@@ -1,0 +1,50 @@
+# Tempo — tek binary mode, filesystem, 48h retention (D10)
+
+tempo:
+  # Storage (filesystem local, MVP için yeterli)
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal
+
+  retention: 48h
+
+  # Receivers — OTLP (grpc + http), Jaeger (opsiyonel)
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+    jaeger:
+      protocols:
+        thrift_http:
+          endpoint: 0.0.0.0:14268
+
+  # Global overrides
+  global_overrides:
+    metrics_generator_processors:
+      - service-graphs
+      - span-metrics
+
+  # Metrics generator (Prometheus'a service graph + span metric push)
+  metricsGenerator:
+    enabled: false                    # MVP'de kapalı, Prom remote_write karmaşıklığı yok
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+persistence:
+  enabled: true
+  storageClass: local-path
+  size: 5Gi
+
+# Ingress YOK — Grafana datasource üzerinden

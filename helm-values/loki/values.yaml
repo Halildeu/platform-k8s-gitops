@@ -1,0 +1,98 @@
+# Loki — SingleBinary mode (D10: 7d retention, minimal resource)
+# D27: upstream grafana/loki chart, no custom patches
+
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false
+
+  # Retention (D10)
+  limits_config:
+    retention_period: 168h            # 7 gün
+    reject_old_samples: true
+    reject_old_samples_max_age: 168h
+    max_cache_freshness_per_query: 10m
+    split_queries_by_interval: 15m
+    ingestion_rate_mb: 4
+    ingestion_burst_size_mb: 6
+    per_stream_rate_limit: 3MB
+    per_stream_rate_limit_burst: 15MB
+
+  compactor:
+    retention_enabled: true
+    delete_request_store: filesystem
+
+  # Schema (boltdb-shipper → filesystem, lokal için)
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+
+  # Storage (filesystem, PVC)
+  commonConfig:
+    path_prefix: /var/loki
+    replication_factor: 1
+
+  storage:
+    type: filesystem
+    filesystem:
+      chunks_directory: /var/loki/chunks
+      rules_directory: /var/loki/rules
+
+# SingleBinary Deployment
+singleBinary:
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+  persistence:
+    enabled: true
+    storageClass: local-path
+    size: 10Gi
+
+# Diğer bileşenler kapalı (SingleBinary'de dahili)
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+
+# Gateway (nginx proxy) KAPALI — Promtail direkt singleBinary'e push
+gateway:
+  enabled: false
+
+# Kapsamlı alerting/recording rules — MVP'de kapalı
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  lokiCanary:
+    enabled: false
+
+# Test kapalı
+test:
+  enabled: false
+
+# MinIO KAPALI (filesystem kullanıyoruz)
+minio:
+  enabled: false
+
+# Chunks cache (memcached) KAPALI — lokal için gereksiz
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+
+# Ingress YOK — Loki'ye sadece Grafana datasource üzerinden erişim
