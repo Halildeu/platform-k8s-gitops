@@ -31,3 +31,6 @@ charts/
 # Local
 .local/
 tmp/
+
+# Claude Code session state
+.claude/

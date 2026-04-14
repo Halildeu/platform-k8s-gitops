@@ -11,26 +11,33 @@
 
 | # | Karar | Değer |
 |---|---|---|
-| D1 | Deployment hedefi | k3s (staging-sw sunucusu), tek cluster |
-| D2 | Namespace stratejisi | **5 ns**: `platform-prod`, `platform-test`, `ingress-nginx`, `argocd`, `external-secrets`, `monitoring` (+ kube-system). Tek cluster, namespace izolasyonu + PriorityClass + NetworkPolicy |
+| D1 | Deployment hedefi | staging-sw üzerinde aynı hostta iki ayrı `k3d` cluster: `prod` + `test`. Bu karar HA/DR değil, **izolasyon** kararıdır |
+| D2 | Namespace stratejisi | **Cluster-bazlı**. Prod cluster: `platform-prod`, `ingress-nginx`, `external-secrets`, `argocd`, `monitoring`. Test cluster: `platform-test`, `ingress-nginx`, `external-secrets`. Prod/test aynı cluster'ı **paylaşmaz** |
 | D3 | Lokal dev | k3d (Docker Desktop üzerinde) |
 | D4 | GitOps motoru | ArgoCD (app-of-apps pattern) |
 | D5 | Manifest yönetimi | Kustomize (base + overlays) + Helm (3. parti chart'lar için) |
 | D6 | Host-level servisler | PG + Keycloak + Vault → **Kubernetes DIŞINDA** Docker Compose ile host'ta çalışır, test+prod ayrı instance |
-| D7 | Service discovery | **Eureka KALDIRILDI** — K8s native DNS (`<svc>.<ns>.svc.cluster.local`). Backend'de `@EnableEurekaClient` ve `@LoadBalanced` RestTemplate'ler temizlenir. Discovery-server pod'u yok → ~400 MB RAM tasarruf |
-| D8 | Ingress + TLS | ingress-nginx; wildcard Sectigo cert (`*.acik.com` + `acik.com`, SAN'de test de kapsanır) manuel K8s Secret olarak; cert-manager **DEFER** (renewal 2026-10-01 öncesi değerlendirilir) |
+| D7 | Service discovery | **Eureka KALDIRILDI** — K8s native DNS (`<svc>.<ns>.svc.cluster.local`). **Dilimli geçiş** (Codex onayı): her PoC diliminde backend + çağıranlar + gateway route birlikte temizlenir. Geçici Eureka YOK |
+| D8 | Ingress + TLS | TLS host-level nginx'te termine edilir (cluster içi ingress-nginx HTTP-only). MVP: manuel Sectigo wildcard rotation + script + `60/30/7d` uyarı takvimi + panel erişim doğrulaması. Faz 12 sonrası: yalnız `ai.acik.com` için LE HTTP-01 **dry-run**; başarılıysa otomasyona geç, başarısızsa manuel sürer |
 | D9 | Secret | External Secrets Operator + Vault (mevcut Vault source-of-truth kalır) |
-| D10 | Observability | kube-prometheus-stack + Loki + Tempo (Helm) |
+| D10 | Observability | kube-prometheus-stack + Loki + Tempo (Helm). **Retention**: Prometheus 10 gün, Loki 7 gün, Tempo 48 saat (MVP). Gerçek ingest ölçüldükten sonra artırma değerlendirilir |
 | D11 | Image registry | GHCR (mevcut `deploy-backend.yml` push akışı korunur) |
 | D12 | Git stratejisi | Lokal `.git` aktif, remote YOK. Canlıya geçerken `halildeu/platform-k8s-gitops` (private) repo oluşturulacak |
 | D13 | Yaklaşım | Doğrudan canlı-ready yapı — atılabilir/deney değil |
 | D14 | Ana repo paralel | `application-k8s.yml` profili + Dockerfile probe'ları K8s manifest yazımıyla **eş zamanlı** yazılır |
 | D15 | CNI | **Calico** (başlangıçtan) — NetworkPolicy garantisi. Flannel değil. +200 MB RAM kabul |
-| D16 | Cluster topolojisi | **2 k3d cluster aynı host'ta** (staging-sw): `prod` ve `test`. Docker-in-Docker ile izole (ayrı control plane, etcd, CNI). Gerekçe: "birini bozunca diğeri etkileniyor" tecrübesinin tekrarlamaması — kontrol düzlemi fiziksel ayrım. Lokal geliştirici makinede de aynı yaklaşım (2 k3d cluster) |
+| D16 | Cluster topolojisi | **2 k3d cluster aynı host'ta** (staging-sw): `prod` + `test`. Docker container'larda ayrı k3s node'ları (ayrı API server, etcd, CNI, Docker network, Pod/Svc CIDR). Gerekçe: "birini bozunca diğeri etkileniyor" tecrübesinin tekrarlanmaması. Lokal geliştirici makinede de aynı iki-cluster modeli |
 | D17 | Test ortamı çalışma modeli | **Scale-to-zero workload**: test cluster control plane açık (~2 GB sabit), workload'lar default `replicas: 0`. Yoğun saatlerde backend+openfga+frontend kapalı (~0 GB). İhtiyaç halinde `test-toggle.sh up`. Host-level test PG/KC/Vault de kapalı varsayılan |
 | D18 | İngress + TLS termination | **Host-level nginx SNI reverse proxy** (mevcut `platform-web-nginx` yerine) 80/443 alır, Sectigo wildcard cert'i termine eder. Hostname'e göre backend: `ai.acik.com` → prod k3d HTTP :30080, `test.acik.com` → test k3d HTTP :31080. Cluster'ların içindeki ingress-nginx HTTP-only (cert'i host handle ediyor) |
 | D19 | Host servis köprüsü | **Service + Endpoints** (IP pin `10.9.10.53`). ExternalName yerine; CoreDNS rewrite kırılgan |
 | D20 | Host port ataması | **Mevcut portlar = PROD (`5432, 8081, 8200`)**, yeni portlar = TEST (`5433, 8082, 8201`). Prod verisi migrasyonu YOK |
+| D21 | HPA & replica | **MVP'de HPA YOK**. `metrics-server` kapalı kalır. Prod sabit `replicas: 2`, test açıldığında `replicas: 1`. HPA ancak ilk gerçek CPU/latency grafiği toplandıktan sonra geri açılabilir. **Gerekçe**: metrics-server disabled + HPA birlikte tutarsızdı (Codex Tur-1) |
+| D22 | CPU bütçesi | Steady-state test kapalı `1.6-2.2 vCPU`, test açık `2.0-2.8 vCPU`; spike (prom compaction + loki flush + rollout aynı anda) `3.4-4.0 vCPU`. **Politika**: CPU request dar ama gerçekçi, limit cömert. `request=limit` yapılmaz. Örüntü: backend `req 150m / lim 750-1000m`, ağır 2-3 servis `req 250-300m`, gateway `req 250m`, kritik podda limit olmayabilir |
+| D23 | DR / RPO / RTO | **Prod**: RPO ≤ 24 saat, RTO ≤ 4 saat. **Test**: RPO ≤ 24 saat, RTO ≤ 1 iş günü. Off-host backup (PG dump + Vault raft snapshot farklı host/object storage'a), düzenli restore provası, stateful/node bakım runbook'u **zorunlu**. Tek host bu karar seviyesini destekler — RPO <1h istenirse mimari değişir |
+| D24 | JVM bellek politikası | **Ortak explicit heap**: `-Xmx384m` (prod default), ağır 2-3 serviste override (512m), test overlay'de `-Xmx256m`. `-XX:MaxRAMPercentage` **KALDIRILDI** (Xmx ile çelişiyor, yanlış beklenti üretiyordu). Container `resources.limits.memory: 512Mi` (heap + metaspace + direct buffer + JIT için tampon) |
+| D25 | PoC dilim stratejisi | Tam manifest çoğaltmasına **geçilmez**, önce ince dilim: `api-gateway + auth-service` (Dilim 1) → `api-gateway + user-service` (Dilim 2) → kalan backend'ler bağımlılık grafına göre. **Kabul kriteri (Dilim 1)**: gateway route `lb://` yok → K8s svc DNS, `auth-service` Eureka'sız kalkar, Keycloak/DB host köprüsü çalışır, smoke yeşil |
+| D26 | YAPMA listesi | MVP kapsamında **yok**: MetalLB, GraalVM, K8s içinde geçici Eureka, aynı hosttaki 2 cluster'ı DR/HA gibi sunma, admin UI'ları aynı hostname altında sertleştirmeden bırakma |
+| D27 | Upstream-first prensibi | Her bileşen **kendi upstream native mekanizmasını** kullanır: k3s (Rancher), Calico (tigera-operator), ArgoCD (upstream Helm + dex OIDC built-in), kube-prometheus-stack (upstream Helm), External Secrets Operator (upstream CRD), Loki/Tempo (upstream Helm). Bizim yazdığımız custom kod **minimum**: sadece `bootstrap/*.sh` (orchestration), `host-compose/proxy/nginx.conf` (reverse proxy), `kustomize/base/apps/<service>/` (backend manifest'leri, Helm chart değil çünkü zaten build pipeline'ı bizim). **YASAK**: custom admission webhook, özel operator, manuel YAML patch'leri (Kustomize strategic merge yerine). **Gerekçe**: satıcı kilidi yok, upgrade yolu net, community desteği aktif |
 
 **HARD RULES:**
 - `platform-test` ve `platform-prod` namespace'leri aynı cluster'ı paylaşır ama **ayrı host-level PG/KC/Vault** instance'ı kullanır
@@ -104,15 +111,17 @@ ai.acik.com/                             test.acik.com/
 - `test.acik.com`: **YENİ**, intranet-only. A kaydı `10.9.10.53` — sadece iç Windows AD DNS'e (`acikdc01.acik.local`) eklenir, dış proxy'e yazılmaz.
 - Path-based seçiminin gerekçesi: sadece 1 yeni DNS kaydı (test.acik.com) + tek wildcard cert, admin UI'lar için subdomain yok.
 
-**TLS stratejisi — wildcard manuel Secret:**
+**TLS stratejisi — host-level nginx'te termine (D18):**
 
-| Namespace | Secret | Cert | Kaynak |
+| Lokasyon | Dosya | Cert | Kaynak |
 |---|---|---|---|
-| `ingress-nginx` | `wildcard-acik-com-tls` | Sectigo `*.acik.com` + `acik.com` | mevcut PEM (`STAR_acik_com.crt` + `.key`, Nginx bundle) |
+| Host (Compose) | `host-compose/proxy/tls/wildcard-acik-com.{crt,key}` | Sectigo `*.acik.com` + `acik.com` | mevcut PEM (`STAR_acik_com.crt` + `.key`, Nginx bundle) |
 
-- Hem `ai.acik.com` hem `test.acik.com` aynı Secret ile servis edilir (wildcard SAN kapsıyor).
-- **cert-manager kurulmaz** (MVP). Renewal manuel — 2026-10-01 expiry öncesi (Faz 14 civarı) tekrar değerlendirilir: yeni Sectigo cert mi, LE HTTP-01 otomasyonu mu.
-- Compose nginx hâlâ Vault self-signed servis ediyor — K8s cutover'a kadar kalabilir ya da araya sıkıştırılır (opsiyonel quick-win, Faz 1 içinde).
+- Hem `ai.acik.com` hem `test.acik.com` aynı host nginx + aynı cert ile servis edilir (wildcard SAN).
+- **Cluster içinde TLS Secret YOK** — k3d ingress-nginx HTTP-only dinler (port 30080/31080), host nginx zaten SSL termine ediyor.
+- **cert-manager MVP'de kurulmaz**. Renewal stratejisi (D8): manuel Sectigo rotation + script + 60/30/7 gün uyarı + panel erişim doğrulaması.
+- **Faz 12 sonrası**: `ai.acik.com` için LE HTTP-01 dry-run. Başarılıysa cert-manager otomasyonu ayrıca kararlandırılır; `test.acik.com` intranet-only kaldığı sürece bu kapsam dışı.
+- Compose nginx (mevcut `platform-web-nginx`) cutover anında durdurulur; host-compose/proxy/ altındaki yeni nginx devralır (aynı 443 port, aynı cert).
 
 **Cert dosyaları:**
 - Local path: `/Users/halilkocoglu/Downloads/STAR_acik_com1/Nginx/STAR_acik_com.{crt,key}`
@@ -133,7 +142,7 @@ ai.acik.com/                             test.acik.com/
 | ingress-nginx | ~250 MB | ~250 MB | |
 | External Secrets Operator | ~200 MB | ~150 MB | |
 | ArgoCD (server+repo+controller+redis+dex) | ~1 GB | **0** | Sadece prod'da, test uzaktan yönetilir |
-| Monitoring stack (prom+grafana+loki+tempo+promtail+alertmanager) | ~2.5 GB | **0** | Sadece prod'da, test federate/scrape |
+| Monitoring stack (prom+grafana+loki+tempo+promtail+alertmanager) | ~2.2 GB | **0** | Sadece prod'da. Retention: Prom 10d, Loki 7d, Tempo 48h (MVP, D10) |
 | **Cluster overhead (alt toplam)** | **~5.7 GB** | **~2.1 GB** | |
 | Backend prod (8 × 384 MB heap) | ~3 GB | - | `-Xmx384m -XX:MaxRAMPercentage=75` |
 | Backend test (KAPALI — r=0) | - | 0 GB | Yoğun saat |
@@ -153,6 +162,23 @@ ai.acik.com/                             test.acik.com/
 - Test backend `-Xmx192m` → -500 MB
 - Test cluster minimal admission → -80 MB
 - **Toplam tasarruf:** ~730 MB (test açık → 15.8 GB'a iner)
+
+**CPU bütçesi (D22):**
+
+| Senaryo | CPU kullanımı | Not |
+|---|---|---|
+| Test kapalı, steady-state | **1.6-2.2 vCPU** | k3d overhead + prod 8 backend idle + Prometheus scrape |
+| Test açık, steady-state | **2.0-2.8 vCPU** | + test control plane + test workload idle |
+| Spike (prom compaction + loki flush + rollout aynı anda) | **3.4-4.0 vCPU** | Kısa süreli, dar request'li podlarda throttle mümkün |
+| Kalıcı saturation (rollout + trafik spike + compaction) | **4.0+ vCPU** | Node CPU pressure → latency artar |
+
+**CPU request/limit örüntü:**
+- Backend tipik: `request 150m` / `limit 750m-1000m`
+- Ağır 2-3 servis: `request 250-300m` / `limit 1000m`
+- api-gateway: `request 250m` / `limit 1000m`
+- Kritik podda limit YOK (kontrollü node saturation)
+- **`request=limit` YAPILMAZ** (D22) — QoS BestEffort/Burstable avantajı kaybedilir
+- JVM için `-XX:ActiveProcessorCount=<limit_cpu>` yoksa GC threadleri host 4 vCPU'ya göre scale eder → throttle artar
 
 **ResourceQuota (FINAL — per cluster):**
 
@@ -514,7 +540,7 @@ platform-k8s-gitops/
 - Prometheus test cluster'ı federate edebiliyor (`up{job="test-federate"}` metriği var)
 
 ### Faz 4 — Kustomize Base: Host Service Köprüleri
-- [ ] `kustomize/base/host-services/postgres-svc.yaml` (ExternalName + Endpoints)
+- [ ] `kustomize/base/host-services/postgres-svc.yaml` (Service + Endpoints, D19 — IP pin `10.9.10.53`, ExternalName kullanılmaz)
 - [ ] `kustomize/base/host-services/keycloak-svc.yaml`
 - [ ] `kustomize/base/host-services/vault-svc.yaml`
 - [ ] `kustomize/base/host-services/kustomization.yaml`
@@ -528,8 +554,9 @@ platform-k8s-gitops/
 - [ ] **Kabul kriteri:** k3d'de openfga ayaklanır, postgres-svc'ye bağlanır
 
 ### Faz 6 — Kustomize Base: Backend Apps (şablon + çoğaltma)
-- [ ] `user-service/` — şablon olarak tam yaz (Deployment, Service, ConfigMap, HPA, PDB, ServiceMonitor, NetworkPolicy, ExternalSecret)
-  - Resource: `requests: 256Mi/100m, limits: 512Mi/500m`, JVM `-Xmx384m` (prod) / `-Xmx256m` (test overlay)
+- [ ] `user-service/` — şablon olarak tam yaz (Deployment, Service, ConfigMap, ~~HPA~~ (D21 — MVP'de yok), PDB, ServiceMonitor, NetworkPolicy, ExternalSecret)
+  - Resource: `requests: 256Mi/150m, limits: 512Mi/750m`, JVM `-Xmx384m` (prod) / `-Xmx256m` (test overlay). **`-XX:MaxRAMPercentage` kullanılmaz** (D24)
+  - Replica: prod 2 sabit (D21), test 0 default (D17) / 1 açıldığında
 - [ ] `auth-service/`, `variant-service/`, `core-data-service/`, `report-service/`, `schema-service/` — copy+edit
 - [ ] ~~`permission-service/`~~ **SKIP** (legacy, kaldırıldı)
 - [ ] ~~`discovery-server/` (Eureka)~~ **SKIP** (D7 revize: K8s native DNS kullanılacak)
@@ -581,12 +608,16 @@ Bu repo'da DEĞİL, ana repo'da yapılacaklar. Manifest yazımıyla eş zamanlı
   - Actuator: `management.endpoints.web.exposure.include=health,prometheus,info`
   - `management.endpoint.health.probes.enabled=true` (startup/liveness/readiness ayrımı)
   - JVM: `JAVA_TOOL_OPTIONS=-Xmx384m -XX:MaxRAMPercentage=75` (prod) / `-Xmx256m` (test)
-- [ ] **Eureka temizliği** (kod değişikliği):
-  - `@EnableEurekaClient` / `@EnableDiscoveryClient` annotation'larını kaldır
-  - `@LoadBalanced RestTemplate`/`WebClient.Builder` → K8s svc URL'leri (config'den okunur)
-  - `pom.xml`: `spring-cloud-starter-netflix-eureka-client` dependency → kaldır
-  - `discovery-server` modülü → arşivle (silme, ileride compose-fallback için kalabilir)
-  - api-gateway route'ları: `lb://...` → `http://<svc>.<ns>.svc.cluster.local:<port>`
+- [ ] **Eureka temizliği — DİLİMLİ** (D7, Codex onayı):
+  - **Dilim 1 (PoC, D25)**: `api-gateway + auth-service`
+    - `auth-service`: `@EnableEurekaClient` kaldır, `@LoadBalanced` client yok
+    - `api-gateway`: route `lb://auth-service` → `http://auth-service.platform-prod.svc.cluster.local:8088`
+    - Smoke: gateway üzerinden `/auth/actuator/health` 200, e2e Keycloak login
+  - **Dilim 2**: `+ user-service` (aynı desen)
+  - **Dilim 3+**: kalan backend'ler bağımlılık grafına göre
+  - **pom.xml temizliği her dilimde**: `spring-cloud-starter-netflix-eureka-client` dependency kaldırılır
+  - `discovery-server` modülü: **tüm filo K8s'e geçtikten sonra** arşivlenir (geçici K8s Eureka YOK — D26)
+  - Geçici `EUREKA_ENABLED=false` env var kullanılmaz — annotation ve dependency tamamen temizlenir
 - [ ] Dockerfile güncelleme: non-root user + USER direktifi
 - [ ] `decisions/topics/kubernetes-migration.v1.json` — ADR yaz (Eureka kaldırma + capacity strategy + path-based ingress)
 - [ ] `docs/OPERATIONS/INFRASTRUCTURE-ENVIRONMENTS.md` güncelleme (K8s ortamı eklenir)
@@ -637,7 +668,11 @@ Bu repo'da DEĞİL, ana repo'da yapılacaklar. Manifest yazımıyla eş zamanlı
 
 | Risk | Etki | Mitigasyon |
 |------|------|-----------|
-| Eureka + K8s Service çifte discovery | Servis çağrıları confused | Eureka'yı K8s içinde single-replica + Headless Service, kısa süreli gözlem |
+| ~~Eureka + K8s Service çifte discovery~~ | **PASIF** (D7 revize) | Eureka tamamen kaldırıldı, K8s native DNS kullanılıyor. Geçici Eureka YOK (D26) |
+| **CPU throttle** (4 vCPU, spike senaryosu) | Request timeout, GC pause, p95 latency bozulması | D22 politikası: request dar (150m), limit cömert (750-1000m), `request=limit` yok. `-XX:ActiveProcessorCount` JVM için pod limit'ine set. Prometheus scrape 30s→60s gerekirse. Gerçek yük ölçülüp gözden geçirilecek |
+| **HPA metrics-server çelişkisi (kapatıldı)** | Autoscaling çalışmazdı | D21: MVP'de HPA YOK, metrics-server kapalı kalır, sabit replica. Gelecekte metrics-server veya Prometheus Adapter kararı ayrıca alınır |
+| **Tek host = HA/DR değil** | Hardware failure → toplam outage | D23: RPO/RTO tanımlı, off-host backup + restore prova zorunlu, runbook'lar Faz 12 öncesi hazır. RPO<1h gerekirse mimari değişir |
+| **PoC dilim başarısızlığı** | Yanlış mimari varsayımı erken yakalanmazsa manifest çoğaltmasında kaybolmuş olur | D25: kabul kriteri net, yeşil olmadan tam filoya geçilmez. Her dilim ayrı PR + smoke test |
 | Host-level PG'ye ağ erişim | Cluster ↔ host network izolasyonu | ExternalName Service + Endpoints ile statik mapping, network policy |
 | Vault secret migration | Prod down riski | Önce test namespace'de ESO test et, prod'a son geç |
 | MFE React duplicate (mevcut blocker) | White screen | K8s öncesi bu çözülmeli — nginx cache header'ları Faz 7'de revize |
@@ -651,6 +686,42 @@ Bu repo'da DEĞİL, ana repo'da yapılacaklar. Manifest yazımıyla eş zamanlı
 | **Disk %80 dolu, geçiş döneminde %87'ye** | k3s image pull başarısız, cluster instabil | Önce hafif prune; compose-prod stop sonrası `docker system prune -a` ile büyük temizlik. **Disk artırma opsiyonu açık** (sysadmin) |
 
 ---
+
+## 6.5 DR / RPO / RTO (FINAL — D23)
+
+**Tek host mimarisinin sınırları:** staging-sw kernel panic/donanım arızası → tüm cluster'lar ve host Compose aynı anda offline. Bu tasarım **HA değil**, operasyonel süreklilik için manuel restore'a güvenir.
+
+**Hedefler:**
+
+| Ortam | RPO | RTO | Kayıp toleransı |
+|---|---|---|---|
+| **prod** | ≤ 24 saat | ≤ 4 saat | Son gecelik backup'a dön |
+| **test** | ≤ 24 saat | ≤ 1 iş günü | İstek halinde restore |
+
+**Backup kapsamı (her öğe için off-host kopya zorunlu):**
+
+| Veri | Kaynak | Yedek | Frekans |
+|---|---|---|---|
+| PG (prod) | host Compose `/var/lib/postgresql/data` | `pg_dump` + physical snapshot → off-host (S3 veya ayrı makine) | günlük 03:00 (mevcut) |
+| PG (test) | host Compose test PG | `pg_dump` → off-host | günlük (ya da on-demand) |
+| Vault raft (prod) | host Compose vault state | `vault operator raft snapshot save` → off-host | günlük 03:00 (mevcut) |
+| Vault raft (test) | host Compose test vault | raft snapshot → off-host | günlük |
+| Keycloak state | PG içinde (KC tabloları) | PG backup içinde | PG ile |
+| k3d cluster state (etcd) | PVC'ler | k3d'nin yerleşik backup'ı yok; **etcd snapshot manuel**, ama GitOps'tan **geri kurulum tercih** | on-demand |
+| Host Compose state dizinleri | `/home/halil/platform/state/*` | tarball → off-host | günlük |
+| Monitoring PVC (prom/loki/tempo) | k3d local-path | **yedek YOK** (retention penceresi kabul) | - |
+| Cert ve key (`host-compose/proxy/tls/`) | host | güvenli off-host (Vault KV veya şifreli bucket) | her rotation'da |
+
+**Restore provası (zorunlu):** Her çeyrekte bir kez prod PG dump'ı test'e restore edilmeli. Başarı kriteri: backend `/actuator/health/readiness` 200 döner, smoke test geçer.
+
+**Runbook'lar (docs/runbook/ altında, Faz 12 öncesi hazır):**
+- `pg-restore.md` — dump/snapshot'tan restore
+- `vault-unseal-restore.md` — raft snapshot + unseal prosedürü
+- `cluster-rebuild.md` — k3d cluster'ı GitOps'tan yeniden kurma (<1 saat hedefi)
+- `cert-rotation.md` — Sectigo yeni cert indirme + host nginx reload + doğrulama
+- `node-maintenance.md` — kernel patch/reboot öncesi downtime planlama + bildirim
+
+**RPO <1 saat veya RTO <1 saat gerekirse:** mevcut mimari yeterli değildir — iki host replication (PG streaming, Vault HA), veya cloud managed DB/KV zorunlu olur. Bu kapsam bu PLAN'ın DIŞINDA.
 
 ## 7. Sonraki Session'a Bootstrap
 
@@ -689,4 +760,6 @@ Devam edeceğim faz: Faz 1 — Repo Temeli (README + .gitignore + ilk commit).
 | 2026-04-14 | **Disk 200 GB onaylandı** (ETA 2026-04-16). Bölüm 2.4 güncellendi. Disk darlığı riski PASIF. RAM 24 GB sabit kalıyor — Eureka kaldırma + JVM heap sıkıştırma + quota stratejisi devam |
 | 2026-04-14 | **Cluster mimari netleşti** — D2 revize (5 ns), D15 Calico CNI, D16 tek cluster, **D17 scale-to-zero test** (yoğun saatlerde test KAPALI, RAM=0), D18 hostNetwork ingress, D19 Service+Endpoints host köprü, D20 prod=mevcut portlar. Bölüm 2.5 Cluster Topoloji eklendi (k3s install flags, k3d config, namespace diyagramı). RAM bütçesi iki senaryolu tablo (kapalı 10.3 GB / açık 13.3 GB) |
 | 2026-04-14 | **2 k3d cluster mimarisine geçildi** — D16 revize (tek k3s → 2 k3d aynı host), D18 revize (hostNetwork ingress → host nginx SNI proxy 443'ü alır, cluster içi HTTP-only). Gerekçe: "birini bozunca diğeri bozuluyor" deneyimine karşı kontrol düzlemi fiziksel ayrımı. Bölüm 2.5 tamamen yeniden yazıldı (k3d-prod/test.yaml config, host nginx SNI proxy nginx.conf, iki cluster diyagramı, ArgoCD multi-cluster). Bölüm 2.4 RAM tablosu cluster-başına detaylı (test kapalı 13.5 GB / açık 16.5 GB, 24 GB'ta rahat). Faz 3 2 cluster setup'a göre revize |
+| 2026-04-14 | **D27 Upstream-first prensibi** eklendi: her bileşen kendi native Helm/operator kullanır, custom kod minimum. Custom admission webhook / özel operator / manuel YAML patch YASAK |
+| 2026-04-14 | **Codex istişaresi — 2 turlu, UZLAŞI** (docs/codex-review-2026-04-14.md). Drift temizliği: D1 (tek cluster → 2 k3d), D2 (5 ns tek cluster → cluster-başına ns), D16 ("Docker-in-Docker" → Docker container), §2.3 TLS (cluster Secret → host nginx), Faz 4 (ExternalName → Service+Endpoints), §6 Risk (Eureka K8s-içi single-replica → PASIF). D7 revize: dilimli Eureka kaldırma. D8 revize: 2 aşamalı cert stratejisi (manuel + Faz 12 HTTP-01 dry-run). D10: retention 14d→10d/14d→7d/3d→48h. **6 yeni karar**: D21 HPA (MVP'de yok), D22 CPU bütçesi, D23 DR/RPO/RTO, D24 JVM `-Xmx` explicit (MaxRAMPercentage kaldırıldı), D25 PoC dilim (`api-gateway + auth-service` → `user-service`), D26 YAPMA listesi. Yeni §6.5 DR/RPO/RTO bölümü. §2.4 CPU bütçesi tablosu. 4 yeni risk (CPU throttle, HPA çelişkisi pasif, tek-host DR sınırı, PoC dilim başarısızlığı) |
 
