@@ -98,7 +98,10 @@ server:
     annotations:
       nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
       nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
-      # ArgoCD kendi root path'ini /argocd'ye ayarladı (server.rootpath), rewrite yok
+      # D26 admin hardening: canlı'da intranet CIDR'ı + VPN pool whitelist
+      # (lokal'de 127.0.0.1 yeterli). Cutover öncesi staging-sw CIDR eklenir.
+      # SSO (Keycloak OIDC) geldiğinde whitelist gevşetilebilir.
+      nginx.ingress.kubernetes.io/whitelist-source-range: "127.0.0.1/32,10.0.0.0/8"
 
 # Repo server — Git'ten manifest okur
 repoServer:

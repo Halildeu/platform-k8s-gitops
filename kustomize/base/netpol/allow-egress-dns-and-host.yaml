@@ -1,0 +1,73 @@
+# App egress allowlist — DNS, host bridge (PG/KC/Vault), aynı-ns servis-arası,
+# ve Keycloak/Vault trafiği (host-bridge servisleri üzerinden).
+---
+# DNS — kube-dns/coredns
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-dns
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: platform
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Aynı namespace içinde servis-arası (gateway → auth-service, vb.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-intra-ns
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: platform
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: platform
+---
+# Host bridge IP'ye (D19: 10.9.10.53 prod; host.docker.internal lokal)
+# NetworkPolicy IP bazlı egress → ipBlock kullanır
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-host-bridge
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: platform
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.43.0.0/16     # k3d ServiceCIDR (prod) — intra-cluster zaten allow var
+              - 10.45.0.0/16     # k3d ServiceCIDR (test)
+              - 10.42.0.0/16     # k3d PodCIDR (prod)
+              - 10.44.0.0/16     # k3d PodCIDR (test)
+      ports:
+        - protocol: TCP
+          port: 5432              # PostgreSQL
+        - protocol: TCP
+          port: 8080              # Keycloak (host'ta 8081/8082, service içeri 8080)
+        - protocol: TCP
+          port: 8200              # Vault

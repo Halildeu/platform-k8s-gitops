@@ -1,0 +1,23 @@
+# D15 + Codex Tur-4 C modeli — default-deny baseline
+# Platform namespace'te tüm ingress + egress kapalı; yalnız allowlist'te
+# tanımlı trafik geçer (ingress-nginx, monitoring, kube-dns, host-bridge).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}               # tüm pod'lar
+  policyTypes:
+    - Ingress
+  # ingress: yok → tümü deny
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  # egress: yok → tümü deny

@@ -1,0 +1,17 @@
+# D22 CPU bütçesi + PLAN §2.4: platform-prod 6GiB/2vCPU, platform-test 3GiB/1vCPU
+# Base'de prod değerleri; overlays/test'te patch ile daralt.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: platform-quota
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: "6Gi"
+    limits.cpu: "4"
+    limits.memory: "12Gi"
+    persistentvolumeclaims: "10"
+    pods: "30"
+    services: "20"
+    secrets: "30"
+    configmaps: "30"

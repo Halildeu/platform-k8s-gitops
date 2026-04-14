@@ -1,0 +1,20 @@
+# D22: pod default request/limit — request=limit YAPILMAZ
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: platform-limits
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "128Mi"
+      max:
+        cpu: "2"
+        memory: "2Gi"
+      min:
+        cpu: "10m"
+        memory: "32Mi"

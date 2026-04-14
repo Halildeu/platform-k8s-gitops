@@ -26,6 +26,18 @@ log "namespace monitoring"
 kubectl --context "${ctx}" create namespace monitoring --dry-run=client -o yaml \
   | kubectl --context "${ctx}" apply -f -
 
+# D26 admin hardening: Grafana admin Secret'ını rastgele üret (ilk kurulumda).
+# Halihazırda varsa dokunma (rotation bilerek manuel).
+if ! kubectl --context "${ctx}" -n monitoring get secret grafana-admin-credentials >/dev/null 2>&1; then
+  log "Grafana admin Secret (rastgele password) oluşturuluyor"
+  ADMIN_PASS="$(openssl rand -base64 24 | tr -d '\n')"
+  kubectl --context "${ctx}" -n monitoring create secret generic grafana-admin-credentials \
+    --from-literal=admin-user=admin \
+    --from-literal=admin-password="${ADMIN_PASS}"
+  log "Admin password Secret'ta. Almak için:"
+  log "  kubectl --context ${ctx} -n monitoring get secret grafana-admin-credentials -o jsonpath='{.data.admin-password}' | base64 -d"
+fi
+
 log "helm upgrade --install kube-prometheus-stack (chart 65.x)"
 helm --kube-context "${ctx}" upgrade --install kube-prometheus-stack \
   prometheus-community/kube-prometheus-stack \
@@ -39,6 +51,8 @@ kubectl --context "${ctx}" -n monitoring get pods
 
 log ""
 log "Erişim:"
-log "  Grafana:    http://ai.acik.com/grafana   (admin / admin-change-me)"
+log "  Grafana:    http://ai.acik.com/grafana"
+log "              Kullanıcı: admin · Şifre:"
+log "              kubectl --context ${ctx} -n monitoring get secret grafana-admin-credentials -o jsonpath='{.data.admin-password}' | base64 -d"
 log "  Prometheus: http://ai.acik.com/prometheus"
 log "  Alertmanager: kubectl port-forward -n monitoring svc/kube-prometheus-stack-alertmanager 9093:9093"

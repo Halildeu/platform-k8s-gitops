@@ -27,6 +27,7 @@ spec:
         prometheus.io/path: "/actuator/prometheus"
         prometheus.io/port: "8080"
     spec:
+      serviceAccountName: api-gateway     # D26: ghcr-pull secret için
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

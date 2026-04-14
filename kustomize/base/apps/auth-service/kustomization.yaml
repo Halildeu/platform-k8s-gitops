@@ -19,5 +19,6 @@ resources:
   - configmap.yaml
   - pdb.yaml
   - secret-stub.yaml         # P0 fix: pod CreateContainerConfigError'u önler
+  - serviceaccount.yaml      # D26: imagePullSecret binding
   # ESO kurulunca secret-stub.yaml çıkarılır, externalsecret.yaml aktif edilir:
   # - externalsecret.yaml

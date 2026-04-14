@@ -24,6 +24,7 @@ data:
     datasources:
       - name: Loki
         type: loki
+        uid: loki                           # Codex Tur-4: Tempo tracesToLogsV2 buna refers
         access: proxy
         url: http://loki.monitoring.svc.cluster.local:3100
         isDefault: false
@@ -31,8 +32,10 @@ data:
         jsonData:
           maxLines: 1000
           derivedFields:
+            # main-repo-tasks.md log format: "traceId":"<id>" (küçük d)
+            # Spring Boot/Brave default: traceId (Sleuth legacy) / trace_id (OTel)
             - datasourceUid: tempo
-              matcherRegex: "traceID=(\\w+)"
+              matcherRegex: '"trace[Ii]d":"(\w+)"'
               name: TraceID
               url: "$${__value.raw}"
 EOF

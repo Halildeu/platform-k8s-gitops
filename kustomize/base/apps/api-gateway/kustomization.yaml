@@ -16,3 +16,4 @@ resources:
   - service.yaml
   - configmap.yaml
   - pdb.yaml
+  - serviceaccount.yaml      # D26: imagePullSecret binding

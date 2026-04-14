@@ -13,12 +13,14 @@ resources:
   - ../../base
 
 images:
+  # D26 + Codex Tur-4: digest pin. CI günceller, PLACEHOLDER digest'i commit
+  # etmeden önce gerçek sha256'ya çevir.
   - name: auth-service
     newName: ghcr.io/halildeu/platform/auth-service
-    newTag: poc
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
   - name: api-gateway
     newName: ghcr.io/halildeu/platform/api-gateway
-    newTag: poc
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
 
 patches:
   # Replica 0 default (scale-to-zero)
@@ -119,3 +121,21 @@ patches:
       - op: replace
         path: /spec/minAvailable
         value: 0
+
+  # Test ResourceQuota daralt: 3GiB/1vCPU (PLAN §2.4)
+  - target:
+      kind: ResourceQuota
+      name: platform-quota
+    patch: |-
+      - op: replace
+        path: /spec/hard/requests.cpu
+        value: "1"
+      - op: replace
+        path: /spec/hard/requests.memory
+        value: 3Gi
+      - op: replace
+        path: /spec/hard/limits.cpu
+        value: "2"
+      - op: replace
+        path: /spec/hard/limits.memory
+        value: 6Gi

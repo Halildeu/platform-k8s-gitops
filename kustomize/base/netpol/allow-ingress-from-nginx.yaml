@@ -1,0 +1,22 @@
+# ingress-nginx namespace'inden app namespace'e HTTP trafiği
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-ingress-nginx
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: platform
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080     # api-gateway
+        - protocol: TCP
+          port: 8088     # auth-service
+        # Diğer backend portları Dilim 2+'de eklenir

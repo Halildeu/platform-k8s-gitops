@@ -14,6 +14,8 @@ resources:
   - apps/auth-service
   - apps/api-gateway
   - ingress
+  - netpol         # D15 + Codex Tur-4 C modeli (default-deny + allowlist)
+  - quota          # D22 ResourceQuota + LimitRange
   # Dilim 2+:
   # - apps/user-service
   # - apps/variant-service

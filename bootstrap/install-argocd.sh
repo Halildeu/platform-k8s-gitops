@@ -39,12 +39,11 @@ log "kurulum tamam"
 kubectl --context "${ctx}" -n argocd get pods,svc
 
 log ""
-log "Admin password:"
-kubectl --context "${ctx}" -n argocd get secret argocd-initial-admin-secret \
-  -o jsonpath='{.data.password}' 2>/dev/null | base64 -d
-echo ""
+log "ArgoCD admin şifresi (stdout'a dump edilmez, D26):"
+log "  kubectl --context ${ctx} -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
+log "İlk girişten sonra 'argocd account update-password' ile değiştirip:"
+log "  kubectl --context ${ctx} -n argocd delete secret argocd-initial-admin-secret"
 log ""
 log "Erişim:"
-log "  Port-forward (direkt): kubectl --context k3d-prod port-forward -n argocd svc/argocd-server 8080:80"
-log "  Ingress (host header): curl -H Host:ai.acik.com http://127.0.0.1:30080/argocd/"
-log "  UI lokal'de: http://ai.acik.com/argocd/ (etc/hosts: 127.0.0.1 ai.acik.com)"
+log "  Port-forward: kubectl --context ${ctx} port-forward -n argocd svc/argocd-server 8080:80"
+log "  Ingress:      http://ai.acik.com/argocd/  (/etc/hosts: 127.0.0.1 ai.acik.com)"

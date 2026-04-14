@@ -116,6 +116,8 @@ grafana:
     pathType: Prefix
     annotations:
       nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+      # D26 admin hardening: intranet + VPN whitelist (staging-sw CIDR cutover'da)
+      nginx.ingress.kubernetes.io/whitelist-source-range: "127.0.0.1/32,10.0.0.0/8"
 
   # Datasource: Loki + Tempo (sonra auto-add)
   sidecar:
@@ -125,8 +127,12 @@ grafana:
     dashboards:
       enabled: true
 
-  # Default admin
-  adminPassword: "admin-change-me"    # Helm --set ile override edin / Vault
+  # D26 admin hardening: şifre Git'te DEĞİL. existingSecret ile bootstrap'tan gelir.
+  # bootstrap/install-monitoring.sh rastgele üretir ya da Vault'tan çeker.
+  admin:
+    existingSecret: grafana-admin-credentials
+    userKey: admin-user
+    passwordKey: admin-password
 
 # ─── Prometheus ───
 prometheus:
@@ -172,6 +178,8 @@ prometheus:
     pathType: Prefix
     annotations:
       nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+      # D26 admin hardening: Prometheus raw query endpoint'i sızarsa metadata sızar
+      nginx.ingress.kubernetes.io/whitelist-source-range: "127.0.0.1/32,10.0.0.0/8"
 
 # ─── Prometheus Operator ───
 prometheusOperator:
