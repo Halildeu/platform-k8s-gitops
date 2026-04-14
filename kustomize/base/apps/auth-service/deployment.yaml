@@ -24,10 +24,9 @@ spec:
         app.kubernetes.io/name: auth-service
         app.kubernetes.io/component: backend
         app.kubernetes.io/part-of: platform
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/path: "/actuator/prometheus"
-        prometheus.io/port: "8088"
+      # D27 upstream Prometheus Operator: annotation YERİNE ServiceMonitor CR
+      # (bkz servicemonitor.yaml). Annotation-based scrape kube-prom-stack
+      # default'ta dinlenmez.
     spec:
       serviceAccountName: auth-service     # D26: ghcr-pull secret için
       # D14: non-root (Dockerfile'dan gelen), pod-level güvenlik de sıkıla

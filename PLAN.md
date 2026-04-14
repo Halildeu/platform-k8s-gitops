@@ -2,8 +2,8 @@
 
 **Repo amacı:** Bu repo `autonomous-orchestrator` platformunun Kubernetes GitOps manifest'lerini tutar. Docker Compose üzerinden k3s cluster'a tam geçiş için **tek doğruluk kaynağıdır**. Bu repo'dan geliştirilen yapı, testler yeşil olduğunda **doğrudan canlıya alınır** — deneysel/atılabilir yapı değildir.
 
-**Son güncelleme:** 2026-04-14
-**Durum:** İskelet klasörler hazır, manifest yazımı başlamadı
+**Son güncelleme:** 2026-04-14 (Codex Tur-4 uzlaşı + drift cleanup)
+**Durum:** PoC Dilim 1 manifest'leri + platform katmanı (ingress-nginx, ArgoCD, kube-prometheus-stack, Loki, Promtail, Tempo) + NetworkPolicy + Quota/LimitRange + ServiceAccount/imagePullSecret şablonu yazıldı. Lokal k3d-prod'da doğrulandı (pod'lar Ready, ingress/quota/NP aktif). Ana repoda (`autonomous-orchestrator`) auth-service + api-gateway Eureka kaldırma işi beklemede → image hazır olunca Dilim 1 smoke test. Test cluster (k3d-test) henüz ayakta değil. ESO/Vault auth henüz kapalı (stub Secret). Disk ETA 2026-04-16 staging-sw'de.
 
 ---
 
@@ -40,7 +40,8 @@
 | D27 | Upstream-first prensibi | Her bileşen **kendi upstream native mekanizmasını** kullanır: k3s (Rancher), Calico (tigera-operator), ArgoCD (upstream Helm + dex OIDC built-in), kube-prometheus-stack (upstream Helm), External Secrets Operator (upstream CRD), Loki/Tempo (upstream Helm). Bizim yazdığımız custom kod **minimum**: sadece `bootstrap/*.sh` (orchestration), `host-compose/proxy/nginx.conf` (reverse proxy), `kustomize/base/apps/<service>/` (backend manifest'leri, Helm chart değil çünkü zaten build pipeline'ı bizim). **YASAK**: custom admission webhook, özel operator, manuel YAML patch'leri (Kustomize strategic merge yerine). **Gerekçe**: satıcı kilidi yok, upgrade yolu net, community desteği aktif |
 
 **HARD RULES:**
-- `platform-test` ve `platform-prod` namespace'leri aynı cluster'ı paylaşır ama **ayrı host-level PG/KC/Vault** instance'ı kullanır
+- **D16 gereği**: `prod` ve `test` **AYRI k3d cluster**'larında çalışır (aynı host'ta ama farklı control plane). Her cluster'da kendi `platform-*` ns'i, kendi `ingress-nginx` + `external-secrets` ns'i. Prod cluster'ında ayrıca `argocd` + `monitoring` ns'leri.
+- Her iki cluster da **ayrı host-level PG/KC/Vault** instance'ı kullanır (D6, D20)
 - OpenFGA K8s içinde (StatefulSet), PostgreSQL host'ta
 - Mevcut `decisions/topics/zanzibar-openfga.v1.json` kuralları K8s'te de geçerlidir (port 8090 yok, ScopeContextFilter order, vb.)
 - Cron deploy DISABLED kalır stabilizasyon bitene kadar
@@ -52,6 +53,10 @@
 ## 2. Mimari
 
 ### 2.1 Fiziksel Topoloji
+
+> **Bu bölüm eski tek-k3s modelini anlatıyordu. Güncel 2-k3d topolojisi için
+> Bölüm 2.5 Cluster Topolojisi'ne bakın (D16).**
+> Aşağıdaki diyagram REFERANS — fiziksel kaynak dağılımı açıklığı için tutuldu.
 
 ```
 ┌────────────────────────── staging-sw (Ubuntu sunucu) ──────────────────────────┐
@@ -74,12 +79,10 @@
 │   │  ns: platform-prod                   │                                      │
 │   │    └── (aynı 10 workload)            │                                      │
 │   │                                      │                                      │
-│   │  ns: platform-system                 │                                      │
-│   │    ├── ingress-nginx                 │                                      │
-│   │    ├── cert-manager                  │                                      │
-│   │    ├── external-secrets              │                                      │
-│   │    ├── argocd                        │                                      │
-│   │    └── monitoring (prom+loki+tempo)  │                                      │
+│   │  (platform-system tek-ns modeli     │                                      │
+│   │   eski — güncel: ayrı ns'ler        │                                      │
+│   │   Bölüm 2.5; cert-manager YOK,      │                                      │
+│   │   TLS host nginx'te termine D8/D18) │                                      │
 │   └──────────────────────────────────────┘                                      │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -144,7 +147,7 @@ ai.acik.com/                             test.acik.com/
 | ArgoCD (server+repo+controller+redis+dex) | ~1 GB | **0** | Sadece prod'da, test uzaktan yönetilir |
 | Monitoring stack (prom+grafana+loki+tempo+promtail+alertmanager) | ~2.2 GB | **0** | Sadece prod'da. Retention: Prom 10d, Loki 7d, Tempo 48h (MVP, D10) |
 | **Cluster overhead (alt toplam)** | **~5.7 GB** | **~2.1 GB** | |
-| Backend prod (8 × 384 MB heap) | ~3 GB | - | `-Xmx384m -XX:MaxRAMPercentage=75` |
+| Backend prod (8 × 384 MB heap) | ~3 GB | - | `-Xmx384m` explicit (D24 — MaxRAMPercentage kaldırıldı) |
 | Backend test (KAPALI — r=0) | - | 0 GB | Yoğun saat |
 | Backend test (AÇIK) | - | ~2 GB | 8 × 256 MB heap |
 | OpenFGA + Frontend | ~130 MB | 130 MB (açık) / 0 (kapalı) | |
@@ -453,13 +456,14 @@ platform-k8s-gitops/
 │       └── prod/               # platform-prod ns — ingress: ai.acik.com (path-based)
 │
 ├── helm-values/                # 3. parti chart values
-│   ├── ingress-nginx/
-│   ├── cert-manager/
-│   ├── external-secrets/
-│   ├── argocd/
-│   ├── kube-prometheus-stack/
-│   ├── loki/
-│   └── tempo/
+│   ├── ingress-nginx/           # values-prod.yaml, values-test.yaml
+│   ├── external-secrets/        # (DEFER — Vault auth sonrası)
+│   ├── argocd/                  # prod cluster only (multi-cluster yönetir)
+│   ├── kube-prometheus-stack/   # prod cluster only
+│   ├── loki/                    # prod cluster only
+│   ├── promtail/                # DaemonSet, prod cluster
+│   └── tempo/                   # prod cluster only
+│   # NOT: cert-manager YOK (D8/D18: TLS host nginx'te)
 │
 ├── host-compose/               # Sunucu host-level Docker Compose
 │   ├── env/                    # .env örnekleri (gerçek .env git-ignored)
@@ -590,7 +594,7 @@ platform-k8s-gitops/
 - [ ] `overlays/prod/` — platform-prod ns
   - image tag: `v<semver>` (ArgoCD Image Updater önerilir)
   - ingress: `ai.acik.com` (path-based), TLS secret: `wildcard-acik-com-tls` (aynı)
-  - replica: 2 (HPA 2-4)
+  - replica: 2 sabit (D21: HPA yok)
   - PDB: minAvailable 1
 
 ### Faz 10 — ArgoCD Applications
@@ -607,7 +611,7 @@ Bu repo'da DEĞİL, ana repo'da yapılacaklar. Manifest yazımıyla eş zamanlı
   - **Eureka kaldırma**: `spring.cloud.discovery.enabled=false`, `eureka.client.enabled=false` (default)
   - Actuator: `management.endpoints.web.exposure.include=health,prometheus,info`
   - `management.endpoint.health.probes.enabled=true` (startup/liveness/readiness ayrımı)
-  - JVM: `JAVA_TOOL_OPTIONS=-Xmx384m -XX:MaxRAMPercentage=75` (prod) / `-Xmx256m` (test)
+  - JVM: `JAVA_TOOL_OPTIONS=-Xmx384m` (prod) / `-Xmx256m` (test). `MaxRAMPercentage` **KULLANILMAZ** (D24 + Codex Tur-4)
 - [ ] **Eureka temizliği — DİLİMLİ** (D7, Codex onayı):
   - **Dilim 1 (PoC, D25)**: `api-gateway + auth-service`
     - `auth-service`: `@EnableEurekaClient` kaldır, `@LoadBalanced` client yok
@@ -761,5 +765,6 @@ Devam edeceğim faz: Faz 1 — Repo Temeli (README + .gitignore + ilk commit).
 | 2026-04-14 | **Cluster mimari netleşti** — D2 revize (5 ns), D15 Calico CNI, D16 tek cluster, **D17 scale-to-zero test** (yoğun saatlerde test KAPALI, RAM=0), D18 hostNetwork ingress, D19 Service+Endpoints host köprü, D20 prod=mevcut portlar. Bölüm 2.5 Cluster Topoloji eklendi (k3s install flags, k3d config, namespace diyagramı). RAM bütçesi iki senaryolu tablo (kapalı 10.3 GB / açık 13.3 GB) |
 | 2026-04-14 | **2 k3d cluster mimarisine geçildi** — D16 revize (tek k3s → 2 k3d aynı host), D18 revize (hostNetwork ingress → host nginx SNI proxy 443'ü alır, cluster içi HTTP-only). Gerekçe: "birini bozunca diğeri bozuluyor" deneyimine karşı kontrol düzlemi fiziksel ayrımı. Bölüm 2.5 tamamen yeniden yazıldı (k3d-prod/test.yaml config, host nginx SNI proxy nginx.conf, iki cluster diyagramı, ArgoCD multi-cluster). Bölüm 2.4 RAM tablosu cluster-başına detaylı (test kapalı 13.5 GB / açık 16.5 GB, 24 GB'ta rahat). Faz 3 2 cluster setup'a göre revize |
 | 2026-04-14 | **D27 Upstream-first prensibi** eklendi: her bileşen kendi native Helm/operator kullanır, custom kod minimum. Custom admission webhook / özel operator / manuel YAML patch YASAK |
+| 2026-04-14 | **Codex Tur-3 + Tur-4**: Kurulum inceleme + kısmi itiraz uzlaşısı. 10 bulgu (3 P0, 5 P1, 2 P2). Tur-4'te benim 2 itirazıma Codex gerekçeyle cevap: (1) admin hardening lokalde toleranslı ama repo-seviyesi prod/test overlay'lerde ŞIMDI sertleştirme, (2) image tag `:poc` REDDEDILDI "cutover'da düzeltilir" argümanım tutmadı — prod/test digest pin + ESO-fed imagePullSecret bugün girdi. NP için C+ model (default-deny + 4 allowlist) seçildi. Tüm 10 madde 3 commit'te kapatıldı (73d8600 + bf7f19f + BU COMMIT). PLAN drift 7 satır temizlendi. |
 | 2026-04-14 | **Codex istişaresi — 2 turlu, UZLAŞI** (docs/codex-review-2026-04-14.md). Drift temizliği: D1 (tek cluster → 2 k3d), D2 (5 ns tek cluster → cluster-başına ns), D16 ("Docker-in-Docker" → Docker container), §2.3 TLS (cluster Secret → host nginx), Faz 4 (ExternalName → Service+Endpoints), §6 Risk (Eureka K8s-içi single-replica → PASIF). D7 revize: dilimli Eureka kaldırma. D8 revize: 2 aşamalı cert stratejisi (manuel + Faz 12 HTTP-01 dry-run). D10: retention 14d→10d/14d→7d/3d→48h. **6 yeni karar**: D21 HPA (MVP'de yok), D22 CPU bütçesi, D23 DR/RPO/RTO, D24 JVM `-Xmx` explicit (MaxRAMPercentage kaldırıldı), D25 PoC dilim (`api-gateway + auth-service` → `user-service`), D26 YAPMA listesi. Yeni §6.5 DR/RPO/RTO bölümü. §2.4 CPU bütçesi tablosu. 4 yeni risk (CPU throttle, HPA çelişkisi pasif, tek-host DR sınırı, PoC dilim başarısızlığı) |
 

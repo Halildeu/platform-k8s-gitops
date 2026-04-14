@@ -22,10 +22,7 @@ spec:
         app.kubernetes.io/name: api-gateway
         app.kubernetes.io/component: gateway
         app.kubernetes.io/part-of: platform
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/path: "/actuator/prometheus"
-        prometheus.io/port: "8080"
+      # D27: ServiceMonitor CR kullanılır, annotation YOK.
     spec:
       serviceAccountName: api-gateway     # D26: ghcr-pull secret için
       securityContext:
