@@ -21,6 +21,10 @@ spec:
     - host: PLACEHOLDER_HOST       # overlays'de override: ai.acik.com / test.acik.com
       http:
         paths:
+          # NOT: ArgoCD/Grafana/Prometheus UI'ları kendi namespace'lerinde
+          # AYRI Ingress kaynaklarıyla exposed (Helm chart'ların ingress.enabled ile).
+          # ingress-nginx aynı host için birden çok Ingress'i birleştirir.
+          #
           # Auth (PoC Dilim 1)
           - path: /auth(/|$)(.*)
             pathType: ImplementationSpecific

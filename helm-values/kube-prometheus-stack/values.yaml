@@ -1,0 +1,225 @@
+# kube-prometheus-stack — prod cluster (D10: Prom 10d, Loki 7d, Tempo 48h)
+# D27: upstream-first — Grafana dashboard'ları otomatik yerleşik
+# Path routing: /grafana, /prometheus (Helm Ingress kendi ns'inde)
+
+# Namespace / cluster-scope
+nameOverride: ""
+fullnameOverride: ""
+
+# Kritik bileşenler
+crds:
+  enabled: true
+
+defaultRules:
+  create: true                        # prom community alerts
+  rules:
+    alertmanager: true
+    etcd: false                       # k3d'de etcd yok (SQLite)
+    configReloaders: true
+    general: true
+    k8s: true
+    kubeApiserverAvailability: true
+    kubeApiserverBurnrate: true
+    kubeApiserverHistogram: true
+    kubeApiserverSlos: true
+    kubeControllerManager: false      # k3s'te ayrı değil
+    kubelet: true
+    kubeProxy: true
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeStateMetrics: true
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true
+
+# ─── Alertmanager ───
+alertmanager:
+  enabled: true
+
+  alertmanagerSpec:
+    replicas: 1                       # D21: HPA yok
+
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+
+    # Storage — local-path provisioner
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+
+  ingress:
+    enabled: false                    # admin-only, kubectl port-forward ile ulaş
+
+# ─── Grafana ───
+grafana:
+  enabled: true
+
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      memory: 256Mi
+
+  # Persistent (dashboards, user DB)
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 1Gi
+
+  # Path prefix /grafana
+  grafana.ini:
+    server:
+      root_url: "https://ai.acik.com/grafana"
+      serve_from_sub_path: true
+    security:
+      disable_initial_admin_creation: false
+    users:
+      default_theme: dark
+    auth:
+      disable_login_form: false       # SSO gelince true
+    # SSO — Keycloak OIDC (şu an kapalı; Faz 3 sonrası)
+    # auth.generic_oauth:
+    #   enabled: true
+    #   name: Keycloak
+    #   auth_url: http://keycloak.platform-prod.svc.cluster.local:8080/realms/platform/protocol/openid-connect/auth
+    #   token_url: http://keycloak.platform-prod.svc.cluster.local:8080/realms/platform/protocol/openid-connect/token
+    #   ...
+
+  # Ingress — Helm kendi ns'inde
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - ai.acik.com
+    path: /grafana
+    pathType: Prefix
+    annotations:
+      nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+
+  # Datasource: Loki + Tempo (sonra auto-add)
+  sidecar:
+    datasources:
+      enabled: true
+      defaultDatasourceEnabled: true
+    dashboards:
+      enabled: true
+
+  # Default admin
+  adminPassword: "admin-change-me"    # Helm --set ile override edin / Vault
+
+# ─── Prometheus ───
+prometheus:
+  enabled: true
+
+  prometheusSpec:
+    replicas: 1
+    retention: 10d                    # D10
+    retentionSize: "8GB"
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+    # ServiceMonitor selector — cluster-wide scrape
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+    # External URL — /prometheus prefix
+    externalUrl: "https://ai.acik.com/prometheus"
+    routePrefix: /prometheus
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - ai.acik.com
+    paths:
+      - /prometheus
+    pathType: Prefix
+    annotations:
+      nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+
+# ─── Prometheus Operator ───
+prometheusOperator:
+  enabled: true
+
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+  # Admission webhook — HA gerekmez tek node'da
+  admissionWebhooks:
+    enabled: true
+    patch:
+      enabled: true
+
+# ─── kube-state-metrics ───
+kubeStateMetrics:
+  enabled: true
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+
+# ─── node-exporter ───
+nodeExporter:
+  enabled: true
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+
+# ─── Bileşenleri kapat (k3s'de yok / gerekmiyor) ───
+kubeControllerManager:
+  enabled: false                      # k3s combined server
+kubeEtcd:
+  enabled: false                      # SQLite
+kubeScheduler:
+  enabled: false                      # k3s combined server
+kubeProxy:
+  enabled: false                      # k3s embedded

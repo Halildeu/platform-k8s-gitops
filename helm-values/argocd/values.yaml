@@ -1,0 +1,152 @@
+# ArgoCD — prod cluster (upstream Helm, D27 upstream-first)
+# - Path-based routing: ai.acik.com/argocd
+# - TLS: host nginx'te termine (D18), ArgoCD server insecure HTTP
+# - Multi-cluster: prod cluster'daki ArgoCD test cluster'ı da yönetir
+# - SSO: Dex → Keycloak (şu an disabled, ESO + Vault auth kilitlenince aktif)
+
+global:
+  domain: ai.acik.com                # path routing için server'a base URL
+
+configs:
+  params:
+    # Path prefix (Ingress /argocd altından geleceğinden)
+    server.rootpath: /argocd
+    # HTTP-only (TLS host nginx'te, ArgoCD behind proxy)
+    server.insecure: "true"
+    # Controller metrics
+    controller.metrics.enabled: "true"
+    server.metrics.enabled: "true"
+
+  cm:
+    # URL — OIDC redirect için
+    url: https://ai.acik.com/argocd
+    # Timeout (uzun deployment'lar için)
+    timeout.reconciliation: 180s
+    # Resource tracking method
+    application.resourceTrackingMethod: annotation
+
+    # Kaynak izleme — silme koruması
+    resource.compareoptions: |
+      ignoreAggregatedRoles: true
+    # Exclusions (cluster-wide kaynakları izleme)
+    resource.exclusions: |
+      - apiGroups:
+          - cilium.io
+        kinds:
+          - CiliumIdentity
+        clusters:
+          - "*"
+
+    # SSO — OIDC via Keycloak (Dex) — ESO/Vault hazır olmadan şu an kapalı
+    # TODO (Faz 3 sonrası): aşağıdakileri aç + Keycloak realm + client tanımla
+    # oidc.config: |
+    #   name: Keycloak
+    #   issuer: http://keycloak.platform-prod.svc.cluster.local:8080/realms/platform
+    #   clientID: argocd
+    #   clientSecret: $oidc.keycloak.clientSecret      # Vault'tan ESO ile
+    #   requestedScopes: ["openid", "profile", "email", "groups"]
+
+  rbac:
+    policy.default: role:readonly
+    policy.csv: |
+      g, argocd-admins, role:admin
+
+  # Repo kimlik doğrulama — GitHub private repo için (Faz 14'e kadar boş)
+  # repositories: |
+  #   - url: https://github.com/halildeu/platform-k8s-gitops
+
+# Controller — ns-scoped değil cluster-scoped (multi-cluster için gerekli)
+controller:
+  replicas: 1                         # D21: HPA yok, sabit
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false                  # monitoring kurulunca true
+
+  # Test cluster'ı uzaktan yönet — cluster credentials argocd-cm + Secret'a eklenir
+  clusterAdminAccess:
+    enabled: true
+
+# Server
+server:
+  replicas: 1                         # D21
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+  service:
+    type: ClusterIP                   # Ingress üzerinden dış erişim
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hostname: ai.acik.com
+    path: /argocd
+    pathType: Prefix
+    annotations:
+      nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+      # ArgoCD kendi root path'ini /argocd'ye ayarladı (server.rootpath), rewrite yok
+
+# Repo server — Git'ten manifest okur
+repoServer:
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+# Application controller — Application CR'ları watch eder
+applicationSet:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+# Notifications — ileride (Slack/email) — şimdi kapalı
+notifications:
+  enabled: false
+
+# Dex — OIDC broker, Keycloak federate edecek (sonra aktif)
+dex:
+  enabled: true                       # OIDC ileride; kapatmak istersen false
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+# Redis — built-in (HA değil, single)
+redis:
+  enabled: true
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
