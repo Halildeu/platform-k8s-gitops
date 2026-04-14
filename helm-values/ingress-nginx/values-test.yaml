@@ -5,15 +5,18 @@ controller:
   kind: DaemonSet
   replicaCount: 1
 
+  # k3d-test port mapping: host 31080 → k3d-LB 80 → node 80 → hostPort 80
+  # Prod ile aynı pattern (bkz values-prod.yaml) — NodePort kullanımı k3d LB
+  # forward modeline uymuyordu, P0 fix (Codex Tur-3).
   hostPort:
-    enabled: false
+    enabled: true
+    ports:
+      http: 80
+      https: 443
 
   service:
     enabled: true
-    type: NodePort
-    nodePorts:
-      http: 30080            # k3d-test config'inde host 31080 → node 80 mapping
-      https: 30443
+    type: ClusterIP
     externalTrafficPolicy: Local
 
   resources:

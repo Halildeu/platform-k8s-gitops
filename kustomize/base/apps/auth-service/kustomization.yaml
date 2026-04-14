@@ -18,7 +18,6 @@ resources:
   - service.yaml
   - configmap.yaml
   - pdb.yaml
-  # externalsecret.yaml — ESO kurulumu sonrası etkinleştirilecek
-  # (PoC'de envFrom Secret yoksa Deployment CreateContainerConfigError alır;
-  # overlays/local'de stub Secret ya da commented olabilir)
+  - secret-stub.yaml         # P0 fix: pod CreateContainerConfigError'u önler
+  # ESO kurulunca secret-stub.yaml çıkarılır, externalsecret.yaml aktif edilir:
   # - externalsecret.yaml

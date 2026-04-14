@@ -25,16 +25,11 @@ spec:
           # AYRI Ingress kaynaklarıyla exposed (Helm chart'ların ingress.enabled ile).
           # ingress-nginx aynı host için birden çok Ingress'i birleştirir.
           #
-          # Auth (PoC Dilim 1)
-          - path: /auth(/|$)(.*)
-            pathType: ImplementationSpecific
-            backend:
-              service:
-                name: auth-service
-                port:
-                  number: 8088
-          # Gateway — diğer tüm /api, /users, /variants vb. route'lar için
-          - path: /api(/|$)(.*)
+          # D25: /auth ve /api İKİSİ DE api-gateway'e gider. Gateway içeriden
+          # auth-service'e route eder (Path=/auth/** predicate). Bu sayede
+          # D7 (Eureka → K8s svc DNS) zinciri gerçekten gateway üzerinden
+          # doğrulanır, ingress backend'ini bypass etmez.
+          - path: /(auth|api|actuator)(/|$)(.*)
             pathType: ImplementationSpecific
             backend:
               service:

@@ -190,16 +190,24 @@ spring:
       enabled: false
     gateway:
       routes:
+        # D25 PoC Dilim 1: ingress /auth → api-gateway → auth-service
+        # (ingress doğrudan auth-service'e gitmez; gateway zincirini doğrular)
         - id: auth-service
           uri: ${AUTH_SERVICE_URL:http://auth-service.platform-prod.svc.cluster.local:8088}
           predicates:
             - Path=/auth/**
           filters:
-            - StripPrefix=1
+            - StripPrefix=1    # /auth/actuator/health → /actuator/health (auth-service'e)
+        # Actuator kendi host (gateway'in kendi sağlık probe'ları)
+        - id: gateway-actuator
+          uri: http://localhost:8080
+          predicates:
+            - Path=/actuator/**
         # Diğer servisler Dilim 2/3'te eklenir
         # - id: user-service
         #   uri: ${USER_SERVICE_URL:http://user-service...:8089}
         #   predicates: [Path=/users/**]
+        #   filters: [StripPrefix=1]    # /users/... → /...
 ```
 
 ### 2.3 pom.xml temizliği (aynı auth-service)
