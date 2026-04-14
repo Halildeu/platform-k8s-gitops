@@ -1,0 +1,28 @@
+# Secrets
+*.env
+.env.*
+!*.env.example
+
+# Host-level state (persistent volumes mount'ları)
+host-compose/state/*/
+!host-compose/state/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kustomize build output
+.kustomize-build/
+
+# Helm
+charts/
+*.tgz
+
+# Local
+.local/
+tmp/
