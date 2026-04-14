@@ -1,0 +1,62 @@
+# k3d cluster: test
+# Docs: https://k3d.io/stable/usage/configfile/
+# Kullanım: k3d cluster create --config bootstrap/k3d-test.yaml
+
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+
+metadata:
+  name: test
+
+servers: 1
+agents: 0
+
+image: rancher/k3s:v1.31.2-k3s1
+
+# Prod cluster'dan ayrı Docker network
+network: platform-test-net
+
+kubeAPI:
+  hostIP: "127.0.0.1"
+  hostPort: "7443"         # prod (6443)'ten farklı
+
+ports:
+  - port: "127.0.0.1:31080:80"    # prod (30080)'den farklı
+    nodeFilters:
+      - server:0
+  - port: "127.0.0.1:31443:443"
+    nodeFilters:
+      - server:0
+
+options:
+  k3s:
+    extraArgs:
+      - arg: "--disable=traefik"
+        nodeFilters: [server:*]
+      - arg: "--disable=servicelb"
+        nodeFilters: [server:*]
+      - arg: "--disable=metrics-server"
+        nodeFilters: [server:*]
+      - arg: "--flannel-backend=none"
+        nodeFilters: [server:*]
+      - arg: "--disable-network-policy"
+        nodeFilters: [server:*]
+      # Prod'dan farklı pod/svc CIDR — potansiyel routing karışıklığını önle
+      - arg: "--cluster-cidr=10.44.0.0/16"
+        nodeFilters: [server:*]
+      - arg: "--service-cidr=10.45.0.0/16"
+        nodeFilters: [server:*]
+      - arg: "--cluster-dns=10.45.0.10"
+        nodeFilters: [server:*]
+      # Test küçük — pod limit düşük
+      - arg: "--kubelet-arg=max-pods=50"
+        nodeFilters: [server:*]
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: false
+
+registries:
+  create:
+    name: platform-test-registry
+    host: "0.0.0.0"
+    hostPort: "5001"         # prod (5000)'den farklı

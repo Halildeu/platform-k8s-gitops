@@ -3,6 +3,11 @@
 .env.*
 !*.env.example
 
+# TLS cert + key (host-level proxy)
+host-compose/proxy/tls/*.crt
+host-compose/proxy/tls/*.key
+host-compose/proxy/tls/*.pem
+
 # Host-level state (persistent volumes mount'ları)
 host-compose/state/*/
 !host-compose/state/.gitkeep

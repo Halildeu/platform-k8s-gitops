@@ -1,0 +1,68 @@
+# k3d cluster: prod
+# Docs: https://k3d.io/stable/usage/configfile/
+# Kullanım: k3d cluster create --config bootstrap/k3d-prod.yaml
+
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+
+metadata:
+  name: prod
+
+servers: 1
+agents: 0
+
+image: rancher/k3s:v1.31.2-k3s1
+
+# Ayrı Docker network — test cluster ile çakışmaz
+network: platform-prod-net
+
+# kubeconfig context: k3d-prod
+# API server 127.0.0.1:6443'te dinler (host nginx kullanmaz, sadece kubectl)
+kubeAPI:
+  hostIP: "127.0.0.1"
+  hostPort: "6443"
+
+# Host nginx SNI proxy bu portları dinler; cluster içinde TLS yok (HTTP-only)
+ports:
+  - port: "127.0.0.1:30080:80"
+    nodeFilters:
+      - server:0
+  - port: "127.0.0.1:30443:443"   # ingress 443 cluster-içi; dış cert host'ta
+    nodeFilters:
+      - server:0
+
+options:
+  k3s:
+    extraArgs:
+      # Traefik'i kapat (ingress-nginx kullanacağız)
+      - arg: "--disable=traefik"
+        nodeFilters: [server:*]
+      # ServiceLB (Klipper) kapalı — host port yeterli
+      - arg: "--disable=servicelb"
+        nodeFilters: [server:*]
+      # metrics-server kapalı — kube-prometheus-stack kendi node-exporter'ı var
+      - arg: "--disable=metrics-server"
+        nodeFilters: [server:*]
+      # Flannel kapalı, Calico kuracağız
+      - arg: "--flannel-backend=none"
+        nodeFilters: [server:*]
+      - arg: "--disable-network-policy"
+        nodeFilters: [server:*]
+      # CIDR'ları test cluster'dan farklı tut
+      - arg: "--cluster-cidr=10.42.0.0/16"
+        nodeFilters: [server:*]
+      - arg: "--service-cidr=10.43.0.0/16"
+        nodeFilters: [server:*]
+      - arg: "--cluster-dns=10.43.0.10"
+        nodeFilters: [server:*]
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: false   # manual; istenirse kubectl config use-context k3d-prod
+
+# Lokal image registry (opsiyonel) — staging-sw'de GHCR doğrudan kullanılır
+# Lokal geliştirme için: k3d'ye push edilen imajlar pull'sız kullanılır
+registries:
+  create:
+    name: platform-prod-registry
+    host: "0.0.0.0"
+    hostPort: "5000"

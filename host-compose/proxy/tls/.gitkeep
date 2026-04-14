@@ -1,0 +1,13 @@
+# TLS cert dosyaları burada mount edilir.
+# Gitignore'a eklidir — cert ve key git'e girmez.
+#
+# Beklenen dosyalar:
+#   wildcard-acik-com.crt   (Nginx bundle: leaf + intermediates)
+#   wildcard-acik-com.key   (private key, 0600)
+#
+# Lokal setup:
+#   cp /Users/halilkocoglu/Downloads/STAR_acik_com1/Nginx/STAR_acik_com.crt \
+#      host-compose/proxy/tls/wildcard-acik-com.crt
+#   cp /Users/halilkocoglu/Downloads/STAR_acik_com1/Nginx/STAR_acik_com.key \
+#      host-compose/proxy/tls/wildcard-acik-com.key
+#   chmod 600 host-compose/proxy/tls/wildcard-acik-com.key
