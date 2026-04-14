@@ -42,6 +42,15 @@ patches:
         path: /data/KEYCLOAK_URL
         value: "http://keycloak.platform-prod.svc.cluster.local:8080"
 
+  # Ingress host: ai.acik.com (D18)
+  - target:
+      kind: Ingress
+      name: platform
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: ai.acik.com
+
   # Host bridge prod portları (D20)
   - target:
       kind: Endpoints

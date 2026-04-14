@@ -71,6 +71,15 @@ patches:
         path: /data/LOGGING_LEVEL_ROOT
         value: "DEBUG"
 
+  # Ingress host: test.acik.com (D18)
+  - target:
+      kind: Ingress
+      name: platform
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: test.acik.com
+
   # Host bridge test portları (D20)
   - target:
       kind: Endpoints

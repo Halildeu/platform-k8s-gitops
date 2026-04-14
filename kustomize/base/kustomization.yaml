@@ -13,6 +13,7 @@ resources:
   - host-services
   - apps/auth-service
   - apps/api-gateway
+  - ingress
   # Dilim 2+:
   # - apps/user-service
   # - apps/variant-service

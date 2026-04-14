@@ -1,0 +1,47 @@
+# Platform ingress — path routing (D18)
+# Host: overlays'de override
+#   local: ai.acik.com (etc hosts 127.0.0.1) veya test.acik.com
+#   prod:  ai.acik.com
+#   test:  test.acik.com
+#
+# TLS: host nginx'te termine (D8/D18), buraya HTTP gelir → tls bölümü YOK
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: platform
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # Host nginx X-Forwarded-* başlıklarına güven
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "25m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: PLACEHOLDER_HOST       # overlays'de override: ai.acik.com / test.acik.com
+      http:
+        paths:
+          # Auth (PoC Dilim 1)
+          - path: /auth(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8088
+          # Gateway — diğer tüm /api, /users, /variants vb. route'lar için
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080
+          # Root — gateway'e git (frontend Dilim 3+'da eklenince override olur)
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8080

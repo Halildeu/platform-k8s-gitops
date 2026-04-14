@@ -115,3 +115,12 @@ patches:
       - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: DEBUG
+
+  # Ingress host — lokal için /etc/hosts: 127.0.0.1 ai.acik.com
+  - target:
+      kind: Ingress
+      name: platform
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: ai.acik.com

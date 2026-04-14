@@ -1,0 +1,79 @@
+# ingress-nginx — prod cluster (k3d-prod)
+# TLS cluster içinde DEĞİL (D18) — host nginx SSL termine eder, buraya HTTP gelir.
+# k3d'nin port mapping'i: host 30080 → node 80 → NodePort Service → ingress controller
+
+controller:
+  kind: DaemonSet
+  replicaCount: 1
+
+  # k3d port mapping: host 30080 → k3d-LB 80 → node 80 → hostPort 80
+  # ingress-nginx DaemonSet pod hostPort 80/443 bind eder; k3d-LB bunu host'a yayınlar.
+  hostPort:
+    enabled: true
+    ports:
+      http: 80
+      https: 443
+
+  service:
+    enabled: true
+    type: ClusterIP          # Service yine gerekli (admission webhook için), ama trafik hostPort'tan
+    externalTrafficPolicy: Local
+
+  # D22: dar request / cömert limit
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+  # Admission webhook — MVP'de basit, TLS ile etkileşim çıkmasın
+  admissionWebhooks:
+    enabled: true
+    patch:
+      enabled: true
+
+  # Metrics (prom scrape için etiketler)
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false        # monitoring kurulunca true yapılacak
+
+  # Default config
+  config:
+    use-forwarded-headers: "true"           # X-Forwarded-* guven (host nginx'den gelir)
+    compute-full-forwarded-for: "true"
+    use-proxy-protocol: "false"
+    proxy-body-size: "25m"
+    proxy-read-timeout: "300"
+    proxy-send-timeout: "300"
+    enable-real-ip: "true"
+    # Tek trusted proxy: host nginx (container network gateway)
+    forwarded-for-header: "X-Forwarded-For"
+    log-format-escape-json: "true"
+    log-format-upstream: '{"time":"$time_iso8601","req":"$request","status":$status,"host":"$host","upstream":"$upstream_addr","rt":$request_time,"urt":$upstream_response_time,"len":$body_bytes_sent,"ua":"$http_user_agent","ref":"$http_referer","ip":"$remote_addr","fwd":"$http_x_forwarded_for"}'
+
+  # Watch namespace kısıtlaması YOK — her namespace'ten Ingress kabul et
+  watchIngressWithoutClass: false
+  ingressClassResource:
+    name: nginx
+    enabled: true
+    default: true           # ingressClassName belirtmeyen Ingress'ler bunu kullanır
+
+  # PDB
+  minAvailable: 0            # tek replica, PDB anlamsız
+  podDisruptionBudget:
+    enabled: false
+
+# Default backend kapalı (404 ingress-nginx kendi default sayfasıyla karşılar)
+defaultBackend:
+  enabled: false
+
+# PSP kapalı (K8s 1.25+ kaldırıldı zaten)
+podSecurityPolicy:
+  enabled: false
+
+# RBAC (namespace-scoped değil, cluster — çünkü Ingress her ns'de olabilir)
+rbac:
+  create: true
+  scope: false

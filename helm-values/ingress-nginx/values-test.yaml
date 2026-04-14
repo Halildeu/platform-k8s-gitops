@@ -1,0 +1,55 @@
+# ingress-nginx — test cluster (k3d-test)
+# Prod ile aynı temel config, daha dar kaynak (test hafif)
+
+controller:
+  kind: DaemonSet
+  replicaCount: 1
+
+  hostPort:
+    enabled: false
+
+  service:
+    enabled: true
+    type: NodePort
+    nodePorts:
+      http: 30080            # k3d-test config'inde host 31080 → node 80 mapping
+      https: 30443
+    externalTrafficPolicy: Local
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+  admissionWebhooks:
+    enabled: true
+    patch:
+      enabled: true
+
+  metrics:
+    enabled: false           # test'te monitoring yok (prod federate eder)
+
+  config:
+    use-forwarded-headers: "true"
+    compute-full-forwarded-for: "true"
+    proxy-body-size: "10m"
+    log-format-escape-json: "true"
+
+  watchIngressWithoutClass: false
+  ingressClassResource:
+    name: nginx
+    enabled: true
+    default: true
+
+  minAvailable: 0
+  podDisruptionBudget:
+    enabled: false
+
+defaultBackend:
+  enabled: false
+
+rbac:
+  create: true
+  scope: false
