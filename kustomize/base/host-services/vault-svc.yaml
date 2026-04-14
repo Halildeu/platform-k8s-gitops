@@ -1,0 +1,30 @@
+# Host-level Vault bridge (D19)
+# Vault PoC Dilim 1'de ESO kurulunca aktif kullanılacak.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault
+  labels:
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/component: host-bridge
+spec:
+  ports:
+    - name: http
+      port: 8200
+      targetPort: 8200
+      protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: vault
+  labels:
+    app.kubernetes.io/name: vault
+subsets:
+  - addresses:
+      - ip: 10.9.10.53
+    ports:
+      - name: http
+        port: 8200                  # prod mevcut (overlays/test 8201)
+        protocol: TCP

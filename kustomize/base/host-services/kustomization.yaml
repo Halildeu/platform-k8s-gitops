@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+commonLabels:
+  app.kubernetes.io/component: host-bridge
+  app.kubernetes.io/part-of: platform
+
+resources:
+  - postgres-svc.yaml
+  - keycloak-svc.yaml
+  - vault-svc.yaml

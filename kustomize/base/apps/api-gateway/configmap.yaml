@@ -1,0 +1,31 @@
+# api-gateway route + bağımlılık URL'leri
+# PoC Dilim 1'de sadece auth-service route'u. Dilim 2+'de diğer servisler eklenir.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-gateway-config
+data:
+  SERVER_PORT: "8080"
+
+  # D7: Eureka yok → K8s svc DNS
+  AUTH_SERVICE_URL: "http://auth-service.PLACEHOLDER_NS.svc.cluster.local:8088"
+  # Dilim 2+:
+  # USER_SERVICE_URL: "http://user-service.PLACEHOLDER_NS.svc.cluster.local:8089"
+  # CORE_DATA_URL: "http://core-data-service.PLACEHOLDER_NS.svc.cluster.local:8092"
+  # VARIANT_URL: "http://variant-service.PLACEHOLDER_NS.svc.cluster.local:8091"
+  # REPORT_URL: "http://report-service.PLACEHOLDER_NS.svc.cluster.local:8095"
+  # SCHEMA_URL: "http://schema-service.PLACEHOLDER_NS.svc.cluster.local:8096"
+
+  # Keycloak (host-level, ExternalName Service üzerinden)
+  KEYCLOAK_URL: "http://keycloak.PLACEHOLDER_NS.svc.cluster.local:8080"
+
+  # Spring Cloud Gateway — PoC Dilim 1 için minimum route (application-k8s.yml
+  # içinde tanımlı olabilir, burası sadece URL override eder)
+
+  # Logging
+  LOGGING_LEVEL_ROOT: "INFO"
+  LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_CLOUD_GATEWAY: "INFO"
+
+  # Tracing (Tempo)
+  MANAGEMENT_TRACING_ENABLED: "false"
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.1"

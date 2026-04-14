@@ -1,0 +1,112 @@
+# Test overlay — k3d-test (staging-sw test cluster)
+# - Image: GHCR sha-<short>
+# - Host bridge: 10.9.10.53:5433/8082/8201 (D20)
+# - Replica: 0 default (D17 scale-to-zero); test-toggle.sh up → 1
+# - Namespace: platform-test
+# - JVM daha dar heap (D24)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-test
+
+resources:
+  - ../../base
+
+images:
+  - name: auth-service
+    newName: ghcr.io/halildeu/platform/auth-service
+    newTag: poc
+  - name: api-gateway
+    newName: ghcr.io/halildeu/platform/api-gateway
+    newTag: poc
+
+patches:
+  # Replica 0 default (scale-to-zero)
+  - target:
+      kind: Deployment
+      name: auth-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0
+      - op: replace
+        path: /spec/template/spec/containers/0/env/1/value
+        value: "-Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
+  - target:
+      kind: Deployment
+      name: api-gateway
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0
+      - op: replace
+        path: /spec/template/spec/containers/0/env/1/value
+        value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
+
+  # ConfigMap namespace → platform-test
+  - target:
+      kind: ConfigMap
+      name: auth-service-config
+    patch: |-
+      - op: replace
+        path: /data/KEYCLOAK_URL
+        value: "http://keycloak.platform-test.svc.cluster.local:8080"
+      - op: replace
+        path: /data/DB_URL
+        value: "jdbc:postgresql://postgres.platform-test.svc.cluster.local:5432/auth_db"
+      - op: replace
+        path: /data/LOGGING_LEVEL_ROOT
+        value: "DEBUG"
+  - target:
+      kind: ConfigMap
+      name: api-gateway-config
+    patch: |-
+      - op: replace
+        path: /data/AUTH_SERVICE_URL
+        value: "http://auth-service.platform-test.svc.cluster.local:8088"
+      - op: replace
+        path: /data/KEYCLOAK_URL
+        value: "http://keycloak.platform-test.svc.cluster.local:8080"
+      - op: replace
+        path: /data/LOGGING_LEVEL_ROOT
+        value: "DEBUG"
+
+  # Host bridge test portları (D20)
+  - target:
+      kind: Endpoints
+      name: postgres
+    patch: |-
+      - op: replace
+        path: /subsets/0/addresses/0/ip
+        value: "10.9.10.53"
+      - op: replace
+        path: /subsets/0/ports/0/port
+        value: 5433
+  - target:
+      kind: Endpoints
+      name: keycloak
+    patch: |-
+      - op: replace
+        path: /subsets/0/addresses/0/ip
+        value: "10.9.10.53"
+      - op: replace
+        path: /subsets/0/ports/0/port
+        value: 8082
+  - target:
+      kind: Endpoints
+      name: vault
+    patch: |-
+      - op: replace
+        path: /subsets/0/addresses/0/ip
+        value: "10.9.10.53"
+      - op: replace
+        path: /subsets/0/ports/0/port
+        value: 8201
+
+  # Test PDB gevşek (tek replica olunca anlamsız)
+  - target:
+      kind: PodDisruptionBudget
+    patch: |-
+      - op: replace
+        path: /spec/minAvailable
+        value: 0

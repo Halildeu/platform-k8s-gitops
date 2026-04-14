@@ -1,0 +1,117 @@
+# Local overlay — k3d-prod (lokal dev makinesi, Docker Desktop)
+# - Image pull YOK (k3d image import ile yükleniyor)
+# - Host-level PG/KC/Vault: host.docker.internal (Docker Desktop DNS)
+# - Namespace: platform-prod (lokal'de de prod ns kullanılır; izolasyon test yapılacaksa overlays/local-test)
+# - Tek replica (lokal kaynak tasarrufu)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-prod
+
+resources:
+  - ../../base
+
+patches:
+  # Image pull policy Never (k3d image import sonrası)
+  - target:
+      kind: Deployment
+      name: auth-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: Deployment
+      name: api-gateway
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
+  # ConfigMap namespace placeholder → platform-prod
+  - target:
+      kind: ConfigMap
+      name: auth-service-config
+    patch: |-
+      - op: replace
+        path: /data/KEYCLOAK_URL
+        value: "http://keycloak.platform-prod.svc.cluster.local:8080"
+      - op: replace
+        path: /data/DB_URL
+        value: "jdbc:postgresql://postgres.platform-prod.svc.cluster.local:5432/auth_db"
+  - target:
+      kind: ConfigMap
+      name: api-gateway-config
+    patch: |-
+      - op: replace
+        path: /data/AUTH_SERVICE_URL
+        value: "http://auth-service.platform-prod.svc.cluster.local:8088"
+      - op: replace
+        path: /data/KEYCLOAK_URL
+        value: "http://keycloak.platform-prod.svc.cluster.local:8080"
+
+  # Host bridge Endpoints — lokal'de Docker Desktop'ın host-gateway IP'si
+  # Docker Desktop 4.x host.docker.internal → 192.168.65.254 (macOS) veya
+  # 172.17.0.1 (Linux). k3d cluster host.docker.internal'a resolve eder.
+  # Burada statik IP yerine ikinci Endpoints kaydı yazmak yerine bir init script
+  # docker container'ın bilgisinden IP çözer. PoC'de hardcoded host IP de yeter:
+  - target:
+      kind: Endpoints
+      name: postgres
+    patch: |-
+      - op: replace
+        path: /subsets/0/addresses/0/ip
+        value: "192.168.65.254"   # macOS Docker Desktop host gateway; Linux için değiştir
+      - op: replace
+        path: /subsets/0/ports/0/port
+        value: 5432
+  - target:
+      kind: Endpoints
+      name: keycloak
+    patch: |-
+      - op: replace
+        path: /subsets/0/addresses/0/ip
+        value: "192.168.65.254"
+      - op: replace
+        path: /subsets/0/ports/0/port
+        value: 8081
+  - target:
+      kind: Endpoints
+      name: vault
+    patch: |-
+      - op: replace
+        path: /subsets/0/addresses/0/ip
+        value: "192.168.65.254"
+      - op: replace
+        path: /subsets/0/ports/0/port
+        value: 8200
+
+  # Lokal kaynak tasarrufu: PDB devre dışı (tek replica ile anlamsız)
+  - target:
+      kind: PodDisruptionBudget
+    patch: |-
+      - op: replace
+        path: /spec/minAvailable
+        value: 0
+
+  # Debug logging açık (lokal test için)
+  - target:
+      kind: ConfigMap
+      name: auth-service-config
+    patch: |-
+      - op: replace
+        path: /data/LOGGING_LEVEL_ROOT
+        value: DEBUG
+  - target:
+      kind: ConfigMap
+      name: api-gateway-config
+    patch: |-
+      - op: replace
+        path: /data/LOGGING_LEVEL_ROOT
+        value: DEBUG

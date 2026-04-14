@@ -1,0 +1,20 @@
+# PoC Dilim 1 base — api-gateway + auth-service + host bridges
+# Dilim 2+'da user-service, variant-service, ... eklenecek.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+commonLabels:
+  app.kubernetes.io/part-of: platform
+
+resources:
+  - host-services
+  - apps/auth-service
+  - apps/api-gateway
+  # Dilim 2+:
+  # - apps/user-service
+  # - apps/variant-service
+  # - apps/core-data-service
+  # - apps/report-service
+  # - apps/schema-service
+  # - apps/openfga   (StatefulSet)
+  # - apps/frontend

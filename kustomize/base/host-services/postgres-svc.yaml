@@ -1,0 +1,35 @@
+# Host-level PostgreSQL bridge (D19: Service + Endpoints, IP pin değil ExternalName)
+# Host IP ve port overlays'de override edilir:
+#   prod (staging-sw): 10.9.10.53:5432
+#   test (staging-sw): 10.9.10.53:5433
+#   local (Docker Desktop): host.docker.internal (resolve edilen IP)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: host-bridge
+spec:
+  # Headless değil — cluster ClusterIP alıp Endpoints'e forward eder
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+---
+# Endpoints manuel yazılır (selector yok, Service otomatik eşleştirmez)
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: postgres                    # Service ile aynı isim
+  labels:
+    app.kubernetes.io/name: postgres
+subsets:
+  - addresses:
+      - ip: 10.9.10.53              # overlays'de override
+    ports:
+      - name: pg
+        port: 5432                  # overlays'de override (prod 5432, test 5433)
+        protocol: TCP
