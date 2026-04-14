@@ -32,10 +32,11 @@ data:
         jsonData:
           maxLines: 1000
           derivedFields:
-            # main-repo-tasks.md log format: "traceId":"<id>" (küçük d)
-            # Spring Boot/Brave default: traceId (Sleuth legacy) / trace_id (OTel)
+            # main-repo-tasks.md log format: "traceId":"<id>" (Sleuth legacy)
+            # Ayrıca Spring Boot 3 OTel format: "trace_id":"<id>" (snake_case)
+            # Her ikisini de yakala: [Tt]race[_]?[Ii]d
             - datasourceUid: tempo
-              matcherRegex: '"trace[Ii]d":"(\w+)"'
+              matcherRegex: '"[Tt]race[_]?[Ii]d":"(\w+)"'
               name: TraceID
               url: "$${__value.raw}"
 EOF
@@ -75,5 +76,6 @@ EOF
 
 log "Grafana sidecar otomatik reload eder (~1 dk)"
 log ""
-log "Doğrulama:"
-log "  curl -H Host:ai.acik.com http://127.0.0.1:30080/grafana/api/datasources -u admin:admin-change-me"
+log "Doğrulama — şifreyi Secret'tan al (D26 admin hardening):"
+log "  PASS=\$(kubectl --context k3d-prod -n monitoring get secret grafana-admin-credentials -o jsonpath='{.data.admin-password}' | base64 -d)"
+log "  curl -H Host:ai.acik.com http://127.0.0.1:30080/grafana/api/datasources -u admin:\$PASS"

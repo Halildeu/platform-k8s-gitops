@@ -10,9 +10,9 @@ kind: Ingress
 metadata:
   name: platform
   annotations:
-    nginx.ingress.kubernetes.io/use-regex: "true"
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
-    # Host nginx X-Forwarded-* başlıklarına güven
+    # rewrite-target YOK — path olduğu gibi api-gateway'e geçer; gateway
+    # route predicate'ları (Path=/auth/**, StripPrefix=1) içeriden route eder.
+    # Codex Tur-5 NEW-1 fix: rewrite /$2 + 3-capture regex bozuk kombinasyondu.
     nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: "25m"
 spec:
@@ -23,24 +23,36 @@ spec:
         paths:
           # NOT: ArgoCD/Grafana/Prometheus UI'ları kendi namespace'lerinde
           # AYRI Ingress kaynaklarıyla exposed (Helm chart'ların ingress.enabled ile).
-          # ingress-nginx aynı host için birden çok Ingress'i birleştirir.
           #
-          # D25: /auth ve /api İKİSİ DE api-gateway'e gider. Gateway içeriden
-          # auth-service'e route eder (Path=/auth/** predicate). Bu sayede
-          # D7 (Eureka → K8s svc DNS) zinciri gerçekten gateway üzerinden
-          # doğrulanır, ingress backend'ini bypass etmez.
-          - path: /(auth|api|actuator)(/|$)(.*)
-            pathType: ImplementationSpecific
+          # D25: TÜM trafik (/, /auth, /api, /actuator) api-gateway'e gider.
+          # Gateway içeriden:
+          #   Path=/auth/**  → StripPrefix=1 → http://auth-service:8088/{rest}
+          #   Path=/api/**   → (Dilim 2+) backend servisler
+          #   Path=/actuator → gateway kendi actuator'u
+          # Bu sayede D7 (Eureka → K8s svc DNS) zinciri gateway üzerinden
+          # doğrulanır, ingress backend'i bypass etmez.
+          - path: /auth
+            pathType: Prefix
             backend:
               service:
                 name: api-gateway
-                port:
-                  number: 8080
-          # Root — gateway'e git (frontend Dilim 3+'da eklenince override olur)
-          - path: /()(.*)
-            pathType: ImplementationSpecific
+                port: { number: 8080 }
+          - path: /api
+            pathType: Prefix
             backend:
               service:
                 name: api-gateway
-                port:
-                  number: 8080
+                port: { number: 8080 }
+          - path: /actuator
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port: { number: 8080 }
+          # Root — gateway'e git (frontend Dilim 3+'da eklenince override)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port: { number: 8080 }

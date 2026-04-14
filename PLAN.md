@@ -90,9 +90,14 @@
 ### 2.2 Network Akışı
 
 ```
-Internet → ingress-nginx → api-gateway.platform-prod.svc → backend services
-                         → frontend.platform-prod.svc    → MFE shell
-                         → argocd-server.platform-system → ArgoCD UI
+Internet/VPN → host nginx (SSL termine) → prod k3d ingress-nginx → 
+  /, /api, /auth, /actuator → api-gateway.platform-prod.svc (gateway route)
+  /argocd                   → argocd-server.argocd.svc (ayrı Ingress, argocd ns)
+  /grafana                  → grafana.monitoring.svc (ayrı Ingress)
+  /prometheus               → prometheus.monitoring.svc (ayrı Ingress)
+
+test.acik.com → test k3d ingress-nginx → api-gateway.platform-test.svc
+  (test cluster'da ArgoCD/Grafana YOK, prod cluster uzaktan yönetir)
 ```
 
 ### 2.3 Hostname & TLS (FINAL)
@@ -104,7 +109,7 @@ PROD (platform-prod)                     TEST (platform-test)
 ai.acik.com/                             test.acik.com/
 ├── /            → frontend (MFE)        ├── /            → frontend
 ├── /api         → api-gateway           ├── /api         → api-gateway
-├── /auth        → keycloak (XName)      ├── /auth        → keycloak (XName)
+├── /auth        → api-gateway → auth-svc├── /auth        → api-gateway → auth-svc
 ├── /argocd      → argocd-server         ├── /argocd      → argocd-server
 ├── /grafana     → grafana               ├── /grafana     → grafana
 └── /prometheus  → prometheus            └── /prometheus  → prometheus
@@ -530,7 +535,7 @@ platform-k8s-gitops/
 - [ ] `helm-values/tempo/values.yaml`
 
 **Platform bileşenleri (test cluster — minimal):**
-- [ ] `helm-values/ingress-nginx-test/values.yaml` — **test**: HTTP-only, hostPort 31080
+- [x] `helm-values/ingress-nginx/values-test.yaml` — **test**: HTTP-only, hostPort 80/443 (k3d-test 31080:80 map)
 - [ ] `helm-values/external-secrets-test/values.yaml` + Vault ClusterSecretStore (test Vault URL)
 - [ ] ArgoCD YOK (prod cluster uzaktan yönetecek)
 - [ ] Monitoring YOK (prod cluster'dan scrape)
@@ -585,15 +590,14 @@ platform-k8s-gitops/
   - ingress: `*.localtest.me` (RFC2606 local-test domain)
   - replica: 1
   - resources: minimum
-- [ ] `overlays/test/` — platform-test ns
-  - image tag: `sha-<short>`
-  - ingress: `test.acik.com` (path-based), TLS secret: `wildcard-acik-com-tls`
+- [x] `overlays/test/` — platform-test ns
+  - image: **digest pin** (D26 + Codex Tur-4; CI sha256 ile günceller)
+  - ingress host: `test.acik.com` (path-based), **TLS host nginx'te D18** (cluster Secret yok)
   - **replica: 0 (scale-to-zero default, D17)** — `test-toggle.sh up` ile 1'e çekilir
-  - PriorityClass: `low-priority`
-  - ArgoCD sync: `ignoreDifferences: [/spec/replicas]` (scale manuel)
-- [ ] `overlays/prod/` — platform-prod ns
-  - image tag: `v<semver>` (ArgoCD Image Updater önerilir)
-  - ingress: `ai.acik.com` (path-based), TLS secret: `wildcard-acik-com-tls` (aynı)
+  - ResourceQuota: 3Gi/1vCPU (PLAN §2.4)
+- [x] `overlays/prod/` — platform-prod ns
+  - image: **digest pin** (CI günceller, ArgoCD Image Updater KULLANILMIYOR — D27 YAPMA listesi dışı)
+  - ingress host: `ai.acik.com` (path-based), **TLS host nginx'te D18**
   - replica: 2 sabit (D21: HPA yok)
   - PDB: minAvailable 1
 
