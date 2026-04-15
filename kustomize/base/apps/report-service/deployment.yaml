@@ -104,4 +104,5 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
-      terminationGracePeriodSeconds: 30
+      # Codex Tur-4 önerisi: preStop sleep 5 + Spring graceful shutdown 30s + buffer
+      terminationGracePeriodSeconds: 45

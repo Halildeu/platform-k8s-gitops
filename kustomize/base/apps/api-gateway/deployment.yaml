@@ -99,4 +99,6 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
-      terminationGracePeriodSeconds: 30
+      # Codex Tur-4 önerisi: preStop sleep 5 + Spring graceful shutdown 30s budget
+      # + buffer — K8s grace süresi preStop ile başlar, Spring'e ~25s kalırdı.
+      terminationGracePeriodSeconds: 45
