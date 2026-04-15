@@ -11,5 +11,6 @@ labels:
 resources:
   - default-deny.yaml
   - allow-ingress-from-nginx.yaml
+  - allow-ingress-intra-ns.yaml
   - allow-monitoring-scrape.yaml
   - allow-egress-dns-and-host.yaml

@@ -1,0 +1,22 @@
+# Aynı namespace içinde platform pod'ların birbirine ingress'i
+# (gateway → backend, backend → openfga, backend-to-backend client çağrıları).
+# "allow-egress-intra-ns" ile simetrik; Codex Tur-1 #3 bulgusu: default-deny
+# aktifken backend'e ingress allow yoktu → gateway → backend timeout dropping.
+# Canlıda 401 JSON dönebilmesi backend'e hiç gitmeden gateway Spring Security
+# chain'inde kesildiği içindi; gerçek E2E (valid JWT + backend'e forward) için
+# bu kural şart.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-intra-ns
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: platform
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: platform
