@@ -17,14 +17,15 @@ controller:
   service:
     enabled: true
     type: ClusterIP
-    externalTrafficPolicy: Local
+    # externalTrafficPolicy YALNIZCA NodePort/LoadBalancer için geçerli;
+    # ClusterIP'de set edersen helm reddediyor (k8s validation).
 
   resources:
     requests:
       cpu: 50m
-      memory: 64Mi
-    limits:
       memory: 128Mi
+    limits:
+      memory: 256Mi          # OOMKilled fix: 128Mi'da OOM'a giriyor; 256Mi yeterli
 
   admissionWebhooks:
     enabled: true
