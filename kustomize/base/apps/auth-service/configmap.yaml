@@ -15,7 +15,12 @@ data:
 
   # Spring Boot
   SERVER_PORT: "8088"
-  MANAGEMENT_SERVER_PORT: "8088"
+  # Actuator ayrı port (Spring Boot native): 8081'de yayınlanır, Spring Security
+  # filter chain main port'a attached — management port serbest (standart pattern)
+  MANAGEMENT_SERVER_PORT: "8081"
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "never"
 
   # D7 Eureka kapatma (ana repo Eureka temizliği gelene kadar runtime override)
   # Bu env'ler main-stable image'ındaki Eureka client'ı devre dışı bırakır.

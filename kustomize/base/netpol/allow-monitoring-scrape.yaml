@@ -16,6 +16,4 @@ spec:
               kubernetes.io/metadata.name: monitoring
       ports:
         - protocol: TCP
-          port: 8080     # gateway /actuator/prometheus
-        - protocol: TCP
-          port: 8088     # auth /actuator/prometheus
+          port: 8081     # management port (actuator ayrı — standart pattern)

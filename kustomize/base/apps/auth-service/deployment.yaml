@@ -44,6 +44,9 @@ spec:
             - name: http
               containerPort: 8088
               protocol: TCP
+            - name: management           # Spring Boot actuator ayrı port (auth'suz)
+              containerPort: 8081
+              protocol: TCP
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: "k8s"
@@ -64,13 +67,13 @@ spec:
           startupProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: http
+              port: management       # 8081 (auth'suz actuator port)
             failureThreshold: 30
             periodSeconds: 5        # 30*5 = 150 sn startup toleransı
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: http
+              port: management
             initialDelaySeconds: 0
             periodSeconds: 15
             timeoutSeconds: 3
@@ -78,7 +81,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: http
+              port: management
             initialDelaySeconds: 0
             periodSeconds: 10
             timeoutSeconds: 3
