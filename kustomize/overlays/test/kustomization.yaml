@@ -268,7 +268,7 @@ patches:
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.19.0.4"
+        value: "172.19.0.2"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 5432
@@ -278,7 +278,7 @@ patches:
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.19.0.5"
+        value: "172.19.0.3"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8080        # container port (host 8081 mapping yok platform-test-net için)
