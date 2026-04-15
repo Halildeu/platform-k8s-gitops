@@ -60,6 +60,13 @@ patches:
       - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: "DEBUG"
+      # Test ortamı: Flyway migration yok, Hibernate DDL-auto ile tablo oluştur
+      - op: add
+        path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: "update"
+      - op: add
+        path: /data/SPRING_FLYWAY_ENABLED
+        value: "false"
   - target:
       kind: ConfigMap
       name: api-gateway-config
