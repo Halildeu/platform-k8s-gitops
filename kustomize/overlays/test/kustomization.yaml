@@ -306,15 +306,17 @@ patches:
       kind: ResourceQuota
       name: platform-quota
     patch: |-
+      # Test quota (Dilim 1+2+3 tamamında 8+ pod çalışır; k3d lokal için)
+      # 8 Spring Boot pod × 150m req × 750m limit + openfga + frontend
       - op: replace
         path: /spec/hard/requests.cpu
-        value: "1"
+        value: "4"
       - op: replace
         path: /spec/hard/requests.memory
-        value: 3Gi
+        value: 8Gi
       - op: replace
         path: /spec/hard/limits.cpu
-        value: "2"
+        value: "8"
       - op: replace
         path: /spec/hard/limits.memory
-        value: 6Gi
+        value: 16Gi
