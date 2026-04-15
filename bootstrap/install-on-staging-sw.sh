@@ -45,10 +45,12 @@ run() {
 }
 
 sshrun() {
+  # ssh non-login shell — PATH'i explicit set et (~/.local/bin için)
+  local cmd="$*"
   if [[ "${DRY_RUN}" == "true" ]]; then
-    printf '\033[90mDRY ssh:\033[0m %s\n' "$*" >&2
+    printf '\033[90mDRY ssh:\033[0m %s\n' "${cmd}" >&2
   else
-    ssh -o BatchMode=no "${REMOTE}" "$@"
+    ssh -o BatchMode=no "${REMOTE}" "export PATH=\$HOME/.local/bin:\$PATH; ${cmd}"
   fi
 }
 
@@ -80,37 +82,36 @@ log "   docker image prune -f (sadece dangling)"
 run "sshrun 'docker image prune -f'" >/dev/null
 
 # ============================================================
-# 3/14 — k3d binary
+# 3-5/14 — Binaries (user-level: ~/.local/bin, sudo gerekmez)
 # ============================================================
-log "3/14 k3d binary kurulum"
-if sshrun 'command -v k3d >/dev/null 2>&1'; then
-  K3D_VER=$(sshrun 'k3d version | head -1')
+log "3/14 k3d binary (~/.local/bin)"
+if sshrun 'command -v k3d >/dev/null 2>&1 || test -x ~/.local/bin/k3d'; then
+  K3D_VER=$(sshrun 'export PATH=$HOME/.local/bin:$PATH; k3d version 2>/dev/null | head -1')
   log "   ✓ zaten kurulu: ${K3D_VER}"
 else
   log "   yükleniyor..."
-  run "sshrun 'curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=v5.7.5 bash'"
+  run "sshrun 'mkdir -p ~/.local/bin && curl -fsSL https://github.com/k3d-io/k3d/releases/download/v5.7.5/k3d-linux-amd64 -o ~/.local/bin/k3d && chmod +x ~/.local/bin/k3d'"
 fi
 
-# ============================================================
-# 4/14 — kubectl binary
-# ============================================================
-log "4/14 kubectl binary"
-if sshrun 'command -v kubectl >/dev/null 2>&1'; then
+log "4/14 kubectl binary (~/.local/bin)"
+if sshrun 'command -v kubectl >/dev/null 2>&1 || test -x ~/.local/bin/kubectl'; then
   log "   ✓ zaten kurulu"
 else
-  log "   yükleniyor (sudo gerek)..."
-  run "sshrun 'KCTL_VER=\$(curl -fsSL https://dl.k8s.io/release/stable.txt) && curl -fsSL -o /tmp/kubectl https://dl.k8s.io/release/\$KCTL_VER/bin/linux/amd64/kubectl && sudo install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl && rm /tmp/kubectl'"
+  log "   yükleniyor..."
+  run "sshrun 'mkdir -p ~/.local/bin && KCTL_VER=\$(curl -fsSL https://dl.k8s.io/release/stable.txt) && curl -fsSL -o ~/.local/bin/kubectl https://dl.k8s.io/release/\$KCTL_VER/bin/linux/amd64/kubectl && chmod +x ~/.local/bin/kubectl'"
 fi
 
-# ============================================================
-# 5/14 — Helm binary
-# ============================================================
-log "5/14 helm binary"
-if sshrun 'command -v helm >/dev/null 2>&1'; then
+log "5/14 helm binary (~/.local/bin)"
+if sshrun 'command -v helm >/dev/null 2>&1 || test -x ~/.local/bin/helm'; then
   log "   ✓ zaten kurulu"
 else
-  run "sshrun 'curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash'"
+  log "   yükleniyor..."
+  run "sshrun 'mkdir -p ~/.local/bin /tmp/helm-install && cd /tmp/helm-install && curl -fsSL https://get.helm.sh/helm-v3.16.3-linux-amd64.tar.gz | tar -xz && mv linux-amd64/helm ~/.local/bin/helm && chmod +x ~/.local/bin/helm && rm -rf /tmp/helm-install'"
 fi
+
+# PATH (sonraki adımlar için ssh'da non-login shell — PATH explicit gerek)
+SSH_PATH_PREFIX='export PATH=$HOME/.local/bin:$PATH;'
+log "   PATH prefix sonraki ssh komutlarına eklenecek: ${SSH_PATH_PREFIX}"
 
 # ============================================================
 # 6/14 — Repo sync (rsync, .git ve cert hariç)
