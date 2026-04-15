@@ -40,7 +40,7 @@ kubectl --context k3d-test -n calico-system get pods
 
 ## 3. Host Nginx SNI Proxy (staging-sw üzerinde)
 
-**Lokal geliştirici makinesinde ATLA** — lokalde `ai.acik.com`/`test.acik.com` DNS'i yok. Lokal dev için `kubectl port-forward` veya `/etc/hosts` ekle.
+**Lokal geliştirici makinesinde ATLA** — lokalde `ai.acik.com`/`testai.acik.com` DNS'i yok. Lokal dev için `kubectl port-forward` veya `/etc/hosts` ekle.
 
 Staging-sw üzerinde:
 
@@ -59,7 +59,7 @@ docker compose -f host-compose/proxy/docker-compose.yml up -d
 
 # 4. Sağlık kontrolü
 curl -sk https://ai.acik.com/healthz
-curl -sk https://test.acik.com/healthz  # test cluster up ise 200, değilse 503
+curl -sk https://testai.acik.com/healthz  # test cluster up ise 200, değilse 503
 ```
 
 ## 4. Temizlik

@@ -28,7 +28,7 @@
 | D15 | CNI | **Calico** (başlangıçtan) — NetworkPolicy garantisi. Flannel değil. +200 MB RAM kabul |
 | D16 | Cluster topolojisi | **2 k3d cluster aynı host'ta** (staging-sw): `prod` + `test`. Docker container'larda ayrı k3s node'ları (ayrı API server, etcd, CNI, Docker network, Pod/Svc CIDR). Gerekçe: "birini bozunca diğeri etkileniyor" tecrübesinin tekrarlanmaması. Lokal geliştirici makinede de aynı iki-cluster modeli |
 | D17 | Test ortamı çalışma modeli | **Scale-to-zero workload**: test cluster control plane açık (~2 GB sabit), workload'lar default `replicas: 0`. Yoğun saatlerde backend+openfga+frontend kapalı (~0 GB). İhtiyaç halinde `test-toggle.sh up`. Host-level test PG/KC/Vault de kapalı varsayılan |
-| D18 | İngress + TLS termination | **Host-level nginx SNI reverse proxy** (mevcut `platform-web-nginx` yerine) 80/443 alır, Sectigo wildcard cert'i termine eder. Hostname'e göre backend: `ai.acik.com` → prod k3d HTTP :30080, `test.acik.com` → test k3d HTTP :31080. Cluster'ların içindeki ingress-nginx HTTP-only (cert'i host handle ediyor) |
+| D18 | İngress + TLS termination | **Host-level nginx SNI reverse proxy** (mevcut `platform-web-nginx` yerine) 80/443 alır, Sectigo wildcard cert'i termine eder. Hostname'e göre backend: `ai.acik.com` → prod k3d HTTP :30080, `testai.acik.com` → test k3d HTTP :31080. Cluster'ların içindeki ingress-nginx HTTP-only (cert'i host handle ediyor) |
 | D19 | Host servis köprüsü | **Service + Endpoints** (IP pin `10.9.10.53`). ExternalName yerine; CoreDNS rewrite kırılgan |
 | D20 | Host port ataması | **Mevcut portlar = PROD (`5432, 8081, 8200`)**, yeni portlar = TEST (`5433, 8082, 8201`). Prod verisi migrasyonu YOK |
 | D21 | HPA & replica | **MVP'de HPA YOK**. `metrics-server` kapalı kalır. Prod sabit `replicas: 2`, test açıldığında `replicas: 1`. HPA ancak ilk gerçek CPU/latency grafiği toplandıktan sonra geri açılabilir. **Gerekçe**: metrics-server disabled + HPA birlikte tutarsızdı (Codex Tur-1) |
@@ -45,8 +45,9 @@
 - OpenFGA K8s içinde (StatefulSet), PostgreSQL host'ta
 - Mevcut `decisions/topics/zanzibar-openfga.v1.json` kuralları K8s'te de geçerlidir (port 8090 yok, ScopeContextFilter order, vb.)
 - Cron deploy DISABLED kalır stabilizasyon bitene kadar
-- **Prod dış + iç, test sadece iç**: prod `ai.acik.com` dış proxy (`212.115.26.190`, L4 pass-through) üzerinden kurum ağı/VPN'den erişilir; test `test.acik.com` yalnız intranet (A kaydı `10.9.10.53`, dış proxy'e yazılmaz)
+- **Prod dış + iç, test sadece iç**: prod `ai.acik.com` dış proxy (`212.115.26.190`, L4 pass-through) üzerinden kurum ağı/VPN'den erişilir; test `testai.acik.com` yalnız intranet (A kaydı `10.9.10.53`, dış proxy'e yazılmaz)
 - **Admin UI'lar path altında**: ArgoCD, Grafana, Prometheus dahil her admin endpoint `ai.acik.com/<path>` şemasını kullanır — ayrı subdomain yok (DNS yükü minimum, tek cert yeter)
+- **STABİLİTE KAPISI** (2026-04-15 kararı): `testai.acik.com` üzerinde **tüm Dilim'ler tamamen stabil olduktan sonra** `ai.acik.com` prod cutover'a geçilir. Test ortamı, prod'a geçişin **kabul kriteri**dir; smoke + chaos + load test'leri yeşil olmadan prod kurulumu başlamaz. Bu yüzden sıralama: test cluster ayağa → testai.acik.com smoke → tüm Dilim 1+2+3 testai'de stabil → SONRA prod cluster ayağa + cutover.
 
 ---
 
@@ -96,7 +97,7 @@ Internet/VPN → host nginx (SSL termine) → prod k3d ingress-nginx →
   /grafana                  → grafana.monitoring.svc (ayrı Ingress)
   /prometheus               → prometheus.monitoring.svc (ayrı Ingress)
 
-test.acik.com → test k3d ingress-nginx → api-gateway.platform-test.svc
+testai.acik.com → test k3d ingress-nginx → api-gateway.platform-test.svc
   (test cluster'da ArgoCD/Grafana YOK, prod cluster uzaktan yönetir)
 ```
 
@@ -106,7 +107,7 @@ test.acik.com → test k3d ingress-nginx → api-gateway.platform-test.svc
 
 ```
 PROD (platform-prod)                     TEST (platform-test)
-ai.acik.com/                             test.acik.com/
+ai.acik.com/                             testai.acik.com/
 ├── /            → frontend (MFE)        ├── /            → frontend
 ├── /api         → api-gateway           ├── /api         → api-gateway
 ├── /auth        → api-gateway → auth-svc├── /auth        → api-gateway → auth-svc
@@ -116,8 +117,8 @@ ai.acik.com/                             test.acik.com/
 ```
 
 - `ai.acik.com`: **mevcut**, prod. Erişim yolu: internet/VPN → dış proxy `212.115.26.190` (L4 pass-through, kurum yönetiminde) → `10.9.10.53:443` (k3s ingress-nginx)
-- `test.acik.com`: **YENİ**, intranet-only. A kaydı `10.9.10.53` — sadece iç Windows AD DNS'e (`acikdc01.acik.local`) eklenir, dış proxy'e yazılmaz.
-- Path-based seçiminin gerekçesi: sadece 1 yeni DNS kaydı (test.acik.com) + tek wildcard cert, admin UI'lar için subdomain yok.
+- `testai.acik.com`: **YENİ**, intranet-only. A kaydı `10.9.10.53` — sadece iç Windows AD DNS'e (`acikdc01.acik.local`) eklenir, dış proxy'e yazılmaz.
+- Path-based seçiminin gerekçesi: sadece 1 yeni DNS kaydı (testai.acik.com) + tek wildcard cert, admin UI'lar için subdomain yok.
 
 **TLS stratejisi — host-level nginx'te termine (D18):**
 
@@ -125,10 +126,10 @@ ai.acik.com/                             test.acik.com/
 |---|---|---|---|
 | Host (Compose) | `host-compose/proxy/tls/wildcard-acik-com.{crt,key}` | Sectigo `*.acik.com` + `acik.com` | mevcut PEM (`STAR_acik_com.crt` + `.key`, Nginx bundle) |
 
-- Hem `ai.acik.com` hem `test.acik.com` aynı host nginx + aynı cert ile servis edilir (wildcard SAN).
+- Hem `ai.acik.com` hem `testai.acik.com` aynı host nginx + aynı cert ile servis edilir (wildcard SAN).
 - **Cluster içinde TLS Secret YOK** — k3d ingress-nginx HTTP-only dinler (port 30080/31080), host nginx zaten SSL termine ediyor.
 - **cert-manager MVP'de kurulmaz**. Renewal stratejisi (D8): manuel Sectigo rotation + script + 60/30/7 gün uyarı + panel erişim doğrulaması.
-- **Faz 12 sonrası**: `ai.acik.com` için LE HTTP-01 dry-run. Başarılıysa cert-manager otomasyonu ayrıca kararlandırılır; `test.acik.com` intranet-only kaldığı sürece bu kapsam dışı.
+- **Faz 12 sonrası**: `ai.acik.com` için LE HTTP-01 dry-run. Başarılıysa cert-manager otomasyonu ayrıca kararlandırılır; `testai.acik.com` intranet-only kaldığı sürece bu kapsam dışı.
 - Compose nginx (mevcut `platform-web-nginx`) cutover anında durdurulur; host-compose/proxy/ altındaki yeni nginx devralır (aynı 443 port, aynı cert).
 
 **Cert dosyaları:**
@@ -333,10 +334,10 @@ http {
     }
   }
 
-  # test.acik.com → test cluster
+  # testai.acik.com → test cluster
   server {
     listen 443 ssl http2;
-    server_name test.acik.com;
+    server_name testai.acik.com;
     ssl_certificate     /etc/nginx/tls/wildcard-acik-com.crt;
     ssl_certificate_key /etc/nginx/tls/wildcard-acik-com.key;
     location / { proxy_pass http://test_k3d; ... }
@@ -354,7 +355,7 @@ http {
 │  │  :443 → SSL termination (Sectigo wildcard) │                                 │
 │  │         SNI routing:                       │                                 │
 │  │         ai.acik.com   → 127.0.0.1:30080    │                                 │
-│  │         test.acik.com → 127.0.0.1:31080    │                                 │
+│  │         testai.acik.com → 127.0.0.1:31080    │                                 │
 │  └────────────────────────────────────────────┘                                 │
 │         │                          │                                            │
 │         ▼                          ▼                                            │
@@ -457,7 +458,7 @@ platform-k8s-gitops/
 │   │   └── monitoring/         # ServiceMonitor CR'ları
 │   └── overlays/
 │       ├── local/              # k3d — image: Never, ingress: *.localtest.me
-│       ├── test/               # platform-test ns — ingress: test.acik.com (path-based)
+│       ├── test/               # platform-test ns — ingress: testai.acik.com (path-based)
 │       └── prod/               # platform-prod ns — ingress: ai.acik.com (path-based)
 │
 ├── helm-values/                # 3. parti chart values
@@ -505,7 +506,7 @@ platform-k8s-gitops/
 - [ ] `README.md` — repo amacı + bootstrap komutları
 - [ ] `.gitignore` — secrets, state/, .env, .DS_Store
 - [ ] İlk commit: "initial plan + skeleton"
-- [ ] **DNS ticket**: sysadmin'e `test.acik.com` A → `10.9.10.53` kaydı için talep (Windows AD DNS)
+- [ ] **DNS ticket**: sysadmin'e `testai.acik.com` A → `10.9.10.53` kaydı için talep (Windows AD DNS)
 - [ ] **Opsiyonel quick-win**: mevcut compose `platform-web-nginx`'i Vault self-signed'dan Sectigo wildcard cert'e geçir (K8s öncesi tarayıcı uyarısını kapat)
 
 ### Faz 2 — Host-Level Servisler (Docker Compose)
@@ -545,7 +546,7 @@ platform-k8s-gitops/
 
 **Kabul kriteri:** 
 - İki k3d cluster ayakta, `kubectl get nodes` her ikisinde çalışır
-- Host nginx SNI proxy 443'ü alır, `ai.acik.com` prod cluster'a, `test.acik.com` test cluster'a yönlendirir (dummy backend ile test)
+- Host nginx SNI proxy 443'ü alır, `ai.acik.com` prod cluster'a, `testai.acik.com` test cluster'a yönlendirir (dummy backend ile test)
 - Prometheus test cluster'ı federate edebiliyor (`up{job="test-federate"}` metriği var)
 
 ### Faz 4 — Kustomize Base: Host Service Köprüleri
@@ -592,7 +593,7 @@ platform-k8s-gitops/
   - resources: minimum
 - [x] `overlays/test/` — platform-test ns
   - image: **digest pin** (D26 + Codex Tur-4; CI sha256 ile günceller)
-  - ingress host: `test.acik.com` (path-based), **TLS host nginx'te D18** (cluster Secret yok)
+  - ingress host: `testai.acik.com` (path-based), **TLS host nginx'te D18** (cluster Secret yok)
   - **replica: 0 (scale-to-zero default, D17)** — `test-toggle.sh up` ile 1'e çekilir
   - ResourceQuota: 3Gi/1vCPU (PLAN §2.4)
 - [x] `overlays/prod/` — platform-prod ns
@@ -688,7 +689,7 @@ Bu repo'da DEĞİL, ana repo'da yapılacaklar. Manifest yazımıyla eş zamanlı
 | Cron deploy aktif edilirse erken push | Yarım manifest prod'a gider | DEPLOY_ENABLED=false kalır Faz 15'e kadar |
 | **Wildcard cert expiry 2026-10-01** | prod + test TLS kesintisi | **P0 reminder 2026-09-01**: yeni Sectigo cert al ya da cert-manager + LE HTTP-01 otomasyonu aç. Renewal öncesi Secret rotate prosedürü test edilmeli |
 | Dış proxy (212.115.26.190) başkasının yönetiminde | `ai.acik.com` üzerinde operasyonel değişiklikler koordinasyon ister | L4 pass-through varsayımı doğrulanmalı (sysadmin'e sor); değilse strateji değişir |
-| `test.acik.com` DNS kaydı sysadmin gecikmesi | Faz 12/13 bloklanır | Faz 1'de erken ticket aç, paralel iş |
+| `testai.acik.com` DNS kaydı sysadmin gecikmesi | Faz 12/13 bloklanır | Faz 1'de erken ticket aç, paralel iş |
 | **Eureka kaldırma kod değişikliği** (D7 revize) | Servis-arası çağrılar bozulur | Faz 11'de annotation + pom + route URL'leri sistematik temizle. Önce tek servis (örn. user-service) PoC, smoke yeşil olunca diğerlerine yay |
 | **24 GB RAM dar bütçe** | OOM, swap'a düşme, prod degradasyon | Resource quota + LimitRange ZORUNLU. JVM heap explicit `-Xmx`. Retention KISA. Geçiş döneminde compose-prod + K8s-test paralel iken RAM <22 GB tut |
 | **Disk %80 dolu, geçiş döneminde %87'ye** | k3s image pull başarısız, cluster instabil | Önce hafif prune; compose-prod stop sonrası `docker system prune -a` ile büyük temizlik. **Disk artırma opsiyonu açık** (sysadmin) |
@@ -771,4 +772,5 @@ Devam edeceğim faz: Faz 1 — Repo Temeli (README + .gitignore + ilk commit).
 | 2026-04-14 | **D27 Upstream-first prensibi** eklendi: her bileşen kendi native Helm/operator kullanır, custom kod minimum. Custom admission webhook / özel operator / manuel YAML patch YASAK |
 | 2026-04-14 | **Codex Tur-3 + Tur-4**: Kurulum inceleme + kısmi itiraz uzlaşısı. 10 bulgu (3 P0, 5 P1, 2 P2). Tur-4'te benim 2 itirazıma Codex gerekçeyle cevap: (1) admin hardening lokalde toleranslı ama repo-seviyesi prod/test overlay'lerde ŞIMDI sertleştirme, (2) image tag `:poc` REDDEDILDI "cutover'da düzeltilir" argümanım tutmadı — prod/test digest pin + ESO-fed imagePullSecret bugün girdi. NP için C+ model (default-deny + 4 allowlist) seçildi. Tüm 10 madde 3 commit'te kapatıldı (73d8600 + bf7f19f + BU COMMIT). PLAN drift 7 satır temizlendi. |
 | 2026-04-14 | **Codex istişaresi — 2 turlu, UZLAŞI** (docs/codex-review-2026-04-14.md). Drift temizliği: D1 (tek cluster → 2 k3d), D2 (5 ns tek cluster → cluster-başına ns), D16 ("Docker-in-Docker" → Docker container), §2.3 TLS (cluster Secret → host nginx), Faz 4 (ExternalName → Service+Endpoints), §6 Risk (Eureka K8s-içi single-replica → PASIF). D7 revize: dilimli Eureka kaldırma. D8 revize: 2 aşamalı cert stratejisi (manuel + Faz 12 HTTP-01 dry-run). D10: retention 14d→10d/14d→7d/3d→48h. **6 yeni karar**: D21 HPA (MVP'de yok), D22 CPU bütçesi, D23 DR/RPO/RTO, D24 JVM `-Xmx` explicit (MaxRAMPercentage kaldırıldı), D25 PoC dilim (`api-gateway + auth-service` → `user-service`), D26 YAPMA listesi. Yeni §6.5 DR/RPO/RTO bölümü. §2.4 CPU bütçesi tablosu. 4 yeni risk (CPU throttle, HPA çelişkisi pasif, tek-host DR sınırı, PoC dilim başarısızlığı) |
+| 2026-04-15 | **Hostname rename + STABİLİTE KAPISI**: `test.acik.com` → `testai.acik.com` (5 dosya: PLAN.md, ingress.yaml, overlay test, host nginx.conf, README). Sectigo wildcard `*.acik.com` kapsıyor → cert değişimi YOK. Yeni HARD RULE: testai.acik.com'da Dilim 1+2+3 stabil olmadan ai.acik.com prod cutover BAŞLAMAZ. Sıralama: test cluster ayağa → testai smoke → tüm dilim'ler yeşil → prod cluster + cutover. |
 

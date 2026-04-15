@@ -1,8 +1,8 @@
 # Platform ingress — path routing (D18)
 # Host: overlays'de override
-#   local: ai.acik.com (etc hosts 127.0.0.1) veya test.acik.com
+#   local: ai.acik.com (etc hosts 127.0.0.1) veya testai.acik.com
 #   prod:  ai.acik.com
-#   test:  test.acik.com
+#   test:  testai.acik.com
 #
 # TLS: host nginx'te termine (D8/D18), buraya HTTP gelir → tls bölümü YOK
 apiVersion: networking.k8s.io/v1
@@ -18,7 +18,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: PLACEHOLDER_HOST       # overlays'de override: ai.acik.com / test.acik.com
+    - host: PLACEHOLDER_HOST       # overlays'de override: ai.acik.com / testai.acik.com
       http:
         paths:
           # NOT: ArgoCD/Grafana/Prometheus UI'ları kendi namespace'lerinde
