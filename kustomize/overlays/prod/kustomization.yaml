@@ -12,19 +12,15 @@ resources:
   - ../../base
 
 images:
-  # D26 + Codex Tur-4: prod/test overlay'leri immutable digest'e pinlenir.
-  # CI (ana repo deploy-backend.yml) her image'ı build eder, GHCR'a push eder,
-  # bu dosyayı `kustomize edit set image auth-service=ghcr.io/.../auth-service@sha256:<DIGEST>`
-  # ile günceller (ya da `kubectl kustomize | yq` benzeri). `:poc` tag'i YALNIZCA
-  # overlays/local/ içinde kalır.
-  #
-  # Canlıya çıkmadan önce PLACEHOLDER digest'leri gerçek CI çıktısıyla değiştir.
+  # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile)
+  # Prod için main-stable tag (runtime rolling). Canlı cutover öncesi CI'nın
+  # verdiği specific digest'e (@sha256:...) pinlenir — D26 Codex Tur-4.
   - name: auth-service
-    newName: ghcr.io/halildeu/platform/auth-service
-    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    newName: ghcr.io/halildeu/platform-ssot-auth-service
+    newTag: main-stable
   - name: api-gateway
-    newName: ghcr.io/halildeu/platform/api-gateway
-    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    newName: ghcr.io/halildeu/platform-ssot-api-gateway
+    newTag: main-stable
 
 patches:
   # ConfigMap: platform-prod namespace
@@ -36,7 +32,7 @@ patches:
         path: /data/KEYCLOAK_URL
         value: "http://keycloak.platform-prod.svc.cluster.local:8080"
       - op: replace
-        path: /data/DB_URL
+        path: /data/SPRING_DATASOURCE_URL
         value: "jdbc:postgresql://postgres.platform-prod.svc.cluster.local:5432/auth_db"
   - target:
       kind: ConfigMap
@@ -48,6 +44,9 @@ patches:
       - op: replace
         path: /data/KEYCLOAK_URL
         value: "http://keycloak.platform-prod.svc.cluster.local:8080"
+      - op: replace
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_0_URI
+        value: "http://auth-service.platform-prod.svc.cluster.local:8088"
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:

@@ -13,14 +13,14 @@ resources:
   - ../../base
 
 images:
-  # D26 + Codex Tur-4: digest pin. CI günceller, PLACEHOLDER digest'i commit
-  # etmeden önce gerçek sha256'ya çevir.
+  # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)
+  # Test için main-stable tag (rolling). Prod için digest pin'e geçilecek.
   - name: auth-service
-    newName: ghcr.io/halildeu/platform/auth-service
-    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    newName: ghcr.io/halildeu/platform-ssot-auth-service
+    newTag: main-stable
   - name: api-gateway
-    newName: ghcr.io/halildeu/platform/api-gateway
-    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    newName: ghcr.io/halildeu/platform-ssot-api-gateway
+    newTag: main-stable
 
 patches:
   # Replica 0 default (scale-to-zero)
@@ -54,7 +54,7 @@ patches:
         path: /data/KEYCLOAK_URL
         value: "http://keycloak.platform-test.svc.cluster.local:8080"
       - op: replace
-        path: /data/DB_URL
+        path: /data/SPRING_DATASOURCE_URL
         value: "jdbc:postgresql://postgres.platform-test.svc.cluster.local:5432/auth_db"
       - op: replace
         path: /data/LOGGING_LEVEL_ROOT
@@ -72,6 +72,9 @@ patches:
       - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: "DEBUG"
+      - op: replace
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_0_URI
+        value: "http://auth-service.platform-test.svc.cluster.local:8088"
 
   # Ingress host + TLS host: testai.acik.com (D18)
   - target:
