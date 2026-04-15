@@ -18,6 +18,13 @@ data:
   SERVER_SHUTDOWN: "graceful"
   SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: "30s"
 
+  # PG connection pool — canlı gözlem: PG max_conn 100, compose prod 50 conn +
+  # k8s 7×10=70 pool → aşım → CrashLoop. Fix: pool 5/min 2. PG max_conn 200'e
+  # artırıldı (compose hotfix runtime ALTER SYSTEM; kalıcı backend/docker-compose.yml
+  # patch follow-up #7).
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "5"
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "2"
+
   # D7 Eureka kapatma + K8s native route (ana repo temizliği gelene kadar runtime)
   EUREKA_CLIENT_ENABLED: "false"
   SPRING_CLOUD_DISCOVERY_ENABLED: "false"
