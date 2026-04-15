@@ -1,6 +1,7 @@
 # Test overlay — k3d-test (staging-sw test cluster)
 # - Image: GHCR sha-<short>
-# - Host bridge: 10.9.10.53:5433/8082/8201 (D20)
+# - Host bridge: 10.9.10.53:5432/8081/8200 (mevcut PG/KC/Vault paylaşılır,
+#   DB/realm/Vault-path ile izolasyon; ayrı test instance D20 gelecek iş)
 # - Replica: 0 default (D17 scale-to-zero); test-toggle.sh up → 1
 # - Namespace: platform-test
 # - JVM daha dar heap (D24)
@@ -98,7 +99,7 @@ patches:
         value: "10.9.10.53"
       - op: replace
         path: /subsets/0/ports/0/port
-        value: 5433
+        value: 5432
   - target:
       kind: Endpoints
       name: keycloak
@@ -108,7 +109,7 @@ patches:
         value: "10.9.10.53"
       - op: replace
         path: /subsets/0/ports/0/port
-        value: 8082
+        value: 8081
   - target:
       kind: Endpoints
       name: vault
@@ -118,7 +119,7 @@ patches:
         value: "10.9.10.53"
       - op: replace
         path: /subsets/0/ports/0/port
-        value: 8201
+        value: 8200
 
   # Test PDB gevşek (tek replica olunca anlamsız)
   - target:
