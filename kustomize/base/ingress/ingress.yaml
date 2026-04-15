@@ -28,13 +28,14 @@ spec:
           # NOT: ArgoCD/Grafana/Prometheus UI'ları kendi namespace'lerinde
           # AYRI Ingress kaynaklarıyla exposed (Helm chart'ların ingress.enabled ile).
           #
-          # D25: TÜM trafik (/, /auth, /api, /actuator) api-gateway'e gider.
-          # Gateway içeriden:
-          #   Path=/auth/**  → StripPrefix=1 → http://auth-service:8088/{rest}
-          #   Path=/api/**   → (Dilim 2+) backend servisler
+          # Dilim 3: API path'leri → api-gateway, / → frontend.
+          # Gateway içeriden route predicate'larıyla downstream servisleri çözer:
+          #   Path=/auth/**  → StripPrefix=1 → auth-service:8088
+          #   Path=/api/**   → backend servisler (Dilim 2)
           #   Path=/actuator → gateway kendi actuator'u
-          # Bu sayede D7 (Eureka → K8s svc DNS) zinciri gateway üzerinden
-          # doğrulanır, ingress backend'i bypass etmez.
+          #   Path=/users|/variants|/core|/reports|/schemas → ilgili backend
+          # /users gibi path'leri açıkça listelememizin sebebi: ingress-nginx'in
+          # /users'ı default backend'e (frontend) göndermemesi.
           - path: /auth
             pathType: Prefix
             backend:
@@ -53,10 +54,40 @@ spec:
               service:
                 name: api-gateway
                 port: { number: 8080 }
-          # Root — gateway'e git (frontend Dilim 3+'da eklenince override)
-          - path: /
+          - path: /users
             pathType: Prefix
             backend:
               service:
                 name: api-gateway
                 port: { number: 8080 }
+          - path: /variants
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port: { number: 8080 }
+          - path: /core
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port: { number: 8080 }
+          - path: /reports
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port: { number: 8080 }
+          - path: /schemas
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port: { number: 8080 }
+          # Root → frontend (MFE shell); daha spesifik /auth, /api vb. öncelikli.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port: { number: 80 }

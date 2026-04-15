@@ -1,0 +1,33 @@
+# core-data-service config — overlays'de namespace-spesifik değerler override edilir
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: core-data-service-config
+data:
+  # Host-level bağımlılıklar — Service+Endpoints (D19) üzerinden
+  # Spring Boot convention env: SPRING_DATASOURCE_URL, SPRING_DATASOURCE_USERNAME,
+  # SPRING_DATASOURCE_PASSWORD (username/password Secret'tan gelir)
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres.PLACEHOLDER_NS.svc.cluster.local:5432/core_db"
+
+  # Spring Boot
+  SERVER_PORT: "8092"
+  # Actuator ayrı port (Spring Boot native): 8081'de yayınlanır, Spring Security
+  # filter chain main port'a attached — management port serbest (standart pattern)
+  MANAGEMENT_SERVER_PORT: "8081"
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "never"
+
+  # D7 Eureka kapatma (ana repo Eureka temizliği gelene kadar runtime override)
+  # Bu env'ler main-stable image'ındaki Eureka client'ı devre dışı bırakır.
+  EUREKA_CLIENT_ENABLED: "false"
+  SPRING_CLOUD_DISCOVERY_ENABLED: "false"
+  SPRING_CLOUD_SERVICE_REGISTRY_AUTO_REGISTRATION_ENABLED: "false"
+
+  # Tracing (Tempo için; base'de kapalı, monitoring kurulunca aç)
+  MANAGEMENT_TRACING_ENABLED: "false"
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.1"
+
+  # Logging level (prod'da INFO, test'te DEBUG override edilir)
+  LOGGING_LEVEL_ROOT: "INFO"
+  LOGGING_LEVEL_COM_ACIK: "INFO"

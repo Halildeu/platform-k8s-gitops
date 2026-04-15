@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# app.kubernetes.io/name SELECTOR'A DA gider (Deployment pod selector + Service selector
+# aynı label ile eşleşsin). Template'e de eklensin ki pod'lar bu label'ı taşısın.
+labels:
+  - pairs:
+      app.kubernetes.io/name: core-data-service
+    includeSelectors: true
+    includeTemplates: true
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: true
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - configmap.yaml
+  - pdb.yaml
+  - secret-stub.yaml         # P0 fix: pod CreateContainerConfigError'u önler
+  - serviceaccount.yaml      # D26: imagePullSecret binding
+  - servicemonitor.yaml      # D27: Prometheus Operator CR (annotation değil)
+  # ESO kurulunca secret-stub.yaml çıkarılır, externalsecret.yaml aktif edilir:
+  # - externalsecret.yaml

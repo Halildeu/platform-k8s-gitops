@@ -21,6 +21,21 @@ images:
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-ssot-api-gateway
     newTag: main-stable
+  - name: user-service
+    newName: ghcr.io/halildeu/platform-ssot-user-service
+    newTag: main-stable
+  - name: variant-service
+    newName: ghcr.io/halildeu/platform-ssot-variant-service
+    newTag: main-stable
+  - name: core-data-service
+    newName: ghcr.io/halildeu/platform-ssot-core-data-service
+    newTag: main-stable
+  - name: report-service
+    newName: ghcr.io/halildeu/platform-ssot-report-service
+    newTag: main-stable
+  - name: schema-service
+    newName: ghcr.io/halildeu/platform-ssot-schema-service
+    newTag: main-stable
 
 patches:
   # ConfigMap: platform-prod namespace
@@ -47,6 +62,21 @@ patches:
       - op: replace
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_0_URI
         value: "http://auth-service.platform-prod.svc.cluster.local:8088"
+      - op: replace
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_1_URI
+        value: "http://user-service.platform-prod.svc.cluster.local:8089"
+      - op: replace
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_2_URI
+        value: "http://variant-service.platform-prod.svc.cluster.local:8091"
+      - op: replace
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_3_URI
+        value: "http://core-data-service.platform-prod.svc.cluster.local:8092"
+      - op: replace
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_4_URI
+        value: "http://report-service.platform-prod.svc.cluster.local:8095"
+      - op: replace
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_5_URI
+        value: "http://schema-service.platform-prod.svc.cluster.local:8096"
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:

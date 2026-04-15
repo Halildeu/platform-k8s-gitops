@@ -1,0 +1,52 @@
+# OpenFGA schema migration — StatefulSet ayağa kalkmadan önce DB schema'yı
+# hazırlar. İlk deploy'da elle tetiklenebilir; ideali Argo CD sync wave -1
+# veya init-container, ancak Dilim 3 kapsamında basit Job bırakıldı.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openfga-migrate
+  labels:
+    app.kubernetes.io/name: openfga
+    app.kubernetes.io/component: authz
+    app.kubernetes.io/part-of: platform
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openfga
+        app.kubernetes.io/component: authz
+        app.kubernetes.io/part-of: platform
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: openfga/openfga:v1.11.2
+          imagePullPolicy: IfNotPresent
+          args:
+            - "migrate"
+            - "--datastore-engine=postgres"
+            - "--datastore-uri=$(OPENFGA_DATASTORE_URI)"
+          envFrom:
+            - configMapRef:
+                name: openfga-config
+            - secretRef:
+                name: openfga-secrets
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "25m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

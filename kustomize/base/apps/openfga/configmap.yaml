@@ -1,0 +1,15 @@
+# OpenFGA kendi env var convention'u (OPENFGA_*) kullanır — Spring Boot DEĞİL.
+# https://openfga.dev/docs/getting-started/setup-openfga/configure-openfga
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openfga-config
+data:
+  OPENFGA_DATASTORE_ENGINE: "postgres"
+  # Host PG (D6) — overlays/test platform-test NS + openfga_db'ye patch'ler.
+  # Parola şu an URL içinde (stub); ESO+Vault geldikçe secret'tan
+  # OPENFGA_DATASTORE_PASSWORD ile inject edip URL'den çıkaracağız.
+  OPENFGA_DATASTORE_URI: "postgres://openfga:PLACEHOLDER_PASSWORD@postgres.PLACEHOLDER_NS.svc.cluster.local:5432/openfga?sslmode=disable"
+  OPENFGA_LOG_LEVEL: "info"
+  OPENFGA_PLAYGROUND_ENABLED: "true"
+  OPENFGA_METRICS_ENABLED: "true"

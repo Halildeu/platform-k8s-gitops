@@ -13,14 +13,13 @@ resources:
   - host-services
   - apps/auth-service
   - apps/api-gateway
+  - apps/user-service
+  - apps/variant-service
+  - apps/core-data-service
+  - apps/report-service
+  - apps/schema-service
+  - apps/openfga          # Dilim 3 — authz engine (StatefulSet)
+  - apps/frontend         # Dilim 3 — MFE shell (nginx)
   - ingress
   - netpol         # D15 + Codex Tur-4 C modeli (default-deny + allowlist)
   - quota          # D22 ResourceQuota + LimitRange
-  # Dilim 2+:
-  # - apps/user-service
-  # - apps/variant-service
-  # - apps/core-data-service
-  # - apps/report-service
-  # - apps/schema-service
-  # - apps/openfga   (StatefulSet)
-  # - apps/frontend

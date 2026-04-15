@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: frontend
+    includeSelectors: true
+    includeTemplates: true
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: true
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - configmap.yaml
+  - pdb.yaml
+  - serviceaccount.yaml
+# ServiceMonitor yok — default nginx /metrics yayınlamaz.
+# İleride nginx-prometheus-exporter sidecar ile eklenebilir.

@@ -1,0 +1,35 @@
+# nginx MFE shell config — Module Federation için cache discipline:
+#   /, /index.html, /remoteEntry.js, /remotes/*/remoteEntry.js → NO-STORE
+#   /assets/*, /remotes/*/assets/* → hashed, 1h immutable
+#
+# TODO: Gerçek HTML içeriği (index.html, assets/, remotes/) henüz image'da YOK.
+# Dilim 4+ initContainer: ghcr.io/halildeu/platform-ssot-web:<sha> artefaktı
+# tar.gz extract → /usr/share/nginx/html VEYA PVC mount (ReadOnlyMany).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+data:
+  default.conf: |
+    server {
+      listen 80;
+      server_name _;
+      root /usr/share/nginx/html;
+      index index.html;
+
+      location = /healthz {
+        access_log off;
+        return 200 'ok';
+        add_header Content-Type text/plain;
+      }
+
+      # MFE shell + remoteEntry must NOT be cached (dynamic hashing)
+      location = / { try_files /index.html =404; add_header Cache-Control "no-store" always; }
+      location = /index.html { add_header Cache-Control "no-store" always; }
+      location = /remoteEntry.js { try_files $uri =404; add_header Cache-Control "no-store" always; }
+      location ~ ^/remotes/[^/]+/remoteEntry\.js$ { try_files $uri =404; add_header Cache-Control "no-store" always; }
+
+      # Hashed assets immutable 1h
+      location /assets/ { try_files $uri =404; expires 1h; add_header Cache-Control "public, max-age=3600, immutable"; }
+      location /remotes/ { try_files $uri =404; expires 1h; add_header Cache-Control "public, max-age=3600, immutable"; }
+    }
