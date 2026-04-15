@@ -114,22 +114,26 @@ SSH_PATH_PREFIX='export PATH=$HOME/.local/bin:$PATH;'
 log "   PATH prefix sonraki ssh komutlarına eklenecek: ${SSH_PATH_PREFIX}"
 
 # ============================================================
-# 6/14 — Repo sync (rsync, .git ve cert hariç)
+# 6/14 — Repo sync (git clone/pull; D12: remote aktif 2026-04-15)
 # ============================================================
-log "6/14 repo sync (lokal → ${REMOTE}:${REPO_DIR_REMOTE})"
-run "sshrun 'mkdir -p ${REPO_DIR_REMOTE}'"
-if [[ "${DRY_RUN}" == "true" ]]; then
-  printf '\033[90mDRY:\033[0m rsync -az %s/ %s:%s/\n' \
-    "${LOCAL_REPO_DIR}" "${REMOTE}" "${REPO_DIR_REMOTE}"
+REPO_URL="${REPO_URL:-git@github.com:Halildeu/platform-k8s-gitops.git}"
+log "6/14 repo sync (git: ${REPO_URL})"
+
+# GitHub SSH port 22 kurum firewall'da kapalı — sunucuda da port 443 config gerek
+sshrun 'grep -q "Host github.com" ~/.ssh/config 2>/dev/null' || {
+  log "   sunucuya github.com SSH config (port 443) ekleniyor"
+  run "sshrun 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && printf \"\\nHost github.com\\n  HostName ssh.github.com\\n  User git\\n  Port 443\\n  StrictHostKeyChecking accept-new\\n\" >> ~/.ssh/config'"
+}
+
+if sshrun "test -d ${REPO_DIR_REMOTE}/.git"; then
+  log "   repo mevcut → git fetch + reset (yerel değişiklik ezilir)"
+  run "sshrun 'cd ${REPO_DIR_REMOTE} && git fetch origin && git reset --hard origin/main && git clean -fd'"
 else
-  rsync -az --delete \
-    --exclude='.git' \
-    --exclude='*.bak-*' \
-    --exclude='host-compose/proxy/tls/*.crt' \
-    --exclude='host-compose/proxy/tls/*.key' \
-    --exclude='docs/codex-review-*.md' \
-    "${LOCAL_REPO_DIR}/" "${REMOTE}:${REPO_DIR_REMOTE}/"
+  log "   ilk clone"
+  run "sshrun 'mkdir -p \$(dirname ${REPO_DIR_REMOTE}) && git clone ${REPO_URL} ${REPO_DIR_REMOTE}'"
 fi
+# Commit doğrula
+sshrun "cd ${REPO_DIR_REMOTE} && git log --oneline -1" || log "   uyarı: git log alınamadı"
 
 # ============================================================
 # 7/14 — k3d-test cluster (port ${TEST_PORT}, mevcut compose çakışmaz)
