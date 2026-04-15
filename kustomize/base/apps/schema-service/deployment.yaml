@@ -10,6 +10,7 @@ metadata:
     app.kubernetes.io/part-of: platform
 spec:
   replicas: 2                      # prod default (D21); test overlay 0'a çekecek
+  minReadySeconds: 10              # Codex Tur-3 #6: endpoint propagation için
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -91,6 +92,12 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+          # Graceful shutdown — Codex Tur-3 #6: preStop sleep ile endpoint deregister
+          # zamanı kazandır, SIGTERM sonrası Spring graceful shutdown (30s budget)
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
           volumeMounts:
             - name: tmp
               mountPath: /tmp

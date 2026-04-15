@@ -18,6 +18,11 @@ data:
   MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
   MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "never"
 
+  # Graceful shutdown — Codex Tur-3 #6: pod SIGTERM sonra in-flight request'leri
+  # tamamlasın (default "immediate" — hızlı ama istekleri keser).
+  SERVER_SHUTDOWN: "graceful"
+  SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: "30s"
+
   # D7 Eureka kapatma (ana repo Eureka temizliği gelene kadar runtime override)
   # Bu env'ler main-stable image'ındaki Eureka client'ı devre dışı bırakır.
   EUREKA_CLIENT_ENABLED: "false"

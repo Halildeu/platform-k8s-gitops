@@ -8,6 +8,9 @@ metadata:
     app.kubernetes.io/part-of: platform
 spec:
   replicas: 2
+  # Pod Ready olduktan sonra 10 sn bekle — ingress/service endpoint cache stale olmasın.
+  # Codex Tur-3 #6: rolling restart sırasında 30 sn 502 sistemik riskini azaltır.
+  minReadySeconds: 10
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -83,6 +86,13 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+          # Graceful shutdown: pod Service endpoint'ten düşsün, in-flight
+          # request'ler tamamlansın, sonra SIGTERM ile Spring graceful shutdown tetiklensin.
+          # Codex Tur-3 #6: ingress-nginx endpoint propagation gecikmesi için.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
           volumeMounts:
             - name: tmp
               mountPath: /tmp

@@ -13,6 +13,11 @@ data:
   MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
   MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "never"
 
+  # Graceful shutdown — Codex Tur-3 #6: pod SIGTERM sonra in-flight request'leri
+  # tamamlasın (default "immediate" — hızlı ama istekleri keser).
+  SERVER_SHUTDOWN: "graceful"
+  SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: "30s"
+
   # D7 Eureka kapatma + K8s native route (ana repo temizliği gelene kadar runtime)
   EUREKA_CLIENT_ENABLED: "false"
   SPRING_CLOUD_DISCOVERY_ENABLED: "false"
