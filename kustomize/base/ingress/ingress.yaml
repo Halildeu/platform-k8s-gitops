@@ -17,6 +17,10 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "25m"
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - PLACEHOLDER_HOST          # overlays'de override; cert SAN *.acik.com kapsıyor
+      secretName: wildcard-acik-com-tls
   rules:
     - host: PLACEHOLDER_HOST       # overlays'de override: ai.acik.com / testai.acik.com
       http:
