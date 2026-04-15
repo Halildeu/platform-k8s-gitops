@@ -113,3 +113,48 @@ Cluster'lar ayakta, CNI hazır — sonra:
 4. `helm-values/kube-prometheus-stack/` + `loki` + `tempo` — prod cluster monitoring
 
 Her biri PLAN.md Faz 3'te listelenmiştir.
+
+---
+
+## Staging-sw Paralel Kurulum (testai.acik.com)
+
+**Mevcut compose stack (ai.acik.com) HİÇ DOKUNULMADAN**, paralel testai.acik.com:
+
+```bash
+# 1. Önce dry-run ile ne yapacağını gör
+DRY_RUN=true ./bootstrap/install-on-staging-sw.sh
+
+# 2. Gerçek çalıştır (DNS hazır olmasını bekle: testai.acik.com → 10.9.10.53)
+./bootstrap/install-on-staging-sw.sh
+
+# 3. Tarayıcı: https://testai.acik.com (Sectigo cert, trusted)
+#    Default scale-to-zero → 503 (gateway pod yok)
+#    Açmak için:
+ssh staging-sw 'kubectl --context k3d-test -n platform-test scale deploy --all --replicas=1'
+
+# 4. Geri al (acil veya cutover sonrası)
+./bootstrap/uninstall-on-staging-sw.sh
+# ai.acik.com hâlâ çalışır, testai.acik.com kapanır
+```
+
+**İzolasyon garantileri:**
+- platform-web-nginx default.conf → testai server block APPEND (eski block dokunulmaz)
+- nginx -s reload graceful (mevcut bağlantılar etkilenmez)
+- Backup atomik: `default.conf.bak-<timestamp>`
+- k3d-test ayrı Docker network (`platform-test-net`)
+- k3d-test farklı CIDR (10.44/10.45) — compose container'larıyla çakışmaz
+- Host port 9080 (compose'da kullanılmıyor)
+- TLS Secret Sectigo wildcard'la paylaşılır (zaten *.acik.com kapsıyor)
+
+**Ön koşullar:**
+- DNS: `testai.acik.com → 10.9.10.53` (Windows AD ticket)
+- ssh staging-sw alias çalışıyor olmalı
+- Sectigo cert lokalde mevcut (default: `~/Downloads/STAR_acik_com1/Nginx/`)
+
+**Override env'leri:**
+```bash
+DRY_RUN=true                  # gerçek değişiklik yok
+TEST_PORT=9080                # k3d-test ingress HTTP port (host)
+CERT_LOCAL=/path/to/star.crt
+KEY_LOCAL=/path/to/star.key
+```
