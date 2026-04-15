@@ -59,10 +59,10 @@ spec:
                 name: auth-service-secrets        # ESO tarafından Vault'tan dolar
           resources:
             requests:
-              memory: "256Mi"       # D22: request dar
+              memory: "384Mi"       # D22: request dar
               cpu: "150m"
             limits:
-              memory: "512Mi"       # D24: heap + metaspace + direct tampon
+              memory: "768Mi"       # Spring Boot 3 + Flyway + Tomcat ≈ 600 MB (512 OOM)
               cpu: "750m"           # D22: limit cömert, request≠limit
           startupProbe:
             httpGet:
