@@ -48,7 +48,7 @@ spec:
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: "k8s"
-            - name: JAVA_OPTS
+            - name: JAVA_TOOL_OPTIONS
               # Gateway biraz daha heap (route cache + reactive pool)
               value: "-Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
           envFrom:
