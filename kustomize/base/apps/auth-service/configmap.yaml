@@ -32,6 +32,18 @@ data:
   SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "5"
   SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "2"
 
+  # Service JWT key pair — application.properties Vault placeholder'ı
+  # (${vault.jwt.auth-service.privateKey}) K8s'te çözülenmiyor → literal string
+  # base64 decode'da "$" illegal char → CrashLoop.
+  # Boş bırakınca ServiceJwtConfiguration otomatik geçici key pair üretir
+  # (handoff §7.3, follow-up #8). ESO+Vault gelince Secret'tan override edilir.
+  SECURITY_SERVICE_JWT_PRIVATE_KEY: ""
+  SECURITY_SERVICE_JWT_PUBLIC_KEY: ""
+
+  # Spring Cloud Vault: K8s'te ESO kullanılacak (PLAN Faz 3), Vault client gereksiz.
+  # Yoksa "Cannot create authentication mechanism for TOKEN" ile crash.
+  SPRING_CLOUD_VAULT_ENABLED: "false"
+
   # D7 Eureka kapatma (ana repo Eureka temizliği gelene kadar runtime override)
   # Bu env'ler main-stable image'ındaki Eureka client'ı devre dışı bırakır.
   EUREKA_CLIENT_ENABLED: "false"
