@@ -17,7 +17,7 @@ controller:
   service:
     enabled: true
     type: ClusterIP          # Service yine gerekli (admission webhook için), ama trafik hostPort'tan
-    externalTrafficPolicy: Local
+    # externalTrafficPolicy ClusterIP Service'te geçerli değil — kaldırıldı (Codex #ingress-fix)
 
   # D22: dar request / cömert limit
   resources:
