@@ -1,0 +1,110 @@
+# kube-prometheus-stack — test cluster minimal (ADR-0002 §3.8)
+# Hedef: test cluster iç metric'ler (kube-state-metrics + node-exporter + ingress
+# metrics + ESO scrape) üret, remote_write ile prod Prom'a akıt.
+# Test cluster'da full Grafana/Alertmanager/Loki YOK; sadece lightweight scrape agent.
+
+crds:
+  # Test cluster zaten ServiceMonitor CR'lar var (base/monitoring/) — CRD conflict
+  # önlemek için test minimal stack'te CRD install KAPALI.
+  enabled: false
+
+# Full stack disable (test cluster hafif)
+grafana:
+  enabled: false
+alertmanager:
+  enabled: false
+
+# Prometheus — lightweight, remote_write prod
+prometheus:
+  enabled: true
+  prometheusSpec:
+    # Test cluster retention kısa (400 GB disk kısıtı — ADR-0002 §7.1)
+    retention: 6h                      # Test lokal buffer; kalıcı veri prod'a gider
+    retentionSize: "2GB"
+    # Resource ceiling (ADR-0002 §7.2 platform-test.slice)
+    resources:
+      limits:
+        memory: 1Gi
+        cpu: "500m"
+      requests:
+        memory: 256Mi
+        cpu: "100m"
+    # Scrape config — test'teki workload metric'leri
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}        # Tüm ServiceMonitor'ları scrape et
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+    # Remote write prod Prometheus'a
+    # NOT: URL prod cluster ingress veya direct Service; cutover sonrası set edilir
+    # Şimdilik placeholder; PR-next-5 ArgoCD kurulumu sonrası doğru endpoint yazılır.
+    remoteWrite:
+      - url: "http://prometheus-prod-remote-write-receiver.platform-prod.svc.cluster.local:9090/api/v1/write"
+        writeRelabelConfigs:
+          # Test cluster label ekle (prod Grafana'da ayrım için)
+          - sourceLabels: ["__name__"]
+            targetLabel: "cluster"
+            replacement: "test"
+        # Queue config — test bağlantısı koparsa prod'a spam'a gerek yok
+        queueConfig:
+          capacity: 500
+          maxSamplesPerSend: 100
+          batchSendDeadline: "10s"
+    # External labels (remote_write'ta header olarak gider)
+    externalLabels:
+      cluster: "test"
+      environment: "test"
+
+# kube-state-metrics — her zaman aktif (resource sızmaz)
+kube-state-metrics:
+  enabled: true
+  resources:
+    limits:
+      memory: 128Mi
+      cpu: "100m"
+    requests:
+      memory: 32Mi
+      cpu: "25m"
+
+# node-exporter — host metric'leri
+prometheus-node-exporter:
+  enabled: true
+  resources:
+    limits:
+      memory: 64Mi
+      cpu: "100m"
+    requests:
+      memory: 32Mi
+      cpu: "25m"
+
+# Prometheus Operator — CRD yönetimi + ServiceMonitor discovery
+prometheusOperator:
+  enabled: true
+  resources:
+    limits:
+      memory: 256Mi
+      cpu: "200m"
+    requests:
+      memory: 64Mi
+      cpu: "50m"
+  # Admission webhook'ları test'te gereksiz (prod-hub)
+  admissionWebhooks:
+    enabled: false
+
+# Defaults disabled (test-specific scrape yeter)
+defaultRules:
+  create: false                       # Alert rule'lar prod'da; test sadece scrape
+kubeApiServer:
+  enabled: true                       # API server metric'leri test'te kritik
+kubelet:
+  enabled: true
+kubeControllerManager:
+  enabled: false                      # k3d'de composite
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false                      # SQLite in k3d
+
+# Ingress/service expose KAPALI test cluster'da (prod-hub centralize)
+# (test cluster için Prom UI/Grafana ihtiyaç varsa port-forward)
