@@ -1,7 +1,7 @@
 # Session Handoff v4 — 2026-04-19 K8s-6
 
 > **Format:** D28 HARD RULE 5-alan (Bağlam / İddia / İspatlar / İspatlamaz / Bilinen boşluk)
-> **Scope:** 50 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side materyal + Monitoring stack 3 sütun (PromQL + LogQL + TraceQL) + 4 dashboard + 16 recording rule + 7 Day-2 runbook + Repo hygiene + ApplicationSet draft + CHANGELOG + Kyverno admission policy DRAFT (5 ClusterPolicy) + **Cert-manager DRAFT** (D8 Aşama 2 Let's Encrypt HTTP-01) + **On-call playbook 14 alert** (Kyverno + backup alerts)
+> **Scope:** 53 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side materyal + Monitoring stack 3 sütun (PromQL+LogQL+TraceQL) + 4 dashboard + 16 recording rule + 8 Day-2 runbook (security incident response eklendi) + Repo hygiene + ApplicationSet draft + CHANGELOG + Kyverno admission DRAFT + Cert-manager DRAFT + On-call playbook 14 alert + **docs/README.md master index** (24 doc)
 > **Codex thread referans:** `019d9a75-4299-7313-85bb-003a7de680eb` (K8s-6 ana), `019da5f8-9087-73f0-899b-267fa608456e` (iter-2..iter-6 delta retrospective)
 > **No-closure uyarı:** Bu handoff "bugün kapandı/bitti" değil — sürekli ortak devam sürecinde ara rapor.
 
@@ -15,7 +15,7 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 
 ---
 
-## 2. İddia (bugün ne oldu — 50 commit)
+## 2. İddia (bugün ne oldu — 53 commit)
 
 ### 2.1 Seviye 0 — Calico Recovery + testai Edge Fix (2026-04-17)
 
@@ -96,6 +96,9 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 | `1c5e648` | Handoff v4 + CHANGELOG sync 47 commit (Kyverno DRAFT eklendi) |
 | `ead1ee1` | on-call-triage-playbook Kyverno + backup alert mapping (8 → 14 alert + KyvernoPolicyViolation detay 5 dk checklist) |
 | `d9d2d4f` | Cert-manager DRAFT (PLAN D8 Aşama 2) — Let's Encrypt HTTP-01 (helm-values + 2 ClusterIssuer + install-cert-manager.sh + platform-cert-manager Application) |
+| `e2088b9` | Handoff + CHANGELOG sync 50 commit (Kyverno + Cert-manager + on-call playbook) |
+| `07bb0ae` | S5 security incident response runbook (9 bölüm: credential + escape + edge + supply chain + DDoS + exfil + forensics + post-mortem + preventive) |
+| `722b15b` | docs/README.md master index — 24 doc tek sayfa (on-call + deploy + acceptance + day-2 + plan + query + handoff + quick start) |
 
 ---
 
@@ -246,7 +249,7 @@ Kalan repo-side iş potansiyeli — Codex iter-5 + iter-7 zincir ile listeye al�
 ```bash
 # Repo sanity
 cd /Users/halilkocoglu/Documents/platform-k8s-gitops
-git status                                          # clean main'den 50 commit ahead
+git status                                          # clean main'den 53 commit ahead
 git log --oneline main..HEAD | head -5              # son 5 commit
 
 # Kustomize build sanity
