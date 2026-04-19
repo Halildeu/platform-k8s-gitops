@@ -1,0 +1,36 @@
+# D22 CPU bütçesi + memory limit zorunlu
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: Require Resource Limits
+    policies.kyverno.io/category: Platform Governance
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: |
+      D22 CPU bütçesi — her container memory limit ve CPU request zorunlu.
+      Unbounded container K8s node'u OOM'a sürükleyebilir.
+spec:
+  validationFailureAction: audit
+  background: true
+  rules:
+    - name: check-resource-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - platform-test
+                - platform-prod
+      validate:
+        message: "Container resources.limits.memory + resources.requests.cpu zorunlu (D22)."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                resources:
+                  requests:
+                    cpu: "?*"
+                  limits:
+                    memory: "?*"

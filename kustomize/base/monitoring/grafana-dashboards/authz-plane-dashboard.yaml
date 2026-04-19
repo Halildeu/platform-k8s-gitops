@@ -1,0 +1,121 @@
+# Grafana Dashboard ConfigMap — Zanzibar Authz Plane
+# Sidecar provisioner auto-import: label grafana_dashboard=1
+# Source: helm-values/kube-prometheus-stack/values.yaml sidecar.dashboards.enabled: true
+# S3-A3: Monitoring stack visualization (Codex iter-6 yedek iş)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zanzibar-authz-plane-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: grafana-dashboard
+data:
+  authz-plane.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "panels": [
+        {
+          "id": 1,
+          "title": "Permission Service (Hub) Up",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "up{job=\"permission-service\"}", "refId": "A"}],
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {"options": {"0": {"text": "DOWN", "color": "red"}}, "type": "value"},
+                {"options": {"1": {"text": "UP", "color": "green"}}, "type": "value"}
+              ],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}
+            }
+          }
+        },
+        {
+          "id": 2,
+          "title": "OpenFGA Engine Up",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "up{job=\"openfga\"}", "refId": "A"}],
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {"options": {"0": {"text": "DOWN", "color": "red"}}, "type": "value"},
+                {"options": {"1": {"text": "UP", "color": "green"}}, "type": "value"}
+              ],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}
+            }
+          }
+        },
+        {
+          "id": 3,
+          "title": "Active Authz Alerts",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "count(ALERTS{alertname=~\"ZanzibarHubDown|OpenFGADown|ZanzibarEdgeSyntheticFail\",alertstate=\"firing\"})", "refId": "A"}],
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "red", "value": 2}]}
+            }
+          }
+        },
+        {
+          "id": 4,
+          "title": "Hub Request Rate (req/s)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "sum(rate(http_server_requests_seconds_count{application=\"permission-service\"}[5m])) by (uri)", "refId": "A", "legendFormat": "{{uri}}"}],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}}
+        },
+        {
+          "id": 5,
+          "title": "Hub p95 Latency (s)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{application=\"permission-service\"}[5m])))", "refId": "A", "legendFormat": "{{uri}}"}],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+          "fieldConfig": {"defaults": {"unit": "s"}}
+        },
+        {
+          "id": 6,
+          "title": "Hub Pod Restart Count (15m delta)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=~\"platform-(test|prod)\",pod=~\"permission-service-.*\"}[15m]))", "refId": "A", "legendFormat": "{{pod}}"}],
+          "gridPos": {"h": 6, "w": 12, "x": 0, "y": 12}
+        },
+        {
+          "id": 7,
+          "title": "Authz Synthetic Probe Success (external edge)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "probe_success{job=~\"blackbox-(testai|prod)-(deny|health)\"}", "refId": "A", "legendFormat": "{{job}} - {{instance}}"}],
+          "gridPos": {"h": 6, "w": 12, "x": 12, "y": 12},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}}
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": ["platform", "zanzibar", "authz"],
+      "templating": {"list": []},
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "Zanzibar Authz Plane",
+      "uid": "zanzibar-authz-plane",
+      "version": 1,
+      "weekStart": ""
+    }

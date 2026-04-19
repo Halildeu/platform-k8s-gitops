@@ -1,0 +1,76 @@
+# Argo Rollouts — Canary deployment sample (DRAFT)
+# PLAN D30: Prod cutover için atomic switch + 72h warm rollback (weighted YASAK)
+# Bu canary pattern sadece içi servisler için opsiyonel (örn. background job,
+# internal async API). Edge-facing servisler ATOMIC ZORUNLU.
+#
+# Sample: permission-service 10%→25%→50%→100% canary (sadece test cluster, demo)
+# Production'da KULLANMA — D30 HARD RULE ihlali edge servisi için.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: permission-service-canary-sample
+  namespace: platform-test
+  annotations:
+    platform.kubernetes.io/draft: "true"     # DRAFT işaret
+    platform.kubernetes.io/purpose: "demo only — edge servis değil"
+spec:
+  replicas: 2
+  strategy:
+    canary:
+      steps:
+        - setWeight: 10
+        - pause: {duration: 5m}
+        - setWeight: 25
+        - pause: {duration: 10m}
+        - setWeight: 50
+        - pause: {duration: 10m}
+        - setWeight: 100
+      # Analysis template (Prometheus query ile canary PASS kontrolü)
+      analysis:
+        templates:
+          - templateName: success-rate
+        args:
+          - name: service-name
+            value: permission-service-canary
+  selector:
+    matchLabels:
+      app: permission-service-canary-sample
+  template:
+    metadata:
+      labels:
+        app: permission-service-canary-sample
+    spec:
+      containers:
+        - name: permission-service
+          image: ghcr.io/halildeu/platform-ssot-permission-service:sha-3923901
+          ports:
+            - containerPort: 8090
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+---
+# AnalysisTemplate — canary PASS kontrol Prometheus query ile
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: success-rate
+  namespace: platform-test
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: success-rate
+      interval: 1m
+      count: 5
+      successCondition: result[0] >= 0.99
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(http_server_requests_seconds_count{application="{{args.service-name}}",status!~"5.."}[5m]))
+            /
+            sum(rate(http_server_requests_seconds_count{application="{{args.service-name}}"}[5m]))

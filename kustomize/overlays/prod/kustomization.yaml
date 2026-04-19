@@ -9,6 +9,7 @@ kind: Kustomization
 namespace: platform-prod
 
 resources:
+  - namespace.yaml    # Namespace + labels (platform=true env=prod, ApplicationSet prereq)
   - ../../base
 
 images:
@@ -36,47 +37,19 @@ images:
   - name: schema-service
     newName: ghcr.io/halildeu/platform-ssot-schema-service
     newTag: main-stable
+  # 2026-04-19 S1-C15: permission-service IMMUTABLE tag (test overlay S1-C14 ile simetrik).
+  # CI 7-char short SHA konvansiyon: sha-3923901 (merge commit 39239011ba1d).
+  # NOT: Prod overlay APPLY EDİLMİYOR — D32 staging-sw-2 bootstrap sonrası Seviye 4.
+  # Bu satır sadece render hizası + kustomize build kontratı için.
+  - name: permission-service
+    newName: ghcr.io/halildeu/platform-ssot-permission-service
+    newTag: sha-3923901
 
 patches:
-  # ConfigMap: platform-prod namespace
-  - target:
-      kind: ConfigMap
-      name: auth-service-config
-    patch: |-
-      - op: replace
-        path: /data/KEYCLOAK_URL
-        value: "http://keycloak.platform-prod.svc.cluster.local:8080"
-      - op: replace
-        path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres.platform-prod.svc.cluster.local:5432/auth_db"
-  - target:
-      kind: ConfigMap
-      name: api-gateway-config
-    patch: |-
-      - op: replace
-        path: /data/AUTH_SERVICE_URL
-        value: "http://auth-service.platform-prod.svc.cluster.local:8088"
-      - op: replace
-        path: /data/KEYCLOAK_URL
-        value: "http://keycloak.platform-prod.svc.cluster.local:8080"
-      - op: replace
-        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_0_URI
-        value: "http://auth-service.platform-prod.svc.cluster.local:8088"
-      - op: replace
-        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_1_URI
-        value: "http://user-service.platform-prod.svc.cluster.local:8089"
-      - op: replace
-        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_2_URI
-        value: "http://variant-service.platform-prod.svc.cluster.local:8091"
-      - op: replace
-        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_3_URI
-        value: "http://core-data-service.platform-prod.svc.cluster.local:8092"
-      - op: replace
-        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_4_URI
-        value: "http://report-service.platform-prod.svc.cluster.local:8095"
-      - op: replace
-        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_5_URI
-        value: "http://schema-service.platform-prod.svc.cluster.local:8096"
+  # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz replace
+  # patches KALDIRILDI. Base zaten shortname (postgres:5432, keycloak:8080,
+  # auth-service:8088, gateway routes 0-5). Prod-specific override YOK,
+  # overlay sadece namespace (platform-prod) + Ingress host + Endpoints pin.
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:

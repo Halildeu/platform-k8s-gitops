@@ -1,0 +1,111 @@
+# Grafana Dashboard ConfigMap — Day-2 JVM + DB + Hikari Pool
+# Codex iter-7 öneri: 4. dashboard (day-2 ops detay) — authz/pods/edge mevcut üçlüsüne ek.
+# Source: docs/promql-query-pack.md §2.5 JVM heap + §4.1 Hikari pool
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jvm-db-hikari-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: grafana-dashboard
+data:
+  jvm-db-hikari.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "panels": [
+        {
+          "id": 1,
+          "title": "JVM Heap Usage % (heap_used / heap_max)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "100 * sum by (pod) (jvm_memory_used_bytes{area=\"heap\",namespace=~\"platform-(test|prod)\"}) / sum by (pod) (jvm_memory_max_bytes{area=\"heap\",namespace=~\"platform-(test|prod)\"})", "refId": "A", "legendFormat": "{{pod}}"}],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}}
+        },
+        {
+          "id": 2,
+          "title": "JVM GC Pause p95 (ms)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "1000 * histogram_quantile(0.95, sum by (le, pod) (rate(jvm_gc_pause_seconds_bucket[5m])))", "refId": "A", "legendFormat": "{{pod}}"}],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "ms", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 100}, {"color": "red", "value": 500}]}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}}
+        },
+        {
+          "id": 3,
+          "title": "JVM Thread Count",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "jvm_threads_live_threads{namespace=~\"platform-(test|prod)\"}", "refId": "A", "legendFormat": "{{pod}}"}],
+          "gridPos": {"h": 6, "w": 12, "x": 0, "y": 8},
+          "options": {"legend": {"displayMode": "list", "placement": "right"}}
+        },
+        {
+          "id": 4,
+          "title": "JVM Classes Loaded",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "jvm_classes_loaded_classes{namespace=~\"platform-(test|prod)\"}", "refId": "A", "legendFormat": "{{pod}}"}],
+          "gridPos": {"h": 6, "w": 12, "x": 12, "y": 8},
+          "options": {"legend": {"displayMode": "list", "placement": "right"}}
+        },
+        {
+          "id": 5,
+          "title": "Hikari Pool Active Connections",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "hikaricp_connections_active{namespace=~\"platform-(test|prod)\"}", "refId": "A", "legendFormat": "{{pod}} active"},
+            {"expr": "hikaricp_connections_max{namespace=~\"platform-(test|prod)\"}", "refId": "B", "legendFormat": "{{pod}} max"}
+          ],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}}
+        },
+        {
+          "id": 6,
+          "title": "Hikari Connection Timeout Rate (/s)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "rate(hikaricp_connections_timeout_total{namespace=~\"platform-(test|prod)\"}[5m])", "refId": "A", "legendFormat": "{{pod}}"}],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.01}, {"color": "red", "value": 0.1}]}}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}}
+        },
+        {
+          "id": 7,
+          "title": "Hikari Pending Connection Requests",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "hikaricp_connections_pending{namespace=~\"platform-(test|prod)\"}", "refId": "A", "legendFormat": "{{pod}}"}],
+          "gridPos": {"h": 6, "w": 12, "x": 0, "y": 22}
+        },
+        {
+          "id": 8,
+          "title": "Hikari Connection Acquire Duration p95 (ms)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "1000 * histogram_quantile(0.95, sum by (le, pod) (rate(hikaricp_connections_acquire_seconds_bucket[5m])))", "refId": "A", "legendFormat": "{{pod}}"}],
+          "gridPos": {"h": 6, "w": 12, "x": 12, "y": 22},
+          "fieldConfig": {"defaults": {"unit": "ms"}}
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": ["platform", "jvm", "db", "hikari", "day-2"],
+      "templating": {"list": []},
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "JVM + DB + Hikari (Day-2 Ops)",
+      "uid": "jvm-db-hikari",
+      "version": 1,
+      "weekStart": ""
+    }

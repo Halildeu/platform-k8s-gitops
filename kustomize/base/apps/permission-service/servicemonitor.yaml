@@ -1,0 +1,20 @@
+# Prometheus Operator ServiceMonitor — D27 upstream pattern (annotation YOK)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: permission-service
+  labels:
+    release: kube-prometheus-stack   # Prom Operator bu label ile filtreler
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: permission-service
+  endpoints:
+    - port: management          # 8081 actuator port (auth'suz)
+      path: /actuator/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - platform-prod
+      - platform-test

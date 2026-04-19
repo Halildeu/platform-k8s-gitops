@@ -1,0 +1,36 @@
+# ESO Base — D9 ExternalSecret + Vault ClusterSecretStore
+# S2-B1: ghcr-pull ExternalSecret (W1 kalıcı çözüm)
+# Source: docs/handoff-S2-B-artifact-hardening.md
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: external-secrets    # overlay'de namespace override mümkün
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: platform
+      app.kubernetes.io/component: eso
+    includeSelectors: false
+    includeTemplates: false
+
+resources:
+  - clustersecretstore-vault.yaml
+  # ghcr-pull ExternalSecret overlay-specific — base/eso kustomization
+  # namespace=external-secrets zorlar (ClusterSecretStore için gerekli),
+  # ama ExternalSecret workload ns'inde (platform-test/platform-prod) olmalı
+  # ki Secret ServiceAccount imagePullSecrets referansı ile uyumlu olsun.
+  # (Codex iter-4 REVISE + iter-5 AGREE Opsiyon B, 2026-04-19).
+  # Per-service ExternalSecret (auth-service-secrets, user-service-secrets,
+  # permission-service-secrets) base/apps/<svc>/externalsecret.yaml altında
+  # (namespace HARDCODE YOK, overlay namespace set eder; W1 drift'ine sahip
+  # değil — intended apply overlay üzerinden).
+
+# Apply: ESO install sonrasi (helm-values/external-secrets)
+#
+# UYARI: Base'i DOĞRUDAN apply ETMEYİN — ClusterSecretStore placeholder
+# FQDN içerir (OVERLAY_MUST_OVERRIDE). Her zaman overlay kullanın:
+#   kubectl apply -k kustomize/overlays/test/eso    # test cluster (k3d-test)
+#   kubectl apply -k kustomize/overlays/prod/eso    # prod cluster (staging-sw-2)
+#
+# Codex iter-2 AGREE (2026-04-19): test/prod Vault izolasyonu için overlay
+# split zorunlu; base tek Vault FQDN sabitlemez.

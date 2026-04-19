@@ -1,0 +1,48 @@
+# PostgreSQL prod instance — staging-sw-2 D32
+# Fresh prod, staging-sw (eski test) compose'undan FORK — data migration YOK.
+# Backup: bootstrap/backup-freshness-exporter.sh + cron pg_dumpall
+# Port: 5432 (host'ta port map yok — K8s cluster Endpoints 10.9.10.53:5432)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: platform-postgres-db-prod
+    restart: unless-stopped
+    ports:
+      - "10.9.10.53:5432:5432"   # Host bind IP (D20) — K8s cluster bu IP'e bağlanır
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+      POSTGRES_DB: postgres
+      # DB'ler bootstrap/install-on-staging-sw-2.sh F3.4 ile yaratılır (stdin pipe)
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro   # opsiyonel init scripts
+    secrets:
+      - pg_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    # D22 kaynak sınırları
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.0"
+
+volumes:
+  pg-data:
+    # Named volume — Docker yönetir, backup /var/lib/docker/volumes/*/pg-data
+    # Backup: pg_dumpall (docs/S5-disaster-recovery-runbook.md)
+
+secrets:
+  pg_password:
+    file: ./secrets/pg_password.txt   # chmod 600 + .gitignore

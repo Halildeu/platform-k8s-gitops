@@ -1,0 +1,135 @@
+# PrometheusRule — Recording Rules (pre-compute expensive queries)
+# Source: docs/promql-query-pack.md §1-4
+# Grafana dashboard'ları bu recording rule'ları referans eder → query daha hızlı
+# ve alert expr'larında tekrar kullanılır (tek yerde tanım).
+#
+# Naming: <level>:<metric>:<operation>
+#   platform = platform-level aggregation
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-recording-rules
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: platform.hub.rate
+      interval: 30s
+      rules:
+        - record: platform:hub:requests:rate5m
+          expr: |
+            sum by (uri) (
+              rate(http_server_requests_seconds_count{application="permission-service"}[5m])
+            )
+
+        - record: platform:hub:requests:p95
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le, uri)
+                (rate(http_server_requests_seconds_bucket{application="permission-service"}[5m]))
+            )
+
+        - record: platform:hub:errors:ratio
+          expr: |
+            sum(rate(http_server_requests_seconds_count{application="permission-service",status=~"5.."}[5m]))
+            /
+            sum(rate(http_server_requests_seconds_count{application="permission-service"}[5m]))
+
+    - name: platform.gateway.rate
+      interval: 30s
+      rules:
+        - record: platform:gateway:p95
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le)
+                (rate(http_server_requests_seconds_bucket{application="api-gateway"}[5m]))
+            )
+
+        - record: platform:gateway:requests:rate5m
+          expr: |
+            sum by (uri)
+              (rate(http_server_requests_seconds_count{application="api-gateway"}[5m]))
+
+    - name: platform.edge.rate
+      interval: 30s
+      rules:
+        - record: platform:edge:5xx_ratio
+          expr: |
+            sum(rate(nginx_ingress_controller_requests{ingress="platform",status=~"5.."}[5m]))
+            /
+            sum(rate(nginx_ingress_controller_requests{ingress="platform"}[5m]))
+
+        - record: platform:edge:requests:rate5m
+          expr: |
+            sum(rate(nginx_ingress_controller_requests{ingress="platform"}[5m]))
+
+    - name: platform.pods.status
+      interval: 30s
+      rules:
+        - record: platform:pods:not_ready
+          expr: |
+            count(
+              kube_pod_status_ready{namespace=~"platform-(test|prod)",condition="true"} == 0
+            )
+
+        - record: platform:pods:restart:rate15m
+          expr: |
+            sum by (pod, namespace) (
+              increase(kube_pod_container_status_restarts_total{namespace=~"platform-(test|prod)"}[15m])
+            )
+
+        - record: platform:pods:memory:usage_ratio
+          expr: |
+            sum by (pod) (container_memory_working_set_bytes{namespace=~"platform-(test|prod)",container!="POD"})
+            /
+            sum by (pod) (container_spec_memory_limit_bytes{namespace=~"platform-(test|prod)",container!="POD"})
+
+        - record: platform:pods:cpu:throttle_ratio
+          expr: |
+            sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{namespace=~"platform-(test|prod)"}[5m]))
+            /
+            sum by (pod) (rate(container_cpu_cfs_periods_total{namespace=~"platform-(test|prod)"}[5m]))
+
+    - name: platform.jvm.stats
+      interval: 30s
+      rules:
+        - record: platform:jvm:heap:ratio
+          expr: |
+            100 * sum by (pod) (jvm_memory_used_bytes{area="heap",namespace=~"platform-(test|prod)"})
+            /
+            sum by (pod) (jvm_memory_max_bytes{area="heap",namespace=~"platform-(test|prod)"})
+
+        - record: platform:jvm:gc:p95_ms
+          expr: |
+            1000 * histogram_quantile(0.95,
+              sum by (le, pod) (rate(jvm_gc_pause_seconds_bucket[5m]))
+            )
+
+    - name: platform.hikari.stats
+      interval: 30s
+      rules:
+        - record: platform:hikari:pool:active_ratio
+          expr: |
+            hikaricp_connections_active{namespace=~"platform-(test|prod)"}
+            /
+            hikaricp_connections_max{namespace=~"platform-(test|prod)"}
+
+        - record: platform:hikari:timeout:rate5m
+          expr: |
+            rate(hikaricp_connections_timeout_total{namespace=~"platform-(test|prod)"}[5m])
+
+    - name: platform.synthetic.probe
+      interval: 30s
+      rules:
+        - record: platform:probe:success_ratio_5m
+          expr: |
+            avg_over_time(probe_success{job=~"blackbox-(testai|prod)-(deny|health)"}[5m])
+
+        - record: platform:probe:duration:p95
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le, job) (rate(probe_duration_seconds_bucket[5m]))
+            )

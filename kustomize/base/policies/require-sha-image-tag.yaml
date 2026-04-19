@@ -1,0 +1,37 @@
+# D30 HARD RULE — Immutable Artifact (sha-<short> veya digest pin)
+# moving tag (latest, main-stable, dev) yasak platform-* ns'de.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-sha-image-tag
+  annotations:
+    policies.kyverno.io/title: Require sha-<short> or digest pin image tag
+    policies.kyverno.io/category: Platform Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: |
+      D30 HARD RULE — Pod container image tag sha-<short> (örn. sha-3923901)
+      veya full digest pin (@sha256:...) zorunlu. Moving tag (latest/main-stable/dev)
+      yasak. CI (closure-language-check) paralel; K8s admission seviyesi
+      defense-in-depth.
+spec:
+  validationFailureAction: audit    # Prod'da 'enforce'a geç sonra
+  background: true
+  rules:
+    - name: check-image-tag
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - platform-test
+                - platform-prod
+      validate:
+        message: |
+          Container image moving tag YASAK (D30 HARD RULE). sha-<short>
+          veya @sha256:digest pin zorunlu. Örnek kabul: ghcr.io/...:sha-3923901
+          veya ghcr.io/...@sha256:abc123...
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest & !*:main-stable & !*:dev & !*:main"

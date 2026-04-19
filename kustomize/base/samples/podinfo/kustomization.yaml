@@ -1,0 +1,20 @@
+# Podinfo — cluster sanity test sample app (stefanprodan/podinfo)
+# Amaç: Yeni cluster/bootstrap'ta edge zinciri (TLS + host nginx + ingress-nginx +
+# cluster route + pod) hızlı doğrulama — platform manifest'leri deploy etmeden.
+# Apply: kubectl apply -k kustomize/base/samples/podinfo -n platform-<env>
+# Cleanup: kubectl delete -k kustomize/base/samples/podinfo -n platform-<env>
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: podinfo
+      app.kubernetes.io/part-of: platform
+      app.kubernetes.io/component: sample
+    includeSelectors: false
+    includeTemplates: false

@@ -1,0 +1,23 @@
+# ClusterIssuer — Let's Encrypt STAGING (rate limit 50 cert/week, test için)
+# HTTP-01 challenge via ingress-nginx
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  labels:
+    app.kubernetes.io/part-of: platform
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: halildeu@gmail.com     # CSR contact (user ops email)
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+            podTemplate:
+              spec:
+                # Challenge pod cpu/memory request (idempotent, kısa süreli)
+                nodeSelector:
+                  kubernetes.io/os: linux

@@ -1,0 +1,142 @@
+# Grafana Dashboard ConfigMap — Edge Synthetic (blackbox probes + nginx edge)
+# Sidecar provisioner auto-import: label grafana_dashboard=1
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zanzibar-edge-synthetic-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: grafana-dashboard
+data:
+  edge-synthetic.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "panels": [
+        {
+          "id": 1,
+          "title": "testai.acik.com Edge Deny Probe",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "probe_success{job=\"blackbox-testai-deny\"}", "refId": "A", "legendFormat": "{{instance}}"}],
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "options": {"colorMode": "background", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {"options": {"0": {"text": "FAIL", "color": "red"}}, "type": "value"},
+                {"options": {"1": {"text": "PASS", "color": "green"}}, "type": "value"}
+              ],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}
+            }
+          }
+        },
+        {
+          "id": 2,
+          "title": "testai.acik.com Edge Health Probe",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "probe_success{job=\"blackbox-testai-health\"}", "refId": "A", "legendFormat": "{{instance}}"}],
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "options": {"colorMode": "background", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {"options": {"0": {"text": "FAIL", "color": "red"}}, "type": "value"},
+                {"options": {"1": {"text": "PASS", "color": "green"}}, "type": "value"}
+              ],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}
+            }
+          }
+        },
+        {
+          "id": 3,
+          "title": "ai.acik.com Edge Deny Probe (prod)",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "probe_success{job=\"blackbox-prod-deny\"}", "refId": "A", "legendFormat": "{{instance}}"}],
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "options": {"colorMode": "background", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {"options": {"0": {"text": "FAIL (pre-cutover normal)", "color": "yellow"}}, "type": "value"},
+                {"options": {"1": {"text": "PASS", "color": "green"}}, "type": "value"}
+              ],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "yellow", "value": null}, {"color": "green", "value": 1}]}
+            }
+          }
+        },
+        {
+          "id": 4,
+          "title": "ai.acik.com Edge Health Probe (prod)",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "probe_success{job=\"blackbox-prod-health\"}", "refId": "A", "legendFormat": "{{instance}}"}],
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+          "options": {"colorMode": "background", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {"options": {"0": {"text": "FAIL (pre-cutover normal)", "color": "yellow"}}, "type": "value"},
+                {"options": {"1": {"text": "PASS", "color": "green"}}, "type": "value"}
+              ],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "yellow", "value": null}, {"color": "green", "value": 1}]}
+            }
+          }
+        },
+        {
+          "id": 5,
+          "title": "Probe Duration p95 (s)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "histogram_quantile(0.95, sum by (le, job) (rate(probe_duration_seconds_bucket{job=~\"blackbox-(testai|prod)-(deny|health)\"}[5m])))", "refId": "A", "legendFormat": "{{job}}"}],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+          "fieldConfig": {"defaults": {"unit": "s"}},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}}
+        },
+        {
+          "id": 6,
+          "title": "Probe HTTP Status Code",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "probe_http_status_code{job=~\"blackbox-(testai|prod)-(deny|health)\"}", "refId": "A", "legendFormat": "{{job}} {{instance}}"}],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}}
+        },
+        {
+          "id": 7,
+          "title": "Edge 5xx Ratio (prod ingress-nginx)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "(sum(rate(nginx_ingress_controller_requests{ingress=\"platform\",status=~\"5..\"}[5m])) / sum(rate(nginx_ingress_controller_requests{ingress=\"platform\"}[5m])))", "refId": "A", "legendFormat": "5xx ratio"}],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.005}, {"color": "red", "value": 0.01}]}}}
+        },
+        {
+          "id": 8,
+          "title": "Gateway p95 Latency (prod)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{application=\"api-gateway\"}[5m])))", "refId": "A", "legendFormat": "p95"}],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+          "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "red", "value": 2}]}}}
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": ["platform", "edge", "synthetic"],
+      "templating": {"list": []},
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "Zanzibar Edge Synthetic",
+      "uid": "zanzibar-edge-synthetic",
+      "version": 1,
+      "weekStart": ""
+    }

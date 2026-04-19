@@ -33,14 +33,31 @@ controller:
     patch:
       enabled: true
 
-  # Metrics (prom scrape için etiketler)
+  # Metrics (prom scrape için etiketler) — EdgeHigh5xxRatio + gateway p95 alert'leri
+  # bu metriklere bağlı. PrometheusRule: kustomize/base/monitoring/zanzibar-stability-rule.yaml
   metrics:
     enabled: true
+    service:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "10254"
+      labels:
+        release: kube-prometheus-stack   # ServiceMonitor selector match
     serviceMonitor:
-      enabled: false        # monitoring kurulunca true yapılacak
+      enabled: true
+      namespaceSelector:
+        matchNames:
+          - ingress-nginx
+      additionalLabels:
+        release: kube-prometheus-stack   # kube-prometheus-stack Prometheus CR ruleSelector eşleşir
+      # Default scrape interval 30s
 
   # Default config
   config:
+    # Güvenlik
+    server-tokens: "false"                    # nginx version header gizle (info sızma)
+    hide-headers: "x-powered-by,x-aspnet-version"
+    # Proxy davranışı
     use-forwarded-headers: "true"           # X-Forwarded-* guven (host nginx'den gelir)
     compute-full-forwarded-for: "true"
     use-proxy-protocol: "false"
@@ -50,6 +67,7 @@ controller:
     enable-real-ip: "true"
     # Tek trusted proxy: host nginx (container network gateway)
     forwarded-for-header: "X-Forwarded-For"
+    # Log formatı (Loki promtail scrape için JSON)
     log-format-escape-json: "true"
     log-format-upstream: '{"time":"$time_iso8601","req":"$request","status":$status,"host":"$host","upstream":"$upstream_addr","rt":$request_time,"urt":$upstream_response_time,"len":$body_bytes_sent,"ua":"$http_user_agent","ref":"$http_referer","ip":"$remote_addr","fwd":"$http_x_forwarded_for"}'
 

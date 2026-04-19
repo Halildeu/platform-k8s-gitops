@@ -1,0 +1,46 @@
+# ArgoCD ApplicationSet — Multi-cluster ESO overlay sync
+# Pattern: cluster generator + label-based selector
+# Apply: D32 sonrası ArgoCD multi-cluster mode
+# DRAFT: şu an tek Application (platform-eso-test + platform-eso-prod) yeterli.
+#
+# Prereq (aktivasyon sırasında):
+#   - Cluster secret label: platform=true + env=test|prod
+#   - argocd/applications/platform-eso-test.yaml + platform-eso-prod.yaml SILINMIŞ
+#   - Vault ClusterSecretStore overlay FQDN per-cluster (test: vault.platform-test.svc,
+#     prod: vault.platform-prod.svc) — zaten overlays/<env>/eso/clustersecretstore-patch.yaml
+#     ile sağlanıyor.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform-eso
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+spec:
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            platform: "true"
+  template:
+    metadata:
+      name: 'platform-eso-{{metadata.labels.env}}'
+      labels:
+        app.kubernetes.io/part-of: platform
+        app.kubernetes.io/cluster: '{{metadata.labels.env}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/Halildeu/platform-k8s-gitops.git
+        targetRevision: main
+        path: 'kustomize/overlays/{{metadata.labels.env}}/eso'
+      destination:
+        server: '{{server}}'
+        namespace: external-secrets
+      syncPolicy:
+        automated:
+          prune: false       # ClusterSecretStore silinmesi risk — manuel temizlik
+          selfHeal: '{{- if eq .metadata.labels.env "prod" -}}false{{- else -}}true{{- end -}}'
+        syncOptions:
+          - CreateNamespace=false   # external-secrets ns Helm tarafından
+          - ServerSideApply=true

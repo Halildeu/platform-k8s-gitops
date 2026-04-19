@@ -1,0 +1,16 @@
+# cert-manager ClusterIssuer — Let's Encrypt staging + prod
+# Apply: helm install cert-manager sonrası
+#   kubectl apply -k kustomize/base/cert-manager
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - clusterissuer-letsencrypt-staging.yaml
+  - clusterissuer-letsencrypt-prod.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: platform
+      app.kubernetes.io/component: cert-manager
+    includeSelectors: false
+    includeTemplates: false

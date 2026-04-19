@@ -7,7 +7,7 @@ data:
   # Host-level bağımlılıklar — Service+Endpoints (D19) üzerinden
   # Spring Boot convention env: SPRING_DATASOURCE_URL, SPRING_DATASOURCE_USERNAME,
   # SPRING_DATASOURCE_PASSWORD (username/password Secret'tan gelir)
-  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres.PLACEHOLDER_NS.svc.cluster.local:5432/users_db"
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/users_db"
 
   # Spring Boot
   SERVER_PORT: "8089"
@@ -31,6 +31,13 @@ data:
   EUREKA_CLIENT_ENABLED: "false"
   SPRING_CLOUD_DISCOVERY_ENABLED: "false"
   SPRING_CLOUD_SERVICE_REGISTRY_AUTO_REGISTRATION_ENABLED: "false"
+
+  # Zanzibar runtime (D-003 TRANSFORMED, 2026-04-19 K8s-6 Seviye 1)
+  # OpenFgaAuthzConfig direct engine + permission-service /authz/version polling
+  # Intra-ns shortname (Codex S1-D5.5 ping-pong Seçenek B uzlaşı, MINIMAL scope)
+  PERMISSION_SERVICE_BASE_URL: "http://permission-service:8090"
+  ERP_OPENFGA_ENABLED: "true"
+  ERP_OPENFGA_API_URL: "http://openfga:8080"
 
   # Tracing (Tempo için; base'de kapalı, monitoring kurulunca aç)
   MANAGEMENT_TRACING_ENABLED: "false"

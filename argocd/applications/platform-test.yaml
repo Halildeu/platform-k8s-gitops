@@ -1,0 +1,38 @@
+# ArgoCD Application — platform-test overlay sync
+# S2-C2: test cluster overlay GitOps yönetimi (opsiyonel — dev ergonomics)
+# NOT: Test cluster için ArgoCD multi-cluster kayıt gerekli:
+#   argocd cluster add k3d-test --name test-cluster
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-test
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Halildeu/platform-k8s-gitops.git
+    targetRevision: main
+    path: kustomize/overlays/test
+  destination:
+    name: test-cluster       # argocd cluster add k3d-test --name test-cluster
+    namespace: platform-test
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  ignoreDifferences:
+    # Scale-to-zero (D17) — test-toggle.sh ile 1'e çekildiğinde ArgoCD drift düzeltmesin
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    # OpenFGA StatefulSet (aynı scale-to-zero)
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/replicas

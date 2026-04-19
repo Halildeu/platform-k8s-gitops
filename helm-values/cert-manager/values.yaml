@@ -1,0 +1,46 @@
+# cert-manager — automated TLS cert (Let's Encrypt HTTP-01)
+# PLAN D8 Aşama 2: Manuel Sectigo paralel; cert-manager Faz 12'de devreye alınır.
+# DRAFT: şu an kurulmamış; bootstrap/install-cert-manager.sh ile aktif olur.
+
+installCRDs: true
+
+replicaCount: 1
+
+resources:
+  requests:
+    memory: 64Mi
+    cpu: 10m
+  limits:
+    memory: 256Mi
+    cpu: 500m
+
+webhook:
+  replicaCount: 1
+  resources:
+    requests:
+      memory: 32Mi
+      cpu: 10m
+    limits:
+      memory: 128Mi
+
+cainjector:
+  replicaCount: 1
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 10m
+    limits:
+      memory: 256Mi
+
+# Prometheus metrics
+prometheus:
+  enabled: true
+  servicemonitor:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+
+# Security
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false

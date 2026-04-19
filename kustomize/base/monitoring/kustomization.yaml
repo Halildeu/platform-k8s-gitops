@@ -1,0 +1,32 @@
+# Monitoring base — kustomize
+# S3-A pack: PrometheusRule + BlackboxExporter + Probe CRs
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Namespace monitoring (prod cluster) — overlay'de namespace override olabilir
+namespace: monitoring
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: platform
+      app.kubernetes.io/component: monitoring
+    includeSelectors: false
+    includeTemplates: false
+
+resources:
+  - zanzibar-stability-rule.yaml
+  - blackbox-exporter.yaml
+  - backup-freshness-rule.yaml    # Codex iter-8 day-2 ek — backup_last_success metric + 5 alert
+  - recording-rules.yaml          # Pre-compute expensive PromQL (Grafana + alert hızlandırma)
+  # Grafana dashboard ConfigMap'ler — kube-prometheus-stack sidecar provisioner
+  # otomatik import (label grafana_dashboard=1). Helm values
+  # helm-values/kube-prometheus-stack/values.yaml sidecar.dashboards.enabled: true.
+  - grafana-dashboards/authz-plane-dashboard.yaml
+  - grafana-dashboards/platform-pods-dashboard.yaml
+  - grafana-dashboards/edge-synthetic-dashboard.yaml
+  - grafana-dashboards/jvm-db-hikari-dashboard.yaml     # Codex iter-7 day-2 4. dashboard
+
+# Kullanım:
+# Apply sadece S3 session'da (testai soak başlangıcı öncesi):
+#   kubectl --context k3d-prod apply -k kustomize/base/monitoring
+# Veya overlay üzerinden (prod cluster için namespace=monitoring zaten default)

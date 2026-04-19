@@ -1,0 +1,35 @@
+# Argo Rollouts — advanced deployment strategies (canary, blue-green)
+# DRAFT: PLAN D30 prod cutover için YASAK (atomic switch + 72h warm rollback).
+# Servis-bazlı iç trafik için opsiyonel (örn. internal async service canary).
+# Apply: bootstrap/install-argo-rollouts.sh (ileride)
+
+replicas: 1
+
+resources:
+  requests:
+    memory: 128Mi
+    cpu: 100m
+  limits:
+    memory: 256Mi
+    cpu: 500m
+
+# Metrics (Prometheus scrape)
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: kube-prometheus-stack
+
+# Notifications (Slack/email opsiyonel)
+notifications:
+  notifiers: {}
+
+# RBAC
+rbac:
+  create: true
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false

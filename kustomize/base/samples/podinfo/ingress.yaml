@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: podinfo
+  annotations:
+    # ingress-nginx class default (nginx)
+    # Cluster sanity — TLS Sectigo wildcard acik.com (overlay'de cert Secret mount)
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: podinfo.testai.acik.com    # Prod için podinfo.ai.acik.com — wildcard *.acik.com cert
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: podinfo
+                port:
+                  number: 9898
+  tls:
+    - hosts:
+        - podinfo.testai.acik.com
+      secretName: wildcard-acik-com-tls

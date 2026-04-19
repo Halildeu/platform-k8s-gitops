@@ -1,0 +1,15 @@
+# ESO prod overlay — k3d-prod (staging-sw-2 D32 prod Vault)
+# Base'deki placeholder ClusterSecretStore FQDN'ini prod Vault'a çevirir.
+# Apply: kubectl --context k3d-prod apply -k kustomize/overlays/prod/eso
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../base/eso
+  - externalsecret-ghcr-pull.yaml    # platform-prod ns (W1 Opsiyon B)
+
+patches:
+  - target:
+      kind: ClusterSecretStore
+      name: vault-platform-gitops
+    path: clustersecretstore-patch.yaml

@@ -1,0 +1,40 @@
+# ArgoCD root.yaml — app-of-apps kök
+# Source: docs/S2-C-argocd-install-plan.md
+# Apply: S2-C2 session, ArgoCD install sonrasi
+#   kubectl --context k3d-prod apply -f argocd/applications/root.yaml
+# Codex Tur 1: "ArgoCD MVP'de sadece prod cluster yönetsin" — prod-only hub
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  # Finalizer ile cascade delete (app-of-apps kök silindiğinde child uygulamalar da silinir)
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Halildeu/platform-k8s-gitops.git
+    targetRevision: main
+    path: argocd/applications
+    directory:
+      recurse: false
+      # Exclude pattern (PROD ROOT — sadece prod hub app'leri):
+      # - root.yaml kendini include etmesin (recursive loop)
+      # - platform-test.yaml + platform-eso-test.yaml: test cluster app'leri
+      #   (Codex PR #1 iter-10 tespit — prod root test app'leri sweep ederse
+      #    test overlay prod hub'a push edilir, D30 + cluster isolation ihlal)
+      # - platform-policies.yaml + platform-cert-manager.yaml: DRAFT (CRD
+      #   install edilmeden apply fail)
+      # Test cluster ArgoCD ayrı kurulursa (S2-C1) test app'ler o instance'a
+      # eklenir — prod root'ta YERİ YOK.
+      exclude: '{root.yaml,platform-test.yaml,platform-eso-test.yaml,platform-policies.yaml,platform-cert-manager.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true        # Git'te silinmiş Application CR'lar cluster'dan silinir
+      selfHeal: true     # Cluster drift otomatik düzeltilir
+    syncOptions:
+      - CreateNamespace=true

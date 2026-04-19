@@ -1,0 +1,166 @@
+# PrometheusRule — Zanzibar Stability Gözlem (S3-A1)
+# Source: docs/S3-stability-soak-pack.md (2026-04-19 K8s-6 S3 pack)
+# Apply: S3 session (testai soak başlangıcı)
+# kube-prometheus-stack Prometheus CR `ruleSelector` bu `release` label'ı ile eşleşir
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: zanzibar-stability
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack   # Prom Operator selector
+spec:
+  groups:
+    - name: zanzibar.hub
+      interval: 30s
+      rules:
+        # 2026-04-19 Codex iter-2 AGREE C-1: up{permission-service} + up{openfga}
+        # metric'leri sadece SAME-CLUSTER Prometheus scrape edebilir. Test cluster
+        # için Prometheus federation S3 scope dışı — test cluster local truth
+        # kubectl-direct smoke ile (prod → test peering GEREKSİZ).
+        - alert: ZanzibarHubDown
+          expr: up{job="permission-service"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: authz-hub
+            cluster_scope: same-cluster    # her cluster kendi hub'ını izler
+          annotations:
+            summary: "Permission-service (Zanzibar hub) DOWN"
+            description: "permission-service 2+ dk yanıt vermiyor. Authz plane aktif değil."
+            runbook_url: "docs/S3-stability-soak-pack.md#2-synthetic-authz-probe"
+
+        - alert: OpenFGADown
+          expr: up{job="openfga"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: authz-engine
+            cluster_scope: same-cluster
+          annotations:
+            summary: "OpenFGA engine DOWN"
+
+        - alert: ZanzibarEdgeSyntheticFail
+          # External edge probe (testai + prod) fail — authoritative edge kaybı.
+          # 4 probe: blackbox-testai-deny, blackbox-testai-health,
+          #          blackbox-prod-deny, blackbox-prod-health
+          expr: probe_success{job=~"blackbox-(testai|prod)-(deny|health)"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            component: edge-synthetic
+          annotations:
+            summary: "External edge (testai/prod) synthetic probe fail"
+            description: "testai.acik.com veya ai.acik.com edge zinciri (TLS + host nginx + ingress + gateway) sağlık kaybı. D29 authoritative entrypoint."
+
+    - name: zanzibar.pods
+      interval: 30s
+      # 2026-04-19 Codex iter-2 AGREE C-1: kube-state-metrics sadece SAME-CLUSTER.
+      # Test cluster Prometheus YOK — bu alertler prod cluster'da platform-prod
+      # namespace için çalışır. Test cluster pod sağlığı kubectl-direct veya
+      # test cluster'a ayrı Prometheus (S3 scope dışı) gerektirir.
+      rules:
+        - alert: PlatformPodRestartSpike
+          expr: |
+            sum by (pod, namespace) (
+              increase(kube_pod_container_status_restarts_total{namespace=~"platform-(test|prod)"}[15m])
+            ) > 0
+          for: 1m
+          labels:
+            severity: warning
+            component: platform-pods
+            cluster_scope: same-cluster
+          annotations:
+            summary: "Unexpected restart {{ $labels.namespace }}/{{ $labels.pod }}"
+
+        - alert: PlatformPodNotReady
+          expr: |
+            sum by (pod, namespace) (
+              kube_pod_status_ready{namespace=~"platform-(test|prod)", condition="true"} == 0
+            ) > 0
+          for: 5m
+          labels:
+            severity: warning
+            component: platform-pods
+            cluster_scope: same-cluster
+          annotations:
+            summary: "Pod not ready {{ $labels.namespace }}/{{ $labels.pod }}"
+
+    - name: zanzibar.cni
+      interval: 30s
+      rules:
+        - alert: CNINodeNotReady
+          expr: |
+            sum(kube_pod_status_ready{namespace="calico-system",pod=~"calico-node-.*",condition="true"} == 0) > 0
+          for: 2m
+          labels:
+            severity: critical
+            component: cni
+          annotations:
+            summary: "Calico CNI node NOT READY"
+            description: "Pod network etkilenebilir (2026-04-17 recovery pattern)."
+
+    - name: zanzibar.cert
+      interval: 5m
+      rules:
+        # SSL cert expire alert — blackbox probe probe_ssl_earliest_cert_expiry metric'inden
+        # testai + prod edge health probe'ları cert detay çıkarır.
+        - alert: SSLCertExpireWarning
+          expr: (probe_ssl_earliest_cert_expiry{job=~"blackbox-(testai|prod)-health"} - time()) / 86400 < 30
+          for: 10m
+          labels:
+            severity: warning
+            component: cert
+          annotations:
+            summary: "SSL cert <30 gün expire ({{ $labels.job }})"
+            description: "Sectigo wildcard *.acik.com renewal başlatın. docs/S5-cert-renewal-runbook.md"
+
+        - alert: SSLCertExpireCritical
+          expr: (probe_ssl_earliest_cert_expiry{job=~"blackbox-(testai|prod)-health"} - time()) / 86400 < 7
+          for: 10m
+          labels:
+            severity: critical
+            component: cert
+          annotations:
+            summary: "SSL cert <7 gün expire ({{ $labels.job }}) — ACIL renewal"
+            description: "Sectigo cert yenilemesi 7 gün içinde aşılacak. docs/S5-cert-renewal-runbook.md"
+
+    - name: zanzibar.edge
+      interval: 30s
+      # 2026-04-19 Codex AR4 WARN: ingress-nginx metrics test cluster'da DISABLED
+      # (helm-values/ingress-nginx/values-test.yaml controller.metrics.enabled: false).
+      # EdgeHigh5xxRatio + EdgeHighLatency alertleri **prod-only**. Test cluster için
+      # authoritative alternatif: blackbox synthetic authz probe (zanzibar-authz-synthetic.yaml
+      # ZanzibarAuthzSyntheticFail alert) — prod da dahil.
+      # Apply ns: monitoring (prod cluster). Prod ingress-nginx metrics ENABLED olmalı
+      # (helm-values/ingress-nginx/values.yaml — values-test DEĞİL).
+      rules:
+        - alert: EdgeHigh5xxRatio
+          expr: |
+            (
+              sum(rate(nginx_ingress_controller_requests{ingress="platform",status=~"5.."}[5m]))
+              / sum(rate(nginx_ingress_controller_requests{ingress="platform"}[5m]))
+            ) > 0.01
+          for: 15m
+          labels:
+            severity: critical
+            component: edge
+            cluster_scope: prod-only   # test cluster metric YOK
+          annotations:
+            summary: "Edge 5xx ratio > 1% (15dk) — PROD"
+            description: "D29 authoritative entrypoint sağlık kaybı. Rollback tetikleyici adayı. Test cluster için ZanzibarAuthzSyntheticFail alert'ine bak."
+
+        - alert: EdgeHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(http_server_requests_seconds_bucket{application="api-gateway"}[5m]))
+            ) > 2
+          for: 10m
+          labels:
+            severity: warning
+            component: edge
+            cluster_scope: prod-only
+          annotations:
+            summary: "Gateway p95 latency > 2s (10dk) — PROD"

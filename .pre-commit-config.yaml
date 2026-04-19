@@ -1,0 +1,46 @@
+# Pre-commit hooks — lokal lint zorunlu
+# Install: pre-commit install (pip install pre-commit)
+# Manuel run: pre-commit run --all-files
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        exclude: '^(kustomize/|argocd/applicationsets/).*\.yaml$'    # kustomize patches çoklu YAML
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args:
+          - -d
+          - '{extends: relaxed, rules: {line-length: {max: 200, level: warning}, document-start: disable, truthy: {check-keys: false}}}'
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.9.0.6
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning]
+
+  - repo: local
+    hooks:
+      - id: no-closure-language
+        name: No closure language (HARD RULE)
+        entry: bash -c 'if grep -rIE "bugün kapandı|tamam bitti|gün sonu|başarıyla tamamlandı|Seviye [0-9X]+ tamam" --include="*.md" --exclude="PLAN.md" --exclude="docs/session-handoff-*.md" .; then echo "❌ Closure language ihlali"; exit 1; fi; echo "✓ No closure language"'
+        language: system
+        pass_filenames: false
+
+      - id: kustomize-build-sanity
+        name: Kustomize build sanity (overlays + base/monitoring + base/eso)
+        entry: bash -c 'for p in kustomize/overlays/test kustomize/overlays/prod kustomize/overlays/test/eso kustomize/overlays/prod/eso kustomize/base/monitoring; do echo "Build $$p..."; kubectl kustomize "$$p" > /dev/null || exit 1; done; echo "✓ Kustomize build PASS"'
+        language: system
+        pass_filenames: false
+        files: '^(kustomize/|helm-values/).*'

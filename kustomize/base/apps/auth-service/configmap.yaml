@@ -7,11 +7,11 @@ data:
   # Host-level bağımlılıklar — Service+Endpoints (D19) üzerinden
   # Spring Boot convention env: SPRING_DATASOURCE_URL, SPRING_DATASOURCE_USERNAME,
   # SPRING_DATASOURCE_PASSWORD (username/password Secret'tan gelir)
-  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres.PLACEHOLDER_NS.svc.cluster.local:5432/auth_db"
-  KEYCLOAK_URL: "http://keycloak.PLACEHOLDER_NS.svc.cluster.local:8080"
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/auth_db"
+  KEYCLOAK_URL: "http://keycloak:8080"
   # Diğer servisler (Dilim 2+'de doldurulacak)
-  # USER_SERVICE_URL: "http://user-service.PLACEHOLDER_NS.svc.cluster.local:8089"
-  # CORE_DATA_URL: "http://core-data-service.PLACEHOLDER_NS.svc.cluster.local:8092"
+  # USER_SERVICE_URL: "http://user-service:8089"
+  # CORE_DATA_URL: "http://core-data-service:8092"
 
   # Spring Boot
   SERVER_PORT: "8088"
@@ -49,6 +49,17 @@ data:
   EUREKA_CLIENT_ENABLED: "false"
   SPRING_CLOUD_DISCOVERY_ENABLED: "false"
   SPRING_CLOUD_SERVICE_REGISTRY_AUTO_REGISTRATION_ENABLED: "false"
+
+  # Zanzibar runtime (D-003 TRANSFORMED, 2026-04-19 K8s-6 Seviye 1)
+  # auth-service K8s profile'daki hardcoded platform-prod.svc override (K8s-6 4-tur Codex tespit)
+  # Permission-service Service port 8090 → targetPort 8084 (PR #502 + apps/permission-service/service.yaml)
+  # Intra-ns shortname (Codex S1-D5.5 ping-pong Seçenek B uzlaşı, MINIMAL scope)
+  PERMISSION_SERVICE_BASE_URL: "http://permission-service:8090"
+  PERMISSION_AUDIT_MIRROR_BASE_URL: "http://permission-service:8090"
+  PERMISSION_AUDIT_MIRROR_ENABLED: "true"
+  USER_SERVICE_BASE_URL: "http://user-service:8089"
+  ERP_OPENFGA_ENABLED: "true"
+  ERP_OPENFGA_API_URL: "http://openfga:8080"
 
   # Tracing (Tempo için; base'de kapalı, monitoring kurulunca aç)
   MANAGEMENT_TRACING_ENABLED: "false"

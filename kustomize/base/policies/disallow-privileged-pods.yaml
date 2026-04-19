@@ -1,0 +1,32 @@
+# Privileged pod yasak (container escape riski)
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-pods
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Pods
+    policies.kyverno.io/category: Pod Security Standards (restricted)
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: audit
+  background: true
+  rules:
+    - name: check-privileged
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - platform-test
+                - platform-prod
+      validate:
+        message: "Privileged pod yasak (container escape riski). securityContext.privileged: false olmalı."
+        pattern:
+          spec:
+            =(initContainers):
+              - =(securityContext):
+                  =(privileged): "false"
+            containers:
+              - =(securityContext):
+                  =(privileged): "false"

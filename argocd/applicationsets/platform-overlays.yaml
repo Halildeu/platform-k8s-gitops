@@ -1,0 +1,56 @@
+# ArgoCD ApplicationSet — Multi-cluster backend overlay sync
+# Pattern: cluster generator + label-based selector
+# Apply: D32 sonrası ArgoCD multi-cluster mode (prod ArgoCD test cluster'ı da yönetir)
+# DRAFT: şu an tek Application (platform-test + platform-prod) yeterli; bu dosya
+#        ileride multi-cluster ArgoCD için pattern.
+#
+# Prereq (aktivasyon sırasında):
+#   - Prod ArgoCD çalışıyor
+#   - Cluster secret'lere label eklenmiş:
+#       kubectl -n argocd label secret <cluster-secret> platform=true env=test
+#       kubectl -n argocd label secret <cluster-secret> platform=true env=prod
+#   - argocd/applications/platform-test.yaml + platform-prod.yaml SILINMIŞ (bu ApplicationSet
+#     onları ikame eder)
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform-overlays
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+spec:
+  # syncPolicy per-cluster template override ile ayarlanır
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            platform: "true"
+  template:
+    metadata:
+      name: 'platform-{{metadata.labels.env}}'
+      labels:
+        app.kubernetes.io/part-of: platform
+        app.kubernetes.io/cluster: '{{metadata.labels.env}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/Halildeu/platform-k8s-gitops.git
+        targetRevision: main
+        path: 'kustomize/overlays/{{metadata.labels.env}}'
+      destination:
+        server: '{{server}}'
+        namespace: 'platform-{{metadata.labels.env}}'
+      syncPolicy:
+        automated:
+          prune: false
+          # Test cluster selfHeal aktif (dev ergonomics), prod manuel sync (D30 atomic)
+          # Cluster secret label'ına göre — Go template condition:
+          selfHeal: '{{- if eq .metadata.labels.env "prod" -}}false{{- else -}}true{{- end -}}'
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas       # HPA veya manuel scale drift (D21 prod) / D17 test scale-to-zero

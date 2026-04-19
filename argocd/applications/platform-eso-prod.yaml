@@ -1,0 +1,32 @@
+# ArgoCD Application — platform-eso-prod (k3d-prod cluster, prod Vault)
+# S2-C2 + D32: ESO CR'ları prod cluster'da sync (staging-sw-2 bootstrap sonrası)
+# Prereq: ESO Deployment + Vault AppRole secret-id prod Vault'ta manuel
+#   (bootstrap/install-on-staging-sw-2.sh F6)
+# Codex iter-2 AGREE: base DOĞRUDAN apply edilmez, overlay zorunlu.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-eso-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/cluster: prod
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Halildeu/platform-k8s-gitops.git
+    targetRevision: main
+    path: kustomize/overlays/prod/eso    # Overlay split — prod Vault FQDN
+  destination:
+    # D32 cutover sonrası: prod cluster ArgoCD external cluster (secret ile bağlı)
+    # veya tek ArgoCD multi-cluster; şu an placeholder — staging-sw-2 bootstrap
+    # sırasında gerçek server URL + cluster secret tanımlanacak.
+    server: https://kubernetes.default.svc
+    namespace: external-secrets
+  syncPolicy:
+    # MANUAL sync — D30 HARD RULE: Codex PR #1 iter-9 tespit — `automated`
+    # field varsa (değerleri false olsa bile) ArgoCD auto-sync açar.
+    # Ref: https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true

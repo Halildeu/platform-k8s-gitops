@@ -1,0 +1,19 @@
+# Namespace — platform-prod (k3d-prod, staging-sw-2 D32)
+# Labels: ApplicationSet cluster generator match prereq
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-prod
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/cluster: prod
+    platform: "true"
+    env: prod
+    # Pod Security Admission (K8s 1.23+ built-in) — Kyverno paralel defense
+    # Prod daha sıkı: restricted enforce (baseline yerine)
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
