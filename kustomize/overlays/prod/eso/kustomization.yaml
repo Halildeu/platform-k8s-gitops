@@ -1,6 +1,23 @@
-# ESO prod overlay — k3d-prod (staging-sw-2 D32 prod Vault)
+# ESO prod overlay — k3d-prod (same-host prod Vault — ADR-0002 pending)
 # Base'deki placeholder ClusterSecretStore FQDN'ini prod Vault'a çevirir.
-# Apply: kubectl --context k3d-prod apply -k kustomize/overlays/prod/eso
+#
+# OPS-PREREQ (merge edilmeden apply EDİLMEZ):
+#   1. Prod Vault instance aktif (platform-prod namespace, host compose veya k8s)
+#   2. Vault'ta `eso-runtime` AppRole yaratıldı (policy adı da `eso-runtime` —
+#      tek kanonik isim, bkz bootstrap/vault-policies/eso-runtime.hcl):
+#        vault policy write eso-runtime bootstrap/vault-policies/eso-runtime.hcl
+#        vault write auth/approle/role/eso-runtime \
+#          token_policies=eso-runtime token_ttl=1h token_max_ttl=24h
+#   3. role_id UUID okundu:
+#        vault read auth/approle/role/eso-runtime/role-id
+#   4. clustersecretstore-patch.yaml içine gerçek role_id UUID eklendi (test overlay
+#      şablonunu izle: JSON6902 op:replace /spec/provider/vault/auth/appRole/roleId)
+#   5. secret-id generate edildi → K8s Secret `vault-approle-secret` (ns external-secrets)
+#   6. CI'da prod/eso render eklendi (bkz .github/workflows/ci.yml — şu an prod/eso
+#      placeholder-leak-check'ten MUAF; re-enable PR'ı 4. adımla aynı PR)
+#
+# Apply (önkoşullar tamamlandıktan sonra):
+#   kubectl --context k3d-prod apply -k kustomize/overlays/prod/eso
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 

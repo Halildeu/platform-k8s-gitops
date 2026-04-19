@@ -27,8 +27,9 @@ NETWORK="${NETWORK:-platform-test-net}"
 CONTAINERS_SERVICES=(
   "platform-postgres-db-1:postgres:5432"
   "platform-keycloak-1:keycloak:8080"
+  "platform-vault-1:vault:8200"
 )
-# platform-vault-1 şu an test cluster için kullanılmıyor (ESO Faz 3'te gelecek)
+# Faz 3 ESO: vault platform-test-net'te görünür olmalı (ClusterSecretStore → 8200)
 
 log()  { printf '\033[36m[reconnect]\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[33m[reconnect]\033[0m %s\n' "$*" >&2; }
