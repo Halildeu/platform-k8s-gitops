@@ -83,18 +83,20 @@ run "bash ${GITOPS_PATH}/bootstrap/install-logs-traces.sh ${K3D_CLUSTER}"
 # ========================
 log "=== F3: Host Compose PROD Servisleri ==="
 # NOT: staging-sw'deki compose'un FORK'u — fresh prod instance, data migration YOK
-# UYARI (Codex PR #1 iter-9): host-compose/keycloak/prod/, vault/prod/, postgres/prod/
-# template'leri şu an repo'da YOK. Sadece host-compose/proxy/ mevcut.
-# Ops elle yazmalı (mevcut staging-sw compose'undan fork + prod-specific override).
-warn "   F3.1-F3.3: Host compose PG/KC/Vault prod — TEMPLATE EKSİK, ops elle yaz"
-warn "     Beklenen path'ler (henüz yok):"
-warn "       ${GITOPS_PATH}/host-compose/keycloak/prod/docker-compose.yml"
-warn "       ${GITOPS_PATH}/host-compose/vault/prod/docker-compose.yml"
-warn "       ${GITOPS_PATH}/host-compose/postgres/prod/docker-compose.yml"
-warn "     Template yazıldıktan sonra bu satırları uncomment:"
-warn "     # run docker compose -f ${GITOPS_PATH}/host-compose/keycloak/prod/docker-compose.yml up -d"
-warn "     # run docker compose -f ${GITOPS_PATH}/host-compose/vault/prod/docker-compose.yml up -d"
-warn "     # run docker compose -f ${GITOPS_PATH}/host-compose/postgres/prod/docker-compose.yml up -d"
+# Template'ler 2026-04-19 yazıldı (Codex PR #1 iter-9 + iter-10 fix):
+#   host-compose/postgres/prod/ + keycloak/prod/ + vault/prod/
+# Secret dosyaları (secrets/*.txt) manuel yazılmalı (chmod 600 + .gitignore).
+log "   F3.1: PostgreSQL prod"
+warn "     Prereq: host-compose/postgres/prod/secrets/pg_password.txt yaz (chmod 600)"
+run "docker compose -f ${GITOPS_PATH}/host-compose/postgres/prod/docker-compose.yml up -d"
+
+log "   F3.2: Keycloak prod"
+warn "     Prereq: host-compose/keycloak/prod/secrets/kc_db_password.txt + kc_admin_password.txt"
+run "docker compose -f ${GITOPS_PATH}/host-compose/keycloak/prod/docker-compose.yml up -d"
+
+log "   F3.3: Vault prod"
+warn "     NOT: ilk kurulum sonrası vault operator init (host-compose/vault/prod/README.md)"
+run "docker compose -f ${GITOPS_PATH}/host-compose/vault/prod/docker-compose.yml up -d"
 
 log "   F3.4: PG init databases (stdin pipe — /tmp host file drift fix)"
 # Codex PR #1 iter-9 tespit: heredoc /tmp/init-prod-db.sql host'ta yazılır,
