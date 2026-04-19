@@ -23,7 +23,7 @@ docker exec -it platform-vault-test vault operator unseal <key2>
 export VAULT_ADDR=http://localhost:8201
 vault login <test-root-token>
 vault secrets enable -version=2 -path=kv kv
-vault policy write eso-runtime ../../../bootstrap/vault-policies/test/eso-runtime.hcl
+vault policy write eso-runtime ../../../bootstrap/vault-policies/eso-runtime.hcl   # PR-next-3 sonrası test/eso-runtime.hcl
 vault auth enable approle
 vault write auth/approle/role/eso-runtime token_policies=eso-runtime token_ttl=1h
 

@@ -111,8 +111,10 @@ vault secrets enable -version=2 -path=kv kv
 vault audit enable -path=file_audit file file_path=/vault/logs/audit.log
 
 # Policy (canonical: eso-runtime)
+# Mevcut repo path: bootstrap/vault-policies/eso-runtime.hcl (düz)
+# PR-next-3 sonrası {common,prod,test}/ refactor gelecek; o zaman prod/eso-runtime.hcl olacak
 cd ../../../bootstrap/vault-policies
-vault policy write eso-runtime prod/eso-runtime.hcl   # PR-next-3 sonrası {common,prod,test}/ yapısı
+vault policy write eso-runtime eso-runtime.hcl
 vault auth enable approle
 vault write auth/approle/role/eso-runtime \
   token_policies=eso-runtime \

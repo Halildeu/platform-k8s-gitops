@@ -32,8 +32,9 @@ vault login <root-token>
 vault secrets enable -version=2 -path=kv kv
 vault audit enable -path=file_audit file file_path=/vault/logs/audit.log
 
-# 6. Policy (canonical: eso-runtime)
-vault policy write eso-runtime ../../../bootstrap/vault-policies/prod/eso-runtime.hcl
+# 6. Policy (canonical: eso-runtime) — mevcut düz path
+# PR-next-3 sonrası bootstrap/vault-policies/prod/eso-runtime.hcl olacak (policy split)
+vault policy write eso-runtime ../../../bootstrap/vault-policies/eso-runtime.hcl
 vault auth enable approle
 vault write auth/approle/role/eso-runtime \
   token_policies="eso-runtime" \
@@ -69,7 +70,7 @@ rsync -av /srv/platform/stateful/prod/vault/logs/snapshot-*.snap backup-host:/ba
 - 2 ayrı Vault daemon (prod + test, **namespace yetersiz**)
 - Ayrı data volume: `/srv/platform/stateful/{prod,test}/vault/data`
 - Secret path her Vault'ta env-neutral: `kv/platform/<svc>` (manifest sadeliği)
-- Policy dizin: `bootstrap/vault-policies/prod/` (env-specific role binding)
+- Policy: `bootstrap/vault-policies/eso-runtime.hcl` (mevcut düz path; PR-next-3 sonrası `prod/` dizinine taşınır)
 - Rotation: secret-id 30 gün prod
 
 ## Referanslar
