@@ -4,9 +4,15 @@ Tüm önemli değişiklikler bu dosyada tutulur. Format: [Keep a Changelog](http
 
 ---
 
-## [Unreleased] — 2026-04-17 → 2026-04-19
+## [Unreleased]
 
-Faz 3/4 → Faz 11'e (Seviye 0-5) büyük delta — 57 commit K8s-6 session.
+_Yeni değişiklikler buraya — Release sonrası yeni delta için._
+
+## [0.2.0] — 2026-04-19
+
+**Release:** K8s-6 Seviye 0-5 repo-side paket (PR #1 squash merge `c8cd0b6`, 80 commit).
+
+Faz 3/4 → Faz 11'e (Seviye 0-5) büyük delta — K8s-6 session (2026-04-17 → 2026-04-19).
 
 ### Added
 
