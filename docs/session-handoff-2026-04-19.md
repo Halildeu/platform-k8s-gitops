@@ -1,7 +1,7 @@
 # Session Handoff v4 — 2026-04-19 K8s-6
 
 > **Format:** D28 HARD RULE 5-alan (Bağlam / İddia / İspatlar / İspatlamaz / Bilinen boşluk)
-> **Scope:** 30 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side paket tam + S3-A3 Grafana + S1/S2 smoke + ES automation + k6 load + Vault policy + PromQL + DR drill
+> **Scope:** 31 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side apply-dışı materyal hazır + S3-A3 Grafana + S1/S2 smoke + ES automation + k6 load + Vault policy + PromQL + DR drill + Day-2 ops (cert/capacity/triage)
 > **Codex thread referans:** `019d9a75-4299-7313-85bb-003a7de680eb` (K8s-6 ana), `019da5f8-9087-73f0-899b-267fa608456e` (iter-2..iter-6 delta retrospective)
 > **No-closure uyarı:** Bu handoff "bugün kapandı/bitti" değil — sürekli ortak devam sürecinde ara rapor.
 
@@ -11,11 +11,11 @@
 
 Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile başladı, 2026-04-19'da Seviye 1 deploy PASS + Seviye 2/3/4 repo-side paket haline evrildi. Ana hedef: Kubernetes yol haritasının 5 Seviye'sini (S0 Canlı dürüst → S1 Zanzibar runtime → S2 Ops sertleşme → S3 Stability soak → S4 Cutover) tamamlamak. Zanzibar-25 (paralel platform-ssot session) 14 PR merge + permission-service K8s-ready (PR #502) + OI-03 canary PASS gönderdi → K8s-6 ayağı başlattı.
 
-**Çoklu iteration Codex adversarial istişare** (iter-2..iter-7) ile 30 commit Codex plan-consensus ile doğrulandı. İki thread: ana K8s-6 + retrospective delta. Kullanıcı HARD RULE'ları: (1) kapanış kelime yasak, (2) IP dışa sızmaz, (3) plan onayları Codex mutabıksa sorma — direkt impl, (4) paralel iş / sürekli devam.
+**Çoklu iteration Codex adversarial istişare** (iter-2..iter-8) ile 31 commit Codex plan-consensus ile doğrulandı. İki thread: ana K8s-6 + retrospective delta. Kullanıcı HARD RULE'ları: (1) kapanış kelime yasak, (2) IP dışa sızmaz, (3) plan onayları Codex mutabıksa sorma — direkt impl, (4) paralel iş / sürekli devam.
 
 ---
 
-## 2. İddia (bugün ne oldu — 30 commit)
+## 2. İddia (bugün ne oldu — 31 commit)
 
 ### 2.1 Seviye 0 — Calico Recovery + testai Edge Fix (2026-04-17)
 
@@ -163,12 +163,12 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 - ✅ **Grafana dashboard JSON pack** → `kustomize/base/monitoring/grafana-dashboards/` (3 ConfigMap sidecar auto-import)
 - ✅ **k6 load test K8s profile** → `tests/k6/zanzibar-load.js` (50 VU × 6dk steady, deny/allow synthetic threshold)
 
-Kalan repo-side iş potansiyeli — **hepsi tamamlandı (f66b5f9 commit):**
+Kalan repo-side iş potansiyeli — Codex iter-5 + iter-7 zincir ile listeye alındı (commit `f66b5f9` + `e5526d9`):
 - ✅ **PromQL query pack** → `docs/promql-query-pack.md` (Authz/Pods/Edge/DB + S3 7-günlük rehber + alert mapping)
 - ✅ **Vault policy HCL şablonları** → `bootstrap/vault-policies/eso-runtime.hcl` + `README.md` (AppRole create + test komutları + rotation)
 - ✅ **Disaster recovery drill runbook** → `docs/S5-disaster-recovery-runbook.md` (RPO 24h + RTO 4h + 3 backup script + 4 restore senaryosu + çeyrek drill)
 
-**Repo-side paket tam (Codex onayı dahil):** Tüm şablonlar, runbook'lar, automation helper'lar, monitoring dashboard'lar, k6 load test profil, Vault policy, PromQL pack, DR drill, Day-2 ops (cert renewal + capacity expansion + on-call triage) hazır. Canlı apply hattı (5.2) dev repo PR merge + ops Vault seed + sysadmin D32 donanım bağımlı.
+**Repo-side apply-dışı materyal hazır (Codex iter-8 onayı dahil):** Şablonlar, runbook'lar, automation helper'lar, monitoring dashboard'lar, k6 load test profil, Vault policy, PromQL pack, DR drill, Day-2 ops (cert renewal + capacity expansion + on-call triage) listeye alındı. Canlı apply hattı (5.2) dev repo PR merge + ops Vault seed + sysadmin D32 donanım bağımlı.
 
 **Day-2 ops paketi (Codex iter-7 tespit + iter-8 zincir, 3 yeni runbook):**
 - ✅ **Cert renewal runbook** → `docs/S5-cert-renewal-runbook.md` (Sectigo wildcard `*.acik.com` yıllık yenileme, CSR + obtain + mount + rollback)
@@ -208,7 +208,7 @@ Kalan repo-side iş potansiyeli — **hepsi tamamlandı (f66b5f9 commit):**
 ```bash
 # Repo sanity
 cd /Users/halilkocoglu/Documents/platform-k8s-gitops
-git status                                          # clean main'den 30 commit ahead
+git status                                          # clean main'den 31 commit ahead
 git log --oneline main..HEAD | head -5              # son 5 commit
 
 # Kustomize build sanity
