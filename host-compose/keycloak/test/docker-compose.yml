@@ -31,7 +31,7 @@ services:
       KC_FEATURES: "token-exchange,admin-fine-grained-authz"
       JAVA_OPTS: "-Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=100"   # Test daha dar
     ports:
-      - "8082:8080"
+      - "127.0.0.1:8082:8080"
     volumes:
       - /srv/platform/stateful/test/keycloak:/opt/keycloak/data
     secrets:

@@ -189,12 +189,38 @@ kubectl --context k3d-prod -n platform-prod get externalsecret
 
 ## Test Bootstrap Sırası
 
-Prod ile aynı pattern, FARKLI secret values. Test credentials prod'dan BAĞIMSIZ (ADR-0002 §3.2 full isolation).
+Prod ile aynı pattern, FARKLI secret values + `--profile manual` zorunlu.
+Test credentials prod'dan BAĞIMSIZ (ADR-0002 §3.2 full isolation).
 
 ```bash
-# Step 0-5 yukarıdakiyle aynı; test klasörü + test Vault + port 5433/8082/8201
+# Step 0-5 yukarıdakiyle aynı yaklaşım; test klasörü + port 5433/8082/8201
+# ÖNEMLİ: Test compose'lar profiles:[manual] ile tanımlı (ADR §5.1 scale-to-zero enforce)
+# Düz `docker compose up -d` test servisini BAŞLATMAZ.
+
 cd host-compose/postgres/test
-# ... aynı sıra
+# Step 0 + Step 1:
+docker compose --profile manual up -d
+until docker exec platform-pg-test pg_isready -U postgres; do sleep 2; done
+# ALTER ROLE (CHANGE_ME_TEST → gerçek şifre)
+source /tmp/bootstrap-creds-test.env  # test kendi creds set
+docker exec -i platform-pg-test psql -U postgres <<SQL
+ALTER ROLE platform WITH PASSWORD '${PG_PLATFORM_PW_TEST}';
+ALTER ROLE keycloak_user WITH PASSWORD '${PG_KC_PW_TEST}';
+ALTER ROLE openfga WITH PASSWORD '${PG_OPENFGA_PW_TEST}';
+SQL
+
+# Step 2 KC:
+cd ../../keycloak/test
+docker compose --profile manual up -d
+
+# Step 3 Vault:
+cd ../../vault/test
+docker compose --profile manual up -d
+# Post-init: operator init + unseal + KV + AppRole (prod benzeri, test root-token ayrı sakla)
+
+# Down (işlem bitince — scale-to-zero default):
+cd host-compose/postgres/test && docker compose --profile manual down
+# KC + Vault da benzer
 ```
 
 ## Rotation (post-bootstrap)

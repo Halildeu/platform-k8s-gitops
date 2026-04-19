@@ -16,7 +16,7 @@ services:
       VAULT_ADDR: http://127.0.0.1:8200
       VAULT_API_ADDR: http://platform-vault-prod:8200   # intra-network API addr
     ports:
-      - "8200:8200"
+      - "127.0.0.1:8200:8200"   # Localhost-only; k3d-prod pod'lar platform-prod-net DNS ile
     cap_add:
       - IPC_LOCK   # mlock — secret swap RAM'den koruma (ADR güvenlik katmanı)
     volumes:

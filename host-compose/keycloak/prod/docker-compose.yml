@@ -32,7 +32,7 @@ services:
       KC_FEATURES: "token-exchange,admin-fine-grained-authz"
       JAVA_OPTS: "-Xmx1g -XX:+UseG1GC -XX:MaxGCPauseMillis=100"
     ports:
-      - "8081:8080"         # Host 8081 → container 8080
+      - "127.0.0.1:8081:8080"   # Localhost-only; host nginx edge aynı host'tan reverse proxy yapar
     volumes:
       - /srv/platform/stateful/prod/keycloak:/opt/keycloak/data
     secrets:

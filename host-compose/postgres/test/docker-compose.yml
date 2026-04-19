@@ -15,7 +15,7 @@ services:
     profiles: ["manual"]
     restart: "no"
     ports:
-      - "5433:5432"   # Host 5433 → container 5432
+      - "127.0.0.1:5433:5432"   # Localhost-only bind; k3d-test pod'lar platform-test-net DNS ile
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/pg_password

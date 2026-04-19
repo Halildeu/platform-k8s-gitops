@@ -10,7 +10,10 @@ services:
     container_name: platform-pg-prod
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      # Host bind ONLY localhost (127.0.0.1) — k3d-prod pod'lar platform-prod-net
+      # üzerinden container DNS (platform-pg-prod:5432) ile ulaşır, host port
+      # yalnız admin/debug için gerekli. External exposure YOK.
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/pg_password

@@ -25,12 +25,14 @@ host-compose/
 |---|---|---|
 | Container isim | `platform-{pg,kc,vault}-prod` | `platform-{pg,kc,vault}-test` |
 | Network | `platform-prod-net` | `platform-test-net` |
-| Host port PG | 5432 | 5433 |
-| Host port KC | 8081 | 8082 |
-| Host port Vault | 8200 | 8201 |
+| Host port PG | 127.0.0.1:5432 | 127.0.0.1:5433 |
+| Host port KC | 127.0.0.1:8081 | 127.0.0.1:8082 |
+| Host port Vault | 127.0.0.1:8200 | 127.0.0.1:8201 |
 | Disk path | `/srv/platform/stateful/prod/<svc>` | `/srv/platform/stateful/test/<svc>` |
 | Resource budget | ADR §7.2 prod-stateful slice | ADR §7.2 test-stateful slice |
 | Default state | Always up | Scale-to-zero (up edilirse kullanıcı iradesi) |
+
+**Güvenlik notu (Codex PR #12 iter-3):** Tüm port bind'ler `127.0.0.1` (localhost-only). K8s cluster pod'lar host port'a değil, **Docker network DNS** üzerinden container IP'ye ulaşır (ör. `platform-pg-prod:5432` from `platform-prod-net`). Host port yalnız admin/debug için (psql CLI, vault CLI, kcadm CLI). External network'e expose YOK.
 
 **KESİN YASAKLAR:**
 - Prod + test shared PG / KC / Vault instance
@@ -69,18 +71,18 @@ docker compose -f docker-compose.yml up -d
 
 ### 3. Test stateful up (ihtiyaç anında)
 ```bash
-# Benzer sıra, test klasörü
-cd host-compose/postgres/test && docker compose up -d
-cd ../../keycloak/test && docker compose up -d
-cd ../../vault/test && docker compose up -d
+# Test servisleri profiles:[manual] — --profile flag ZORUNLU (ADR §5.1 enforce)
+cd host-compose/postgres/test && docker compose --profile manual up -d
+cd ../../keycloak/test && docker compose --profile manual up -d
+cd ../../vault/test && docker compose --profile manual up -d
 ```
 
 ### 4. Test scale-down (ADR §5.1 default)
 ```bash
 # Test kapalı tutulur (kullanıcı direktif 2026-04-19):
-cd host-compose/vault/test && docker compose down
-cd ../../keycloak/test && docker compose down
-cd ../../postgres/test && docker compose down
+cd host-compose/vault/test && docker compose --profile manual down
+cd ../../keycloak/test && docker compose --profile manual down
+cd ../../postgres/test && docker compose --profile manual down
 ```
 
 ## Secret Yönetimi

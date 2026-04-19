@@ -1,11 +1,18 @@
 # S5 Disaster Recovery Runbook — Backup + Restore Drill
 
+> ⚠ **ADR-0002 UPDATE** (2026-04-19): D32 supersede edildi. Container isimleri güncel:
+> - `platform-postgres` → `platform-pg-{prod,test}` (env-specific)
+> - `platform-keycloak` → `platform-kc-{prod,test}`
+> - `platform-vault` → `platform-vault-{prod,test}`
+>
+> Bu dokümandaki komutları uygularken env suffix ekleyin (örn. `platform-pg-prod`).
+> Canonical runbook: [`docs/prod-cutover-runbook-v2.md`](./prod-cutover-runbook-v2.md) + [`day-2-governance.md`](./day-2-governance.md) §1 Backup/Restore Drill.
+
 > **Source:** K8s-6 S5 (post-cutover stabil workload için DR hazırlık)
-> **Prereq:** D32 prod cutover PASS + T+72h warm rollback window kapanmış
+> **Prereq:** ADR-0002 prod cutover PASS + T+72h warm rollback window kapanmış
 > **Kapsam:** PostgreSQL + Keycloak realm + Vault KV + K8s manifest
 > **RPO hedefi (D23):** 24 saat
 > **RTO hedefi (D23):** 4 saat
-> **Codex yedek iş önerisi — post-D32 scope, pre-cutover kritik değil**
 
 ---
 

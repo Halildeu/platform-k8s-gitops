@@ -107,7 +107,7 @@ log "   F3.4: PG init databases (stdin pipe — /tmp host file drift fix)"
 # Codex PR #1 iter-9 tespit: heredoc /tmp/init-prod-db.sql host'ta yazılır,
 # docker exec container içinden okur → path uyumsuz. Fix: stdin pipe ile
 # docker exec -i doğrudan.
-run 'docker exec -i platform-postgres-db-prod psql -U postgres <<SQL
+run 'docker exec -i platform-pg-prod psql -U postgres <<SQL
 CREATE DATABASE auth_db OWNER platform;
 CREATE DATABASE users_db OWNER platform;
 CREATE DATABASE variants_db OWNER platform;

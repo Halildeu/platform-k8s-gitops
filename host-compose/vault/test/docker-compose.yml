@@ -16,7 +16,7 @@ services:
       VAULT_ADDR: http://127.0.0.1:8200
       VAULT_API_ADDR: http://platform-vault-test:8200
     ports:
-      - "8201:8200"   # Host 8201 → container 8200
+      - "127.0.0.1:8201:8200"   # Localhost-only bind
     cap_add:
       - IPC_LOCK
     volumes:

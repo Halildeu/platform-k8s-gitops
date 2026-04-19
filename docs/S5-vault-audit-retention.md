@@ -1,5 +1,9 @@
 # S5 Vault Audit Log Retention — Day-2 Ops
 
+> ⚠ **ADR-0002 UPDATE** (2026-04-19): Container adı `platform-vault` → `platform-vault-{prod,test}` (env-specific).
+> Komutları uygularken env suffix ekleyin.
+> İlişkili: [`day-2-governance.md`](./day-2-governance.md) §1.3 Vault Backup.
+
 > **Source:** K8s-6 S5 day-2 ops (Codex iter-8 non-blocking öneri)
 > **Kapsam:** Vault audit backend + log rotation + retention policy + review rutini
 > **Frekans:** Haftalık review (ops), aylık archive, yıllık purge
