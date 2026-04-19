@@ -151,8 +151,11 @@ fi
 
 1. **Preflight script** çalıştır (Vault doğrulama)
 2. ESO Helm chart install (`helm-values/external-secrets/`)
-3. ClusterSecretStore + ghcr-pull ExternalSecret apply (`kubectl apply -k kustomize/base/eso`)
-4. Doğrula: `kubectl get externalsecret -A` + `kubectl get secret ghcr-pull`
+3. ClusterSecretStore + ghcr-pull ExternalSecret apply — **OVERLAY ZORUNLU** (Codex iter-2 AGREE D-1):
+   - Test cluster: `kubectl apply -k kustomize/overlays/test/eso`
+   - Prod cluster: `kubectl apply -k kustomize/overlays/prod/eso`
+   - **YASAK:** `kubectl apply -k kustomize/base/eso` (ClusterSecretStore FQDN placeholder, Ready=False)
+4. Doğrula: `kubectl get externalsecret -A` + `kubectl get secret ghcr-pull` + `kubectl get clustersecretstore` (Status=Ready)
 5. Per-service ES switch (her svc kustomization.yaml'da `secret-stub.yaml` kaldır + `externalsecret.yaml` ekle)
 6. Apply overlay (`kubectl apply -k overlays/test`)
 7. Doğrula: 7 ExternalSecret Synced + pod env effective

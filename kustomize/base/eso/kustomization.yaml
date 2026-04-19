@@ -21,4 +21,11 @@ resources:
   # veya base/apps/<svc>/externalsecret.yaml (secret-stub.yaml ile exchange)
 
 # Apply: ESO install sonrasi (helm-values/external-secrets)
-# kubectl apply -k kustomize/base/eso
+#
+# UYARI: Base'i DOĞRUDAN apply ETMEYİN — ClusterSecretStore placeholder
+# FQDN içerir (OVERLAY_MUST_OVERRIDE). Her zaman overlay kullanın:
+#   kubectl apply -k kustomize/overlays/test/eso    # test cluster (k3d-test)
+#   kubectl apply -k kustomize/overlays/prod/eso    # prod cluster (staging-sw-2)
+#
+# Codex iter-2 AGREE (2026-04-19): test/prod Vault izolasyonu için overlay
+# split zorunlu; base tek Vault FQDN sabitlemez.

@@ -2,6 +2,17 @@
 # Source: docs/S3-stability-soak-pack.md
 # Apply: S3 session (S2-B3 smoke-client merged sonrasi, secret mount icin)
 # Not: kube-prometheus-stack opsiyonel blackbox-exporter icerir; burada standalone
+#
+# Codex iter-2 AGREE (2026-04-19) C-1 REVISE-ONAY: Probe hedefleri external
+# edge URL'leri (testai.acik.com / ai.acik.com). Cluster-local FQDN hedefleri
+# kaldırıldı — prod cluster'dan test cluster'a direkt peering yok.
+#
+# 3 katman net ayrım:
+#   - Prod cluster blackbox (bu dosya): external edge URL'leri — TLS + host
+#     nginx + ingress + gateway zinciri authoritative
+#   - Test cluster local truth: cluster-direct kubectl smoke (cluster-içi
+#     pod-to-pod + permission-service iç health + openfga TCP)
+#   - Prod → test peering: şu an GEREKSİZ (S3 için açılmaz)
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -30,15 +41,13 @@ data:
           valid_status_codes: [200]
           bearer_token_file: /etc/blackbox/token  # S2-B3 smoke-client secret mount
           preferred_ip_protocol: ip4
-      tcp_connect:
-        prober: tcp
-        timeout: 5s
       http_200:
         prober: http
         timeout: 5s
         http:
           method: GET
           valid_status_codes: [200]
+          preferred_ip_protocol: ip4
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -115,18 +124,19 @@ spec:
       port: 9115
       targetPort: http
 ---
-# Probe CR — Zanzibar hub smoke (cluster-direct)
+# Probe CR — testai external edge deny (authoritative edge ölçümü)
+# testai.acik.com → host nginx → k3d-test serverlb → gateway → backend chain
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
-  name: zanzibar-hub-smoke
+  name: zanzibar-testai-edge-deny
   namespace: monitoring
   labels:
     app.kubernetes.io/part-of: platform
     release: kube-prometheus-stack
 spec:
-  jobName: blackbox-testai-authz
-  module: authz_deny     # Default: unauthenticated deny expect
+  jobName: blackbox-testai-deny
+  module: authz_deny    # unauthenticated 401/403 expect
   prober:
     url: blackbox-exporter.monitoring.svc.cluster.local:9115
   interval: 60s
@@ -134,31 +144,81 @@ spec:
   targets:
     staticConfig:
       static:
-        - http://permission-service.platform-test.svc.cluster.local:8090/api/v1/authz/version
-        - http://permission-service.platform-test.svc.cluster.local:8090/api/v1/authz/me
-        - http://api-gateway.platform-test.svc.cluster.local:8080/variants
-        - http://api-gateway.platform-test.svc.cluster.local:8080/auth/login
+        - https://testai.acik.com/variants
+        - https://testai.acik.com/auth/login
       labels:
-        component: zanzibar-deny-probe
+        component: testai-deny-probe
+        edge: testai
 ---
-# Probe CR — Hub TCP health
+# Probe CR — testai external edge health (sentinel + actuator)
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
-  name: zanzibar-hub-tcp
+  name: zanzibar-testai-edge-health
   namespace: monitoring
   labels:
     app.kubernetes.io/part-of: platform
     release: kube-prometheus-stack
 spec:
-  jobName: blackbox-testai-tcp
-  module: tcp_connect
+  jobName: blackbox-testai-health
+  module: http_200
   prober:
     url: blackbox-exporter.monitoring.svc.cluster.local:9115
   interval: 60s
   targets:
     staticConfig:
       static:
-        - permission-service.platform-test.svc.cluster.local:8090
-        - permission-service.platform-test.svc.cluster.local:8081
-        - openfga.platform-test.svc.cluster.local:8080
+        - https://testai.acik.com/testai-healthz
+        - https://testai.acik.com/auth/actuator/health
+      labels:
+        component: testai-health-probe
+        edge: testai
+---
+# Probe CR — ai.acik.com prod external edge (D32 cutover sonrası aktif)
+# Cutover öncesi target 503/404 dönebilir; bu beklenti.
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: zanzibar-prod-edge-deny
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    release: kube-prometheus-stack
+spec:
+  jobName: blackbox-prod-deny
+  module: authz_deny
+  prober:
+    url: blackbox-exporter.monitoring.svc.cluster.local:9115
+  interval: 60s
+  scrapeTimeout: 15s
+  targets:
+    staticConfig:
+      static:
+        - https://ai.acik.com/variants
+        - https://ai.acik.com/auth/login
+      labels:
+        component: prod-deny-probe
+        edge: ai-prod
+---
+# Probe CR — ai.acik.com prod edge health (D32 cutover sonrası aktif)
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: zanzibar-prod-edge-health
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    release: kube-prometheus-stack
+spec:
+  jobName: blackbox-prod-health
+  module: http_200
+  prober:
+    url: blackbox-exporter.monitoring.svc.cluster.local:9115
+  interval: 60s
+  targets:
+    staticConfig:
+      static:
+        - https://ai.acik.com/auth/actuator/health
+      labels:
+        component: prod-health-probe
+        edge: ai-prod

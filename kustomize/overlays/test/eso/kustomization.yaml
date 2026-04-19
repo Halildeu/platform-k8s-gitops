@@ -1,0 +1,14 @@
+# ESO test overlay — k3d-test (staging-sw test Vault)
+# Base'deki placeholder ClusterSecretStore FQDN'ini test Vault'a çevirir.
+# Apply: kubectl --context k3d-test apply -k kustomize/overlays/test/eso
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../base/eso
+
+patches:
+  - target:
+      kind: ClusterSecretStore
+      name: vault-platform-gitops
+    path: clustersecretstore-patch.yaml

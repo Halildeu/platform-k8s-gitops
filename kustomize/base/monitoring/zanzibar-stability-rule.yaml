@@ -16,12 +16,17 @@ spec:
     - name: zanzibar.hub
       interval: 30s
       rules:
+        # 2026-04-19 Codex iter-2 AGREE C-1: up{permission-service} + up{openfga}
+        # metric'leri sadece SAME-CLUSTER Prometheus scrape edebilir. Test cluster
+        # için Prometheus federation S3 scope dışı — test cluster local truth
+        # kubectl-direct smoke ile (prod → test peering GEREKSİZ).
         - alert: ZanzibarHubDown
           expr: up{job="permission-service"} == 0
           for: 2m
           labels:
             severity: critical
             component: authz-hub
+            cluster_scope: same-cluster    # her cluster kendi hub'ını izler
           annotations:
             summary: "Permission-service (Zanzibar hub) DOWN"
             description: "permission-service 2+ dk yanıt vermiyor. Authz plane aktif değil."
@@ -33,45 +38,55 @@ spec:
           labels:
             severity: critical
             component: authz-engine
+            cluster_scope: same-cluster
           annotations:
             summary: "OpenFGA engine DOWN"
 
-        - alert: ZanzibarAuthzSyntheticFail
-          expr: probe_success{job="blackbox-testai-authz"} == 0
+        - alert: ZanzibarEdgeSyntheticFail
+          # External edge probe (testai + prod) fail — authoritative edge kaybı.
+          # 4 probe: blackbox-testai-deny, blackbox-testai-health,
+          #          blackbox-prod-deny, blackbox-prod-health
+          expr: probe_success{job=~"blackbox-(testai|prod)-(deny|health)"} == 0
           for: 5m
           labels:
             severity: warning
-            component: authz-synthetic
+            component: edge-synthetic
           annotations:
-            summary: "Zanzibar authz synthetic probe failing"
-            description: "/authz/me veya /authz/version erişilemiyor. Deny/allow enforce riski."
+            summary: "External edge (testai/prod) synthetic probe fail"
+            description: "testai.acik.com veya ai.acik.com edge zinciri (TLS + host nginx + ingress + gateway) sağlık kaybı. D29 authoritative entrypoint."
 
     - name: zanzibar.pods
       interval: 30s
+      # 2026-04-19 Codex iter-2 AGREE C-1: kube-state-metrics sadece SAME-CLUSTER.
+      # Test cluster Prometheus YOK — bu alertler prod cluster'da platform-prod
+      # namespace için çalışır. Test cluster pod sağlığı kubectl-direct veya
+      # test cluster'a ayrı Prometheus (S3 scope dışı) gerektirir.
       rules:
-        - alert: PlatformTestPodRestartSpike
+        - alert: PlatformPodRestartSpike
           expr: |
             sum by (pod, namespace) (
-              increase(kube_pod_container_status_restarts_total{namespace="platform-test"}[15m])
+              increase(kube_pod_container_status_restarts_total{namespace=~"platform-(test|prod)"}[15m])
             ) > 0
           for: 1m
           labels:
             severity: warning
-            component: platform-test
+            component: platform-pods
+            cluster_scope: same-cluster
           annotations:
-            summary: "Unexpected restart in platform-test ({{ $labels.pod }})"
+            summary: "Unexpected restart {{ $labels.namespace }}/{{ $labels.pod }}"
 
-        - alert: PlatformTestPodNotReady
+        - alert: PlatformPodNotReady
           expr: |
             sum by (pod, namespace) (
-              kube_pod_status_ready{namespace="platform-test", condition="true"} == 0
+              kube_pod_status_ready{namespace=~"platform-(test|prod)", condition="true"} == 0
             ) > 0
           for: 5m
           labels:
             severity: warning
-            component: platform-test
+            component: platform-pods
+            cluster_scope: same-cluster
           annotations:
-            summary: "Pod not ready {{ $labels.pod }}"
+            summary: "Pod not ready {{ $labels.namespace }}/{{ $labels.pod }}"
 
     - name: zanzibar.cni
       interval: 30s

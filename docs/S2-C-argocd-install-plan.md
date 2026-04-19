@@ -31,10 +31,14 @@ argocd cluster add k3d-test --name test-cluster --project platform
 ```
 argocd/applications/
 ├── root.yaml              # app-of-apps kök (tüm diğer Application'ları yönetir)
-├── platform-system.yaml   # ingress-nginx + ESO + kube-prometheus-stack + Loki + Tempo
-├── platform-test.yaml     # overlays/test sync
-└── platform-prod.yaml     # overlays/prod sync (manual sync, D32 sonrası)
+├── platform-system.yaml   # ingress-nginx + kube-prometheus-stack + Loki + Tempo
+├── platform-test.yaml     # overlays/test sync (test cluster backend)
+├── platform-prod.yaml     # overlays/prod sync (manual sync, D32 sonrası)
+├── platform-eso-test.yaml # overlays/test/eso (test Vault ESO — Codex iter-2)
+└── platform-eso-prod.yaml # overlays/prod/eso (prod Vault ESO — D32 sonrası)
 ```
+
+**NOT (Codex iter-2 AGREE D-1):** ESO iki ayrı Application olarak bölündü (test Vault + prod Vault FQDN farklı, overlay patch gerek). Base `kustomize/base/eso` DOĞRUDAN apply edilmez — ClusterSecretStore FQDN placeholder.
 
 **root.yaml taslak:**
 
