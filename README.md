@@ -8,14 +8,18 @@ Kubernetes GitOps manifest'leri — autonomous-orchestrator platformu. Bu repo, 
 
 Docker Compose tabanlı `autonomous-orchestrator` platformunu Kubernetes'e taşımak. 2 k3d cluster (test + prod) topoloji, ArgoCD GitOps, Zanzibar authz plane (permission-service + OpenFGA + Keycloak), ESO + Vault secret management.
 
-## Mimari Özet
+## Mimari Özet (ADR-0002 sonrası)
 
-- **Test cluster:** k3d-test (staging-sw, testai.acik.com)
-- **Prod cluster:** k3d-prod (staging-sw-2, ai.acik.com) — D32 donanım bekler
-- **Host compose (her host):** PostgreSQL + Keycloak + Vault + nginx reverse proxy (SSL termination)
+> **Ana karar:** [`docs/adr/0002-single-host-dual-cluster.md`](./docs/adr/0002-single-host-dual-cluster.md) — same-host + full stateful isolation
+
+- **Test cluster:** k3d-test (staging-sw, testai.acik.com) — default scale-to-zero
+- **Prod cluster:** k3d-prod (**staging-sw aynı host**, ai.acik.com) — D32 separate-host SUPERSEDED
+- **Host compose (ayrı instance prod/test):** PG/KC/Vault prod + PG/KC/Vault test (full isolation, `/srv/platform/stateful/{prod,test}/...`)
 - **K8s manifest:** 8 backend (auth/gateway/user/variant/core-data/report/schema/permission) + OpenFGA + frontend
-- **Secret flow:** Vault AppRole → ESO ExternalSecret → K8s Secret → Pod env
+- **Secret flow:** Vault AppRole → ESO ExternalSecret → K8s Secret → Pod env (env-neutral path `kv/platform/<svc>`, 2 ayrı Vault daemon)
 - **Edge:** host nginx (SSL) → k3d serverlb → ingress-nginx → api-gateway → backend
+- **ArgoCD:** prod-hub-only (tek hub prod cluster'da, 2 cluster yönetir; test cred Vault/out-of-band)
+- **Observability:** prod kube-prom-stack + test cluster minimal metrics + remote_write prod
 
 ## Dizin Yapısı
 

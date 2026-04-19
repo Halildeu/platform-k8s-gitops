@@ -1,5 +1,9 @@
 # D32 Bootstrap Runbook — staging-sw-2 Prod Host Kurulumu
 
+> ⚠ **SUPERSEDED by ADR-0002** (2026-04-19) — Same-host prod cutover kabul edildi; ayrı `staging-sw-2` donanım ana yol değil. Yeni kurulum: [`docs/adr/0002-single-host-dual-cluster.md`](./adr/0002-single-host-dual-cluster.md) + [`docs/prod-cutover-runbook-v2.md`](./prod-cutover-runbook-v2.md).
+>
+> Bu doküman tarihi bağlam olarak korunur (forward-extension — ikinci host geleceğinde referans).
+
 > **Source:** PLAN.md Bölüm 1.5 D32 Bootstrap Kontrat F1-F9
 > **Script:** `bootstrap/install-on-staging-sw-2.sh`
 > **Prereq:** staging-sw-2 fiziksel sunucu hazır (kurumsal ağ, ops koordinasyon)
