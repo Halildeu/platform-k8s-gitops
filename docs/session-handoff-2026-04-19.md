@@ -1,7 +1,7 @@
 # Session Handoff v4 — 2026-04-19 K8s-6
 
 > **Format:** D28 HARD RULE 5-alan (Bağlam / İddia / İspatlar / İspatlamaz / Bilinen boşluk)
-> **Scope:** 30 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side paket + S3-A3 Grafana + S1/S2 smoke + ES automation + k6 load
+> **Scope:** 30 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side paket tam + S3-A3 Grafana + S1/S2 smoke + ES automation + k6 load + Vault policy + PromQL + DR drill
 > **Codex thread referans:** `019d9a75-4299-7313-85bb-003a7de680eb` (K8s-6 ana), `019da5f8-9087-73f0-899b-267fa608456e` (iter-2..iter-6 delta retrospective)
 > **No-closure uyarı:** Bu handoff "bugün kapandı/bitti" değil — sürekli ortak devam sürecinde ara rapor.
 
@@ -11,11 +11,11 @@
 
 Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile başladı, 2026-04-19'da Seviye 1 deploy PASS + Seviye 2/3/4 repo-side paket haline evrildi. Ana hedef: Kubernetes yol haritasının 5 Seviye'sini (S0 Canlı dürüst → S1 Zanzibar runtime → S2 Ops sertleşme → S3 Stability soak → S4 Cutover) tamamlamak. Zanzibar-25 (paralel platform-ssot session) 14 PR merge + permission-service K8s-ready (PR #502) + OI-03 canary PASS gönderdi → K8s-6 ayağı başlattı.
 
-**Çoklu iteration Codex adversarial istişare** (iter-2..iter-6) ile 25 commit Codex plan-consensus ile doğrulandı. İki thread: ana K8s-6 + retrospective delta. Kullanıcı HARD RULE'ları: (1) kapanış kelime yasak, (2) IP dışa sızmaz, (3) plan onayları Codex mutabıksa sorma — direkt impl, (4) paralel iş / sürekli devam.
+**Çoklu iteration Codex adversarial istişare** (iter-2..iter-7) ile 30 commit Codex plan-consensus ile doğrulandı. İki thread: ana K8s-6 + retrospective delta. Kullanıcı HARD RULE'ları: (1) kapanış kelime yasak, (2) IP dışa sızmaz, (3) plan onayları Codex mutabıksa sorma — direkt impl, (4) paralel iş / sürekli devam.
 
 ---
 
-## 2. İddia (bugün ne oldu — 25 commit)
+## 2. İddia (bugün ne oldu — 30 commit)
 
 ### 2.1 Seviye 0 — Calico Recovery + testai Edge Fix (2026-04-17)
 
@@ -71,10 +71,11 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 | `41d17e9` | iter-5 AGREE — W1 ghcr-pull namespace fix (Opsiyon B overlay-specific) |
 | `135a718` | iter-4/iter-5 scope — S4-rollback-runbook + D32-bootstrap-runbook + PLAN entry |
 | `3b0cb50` | iter-6 PARTIAL — 5 latent drift temizliği (README + install-sw ESO + shortname rollback + nginx D32 + script closure) |
-| `d4ac378` | session-handoff-2026-04-19.md v4 — 25 commit + durum özeti (D28 5-alan) |
+| `d4ac378` | session-handoff-2026-04-19.md v4 — 25 commit özeti (D28 5-alan, yazım anında) |
 | `5c06f22` | S3-A3 Grafana dashboard pack — 3 ConfigMap sidecar auto-import (authz plane + platform pods + edge synthetic) |
 | `fc794c3` | S1-S2 acceptance smoke runbook — D29 3-katman template (Up/Functional/Zanzibar-ready + D30 immutable + No-Go gate mapping) |
-| `<sonraki>` | Repo-side yedek: apply-eso-switch.sh + k6 zanzibar-load.js + handoff v4 update |
+| `4e89156` | Repo-side yedek 1: apply-eso-switch.sh + k6 zanzibar-load.js + handoff v4 update |
+| `f66b5f9` | Repo-side yedek 2: Vault policy HCL (eso-runtime.hcl + README) + PromQL query pack + S5 DR drill runbook |
 
 ---
 
@@ -162,10 +163,17 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 - ✅ **Grafana dashboard JSON pack** → `kustomize/base/monitoring/grafana-dashboards/` (3 ConfigMap sidecar auto-import)
 - ✅ **k6 load test K8s profile** → `tests/k6/zanzibar-load.js` (50 VU × 6dk steady, deny/allow synthetic threshold)
 
-Kalan repo-side iş potansiyeli:
-- PromQL query pack (S3 stability soak custom — mevcut PrometheusRule yerine günlük ops query'ler)
-- Vault policy HCL şablonları (eso-runtime + gitops-runtime policy'leri repo'da versioned)
-- Disaster recovery drill runbook (PG backup + volume restore + KC realm export)
+Kalan repo-side iş potansiyeli — **hepsi tamamlandı (f66b5f9 commit):**
+- ✅ **PromQL query pack** → `docs/promql-query-pack.md` (Authz/Pods/Edge/DB + S3 7-günlük rehber + alert mapping)
+- ✅ **Vault policy HCL şablonları** → `bootstrap/vault-policies/eso-runtime.hcl` + `README.md` (AppRole create + test komutları + rotation)
+- ✅ **Disaster recovery drill runbook** → `docs/S5-disaster-recovery-runbook.md` (RPO 24h + RTO 4h + 3 backup script + 4 restore senaryosu + çeyrek drill)
+
+**Repo-side paket tam (Codex onayı dahil):** Tüm şablonlar, runbook'lar, automation helper'lar, monitoring dashboard'lar, k6 load test profil, Vault policy, PromQL pack, DR drill, Day-2 ops (cert renewal + capacity expansion + on-call triage) hazır. Canlı apply hattı (5.2) dev repo PR merge + ops Vault seed + sysadmin D32 donanım bağımlı.
+
+**Day-2 ops paketi (Codex iter-7 tespit + iter-8 zincir, 3 yeni runbook):**
+- ✅ **Cert renewal runbook** → `docs/S5-cert-renewal-runbook.md` (Sectigo wildcard `*.acik.com` yıllık yenileme, CSR + obtain + mount + rollback)
+- ✅ **Capacity expansion runbook** → `docs/S5-capacity-expansion-runbook.md` (disk/memory/CPU darboğaz LVM expand + JVM heap + container limit + K8s PVC resize + ResourceQuota)
+- ✅ **On-call triage playbook** → `docs/on-call-triage-playbook.md` (8 alert karar matrisi + 5 dk checklist + escalation tree + post-mortem zorunluluğu)
 
 ---
 
@@ -200,7 +208,7 @@ Kalan repo-side iş potansiyeli:
 ```bash
 # Repo sanity
 cd /Users/halilkocoglu/Documents/platform-k8s-gitops
-git status                                          # clean main'den 25 commit ahead
+git status                                          # clean main'den 30 commit ahead
 git log --oneline main..HEAD | head -5              # son 5 commit
 
 # Kustomize build sanity
