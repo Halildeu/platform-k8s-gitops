@@ -1,8 +1,13 @@
 # Test overlay — k3d-test (staging-sw test cluster)
 # - Image: GHCR sha-<short>
 # - Host bridge: platform-test-net Docker network (172.19.0.x); fiili
-#   Endpoints patch değerleri satır 240+ (postgres 172.19.0.2, keycloak
-#   172.19.0.3, vault 172.19.0.1). 10.9.10.53 prod overlay'de kullanılır.
+#   Endpoints patch değerleri satır 240+ (postgres 172.19.0.4, keycloak
+#   172.19.0.5, vault 172.19.0.6). 10.9.10.53 prod overlay'de kullanılır.
+# - UYARI: Endpoints IP'leri deterministic değil (docker network connect sırası
+#   IP atar). Compose recreate sonrası bootstrap/reconnect-compose-to-test-net.sh
+#   hem docker bağlantısını hem kubectl Endpoints patch'ini çalıştırır. Git truth
+#   bu ay kullanılan IP setini yansıtır; kalıcı çözüm için compose'da
+#   ipv4_address sabitlemek ayrı roadmap item'ı (platform-ssot repo değişikliği).
 # - Replica: 0 default (D17 scale-to-zero); test-toggle.sh up → 1
 # - Namespace: platform-test
 # - JVM daha dar heap (D24)
@@ -247,7 +252,7 @@ patches:
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.19.0.2"
+        value: "172.19.0.4"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 5432
@@ -257,7 +262,7 @@ patches:
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.19.0.3"
+        value: "172.19.0.5"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8080        # container port (host 8081 mapping yok platform-test-net için)
@@ -267,7 +272,7 @@ patches:
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.19.0.1"        # Vault henüz connect edilmedi — placeholder
+        value: "172.19.0.6"        # Faz 3 ESO: vault docker network connect sonrası
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8200
