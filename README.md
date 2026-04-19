@@ -167,6 +167,31 @@ Backend kaynak kodu + Dockerfile + `application-k8s.yml` profilleri ayrı repoda
 
 Her büyük delta sonrası Codex MCP adversarial review (plan-time istişare). Detay: [CLAUDE.md](./CLAUDE.md).
 
+## Makefile Ops Wrappers
+
+```bash
+make help                    # hedef listesi
+make sanity                  # kustomize build all overlays
+make lint                    # yaml + shell + kustomize
+make apply-test              # canlı apply k3d-test
+make apply-prod              # interactive confirm (D30 atomic)
+make smoke-test              # testai edge sanity
+make install-eso-test        # ESO Helm install
+make es-switch-test          # per-service secret-stub → externalsecret
+```
+
+Detay: [Makefile](./Makefile) + [CONTRIBUTING.md](./CONTRIBUTING.md)
+
+## Pre-commit Hooks (lokal)
+
+```bash
+pip install pre-commit
+pre-commit install           # repo hook'u aktif
+pre-commit run --all-files   # manuel çalıştır
+```
+
+Hooks: no-closure-language (HARD RULE) + kustomize-build-sanity + yamllint + shellcheck + trailing-whitespace.
+
 ## Lisans
 
 Internal — Workcube ERP platform.
