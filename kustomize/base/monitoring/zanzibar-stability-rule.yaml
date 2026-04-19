@@ -1,0 +1,117 @@
+# PrometheusRule — Zanzibar Stability Gözlem (S3-A1)
+# Source: docs/S3-stability-soak-pack.md (2026-04-19 K8s-6 S3 pack)
+# Apply: S3 session (testai soak başlangıcı)
+# kube-prometheus-stack Prometheus CR `ruleSelector` bu `release` label'ı ile eşleşir
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: zanzibar-stability
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack   # Prom Operator selector
+spec:
+  groups:
+    - name: zanzibar.hub
+      interval: 30s
+      rules:
+        - alert: ZanzibarHubDown
+          expr: up{job="permission-service"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: authz-hub
+          annotations:
+            summary: "Permission-service (Zanzibar hub) DOWN"
+            description: "permission-service 2+ dk yanıt vermiyor. Authz plane aktif değil."
+            runbook_url: "docs/S3-stability-soak-pack.md#2-synthetic-authz-probe"
+
+        - alert: OpenFGADown
+          expr: up{job="openfga"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: authz-engine
+          annotations:
+            summary: "OpenFGA engine DOWN"
+
+        - alert: ZanzibarAuthzSyntheticFail
+          expr: probe_success{job="blackbox-testai-authz"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            component: authz-synthetic
+          annotations:
+            summary: "Zanzibar authz synthetic probe failing"
+            description: "/authz/me veya /authz/version erişilemiyor. Deny/allow enforce riski."
+
+    - name: zanzibar.pods
+      interval: 30s
+      rules:
+        - alert: PlatformTestPodRestartSpike
+          expr: |
+            sum by (pod, namespace) (
+              increase(kube_pod_container_status_restarts_total{namespace="platform-test"}[15m])
+            ) > 0
+          for: 1m
+          labels:
+            severity: warning
+            component: platform-test
+          annotations:
+            summary: "Unexpected restart in platform-test ({{ $labels.pod }})"
+
+        - alert: PlatformTestPodNotReady
+          expr: |
+            sum by (pod, namespace) (
+              kube_pod_status_ready{namespace="platform-test", condition="true"} == 0
+            ) > 0
+          for: 5m
+          labels:
+            severity: warning
+            component: platform-test
+          annotations:
+            summary: "Pod not ready {{ $labels.pod }}"
+
+    - name: zanzibar.cni
+      interval: 30s
+      rules:
+        - alert: CNINodeNotReady
+          expr: |
+            sum(kube_pod_status_ready{namespace="calico-system",pod=~"calico-node-.*",condition="true"} == 0) > 0
+          for: 2m
+          labels:
+            severity: critical
+            component: cni
+          annotations:
+            summary: "Calico CNI node NOT READY"
+            description: "Pod network etkilenebilir (2026-04-17 recovery pattern)."
+
+    - name: zanzibar.edge
+      interval: 30s
+      rules:
+        - alert: EdgeHigh5xxRatio
+          expr: |
+            (
+              sum(rate(nginx_ingress_controller_requests{ingress="platform",status=~"5.."}[5m]))
+              / sum(rate(nginx_ingress_controller_requests{ingress="platform"}[5m]))
+            ) > 0.01
+          for: 15m
+          labels:
+            severity: critical
+            component: edge
+          annotations:
+            summary: "Edge 5xx ratio > 1% (15dk)"
+            description: "D29 authoritative entrypoint sağlık kaybı. Rollback tetikleyici adayı."
+
+        - alert: EdgeHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(http_server_requests_seconds_bucket{application="api-gateway"}[5m]))
+            ) > 2
+          for: 10m
+          labels:
+            severity: warning
+            component: edge
+          annotations:
+            summary: "Gateway p95 latency > 2s (10dk)"

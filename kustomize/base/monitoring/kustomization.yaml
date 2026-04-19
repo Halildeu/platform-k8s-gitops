@@ -1,0 +1,25 @@
+# Monitoring base — kustomize
+# S3-A pack: PrometheusRule + BlackboxExporter + Probe CRs
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Namespace monitoring (prod cluster) — overlay'de namespace override olabilir
+namespace: monitoring
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: platform
+      app.kubernetes.io/component: monitoring
+    includeSelectors: false
+    includeTemplates: false
+
+resources:
+  - zanzibar-stability-rule.yaml
+  - blackbox-exporter.yaml
+  # S3 soak sırasında Grafana dashboard ConfigMap'leri de eklenebilir
+  # (grafana-operator veya sidecar provisioner ile)
+
+# Kullanım:
+# Apply sadece S3 session'da (testai soak başlangıcı öncesi):
+#   kubectl --context k3d-prod apply -k kustomize/base/monitoring
+# Veya overlay üzerinden (prod cluster için namespace=monitoring zaten default)

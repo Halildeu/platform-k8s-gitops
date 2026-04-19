@@ -2,8 +2,36 @@
 
 **Repo amacı:** Bu repo `autonomous-orchestrator` platformunun Kubernetes GitOps manifest'lerini tutar. Docker Compose üzerinden k3s cluster'a tam geçiş için **tek doğruluk kaynağıdır**. Bu repo'dan geliştirilen yapı, testler yeşil olduğunda **doğrudan canlıya alınır** — deneysel/atılabilir yapı değildir.
 
-**Son güncelleme:** 2026-04-14 (Codex Tur-4 uzlaşı + drift cleanup)
-**Durum:** PoC Dilim 1 manifest'leri + platform katmanı (ingress-nginx, ArgoCD, kube-prometheus-stack, Loki, Promtail, Tempo) + NetworkPolicy + Quota/LimitRange + ServiceAccount/imagePullSecret şablonu yazıldı. Lokal k3d-prod'da doğrulandı (pod'lar Ready, ingress/quota/NP aktif). Ana repoda (`autonomous-orchestrator`) auth-service + api-gateway Eureka kaldırma işi beklemede → image hazır olunca Dilim 1 smoke test. Test cluster (k3d-test) henüz ayakta değil. ESO/Vault auth henüz kapalı (stub Secret). Disk ETA 2026-04-16 staging-sw'de.
+**Son güncelleme:** 2026-04-19 (S1 Zanzibar runtime aktivasyonu + S2/S3/S4 doc pack + 10 HARD RULES revize)
+
+**Güncel Seviye Durum:**
+| Seviye | Faz Karşılığı | Durum | İş Tipi |
+|---|---|---|---|
+| **S0** Canlı dürüst | Faz 3/4 REGRESSION fix | ✅ TAMAM (2026-04-17) | Calico CNI + pod recovery + testai edge |
+| **S1** Zanzibar runtime | Faz 5/6/9/11 | ✅ Deploy PASS · ⚠ Allow synthetic WARN | permission-service 1/1 Running, deny enforce kanıtlı, allow S2-B3 bekliyor |
+| **S2** Ops sertleşme | Faz 7/8/9/10/14 | ⏳ Doc pack hazır, apply bekliyor | smoke-client → shortname apply → ESO/digest → ArgoCD |
+| **S3** Stability soak | Faz 12/13 | ⏳ Doc pack + YAML (PrometheusRule + Blackbox probe) hazır | Apply + 3-7 gün testai gözlem |
+| **S4** Cutover | Faz 15 | ⏳ Blueprint + D32 F1-F9 checklist | D32 staging-sw-2 donanım + atomic switch |
+
+**Bugünkü Commit'ler (2026-04-19):**
+- `8cec273` docs(handoff) platform-ssot permission-service K8s-ready istek
+- `ecc3935` feat(S1) permission-service K8s-ready + Zanzibar runtime aktivasyonu (17 dosya)
+- `154b4a3` docs(plan) S1 deploy-sonrası canlı sonuç
+- `eb13cb2` refactor(kustomize) intra-ns svc URLs shortname (S2-A1 git-only)
+- `85c7e2a` docs(handoff) S1 acceptance + S2/S3/S4 doc pack (787 insert, 6 doc)
+- `31ab635` docs(s2) no closure HARD RULE + nginx edge migration + shortname apply plan
+
+**Codex Thread:** `019d9a75-4299-7313-85bb-003a7de680eb` (10+ tur, devam ediyor)
+
+**Sonraki Aktif Sıra (Codex FR3):**
+1. smoke-client + allow synthetic (S2-B3) — platform-ssot iş, handoff doc hazır
+2. Host nginx testai block kalıcılık root cause (S2-X2) + D18 migration runbook hazır
+3. Shortname refactor apply (S2-A1) — smoke-client sonrası selective apply + rolling restart
+4. W1 ghcr-pull ESO + W3 digest pin (paralel, handoff doc hazır)
+5. ArgoCD install test cluster (opsiyonel, dev ergonomics)
+6. S3 monitoring apply + soak başlangıcı
+7. D32 staging-sw-2 bootstrap (F1-F9, paralel hat)
+8. S4 cutover atomic switch
 
 ---
 
