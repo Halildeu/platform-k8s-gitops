@@ -211,3 +211,6 @@ Apply sırası:
 S2-C1 ArgoCD install + S2-B3 smoke-client sonrası S3-A uygulama. Smoke-client
 bearer token secret mount blackbox-exporter.yaml satır 86-90 + 99-101 yorumdan
 açılır (authz_allow module bearer_token_file mount).
+
+**No-Go gate 6/6 blocker smoke template:** `docs/S1-S2-acceptance-smoke-runbook.md`
+(Up/Functional/Zanzibar-ready 3 katman D29 + D30 immutable + rollback smoke).
