@@ -1,0 +1,49 @@
+# PostgreSQL Test Instance — ADR-0002 Same-Host Full Isolation
+# Bind-mount: /srv/platform/stateful/test/postgres (forward-extension: ayrı partition)
+# Network: platform-test-net (k3d-test + test stateful ONLY)
+# Port: 5433 (test — prod 5432 ile çakışma yok)
+# Container: platform-pg-test
+# Operasyon: test default scale-to-zero (ADR §5.1); gerektiğinde up.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: platform-pg-test
+    restart: unless-stopped
+    ports:
+      - "5433:5432"   # Host 5433 → container 5432
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+      POSTGRES_DB: postgres
+    volumes:
+      - /srv/platform/stateful/test/postgres:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+    secrets:
+      - pg_password
+    networks:
+      - platform-test-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G      # ADR §7.2 platform-test-stateful.slice (daha dar)
+          cpus: "0.75"
+
+networks:
+  platform-test-net:
+    external: true          # pre-created (k3d-test zaten kullanıyor)
+
+secrets:
+  pg_password:
+    file: ./secrets/pg_password.txt   # chmod 600, .gitignore

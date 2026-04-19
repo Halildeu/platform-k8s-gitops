@@ -1,25 +1,28 @@
-# PostgreSQL prod instance — staging-sw-2 D32
-# Fresh prod, staging-sw (eski test) compose'undan FORK — data migration YOK.
-# Backup: bootstrap/backup-freshness-exporter.sh + cron pg_dumpall
-# Port: 5432 (host'ta port map yok — K8s cluster Endpoints 10.9.10.53:5432)
+# PostgreSQL Prod Instance — ADR-0002 Same-Host Full Isolation
+# Bind-mount: /srv/platform/stateful/prod/postgres (forward-extension: ayrı partition)
+# Network: platform-prod-net (k3d-prod + prod stateful ONLY)
+# Port: 5432 (prod)
+# Container: platform-pg-prod
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: platform-postgres-db-prod
+    container_name: platform-pg-prod
     restart: unless-stopped
     ports:
-      - "10.9.10.53:5432:5432"   # Host bind IP (D20) — K8s cluster bu IP'e bağlanır
+      - "5432:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
       POSTGRES_DB: postgres
-      # DB'ler bootstrap/install-on-staging-sw-2.sh F3.4 ile yaratılır (stdin pipe)
+      # DB'ler migrate-init.sql ile yaratılır (bkz init/01-create-databases.sql)
     volumes:
-      - pg-data:/var/lib/postgresql/data
-      - ./init:/docker-entrypoint-initdb.d:ro   # opsiyonel init scripts
+      - /srv/platform/stateful/prod/postgres:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro   # DB create + grant scripts
     secrets:
       - pg_password
+    networks:
+      - platform-prod-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -31,18 +34,16 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
-    # D22 kaynak sınırları
     deploy:
       resources:
         limits:
-          memory: 2G
-          cpus: "1.0"
+          memory: 3G        # ADR §7.2 platform-prod-stateful.slice
+          cpus: "1.5"
 
-volumes:
-  pg-data:
-    # Named volume — Docker yönetir, backup /var/lib/docker/volumes/*/pg-data
-    # Backup: pg_dumpall (docs/S5-disaster-recovery-runbook.md)
+networks:
+  platform-prod-net:
+    external: true         # pre-created by bootstrap: docker network create platform-prod-net
 
 secrets:
   pg_password:
-    file: ./secrets/pg_password.txt   # chmod 600 + .gitignore
+    file: ./secrets/pg_password.txt   # chmod 600, .gitignore

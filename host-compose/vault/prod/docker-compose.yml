@@ -1,7 +1,10 @@
-# Vault prod instance — staging-sw-2 D32
-# KV v2 + AppRole auth + audit backend enabled
-# Storage: Raft (local filesystem) — single-node MVP
-# Port: 8200 host-side
+# Vault Prod Instance — ADR-0002 Same-Host Full Isolation
+# KV v2 + AppRole auth + audit backend
+# Storage: Raft (local filesystem), single-node (forward-extension: replication)
+# Network: platform-prod-net
+# Port: 8200 (prod)
+# Container: platform-vault-prod
+# Seal: manual unseal (HSM yok — ADR §3.6; forward-extension: transit seal)
 
 services:
   vault:
@@ -11,15 +14,17 @@ services:
     command: ["vault", "server", "-config=/vault/config/config.hcl"]
     environment:
       VAULT_ADDR: http://127.0.0.1:8200
-      VAULT_API_ADDR: http://10.9.10.53:8200
+      VAULT_API_ADDR: http://platform-vault-prod:8200   # intra-network API addr
     ports:
-      - "10.9.10.53:8200:8200"   # Host bind (D20)
+      - "8200:8200"
     cap_add:
-      - IPC_LOCK   # mlock — secret swap RAM'den koruma
+      - IPC_LOCK   # mlock — secret swap RAM'den koruma (ADR güvenlik katmanı)
     volumes:
       - ./config:/vault/config:ro
-      - vault-data:/vault/data
-      - vault-logs:/vault/logs   # audit log persist (docs/S5-vault-audit-retention.md)
+      - /srv/platform/stateful/prod/vault/data:/vault/data
+      - /srv/platform/stateful/prod/vault/logs:/vault/logs   # audit log persist
+    networks:
+      - platform-prod-net
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8200/v1/sys/health"]
       interval: 30s
@@ -36,6 +41,6 @@ services:
           memory: 512M
           cpus: "0.5"
 
-volumes:
-  vault-data:    # Raft storage — backup critical (docs/S5-DR §2.3)
-  vault-logs:    # audit log persist
+networks:
+  platform-prod-net:
+    external: true

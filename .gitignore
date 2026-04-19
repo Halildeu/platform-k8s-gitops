@@ -3,6 +3,10 @@
 .env.*
 !*.env.example
 
+# host-compose secrets (ADR-0002 stateful isolation)
+host-compose/*/*/secrets/*.txt
+!host-compose/*/*/secrets/*.txt.example
+
 # TLS cert + key (host-level proxy)
 host-compose/proxy/tls/*.crt
 host-compose/proxy/tls/*.key
