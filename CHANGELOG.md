@@ -6,7 +6,7 @@ Tüm önemli değişiklikler bu dosyada tutulur. Format: [Keep a Changelog](http
 
 ## [Unreleased] — 2026-04-17 → 2026-04-19
 
-Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 50 commit K8s-6 session.
+Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 53 commit K8s-6 session.
 
 ### Added
 
@@ -50,7 +50,9 @@ Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 50 commit K8s-6 session.
 - `docs/S5-capacity-expansion-runbook.md` — disk LVM + JVM heap + PVC + Quota
 - `docs/S5-vault-audit-retention.md` — file backend + logrotate + review
 - `docs/S5-privileged-access-review.md` — AppRole + RBAC + SSH + PAT çeyreklik
-- `docs/on-call-triage-playbook.md` — 8 alert karar matrisi (ROLLBACK/INVESTIGATE/OBSERVE) + 5 dk checklist + escalation tree
+- `docs/on-call-triage-playbook.md` — 14 alert karar matrisi (ROLLBACK/INVESTIGATE/OBSERVE + Kyverno + backup triggers) + 5 dk checklist + escalation tree
+- `docs/S5-security-incident-response.md` — 6 incident tipi (credential compromise + container escape + suspicious edge + supply chain + DDoS + exfil) + forensics + post-mortem + preventive hardening
+- `docs/README.md` — master index (24 doc envanteri + 🚨 on-call + 🚀 deploy + ✅ acceptance + 🔐 day-2 + 📋 plan + 📊 query pack + 🤝 handoff + quick start)
 
 **Plan pack:**
 - `docs/S2-B1-vault-property-matrix.md` — Vault path + property matrisi
