@@ -1,0 +1,73 @@
+# PrometheusRule — Backup Freshness Alert
+# Source: docs/S5-disaster-recovery-runbook.md (Codex iter-8 non-blocking day-2 ek)
+# Metric: backup_last_success_timestamp_seconds{type="pg|kc|vault"} — node_exporter
+#         textfile collector ile /var/lib/node_exporter/backup_freshness.prom dosyasından
+# Exporter script: bootstrap/backup-freshness-exporter.sh (cron 0 * * * *)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: backup-freshness
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: backup.freshness
+      interval: 5m
+      rules:
+        - alert: BackupPGStale
+          expr: (time() - backup_last_success_timestamp_seconds{type="pg"}) > 86400
+          for: 15m
+          labels:
+            severity: warning
+            component: backup
+            backup_type: pg
+          annotations:
+            summary: "PostgreSQL backup stale (>24h)"
+            description: "Son PG dump 24 saatten eski. DR RPO (24h) ihlal riski."
+            runbook_url: "docs/S5-disaster-recovery-runbook.md#21-postgresql-günlük-dump"
+
+        - alert: BackupPGCritical
+          expr: (time() - backup_last_success_timestamp_seconds{type="pg"}) > 172800
+          for: 30m
+          labels:
+            severity: critical
+            component: backup
+            backup_type: pg
+          annotations:
+            summary: "PostgreSQL backup CRITICAL (>48h)"
+            description: "Son PG dump 48 saatten eski. DR RPO ihlali kesin. Ops acil aksiyon."
+
+        - alert: BackupVaultStale
+          expr: (time() - backup_last_success_timestamp_seconds{type="vault"}) > 86400
+          for: 15m
+          labels:
+            severity: warning
+            component: backup
+            backup_type: vault
+          annotations:
+            summary: "Vault snapshot stale (>24h)"
+            description: "Son Vault Raft snapshot 24 saatten eski."
+
+        - alert: BackupKCStale
+          expr: (time() - backup_last_success_timestamp_seconds{type="kc"}) > 691200
+          for: 30m
+          labels:
+            severity: warning
+            component: backup
+            backup_type: kc
+          annotations:
+            summary: "Keycloak realm export stale (>8 gün)"
+            description: "Haftalık KC realm export 8 günden eski. Cron kontrol + retention review."
+
+        - alert: BackupExporterDown
+          expr: absent(backup_last_success_timestamp_seconds)
+          for: 15m
+          labels:
+            severity: critical
+            component: backup
+          annotations:
+            summary: "Backup freshness exporter DOWN"
+            description: "node_exporter textfile collector backup_freshness.prom okunmuyor. Cron çalışmıyor veya exporter script fail."
