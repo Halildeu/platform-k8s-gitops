@@ -155,7 +155,11 @@ fi
    - Test cluster: `kubectl apply -k kustomize/overlays/test/eso`
    - Prod cluster: `kubectl apply -k kustomize/overlays/prod/eso`
    - **YASAK:** `kubectl apply -k kustomize/base/eso` (ClusterSecretStore FQDN placeholder, Ready=False)
-4. Doğrula: `kubectl get externalsecret -A` + `kubectl get secret ghcr-pull` + `kubectl get clustersecretstore` (Status=Ready)
+4. Doğrula:
+   - `kubectl get clustersecretstore vault-platform-gitops` Status=Ready
+   - `kubectl -n platform-<env> get externalsecret ghcr-pull` Synced=True (W1 Opsiyon B — workload ns)
+   - `kubectl -n platform-<env> get secret ghcr-pull` type=kubernetes.io/dockerconfigjson
+   - Cache-busting pull kanıtı (fresh tag veya node cache temizle + `kubectl describe pod` Events "Successfully pulled image")
 5. Per-service ES switch (her svc kustomization.yaml'da `secret-stub.yaml` kaldır + `externalsecret.yaml` ekle)
 6. Apply overlay (`kubectl apply -k overlays/test`)
 7. Doğrula: 7 ExternalSecret Synced + pod env effective

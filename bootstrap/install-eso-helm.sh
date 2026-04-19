@@ -73,13 +73,22 @@ NEXT STEPS (manuel ops):
 6) Overlay ESO apply (ClusterSecretStore + ghcr-pull ExternalSecret):
    kubectl --context ${CTX} apply -k kustomize/overlays/${CLUSTER}/eso
 
-7) Doğrulama:
+7) Doğrulama (W1 Opsiyon B — ghcr-pull workload ns'inde):
    kubectl --context ${CTX} get clustersecretstore vault-platform-gitops
    # Status=Ready, Message=store validated
-   kubectl --context ${CTX} -n external-secrets get externalsecret ghcr-pull
-   # Synced=True
+   kubectl --context ${CTX} -n platform-${CLUSTER} get externalsecret ghcr-pull
+   # Synced=True (overlay-specific ES, workload ns)
    kubectl --context ${CTX} -n platform-${CLUSTER} get secret ghcr-pull
    # type=kubernetes.io/dockerconfigjson
+   # NOT: ghcr-pull ExternalSecret base/eso'da DEĞİL, overlays/${CLUSTER}/eso'da.
+   # Codex iter-4 REVISE + iter-5 AGREE Opsiyon B — namespace fix.
+
+8) Gerçek pull acceptance (cache-busting — Codex iter-5 uyarısı):
+   # Sadece "secret var" ≠ "pull auth çalıştı". Cache-independent prova gerek:
+   #   (a) Fresh tag deploy (yeni sha-<short> image)
+   #   (b) Veya node image cache temizle + rollout restart
+   #   (c) Veya describe pod 'Successfully pulled image' event (kubernetes.io
+   #       kube-apiserver events)
 
 8) Per-service ExternalSecret switch (S2-B1 Dilim 2):
    Her servis kustomization.yaml içinde secret-stub.yaml kaldır, externalsecret.yaml ekle.

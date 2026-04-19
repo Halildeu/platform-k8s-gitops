@@ -196,8 +196,14 @@ Gün 7: No-Go gate review → cutover açık/kapalı karar.
 ## 5. Apply Notu
 
 **Bu bir doküman pack — S3 session'da apply edilir.** Gerekli dosyalar:
-- `kustomize/base/monitoring/zanzibar-stability-rule.yaml`
-- `kustomize/base/monitoring/blackbox-config.yaml`
-- `kustomize/base/monitoring/zanzibar-authz-probe.yaml`
+- `kustomize/base/monitoring/zanzibar-stability-rule.yaml` — PrometheusRule (Hub/Pod/CNI + ZanzibarEdgeSyntheticFail)
+- `kustomize/base/monitoring/blackbox-exporter.yaml` — ConfigMap + Deployment + Service + 4 Probe CR (testai-deny/health + prod-deny/health, Codex iter-2 C-1 REVISE-ONAY external edge target)
+- `kustomize/base/monitoring/kustomization.yaml` — base kustomization (namespace: monitoring)
 
-S2-C1 ArgoCD install + S2-B3 smoke-client sonrası S3-A uygulama.
+Apply sırası:
+1. `kubectl --context k3d-prod apply -k kustomize/base/monitoring` (prod cluster merkezi monitoring)
+2. Doğrula: `kubectl -n monitoring get probes,prometheusrules`
+
+S2-C1 ArgoCD install + S2-B3 smoke-client sonrası S3-A uygulama. Smoke-client
+bearer token secret mount blackbox-exporter.yaml satır 86-90 + 99-101 yorumdan
+açılır (authz_allow module bearer_token_file mount).

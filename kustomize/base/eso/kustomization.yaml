@@ -15,10 +15,15 @@ labels:
 
 resources:
   - clustersecretstore-vault.yaml
-  - externalsecret-ghcr-pull.yaml
-  # İleride: per-service ExternalSecret (auth-service-secrets,
-  # user-service-secrets, permission-service-secrets) overlay altında
-  # veya base/apps/<svc>/externalsecret.yaml (secret-stub.yaml ile exchange)
+  # ghcr-pull ExternalSecret overlay-specific — base/eso kustomization
+  # namespace=external-secrets zorlar (ClusterSecretStore için gerekli),
+  # ama ExternalSecret workload ns'inde (platform-test/platform-prod) olmalı
+  # ki Secret ServiceAccount imagePullSecrets referansı ile uyumlu olsun.
+  # (Codex iter-4 REVISE + iter-5 AGREE Opsiyon B, 2026-04-19).
+  # Per-service ExternalSecret (auth-service-secrets, user-service-secrets,
+  # permission-service-secrets) base/apps/<svc>/externalsecret.yaml altında
+  # (namespace HARDCODE YOK, overlay namespace set eder; W1 drift'ine sahip
+  # değil — intended apply overlay üzerinden).
 
 # Apply: ESO install sonrasi (helm-values/external-secrets)
 #

@@ -86,10 +86,10 @@ Detay: platform-k8s-gitops/docs/handoff-S2-B-artifact-hardening.md
 Özet:
 W1 — ghcr-pull Secret ESO ile Vault'tan auto-inject:
   - Vault path: kv/gitops/ghcr-token (username + password=PAT read:packages)
-  - AppRole gitops-runtime read policy
-  - K8s-6 repo zaten hazır: kustomize/base/eso/externalsecret-ghcr-pull.yaml
-  - Bu PR'da iş: Vault path seed + AppRole policy + (eğer gerekirse) ESO
-    ClusterSecretStore "vault-platform-gitops" tanımla
+  - AppRole eso-runtime read policy (kv/data/gitops/ghcr-token)
+  - K8s-6 repo hazır: overlays/test/eso + overlays/prod/eso (Codex iter-5
+    Opsiyon B — workload ns, base/eso değil)
+  - Bu PR'da iş: Vault path seed + AppRole policy
 
 W3 — platform-ssot deploy-backend.yml her build sonunda K8s-gitops'a PR açmalı:
   - Her servis için "kustomize edit set image <svc>=...:sha-<short>"

@@ -39,19 +39,22 @@ Seviye 1'de iki geçici/minimal çözüm uygulandı:
 
 ### 2.3 Kabul Kriteri
 
-- [ ] `kubectl -n platform-test get secret ghcr-pull` **VAR** (type docker-registry)
-- [ ] ESO pod Running + `ExternalSecret` Synced status
+- [ ] `kubectl -n platform-test get secret ghcr-pull` **VAR** (type kubernetes.io/dockerconfigjson) — **workload ns** (Codex iter-5 Opsiyon B)
+- [ ] `kubectl -n platform-test get externalsecret ghcr-pull` Synced=True
+- [ ] ESO pod Running (`kubectl -n external-secrets get pods`)
 - [ ] Pod spec `imagePullSecrets: [{name: ghcr-pull}]` aktif kullanım
-- [ ] Yeni deploy'da GHCR pull başarılı (image cache temizlenmiş ortamda test)
+- [ ] **Cache-busting gerçek pull kanıtı** (Codex iter-5 uyarısı — "secret var" ≠ "pull auth çalıştı"): (a) fresh sha-<short> tag deploy veya (b) node image cache temizle + rollout restart veya (c) `kubectl describe pod` Events'da `Successfully pulled image`
 
-### 2.4 K8s-6 Manifest Taslak
+### 2.4 K8s-6 Manifest (Codex iter-5 Opsiyon B — overlay-specific)
+
+**Kalıcı konum:** `kustomize/overlays/test/eso/externalsecret-ghcr-pull.yaml` + `kustomize/overlays/prod/eso/externalsecret-ghcr-pull.yaml` (base/eso'da DEĞİL — namespace drift önlemi).
 
 ```yaml
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
   name: ghcr-pull
-  namespace: platform-test
+  namespace: platform-test    # workload ns (overlay-specific)
 spec:
   refreshInterval: 30m
   secretStoreRef:

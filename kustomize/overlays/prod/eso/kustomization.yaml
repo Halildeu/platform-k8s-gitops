@@ -6,6 +6,7 @@ kind: Kustomization
 
 resources:
   - ../../../base/eso
+  - externalsecret-ghcr-pull.yaml    # platform-prod ns (W1 Opsiyon B)
 
 patches:
   - target:
