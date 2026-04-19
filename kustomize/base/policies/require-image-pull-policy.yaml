@@ -1,0 +1,32 @@
+# imagePullPolicy: Always YASAK (D30 immutable tag ile çelişir)
+# IfNotPresent veya Never (bilinçli pull davranışı)
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-image-pull-policy
+  annotations:
+    policies.kyverno.io/title: Require Explicit imagePullPolicy
+    policies.kyverno.io/category: Platform Governance
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/description: |
+      imagePullPolicy Always YASAK — D30 immutable tag pattern ile uyumsuz.
+      IfNotPresent (default) veya Never kabul edilir.
+spec:
+  validationFailureAction: audit
+  background: true
+  rules:
+    - name: check-pull-policy
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - platform-test
+                - platform-prod
+      validate:
+        message: "imagePullPolicy Always YASAK (D30). IfNotPresent veya Never kullan."
+        pattern:
+          spec:
+            containers:
+              - =(imagePullPolicy): "!Always"

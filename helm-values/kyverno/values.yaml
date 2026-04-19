@@ -1,0 +1,56 @@
+# Kyverno — admission controller policy engine
+# Chart: https://kyverno.github.io/kyverno
+# Apply: bootstrap/install-kyverno.sh (ileride) veya manuel helm install
+# Policy CR'lar: kustomize/base/policies/ (ClusterPolicy — D30 HARD RULE enforce)
+
+# Kyverno admission controller + background controller
+admissionController:
+  replicas: 1      # MVP; prod D32 sonrası HA 3 replica
+
+  # D22 dar request / cömert limit
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 384Mi
+      cpu: 500m
+
+backgroundController:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+
+cleanupController:
+  enabled: true
+  replicas: 1
+
+reportsController:
+  enabled: true
+  replicas: 1
+
+# PolicyReport CR (kube-prometheus-stack PrometheusRule ile monitor edilebilir)
+policyReportsEnabled: true
+
+# Webhook timeout (prod'da çok dar olmamalı — 10s önerilir)
+webhooksTimeout: 10
+
+# Metrics (Prometheus scrape için)
+serviceMonitor:
+  enabled: true
+  additionalLabels:
+    release: kube-prometheus-stack
+
+# Audit mode — initial deployment'ta enforce değil audit (policy violations log + PolicyReport)
+# Prod için enforce'a geçmeden önce test'te audit mode gözlem
+# Not: validationFailureAction ClusterPolicy spec'inde tanımlanır, values.yaml'da değil
+
+# Container securityContext (non-root)
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false

@@ -1,0 +1,26 @@
+# Kyverno ClusterPolicy — D30 HARD RULE runtime enforce
+# Codex yedek iş: admission controller seviyesinde immutable artifact +
+# non-root + resource limits + pull policy enforce. CI (closure-language-check)
+# paralel — defense in depth.
+#
+# Apply: helm install kyverno + kubectl apply -k kustomize/base/policies
+# Pre-install: helm-values/kyverno/values.yaml
+#
+# validationFailureAction "audit" (soft) → PolicyReport CR (violations log).
+# Prod'da enforce'a geç sonra test'te audit mode güvenli gözlem.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - require-sha-image-tag.yaml
+  - disallow-privileged-pods.yaml
+  - require-non-root.yaml
+  - require-resource-limits.yaml
+  - require-image-pull-policy.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: platform
+      app.kubernetes.io/component: policy
+    includeSelectors: false
+    includeTemplates: false
