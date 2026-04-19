@@ -1,0 +1,35 @@
+# ArgoCD Application — platform-prod overlay sync (MANUAL — D30 atomic cutover)
+# S2-C2: prod cluster overlay GitOps (staging-sw-2, D32 sonrasi)
+# Codex Tur 3: "Cutover atomic switch — auto-sync YOK, manual trigger"
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Halildeu/platform-k8s-gitops.git
+    targetRevision: main
+    path: kustomize/overlays/prod
+  destination:
+    # D32: staging-sw-2 k3d-prod ayrı fiziksel host
+    # argocd cluster add k3d-prod (staging-sw-2'den) --name prod-cluster
+    name: prod-cluster
+    namespace: platform-prod
+  syncPolicy:
+    # MANUAL sync — D30 HARD RULE: atomic cutover
+    # Otomatik sync açık olursa ArgoCD her değişikliği anında canlıya sürer —
+    # bu cutover blueprint'ini ihlal eder. Manuel onay zorunlu.
+    automated: {}    # BOŞ — NOT enabled
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  ignoreDifferences:
+    # Prod replicas (D21: sabit 2, HPA yok) — ArgoCD drift düzeltmesin
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

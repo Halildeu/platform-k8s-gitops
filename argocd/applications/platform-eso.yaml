@@ -1,0 +1,27 @@
+# ArgoCD Application — platform-eso (ExternalSecret + ClusterSecretStore)
+# S2-C2: ESO CR'ları GitOps ile sync
+# Prereq: ESO Deployment + Vault ClusterSecretStore manuel kurulmuş olmalı
+#   (helm-values/external-secrets/ + bootstrap F6)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-eso
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Halildeu/platform-k8s-gitops.git
+    targetRevision: main
+    path: kustomize/base/eso
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-secrets
+  syncPolicy:
+    automated:
+      prune: false    # ClusterSecretStore silinmesi risk — manuel temizlik
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false   # external-secrets ns Helm tarafından
+      - ServerSideApply=true
