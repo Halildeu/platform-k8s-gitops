@@ -2,7 +2,7 @@
 
 > **Source:** K8s-6 Codex FR4 son öneri (2026-04-19)
 > **Usage:** ESO apply öncesi Vault path + property varlık doğrulama
-> **Prereq:** Vault AppRole `eso-runtime` aktif + `eso-runtime-kv-read` policy
+> **Prereq:** Vault AppRole `eso-runtime` aktif + `eso-runtime` policy (canonical, bootstrap/vault-policies/eso-runtime.hcl)
 
 ---
 
