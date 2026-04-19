@@ -18,6 +18,11 @@
 | `PlatformPodRestartSpike` | warning | **INVESTIGATE** | 15dk'da 1+ pod restart. `kubectl logs` + memory/OOM + disk full check. |
 | `PlatformPodNotReady` | warning | **INVESTIGATE** (5dk+ → ROLLBACK candidate) | 5dk+ pod Not Ready. `kubectl describe pod` Events + Deployment spec. |
 | `CNINodeNotReady` | critical | **INVESTIGATE** (2dk+) | Calico CNI DOWN. 2026-04-17 recovery pattern (typha scale=0 + node recycle). |
+| `KyvernoPolicyViolation` | warning/critical | **INVESTIGATE** (policy tipine göre) | Admission policy fail. audit mode → log; enforce mode → deploy reject. Violation detay: `kubectl get policyreport -A`. |
+| `BackupPGStale` | warning | **INVESTIGATE** | >24h PG backup yok → cron kontrol + disk full + permission audit. |
+| `BackupPGCritical` | critical | **ROLLBACK** (DR perspektifi) | >48h PG backup yok → DR RPO ihlali. Ops acil + backup script fix. |
+| `BackupVaultStale` | warning | **INVESTIGATE** | >24h Vault snapshot yok (RPO risk). |
+| `BackupExporterDown` | critical | **INVESTIGATE** | node_exporter textfile collector okumuyor (monitoring körlüğü). |
 
 ---
 
@@ -107,6 +112,27 @@
 
 - Readiness probe fail → endpoint response 200 değil (Spring Boot startup, DB bekliyor)
 - Init container fail → migration veya prereq
+
+### 2.8.1 KyvernoPolicyViolation (warning/critical, INVESTIGATE)
+
+**Neden:** Admission controller policy ihlali (D30 immutable + non-root + resource limits + pull policy).
+
+**5 dk aksiyon:**
+1. **T+0 (30s)** — `kubectl get policyreport -A` — hangi pod hangi policy fail
+2. **T+1 (1m)** — Policy adı + violation detay:
+   ```bash
+   kubectl get policyreport <report-name> -o json | jq '.results[] | select(.result == "fail")'
+   ```
+3. **T+3 (3m)** — Policy tipine göre:
+   - `require-sha-image-tag` → Pod moving tag kullanıyor (latest/main-stable) → overlay tag fix + rollout
+   - `require-non-root` → securityContext.runAsNonRoot eksik → deployment patch
+   - `require-resource-limits` → resources.limits eksik → D22 overlay patch
+   - `disallow-privileged-pods` → container escape şüphesi (kritik)
+4. **T+5 (5m)** — Audit mode'da loglanır (deploy PASS); enforce mode'da reject → deploy fail → CI/CD cluster alerts
+
+**Enforce mode'da Policy fail → Rollback DEĞİL, Fix DEPLOY:**
+- Eğer prod'da policy enforce aktif ve yeni deploy fail olduysa, eski image Running kalır (sorun yok)
+- Fix: policy uyumlu manifest düzelt + re-deploy
 
 ### 2.8 CNINodeNotReady (critical, INVESTIGATE)
 
