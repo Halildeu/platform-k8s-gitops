@@ -83,14 +83,24 @@ run "bash ${GITOPS_PATH}/bootstrap/install-logs-traces.sh ${K3D_CLUSTER}"
 # ========================
 log "=== F3: Host Compose PROD Servisleri ==="
 # NOT: staging-sw'deki compose'un FORK'u — fresh prod instance, data migration YOK
-log "   F3.1-F3.3: Host compose PG/KC/Vault prod"
-run "docker compose -f ${GITOPS_PATH}/host-compose/keycloak/prod/docker-compose.yml up -d"
-run "docker compose -f ${GITOPS_PATH}/host-compose/vault/prod/docker-compose.yml up -d"
-# PostgreSQL prod ayrı container (compose template mevcut değilse ops elle yazmalı)
-warn "   F3.3: host-compose/postgres/prod/ template henüz yazılmadı — ops elle yaz"
+# UYARI (Codex PR #1 iter-9): host-compose/keycloak/prod/, vault/prod/, postgres/prod/
+# template'leri şu an repo'da YOK. Sadece host-compose/proxy/ mevcut.
+# Ops elle yazmalı (mevcut staging-sw compose'undan fork + prod-specific override).
+warn "   F3.1-F3.3: Host compose PG/KC/Vault prod — TEMPLATE EKSİK, ops elle yaz"
+warn "     Beklenen path'ler (henüz yok):"
+warn "       ${GITOPS_PATH}/host-compose/keycloak/prod/docker-compose.yml"
+warn "       ${GITOPS_PATH}/host-compose/vault/prod/docker-compose.yml"
+warn "       ${GITOPS_PATH}/host-compose/postgres/prod/docker-compose.yml"
+warn "     Template yazıldıktan sonra bu satırları uncomment:"
+warn "     # run docker compose -f ${GITOPS_PATH}/host-compose/keycloak/prod/docker-compose.yml up -d"
+warn "     # run docker compose -f ${GITOPS_PATH}/host-compose/vault/prod/docker-compose.yml up -d"
+warn "     # run docker compose -f ${GITOPS_PATH}/host-compose/postgres/prod/docker-compose.yml up -d"
 
-log "   F3.4: PG init databases"
-cat <<SQL > /tmp/init-prod-db.sql
+log "   F3.4: PG init databases (stdin pipe — /tmp host file drift fix)"
+# Codex PR #1 iter-9 tespit: heredoc /tmp/init-prod-db.sql host'ta yazılır,
+# docker exec container içinden okur → path uyumsuz. Fix: stdin pipe ile
+# docker exec -i doğrudan.
+run 'docker exec -i platform-postgres-db-prod psql -U postgres <<SQL
 CREATE DATABASE auth_db OWNER platform;
 CREATE DATABASE users_db OWNER platform;
 CREATE DATABASE variants_db OWNER platform;
@@ -100,8 +110,7 @@ CREATE DATABASE schemas_db OWNER platform;
 CREATE DATABASE permission_db OWNER platform;
 CREATE DATABASE openfga OWNER openfga;
 CREATE DATABASE keycloak OWNER keycloak_user;
-SQL
-run "docker exec platform-postgres-db-prod psql -U postgres -f /tmp/init-prod-db.sql"
+SQL'
 
 # ========================
 # F4 — Host Nginx SNI Proxy
@@ -129,21 +138,34 @@ log "   F6.1: Vault AppRole secret-id (manuel — ops ilk bootstrap, sonrası au
 warn "     kubectl -n external-secrets create secret generic vault-approle-secret --from-literal=secret-id=<VAULT_ESO_RUNTIME_SECRET_ID>"
 log "   F6.2: Overlay ESO apply — ClusterSecretStore + ghcr-pull (YASAK: base/eso doğrudan apply)"
 run "kubectl --context k3d-${K3D_CLUSTER} apply -k ${GITOPS_PATH}/kustomize/overlays/prod/eso"
-log "   F6.3: Doğrula ClusterSecretStore Ready + ghcr-pull Synced"
+log "   F6.3: Doğrula ClusterSecretStore Ready + ghcr-pull Synced (W1 Opsiyon B: workload ns)"
 run "kubectl --context k3d-${K3D_CLUSTER} get clustersecretstore vault-platform-gitops"
-run "kubectl --context k3d-${K3D_CLUSTER} -n external-secrets get externalsecret ghcr-pull"
+# Codex PR #1 iter-9: ghcr-pull ExternalSecret W1 Opsiyon B ile workload ns'de
+# (external-secrets değil — platform-prod/test).
+run "kubectl --context k3d-${K3D_CLUSTER} -n platform-${K3D_CLUSTER} get externalsecret ghcr-pull"
+run "kubectl --context k3d-${K3D_CLUSTER} -n platform-${K3D_CLUSTER} get secret ghcr-pull"
 log "   F6.4: Per-service ExternalSecret (7 backend + permission-service) — overlay apply ile gelir (F8+)"
 
 # ========================
 # F7 — GitOps (ArgoCD)
 # ========================
 log "=== F7: ArgoCD Repo + Applications ==="
+log "   F7.0: ArgoCD cluster registry (Codex PR #1 iter-9 eksiklik fix)"
+# platform-prod Application destination name: prod-cluster bekliyor —
+# argocd cluster add ile kaydet.
+warn "   F7.0.1: argocd login <server> (ilk kurulum, ops manuel)"
+warn "   F7.0.2: Prod cluster registry:"
+warn "     argocd cluster add k3d-${K3D_CLUSTER} --name prod-cluster --project default"
+warn "     (context k3d-${K3D_CLUSTER} lokal, ama multi-cluster ArgoCD için cluster secret üretilir)"
+
 log "   F7.1: ArgoCD repo credential"
 run "argocd --server argocd.${K3D_CLUSTER}.local repo add ${GITOPS_REPO} --ssh-private-key-path ~/.ssh/k8s-gitops-deploy"
 log "   F7.2: app-of-apps root.yaml apply"
 run "kubectl --context k3d-${K3D_CLUSTER} apply -f ${GITOPS_PATH}/argocd/applications/root.yaml"
 log "   F7.3: ArgoCD first sync — DRY RUN"
 warn "   Prod application MANUAL sync (D30 atomic cutover) — ops elle"
+warn "   NOT: root.yaml exclude platform-policies + platform-cert-manager"
+warn "   (DRAFT, Kyverno/cert-manager Helm install edilmeden CRD yok)"
 
 # ========================
 # F8 — Pre-Cutover Smoke
