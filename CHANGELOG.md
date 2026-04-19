@@ -6,7 +6,7 @@ Tüm önemli değişiklikler bu dosyada tutulur. Format: [Keep a Changelog](http
 
 ## [Unreleased] — 2026-04-17 → 2026-04-19
 
-Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 44 commit K8s-6 session.
+Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 47 commit K8s-6 session.
 
 ### Added
 
@@ -63,6 +63,16 @@ Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 44 commit K8s-6 session.
 - `docs/promql-query-pack.md` — günlük ops + S3 soak PromQL + recording rule tablosu
 - `docs/logql-query-pack.md` — Loki log analysis (authz + edge + pod + security + DB + CNI + Vault + S3 + tuning + alert mapping)
 - `docs/traceql-query-pack.md` — Tempo trace analysis (OTel config + TraceQL + ops troubleshoot + sampling + Tempo tuning + metrics_generator)
+
+**Admission Policy (Kyverno DRAFT):**
+- `helm-values/kyverno/values.yaml` — Kyverno admission controller (audit + background + cleanup + reports)
+- `kustomize/base/policies/require-sha-image-tag.yaml` — D30 immutable (latest/main-stable YASAK)
+- `kustomize/base/policies/disallow-privileged-pods.yaml` — container escape önleme
+- `kustomize/base/policies/require-non-root.yaml` — runAsNonRoot: true zorunlu
+- `kustomize/base/policies/require-resource-limits.yaml` — D22 CPU + memory limit
+- `kustomize/base/policies/require-image-pull-policy.yaml` — imagePullPolicy Always YASAK
+- `bootstrap/install-kyverno.sh` — Helm install + policy apply + audit → enforce rehberi
+- `argocd/applications/platform-policies.yaml` — GitOps sync Application (DRAFT)
 
 **Handoff pack:**
 - `docs/session-handoff-2026-04-19.md` — v4 5-alan (Bağlam/İddia/İspatlar/İspatlamaz/Bilinen boşluk), 38 commit özet

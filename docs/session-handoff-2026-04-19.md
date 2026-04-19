@@ -1,7 +1,7 @@
 # Session Handoff v4 — 2026-04-19 K8s-6
 
 > **Format:** D28 HARD RULE 5-alan (Bağlam / İddia / İspatlar / İspatlamaz / Bilinen boşluk)
-> **Scope:** 44 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side materyal hazır + Monitoring stack 3 sütun (PromQL + LogQL + TraceQL query pack) + 4 Grafana dashboard + 16 recording rule + 7 Day-2 runbook + Repo hygiene kompleksi + ApplicationSet draft + CHANGELOG
+> **Scope:** 47 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side materyal + Monitoring stack 3 sütun (PromQL + LogQL + TraceQL) + 4 dashboard + 16 recording rule + 7 Day-2 runbook + Repo hygiene + ApplicationSet draft + CHANGELOG + **Kyverno admission policy draft** (5 ClusterPolicy D30 HARD RULE enforce)
 > **Codex thread referans:** `019d9a75-4299-7313-85bb-003a7de680eb` (K8s-6 ana), `019da5f8-9087-73f0-899b-267fa608456e` (iter-2..iter-6 delta retrospective)
 > **No-closure uyarı:** Bu handoff "bugün kapandı/bitti" değil — sürekli ortak devam sürecinde ara rapor.
 
@@ -15,7 +15,7 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 
 ---
 
-## 2. İddia (bugün ne oldu — 44 commit)
+## 2. İddia (bugün ne oldu — 47 commit)
 
 ### 2.1 Seviye 0 — Calico Recovery + testai Edge Fix (2026-04-17)
 
@@ -90,6 +90,9 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 | `afc2cdf` | Handoff v4 + CHANGELOG mini update 41 commit (Namespace + GitHub hygiene) |
 | `a11d1d5` | docs/logql-query-pack.md (11 bölüm: authz + edge + pod crash + security + DB + CNI + Vault + S3 soak + Loki tuning + alert mapping) |
 | `660b252` | docs/traceql-query-pack.md (7 bölüm: OTel config + TraceQL + ops troubleshoot + sampling stratejisi + Tempo tuning + metrics_generator) |
+| `3ab2b4d` | Handoff v4 + CHANGELOG final sync 44 commit (LogQL + TraceQL + Plan pack bölümlendirme) |
+| `ea221d1` | Kyverno policy DRAFT — 5 ClusterPolicy (require-sha-image-tag + disallow-privileged + require-non-root + require-resource-limits + require-image-pull-policy) + helm-values/kyverno/values.yaml |
+| `0dcad62` | bootstrap/install-kyverno.sh + argocd/applications/platform-policies.yaml (DRAFT GitOps sync) |
 
 ---
 
@@ -240,7 +243,7 @@ Kalan repo-side iş potansiyeli — Codex iter-5 + iter-7 zincir ile listeye al�
 ```bash
 # Repo sanity
 cd /Users/halilkocoglu/Documents/platform-k8s-gitops
-git status                                          # clean main'den 44 commit ahead
+git status                                          # clean main'den 47 commit ahead
 git log --oneline main..HEAD | head -5              # son 5 commit
 
 # Kustomize build sanity
