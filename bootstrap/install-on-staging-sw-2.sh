@@ -120,13 +120,19 @@ warn "   F5.2: Dış proxy kurumsal L4 backend TABLOSUNA staging-sw-2 IP ekleme 
 warn "   F5.3: DNS kaydı dokunulmaz (cutover upstream switch ile değişir)"
 
 # ========================
-# F6 — Artifact + Secret
+# F6 — Artifact + Secret (Codex iter-3 PARTIAL absorb)
 # ========================
 log "=== F6: ESO Secret Flow ==="
-log "   F6.1: ghcr-pull ExternalSecret"
-run "kubectl --context k3d-${K3D_CLUSTER} apply -f ${GITOPS_PATH}/kustomize/base/eso/externalsecret-ghcr-pull.yaml"
-log "   F6.2: Backend servis ExternalSecret'lar (SPRING_DATASOURCE_*, KC client, JWT key)"
-run "kubectl --context k3d-${K3D_CLUSTER} apply -k ${GITOPS_PATH}/kustomize/base/eso"
+log "   F6.0: ESO Helm install (external-secrets ns)"
+run "bash ${GITOPS_PATH}/bootstrap/install-eso-helm.sh prod"
+log "   F6.1: Vault AppRole secret-id (manuel — ops ilk bootstrap, sonrası auto-rotate)"
+warn "     kubectl -n external-secrets create secret generic vault-approle-secret --from-literal=secret-id=<VAULT_ESO_RUNTIME_SECRET_ID>"
+log "   F6.2: Overlay ESO apply — ClusterSecretStore + ghcr-pull (YASAK: base/eso doğrudan apply)"
+run "kubectl --context k3d-${K3D_CLUSTER} apply -k ${GITOPS_PATH}/kustomize/overlays/prod/eso"
+log "   F6.3: Doğrula ClusterSecretStore Ready + ghcr-pull Synced"
+run "kubectl --context k3d-${K3D_CLUSTER} get clustersecretstore vault-platform-gitops"
+run "kubectl --context k3d-${K3D_CLUSTER} -n external-secrets get externalsecret ghcr-pull"
+log "   F6.4: Per-service ExternalSecret (7 backend + permission-service) — overlay apply ile gelir (F8+)"
 
 # ========================
 # F7 — GitOps (ArgoCD)

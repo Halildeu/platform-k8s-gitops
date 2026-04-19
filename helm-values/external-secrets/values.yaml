@@ -1,0 +1,56 @@
+# External Secrets Operator (ESO) — Helm values
+# Chart: https://charts.external-secrets.io
+# Usage: bash bootstrap/install-eso-helm.sh <test|prod>
+# Codex iter-3 PARTIAL absorb: helm-values/external-secrets/ dizini eksik → eklendi
+
+installCRDs: true
+
+replicaCount: 1
+
+resources:
+  requests:
+    memory: 64Mi
+    cpu: 10m
+  limits:
+    memory: 256Mi
+    cpu: 500m
+
+serviceMonitor:
+  enabled: false    # S3 monitoring stack henüz kurulu olmayabilir; sonra aç
+
+webhook:
+  replicaCount: 1
+  resources:
+    requests:
+      memory: 32Mi
+      cpu: 10m
+    limits:
+      memory: 128Mi
+      cpu: 200m
+
+certController:
+  replicaCount: 1
+  resources:
+    requests:
+      memory: 32Mi
+      cpu: 10m
+    limits:
+      memory: 128Mi
+      cpu: 200m
+
+# Log level (runtime troubleshoot için)
+log:
+  level: info    # debug'a çekilebilir Vault auth sorunlarında
+
+# PodSecurityContext — non-root (D30 hardening)
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
