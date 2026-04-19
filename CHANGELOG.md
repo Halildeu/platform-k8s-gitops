@@ -6,7 +6,7 @@ Tüm önemli değişiklikler bu dosyada tutulur. Format: [Keep a Changelog](http
 
 ## [Unreleased] — 2026-04-17 → 2026-04-19
 
-Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 53 commit K8s-6 session.
+Faz 3/4 → Faz 11'e (Seviye 0-5) büyük delta — 57 commit K8s-6 session.
 
 ### Added
 
@@ -84,6 +84,17 @@ Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 53 commit K8s-6 session.
 - `argocd/applications/platform-cert-manager.yaml` — GitOps sync (DRAFT)
 
 Şu an Sectigo wildcard manuel aktif; cert-manager Faz 12'de devreye alınır.
+
+**Argo Rollouts (DRAFT) — iç servis canary:**
+- `helm-values/argo-rollouts/values.yaml` — controller (ServiceMonitor + non-root)
+- `kustomize/base/rollouts-samples/canary-sample.yaml` — Rollout CR sample (10→25→50→100% step + AnalysisTemplate Prometheus success-rate query)
+- `bootstrap/install-argo-rollouts.sh` — Helm install + kubectl plugin kontrol + watch/promote/abort rehberi
+- **UYARI (PLAN D30):** Edge servis YASAK — atomic cutover only. Scope: iç servis / async job / background API.
+
+**Pod Security Admission (K8s 1.23+ built-in):**
+- `kustomize/overlays/test/namespace.yaml` — enforce=baseline + audit=restricted + warn=restricted (geçiş dönemi)
+- `kustomize/overlays/prod/namespace.yaml` — enforce=restricted (sıkı: runAsNonRoot + readOnlyRootFilesystem + drop ALL + seccompProfile RuntimeDefault zorunlu)
+- Kyverno ClusterPolicy paralel defense-in-depth
 
 **Handoff pack:**
 - `docs/session-handoff-2026-04-19.md` — v4 5-alan (Bağlam/İddia/İspatlar/İspatlamaz/Bilinen boşluk), 38 commit özet
