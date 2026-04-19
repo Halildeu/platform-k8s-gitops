@@ -134,13 +134,13 @@ kubectl -n calico-system scale deploy calico-typha --replicas=1
 **Süre:** ~10 dk (image pull + up + healthcheck)
 
 **İçerik:**
-- `host-compose/data/docker-compose.yml up -d` (postgres + keycloak + vault)
+- Per-service: postgres/prod + keycloak/prod + vault/prod (3 ayrı compose — ADR-0002)
 - `host-compose/proxy/docker-compose.yml up -d` (nginx reverse proxy 443 SNI)
 - `docker exec host-nginx-proxy nginx -t` syntax test
 
 **Doğrulama:**
 ```bash
-docker compose -f host-compose/data/docker-compose.yml ps
+docker compose -f host-compose/postgres/prod/docker-compose.yml ps
 # Beklenen: postgres + keycloak + vault Up (healthy)
 
 docker compose -f host-compose/proxy/docker-compose.yml ps

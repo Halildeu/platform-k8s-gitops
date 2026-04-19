@@ -1,7 +1,7 @@
 # S5 Vault Audit Log Retention — Day-2 Ops
 
-> ⚠ **ADR-0002 UPDATE** (2026-04-19): Container adı `platform-vault` → `platform-vault-{prod,test}` (env-specific).
-> Komutları uygularken env suffix ekleyin.
+> ⚠ **ADR-0002 UPDATE** (2026-04-19): Container env-specific ayrıldı: `platform-vault-prod` + `platform-vault-test`.
+> Bu doküman prod context; test instance için komut container adını `platform-vault-test`, port `8201` olarak değiştir.
 > İlişkili: [`day-2-governance.md`](./day-2-governance.md) §1.3 Vault Backup.
 
 > **Source:** K8s-6 S5 day-2 ops (Codex iter-8 non-blocking öneri)
@@ -33,7 +33,7 @@ vault audit list
 ### 1.2 Docker Compose Volume Mount
 
 ```yaml
-# host-compose/data/docker-compose.yml
+# host-compose/vault/prod/docker-compose.yml
 services:
   vault:
     image: hashicorp/vault:1.15
@@ -64,7 +64,7 @@ cat <<'EOF' | sudo tee /etc/logrotate.d/vault
     missingok
     notifempty
     postrotate
-        docker exec platform-vault kill -SIGHUP 1 2>/dev/null || true
+        docker exec platform-vault-prod kill -SIGHUP 1 2>/dev/null || true
     endscript
 }
 EOF
@@ -173,7 +173,7 @@ find "${ARCHIVE_DIR}" -name "audit-*.tar.gz" -mtime +365 -delete
 ## 6. Referanslar
 
 - Vault docs: <admin-panel> (ops erişim)
-- `host-compose/data/docker-compose.yml` — Vault service + volumes
+- `host-compose/vault/prod/docker-compose.yml` — Vault service + volumes
 - `helm-values/loki/values.yaml` — Loki retention (logs-traces stack)
 - `helm-values/promtail/values.yaml` — Promtail config
 - `docs/S5-disaster-recovery-runbook.md` — Vault snapshot backup referansı
