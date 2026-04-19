@@ -21,9 +21,10 @@ spec:
     namespace: platform-prod
   syncPolicy:
     # MANUAL sync — D30 HARD RULE: atomic cutover
-    # Otomatik sync açık olursa ArgoCD her değişikliği anında canlıya sürer —
-    # bu cutover blueprint'ini ihlal eder. Manuel onay zorunlu.
-    automated: {}    # BOŞ — NOT enabled
+    # Codex PR #1 iter-9 tespit: `automated: {}` ArgoCD docs'a göre auto-sync
+    # AÇAR (boş field yeterli). Manual sync için `automated` field TAMAMEN
+    # olmamalı.
+    # Ref: https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true

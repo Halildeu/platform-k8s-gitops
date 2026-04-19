@@ -24,9 +24,9 @@ spec:
     server: https://kubernetes.default.svc
     namespace: external-secrets
   syncPolicy:
-    automated:
-      prune: false
-      selfHeal: false    # D30 atomic cutover kuralı — manuel sync
+    # MANUAL sync — D30 HARD RULE: Codex PR #1 iter-9 tespit — `automated`
+    # field varsa (değerleri false olsa bile) ArgoCD auto-sync açar.
+    # Ref: https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/
     syncOptions:
       - CreateNamespace=false
       - ServerSideApply=true

@@ -19,8 +19,13 @@ spec:
     path: argocd/applications
     directory:
       recurse: false
-      # Exclude pattern: root.yaml kendini include etmesin (recursive loop)
-      exclude: '{root.yaml}'
+      # Exclude pattern:
+      # - root.yaml kendini include etmesin (recursive loop)
+      # - platform-policies.yaml (Kyverno DRAFT — CRD install edilmeden apply fail)
+      # - platform-cert-manager.yaml (cert-manager DRAFT — CRD install edilmeden apply fail)
+      # Kyverno/cert-manager helm install edilince manuel `kubectl apply -f` ile
+      # veya exclude kaldırılarak aktive edilir.
+      exclude: '{root.yaml,platform-policies.yaml,platform-cert-manager.yaml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

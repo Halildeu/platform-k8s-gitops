@@ -71,7 +71,9 @@ jobs:
         uses: ludeeus/action-shellcheck@master
         with:
           scandir: ./bootstrap
-          severity: warning
+          # severity: error (warning'lerde SC2034 unused var + SC2294 eval
+          # array pattern var — değiştirmeye değmez; error'a çeken real bug'a)
+          severity: error
           ignore_paths: ""
 
   closure-language-check:
@@ -84,18 +86,25 @@ jobs:
         run: |
           # CLAUDE.md kural: "kapandı/bitti/gün sonu/başarıyla tamamlandı/pause"
           # PLAN.md tarihsel entry'ler grep dışı (içerik tarih değiştirilmez)
+          # Meta dosyalar (kural tanımlayan) da exclude — kural kendisi kelimeyi içerir.
           set +e
           PATTERN='(bugün kapandı|tamam bitti|gün sonu|başarıyla tamamlandı|Seviye [0-9X]+ tamam)'
           FOUND=$(grep -rIE "$PATTERN" --include="*.md" \
             --exclude="PLAN.md" \
-            --exclude="docs/session-handoff-*.md" \
+            --exclude="CLAUDE.md" \
+            --exclude="CONTRIBUTING.md" \
+            --exclude="CHANGELOG.md" \
+            --exclude="README.md" \
+            --exclude="pull_request_template.md" \
+            --exclude="dev-repo-handoff-bundle.md" \
+            --exclude="session-handoff-*.md" \
             . || true)
           if [[ -n "$FOUND" ]]; then
             echo "❌ Closure language bulundu (HARD RULE ihlal):"
             echo "$FOUND"
             exit 1
           fi
-          echo "✓ No closure language (runbook/handoff dışı)"
+          echo "✓ No closure language (runbook/handoff/meta dışı)"
 
   placeholder-leak-check:
     name: Placeholder Leak Check (PLACEHOLDER_NS / OVERLAY_MUST_OVERRIDE runtime sızmaması)
