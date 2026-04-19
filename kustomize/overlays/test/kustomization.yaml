@@ -12,6 +12,7 @@ kind: Kustomization
 namespace: platform-test
 
 resources:
+  - namespace.yaml    # Namespace + labels (platform=true env=test, ApplicationSet prereq)
   - ../../base
 
 images:

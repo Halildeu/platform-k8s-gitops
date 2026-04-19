@@ -1,0 +1,21 @@
+# CODEOWNERS — platform-k8s-gitops
+# PR review otomatik atama. GitHub branch protection ile birleştirilince
+# review zorunlu (self-merge yasağı).
+
+# Tüm dosyalar için default — repo owner
+*                               @Halildeu
+
+# Kritik alanlar — ek reviewer gerekebilir (ops ekibi büyüdükçe genişletilir)
+PLAN.md                         @Halildeu
+CLAUDE.md                       @Halildeu
+kustomize/base/                 @Halildeu
+kustomize/overlays/prod/        @Halildeu
+argocd/applications/            @Halildeu
+argocd/applicationsets/         @Halildeu
+bootstrap/                      @Halildeu
+helm-values/                    @Halildeu
+host-compose/                   @Halildeu
+.github/workflows/              @Halildeu
+docs/prod-cutover-smoke-runbook.md    @Halildeu
+docs/S4-rollback-runbook.md     @Halildeu
+docs/D32-bootstrap-runbook.md   @Halildeu

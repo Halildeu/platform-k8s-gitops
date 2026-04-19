@@ -9,6 +9,7 @@ kind: Kustomization
 namespace: platform-prod
 
 resources:
+  - namespace.yaml    # Namespace + labels (platform=true env=prod, ApplicationSet prereq)
   - ../../base
 
 images:

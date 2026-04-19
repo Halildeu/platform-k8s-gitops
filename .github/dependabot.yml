@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # GitHub Actions workflow bağımlılıkları
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "chore(ci)"
+
+  # Helm chart version takibi: helm-values/ dizinleri için
+  # (Dependabot helm chart sürümü otomatik izlemez; manuel veya custom action)

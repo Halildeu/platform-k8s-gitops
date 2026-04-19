@@ -1,0 +1,12 @@
+# Namespace — platform-test (k3d-test)
+# Labels: ApplicationSet cluster generator match prereq
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-test
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/cluster: test
+    platform: "true"
+    env: test
+    # kubernetes.io/metadata.name otomatik set edilir (NetworkPolicy namespaceSelector için)
