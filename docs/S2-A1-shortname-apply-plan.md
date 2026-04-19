@@ -100,15 +100,27 @@ kubectl --context k3d-test -n platform-test exec deploy/auth-service -- env | gr
 # beklenen: KEYCLOAK_URL=http://keycloak:8080, jdbc:postgresql://postgres:5432/auth_db
 ```
 
-## 4. Rollback Senaryosu
+## 4. Rollback Senaryosu (Codex iter-6 SELECTIVE ZORLA)
+
+**YASAK:** `kubectl apply -k overlays/test` tam overlay — D17 scale-to-zero patch'leri yeniden uygulanır + mevcut Running pod'lar replicas=0 düşer (outage riski).
+
+**Selective rollback:**
 
 ```bash
 git revert eb13cb2
-kubectl --context k3d-test -n platform-test apply -k overlays/test
-kubectl rollout restart deploy --all  # tüm backend'ler eski FQDN+PLACEHOLDER_NS'e dön
+
+# Sadece shortname refactor commit'inde değişen ConfigMap dosyalarını uygula
+for svc in auth-service api-gateway user-service variant-service core-data-service permission-service report-service schema-service; do
+  kubectl --context k3d-test -n platform-test apply \
+    -f kustomize/base/apps/${svc}/configmap.yaml
+done
+
+# ConfigMap env pickup için rolling restart (envFrom auto-pickup etmez)
+kubectl --context k3d-test -n platform-test rollout restart deploy --all
+# 2-3 dk rolling — D17 scale-to-zero patch'i pod'u durdurmaz (apply -k YASAK)
 ```
 
-**Rollback downtime:** Aynı rolling strategy, 2-3 dk total.
+**Rollback downtime:** Rolling strategy `maxSurge: 1, maxUnavailable: 0`, 2-3 dk total. Mevcut Running pod sayısı korunur.
 
 ## 5. Kabul Kriteri
 

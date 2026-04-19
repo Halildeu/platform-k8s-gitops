@@ -26,6 +26,15 @@ host-compose/proxy/
 
 **Mevcut çalışan:** `platform-web-nginx` container (eski `backend/docker-compose.yml` compose) — default.conf host mount ile, testai server_block dün append ettim (drift #1 fix geçici).
 
+**D32 sonrası kalıcı hedef (Codex iter-6 hizası):**
+- **D32 öncesi (şu an — staging-sw host):** host nginx → `127.0.0.1:30080` (k3d-prod aynı host) + `127.0.0.1:31080` (k3d-test aynı host)
+- **D32 sonrası (kalıcı — iki-host topoloji):**
+  - staging-sw (eski test host): testai.acik.com → k3d-test aynı host (değişmez, kalıcı test ortamı)
+  - staging-sw-2 (yeni prod host): ai.acik.com → k3d-prod YENI host (`127.0.0.1:30080` ayrı serverlb)
+  - Dış proxy `212.115.26.190` L4 backend: `staging-sw → staging-sw-2` atomic switch (S4-D cutover, `docs/prod-cutover-smoke-runbook.md`)
+  - DNS değişmez, kurumsal proxy upstream switch yeterli (TTL risk YOK)
+- **Bu proxy migration (D18 kalıcı):** staging-sw host'unda platform-web-nginx → yeni `host-compose/proxy/` container geçişi — testai.acik.com kesintisiz. Bu migration pre-D32 yapılır ve staging-sw-2'ye D32 bootstrap F4'te aynı pattern kopyalanır.
+
 ## 2. Drift Root Cause Hipotez
 
 - Gece 00:54 default.conf override → eski `platform-web-nginx` container'ına **bir deploy orchestration** yeniden default.conf yazıyor. Kaynak bilinmiyor (audit geniş, doğrudan process log yok).

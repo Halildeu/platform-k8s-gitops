@@ -198,6 +198,18 @@ run "sshrun 'shred -u ${TMP_CRT} ${TMP_KEY} 2>/dev/null || rm -f ${TMP_CRT} ${TM
 log "12/14 kustomize overlay apply (platform-test ns)"
 run "sshrun 'kubectl --context k3d-test apply -k ${REPO_DIR_REMOTE}/kustomize/overlays/test/'"
 
+# ------------------------------------------------------------
+# Opsiyonel ek: ESO pilot install test cluster (manuel follow-up)
+# Vault AppRole eso-runtime + kv/gitops/ghcr-token seed hazır olunca çalışır.
+# Bu script'te OTOMATIK değil — Codex iter-6 uzlaşı: Vault/AppRole bağımlılığı
+# nedeniyle manuel/opsiyonel follow-up olarak belgelendi.
+# Elle çalıştır (test host'ta):
+#   ssh ${REMOTE} 'bash ${REPO_DIR_REMOTE}/bootstrap/install-eso-helm.sh test'
+#   ssh ${REMOTE} 'kubectl --context k3d-test -n external-secrets create secret generic vault-approle-secret --from-literal=secret-id=<VAULT_ESO_RUNTIME_SECRET_ID>'
+#   ssh ${REMOTE} 'kubectl --context k3d-test apply -k ${REPO_DIR_REMOTE}/kustomize/overlays/test/eso'
+# Preflight: docs/S2-B1-vault-property-matrix.md
+# ------------------------------------------------------------
+
 # ============================================================
 # 13/14 — platform-web-nginx'e testai server block (atomik backup + reload)
 # ============================================================
@@ -308,7 +320,7 @@ log "=== Mevcut sistem kontrolü (ai.acik.com etkilenmiş mi?) ==="
 sshrun 'curl -sk --max-time 5 -o /dev/null -w "ai.acik.com / → HTTP %{http_code}\n" https://127.0.0.1/ -H "Host: ai.acik.com"'
 
 log ""
-log "✓ DONE — testai.acik.com paralel kurulum tamamlandı"
+log "✓ PASS — testai.acik.com paralel kurulum adımları çalıştı"
 log ""
 log "Tarayıcı erişim:"
 log "  https://testai.acik.com               (DNS hazırsa, scale-to-zero default → 503)"

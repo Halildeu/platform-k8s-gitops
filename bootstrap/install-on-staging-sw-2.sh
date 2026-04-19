@@ -155,6 +155,7 @@ log "   F8.2: imageID == GHCR digest kontrol (tüm 8 servis)"
 warn "   F8.3-F8.5: Intra-cluster Zanzibar smoke + localhost edge + No-Go gate (docs/prod-cutover-smoke-runbook.md)"
 
 log ""
-log "=== F1-F8 TAMAM ==="
+log "=== F1-F8 PASS ==="
 log "F9 Cutover atomic switch: docs/prod-cutover-smoke-runbook.md"
 log "SONRAKİ: Codex pre-cutover ping-pong + sysadmin dış proxy backend switch"
+log "Detay runbook: docs/D32-bootstrap-runbook.md (F1-F9 adım-adım + partial unwind)"

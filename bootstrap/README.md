@@ -107,10 +107,12 @@ docker system prune -a    # reclaimable silme (DİKKAT: kullanılan imajlar kal�
 ## Sıradaki Adım
 
 Cluster'lar ayakta, CNI hazır — sonra:
-1. `helm-values/ingress-nginx/` — ingress controller (her iki cluster'a)
-2. `helm-values/external-secrets/` — ESO + Vault ClusterSecretStore
-3. `helm-values/argocd/` — prod cluster'a (tek instance, multi-cluster yönetir)
-4. `helm-values/kube-prometheus-stack/` + `loki` + `tempo` — prod cluster monitoring
+1. `helm-values/ingress-nginx/` — ingress controller (`bash bootstrap/install-ingress.sh <test|prod>`)
+2. `helm-values/external-secrets/` — ESO Helm install (`bash bootstrap/install-eso-helm.sh <test|prod>`) + `kubectl apply -k kustomize/overlays/<env>/eso` (Codex iter-5 Opsiyon B — overlay-specific ghcr-pull)
+3. `helm-values/argocd/` — prod cluster'a (`bash bootstrap/install-argocd.sh prod`, tek instance, multi-cluster yönetir)
+4. `helm-values/kube-prometheus-stack/` + `loki` + `tempo` — prod cluster monitoring (`bash bootstrap/install-monitoring.sh prod` + `bash bootstrap/install-logs-traces.sh prod`)
+
+**ESO ön-gereksinim (ops):** Vault path seed (`kv/gitops/ghcr-token` + `kv/platform/<svc>`) + AppRole `eso-runtime` read policy. Preflight script: `docs/S2-B1-vault-property-matrix.md`.
 
 Her biri PLAN.md Faz 3'te listelenmiştir.
 
