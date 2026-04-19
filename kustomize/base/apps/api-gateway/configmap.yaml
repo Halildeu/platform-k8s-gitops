@@ -41,46 +41,46 @@ data:
   # Gateway route (application-k8s.yml eksikse env ile override)
   # Path prefix → StripPrefix=1 → K8s svc DNS
   SPRING_CLOUD_GATEWAY_ROUTES_0_ID: "auth-service"
-  SPRING_CLOUD_GATEWAY_ROUTES_0_URI: "http://auth-service.PLACEHOLDER_NS.svc.cluster.local:8088"
+  SPRING_CLOUD_GATEWAY_ROUTES_0_URI: "http://auth-service:8088"
   SPRING_CLOUD_GATEWAY_ROUTES_0_PREDICATES_0: "Path=/auth/**"
   SPRING_CLOUD_GATEWAY_ROUTES_0_FILTERS_0: "StripPrefix=1"
 
   SPRING_CLOUD_GATEWAY_ROUTES_1_ID: "user-service"
-  SPRING_CLOUD_GATEWAY_ROUTES_1_URI: "http://user-service.PLACEHOLDER_NS.svc.cluster.local:8089"
+  SPRING_CLOUD_GATEWAY_ROUTES_1_URI: "http://user-service:8089"
   SPRING_CLOUD_GATEWAY_ROUTES_1_PREDICATES_0: "Path=/users/**"
   SPRING_CLOUD_GATEWAY_ROUTES_1_FILTERS_0: "StripPrefix=1"
 
   SPRING_CLOUD_GATEWAY_ROUTES_2_ID: "variant-service"
-  SPRING_CLOUD_GATEWAY_ROUTES_2_URI: "http://variant-service.PLACEHOLDER_NS.svc.cluster.local:8091"
+  SPRING_CLOUD_GATEWAY_ROUTES_2_URI: "http://variant-service:8091"
   SPRING_CLOUD_GATEWAY_ROUTES_2_PREDICATES_0: "Path=/variants/**"
   SPRING_CLOUD_GATEWAY_ROUTES_2_FILTERS_0: "StripPrefix=1"
 
   SPRING_CLOUD_GATEWAY_ROUTES_3_ID: "core-data-service"
-  SPRING_CLOUD_GATEWAY_ROUTES_3_URI: "http://core-data-service.PLACEHOLDER_NS.svc.cluster.local:8092"
+  SPRING_CLOUD_GATEWAY_ROUTES_3_URI: "http://core-data-service:8092"
   SPRING_CLOUD_GATEWAY_ROUTES_3_PREDICATES_0: "Path=/core/**"
   SPRING_CLOUD_GATEWAY_ROUTES_3_FILTERS_0: "StripPrefix=1"
 
   SPRING_CLOUD_GATEWAY_ROUTES_4_ID: "report-service"
-  SPRING_CLOUD_GATEWAY_ROUTES_4_URI: "http://report-service.PLACEHOLDER_NS.svc.cluster.local:8095"
+  SPRING_CLOUD_GATEWAY_ROUTES_4_URI: "http://report-service:8095"
   SPRING_CLOUD_GATEWAY_ROUTES_4_PREDICATES_0: "Path=/reports/**"
   SPRING_CLOUD_GATEWAY_ROUTES_4_FILTERS_0: "StripPrefix=1"
 
   SPRING_CLOUD_GATEWAY_ROUTES_5_ID: "schema-service"
-  SPRING_CLOUD_GATEWAY_ROUTES_5_URI: "http://schema-service.PLACEHOLDER_NS.svc.cluster.local:8096"
+  SPRING_CLOUD_GATEWAY_ROUTES_5_URI: "http://schema-service:8096"
   SPRING_CLOUD_GATEWAY_ROUTES_5_PREDICATES_0: "Path=/schemas/**"
   SPRING_CLOUD_GATEWAY_ROUTES_5_FILTERS_0: "StripPrefix=1"
 
   # D7: Eureka yok → K8s svc DNS
-  AUTH_SERVICE_URL: "http://auth-service.PLACEHOLDER_NS.svc.cluster.local:8088"
+  AUTH_SERVICE_URL: "http://auth-service:8088"
   # Dilim 2+:
-  # USER_SERVICE_URL: "http://user-service.PLACEHOLDER_NS.svc.cluster.local:8089"
-  # CORE_DATA_URL: "http://core-data-service.PLACEHOLDER_NS.svc.cluster.local:8092"
-  # VARIANT_URL: "http://variant-service.PLACEHOLDER_NS.svc.cluster.local:8091"
-  # REPORT_URL: "http://report-service.PLACEHOLDER_NS.svc.cluster.local:8095"
-  # SCHEMA_URL: "http://schema-service.PLACEHOLDER_NS.svc.cluster.local:8096"
+  # USER_SERVICE_URL: "http://user-service:8089"
+  # CORE_DATA_URL: "http://core-data-service:8092"
+  # VARIANT_URL: "http://variant-service:8091"
+  # REPORT_URL: "http://report-service:8095"
+  # SCHEMA_URL: "http://schema-service:8096"
 
   # Keycloak (host-level, ExternalName Service üzerinden)
-  KEYCLOAK_URL: "http://keycloak.PLACEHOLDER_NS.svc.cluster.local:8080"
+  KEYCLOAK_URL: "http://keycloak:8080"
 
   # Spring Cloud Gateway — PoC Dilim 1 için minimum route (application-k8s.yml
   # içinde tanımlı olabilir, burası sadece URL override eder)

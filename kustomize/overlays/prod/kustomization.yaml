@@ -52,38 +52,38 @@ patches:
     patch: |-
       - op: replace
         path: /data/KEYCLOAK_URL
-        value: "http://keycloak.platform-prod.svc.cluster.local:8080"
+        value: "http://keycloak:8080"
       - op: replace
         path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres.platform-prod.svc.cluster.local:5432/auth_db"
+        value: "jdbc:postgresql://postgres:5432/auth_db"
   - target:
       kind: ConfigMap
       name: api-gateway-config
     patch: |-
       - op: replace
         path: /data/AUTH_SERVICE_URL
-        value: "http://auth-service.platform-prod.svc.cluster.local:8088"
+        value: "http://auth-service:8088"
       - op: replace
         path: /data/KEYCLOAK_URL
-        value: "http://keycloak.platform-prod.svc.cluster.local:8080"
+        value: "http://keycloak:8080"
       - op: replace
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_0_URI
-        value: "http://auth-service.platform-prod.svc.cluster.local:8088"
+        value: "http://auth-service:8088"
       - op: replace
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_1_URI
-        value: "http://user-service.platform-prod.svc.cluster.local:8089"
+        value: "http://user-service:8089"
       - op: replace
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_2_URI
-        value: "http://variant-service.platform-prod.svc.cluster.local:8091"
+        value: "http://variant-service:8091"
       - op: replace
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_3_URI
-        value: "http://core-data-service.platform-prod.svc.cluster.local:8092"
+        value: "http://core-data-service:8092"
       - op: replace
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_4_URI
-        value: "http://report-service.platform-prod.svc.cluster.local:8095"
+        value: "http://report-service:8095"
       - op: replace
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_5_URI
-        value: "http://schema-service.platform-prod.svc.cluster.local:8096"
+        value: "http://schema-service:8096"
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:

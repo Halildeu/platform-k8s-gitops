@@ -7,7 +7,7 @@ data:
   # Host-level bağımlılıklar — Service+Endpoints (D19) üzerinden
   # Spring Boot convention env: SPRING_DATASOURCE_URL, SPRING_DATASOURCE_USERNAME,
   # SPRING_DATASOURCE_PASSWORD (username/password Secret'tan gelir)
-  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres.PLACEHOLDER_NS.svc.cluster.local:5432/reports_db"
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/reports_db"
 
   # Spring Boot
   SERVER_PORT: "8095"

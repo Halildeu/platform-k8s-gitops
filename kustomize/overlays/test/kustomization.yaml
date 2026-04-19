@@ -76,10 +76,10 @@ patches:
     patch: |-
       - op: replace
         path: /data/KEYCLOAK_URL
-        value: "http://keycloak.platform-test.svc.cluster.local:8080"
+        value: "http://keycloak:8080"
       - op: replace
         path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres.platform-test.svc.cluster.local:5432/auth_db"
+        value: "jdbc:postgresql://postgres:5432/auth_db"
       - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: "DEBUG"
@@ -98,7 +98,7 @@ patches:
     patch: |-
       - op: replace
         path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres.platform-test.svc.cluster.local:5432/users_db"
+        value: "jdbc:postgresql://postgres:5432/users_db"
       - op: add
         path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
         value: "update"
@@ -111,7 +111,7 @@ patches:
     patch: |-
       - op: replace
         path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres.platform-test.svc.cluster.local:5432/variants_db"
+        value: "jdbc:postgresql://postgres:5432/variants_db"
       - op: add
         path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
         value: "update"
@@ -124,7 +124,7 @@ patches:
     patch: |-
       - op: replace
         path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres.platform-test.svc.cluster.local:5432/core_db"
+        value: "jdbc:postgresql://postgres:5432/core_db"
       - op: add
         path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
         value: "update"
@@ -137,7 +137,7 @@ patches:
     patch: |-
       - op: replace
         path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres.platform-test.svc.cluster.local:5432/reports_db"
+        value: "jdbc:postgresql://postgres:5432/reports_db"
       - op: add
         path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
         value: "update"
@@ -150,7 +150,7 @@ patches:
     patch: |-
       - op: replace
         path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres.platform-test.svc.cluster.local:5432/schemas_db"
+        value: "jdbc:postgresql://postgres:5432/schemas_db"
       - op: add
         path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
         value: "update"
@@ -219,7 +219,7 @@ patches:
     patch: |-
       - op: replace
         path: /data/OPENFGA_DATASTORE_URI
-        value: "postgres://openfga:change-me-local-only@postgres.platform-test.svc.cluster.local:5432/openfga?sslmode=disable"
+        value: "postgres://openfga:change-me-local-only@postgres:5432/openfga?sslmode=disable"
 
   - target:
       kind: ConfigMap
@@ -227,31 +227,31 @@ patches:
     patch: |-
       - op: replace
         path: /data/AUTH_SERVICE_URL
-        value: "http://auth-service.platform-test.svc.cluster.local:8088"
+        value: "http://auth-service:8088"
       - op: replace
         path: /data/KEYCLOAK_URL
-        value: "http://keycloak.platform-test.svc.cluster.local:8080"
+        value: "http://keycloak:8080"
       - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: "DEBUG"
       - op: replace
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_0_URI
-        value: "http://auth-service.platform-test.svc.cluster.local:8088"
+        value: "http://auth-service:8088"
       - op: replace
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_1_URI
-        value: "http://user-service.platform-test.svc.cluster.local:8089"
+        value: "http://user-service:8089"
       - op: replace
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_2_URI
-        value: "http://variant-service.platform-test.svc.cluster.local:8091"
+        value: "http://variant-service:8091"
       - op: replace
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_3_URI
-        value: "http://core-data-service.platform-test.svc.cluster.local:8092"
+        value: "http://core-data-service:8092"
       - op: replace
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_4_URI
-        value: "http://report-service.platform-test.svc.cluster.local:8095"
+        value: "http://report-service:8095"
       - op: replace
         path: /data/SPRING_CLOUD_GATEWAY_ROUTES_5_URI
-        value: "http://schema-service.platform-test.svc.cluster.local:8096"
+        value: "http://schema-service:8096"
 
   # Ingress host + TLS host: testai.acik.com (D18)
   - target:
