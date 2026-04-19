@@ -17,28 +17,31 @@ resources:
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)
-  # Test için main-stable tag (rolling). Prod için digest pin'e geçilecek.
+  # 2026-04-19 akşam: Tüm 8 servis sha-3923901 immutable tag (D30 full uyum).
+  # Dev repo main merge sonrası CI GHCR'a push ediyor, overlay bu sha'ya pin'lenir.
+  # Yeni commit'ler → yeni sha-<short> → overlay güncellenir (manuel veya W3 CI).
+  # moving tag main-stable D30 ihlal (cache hit, yeni image çekilmez).
   - name: auth-service
     newName: ghcr.io/halildeu/platform-ssot-auth-service
-    newTag: main-stable
+    newTag: sha-3923901
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-ssot-api-gateway
-    newTag: main-stable
+    newTag: sha-3923901
   - name: user-service
     newName: ghcr.io/halildeu/platform-ssot-user-service
-    newTag: main-stable
+    newTag: sha-3923901
   - name: variant-service
     newName: ghcr.io/halildeu/platform-ssot-variant-service
-    newTag: main-stable
+    newTag: sha-3923901
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-ssot-core-data-service
-    newTag: main-stable
+    newTag: sha-3923901
   - name: report-service
     newName: ghcr.io/halildeu/platform-ssot-report-service
-    newTag: main-stable
+    newTag: sha-3923901
   - name: schema-service
     newName: ghcr.io/halildeu/platform-ssot-schema-service
-    newTag: main-stable
+    newTag: sha-3923901
   # 2026-04-19 S1-C14: permission-service IMMUTABLE tag (Codex ping-pong Madde 3
   # uzlaşı; D30 HARD RULE uyumu). PR #502 merge commit 39239011ba1d → CI push
   # sha-3923901 tag (7-char short SHA, CI konvansiyon). "main-stable" tek başına
