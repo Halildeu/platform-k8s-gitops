@@ -16,8 +16,12 @@ labels:
 resources:
   - zanzibar-stability-rule.yaml
   - blackbox-exporter.yaml
-  # S3 soak sırasında Grafana dashboard ConfigMap'leri de eklenebilir
-  # (grafana-operator veya sidecar provisioner ile)
+  # Grafana dashboard ConfigMap'ler — kube-prometheus-stack sidecar provisioner
+  # otomatik import (label grafana_dashboard=1). Helm values
+  # helm-values/kube-prometheus-stack/values.yaml sidecar.dashboards.enabled: true.
+  - grafana-dashboards/authz-plane-dashboard.yaml
+  - grafana-dashboards/platform-pods-dashboard.yaml
+  - grafana-dashboards/edge-synthetic-dashboard.yaml
 
 # Kullanım:
 # Apply sadece S3 session'da (testai soak başlangıcı öncesi):

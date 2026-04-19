@@ -198,6 +198,10 @@ Gün 7: No-Go gate review → cutover açık/kapalı karar.
 **Bu bir doküman pack — S3 session'da apply edilir.** Gerekli dosyalar:
 - `kustomize/base/monitoring/zanzibar-stability-rule.yaml` — PrometheusRule (Hub/Pod/CNI + ZanzibarEdgeSyntheticFail)
 - `kustomize/base/monitoring/blackbox-exporter.yaml` — ConfigMap + Deployment + Service + 4 Probe CR (testai-deny/health + prod-deny/health, Codex iter-2 C-1 REVISE-ONAY external edge target)
+- `kustomize/base/monitoring/grafana-dashboards/` — 3 dashboard ConfigMap (sidecar provisioner auto-import):
+  - `authz-plane-dashboard.yaml` — Hub Up + OpenFGA Up + active alerts + Hub request rate/p95 + restart + synthetic probe
+  - `platform-pods-dashboard.yaml` — Total Running + Not Ready + 15m restart + memory/CPU per pod + Ready timeline
+  - `edge-synthetic-dashboard.yaml` — 4 probe stat (testai/prod deny/health) + duration p95 + HTTP status + 5xx ratio + gateway p95
 - `kustomize/base/monitoring/kustomization.yaml` — base kustomization (namespace: monitoring)
 
 Apply sırası:
