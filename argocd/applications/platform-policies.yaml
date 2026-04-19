@@ -1,0 +1,31 @@
+# ArgoCD Application — platform-policies (Kyverno ClusterPolicy CR'lar)
+# DRAFT: Kyverno Helm install sonrası aktif olur (bootstrap/install-kyverno.sh).
+# MVP'de Kyverno kurulmamış; policy CR'lar Apply edilirse CRD yok hata verir.
+#
+# Aktivasyon:
+#   1. bash bootstrap/install-kyverno.sh prod
+#   2. kubectl apply -f argocd/applications/platform-policies.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-policies
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: policy
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Halildeu/platform-k8s-gitops.git
+    targetRevision: main
+    path: kustomize/base/policies
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      prune: false    # ClusterPolicy silinmesi risk — manuel temizlik
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
