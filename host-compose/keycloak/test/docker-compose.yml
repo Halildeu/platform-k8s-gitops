@@ -9,7 +9,9 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.5.5
     container_name: platform-kc-test
-    restart: unless-stopped
+    # ADR-0002 §5.1: test default scale-to-zero (profiles: [manual] enforce)
+    profiles: ["manual"]
+    restart: "no"
     command: ["start", "--optimized"]
     environment:
       KC_DB: postgres

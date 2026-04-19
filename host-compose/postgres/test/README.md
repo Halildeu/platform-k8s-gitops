@@ -6,6 +6,8 @@
 
 ## Kurulum
 
+**NOT:** Test compose'u `profiles: [manual]` ile tanımlı — default compose up çalıştırmaz. ADR-0002 §5.1 scale-to-zero compose-level enforce.
+
 ```bash
 # 0. Host bind-mount + network
 sudo mkdir -p /srv/platform/stateful/test/postgres
@@ -17,8 +19,8 @@ mkdir -p secrets
 echo "<STRONG_RANDOM_TEST_PASSWORD>" > secrets/pg_password.txt
 chmod 600 secrets/pg_password.txt
 
-# 2. Compose up
-docker compose -f docker-compose.yml up -d
+# 2. Compose up — profile zorunlu
+docker compose --profile manual up -d
 
 # 3. Init doğrulama
 docker exec platform-pg-test psql -U postgres -c '\l' | \
@@ -28,7 +30,8 @@ docker exec platform-pg-test psql -U postgres -c '\l' | \
 ## Test Down (default)
 
 ```bash
-docker compose down   # scale-to-zero default
+docker compose --profile manual down
+# Host reboot → restart:"no" + profiles:[manual] = geri gelmez (ADR §5.1 enforce)
 ```
 
 ## İzolasyon

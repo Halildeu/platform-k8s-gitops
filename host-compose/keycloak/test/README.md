@@ -7,6 +7,8 @@
 
 ## Kurulum
 
+**NOT:** `profiles: [manual]` default-off enforce. Compose up manuel profile gerektirir.
+
 ```bash
 sudo mkdir -p /srv/platform/stateful/test/keycloak
 sudo chown -R 1000:1000 /srv/platform/stateful/test/keycloak
@@ -17,8 +19,7 @@ echo "<KC_ADMIN_TEST_PASSWORD>" > secrets/kc_admin_password.txt
 chmod 600 secrets/*.txt
 
 # Prereq: platform-pg-test + platform-test-net hazır
-
-docker compose up -d
+docker compose --profile manual up -d
 ```
 
 ## Smoke

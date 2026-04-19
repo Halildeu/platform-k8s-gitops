@@ -10,7 +10,8 @@
 sudo mkdir -p /srv/platform/stateful/test/vault/{data,logs}
 sudo chown -R 1000:1000 /srv/platform/stateful/test/vault
 
-docker compose up -d
+# ADR §5.1 enforce: profiles [manual] default-off
+docker compose --profile manual up -d
 
 # Init + unseal (prod ile aynı pattern, keys ayrı sakla)
 docker exec -it platform-vault-test vault operator init -key-shares=3 -key-threshold=2

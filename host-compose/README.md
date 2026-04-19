@@ -92,16 +92,66 @@ cd ../../postgres/test && docker compose down
 
 ## Migration — Legacy Compose'dan ADR-0002'ye
 
-Mevcut `platform-postgres-db-1` / `platform-keycloak-1` / `platform-vault-1` container'ları (platform-ssot repo backend compose) **shared** durumda (hem test hem compose-live-backend aynı instance kullanıyor).
+Mevcut `platform-postgres-db-1` / `platform-keycloak-1` / `platform-vault-1` container'ları (platform-ssot repo backend compose) **shared** durumda (prod live trafik + test dev shared).
 
-**Geçiş planı (Faz D — ADR §9 follow-up 9):**
-1. Prod stateful yeni instance up (yukarıdaki bootstrap)
-2. Prod data migration (dump + restore legacy → yeni prod PG/Vault)
-3. Cutover sonrası (Faz G) eski shared instance decommission
-4. Test stateful yeni instance up (ESO Faz 3 test yeniden seed)
-5. Eski `platform-postgres-db-1` + legacy KC + Vault stop (T+72h+)
+### UYARI: Port Çakışması (Codex PR #12 iter-1 blocker fix)
 
-**Runbook:** `docs/prod-cutover-runbook-v2.md` + gelecek migration runbook.
+Legacy container'lar zaten host port 5432/8080/8200 publish ediyor. Yeni prod compose'lar aynı portları kullanmak istiyor. Naif "önce yeni up, sonra eski stop" akışı **port çakışması ile fail olur**.
+
+### Güvenli Migration Sırası (port-çakışmasız)
+
+**Faz D.1 — Prod Hazırlık (zero-downtime)**
+1. Bind-mount dizinleri + network pre-create (bkz §1 Host prerequisite)
+2. Vault prod init + seed (host-compose/vault/prod — **port 8200 legacy Vault ile çakışmaz** çünkü legacy Vault `platform_microservice-network` üzerinde, port publish'i yok — doğrula!)
+3. Prod PG + KC **PORT MAP KAPALI veya farklı** compose override ile up (geçici)
+
+**Faz D.2 — Data Migration (zero-downtime)**
+4. Legacy PG dump → yeni prod PG restore (pg_dumpall | psql)
+5. Legacy Vault KV dump → yeni prod Vault seed (vault kv get + vault kv put)
+6. Legacy KC realm export → yeni prod KC import
+7. Doğrulama: yeni prod stack intra-docker reachable, data intact
+
+**Faz D.3 — Atomic Port Swap (cutover window)**
+8. Host nginx edge config freeze
+9. `docker stop platform-postgres-db-1 platform-keycloak-1 platform-vault-1` (eski stack)
+10. Yeni prod compose port map'leri aktif et (override kaldır → 5432/8081/8200 aç)
+11. `docker compose restart platform-pg-prod platform-kc-prod platform-vault-prod`
+12. K8s Endpoints yeni prod container IP'lerine patch (bootstrap/reconnect-compose-to-net.sh benzeri prod variant)
+13. Edge smoke (ai.acik.com healthy)
+
+**Faz D.4 — Rollback Window (72h)**
+14. Legacy stack container'lar **silinmez, sadece stop** (rollback trigger varsa re-start)
+15. T+72h stabil → legacy stack decommission + volume archive
+
+### Geçici Compose Override Pattern (Faz D.1)
+
+```bash
+# docker-compose.override.yml (geçici, git dışı)
+cat > host-compose/postgres/prod/docker-compose.override.yml <<'EOF'
+services:
+  postgres:
+    ports: !override
+      - "15432:5432"   # Geçici farklı port, legacy 5432 ile çakışmaz
+EOF
+docker compose up -d
+# Data migration tamamlandıktan sonra override'ı sil + restart
+```
+
+### Alternatif: Kısa Downtime (basit ama kesinti var)
+
+Eğer planned downtime kabul edilebiliyorsa:
+```bash
+docker stop platform-postgres-db-1 platform-keycloak-1 platform-vault-1
+# Port serbest; yeni prod compose'lar normal up
+docker compose -f host-compose/postgres/prod/docker-compose.yml up -d
+# ... KC + Vault
+# Data yok — fresh bootstrap (Step 0-5 BOOTSTRAP.md)
+```
+
+Bu senaryoda legacy data KAYBOLMAZ (container stopped, volume remains). Rollback için legacy container'ları tekrar `docker start`.
+
+**Detaylı runbook:** [`docs/prod-cutover-runbook-v2.md`](../docs/prod-cutover-runbook-v2.md) (Faz G atomic edge cutover)
+**Credential bootstrap:** [`host-compose/BOOTSTRAP.md`](./BOOTSTRAP.md) (fresh install credential zinciri)
 
 ## Forward-Extension Paths (ADR §6)
 
