@@ -1,5 +1,9 @@
 # S5 Vault Audit Log Retention — Day-2 Ops
 
+> ⚠ **ADR-0002 UPDATE** (2026-04-19): Container env-specific ayrıldı: `platform-vault-prod` + `platform-vault-test`.
+> Bu doküman prod context; test instance için komut container adını `platform-vault-test`, port `8201` olarak değiştir.
+> İlişkili: [`day-2-governance.md`](./day-2-governance.md) §1.3 Vault Backup.
+
 > **Source:** K8s-6 S5 day-2 ops (Codex iter-8 non-blocking öneri)
 > **Kapsam:** Vault audit backend + log rotation + retention policy + review rutini
 > **Frekans:** Haftalık review (ops), aylık archive, yıllık purge
@@ -29,19 +33,17 @@ vault audit list
 ### 1.2 Docker Compose Volume Mount
 
 ```yaml
-# host-compose/data/docker-compose.yml
+# host-compose/vault/prod/docker-compose.yml (ADR-0002 bind-mount)
 services:
   vault:
-    image: hashicorp/vault:1.15
+    image: hashicorp/vault:1.17
     volumes:
-      - vault-data:/vault/data
-      - vault-logs:/vault/logs      # yeni — audit log persist
+      - /srv/platform/stateful/prod/vault/data:/vault/data    # Raft storage
+      - /srv/platform/stateful/prod/vault/logs:/vault/logs    # audit log persist
     # ...
-
-volumes:
-  vault-data:
-  vault-logs:                        # yeni
 ```
+
+NOT: ADR-0002 kabul sonrası bind-mount kullanılır (eski named volume `vault-logs` kaldırıldı). Host path `/srv/platform/stateful/prod/vault/logs/audit.log` doğrudan erişilebilir (logrotate/backup daha kolay).
 
 ---
 
@@ -52,7 +54,7 @@ volumes:
 ```bash
 # /etc/logrotate.d/vault
 cat <<'EOF' | sudo tee /etc/logrotate.d/vault
-/var/lib/docker/volumes/host-compose_vault-logs/_data/audit.log {
+/srv/platform/stateful/prod/vault/logs/audit.log {
     daily
     rotate 90             # 90 gün retention
     compress
@@ -60,7 +62,7 @@ cat <<'EOF' | sudo tee /etc/logrotate.d/vault
     missingok
     notifempty
     postrotate
-        docker exec platform-vault kill -SIGHUP 1 2>/dev/null || true
+        docker exec platform-vault-prod kill -SIGHUP 1 2>/dev/null || true
     endscript
 }
 EOF
@@ -88,17 +90,17 @@ sudo logrotate -f /etc/logrotate.d/vault
 
 ```bash
 # Son 7 gün failed auth denemeleri
-tail -n 100000 /var/lib/docker/volumes/host-compose_vault-logs/_data/audit.log \
+tail -n 100000 /srv/platform/stateful/prod/vault/logs/audit.log \
   | jq 'select(.request.operation == "update" and .response.error != null) | {time, path: .request.path, error: .response.error}' \
   | head -50
 
 # AppRole login başarı sayısı (son 24h)
-tail -n 100000 audit.log \
+tail -n 100000 /srv/platform/stateful/prod/vault/logs/audit.log \
   | jq -r 'select(.request.path == "auth/approle/login") | .time' \
   | awk -F'T' '$1 == "'$(date -u +%Y-%m-%d)'" {n++} END {print n" AppRole login bugün"}'
 
 # KV read per servis (son 7 gün)
-tail -n 500000 audit.log \
+tail -n 500000 /srv/platform/stateful/prod/vault/logs/audit.log \
   | jq -r 'select(.request.path | startswith("kv/data/platform/")) | .request.path' \
   | sort | uniq -c | sort -rn
 # Beklenen: permission-service + auth-service + diğer 5 servis read dağılımı
@@ -127,7 +129,7 @@ mkdir -p "${ARCHIVE_DIR}"
 
 # Son ayın logları topla
 tar -czf "${ARCHIVE_DIR}/audit-${MONTH}.tar.gz" \
-  /var/lib/docker/volumes/host-compose_vault-logs/_data/audit.log.*.gz 2>/dev/null || true
+  /srv/platform/stateful/prod/vault/logs/audit.log.*.gz 2>/dev/null || true
 
 echo "✓ Archive: ${ARCHIVE_DIR}/audit-${MONTH}.tar.gz"
 
@@ -141,7 +143,7 @@ find "${ARCHIVE_DIR}" -name "audit-*.tar.gz" -mtime +365 -delete
 
 ### 4.1 Vault Audit Log Exporter (node_exporter textfile veya Promtail)
 
-**Opsiyon A (minimal):** Promtail (mevcut logs-traces stack) `/var/lib/docker/volumes/host-compose_vault-logs/_data/audit.log` dosyasını tail eder → Loki'ye gönderir.
+**Opsiyon A (minimal):** Promtail (mevcut logs-traces stack) `/srv/platform/stateful/prod/vault/logs/audit.log` dosyasını tail eder → Loki'ye gönderir.
 
 **Opsiyon B (detay):** Custom exporter — audit log'tan metric üretir (failed auth rate, path access count, policy change count).
 
@@ -169,7 +171,7 @@ find "${ARCHIVE_DIR}" -name "audit-*.tar.gz" -mtime +365 -delete
 ## 6. Referanslar
 
 - Vault docs: <admin-panel> (ops erişim)
-- `host-compose/data/docker-compose.yml` — Vault service + volumes
+- `host-compose/vault/prod/docker-compose.yml` — Vault service + volumes
 - `helm-values/loki/values.yaml` — Loki retention (logs-traces stack)
 - `helm-values/promtail/values.yaml` — Promtail config
 - `docs/S5-disaster-recovery-runbook.md` — Vault snapshot backup referansı

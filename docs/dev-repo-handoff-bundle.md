@@ -1,9 +1,10 @@
-# Dev Repo Handoff Bundle — platform-ssot (Zanzibar-25 ardıl)
+# Dev Repo Handoff Bundle — platform-ssot (Zanzibar-25 ardıl + ADR-0002 post-ESO)
 
-> **Source:** K8s-6 Seviye 1 + Seviye 2 scope (2026-04-19)
+> **Source:** K8s-6 Seviye 1 + Seviye 2 scope (2026-04-19) + ADR-0002 post-ESO-Faz-3
 > **Target:** platform-ssot session / ops / CI
-> **Format:** 3 bağımsız iş — her biri ayrı PR veya paralel yürütülebilir
-> **Priority sırası:** S2-B3 (P1, D29 blocker) → S1-B2 (P1 paralel, drift) → S2-B (P1, D30 uyum)
+> **Format:** 4 bağımsız iş — her biri ayrı PR veya paralel yürütülebilir
+> **Son güncelleme:** 2026-04-19 ESO Faz 3 canlı DONE sonrası (Codex PR #12 iter-3 REVISE)
+> **Priority sırası:** S2-B3 (P1 D29 blocker) → S2-B4 schema build (P1 testai image gap) → S1-B2 (P1 paralel drift) → S2-B (W1 kapatıldı, W3 devam)
 
 ---
 
@@ -11,11 +12,19 @@
 
 | ID | İş | Scope | Blocker mı | Referans doküman |
 |---|---|---|---|---|
-| **S2-B3** | Keycloak `smoke-client` confidential client | Realm config + Vault seed | ✅ D29 Zanzibar-ready full acceptance | [handoff-smoke-client-keycloak.md](handoff-smoke-client-keycloak.md) |
+| **S2-B3** | Keycloak `smoke-client` confidential client | Realm config (backend/keycloak/exports/serban-realm.json) + Vault seed | ✅ D29 Zanzibar-ready full acceptance (testai allow probe) | [handoff-smoke-client-keycloak.md](handoff-smoke-client-keycloak.md) |
+| **S2-B4** | schema-service immutable image build | Dev repo CI schema-service artifact push (sha-<new>) | ⚠ D30 HARD RULE ihlal (overlay hâlâ main-stable) | Aşağıda §2.2 |
 | **S1-B2** | auth-service `application-k8s.yml` hardcoded NS default fix | 2 default URL → shortname | ❌ ConfigMap override maskeliyor | [handoff-auth-hardcoded-ns-fix.md](handoff-auth-hardcoded-ns-fix.md) |
-| **S2-B (W1+W3)** | ghcr-pull ESO + digest pin CI | ExternalSecret + deploy-backend.yml revize | ⚠ D30 HARD RULE full uyum | [handoff-S2-B-artifact-hardening.md](handoff-S2-B-artifact-hardening.md) |
+| **S2-B (W1)** | ghcr-pull ESO | **KAPATILDI** k8s-gitops #11 merge | — | [handoff-S2-B-artifact-hardening.md](handoff-S2-B-artifact-hardening.md) |
+| **S2-B (W3)** | digest pin CI (deploy-backend.yml) | 7 servis main-stable → sha-<short> auto-bump | ⚠ D30 HARD RULE long-term uyum | [handoff-S2-B-artifact-hardening.md](handoff-S2-B-artifact-hardening.md) §W3 |
 
-**Codex apply-order uzlaşısı (FR2):** ESO path/AppRole ops + smoke-client paralel → shortname refactor apply → ArgoCD. "Aynı pencereye çok iş yığma."
+**Codex apply-order uzlaşısı (FR2) + ADR-0002:** ESO path/AppRole ops + smoke-client paralel → shortname refactor apply → ArgoCD. "Aynı pencereye çok iş yığma."
+
+**ADR-0002 post-Faz-3 net durum:**
+- K8s-gitops ESO Faz 3 canlı (CSS Ready, 7 ES Synced, 10/10 pod Running)
+- testai.acik.com D29 katman 1+2 (Up + Functional) ✓
+- D29 katman 3 (Zanzibar-ready allow probe) **BLOCKED smoke-client (S2-B3)**
+- Prod cutover (ai.acik.com) bu handoff kapandıktan sonra (ADR-0002 Faz F+G)
 
 ---
 
@@ -44,7 +53,36 @@ Not: Zanzibar-25 canary-load dedicated client varsa aynı kullanılabilir
 Codex istişaresi: küçük scope, tek turlu consult yeterli.
 ```
 
-### 2.2 — S1-B2 auth-service hardcoded NS default
+### 2.2 — S2-B4 schema-service immutable image build (NEW)
+
+```
+TASK: schema-service immutable artifact gap kapanış
+From: ADR-0002 ESO Faz 3 canlı sonrası (2026-04-19)
+Priority: P1 (D30 HARD RULE ihlal; overlay hâlâ main-stable)
+
+Bağlam:
+- platform-k8s-gitops test overlay (kustomize/overlays/test/kustomization.yaml:42-48)
+  7 servis sha-3923901 (immutable), AMA schema-service hâlâ `main-stable` (moving tag).
+- Dev repo main branch'te schema-service'te son commit'ten beri değişiklik yok → CI
+  skip yapıyor, sha-<short> image yaratmıyor.
+- Cutover öncesi D30 uyum için schema-service'in de immutable tag'i olmalı.
+
+Yapılacak:
+1. platform-ssot/backend/schema-service'te trivial bir no-op change yap
+   (örn. README.md güncellemesi veya version comment)
+2. main branch'e merge et → CI otomatik build + GHCR push (sha-<new-short>)
+3. k8s-gitops repo'ya PR: overlays/test/kustomization.yaml schema-service
+   newTag: main-stable → sha-<new-short>
+4. Apply + doğrulama (pod imageID == GHCR digest)
+
+Beklenen output:
+- GHCR: ghcr.io/halildeu/platform-ssot-schema-service:sha-<short>
+- Canlı: schema-service pod imageID sha-<short> digest eşleşir
+
+Codex istişaresi: ÇOK küçük scope, consult gereksiz; sadece CI doğrulama.
+```
+
+### 2.3 — S1-B2 auth-service hardcoded NS default
 
 ```
 TASK: auth-service application-k8s.yml hardcoded NS default fix
@@ -74,12 +112,16 @@ CI build + GHCR push yeni sha-<short> tag.
 Codex istişaresi: küçük scope, tek turlu consult yeterli.
 ```
 
-### 2.3 — S2-B (W1 ESO + W3 digest pin CI)
+### 2.4 — S2-B W3 digest pin CI (W1 KAPATILDI)
 
 ```
-TASK: S2-B Artifact Hardening (W1 ghcr-pull ESO + W3 digest pin CI)
-From: K8s-6 Seviye 2 scope
-Priority: P1 (D30 Immutable Artifact HARD RULE tam uyumu)
+TASK: S2-B W3 Digest Pin CI (W1 ghcr-pull KAPATILDI k8s-gitops #11 merge)
+From: K8s-6 Seviye 2 scope + ADR-0002 post-Faz-3
+Priority: P1 (D30 Immutable Artifact HARD RULE long-term uyum)
+
+Not: W1 (ghcr-pull ExternalSecret) platform-k8s-gitops'ta canlı çalışıyor
+(PR #11 merge sonrası CSS Ready + ghcr-pull Synced=True). Bu handoff
+yalnız W3 için; W1 bölümünü SKIP et.
 
 Detay: platform-k8s-gitops/docs/handoff-S2-B-artifact-hardening.md
 

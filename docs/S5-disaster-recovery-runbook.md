@@ -1,11 +1,18 @@
 # S5 Disaster Recovery Runbook — Backup + Restore Drill
 
+> ⚠ **ADR-0002 UPDATE** (2026-04-19): D32 supersede edildi. Container isimleri güncel:
+> - `platform-pg-prod` → `platform-pg-{prod,test}` (env-specific)
+> - `platform-kc-prod` → `platform-kc-{prod,test}`
+> - `platform-vault-prod` → `platform-vault-{prod,test}`
+>
+> Bu dokümandaki komutları uygularken env suffix ekleyin (örn. `platform-pg-prod`).
+> Canonical runbook: [`docs/prod-cutover-runbook-v2.md`](./prod-cutover-runbook-v2.md) + [`day-2-governance.md`](./day-2-governance.md) §1 Backup/Restore Drill.
+
 > **Source:** K8s-6 S5 (post-cutover stabil workload için DR hazırlık)
-> **Prereq:** D32 prod cutover PASS + T+72h warm rollback window kapanmış
+> **Prereq:** ADR-0002 prod cutover PASS + T+72h warm rollback window kapanmış
 > **Kapsam:** PostgreSQL + Keycloak realm + Vault KV + K8s manifest
 > **RPO hedefi (D23):** 24 saat
 > **RTO hedefi (D23):** 4 saat
-> **Codex yedek iş önerisi — post-D32 scope, pre-cutover kritik değil**
 
 ---
 
@@ -47,7 +54,9 @@ DATE=$(date +%Y%m%d-%H%M%S)
 mkdir -p "${BACKUP_DIR}"
 
 # pg_dumpall — tüm DB + role + tablespace
-docker exec platform-postgres pg_dumpall -U postgres \
+# --clean --if-exists: restore duplicate-object safe (DROP IF EXISTS + CREATE)
+# ADR-0002 DR akışında init SQL ile çakışma önler
+docker exec platform-pg-prod pg_dumpall -U postgres --clean --if-exists \
   | gzip > "${BACKUP_DIR}/pg_dumpall_${DATE}.sql.gz"
 
 # Retention (14 gün eski dosyaları sil)
@@ -69,12 +78,12 @@ DATE=$(date +%Y%m%d)
 
 mkdir -p "${BACKUP_DIR}"
 
-docker exec platform-keycloak /opt/keycloak/bin/kc.sh export \
+docker exec platform-kc-prod /opt/keycloak/bin/kc.sh export \
   --realm serban \
   --users realm_file \
   --file "/tmp/serban-${DATE}.json"
 
-docker cp "platform-keycloak:/tmp/serban-${DATE}.json" \
+docker cp "platform-kc-prod:/tmp/serban-${DATE}.json" \
   "${BACKUP_DIR}/serban-${DATE}.json"
 
 gzip "${BACKUP_DIR}/serban-${DATE}.json"
@@ -113,25 +122,38 @@ echo "✓ Vault snapshot: ${BACKUP_DIR}/vault-snapshot-${DATE}.snap"
 
 **Süre:** ~30 dk (dump boyutuna göre)
 
+**DİKKAT (ADR-0002 init SQL çakışması):** Fresh PG start init SQL script'i çalıştırır (role + DB yaratır). `pg_dumpall` restore ise aynı object'leri tekrar yaratmaya çalışır → duplicate-object hataları. 2 çözüm: (A) Init dizinini geçici kaldır, (B) `--clean --if-exists` dump kullan.
+
 ```bash
-# 1. Compose PG durdur + volume temizle (DIKKAT destructive)
-docker compose -f host-compose/data/docker-compose.yml stop postgres
-docker compose -f host-compose/data/docker-compose.yml rm -f postgres
-docker volume rm host-compose_postgres-data
+# 1. Compose PG durdur + bind-mount dizin temizle (DİKKAT destructive)
+docker compose -f host-compose/postgres/prod/docker-compose.yml stop postgres
+docker compose -f host-compose/postgres/prod/docker-compose.yml rm -f postgres
 
-# 2. Compose PG baştan başlat (boş volume)
-docker compose -f host-compose/data/docker-compose.yml up -d postgres
-sleep 30   # init time
+# ADR-0002 bind-mount (named volume değil):
+sudo rm -rf /srv/platform/stateful/prod/postgres/*
+sudo chown -R 999:999 /srv/platform/stateful/prod/postgres
 
-# 3. Restore (backup'tan)
+# 2a. (ÖNERİLEN) Init script'i geçici bir yere taşı — restore çakışma önleme
+mv host-compose/postgres/prod/init host-compose/postgres/prod/init.disabled
+
+# 2b. Compose PG baştan başlat (boş dizin; init SQL ÇALIŞMAZ çünkü init/ yok)
+docker compose -f host-compose/postgres/prod/docker-compose.yml up -d postgres
+until docker exec platform-pg-prod pg_isready -U postgres; do sleep 2; done
+
+# 3. Restore (dump zaten role + DB + grant içerir)
 gunzip -c /home/halil/platform/backup/pg/pg_dumpall_<DATE>.sql.gz | \
-  docker exec -i platform-postgres psql -U postgres
+  docker exec -i platform-pg-prod psql -U postgres
 
-# 4. Doğrula (DB listesi + tablo sayısı)
-docker exec platform-postgres psql -U postgres -c '\l'
-# Beklenen: auth_db, user_db, variant_db, core_db, report_db, schema_db,
-#           permission_db, openfga_db, keycloak
+# 4. Init script'i geri koy (gelecekteki fresh restart için)
+mv host-compose/postgres/prod/init.disabled host-compose/postgres/prod/init
+
+# 5. Doğrula (DB listesi)
+docker exec platform-pg-prod psql -U postgres -c '\l'
+# Beklenen: auth_db, users_db, variants_db, core_db, reports_db, schemas_db,
+#           permission_db, openfga, keycloak
 ```
+
+**Alternatif (B):** Backup'ta `pg_dumpall --clean --if-exists` flag kullanılmışsa init SQL çalıştırılabilir; `DROP IF EXISTS` + `CREATE` pattern ile duplicate-safe. Backup script'i o flagi içeriyorsa 2a adımı skip edilebilir.
 
 ### 3.2 Keycloak realm restore
 
@@ -140,15 +162,15 @@ docker exec platform-postgres psql -U postgres -c '\l'
 ```bash
 # KC config dir'e realm JSON kopya
 docker cp /home/halil/platform/backup/keycloak/serban-<DATE>.json.gz \
-  platform-keycloak:/tmp/
+  platform-kc-prod:/tmp/
 
-docker exec platform-keycloak gunzip /tmp/serban-<DATE>.json.gz
+docker exec platform-kc-prod gunzip /tmp/serban-<DATE>.json.gz
 
-docker exec platform-keycloak /opt/keycloak/bin/kc.sh import \
+docker exec platform-kc-prod /opt/keycloak/bin/kc.sh import \
   --file /tmp/serban-<DATE>.json
 
 # KC restart (import sonrası)
-docker compose -f host-compose/data/docker-compose.yml restart keycloak
+docker compose -f host-compose/keycloak/prod/docker-compose.yml restart keycloak
 ```
 
 ### 3.3 Vault KV restore
@@ -225,4 +247,4 @@ argocd app sync platform-prod
 - `docs/D32-bootstrap-runbook.md` F1-F9 (fresh host build)
 - `docs/S1-S2-acceptance-smoke-runbook.md` (restore sonrası smoke)
 - `bootstrap/vault-policies/README.md` (Vault policy + AppRole yeniden yaratma)
-- `host-compose/data/docker-compose.yml` (PG + KC + Vault compose config)
+- `host-compose/{postgres,keycloak,vault}/prod/docker-compose.yml` (ADR-0002 per-service compose)

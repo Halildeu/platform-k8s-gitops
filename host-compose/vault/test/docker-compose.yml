@@ -1,0 +1,46 @@
+# Vault Test Instance — ADR-0002 Same-Host Full Isolation
+# Network: platform-test-net (test ESO ile aynı network)
+# Port: 8201 (test — prod 8200 ile çakışma yok)
+# Container: platform-vault-test
+# Operasyon: test default scale-to-zero; ESO apply için up edilir
+
+services:
+  vault:
+    image: hashicorp/vault:1.17
+    container_name: platform-vault-test
+    # ADR-0002 §5.1: test default scale-to-zero
+    profiles: ["manual"]
+    restart: "no"
+    command: ["vault", "server", "-config=/vault/config/config.hcl"]
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+      VAULT_API_ADDR: http://platform-vault-test:8200
+    ports:
+      - "127.0.0.1:8201:8200"   # Localhost-only bind
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - ./config:/vault/config:ro
+      - /srv/platform/stateful/test/vault/data:/vault/data
+      - /srv/platform/stateful/test/vault/logs:/vault/logs
+    networks:
+      - platform-test-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8200/v1/sys/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+networks:
+  platform-test-net:
+    external: true

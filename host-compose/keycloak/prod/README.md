@@ -1,41 +1,54 @@
-# Keycloak Prod Compose (staging-sw-2 D32)
+# Keycloak Prod Instance — ADR-0002 Same-Host Isolation
+
+> **Container:** `platform-kc-prod` · **Port:** 8081 · **Network:** `platform-prod-net`
+> **Disk:** `/srv/platform/stateful/prod/keycloak`
+> **DB:** prod PG (`platform-pg-prod`, cross-env read YASAK)
 
 ## Kurulum
 
 ```bash
+# 0. Host bind-mount + prereq
+sudo mkdir -p /srv/platform/stateful/prod/keycloak
+sudo chown -R 1000:1000 /srv/platform/stateful/prod/keycloak
+
 # 1. Secret dosyaları
 mkdir -p secrets
 echo "<KC_DB_PASSWORD>" > secrets/kc_db_password.txt
 echo "<KC_ADMIN_PASSWORD>" > secrets/kc_admin_password.txt
 chmod 600 secrets/*.txt
 
-# 2. PostgreSQL prod up olmalı (bkz ../../postgres/prod/)
-# DB + owner yaratılmış olmalı: keycloak / keycloak_user
+# 2. Prereq: platform-pg-prod ve platform-prod-net hazır (bkz ../../postgres/prod/)
 
 # 3. Compose up
 docker compose -f docker-compose.yml up -d
 
-# 4. Realm import (staging-sw'den backup)
-docker cp /path/to/serban-YYYYMMDD.json platform-keycloak-prod:/tmp/
-docker exec platform-keycloak-prod /opt/keycloak/bin/kc.sh import \
+# 4. Realm import (first-time; backup/restore için day-2-governance §1.4)
+docker cp /path/to/serban-YYYYMMDD.json platform-kc-prod:/tmp/
+docker exec platform-kc-prod /opt/keycloak/bin/kc.sh import \
   --file /tmp/serban-YYYYMMDD.json
 ```
 
 ## Smoke
 
 ```bash
-# Healthz
-curl http://10.9.10.53:8081/health/ready
-# Beklenen: 200 + {"status":"UP"}
-
-# Realm serban
-curl http://10.9.10.53:8081/realms/serban/.well-known/openid-configuration
-# Beklenen: 200 + OIDC discovery JSON
+curl http://localhost:8081/health/ready          # 200 + {"status":"UP"}
+curl http://localhost:8081/realms/serban/.well-known/openid-configuration    # OIDC discovery
 ```
+
+## İzolasyon
+
+- Realm adı test ile aynı olabilir (`serban`); issuer URL ve client_secret farklı
+- Test KC (`platform-kc-test`, port 8082) ile cross-read **YASAK** (ayrı DB, ayrı Vault path)
+- Admin credentials Vault path: `kv/platform/keycloak/admin`
+
+## Rotation
+
+- Admin token TTL: `8h` (day-2-governance §2.1)
+- Confidential client secrets: çeyreklik rotation
 
 ## Referanslar
 
-- docs/S5-cert-renewal-runbook.md (Sectigo cert mount)
-- docs/S5-disaster-recovery-runbook.md §3.2 (Realm restore)
-- PLAN.md D20 host bridge + D24 JVM heap
-- bootstrap/install-on-staging-sw-2.sh F3 (compose up)
+- [ADR-0002 §3.2](../../../docs/adr/0002-single-host-dual-cluster.md)
+- [host-compose/README.md](../../README.md)
+- [docs/day-2-governance.md §1.4](../../../docs/day-2-governance.md) (KC realm export)
+- [docs/S5-cert-renewal-runbook.md](../../../docs/S5-cert-renewal-runbook.md) (Sectigo)

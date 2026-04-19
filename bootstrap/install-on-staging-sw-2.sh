@@ -103,21 +103,12 @@ log "   F3.3: Vault prod"
 warn "     NOT: ilk kurulum sonrası vault operator init (host-compose/vault/prod/README.md)"
 run "docker compose -f ${GITOPS_PATH}/host-compose/vault/prod/docker-compose.yml up -d"
 
-log "   F3.4: PG init databases (stdin pipe — /tmp host file drift fix)"
-# Codex PR #1 iter-9 tespit: heredoc /tmp/init-prod-db.sql host'ta yazılır,
-# docker exec container içinden okur → path uyumsuz. Fix: stdin pipe ile
-# docker exec -i doğrudan.
-run 'docker exec -i platform-postgres-db-prod psql -U postgres <<SQL
-CREATE DATABASE auth_db OWNER platform;
-CREATE DATABASE users_db OWNER platform;
-CREATE DATABASE variants_db OWNER platform;
-CREATE DATABASE core_db OWNER platform;
-CREATE DATABASE reports_db OWNER platform;
-CREATE DATABASE schemas_db OWNER platform;
-CREATE DATABASE permission_db OWNER platform;
-CREATE DATABASE openfga OWNER openfga;
-CREATE DATABASE keycloak OWNER keycloak_user;
-SQL'
+log "   F3.4: PG init databases — DELEGATED to host-compose/postgres/prod/init/01-create-databases.sql"
+# ADR-0002 sonrası: init SQL script docker-entrypoint-initdb.d üzerinden
+# ilk boot'ta otomatik çalışır (host-compose/postgres/prod/init/01-create-databases.sql).
+# Buradaki elle CREATE DATABASE Codex iter-2 blocker'ı: "already exists" verip script kırılır.
+# Fresh bootstrap credential chain için: docs/host-compose/BOOTSTRAP.md Step 0-5 takip edilir.
+log "   F3.4: ALTER ROLE (CHANGE_ME_PROD → real password) is manual step — see host-compose/BOOTSTRAP.md Step 1"
 
 # ========================
 # F4 — Host Nginx SNI Proxy

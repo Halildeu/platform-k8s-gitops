@@ -29,7 +29,7 @@
 **İlk aksiyon (0-5 dk):**
 ```bash
 # 1. Vault audit log tail — şüpheli kullanıcı tespit
-tail -n 1000 /var/lib/docker/volumes/host-compose_vault-logs/_data/audit.log \
+tail -n 1000 /srv/platform/stateful/prod/vault/logs/audit.log \
   | jq 'select(.auth.display_name != "admin" and .auth.display_name != "eso-runtime")'
 
 # 2. Compromised role/token listele
