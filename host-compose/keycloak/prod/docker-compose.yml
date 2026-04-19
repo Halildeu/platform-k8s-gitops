@@ -1,0 +1,62 @@
+# Keycloak prod instance — staging-sw-2 D32
+# Realm `serban` fresh import (backup/keycloak/serban-*.json)
+# DB: host postgres prod (keycloak database + keycloak_user owner)
+# Port: 8081 host-side (compose proxy SSL termination sonrası HTTP)
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: platform-keycloak-prod
+    restart: unless-stopped
+    command: ["start", "--optimized"]
+    environment:
+      # DB bağlantı (host postgres)
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres   # aynı docker network veya host.docker.internal
+      KC_DB_URL_PORT: "5432"
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak_user
+      KC_DB_PASSWORD_FILE: /run/secrets/kc_db_password
+      # Admin (ilk kurulum — sonra rotate)
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD_FILE: /run/secrets/kc_admin_password
+      # HTTP (SSL upstream — host nginx)
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_PROXY: edge
+      # Performance (prod)
+      KC_METRICS_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_FEATURES: "token-exchange,admin-fine-grained-authz"
+      # Java opts (D24)
+      JAVA_OPTS: "-Xmx1g -XX:+UseG1GC -XX:MaxGCPauseMillis=100"
+    ports:
+      - "10.9.10.53:8081:8080"   # Host bind (D20, K8s cluster Endpoints)
+    secrets:
+      - kc_db_password
+      - kc_admin_password
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.0\\r\\n' >&3 && head -1 <&3 | grep -q 'HTTP/1.0 200'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      - postgres   # external_links ile (external ağda postgres prod)
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.0"
+
+secrets:
+  kc_db_password:
+    file: ./secrets/kc_db_password.txt
+  kc_admin_password:
+    file: ./secrets/kc_admin_password.txt
