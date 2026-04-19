@@ -2,7 +2,118 @@
 
 **Repo amacı:** Bu repo `autonomous-orchestrator` platformunun Kubernetes GitOps manifest'lerini tutar. Docker Compose üzerinden k3s cluster'a tam geçiş için **tek doğruluk kaynağıdır**. Bu repo'dan geliştirilen yapı, testler yeşil olduğunda **doğrudan canlıya alınır** — deneysel/atılabilir yapı değildir.
 
-**Son güncelleme:** 2026-04-19 (S1 Zanzibar runtime aktivasyonu + S2/S3/S4 doc pack + 10 HARD RULES revize)
+**Son güncelleme:** 2026-04-19 (ADR-0002 Single-Host Dual-Cluster + Faz A-I roadmap reset)
+
+---
+
+## 0. Mevcut Strateji (ADR-0002 sonrası)
+
+**Referans ADR:** [`docs/adr/0002-single-host-dual-cluster.md`](./docs/adr/0002-single-host-dual-cluster.md)
+
+Bu repo için güncel ana strateji:
+
+- `platform-k8s-gitops` **tek prod desired-state repo**'dur
+- Prod + test **aynı fiziksel host** (staging-sw) üzerinde 2 ayrı `k3d` cluster
+- Prod + test **ayrı PG / KC / Vault** instance (full stateful isolation)
+- `D32 separate-host` (staging-sw-2 ayrı sunucu) **SUPERSEDED** — forward-extension path olarak açık
+- Operasyon `normal / cutover-freeze / rollback-window` mod kontratı ile yürütülür
+- Test cluster **default scale-to-zero** (user 2026-04-19); ihtiyaç durumunda açılır
+
+### 0.1 Faz A-I Yol Haritası
+
+| Faz | Amaç | Effort | Ana blocker | Done kriteri | Paralel |
+|---|---|---|---|---|---|
+| **A** Decision Reset | ADR-0002 + D32 supersede + PLAN/README yön | 0.5-1 gün | Yok | ADR-0002 accepted; D32 supersede işaretli; PLAN/README güncel | Tek başına önce |
+| **B** Test Authoritative Live | `testai.acik.com` full K8s | 3-5 iş günü | smoke-client, schema immutable image, ESO apply, host-bridge determinism | D29 3 katman (Up+Functional+Zanzibar) kanıtlı | D ile paralel |
+| **C** Test Stability Gate | Soak + minimal metrics + blackbox | 5-7 takvim günü | Test cluster minimal metrics + remote_write | Soak penceresinde blocker alert yok | D/E ile overlap |
+| **D** Prod Isolation Prep | Ayrı PG/KC/Vault instance | 2-4 iş günü | disk path, backup, unseal, network | Prod stateful seed'li + restore prova edildi | B/C ile paralel |
+| **E** Prod Control Plane | Prod monitoring + ArgoCD + legacy obs kapatma | 1-2 iş günü | prod-hub ArgoCD, legacy observability shutdown | Prod infra healthy; legacy compose obs kapalı | D ile yakın paralel |
+| **F** Prod Workload Preflight | Immutable artifact + dry-run | 1-2 iş günü | prod secrets, local smoke, imageID match | Prod overlay dry-run temiz; local smoke PASS | C sonuna yakın |
+| **G** Atomic Prod Cutover | `ai.acik.com` same-host cutover | 0.5 gün + 72h soak | No-go gate, freeze window, stakeholder sign-off | `ai.acik.com` authoritative smoke PASS | H bekler |
+| **H** Compose Deploy Decommission | dev repo deploy-backend + warm rollback shutdown | 0.5-1 gün | 72h rollback penceresi | Compose deploy job disabled + warm backend kapalı | G sonrası |
+| **I** Day-2 Hardening | Governance ritmi | 3-5 iş günü ilk tur + periyodik | backup drill, rotation, cert, vuln, retention | Ritim işliyor (aylık+çeyreklik review) | D sonrası parçalı |
+
+**Gerçekçi ufuk:**
+- `testai.acik.com` full K8s: **1.5-2 hafta** (7-10 iş günü)
+- `ai.acik.com` prod cutover: **3-4 hafta**
+
+### 0.2 Operational Mode Contract (ADR-0002 §5)
+
+#### `normal`
+- Prod workload + stateful + edge + monitoring aktif
+- Test **default scale-to-zero** (user direktif); ihtiyaç durumunda açık
+- Runner concurrency sınırlı (1)
+- **Yasak:** shared stateful, legacy compose observability paralel truth
+
+#### `cutover-freeze`
+- Prod cutover öncesi değişkenlik minimum
+- Test minimal (sadece health/synthetic)
+- Runner throttled (CPU %50)
+- **Yasak:** test full workload, yeni feature deploy, schema değişikliği, legacy obs
+
+#### `rollback-window`
+- Atomic cutover sonrası 72h
+- Prod live + warm compose backend standby
+- Test scale-to-zero veya minimal
+- Runner pause/throttle (CPU %25)
+- **Yasak:** test full, prod stateful migration, monitoring stack değişikliği
+
+### 0.3 Mode Transitions
+- `normal → cutover-freeze`: cutover kararı + preflight PASS
+- `cutover-freeze → rollback-window`: T+15m go gate PASS (runbook §8)
+- `rollback-window → normal`: T+72h stabil + warm compose shutdown
+- `any → emergency-rollback`:
+  - Edge 5xx `> 1%` / 15 dk
+  - Gateway p95 `> 2s` / 10 dk
+  - Authz synthetic fail ardışık 3 kez
+  - Kritik fonksiyonel bozulma
+
+### 0.4 Yasak Kombinasyonlar
+- `rollback-window` + `test full workload`
+- `rollback-window` + `runner full concurrency`
+- `cutover-freeze` + `legacy compose observability active`
+- `prod live` + `shared PG/KC/Vault`
+- `prod live` + `moving tag main-stable` (D30 ihlal)
+- `prod live` + `belirsiz rollback kapsamı`
+
+### 0.5 Kritik 3 Blocker
+
+1. **Test authoritative-live zinciri**
+   - smoke-client Keycloak confidential client seed
+   - schema-service immutable image (dev repo build gap)
+   - ESO pull secret (ghcr-pull dockerconfigjson)
+   - host-bridge determinism (compose IP stability)
+
+2. **Prod stateful isolation**
+   - Ayrı PG/KC/Vault instance (`platform-{pg,kc,vault}-{prod,test}`)
+   - Bind-mount disk path (`/srv/platform/stateful/{prod,test}/...`)
+   - Backup + unseal + seed flow
+   - Network kontrat (platform-prod-net izolasyon)
+
+3. **Same-host kapasite disiplini (400 GB disk ADR-0002 §7.1)**
+   - Runner throttle (cutover/rollback'te CPU %50/%25)
+   - Legacy observability kapanışı (prod live ÖNCE)
+   - Rollback-window kapsamı dar tutma
+
+### 0.6 Faz-Eski Mapping
+
+| Eski | Yeni karşılık |
+|---|---|
+| `S0/S1` | Faz B ağırlıklı |
+| `S2` | Faz B + D + E |
+| `S3` | Faz C |
+| `S4` | Faz F + G + H |
+| `D32 separate-host` | **SUPERSEDED by ADR-0002** (historical path, forward-extension) |
+
+### 0.7 Referans Dokümanlar
+- `docs/adr/0002-single-host-dual-cluster.md` (ana ADR)
+- `docs/prod-cutover-runbook-v2.md` (atomic cutover step-by-step)
+- `docs/day-2-governance.md` (backup/rotation/cert/vuln/retention)
+- `docs/S1-S2-acceptance-smoke-runbook.md` (D29 3 katman kanıt)
+- Eski: `docs/D32-bootstrap-runbook.md` (historical, SUPERSEDED)
+- Eski: `docs/prod-cutover-smoke-runbook.md` (v1, historical)
+
+---
 
 **Güncel Seviye Durum:**
 | Seviye | Faz Karşılığı | Durum | İş Tipi |

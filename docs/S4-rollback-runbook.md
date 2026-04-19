@@ -1,5 +1,7 @@
 # S4 Rollback Runbook — D30 72h Warm Rollback
 
+> ⚠ **Partial SUPERSEDE by ADR-0002 / prod-cutover-runbook-v2** (2026-04-19) — `staging-sw-2` ayrı host varsayımı değişti. Yeni rollback prosedürü same-host için `docs/prod-cutover-runbook-v2.md` §11-12 altında konsolide edildi. Bu doküman teşhis/decommission kısımları için hâlâ referanstır.
+
 > **Source:** PLAN.md D30 Cutover Atomic Switch + 72h Warm Rollback HARD RULE
 > **Prereq:** S4-D cutover gerçekleşmiş (`ai.acik.com` → staging-sw-2 upstream)
 > **Scope:** Canlı trafik geri alma (staging-sw-2 → staging-sw compose), dar — teşhis SONRA

@@ -32,5 +32,15 @@ Reddedilen alternatifler + red nedenleri.
 | # | Başlık | Status |
 |---|---|---|
 | 0001 | [Service Mesh Rejected](./0001-service-mesh-rejected.md) | Rejected |
+| 0002 | [Single-Host Dual-Cluster Topology](./0002-single-host-dual-cluster.md) | **Accepted** (2026-04-19) |
 
 Her yeni büyük karar için yeni ADR dosyası + PLAN.md D-karar satırı referansı.
+
+## Superseded Kararlar
+
+ADR-0002 aşağıdaki kararları supersede etti:
+- `PLAN.md D32` — staging-sw-2 ayrı fiziksel prod cluster
+- `docs/D32-bootstrap-runbook.md` — D32 ayrı-host prod kurulum
+- `bootstrap/install-on-staging-sw-2.sh` — ayrı sunucu prod bootstrap
+
+Bu dosyalar **tarihi bağlam olarak korunur**; yeni kurulum ADR-0002 + `docs/prod-cutover-runbook-v2.md` izler.

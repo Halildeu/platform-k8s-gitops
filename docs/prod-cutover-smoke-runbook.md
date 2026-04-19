@@ -1,5 +1,9 @@
 # Prod Cutover Smoke Runbook — S4-D Atomic Switch
 
+> ⚠ **SUPERSEDED by v2** (2026-04-19) — ADR-0002 kabulü ile atomic cutover prosedürü yenilendi. Yeni runbook: [`docs/prod-cutover-runbook-v2.md`](./prod-cutover-runbook-v2.md).
+>
+> Bu doküman tarihi bağlam olarak korunur (v1 smoke yaklaşımı).
+
 > **Source:** K8s-6 Codex thread `019d9a75` 4-tur mutabakat Tur A3 + S4-D blueprint (2026-04-19)
 > **Prereq:** S4-F1-F9 staging-sw-2 bootstrap tamam (D32 checklist PLAN.md Bölüm 1.5)
 > **Prereq:** S3 testai stability soak PASS (No-Go gate 6/6 blocker 🟢)

@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # install-on-staging-sw-2.sh — D32 Prod Host Bootstrap Script (S4-F)
 #
+# ⚠ SUPERSEDED by ADR-0002 (2026-04-19): same-host prod cutover kabul edildi.
+# Bu script yalnız ileride 2. fiziksel sunucu eklenirse (forward-extension)
+# referans olarak korunur. Yeni prod kurulum: ADR-0002 §3 + ilgili compose
+# template (host-compose/{prod,test}/) — docs/prod-cutover-runbook-v2.md.
+#
 # Bu script yeni 2. fiziksel sunucu `staging-sw-2` üzerinde prod cluster +
 # host compose PG/KC/Vault prod + host nginx proxy kurulumu yapar.
 #
