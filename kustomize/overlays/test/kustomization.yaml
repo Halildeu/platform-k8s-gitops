@@ -41,7 +41,11 @@ images:
     newTag: sha-3923901
   - name: schema-service
     newName: ghcr.io/halildeu/platform-ssot-schema-service
-    newTag: sha-3923901
+    # Dev repo sha-3923901 commit'inde schema-service build yok (CI pipeline
+    # schema değişmediği için atlamış). Overlay sha bumpında image bulunamayıp
+    # ErrImageNeverPull olur. Dev repo schema-service yeni commit push edince
+    # burası da sha-<short> pin'lenir (D30 uyum).
+    newTag: main-stable    # TEMP: dev repo schema yeni build bekler
   # 2026-04-19 S1-C14: permission-service IMMUTABLE tag (Codex ping-pong Madde 3
   # uzlaşı; D30 HARD RULE uyumu). PR #502 merge commit 39239011ba1d → CI push
   # sha-3923901 tag (7-char short SHA, CI konvansiyon). "main-stable" tek başına
