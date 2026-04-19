@@ -1,0 +1,65 @@
+# ExternalDNS — Ingress/Service'den otomatik DNS kayıt (kurumsal DNS için)
+# DRAFT: Kurumsal DNS provider API varsa aktif; şu an Sectigo + manuel A record.
+# PLAN'da D27 upstream-first — custom kod yerine upstream helm/operator kullan.
+# Apply: bootstrap/install-external-dns.sh (ileride)
+
+# Provider — kurumsal DNS server tipi (Bind RFC2136, CoreDNS, PowerDNS, vb.)
+# Kurum DNS entegrasyonu netleşince burada set edilecek.
+provider:
+  name: rfc2136
+  # Veya: name: coredns / name: infoblox / name: pdns / name: aws (Route53)
+
+rfc2136:
+  host: "<DNS_SERVER_IP>"      # Kurumsal DNS IP (sysadmin)
+  port: 53
+  zone:
+    - acik.com
+  tsigSecret: "<TSIG_SECRET>"  # TSIG secret — Vault kv/platform/external-dns/tsig
+  tsigSecretAlg: hmac-sha256
+  tsigKeyname: "externaldns-key"
+  tsigAxfr: true
+
+# Domains + sources
+domainFilters:
+  - acik.com
+
+# Source: ingress + service (crd opsiyonel ileri)
+sources:
+  - ingress
+  - service
+
+# Txt owner — birden çok ExternalDNS instance çakışmaması için unique
+txtOwnerId: "platform-k8s-gitops"
+txtPrefix: "external-dns-"
+
+# Policy — sync (upsert) vs create-only
+policy: sync     # DNS kayıtlarını hem upsert hem silme (ingress delete → DNS del)
+# policy: upsert-only    # DNS silme YASAK (production safety); insan manuel sil
+
+# Metrics
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: kube-prometheus-stack
+
+# Resources (dar)
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+# Security
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+
+# Interval — 1 dk
+interval: 1m
+
+# RBAC
+rbac:
+  create: true
