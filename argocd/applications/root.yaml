@@ -19,13 +19,16 @@ spec:
     path: argocd/applications
     directory:
       recurse: false
-      # Exclude pattern:
+      # Exclude pattern (PROD ROOT — sadece prod hub app'leri):
       # - root.yaml kendini include etmesin (recursive loop)
-      # - platform-policies.yaml (Kyverno DRAFT — CRD install edilmeden apply fail)
-      # - platform-cert-manager.yaml (cert-manager DRAFT — CRD install edilmeden apply fail)
-      # Kyverno/cert-manager helm install edilince manuel `kubectl apply -f` ile
-      # veya exclude kaldırılarak aktive edilir.
-      exclude: '{root.yaml,platform-policies.yaml,platform-cert-manager.yaml}'
+      # - platform-test.yaml + platform-eso-test.yaml: test cluster app'leri
+      #   (Codex PR #1 iter-10 tespit — prod root test app'leri sweep ederse
+      #    test overlay prod hub'a push edilir, D30 + cluster isolation ihlal)
+      # - platform-policies.yaml + platform-cert-manager.yaml: DRAFT (CRD
+      #   install edilmeden apply fail)
+      # Test cluster ArgoCD ayrı kurulursa (S2-C1) test app'ler o instance'a
+      # eklenir — prod root'ta YERİ YOK.
+      exclude: '{root.yaml,platform-test.yaml,platform-eso-test.yaml,platform-policies.yaml,platform-cert-manager.yaml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

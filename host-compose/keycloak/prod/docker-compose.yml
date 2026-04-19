@@ -42,8 +42,12 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-    depends_on:
-      - postgres   # external_links ile (external ağda postgres prod)
+    # NOT (Codex PR #1 iter-10 fix): depends_on KALDIRILDI — postgres servisi
+    # ayrı compose instance'ta (host-compose/postgres/prod/docker-compose.yml).
+    # Startup ordering: bootstrap/install-on-staging-sw-2.sh F3.1 postgres önce
+    # up, F3.2 keycloak sonra. Docker Compose cross-file depends_on desteklemez.
+    # KC_DB_URL_HOST=postgres external DNS/network ile resolve edilir (docker
+    # network connect ile aynı network'e bağlanması şart — compose external).
     logging:
       driver: json-file
       options:
