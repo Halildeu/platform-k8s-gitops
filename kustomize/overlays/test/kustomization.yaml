@@ -69,21 +69,17 @@ patches:
         path: /spec/template/spec/containers/0/env/1/value
         value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
 
-  # ConfigMap namespace → platform-test
+  # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz SPRING_DATASOURCE_URL
+  # + KEYCLOAK_URL replace patch'leri KALDIRILDI (base zaten shortname).
+  # Overlay test-specific add patches (DDL_AUTO + FLYWAY_ENABLED + LOGGING DEBUG) kalır.
+
   - target:
       kind: ConfigMap
       name: auth-service-config
     patch: |-
       - op: replace
-        path: /data/KEYCLOAK_URL
-        value: "http://keycloak:8080"
-      - op: replace
-        path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres:5432/auth_db"
-      - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: "DEBUG"
-      # Test ortamı: Flyway migration yok, Hibernate DDL-auto ile tablo oluştur
       - op: add
         path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
         value: "update"
@@ -91,14 +87,11 @@ patches:
         path: /data/SPRING_FLYWAY_ENABLED
         value: "false"
 
-  # Dilim 2: 5 backend ConfigMap patches (PLACEHOLDER_NS replace + DDL-auto)
+  # Dilim 2: 5 backend ConfigMap patches (DDL-auto + FLYWAY test override)
   - target:
       kind: ConfigMap
       name: user-service-config
     patch: |-
-      - op: replace
-        path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres:5432/users_db"
       - op: add
         path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
         value: "update"
@@ -109,9 +102,6 @@ patches:
       kind: ConfigMap
       name: variant-service-config
     patch: |-
-      - op: replace
-        path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres:5432/variants_db"
       - op: add
         path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
         value: "update"
@@ -122,9 +112,6 @@ patches:
       kind: ConfigMap
       name: core-data-service-config
     patch: |-
-      - op: replace
-        path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres:5432/core_db"
       - op: add
         path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
         value: "update"
@@ -135,9 +122,6 @@ patches:
       kind: ConfigMap
       name: report-service-config
     patch: |-
-      - op: replace
-        path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres:5432/reports_db"
       - op: add
         path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
         value: "update"
@@ -148,9 +132,6 @@ patches:
       kind: ConfigMap
       name: schema-service-config
     patch: |-
-      - op: replace
-        path: /data/SPRING_DATASOURCE_URL
-        value: "jdbc:postgresql://postgres:5432/schemas_db"
       - op: add
         path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
         value: "update"
@@ -211,8 +192,9 @@ patches:
         path: /spec/replicas
         value: 0
 
-  # Dilim 3: OpenFGA datastore URI → platform-test namespace + openfga_db
-  # Host PG'de openfga user + openfga_db'nin önceden açılmış olması gerekir.
+  # Dilim 3: OpenFGA datastore URI (S2-A1 follow-up: shortname base'de zaten,
+  # ama openfga_db + 'change-me-local-only' stub şifre bu patch'te test-specific.
+  # ESO aktif olunca (S2-B1 pilot externalsecret.yaml) bu patch kaldırılır.)
   - target:
       kind: ConfigMap
       name: openfga-config
@@ -221,37 +203,17 @@ patches:
         path: /data/OPENFGA_DATASTORE_URI
         value: "postgres://openfga:change-me-local-only@postgres:5432/openfga?sslmode=disable"
 
+  # 2026-04-19 S2-A1 follow-up: api-gateway shortname base'de zaten.
+  # Overlay sadece LOGGING_LEVEL_ROOT DEBUG test override; gateway routes +
+  # AUTH_SERVICE_URL + KEYCLOAK_URL replace'leri (eski patches) KALDIRILDI
+  # (base shortname ile aynı değer → gereksiz).
   - target:
       kind: ConfigMap
       name: api-gateway-config
     patch: |-
       - op: replace
-        path: /data/AUTH_SERVICE_URL
-        value: "http://auth-service:8088"
-      - op: replace
-        path: /data/KEYCLOAK_URL
-        value: "http://keycloak:8080"
-      - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: "DEBUG"
-      - op: replace
-        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_0_URI
-        value: "http://auth-service:8088"
-      - op: replace
-        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_1_URI
-        value: "http://user-service:8089"
-      - op: replace
-        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_2_URI
-        value: "http://variant-service:8091"
-      - op: replace
-        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_3_URI
-        value: "http://core-data-service:8092"
-      - op: replace
-        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_4_URI
-        value: "http://report-service:8095"
-      - op: replace
-        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_5_URI
-        value: "http://schema-service:8096"
 
   # Ingress host + TLS host: testai.acik.com (D18)
   - target:
