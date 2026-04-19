@@ -99,6 +99,16 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 | `e2088b9` | Handoff + CHANGELOG sync 50 commit (Kyverno + Cert-manager + on-call playbook) |
 | `07bb0ae` | S5 security incident response runbook (9 bölüm: credential + escape + edge + supply chain + DDoS + exfil + forensics + post-mortem + preventive) |
 | `722b15b` | docs/README.md master index — 24 doc tek sayfa (on-call + deploy + acceptance + day-2 + plan + query + handoff + quick start) |
+| `d74245a` | Handoff v4 sync 53 commit (security incident + docs/README index) |
+| `c13dd2f` | CHANGELOG sync 53 commit (Runbook pack 12→14 madde) |
+| `78eb070` | PLAN.md 26 commit zincir entry (S2-S5 repo-side tam paket özet) |
+| `79dd3c9` | Argo Rollouts DRAFT — canary pattern iç servis (helm-values + canary-sample + install script; edge D30 YASAK) |
+| `b697a36` | Pod Security Admission label — test:baseline / prod:restricted (K8s 1.23+ built-in paralel Kyverno defense) |
+| `b405509` | Handoff + CHANGELOG sync 57 commit (Argo Rollouts + PSA eklendi) |
+| `939b0bc` | Handoff scope 53→58 commit fix (önceki edit fail recovery) |
+| `f7897af` | External DNS DRAFT — otomatik DNS kayıt Ingress'ten (rfc2136 + TSIG; kurumsal DNS provider) |
+| `4332e93` | Podinfo demo app sample — cluster sanity test helper (PSA restricted uyumlu) |
+| `63e9f8f` | Handoff + CHANGELOG sync 61 commit (External DNS + Podinfo eklendi) |
 
 ---
 
@@ -249,7 +259,7 @@ Kalan repo-side iş potansiyeli — Codex iter-5 + iter-7 zincir ile listeye al�
 ```bash
 # Repo sanity
 cd /Users/halilkocoglu/Documents/platform-k8s-gitops
-git status                                          # clean main'den 53 commit ahead
+git status                                          # clean main'den 62 commit ahead
 git log --oneline main..HEAD | head -5              # son 5 commit
 
 # Kustomize build sanity
