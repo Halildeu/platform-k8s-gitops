@@ -32,6 +32,13 @@ data:
   SPRING_CLOUD_DISCOVERY_ENABLED: "false"
   SPRING_CLOUD_SERVICE_REGISTRY_AUTO_REGISTRATION_ENABLED: "false"
 
+  # Zanzibar runtime (D-003 TRANSFORMED, 2026-04-19 K8s-6 Seviye 1)
+  # OpenFgaAuthzConfig direct engine + permission-service /authz/version polling
+  # Intra-ns shortname (Codex S1-D5.5 ping-pong Seçenek B uzlaşı, MINIMAL scope)
+  PERMISSION_SERVICE_BASE_URL: "http://permission-service:8090"
+  ERP_OPENFGA_ENABLED: "true"
+  ERP_OPENFGA_API_URL: "http://openfga:8080"
+
   # Tracing (Tempo için; base'de kapalı, monitoring kurulunca aç)
   MANAGEMENT_TRACING_ENABLED: "false"
   MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.1"

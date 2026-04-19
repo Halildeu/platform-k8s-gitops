@@ -1,0 +1,64 @@
+# permission-service config — D-003 TRANSFORMED (OpenFGA authz hub, CNS-20260411-001)
+# K8s Service port 8090 → targetPort 8084 (container internal) — D-003 kontrat
+# PR #502 (platform-ssot dev repo) application-k8s.yml uyumlu
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: permission-service-config
+data:
+  # Host-level bağımlılıklar — Service+Endpoints (D19) üzerinden, intra-ns shortname
+  # (Codex Tur 2 Minimal scope + S1-D5.5 ping-pong Seçenek B uzlaşı).
+  # Pod namespace-local svc DNS'e resolve eder: postgres → postgres.<ns>.svc → Endpoints → 10.9.10.53.
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/permission_db"
+
+  # Spring Boot
+  SERVER_PORT: "8084"                 # PR #502: container internal port
+  MANAGEMENT_SERVER_PORT: "8081"
+  # Runbook RB-zanzibar-canary /actuator/metrics/tuple_sync_outbox_pending
+  # için metrics endpoint expose (PR #502 Codex iter2 kararı)
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "never"
+
+  # Graceful shutdown — Codex Tur-3 #6 (user-service pattern)
+  SERVER_SHUTDOWN: "graceful"
+  SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: "30s"
+
+  # PG connection pool
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "5"
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "2"
+
+  # D7 Eureka kapatma (application-k8s.yml explicit disable + runtime override)
+  EUREKA_CLIENT_ENABLED: "false"
+  SPRING_CLOUD_DISCOVERY_ENABLED: "false"
+  SPRING_CLOUD_SERVICE_REGISTRY_AUTO_REGISTRATION_ENABLED: "false"
+
+  # OpenFGA (D-003 authz hub kontrat; PR #502 erp.openfga.* prefix)
+  # enabled=true default k8s profile'da (runbook + decision registry gereği)
+  # Intra-ns shortname (Codex S1-D5.5 ping-pong Seçenek B)
+  ERP_OPENFGA_ENABLED: "true"
+  ERP_OPENFGA_API_URL: "http://openfga:8080"
+  # Store/Model ID ESO ile Vault'tan gelir (boş stub, runtime override)
+  ERP_OPENFGA_STORE_ID: ""
+  ERP_OPENFGA_MODEL_ID: ""
+
+  # Permission authz user-lookup (PR #502, intra-ns shortname)
+  PERMISSION_AUTHZ_USER_LOOKUP_BASE_URL: "http://user-service:8089"
+  PERMISSION_AUTHZ_USER_TABLE: "user_service.users"
+
+  # Keycloak JWT issuer (D18 uyarı: host nginx SNI terminates TLS; K8s DNS intra-cluster)
+  # Intra-ns shortname — host bridge Service+Endpoints ile 10.9.10.53'e resolve
+  KEYCLOAK_ISSUER_URI: "http://keycloak:8080/realms/serban"
+  KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+
+  # Internal API key security (PR #502; secret'ten gelir)
+  SECURITY_INTERNAL_API_KEY_ENABLED: "true"
+  SECURITY_LEGACY_API_KEY_ENABLED: "false"
+
+  # Tracing (Tempo için; base'de kapalı)
+  MANAGEMENT_TRACING_ENABLED: "false"
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.1"
+
+  # Logging
+  LOGGING_LEVEL_ROOT: "INFO"
+  LOGGING_LEVEL_COM_ACIK: "INFO"

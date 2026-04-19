@@ -1,0 +1,10 @@
+# D21: replica 2 sabit, PDB minAvailable 1
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: permission-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: permission-service

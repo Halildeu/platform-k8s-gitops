@@ -36,6 +36,13 @@ images:
   - name: schema-service
     newName: ghcr.io/halildeu/platform-ssot-schema-service
     newTag: main-stable
+  # 2026-04-19 S1-C15: permission-service IMMUTABLE tag (test overlay S1-C14 ile simetrik).
+  # CI 7-char short SHA konvansiyon: sha-3923901 (merge commit 39239011ba1d).
+  # NOT: Prod overlay APPLY EDİLMİYOR — D32 staging-sw-2 bootstrap sonrası Seviye 4.
+  # Bu satır sadece render hizası + kustomize build kontratı için.
+  - name: permission-service
+    newName: ghcr.io/halildeu/platform-ssot-permission-service
+    newTag: sha-3923901
 
 patches:
   # ConfigMap: platform-prod namespace

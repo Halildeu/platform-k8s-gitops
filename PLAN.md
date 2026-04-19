@@ -42,6 +42,7 @@
 | D29 | Raporlama seviyeleri | Tek "green" etiketi **YASAK**. 3 seviye zorunlu: (1) **Up** = Pod Ready + edge gerçek backend + kritik dep TCP açık; (2) **Functional** = Up + ana işlev doğru dep ile çalışıyor; (3) **Zanzibar-ready** = Functional + permission-service hub yayında + OpenFGA enabled + `/authz/me`+`/authz/version` + synthetic allow/deny enforce kanıtlı. Ayrıca **Dilim 1A** (authn/transport slice) ≠ **Dilim 1Z** (authz plane env doğru); auth-service permission-service'siz boot edebilir ama "Dilim 1 tamam" denmez |
 | D30 | Cutover stratejisi | Weighted DNS (%10→50→100) **DEĞİL**. Tek-seferlik proxy upstream switch (`ai.acik.com` compose → `k3d-prod:30080` host nginx reload) + **72 saat warm rollback** (compose canlı ama trafik dışı). Ayrıca: test/prod overlay'lerde **digest pin** (repo@sha256) zorunlu, moving tag (`main-stable`) tek başına kanıt değil; pod `imageID` ↔ GHCR digest eşleşmesi doğrulanır. Sebep: weighted için session/cache/side-effect güvenliği ayrı doğrulanmalı — şu anki tasarımda gereksiz risk |
 | D31 | Primary datasource mimarisi | **Tüm mimari PostgreSQL üzerine** kuruludur; PG varsayılan DB (auth, user, variant, core, report, schema, permission, openfga, keycloak). **Dış SQL (MSSQL vb.) secondary/opsiyonel** integration — örn. report/schema Workcube ERP'den `reporting` ve `workcube_mikrolink` DB'lerine **read-only** bağlanır. Dev repo `application-k8s.yml` report/schema için `SQLServerDriver` PRIMARY varsayması **YANLIŞ** → `platform-ssot` tarafında primary PG + secondary MSSQL multi-datasource pattern'e geçilmeli. MSSQL host köprüsü gerekirse D19 pattern (Service+Endpoints IP pin) + ESO-Secret credentials. MSSQL feature **cutover blocker DEĞİL** — feature-flagged opsiyonel |
+| D32 | Prod izolasyon + OI-04 prereq stratejisi | **External cloud/KMS REDDEDILDİ** (kullanıcı kararı 2026-04-19). Çözüm: **kendi 2. fiziksel sunucu `staging-sw-2`**. Prod k3d cluster + host compose PG/KC/Vault **prod instance'ı** ayrı host'a taşınır ("taşıma değil yeni kurulum" — Codex 4-tur re-baseline T3S4). Test cluster + host compose test instance `staging-sw`'de kalır. Cutover: dış proxy `212.115.26.190` L4 backend hedefi atomik switch (`staging-sw → staging-sw-2`). `staging-sw`'deki mevcut compose stack **frozen rollback pointer** 72h. **D1/D16/D18/D23 revize tetikler:** D1 iki fiziksel host, D16 cluster topoloji fiziksel ayrım eklendi, D18 her host'ta ayrı host nginx SNI proxy, D23 tek-host DR sınırı azalır. OI-04 "independent host" prereq bu kararla karşılanır. **Bootstrap kontrat listesi** ayrı bölümde (D32-Bootstrap). Cutover S4-D atomic switch dizisi. |
 
 **HARD RULES:**
 - **D16 gereği**: `prod` ve `test` **AYRI k3d cluster**'larında çalışır (aynı host'ta ama farklı control plane). Her cluster'da kendi `platform-*` ns'i, kendi `ingress-nginx` + `external-secrets` ns'i. Prod cluster'ında ayrıca `argocd` + `monitoring` ns'leri.
@@ -57,6 +58,76 @@
 - **IMMUTABLE ARTIFACT — DIGEST+IMAGEID** (2026-04-17, D30 karşılığı): `main-stable` gibi moving tag **tek başına kanıt sayılmaz**. Overlay'lerde CI tarafından yazılan **digest pin** (repo@sha256:...) zorunlu. Pod `imageID` ile GHCR digest eşleşmesi doğrulanır. Sebep: GHCR rebuild K8s'e "yeni image" dedirtmez, IfNotPresent policy eski image ile çalışır.
 - **CUTOVER ATOMIC SWITCH** (2026-04-17, D30 karşılığı): Cutover weighted DNS (%10→50→100) **DEĞİL** — tek-seferlik proxy upstream switch (`ai.acik.com` compose → `k3d-prod:30080`) + **72 saat warm rollback** (compose canlı ama trafik dışı). Weighted yalnızca session/cache/side-effect riski ayrı doğrulandığında açılabilir; şu anki tasarımda gereksiz risk.
 - **HANDOFF ŞABLONU 5-ALAN** (2026-04-17, D28 karşılığı): Her drift iddiası `(Bağlam / İddia / İspatlar / İspatlamaz / Bilinen boşluk)` formatında yazılır. Tek başına "iddia" yeterli değil. Örnek: `docs/session-handoff-2026-04-17.md`.
+
+---
+
+## 1.5 D32 staging-sw-2 Bootstrap Kontrat Listesi (2026-04-19 Codex 4-tur re-baseline)
+
+> Bu bölüm D32 kararının (Bölüm 1 tablosu) **operasyonel checklist**idir. Sonraki session (ya da bu session devamında) staging-sw-2 kurulumuna başladığında **bu listeyi rehber alır**. Zanzibar-25 permission-service atlama pattern'inin tekrarlanmaması için **bugün yazıldı** (Codex ping-pong Madde 4 uzlaşı). "Ayrı session halleder" = "bugün checklist yazma" **DEĞİLDİR**.
+
+### F1 — Donanım + Temel Kurulum
+- [ ] **F1.1** staging-sw-2 fiziksel sunucu satın alma (Ubuntu 22.04 LTS hedef, min 4vCPU/24GB RAM/200GB disk — staging-sw eş spec)
+- [ ] **F1.2** Ubuntu kurulum + SSH + `halil` user + sudoers
+- [ ] **F1.3** `$HOME/.local/bin` PATH setup + kubectl/k3d/helm binary install
+- [ ] **F1.4** Docker CE + compose plugin install
+- [ ] **F1.5** Host firewall/port matrisi (80/443 host nginx, 6443/9080/ingress k3d-prod, 5432/8080/8200 host compose)
+
+### F2 — k3d-prod Cluster
+- [ ] **F2.1** `bootstrap/k3d-prod.yaml` ile cluster create (CIDR 10.42.0.0/16 pod + 10.43.0.0/16 svc, HTTP ingress hostPort 30080)
+- [ ] **F2.2** Tigera Operator + Calico install (tek-node için `typhaDeployment.replicas=0` Installation CR)
+- [ ] **F2.3** ingress-nginx install (DaemonSet, hostPort 80/443, values-prod.yaml)
+- [ ] **F2.4** ArgoCD install prod cluster (`bootstrap/install-argocd.sh prod`)
+- [ ] **F2.5** kube-prometheus-stack install (Prom + Grafana + Alertmanager + node-exporter + kube-state-metrics)
+- [ ] **F2.6** Loki + Tempo install (host-level tutulmaz, K8s internal filesystem)
+- [ ] **F2.7** Promtail DaemonSet (sysctl `inotify=512` F1 aşamasında host'a set edilmeli — W2 pattern)
+
+### F3 — Host Compose PROD Instance (fresh kurulum, data migration YOK)
+- [ ] **F3.1** `host-compose/vault/prod/docker-compose.yml` — Vault prod instance (port 8200)
+- [ ] **F3.2** `host-compose/keycloak/prod/docker-compose.yml` — KC prod (port 8081)
+- [ ] **F3.3** PostgreSQL prod container (port 5432)
+- [ ] **F3.4** PG init script: `CREATE DATABASE auth_db, users_db, variants_db, core_db, reports_db, schemas_db, keycloak, openfga, permission_db` (D32 prereq — bugünkü manuel S1-D7 pattern otomatikleşir)
+- [ ] **F3.5** Keycloak realm/clients seed (admin-cli + smoke-client + canary-load + service-token)
+- [ ] **F3.6** Vault seed: AppRole + backend-deploy-runtime.hcl policy + KV paths (`kv/platform/<service>/<env>`)
+- [ ] **F3.7** `platform-prod-net` Docker bridge — k3d-prod cluster + host compose bağlantı (test'teki `platform-test-net` pattern)
+
+### F4 — Host Nginx SNI Proxy (staging-sw-2)
+- [ ] **F4.1** `host-compose/proxy/docker-compose.yml` + `nginx.conf` (D18 referans)
+- [ ] **F4.2** Sectigo wildcard `*.acik.com` cert mount (staging-sw ile aynı cert, paylaşımlı)
+- [ ] **F4.3** `ai.acik.com` server block → `proxy_pass http://127.0.0.1:30080` (k3d-prod ingress-nginx)
+- [ ] **F4.4** nginx `nginx -t` + reload test
+
+### F5 — Network + Dış Proxy Hazırlığı
+- [ ] **F5.1** staging-sw-2 kurumsal IP ataması (10.x.x.x intranet)
+- [ ] **F5.2** Dış proxy `212.115.26.190` L4 backend tablosuna staging-sw-2 IP eklenmesi (sysadmin iş — **apply değil, hazırlık**)
+- [ ] **F5.3** DNS kaydı: `ai.acik.com` A kaydı şu an staging-sw'ye (dış proxy üzerinden), cutover sırasında dokunulmaz (proxy backend değişimi yeterli)
+
+### F6 — Artifact + Secret
+- [ ] **F6.1** `ghcr-pull` ESO ExternalSecret (W1 pattern, Vault `kv/gitops/ghcr-token`)
+- [ ] **F6.2** Her servis için ExternalSecret (SPRING_DATASOURCE_*, KC_CLIENT_SECRET, AUTH_SERVICE_JWT_PRIVATE_KEY)
+- [ ] **F6.3** permission-service ExternalSecret (`PERMISSION_SERVICE_INTERNAL_API_KEY`)
+
+### F7 — GitOps Bağlama
+- [ ] **F7.1** ArgoCD repo credential (SSH deploy key — staging-sw ile aynı key)
+- [ ] **F7.2** ArgoCD Application CR'ları (root.yaml → 3 app: platform-system, platform-prod, monitoring)
+- [ ] **F7.3** ArgoCD first sync — platform-prod overlay (DRY RUN önce, sonra manual sync)
+
+### F8 — Pre-Cutover Smoke (prod cluster hazır ama trafik yok)
+- [ ] **F8.1** permission-service + auth + 7 backend Pod Ready
+- [ ] **F8.2** imageID kanıt (digest pin = GHCR)
+- [ ] **F8.3** Intra-cluster Zanzibar smoke (port-forward, hub + enforcement)
+- [ ] **F8.4** Local host `curl` test (staging-sw-2 host nginx → k3d-prod ingress → gateway)
+- [ ] **F8.5** No-Go gate review 6 blocker PASS
+
+### F9 — Cutover (S4-D dizisi, F8 PASS sonrası)
+- [ ] **F9.1** Preflight + Freeze + Rollback rehearsal
+- [ ] **F9.2** Dış proxy backend switch: `staging-sw → staging-sw-2` (sysadmin iş)
+- [ ] **F9.3** Atomic smoke (edge `ai.acik.com` gerçek backend staging-sw-2)
+- [ ] **F9.4** Hot observation 30-60dk
+- [ ] **F9.5** Continuity check (canary restart)
+- [ ] **F9.6** 72h warm rollback window (staging-sw compose frozen)
+- [ ] **F9.7** Decommission gate (ayrı karar)
+
+**Kritik Not:** Bu checklist **sonraki session başlangıç rehberi**dir. Checklist dışı iş yapılırsa drift üretir (Zanzibar-25 permission-service pattern'i). Her maddenin altı doldurulmadan bir sonraki aşamaya geçilmez.
 
 ---
 
@@ -566,13 +637,15 @@ platform-k8s-gitops/
 - [ ] **Kabul kriteri:** k3d'den `kubectl exec` ile busybox pod'dan `nc -vz postgres.svc 5432` bağlanır
 
 ### Faz 5 — Kustomize Base: OpenFGA
-- [ ] StatefulSet (1 replica, migrate InitContainer)
-- [ ] Service (4000/4001)
-- [ ] Secret → ExternalSecret (Vault'tan `OPENFGA_STORE_ID`, `OPENFGA_MODEL_ID`)
-- [ ] migrate Job (Helm hook benzeri)
-- [ ] **Kabul kriteri:** k3d'de openfga ayaklanır, postgres-svc'ye bağlanır
+- [x] StatefulSet (1 replica, migrate InitContainer) — `kustomize/base/apps/openfga/` (NOT: PLAN eski `authz/openfga/` dizin şeması YANLIŞ)
+- [x] Service (**8080/8081/3000** — NOT: PLAN eski 4000/4001 YANLIŞ; gerçek portlar 8080 gRPC/HTTP, 8081 mgmt, 3000 playground)
+- [ ] Secret → ExternalSecret (Vault'tan `OPENFGA_STORE_ID`, `OPENFGA_MODEL_ID`) — şu an stub, ESO S2 iş
+- [x] migrate Job (Helm hook benzeri) — init container pattern
+- [x] **Kabul kriteri:** k3d'de openfga ayaklanır ✅ (S0 recovery 2026-04-17 sonrası 9/9 Ready)
+- **S1 (2026-04-19) FIX:** `ERP_OPENFGA_ENABLED=true` ConfigMap'e caller servisler (auth/user/variant/core) için eklenmeli — default=false Zanzibar enforcement'ı kapalı bırakıyor (S1-C10-13)
 
 ### Faz 6 — Kustomize Base: Backend Apps (şablon + çoğaltma)
+- **S1 (2026-04-19) FIX:** `permission-service` manifest seti yazılacak (S1-C1..C8), base kustomization include (S1-C9), caller ConfigMap'lere `ERP_OPENFGA_*` + `PERMISSION_SERVICE_BASE_URL` patch (S1-C10..C13), overlay test+prod immutable tag `sha-3923901` (S1-C14-15). Dil 1+2 Zanzibar-25'te kapandı (`d6e0aa8b` + `fb3a94bc`), permission-service gap bugün kapanacak.
 - [ ] `user-service/` — şablon olarak tam yaz (Deployment, Service, ConfigMap, ~~HPA~~ (D21 — MVP'de yok), PDB, ServiceMonitor, NetworkPolicy, ExternalSecret)
   - Resource: `requests: 256Mi/150m, limits: 512Mi/750m`, JVM `-Xmx384m` (prod) / `-Xmx256m` (test overlay). **`-XX:MaxRAMPercentage` kullanılmaz** (D24)
   - Replica: prod 2 sabit (D21), test 0 default (D17) / 1 açıldığında
@@ -787,4 +860,5 @@ Devam edeceğim faz: Faz 1 — Repo Temeli (README + .gitignore + ilk commit).
 | 2026-04-15 | **GERÇEK TAM BİTİŞ** — Codex Tur-7+8 false-positive 200'lerin nginx'te testai server block silinmesinden kaynaklandığını keşfetti. Pod crash ana nedeni: **ARM64 (M4 Pro) image AMD64 staging-sw'de exec format error**. AMD64 cross-build → tarball → scp → docker load → k3d import → rollout. Ayrıca kustomize patch'ler SPRING_DATASOURCE_URL pod env'e erişemedi (Spring Boot property resolution sırası) → `kubectl set env` ile explicit env ekleme ile çözüldü. Son smoke: **6/6 backend path → 401 "JWT token zorunludur" JSON** (gerçek Spring Security cevabı, HTML değil). Zincir: ingress → gateway:8080 → K8s DNS → `<svc>.platform-test.svc.cluster.local:<port>` → Spring Security 401. ai.acik.com (compose) DOKUNULMADI → 200. PoC HEDEFİ TAMAMEN BAŞARILDI. Kalan polish: OpenFGA migrate idempotency, Dockerfile `JAVA_TOOL_OPTIONS` env adı (JAVA_OPTS ENTRYPOINT'te expand olmuyor), testai nginx block'un compose restart'a dayanıklılığı (docker-compose.yml networks block). |
 | 2026-04-17 | **Drift teşhis + 4-tur Codex istişare re-baseline** (thread `019d9a75-4299-7313-85bb-003a7de680eb`). **Eklenen:** D28 (handoff 5-alan zorunlu), D29 (Up≠Functional≠Zanzibar-ready 3 seviye raporlama, tek "green" yasak), D30 (cutover atomic switch + 72h warm rollback, digest pin zorunlu, weighted YASAK), D31 (primary DB PostgreSQL, MSSQL secondary/opsiyonel external). **Revize:** "port 8090 yok" HARD RULE KALDIRILDI — D-003 TRANSFORMED uyumlu `permission-service` Service 8090→8084 DOĞRU kontrat. **Düzeltme:** Faz 6 `permission-service SKIP` → **AKTIF** (Zanzibar authz hub, CNS-20260411-001). **Yeni HARD RULES:** Authoritative Entrypoint (smoke tuple + negatif kontrol), Up≠Zanzibar-ready ayrımı, Immutable Artifact (digest pin + imageID), Cutover Atomic Switch, Handoff 5-alan. **Drift haritası (bugünkü gerçek):** Faz 3/4/5/6 REGRESSION (Calico BIRD down + Typha watch cache bozuk; 5 pod crash 20h; testai edge SNI fallback compose frontend'e; users_db+variants_db YOK; OpenFGA enabled=false default; ghcr-pull secret eksik), Faz 10 BAŞLAMADI (ArgoCD yok), Faz 13 REGRESSION (1-hafta gözlem başlamamış), Faz 15 BAŞLAMADI. **Repo ayrımı netleşti:** `platform-k8s-gitops` (bu repo, manifest) + `platform-ssot` (Java backend + MFE, `/Users/halilkocoglu/Documents/dev/`) + `autonomous-orchestrator` (Python control-plane, governance). Handoff v3 `docs/session-handoff-2026-04-17.md` ilk 5-alan örneği. |
 | 2026-04-17 | **Seviye 0 canlı recovery TAMAMLANDI** (Codex thread devamı). **Fix uygulandı:** `calico-typha scale=0` + `calico-node` recycle → BIRD up, Tigera DEGRADED=**False**. `users_db`+`variants_db` zaten mevcut (önceki drift). 5 crash pod rollout restart → **9/9 Pod Running + Ready**, tüm Endpoints doldu. **Intra-cluster Up kanıt:** labeled busybox nc 3/3 OPEN (postgres.svc:5432, keycloak.svc:8080, raw 172.19.0.4:5432), management:8081/actuator/health auth/user/variant/core → **4/4 200**. **testai edge fix:** `/home/halil/platform/web/nginx/default.conf` host dosyasına `testai.acik.com` server_block + `/testai-healthz` sentinel + proxy → `127.0.0.1:9080` (k3d-test serverlb). Config mount kalıcı (compose restart dayanıklı). **Gerçek edge smoke:** `/testai-healthz`→200 "testai-healthz" body, `/auth/actuator/health`→ K8s gateway JSON "JWT token zorunludur", `/reports`+`/schemas`→ 401 Spring Security. **compose fallback YOK** (drift #1 kapatıldı). `ai.acik.com` dokunulmadı (200+401 aynen). **Warning kalıntıları** (Seviye 1/2'ye ertelendi): Content-Type text/html vs application/json drift (gateway response header), auth/user/variant/core `/actuator/health` 200 vs report/schema 401 tutarsızlığı, calico-typha Tigera operator auto-recreate (Installation CR override — Seviye 2.5'e), ghcr-pull secret restore, Promtail sysctl fix, dev repo permission-service application-k8s.yml yok, OpenFGA enabled=false default, digest pin yok. **Seviye 0 kapatıldı**; Seviye 1 Zanzibar runtime aktivasyonu sıradaki iş (permission-service manifest + OpenFGA enabled + auth-service hardcoded namespace temizliği). |
+| 2026-04-19 | **Seviye 1 DEPLOY-ÖNCESİ KARAR KAYDI** (Codex 4-tur re-baseline Seri 2 + retrospektif ping-pong, aynı thread `019d9a75`). **Zanzibar-25 kapanışı:** platform-ssot'ta 14 PR merged (Dilim 1+2 K8s-ready + STORY-0319 prod-like + PR #502 permission-service application-k8s.yml + OI-03 canary PASS Evidence). **D32 eklendi:** External cloud/KMS REDDEDILDİ → kendi 2. fiziksel sunucu `staging-sw-2` (D1/D16/D18/D23 revize; **Bölüm 1.5 Bootstrap Kontrat Listesi F1-F9** yazıldı — Zanzibar-25 atlama pattern'inin tekrarlanmaması için). **4-tur mutabakat ekseni:** Seviye 1 minimal scope (permission-service + ZORUNLU core-data + variant ConfigMap + overlay test+prod), 2 katmanlı smoke (A. Hub cluster-direct port-forward `/actuator/health:8081`, `/authz/version`, `/authz/me`; B. Enforcement gateway token'lı `/variants` allow/deny), rollback **tek-commit revert** (selector delete yasak), D32 **paralel hat** (test Seviye 1 staging-sw'de devam). **Retrospektif ping-pong uzlaşı (4 madde):** (1) auth-service hardcoded NS default **bugün dev repo PR** paralel; (2) variant-service ConfigMap **ZORUNLU** (opsiyonel değil — `OpenFgaAuthzConfig` default `http://127.0.0.1:8091` self-call drift); (3) immutable tag **bugün** `sha-3923901` (`main-stable` D30 ihlal); (4) D32 kontrat listesi **bugün PLAN'e** (drift önleme). **Kritik düzeltmeler:** actuator health **management port 8081** (8090 değil), auth login `Set.of()` → auth→permission smoke proof değil (Hub cluster-direct zorunlu), gateway K8s GitOps'ta `/api/v1/authz/**` route yok (dev repo'da var, drift not — Seviye 2). **Kod sistemi:** `S<n>-<kategori><madde>` hiyerarşi; S1 = bugün Zanzibar runtime, S2 ops sertleşme, S3 stability soak, S4 cutover. Faz 5+6 REGRESSION → **S1'de FIX** (permission-service + OpenFGA enabled). Deploy-sonrası canlı sonuç ayrı entry olacak. |
 

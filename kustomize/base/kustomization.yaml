@@ -19,6 +19,8 @@ resources:
   - apps/report-service
   - apps/schema-service
   - apps/openfga          # Dilim 3 — authz engine (StatefulSet)
+  - apps/permission-service  # Zanzibar-25 Dilim 2 gap closure (2026-04-19, PR #502 uyumlu)
+                             # D-003 TRANSFORMED: OpenFGA authz hub, Service 8090→8084
   - apps/frontend         # Dilim 3 — MFE shell (nginx)
   - ingress
   - netpol         # D15 + Codex Tur-4 C modeli (default-deny + allowlist)
