@@ -1,7 +1,7 @@
 # Session Handoff v4 — 2026-04-19 K8s-6
 
 > **Format:** D28 HARD RULE 5-alan (Bağlam / İddia / İspatlar / İspatlamaz / Bilinen boşluk)
-> **Scope:** 61 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2-5 repo-side materyal + Monitoring stack 3 sütun (PromQL+LogQL+TraceQL) + 4 dashboard + 16 recording rule + 8 Day-2 runbook + Repo hygiene + ApplicationSet draft + CHANGELOG + Kyverno DRAFT + Cert-manager DRAFT + Argo Rollouts DRAFT + Pod Security Admission + External DNS DRAFT + Podinfo sample + On-call 14 alert + docs/README.md index
+> **Scope:** 66 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2-5 repo-side materyal + Monitoring stack 3 sütun + 4 dashboard + 16 recording rule + 8 Day-2 runbook + SSL cert expire alert + Makefile + pre-commit hooks + Repo hygiene + ApplicationSet draft + CHANGELOG + Kyverno DRAFT + Cert-manager DRAFT + Argo Rollouts DRAFT + PSA + External DNS DRAFT + Podinfo sample + On-call 14 alert + docs/README.md index
 > **Codex thread referans:** `019d9a75-4299-7313-85bb-003a7de680eb` (K8s-6 ana), `019da5f8-9087-73f0-899b-267fa608456e` (iter-2..iter-6 delta retrospective)
 > **No-closure uyarı:** Bu handoff "bugün kapandı/bitti" değil — sürekli ortak devam sürecinde ara rapor.
 
@@ -109,6 +109,9 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 | `f7897af` | External DNS DRAFT — otomatik DNS kayıt Ingress'ten (rfc2136 + TSIG; kurumsal DNS provider) |
 | `4332e93` | Podinfo demo app sample — cluster sanity test helper (PSA restricted uyumlu) |
 | `63e9f8f` | Handoff + CHANGELOG sync 61 commit (External DNS + Podinfo eklendi) |
+| `47432b1` | Handoff commit tablosu 11 eksik satır + git status 62 sync |
+| `995770f` | Makefile (ops wrappers 9 hedef) + .pre-commit-config.yaml (lokal lint + HARD RULE check) |
+| `20ec03a` | SSL cert expire alert (SSLCertExpireWarning <30gün + Critical <7gün, blackbox probe_ssl_earliest_cert_expiry) |
 
 ---
 
