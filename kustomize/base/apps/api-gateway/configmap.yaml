@@ -70,6 +70,15 @@ data:
   SPRING_CLOUD_GATEWAY_ROUTES_5_PREDICATES_0: "Path=/schemas/**"
   SPRING_CLOUD_GATEWAY_ROUTES_5_FILTERS_0: "StripPrefix=1"
 
+  # Zanzibar authz hub — permission-service D-003 TRANSFORMED (Seviye 1 deploy)
+  # Codex PR #1 iter-9 drift tespit: CHANGELOG "/api/v1/authz/** eklendi" diyor
+  # ama configmap'te yoktu — dev repo'da var, K8s overlay'de eksikti. Fix edildi.
+  # NOT: StripPrefix YOK (permission-service native endpoint: /api/v1/authz/*).
+  SPRING_CLOUD_GATEWAY_ROUTES_6_ID: "permission-service"
+  SPRING_CLOUD_GATEWAY_ROUTES_6_URI: "http://permission-service:8090"
+  SPRING_CLOUD_GATEWAY_ROUTES_6_PREDICATES_0: "Path=/api/v1/authz/**"
+  # StripPrefix yok — native route preserved
+
   # D7: Eureka yok → K8s svc DNS
   AUTH_SERVICE_URL: "http://auth-service:8088"
   # Dilim 2+:
