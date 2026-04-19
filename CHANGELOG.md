@@ -6,7 +6,7 @@ Tüm önemli değişiklikler bu dosyada tutulur. Format: [Keep a Changelog](http
 
 ## [Unreleased] — 2026-04-17 → 2026-04-19
 
-Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 47 commit K8s-6 session.
+Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 50 commit K8s-6 session.
 
 ### Added
 
@@ -73,6 +73,15 @@ Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 47 commit K8s-6 session.
 - `kustomize/base/policies/require-image-pull-policy.yaml` — imagePullPolicy Always YASAK
 - `bootstrap/install-kyverno.sh` — Helm install + policy apply + audit → enforce rehberi
 - `argocd/applications/platform-policies.yaml` — GitOps sync Application (DRAFT)
+
+**Cert-manager (DRAFT, PLAN D8 Aşama 2):**
+- `helm-values/cert-manager/values.yaml` — Helm chart (installCRDs + webhook + cainjector + ServiceMonitor)
+- `kustomize/base/cert-manager/clusterissuer-letsencrypt-staging.yaml` — ACME staging (rate limit testi)
+- `kustomize/base/cert-manager/clusterissuer-letsencrypt-prod.yaml` — ACME prod
+- `bootstrap/install-cert-manager.sh` — Helm install + ClusterIssuer apply + test Certificate CR rehberi
+- `argocd/applications/platform-cert-manager.yaml` — GitOps sync (DRAFT)
+
+Şu an Sectigo wildcard manuel aktif; cert-manager Faz 12'de devreye alınır.
 
 **Handoff pack:**
 - `docs/session-handoff-2026-04-19.md` — v4 5-alan (Bağlam/İddia/İspatlar/İspatlamaz/Bilinen boşluk), 38 commit özet
