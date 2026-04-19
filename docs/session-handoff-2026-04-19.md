@@ -1,7 +1,7 @@
 # Session Handoff v4 — 2026-04-19 K8s-6
 
 > **Format:** D28 HARD RULE 5-alan (Bağlam / İddia / İspatlar / İspatlamaz / Bilinen boşluk)
-> **Scope:** 36 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side materyal hazır + S3-A3 Grafana (4 dashboard) + S1/S2 smoke + ES automation + k6 load + Vault policy + PromQL + DR drill + Day-2 ops (cert/capacity/triage/backup-freshness/audit/access-review) + Repo hygiene (CI+CLAUDE+README+ingress metrics) + ArgoCD ApplicationSet draft
+> **Scope:** 38 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side materyal hazır + S3-A3 Grafana (4 dashboard + 16 recording rule) + S1/S2 smoke + ES automation + k6 load + Vault policy + PromQL + DR drill + Day-2 ops (7 runbook) + Repo hygiene (CI+CLAUDE+README+CONTRIBUTING+PR template+ingress metrics) + ArgoCD ApplicationSet draft
 > **Codex thread referans:** `019d9a75-4299-7313-85bb-003a7de680eb` (K8s-6 ana), `019da5f8-9087-73f0-899b-267fa608456e` (iter-2..iter-6 delta retrospective)
 > **No-closure uyarı:** Bu handoff "bugün kapandı/bitti" değil — sürekli ortak devam sürecinde ara rapor.
 
@@ -15,7 +15,7 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 
 ---
 
-## 2. İddia (bugün ne oldu — 36 commit)
+## 2. İddia (bugün ne oldu — 38 commit)
 
 ### 2.1 Seviye 0 — Calico Recovery + testai Edge Fix (2026-04-17)
 
@@ -82,6 +82,8 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 | `f075660` | Repo hygiene: CI workflow (5 job) + CLAUDE.md (agent kılavuzu) + README genişletme + ingress-nginx metrics+serviceMonitor + server-tokens:false |
 | `455781b` | Day-2 4. dashboard: JVM + DB + Hikari (heap % + GC p95 + pool active/timeout/pending + acquire duration) |
 | `553ae98` | ArgoCD ApplicationSet DRAFT pattern (overlays + eso; D32 sonrası multi-cluster) |
+| `4c67c8f` | Handoff v4 mini update 36 commit (son 6 paket: day-2 ops + repo hygiene + ApplicationSet) |
+| `4d20ec6` | Recording rules (16 rule, 7 grup) + PR template + CONTRIBUTING.md (repo workflow + HARD RULE enforce) |
 
 ---
 
@@ -189,7 +191,10 @@ Kalan repo-side iş potansiyeli — Codex iter-5 + iter-7 zincir ile listeye al�
 - ✅ **CI workflow** → `.github/workflows/ci.yml` (5 job: kustomize-build + yaml-lint + shell-lint + closure-language-check + placeholder-leak-check)
 - ✅ **CLAUDE.md** → agent kılavuzu (6 HARD RULE + kustomize/selective apply/Codex pattern + 5 yaygın pitfall + agent session akış)
 - ✅ **README.md genişletme** → 119 satır (13 runbook + 6 plan pack + 5 handoff tablo + hızlı kurulum + karar logu + HARD RULE)
+- ✅ **CONTRIBUTING.md** → repo workflow (9 adım branch → merge) + 5 HARD RULE enforce + commit type örnekleri + dizin kuralları
+- ✅ **PR template** → `.github/pull_request_template.md` (özet + tip + kapsam + test planı + D29/D30 kontrol + Codex verdict + referans)
 - ✅ **ingress-nginx metrics+serviceMonitor** → values-prod.yaml (EdgeHigh5xxRatio prereq) + server-tokens:false (güvenlik)
+- ✅ **Recording rules** → `kustomize/base/monitoring/recording-rules.yaml` (16 rule, 7 grup — hub/gateway/edge/pods/jvm/hikari/probe pre-compute)
 
 **ArgoCD ApplicationSet DRAFT:**
 - ✅ `argocd/applicationsets/platform-overlays.yaml` (backend multi-cluster pattern, D32 sonrası)
@@ -229,7 +234,7 @@ Kalan repo-side iş potansiyeli — Codex iter-5 + iter-7 zincir ile listeye al�
 ```bash
 # Repo sanity
 cd /Users/halilkocoglu/Documents/platform-k8s-gitops
-git status                                          # clean main'den 36 commit ahead
+git status                                          # clean main'den 38 commit ahead
 git log --oneline main..HEAD | head -5              # son 5 commit
 
 # Kustomize build sanity
