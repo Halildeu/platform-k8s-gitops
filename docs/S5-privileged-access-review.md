@@ -126,7 +126,7 @@ sudo ssh-keygen -lf /home/halil/.ssh/authorized_keys
 
 ```bash
 # Son 7 gün policy değişiklikleri (review YASAK)
-grep -h "sys/policies/acl" /var/lib/docker/volumes/host-compose_vault-logs/_data/audit.log.* \
+grep -h "sys/policies/acl" /srv/platform/stateful/prod/vault/logs/audit.log.* \
   | jq 'select(.request.operation == "update" or .request.operation == "delete")' \
   | jq -s '.[] | {time, path, subject: .auth.display_name}'
 # Beklenen: sadece bilinen ops hesabı

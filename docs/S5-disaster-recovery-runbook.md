@@ -121,14 +121,17 @@ echo "✓ Vault snapshot: ${BACKUP_DIR}/vault-snapshot-${DATE}.snap"
 **Süre:** ~30 dk (dump boyutuna göre)
 
 ```bash
-# 1. Compose PG durdur + volume temizle (DIKKAT destructive)
+# 1. Compose PG durdur + bind-mount dizin temizle (DİKKAT destructive)
 docker compose -f host-compose/postgres/prod/docker-compose.yml stop postgres
 docker compose -f host-compose/postgres/prod/docker-compose.yml rm -f postgres
-docker volume rm host-compose_postgres-data
 
-# 2. Compose PG baştan başlat (boş volume)
+# ADR-0002 bind-mount (named volume değil):
+sudo rm -rf /srv/platform/stateful/prod/postgres/*
+sudo chown -R 999:999 /srv/platform/stateful/prod/postgres
+
+# 2. Compose PG baştan başlat (boş dizin; init SQL çalışır)
 docker compose -f host-compose/postgres/prod/docker-compose.yml up -d postgres
-sleep 30   # init time
+sleep 30   # init SQL + cluster bootstrap
 
 # 3. Restore (backup'tan)
 gunzip -c /home/halil/platform/backup/pg/pg_dumpall_<DATE>.sql.gz | \

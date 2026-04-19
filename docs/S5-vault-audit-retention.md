@@ -33,19 +33,17 @@ vault audit list
 ### 1.2 Docker Compose Volume Mount
 
 ```yaml
-# host-compose/vault/prod/docker-compose.yml
+# host-compose/vault/prod/docker-compose.yml (ADR-0002 bind-mount)
 services:
   vault:
-    image: hashicorp/vault:1.15
+    image: hashicorp/vault:1.17
     volumes:
-      - vault-data:/vault/data
-      - vault-logs:/vault/logs      # yeni — audit log persist
+      - /srv/platform/stateful/prod/vault/data:/vault/data    # Raft storage
+      - /srv/platform/stateful/prod/vault/logs:/vault/logs    # audit log persist
     # ...
-
-volumes:
-  vault-data:
-  vault-logs:                        # yeni
 ```
+
+NOT: ADR-0002 kabul sonrası bind-mount kullanılır (eski named volume `vault-logs` kaldırıldı). Host path `/srv/platform/stateful/prod/vault/logs/audit.log` doğrudan erişilebilir (logrotate/backup daha kolay).
 
 ---
 
@@ -56,7 +54,7 @@ volumes:
 ```bash
 # /etc/logrotate.d/vault
 cat <<'EOF' | sudo tee /etc/logrotate.d/vault
-/var/lib/docker/volumes/host-compose_vault-logs/_data/audit.log {
+/srv/platform/stateful/prod/vault/logs/audit.log {
     daily
     rotate 90             # 90 gün retention
     compress
@@ -92,7 +90,7 @@ sudo logrotate -f /etc/logrotate.d/vault
 
 ```bash
 # Son 7 gün failed auth denemeleri
-tail -n 100000 /var/lib/docker/volumes/host-compose_vault-logs/_data/audit.log \
+tail -n 100000 /srv/platform/stateful/prod/vault/logs/audit.log \
   | jq 'select(.request.operation == "update" and .response.error != null) | {time, path: .request.path, error: .response.error}' \
   | head -50
 
@@ -131,7 +129,7 @@ mkdir -p "${ARCHIVE_DIR}"
 
 # Son ayın logları topla
 tar -czf "${ARCHIVE_DIR}/audit-${MONTH}.tar.gz" \
-  /var/lib/docker/volumes/host-compose_vault-logs/_data/audit.log.*.gz 2>/dev/null || true
+  /srv/platform/stateful/prod/vault/logs/audit.log.*.gz 2>/dev/null || true
 
 echo "✓ Archive: ${ARCHIVE_DIR}/audit-${MONTH}.tar.gz"
 
@@ -145,7 +143,7 @@ find "${ARCHIVE_DIR}" -name "audit-*.tar.gz" -mtime +365 -delete
 
 ### 4.1 Vault Audit Log Exporter (node_exporter textfile veya Promtail)
 
-**Opsiyon A (minimal):** Promtail (mevcut logs-traces stack) `/var/lib/docker/volumes/host-compose_vault-logs/_data/audit.log` dosyasını tail eder → Loki'ye gönderir.
+**Opsiyon A (minimal):** Promtail (mevcut logs-traces stack) `/srv/platform/stateful/prod/vault/logs/audit.log` dosyasını tail eder → Loki'ye gönderir.
 
 **Opsiyon B (detay):** Custom exporter — audit log'tan metric üretir (failed auth rate, path access count, policy change count).
 
