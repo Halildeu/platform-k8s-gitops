@@ -17,6 +17,7 @@ resources:
   - zanzibar-stability-rule.yaml
   - blackbox-exporter.yaml
   - backup-freshness-rule.yaml    # Codex iter-8 day-2 ek — backup_last_success metric + 5 alert
+  - recording-rules.yaml          # Pre-compute expensive PromQL (Grafana + alert hızlandırma)
   # Grafana dashboard ConfigMap'ler — kube-prometheus-stack sidecar provisioner
   # otomatik import (label grafana_dashboard=1). Helm values
   # helm-values/kube-prometheus-stack/values.yaml sidecar.dashboards.enabled: true.

@@ -256,11 +256,39 @@ Tümü `kustomize/base/monitoring/zanzibar-stability-rule.yaml` içinde tanıml�
 
 ---
 
-## 7. Referanslar
+## 7. Recording Rules (pre-compute, `kustomize/base/monitoring/recording-rules.yaml`)
 
-- `kustomize/base/monitoring/zanzibar-stability-rule.yaml` — PrometheusRule
+Expensive PromQL query'ler recording rule olarak pre-compute edildi. Dashboard ve alert'ler bu metric'leri kullanır → render hızlı + tek yerde tanım.
+
+| Recording rule | Kapsam |
+|---|---|
+| `platform:hub:requests:rate5m` | Hub request rate by URI |
+| `platform:hub:requests:p95` | Hub p95 latency by URI |
+| `platform:hub:errors:ratio` | Hub 5xx error ratio |
+| `platform:gateway:p95` | Gateway p95 latency |
+| `platform:gateway:requests:rate5m` | Gateway request rate by URI |
+| `platform:edge:5xx_ratio` | Ingress-nginx 5xx ratio (EdgeHigh5xxRatio alert) |
+| `platform:edge:requests:rate5m` | Ingress-nginx request rate |
+| `platform:pods:not_ready` | Platform ns Not Ready pod count |
+| `platform:pods:restart:rate15m` | 15dk restart rate per pod |
+| `platform:pods:memory:usage_ratio` | Pod memory / limit |
+| `platform:pods:cpu:throttle_ratio` | Pod CPU throttle ratio |
+| `platform:jvm:heap:ratio` | JVM heap % |
+| `platform:jvm:gc:p95_ms` | JVM GC pause p95 ms |
+| `platform:hikari:pool:active_ratio` | Hikari pool utilization |
+| `platform:hikari:timeout:rate5m` | Hikari timeout rate |
+| `platform:probe:success_ratio_5m` | Blackbox probe 5dk avg success |
+| `platform:probe:duration:p95` | Probe duration p95 |
+
+**Kullanım:** Dashboard panellerinde doğrudan recording rule adı query olarak kullanılır (örn. `platform:hub:p95{uri="/api/v1/authz/check"}` ham histogram_quantile yerine).
+
+## 8. Referanslar
+
+- `kustomize/base/monitoring/zanzibar-stability-rule.yaml` — Alert PrometheusRule
+- `kustomize/base/monitoring/recording-rules.yaml` — Pre-compute recording rules
 - `kustomize/base/monitoring/blackbox-exporter.yaml` — 4 Probe CR
-- `kustomize/base/monitoring/grafana-dashboards/` — 3 dashboard (authz plane + platform pods + edge synthetic)
+- `kustomize/base/monitoring/backup-freshness-rule.yaml` — Backup alert + exporter
+- `kustomize/base/monitoring/grafana-dashboards/` — 4 dashboard (authz plane + platform pods + edge synthetic + JVM/DB/Hikari)
 - `docs/S3-stability-soak-pack.md` — S3 soak 7 günlük plan
 - `docs/S1-S2-acceptance-smoke-runbook.md` — D29 3-katman acceptance smoke
 - `tests/k6/zanzibar-load.js` — Load test profile (Gün 6)
