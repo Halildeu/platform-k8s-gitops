@@ -14,36 +14,36 @@ resources:
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile)
-  # Prod için main-stable tag (runtime rolling). Canlı cutover öncesi CI'nın
+  # Prod için sha-60611fa tag (runtime rolling). Canlı cutover öncesi CI'nın
   # verdiği specific digest'e (@sha256:...) pinlenir — D26 Codex Tur-4.
   - name: auth-service
     newName: ghcr.io/halildeu/platform-ssot-auth-service
-    newTag: main-stable
+    newTag: sha-60611fa
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-ssot-api-gateway
-    newTag: main-stable
+    newTag: sha-60611fa
   - name: user-service
     newName: ghcr.io/halildeu/platform-ssot-user-service
-    newTag: main-stable
+    newTag: sha-60611fa
   - name: variant-service
     newName: ghcr.io/halildeu/platform-ssot-variant-service
-    newTag: main-stable
+    newTag: sha-60611fa
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-ssot-core-data-service
-    newTag: main-stable
+    newTag: sha-60611fa
   - name: report-service
     newName: ghcr.io/halildeu/platform-ssot-report-service
-    newTag: main-stable
+    newTag: sha-60611fa
   - name: schema-service
     newName: ghcr.io/halildeu/platform-ssot-schema-service
-    newTag: main-stable
+    newTag: sha-60611fa
   # 2026-04-19 S1-C15: permission-service IMMUTABLE tag (test overlay S1-C14 ile simetrik).
-  # CI 7-char short SHA konvansiyon: sha-3923901 (merge commit 39239011ba1d).
+  # CI 7-char short SHA konvansiyon: sha-60611fa (merge commit 39239011ba1d).
   # NOT: Prod overlay APPLY EDİLMİYOR — D32 staging-sw-2 bootstrap sonrası Seviye 4.
   # Bu satır sadece render hizası + kustomize build kontratı için.
   - name: permission-service
     newName: ghcr.io/halildeu/platform-ssot-permission-service
-    newTag: sha-3923901
+    newTag: sha-60611fa
 
 patches:
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz replace

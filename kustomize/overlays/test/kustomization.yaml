@@ -22,43 +22,39 @@ resources:
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)
-  # 2026-04-19 akşam: Tüm 8 servis sha-3923901 immutable tag (D30 full uyum).
-  # Dev repo main merge sonrası CI GHCR'a push ediyor, overlay bu sha'ya pin'lenir.
+  # 2026-04-20: Tüm 8 servis sha-60611fa immutable tag (D30 full uyum).
+  # Dev repo PR #510/#511/#512 merge sonrası CI GHCR sha-60611fa push.
   # Yeni commit'ler → yeni sha-<short> → overlay güncellenir (manuel veya W3 CI).
   # moving tag main-stable D30 ihlal (cache hit, yeni image çekilmez).
   - name: auth-service
     newName: ghcr.io/halildeu/platform-ssot-auth-service
-    newTag: sha-3923901
+    newTag: sha-60611fa
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-ssot-api-gateway
-    newTag: sha-3923901
+    newTag: sha-60611fa
   - name: user-service
     newName: ghcr.io/halildeu/platform-ssot-user-service
-    newTag: sha-3923901
+    newTag: sha-60611fa
   - name: variant-service
     newName: ghcr.io/halildeu/platform-ssot-variant-service
-    newTag: sha-3923901
+    newTag: sha-60611fa
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-ssot-core-data-service
-    newTag: sha-3923901
+    newTag: sha-60611fa
   - name: report-service
     newName: ghcr.io/halildeu/platform-ssot-report-service
-    newTag: sha-3923901
+    newTag: sha-60611fa
   - name: schema-service
     newName: ghcr.io/halildeu/platform-ssot-schema-service
-    # Dev repo sha-3923901 commit'inde schema-service build yok (CI pipeline
-    # schema değişmediği için atlamış). Overlay sha bumpında image bulunamayıp
-    # ErrImageNeverPull olur. Dev repo schema-service yeni commit push edince
-    # burası da sha-<short> pin'lenir (D30 uyum).
-    newTag: main-stable    # TEMP: dev repo schema yeni build bekler
-  # 2026-04-19 S1-C14: permission-service IMMUTABLE tag (Codex ping-pong Madde 3
-  # uzlaşı; D30 HARD RULE uyumu). PR #502 merge commit 39239011ba1d → CI push
-  # sha-3923901 tag (7-char short SHA, CI konvansiyon). "main-stable" tek başına
-  # D30 ihlal. Diğer servislerde full digest pin W3 ayrı PR (S2-B2 platform-ssot CI),
-  # permission-service burada pilot.
+    # 2026-04-20: dev-repo PR #512 (CI trigger) merge sonrası schema-service
+    # immutable build oluştu. D30 main-stable → sha-60611fa bump.
+    newTag: sha-60611fa
+  # 2026-04-20: tüm 8 servis sha-60611fa (D30 HARD RULE uyumu). Pin commit
+  # 60611fa = dev-repo PR #510/#511/#512 ardışık merge head (auth NS fix +
+  # smoke-client + schema CI). Full digest pin W3 ayrı PR (S2-B2).
   - name: permission-service
     newName: ghcr.io/halildeu/platform-ssot-permission-service
-    newTag: sha-3923901
+    newTag: sha-60611fa
 
 patches:
   # Replica 0 default (scale-to-zero)
