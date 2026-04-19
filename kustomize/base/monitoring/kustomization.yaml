@@ -23,6 +23,7 @@ resources:
   - grafana-dashboards/authz-plane-dashboard.yaml
   - grafana-dashboards/platform-pods-dashboard.yaml
   - grafana-dashboards/edge-synthetic-dashboard.yaml
+  - grafana-dashboards/jvm-db-hikari-dashboard.yaml     # Codex iter-7 day-2 4. dashboard
 
 # Kullanım:
 # Apply sadece S3 session'da (testai soak başlangıcı öncesi):
