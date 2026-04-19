@@ -95,12 +95,12 @@ tail -n 100000 /srv/platform/stateful/prod/vault/logs/audit.log \
   | head -50
 
 # AppRole login başarı sayısı (son 24h)
-tail -n 100000 audit.log \
+tail -n 100000 /srv/platform/stateful/prod/vault/logs/audit.log \
   | jq -r 'select(.request.path == "auth/approle/login") | .time' \
   | awk -F'T' '$1 == "'$(date -u +%Y-%m-%d)'" {n++} END {print n" AppRole login bugün"}'
 
 # KV read per servis (son 7 gün)
-tail -n 500000 audit.log \
+tail -n 500000 /srv/platform/stateful/prod/vault/logs/audit.log \
   | jq -r 'select(.request.path | startswith("kv/data/platform/")) | .request.path' \
   | sort | uniq -c | sort -rn
 # Beklenen: permission-service + auth-service + diğer 5 servis read dağılımı

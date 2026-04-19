@@ -54,7 +54,9 @@ DATE=$(date +%Y%m%d-%H%M%S)
 mkdir -p "${BACKUP_DIR}"
 
 # pg_dumpall — tüm DB + role + tablespace
-docker exec platform-pg-prod pg_dumpall -U postgres \
+# --clean --if-exists: restore duplicate-object safe (DROP IF EXISTS + CREATE)
+# ADR-0002 DR akışında init SQL ile çakışma önler
+docker exec platform-pg-prod pg_dumpall -U postgres --clean --if-exists \
   | gzip > "${BACKUP_DIR}/pg_dumpall_${DATE}.sql.gz"
 
 # Retention (14 gün eski dosyaları sil)
@@ -120,6 +122,8 @@ echo "✓ Vault snapshot: ${BACKUP_DIR}/vault-snapshot-${DATE}.snap"
 
 **Süre:** ~30 dk (dump boyutuna göre)
 
+**DİKKAT (ADR-0002 init SQL çakışması):** Fresh PG start init SQL script'i çalıştırır (role + DB yaratır). `pg_dumpall` restore ise aynı object'leri tekrar yaratmaya çalışır → duplicate-object hataları. 2 çözüm: (A) Init dizinini geçici kaldır, (B) `--clean --if-exists` dump kullan.
+
 ```bash
 # 1. Compose PG durdur + bind-mount dizin temizle (DİKKAT destructive)
 docker compose -f host-compose/postgres/prod/docker-compose.yml stop postgres
@@ -129,19 +133,27 @@ docker compose -f host-compose/postgres/prod/docker-compose.yml rm -f postgres
 sudo rm -rf /srv/platform/stateful/prod/postgres/*
 sudo chown -R 999:999 /srv/platform/stateful/prod/postgres
 
-# 2. Compose PG baştan başlat (boş dizin; init SQL çalışır)
-docker compose -f host-compose/postgres/prod/docker-compose.yml up -d postgres
-sleep 30   # init SQL + cluster bootstrap
+# 2a. (ÖNERİLEN) Init script'i geçici bir yere taşı — restore çakışma önleme
+mv host-compose/postgres/prod/init host-compose/postgres/prod/init.disabled
 
-# 3. Restore (backup'tan)
+# 2b. Compose PG baştan başlat (boş dizin; init SQL ÇALIŞMAZ çünkü init/ yok)
+docker compose -f host-compose/postgres/prod/docker-compose.yml up -d postgres
+until docker exec platform-pg-prod pg_isready -U postgres; do sleep 2; done
+
+# 3. Restore (dump zaten role + DB + grant içerir)
 gunzip -c /home/halil/platform/backup/pg/pg_dumpall_<DATE>.sql.gz | \
   docker exec -i platform-pg-prod psql -U postgres
 
-# 4. Doğrula (DB listesi + tablo sayısı)
+# 4. Init script'i geri koy (gelecekteki fresh restart için)
+mv host-compose/postgres/prod/init.disabled host-compose/postgres/prod/init
+
+# 5. Doğrula (DB listesi)
 docker exec platform-pg-prod psql -U postgres -c '\l'
-# Beklenen: auth_db, user_db, variant_db, core_db, report_db, schema_db,
-#           permission_db, openfga_db, keycloak
+# Beklenen: auth_db, users_db, variants_db, core_db, reports_db, schemas_db,
+#           permission_db, openfga, keycloak
 ```
+
+**Alternatif (B):** Backup'ta `pg_dumpall --clean --if-exists` flag kullanılmışsa init SQL çalıştırılabilir; `DROP IF EXISTS` + `CREATE` pattern ile duplicate-safe. Backup script'i o flagi içeriyorsa 2a adımı skip edilebilir.
 
 ### 3.2 Keycloak realm restore
 
