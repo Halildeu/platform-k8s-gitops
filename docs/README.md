@@ -100,3 +100,25 @@ Tüm runbook, plan pack, handoff, query pack index — agent/ops session başlan
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) — repo workflow 9 adım
 - [../CHANGELOG.md](../CHANGELOG.md) — Keep a Changelog format, session delta
 - [../CLAUDE.md](../CLAUDE.md) — agent kılavuzu
+- [../Makefile](../Makefile) — ops komutları wrapper (`make help`)
+- [../.pre-commit-config.yaml](../.pre-commit-config.yaml) — lokal lint hooks
+
+## 🛠️ Hızlı Komutlar
+
+```bash
+# Kustomize build sanity (tüm overlay + base)
+make sanity
+
+# Canlı smoke (testai edge)
+make smoke-test
+
+# ESO install + overlay apply
+make install-eso-test
+kubectl -n external-secrets create secret generic vault-approle-secret \
+  --from-literal=secret-id=<SECRET_ID>
+make apply-eso-test
+
+# Pre-commit lokal hook (ilk kurulum)
+pip install pre-commit
+pre-commit install
+```
