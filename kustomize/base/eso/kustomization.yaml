@@ -1,0 +1,24 @@
+# ESO Base — D9 ExternalSecret + Vault ClusterSecretStore
+# S2-B1: ghcr-pull ExternalSecret (W1 kalıcı çözüm)
+# Source: docs/handoff-S2-B-artifact-hardening.md
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: external-secrets    # overlay'de namespace override mümkün
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: platform
+      app.kubernetes.io/component: eso
+    includeSelectors: false
+    includeTemplates: false
+
+resources:
+  - clustersecretstore-vault.yaml
+  - externalsecret-ghcr-pull.yaml
+  # İleride: per-service ExternalSecret (auth-service-secrets,
+  # user-service-secrets, permission-service-secrets) overlay altında
+  # veya base/apps/<svc>/externalsecret.yaml (secret-stub.yaml ile exchange)
+
+# Apply: ESO install sonrasi (helm-values/external-secrets)
+# kubectl apply -k kustomize/base/eso
