@@ -1,0 +1,27 @@
+# ArgoCD Application — cert-manager ClusterIssuer CR'lar
+# DRAFT: cert-manager Helm install sonrası (bootstrap/install-cert-manager.sh) aktif
+# PLAN D8 Aşama 2 — şu an Sectigo manuel paralel
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-cert-manager
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: cert-manager
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Halildeu/platform-k8s-gitops.git
+    targetRevision: main
+    path: kustomize/base/cert-manager
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: false    # ClusterIssuer silinmesi risk
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
