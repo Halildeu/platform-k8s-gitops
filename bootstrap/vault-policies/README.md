@@ -79,9 +79,11 @@ kubectl --context k3d-<test|prod> -n external-secrets create secret generic \
   vault-approle-secret --from-literal=secret-id="${SECRET_ID}"
 
 # ClusterSecretStore zaten repo'da (overlays/<env>/eso):
-#   roleId: eso-runtime (HCL role adı)
+#   roleId: <UUID> (Vault role_id, overlay patch ile set; `vault read auth/approle/role/eso-runtime/role-id` ile okunur)
 #   secretRef.name: vault-approle-secret (bu Secret)
 #   secretRef.key: secret-id (Secret data anahtarı)
+# NOT: Base manifest'te roleId="OVERLAY_MUST_OVERRIDE_ROLE_ID_UUID" placeholder;
+# overlays/test/eso/clustersecretstore-patch.yaml + overlays/prod/eso/... UUID override eder.
 ```
 
 ## 4. Rotation Stratejisi
