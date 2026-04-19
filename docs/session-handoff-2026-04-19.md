@@ -1,7 +1,7 @@
 # Session Handoff v4 — 2026-04-19 K8s-6
 
 > **Format:** D28 HARD RULE 5-alan (Bağlam / İddia / İspatlar / İspatlamaz / Bilinen boşluk)
-> **Scope:** 31 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side apply-dışı materyal hazır + S3-A3 Grafana + S1/S2 smoke + ES automation + k6 load + Vault policy + PromQL + DR drill + Day-2 ops (cert/capacity/triage)
+> **Scope:** 36 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side materyal hazır + S3-A3 Grafana (4 dashboard) + S1/S2 smoke + ES automation + k6 load + Vault policy + PromQL + DR drill + Day-2 ops (cert/capacity/triage/backup-freshness/audit/access-review) + Repo hygiene (CI+CLAUDE+README+ingress metrics) + ArgoCD ApplicationSet draft
 > **Codex thread referans:** `019d9a75-4299-7313-85bb-003a7de680eb` (K8s-6 ana), `019da5f8-9087-73f0-899b-267fa608456e` (iter-2..iter-6 delta retrospective)
 > **No-closure uyarı:** Bu handoff "bugün kapandı/bitti" değil — sürekli ortak devam sürecinde ara rapor.
 
@@ -11,11 +11,11 @@
 
 Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile başladı, 2026-04-19'da Seviye 1 deploy PASS + Seviye 2/3/4 repo-side paket haline evrildi. Ana hedef: Kubernetes yol haritasının 5 Seviye'sini (S0 Canlı dürüst → S1 Zanzibar runtime → S2 Ops sertleşme → S3 Stability soak → S4 Cutover) tamamlamak. Zanzibar-25 (paralel platform-ssot session) 14 PR merge + permission-service K8s-ready (PR #502) + OI-03 canary PASS gönderdi → K8s-6 ayağı başlattı.
 
-**Çoklu iteration Codex adversarial istişare** (iter-2..iter-8) ile 31 commit Codex plan-consensus ile doğrulandı. İki thread: ana K8s-6 + retrospective delta. Kullanıcı HARD RULE'ları: (1) kapanış kelime yasak, (2) IP dışa sızmaz, (3) plan onayları Codex mutabıksa sorma — direkt impl, (4) paralel iş / sürekli devam.
+**Çoklu iteration Codex adversarial istişare** (iter-2..iter-8) + user feedback zinciri (pause/closure/option-list yasak) ile 36 commit Codex plan-consensus ile doğrulandı. İki thread: ana K8s-6 + retrospective delta. Kullanıcı HARD RULE'ları: (1) kapanış kelime yasak, (2) IP dışa sızmaz, (3) plan onayları Codex mutabıksa sorma — direkt impl, (4) paralel iş / sürekli devam.
 
 ---
 
-## 2. İddia (bugün ne oldu — 31 commit)
+## 2. İddia (bugün ne oldu — 36 commit)
 
 ### 2.1 Seviye 0 — Calico Recovery + testai Edge Fix (2026-04-17)
 
@@ -76,6 +76,12 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 | `fc794c3` | S1-S2 acceptance smoke runbook — D29 3-katman template (Up/Functional/Zanzibar-ready + D30 immutable + No-Go gate mapping) |
 | `4e89156` | Repo-side yedek 1: apply-eso-switch.sh + k6 zanzibar-load.js + handoff v4 update |
 | `f66b5f9` | Repo-side yedek 2: Vault policy HCL (eso-runtime.hcl + README) + PromQL query pack + S5 DR drill runbook |
+| `e5526d9` | Day-2 ops 3 runbook: cert renewal + capacity expansion + on-call triage playbook + handoff v4 sayı drift fix |
+| `f8404c2` | Handoff v4 no-closure dil revize + iter-8 cache clarify (sayı 30→31) |
+| `e929e5b` | Day-2 ops ek: backup-freshness-rule (5 alert) + exporter sh + vault-audit-retention + privileged-access-review + memory: no-pause eklendi |
+| `f075660` | Repo hygiene: CI workflow (5 job) + CLAUDE.md (agent kılavuzu) + README genişletme + ingress-nginx metrics+serviceMonitor + server-tokens:false |
+| `455781b` | Day-2 4. dashboard: JVM + DB + Hikari (heap % + GC p95 + pool active/timeout/pending + acquire duration) |
+| `553ae98` | ArgoCD ApplicationSet DRAFT pattern (overlays + eso; D32 sonrası multi-cluster) |
 
 ---
 
@@ -170,10 +176,25 @@ Kalan repo-side iş potansiyeli — Codex iter-5 + iter-7 zincir ile listeye al�
 
 **Repo-side apply-dışı materyal hazır (Codex iter-8 onayı dahil):** Şablonlar, runbook'lar, automation helper'lar, monitoring dashboard'lar, k6 load test profil, Vault policy, PromQL pack, DR drill, Day-2 ops (cert renewal + capacity expansion + on-call triage) listeye alındı. Canlı apply hattı (5.2) dev repo PR merge + ops Vault seed + sysadmin D32 donanım bağımlı.
 
-**Day-2 ops paketi (Codex iter-7 tespit + iter-8 zincir, 3 yeni runbook):**
-- ✅ **Cert renewal runbook** → `docs/S5-cert-renewal-runbook.md` (Sectigo wildcard `*.acik.com` yıllık yenileme, CSR + obtain + mount + rollback)
-- ✅ **Capacity expansion runbook** → `docs/S5-capacity-expansion-runbook.md` (disk/memory/CPU darboğaz LVM expand + JVM heap + container limit + K8s PVC resize + ResourceQuota)
-- ✅ **On-call triage playbook** → `docs/on-call-triage-playbook.md` (8 alert karar matrisi + 5 dk checklist + escalation tree + post-mortem zorunluluğu)
+**Day-2 ops paketi (Codex iter-7 tespit + iter-8 zincir + user pause-yasak sonrası zincir devam, 7 yeni runbook/script):**
+- ✅ **Cert renewal runbook** → `docs/S5-cert-renewal-runbook.md` (Sectigo wildcard yıllık yenileme)
+- ✅ **Capacity expansion runbook** → `docs/S5-capacity-expansion-runbook.md` (disk LVM + JVM heap + PVC + ResourceQuota)
+- ✅ **On-call triage playbook** → `docs/on-call-triage-playbook.md` (8 alert karar matrisi)
+- ✅ **Backup freshness rule + exporter** → `kustomize/base/monitoring/backup-freshness-rule.yaml` (5 alert) + `bootstrap/backup-freshness-exporter.sh` (node_exporter textfile)
+- ✅ **Vault audit retention** → `docs/S5-vault-audit-retention.md` (file backend + logrotate + haftalık review + aylık archive)
+- ✅ **Privileged access review** → `docs/S5-privileged-access-review.md` (AppRole + RBAC + SSH + GHCR PAT çeyreklik)
+- ✅ **JVM + DB + Hikari dashboard** → `kustomize/base/monitoring/grafana-dashboards/jvm-db-hikari-dashboard.yaml` (Day-2 4. dashboard, 8 panel)
+
+**Repo hygiene paketi:**
+- ✅ **CI workflow** → `.github/workflows/ci.yml` (5 job: kustomize-build + yaml-lint + shell-lint + closure-language-check + placeholder-leak-check)
+- ✅ **CLAUDE.md** → agent kılavuzu (6 HARD RULE + kustomize/selective apply/Codex pattern + 5 yaygın pitfall + agent session akış)
+- ✅ **README.md genişletme** → 119 satır (13 runbook + 6 plan pack + 5 handoff tablo + hızlı kurulum + karar logu + HARD RULE)
+- ✅ **ingress-nginx metrics+serviceMonitor** → values-prod.yaml (EdgeHigh5xxRatio prereq) + server-tokens:false (güvenlik)
+
+**ArgoCD ApplicationSet DRAFT:**
+- ✅ `argocd/applicationsets/platform-overlays.yaml` (backend multi-cluster pattern, D32 sonrası)
+- ✅ `argocd/applicationsets/platform-eso.yaml` (ESO multi-cluster)
+- ✅ `argocd/applicationsets/README.md` (aktivasyon adımları + avantaj/dezavantaj)
 
 ---
 
@@ -208,7 +229,7 @@ Kalan repo-side iş potansiyeli — Codex iter-5 + iter-7 zincir ile listeye al�
 ```bash
 # Repo sanity
 cd /Users/halilkocoglu/Documents/platform-k8s-gitops
-git status                                          # clean main'den 31 commit ahead
+git status                                          # clean main'den 36 commit ahead
 git log --oneline main..HEAD | head -5              # son 5 commit
 
 # Kustomize build sanity
