@@ -1,7 +1,7 @@
 # S2-A1 Shortname Refactor — Apply Plan
 
 > **Source:** K8s-6 S2 (2026-04-19)
-> **Status:** Git commit `eb13cb2` tamamlandı, canlı apply **bekliyor**
+> **Status:** Git commit `eb13cb2` atıldı, canlı apply **bekliyor**
 > **Codex Tur 2 + S2-A1 uzlaşı:** Git-only bugün, apply **smoke-client (S2-B3) sonrası**
 > **Sıra:** S2-B3 → S2-X2 (nginx edge migration) → **S2-A1 apply** → S2-B/C/D
 

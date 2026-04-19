@@ -9,7 +9,7 @@
 
 ## 1. Bağlam
 
-K8s-6 Seviye 1 deploy tamam:
+K8s-6 Seviye 1 deploy PASS:
 - permission-service (`sha-3923901`) 1/1 Running testai'de
 - Hub smoke (cluster-direct): `/api/v1/authz/version` + `/api/v1/authz/me` → **401 JWT required** (endpoint aktif, Spring Security chain doğru)
 - Intra-cluster gateway deny enforce: `/variants`, `/auth/login` (no token) → **401 JSON** ✅

@@ -1,7 +1,8 @@
 # Test overlay — k3d-test (staging-sw test cluster)
 # - Image: GHCR sha-<short>
-# - Host bridge: 10.9.10.53:5432/8081/8200 (mevcut PG/KC/Vault paylaşılır,
-#   DB/realm/Vault-path ile izolasyon; ayrı test instance D20 gelecek iş)
+# - Host bridge: platform-test-net Docker network (172.19.0.x); fiili
+#   Endpoints patch değerleri satır 240+ (postgres 172.19.0.2, keycloak
+#   172.19.0.3, vault 172.19.0.1). 10.9.10.53 prod overlay'de kullanılır.
 # - Replica: 0 default (D17 scale-to-zero); test-toggle.sh up → 1
 # - Namespace: platform-test
 # - JVM daha dar heap (D24)
