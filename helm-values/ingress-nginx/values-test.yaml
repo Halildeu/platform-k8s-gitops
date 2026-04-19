@@ -36,6 +36,7 @@ controller:
     enabled: false           # test'te monitoring yok (prod federate eder)
 
   config:
+    server-tokens: "false"                    # güvenlik — version header gizle
     use-forwarded-headers: "true"
     compute-full-forwarded-for: "true"
     proxy-body-size: "10m"
