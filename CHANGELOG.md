@@ -6,7 +6,7 @@ Tüm önemli değişiklikler bu dosyada tutulur. Format: [Keep a Changelog](http
 
 ## [Unreleased] — 2026-04-17 → 2026-04-19
 
-Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 39 commit K8s-6 session.
+Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 41 commit K8s-6 session.
 
 ### Added
 
@@ -71,8 +71,13 @@ Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 39 commit K8s-6 session.
 **Repo hygiene:**
 - `.github/workflows/ci.yml` — 5 CI job (kustomize-build + yaml-lint + shell-lint + closure-language-check + placeholder-leak-check)
 - `.github/pull_request_template.md` — PR template (HARD RULE kontrol + Codex verdict)
+- `.github/ISSUE_TEMPLATE/{bug,feature}.md` — issue template (D29 3-katman + HARD RULE etki + Codex istişare seviyesi)
+- `.github/CODEOWNERS` — PR review otomatik atama (kritik alanlar: PLAN + CLAUDE + base + prod + ArgoCD + bootstrap)
+- `.github/dependabot.yml` — github-actions haftalık bağımlılık güncelleme
+- `kustomize/overlays/{test,prod}/namespace.yaml` — explicit Namespace manifest + labels (platform=true + env=test|prod, ApplicationSet prereq)
 - `CLAUDE.md` — agent kılavuzu (6 HARD RULE + pattern + pitfall + session akış)
 - `CONTRIBUTING.md` — repo workflow 9 adım + HARD RULE enforce + commit type
+- `CHANGELOG.md` — Keep a Changelog format (41 commit özet + karar logu)
 - `README.md` genişletme — 119 satır (dizin + runbook envanteri + hızlı kurulum + karar logu)
 
 ### Changed
