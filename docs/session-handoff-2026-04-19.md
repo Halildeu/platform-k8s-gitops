@@ -1,7 +1,7 @@
 # Session Handoff v4 — 2026-04-19 K8s-6
 
 > **Format:** D28 HARD RULE 5-alan (Bağlam / İddia / İspatlar / İspatlamaz / Bilinen boşluk)
-> **Scope:** 71 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2-5 repo-side materyal + Monitoring stack 3 sütun + 4 dashboard + 16 recording rule + SSL cert alert + 8 Day-2 runbook + Makefile + pre-commit + Repo hygiene + ApplicationSet draft + CHANGELOG + Kyverno DRAFT + Cert-manager DRAFT + Argo Rollouts DRAFT + PSA + External DNS DRAFT + Podinfo + **ADR-0001 Service Mesh rejected (D33)** + On-call 14 alert + docs/README.md index + docs/adr/ dizin
+> **Scope:** 77 commit main..HEAD, **PR #1 açık + CI 5/5 PASS** (https://github.com/Halildeu/platform-k8s-gitops/pull/1). Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2-5 repo-side materyal + Monitoring stack 3 sütun + 4 dashboard + 16 recording rule + SSL cert alert + 8 Day-2 runbook + Makefile + pre-commit + Repo hygiene + ApplicationSet draft + CHANGELOG + Kyverno DRAFT + Cert-manager DRAFT + Argo Rollouts DRAFT + PSA + External DNS DRAFT + Podinfo + ADR-0001 Service Mesh rejected (D33) + On-call 14 alert + docs/README.md index + **host-compose/postgres+keycloak+vault/prod/ template** (D32 F3) + **Codex iter-9 PR review blocker absorb** (Argo manual sync + root exclude DRAFT + bootstrap fix + gateway /api/v1/authz/** route + CI placeholder gerçek check).
 > **Codex thread referans:** `019d9a75-4299-7313-85bb-003a7de680eb` (K8s-6 ana), `019da5f8-9087-73f0-899b-267fa608456e` (iter-2..iter-6 delta retrospective)
 > **No-closure uyarı:** Bu handoff "bugün kapandı/bitti" değil — sürekli ortak devam sürecinde ara rapor.
 
@@ -117,6 +117,16 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 | `a988f2e` | docs/README Makefile + pre-commit refs + Hızlı Komutlar bölümü |
 | `2c45d81` | ADR-0001 Service Mesh REDDEDILDI (D33) + docs/adr/ dizin başlatıldı (MADR pattern) |
 | `a574dfa` | PLAN.md D33 Service Mesh red karar satırı |
+| `ed6992d` | Handoff sync 71 commit (Makefile + pre-commit + SSL alert + ADR-0001) |
+| — | **PR #1 açıldı** https://github.com/Halildeu/platform-k8s-gitops/pull/1 (72 commit) |
+| — | Codex PR #1 iter-9 REQUEST_CHANGES: 4 P0/P1 blocker + CI 2 fail |
+| `5baffb4` | PR #1 fix: CI closure exclude + shellcheck error + **Argo manual sync** (P0 `automated:{}` kaldırıldı) + root exclude DRAFT (platform-policies + platform-cert-manager) |
+| `28bf5a8` | PR #1 fix: install-on-staging-sw-2.sh F3/F6/F7 (compose path warn + PG init stdin pipe + ghcr-pull workload ns + argocd cluster add warn) |
+| `405cd1b` | PR #1 fix: Gateway **`/api/v1/authz/**` route** (permission-service:8090) + CI placeholder-leak-check gerçek kontrol (kustomize build + grep OVERLAY_MUST_OVERRIDE) |
+| `e5229c3` | host-compose/postgres+keycloak+vault/prod/ compose template (9 dosya, D32 F3 ön-koşul) + .gitignore secrets |
+| `b097aec` | install-on-staging-sw-2.sh F3.1-F3.3 aktif (template yazıldı, run komutları aktif) |
+
+**CI 5/5 PASS** (77 commit, PR #1 merge-ready)
 
 ---
 
