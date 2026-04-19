@@ -30,15 +30,29 @@ jobs:
         run: kustomize build kustomize/overlays/test/eso > /tmp/test-eso.yaml
       # overlays/prod/eso: OPS-PREREQ gated — prod Vault AppRole yaratılana kadar
       # role_id UUID placeholder kalır (kustomization.yaml OPS-PREREQ bloğu 1-6 adım).
-      # Re-enable prod Vault seed PR'ında: bu satırı aç + placeholder-leak-check prod/eso ekle.
-      - name: Build overlays/prod/eso (placeholder kabul — OPS-PREREQ)
+      # Re-enable prod Vault seed PR'ında: bu step kaldır + placeholder-leak-check'e prod/eso ekle.
+      #
+      # DAR MUAFİYET (Codex iter-2 refinement): SADECE roleId placeholder'ı serbest;
+      # FQDN veya başka herhangi bir OVERLAY_MUST_OVERRIDE sızarsa CI FAIL etmeli.
+      - name: Build overlays/prod/eso (dar placeholder muafiyeti — OPS-PREREQ)
         run: |
+          set -e
           out=$(kustomize build kustomize/overlays/prod/eso 2>&1)
-          if echo "${out}" | grep -q "OVERLAY_MUST_OVERRIDE_ROLE_ID_UUID"; then
-            echo "✓ prod/eso roleId placeholder bilinçli (OPS-PREREQ gated)"
-          else
+          # İzin verilen: tek bir satırda "roleId: OVERLAY_MUST_OVERRIDE_ROLE_ID_UUID"
+          # Yasak: server FQDN placeholder'ı, ya da başka herhangi OVERLAY_MUST_OVERRIDE
+          leaks=$(echo "${out}" | grep "OVERLAY_MUST_OVERRIDE" || true)
+          if [[ -z "${leaks}" ]]; then
             echo "ℹ prod/eso roleId gerçek UUID — OPS-PREREQ tamamlanmış gibi; placeholder-leak-check'i re-enable et"
+            exit 0
           fi
+          # Sadece "roleId:" satırındaki OVERLAY_MUST_OVERRIDE_ROLE_ID_UUID kabul
+          disallowed=$(echo "${leaks}" | grep -v "roleId: OVERLAY_MUST_OVERRIDE_ROLE_ID_UUID" || true)
+          if [[ -n "${disallowed}" ]]; then
+            echo "❌ prod/eso'da izinsiz placeholder leak:"
+            echo "${disallowed}"
+            exit 1
+          fi
+          echo "✓ prod/eso yalnız roleId placeholder'ı var (OPS-PREREQ gated, Codex iter-2 dar muafiyet)"
       - name: Build base/monitoring
         run: kustomize build kustomize/base/monitoring > /tmp/monitoring.yaml
       - name: Build base/eso (MUST FAIL — placeholder FQDN)

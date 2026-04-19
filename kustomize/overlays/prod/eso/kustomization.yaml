@@ -3,9 +3,11 @@
 #
 # OPS-PREREQ (merge edilmeden apply EDİLMEZ):
 #   1. Prod Vault instance aktif (platform-prod namespace, host compose veya k8s)
-#   2. Vault'ta `eso-runtime` AppRole yaratıldı:
+#   2. Vault'ta `eso-runtime` AppRole yaratıldı (policy adı da `eso-runtime` —
+#      tek kanonik isim, bkz bootstrap/vault-policies/eso-runtime.hcl):
+#        vault policy write eso-runtime bootstrap/vault-policies/eso-runtime.hcl
 #        vault write auth/approle/role/eso-runtime \
-#          token_policies=eso-runtime-kv-read token_ttl=24h token_max_ttl=72h
+#          token_policies=eso-runtime token_ttl=1h token_max_ttl=24h
 #   3. role_id UUID okundu:
 #        vault read auth/approle/role/eso-runtime/role-id
 #   4. clustersecretstore-patch.yaml içine gerçek role_id UUID eklendi (test overlay
