@@ -6,7 +6,7 @@ Tüm önemli değişiklikler bu dosyada tutulur. Format: [Keep a Changelog](http
 
 ## [Unreleased] — 2026-04-17 → 2026-04-19
 
-Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 41 commit K8s-6 session.
+Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 44 commit K8s-6 session.
 
 ### Added
 
@@ -58,7 +58,11 @@ Faz 3/4 → Faz 11'e (Seviye 0-4) büyük delta — 41 commit K8s-6 session.
 - `docs/S2-C-argocd-install-plan.md` — ArgoCD install + app-of-apps plan
 - `docs/S2-X3-security-hygiene.md` — IP sanitize HARD RULE
 - `docs/S3-stability-soak-pack.md` — 7 günlük stability soak
+
+**Monitoring query pack:**
 - `docs/promql-query-pack.md` — günlük ops + S3 soak PromQL + recording rule tablosu
+- `docs/logql-query-pack.md` — Loki log analysis (authz + edge + pod + security + DB + CNI + Vault + S3 + tuning + alert mapping)
+- `docs/traceql-query-pack.md` — Tempo trace analysis (OTel config + TraceQL + ops troubleshoot + sampling + Tempo tuning + metrics_generator)
 
 **Handoff pack:**
 - `docs/session-handoff-2026-04-19.md` — v4 5-alan (Bağlam/İddia/İspatlar/İspatlamaz/Bilinen boşluk), 38 commit özet

@@ -1,7 +1,7 @@
 # Session Handoff v4 — 2026-04-19 K8s-6
 
 > **Format:** D28 HARD RULE 5-alan (Bağlam / İddia / İspatlar / İspatlamaz / Bilinen boşluk)
-> **Scope:** 41 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side materyal hazır + S3-A3 Grafana (4 dashboard + 16 recording rule) + S1/S2 smoke + ES automation + k6 load + Vault policy + PromQL + DR drill + Day-2 ops (7 runbook) + Repo hygiene (CI + CLAUDE + README + CONTRIBUTING + PR template + ISSUE template + CODEOWNERS + dependabot + Namespace manifest + ingress metrics) + ApplicationSet draft + CHANGELOG
+> **Scope:** 44 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side materyal hazır + Monitoring stack 3 sütun (PromQL + LogQL + TraceQL query pack) + 4 Grafana dashboard + 16 recording rule + 7 Day-2 runbook + Repo hygiene kompleksi + ApplicationSet draft + CHANGELOG
 > **Codex thread referans:** `019d9a75-4299-7313-85bb-003a7de680eb` (K8s-6 ana), `019da5f8-9087-73f0-899b-267fa608456e` (iter-2..iter-6 delta retrospective)
 > **No-closure uyarı:** Bu handoff "bugün kapandı/bitti" değil — sürekli ortak devam sürecinde ara rapor.
 
@@ -15,7 +15,7 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 
 ---
 
-## 2. İddia (bugün ne oldu — 41 commit)
+## 2. İddia (bugün ne oldu — 44 commit)
 
 ### 2.1 Seviye 0 — Calico Recovery + testai Edge Fix (2026-04-17)
 
@@ -84,6 +84,12 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 | `553ae98` | ArgoCD ApplicationSet DRAFT pattern (overlays + eso; D32 sonrası multi-cluster) |
 | `4c67c8f` | Handoff v4 mini update 36 commit (son 6 paket: day-2 ops + repo hygiene + ApplicationSet) |
 | `4d20ec6` | Recording rules (16 rule, 7 grup) + PR template + CONTRIBUTING.md (repo workflow + HARD RULE enforce) |
+| `8807f62` | Handoff v4 mini update 38 commit (recording rules + PR template + CONTRIBUTING) |
+| `5fb1f52` | CHANGELOG.md (Keep a Changelog format, 39 commit özet + karar logu) |
+| `888bcd2` | Namespace manifest + GitHub ISSUE_TEMPLATE bug+feature + dependabot + CODEOWNERS |
+| `afc2cdf` | Handoff v4 + CHANGELOG mini update 41 commit (Namespace + GitHub hygiene) |
+| `a11d1d5` | docs/logql-query-pack.md (11 bölüm: authz + edge + pod crash + security + DB + CNI + Vault + S3 soak + Loki tuning + alert mapping) |
+| `660b252` | docs/traceql-query-pack.md (7 bölüm: OTel config + TraceQL + ops troubleshoot + sampling stratejisi + Tempo tuning + metrics_generator) |
 
 ---
 
@@ -234,7 +240,7 @@ Kalan repo-side iş potansiyeli — Codex iter-5 + iter-7 zincir ile listeye al�
 ```bash
 # Repo sanity
 cd /Users/halilkocoglu/Documents/platform-k8s-gitops
-git status                                          # clean main'den 41 commit ahead
+git status                                          # clean main'den 44 commit ahead
 git log --oneline main..HEAD | head -5              # son 5 commit
 
 # Kustomize build sanity
