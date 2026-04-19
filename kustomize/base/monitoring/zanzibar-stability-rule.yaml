@@ -102,6 +102,31 @@ spec:
             summary: "Calico CNI node NOT READY"
             description: "Pod network etkilenebilir (2026-04-17 recovery pattern)."
 
+    - name: zanzibar.cert
+      interval: 5m
+      rules:
+        # SSL cert expire alert — blackbox probe probe_ssl_earliest_cert_expiry metric'inden
+        # testai + prod edge health probe'ları cert detay çıkarır.
+        - alert: SSLCertExpireWarning
+          expr: (probe_ssl_earliest_cert_expiry{job=~"blackbox-(testai|prod)-health"} - time()) / 86400 < 30
+          for: 10m
+          labels:
+            severity: warning
+            component: cert
+          annotations:
+            summary: "SSL cert <30 gün expire ({{ $labels.job }})"
+            description: "Sectigo wildcard *.acik.com renewal başlatın. docs/S5-cert-renewal-runbook.md"
+
+        - alert: SSLCertExpireCritical
+          expr: (probe_ssl_earliest_cert_expiry{job=~"blackbox-(testai|prod)-health"} - time()) / 86400 < 7
+          for: 10m
+          labels:
+            severity: critical
+            component: cert
+          annotations:
+            summary: "SSL cert <7 gün expire ({{ $labels.job }}) — ACIL renewal"
+            description: "Sectigo cert yenilemesi 7 gün içinde aşılacak. docs/S5-cert-renewal-runbook.md"
+
     - name: zanzibar.edge
       interval: 30s
       # 2026-04-19 Codex AR4 WARN: ingress-nginx metrics test cluster'da DISABLED
