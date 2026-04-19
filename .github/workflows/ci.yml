@@ -28,31 +28,8 @@ jobs:
         run: kustomize build kustomize/overlays/prod > /tmp/prod.yaml
       - name: Build overlays/test/eso
         run: kustomize build kustomize/overlays/test/eso > /tmp/test-eso.yaml
-      # overlays/prod/eso: OPS-PREREQ gated — prod Vault AppRole yaratılana kadar
-      # role_id UUID placeholder kalır (kustomization.yaml OPS-PREREQ bloğu 1-6 adım).
-      # Re-enable prod Vault seed PR'ında: bu step kaldır + placeholder-leak-check'e prod/eso ekle.
-      #
-      # DAR MUAFİYET (Codex iter-2 refinement): SADECE roleId placeholder'ı serbest;
-      # FQDN veya başka herhangi bir OVERLAY_MUST_OVERRIDE sızarsa CI FAIL etmeli.
-      - name: Build overlays/prod/eso (dar placeholder muafiyeti — OPS-PREREQ)
-        run: |
-          set -e
-          out=$(kustomize build kustomize/overlays/prod/eso 2>&1)
-          # İzin verilen: tek bir satırda "roleId: OVERLAY_MUST_OVERRIDE_ROLE_ID_UUID"
-          # Yasak: server FQDN placeholder'ı, ya da başka herhangi OVERLAY_MUST_OVERRIDE
-          leaks=$(echo "${out}" | grep "OVERLAY_MUST_OVERRIDE" || true)
-          if [[ -z "${leaks}" ]]; then
-            echo "ℹ prod/eso roleId gerçek UUID — OPS-PREREQ tamamlanmış gibi; placeholder-leak-check'i re-enable et"
-            exit 0
-          fi
-          # Sadece "roleId:" satırındaki OVERLAY_MUST_OVERRIDE_ROLE_ID_UUID kabul
-          disallowed=$(echo "${leaks}" | grep -v "roleId: OVERLAY_MUST_OVERRIDE_ROLE_ID_UUID" || true)
-          if [[ -n "${disallowed}" ]]; then
-            echo "❌ prod/eso'da izinsiz placeholder leak:"
-            echo "${disallowed}"
-            exit 1
-          fi
-          echo "✓ prod/eso yalnız roleId placeholder'ı var (OPS-PREREQ gated, Codex iter-2 dar muafiyet)"
+      - name: Build overlays/prod/eso
+        run: kustomize build kustomize/overlays/prod/eso > /tmp/prod-eso.yaml
       - name: Build base/monitoring
         run: kustomize build kustomize/base/monitoring > /tmp/monitoring.yaml
       - name: Build base/eso (MUST FAIL — placeholder FQDN)
@@ -142,12 +119,9 @@ jobs:
       - name: Check overlay render clean (Codex PR #1 iter-9 fix)
         run: |
           # Overlay render'da OVERLAY_MUST_OVERRIDE placeholder sızmamalı
-          # Base/eso fail-closed placeholder — overlay patch ile gerçek FQDN + role_id
-          # NOT: overlays/prod/eso placeholder-leak-check MUAF — prod Vault AppRole
-          # henüz yaratılmadı (overlays/prod/eso/kustomization.yaml OPS-PREREQ bloğu).
-          # Re-enable: prod Vault seed PR'ında bu listeye "overlays/prod/eso" ekle.
+          # Base/eso fail-closed placeholder — overlay patch ile gerçek FQDN
           set -e
-          for overlay in overlays/test/eso; do
+          for overlay in overlays/test/eso overlays/prod/eso; do
             out=$(kustomize build kustomize/${overlay})
             if echo "${out}" | grep -q "OVERLAY_MUST_OVERRIDE"; then
               echo "❌ ${overlay} render'da OVERLAY_MUST_OVERRIDE kaldı — patch eksik"
@@ -155,4 +129,3 @@ jobs:
             fi
             echo "✓ ${overlay} placeholder temiz"
           done
-          echo "ℹ prod/eso placeholder-leak-check MUAF (OPS-PREREQ gated)"
