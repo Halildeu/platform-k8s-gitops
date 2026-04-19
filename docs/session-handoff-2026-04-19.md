@@ -1,7 +1,7 @@
 # Session Handoff v4 — 2026-04-19 K8s-6
 
 > **Format:** D28 HARD RULE 5-alan (Bağlam / İddia / İspatlar / İspatlamaz / Bilinen boşluk)
-> **Scope:** 25 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side paket
+> **Scope:** 30 commit main..HEAD, Seviye 0 PASS + Seviye 1 deploy PASS + Seviye 2/3/4 repo-side paket + S3-A3 Grafana + S1/S2 smoke + ES automation + k6 load
 > **Codex thread referans:** `019d9a75-4299-7313-85bb-003a7de680eb` (K8s-6 ana), `019da5f8-9087-73f0-899b-267fa608456e` (iter-2..iter-6 delta retrospective)
 > **No-closure uyarı:** Bu handoff "bugün kapandı/bitti" değil — sürekli ortak devam sürecinde ara rapor.
 
@@ -71,6 +71,10 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 | `41d17e9` | iter-5 AGREE — W1 ghcr-pull namespace fix (Opsiyon B overlay-specific) |
 | `135a718` | iter-4/iter-5 scope — S4-rollback-runbook + D32-bootstrap-runbook + PLAN entry |
 | `3b0cb50` | iter-6 PARTIAL — 5 latent drift temizliği (README + install-sw ESO + shortname rollback + nginx D32 + script closure) |
+| `d4ac378` | session-handoff-2026-04-19.md v4 — 25 commit + durum özeti (D28 5-alan) |
+| `5c06f22` | S3-A3 Grafana dashboard pack — 3 ConfigMap sidecar auto-import (authz plane + platform pods + edge synthetic) |
+| `fc794c3` | S1-S2 acceptance smoke runbook — D29 3-katman template (Up/Functional/Zanzibar-ready + D30 immutable + No-Go gate mapping) |
+| `<sonraki>` | Repo-side yedek: apply-eso-switch.sh + k6 zanzibar-load.js + handoff v4 update |
 
 ---
 
@@ -151,12 +155,17 @@ Bu session 2026-04-17'de Codex 4-tur re-baseline (D28-D31 + HARD RULES) ile baş
 10. D32 staging-sw-2 donanım hazır → `bash bootstrap/install-on-staging-sw-2.sh` F1-F9 (`docs/D32-bootstrap-runbook.md`)
 11. S4-D atomic cutover (`docs/prod-cutover-smoke-runbook.md`) + T+72h warm rollback window (`docs/S4-rollback-runbook.md`)
 
-### 5.3 Repo-side yedek iş (dev/ops bekler iken)
+### 5.3 Repo-side yedek iş (dev/ops bekler iken) — ✅ hepsi yazıldı
 
-- Smoke test runbook (S1 re-run + S2 acceptance template)
-- Per-service ES switch automation helper (secret-stub → externalsecret exchange)
-- Grafana dashboard JSON pack (authz plane + platform pods + edge)
-- Load test k6 script K8s-6 Zanzibar profile (Zanzibar-25 k6 pattern taşıma)
+- ✅ **Smoke test runbook** → `docs/S1-S2-acceptance-smoke-runbook.md` (D29 3-katman)
+- ✅ **Per-service ES switch automation** → `bootstrap/apply-eso-switch.sh` (7 servis idempotent swap)
+- ✅ **Grafana dashboard JSON pack** → `kustomize/base/monitoring/grafana-dashboards/` (3 ConfigMap sidecar auto-import)
+- ✅ **k6 load test K8s profile** → `tests/k6/zanzibar-load.js` (50 VU × 6dk steady, deny/allow synthetic threshold)
+
+Kalan repo-side iş potansiyeli:
+- PromQL query pack (S3 stability soak custom — mevcut PrometheusRule yerine günlük ops query'ler)
+- Vault policy HCL şablonları (eso-runtime + gitops-runtime policy'leri repo'da versioned)
+- Disaster recovery drill runbook (PG backup + volume restore + KC realm export)
 
 ---
 
