@@ -20,8 +20,14 @@ spec:
         # metric'leri sadece SAME-CLUSTER Prometheus scrape edebilir. Test cluster
         # için Prometheus federation S3 scope dışı — test cluster local truth
         # kubectl-direct smoke ile (prod → test peering GEREKSİZ).
+        # 2026-04-20: scale-aware — ADR-0002 mode=normal "test default scale-to-zero"
+        # direktifi replicas=0 durumunu `unless` ile inhibit eder (critical false-positive
+        # kasıtlı scale down'da fire etmesin). Prod'da replicas>0 → normal davranış.
         - alert: ZanzibarHubDown
-          expr: up{job="permission-service"} == 0
+          expr: |
+            up{job="permission-service"} == 0
+            unless on(namespace)
+            kube_deployment_spec_replicas{deployment="permission-service"} == 0
           for: 2m
           labels:
             severity: critical
@@ -33,7 +39,10 @@ spec:
             runbook_url: "docs/S3-stability-soak-pack.md#2-synthetic-authz-probe"
 
         - alert: OpenFGADown
-          expr: up{job="openfga"} == 0
+          expr: |
+            up{job="openfga"} == 0
+            unless on(namespace)
+            kube_statefulset_replicas{statefulset="openfga"} == 0
           for: 2m
           labels:
             severity: critical
