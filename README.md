@@ -1,12 +1,22 @@
 # platform-k8s-gitops
 
-Kubernetes GitOps manifest'leri — autonomous-orchestrator platformu. Bu repo, platform'un Docker Compose'dan Kubernetes'e tam geçişi için **tek doğruluk kaynağıdır** (PLAN.md Bölüm 1.5).
+Kubernetes GitOps manifest'leri — autonomous-orchestrator platformu. Bu repo, platform'un Docker Compose'dan Kubernetes'e tam geçişi için **tek desired-state repo**'dur; karar, canlı durum ve tarihsel handoff belgeleri ayrı katmanlarda tutulur.
 
 ---
 
 ## Amaç
 
 Docker Compose tabanlı `autonomous-orchestrator` platformunu Kubernetes'e taşımak. 2 k3d cluster (test + prod) topoloji, ArgoCD GitOps, Zanzibar authz plane (permission-service + OpenFGA + Keycloak), ESO + Vault secret management.
+
+## Canonical Doküman Sırası
+
+Bu repo içinde belge önceliği aşağıdaki sırayla okunmalıdır:
+
+1. [ADR-0002](./docs/adr/0002-single-host-dual-cluster.md) — ana mimari karar
+2. [Current State](./docs/state/current-state.md) — canlı durum ve aktif blocker'lar
+3. [PLAN.md](./PLAN.md) — hedef roadmap, operasyon kontratı ve historical mapping
+4. Runbook'lar — adım adım operasyonel uygulama
+5. Handoff belgeleri — tarihsel bağlam, karar kaynağı değil
 
 ## Mimari Özet (ADR-0002 sonrası)
 
@@ -43,14 +53,15 @@ helm-values/
 └── promtail/                # log shipper
 
 host-compose/
-├── data/                    # postgres + keycloak + vault compose
+├── postgres/                # prod + test postgres compose
+├── keycloak/                # prod + test keycloak compose
+├── vault/                   # prod + test vault compose
 └── proxy/                   # nginx SSL SNI reverse proxy (D18)
 
 argocd/applications/         # 6 Application (root + test + prod + system + eso-test + eso-prod)
 
 bootstrap/
-├── install-on-staging-sw.sh    # test host F1 bootstrap
-├── install-on-staging-sw-2.sh  # prod host F1-F9 bootstrap (D32)
+├── install-on-staging-sw.sh    # same-host dual-cluster bootstrap
 ├── install-eso-helm.sh         # ESO Helm install + NEXT STEPS
 ├── install-calico.sh + install-ingress.sh + install-argocd.sh + install-monitoring.sh + install-logs-traces.sh
 ├── apply-eso-switch.sh         # per-service secret-stub → externalsecret swap
@@ -68,8 +79,10 @@ tests/k6/                    # k6 load test profile (S3 soak)
 
 | Dosya | Amaç |
 |---|---|
-| [PLAN.md](./PLAN.md) | Master plan, karar logu (D1-D32), Seviye durum, Faz 3-15 haritası |
-| [docs/D32-bootstrap-runbook.md](./docs/D32-bootstrap-runbook.md) | F1-F9 prod host bootstrap (staging-sw-2) adım-adım + partial unwind |
+| [docs/state/current-state.md](./docs/state/current-state.md) | Canlı truth snapshot, blocker'lar ve aktif fazlar |
+| [PLAN.md](./PLAN.md) | Master roadmap, operasyon kontratı, karar logu ve appendix'ler |
+| [docs/semantic-architecture.md](./docs/semantic-architecture.md) | Runtime topoloji + testten proda promotion semantiği |
+| [docs/D32-bootstrap-runbook.md](./docs/D32-bootstrap-runbook.md) | Historical / superseded: staging-sw-2 ayrı host bootstrap yolu |
 | [docs/prod-cutover-smoke-runbook.md](./docs/prod-cutover-smoke-runbook.md) | S4-D atomic cutover (dış proxy switch + T+5/T+30/T+60 smoke) |
 | [docs/S4-rollback-runbook.md](./docs/S4-rollback-runbook.md) | D30 72h warm rollback (5 dk trafik geri alma + teşhis) |
 | [docs/S1-S2-acceptance-smoke-runbook.md](./docs/S1-S2-acceptance-smoke-runbook.md) | D29 3-katman smoke (Up/Functional/Zanzibar-ready) |
@@ -138,19 +151,20 @@ kubectl --context k3d-test apply -k kustomize/overlays/test
 # docs/S1-S2-acceptance-smoke-runbook.md 3 katman D29
 ```
 
-Prod host kurulumu: `bootstrap/install-on-staging-sw-2.sh` + `docs/D32-bootstrap-runbook.md` F1-F9.
+Ana yol kurulumu: `bootstrap/install-on-staging-sw.sh` ve ilgili same-host dual-cluster runbook'ları.
+Historical / superseded yol: `bootstrap/install-on-staging-sw-2.sh` + `docs/D32-bootstrap-runbook.md`.
 
 ## Karar Logu (Highlights)
 
-- **D1/D16:** 2 k3d cluster (test + prod) aynı host pattern (staging-sw → staging-sw-2 split D32)
+- **D1/D16:** 2 k3d cluster (test + prod) aynı host pattern
 - **D17:** Test scale-to-zero (yoğun saatlerde RAM=0)
-- **D18:** Host nginx SNI SSL termination (D32 öncesi + sonrası farklı topoloji)
+- **D18:** Host nginx SNI SSL termination
 - **D20:** Host bridge (test 172.19.0.x platform-test-net, prod 10.9.10.53)
 - **D28:** Handoff 5-alan (Bağlam/İddia/İspatlar/İspatlamaz/Bilinen boşluk)
 - **D29:** Up ≠ Functional ≠ Zanzibar-ready 3 katman (tek "yeşil" yasak)
 - **D30:** Atomic cutover + 72h warm rollback + immutable artifact (digest pin zorunlu)
 - **D31:** PG primary, MSSQL secondary/opsiyonel external
-- **D32:** External cloud/KMS REDDEDILDİ → staging-sw-2 fiziksel sunucu (F1-F9 kontrat)
+- **D32:** Historical / forward-extension path; current main path değil
 
 Tam liste: [PLAN.md](./PLAN.md) Bölüm "Karar Logu".
 

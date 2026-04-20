@@ -13,7 +13,7 @@ Codex önerisi: `0=yok`, `25=doküman`, `50=partial live`, `75=kanıtlı ama cut
 
 | Sayaç | Değer | Claim | Last Evidence | Last Verified | Owner | Next Gate |
 |---|---:|---|---|---|---|---|
-| **test-k8s** | **75** | testai.acik.com k8s frontend + KC+PG+Vault ayrı, login canlı | `curl .../testai.acik.com/realms/platform-test/.well-known` → 200, issuer=https://testai.acik.com | 2026-04-20 | Claude | ESO CSS Ready + ArgoCD sync |
+| **test-k8s** | **75** | testai.acik.com OIDC discovery + frontend render canlı; authz plane henüz gate-ready değil | `curl .../testai.acik.com/realms/platform-test/.well-known` → 200, issuer=https://testai.acik.com; frontend deploy image=`nginx:1.27-alpine`; `openfga-0` CrashLoopBackOff | 2026-04-20 | Claude | OpenFGA recover + blocker alert=0 + ESO CSS Ready |
 | **prod-stateful-split** | **65** | platform-pg-prod + kc-prod + vault-prod ayrı stack, 9 backend compose healthy | `docker ps` + `curl ai.acik.com/realms/serban/.well-known` 200 + JWT 401 | 2026-04-20 | Ops | DR drill + warm rollback kanıtı |
 | **prod-workload-gitops** | **20** | ArgoCD root + platform-system Synced; platform-prod manual-sync mode + ESO blocked | `kubectl get applications -n argocd` + status OutOfSync/Missing | 2026-04-20 | Claude | ESO Ready + manual sync + imageID D30 |
 | **secret-delivery** | **15** | ClusterSecretStore Ready=False (pod → stateful IP refused); ESO helm install var, AppRole secret yaratıldı | ESO controller logs `unable to log in with app role auth: Put ...: connect: connection refused` | 2026-04-20 | Ops | Packet-level kanıt + host-bridge kurtarma **veya** ADR-0003 pod-native pivot |
@@ -28,7 +28,7 @@ Codex önerisi: `0=yok`, `25=doküman`, `50=partial live`, `75=kanıtlı ama cut
 | Hostname | Edge | Real Backend Owner | Smoke Evidence |
 |---|---|---|---|
 | `ai.acik.com` | staging-sw host nginx SSL termine → 127.0.0.1:8080/8081 | compose 9 backend + platform-kc-prod (yeni stack) + platform-pg-prod + platform-vault-prod | `curl /realms/serban/.well-known` 200 + `/api/auth/actuator/health` 401 JWT |
-| `testai.acik.com` | staging-sw host nginx → 127.0.0.1:8082 (KC) + 127.0.0.1:9080 (k3d-test ingress) | k3d-test frontend pod (platform-ssot-frontend-testai sha-2169841) + platform-kc-test + platform-pg-test | `curl /realms/platform-test/.well-known` 200 + HTML 2899B Module Federation |
+| `testai.acik.com` | staging-sw host nginx → 127.0.0.1:8082 (KC) + 127.0.0.1:9080 (k3d-test ingress) | k3d-test frontend deployment (`nginx:1.27-alpine`) + platform-kc-test + platform-pg-test | `curl /realms/platform-test/.well-known` 200 + frontend HTML render; authz plane blocker: `openfga-0` CrashLoopBackOff |
 | `argocd` | k3d-prod cluster-internal (root Application Synced) | ArgoCD hub (argo-cd 7.7.5) | `kubectl get application root -o jsonpath='{.status.sync.status}'` → Synced |
 | Monitoring | k3d-prod + k3d-test (kube-prometheus-stack v65.8.0) | Prometheus + Grafana + Loki + Promtail + Tempo | `kubectl get pod -n monitoring` → 5 pod Running test, ~10 pod prod |
 
@@ -40,7 +40,7 @@ Codex önerisi: `0=yok`, `25=doküman`, `50=partial live`, `75=kanıtlı ama cut
 |---|---|---|---|---|
 | **ai.acik.com → compose legacy** | `cold-potential` (test edilmedi) | `platform_postgres_data`, `platform_vault_data`, `platform_keycloak_data`, `platform_loki_data`, `platform_tempo_data`, `platform_vault_logs`, `platform_vault_snapshots` | **NEVER** | Hedef: RTO≤4h, RPO≤24h (ölçülmedi) |
 | **testai.acik.com → compose legacy** | `no rollback path` | Test stateful yeni stack, eski yoktu | N/A | N/A |
-| **K8s workload rollback** | `k8s workload henüz apply edilmedi prod** | N/A | N/A | N/A |
+| **K8s workload rollback** | `k8s workload henüz apply edilmedi prod` | N/A | N/A | N/A |
 
 **Warm rollback iddiası ihlali**: ADR-0002 §8 `T+72h warm rollback` istiyor. Şu an `cold rollback potential` = sözleşmeye aykırı.
 
@@ -57,13 +57,13 @@ Codex önerisi: `0=yok`, `25=doküman`, `50=partial live`, `75=kanıtlı ama cut
 | Prod ESO `roleId` | Gerçek UUID overlay patch | Placeholder literal `"eso-runtime"` | Claude | Faz 11 | HIGH (secret delivery block) |
 | ClusterIssuer Let's Encrypt | `bootstrap/install-cert-manager.sh` var, apply edilmiş | ClusterIssuer YOK canlıda | Claude | Faz 12 | MEDIUM |
 | Test cluster ArgoCD register | Prod hub'dan yönet (ADR §3.7) | k3d-test kayıtlı DEĞİL | Ops | Faz 11 | MEDIUM |
-| Handoff split | Append-only 1207 satır | Bu PR ile canonical + session-logs ayrımı başladı | Claude | Faz 10 | LOW |
+| Handoff split | Append-only 1207 satır | Bu PR ile canonical + historical ayrımı başladı | Claude | Faz 10 | LOW |
 
 ---
 
 ## 5. Sonraki 4 Faz (Codex Planı)
 
-Detay: `docs/session-logs/2026-04-20-s10-codex-plan.md` (bu oturumda eklenecek)
+Detay bu dokümanda tutulur; ayrı session log split'i henüz repo içine alınmadı.
 
 | Faz | Pencere | Done Kriter | No-Go |
 |---|---|---|---|
@@ -92,5 +92,5 @@ Bu dokümanda ve sonraki iletişimde **kullanılmayacak**:
 - **Roadmap**: `PLAN.md` §0 Faz A-I (Faz 10-13 bu dokümanda ek)
 - **Runbook**: `docs/prod-cutover-runbook-v2.md`, `docs/S5-disaster-recovery-runbook.md`
 - **Handoff**: `docs/session-handoff-2026-04-20-k8s-migration-faz-b-c.md` (Session 1-10 kronolojik, append-only, karar kaynağı değil)
-- **Session logs**: `docs/session-logs/` (Session 10'dan itibaren bölümlenmiş)
+- **Review backlog**: `docs/plan-revision-review-2026-04-20.md` (canonical cleanup backlog, working tree)
 - **Codex adversarial reviews**: thread `019daa7f` (adversarial), thread `019daad8` (4-faz plan)

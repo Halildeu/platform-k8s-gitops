@@ -107,42 +107,23 @@ Bu repo için güncel ana strateji:
 
 ### 0.7 Referans Dokümanlar
 - `docs/adr/0002-single-host-dual-cluster.md` (ana ADR)
+- `docs/state/current-state.md` (canlı durum ve blocker truth)
 - `docs/prod-cutover-runbook-v2.md` (atomic cutover step-by-step)
 - `docs/day-2-governance.md` (backup/rotation/cert/vuln/retention)
 - `docs/S1-S2-acceptance-smoke-runbook.md` (D29 3 katman kanıt)
+- `docs/semantic-architecture.md` (runtime + promotion semantiği)
 - Eski: `docs/D32-bootstrap-runbook.md` (historical, SUPERSEDED)
 - Eski: `docs/prod-cutover-smoke-runbook.md` (v1, historical)
 
 ---
 
-**Güncel Seviye Durum:**
-| Seviye | Faz Karşılığı | Durum | İş Tipi |
-|---|---|---|---|
-| **S0** Canlı dürüst | Faz 3/4 REGRESSION fix | ✅ PASS (2026-04-17) | Calico CNI + pod recovery + testai edge |
-| **S1** Zanzibar runtime | Faz 5/6/9/11 | ✅ Deploy PASS · ⚠ Allow synthetic WARN | permission-service 1/1 Running, deny enforce kanıtlı, allow S2-B3 bekliyor |
-| **S2** Ops sertleşme | Faz 7/8/9/10/14 | ⏳ Doc pack hazır, apply bekliyor | smoke-client → shortname apply → ESO/digest → ArgoCD |
-| **S3** Stability soak | Faz 12/13 | ⏳ Doc pack + YAML (PrometheusRule + Blackbox probe) hazır | Apply + 3-7 gün testai gözlem |
-| **S4** Cutover | Faz 15 | ⏳ Blueprint + D32 F1-F9 checklist | D32 staging-sw-2 donanım + atomic switch |
+## 0.8 Canlı Durum Kaynağı
 
-**Bugünkü Commit'ler (2026-04-19):**
-- `8cec273` docs(handoff) platform-ssot permission-service K8s-ready istek
-- `ecc3935` feat(S1) permission-service K8s-ready + Zanzibar runtime aktivasyonu (17 dosya)
-- `154b4a3` docs(plan) S1 deploy-sonrası canlı sonuç
-- `eb13cb2` refactor(kustomize) intra-ns svc URLs shortname (S2-A1 git-only)
-- `85c7e2a` docs(handoff) S1 acceptance + S2/S3/S4 doc pack (787 insert, 6 doc)
-- `31ab635` docs(s2) no closure HARD RULE + nginx edge migration + shortname apply plan
+Bu dosya hedef roadmap ve operasyon kontratı içindir. Canlı durum, blocker ve optimism temizliği için otoriter kaynak:
 
-**Codex Thread:** `019d9a75-4299-7313-85bb-003a7de680eb` (10+ tur, devam ediyor)
+- `docs/state/current-state.md`
 
-**Sonraki Aktif Sıra (Codex FR3):**
-1. smoke-client + allow synthetic (S2-B3) — platform-ssot iş, handoff doc hazır
-2. Host nginx testai block kalıcılık root cause (S2-X2) + D18 migration runbook hazır
-3. Shortname refactor apply (S2-A1) — smoke-client sonrası selective apply + rolling restart
-4. W1 ghcr-pull ESO + W3 digest pin (paralel, handoff doc hazır)
-5. ArgoCD install test cluster (opsiyonel, dev ergonomics)
-6. S3 monitoring apply + soak başlangıcı
-7. D32 staging-sw-2 bootstrap (F1-F9, paralel hat)
-8. S4 cutover atomic switch
+Eski `S0-S4` seviye snapshot'ı ve oturum-özel sıra listeleri historical bağlamdır; aktif karar veya current truth kaynağı olarak kullanılmamalıdır.
 
 ---
 
@@ -181,7 +162,7 @@ Bu repo için güncel ana strateji:
 | D29 | Raporlama seviyeleri | Tek "green" etiketi **YASAK**. 3 seviye zorunlu: (1) **Up** = Pod Ready + edge gerçek backend + kritik dep TCP açık; (2) **Functional** = Up + ana işlev doğru dep ile çalışıyor; (3) **Zanzibar-ready** = Functional + permission-service hub yayında + OpenFGA enabled + `/authz/me`+`/authz/version` + synthetic allow/deny enforce kanıtlı. Ayrıca **Dilim 1A** (authn/transport slice) ≠ **Dilim 1Z** (authz plane env doğru); auth-service permission-service'siz boot edebilir ama "Dilim 1 tamam" denmez |
 | D30 | Cutover stratejisi | Weighted DNS (%10→50→100) **DEĞİL**. Tek-seferlik proxy upstream switch (`ai.acik.com` compose → `k3d-prod:30080` host nginx reload) + **72 saat warm rollback** (compose canlı ama trafik dışı). Ayrıca: test/prod overlay'lerde **digest pin** (repo@sha256) zorunlu, moving tag (`main-stable`) tek başına kanıt değil; pod `imageID` ↔ GHCR digest eşleşmesi doğrulanır. Sebep: weighted için session/cache/side-effect güvenliği ayrı doğrulanmalı — şu anki tasarımda gereksiz risk |
 | D31 | Primary datasource mimarisi | **Tüm mimari PostgreSQL üzerine** kuruludur; PG varsayılan DB (auth, user, variant, core, report, schema, permission, openfga, keycloak). **Dış SQL (MSSQL vb.) secondary/opsiyonel** integration — örn. report/schema Workcube ERP'den `reporting` ve `workcube_mikrolink` DB'lerine **read-only** bağlanır. Dev repo `application-k8s.yml` report/schema için `SQLServerDriver` PRIMARY varsayması **YANLIŞ** → `platform-ssot` tarafında primary PG + secondary MSSQL multi-datasource pattern'e geçilmeli. MSSQL host köprüsü gerekirse D19 pattern (Service+Endpoints IP pin) + ESO-Secret credentials. MSSQL feature **cutover blocker DEĞİL** — feature-flagged opsiyonel |
-| D32 | Prod izolasyon + OI-04 prereq stratejisi | **External cloud/KMS REDDEDILDİ** (kullanıcı kararı 2026-04-19). Çözüm: **kendi 2. fiziksel sunucu `staging-sw-2`**. Prod k3d cluster + host compose PG/KC/Vault **prod instance'ı** ayrı host'a taşınır ("taşıma değil yeni kurulum" — Codex 4-tur re-baseline T3S4). Test cluster + host compose test instance `staging-sw`'de kalır. Cutover: dış proxy `212.115.26.190` L4 backend hedefi atomik switch (`staging-sw → staging-sw-2`). `staging-sw`'deki mevcut compose stack **frozen rollback pointer** 72h. **D1/D16/D18/D23 revize tetikler:** D1 iki fiziksel host, D16 cluster topoloji fiziksel ayrım eklendi, D18 her host'ta ayrı host nginx SNI proxy, D23 tek-host DR sınırı azalır. OI-04 "independent host" prereq bu kararla karşılanır. **Bootstrap kontrat listesi** ayrı bölümde (D32-Bootstrap). Cutover S4-D atomic switch dizisi. |
+| D32 | Historical forward-extension path | **SUPERSEDED by ADR-0002**. `staging-sw-2` ayrı fiziksel host yönü tarihsel/gelecek genişleme appendix'i olarak korunur; current main path DEĞİLDİR. Aktif roadmap, same-host dual-cluster + full stateful isolation modelidir. |
 
 **HARD RULES:**
 - **D16 gereği**: `prod` ve `test` **AYRI k3d cluster**'larında çalışır (aynı host'ta ama farklı control plane). Her cluster'da kendi `platform-*` ns'i, kendi `ingress-nginx` + `external-secrets` ns'i. Prod cluster'ında ayrıca `argocd` + `monitoring` ns'leri.
@@ -202,9 +183,9 @@ Bu repo için güncel ana strateji:
 
 ---
 
-## 1.5 D32 staging-sw-2 Bootstrap Kontrat Listesi (2026-04-19 Codex 4-tur re-baseline)
+## 1.5 D32 staging-sw-2 Bootstrap Kontrat Listesi (Historical Appendix)
 
-> Bu bölüm D32 kararının (Bölüm 1 tablosu) **operasyonel checklist**idir. Sonraki session (ya da bu session devamında) staging-sw-2 kurulumuna başladığında **bu listeyi rehber alır**. Zanzibar-25 permission-service atlama pattern'inin tekrarlanmaması için **bugün yazıldı** (Codex ping-pong Madde 4 uzlaşı). "Ayrı session halleder" = "bugün checklist yazma" **DEĞİLDİR**.
+> Bu bölüm current main path değildir. `staging-sw-2` ayrı fiziksel host yönü, ADR-0002 sonrasında **historical / forward-extension appendix** olarak korunur. Aynı-host dual-cluster modeli bloklanmadığı sürece bu checklist aktif roadmap yerine geçmez.
 
 ### F1 — Donanım + Temel Kurulum
 - [ ] **F1.1** staging-sw-2 fiziksel sunucu satın alma (Ubuntu 22.04 LTS hedef, min 4vCPU/24GB RAM/200GB disk — staging-sw eş spec)
