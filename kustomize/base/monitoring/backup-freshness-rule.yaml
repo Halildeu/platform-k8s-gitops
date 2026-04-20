@@ -62,12 +62,20 @@ spec:
             summary: "Keycloak realm export stale (>8 gün)"
             description: "Haftalık KC realm export 8 günden eski. Cron kontrol + retention review."
 
+        # 2026-04-20: scope-aware (ADR-0002 mode=normal false-positive kesimi)
+        # BackupExporter sadece prod cluster'da deploy edilir (host stateful backup
+        # scripts staging-sw prod-only). Test cluster'da metric YOK → absent() hep
+        # true → false-positive critical. Fix: platform-prod namespace varlığına göre
+        # kapı — test cluster'da bu namespace yok (sadece platform-test), prod'da var.
         - alert: BackupExporterDown
-          expr: absent(backup_last_success_timestamp_seconds)
+          expr: |
+            absent(backup_last_success_timestamp_seconds)
+            and on() count(kube_namespace_labels{namespace="platform-prod"}) > 0
           for: 15m
           labels:
             severity: critical
             component: backup
+            cluster_scope: prod-only
           annotations:
-            summary: "Backup freshness exporter DOWN"
-            description: "node_exporter textfile collector backup_freshness.prom okunmuyor. Cron çalışmıyor veya exporter script fail."
+            summary: "Backup freshness exporter DOWN (prod)"
+            description: "node_exporter textfile collector backup_freshness.prom okunmuyor. Cron çalışmıyor veya exporter script fail. Test cluster'da scope-aware ile sessiz."
