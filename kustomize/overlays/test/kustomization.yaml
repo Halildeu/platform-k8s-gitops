@@ -55,6 +55,13 @@ images:
   - name: permission-service
     newName: ghcr.io/halildeu/platform-ssot-permission-service
     newTag: sha-60611fa
+  # 2026-04-20: ADR-0002 Faz B kapanış — Frontend MFE GHCR image
+  # dev-repo platform-ssot PR #522 (multi-stage Dockerfile) + PR #525 (context ./web fix)
+  # + PR #526 (COPY . . + .dockerignore). Workflow run 24643832079 SUCCESS (2m41s).
+  # GHCR: ghcr.io/halildeu/platform-ssot-frontend:sha-fb09fc9 (D30 immutable, manifest verified).
+  - name: frontend
+    newName: ghcr.io/halildeu/platform-ssot-frontend
+    newTag: sha-fb09fc9
 
 patches:
   # Replica 0 default (scale-to-zero)
