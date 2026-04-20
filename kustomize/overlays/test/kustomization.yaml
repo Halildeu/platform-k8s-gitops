@@ -59,9 +59,12 @@ images:
   # dev-repo platform-ssot PR #522 (multi-stage Dockerfile) + PR #525 (context ./web fix)
   # + PR #526 (COPY . . + .dockerignore). Workflow run 24643832079 SUCCESS (2m41s).
   # GHCR: ghcr.io/halildeu/platform-ssot-frontend:sha-fb09fc9 (D30 immutable, manifest verified).
+  # 2026-04-20: Faz E env-per-build (platform-ssot PR #534) — testai-specific image
+  # (VITE_KEYCLOAK_URL=https://testai.acik.com + VITE_KEYCLOAK_REALM=platform-test
+  # build-time inline). Host nginx sub_filter hack kaldırılabilir.
   - name: frontend
-    newName: ghcr.io/halildeu/platform-ssot-frontend
-    newTag: sha-fb09fc9
+    newName: ghcr.io/halildeu/platform-ssot-frontend-testai
+    newTag: sha-2169841
 
 patches:
   # Replica 0 default (scale-to-zero)

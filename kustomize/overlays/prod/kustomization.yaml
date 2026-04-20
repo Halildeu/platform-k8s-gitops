@@ -44,6 +44,11 @@ images:
   - name: permission-service
     newName: ghcr.io/halildeu/platform-ssot-permission-service
     newTag: sha-60611fa
+  # 2026-04-20: Faz E env-per-build — prod frontend image (ai.acik.com + serban)
+  # Matrix build: platform-ssot PR #534
+  - name: frontend
+    newName: ghcr.io/halildeu/platform-ssot-frontend
+    newTag: sha-2169841
 
 patches:
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz replace
