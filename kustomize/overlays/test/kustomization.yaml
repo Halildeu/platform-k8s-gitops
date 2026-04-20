@@ -55,6 +55,13 @@ images:
   - name: permission-service
     newName: ghcr.io/halildeu/platform-ssot-permission-service
     newTag: sha-60611fa
+  # 2026-04-20: ADR-0002 Faz B kapanış — Frontend MFE GHCR image
+  # dev-repo PR #522 (platform-ssot) merge → frontend-image.yml workflow →
+  # ghcr.io/halildeu/platform-ssot-frontend:sha-<short> immutable tag (D30).
+  # İlk merge sonrası sha placeholder → gerçek sha bump ayrı commit.
+  - name: frontend
+    newName: ghcr.io/halildeu/platform-ssot-frontend
+    newTag: main-stable   # PLACEHOLDER — PR #522 merge sonrası sha-<short>'a bump (D30)
 
 patches:
   # Replica 0 default (scale-to-zero)

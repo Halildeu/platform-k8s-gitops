@@ -1,9 +1,8 @@
-# Frontend — MFE shell (Module Federation). Şu an nginx:1.27-alpine sadece
-# static dosya serve edecek konfigürasyon ile geliyor, AMA gerçek HTML içeriği
-# henüz bu image'da YOK.
-# TODO: initContainer ile ghcr.io/halildeu/platform-ssot-web:<sha> artefaktını
-# indirip /usr/share/nginx/html'e kopyalamak VEYA PVC mount etmek. İkinci
-# aşama (Dilim 4+) planlandı.
+# Frontend — MFE shell (Module Federation).
+# 2026-04-20: ADR-0002 Faz B kapanış — GHCR image pattern (kustomize placeholder 'frontend',
+# overlay newName: ghcr.io/halildeu/platform-ssot-frontend + newTag: sha-<short>).
+# dev-repo platform-ssot web/Dockerfile (pnpm build → nginx serve) CI ile GHCR'a push'lar.
+# PR #522 (platform-ssot) → frontend-image.yml workflow → sha-<short> immutable tag (D30).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -39,7 +38,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: frontend
-          image: nginx:1.27-alpine
+          image: frontend      # kustomize placeholder; overlay image entry sha pin
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
