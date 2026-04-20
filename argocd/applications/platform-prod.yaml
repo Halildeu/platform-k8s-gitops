@@ -15,9 +15,11 @@ spec:
     targetRevision: main
     path: kustomize/overlays/prod
   destination:
-    # D32: staging-sw-2 k3d-prod ayrı fiziksel host
-    # argocd cluster add k3d-prod (staging-sw-2'den) --name prod-cluster
-    name: prod-cluster
+    # 2026-04-20: ADR-0002 single-host-dual-cluster (D32 SUPERSEDED).
+    # ArgoCD hub k3d-prod içinde; platform-prod overlay aynı cluster'a sync.
+    # Önceki `name: prod-cluster` external cluster secret varsayımı Faz D sonrası
+    # geçersiz — in-cluster direct sync.
+    server: https://kubernetes.default.svc
     namespace: platform-prod
   syncPolicy:
     # MANUAL sync — D30 HARD RULE: atomic cutover
