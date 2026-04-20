@@ -193,7 +193,7 @@ patches:
         path: /spec/replicas
         value: 0
 
-  # Dilim 3: OpenFGA + Frontend scale-to-zero (D17)
+  # Dilim 3: OpenFGA scale-to-zero (D17 — test default, mode=normal)
   - target:
       kind: StatefulSet
       name: openfga
@@ -201,13 +201,17 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 0
+  # 2026-04-20: testai.acik.com authoritative live (e2e kanıtlı: curl 212.115.26.190
+  # → HTTP 200 2899B Module Federation HTML). Frontend always-on (replicas=1); D17
+  # scale-to-zero exception: UI public entrypoint her zaman erişilebilir olmalı.
+  # Backend'ler mode=normal scale 0 kalır; frontend MFE static artifact DB bağımlı değil.
   - target:
       kind: Deployment
       name: frontend
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 0
+        value: 1
 
   # Dilim 3: OpenFGA datastore URI (S2-A1 follow-up: shortname base'de zaten,
   # ama openfga_db + 'change-me-local-only' stub şifre bu patch'te test-specific.
