@@ -49,6 +49,7 @@ Tüm runbook, plan pack, handoff, query pack index — agent/ops session başlan
 
 | Doküman | Kullanım |
 |---|---|
+| [context-priority-rules.md](./context-priority-rules.md) | Canonical bağlam önceliği, authority zinciri ve testten proda promotion semantiği |
 | [S2-B1-vault-property-matrix.md](./S2-B1-vault-property-matrix.md) | ESO Vault path + property matrisi + preflight script |
 | [S2-B2-digest-pin-ci-template.md](./S2-B2-digest-pin-ci-template.md) | Platform-ssot deploy-backend.yml digest pin CI snippet |
 | [S2-C-argocd-install-plan.md](./S2-C-argocd-install-plan.md) | ArgoCD install + 6 Application app-of-apps plan |
@@ -86,11 +87,12 @@ Tüm runbook, plan pack, handoff, query pack index — agent/ops session başlan
 
 ## 🗺️ Quick Start — Yeni Session
 
-1. Bu dosya (docs/README.md) — genel bakış
-2. [../PLAN.md](../PLAN.md) — son 5 entry + Güncel Seviye Durum
-3. [../CLAUDE.md](../CLAUDE.md) — agent HARD RULE + pattern + pitfall
-4. [session-handoff-2026-04-19.md](./session-handoff-2026-04-19.md) — son durum + pending iş
-5. Codex thread: `019d9a75` (ana) + `019da5f8` (delta)
+1. [../AGENTS.md](../AGENTS.md) — en yüksek öncelikli giriş yüzeyi
+2. [context-priority-rules.md](./context-priority-rules.md) — otorite zinciri + yorumlama kuralları
+3. [state/current-state.md](./state/current-state.md) — canlı truth snapshot
+4. [../PLAN.md](../PLAN.md) — aktif fazlar, done kriterleri, roadmap
+5. [../CLAUDE.md](../CLAUDE.md) — agent-özel pattern/pitfall tamamlayıcısı
+6. [session-handoff-2026-04-19.md](./session-handoff-2026-04-19.md) — tarihsel bağlam + pending iş
 
 ---
 

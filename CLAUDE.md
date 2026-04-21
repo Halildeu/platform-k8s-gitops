@@ -2,6 +2,8 @@
 
 > Bu dosya Claude Code / agent session'larında otomatik yüklenir. Repo-specific kurallar, pattern'ler ve bağlam.
 
+> Öncelik notu: Repo-geneli giriş yüzeyi [AGENTS.md](./AGENTS.md), canonical kural seti ise [docs/context-priority-rules.md](./docs/context-priority-rules.md) dosyasıdır. Bu dosya agent-özel tamamlayıcıdır; çelişki halinde `AGENTS.md` ve canonical kural seti üstün gelir.
+
 ---
 
 ## Proje Bağlamı
@@ -128,12 +130,13 @@ Her runbook: tetik → adımlar (süre + komut + beklenen + fail sinyali + devam
 
 ## Agent Session Akış
 
-1. Oku: `README.md` → `PLAN.md` son entries → `docs/session-handoff-<latest>.md`
-2. Kontrol: `git log --oneline main..HEAD | head -10` + `git status`
-3. Memory: `~/.claude/projects/<slug>/memory/MEMORY.md` → feedback kuralları
-4. Codex thread: `PLAN.md` "Codex Thread" referanslar (ana + delta)
-5. İş sırası: `docs/session-handoff-<latest>.md` §5 (bekleyen iş + repo-side yedek)
-6. İş: kullanıcı explicit isteği varsa o, yoksa handoff sırasındaki ilk aktif iş
+1. Oku: `AGENTS.md` → `docs/context-priority-rules.md`
+2. Truth ayır: `docs/state/current-state.md` (canlı truth) + `docs/adr/0002-single-host-dual-cluster.md` (aktif mimari) + `PLAN.md` (roadmap/done kriteri)
+3. Kontrol: `git log --oneline main..HEAD | head -10` + `git status`
+4. Memory: `~/.claude/projects/<slug>/memory/MEMORY.md` → feedback kuralları
+5. Codex thread: `PLAN.md` "Codex Thread" referanslar (ana + delta)
+6. Historical gerekiyorsa: `docs/session-handoff-<latest>.md`
+7. İş: kullanıcı explicit isteği varsa o, yoksa canonical truth + aktif blocker sırasındaki ilk iş
 
 ## Test Öncesi
 
