@@ -1,9 +1,10 @@
 # Current State — Platform K8s Migration
 
-> **Status as of**: 2026-04-20 ~13:30 UTC+3 (Session 10 kapanış)
+> **Status as of**: 2026-04-20 ~13:30 UTC+3 (Session 10 snapshot)
 > **Verified by**: Claude Opus 4.7 + Codex (thread `019daad8`) adversarial review
 > **Source set**: Live `kubectl`, `curl`, `docker`, `ssh staging-sw` outputs + repo main HEAD
 > **Supersedes**: `docs/session-handoff-2026-04-20-k8s-migration-faz-b-c.md` bölümlerindeki `%99.5`, `DONE + LIVE (Faz H)`, `soft cutover` ifadeleri
+> **Interpretation gate**: Önce [../../AGENTS.md](../../AGENTS.md), ardından [../context-priority-rules.md](../context-priority-rules.md) okunur; bu dosya canlı truth snapshot'tır, repo-geneli kural sözleşmesi değildir.
 
 ---
 

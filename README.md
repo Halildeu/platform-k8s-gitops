@@ -8,15 +8,21 @@ Kubernetes GitOps manifest'leri — autonomous-orchestrator platformu. Bu repo, 
 
 Docker Compose tabanlı `autonomous-orchestrator` platformunu Kubernetes'e taşımak. 2 k3d cluster (test + prod) topoloji, ArgoCD GitOps, Zanzibar authz plane (permission-service + OpenFGA + Keycloak), ESO + Vault secret management.
 
-## Canonical Doküman Sırası
+## Canonical Giriş ve Otorite Zinciri
 
-Bu repo içinde belge önceliği aşağıdaki sırayla okunmalıdır:
+Bu repo için ilk giriş yüzeyi artık:
 
-1. [ADR-0002](./docs/adr/0002-single-host-dual-cluster.md) — ana mimari karar
-2. [Current State](./docs/state/current-state.md) — canlı durum ve aktif blocker'lar
-3. [PLAN.md](./PLAN.md) — hedef roadmap, operasyon kontratı ve historical mapping
-4. Runbook'lar — adım adım operasyonel uygulama
-5. Handoff belgeleri — tarihsel bağlam, karar kaynağı değil
+1. [AGENTS.md](./AGENTS.md) — repo-geneli bağlam önceliği ve HARD RULE
+2. [docs/context-priority-rules.md](./docs/context-priority-rules.md) — otorite zinciri, repo sınırı ve promotion semantiği
+
+Soru tipine göre otoriter kaynak:
+
+1. Canlı truth için [Current State](./docs/state/current-state.md) + live evidence
+2. Aktif mimari karar için [ADR-0002](./docs/adr/0002-single-host-dual-cluster.md)
+3. Yol haritası ve done kriterleri için [PLAN.md](./PLAN.md)
+4. Operasyon adımları için ilgili runbook
+
+`README.md` ve `docs/README.md` navigator'dur; handoff belgeleri tarihsel bağlam taşır ama karar kaynağı değildir.
 
 ## Mimari Özet (ADR-0002 sonrası)
 
@@ -99,6 +105,7 @@ tests/k6/                    # k6 load test profile (S3 soak)
 
 | Dosya | Amaç |
 |---|---|
+| [docs/context-priority-rules.md](./docs/context-priority-rules.md) | Canonical bağlam önceliği, authority zinciri ve testten proda promotion semantiği |
 | [docs/S2-B1-vault-property-matrix.md](./docs/S2-B1-vault-property-matrix.md) | ESO Vault path + property matrisi + preflight |
 | [docs/S2-B2-digest-pin-ci-template.md](./docs/S2-B2-digest-pin-ci-template.md) | Platform-ssot deploy-backend.yml digest pin CI snippet |
 | [docs/S2-C-argocd-install-plan.md](./docs/S2-C-argocd-install-plan.md) | ArgoCD install + app-of-apps plan |
@@ -169,6 +176,8 @@ Historical / superseded yol: `bootstrap/install-on-staging-sw-2.sh` + `docs/D32-
 Tam liste: [PLAN.md](./PLAN.md) Bölüm "Karar Logu".
 
 ## Kurallar (HARD RULE)
+
+Canonical kaynak: [AGENTS.md](./AGENTS.md) + [docs/context-priority-rules.md](./docs/context-priority-rules.md). Aşağıdaki maddeler kısa özet niteliğindedir.
 
 - **No closure language:** "kapandı/bitti/gün sonu/pause" YASAK — kullanıcı "dur/yeter/bitti" demedikçe iş devam
 - **IP sanitize:** Dış kullanıcı-facing response/doc'ta IP görünmemeli

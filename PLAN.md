@@ -8,6 +8,8 @@
 
 ## 0. Mevcut Strateji (ADR-0002 sonrası)
 
+> Bağlam önceliği ve kural çözümü için önce [AGENTS.md](./AGENTS.md), ardından [docs/context-priority-rules.md](./docs/context-priority-rules.md) okunur. Bu dosya roadmap ve done kriteri kaynağıdır; tek başına canlı truth kaynağı değildir.
+
 **Referans ADR:** [`docs/adr/0002-single-host-dual-cluster.md`](./docs/adr/0002-single-host-dual-cluster.md)
 
 Bu repo için güncel ana strateji:
@@ -106,6 +108,8 @@ Bu repo için güncel ana strateji:
 | `D32 separate-host` | **SUPERSEDED by ADR-0002** (historical path, forward-extension) |
 
 ### 0.7 Referans Dokümanlar
+- `AGENTS.md` (repo-geneli giriş yüzeyi ve HARD RULE)
+- `docs/context-priority-rules.md` (otorite zinciri, repo sınırı, testten proda promotion semantiği)
 - `docs/adr/0002-single-host-dual-cluster.md` (ana ADR)
 - `docs/state/current-state.md` (canlı durum ve blocker truth)
 - `docs/prod-cutover-runbook-v2.md` (atomic cutover step-by-step)
@@ -121,6 +125,7 @@ Bu repo için güncel ana strateji:
 
 Bu dosya hedef roadmap ve operasyon kontratı içindir. Canlı durum, blocker ve optimism temizliği için otoriter kaynak:
 
+- `AGENTS.md` + `docs/context-priority-rules.md` (yorumlama/öncelik kuralları)
 - `docs/state/current-state.md`
 
 Eski `S0-S4` seviye snapshot'ı ve oturum-özel sıra listeleri historical bağlamdır; aktif karar veya current truth kaynağı olarak kullanılmamalıdır.
