@@ -1,9 +1,11 @@
 # S4 Rollback Runbook — D30 72h Warm Rollback
 
 > ⚠ **Partial SUPERSEDE by ADR-0002 / prod-cutover-runbook-v2** (2026-04-19) — `staging-sw-2` ayrı host varsayımı değişti. Yeni rollback prosedürü same-host için `docs/prod-cutover-runbook-v2.md` §11-12 altında konsolide edildi. Bu doküman teşhis/decommission kısımları için hâlâ referanstır.
+> **Interpretation gate:** Once [../AGENTS.md](../AGENTS.md), ardindan [context-priority-rules.md](./context-priority-rules.md), sonra live truth icin [state/current-state.md](./state/current-state.md) okunur.
+> **Status:** Historical companion. Bu dokuman icindeki `staging-sw-2` ve dis proxy switch ornekleri current same-host ana yol icin aktif rollback komutu olarak okunmaz.
 
 > **Source:** PLAN.md D30 Cutover Atomic Switch + 72h Warm Rollback HARD RULE
-> **Prereq:** S4-D cutover gerçekleşmiş (`ai.acik.com` → staging-sw-2 upstream)
+> **Historical prereq:** Eski iki-host akista S4-D cutover `ai.acik.com` trafik hedefini `staging-sw-2` tarafina almis olurdu.
 > **Scope:** Canlı trafik geri alma (staging-sw-2 → staging-sw compose), dar — teşhis SONRA
 > **YASAK:** Weighted DNS, partial rollback, paralel deploy (D30 HARD RULE)
 > **Codex iter-4/iter-5 uyumu:** Ana gövde 5 dk trafik geri alma; teardown/decommission AYRI bölüm (prod-cutover-smoke-runbook.md §4)
@@ -184,7 +186,8 @@ Kısa:
 ## 7. Referanslar
 
 - PLAN.md D30 Cutover Atomic Switch + 72h Warm Rollback HARD RULE
-- docs/prod-cutover-smoke-runbook.md Adım 6 (72h Warm Rollback Window)
+- docs/prod-cutover-runbook-v2.md §12 (aktif same-host rollback proseduru)
+- docs/prod-cutover-smoke-runbook.md Adım 6 (historical)
 - docs/D32-bootstrap-runbook.md §11 Partial Unwind
 - docs/S3-stability-soak-pack.md No-Go gate
 - Codex thread `019d9a75` iter-4/iter-5 rollback scope uzlaşı

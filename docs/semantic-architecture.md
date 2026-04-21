@@ -1,11 +1,14 @@
 # Semantik Mimari
 
+> **Interpretation gate:** Once [../AGENTS.md](../AGENTS.md), ardindan [context-priority-rules.md](./context-priority-rules.md) okunur.
+> **Role:** Bu dokuman canli truth snapshot'i degil; repo siniri, topoloji ve `test -> prod` promotion semantigini anlatan canonical mimari ozettir.
+
 Bu dokuman, `platform-k8s-gitops` reposunun yonettigi hedef topolojiyi ve repo sinirlarini tek yerde toplar.
 
 ## Ozet
 
 - Tasinan sistem: `autonomous-orchestrator` platformunun Kubernetes dagitim ve operasyon katmani
-- Uygulama kaynak kodu: `/Users/halilkocoglu/Documents/dev/`
+- Uygulama kaynak kodu ve artifact uretimi: `platform-ssot`
 - GitOps repo gorevi: manifest, overlay, ArgoCD application, host-level stateful compose ve operasyonel kontrat
 
 ## Semantik Katmanlar
@@ -25,7 +28,7 @@ Bu dokuman, `platform-k8s-gitops` reposunun yonettigi hedef topolojiyi ve repo s
 7. Artifact ve deploy katmani
    Uygulama image'lari ana repoda build edilir, GHCR'a push edilir, bu repo tarafindan deploy edilir.
 8. Promotion katmani
-   Test ortami sadece paralel bir kopya degil, prod'a gecisin kabul kapisidir. Test yeşil olmadan prod sync ve cutover baslamaz.
+   Test ortami sadece paralel bir kopya degil, prod'a gecisin kabul kapisidir. D29 seviyeleri, soak ve blocker kapilari temizlenmeden prod sync ve cutover baslamaz.
 
 ## Repo Siniri
 
@@ -51,8 +54,8 @@ Bu akis runtime trafik akisi degil, release promotion semantigidir:
 
 1. Uygulama image'i ana repoda build edilir ve GHCR'a push edilir.
 2. Bu repo once test overlay uzerinden `k3d-test` ortamini besler.
-3. `testai.acik.com` uzerinde smoke, functional, Zanzibar ve soak kaniti toplanir.
-4. Test Stability Gate yesil olmadan prod promotion baslamaz.
+3. `testai.acik.com` uzerinde `Up`, `Functional`, `Zanzibar-ready` ve soak kaniti toplanir.
+4. Test Stability Gate temizlenmeden ve aktif blocker'lar kapanmadan prod promotion baslamaz.
 5. Go/No-Go gate asamasinda artifact sabitlenir ve prod onayi verilir.
 6. ArgoCD prod overlay'i sync eder.
 7. Cutover ile `ai.acik.com` authoritative olarak prod cluster'a gecirilir.
@@ -111,12 +114,12 @@ flowchart TB
 
     subgraph GITOPS["GitOps ve Build Akisi"]
         GITOPS_REPO["platform-k8s-gitops\nmanifest + overlays + ArgoCD apps"]
-        APP_REPO["dev repo\nuygulama kaynak kodu + Dockerfile + application-k8s.yml"]
+        APP_REPO["platform-ssot\nuygulama kaynak kodu + Dockerfile + application-k8s.yml"]
         GHCR["GHCR\nimmutable image artifact"]
     end
 
     subgraph PROMOTION["Testten Proda Promotion Akisi"]
-        TEST_GATE["Test Stability Gate\nsmoke + functional + zanzibar + soak"]
+        TEST_GATE["Test Stability Gate\nD29 smoke + Zanzibar + soak"]
         RELEASE_GATE["Go/No-Go Gate\nartifact sabitleme + prod onayi"]
         CUTOVER["Cutover\nai.acik.com -> prod"]
     end
@@ -167,10 +170,10 @@ flowchart TB
     GHCR --> GITOPS_REPO
     GITOPS_REPO --> PROD_ARGO
     GITOPS_REPO --> TEST_CLUSTER
-    TEST_CLUSTER -.->|"kanit uretir"| TEST_GATE
+    TEST_CLUSTER -.->|"D29 kaniti uretir"| TEST_GATE
     TEST_MON -.->|"alert ve probe"| TEST_GATE
     GHCR -.->|"immutable image"| RELEASE_GATE
-    TEST_GATE -.->|"yesil ise"| RELEASE_GATE
+    TEST_GATE -.->|"gate temiz ise"| RELEASE_GATE
     RELEASE_GATE -.->|"prod overlay sync"| PROD_ARGO
     RELEASE_GATE -.->|"freeze window"| CUTOVER
     CUTOVER -.->|"authoritative trafik"| EDGE
