@@ -22,39 +22,38 @@ resources:
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)
-  # 2026-04-20: Tüm 8 servis sha-60611fa immutable tag (D30 full uyum).
-  # Dev repo PR #510/#511/#512 merge sonrası CI GHCR sha-60611fa push.
+  # 2026-04-21: Tüm 8 servis sha-57eeff8 immutable tag (D30 full uyum).
+  # Dev repo PR #538 merge sonrası CI GHCR sha-57eeff8 push.
   # Yeni commit'ler → yeni sha-<short> → overlay güncellenir (manuel veya W3 CI).
   # moving tag main-stable D30 ihlal (cache hit, yeni image çekilmez).
   - name: auth-service
     newName: ghcr.io/halildeu/platform-ssot-auth-service
-    newTag: sha-60611fa
+    newTag: sha-57eeff8
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-ssot-api-gateway
-    newTag: sha-60611fa
+    newTag: sha-57eeff8
   - name: user-service
     newName: ghcr.io/halildeu/platform-ssot-user-service
-    newTag: sha-60611fa
+    newTag: sha-57eeff8
   - name: variant-service
     newName: ghcr.io/halildeu/platform-ssot-variant-service
-    newTag: sha-60611fa
+    newTag: sha-57eeff8
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-ssot-core-data-service
-    newTag: sha-60611fa
+    newTag: sha-57eeff8
   - name: report-service
     newName: ghcr.io/halildeu/platform-ssot-report-service
-    newTag: sha-60611fa
+    newTag: sha-57eeff8
   - name: schema-service
     newName: ghcr.io/halildeu/platform-ssot-schema-service
-    # 2026-04-20: dev-repo PR #512 (CI trigger) merge sonrası schema-service
-    # immutable build oluştu. D30 main-stable → sha-60611fa bump.
-    newTag: sha-60611fa
-  # 2026-04-20: tüm 8 servis sha-60611fa (D30 HARD RULE uyumu). Pin commit
-  # 60611fa = dev-repo PR #510/#511/#512 ardışık merge head (auth NS fix +
-  # smoke-client + schema CI). Full digest pin W3 ayrı PR (S2-B2).
+    # 2026-04-21: dev-repo PR #538 merge sonrası schema-service dahil tüm backend
+    # image'ları sha-57eeff8 immutable tag ile yeniden push edildi.
+    newTag: sha-57eeff8
+  # 2026-04-21: tüm 8 servis sha-57eeff8 (D30 HARD RULE uyumu). Pin commit
+  # 57eeff8 = dev-repo PR #538 merge head. Full digest pin W3 ayrı PR (S2-B2).
   - name: permission-service
     newName: ghcr.io/halildeu/platform-ssot-permission-service
-    newTag: sha-60611fa
+    newTag: sha-57eeff8
   # 2026-04-20: ADR-0002 Faz B kapanış — Frontend MFE GHCR image
   # dev-repo platform-ssot PR #522 (multi-stage Dockerfile) + PR #525 (context ./web fix)
   # + PR #526 (COPY . . + .dockerignore). Workflow run 24643832079 SUCCESS (2m41s).
