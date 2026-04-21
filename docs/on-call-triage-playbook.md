@@ -1,8 +1,10 @@
 # On-Call Triage Playbook — Alert → Action Mapping
 
+> **Interpretation gate:** Once [../AGENTS.md](../AGENTS.md), ardindan [context-priority-rules.md](./context-priority-rules.md), sonra live truth icin [state/current-state.md](./state/current-state.md) okunur.
 > **Source:** K8s-6 S3-A PrometheusRule 8 alert (Codex iter-7 tespit — day-2 ops)
 > **Hedef:** Alert geldiğinde 2 dk içinde karar — ROLLBACK vs INVESTIGATE vs OBSERVE
 > **Ölçü:** D29 HARD RULE (authoritative entrypoint + up ≠ functional ≠ Zanzibar-ready)
+> **Role:** Bu dokuman alert → aksiyon matrisi verir; aktif rollback komutlari icin primary referans `docs/prod-cutover-runbook-v2.md` §12'dir.
 
 ---
 
@@ -10,8 +12,8 @@
 
 | Alert | Severity | Triage | Aksiyon |
 |---|---|---|---|
-| `ZanzibarHubDown` | critical | **ROLLBACK** | permission-service 2dk+ DOWN. D30 trigger. Rollback runbook §2 (5 dk trafik geri alma). |
-| `OpenFGADown` | critical | **ROLLBACK** | Authz plane engine DOWN. Rollback runbook §2. |
+| `ZanzibarHubDown` | critical | **ROLLBACK** | permission-service 2dk+ DOWN. D30 trigger. `docs/prod-cutover-runbook-v2.md` §12. |
+| `OpenFGADown` | critical | **ROLLBACK** | Authz plane engine DOWN. `docs/prod-cutover-runbook-v2.md` §12. |
 | `ZanzibarEdgeSyntheticFail` | warning | **INVESTIGATE** (3× fail → ROLLBACK) | External edge probe 5 dk fail. 3× peş peşe → immediate rollback. 1-2× → edge nginx + cert + k3d serverlb teşhis. |
 | `EdgeHigh5xxRatio` | critical | **ROLLBACK** (sustained 15dk) | Prod 5xx > 1% sustained. D30 trigger. Rollback + fix plan. |
 | `EdgeHighLatency` | warning | **INVESTIGATE** | Gateway p95 > 2s 10dk. PG slow query + pod CPU throttle + network teşhis. |
@@ -35,7 +37,7 @@
 **5 dk aksiyon:**
 1. **T+0 (30s)** — Slack oncall notify + deploy freeze (ArgoCD manuel sync)
 2. **T+1 (1m)** — `kubectl -n platform-prod get pod -l app.kubernetes.io/name=permission-service`
-   - `CrashLoopBackOff` → Rollback kararı net (`docs/S4-rollback-runbook.md` §2)
+   - `CrashLoopBackOff` → Rollback kararı net (`docs/prod-cutover-runbook-v2.md` §12)
    - `Running ama up=0` → Liveness probe fail; 1 dk daha bekle (pod restart beklenir)
 3. **T+3 (3m)** — Trafik geri alma başla (dış proxy backend `staging-sw-2 → staging-sw`)
 4. **T+5 (5m)** — ai.acik.com compose backend edge smoke doğrulama
@@ -69,7 +71,7 @@
 3. **T+3 (3m)** — Cert kontrolü: `echo | openssl s_client -servername testai.acik.com -connect testai.acik.com:443 2>/dev/null | openssl x509 -noout -dates`
 4. **T+5 (5m)** — Teşhis sonucu → observe (bir sonraki probe beklet) veya rollback karar
 
-**3× peş peşe fail (15 dk):** Rollback runbook §2 (immediate 5 dk trafik geri alma).
+**3× peş peşe fail (15 dk):** `docs/prod-cutover-runbook-v2.md` §12 (immediate trafik geri alma).
 
 ### 2.4 EdgeHigh5xxRatio (critical, sustained = rollback)
 
@@ -156,7 +158,7 @@
 
 ```
 Alert gelir
-  ├─ Critical + Rollback → 5 dk içinde S4-rollback-runbook §2
+  ├─ Critical + Rollback → 5 dk içinde prod-cutover-runbook-v2 §12
   │     └─ Rollback PASS → 72h warm window + Codex adversarial review
   │     └─ Rollback FAIL → Stakeholder escalate + incident commander
   ├─ Critical + Investigate → 5 dk checklist
@@ -187,7 +189,8 @@ Alert gelir
 ## 5. Referanslar
 
 - `kustomize/base/monitoring/zanzibar-stability-rule.yaml` — 8 alert tanımı
-- `docs/S4-rollback-runbook.md` — D30 72h warm rollback mekaniği
+- `docs/prod-cutover-runbook-v2.md` — aktif same-host cutover ve rollback mekaniği
+- `docs/S4-rollback-runbook.md` — historical companion / diagnostic reference
 - `docs/S1-S2-acceptance-smoke-runbook.md` — post-rollback smoke template
 - `docs/S5-capacity-expansion-runbook.md` — memory/CPU/disk revize
 - `docs/promql-query-pack.md` — günlük ops PromQL sorguları

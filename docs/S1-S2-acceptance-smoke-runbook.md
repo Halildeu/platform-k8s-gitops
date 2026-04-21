@@ -1,9 +1,11 @@
 # S1/S2 Acceptance Smoke Runbook
 
+> **Interpretation gate:** Once [../AGENTS.md](../AGENTS.md), ardindan [context-priority-rules.md](./context-priority-rules.md), sonra live truth icin [state/current-state.md](./state/current-state.md) okunur.
 > **Source:** K8s-6 Seviye 1 + Seviye 2 acceptance template
 > **Pattern:** D29 HARD RULE — Up ≠ Functional ≠ Zanzibar-ready 3 katman smoke
 > **Kullanım:** Her deploy sonrası hızlı doğrulama, No-Go gate ön-kontrol, rollback sonrası smoke
-> **Scope:** testai (k3d-test) + ai.acik.com (k3d-prod, D32 cutover sonrası) her iki ortama adapte
+> **Role:** Bu dokuman smoke ve kabul kaniti prosedurudur; aktif canli skor veya faz durumu buradan okunmaz.
+> **Scope:** testai (k3d-test) + ai.acik.com (k3d-prod, Faz G same-host cutover sonrasi) her iki ortama adapte
 
 ---
 
@@ -113,7 +115,7 @@ kubectl --context $CTX -n $NS exec smoke-nc -- wget -qO- \
 ### 4.1 External edge (D29 authoritative entrypoint)
 
 ```bash
-HOST=testai.acik.com   # veya ai.acik.com (D32 cutover sonrası)
+HOST=testai.acik.com   # veya ai.acik.com (Faz G same-host cutover sonrasi)
 
 # Deny (unauthenticated)
 curl -sk -o /dev/null -w "%{http_code}\n" "https://${HOST}/variants"
@@ -211,7 +213,7 @@ Up ✅ / Functional <✅|⚠|❌> / Zanzibar-ready <✅|⚠|❌>
 
 ---
 
-## 6. Rollback Smoke (S4-rollback-runbook.md §4 atıf)
+## 6. Rollback Smoke (prod-cutover-runbook-v2.md §12 atıf)
 
 Rollback sonrası aynı 3 katman smoke uygulanır ama hedef `ai.acik.com` compose backend:
 - Katman 1: `docker ps` platform-* sayısı + healthcheck
@@ -239,7 +241,8 @@ Her blocker için bu runbook'un ilgili bölümü çalıştırılır.
 - PLAN.md D29 Up ≠ Functional ≠ Zanzibar-ready HARD RULE
 - PLAN.md D30 Immutable Artifact HARD RULE
 - docs/prod-cutover-smoke-runbook.md (S4-D atomic cutover smoke)
-- docs/S4-rollback-runbook.md (rollback sonrası smoke §4)
+- docs/prod-cutover-runbook-v2.md §12 (aktif same-host rollback sonrasi smoke)
+- docs/S4-rollback-runbook.md (historical companion)
 - docs/D32-bootstrap-runbook.md (F8 pre-cutover smoke referansı)
 - docs/handoff-smoke-client-keycloak.md (smoke-client S2-B3 dev repo iş)
 - docs/S3-stability-soak-pack.md No-Go gate (bu runbook altı 6 blocker)

@@ -1,9 +1,11 @@
 # Prod Cutover Runbook v2 — Atomic Same-Host Cutover
 
+> **Interpretation gate:** Once [../AGENTS.md](../AGENTS.md), ardindan [context-priority-rules.md](./context-priority-rules.md), sonra live truth icin [state/current-state.md](./state/current-state.md) okunur.
 > **Scope:** `ai.acik.com` compose backend → `k3d-prod` atomic switch
 > **Pattern:** `cutover-freeze` → `rollback-window` (bkz ADR-0002 §5)
 > **Strategy:** Weighted rollout YOK, tek switch + 72h warm rollback
-> **Prereq:** ADR-0002 accepted + Faz A-F PASS (PLAN.md §0.1)
+> **Role:** Bu dokuman operasyon prosedurudur; canli durum kaniti tek basina bu dosyadan okunmaz.
+> **Prereq:** ADR-0002 accepted + Faz A-F gate'leri `PLAN.md` ve `docs/state/current-state.md` uzerinden dogrulandi
 
 ## 0. Ortak Değişkenler
 
