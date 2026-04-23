@@ -22,38 +22,39 @@ resources:
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)
-  # 2026-04-21: Tüm 8 servis sha-57eeff8 immutable tag (D30 full uyum).
-  # Dev repo PR #538 merge sonrası CI GHCR sha-57eeff8 push.
+  # 2026-04-20: Tüm 8 servis sha-60611fa immutable tag (D30 full uyum).
+  # Dev repo PR #510/#511/#512 merge sonrası CI GHCR sha-60611fa push.
   # Yeni commit'ler → yeni sha-<short> → overlay güncellenir (manuel veya W3 CI).
   # moving tag main-stable D30 ihlal (cache hit, yeni image çekilmez).
   - name: auth-service
     newName: ghcr.io/halildeu/platform-ssot-auth-service
-    newTag: sha-57eeff8
+    newTag: sha-60611fa
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-ssot-api-gateway
-    newTag: sha-57eeff8
+    newTag: sha-60611fa
   - name: user-service
     newName: ghcr.io/halildeu/platform-ssot-user-service
-    newTag: sha-57eeff8
+    newTag: sha-60611fa
   - name: variant-service
     newName: ghcr.io/halildeu/platform-ssot-variant-service
-    newTag: sha-57eeff8
+    newTag: sha-60611fa
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-ssot-core-data-service
-    newTag: sha-57eeff8
+    newTag: sha-60611fa
   - name: report-service
     newName: ghcr.io/halildeu/platform-ssot-report-service
-    newTag: sha-57eeff8
+    newTag: sha-60611fa
   - name: schema-service
     newName: ghcr.io/halildeu/platform-ssot-schema-service
-    # 2026-04-21: dev-repo PR #538 merge sonrası schema-service dahil tüm backend
-    # image'ları sha-57eeff8 immutable tag ile yeniden push edildi.
-    newTag: sha-57eeff8
-  # 2026-04-21: tüm 8 servis sha-57eeff8 (D30 HARD RULE uyumu). Pin commit
-  # 57eeff8 = dev-repo PR #538 merge head. Full digest pin W3 ayrı PR (S2-B2).
+    # 2026-04-20: dev-repo PR #512 (CI trigger) merge sonrası schema-service
+    # immutable build oluştu. D30 main-stable → sha-60611fa bump.
+    newTag: sha-60611fa
+  # 2026-04-20: tüm 8 servis sha-60611fa (D30 HARD RULE uyumu). Pin commit
+  # 60611fa = dev-repo PR #510/#511/#512 ardışık merge head (auth NS fix +
+  # smoke-client + schema CI). Full digest pin W3 ayrı PR (S2-B2).
   - name: permission-service
     newName: ghcr.io/halildeu/platform-ssot-permission-service
-    newTag: sha-57eeff8
+    newTag: sha-60611fa
   # 2026-04-20: ADR-0002 Faz B kapanış — Frontend MFE GHCR image
   # dev-repo platform-ssot PR #522 (multi-stage Dockerfile) + PR #525 (context ./web fix)
   # + PR #526 (COPY . . + .dockerignore). Workflow run 24643832079 SUCCESS (2m41s).
@@ -127,6 +128,18 @@ patches:
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "false"
+      - op: add
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/KEYCLOAK_JWKS_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_AUDIENCE
+        value: "account"
+      - op: add
+        path: /data/AUTHZ_USER_TABLE
+        value: "users"
   - target:
       kind: ConfigMap
       name: core-data-service-config
@@ -157,6 +170,20 @@ patches:
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "false"
+
+  - target:
+      kind: ConfigMap
+      name: permission-service-config
+    patch: |-
+      - op: replace
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: replace
+        path: /data/KEYCLOAK_JWKS_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: replace
+        path: /data/PERMISSION_AUTHZ_USER_TABLE
+        value: "users"
 
   # Dilim 2: scale-to-zero 5 backend (D17)
   - target:
@@ -235,6 +262,12 @@ patches:
       name: api-gateway-config
     patch: |-
       - op: replace
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: replace
+        path: /data/KEYCLOAK_JWKS_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: "DEBUG"
 
@@ -251,17 +284,17 @@ patches:
         value: testai.acik.com
 
   # Host bridge test portları (D20)
-  # Host bridge endpoints — compose container'lar platform-test-net Docker
-  # network'üne ek bağlı (docker network connect). IP'ler docker-compose up
-  # ile sabit kalır; rebuild sonrası yeniden connect gerekebilir.
-  # TODO: compose dosyasına networks: [platform-test-net] kalıcı ekle.
+  # 2026-04-22 live truth: k3d-test node + test compose stateful container'lar
+  # aynı `platform-test-net` Docker ağına bağlı. Bu yüzden host-service
+  # endpoint'leri published host port yerine container bridge IP + native port
+  # üzerinden çözülür. Controlled recreate sonrası bu IP'ler doğrulanmalıdır.
   - target:
       kind: Endpoints
       name: postgres
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.19.0.4"
+        value: "172.19.0.6"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 5432
@@ -274,14 +307,14 @@ patches:
         value: "172.19.0.5"
       - op: replace
         path: /subsets/0/ports/0/port
-        value: 8080        # container port (host 8081 mapping yok platform-test-net için)
+        value: 8080
   - target:
       kind: Endpoints
       name: vault
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "172.19.0.6"        # Faz 3 ESO: vault docker network connect sonrası
+        value: "172.19.0.4"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8200

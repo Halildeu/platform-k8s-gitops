@@ -100,12 +100,12 @@ kubectl --context $CTX -n $NS exec smoke-nc -- wget -qO- \
 ```bash
 # Token YOK — deny beklenir
 kubectl --context $CTX -n $NS exec smoke-nc -- wget -qO- \
-  "http://api-gateway:8080/variants" 2>&1
+  "http://api-gateway:8080/variants?gridId=1204" 2>&1
 # Beklenen: 401 JSON "JWT zorunlu"
 
 kubectl --context $CTX -n $NS exec smoke-nc -- wget -qO- \
-  "http://api-gateway:8080/auth/login" -X POST --header "Content-Type: application/json" 2>&1
-# Beklenen: 401 JSON (login endpoint JWT gerektirir veya 400 malformed)
+  "http://api-gateway:8080/api/v1/authz/me" 2>&1
+# Beklenen: 401 JSON
 ```
 
 ---
@@ -118,10 +118,11 @@ kubectl --context $CTX -n $NS exec smoke-nc -- wget -qO- \
 HOST=testai.acik.com   # veya ai.acik.com (Faz G same-host cutover sonrasi)
 
 # Deny (unauthenticated)
-curl -sk -o /dev/null -w "%{http_code}\n" "https://${HOST}/variants"
+curl -sk -o /dev/null -w "%{http_code}\n" \
+  "https://${HOST}/api/v1/variants?gridId=1204"
 # Beklenen: 401
 
-curl -sk -o /dev/null -w "%{http_code}\n" "https://${HOST}/auth/login"
+curl -sk -o /dev/null -w "%{http_code}\n" "https://${HOST}/api/v1/authz/me"
 # Beklenen: 401
 
 # Sentinel health
@@ -132,32 +133,53 @@ curl -sk -w "%{http_code}\n" -o /dev/null "https://${HOST}/auth/actuator/health"
 # Beklenen: 200
 ```
 
-### 4.2 Allow synthetic (smoke-client token)
+### 4.2 Allow synthetic (scoped user token)
 
 **Prereq:** S2-B3 smoke-client Keycloak confidential client merged + Vault'ta secret + blackbox-exporter bearer_token_file mount aktif.
 
+**Kritik not (2026-04-21 live truth):**
+- `variant-service` allow yolu sadece permission set ile açılmıyor; numeric `PROJECT.ref_id` scope da istiyor.
+- Canonical test canary `gridId=1204`.
+- `test-grid` gibi non-numeric veya scope'suz değerler deny (`403`) için uygundur, allow kanıtı için uygun DEĞİLDİR.
+- Düz `client_credentials` service-account tokenı `/variants` için canonical değil; variant-service `userId` + `email` + scope bağlamı beklediği için scoped **user token** kullanılmalı.
+
 ```bash
-# 1. Token al (client_credentials veya password grant)
+# 0. Bir kez test canary scope seed'i uygula (idempotent)
+bash bootstrap/seed-test-variant-canary-scope.sh
+
+HOST=testai.acik.com
+REALM=platform-test
+CANARY_GRID_ID=1204
+
+# 1. Token al (smoke-client confidential client + scoped user password grant)
 SMOKE_CLIENT_SECRET=<vault-inject>
+SMOKE_TEST_USERNAME=testuser
+SMOKE_TEST_PASSWORD=<seeded-user-password>
 TOKEN=$(curl -sk -X POST \
-  "https://${HOST}/auth/realms/serban/protocol/openid-connect/token" \
-  -d "grant_type=client_credentials" \
+  "https://${HOST}/realms/${REALM}/protocol/openid-connect/token" \
+  -d "grant_type=password" \
   -d "client_id=smoke-client" \
   -d "client_secret=${SMOKE_CLIENT_SECRET}" \
+  -d "username=${SMOKE_TEST_USERNAME}" \
+  -d "password=${SMOKE_TEST_PASSWORD}" \
   | jq -r .access_token)
 
-# 2. Authenticated allow
+# 2. Internal authz scope görünürlüğü (opsiyonel ama yüksek sinyal)
+kubectl --context k3d-test -n platform-test exec deploy/variant-service -- \
+  sh -lc "curl -s -H 'Authorization: Bearer ${TOKEN}' http://permission-service:8090/api/v1/authz/me"
+# Beklenen: allowedScopes içinde PROJECT:1204
+
+# 3. Authenticated allow (canonical canary)
 curl -sk -o /dev/null -w "%{http_code}\n" \
   -H "Authorization: Bearer $TOKEN" \
-  "https://${HOST}/variants"
-# Beklenen: 2xx (yetkili persona)
+  "https://${HOST}/api/v1/variants?gridId=${CANARY_GRID_ID}"
+# Beklenen: 200 (boş liste de kabul)
 
-# 3. Unauthorized scope deny
-RESTRICTED_TOKEN=<restricted-persona-token>
+# 4. Out-of-scope deny
 curl -sk -o /dev/null -w "%{http_code}\n" \
-  -H "Authorization: Bearer $RESTRICTED_TOKEN" \
-  "https://${HOST}/variants"
-# Beklenen: 403 (persona yetkisiz)
+  -H "Authorization: Bearer $TOKEN" \
+  "https://${HOST}/api/v1/variants?gridId=test-grid"
+# Beklenen: 403 (scope dışı / non-canonical gridId)
 ```
 
 ### 4.3 D30 Immutable Artifact Kanıt
@@ -200,8 +222,8 @@ Her smoke session sonunda 5-alan rapor:
 - Gateway 401 deny: ✅ / ❌
 
 ### Katman 3 — Zanzibar-ready
-- External edge deny: ✅ (testai /variants 401) / ❌
-- External edge allow synthetic: ⚠ bekliyor (smoke-client) / ✅ 2xx / ❌
+- External edge deny: ✅ (testai `/api/v1/variants?gridId=1204` veya `/api/v1/authz/me` 401) / ❌
+- External edge allow synthetic: ⚠ bekliyor (scoped user + canary scope seed) / ✅ 200 / ❌
 - D30 immutable tag: ✅ (sha-<short> eşleşme) / ⚠ moving tag / ❌ drift
 
 ### Açık boşluk / next step

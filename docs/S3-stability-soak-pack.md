@@ -151,8 +151,8 @@ spec:
         - http://permission-service.platform-test.svc.cluster.local:8090/api/v1/authz/version
         - http://permission-service.platform-test.svc.cluster.local:8090/api/v1/authz/me
         # Gateway enforcement probe (deny path)
-        - http://api-gateway.platform-test.svc.cluster.local:8080/variants
-        - http://api-gateway.platform-test.svc.cluster.local:8080/auth/login
+        - http://api-gateway.platform-test.svc.cluster.local:8080/variants?gridId=1204
+        - http://api-gateway.platform-test.svc.cluster.local:8080/api/v1/authz/me
 ```
 
 **Smoke-client token** (S2-B3 handoff) secret mount + bearer_token_file ile allow tarafı.

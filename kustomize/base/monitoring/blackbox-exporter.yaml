@@ -125,7 +125,8 @@ spec:
       targetPort: http
 ---
 # Probe CR — testai external edge deny (authoritative edge ölçümü)
-# testai.acik.com → host nginx → k3d-test serverlb → gateway → backend chain
+# Not: `/variants` ve `/auth/login` artık SPA/public yüzeyler; deny kontratı API
+# zincirinde ölçülür.
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
@@ -144,8 +145,8 @@ spec:
   targets:
     staticConfig:
       static:
-        - https://testai.acik.com/variants
-        - https://testai.acik.com/auth/login
+        - https://testai.acik.com/api/v1/variants?gridId=1204
+        - https://testai.acik.com/api/v1/authz/me
       labels:
         component: testai-deny-probe
         edge: testai
@@ -194,8 +195,8 @@ spec:
   targets:
     staticConfig:
       static:
-        - https://ai.acik.com/variants
-        - https://ai.acik.com/auth/login
+        - https://ai.acik.com/api/v1/variants?gridId=1204
+        - https://ai.acik.com/api/v1/authz/me
       labels:
         component: prod-deny-probe
         edge: ai-prod
