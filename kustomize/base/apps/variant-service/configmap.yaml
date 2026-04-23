@@ -44,6 +44,12 @@ data:
   ERP_OPENFGA_ENABLED: "true"
   ERP_OPENFGA_API_URL: "http://openfga:8080"
 
+  # Source repo k8s profile fallback'i `serban`; overlay'ler issuer'ı token
+  # `iss` claim'i ile aynı edge hostname'e çevirir. JWK cluster içi Keycloak'tan okunur.
+  KEYCLOAK_ISSUER_URI: "http://keycloak:8080/realms/serban"
+  KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+  SECURITY_JWT_AUDIENCE: "variant-service"
+
   # Tracing (Tempo için; base'de kapalı, monitoring kurulunca aç)
   MANAGEMENT_TRACING_ENABLED: "false"
   MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.1"

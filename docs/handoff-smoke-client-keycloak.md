@@ -3,7 +3,7 @@
 > **Source:** K8s-6 Seviye 1 acceptance (2026-04-19, Codex thread `019d9a75` S1-E6 tamamlanma review)
 > **Target:** platform-ssot (Keycloak realm config + seed) veya ops ekibi
 > **Priority:** P1 — S2 ilk blocker (D29 Zanzibar-ready full acceptance için **allow synthetic** kanıtı)
-> **Codex S1-E6 uzlaşısı:** "Authenticated allow synthetic hâlâ eksik, S2'nin ilk işi olmalı — shortname refactor DEĞİL"
+> **Live truth addendum (2026-04-21):** Confidential client tek başına yetmiyor; `/variants` allow zinciri ayrıca numeric `PROJECT.ref_id` scope seed istiyor.
 
 ---
 
@@ -15,7 +15,7 @@ K8s-6 Seviye 1 deploy PASS:
 - Intra-cluster gateway deny enforce: `/variants`, `/auth/login` (no token) → **401 JSON** ✅
 - Authoritative edge (intranet host, testai A kaydı) deny enforce ✅
 
-**Açık kapı:** D29 tam Zanzibar-ready kabul için **synthetic allow kanıtı** gerek — yani **authenticated user** ile `/variants` 2xx, unauthorized scope ile 403.
+**Açık kapı:** D29 tam Zanzibar-ready kabul için **synthetic allow kanıtı** gerek — yani **scoped authenticated user** ile `/api/v1/variants?gridId=<numeric-project-ref>` 2xx, scope dışı istek ile 403.
 
 ## 2. Sorun
 
@@ -27,7 +27,14 @@ curl -X POST "http://keycloak:8080/realms/serban/protocol/openid-connect/token" 
 → HTTP 401
 ```
 
-Zanzibar-25'te de benzer engelle karşılaşıldı (kişi not edilmişti). Çözüm: **confidential client** yaratılmalı.
+Zanzibar-25'te de benzer engelle karşılaşıldı (kişi not edilmişti). Çözüm ilk halkada **confidential client** yaratmak.
+
+Ancak 2026-04-21 canlı incelemesi ikinci halkayı netleştirdi:
+- `variant-service` düz `client_credentials` service-account tokenını canonical allow probe olarak kabul etmiyor; `userId` + `email` + scope bağlamı bekliyor.
+- `permission-service` izin döndürse bile `allowedScopes=[]` iken `VariantService.enforceGridScope()` doğrudan `403 Scope izni yok` veriyor.
+- Scope modeli string değil numeric: `PROJECT.ref_id` `bigint`.
+
+Bu yüzden gerçek allow kanıtı için **confidential client + scoped user token + numeric project scope seed** birlikte gerekir.
 
 ## 3. İstenen İş
 
@@ -52,25 +59,59 @@ Keycloak realm `serban` JSON export'ta bu client seed olarak dahil olmalı. Loka
 **K8s-6 ConfigMap/Secret:** `smoke-client-secrets` (ESO inject — S2-B1 W1 ESO work ile birleşir)
 **Smoke script env:** `SMOKE_CLIENT_ID=smoke-client`, `SMOKE_CLIENT_SECRET=<vault-inject>`
 
-### 3.4 Test Usage (K8s-6 Seviye 1 acceptance için)
+### 3.4 Canary Scope Seed (YENİ ZORUNLU BAĞLAM)
+
+`/variants` allow zinciri için test permission DB'de numeric project scope seed gerekir.
+
+**Canonical test canary (canlı kanıt):**
+- Scope type: `PROJECT`
+- Scope ref: `1204`
+- User: `testuser@testai.acik.com` (`user_id=2`)
+- Permission: `VARIANTS_READ`
+
+**İdempotent seed (test):**
 
 ```bash
-# Token al (client_credentials flow veya password grant)
+bash bootstrap/seed-test-variant-canary-scope.sh
+```
+
+Bu helper şunu üretir:
+- `permission_db.public.scopes(scope_type='PROJECT', ref_id=1204)`
+- `permission_db.public.user_permission_scope(user_id=2, permission_code='VARIANTS_READ', scope_id=<1204>)`
+
+**Not:** Bu şu an live-manual canary seed. Kalıcı çözüm ya source repo seed/migration tarafında ya da formal bootstrap runbook'ta taşınmalı.
+
+### 3.5 Test Usage (K8s-6 acceptance için)
+
+```bash
+# Token al (canonical: scoped user password grant)
+HOST=testai.acik.com
+REALM=platform-test
+CANARY_GRID_ID=1204
+SMOKE_TEST_USERNAME=testuser
+SMOKE_TEST_PASSWORD=<seeded-user-password>
+
 TOKEN=$(curl -sk -X POST \
-  "https://testai.acik.com/auth/realms/serban/protocol/openid-connect/token" \
-  -d "grant_type=client_credentials" \
+  "https://${HOST}/realms/${REALM}/protocol/openid-connect/token" \
+  -d "grant_type=password" \
   -d "client_id=smoke-client" \
   -d "client_secret=$SMOKE_CLIENT_SECRET" \
+  -d "username=${SMOKE_TEST_USERNAME}" \
+  -d "password=${SMOKE_TEST_PASSWORD}" \
   | jq -r .access_token)
 
-# Authenticated allow synthetic
-curl -sk -H "Authorization: Bearer $TOKEN" "https://testai.acik.com/variants"
-# beklenen: 2xx (yetkili varsa)
+# Authenticated allow synthetic (canonical canary)
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "https://${HOST}/api/v1/variants?gridId=${CANARY_GRID_ID}"
+# beklenen: 200 (boş liste kabul)
 
-# Unauthorized scope deny
-curl -sk -H "Authorization: Bearer <restricted-persona-token>" "https://testai.acik.com/variants"
+# Scope dışı deny
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "https://${HOST}/api/v1/variants?gridId=test-grid"
 # beklenen: 403
 ```
+
+**Önemli:** Düz `client_credentials` tokenı yalnız hub-level probe için uygun olabilir; `/variants` allow kanıtı için canonical değildir.
 
 ## 4. Kabul Kriteri
 
@@ -79,7 +120,8 @@ curl -sk -H "Authorization: Bearer <restricted-persona-token>" "https://testai.a
 - [ ] Realm export JSON'a eklenmiş
 - [ ] Lokal dev'de `docker-compose up` sonrası KC'de görünür
 - [ ] Staging'de seed script ile gelir
-- [ ] K8s-6 smoke tuple B katmanı `curl -H "Authorization: Bearer <token>" /variants` 2xx + 403 kanıt
+- [ ] Test canary scope seed repo/runbook tarafında tanımlı (`PROJECT 1204` + `VARIANTS_READ` mapping)
+- [ ] K8s-6 smoke tuple B katmanı `curl -H "Authorization: Bearer <token>" "/api/v1/variants?gridId=1204"` → 200 ve `gridId=test-grid` → 403 kanıt
 
 ## 5. Zanzibar-25 ile Birleşim
 
@@ -101,12 +143,14 @@ Priority: P1 (Zanzibar-ready full acceptance blocker)
 Detay: platform-k8s-gitops/docs/handoff-smoke-client-keycloak.md
 
 Özet: admin-cli direct_access_grants=false. Synthetic allow+deny smoke için
-confidential client gerek. Keycloak realm serban içinde smoke-client (veya
-canary-load birleşik) confidential + direct_access_grants + service_accounts.
-Secret Vault'ta kv/platform/keycloak/smoke-client. Lokal realm export'a seed.
+confidential client gerek ama tek başına yetmiyor. Keycloak realm serban /
+platform-test içinde smoke-client (veya canary-load birleşik) confidential +
+direct_access_grants + service_accounts. Secret Vault'ta kv/platform/keycloak/smoke-client.
+Lokal realm export'a seed. Ayrıca test permission_db içinde numeric PROJECT canary
+scope seed'i (1204) ve scoped user persona gerekir.
 
-Kabul: curl -d grant_type=client_credentials + client_id + client_secret →
-access_token → /variants (authenticated) 2xx, /variants (unauthorized) 403.
+Kabul: password grant ile scoped user token → /api/v1/variants?gridId=1204 200,
+/api/v1/variants?gridId=test-grid 403.
 
 Not: Zanzibar-25 canary-load dedicated client varsa aynı kullanılabilir.
 ```

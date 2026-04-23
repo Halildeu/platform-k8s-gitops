@@ -46,8 +46,8 @@ data:
   PERMISSION_AUTHZ_USER_LOOKUP_BASE_URL: "http://user-service:8089"
   PERMISSION_AUTHZ_USER_TABLE: "user_service.users"
 
-  # Keycloak JWT issuer (D18 uyarı: host nginx SNI terminates TLS; K8s DNS intra-cluster)
-  # Intra-ns shortname — host bridge Service+Endpoints ile 10.9.10.53'e resolve
+  # Source repo k8s profile fallback'i `serban`; overlay'ler issuer'ı token
+  # `iss` claim'i ile aynı edge hostname'e çevirir. JWK cluster içi Keycloak'tan okunur.
   KEYCLOAK_ISSUER_URI: "http://keycloak:8080/realms/serban"
   KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
 
