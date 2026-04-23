@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-> **Status as of**: 2026-04-24 ~01:00 UTC+3 (Session 26 — HONEST truth iki adversarial iteration ile kalibre edildi: (1) Session 25'te "Prod ESO roleId HIGH CLOSED + secret-delivery=87" iddiası stale idi — PR #57 merged ama ArgoCD sync tetiklenmemişti, canlı CSS `roleId=eso-runtime` + 8/8 ES SecretSyncedError + AppRole login `400 invalid role or secret ID`. Kullanıcı feedback'i yakalayıp Session 26'da CANLIDA düzeltildi: manual sync → CSS Ready=True/Valid + 8/8 ES SecretSynced=True + AppRole login working. ESO secret-delivery recovered (CANLI). (2) İlk Session 26 raporunda "FULL DR DRILL PASS RTO 120s" denildi; tekrar adversarial feedback: drill log'unda `KC: import best-effort failed — container not running` (KC image pull OK, container crash muhtemelen PG auth mismatch — drill PG'ye restore edilen keycloak user prod password korunur, drill KC container `drill-only-postgres` ile bağlanmaya çalışır). Drill PG+Vault PASS + KC backup present + KC restore **unresolved** = **PARTIAL**. Ek Degraded kaynak: `platform-prod` `openfga-migrate Job BackoffLimitExceeded` (9h önce fail, ayrı iş). `dr-validation` 5→**75** (PG+Vault drill PASS + KC export + KC import unresolved). Faz 13 prereq: secret-delivery=87 ✅, dr-validation=75 (85 hedefin altı; hybrid kabul veya KC drill fix PR #65 lazım).
+> **Status as of**: 2026-04-24 ~01:22 UTC+3 (Session 27 — **GERÇEK FULL DR DRILL PASS CANLIDA KANITLANDI**: 11 iterative bug fix cycle sonrası (PR #55 initial + #58/59/60 early + #65/66/67/68 KC-specific) drill iter-11 full PASS — PG restore 2s + Vault init/restore 16s + **KC up 20s + imported 30s** + 2x smoke (PG+Vault+**KC OIDC discovery 200**) + 60s sleep = **RTO 132s** (%0.92 of 14400s budget). Session 26 adversarial feedback cycle tam kapandı: ESO canlı recovered + openfga-migrate Job Complete + platform-prod Healthy + full drill with KC import. Faz 13 prereq CANLIDA TEYİT: secret-delivery=87 ✅ + dr-validation=75→**85** ✅.
 > **Verified by**: Codex + live `ssh staging-sw`
 > **Source set**: Live `kubectl`, `curl`, `docker`, `ssh staging-sw` outputs + repo HEAD
 > **Supersedes**: `docs/session-handoff-2026-04-20-k8s-migration-faz-b-c.md` bölümlerindeki `%99.5`, `DONE + LIVE (Faz H)`, `soft cutover` ifadeleri
@@ -8,7 +8,92 @@
 
 ---
 
-## Live Delta — Session 26 (2026-04-24 ~00:55 UTC+3) — HONEST CORRECTION
+## Live Delta — Session 27 (2026-04-24 ~01:22 UTC+3) — FULL DR DRILL PASS CANLI
+
+### Zafer: Gerçek Full DR Drill (iter-11, 11 bug fix sonrası)
+
+Drill log (`/tmp/dr-drill-20260424-011903.log`) kanıtı:
+```
+[dr-drill OK] 01:19:08 PG: restored + keycloak_user/DB unified (2s)
+[dr-drill OK] 01:19:24 VAULT: restored (4s)   (init+unseal 12s + restore 4s = 16s)
+[dr-drill OK] 01:19:44 KC: up
+[dr-drill OK] 01:20:14 KC: imported (30s)                              ← Session 27'de İLK KEZ!
+[dr-drill OK] 01:20:15 SMOKE[1] PG: DB listesi görünüyor
+[dr-drill OK] 01:20:15 SMOKE[1] Vault: Initialized=true (Sealed=true)
+[dr-drill OK] 01:20:15 SMOKE[1] KC: OIDC discovery 200                 ← Session 27'de İLK KEZ!
+[dr-drill OK] 01:20:15 SMOKE[1]: PASS
+[dr-drill]    01:20:15 SMOKE: 60s sleep before independent re-run
+[dr-drill OK] 01:21:15 SMOKE[2] KC: OIDC discovery 200
+[dr-drill OK] 01:21:15 SMOKE[2]: PASS
+[dr-drill OK] 01:21:15 RTO: PASS (132s / 14400s budget)
+[dr-drill OK] === DR DRILL PASS === (exit 0)
+```
+
+### Bug Tree: 11 İterasyon Canlı Kanıtlı Sıralı Fix
+
+| Iter | Timestamp | Bug | Fix PR | Kanıt |
+|---:|---|---|---|---|
+| 1 | 00:19:43 | Safety glob `platform-stateful*` false match | #58 | Default DRILL_ROOT abort |
+| 2 | 00:20:01 | `((i++))` set -e infaz (i=0 exit 1) | #58 | PG ready-check öncesi exit |
+| 3 | 00:20:02 | `docker run >/dev/null` stderr gizleme | #58 | Manuel stderr: network not found |
+| 4 | 00:22:30 | Vault container UID 100 `/vault/data` permission | #59 | Manuel log: bolt file permission denied |
+| 5 | 00:26:00 | Vault smoke sealed post-restore FAIL | #60 | SMOKE[1] Vault: status FAIL exit 2 |
+| 6 | 00:53:48 | KC container crash (hipotez PG şifre) | #65 (yanlış user) | `container not running` post `KC: up` |
+| 7 | 01:06:00 | SIGPIPE bg shell (exit 141) | Ortam fix (setsid+disown) | SELECT sonrası hemen teardown |
+| 8 | 01:07:59 | `ALTER ROLE keycloak` user yok | #66 keycloak_user | "kullanıcı yoksa normal" |
+| 9 | 01:12:18 | KC Liquibase checksum mismatch 25↔26.5 | #67 | Container logs `jpa-changelog-2.5.0.xml` hash fark |
+| 10 | 01:15:46 | `restore_kc t1` unbound variable (set -u) | #68 | Line 368 unbound variable crash |
+| **11** | **01:19:03** | **Tüm fix'ler birleşik — GERÇEK FULL PASS** | — | KC imported 30s + 2x KC OIDC 200 + RTO 132s + exit 0 |
+
+### Session 26 Kazanımları (bu Session 27'ye önkoşul)
+
+1. **ESO secret-delivery recovered** (Session 25 stale → Session 26 canlı fix):
+   - ArgoCD platform-eso-prod manual sync → roleId UUID canlıya
+   - CSS `Ready=True/Valid "store validated"` ✅
+   - 8/8 ES `SecretSynced=True` ✅
+   - AppRole login 400 error kapandı
+2. **openfga-migrate Job Complete** (platform-prod Degraded kaynağı kapandı):
+   - Delete + ArgoCD sync → new Job `Complete 1/1 5s`
+   - Pod logs: `migration done current version: 6`
+   - platform-prod: `OutOfSync/Degraded` → `OutOfSync/**Healthy**` ✅
+3. **KC export cron full upgrade** (PR #62/63):
+   - `kcadm.sh get realms/<realm>` (PARTIAL) → `partial-export` POST + users API + jq merge
+   - Canlı: realm=serban, users=11, clients=11, roles=5
+
+### 5-Sayaç Session 27 (CANLI TEYİT, honest)
+
+- `test-k8s`: 86 (değişim yok)
+- `prod-stateful-split`: 76 (KC healthy, S25 doğruydu)
+- `prod-workload-gitops`: 72 → **75** (ESO canlı parite + openfga Complete + platform-prod Healthy; ArgoCD cosmetic OutOfSync kaldı)
+- `secret-delivery`: **87 CANLI** (S26 honest, S27'de değişim yok)
+- `dr-validation`: 75 → **85** (gerçek full KC import drill PASS, 2x KC OIDC smoke, RTO 132s)
+
+### Weighted operational continuity: **~%88** (Session 26 sonrası +5 net: full KC drill +10, platform-prod Healthy +2, ESO hâlâ kozmetik OutOfSync -7 cap)
+
+### Faz 13 Atomic Cutover Prereq Check — CANLI KANITLI
+
+| Gate | Hedef | Canlı | Durum |
+|---|---|---|---|
+| `secret-delivery` | ≥80 | 87 | ✅ CANLI (CSS Ready + 8 ES Sync) |
+| `dr-validation` | ≥85 | 85 | ✅ CANLI (full drill + KC OIDC smoke) |
+
+**Faz 13 GO — atomic cutover için sözleşme koşulları CANLI KANITLI.**
+
+### Kalan Cleanup (Faz 13 öncesi opsiyonel, non-blocking)
+
+1. ArgoCD platform-prod + platform-eso-prod OutOfSync cosmetic (v1beta1 stored serialization + ConfigMap health=null aggregation) — Faz 13 cluster rebuild ile doğal temizlenir
+2. Drill quarterly cron scheduling (PLAN.md D23)
+3. Prod non-superAdmin scoped allow seed kontratı (variants 1204=200)
+4. ArgoCD stuck OutOfSync cosmetic diff için `RespectIgnoreDifferences=true` syncOption
+
+### Session 25 Stale Öğrenilen Dersi (Session 26'dan korunuyor)
+
+- **PR merged ≠ ArgoCD synced ≠ canlı apply** (D30 HARD RULE manual sync)
+- Her iddia canlı log + `kubectl get` + smoke **tek-tek** doğrulanmadan rapora girmez
+- Bug fix cycle: iterative, adversarial feedback olmadan stale kalma riski yüksek
+- "Drill PASS banner" script-level sinyal; her subsystem kanıtı ayrıca doğrulanmalı (PG/Vault/KC OIDC 200)
+
+## Live Delta — Session 26 (2026-04-24 ~01:00 UTC+3) — HONEST CORRECTION
 
 ### Session 25 Stale İddia Düzeltmesi (Mea Culpa)
 
@@ -300,9 +385,9 @@ Codex önerisi: `0=yok`, `25=doküman`, `50=partial live`, `75=kanıtlı ama cut
 | **prod-stateful-split** | **76** | Session 25: `platform-kc-prod` compose recreate sonrası `Health.Status=healthy` (PR #57 dual-network + healthcheck `localhost→127.0.0.1` + printf); Known Drift "platform-kc-prod unhealthy" kapandı. Prod compose/discovery yüzeyi stabil | `docker inspect platform-kc-prod --format '{{.State.Status}} {{.State.Health.Status}}'` → `running healthy`; `docker inspect platform-kc-prod --format '{{range \$k,\$v:=.NetworkSettings.Networks}}{{\$k}} {{end}}'` → `platform-prod-net platform_microservice-network`; healthcheck exit log son 3 `[0] [0] [0]` | 2026-04-24 | Ops | Prod scoped allow seed kontratı + DR full drill (KC dahil) |
 | **prod-workload-gitops** | **73** | Session 26: ArgoCD platform-eso-prod manual sync tetiklendi → roleId UUID canlıya + CSS Ready=True + 8 ES SecretSynced=True (ESO canlı parite ✅). Fakat platform-prod hâlâ `OutOfSync/Degraded`: kaynak artık ESO değil, `openfga-migrate` Job `BackoffLimitExceeded` (9h önce fail, 0/1 completions). ExternalSecret'ler `Healthy` + `OutOfSync` (cosmetic, v1beta1 stored serialization kalıntı). İlk Session 26 iddia "78" da ılımlı stale; honest "73" | `kubectl get clustersecretstore vault-platform-gitops -o jsonpath='{.status.conditions[0].status}'` → `True`; 8 ES `True`; `kubectl -n argocd get application platform-prod -o jsonpath='{.status.resources}'` → `openfga-migrate Job Degraded BackoffLimitExceeded` kaynak | 2026-04-24 | Claude | `openfga-migrate` Job fix (ayrı PR) + ArgoCD cosmetic (Faz 13 rebuild) |
 | **secret-delivery** | **87** | Session 26 CANLIDA TEYİT: Session 25 iddia stale idi (manifest merged ≠ canlı apply). Session 26'da manual sync tetiklendi: roleId UUID (`0db7ba83-b485-4afb-da7d-e1041b1f8a56`) canlıya geçti, CSS `Ready=True/Valid "store validated"`, 8/8 ES `SecretSynced=True` (auth/core-data/ghcr-pull/permission/report/schema/user/variant). AppRole login 400 error kapandı | CANLIDA KANIT: `ssh staging-sw 'docker exec k3d-prod-server-0 kubectl get clustersecretstore vault-platform-gitops -o jsonpath=\"{.spec.provider.vault.auth.appRole.roleId} | {.status.conditions[0].status}\"'` → `0db7ba83-b485-4afb-da7d-e1041b1f8a56 \| True`; 8 ES force-sync annotation sonrası `READY=True` (tümü) | 2026-04-24 | Claude | Faz 13 atomic cutover için gate ≥80 ✅ CANLI KANITLI |
-| **dr-validation** | **75** | Session 26: PG+Vault drill PASS (iter-6, 2026-04-24 00:52-00:54 UTC+3) RTO 120s, PG 4s + Vault 13s + KC boot 38s + 2x smoke + 60s sleep. KC backup present (serban-20260424.json.gz users=11 clients=11 roles=5). **KC import FAIL**: container crash (muhtemelen PG auth mismatch — restore sonrası keycloak user prod password korunuyor, drill KC container `drill-only-postgres` ile bağlanıyor → JDBC auth fail → container exit). Drill SKIP_KC=1 best-effort fallback ile PG+Vault smoke'ları ile PASS banner. KC restore zinciri kanıtlanmadı. İlk Session 26 iddia "85 full drill PASS" stale; honest "75" | `cat /tmp/dr-drill-20260424-005249.log` → `KC: up` sonrası `Error response from daemon: container ee838c5c... is not running` + `KC: import best-effort failed — drill MARK=PARTIAL, PG+Vault still valid` + SMOKE'lar sadece PG+Vault için PASS | 2026-04-24 | Claude | PR #65: `restore_pg` sonrası `ALTER ROLE keycloak WITH PASSWORD 'drill-only-postgres'` ekle → drill rerun → gerçek KC import + smoke PASS → dr-validation 75→85 |
+| **dr-validation** | **85** | Session 27: **Gerçek full DR drill PASS** (iter-11, 2026-04-24 01:19:03-01:21:15 UTC+3). 11 iterative bug fix cycle: #58 (safety+set-e+stderr) + #59 (permission) + #60 (sealed smoke) + #65 (wrong user adı) + #66 (keycloak_user correct) + #67 (KC 26.5.5 image match) + #68 (t1 unbound). Final akış: PG restore 2s + Vault 16s + KC up 20s + **KC imported 30s** + SMOKE[1] (PG+Vault+KC OIDC 200) + 60s sleep + SMOKE[2] (PG+Vault+KC OIDC 200) + RTO 132s + exit 0. `dr-validation=85` gerçek full drill + 2x KC OIDC smoke kanıtlı | `cat /tmp/dr-drill-20260424-011903.log` → `KC: imported (30s)`, `SMOKE[1] KC: OIDC discovery 200`, `SMOKE[2] KC: OIDC discovery 200`, `RTO: PASS (132s / 14400s budget)`, `=== DR DRILL PASS ===` exit 0 | 2026-04-24 | Claude | Faz 13 prereq ≥85 ✅ CANLI; drill cron scheduling (PLAN.md D23 quarterly) sonraki opsiyonel iş |
 
-**Weighted operational continuity**: `~%83` (Session 26 HONEST truth iki adversarial iteration sonrası kalibre: Session 25 %86 iddia stale + Session 26 ilk %89 iddia stale. Dürüst durum %83 — ESO recovered (canlı) + KC compose healthy + PG/Vault drill PASS; KC drill import unresolved + openfga-migrate Job Degraded + ArgoCD cosmetic. Faz 13 prereq: secret-delivery=87 ≥80 ✅ CANLI; dr-validation=75 (85 hedefin altı — PR #65 KC drill password-unify fix + rerun lazım veya hybrid kabul). Kalan teknik borç: (1) KC drill import crash PR #65, (2) openfga-migrate Job BackoffLimitExceeded, (3) ArgoCD platform-prod cosmetic OutOfSync, (4) prod non-superAdmin scoped allow seed.)
+**Weighted operational continuity**: `~%88` (Session 27: 11 iterative drill bug fix cycle sonrası gerçek full DR drill PASS CANLI KANITLI; openfga-migrate Complete + platform-prod Healthy + ESO canlı parite. Dürüst durum %88 — CSS Ready + 8 ES Sync + full DR drill with KC OIDC 200 + runtime cosmetic OutOfSync kalıntı (Faz 13 rebuild ile temizlenir). Faz 13 prereq CANLIDA TEYİT: secret-delivery=87 ≥80 ✅ + dr-validation=85 ≥85 ✅ → **Faz 13 GO**. Kalan opsiyonel cleanup: (1) ArgoCD cosmetic OutOfSync, (2) drill quarterly cron, (3) prod scoped allow seed, (4) RespectIgnoreDifferences syncOption.)
 
 ---
 
