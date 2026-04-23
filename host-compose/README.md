@@ -44,10 +44,16 @@ host-compose/
 
 ### 1. Host prerequisite
 ```bash
-# Bind-mount dizinleri + sahiplik (UID 999 postgres, UID 1000 keycloak/vault)
+# Bind-mount dizinleri + sahiplik
+# - postgres: UID 999
+# - keycloak: UID 1000, GID 0 ve writable `data/tmp` gerekir; aksi halde
+#   `/resources/*` asset'leri 500 döner
+# - vault: mevcut image/user kontratına göre 1000:1000
 sudo mkdir -p /srv/platform/stateful/{prod,test}/{postgres,keycloak,vault/data,vault/logs}
 sudo chown -R 999:999 /srv/platform/stateful/{prod,test}/postgres
-sudo chown -R 1000:1000 /srv/platform/stateful/{prod,test}/{keycloak,vault}
+sudo chown -R 1000:0 /srv/platform/stateful/{prod,test}/keycloak
+sudo install -d -o 1000 -g 0 -m 0775 /srv/platform/stateful/prod/keycloak/tmp /srv/platform/stateful/test/keycloak/tmp
+sudo chown -R 1000:1000 /srv/platform/stateful/{prod,test}/vault
 
 # Docker network (pre-create, external)
 docker network create platform-prod-net 2>/dev/null || echo "prod-net exists"

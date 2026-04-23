@@ -15,7 +15,8 @@ services:
     profiles: ["manual"]
     restart: "no"
     ports:
-      - "127.0.0.1:5433:5432"   # Localhost-only bind; k3d-test pod'lar platform-test-net DNS ile
+      - "127.0.0.1:5433:5432"   # Host-local admin/drill erişimi
+      - "10.9.10.53:5433:5432"  # k3d-test pod'lar için host-bridge erişimi
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/pg_password

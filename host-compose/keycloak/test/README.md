@@ -11,7 +11,8 @@
 
 ```bash
 sudo mkdir -p /srv/platform/stateful/test/keycloak
-sudo chown -R 1000:1000 /srv/platform/stateful/test/keycloak
+sudo chown -R 1000:0 /srv/platform/stateful/test/keycloak
+sudo install -d -o 1000 -g 0 -m 0775 /srv/platform/stateful/test/keycloak/tmp
 
 mkdir -p secrets
 echo "<KC_DB_TEST_PASSWORD>" > secrets/kc_db_password.txt
@@ -21,6 +22,8 @@ chmod 600 secrets/*.txt
 # Prereq: platform-pg-test + platform-test-net hazır
 docker compose --profile manual up -d
 ```
+
+**Kritik not:** Keycloak container `uid=1000 gid=0` ile çalışır. Bind-mount dizini buna writable değilse `data/tmp` oluşturulamaz ve `/resources/*` login asset zinciri `500 application/json` döner.
 
 ## Smoke
 
