@@ -31,8 +31,8 @@
 
 #### Faz 10 — Dürüstlük Recovery (D0-D1, 21-22 Nis)
 - S10-T1: `docs/state/current-state.md` canonical (3h) ✅ **BU OTURUMDA YAPILDI**
-- S10-T2: Handoff 1207 satır → 4 parça split (4h) — PENDING
-- S10-T3: `drift-ledger.md` + söylem revizyonu (4h) — PENDING (current-state'e dahil edildi)
+- S10-T2: Handoff 1207 satır → 4 parça split (4h) — ~~PENDING~~ ✅ **2026-04-24 PR #53 CLOSED** (1290 satır → 10 session-logs s01..s10 + 55 satır index)
+- S10-T3: `drift-ledger.md` + söylem revizyonu (4h) — ~~PENDING~~ ✅ **current-state.md §Live Delta + §Yasak Terimler ile dahil edildi (Session 10-27 truth evolution)**
 
 #### Faz 11 — Secret Delivery Truth-Finding (D2-D4, 23-25 Nis)
 - S11-T1: Packet-level hakikat çıkarımı — tcpdump + conntrack + iptables counter (1g)
