@@ -76,10 +76,15 @@ for env in prod test; do
   fi
 
   # 2. partial-export (realm + clients + groups + roles)
-  realm_json=$(docker exec "${container}" /opt/keycloak/bin/kcadm.sh get \
+  # NOT: Keycloak API `partial-export` POST endpoint'idir; `kcadm.sh get` →
+  # "Resource not found" döner. `kcadm.sh create` POST yapar; RealmRepresentation
+  # response'u `-o` flag ile stdout'a geçer. `-s dummy=1` boş body için dummy
+  # field (server ignore eder — realm spec'e işlemez).
+  realm_json=$(docker exec "${container}" /opt/keycloak/bin/kcadm.sh create \
     "realms/${realm}/partial-export" \
     --query exportGroupsAndRoles=true \
-    --query exportClients=true 2>/dev/null) || {
+    --query exportClients=true \
+    -o -s dummy=1 2>/dev/null) || {
       err "partial-export FAIL ${env}:${realm}"
       continue
     }
