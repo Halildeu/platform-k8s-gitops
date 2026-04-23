@@ -30,6 +30,8 @@ spec:
     syncOptions:
       - CreateNamespace=false
       - ServerSideApply=true
+      # 2026-04-24 Session 28: RespectIgnoreDifferences (bkz. platform-prod.yaml açıklaması)
+      - RespectIgnoreDifferences=true
   # 2026-04-23 PR #54 (post PR #52 v1beta1→v1 migration):
   # ServerSideApply v1 spec'i cluster'a dayattı ama stored managedFields +
   # annotations + status alanları v1beta1 era'dan kalma serialization ile

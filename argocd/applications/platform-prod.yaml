@@ -30,6 +30,12 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      # 2026-04-24 Session 28 — PR #54 ignoreDifferences ServerSideApply ile
+      # çakışıyordu; Argo sync sırasında managed field'lar yeniden yaratılıyor
+      # ve OutOfSync cosmetic kalıcı. RespectIgnoreDifferences bu çakışmayı
+      # çözer: ignore edilen jsonPointers sync sırasında dokunulmaz.
+      # Ref: https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/#respect-ignore-difference-configs
+      - RespectIgnoreDifferences=true
   ignoreDifferences:
     # Prod replicas (D21: sabit 2, HPA yok) — ArgoCD drift düzeltmesin
     - group: apps
