@@ -259,29 +259,33 @@ restore_pg() {
   fi
 
   # Drill KC container bağlantı şifresini unify et. Prod `pg_dumpall` restore
-  # sonrası `keycloak` user prod password'u korur (dump'ta role + password
-  # hash). Drill KC container `KC_DB_PASSWORD=drill-only-postgres` ile
-  # bağlanmaya çalıştığında JDBC auth fail → container crash (canlı iter-6
-  # kanıtı: `container ... is not running` hemen `KC: up` sonrası).
-  # Fix: drill sandbox'ta `keycloak` user password'u drill değerine hizala.
-  # Sadece drill sandbox'ta etki eder; canlı prod PG etkilenmez (teardown trap
-  # sandbox'ı siler, drill PG container'ı drill network'üne izole).
-  log "PG: sync keycloak user password for drill KC container"
+  # sonrası prod KC user (prod convention: `keycloak_user`) password hash'ini
+  # korur. Drill KC container `KC_DB_PASSWORD=drill-only-postgres` ile
+  # bağlanmaya çalıştığında JDBC auth fail → container crash.
+  # NOT: Kullanıcı adı prod'da `keycloak_user` (bkz. host-compose/keycloak/prod/
+  # docker-compose.yml `KC_DB_USERNAME: keycloak_user`). Drill iter-8 kanıtı:
+  # `ALTER ROLE keycloak` "kullanıcı yoksa normal" fail, çünkü dump'ta
+  # `CREATE ROLE keycloak_user` var (`keycloak` değil).
+  # Fix: drill sandbox'ta `keycloak_user` password'u drill değerine hizala.
+  # Sadece drill sandbox'ta etki eder; canlı prod PG etkilenmez.
+  log "PG: sync keycloak_user password for drill KC container"
   docker exec "$PG_CONTAINER" psql -U postgres -c \
-    "ALTER ROLE keycloak WITH PASSWORD 'drill-only-postgres';" >>"$DRILL_LOG" 2>&1 || \
-    log "PG: ALTER ROLE keycloak best-effort failed (kullanıcı yoksa normal)"
+    "ALTER ROLE keycloak_user WITH PASSWORD 'drill-only-postgres';" >>"$DRILL_LOG" 2>&1 || \
+    log "PG: ALTER ROLE keycloak_user best-effort failed (dump'ta yoksa normal)"
 
-  # KC drill DB yoksa oluştur (prod dump'ta keycloak DB yoksa veya sadece test
-  # realm için). Drill KC container bağlantıda "database does not exist" eder.
+  # KC `keycloak` DB zaten prod dump'ta var (pg_dumpall tüm DB'leri dahil eder);
+  # drill için ek CREATE gerekmez. Ancak edge-case: dump'ta keycloak DB eksikse
+  # boş DB oluştur ki KC container "database does not exist" almasın.
   if ! docker exec "$PG_CONTAINER" psql -U postgres -tAc \
        "SELECT 1 FROM pg_database WHERE datname='keycloak'" 2>/dev/null | grep -q 1; then
+    log "PG: keycloak DB dump'ta yok, boş oluşturuluyor (edge case)"
     docker exec "$PG_CONTAINER" psql -U postgres -c \
-      "CREATE DATABASE keycloak OWNER keycloak;" >>"$DRILL_LOG" 2>&1 || \
+      "CREATE DATABASE keycloak OWNER keycloak_user;" >>"$DRILL_LOG" 2>&1 || \
       log "PG: CREATE DATABASE keycloak best-effort failed"
   fi
 
   t1=$(date +%s)
-  ok "PG: restored + keycloak user/db unified ($((t1-t0))s)"
+  ok "PG: restored + keycloak_user/DB unified ($((t1-t0))s)"
 }
 
 # ---- VAULT RESTORE ----
@@ -338,7 +342,7 @@ start_kc() {
       -p "${KC_PORT}:8080" \
       -e KC_DB=postgres \
       -e KC_DB_URL="jdbc:postgresql://${PG_CONTAINER}:5432/keycloak" \
-      -e KC_DB_USERNAME=keycloak \
+      -e KC_DB_USERNAME=keycloak_user \
       -e KC_DB_PASSWORD=drill-only-postgres \
       -e KEYCLOAK_ADMIN=admin \
       -e KEYCLOAK_ADMIN_PASSWORD=drill-admin \
