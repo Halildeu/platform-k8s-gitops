@@ -71,13 +71,31 @@ Sonuç: Session 28 = rollback-window başlangıcı + **hybrid kontrat canonical 
 - **T+24h**: 2026-04-25 01:25 UTC+3 — 24h soak gate (error rate < %0.1)
 - **T+72h**: 2026-04-27 01:25 UTC+3 — rollback-window kapanış, hybrid prod permanent
 
-### Paralel Cleanup Post-T0 (rollback-window içinde)
+### Paralel Cleanup Post-T0 (rollback-window içinde) — TAM KAPANDI
 
-- **PR #72** RespectIgnoreDifferences syncOption — MERGED (runtime etki: kısmi, cosmetic kalıtım)
-- **PR #73** `/metadata` agresif ignoreDifferences — MERGED (kısmi, 7 ES hâlâ spec-level diff)
-- **PR #76** jqPathExpressions ESO v1 default fields — MERGED ✅ **TAM FIX** (ArgoCD 4/4 Synced/Healthy revision `52af34a`, cosmetic OutOfSync tamamen kapandı, prod-workload-gitops 75→88)
-- **PR #74** `bootstrap/dr-drill-cron.sh` + Prometheus textfile metric — MERGED (3 ayda bir full drill otomasyon, PLAN.md D23 kontrat)
-- ArgoCD Apps **OutOfSync/Healthy** cosmetic kalıcı — runtime blocker değil, rollback-window 72h boyunca soak
+| PR | İçerik | Durum | Etki |
+|---|---|---|---|
+| #72 | RespectIgnoreDifferences syncOption | MERGED | Kısmi, cosmetic kalıtım |
+| #73 | `/metadata` agresif ignoreDifferences | MERGED | Kısmi (metadata) |
+| #74 | `dr-drill-cron.sh` + Prometheus metric | MERGED + staging-sw crontab install | Quarterly drill otomasyon |
+| #76 | jqPathExpressions ESO v1 default fields | MERGED ✅ | **TAM FIX** |
+| #77 | Session 28 T+30 sayaç upgrade | MERGED | prod-workload-gitops 75→88 |
+| #78 | DR drill PrometheusRule (4 alert) | MERGED | PR #74 metric consumer |
+
+**ArgoCD 4/4 Synced/Healthy** ✅ revision `52af34a` (cosmetic OutOfSync tamamen kapandı).
+
+### Staging-sw Canlı İnstall
+
+- `crontab -l | grep dr-drill-cron` → `0 3 1 */3 * /home/halil/platform-k8s-gitops/bootstrap/dr-drill-cron.sh ...` installed ✅
+- `/var/lib/node_exporter/` dir mevcut (textfile collector) ✅
+- İlk quarterly drill 2026-07-01 03:00 UTC planlı
+
+### Kalan Açık (non-blocking, rollback-window içinde)
+
+**(a) Prod non-superAdmin scoped allow seed** — Codex yorum: T+60 PASS sonrası başlat (T+24h'a kadar bekletme).
+- KC canary-restricted user için role + OpenFGA tuple seed
+- Etki: variants(1204)=403 → 200 (scoped allow)
+- Sayaç: prod-workload-gitops 88→92 (D29 Zanzibar-ready threshold)
 
 **Rollback trigger conditions** (her gate'te):
 - 5xx error rate > %1 persistent
