@@ -9,7 +9,8 @@
 ```bash
 # 0. Host bind-mount + prereq
 sudo mkdir -p /srv/platform/stateful/prod/keycloak
-sudo chown -R 1000:1000 /srv/platform/stateful/prod/keycloak
+sudo chown -R 1000:0 /srv/platform/stateful/prod/keycloak
+sudo install -d -o 1000 -g 0 -m 0775 /srv/platform/stateful/prod/keycloak/tmp
 
 # 1. Secret dosyaları
 mkdir -p secrets
@@ -27,6 +28,8 @@ docker cp /path/to/serban-YYYYMMDD.json platform-kc-prod:/tmp/
 docker exec platform-kc-prod /opt/keycloak/bin/kc.sh import \
   --file /tmp/serban-YYYYMMDD.json
 ```
+
+**Kritik not:** Keycloak container `uid=1000 gid=0` ile çalışır. Bind-mount dizini buna writable değilse `data/tmp` oluşturulamaz ve `/resources/*` asset'leri `500` döner.
 
 ## Smoke
 
