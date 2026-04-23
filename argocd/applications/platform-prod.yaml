@@ -50,9 +50,17 @@ spec:
     - group: external-secrets.io
       kind: ExternalSecret
       jsonPointers:
-        - /metadata/annotations
-        - /metadata/managedFields
+        # 2026-04-24 Session 28: PR #72 sonrası 7/8 ES hâlâ OutOfSync
+        # (ghcr-pull Synced, 7 backend ES OutOfSync). Mevcut /metadata/annotations
+        # + /metadata/managedFields + /status yetersiz — ServerSideApply field
+        # manager drift'i başka metadata alanlarında da üretiyor.
+        # Daha agresif: tüm /metadata + /status (spec-level diff hâlâ yakalanır).
+        - /metadata
         - /status
+      # jqPathExpressions ile ekstra hassasiyet (spec'teki cosmetic array sıralama)
+      jqPathExpressions:
+        - .spec.data[]? | select(.sourceRef)   # ESO optional sourceRef kozmetik
+        - .spec.refreshInterval                # cron interval format farkı
     # Host-bridge Endpoints (D20 + PR #49): manifest 10.9.10.53:{5432,8081,8200}
     # ile cluster canlı değerleri birebir, ama subset serialization'da stored
     # v1 bin-format farkı diff üretiyor. Runtime trafik akışı korundu:
