@@ -99,7 +99,7 @@ patches:
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "10.9.10.53"
+        value: "172.21.0.4"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 5432
@@ -109,17 +109,17 @@ patches:
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "10.9.10.53"
+        value: "172.21.0.5"
       - op: replace
         path: /subsets/0/ports/0/port
-        value: 8081
+        value: 8080
   - target:
       kind: Endpoints
       name: vault
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "10.9.10.53"
+        value: "172.21.0.6"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8200
@@ -137,7 +137,7 @@ patches:
         value: 8Gi
       - op: replace
         path: /spec/hard/limits.cpu
-        value: "16"
+        value: "24"
       - op: replace
         path: /spec/hard/limits.memory
-        value: 16Gi
+        value: 24Gi
