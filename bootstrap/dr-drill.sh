@@ -83,7 +83,11 @@ assert_safety() {
     exit 2
   fi
 
-  if [[ "$DRILL_ROOT" == /home/halil/platform-stateful* ]]; then
+  # Canlı stateful path prefix guard — DİKKAT: glob `platform-stateful*` yanlış
+  # pozitif verir (örn. `platform-stateful-drill` match eder). Trailing `/` ile
+  # kesin prefix eşleşmesi + tam path eşitlik kontrolü:
+  if [[ "$DRILL_ROOT" == /home/halil/platform-stateful ]] || \
+     [[ "$DRILL_ROOT" == /home/halil/platform-stateful/* ]]; then
     err "DRILL_ROOT canlı stateful path ile çakışıyor. Abort."
     exit 2
   fi
@@ -213,17 +217,24 @@ provision_sandbox() {
 # ---- PG RESTORE ----
 start_pg() {
   log "PG: start drill postgres on port $PG_PORT"
-  docker run -d --name "$PG_CONTAINER" \
-    --network "$DRILL_NET" \
-    -p "${PG_PORT}:5432" \
-    -v "${DRILL_ROOT}/postgres:/var/lib/postgresql/data" \
-    -e POSTGRES_PASSWORD=drill-only-postgres \
-    -e PGDATA=/var/lib/postgresql/data/pgdata \
-    "$PG_IMAGE" >/dev/null
+  # stderr DRILL_LOG'a yönlendirilir ki image pull/permission/name collision
+  # gibi silent fail'ler görülsün; `>/dev/null` tek yönlü hata saklama idi
+  if ! docker run -d --name "$PG_CONTAINER" \
+      --network "$DRILL_NET" \
+      -p "${PG_PORT}:5432" \
+      -v "${DRILL_ROOT}/postgres:/var/lib/postgresql/data" \
+      -e POSTGRES_PASSWORD=drill-only-postgres \
+      -e PGDATA=/var/lib/postgresql/data/pgdata \
+      "$PG_IMAGE" >>"$DRILL_LOG" 2>&1; then
+    err "PG docker run failed (see $DRILL_LOG)"
+    exit 4
+  fi
 
+  # Pre-increment (((++i))) post-increment (((i++)))'dan farkla `set -e` ile
+  # uyumludur. `((i++))` eski değeri 0 olduğunda exit 1 döner → set -e trigger.
   local i=0
   until docker exec "$PG_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; do
-    ((i++))
+    ((++i))
     if [[ $i -gt 30 ]]; then err "PG boot timeout"; exit 4; fi
     sleep 2
   done
@@ -245,13 +256,16 @@ restore_pg() {
 # ---- VAULT RESTORE ----
 start_vault() {
   log "VAULT: start drill vault on port $VAULT_PORT"
-  docker run -d --name "$VAULT_CONTAINER" \
-    --network "$DRILL_NET" \
-    -p "${VAULT_PORT}:8200" \
-    --cap-add IPC_LOCK \
-    -v "${DRILL_ROOT}/vault:/vault/data" \
-    -e VAULT_LOCAL_CONFIG='{"storage":{"raft":{"path":"/vault/data","node_id":"drill"}},"listener":{"tcp":{"address":"0.0.0.0:8200","tls_disable":1}},"disable_mlock":true,"ui":false,"cluster_addr":"http://127.0.0.1:8201","api_addr":"http://127.0.0.1:8200"}' \
-    "$VAULT_IMAGE" server >/dev/null
+  if ! docker run -d --name "$VAULT_CONTAINER" \
+      --network "$DRILL_NET" \
+      -p "${VAULT_PORT}:8200" \
+      --cap-add IPC_LOCK \
+      -v "${DRILL_ROOT}/vault:/vault/data" \
+      -e VAULT_LOCAL_CONFIG='{"storage":{"raft":{"path":"/vault/data","node_id":"drill"}},"listener":{"tcp":{"address":"0.0.0.0:8200","tls_disable":1}},"disable_mlock":true,"ui":false,"cluster_addr":"http://127.0.0.1:8201","api_addr":"http://127.0.0.1:8200"}' \
+      "$VAULT_IMAGE" server >>"$DRILL_LOG" 2>&1; then
+    err "Vault docker run failed (see $DRILL_LOG)"
+    exit 4
+  fi
 
   sleep 3
   # Init (capture root token)
@@ -288,16 +302,19 @@ restore_vault() {
 start_kc() {
   [[ "$SKIP_KC" == "1" ]] && { log "KC: SKIP_KC=1, atlanıyor"; return 0; }
   log "KC: start drill keycloak on port $KC_PORT"
-  docker run -d --name "$KC_CONTAINER" \
-    --network "$DRILL_NET" \
-    -p "${KC_PORT}:8080" \
-    -e KC_DB=postgres \
-    -e KC_DB_URL="jdbc:postgresql://${PG_CONTAINER}:5432/keycloak" \
-    -e KC_DB_USERNAME=keycloak \
-    -e KC_DB_PASSWORD=drill-only-postgres \
-    -e KEYCLOAK_ADMIN=admin \
-    -e KEYCLOAK_ADMIN_PASSWORD=drill-admin \
-    "$KC_IMAGE" start-dev >/dev/null
+  if ! docker run -d --name "$KC_CONTAINER" \
+      --network "$DRILL_NET" \
+      -p "${KC_PORT}:8080" \
+      -e KC_DB=postgres \
+      -e KC_DB_URL="jdbc:postgresql://${PG_CONTAINER}:5432/keycloak" \
+      -e KC_DB_USERNAME=keycloak \
+      -e KC_DB_PASSWORD=drill-only-postgres \
+      -e KEYCLOAK_ADMIN=admin \
+      -e KEYCLOAK_ADMIN_PASSWORD=drill-admin \
+      "$KC_IMAGE" start-dev >>"$DRILL_LOG" 2>&1; then
+    err "KC docker run failed (see $DRILL_LOG)"
+    exit 4
+  fi
   sleep 20
   ok "KC: up"
 }
