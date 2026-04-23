@@ -55,6 +55,30 @@ patches:
   # patches KALDIRILDI. Base zaten shortname (postgres:5432, keycloak:8080,
   # auth-service:8088, gateway routes 0-5). Prod-specific override YOK,
   # overlay sadece namespace (platform-prod) + Ingress host + Endpoints pin.
+  - target:
+      kind: ConfigMap
+      name: api-gateway-config
+    patch: |-
+      - op: replace
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://ai.acik.com/realms/serban"
+  - target:
+      kind: ConfigMap
+      name: variant-service-config
+    patch: |-
+      - op: add
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://ai.acik.com/realms/serban"
+      - op: add
+        path: /data/SECURITY_JWT_AUDIENCE
+        value: "account"
+  - target:
+      kind: ConfigMap
+      name: permission-service-config
+    patch: |-
+      - op: replace
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://ai.acik.com/realms/serban"
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:
