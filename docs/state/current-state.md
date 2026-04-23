@@ -56,13 +56,27 @@ Sonuç: Session 28 = rollback-window başlangıcı + **hybrid kontrat canonical 
 
 **"Atomic cutover"** = bu hybrid kontratın authoritative prod olarak kabul edilmesi, ilave switch yok.
 
-### 72h Rollback-Window Plan
+### 72h Rollback-Window Plan + Canlı Gate Sonuçları
 
-- **T0**: 2026-04-24 01:25 UTC+3 (yukarı kanıtlanan T0 minimum teyit)
-- **T+15**: 01:40 UTC+3 — allow+deny smoke + anonymous + service-account
-- **T+60**: 02:25 UTC+3 — auth chain + scoped deny + error rate
+- **T0**: 2026-04-24 01:25 UTC+3 ✅ (yukarı kanıtlanan T0 minimum teyit)
+- **T+15**: **02:13 UTC+3 PASS** ✅ (Fiili 48 dk geç — ScheduleWakeup + paralel cleanup):
+  - Anonymous: theme-registry=200, authz/me=401, variants=401
+  - KC OIDC discovery=200 (compose KC)
+  - K8s: 19 pod Running + 1 Completed (openfga-migrate Job)
+  - ArgoCD: 4/4 Application Healthy
+  - Compose: KC + PG + Vault healthy
+  - Son 5 dk error log: temiz (fatal/5xx yok)
+  - Rollback trigger eşiği altında → devam
+- **T+60**: 02:25 UTC+3 — auth chain + scoped deny + error rate (ScheduleWakeup 720s planlandı 23:26 UTC)
 - **T+24h**: 2026-04-25 01:25 UTC+3 — 24h soak gate (error rate < %0.1)
 - **T+72h**: 2026-04-27 01:25 UTC+3 — rollback-window kapanış, hybrid prod permanent
+
+### Paralel Cleanup Post-T0 (rollback-window içinde)
+
+- **PR #72** RespectIgnoreDifferences syncOption — MERGED (runtime etki: kısmi, cosmetic kalıtım)
+- **PR #73** `/metadata` agresif ignoreDifferences — MERGED (runtime etki: kısmi, 7 ES hâlâ spec-level diff — teknik borç, Faz rebuild ile doğal temizlenir)
+- **PR #74** `bootstrap/dr-drill-cron.sh` + Prometheus textfile metric — MERGED (3 ayda bir full drill otomasyon, PLAN.md D23 kontrat)
+- ArgoCD Apps **OutOfSync/Healthy** cosmetic kalıcı — runtime blocker değil, rollback-window 72h boyunca soak
 
 **Rollback trigger conditions** (her gate'te):
 - 5xx error rate > %1 persistent
