@@ -264,7 +264,7 @@ Fail varsa rollback değerlendirmesi beklemez (bkz §11.2).
 ```bash
 # 1. Allow token al
 ALLOW_TOKEN=$(curl -sk -X POST \
-  "https://ai.acik.com/auth/realms/serban/protocol/openid-connect/token" \
+  "https://ai.acik.com/realms/serban/protocol/openid-connect/token" \
   -d "grant_type=client_credentials" \
   -d "client_id=${SMOKE_CLIENT_ID}" \
   -d "client_secret=${SMOKE_CLIENT_SECRET}" | jq -r .access_token)
@@ -350,7 +350,7 @@ curl -sk -o /dev/null -w 'root: %{http_code}\n' https://ai.acik.com/
 
 # Allow probe sustain
 ALLOW_TOKEN=$(curl -sk -X POST \
-  "https://ai.acik.com/auth/realms/serban/protocol/openid-connect/token" \
+  "https://ai.acik.com/realms/serban/protocol/openid-connect/token" \
   -d "grant_type=client_credentials" \
   -d "client_id=${SMOKE_CLIENT_ID}" \
   -d "client_secret=${SMOKE_CLIENT_SECRET}" | jq -r .access_token)
