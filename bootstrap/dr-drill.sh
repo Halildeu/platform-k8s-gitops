@@ -361,17 +361,18 @@ restore_kc() {
   t0=$(date +%s)
   zcat "$LATEST_KC" > /tmp/drill-realm.json
   docker cp /tmp/drill-realm.json "$KC_CONTAINER:/tmp/realm.json"
-  # NOT: kc-export-cron.sh şu an `kcadm.sh get realms/<realm>` kullanıyor —
-  # kc.sh import yerine kcadm.sh create benzeri alternatif gerekebilir.
-  # Şimdilik best-effort import; fail olursa drill PARTIAL işaretli devam.
+  # kc-export-cron.sh PR #62/63 full export: realm + clients + groups + roles + users.
+  # kc.sh import komutu running instance'da v26+ için çalışır (realm override=true).
+  # Best-effort import; fail olursa drill PARTIAL işaretli devam.
   if docker exec "$KC_CONTAINER" /opt/keycloak/bin/kc.sh import --file /tmp/realm.json >>"$DRILL_LOG" 2>&1; then
+    t1=$(date +%s)
     ok "KC: imported ($((t1-t0))s)"
   else
-    log "KC: import best-effort failed — drill MARK=PARTIAL, PG+Vault still valid"
+    t1=$(date +%s)
+    log "KC: import best-effort failed after $((t1-t0))s — drill MARK=PARTIAL, PG+Vault still valid"
     SKIP_KC=1
   fi
   rm -f /tmp/drill-realm.json
-  t1=$(date +%s)
 }
 
 # ---- SMOKE (idempotent, runnable twice) ----
