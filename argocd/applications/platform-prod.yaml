@@ -50,17 +50,22 @@ spec:
     - group: external-secrets.io
       kind: ExternalSecret
       jsonPointers:
-        # 2026-04-24 Session 28: PR #72 sonrası 7/8 ES hâlâ OutOfSync
-        # (ghcr-pull Synced, 7 backend ES OutOfSync). Mevcut /metadata/annotations
-        # + /metadata/managedFields + /status yetersiz — ServerSideApply field
-        # manager drift'i başka metadata alanlarında da üretiyor.
-        # Daha agresif: tüm /metadata + /status (spec-level diff hâlâ yakalanır).
+        # /metadata tümü + /status (ServerSideApply field manager cosmetic)
         - /metadata
         - /status
-      # jqPathExpressions ile ekstra hassasiyet (spec'teki cosmetic array sıralama)
+      # 2026-04-24 Session 28 T+30 (d investigate): OutOfSync gerçek sebebi
+      # ESO v1 API default field'ları (canlıda var, manifest'te yok):
+      #   spec.data[].remoteRef.conversionStrategy = "Default"
+      #   spec.data[].remoteRef.decodingStrategy = "None"
+      #   spec.data[].remoteRef.metadataPolicy = "None"
+      #   spec.data[].remoteRef.nullBytePolicy = "Ignore"
+      # Argo diff: "manifest'te yok ama canlıda var → OutOfSync"
+      # Fix: jqPathExpressions ile bu default alanları targeted ignore
       jqPathExpressions:
-        - .spec.data[]? | select(.sourceRef)   # ESO optional sourceRef kozmetik
-        - .spec.refreshInterval                # cron interval format farkı
+        - .spec.data[].remoteRef.conversionStrategy
+        - .spec.data[].remoteRef.decodingStrategy
+        - .spec.data[].remoteRef.metadataPolicy
+        - .spec.data[].remoteRef.nullBytePolicy
     # Host-bridge Endpoints (D20 + PR #49): manifest 10.9.10.53:{5432,8081,8200}
     # ile cluster canlı değerleri birebir, ama subset serialization'da stored
     # v1 bin-format farkı diff üretiyor. Runtime trafik akışı korundu:
