@@ -15,6 +15,8 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: ingress-nginx
       ports:
-        # D25: sadece gateway (8080) — diğer servisler gateway içinden K8s DNS
+        # ingress-nginx hem frontend (80) hem api-gateway (8080) upstream'lerine erişir
+        - protocol: TCP
+          port: 80       # frontend
         - protocol: TCP
           port: 8080     # api-gateway

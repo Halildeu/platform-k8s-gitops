@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-> **Status as of**: 2026-04-21 ~11:20 UTC+3 (Session 12 live truth closure refresh)
+> **Status as of**: 2026-04-22 ~09:50 UTC+3 (Session 13 authenticated allow + path drift refresh)
 > **Verified by**: Codex + live `ssh staging-sw`
 > **Source set**: Live `kubectl`, `curl`, `docker`, Prometheus API, `ssh staging-sw` outputs + repo HEAD
 > **Supersedes**: `docs/session-handoff-2026-04-20-k8s-migration-faz-b-c.md` bölümlerindeki `%99.5`, `DONE + LIVE (Faz H)`, `soft cutover` ifadeleri
@@ -14,13 +14,13 @@ Codex önerisi: `0=yok`, `25=doküman`, `50=partial live`, `75=kanıtlı ama cut
 
 | Sayaç | Değer | Claim | Last Evidence | Last Verified | Owner | Next Gate |
 |---|---:|---|---|---|---|---|
-| **test-k8s** | **85** | testai.acik.com OIDC discovery + canonical frontend render canlı; frontend `platform-ssot-frontend-testai:sha-2169841` image'ında ve public pull yolunda. Dış deny zinciri yeşil, fakat authenticated allow hâlâ kırık: `testuser` tokenı ile `/variants` `500`, gateway JWT decoder hâlâ `serban` realm JWKS'ine gidiyor | `curl https://testai.acik.com/realms/platform-test/.well-known/openid-configuration` → `200`; root HTML yalnız `testai.acik.com` + `platform-test`; no-token `/variants` ve `/auth/login` → `401`; password-grant token ile `/variants` → `500`; gateway log: `/realms/serban/protocol/openid-connect/certs` + `No suitable decoder accepted the token` | 2026-04-21 | Codex | Gateway JWT realm drift fix (`serban`→`platform-test`) + allow synthetic `2xx/403` + 24h soak |
+| **test-k8s** | **89** | testai.acik.com public edge zinciri yeniden sağlıklı: OIDC discovery + canonical frontend render canlı, public `/` `200`, login callback route `/login` `200`, no-token `/variants` `401`. Authenticated allow backend zinciri de yeşile döndü: `testuser` tokenı ile canonical gateway path `GET /variants?gridId=101` → `200`. Önceki `serban` JWKS drift'i artık repro edilemiyor. Kalan drift frontend grid-variants client yolunda: source repo `fetchGridVariants()` browser'da `/v1/variants?gridId=...` çağırıyor; canlı edge bu path'i API değil SPA HTML olarak döndürüyor | 2026-04-22: `curl https://testai.acik.com/realms/platform-test/.well-known/openid-configuration` → `200`; `curl https://testai.acik.com/` → `200`; `curl https://testai.acik.com/login` → `200`; no-token `/variants` → `401`; password-grant (`client_id=frontend`, `testuser`) token ile `curl https://testai.acik.com/variants?gridId=101` → `200 {"items":[],"total":0,...}`. Drift kanıtı: `curl https://testai.acik.com/v1/variants?gridId=101` → `200 text/html` (SPA HTML fallback) | 2026-04-22 | Codex | Frontend variants API path drift (`/v1/variants` → gateway-exposed path) kapat + 24h soak |
 | **prod-stateful-split** | **63** | `platform-pg-prod` + `platform-vault-prod` canlı; 9 backend compose Up. `platform-kc-prod` edge'den cevap veriyor ama container healthcheck `unhealthy`, bu yüzden prod stateful split tam temiz değil | `docker ps` → 9 backend Up + `platform-pg-prod` healthy + `platform-vault-prod` healthy + `platform-kc-prod` unhealthy; `curl ai.acik.com/realms/serban/.well-known/openid-configuration` → `200`; `/api/auth/actuator/health` → `401` | 2026-04-21 | Ops | `platform-kc-prod` unhealthy kök nedeni + DR drill + KC backup freshness |
 | **prod-workload-gitops** | **0** | Live host `k3d-prod` cluster'da ArgoCD, ESO ve `platform-prod` workload yüzeyi YOK; bu başlık şu an doküman/runbook seviyesinde, canlı kontrol-plane olarak doğrulanamıyor | `docker exec k3d-prod-server-0 kubectl get ns` → yalnız system/monitoring namespace'leri; `argocd`, `external-secrets`, `platform-prod` yok; `kubectl get crd | egrep 'argoproj.io|external-secrets.io'` → boş | 2026-04-21 | Ops | Live host `k3d-prod` üzerine ArgoCD + ESO bootstrap + `platform-prod` namespace/sync |
 | **secret-delivery** | **55** | Test ClusterSecretStore recovery tamam; kritik backend/OpenFGA secret'leri Sync durumda. `ghcr-pull` SecretSynced olsa da frontend public GHCR pull kullandığı için `frontend` ServiceAccount bağı kaldırıldı. Prod secret-delivery ise beklenenden daha geride: live host `k3d-prod` cluster'da ESO CRD/namespace görünmüyor | Test: `ClusterSecretStore/vault-platform-gitops` Ready=`True`; `ghcr-pull`, `core-data-service-secrets`, `permission-service-secrets`, `user-service-secrets`, `variant-service-secrets` = `SecretSynced=True`; `kubectl -n platform-test get sa frontend -o jsonpath='{.imagePullSecrets}'` → boş. Prod: `kubectl get crd | egrep 'external-secrets.io'` → boş; `kubectl get ns` → `external-secrets` yok | 2026-04-21 | Codex | Live host prod ESO bootstrap + AppRole/roleId truth + sustained reconcile |
 | **dr-validation** | **0** | Rollback drill YAPILMADI. Cold potential var ama yalnız kısmi volume/bind-mount kanıtı mevcut; `backup_freshness.prom` içinde `kc=0`, yani backup tarafı eksiksiz doğrulanmış değil | `docker volume ls \| grep platform_`; `/home/halil/platform-stateful/{prod,test}/{postgres,keycloak,vault}`; `~/node_exporter_textfile/backup_freshness.prom` → `pg>0`, `vault>0`, `kc=0`; `docs/S5-disaster-recovery-runbook.md` (runbook var, drill yok) | 2026-04-21 | Ops | Clone + boot + 2x independent smoke PASS + KC backup path |
 
-**Weighted operational continuity**: `~%68` (test frontend parity ve deny zinciri toparlandı; authenticated allow, prod GitOps/ESO ve DR hâlâ açık)
+**Weighted operational continuity**: `~%76` (test public edge, login callback ve backend authenticated allow toparlandı; frontend variants path drift, prod GitOps/ESO ve DR hâlâ açık)
 
 ---
 
@@ -29,7 +29,7 @@ Codex önerisi: `0=yok`, `25=doküman`, `50=partial live`, `75=kanıtlı ama cut
 | Hostname | Edge | Real Backend Owner | Smoke Evidence |
 |---|---|---|---|
 | `ai.acik.com` | staging-sw host nginx SSL termine → 127.0.0.1:8080/8081 | compose 9 backend + platform-kc-prod (yeni stack) + platform-pg-prod + platform-vault-prod | `curl /realms/serban/.well-known` 200 + `/api/auth/actuator/health` 401 JWT |
-| `testai.acik.com` | staging-sw host nginx → 127.0.0.1:8082 (KC) + 127.0.0.1:9080 (k3d-test ingress) | k3d-test frontend (`platform-ssot-frontend-testai:sha-2169841`) + 8 backend + `openfga` + platform-kc-test + platform-pg-test + platform-vault-test | OIDC `200`; root HTML yalnız `testai.acik.com` + `platform-test`; no-token deny `401`; authenticated `testuser` token ile `/variants` `500`; gateway log'unda `serban` realm cert fetch `404` |
+| `testai.acik.com` | staging-sw host nginx → 127.0.0.1:8082 (KC) + 127.0.0.1:31080 (k3d-test ingress) | k3d-test frontend (`platform-ssot-frontend-testai:sha-2169841`) + 8 backend + `openfga` + platform-kc-test + platform-pg-test + platform-vault-test | OIDC `200`; public root HTML `200`; public `/login` `200` (SPA fallback düzeldi); no-token `/variants` `401`; authenticated `testuser` + `gridId=101` ile `/variants` `200 {"items":[]...}`. Kalan drift: public `/v1/variants?gridId=101` API yerine SPA HTML dönüyor |
 | `argocd` | live host `k3d-prod` cluster'da yüzey doğrulanamadı | `argocd` namespace/CRD yok | `kubectl get ns` → `argocd` yok; `kubectl get crd | grep argoproj.io` → boş |
 | Monitoring | test monitoring + host backup freshness metriği | Test: 5 pod Running; host textfile: `pg`/`vault` timestamp var, `kc=0` | Prometheus query `ALERTS{severity="critical",alertstate="firing"}` → boş; `ALERTS{alertname="BackupKCStale",alertstate="firing"}` → `1`; `backup_freshness.prom` içinde `backup_last_success_timestamp_seconds{type="kc"} 0` |
 
@@ -55,7 +55,7 @@ Codex önerisi: `0=yok`, `25=doküman`, `50=partial live`, `75=kanıtlı ama cut
 | Test Vault port | 8201 (ADR §0.2) | 8301 (eski vault 8201'i tutuyor) | Ops | 2026-04-25 | LOW |
 | Vault version | ≥1.21 (eski compose) | 1.17 (yeni host-compose) | Claude | 2026-04-23 | MEDIUM — undocumented version track change |
 | k3d CLI | staging-sw'de kurulu (ADR §3.1 varsayım) | YOK, sadece Mac'te | Ops | Nice-to-have | LOW |
-| Gateway JWT realm drift | Test authn/authz zinciri `platform-test` realm ile kapanmalı | Authenticated `testuser` tokenı ile `/variants` `500`; `api-gateway` log'u hâlâ `GET /realms/serban/protocol/openid-connect/certs` çağırıyor ve `404` sonrası `No suitable decoder accepted the token` üretiyor | App/Ops | Faz 11 | HIGH |
+| Frontend variants path drift | Frontend grid-variants browser çağrısı gateway-exposed public path ile hizalı olmalı | Source repo `variants.api.ts`: `FETCH_BASE_URL = window.location.origin`, `VARIANTS_BASE_URL = '/v1/variants'`; canlı edge `GET /v1/variants?gridId=101` için API yerine SPA HTML (`200 text/html`) dönüyor. Aynı anda canonical gateway path `GET /variants?gridId=101` authenticated `200` | App/Ops | Faz 11 | HIGH |
 | Prod ESO `roleId` | Gerçek UUID overlay patch | Placeholder literal `"eso-runtime"` | Claude | Faz 11 | HIGH (secret delivery block) |
 | ClusterIssuer Let's Encrypt | `bootstrap/install-cert-manager.sh` var, apply edilmiş | ClusterIssuer YOK canlıda | Claude | Faz 12 | MEDIUM |
 | Test cluster ArgoCD register | Prod hub'dan yönet (ADR §3.7) | k3d-test kayıtlı DEĞİL | Ops | Faz 11 | MEDIUM |
@@ -82,8 +82,8 @@ Bu dokümanda ve sonraki iletişimde **kullanılmayacak**:
 
 - ❌ "Faz H DONE" / "H fiilen yapıldı" → ✅ "Legacy container rm, Faz H formal olarak henüz BAŞLAMADI (soak sonrası)"
 - ❌ "Faz G cutover yapıldı" / "soft cutover" → ✅ "Stateful split migration with compose-preserved workload"
-- ❌ "%99.5 migration complete" → ✅ "Weighted operational continuity ~%68"
-- ❌ "test Zanzibar smoke tamam" → ✅ "Deny zinciri yeşil; authenticated allow hâlâ `500` (`serban` realm drift)"
+- ❌ "%99.5 migration complete" → ✅ "Weighted operational continuity ~%76"
+- ❌ "test Zanzibar smoke tamam" → ✅ "Deny zinciri yeşil; authenticated allow backend'de `200`, fakat frontend variants path drift'i (`/v1/variants`) hâlâ açık"
 - ❌ "warm rollback available" → ✅ "cold rollback potential, drill yapılmadı"
 - ❌ "ESO chain hazır, sadece routing" → ✅ "Test secret-delivery toparlandı; frontend public GHCR pull path kullanıyor; live host prod cluster'da ESO yüzeyi henüz yok"
 

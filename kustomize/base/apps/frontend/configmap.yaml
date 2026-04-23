@@ -23,8 +23,8 @@ data:
         add_header Content-Type text/plain;
       }
 
-      # MFE shell + remoteEntry must NOT be cached (dynamic hashing)
-      location = / { try_files /index.html =404; add_header Cache-Control "no-store" always; }
+      # SPA routes (/login, /variants, vb.) index.html'e düşmeli; assets/remotes aşağıda ayrı ele alınır.
+      location / { try_files $uri $uri/ /index.html; add_header Cache-Control "no-store" always; }
       location = /index.html { add_header Cache-Control "no-store" always; }
       location = /remoteEntry.js { try_files $uri =404; add_header Cache-Control "no-store" always; }
       location ~ ^/remotes/[^/]+/remoteEntry\.js$ { try_files $uri =404; add_header Cache-Control "no-store" always; }
