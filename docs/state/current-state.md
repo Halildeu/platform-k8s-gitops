@@ -67,7 +67,14 @@ Sonuç: Session 28 = rollback-window başlangıcı + **hybrid kontrat canonical 
   - Compose: KC + PG + Vault healthy
   - Son 5 dk error log: temiz (fatal/5xx yok)
   - Rollback trigger eşiği altında → devam
-- **T+60**: 02:25 UTC+3 — auth chain + scoped deny + error rate (ScheduleWakeup 720s planlandı 23:26 UTC)
+- **T+60**: **02:23 UTC+3 PASS** ✅ (Fiili early, 2 dk önce):
+  - Anonymous: theme=200, authz/me=401, variants=401 (T+15 ile aynı)
+  - KC OIDC: issuer + token_endpoint doğru
+  - ArgoCD 4/4 Synced/Healthy (PR #76 kalıcı)
+  - 19 Running + 1 Completed + 2 pod restart (kabul edilebilir, user-service'ten)
+  - **0 ERROR/5xx log** (son 60 dk api-gateway)
+  - 8/8 ES SecretSynced=True
+  - Rollback trigger eşiği altında → (a) scoped allow seed başlat
 - **T+24h**: 2026-04-25 01:25 UTC+3 — 24h soak gate (error rate < %0.1)
 - **T+72h**: 2026-04-27 01:25 UTC+3 — rollback-window kapanış, hybrid prod permanent
 
