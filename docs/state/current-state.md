@@ -1,12 +1,101 @@
 # Current State — Platform K8s Migration
 
-> **Status as of**: 2026-04-24 ~01:22 UTC+3 (Session 27 — **GERÇEK FULL DR DRILL PASS CANLIDA KANITLANDI**: 11 iterative bug fix cycle sonrası (PR #55 initial + #58/59/60 early + #65/66/67/68 KC-specific) drill iter-11 full PASS — PG restore 2s + Vault init/restore 16s + **KC up 20s + imported 30s** + 2x smoke (PG+Vault+**KC OIDC discovery 200**) + 60s sleep = **RTO 132s** (%0.92 of 14400s budget). Session 26 adversarial feedback cycle tam kapandı: ESO canlı recovered + openfga-migrate Job Complete + platform-prod Healthy + full drill with KC import. Faz 13 prereq CANLIDA TEYİT: secret-delivery=87 ✅ + dr-validation=75→**85** ✅.
+> **Status as of**: 2026-04-24 ~01:25 UTC+3 (Session 28 T0 — **FAZ 13 HYBRID GO CANLI KANITLI**: Codex verdict PARTIAL+GO (thread `019dbc86`). Kontrat ADR-0002 Faz D6 (stateful PG+KC+Vault K8s-dışı, host-compose'da) ile uyumlu: "Full cutover" (K8s KC deploy + compose decommission) ADR aykırı → reddedildi. **Atomic cutover anlamı kalibre edildi**: `ai.acik.com` authoritative prod yolu K8s workload'a bağlı (byte-perfect canlı kanıt: public=127.0.0.1:30443 NodePort 200 15666B eşleşme) + stateful tier compose'da kalıcı + **72h rollback-window başladı T0=2026-04-24 01:25 UTC+3**. Session 28 açılış 5-komut refresh 5/5 Session 27 canonical eşleşme, T0 minimum teyit 3/3 PASS. Kalan paralel cleanup (non-blocking): ArgoCD cosmetic OutOfSync (RespectIgnoreDifferences syncOption), drill quarterly cron, prod non-superAdmin scoped allow seed.
 > **Verified by**: Codex + live `ssh staging-sw`
 > **Source set**: Live `kubectl`, `curl`, `docker`, `ssh staging-sw` outputs + repo HEAD
 > **Supersedes**: `docs/session-handoff-2026-04-20-k8s-migration-faz-b-c.md` bölümlerindeki `%99.5`, `DONE + LIVE (Faz H)`, `soft cutover` ifadeleri
 > **Interpretation gate**: Önce [../../AGENTS.md](../../AGENTS.md), ardından [../context-priority-rules.md](../context-priority-rules.md) okunur; bu dosya canlı truth snapshot'tır, repo-geneli kural sözleşmesi değildir.
 
 ---
+
+## Live Delta — Session 28 (2026-04-24 ~01:25 UTC+3) — FAZ 13 HYBRID GO CANLI + 72h ROLLBACK-WINDOW AÇILDI
+
+### Codex Verdict (thread `019dbc86`)
+
+**VERDICT: PARTIAL + Faz 13 kararı GO/Hybrid**. Ana yorum (Codex'ten):
+
+> "Atomic switch anlamı: `/realms/` K8s'e taşımak değil; mevcut hybrid'in authoritative prod contract olarak kabul edilmesi ve rollback-window'a girilmesi. `ADR-0002` ve `PLAN.md` D6: PG + Keycloak + Vault prod/test ayrık olacak ama Kubernetes dışında, host/compose üzerinde kalacak. Full cutover = K8s KC deploy + compose KC decommission bu repo'nun aktif kontratına uymuyor — yeni mimari/faz olur."
+
+Sonuç: Session 28 = rollback-window başlangıcı + **hybrid kontrat canonical truth**.
+
+### T0 Minimum Teyit (3/3 PASS, 01:25 UTC+3)
+
+```
+1. ai.acik.com/api/v1/theme-registry → 200 15666B
+2. https://127.0.0.1:30443 Host=ai.acik.com → 200 15666B  (byte-perfect K8s NodePort match)
+3. https://ai.acik.com/realms/serban/.well-known/openid-configuration → issuer "https://ai.acik.com/realms/serban" (compose KC)
+```
+
+### Session 28 Açılış 5-Komut Refresh (5/5 Session 27 canonical eşleşme)
+
+```
+1. CSS vault-platform-gitops:      Ready=True reason=Valid
+2. 8 ExternalSecret READY:         TÜM 8x True/SecretSynced
+3. openfga-migrate Job:            SuccessCriteriaMet, completions=1
+4. ArgoCD Applications:            platform-prod + eso-prod OutOfSync/Healthy rev 82c6abd (cosmetic v1beta1 stored)
+5. DR drill log:                   KC imported 30s + 2x SMOKE PASS + RTO 132s + DRILL PASS
+6. KC health:                      healthy (dual-network, PR #57 sonrası)
+```
+
+### T0 Kaynak Tasarrufu (Codex önerisi)
+
+- **Test cluster scale-to-zero**: 9 deployment (api-gateway + 8 backend + frontend) → 0/0 replicas
+  - Rollback-window 72h boyunca test trafiği yok; kaynak prod'a
+  - Gerekirse `kubectl -n platform-test scale deploy --all --replicas=1` ile hızlı aç
+
+### Faz 13 Kapsamı — Kalibre Edilmiş Kontrat
+
+**Önceki yorum (reddedildi)**: "nginx upstream switch + /realms/ K8s'e taşıma + compose KC decommission"
+
+**Doğru kontrat (Codex + ADR-0002 D6)**:
+- `ai.acik.com/api/*` → K8s workload (zaten byte-perfect aktif)
+- `ai.acik.com/realms/*` + `/resources/*` → compose `platform-kc-prod` (kalıcı, ADR D6 stateful izolasyonu)
+- `ai.acik.com/api/auth/*` rotası: compose `platform-auth-service-1` (Spring Boot, compose KC'ye bağlı)
+- PG + Vault + KC: compose host-compose stack (bind-mount /home/halil/platform-stateful/)
+- K8s cluster prod workload layer (frontend + 8 backend + openfga)
+
+**"Atomic cutover"** = bu hybrid kontratın authoritative prod olarak kabul edilmesi, ilave switch yok.
+
+### 72h Rollback-Window Plan
+
+- **T0**: 2026-04-24 01:25 UTC+3 (yukarı kanıtlanan T0 minimum teyit)
+- **T+15**: 01:40 UTC+3 — allow+deny smoke + anonymous + service-account
+- **T+60**: 02:25 UTC+3 — auth chain + scoped deny + error rate
+- **T+24h**: 2026-04-25 01:25 UTC+3 — 24h soak gate (error rate < %0.1)
+- **T+72h**: 2026-04-27 01:25 UTC+3 — rollback-window kapanış, hybrid prod permanent
+
+**Rollback trigger conditions** (her gate'te):
+- 5xx error rate > %1 persistent
+- KC OIDC discovery fail > 3 iter
+- ESO sync fail > 10 dk (eski durumdan rollback)
+- prod workload pod crash loop (2+ pod 10 dk)
+
+**Rollback playbook** (runbook §8):
+1. nginx config backup → `/home/halil/platform/web/nginx/default.conf.bak.2026-04-24`
+2. /api/ upstream `127.0.0.1:30443` → `127.0.0.1:8082` (compose gateway) restore
+3. Test: anonymous 200 + token smoke
+4. Aktif: 5 dk restore
+
+### Paralel Cleanup (rollback-window içinde, non-blocking)
+
+1. **RespectIgnoreDifferences syncOption** — ArgoCD cosmetic OutOfSync susturma (PR pending)
+2. **Drill quarterly cron** — PLAN.md D23 (PR pending)
+3. **Prod non-superAdmin scoped allow seed** — variants(1204)=200 seed (PR pending)
+4. **KC K8s migration (ileride)**: ayrı yeni faz, şu an scope dışı
+
+### 5-Sayaç Session 28 (T0 post-refresh, honest)
+
+- `test-k8s`: 86 → **84** (scale-to-zero rollback-window boyunca; rollback gerekirse 1 replica bring-up)
+- `prod-stateful-split`: 76 (değişim yok, KC healthy + PG+Vault stabil)
+- `prod-workload-gitops`: 75 (değişim yok, OutOfSync cosmetic kaldı)
+- `secret-delivery`: 87 (değişim yok, CSS Ready + 8 ES Sync)
+- `dr-validation`: 85 (değişim yok, full drill PASS kanıtı geçerli)
+
+### Weighted operational continuity: **~%86** (Session 27 %85 + Faz 13 Hybrid GO +1; rollback-window aktif, T+72h kapanış +1 daha)
+
+### Faz 13 Execute Durumu — KABUL EDİLDİ
+
+✅ Prereq CANLI TEYİT + Codex verdict + T0 minimum teyit PASS → **Faz 13 Hybrid GO aktif**.
 
 ## Live Delta — Session 27 (2026-04-24 ~01:22 UTC+3) — FULL DR DRILL PASS CANLI
 
