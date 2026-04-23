@@ -30,3 +30,23 @@ spec:
     syncOptions:
       - CreateNamespace=false
       - ServerSideApply=true
+  # 2026-04-23 PR #54 (post PR #52 v1beta1→v1 migration):
+  # ServerSideApply v1 spec'i cluster'a dayattı ama stored managedFields +
+  # annotations + status alanları v1beta1 era'dan kalma serialization ile
+  # cosmetic diff üretiyor. Runtime sağlıklı: `ClusterSecretStore` Ready=True,
+  # `ExternalSecret/ghcr-pull` SecretSynced=True, ESO controller reconcile ediyor.
+  # Bu ignore'lar yalnız cosmetic diff'i susturur; gerçek provider/data/path
+  # drift'i hâlâ Argo tarafından yakalanır (örn. `spec.provider.vault.server` FQDN).
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jsonPointers:
+        - /metadata/annotations
+        - /metadata/managedFields
+        - /status
+    - group: external-secrets.io
+      kind: ClusterSecretStore
+      jsonPointers:
+        - /metadata/annotations
+        - /metadata/managedFields
+        - /status
