@@ -53,7 +53,7 @@ RTO_BUDGET_SECONDS="${RTO_BUDGET_SECONDS:-14400}"
 # Images (match live prod stack versions)
 PG_IMAGE="${PG_IMAGE:-pgvector/pgvector:pg18}"
 VAULT_IMAGE="${VAULT_IMAGE:-hashicorp/vault:1.17}"
-KC_IMAGE="${KC_IMAGE:-quay.io/keycloak/keycloak:25.0}"
+KC_IMAGE="${KC_IMAGE:-quay.io/keycloak/keycloak:26.5.5}"   # Prod ile eşleşmeli (bkz. host-compose/keycloak/prod/docker-compose.yml). Version skew Liquibase checksum mismatch verir (drill iter-9 canlı kanıt: jpa-changelog-2.5.0.xml hash farkı KC 25→26)
 
 # Disk requirement
 MIN_FREE_GB="${MIN_FREE_GB:-20}"
