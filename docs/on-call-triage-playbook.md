@@ -62,8 +62,8 @@
 **Neden:** External edge probe (testai veya prod) başarısız. Edge zinciri kopuk.
 
 **5 dk aksiyon (1× fail):**
-1. **T+0 (30s)** — Probe target manuel test: `curl -sk -o /dev/null -w "%{http_code}\n" https://testai.acik.com/variants`
-   - 401 bekliyoruz (deny); 200/timeout/503 = sorun
+1. **T+0 (30s)** — Probe target manuel test: `curl -sk -o /dev/null -w "%{http_code}\n" 'https://testai.acik.com/api/v1/variants?gridId=1204'`
+   - 401 bekliyoruz (deny); 200/timeout/503 = sorun. `https://testai.acik.com/variants` artık SPA/public yüzey olduğu için burada referans değildir
 2. **T+1 (1m)** — Edge zinciri çöz:
    - DNS: `dig testai.acik.com` → doğru IP
    - Nginx: `docker exec platform-web-nginx nginx -t`
