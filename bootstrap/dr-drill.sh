@@ -257,8 +257,31 @@ restore_pg() {
     err "PG restore failed (see $DRILL_LOG)"
     exit 4
   fi
+
+  # Drill KC container bağlantı şifresini unify et. Prod `pg_dumpall` restore
+  # sonrası `keycloak` user prod password'u korur (dump'ta role + password
+  # hash). Drill KC container `KC_DB_PASSWORD=drill-only-postgres` ile
+  # bağlanmaya çalıştığında JDBC auth fail → container crash (canlı iter-6
+  # kanıtı: `container ... is not running` hemen `KC: up` sonrası).
+  # Fix: drill sandbox'ta `keycloak` user password'u drill değerine hizala.
+  # Sadece drill sandbox'ta etki eder; canlı prod PG etkilenmez (teardown trap
+  # sandbox'ı siler, drill PG container'ı drill network'üne izole).
+  log "PG: sync keycloak user password for drill KC container"
+  docker exec "$PG_CONTAINER" psql -U postgres -c \
+    "ALTER ROLE keycloak WITH PASSWORD 'drill-only-postgres';" >>"$DRILL_LOG" 2>&1 || \
+    log "PG: ALTER ROLE keycloak best-effort failed (kullanıcı yoksa normal)"
+
+  # KC drill DB yoksa oluştur (prod dump'ta keycloak DB yoksa veya sadece test
+  # realm için). Drill KC container bağlantıda "database does not exist" eder.
+  if ! docker exec "$PG_CONTAINER" psql -U postgres -tAc \
+       "SELECT 1 FROM pg_database WHERE datname='keycloak'" 2>/dev/null | grep -q 1; then
+    docker exec "$PG_CONTAINER" psql -U postgres -c \
+      "CREATE DATABASE keycloak OWNER keycloak;" >>"$DRILL_LOG" 2>&1 || \
+      log "PG: CREATE DATABASE keycloak best-effort failed"
+  fi
+
   t1=$(date +%s)
-  ok "PG: restored ($((t1-t0))s)"
+  ok "PG: restored + keycloak user/db unified ($((t1-t0))s)"
 }
 
 # ---- VAULT RESTORE ----
