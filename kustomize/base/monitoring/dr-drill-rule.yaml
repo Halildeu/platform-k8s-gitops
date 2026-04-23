@@ -1,0 +1,69 @@
+# PrometheusRule — DR Drill Health Alert
+# Source: Codex Session 28 paralel cleanup (c) (thread 019dbc9f)
+# Metric: dr_drill_last_run_* — node_exporter textfile collector
+#         /var/lib/node_exporter/dr_drill.prom dosyasından
+# Wrapper: bootstrap/dr-drill-cron.sh (cron 0 3 1 */3 * — quarterly)
+# Contract: PLAN.md D23 quarterly DR drill + RTO ≤ 4h (14400s)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dr-drill-health
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: dr.drill
+      interval: 5m
+      rules:
+        # Son başarılı drill 95 günden eski (quarterly = ~90 gün + 5 gün tolerans)
+        - alert: DRDrillStale
+          expr: (time() - dr_drill_last_run_timestamp_seconds) > 8208000
+          for: 1h
+          labels:
+            severity: warning
+            component: dr
+            scope: quarterly
+          annotations:
+            summary: "DR drill stale (>95 gün son çalışma)"
+            description: "Son DR drill 95 günden önce çalıştı. PLAN.md D23 quarterly drill SLA ihlali."
+            runbook_url: "docs/S5-disaster-recovery-runbook.md#4-dr-drill-checklist-çeyrek-yılda-bir"
+
+        # Son drill FAIL (success=0)
+        - alert: DRDrillFailed
+          expr: dr_drill_last_run_success == 0
+          for: 15m
+          labels:
+            severity: critical
+            component: dr
+          annotations:
+            summary: "DR drill son çalışmada FAIL"
+            description: "Son DR drill başarısız oldu (success=0). Backup/restore zinciri bozuk olabilir. bootstrap/dr-drill-cron.sh log + /tmp/dr-drill-*.log incele."
+            runbook_url: "docs/S5-disaster-recovery-runbook.md#3-restore-senaryoları-drill"
+
+        # RTO budget ihlali (> 4h = 14400s)
+        - alert: DRDrillRTOExceeded
+          expr: dr_drill_last_rto_seconds > 14400
+          for: 5m
+          labels:
+            severity: warning
+            component: dr
+          annotations:
+            summary: "DR drill RTO budget aşıldı (>4h)"
+            description: "Son drill RTO {{ $value }}s — 14400s (4h) hedefi aşıldı. ADR-0002 §8 DR RTO contract ihlali."
+
+        # Exporter down (prod only, backup-freshness pattern)
+        - alert: DRDrillExporterDown
+          expr: |
+            absent(dr_drill_last_run_timestamp_seconds)
+            and on() count(kube_namespace_labels{namespace="platform-prod"}) > 0
+          for: 1h
+          labels:
+            severity: warning
+            component: dr
+            cluster_scope: prod-only
+          annotations:
+            summary: "DR drill exporter DOWN (prod)"
+            description: "node_exporter textfile dr_drill.prom okunmuyor. Cron çalışmıyor veya wrapper script fail. Test cluster'da scope-aware ile sessiz."
