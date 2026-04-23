@@ -36,3 +36,32 @@ spec:
       kind: Deployment
       jsonPointers:
         - /spec/replicas
+    # 2026-04-23 PR #54 (post PR #52 v1beta1→v1 migration):
+    # ServerSideApply ile v1 spec dayatıldı ama cluster'da v1beta1 era'dan kalma
+    # stored managedFields/annotations/status cosmetic diff üretiyor.
+    # Runtime davranışı v1 spec ile birebir (CSS Ready=True, ES SecretSynced=True),
+    # fakat Argo diff cosmetic farkı OutOfSync olarak raporluyor.
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jsonPointers:
+        - /metadata/annotations
+        - /metadata/managedFields
+        - /status
+    # Host-bridge Endpoints (D20 + PR #49): manifest 10.9.10.53:{5432,8081,8200}
+    # ile cluster canlı değerleri birebir, ama subset serialization'da stored
+    # v1 bin-format farkı diff üretiyor. Runtime trafik akışı korundu:
+    # `ai.acik.com/api/` → K8s ingress-nginx (NodePort 30443) → api-gateway
+    # ve pod'lar `postgres/keycloak/vault` Service DNS'leri üstünden
+    # 10.9.10.53'teki compose stateful'lara bağlanıyor.
+    - kind: Endpoints
+      jsonPointers:
+        - /subsets
+    # openfga-config: base manifest'te placeholder `change-me-local-only`
+    # şifreli connection string var; canlı override bu değerle eşleşiyor
+    # (test overlay de aynı override yapıyor). ESO ile gerçek şifre
+    # seed edilene kadar bu field'ı ignore ediyoruz; aksi halde sync spec'i
+    # cluster'a dayatırsa (şu an zaten aynı değer) kozmetik diff üretir.
+    - kind: ConfigMap
+      name: openfga-config
+      jsonPointers:
+        - /data/OPENFGA_DATASTORE_URI
