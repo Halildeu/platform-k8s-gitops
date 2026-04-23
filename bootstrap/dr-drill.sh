@@ -210,6 +210,14 @@ cleanup_previous() {
 provision_sandbox() {
   log "PROVISION: create sandbox dirs + network"
   mkdir -p "${DRILL_ROOT}/postgres" "${DRILL_ROOT}/vault" "${DRILL_ROOT}/keycloak"
+  # Container user drift'leri için 0777 — geçici sandbox, teardown'da silinir.
+  # Vault: UID 100 `/vault/data` yazamıyordu (host-owner: halil:halil).
+  # Keycloak: UID 1000 `/opt/keycloak/data` benzer sorun potansiyeli.
+  # PG: pgvector entrypoint initdb chown yapar, aslında bağımsız ama simetri için.
+  # Güvenlik notu: drill container'ları drill network'üne izole, drill-* prefix,
+  # port offset +10000; 0777 yalnız drill root altındaki 3 dizinde, canlı disk
+  # erişimine köprü değil (DRILL_ROOT == *drill* guard var).
+  chmod 0777 "${DRILL_ROOT}/postgres" "${DRILL_ROOT}/vault" "${DRILL_ROOT}/keycloak"
   docker network create "$DRILL_NET" >/dev/null
   ok "PROVISION: $DRILL_ROOT + $DRILL_NET"
 }
