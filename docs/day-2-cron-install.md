@@ -41,6 +41,10 @@ chmod 700 /home/halil/platform/backup
 
 # KC realm export — haftalık Pazar 03:00
 0 3 * * 0   /home/halil/platform-k8s-gitops/bootstrap/kc-export-cron.sh >> /var/log/platform-kc-export.log 2>&1
+
+# DR drill quarterly — her 3 ayın 1'i 03:00 (Ocak/Nisan/Temmuz/Ekim) — Faz 12 PLAN.md D23
+# SKIP_KC=0 default (full drill: PG+Vault+KC). Prometheus textfile metric: dr_drill_last_run_success
+0 3 1 */3 * /home/halil/platform-k8s-gitops/bootstrap/dr-drill-cron.sh >> /var/log/platform-dr-drill.log 2>&1
 ```
 
 ## Doğrulama
