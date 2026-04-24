@@ -18,8 +18,4 @@ resources:
   - service.yaml
   - configmap.yaml
   - pdb.yaml
-  - externalsecret.yaml         # P0 fix: pod CreateContainerConfigError'u önler
   - serviceaccount.yaml      # D26: imagePullSecret binding
-  - servicemonitor.yaml      # D27: Prometheus Operator CR (annotation değil)
-  # ESO kurulunca externalsecret.yaml çıkarılır, externalsecret.yaml aktif edilir:
-  # - externalsecret.yaml

@@ -1,0 +1,19 @@
+# ops extras for permission-service (Faz 17.2.5)
+# CRD-gated resources: ExternalSecret (external-secrets.io) + ServiceMonitor (monitoring.coreos.com)
+# Label injection parent runtime kustomization ile simetrik (app-name + part-of).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: permission-service
+    includeSelectors: false
+    includeTemplates: false
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: false
+
+resources:
+  - externalsecret.yaml
+  - servicemonitor.yaml

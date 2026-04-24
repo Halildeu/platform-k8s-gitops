@@ -11,6 +11,7 @@ namespace: platform-prod
 resources:
   - namespace.yaml    # Namespace + labels (platform=true env=prod, ApplicationSet prereq)
   - ../../base
+  - ../../base/apps/ops-bundle    # Faz 17.2.5: ExternalSecret + ServiceMonitor CRD paketi (runtime'dan ayrı)
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile)
