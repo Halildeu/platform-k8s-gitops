@@ -1253,22 +1253,31 @@ Codex iter-3 sıra: önce `stop`, smoke + soak, sonra `rm`.
   - **A**: auth-service-1, user-service-1, core-data-service-1, report-service-1, schema-service-1, variant-service-1, api-gateway-1, discovery-server-1, openfga-1 (K8s StatefulSet duplicate)
 - `docker compose stop` only (`rm` 18.7'de)
 
-#### 18.6 — T+15m / T+60m / T+24h Smoke
+#### 18.6 — 5-Dakika Smoke (no-soak, Codex AGREE 019dc07c)
 
-Codex iter-3: 7 gün değil, 24h yeterli (cleanup ≠ cutover).
+**User direktifi absorb (2026-04-24):** "bekleme yok hızlı ve güvenli" + "sistem kullanıcısı yok" → 24h soak **KALDIRILDI**. Codex thread `019dc07c` GO no-soak (rationale: compose stateless 9 zaten out-of-path per Faz 18.1 A0 upflow kanıtı + edge routing K8s-only).
 
-- T+15m / T+60m: K8s 49 prod pod Running stable, `ai.acik.com/` + `/api/` 200, `/realms/` 200 (KC compose stateful canlı)
-- T+24h: error rate zero regression, CPU/memory baseline
-- `docs/phase18-evidence/smoke-24h-YYYYMMDD.md`
+- T+5m smoke:
+  - K8s prod: 49 pod Running + Ready unchanged
+  - K8s test: 9 pod Running + Ready unchanged
+  - `ai.acik.com/` 200 + `/api/` 401 (JWT flow) + `/realms/` 200 (KC compose stateful kalıyor)
+  - `testai.acik.com/` 200 + aynı pattern
+- **Codex gate 1 — OpenFGA store/model parity** (authz plane kanıtı):
+  - `ai.acik.com/api/v1/authz/version` 200 (version drift yoksa)
+  - Veya sentetik allow/deny check (canary scoped token)
+  - Store/model mismatch görürsen → **18.7'ye GEÇME**, rollback
+- `docs/phase18-evidence/faz-18-5-7-smoke-YYYYMMDD.md`
 
-**Go/No-Go**: 24h smoke PASS → 18.7'ye geç.
+**Go/No-Go**: 5-dk smoke PASS + OpenFGA parity OK → 18.7'ye geç (point-of-no-return).
 
-#### 18.7 — App Stateless Compose `rm` + Deploy Script Cleanup
+#### 18.7 — App Stateless Compose `rm` + Deploy Script Cleanup (**point-of-no-return**)
 
 - `docker compose rm -f` stopped containers
-- Cross-repo: `platform-ssot/deploy/docker-compose.prod.yml` app stateless blok kaldırma
+- Cross-repo: `platform-ssot/deploy/docker-compose.prod.yml` app stateless blok kaldırma (vault pattern 18.4 tombstone comment)
+- `backend/docker-compose.yml` stage/dev aynı retirement
 - `deploy/ubuntu/platform-start.sh` + `deploy-backend.sh` app stateless start satırları temizleme
-- Point of no return; önceki 18.5-18.6 smoke PASS olmadan YAPMA
+- Point-of-no-return; 18.6 5-dk smoke + OpenFGA parity PASS olmadan YAPMA (Codex gate 2)
+- Codex AGREE 019dc07c ready_for_impl=true
 
 #### 18.8 — Lokal k3d-dev Clean Smoke (non-blocking evidence lane)
 
