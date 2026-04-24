@@ -1,10 +1,98 @@
 # Current State — Platform K8s Migration
 
-> **Status as of**: 2026-04-24 ~01:25 UTC+3 (Session 28 T0 — **FAZ 13 HYBRID GO CANLI KANITLI**: Codex verdict PARTIAL+GO (thread `019dbc86`). Kontrat ADR-0002 Faz D6 (stateful PG+KC+Vault K8s-dışı, host-compose'da) ile uyumlu: "Full cutover" (K8s KC deploy + compose decommission) ADR aykırı → reddedildi. **Atomic cutover anlamı kalibre edildi**: `ai.acik.com` authoritative prod yolu K8s workload'a bağlı (byte-perfect canlı kanıt: public=127.0.0.1:30443 NodePort 200 15666B eşleşme) + stateful tier compose'da kalıcı + **72h rollback-window başladı T0=2026-04-24 01:25 UTC+3**. Session 28 açılış 5-komut refresh 5/5 Session 27 canonical eşleşme, T0 minimum teyit 3/3 PASS. Kalan paralel cleanup (non-blocking): ArgoCD cosmetic OutOfSync (RespectIgnoreDifferences syncOption), drill quarterly cron, prod non-superAdmin scoped allow seed.
+> **Status as of**: 2026-04-24 ~09:55 UTC+3 (Session 29 — **TOPOLOJİ NETLEŞME + TEST FULL-HEALTH + FAZ 17 PLAN DRAFT**: üç-katman (lokal dev Mac / test staging-sw k3d-test / prod staging-sw k3d-prod+compose) netleştirildi, Mac k3d mirror'ları stop (RAM relief ~7 GB→130 MB), staging-sw k3d-test auth-service RSA PEM placeholder fix (Vault `kv/platform/auth-service` jwt_private_key/public_key initialize) → **9/9 platform-test pod 1/1 Ready + testai.acik.com 200**, staging-sw k3d-prod 49 Running korundu. Faz 13 rollback-window kullanıcı direktifi ile iptal (canlı kullanıcı yok). Faz 17 Local Dev Environment Parity + Faz 16.0 Data Contract paralel plan draft (Plan subagent + Codex adversarial review bekleniyor). ⏸️ Önceki Session 28 T0 — **FAZ 13 HYBRID GO CANLI KANITLI**: Codex verdict PARTIAL+GO (thread `019dbc86`). Kontrat ADR-0002 Faz D6 (stateful PG+KC+Vault K8s-dışı, host-compose'da) ile uyumlu: "Full cutover" (K8s KC deploy + compose decommission) ADR aykırı → reddedildi. **Atomic cutover anlamı kalibre edildi**: `ai.acik.com` authoritative prod yolu K8s workload'a bağlı (byte-perfect canlı kanıt: public=127.0.0.1:30443 NodePort 200 15666B eşleşme) + stateful tier compose'da kalıcı + **72h rollback-window başladı T0=2026-04-24 01:25 UTC+3**. Session 28 açılış 5-komut refresh 5/5 Session 27 canonical eşleşme, T0 minimum teyit 3/3 PASS. Kalan paralel cleanup (non-blocking): ArgoCD cosmetic OutOfSync (RespectIgnoreDifferences syncOption), drill quarterly cron, prod non-superAdmin scoped allow seed.
 > **Verified by**: Codex + live `ssh staging-sw`
 > **Source set**: Live `kubectl`, `curl`, `docker`, `ssh staging-sw` outputs + repo HEAD
 > **Supersedes**: `docs/session-handoff-2026-04-20-k8s-migration-faz-b-c.md` bölümlerindeki `%99.5`, `DONE + LIVE (Faz H)`, `soft cutover` ifadeleri
 > **Interpretation gate**: Önce [../../AGENTS.md](../../AGENTS.md), ardından [../context-priority-rules.md](../context-priority-rules.md) okunur; bu dosya canlı truth snapshot'tır, repo-geneli kural sözleşmesi değildir.
+
+---
+
+## Live Delta — Session 29 (2026-04-24 ~09:55 UTC+3) — TOPOLOJİ NETLEŞME + TEST FULL-HEALTH RESTORE + FAZ 17 ÖNERİSİ
+
+### Kullanıcı Direktifi + Bağlam
+
+- "gözlemler iptal canlı kullnıcımız yok hemen işe gireceğiz simulasyonla"
+- "önce lokal test ve prod tam sağlık yol haritasına göre çalışacak"
+- "lokalde dev sistemde geliştirim yapmayacak mıyız zaten test ve prod sunucuda" (topology challenge)
+
+### Topoloji Netleşme (üç-katman, ADR-0002 uyumlu)
+
+| Katman | Host | Cluster/Stack | Domain | Amaç |
+|---|---|---|---|---|
+| **Lokal dev** | Mac developer | (stopped — önce yanlışlıkla k3d-prod/k3d-test adıyla mirror çalıştırıldı) | localhost / dev.local | Kod geliştirme, hızlı test, fake secret |
+| **Test (stage)** | staging-sw | k3d-test | testai.acik.com | Merge sonrası validasyon, CI gate |
+| **Prod** | staging-sw | k3d-prod + compose stateful | ai.acik.com | Canlı trafik |
+
+**Keşif:** Mac'te `k3d-prod`+`k3d-test` context'leri aslında Mac local Docker container'larda çalışan paralel mirror'lardı (Docker Desktop 8GB limit → over-commit: Load 527 içeride, API TLS handshake timeout). Gerçek test+prod staging-sw'de (Ubuntu x86_64 `stagingsw`, IP 10.9.10.53).
+
+### Mac k3d Stop (RAM Relief)
+
+```
+# Önce
+k3d-test-server-0  4.3 GB / 7.65 GB
+k3d-prod-server-0  2.75 GB / 7.65 GB
+TOTAL              ~7 GB Docker quota tüketiyor
+
+# Sonra (k3d cluster stop prod && k3d cluster stop test)
+platform-smoke-47853-grafana-1  127 MB (DR drill smoke)
+pgvector_local                  3 MB
+TOTAL                           ~130 MB
+```
+
+Reversible: `k3d cluster start prod/test` bir saniye. **Silinmedi**, sadece stop.
+
+### staging-sw k3d-test Full-Health Restore
+
+**Blocker bulundu:** `kv/platform/auth-service` test Vault'ta `jwt_private_key=placeholder_test` + `jwt_public_key=placeholder_test` + `keycloak_client_secret=PLACEHOLDER` — hiç initialize edilmemiş.
+
+Spring Boot `ServiceJwtConfiguration.decodePem()` → `Base64.getDecoder().decode("placeholder_test")` → `IllegalArgumentException: Illegal base64 character 5f` (`_` standart Base64'te yok, URL-safe) → CrashLoopBackOff 518+ restart.
+
+**Fix:** RSA 2048-bit keypair generate → Vault test kv/platform/auth-service `jwt_private_key` + `jwt_public_key` PEM olarak yaz (version 1→2) → ESO force-refresh (1 dk) → `kubectl rollout restart deploy/auth-service` → pod 1/1 Ready.
+
+**Final test state:**
+
+```
+platform-test deployments (9/9 + openfga + migrate Completed)
+  api-gateway          1/1
+  auth-service         1/1 (RSA fix sonrası)
+  core-data-service    1/1
+  frontend             1/1
+  permission-service   1/1
+  report-service       1/1
+  schema-service       1/1
+  user-service         1/1
+  variant-service      1/1
+
+testai.acik.com/                         → 200 ✅
+testai.acik.com/api/v1/theme-registry    → 200 ✅
+```
+
+**Prod durumu:** 49 Running pod, 0 non-Running (doğrulandı).
+
+### Faz 13 Rollback-Window İptal (Kullanıcı Direktifi)
+
+"Gözlem iptal + canlı kullanıcı yok + simulasyon" → 72h pasif bekleme (2026-04-27 01:25 UTC+3) anlamsız. Hybrid kontrat **permanent** kabul, Faz 16/17 yürütme penceresi açık.
+
+### Faz 17 Önerisi — Local Dev Environment Parity (Yeni)
+
+Kullanıcının mimari analizi: "k3d-prod ve k3d-test sunucuda runtime target, dev değil. Lokal dev ayrı olmalı. Promotion: local → testai → prod."
+
+Mevcut repo `kustomize/overlays/local/` var ama eksik:
+- Namespace `platform-prod` (çatışma — `platform-dev` olmalı)
+- Tiltfile/skaffold yok (hot reload)
+- `dev-up.sh`/`dev-down.sh`/`dev-seed.sh`/`dev-smoke.sh` yok
+- `.env.example`, fake Vault seed, local KC realm, local PG seed yok
+- Mac cluster adı `k3d-prod` (staging-sw ile çatışır — `k3d-dev` olmalı)
+
+Plan subagent → Faz 17 draft + Codex adversarial review sonrası PLAN.md insert. Paralel Plan subagent Faz 16.0 Data Contract (`docs/migration/mssql-pg-data-contract.md`) draft.
+
+### Sıradaki İş (auto mode)
+
+1. Plan subagent → Faz 17 draft + Faz 16.0 draft (paralel)
+2. İkisi için ayrı Codex thread adversarial review (paralel)
+3. AGREE → PLAN.md + `docs/migration/mssql-pg-data-contract.md` PR
+4. 17.0 naming hygiene başlat (k3d-prod local → k3d-dev rename, platform-dev namespace ayrımı)
 
 ---
 
