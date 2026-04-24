@@ -1,0 +1,536 @@
+_meta:
+  annex: 2A_report_runtime_source_surface
+  status: DRAFT
+  seal_state: DRAFT
+  generated_by: scripts/migration/extract-report-source-annex.py
+  total_reports: 31
+  direct_source_reports: 23
+  source_query_reports: 8
+  reports_with_nolock_hint: 8
+  reports_with_cte: 0
+  pending_manual_validation:
+  - fin-cari-islemler
+  - fin-fatura-satirlari
+  - fin-kaynak-eslesme
+  - fin-masraf-detay
+  - fin-muhasebe-detay
+  - fin-stok-fis-detay
+  - fin-tutar-mutabakat
+  - hr-compensation-detay
+  unique_table_count: 44
+  seal_gate:
+  - 'All sourceQuery reports manually validated (manually_validated: true)'
+  - Zero tables with schema='UNKNOWN_AT_PARSE'
+  - Zero tables with migration_action_default='pending_annex'
+  - Workcube admin resolved all parametric_schemas
+  references:
+  - docs/migration/mssql-pg-data-contract.md §3 Annex 2A extraction hierarchy
+  - Codex thread 019dbe92 iter-4 AGREE
+reports:
+- report: fin-alacak-yaslandirma
+  category: Finans
+  title: Alacak Yaşlandırma Analizi
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_1
+  tables:
+  - schema: workcube_mikrolink_1
+    name: COMPANY_REMAINDER
+    parametric_schema: true
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - workcube_mikrolink_1
+- report: fin-banka-hareketleri
+  category: Finans
+  title: Banka Hareketleri
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_1
+  tables:
+  - schema: workcube_mikrolink_1
+    name: BANK_ACTIONS
+    parametric_schema: true
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - workcube_mikrolink_1
+- report: fin-borc-yaslandirma
+  category: Finans
+  title: Borç Yaşlandırma Analizi
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_1
+  tables:
+  - schema: workcube_mikrolink_1
+    name: COMPANY_REMAINDER
+    parametric_schema: true
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - workcube_mikrolink_1
+- report: fin-butce-gerceklesen
+  category: Finans
+  title: Bütçe vs Gerçekleşen
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: standard
+  schema_name: workcube_mikrolink
+  tables:
+  - schema: workcube_mikrolink
+    name: BUDGET_PLAN_ROW
+    parametric_schema: true
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - workcube_mikrolink
+- report: fin-cari-hareketler
+  category: Finans
+  title: Cari Hesap Hareketleri
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_1
+  tables:
+  - schema: workcube_mikrolink_1
+    name: CARI_ROWS
+    parametric_schema: true
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - workcube_mikrolink_1
+- report: fin-cari-islemler
+  category: Finans
+  title: Cari İşlem Detayları
+  extraction_method: sourceQuery
+  manually_validated: false
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_2026_1
+  tables:
+  - schema: '{schema}'
+    name: CARI_ACTIONS
+    parametric_schema: true
+  - schema: workcube_mikrolink_7
+    name: SETUP_PROCESS_CAT
+  - schema: workcube_mikrolink
+    name: COMPANY
+  - schema: workcube_mikrolink
+    name: PRO_PROJECTS
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - '{schema}'
+  contains_nolock_hint: true
+- report: fin-cari-mutabakat
+  category: Finans
+  title: Cari Mutabakat Raporu
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_1
+  tables:
+  - schema: workcube_mikrolink_1
+    name: CARI_ROWS
+    parametric_schema: true
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - workcube_mikrolink_1
+- report: fin-cek-senet
+  category: Finans
+  title: Çek/Senet Takip
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_1
+  tables:
+  - schema: workcube_mikrolink_1
+    name: CHEQUE
+    parametric_schema: true
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - workcube_mikrolink_1
+- report: fin-cek-vade-takip
+  category: Finans
+  title: Çek Vade Takip Raporu
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_1
+  tables:
+  - schema: workcube_mikrolink_1
+    name: CHEQUE
+    parametric_schema: true
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - workcube_mikrolink_1
+- report: fin-fatura-satirlari
+  category: Finans
+  title: Fatura Satır Detayları
+  extraction_method: sourceQuery
+  manually_validated: false
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_2026_1
+  tables:
+  - schema: '{schema}'
+    name: INVOICE_ROW
+    parametric_schema: true
+  - schema: '{schema}'
+    name: INVOICE
+    parametric_schema: true
+  - schema: workcube_mikrolink
+    name: COMPANY
+  - schema: workcube_mikrolink
+    name: PRO_PROJECTS
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - '{schema}'
+  contains_nolock_hint: true
+- report: fin-faturalar
+  category: Finans
+  title: Fatura Listesi
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_1
+  tables:
+  - schema: workcube_mikrolink_1
+    name: INVOICE
+    parametric_schema: true
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - workcube_mikrolink_1
+- report: fin-gerceklesen-maliyet
+  category: Finans
+  title: Gerçekleşen Maliyet Raporu
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_2026_1
+  tables:
+  - schema: workcube_mikrolink_2026_1
+    name: ACCOUNT_CARD_ROWS
+    parametric_schema: true
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - workcube_mikrolink_2026_1
+- report: fin-kasa-hareketleri
+  category: Finans
+  title: Kasa Hareketleri
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_1
+  tables:
+  - schema: workcube_mikrolink_1
+    name: CASH_ACTIONS
+    parametric_schema: true
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - workcube_mikrolink_1
+- report: fin-kaynak-eslesme
+  category: Finans
+  title: Muhasebe Kaynak Eşleşme Raporu
+  extraction_method: sourceQuery
+  manually_validated: false
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_2026_1
+  tables:
+  - schema: '{schema}'
+    name: ACCOUNT_CARD_ROWS
+    parametric_schema: true
+  - schema: '{schema}'
+    name: ACCOUNT_CARD
+    parametric_schema: true
+  - schema: workcube_mikrolink_7
+    name: SETUP_PROCESS_CAT
+  - schema: workcube_mikrolink
+    name: COMPANY
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - '{schema}'
+  contains_nolock_hint: true
+- report: fin-masraf-detay
+  category: Finans
+  title: Masraf Fiş Detayları
+  extraction_method: sourceQuery
+  manually_validated: false
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_2026_1
+  tables:
+  - schema: '{schema}'
+    name: EXPENSE_ITEM_PLANS
+    parametric_schema: true
+  - schema: '{schema}'
+    name: EXPENSE_ITEMS
+    parametric_schema: true
+  - schema: workcube_mikrolink_7
+    name: SETUP_PROCESS_CAT
+  - schema: workcube_mikrolink
+    name: COMPANY
+  - schema: workcube_mikrolink
+    name: PRO_PROJECTS
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - '{schema}'
+  contains_nolock_hint: true
+- report: fin-muhasebe-detay
+  category: Finans
+  title: Muhasebe Detay Raporu
+  extraction_method: sourceQuery
+  manually_validated: false
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_2026_1
+  tables:
+  - schema: '{schema}'
+    name: ACCOUNT_CARD_ROWS
+    parametric_schema: true
+  - schema: '{schema}'
+    name: ACCOUNT_PLAN
+    parametric_schema: true
+  - schema: '{schema}'
+    name: ACCOUNT_CARD
+    parametric_schema: true
+  - schema: workcube_mikrolink_7
+    name: SETUP_PROCESS_CAT
+  - schema: workcube_mikrolink
+    name: PRO_PROJECTS
+  - schema: workcube_mikrolink
+    name: COMPANY
+  - schema: workcube_mikrolink
+    name: DEPARTMENT
+  - schema: workcube_mikrolink
+    name: BRANCH
+  - schema: workcube_mikrolink
+    name: EMPLOYEES
+  - schema: workcube_mikrolink
+    name: SETUP_DOCUMENT_TYPE
+  - schema: workcube_mikrolink
+    name: CONSUMER
+  - schema: '{schema}'
+    name: ACCOUNT_CARD_MONEY
+    parametric_schema: true
+  - schema: workcube_mikrolink
+    name: MONEY_HISTORY
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - '{schema}'
+  contains_nolock_hint: true
+- report: fin-muhasebe-fisleri
+  category: Finans
+  title: Muhasebe Fişleri
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_2026_1
+  tables:
+  - schema: workcube_mikrolink_2026_1
+    name: ACCOUNT_CARD
+    parametric_schema: true
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - workcube_mikrolink_2026_1
+- report: fin-nakit-akis-ozet
+  category: Finans
+  title: Nakit Akış Özeti
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_1
+  tables:
+  - schema: workcube_mikrolink_1
+    name: BANK_ACTIONS
+    parametric_schema: true
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - workcube_mikrolink_1
+- report: fin-stok-fis-detay
+  category: Finans
+  title: Stok Fiş Satır Detayları
+  extraction_method: sourceQuery
+  manually_validated: false
+  schema_mode: yearly
+  schema_name: workcube_mikrolink_2026_1
+  tables:
+  - schema: '{schema}'
+    name: STOCK_FIS_ROW
+    parametric_schema: true
+  - schema: '{schema}'
+    name: STOCK_FIS
+    parametric_schema: true
+  - schema: workcube_mikrolink_7
+    name: SETUP_PROCESS_CAT
+  - schema: workcube_mikrolink
+    name: PRO_PROJECTS
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - '{schema}'
+  contains_nolock_hint: true
+- report: fin-tutar-mutabakat
+  category: Finans
+  title: Kaynak ↔ Muhasebe Tutar Mutabakatı
+  extraction_method: sourceQuery
+  manually_validated: false
+  schema_mode: static
+  schema_name: workcube_mikrolink_2026_1
+  tables:
+  - schema: '{schema}'
+    name: ACCOUNT_CARD
+    parametric_schema: true
+  - schema: workcube_mikrolink_7
+    name: SETUP_PROCESS_CAT
+  - schema: '{schema}'
+    name: INVOICE
+    parametric_schema: true
+  - schema: '{schema}'
+    name: EXPENSE_ITEM_PLANS
+    parametric_schema: true
+  - schema: '{schema}'
+    name: BANK_ACTIONS
+    parametric_schema: true
+  - schema: '{schema}'
+    name: CARI_ACTIONS
+    parametric_schema: true
+  - schema: '{schema}'
+    name: ACCOUNT_CARD_ROWS
+    parametric_schema: true
+  - schema: workcube_mikrolink
+    name: COMPANY
+  migration_action_default: pending_annex
+  parametric_schemas:
+  - '{schema}'
+  contains_nolock_hint: true
+- report: hr-bordro-detay
+  category: İnsan Kaynakları
+  title: Bordro Detay Raporu
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: unknown
+  schema_name: workcube_mikrolink
+  tables:
+  - schema: workcube_mikrolink
+    name: EMPLOYEES_PUANTAJ_ROWS
+  migration_action_default: pending_annex
+- report: hr-compensation-detay
+  category: İnsan Kaynakları
+  title: Ücret Detay Raporu
+  extraction_method: sourceQuery
+  manually_validated: false
+  schema_mode: unknown
+  schema_name: workcube_mikrolink
+  tables:
+  - schema: workcube_mikrolink
+    name: EMPLOYEES_PUANTAJ_ROWS
+  - schema: workcube_mikrolink
+    name: EMPLOYEES_PUANTAJ
+  - schema: workcube_mikrolink
+    name: EMPLOYEES
+  - schema: workcube_mikrolink
+    name: EMPLOYEES_IN_OUT
+  - schema: workcube_mikrolink
+    name: EMPLOYEE_POSITIONS
+  - schema: workcube_mikrolink
+    name: EMPLOYEES_DETAIL
+  - schema: workcube_mikrolink
+    name: EMPLOYEES_IDENTY
+  - schema: workcube_mikrolink
+    name: BRANCH
+  - schema: workcube_mikrolink
+    name: OUR_COMPANY
+  migration_action_default: pending_annex
+  contains_nolock_hint: true
+- report: hr-egitim-katilim
+  category: İnsan Kaynakları
+  title: Eğitim Katılım Raporu
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: unknown
+  schema_name: workcube_mikrolink
+  tables:
+  - schema: workcube_mikrolink
+    name: TRAINING_CLASS_ATTENDER
+  migration_action_default: pending_annex
+- report: hr-giris-cikis
+  category: İnsan Kaynakları
+  title: İşe Giriş / Çıkış Raporu
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: unknown
+  schema_name: workcube_mikrolink
+  tables:
+  - schema: workcube_mikrolink
+    name: EMPLOYEES_IN_OUT
+  migration_action_default: pending_annex
+- report: hr-izin-raporu
+  category: İnsan Kaynakları
+  title: İzin Raporu
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: unknown
+  schema_name: workcube_mikrolink
+  tables:
+  - schema: workcube_mikrolink
+    name: OFFTIME
+  migration_action_default: pending_annex
+- report: hr-maas-gecmisi
+  category: İnsan Kaynakları
+  title: Maaş Değişiklik Geçmişi
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: unknown
+  schema_name: workcube_mikrolink
+  tables:
+  - schema: workcube_mikrolink
+    name: EMPLOYEES_SALARY_HISTORY
+  migration_action_default: pending_annex
+- report: hr-maas-raporu
+  category: İnsan Kaynakları
+  title: Maaş Raporu
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: unknown
+  schema_name: workcube_mikrolink
+  tables:
+  - schema: workcube_mikrolink
+    name: EMPLOYEES_SALARY
+  migration_action_default: pending_annex
+- report: hr-personel-listesi
+  category: İnsan Kaynakları
+  title: Personel Listesi
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: unknown
+  schema_name: workcube_mikrolink
+  tables:
+  - schema: workcube_mikrolink
+    name: EMPLOYEE_POSITIONS
+  migration_action_default: pending_annex
+- report: hr-puantaj
+  category: İnsan Kaynakları
+  title: Puantaj / Devamsızlık Raporu
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: unknown
+  schema_name: workcube_mikrolink
+  tables:
+  - schema: workcube_mikrolink
+    name: EMPLOYEE_DAILY_IN_OUT
+  migration_action_default: pending_annex
+- report: satis-ozet
+  category: Satış
+  title: Sipariş Özet Raporu
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: unknown
+  schema_name: workcube_mikrolink_1
+  tables:
+  - schema: workcube_mikrolink_1
+    name: ORDERS
+  migration_action_default: pending_annex
+- report: stok-durum
+  category: Satış
+  title: Sipariş Kalem Raporu
+  extraction_method: direct_source
+  manually_validated: true
+  schema_mode: unknown
+  schema_name: workcube_mikrolink_1
+  tables:
+  - schema: workcube_mikrolink_1
+    name: ORDER_ROW
+  migration_action_default: pending_annex
