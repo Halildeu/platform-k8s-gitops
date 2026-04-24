@@ -1,0 +1,75 @@
+# k3d cluster: dev  (Mac developer machine — Faz 17.0)
+# Docs: https://k3d.io/stable/usage/configfile/
+# Kullanım: k3d cluster create --config bootstrap/k3d-dev.yaml
+#
+# Bu cluster **lokal dev** içindir. staging-sw runtime target'ları (k3d-test, k3d-prod)
+# ile karışmaz — farklı cluster adı, farklı network, farklı port. Bkz. PLAN.md Faz 17.
+#
+# İlişkili dokümanlar:
+# - PLAN.md §17.0 (naming + namespace hygiene)
+# - docs/promotion-contract.md (17.4 deliverable — TBD)
+# - docs/local-dev-runbook.md (17.3 deliverable — TBD)
+
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+
+metadata:
+  name: dev
+
+servers: 1
+agents: 0
+
+image: rancher/k3s:v1.31.2-k3s1
+
+# staging-sw (k3d-test, k3d-prod) ve lokal dev arasında network izolasyonu
+network: platform-dev-net
+
+kubeAPI:
+  hostIP: "127.0.0.1"
+  # test (7443) ve prod (6443)'ten farklı — çakışma yok
+  hostPort: "8443"
+
+ports:
+  # High-port 32080/32443 (Faz 17.X — macOS privileged port yasağı yok; sudo gerekmez)
+  # Local edge TLS (mkcert + Caddy) bu portların önünde :443 veya :8443 terminate eder
+  - port: "127.0.0.1:32080:80"
+    nodeFilters:
+      - server:0
+  - port: "127.0.0.1:32443:443"
+    nodeFilters:
+      - server:0
+
+options:
+  k3s:
+    extraArgs:
+      - arg: "--disable=traefik"
+        nodeFilters: [server:*]
+      - arg: "--disable=servicelb"
+        nodeFilters: [server:*]
+      - arg: "--disable=metrics-server"
+        nodeFilters: [server:*]
+      - arg: "--flannel-backend=none"
+        nodeFilters: [server:*]
+      - arg: "--disable-network-policy"
+        nodeFilters: [server:*]
+      # Dev cluster CIDR — test (10.44) ve prod (10.42) ile karışmaz
+      - arg: "--cluster-cidr=10.46.0.0/16"
+        nodeFilters: [server:*]
+      - arg: "--service-cidr=10.47.0.0/16"
+        nodeFilters: [server:*]
+      - arg: "--cluster-dns=10.47.0.10"
+        nodeFilters: [server:*]
+      # Dev küçük — 4-servis authn-min profile için 50 pod fazlasıyla yeterli
+      - arg: "--kubelet-arg=max-pods=50"
+        nodeFilters: [server:*]
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    # Kullanıcı context seçimini kendi yapsın (auto-switch off)
+    switchCurrentContext: false
+
+registries:
+  create:
+    name: platform-dev-registry
+    host: "0.0.0.0"
+    # test (5001) ve prod (5000)'dan farklı
+    hostPort: "5002"
