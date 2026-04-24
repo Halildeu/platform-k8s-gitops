@@ -1,0 +1,123 @@
+# Local profile: zanzibar-min (Faz 17.2 — PLAN §17.8 profile matrix)
+#
+# Cluster: k3d-dev  |  Namespace: platform-dev  |  Domain: *.localtest.me
+# Workload count: 8 (authn-min 4 + 4 Zanzibar chain apps)
+#   authn-min base (4): api-gateway + auth-service + postgres + keycloak bridges
+#   + zanzibar chain (4):
+#     - permission-service (authz Hub — Codex iter-2 bulgu 1: user-service bağımlılığı)
+#     - user-service (permission-service lookup için: PERMISSION_AUTHZ_USER_LOOKUP_BASE_URL=user-service:8089)
+#     - variant-service (scope-aware sample enforcement)
+#     - openfga (Zanzibar store StatefulSet)
+#
+# D29 Gate: Up + Functional + Zanzibar-ready (FULL 3-katman)
+#   - authn-min kapıları (OIDC + token + readiness helper)
+#   - OpenFGA synthetic tuple check
+#   - /variants scope-aware allow/deny (token'lı)
+#
+# Bu overlay base/apps/ops-bundle include ETMEZ (CRD-free, Faz 17.2.5)
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-dev
+
+resources:
+  - ../../base/host-services
+  - ../../base/apps/api-gateway
+  - ../../base/apps/auth-service
+  - ../../base/apps/permission-service
+  - ../../base/apps/user-service
+  - ../../base/apps/variant-service
+  - ../../base/apps/openfga
+  - ../../base/ingress
+
+patches:
+  # Image pull policy Never + single replica (lokal)
+  - target:
+      kind: Deployment
+      labelSelector: "app.kubernetes.io/part-of=platform"
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
+  # ConfigMap: platform-prod.svc → platform-dev.svc (runtime sub-path fixups)
+  # auth-service
+  - target:
+      kind: ConfigMap
+      name: auth-service-config
+    patch: |-
+      - op: replace
+        path: /data/KEYCLOAK_URL
+        value: "http://keycloak.platform-dev.svc.cluster.local:8080"
+      - op: replace
+        path: /data/DB_URL
+        value: "jdbc:postgresql://postgres.platform-dev.svc.cluster.local:5432/auth_db"
+      - op: replace
+        path: /data/LOGGING_LEVEL_ROOT
+        value: DEBUG
+  # api-gateway
+  - target:
+      kind: ConfigMap
+      name: api-gateway-config
+    patch: |-
+      - op: replace
+        path: /data/AUTH_SERVICE_URL
+        value: "http://auth-service.platform-dev.svc.cluster.local:8088"
+      - op: replace
+        path: /data/KEYCLOAK_URL
+        value: "http://keycloak.platform-dev.svc.cluster.local:8080"
+      - op: replace
+        path: /data/LOGGING_LEVEL_ROOT
+        value: DEBUG
+
+  # Host bridge Endpoints — Docker Desktop host-gateway
+  - target:
+      kind: Endpoints
+      name: postgres
+    patch: |-
+      - op: replace
+        path: /subsets/0/addresses/0/ip
+        value: "192.168.65.254"
+      - op: replace
+        path: /subsets/0/ports/0/port
+        value: 5432
+  - target:
+      kind: Endpoints
+      name: keycloak
+    patch: |-
+      - op: replace
+        path: /subsets/0/addresses/0/ip
+        value: "192.168.65.254"
+      - op: replace
+        path: /subsets/0/ports/0/port
+        value: 8081
+
+  # PDB devre dışı
+  - target:
+      kind: PodDisruptionBudget
+    patch: |-
+      - op: replace
+        path: /spec/minAvailable
+        value: 0
+
+  # OpenFGA StatefulSet tek replica
+  - target:
+      kind: StatefulSet
+      name: openfga
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
+  # Ingress host
+  - target:
+      kind: Ingress
+      name: platform
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: app.localtest.me

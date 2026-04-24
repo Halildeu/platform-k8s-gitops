@@ -32,6 +32,15 @@ jobs:
         run: kustomize build kustomize/overlays/prod/eso > /tmp/prod-eso.yaml
       - name: Build base/monitoring
         run: kustomize build kustomize/base/monitoring > /tmp/monitoring.yaml
+      # Faz 17.Z — PR'da blocking: local overlay'ler render sanity (lokal dev drift yakalama)
+      - name: Build overlays/local-authn-min (Faz 17.2)
+        run: kustomize build kustomize/overlays/local-authn-min > /tmp/local-authn-min.yaml
+      - name: Build overlays/local-zanzibar-min (Faz 17.2)
+        run: kustomize build kustomize/overlays/local-zanzibar-min > /tmp/local-zanzibar-min.yaml
+      - name: Build overlays/local-full (Faz 17.2)
+        run: kustomize build kustomize/overlays/local-full > /tmp/local-full.yaml
+      - name: Build overlays/local (Faz 17.2 DEPRECATED — legacy render sanity)
+        run: kustomize build kustomize/overlays/local > /tmp/local-legacy.yaml
       - name: Build base/eso (MUST FAIL — placeholder FQDN)
         run: |
           if kustomize build kustomize/base/eso 2>&1 | grep -q "OVERLAY_MUST_OVERRIDE"; then
