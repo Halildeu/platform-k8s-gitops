@@ -1174,6 +1174,160 @@ Deliverable: `.github/workflows/local-overlay-lint.yml` (PR) + `.github/workflow
 
 ---
 
+### Faz 18 — Compose Dependencies Retirement + Environment Independence
+
+**Kapsam**: Compose stateless + cross-realm control-plane dependencies retirement. ADR-0002 D6 stateful tier (PG/KC/Vault compose) **korunur**; stateless compose + `platform-service-manager-1` Docker-socket control plane + `platform_microservice-network` legacy + `/api/services/` public debug route bitirilir. D34 yeni karar: runtime/state/secret independence 3-realm arası.
+
+**Yürütme penceresi**: Faz 13 Hybrid GO canlı + rollback-window iptal sonrası. Faz 16 MSSQL migration'dan **bağımsız** (stateless compose MSSQL kullanmaz). Effort: 5-7 iş günü (13 sub-faz, cross-repo).
+
+**Codex adversarial review**: thread `019dbfa5` — iter-1 VERDICT → iter-2 (scope daraltma user "mimari aynı") → **iter-3 AGREE** (3 guardrail: D34 PLAN kararı, 18.11 decision-capture + impl defer, 18.5-7 24h smoke yeterli). Ayrıca diğer repo AI değerlendirme absorb: environment independence contract + lokal k3d-dev smoke kanıtı + prod public debug route cleanup.
+
+**Faz adı kritik**: "Compose Dependencies Retirement" (stateless + control plane) — ADR-0002 topoloji **değişmez** (staging-sw same-host dual-cluster korunur). D34 operasyonel boundary, mimari değil.
+
+#### 18.0 — D34 Environment Independence Contract
+
+Yeni karar satırı PLAN D-log:
+
+**D34 (Accepted 2026-04-24)**: Lokal dev (Mac k3d-dev) + Ubuntu test (staging-sw k3d-test + testai) + Ubuntu prod (staging-sw k3d-prod + ai) **runtime/state/secret/control-plane bağımsız**. Paylaşılabilir: Git repo + CI artifact + immutable image digest + Kustomize base + runbook/docs. Paylaşılmaz: DB, KC realm, Vault path/AppRole, OpenFGA store/model, host nginx debug route, service-manager endpoint, MSSQL canlı bağlantı, runtime container/pod/volume.
+
+ADR-0002 **aynı kalır** (topoloji değişmez; D34 operasyonel boundary).
+
+Deliverable: `PLAN.md` D34 satır + `docs/promotion-contract.md` 3-realm runtime independence bölüm + `docs/state/current-state.md` D34 truth closure.
+
+#### 18.1 — A0 Live Preflight (staging-sw)
+
+Edge/upstream authoritative teyit + cross-realm canlı kanıt:
+
+- `ssh staging-sw docker ps` full container listesi
+- Edge nginx upstream: `/api/` (30443 K8s ✓), `/api/services/` (8795 compose DRIFT), `/realms/` (8081 compose KC — ADR-0002 D6 OK)
+- `/api/auth/*` compose auth-service dependency teyit/red (canlı canlı curl + access log grep)
+- K8s pod sayısı sabit (49 prod Running)
+- Access log son 24h grep `/api/services/` (canlı consumer hit sayım)
+- `docker inspect platform-service-manager-1` Docker socket mount confirm
+- Frontend source: `ai.acik.com/` root → platform-web-nginx static kanıt
+- `docs/phase18-evidence/a0-preflight-YYYYMMDD.md`
+
+**Go/No-Go**: Tüm drift kanıtları + consumer count → Aşama 2'ye geç.
+
+#### 18.2 — `/api/services/` Public Debug Route Tombstone (410 Gone)
+
+Codex iter-3 kararı: 410 semantic doğru (resource permanently gone).
+
+- Edge nginx `/api/services/` → `return 410 'Gone; replaced by ArgoCD/Grafana ops links'` JSON tombstone
+- **Tombstone deprecation window**: 7 takvim günü + son 24h 0 hit → route tam silme
+- `docs/phase18-evidence/service-endpoint-tombstone.md`
+
+#### 18.3 — service-manager-1 Retirement (Cross-Repo)
+
+Codex iter-3: 2 ayrı PR (web vs backend/deploy) blast radius orta.
+
+**platform-ssot PR 1 (web)**:
+- `web/apps/mfe-shell/src/pages/admin/service-control/` → kaldır
+- `web/apps/mfe-shell/src/pages/home/widgets/ServiceHealthSummaryWidget.tsx` → "Ops Links" (ArgoCD/Grafana/runbook) replace
+- `web/apps/mfe-shell/src/app/router/AppRouter.tsx` + `header-navigation.config.ts` + `Sidebar.tsx` + `chord-navigation.config.ts` → route/nav/shortcut cleanup
+- Vite local dev plugin `service-health-api.ts` → **dev-only kalabilir** (Faz 17 local fixtures simetrik)
+
+**platform-ssot PR 2 (backend/deploy)**:
+- `backend/scripts/service-manager-api.js` → arşiv/silme
+- `deploy/docker-compose.prod.yml` → platform-service-manager-1 blok kaldır
+- `deploy/ubuntu/deploy-backend.sh` + `platform-start.sh` → service-manager invoke satır temizle
+
+**platform-k8s-gitops PR (bu repo)**:
+- `host-compose/web/nginx/default.conf` `/api/services/` route 410 tombstone
+- 18.2 tombstone deprecation süresi sonunda route tam silme
+- Evidence doc
+
+#### 18.4 — Vault Ops Replacement
+
+- `platform-vault-snapshot-1` compose → retire
+- **Replace**: `bootstrap/vault-snapshot-cron.sh` repo-native authoritative (zaten mevcut)
+- `platform-vault-audit-init-1` one-shot → retire earlier
+
+#### 18.5 — App Stateless Compose `stop` Only
+
+Codex iter-3 sıra: önce `stop`, smoke + soak, sonra `rm`.
+
+- prereq: 18.1 A0 + 18.2 tombstone + 18.3 service-manager retire PASS
+- Grup (Codex iter-2 Option Y sıralaması adapted):
+  - **B**: vault-snapshot-1, vault-audit-init-1 → 18.4'e delege
+  - **A**: auth-service-1, user-service-1, core-data-service-1, report-service-1, schema-service-1, variant-service-1, api-gateway-1, discovery-server-1, openfga-1 (K8s StatefulSet duplicate)
+- `docker compose stop` only (`rm` 18.7'de)
+
+#### 18.6 — T+15m / T+60m / T+24h Smoke
+
+Codex iter-3: 7 gün değil, 24h yeterli (cleanup ≠ cutover).
+
+- T+15m / T+60m: K8s 49 prod pod Running stable, `ai.acik.com/` + `/api/` 200, `/realms/` 200 (KC compose stateful canlı)
+- T+24h: error rate zero regression, CPU/memory baseline
+- `docs/phase18-evidence/smoke-24h-YYYYMMDD.md`
+
+**Go/No-Go**: 24h smoke PASS → 18.7'ye geç.
+
+#### 18.7 — App Stateless Compose `rm` + Deploy Script Cleanup
+
+- `docker compose rm -f` stopped containers
+- Cross-repo: `platform-ssot/deploy/docker-compose.prod.yml` app stateless blok kaldırma
+- `deploy/ubuntu/platform-start.sh` + `deploy-backend.sh` app stateless start satırları temizleme
+- Point of no return; önceki 18.5-18.6 smoke PASS olmadan YAPMA
+
+#### 18.8 — Lokal k3d-dev Clean Smoke (non-blocking evidence lane)
+
+Codex iter-3: paralel, 18.1-18.7 gate değil.
+
+- Mac'te clean worktree (current dirty state ayrı PR'da temizlik)
+- `./bootstrap/setup-clusters.sh dev` → cluster up
+- `./scripts/dev-up.sh --profile authn-min` → apply
+- `./scripts/dev-seed.sh --profile authn-min` → fixtures
+- `./scripts/dev-smoke.sh --profile authn-min` → PASS
+- D34 "local dev" bacağı evidence
+- `docs/phase18-evidence/local-dev-smoke-YYYYMMDD.md`
+
+#### 18.9 — Legacy Observability Retirement (conditional)
+
+- platform-{grafana,prometheus,tempo,loki,promtail}-1 compose stop
+- **ÖNKOŞUL** (Codex iter-2 uyarı): K8s test monitoring gap kapatılmış olmalı (current-state:737 drift)
+- Gap açıksa bu sub-faz **beklemede**
+
+#### 18.10 — Legacy Network Cleanup
+
+Codex iter-3: KC detach önce.
+
+- Prereq: 18.7 complete (compose stateless yok)
+- `docker network disconnect platform_microservice-network platform-kc-prod` → KC sadece `platform-prod-net`'te
+- Aynı: `platform-pg-prod`, `platform-vault-prod` (host-compose/postgres/prod/docker-compose.yml + vault/prod/docker-compose.yml zaten `platform-prod-net` only)
+- `docker network rm platform_microservice-network`
+
+#### 18.11 — Frontend Source Decision Capture (impl defer)
+
+Codex iter-3: ikiye ayır — 18.11.a karar, 18.11.b impl ertelenmiş.
+
+- **18.11.a**: Bugünkü truth mühürü `Option B: host-static canonical` (current-state:734 evidence). `docs/state/current-state.md` + `docs/promotion-contract.md` bu truth'u net yazar.
+- **18.11.b** (DEFERRED): Option A (K8s frontend authoritative) cutover — ayrı Faz 19 veya pending.
+
+#### 18.12 — Truth Closure
+
+- `PLAN.md` D34 + Faz 18 COMPLETE marker
+- `docs/promotion-contract.md` 3-realm independence kontrat
+- `docs/state/current-state.md` Faz 18 delta (A0 + tombstone + service-manager retire + stateless rm + network clean + local smoke + frontend source captured)
+- Final handoff: `docs/session-handoff-<date>-faz-18-complete.md`
+
+#### Repo Sınırı
+
+| Repo | İçerik |
+|---|---|
+| `platform-k8s-gitops` | Edge nginx tombstone + tam remove, `PLAN.md` D34, `docs/promotion-contract.md`, `docs/phase18-evidence/*`, truth closure docs |
+| `platform-ssot` | MFE admin UI cleanup (route/nav/shortcut), `backend/scripts/service-manager-api.js` retire, `deploy/docker-compose.prod.yml` stateless blok removal, `deploy/ubuntu/*.sh` cleanup |
+
+#### Bağlantılar
+
+- ADR-0002 D6 (stateful tier compose, değişmez)
+- PLAN D34 (YENİ — 18.0 deliverable, 3-realm runtime independence)
+- `docs/promotion-contract.md` (Faz 17.4 — D34 kontrat detay genişlemesi)
+- `docs/state/current-state.md` drift (shared edge + compose stateless canlı gateway/auth çelişkisi)
+- Codex thread: `019dbfa5` (iter-1 VERDICT → iter-2 revize → iter-3 AGREE)
+
+---
+
 ## 5. Ana Repo Bağlantısı
 
 **autonomous-orchestrator** içinde kalacaklar:
