@@ -8,6 +8,65 @@
 
 ---
 
+## Live Delta — Session 29 +26 (2026-04-24 ~22:15 UTC+3) — FAZ 19.3 COMPLETE + 19.4+19.5 combined PR
+
+### Faz 19.3 COMPLETE — Zanzibar batch (platform-backend PR #2 MERGED 19:06:14Z)
+
+**Codex AGREE thread 019dc0d8:**
+- Kod zaten 19.1'de taşındı; 19.3 = CI batch scope + DSL validation + D29 kanıt
+- common-auth koordinat stabil (com.example:common-auth:1.1.0)
+- Relocation POM gerek yok (1:1 migration)
+
+**platform-backend PR #2 değişiklikler:**
+- `ci-mvn-check.yml` batch scope: auth+user+variant → **+permission-service +common-auth** (-am deps)
+- Yeni job `openfga-dsl-check`: DSL basic presence + structural check (fga CLI v0.6 `but not` syntax incompat → simplified)
+
+**Zanzibar plane korumaları:**
+- Vault `kv/platform/openfga` ExternalSecret UNCHANGED (runtime authoritative)
+- Fixtures (tuples-seed.json) test-only backend repo'da
+- Ops runbook (`prod-scoped-allow-seed-runbook.md`) gitops'ta
+
+### Faz 19.4+19.5 IN REVIEW — Combined backend batch 3+4 (platform-backend PR #3)
+
+**Scope:** core-data + report + schema + api-gateway + discovery-server (5 servis).
+
+**Değişiklikler:**
+- `batch-build` → `full-reactor-build`: parent pom 9 modül full reactor
+- Yeni job `schema-service-build`: standalone (schema-service parent pom'da değil)
+- Timeout 20→30 dakika (reactor)
+
+**10 module coverage** (auth + user + variant + core-data + report + schema + permission + common-auth + api-gateway + discovery-server).
+
+### User direktif UPHELD
+
+- "discovery service i almayı unutma" ✓ (discovery-server legacy marker + CI full-reactor compile)
+- Zero regression K8s runtime unchanged
+
+### Evidence
+
+- `docs/faz-19-evidence/19.3-zanzibar-ci-scope.md` (8 section)
+- `docs/faz-19-evidence/19.4-19.5-full-reactor-schema.md` (7 section, 10 module coverage tablosu)
+
+### Session 29 güncel PR sayacı
+
+| Repo | Merged | Open | Total |
+|---|---|---|---|
+| platform-k8s-gitops | 28 (#84-#113) + 1 (#114 bu) | 1 (#114) | 29 |
+| platform-ssot | 5 (#550-#554) | 0 | 5 |
+| platform-backend (YENİ) | 2 (#1, #2) + 1 (#3 CI) | 1 (#3) | 3 |
+| platform-web (YENİ) | 0 (initial push only) | 0 | — |
+| **Toplam** | **35 PR merged + 2 open + 2 yeni repo state** | | |
+
+### Sıradaki
+
+- Faz 19.4+19.5 backend PR #3 CI green + merge → full backend migration DONE (10 modül)
+- **Faz 19.6 platform-web migration**: filter-repo aftermath + CI + hijyen + large file cleanup
+- Faz 19.7 reports code split + data contract gitops'ta
+- Faz 19.8 CI + image pipeline (dual-build)
+- Faz 19.9 cutover test→prod atomic
+
+---
+
 ## Live Delta — Session 29 +25 (2026-04-24 ~21:50 UTC+3) — FAZ 19.2 PR-A (platform-backend PR #1)
 
 ### Faz 19.2 PR-A IN REVIEW (platform-backend)
