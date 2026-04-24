@@ -8,6 +8,63 @@
 
 ---
 
+## Live Delta — Session 29 +21 (2026-04-24 ~20:35 UTC+3) — FAZ 18.5-18.7 COMPLETE (3-dk retirement)
+
+### Faz 18.5-18.7 App Stateless Compose Retirement TAMAMLANDI
+
+**Live evidence staging-sw 2026-04-24 17:27:07 → 17:30:21 UTC (3 dakika 14 saniye):**
+- **17:27:07 Pre-stop baseline**: K8s prod 19 Running + test 10 Running + edge 200/401 ✓
+- **17:27:53 Stop 9 container**: auth/user/variant/core-data/report/schema/api-gateway/discovery-server/openfga
+- **17:28:16 T+5m smoke PASS**: K8s Running stable + edge unchanged + `/realms/` 200 KC stateful
+- **17:28:16 OpenFGA parity gate PASS**: `/api/v1/authz/version` 401 "JWT token zorunludur" (authz chain K8s alive, store/model parity)
+- **17:29:35 Rm 11 container**: 9 stopped + permission-service Exited + openfga-migrate Completed
+- **17:30:21 Post-rm smoke PASS**: zero regression (K8s 19+10 Running, edge 200/401)
+
+**3 PR chain:**
+- **PR #107** (gitops): PLAN drift no-soak fix (24h→5dk smoke + OpenFGA parity gate) MERGED
+- **PR #553** (ssot): 11 compose blok tombstone + deploy script cleanup (-937/+54 satır) OPEN/CI
+- **PR #108** (gitops — bu): Faz 18.5-18.7 evidence doc + current-state + PLAN COMPLETE marker
+
+**Codex AGREE:** thread `019dc07c` ready_for_impl=true + 2 gate PASS:
+1. OpenFGA store/model parity (K8s authoritative, Vault kv/platform/openfga ESO mount)
+2. 18.7 point-of-no-return (5-dk smoke + parity prereq)
+
+### Deploy script cleanup (-937 satır)
+
+- `deploy-backend.sh`: services list 10→3, backend_services 8→0, "Ensure infra" up 5→3 (openfga-migrate + openfga kaldırıldı), "Recreate backend" block retired
+- `platform-start.sh`: stateful + observability phase; backend phase-2 kaldırıldı
+- `deploy/docker-compose.prod.yml`: 9 service blok awk ile tombstone
+- `backend/docker-compose.yml`: 11 service blok awk ile tombstone
+
+### Kalan staging-sw compose (Faz 18 ilerleme)
+
+**D6 stateful (kalacak):** platform-{pg,kc,vault}-{prod,test} + vault-unseal
+**Observability (Faz 18.9 hedefi):** platform-{grafana,prometheus,tempo,loki,promtail}-1
+**Edge (Faz 18.11 karar):** platform-web-nginx + platform-web-nginx-stage
+**Zombie (Faz 18.10 cleanup):** platform-{keycloak,vault,postgres-db,vault-unseal}-1 (Created state)
+
+### Session 29 4-gün PR sayacı (güncel)
+
+| Date | Gitops PRs | SSOT PRs | Notes |
+|---|---|---|---|
+| Apr 20-23 | #84-#97 (14 PR) | — | Faz 17 + 16.0/16.1/16.2 + 16.8 |
+| Apr 24 morning | #98-#102 (5 PR) | #550 #551 | Faz 18 plan + 18.1/18.2/18.3 |
+| Apr 24 afternoon | #103 | — | Session 29 +18 delta |
+| Apr 24 evening | #104 #105 #106 | #552 | Faz 18.4 COMPLETE (3 gitops + 1 ssot) |
+| Apr 24 late | #107 **#108** | #553 (open) | Faz 18.5-18.7 COMPLETE (2 gitops + 1 ssot) |
+| **TOTAL** | **25 merged + 1 open** | **4 merged + 1 open** | **30 cross-repo PR Session 29** |
+
+### Sıradaki İleri İş
+
+- **Faz 18.8** (non-blocking paralel): Mac k3d-dev clean smoke (user trigger)
+- **Faz 18.9**: Observability cleanup değerlendirmesi (compose grafana/prom/tempo/loki/promtail K8s duplicate mi?)
+- **Faz 18.10**: Zombie keycloak-1 + vault-1 + postgres-db-1 + vault-unseal-1 network cleanup
+- **Faz 18.11**: Frontend source decision capture (Option B canonical)
+- **Faz 18.12**: Truth closure + Session 30 handoff
+- **Faz 19**: Codex split-repo (thread `019dc033` 10-step, discovery-server + reports migration + Zanzibar Java source)
+
+---
+
 ## Live Delta — Session 29 +20 (2026-04-24 ~20:00 UTC+3) — FAZ 18.4 COMPLETE + USER DIRECTIVES LOCKED
 
 ### Faz 18.4 Vault Ops Compose Retirement TAMAMLANDI

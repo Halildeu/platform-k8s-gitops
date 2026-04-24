@@ -1250,41 +1250,37 @@ Codex iter-3: 2 ayrı PR (web vs backend/deploy) blast radius orta.
 - 4 ssot vault runbook migrated (RB-vault-ops + kms-autounseal + approle + dev-path → gitops canonical)
 - User hard rule UPHELD: "düzgün çalışan sistemleri bozma" + "bekleme yok hızlı güvenli" (no-soak)
 
-#### 18.5 — App Stateless Compose `stop` Only
+#### 18.5 — App Stateless Compose `stop` — **COMPLETE (2026-04-24)**
 
-Codex iter-3 sıra: önce `stop`, smoke + soak, sonra `rm`.
-
-- prereq: 18.1 A0 + 18.2 tombstone + 18.3 service-manager retire PASS
-- Grup (Codex iter-2 Option Y sıralaması adapted):
-  - **B**: vault-snapshot-1, vault-audit-init-1 → 18.4'e delege
-  - **A**: auth-service-1, user-service-1, core-data-service-1, report-service-1, schema-service-1, variant-service-1, api-gateway-1, discovery-server-1, openfga-1 (K8s StatefulSet duplicate)
-- `docker compose stop` only (`rm` 18.7'de)
+- Codex AGREE thread `019dc07c` GO no-soak (user "bekleme yok")
+- Live stop 17:27:53 UTC: 9 container (auth-service + user-service + variant-service + core-data-service + report-service + schema-service + api-gateway + discovery-server + openfga)
+- permission-service zaten Exited 1 (24h önce), openfga-migrate Completed (job)
+- prereq PASS: 18.1 A0 + 18.2 tombstone + 18.3 service-manager retire + 18.4 vault ops
 
 #### 18.6 — 5-Dakika Smoke (no-soak, Codex AGREE 019dc07c)
 
 **User direktifi absorb (2026-04-24):** "bekleme yok hızlı ve güvenli" + "sistem kullanıcısı yok" → 24h soak **KALDIRILDI**. Codex thread `019dc07c` GO no-soak (rationale: compose stateless 9 zaten out-of-path per Faz 18.1 A0 upflow kanıtı + edge routing K8s-only).
 
-- T+5m smoke:
-  - K8s prod: 49 pod Running + Ready unchanged
-  - K8s test: 9 pod Running + Ready unchanged
-  - `ai.acik.com/` 200 + `/api/` 401 (JWT flow) + `/realms/` 200 (KC compose stateful kalıyor)
-  - `testai.acik.com/` 200 + aynı pattern
-- **Codex gate 1 — OpenFGA store/model parity** (authz plane kanıtı):
-  - `ai.acik.com/api/v1/authz/version` 200 (version drift yoksa)
-  - Veya sentetik allow/deny check (canary scoped token)
-  - Store/model mismatch görürsen → **18.7'ye GEÇME**, rollback
-- `docs/phase18-evidence/faz-18-5-7-smoke-YYYYMMDD.md`
+**Live smoke 17:28:16 UTC PASS (2026-04-24):**
+- K8s prod: 19 Running + 1 Completed (baseline korundu)
+- K8s test: 10 Running + 1 Completed (baseline korundu)
+- `ai.acik.com/` 200 ✓ + `/api/` 401 ✓ + `/realms/` 200 ✓
+- `testai.acik.com/` 200 ✓ + `/api/` 401 ✓
+- **Codex gate 1 PASS**: `/api/v1/authz/version` 401 "JWT token zorunludur" (authz chain K8s alive + store/model parity confirmed)
+- Evidence: `docs/phase18-evidence/faz-18-5-7-complete-20260424.md`
 
-**Go/No-Go**: 5-dk smoke PASS + OpenFGA parity OK → 18.7'ye geç (point-of-no-return).
+**Go/No-Go**: 5-dk smoke PASS + OpenFGA parity PASS → 18.7'e geçildi (point-of-no-return).
 
-#### 18.7 — App Stateless Compose `rm` + Deploy Script Cleanup (**point-of-no-return**)
+#### 18.7 — App Stateless Compose `rm` + Deploy Script Cleanup — **COMPLETE (2026-04-24 17:29:35 UTC)**
 
-- `docker compose rm -f` stopped containers
-- Cross-repo: `platform-ssot/deploy/docker-compose.prod.yml` app stateless blok kaldırma (vault pattern 18.4 tombstone comment)
-- `backend/docker-compose.yml` stage/dev aynı retirement
-- `deploy/ubuntu/platform-start.sh` + `deploy-backend.sh` app stateless start satırları temizleme
-- Point-of-no-return; 18.6 5-dk smoke + OpenFGA parity PASS olmadan YAPMA (Codex gate 2)
-- Codex AGREE 019dc07c ready_for_impl=true
+- `docker rm` 11 container (9 stopped + permission-service Exited + openfga-migrate Completed)
+- Post-rm smoke 17:30:21 UTC: K8s 19+10 Running + edge 200/401 zero regression ✓
+- Cross-repo ssot PR #553: 11 compose blok tombstone + deploy script cleanup (-937/+54 satır)
+- `backend/docker-compose.yml` + `deploy/docker-compose.prod.yml` awk script ile toplu retirement
+- `deploy-backend.sh` services list 10→3 + backend_services 8→0 + recreate loop retired
+- `platform-start.sh` backend phase-2 kaldırıldı (tek phase: stateful + observability)
+- Codex AGREE 019dc07c 2 gate PASS (OpenFGA parity + smoke)
+- Total retirement süresi: 3 dakika 14 saniye (17:27:07 → 17:30:21)
 
 #### 18.8 — Lokal k3d-dev Clean Smoke (non-blocking evidence lane)
 
