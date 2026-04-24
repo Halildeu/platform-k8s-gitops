@@ -8,6 +8,69 @@
 
 ---
 
+## Live Delta — Session 29 +27 (2026-04-24 ~22:30 UTC+3) — FAZ 19.4-19.7 HIZLI İLERLEME
+
+### Faz 19.4+19.5 COMPLETE (backend PR #3 MERGED 19:12:52Z)
+
+**10 module CI coverage** — platform-backend:
+- full-reactor-build: 9 parent pom module (auth+user+variant+permission+common-auth+core+report+api-gateway+discovery)
+- schema-service-build: standalone (common-auth install önce)
+- openfga-dsl-check: basic presence
+- Fix cycle: schema-service `common-auth:1.1.0` Maven Central'da yok → önce `-pl common-auth -am install` local, sonra schema-service verify
+
+### Faz 19.6 IN REVIEW — platform-web PR #12
+
+**Çıkan PR #12 değişiklikler:**
+- `ci-web-check.yml` (pnpm install + lint, workflow_dispatch + PR/push trigger)
+- 16 legacy workflow disable → `workflows-legacy/`
+- `@Halildeu` solo CODEOWNERS
+- CONTRIBUTING rewrite (Option B canonical + pnpm + large file note)
+- README update (live status + 739 commit)
+- CI fix: pnpm/action-setup version collision (package.json packageManager vs workflow version → version kaldırıldı)
+
+**Faz 18.11.a frontend canonical UPHELD**:
+- Option B (host-static nginx)
+- K8s frontend DEĞİL
+- Port pins: 30443 prod, 31080/5545 test
+
+### Faz 19.7 COMPLETE (docs-only)
+
+Reports code split — migration zaten tamamlandı, sadece mühürleme:
+- mfe-reporting → platform-web apps/mfe-reporting (19.1 filter-repo) ✓
+- report-service → platform-backend report-service (19.1 + 19.4 CI coverage) ✓
+- **Data contract platform-k8s-gitops authority:**
+  - `docs/migration/flyway-v16-plan.md`
+  - `docs/migration/mssql-pg-data-contract.md`
+  - `docs/migration/report-source-annex.yaml`
+  - `docs/migration/schema-introspection-annex.yaml`
+
+Codex direktif absorb: "Reports code taşınır, data contract gitops'ta DRAFT annex korunur" ✓
+
+### Faz 19 güncel durum
+
+| Faz | Status | Evidence |
+|---|---|---|
+| 19.0 | ✅ MERGED | PR #111 |
+| 19.1 | ✅ MERGED | PR #112 (2 repo + filter-repo) |
+| 19.2 | ✅ MERGED | backend #1 + gitops #113 |
+| 19.3 | ✅ MERGED | backend #2 + gitops #114 |
+| 19.4+19.5 | ✅ MERGED | backend #3 (10 module CI) + gitops #114 |
+| 19.6 | 🔄 IN REVIEW | web #12 (fix cycle pnpm collision) |
+| 19.7 | ✅ COMPLETE | docs-only, migration zaten tamamlandı |
+| 19.8 | ⏳ Pending | CI + image pipeline (dual-build) |
+| 19.9 | ⏳ Pending | Cutover test→prod atomic |
+| 19.10 | ⏳ Pending | Source repo archive (optional) |
+
+### Session 29 güncel PR sayacı
+
+- platform-k8s-gitops: 29 merged + 1 open (bu)
+- platform-ssot: 5 merged + 0 open
+- platform-backend: 3 merged + 0 open
+- platform-web: 0 merged + 1 open (#12)
+- **Toplam: 37 merged + 2 open**
+
+---
+
 ## Live Delta — Session 29 +26 (2026-04-24 ~22:15 UTC+3) — FAZ 19.3 COMPLETE + 19.4+19.5 combined PR
 
 ### Faz 19.3 COMPLETE — Zanzibar batch (platform-backend PR #2 MERGED 19:06:14Z)
