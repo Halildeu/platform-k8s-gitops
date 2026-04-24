@@ -8,6 +8,59 @@
 
 ---
 
+## Live Delta — Session 29 +20 (2026-04-24 ~20:00 UTC+3) — FAZ 18.4 COMPLETE + USER DIRECTIVES LOCKED
+
+### Faz 18.4 Vault Ops Compose Retirement TAMAMLANDI
+
+**Kanıt tabakası:**
+- Live staging-sw topoloji: **iki ayrı vault container** `platform-vault-prod` + `platform-vault-test` (D34 per-realm izolasyon compose tier'da zaten uygulanmış)
+- Compose sidecar ZOMBIE keşfi (Phase 2 manuel smoke): `platform-vault-snapshot-1` + `platform-vault-audit-init-1` entrypoint `/bin/sh` + `sleep infinity` = 0 iş
+- Host cron Apr 20'den beri tek authoritative (4 gün snapshot evidence Apr 21-24 OK prod+test)
+
+**3 PR chain:**
+- **PR #104** (gitops Phase 1): repo-only scripts + runbook + 4 ssot vault runbook migration (RB-vault-ops + kms-autounseal + approle + dev-path)
+- **PR #105** (gitops HOTFIX): multi-vault topology restore — Phase 1 single-vault assumption YANLIŞTI, live iki vault, hotfix canvas `for env in prod test` loop geri + Codex guardrails korundu (flock + unique temp + 14-gün retention)
+- **PR #552** (ssot): compose blok retirement → tombstone comment (service-manager pattern), `deploy-backend.sh` + `platform-start.sh` cleanup
+
+**Codex AGREE:** thread `019dc04d` (ready_for_impl=true, 6 guardrail absorb: flock + unique temp + idempotent ensure + 14-gün retention + install/retire runbook ayrı + backup-freshness-exporter zaten vault kapsar)
+
+**Phase 2 staging-sw live smoke (2026-04-24 19:47):**
+- Snapshot prod 80K + test 60K (ayrı dosyalar `/home/halil/platform/backup/vault/{prod,test}/`)
+- Audit-init prod + test: `Success! Enabled the file audit device at: file/` (zombie sidecar disable etmişti, host cron re-enable)
+- Idempotent re-run: `already enabled` PASS
+- Vault health unchanged: prod + test HA active, sealed=false
+- Zombie sidecar rm: `docker stop + rm platform-vault-snapshot-1 platform-vault-audit-init-1` (0 functional etki)
+- Crontab: `0 2` snapshot + `15 2` audit-init (offset race koruma + flock script-level fail-safe)
+
+**Evidence doc:** `docs/phase18-evidence/faz-18-4-complete-20260424.md`
+
+### User Hard Rule LOCKED (oturum kuralları)
+
+1. **"düzgün çalışan sistemleri bozmdan yapalım"** — 4-fazlı non-destructive yaklaşım default (Phase 1 repo-only → Phase 2 paralel → Phase 3 stop → Phase 4 rm). Phase 2 keşfi Phase 1 varsayımını düzeltti → hotfix ile zero-damage.
+2. **"bekleme yok hızlı ve güvenli"** — 48h soak + 72h warm rollback kaldırıldı; kullanıcı direct smoke + rm onayı (sistem kullanıcısı yok, güvenlik compromise değil).
+3. **"raporları da taşıyacağız"** — ssot vault runbook'ları canonical header ile gitops'a (Faz 19 split-repo öncesi batch'ten bağımsız hızlı migration).
+4. **"discovery service i almayı unutma"** — Faz 19 migration scope'una not eklendi.
+
+### Sıradaki İleri İş
+
+- **Faz 18.5-18.7 (no-soak)**: 9 app stateless compose (auth-service + user-service + core-data-service + report-service + schema-service + variant-service + api-gateway + discovery-server + openfga K8s duplicate) → direct `stop + rm` + cross-repo ssot blok kaldırma
+- **Faz 18.8**: Mac k3d-dev clean smoke (user trigger)
+- **Faz 18.9-18.12**: Observability cleanup + frontend truth + truth closure
+- **Faz 19**: Split-repo authority transfer (Codex thread `019dc033` 10-step, discovery-server + reports migration dahil)
+
+### 4 Gün PR Sayacı (Session 29)
+
+| Date | Gitops PRs | SSOT PRs | Notes |
+|---|---|---|---|
+| Apr 20 | #84-#93 (10 PR, 4070 satır) | — | Faz 17 + 16.0 + 16.2 |
+| Apr 22-23 | #94-#97 (4 PR) | — | Faz 16.8 + 16.2 planning |
+| Apr 24 morning | #98-#102 (5 PR) | #550 #551 | Faz 18 plan + 18.1/18.2/18.3 |
+| Apr 24 afternoon | #103 | — | Session 29 +18 state delta |
+| Apr 24 evening | #104 #105 | #552 (OPEN) | Faz 18.4 COMPLETE |
+| **TOTAL** | **22** | **3 merged + 1 open** | 25 cross-repo PR |
+
+---
+
 ## Live Delta — Session 29 +18 (2026-04-24 ~15:30 UTC+3) — FAZ 18.3 CROSS-REPO + HOST OPS TAMAMLANDI + YENİ YÖN
 
 ### Kaynak Repo Anlamı Netleşti (User Direktif)

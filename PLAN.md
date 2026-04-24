@@ -1237,11 +1237,18 @@ Codex iter-3: 2 ayrı PR (web vs backend/deploy) blast radius orta.
 - 18.2 tombstone deprecation süresi sonunda route tam silme
 - Evidence doc
 
-#### 18.4 — Vault Ops Replacement
+#### 18.4 — Vault Ops Replacement — **COMPLETE (2026-04-24)**
 
-- `platform-vault-snapshot-1` compose → retire
-- **Replace**: `bootstrap/vault-snapshot-cron.sh` repo-native authoritative (zaten mevcut)
-- `platform-vault-audit-init-1` one-shot → retire earlier
+- `platform-vault-snapshot-1` compose → retire ✓ (PR #552 ssot + host rm)
+- **Replace**: `bootstrap/vault-snapshot-cron.sh` multi-vault + Codex guardrails (flock + unique temp + 14-gün retention)
+- `platform-vault-audit-init-1` → retire ✓ + `bootstrap/vault-audit-init-cron.sh` idempotent ensure (crontab 02:15)
+- Codex AGREE thread `019dc04d` + ready_for_impl=true
+- Live kanıt: staging-sw 2026-04-24 19:47 manuel smoke PASS prod+test (80K + 60K) + 4-gün Apr 21-24 log evidence
+- Keşif: compose sidecar ZOMBIE (`sleep infinity` 2026-04-23+) — host cron Apr 20'den beri authoritative, retirement = dead code
+- PR: platform-k8s-gitops #104 (Phase 1) + #105 (multi-vault hotfix) + platform-ssot #552 (compose blok rm)
+- Evidence: `docs/phase18-evidence/faz-18-4-complete-20260424.md`
+- 4 ssot vault runbook migrated (RB-vault-ops + kms-autounseal + approle + dev-path → gitops canonical)
+- User hard rule UPHELD: "düzgün çalışan sistemleri bozma" + "bekleme yok hızlı güvenli" (no-soak)
 
 #### 18.5 — App Stateless Compose `stop` Only
 
