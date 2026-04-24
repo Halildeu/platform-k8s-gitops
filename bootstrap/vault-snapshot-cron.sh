@@ -1,73 +1,75 @@
 #!/usr/bin/env bash
-# Vault Raft Snapshot Cron — daily (Faz 18.4, revize)
-# Source: ADR-0002 §0.5 + docs/S5-disaster-recovery-runbook.md + Codex thread 019dc04d AGREE
+# Vault Raft Snapshot Cron — daily (Faz I.1.2 + Faz 18.4 Phase 1 hotfix)
+# Source: ADR-0002 §0.5 + docs/S5-disaster-recovery-runbook.md
 #
-# Faz 18.4 değişiklikleri (compose vault-snapshot-1 retirement replacement):
-#   - Tek vault topolojisi: `platform-vault-1` (multi-vault loop kaldırıldı)
-#   - flock: paralel run engelleme (Codex guardrail: compose sidecar + host cron 48h co-exist)
-#   - unique temp file: /tmp/snap-<PID>-<timestamp>.tmp (race koruma)
-#   - Retention 14 gün (repo canonical; compose 7 gün override yok)
-#   - Schedule offset önerisi: 02:00 (compose sidecar 24h loop'tan bağımsız)
+# TOPOLOJI (2026-04-24 Faz 18.4 Phase 2 kanıt):
+#   Live container'lar: platform-vault-prod + platform-vault-test (iki ayrı vault, D34 per-realm).
+#   compose platform-vault-snapshot-1 ZOMBIE (sleep infinity) — host cron authoritative.
+#
+# Faz 18.4 Phase 1 hotfix: original multi-vault loop RESTORED + defensive guardrails:
+#   - flock: paralel-run koruma (aynı cron'un iki tick'i lap etmesin)
+#   - unique temp file per-env (compose sidecar /tmp/snap.tmp legacy race hypothesis için)
+#   - Retention 14 gün (repo canonical)
 #
 # Cron install (staging-sw):
 #   0 2 * * * /home/halil/platform-k8s-gitops/bootstrap/vault-snapshot-cron.sh
 #
-# Output: /home/halil/platform/backup/vault/vault-snapshot-<YYYYMMDD-HHMM>.snap
+# Output: /home/halil/platform/backup/vault/{prod,test}/vault-snapshot-<YYYYMMDD-HHMM>.snap
 # Retention: 14 gün
 
 set -euo pipefail
 
 BACKUP_ROOT="${BACKUP_ROOT:-/home/halil/platform/backup/vault}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
-CONTAINER="${VAULT_CONTAINER:-platform-vault-1}"
-TOKEN_FILE="${VAULT_TOKEN_FILE:-/home/halil/bootstrap-drill/vault-init-prod.json}"
 LOCK_FILE="${LOCK_FILE:-/tmp/vault-snapshot-cron.lock}"
 TIMESTAMP=$(date +%Y%m%d-%H%M)
 
 log() { printf '\033[0;36m[vault-snapshot]\033[0m %s\n' "$*" >&2; }
 
-# Codex guardrail: flock paralel run + Phase 2 compose co-exist race koruma
+# Codex guardrail: flock paralel-run koruma
 exec 9>"${LOCK_FILE}"
 if ! flock -n 9; then
   log "SKIP: another vault-snapshot run holds lock ${LOCK_FILE}"
   exit 0
 fi
 
-mkdir -p "${BACKUP_ROOT}"
+for env in prod test; do
+  container="platform-vault-${env}"
+  dir="${BACKUP_ROOT}/${env}"
+  mkdir -p "${dir}"
 
-# Vault container state
-state=$(docker inspect "${CONTAINER}" --format "{{.State.Status}}" 2>/dev/null || echo "missing")
-if [[ "${state}" != "running" ]]; then
-  log "SKIP: ${CONTAINER} state=${state}"
-  exit 0
-fi
+  state=$(docker inspect "${container}" --format "{{.State.Status}}" 2>/dev/null || echo "missing")
+  if [[ "${state}" != "running" ]]; then
+    log "SKIP ${env}: ${container} state=${state}"
+    continue
+  fi
 
-# Token
-if [[ ! -f "${TOKEN_FILE}" ]]; then
-  log "FAIL: no token file ${TOKEN_FILE}"
-  exit 1
-fi
-ROOT_TOKEN=$(python3 -c "import json; print(json.load(open('${TOKEN_FILE}'))['root_token'])")
+  # Vault token (root) bootstrap-drill'den
+  token_file="${HOME}/bootstrap-drill/vault-init-${env}.json"
+  if [[ ! -f "${token_file}" ]]; then
+    log "SKIP ${env}: no token file ${token_file}"
+    continue
+  fi
+  ROOT_TOKEN=$(python3 -c "import json; print(json.load(open('${token_file}'))['root_token'])")
 
-# Codex guardrail: unique temp file (PID + timestamp) — compose sidecar legacy /tmp/snap.tmp race safe
-TMP_IN_CONTAINER="/tmp/snap-$$-${TIMESTAMP}.tmp"
-output="${BACKUP_ROOT}/vault-snapshot-${TIMESTAMP}.snap"
+  # Codex guardrail: unique temp file (PID + timestamp) per-env — legacy compose sidecar race safe
+  tmp_in_container="/tmp/snap-${env}-$$-${TIMESTAMP}.tmp"
+  output="${dir}/vault-snapshot-${TIMESTAMP}.snap"
+  log "SNAPSHOT ${env} → ${output} (tmp=${tmp_in_container})"
 
-log "SNAPSHOT → ${output} (tmp=${TMP_IN_CONTAINER})"
+  if docker exec -e VAULT_TOKEN="${ROOT_TOKEN}" "${container}" vault operator raft snapshot save "${tmp_in_container}" 2>/dev/null \
+    && docker cp "${container}:${tmp_in_container}" "${output}"; then
+    chmod 600 "${output}"
+    docker exec "${container}" rm -f "${tmp_in_container}" 2>/dev/null || true
+    size=$(du -h "${output}" | cut -f1)
+    log "OK ${env} size=${size}"
+  else
+    log "FAIL ${env}"
+    rm -f "${output}"
+    continue
+  fi
 
-if docker exec -e VAULT_TOKEN="${ROOT_TOKEN}" "${CONTAINER}" vault operator raft snapshot save "${TMP_IN_CONTAINER}" 2>/dev/null \
-  && docker cp "${CONTAINER}:${TMP_IN_CONTAINER}" "${output}"; then
-  chmod 600 "${output}"
-  docker exec "${CONTAINER}" rm -f "${TMP_IN_CONTAINER}" 2>/dev/null || true
-  size=$(du -h "${output}" | cut -f1)
-  log "OK size=${size}"
-else
-  log "FAIL snapshot save/cp"
-  rm -f "${output}"
-  exit 1
-fi
-
-# Retention: 14 gün
-find "${BACKUP_ROOT}" -name "vault-snapshot-*.snap" -type f -mtime +"${RETENTION_DAYS}" -delete 2>/dev/null || true
+  find "${dir}" -name "vault-snapshot-*.snap" -type f -mtime +"${RETENTION_DAYS}" -delete 2>/dev/null || true
+done
 
 log "DONE ${TIMESTAMP}"
