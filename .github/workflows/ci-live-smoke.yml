@@ -1,0 +1,81 @@
+name: CI - Live Smoke (MFE Remote + Auth Chain)
+
+# Live smoke guard — her deploy sonrası + manuel trigger.
+# 2026-04-25 post-cutover eklendi: schema-explorer regression önlemi.
+#
+# Amaç:
+# - 7 MFE remoteEntry.js erişilebilirlik (Module Federation sanity)
+# - Shell + admin route render (HTTP 200)
+# - Auth chain (401 JWT required on /api/)
+# - Realm endpoint (Keycloak stateful sanity)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Hedef: test / prod / both'
+        required: false
+        default: 'both'
+        type: choice
+        options:
+          - test
+          - prod
+          - both
+  # Opsiyonel: scheduled smoke (her saat)
+  # schedule:
+  #   - cron: '0 * * * *'
+
+jobs:
+  mfe-remote-smoke:
+    name: MFE Remote Smoke (${{ inputs.target || 'both' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run MFE remote smoke
+        run: bash scripts/smoke/mfe-remote-smoke.sh ${{ inputs.target || 'both' }}
+
+  auth-chain-smoke:
+    name: Auth chain + realm smoke (${{ inputs.target || 'both' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Test edge HTTPS + auth + realm
+        run: |
+          set -e
+          check_host() {
+            local host="$1"
+            local label="$2"
+            echo "=== $label ($host) ==="
+
+            # / 200
+            local root
+            root=$(curl -sS -o /dev/null -w '%{http_code}' -k "https://${host}/")
+            echo "  /              → $root"
+            [[ "$root" == "200" ]] || { echo "FAIL root"; exit 1; }
+
+            # /api/ 401 JWT
+            local api
+            api=$(curl -sS -o /dev/null -w '%{http_code}' -k "https://${host}/api/")
+            echo "  /api/          → $api"
+            [[ "$api" == "401" ]] || { echo "FAIL auth chain (expected 401, got $api)"; exit 1; }
+
+            # /realms/master/ 200
+            local realm
+            realm=$(curl -sS -o /dev/null -w '%{http_code}' -k "https://${host}/realms/master/.well-known/openid-configuration")
+            echo "  /realms/master → $realm"
+            [[ "$realm" == "200" ]] || { echo "FAIL realm"; exit 1; }
+
+            # /api/v1/authz/version 401 (Zanzibar-ready parity)
+            local authz
+            authz=$(curl -sS -o /dev/null -w '%{http_code}' -k "https://${host}/api/v1/authz/version")
+            echo "  /api/v1/authz/version → $authz"
+            [[ "$authz" == "401" ]] || { echo "FAIL Zanzibar parity"; exit 1; }
+          }
+
+          target="${{ inputs.target || 'both' }}"
+          [[ "$target" == "test" || "$target" == "both" ]] && check_host "testai.acik.com" "TEST"
+          [[ "$target" == "prod" || "$target" == "both" ]] && check_host "ai.acik.com" "PROD"
+          echo "=== Auth chain SMOKE PASS ==="
