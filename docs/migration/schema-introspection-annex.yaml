@@ -1,0 +1,133 @@
+_meta:
+  annex: 2B_schema_introspection_surface
+  status: DRAFT
+  seal_state: DRAFT
+  generated_from:
+    - platform-ssot/backend/schema-service/src/main/java/com/example/schema/service/SchemaExtractService.java
+    - platform-ssot/backend/schema-service/src/main/java/com/example/schema/service/SchemaSnapshotService.java
+  seal_gate:
+    - Workcube admin sign-off on sys.* introspection query set
+    - Schema-service parity decision mühürlendi (live PG catalog vs ETL-ed metadata snapshot)
+    - 16.2 Flyway target schema bu karara göre tasarlandı
+    - 16.3 ETL worker bu kararı uyguluyor
+  references:
+    - docs/migration/mssql-pg-data-contract.md §4 Annex 2B schema-introspection-surface
+    - docs/migration/mssql-pg-data-contract.md §4.2 schema-service parity decision 16.1 gate
+    - Codex thread 019dbe92 iter-2 bulgu 1 HIGH (annex split)
+
+# -----------------------------------------------------------------------------
+# Schema-Service Parity Decision (16.1 SEAL gate — KRITIK)
+# -----------------------------------------------------------------------------
+# ERTELENMEMIS KARAR: live PG catalog vs ETL-ed metadata snapshot
+#
+# Option A: Live PG catalog
+#   Kaynak: pg_tables, pg_attribute, pg_views, pg_indexes, pg_constraint
+#   Avantaj: dinamik + güncel; 16.3 ETL worker meta-catalog lane gerekmez
+#   Risk: MSSQL-PG semantik uçlar eşlenmeyebilir (örn. sys.sql_modules → pg_views definition farkı)
+#
+# Option B: ETL-ed metadata snapshot
+#   Kaynak: reports_db.schema_metadata_snapshot (periyodik refresh, günlük)
+#   Avantaj: annex 2B kapsamında iyi-tanımlı; MSSQL ile bire-bir eşleme
+#   Risk: stale snapshot penceresi; refresh job yönetimi gerekir
+#
+# Karar: <TBD — 16.1 sonunda mühürlenir, docs/migration/schema-service-parity-adr.md>
+
+parity_decision:
+  status: PENDING_16_1
+  selected_option: null  # "A_live_pg_catalog" | "B_etl_metadata_snapshot"
+  rationale_document: docs/migration/schema-service-parity-adr.md
+  seal_deadline: 16.1_inventory_completion
+
+# -----------------------------------------------------------------------------
+# MSSQL System Catalog Objects Observed (from schema-service source)
+# -----------------------------------------------------------------------------
+observed_system_catalogs:
+  - object: sys.tables
+    usage: Table enumeration + partitioning
+    called_from:
+      - SchemaExtractService.java:38 (table column extraction)
+      - SchemaExtractService.java:83 (partitioning + row count)
+    migration_action: metadata_snapshot_refresh  # Option B
+    pg_equivalent: pg_tables (Option A mapping)
+  - object: sys.schemas
+    usage: Schema name resolution
+    called_from:
+      - SchemaExtractService.java:39
+      - SchemaExtractService.java:84
+      - SchemaExtractService.java:104
+      - SchemaExtractService.java:128
+    migration_action: metadata_snapshot_refresh
+    pg_equivalent: information_schema.schemata
+  - object: sys.columns
+    usage: Column name + type + nullability
+    called_from:
+      - SchemaExtractService.java:40
+    migration_action: metadata_snapshot_refresh
+    pg_equivalent: pg_attribute
+  - object: sys.types
+    usage: Column data type resolution (user_type_id → type name)
+    called_from:
+      - SchemaExtractService.java:41
+    migration_action: metadata_snapshot_refresh
+    pg_equivalent: pg_type
+  - object: sys.index_columns
+    usage: Index column membership
+    called_from:
+      - SchemaExtractService.java:44
+    migration_action: metadata_snapshot_refresh
+    pg_equivalent: pg_index (indkey array)
+  - object: sys.indexes
+    usage: Index metadata (unique, clustered)
+    called_from:
+      - SchemaExtractService.java:45
+    migration_action: metadata_snapshot_refresh
+    pg_equivalent: pg_indexes
+  - object: sys.partitions
+    usage: Row count per partition (index_id IN (0,1) heap + clustered)
+    called_from:
+      - SchemaExtractService.java:85
+    migration_action: metadata_snapshot_refresh
+    pg_equivalent: pg_class.reltuples (approximate) veya pg_stat_user_tables.n_live_tup
+  - object: sys.sql_modules
+    usage: View / procedure / function definition text
+    called_from:
+      - SchemaExtractService.java:102
+    migration_action: metadata_snapshot_refresh
+    pg_equivalent: pg_views.definition + pg_proc.prosrc
+    notes: "MSSQL T-SQL definition ≠ PG syntax; metadata snapshot approach — keep source definition as-is, mark language=tsql"
+  - object: sys.objects
+    usage: Generic object lookup (view/procedure/function type filter)
+    called_from:
+      - SchemaExtractService.java:103
+    migration_action: metadata_snapshot_refresh
+    pg_equivalent: pg_class
+
+# -----------------------------------------------------------------------------
+# MSSQL-specific features NOT covered by schema-service (out of scope for 2B)
+# -----------------------------------------------------------------------------
+out_of_scope:
+  - feature: CHECK constraints
+    rationale: PLAN.md §16.0 Open Question #2; treat separately if encountered
+  - feature: Triggers
+    rationale: Workcube design "business logic in app layer"; verified zero triggers in 16.1 inventory
+  - feature: Computed columns
+    rationale: MSSQL AS (...) PERSISTED → PG GENERATED ALWAYS AS ... STORED; syntax-level port in 16.2 Flyway
+  - feature: Full-text catalogs
+    rationale: Not used by schema-service; 16.1 inventory verify
+  - feature: Spatial indexes (geography/geometry)
+    rationale: Not in observed type inventory (docs/migration/mssql-pg-data-contract.md §5.3)
+
+# -----------------------------------------------------------------------------
+# Acceptance Criteria for 2B SEAL
+# -----------------------------------------------------------------------------
+acceptance:
+  - check: Schema-service parity decision (A vs B) mühürlü
+    evidence: docs/migration/schema-service-parity-adr.md approved
+  - check: Observed system catalog set validated against schema-service source code (SHA pin)
+    evidence: SchemaExtractService.java revision SHA noted
+  - check: Out-of-scope features confirmed via 16.1 inventory (zero triggers, zero computed-column edge cases)
+    evidence: 16.1 inventory report line
+  - check: 16.2 Flyway target schema design reviewed against parity decision
+    evidence: Flyway V16 PR + code review link
+  - check: 16.3 ETL worker meta-catalog lane implemented if Option B, or documented skip if Option A
+    evidence: 16.3 worker PR + test evidence
