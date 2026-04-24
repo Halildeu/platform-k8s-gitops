@@ -1,10 +1,99 @@
 # Current State — Platform K8s Migration
 
-> **Status as of**: 2026-04-24 ~09:55 UTC+3 (Session 29 — **TOPOLOJİ NETLEŞME + TEST FULL-HEALTH + FAZ 17 PLAN DRAFT**: üç-katman (lokal dev Mac / test staging-sw k3d-test / prod staging-sw k3d-prod+compose) netleştirildi, Mac k3d mirror'ları stop (RAM relief ~7 GB→130 MB), staging-sw k3d-test auth-service RSA PEM placeholder fix (Vault `kv/platform/auth-service` jwt_private_key/public_key initialize) → **9/9 platform-test pod 1/1 Ready + testai.acik.com 200**, staging-sw k3d-prod 49 Running korundu. Faz 13 rollback-window kullanıcı direktifi ile iptal (canlı kullanıcı yok). Faz 17 Local Dev Environment Parity + Faz 16.0 Data Contract paralel plan draft (Plan subagent + Codex adversarial review bekleniyor). ⏸️ Önceki Session 28 T0 — **FAZ 13 HYBRID GO CANLI KANITLI**: Codex verdict PARTIAL+GO (thread `019dbc86`). Kontrat ADR-0002 Faz D6 (stateful PG+KC+Vault K8s-dışı, host-compose'da) ile uyumlu: "Full cutover" (K8s KC deploy + compose decommission) ADR aykırı → reddedildi. **Atomic cutover anlamı kalibre edildi**: `ai.acik.com` authoritative prod yolu K8s workload'a bağlı (byte-perfect canlı kanıt: public=127.0.0.1:30443 NodePort 200 15666B eşleşme) + stateful tier compose'da kalıcı + **72h rollback-window başladı T0=2026-04-24 01:25 UTC+3**. Session 28 açılış 5-komut refresh 5/5 Session 27 canonical eşleşme, T0 minimum teyit 3/3 PASS. Kalan paralel cleanup (non-blocking): ArgoCD cosmetic OutOfSync (RespectIgnoreDifferences syncOption), drill quarterly cron, prod non-superAdmin scoped allow seed.
+> **Status as of**: 2026-04-24 ~12:45 UTC+3 (Session 29 WRAP — **FAZ 17 TAM IMPL (10 PR MERGED 4070 satır) + FAZ 16.0/16.1 DRAFT + FAZ 16.2 PLAN AGREE**: Faz 17 Local Dev Environment Parity 9 sub-faz (17.0 naming + 17.1 fixtures + 17.2 profile overlays + 17.2.5 app base split + 17.3 scripts + 17.4 promotion-contract + 17.5 README + 17.X TLS + 17.Y image handoff) + CI 5/5 green. Faz 16.0 data contract DRAFT/RFC + Faz 16.1 annex 2A crawler 44 unique tablo + 2B 9 sys.* catalog. Codex 3 thread (019dbe80 Faz 17 iter-4 AGREE, 019dbe92 Faz 16.0 iter-4 AGREE DRAFT/RFC, 019dbf15 Faz 16.2 plan istişare). Kalan: Faz 17 secondary codex exec (user codex login), Faz 16.1 SEAL dış paydaş (Workcube admin 8 sourceQuery manuel + schema-service-parity-adr), Faz 16.2 Flyway V16 platform-ssot cross-repo PR. ⏸️ Önceki ~09:55 UTC+3 Session 29 — üç-katman (lokal dev Mac / test staging-sw k3d-test / prod staging-sw k3d-prod+compose) netleştirildi, Mac k3d mirror'ları stop (RAM relief ~7 GB→130 MB), staging-sw k3d-test auth-service RSA PEM placeholder fix (Vault `kv/platform/auth-service` jwt_private_key/public_key initialize) → **9/9 platform-test pod 1/1 Ready + testai.acik.com 200**, staging-sw k3d-prod 49 Running korundu. Faz 13 rollback-window kullanıcı direktifi ile iptal (canlı kullanıcı yok). Faz 17 Local Dev Environment Parity + Faz 16.0 Data Contract paralel plan draft (Plan subagent + Codex adversarial review bekleniyor). ⏸️ Önceki Session 28 T0 — **FAZ 13 HYBRID GO CANLI KANITLI**: Codex verdict PARTIAL+GO (thread `019dbc86`). Kontrat ADR-0002 Faz D6 (stateful PG+KC+Vault K8s-dışı, host-compose'da) ile uyumlu: "Full cutover" (K8s KC deploy + compose decommission) ADR aykırı → reddedildi. **Atomic cutover anlamı kalibre edildi**: `ai.acik.com` authoritative prod yolu K8s workload'a bağlı (byte-perfect canlı kanıt: public=127.0.0.1:30443 NodePort 200 15666B eşleşme) + stateful tier compose'da kalıcı + **72h rollback-window başladı T0=2026-04-24 01:25 UTC+3**. Session 28 açılış 5-komut refresh 5/5 Session 27 canonical eşleşme, T0 minimum teyit 3/3 PASS. Kalan paralel cleanup (non-blocking): ArgoCD cosmetic OutOfSync (RespectIgnoreDifferences syncOption), drill quarterly cron, prod non-superAdmin scoped allow seed.
 > **Verified by**: Codex + live `ssh staging-sw`
 > **Source set**: Live `kubectl`, `curl`, `docker`, `ssh staging-sw` outputs + repo HEAD
 > **Supersedes**: `docs/session-handoff-2026-04-20-k8s-migration-faz-b-c.md` bölümlerindeki `%99.5`, `DONE + LIVE (Faz H)`, `soft cutover` ifadeleri
 > **Interpretation gate**: Önce [../../AGENTS.md](../../AGENTS.md), ardından [../context-priority-rules.md](../context-priority-rules.md) okunur; bu dosya canlı truth snapshot'tır, repo-geneli kural sözleşmesi değildir.
+
+---
+
+## Live Delta — Session 29 WRAP (2026-04-24 ~12:45 UTC+3) — FAZ 17 TAM IMPL (10 PR MERGED) + FAZ 16.2 PLAN AGREE
+
+### 10 PR MERGED Zinciri (4070 satır, CI 5/5 all green)
+
+| PR | İçerik | Merge | Satır |
+|---|---|---|---|
+| #84 | Faz 17 plan + Faz 16.0 Data Contract DRAFT + Session 29 delta | `0fa8e36` | 798 |
+| #85 | Faz 16.1 DRAFT annex 2A crawler + 2B schema-introspection | `b4d2755` | 1022 |
+| #86 | Faz 17.0 k3d-dev + overlays/local namespace hygiene | `08c7e6d` | 115 |
+| #87 | Faz 17.2.5 app base runtime/ops split (semantic diff 0) | `a9b5cbb` | 197 |
+| #88 | Faz 17.2 profile matrix overlays (authn-min/zanzibar-min/full) + CI | `98b1b2c` | 395 |
+| #89 | Faz 17.1 fake fixtures (NOT_FOR_PROD deterministic) | `6606668` | 396 |
+| #90 | Faz 17.3 dev-up/down/seed/smoke scripts (profile-aware, shellcheck clean) | `b0fe494` | ~450 |
+| #91 | Faz 17.4 promotion-contract + 17.5 README/CONTRIBUTING 3-tier | `88d05d6` | 255 |
+| #92 | Faz 17.X local edge TLS (mkcert + Caddy) | `b59ede7` | 249 |
+| #93 | Faz 17.Y local dev image handoff contract | `0f0f132` | 190 |
+
+### Faz 17 Local Dev Parity — TAM IMPL
+
+Dizin yapısı merged:
+```
+bootstrap/
+├── k3d-dev.yaml                  # 32080/32443 high-port, platform-dev-net
+├── local-fixtures/
+│   ├── certs/jwt-signing.pem    # fake RSA 2048 (NOT_FOR_PROD)
+│   ├── keycloak/dev-local-realm.json  # 2 user (dev/viewer) + 2 client
+│   ├── openfga/tuples.json      # 6 tuple + 2 smoke_check
+│   └── postgres/seed-dev.sql    # 4 DB seed
+└── local-edge/
+    ├── Caddyfile                # mkcert + TLS reverse proxy (:8443 default)
+    └── README.md                # OIDC cookie Secure parity
+
+kustomize/
+├── base/apps/<svc>/
+│   ├── kustomization.yaml       # runtime-only (17.2.5 split)
+│   └── ops/                     # CRD-gated (ExternalSecret + ServiceMonitor)
+├── base/apps/ops-bundle/        # 9 ops/ aggregator
+└── overlays/
+    ├── local-authn-min          # 2 workload (Up + Functional auth-only)
+    ├── local-zanzibar-min       # 6 workload (D29 3-katman)
+    ├── local-full               # 10 workload (testai desen)
+    └── local                    # DEPRECATED (legacy)
+
+scripts/
+├── dev-up.sh                    # k3d + apply + Tilt hint
+├── dev-down.sh                  # stop/delete
+├── dev-seed.sh                  # KC realm + PG + OpenFGA profile-aware
+└── dev-smoke.sh                 # D29 gate profile-aware JSON CI
+
+docs/
+├── promotion-contract.md        # 3-tier local → testai → prod
+├── local-dev-image-contract.md  # k3d import vs registry
+└── migration/
+    ├── mssql-pg-data-contract.md        # Faz 16.0 DRAFT/RFC 546 satır
+    ├── report-source-annex.yaml         # Faz 16.1 DRAFT 31 rapor 44 tablo
+    └── schema-introspection-annex.yaml  # Faz 16.1 DRAFT 9 sys.* catalog
+
+.env.example                     # dev env var template (NO real cred)
+```
+
+### Codex Adversarial Review (2 thread, 8 ping-pong)
+
+- **Faz 17 thread `019dbe80`**: iter-1 REVISE (2 RED) → iter-2 PARTIAL → iter-3 PARTIAL → **iter-4 AGREE** ✓
+- **Faz 16.0 thread `019dbe92`**: iter-1 REVISE → iter-2 PARTIAL → iter-3 PARTIAL → **iter-4 AGREE** (DRAFT/RFC) ✓
+- **Faz 16.2 thread `019dbf15`**: plan-time istişare — VERDICT aldı (önce parity ADR, sonra V16)
+
+### Pre-Session 29 Durum (ileri referans)
+
+Faz 13 Hybrid GO canlı (T0 2026-04-24 01:25 UTC+3). 72h rollback-window **iptal**
+(kullanıcı direktifi: canlı kullanıcı yok, simulasyon modu). Hybrid kontrat permanent.
+
+- testai.acik.com / + /api/v1/theme-registry → 200
+- ai.acik.com / + /api/v1/theme-registry → 200 (49 prod pod Running)
+- k3d-test 9/9 pod 1/1 Ready (Vault RSA PEM placeholder fix sonrası)
+- Mac k3d mirror'ları stop (RAM 7GB→130MB relief)
+
+### Kalan İleri İş
+
+1. **Faz 17 secondary codex exec review** — `codex login` refresh_token fix pending (user action)
+2. **Faz 16.1 SEAL dış paydaş**:
+   - 8 sourceQuery rapor manuel validation (Workcube admin + backend lead)
+   - `docs/migration/schema-service-parity-adr.md` karar (Option A live PG vs Option B ETL-ed snapshot)
+3. **Faz 16.2 Flyway V16** (platform-ssot cross-repo PR): `V16__reports.sql` 4 tablo (reports + saved_reports + wc_permissions_snapshot + wc_modules_snapshot); schemas_db parity ADR sonrası
+4. **Faz 17.6 ADR-0003 opsiyonel** (inner-loop tooling ownership)
+5. **platform-ssot cross-repo PR**: Tiltfile (Faz 17.2 authoritative) + CONTRIBUTING ownership cümle
+6. **Compose stateless decommission** (Faz 16.8 Aşama 1+2 hazırlık — 16.5 cutover sonrası)
 
 ---
 
