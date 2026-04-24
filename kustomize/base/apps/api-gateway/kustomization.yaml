@@ -17,4 +17,3 @@ resources:
   - configmap.yaml
   - pdb.yaml
   - serviceaccount.yaml      # D26: imagePullSecret binding
-  - servicemonitor.yaml      # D27: Prometheus Operator CR

@@ -17,4 +17,3 @@ resources:
   - configmap.yaml
   - secret-stub.yaml
   - migrate-job.yaml
-  - servicemonitor.yaml

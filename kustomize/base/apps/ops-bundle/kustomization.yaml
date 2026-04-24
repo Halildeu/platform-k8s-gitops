@@ -1,0 +1,26 @@
+# ops-bundle — CRD-gated resources (ExternalSecret + ServiceMonitor) (Faz 17.2.5)
+#
+# Bu paket:
+# - ExternalSecret (external-secrets.io, CRD: ClusterSecretStore aracılığıyla Vault'tan sync)
+# - ServiceMonitor (monitoring.coreos.com, CRD: Prometheus Operator scrape)
+#
+# Kullanım:
+# - test / prod overlay: `resources: [../../base, ../../base/apps/ops-bundle]`
+#   (runtime + ops CRD paketi birlikte)
+# - local-authn-min / local-zanzibar-min / local-full overlay: bunu include ETME
+#   (CRD Mac k3d-dev'de yüklü değil; inline fake Secret'lerle seed edilir — Faz 17.1)
+#
+# Her app'in ops/ alt klasörü kendi ES + SM dosyalarını tutar; bu paket topluca include eder.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../auth-service/ops
+  - ../api-gateway/ops
+  - ../user-service/ops
+  - ../variant-service/ops
+  - ../core-data-service/ops
+  - ../report-service/ops
+  - ../schema-service/ops
+  - ../permission-service/ops
+  - ../openfga/ops
