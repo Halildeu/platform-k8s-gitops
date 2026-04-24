@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# Prod + test k3d cluster'larını ayağa kaldırır.
+# k3d cluster'larını ayağa kaldırır.
 # Idempotent: cluster zaten varsa dokunmaz.
+#
+# Runtime target'lar (staging-sw):
+#   - prod  → ai.acik.com      (k3d-prod)
+#   - test  → testai.acik.com  (k3d-test)
+#
+# Lokal dev (Mac developer machine, Faz 17.0):
+#   - dev   → *.localtest.me   (k3d-dev, network platform-dev-net, port 32080/32443)
 #
 # Gereksinimler:
 #   - docker
@@ -8,9 +15,10 @@
 #   - kubectl
 #
 # Kullanım:
-#   ./bootstrap/setup-clusters.sh            # ikisini de kur
+#   ./bootstrap/setup-clusters.sh            # prod + test (staging-sw default)
 #   ./bootstrap/setup-clusters.sh prod       # sadece prod
 #   ./bootstrap/setup-clusters.sh test       # sadece test
+#   ./bootstrap/setup-clusters.sh dev        # Mac lokal dev (Faz 17)
 
 set -euo pipefail
 
@@ -47,8 +55,9 @@ create_cluster() {
 case "${TARGETS}" in
   prod) create_cluster prod ;;
   test) create_cluster test ;;
+  dev)  create_cluster dev ;;
   both|"") create_cluster prod; create_cluster test ;;
-  *) err "bilinmeyen hedef: ${TARGETS} (beklenen: prod|test|both)" ;;
+  *) err "bilinmeyen hedef: ${TARGETS} (beklenen: prod|test|dev|both)" ;;
 esac
 
 log "kubeconfig context'leri: $(kubectl config get-contexts -o name | grep '^k3d-' | tr '\n' ' ')"

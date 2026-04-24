@@ -1,12 +1,25 @@
-# Local overlay — k3d-prod (lokal dev makinesi, Docker Desktop)
-# - Image pull YOK (k3d image import ile yükleniyor)
-# - Host-level PG/KC/Vault: host.docker.internal (Docker Desktop DNS)
-# - Namespace: platform-prod (lokal'de de prod ns kullanılır; izolasyon test yapılacaksa overlays/local-test)
-# - Tek replica (lokal kaynak tasarrufu)
+# Local overlay — k3d-dev (Mac developer machine, Docker Desktop)  [Faz 17.0]
+#
+# Bu overlay MAC LOCAL dev cluster içindir (staging-sw runtime değildir).
+# Cluster: k3d-dev  |  Namespace: platform-dev  |  Domain: *.localtest.me
+# Image pull YOK (k3d image import ile yükleniyor).
+# Host-level PG/KC/Vault: host.docker.internal (Docker Desktop DNS).
+#
+# Runtime hedefleri AYRI overlay'lerdedir:
+#   - overlays/test  → testai.acik.com (staging-sw k3d-test)
+#   - overlays/prod  → ai.acik.com     (staging-sw k3d-prod)
+#
+# NOT (Faz 17 Codex AGREE iter-4):
+# - Bu overlay "authn-min" profilinin MVP'idir. Profile matrix (local-authn-min,
+#   local-zanzibar-min, local-full) ve app base runtime/ops split (17.2.5)
+#   ayrı PR zincirlerinde gelir.
+# - Bu kustomization'ın ExternalSecret/ServiceMonitor'ü include etmesi 17.2.5
+#   split öncesinde ham kalır; lokalde CRD yüklü değilse `kustomize build`
+#   çıkıtısından manuel filtrelenir.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: platform-prod
+namespace: platform-dev
 
 resources:
   - ../../base
@@ -34,27 +47,27 @@ patches:
         path: /spec/replicas
         value: 1
 
-  # ConfigMap namespace placeholder → platform-prod
+  # ConfigMap namespace placeholder → platform-dev
   - target:
       kind: ConfigMap
       name: auth-service-config
     patch: |-
       - op: replace
         path: /data/KEYCLOAK_URL
-        value: "http://keycloak.platform-prod.svc.cluster.local:8080"
+        value: "http://keycloak.platform-dev.svc.cluster.local:8080"
       - op: replace
         path: /data/DB_URL
-        value: "jdbc:postgresql://postgres.platform-prod.svc.cluster.local:5432/auth_db"
+        value: "jdbc:postgresql://postgres.platform-dev.svc.cluster.local:5432/auth_db"
   - target:
       kind: ConfigMap
       name: api-gateway-config
     patch: |-
       - op: replace
         path: /data/AUTH_SERVICE_URL
-        value: "http://auth-service.platform-prod.svc.cluster.local:8088"
+        value: "http://auth-service.platform-dev.svc.cluster.local:8088"
       - op: replace
         path: /data/KEYCLOAK_URL
-        value: "http://keycloak.platform-prod.svc.cluster.local:8080"
+        value: "http://keycloak.platform-dev.svc.cluster.local:8080"
 
   # Host bridge Endpoints — lokal'de Docker Desktop'ın host-gateway IP'si
   # Docker Desktop 4.x host.docker.internal → 192.168.65.254 (macOS) veya
@@ -116,11 +129,13 @@ patches:
         path: /data/LOGGING_LEVEL_ROOT
         value: DEBUG
 
-  # Ingress host — lokal için /etc/hosts: 127.0.0.1 ai.acik.com
+  # Ingress host — Faz 17.0: *.localtest.me otomatik 127.0.0.1 resolve (RFC2606)
+  # Eski ai.acik.com değeri runtime target yolunu karıştırıyordu — kaldırıldı.
+  # Lokal edge TLS (17.X): mkcert + Caddy `app.localtest.me:8443` → ingress 32443 proxy.
   - target:
       kind: Ingress
       name: platform
     patch: |-
       - op: replace
         path: /spec/rules/0/host
-        value: ai.acik.com
+        value: app.localtest.me
