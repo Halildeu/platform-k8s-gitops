@@ -868,6 +868,149 @@ Bu repo'da DEĞİL, ana repo'da yapılacaklar. Manifest yazımıyla eş zamanlı
 
 ---
 
+### Faz 16 — Source Data Migration (MSSQL → PG)
+
+**Kapsam**: Rapor + şema gezgini kaynağı `Workcube Mikrolink ERP` MSSQL (`10.9.193.201:1433/workcube_mikrolink`) → PG canonical (`reports_db`, `schemas_db`). ADR-0002 D31 **PG primary, MSSQL secondary/opsiyonel** kontratının veri-gerçekliği boşluğunu kapatır.
+
+**Yürütme penceresi**: Faz 15 T+72h rollback-window kapanışı sonrası (≥ 2026-04-27 01:25 UTC+3). 2-3 hafta süre (single dev), 1-2 hafta (paralel team).
+
+**Codex adversarial review**: thread `019dbe1d` (ilk REVISE) → `019dbe1f` (PARTIAL) → `019dbe21` (PARTIAL) → `019dbe22` **AGREE** (with 15 dk rollback trigger edit).
+
+**Faz adı önemli**: "Source-Read Cutover / MSSQL-off Switch" — Production Cutover (Faz 15) **değil**. Faz 15 Hybrid GO zaten canlıda kontratlı.
+
+#### 16.0 — Data Contract (ETL öncesi sabitlenmeli)
+
+- Her MSSQL tablosu: `authoritative` / `cache-reference` / `skip` kategorisi
+- Idempotency key (natural PK veya surrogate)
+- **Type mapping matrisi**:
+  - `nvarchar(N)` → `VARCHAR(N)` (collation: PG `C.UTF-8`)
+  - `nvarchar(MAX)` → `TEXT`
+  - `datetime2` → `TIMESTAMPTZ` (UTC canonical, app-side timezone convert)
+  - `decimal(N,M)` → `NUMERIC(N,M)` (precision korunur)
+  - `bit` → `BOOLEAN`, `uniqueidentifier` → `UUID`
+- **Collation**: MSSQL `Turkish_CI_AS` → PG `C.UTF-8` + `CITEXT` case-insensitive paritede mi? Kural per-column
+- **Soft-delete semantics**: MSSQL `DELETED_FLAG` / `REVOKED_AT` → PG aynı kolon + query filter
+- **FK load order**: Dependency graph → topological sort (önce parent sonra child)
+- **NULL vs empty string**: MSSQL `''` kullanımı → PG `NULL` kural per-column
+- **Unicode edge cases**: Surrogate pairs, emoji, BOM stripping
+- **Write-freeze owner**: Workcube admin (operasyonel sahip, freeze 10-15 dk hedef)
+- **Backup**: freeze öncesi MSSQL full backup (ERP side)
+- Deliverable: `docs/migration/mssql-pg-data-contract.md`
+
+#### 16.1 — Source Discovery (inventory)
+
+- Tablo listesi + row count + data size + FK + index
+- Kritik tablolar: `REPORTS`, `SAVED_REPORTS`, `custom_reports`, `PERMISSIONS`, `MODULES`, `USERS`
+- Deliverable: `docs/migration/mssql-inventory.md`
+
+#### 16.2 — PG Target Schema + Flyway (platform-ssot)
+
+- Repo: **platform-ssot**
+- `backend/report-service/src/main/resources/db/migration/V16__reports.sql`
+- `backend/schema-service/src/main/resources/db/migration/V16__schemas.sql`
+- Index strategy (PG'ye uygun; MSSQL'den farklı olabilir)
+- Deliverable: Flyway PR (platform-ssot)
+
+#### 16.3 — ETL Stand-Alone Worker
+
+- **Stand-alone worker** (Python/Go), Spring Batch **değil** (runtime gömülü değil, blast radius daraltılır)
+- Idempotent, retry-safe, batch cursor
+- Source: `sqlcmd bcp export` + JDBC read fallback
+- Target: `psql COPY` bulk
+- Repo: **platform-ssot** (worker kodu) + **platform-k8s-gitops** (Job manifest `bootstrap/mssql-etl/`)
+- Deliverable: `platform-ssot/backend/mssql-etl-worker/` + K8s Job manifest (tek-seferlik)
+
+#### 16.3.5 — Reconciliation (gate)
+
+- **Row count parity** (MSSQL vs PG)
+- **Checksum/MD5** sütun-level (critical fields için)
+- **Nullability parity**
+- **Encoding parity** (nvarchar → text UTF-8)
+- **Sample semantic diff** (ilk 100 row side-by-side)
+- PASS/FAIL gate — FAIL ise 16.5 cutover yasak
+- Deliverable: `docs/migration/reconcile-YYYYMMDD.md` + per-table PASS/FAIL
+
+#### 16.4 — Delta Sync (varsayılan SKIP)
+
+- CDC/poll-based continuous sync **açılmaz** (scope creep)
+- Yalnız "final delta before cutover" (16.5 adımı 2)
+
+#### 16.5 — Source-Read Cutover Sequence
+
+**Adımlar**:
+1. Source freeze window (ERP write durdur, Workcube admin owner)
+2. Final delta import (16.3 worker tek-seferlik rerun)
+3. 16.3.5 reconciliation PASS
+4. Feature flag: `REPORT_MSSQL_ENABLED=false`, `SCHEMA_MSSQL_ENABLED=false`
+5. Spring restart (`docker compose up -d --force-recreate report-service schema-service`)
+6. Read-path kanıtı (rapor UI → PG)
+
+#### 16.5.5 — Test-Authoritative Gate (prod öncesi ZORUNLU)
+
+- `testai.acik.com` k3d-test cluster'da MSSQL-off functional kanıt
+- Test PG'ye 16.3 ETL seed
+- Test feature flag `*_MSSQL_ENABLED=false`
+- Test smoke: rapor UI render + schema explorer + D29 3-katman PASS
+- **Prod cutover 16.5 yürütme sadece testai MSSQL-off smoke PASS sonrası**
+
+#### 16.5.X — Rollback Kontratı (açık)
+
+**Tetikleyiciler**:
+- 16.3.5 reconciliation fail
+- 16.5 smoke fail
+- **5xx error rate > %1 persistent (15 dk canonical)** (AGENTS.md canonical süre)
+- ERP owner freeze-undo isteği
+
+**Rollback süresi**: < 10 dk
+
+**Re-enable adımları**:
+1. `*_MSSQL_ENABLED=true` (compose env)
+2. `docker compose up -d --force-recreate report-service schema-service`
+3. Smoke: rapor/schemas UI → MSSQL live
+4. current-state delta: "Faz 16 source-read cutover rolled back, re-attempt planı"
+
+**Kritik**: Secret/network kaldırma (16.8) **yalnız rollback-window kapanışı sonrası**. Erken yapılırsa geri dönüş zor (Vault path silindiyse restore gerek).
+
+#### 16.6 — Auditability
+
+- Migration manifest (hangi tablo, row count, timestamp)
+- Batch log (job start/end, per-table success/fail)
+- Reject queue (`migration_rejects` table — PG constraint fail row'lar)
+- Tekrar çalıştırılabilirlik kontrol
+- Reject-row remediation: manuel review + fix + re-import
+- Deliverable: `docs/migration/audit-log-YYYYMMDD.md`
+
+#### 16.7 — Smoke + D29 3-Katman
+
+- **Up**: PG DB accessible, Spring Boot UP
+- **Functional**: rapor listesi + render + schema explorer UI
+- **Zanzibar-ready**: scope-aware report access (admin vs canary-restricted farklı rapor seti)
+- **Başarı kriteri**: MSSQL kapalıyken functional parity
+
+#### 16.8 — MSSQL Decommission Aşamalı (her aşama ayrı PR)
+
+- **Aşama 1** (feature-off): `*_MSSQL_ENABLED=false` → 16.5'te yapılır
+- **Aşama 2** (env remove): Vault secret remove + compose env clean → 16.5 PASS + **7 gün gözlem** sonrası
+- **Aşama 3** (network deny): `iptables DROP 10.9.193.201:1433` → Aşama 2 + **7 gün** sonrası
+- **Aşama 4** (emergency erişim proc): Aşama 3 ile paralel doc — DR dry-run için 30 dk SLA geri-erişim
+- **Aşama 5** (tam kesim + decommission): Aşama 3 + **30 gün gözlem** sonrası + ADR eklentisi
+
+#### Repo Sınırı (Codex explicit)
+
+| Repo | İçerik |
+|---|---|
+| `platform-ssot` | Flyway V16 SQL, entity mapping, ETL worker kodu, unit/integration test, MSSQL driver config |
+| `platform-k8s-gitops` | K8s Job manifest (`bootstrap/mssql-etl/`), feature flag env, Vault path (secret remove), compose env, runbook (`docs/phase16-*`), current-state truth closure |
+
+#### Bağlantılar
+
+- ADR-0002 D31 (PG primary, MSSQL secondary)
+- `PLAN.md:168-184` (Cutover Atomic Switch — Faz 15'te yapılmış)
+- `docs/state/current-state.md` Session X delta (Faz 16 execute sonrası)
+- Codex threads: `019dbe1d`, `019dbe1f`, `019dbe21`, `019dbe22` (AGREE)
+
+---
+
 ## 5. Ana Repo Bağlantısı
 
 **autonomous-orchestrator** içinde kalacaklar:
