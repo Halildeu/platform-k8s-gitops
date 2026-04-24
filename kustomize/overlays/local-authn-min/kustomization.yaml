@@ -1,22 +1,32 @@
-# Local overlay — LEGACY (Faz 17.2 sonrası DEPRECATED)
-#
-# BU OVERLAY DEPRECATED. Yeni profile-based overlay'lere geç:
-#   - overlays/local-authn-min   ← authn smoke (2 workload: api-gateway + auth-service)
-#   - overlays/local-zanzibar-min ← Zanzibar D29 3-katman (6 workload)
-#   - overlays/local-full         ← 9 app + openfga (10 workload, testai desen)
-#
-# Bu overlay şu an overlays/local-full ile işlevsel eşdeğerdir; yeni geliştirmeler
-# doğrudan `local-full`'e yönlendirilmeli. Legacy kullanım için 1-2 PR döngüsü
-# daha korunacak, sonra silinecektir.
+# Local profile: authn-min (Faz 17.2 — PLAN §17.8 profile matrix)
 #
 # Cluster: k3d-dev  |  Namespace: platform-dev  |  Domain: *.localtest.me
+# Workload count: 4 (Deployment + StatefulSet)
+#   - api-gateway
+#   - auth-service
+#   - host-service postgres (bridge Endpoints)
+#   - host-service keycloak (bridge Endpoints)
+#
+# D29 Gate: Up + Functional (auth-only)
+#   - OIDC discovery + token mint (external edge)
+#   - auth-service :8081/actuator/health/readiness (internal port-forward helper)
+#   - Zanzibar-ready kanıt YOK (permission-service + openfga yok — zanzibar-min profiline geç)
+#
+# Bu overlay base/apps/ops-bundle include ETMEZ (CRD-free lokal, Faz 17.2.5 split)
+# ES + SM resources inline fake Secret'lerle değiştirilir (Faz 17.1 fixtures)
+
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 namespace: platform-dev
 
 resources:
-  - ../../base
+  # Runtime-only (ops-bundle hariç)
+  - ../../base/host-services
+  - ../../base/apps/api-gateway
+  - ../../base/apps/auth-service
+  - ../../base/ingress
+  # NOT: netpol + quota lokal dev için opsiyonel — Faz 17.3 dev-up.sh --strict bayrağı
 
 patches:
   # Image pull policy Never (k3d image import sonrası)
@@ -41,7 +51,7 @@ patches:
         path: /spec/replicas
         value: 1
 
-  # ConfigMap namespace placeholder → platform-dev
+  # ConfigMap namespace: platform-dev.svc.cluster.local
   - target:
       kind: ConfigMap
       name: auth-service-config
@@ -63,18 +73,17 @@ patches:
         path: /data/KEYCLOAK_URL
         value: "http://keycloak.platform-dev.svc.cluster.local:8080"
 
-  # Host bridge Endpoints — lokal'de Docker Desktop'ın host-gateway IP'si
-  # Docker Desktop 4.x host.docker.internal → 192.168.65.254 (macOS) veya
-  # 172.17.0.1 (Linux). k3d cluster host.docker.internal'a resolve eder.
-  # Burada statik IP yerine ikinci Endpoints kaydı yazmak yerine bir init script
-  # docker container'ın bilgisinden IP çözer. PoC'de hardcoded host IP de yeter:
+  # Host bridge Endpoints — Docker Desktop host-gateway
+  # macOS: 192.168.65.254 (Docker Desktop 4.x)
+  # Linux: 172.17.0.1
+  # dev-up.sh script OS detect edip IP override eder
   - target:
       kind: Endpoints
       name: postgres
     patch: |-
       - op: replace
         path: /subsets/0/addresses/0/ip
-        value: "192.168.65.254"   # macOS Docker Desktop host gateway; Linux için değiştir
+        value: "192.168.65.254"
       - op: replace
         path: /subsets/0/ports/0/port
         value: 5432
@@ -88,18 +97,8 @@ patches:
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8081
-  - target:
-      kind: Endpoints
-      name: vault
-    patch: |-
-      - op: replace
-        path: /subsets/0/addresses/0/ip
-        value: "192.168.65.254"
-      - op: replace
-        path: /subsets/0/ports/0/port
-        value: 8200
 
-  # Lokal kaynak tasarrufu: PDB devre dışı (tek replica ile anlamsız)
+  # PDB devre dışı (tek replica ile anlamsız)
   - target:
       kind: PodDisruptionBudget
     patch: |-
@@ -107,7 +106,7 @@ patches:
         path: /spec/minAvailable
         value: 0
 
-  # Debug logging açık (lokal test için)
+  # Debug logging (lokal test için)
   - target:
       kind: ConfigMap
       name: auth-service-config
@@ -123,9 +122,7 @@ patches:
         path: /data/LOGGING_LEVEL_ROOT
         value: DEBUG
 
-  # Ingress host — Faz 17.0: *.localtest.me otomatik 127.0.0.1 resolve (RFC2606)
-  # Eski ai.acik.com değeri runtime target yolunu karıştırıyordu — kaldırıldı.
-  # Lokal edge TLS (17.X): mkcert + Caddy `app.localtest.me:8443` → ingress 32443 proxy.
+  # Ingress host — app.localtest.me (RFC2606 127.0.0.1 resolve)
   - target:
       kind: Ingress
       name: platform
