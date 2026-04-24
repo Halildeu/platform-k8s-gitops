@@ -37,6 +37,40 @@ Soru tipine göre otoriter kaynak:
 - **ArgoCD:** prod-hub-only (tek hub prod cluster'da, 2 cluster yönetir; test cred Vault/out-of-band)
 - **Observability:** prod kube-prom-stack + test cluster minimal metrics + remote_write prod
 
+### Dev vs Test vs Prod — 3-Tier Model (Faz 17)
+
+> Tam detay: [docs/promotion-contract.md](./docs/promotion-contract.md)
+
+| Tier | Host | Cluster / Stack | Domain | Amaç |
+|---|---|---|---|---|
+| **Lokal dev** | Mac developer | `k3d-dev` (Docker Desktop) | `*.localtest.me` | Kod geliştirme, inner-loop smoke |
+| **Test** | staging-sw | `k3d-test` | `testai.acik.com` | Merge gate, D29 3-katman |
+| **Prod** | staging-sw | `k3d-prod` + compose | `ai.acik.com` | Canlı trafik, 72h rollback-window |
+
+**Kural:** `k3d-prod` + `k3d-test` staging-sw runtime target'larıdır (dev değil). Lokal dev için **ayrı** `k3d-dev` cluster (Faz 17.0: `bootstrap/k3d-dev.yaml`, namespace `platform-dev`). Mac'te `k3d-prod`/`k3d-test` çalıştırmak çakışma üretir → YASAK.
+
+Promotion akışı: `dev-smoke.sh PASS` → PR + CI → ArgoCD sync → testai D29 3-katman → prod approval → ai.acik.com.
+
+### Lokal Dev Quick Start (Faz 17)
+
+```bash
+# k3d-dev cluster + namespace + overlay apply + fixtures
+./bootstrap/setup-clusters.sh dev    # veya: ./scripts/dev-up.sh --profile authn-min
+./scripts/dev-seed.sh --profile authn-min
+./scripts/dev-smoke.sh --profile authn-min
+
+# Profile seçimi:
+#   authn-min    — 2 workload (api-gateway + auth-service), Up + Functional (auth-only)
+#   zanzibar-min — 6 workload (+ permission + user + variant + openfga), D29 3-katman
+#   full         — 10 workload (9 app + openfga), testai desen paritesi
+
+# Tear-down
+./scripts/dev-down.sh              # stop (reversible)
+./scripts/dev-down.sh --delete     # tam silme
+```
+
+Fake fixtures (`bootstrap/local-fixtures/`): fake RSA PEM, KC realm `dev-local` (dev@localtest.me / viewer@localtest.me), OpenFGA tuples, PG seed SQL. `.env.example` root'ta — `.env` gitignored.
+
 ## Dizin Yapısı
 
 ```

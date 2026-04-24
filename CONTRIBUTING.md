@@ -22,6 +22,26 @@ cd platform-k8s-gitops
 
 ---
 
+## 3-Tier Topoloji (Faz 17)
+
+> Detay: [docs/promotion-contract.md](./docs/promotion-contract.md)
+
+| Tier | Host | Cluster | Domain |
+|---|---|---|---|
+| Lokal dev | Mac | `k3d-dev` | `*.localtest.me` |
+| Test | staging-sw | `k3d-test` | `testai.acik.com` |
+| Prod | staging-sw | `k3d-prod` + compose | `ai.acik.com` |
+
+**Ownership Matrix (cross-repo):**
+- **Inner-loop tooling** (Tilt, code watch, image build) → `platform-ssot` **authoritative**
+- **Env/smoke/scaffolding** (overlays, scripts, fixtures) → `platform-k8s-gitops` **authoritative**
+- **Application code** (Java + MFE) → `platform-ssot`
+- **K8s manifest** (Deployment/Service/ConfigMap) → `platform-k8s-gitops`
+
+Ownership değişirse **her iki repo CONTRIBUTING senkron güncellenir** (Faz 17.6 cross-repo kural).
+
+---
+
 ## Workflow
 
 ### 1. Branch
@@ -31,19 +51,41 @@ git checkout -b feat/<kısa-başlık>
 # veya: fix/<...>, docs/<...>, refactor/<...>, chore/<...>
 ```
 
-### 2. Değişiklik
+### 2. Lokal Dev Setup (ilk defa)
+
+```bash
+# k3d-dev cluster ayağa kaldır (Faz 17)
+./bootstrap/setup-clusters.sh dev                 # veya ./scripts/dev-up.sh
+./scripts/dev-seed.sh --profile authn-min         # KC realm + PG seed (fake fixtures)
+./scripts/dev-smoke.sh --profile authn-min        # D29 muadili smoke
+```
+
+Profile'lar:
+- `authn-min` (2 workload, Up+Functional auth-only)
+- `zanzibar-min` (6 workload, D29 3-katman FULL)
+- `full` (10 workload, testai desen paritesi)
+
+### 3. Değişiklik
 
 - **Kustomize base:** tüm overlay'lere yansır — dikkat
-- **Overlay-specific:** `kustomize/overlays/{test|prod}[/eso]/`
+- **Overlay-specific:** `kustomize/overlays/{test|prod|local-*}[/eso]/`
+- **App base ayrımı (Faz 17.2.5):**
+  - `kustomize/base/apps/<svc>/kustomization.yaml` → runtime only (Deployment + Service + ConfigMap + PDB + ServiceAccount)
+  - `kustomize/base/apps/<svc>/ops/kustomization.yaml` → CRD-gated (ExternalSecret + ServiceMonitor)
+  - test/prod overlay `ops-bundle` include eder; local-* overlay **include ETMEZ** (CRD-free)
 - **Runbook:** `docs/<Sx>-<topic>-runbook.md` format
 - **Handoff:** büyük delta ise `docs/session-handoff-<YYYY-MM-DD>.md` güncelle
 
-### 3. Lokal Sanity
+### 4. Lokal Sanity
 
 ```bash
-# Kustomize build
-kubectl kustomize kustomize/overlays/test > /tmp/test.yaml
-kubectl kustomize kustomize/overlays/prod > /tmp/prod.yaml
+# Lokal dev smoke (değişikliği Mac'te test)
+./scripts/dev-smoke.sh --profile <profil>
+
+# Kustomize build (tüm overlay'ler)
+for o in test prod local local-authn-min local-zanzibar-min local-full; do
+  kubectl kustomize kustomize/overlays/$o > /tmp/$o.yaml && echo "$o OK"
+done
 kubectl kustomize kustomize/overlays/test/eso > /tmp/test-eso.yaml
 kubectl kustomize kustomize/overlays/prod/eso > /tmp/prod-eso.yaml
 kubectl kustomize kustomize/base/monitoring > /tmp/monitoring.yaml
@@ -52,7 +94,7 @@ kubectl kustomize kustomize/base/monitoring > /tmp/monitoring.yaml
 yamllint kustomize/ argocd/ docs/ helm-values/
 
 # Shell lint (varsa script değişim)
-shellcheck bootstrap/*.sh
+shellcheck bootstrap/*.sh scripts/*.sh
 ```
 
 ### 4. Codex Adversarial Review (büyük değişim için)
