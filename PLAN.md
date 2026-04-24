@@ -1361,7 +1361,7 @@ Codex iter-3: paralel, 18.1-18.7 gate değil.
 |---|---|---|---|
 | 19.0 | Authority reset + ADR-0004 | **COMPLETE** | gitops |
 | 19.1 | Yeni repo create + filter-repo migration | **COMPLETE (2026-04-24)**: platform-backend 338 commit, platform-web 739 commit; sha-map saved | org + ssot read |
-| 19.2 | Backend batch 1: auth + user + variant | Pending | platform-backend |
+| 19.2 | Backend batch 1: auth + user + variant | **PR-A IN REVIEW (2026-04-24)**: platform-backend PR #1 (CI + hijyen); Codex thread `019dc0cc` AGREE | platform-backend |
 | 19.3 | Backend batch 2: permission + Zanzibar plane | Pending | platform-backend |
 | 19.4 | Backend batch 3: core + report + schema | Pending | platform-backend |
 | 19.5 | Backend batch 4: api-gateway + discovery-server | Pending | platform-backend |

@@ -8,6 +8,46 @@
 
 ---
 
+## Live Delta — Session 29 +25 (2026-04-24 ~21:50 UTC+3) — FAZ 19.2 PR-A (platform-backend PR #1)
+
+### Faz 19.2 PR-A IN REVIEW (platform-backend)
+
+**Codex AGREE thread 019dc0cc** (Faz 19.2 plan, 6 default):
+1. Branch protection solo pattern (admin bypass OK)
+2. CI MVP tek workflow (batch scope `-pl auth-service,user-service,variant-service -am`)
+3. Image naming `platform-ssot-*` korundu (dual-build minimum hareket)
+4. Zanzibar batch sıralama: 19.2 compile-time only, 19.3 common-auth + openfga-runtime taşınır
+5. Root pom.xml reactor multi-module build
+6. 2-PR yaklaşımı (PR-A CI + hijyen, PR-B opsiyonel)
+
+**platform-backend PR #1** (Codex 2-PR pattern PR-A): https://github.com/Halildeu/platform-backend/pull/1
+
+Değişiklikler:
+- `.github/workflows/ci-mvn-check.yml` (yeni): Temurin JDK 21 + Maven cache + batch scope
+- `.github/workflows-legacy/` (4 legacy workflow disable): env-smoke + i18n-a11y-smoke + release-canary + security-guardrails (eksik scripts/secrets, kırılırdı)
+- `.github/CODEOWNERS` solo pattern (@Halildeu)
+- `.github/PULL_REQUEST_TEMPLATE.md` backend scope + Zanzibar checkboxes
+- `CONTRIBUTING.md` yeni: repo sınırı + branch protection + Zanzibar plane koruma
+- `README.md` update: live status + 9 module list + CI pattern
+
+### Evidence
+
+`docs/faz-19-evidence/19.2-backend-ci-hygiene.md` (6 section).
+
+### Sıradaki — Faz 19.3
+
+Backend batch 2 — **Zanzibar plane** migration:
+- permission-service (Java)
+- common-auth/openfga (OAuth2 + Zanzibar client library, Maven coordinates stabil tut)
+- openfga-runtime (DSL model + store seed)
+
+Özel dikkat:
+- OpenFGA store/model-id Vault `kv/platform/openfga` authoritative (platform-k8s-gitops ExternalSecret)
+- Scoped allow seed fixtures platform-k8s-gitops'ta kalır
+- D29 authz kanıtı: `/api/v1/authz/version` 401 JWT + synthetic allow/deny
+
+---
+
 ## Live Delta — Session 29 +24 (2026-04-24 ~21:35 UTC+3) — FAZ 19.1 LIVE (2 yeni repo + filter-repo migration)
 
 ### User onay + Faz 19.1 COMPLETE
