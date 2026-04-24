@@ -1008,6 +1008,169 @@ Bu repo'da DEĞİL, ana repo'da yapılacaklar. Manifest yazımıyla eş zamanlı
 - `PLAN.md:168-184` (Cutover Atomic Switch — Faz 15'te yapılmış)
 - `docs/state/current-state.md` Session X delta (Faz 16 execute sonrası)
 - Codex threads: `019dbe1d`, `019dbe1f`, `019dbe21`, `019dbe22` (AGREE)
+- **16.0 Data Contract deliverable**: `docs/migration/mssql-pg-data-contract.md` (DRAFT/RFC, SEALED 16.1 inventory sonunda) — Codex thread `019dbe92` iter-4 AGREE
+
+---
+
+### Faz 17 — Local Dev Environment Parity
+
+**Kapsam**: Mac geliştirici makinesi (lokal dev, `k3d-dev`, `platform-dev`, `*.localtest.me`) staging-sw runtime target'larından (`testai.acik.com` / `ai.acik.com`) ayrılır. Mevcut `overlays/local` yanlış `namespace: platform-prod` kullanımını düzeltir. Üç-tier promotion: **Lokal dev** (dev-smoke PASS) → **PR + CI render/lint** → **testai.acik.com** (D29 3-katman) → **prod approval** → **ai.acik.com**.
+
+**Yürütme penceresi**: Faz 16 16.0 ile **tam paralel**; 16.1+ ETL lokal e2e testi isterse 17.X TLS + 17.1 fixtures + 17.2 Tilt **blocker olur**. Effort: 2-3 iş günü (single dev).
+
+**Codex adversarial review**: MCP thread `019dbe80` — iter-1 REVISE (2 RED absorb) → iter-2 PARTIAL → iter-3 PARTIAL → **iter-4 AGREE**.
+
+**Faz adı önemli**: "Local Dev Environment Parity" — prod/test overlay değişikliği **değil**. Hedef: lokal 5 dk fonksiyonel stack, prod secret/Vault/KC'ye sıfır bağımlılık.
+
+#### 17.0 — Naming + Namespace + Image Handoff
+
+- Cluster: Mac lokal `k3d-dev` (eski `k3d-prod` YASAK — staging-sw ile çakışır)
+- Namespace: `platform-dev` (overlay'de `platform-prod` kullanımı kaldırılır)
+- Domain: `*.localtest.me` (RFC2606, 127.0.0.1 resolve) veya `dev.local` (/etc/hosts)
+- `bootstrap/k3d-dev.yaml` (portlar `32080/32443` high-port, network `platform-dev-net`)
+- **Image handoff**: `k3d image import` default, `registry.localhost:5000` opt-in (hızlı rebuild)
+- Deliverable: `bootstrap/k3d-dev.yaml` + overlays/local-* namespace patch + `docs/local-dev-image-contract.md`
+
+#### 17.1 — Fake Fixtures Seed (Vault token git'e YOK)
+
+- **Fake fixtures** (git-committed, `NOT_FOR_PROD` header): `bootstrap/local-fixtures/` — PEM (openssl rsa:2048), fake KC realm JSON, OpenFGA tuple sample, PG fixture SQL
+- **Vault dev-mode opsiyonel** (`full` profile): deterministic `-dev-root-token-id=dev-root-token`, script `export VAULT_TOKEN=dev-root-token` (NEVER git, NEVER shared, NEVER CI)
+- `authn-min` + `zanzibar-min`: ESO bypass — overlays/local-* inline Secret'ler (fake fixtures'tan seed)
+- `.env.example` committed (no real credentials)
+- Versioned seed deterministic: aynı `dev-seed.sh` = aynı PG/KC/OpenFGA state (drift yok)
+- Deliverable: `bootstrap/local-fixtures/` + `.env.example` + `scripts/dev-seed.sh`
+
+#### 17.2 — Local Dev Stack Scaffold (Tilt, ssot authoritative)
+
+- **Tiltfile konumu**: `platform-ssot` (authoritative — Java/MFE kod watch + image build)
+- Bu repo: Tiltfile **YOK**; ssot `k8s_yaml(kustomize('../platform-k8s-gitops/kustomize/overlays/local-$profile'))` ile tüketir
+- Dev scripts (`dev-up/down/seed/smoke`): `platform-k8s-gitops` (cluster lifecycle owner)
+- **Profile matrix** (D29 kontrat uyumlu):
+
+| Profile | Workload count | Composition | D29 Gate |
+|---|---|---|---|
+| `authn-min` | **4** | api-gateway + auth-service + keycloak + postgres | Up + Functional (auth-only; Zanzibar kanıtı **YOK**) |
+| `zanzibar-min` | **8** | authn-min + permission-service + user-service + variant-service + openfga | D29 3-katman FULL (Up + Functional + Zanzibar-ready) |
+| `full` | **12** | 9-app deployment + openfga + keycloak + postgres | D29 + testai desen paritesi |
+
+"Workload count" = Deployment + StatefulSet sayısı (Job/CronJob sayılmaz)
+
+Deliverable: ssot/Tiltfile (cross-repo PR ref) + `docs/local-dev-tilt.md` + profile switch kontratı
+
+#### 17.2.5 — App Base Split (runtime vs ops)
+
+Mevcut `kustomize/base/apps/<svc>/kustomization.yaml` runtime + ES + ServiceMonitor tek bütün — CRD'siz lokal profile'da çalışmaz. Split:
+
+```
+kustomize/base/apps/<svc>/
+  kustomization.yaml       ← runtime only: deployment + service + configmap
+  ops/
+    kustomization.yaml     ← ExternalSecret + ServiceMonitor
+```
+
+Overlay tüketim:
+- **test/prod overlay**: `resources: [../base/apps/<svc>, ../base/apps/<svc>/ops]` (geriye uyum)
+- **local-* overlay**: sadece `../base/apps/<svc>` (CRD bağımsızlığı)
+
+**Parity sanity** = normalized semantic diff (raw byte diff **DEĞİL** — resource sırası varyansı izole edilir)
+
+Deliverable: 9 app × ops/ split PR (18 dosya + overlay ref güncellemeleri)
+
+#### 17.3 — Dev Scripts (profile-aware, idempotent)
+
+- `scripts/dev-up.sh --profile authn-min|zanzibar-min|full` — cluster + ns + fixtures + TLS edge + Tilt
+- `scripts/dev-down.sh` — tear-down (cluster + network + Tilt)
+- `scripts/dev-seed.sh --profile X` — PG + KC realm + OpenFGA tuple fixtures (profile'a göre)
+- `scripts/dev-smoke.sh --profile X` — 17.8 her profile için ayrı kapı
+- Idempotent; yeniden çalıştırma state bozmaz; `:8081` internal helper için high-port (18081) kullan (çakışma önleme)
+
+Deliverable: `scripts/dev-*.sh` + `docs/local-dev-runbook.md`
+
+#### 17.4 — Promotion Contract Doc
+
+`docs/promotion-contract.md` — 3-tier akış resmi. Her tier için tablo: domain, cluster, namespace, Vault scope, secret source, rollback kontratı. "Lokal PASS ≠ testai PASS ≠ prod PASS" — her tier bağımsız smoke gate.
+
+Deliverable: `docs/promotion-contract.md`
+
+#### 17.5 — Docs Update
+
+- `README.md` — "Dev vs Test vs Prod" bölümü netleşir
+- `CONTRIBUTING.md` — yeni katkı akışı: dev-up → kod → dev-smoke → PR
+- `.env.example` referansı (17.1)
+
+Deliverable: README + CONTRIBUTING güncellemeleri
+
+#### 17.6 — Repo Split Decision (cross-repo ownership)
+
+- ADR-0003 **opsiyonel** (overhead düşük)
+- AMA authoritative ownership cümlesi **iki repoda birden** yazılır (unilateral yazım drift üretir)
+- Cümle: "Inner-loop tooling (Tilt, code watch, image build) → `platform-ssot` authoritative. Env/smoke/scaffolding (`overlays/local-*`, `scripts/dev-*.sh`, fixtures) → `platform-k8s-gitops` authoritative. Değişirse her iki repo CONTRIBUTING senkron güncellenir."
+
+Deliverable: bu repo doc + platform-ssot cross-PR referans
+
+#### 17.7 — Migration from Current State (DROP "delete prod")
+
+- `overlays/local/kustomization.yaml`: `namespace: platform-prod` → `platform-dev`; ConfigMap URL'ler `*.platform-prod.svc.*` → `*.platform-dev.svc.*`
+- Comment: "k3d-prod (lokal)" → "k3d-dev (Mac developer)"
+- Mac'te mevcut `k3d-prod`+`k3d-test` cluster'ları: **warn + stop (reversible)** — zaten Session 29'da stop edildi. `k3d cluster delete prod` **YAPMA** (gerekirse geliştirici manuel)
+- `bootstrap/setup-clusters.sh` (şu an sadece prod|test) → `--dev` bayrağı veya ayrı `bootstrap/setup-dev-cluster.sh`
+- Geliştirici rehberi: eski context'leri temizle (`kubectl config delete-context`)
+
+Deliverable: overlay migration PR + migration runbook (1 sayfa) + setup-clusters.sh dev desteği
+
+#### 17.8 — Smoke Criteria (profile-based gates, auth-only authn-min)
+
+| Profile | Smoke Kapıları |
+|---|---|
+| `authn-min` | (a) External: `GET /realms/dev-local/.well-known/openid-configuration` → 200 + (b) Token mint `POST /realms/dev-local/protocol/openid-connect/token` → access_token + (c) Internal helper (port-forward): `:8081/actuator/health/readiness` → 200. **AUTHZ-gated endpoint'ler YASAK** (permission-service yok, chain patlar) |
+| `zanzibar-min` | authn-min + (d) OpenFGA synthetic tuple check + (e) `/variants` scope-aware allow/deny (token'lı) |
+| `full` | zanzibar-min + (f) frontend UI render (ssot MFE artifact) + (g) 9-app `/actuator/health/readiness` 200 |
+
+Her profile için `dev-smoke.sh --profile X` exit 0 = PASS; fail → JSON stderr explanation.
+
+Deliverable: `scripts/dev-smoke.sh` + PASS/FAIL kriterleri `docs/local-dev-runbook.md`
+
+#### 17.X — Local Edge TLS (mkcert + Caddy)
+
+- mkcert + Caddy lokal edge `https://app.localtest.me` (:443 sudo gerekirse, :8443 fallback **DEFAULT** — sudo istemez)
+- Cookie `Secure=true` + `SameSite=None` parity (testai/prod davranışı)
+- OIDC redirect flow HTTPS zorunlu (KC production-mode)
+- **Route kontratı**: Caddy explicit proxy — `/realms/*` + `/resources/*` KC'ye direkt (ingress base'de bu rotalar yok, Caddy üstlenecek)
+- High-port 32080/32443 k3d ingress arkada kalır; Caddy 443/8443 terminate eder
+
+Deliverable: `bootstrap/local-edge/` (mkcert + Caddy config) + docs port seçim rehberi
+
+#### 17.Y — Image Handoff Contract
+
+- **Default**: Tilt `docker_build` + `k3d image import` (cluster-scope erişim, auto)
+- **Alternatif**: lokal registry `registry.localhost:5000` (cluster'dan pull, daha hızlı rebuild replica)
+- Trade-off: `k3d image import` basit ama yavaş iteratif build; registry karmaşık ama CI-benzeri
+
+Deliverable: `docs/local-dev-image-contract.md` karar mühürler
+
+#### 17.Z — CI Integration Split
+
+- **Blocking PR CI** (her PR'da): `overlays/local-*` kustomize build + yaml-lint + shell-lint `scripts/dev-*.sh`
+- **Non-blocking nightly/manual** (`workflow_dispatch`): tam k3d smoke (GitHub Actions runner'da k3d cluster + dev-up + dev-smoke `authn-min` MVP)
+- Cross-repo integration (platform-ssot PR tetikleyen): `17.Z.1` ileri iş
+
+Deliverable: `.github/workflows/local-overlay-lint.yml` (PR) + `.github/workflows/local-smoke-nightly.yml` (manual/nightly)
+
+#### Repo Sınırı (Codex AGREE)
+
+| Repo | İçerik |
+|---|---|
+| `platform-ssot` | **Tiltfile (authoritative)**, Dockerfile, Maven/Gradle build config, code watch patterns, image build logic |
+| `platform-k8s-gitops` | `bootstrap/k3d-dev.yaml`, `overlays/local-*` (ns `platform-dev`), `scripts/dev-*.sh`, `bootstrap/local-fixtures/`, `bootstrap/local-edge/` (mkcert+Caddy), `docs/promotion-contract.md`, `docs/local-dev-runbook.md`, `docs/local-dev-image-contract.md`, CI workflows |
+
+#### Bağlantılar
+
+- ADR-0002 D31 (PG primary + single-host dual-cluster — lokal bozmaz)
+- ADR-0003 (opsiyonel, 17.6 — inner-loop tooling ownership)
+- `PLAN.md:844-849` Faz 12 "Lokal Doğrulama" — **Faz 17 superseded + modernize**; Faz 12:845 `k3d cluster create platform` artık tarihsel
+- `kustomize/overlays/local/kustomization.yaml:1-9` (17.7 düzeltir)
+- Faz 16 paralellik: 16.0 data contract tamamen paralel; 16.1+ ETL lokal e2e isterse 17.X TLS + 17.1 fixtures + 17.2 Tilt blocker
+- Codex thread: `019dbe80` (iter-1 → iter-4 AGREE)
 
 ---
 
