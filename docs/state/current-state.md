@@ -78,6 +78,37 @@ Sonuç: Session 28 = rollback-window başlangıcı + **hybrid kontrat canonical 
 - **T+24h**: 2026-04-25 01:25 UTC+3 — 24h soak gate (error rate < %0.1)
 - **T+72h**: 2026-04-27 01:25 UTC+3 — rollback-window kapanış, hybrid prod permanent
 
+### Session 28 T+X: (a) Scoped Allow Seed PARTIAL (2026-04-24 05:25 UTC+3)
+
+Codex verdict 019dbca8 sonrası bekleme atlanıp execute denendi. **KC + OpenFGA tarafı tamamlandı, permission-service DB seed kullanıcı onayı bekliyor**.
+
+**Yapılan (canlı kanıtlı)**:
+- KC `canary-load` client `uid-static` mapper **SİLİNDİ** (`uid-claim` dinamik tek başına)
+- `canary-restricted@stage.local` user **fully set up**: `attributes.uid=["920002"]` + email/firstName/lastName + `enabled=true` + `emailVerified=true` + `requiredActions=[]`
+- Realm role `VARIANT_SCOPE_CANARY` create + canary-restricted'a assign
+- Token mint: `uid=920002` (920001 DEĞİL — drift kapandı), `realm_access` includes `VARIANT_SCOPE_CANARY`
+- OpenFGA tuple `project:1204#viewer@user:920002` write (güncel store `01KPXCVBHCY2TQ6YHVK009NS1C`, model `01KPXCVBMDKXXRPGKFGPDRVBQX`)
+- User Profile `unmanagedAttributePolicy=ENABLED` (prod realm)
+
+**Blocker yeni keşif**: variant-service log `Resolved variant authz context: userId=920002 ... permissionsCount=0 isAdmin=false` → gerçek authz hub **permission-service** (Spring Boot DB-backed). OpenFGA ikincil.
+
+**permission_db schema**:
+- `permissions.code=VARIANTS_READ` id=45
+- `scopes(scope_type='PROJECT', ref_id=1204)` yoksa insert gerek
+- `user_permission_scope(user_id=920002, permission_id=45, scope_id=X)` insert gerek
+
+**Seed SQL hazır** (`docs/prod-scoped-allow-seed-runbook.md` §5-pre). Execute için **kullanıcı onayı** bekliyor (prod DB INSERT runbook dışında keşfedildi).
+
+**Smoke partial** (post-KC+OpenFGA seed, pre-PG seed):
+```
+authz/me: {superAdmin: false, userId: "920002", allowedScopes: [], permissions_count: 0}
+variants(1204) → 403  (permission-service hub permissions_count=0 nedeniyle)
+```
+
+**Beklenen post-PG-seed**:
+- `allowedScopes=[{PROJECT, 1204}]`, `permissions_count≥1`
+- `variants(1204)=200`, `variants(test-grid)=403`
+
 ### Paralel Cleanup Post-T0 (rollback-window içinde) — TAM KAPANDI
 
 | PR | İçerik | Durum | Etki |

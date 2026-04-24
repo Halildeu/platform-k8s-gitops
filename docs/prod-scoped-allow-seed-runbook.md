@@ -164,7 +164,66 @@ docker exec platform-kc-prod /opt/keycloak/bin/kcadm.sh remove-roles \
 docker exec platform-kc-prod /opt/keycloak/bin/kcadm.sh delete roles/VARIANT_SCOPE_CANARY -r serban
 ```
 
-## 5. OpenFGA Tuple Seed
+## 5-pre. Permission-Service DB Seed (Session 28 Keşif)
+
+> **Kritik keşif** (Codex thread `019dbdf2`): KC + OpenFGA seed tek başına **yetersiz**. variant-service `authz/me` için **permission-service hub**'a çağrı yapıyor; allowedScopes + permissions Spring Boot-side DB-backed. OpenFGA `Check` muhtemelen ikincil resource-level doğrulama için.
+
+### Gerçek Blocker Yeri
+
+- `variant-service` log: `Resolved variant authz context: userId=920002 ... permissionsCount=0 isAdmin=false`
+- Token'da `VARIANT_SCOPE_CANARY` role görünüyor
+- authz/me `{superAdmin: false, allowedScopes: [], permissions_count: 0}` → scope+permission hub-side boş
+
+### Schema (canlı keşif)
+
+permission_db tabloları:
+- `permissions` (id, code, module_name) → `VARIANTS_READ` id=45
+- `roles` (id, name)
+- `role_permissions` (role_id, permission_id)
+- `user_role_assignments` (user_id, company_id, project_id, warehouse_id, role_id, active)
+- `scopes` (id, scope_type, ref_id) — unique (scope_type, ref_id)
+- `user_permission_scope` (user_id, permission_id, scope_id) — direct user-perm-scope
+
+### 5-pre.1 Seed SQL (idempotent, yetki gerektirir)
+
+```sql
+-- permission_db içinde platform user'la execute
+BEGIN;
+-- Scope PROJECT/1204 (yoksa)
+INSERT INTO scopes(scope_type, ref_id, description)
+  VALUES('PROJECT', 1204, 'Canary scoped allow — scoped variant seed 2026-04-24')
+  ON CONFLICT (scope_type, ref_id) DO NOTHING;
+
+-- User 920002'ye VARIANTS_READ@PROJECT/1204 grant
+INSERT INTO user_permission_scope(user_id, permission_id, scope_id)
+  SELECT 920002, 45, s.id FROM scopes s
+  WHERE s.scope_type='PROJECT' AND s.ref_id=1204
+  ON CONFLICT (user_id, permission_id, scope_id) DO NOTHING;
+COMMIT;
+
+-- Verify
+SELECT * FROM scopes WHERE scope_type='PROJECT' AND ref_id=1204;
+SELECT * FROM user_permission_scope WHERE user_id=920002;
+```
+
+### 5-pre.2 Execute Komutu
+
+```bash
+ssh staging-sw
+docker exec -i platform-pg-prod psql -U platform -d permission_db <<'SQL'
+[yukarıdaki BEGIN..COMMIT bloğu]
+SQL
+```
+
+### 5-pre.3 Rollback
+
+```sql
+DELETE FROM user_permission_scope WHERE user_id=920002 AND permission_id=45;
+DELETE FROM scopes WHERE scope_type='PROJECT' AND ref_id=1204
+  AND NOT EXISTS (SELECT 1 FROM user_permission_scope WHERE scope_id=scopes.id);
+```
+
+## 5. OpenFGA Tuple Seed (muhtemelen ikincil, check için)
 
 ### 5.1 Prod OpenFGA container
 ```bash
