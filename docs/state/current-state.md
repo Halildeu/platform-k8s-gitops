@@ -8,6 +8,61 @@
 
 ---
 
+## Live Delta — Session 29 +24 (2026-04-24 ~21:35 UTC+3) — FAZ 19.1 LIVE (2 yeni repo + filter-repo migration)
+
+### User onay + Faz 19.1 COMPLETE
+
+User "onayla" → Codex AGREE 019dc0ac 6 stratejik default kabul → 19.1 live impl.
+
+**GitHub repo create:**
+- **platform-backend** (private): https://github.com/Halildeu/platform-backend
+- **platform-web** (private): https://github.com/Halildeu/platform-web
+
+**git filter-repo migration:**
+- Original ssot: 2,696 commits + 275M packed
+- **platform-backend** post-filter: 338 commits + 3.7M
+- **platform-web** post-filter: 739 commits + 106M
+- Path strategy: `--path backend/ --path-rename backend/:` (tek path, collision önleme — backend/.github vs root .github collision'a karşı Codex multi-path'ten sapıldı)
+
+**sha-map evidence (Codex guardrail):**
+- `docs/faz-19-evidence/sha-map-platform-backend.txt` (2,697 satır)
+- `docs/faz-19-evidence/sha-map-platform-web.txt` (2,697 satır)
+
+**Push verification:**
+- platform-backend HEAD: `16b4b20b` Faz 18.9 observability retirement
+- platform-web HEAD: `de2494a8` Faz 18.3 PR-A service-control retire
+
+### Zero regression
+
+- K8s 19 prod + 10 test + 11 monitoring Running unchanged
+- Edge ai.acik.com 200, testai.acik.com 200
+- platform-k8s-gitops + platform-ssot hiç dokunulmadı (read-only kaynak)
+- 3-realm izolasyon korundu
+
+### Faz 19.1 evidence doc
+
+`docs/faz-19-evidence/19.1-repo-create-filter-migration.md` (8 section).
+
+### Large file warning (platform-web)
+
+Push sırasında 2 dosya >50MB uyarı (eski `.next/cache/webpack/*.pack` 2026-03-21/29 artefaktları). Push başarılı; Faz 19.2 öncesi BFG/filter-repo --strip-blobs-bigger-than 50M değerlendirilebilir.
+
+### Sıradaki — Faz 19.2
+
+Backend batch 1 (auth + user + variant): CI workflow setup + pom.xml sanity + compile check.
+
+### Session 29 güncel PR sayacı
+
+| Repo | Merged | Open | Total |
+|---|---|---|---|
+| platform-k8s-gitops | 27 (#84-#111, #112 bu) | 1 (#112) | 28 |
+| platform-ssot | 5 (#550-#554) | 0 | 5 |
+| platform-backend (YENİ) | initial push 338 commit | — | — |
+| platform-web (YENİ) | initial push 739 commit | — | — |
+| **Toplam** | **32 PR merged + 2 yeni repo initial state** | — | — |
+
+---
+
 ## Live Delta — Session 29 +23 (2026-04-24 ~21:15 UTC+3) — FAZ 19.0 BAŞLADI (ADR-0004)
 
 ### Faz 19 Split-repo Authority Transfer — Faz 19.0 COMPLETE
