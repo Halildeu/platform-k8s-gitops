@@ -8,6 +8,106 @@
 
 ---
 
+## Live Delta — Session 29 +22 (2026-04-24 ~21:00 UTC+3) — FAZ 18 FULL CLOSURE (18.1-18.12 tümü ✓)
+
+### Faz 18.9 + 18.10 LIVE COMPLETE (observability + network cleanup)
+
+**Faz 18.9 — 5 Observability container retire (17:54 UTC):**
+- Stop+rm: grafana + prometheus + tempo + loki + promtail compose container
+- K8s kube-prometheus-stack authoritative (monitoring ns 8d uptime, 11 Running)
+- Preflight (Codex 019dc09c):
+  1. K8s `authz-plane-dashboard.yaml` canonical (compose zanzibar-authz.json replacement)
+  2. K8s Tempo ClusterIP (no host port conflict)
+  3. Log visibility kabul (user "sistem kullanıcısı yok" + ops docker logs)
+- Zero regression: K8s 11 Running + edge 200/401 unchanged
+- PR: platform-ssot #554 (compose blok + 2 volume + script -195/+33)
+
+**Faz 18.10 — 4 Created zombie + orphan network (17:58 UTC):**
+- rm: platform-keycloak-1 + platform-vault-1 + platform-postgres-db-1 + platform-vault-unseal-1 (2026-04-23 artifacts)
+- `docker network rm platform_observability-network` (orphan)
+- Kalan 3 network: platform-prod-net + platform-test-net + platform_microservice-network (active attachments)
+- Host-only operation, PR yok
+
+### Faz 18.11 — Frontend Canonical Truth SEAL
+
+**Frontend delivery canonical (18.11.a mühürlendi):**
+- `staging-sw` host üstünde **`platform-web-nginx`** (prod, ai.acik.com) + **`platform-web-nginx-stage`** (test, testai.acik.com) reverse-proxy
+- **K8s frontend authoritative DEĞİL**; K8s backend'e erişim `nginx → K8s NodePort`
+- **Port pins:**
+  - `ai.acik.com` → K8s prod NodePort `127.0.0.1:30443` (HTTPS)
+  - `testai.acik.com` → K8s test NodePort `127.0.0.1:31080` + `127.0.0.1:5545`
+
+**Option A (K8s frontend authoritative) — Faz 19+ karar kapısı (DEFERRED).**
+
+### Faz 18.12 — Truth Closure + Session 30 Handoff
+
+- PLAN.md §Faz 18.1-18.12 hepsi COMPLETE marker ✓
+- docs/state/current-state.md full Faz 18 closure delta ✓ (bu)
+- docs/session-handoff-2026-04-24-faz-18-truth-closure.md (Session 29 wrap) ✓
+- Faz 19 gate pointer (Codex `019dc033` 10-step split-repo authority transfer)
+
+### Faz 18 final özet metrikleri
+
+| Kategori | Retire | Kalacak |
+|---|---|---|
+| Compose container (staging-sw) | 14 | 9 (D6 stateful + edge + registry) |
+| Compose services ssot repo | 18 blok tombstone | postgres-db + keycloak + vault + vault-unseal + web-nginx |
+| Compose volumes | 3 (vault_snapshots, loki_data, tempo_data) | postgres_data + vault_data + vault_logs |
+| Compose networks | 1 (platform_observability-network) | 3 (prod-net + test-net + microservice-network) |
+
+### Final staging-sw compose state (9 containers)
+
+```
+platform-pg-prod          (D6 ✓ Up 27h healthy)
+platform-kc-prod          (D6 ✓ Up 21h healthy)
+platform-vault-prod       (D6 ✓ Up 27h healthy)
+platform-pg-test          (D6 ✓ Up 3d healthy)
+platform-kc-test          (D6 ✓ Up 2d healthy)
+platform-vault-test       (D6 ✓ Up 4d healthy)
+platform-web-nginx        (edge prod ✓ Up 2d)
+platform-web-nginx-stage  (edge test ✓ Up 14m)
+platform-test-registry    (k3d-test registry ✓ Up 3d)
+```
+
+### Session 29 PR sayacı (final)
+
+| Repo | Merged | Open | Total |
+|---|---|---|---|
+| platform-k8s-gitops | 25 (PR #84-#108) | 1 (PR #109 bu) | 26 |
+| platform-ssot | 4 (#550-#553) | 1 (#554) | 5 |
+| **Toplam** | **29** | **2** | **31 cross-repo PR** |
+
+### Codex AGREE thread (Session 29 — 8 thread)
+
+1. `019dbe80` — Faz 17 Local Dev Parity (iter-4 AGREE)
+2. `019dbe92` — Faz 16.0 Data Contract DRAFT (iter-4 AGREE)
+3. `019dbf15` — Faz 16.2 Flyway V16 plan
+4. `019dbf24` — Faz 16.8 Source Decommission (iter-7 AGREE)
+5. `019dbfa5` — Faz 18 Compose Retirement (iter-3 AGREE)
+6. `019dc033` — Faz 19 Split-repo Authority Transfer (ready DEFERRED)
+7. `019dc04d` — Faz 18.4 Vault Ops (AGREE + 6 guardrail)
+8. `019dc07c` — Faz 18.5-18.7 (GO no-soak, 2 gate PASS)
+9. `019dc09c` — Faz 18.9-18.12 combined (conditional GO + 3 preflight)
+
+### User Hard Rules LOCKED (Session 29 kurallar)
+
+1. **"düzgün çalışan sistemleri bozmdan yapalım"** → non-destructive 4-fazlı pattern default
+2. **"bekleme yok hızlı ve güvenli"** → 24h soak + 72h warm rollback kaldırıldı
+3. **"raporları da taşıyacağız"** → 4 ssot vault runbook gitops canonical'a migrated
+4. **"discovery service i almayı unutma"** → Faz 19 migration scope note
+5. **"Kaynak repo tek amacı: geliştirme taşıma"** → Faz 19 split-repo hedef
+
+### Sıradaki Oturum
+
+**Faz 19 — Split-repo authority transfer** (Codex thread `019dc033` 10-step plan):
+- 19.0: Authority reset
+- 19.1-19.8: Migration (discovery-server, permission-service Java, reports, Zanzibar OpenFGA Java, other backends)
+- 19.9: (Optional) source repo delete
+
+Plan-time impl blocks on this (Faz 18.12) truth closure ← **TAMAMLANDI BU PR'DA**.
+
+---
+
 ## Live Delta — Session 29 +21 (2026-04-24 ~20:35 UTC+3) — FAZ 18.5-18.7 COMPLETE (3-dk retirement)
 
 ### Faz 18.5-18.7 App Stateless Compose Retirement TAMAMLANDI
