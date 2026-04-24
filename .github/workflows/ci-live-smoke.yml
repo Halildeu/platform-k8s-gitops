@@ -1,7 +1,19 @@
-name: CI - Live Smoke (MFE Remote + Auth Chain)
+name: CI - Live Smoke (MFE Remote + Auth Chain) [NEEDS SELF-HOSTED OR SSH]
 
 # Live smoke guard — her deploy sonrası + manuel trigger.
 # 2026-04-25 post-cutover eklendi: schema-explorer regression önlemi.
+#
+# ⚠️ NETWORK LIMITATION (2026-04-25 bulgusu):
+# GitHub-hosted runner (ubuntu-latest) testai.acik.com / ai.acik.com'a ERİŞEMEZ.
+# Bu domain'ler staging-sw intranet'inde resolve ediliyor (10.9.10.53 private).
+# Public internet → curl connect timeout (135s).
+#
+# Self-hosted runner + VPN/SSH tunnel yapılana kadar bu workflow GitHub-hosted runner'da çalışmaz.
+# Alternatif A (önerilen): staging-sw host cron (scheduled smoke, local execution)
+#   echo "*/15 * * * * bash /home/halil/platform-k8s-gitops/scripts/smoke/mfe-remote-smoke.sh both >> /var/log/mfe-smoke.log 2>&1" | crontab -
+# Alternatif B: user terminal manuel
+#   ssh halil@10.9.10.53 "bash /home/halil/platform-k8s-gitops/scripts/smoke/mfe-remote-smoke.sh both"
+# Alternatif C: self-hosted runner staging-sw'de kur → runs-on: [self-hosted, staging-sw]
 #
 # Amaç:
 # - 7 MFE remoteEntry.js erişilebilirlik (Module Federation sanity)
