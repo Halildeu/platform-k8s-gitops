@@ -1316,14 +1316,68 @@ Codex iter-3: ikiye ayır — 18.11.a karar, 18.11.b impl ertelenmiş.
 - **18.11.a**: Bugünkü truth mühürü `Option B: host-static canonical` (current-state:734 evidence). `docs/state/current-state.md` + `docs/promotion-contract.md` bu truth'u net yazar.
 - **18.11.b** (DEFERRED): Option A (K8s frontend authoritative) cutover — ayrı Faz 19 veya pending.
 
-#### 18.12 — Truth Closure
+#### 18.12 — Truth Closure — **COMPLETE (2026-04-24)**
 
-- `PLAN.md` D34 + Faz 18 COMPLETE marker
-- `docs/promotion-contract.md` 3-realm independence kontrat
-- `docs/state/current-state.md` Faz 18 delta (A0 + tombstone + service-manager retire + stateless rm + network clean + local smoke + frontend source captured)
-- Final handoff: `docs/session-handoff-<date>-faz-18-complete.md`
+- PLAN.md §Faz 18 COMPLETE markers ✓ (18.1-18.12 hepsi)
+- docs/state/current-state.md Session 29 +22 delta ✓
+- docs/session-handoff-2026-04-24-faz-18-truth-closure.md ✓ (D28 5-alan)
+- Faz 19 gate pointer (Codex `019dc033` + `019dc0ac` ready)
 
-#### Repo Sınırı
+---
+
+### Faz 19 — Split-repo Authority Transfer — **IN PROGRESS (2026-04-24 Faz 19.0)**
+
+**Canonical ADR**: [docs/adr/0004-split-repo-authority-transfer.md](adr/0004-split-repo-authority-transfer.md)
+
+**User direktifleri (Session 29 locked):**
+1. "Kaynak raporu tek amacı: geliştirme taşıma."
+2. "discovery service i almayı unutma."
+3. "raporları da taşıyacağız."
+
+**Codex AGREE thread `019dc0ac` — 6 stratejik default:**
+1. **2 repo**: `platform-backend` + `platform-web`
+2. **Zanzibar backend içinde** (lockstep — ayrı repo overkill)
+3. **Path-filtered full history** (git filter-repo multi-path + sha-map)
+4. **Dual-build + single-consumer** transition (gitops tek digest)
+5. **Reports code taşınır, data contract gitops'ta kalır** (16.1 DRAFT annex pending)
+6. **Option A (K8s frontend) Faz 19 SONRASI** karar kapısı
+
+**10-step plan özet** (detay ADR-0004):
+
+| Step | Title | Durum |
+|---|---|---|
+| 19.0 | Authority reset + ADR-0004 | **IN PROGRESS** (bu commit) |
+| 19.1 | Yeni repo(lar)ı oluştur + policy + filter-repo dry-run | Pending |
+| 19.2 | Backend batch 1: auth + user + variant | Pending |
+| 19.3 | Backend batch 2: permission + Zanzibar plane | Pending |
+| 19.4 | Backend batch 3: core + report + schema | Pending |
+| 19.5 | Backend batch 4: api-gateway + discovery-server | Pending |
+| 19.6 | Frontend migration | Pending |
+| 19.7 | Reports code split + data contract gitops'ta | Pending |
+| 19.8 | CI + image pipeline migration (dual-build) | Pending |
+| 19.9 | Cutover test→prod atomic (D29 3-layer) | Pending |
+| 19.10 (opt) | Source repo lock/archive | Pending |
+
+**Prereq**: Faz 18.12 truth closure ✓ (PR #109, 2026-04-24 18:04 UTC).
+
+**User karar bekleniyor (19.1 öncesi)** — default'tan sapma varsa belirt:
+- Repo count: 2 (default) vs 1 monorepo vs 3 (zanzibar ayrı)
+- Repo naming: `platform-backend` + `platform-web` (default) vs user önerisi
+- History scope: path-filtered full (default) vs squash
+- Transition: dual-build (default) vs cold-switch
+- Faz 18.11.b Option A: migration sonrası (default) vs aynı pencere
+- Reports data migration: defer (default, 16.1 DRAFT) vs aynı faz
+
+#### Repo Sınırı (Faz 19 genişletildi)
+
+| Repo | İçerik | Faz Durum |
+|---|---|---|
+| `platform-k8s-gitops` | Kustomize + Helm + ArgoCD + day-2 + ADR + PLAN + current-state + host-compose + **ops runbook canonical** + data contract (DRAFT annex dahil) | Mevcut, genişletildi |
+| `platform-backend` (YENİ) | 8 Java mikroservis + Zanzibar plane (permission + common-auth/openfga + openfga-runtime) + discovery-server legacy + Flyway | Faz 19.1'de create |
+| `platform-web` (YENİ) | MFE shell + mfe-admin + mfe-reporting + mfe-workbench + design-system + i18n-dicts | Faz 19.1'de create |
+| ~~`platform-ssot`~~ | **DEPRECATED** (Faz 19.10'da read-only archive veya delete) | Faz 19.10'da kilitlenecek |
+
+#### Bağlantılar (Faz 19)
 
 | Repo | İçerik |
 |---|---|
@@ -1332,11 +1386,12 @@ Codex iter-3: ikiye ayır — 18.11.a karar, 18.11.b impl ertelenmiş.
 
 #### Bağlantılar
 
-- ADR-0002 D6 (stateful tier compose, değişmez)
-- PLAN D34 (YENİ — 18.0 deliverable, 3-realm runtime independence)
-- `docs/promotion-contract.md` (Faz 17.4 — D34 kontrat detay genişlemesi)
-- `docs/state/current-state.md` drift (shared edge + compose stateless canlı gateway/auth çelişkisi)
-- Codex thread: `019dbfa5` (iter-1 VERDICT → iter-2 revize → iter-3 AGREE)
+- ADR-0002 D6 (stateful tier compose, değişmez — Faz 19 split-repo bunu etkilemez)
+- ADR-0003 inner-loop tooling ownership (Faz 17.6 — Faz 19 sonrası dev workflow)
+- **ADR-0004 split-repo authority transfer** (Faz 19.0 — yeni)
+- PLAN D34 (3-realm runtime independence — korunur)
+- `docs/promotion-contract.md` (Faz 17.4 + Faz 19.6 frontend source guarantee)
+- Codex thread: `019dbfa5` (Faz 18 AGREE) + `019dc033` (Faz 19 initial) + `019dc0ac` (Faz 19 detaylı AGREE)
 
 ---
 

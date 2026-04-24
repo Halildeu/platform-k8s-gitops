@@ -8,7 +8,57 @@
 
 ---
 
-## Live Delta — Session 29 +21 (2026-04-24 ~20:35 UTC+3) — FAZ 18.5-18.7 COMPLETE (3-dk retirement)
+## Live Delta — Session 29 +23 (2026-04-24 ~21:10 UTC+3) — FAZ 19.0 BAŞLADI (ADR-0004)
+
+### Faz 19 Split-repo Authority Transfer — Faz 19.0 COMPLETE
+
+**ADR-0004 kabul edildi** (docs/adr/0004-split-repo-authority-transfer.md): Platform-ssot kaynak kod üç repo'ya split:
+- **platform-k8s-gitops** (mevcut authoritative): manifest + docs + ops + host-compose
+- **platform-backend** (YENİ 19.1'de): 8 Java mikroservis + Zanzibar plane + discovery-server
+- **platform-web** (YENİ 19.1'de): MFE + design-system + i18n
+
+### Codex AGREE thread 019dc0ac — 6 stratejik default
+
+1. **2 repo** (backend + web), Zanzibar backend içinde
+2. **Path-filtered full history** (git filter-repo multi-path + sha-map)
+3. **Dual-build + single-consumer** transition (gitops tek digest tüketir)
+4. **Reports code taşınır, data contract gitops'ta kalır** (Faz 16.1 DRAFT annex pending)
+5. **Option A (K8s frontend) migration SONRASI** karar kapısı
+6. **Monorepo + Zanzibar ayrı repo** alternatives REDDEDILDI (Codex uyarı: PR koordinasyon overhead)
+
+### User karar bekleniyor (19.1 öncesi)
+
+Default'tan sapma isterse override belirt:
+
+| Decision | Codex default | Alternative |
+|---|---|---|
+| Repo count | 2 (backend + web) | 1 monorepo / 3 (zanzibar ayrı) |
+| Naming | `platform-backend` + `platform-web` | User önerisi |
+| History scope | Path-filtered full | Squash (Codex uyarı: blame kaybı) |
+| Transition | Dual-build 1-2 hafta | Cold-switch tek-gün |
+| 18.11.b Option A | Migration sonrası | Aynı pencere |
+| Reports data migration | Defer (16.1 DRAFT) | Aynı faz sıkıştır |
+
+### Faz 19 10-step plan özet
+
+| Step | Title | Authority |
+|---|---|---|
+| 19.0 | **Authority reset + ADR-0004** | gitops (bu PR) |
+| 19.1 | Yeni repo create + filter-repo dry-run | org + ssot read |
+| 19.2-19.5 | Backend batch'ler (auth+user+variant → permission+Zanzibar → core+report+schema → gateway+discovery-server) | platform-backend |
+| 19.6 | Frontend migration | platform-web |
+| 19.7 | Reports code split (data contract gitops'ta) | mix |
+| 19.8 | CI + image pipeline (dual-build) | yeni repolar |
+| 19.9 | Cutover test→prod atomic (D29 3-layer) | gitops overlays |
+| 19.10 (opt) | Source repo lock/archive | org policy |
+
+### Faz 18.8 Mac k3d-dev smoke
+
+Hâlâ pending (user Mac host trigger), non-blocking. Faz 19 paralel ilerleyebilir.
+
+---
+
+## Live Delta — Session 29 +22 (2026-04-24 ~21:00 UTC+3) — FAZ 18 FULL CLOSURE (18.1-18.12 tümü ✓)
 
 ### Faz 18.5-18.7 App Stateless Compose Retirement TAMAMLANDI
 
