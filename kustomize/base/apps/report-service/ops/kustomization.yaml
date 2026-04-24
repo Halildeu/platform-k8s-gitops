@@ -17,3 +17,4 @@ labels:
 resources:
   - externalsecret.yaml
   - servicemonitor.yaml
+  - externalsecret-mssql.yaml  # Faz 19.MSSQL (ADR-0005) — Workcube MSSQL secondary DataSource
