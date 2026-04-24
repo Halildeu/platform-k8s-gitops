@@ -1294,34 +1294,47 @@ Codex iter-3: paralel, 18.1-18.7 gate değil.
 - D34 "local dev" bacağı evidence
 - `docs/phase18-evidence/local-dev-smoke-YYYYMMDD.md`
 
-#### 18.9 — Legacy Observability Retirement (conditional)
+#### 18.9 — Legacy Observability Retirement — **COMPLETE (2026-04-24 17:54 UTC)**
 
-- platform-{grafana,prometheus,tempo,loki,promtail}-1 compose stop
-- **ÖNKOŞUL** (Codex iter-2 uyarı): K8s test monitoring gap kapatılmış olmalı (current-state:737 drift)
-- Gap açıksa bu sub-faz **beklemede**
+- platform-{grafana,prometheus,tempo,loki,promtail}-1 compose stop+rm
+- K8s kube-prometheus-stack authoritative (monitoring ns 8d uptime, 11 Running)
+- Codex AGREE thread `019dc09c` conditional GO + 3 preflight:
+  1. K8s `authz-plane-dashboard.yaml` canonical (compose zanzibar-authz.json replacement)
+  2. K8s Tempo ClusterIP (port 4317/4318 no host conflict)
+  3. Log visibility kabul (ops `docker logs` + user "sistem kullanıcısı yok")
+- Live zero regression: K8s 11 Running + edge 200/401 unchanged
+- PR: platform-ssot #554 (compose blok + 2 volume + script cleanup -195/+33)
 
-#### 18.10 — Legacy Network Cleanup
+#### 18.10 — Legacy Network Cleanup — **COMPLETE (2026-04-24 17:58 UTC)**
 
-Codex iter-3: KC detach önce.
+- 4 Created zombie container rm: platform-keycloak-1 + platform-vault-1 + platform-postgres-db-1 + platform-vault-unseal-1 (2026-04-23'ten kalma, never started)
+- `docker network rm platform_observability-network` (orphan, 0 attach)
+- Kalan networks: platform-prod-net + platform-test-net + platform_microservice-network (active attachments)
+- Host-only operation, PR gerekmez (cross-repo impact yok)
 
-- Prereq: 18.7 complete (compose stateless yok)
-- `docker network disconnect platform_microservice-network platform-kc-prod` → KC sadece `platform-prod-net`'te
-- Aynı: `platform-pg-prod`, `platform-vault-prod` (host-compose/postgres/prod/docker-compose.yml + vault/prod/docker-compose.yml zaten `platform-prod-net` only)
-- `docker network rm platform_microservice-network`
+#### 18.11 — Frontend Source Decision Capture — **COMPLETE (2026-04-24, 18.11.a only, 18.11.b DEFERRED)**
 
-#### 18.11 — Frontend Source Decision Capture (impl defer)
+- **18.11.a**: Canonical truth mühürlendi:
+  - **Frontend delivery:** `staging-sw` host üstünde `platform-web-nginx` (prod) + `platform-web-nginx-stage` (test) reverse-proxy
+  - **K8s frontend authoritative DEĞİL**; K8s backend'e erişim `nginx → NodePort/Ingress` üzerinden
+  - **Port pins:** ai.acik.com → K8s prod NodePort 30443 / testai.acik.com → K8s test 31080/5545
+- **18.11.b** (DEFERRED): Option A (K8s frontend authoritative) — Faz 19+ karar kapısı
 
-Codex iter-3: ikiye ayır — 18.11.a karar, 18.11.b impl ertelenmiş.
+#### 18.12 — Truth Closure — **COMPLETE**
 
-- **18.11.a**: Bugünkü truth mühürü `Option B: host-static canonical` (current-state:734 evidence). `docs/state/current-state.md` + `docs/promotion-contract.md` bu truth'u net yazar.
-- **18.11.b** (DEFERRED): Option A (K8s frontend authoritative) cutover — ayrı Faz 19 veya pending.
+- PLAN.md §Faz 18.1-18.12 hepsi COMPLETE marker ✓
+- docs/state/current-state.md Faz 18 full closure delta ✓
+- docs/session-handoff-2026-04-24-faz-18-truth-closure.md (Session 29 wrap) ✓
+- Faz 19 gate pointer (Codex `019dc033` 10-step: split-repo authority transfer)
 
-#### 18.12 — Truth Closure
+#### Faz 18 Özet Metrikleri
 
-- `PLAN.md` D34 + Faz 18 COMPLETE marker
-- `docs/promotion-contract.md` 3-realm independence kontrat
-- `docs/state/current-state.md` Faz 18 delta (A0 + tombstone + service-manager retire + stateless rm + network clean + local smoke + frontend source captured)
-- Final handoff: `docs/session-handoff-<date>-faz-18-complete.md`
+- **14 compose container retire**: service-manager + vault-snapshot + vault-audit-init + 9 app stateless (auth/user/variant/core-data/report/schema/api-gateway/discovery-server/openfga) + permission-service + openfga-migrate + 5 observability + 4 zombie Created
+- **9 compose container kalacak** (ADR-0002 D6 uphold): {pg,kc,vault}-{prod,test} + vault-unseal + 2 nginx edge + test registry
+- **30 cross-repo PR Session 29**: 25 gitops merged + 4 ssot merged + 1 ssot open (#554)
+- **3-realm izolasyon UPHELD**: ubuntu prod (K8s 19 pod + compose stateful) + ubuntu test (K8s 10 pod + compose stateful) + dev lokal (k3d-dev pending 18.8 smoke)
+- **Zero regression**: K8s 19+10 Running stable + edge 200/401 tüm retirement boyunca
+- **Codex AGREE thread**: 7 Session 29'da (Faz 17, 16.0, 16.2, 16.8, 18 plan, 18.4, 18.5-18.7, 18.9-18.12)
 
 #### Repo Sınırı
 
