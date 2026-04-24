@@ -1,0 +1,12 @@
+# mkcert generated certs (per-developer, NEVER commit)
+app.localtest.me.pem
+app.localtest.me-key.pem
+*.pem
+*-key.pem
+
+# Caddy logs
+caddy-access.log
+caddy-error.log
+
+# macOS
+.DS_Store

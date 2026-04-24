@@ -1,0 +1,95 @@
+# Faz 17.X — Local Edge TLS (mkcert + Caddy)
+#
+# Cluster: k3d-dev
+# Hedef:
+# - OIDC redirect / cookie `Secure=true` + `SameSite=None` parity (testai/prod davranışı)
+# - Keycloak `/realms/*` + `/resources/*` route (ingress-base'de yok — edge üstlenir)
+# - :443 sudo isterse veya :8443 fallback (privileged bind kontrolü OS bazlı)
+#
+# Route kontratı (Codex iter-4 cümlesi: "local edge /realms/* ve /resources/*
+# trafiğini Keycloak'a explicit proxy eder"):
+# - /realms/*           → KC (compose veya k3d-dev KC pod)
+# - /resources/*        → KC (static assets)
+# - /api/*              → ingress-nginx (32080) → api-gateway
+# - /                   → frontend (veya dev değilse 404)
+#
+# Setup (one-time):
+#   mkcert -install
+#   cd bootstrap/local-edge
+#   mkcert app.localtest.me "*.localtest.me" localhost 127.0.0.1 ::1
+#   caddy run --config Caddyfile
+#
+# Default port :8443 (sudo gerekmez). Eğer :443 isterseniz:
+#   sudo caddy run --config Caddyfile --adapter caddyfile
+# veya /etc/pf.conf ile 8443→443 redirect.
+
+{
+	# Local-only; real auto-TLS (ACME) kapalı
+	auto_https off
+	debug
+}
+
+# Ana edge: dev frontend + /realms proxy
+app.localtest.me:8443 {
+	tls ./app.localtest.me.pem ./app.localtest.me-key.pem
+
+	# Keycloak routes (ingress-base'de yok — edge üstlenir)
+	# KC compose default: http://localhost:8081
+	# KC k3d-dev içinde: http://keycloak.platform-dev.svc.cluster.local:8080 (cluster-scope)
+	# Caddy Mac'te çalışır: host erişimi bridge üzerinden
+	handle_path /realms/* {
+		reverse_proxy http://localhost:8081 {
+			header_up Host localhost:8081
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-Host app.localtest.me
+			header_up X-Forwarded-Port 8443
+		}
+	}
+	handle_path /resources/* {
+		reverse_proxy http://localhost:8081 {
+			header_up Host localhost:8081
+		}
+	}
+
+	# Platform API: ingress-nginx üzerinden api-gateway'e
+	handle_path /api/* {
+		reverse_proxy http://localhost:32080 {
+			header_up Host app.localtest.me
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-Port 8443
+		}
+	}
+
+	# Platform auth, users, variants, reports, schemas rotaları (ingress base)
+	handle_path /auth/* /users/* /variants/* /core/* /reports/* /schemas/* {
+		reverse_proxy http://localhost:32080 {
+			header_up Host app.localtest.me
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-Port 8443
+		}
+	}
+
+	# Frontend (MFE shell)
+	handle {
+		reverse_proxy http://localhost:32080 {
+			header_up Host app.localtest.me
+			header_up X-Forwarded-Proto https
+			header_up X-Forwarded-Port 8443
+		}
+	}
+
+	# Log
+	log {
+		output file ./caddy-access.log
+		format json
+	}
+}
+
+# OpenFGA direct (zanzibar-min + full profile)
+openfga.localtest.me:8443 {
+	tls ./app.localtest.me.pem ./app.localtest.me-key.pem
+
+	reverse_proxy http://localhost:32080 {
+		header_up Host openfga.platform-dev.svc.cluster.local
+	}
+}
