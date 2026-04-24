@@ -17,39 +17,39 @@ images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile)
   # Prod için sha-60611fa tag (runtime rolling). Canlı cutover öncesi CI'nın
   # verdiği specific digest'e (@sha256:...) pinlenir — D26 Codex Tur-4.
+  # Faz 19.9 CUTOVER v2 (Codex AGREE 019dc0ef Option B, ADR-0004):
+  # Source: platform-backend + platform-web (Faz 19.1 filter-repo + 19.8 ci-image-push).
+  # Pin: @sha256:digest (D30 immutable, moving tag YASAK).
+  # GHCR packages PRIVATE; erişim: ghcr-pull Secret (ESO kv/gitops/ghcr-token → Halildeu PAT).
+
   - name: auth-service
-    newName: ghcr.io/halildeu/platform-ssot-auth-service
-    newTag: sha-60611fa
+    newName: ghcr.io/halildeu/platform-backend-auth-service
+    digest: sha256:c84bc6b04f7f17cc145024d6eeff2c624c52704a259ce843aeea63444da9ed37
   - name: api-gateway
-    newName: ghcr.io/halildeu/platform-ssot-api-gateway
-    newTag: sha-60611fa
+    newName: ghcr.io/halildeu/platform-backend-api-gateway
+    digest: sha256:5e7f0d48bfe080e59034ece9399390e6543c97d13c8e799c4a1bb9d1e9cd0d09
   - name: user-service
-    newName: ghcr.io/halildeu/platform-ssot-user-service
-    newTag: sha-60611fa
+    newName: ghcr.io/halildeu/platform-backend-user-service
+    digest: sha256:df8b84d0cd02d064cf455f40017bd5cb4ca1be271e5e7068afeb36fc4526a7f1
   - name: variant-service
-    newName: ghcr.io/halildeu/platform-ssot-variant-service
-    newTag: sha-60611fa
+    newName: ghcr.io/halildeu/platform-backend-variant-service
+    digest: sha256:4a51a49f1b07cf6e211bff5bd01cc68946a85b522c5d7cc171718ac85d892d13
   - name: core-data-service
-    newName: ghcr.io/halildeu/platform-ssot-core-data-service
-    newTag: sha-60611fa
+    newName: ghcr.io/halildeu/platform-backend-core-data-service
+    digest: sha256:b803507ac6b17240a8cced6878606f2aad7b31856140d6b5071352135babf37f
   - name: report-service
-    newName: ghcr.io/halildeu/platform-ssot-report-service
-    newTag: sha-60611fa
+    newName: ghcr.io/halildeu/platform-backend-report-service
+    digest: sha256:13cc1b589d394533dc6077b07f043004db9dd95f62775b5f4ce5a924ff3c31f3
   - name: schema-service
-    newName: ghcr.io/halildeu/platform-ssot-schema-service
-    newTag: sha-60611fa
-  # 2026-04-19 S1-C15: permission-service IMMUTABLE tag (test overlay S1-C14 ile simetrik).
-  # CI 7-char short SHA konvansiyon: sha-60611fa (merge commit 39239011ba1d).
-  # NOT: Prod overlay APPLY EDİLMİYOR — D32 staging-sw-2 bootstrap sonrası Seviye 4.
-  # Bu satır sadece render hizası + kustomize build kontratı için.
+    newName: ghcr.io/halildeu/platform-backend-schema-service
+    digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
-    newName: ghcr.io/halildeu/platform-ssot-permission-service
-    newTag: sha-60611fa
-  # 2026-04-20: Faz E env-per-build — prod frontend image (ai.acik.com + serban)
-  # Matrix build: platform-ssot PR #534
+    newName: ghcr.io/halildeu/platform-backend-permission-service
+    digest: sha256:10cba61702cd66798330c86b0eecdfb1786eae8ad65f60c80067056698d06d96
+  # Frontend prod variant (ai.acik.com + serban realm)
   - name: frontend
-    newName: ghcr.io/halildeu/platform-ssot-frontend
-    newTag: sha-2169841
+    newName: ghcr.io/halildeu/platform-web-frontend
+    digest: sha256:1427cdc54721aaf0530cfe863c61f3a09360db7238afb8317aaf68aee9f3f801
 
 patches:
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz replace
