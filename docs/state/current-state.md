@@ -8,6 +8,53 @@
 
 ---
 
+## Live Delta — Session 29 +23 (2026-04-24 ~21:15 UTC+3) — FAZ 19.0 BAŞLADI (ADR-0004)
+
+### Faz 19 Split-repo Authority Transfer — Faz 19.0 COMPLETE
+
+**ADR-0004 kabul edildi** (docs/adr/0004-split-repo-authority-transfer.md): Platform-ssot kaynak kod üç repo'ya split:
+- **platform-k8s-gitops** (mevcut authoritative)
+- **platform-backend** (YENİ Faz 19.1'de): 8 Java mikroservis + Zanzibar plane + discovery-server legacy
+- **platform-web** (YENİ Faz 19.1'de): MFE shell + admin + reporting + workbench + design-system + i18n
+
+**Codex AGREE thread 019dc0ac — 6 stratejik default:**
+1. 2 repo (backend + web), Zanzibar backend içinde
+2. Path-filtered full history (git filter-repo multi-path + sha-map)
+3. Dual-build + single-consumer transition (gitops tek digest tüketir)
+4. Reports code taşınır, data contract gitops'ta kalır (16.1 DRAFT annex pending)
+5. Option A (K8s frontend) migration SONRASI karar kapısı
+6. Monorepo + Zanzibar ayrı repo alternatives reddedildi
+
+**User karar bekleniyor (19.1 öncesi)** — default'tan sapma varsa override:
+
+| Decision | Codex default | Alternative |
+|---|---|---|
+| Repo count | 2 (backend + web) | 1 monorepo / 3 (zanzibar ayrı) |
+| Naming | `platform-backend` + `platform-web` | User önerisi |
+| History | Path-filtered full | Squash (blame kaybı) |
+| Transition | Dual-build | Cold-switch |
+| 18.11.b Option A | Migration sonrası | Aynı pencere |
+| Reports data | Defer | Aynı faz |
+
+### Faz 19 10-step plan (ADR-0004 detay)
+
+| Step | Title | Durum |
+|---|---|---|
+| 19.0 | Authority reset + ADR-0004 | **COMPLETE** (PR #110) |
+| 19.1 | Yeni repo create + filter-repo dry-run | PENDING user onay |
+| 19.2-19.5 | Backend batch'ler | Pending |
+| 19.6 | Frontend migration | Pending |
+| 19.7 | Reports code split | Pending |
+| 19.8 | CI + image pipeline (dual-build) | Pending |
+| 19.9 | Cutover test→prod atomic | Pending |
+| 19.10 (opt) | Source repo lock/archive | Pending |
+
+### Faz 18.8 Mac k3d-dev smoke
+
+Hâlâ pending (user Mac host trigger), non-blocking. Faz 19 paralel ilerleyebilir.
+
+---
+
 ## Live Delta — Session 29 +22 (2026-04-24 ~21:00 UTC+3) — FAZ 18 FULL CLOSURE (18.1-18.12 tümü ✓)
 
 ### Faz 18.9 + 18.10 LIVE COMPLETE (observability + network cleanup)
