@@ -33,6 +33,7 @@ Reddedilen alternatifler + red nedenleri.
 |---|---|---|
 | 0001 | [Service Mesh Rejected](./0001-service-mesh-rejected.md) | Rejected |
 | 0002 | [Single-Host Dual-Cluster Topology](./0002-single-host-dual-cluster.md) | **Accepted** (2026-04-19) |
+| 0003 | [Inner-Loop Tooling Ownership Between platform-ssot and platform-k8s-gitops](./0003-inner-loop-tooling-ownership.md) | **Accepted** (2026-04-24) |
 
 Her yeni büyük karar için yeni ADR dosyası + PLAN.md D-karar satırı referansı.
 
