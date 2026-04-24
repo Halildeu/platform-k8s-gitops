@@ -22,50 +22,41 @@ resources:
   - ../../base/apps/ops-bundle    # Faz 17.2.5: ExternalSecret + ServiceMonitor CRD paketi (runtime'dan ayrı)
 
 images:
-  # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)
-  # 2026-04-20: Tüm 8 servis sha-60611fa immutable tag (D30 full uyum).
-  # Dev repo PR #510/#511/#512 merge sonrası CI GHCR sha-60611fa push.
-  # Yeni commit'ler → yeni sha-<short> → overlay güncellenir (manuel veya W3 CI).
-  # moving tag main-stable D30 ihlal (cache hit, yeni image çekilmez).
+  # Faz 19.9 CUTOVER (Codex AGREE 019dc0ef Option B, ADR-0004):
+  # Source: platform-backend + platform-web yeni repolar (Faz 19.1 filter-repo).
+  # Pin: @sha256:digest (D30 immutable authoritative, moving tag YASAK).
+  # Digest source: platform-backend ci-image-push + platform-web ci-web-image-push
+  # workflow run 24908379838 + 24907995842 (2026-04-24 19:39 + 19:32 UTC).
+  # Test overlay önce apply; D29 3-layer kanıt sonra prod (Codex gate).
+
   - name: auth-service
-    newName: ghcr.io/halildeu/platform-ssot-auth-service
-    newTag: sha-60611fa
+    newName: ghcr.io/halildeu/platform-backend-auth-service
+    digest: sha256:c84bc6b04f7f17cc145024d6eeff2c624c52704a259ce843aeea63444da9ed37
   - name: api-gateway
-    newName: ghcr.io/halildeu/platform-ssot-api-gateway
-    newTag: sha-60611fa
+    newName: ghcr.io/halildeu/platform-backend-api-gateway
+    digest: sha256:5e7f0d48bfe080e59034ece9399390e6543c97d13c8e799c4a1bb9d1e9cd0d09
   - name: user-service
-    newName: ghcr.io/halildeu/platform-ssot-user-service
-    newTag: sha-60611fa
+    newName: ghcr.io/halildeu/platform-backend-user-service
+    digest: sha256:df8b84d0cd02d064cf455f40017bd5cb4ca1be271e5e7068afeb36fc4526a7f1
   - name: variant-service
-    newName: ghcr.io/halildeu/platform-ssot-variant-service
-    newTag: sha-60611fa
+    newName: ghcr.io/halildeu/platform-backend-variant-service
+    digest: sha256:4a51a49f1b07cf6e211bff5bd01cc68946a85b522c5d7cc171718ac85d892d13
   - name: core-data-service
-    newName: ghcr.io/halildeu/platform-ssot-core-data-service
-    newTag: sha-60611fa
+    newName: ghcr.io/halildeu/platform-backend-core-data-service
+    digest: sha256:b803507ac6b17240a8cced6878606f2aad7b31856140d6b5071352135babf37f
   - name: report-service
-    newName: ghcr.io/halildeu/platform-ssot-report-service
-    newTag: sha-60611fa
+    newName: ghcr.io/halildeu/platform-backend-report-service
+    digest: sha256:13cc1b589d394533dc6077b07f043004db9dd95f62775b5f4ce5a924ff3c31f3
   - name: schema-service
-    newName: ghcr.io/halildeu/platform-ssot-schema-service
-    # 2026-04-20: dev-repo PR #512 (CI trigger) merge sonrası schema-service
-    # immutable build oluştu. D30 main-stable → sha-60611fa bump.
-    newTag: sha-60611fa
-  # 2026-04-20: tüm 8 servis sha-60611fa (D30 HARD RULE uyumu). Pin commit
-  # 60611fa = dev-repo PR #510/#511/#512 ardışık merge head (auth NS fix +
-  # smoke-client + schema CI). Full digest pin W3 ayrı PR (S2-B2).
+    newName: ghcr.io/halildeu/platform-backend-schema-service
+    digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
-    newName: ghcr.io/halildeu/platform-ssot-permission-service
-    newTag: sha-60611fa
-  # 2026-04-20: ADR-0002 Faz B kapanış — Frontend MFE GHCR image
-  # dev-repo platform-ssot PR #522 (multi-stage Dockerfile) + PR #525 (context ./web fix)
-  # + PR #526 (COPY . . + .dockerignore). Workflow run 24643832079 SUCCESS (2m41s).
-  # GHCR: ghcr.io/halildeu/platform-ssot-frontend:sha-fb09fc9 (D30 immutable, manifest verified).
-  # 2026-04-20: Faz E env-per-build (platform-ssot PR #534) — testai-specific image
-  # (VITE_KEYCLOAK_URL=https://testai.acik.com + VITE_KEYCLOAK_REALM=platform-test
-  # build-time inline). Host nginx sub_filter hack kaldırılabilir.
+    newName: ghcr.io/halildeu/platform-backend-permission-service
+    digest: sha256:10cba61702cd66798330c86b0eecdfb1786eae8ad65f60c80067056698d06d96
+  # Frontend — Faz 19.9 cutover testai variant (testai.acik.com + platform-test realm)
   - name: frontend
-    newName: ghcr.io/halildeu/platform-ssot-frontend-testai
-    newTag: sha-2169841
+    newName: ghcr.io/halildeu/platform-web-frontend-testai
+    digest: sha256:5901eaf4114e2b611c832abb5137be876339f7b067f1b9254ebc8d2104615e58
 
 patches:
   # Replica 0 default (scale-to-zero)
