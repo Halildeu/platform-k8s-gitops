@@ -1,0 +1,30 @@
+# Faz 19.MSSQL — ADR-0005 Dual DataSource Reporting
+# Sadece report-service + schema-service pod'larına Workcube MSSQL egress 1433 allow.
+# Default-deny ihlal etmez: allowlist additive (diğer pod'lar 1433'e erişemez).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-workcube-mssql
+  annotations:
+    platform.acik.com/adr: "0005"
+    platform.acik.com/purpose: "Dual DataSource Reporting: report/schema services → Workcube MSSQL live ERP"
+spec:
+  # Sadece bu iki servis egress 1433 — allowlist (default-deny + allow-egress-dns-and-host ile kombine)
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - report-service
+          - schema-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        # Workcube MSSQL host IP (overlays'de override)
+        - ipBlock:
+            cidr: 10.9.193.201/32
+      ports:
+        - protocol: TCP
+          port: 1433

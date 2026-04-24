@@ -1,0 +1,49 @@
+# Faz 19.MSSQL — Workcube MSSQL host bridge (D19: Service + Endpoints pattern)
+# ADR-0005 Dual DataSource Reporting — live ERP data source (read-only)
+#
+# Target: Workcube Mikrolink ERP MSSQL (authoritative, read-only, Workcube ownership)
+# Default: 10.9.193.201:1433 (staging-sw subnet içinde reachable)
+# Override: overlays/{prod,test} → Endpoints subsets.addresses.ip + port
+#
+# Access control:
+# - NetworkPolicy allow-egress-workcube-mssql: sadece report-service + schema-service podSelector
+# - Read-only DB user (Workcube admin tarafında yaratılmalı, SELECT scope tablolar allowlist)
+# - Credentials: Vault kv/platform/mssql-external → ESO → K8s Secret (report + schema bind)
+#
+# Runtime behavior (degraded mode per ADR-0005):
+# - MSSQL unreachable → report-service MSSQL-backed endpoints 503, PG-backed OK
+# - Health indicator ayrı, readiness coupling YASAK (pod evict/restart döngüsü riski)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workcube-mssql
+  labels:
+    app.kubernetes.io/name: workcube-mssql
+    app.kubernetes.io/component: host-bridge
+    app.kubernetes.io/part-of: reporting
+  annotations:
+    platform.acik.com/adr: "0005"
+    platform.acik.com/source: "Workcube Mikrolink ERP (read-only, live)"
+spec:
+  # ClusterIP (headless değil) — Endpoints'e forward
+  ports:
+    - name: mssql
+      port: 1433
+      targetPort: 1433
+      protocol: TCP
+---
+# Endpoints manuel — Workcube MSSQL host IP (overlays'de override)
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: workcube-mssql
+  labels:
+    app.kubernetes.io/name: workcube-mssql
+subsets:
+  - addresses:
+      - ip: 10.9.193.201              # Workcube ERP MSSQL host (overlays'de override)
+    ports:
+      - name: mssql
+        port: 1433                    # MSSQL default port
+        protocol: TCP

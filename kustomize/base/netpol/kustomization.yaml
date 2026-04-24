@@ -14,3 +14,4 @@ resources:
   - allow-ingress-intra-ns.yaml
   - allow-monitoring-scrape.yaml
   - allow-egress-dns-and-host.yaml
+  - allow-egress-workcube-mssql.yaml  # Faz 19.MSSQL (ADR-0005 Dual DataSource)
