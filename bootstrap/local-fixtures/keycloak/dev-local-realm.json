@@ -1,0 +1,88 @@
+{
+  "_comment": "Faz 17.1 fake KC realm — NOT_FOR_PROD. Mac dev k3d-dev cluster seed.",
+  "realm": "dev-local",
+  "enabled": true,
+  "displayName": "Dev Local Realm (fake)",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "rememberMe": true,
+  "verifyEmail": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
+
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+
+  "roles": {
+    "realm": [
+      {"name": "ADMIN", "description": "Full admin (local dev only)"},
+      {"name": "USER", "description": "Regular user"},
+      {"name": "VIEWER", "description": "Read-only viewer"}
+    ]
+  },
+
+  "users": [
+    {
+      "username": "dev@localtest.me",
+      "email": "dev@localtest.me",
+      "firstName": "Dev",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {"type": "password", "value": "dev", "temporary": false}
+      ],
+      "realmRoles": ["ADMIN", "USER"]
+    },
+    {
+      "username": "viewer@localtest.me",
+      "email": "viewer@localtest.me",
+      "firstName": "Viewer",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {"type": "password", "value": "viewer", "temporary": false}
+      ],
+      "realmRoles": ["VIEWER"]
+    }
+  ],
+
+  "clients": [
+    {
+      "clientId": "platform-gateway",
+      "name": "Platform API Gateway (dev)",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "secret": "dev-local-client-secret-NOT_FOR_PROD",
+      "redirectUris": [
+        "http://app.localtest.me:8443/*",
+        "http://localhost:32080/*",
+        "http://localhost:32443/*"
+      ],
+      "webOrigins": ["*"],
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
+    },
+    {
+      "clientId": "platform-frontend",
+      "name": "Platform Frontend MFE (dev)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "http://app.localtest.me:8443/*"
+      ],
+      "webOrigins": ["*"]
+    }
+  ]
+}
