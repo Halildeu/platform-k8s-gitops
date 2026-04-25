@@ -20,6 +20,9 @@ resources:
   - namespace.yaml    # Namespace + labels (platform=true env=test, ApplicationSet prereq)
   - ../../base
   - ../../base/apps/ops-bundle    # Faz 17.2.5: ExternalSecret + ServiceMonitor CRD paketi (runtime'dan ayrı)
+  # Faz 19.MSSQL.F: bridge proxy container IP per-cluster
+  - endpoints-workcube-mssql.yaml    # 172.19.0.8 (workcube-mssql-proxy-test, alpine/socat)
+  - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)

@@ -1,0 +1,25 @@
+# Faz 19.MSSQL.F overlay pin — prod NetPol egress to bridge proxy IP/32
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-workcube-mssql
+  annotations:
+    platform.acik.com/adr: "0005"
+    platform.acik.com/purpose: "Dual DataSource Reporting: report/schema services → bridge proxy → Workcube MSSQL"
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - report-service
+          - schema-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 172.21.0.7/32      # workcube-mssql-proxy-prod bridge container IP
+      ports:
+        - protocol: TCP
+          port: 11433
