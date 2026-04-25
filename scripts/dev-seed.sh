@@ -139,9 +139,13 @@ fi
 # Bu credentials sadece local-only stub; gerçek runtime için yeterli değil
 # (KC realm fixture ile uyumlu ad-hoc dev secret).
 log "K8s secret stubs (auth-service-secrets — local dev only)"
+# Spring Boot convention env: SPRING_DATASOURCE_USERNAME + SPRING_DATASOURCE_PASSWORD
+# (DB_PASSWORD/USERNAME değil — Spring Boot relaxed binding uyumlu canonical adlar)
+# dev-pg container POSTGRES_USER=postgres + POSTGRES_PASSWORD=postgres ile başlatılır
 kubectl --context k3d-dev -n platform-dev create secret generic auth-service-secrets \
+    --from-literal=SPRING_DATASOURCE_USERNAME=postgres \
+    --from-literal=SPRING_DATASOURCE_PASSWORD=postgres \
     --from-literal=KEYCLOAK_CLIENT_SECRET=local-dev-stub \
-    --from-literal=DB_PASSWORD=local-dev-stub \
     --dry-run=client -o yaml | kubectl --context k3d-dev apply -f - >/dev/null
 
 log "=== seed tamamlandı (profile=${PROFILE}) ==="

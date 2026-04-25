@@ -20,6 +20,13 @@ data:
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
   MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
   MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "never"
+  # Faz 20 follow-up — Spring Boot health group exclude validation kapatma:
+  # application-k8s.yml `management.endpoint.health.group.readiness.exclude: workcubeMssql`
+  # MSSQL feature flag-off durumunda contributor yaratılmıyor; validation fail.
+  # Spring 2.5+ default validate-group-membership=true → context init fail.
+  # Bu config off yapılarak feature-flag mode safe çalışır (bridge decommission sonrası prod
+  # report-service crash sebebinin kalıcı fix'i).
+  MANAGEMENT_ENDPOINT_HEALTH_VALIDATE_GROUP_MEMBERSHIP: "false"
 
   # Graceful shutdown — Codex Tur-3 #6
   SERVER_SHUTDOWN: "graceful"
