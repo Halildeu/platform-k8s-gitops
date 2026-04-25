@@ -105,8 +105,27 @@ patches:
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "false"
+      - op: add
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/KEYCLOAK_JWKS_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_AUDIENCE
+        value: "account,frontend,auth-service"
 
   # Dilim 2: 5 backend ConfigMap patches (DDL-auto + FLYWAY test override)
+  # Faz 19.MSSQL.N (2026-04-25): SECURITY_JWT_* + KEYCLOAK_* (platform-test realm)
+  # Test cluster e2e simülasyon ile bulundu: SecurityConfig firstNonBlank #3
+  # (application.yml security.jwt.jwk-set-uri default-serban) override için #2
+  # SECURITY_JWT_* env direkt set gerekli. Configmap'tan envFrom inject edilir.
   - target:
       kind: ConfigMap
       name: user-service-config
@@ -117,6 +136,21 @@ patches:
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "false"
+      - op: add
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/KEYCLOAK_JWKS_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_AUDIENCE
+        value: "account,frontend,user-service"
   - target:
       kind: ConfigMap
       name: variant-service-config
@@ -134,8 +168,14 @@ patches:
         path: /data/KEYCLOAK_JWKS_URI
         value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
       - op: add
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
         path: /data/SECURITY_JWT_AUDIENCE
-        value: "account"
+        value: "account"   # variant-service AudienceValidator tek-string equals (CSV değil)
       - op: add
         path: /data/AUTHZ_USER_TABLE
         value: "users"
@@ -149,6 +189,21 @@ patches:
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "false"
+      - op: add
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/KEYCLOAK_JWKS_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_AUDIENCE
+        value: "account,frontend,core-data-service"
   - target:
       kind: ConfigMap
       name: report-service-config
@@ -159,6 +214,28 @@ patches:
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "false"
+      - op: add
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/KEYCLOAK_JWKS_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_AUDIENCE
+        value: "account,frontend,report-service"
+      # Faz 19.MSSQL.A activation (test cluster)
+      - op: add
+        path: /data/REPORT_PG_URL
+        value: "jdbc:postgresql://postgres:5432/reports_db"
+      - op: add
+        path: /data/REPORT_MSSQL_ENABLED
+        value: "true"
   - target:
       kind: ConfigMap
       name: schema-service-config
@@ -169,6 +246,21 @@ patches:
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "false"
+      - op: add
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/KEYCLOAK_JWKS_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_AUDIENCE
+        value: "account,frontend,schema-service"
 
   - target:
       kind: ConfigMap
@@ -180,6 +272,15 @@ patches:
       - op: replace
         path: /data/KEYCLOAK_JWKS_URI
         value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_AUDIENCE
+        value: "account,frontend,permission-service"
       - op: replace
         path: /data/PERMISSION_AUTHZ_USER_TABLE
         value: "users"
@@ -210,9 +311,30 @@ patches:
       kind: Deployment
       name: report-service
     patch: |-
+      # Faz 19.MSSQL.A activation (test cluster):
+      # - replicas=1 (D17 scale=0 override; MSSQL canlı 31 rapor + 12 dashboard)
+      # - REPORT_PG_USERNAME/PASSWORD valueFrom secret (PG metadata için)
+      # - PostgresDataSourceConfig'in default 'postgres'/'postgres' yetersiz, mevcut
+      #   secret'taki SPRING_DATASOURCE_PASSWORD'u alias'lar.
       - op: replace
         path: /spec/replicas
-        value: 0
+        value: 1
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: REPORT_PG_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: report-service-secrets
+              key: SPRING_DATASOURCE_USERNAME
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: REPORT_PG_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: report-service-secrets
+              key: SPRING_DATASOURCE_PASSWORD
   - target:
       kind: Deployment
       name: schema-service
