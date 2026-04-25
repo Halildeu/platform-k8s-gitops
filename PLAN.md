@@ -1440,6 +1440,81 @@ Default'tan sapma varsa override:
 
 ---
 
+### Faz 19.11 — platform-ssot Residual Asset Migration (Hard Archive Öncesi)
+
+**Bağlam**: Faz 19.10 platform-ssot soft lock yapıldı (PR ssot #555), 4 critical PR triage edildi (web #29-31 + backend #8). **Ancak platform-ssot'ta migrate edilmemiş büyük miktar asset var** — kullanıcı tespit etti (2026-04-25 değerlendirme).
+
+**Kapsam ölçümü**:
+- platform-ssot: **35 workflow + 137 script + 32 Playwright spec + 21 policy + 8 doc kategorisi + 4 schema-docs dir**
+- platform-backend + platform-web + platform-k8s-gitops toplam: **6 workflow + sınırlı test/script**
+
+**Hard archive 1 hafta planı içinde 4 dalga halinde migrate**:
+
+#### 19.11.A — Security Gates (KRİTİK — Dalga 1, ~1 saat)
+
+| Workflow | Hedef repo | Amaç |
+|---|---|---|
+| `gate-secrets.yml` (gitleaks) | tüm 3 repo | secret scan |
+| `gate-osv-scan.yml` | platform-backend + web | dependency vuln scan |
+| `security-guardrails.yml` | hepsi | security checks |
+
+#### 19.11.B — Test Suites (YÜKSEK — Dalga 2, 4-6 saat)
+
+- 32 Playwright spec → platform-web/tests/playwright/
+- web/tests/msw → platform-web/tests/msw
+- web/tests/smoke → platform-web/tests/smoke
+- 4 workflow: web-playwright-{smoke,nightly,local-nightly} + post-deploy-validate
+
+#### 19.11.C — Smoke + Deploy Workflows (YÜKSEK — Dalga 3, 3-4 saat)
+
+| Workflow | Hedef | D29 katman |
+|---|---|---|
+| `smoke-zanzibar.yml` | gitops | katman 3 (Zanzibar-ready) |
+| `release-canary.yml` | gitops | release pipeline |
+| `rollback.yml` (18KB) | gitops | automated rollback |
+| `stage-keycloak-smoke-user.yml` (33KB) | gitops | KC realm + test user |
+| `staging-error-sweep.yml` | gitops | error log digest |
+
+#### 19.11.D — Knowledge Base + Decisions (ORTA — Dalga 4, 1-2 gün)
+
+- `decisions/registry.v1.json` + `decisions/topics/zanzibar-openfga.v1.json` → gitops/decisions/
+- 21 `policies/policy_*.v1.json` → gitops/policies/ (bağlantılı: `gate-policy-dry-run.yml`)
+- `AGENT-CODEX.{ai,backend,core,data,docs,mobile,web}.md` → ilgili repolarda
+- `docs/00-handbook` + `docs/02-architecture` + `docs/04-operations` → gitops/docs/
+- `standards.lock` → gitops (CI gate referansı)
+- `ci/` 14 Python check script → gitops/ci/
+
+#### 19.11.E — Operasyonel scripts (selektif, Dalga 4 follow-up)
+
+- `doctor-infra.sh` + `doctor-zanzibar.sh` → gitops/scripts/
+- `check-vpn.sh` + `check-mf.sh` → gitops/scripts/
+- 40+ `check_*.py` scripts → selektif port (CI gate'lerle bağlantılı olanlar)
+
+#### 19.11.F — Schema docs (Faz 16 referansı, Dalga 4 follow-up)
+
+- `schema-docs-mssql-2026-35/` → gitops/docs/migration/ (Workcube schema introspection — Faz 16 ETL referansı)
+- `schema-docs-mssql-35-implied/` → aynı
+
+#### Dependency parity audit (paralel iş)
+
+Migration sırasında **dependency parity audit** koşulur:
+- Java Maven (platform-backend pom.xml hierarchy) vs platform-ssot/backend
+- Web npm (platform-web package.json hierarchy) vs platform-ssot/web
+- Python (requirements-dev.txt) → migrate edilmeli mi karar
+- Versiyon güncelliği + CVE alarm
+
+#### Önkoşul
+
+Faz 19.10 hard archive **bu 4 dalga tamamlanmadan yapılmamalı** — archived repo'dan asset çıkarmak `gh api` ile zor (sadece archived state'te raw URL'ler erişilebilir kalır ama PR/Issue history dondurulur).
+
+#### Bağlantılar
+
+- PR #143 (Madde 1+2 fix sonrası kullanıcı değerlendirmesi)
+- platform-ssot #555 (DEPRECATED soft lock)
+- ADR-0004 split-repo authority transfer
+
+---
+
 ### Faz 20 — Calico Routing Root Cause Fix — **COMPLETE (2026-04-25 19:00 UTC)**
 
 **Bağlam**: Faz 19.MSSQL.F'te Calico VXLAN overlay'den external 10.9.193.0/24 LAN'a routing fail tespit edilmişti. Workaround: alpine/socat bridge proxy container per-cluster (workcube-mssql-proxy-{prod,test}). Bu kalıcı çözüm değildi.
