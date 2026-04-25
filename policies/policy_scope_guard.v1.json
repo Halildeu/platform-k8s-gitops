@@ -1,0 +1,9 @@
+{
+  "version": "v1",
+  "description": "Scope guard thresholds for detecting scope creep during agent sessions.",
+  "warn_multiplier": 2.0,
+  "block_multiplier": 3.0,
+  "default_max_files": 10,
+  "domain_change_warn": true,
+  "auto_init_on_first_write": true
+}

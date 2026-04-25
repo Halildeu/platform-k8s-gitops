@@ -1,0 +1,78 @@
+{
+  "$schema": "urn:ao:decisions:topic:v1",
+  "id": "security-local-dev",
+  "title": "Security: Local Development Auth Rules",
+  "status": "ACTIVE",
+  "revision": 1,
+  "created_at": "2026-03-30T10:00:00Z",
+  "updated_at": "2026-03-30T10:00:00Z",
+  "owner": "halil",
+  "decisions": [
+    {
+      "id": "D-101",
+      "decision": "Local profilde SecurityConfigLocal permitAll, JWT doğrulaması YOK",
+      "status": "FINAL",
+      "rationale": "Dev ortamda Keycloak login yeterli, JWT decode gereksiz. oauth2ResourceServer 401'e neden olur.",
+      "date": "2026-03-30"
+    },
+    {
+      "id": "D-102",
+      "decision": "Her servisin SecurityConfig'inde @Profile('!local & !dev') olmalı",
+      "status": "FINAL",
+      "rationale": "Local profilde production SecurityConfig aktif olmamalı. İki filter chain çakışır.",
+      "date": "2026-03-30"
+    },
+    {
+      "id": "D-103",
+      "decision": "Controller'larda requireCurrentUser/getCurrentUser dev fallback olmalı",
+      "status": "FINAL",
+      "rationale": "Local profilde Principal null. ScopeContext veya dev-user fallback gerekli.",
+      "date": "2026-03-30"
+    },
+    {
+      "id": "D-104",
+      "decision": "schema-service AUTH_MODE=permitAll Docker default'ta",
+      "status": "FINAL",
+      "rationale": "Schema-service profil yerine AUTH_MODE env var kullanıyor. Default permitAll olmalı.",
+      "date": "2026-03-30"
+    },
+    {
+      "id": "D-105",
+      "decision": "Docker compose'da tüm servisler SPRING_PROFILES_ACTIVE=local,docker",
+      "status": "FINAL",
+      "rationale": "local profili SecurityConfigLocal'ı aktif eder. Sadece docker profili JWT zorunlu kılar.",
+      "date": "2026-03-30"
+    }
+  ],
+  "constraints": [
+    {
+      "id": "C-101",
+      "constraint": "NEVER add oauth2ResourceServer to any SecurityConfigLocal.java",
+      "scope": "backend/**/SecurityConfigLocal.java"
+    },
+    {
+      "id": "C-102",
+      "constraint": "NEVER remove @Profile annotation from SecurityConfig.java",
+      "scope": "backend/**/SecurityConfig.java"
+    },
+    {
+      "id": "C-103",
+      "constraint": "NEVER change SPRING_PROFILES_ACTIVE to remove 'local' from Docker default",
+      "scope": "backend/docker-compose.yml"
+    },
+    {
+      "id": "C-104",
+      "constraint": "NEVER throw 401/UNAUTHORIZED in dev fallback — return dev-user instead",
+      "scope": "backend/**/controller/*.java"
+    }
+  ],
+  "validation": {
+    "doctor_script": "backend/scripts/doctor-zanzibar.sh",
+    "quick_check": "backend/scripts/doctor-zanbibar.sh --quick",
+    "checks": [
+      "A1: SecurityConfigLocal JWT-free",
+      "A2: SecurityConfig @Profile",
+      "B3: All API endpoints 200 without token"
+    ]
+  }
+}

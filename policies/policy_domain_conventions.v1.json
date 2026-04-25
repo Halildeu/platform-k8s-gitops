@@ -1,0 +1,44 @@
+{
+  "version": "v1",
+  "description": "Domain-specific conventions for frontend, backend, database, accounting, and api domains.",
+  "detection": {
+    "confidence_threshold": 0.7,
+    "max_rules_per_domain": 20,
+    "fallback_domain": "general"
+  },
+  "domains": {
+    "frontend": {
+      "forbidden_imports": ["antd", "@ant-design/icons", "@mui/material", "@chakra-ui/react", "recharts", "@nivo", "victory", "chart.js", "d3"],
+      "required_package": "@mfe/design-system",
+      "bundler": "vite",
+      "test_framework": "vitest",
+      "rules_file": ".claude/rules/frontend.md"
+    },
+    "backend": {
+      "required_imports": ["src.shared.utils"],
+      "forbidden_patterns": ["print()", "open(.*json.*)"],
+      "auth_model": "keycloak_login_openfga_authz",
+      "rules_file": ".claude/rules/backend.md"
+    },
+    "database": {
+      "query_rules": {
+        "no_alias_source": true,
+        "qualify_ambiguous": true
+      },
+      "tier_model": "shared > company > yearly",
+      "schema_discovery": "SchemaLens API (port 8096)",
+      "rules_file": ".claude/rules/database.md"
+    },
+    "accounting": {
+      "standard": "Tekduzen Hesap Plani",
+      "core_tables": ["ACCOUNT_PLAN", "ACCOUNT_CARD", "ACCOUNT_CARD_ROWS", "BUDGET_PLAN_ROW"],
+      "rules_file": ".claude/rules/accounting.md"
+    },
+    "api": {
+      "style": "REST",
+      "versioning": "url_prefix",
+      "auth": "keycloak_jwt_bearer",
+      "rules_file": ".claude/rules/api.md"
+    }
+  }
+}

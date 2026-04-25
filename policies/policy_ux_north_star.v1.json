@@ -1,0 +1,121 @@
+{
+  "version": "v1",
+  "kind": "policy-ux-north-star",
+  "status": "ACTIVE",
+  "owner": "ux-platform",
+  "purpose": "Kullanici deneyimini katalog, olcum ve AI-assisted karar lensleri ile tek standartta tutar.",
+  "enforcement_mode": "blocking",
+  "ci_lane": "contract",
+  "north_star_catalog_path": "registry/ux_north_star_catalog.aistd.v1.json",
+  "primary_program_id": "ui_kutuphane_sistemi",
+  "experience_principles": [
+    {
+      "id": "uxp-001",
+      "title": "Task clarity first",
+      "description": "Kullanici her ekranda birincil gorevi 5 saniyede anlayabilmelidir.",
+      "evidence_required": [
+        "primary_cta_visibility",
+        "clear_information_hierarchy"
+      ]
+    },
+    {
+      "id": "uxp-002",
+      "title": "Consistency over novelty",
+      "description": "Ayni isi yapan farkli komponent davranislari teklestirilir.",
+      "evidence_required": [
+        "single_ui_library_usage",
+        "design_token_chain_integrity"
+      ]
+    },
+    {
+      "id": "uxp-003",
+      "title": "Fast feedback",
+      "description": "Her kullanici aksiyonunda durum geri bildirimi net ve olculebilir olmalidir.",
+      "evidence_required": [
+        "loading_feedback",
+        "error_feedback",
+        "success_feedback"
+      ]
+    },
+    {
+      "id": "uxp-004",
+      "title": "Accessible by default",
+      "description": "Klavye, ekran okuyucu ve kontrast gereksinimleri varsayilan olarak zorunludur.",
+      "evidence_required": [
+        "keyboard_navigation_matrix",
+        "aria_semantics",
+        "contrast_checks"
+      ]
+    },
+    {
+      "id": "uxp-005",
+      "title": "Recoverable flows",
+      "description": "Kullanici hatalari geri alinabilir ve yeniden denenebilir olmalidir.",
+      "evidence_required": [
+        "undo_or_retry_pattern",
+        "safe_defaults"
+      ]
+    }
+  ],
+  "interaction_contract": {
+    "state_model_required": [
+      "collapsed",
+      "expanded",
+      "hover",
+      "focus",
+      "loading",
+      "disabled",
+      "error"
+    ],
+    "keyboard_support_required": [
+      "Tab",
+      "Shift+Tab",
+      "Enter",
+      "Space",
+      "ArrowUp",
+      "ArrowDown",
+      "ArrowLeft",
+      "ArrowRight",
+      "Escape"
+    ],
+    "feedback_latency_budgets_ms": {
+      "soft": 100,
+      "hard": 1000
+    },
+    "error_recovery_patterns": [
+      "inline_validation",
+      "retry_action",
+      "fallback_empty_state"
+    ]
+  },
+  "ai_ux_contract": {
+    "disclosure_required": true,
+    "human_override_required": true,
+    "prompt_trace_required": true,
+    "unsafe_output_block_required": true,
+    "model_consultation_mode": "multi-provider-lens",
+    "required_lenses": [
+      "compliance_safety",
+      "task_success",
+      "clarity_cognitive_load",
+      "accessibility_inclusion",
+      "operations_observability"
+    ],
+    "fallback_order": [
+      "reasoning",
+      "fast_reasoning",
+      "chat"
+    ]
+  },
+  "measurement_contract": {
+    "north_star_metric": "task_success_rate",
+    "support_metrics": [
+      "time_to_first_success",
+      "error_recovery_rate",
+      "accessibility_violation_rate",
+      "ui_consistency_violation_rate",
+      "assistant_acceptance_rate"
+    ],
+    "minimum_review_cadence_days": 14
+  }
+}

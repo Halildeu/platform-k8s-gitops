@@ -1,0 +1,836 @@
+{
+  "version": "v2",
+  "enabled": true,
+  "plan_policy": "optional",
+  "auto_remediation": {
+    "enabled": true,
+    "seed_tag": "work_intake_auto_remediation"
+  },
+  "bucket_order": [
+    "INCIDENT",
+    "TICKET",
+    "PROJECT",
+    "ROADMAP"
+  ],
+  "default_rule": {
+    "bucket": "TICKET",
+    "severity": "S3",
+    "priority": "P3"
+  },
+  "dedupe": {
+    "strategy": "stable_sha256",
+    "template": "source_type+source_ref+bucket"
+  },
+  "sla_hints": {
+    "INCIDENT": "4h",
+    "TICKET": "5d",
+    "PROJECT": "sprint",
+    "ROADMAP": "quarter"
+  },
+  "notes": [
+    "Incident only for critical nav gaps, regressions, hard budget, or integrity FAIL.",
+    "Small GAPs and doc cleanups prefer TICKET; medium/large GAPs remain PROJECT.",
+    "Script budget routes docs/tests/tooling to TICKET, core code to PROJECT.",
+    "Manual requests map to ROADMAP/PROJECT/TICKET based on kind and core-change constraints.",
+    "Release signals map to TICKET/PROJECT/ROADMAP based on dirty tree, publish block, and channel."
+  ],
+  "fail_action": "warn",
+  "bucket_rules": [
+    {
+      "id": "doc_nav_critical",
+      "source_type": "DOC_NAV",
+      "when": {
+        "critical_nav_gaps_gt": 0
+      },
+      "bucket": "INCIDENT",
+      "severity": "S1",
+      "priority": "P1"
+    },
+    {
+      "id": "pdca_regression_high",
+      "source_type": "PDCA_REGRESSION",
+      "when": {
+        "regression_severity_gte": "high"
+      },
+      "bucket": "INCIDENT",
+      "severity": "S1",
+      "priority": "P1"
+    },
+    {
+      "id": "script_budget_hard",
+      "source_type": "SCRIPT_BUDGET",
+      "when": {
+        "hard_exceeded_gt": 0
+      },
+      "bucket": "INCIDENT",
+      "severity": "S1",
+      "priority": "P1"
+    },
+    {
+      "id": "integrity_fail",
+      "source_type": "INTEGRITY",
+      "when": {
+        "integrity_status_in": [
+          "FAIL"
+        ]
+      },
+      "bucket": "INCIDENT",
+      "severity": "S1",
+      "priority": "P1"
+    },
+    {
+      "id": "release_status_fail",
+      "source_type": "RELEASE",
+      "when": {
+        "release_status_in": [
+          "FAIL"
+        ]
+      },
+      "bucket": "INCIDENT",
+      "severity": "S1",
+      "priority": "P1"
+    },
+    {
+      "id": "release_status_warn",
+      "source_type": "RELEASE",
+      "when": {
+        "release_status_in": [
+          "WARN"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S3",
+      "priority": "P3"
+    },
+    {
+      "id": "release_dirty_tree",
+      "source_type": "RELEASE",
+      "when": {
+        "release_dirty_tree_eq": true
+      },
+      "bucket": "TICKET",
+      "severity": "S3",
+      "priority": "P3"
+    },
+    {
+      "id": "release_unpushed_commits",
+      "source_type": "RELEASE",
+      "when": {
+        "release_unpushed_commits_gt": 0
+      },
+      "bucket": "TICKET",
+      "severity": "S3",
+      "priority": "P3"
+    },
+    {
+      "id": "release_publish_blocked",
+      "source_type": "RELEASE",
+      "when": {
+        "release_publish_blocked_eq": true
+      },
+      "bucket": "ROADMAP",
+      "severity": "S2",
+      "priority": "P2",
+      "tags": [
+        "plan_only"
+      ]
+    },
+    {
+      "id": "release_plan_final",
+      "source_type": "RELEASE",
+      "when": {
+        "release_plan_present_eq": true,
+        "release_channel_in": [
+          "final"
+        ]
+      },
+      "bucket": "ROADMAP",
+      "severity": "S2",
+      "priority": "P2",
+      "tags": [
+        "plan_only"
+      ]
+    },
+    {
+      "id": "release_plan_present",
+      "source_type": "RELEASE",
+      "when": {
+        "release_plan_present_eq": true
+      },
+      "bucket": "PROJECT",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-RELEASE-AUTOMATION"
+    },
+    {
+      "id": "github_ops_index_lock",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_signal_in": [
+          "index_lock"
+        ]
+      },
+      "bucket": "INCIDENT",
+      "severity": "S1",
+      "priority": "P1",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_dirty_tree",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_signal_in": [
+          "dirty_tree"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S3",
+      "priority": "P3",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_behind_remote",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_signal_in": [
+          "behind_remote"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S3",
+      "priority": "P3",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_live_gate_disabled",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_signal_in": [
+          "live_gate_disabled"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S4",
+      "priority": "P4",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_job_pass_auto_close",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_job_status_in": [
+          "PASS"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S4",
+      "priority": "P4",
+      "auto_close": true,
+      "closed_reason": "GITHUB_OPS_JOB_PASS",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_job_demo_prereq_fail",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_job_status_in": [
+          "FAIL"
+        ],
+        "github_ops_job_failure_class_in": [
+          "DEMO_PREREQ_FAIL"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_job_demo_prereq_apply_fail",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_job_status_in": [
+          "FAIL"
+        ],
+        "github_ops_job_failure_class_in": [
+          "DEMO_PREREQ_APPLY_FAIL"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_job_demo_catalog_parse",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_job_status_in": [
+          "FAIL"
+        ],
+        "github_ops_job_failure_class_in": [
+          "DEMO_CATALOG_PARSE"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_job_demo_catalog_missing",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_job_status_in": [
+          "FAIL"
+        ],
+        "github_ops_job_failure_class_in": [
+          "DEMO_CATALOG_MISSING"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_job_demo_advisor_missing",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_job_status_in": [
+          "FAIL"
+        ],
+        "github_ops_job_failure_class_in": [
+          "DEMO_ADVISOR_SUGGESTIONS_MISSING"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_job_core_break",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_job_status_in": [
+          "FAIL"
+        ],
+        "github_ops_job_failure_class_in": [
+          "CORE_BREAK"
+        ]
+      },
+      "bucket": "INCIDENT",
+      "severity": "S1",
+      "priority": "P1",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_job_policy_time_limit",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_job_status_in": [
+          "FAIL"
+        ],
+        "github_ops_job_failure_class_in": [
+          "POLICY_TIME_LIMIT"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_job_fail_other",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_job_status_in": [
+          "FAIL"
+        ],
+        "github_ops_job_failure_class_in": [
+          "OTHER"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_job_timeout",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_job_status_in": [
+          "TIMEOUT",
+          "KILLED"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "github_ops_job_skip_no_network",
+      "source_type": "GITHUB_OPS",
+      "when": {
+        "github_ops_job_status_in": [
+          "SKIP"
+        ],
+        "github_ops_job_skip_reason_in": [
+          "NO_NETWORK",
+          "LIVE_GATE_DISABLED",
+          "AUTH_MISSING",
+          "NETWORK_DISABLED"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S4",
+      "priority": "P4",
+      "suggested_extension": "PRJ-GITHUB-OPS"
+    },
+    {
+      "id": "job_smoke_full_demo_prereq_fail",
+      "source_type": "JOB_STATUS",
+      "when": {
+        "job_status_in": [
+          "FAIL"
+        ],
+        "job_type_in": [
+          "SMOKE_FULL"
+        ],
+        "job_failure_class_in": [
+          "DEMO_PREREQ_FAIL"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-AIRUNNER"
+    },
+    {
+      "id": "job_smoke_full_demo_catalog_parse",
+      "source_type": "JOB_STATUS",
+      "when": {
+        "job_status_in": [
+          "FAIL"
+        ],
+        "job_type_in": [
+          "SMOKE_FULL"
+        ],
+        "job_failure_class_in": [
+          "DEMO_CATALOG_PARSE"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-AIRUNNER"
+    },
+    {
+      "id": "job_smoke_full_core_break",
+      "source_type": "JOB_STATUS",
+      "when": {
+        "job_status_in": [
+          "FAIL"
+        ],
+        "job_type_in": [
+          "SMOKE_FULL"
+        ],
+        "job_failure_class_in": [
+          "CORE_BREAK"
+        ]
+      },
+      "bucket": "INCIDENT",
+      "severity": "S1",
+      "priority": "P1"
+    },
+    {
+      "id": "job_smoke_full_fail_other",
+      "source_type": "JOB_STATUS",
+      "when": {
+        "job_status_in": [
+          "FAIL"
+        ],
+        "job_type_in": [
+          "SMOKE_FULL"
+        ],
+        "job_failure_class_in": [
+          "OTHER"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-AIRUNNER"
+    },
+    {
+      "id": "job_smoke_full_timeout",
+      "source_type": "JOB_STATUS",
+      "when": {
+        "job_status_in": [
+          "TIMEOUT",
+          "KILLED"
+        ],
+        "job_type_in": [
+          "SMOKE_FULL"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-AIRUNNER"
+    },
+    {
+      "id": "job_status_pass_auto_close",
+      "source_type": "JOB_STATUS",
+      "when": {
+        "job_status_in": [
+          "PASS"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S4",
+      "priority": "P4",
+      "auto_close": true,
+      "closed_reason": "JOB_STATUS_PASS"
+    },
+    {
+      "id": "job_status_fail_core_break",
+      "source_type": "JOB_STATUS",
+      "when": {
+        "job_status_in": [
+          "FAIL"
+        ],
+        "job_failure_class_in": [
+          "CORE_BREAK"
+        ]
+      },
+      "bucket": "INCIDENT",
+      "severity": "S1",
+      "priority": "P1"
+    },
+    {
+      "id": "job_status_fail",
+      "source_type": "JOB_STATUS",
+      "when": {
+        "job_status_in": [
+          "FAIL"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S2",
+      "priority": "P2"
+    },
+    {
+      "id": "job_status_skip_policy_blocked",
+      "source_type": "JOB_STATUS",
+      "when": {
+        "job_status_in": [
+          "SKIP"
+        ],
+        "job_skip_reason_in": [
+          "POLICY_BLOCKED"
+        ]
+      },
+      "bucket": "ROADMAP",
+      "severity": "S2",
+      "priority": "P2"
+    },
+    {
+      "id": "job_status_skip_auth_missing",
+      "source_type": "JOB_STATUS",
+      "when": {
+        "job_status_in": [
+          "SKIP"
+        ],
+        "job_skip_reason_in": [
+          "AUTH_MISSING",
+          "NETWORK_DISABLED"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S4",
+      "priority": "P4"
+    },
+    {
+      "id": "job_status_skip_no_network",
+      "source_type": "JOB_STATUS",
+      "when": {
+        "job_status_in": [
+          "SKIP"
+        ],
+        "job_skip_reason_in": [
+          "NO_NETWORK"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S4",
+      "priority": "P4"
+    },
+    {
+      "id": "time_sink_project_over_threshold",
+      "source_type": "TIME_SINK",
+      "when": {
+        "time_sink_over_threshold_eq": true
+      },
+      "bucket": "PROJECT",
+      "severity": "S2",
+      "priority": "P2",
+      "suggested_extension": "PRJ-AIRUNNER"
+    },
+    {
+      "id": "time_sink_escalate",
+      "source_type": "TIME_SINK",
+      "when": {
+        "time_sink_breach_count_gte": 3
+      },
+      "bucket": "INCIDENT",
+      "severity": "S2",
+      "priority": "P2"
+    },
+    {
+      "id": "time_sink_default",
+      "source_type": "TIME_SINK",
+      "bucket": "TICKET",
+      "severity": "S3",
+      "priority": "P3",
+      "suggested_extension": "PRJ-AIRUNNER"
+    },
+    {
+      "id": "manual_request_core_change",
+      "source_type": "MANUAL_REQUEST",
+      "when": {
+        "manual_request_requires_core_change": true
+      },
+      "bucket": "ROADMAP",
+      "severity": "S2",
+      "priority": "P2",
+      "tags": [
+        "plan_only"
+      ]
+    },
+    {
+      "id": "manual_request_strategy",
+      "source_type": "MANUAL_REQUEST",
+      "when": {
+        "manual_request_kind_in": [
+          "strategy",
+          "multi-quarter"
+        ]
+      },
+      "bucket": "ROADMAP",
+      "severity": "S2",
+      "priority": "P2"
+    },
+    {
+      "id": "manual_request_context_router_project",
+      "source_type": "MANUAL_REQUEST",
+      "when": {
+        "manual_request_kind_in": [
+          "context-router"
+        ]
+      },
+      "bucket": "PROJECT",
+      "severity": "S2",
+      "priority": "P2",
+      "tags": [
+        "plan_only"
+      ]
+    },
+    {
+      "id": "manual_request_doc_only_safe",
+      "source_type": "MANUAL_REQUEST",
+      "when": {
+        "manual_request_kind_in": [
+          "doc-fix",
+          "doc-link-fix",
+          "doc-metadata",
+          "note"
+        ],
+        "manual_request_impact_scope_in": [
+          "doc-only",
+          "workspace-only"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S3",
+      "priority": "P3",
+      "suggested_extension": "PRJ-AIRUNNER"
+    },
+    {
+      "id": "manual_request_project",
+      "source_type": "MANUAL_REQUEST",
+      "when": {
+        "manual_request_kind_in": [
+          "feature",
+          "refactor",
+          "new_project"
+        ]
+      },
+      "bucket": "PROJECT",
+      "severity": "S2",
+      "priority": "P2"
+    },
+    {
+      "id": "manual_request_ticket",
+      "source_type": "MANUAL_REQUEST",
+      "when": {
+        "manual_request_kind_in": [
+          "support",
+          "question",
+          "minor_fix"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S3",
+      "priority": "P3",
+      "suggested_extension": "PRJ-AIRUNNER"
+    },
+    {
+      "id": "doc_nav_broken_refs",
+      "source_type": "DOC_NAV",
+      "when": {
+        "broken_refs_gt": 0
+      },
+      "bucket": "TICKET",
+      "severity": "S3",
+      "priority": "P3",
+      "suggested_extension": "PRJ-AIRUNNER"
+    },
+    {
+      "id": "gap_effort_small",
+      "source_type": "GAP",
+      "when": {
+        "effort_in": [
+          "XS",
+          "S",
+          "LOW"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S3",
+      "priority": "P3"
+    },
+    {
+      "id": "gap_low_risk",
+      "source_type": "GAP",
+      "when": {
+        "risk_in": [
+          "LOW"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S3",
+      "priority": "P3"
+    },
+    {
+      "id": "gap_severity_s3",
+      "source_type": "GAP",
+      "when": {
+        "severity_in": [
+          "S3"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S3",
+      "priority": "P3"
+    },
+    {
+      "id": "script_budget_soft_docs",
+      "source_type": "SCRIPT_BUDGET",
+      "when": {
+        "hard_exceeded_eq": 0,
+        "soft_only": true,
+        "path_prefix_in": [
+          "docs/",
+          "tests/",
+          "test/",
+          "ci/",
+          "scripts/",
+          "tools/"
+        ]
+      },
+      "bucket": "TICKET",
+      "severity": "S3",
+      "priority": "P3",
+      "suggested_extension": "PRJ-AIRUNNER"
+    },
+    {
+      "id": "script_budget_soft_ops",
+      "source_type": "SCRIPT_BUDGET",
+      "when": {
+        "hard_exceeded_eq": 0,
+        "soft_only": true,
+        "path_prefix_in": [
+          "src/ops/",
+          "src/orchestrator/"
+        ]
+      },
+      "bucket": "PROJECT",
+      "severity": "S2",
+      "priority": "P2",
+      "tags": [
+        "M0"
+      ]
+    },
+    {
+      "id": "script_budget_soft_default",
+      "source_type": "SCRIPT_BUDGET",
+      "when": {
+        "hard_exceeded_eq": 0,
+        "soft_only": true
+      },
+      "bucket": "PROJECT",
+      "severity": "S2",
+      "priority": "P2",
+      "tags": [
+        "M0"
+      ]
+    },
+    {
+      "id": "gap_medium_high_risk",
+      "source_type": "GAP",
+      "when": {
+        "severity_in": [
+          "S1",
+          "S2"
+        ],
+        "risk_in": [
+          "MEDIUM",
+          "HIGH"
+        ]
+      },
+      "bucket": "PROJECT",
+      "severity": "S2",
+      "priority": "P2"
+    },
+    {
+      "id": "gap_medium_high_effort",
+      "source_type": "GAP",
+      "when": {
+        "severity_in": [
+          "S1",
+          "S2"
+        ],
+        "effort_in": [
+          "M",
+          "L",
+          "MEDIUM",
+          "HIGH"
+        ]
+      },
+      "bucket": "PROJECT",
+      "severity": "S2",
+      "priority": "P2"
+    },
+    {
+      "id": "gap_default_project",
+      "source_type": "GAP",
+      "bucket": "PROJECT",
+      "severity": "S2",
+      "priority": "P2"
+    }
+  ]
+}

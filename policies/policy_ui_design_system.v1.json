@@ -1,0 +1,88 @@
+{
+  "version": "v1",
+  "kind": "policy-ui-design-system",
+  "status": "ACTIVE",
+  "owner": "frontend-platform",
+  "purpose": "Tek tasarim kutuphanesi, moduler sayfa kompozisyonu ve parametrik veri kontratini drift'e kapatir.",
+  "enforcement_mode": "blocking",
+  "ci_lane": "contract",
+  "single_ui_library": {
+    "package_name": "mfe-ui-kit",
+    "package_manifest_path": "web/packages/ui-kit/package.json",
+    "design_catalog_index_path": "web/apps/mfe-shell/src/pages/admin/design-lab.index.json",
+    "required_npm_scripts": [
+      "lint:no-antd",
+      "tokens:build",
+      "designlab:index"
+    ],
+    "forbidden_imports": [
+      "antd",
+      "@ant-design/icons",
+      "echarts",
+      "echarts/core",
+      "echarts-gl",
+      "ag-charts-community",
+      "ag-charts-react",
+      "ag-charts-enterprise"
+    ],
+    "forbidden_imports_note": "Chart engines forbidden in application code. Design Lab (x-charts, design-system) imports internally."
+  },
+  "design_tokens": {
+    "source_path": "web/design-tokens/figma.tokens.json",
+    "generated_paths": [
+      "web/apps/mfe-shell/src/styles/theme.css",
+      "web/design-tokens/generated/theme-contract.json"
+    ],
+    "check_command": "node web/scripts/theme/generate-theme-css.mjs --check"
+  },
+  "page_modularity": {
+    "layout_exports_required": [
+      "PageLayout",
+      "DetailDrawer",
+      "FormDrawer"
+    ],
+    "ui_usage_import_prefix": "from 'mfe-ui-kit'",
+    "pages_root": "web/apps"
+  },
+  "parametric_data": {
+    "query_builder_path": "web/packages/ui-kit/src/components/entity-grid/buildEntityGridQueryParams.ts",
+    "theme_contract_runtime_path": "web/packages/ui-kit/src/runtime/theme-contract.ts",
+    "theme_context_provider_path": "web/apps/mfe-shell/src/app/theme/theme-context.provider.tsx"
+  },
+  "chart_platform": {
+    "primary_engine": "echarts",
+    "primary_engine_license": "Apache-2.0",
+    "grid_linked_engine": "ag-charts-community",
+    "grid_linked_engine_license": "MIT",
+    "spec_schema": "schemas/chart-spec.schema.v1.json",
+    "decision_topic": "decisions/topics/chart-viz-engine-selection.v1.json",
+    "internal_packages": [
+      "web/packages/x-charts",
+      "web/packages/design-system/src/components/charts"
+    ],
+    "bundle_size_gate": {
+      "max_gzip_kb": 350,
+      "tree_shaking_required": true
+    },
+    "accessibility": {
+      "wcag_level": "AA",
+      "keyboard_navigation": true,
+      "data_table_fallback": true,
+      "colorblind_palettes": true,
+      "contrast_ratio_min": 4.5
+    },
+    "ci_gates": [
+      "bundle-size-check",
+      "a11y-axe-audit",
+      "contrast-ratio-check",
+      "xss-sanitization-check",
+      "memory-leak-test",
+      "performance-benchmark",
+      "chart-spec-validation",
+      "visual-regression",
+      "forbidden-imports-check",
+      "tree-shaking-verify"
+    ]
+  },
+  "fail_action": "warn"
+}

@@ -1,0 +1,184 @@
+{
+  "$schema": "urn:ao:decisions:topic:v1",
+  "id": "zanzibar-openfga",
+  "title": "Authorization: OpenFGA Zanzibar Migration",
+  "status": "ACTIVE",
+  "revision": 4,
+  "created_at": "2026-03-29T00:00:00Z",
+  "updated_at": "2026-04-14T00:00:00Z",
+  "owner": "halil",
+  "decisions": [
+    {
+      "id": "D-001",
+      "decision": "Use OpenFGA (Zanzibar) for authorization",
+      "status": "FINAL",
+      "rationale": "Apache 2.0, self-hosted, Google Zanzibar model, Java/JS SDK mevcut, Keycloak connector var",
+      "date": "2026-03-29"
+    },
+    {
+      "id": "D-002",
+      "decision": "Keycloak = authentication ONLY (identity JWT)",
+      "status": "FINAL",
+      "rationale": "JWT sadece sub, email, realm_role içerir. Permission claim YOK.",
+      "date": "2026-03-29"
+    },
+    {
+      "id": "D-003",
+      "decision": "Permission-service TRANSFORMED — OpenFGA authorization hub",
+      "status": "FINAL",
+      "rationale": "Permission-service is no longer a standalone authz engine but the OpenFGA synchronization hub: TupleSyncService (tuple write/delete), AuthzVersionService (cache invalidation), AccessControllerV1 (roles CRUD), /authz/me+/authz/version endpoints. Removing it would break Zanzibar. Original 'REMOVED' label was aspirational; actual evolution is TRANSFORMATION.",
+      "date": "2026-04-11",
+      "dcp_ref": "CNS-20260411-001"
+    },
+    {
+      "id": "D-004",
+      "decision": "SecurityConfigLocal: NO JWT validation in local/dev profile",
+      "status": "FINAL",
+      "rationale": "oauth2ResourceServer causes 401 when Keycloak token issuer doesn't match. Local profile = permitAll, no JWT decode.",
+      "date": "2026-03-30"
+    },
+    {
+      "id": "D-005",
+      "decision": "ScopeContextFilter order: LOWEST_PRECEDENCE - 10 (after Spring Security)",
+      "status": "FINAL",
+      "rationale": "HIGHEST_PRECEDENCE causes userId=null because filter runs before SecurityContext is populated.",
+      "date": "2026-03-29"
+    },
+    {
+      "id": "D-006",
+      "decision": "Vite proxy: direct service routes, NO gateway for API calls",
+      "status": "FINAL",
+      "rationale": "Gateway Vault fallback handler blocks some routes. Direct proxy to service ports (8089, 8091, 8092, 8095).",
+      "date": "2026-03-30"
+    },
+    {
+      "id": "D-007",
+      "decision": "Frontend AUTH_MODE=keycloak (sektör standardı)",
+      "status": "FINAL",
+      "rationale": "permitAll/fake auth is for CI only. Dev login via Keycloak. .env.local must NOT be changed by AI agents.",
+      "date": "2026-03-30"
+    },
+    {
+      "id": "D-008",
+      "decision": "Permission-service operational scope — OpenFGA Hub responsibilities",
+      "status": "FINAL",
+      "rationale": "Permission-service responsibilities (D-003 extension): (1) TupleSyncService — role/scope changes -> OpenFGA tuple write/delete with deny-wins resolution; (2) AuthzVersionService — cache invalidation version management; (3) TupleSyncOutboxPoller — durable retry with SELECT FOR UPDATE SKIP LOCKED; (4) AuthorizationControllerV1 — user-facing /authz/me, /authz/check, /authz/batch-check, /authz/explain, /authz/version, /authz/catalog, /authz/modules endpoints; (5) AccessControllerV1 + PermissionControllerV1 — role/permission CRUD. NOT responsible for: authentication (Keycloak), data enforcement (each service's Hibernate @Filter + RLS), or HTTP permission checks from other services (they call OpenFgaAuthzService directly via OpenFGA SDK).",
+      "date": "2026-04-14",
+      "supersedes": null,
+      "extends": "D-003"
+    }
+  ],
+  "rejected_alternatives": [
+    {
+      "id": "R-001",
+      "alternative": "Build custom SaaS authorization platform",
+      "reason": "Solo developer, market saturated (Auth0 FGA, Permit.io, Authzed). Use existing OSS.",
+      "tried_count": 1,
+      "last_tried": "2026-03-29"
+    },
+    {
+      "id": "R-002",
+      "alternative": "Embed permissions in JWT",
+      "reason": "Stale until token refresh (5 min TTL). Permission changes not reflected in real-time.",
+      "tried_count": 3,
+      "last_tried": "2026-03-30"
+    },
+    {
+      "id": "R-003",
+      "alternative": "Shadow mode (dual-write old + new system)",
+      "reason": "Too complex for solo developer. Use feature flags per-service instead.",
+      "tried_count": 1,
+      "last_tried": "2026-03-29"
+    },
+    {
+      "id": "R-004",
+      "alternative": "AUTH_MODE=permitAll for dev",
+      "reason": "Sektör standardı keycloak. permitAll causes AI agents to break auth flow.",
+      "tried_count": 4,
+      "last_tried": "2026-03-30"
+    },
+    {
+      "id": "R-005",
+      "alternative": "SecurityConfigLocal with oauth2ResourceServer",
+      "reason": "Causes 401 when Keycloak token issuer doesn't match local config. JWT must be completely off in local.",
+      "tried_count": 5,
+      "last_tried": "2026-03-30"
+    },
+    {
+      "id": "R-006",
+      "alternative": "Other services make HTTP calls to permission-service for authz checks",
+      "reason": "Adds latency and SPOF risk. Services use OpenFgaAuthzService from common-auth (direct OpenFGA SDK) for check/listObjects. Permission-service is hub for WRITE/SYNC + user-facing queries, not a check proxy.",
+      "tried_count": 1,
+      "last_tried": "2026-04-11"
+    }
+  ],
+  "constraints": [
+    {
+      "id": "C-001",
+      "constraint": "NEVER modify .env.local AUTH_MODE",
+      "scope": "web/apps/mfe-shell/.env.local"
+    },
+    {
+      "id": "C-002",
+      "constraint": "NEVER add oauth2ResourceServer to SecurityConfigLocal",
+      "scope": "backend/**/SecurityConfigLocal.java"
+    },
+    {
+      "id": "C-003",
+      "constraint": "NEVER change ScopeContextFilter order to HIGHEST_PRECEDENCE",
+      "scope": "backend/**/OpenFgaAuthzConfig.java"
+    },
+    {
+      "id": "C-004",
+      "constraint": "Vite proxy /api/v1/authz, /api/v1/roles, /api/v1/permissions → localhost:8090 (permission-service hub). NEVER route these through gateway.",
+      "scope": "web/apps/mfe-shell/vite.config.ts"
+    },
+    {
+      "id": "C-005",
+      "constraint": "Permission-service is the OpenFGA hub — do NOT remove it; do NOT duplicate TupleSyncService or AuthzVersionService in other services",
+      "scope": "backend/permission-service/**"
+    },
+    {
+      "id": "C-006",
+      "constraint": "schema-service AUTH_MODE kill-switch REMOVED — always authenticated() in non-local profiles. Do NOT re-add permitAll bypass.",
+      "scope": "backend/schema-service/**/SecurityConfig.java"
+    },
+    {
+      "id": "C-007",
+      "constraint": "Production SecurityConfig catch-all must be authenticated() or denyAll(), NEVER permitAll(). Only SecurityConfigLocal (@Profile local/dev) may use permitAll.",
+      "scope": "backend/**/SecurityConfig.java"
+    },
+    {
+      "id": "C-008",
+      "constraint": "Services must use OpenFgaAuthzService (common-auth) for check/listObjects operations — NOT HTTP calls to permission-service. Permission-service is the WRITE hub (tuple sync) and user-facing QUERY hub (/authz/me, /authz/explain), not a check proxy.",
+      "scope": "backend/*-service/**"
+    }
+  ],
+  "validation": {
+    "doctor_script": "backend/scripts/doctor-zanzibar.sh",
+    "quick_check": "backend/scripts/doctor-zanzibar.sh --quick",
+    "expected_result": "0 errors"
+  },
+  "change_log": [
+    {
+      "revision": 1,
+      "date": "2026-03-30",
+      "changes": "Initial decisions registry created after full Zanzibar migration"
+    },
+    {
+      "revision": 2,
+      "date": "2026-04-11",
+      "changes": "D-003 DCP: 'Permission-service REMOVED' → 'TRANSFORMED — OpenFGA hub'. C-005 updated to protect hub role. Ref: CNS-20260411-001 (Claude+Codex consultation, Seçenek B uzlaşı)."
+    },
+    {
+      "revision": 3,
+      "date": "2026-04-13",
+      "changes": "4 pending decisions resolved (K-1..K-4). C-006 added: schema-service AUTH_MODE kill-switch removed. C-007 added: prod SecurityConfig must use authenticated() catch-all. ERP_OPENFGA_ENABLED staged rollout via PR-D (docker-compose default true). MFE standalone auth deferred (shell protection sufficient). Vault naming fixed in compose. Ref: CNS-20260413-001."
+    },
+    {
+      "revision": 4,
+      "date": "2026-04-14",
+      "changes": "D-008 added: Permission-service operational scope (hub responsibilities explicit). R-006 added: other services do NOT HTTP-call permission-service for checks. C-008 added: direct OpenFGA SDK usage for checks. Ref: CNS-20260414-001/002 (Rev 19 consensus)."
+    }
+  ]
+}

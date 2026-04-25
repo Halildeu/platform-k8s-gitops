@@ -1,0 +1,17 @@
+{
+  "version": "v1",
+  "live_enabled": true,
+  "enable_env_key": "KERNEL_API_LLM_LIVE",
+  "allowed_providers": [
+    "openai",
+    "google",
+    "claude",
+    "deepseek",
+    "qwen",
+    "xai"
+  ],
+  "max_calls_per_run": 12,
+  "timeout_ms": 60000,
+  "max_output_chars": 20000,
+  "fail_action": "warn"
+}

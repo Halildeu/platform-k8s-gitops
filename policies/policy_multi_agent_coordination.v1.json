@@ -1,0 +1,53 @@
+{
+  "$schema": "../schemas/policy-multi-agent-coordination.schema.v1.json",
+  "schema_ref": "urn:ao:policy-multi-agent-coordination:v1",
+  "version": "1.0.0",
+  "worktree_isolation": {
+    "enabled": true,
+    "rule": "one_agent_one_worktree",
+    "canonical_tree_commit": "blocked",
+    "worktree_location": "external_peer"
+  },
+  "branch_policy": {
+    "base_branch": "main",
+    "chaining_allowed": false,
+    "naming_patterns": {
+      "claude": "claude/{name}|feat/claude-{task}|fix/claude-{task}",
+      "codex": "codex/{task}|feat/codex-{task}|fix/codex-{task}",
+      "generic": "feat/{agent}-{task}|fix/{agent}-{task}"
+    }
+  },
+  "shared_tree_protection": {
+    "commit_blocked": true,
+    "push_blocked": true,
+    "destructive_ops_blocked": [
+      "checkout -- .",
+      "checkout -- <path>",
+      "reset --hard",
+      "reset HEAD~",
+      "clean -fd"
+    ]
+  },
+  "hook_behavior": {
+    "canonical_mode": "blocked",
+    "worktree_mode": "light",
+    "worktree_detection": {
+      "authoritative": "git rev-parse --git-dir != git rev-parse --git-common-dir",
+      "fast_path": "test -f .git"
+    },
+    "light_mode_steps": [
+      "secrets-gate",
+      "schema-policy-enforcement",
+      "staged-scope-lint"
+    ],
+    "scope_aware_lint": {
+      "toolchain_missing": "warn",
+      "changed_scope_match": "fail"
+    },
+    "artifact_storage": "worktree_local",
+    "fingerprint_mode": {
+      "canonical": "full: staged + unstaged + untracked + HEAD + branch",
+      "worktree": "reduced: staged_diff + staged_paths + HEAD + branch + worktree_id"
+    }
+  }
+}

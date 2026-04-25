@@ -1,0 +1,180 @@
+{
+  "version": "v1",
+  "$schema": "../schemas/policy-test-quality.schema.v1.json",
+  "kind": "policy-test-quality",
+  "status": "ACTIVE",
+  "owner": "platform-quality",
+  "enforcement_mode": "blocking",
+  "fail_action": "block",
+  "ci_lane": "contract",
+  "dry_run_support": true,
+  "rules": [
+    {
+      "rule_id": "TQ-001",
+      "name": "shallow_render_only",
+      "description": "Test renders component with no meaningful props, no user interaction, and only checks DOM existence (toBeInTheDocument, toBeVisible, toBeTruthy, toMatchSnapshot). Provides zero behavioral coverage.",
+      "severity": "HIGH",
+      "detection_method": "semgrep_pattern",
+      "languages": ["typescript", "javascript"],
+      "pattern_indicators": [
+        {
+          "indicator_type": "assertion_weakness",
+          "pattern": "render + (toBeInTheDocument|toBeVisible|toBeTruthy|toMatchSnapshot)",
+          "description": "Only assertion is DOM existence or snapshot — no behavioral check."
+        },
+        {
+          "indicator_type": "interaction_absence",
+          "pattern": "zero userEvent|fireEvent|rerender|waitFor calls in test block",
+          "description": "No user interaction triggers at all."
+        }
+      ],
+      "remediation": "Add meaningful props, user interaction (fireEvent/userEvent), and behavioral assertions (state change, callback invocation, rendered content validation).",
+      "semgrep_rule_id": "EP-006",
+      "examples": {
+        "positive_match": [
+          "render(<Button />); expect(screen.getByTestId('btn')).toBeInTheDocument();",
+          "const { asFragment } = render(<Card />); expect(asFragment()).toMatchSnapshot();"
+        ],
+        "negative_match": [
+          "render(<Button onClick={handler} label='Save' />); fireEvent.click(screen.getByRole('button')); expect(handler).toHaveBeenCalled();"
+        ]
+      }
+    },
+    {
+      "rule_id": "TQ-002",
+      "name": "tautological_assertion",
+      "description": "Assertion that is always true regardless of component behavior. Includes literal-to-literal comparisons and toBeDefined() on non-nullable expressions.",
+      "severity": "CRITICAL",
+      "detection_method": "semgrep_pattern",
+      "languages": ["typescript", "javascript"],
+      "pattern_indicators": [
+        {
+          "indicator_type": "regex_match",
+          "pattern": "expect(true).toBe(true)|expect(1).toBe(1)|expect('...').toBe('...')",
+          "description": "Literal compared to itself — always passes."
+        },
+        {
+          "indicator_type": "assertion_weakness",
+          "pattern": "expect(x).toBeDefined() as sole assertion",
+          "description": "toBeDefined alone is weak — most expressions are defined."
+        }
+      ],
+      "remediation": "Replace with assertions that test actual component behavior: output values, side effects, state transitions, or error conditions.",
+      "semgrep_rule_id": "EP-007",
+      "examples": {
+        "positive_match": [
+          "expect(true).toBe(true);",
+          "expect(1).toBe(1);",
+          "expect(wrapper).toBeDefined();"
+        ],
+        "negative_match": [
+          "expect(result.status).toBe('success');",
+          "expect(screen.getByText('Error')).toBeDefined();"
+        ]
+      }
+    },
+    {
+      "rule_id": "TQ-003",
+      "name": "template_duplication",
+      "description": "Structurally identical test body copied across multiple files. Detected via normalized body hash (comment strip, whitespace normalize, test title remove, import normalize).",
+      "severity": "HIGH",
+      "detection_method": "structural_similarity",
+      "languages": ["typescript", "javascript"],
+      "pattern_indicators": [
+        {
+          "indicator_type": "structural_duplication",
+          "pattern": "normalized body SHA-256 match across 2+ files",
+          "description": "Same test logic duplicated with only cosmetic differences."
+        }
+      ],
+      "remediation": "Extract shared test utilities; write unique test scenarios per component that exercise distinct behaviors.",
+      "examples": {
+        "positive_match": [
+          "223 depth test files with identical 88-line render(<div data-testid>) body"
+        ],
+        "negative_match": [
+          "Two tests sharing a helper function but with different assertions and scenarios"
+        ]
+      }
+    },
+    {
+      "rule_id": "TQ-004",
+      "name": "no_real_import",
+      "description": "Test file does not import the component it claims to test. File name implies ComponentX but no import of ComponentX found. Detected via AST-lite heuristic comparing filename to import list.",
+      "severity": "HIGH",
+      "detection_method": "heuristic_metric",
+      "languages": ["typescript", "javascript"],
+      "pattern_indicators": [
+        {
+          "indicator_type": "import_absence",
+          "pattern": "filename contains ComponentName but import list does not include ComponentName",
+          "description": "Test file never imports the subject under test."
+        }
+      ],
+      "remediation": "Import and test the actual component. If the file tests utilities, rename it to reflect the real subject.",
+      "examples": {
+        "positive_match": [
+          "Button.test.tsx with no 'import { Button }' or 'import Button' statement"
+        ],
+        "negative_match": [
+          "Button.test.tsx with 'import { Button } from '../Button''"
+        ]
+      }
+    },
+    {
+      "rule_id": "TQ-005",
+      "name": "mock_everything_test_nothing",
+      "description": "All dependencies mocked, no real function call or integration point tested. Detected via mock/spy count vs real assertion ratio. mock_ratio > 0.8 and real_call_count == 0 triggers warning.",
+      "severity": "MEDIUM",
+      "detection_method": "heuristic_metric",
+      "languages": ["typescript", "javascript"],
+      "pattern_indicators": [
+        {
+          "indicator_type": "mock_ratio",
+          "pattern": "vi.mock|jest.mock count > 3 AND real assertion count == 0",
+          "description": "Heavy mocking surface with no real integration test."
+        }
+      ],
+      "remediation": "Reduce mocking surface; test at integration boundaries. Mock external APIs and router, not internal component logic. Every mock-heavy test must have at least one contract or side-effect assertion.",
+      "examples": {
+        "positive_match": [
+          "vi.mock('../api'); vi.mock('../store'); vi.mock('../utils'); expect(true).toBe(true);"
+        ],
+        "negative_match": [
+          "vi.mock('../api'); render(<Form />); fireEvent.submit(...); expect(api.post).toHaveBeenCalledWith(expectedPayload);"
+        ]
+      }
+    },
+    {
+      "rule_id": "TQ-006",
+      "name": "bulk_generation_marker",
+      "description": "Tests generated with known bulk-generation markers indicating automated mass creation without quality review.",
+      "severity": "CRITICAL",
+      "detection_method": "semgrep_regex",
+      "languages": ["typescript", "javascript", "python"],
+      "pattern_indicators": [
+        {
+          "indicator_type": "marker_presence",
+          "pattern": "quality-edge-boost|auto-generated-test|test-scaffold|bulk-test-gen",
+          "description": "Known markers from bulk test generation tools."
+        }
+      ],
+      "remediation": "Delete the marker and replace with genuine hand-written tests that exercise real component behavior.",
+      "semgrep_rule_id": "EP-008",
+      "examples": {
+        "positive_match": [
+          "// quality-edge-boost",
+          "/* auto-generated-test */"
+        ],
+        "negative_match": [
+          "// Tests for edge cases in date formatting"
+        ]
+      }
+    }
+  ],
+  "thresholds": {
+    "max_shallow_render_ratio": 0.10,
+    "min_assertion_density": 2.0,
+    "max_duplication_ratio": 0.05
+  }
+}
