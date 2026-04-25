@@ -1,0 +1,52 @@
+{
+  "version": "v1",
+  "auth": {
+    "mode": "bearer",
+    "env_key": "KERNEL_API_TOKEN",
+    "required": true
+  },
+  "limits": {
+    "max_body_bytes": 65536,
+    "max_json_depth": 40,
+    "rate_limit_per_minute": 60,
+    "max_concurrent": 4
+  },
+  "actions": {
+    "allowlist": [
+      "project_status",
+      "system_status",
+      "doc_nav_check",
+      "roadmap_follow",
+      "roadmap_finish",
+      "codex_home_init",
+      "codex_env_check",
+      "m0_plan_ensure",
+      "intake_status",
+      "intake_next",
+      "intake_create_plan",
+      "llm_providers_init",
+      "llm_list_providers",
+      "llm_call",
+      "llm_call_live",
+      "llm_live_probe",
+      "github_ops_check",
+      "github_ops_job_start",
+      "github_ops_job_poll"
+    ],
+    "llm_call_live_allowed": true
+  },
+  "audit": {
+    "enabled": true,
+    "path": ".cache/reports/kernel_api_audit.v1.jsonl",
+    "redact_keys": [
+      "*KEY*",
+      "*TOKEN*",
+      "*SECRET*",
+      "authorization",
+      "api_key",
+      "bearer"
+    ],
+    "store_request_preview": true
+  },
+  "fail_action": "block"
+}

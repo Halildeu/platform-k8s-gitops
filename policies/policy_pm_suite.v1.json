@@ -1,0 +1,37 @@
+{
+  "version": "v1",
+  "enabled": true,
+  "default_workflow": {
+    "statuses": [
+      "OPEN",
+      "IN_PROGRESS",
+      "BLOCKED",
+      "DONE"
+    ]
+  },
+  "default_priority": "P2",
+  "default_severity": "S3",
+  "execution_bridge": {
+    "enabled": true,
+    "contract_path": "extensions/PRJ-PM-SUITE/contract/feature_execution_contract.v1.json",
+    "checker_path": "extensions/PRJ-PM-SUITE/contract/check_feature_execution_contract.py",
+    "seed_script_path": "extensions/PRJ-PM-SUITE/contract/seed_feature_execution_contract.py",
+    "contract_schema_path": "schemas/feature-execution-contract.schema.v1.json",
+    "report_path": ".cache/reports/feature_execution_contract_check.v1.json"
+  },
+  "notes": [
+    "feature_execution_bridge_active",
+    "pm_suite_minimum_operational_mode",
+    "delivery_session_compiler_active"
+  ],
+  "delivery_session": {
+    "enabled": true,
+    "packet_path": ".cache/reports/delivery_session_packet.v1.json",
+    "guard_report_path": ".cache/reports/delivery_session_guard.v1.json",
+    "builder_path": "extensions/PRJ-PM-SUITE/contract/build_delivery_session_packet.py",
+    "guard_path": "extensions/PRJ-PM-SUITE/contract/check_delivery_session_guard.py",
+    "packet_schema_path": "schemas/delivery-session-packet.schema.v1.json",
+    "note": "delivery_session_compiler_active"
+  },
+  "fail_action": "warn"
+}

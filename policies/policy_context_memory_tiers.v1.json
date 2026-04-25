@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "description": "Memory tier policy for rule classification and autonomous evolution.",
+  "tiers": {
+    "hot": { "always_load": true, "max_rules": 30, "min_effectiveness": 0.7 },
+    "warm": { "load_on_match": true, "max_rules": 50, "min_effectiveness": 0.3 },
+    "cold": { "load_on_demand": true, "archive_after_sessions": 30 }
+  },
+  "auto_evolution": {
+    "enabled": true,
+    "auto_apply_threshold": 0.9,
+    "auto_apply_with_rollback_threshold": 0.7,
+    "manual_review_below": 0.7,
+    "dead_session_threshold": 30
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "version": "v1",
+  "kind": "policy-feature-execution-bridge",
+  "status": "ACTIVE",
+  "enforcement_mode": "blocking",
+  "contract_path": "extensions/PRJ-PM-SUITE/contract/feature_execution_contract.v1.json",
+  "contract_schema_path": "schemas/feature-execution-contract.schema.v1.json",
+  "pm_policy_path": "policies/policy_pm_suite.v1.json",
+  "technical_baseline_path": "registry/technical_baseline.aistd.v1.json",
+  "ux_lock_path": "extensions/PRJ-UX-NORTH-STAR/contract/ux_katalogu.final_lock.v1.json",
+  "scope_detection": {
+    "include_globs": [
+      "backend/**",
+      "web/**",
+      "frontend/**",
+      "mobile/**",
+      "apps/**",
+      "ui/**",
+      "api/**",
+      "db/**",
+      "database/**",
+      "sql/**",
+      "extensions/**/web/**",
+      "extensions/**/src/**"
+    ],
+    "exclude_globs": [
+      "**/node_modules/**",
+      "**/.cache/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/coverage/**",
+      "**/tests/**",
+      "**/test/**",
+      "**/*.md",
+      "**/*.json",
+      "**/*.yml",
+      "**/*.yaml",
+      "**/*.lock",
+      "**/*.spec.*",
+      "**/*.test.*"
+    ],
+    "scope_globs": {
+      "backend": [
+        "backend/**",
+        "services/**",
+        "extensions/**/src/main/**"
+      ],
+      "frontend": [
+        "web/**",
+        "frontend/**",
+        "mobile/**",
+        "apps/**",
+        "ui/**",
+        "extensions/**/web/**",
+        "extensions/**/src/**"
+      ],
+      "database": [
+        "db/**",
+        "database/**",
+        "sql/**",
+        "backend/**/db/**",
+        "backend/**/migration/**"
+      ],
+      "api": [
+        "api/**",
+        "backend/**/controller/**",
+        "backend/**/dto/**",
+        "docs/03-delivery/api/**"
+      ]
+    }
+  },
+  "ux_scope": {
+    "required_globs": [
+      "web/**",
+      "frontend/**",
+      "mobile/**",
+      "apps/**",
+      "ui/**",
+      "extensions/**/web/**",
+      "extensions/**/src/**"
+    ],
+    "require_ux_on_frontend_changes": true
+  },
+  "validation": {
+    "active_status_on_scoped_change": true,
+    "required_source_refs_min": 1,
+    "placeholder_tokens": [
+      "TBD",
+      "REPLACE_ME",
+      "TODO"
+    ],
+    "required_execution_sequence_from_lock": true,
+    "required_lanes_from_lock": true
+  },
+  "reporting": {
+    "out_path": ".cache/reports/feature_execution_contract_check.v1.json"
+  },
+  "fail_action": "warn"
+}

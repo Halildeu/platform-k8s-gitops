@@ -1,0 +1,34 @@
+{
+  "version": "v1",
+  "enabled": true,
+  "focus": {
+    "session_continuity": true,
+    "context_pack_routing": true,
+    "memory_assist": true,
+    "plan_apply_traceability": true
+  },
+  "limits": {
+    "max_context_pack_bytes": 65536,
+    "max_session_items": 200,
+    "max_recommended_next_actions": 8
+  },
+  "inputs": {
+    "required": [
+      "system_status.v1.json",
+      "work_intake.v1.json",
+      "session-context.schema.json",
+      "context-pack.schema.v1.json"
+    ]
+  },
+  "outputs": {
+    "workspace_reports": [
+      ".cache/reports/context_orchestration_status.v1.json",
+      ".cache/reports/request_intake_to_exec_trace.v1.json"
+    ]
+  },
+  "guardrails": {
+    "network_default": false,
+    "report_only_on_missing_context": true,
+    "fail_closed_on_schema_mismatch": true
+  }
+}

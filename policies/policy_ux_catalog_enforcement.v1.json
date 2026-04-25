@@ -1,0 +1,48 @@
+{
+  "version": "v1",
+  "kind": "policy-ux-catalog-enforcement",
+  "status": "ACTIVE",
+  "enforcement_mode": "blocking",
+  "lock_file": "extensions/PRJ-UX-NORTH-STAR/contract/ux_katalogu.final_lock.v1.json",
+  "change_map": {
+    "required": true,
+    "path": "extensions/PRJ-UX-NORTH-STAR/contract/ux_change_map.v1.json",
+    "min_entries": 1
+  },
+  "enforce_scope": {
+    "include_globs": [
+      "web/**",
+      "frontend/**",
+      "mobile/**",
+      "apps/**",
+      "ui/**",
+      "extensions/**/web/**",
+      "extensions/**/src/**"
+    ],
+    "exclude_globs": [
+      "**/node_modules/**",
+      "**/.cache/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/coverage/**",
+      "**/tests/**",
+      "**/test/**",
+      "**/*.md",
+      "**/*.json",
+      "**/*.yml",
+      "**/*.yaml",
+      "**/*.lock",
+      "**/*.spec.*",
+      "**/*.test.*"
+    ]
+  },
+  "mapping_contract": {
+    "required_fields": [
+      "path",
+      "ux_theme_id",
+      "ux_subtheme_id"
+    ],
+    "allow_extra_fields": true
+  },
+  "fail_action": "warn"
+}

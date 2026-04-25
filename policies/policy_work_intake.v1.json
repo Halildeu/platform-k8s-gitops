@@ -1,0 +1,31 @@
+{
+  "version": "v1",
+  "enabled": true,
+  "plan_policy": "optional",
+  "buckets": ["ROADMAP", "PROJECT", "TICKET", "INCIDENT"],
+  "severity_levels": ["S0", "S1", "S2", "S3", "S4"],
+  "sla_hints": {
+    "S0": "hours",
+    "S1": "1d",
+    "S2": "1w",
+    "S3": "1m",
+    "S4": "backlog"
+  },
+  "classification": {
+    "incident_keywords": ["service down", "data loss", "security breach", "urgent compliance"],
+    "roadmap_keywords": ["adoption", "new_standard", "platform", "multi_project"],
+    "coverage_suffixes": ["COVERAGE"],
+    "regression_bucket": "INCIDENT",
+    "default_bucket": "TICKET"
+  },
+  "severity_map": {
+    "high": "S1",
+    "medium": "S2",
+    "low": "S3",
+    "unknown": "S4"
+  },
+  "notes": [
+    "Deterministic intake classification policy.",
+    "Plan policy is optional by default (IDLE over FAIL)."
+  ]
+}

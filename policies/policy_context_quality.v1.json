@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "description": "Context quality thresholds for health scoring and drift early warning.",
+  "scoring": {
+    "min_relevance_score": 12,
+    "max_efficiency_ratio": 0.8,
+    "min_cache_hit_rate_warn": 0.5,
+    "min_cache_hit_rate_alert": 0.3,
+    "quality_trend_alert": "DEGRADING"
+  },
+  "components": {
+    "total": 9,
+    "max_points_per_component": 20,
+    "max_total_points": 180
+  }
+}

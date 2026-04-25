@@ -1,0 +1,38 @@
+{
+  "$schema": "urn:ao:decisions:registry:v1",
+  "version": "1.0.0",
+  "description": "Canonical decision registry — all architectural decisions that AI agents MUST respect. Agents must check this file before modifying any related code.",
+  "last_updated": "2026-04-14T00:00:00Z",
+  "topics": [
+    {
+      "id": "zanzibar-openfga",
+      "title": "Authorization: OpenFGA Zanzibar Migration",
+      "status": "ACTIVE",
+      "revision": 4,
+      "file": "topics/zanzibar-openfga.v1.json",
+      "scope": [
+        "backend/**",
+        "web/apps/mfe-shell/**",
+        "web/packages/auth/**"
+      ],
+      "summary": "Keycloak (authn) + OpenFGA (authz engine) + permission-service (OpenFGA Hub: tuple sync, version mgmt, /authz/me+/check+/explain, role CRUD) + Hibernate @Filter + RLS (data enforcement). Other services use OpenFgaAuthzService directly (no HTTP to hub for checks)."
+    },
+    {
+      "id": "security-local-dev",
+      "title": "Security: Local Development Auth Rules",
+      "status": "ACTIVE",
+      "revision": 1,
+      "file": "topics/security-local-dev.v1.json",
+      "scope": [
+        "backend/**",
+        "web/apps/mfe-shell/.env*"
+      ],
+      "summary": "Local profilde JWT doğrulaması YOK. Login Keycloak'tan. permitAll sadece CI için."
+    }
+  ],
+  "rules": {
+    "read_before_modify": "Any AI agent MUST read this registry and the relevant topic file BEFORE modifying files in the topic's scope.",
+    "no_silent_revert": "Decisions with status FINAL cannot be silently reverted. A DCP (Decision Change Proposal) must be created and approved by the user.",
+    "tried_alternatives": "Rejected alternatives have a tried_count. Do NOT retry them without explicit user approval."
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "version": "v1",
+  "defaults": {
+    "enabled": false,
+    "timeout_seconds": 20,
+    "max_request_bytes": 65536,
+    "max_response_bytes": 131072,
+    "retry_count": 0,
+    "allow_models": [
+      "*"
+    ]
+  },
+  "providers": {
+    "claude": {
+      "enabled": true,
+      "expected_env_keys": [
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_API_KEY"
+      ],
+      "allow_models": [
+        "claude-3-haiku-20240307",
+        "claude-haiku-4-5-20251001"
+      ],
+      "default_model": "claude-3-haiku-20240307"
+    },
+    "deepseek": {
+      "enabled": true,
+      "expected_env_keys": [
+        "DEEPSEEK_API_KEY"
+      ],
+      "allow_models": [
+        "deepseek-chat",
+        "deepseek-reasoner"
+      ],
+      "default_model": "deepseek-chat"
+    },
+    "google": {
+      "enabled": true,
+      "expected_env_keys": [
+        "GOOGLE_API_KEY"
+      ],
+      "allow_models": [
+        "gemini-2.0-flash",
+        "gemini-3-flash-preview"
+      ],
+      "default_model": "gemini-2.0-flash"
+    },
+    "openai": {
+      "enabled": false,
+      "expected_env_keys": [
+        "OPENAI_API_KEY"
+      ],
+      "allow_models": [
+        "gpt-4o-mini",
+        "gpt-4o",
+        "gpt-5.2-mini",
+        "gpt-5.2-codex",
+        "gpt-5.3-codex",
+        "gpt-5.4"
+      ],
+      "default_model": "gpt-5.3-codex"
+    },
+    "qwen": {
+      "enabled": false,
+      "expected_env_keys": [
+        "QWEN_API_KEY"
+      ],
+      "allow_models": [
+        "qwen-plus",
+        "qwen-plus-latest",
+        "qwen-flash",
+        "qwen2.5-72b-instruct"
+      ],
+      "default_model": "qwen-plus"
+    },
+    "xai": {
+      "enabled": false,
+      "expected_env_keys": [
+        "XAI_API_KEY"
+      ],
+      "allow_models": [
+        "grok-4-latest",
+        "grok-code-fast-1"
+      ],
+      "default_model": "grok-4-latest"
+    }
+  },
+  "live_gate": {
+    "policy_live_enabled": true,
+    "require_env_key_present": true,
+    "require_explicit_live_flag": true,
+    "explicit_live_flag_env": "KERNEL_API_LLM_LIVE"
+  },
+  "fail_action": "block"
+}
