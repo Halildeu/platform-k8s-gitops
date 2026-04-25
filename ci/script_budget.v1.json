@@ -1,0 +1,135 @@
+{
+  "version": "v1",
+  "tracked_text_file_limits": {
+    "soft_lines": 1200,
+    "hard_lines": 2000
+  },
+  "grandfathered_files": [
+    {
+      "path": "backend/backend/keycloak/exports/serban-realm.json",
+      "mode": "no_growth_only",
+      "current_lines": 2148,
+      "max_allowed_lines": 2148
+    },
+    {
+      "path": "scripts/doc_production_generate.py",
+      "mode": "no_growth_only",
+      "current_lines": 3129,
+      "max_allowed_lines": 3129
+    },
+    {
+      "path": "scripts/docflow_next.py",
+      "mode": "no_growth_only",
+      "current_lines": 2134,
+      "max_allowed_lines": 2134
+    },
+    {
+      "path": "web/apps/mfe-access/package-lock.json",
+      "mode": "no_growth_only",
+      "current_lines": 8116,
+      "max_allowed_lines": 8116
+    },
+    {
+      "path": "web/apps/mfe-ethic/package-lock.json",
+      "mode": "no_growth_only",
+      "current_lines": 10985,
+      "max_allowed_lines": 10985
+    },
+    {
+      "path": "web/apps/mfe-reporting/package-lock.json",
+      "mode": "no_growth_only",
+      "current_lines": 6814,
+      "max_allowed_lines": 6814
+    },
+    {
+      "path": "web/apps/mfe-shell/package-lock.json",
+      "mode": "no_growth_only",
+      "current_lines": 5967,
+      "max_allowed_lines": 5967
+    },
+    {
+      "path": "web/apps/mfe-shell/src/app/ShellApp.ui.tsx",
+      "mode": "no_growth_only",
+      "current_lines": 2078,
+      "max_allowed_lines": 2078
+    },
+    {
+      "path": "web/apps/mfe-shell/src/pages/admin/DesignLabPage.tsx",
+      "mode": "no_growth_only",
+      "current_lines": 7635,
+      "max_allowed_lines": 7635
+    },
+    {
+      "path": "web/apps/mfe-shell/src/pages/admin/design-lab.index.json",
+      "mode": "no_growth_only",
+      "current_lines": 3454,
+      "max_allowed_lines": 3454
+    },
+    {
+      "path": "web/apps/mfe-suggestions/package-lock.json",
+      "mode": "no_growth_only",
+      "current_lines": 5319,
+      "max_allowed_lines": 5319
+    },
+    {
+      "path": "web/apps/mfe-users/package-lock.json",
+      "mode": "no_growth_only",
+      "current_lines": 8939,
+      "max_allowed_lines": 8939
+    },
+    {
+      "path": "web/package-lock.json",
+      "mode": "no_growth_only",
+      "current_lines": 26778,
+      "max_allowed_lines": 26778
+    },
+    {
+      "path": "web/packages/ui-kit/package-lock.json",
+      "mode": "no_growth_only",
+      "current_lines": 11027,
+      "max_allowed_lines": 11027
+    },
+    {
+      "path": "web/packages/ui-kit/src/catalog/component-api-catalog.v1.json",
+      "mode": "no_growth_only",
+      "current_lines": 3476,
+      "max_allowed_lines": 3476
+    },
+    {
+      "path": "web/packages/ui-kit/src/catalog/component-registry.v1.json",
+      "mode": "no_growth_only",
+      "current_lines": 2811,
+      "max_allowed_lines": 2811
+    },
+    {
+      "path": "web/packages/ui-kit/src/components/entity-grid/EntityGridTemplate.tsx",
+      "mode": "no_growth_only",
+      "current_lines": 2488,
+      "max_allowed_lines": 2488
+    },
+    {
+      "path": "web/pnpm-lock.yaml",
+      "mode": "no_growth_only",
+      "current_lines": 16372,
+      "max_allowed_lines": 16372
+    }
+  ],
+  "file_line_limits": [],
+  "function_line_limits": {
+    "soft": 120,
+    "hard": 400
+  },
+  "function_scan_paths": [
+    "ci/check_script_budget.py",
+    "ci/check_module_delivery_lanes.py",
+    "ci/run_module_delivery_lane.py",
+    "scripts/check_cache_boundary.py",
+    "scripts/check_branch_protection_solo_policy.py",
+    "extensions/PRJ-PM-SUITE/contract/check_feature_execution_contract.py"
+  ],
+  "excluded_patterns": [
+    "web/reports/token-diff-report.json",
+    "web/reports/token-diff-report.html",
+    "web/packages/design-system/docs/api/API-REFERENCE.md"
+  ]
+}
