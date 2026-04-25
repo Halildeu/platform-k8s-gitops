@@ -1346,7 +1346,7 @@ Codex iter-3: paralel, 18.1-18.7 gate değil.
 - /api/v1/permissions, /api/v1/me/theme/resolved, /api/audit/events, /api/v1/authz/me
 - HikariPool-1 (MSSQL primary) + workcube-mssql-readonly (qualifier secondary) + report-pg-pool
 
-**Faz 19.MSSQL.A-O delta** (PR sequence):
+**Faz 19.MSSQL.A-P delta** (PR sequence):
 | Faz | PR | Repo | Özet |
 |---|---|---|---|
 | 19.MSSQL.A | #6 | platform-backend | WorkcubeMssqlConfig + workcube package (feature-flagged) |
@@ -1358,6 +1358,7 @@ Codex iter-3: paralel, 18.1-18.7 gate değil.
 | 19.MSSQL.M | #127 | platform-k8s-gitops | gateway 6 v1 public + audit/events route (kalıcı) |
 | 19.MSSQL.N | #128 | platform-k8s-gitops | test overlay platform-test realm + SECURITY_JWT_* + report-service activation (kalıcı) |
 | 19.MSSQL.O | #28 | platform-web | CI gateway URL `/api` + build-script asset merge (kalıcı) |
+| 19.MSSQL.P | #130 | platform-k8s-gitops | gateway audit/events SSE 404 fix — ROUTES_14 split (root → user-service exact) + ROUTES_15 (sub-paths /live + /export + /export-jobs → permission-service:8090) |
 
 **Bridge proxy pattern** (Calico routing fix workaround):
 - K3d cluster pod overlay → 10.9.193.201 (Workcube MSSQL) Calico drop
