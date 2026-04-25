@@ -124,9 +124,19 @@ data:
   SPRING_CLOUD_GATEWAY_ROUTES_13_URI: "http://permission-service:8090"
   SPRING_CLOUD_GATEWAY_ROUTES_13_PREDICATES_0: "Path=/api/v1/permissions/**"
 
+  # Faz 19.MSSQL.P (2026-04-25) — audit/events split:
+  # - /api/audit/events (exact GET list) → user-service (UserAuditEvent mirror, basic shape)
+  # - /api/audit/events/** (sub-paths /live SSE + /export + /export-jobs/*) → permission-service
+  # Sebep: user-service AuditEventController sadece root @GetMapping; /live SSE + /export + /export-jobs
+  # permission-service AuditEventController + AuditEventStream'de impl. ROUTES_14 öncesinde /api/audit/events/**
+  # user-service'e rotalanıyordu → /live = 404. Split sonrası mfe-audit hem list hem live stream alır.
   SPRING_CLOUD_GATEWAY_ROUTES_14_ID: "user-service-audit-events-route"
   SPRING_CLOUD_GATEWAY_ROUTES_14_URI: "http://user-service:8089"
-  SPRING_CLOUD_GATEWAY_ROUTES_14_PREDICATES_0: "Path=/api/audit/events/**,/api/audit/events"
+  SPRING_CLOUD_GATEWAY_ROUTES_14_PREDICATES_0: "Path=/api/audit/events"
+
+  SPRING_CLOUD_GATEWAY_ROUTES_15_ID: "permission-service-audit-events-subpaths-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_15_URI: "http://permission-service:8090"
+  SPRING_CLOUD_GATEWAY_ROUTES_15_PREDICATES_0: "Path=/api/audit/events/**"
 
   # D7: Eureka yok → K8s svc DNS
   AUTH_SERVICE_URL: "http://auth-service:8088"
