@@ -193,21 +193,34 @@ class ThresholdPolicy:
       - initial:      max_reject_ratio default 0.0; runner respects override.
       - final-delta:  strict — abort on first threshold breach.
       - dry-run:      continue forever; rejects logged + written to audit.
+
+    Codex iter-9: accepts BOTH the CLI hyphen spelling (`final-delta`,
+    `dry-run`) and the DB CHECK constraint underscore spelling
+    (`final_delta`, `dry_run`). The orchestrator reads mode from
+    migration_runs (underscore form) so the policy must speak both
+    dialects. Unknown modes fail fast with ValueError.
     """
 
     mode: str
     max_reject_ratio: float
 
     def should_abort(self, rejected: int, processed: int) -> bool:
+        # Defer the import to avoid a circular: audit imports nothing from
+        # retry, retry doesn't need audit at module load. Late binding keeps
+        # both modules independently importable.
+        from etl_worker.audit import normalize_mode
+
+        db_mode = normalize_mode(self.mode)
+
         # dry-run: never aborts (rejects audit-only).
-        if self.mode == "dry-run":
+        if db_mode == "dry_run":
             return False
 
-        # Codex iter-8: final-delta strict — abort on FIRST reject regardless
+        # Codex iter-8/9: final-delta strict — abort on FIRST reject regardless
         # of processed count. This must run before the processed<=0 guard so
         # that a "transform reject before any row hits PG" still aborts the
         # cutover. The guard is only meaningful for ratio-based modes.
-        if self.mode == "final-delta":
+        if db_mode == "final_delta":
             return rejected > 0
 
         if processed <= 0:

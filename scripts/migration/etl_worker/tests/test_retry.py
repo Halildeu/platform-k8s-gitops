@@ -259,3 +259,44 @@ def test_threshold_zero_processed():
     # In initial mode, 1 reject + 0 processed is also not aborted (degenerate);
     # only final-delta makes that strict.
     assert p.should_abort(rejected=1, processed=0) is False
+
+
+# ============================================================================
+# Codex iter-9: DB-canonical (underscore) mode spellings must work too.
+# Day 7 orchestrator reads mode from migration_runs which stores the DDL
+# CHECK form (`final_delta`, `dry_run`, `reconcile_only`).
+# ============================================================================
+
+def test_threshold_final_delta_underscore_strict():
+    """`final_delta` (DB form) must abort on first reject just like the
+    hyphen form. Otherwise the orchestrator would silently fall through to
+    the ratio path."""
+    p = ThresholdPolicy(mode="final_delta", max_reject_ratio=0.0)
+    assert p.should_abort(rejected=1, processed=10000) is True
+    assert p.should_abort(rejected=1, processed=0) is True
+    assert p.should_abort(rejected=0, processed=10000) is False
+
+
+def test_threshold_dry_run_underscore_never_aborts():
+    """`dry_run` (DB form) must never abort; otherwise high reject ratios
+    in a dry-run would falsely trigger the ratio path."""
+    p = ThresholdPolicy(mode="dry_run", max_reject_ratio=0.0)
+    assert p.should_abort(rejected=999_999, processed=1) is False
+
+
+def test_threshold_unknown_mode_raises():
+    """Unknown modes fail fast — silently behaving as `initial` is risky
+    operationally (Codex iter-9 ack)."""
+    p = ThresholdPolicy(mode="GARBAGE", max_reject_ratio=0.0)
+    with pytest.raises(ValueError):
+        p.should_abort(rejected=0, processed=1)
+
+
+def test_threshold_reconcile_only_underscore():
+    """`reconcile_only` falls through to ratio-based behavior with the
+    given ratio (read-only mode; ratio=0 means any reject aborts)."""
+    p = ThresholdPolicy(mode="reconcile_only", max_reject_ratio=0.0)
+    # processed>0 + rejected>0 → ratio>0 → abort
+    assert p.should_abort(rejected=1, processed=10) is True
+    # rejected=0 → ratio=0 → ratio > 0.0 is False → no abort
+    assert p.should_abort(rejected=0, processed=10) is False
