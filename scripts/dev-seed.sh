@@ -134,4 +134,14 @@ if [[ "${DO_OPENFGA}" == "true" ]]; then
   fi
 fi
 
+# ----- 4. K8s Secret stub'ları (Faz 17.3 — local dev fixture) -----
+# Test/prod ESO tarafından Vault'tan dolan secret'lar — lokal dev için fake değer
+# Bu credentials sadece local-only stub; gerçek runtime için yeterli değil
+# (KC realm fixture ile uyumlu ad-hoc dev secret).
+log "K8s secret stubs (auth-service-secrets — local dev only)"
+kubectl --context k3d-dev -n platform-dev create secret generic auth-service-secrets \
+    --from-literal=KEYCLOAK_CLIENT_SECRET=local-dev-stub \
+    --from-literal=DB_PASSWORD=local-dev-stub \
+    --dry-run=client -o yaml | kubectl --context k3d-dev apply -f - >/dev/null
+
 log "=== seed tamamlandı (profile=${PROFILE}) ==="
