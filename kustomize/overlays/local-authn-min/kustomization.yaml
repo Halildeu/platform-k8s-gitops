@@ -126,7 +126,9 @@ patches:
         path: /spec/minAvailable
         value: 0
 
-  # Debug logging (lokal test için)
+  # Debug logging (lokal test için) + Hibernate DDL update (Faz 17.1 fixture)
+  # Lokal dev'de Flyway disable + Hibernate ddl-auto=update — schema otomatik oluşur
+  # (test/prod overlay'lerde Flyway authoritative; lokal'de fixture daha esnek)
   - target:
       kind: ConfigMap
       name: auth-service-config
@@ -134,6 +136,12 @@ patches:
       - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: DEBUG
+      - op: add
+        path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: "update"
+      - op: add
+        path: /data/SPRING_FLYWAY_ENABLED
+        value: "false"
   - target:
       kind: ConfigMap
       name: api-gateway-config
