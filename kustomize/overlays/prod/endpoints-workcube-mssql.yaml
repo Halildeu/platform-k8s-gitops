@@ -1,6 +1,6 @@
-# Faz 19.MSSQL.F overlay pin — prod cluster bridge proxy container IP
-# Container: workcube-mssql-proxy-prod (alpine/socat) on platform-prod-net (172.21.0.0/16)
-# Bootstrap (idempotent): bash bootstrap/workcube-mssql-proxy.sh
+# Faz 20 LIVE — prod cluster direct routing (bridge proxy decommissioned)
+# Calico containerIPForwarding=Enabled (PR #136) → pod direct → 10.9.193.201:1433
+# Önceki: 172.21.0.7:11433 (workcube-mssql-proxy-prod alpine/socat bridge container)
 apiVersion: v1
 kind: Endpoints
 metadata:
@@ -9,8 +9,8 @@ metadata:
     app.kubernetes.io/name: workcube-mssql
 subsets:
   - addresses:
-      - ip: 172.21.0.7              # bridge container IP (platform-prod-net subnet)
+      - ip: 10.9.193.201              # Workcube MSSQL host direct (Faz 20 LIVE)
     ports:
       - name: mssql
-        port: 11433
+        port: 1433                    # MSSQL standart port (TDS)
         protocol: TCP

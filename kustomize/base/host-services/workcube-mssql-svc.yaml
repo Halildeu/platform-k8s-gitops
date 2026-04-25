@@ -1,15 +1,14 @@
 # Faz 19.MSSQL — Workcube MSSQL host bridge (D19 Service, Endpoints overlay-only)
 # ADR-0005 Dual DataSource Reporting — live ERP data source (read-only)
 #
-# 2026-04-25 Faz 19.MSSQL.F (network teşhis sonrası strateji):
-# - K3d cluster pod overlay → 10.9.193.0/24 dış subnet'e Calico tunneling/routing fail
-# - Çözüm: docker bridge'de socat proxy container (cluster ile AYNI bridge'de)
-# - Endpoints overlay-spesifik (her bridge subnet'i farklı): kustomize/overlays/{prod,test}
-#
-# Proxy bootstrap (idempotent): bash bootstrap/workcube-mssql-proxy.sh
+# 2026-04-25 Faz 20 LIVE — Direct routing (bridge proxy decommissioned):
+# - Calico containerIPForwarding=Enabled (PR #136) ile pod overlay → external 10.9.193.0/24 routing aktif
+# - Pod direct → 10.9.193.201:1433 (bridge proxy yok, ekstra hop yok)
+# - Service port 11433 (Vault JDBC URL backward compat) → targetPort 1433 (real MSSQL)
+# - Endpoints overlay-spesifik: 10.9.193.201:1433 (her iki cluster aynı, çünkü direkt LAN'a gidiyor)
 #
 # Authentication (Workcube boreas domain, IT mesajı 2026-04-25):
-#   JDBC URL: ...;authenticationScheme=NTLM;domain=boreas
+#   JDBC URL: jdbc:sqlserver://workcube-mssql:11433;...;authenticationScheme=NTLM;domain=boreas
 #   Username: AlUser_App (plain, domain= ayrı parametre)
 #   Vault path: kv/platform/mssql-external (D34 izolasyon)
 #
@@ -28,13 +27,15 @@ metadata:
   annotations:
     platform.acik.com/adr: "0005"
     platform.acik.com/source: "Workcube Mikrolink ERP (read-only, live, boreas domain)"
-    platform.acik.com/proxy: "alpine/socat bridge container per-cluster (workcube-mssql-proxy-{prod,test})"
+    platform.acik.com/direct-routing: "Faz 20 LIVE — Calico containerIPForwarding pod direct (10.9.193.201:1433)"
 spec:
+  # Pod-facing port 11433 unchanged (Vault JDBC URL backward compat — no rotation needed).
+  # targetPort 1433 = real MSSQL port (Endpoints'te 10.9.193.201:1433).
+  # kube-proxy DNAT: pod connect :11433 → Service → Endpoint 10.9.193.201:1433.
   ports:
     - name: mssql
       port: 11433
-      targetPort: 11433
+      targetPort: 1433
       protocol: TCP
 # NOTE: Endpoints (subset.addresses) overlay-spesifik, base'de yok.
-#       overlays/prod/endpoints-workcube-mssql.yaml: 172.21.0.7
-#       overlays/test/endpoints-workcube-mssql.yaml: 172.19.0.8
+#       overlays/{prod,test}/endpoints-workcube-mssql.yaml: 10.9.193.201:1433 (direct, post-Faz-20)

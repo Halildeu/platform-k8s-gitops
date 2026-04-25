@@ -1,10 +1,12 @@
-# Faz 19.MSSQL.F overlay pin — test NetPol egress to bridge proxy IP/32
+# Faz 20 LIVE — test NetPol egress direct (Workcube MSSQL host)
+# Önceki: 172.19.0.8/32:11433 (bridge proxy)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-egress-workcube-mssql
   annotations:
     platform.acik.com/adr: "0005"
+    platform.acik.com/direct-routing: "Faz 20 LIVE — pod direct via Calico containerIPForwarding"
 spec:
   podSelector:
     matchExpressions:
@@ -18,7 +20,7 @@ spec:
   egress:
     - to:
         - ipBlock:
-            cidr: 172.19.0.8/32      # workcube-mssql-proxy-test bridge container IP
+            cidr: 10.9.193.201/32      # Workcube MSSQL host direct
       ports:
         - protocol: TCP
-          port: 11433
+          port: 1433                    # MSSQL standart port
