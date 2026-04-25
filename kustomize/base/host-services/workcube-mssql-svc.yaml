@@ -1,18 +1,21 @@
-# Faz 19.MSSQL — Workcube MSSQL host bridge (D19: Service + Endpoints pattern)
+# Faz 19.MSSQL — Workcube MSSQL host bridge (D19 Service, Endpoints overlay-only)
 # ADR-0005 Dual DataSource Reporting — live ERP data source (read-only)
 #
-# Target: Workcube Mikrolink ERP MSSQL (authoritative, read-only, Workcube ownership)
-# Default: 10.9.193.201:1433 (staging-sw subnet içinde reachable)
-# Override: overlays/{prod,test} → Endpoints subsets.addresses.ip + port
+# 2026-04-25 Faz 19.MSSQL.F (network teşhis sonrası strateji):
+# - K3d cluster pod overlay → 10.9.193.0/24 dış subnet'e Calico tunneling/routing fail
+# - Çözüm: docker bridge'de socat proxy container (cluster ile AYNI bridge'de)
+# - Endpoints overlay-spesifik (her bridge subnet'i farklı): kustomize/overlays/{prod,test}
 #
-# Access control:
-# - NetworkPolicy allow-egress-workcube-mssql: sadece report-service + schema-service podSelector
-# - Read-only DB user (Workcube admin tarafında yaratılmalı, SELECT scope tablolar allowlist)
-# - Credentials: Vault kv/platform/mssql-external → ESO → K8s Secret (report + schema bind)
+# Proxy bootstrap (idempotent): bash bootstrap/workcube-mssql-proxy.sh
+#
+# Authentication (Workcube boreas domain, IT mesajı 2026-04-25):
+#   JDBC URL: ...;authenticationScheme=NTLM;domain=boreas
+#   Username: AlUser_App (plain, domain= ayrı parametre)
+#   Vault path: kv/platform/mssql-external (D34 izolasyon)
 #
 # Runtime behavior (degraded mode per ADR-0005):
-# - MSSQL unreachable → report-service MSSQL-backed endpoints 503, PG-backed OK
-# - Health indicator ayrı, readiness coupling YASAK (pod evict/restart döngüsü riski)
+# - MSSQL unreachable → MSSQL-backed endpoints 503, PG-backed OK
+# - Health indicator ayrı (NOT in readiness — pod evict döngüsü riski)
 ---
 apiVersion: v1
 kind: Service
@@ -24,26 +27,14 @@ metadata:
     app.kubernetes.io/part-of: reporting
   annotations:
     platform.acik.com/adr: "0005"
-    platform.acik.com/source: "Workcube Mikrolink ERP (read-only, live)"
+    platform.acik.com/source: "Workcube Mikrolink ERP (read-only, live, boreas domain)"
+    platform.acik.com/proxy: "alpine/socat bridge container per-cluster (workcube-mssql-proxy-{prod,test})"
 spec:
-  # ClusterIP (headless değil) — Endpoints'e forward
   ports:
     - name: mssql
-      port: 1433
-      targetPort: 1433
+      port: 11433
+      targetPort: 11433
       protocol: TCP
----
-# Endpoints manuel — Workcube MSSQL host IP (overlays'de override)
-apiVersion: v1
-kind: Endpoints
-metadata:
-  name: workcube-mssql
-  labels:
-    app.kubernetes.io/name: workcube-mssql
-subsets:
-  - addresses:
-      - ip: 10.9.193.201              # Workcube ERP MSSQL host (overlays'de override)
-    ports:
-      - name: mssql
-        port: 1433                    # MSSQL default port
-        protocol: TCP
+# NOTE: Endpoints (subset.addresses) overlay-spesifik, base'de yok.
+#       overlays/prod/endpoints-workcube-mssql.yaml: 172.21.0.7
+#       overlays/test/endpoints-workcube-mssql.yaml: 172.19.0.8

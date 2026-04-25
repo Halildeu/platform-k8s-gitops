@@ -4,10 +4,12 @@ kind: ConfigMap
 metadata:
   name: schema-service-config
 data:
-  # Host-level bağımlılıklar — Service+Endpoints (D19) üzerinden
-  # Spring Boot convention env: SPRING_DATASOURCE_URL, SPRING_DATASOURCE_USERNAME,
-  # SPRING_DATASOURCE_PASSWORD (username/password Secret'tan gelir)
-  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/schemas_db"
+  # ADR-0005 Dual DataSource Reporting (Faz 19.MSSQL activation)
+  # Primary spring.datasource = Workcube MSSQL (schema introspection lane)
+  #   → SPRING_DATASOURCE_URL/USERNAME/PASSWORD ESO secret schema-service-mssql-secrets'ten gelir
+  # Secondary report.postgres = platform metadata (eğer kullanılıyorsa)
+  REPORT_PG_URL: "jdbc:postgresql://postgres:5432/schemas_db"
+  SCHEMA_MSSQL_ENABLED: "true"   # feature flag
 
   # Spring Boot
   SERVER_PORT: "8096"

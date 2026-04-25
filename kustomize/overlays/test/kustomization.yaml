@@ -20,6 +20,9 @@ resources:
   - namespace.yaml    # Namespace + labels (platform=true env=test, ApplicationSet prereq)
   - ../../base
   - ../../base/apps/ops-bundle    # Faz 17.2.5: ExternalSecret + ServiceMonitor CRD paketi (runtime'dan ayrı)
+  # Faz 19.MSSQL.F: bridge proxy container IP per-cluster
+  - endpoints-workcube-mssql.yaml    # 172.19.0.8 (workcube-mssql-proxy-test, alpine/socat)
+  - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)
@@ -50,7 +53,7 @@ images:
     digest: sha256:b803507ac6b17240a8cced6878606f2aad7b31856140d6b5071352135babf37f
   - name: report-service
     newName: ghcr.io/halildeu/platform-backend-report-service
-    digest: sha256:13cc1b589d394533dc6077b07f043004db9dd95f62775b5f4ce5a924ff3c31f3
+    digest: sha256:1d38fe3f3439067eeaae1d2015d470a3273074c6509589b54e7422fd749cc8b1
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
@@ -60,7 +63,7 @@ images:
   # Frontend testai variant (testai.acik.com + platform-test realm)
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend-testai
-    digest: sha256:5901eaf4114e2b611c832abb5137be876339f7b067f1b9254ebc8d2104615e58
+    digest: sha256:e0c50f32923f8cee440a7733ceda6267f418b5918fd9c2bba91c71d25ac1d9bc
 
 patches:
   # Replica 0 default (scale-to-zero)

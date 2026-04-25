@@ -1,0 +1,16 @@
+# Faz 19.MSSQL.F overlay pin — test cluster bridge proxy container IP
+# Container: workcube-mssql-proxy-test (alpine/socat) on platform-test-net (172.19.0.0/16)
+# Bootstrap (idempotent): bash bootstrap/workcube-mssql-proxy.sh
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: workcube-mssql
+  labels:
+    app.kubernetes.io/name: workcube-mssql
+subsets:
+  - addresses:
+      - ip: 172.19.0.8              # bridge container IP (platform-test-net subnet)
+    ports:
+      - name: mssql
+        port: 11433
+        protocol: TCP

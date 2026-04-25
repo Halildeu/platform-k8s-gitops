@@ -57,7 +57,10 @@ spec:
             - configMapRef:
                 name: schema-service-config
             - secretRef:
-                name: schema-service-secrets        # ESO tarafından Vault'tan dolar
+                name: schema-service-secrets        # ESO Vault → JWT/Auth secrets
+            - secretRef:                            # Faz 19.MSSQL — Workcube creds (Spring conv + SCHEMA_*)
+                name: schema-service-mssql-secrets  # ESO Vault kv/platform/mssql-external
+                optional: true                      # ESO sync gecikse pod start engellenmesin
           resources:
             requests:
               memory: "384Mi"       # D22: request dar

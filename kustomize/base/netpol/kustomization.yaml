@@ -14,4 +14,6 @@ resources:
   - allow-ingress-intra-ns.yaml
   - allow-monitoring-scrape.yaml
   - allow-egress-dns-and-host.yaml
-  - allow-egress-workcube-mssql.yaml  # Faz 19.MSSQL (ADR-0005 Dual DataSource)
+  # Faz 19.MSSQL.F: NetPol overlay-spesifik (her cluster bridge subnet'i farklı IP)
+  # overlays/prod: egress 172.21.0.7/32:11433 (workcube-mssql-proxy-prod)
+  # overlays/test: egress 172.19.0.8/32:11433 (workcube-mssql-proxy-test)
