@@ -1338,7 +1338,41 @@ Codex iter-3: paralel, 18.1-18.7 gate değil.
 
 ---
 
-### Faz 19 — Split-repo Authority Transfer — **IN PROGRESS (19.0 COMPLETE, 19.1+ pending user onay)**
+### Faz 19 — Split-repo Authority Transfer — **COMPLETE (2026-04-25 17:25 UTC)**
+
+**KAPANIŞ KANITI** (e2e Playwright + curl JWT, 8/8 backend endpoint 200):
+- /api/v1/users (2 user), /api/v1/reports (31 rapor), /api/v1/dashboards (12)
+- /api/v1/schema/snapshot (3.6 MB, 1509 tablo + 26240 kolon, 27 domain)
+- /api/v1/permissions, /api/v1/me/theme/resolved, /api/audit/events, /api/v1/authz/me
+- HikariPool-1 (MSSQL primary) + workcube-mssql-readonly (qualifier secondary) + report-pg-pool
+
+**Faz 19.MSSQL.A-O delta** (PR sequence):
+| Faz | PR | Repo | Özet |
+|---|---|---|---|
+| 19.MSSQL.A | #6 | platform-backend | WorkcubeMssqlConfig + workcube package (feature-flagged) |
+| 19.MSSQL.B | #7 | platform-backend | application-k8s.yml MSSQL+PG env binding |
+| 19.MSSQL.C | #125 | platform-k8s-gitops | configmap + deployment envFrom MSSQL secret |
+| 19.MSSQL.D-H | #126 | platform-k8s-gitops | ESO dual-key + bridge proxy + asset merge live patches |
+| 19.MSSQL.I | (manuel) | edge nginx | release c1c624c cutover (host-level) |
+| 19.MSSQL.J-L | #27 | platform-web | schema-explorer auth interceptor + window.fetch monkey-patch + mfe_shell URL env-driven |
+| 19.MSSQL.M | #127 | platform-k8s-gitops | gateway 6 v1 public + audit/events route (kalıcı) |
+| 19.MSSQL.N | #128 | platform-k8s-gitops | test overlay platform-test realm + SECURITY_JWT_* + report-service activation (kalıcı) |
+| 19.MSSQL.O | #28 | platform-web | CI gateway URL `/api` + build-script asset merge (kalıcı) |
+
+**Bridge proxy pattern** (Calico routing fix workaround):
+- K3d cluster pod overlay → 10.9.193.201 (Workcube MSSQL) Calico drop
+- Workaround: docker bridge'de `alpine/socat` per-cluster (`workcube-mssql-proxy-{prod,test}`)
+- Path: Pod → kube-proxy DNAT → bridge container (172.21.0.7 prod / 172.19.0.8 test) → 10.9.193.201:1433
+- Bootstrap: `bash bootstrap/workcube-mssql-proxy.sh` (idempotent docker run)
+
+**Vault seed** (D34 izolasyon, prod+test):
+- `kv/platform/mssql-external` { username, password, jdbc_url } — Boreas AD domain (`authenticationScheme=NTLM;domain=boreas`)
+
+**Frontend digest pin** (gitops live):
+- `platform-web-frontend-testai`: sha-c1c624c (manual edge override; kalıcı CI fix sha-ac35567 sonrası)
+- `platform-web-frontend` (prod): sha-c1c624c
+
+**Original 10-step plan** (now COMPLETE):
 
 **Canonical ADR**: [docs/adr/0004-split-repo-authority-transfer.md](adr/0004-split-repo-authority-transfer.md)
 

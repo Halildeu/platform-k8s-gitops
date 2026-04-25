@@ -63,7 +63,7 @@ images:
   # Frontend testai variant (testai.acik.com + platform-test realm)
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend-testai
-    digest: sha256:e0c50f32923f8cee440a7733ceda6267f418b5918fd9c2bba91c71d25ac1d9bc
+    digest: sha256:6229560c65bf0c0595af21958d7373f5fcd44c504867fbaedeb49e99523c5a70
 
 patches:
   # Replica 0 default (scale-to-zero)
