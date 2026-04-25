@@ -65,6 +65,32 @@ Agent'ın **staging-sw sunucusuna SSH** ile erişim ve kubectl operasyonlarını
 
 User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak kural olarak ekle genel kural"
 
+### 8. Continuous Autonomous Mode + Codex Decision Authority (KALICI ANA KURAL — kullanıcı 2026-04-25)
+
+**HARD RULE**: Otomatik mod sürekli aktiftir; durmak yok, tüm işler bitene kadar devam.
+
+**Karar verme kuralı**:
+- Stratejik karar gerektiren noktada (mimari, deploy, rollback, scope değişimi) **Codex MCP'ye danış**
+- `mcp__codex__codex` (yeni thread) veya `mcp__codex__codex-reply` (mevcut thread) ile otomatik soruyu sor
+- **Codex'in cevabı kullanıcının kararı sayılır** — kullanıcıya sorma, beklemeden uygula
+- Codex AGREE / `ready_for_impl=true` → direkt impl
+- Codex PARTIAL / REVISE → absorb et, yeni iter submit et
+- Codex RED → bu durum istisna; kullanıcıya rapor ver yön sor (gerçek blocker)
+
+**Çıktı**:
+- Her Codex MCP danışmasından sonra yapılan işin Codex thread referansıyla raporlanır
+- Plan iterasyonları kullanıcıya gösterilmez (CNS-011 superseded; consensus yeterli)
+
+**İstisnalar** (yine kullanıcı onayı gerek):
+- Repo arşivleme/silme/visibility değişimi (irreversible)
+- Production destructive işlemler (D30 atomic cutover — açık karar bekleniyor)
+- Credential paylaşımı (Vault token, admin password)
+- Para harcaması (cloud provider, GitHub Actions limit aşımı)
+
+**Mantık**: Kullanıcı sürekli iş + Codex adversarial istişare ile yüksek tempo iteration istiyor. Auto mode + Codex danışmanlığı consensus pattern'iyle her stratejik karar **çift onay** alır (sistem + Codex), kullanıcı interrupt edilmez.
+
+User mesajı (2026-04-25): "durmak yok süreklid evam tüm işler biteene kadar otomaitk mode karar gerektğinde codex ile msp üzeri,nde otomaitk cevap al benim kararım sasyılacak kural olrak yaz bunu klıcı kural ana kural"
+
 ## Pattern'ler
 
 ### Kustomize Overlay
