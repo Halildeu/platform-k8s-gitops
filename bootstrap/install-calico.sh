@@ -26,6 +26,7 @@ install_calico() {
   case "${cluster}" in
     prod) pod_cidr="10.42.0.0/16" ;;
     test) pod_cidr="10.44.0.0/16" ;;
+    dev)  pod_cidr="10.46.0.0/16" ;;
     *) err "bilinmeyen cluster: ${cluster}" ;;
   esac
 
@@ -94,6 +95,7 @@ TARGETS="${1:-both}"
 case "${TARGETS}" in
   prod) install_calico prod ;;
   test) install_calico test ;;
+  dev)  install_calico dev ;;
   both|"") install_calico prod; install_calico test ;;
   *) err "bilinmeyen hedef: ${TARGETS}" ;;
 esac

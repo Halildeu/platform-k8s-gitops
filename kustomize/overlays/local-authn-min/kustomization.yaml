@@ -123,10 +123,14 @@ patches:
         value: DEBUG
 
   # Ingress host — app.localtest.me (RFC2606 127.0.0.1 resolve)
+  # NOT: tls.hosts[0] da override edilmek zorunda (base PLACEHOLDER_HOST ingress validator fail eder)
   - target:
       kind: Ingress
       name: platform
     patch: |-
       - op: replace
         path: /spec/rules/0/host
+        value: app.localtest.me
+      - op: replace
+        path: /spec/tls/0/hosts/0
         value: app.localtest.me
