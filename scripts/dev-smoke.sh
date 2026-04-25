@@ -135,13 +135,17 @@ if [[ "${PROFILE}" == "full" ]]; then
 fi
 
 # ----- D34 isolation gate (Faz 17.1 — local realm leak denylist) -----
-# platform-dev içinde staging/prod IP veya domain referansı olmamalı
-DENYLIST_HITS=$(kubectl --context k3d-dev -n platform-dev get all,endpoints,configmap -o yaml 2>/dev/null \
-    | grep -cE "10\.9\.10\.53|10\.9\.193\.201|ai\.acik\.com|testai\.acik\.com" || true)
+# platform-dev içinde staging/prod IP, domain, namespace veya container adı referansı olmamalı.
+# Geniş resource scope: all + endpoints + configmap + secret + deployment + statefulset + ingress + networkpolicy
+# Geniş denylist: IP + domain + namespace + container ad pattern'leri (vault-prod, kc-test, pg-prod, vb.)
+RESOURCES="all,endpoints,configmap,secret,deployment,statefulset,ingress,networkpolicy"
+DENYLIST_PATTERNS="10\.9\.10\.53|10\.9\.193\.201|ai\.acik\.com|testai\.acik\.com|platform-prod|platform-test|workcube|mssql|vault-prod|vault-test|kc-prod|kc-test|pg-prod|pg-test"
+DENYLIST_HITS=$(kubectl --context k3d-dev -n platform-dev get "${RESOURCES}" -o yaml 2>/dev/null \
+    | grep -cE "${DENYLIST_PATTERNS}" || true)
 if [[ "${DENYLIST_HITS}" -eq 0 ]]; then
-  record "z_isolation_denylist" "PASS" "no staging/prod IP or domain leak"
+  record "z_isolation_denylist" "PASS" "no staging/prod leak (8 resource × 14 pattern)"
 else
-  record "z_isolation_denylist" "FAIL" "${DENYLIST_HITS} staging/prod reference (D34 ihlal)"
+  record "z_isolation_denylist" "FAIL" "${DENYLIST_HITS} reference (D34 ihlal — kubectl get ${RESOURCES} | grep -E '${DENYLIST_PATTERNS}')"
 fi
 
 # ----- Özet -----
