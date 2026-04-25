@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# SCRIPT_DIR removed (unused — SC2034)
 
 log()  { printf '\033[0;36m[dev-pg]\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[0;33m[dev-pg]\033[0m %s\n' "$*" >&2; }
