@@ -28,15 +28,35 @@ resources:
   - ../../base/ingress
   # NOT: netpol + quota lokal dev için opsiyonel — Faz 17.3 dev-up.sh --strict bayrağı
 
+# Faz 17.3 D34 dev realm self-contained — GHCR direct pull (Tiltfile yerine)
+# Mac k3d-dev internet erişimi var → imagePullPolicy=IfNotPresent + GHCR :latest
+# Test/prod cluster digest pin'i (ghcr.io/halildeu/...@sha256:...) overlays/{test,prod}/kustomization.yaml'da
+# Dev'de :latest kullanılır (geliştirme akışı için), test/prod immutable digest (D30 atomic).
+# ghcr-pull secret ad-hoc Mac k3d-dev'de oluşturulmalı (ayrı runbook):
+#   kubectl --context k3d-dev -n platform-dev create secret generic ghcr-pull \
+#     --from-file=.dockerconfigjson=$HOME/.docker/config.json \
+#     --type=kubernetes.io/dockerconfigjson
+#   for sa in default api-gateway auth-service; do
+#     kubectl --context k3d-dev -n platform-dev patch sa $sa \
+#       -p '{"imagePullSecrets":[{"name":"ghcr-pull"}]}'
+#   done
+images:
+  - name: auth-service
+    newName: ghcr.io/halildeu/platform-backend-auth-service
+    newTag: latest
+  - name: api-gateway
+    newName: ghcr.io/halildeu/platform-backend-api-gateway
+    newTag: latest
+
 patches:
-  # Image pull policy Never (k3d image import sonrası)
+  # Replicas=1 + IfNotPresent (Mac dev: image cache hit fast, miss=GHCR pull)
   - target:
       kind: Deployment
       name: auth-service
     patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Never
+        value: IfNotPresent
       - op: replace
         path: /spec/replicas
         value: 1
@@ -46,7 +66,7 @@ patches:
     patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Never
+        value: IfNotPresent
       - op: replace
         path: /spec/replicas
         value: 1
