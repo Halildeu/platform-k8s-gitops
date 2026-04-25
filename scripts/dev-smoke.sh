@@ -134,6 +134,16 @@ if [[ "${PROFILE}" == "full" ]]; then
   record "g_nine_app_actuator" "SKIP" "manuel kubectl get pods -n platform-dev — 9/9 Ready doğrulama"
 fi
 
+# ----- D34 isolation gate (Faz 17.1 — local realm leak denylist) -----
+# platform-dev içinde staging/prod IP veya domain referansı olmamalı
+DENYLIST_HITS=$(kubectl --context k3d-dev -n platform-dev get all,endpoints,configmap -o yaml 2>/dev/null \
+    | grep -cE "10\.9\.10\.53|10\.9\.193\.201|ai\.acik\.com|testai\.acik\.com" || true)
+if [[ "${DENYLIST_HITS}" -eq 0 ]]; then
+  record "z_isolation_denylist" "PASS" "no staging/prod IP or domain leak"
+else
+  record "z_isolation_denylist" "FAIL" "${DENYLIST_HITS} staging/prod reference (D34 ihlal)"
+fi
+
 # ----- Özet -----
 PASS_COUNT=$(printf '%s\n' "${RESULTS[@]}" | grep -c '|PASS|' || true)
 FAIL_COUNT=$(printf '%s\n' "${RESULTS[@]}" | grep -c '|FAIL|' || true)

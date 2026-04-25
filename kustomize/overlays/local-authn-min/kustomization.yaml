@@ -28,6 +28,11 @@ resources:
   - ../../base/ingress
   # NOT: netpol + quota lokal dev için opsiyonel — Faz 17.3 dev-up.sh --strict bayrağı
 
+# Faz 17.1 D34 isolation hardening — vault + workcube-mssql delete (staging-sw IP / canlı external)
+# base/host-services'tan tüm 4 svc gelir; local'de sadece pg + keycloak gerek (Mac host bridge).
+# vault default Endpoints 10.9.10.53 (staging-sw) + workcube canlı external = D34 izolasyon ihlal.
+# zanzibar-min/full profile'larda local fake fixture eklenebilir (Faz 17.5 follow-up).
+
 # Faz 17.3 D34 dev realm self-contained — GHCR direct pull (Tiltfile yerine)
 # Mac k3d-dev internet erişimi var → imagePullPolicy=IfNotPresent + GHCR :latest
 # Test/prod cluster digest pin'i (ghcr.io/halildeu/...@sha256:...) overlays/{test,prod}/kustomization.yaml'da
@@ -49,6 +54,36 @@ images:
     newTag: latest
 
 patches:
+  # Faz 17.1 D34 isolation — vault + workcube-mssql Service+Endpoints delete
+  # base'ten gelirler ama local-authn-min profilinde gerek yok + staging IP sızıntısı yapar
+  - target:
+      kind: Service
+      name: vault
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: vault
+  - target:
+      kind: Endpoints
+      name: vault
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Endpoints
+      metadata:
+        name: vault
+  - target:
+      kind: Service
+      name: workcube-mssql
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: workcube-mssql
+
   # Replicas=1 + IfNotPresent (Mac dev: image cache hit fast, miss=GHCR pull)
   - target:
       kind: Deployment

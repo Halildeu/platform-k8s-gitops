@@ -176,6 +176,39 @@ Bu ADR supersede edilirse:
 
 ---
 
+## Faz 20 Addendum (2026-04-25): Bridge proxy decommission + 3-realm exception
+
+**Bridge proxy decommissioned** (PR #138 LIVE):
+- Calico `containerIPForwarding=Enabled` (Faz 20 PR #136) → pod direct → 10.9.193.201:1433
+- Service `port: 11433` (Vault JDBC URL backward compat) + `targetPort: 1433` (Endpoints)
+- Endpoints test+prod: `10.9.193.201:1433` (her iki cluster aynı external IP)
+- 2 socat container silindi: `workcube-mssql-proxy-{test,prod}`
+
+**3-realm izolasyon exception**: Workcube MSSQL test+prod tarafından **ortak** read-only external dependency. Strict D34 izolasyon kuralı açısından bu bilinçli bir istisnadır:
+
+| Realm | Workcube MSSQL bağımlılık |
+|---|---|
+| dev (Mac) | YOK (Faz 17.1 isolation hardening, vault + workcube Service kaldırıldı) |
+| test (Ubuntu) | 10.9.193.201:1433 read-only (workcube_mikrolink schema crawl + reports) |
+| prod (Ubuntu) | 10.9.193.201:1433 read-only (aynı external source) |
+
+**Kalıcı hedef** (Faz 16 migration roadmap):
+- PG primary, MSSQL secondary/opsiyonel
+- 16.0 Data Contract (DRAFT, mevcut)
+- 16.2 Flyway V16 PG canonical (DRAFT, mevcut)
+- 16.3 ETL stand-alone worker (yapılacak)
+- 16.5 Source-read cutover (`*_MSSQL_ENABLED=false` flag)
+- 16.8 MSSQL decommission Aşama 1-5
+
+Bu cutover sonrasında Workcube ortak external bağımlılığı son bulacak; her realm kendi PG canonical'inde self-contained olacak.
+
+**dev realm self-containment rule** (Faz 17.1 hardening):
+- `local-authn-min` overlay'inden vault + workcube-mssql Service+Endpoints `$patch: delete` ile çıkarıldı
+- `dev-smoke.sh` D34 isolation gate eklendi (denylist: `10.9.10.53|10.9.193.201|ai.acik.com|testai.acik.com`)
+- `zanzibar-min/full` profile'larda lokal fake fixture eklenmesi gerekir (Faz 17.5 follow-up)
+
+---
+
 ## References
 
 - [ADR-0002](0002-single-host-dual-cluster.md) §0.5 D6 stateful tier (PG/KC/Vault compose permanent)
