@@ -138,6 +138,29 @@ data:
   SPRING_CLOUD_GATEWAY_ROUTES_15_URI: "http://permission-service:8090"
   SPRING_CLOUD_GATEWAY_ROUTES_15_PREDICATES_0: "Path=/api/audit/events/**"
 
+  # Faz 19.MSSQL.Q (2026-04-25) — /api/v1/roles route eksikti:
+  # mfe-access (RoleDrawer + roles.api.ts) + mfe-users (UserDetailDrawer) çağrıları:
+  #   GET    /api/v1/roles                         → list roles
+  #   GET    /api/v1/roles/{id}                    → role detail
+  #   POST   /api/v1/roles                         → create role
+  #   PUT    /api/v1/roles/{id}                    → update role
+  #   DELETE /api/v1/roles/{id}                    → delete role
+  #   POST   /api/v1/roles/{id}/clone              → clone
+  #   PUT    /api/v1/roles/{id}/permissions        → set permissions
+  #   PATCH  /api/v1/roles/{id}/permissions/bulk   → bulk add/remove
+  #   PUT    /api/v1/roles/{id}/granules           → granule update
+  #   GET    /api/v1/roles/{id}/members            → list members
+  #   POST   /api/v1/roles/{id}/members            → add members
+  #   DELETE /api/v1/roles/{id}/members/{userId}   → remove member
+  #   GET    /api/v1/roles/users/{id}/scopes       → list user scopes (AccessControllerV1)
+  #   POST   /api/v1/roles/users/{id}/scopes       → add user scope
+  #   DELETE /api/v1/roles/users/{id}/scopes/{type}/{ref} → remove scope
+  # Backend: permission-service AccessControllerV1 @RequestMapping("/api/v1/roles")
+  # NOT: StripPrefix YOK (controller path tam eşler).
+  SPRING_CLOUD_GATEWAY_ROUTES_16_ID: "permission-service-v1-roles-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_16_URI: "http://permission-service:8090"
+  SPRING_CLOUD_GATEWAY_ROUTES_16_PREDICATES_0: "Path=/api/v1/roles/**"
+
   # D7: Eureka yok → K8s svc DNS
   AUTH_SERVICE_URL: "http://auth-service:8088"
   # Dilim 2+:
