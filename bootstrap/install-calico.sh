@@ -52,6 +52,13 @@ metadata:
   name: default
 spec:
   calicoNetwork:
+    # Faz 20 (2026-04-25) — k3d gotcha: containerIPForwarding=Disabled (default) ile pod ns'de
+    # net.ipv4.ip_forward=0 kalır → pod'dan external LAN'a (10.9.193.0/24 Workcube MSSQL)
+    # routing FAIL. natOutgoing tek başına yetmiyor, ip_forward toggle gerek.
+    # Ref: k3d Calico guide allow_ip_forwarding requirement (k3d/discussions/914),
+    # Calico Installation API containerIPForwarding field, tigera/operator issue #1709.
+    # Bu fix bridge proxy workaround'unu (workcube-mssql-proxy-{prod,test}) decommission eder.
+    containerIPForwarding: Enabled
     ipPools:
       - blockSize: 26
         cidr: ${pod_cidr}
