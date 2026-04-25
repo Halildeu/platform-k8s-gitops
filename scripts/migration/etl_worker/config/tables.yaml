@@ -1,0 +1,64 @@
+# Faz 16.3 — ETL Tables Manifest (Codex iter-5 AGREE)
+# 40 tablo allowlist. Per-table:
+# - source_schema: workcube_mikrolink (canonical) veya parametric (workcube_mikrolink_1, _2, ...)
+# - idempotency_key: business PK kolon listesi (Codex iter-5: manifest zorunlu, runtime tahmin etmesin)
+# - parametric: bool (yıllık schema mode)
+# - source_year_column: parametric için fiscal year extraction
+# - reports: bu tablo hangi raporlarda kullanılır (audit)
+#
+# Manifest validation: etl-worker validate-manifest
+# Source uyuşmazlığı: fail-fast (PK mismatch, table not found)
+
+version: "1.0-DRAFT"
+contract_ref: "docs/migration/mssql-pg-data-contract.md"
+annex_ref: "docs/migration/report-source-annex.yaml"
+
+# ============================================================================
+# Canonical tables (snapshot var, generator full DDL)
+# ============================================================================
+
+tables:
+  - name: COMPANY
+    source_schema: workcube_mikrolink
+    parametric: false
+    idempotency_key: [COMPANY_ID]  # TODO confirm with Workcube admin
+    reports: [fin-company-listing]  # placeholder
+    notes: "113 kolon, snapshot canonical. PK manuel verify gerek (snapshot pk:false)."
+
+  - name: COMPANY_PARTNER
+    source_schema: workcube_mikrolink
+    parametric: false
+    idempotency_key: [COMPANYP_ID]  # TODO verify
+    reports: [fin-company-partners]
+    notes: "Partner relations."
+
+  - name: BRANCH
+    source_schema: workcube_mikrolink
+    parametric: false
+    idempotency_key: [BRANCH_ID]  # TODO verify
+    reports: [fin-branch-listing]
+    notes: "Branches/locations."
+
+  # TODO: kalan 17 matched canonical tablo + 17 parametric tablo
+
+# ============================================================================
+# Parametric tables (snapshot eksik — Faz 16.2.P sprint sonrası eklenir)
+# ============================================================================
+
+# Örnek (placeholder):
+# - name: BANK_ACTIONS
+#   source_schemas: [workcube_mikrolink_1]  # 2024
+#   parametric: true
+#   idempotency_key: [BANK_ACTION_ID]
+#   reports: [fin-banka-hareketleri, fin-nakit-akis-ozet]
+#   notes: "TODO_PARAMETRIC_SCHEMA_SNAPSHOT_REQUIRED"
+
+# ============================================================================
+# Validation rules (Codex iter-5)
+# ============================================================================
+
+validation:
+  fail_on_pk_mismatch: true       # idempotency_key INFORMATION_SCHEMA'da yoksa abort
+  fail_on_missing_table: true      # tablo MSSQL'de yoksa abort
+  warn_on_extra_columns: true      # snapshot'tan fazla kolon varsa warn (drift)
+  max_reject_ratio_default: 0.0    # cutover: 0; dry-run: 0.05 (override CLI)
