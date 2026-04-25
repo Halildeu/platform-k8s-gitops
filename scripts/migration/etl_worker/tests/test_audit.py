@@ -19,7 +19,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from etl_worker.audit import AUDIT_SCHEMA, AuditModule, RejectRecord
+from etl_worker.audit import (
+    AUDIT_SCHEMA,
+    DB_MODE_VALUES,
+    AuditModule,
+    RejectRecord,
+    normalize_mode,
+)
 
 
 # ============================================================================
@@ -74,6 +80,51 @@ def test_create_run_inserts_running_row(audit, mock_conn):
     assert params[0] == "11111111-1111-1111-1111-111111111111"
     assert params[1] == "initial"
     assert params[2] == "workcube_mikrolink"
+
+
+# ============================================================================
+# Mode normalization (Codex iter-8)
+# ============================================================================
+
+def test_normalize_mode_hyphen_to_underscore():
+    """CLI hyphen modes must map to DB CHECK constraint underscore values."""
+    assert normalize_mode("initial") == "initial"
+    assert normalize_mode("final-delta") == "final_delta"
+    assert normalize_mode("reconcile-only") == "reconcile_only"
+    assert normalize_mode("dry-run") == "dry_run"
+
+
+def test_normalize_mode_idempotent_underscore():
+    """Already-canonical underscore form passes through."""
+    assert normalize_mode("final_delta") == "final_delta"
+    assert normalize_mode("dry_run") == "dry_run"
+
+
+def test_normalize_mode_unknown_raises():
+    with pytest.raises(ValueError):
+        normalize_mode("BOGUS")
+
+
+def test_db_mode_values_match_v16_check_constraint():
+    """Sanity check that the canonical DB values match the V16 DDL CHECK
+    constraint exactly. Drift here = audit insert constraint violation."""
+    assert DB_MODE_VALUES == {"initial", "final_delta", "reconcile_only", "dry_run"}
+
+
+def test_create_run_normalizes_mode(audit, mock_conn):
+    """`final-delta` from CLI must be inserted as `final_delta` in audit."""
+    audit.create_run(
+        run_id="rid-fd",
+        mode="final-delta",
+        source_database="wm",
+    )
+    params = mock_conn._cur.execute.call_args.args[1]
+    assert params[1] == "final_delta"  # normalized for CHECK constraint
+
+
+def test_create_run_rejects_unknown_mode(audit):
+    with pytest.raises(ValueError):
+        audit.create_run(run_id="rid", mode="garbage", source_database="wm")
 
 
 def test_update_run_status_success(audit, mock_conn):

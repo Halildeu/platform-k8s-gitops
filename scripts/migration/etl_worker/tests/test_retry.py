@@ -131,6 +131,20 @@ def test_classify_invalid_authorization_critical():
     assert classify_error(e) == RetryClass.CRITICAL
 
 
+def test_classify_program_limit_exceeded_critical():
+    """Codex iter-8: SQLSTATE class 54 (program_limit_exceeded) → CRITICAL.
+    Examples: too many columns, statement too complex, too many arguments."""
+    for sqlstate in ("54000", "54001", "54011", "54023"):
+        e = _err(psycopg.errors.Error, sqlstate)
+        assert classify_error(e) == RetryClass.CRITICAL, sqlstate
+
+
+def test_classify_unknown_54_class_critical():
+    """Class-level fallback for unknown 54XXX codes."""
+    e = _err(psycopg.errors.Error, "54ZZZ")
+    assert classify_error(e) == RetryClass.CRITICAL
+
+
 # ============================================================================
 # Class-level fallback (SQLSTATE class prefix)
 # ============================================================================
@@ -224,12 +238,24 @@ def test_threshold_final_delta_strict():
     assert p.should_abort(rejected=0, processed=10000) is False
 
 
+def test_threshold_final_delta_strict_zero_processed():
+    """Codex iter-8: final-delta must abort even when processed==0 (e.g.
+    transform reject before any row hit PG). The zero-processed guard must
+    not mask the strict contract."""
+    p = ThresholdPolicy(mode="final-delta", max_reject_ratio=0.0)
+    assert p.should_abort(rejected=1, processed=0) is True
+    assert p.should_abort(rejected=0, processed=0) is False
+
+
 def test_threshold_dry_run_never_aborts():
     p = ThresholdPolicy(mode="dry-run", max_reject_ratio=0.0)
     assert p.should_abort(rejected=999_999, processed=1) is False
 
 
 def test_threshold_zero_processed():
-    """Avoid divide-by-zero when nothing has been processed yet."""
+    """Avoid divide-by-zero when nothing has been processed yet (initial mode)."""
     p = ThresholdPolicy(mode="initial", max_reject_ratio=0.0)
     assert p.should_abort(rejected=0, processed=0) is False
+    # In initial mode, 1 reject + 0 processed is also not aborted (degenerate);
+    # only final-delta makes that strict.
+    assert p.should_abort(rejected=1, processed=0) is False

@@ -24,6 +24,42 @@ AUDIT_SCHEMA = "migration_audit"
 
 
 # ============================================================================
+# Mode canonicalization (Codex iter-8)
+# ============================================================================
+#
+# CLI uses hyphen-spelled modes (`final-delta`, `reconcile-only`, `dry-run`)
+# because Click options conventionally use hyphens. The V16 audit DDL CHECK
+# constraint accepts underscore variants (`final_delta`, `reconcile_only`,
+# `dry_run`). All audit writes go through this normalization to keep the
+# CLI surface stable while satisfying the DB constraint.
+
+DB_MODE_VALUES = {"initial", "final_delta", "reconcile_only", "dry_run"}
+
+_CLI_TO_DB_MODE = {
+    "initial": "initial",
+    "final-delta": "final_delta",
+    "final_delta": "final_delta",
+    "reconcile-only": "reconcile_only",
+    "reconcile_only": "reconcile_only",
+    "dry-run": "dry_run",
+    "dry_run": "dry_run",
+}
+
+
+def normalize_mode(mode: str) -> str:
+    """Map CLI-facing mode string to the DB CHECK constraint value.
+
+    Raises ValueError on unknown modes so we fail before INSERT instead of
+    surfacing a constraint violation deep in the run.
+    """
+    if mode not in _CLI_TO_DB_MODE:
+        raise ValueError(
+            f"unknown mode {mode!r}; expected one of {sorted(_CLI_TO_DB_MODE)}"
+        )
+    return _CLI_TO_DB_MODE[mode]
+
+
+# ============================================================================
 # Data classes (typed payloads)
 # ============================================================================
 
@@ -108,7 +144,13 @@ class AuditModule:
         started_by: str | None = None,
         notes: dict[str, Any] | None = None,
     ) -> None:
-        """Insert a new RUNNING migration_runs row."""
+        """Insert a new RUNNING migration_runs row.
+
+        `mode` accepts CLI-spelled values (`final-delta`, `dry-run`,
+        `reconcile-only`) and is normalized to the DB CHECK form
+        (`final_delta`, `dry_run`, `reconcile_only`) before INSERT.
+        """
+        db_mode = normalize_mode(mode)
         with self.conn.cursor() as cur:
             cur.execute(
                 sql.SQL(
@@ -119,7 +161,7 @@ class AuditModule:
                 ).format(schema=sql.Identifier(AUDIT_SCHEMA)),
                 (
                     run_id,
-                    mode,
+                    db_mode,
                     source_database,
                     worker_version,
                     git_sha,
@@ -129,7 +171,7 @@ class AuditModule:
                     json.dumps(notes or {}),
                 ),
             )
-        log.info("audit.run.created run_id=%s mode=%s", run_id, mode)
+        log.info("audit.run.created run_id=%s mode=%s db_mode=%s", run_id, mode, db_mode)
 
     def update_run_status(
         self,

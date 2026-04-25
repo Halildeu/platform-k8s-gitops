@@ -108,7 +108,13 @@ def inspect_source(ctx: click.Context, tables: str | None) -> None:
 
 
 @main.command("run")
-@click.option("--mode", type=click.Choice(["initial", "final-delta", "reconcile-only", "dry-run"]), required=True)
+@click.option(
+    "--mode",
+    type=click.Choice(["initial", "final-delta", "reconcile-only", "dry-run"]),
+    required=False,
+    default=None,
+    help="Required for new runs; ignored on --resume (mode read from audit).",
+)
 @click.option("--run-id", default=None, help="UUID (auto-generated if omitted)")
 @click.option("--tables", help="CSV (default: manifest all)")
 @click.option("--limit", type=int, default=None, help="Per-table row limit (dry-run helper)")
@@ -117,7 +123,7 @@ def inspect_source(ctx: click.Context, tables: str | None) -> None:
 @click.pass_context
 def run(
     ctx: click.Context,
-    mode: str,
+    mode: str | None,
     run_id: str | None,
     tables: str | None,
     limit: int | None,
@@ -128,19 +134,14 @@ def run(
     if resume and not run_id:
         click.echo("FAIL: --resume requires --run-id", err=True)
         sys.exit(2)
+    if not resume and mode is None:
+        click.echo("FAIL: --mode is required for new runs (use --resume to continue an existing run)", err=True)
+        sys.exit(2)
 
     rid = run_id or str(uuid.uuid4())
-    log.info(
-        "run.start",
-        run_id=rid,
-        mode=mode,
-        tables=tables,
-        limit=limit,
-        dry_run=dry_run,
-        resume=resume,
-    )
 
     if dry_run:
+        log.info("run.start", run_id=rid, mode=mode, tables=tables, limit=limit, dry_run=True, resume=False)
         click.echo(f"DRY RUN — would extract {tables or 'all'} (limit={limit})")
         click.echo("Gün 4 PoC: MSSQL extract + PG raw staging COPY only.")
         click.echo("Gün 5+: transform + final load + idempotent upsert.")
@@ -156,24 +157,37 @@ def run(
             config: Config = ctx.obj["config"]
             with psycopg.connect(config.pg_dsn, autocommit=True) as audit_conn:
                 audit = AuditModule(audit_conn)
+                run_record = audit.get_run(rid)
                 state = audit.get_resume_state(rid)
         except Exception as e:
             click.echo(f"FAIL: resume state lookup error: {e}", err=True)
             sys.exit(2)
 
+        if run_record is None:
+            click.echo(f"FAIL: run_id={rid} not found in migration_runs", err=True)
+            sys.exit(2)
         if not state:
-            click.echo(f"FAIL: no audit state found for run_id={rid}", err=True)
+            click.echo(
+                f"FAIL: no migration_table_state rows for run_id={rid} "
+                "(was the run created but never started a table?)",
+                err=True,
+            )
             sys.exit(2)
 
+        # Mode comes from the audit row, not the user (Codex iter-8 fix).
+        log.info("run.start", run_id=rid, mode=run_record["mode"], resume=True)
         skipped = sum(1 for v in state.values() if v["status"] == "VALIDATED")
         pending = len(state) - skipped
         click.echo(f"RESUME plan — run_id={rid}")
-        click.echo(f"  total table_state rows : {len(state)}")
+        click.echo(f"  audit mode              : {run_record['mode']}")
+        click.echo(f"  audit status            : {run_record['status']}")
+        click.echo(f"  total table_state rows  : {len(state)}")
         click.echo(f"  validated (skip)        : {skipped}")
         click.echo(f"  pending / loading       : {pending}")
         click.echo("Orchestrator wiring is implemented in Day 7 dry-run.")
         return
 
+    log.info("run.start", run_id=rid, mode=mode, tables=tables, limit=limit, dry_run=False, resume=False)
     click.echo("FULL RUN — Gün 7 orchestrator gerek (TODO)")
     sys.exit(2)
 
@@ -201,6 +215,16 @@ def status(ctx: click.Context, run_id: str, as_json: bool) -> None:
         click.echo(f"FAIL: run_id={run_id} not found in migration_runs", err=True)
         sys.exit(2)
 
+    # Codex iter-8: normalize buckets so all 5 statuses are present (zero-fill)
+    # in both human and JSON output. Hidden zeros = SRE triage ambiguity.
+    _ZERO_BUCKET = {"tables": 0, "rows_extracted": 0, "rows_loaded": 0, "rows_rejected": 0}
+    raw_buckets = summary.get("buckets", {}) or {}
+    buckets = {
+        st: dict(raw_buckets.get(st, _ZERO_BUCKET))
+        for st in ("PENDING", "EXTRACTING", "LOADING", "VALIDATED", "FAILED")
+    }
+    summary["buckets"] = buckets
+
     if as_json:
         click.echo(json.dumps(summary, default=str, indent=2))
         return
@@ -217,19 +241,13 @@ def status(ctx: click.Context, run_id: str, as_json: bool) -> None:
 
     click.echo("")
     click.echo("table_state buckets:")
-    buckets = summary.get("buckets", {})
-    if not buckets:
-        click.echo("  (no table_state rows)")
-    else:
-        for st in ("PENDING", "EXTRACTING", "LOADING", "VALIDATED", "FAILED"):
-            b = buckets.get(st)
-            if not b:
-                continue
-            click.echo(
-                f"  {st:<12} tables={b['tables']:<5} "
-                f"extracted={b['rows_extracted']} loaded={b['rows_loaded']} "
-                f"rejected={b['rows_rejected']}"
-            )
+    for st in ("PENDING", "EXTRACTING", "LOADING", "VALIDATED", "FAILED"):
+        b = buckets[st]
+        click.echo(
+            f"  {st:<12} tables={b['tables']:<5} "
+            f"extracted={b['rows_extracted']} loaded={b['rows_loaded']} "
+            f"rejected={b['rows_rejected']}"
+        )
 
     click.echo("")
     click.echo(f"reject_total  : {summary.get('reject_total', 0)}")

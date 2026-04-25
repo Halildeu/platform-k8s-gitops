@@ -74,6 +74,11 @@ _CRITICAL_SQLSTATES = {
     "53200",  # out_of_memory
     "53300",  # too_many_connections
     "53400",  # configuration_limit_exceeded
+    # Class 54 — program_limit_exceeded (Codex iter-8 add)
+    "54000",  # program_limit_exceeded
+    "54001",  # statement_too_complex
+    "54011",  # too_many_columns
+    "54023",  # too_many_arguments
     "42P01",  # undefined_table
     "42703",  # undefined_column
     "42P07",  # duplicate_table (schema mismatch)
@@ -112,7 +117,7 @@ def classify_error(exc: BaseException) -> RetryClass:
             return RetryClass.TRANSIENT
         if cls in {"22", "23"}:
             return RetryClass.NO_RETRY
-        if cls in {"53", "58", "XX", "3D", "3F", "28", "42"}:
+        if cls in {"53", "54", "58", "XX", "3D", "3F", "28", "42"}:
             return RetryClass.CRITICAL
         return RetryClass.NO_RETRY
 
@@ -194,13 +199,20 @@ class ThresholdPolicy:
     max_reject_ratio: float
 
     def should_abort(self, rejected: int, processed: int) -> bool:
+        # dry-run: never aborts (rejects audit-only).
         if self.mode == "dry-run":
             return False
+
+        # Codex iter-8: final-delta strict — abort on FIRST reject regardless
+        # of processed count. This must run before the processed<=0 guard so
+        # that a "transform reject before any row hits PG" still aborts the
+        # cutover. The guard is only meaningful for ratio-based modes.
+        if self.mode == "final-delta":
+            return rejected > 0
+
         if processed <= 0:
             return False
         ratio = rejected / processed
-        if self.mode == "final-delta":
-            return ratio > 0.0  # strict
         return ratio > self.max_reject_ratio
 
 
