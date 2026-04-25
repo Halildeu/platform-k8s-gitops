@@ -1440,6 +1440,42 @@ Default'tan sapma varsa override:
 
 ---
 
+### Faz 20 — Calico Routing Root Cause Fix — **COMPLETE (2026-04-25 19:00 UTC)**
+
+**Bağlam**: Faz 19.MSSQL.F'te Calico VXLAN overlay'den external 10.9.193.0/24 LAN'a routing fail tespit edilmişti. Workaround: alpine/socat bridge proxy container per-cluster (workcube-mssql-proxy-{prod,test}). Bu kalıcı çözüm değildi.
+
+**Root cause** (Calico research subagent verdict): K3d gotcha — Calico `Installation` CR'de `containerIPForwarding` default `Disabled`. Bu, CNI ConfigMap `"allow_ip_forwarding": false` üretir → pod ns'de `net.ipv4.ip_forward=0` → external LAN routing FAIL. `natOutgoing: Enabled` tek başına yetmiyor; ip_forward + natOutgoing iki ayar birbirini tamamlar.
+
+**Fix** (PR #136 MERGED): `bootstrap/install-calico.sh` Installation CR'a `spec.calicoNetwork.containerIPForwarding: Enabled` eklendi (1/10 karmaşıklık).
+
+**Live proof** (D29 3-katman):
+| Katman | Test | Sonuç |
+|---|---|---|
+| Up | calico-node DaemonSet rolling restart (test+prod) | Running ✓ |
+| Functional | Synthetic pod `cat /proc/sys/net/ipv4/ip_forward` | `1` ✓ |
+| External routing | `nc -zv -w5 8.8.8.8 53` (test+prod) | OPEN ✓ |
+| Bridge proxy parallel | `nc 172.19.0.8:11433` (test) / `172.21.0.7:11433` (prod) | OPEN ✓ (decommission'a kadar warm) |
+
+**Bridge proxy decommission** (deferred ayrı sprint, atomic risk):
+- Service port: `11433` → `1433`
+- Endpoints IP: `172.19.0.8` (test) / `172.21.0.7` (prod) → `10.9.193.201`
+- NetPol `allow-egress-workcube-mssql` cidr+port güncelle
+- Vault `kv/platform/mssql-external` JDBC URL `:11433` → `:1433`
+- ESO refresh + report-service + schema-service rollout restart
+- Bridge container'ları docker rm
+
+Kullanıcı feedback: "atomic Vault + manifest swap risk var — mevcut bridge proxy çalışıyor, decommission iyileştirme/optional".
+
+**Codex thread**: research subagent verdict (k3d Calico guide + Installation API + tigera/operator #1709)
+
+#### Bağlantılar (Faz 20)
+
+- PR #136 (containerIPForwarding=Enabled)
+- ADR-0005 Dual DataSource Reporting (Faz 19.MSSQL.A — bridge proxy strateji unutulmadı)
+- Codex research subagent (web search + Calico docs analizi)
+
+---
+
 ### Faz 18 Eski Bağlantılar (historical reference)
 
 - ADR-0002 D6 (stateful tier compose, değişmez)
