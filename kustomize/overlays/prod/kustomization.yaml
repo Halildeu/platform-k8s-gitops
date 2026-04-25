@@ -52,7 +52,7 @@ images:
   # Frontend prod variant (ai.acik.com + serban realm)
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
-    digest: sha256:1427cdc54721aaf0530cfe863c61f3a09360db7238afb8317aaf68aee9f3f801
+    digest: sha256:d02156e5841601d329c13fbd9aaf3f5d9a5f9a528f637a263222c4e419d9f33f
 
 patches:
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz replace
