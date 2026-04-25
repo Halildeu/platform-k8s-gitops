@@ -1456,22 +1456,39 @@ Default'tan sapma varsa override:
 | External routing | `nc -zv -w5 8.8.8.8 53` (test+prod) | OPEN ✓ |
 | Bridge proxy parallel | `nc 172.19.0.8:11433` (test) / `172.21.0.7:11433` (prod) | OPEN ✓ (decommission'a kadar warm) |
 
-**Bridge proxy decommission** (deferred ayrı sprint, atomic risk):
-- Service port: `11433` → `1433`
-- Endpoints IP: `172.19.0.8` (test) / `172.21.0.7` (prod) → `10.9.193.201`
-- NetPol `allow-egress-workcube-mssql` cidr+port güncelle
-- Vault `kv/platform/mssql-external` JDBC URL `:11433` → `:1433`
-- ESO refresh + report-service + schema-service rollout restart
-- Bridge container'ları docker rm
+**Bridge proxy decommission DONE** (2026-04-25 19:30 UTC, PR #138 MERGED + LIVE apply):
 
-Kullanıcı feedback: "atomic Vault + manifest swap risk var — mevcut bridge proxy çalışıyor, decommission iyileştirme/optional".
+Atomic swap pattern — Vault URL rotation YOK:
+- Service `port: 11433` (Vault JDBC URL backward compat) + `targetPort: 1433` (Endpoints'e iletilen)
+- Endpoints `IP: 10.9.193.201, port: 1433` (her iki cluster aynı, direct LAN)
+- NetPol `cidr: 10.9.193.201/32, port: 1433`
+- `bootstrap/workcube-mssql-proxy.sh` → `bootstrap/archived/...faz-20-decommissioned`
+
+Apply sıralaması (D29 + D30 atomic):
+1. PR #138 merged → staging-sw git pull
+2. Test cluster apply 3 manifest → smoke /api/v1/reports + /api/v1/schema/snapshot 200
+3. Prod cluster apply 3 manifest → smoke (anon health 401 doğru shape)
+4. `docker stop+rm workcube-mssql-proxy-{test,prod}` → 2 container silindi
+5. Final compose state: 16 → **13 container** (tamamı bilinçli mimari)
+
+Live proof (test cluster):
+- /api/v1/reports → 200 (MSSQL connection direct)
+- /api/v1/dashboards → 200
+- /api/v1/schema/snapshot → 200 + 3.6 MB + 1509 tablo + 26240 kolon
+
+**Compose stack final state** (13 container):
+- D6 stateful: pg-{prod,test}, kc-{prod,test}, vault-{prod,test} = 6
+- Edge nginx (D8/D18): platform-web-nginx, platform-web-nginx-stage = 2
+- K3d cluster infra: k3d-{prod,test}-{server-0,serverlb} = 4
+- Test registry: platform-test-registry = 1
 
 **Codex thread**: research subagent verdict (k3d Calico guide + Installation API + tigera/operator #1709)
 
 #### Bağlantılar (Faz 20)
 
-- PR #136 (containerIPForwarding=Enabled)
-- ADR-0005 Dual DataSource Reporting (Faz 19.MSSQL.A — bridge proxy strateji unutulmadı)
+- PR #136 (containerIPForwarding=Enabled — root cause fix)
+- PR #138 (bridge proxy decommission — atomic swap pattern)
+- ADR-0005 Dual DataSource Reporting (bridge proxy → direct routing)
 - Codex research subagent (web search + Calico docs analizi)
 
 ---
