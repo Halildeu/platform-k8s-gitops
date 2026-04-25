@@ -45,6 +45,26 @@ Her deploy/cutover 3 katman ayrı kanıt:
 
 Weighted DNS (%10/50/100) YASAK. Dış proxy L4 backend atomic switch. T+72h staging-sw compose frozen+ayakta (rollback pointer).
 
+### 7. SSH + sudo + kubectl yetkisi (genel kural — kullanıcı 2026-04-25 onayı)
+
+Agent'ın **staging-sw sunucusuna SSH** ile erişim ve kubectl operasyonlarını **kullanıcıdan tekrar onay almadan** yapma yetkisi vardır. Bu yetki:
+
+- `ssh halil@staging-sw "<command>"` — SSH komut çalıştırma
+- `kubectl --context k3d-{test,prod} -n platform-{test,prod} ...` — read+write
+- ConfigMap selective apply (D17 koruma kuralına uygun, full overlay apply YASAK)
+- Deployment rollout restart
+- Pod logs, exec (debug için, kullanıcı bilgisi sızdırmadan)
+- Sudo gerektiren ops işlemleri (örn. host nginx reload, edge release switch)
+
+**İstisnalar (yine de onay gerek):**
+- Prod cluster'a destructive değişiklik (D30 atomic cutover öncesi açık karar)
+- Yeni image build/push (kullanıcı kaynak kod değişimi gördüğünde implicit ok)
+- Kullanıcı credentials kullanımı (admin password gibi — kullanıcı paylaşırsa ok)
+
+**Mantık:** Kullanıcı zaten sunucuya ortak (sürekli sunucudayım), her komutu agent vs kullanıcı koşması arasında pratik fark yok; ama otomasyonu agent yapıyor ki copy-paste workflow olmasın.
+
+User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak kural olarak ekle genel kural"
+
 ## Pattern'ler
 
 ### Kustomize Overlay
