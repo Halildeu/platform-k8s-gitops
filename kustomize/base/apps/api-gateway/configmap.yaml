@@ -97,6 +97,37 @@ data:
   SPRING_CLOUD_GATEWAY_ROUTES_8_URI: "http://variant-service:8091"
   SPRING_CLOUD_GATEWAY_ROUTES_8_PREDICATES_0: "Path=/api/v1/variants/**"
 
+  # Faz 19.MSSQL.M (2026-04-25) — v1 public routes (frontend canonical paths)
+  # Test cluster e2e simülasyon ile bulunan eksik route'lar:
+  # - report/dashboard frontend `/api/v1/{reports,dashboards}` çağırır
+  # - schema-explorer frontend `/api/v1/schema/...` çağırır
+  # - mfe-users `/api/v1/users` + mfe-access `/api/v1/permissions` çağırır
+  # - mfe-audit `/api/audit/events` çağırır (v1 prefix YOK, controller @RequestMapping("/api/audit/events"))
+  # NOT: StripPrefix YOK — controller'lar /api/v1/<svc> tam path bekliyor.
+  SPRING_CLOUD_GATEWAY_ROUTES_9_ID: "report-service-v1-public-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_9_URI: "http://report-service:8095"
+  SPRING_CLOUD_GATEWAY_ROUTES_9_PREDICATES_0: "Path=/api/v1/reports/**"
+
+  SPRING_CLOUD_GATEWAY_ROUTES_10_ID: "dashboard-service-v1-public-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_10_URI: "http://report-service:8095"
+  SPRING_CLOUD_GATEWAY_ROUTES_10_PREDICATES_0: "Path=/api/v1/dashboards/**"
+
+  SPRING_CLOUD_GATEWAY_ROUTES_11_ID: "schema-service-v1-public-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_11_URI: "http://schema-service:8096"
+  SPRING_CLOUD_GATEWAY_ROUTES_11_PREDICATES_0: "Path=/api/v1/schema/**"
+
+  SPRING_CLOUD_GATEWAY_ROUTES_12_ID: "user-service-v1-public-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_12_URI: "http://user-service:8089"
+  SPRING_CLOUD_GATEWAY_ROUTES_12_PREDICATES_0: "Path=/api/v1/users/**"
+
+  SPRING_CLOUD_GATEWAY_ROUTES_13_ID: "permission-service-v1-permissions-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_13_URI: "http://permission-service:8090"
+  SPRING_CLOUD_GATEWAY_ROUTES_13_PREDICATES_0: "Path=/api/v1/permissions/**"
+
+  SPRING_CLOUD_GATEWAY_ROUTES_14_ID: "user-service-audit-events-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_14_URI: "http://user-service:8089"
+  SPRING_CLOUD_GATEWAY_ROUTES_14_PREDICATES_0: "Path=/api/audit/events/**,/api/audit/events"
+
   # D7: Eureka yok → K8s svc DNS
   AUTH_SERVICE_URL: "http://auth-service:8088"
   # Dilim 2+:
