@@ -4,10 +4,13 @@ kind: ConfigMap
 metadata:
   name: report-service-config
 data:
-  # Host-level bağımlılıklar — Service+Endpoints (D19) üzerinden
-  # Spring Boot convention env: SPRING_DATASOURCE_URL, SPRING_DATASOURCE_USERNAME,
-  # SPRING_DATASOURCE_PASSWORD (username/password Secret'tan gelir)
-  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/reports_db"
+  # ADR-0005 Dual DataSource Reporting (Faz 19.MSSQL activation)
+  # Primary spring.datasource = Workcube MSSQL (read-only live, ERP)
+  #   → REPORT_MSSQL_JDBC_URL/USERNAME/PASSWORD ESO secret report-service-mssql-secrets'ten gelir
+  #   → application-k8s.yml içinde spring.datasource.url=${REPORT_MSSQL_JDBC_URL:}
+  # Secondary report.postgres = platform metadata (custom_reports, alerts, schedules)
+  REPORT_PG_URL: "jdbc:postgresql://postgres:5432/reports_db"
+  REPORT_MSSQL_ENABLED: "false"   # WorkcubeMssqlConfig (PR #6) feature flag — secondary qualifier opt-in
 
   # Spring Boot
   SERVER_PORT: "8095"

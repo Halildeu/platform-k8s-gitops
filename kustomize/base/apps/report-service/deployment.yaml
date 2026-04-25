@@ -57,7 +57,10 @@ spec:
             - configMapRef:
                 name: report-service-config
             - secretRef:
-                name: report-service-secrets        # ESO tarafından Vault'tan dolar
+                name: report-service-secrets        # ESO Vault → JWT/Auth secrets
+            - secretRef:                            # Faz 19.MSSQL (ADR-0005) — Workcube creds
+                name: report-service-mssql-secrets  # ESO Vault → REPORT_MSSQL_JDBC_URL/USERNAME/PASSWORD
+                optional: true                      # ESO sync henüz tamamlanmamışsa pod start engellenmesin
           resources:
             requests:
               memory: "384Mi"       # D22: request dar
