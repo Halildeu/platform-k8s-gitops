@@ -91,6 +91,23 @@ User mesajı (2026-04-25): "ssh ile sudo yetkin var gerekli işlemleir yapmak ku
 
 User mesajı (2026-04-25): "durmak yok süreklid evam tüm işler biteene kadar otomaitk mode karar gerektğinde codex ile msp üzeri,nde otomaitk cevap al benim kararım sasyılacak kural olrak yaz bunu klıcı kural ana kural"
 
+### 9. No Fake Work / No Cosmetic Operations (KALICI ANA KURAL — kullanıcı 2026-04-25)
+
+**HARD RULE**: Sisteme gerçek fayda sağlamayan **fake/kozmetik iş yasak**. Görünür hareket / sıfır gerçek delta = adversarial yük; commit'leme, raporlama.
+
+Detay kural seti **global** (`~/.claude/CLAUDE.md` — "HARD RULE — No Fake Work / No Cosmetic Operations"). Repo-spesifik tetikleyiciler:
+
+- **Test koşmadan "tests added" merge etme** — pytest output paste'i veya CI run linki olmadan PR yeşil yapılmaz.
+- **Skeleton commit** (`# TODO: implement`) bağımsız PR olarak ayrı çıkmaz; ya impl ile birlikte ya hiç.
+- **Apply-without-verify**: `kubectl apply` sonrası `kubectl get` ile yeni state doğrulanmadan iş "done" sayılmaz.
+- **Codex AGREE = plan kanıtı, run kanıtı değil**; impl sonrası kanıt ayrı kapı.
+- **D29 disiplini ile uyumlu**: Up ≠ Functional ≠ Zanzibar-ready; her kapı için bağımsız çalıştırma kanıtı.
+- **Filter-repo / migration sonrası** "% byte-identical" iddiaları diff komutu çıktısı ile beraber raporlanır.
+
+**Karar kuralı (tek cümle)**: Her satır kod / her komut / her commit için *"Bu sistem state'ini doğrulanmış şekilde X→Y'e taşıdı mı, yoksa sadece görüntü mü verdi?"* — ikincisinde at, kullanıcıya rapor.
+
+User mesajı (2026-04-25): "fake işlem istemiyorum sisteme gereksi olup fayda sağlamayan işlerde istemiyorum bunu ana kural olarak ekle"
+
 ## Pattern'ler
 
 ### Kustomize Overlay

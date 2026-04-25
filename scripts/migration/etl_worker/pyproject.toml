@@ -30,6 +30,10 @@ etl-worker = "etl_worker.cli:main"
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["etl_worker*"]
+exclude = ["tests*"]
+
 [tool.ruff]
 line-length = 110
 target-version = "py312"

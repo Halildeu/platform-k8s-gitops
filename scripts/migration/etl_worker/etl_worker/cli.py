@@ -1,13 +1,18 @@
-"""Faz 16.3 — ETL Worker CLI (Codex iter-5 AGREE).
+"""Faz 16.3 — ETL Worker CLI (Codex iter-7 REVISE).
 
 Usage:
     etl-worker validate-manifest
     etl-worker inspect-source --tables COMPANY
     etl-worker run --mode initial --run-id <uuid> --tables COMPANY,COMPANY_PARTNER --dry-run
     etl-worker run --mode final-delta --run-id <uuid>
+    etl-worker run --mode initial --run-id <uuid> --resume
+    etl-worker status --run-id <uuid>
     etl-worker reconcile --run-id <uuid> --output docs/migration/reconcile-YYYYMMDD.md
 """
 
+from __future__ import annotations
+
+import json
 import sys
 import uuid
 from pathlib import Path
@@ -103,16 +108,37 @@ def inspect_source(ctx: click.Context, tables: str | None) -> None:
 
 
 @main.command("run")
-@click.option("--mode", type=click.Choice(["initial", "final-delta", "reconcile-only"]), required=True)
+@click.option("--mode", type=click.Choice(["initial", "final-delta", "reconcile-only", "dry-run"]), required=True)
 @click.option("--run-id", default=None, help="UUID (auto-generated if omitted)")
 @click.option("--tables", help="CSV (default: manifest all)")
 @click.option("--limit", type=int, default=None, help="Per-table row limit (dry-run helper)")
 @click.option("--dry-run", is_flag=True, help="Read-only, no write to PG")
+@click.option("--resume", is_flag=True, help="Resume an existing run; requires --run-id")
 @click.pass_context
-def run(ctx: click.Context, mode: str, run_id: str | None, tables: str | None, limit: int | None, dry_run: bool) -> None:
+def run(
+    ctx: click.Context,
+    mode: str,
+    run_id: str | None,
+    tables: str | None,
+    limit: int | None,
+    dry_run: bool,
+    resume: bool,
+) -> None:
     """ETL run — MSSQL extract → PG raw staging → transform → final."""
+    if resume and not run_id:
+        click.echo("FAIL: --resume requires --run-id", err=True)
+        sys.exit(2)
+
     rid = run_id or str(uuid.uuid4())
-    log.info("run.start", run_id=rid, mode=mode, tables=tables, limit=limit, dry_run=dry_run)
+    log.info(
+        "run.start",
+        run_id=rid,
+        mode=mode,
+        tables=tables,
+        limit=limit,
+        dry_run=dry_run,
+        resume=resume,
+    )
 
     if dry_run:
         click.echo(f"DRY RUN — would extract {tables or 'all'} (limit={limit})")
@@ -120,8 +146,93 @@ def run(ctx: click.Context, mode: str, run_id: str | None, tables: str | None, l
         click.echo("Gün 5+: transform + final load + idempotent upsert.")
         return
 
-    click.echo("FULL RUN — Gün 5+ implementation gerek (TODO)")
+    if resume:
+        # Read-only resume preview — actual orchestrator wires audit module.
+        try:
+            import psycopg
+
+            from etl_worker.audit import AuditModule
+
+            config: Config = ctx.obj["config"]
+            with psycopg.connect(config.pg_dsn, autocommit=True) as audit_conn:
+                audit = AuditModule(audit_conn)
+                state = audit.get_resume_state(rid)
+        except Exception as e:
+            click.echo(f"FAIL: resume state lookup error: {e}", err=True)
+            sys.exit(2)
+
+        if not state:
+            click.echo(f"FAIL: no audit state found for run_id={rid}", err=True)
+            sys.exit(2)
+
+        skipped = sum(1 for v in state.values() if v["status"] == "VALIDATED")
+        pending = len(state) - skipped
+        click.echo(f"RESUME plan — run_id={rid}")
+        click.echo(f"  total table_state rows : {len(state)}")
+        click.echo(f"  validated (skip)        : {skipped}")
+        click.echo(f"  pending / loading       : {pending}")
+        click.echo("Orchestrator wiring is implemented in Day 7 dry-run.")
+        return
+
+    click.echo("FULL RUN — Gün 7 orchestrator gerek (TODO)")
     sys.exit(2)
+
+
+@main.command("status")
+@click.option("--run-id", required=True, type=str)
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON")
+@click.pass_context
+def status(ctx: click.Context, run_id: str, as_json: bool) -> None:
+    """Show audit state for a run (counts per status bucket + reject total)."""
+    try:
+        import psycopg
+
+        from etl_worker.audit import AuditModule
+
+        config: Config = ctx.obj["config"]
+        with psycopg.connect(config.pg_dsn, autocommit=True) as conn:
+            audit = AuditModule(conn)
+            summary = audit.status_summary(run_id)
+    except Exception as e:
+        click.echo(f"FAIL: status query error: {e}", err=True)
+        sys.exit(2)
+
+    if summary["run"] is None:
+        click.echo(f"FAIL: run_id={run_id} not found in migration_runs", err=True)
+        sys.exit(2)
+
+    if as_json:
+        click.echo(json.dumps(summary, default=str, indent=2))
+        return
+
+    run = summary["run"]
+    click.echo(f"run_id        : {run['run_id']}")
+    click.echo(f"mode          : {run['mode']}")
+    click.echo(f"status        : {run['status']}")
+    click.echo(f"source_db     : {run['source_database']}")
+    click.echo(f"started_at    : {run['started_at']}")
+    click.echo(f"completed_at  : {run['completed_at']}")
+    if run.get("error_summary"):
+        click.echo(f"error_summary : {run['error_summary']}")
+
+    click.echo("")
+    click.echo("table_state buckets:")
+    buckets = summary.get("buckets", {})
+    if not buckets:
+        click.echo("  (no table_state rows)")
+    else:
+        for st in ("PENDING", "EXTRACTING", "LOADING", "VALIDATED", "FAILED"):
+            b = buckets.get(st)
+            if not b:
+                continue
+            click.echo(
+                f"  {st:<12} tables={b['tables']:<5} "
+                f"extracted={b['rows_extracted']} loaded={b['rows_loaded']} "
+                f"rejected={b['rows_rejected']}"
+            )
+
+    click.echo("")
+    click.echo(f"reject_total  : {summary.get('reject_total', 0)}")
 
 
 @main.command("reconcile")
