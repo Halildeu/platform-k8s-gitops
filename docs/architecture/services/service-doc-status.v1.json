@@ -1,0 +1,83 @@
+{
+  "version": "1.0",
+  "services": [
+    {
+      "name": "backend-docs",
+      "status": "supporting",
+      "runtime_expected": false,
+      "note": "Doküman migrasyonu ve mimari governance alanıdır."
+    },
+    {
+      "name": "api-gateway",
+      "status": "active",
+      "runtime_expected": true,
+      "note": "Çalışan ingress/runtime modülü vardır."
+    },
+    {
+      "name": "auth-service",
+      "status": "active",
+      "runtime_expected": true,
+      "note": "Çalışan auth/runtime modülü vardır."
+    },
+    {
+      "name": "core-data-service",
+      "status": "active",
+      "runtime_expected": true,
+      "note": "Çalışan master-data runtime modülü vardır."
+    },
+    {
+      "name": "discovery-server",
+      "status": "active",
+      "runtime_expected": true,
+      "note": "Çalışan service discovery runtime modülü vardır."
+    },
+    {
+      "name": "permission-service",
+      "status": "active",
+      "runtime_expected": true,
+      "note": "Çalışan backend modülü vardır."
+    },
+    {
+      "name": "user-service",
+      "status": "active",
+      "runtime_expected": true,
+      "note": "Çalışan backend modülü vardır."
+    },
+    {
+      "name": "variant-service",
+      "status": "active",
+      "runtime_expected": true,
+      "note": "Çalışan varyant/tema runtime modülü vardır."
+    },
+    {
+      "name": "approval-system",
+      "status": "plan_only",
+      "runtime_expected": false,
+      "note": "Doküman/ürün niyeti vardır; aktif backend modülü yoktur."
+    },
+    {
+      "name": "ethics-case-management",
+      "status": "plan_only",
+      "runtime_expected": false,
+      "note": "Doküman/ürün niyeti vardır; aktif backend modülü yoktur."
+    },
+    {
+      "name": "fleet-operations",
+      "status": "plan_only",
+      "runtime_expected": false,
+      "note": "Doküman/ürün niyeti vardır; aktif backend modülü yoktur."
+    },
+    {
+      "name": "ops",
+      "status": "plan_only",
+      "runtime_expected": false,
+      "note": "Doküman/ürün niyeti vardır; aktif backend modülü yoktur."
+    },
+    {
+      "name": "theme-system",
+      "status": "plan_only",
+      "runtime_expected": false,
+      "note": "Tema alanı fiilen variant-service içinde yaşar; ayrı runtime modül yoktur."
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "subject_id": "ui_kutuphane_sistemi",
+  "status": "ACTIVE",
+  "package_name": "mfe-ui-kit",
+  "package_manifest_path": "web/packages/ui-kit/package.json",
+  "preview_route": "/admin/design-lab",
+  "runtime_entry": "web/packages/ui-kit/src/index.ts",
+  "design_lab_page": "web/apps/mfe-shell/src/pages/admin/DesignLabPage.tsx",
+  "design_catalog_index_path": "web/apps/mfe-shell/src/pages/admin/design-lab.index.json",
+  "component_manifest_path": "web/packages/ui-kit/src/catalog/component-manifest.v1.json",
+  "component_registry_path": "web/packages/ui-kit/src/catalog/component-registry.v1.json",
+  "component_api_catalog_path": "web/packages/ui-kit/src/catalog/component-api-catalog.v1.json",
+  "required_scripts": [
+    "designlab:index",
+    "doctor:frontend",
+    "gate:ui-library-wave",
+    "gate:ui-library-release",
+    "publish:bundle",
+    "release:ui-library:manifest",
+    "release:ui-library"
+  ],
+  "required_artifacts": [
+    "web/packages/dist/ui-kit/remoteEntry.js",
+    "web/dist/ui-kit/remoteEntry.js",
+    "web/dist/ui-kit/ui-library-release-manifest.v1.json"
+  ],
+  "governance_rules": [
+    "registry_export_sync",
+    "single_ui_library",
+    "recipe_before_custom_ui",
+    "theme_contract_single_chain",
+    "no_runtime_antd_material"
+  ]
+}

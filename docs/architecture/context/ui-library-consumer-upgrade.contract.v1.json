@@ -1,0 +1,65 @@
+{
+  "version": "1.0",
+  "contract_id": "ui-library-consumer-upgrade-contract-v1",
+  "status": "ACTIVE",
+  "default_strategy": "manual-checklist",
+  "codemod_support": "dry-run-candidate",
+  "change_classes": [
+    {
+      "class_id": "patch-safe-lab-only",
+      "semver": "patch",
+      "review_level": "design-lab-only",
+      "description": "Stable ama henuz Design Lab disina cikmayan surface degisiklikleri."
+    },
+    {
+      "class_id": "minor-single-app-review",
+      "semver": "minor",
+      "review_level": "single-consumer",
+      "description": "Yalniz bir tuketici uygulamayi etkileyen public surface degisiklikleri."
+    },
+    {
+      "class_id": "minor-beta-external-review",
+      "semver": "minor",
+      "review_level": "beta-consumer",
+      "description": "Beta lifecycle ile dis uygulamalarda kullanilan surface degisiklikleri."
+    },
+    {
+      "class_id": "major-cross-app-review",
+      "semver": "major",
+      "review_level": "cross-consumer",
+      "description": "Birden fazla tuketici uygulamayi etkileyen public surface degisiklikleri."
+    }
+  ],
+  "playbook_tracks": [
+    {
+      "track_id": "package-import-review",
+      "label": "Package import review",
+      "automation": "manual-checklist",
+      "trigger": "public-export-change"
+    },
+    {
+      "track_id": "module-federation-review",
+      "label": "Module Federation review",
+      "automation": "manual-checklist",
+      "trigger": "remote-expose-change"
+    },
+    {
+      "track_id": "theme-runtime-review",
+      "label": "Theme runtime review",
+      "automation": "manual-checklist",
+      "trigger": "theme-runtime-change"
+    },
+    {
+      "track_id": "consumer-rollout-review",
+      "label": "Consumer rollout review",
+      "automation": "manual-checklist",
+      "trigger": "multi-app-adoption-change"
+    }
+  ],
+  "rules": [
+    "Single-app blast radius backlog'u release cockpit'te gorunur tutulur.",
+    "Cross-app impact tasiyan public surface degisiklikleri major review sinifina girer.",
+    "Codemod support dry-run-candidate seviyesine geldiyse candidate artefact ve audit sonucu zorunlu kabul edilir.",
+    "Consumer impact artefact'i, semver guidance ve migration track ile birlikte uretilmelidir."
+  ]
+}

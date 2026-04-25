@@ -1,0 +1,174 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-03-06",
+  "runtime_database": {
+    "engine": "postgresql",
+    "database": "users",
+    "current_schema_mode": "service-owned-schema",
+    "target_schema_mode": "service-owned-schema"
+  },
+  "isolated_rehearsal": {
+    "status": "passed",
+    "date": "2026-03-06",
+    "database": "schema_rehearsal",
+    "compose_file": "backend/devops/rehearsal/docker-compose.app-level-schema.yml",
+    "runner": "backend/scripts/ops/run-app-level-schema-rehearsal.sh",
+    "evidence": [
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/compose-ps.json",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/eureka-apps.xml",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/gateway-companies-headers.txt",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/gateway-companies-body.txt",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/schema-inventory.txt",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/admin-role-assignments.txt",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/flyway-history-counts.txt"
+    ]
+  },
+  "live_cutover": {
+    "status": "passed",
+    "date": "2026-03-06",
+    "database": "users",
+    "runner": "backend/scripts/ops/run-live-service-schema-cutover.sh",
+    "runbook": "docs/04-operations/RUNBOOKS/RB-live-service-schema-cutover.md",
+    "evidence": [
+      "backend/.autopilot-tmp/live-schema-cutover/pre/compose-ps.json",
+      "backend/.autopilot-tmp/live-schema-cutover/pre/users-pre-cutover.dump",
+      "backend/.autopilot-tmp/live-schema-cutover/post/compose-ps.json",
+      "backend/.autopilot-tmp/live-schema-cutover/post/api-gateway-health.json",
+      "backend/.autopilot-tmp/live-schema-cutover/post/eureka-apps.xml",
+      "backend/.autopilot-tmp/live-schema-cutover/post/gateway-companies-headers.txt",
+      "backend/.autopilot-tmp/live-schema-cutover/post/admin-role-assignments.txt",
+      "backend/.autopilot-tmp/live-schema-cutover/post/flyway-history-counts.txt",
+      "backend/.autopilot-tmp/live-schema-cutover/post/schema-inventory.txt"
+    ]
+  },
+  "service_schema_contract": [
+    {
+      "service": "auth-service",
+      "current_schema": "auth_service",
+      "target_schema": "auth_service",
+      "owned_tables": [
+        "auth_flyway_history",
+        "email_verification_tokens",
+        "password_reset_tokens"
+      ],
+      "status": "live_service_owned"
+    },
+    {
+      "service": "user-service",
+      "current_schema": "user_service",
+      "target_schema": "user_service",
+      "owned_tables": [
+        "user_flyway_history",
+        "users",
+        "user_audit_events",
+        "user_notification_preferences"
+      ],
+      "status": "live_service_owned"
+    },
+    {
+      "service": "permission-service",
+      "current_schema": "permission_service",
+      "target_schema": "permission_service",
+      "owned_tables": [
+        "permission_flyway_history",
+        "permissions",
+        "roles",
+        "role_permissions",
+        "user_role_assignments",
+        "permission_audit_events",
+        "scopes",
+        "user_permission_scope",
+        "authz_audit_log"
+      ],
+      "status": "live_service_owned"
+    },
+    {
+      "service": "variant-service",
+      "current_schema": "variant_service",
+      "target_schema": "variant_service",
+      "owned_tables": [
+        "variant_flyway_history",
+        "user_grid_variants",
+        "user_grid_variant_preferences",
+        "variant_visibility",
+        "themes",
+        "theme_registry",
+        "theme_registry_css_vars",
+        "theme_overrides",
+        "user_theme_selections"
+      ],
+      "status": "live_service_owned"
+    },
+    {
+      "service": "core-data-service",
+      "current_schema": "core_data_service",
+      "target_schema": "core_data_service",
+      "owned_tables": [
+        "core_data_flyway_history",
+        "companies"
+      ],
+      "status": "live_service_owned"
+    }
+  ],
+  "blockers": [
+    {
+      "id": "cross-service-seed-user-role-assignment",
+      "severity": "medium",
+      "owner_service": "permission-service",
+      "violating_service": "user-service",
+      "state": "managed_post_cutover_legacy_migration_debt",
+      "runtime_mitigation": "permission-service default admin role assignment bootstrap",
+      "evidence": [
+        "backend/user-service/src/main/resources/db/migration/V6__seed_admin_user.sql",
+        "backend/user-service/src/main/resources/db/migration/V8__seed_theme_admin_users.sql",
+        "backend/permission-service/src/main/java/com/example/permission/config/DefaultAdminRoleAssignmentInitializer.java",
+        "docs/02-architecture/runtime/legacy-flyway-cutover-plan.v1.json",
+        "backend/user-service/src/main/resources/db/migration_schema_owned/V1__create_user_schema.sql",
+        "backend/permission-service/src/main/resources/db/migration_schema_owned/V1__create_permission_schema.sql",
+        "backend/devops/postgres/02-offline-service-schema-cutover.sql",
+        "backend/.autopilot-tmp/cutover-rehearsal/post-cutover-inventory.txt"
+      ],
+      "reason": "user-service migration zinciri permission-service tablolari olan roles ve user_role_assignments alanina SQL seviyesinde dokunuyor. Mevcut uygulama checksum riski nedeniyle yerinde degistirilmedi; aktif runtime ownership permission-service bootstrap katmanina tasindi, live schema cutover tamamlandi ve borc artik runtime blocker degil legacy migration debt olarak izleniyor."
+    }
+  ],
+  "cutover_phases": [
+    {
+      "phase": "phase-0-contract",
+      "status": "done",
+      "deliverables": [
+        "service schema contract SQL",
+        "service config schema env keys",
+        "database isolation ADR"
+      ]
+    },
+    {
+      "phase": "phase-1-decouple-cross-service-seeds",
+      "status": "done",
+      "deliverables": [
+        "legacy V6/V8 migration coupling runtime tarafinda permission-service bootstrap ownership ile mitigated",
+        "user-service migration checksum riski dokumante edildi",
+        "legacy Flyway cutover plan artefacti eklendi"
+      ]
+    },
+    {
+      "phase": "phase-2-app-level-schema-rehearsal",
+      "status": "done",
+      "deliverables": [
+        "db/migration_schema_owned zincirleri ile izole app-level rehearsal",
+        "schema_rehearsal ortaminda health/eureka/gateway/admin assignment kaniti",
+        "permission-service qualified user-table ve auth-service local,docker profile rehearsal fixleri"
+      ]
+    },
+    {
+      "phase": "phase-3-live-schema-cutover",
+      "status": "done",
+      "deliverables": [
+        "tablolari hedef schemalara tasindi",
+        "service env schema degerleri hedef schema oldu",
+        "canli stack icin upgrade smoke kaniti uretildi",
+        "legacy-flyway-cutover-plan.v1.json referansina gore rollout/rollback paketi uygulandi",
+        "02-offline-service-schema-cutover.sql ve app-level rehearsal kaniti baz alinarak live cutover tamamlandi"
+      ]
+    }
+  ]
+}

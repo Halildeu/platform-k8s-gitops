@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "contract_id": "ui-library-consumer-codemod-prototypes-contract-v1",
+  "status": "ACTIVE",
+  "source_dir": "web/scripts/codemods/ui-library/prototypes",
+  "artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-prototypes.v1.json",
+  "audit_script": "audit:ui-library-codemod-prototypes",
+  "audit_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-prototypes.audit.v1.json",
+  "focus_components": [
+    "Empty",
+    "ReportFilterPanel",
+    "Select",
+    "Tag",
+    "Text",
+    "ThemePreviewCard"
+  ],
+  "required_sections": [
+    "rewritePreview",
+    "matchStrategy",
+    "manualValidation",
+    "rollbackPlan"
+  ],
+  "rules": [
+    "Prototype dosyalari her candidate icin kaynak JSON spec'i ve ayri TypeScript iskeleti tasir.",
+    "Rewrite preview alanlari illustrative kabul edilir; actual auto-apply davranisi uretmez.",
+    "Prototype audit PASS olmadan release manifest icindeki latestAudit ozeti guncel sayilmaz.",
+    "Prototype source'i ve summary artefact'i ayri drift yuzeyleri olarak release contract icinde dogrulanir."
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "subject_id": "ui_kutuphane_sistemi",
+  "status": "ACTIVE",
+  "package_name": "mfe-ui-kit",
+  "policy": "recipe_before_page_level_custom_ui",
+  "rules": [
+    "Yeni veya degisen sayfa bloklari once mevcut recipe ve page-block ailesinden tumeye denenir.",
+    "Raw custom UI ancak registry veya recipe boslugu kanitlanirsa kabul edilir.",
+    "Design Lab recipe gorunurlugu olmadan reusable page shell stable ilan edilmez."
+  ],
+  "evidence": [
+    "web/apps/mfe-shell/src/pages/admin/design-lab.index.json",
+    "web/tests/playwright/pw_scenarios.yml",
+    "web/test-results/diagnostics/ui-library-wave-gate/**/ui-library-wave-gate.summary.v1.json"
+  ]
+}

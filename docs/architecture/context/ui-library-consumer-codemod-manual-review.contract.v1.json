@@ -1,0 +1,33 @@
+{
+  "version": "1.0",
+  "contract_id": "ui-library-consumer-codemod-manual-review-contract-v1",
+  "status": "ACTIVE",
+  "input_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-candidates.v1.json",
+  "artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-manual-review.v1.json",
+  "audit_script": "audit:ui-library-codemod-manual-review",
+  "audit_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-manual-review.audit.v1.json",
+  "run_script": "run:ui-library-codemod-manual-review",
+  "review_mode": "manual-review-only",
+  "review_write_enabled": false,
+  "approval_model": "single-owner-direct-approval",
+  "decision_state_default": "owner_review_pending",
+  "default_owner_handles": [
+    "@halilkocoglu"
+  ],
+  "focus_components": [
+    "ReportFilterPanel",
+    "Select",
+    "Text"
+  ],
+  "focus_risk_levels": [
+    "medium",
+    "high"
+  ],
+  "rules": [
+    "Manual review artefact'i orta ve yuksek riskli single-app candidate'lari packet seviyesinde degerlendirir.",
+    "Runner yalniz selector/signal gozlemi, blocker paketi ve review evidence uretir; kaynak dosyalara yazmaz.",
+    "Review packet PASS olmadan release manifest icindeki latestAudit ozeti guncel sayilmaz.",
+    "Actual rewrite bu kontrat altinda acilmaz; sonuc yalniz owner review ve rollout karari icin kullanilir.",
+    "Approval modeli tek-sahip dogrudan onaydir; pending decision state operator review tamamlanana kadar korunur."
+  ]
+}

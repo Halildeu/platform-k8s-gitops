@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "contract_id": "ui-library-consumer-codemod-dry-run-contract-v1",
+  "status": "ACTIVE",
+  "input_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-candidates.v1.json",
+  "prototype_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-prototypes.v1.json",
+  "artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-dry-run.v1.json",
+  "audit_script": "audit:ui-library-codemod-dry-run",
+  "audit_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-dry-run.audit.v1.json",
+  "run_script": "run:ui-library-codemod-dry-run",
+  "execution_mode": "illustrative-dry-run",
+  "focus_components": [
+    "Empty",
+    "Tag",
+    "ThemePreviewCard"
+  ],
+  "rules": [
+    "Dry-run artefact'i yalniz dusuk riskli low-touch componentleri isler ve kaynak dosyalara yazmaz.",
+    "Runner her hedef dosyada proposed, already_normalized veya skipped sinyallerinden en az birini uretir.",
+    "Dry-run audit PASS olmadan release manifest icindeki latestAudit ozeti guncel sayilmaz.",
+    "Actual auto-apply davranisi bu kontrat altinda acilmaz; sonuc yalniz review ve rollout hazirlik sinyali uretir."
+  ]
+}

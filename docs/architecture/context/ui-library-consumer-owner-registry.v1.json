@@ -1,0 +1,16 @@
+{
+  "version": "1.0",
+  "contract_id": "ui-library-consumer-owner-registry-v1",
+  "status": "ACTIVE",
+  "codeowners_path": ".github/CODEOWNERS",
+  "default_owner_handles": [
+    "@halilkocoglu"
+  ],
+  "app_owner_overrides": [],
+  "rules": [
+    "Consumer app owner cozumlemesi once explicit override listesine, sonra CODEOWNERS fallback'ina bakar.",
+    "Override tanimsiz uygulamalar repo default owner ile eslenir; bos owner birakilmaz.",
+    "Upgrade checklist ve consumer impact artefact'lari owner resolution sonucunu ayni release turunda tasir.",
+    "App owner ayrismasi gerektiginde registry override listesi genisletilir; generated artefact elle degistirilmez."
+  ]
+}

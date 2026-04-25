@@ -1,0 +1,46 @@
+{
+  "version": "1.0",
+  "subject_id": "ui_kutuphane_sistemi",
+  "catalog_id": "ui-library-theme-preset-catalog-v1",
+  "source_of_truth": "web/design-tokens/generated/theme-contract.json",
+  "default_mode": "serban-light",
+  "presets": [
+    {
+      "preset_id": "enterprise_light_default",
+      "theme_mode": "serban-light",
+      "label": "Light",
+      "appearance": "light",
+      "density": "comfortable",
+      "is_default_mode": true
+    },
+    {
+      "preset_id": "operator_dark_focus",
+      "theme_mode": "serban-dark",
+      "label": "Dark",
+      "appearance": "dark",
+      "density": "comfortable",
+      "is_default_mode": false
+    },
+    {
+      "preset_id": "accessibility_high_contrast",
+      "theme_mode": "serban-hc",
+      "label": "High Contrast",
+      "appearance": "high-contrast",
+      "density": "comfortable",
+      "is_default_mode": false
+    },
+    {
+      "preset_id": "compact_workspace",
+      "theme_mode": "serban-compact",
+      "label": "Compact",
+      "appearance": "light",
+      "density": "compact",
+      "is_default_mode": false
+    }
+  ],
+  "rules": [
+    "Resmi presetler theme-contract allowedModes disina cikamaz.",
+    "Yeni preset eklenirse docs, preview, release notes ve Theme Admin ayni patch icinde guncellenir.",
+    "Preset adi docs ve runtime tarafinda ayni semantic kimlikle kullanilir."
+  ]
+}

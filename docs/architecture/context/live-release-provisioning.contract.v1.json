@@ -1,0 +1,99 @@
+{
+  "version": "1.0",
+  "contract_id": "live-release-provisioning-contract-v1",
+  "last_verified": "2026-03-06",
+  "purpose": "Canary ve DAST gibi live release guardrail'lerinin hangi secret/variable/hook kontrati ile fail-closed calisacagini tanimlar.",
+  "canary": {
+    "workflow": ".github/workflows/release-canary.yml",
+    "script": "backend/scripts/ops/release-canary.mjs",
+    "modes": {
+      "sample": {
+        "description": "Secret gerektirmeden sample metrics ile guardrail provasi.",
+        "required_inputs": []
+      },
+      "live": {
+        "description": "Gercek hook, metrics ve smoke endpoint'leri ile fail-closed canary.",
+        "required_secrets": [
+          "CANARY_ENABLED",
+          "CANARY_PROM_URL",
+          "GRAFANA_API_KEY|CANARY_API_KEY",
+          "CANARY_APPLY_WEIGHT_HOOK_URL|CANARY_WEIGHT_10_HOOK_URL",
+          "CANARY_ROLLBACK_HOOK_URL",
+          "CANARY_WEB_SMOKE_URL",
+          "CANARY_BACKEND_HEALTH_URLS"
+        ],
+        "required_variables": [
+          "CANARY_DEFAULT_MODE",
+          "CANARY_DEFAULT_ENV",
+          "CANARY_TTFB_QUERY",
+          "CANARY_ERROR_QUERY",
+          "CANARY_SENTRY_QUERY",
+          "CANARY_AUDIT_FILTER_QUERY",
+          "CANARY_AUDIT_TOTAL_QUERY"
+        ],
+        "fail_closed_rules": [
+          "CANARY_ENABLED=true degilse live mode skip edilir.",
+          "Weight hook veya genel apply hook yoksa orchestration fail olur.",
+          "Web smoke URL veya backend health listesi yoksa live canary fail olur.",
+          "Prom URL ve metrics query set'i yoksa live metrics toplama fail olur."
+        ]
+      }
+    },
+    "evidence": [
+      "backend/test-results/canary/**/canary.summary.v1.json",
+      "backend/test-results/canary/**/canary.summary.v1.md"
+    ]
+  },
+  "dast": {
+    "workflow": ".github/workflows/security-guardrails.yml",
+    "script": "backend/scripts/ci/security/run-dast.sh",
+    "required_secrets": [
+      "ZAP_TARGET_URL"
+    ],
+    "supported_auth_modes": [
+      {
+        "id": "none",
+        "required_variables": [],
+        "required_secrets": []
+      },
+      {
+        "id": "bearer_header",
+        "required_variables": [
+          "ZAP_AUTH_MODE",
+          "ZAP_AUTH_HEADER_NAME"
+        ],
+        "required_secrets": [
+          "ZAP_AUTH_HEADER_VALUE"
+        ],
+        "notes": "ZAP baseline replacer config ile HTTP request header enjekte edilir. Secret log'a yazilmaz."
+      }
+    ],
+    "fail_closed_rules": [
+      "Auth mode bearer_header ise header name/value olmadan DAST fail olur.",
+      "ZAP_TARGET_URL yoksa workflow notice verip DAST'i skip eder; bu durum live provisioning eksigi olarak kabul edilir."
+    ],
+    "evidence": [
+      "backend/test-results/security/zap/zap-report.json",
+      "backend/test-results/security/zap/zap-report.html",
+      "backend/test-results/security/zap/zap-report.xml"
+    ]
+  },
+  "registry_bindings": [
+    "docs/00-handbook/AUTH-REGISTRY.tsv"
+  ],
+  "non_loggable_fields": [
+    "GRAFANA_API_KEY",
+    "CANARY_API_KEY",
+    "CANARY_APPLY_WEIGHT_HOOK_URL",
+    "CANARY_WEIGHT_10_HOOK_URL",
+    "CANARY_WEIGHT_50_HOOK_URL",
+    "CANARY_WEIGHT_100_HOOK_URL",
+    "CANARY_ROLLBACK_HOOK_URL",
+    "ZAP_AUTH_HEADER_VALUE"
+  ],
+  "success_criteria": [
+    "Canary ve DAST workflow'larindaki env isimleri kontrat ve AUTH-REGISTRY ile tutarli olmalidir.",
+    "Live canary mode eksik provisioning ile sessiz devam etmemeli, fail-closed davranmalidir.",
+    "DAST auth mode secildiyse gerekli auth secret/variable set edilmeden scan baslamamalidir."
+  ]
+}

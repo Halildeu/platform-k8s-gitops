@@ -1,0 +1,46 @@
+{
+  "version": "1.0",
+  "contract_id": "ui-library-consumer-codemod-manual-decision-contract-v1",
+  "status": "ACTIVE",
+  "input_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-manual-review.v1.json",
+  "artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-manual-review-decisions.v1.json",
+  "audit_script": "audit:ui-library-codemod-manual-review-decisions",
+  "audit_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-manual-review-decisions.audit.v1.json",
+  "run_script": "run:ui-library-codemod-manual-review-decisions",
+  "decision_mode": "single-owner-direct-approval",
+  "default_owner_handles": [
+    "@halilkocoglu"
+  ],
+  "allowed_decisions": [
+    "approved_for_apply_preview",
+    "deferred_until_visual_review",
+    "review_only_manual_refactor",
+    "rejected_for_auto_apply"
+  ],
+  "decision_plan": [
+    {
+      "component": "Select",
+      "decision": "approved_for_apply_preview",
+      "next_step": "medium-risk apply-preview hazirla, diff ve smoke ile dar kapsamli tur yap",
+      "rationale": "Tek dosya hedefli ve packet PASS; controlled flow riski var ama apply-preview seviyesinde ilerlenebilir."
+    },
+    {
+      "component": "Text",
+      "decision": "deferred_until_visual_review",
+      "next_step": "visual diff ve typography parity review tamamlanmadan write acma",
+      "rationale": "Coklu dosya ve typography semantigi nedeniyle once gorsel review gerekli."
+    },
+    {
+      "component": "ReportFilterPanel",
+      "decision": "review_only_manual_refactor",
+      "next_step": "children slot ve handler parity icin manuel refactor plani uret",
+      "rationale": "Yuksek riskli slot/handler davranisi auto-transform icin hala uygun degil."
+    }
+  ],
+  "rules": [
+    "Decision artefact'i manual-review packetlerinden sonra uretilir ve tek-sahip karar durumunu resmi release evidenti yapar.",
+    "Karar verilmis olmak auto-write anlamina gelmez; medium/high risk candidate'lar icin yazma hattı ayri acilir.",
+    "Allowed decision seti disindaki durumlar fail-closed sayilir.",
+    "Decision audit PASS olmadan release manifest icindeki latest decision ozeti guncel sayilmaz."
+  ]
+}

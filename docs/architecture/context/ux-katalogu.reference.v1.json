@@ -1,0 +1,56 @@
+{
+  "version": "1.0",
+  "subject_id": "ux_katalogu",
+  "themes": [
+    {
+      "theme_id": "consistency_and_pattern_governance",
+      "subthemes": [
+        "single_component_source_of_truth",
+        "behavior_contracts_across_modules"
+      ]
+    },
+    {
+      "theme_id": "navigation_information_scent",
+      "subthemes": [
+        "orientation_and_wayfinding",
+        "domain_based_information_architecture",
+        "deep_link_and_shareable_state"
+      ]
+    },
+    {
+      "theme_id": "task_completion_architecture",
+      "subthemes": [
+        "critical_path_minimization",
+        "smart_defaults_and_prefill"
+      ]
+    },
+    {
+      "theme_id": "data_entry_validation_recovery",
+      "subthemes": [
+        "inline_validation_before_submit",
+        "dependency_aware_form_guidance",
+        "input_error_prevention_patterns",
+        "multi_step_wizard_progress"
+      ]
+    },
+    {
+      "theme_id": "feedback_state_and_visibility",
+      "subthemes": [
+        "loading_empty_error_success_patterns",
+        "response_time_budget_feedback"
+      ]
+    },
+    {
+      "theme_id": "accessibility_and_inclusive_design",
+      "subthemes": [
+        "contrast_typography_readability"
+      ]
+    },
+    {
+      "theme_id": "trust_privacy_security_ux",
+      "subthemes": [
+        "privacy_by_design_defaults"
+      ]
+    }
+  ]
+}
