@@ -39,7 +39,7 @@ images:
     digest: sha256:b803507ac6b17240a8cced6878606f2aad7b31856140d6b5071352135babf37f
   - name: report-service
     newName: ghcr.io/halildeu/platform-backend-report-service
-    digest: sha256:13cc1b589d394533dc6077b07f043004db9dd95f62775b5f4ce5a924ff3c31f3
+    digest: sha256:1d38fe3f3439067eeaae1d2015d470a3273074c6509589b54e7422fd749cc8b1
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
