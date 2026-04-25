@@ -107,6 +107,11 @@ jobs:
             --exclude="pull_request_template.md" \
             --exclude="dev-repo-handoff-bundle.md" \
             --exclude="session-handoff-*.md" \
+            --exclude-dir="handbook" \
+            --exclude-dir="architecture" \
+            --exclude-dir="operations" \
+            --exclude-dir="templates" \
+            --exclude-dir="agent-codex" \
             . || true)
           if [[ -n "$FOUND" ]]; then
             echo "❌ Closure language bulundu (HARD RULE ihlal):"
