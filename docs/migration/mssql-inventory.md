@@ -113,3 +113,78 @@ Snapshot canonical schema=workcube_mikrolink. Parametric schemas (workcube_mikro
 - `SETUP_PROCESS_CAT` - used by: fin-cari-islemler, fin-kaynak-eslesme, fin-masraf-detay, fin-muhasebe-detay, fin-stok-fis-detay, fin-tutar-mutabakat
 - `STOCK_FIS` - used by: fin-stok-fis-detay
 - `STOCK_FIS_ROW` - used by: fin-stok-fis-detay
+
+---
+
+## Parametric Schema Enumeration (Faz 16.1 Gün 1 deliverable)
+
+Codex iter-2 verdict: PG'de Workcube yıllık sub-schema **kopyalama** — tek logical schema + `source_year SMALLINT` + declarative partition.
+
+### 16 parametric tablo (`{schema}` runtime placeholder + actual `workcube_mikrolink_N`)
+
+| Table | Schema patterns | Reports |
+|---|---|---|
+| `ACCOUNT_CARD` | `workcube_mikrolink_2026_1`, `{schema}` | fin-kaynak-eslesme, fin-muhasebe-detay, fin-muhasebe-fisleri |
+| `ACCOUNT_CARD_MONEY` | `{schema}` | fin-muhasebe-detay |
+| `ACCOUNT_CARD_ROWS` | `workcube_mikrolink_2026_1`, `{schema}` | fin-gerceklesen-maliyet, fin-kaynak-eslesme, fin-muhasebe-detay |
+| `ACCOUNT_PLAN` | `{schema}` | fin-muhasebe-detay |
+| `BANK_ACTIONS` | `workcube_mikrolink_1` | fin-banka-hareketleri, fin-nakit-akis-ozet |
+| `CARI_ACTIONS` | `{schema}` | fin-cari-islemler |
+| `CARI_ROWS` | `workcube_mikrolink_1` | fin-cari-hareketler, fin-cari-mutabakat |
+| `CASH_ACTIONS` | `workcube_mikrolink_1` | fin-kasa-hareketleri |
+| `CHEQUE` | `workcube_mikrolink_1` | fin-cek-senet, fin-cek-vade-takip |
+| `COMPANY_REMAINDER` | `workcube_mikrolink_1` | fin-alacak-yaslandirma, fin-borc-yaslandirma |
+| `EXPENSE_ITEMS` | `{schema}` | fin-masraf-detay |
+| `EXPENSE_ITEM_PLANS` | `{schema}` | fin-masraf-detay |
+| `INVOICE` | `workcube_mikrolink_1`, `{schema}` | fin-fatura-satirlari, fin-faturalar |
+| `INVOICE_ROW` | `{schema}` | fin-fatura-satirlari |
+| `STOCK_FIS` | `{schema}` | fin-stok-fis-detay |
+| `STOCK_FIS_ROW` | `{schema}` | fin-stok-fis-detay |
+
+### Schema → year mapping (Workcube convention — admin onayı gerek)
+
+| Schema | Fiscal year |
+|---|---|
+| `workcube_mikrolink` | canonical (year-independent) |
+| `workcube_mikrolink_1` | 2024 (?) |
+| `workcube_mikrolink_2` | 2025 (?) |
+| `workcube_mikrolink_3` | 2026 (current?) |
+| `workcube_mikrolink_2026_1` | 2026 specific (suffix mantıksız) |
+| `{schema}` | runtime resolved (rapor query parametre) |
+
+**ÖNEMLI**: Workcube admin'den schema enumeration kuralı net teyit gerek. `_1`, `_2`, `_2026_1` patterns inconsistent.
+
+### PG canonical pattern (Codex AGREE)
+
+```sql
+-- Tek logical schema
+CREATE SCHEMA workcube_mikrolink;
+
+-- Partitioned table (per year)
+CREATE TABLE workcube_mikrolink.invoice (
+    id BIGINT,
+    source_year SMALLINT NOT NULL,
+    source_schema VARCHAR(50) NOT NULL,  -- audit trail
+    -- ... other columns
+    PRIMARY KEY (id, source_year)
+) PARTITION BY LIST (source_year);
+
+CREATE TABLE workcube_mikrolink.invoice_2024 PARTITION OF workcube_mikrolink.invoice FOR VALUES IN (2024);
+CREATE TABLE workcube_mikrolink.invoice_2025 PARTITION OF workcube_mikrolink.invoice FOR VALUES IN (2025);
+CREATE TABLE workcube_mikrolink.invoice_2026 PARTITION OF workcube_mikrolink.invoice FOR VALUES IN (2026);
+```
+
+Compatibility view (eğer rapor SQL literal schema bekliyorsa):
+
+```sql
+CREATE VIEW workcube_mikrolink_1.invoice AS SELECT * FROM workcube_mikrolink.invoice WHERE source_year = 2024;
+```
+
+## Sıradaki: Faz 16.0 Data Contract REVIEWED → SEALED gate
+
+- 16 parametric tablo schema enumeration **netleşmesi** (admin onayı)
+- 17 unmatched edge case'lerin classification ✓
+- Type mapping matrix per-table (40 tablo)
+- ADR-0005 schema-service parity addendum
+
+Codex thread: `019dc6d5` iter-2 AGREE.
