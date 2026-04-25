@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "subject_id": "ui_kutuphane_sistemi",
+  "generated_at": "2026-03-10T00:00:00Z",
+  "preview_route": "/admin/design-lab",
+  "package_manifest_path": "web/packages/ui-kit/package.json",
+  "active_wave_contracts": [
+    "docs/02-architecture/context/ui-library-wave-11-recipes.v1.json",
+    "docs/02-architecture/context/ui-library-wave-10-theme-presets.v1.json"
+  ],
+  "core_contracts": [
+    "docs/02-architecture/context/ui-library-governance.contract.v1.json",
+    "docs/02-architecture/context/ui-library-package-release.contract.v1.json",
+    "docs/02-architecture/context/ui-library-recipe-system.contract.v1.json",
+    "docs/02-architecture/context/ui-library-adoption-enforcement.contract.v1.json",
+    "docs/02-architecture/context/ui-library-theme-preset-catalog.v1.json",
+    "docs/02-architecture/context/ui-library-component-roadmap.v1.json",
+    "docs/02-architecture/context/ux-katalogu.reference.v1.json",
+    "docs/02-architecture/context/ui-library-ux-alignment.v1.json",
+    "docs/02-architecture/blueprints/ui-library-system-blueprint.v1.json"
+  ],
+  "derived_catalogs": [
+    "web/packages/ui-kit/src/catalog/component-manifest.v1.json",
+    "web/packages/ui-kit/src/catalog/component-docs/index.ts"
+  ]
+}

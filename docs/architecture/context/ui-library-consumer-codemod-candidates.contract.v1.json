@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "contract_id": "ui-library-consumer-codemod-candidates-contract-v1",
+  "status": "ACTIVE",
+  "transform_engine": "ts-morph-candidate",
+  "apply_policy": "manual-approval-required",
+  "prototype_contract_path": "docs/02-architecture/context/ui-library-consumer-codemod-prototypes.contract.v1.json",
+  "artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-candidates.v1.json",
+  "audit_script": "audit:ui-library-codemod-candidates",
+  "audit_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-candidates.audit.v1.json",
+  "focus_components": [
+    "Empty",
+    "ReportFilterPanel",
+    "Select",
+    "Tag",
+    "Text",
+    "ThemePreviewCard"
+  ],
+  "risk_levels": [
+    "low",
+    "medium",
+    "high"
+  ],
+  "rules": [
+    "Codemod candidate artefact'i yalniz single-app blast radius backlog'undan turetilir; cross-app surface otomatik rewrite backlog'una alinmaz.",
+    "Her candidate transformKind, riskLevel, dry-run scope ve target file listesi tasir; soyut fikir kaydi olarak kalmaz.",
+    "Dry-run audit PASS olmadan candidate release manifest icinde 'latestAudit' ile senkron sayilmaz.",
+    "Auto-apply false varsayilanidir; actual rewrite script'i ayri onay ve ayri delivery turu ister."
+  ]
+}

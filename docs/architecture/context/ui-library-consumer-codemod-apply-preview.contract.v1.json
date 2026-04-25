@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "contract_id": "ui-library-consumer-codemod-apply-preview-contract-v1",
+  "status": "ACTIVE",
+  "input_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-dry-run.v1.json",
+  "artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-apply-preview.v1.json",
+  "audit_script": "audit:ui-library-codemod-apply-preview",
+  "audit_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-apply-preview.audit.v1.json",
+  "run_script": "run:ui-library-codemod-apply-preview",
+  "default_write_mode": "preview_only",
+  "allow_write_flag": "--write",
+  "focus_components": [
+    "Empty",
+    "Tag",
+    "ThemePreviewCard"
+  ],
+  "rules": [
+    "Apply preview runner varsayilan olarak kaynak dosyalara yazmaz ve yalniz exact-match write eligibility hesaplar.",
+    "Gercek write yalniz explicit --write ile acilir; release gate bu modu kullanmaz.",
+    "Preview artefact'i proposed kayitlari write_eligible veya stale/ambiguous olarak siniflandirir.",
+    "Apply preview audit PASS olmadan release manifest icindeki latestAudit ozeti guncel sayilmaz."
+  ]
+}

@@ -1,0 +1,185 @@
+{
+  "version": "1.0",
+  "scope": "dev-subcontractor-runtime-alignment",
+  "updated_at": "2026-03-06",
+  "summary": {
+    "database_isolation_open_count": 0,
+    "database_isolation_decision_open_count": 0,
+    "rest_client_migration_open_count": 0,
+    "runtime_doc_gap_open_count": 0,
+    "runtime_gate_hardening_open_count": 0
+  },
+  "tracks": [
+    {
+      "id": "runtime-gate-hardening",
+      "status": "closed",
+      "goal": "Compose stack içinde permission-service ve api-gateway health-gated olsun.",
+      "items": [
+        {
+          "service": "permission-service",
+          "status": "closed",
+          "action": "Compose healthcheck eklendi."
+        },
+        {
+          "service": "api-gateway",
+          "status": "closed",
+          "action": "Compose healthcheck eklendi ve gateway depends_on permission-service -> service_healthy oldu."
+        }
+      ]
+    },
+    {
+      "id": "database-isolation",
+      "status": "closed",
+      "goal": "Shared users veritabanı bağımlılığını servis sınırlarıyla uyumlu hale getirmek.",
+      "decision_status": "closed",
+      "decision_artifacts": [
+        "docs/02-architecture/runtime/database-isolation-plan.v1.json",
+        "docs/02-architecture/runtime/database-isolation-plan.md",
+        "docs/02-architecture/services/backend-docs/ADR/ADR-0004-shared-postgres-schema-ownership-and-cutover.md",
+        "docs/02-architecture/runtime/legacy-flyway-cutover-plan.v1.json",
+        "docs/02-architecture/runtime/legacy-flyway-cutover-plan.md",
+        "backend/devops/postgres/02-offline-service-schema-cutover.sql",
+        "backend/devops/postgres/03-offline-service-schema-cutover-rollback.sql",
+        "backend/scripts/ops/validate-schema-owned-baselines.sh",
+        "backend/scripts/ops/rehearse-service-schema-cutover.sh",
+        "backend/devops/rehearsal/docker-compose.app-level-schema.yml",
+        "backend/scripts/ops/run-app-level-schema-rehearsal.sh",
+        "backend/.autopilot-tmp/app-level-schema-rehearsal/compose-ps.json",
+        "backend/.autopilot-tmp/app-level-schema-rehearsal/eureka-apps.xml",
+        "backend/.autopilot-tmp/app-level-schema-rehearsal/gateway-companies-headers.txt",
+        "backend/.autopilot-tmp/app-level-schema-rehearsal/admin-role-assignments.txt",
+        "backend/scripts/ops/run-live-service-schema-cutover.sh",
+        "docs/04-operations/RUNBOOKS/RB-live-service-schema-cutover.md",
+        "backend/.autopilot-tmp/live-schema-cutover/post/api-gateway-health.json",
+        "backend/.autopilot-tmp/live-schema-cutover/post/eureka-apps.xml",
+        "backend/.autopilot-tmp/live-schema-cutover/post/admin-role-assignments.txt",
+        "backend/.autopilot-tmp/live-schema-cutover/post/schema-inventory.txt"
+      ],
+      "items": [
+        {
+          "service": "auth-service",
+          "status": "closed",
+          "current_runtime": "jdbc:postgresql://postgres-db:5432/users (auth_service aktif)",
+          "target": "auth_service schema ownership",
+          "evidence": [
+            "backend/docker-compose.yml",
+            "backend/auth-service/src/main/resources/application-docker.properties",
+            "backend/auth-service/src/main/resources/application.properties",
+            "backend/.autopilot-tmp/app-level-schema-rehearsal/auth-service-health.json",
+            "backend/.autopilot-tmp/live-schema-cutover/post/auth-service-health.json"
+          ]
+        },
+        {
+          "service": "user-service",
+          "status": "closed",
+          "current_runtime": "jdbc:postgresql://postgres-db:5432/users (user_service aktif)",
+          "target": "user_service schema ownership",
+          "blocker_type": "managed_legacy_flyway_coupling",
+          "runtime_mitigation": "permission-service default admin role assignment bootstrap",
+          "evidence": [
+            "backend/user-service/src/main/resources/application-docker.properties",
+            "backend/user-service/src/main/resources/application.properties",
+            "backend/user-service/src/main/resources/db/migration/V6__seed_admin_user.sql",
+            "backend/user-service/src/main/resources/db/migration/V8__seed_theme_admin_users.sql",
+            "backend/permission-service/src/main/java/com/example/permission/config/DefaultAdminRoleAssignmentInitializer.java",
+            "docs/02-architecture/runtime/legacy-flyway-cutover-plan.v1.json",
+            "backend/user-service/src/main/resources/db/migration_schema_owned/V1__create_user_schema.sql",
+            "backend/user-service/src/main/resources/db/migration_schema_owned/V3__seed_admin_users.sql",
+            "backend/.autopilot-tmp/app-level-schema-rehearsal/user-service-health.json",
+            "backend/.autopilot-tmp/app-level-schema-rehearsal/admin-role-assignments.txt",
+            "backend/.autopilot-tmp/live-schema-cutover/post/user-service-health.json",
+            "backend/.autopilot-tmp/live-schema-cutover/post/admin-role-assignments.txt"
+          ]
+        },
+        {
+          "service": "permission-service",
+          "status": "closed",
+          "current_runtime": "jdbc:postgresql://postgres-db:5432/users (permission_service aktif)",
+          "target": "permission_service schema ownership",
+          "evidence": [
+            "backend/docker-compose.yml",
+            "backend/permission-service/src/main/resources/application-docker.properties",
+            "backend/permission-service/src/main/resources/application.properties",
+            "backend/permission-service/src/main/resources/db/migration_schema_owned/V1__create_permission_schema.sql",
+            "backend/devops/postgres/02-offline-service-schema-cutover.sql",
+            "backend/.autopilot-tmp/app-level-schema-rehearsal/permission-service-health.json",
+            "backend/.autopilot-tmp/live-schema-cutover/post/permission-service-health.json"
+          ]
+        },
+        {
+          "service": "variant-service",
+          "status": "closed",
+          "current_runtime": "jdbc:postgresql://postgres-db:5432/users (variant_service aktif)",
+          "target": "variant_service schema ownership",
+          "evidence": [
+            "backend/variant-service/src/main/resources/application-docker.properties",
+            "backend/variant-service/src/main/resources/application.properties",
+            "backend/.autopilot-tmp/app-level-schema-rehearsal/variant-service-health.json",
+            "backend/.autopilot-tmp/live-schema-cutover/post/variant-service-health.json"
+          ]
+        },
+        {
+          "service": "core-data-service",
+          "status": "closed",
+          "current_runtime": "jdbc:postgresql://postgres-db:5432/users (core_data_service aktif)",
+          "target": "core_data_service schema ownership",
+          "evidence": [
+            "backend/docker-compose.yml",
+            "backend/core-data-service/src/main/resources/application.yml",
+            "backend/.autopilot-tmp/app-level-schema-rehearsal/core-data-service-health.json",
+            "backend/.autopilot-tmp/live-schema-cutover/post/core-data-service-health.json"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rest-client-migration",
+      "status": "closed",
+      "goal": "Servisler arası HTTP istemcilerini WebClient standardına taşımak.",
+      "items": [
+        {
+          "service": "auth-service",
+          "status": "closed",
+          "action": "Permission/User istemcileri WebClient'a taşındı; CustomUserDetailsService tekrar HTTP yazmak yerine UserServiceClient üzerinden çözümleniyor."
+        },
+        {
+          "service": "user-service",
+          "status": "closed",
+          "action": "Permission client, authz context ve token mint hattı WebClient'a taşındı; merkezi builder config eklendi."
+        }
+      ]
+    },
+    {
+      "id": "runtime-doc-gaps",
+      "status": "closed",
+      "goal": "Aktif runtime servislerin hepsi için asgari TECH-DESIGN dokümanı olsun.",
+      "items": [
+        {
+          "service": "auth-service",
+          "status": "closed",
+          "action": "TECH-DESIGN-auth-service-overview.md eklendi."
+        },
+        {
+          "service": "variant-service",
+          "status": "closed",
+          "action": "TECH-DESIGN-variant-service-overview.md eklendi."
+        },
+        {
+          "service": "core-data-service",
+          "status": "closed",
+          "action": "TECH-DESIGN-core-data-service-overview.md eklendi."
+        },
+        {
+          "service": "api-gateway",
+          "status": "closed",
+          "action": "TECH-DESIGN-api-gateway-overview.md eklendi."
+        },
+        {
+          "service": "discovery-server",
+          "status": "closed",
+          "action": "TECH-DESIGN-discovery-server-overview.md eklendi."
+        }
+      ]
+    }
+  ]
+}

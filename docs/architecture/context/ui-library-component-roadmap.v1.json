@@ -1,0 +1,1047 @@
+{
+  "version": "1.0",
+  "subject_id": "ui_kutuphane_sistemi",
+  "roadmap_id": "ui-library-component-roadmap-v1",
+  "purpose": "UI kutuphanesi icin component family matrix, maturity hedefleri, gate/check/evidence planini ve release wave sirasini tek kanonik kaynakta toplamak.",
+  "baseline_state": {
+    "locked_by_commit": "0900750",
+    "exported_count": 46,
+    "planned_count": 24,
+    "live_demo_count": 17,
+    "status": "FOUNDATION_LOCKED",
+    "notes": ["Governance, UX alignment, registry ve Design Lab baglantilari commit ile sabitlendi.", "Kod gelistirme family matrix + wave secimi yapilmadan baslamaz."]
+  },
+  "planning_rule": {
+    "code_starts_after": ["component family secimi", "maturity hedefi secimi", "gate/check/evidence planinin belirlenmesi"],
+    "must_read_before_first_wave": [
+      "docs/02-architecture/context/ui-library-governance.contract.v1.json",
+      "docs/02-architecture/context/ux-katalogu.reference.v1.json",
+      "docs/02-architecture/context/ui-library-ux-alignment.v1.json",
+      "docs/02-architecture/context/ui-library-system.context.v1.json",
+      "docs/02-architecture/blueprints/ui-library-system-blueprint.v1.json"
+    ]
+  },
+  "component_family_matrix": [
+    {
+      "family_id": "foundation_primitives",
+      "title_tr": "Foundation Primitives",
+      "ux_alignment_family_id": "foundation_primitives",
+      "purpose": "Tum diger family'lerin uzerine oturdugu temel primitive ve feedback atomlarini standardize etmek.",
+      "current_state": {
+        "implemented_now": ["Button", "Badge", "Tag", "Text", "Tooltip", "Empty", "LinkInline", "IconButton", "Avatar", "Divider", "Skeleton", "Spinner"],
+        "gaps": []
+      },
+      "target_components": [
+        {
+          "component_name": "Button",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_1_foundation_primitives",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "consistency_and_pattern_governance",
+          "ux_primary_subtheme_id": "single_component_source_of_truth"
+        },
+        {
+          "component_name": "Text",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_1_foundation_primitives",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "accessibility_and_inclusive_design",
+          "ux_primary_subtheme_id": "contrast_typography_readability"
+        },
+        {
+          "component_name": "LinkInline",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_1_foundation_primitives",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "navigation_information_scent",
+          "ux_primary_subtheme_id": "orientation_and_wayfinding"
+        },
+        {
+          "component_name": "IconButton",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_1_foundation_primitives",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "task_completion_architecture",
+          "ux_primary_subtheme_id": "critical_path_minimization"
+        },
+        {
+          "component_name": "Avatar",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_1_foundation_primitives",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "trust_privacy_security_ux",
+          "ux_primary_subtheme_id": "privacy_by_design_defaults"
+        },
+        {
+          "component_name": "Divider",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_1_foundation_primitives",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "consistency_and_pattern_governance",
+          "ux_primary_subtheme_id": "behavior_contracts_across_modules"
+        },
+        {
+          "component_name": "Skeleton",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_1_foundation_primitives",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "feedback_state_and_visibility",
+          "ux_primary_subtheme_id": "loading_empty_error_success_patterns"
+        },
+        {
+          "component_name": "Spinner",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_1_foundation_primitives",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "feedback_state_and_visibility",
+          "ux_primary_subtheme_id": "response_time_budget_feedback"
+        }
+      ],
+      "exit_criteria": [
+        "Temel primitive seti semantik token ve typography kurallariyla hizalanir.",
+        "Button/Text/Badge/Tag/Tooltip/Empty regression olmadan stable kalir.",
+        "Raw visual bypass = 0"
+      ]
+    },
+    {
+      "family_id": "navigation",
+      "title_tr": "Navigation",
+      "ux_alignment_family_id": "navigation_components",
+      "purpose": "Yol bulma, bilgi kokusu ve cok adimli akislarda kullanilan ortak navigation pattern'lerini standartlastirmak.",
+      "current_state": {
+        "implemented_now": ["Tabs", "Breadcrumb", "Pagination", "Steps", "AnchorToc"],
+        "gaps": []
+      },
+      "target_components": [
+        {
+          "component_name": "Tabs",
+          "source_type": "planned_registry",
+          "target_wave": "wave_2_navigation",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "navigation_information_scent",
+          "ux_primary_subtheme_id": "orientation_and_wayfinding"
+        },
+        {
+          "component_name": "Breadcrumb",
+          "source_type": "planned_registry",
+          "target_wave": "wave_2_navigation",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "navigation_information_scent",
+          "ux_primary_subtheme_id": "domain_based_information_architecture"
+        },
+        {
+          "component_name": "Pagination",
+          "source_type": "planned_registry",
+          "target_wave": "wave_2_navigation",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "task_completion_architecture",
+          "ux_primary_subtheme_id": "critical_path_minimization"
+        },
+        {
+          "component_name": "Steps",
+          "source_type": "planned_registry",
+          "target_wave": "wave_2_navigation",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "data_entry_validation_recovery",
+          "ux_primary_subtheme_id": "multi_step_wizard_progress"
+        },
+        {
+          "component_name": "AnchorToc",
+          "source_type": "planned_registry",
+          "target_wave": "wave_2_navigation",
+          "target_maturity": "beta",
+          "preview_mode": "inspector",
+          "ux_primary_theme_id": "navigation_information_scent",
+          "ux_primary_subtheme_id": "deep_link_and_shareable_state"
+        }
+      ],
+      "exit_criteria": [
+        "Keyboard navigation ve focus order APG patternleriyle uyumlu olur.",
+        "Orientation ve route awareness Design Lab demo'larinda gorunur olur."
+      ]
+    },
+    {
+      "family_id": "forms",
+      "title_tr": "Forms",
+      "ux_alignment_family_id": "form_input_components",
+      "purpose": "Veri girisi, dogrulama, geri bildirim ve kurtarma davranislarini ortak component seviyesinde standardize etmek.",
+      "current_state": {
+        "implemented_now": ["Checkbox", "DatePicker", "Radio", "Select", "Slider", "Switch", "TextArea", "TextInput"],
+        "gaps": ["TimePicker", "Upload"]
+      },
+      "target_components": [
+        {
+          "component_name": "TextInput",
+          "source_type": "planned_registry",
+          "target_wave": "wave_3_forms",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "data_entry_validation_recovery",
+          "ux_primary_subtheme_id": "inline_validation_before_submit"
+        },
+        {
+          "component_name": "TextArea",
+          "source_type": "planned_registry",
+          "target_wave": "wave_3_forms",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "data_entry_validation_recovery",
+          "ux_primary_subtheme_id": "dependency_aware_form_guidance"
+        },
+        {
+          "component_name": "Checkbox",
+          "source_type": "planned_registry",
+          "target_wave": "wave_3_forms",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "data_entry_validation_recovery",
+          "ux_primary_subtheme_id": "input_error_prevention_patterns"
+        },
+        {
+          "component_name": "Radio",
+          "source_type": "planned_registry",
+          "target_wave": "wave_3_forms",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "task_completion_architecture",
+          "ux_primary_subtheme_id": "smart_defaults_and_prefill"
+        },
+        {
+          "component_name": "Switch",
+          "source_type": "planned_registry",
+          "target_wave": "wave_3_forms",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "feedback_state_and_visibility",
+          "ux_primary_subtheme_id": "deterministic_state_model"
+        },
+        {
+          "component_name": "Slider",
+          "source_type": "planned_registry",
+          "target_wave": "wave_3_forms",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "personalization_and_adaptive_productivity",
+          "ux_primary_subtheme_id": "adaptive_density_layout_preferences"
+        },
+        {
+          "component_name": "DatePicker",
+          "source_type": "planned_registry",
+          "target_wave": "wave_3_forms",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "task_completion_architecture",
+          "ux_primary_subtheme_id": "cross_step_context_persistence"
+        },
+        {
+          "component_name": "TimePicker",
+          "source_type": "planned_registry",
+          "target_wave": "wave_3_forms",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "task_completion_architecture",
+          "ux_primary_subtheme_id": "cross_step_context_persistence"
+        },
+        {
+          "component_name": "Upload",
+          "source_type": "planned_registry",
+          "target_wave": "wave_3_forms",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "performance_resilience_experience",
+          "ux_primary_subtheme_id": "retry_idempotency_and_duplicate_prevention"
+        }
+      ],
+      "exit_criteria": [
+        "Label/help/error/disabled/readOnly durumlari ortak kontratla gelir.",
+        "Inline validation ve error recovery Design Lab demo'larinda gorunur olur."
+      ]
+    },
+    {
+      "family_id": "data_display",
+      "title_tr": "Data Display",
+      "ux_alignment_family_id": "data_display_and_grid_components",
+      "purpose": "Liste, tablo, grid ve aciklayici veri gosteren yapilari gorev odakli ve performansli hale getirmek.",
+      "current_state": {
+        "implemented_now": ["AgGridServer", "EntityGridTemplate", "TableSimple", "Descriptions", "List", "JsonViewer", "Tree", "TreeTable"],
+        "gaps": []
+      },
+      "target_components": [
+        {
+          "component_name": "AgGridServer",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_4_data_display",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "performance_resilience_experience",
+          "ux_primary_subtheme_id": "perceived_performance_optimization"
+        },
+        {
+          "component_name": "EntityGridTemplate",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_4_data_display",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "task_completion_architecture",
+          "ux_primary_subtheme_id": "role_goal_task_mapping"
+        },
+        {
+          "component_name": "TableSimple",
+          "source_type": "planned_registry",
+          "target_wave": "wave_4_data_display",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "measurement_kpi_and_experimentation",
+          "ux_primary_subtheme_id": "task_completion_time_p50_p95"
+        },
+        {
+          "component_name": "List",
+          "source_type": "planned_registry",
+          "target_wave": "wave_4_data_display",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "task_completion_architecture",
+          "ux_primary_subtheme_id": "critical_path_minimization"
+        },
+        {
+          "component_name": "Tree",
+          "source_type": "planned_registry",
+          "target_wave": "wave_4_data_display",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "navigation_information_scent",
+          "ux_primary_subtheme_id": "domain_based_information_architecture"
+        },
+        {
+          "component_name": "TreeTable",
+          "source_type": "planned_registry",
+          "target_wave": "wave_4_data_display",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "navigation_information_scent",
+          "ux_primary_subtheme_id": "domain_based_information_architecture"
+        },
+        {
+          "component_name": "Descriptions",
+          "source_type": "planned_registry",
+          "target_wave": "wave_4_data_display",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "feedback_state_and_visibility",
+          "ux_primary_subtheme_id": "confirmation_receipts_and_traceability"
+        },
+        {
+          "component_name": "JsonViewer",
+          "source_type": "planned_registry",
+          "target_wave": "wave_4_data_display",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "trust_privacy_security_ux",
+          "ux_primary_subtheme_id": "user_visible_audit_log"
+        }
+      ],
+      "exit_criteria": [
+        "Data display seti loading/empty/error/success patternlerini ortak getirir.",
+        "Task-critical tablolar performans ve a11y ölçüm bağlariyla gelir."
+      ]
+    },
+    {
+      "family_id": "page_blocks",
+      "title_tr": "Page / Block Library",
+      "ux_alignment_family_id": "page_block_compositions",
+      "purpose": "Hazir page shell ve block compositelerini veriyle beslenen, dusuk dokunuslu reusable API olarak urunlestirmek.",
+      "current_state": {
+        "implemented_now": ["PageLayout", "FilterBar", "ReportFilterPanel", "PageHeader", "SummaryStrip", "EntitySummaryBlock"],
+        "gaps": ["SectionShell", "ActionHeader"]
+      },
+      "target_components": [
+        {
+          "component_name": "PageLayout",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_7_page_blocks",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "navigation_information_scent",
+          "ux_primary_subtheme_id": "domain_based_information_architecture"
+        },
+        {
+          "component_name": "FilterBar",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_7_page_blocks",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "task_completion_architecture",
+          "ux_primary_subtheme_id": "critical_path_minimization"
+        },
+        {
+          "component_name": "ReportFilterPanel",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_7_page_blocks",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "data_entry_validation_recovery",
+          "ux_primary_subtheme_id": "dependency_aware_form_guidance"
+        },
+        {
+          "component_name": "PageHeader",
+          "source_type": "planned_registry",
+          "target_wave": "wave_7_page_blocks",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "navigation_information_scent",
+          "ux_primary_subtheme_id": "orientation_and_wayfinding"
+        },
+        {
+          "component_name": "SummaryStrip",
+          "source_type": "planned_registry",
+          "target_wave": "wave_7_page_blocks",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "measurement_kpi_and_experimentation",
+          "ux_primary_subtheme_id": "task_completion_time_p50_p95"
+        },
+        {
+          "component_name": "EntitySummaryBlock",
+          "source_type": "planned_registry",
+          "target_wave": "wave_7_page_blocks",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "feedback_state_and_visibility",
+          "ux_primary_subtheme_id": "confirmation_receipts_and_traceability"
+        }
+      ],
+      "exit_criteria": [
+        "Page shell ve summary block seti route icinde kopyalanmadan ui-kit uzerinden kullanilir.",
+        "Page/block compositeler veri ve callback ile calisir; fetch ve business logic route seviyesinde kalir.",
+        "Page/block family icin release notes ve package lifecycle kurali uygulanir."
+      ]
+    },
+    {
+      "family_id": "overlay",
+      "title_tr": "Overlay",
+      "ux_alignment_family_id": "overlay_and_confirmation_components",
+      "purpose": "Dialog, drawer, popover ve confirmation deneyimlerini guvenli ve izlenebilir hale getirmek.",
+      "current_state": {
+        "implemented_now": ["Modal", "FormDrawer", "DetailDrawer", "Dropdown", "Tooltip", "Popover", "ContextMenu", "TourCoachmarks"],
+        "gaps": []
+      },
+      "target_components": [
+        {
+          "component_name": "Modal",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_5_overlay",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "trust_privacy_security_ux",
+          "ux_primary_subtheme_id": "high_risk_action_confirmation"
+        },
+        {
+          "component_name": "FormDrawer",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_5_overlay",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "data_entry_validation_recovery",
+          "ux_primary_subtheme_id": "multi_step_wizard_progress"
+        },
+        {
+          "component_name": "DetailDrawer",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_5_overlay",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "feedback_state_and_visibility",
+          "ux_primary_subtheme_id": "confirmation_receipts_and_traceability"
+        },
+        {
+          "component_name": "Popover",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_5_overlay",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "feedback_state_and_visibility",
+          "ux_primary_subtheme_id": "actionable_error_messages"
+        },
+        {
+          "component_name": "ContextMenu",
+          "source_type": "implemented_backlog",
+          "target_wave": "wave_8_overlay_extensions",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "navigation_information_scent",
+          "ux_primary_subtheme_id": "contextual_quick_actions",
+          "registry_action": "promote_planned_entry"
+        },
+        {
+          "component_name": "TourCoachmarks",
+          "source_type": "implemented_backlog",
+          "target_wave": "wave_8_overlay_extensions",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "onboarding_help_and_learnability",
+          "ux_primary_subtheme_id": "process_tours_for_critical_flows",
+          "registry_action": "promote_planned_entry"
+        },
+        {
+          "component_name": "Dropdown",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_5_overlay",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "navigation_information_scent",
+          "ux_primary_subtheme_id": "contextual_quick_actions"
+        },
+        {
+          "component_name": "Tooltip",
+          "source_type": "existing_upgrade",
+          "target_wave": "wave_5_overlay",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "feedback_state_and_visibility",
+          "ux_primary_subtheme_id": "actionable_error_messages"
+        }
+      ],
+      "exit_criteria": [
+        "Focus trap, escape, dismiss ve confirmation davranislari standart olur.",
+        "Riskli aksiyonlarda confirmation modeli ve audit izleri gorunur olur."
+      ]
+    },
+    {
+      "family_id": "ai_native_helpers",
+      "title_tr": "AI-Native Helpers",
+      "ux_alignment_family_id": "ai_assisted_components",
+      "purpose": "AI onerisi, onay checkpoint'i, kaynak seffafligi ve insan onayi gerektiren deneyimleri ortaklastirmak.",
+      "current_state": {
+        "implemented_now": ["CommandPalette", "RecommendationCard", "ConfidenceBadge", "ApprovalCheckpoint", "CitationPanel", "AIActionAuditTimeline", "PromptComposer"],
+        "gaps": []
+      },
+      "target_components": [
+        {
+          "component_name": "CommandPalette",
+          "source_type": "planned_registry",
+          "target_wave": "wave_6_ai_native_helpers",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "ai_assisted_decision_experience",
+          "ux_primary_subtheme_id": "safe_prompt_templates_and_scope"
+        },
+        {
+          "component_name": "RecommendationCard",
+          "source_type": "planned_registry",
+          "target_wave": "wave_6_ai_native_helpers",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "ai_assisted_decision_experience",
+          "ux_primary_subtheme_id": "contextual_recommendation_cards"
+        },
+        {
+          "component_name": "ConfidenceBadge",
+          "source_type": "planned_registry",
+          "target_wave": "wave_6_ai_native_helpers",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "ai_assisted_decision_experience",
+          "ux_primary_subtheme_id": "confidence_and_source_transparency"
+        },
+        {
+          "component_name": "ApprovalCheckpoint",
+          "source_type": "planned_registry",
+          "target_wave": "wave_6_ai_native_helpers",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "ai_assisted_decision_experience",
+          "ux_primary_subtheme_id": "human_approval_checkpoints"
+        },
+        {
+          "component_name": "CitationPanel",
+          "source_type": "planned_registry",
+          "target_wave": "wave_6_ai_native_helpers",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "ai_assisted_decision_experience",
+          "ux_primary_subtheme_id": "confidence_and_source_transparency"
+        },
+        {
+          "component_name": "AIActionAuditTimeline",
+          "source_type": "planned_registry",
+          "target_wave": "wave_6_ai_native_helpers",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "ai_assisted_decision_experience",
+          "ux_primary_subtheme_id": "ai_action_audit_trail"
+        },
+        {
+          "component_name": "PromptComposer",
+          "source_type": "planned_registry",
+          "target_wave": "wave_6_ai_native_helpers",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "ux_writing_and_microcopy",
+          "ux_primary_subtheme_id": "ai_message_tone_guardrails"
+        }
+      ],
+      "exit_criteria": [
+        "AI helper seti source transparency, confidence ve human approval davranislarini standartlastirir.",
+        "AI-native componentler privacy/redaction ve audit trail kontratiyla gelir."
+      ]
+    },
+    {
+      "family_id": "foundation_language",
+      "title_tr": "Foundation Language",
+      "ux_alignment_family_id": "governance_and_foundation_language",
+      "purpose": "Typography, iconography, motion ve responsive/layout-grid dilini component ustu bir foundation katmani olarak kilitlemek.",
+      "current_state": {
+        "implemented_now": ["TypographySystem", "IconographySystem", "MotionSystem", "ResponsiveLayoutGrid"],
+        "gaps": []
+      },
+      "target_components": [
+        {
+          "component_name": "TypographySystem",
+          "source_type": "contract_lock",
+          "target_wave": "wave_9_foundation_language",
+          "target_maturity": "stable",
+          "preview_mode": "inspector",
+          "ux_primary_theme_id": "consistency_and_pattern_governance",
+          "ux_primary_subtheme_id": "single_component_source_of_truth"
+        },
+        {
+          "component_name": "IconographySystem",
+          "source_type": "contract_lock",
+          "target_wave": "wave_9_foundation_language",
+          "target_maturity": "stable",
+          "preview_mode": "inspector",
+          "ux_primary_theme_id": "consistency_and_pattern_governance",
+          "ux_primary_subtheme_id": "behavior_contracts_across_modules"
+        },
+        {
+          "component_name": "MotionSystem",
+          "source_type": "contract_lock",
+          "target_wave": "wave_9_foundation_language",
+          "target_maturity": "stable",
+          "preview_mode": "inspector",
+          "ux_primary_theme_id": "feedback_state_and_visibility",
+          "ux_primary_subtheme_id": "response_time_budget_feedback"
+        },
+        {
+          "component_name": "ResponsiveLayoutGrid",
+          "source_type": "contract_lock",
+          "target_wave": "wave_9_foundation_language",
+          "target_maturity": "stable",
+          "preview_mode": "inspector",
+          "ux_primary_theme_id": "navigation_information_scent",
+          "ux_primary_subtheme_id": "domain_based_information_architecture"
+        }
+      ],
+      "exit_criteria": [
+        "Typography, iconography, motion ve responsive/layout-grid karar dili tek kontrat setinde kilitlenir.",
+        "Foundation dili governance ve wave gate icinde zorunlu okunur hale gelir."
+      ]
+    },
+    {
+      "family_id": "theme_presets",
+      "title_tr": "Theme Presets",
+      "ux_alignment_family_id": "theming_customization",
+      "purpose": "Resmi theme preset ailesini docs, runtime ve release diliyle ayni isimlerde toplamak.",
+      "current_state": {
+        "implemented_now": ["ThemePresetGallery", "ThemePresetCompare"],
+        "gaps": []
+      },
+      "target_components": [
+        {
+          "component_name": "ThemePresetGallery",
+          "source_type": "preset_catalog",
+          "target_wave": "wave_10_theme_presets",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "theming_customization",
+          "ux_primary_subtheme_id": "mode_density_personalization"
+        },
+        {
+          "component_name": "ThemePresetCompare",
+          "source_type": "preset_catalog",
+          "target_wave": "wave_10_theme_presets",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "accessibility_and_inclusive_design",
+          "ux_primary_subtheme_id": "contrast_typography_readability"
+        }
+      ],
+      "exit_criteria": [
+        "Resmi preset ailesi theme-contract allowedModes ile uyumlu kalir.",
+        "Docs, preview ve release gorunumleri ayni preset kimliklerini kullanir."
+      ]
+    },
+    {
+      "family_id": "recipes",
+      "title_tr": "Recipes",
+      "ux_alignment_family_id": "recipe_patterns",
+      "purpose": "Tekil componentleri asan ekran/panel kaliplarini reusable recipe sistemi altinda toplamak.",
+      "current_state": {
+        "implemented_now": ["SearchFilterListing", "DetailSummary", "ApprovalReview", "EmptyErrorLoading", "AIGuidedAuthoring"],
+        "gaps": ["DashboardKPIAnalytics", "TableToChartReview", "MultiStepSubmission"]
+      },
+      "target_components": [
+        {
+          "component_name": "SearchFilterListing",
+          "source_type": "recipe_contract",
+          "target_wave": "wave_11_recipes",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "task_completion_architecture",
+          "ux_primary_subtheme_id": "critical_path_minimization"
+        },
+        {
+          "component_name": "DetailSummary",
+          "source_type": "recipe_contract",
+          "target_wave": "wave_11_recipes",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "feedback_state_and_visibility",
+          "ux_primary_subtheme_id": "confirmation_receipts_and_traceability"
+        },
+        {
+          "component_name": "ApprovalReview",
+          "source_type": "recipe_contract",
+          "target_wave": "wave_11_recipes",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "ai_assisted_decision_experience",
+          "ux_primary_subtheme_id": "human_approval_checkpoints"
+        },
+        {
+          "component_name": "EmptyErrorLoading",
+          "source_type": "recipe_contract",
+          "target_wave": "wave_11_recipes",
+          "target_maturity": "stable",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "feedback_state_and_visibility",
+          "ux_primary_subtheme_id": "loading_empty_error_success_patterns"
+        },
+        {
+          "component_name": "AIGuidedAuthoring",
+          "source_type": "recipe_contract",
+          "target_wave": "wave_11_recipes",
+          "target_maturity": "beta",
+          "preview_mode": "live",
+          "ux_primary_theme_id": "ai_assisted_decision_experience",
+          "ux_primary_subtheme_id": "safe_prompt_templates_and_scope"
+        }
+      ],
+      "exit_criteria": [
+        "Page ve panel kaliplari veri/config ile tuketilebilen reusable recipe diline tasinir.",
+        "Route-level duplicate layout ve flow sayisi azalir."
+      ]
+    }
+  ],
+  "maturity_targets": {
+    "definitions": {
+      "planned": "Registry/backlog var, runtime export yok.",
+      "beta": "Runtime export + preview + unit test + a11y smoke var; kontrollu adopisyon icin hazir.",
+      "stable": "Consumer adoption var, regression evidence var, acik blocker yok."
+    },
+    "family_targets": [
+      {
+        "family_id": "foundation_primitives",
+        "target_mix": {
+          "stable": 4,
+          "beta": 4
+        }
+      },
+      {
+        "family_id": "navigation",
+        "target_mix": {
+          "stable": 2,
+          "beta": 3
+        }
+      },
+      {
+        "family_id": "forms",
+        "target_mix": {
+          "stable": 5,
+          "beta": 4
+        }
+      },
+      {
+        "family_id": "data_display",
+        "target_mix": {
+          "stable": 2,
+          "beta": 6
+        }
+      },
+      {
+        "family_id": "page_blocks",
+        "target_mix": {
+          "stable": 3,
+          "beta": 3
+        }
+      },
+      {
+        "family_id": "overlay",
+        "target_mix": {
+          "stable": 3,
+          "beta": 3
+        }
+      },
+      {
+        "family_id": "ai_native_helpers",
+        "target_mix": {
+          "stable": 0,
+          "beta": 7
+        }
+      },
+      {
+        "family_id": "foundation_language",
+        "target_mix": {
+          "stable": 4,
+          "beta": 0
+        }
+      },
+      {
+        "family_id": "theme_presets",
+        "target_mix": {
+          "stable": 4,
+          "beta": 0
+        }
+      },
+      {
+        "family_id": "recipes",
+        "target_mix": {
+          "stable": 4,
+          "beta": 1
+        }
+      }
+    ]
+  },
+  "gate_check_evidence_plan": {
+    "common_checks": [
+      "python3 scripts/check_ui_library_governance_contract.py",
+      "python3 scripts/check_ui_library_foundation_contracts.py",
+      "python3 scripts/check_ui_library_system_extensions.py",
+      "python3 scripts/check_ui_library_ux_alignment.py",
+      "npm -C web run designlab:index",
+      "npm -C web run lint:tailwind",
+      "npm -C web run lint:no-antd",
+      "npm -C web run test:ui-kit",
+      "npm -C web run gate:ui-library-wave -- --wave wave_1_foundation_primitives",
+      "npm -C web run doctor:frontend -- --preset ui-library",
+      "python3 scripts/check_ui_library_page_block_contract.py",
+      "python3 scripts/check_ui_library_package_release_contract.py"
+    ],
+    "family_specific_checks": {
+      "foundation_primitives": [
+        "semantic token compliance",
+        "focus/hover/disabled visual regression",
+        "basic keyboard support"
+      ],
+      "navigation": [
+        "WAI-ARIA keyboard navigation pattern check",
+        "focus order and selected state check",
+        "deep-link or orientation demo check"
+      ],
+      "forms": [
+        "label/help/error state coverage",
+        "validation and assistive text coverage",
+        "keyboard and screen reader basic coverage"
+      ],
+      "data_display": [
+        "loading/empty/error state coverage",
+        "large data/perceived performance note",
+        "task KPI linkage note"
+      ],
+      "overlay": [
+        "focus trap/escape/dismiss check",
+        "destructive action confirmation behavior check",
+        "scroll lock and stacked overlay sanity check"
+      ],
+      "ai_native_helpers": [
+        "source transparency rendering",
+        "confidence display",
+        "manual fallback path",
+        "privacy/redaction note",
+        "audit trail evidence"
+      ],
+      "page_blocks": [
+        "page shell slot contract check",
+        "route-level duplicate layout count = 0",
+        "summary/filter/header block preview parity",
+        "release notes and lifecycle note for stable block changes"
+      ],
+      "foundation_language": [
+        "semantic typography contract check",
+        "iconography single-runtime-set check",
+        "reduced-motion and responsive shell contract check"
+      ],
+      "theme_presets": ["theme-contract allowedModes parity", "preset docs/release parity", "theme preview evidence"],
+      "recipes": [
+        "recipe owner component parity",
+        "page/block reuse evidence",
+        "duplicate layout reduction note"
+      ]
+    },
+    "minimum_evidence_artifacts": [
+      "registry entry or registry update",
+      "Design Lab preview evidence",
+      "test summary",
+      "UX primary theme/subtheme declaration",
+      "a11y/APG note for interactive widgets",
+      "release note if stable or breaking behavior change"
+    ]
+  },
+  "release_waves": [
+    {
+      "wave_id": "wave_0_foundation_locked",
+      "title_tr": "Foundation Locked",
+      "status": "completed",
+      "objective": "Governance, UX alignment, registry ve Design Lab baglarini sabitlemek.",
+      "families": ["foundation_primitives", "navigation", "forms", "data_display", "overlay", "ai_native_helpers"]
+    },
+    {
+      "wave_id": "wave_1_foundation_primitives",
+      "title_tr": "Foundation Primitives",
+      "status": "completed",
+      "objective": "Foundation primitives export setini zorunlu doctor evidence ve release-hardening gate altinda yeniden kilitle.",
+      "families": ["foundation_primitives"],
+      "candidate_components": ["Button", "Text", "LinkInline", "IconButton", "Avatar", "Divider", "Skeleton", "Spinner"],
+      "dependencies": ["governance locked", "ux alignment locked", "frontend diagnostics registry active"]
+    },
+    {
+      "wave_id": "wave_2_navigation",
+      "title_tr": "Navigation",
+      "status": "completed",
+      "objective": "Sekme, breadcrumb ve ilerleme kaliplarini standardize et.",
+      "families": ["navigation"],
+      "candidate_components": ["Tabs", "Breadcrumb", "Pagination", "Steps", "AnchorToc"],
+      "dependencies": ["wave_1_foundation_primitives"],
+      "notes": [
+        "Tabs ve Breadcrumb stable export olarak acik.",
+        "Pagination ve Steps beta export + preview + API catalog ile aktif.",
+        "AnchorToc beta export + live preview ile eklendi ve navigation wave kapandi."
+      ]
+    },
+    {
+      "wave_id": "wave_3_forms",
+      "title_tr": "Forms",
+      "status": "completed",
+      "objective": "Input ailesini error/help/validation davranislariyla tamamla.",
+      "families": ["forms"],
+      "candidate_components": ["TextInput", "TextArea", "Checkbox", "Radio", "Switch", "Slider", "DatePicker", "TimePicker", "Upload"],
+      "dependencies": ["wave_1_foundation_primitives"],
+      "notes": [
+        "TextInput ve TextArea stable export + live preview + API catalog ile acildi.",
+        "Checkbox, Radio ve Switch stable export + live preview + API catalog ile acildi.",
+        "Slider, DatePicker, TimePicker ve Upload beta export + live preview + API catalog ile acildi.",
+        "wave_3_forms kapanisi doctor evidence ve wave gate PASS ile tamamlandi."
+      ]
+    },
+    {
+      "wave_id": "wave_4_data_display",
+      "title_tr": "Data Display",
+      "status": "completed",
+      "objective": "Grid ve hafif veri gosterim ailesini gorev odakli ve olculebilir hale getir.",
+      "families": ["data_display"],
+      "candidate_components": ["AgGridServer", "EntityGridTemplate", "TableSimple", "List", "Tree", "TreeTable", "Descriptions", "JsonViewer"],
+      "dependencies": ["wave_1_foundation_primitives", "wave_3_forms"],
+      "notes": [
+        "TableSimple ve Descriptions export + live preview + API catalog ile acildi.",
+        "AgGridServer ve EntityGridTemplate stable export + live preview + API catalog + doctor evidence ile batch-2 tamamlandi.",
+        "List, JsonViewer, Tree ve TreeTable beta export + live preview + API catalog ile wave_4_data_display kapandi."
+      ]
+    },
+    {
+      "wave_id": "wave_5_overlay",
+      "title_tr": "Overlay",
+      "status": "completed",
+      "objective": "Dialog/drawer/popover onay akisini guvenli ve izlenebilir sekilde tamamla.",
+      "families": ["overlay"],
+      "candidate_components": ["Modal", "Dropdown", "Tooltip", "FormDrawer", "DetailDrawer", "Popover"],
+      "dependencies": ["wave_1_foundation_primitives", "wave_3_forms"],
+      "notes": [
+        "Batch-1 overlay primitive seti Modal, Dropdown ve Tooltip olarak acildi.",
+        "Dropdown forms taxonomy altinda, Tooltip feedback taxonomy altinda kalsa da wave_5 capraz-grup overlay batch olarak yonetilir.",
+        "ContextMenu ve TourCoachmarks sonraki overlay extension dalgasi olan wave_8_overlay_extensions ile kapatildi."
+      ],
+      "completed_components": ["Modal", "Dropdown", "Tooltip", "FormDrawer", "DetailDrawer", "Popover"],
+      "remaining_components": []
+    },
+    {
+      "wave_id": "wave_6_ai_native_helpers",
+      "title_tr": "AI-Native Helpers",
+      "status": "completed",
+      "objective": "AI destekli karar ve onay deneyimini guvenli, izlenebilir ve UX catalog uyumlu hale getir.",
+      "families": ["ai_native_helpers"],
+      "candidate_components": ["CommandPalette", "RecommendationCard", "ConfidenceBadge", "ApprovalCheckpoint", "CitationPanel", "AIActionAuditTimeline", "PromptComposer"],
+      "dependencies": ["wave_1_foundation_primitives", "wave_2_navigation", "wave_3_forms", "wave_5_overlay"]
+    },
+    {
+      "wave_id": "wave_7_page_blocks",
+      "title_tr": "Page / Block Library",
+      "status": "completed",
+      "objective": "Hazir page shell ve block compositelerini urunlestir; route-level kopya yapilari azalt.",
+      "families": ["page_blocks"],
+      "candidate_components": ["PageLayout", "FilterBar", "ReportFilterPanel", "PageHeader", "SummaryStrip", "EntitySummaryBlock"],
+      "dependencies": ["wave_1_foundation_primitives", "wave_2_navigation", "wave_3_forms", "wave_4_data_display"],
+      "notes": [
+        "PageLayout, FilterBar ve ReportFilterPanel mevcut substrate olarak page_blocks ailesine tasindi.",
+        "PageHeader, SummaryStrip ve EntitySummaryBlock batch ile export + live preview + doctor evidence seviyesine cekildi.",
+        "SectionShell ve ActionHeader sonraki backlog olarak ailede tutulur; aktif dalga kapsaminda degildir."
+      ]
+    },
+    {
+      "wave_id": "wave_8_overlay_extensions",
+      "title_tr": "Overlay Extensions",
+      "status": "completed",
+      "objective": "ContextMenu ve TourCoachmarks backlog overlay uzantilarini export + docs + doctor evidence ile urunlestir.",
+      "families": ["overlay"],
+      "candidate_components": ["ContextMenu", "TourCoachmarks"],
+      "dependencies": ["wave_5_overlay", "wave_7_page_blocks"],
+      "notes": [
+        "ContextMenu ve TourCoachmarks wave_5 disindaki backlog statusten cikartilip ayri overlay extension dalgasi olarak kapatildi.",
+        "Doktor, Playwright ve docs-site preview evidence ayni dalga kontratina baglandi."
+      ],
+      "completed_components": ["ContextMenu", "TourCoachmarks"],
+      "remaining_components": []
+    },
+    {
+      "wave_id": "wave_9_foundation_language",
+      "title_tr": "Foundation Language",
+      "status": "completed",
+      "objective": "Typography, iconography, motion ve responsive/layout-grid kontratlarini kilitle.",
+      "families": ["foundation_language"],
+      "candidate_components": ["TypographySystem", "IconographySystem", "MotionSystem", "ResponsiveLayoutGrid"],
+      "dependencies": ["wave_1_foundation_primitives", "wave_7_page_blocks"],
+      "notes": ["Foundation dili component ustu kontrat seti olarak kilitlendi ve governance/gate zincirine baglandi."]
+    },
+    {
+      "wave_id": "wave_10_theme_presets",
+      "title_tr": "Theme Presets",
+      "status": "completed",
+      "objective": "Resmi theme preset ailesini tek katalog ve release diliyle standardize et.",
+      "families": ["theme_presets"],
+      "candidate_components": ["ThemePresetGallery", "ThemePresetCompare"],
+      "dependencies": ["wave_9_foundation_language"],
+      "notes": ["Theme preset katalogu mevcut theme-contract allowedModes ile hizali resmi preset ailesi uretir."]
+    },
+    {
+      "wave_id": "wave_11_recipes",
+      "title_tr": "Recipes",
+      "status": "completed",
+      "objective": "Reusable ekran/panel kaliplarini recipe sistemi kontrati altinda standardize et.",
+      "families": ["recipes"],
+      "candidate_components": ["SearchFilterListing", "DetailSummary", "ApprovalReview", "EmptyErrorLoading", "AIGuidedAuthoring"],
+      "dependencies": ["wave_7_page_blocks", "wave_10_theme_presets"],
+      "notes": ["Recipe sistemi, page/block ve component owner API'lerini tekrar kullanilabilir ekran kaliplari olarak birlestirdi."]
+    }
+  ]
+}

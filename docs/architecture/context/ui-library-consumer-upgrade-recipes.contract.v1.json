@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "contract_id": "ui-library-consumer-upgrade-recipes-contract-v1",
+  "status": "ACTIVE",
+  "focus_components": [
+    "Empty",
+    "ReportFilterPanel",
+    "Select",
+    "Tag",
+    "Text",
+    "ThemePreviewCard"
+  ],
+  "candidate_mode": "dry-run-audit",
+  "audit_script": "audit:ui-library-upgrade-recipes",
+  "audit_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-upgrade-recipes.audit.v1.json",
+  "recipe_fields": [
+    "recipeId",
+    "component",
+    "consumerApp",
+    "ownerHandles",
+    "targetFiles",
+    "apiFocusProps",
+    "previewFocus",
+    "regressionFocus",
+    "automation",
+    "steps"
+  ],
+  "rules": [
+    "Upgrade recipe artefact'i once single-app blast radius backlog'u kapsar; cross-app surface ayri rollout track'inde kalir.",
+    "Her recipe somut consumer app, owner ve target file listesi tasir; soyut backlog satiri olarak kalmaz.",
+    "Codemod candidate'lari fail-closed sekilde dry-run audit script'i ile raporlanir; otomatik write varsayilan degildir.",
+    "Recipe backlog'u release manifest, Design Lab ve latest release artefact'lari ile ayni turda uretilir."
+  ]
+}

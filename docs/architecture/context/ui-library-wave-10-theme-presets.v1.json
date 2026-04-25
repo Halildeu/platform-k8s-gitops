@@ -1,0 +1,19 @@
+{
+  "version": "1.0",
+  "wave_id": "wave_10_theme_presets",
+  "status": "completed",
+  "families": [
+    "theme_presets"
+  ],
+  "dependencies": [
+    "wave_9_foundation_language"
+  ],
+  "focus_artifacts": [
+    "docs/02-architecture/context/ui-library-theme-preset-catalog.v1.json"
+  ],
+  "gate_requirements": [
+    "python3 scripts/check_ui_library_system_extensions.py",
+    "python3 scripts/check_ui_library_governance_contract.py",
+    "npm -C web run gate:ui-library-wave -- --wave wave_10_theme_presets"
+  ]
+}

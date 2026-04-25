@@ -1,0 +1,24 @@
+{
+  "version": "1.0",
+  "contract_id": "ui-library-visual-review-contract-v1",
+  "status": "ACTIVE",
+  "provider": "chromatic",
+  "storybook_build_script": "build-storybook",
+  "review_script": "chromatic",
+  "secret_env_var": "CHROMATIC_PROJECT_TOKEN",
+  "review_mode_when_secret_present": "hosted_review",
+  "review_mode_when_secret_missing": "artifact_only",
+  "storybook_static_path": "web/storybook-static/index.html",
+  "chromatic_trigger_path": "web/stories/_chromatic-trigger.ts",
+  "performance_hints_policy": {
+    "mode": "disabled-for-docs-build",
+    "owner": "app-and-package-bundle-gates",
+    "reason": "Storybook docs build tum story surface'ini tek bundle altinda toplar; bundle agirlik butceleri release docs yerine app ve package gate'lerinde izlenir."
+  },
+  "rules": [
+    "Visual review truth'u env degiskeni yerine bu kontrat ve release manifest ustunden okunur.",
+    "Secret varsa hosted review kanali aktiflestirilir; secret yoksa artifact-only fallback kullanilir.",
+    "Storybook static artefact'i ve core harness dosyalari yoksa visual contract FAIL olmalidir.",
+    "Webpack performance hint warning'leri docs build icin kapatilabilir; bundle agirlik guveni ayrik gate'lerde korunur."
+  ]
+}

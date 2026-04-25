@@ -1,0 +1,46 @@
+NAME	TYPE	OWNER	SOURCE	MIN_SCOPE_OR_PERMISSIONS	USED_IN	NOTES
+BACKEND_HEALTH_URLS	github_secret	@team/platform	GitHub Actions secret	HTTP(S) endpoint list (comma-separated)	.github/workflows/post-deploy-validate.yml	Healthcheck list for backend validate.
+BACKEND_ROLLBACK_HOOK_URL	github_secret	@team/platform	GitHub Actions secret	HTTP(S) POST endpoint	.github/workflows/rollback.yml	Backend rollback hook.
+CANARY_API_KEY	github_secret	@team/platform	GitHub Actions secret	Grafana/observability API key	.github/workflows/release-canary.yml	Alternate live canary metrics key when Grafana key is not used.
+CANARY_APPLY_WEIGHT_HOOK_URL	github_secret	@team/platform	GitHub Actions secret	HTTP(S) POST endpoint	.github/workflows/release-canary.yml	Generic hook that applies requested canary weight.
+CANARY_AUDIT_FILTER_QUERY	github_variable	@team/platform	GitHub Actions variable	PromQL/Loki query string	.github/workflows/release-canary.yml	Canary audit filter query.
+CANARY_AUDIT_TOTAL_QUERY	github_variable	@team/platform	GitHub Actions variable	PromQL/Loki query string	.github/workflows/release-canary.yml	Canary audit total query.
+CANARY_BACKEND_HEALTH_URLS	github_secret	@team/platform	GitHub Actions secret	HTTP(S) endpoint list (comma-separated)	.github/workflows/release-canary.yml	Backend healthcheck list for live canary runtime validation.
+CANARY_DEFAULT_ENV	github_variable	@team/platform	GitHub Actions variable	Environment name (stage/prod)	.github/workflows/release-canary.yml	Default live canary target environment.
+CANARY_DEFAULT_MODE	github_variable	@team/platform	GitHub Actions variable	Canary mode (sample/live)	.github/workflows/release-canary.yml	Default canary execution mode.
+CANARY_ENABLED	github_secret	@team/platform	GitHub Actions secret	string "true"/"false"	.github/workflows/release-canary.yml	Kill-switch: live canary only runs when true.
+CANARY_ERROR_QUERY	github_variable	@team/platform	GitHub Actions variable	PromQL/Loki query string	.github/workflows/release-canary.yml	Canary error-rate query.
+CANARY_PROM_URL	github_secret	@team/platform	GitHub Actions secret	Prometheus/Grafana proxy URL	.github/workflows/release-canary.yml	Metrics base URL for live canary.
+CANARY_ROLLBACK_HOOK_URL	github_secret	@team/platform	GitHub Actions secret	HTTP(S) POST endpoint	.github/workflows/release-canary.yml	Rollback hook for failed canary stage.
+CANARY_SENTRY_QUERY	github_variable	@team/platform	GitHub Actions variable	PromQL/Loki/Sentry query string	.github/workflows/release-canary.yml	Canary Sentry/error query.
+CANARY_TTFB_QUERY	github_variable	@team/platform	GitHub Actions variable	PromQL query string	.github/workflows/release-canary.yml	Canary TTFB query.
+CANARY_WEIGHT_10_HOOK_URL	github_secret	@team/platform	GitHub Actions secret	HTTP(S) POST endpoint	.github/workflows/release-canary.yml	Optional weight-specific hook for 10% rollout.
+CANARY_WEIGHT_100_HOOK_URL	github_secret	@team/platform	GitHub Actions secret	HTTP(S) POST endpoint	.github/workflows/release-canary.yml	Optional weight-specific hook for 100% rollout.
+CANARY_WEIGHT_50_HOOK_URL	github_secret	@team/platform	GitHub Actions secret	HTTP(S) POST endpoint	.github/workflows/release-canary.yml	Optional weight-specific hook for 50% rollout.
+CANARY_WEB_SMOKE_URL	github_secret	@team/platform	GitHub Actions secret	HTTP(S) URL	.github/workflows/release-canary.yml	Web smoke endpoint for live canary runtime validation.
+DEPLOY_ENABLED	github_secret	@team/platform	GitHub Actions secret	string "true"/"false"	.github/workflows/deploy-web.yml,.github/workflows/deploy-backend.yml,.github/workflows/post-deploy-validate.yml	Kill-switch: deploy chain.
+GH_AUTH_VAULT_FIELD	env	@team/platform	Env var / Vault pointer	Vault KV field name	GH-AUTH-VAULT-POINTERS.md	Points to a Vault KV field that stores a GitHub token.
+GH_AUTH_VAULT_PATH	env	@team/platform	Env var / Vault pointer	Vault KV v2 path	GH-AUTH-VAULT-POINTERS.md	Points to a Vault KV path that stores a GitHub token.
+GH_LOCAL_AUTOPILOT_TOKEN	vault_field	@team/platform	Vault KV v2 field	GitHub token (PAT / fine-grained)	GH-AUTH-VAULT-POINTERS.md,scripts/ops/local_ops_start.sh	Local autopilot token; value never logged.
+GH_SECRETS_SYNC_TOKEN	github_secret	@team/platform	GitHub Actions secret	PAT/fine-grained token that can update repo secrets	.github/workflows/vault-secrets-sync.yml	Used only for writing GitHub Secrets (GITHUB_TOKEN cannot).
+GH_TOKEN	env	@team/platform	Env var	GitHub token injected for gh/CLI	GitHub Actions + local ops	Preferred session token for `gh` CLI.
+GITHUB_TOKEN	github_token	@team/platform	GitHub Actions built-in token	Controlled by workflow `permissions:` blocks	GitHub Actions	Do not store as secret; permissions must be explicit per workflow.
+GRAFANA_API_KEY	github_secret	@team/platform	GitHub Actions secret	Grafana/observability API key	.github/workflows/release-canary.yml	Primary live canary metrics key.
+KEYCLOAK_CLIENT_ID	github_secret	@team/platform	GitHub Actions secret	OIDC client id	.github/workflows/vault-secrets-sync.yml	Playwright Keycloak config.
+KEYCLOAK_CLIENT_SECRET	github_secret	@team/platform	GitHub Actions secret	OIDC client secret	.github/workflows/vault-secrets-sync.yml	Playwright Keycloak config.
+KEYCLOAK_SCOPE	github_secret	@team/platform	GitHub Actions secret	optional OAuth scope	.github/workflows/vault-secrets-sync.yml	Optional.
+KEYCLOAK_TOKEN_URL	github_secret	@team/platform	GitHub Actions secret	OIDC token endpoint URL	.github/workflows/vault-secrets-sync.yml	Playwright Keycloak config.
+COSIGN_PASSWORD	github_secret	@team/platform	GitHub Actions secret	Cosign private key password	.github/workflows/security-guardrails.yml	SBOM signing key passphrase when key is encrypted.
+COSIGN_PRIVATE_KEY	github_secret	@team/platform	GitHub Actions secret	Cosign private key (PEM)	.github/workflows/security-guardrails.yml	Used by cosign sign-blob for SBOM signatures.
+NVD_API_KEY	github_secret	@team/platform	GitHub Actions secret	NVD API key	.github/workflows/security-guardrails.yml	Used by Dependency-Check to avoid NVD throttling and stale-cache fallback.
+PLAYWRIGHT_BASE_URL	github_secret	@team/platform	GitHub Actions secret	HTTP(S) base URL	.github/workflows/web-playwright-nightly.yml	Base URL for Playwright tests (dispatch can override).
+ROLLBACK_ENABLED	github_secret	@team/platform	GitHub Actions secret	string "true"/"false"	.github/workflows/rollback.yml	Kill-switch: rollback workflow.
+VAULT_ADDR	github_secret	@team/platform	GitHub Actions secret	Vault address URL	.github/workflows/vault-secrets-sync.yml,GH-AUTH-VAULT-POINTERS.md	Vault endpoint.
+VAULT_TOKEN	github_secret	@team/platform	GitHub Actions secret	Vault token	.github/workflows/vault-secrets-sync.yml,GH-AUTH-VAULT-POINTERS.md	Vault auth token; masked.
+WEB_DEPLOY_HOOK_URL	github_secret	@team/platform	GitHub Actions secret	HTTP(S) POST endpoint	.github/workflows/deploy-web.yml	Web deploy hook.
+WEB_ROLLBACK_HOOK_URL	github_secret	@team/platform	GitHub Actions secret	HTTP(S) POST endpoint	.github/workflows/rollback.yml	Web rollback hook.
+WEB_SMOKE_URL	github_secret	@team/platform	GitHub Actions secret	HTTP(S) URL	.github/workflows/post-deploy-validate.yml	Web smoke endpoint for validate.
+ZAP_AUTH_HEADER_NAME	github_variable	@team/platform	GitHub Actions variable	HTTP header name	.github/workflows/security-guardrails.yml	Header name injected into ZAP requests when auth mode is bearer_header.
+ZAP_AUTH_HEADER_VALUE	github_secret	@team/platform	GitHub Actions secret	HTTP header value	.github/workflows/security-guardrails.yml	Header value injected into ZAP requests; never logged.
+ZAP_AUTH_MODE	github_variable	@team/platform	GitHub Actions variable	Auth mode enum (none/bearer_header)	.github/workflows/security-guardrails.yml	Determines how DAST authenticates.
+ZAP_TARGET_URL	github_secret	@team/platform	GitHub Actions secret	HTTP(S) base URL	.github/workflows/security-guardrails.yml	DAST target URL.

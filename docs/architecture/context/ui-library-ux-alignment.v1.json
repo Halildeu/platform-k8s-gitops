@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "subject_id": "ui_kutuphane_sistemi",
+  "family_alignment": [
+    {
+      "family_id": "foundation_primitives",
+      "ux_theme_id": "consistency_and_pattern_governance",
+      "ux_subtheme_id": "single_component_source_of_truth"
+    },
+    {
+      "family_id": "navigation",
+      "ux_theme_id": "navigation_information_scent",
+      "ux_subtheme_id": "orientation_and_wayfinding"
+    },
+    {
+      "family_id": "forms",
+      "ux_theme_id": "data_entry_validation_recovery",
+      "ux_subtheme_id": "inline_validation_before_submit"
+    },
+    {
+      "family_id": "theme_presets",
+      "ux_theme_id": "consistency_and_pattern_governance",
+      "ux_subtheme_id": "single_component_source_of_truth"
+    },
+    {
+      "family_id": "recipes",
+      "ux_theme_id": "task_completion_architecture",
+      "ux_subtheme_id": "critical_path_minimization"
+    }
+  ],
+  "artifacts": [
+    "web/apps/mfe-shell/src/pages/admin/DesignLabPage.tsx",
+    "web/packages/ui-kit/src/catalog/component-registry.v1.json"
+  ]
+}

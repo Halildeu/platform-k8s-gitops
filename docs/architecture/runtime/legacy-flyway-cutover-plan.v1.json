@@ -1,0 +1,322 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-03-06",
+  "status": "live_cutover_completed",
+  "scope": {
+    "database": "users",
+    "mode": "shared-postgres-schema-cutover",
+    "affected_services": [
+      "auth-service",
+      "user-service",
+      "permission-service",
+      "variant-service",
+      "core-data-service"
+    ],
+    "primary_blocker": "managed-legacy-user-service-flyway-debt"
+  },
+  "latest_rehearsal": {
+    "status": "passed",
+    "date": "2026-03-06",
+    "mode": "isolated-app-level-schema-rehearsal",
+    "database": "schema_rehearsal",
+    "evidence": [
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/compose-ps.json",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/eureka-apps.xml",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/discovery-health.json",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/permission-service-health.json",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/user-service-health.json",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/auth-service-health.json",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/variant-service-health.json",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/core-data-service-health.json",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/api-gateway-health.json",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/gateway-companies-headers.txt",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/gateway-companies-body.txt",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/schema-inventory.txt",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/admin-role-assignments.txt",
+      "backend/.autopilot-tmp/app-level-schema-rehearsal/flyway-history-counts.txt"
+    ]
+  },
+  "latest_live_cutover": {
+    "status": "passed",
+    "date": "2026-03-06",
+    "mode": "live-maintenance-window-cutover",
+    "database": "users",
+    "evidence": [
+      "backend/.autopilot-tmp/live-schema-cutover/pre/compose-ps.json",
+      "backend/.autopilot-tmp/live-schema-cutover/pre/users-pre-cutover.dump",
+      "backend/.autopilot-tmp/live-schema-cutover/pre/schema-inventory.txt",
+      "backend/.autopilot-tmp/live-schema-cutover/post/compose-ps.json",
+      "backend/.autopilot-tmp/live-schema-cutover/post/api-gateway-health.json",
+      "backend/.autopilot-tmp/live-schema-cutover/post/eureka-apps.xml",
+      "backend/.autopilot-tmp/live-schema-cutover/post/gateway-companies-headers.txt",
+      "backend/.autopilot-tmp/live-schema-cutover/post/admin-role-assignments.txt",
+      "backend/.autopilot-tmp/live-schema-cutover/post/flyway-history-counts.txt",
+      "backend/.autopilot-tmp/live-schema-cutover/post/schema-inventory.txt",
+      "backend/.autopilot-tmp/live-schema-cutover/post/cutover.sql.out"
+    ]
+  },
+  "recommended_strategy": {
+    "id": "rebaseline-plus-upgrade-cutover",
+    "fresh_bootstrap_track": "Create new schema-owned baseline chains after cutover; do not reuse legacy public-schema bootstrap as canonical for empty environments.",
+    "upgrade_track": "Use one-time offline schema move SQL plus schema-aware env flip; do not edit already applied V6/V8 migrations.",
+    "why": [
+      "Applied Flyway versioned migrations must remain immutable.",
+      "Current runtime already mitigates active admin role assignment ownership in permission-service.",
+      "Fresh bootstrap and in-place upgrade need different safety strategies."
+    ],
+    "rejected_alternatives": [
+      {
+        "id": "edit-v6-v8-in-place",
+        "reason": "Breaks Flyway checksum on existing environments."
+      },
+      {
+        "id": "big-bang-new-database-first",
+        "reason": "Adds infra scope before schema ownership debt is closed."
+      }
+    ]
+  },
+  "invariants": [
+    "No in-place edit on already applied V6/V8 user-service migrations.",
+    "Cutover runs with business services stopped; postgres stays up.",
+    "Permission bootstrap remains source of truth for default ADMIN role assignment.",
+    "Object inventory and Flyway history evidence are captured before and after cutover.",
+    "Rollback must be possible without rewriting historical migration files."
+  ],
+  "evidence_inputs": [
+    "backend/.autopilot-tmp/runtime-smoke/postgres-table-inventory.txt",
+    "backend/.autopilot-tmp/runtime-smoke/postgres-sequences.txt",
+    "backend/.autopilot-tmp/runtime-smoke/user-flyway-history.txt",
+    "backend/.autopilot-tmp/runtime-smoke/permission-flyway-history.txt",
+    "backend/user-service/src/main/resources/db/migration/V6__seed_admin_user.sql",
+    "backend/user-service/src/main/resources/db/migration/V8__seed_theme_admin_users.sql",
+    "backend/permission-service/src/main/java/com/example/permission/config/DefaultAdminRoleAssignmentInitializer.java",
+    "backend/.autopilot-tmp/baseline-validation/auth-service.log",
+    "backend/.autopilot-tmp/baseline-validation/user-service.log",
+    "backend/.autopilot-tmp/baseline-validation/permission-service.log",
+    "backend/.autopilot-tmp/baseline-validation/core-data-service.log",
+    "backend/.autopilot-tmp/baseline-validation/variant-service.log",
+    "backend/.autopilot-tmp/cutover-rehearsal/post-cutover-inventory.txt",
+    "backend/.autopilot-tmp/cutover-rehearsal/post-rollback-inventory.txt",
+    "backend/.autopilot-tmp/app-level-schema-rehearsal/compose-ps.json",
+    "backend/.autopilot-tmp/app-level-schema-rehearsal/eureka-apps.xml",
+    "backend/.autopilot-tmp/app-level-schema-rehearsal/gateway-companies-headers.txt",
+    "backend/.autopilot-tmp/app-level-schema-rehearsal/gateway-companies-body.txt",
+    "backend/.autopilot-tmp/app-level-schema-rehearsal/schema-inventory.txt",
+    "backend/.autopilot-tmp/app-level-schema-rehearsal/admin-role-assignments.txt",
+    "backend/.autopilot-tmp/app-level-schema-rehearsal/flyway-history-counts.txt"
+  ],
+  "phases": [
+    {
+      "id": "phase-0-preflight-freeze",
+      "status": "done",
+      "goal": "Freeze current runtime state and capture rollback evidence.",
+      "steps": [
+        "Record table inventory, sequence inventory and Flyway history tables.",
+        "Capture current service health, Eureka registry and gateway smoke evidence.",
+        "Stop api-gateway, auth-service, user-service, permission-service, variant-service and core-data-service in controlled order."
+      ],
+      "outputs": [
+        "pre-cutover object inventory",
+        "pre-cutover Flyway history snapshot",
+        "pre-cutover runtime lock snapshot"
+      ]
+    },
+    {
+      "id": "phase-1-fresh-bootstrap-rebaseline",
+      "status": "implemented",
+      "goal": "Define clean schema-owned bootstrap chains for empty environments.",
+      "steps": [
+        "Create new canonical bootstrap chains per service for target schema ownership.",
+        "User-service bootstrap chain must own only users, user_audit_events and user_notification_preferences.",
+        "Permission-service bootstrap chain must own roles, role_permissions, user_role_assignments, scopes, user_permission_scope, audit tables and default admin assignment bootstrap.",
+        "Mark legacy public-schema bootstrap chain as legacy-only in docs and rollout notes."
+      ],
+      "outputs": [
+        "schema-owned baseline migration chains",
+        "baseline validation logs",
+        "legacy bootstrap deprecation note"
+      ]
+    },
+    {
+      "id": "phase-2-offline-upgrade-cutover",
+      "status": "executed_live",
+      "goal": "Move existing public objects into target service schemas without touching applied versioned migrations.",
+      "steps": [
+        "Create target schemas if missing.",
+        "Move auth-service tables and sequences to auth_service.",
+        "Move variant-service tables and sequences to variant_service.",
+        "Move core-data-service tables and sequences to core_data_service.",
+        "Move permission-service tables and sequences to permission_service.",
+        "Move user-service tables and sequences to user_service.",
+        "Ensure cross-schema foreign keys and defaults remain valid after SET SCHEMA operations."
+      ],
+      "outputs": [
+        "one-time cutover SQL",
+        "rollback SQL",
+        "cutover rehearsal logs",
+        "post-cutover schema ownership evidence"
+      ]
+    },
+    {
+      "id": "phase-3-config-flip-and-runtime-verify",
+      "status": "executed_live",
+      "goal": "Deploy schema-aware configuration in an isolated rehearsal environment and verify runtime behavior.",
+      "steps": [
+        "Set AUTH_DB_SCHEMA, USER_DB_SCHEMA, PERMISSION_DB_SCHEMA, VARIANT_DB_SCHEMA and CORE_DATA_DB_SCHEMA to target schema names.",
+        "Start discovery-server, then permission-service, auth-service, user-service, variant-service, core-data-service and api-gateway.",
+        "Validate actuator health, Eureka registration, gateway 401 smoke and default admin role assignments.",
+        "Run Flyway info/validate checks for auth-service, user-service, permission-service, variant-service and core-data-service."
+      ],
+      "outputs": [
+        "app-level schema rehearsal smoke",
+        "schema-aware config evidence",
+        "post-rehearsal Flyway history snapshot"
+      ]
+    },
+    {
+      "id": "phase-4-live-maintenance-window-cutover",
+      "status": "done",
+      "goal": "Execute offline schema move against the live users database and flip runtime configuration in a controlled maintenance window.",
+      "steps": [
+        "Capture pre-cutover runtime lock snapshot from the live stack.",
+        "Stop business services while leaving PostgreSQL available.",
+        "Apply 02-offline-service-schema-cutover.sql against the live users database.",
+        "Flip live AUTH_DB_SCHEMA, USER_DB_SCHEMA, PERMISSION_DB_SCHEMA, VARIANT_DB_SCHEMA and CORE_DATA_DB_SCHEMA values to target schema names.",
+        "Start services in discovery -> permission -> user -> auth -> variant -> core-data -> api-gateway order.",
+        "Re-run health, Eureka, gateway 401 smoke, admin assignment and Flyway validate evidence collection against the live stack."
+      ],
+      "outputs": [
+        "live post-cutover runtime smoke",
+        "live schema ownership evidence",
+        "live rollback-ready lock snapshot"
+      ]
+    }
+  ],
+  "service_object_move_plan": [
+    {
+      "service": "auth-service",
+      "target_schema": "auth_service",
+      "tables": [
+        "email_verification_tokens",
+        "password_reset_tokens",
+        "auth_flyway_history"
+      ],
+      "sequences": [
+        "email_verification_tokens_id_seq",
+        "password_reset_tokens_id_seq"
+      ]
+    },
+    {
+      "service": "variant-service",
+      "target_schema": "variant_service",
+      "tables": [
+        "themes",
+        "theme_registry",
+        "theme_registry_css_vars",
+        "theme_overrides",
+        "user_theme_selections",
+        "user_grid_variants",
+        "user_grid_variant_preferences",
+        "variant_visibility",
+        "variant_flyway_history"
+      ],
+      "sequences": [
+        "variant_visibility_id_seq"
+      ]
+    },
+    {
+      "service": "core-data-service",
+      "target_schema": "core_data_service",
+      "tables": [
+        "companies",
+        "core_data_flyway_history"
+      ],
+      "sequences": [
+        "companies_id_seq"
+      ]
+    },
+    {
+      "service": "permission-service",
+      "target_schema": "permission_service",
+      "tables": [
+        "permissions",
+        "roles",
+        "role_permissions",
+        "user_role_assignments",
+        "scopes",
+        "user_permission_scope",
+        "permission_audit_events",
+        "authz_audit_log",
+        "permission_flyway_history"
+      ],
+      "sequences": [
+        "permissions_id_seq",
+        "roles_id_seq",
+        "role_permissions_id_seq",
+        "scopes_id_seq",
+        "user_permission_scope_id_seq",
+        "user_role_assignments_id_seq",
+        "permission_audit_events_id_seq",
+        "authz_audit_log_id_seq"
+      ],
+      "notes": [
+        "Move in same offline window as user-service tables because user_role_assignments references users.",
+        "Default admin role assignment bootstrap remains enabled during first post-cutover start."
+      ]
+    },
+    {
+      "service": "user-service",
+      "target_schema": "user_service",
+      "tables": [
+        "users",
+        "user_audit_events",
+        "user_notification_preferences",
+        "user_flyway_history"
+      ],
+      "sequences": [
+        "users_id_seq",
+        "user_audit_events_id_seq",
+        "user_notification_preferences_id_seq"
+      ],
+      "notes": [
+        "User-service and permission-service cutover must be treated as a coordinated pair.",
+        "Legacy V6/V8 migrations remain historical evidence only; ownership behavior comes from permission-service bootstrap."
+      ]
+    }
+  ],
+  "validation_gates": [
+    "All backend services healthy after schema flip.",
+    "Eureka lists AUTH-SERVICE, USER-SERVICE, PERMISSION-SERVICE, VARIANT-SERVICE and CORE-DATA-SERVICE.",
+    "Gateway GET /api/v1/companies returns 401 Unauthorized, not 404/5xx.",
+    "Admin users keep active ADMIN assignment.",
+    "All moved tables and sequences appear under target schemas.",
+    "Flyway validate succeeds for all schema-aware services."
+  ],
+  "rollback_strategy": {
+    "trigger_conditions": [
+      "Flyway validate failure after schema flip.",
+      "Critical service health stays DOWN/UNHEALTHY.",
+      "Gateway smoke returns 5xx or registry misses a critical service."
+    ],
+    "steps": [
+      "Stop business services again.",
+      "Revert schema env values back to public.",
+      "Apply reverse SET SCHEMA operations using pre-cutover inventory.",
+      "Re-run health, Eureka and gateway smoke on public schema mode.",
+      "Preserve cutover failure evidence for follow-up; do not edit historical migrations."
+    ]
+  },
+  "prepared_artifacts": [
+    "backend/auth-service/src/main/resources/db/migration_schema_owned",
+    "backend/user-service/src/main/resources/db/migration_schema_owned",
+    "backend/permission-service/src/main/resources/db/migration_schema_owned",
+    "backend/core-data-service/src/main/resources/db/migration_schema_owned",
+    "backend/variant-service/src/main/resources/db/migration_schema_owned",
+    "backend/devops/postgres/02-offline-service-schema-cutover.sql",
+    "backend/devops/postgres/03-offline-service-schema-cutover-rollback.sql",
+    "backend/scripts/ops/validate-schema-owned-baselines.sh",
+    "backend/scripts/ops/rehearse-service-schema-cutover.sh",
+    "backend/devops/rehearsal/docker-compose.app-level-schema.yml",
+    "backend/scripts/ops/run-app-level-schema-rehearsal.sh"
+  ]
+}

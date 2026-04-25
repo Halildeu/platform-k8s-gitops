@@ -1,0 +1,40 @@
+{
+  "version": "1.0",
+  "subject_id": "ui_kutuphane_sistemi",
+  "layers": [
+    {
+      "layer_id": "manifests",
+      "artifacts": [
+        "web/packages/ui-kit/src/catalog/component-manifest.v1.json",
+        "web/packages/ui-kit/src/catalog/component-registry.v1.json",
+        "web/packages/ui-kit/src/catalog/component-api-catalog.v1.json",
+        "web/apps/mfe-shell/src/pages/admin/design-lab.index.json"
+      ]
+    },
+    {
+      "layer_id": "runtime",
+      "artifacts": [
+        "web/packages/ui-kit/src/index.ts",
+        "web/packages/ui-kit/src/runtime/theme-contract.ts",
+        "web/packages/ui-kit/src/runtime/theme-controller.ts",
+        "web/packages/ui-kit/src/runtime/access-controller.ts"
+      ]
+    },
+    {
+      "layer_id": "diagnostics",
+      "artifacts": [
+        "web/apps/mfe-shell/src/pages/admin/DesignLabPage.tsx",
+        "web/scripts/ops/frontend-doctor.mjs",
+        "web/scripts/ops/run-ui-library-wave-gate.mjs"
+      ]
+    },
+    {
+      "layer_id": "release",
+      "artifacts": [
+        "web/packages/dist/ui-kit/remoteEntry.js",
+        "web/dist/ui-kit/remoteEntry.js",
+        "web/dist/ui-kit/ui-library-release-manifest.v1.json"
+      ]
+    }
+  ]
+}

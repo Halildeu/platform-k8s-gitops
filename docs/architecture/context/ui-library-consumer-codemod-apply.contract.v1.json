@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "contract_id": "ui-library-consumer-codemod-apply-contract-v1",
+  "status": "ACTIVE",
+  "input_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-apply-preview.v1.json",
+  "artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-apply.v1.json",
+  "audit_script": "audit:ui-library-codemod-apply",
+  "audit_artifact_path": "web/test-results/releases/ui-library/latest/ui-library-codemod-apply.audit.v1.json",
+  "run_script": "run:ui-library-codemod-apply",
+  "default_write_mode": "write_requires_flag",
+  "allow_write_flag": "--write",
+  "focus_components": [
+    "Empty",
+    "Tag",
+    "ThemePreviewCard"
+  ],
+  "rules": [
+    "Apply executor varsayilan olarak kaynak dosyalara yazmaz; exact-match write planini korur.",
+    "Gercek write yalniz explicit --write ile acilir ve yalniz write_eligible_preview operasyonlarini uygular.",
+    "Executor, kaynak dosya yeniden dogrulamasini apply aninda tekrar yapar; stale veya ambiguous kayitlari yazmaz.",
+    "Apply audit PASS olmadan release manifest icindeki latestAudit ozeti guncel sayilmaz."
+  ]
+}

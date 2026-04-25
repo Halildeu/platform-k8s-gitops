@@ -1,0 +1,62 @@
+{
+  "version": "1.0",
+  "subject_id": "ui_kutuphane_sistemi",
+  "contract_id": "ui-library-recipe-system-contract-v1",
+  "status": "ACTIVE",
+  "current_recipe_families": [
+    {
+      "recipe_id": "search_filter_listing",
+      "owner_blocks": [
+        "PageLayout",
+        "FilterBar",
+        "AgGridServer",
+        "TableSimple",
+        "List",
+        "Empty"
+      ],
+      "intent": "liste, filtre ve sonuc yuzeylerini ayni shell altinda toplamak"
+    },
+    {
+      "recipe_id": "detail_summary",
+      "owner_blocks": [
+        "PageHeader",
+        "SummaryStrip",
+        "EntitySummaryBlock",
+        "Descriptions",
+        "JsonViewer"
+      ],
+      "intent": "detay ekranlarinda ozet + meta + yan panel kurgusunu ortaklastirmak"
+    },
+    {
+      "recipe_id": "approval_review",
+      "owner_blocks": [
+        "ApprovalCheckpoint",
+        "CitationPanel",
+        "AIActionAuditTimeline",
+        "Modal",
+        "DetailDrawer"
+      ],
+      "intent": "review, kanit ve karar aksiyonlarini recipe-first davranisla toplamak"
+    },
+    {
+      "recipe_id": "empty_error_loading",
+      "owner_blocks": [
+        "Skeleton",
+        "Empty",
+        "Spinner",
+        "Button"
+      ],
+      "intent": "yukleme, bos ve hata durumlarini ortak bir recipe ailesinde toplamak"
+    },
+    {
+      "recipe_id": "ai_guided_authoring",
+      "owner_blocks": [
+        "PromptComposer",
+        "RecommendationCard",
+        "ConfidenceBadge",
+        "CommandPalette"
+      ],
+      "intent": "AI yardimli yazim, tavsiye ve komut secimini tek recipe altinda birlestirmek"
+    }
+  ]
+}
