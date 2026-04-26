@@ -201,6 +201,32 @@ def test_v17_canonical_tables_match_v16_ddl():
     )
 
 
+def test_v16_audit_table_state_pk_uses_unique_index_not_expression_pk():
+    """Codex iter (live smoke) regression: PostgreSQL doesn't accept
+    expressions inside PRIMARY KEY definitions. Earlier V16 used
+        PRIMARY KEY (run_id, table_name, source_schema, COALESCE(source_year, 0))
+    which syntax-errored on apply. The fix moves the expression to a
+    UNIQUE INDEX. This static gate ensures the generator (or any future
+    hand-edit) doesn't regress.
+    """
+    ddl = _read_v16()
+    # Locate migration_audit.migration_table_state block
+    start = ddl.find("CREATE TABLE migration_audit.migration_table_state (")
+    assert start >= 0, "migration_table_state CREATE TABLE missing"
+    end = ddl.find("\n);", start)
+    assert end > 0
+    block = ddl[start:end]
+    assert "COALESCE" not in block, (
+        "PRIMARY KEY contains COALESCE expression — PostgreSQL syntax error. "
+        "Move to a UNIQUE INDEX outside the CREATE TABLE."
+    )
+    # Matching unique index must exist
+    assert re.search(
+        r"CREATE UNIQUE INDEX idx_migration_table_state_pk\b[^;]*COALESCE\s*\(\s*source_year\s*,\s*0\s*\)",
+        ddl,
+    ), "missing CREATE UNIQUE INDEX over the COALESCE(source_year, 0) expression"
+
+
 @pytest.mark.parametrize("table_name", ["COMPANY", "BRANCH"])
 def test_v16_ddl_has_unique_lineage_constraint(table_name):
     """The conflict key (source_schema, source_table, source_pk) must have a
