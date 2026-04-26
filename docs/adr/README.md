@@ -34,6 +34,9 @@ Reddedilen alternatifler + red nedenleri.
 | 0001 | [Service Mesh Rejected](./0001-service-mesh-rejected.md) | Rejected |
 | 0002 | [Single-Host Dual-Cluster Topology](./0002-single-host-dual-cluster.md) | **Accepted** (2026-04-19) |
 | 0003 | [Inner-Loop Tooling Ownership Between platform-ssot and platform-k8s-gitops](./0003-inner-loop-tooling-ownership.md) | **Accepted** (2026-04-24) |
+| 0004 | [Split-Repo Authority Transfer](./0004-split-repo-authority-transfer.md) | **Accepted** |
+| 0005 | [Dual DataSource Reporting](./0005-dual-datasource-reporting.md) | **Accepted** |
+| 0008 | [Multi-Org Explicit-Scope Zanzibar Contract](./0008-multi-org-explicit-scope-zanzibar.md) | **Accepted** (2026-04-26) |
 
 Her yeni büyük karar için yeni ADR dosyası + PLAN.md D-karar satırı referansı.
 
