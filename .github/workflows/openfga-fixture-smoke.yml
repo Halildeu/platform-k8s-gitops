@@ -1,0 +1,95 @@
+name: OpenFGA Fixture Smoke (Faz 21.3 — D29 Zanzibar third level)
+
+# Faz 21.3 fixture-level regression gate — turns the one-time E2E proof
+# from PR #168 into a permanent CI check. On every change that could
+# break the dev/local OpenFGA seed flow:
+#   1. Spin up an ephemeral openfga/openfga:latest container.
+#   2. Run `scripts/dev-seed.sh --openfga-only` against it (renders
+#      model.fga via render_model_json.py, writes model + tuples).
+#   3. Run `scripts/smoke-openfga-fixture.sh` which executes every
+#      `smoke_checks[]` from `tuples.json` and asserts the expected
+#      allow/deny outcome.
+#
+# Catches: render_model_json.py regressions, dev-seed.sh OpenFGA
+# block regressions, model.fga ↔ tuples.json relation-name drift,
+# smoke_checks expectations vs current model semantics.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "bootstrap/local-fixtures/openfga/**"
+      - "scripts/dev-seed.sh"
+      - "scripts/smoke-openfga-fixture.sh"
+      - ".github/workflows/openfga-fixture-smoke.yml"
+  push:
+    branches: [main]
+    paths:
+      - "bootstrap/local-fixtures/openfga/**"
+      - "scripts/dev-seed.sh"
+      - "scripts/smoke-openfga-fixture.sh"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-smoke:
+    name: dev-seed.sh + 8 smoke checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Start ephemeral OpenFGA
+        run: |
+          docker run -d --name openfga-fixture \
+            -p 8080:8080 -p 8081:8081 \
+            openfga/openfga:latest run
+
+      - name: Wait for OpenFGA /healthz
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s --max-time 2 http://localhost:8080/healthz | jq -r '.status // empty' 2>/dev/null || true)
+            if [[ "${STATUS}" == "SERVING" ]]; then
+              echo "openfga healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "openfga did not become healthy in 30s; logs:"
+          docker logs openfga-fixture 2>&1 | tail -50
+          exit 1
+
+      - name: Seed model + tuples (dev-seed.sh --openfga-only)
+        env:
+          OPENFGA_URL: http://localhost:8080
+        run: |
+          # The script's KC + PG + k8s-secret blocks are skipped via flag,
+          # but the trailing kubectl secret stub will fail (no cluster).
+          # We capture and ignore that single non-OpenFGA failure: the
+          # OpenFGA block runs first and its output is what we verify.
+          bash scripts/dev-seed.sh --openfga-only 2>&1 | tee /tmp/dev-seed.log
+          if ! grep -q "OpenFGA tuples written" /tmp/dev-seed.log; then
+            echo "❌ dev-seed.sh did not reach 'OpenFGA tuples written' marker"
+            exit 1
+          fi
+
+      - name: Run smoke checks
+        env:
+          OPENFGA_URL: http://localhost:8080
+        run: bash scripts/smoke-openfga-fixture.sh
+
+      - name: Dump OpenFGA logs on failure
+        if: failure()
+        run: docker logs openfga-fixture 2>&1 | tail -100 || true
+
+      - name: Cleanup
+        if: always()
+        run: docker stop openfga-fixture 2>&1 || true

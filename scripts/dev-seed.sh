@@ -194,14 +194,24 @@ fi
 # Test/prod ESO tarafından Vault'tan dolan secret'lar — lokal dev için fake değer
 # Bu credentials sadece local-only stub; gerçek runtime için yeterli değil
 # (KC realm fixture ile uyumlu ad-hoc dev secret).
-log "K8s secret stubs (auth-service-secrets — local dev only)"
-# Spring Boot convention env: SPRING_DATASOURCE_USERNAME + SPRING_DATASOURCE_PASSWORD
-# (DB_PASSWORD/USERNAME değil — Spring Boot relaxed binding uyumlu canonical adlar)
-# dev-pg container POSTGRES_USER=postgres + POSTGRES_PASSWORD=postgres ile başlatılır
-kubectl --context k3d-dev -n platform-dev create secret generic auth-service-secrets \
-    --from-literal=SPRING_DATASOURCE_USERNAME=postgres \
-    --from-literal=SPRING_DATASOURCE_PASSWORD=postgres \
-    --from-literal=KEYCLOAK_CLIENT_SECRET=local-dev-stub \
-    --dry-run=client -o yaml | kubectl --context k3d-dev apply -f - >/dev/null
+#
+# Skip when kubectl k3d-dev context yok (CI smoke runs, --openfga-only against
+# bare openfga container, etc.). The stub is only useful when k3d-dev cluster
+# is up; otherwise create-secret fails and aborts the script under set -e.
+if command -v kubectl >/dev/null 2>&1 \
+    && kubectl --context k3d-dev version --client >/dev/null 2>&1 \
+    && kubectl --context k3d-dev cluster-info >/dev/null 2>&1; then
+  log "K8s secret stubs (auth-service-secrets — local dev only)"
+  # Spring Boot convention env: SPRING_DATASOURCE_USERNAME + SPRING_DATASOURCE_PASSWORD
+  # (DB_PASSWORD/USERNAME değil — Spring Boot relaxed binding uyumlu canonical adlar)
+  # dev-pg container POSTGRES_USER=postgres + POSTGRES_PASSWORD=postgres ile başlatılır
+  kubectl --context k3d-dev -n platform-dev create secret generic auth-service-secrets \
+      --from-literal=SPRING_DATASOURCE_USERNAME=postgres \
+      --from-literal=SPRING_DATASOURCE_PASSWORD=postgres \
+      --from-literal=KEYCLOAK_CLIENT_SECRET=local-dev-stub \
+      --dry-run=client -o yaml | kubectl --context k3d-dev apply -f - >/dev/null
+else
+  log "skip K8s secret stubs (no k3d-dev kubectl context)"
+fi
 
 log "=== seed tamamlandı (profile=${PROFILE}) ==="
