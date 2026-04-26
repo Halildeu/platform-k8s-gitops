@@ -1,0 +1,123 @@
+name: OpenFGA Model Drift Gate (Faz 19.11 Step 4)
+
+# Faz 19.11 Step 4 — Catches semantic drift between this repo's local
+# fixture model.fga and the authoritative upstream
+# (Halildeu/platform-backend:backend/openfga/model.fga). When upstream
+# semantic changes (e.g. another explicit-scope adjustment or a new
+# type addition), this gate forces an explicit sync PR before the local
+# fixture diverges.
+#
+# Why semantic JSON compare (not text diff): comments and whitespace
+# differ but produce identical OpenFGA models. The render_model_json.py
+# helper converts both files to the canonical JSON form that OpenFGA
+# itself stores; we compare those.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "bootstrap/local-fixtures/openfga/model.fga"
+      - "bootstrap/local-fixtures/openfga/render_model_json.py"
+      - ".github/workflows/openfga-model-drift.yml"
+  push:
+    branches: [main]
+    paths:
+      - "bootstrap/local-fixtures/openfga/model.fga"
+      - "bootstrap/local-fixtures/openfga/render_model_json.py"
+  schedule:
+    # Weekly Mondays 03:00 UTC — catches upstream drift between PR cycles
+    - cron: "0 3 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: model.fga semantic drift vs platform-backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Fetch upstream model.fga
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/upstream
+          curl -fsSL \
+            -H "Accept: application/vnd.github.v3.raw" \
+            "https://raw.githubusercontent.com/Halildeu/platform-backend/main/backend/openfga/model.fga" \
+            -o /tmp/upstream/model.fga
+          echo "upstream model.fga ($(wc -l < /tmp/upstream/model.fga) lines):"
+          head -20 /tmp/upstream/model.fga
+
+      - name: Render local model.fga → JSON
+        run: |
+          python3 bootstrap/local-fixtures/openfga/render_model_json.py \
+            bootstrap/local-fixtures/openfga/model.fga \
+            > /tmp/local-model.json
+          echo "local model.json size: $(wc -c < /tmp/local-model.json) bytes"
+
+      - name: Render upstream model.fga → JSON
+        run: |
+          python3 bootstrap/local-fixtures/openfga/render_model_json.py \
+            /tmp/upstream/model.fga \
+            > /tmp/upstream-model.json
+          echo "upstream model.json size: $(wc -c < /tmp/upstream-model.json) bytes"
+
+      - name: Compare JSON (semantic equivalence)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import sys
+
+          with open("/tmp/local-model.json") as f:
+              local = json.load(f)
+          with open("/tmp/upstream-model.json") as f:
+              upstream = json.load(f)
+
+          if local == upstream:
+              print("✓ local model.fga is semantically identical to upstream platform-backend.")
+              sys.exit(0)
+
+          # Compute a structural diff for the failure message.
+          local_types = {t["type"]: t for t in local.get("type_definitions", [])}
+          upstream_types = {t["type"]: t for t in upstream.get("type_definitions", [])}
+
+          local_only = sorted(set(local_types) - set(upstream_types))
+          upstream_only = sorted(set(upstream_types) - set(local_types))
+          shared_drifted = sorted(t for t in set(local_types) & set(upstream_types) if local_types[t] != upstream_types[t])
+
+          print("✗ DRIFT DETECTED — local model.fga is NOT semantically identical to upstream.")
+          print()
+          if local_only:
+              print(f"  Types in LOCAL ONLY: {local_only}")
+          if upstream_only:
+              print(f"  Types in UPSTREAM ONLY: {upstream_only}")
+          if shared_drifted:
+              print(f"  Types with relation drift: {shared_drifted}")
+              for t in shared_drifted:
+                  l_rels = sorted(local_types[t].get("relations", {}).keys())
+                  u_rels = sorted(upstream_types[t].get("relations", {}).keys())
+                  if l_rels != u_rels:
+                      print(f"    {t}: local relations={l_rels} vs upstream={u_rels}")
+                  else:
+                      print(f"    {t}: same relation names but definitions differ")
+
+          print()
+          print("To resolve:")
+          print("  1. Inspect upstream change in Halildeu/platform-backend backend/openfga/model.fga.")
+          print("  2. If the change is intended for this repo, copy it into")
+          print("     bootstrap/local-fixtures/openfga/model.fga and update tuples.json + smoke")
+          print("     checks if relation names changed (see Faz 19.11 Step 3 PR #168).")
+          print("  3. If the change should NOT propagate, document the divergence in")
+          print("     docs/openfga-authorization-model.upstream.md and gate this workflow")
+          print("     to skip the affected types.")
+          sys.exit(1)
+          PY
