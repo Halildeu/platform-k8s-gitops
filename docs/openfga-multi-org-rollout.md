@@ -76,35 +76,56 @@ echo "NEW_MODEL_ID=${NEW_MODEL_ID}"
 vault kv patch kv/platform/openfga model_id="${NEW_MODEL_ID}"
 ```
 
-ESO refresh interval (per existing ExternalSecret manifest) is 1h.
-Force a manual refresh:
+ESO refresh interval (per existing ExternalSecret manifests) is 1h.
+The Vault `kv/platform/openfga` `model_id` property is consumed by **4
+ExternalSecrets** in this repo (each with `secretKey: ERP_OPENFGA_MODEL_ID`):
+
+- `permission-service-secrets`
+- `core-data-service-secrets`
+- `variant-service-secrets`
+- `user-service-secrets`
+
+Force manual refresh on all four:
 
 ```bash
-ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
-  annotate es openfga-secrets force-sync=$(date +%s) --overwrite"
+for es in permission-service-secrets core-data-service-secrets \
+          variant-service-secrets user-service-secrets; do
+  ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+    annotate externalsecret \"$es\" force-sync=\"$(date +%s)\" --overwrite"
+done
 ```
 
-**Operator gate**: confirm `kubectl get externalsecret openfga-secrets`
-shows `STATUS=SecretSynced` with refreshed `lastTransitionTime`.
+**Operator gate**: confirm each ExternalSecret shows `STATUS=SecretSynced`
+with refreshed `lastTransitionTime`. NOTE — the `openfga-secrets` Secret
+in this repo is the OpenFGA datastore credential stub, NOT the
+`model_id` carrier; do NOT annotate it for this rotate.
 
 ## Step 4 — Rollout services consuming the model
 
+Only the 4 services with the ExternalSecret `ERP_OPENFGA_MODEL_ID` key
+need to restart for the model_id rotate to take effect. Other services
+(auth-service, schema-service, report-service, api-gateway) do not
+consume the model_id env in this repo's manifests.
+
 ```bash
-# Restart all services that read OPENFGA_MODEL_ID:
 ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
-  rollout restart deploy/permission-service deploy/auth-service \
-  deploy/core-data-service deploy/report-service deploy/schema-service \
-  deploy/variant-service deploy/user-service deploy/api-gateway"
-ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
-  rollout status deploy/permission-service --timeout=180s"
+  rollout restart deploy/permission-service deploy/core-data-service \
+  deploy/variant-service deploy/user-service"
+
+for svc in permission-service core-data-service variant-service user-service; do
+  ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+    rollout status deploy/$svc --timeout=180s"
+done
 ```
 
-**Operator gate**: each pod Ready 1/1 with new model_id env. Confirm:
+**Operator gate**: each pod Ready 1/1 with new model_id env. Confirm
+the canonical env variable name (`ERP_OPENFGA_MODEL_ID`, NOT
+`OPENFGA_MODEL_ID`):
 
 ```bash
 ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
-  exec deploy/permission-service -- env | grep OPENFGA_MODEL_ID"
-# expect NEW_MODEL_ID
+  exec deploy/permission-service -- env | grep ERP_OPENFGA_MODEL_ID"
+# expect ERP_OPENFGA_MODEL_ID=<NEW_MODEL_ID>
 ```
 
 ## Step 5 — Existing-state regression check
@@ -210,13 +231,17 @@ If any step fails or post-deploy regression appears:
 # 1. Vault model_id revert
 vault kv patch kv/platform/openfga model_id="<old_model_id_from_step_0>"
 
-# 2. ESO force refresh
-ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
-  annotate es openfga-secrets force-sync=$(date +%s) --overwrite"
+# 2. ESO force refresh (same 4 ExternalSecrets as Step 3)
+for es in permission-service-secrets core-data-service-secrets \
+          variant-service-secrets user-service-secrets; do
+  ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+    annotate externalsecret \"$es\" force-sync=\"$(date +%s)\" --overwrite"
+done
 
-# 3. Service rollouts
+# 3. Service rollouts (same 4 services as Step 4)
 ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
-  rollout restart deploy/permission-service deploy/auth-service ..."
+  rollout restart deploy/permission-service deploy/core-data-service \
+  deploy/variant-service deploy/user-service"
 
 # 4. New tuples are harmless on old model (model just doesn't know
 #    organization/depot types — checks against them fail closed); leave

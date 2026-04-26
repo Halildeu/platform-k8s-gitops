@@ -218,7 +218,7 @@ ayrı ADR (ADR-0009?) ile değerlendirilir.
 ## References
 
 - Codex thread `019dc8b4` iter-1/2/3 (Faz 21.A + 21.1 + 21.3)
-- `decisions/topics/zanzibar-openfga.v1.json` (D-001..D-007 final)
+- `decisions/topics/zanzibar-openfga.v1.json` (D-001..D-008 + C-008 final)
 - `bootstrap/local-fixtures/openfga/tuples.json` (current dev fixture)
 - `kustomize/base/apps/openfga/` (StatefulSet + migrate-job + ESO)
 - `kustomize/base/apps/permission-service/` (Zanzibar PEP/hub)
