@@ -137,21 +137,24 @@ def _mssql_factory(conn):
 
 
 def _stable_extract(batches: list[list[dict]]):
-    """Return an extract_fn that yields the given batches once."""
-    def fn(mssql_conn, table_meta, last_pk):
+    """Return an extract_fn that yields the given batches once.
+
+    Codex iter-5/6: extract_fn signature now (mssql_conn, table_meta, last_pk, limit)
+    so tests must accept the limit arg.
+    """
+    def fn(mssql_conn, table_meta, last_pk, limit):
         for b in batches:
             yield b
     return fn
 
 
-def _row(i: int, name: str = "Acme") -> dict:
+def _raw_row(i: int, name: str = "Acme") -> dict:
+    """RAW MSSQL-shaped row (just business cols). Runner runs transform_row()
+    on this before handing to load_batch. This mirrors the real path Codex
+    iter-5 said was missing in iter-4."""
     return {
         "company_id": i,
         "company_name": name,
-        "source_schema": "workcube_mikrolink",
-        "source_table": "COMPANY",
-        "source_pk": f'["{i}"]',
-        "content_hash": "deadbeef" * 8,
     }
 
 
@@ -169,7 +172,7 @@ def test_lock_contended_no_audit_mutate(cfg, mssql_conn):
     with patch("etl_worker.runner.AuditModule") as audit_cls:
         outcome = run_orchestrator(
             cfg,
-            extract_fn=_stable_extract([[_row(1)]]),
+            extract_fn=_stable_extract([[_raw_row(1)]]),
             pg_connect_fn=_connect_factory(contested),
             mssql_connect_fn=_mssql_factory(mssql_conn),
         )
@@ -191,7 +194,7 @@ def test_v16_preflight_failure_no_audit_mutate(cfg, lock_conn, mssql_conn):
     ), patch("etl_worker.runner.AuditModule") as audit_cls:
         outcome = run_orchestrator(
             cfg,
-            extract_fn=_stable_extract([[_row(1)]]),
+            extract_fn=_stable_extract([[_raw_row(1)]]),
             pg_connect_fn=_connect_factory(lock_conn),
             mssql_connect_fn=_mssql_factory(mssql_conn),
         )
@@ -212,7 +215,7 @@ def test_run_exists_does_not_mutate_existing_row(cfg, lock_conn, audit_conn, loa
          patch("etl_worker.runner.AuditModule", return_value=audit):
         outcome = run_orchestrator(
             cfg,
-            extract_fn=_stable_extract([[_row(1)]]),
+            extract_fn=_stable_extract([[_raw_row(1)]]),
             pg_connect_fn=_connect_factory(lock_conn, audit_conn, load_conn),
             mssql_connect_fn=_mssql_factory(mssql_conn),
         )
@@ -238,7 +241,7 @@ def test_happy_path_validates_table_and_marks_run_success(
         lb.return_value = LoadStats(inserted=2, updated=0, rejected=0)
         outcome = run_orchestrator(
             cfg,
-            extract_fn=_stable_extract([[_row(1), _row(2)]]),
+            extract_fn=_stable_extract([[_raw_row(1), _raw_row(2)]]),
             pg_connect_fn=_connect_factory(lock_conn, audit_conn, load_conn),
             mssql_connect_fn=_mssql_factory(mssql_conn),
             backoff=fast_backoff,
@@ -273,7 +276,7 @@ def test_critical_error_aborts_with_audit_status(
          patch("etl_worker.runner.load_batch", side_effect=err):
         outcome = run_orchestrator(
             cfg,
-            extract_fn=_stable_extract([[_row(1)]]),
+            extract_fn=_stable_extract([[_raw_row(1)]]),
             pg_connect_fn=_connect_factory(lock_conn, audit_conn, load_conn),
             mssql_connect_fn=_mssql_factory(mssql_conn),
             backoff=fast_backoff,
@@ -306,7 +309,7 @@ def test_transient_retry_exhausted_aborts(
          patch("etl_worker.runner.load_batch", side_effect=err):
         outcome = run_orchestrator(
             cfg,
-            extract_fn=_stable_extract([[_row(1)]]),
+            extract_fn=_stable_extract([[_raw_row(1)]]),
             pg_connect_fn=_connect_factory(lock_conn, audit_conn, load_conn),
             mssql_connect_fn=_mssql_factory(mssql_conn),
             backoff=fast_backoff,
@@ -360,7 +363,7 @@ def test_threshold_breach_final_delta_aborts(lock_conn, audit_conn, load_conn, m
         )
         outcome = run_orchestrator(
             cfg,
-            extract_fn=_stable_extract([[_row(7)]]),
+            extract_fn=_stable_extract([[_raw_row(7)]]),
             pg_connect_fn=_connect_factory(lock_conn, audit_conn, load_conn),
             mssql_connect_fn=_mssql_factory(mssql_conn),
             backoff=fast_backoff,
@@ -376,6 +379,85 @@ def test_threshold_breach_final_delta_aborts(lock_conn, audit_conn, load_conn, m
 # ============================================================================
 # Resume skips VALIDATED tables
 # ============================================================================
+
+# ============================================================================
+# Transform-in-runner real path (Codex iter-5/6 fix)
+# ============================================================================
+
+def test_runner_calls_transform_row_before_load(
+    cfg, lock_conn, audit_conn, load_conn, mssql_conn, fast_backoff,
+):
+    """The runner must run raw rows through transform_row() before passing
+    to load_batch(). This guards against the "fake path" Codex iter-5 caught
+    where tests injected pre-transformed rows so the missing transform call
+    went unnoticed."""
+    audit = MagicMock(spec=AuditModule)
+
+    received_typed_rows: list = []
+    def fake_load_batch(conn, rows, table_meta, **kw):
+        from etl_worker.load import LoadStats
+        received_typed_rows.extend(rows)
+        return LoadStats(inserted=len(rows))
+
+    with patch("etl_worker.runner.preflight_v16_table_state_pk"), \
+         patch("etl_worker.runner.AuditModule", return_value=audit), \
+         patch("etl_worker.runner.load_batch", side_effect=fake_load_batch):
+        outcome = run_orchestrator(
+            cfg,
+            extract_fn=_stable_extract([[_raw_row(1, "Acme"), _raw_row(2, "Beta")]]),
+            pg_connect_fn=_connect_factory(lock_conn, audit_conn, load_conn),
+            mssql_connect_fn=_mssql_factory(mssql_conn),
+            backoff=fast_backoff,
+        )
+
+    assert outcome is RunOutcome.SUCCESS
+    # transform_row populated audit columns + content_hash
+    assert len(received_typed_rows) == 2
+    for r in received_typed_rows:
+        assert r["source_schema"] == "workcube_mikrolink"
+        assert r["source_table"] == "COMPANY"
+        assert "source_pk" in r
+        assert "content_hash" in r
+        assert len(r["content_hash"]) == 64  # SHA-256 hex
+
+
+def test_runner_transform_reject_persists_without_load(lock_conn, audit_conn, load_conn, mssql_conn, fast_backoff):
+    """A row that fails transform (e.g. NOT_NULL_VIOLATION) must be persisted
+    to migration_rejects and never reach load_batch."""
+    # Permissive ratio so the single reject doesn't trip the threshold; we're
+    # asserting the persistence path, not the abort path.
+    cfg = RunnerConfig(
+        pg_dsn="x", mssql_dsn="y",
+        run_id="44444444-4444-4444-4444-444444444444",
+        mode="initial",
+        manifest=[_company_meta()],
+        max_reject_ratio=1.0,  # allow up to 100% rejected
+    )
+    audit = MagicMock(spec=AuditModule)
+
+    with patch("etl_worker.runner.preflight_v16_table_state_pk"), \
+         patch("etl_worker.runner.AuditModule", return_value=audit), \
+         patch("etl_worker.runner.load_batch") as lb:
+        from etl_worker.load import LoadStats
+        lb.return_value = LoadStats(inserted=0)
+        outcome = run_orchestrator(
+            cfg,
+            # company_id None violates NOT NULL → transform_row rejects this row
+            extract_fn=_stable_extract([[{"company_id": None, "company_name": "X"}]]),
+            pg_connect_fn=_connect_factory(lock_conn, audit_conn, load_conn),
+            mssql_connect_fn=_mssql_factory(mssql_conn),
+            backoff=fast_backoff,
+        )
+
+    assert outcome is RunOutcome.SUCCESS
+    audit.insert_rejects_batch.assert_called()
+    # The rejects passed in must include reject_reason "NOT_NULL_VIOLATION"
+    rejects_call = audit.insert_rejects_batch.call_args
+    rejects = rejects_call.args[0]
+    assert any(r.reject_reason == "NOT_NULL_VIOLATION" for r in rejects)
+    # load_batch was NOT called (typed_batch was empty)
+    lb.assert_not_called()
+
 
 def test_resume_skips_validated_tables(lock_conn, audit_conn, load_conn, mssql_conn, fast_backoff):
     cfg = RunnerConfig(
@@ -397,9 +479,11 @@ def test_resume_skips_validated_tables(lock_conn, audit_conn, load_conn, mssql_c
     }
 
     extract_calls: list[str] = []
-    def extract_fn(mssql_conn, table_meta, last_pk):
+    def extract_fn(mssql_conn, table_meta, last_pk, limit):
         extract_calls.append(table_meta.name)
-        yield [_row(1)] if table_meta.name == "BANK" else []
+        if table_meta.name == "BANK":
+            yield [{"bank_id": 1}]
+        # else: nothing yielded
 
     with patch("etl_worker.runner.preflight_v16_table_state_pk"), \
          patch("etl_worker.runner.AuditModule", return_value=audit), \

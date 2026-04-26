@@ -29,10 +29,25 @@ def runner():
 
 @pytest.fixture
 def config_dir(tmp_path):
-    """Minimal manifest dir so the @main(config-dir) option exists check passes."""
+    """Minimal manifest dir so the @main(config-dir) option exists check passes.
+
+    Codex iter-6: manifest must include columns or _load_manifest fail-fasts.
+    Provide one minimal table with idempotency_key matching its single column.
+    """
     cfg = tmp_path / "config"
     cfg.mkdir()
-    (cfg / "tables.yaml").write_text("tables: []\n")
+    (cfg / "tables.yaml").write_text(
+        """\
+version: "1.0-test"
+tables:
+  - name: TEST_T
+    source_schema: workcube_mikrolink
+    parametric: false
+    idempotency_key: [TEST_ID]
+    columns:
+      - { name: TEST_ID, pg_type: INTEGER, nullable: false }
+"""
+    )
     return str(cfg)
 
 
@@ -188,6 +203,29 @@ def test_status_text_prints_all_five_buckets(runner, config_dir, audit_mock):
     # Zero-fill: PENDING tables=0
     assert "PENDING      tables=0" in result.output
     assert "FAILED       tables=0" in result.output
+
+
+def test_run_manifest_missing_columns_fails_fast(runner, tmp_path):
+    """Codex iter-6 fix: a manifest entry without `columns` must NOT silently
+    pass through; the run must abort before any audit or extract work."""
+    cfg = tmp_path / "config"
+    cfg.mkdir()
+    (cfg / "tables.yaml").write_text(
+        """\
+version: "1.0-test"
+tables:
+  - name: NO_COLUMNS_T
+    source_schema: workcube_mikrolink
+    parametric: false
+    idempotency_key: [X]
+"""
+    )
+    result = runner.invoke(
+        main,
+        ["--config-dir", str(cfg), "run", "--mode", "initial"],
+    )
+    assert result.exit_code != 0
+    assert "missing `columns`" in result.output
 
 
 def test_status_json_zero_fills_buckets(runner, config_dir, audit_mock):

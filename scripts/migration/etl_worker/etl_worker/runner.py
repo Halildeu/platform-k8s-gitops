@@ -41,7 +41,8 @@ from etl_worker.retry import (
     classify_error,
     describe,
 )
-from etl_worker.transform import TableMeta, make_source_pk
+from etl_worker.audit import RejectRecord as AuditRejectRecord  # noqa: F401 (re-export)
+from etl_worker.transform import TableMeta, make_source_pk, transform_row
 
 log = logging.getLogger(__name__)
 
@@ -73,8 +74,8 @@ class ThresholdBreachError(RuntimeError):
 # real psycopg/pyodbc adapters; tests inject in-memory mocks.
 
 ExtractBatchFn = Callable[
-    [Any, TableMeta, str | None],  # (mssql_conn, table_meta, last_pk)
-    Iterable[list[dict[str, Any]]],  # yields batches
+    [Any, TableMeta, str | None, int | None],  # (mssql_conn, table_meta, last_pk, limit)
+    Iterable[list[dict[str, Any]]],             # yields batches of RAW MSSQL rows
 ]
 
 PgConnectFn = Callable[[str, bool], Any]  # (dsn, autocommit) → psycopg.Connection
@@ -90,17 +91,65 @@ def _default_mssql_connect(dsn: str) -> Any:
     return pyodbc.connect(dsn, timeout=30)
 
 
-def _default_extract(mssql_conn: Any, table_meta: TableMeta, last_pk: str | None) -> Iterable[list[dict[str, Any]]]:
-    """Placeholder paginated extract.
+def default_mssql_extract(
+    mssql_conn: Any,
+    table_meta: TableMeta,
+    last_pk: str | None,
+    limit: int | None,
+) -> Iterable[list[dict[str, Any]]]:
+    """Day 7 default MSSQL extractor.
 
-    Day 7 dry-run uses a thin generator wrapper around pyodbc; for unit
-    tests this is replaced with a fixed list. The real extract logic
-    (chunking, last_pk continuation) belongs to a future PR; for Day 7
-    the dry-run with limit=1000 single-batch extract is sufficient.
+    Single deterministic page: SELECT <manifest cols + idempotency_key cols>
+    FROM <schema>.<table> ORDER BY <idempotency_key> OFFSET 0 ROWS FETCH NEXT
+    <limit> ROWS ONLY.
+
+    `last_pk` continuation is intentionally not implemented in Day 7. Resume
+    of partially-loaded tables is supported at the table-level (skip
+    VALIDATED) but mid-table continuation lands in Day 8 with proper keyset
+    pagination on idempotency_key tuples.
+
+    Yields raw row dicts keyed by manifest column name. Caller (runner)
+    feeds each row through `transform_row()` before `load_batch()`.
     """
-    raise NotImplementedError(
-        "default extract not implemented — pass extract_fn to run_orchestrator()"
+    if not table_meta.columns:
+        raise RuntimeError(
+            f"manifest columns empty for {table_meta.name!r} — "
+            "validate-manifest should have caught this"
+        )
+    if last_pk is not None:
+        log.warning(
+            "extract.last_pk_unsupported_in_day7 table=%s last_pk=%s — restarting from offset 0",
+            table_meta.name, last_pk,
+        )
+
+    cols = [c.name for c in table_meta.columns]
+    # Deduplicate while preserving order (idempotency_key cols may overlap with declared cols)
+    seen: set[str] = set()
+    select_cols: list[str] = []
+    for c in cols + table_meta.idempotency_key:
+        if c not in seen:
+            seen.add(c)
+            select_cols.append(c)
+
+    col_list = ", ".join(select_cols)
+    order_list = ", ".join(table_meta.idempotency_key)
+    schema = table_meta.source_schema
+    table = table_meta.name
+
+    query = (
+        f"SELECT {col_list} FROM {schema}.{table} "
+        f"ORDER BY {order_list} OFFSET 0 ROWS"
     )
+    if limit is not None:
+        query += f" FETCH NEXT {int(limit)} ROWS ONLY"
+
+    log.info("extract.query table=%s limit=%s", table_meta.name, limit)
+    cur = mssql_conn.cursor()
+    cur.execute(query)
+    rows = cur.fetchall()
+    batch = [{c: row[i] for i, c in enumerate(select_cols)} for row in rows]
+    if batch:
+        yield batch
 
 
 # ============================================================================
@@ -171,6 +220,7 @@ class RunnerConfig:
     manifest: list[TableMeta]
     resume: bool = False
     max_reject_ratio: float = 0.0
+    limit: int | None = None  # per-table row cap (None = full)
     source_database: str = "workcube_mikrolink"
     worker_version: str = "0.1.0"
     git_sha: str | None = None
@@ -182,7 +232,7 @@ class RunnerConfig:
 
 def run_orchestrator(
     cfg: RunnerConfig,
-    extract_fn: ExtractBatchFn = _default_extract,
+    extract_fn: ExtractBatchFn = default_mssql_extract,
     pg_connect_fn: PgConnectFn = _default_pg_connect,
     mssql_connect_fn: MssqlConnectFn = _default_mssql_connect,
     backoff: BackoffPolicy | None = None,
@@ -272,13 +322,66 @@ def run_orchestrator(
             last_pk = existing.get("last_pk")
             batch_no = int(existing.get("batch_no") or 0)
 
-            for batch in extract_fn(mssql_conn, table_meta, last_pk):
+            # Codex iter-5 fix: real path is MSSQL extract → transform_row →
+            # load_batch. Tests can still inject load-ready rows via a custom
+            # extract_fn, but the default flow now mirrors production.
+            for raw_batch in extract_fn(mssql_conn, table_meta, last_pk, cfg.limit):
                 batch_no += 1
+                # Per-row transform with reject capture
+                typed_batch: list[dict[str, Any]] = []
+                transform_rejects: list[Any] = []  # AuditRejectRecord-shaped
+                for raw_row in raw_batch:
+                    tr = transform_row(raw_row, table_meta)
+                    if tr.reject_reason:
+                        transform_rejects.append(AuditRejectRecord(
+                            run_id=cfg.run_id,
+                            table_name=table_meta.name,
+                            source_schema=table_meta.source_schema,
+                            source_year=table_meta.source_year,
+                            source_pk=tr.source_pk,
+                            column_name=tr.reject_column,
+                            reject_reason=tr.reject_reason,
+                            severity="ERROR",
+                            pg_error_code=None,
+                            pg_error_message=None,
+                            source_value=tr.reject_value,
+                            raw_payload=raw_row if cfg.include_raw_payload else None,
+                        ))
+                        continue
+                    typed_batch.append(tr.typed_row)
+
+                # Persist transform-stage rejects (autocommit conn).
+                if transform_rejects:
+                    audit.insert_rejects_batch(transform_rejects)
+                    audit.record_batch_failure(
+                        run_id=cfg.run_id,
+                        table_name=table_meta.name,
+                        source_schema=table_meta.source_schema,
+                        source_year=table_meta.source_year,
+                        batch_no=batch_no,
+                        rows_rejected=len(transform_rejects),
+                    )
+                    rejected_total += len(transform_rejects)
+                    processed_total += len(transform_rejects)
+
+                if not typed_batch:
+                    # All rows rejected at transform stage; threshold then continue.
+                    if threshold.should_abort(rejected_total, processed_total):
+                        if run_owned:
+                            _safe_audit_status(
+                                audit, cfg.run_id, "ABORTED",
+                                f"threshold breach mode={mode} rejected={rejected_total} processed={processed_total}",
+                            )
+                        raise ThresholdBreachError(
+                            f"threshold breach mode={mode} rejected={rejected_total}/{processed_total}"
+                        )
+                    continue
+
                 attempt = 0
                 while True:
                     try:
                         stats = load_batch(
-                            load_conn, batch, table_meta,
+                            load_conn, typed_batch, table_meta,
                             include_raw_payload=cfg.include_raw_payload,
                         )
                         # Reject persistence on the autocommit audit conn
@@ -291,7 +394,7 @@ def run_orchestrator(
                             source_schema=table_meta.source_schema,
                             source_year=table_meta.source_year,
                             rows_loaded=stats.inserted + stats.updated,
-                            last_pk=_last_pk_from_batch(batch, table_meta),
+                            last_pk=_last_pk_from_batch(typed_batch, table_meta),
                             batch_no=batch_no,
                         )
                         # Codex iter-4 implementation note: also bump rows_rejected
@@ -307,7 +410,7 @@ def run_orchestrator(
                                 rows_rejected=stats.rejected,
                             )
                         rejected_total += stats.rejected
-                        processed_total += len(batch)
+                        processed_total += len(typed_batch)
                         break
                     except psycopg.errors.Error as e:
                         cls = classify_error(e)
@@ -345,10 +448,10 @@ def run_orchestrator(
                                 source_schema=table_meta.source_schema,
                                 source_year=table_meta.source_year,
                                 batch_no=batch_no,
-                                rows_rejected=len(batch),
+                                rows_rejected=len(typed_batch),
                             )
-                            rejected_total += len(batch)
-                            processed_total += len(batch)
+                            rejected_total += len(typed_batch)
+                            processed_total += len(typed_batch)
                             break
                         # TRANSIENT
                         attempt += 1

@@ -117,8 +117,12 @@ def inspect_source(ctx: click.Context, tables: str | None) -> None:
 )
 @click.option("--run-id", default=None, help="UUID (auto-generated if omitted)")
 @click.option("--tables", help="CSV (default: manifest all)")
-@click.option("--limit", type=int, default=None, help="Per-table row limit (dry-run helper)")
-@click.option("--dry-run", is_flag=True, help="Read-only, no write to PG")
+@click.option(
+    "--limit",
+    type=int,
+    default=None,
+    help="Per-table row cap; passed to extractor and reconcile scope.",
+)
 @click.option("--resume", is_flag=True, help="Resume an existing run; requires --run-id")
 @click.pass_context
 def run(
@@ -127,10 +131,14 @@ def run(
     run_id: str | None,
     tables: str | None,
     limit: int | None,
-    dry_run: bool,
     resume: bool,
 ) -> None:
-    """ETL run — MSSQL extract → PG raw staging → transform → final."""
+    """ETL run — MSSQL extract → transform → PG canonical load → audit.
+
+    For dry-run mode use `--mode dry-run`; the legacy `--dry-run` flag was
+    removed in Day 7 to avoid double-meaning with `--mode dry-run` (Codex
+    iter-5 fix).
+    """
     if resume and not run_id:
         click.echo("FAIL: --resume requires --run-id", err=True)
         sys.exit(2)
@@ -139,13 +147,6 @@ def run(
         sys.exit(2)
 
     rid = run_id or str(uuid.uuid4())
-
-    if dry_run:
-        log.info("run.start", run_id=rid, mode=mode, tables=tables, limit=limit, dry_run=True, resume=False)
-        click.echo(f"DRY RUN — would extract {tables or 'all'} (limit={limit})")
-        click.echo("Gün 4 PoC: MSSQL extract + PG raw staging COPY only.")
-        click.echo("Gün 5+: transform + final load + idempotent upsert.")
-        return
 
     if resume:
         # Day 7: validate state then call orchestrator. The orchestrator
@@ -221,6 +222,7 @@ def run(
         manifest=manifest,
         resume=False,
         max_reject_ratio=config.max_reject_ratio,
+        limit=limit,
         worker_version=config.worker_version,
         git_sha=config.git_sha,
         contract_version=config.contract_version,
@@ -388,6 +390,13 @@ def reconcile(
 # ============================================================================
 
 def _load_manifest(config_dir: Path, tables_csv: str | None) -> list[Any]:
+    """Load + validate tables.yaml manifest.
+
+    Codex iter-5 fail-fast (Day 7): empty `columns` is not silently accepted —
+    extractor and reconcile both rely on column metadata, so a missing list
+    means the run is unrunnable. Better to refuse at startup than to ship
+    `SELECT  FROM ...` to MSSQL or load no business columns into PG.
+    """
     import yaml
 
     from etl_worker.transform import ColumnMeta, TableMeta
@@ -398,8 +407,13 @@ def _load_manifest(config_dir: Path, tables_csv: str | None) -> list[Any]:
         {t.strip().upper() for t in tables_csv.split(",")} if tables_csv else None
     )
     out: list[TableMeta] = []
+    missing_columns: list[str] = []
     for entry in raw.get("tables", []):
         if table_filter is not None and entry["name"].upper() not in table_filter:
+            continue
+        col_specs = entry.get("columns") or []
+        if not col_specs:
+            missing_columns.append(entry["name"])
             continue
         cols = [
             ColumnMeta(
@@ -408,16 +422,36 @@ def _load_manifest(config_dir: Path, tables_csv: str | None) -> list[Any]:
                 nullable=c.get("nullable", True),
                 max_length=c.get("max_length"),
             )
-            for c in entry.get("columns", [])
+            for c in col_specs
         ]
+        # idempotency_key columns must be present in the column list.
+        col_names = {c.name for c in cols}
+        idempotency_key = entry["idempotency_key"]
+        missing_pk = [k for k in idempotency_key if k not in col_names]
+        if missing_pk:
+            raise click.ClickException(
+                f"manifest table {entry['name']!r}: idempotency_key {missing_pk} "
+                f"missing from columns. fix config/tables.yaml."
+            )
         out.append(
             TableMeta(
                 name=entry["name"],
                 source_schema=entry.get("source_schema", "workcube_mikrolink"),
                 source_year=entry.get("source_year"),
                 columns=cols,
-                idempotency_key=entry["idempotency_key"],
+                idempotency_key=idempotency_key,
             )
+        )
+    if missing_columns:
+        raise click.ClickException(
+            f"manifest tables missing `columns`: {missing_columns}. "
+            "Day 7 cannot run without column metadata — populate config/tables.yaml "
+            "(future: auto-resolve from V16 generator output)."
+        )
+    if not out:
+        raise click.ClickException(
+            "manifest produced 0 valid tables (filter mismatch or all entries "
+            "missing columns)."
         )
     return out
 
