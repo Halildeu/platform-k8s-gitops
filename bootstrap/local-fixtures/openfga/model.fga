@@ -1,0 +1,59 @@
+model
+  schema 1.1
+
+type user
+
+type organization
+  relations
+    define admin: [user]
+    define member: [user] or admin
+
+type company
+  relations
+    define org: [organization]
+    define admin: [user] or admin from org
+    define manager: [user]
+    define member: [user] or manager or admin
+    define viewer: [user] or member
+
+type project
+  relations
+    define company: [company]
+    define admin: [user] or admin from company
+    define manager: [user]
+    define viewer: [user] or manager or admin
+
+type warehouse
+  relations
+    define company: [company]
+    define admin: [user] or admin from company
+    define manager: [user]
+    define operator: [user] or manager or admin
+    define viewer: [user] or operator
+
+type branch
+  relations
+    define company: [company]
+    define admin: [user] or admin from company
+    define manager: [user]
+    define member: [user] or manager or admin
+    define viewer: [user] or member
+
+type module
+  relations
+    define can_edit: [user] but not blocked
+    define can_manage: [user] or can_edit but not blocked
+    define can_view: [user] or can_manage but not blocked
+    define blocked: [user]
+
+type action
+  relations
+    define allowed: [user] but not blocked
+    define blocked: [user]
+
+type report
+  relations
+    define can_edit: [user] but not blocked
+    define can_view: [user] or can_edit but not blocked
+    define blocked: [user]
+

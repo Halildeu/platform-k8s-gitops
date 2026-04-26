@@ -197,14 +197,14 @@ curl -X POST .../authz/check \
 # expect {"allowed": false}
 
 # Deny case 2 — depot hierarchy auto-grant absent
-# user has explicit depot:wc-department-3792 viewer; check sub-depot 3792-01:
+# user has explicit warehouse:wc-department-3792 viewer; check sub-depot 3792-01:
 curl -X POST .../authz/check \
-  -d '{"user":"user:<depot-viewer>","relation":"viewer","object":"depot:wc-department-3792-01"}'
+  -d '{"user":"user:<depot-viewer>","relation":"viewer","object":"warehouse:wc-department-3792-01"}'
 # expect {"allowed": false}
 
 # Cross-kind deny — company viewer doesn't see depot
 curl -X POST .../authz/check \
-  -d '{"user":"user:<company-viewer>","relation":"viewer","object":"depot:wc-department-3792"}'
+  -d '{"user":"user:<company-viewer>","relation":"viewer","object":"warehouse:wc-department-3792"}'
 # expect {"allowed": false}
 ```
 

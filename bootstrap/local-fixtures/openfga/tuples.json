@@ -6,7 +6,7 @@
     "Schema: user can view/edit project (ADMIN → owner, USER → viewer).",
     "zanzibar-min smoke: dev-local user view/edit kontrolü /variants endpoint üzerinden."
   ],
-  "model": "docs/platform-ssot/openfga-authorization-model.fga",
+  "model": "bootstrap/local-fixtures/openfga/model.fga",
   "tuples": [
     {"user": "user:dev@localtest.me", "relation": "owner", "object": "project:dev-local"},
     {"user": "user:dev@localtest.me", "relation": "admin", "object": "company:dev"},
@@ -31,7 +31,7 @@
       {"user": "user:company-viewer@localtest.me", "relation": "viewer", "object": "company:wc-company-1001"},
       {"user": "user:project-viewer@localtest.me", "relation": "viewer", "object": "project:wc-project-1204"},
       {"user": "user:branch-viewer@localtest.me",  "relation": "viewer", "object": "branch:wc-branch-7"},
-      {"user": "user:depot-viewer@localtest.me",   "relation": "viewer", "object": "depot:wc-department-3792"}
+      {"user": "user:depot-viewer@localtest.me",   "relation": "viewer", "object": "warehouse:wc-department-3792"}
     ],
     "smoke_checks_after_backend_model_update": [
       {"description": "admin can administer AÇIK", "expected": true,
@@ -41,11 +41,11 @@
       {"description": "explicit company viewer can view that company", "expected": true,
        "check": {"user": "user:company-viewer@localtest.me", "relation": "viewer", "object": "company:wc-company-1001"}},
       {"description": "explicit depot viewer can view that depot", "expected": true,
-       "check": {"user": "user:depot-viewer@localtest.me", "relation": "viewer", "object": "depot:wc-department-3792"}},
+       "check": {"user": "user:depot-viewer@localtest.me", "relation": "viewer", "object": "warehouse:wc-department-3792"}},
       {"description": "depot viewer can NOT view sub-depot (no transitive parent_depot)", "expected": false,
-       "check": {"user": "user:depot-viewer@localtest.me", "relation": "viewer", "object": "depot:wc-department-3792-01"}},
+       "check": {"user": "user:depot-viewer@localtest.me", "relation": "viewer", "object": "warehouse:wc-department-3792-01"}},
       {"description": "company viewer can NOT view depot (cross-kind isolation)", "expected": false,
-       "check": {"user": "user:company-viewer@localtest.me", "relation": "viewer", "object": "depot:wc-department-3792"}}
+       "check": {"user": "user:company-viewer@localtest.me", "relation": "viewer", "object": "warehouse:wc-department-3792"}}
     ]
   }
 }

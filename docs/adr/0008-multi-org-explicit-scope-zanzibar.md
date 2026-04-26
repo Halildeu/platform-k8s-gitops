@@ -18,19 +18,57 @@ explicit-scope contract gerektiriyor: **kullanıcı scope atanmadan hiçbir
 veri göremez**. Hizmet kurum-bazlı (multi-org); bir kurumun birden fazla
 Workcube COMPANY'si olabilir. Şu anki tek kurum: AÇIK (V19 seed).
 
-Mevcut OpenFGA modeli (`docs/platform-ssot/openfga-authorization-model.fga`,
-upstream platform-ssot) tip seti: `user`, `company`, `project`, `variant`.
-Faz 21.3 için eksik:
-- `organization` tipi (kurum tenant binding)
-- `depot` tipi (DEPARTMENT-backed; Faz 21.A)
-- `branch` tipi (BRANCH-backed; ADR-0005 lineage)
-- Explicit-scope semantik: parent_org auto-grant **YOK**
+### Naming convention (PG ↔ OpenFGA)
+
+PG-side `data_access.scope.scope_kind` ENUM:
+- `'company' | 'project' | 'depot' | 'branch'`
+
+V19 + V20 immutable migrations PG-side `'depot'` kullanıyor (Türkçe
+"depo" UI sekmesi karşılığı). OpenFGA model'de eşdeğer tip ismi
+`warehouse` (Faz 19 öncesi yazılan model). Bu naming farkı kalır;
+tuple writer mapping yapar:
+
+| PG `scope_kind` | OpenFGA object type | UI sekmesi (TR) |
+|---|---|---|
+| `company` | `company` | Şirketler |
+| `project` | `project` | Projeler |
+| `depot` | **`warehouse`** | Depolar |
+| `branch` | `branch` | Şubeler |
+
+### Current model.fga state (`bootstrap/local-fixtures/openfga/model.fga`)
+
+Faz 19.11 residual migration: model dosyası bu repoya çekildi
+(platform-ssot upstream'den read-only fetch). **Mevcut tipler ZATEN var**
+(organization + company + project + warehouse + branch + module + action +
+report). Faz 21.3 için boş slate değil; aşağıdaki **explicit-scope
+düzeltmeleri gerekiyor** (Faz 21.3 backend PR'ında):
+
+```fga
+# Mevcut (auto-grant DAHİL — explicit-scope contract'a aykırı)
+type company
+  relations
+    define org: [organization]
+    define admin: [user] or admin from org    # ← auto-grant YASAK
+    define manager: [user]
+    define member: [user] or manager or admin
+    define viewer: [user] or member            # ← transitive grant
+```
+
+Faz 21.3 explicit-scope eksikleri:
+1. `admin from org`, `admin from company` auto-grant relations kaldırılmalı.
+2. `viewer: [user] or member`, `viewer: [user] or operator` gibi
+   transitive view zincirleri kaldırılmalı.
+3. `organization#member` data visibility grant değildir (UI mandate).
+4. Hiyerarşik containment relation (parent_org/_company) **ownership**
+   metadata kalır, ama `viewer` auto-grant ÜRETMEZ.
 
 ## Decision
 
-### Type model genişletmesi (backend repo PR'ında)
+### Target type model (Faz 21.3 backend PR — `bootstrap/local-fixtures/openfga/model.fga`)
 
 ```fga
+type user
+
 type organization
   relations
     define member: [user]    # tenant binding only — NO data grant
@@ -38,28 +76,35 @@ type organization
 
 type company
   relations
-    define parent_org: [organization]
-    define viewer: [user]    # explicit assignment only
+    define org: [organization]                   # ownership/containment
+    define viewer: [user]                        # explicit assignment only
+    # NO `admin from org` — explicit-scope contract
 
 type project
   relations
-    define parent_org: [organization]
-    define parent_company: [company]
-    define viewer: [user]
+    define company: [company]                    # ownership/containment
+    define viewer: [user]                        # explicit assignment only
+    # NO `admin from company`, NO `viewer: [user] or manager or admin`
 
-type depot
+type warehouse
   relations
-    define parent_org: [organization]
-    define parent_branch: [branch]
-    define parent_depot: [depot]   # 3-level hierarchy parent (Depo→Lokasyon→Raf)
-    define viewer: [user]    # explicit-only; parent_depot transitive YOK
+    define company: [company]                    # ownership/containment
+    define parent_warehouse: [warehouse]         # 3-level hierarchy
+                                                  # (Depo→Lokasyon→Raf)
+    define viewer: [user]                        # explicit-only; NO transitive
+                                                  # parent_warehouse YOK
 
 type branch
   relations
-    define parent_org: [organization]
-    define parent_company: [company]
-    define viewer: [user]
+    define company: [company]                    # ownership/containment
+    define viewer: [user]                        # explicit assignment only
+    # NO `admin from company`, NO `viewer: [user] or member`
+
+# module/action/report types unchanged (existing model)
 ```
+
+**Naming**: OpenFGA tip adı `warehouse`; PG `scope_kind = 'depot'`. Tuple
+writer mapping yapar (yukarıdaki PG↔FGA tablosu).
 
 ### Explicit-scope kontrat noktaları
 
@@ -70,20 +115,21 @@ type branch
 2. **`organization#admin` scope atama yetkisidir** (kullanıcı VEYA rol
    bazlı). Backend `data_access.scope` INSERT API call'unu admin yapar.
 
-3. **`company|project|depot|branch#viewer@user` explicit assignment'tan
+3. **`company|project|warehouse|branch#viewer@user` explicit assignment'tan
    gelir**. Tuple writer source-of-truth: `data_access.scope` tablosu
    (V19, PR #163). INSERT → tuple write; UPDATE revoked_at=now() → tuple
    delete.
 
-4. **`parent_org` ownership/containment ilişkisidir**. Auto-grant
+4. **`org`/`company` ownership/containment relations'dır**. Auto-grant
    ÜRETMEZ. Yani user `organization:acik#member` ise içerideki company'leri
    otomatik göremez.
 
-5. **Depo hiyerarşisi de explicit-only**. `parent_depot` relation tutulur
-   (Depo→Lokasyon→Raf navigation için), ama `viewer from parent_depot`
-   model edilmez. `DEPARTMENT_ID = 3792` (Depo "ADC Deposu") atayan,
-   altındaki `3792-01` (Lokasyon "ADC3") otomatik açmaz; ayrı atama gerek.
-   (Kullanıcı Faz 21.A kararı: "üçü birden atanabilir ama").
+5. **Depo hiyerarşisi de explicit-only**. `parent_warehouse` relation
+   tutulur (Depo→Lokasyon→Raf navigation için), ama `viewer from
+   parent_warehouse` model edilmez. `DEPARTMENT_ID = 3792` (Depo "ADC
+   Deposu") atayan, altındaki `3792-01` (Lokasyon "ADC3") otomatik açmaz;
+   ayrı atama gerek. (Kullanıcı Faz 21.A kararı: "üçü birden atanabilir
+   ama").
 
 6. **Backend enforcement direct OpenFGA SDK** (ADR-0013/C-008). Backend
    servisleri permission-service HTTP üzerinden değil, doğrudan
@@ -96,12 +142,12 @@ DB'de `data_access.scope.scope_ref` canonical JSON form
 (`["1001"]`). OpenFGA object id API-safe representation gerektirir;
 deterministic encoding:
 
-| DB scope_ref | OpenFGA object id |
-|---|---|
-| `["1001"]` (company) | `company:wc-company-1001` |
-| `["1204"]` (project) | `project:wc-project-1204` |
-| `["3792"]` (depot/dept) | `depot:wc-department-3792` |
-| `["7"]` (branch) | `branch:wc-branch-7` |
+| DB scope_kind | DB scope_ref | OpenFGA object id |
+|---|---|---|
+| `company` | `["1001"]` | `company:wc-company-1001` |
+| `project` | `["1204"]` | `project:wc-project-1204` |
+| `depot` | `["3792"]` | `warehouse:wc-department-3792` |
+| `branch` | `["7"]` | `branch:wc-branch-7` |
 
 Encoding kuralları:
 - prefix: `wc-` (workcube source)

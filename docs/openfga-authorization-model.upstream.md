@@ -1,47 +1,50 @@
-# OpenFGA Authorization Model — Upstream Reference
+# OpenFGA Authorization Model — Migration Status
 
-> **Status**: Faz 19.11 residual (placeholder).
-> The actual `.fga` source-of-truth file lives in **platform-ssot** until
-> Faz 19.10 hard archive completes. This file documents the location and
-> the migration plan.
+> **Status**: Faz 19.11 residual STEP 1+2 COMPLETE (2026-04-26).
+> Model file migrated from upstream platform-ssot to this repo.
+> Steps 3-5 still pending (dev-seed.sh reload + CI diff + upstream prune).
 
-## Current authoritative location
+## Current location (this repo, authoritative for dev/local)
 
-- Repo: `platform-ssot` (`Halildeu/platform-ssot`, currently active —
-  hard archive deferred until Faz 19.11 4-dalga complete).
-- Path: `docs/platform-ssot/openfga-authorization-model.fga`
-- Referenced by `bootstrap/local-fixtures/openfga/tuples.json#model`.
+- Path: **`bootstrap/local-fixtures/openfga/model.fga`** (59 lines)
+- Source: snapshotted from
+  `Halildeu/platform-ssot:backend/openfga/model.fga` on 2026-04-26 via
+  `gh api` read-only fetch.
+- Referenced by `bootstrap/local-fixtures/openfga/tuples.json#model`
+  → updated to local path in this PR.
 
-## Why not in this repo (yet)
+## Faz 21.3 backend PR will modify this file
 
-Per Faz 19 split-repo authority transfer:
-- platform-k8s-gitops owns: deployment manifests (StatefulSet,
-  ConfigMap, ESO, migrate-job), runbooks, ADRs, dev fixtures.
-- platform-ssot owns: source-of-truth model files until OpenFGA model
-  ownership is explicitly migrated.
+The model in this repo currently mirrors platform-ssot upstream:
+- Has type `organization`, `company`, `project`, `warehouse`, `branch`
+  + module/action/report.
+- Has **auto-grant relations** (`admin from org`, `viewer: ... or member`)
+  that contradict ADR-0008 explicit-scope contract.
 
-Faz 19.11 (residual asset migration before hard archive) is in
-progress; the model `.fga` file is part of the residual set that
-hasn't been migrated yet because it's actively being modified for
-Faz 21.3 (multi-org + depot types per ADR-0008).
+Faz 21.3 backend repo PR (platform-backend, not k8s-gitops) will:
+1. Remove auto-grant relations per ADR-0008.
+2. Add `parent_warehouse` for hierarchy navigation (no transitive
+   viewer grant).
+3. Write the new model to OpenFGA store; capture new `model_id`.
+4. Vault `kv/platform/openfga model_id` rotate per
+   `docs/openfga-multi-org-rollout.md`.
 
-## Migration plan
+## Naming reminder (PG ↔ OpenFGA)
 
-When Faz 21.3 backend repo PR merges (organization + depot types
-added):
+PG `data_access.scope.scope_kind = 'depot'` (V19+V20 immutable migrations)
+maps to OpenFGA object type `warehouse`. See ADR-0008 § Naming.
 
-1. Copy the final `openfga-authorization-model.fga` into
-   `bootstrap/local-fixtures/openfga/model.fga` in this repo.
-2. Update `tuples.json#model` from
-   `docs/platform-ssot/openfga-authorization-model.fga` →
-   `bootstrap/local-fixtures/openfga/model.fga`.
-3. Update `dev-seed.sh` to load model from local path.
-4. Add a CI check that diffs the local copy against the deployed
-   `model_id` content (rendered from OpenFGA store).
-5. Once stable, delete the upstream copy in platform-ssot
-   (post-hard-archive consideration).
+## Migration plan — remaining steps
 
-This file removes once steps 1-4 land.
+- [x] Step 1: Copy `model.fga` to `bootstrap/local-fixtures/openfga/`.
+- [x] Step 2: Update `tuples.json#model` to local path.
+- [ ] Step 3: Update `scripts/dev-seed.sh` to read model from local path
+      and write to OpenFGA store on local cluster boot. (Separate PR.)
+- [ ] Step 4: CI gate — diff local model file against deployed model_id
+      content rendered from OpenFGA store on the prod cluster. (Separate
+      PR; needs read access to `kv/platform/openfga`.)
+- [ ] Step 5: Once stable, delete the upstream copy in platform-ssot
+      (post-hard-archive consideration).
 
 ## Why this placeholder is committed
 
