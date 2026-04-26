@@ -6,7 +6,6 @@ Pure-Python tests; no live PG.
 from __future__ import annotations
 
 import random
-from unittest.mock import MagicMock
 
 import psycopg
 import pytest

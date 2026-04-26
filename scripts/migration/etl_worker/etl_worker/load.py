@@ -160,7 +160,7 @@ def load_batch(
         audit_cols.insert(1, "source_year")
     all_cols = cols + audit_cols
 
-    def row_to_tuple(row: dict[str, Any]) -> tuple:
+    def row_to_tuple(row: dict[str, Any]) -> tuple[Any, ...]:
         return tuple(row.get(c) for c in all_cols)
 
     # Try bulk first.

@@ -4,7 +4,6 @@ Test only SQL string generation (no live DB connection).
 Real PG integration tests run in CI (Faz 16.3 Gün 7 dry-run).
 """
 
-import psycopg.sql
 
 from etl_worker.transform import ColumnMeta, TableMeta
 from etl_worker.load import build_upsert_sql

@@ -145,12 +145,12 @@ def _sqlstate_of(exc: BaseException) -> str | None:
     """Pull SQLSTATE from a psycopg error (sqlstate attr or diag.sqlstate)."""
     state = getattr(exc, "sqlstate", None)
     if state:
-        return state
+        return str(state)
     diag = getattr(exc, "diag", None)
     if diag is not None:
         state = getattr(diag, "sqlstate", None)
         if state:
-            return state
+            return str(state)
     return None
 
 

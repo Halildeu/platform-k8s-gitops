@@ -74,6 +74,12 @@ jobs:
             exit 1
           fi
 
+      - name: Run ruff (style)
+        run: ruff check .
+
+      - name: Run mypy (strict)
+        run: python -m mypy etl_worker
+
       - name: Upload junit + coverage
         if: always()
         uses: actions/upload-artifact@v4

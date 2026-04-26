@@ -9,11 +9,10 @@ Coverage:
 - source_pk canonical JSON array
 """
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 import uuid
 
-import pytest
 
 from etl_worker.transform import (
     ColumnMeta,

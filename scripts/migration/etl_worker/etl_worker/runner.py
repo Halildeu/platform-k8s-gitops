@@ -32,7 +32,7 @@ from typing import Any, Callable, Iterable
 import psycopg
 
 from etl_worker.audit import AuditModule, RejectRecord
-from etl_worker.load import LoadStats, load_batch
+from etl_worker.load import load_batch
 from etl_worker.preflight_v16 import (
     SchemaContractError,
     preflight_final_table_lineage,
@@ -361,6 +361,9 @@ def run_orchestrator(
                             raw_payload=raw_row if cfg.include_raw_payload else None,
                         ))
                         continue
+                    # When reject_reason is falsy transform_row guarantees a
+                    # typed_row; assertion communicates that to mypy.
+                    assert tr.typed_row is not None  # nosec — guarded above
                     typed_batch.append(tr.typed_row)
 
                 # Persist transform-stage rejects (autocommit conn).

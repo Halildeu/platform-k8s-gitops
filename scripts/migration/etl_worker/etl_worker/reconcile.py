@@ -33,9 +33,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from etl_worker.transform import (
-    ColumnMeta,
     TableMeta,
-    content_hash,
     make_source_pk,
     transform_row,
 )
@@ -363,7 +361,7 @@ def _mssql_aggregate_checksum(mssql_conn: Any, table_meta: TableMeta) -> str | N
     return None
 
 
-def _year_predicate(table_meta: TableMeta) -> tuple[str, list]:
+def _year_predicate(table_meta: TableMeta) -> tuple[str, list[Any]]:
     """Build a SQL predicate fragment for the source_year filter.
 
     Canonical (non-parametric) tables have no `source_year` column in V16
@@ -443,7 +441,7 @@ def _pg_aggregate_checksum(
 
 def render_markdown(report: ReconcileReport) -> str:
     lines: list[str] = []
-    lines.append(f"# Reconciliation report")
+    lines.append("# Reconciliation report")
     lines.append("")
     lines.append(f"- run_id: `{report.run_id}`")
     lines.append(f"- mode:   `{report.mode}`")

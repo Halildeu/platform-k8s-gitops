@@ -16,6 +16,7 @@ import json
 import sys
 import uuid
 from pathlib import Path
+from typing import Any
 
 import click
 import structlog
@@ -210,9 +211,9 @@ def run(
 
     # Day 7: orchestrator wired
     log.info("run.start", run_id=rid, mode=mode, tables=tables, limit=limit, dry_run=False, resume=False)
-    from etl_worker.runner import RunOutcome, RunnerConfig, run_orchestrator
+    from etl_worker.runner import RunnerConfig, run_orchestrator
 
-    config: Config = ctx.obj["config"]
+    config = ctx.obj["config"]
     manifest = _load_manifest(ctx.obj["config_dir"], tables)
     runner_cfg = RunnerConfig(
         pg_dsn=config.pg_dsn,

@@ -13,8 +13,10 @@ import psycopg
 import pytest
 
 from etl_worker.preflight_v16 import (
+    REQUIRED_LINEAGE_COLUMNS,
     SENTINEL_RUN_ID,
     SchemaContractError,
+    preflight_final_table_lineage,
     preflight_v16_table_state_pk,
 )
 
@@ -155,11 +157,7 @@ def test_sentinel_run_id_is_zero_uuid():
 # ============================================================================
 # preflight_final_table_lineage (Codex iter-8)
 # ============================================================================
-
-from etl_worker.preflight_v16 import (
-    REQUIRED_LINEAGE_COLUMNS,
-    preflight_final_table_lineage,
-)
+# Imports moved to the top-of-file block (Faz 16 ruff cleanup, ANN E402).
 
 
 def _lineage_conn(
