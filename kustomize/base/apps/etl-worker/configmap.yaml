@@ -1,0 +1,32 @@
+# etl-worker (Faz 16) — non-secret runtime config
+# Codex thread 019dc88c iter-4 AGREE on user-gated dry-run staging-sw deploy.
+#
+# Secrets live in:
+#   - workcube-mssql-creds (shared with schema-service via ESO Vault)
+#   - etl-worker-pg-secrets (PG user for reports_db)
+#
+# This Job is NOT auto-applied via ArgoCD; the dry-run runbook walks the
+# operator through `kubectl apply -f ...` with explicit confirmation gates.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: etl-worker-config
+data:
+  # PG target
+  PG_HOST: "postgres"
+  PG_PORT: "5432"
+  PG_DATABASE: "reports_db"
+
+  # MSSQL source (Workcube — same target as schema-service)
+  MSSQL_HOST: "workcube-mssql"
+  MSSQL_PORT: "11433"
+  MSSQL_DATABASE: "workcube_mikrolink"
+  MSSQL_DOMAIN: "boreas"
+
+  # Worker policy
+  ETL_BATCH_SIZE: "10000"
+  ETL_MAX_REJECT_RATIO: "0.0"
+  LOG_LEVEL: "INFO"
+  CONTRACT_VERSION: "v1.0-DRAFT"
+  ANNEX_VERSION: "2A-2026-04-25"
