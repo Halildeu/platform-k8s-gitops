@@ -874,6 +874,32 @@ Bu repo'da DEĞİL, ana repo'da yapılacaklar. Manifest yazımıyla eş zamanlı
 
 **Yürütme penceresi**: Faz 15 T+72h rollback-window kapanışı sonrası (≥ 2026-04-27 01:25 UTC+3). 2-3 hafta süre (single dev), 1-2 hafta (paralel team).
 
+#### Faz 16.2.P — Parametric (multi-tenant + yearly schema) ETL — DEFERRED INDEFINITELY
+
+**Karar tarihi**: 2026-04-26 (Codex thread `019dc88c` iter-4 AGREE).
+
+**Durum**: Defer edildi. Yeniden başlatma şartı:
+- (a) canlı MSSQL üzerinde **ölçülebilir analitik performans baskısı**, ya da
+- (b) MSSQL **decommission timeline** netleşmesi.
+
+**Rasyonel** (Codex iter-4 dili):
+> Canlı raporlar halen MSSQL authoritative path kullanıyor (`testai.acik.com/admin/reports/...` → `report-service` doğrudan MSSQL NTLM). Parametric ETL'in şu anki ek değeri perf/decommission baskısı olmadan sınırlı; agent tarafında read-only / no-admin auth boundary nedeniyle crawler işi kullanıcı içi operasyon olarak kalır. 17 parametric × ~25 tenant × N yıl = potansiyel ~1275+ instance — ürün değerine göre fazla pahalı.
+
+**Kapsam dışına alınanlar** (Codex iter-2/iter-3 plan-time çıktıları arşivde):
+- 17 parametric tablo crawl (composite tenant + year axis)
+- `source_axis_key` + `source_year_bucket NOT NULL` partition design
+- V18 parametric DDL generator extension
+- Manifest `source_instances` enrichment
+- Runner parametric expansion (1 manifest entry → N TableMeta)
+- Schema-service yearly-schema crawl tool
+
+**Korunan Faz 16 kapsamı (canonical only)**: 23 master-data tablosu Day 6+7+hotfix ile DONE. PR #157 (Day 6 audit/retry), #158 (Day 7 orchestrator+reconcile), #159 (Day 7 live smoke hotfix). Mac dev-pg smoke `VERDICT MATCH`, `checksum_pg = checksum_mssql`, idempotent upsert kanıtlı (`docs/migration/reconcile-20260426-1b4f8397-smoke-dev-pg.{md,json}`).
+
+**Agent davranış kuralı (CLAUDE.md drift guard)**:
+- Sentetik 17-tablo fixture işine TEKRAR BAŞLAMA (kural #9 ihlali olarak silindi).
+- Agent sandbox içinden canlı parametric schema crawl TASARLAMA/KOŞTURMA.
+- Bu Faz yeniden açılırsa: yeni Codex iter ile başla, mevcut iter-3 REVISE bulgularını (composite axis + partition PK + explicit_allowlist_required) absorb et.
+
 **Codex adversarial review**: thread `019dbe1d` (ilk REVISE) → `019dbe1f` (PARTIAL) → `019dbe21` (PARTIAL) → `019dbe22` **AGREE** (with 15 dk rollback trigger edit).
 
 **Faz adı önemli**: "Source-Read Cutover / MSSQL-off Switch" — Production Cutover (Faz 15) **değil**. Faz 15 Hybrid GO zaten canlıda kontratlı.

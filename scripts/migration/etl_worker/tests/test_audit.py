@@ -377,6 +377,51 @@ def test_status_summary_aggregates_buckets(audit, mock_conn):
     assert summary["reject_total"] == 3
 
 
+def test_list_rejects_default_filters_by_run_only(audit, mock_conn):
+    cur = mock_conn._cur
+    cur.fetchall.return_value = [
+        (1, "COMPANY", "workcube_mikrolink", None, '["1001"]', None,
+         "LOAD_NO_RETRY", "ERROR", "23502", "not null", "2026-04-26T07:00:00+00:00"),
+        (2, "COMPANY", "workcube_mikrolink", None, '["1002"]', None,
+         "LOAD_NO_RETRY", "ERROR", "23502", "not null", "2026-04-26T07:01:00+00:00"),
+    ]
+    rows = audit.list_rejects("rid-1")
+    assert len(rows) == 2
+    assert rows[0]["id"] == 1
+    assert rows[0]["source_pk"] == '["1001"]'
+    assert rows[0]["reject_reason"] == "LOAD_NO_RETRY"
+    rendered = mock_conn._cur.execute.call_args.args[0]
+    if hasattr(rendered, "as_string"):
+        rendered = rendered.as_string(None)
+    assert "WHERE run_id = %s" in rendered
+    assert "ORDER BY rejected_at DESC" in rendered
+
+
+def test_list_rejects_filters_by_table_name(audit, mock_conn):
+    mock_conn._cur.fetchall.return_value = []
+    audit.list_rejects("rid-1", table_name="COMPANY", limit=10, offset=5)
+    params = mock_conn._cur.execute.call_args.args[1]
+    assert "COMPANY" in params
+    rendered = mock_conn._cur.execute.call_args.args[0]
+    if hasattr(rendered, "as_string"):
+        rendered = rendered.as_string(None)
+    assert "AND table_name = %s" in rendered
+
+
+def test_list_rejects_clamps_invalid_limit_offset(audit, mock_conn):
+    """Defensive bounds: zero/negative/over-cap."""
+    mock_conn._cur.fetchall.return_value = []
+    audit.list_rejects("rid", limit=0, offset=-5)
+    params = mock_conn._cur.execute.call_args.args[1]
+    # limit clamped to 50, offset clamped to 0
+    assert params[-2] == 50
+    assert params[-1] == 0
+    audit.list_rejects("rid", limit=999999)
+    params2 = mock_conn._cur.execute.call_args.args[1]
+    # limit clamped to 1000
+    assert params2[-2] == 1000
+
+
 def test_reject_count_filters_by_table(audit, mock_conn):
     mock_conn._cur.fetchone.return_value = (5,)
     n = audit.reject_count("rid", table_name="COMPANY")

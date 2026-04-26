@@ -462,6 +462,63 @@ class AuditModule:
             "error_summary": row[6],
         }
 
+    def list_rejects(
+        self,
+        run_id: str,
+        table_name: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """SRE triage helper (Day 8): list reject rows with the most useful
+        diagnostic columns. Order: rejected_at DESC.
+
+        Codex 019dc88c iter-4 AGREE: bounded operator value, doesn't depend
+        on parametric scope.
+        """
+        if limit <= 0:
+            limit = 50
+        if limit > 1000:
+            limit = 1000
+        if offset < 0:
+            offset = 0
+
+        params: list[Any] = [run_id]
+        where = "WHERE run_id = %s"
+        if table_name is not None:
+            where += " AND table_name = %s"
+            params.append(table_name)
+        params.extend([limit, offset])
+
+        with self.conn.cursor() as cur:
+            cur.execute(
+                sql.SQL(
+                    "SELECT id, table_name, source_schema, source_year, source_pk, "
+                    "       column_name, reject_reason, severity, pg_error_code, "
+                    "       pg_error_message, rejected_at "
+                    "FROM {schema}.migration_rejects "
+                    f"{where} "
+                    "ORDER BY rejected_at DESC LIMIT %s OFFSET %s"
+                ).format(schema=sql.Identifier(AUDIT_SCHEMA)),
+                params,
+            )
+            rows = cur.fetchall()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            out.append({
+                "id": int(r[0]),
+                "table_name": r[1],
+                "source_schema": r[2],
+                "source_year": r[3],
+                "source_pk": r[4],
+                "column_name": r[5],
+                "reject_reason": r[6],
+                "severity": r[7],
+                "pg_error_code": r[8],
+                "pg_error_message": r[9],
+                "rejected_at": r[10],
+            })
+        return out
+
     def get_resume_state(self, run_id: str) -> dict[str, dict[str, Any]]:
         """Return per-(table, schema, year) state for resume.
 
