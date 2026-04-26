@@ -56,24 +56,28 @@ Faz 21'de `'depot'` scope listesi DEPARTMENT'ın **sadece fiziksel lokasyon sat�
 - Filter PG-side daha esnek; SETUP_DEPARTMENT_TYPE değişirse SQL düzeltmesi yetebilir, ETL rerun gerekmez.
 - ETL idempotent + content_hash ile zaten "tüm satırlar" minimum kost.
 
-## SETUP_DEPARTMENT_TYPE lookup
+## SETUP_DEPARTMENT_TYPE lookup — Faz 21.4'e defer
 
 Workcube `DEPARTMENT.DEPARTMENT_TYPE` (int) → `SETUP_DEPARTMENT_TYPE.DEPARTMENT_TYPE_ID` lookup. Lookup içindeki 200-char `DEPARTMENT_TYPE` string ile UI'daki "Depo / Lokasyon / Raf" görünür.
 
-ETL kapsam **gerekçesi**:
-- DEPARTMENT_TYPE_ID değerleri runtime'da bilinemez (snapshot DDL'de gerçek satırlar yok). Lookup ETL'le PG'ye gelirse `data_access` listing query'sinde `JOIN setup_department_type` ile UI tarafı tür adını gösterebilir.
-- 9 kolonluk küçük statik tablo; ETL kostu ihmal edilebilir.
+**Faz 21.1 kapsam ayrımı** (Codex 019dc8b4 iter-1 PR #165 absorb):
+- Scope assignment için lookup **gerekli değil**: `data_access.scope` `DEPARTMENT.source_pk` üzerinden lineage existence guard kullanır; tür adı (`Depo / Lokasyon / Raf`) sadece görüntüleme amaçlı.
+- Listing UI'da tür adını gösterme **Faz 21.4 backend repo işi**: read-model olarak ya backend ETL'le ya da JOIN ile çözülür.
+- Bu nedenle Faz 21.1 manifest'e `PRO_PROJECTS + DEPARTMENT` eklendi; `SETUP_DEPARTMENT_TYPE`/`SETUP_DEPARTMENT_NAME`/`SETUP_DEPARTMENT_CAT` **dahil edilmedi**.
 
-`SETUP_DEPARTMENT_NAME` (10 kolon) ve `SETUP_DEPARTMENT_CAT` (9 kolon) da `DEPARTMENT._DEPARTMENT_NAME_ID`, `DEPARTMENT.DEPARTMENT_CAT` referansları için ETL kapsama alınması düşünülmeli (Faz 21.1'de manifest'e ek 2 satır).
+İleride Faz 21.4'te lookup gerekirse iki yol:
+1. ETL ile workcube_mikrolink şemasına `setup_department_type` eklenmesi (V21 generator extension).
+2. Backend (platform-web) tarafında MSSQL doğrudan lookup veya cache.
+
+Karar Faz 21.4'te.
 
 ## scope_kind ve V19 etkisi
 
-V19 (PR #163, commit `f311c52`) `data_access.scope` tablosunda `scope_kind_source_table_consistent` CHECK constraint'i şu an:
-```sql
-(scope_kind = 'depot' AND scope_source_table = 'TBD_DEPOT_TABLE')
-```
+V19 (PR #163, commit `f311c52`) `data_access.scope` tablosunda `scope_kind_source_table_consistent` CHECK constraint'i V20 (Faz 21.1, PR #165) ile genişletildi:
+- V19 başlangıç: `(scope_kind = 'depot' AND scope_source_table = 'TBD_DEPOT_TABLE')` (fail-closed placeholder).
+- V20 sonrası: `(scope_kind = 'depot' AND scope_source_table = 'DEPARTMENT')`.
 
-Bu kararla birlikte V20 ALTER migration:
+V20 ALTER migration özeti:
 ```sql
 ALTER TABLE data_access.scope DROP CONSTRAINT scope_kind_source_table_consistent;
 ALTER TABLE data_access.scope ADD CONSTRAINT scope_kind_source_table_consistent CHECK (
@@ -92,7 +96,7 @@ ELSIF p_kind = 'depot' AND p_source_table = 'DEPARTMENT' THEN
     WHERE source_pk = p_ref AND source_schema = 'workcube_mikrolink';
 ```
 
-Bu V20 migration **Faz 21.1 manifest enrichment PR'ı ile aynı paket**te gelir; DEPARTMENT ETL'lendiği aynı PR'da scope CHECK + trigger genişler.
+Bu V20 migration **Faz 21.1a manifest+contract PR'ı**nda gelir (PR #165). DEPARTMENT ETL koşumu ve reconcile evidence **Faz 21.1b** ayrı user-gated PR'ı (agent sandbox shared PG erişemiyor).
 
 ## 3-seviye atama semantiği
 
@@ -111,23 +115,25 @@ Bu fazda **explicit-only**. Karar değişirse ayrı ADR.
 
 ## Faz 21.1 manifest enrichment için yön
 
-Tables.yaml manifest'e eklenecek 4 entity (mevcut COMPANY + BRANCH + PRO_PROJECTS dışında DEPARTMENT + lookup'lar):
+Tables.yaml manifest'e eklenecek **4 entity** (`SETUP_DEPARTMENT_TYPE` Faz 21.4'e defer):
 
 | Manifest entry | Tablo | Kolon adedi (full) | Min kolon (Veri Erişimi listing için) |
 |---|---|---|---|
 | (var) COMPANY | `COMPANY` | 113 | id, name, status |
 | (var) BRANCH | `BRANCH` | 107 | id, name, status, company_id |
-| **YENİ** PRO_PROJECTS | `PRO_PROJECTS` | 75 | id, name, project_status, company_id, branch_id |
-| **YENİ** DEPARTMENT | `DEPARTMENT` | 43 | id, head/name, type, status, branch_id, company_id, hierarchy_dep_id, level_no, address, admin1_position_code |
-| **YENİ** SETUP_DEPARTMENT_TYPE | `SETUP_DEPARTMENT_TYPE` | 9 | id, type_name |
-| (opsiyonel) SETUP_DEPARTMENT_NAME | `SETUP_DEPARTMENT_NAME` | 10 | id, name, is_active |
+| **YENİ** PRO_PROJECTS | `PRO_PROJECTS` | 75 | id, number, status, head, emp_id, agreement_no |
+| **YENİ** DEPARTMENT | `DEPARTMENT` | 43 | id, head, type, status, branch_id, our_company_id, hierarchy_dep_id, hierarchy, level_no, dept_cat, address, admin1/2_position_code |
+| ~~SETUP_DEPARTMENT_TYPE~~ | (Faz 21.4'e defer; scope assignment için gerekli değil) | — | — |
+| ~~SETUP_DEPARTMENT_NAME~~ | (Faz 21.4'e defer) | — | — |
 
-Faz 21.1 PR'ı:
+**Faz 21.1a PR'ı (PR #165)**:
 1. `tables.yaml` manifest enrichment.
 2. V20 migration: scope CHECK + validate_scope_ref function genişletme.
-3. ETL koşum (PR #162 runbook ile, dev-pg veya staging-sw — kullanıcı onayına bağlı).
-4. `data_access.scope` üzerinde gerçek `'depot'` scope ataması test (insert + trigger doğrulama).
-5. Reconcile artifact 5 entity ile.
+3. `data_access.scope` üzerinde gerçek `'depot'` scope ataması test (insert + trigger doğrulama; canlı dev-pg evidence).
+
+**Faz 21.1b PR'ı (next, user-gated)**:
+1. ETL koşum (PR #162 runbook ile, kullanıcı onaylı).
+2. Reconcile artifact 4 entity ile: COMPANY, BRANCH, PRO_PROJECTS, DEPARTMENT.
 
 ## Kararı kapatan referanslar
 

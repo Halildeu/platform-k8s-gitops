@@ -58,6 +58,56 @@ tables:
   # sonrası schema-service crawl tamamlanınca kolonlar eklenir + V16 generator
   # rerun. O zamana kadar bu tablo manifest dışı; çağıranlar fail-fast alır.
 
+  # ============================================================================
+  # Faz 21.1 — Veri Erişimi entity'leri (Codex 019dc8b4 AGREE)
+  # ============================================================================
+  # Source-of-truth: docs/migration/depolar-source-decision.md (Faz 21.A merged).
+  # data_access.scope_kind ↔ source_table contract (V20):
+  #   project → PRO_PROJECTS
+  #   depot   → DEPARTMENT
+  # SETUP_DEPARTMENT_TYPE lookup ETL kapsamı dışı (Faz 21.4 backend repo işi).
+
+  - name: PRO_PROJECTS
+    source_schema: workcube_mikrolink
+    parametric: false
+    idempotency_key: [PROJECT_ID]
+    reports: [data-access-scope-listing]
+    notes: "Veri Erişimi → Projeler (Faz 21.1). Min kolon altkümesi (75 toplam)."
+    columns:
+      - { name: PROJECT_ID,      pg_type: INTEGER,        nullable: false }
+      - { name: PROJECT_NUMBER,  pg_type: VARCHAR(50),    nullable: true,  max_length: 50 }
+      - { name: PROJECT_STATUS,  pg_type: BOOLEAN,        nullable: true }
+      - { name: PROJECT_HEAD,    pg_type: VARCHAR(100),   nullable: false, max_length: 100 }
+      - { name: PROJECT_EMP_ID,  pg_type: INTEGER,        nullable: true }
+      - { name: AGREEMENT_NO,    pg_type: VARCHAR(43),    nullable: true,  max_length: 43 }
+
+  - name: DEPARTMENT
+    source_schema: workcube_mikrolink
+    parametric: false
+    idempotency_key: [DEPARTMENT_ID]
+    reports: [data-access-scope-listing]
+    notes: |
+      Veri Erişimi → Depolar (Faz 21.1, Faz 21.A karar).
+      DEPARTMENT multi-purpose (HR + fiziksel lokasyon).
+      Filter PG-side data_access listing query'sinde uygulanır
+      (DEPARTMENT_TYPE in (...) OR IS_STORE > 0). Min kolon altkümesi (43 toplam).
+    columns:
+      - { name: DEPARTMENT_ID,         pg_type: INTEGER,        nullable: false }
+      - { name: DEPARTMENT_STATUS,     pg_type: BOOLEAN,        nullable: true }
+      - { name: IS_STORE,              pg_type: INTEGER,        nullable: true }
+      - { name: BRANCH_ID,             pg_type: INTEGER,        nullable: true }
+      - { name: OUR_COMPANY_ID,        pg_type: INTEGER,        nullable: true }
+      - { name: DEPARTMENT_HEAD,       pg_type: VARCHAR(100),   nullable: false, max_length: 100 }
+      - { name: DEPARTMENT_DETAIL,     pg_type: VARCHAR(150),   nullable: true,  max_length: 150 }
+      - { name: HIERARCHY_DEP_ID,      pg_type: VARCHAR(50),    nullable: true,  max_length: 50 }
+      - { name: HIERARCHY,             pg_type: VARCHAR(75),    nullable: true,  max_length: 75 }
+      - { name: LEVEL_NO,              pg_type: INTEGER,        nullable: true }
+      - { name: DEPARTMENT_TYPE,       pg_type: INTEGER,        nullable: true }
+      - { name: DEPARTMENT_CAT,        pg_type: INTEGER,        nullable: true }
+      - { name: ADMIN1_POSITION_CODE,  pg_type: INTEGER,        nullable: true }
+      - { name: ADMIN2_POSITION_CODE,  pg_type: INTEGER,        nullable: true }
+      - { name: DEPARTMENT_ADDRESS,    pg_type: VARCHAR(500),   nullable: true,  max_length: 500 }
+
   # TODO: kalan 18 matched canonical tablo (V16 generator çıktısından kopyala)
   # TODO: 17 parametric tablo (Faz 16.2.P snapshot sonrası)
 
