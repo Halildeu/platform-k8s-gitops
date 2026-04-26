@@ -178,15 +178,23 @@ if [[ "${DO_OPENFGA}" == "true" ]]; then
     else
       PAYLOAD="{\"writes\": {\"tuple_keys\": ${TUPLES}}}"
     fi
-    HTTP=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" \
+    TUPLE_RESP_FILE=$(mktemp -t dev-seed-tuples.XXXXXX)
+    HTTP=$(curl -s --max-time 10 -o "${TUPLE_RESP_FILE}" -w "%{http_code}" \
       -X POST "${OPENFGA_URL}/stores/${STORE_ID}/write" \
       -H "Content-Type: application/json" \
       -d "${PAYLOAD}" || echo "000")
     case "${HTTP}" in
       200) log "OpenFGA tuples written ($(echo "${TUPLES}" | jq 'length') tuples)" ;;
-      400) warn "OpenFGA write 400 — duplicate tuples (idempotent beklenen) veya model uyumsuz" ;;
-      *) warn "OpenFGA write HTTP=${HTTP}" ;;
+      400)
+        # Codex retrospective WARNING #7: distinguish duplicate-write idempotency
+        # vs model-mismatch / type-error in the response body so debug doesn't
+        # have to re-run the script with manual curl.
+        BODY=$(head -c 300 "${TUPLE_RESP_FILE}" 2>/dev/null)
+        warn "OpenFGA write 400; body=${BODY}"
+        ;;
+      *) warn "OpenFGA write HTTP=${HTTP}; body=$(head -c 300 "${TUPLE_RESP_FILE}" 2>/dev/null)" ;;
     esac
+    rm -f "${TUPLE_RESP_FILE}"
   fi
 fi
 
@@ -198,9 +206,13 @@ fi
 # Skip when kubectl k3d-dev context yok (CI smoke runs, --openfga-only against
 # bare openfga container, etc.). The stub is only useful when k3d-dev cluster
 # is up; otherwise create-secret fails and aborts the script under set -e.
+#
+# Codex retrospective WARNING #6: bound the cluster-info probe with a
+# request timeout so a configured-but-down k3d-dev cluster doesn't make
+# the script hang for the kubectl default (~10s+).
 if command -v kubectl >/dev/null 2>&1 \
-    && kubectl --context k3d-dev version --client >/dev/null 2>&1 \
-    && kubectl --context k3d-dev cluster-info >/dev/null 2>&1; then
+    && kubectl config get-contexts k3d-dev >/dev/null 2>&1 \
+    && kubectl --context k3d-dev --request-timeout=3s cluster-info >/dev/null 2>&1; then
   log "K8s secret stubs (auth-service-secrets — local dev only)"
   # Spring Boot convention env: SPRING_DATASOURCE_USERNAME + SPRING_DATASOURCE_PASSWORD
   # (DB_PASSWORD/USERNAME değil — Spring Boot relaxed binding uyumlu canonical adlar)

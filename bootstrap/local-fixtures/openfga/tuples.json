@@ -39,7 +39,11 @@
     {"description": "depot viewer CANNOT view sub-depot (no transitive parent_warehouse — ADR-0008 alt C reddedildi)", "expected": false,
      "check": {"user": "user:depot-viewer@localtest.me", "relation": "viewer", "object": "warehouse:wc-department-3792-01"}},
     {"description": "company viewer CANNOT view depot (cross-kind isolation)", "expected": false,
-     "check": {"user": "user:company-viewer@localtest.me", "relation": "viewer", "object": "warehouse:wc-department-3792"}}
+     "check": {"user": "user:company-viewer@localtest.me", "relation": "viewer", "object": "warehouse:wc-department-3792"}},
+    {"description": "org member CANNOT view dev-local project (no transitive viewer from organization#member — UI mandate; regression guard if `viewer from org` ever sneaks in)", "expected": false,
+     "check": {"user": "user:member@localtest.me", "relation": "viewer", "object": "project:dev-local"}},
+    {"description": "company viewer CANNOT view dev-local project (no transitive viewer from project#company — guards against `viewer from company` regression)", "expected": false,
+     "check": {"user": "user:company-viewer@localtest.me", "relation": "viewer", "object": "project:dev-local"}}
   ],
   "_legacy_variant_tuples": {
     "_status": "ARCHIVED — model.fga v1.1 snapshot has no `variant` type. These tuples used to seed Faz 17 variant scenarios; the corresponding model entries were removed upstream. Do NOT activate without re-adding `type variant` to model.fga.",
