@@ -96,7 +96,7 @@ ELSIF p_kind = 'depot' AND p_source_table = 'DEPARTMENT' THEN
     WHERE source_pk = p_ref AND source_schema = 'workcube_mikrolink';
 ```
 
-Bu V20 migration **Faz 21.1 manifest enrichment PR'ı ile aynı paket**te gelir; DEPARTMENT ETL'lendiği aynı PR'da scope CHECK + trigger genişler.
+Bu V20 migration **Faz 21.1a manifest+contract PR'ı**nda gelir (PR #165). DEPARTMENT ETL koşumu ve reconcile evidence **Faz 21.1b** ayrı user-gated PR'ı (agent sandbox shared PG erişemiyor).
 
 ## 3-seviye atama semantiği
 
@@ -115,23 +115,25 @@ Bu fazda **explicit-only**. Karar değişirse ayrı ADR.
 
 ## Faz 21.1 manifest enrichment için yön
 
-Tables.yaml manifest'e eklenecek 4 entity (mevcut COMPANY + BRANCH + PRO_PROJECTS dışında DEPARTMENT + lookup'lar):
+Tables.yaml manifest'e eklenecek **4 entity** (`SETUP_DEPARTMENT_TYPE` Faz 21.4'e defer):
 
 | Manifest entry | Tablo | Kolon adedi (full) | Min kolon (Veri Erişimi listing için) |
 |---|---|---|---|
 | (var) COMPANY | `COMPANY` | 113 | id, name, status |
 | (var) BRANCH | `BRANCH` | 107 | id, name, status, company_id |
-| **YENİ** PRO_PROJECTS | `PRO_PROJECTS` | 75 | id, name, project_status, company_id, branch_id |
-| **YENİ** DEPARTMENT | `DEPARTMENT` | 43 | id, head/name, type, status, branch_id, company_id, hierarchy_dep_id, level_no, address, admin1_position_code |
+| **YENİ** PRO_PROJECTS | `PRO_PROJECTS` | 75 | id, number, status, head, emp_id, agreement_no |
+| **YENİ** DEPARTMENT | `DEPARTMENT` | 43 | id, head, type, status, branch_id, our_company_id, hierarchy_dep_id, hierarchy, level_no, dept_cat, address, admin1/2_position_code |
 | ~~SETUP_DEPARTMENT_TYPE~~ | (Faz 21.4'e defer; scope assignment için gerekli değil) | — | — |
 | ~~SETUP_DEPARTMENT_NAME~~ | (Faz 21.4'e defer) | — | — |
 
-Faz 21.1 PR'ı:
+**Faz 21.1a PR'ı (PR #165)**:
 1. `tables.yaml` manifest enrichment.
 2. V20 migration: scope CHECK + validate_scope_ref function genişletme.
-3. ETL koşum (PR #162 runbook ile, dev-pg veya staging-sw — kullanıcı onayına bağlı).
-4. `data_access.scope` üzerinde gerçek `'depot'` scope ataması test (insert + trigger doğrulama).
-5. Reconcile artifact 5 entity ile.
+3. `data_access.scope` üzerinde gerçek `'depot'` scope ataması test (insert + trigger doğrulama; canlı dev-pg evidence).
+
+**Faz 21.1b PR'ı (next, user-gated)**:
+1. ETL koşum (PR #162 runbook ile, kullanıcı onaylı).
+2. Reconcile artifact 4 entity ile: COMPANY, BRANCH, PRO_PROJECTS, DEPARTMENT.
 
 ## Kararı kapatan referanslar
 
