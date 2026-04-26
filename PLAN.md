@@ -1663,11 +1663,16 @@ Live proof (test cluster):
 - Flyway migration: `V19__data_access.sql` (V17 lineage ALTER'dan sonra, V18 boş kalır parametric için reserve).
 
 **Faz 21.3 — Authz entegrasyonu** (Zanzibar/OpenFGA):
-- Yeni türler:
-  - `organization` (member/viewer relations)
-  - `company`, `project`, `depot`, `branch` (viewer relation, parent_organization)
-- Tuple atama akışı: bir user organization'a `member` olur → org içindeki `company:<id>#parent_organization@organization:<org>` zinciri ile transitive `viewer` kazanır → permission-service `check` ile UI scope filtresi uygular.
-- ADR-0008 (yeni) — multi-org scope vs Zanzibar contract.
+- Yeni türler (Codex 019dc8b4 iter-2 absorb — UI'daki "Scope atanmadan kullanıcı hiçbir veri göremez" kuralıyla uyumlu, **explicit-scope contract**):
+  - `organization` relations:
+    - `member: [user]` — kurum üyeliği/tenant bağlamı; **veri görünürlüğü vermez**.
+    - `admin: [user]` — scope atama/yönetim yetkisi (kullanıcı veya rol).
+  - `company`, `project`, `depot`, `branch` relations:
+    - `parent_org: [organization]` — ownership/containment; viewer auto-grant ÜRETMEZ.
+    - `viewer: [user]` — explicit scope assignment'tan gelir; `data_access.scope` INSERT'i tuple writer ile bu relation'a yazar.
+- Tuple atama akışı: admin Veri Erişimi panelinde user'a company/project/depot/branch atar → backend `data_access.scope` satırı insert + tuple writer `company:<source_pk>#viewer@user:<uid>` yazar. Org membership tek başına hiçbir company'yi açmaz.
+- Backend enforcement: ADR-0013 / C-008 gereği direct `OpenFgaAuthzService` SDK; permission-service tuple writer + user-facing authz hub.
+- ADR-0008 (yeni) — "multi-org scope, explicit-grant contract" — UI semantiğinin Zanzibar modeline yansıması.
 
 **Faz 21.4 — UI/Backend integration** (out of platform-k8s-gitops scope):
 - Frontend admin "Veri Erişimi" panel: scope listesi + atama UI (mevcut MFE'lerden birinde).

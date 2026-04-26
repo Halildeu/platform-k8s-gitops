@@ -49,7 +49,8 @@ COMMENT ON TABLE data_access.organization IS
 CREATE TABLE data_access.organization_company (
     org_id BIGINT NOT NULL REFERENCES data_access.organization(id) ON DELETE CASCADE,
     workcube_company_source_pk TEXT NOT NULL,
-    source_schema TEXT NOT NULL DEFAULT 'workcube_mikrolink',
+    source_schema TEXT NOT NULL DEFAULT 'workcube_mikrolink'
+        CHECK (source_schema = 'workcube_mikrolink'),
     source_table TEXT NOT NULL DEFAULT 'COMPANY' CHECK (source_table = 'COMPANY'),
     attached_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     notes JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -72,16 +73,23 @@ CREATE TABLE data_access.scope (
     user_id UUID NOT NULL,
     org_id BIGINT NOT NULL REFERENCES data_access.organization(id) ON DELETE CASCADE,
     scope_kind TEXT NOT NULL CHECK (scope_kind IN ('company','project','depot','branch')),
-    scope_source_schema TEXT NOT NULL DEFAULT 'workcube_mikrolink',
+    scope_source_schema TEXT NOT NULL DEFAULT 'workcube_mikrolink'
+        CHECK (scope_source_schema = 'workcube_mikrolink'),
     scope_source_table TEXT NOT NULL,
     scope_ref TEXT NOT NULL,
     granted_by UUID,
     granted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at TIMESTAMPTZ,
     revoked_by UUID,
-    notes JSONB NOT NULL DEFAULT '{}'::jsonb,
-    UNIQUE (user_id, org_id, scope_kind, scope_ref)
+    notes JSONB NOT NULL DEFAULT '{}'::jsonb
+    -- Codex 019dc8b4 iter-2: table-level UNIQUE removed; revoked rows
+    -- otherwise block re-grant. Active-only partial UNIQUE INDEX below.
 );
+
+-- Active-only uniqueness — admin can re-grant a previously revoked scope.
+CREATE UNIQUE INDEX uq_scope_active_assignment
+    ON data_access.scope (user_id, org_id, scope_kind, scope_ref)
+    WHERE revoked_at IS NULL;
 
 -- Scope kind ↔ source_table consistency. Depot table is TBD per
 -- docs/migration/depolar-source-decision.md (Faz 21.A); the CHECK leaves
@@ -153,8 +161,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER scope_validate_before_insert
-    BEFORE INSERT ON data_access.scope
+-- Codex 019dc8b4 iter-2: also fire on UPDATE that activates / changes the
+-- scope target. Without this, an invalid scope can be smuggled in as
+-- revoked, then activated via UPDATE (revoked_at = NULL) without
+-- re-validation; or scope_kind/scope_ref/scope_source_table can be
+-- mutated post-grant.
+CREATE TRIGGER scope_validate_before_write
+    BEFORE INSERT OR UPDATE OF
+        scope_kind, scope_source_schema, scope_source_table, scope_ref, revoked_at
+    ON data_access.scope
     FOR EACH ROW
     WHEN (NEW.revoked_at IS NULL)
     EXECUTE FUNCTION data_access.scope_validate_trg();
