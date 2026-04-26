@@ -1,38 +1,40 @@
 # OpenFGA Authorization Model — Migration Status
 
-> **Status**: Faz 19.11 residual STEP 1+2 COMPLETE (2026-04-26).
-> Model file migrated from upstream platform-ssot to this repo.
-> Steps 3-5 still pending (dev-seed.sh reload + CI diff + upstream prune).
+> **Status**: Faz 19.11 residual STEP 1+2+3 COMPLETE (2026-04-26).
+> Model file migrated from upstream platform-ssot to this repo + dev-seed.sh
+> now writes the model to OpenFGA store on local cluster boot. Steps 4-5
+> still pending (CI diff + upstream prune).
 
 ## Current location (this repo)
 
-- Path: **`bootstrap/local-fixtures/openfga/model.fga`** (59 lines)
+- Path: **`bootstrap/local-fixtures/openfga/model.fga`** (61 lines)
 - Source: snapshotted from
-  `Halildeu/platform-ssot:backend/openfga/model.fga` on 2026-04-26 via
-  `gh api` read-only fetch.
-- `bootstrap/local-fixtures/openfga/tuples.json#model` path now points
-  to this local file — but the model is **NOT YET LOADED** by
-  `dev-seed.sh`. That requires Step 3 (below). Until Step 3 lands, the
-  local file is a snapshot reference; the OpenFGA store on dev/local
-  clusters still runs whatever model_id was previously written there.
-  "Authoritative for dev/local" status is reached only after Step 3 +
-  fixture compatibility validation.
+  `Halildeu/platform-backend:backend/openfga/model.fga` on 2026-04-26 via
+  read-only fetch (post Faz 21.3 explicit-scope semantic update — backend
+  PR #11). The local copy is the authoritative dev/local model.
+- Helper: **`bootstrap/local-fixtures/openfga/render_model_json.py`** —
+  custom DSL→JSON renderer (skips `#` comments + `or` / `but not`
+  precedence). Used by `dev-seed.sh` to render before POST to OpenFGA.
+- `bootstrap/local-fixtures/openfga/tuples.json#model` path points to
+  this local file. With Step 3 in place `dev-seed.sh` writes the model
+  to OpenFGA store **before** writing tuples (model_id captured + passed
+  explicitly to `/write`).
 
-## Faz 21.3 backend PR will modify this file
+## Faz 21.3 backend PR — DONE
 
-The model in this repo currently mirrors platform-ssot upstream:
-- Has type `organization`, `company`, `project`, `warehouse`, `branch`
-  + module/action/report.
-- Has **auto-grant relations** (`admin from org`, `viewer: ... or member`)
-  that contradict ADR-0008 explicit-scope contract.
-
-Faz 21.3 backend repo PR (platform-backend, not k8s-gitops) will:
-1. Remove auto-grant relations per ADR-0008.
-2. Add `parent_warehouse` for hierarchy navigation (no transitive
-   viewer grant).
-3. Write the new model to OpenFGA store; capture new `model_id`.
-4. Vault `kv/platform/openfga model_id` rotate per
-   `docs/openfga-multi-org-rollout.md`.
+The local model mirrors **post-Faz-21.3** upstream
+(`Halildeu/platform-backend:backend/openfga/model.fga` PR #11 merged
+2026-04-26):
+- Auto-grant relations REMOVED per ADR-0008 (`admin from org`,
+  `viewer: ... or member`, etc.).
+- `parent_warehouse: [warehouse]` ADDED for hierarchy navigation; no
+  transitive viewer grant (ADR-0008 alt C reddedildi).
+- Types unchanged otherwise: `user`, `organization`, `company`,
+  `project`, `warehouse`, `branch`, `module`, `action`, `report`.
+- Vault `kv/platform/openfga model_id` rotate is a staging/prod cluster
+  rollout step (`docs/openfga-multi-org-rollout.md` Step 3) — NOT
+  exercised by `dev-seed.sh` (k3d-dev local store; ephemeral model_id
+  per cluster boot).
 
 ## Naming reminder (PG ↔ OpenFGA)
 
@@ -43,22 +45,29 @@ maps to OpenFGA object type `warehouse`. See ADR-0008 § Naming.
 
 - [x] Step 1: Copy `model.fga` to `bootstrap/local-fixtures/openfga/`.
 - [x] Step 2: Update `tuples.json#model` to local path.
-- [ ] Step 3: Update `scripts/dev-seed.sh` to read model from local path
-      and write to OpenFGA store on local cluster boot. (Separate PR.)
+- [x] Step 3: Update `scripts/dev-seed.sh` to read model from local path
+      and write to OpenFGA store on local cluster boot. **DONE
+      2026-04-26.** Order: discover/create store → render `model.fga`
+      via `render_model_json.py` → POST `/stores/{id}/authorization-models`
+      → capture model_id → POST `/stores/{id}/write` with
+      `authorization_model_id` explicit. Verified end-to-end against
+      `openfga/openfga:latest` Docker container: 8/8 fixture smoke
+      checks pass (5 allow + 3 deny — D29 Zanzibar-ready third level).
 - [ ] Step 4: CI gate — diff local model file against deployed model_id
       content rendered from OpenFGA store on the prod cluster. (Separate
       PR; needs read access to `kv/platform/openfga`.)
-- [ ] Step 5: Once stable, delete the upstream copy in platform-ssot
-      (post-hard-archive consideration).
+- [ ] Step 5: Once stable, delete the upstream copy in platform-backend
+      (post Faz 21.3 backend PR #11 propagation).
 
-## Why this placeholder is committed
+## Why this doc is committed
 
 - Codex 019dc8b4 iter-1 flagged the absent file as Faz 19.11 residual.
-- ADR-0008 references the model; this stub gives next-agent context
-  about why it's not yet here.
+- ADR-0008 references the model; this doc tracks migration state across
+  the 5-step plan.
 - Faz 21.3 rollout runbook (`docs/openfga-multi-org-rollout.md`) Step 2
-  expects the model file to be writable to OpenFGA store; operator
-  pulls from platform-ssot until migration completes.
+  expects the model file to be writable to OpenFGA store on staging/
+  prod; that path is parallel to the k3d-dev path now exercised by
+  `dev-seed.sh` (Step 3 done).
 
 ## Cross-refs
 

@@ -104,31 +104,87 @@ if [[ "${DO_PG}" == "true" ]]; then
   fi
 fi
 
-# ----- OpenFGA tuple write -----
+# ----- OpenFGA model + tuple write (Faz 19.11 Step 3 + Faz 21.3 fixture activation) -----
+# Order: discover/create store → write model.fga (capture model_id) → write tuples.
+# Without the model-write step, tuples target whatever model was previously written
+# to the store; Faz 21.3 explicit-scope semantic must be authoritative for dev/local.
 if [[ "${DO_OPENFGA}" == "true" ]]; then
-  log "OpenFGA tuple write (target=${OPENFGA_URL})"
-  # Store ID enviar veya auto-discover
+  log "OpenFGA model + tuples (target=${OPENFGA_URL})"
+
+  # 1. Store discovery — env override > auto-discover > create
   STORE_ID="${OPENFGA_STORE_ID:-}"
   if [[ -z "${STORE_ID}" ]]; then
-    STORE_ID=$(curl -s --max-time 5 "${OPENFGA_URL}/stores" | jq -r '.stores[0].id' 2>/dev/null)
-    if [[ -z "${STORE_ID}" || "${STORE_ID}" == "null" ]]; then
-      warn "OpenFGA store henüz yok — cluster'da openfga-migrate Job tamamlandı mı?"
-      warn "Skip: OpenFGA tuple write"
+    STORE_ID=$(curl -s --max-time 5 "${OPENFGA_URL}/stores" | jq -r '.stores[0].id // empty' 2>/dev/null || true)
+  fi
+  if [[ -z "${STORE_ID}" ]]; then
+    log "No OpenFGA store found — creating 'platform-dev'"
+    CREATE_RESP=$(curl -s --max-time 10 -X POST "${OPENFGA_URL}/stores" \
+      -H "Content-Type: application/json" \
+      -d '{"name":"platform-dev"}' || echo "{}")
+    STORE_ID=$(echo "${CREATE_RESP}" | jq -r '.id // empty' 2>/dev/null || true)
+    if [[ -z "${STORE_ID}" ]]; then
+      warn "OpenFGA store create failed — cluster'da openfga StatefulSet ayakta mı? Skip."
     else
-      log "auto-discovered store: ${STORE_ID}"
+      log "created store: ${STORE_ID}"
     fi
+  else
+    log "using OpenFGA store: ${STORE_ID}"
   fi
 
-  if [[ -n "${STORE_ID}" && "${STORE_ID}" != "null" ]]; then
+  if [[ -n "${STORE_ID}" ]]; then
+    # 2. Render model.fga → JSON
+    MODEL_FILE="${FIXTURES}/openfga/model.fga"
+    RENDERER="${FIXTURES}/openfga/render_model_json.py"
+    if ! command -v python3 >/dev/null 2>&1; then
+      warn "python3 yok — model render edilemiyor; skip model write"
+    elif [[ ! -f "${MODEL_FILE}" || ! -f "${RENDERER}" ]]; then
+      warn "model.fga veya render_model_json.py eksik — skip model write"
+    else
+      MODEL_JSON=$(python3 "${RENDERER}" "${MODEL_FILE}" 2>&1) || {
+        warn "model render başarısız: ${MODEL_JSON}"
+        MODEL_JSON=""
+      }
+      if [[ -n "${MODEL_JSON}" ]]; then
+        # 3. Write model — capture model_id for tuple writes
+        MODEL_RESP_FILE=$(mktemp -t dev-seed-model.XXXXXX)
+        HTTP=$(curl -s --max-time 10 -o "${MODEL_RESP_FILE}" -w "%{http_code}" \
+          -X POST "${OPENFGA_URL}/stores/${STORE_ID}/authorization-models" \
+          -H "Content-Type: application/json" \
+          -d "${MODEL_JSON}" || echo "000")
+        case "${HTTP}" in
+          200|201)
+            MODEL_ID=$(jq -r '.authorization_model_id // empty' "${MODEL_RESP_FILE}" 2>/dev/null || true)
+            if [[ -n "${MODEL_ID}" ]]; then
+              log "OpenFGA model written; model_id=${MODEL_ID}"
+            else
+              warn "OpenFGA model write HTTP=${HTTP} ama model_id parse edilemedi: $(head -c 200 "${MODEL_RESP_FILE}")"
+              MODEL_ID=""
+            fi
+            ;;
+          *)
+            warn "OpenFGA model write HTTP=${HTTP}; body=$(head -c 300 "${MODEL_RESP_FILE}" 2>/dev/null)"
+            MODEL_ID=""
+            ;;
+        esac
+        rm -f "${MODEL_RESP_FILE}"
+      fi
+    fi
+
+    # 4. Write tuples (idempotent — duplicate writes return 400, kabul ediyoruz)
     TUPLES=$(jq -c '.tuples' "${FIXTURES}/openfga/tuples.json")
-    PAYLOAD="{\"writes\": {\"tuple_keys\": ${TUPLES}}}"
+    if [[ -n "${MODEL_ID:-}" ]]; then
+      PAYLOAD=$(jq -nc --arg mid "${MODEL_ID}" --argjson tk "${TUPLES}" \
+        '{authorization_model_id: $mid, writes: {tuple_keys: $tk}}')
+    else
+      PAYLOAD="{\"writes\": {\"tuple_keys\": ${TUPLES}}}"
+    fi
     HTTP=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" \
       -X POST "${OPENFGA_URL}/stores/${STORE_ID}/write" \
       -H "Content-Type: application/json" \
       -d "${PAYLOAD}" || echo "000")
     case "${HTTP}" in
-      200) log "OpenFGA tuples written" ;;
-      400) warn "OpenFGA write 400 — duplicate tuples (idempotent beklenen)" ;;
+      200) log "OpenFGA tuples written ($(echo "${TUPLES}" | jq 'length') tuples)" ;;
+      400) warn "OpenFGA write 400 — duplicate tuples (idempotent beklenen) veya model uyumsuz" ;;
       *) warn "OpenFGA write HTTP=${HTTP}" ;;
     esac
   fi

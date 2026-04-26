@@ -1,43 +1,46 @@
 model
   schema 1.1
 
+# Faz 21.3 explicit-scope contract per ADR-0008 (platform-k8s-gitops).
+# UI mandate: "Scope atanmadan kullanıcı hiçbir veri göremez."
+#   - organization#member = tenant binding, NO data grant
+#   - organization#admin  = scope assignment authority
+#   - company|project|warehouse|branch#viewer@user = explicit assignment
+#     from data_access.scope INSERT via permission-service tuple writer.
+#   - parent_org / parent_company / parent_warehouse = ownership/containment
+#     metadata; NO auto-grant viewer.
+#
+# PG ↔ OpenFGA naming bridge: PG `data_access.scope.scope_kind = 'depot'`
+# (V19/V20 immutable migrations) maps to OpenFGA object_type `warehouse`
+# via tuple writer (Halildeu/platform-k8s-gitops ADR-0008 § Naming).
+
 type user
 
 type organization
   relations
     define admin: [user]
-    define member: [user] or admin
+    define member: [user]
 
 type company
   relations
     define org: [organization]
-    define admin: [user] or admin from org
-    define manager: [user]
-    define member: [user] or manager or admin
-    define viewer: [user] or member
+    define viewer: [user]
 
 type project
   relations
     define company: [company]
-    define admin: [user] or admin from company
-    define manager: [user]
-    define viewer: [user] or manager or admin
+    define viewer: [user]
 
 type warehouse
   relations
     define company: [company]
-    define admin: [user] or admin from company
-    define manager: [user]
-    define operator: [user] or manager or admin
-    define viewer: [user] or operator
+    define parent_warehouse: [warehouse]
+    define viewer: [user]
 
 type branch
   relations
     define company: [company]
-    define admin: [user] or admin from company
-    define manager: [user]
-    define member: [user] or manager or admin
-    define viewer: [user] or member
+    define viewer: [user]
 
 type module
   relations
@@ -56,4 +59,3 @@ type report
     define can_edit: [user] but not blocked
     define can_view: [user] or can_edit but not blocked
     define blocked: [user]
-
