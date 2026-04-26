@@ -363,14 +363,27 @@ def _mssql_aggregate_checksum(mssql_conn: Any, table_meta: TableMeta) -> str | N
     return None
 
 
+def _year_predicate(table_meta: TableMeta) -> tuple[str, list]:
+    """Build a SQL predicate fragment for the source_year filter.
+
+    Canonical (non-parametric) tables have no `source_year` column in V16
+    DDL, so we omit the predicate. Parametric tables carry source_year
+    SMALLINT, so we use IS NOT DISTINCT FROM (NULL-safe).
+    """
+    if table_meta.source_year is None:
+        return ("", [])
+    return (" AND source_year IS NOT DISTINCT FROM %s", [table_meta.source_year])
+
+
 def _pg_count_canonical(
     pg_conn: Any, table_meta: TableMeta, pg_canonical_schema: str,
 ) -> int:
     cur = pg_conn.cursor()
+    year_pred, year_params = _year_predicate(table_meta)
     cur.execute(
         f"SELECT count(*) FROM {pg_canonical_schema}.{table_meta.name.lower()} "
-        "WHERE source_schema = %s AND source_year IS NOT DISTINCT FROM %s",
-        (table_meta.source_schema, table_meta.source_year),
+        f"WHERE source_schema = %s{year_pred}",
+        [table_meta.source_schema, *year_params],
     )
     row = cur.fetchone()
     return int(row[0] if row else 0)
@@ -385,11 +398,12 @@ def _pg_lookup_hashes(
     if not pk_set:
         return {}
     cur = pg_conn.cursor()
+    year_pred, year_params = _year_predicate(table_meta)
     cur.execute(
         f"SELECT source_pk, content_hash FROM {pg_canonical_schema}.{table_meta.name.lower()} "
-        "WHERE source_schema = %s AND source_year IS NOT DISTINCT FROM %s "
+        f"WHERE source_schema = %s{year_pred} "
         "AND source_pk = ANY(%s::text[])",
-        (table_meta.source_schema, table_meta.source_year, pk_set),
+        [table_meta.source_schema, *year_params, pk_set],
     )
     return {row[0]: row[1] for row in cur.fetchall()}
 
@@ -401,12 +415,13 @@ def _pg_aggregate_checksum(
     pg_canonical_schema: str,
 ) -> str | None:
     cur = pg_conn.cursor()
+    year_pred, year_params = _year_predicate(table_meta)
     if expected_pk_set is None:
         cur.execute(
             f"SELECT md5(string_agg(content_hash, '' ORDER BY source_pk)) "
             f"FROM {pg_canonical_schema}.{table_meta.name.lower()} "
-            "WHERE source_schema = %s AND source_year IS NOT DISTINCT FROM %s",
-            (table_meta.source_schema, table_meta.source_year),
+            f"WHERE source_schema = %s{year_pred}",
+            [table_meta.source_schema, *year_params],
         )
     else:
         if not expected_pk_set:
@@ -414,9 +429,9 @@ def _pg_aggregate_checksum(
         cur.execute(
             f"SELECT md5(string_agg(content_hash, '' ORDER BY source_pk)) "
             f"FROM {pg_canonical_schema}.{table_meta.name.lower()} "
-            "WHERE source_schema = %s AND source_year IS NOT DISTINCT FROM %s "
+            f"WHERE source_schema = %s{year_pred} "
             "AND source_pk = ANY(%s::text[])",
-            (table_meta.source_schema, table_meta.source_year, expected_pk_set),
+            [table_meta.source_schema, *year_params, expected_pk_set],
         )
     row = cur.fetchone()
     return row[0] if row else None

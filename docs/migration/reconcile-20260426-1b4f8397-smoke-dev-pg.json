@@ -1,0 +1,40 @@
+{
+  "run_id": "1b4f8397-d622-4f70-8d5a-dc50d5b7b345",
+  "mode": "dry_run",
+  "overall_verdict": "MATCH",
+  "tables": [
+    {
+      "table_name": "COMPANY",
+      "source_schema": "workcube_mikrolink",
+      "source_year": null,
+      "scope_kind": "limited",
+      "scope_limit": 10,
+      "row_count_pg": 3,
+      "row_count_mssql": 3,
+      "sample_diff": [
+        {
+          "source_pk": "[\"1001\"]",
+          "hash_pg": "f3031cc346dcee62a44aed37afeedd5e94befe8f8cd0b5ddc072acac4710e0b2",
+          "hash_mssql": "f3031cc346dcee62a44aed37afeedd5e94befe8f8cd0b5ddc072acac4710e0b2",
+          "match": true
+        },
+        {
+          "source_pk": "[\"1002\"]",
+          "hash_pg": "f27c93ceeb943f418139a23b9cee2b1c3dc2a5d9a265887c3b04dd31deb880b5",
+          "hash_mssql": "f27c93ceeb943f418139a23b9cee2b1c3dc2a5d9a265887c3b04dd31deb880b5",
+          "match": true
+        },
+        {
+          "source_pk": "[\"1003\"]",
+          "hash_pg": "9f32ee0550a681e4c3d534c546769515f75ed7a4f638eed68068f16ef9f2d7e3",
+          "hash_mssql": "9f32ee0550a681e4c3d534c546769515f75ed7a4f638eed68068f16ef9f2d7e3",
+          "match": true
+        }
+      ],
+      "checksum_pg": "77740998e6a4a584571abf4be17f55c1",
+      "checksum_mssql": "77740998e6a4a584571abf4be17f55c1",
+      "verdict": "MATCH",
+      "notes": []
+    }
+  ]
+}
