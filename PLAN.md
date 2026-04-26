@@ -1470,11 +1470,13 @@ Default'tan sapma varsa override:
 
 **Bağlam**: Faz 19.10 platform-ssot soft lock yapıldı (PR ssot #555), 4 critical PR triage edildi (web #29-31 + backend #8). **Ancak platform-ssot'ta migrate edilmemiş büyük miktar asset var** — kullanıcı tespit etti (2026-04-25 değerlendirme).
 
-**Status — OpenFGA model.fga track (Faz 19.11 Step 1-4 SEALED 2026-04-26)**:
+**Status — OpenFGA model.fga track + Faz 21.A + Faz 16 CI gates (Step 1-4 SEALED 2026-04-26)**:
 - Step 1+2: Model snapshotted to `bootstrap/local-fixtures/openfga/model.fga` + `tuples.json#model` path updated (PR #167 superseded; latest: PR #168 aligned with `Halildeu/platform-backend` PR #11 explicit-scope semantic).
 - Step 3 (PR #168 merged): `scripts/dev-seed.sh` writes `model.fga` to OpenFGA store via `render_model_json.py` BEFORE writing tuples; `model_id` captured + passed explicitly. Multi-org tuples promoted from `_future_*` to active. 8/8 smoke checks pass against ephemeral OpenFGA (5 allow + 3 deny — D29 third level).
 - Step 4 (PR #169 merged): `.github/workflows/openfga-model-drift.yml` — semantic-JSON drift gate against upstream `Halildeu/platform-backend:main:backend/openfga/model.fga`. Triggers on PR/push (path-filtered) + weekly Mondays 03:00 UTC + manual.
-- Faz 21.3 fixture smoke gate (PR #170 merged): `.github/workflows/openfga-fixture-smoke.yml` + `scripts/smoke-openfga-fixture.sh` — every `tuples.json#smoke_checks[]` runs against ephemeral OpenFGA container in CI. Catches render/seed/tuples/smoke regressions.
+- Faz 21.3 fixture smoke gate (PR #170 merged): `.github/workflows/openfga-fixture-smoke.yml` + `scripts/smoke-openfga-fixture.sh` — every `tuples.json#smoke_checks[]` runs against ephemeral OpenFGA container in CI. Catches render/seed/tuples/smoke regressions. PR #173 then absorbed Codex retrospective `019dcbc8` (image pin to `openfga/openfga:v1.14`, +2 containment-deny smoke checks → 10 total, dev-seed.sh `--request-timeout=3s` + body logging).
+- Faz 21.A PG schema regression gate (PR #172 merged): `.github/workflows/data-access-migrations.yml` brings up `postgres:16-alpine`, applies V16→V17→V19→V20, runs 11-assertion suite (`sql/migration/tests/test_v19_v20_data_access.sql`) covering AÇIK seed, scope_kind ↔ source_table CHECK, validate_scope_ref(), UPDATE-smuggling guard, partial UNIQUE re-grant.
+- Faz 16 ETL worker pytest + lint gate (PR #174 + #175 merged): `.github/workflows/etl-worker-tests.yml` runs 159 pytest assertions (12 modules / 3185 LoC, mocks only — no live DB) with soft floor 150, plus `ruff check` and `python -m mypy etl_worker` strict. ruff 19→0 + mypy 10→0 cleanup landed in #175.
 - Step 5 pending (low priority): platform-backend's upstream copy can be pruned once a deployed-`model_id` diff gate is also in place; current upstream-source drift gate is acceptable steady-state.
 
 **Kapsam ölçümü**:
