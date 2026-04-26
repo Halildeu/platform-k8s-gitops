@@ -1,0 +1,75 @@
+# etl-worker — ad-hoc K8s Job for canonical MSSQL → PG ETL run.
+#
+# Hard rules in this manifest:
+#   - NOT auto-applied. Operator runs `kubectl apply -f` per the
+#     docs/etl-worker-staging-dry-run.md runbook. ArgoCD does NOT
+#     reconcile Jobs in this namespace by design.
+#   - run-id is a placeholder (PLACEHOLDER_RUN_ID). The runbook
+#     instructs the operator to substitute a fresh UUID before apply.
+#   - mode default is `dry-run`. Production cutover MUST switch to
+#     `final-delta` only after a documented gate.
+#   - backoffLimit: 0 — the application's own retry/threshold logic
+#     owns recovery. K8s Job restart would corrupt audit state.
+#   - activeDeadlineSeconds: 3600 — first dry-run target is < 60 min
+#     for limit=1000 across 2 canonical tables.
+#   - ttlSecondsAfterFinished: 86400 — keep logs reachable 24h for
+#     post-run inspection; runbook says to scrape them sooner anyway.
+#
+# Codex thread 019dc88c iter-4 AGREE on user-gated dry-run prep PR.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: etl-worker-PLACEHOLDER_RUN_ID
+  labels:
+    app.kubernetes.io/name: etl-worker
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: platform
+    platform.acik.com/faz: "16"
+  annotations:
+    platform.acik.com/codex-thread: "019dc88c"
+    platform.acik.com/runbook: "docs/etl-worker-staging-dry-run.md"
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: etl-worker
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: etl-worker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: etl-worker
+          image: ghcr.io/halildeu/platform/etl-worker:sha-placeholder
+          imagePullPolicy: IfNotPresent
+          # Args overridden by runbook; default `validate-manifest` is a
+          # no-op smoke that proves boot-up + manifest load + PG conn.
+          args:
+            - "validate-manifest"
+          envFrom:
+            - configMapRef:
+                name: etl-worker-config
+            - secretRef:
+                name: etl-worker-pg-secrets
+            - secretRef:
+                name: etl-worker-mssql-secrets
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1500m"
+              memory: "2Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]

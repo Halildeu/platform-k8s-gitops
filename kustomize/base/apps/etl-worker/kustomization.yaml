@@ -1,0 +1,13 @@
+# etl-worker base — explicitly NOT included in any environment overlay.
+# This kustomization exists so `kubectl kustomize` can render the manifests
+# for review/sanity, but the dry-run runbook applies them via raw
+# `kubectl apply -f` after the operator substitutes RUN_ID + image sha.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - serviceaccount.yaml
+  - configmap.yaml
+  - secret-stub.yaml
+  - job.yaml
