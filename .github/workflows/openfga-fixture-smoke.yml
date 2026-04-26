@@ -3,7 +3,8 @@ name: OpenFGA Fixture Smoke (Faz 21.3 — D29 Zanzibar third level)
 # Faz 21.3 fixture-level regression gate — turns the one-time E2E proof
 # from PR #168 into a permanent CI check. On every change that could
 # break the dev/local OpenFGA seed flow:
-#   1. Spin up an ephemeral openfga/openfga:latest container.
+#   1. Spin up an ephemeral OpenFGA container (image tag pinned to a
+#      minor version below — Codex retrospective WARNING #3 absorb).
 #   2. Run `scripts/dev-seed.sh --openfga-only` against it (renders
 #      model.fga via render_model_json.py, writes model + tuples).
 #   3. Run `scripts/smoke-openfga-fixture.sh` which executes every
@@ -47,10 +48,14 @@ jobs:
           python-version: "3.11"
 
       - name: Start ephemeral OpenFGA
+        # Pin to v1.14 minor — `latest` would silently change API/health
+        # response shape on a future OpenFGA release and break unrelated
+        # PRs. Bump in a deliberate PR after a local pipe-test of the new
+        # tag confirms render_model_json.py + tuples + smoke still work.
         run: |
           docker run -d --name openfga-fixture \
             -p 8080:8080 -p 8081:8081 \
-            openfga/openfga:latest run
+            openfga/openfga:v1.14 run
 
       - name: Wait for OpenFGA /healthz
         run: |
@@ -71,10 +76,11 @@ jobs:
         env:
           OPENFGA_URL: http://localhost:8080
         run: |
-          # The script's KC + PG + k8s-secret blocks are skipped via flag,
-          # but the trailing kubectl secret stub will fail (no cluster).
-          # We capture and ignore that single non-OpenFGA failure: the
-          # OpenFGA block runs first and its output is what we verify.
+          # KC + PG blocks are skipped via --openfga-only. The trailing k8s
+          # secret stub now self-skips when no k3d-dev kubectl context is
+          # present (PR #170 + this PR's request-timeout hardening), so the
+          # whole script exits 0. We still grep the marker as a positive
+          # signal that the OpenFGA block actually completed.
           bash scripts/dev-seed.sh --openfga-only 2>&1 | tee /tmp/dev-seed.log
           if ! grep -q "OpenFGA tuples written" /tmp/dev-seed.log; then
             echo "❌ dev-seed.sh did not reach 'OpenFGA tuples written' marker"
@@ -92,4 +98,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: docker stop openfga-fixture 2>&1 || true
+        run: docker rm -f openfga-fixture 2>&1 || true
