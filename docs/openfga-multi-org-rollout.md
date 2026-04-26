@@ -264,7 +264,11 @@ project/company/variant flows unchanged.
 - ADR-0008 (this repo)
 - Backend OpenFGA model PR (platform-ssot or successor) — [TODO link]
 - Vault `kv/platform/openfga`
-- ExternalSecret `openfga-secrets` + `permission-service-secrets`
+- ExternalSecrets carrying `ERP_OPENFGA_MODEL_ID`:
+  `permission-service-secrets`, `core-data-service-secrets`,
+  `variant-service-secrets`, `user-service-secrets`
+  (NOTE: `openfga-secrets` is the OpenFGA datastore credential stub,
+  NOT the model_id carrier)
 - `kustomize/base/apps/openfga/` deployment
 - `tests/k6/zanzibar-load.js` baseline
-- `decisions/topics/zanzibar-openfga.v1.json` (D-001..D-007 FINAL)
+- `decisions/topics/zanzibar-openfga.v1.json` (D-001..D-008 + C-008 FINAL)
