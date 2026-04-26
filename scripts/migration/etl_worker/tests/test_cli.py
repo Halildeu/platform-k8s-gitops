@@ -29,18 +29,45 @@ def runner():
 
 @pytest.fixture
 def config_dir(tmp_path):
-    """Minimal manifest dir so the @main(config-dir) option exists check passes."""
+    """Minimal manifest dir so the @main(config-dir) option exists check passes.
+
+    Codex iter-6: manifest must include columns or _load_manifest fail-fasts.
+    Provide one minimal table with idempotency_key matching its single column.
+    """
     cfg = tmp_path / "config"
     cfg.mkdir()
-    (cfg / "tables.yaml").write_text("tables: []\n")
+    (cfg / "tables.yaml").write_text(
+        """\
+version: "1.0-test"
+tables:
+  - name: TEST_T
+    source_schema: workcube_mikrolink
+    parametric: false
+    idempotency_key: [TEST_ID]
+    columns:
+      - { name: TEST_ID, pg_type: INTEGER, nullable: false }
+"""
+    )
     return str(cfg)
 
 
 @pytest.fixture
 def audit_mock():
-    """Patch psycopg.connect + AuditModule used inside cli.run/status paths."""
-    with patch("psycopg.connect") as pc, patch("etl_worker.audit.AuditModule") as am_cls:
-        # connect returns a context-manager yielding a fake conn
+    """Patch psycopg.connect + AuditModule + run_orchestrator used inside
+    cli.run/status paths.
+
+    Note: cli.run on --resume validates state via AuditModule, then hands
+    off to runner.run_orchestrator. We patch the orchestrator entry point
+    to return SUCCESS by default; tests that need a different outcome
+    override on the returned mock (orchestrator_mock).
+    """
+    from etl_worker.runner import RunOutcome
+
+    with (
+        patch("psycopg.connect") as pc,
+        patch("etl_worker.audit.AuditModule") as am_cls,
+        patch("etl_worker.runner.run_orchestrator") as orch,
+    ):
         conn = MagicMock(name="conn")
         conn.autocommit = True
         ctx = MagicMock()
@@ -50,6 +77,12 @@ def audit_mock():
 
         audit = MagicMock(name="AuditModule")
         am_cls.return_value = audit
+
+        orch.return_value = RunOutcome.SUCCESS
+
+        # Expose both — most tests only need audit_mock; orchestrator-aware
+        # tests can fetch via the request fixture in their own arg list.
+        audit._orchestrator = orch
         yield audit
 
 
@@ -58,7 +91,12 @@ def audit_mock():
 # ============================================================================
 
 def test_run_resume_without_mode_succeeds(runner, config_dir, audit_mock):
-    """Codex iter-8 fix #1: --resume must NOT require --mode."""
+    """Codex iter-8 fix #1: --resume must NOT require --mode.
+
+    Day 7 (iter-4): the resume path now hands off to run_orchestrator after
+    rendering the preview. We assert both the preview lines AND that the
+    orchestrator was invoked with resume=True / mode taken from audit.
+    """
     audit_mock.get_run.return_value = {
         "run_id": "rid-1",
         "mode": "initial",
@@ -83,6 +121,14 @@ def test_run_resume_without_mode_succeeds(runner, config_dir, audit_mock):
     assert "audit mode              : initial" in result.output
     assert "validated (skip)        : 1" in result.output
     assert "pending / loading       : 2" in result.output
+    # Codex iter-4: orchestrator must be invoked with resume=True
+    orch = audit_mock._orchestrator
+    assert orch.called, "run_orchestrator was not called"
+    args, kwargs = orch.call_args
+    runner_cfg = args[0] if args else kwargs.get("cfg")
+    assert runner_cfg.resume is True
+    assert runner_cfg.run_id == "rid-1"
+    assert runner_cfg.mode == "initial"
 
 
 def test_run_resume_requires_run_id(runner, config_dir):
@@ -157,6 +203,29 @@ def test_status_text_prints_all_five_buckets(runner, config_dir, audit_mock):
     # Zero-fill: PENDING tables=0
     assert "PENDING      tables=0" in result.output
     assert "FAILED       tables=0" in result.output
+
+
+def test_run_manifest_missing_columns_fails_fast(runner, tmp_path):
+    """Codex iter-6 fix: a manifest entry without `columns` must NOT silently
+    pass through; the run must abort before any audit or extract work."""
+    cfg = tmp_path / "config"
+    cfg.mkdir()
+    (cfg / "tables.yaml").write_text(
+        """\
+version: "1.0-test"
+tables:
+  - name: NO_COLUMNS_T
+    source_schema: workcube_mikrolink
+    parametric: false
+    idempotency_key: [X]
+"""
+    )
+    result = runner.invoke(
+        main,
+        ["--config-dir", str(cfg), "run", "--mode", "initial"],
+    )
+    assert result.exit_code != 0
+    assert "missing `columns`" in result.output
 
 
 def test_status_json_zero_fills_buckets(runner, config_dir, audit_mock):

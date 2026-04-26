@@ -117,8 +117,12 @@ def inspect_source(ctx: click.Context, tables: str | None) -> None:
 )
 @click.option("--run-id", default=None, help="UUID (auto-generated if omitted)")
 @click.option("--tables", help="CSV (default: manifest all)")
-@click.option("--limit", type=int, default=None, help="Per-table row limit (dry-run helper)")
-@click.option("--dry-run", is_flag=True, help="Read-only, no write to PG")
+@click.option(
+    "--limit",
+    type=int,
+    default=None,
+    help="Per-table row cap; passed to extractor and reconcile scope.",
+)
 @click.option("--resume", is_flag=True, help="Resume an existing run; requires --run-id")
 @click.pass_context
 def run(
@@ -127,10 +131,14 @@ def run(
     run_id: str | None,
     tables: str | None,
     limit: int | None,
-    dry_run: bool,
     resume: bool,
 ) -> None:
-    """ETL run — MSSQL extract → PG raw staging → transform → final."""
+    """ETL run — MSSQL extract → transform → PG canonical load → audit.
+
+    For dry-run mode use `--mode dry-run`; the legacy `--dry-run` flag was
+    removed in Day 7 to avoid double-meaning with `--mode dry-run` (Codex
+    iter-5 fix).
+    """
     if resume and not run_id:
         click.echo("FAIL: --resume requires --run-id", err=True)
         sys.exit(2)
@@ -140,15 +148,10 @@ def run(
 
     rid = run_id or str(uuid.uuid4())
 
-    if dry_run:
-        log.info("run.start", run_id=rid, mode=mode, tables=tables, limit=limit, dry_run=True, resume=False)
-        click.echo(f"DRY RUN — would extract {tables or 'all'} (limit={limit})")
-        click.echo("Gün 4 PoC: MSSQL extract + PG raw staging COPY only.")
-        click.echo("Gün 5+: transform + final load + idempotent upsert.")
-        return
-
     if resume:
-        # Read-only resume preview — actual orchestrator wires audit module.
+        # Day 7: validate state then call orchestrator. The orchestrator
+        # itself reads run/state, but we surface a friendly preview before
+        # spinning up MSSQL + load conns.
         try:
             import psycopg
 
@@ -184,12 +187,49 @@ def run(
         click.echo(f"  total table_state rows  : {len(state)}")
         click.echo(f"  validated (skip)        : {skipped}")
         click.echo(f"  pending / loading       : {pending}")
-        click.echo("Orchestrator wiring is implemented in Day 7 dry-run.")
+
+        # Hand off to the orchestrator.
+        from etl_worker.runner import RunnerConfig, run_orchestrator
+        manifest = _load_manifest(ctx.obj["config_dir"], tables)
+        runner_cfg = RunnerConfig(
+            pg_dsn=config.pg_dsn,
+            mssql_dsn=config.mssql_dsn,
+            run_id=rid,
+            mode=run_record["mode"],
+            manifest=manifest,
+            resume=True,
+            max_reject_ratio=config.max_reject_ratio,
+            worker_version=config.worker_version,
+            git_sha=config.git_sha,
+            contract_version=config.contract_version,
+            annex_version=config.annex_version,
+        )
+        outcome = run_orchestrator(runner_cfg)
+        _exit_for_outcome(outcome, rid)
         return
 
+    # Day 7: orchestrator wired
     log.info("run.start", run_id=rid, mode=mode, tables=tables, limit=limit, dry_run=False, resume=False)
-    click.echo("FULL RUN — Gün 7 orchestrator gerek (TODO)")
-    sys.exit(2)
+    from etl_worker.runner import RunOutcome, RunnerConfig, run_orchestrator
+
+    config: Config = ctx.obj["config"]
+    manifest = _load_manifest(ctx.obj["config_dir"], tables)
+    runner_cfg = RunnerConfig(
+        pg_dsn=config.pg_dsn,
+        mssql_dsn=config.mssql_dsn,
+        run_id=rid,
+        mode=mode,
+        manifest=manifest,
+        resume=False,
+        max_reject_ratio=config.max_reject_ratio,
+        limit=limit,
+        worker_version=config.worker_version,
+        git_sha=config.git_sha,
+        contract_version=config.contract_version,
+        annex_version=config.annex_version,
+    )
+    outcome = run_orchestrator(runner_cfg)
+    _exit_for_outcome(outcome, rid)
 
 
 @main.command("status")
@@ -255,13 +295,185 @@ def status(ctx: click.Context, run_id: str, as_json: bool) -> None:
 
 @main.command("reconcile")
 @click.option("--run-id", required=True, type=str)
-@click.option("--output", type=click.Path(), default=None, help="Markdown output path")
+@click.option(
+    "--scope",
+    type=click.Choice(["full", "limited", "delta"]),
+    default="limited",
+    help="Reconcile scope kind (Day 7 dry-run default: limited).",
+)
+@click.option("--limit", type=int, default=1000, help="Limited scope row cap per table.")
+@click.option(
+    "--output-dir",
+    type=click.Path(),
+    default="docs/migration",
+    help="Output dir for reconcile-YYYYMMDD-<run_id_short>.{md,json}.",
+)
+@click.option("--tables", help="CSV (default: manifest all)")
 @click.pass_context
-def reconcile(ctx: click.Context, run_id: str, output: str | None) -> None:
+def reconcile(
+    ctx: click.Context,
+    run_id: str,
+    scope: str,
+    limit: int,
+    output_dir: str,
+    tables: str | None,
+) -> None:
     """16.3.5 reconciliation gate (row count + checksum + sample diff)."""
-    log.info("reconcile.start", run_id=run_id)
-    click.echo(f"TODO Gün 7: reconcile run-id={run_id}")
-    click.echo("Output: row_count parity + checksum + sample diff (markdown + JSON)")
+    import datetime
+    import os
+
+    import psycopg
+
+    from etl_worker.reconcile import (
+        ReconcileReport,
+        ReconcileScope,
+        reconcile_table,
+        render_json,
+        render_markdown,
+    )
+
+    log.info("reconcile.start", run_id=run_id, scope=scope, limit=limit)
+    config: Config = ctx.obj["config"]
+    manifest = _load_manifest(ctx.obj["config_dir"], tables)
+    scope_obj = ReconcileScope(kind=scope, limit=limit if scope == "limited" else None)
+
+    report = ReconcileReport(run_id=run_id, mode="reconcile", tables=[])
+
+    pg_conn = psycopg.connect(config.pg_dsn)
+    mssql_conn = None
+    try:
+        try:
+            import pyodbc
+            mssql_conn = pyodbc.connect(config.mssql_dsn, timeout=30)
+        except Exception as e:
+            click.echo(f"FAIL: MSSQL connection error: {e}", err=True)
+            sys.exit(2)
+
+        for table_meta in manifest:
+            res = reconcile_table(pg_conn, mssql_conn, table_meta, scope_obj)
+            report.tables.append(res)
+            click.echo(
+                f"  {table_meta.source_schema}.{table_meta.name} "
+                f"(year={table_meta.source_year}) → {res.verdict} "
+                f"pg={res.row_count_pg} mssql={res.row_count_mssql}"
+            )
+    finally:
+        try:
+            pg_conn.close()
+        except Exception:
+            pass
+        if mssql_conn is not None:
+            try:
+                mssql_conn.close()
+            except Exception:
+                pass
+
+    # Write artifacts
+    today = datetime.date.today().strftime("%Y%m%d")
+    short = run_id.split("-")[0] if "-" in run_id else run_id[:8]
+    os.makedirs(output_dir, exist_ok=True)
+    base = f"reconcile-{today}-{short}"
+    md_path = os.path.join(output_dir, f"{base}.md")
+    json_path = os.path.join(output_dir, f"{base}.json")
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write(render_markdown(report))
+    with open(json_path, "w", encoding="utf-8") as f:
+        f.write(render_json(report))
+    click.echo("")
+    click.echo(f"overall verdict: {report.overall_verdict()}")
+    click.echo(f"markdown: {md_path}")
+    click.echo(f"json:     {json_path}")
+
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+def _load_manifest(config_dir: Path, tables_csv: str | None) -> list[Any]:
+    """Load + validate tables.yaml manifest.
+
+    Codex iter-5 fail-fast (Day 7): empty `columns` is not silently accepted —
+    extractor and reconcile both rely on column metadata, so a missing list
+    means the run is unrunnable. Better to refuse at startup than to ship
+    `SELECT  FROM ...` to MSSQL or load no business columns into PG.
+    """
+    import yaml
+
+    from etl_worker.transform import ColumnMeta, TableMeta
+
+    manifest_path = config_dir / "tables.yaml"
+    raw = yaml.safe_load(manifest_path.read_text())
+    table_filter = (
+        {t.strip().upper() for t in tables_csv.split(",")} if tables_csv else None
+    )
+    out: list[TableMeta] = []
+    missing_columns: list[str] = []
+    for entry in raw.get("tables", []):
+        if table_filter is not None and entry["name"].upper() not in table_filter:
+            continue
+        col_specs = entry.get("columns") or []
+        if not col_specs:
+            missing_columns.append(entry["name"])
+            continue
+        cols = [
+            ColumnMeta(
+                name=c["name"],
+                pg_type=c["pg_type"],
+                nullable=c.get("nullable", True),
+                max_length=c.get("max_length"),
+            )
+            for c in col_specs
+        ]
+        # idempotency_key columns must be present in the column list.
+        col_names = {c.name for c in cols}
+        idempotency_key = entry["idempotency_key"]
+        missing_pk = [k for k in idempotency_key if k not in col_names]
+        if missing_pk:
+            raise click.ClickException(
+                f"manifest table {entry['name']!r}: idempotency_key {missing_pk} "
+                f"missing from columns. fix config/tables.yaml."
+            )
+        out.append(
+            TableMeta(
+                name=entry["name"],
+                source_schema=entry.get("source_schema", "workcube_mikrolink"),
+                source_year=entry.get("source_year"),
+                columns=cols,
+                idempotency_key=idempotency_key,
+            )
+        )
+    if missing_columns:
+        raise click.ClickException(
+            f"manifest tables missing `columns`: {missing_columns}. "
+            "Day 7 cannot run without column metadata — populate config/tables.yaml "
+            "(future: auto-resolve from V16 generator output)."
+        )
+    if not out:
+        raise click.ClickException(
+            "manifest produced 0 valid tables (filter mismatch or all entries "
+            "missing columns)."
+        )
+    return out
+
+
+def _exit_for_outcome(outcome: Any, run_id: str) -> None:
+    """Map RunOutcome → CLI exit code."""
+    from etl_worker.runner import RunOutcome
+
+    if outcome is RunOutcome.SUCCESS:
+        click.echo(f"✓ run {run_id} SUCCESS")
+        sys.exit(0)
+    if outcome is RunOutcome.LOCK_CONTENDED:
+        click.echo(f"FAIL: another worker holds run lease for {run_id}", err=True)
+        sys.exit(3)
+    if outcome is RunOutcome.RUN_EXISTS:
+        click.echo(f"FAIL: run_id={run_id} already exists in migration_runs", err=True)
+        sys.exit(1)
+    if outcome is RunOutcome.ABORTED:
+        click.echo(f"FAIL: run {run_id} ABORTED (see migration_runs.error_summary)", err=True)
+        sys.exit(2)
+    click.echo(f"FAIL: run {run_id} FAILED (see logs)", err=True)
+    sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -292,13 +292,21 @@ def gen_canonical_table(table: TableMeta, blocked: list) -> str:
         col_defs.append(f"    {quote_ident(col.name)} {pg_type}{nullable}{identity},")
 
     lines.extend(col_defs)
+    # Codex Day 7 iter-7: ETL idempotency lineage columns. The runner's
+    # build_upsert_sql() inserts source_table + source_pk; conflict key is
+    # UNIQUE (source_schema, source_table, source_pk). Without these
+    # columns + index, every upsert would hit `undefined_column` at load.
+    lines.append("    source_table VARCHAR(128) NOT NULL,")
+    lines.append("    source_pk TEXT NOT NULL,")
     lines.append("    content_hash VARCHAR(64) NOT NULL,")
     lines.append("    migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)")
     lines.append("    migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),")
-    lines.append("    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review")
+    lines.append("    PRIMARY KEY (migration_row_id),")
+    lines.append("    UNIQUE (source_schema, source_table, source_pk)")
     lines.append(");")
     lines.append("")
     lines.append(f"CREATE INDEX idx_{tname}_hash ON workcube_mikrolink.{tname} (content_hash);")
+    lines.append(f"CREATE INDEX idx_{tname}_lineage ON workcube_mikrolink.{tname} (source_schema, source_table, source_pk);")
 
     return "\n".join(lines) + "\n"
 

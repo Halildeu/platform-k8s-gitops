@@ -1,13 +1,18 @@
-# Faz 16.3 — ETL Tables Manifest (Codex iter-5 AGREE)
+# Faz 16.3 — ETL Tables Manifest (Codex iter-5 AGREE / iter-6 absorb)
 # 40 tablo allowlist. Per-table:
 # - source_schema: workcube_mikrolink (canonical) veya parametric (workcube_mikrolink_1, _2, ...)
 # - idempotency_key: business PK kolon listesi (Codex iter-5: manifest zorunlu, runtime tahmin etmesin)
 # - parametric: bool (yıllık schema mode)
 # - source_year_column: parametric için fiscal year extraction
 # - reports: bu tablo hangi raporlarda kullanılır (audit)
+# - columns: pg_type + nullable + max_length (Codex iter-6: Day 7 fail-fast)
 #
 # Manifest validation: etl-worker validate-manifest
-# Source uyuşmazlığı: fail-fast (PK mismatch, table not found)
+# Source uyuşmazlığı: fail-fast (PK mismatch, table not found, columns missing)
+#
+# Day 7 KAPSAMINDA: COMPANY + BRANCH (V16 DDL doğrudan; minimal kolon altkümesi
+# — production manifest tüm kolonlar için V16 generator çıktısından üretilecek
+# (Faz 16.3.E placeholder)).
 
 version: "1.0-DRAFT"
 contract_ref: "docs/migration/mssql-pg-data-contract.md"
@@ -21,44 +26,48 @@ tables:
   - name: COMPANY
     source_schema: workcube_mikrolink
     parametric: false
-    idempotency_key: [COMPANY_ID]  # TODO confirm with Workcube admin
-    reports: [fin-company-listing]  # placeholder
-    notes: "113 kolon, snapshot canonical. PK manuel verify gerek (snapshot pk:false)."
-
-  - name: COMPANY_PARTNER
-    source_schema: workcube_mikrolink
-    parametric: false
-    idempotency_key: [COMPANYP_ID]  # TODO verify
-    reports: [fin-company-partners]
-    notes: "Partner relations."
+    idempotency_key: [COMPANY_ID]
+    reports: [fin-company-listing]
+    notes: "113 kolon canonical; Day 7 dry-run minimal subset, full set Faz 16.3.E."
+    columns:
+      - { name: COMPANY_ID,    pg_type: INTEGER,        nullable: false }
+      - { name: COMPANYCAT_ID, pg_type: INTEGER,        nullable: false }
+      - { name: COMPANY_STATUS, pg_type: BOOLEAN,       nullable: false }
+      - { name: NICKNAME,      pg_type: VARCHAR(150),   nullable: true,  max_length: 150 }
+      - { name: FULLNAME,      pg_type: VARCHAR(250),   nullable: true,  max_length: 250 }
+      - { name: TAXOFFICE,     pg_type: VARCHAR(50),    nullable: true,  max_length: 50 }
+      - { name: TAXNO,         pg_type: VARCHAR(43),    nullable: true,  max_length: 43 }
+      - { name: COMPANY_EMAIL, pg_type: VARCHAR(100),   nullable: true,  max_length: 100 }
 
   - name: BRANCH
     source_schema: workcube_mikrolink
     parametric: false
-    idempotency_key: [BRANCH_ID]  # TODO verify
+    idempotency_key: [BRANCH_ID]
     reports: [fin-branch-listing]
-    notes: "Branches/locations."
+    notes: "Branches/locations; Day 7 minimal subset."
+    columns:
+      - { name: BRANCH_ID,      pg_type: INTEGER,       nullable: false }
+      - { name: BRANCH_STATUS,  pg_type: BOOLEAN,       nullable: false }
+      - { name: COMPANY_ID,     pg_type: INTEGER,       nullable: true }
+      - { name: BRANCH_NAME,    pg_type: VARCHAR(50),   nullable: false, max_length: 50 }
+      - { name: BRANCH_FULLNAME, pg_type: VARCHAR(250), nullable: true,  max_length: 250 }
+      - { name: BRANCH_EMAIL,   pg_type: VARCHAR(75),   nullable: true,  max_length: 75 }
+      - { name: BRANCH_ADDRESS, pg_type: VARCHAR(250),  nullable: true,  max_length: 250 }
 
-  # TODO: kalan 17 matched canonical tablo + 17 parametric tablo
+  # COMPANY_PARTNER: V16 DDL'de yok (snapshot eksik) — Faz 16.2.P sprint
+  # sonrası schema-service crawl tamamlanınca kolonlar eklenir + V16 generator
+  # rerun. O zamana kadar bu tablo manifest dışı; çağıranlar fail-fast alır.
+
+  # TODO: kalan 18 matched canonical tablo (V16 generator çıktısından kopyala)
+  # TODO: 17 parametric tablo (Faz 16.2.P snapshot sonrası)
 
 # ============================================================================
-# Parametric tables (snapshot eksik — Faz 16.2.P sprint sonrası eklenir)
-# ============================================================================
-
-# Örnek (placeholder):
-# - name: BANK_ACTIONS
-#   source_schemas: [workcube_mikrolink_1]  # 2024
-#   parametric: true
-#   idempotency_key: [BANK_ACTION_ID]
-#   reports: [fin-banka-hareketleri, fin-nakit-akis-ozet]
-#   notes: "TODO_PARAMETRIC_SCHEMA_SNAPSHOT_REQUIRED"
-
-# ============================================================================
-# Validation rules (Codex iter-5)
+# Validation rules (Codex iter-5/6)
 # ============================================================================
 
 validation:
   fail_on_pk_mismatch: true       # idempotency_key INFORMATION_SCHEMA'da yoksa abort
   fail_on_missing_table: true      # tablo MSSQL'de yoksa abort
+  fail_on_empty_columns: true      # Codex iter-6: columns boş manifest entry kabul edilmez
   warn_on_extra_columns: true      # snapshot'tan fazla kolon varsa warn (drift)
   max_reject_ratio_default: 0.0    # cutover: 0; dry-run: 0.05 (override CLI)
