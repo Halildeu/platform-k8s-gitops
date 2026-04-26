@@ -1,0 +1,138 @@
+name: data_access PG migration regression (Faz 21.A)
+
+# Faz 21.A regression gate — applies V16 → V17 → V19 → V20 to a fresh
+# postgres:16-alpine and runs `sql/migration/tests/test_v19_v20_data_access.sql`
+# which exercises:
+#   * AÇIK organization seed (V19)
+#   * scope_kind ↔ source_table CHECK (V19 + V20 widened to DEPARTMENT)
+#   * validate_scope_ref() lineage existence guard (4 branches)
+#   * scope_validate_before_write trigger on INSERT + UPDATE (V19 iter-2:
+#     UPDATE-smuggling guard via revoked_at=NULL re-activation block)
+#   * uq_scope_active_assignment partial UNIQUE — re-grant after revoke
+#
+# The test file uses RAISE EXCEPTION on assertion failures, so any drift
+# in V19/V20 semantics (or in V16/V17 dependencies that shift the
+# workcube_mikrolink schema) produces a non-zero psql exit and fails CI.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "sql/migration/V16__*.sql"
+      - "sql/migration/V17__*.sql"
+      - "sql/migration/V19__*.sql"
+      - "sql/migration/V20__*.sql"
+      - "sql/migration/tests/**"
+      - ".github/workflows/data-access-migrations.yml"
+  push:
+    branches: [main]
+    paths:
+      - "sql/migration/V16__*.sql"
+      - "sql/migration/V17__*.sql"
+      - "sql/migration/V19__*.sql"
+      - "sql/migration/V20__*.sql"
+      - "sql/migration/tests/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  pg-regression:
+    name: V16 → V17 → V19 → V20 + assertion suite
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: reports_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d reports_db"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update -y -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Apply migrations (V16 → V17 → V19 → V20)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: test
+          PGDATABASE: reports_db
+        run: |
+          set -euo pipefail
+          for f in \
+            sql/migration/V16__reports.sql \
+            sql/migration/V17__etl_lineage_columns.sql \
+            sql/migration/V19__data_access.sql \
+            sql/migration/V20__data_access_depot_alter.sql; do
+            echo "::group::apply $f"
+            psql -v ON_ERROR_STOP=1 -f "$f" > /tmp/migrate-$(basename "$f").log 2>&1 \
+              || { echo "::error::failed: $f"; tail -50 /tmp/migrate-$(basename "$f").log; exit 1; }
+            echo "::endgroup::"
+          done
+
+      - name: Smoke — AÇIK seed + V20 CHECK rebuilt
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: test
+          PGDATABASE: reports_db
+        run: |
+          set -euo pipefail
+          ORG_NAME=$(psql -tAX -c "SELECT name FROM data_access.organization WHERE name='AÇIK';")
+          if [[ "${ORG_NAME}" != "AÇIK" ]]; then
+            echo "::error::AÇIK seed missing; got '${ORG_NAME}'"
+            exit 1
+          fi
+          DEFCHECK=$(psql -tAX -c "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='scope_kind_source_table_consistent';")
+          if ! grep -q "DEPARTMENT" <<<"${DEFCHECK}"; then
+            echo "::error::V20 CHECK rebuild missing DEPARTMENT branch"
+            echo "got: ${DEFCHECK}"
+            exit 1
+          fi
+          if grep -q "TBD_DEPOT_TABLE" <<<"${DEFCHECK}"; then
+            echo "::error::V19 placeholder TBD_DEPOT_TABLE still present after V20"
+            exit 1
+          fi
+
+      - name: Run assertion suite
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: test
+          PGDATABASE: reports_db
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 \
+            -f sql/migration/tests/test_v19_v20_data_access.sql \
+            > /tmp/test-out.log 2>&1
+          PASSES=$(grep -c "^NOTICE:  PASS" /tmp/test-out.log || true)
+          echo "PASS assertions: ${PASSES}"
+          cat /tmp/test-out.log
+          if (( PASSES < 11 )); then
+            echo "::error::expected ≥11 PASS assertions; got ${PASSES}"
+            exit 1
+          fi
+
+      - name: Dump psql logs on failure
+        if: failure()
+        run: |
+          for f in /tmp/migrate-*.log /tmp/test-out.log; do
+            [[ -f "$f" ]] || continue
+            echo "=== $f ==="
+            tail -100 "$f"
+          done
