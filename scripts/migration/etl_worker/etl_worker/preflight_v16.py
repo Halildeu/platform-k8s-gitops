@@ -20,7 +20,6 @@ import logging
 from typing import Iterable
 
 import psycopg
-from psycopg import sql
 
 log = logging.getLogger(__name__)
 

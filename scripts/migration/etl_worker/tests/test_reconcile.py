@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -26,7 +26,7 @@ from etl_worker.reconcile import (
     render_json,
     render_markdown,
 )
-from etl_worker.transform import ColumnMeta, TableMeta, content_hash
+from etl_worker.transform import ColumnMeta, TableMeta
 
 
 # ============================================================================

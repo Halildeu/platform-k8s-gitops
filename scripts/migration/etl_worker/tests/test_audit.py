@@ -20,7 +20,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from etl_worker.audit import (
-    AUDIT_SCHEMA,
     DB_MODE_VALUES,
     AuditModule,
     RejectRecord,

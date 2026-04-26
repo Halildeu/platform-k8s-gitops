@@ -569,7 +569,10 @@ class AuditModule:
                     ).format(schema=sql.Identifier(AUDIT_SCHEMA)),
                     (run_id, table_name),
                 )
-            return int(cur.fetchone()[0])
+            row = cur.fetchone()
+            if row is None:
+                return 0
+            return int(row[0])
 
     def status_summary(self, run_id: str) -> dict[str, Any]:
         """Aggregate status for CLI `status --run-id`."""

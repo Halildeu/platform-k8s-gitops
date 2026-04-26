@@ -23,8 +23,6 @@ from etl_worker.audit import AuditModule
 from etl_worker.preflight_v16 import SchemaContractError
 from etl_worker.retry import BackoffPolicy
 from etl_worker.runner import (
-    LOCK_NAMESPACE,
-    CriticalError,
     RunnerConfig,
     RunOutcome,
     run_orchestrator,

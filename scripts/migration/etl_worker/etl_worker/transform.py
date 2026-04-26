@@ -90,7 +90,7 @@ def cast_value(raw: Any, target_type: str, column_name: str) -> tuple[Any, str |
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
                 return dt, None
-            return None, f"TIMESTAMPTZ_PARSE_FAIL"
+            return None, "TIMESTAMPTZ_PARSE_FAIL"
 
         if target_upper == "DATE":
             if isinstance(raw, date) and not isinstance(raw, datetime):
@@ -161,7 +161,7 @@ def make_source_pk(row: dict[str, Any], idempotency_key: list[str]) -> str:
     Delimiter-based template (e.g., "12345|678") riskli (delimiter çakışması).
     JSON array tüm tipler için güvenli.
     """
-    pk_values = []
+    pk_values: list[str | None] = []
     for col in idempotency_key:
         v = row.get(col)
         if v is None:
