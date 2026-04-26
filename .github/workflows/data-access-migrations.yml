@@ -120,11 +120,17 @@ jobs:
           psql -v ON_ERROR_STOP=1 \
             -f sql/migration/tests/test_v19_v20_data_access.sql \
             > /tmp/test-out.log 2>&1
-          PASSES=$(grep -c "^NOTICE:  PASS" /tmp/test-out.log || true)
+          # psql -f prepends "psql:file:line:" to NOTICE messages, so we
+          # grep for the inner marker instead of anchoring with `^NOTICE:`.
+          PASSES=$(grep -cE "NOTICE:[[:space:]]+PASS" /tmp/test-out.log || true)
           echo "PASS assertions: ${PASSES}"
           cat /tmp/test-out.log
           if (( PASSES < 11 )); then
             echo "::error::expected ≥11 PASS assertions; got ${PASSES}"
+            exit 1
+          fi
+          if ! grep -q "ALL ASSERTIONS PASSED" /tmp/test-out.log; then
+            echo "::error::final summary line missing — suite did not reach the end"
             exit 1
           fi
 
