@@ -5,10 +5,15 @@
 --   * scope_validate_before_write trigger (INSERT + UPDATE coverage per V19 iter-2)
 --   * uq_scope_active_assignment partial UNIQUE (re-grant after revoke succeeds)
 --
--- Designed to run after V16+V17+V19+V20 are applied to an empty database.
--- Idempotent within a single run via TRUNCATE at start; safe to re-run.
--- On any unexpected error or assertion failure, RAISE EXCEPTION exits the
--- transaction non-zero and surfaces the failure in CI logs.
+-- ⚠ DESTRUCTIVE on shared/staged databases. This file calls TRUNCATE on
+--   data_access.scope and on the four workcube_mikrolink anchor tables
+--   (company, pro_projects, branch, department). It is intended ONLY for
+--   ephemeral CI databases (`postgres:16-alpine` service container) or a
+--   throwaway local Docker. Do NOT run against any database that already
+--   holds ETL data or production tuples.
+--
+-- Idempotent within a single CI invocation: re-running this file on the
+-- same ephemeral DB is safe because every step truncates first.
 
 \set ON_ERROR_STOP on
 

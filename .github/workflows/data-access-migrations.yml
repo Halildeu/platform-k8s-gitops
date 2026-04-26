@@ -125,8 +125,13 @@ jobs:
           PASSES=$(grep -cE "NOTICE:[[:space:]]+PASS" /tmp/test-out.log || true)
           echo "PASS assertions: ${PASSES}"
           cat /tmp/test-out.log
-          if (( PASSES < 11 )); then
-            echo "::error::expected ≥11 PASS assertions; got ${PASSES}"
+          # Floor: 10 PASS-prefixed NOTICE lines (one per assertion block).
+          # The final summary line uses a separate marker checked below; if
+          # any assertion block is added/removed in the future, both this
+          # count and the count claimed in the test file's summary block
+          # need to move together.
+          if (( PASSES < 10 )); then
+            echo "::error::expected ≥10 PASS assertions; got ${PASSES}"
             exit 1
           fi
           if ! grep -q "ALL ASSERTIONS PASSED" /tmp/test-out.log; then
