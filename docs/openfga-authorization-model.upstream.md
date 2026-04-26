@@ -1,9 +1,9 @@
 # OpenFGA Authorization Model — Migration Status
 
-> **Status**: Faz 19.11 residual STEP 1+2+3 COMPLETE (2026-04-26).
-> Model file migrated from upstream platform-ssot to this repo + dev-seed.sh
-> now writes the model to OpenFGA store on local cluster boot. Steps 4-5
-> still pending (CI diff + upstream prune).
+> **Status**: Faz 19.11 residual STEP 1+2+3+4 COMPLETE (2026-04-26).
+> Model migrated, dev-seed.sh writes it to local OpenFGA store, and a
+> CI drift gate compares against upstream platform-backend on every
+> change. Step 5 (upstream prune) remains as low-priority cleanup.
 
 ## Current location (this repo)
 
@@ -53,11 +53,24 @@ maps to OpenFGA object type `warehouse`. See ADR-0008 § Naming.
       `authorization_model_id` explicit. Verified end-to-end against
       `openfga/openfga:latest` Docker container: 8/8 fixture smoke
       checks pass (5 allow + 3 deny — D29 Zanzibar-ready third level).
-- [ ] Step 4: CI gate — diff local model file against deployed model_id
-      content rendered from OpenFGA store on the prod cluster. (Separate
-      PR; needs read access to `kv/platform/openfga`.)
-- [ ] Step 5: Once stable, delete the upstream copy in platform-backend
-      (post Faz 21.3 backend PR #11 propagation).
+- [x] Step 4: CI drift gate. **DONE 2026-04-26.** Implemented as
+      `.github/workflows/openfga-model-drift.yml`: on every PR or push
+      that touches `model.fga` or `render_model_json.py`, plus weekly
+      Mondays 03:00 UTC, the workflow fetches
+      `Halildeu/platform-backend:main:backend/openfga/model.fga`,
+      renders both files to JSON via `render_model_json.py`, and
+      semantic-compares the dicts. Drift fails the workflow with a
+      structured diff (LOCAL ONLY / UPSTREAM ONLY / shared-drifted
+      types). NOTE: this Step 4 variant catches **upstream-source**
+      drift (catches divergence early, before rotation). The original
+      Step 4 description (diff against deployed `model_id` on prod
+      cluster via Vault `kv/platform/openfga`) remains a future
+      strengthening once Vault read in CI is wired (separate PR).
+- [ ] Step 5: Once stable and the deployed-model drift gate above is
+      added, delete the upstream copy in platform-backend (post Faz
+      21.3 backend PR #11 propagation). Low priority — keeping a
+      single source-of-truth in platform-backend with a periodic
+      drift-checker here is acceptable steady-state.
 
 ## Why this doc is committed
 
