@@ -278,6 +278,95 @@ def test_render_json_smoke():
     assert payload["tables"][0]["scope_kind"] == "limited"
 
 
+# ============================================================================
+# Year-predicate regression (Codex iter live smoke)
+# ============================================================================
+
+def test_pg_helpers_omit_source_year_for_canonical():
+    """V16 canonical (non-parametric) tables don't have a source_year column.
+    The PG helpers must omit the predicate or live reconcile throws
+    `undefined_column` 42703. This is the bug the dev-pg smoke caught.
+    """
+    from etl_worker.reconcile import (
+        _pg_aggregate_checksum,
+        _pg_count_canonical,
+        _pg_lookup_hashes,
+    )
+
+    canonical = _company_meta()  # source_year=None
+    sql_capture: list[str] = []
+    params_capture: list = []
+
+    cur = MagicMock()
+    def execute(sql_text, params=None):
+        sql_capture.append(sql_text)
+        params_capture.append(params)
+    cur.execute.side_effect = execute
+    cur.fetchall.return_value = []
+    cur.fetchone.return_value = (0,)
+
+    pg = MagicMock()
+    pg.cursor.return_value = cur
+
+    _pg_count_canonical(pg, canonical, "workcube_mikrolink")
+    _pg_lookup_hashes(pg, canonical, ['["1001"]'], "workcube_mikrolink")
+    _pg_aggregate_checksum(pg, canonical, ['["1001"]'], "workcube_mikrolink")
+
+    for sql in sql_capture:
+        assert "source_year IS NOT DISTINCT FROM" not in sql, (
+            f"canonical helper must NOT reference source_year: {sql}"
+        )
+    # source_schema present in every WHERE (sanity)
+    for sql in sql_capture:
+        assert "source_schema = %s" in sql
+
+
+def test_pg_helpers_include_source_year_for_parametric():
+    """When the manifest entry has source_year set (parametric tables), the
+    helpers must include the predicate AND bind the year."""
+    from etl_worker.reconcile import (
+        _pg_aggregate_checksum,
+        _pg_count_canonical,
+        _pg_lookup_hashes,
+    )
+
+    parametric = TableMeta(
+        name="BANK_ACTIONS",
+        source_schema="workcube_mikrolink_1",
+        source_year=2024,
+        columns=[
+            ColumnMeta(name="bank_action_id", pg_type="BIGINT", nullable=False),
+        ],
+        idempotency_key=["bank_action_id"],
+    )
+
+    sql_capture: list[str] = []
+    params_capture: list = []
+
+    cur = MagicMock()
+    def execute(sql_text, params=None):
+        sql_capture.append(sql_text)
+        params_capture.append(params)
+    cur.execute.side_effect = execute
+    cur.fetchall.return_value = []
+    cur.fetchone.return_value = (0,)
+
+    pg = MagicMock()
+    pg.cursor.return_value = cur
+
+    _pg_count_canonical(pg, parametric, "workcube_mikrolink")
+    _pg_lookup_hashes(pg, parametric, ['["1"]'], "workcube_mikrolink")
+    _pg_aggregate_checksum(pg, parametric, ['["1"]'], "workcube_mikrolink")
+
+    for sql in sql_capture:
+        assert "source_year IS NOT DISTINCT FROM %s" in sql, (
+            f"parametric helper must include source_year predicate: {sql}"
+        )
+    # year=2024 must be present in each call's params
+    for params in params_capture:
+        assert 2024 in params
+
+
 def test_overall_verdict_picks_worst():
     r1 = TableReconcileResult(
         table_name="A", source_schema="s", source_year=None,

@@ -50,9 +50,18 @@ CREATE TABLE migration_audit.migration_table_state (
     extract_query_hash VARCHAR(64),
     max_updated_at TIMESTAMPTZ,
     started_at TIMESTAMPTZ,
-    completed_at TIMESTAMPTZ,
-    PRIMARY KEY (run_id, table_name, source_schema, COALESCE(source_year, 0))
+    completed_at TIMESTAMPTZ
 );
+
+-- PostgreSQL doesn't support expressions in PRIMARY KEY definitions, but it
+-- does support expressions in UNIQUE INDEX. The conflict key we actually need
+-- is (run_id, table_name, source_schema, COALESCE(source_year, 0)) — i.e.
+-- treat NULL year as 0 so canonical and parametric tables share a uniqueness
+-- contract. Codex iter-1 flagged this; this UNIQUE INDEX is what
+-- preflight_v16_table_state_pk probes at runner startup.
+CREATE UNIQUE INDEX idx_migration_table_state_pk
+    ON migration_audit.migration_table_state
+    (run_id, table_name, source_schema, COALESCE(source_year, 0));
 
 CREATE INDEX idx_migration_table_state_status ON migration_audit.migration_table_state (status, table_name);
 
