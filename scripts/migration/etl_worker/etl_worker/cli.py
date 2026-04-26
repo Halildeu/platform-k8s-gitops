@@ -293,6 +293,65 @@ def status(ctx: click.Context, run_id: str, as_json: bool) -> None:
     click.echo(f"reject_total  : {summary.get('reject_total', 0)}")
 
 
+@main.command("rejects")
+@click.option("--run-id", required=True, type=str)
+@click.option("--table", default=None, help="Filter by table_name (uppercase).")
+@click.option("--limit", type=int, default=50, help="Max rows (1-1000, default 50).")
+@click.option("--offset", type=int, default=0, help="Pagination offset.")
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+@click.pass_context
+def rejects(
+    ctx: click.Context,
+    run_id: str,
+    table: str | None,
+    limit: int,
+    offset: int,
+    as_json: bool,
+) -> None:
+    """Day 8 (Codex 019dc88c iter-4): list rejects for a run.
+
+    SRE triage helper. Reads from migration_audit.migration_rejects ordered
+    by rejected_at DESC. Use `status --run-id` first to see counts; come
+    here to inspect specific rows.
+    """
+    try:
+        import psycopg
+
+        from etl_worker.audit import AuditModule
+
+        config: Config = ctx.obj["config"]
+        with psycopg.connect(config.pg_dsn, autocommit=True) as conn:
+            audit = AuditModule(conn)
+            rows = audit.list_rejects(run_id, table_name=table, limit=limit, offset=offset)
+    except Exception as e:
+        click.echo(f"FAIL: rejects query error: {e}", err=True)
+        sys.exit(2)
+
+    if as_json:
+        click.echo(json.dumps(rows, default=str, indent=2))
+        return
+
+    if not rows:
+        click.echo(f"(no rejects for run_id={run_id}" + (f" table={table})" if table else ")"))
+        return
+
+    # Human table: source_pk + reason + sqlstate + truncated message
+    click.echo(
+        f"{'#':<6} {'table':<25} {'source_pk':<20} {'reason':<25} "
+        f"{'sqlstate':<10} {'rejected_at':<28} message"
+    )
+    click.echo("-" * 140)
+    for r in rows:
+        msg = (r.get("pg_error_message") or "")[:60]
+        click.echo(
+            f"{r['id']:<6} {(r['table_name'] or '')[:25]:<25} "
+            f"{(r['source_pk'] or '')[:20]:<20} "
+            f"{(r['reject_reason'] or '')[:25]:<25} "
+            f"{(r['pg_error_code'] or '')[:10]:<10} "
+            f"{str(r['rejected_at'])[:28]:<28} {msg}"
+        )
+
+
 @main.command("reconcile")
 @click.option("--run-id", required=True, type=str)
 @click.option(

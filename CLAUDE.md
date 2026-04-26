@@ -169,6 +169,25 @@ Types: `feat` / `fix` / `refactor` / `docs` / `chore` / `test`
    kubectl -n calico-system scale deploy calico-typha --replicas=1
    ```
 
+## Hızlı Bağlam — MSSQL Şema Gezgini (Workcube)
+
+**Kullanıcı kuralı (2026-04-26)**: Workcube MSSQL kaynak şeması her zaman schema-service üzerinden alınır. Agent **sentetik tablo/kolon/FK üretmemeli** — gerçek snapshot mevcuttur.
+
+| Kaynak | Konum | İçerik |
+|---|---|---|
+| **Snapshot dump (committed)** | `docs/migration/workcube-schema.json` (3.4 MB) | 1509 tablo, 26240 kolon, **1774 ilişki (FK)**, 27 domain. Canonical `workcube_mikrolink` schema'sı. |
+| **Live API** | `schema-service` `/api/v1/schema/snapshot` (port 8096) | Aynı yapıyı runtime'da döner. |
+| **ETL allowlist** | `docs/migration/mssql-inventory.md` | 40 tablo (23 canonical match + 17 parametric) — rapor scope baseline. |
+
+**Parametric (yıllık) tablolar** canonical snapshot'ta YOK; `workcube_mikrolink_<yıl>` schema'larında. 17 parametric tabloyu çekmek için schema-service'in yearly schema crawl'ı gerekiyor (Faz 16.2.P sprint).
+
+**Agent için pratik**: tablo/kolon/FK gereksiniminde **önce** `workcube-schema.json` oku; hız + doğruluk + kural #9 uyumu. Sentetik şema yapma.
+
+**Drift guard (Codex 019dc88c iter-4)**:
+- Sentetik 17-tablo fixture işine **tekrar başlama**; daha önce yazılıp silindi (kural #9 ihlali tespit edildi).
+- Agent sandbox içinden **canlı parametric schema crawl** tasarlama/koşturma. Read-only auth boundary nedeniyle crawl operasyonu kullanıcı içi iştir; agent yalnız tool tasarlar, kullanıcı çalıştırır, çıktı snapshot dosyaları repo'ya gelir.
+- Faz 16.2.P (parametric ETL) **defer edildi** — `PLAN.md` Faz 16.2.P altındaki rationale'a bak. Yeniden başlatma şartı orada yazılı.
+
 ## Repo İşleme
 
 ### Yeni Feature/Fix

@@ -228,6 +228,76 @@ tables:
     assert "missing `columns`" in result.output
 
 
+def test_rejects_command_human_output(runner, config_dir, audit_mock):
+    """Day 8 (Codex iter-4): rejects subcommand prints triage-friendly rows."""
+    audit_mock.list_rejects.return_value = [
+        {
+            "id": 1,
+            "table_name": "COMPANY",
+            "source_schema": "workcube_mikrolink",
+            "source_year": None,
+            "source_pk": '["1001"]',
+            "column_name": None,
+            "reject_reason": "LOAD_NO_RETRY",
+            "severity": "ERROR",
+            "pg_error_code": "23502",
+            "pg_error_message": "null value in column violates not-null constraint",
+            "rejected_at": "2026-04-26T07:00:00+00:00",
+        },
+    ]
+    result = runner.invoke(
+        main,
+        ["--config-dir", config_dir, "rejects", "--run-id", "rid-1"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "COMPANY" in result.output
+    assert '["1001"]' in result.output
+    assert "LOAD_NO_RETRY" in result.output
+    assert "23502" in result.output
+
+
+def test_rejects_command_json_output(runner, config_dir, audit_mock):
+    audit_mock.list_rejects.return_value = [
+        {
+            "id": 5, "table_name": "BRANCH", "source_schema": "wm",
+            "source_year": None, "source_pk": '["7"]', "column_name": "branch_name",
+            "reject_reason": "LENGTH_OVERFLOW", "severity": "ERROR",
+            "pg_error_code": None, "pg_error_message": None,
+            "rejected_at": "2026-04-26T07:00:00+00:00",
+        },
+    ]
+    result = runner.invoke(
+        main,
+        ["--config-dir", config_dir, "rejects", "--run-id", "rid-1", "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload[0]["reject_reason"] == "LENGTH_OVERFLOW"
+    assert payload[0]["source_pk"] == '["7"]'
+
+
+def test_rejects_command_filters_by_table_arg(runner, config_dir, audit_mock):
+    audit_mock.list_rejects.return_value = []
+    result = runner.invoke(
+        main,
+        ["--config-dir", config_dir, "rejects", "--run-id", "rid-1", "--table", "COMPANY"],
+    )
+    assert result.exit_code == 0
+    audit_mock.list_rejects.assert_called_once()
+    call_kwargs = audit_mock.list_rejects.call_args.kwargs
+    assert call_kwargs.get("table_name") == "COMPANY"
+
+
+def test_rejects_command_empty_message(runner, config_dir, audit_mock):
+    audit_mock.list_rejects.return_value = []
+    result = runner.invoke(
+        main,
+        ["--config-dir", config_dir, "rejects", "--run-id", "rid-empty"],
+    )
+    assert result.exit_code == 0
+    assert "no rejects for run_id=rid-empty" in result.output
+
+
 def test_status_json_zero_fills_buckets(runner, config_dir, audit_mock):
     audit_mock.status_summary.return_value = {
         "run": {
