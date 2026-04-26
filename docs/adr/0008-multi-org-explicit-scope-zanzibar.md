@@ -202,9 +202,15 @@ ancak retry + idempotency açık planlanırsa (backend repo iş).
 
 ### Rollout etkisi
 
-- Backend repo (platform-ssot veya yeni platform-web) PR:
-  - `openfga-authorization-model.fga`'da `organization` + `depot` ekle.
-  - permission-service tuple writer.
+- Backend repo (platform-backend veya successor) PR:
+  - `openfga-authorization-model.fga` explicit-scope semantiğine çekilir:
+    auto-grant relations (`admin from org`, `viewer: ... or member`) `company`,
+    `project`, `warehouse`, `branch` tiplerinden kaldırılır;
+    `warehouse.parent_warehouse` 3-level Depo→Lokasyon→Raf hiyerarşisi için
+    eklenir (transitive viewer YOK).
+  - permission-service tuple writer: PG `data_access.scope INSERT` →
+    OpenFGA tuple write. `scope_kind='depot'` → object_type `warehouse`
+    mapping uygulanır (ADR-0008 § Naming).
   - REST API.
 - k8s-gitops repo:
   - Bu ADR (THIS PR).
@@ -240,7 +246,7 @@ filter karmaşıklığı + UI listing harder.
 ### C. Hiyerarşik auto-grant (parent_warehouse transitive)
 
 ```fga
-type depot
+type warehouse
   define viewer: [user] or viewer from parent_warehouse
 ```
 

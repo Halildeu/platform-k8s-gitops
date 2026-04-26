@@ -4,7 +4,7 @@
     "Mac k3d-dev cluster'ında openfga StatefulSet ayağa kalktıktan sonra",
     "dev-seed.sh scripti bu tuple'ları `openfga` API'sine yükler.",
     "Schema: user can view/admin project; user can view/admin company.",
-    "zanzibar-min smoke: dev-local user view kontrolü /variants endpoint üzerinden.",
+    "zanzibar-min smoke: dev-local project/company viewer/admin checks (legacy variants smoke archived in _legacy_variant_tuples).",
     "Codex 019dc8b4 iter-1 (Faz 21.3 PR #167) align: aktif tuples local model.fga 'da var olan tipler/relations ile uyumlu.",
     "owner→admin (model.project.relations: company|admin|manager|viewer; 'owner' YOK).",
     "can_view→viewer (model.project.relations 'can_view' yok; viewer use et).",
