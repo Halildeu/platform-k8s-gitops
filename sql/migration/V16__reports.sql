@@ -296,13 +296,17 @@ CREATE TABLE workcube_mikrolink.branch (
     kanun_5746_information TEXT,
     branch_project_code VARCHAR(200),
     rate_5510 INTEGER,
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_branch_hash ON workcube_mikrolink.branch (content_hash);
+CREATE INDEX idx_branch_lineage ON workcube_mikrolink.branch (source_schema, source_table, source_pk);
 
 -- ===== BUDGET_PLAN_ROW (PARAMETRIC — placeholder) =====
 -- Used by: fin-butce-gerceklesen
@@ -526,13 +530,17 @@ CREATE TABLE workcube_mikrolink.company (
     eshipment_alias VARCHAR(100),
     payment_group_id INTEGER,
     genius_id INTEGER,
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_company_hash ON workcube_mikrolink.company (content_hash);
+CREATE INDEX idx_company_lineage ON workcube_mikrolink.company (source_schema, source_table, source_pk);
 
 -- ===== COMPANY_REMAINDER (PARAMETRIC — placeholder) =====
 -- Used by: fin-alacak-yaslandirma, fin-borc-yaslandirma
@@ -724,13 +732,17 @@ CREATE TABLE workcube_mikrolink.consumer (
     genius_id INTEGER,
     want_call BOOLEAN,
     twinhub_url VARCHAR(250),
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_consumer_hash ON workcube_mikrolink.consumer (content_hash);
+CREATE INDEX idx_consumer_lineage ON workcube_mikrolink.consumer (source_schema, source_table, source_pk);
 
 -- raw staging: DEPARTMENT
 CREATE TABLE workcube_mssql_raw.department (
@@ -789,13 +801,17 @@ CREATE TABLE workcube_mikrolink.department (
     department_country_id INTEGER,
     department_city_id INTEGER,
     department_county_id INTEGER,
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_department_hash ON workcube_mikrolink.department (content_hash);
+CREATE INDEX idx_department_lineage ON workcube_mikrolink.department (source_schema, source_table, source_pk);
 
 -- raw staging: EMPLOYEES
 CREATE TABLE workcube_mssql_raw.employees (
@@ -883,13 +899,17 @@ CREATE TABLE workcube_mikrolink.employees (
     office365_mail_status BOOLEAN,
     office365_mail_licence BOOLEAN,
     is_interruption BOOLEAN,
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_employees_hash ON workcube_mikrolink.employees (content_hash);
+CREATE INDEX idx_employees_lineage ON workcube_mikrolink.employees (source_schema, source_table, source_pk);
 
 -- raw staging: EMPLOYEES_DETAIL
 CREATE TABLE workcube_mssql_raw.employees_detail (
@@ -1056,13 +1076,17 @@ CREATE TABLE workcube_mikrolink.employees_detail (
     _lang2_speak INTEGER,
     _ref1_position VARCHAR(40),
     _lang5_speak INTEGER,
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_employees_detail_hash ON workcube_mikrolink.employees_detail (content_hash);
+CREATE INDEX idx_employees_detail_lineage ON workcube_mikrolink.employees_detail (source_schema, source_table, source_pk);
 
 -- raw staging: EMPLOYEES_IDENTY
 CREATE TABLE workcube_mssql_raw.employees_identy (
@@ -1116,13 +1140,17 @@ CREATE TABLE workcube_mikrolink.employees_identy (
     nationality INTEGER,
     socialsecurity_no VARCHAR(50),
     birth_city INTEGER,
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_employees_identy_hash ON workcube_mikrolink.employees_identy (content_hash);
+CREATE INDEX idx_employees_identy_lineage ON workcube_mikrolink.employees_identy (source_schema, source_table, source_pk);
 
 -- raw staging: EMPLOYEES_IN_OUT
 CREATE TABLE workcube_mssql_raw.employees_in_out (
@@ -1338,13 +1366,17 @@ CREATE TABLE workcube_mikrolink.employees_in_out (
     start_cumulative_wage_total DOUBLE PRECISION,
     is_retired_5510 INTEGER,
     is_no_5510 BOOLEAN,
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_employees_in_out_hash ON workcube_mikrolink.employees_in_out (content_hash);
+CREATE INDEX idx_employees_in_out_lineage ON workcube_mikrolink.employees_in_out (source_schema, source_table, source_pk);
 
 -- raw staging: EMPLOYEES_PUANTAJ
 CREATE TABLE workcube_mssql_raw.employees_puantaj (
@@ -1386,13 +1418,17 @@ CREATE TABLE workcube_mikrolink.employees_puantaj (
     statue_type INTEGER,
     statue INTEGER,
     statue_type_individual INTEGER,
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_employees_puantaj_hash ON workcube_mikrolink.employees_puantaj (content_hash);
+CREATE INDEX idx_employees_puantaj_lineage ON workcube_mikrolink.employees_puantaj (source_schema, source_table, source_pk);
 
 -- raw staging: EMPLOYEES_PUANTAJ_ROWS
 CREATE TABLE workcube_mssql_raw.employees_puantaj_rows (
@@ -1691,13 +1727,17 @@ CREATE TABLE workcube_mikrolink.employees_puantaj_rows (
     sgk_isci_indirimi_2828 DOUBLE PRECISION,
     sgk_issizlik_isveren_indirimi_2828 DOUBLE PRECISION,
     sgk_issizlik_isci_indirimi_2828 DOUBLE PRECISION,
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_employees_puantaj_rows_hash ON workcube_mikrolink.employees_puantaj_rows (content_hash);
+CREATE INDEX idx_employees_puantaj_rows_lineage ON workcube_mikrolink.employees_puantaj_rows (source_schema, source_table, source_pk);
 
 -- raw staging: EMPLOYEES_SALARY
 CREATE TABLE workcube_mssql_raw.employees_salary (
@@ -1749,13 +1789,17 @@ CREATE TABLE workcube_mikrolink.employees_salary (
     m10_enc VARCHAR(250),
     m11_enc VARCHAR(250),
     m12_enc VARCHAR(250),
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_employees_salary_hash ON workcube_mikrolink.employees_salary (content_hash);
+CREATE INDEX idx_employees_salary_lineage ON workcube_mikrolink.employees_salary (source_schema, source_table, source_pk);
 
 -- raw staging: EMPLOYEES_SALARY_HISTORY
 CREATE TABLE workcube_mssql_raw.employees_salary_history (
@@ -1805,13 +1849,17 @@ CREATE TABLE workcube_mikrolink.employees_salary_history (
     m10_enc VARCHAR(250),
     m11_enc VARCHAR(250),
     m12_enc VARCHAR(250),
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_employees_salary_history_hash ON workcube_mikrolink.employees_salary_history (content_hash);
+CREATE INDEX idx_employees_salary_history_lineage ON workcube_mikrolink.employees_salary_history (source_schema, source_table, source_pk);
 
 -- raw staging: EMPLOYEE_DAILY_IN_OUT
 CREATE TABLE workcube_mssql_raw.employee_daily_in_out (
@@ -1864,13 +1912,17 @@ CREATE TABLE workcube_mikrolink.employee_daily_in_out (
     in_coordinate2 VARCHAR(50),
     project_id INTEGER,
     work_id INTEGER,
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_employee_daily_in_out_hash ON workcube_mikrolink.employee_daily_in_out (content_hash);
+CREATE INDEX idx_employee_daily_in_out_lineage ON workcube_mikrolink.employee_daily_in_out (source_schema, source_table, source_pk);
 
 -- raw staging: EMPLOYEE_POSITIONS
 CREATE TABLE workcube_mssql_raw.employee_positions (
@@ -1988,13 +2040,17 @@ CREATE TABLE workcube_mikrolink.employee_positions (
     position_section_id INTEGER,
     position_unit_id INTEGER,
     position_lower_unit_id INTEGER,
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_employee_positions_hash ON workcube_mikrolink.employee_positions (content_hash);
+CREATE INDEX idx_employee_positions_lineage ON workcube_mikrolink.employee_positions (source_schema, source_table, source_pk);
 
 -- ===== EXPENSE_ITEMS (PARAMETRIC — placeholder) =====
 -- Used by: fin-masraf-detay
@@ -2105,13 +2161,17 @@ CREATE TABLE workcube_mikrolink.money_history (
     record_ip VARCHAR(50),
     effective_sale DOUBLE PRECISION,
     effective_pur DOUBLE PRECISION,
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_money_history_hash ON workcube_mikrolink.money_history (content_hash);
+CREATE INDEX idx_money_history_lineage ON workcube_mikrolink.money_history (source_schema, source_table, source_pk);
 
 -- raw staging: OFFTIME
 CREATE TABLE workcube_mssql_raw.offtime (
@@ -2189,13 +2249,17 @@ CREATE TABLE workcube_mikrolink.offtime (
     week_offday INTEGER,
     document_number VARCHAR(50),
     is_source_app BOOLEAN,
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_offtime_hash ON workcube_mikrolink.offtime (content_hash);
+CREATE INDEX idx_offtime_lineage ON workcube_mikrolink.offtime (source_schema, source_table, source_pk);
 
 -- WARNING: ORDERS no snapshot columns — skipped
 
@@ -2283,13 +2347,17 @@ CREATE TABLE workcube_mikrolink.our_company (
     finance_mail VARCHAR(50),
     finance_mail_cc VARCHAR(250),
     company_short_code VARCHAR(20),
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_our_company_hash ON workcube_mikrolink.our_company (content_hash);
+CREATE INDEX idx_our_company_lineage ON workcube_mikrolink.our_company (source_schema, source_table, source_pk);
 
 -- raw staging: PRO_PROJECTS
 CREATE TABLE workcube_mssql_raw.pro_projects (
@@ -2380,13 +2448,17 @@ CREATE TABLE workcube_mikrolink.pro_projects (
     image_is_ai BOOLEAN,
     project_presentation TEXT,
     alt_birim_id VARCHAR(20),
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_pro_projects_hash ON workcube_mikrolink.pro_projects (content_hash);
+CREATE INDEX idx_pro_projects_lineage ON workcube_mikrolink.pro_projects (source_schema, source_table, source_pk);
 
 -- raw staging: SETUP_DOCUMENT_TYPE
 CREATE TABLE workcube_mssql_raw.setup_document_type (
@@ -2411,13 +2483,17 @@ CREATE TABLE workcube_mikrolink.setup_document_type (
     update_date TIMESTAMPTZ,
     update_emp INTEGER,
     update_ip VARCHAR(50),
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_setup_document_type_hash ON workcube_mikrolink.setup_document_type (content_hash);
+CREATE INDEX idx_setup_document_type_lineage ON workcube_mikrolink.setup_document_type (source_schema, source_table, source_pk);
 
 -- WARNING: SETUP_PROCESS_CAT no snapshot columns — skipped
 
@@ -2485,13 +2561,17 @@ CREATE TABLE workcube_mikrolink.training_class_attender (
     detail VARCHAR(500),
     participation_rate DOUBLE PRECISION,
     comment VARCHAR(500),
+    source_table VARCHAR(128) NOT NULL,
+    source_pk TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     migration_row_id BIGSERIAL,  -- surrogate (PK metadata snapshot'ta yok, Codex iter-4)
     migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (migration_row_id)  -- TODO: business PK manual review
+    PRIMARY KEY (migration_row_id),
+    UNIQUE (source_schema, source_table, source_pk)
 );
 
 CREATE INDEX idx_training_class_attender_hash ON workcube_mikrolink.training_class_attender (content_hash);
+CREATE INDEX idx_training_class_attender_lineage ON workcube_mikrolink.training_class_attender (source_schema, source_table, source_pk);
 
 
 COMMIT;
