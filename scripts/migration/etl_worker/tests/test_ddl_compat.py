@@ -169,6 +169,38 @@ def test_v16_ddl_has_audit_lineage_columns(table_name):
         )
 
 
+def test_v17_canonical_tables_match_v16_ddl():
+    """Codex iter-9 PR-blocker: V17 DO LOOP iterates a hard-coded
+    `canonical_tables` array. If that list drifts from the actual V16 DDL,
+    V17 will ALTER TABLE on a missing relation and abort. This test parses
+    both files and asserts the sets match exactly.
+    """
+    v16 = _read_v16()
+    # Canonical = anything declared as `CREATE TABLE workcube_mikrolink.<name>`.
+    v16_tables = set(re.findall(r"CREATE TABLE workcube_mikrolink\.(\w+) \(", v16))
+
+    v17_path = REPO_ROOT / "sql" / "migration" / "V17__etl_lineage_columns.sql"
+    if not v17_path.exists():
+        pytest.skip(f"V17 not found at {v17_path}; run from repo root")
+    v17 = v17_path.read_text(encoding="utf-8")
+
+    # Extract array contents — single quoted entries inside ARRAY[...]
+    m = re.search(r"canonical_tables\s+TEXT\[\]\s*:=\s*ARRAY\[(.*?)\];", v17, re.DOTALL)
+    assert m, "V17 canonical_tables array not found"
+    v17_tables = set(re.findall(r"'([^']+)'", m.group(1)))
+
+    missing_in_v16 = v17_tables - v16_tables
+    missing_in_v17 = v16_tables - v17_tables
+    assert not missing_in_v16, (
+        f"V17 lists tables not in V16 DDL: {sorted(missing_in_v16)}. "
+        "ALTER TABLE will fail with relation_undefined."
+    )
+    assert not missing_in_v17, (
+        f"V16 has canonical tables NOT covered by V17: {sorted(missing_in_v17)}. "
+        "These tables will not get the ETL lineage columns."
+    )
+
+
 @pytest.mark.parametrize("table_name", ["COMPANY", "BRANCH"])
 def test_v16_ddl_has_unique_lineage_constraint(table_name):
     """The conflict key (source_schema, source_table, source_pk) must have a

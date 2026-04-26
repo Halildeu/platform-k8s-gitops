@@ -186,10 +186,16 @@ def test_lock_contended_no_audit_mutate(cfg, mssql_conn):
 # ============================================================================
 
 def test_lineage_preflight_failure_no_audit_mutate(cfg, lock_conn, mssql_conn):
-    """Codex iter-8: when V17 has not been applied (final tables missing the
-    lineage columns), the runner must fail-fast with NO audit mutation.
-    AuditModule must never be instantiated because we never opened the audit
-    conn — the lineage preflight runs on control_conn before that step."""
+    """Codex iter-8/9: when V17 has not been applied (final tables missing the
+    lineage columns), the runner must fail-fast with:
+       - NO AuditModule instantiation (audit_conn never opened)
+       - NO MSSQL connection (mssql_connect_fn never called)
+       - control_conn closed cleanly
+    The lineage preflight runs on control_conn BEFORE audit/load/mssql conns
+    open, so a stale schema never wastes downstream resources."""
+    mssql_factory = MagicMock(return_value=mssql_conn)
+    pg_factory = MagicMock(return_value=lock_conn)
+
     with patch("etl_worker.runner.preflight_v16_table_state_pk"), \
          patch(
             "etl_worker.runner.preflight_final_table_lineage",
@@ -198,11 +204,15 @@ def test_lineage_preflight_failure_no_audit_mutate(cfg, lock_conn, mssql_conn):
         outcome = run_orchestrator(
             cfg,
             extract_fn=_stable_extract([[_raw_row(1)]]),
-            pg_connect_fn=_connect_factory(lock_conn),
-            mssql_connect_fn=_mssql_factory(mssql_conn),
+            pg_connect_fn=pg_factory,
+            mssql_connect_fn=mssql_factory,
         )
     assert outcome is RunOutcome.FAILED
     audit_cls.assert_not_called()
+    # MSSQL connection must NEVER open on a stale-schema run
+    mssql_factory.assert_not_called()
+    # Only the control_conn was opened (one pg_factory call)
+    assert pg_factory.call_count == 1
     lock_conn.close.assert_called_once()
 
 

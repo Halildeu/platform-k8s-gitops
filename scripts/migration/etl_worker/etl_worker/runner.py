@@ -267,20 +267,20 @@ def run_orchestrator(
         # 2. V16 audit-PK preflight under lock (rollback-capable on control_conn)
         preflight_v16_table_state_pk(control_conn)
 
-        # 3. Audit + load + mssql conns
-        audit_conn = pg_connect_fn(cfg.pg_dsn, True)
-        load_conn = pg_connect_fn(cfg.pg_dsn, False)
-        mssql_conn = mssql_connect_fn(cfg.mssql_dsn)
-        audit = AuditModule(audit_conn)
-
-        # 3b. Final-table lineage preflight (Codex iter-8): catch a stale schema
-        #     where V17 has not been applied before any audit row mutation.
-        #     We use control_conn (autocommit) so this never touches load_conn's
-        #     transaction state. No audit mutation here; failure → FAILED outcome.
+        # 3. Final-table lineage preflight (Codex iter-8/9): catch a stale schema
+        #     where V17 has not been applied. Runs BEFORE audit/load/mssql
+        #     conns open so a stale schema never produces an audit row, never
+        #     opens an MSSQL connection, never instantiates AuditModule.
         preflight_final_table_lineage(
             control_conn,
             table_names=[t.name for t in cfg.manifest],
         )
+
+        # 4. Audit + load + mssql conns (only after both preflights pass).
+        audit_conn = pg_connect_fn(cfg.pg_dsn, True)
+        load_conn = pg_connect_fn(cfg.pg_dsn, False)
+        mssql_conn = mssql_connect_fn(cfg.mssql_dsn)
+        audit = AuditModule(audit_conn)
 
         # 4. Resume vs new run
         mode = cfg.mode

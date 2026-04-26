@@ -13,15 +13,21 @@
 --
 -- Backfill semantics:
 --   * source_table  = upper(<table_name>)  for any pre-existing rows.
---   * source_pk     = NULL → set to '[]' as a deterministic sentinel so
---                     NOT NULL can be enforced. The ETL runner will
---                     overwrite these on the next ON CONFLICT update because
---                     content_hash is identical, so this acts as a one-time
---                     marker for "row was migrated before lineage existed".
---                     Operators investigating sentinel rows should re-run
---                     `etl-worker reconcile` post-load.
+--   * source_pk     = unique per-row sentinel `["__pre_v17_<migration_row_id>"]`.
+--                     A single fixed value would have collided in the new
+--                     UNIQUE (source_schema, source_table, source_pk) index
+--                     for tables with 2+ pre-existing rows. Per-row sentinel
+--                     keeps the index satisfiable.
+--                     IMPORTANT: these sentinel rows do NOT match the real
+--                     ETL conflict key, so the next `etl-worker run` will
+--                     INSERT new (real source_pk) rows alongside them. They
+--                     must be cleaned up by an operator after lineage is
+--                     real, e.g.:
+--                       DELETE FROM workcube_mikrolink.<t>
+--                       WHERE source_pk LIKE '["__pre_v17_%';
+--                     V17 itself does NOT delete them (data-loss potential).
 --
--- Codex thread: 019dc6fb iter-8 REVISE.
+-- Codex thread: 019dc6fb iter-9 REVISE.
 
 BEGIN;
 
@@ -32,27 +38,29 @@ BEGIN;
 DO $$
 DECLARE
     t TEXT;
+    -- Codex iter-9: list MUST mirror V16 canonical CREATE TABLE statements
+    -- (20 tables). Drift will surface as ALTER TABLE on a missing relation.
     canonical_tables TEXT[] := ARRAY[
         'branch',
         'company',
         'consumer',
         'department',
+        'employee_daily_in_out',
+        'employee_positions',
         'employees',
         'employees_detail',
         'employees_identy',
         'employees_in_out',
         'employees_puantaj',
         'employees_puantaj_rows',
-        'employees_position_history',
-        'positions',
-        'position_categories',
-        'sector_categories',
-        'subsector',
-        'training_class',
-        'training_class_attender',
-        'training_class_files',
-        'training_class_levels',
-        'training_class_member'
+        'employees_salary',
+        'employees_salary_history',
+        'money_history',
+        'offtime',
+        'our_company',
+        'pro_projects',
+        'setup_document_type',
+        'training_class_attender'
     ];
 BEGIN
     FOREACH t IN ARRAY canonical_tables LOOP
@@ -69,8 +77,14 @@ BEGIN
             'UPDATE workcube_mikrolink.%I SET source_table = upper(%L) WHERE source_table IS NULL',
             t, t
         );
+        -- Codex iter-9 fix: per-row sentinel so the new UNIQUE index over
+        -- (source_schema, source_table, source_pk) doesn't collide on tables
+        -- with 2+ pre-existing rows. Operators clean these up after the next
+        -- ETL run inserts real lineage values; see header doc.
         EXECUTE format(
-            'UPDATE workcube_mikrolink.%I SET source_pk = ''[]'' WHERE source_pk IS NULL',
+            'UPDATE workcube_mikrolink.%I '
+            'SET source_pk = ''["__pre_v17_'' || migration_row_id || ''"]'' '
+            'WHERE source_pk IS NULL',
             t
         );
 
