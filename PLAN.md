@@ -1470,6 +1470,13 @@ Default'tan sapma varsa override:
 
 **Bağlam**: Faz 19.10 platform-ssot soft lock yapıldı (PR ssot #555), 4 critical PR triage edildi (web #29-31 + backend #8). **Ancak platform-ssot'ta migrate edilmemiş büyük miktar asset var** — kullanıcı tespit etti (2026-04-25 değerlendirme).
 
+**Status — OpenFGA model.fga track (Faz 19.11 Step 1-4 SEALED 2026-04-26)**:
+- Step 1+2: Model snapshotted to `bootstrap/local-fixtures/openfga/model.fga` + `tuples.json#model` path updated (PR #167 superseded; latest: PR #168 aligned with `Halildeu/platform-backend` PR #11 explicit-scope semantic).
+- Step 3 (PR #168 merged): `scripts/dev-seed.sh` writes `model.fga` to OpenFGA store via `render_model_json.py` BEFORE writing tuples; `model_id` captured + passed explicitly. Multi-org tuples promoted from `_future_*` to active. 8/8 smoke checks pass against ephemeral OpenFGA (5 allow + 3 deny — D29 third level).
+- Step 4 (PR #169 merged): `.github/workflows/openfga-model-drift.yml` — semantic-JSON drift gate against upstream `Halildeu/platform-backend:main:backend/openfga/model.fga`. Triggers on PR/push (path-filtered) + weekly Mondays 03:00 UTC + manual.
+- Faz 21.3 fixture smoke gate (PR #170 merged): `.github/workflows/openfga-fixture-smoke.yml` + `scripts/smoke-openfga-fixture.sh` — every `tuples.json#smoke_checks[]` runs against ephemeral OpenFGA container in CI. Catches render/seed/tuples/smoke regressions.
+- Step 5 pending (low priority): platform-backend's upstream copy can be pruned once a deployed-`model_id` diff gate is also in place; current upstream-source drift gate is acceptable steady-state.
+
 **Kapsam ölçümü**:
 - platform-ssot: **35 workflow + 137 script + 32 Playwright spec + 21 policy + 8 doc kategorisi + 4 schema-docs dir**
 - platform-backend + platform-web + platform-k8s-gitops toplam: **6 workflow + sınırlı test/script**
