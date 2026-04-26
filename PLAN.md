@@ -1633,10 +1633,11 @@ Live proof (test cluster):
   data_access.organization_company (
       org_id BIGINT NOT NULL REFERENCES data_access.organization(id),
       workcube_company_source_pk TEXT NOT NULL,
-      source_schema TEXT NOT NULL DEFAULT 'workcube_mikrolink',
+      source_schema TEXT NOT NULL DEFAULT 'workcube_mikrolink'
+          CHECK (source_schema = 'workcube_mikrolink'),     -- Codex iter-2
       source_table TEXT NOT NULL DEFAULT 'COMPANY' CHECK (source_table = 'COMPANY'),
       attached_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      UNIQUE (org_id, workcube_company_source_pk)
+      PRIMARY KEY (org_id, workcube_company_source_pk)
   );
 
   data_access.scope (
@@ -1644,12 +1645,15 @@ Live proof (test cluster):
       user_id UUID NOT NULL,
       org_id BIGINT NOT NULL REFERENCES data_access.organization(id),
       scope_kind TEXT NOT NULL CHECK (scope_kind IN ('company','project','depot','branch')),
-      scope_source_schema TEXT NOT NULL DEFAULT 'workcube_mikrolink',
+      scope_source_schema TEXT NOT NULL DEFAULT 'workcube_mikrolink'
+          CHECK (scope_source_schema = 'workcube_mikrolink'),  -- Codex iter-2
       scope_source_table TEXT NOT NULL,
       scope_ref TEXT NOT NULL,            -- workcube source_pk (canonical JSON form)
       granted_by UUID,
       granted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      UNIQUE (user_id, org_id, scope_kind, scope_ref),
+      revoked_at TIMESTAMPTZ,
+      revoked_by UUID,
+      -- Codex iter-2: table-level UNIQUE YOK (revoke + re-grant cycle için)
       CHECK (
         (scope_kind = 'company'  AND scope_source_table = 'COMPANY') OR
         (scope_kind = 'project'  AND scope_source_table = 'PRO_PROJECTS') OR
@@ -1657,6 +1661,11 @@ Live proof (test cluster):
         (scope_kind = 'depot'    AND scope_source_table IN ('TBD_DEPOT_TABLE_FROM_FAZ_21_A'))
       )
   );
+
+  -- Codex 019dc8b4 iter-2: active-only partial unique
+  CREATE UNIQUE INDEX uq_scope_active_assignment
+      ON data_access.scope (user_id, org_id, scope_kind, scope_ref)
+      WHERE revoked_at IS NULL;
   ```
 - Validation function `data_access.validate_scope_ref(kind, source_table, ref)` lineage existence check yapar (PG'de N tablo çapraz FK doğal değil; trigger + function tercih).
 - Seed migration: V19 sonrası `INSERT INTO data_access.organization (name, status) VALUES ('AÇIK', 'active');` ve ETL canonical COMPANY satırlarının `source_pk`'lerini `organization_company`'ye bulk insert (initial bootstrap migration veya CLI).
