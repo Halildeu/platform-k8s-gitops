@@ -6,8 +6,14 @@
 #     reconcile Jobs in this namespace by design.
 #   - run-id is a placeholder (PLACEHOLDER_RUN_ID). The runbook
 #     instructs the operator to substitute a fresh UUID before apply.
-#   - mode default is `dry-run`. Production cutover MUST switch to
-#     `final-delta` only after a documented gate.
+#   - default `args` is `validate-manifest` (boot smoke, no DB writes).
+#     Phase B of the runbook explicitly sets `--mode=dry-run` for the
+#     real ETL pass. Production cutover (`--mode=final-delta`) goes
+#     through a separate gate.
+#   - image is pinned by **digest** (`@sha256:...`), not tag, per D30
+#     immutable artifact rule. The runbook builds, pushes, captures
+#     the digest, and substitutes `repo@sha256:<DIGEST>` for
+#     PLACEHOLDER_DIGEST below.
 #   - backoffLimit: 0 — the application's own retry/threshold logic
 #     owns recovery. K8s Job restart would corrupt audit state.
 #   - activeDeadlineSeconds: 3600 — first dry-run target is < 60 min
@@ -48,7 +54,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: etl-worker
-          image: ghcr.io/halildeu/platform/etl-worker:sha-placeholder
+          image: ghcr.io/halildeu/platform/etl-worker@sha256:PLACEHOLDER_DIGEST
           imagePullPolicy: IfNotPresent
           # Args overridden by runbook; default `validate-manifest` is a
           # no-op smoke that proves boot-up + manifest load + PG conn.

@@ -19,20 +19,29 @@ has typed approval for that specific step.
 
 ## 0. Pre-flight (no cluster touch)
 
-Operator runs locally:
+Operator runs locally. **D30 immutable artifact rule**: the manifest
+pins `image` by digest (`@sha256:...`), not by tag. Tag is convenience
+for humans; digest is the runtime contract.
 
 ```bash
-# Image must be a real digest — not "sha-placeholder".
 SHA=$(git rev-parse --short=12 HEAD)
-echo "build target: ghcr.io/halildeu/platform/etl-worker:sha-${SHA}"
+IMAGE_TAG="ghcr.io/halildeu/platform/etl-worker:sha-${SHA}"
 
-# Optional: docker build + push (Workflow alternative)
 cd scripts/migration/etl_worker
-docker build -t ghcr.io/halildeu/platform/etl-worker:sha-${SHA} .
-docker push ghcr.io/halildeu/platform/etl-worker:sha-${SHA}
+docker build -t "${IMAGE_TAG}" .
+docker push "${IMAGE_TAG}"
+
+# Capture the canonical digest of what was just pushed.
+DIGEST=$(docker buildx imagetools inspect "${IMAGE_TAG}" \
+    --format '{{json .Manifest.Digest}}' | tr -d '"')
+
+# Final pinned reference — substitute this into job.yaml in Step 4.
+IMAGE_REF="ghcr.io/halildeu/platform/etl-worker@${DIGEST}"
+echo "IMAGE_REF=${IMAGE_REF}"
 ```
 
-Operator gate: confirm image was pushed.
+Operator gate: paste `IMAGE_REF`. It must start with `ghcr.io/...@sha256:`
+and the digest must be 64 hex chars.
 
 ---
 
@@ -103,15 +112,22 @@ returns both.
 ```bash
 RUN_ID=$(uuidgen | tr 'A-Z' 'a-z')
 SHORT="${RUN_ID:0:8}"
-SHA="<image-sha-from-step-0>"
+# IMAGE_REF was captured in Step 0 (must be a digest pin: repo@sha256:...).
 
 # Substitute placeholders. The base manifest carries
-# `etl-worker-PLACEHOLDER_RUN_ID` and image `sha-placeholder`; this
-# substitution is INTENTIONAL — kustomize cannot rename a Job per run.
+# `etl-worker-PLACEHOLDER_RUN_ID` and image
+# `ghcr.io/halildeu/platform/etl-worker@sha256:PLACEHOLDER_DIGEST`;
+# the runbook replaces both intentionally — kustomize cannot rename a
+# Job per run, and digest substitution is what enforces D30.
 sed \
   -e "s/PLACEHOLDER_RUN_ID/${SHORT}/g" \
-  -e "s|etl-worker:sha-placeholder|etl-worker:sha-${SHA}|g" \
+  -e "s|ghcr.io/halildeu/platform/etl-worker@sha256:PLACEHOLDER_DIGEST|${IMAGE_REF}|g" \
   /tmp/etl-worker/job.yaml > /tmp/etl-worker-job-${SHORT}.yaml
+
+# Sanity: the substituted file must contain a digest reference.
+grep -q "ghcr.io/halildeu/platform/etl-worker@sha256:[a-f0-9]\{64\}" \
+  /tmp/etl-worker-job-${SHORT}.yaml || {
+    echo "FAIL: digest substitution did not land; refusing to apply"; exit 2; }
 
 ssh halil@staging-sw "kubectl --context k3d-test -n platform-test apply \
   -f /tmp/etl-worker-job-${SHORT}.yaml"
@@ -122,14 +138,25 @@ ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
   wait --for=condition=complete --timeout=120s \
   job/etl-worker-${SHORT}"
 
+# D30 verification gate: pod's running imageID MUST equal IMAGE_REF.
+POD_IMG=$(ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  get pod -l job-name=etl-worker-${SHORT} \
+  -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'")
+echo "running imageID: ${POD_IMG}"
+echo "expected ref   : ${IMAGE_REF}"
+# imageID typically prefixed with "ghcr.io/.../etl-worker@sha256:..."; the
+# digest portion must match the IMAGE_REF digest exactly.
+
 ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
   logs job/etl-worker-${SHORT} --tail=50"
 ```
 
 Expected log line: `✓ Manifest valid (N tables, syntax OK)`.
 
-Operator gate: paste tail-50 logs + `kubectl get job` showing
-`COMPLETIONS 1/1`. If anything else, STOP — do not proceed to Phase B.
+Operator gate (D29 + D30): paste tail-50 logs + `kubectl get job` showing
+`COMPLETIONS 1/1` + the imageID/IMAGE_REF digest match. If digests
+differ, STOP — likely tag drift on the registry. Do not proceed to
+Phase B until imageID matches.
 
 ---
 
