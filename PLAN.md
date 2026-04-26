@@ -1594,6 +1594,104 @@ Live proof (test cluster):
 
 ---
 
+### Faz 21 — Veri Erişimi Multi-Org Scope Layer (PROPOSED)
+
+**Karar tarihi**: 2026-04-26 (kullanıcı UI ekran kanıtı + multi-org gereksinim).
+
+**Bağlam**: Platform "Veri Erişimi" panelinde dört scope sekmesi: Şirketler / Projeler / Depolar / Şubeler. Hizmet **kurum bazlı** verilecek; bir kurum birden fazla Workcube COMPANY'ye sahip olabilir. Her kullanıcının erişebileceği veri scope'u (companies/projects/depots/branches) kurum bazlı atanacak.
+
+**MSSQL kaynak eşleşmesi** (snapshot `docs/migration/workcube-schema.json` ile doğrulandı):
+
+| UI sekme | MSSQL tablosu | Kolon sayısı | V16 DDL'de? |
+|---|---|---|---|
+| Şirketler | `COMPANY` | 113 | ✓ (Day 7 smoke MATCH'te kullanıldı) |
+| Şubeler | `BRANCH` | 107 | ✓ |
+| Projeler | `PRO_PROJECTS` | 75 | ✓ |
+| **Depolar** | **TBD** | — | netleşecek (adaylar: `STOCK_LOCATION_DESIGN`, `COMPANY_DEPOT_DISTANCE`, `STOCKS_LOCATION`; Workcube admin teyidi) |
+
+**Faz 16 ile ilişki**: COMPANY/BRANCH/PRO_PROJECTS zaten Faz 16 canonical kapsamında (V16 DDL üretildi, lineage cols + UNIQUE index hazır). Bu fazda yapılacak: (a) Depolar kaynak tablosunun netleştirilmesi + V16 generator rerun gerekirse, (b) tables.yaml manifest'ine 4 entity için tam kolon set'i ile parametric-olmayan entry'ler, (c) Veri Erişimi domain layer (kurum modeli + scope assignment).
+
+**Faz 21.1 — ETL kapsam genişletme** (canonical, parametric değil):
+- Depolar kaynak tablosunun netleşmesi (kullanıcı veya Workcube admin teyidi).
+- `config/tables.yaml` manifest'e 4 entity için minimal-ama-yeterli kolon set'i (idempotency_key + scope listing UI'sının ihtiyacı: id, name, parent_id, status). Faz 16 kural #9 manifest fail-fast halen geçerli.
+- Test cluster apply (V16 + V17 zaten orada) + ad-hoc Job (PR #162 runbook üzerinden) `--tables COMPANY,BRANCH,PRO_PROJECTS,<DEPOLAR>` ile ETL koşumu.
+- Reconcile artifact 4-entity kapsamında; Faz 16 Behavior gate'in genişletilmiş halı.
+
+**Faz 21.2 — Org/Tenant data model** (PG canonical, MSSQL'den bağımsız):
+- Schema yeri (Codex 019dc8b4 iter-1 REVISE): **`reports_db` içinde ayrı `data_access` schema**. Cross-DB join karmaşıklığı kaçırılır; `data_access_scope.scope_ref ↔ workcube_mikrolink.<entity>.source_pk` tek SQL ile join edilebilir. ADR consequence: "ileride org_db'ye ayrılabilir, şimdilik lineage-locality wins."
+- **AÇIK kurumu seed** (kullanıcı 2026-04-26): Mevcut Workcube MSSQL kaynağındaki tüm 1509 tablo + tüm COMPANY/BRANCH/PRO_PROJECTS satırları **AÇIK** kurumuna ait olarak seed edilir. `organization` tablosuna ilk satır `(id=1, name='AÇIK', status='active')`. Multi-org alt yapı tablo modelinde korunur (N:N tasarım), ama bu fazın canlı verisi tek-org. İleride başka kurum eklenirse (yeni MSSQL kaynağı veya ayrı tenant izolasyonu) `organization` satırı + `organization_company` mapping'i eklenmesi yeterli.
+- Tablolar:
+  ```
+  data_access.organization (
+      id BIGSERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,        -- 'AÇIK' seed
+      status TEXT NOT NULL CHECK (status IN ('active','suspended','archived')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_by UUID
+  );
+
+  data_access.organization_company (
+      org_id BIGINT NOT NULL REFERENCES data_access.organization(id),
+      workcube_company_source_pk TEXT NOT NULL,
+      source_schema TEXT NOT NULL DEFAULT 'workcube_mikrolink',
+      source_table TEXT NOT NULL DEFAULT 'COMPANY' CHECK (source_table = 'COMPANY'),
+      attached_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (org_id, workcube_company_source_pk)
+  );
+
+  data_access.scope (
+      id BIGSERIAL PRIMARY KEY,
+      user_id UUID NOT NULL,
+      org_id BIGINT NOT NULL REFERENCES data_access.organization(id),
+      scope_kind TEXT NOT NULL CHECK (scope_kind IN ('company','project','depot','branch')),
+      scope_source_schema TEXT NOT NULL DEFAULT 'workcube_mikrolink',
+      scope_source_table TEXT NOT NULL,
+      scope_ref TEXT NOT NULL,            -- workcube source_pk (canonical JSON form)
+      granted_by UUID,
+      granted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (user_id, org_id, scope_kind, scope_ref),
+      CHECK (
+        (scope_kind = 'company'  AND scope_source_table = 'COMPANY') OR
+        (scope_kind = 'project'  AND scope_source_table = 'PRO_PROJECTS') OR
+        (scope_kind = 'branch'   AND scope_source_table = 'BRANCH') OR
+        (scope_kind = 'depot'    AND scope_source_table IN ('TBD_DEPOT_TABLE_FROM_FAZ_21_A'))
+      )
+  );
+  ```
+- Validation function `data_access.validate_scope_ref(kind, source_table, ref)` lineage existence check yapar (PG'de N tablo çapraz FK doğal değil; trigger + function tercih).
+- Seed migration: V19 sonrası `INSERT INTO data_access.organization (name, status) VALUES ('AÇIK', 'active');` ve ETL canonical COMPANY satırlarının `source_pk`'lerini `organization_company`'ye bulk insert (initial bootstrap migration veya CLI).
+- Flyway migration: `V19__data_access.sql` (V17 lineage ALTER'dan sonra, V18 boş kalır parametric için reserve).
+
+**Faz 21.3 — Authz entegrasyonu** (Zanzibar/OpenFGA):
+- Yeni türler:
+  - `organization` (member/viewer relations)
+  - `company`, `project`, `depot`, `branch` (viewer relation, parent_organization)
+- Tuple atama akışı: bir user organization'a `member` olur → org içindeki `company:<id>#parent_organization@organization:<org>` zinciri ile transitive `viewer` kazanır → permission-service `check` ile UI scope filtresi uygular.
+- ADR-0008 (yeni) — multi-org scope vs Zanzibar contract.
+
+**Faz 21.4 — UI/Backend integration** (out of platform-k8s-gitops scope):
+- Frontend admin "Veri Erişimi" panel: scope listesi + atama UI (mevcut MFE'lerden birinde).
+- Backend (muhtemelen `permission-service` veya `core-data-service`): scope query API'leri + atama mutation'ları.
+- Bu faz kapsamı **platform-web** repo (sub-component) işidir; platform-k8s-gitops sadece manifest/secret/ESO tarafını taşır.
+
+**Sıra ve PR ayrımı** (taslak — Codex iter-1 plan-time onayına bağlı):
+1. Depolar kaynak tablosu netleştirme (issue + dosya: `docs/migration/depolar-source-decision.md`).
+2. Manifest enrichment PR — `tables.yaml` 4 entity tam kolon + V16 generator için PRO_PROJECTS minimum kolon doğrulaması.
+3. ETL koşum + reconcile evidence (PR #162 runbook ile, ayrı evidence commit'i).
+4. Data access schema migration PR — `data_access.organization*`, `data_access_scope` (Flyway V19+).
+5. OpenFGA tip + tuple yazıcı (Zanzibar plane).
+6. Backend API kontratı (platform-web tarafı).
+
+**D29 disiplini**: Her faz alt-PR'ı Up + Functional + Behavior gate ayrı kanıtla. Faz 21.2 schema migration için: pgTAP testi veya en azından integration test koşumu (mevcut etl_worker tests/test_v16_preflight.py paterni).
+
+**Hard rules** (mevcut):
+- Kural #9 No Fake Work: scope assignment akışı Functional gate olarak gerçek bir org + 2 user + 1 company atama denemesi ile kanıtlanır; mock UI screenshot yetmez.
+- Kural #8 Codex authority: stratejik karar (data_access schema yeri, OpenFGA store ayrımı, vs) Codex iter ile alınır.
+
+**Codex thread**: bu fazın plan-time iter-1'i sonrası açılacak.
+
+---
+
 ### Faz 18 Eski Bağlantılar (historical reference)
 
 - ADR-0002 D6 (stateful tier compose, değişmez)
