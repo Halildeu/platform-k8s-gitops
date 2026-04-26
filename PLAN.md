@@ -1607,15 +1607,25 @@ Live proof (test cluster):
 | Şirketler | `COMPANY` | 113 | ✓ (Day 7 smoke MATCH'te kullanıldı) |
 | Şubeler | `BRANCH` | 107 | ✓ |
 | Projeler | `PRO_PROJECTS` | 75 | ✓ |
-| **Depolar** | **TBD** | — | netleşecek (adaylar: `STOCK_LOCATION_DESIGN`, `COMPANY_DEPOT_DISTANCE`, `STOCKS_LOCATION`; Workcube admin teyidi) |
+| **Depolar** | `DEPARTMENT` (43 cols) + `SETUP_DEPARTMENT_TYPE` lookup | 43 + 9 | ✓ DEPARTMENT V16 canonical; lookup Faz 21.4'e defer (PR #164, Faz 21.A merged) |
 
 **Faz 16 ile ilişki**: COMPANY/BRANCH/PRO_PROJECTS zaten Faz 16 canonical kapsamında (V16 DDL üretildi, lineage cols + UNIQUE index hazır). Bu fazda yapılacak: (a) Depolar kaynak tablosunun netleştirilmesi + V16 generator rerun gerekirse, (b) tables.yaml manifest'ine 4 entity için tam kolon set'i ile parametric-olmayan entry'ler, (c) Veri Erişimi domain layer (kurum modeli + scope assignment).
 
 **Faz 21.1 — ETL kapsam genişletme** (canonical, parametric değil):
-- Depolar kaynak tablosunun netleşmesi (kullanıcı veya Workcube admin teyidi).
-- `config/tables.yaml` manifest'e 4 entity için minimal-ama-yeterli kolon set'i (idempotency_key + scope listing UI'sının ihtiyacı: id, name, parent_id, status). Faz 16 kural #9 manifest fail-fast halen geçerli.
-- Test cluster apply (V16 + V17 zaten orada) + ad-hoc Job (PR #162 runbook üzerinden) `--tables COMPANY,BRANCH,PRO_PROJECTS,<DEPOLAR>` ile ETL koşumu.
-- Reconcile artifact 4-entity kapsamında; Faz 16 Behavior gate'in genişletilmiş halı.
+
+İki alt-faza bölündü (Codex 019dc8b4 PR #165 iter-1 absorb):
+
+**21.1a — Manifest + V20 contract** (PR #165, MERGED expected):
+- ✅ Depolar kaynak tablosu netleşti: `DEPARTMENT` (Faz 21.A doc, PR #164 merged).
+- ✅ `config/tables.yaml` manifest'e PRO_PROJECTS + DEPARTMENT eklendi (15 + 6 minimum kolon).
+- ✅ V20 migration: `scope_kind='depot'` → `DEPARTMENT` CHECK; validate_scope_ref() depot/DEPARTMENT branch.
+- ✅ Live evidence Mac dev-pg: V20 apply OK; depot trigger guard 3 saldırı vektörü reddedildi; valid INSERT pass.
+- 159/159 test PASS.
+
+**21.1b — Live ETL run + reconcile evidence** (next, separate PR):
+- Test cluster apply (V16 + V17 + V19 + V20) + ad-hoc Job (PR #162 runbook) `--tables COMPANY,BRANCH,PRO_PROJECTS,DEPARTMENT` ile ETL koşumu.
+- Reconcile artifact 4-entity kapsamında; Faz 16 Behavior gate'in genişletilmiş hali.
+- User-gated deploy step; agent sandbox shared PG erişimi yok.
 
 **Faz 21.2 — Org/Tenant data model** (PG canonical, MSSQL'den bağımsız):
 - Schema yeri (Codex 019dc8b4 iter-1 REVISE): **`reports_db` içinde ayrı `data_access` schema**. Cross-DB join karmaşıklığı kaçırılır; `data_access_scope.scope_ref ↔ workcube_mikrolink.<entity>.source_pk` tek SQL ile join edilebilir. ADR consequence: "ileride org_db'ye ayrılabilir, şimdilik lineage-locality wins."
@@ -1658,7 +1668,7 @@ Live proof (test cluster):
         (scope_kind = 'company'  AND scope_source_table = 'COMPANY') OR
         (scope_kind = 'project'  AND scope_source_table = 'PRO_PROJECTS') OR
         (scope_kind = 'branch'   AND scope_source_table = 'BRANCH') OR
-        (scope_kind = 'depot'    AND scope_source_table IN ('TBD_DEPOT_TABLE_FROM_FAZ_21_A'))
+        (scope_kind = 'depot'    AND scope_source_table = 'DEPARTMENT')  -- V20 (Faz 21.1)
       )
   );
 

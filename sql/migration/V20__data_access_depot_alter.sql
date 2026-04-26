@@ -8,8 +8,10 @@
 --   2. Re-adds the check with depot → DEPARTMENT.
 --   3. Replaces validate_scope_ref() with a depot/DEPARTMENT branch.
 --
--- Idempotent: every step is conditional. Re-running on a cluster that
--- already received V20 is a no-op.
+-- Idempotent / safe-to-rerun: ALTER DROP CONSTRAINT IF EXISTS + re-ADD
+-- + CREATE OR REPLACE FUNCTION. Net effect on a cluster that already
+-- received V20 is the same final shape (not a strict no-op, but
+-- semantically a fixed point).
 
 BEGIN;
 

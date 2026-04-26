@@ -71,7 +71,7 @@ tables:
     source_schema: workcube_mikrolink
     parametric: false
     idempotency_key: [PROJECT_ID]
-    reports: []
+    reports: [data-access-scope-listing]
     notes: "Veri Erişimi → Projeler (Faz 21.1). Min kolon altkümesi (75 toplam)."
     columns:
       - { name: PROJECT_ID,      pg_type: INTEGER,        nullable: false }
@@ -85,7 +85,7 @@ tables:
     source_schema: workcube_mikrolink
     parametric: false
     idempotency_key: [DEPARTMENT_ID]
-    reports: []
+    reports: [data-access-scope-listing]
     notes: |
       Veri Erişimi → Depolar (Faz 21.1, Faz 21.A karar).
       DEPARTMENT multi-purpose (HR + fiziksel lokasyon).
