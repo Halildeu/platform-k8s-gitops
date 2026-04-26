@@ -185,6 +185,27 @@ def test_lock_contended_no_audit_mutate(cfg, mssql_conn):
 # V16 preflight failure → FAILED, audit untouched
 # ============================================================================
 
+def test_lineage_preflight_failure_no_audit_mutate(cfg, lock_conn, mssql_conn):
+    """Codex iter-8: when V17 has not been applied (final tables missing the
+    lineage columns), the runner must fail-fast with NO audit mutation.
+    AuditModule must never be instantiated because we never opened the audit
+    conn — the lineage preflight runs on control_conn before that step."""
+    with patch("etl_worker.runner.preflight_v16_table_state_pk"), \
+         patch(
+            "etl_worker.runner.preflight_final_table_lineage",
+            side_effect=SchemaContractError("missing source_pk"),
+         ), patch("etl_worker.runner.AuditModule") as audit_cls:
+        outcome = run_orchestrator(
+            cfg,
+            extract_fn=_stable_extract([[_raw_row(1)]]),
+            pg_connect_fn=_connect_factory(lock_conn),
+            mssql_connect_fn=_mssql_factory(mssql_conn),
+        )
+    assert outcome is RunOutcome.FAILED
+    audit_cls.assert_not_called()
+    lock_conn.close.assert_called_once()
+
+
 def test_v16_preflight_failure_no_audit_mutate(cfg, lock_conn, mssql_conn):
     """A SchemaContractError before audit_conn even opens must surface as
     FAILED with NO audit module instantiation."""
@@ -212,6 +233,7 @@ def test_run_exists_does_not_mutate_existing_row(cfg, lock_conn, audit_conn, loa
     audit.create_run.side_effect = psycopg.errors.UniqueViolation("dup run_id")
 
     with patch("etl_worker.runner.preflight_v16_table_state_pk"), \
+         patch("etl_worker.runner.preflight_final_table_lineage"), \
          patch("etl_worker.runner.AuditModule", return_value=audit):
         outcome = run_orchestrator(
             cfg,
@@ -235,6 +257,7 @@ def test_happy_path_validates_table_and_marks_run_success(
     audit = MagicMock(spec=AuditModule)
 
     with patch("etl_worker.runner.preflight_v16_table_state_pk"), \
+         patch("etl_worker.runner.preflight_final_table_lineage"), \
          patch("etl_worker.runner.AuditModule", return_value=audit), \
          patch("etl_worker.runner.load_batch") as lb:
         from etl_worker.load import LoadStats
@@ -272,6 +295,7 @@ def test_critical_error_aborts_with_audit_status(
         raise e
 
     with patch("etl_worker.runner.preflight_v16_table_state_pk"), \
+         patch("etl_worker.runner.preflight_final_table_lineage"), \
          patch("etl_worker.runner.AuditModule", return_value=audit), \
          patch("etl_worker.runner.load_batch", side_effect=err):
         outcome = run_orchestrator(
@@ -305,6 +329,7 @@ def test_transient_retry_exhausted_aborts(
         raise e
 
     with patch("etl_worker.runner.preflight_v16_table_state_pk"), \
+         patch("etl_worker.runner.preflight_final_table_lineage"), \
          patch("etl_worker.runner.AuditModule", return_value=audit), \
          patch("etl_worker.runner.load_batch", side_effect=err):
         outcome = run_orchestrator(
@@ -338,6 +363,7 @@ def test_threshold_breach_final_delta_aborts(lock_conn, audit_conn, load_conn, m
     audit = MagicMock(spec=AuditModule)
 
     with patch("etl_worker.runner.preflight_v16_table_state_pk"), \
+         patch("etl_worker.runner.preflight_final_table_lineage"), \
          patch("etl_worker.runner.AuditModule", return_value=audit), \
          patch("etl_worker.runner.load_batch") as lb:
         from etl_worker.load import LoadReject, LoadStats
@@ -400,6 +426,7 @@ def test_runner_calls_transform_row_before_load(
         return LoadStats(inserted=len(rows))
 
     with patch("etl_worker.runner.preflight_v16_table_state_pk"), \
+         patch("etl_worker.runner.preflight_final_table_lineage"), \
          patch("etl_worker.runner.AuditModule", return_value=audit), \
          patch("etl_worker.runner.load_batch", side_effect=fake_load_batch):
         outcome = run_orchestrator(
@@ -436,6 +463,7 @@ def test_runner_transform_reject_persists_without_load(lock_conn, audit_conn, lo
     audit = MagicMock(spec=AuditModule)
 
     with patch("etl_worker.runner.preflight_v16_table_state_pk"), \
+         patch("etl_worker.runner.preflight_final_table_lineage"), \
          patch("etl_worker.runner.AuditModule", return_value=audit), \
          patch("etl_worker.runner.load_batch") as lb:
         from etl_worker.load import LoadStats
@@ -486,6 +514,7 @@ def test_resume_skips_validated_tables(lock_conn, audit_conn, load_conn, mssql_c
         # else: nothing yielded
 
     with patch("etl_worker.runner.preflight_v16_table_state_pk"), \
+         patch("etl_worker.runner.preflight_final_table_lineage"), \
          patch("etl_worker.runner.AuditModule", return_value=audit), \
          patch("etl_worker.runner.load_batch") as lb:
         from etl_worker.load import LoadStats

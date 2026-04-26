@@ -33,7 +33,11 @@ import psycopg
 
 from etl_worker.audit import AuditModule, RejectRecord
 from etl_worker.load import LoadStats, load_batch
-from etl_worker.preflight_v16 import SchemaContractError, preflight_v16_table_state_pk
+from etl_worker.preflight_v16 import (
+    SchemaContractError,
+    preflight_final_table_lineage,
+    preflight_v16_table_state_pk,
+)
 from etl_worker.retry import (
     BackoffPolicy,
     RetryClass,
@@ -260,7 +264,7 @@ def run_orchestrator(
             log.error("advisory_lock_contended run_id=%s ns=%s", cfg.run_id, LOCK_NAMESPACE)
             return RunOutcome.LOCK_CONTENDED
 
-        # 2. V16 PK preflight under lock (rollback-capable on control_conn)
+        # 2. V16 audit-PK preflight under lock (rollback-capable on control_conn)
         preflight_v16_table_state_pk(control_conn)
 
         # 3. Audit + load + mssql conns
@@ -268,6 +272,15 @@ def run_orchestrator(
         load_conn = pg_connect_fn(cfg.pg_dsn, False)
         mssql_conn = mssql_connect_fn(cfg.mssql_dsn)
         audit = AuditModule(audit_conn)
+
+        # 3b. Final-table lineage preflight (Codex iter-8): catch a stale schema
+        #     where V17 has not been applied before any audit row mutation.
+        #     We use control_conn (autocommit) so this never touches load_conn's
+        #     transaction state. No audit mutation here; failure → FAILED outcome.
+        preflight_final_table_lineage(
+            control_conn,
+            table_names=[t.name for t in cfg.manifest],
+        )
 
         # 4. Resume vs new run
         mode = cfg.mode
