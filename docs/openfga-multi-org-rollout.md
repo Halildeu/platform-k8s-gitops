@@ -8,7 +8,15 @@
 ## Pre-conditions
 
 - [ ] Backend repo PR (platform-ssot or successor): `openfga-authorization-model.fga`
-      adds `organization` + `depot` types per ADR-0008. Tuple writer +
+      semantic update per ADR-0008 explicit-scope contract:
+      (a) Remove auto-grant relations (`admin from org`, `viewer: ...
+      or member`, etc.) from `company`, `project`, `warehouse`, `branch`.
+      (b) Add `parent_warehouse: [warehouse]` for 3-level Depo→Lokasyon
+      →Raf navigation (no transitive viewer grant).
+      (c) Tuple writer maps PG `scope_kind='depot'` → OpenFGA
+      `warehouse` object_type.
+      (Existing types — organization + company + project + warehouse +
+      branch — already present in upstream model; no NEW types added.)
       REST API integrated with `data_access.scope` (V19/V20 already on
       target PG via PR #163, #165).
 - [ ] V19 + V20 already applied on target PG cluster

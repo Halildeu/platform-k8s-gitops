@@ -237,11 +237,11 @@ OpenFGA tek tip `resource` + ayrı kolon ile entity ayrımı.
 **Reddedildi**. Tip ayrımı domain semantiğini kaybeder; query/check'lerde
 filter karmaşıklığı + UI listing harder.
 
-### C. Hiyerarşik auto-grant (parent_depot transitive)
+### C. Hiyerarşik auto-grant (parent_warehouse transitive)
 
 ```fga
 type depot
-  define viewer: [user] or viewer from parent_depot
+  define viewer: [user] or viewer from parent_warehouse
 ```
 
 **Reddedildi (bu fazda)**. Kullanıcı 2026-04-26: "üçü birden atanabilir

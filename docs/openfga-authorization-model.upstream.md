@@ -4,14 +4,19 @@
 > Model file migrated from upstream platform-ssot to this repo.
 > Steps 3-5 still pending (dev-seed.sh reload + CI diff + upstream prune).
 
-## Current location (this repo, authoritative for dev/local)
+## Current location (this repo)
 
 - Path: **`bootstrap/local-fixtures/openfga/model.fga`** (59 lines)
 - Source: snapshotted from
   `Halildeu/platform-ssot:backend/openfga/model.fga` on 2026-04-26 via
   `gh api` read-only fetch.
-- Referenced by `bootstrap/local-fixtures/openfga/tuples.json#model`
-  → updated to local path in this PR.
+- `bootstrap/local-fixtures/openfga/tuples.json#model` path now points
+  to this local file — but the model is **NOT YET LOADED** by
+  `dev-seed.sh`. That requires Step 3 (below). Until Step 3 lands, the
+  local file is a snapshot reference; the OpenFGA store on dev/local
+  clusters still runs whatever model_id was previously written there.
+  "Authoritative for dev/local" status is reached only after Step 3 +
+  fixture compatibility validation.
 
 ## Faz 21.3 backend PR will modify this file
 

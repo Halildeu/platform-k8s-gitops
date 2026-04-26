@@ -3,28 +3,41 @@
   "_notes": [
     "Mac k3d-dev cluster'ında openfga StatefulSet ayağa kalktıktan sonra",
     "dev-seed.sh scripti bu tuple'ları `openfga` API'sine yükler.",
-    "Schema: user can view/edit project (ADMIN → owner, USER → viewer).",
-    "zanzibar-min smoke: dev-local user view/edit kontrolü /variants endpoint üzerinden."
+    "Schema: user can view/admin project; user can view/admin company.",
+    "zanzibar-min smoke: dev-local user view kontrolü /variants endpoint üzerinden.",
+    "Codex 019dc8b4 iter-1 (Faz 21.3 PR #167) align: aktif tuples local model.fga 'da var olan tipler/relations ile uyumlu.",
+    "owner→admin (model.project.relations: company|admin|manager|viewer; 'owner' YOK).",
+    "can_view→viewer (model.project.relations 'can_view' yok; viewer use et).",
+    "variant tuples → _legacy_variant_tuples (model'de variant tipi yok; v1.1 model snapshot'ında kaldırıldı)."
   ],
   "model": "bootstrap/local-fixtures/openfga/model.fga",
   "tuples": [
-    {"user": "user:dev@localtest.me", "relation": "owner", "object": "project:dev-local"},
-    {"user": "user:dev@localtest.me", "relation": "admin", "object": "company:dev"},
+    {"user": "user:dev@localtest.me",    "relation": "admin",  "object": "project:dev-local"},
+    {"user": "user:dev@localtest.me",    "relation": "admin",  "object": "company:dev"},
     {"user": "user:viewer@localtest.me", "relation": "viewer", "object": "project:dev-local"},
-    {"user": "user:viewer@localtest.me", "relation": "member", "object": "company:dev"},
-    {"user": "user:dev@localtest.me", "relation": "editor", "object": "variant:sample-variant-1"},
-    {"user": "user:viewer@localtest.me", "relation": "viewer", "object": "variant:sample-variant-1"}
+    {"user": "user:viewer@localtest.me", "relation": "member", "object": "company:dev"}
   ],
   "smoke_checks": [
-    {"description": "dev@localtest.me can view project:dev-local", "expected": true,
-     "check": {"user": "user:dev@localtest.me", "relation": "can_view", "object": "project:dev-local"}},
-    {"description": "viewer@localtest.me cannot edit variant", "expected": false,
-     "check": {"user": "user:viewer@localtest.me", "relation": "can_edit", "object": "variant:sample-variant-1"}}
+    {"description": "dev@localtest.me viewer project:dev-local (admin transitive in current model)", "expected": true,
+     "check": {"user": "user:dev@localtest.me", "relation": "viewer", "object": "project:dev-local"}},
+    {"description": "viewer@localtest.me viewer project:dev-local (explicit)", "expected": true,
+     "check": {"user": "user:viewer@localtest.me", "relation": "viewer", "object": "project:dev-local"}}
   ],
+  "_legacy_variant_tuples": {
+    "_status": "ARCHIVED — model.fga v1.1 snapshot has no `variant` type. These tuples used to seed Faz 17 variant scenarios; the corresponding model entries were removed upstream. Do NOT activate without re-adding `type variant` to model.fga.",
+    "tuples": [
+      {"user": "user:dev@localtest.me",    "relation": "editor", "object": "variant:sample-variant-1"},
+      {"user": "user:viewer@localtest.me", "relation": "viewer", "object": "variant:sample-variant-1"}
+    ],
+    "smoke_checks": [
+      {"description": "viewer@localtest.me cannot edit variant", "expected": false,
+       "check": {"user": "user:viewer@localtest.me", "relation": "can_edit", "object": "variant:sample-variant-1"}}
+    ]
+  },
   "_future_multi_org_tuples": {
-    "_status": "DEFERRED — NOT loaded by dev-seed.sh until backend OpenFGA model adds organization + depot types per ADR-0008. Loading these now would 400 (unknown type).",
+    "_status": "DEFERRED — NOT loaded by dev-seed.sh. Active fixture above is aligned with current model.fga snapshot (organization + warehouse + others already present). These multi-org tuples activate only AFTER backend repo PR (a) removes auto-grant relations per ADR-0008 explicit-scope contract, AND (b) confirms warehouse hierarchy parent_warehouse semantics.",
     "_authority": "docs/adr/0008-multi-org-explicit-scope-zanzibar.md",
-    "_loading_gate": "After backend repo PR merges openfga-authorization-model.fga with organization + depot, move these into the active 'tuples' array via a follow-up PR.",
+    "_loading_gate": "After Faz 21.3 backend PR (platform-backend) merges the explicit-scope model.fga update and the dev-seed.sh model reload (Step 3 of upstream.md migration plan), move these into the active 'tuples' array via a follow-up PR.",
     "tuples_after_backend_model_update": [
       {"user": "user:admin@localtest.me",          "relation": "admin",  "object": "organization:acik"},
       {"user": "user:member@localtest.me",         "relation": "member", "object": "organization:acik"},
@@ -42,7 +55,7 @@
        "check": {"user": "user:company-viewer@localtest.me", "relation": "viewer", "object": "company:wc-company-1001"}},
       {"description": "explicit depot viewer can view that depot", "expected": true,
        "check": {"user": "user:depot-viewer@localtest.me", "relation": "viewer", "object": "warehouse:wc-department-3792"}},
-      {"description": "depot viewer can NOT view sub-depot (no transitive parent_depot)", "expected": false,
+      {"description": "depot viewer can NOT view sub-depot (no transitive parent_warehouse)", "expected": false,
        "check": {"user": "user:depot-viewer@localtest.me", "relation": "viewer", "object": "warehouse:wc-department-3792-01"}},
       {"description": "company viewer can NOT view depot (cross-kind isolation)", "expected": false,
        "check": {"user": "user:company-viewer@localtest.me", "relation": "viewer", "object": "warehouse:wc-department-3792"}}
