@@ -1,10 +1,80 @@
 # Current State — Platform K8s Migration
 
-> **Status as of**: 2026-04-24 ~15:30 UTC+3 (Session 29 +18 — **FAZ 18.3 CROSS-REPO + HOST OPS TAMAMLANDI + YENİ YÖN**: ssot PR #550 + #551 MERGED (cross-repo), `platform-service-manager-1` container stop+rm canlı, zero regression (410 tombstone + 200 diğer routes). User direktif kaynak repo amacı netleştirildi: "Kaynak repo tek amacı eski geliştirmeleri yeni sisteme taşıma kaynağı, başka amaç yok" → Faz 19 Kaynak Repo Full Decommission plan-time Codex istişare sıradaki. 22 cross-repo PR merged (19 gitops + 3 ssot) Session 29'da. ⏸️ Önceki ~14:10 Session 29 +12 — **FAZ 18.2 CANLI DEPLOY PASS + PR-A AÇILDI**: `/api/services/` HTTP 410 Gone her iki domain (ai.acik.com + testai.acik.com) deploy PASS, zero regression. platform-ssot cross-repo PR #550 açıldı (MFE admin UI retire + Ops Links compat page + ShellHeader permission fix + i18n 4 dil, net -797 satır cleanup, linked worktree + `--worktree-mode` light gate PASS). 18 PR bu repo + 1 PR ssot = 19 cross-repo PR. ⏸️ Önceki ~12:45 Session 29 WRAP — **FAZ 17 TAM IMPL (10 PR MERGED 4070 satır) + FAZ 16.0/16.1 DRAFT + FAZ 16.2 PLAN AGREE**: Faz 17 Local Dev Environment Parity 9 sub-faz (17.0 naming + 17.1 fixtures + 17.2 profile overlays + 17.2.5 app base split + 17.3 scripts + 17.4 promotion-contract + 17.5 README + 17.X TLS + 17.Y image handoff) + CI 5/5 green. Faz 16.0 data contract DRAFT/RFC + Faz 16.1 annex 2A crawler 44 unique tablo + 2B 9 sys.* catalog. Codex 3 thread (019dbe80 Faz 17 iter-4 AGREE, 019dbe92 Faz 16.0 iter-4 AGREE DRAFT/RFC, 019dbf15 Faz 16.2 plan istişare). Kalan: Faz 17 secondary codex exec (user codex login), Faz 16.1 SEAL dış paydaş (Workcube admin 8 sourceQuery manuel + schema-service-parity-adr), Faz 16.2 Flyway V16 platform-ssot cross-repo PR. ⏸️ Önceki ~09:55 UTC+3 Session 29 — üç-katman (lokal dev Mac / test staging-sw k3d-test / prod staging-sw k3d-prod+compose) netleştirildi, Mac k3d mirror'ları stop (RAM relief ~7 GB→130 MB), staging-sw k3d-test auth-service RSA PEM placeholder fix (Vault `kv/platform/auth-service` jwt_private_key/public_key initialize) → **9/9 platform-test pod 1/1 Ready + testai.acik.com 200**, staging-sw k3d-prod 49 Running korundu. Faz 13 rollback-window kullanıcı direktifi ile iptal (canlı kullanıcı yok). Faz 17 Local Dev Environment Parity + Faz 16.0 Data Contract paralel plan draft (Plan subagent + Codex adversarial review bekleniyor). ⏸️ Önceki Session 28 T0 — **FAZ 13 HYBRID GO CANLI KANITLI**: Codex verdict PARTIAL+GO (thread `019dbc86`). Kontrat ADR-0002 Faz D6 (stateful PG+KC+Vault K8s-dışı, host-compose'da) ile uyumlu: "Full cutover" (K8s KC deploy + compose decommission) ADR aykırı → reddedildi. **Atomic cutover anlamı kalibre edildi**: `ai.acik.com` authoritative prod yolu K8s workload'a bağlı (byte-perfect canlı kanıt: public=127.0.0.1:30443 NodePort 200 15666B eşleşme) + stateful tier compose'da kalıcı + **72h rollback-window başladı T0=2026-04-24 01:25 UTC+3**. Session 28 açılış 5-komut refresh 5/5 Session 27 canonical eşleşme, T0 minimum teyit 3/3 PASS. Kalan paralel cleanup (non-blocking): ArgoCD cosmetic OutOfSync (RespectIgnoreDifferences syncOption), drill quarterly cron, prod non-superAdmin scoped allow seed.
+> **Status as of**: 2026-04-26 ~22:10 UTC+3 (Session 30 — **FAZ 19.11 STEP 1-4 + FAZ 21.A + FAZ 21.3 EXPLICIT-SCOPE FIXTURE + FAZ 16 ETL CI**: 9 within-repo PR merged (#168-#176) + 2 cross-repo PR merged (platform-backend #10/#11). OpenFGA model migrated from platform-ssot to local fixtures + dev-seed.sh writes it before tuples (model_id explicit) + semantic-JSON drift gate vs upstream platform-backend + fixture smoke gate (10 checks: 5 allow + 3 deny + 2 containment-deny). data_access PG schema (V19+V20) regression CI gate (V16→V17→V19→V20 + 11-assertion suite). etl_worker pytest CI (159 tests) + ruff (19→0) + mypy strict (10→0). Codex retrospective `019dcbc8` consulted post-#172, absorbed in #173. Within-repo agent-actionable work exhausted; remaining items operator-gated (Faz 21.1b ETL run on staging-sw via PR #162 runbook) or sandbox-blocked (cross-repo PR-C/D/E Java/REST/UI). Handoff docs: `docs/session-handoff-2026-04-26-faz-21-3-zanzibar-fixture-sealed.md` + `docs/session-handoff-2026-04-26-supplement-pr-172-175.md`. ⏸️ Önceki 2026-04-25 — **FAZ 19.MSSQL.A-O LIVE**: Workcube MSSQL bridge canlı, 31 rapor + 12 dashboard, 8/8 backend endpoint 200 (handoff: `docs/session-handoff-2026-04-25-faz-19-mssql-closure.md`). ⏸️ Önceki 2026-04-24 ~15:30 UTC+3 — **FAZ 18.3 CROSS-REPO + HOST OPS**: ssot PR #550 + #551 MERGED (cross-repo), `platform-service-manager-1` container stop+rm canlı, zero regression (410 tombstone + 200 diğer routes). User direktif kaynak repo amacı netleştirildi: "Kaynak repo tek amacı eski geliştirmeleri yeni sisteme taşıma kaynağı, başka amaç yok" → Faz 19 Kaynak Repo Full Decommission plan-time Codex istişare sıradaki. 22 cross-repo PR merged (19 gitops + 3 ssot) Session 29'da. ⏸️ Önceki ~14:10 Session 29 +12 — **FAZ 18.2 CANLI DEPLOY PASS + PR-A AÇILDI**: `/api/services/` HTTP 410 Gone her iki domain (ai.acik.com + testai.acik.com) deploy PASS, zero regression. platform-ssot cross-repo PR #550 açıldı (MFE admin UI retire + Ops Links compat page + ShellHeader permission fix + i18n 4 dil, net -797 satır cleanup, linked worktree + `--worktree-mode` light gate PASS). 18 PR bu repo + 1 PR ssot = 19 cross-repo PR. ⏸️ Önceki ~12:45 Session 29 WRAP — **FAZ 17 TAM IMPL (10 PR MERGED 4070 satır) + FAZ 16.0/16.1 DRAFT + FAZ 16.2 PLAN AGREE**: Faz 17 Local Dev Environment Parity 9 sub-faz (17.0 naming + 17.1 fixtures + 17.2 profile overlays + 17.2.5 app base split + 17.3 scripts + 17.4 promotion-contract + 17.5 README + 17.X TLS + 17.Y image handoff) + CI 5/5 green. Faz 16.0 data contract DRAFT/RFC + Faz 16.1 annex 2A crawler 44 unique tablo + 2B 9 sys.* catalog. Codex 3 thread (019dbe80 Faz 17 iter-4 AGREE, 019dbe92 Faz 16.0 iter-4 AGREE DRAFT/RFC, 019dbf15 Faz 16.2 plan istişare). Kalan: Faz 17 secondary codex exec (user codex login), Faz 16.1 SEAL dış paydaş (Workcube admin 8 sourceQuery manuel + schema-service-parity-adr), Faz 16.2 Flyway V16 platform-ssot cross-repo PR. ⏸️ Önceki ~09:55 UTC+3 Session 29 — üç-katman (lokal dev Mac / test staging-sw k3d-test / prod staging-sw k3d-prod+compose) netleştirildi, Mac k3d mirror'ları stop (RAM relief ~7 GB→130 MB), staging-sw k3d-test auth-service RSA PEM placeholder fix (Vault `kv/platform/auth-service` jwt_private_key/public_key initialize) → **9/9 platform-test pod 1/1 Ready + testai.acik.com 200**, staging-sw k3d-prod 49 Running korundu. Faz 13 rollback-window kullanıcı direktifi ile iptal (canlı kullanıcı yok). Faz 17 Local Dev Environment Parity + Faz 16.0 Data Contract paralel plan draft (Plan subagent + Codex adversarial review bekleniyor). ⏸️ Önceki Session 28 T0 — **FAZ 13 HYBRID GO CANLI KANITLI**: Codex verdict PARTIAL+GO (thread `019dbc86`). Kontrat ADR-0002 Faz D6 (stateful PG+KC+Vault K8s-dışı, host-compose'da) ile uyumlu: "Full cutover" (K8s KC deploy + compose decommission) ADR aykırı → reddedildi. **Atomic cutover anlamı kalibre edildi**: `ai.acik.com` authoritative prod yolu K8s workload'a bağlı (byte-perfect canlı kanıt: public=127.0.0.1:30443 NodePort 200 15666B eşleşme) + stateful tier compose'da kalıcı + **72h rollback-window başladı T0=2026-04-24 01:25 UTC+3**. Session 28 açılış 5-komut refresh 5/5 Session 27 canonical eşleşme, T0 minimum teyit 3/3 PASS. Kalan paralel cleanup (non-blocking): ArgoCD cosmetic OutOfSync (RespectIgnoreDifferences syncOption), drill quarterly cron, prod non-superAdmin scoped allow seed.
 > **Verified by**: Codex + live `ssh staging-sw`
 > **Source set**: Live `kubectl`, `curl`, `docker`, `ssh staging-sw` outputs + repo HEAD
 > **Supersedes**: `docs/session-handoff-2026-04-20-k8s-migration-faz-b-c.md` bölümlerindeki `%99.5`, `DONE + LIVE (Faz H)`, `soft cutover` ifadeleri
 > **Interpretation gate**: Önce [../../AGENTS.md](../../AGENTS.md), ardından [../context-priority-rules.md](../context-priority-rules.md) okunur; bu dosya canlı truth snapshot'tır, repo-geneli kural sözleşmesi değildir.
+
+---
+
+## Live Delta — Session 30 (2026-04-26 ~22:10 UTC+3) — FAZ 19.11 STEP 1-4 + FAZ 21.A + FAZ 21.3 + FAZ 16 ETL CI
+
+### Within-repo PRs (9 — all MERGED)
+
+| # | Faz | Scope |
+|---|---|---|
+| #167 | 19.11+21.3 | model.fga snapshot from platform-ssot + warehouse naming align |
+| #168 | 19.11 Step 3 + 21.3 | dev-seed.sh writes model.fga to OpenFGA store BEFORE tuples (model_id explicit); multi-org tuples promoted from `_future_*` to active; 8/8 smoke checks |
+| #169 | 19.11 Step 4 | `.github/workflows/openfga-model-drift.yml` — semantic-JSON drift gate vs upstream platform-backend (raw.githubusercontent.com fetch + render_model_json.py + dict deep-equal) |
+| #170 | 21.3 | `.github/workflows/openfga-fixture-smoke.yml` + `scripts/smoke-openfga-fixture.sh` — ephemeral OpenFGA + dev-seed.sh + smoke checks |
+| #171 | 21.3 | session handoff doc + PLAN.md status |
+| #172 | 21.A | data_access PG migration regression CI gate (V16→V17→V19→V20 + 11-assertion suite covering AÇIK seed, scope_kind ↔ source_table CHECK, validate_scope_ref(), UPDATE-smuggling guard, partial UNIQUE re-grant) |
+| #173 | 21.3 | Codex retrospective `019dcbc8` absorb (4 WARNINGs): pin `openfga/openfga:v1.14`, +2 containment-deny smoke checks → 10 total, dev-seed.sh `--request-timeout=3s` + tuple-write 400 body logging, stale comment cleanup |
+| #174 | 16 | etl_worker pytest CI regression gate (159 tests across 12 modules; soft floor 150) |
+| #175 | 16 | etl_worker ruff (19→0) + mypy strict (10→0) cleanup + workflow extension to gate both |
+| #176 | 21.A+16 | supplement handoff + PLAN.md status update |
+
+### Cross-repo PRs (2 — MERGED earlier in session)
+
+| # | Repo | Scope |
+|---|---|---|
+| #10 | platform-backend | Faz 19.11.A residual `backend/openfga/` migration from platform-ssot (6 files) |
+| #11 | platform-backend | Faz 21.3 model.fga semantic update — auto-grants removed, `parent_warehouse: [warehouse]` added |
+
+### CI gate inventory after Session 30
+
+| Gate | Triggers | Source PR |
+|---|---|---|
+| Kustomize Build Sanity | always | (existing) |
+| YAML Lint | always | (existing) |
+| Shell Lint (shellcheck) | always | (existing) |
+| gitleaks | always | (existing) |
+| No-Closure Language Check | always | (existing) |
+| Placeholder Leak Check | always | (existing) |
+| OpenFGA model.fga drift vs platform-backend | path-filtered + weekly Mon 03:00 UTC | #169 |
+| OpenFGA fixture smoke (10 checks: 5 allow + 3 deny + 2 containment-deny) | path-filtered | #170 + #173 |
+| `data_access` V16→V17→V19→V20 + 11 assertions | path-filtered | #172 |
+| etl_worker pytest (159 tests, soft floor 150) | path-filtered + weekly Mon 04:00 UTC | #174 |
+| etl_worker ruff + mypy strict | path-filtered + weekly Mon 04:00 UTC | #175 |
+
+### D29 third-level coverage matrix
+
+| Layer | Covered by | Gate |
+|---|---|---|
+| Up | k8s manifest build sanity | `ci.yml#kustomize-build` |
+| Functional (PG schema) | V16-V20 + 11 assertions | `data-access-migrations.yml` |
+| Functional (ETL worker) | 159 pytest with mocks + ruff + mypy strict | `etl-worker-tests.yml` |
+| Zanzibar-ready (model) | semantic-JSON drift vs upstream | `openfga-model-drift.yml` |
+| Zanzibar-ready (allow + deny) | 10 fixture smoke checks | `openfga-fixture-smoke.yml` |
+
+### Live evidence highlights
+
+- D29 third level: `[dev-seed] OpenFGA model written; model_id=01KQ5VS6JJ10NGAH040ZCEJ56R` + `summary: 10 pass, 0 fail`
+- Drift gate: `local: 10039 bytes  upstream: 10039 bytes  match: True`
+- Faz 21.A: 11 assertion lines printed by psql `NOTICE` + `=== test_v19_v20_data_access: ALL ASSERTIONS PASSED ===`
+- Faz 16: `159 passed in 0.17s` + `Success: no issues found in 11 source files` (mypy strict)
+
+### Codex thread reference
+
+- `019dcbc8` — retrospective consult on #168-#172. Verdict: no BLOCKER, 7 WARNING + 4 NIT. 4 WARNINGs absorbed in #173.
+
+### Sıradaki adımlar
+
+1. **WAIT for user direction** on cross-repo unblock — PR-C/D/E (Java tuple writer + REST + UI) sandbox-blocked at intent-classifier layer; `bypassPermissions + skipDangerousModePermissionPrompt` insufficient.
+2. **Operator action**: Faz 21.1b ETL run on staging-sw via `docs/PR-162-runbook` (advisory-lock + run-id ownership; agent SSH cannot execute under that contract).
+3. **Faz 19.11.A workflow distribution** — `gate-secrets.yml` / `gate-osv-scan.yml` / `security-guardrails.yml` to platform-backend + platform-web. Same sandbox blocker.
+4. **ci/ Python check script port** — 13 scripts present in `ci/` but no workflow runs them yet. Substantial fresh work; could be next session.
 
 ---
 
