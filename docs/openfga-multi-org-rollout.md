@@ -224,7 +224,59 @@ mismatch, STOP — do not enable feature flag.
 Faz 21.3 PR-C downstream introduces a fail-closed activation flag
 `REPORTS_DB_ENABLED` (default `false`). The dual-datasource bean
 graph (`ReportsDbDataSourceConfig`) only instantiates when this flag
-is `"true"`. Vault credentials must be populated **before** the flip:
+is `"true"`. After Faz 21.3 PR-D delivery the activation gate is
+property-based: `AccessScopeService` requires BOTH
+`spring.datasource.reports-db.enabled=true` AND
+`erp.openfga.enabled=true` (multi-name `@ConditionalOnProperty`,
+AND semantic). With either flag absent or `false` the service bean
+is absent and every REST endpoint returns 503 SERVICE_UNAVAILABLE.
+
+### Pre-flip operator authz tuple seed (Faz 21.3 PR-D)
+
+The new `/api/v1/access/scope` endpoints are gated by
+`@RequireModule("ACCESS", "can_manage")` (grant + revoke) and
+`@RequireModule("ACCESS", "can_view")` (list). Both relations are
+`type module` in `backend/openfga/model.fga`. **Operators who will
+issue scope grants in the UI/API need the tuples seeded BEFORE the
+flag flip — otherwise the first POST to `/api/v1/access/scope`
+returns 403.**
+
+```bash
+# For each user who will administer scope assignments (org admins),
+# seed two tuples on the OpenFGA store. Operator runs once per admin uid.
+ADMIN_UID="<admin-user-uuid>"
+STORE_ID=$(vault kv get -field=store_id kv/platform/openfga)
+MODEL_ID=$(vault kv get -field=model_id kv/platform/openfga)
+
+curl -s -X POST "${OPENFGA_URL}/stores/${STORE_ID}/write" \
+  -H 'Content-Type: application/json' \
+  -d @- <<EOF
+{
+  "authorization_model_id": "${MODEL_ID}",
+  "writes": {
+    "tuple_keys": [
+      {"user": "user:${ADMIN_UID}", "relation": "can_manage", "object": "module:ACCESS"},
+      {"user": "user:${ADMIN_UID}", "relation": "can_view",   "object": "module:ACCESS"}
+    ]
+  }
+}
+EOF
+```
+
+Verify with a `/check`:
+
+```bash
+curl -s -X POST "${OPENFGA_URL}/stores/${STORE_ID}/check" \
+  -H 'Content-Type: application/json' \
+  -d "{\"authorization_model_id\":\"${MODEL_ID}\",\"tuple_key\":{\"user\":\"user:${ADMIN_UID}\",\"relation\":\"can_manage\",\"object\":\"module:ACCESS\"}}"
+# expect {"allowed":true}
+```
+
+Seed users for scope viewers (regular users who only LIST their own
+scopes) need only `can_view`. Skip if list endpoint isn't exposed
+to that user persona.
+
+### Vault credentials must be populated **before** the flip:
 
 ```bash
 # 1. Populate reports_db credentials in Vault (operator)

@@ -161,6 +161,20 @@ data:
   SPRING_CLOUD_GATEWAY_ROUTES_16_URI: "http://permission-service:8090"
   SPRING_CLOUD_GATEWAY_ROUTES_16_PREDICATES_0: "Path=/api/v1/roles/**"
 
+  # Faz 21.3 PR-D — multi-org Veri Erişimi REST surface (ADR-0008 explicit-scope).
+  # Backend: permission-service AccessScopeController @RequestMapping("/api/v1/access/scope").
+  # Endpoints:
+  #   POST   /api/v1/access/scope         → grant   (require module:ACCESS#can_manage)
+  #   DELETE /api/v1/access/scope/{id}    → revoke  (require module:ACCESS#can_manage)
+  #   GET    /api/v1/access/scope?...     → list    (require module:ACCESS#can_view)
+  # Conditional activation (PR-C downstream): if REPORTS_DB_ENABLED=false the
+  # service bean is absent and every endpoint returns 503 SERVICE_UNAVAILABLE
+  # (graceful — distinguishable from 404 "no such route").
+  # NOT: StripPrefix YOK (controller native path tam eşler).
+  SPRING_CLOUD_GATEWAY_ROUTES_17_ID: "permission-service-v1-access-scope-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_17_URI: "http://permission-service:8090"
+  SPRING_CLOUD_GATEWAY_ROUTES_17_PREDICATES_0: "Path=/api/v1/access/scope/**,/api/v1/access/scope"
+
   # D7: Eureka yok → K8s svc DNS
   AUTH_SERVICE_URL: "http://auth-service:8088"
   # Dilim 2+:

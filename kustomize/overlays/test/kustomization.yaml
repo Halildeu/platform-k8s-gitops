@@ -59,8 +59,9 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # Faz 21.3 PR-C merge (sha-6bf191f): data_access multi-DS + scope tuple writer
-    digest: sha256:5064ced1536d8c405a8aba05f800468f72583150e82e0f43790ca74335134c11
+    # Faz 21.3 PR-D merge (sha-ecdb551): REST /api/v1/access/scope endpoints
+    # (PR-C primitives layered + AccessScopeService + Controller + 23 new tests).
+    digest: sha256:b75f23b18c5f9bc0b61d625e8cc92b5f56bf7c137a2d446c39d9071c136ed95c
   # Frontend testai variant (testai.acik.com + platform-test realm)
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend-testai
