@@ -221,15 +221,56 @@ mismatch, STOP — do not enable feature flag.
 
 ## Step 8 — Feature flag ON (gradual)
 
+Faz 21.3 PR-C downstream introduces a fail-closed activation flag
+`REPORTS_DB_ENABLED` (default `false`). The dual-datasource bean
+graph (`ReportsDbDataSourceConfig`) only instantiates when this flag
+is `"true"`. Vault credentials must be populated **before** the flip:
+
 ```bash
-# Backend ConfigMap:
+# 1. Populate reports_db credentials in Vault (operator)
+vault kv patch kv/platform/permission-service \
+  reports_db_username="<read-only-user>" \
+  reports_db_password="<value>"
+
+# 2. ESO force-refresh permission-service-secrets to pick up the new keys
 ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
-  set env deploy/permission-service MULTI_ORG_TUPLE_SYNC_ENABLED=true"
+  annotate externalsecret permission-service-secrets \
+  force-sync=\"$(date +%s)\" --overwrite"
+
+# 3. Verify the secret has REPORTS_DB_USERNAME + REPORTS_DB_PASSWORD
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  get secret permission-service-secrets -o jsonpath='{.data}' | \
+  jq 'keys' | grep -E 'REPORTS_DB_(USERNAME|PASSWORD)'"
+# expect both keys present
+
+# 4. Flip activation flag in ConfigMap (or via env override in Deployment)
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  set env deploy/permission-service REPORTS_DB_ENABLED=true"
 ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
   rollout restart deploy/permission-service"
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  rollout status deploy/permission-service --timeout=120s"
+
+# 5. Verify reports_db datasource bean graph is up
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  exec deploy/permission-service -- env | \
+  grep -E 'REPORTS_DB_(ENABLED|URL|USERNAME|PASSWORD)'"
+# expect REPORTS_DB_ENABLED=true + URL/USERNAME/PASSWORD present
+
+# 6. (Optional) actuator health check (if reports-db indicator wired)
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  exec deploy/permission-service -- \
+  curl -s http://localhost:8081/actuator/health/reports_db 2>/dev/null || \
+  echo 'health indicator not wired — tail logs for HikariCP connect line'"
 ```
 
-Backend now writes tuples on `data_access.scope INSERT` automatically.
+**Operator gate**: pod Ready 1/1 + the Spring log line "HikariPool-2 - Start completed."
+or equivalent appears (proves the secondary datasource initialised). Without that
+the flag flip is inert; PR-D's REST `/api/v1/access/scope` endpoint will return
+500 because `DataAccessScopeRepository` won't be wired.
+
+Backend now writes tuples on `data_access.scope INSERT` once PR-D delivers the
+REST contract that triggers `DataAccessScopeTupleWriter.writeScopeTuple()`.
 
 ## Rollback
 
