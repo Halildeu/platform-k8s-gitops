@@ -11,6 +11,18 @@ data:
   # Pod namespace-local svc DNS'e resolve eder: postgres → postgres.<ns>.svc → Endpoints → 10.9.10.53.
   SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/permission_db"
 
+  # Faz 21.3 PR-C: secondary datasource for data_access.* schema
+  # (V19/V20 in this repo, lineage-locality per ADR-0005).
+  # Activation gated on REPORTS_DB_ENABLED. Defaults FAIL-CLOSED at false:
+  # the dual-datasource bean graph (ReportsDbDataSourceConfig) only
+  # instantiates when this flag is "true". Flip to true during D35
+  # staging-sw smoke after PR-D delivers REST contract + Vault credentials
+  # populate REPORTS_DB_USERNAME/PASSWORD via ESO (see ops/externalsecret.yaml).
+  REPORTS_DB_ENABLED: "false"
+  REPORTS_DB_URL: "jdbc:postgresql://postgres:5432/reports_db"
+  REPORTS_DB_POOL_MAX: "5"
+  REPORTS_DB_POOL_MIN: "1"
+
   # Spring Boot
   SERVER_PORT: "8084"                 # PR #502: container internal port
   MANAGEMENT_SERVER_PORT: "8081"
