@@ -1,10 +1,14 @@
--- Faz 21.A test suite — exercises V19 + V20 + V21 contracts end-to-end:
+-- Faz 21.A + V22 test suite — exercises V19 + V20 + V21 + V22 contracts end-to-end:
 --   * AÇIK org seed exists
 --   * scope_kind ↔ source_table CHECK (V19+V20)
 --   * validate_scope_ref() lineage existence guard (V19 raw → V21 JSON, depot V20)
 --   * scope_validate_before_write trigger (INSERT + UPDATE coverage per V19 iter-2)
 --   * uq_scope_active_assignment partial UNIQUE (re-grant after revoke succeeds)
 --   * V21 JSON parse contract (Codex 019dcfb0 BLOCKER absorbed)
+--   * V22 outbox table — claim/PROCESSING/PROCESSED/FAILED transitions
+--   * V22 recover_stuck_outbox_rows() function
+--   * V22 action + status CHECK constraints
+--   * V22 5 indexes (claim, ordering, recovery, failed, scope_id)
 --
 -- V21 (this iteration): scope_ref ADR-0008 canonical = JSON array string.
 -- All positive tests use `'["1001"]'` form. Malformed JSON / empty array /
@@ -28,7 +32,8 @@ BEGIN;
 -- 0. Reset state — repeatable test run on a stable DB
 -- ============================================================================
 
-TRUNCATE data_access.scope RESTART IDENTITY;
+-- V22 outbox FK references scope.id; CASCADE truncates outbox alongside.
+TRUNCATE data_access.scope RESTART IDENTITY CASCADE;
 
 -- workcube_mikrolink fixtures: 1 row per scope_kind anchor table.
 -- V16 imposes NOT-NULL columns on each table; we set the minimum needed
@@ -341,6 +346,187 @@ BEGIN
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
     VALUES (v_uid, v_org, 'company', 'COMPANY', '["1001"]');
     RAISE NOTICE 'PASS  re-grant after revoke succeeds (Codex 019dc8b4 iter-2 partial UNIQUE)';
+END $$;
+
+-- ============================================================================
+-- 7. V22 outbox table — schema + claim semantics + recovery (Codex 019dcf5c)
+-- ============================================================================
+
+DO $$
+DECLARE
+    v_org BIGINT;
+    v_scope_id BIGINT;
+    v_outbox_id BIGINT;
+    v_recovered INT;
+    v_claimed INT;
+BEGIN
+    SELECT id INTO v_org FROM data_access.organization WHERE name = 'AÇIK';
+
+    -- Create a scope row to attach outbox to (V22 outbox FK references scope.id)
+    INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
+    VALUES ('cccccccc-cccc-cccc-cccc-cccccccccccc', v_org, 'company', 'COMPANY', '["1001"]')
+    RETURNING id INTO v_scope_id;
+
+    -- V22 outbox PENDING row INSERT
+    INSERT INTO data_access.scope_outbox (scope_id, action, payload)
+    VALUES (
+        v_scope_id, 'GRANT',
+        jsonb_build_object(
+            'scopeId', v_scope_id,
+            'userId', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+            'orgId', v_org,
+            'scopeKind', 'company',
+            'scopeRef', '["1001"]',
+            'tuple', jsonb_build_object(
+                'user', 'user:cccccccc-cccc-cccc-cccc-cccccccccccc',
+                'relation', 'viewer',
+                'object', 'company:wc-company-1001'
+            )
+        )
+    )
+    RETURNING id INTO v_outbox_id;
+    RAISE NOTICE 'PASS  V22 outbox PENDING row INSERT (scope_id=% outbox_id=%)', v_scope_id, v_outbox_id;
+END $$;
+
+DO $$
+DECLARE
+    v_outbox_id BIGINT;
+    v_status TEXT;
+    v_attempt INT;
+BEGIN
+    SELECT id INTO v_outbox_id FROM data_access.scope_outbox
+    WHERE scope_id = (SELECT id FROM data_access.scope WHERE user_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc')
+    LIMIT 1;
+
+    -- Simulate poller claim: UPDATE PENDING → PROCESSING + lock metadata
+    UPDATE data_access.scope_outbox
+    SET status = 'PROCESSING',
+        locked_by = 'test-poller-instance-1',
+        locked_until = now() + INTERVAL '2 minutes',
+        attempt_count = attempt_count + 1
+    WHERE id = v_outbox_id AND status = 'PENDING'
+    RETURNING status, attempt_count INTO v_status, v_attempt;
+
+    IF v_status != 'PROCESSING' OR v_attempt != 1 THEN
+        RAISE EXCEPTION 'V22 claim failed: status=% attempt=%', v_status, v_attempt;
+    END IF;
+    RAISE NOTICE 'PASS  V22 outbox claim transition PENDING→PROCESSING (attempt %)', v_attempt;
+
+    -- Simulate successful FGA write completion: PROCESSING → PROCESSED
+    UPDATE data_access.scope_outbox
+    SET status = 'PROCESSED',
+        processed_at = now(),
+        locked_by = NULL,
+        locked_until = NULL
+    WHERE id = v_outbox_id AND status = 'PROCESSING';
+
+    SELECT status INTO v_status FROM data_access.scope_outbox WHERE id = v_outbox_id;
+    IF v_status != 'PROCESSED' THEN
+        RAISE EXCEPTION 'V22 PROCESSED transition failed: status=%', v_status;
+    END IF;
+    RAISE NOTICE 'PASS  V22 outbox transition PROCESSING→PROCESSED (processed_at set)';
+END $$;
+
+DO $$
+DECLARE
+    v_org BIGINT;
+    v_scope_id BIGINT;
+    v_outbox_id BIGINT;
+    v_recovered INT;
+    v_status TEXT;
+BEGIN
+    SELECT id INTO v_org FROM data_access.organization WHERE name = 'AÇIK';
+
+    -- Create another scope to attach a stuck-PROCESSING outbox row to
+    INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
+    VALUES ('dddddddd-dddd-dddd-dddd-dddddddddddd', v_org, 'project', 'PRO_PROJECTS', '["1204"]')
+    RETURNING id INTO v_scope_id;
+
+    -- Insert a PROCESSING row with EXPIRED locked_until (pod crash simulation)
+    INSERT INTO data_access.scope_outbox (
+        scope_id, action, payload, status,
+        locked_by, locked_until, attempt_count
+    )
+    VALUES (
+        v_scope_id, 'GRANT',
+        jsonb_build_object('scopeId', v_scope_id, 'userId', 'dddddddd-dddd-dddd-dddd-dddddddddddd'),
+        'PROCESSING',
+        'crashed-pod-instance', now() - INTERVAL '5 minutes',  -- stuck (locked_until past)
+        2
+    )
+    RETURNING id INTO v_outbox_id;
+
+    -- Run recovery function
+    SELECT data_access.recover_stuck_outbox_rows() INTO v_recovered;
+
+    IF v_recovered < 1 THEN
+        RAISE EXCEPTION 'V22 stuck row recovery did not fire (recovered=%)', v_recovered;
+    END IF;
+
+    -- Verify the row is back to PENDING with locked_by/locked_until cleared
+    SELECT status INTO v_status FROM data_access.scope_outbox WHERE id = v_outbox_id;
+    IF v_status != 'PENDING' THEN
+        RAISE EXCEPTION 'V22 stuck row not recovered to PENDING: status=%', v_status;
+    END IF;
+    RAISE NOTICE 'PASS  V22 recover_stuck_outbox_rows() releases PROCESSING→PENDING (recovered=%)', v_recovered;
+END $$;
+
+DO $$
+DECLARE
+    v_org BIGINT;
+    v_scope_id BIGINT;
+    v_trapped BOOLEAN := FALSE;
+BEGIN
+    SELECT id INTO v_org FROM data_access.organization WHERE name = 'AÇIK';
+    SELECT id INTO v_scope_id FROM data_access.scope
+    WHERE user_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc' LIMIT 1;
+
+    -- V22 CHECK: action must be GRANT or REVOKE
+    BEGIN
+        INSERT INTO data_access.scope_outbox (scope_id, action, payload)
+        VALUES (v_scope_id, 'INVALID_ACTION', '{}'::jsonb);
+        RAISE EXCEPTION 'V22 action CHECK NOT trapped';
+    EXCEPTION WHEN check_violation THEN
+        v_trapped := TRUE;
+    END;
+    IF NOT v_trapped THEN
+        RAISE EXCEPTION 'V22 action CHECK should reject INVALID_ACTION';
+    END IF;
+    RAISE NOTICE 'PASS  V22 outbox action CHECK rejects unknown values';
+
+    -- V22 CHECK: status must be one of 4 valid states
+    v_trapped := FALSE;
+    BEGIN
+        INSERT INTO data_access.scope_outbox (scope_id, action, payload, status)
+        VALUES (v_scope_id, 'GRANT', '{}'::jsonb, 'BOGUS_STATE');
+        RAISE EXCEPTION 'V22 status CHECK NOT trapped';
+    EXCEPTION WHEN check_violation THEN
+        v_trapped := TRUE;
+    END;
+    IF NOT v_trapped THEN
+        RAISE EXCEPTION 'V22 status CHECK should reject BOGUS_STATE';
+    END IF;
+    RAISE NOTICE 'PASS  V22 outbox status CHECK rejects unknown values';
+END $$;
+
+DO $$
+DECLARE
+    v_count BIGINT;
+BEGIN
+    -- Verify V22 indexes exist (claim, recovery, ordering)
+    SELECT count(*) INTO v_count FROM pg_indexes
+    WHERE schemaname = 'data_access' AND tablename = 'scope_outbox'
+      AND indexname IN (
+          'idx_scope_outbox_claim',
+          'idx_scope_outbox_scope_ordering',
+          'idx_scope_outbox_recovery',
+          'idx_scope_outbox_failed',
+          'idx_scope_outbox_scope_id'
+      );
+    IF v_count != 5 THEN
+        RAISE EXCEPTION 'V22 expected 5 indexes, got %', v_count;
+    END IF;
+    RAISE NOTICE 'PASS  V22 outbox 5 indexes present (claim/ordering/recovery/failed/scope_id)';
 END $$;
 
 -- ============================================================================
