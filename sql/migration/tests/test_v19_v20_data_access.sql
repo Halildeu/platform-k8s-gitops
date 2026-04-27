@@ -367,8 +367,11 @@ BEGIN
     VALUES ('cccccccc-cccc-cccc-cccc-cccccccccccc', v_org, 'company', 'COMPANY', '["1001"]')
     RETURNING id INTO v_scope_id;
 
-    -- V22 outbox PENDING row INSERT
-    INSERT INTO data_access.scope_outbox (scope_id, action, payload)
+    -- V22 outbox PENDING row INSERT (V23: tuple_* columns NOT NULL)
+    INSERT INTO data_access.scope_outbox (
+        scope_id, action, payload,
+        tuple_user, tuple_relation, tuple_object
+    )
     VALUES (
         v_scope_id, 'GRANT',
         jsonb_build_object(
@@ -382,7 +385,10 @@ BEGIN
                 'relation', 'viewer',
                 'object', 'company:wc-company-1001'
             )
-        )
+        ),
+        'user:cccccccc-cccc-cccc-cccc-cccccccccccc',
+        'viewer',
+        'company:wc-company-1001'
     )
     RETURNING id INTO v_outbox_id;
     RAISE NOTICE 'PASS  V22 outbox PENDING row INSERT (scope_id=% outbox_id=%)', v_scope_id, v_outbox_id;
@@ -445,12 +451,14 @@ BEGIN
     -- Insert a PROCESSING row with EXPIRED locked_until (pod crash simulation)
     INSERT INTO data_access.scope_outbox (
         scope_id, action, payload, status,
+        tuple_user, tuple_relation, tuple_object,
         locked_by, locked_until, attempt_count
     )
     VALUES (
         v_scope_id, 'GRANT',
         jsonb_build_object('scopeId', v_scope_id, 'userId', 'dddddddd-dddd-dddd-dddd-dddddddddddd'),
         'PROCESSING',
+        'user:dddddddd-dddd-dddd-dddd-dddddddddddd', 'viewer', 'project:wc-project-1204',
         'crashed-pod-instance', now() - INTERVAL '5 minutes',  -- stuck (locked_until past)
         2
     )
@@ -481,10 +489,16 @@ BEGIN
     SELECT id INTO v_scope_id FROM data_access.scope
     WHERE user_id = 'cccccccc-cccc-cccc-cccc-cccccccccccc' LIMIT 1;
 
-    -- V22 CHECK: action must be GRANT or REVOKE
+    -- V22 CHECK: action must be GRANT or REVOKE (V23: tuple_* required)
     BEGIN
-        INSERT INTO data_access.scope_outbox (scope_id, action, payload)
-        VALUES (v_scope_id, 'INVALID_ACTION', '{}'::jsonb);
+        INSERT INTO data_access.scope_outbox (
+            scope_id, action, payload,
+            tuple_user, tuple_relation, tuple_object
+        )
+        VALUES (
+            v_scope_id, 'INVALID_ACTION', '{}'::jsonb,
+            'user:test', 'viewer', 'company:test'
+        );
         RAISE EXCEPTION 'V22 action CHECK NOT trapped';
     EXCEPTION WHEN check_violation THEN
         v_trapped := TRUE;
@@ -494,11 +508,17 @@ BEGIN
     END IF;
     RAISE NOTICE 'PASS  V22 outbox action CHECK rejects unknown values';
 
-    -- V22 CHECK: status must be one of 4 valid states
+    -- V22 CHECK: status must be one of 4 valid states (V23: tuple_* required)
     v_trapped := FALSE;
     BEGIN
-        INSERT INTO data_access.scope_outbox (scope_id, action, payload, status)
-        VALUES (v_scope_id, 'GRANT', '{}'::jsonb, 'BOGUS_STATE');
+        INSERT INTO data_access.scope_outbox (
+            scope_id, action, payload, status,
+            tuple_user, tuple_relation, tuple_object
+        )
+        VALUES (
+            v_scope_id, 'GRANT', '{}'::jsonb, 'BOGUS_STATE',
+            'user:test', 'viewer', 'company:test'
+        );
         RAISE EXCEPTION 'V22 status CHECK NOT trapped';
     EXCEPTION WHEN check_violation THEN
         v_trapped := TRUE;
@@ -513,20 +533,171 @@ DO $$
 DECLARE
     v_count BIGINT;
 BEGIN
-    -- Verify V22 indexes exist (claim, recovery, ordering)
+    -- Verify V22 indexes exist (claim, recovery, failed, scope_id)
+    -- NOTE: V23 dropped idx_scope_outbox_scope_ordering (Codex 019dd0e0 BLOCKER 2 fix);
+    -- replaced by idx_scope_outbox_tuple_ordering. Verified separately below.
     SELECT count(*) INTO v_count FROM pg_indexes
     WHERE schemaname = 'data_access' AND tablename = 'scope_outbox'
       AND indexname IN (
           'idx_scope_outbox_claim',
-          'idx_scope_outbox_scope_ordering',
           'idx_scope_outbox_recovery',
           'idx_scope_outbox_failed',
           'idx_scope_outbox_scope_id'
       );
-    IF v_count != 5 THEN
-        RAISE EXCEPTION 'V22 expected 5 indexes, got %', v_count;
+    IF v_count != 4 THEN
+        RAISE EXCEPTION 'V22 (post-V23) expected 4 indexes, got %', v_count;
     END IF;
-    RAISE NOTICE 'PASS  V22 outbox 5 indexes present (claim/ordering/recovery/failed/scope_id)';
+    RAISE NOTICE 'PASS  V22 outbox 4 indexes present (claim/recovery/failed/scope_id; ordering moved to V23)';
+END $$;
+
+-- ============================================================================
+-- 8. V23 outbox tuple typed columns + tuple-key ordering (Codex 019dd0e0 BLOCKER 2)
+-- ============================================================================
+
+DO $$
+DECLARE
+    v_count BIGINT;
+BEGIN
+    -- V23: tuple_user, tuple_relation, tuple_object NOT NULL columns added
+    SELECT count(*) INTO v_count FROM information_schema.columns
+    WHERE table_schema = 'data_access' AND table_name = 'scope_outbox'
+      AND column_name IN ('tuple_user', 'tuple_relation', 'tuple_object')
+      AND is_nullable = 'NO';
+    IF v_count != 3 THEN
+        RAISE EXCEPTION 'V23 expected 3 NOT NULL tuple columns, got %', v_count;
+    END IF;
+    RAISE NOTICE 'PASS  V23 outbox tuple_user/tuple_relation/tuple_object NOT NULL';
+END $$;
+
+DO $$
+DECLARE
+    v_count BIGINT;
+BEGIN
+    -- V23: idx_scope_outbox_tuple_ordering exists
+    SELECT count(*) INTO v_count FROM pg_indexes
+    WHERE schemaname = 'data_access'
+      AND indexname = 'idx_scope_outbox_tuple_ordering';
+    IF v_count != 1 THEN
+        RAISE EXCEPTION 'V23 expected idx_scope_outbox_tuple_ordering, got %', v_count;
+    END IF;
+    -- And the V22 scope_id-based ordering index is dropped
+    SELECT count(*) INTO v_count FROM pg_indexes
+    WHERE schemaname = 'data_access'
+      AND indexname = 'idx_scope_outbox_scope_ordering';
+    IF v_count != 0 THEN
+        RAISE EXCEPTION 'V23 should have dropped idx_scope_outbox_scope_ordering, but found %', v_count;
+    END IF;
+    RAISE NOTICE 'PASS  V23 idx_scope_outbox_tuple_ordering replaces V22 scope_id-based index';
+END $$;
+
+DO $$
+DECLARE
+    v_org BIGINT;
+    v_scope_id_a BIGINT;
+    v_scope_id_b BIGINT;
+    v_outbox_a BIGINT;  -- GRANT scope_id_a (older)
+    v_outbox_b BIGINT;  -- REVOKE scope_id_a
+    v_outbox_c BIGINT;  -- GRANT scope_id_b (re-grant, same tuple)
+    v_count BIGINT;
+BEGIN
+    SELECT id INTO v_org FROM data_access.organization WHERE name = 'AÇIK';
+
+    -- V23 BLOCKER 2 SCENARIO: revoke+re-grant same tuple key (different scope.id)
+
+    -- 1. First grant: scope_id=A, outbox GRANT
+    INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
+    VALUES ('11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_org, 'company', 'COMPANY', '["1001"]')
+    RETURNING id INTO v_scope_id_a;
+
+    INSERT INTO data_access.scope_outbox (
+        scope_id, action, payload, tuple_user, tuple_relation, tuple_object
+    )
+    VALUES (
+        v_scope_id_a, 'GRANT',
+        jsonb_build_object('scopeId', v_scope_id_a),
+        'user:11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'viewer', 'company:wc-company-1001'
+    )
+    RETURNING id INTO v_outbox_a;
+
+    -- Simulate scope_id=A processed (PROCESSED)
+    UPDATE data_access.scope_outbox SET status = 'PROCESSED', processed_at = now() WHERE id = v_outbox_a;
+
+    -- 2. Revoke scope_id=A: outbox REVOKE same tuple
+    UPDATE data_access.scope SET revoked_at = now() WHERE id = v_scope_id_a;
+    INSERT INTO data_access.scope_outbox (
+        scope_id, action, payload, tuple_user, tuple_relation, tuple_object
+    )
+    VALUES (
+        v_scope_id_a, 'REVOKE',
+        jsonb_build_object('scopeId', v_scope_id_a),
+        'user:11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'viewer', 'company:wc-company-1001'
+    )
+    RETURNING id INTO v_outbox_b;
+
+    -- 3. Re-grant: NEW scope_id=B (V19 partial UNIQUE allows post-revoke)
+    INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
+    VALUES ('11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_org, 'company', 'COMPANY', '["1001"]')
+    RETURNING id INTO v_scope_id_b;
+
+    INSERT INTO data_access.scope_outbox (
+        scope_id, action, payload, tuple_user, tuple_relation, tuple_object
+    )
+    VALUES (
+        v_scope_id_b, 'GRANT',
+        jsonb_build_object('scopeId', v_scope_id_b),
+        'user:11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'viewer', 'company:wc-company-1001'
+    )
+    RETURNING id INTO v_outbox_c;
+
+    -- 4. CRITICAL TEST: simulate poller's claim NOT EXISTS guard.
+    --    Outbox state: B (PROCESSED), A (PENDING REVOKE), C (PENDING GRANT same tuple)
+    --    Claim eligibility for outbox C: NOT EXISTS older same-tuple PENDING/PROCESSING?
+    --    Older same-tuple: outbox B (id < C.id, status PENDING) → MATCHES → NOT EXISTS = false
+    --    → outbox C should NOT be claim-eligible until B processed.
+
+    SELECT count(*) INTO v_count
+    FROM data_access.scope_outbox outer_row
+    WHERE outer_row.id = v_outbox_c
+      AND outer_row.status = 'PENDING'
+      AND NOT EXISTS (
+          SELECT 1 FROM data_access.scope_outbox older
+          WHERE older.tuple_user = outer_row.tuple_user
+            AND older.tuple_relation = outer_row.tuple_relation
+            AND older.tuple_object = outer_row.tuple_object
+            AND older.id < outer_row.id
+            AND older.status IN ('PENDING', 'PROCESSING')
+      );
+
+    IF v_count != 0 THEN
+        RAISE EXCEPTION 'V23 ordering FAIL: outbox_c claim-eligible while older REVOKE outbox_b PENDING (count=%)', v_count;
+    END IF;
+    RAISE NOTICE 'PASS  V23 ordering guard blocks GRANT(scope_id=B) while REVOKE(scope_id=A) same-tuple PENDING';
+
+    -- 5. Now process REVOKE outbox_b (simulate)
+    UPDATE data_access.scope_outbox SET status = 'PROCESSED', processed_at = now() WHERE id = v_outbox_b;
+
+    -- 6. Verify outbox_c is NOW claim-eligible (no older PENDING/PROCESSING for same tuple)
+    SELECT count(*) INTO v_count
+    FROM data_access.scope_outbox outer_row
+    WHERE outer_row.id = v_outbox_c
+      AND outer_row.status = 'PENDING'
+      AND NOT EXISTS (
+          SELECT 1 FROM data_access.scope_outbox older
+          WHERE older.tuple_user = outer_row.tuple_user
+            AND older.tuple_relation = outer_row.tuple_relation
+            AND older.tuple_object = outer_row.tuple_object
+            AND older.id < outer_row.id
+            AND older.status IN ('PENDING', 'PROCESSING')
+      );
+
+    IF v_count != 1 THEN
+        RAISE EXCEPTION 'V23 ordering FAIL: outbox_c not claim-eligible after REVOKE processed (count=%)', v_count;
+    END IF;
+    RAISE NOTICE 'PASS  V23 GRANT(scope_id=B) claim-eligible after REVOKE(scope_id=A) processed';
+
+    -- Cleanup
+    DELETE FROM data_access.scope_outbox WHERE id IN (v_outbox_a, v_outbox_b, v_outbox_c);
+    DELETE FROM data_access.scope WHERE id IN (v_scope_id_a, v_scope_id_b);
 END $$;
 
 -- ============================================================================
