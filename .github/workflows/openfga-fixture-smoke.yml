@@ -36,7 +36,7 @@ permissions:
 
 jobs:
   fixture-smoke:
-    name: dev-seed.sh + 8 smoke checks
+    name: dev-seed.sh + fixture smoke checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
