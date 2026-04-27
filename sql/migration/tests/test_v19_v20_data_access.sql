@@ -1,9 +1,14 @@
--- Faz 21.A test suite — exercises V19 + V20 contracts end-to-end:
+-- Faz 21.A test suite — exercises V19 + V20 + V21 contracts end-to-end:
 --   * AÇIK org seed exists
 --   * scope_kind ↔ source_table CHECK (V19+V20)
---   * validate_scope_ref() lineage existence guard (V19, depot branch in V20)
+--   * validate_scope_ref() lineage existence guard (V19 raw → V21 JSON, depot V20)
 --   * scope_validate_before_write trigger (INSERT + UPDATE coverage per V19 iter-2)
 --   * uq_scope_active_assignment partial UNIQUE (re-grant after revoke succeeds)
+--   * V21 JSON parse contract (Codex 019dcfb0 BLOCKER absorbed)
+--
+-- V21 (this iteration): scope_ref ADR-0008 canonical = JSON array string.
+-- All positive tests use `'["1001"]'` form. Malformed JSON / empty array /
+-- non-scalar first element → trigger returns FALSE → P0001 raised.
 --
 -- ⚠ DESTRUCTIVE on shared/staged databases. This file calls TRUNCATE on
 --   data_access.scope and on the four workcube_mikrolink anchor tables
@@ -84,19 +89,20 @@ DECLARE
 BEGIN
     SELECT id INTO v_org FROM data_access.organization WHERE name = 'AÇIK';
 
+    -- V21 canonical: scope_ref = JSON array string per ADR-0008 § Object id encoding
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-    VALUES ('11111111-1111-1111-1111-111111111111', v_org, 'company', 'COMPANY', '1001');
+    VALUES ('11111111-1111-1111-1111-111111111111', v_org, 'company', 'COMPANY', '["1001"]');
 
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-    VALUES ('22222222-2222-2222-2222-222222222222', v_org, 'project', 'PRO_PROJECTS', '1204');
+    VALUES ('22222222-2222-2222-2222-222222222222', v_org, 'project', 'PRO_PROJECTS', '["1204"]');
 
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-    VALUES ('33333333-3333-3333-3333-333333333333', v_org, 'branch', 'BRANCH', '7');
+    VALUES ('33333333-3333-3333-3333-333333333333', v_org, 'branch', 'BRANCH', '["7"]');
 
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-    VALUES ('44444444-4444-4444-4444-444444444444', v_org, 'depot', 'DEPARTMENT', '3792');
+    VALUES ('44444444-4444-4444-4444-444444444444', v_org, 'depot', 'DEPARTMENT', '["3792"]');
 
-    RAISE NOTICE 'PASS  4 positive INSERTs (one per scope_kind)';
+    RAISE NOTICE 'PASS  4 positive INSERTs (one per scope_kind, JSON array form)';
 END $$;
 
 -- ============================================================================
@@ -193,29 +199,66 @@ BEGIN
     -- company/COMPANY but scope_ref does not exist in workcube_mikrolink.company.
     BEGIN
         INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-        VALUES ('88888888-8888-8888-8888-888888888888', v_org, 'company', 'COMPANY', '999999');
-        RAISE EXCEPTION 'expected trigger to reject scope_ref=999999, but INSERT succeeded';
+        VALUES ('88888888-8888-8888-8888-888888888888', v_org, 'company', 'COMPANY', '["999999"]');
+        RAISE EXCEPTION 'expected trigger to reject scope_ref=["999999"], but INSERT succeeded';
     EXCEPTION WHEN raise_exception THEN
         v_trapped := TRUE;
     END;
     IF NOT v_trapped THEN
         RAISE EXCEPTION 'trigger validate_scope_ref NOT fired';
     END IF;
-    RAISE NOTICE 'PASS  trigger rejects company/COMPANY/999999 (no lineage)';
+    RAISE NOTICE 'PASS  trigger rejects company/COMPANY/["999999"] (no lineage, JSON form)';
 
     -- depot/DEPARTMENT/missing source_pk — V20 branch.
     v_trapped := FALSE;
     BEGIN
         INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-        VALUES ('99999999-9999-9999-9999-999999999999', v_org, 'depot', 'DEPARTMENT', '999999');
-        RAISE EXCEPTION 'expected trigger to reject depot scope_ref=999999, but INSERT succeeded';
+        VALUES ('99999999-9999-9999-9999-999999999999', v_org, 'depot', 'DEPARTMENT', '["999999"]');
+        RAISE EXCEPTION 'expected trigger to reject depot scope_ref=["999999"], but INSERT succeeded';
     EXCEPTION WHEN raise_exception THEN
         v_trapped := TRUE;
     END;
     IF NOT v_trapped THEN
         RAISE EXCEPTION 'V20 depot branch trigger NOT fired';
     END IF;
-    RAISE NOTICE 'PASS  V20 trigger rejects depot/DEPARTMENT/999999 (no lineage)';
+    RAISE NOTICE 'PASS  V20 trigger rejects depot/DEPARTMENT/["999999"] (no lineage, JSON form)';
+
+    -- V21: malformed JSON — scope_ref invalid JSON cast → trigger returns FALSE
+    v_trapped := FALSE;
+    BEGIN
+        INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
+        VALUES ('aabbccdd-aabb-ccdd-eeff-aabbccddeeff', v_org, 'company', 'COMPANY', 'not-json{');
+        RAISE EXCEPTION 'expected V21 trigger to reject malformed JSON';
+    EXCEPTION WHEN raise_exception THEN
+        v_trapped := TRUE;
+    END;
+    IF NOT v_trapped THEN
+        RAISE EXCEPTION 'V21 trigger malformed JSON NOT trapped';
+    END IF;
+    RAISE NOTICE 'PASS  V21 trigger rejects malformed JSON scope_ref (parse fail-closed)';
+
+    -- V21: empty array — scope_ref ->>0 returns NULL → trigger returns FALSE
+    v_trapped := FALSE;
+    BEGIN
+        INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
+        VALUES ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', v_org, 'company', 'COMPANY', '[]');
+        RAISE EXCEPTION 'expected V21 trigger to reject empty array';
+    EXCEPTION WHEN raise_exception THEN
+        v_trapped := TRUE;
+    END;
+    IF NOT v_trapped THEN
+        RAISE EXCEPTION 'V21 trigger empty array NOT trapped';
+    END IF;
+    RAISE NOTICE 'PASS  V21 trigger rejects empty array scope_ref (NULL first element)';
+
+    -- V21: numeric scalar (encoder also accepts) — `[1001]` → ->>0 returns "1001" text
+    -- This is a positive case validating numeric scalar parity with string scalar.
+    INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
+    VALUES ('ddffeeaa-ddff-eeaa-ddff-eeaaddffeeaa', v_org, 'company', 'COMPANY', '[1001]');
+    RAISE NOTICE 'PASS  V21 trigger accepts numeric scalar [1001] (parity with ["1001"])';
+
+    -- Cleanup the V21 numeric-scalar row (so subsequent tests have clean state)
+    DELETE FROM data_access.scope WHERE user_id = 'ddffeeaa-ddff-eeaa-ddff-eeaaddffeeaa';
 END $$;
 
 -- ============================================================================
@@ -232,16 +275,17 @@ BEGIN
 
     -- Smuggle an invalid scope_ref in as REVOKED (trigger does NOT fire when
     -- revoked_at IS NOT NULL).  The row exists but is inactive.
+    -- V21: JSON form scope_ref but pointing to non-existent source_pk.
     INSERT INTO data_access.scope (
         user_id, org_id, scope_kind, scope_source_table, scope_ref,
         granted_at, revoked_at
     )
     VALUES (
-        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_org, 'company', 'COMPANY', '999999',
+        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_org, 'company', 'COMPANY', '["999999"]',
         now() - INTERVAL '1 hour', now() - INTERVAL '30 minutes'
     )
     RETURNING id INTO v_id;
-    RAISE NOTICE '      seeded smuggled-revoked row id=% (scope_ref=999999)', v_id;
+    RAISE NOTICE '      seeded smuggled-revoked row id=% (scope_ref=["999999"])', v_id;
 
     -- Now activate the row by clearing revoked_at — trigger MUST fire and reject.
     BEGIN
@@ -272,15 +316,15 @@ DECLARE
 BEGIN
     SELECT id INTO v_org FROM data_access.organization WHERE name = 'AÇIK';
 
-    -- Initial grant.
+    -- Initial grant. V21: JSON form scope_ref.
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-    VALUES (v_uid, v_org, 'company', 'COMPANY', '1001')
+    VALUES (v_uid, v_org, 'company', 'COMPANY', '["1001"]')
     RETURNING id INTO v_id;
 
     -- Same triple again while still ACTIVE — must FAIL via uq_scope_active_assignment.
     BEGIN
         INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-        VALUES (v_uid, v_org, 'company', 'COMPANY', '1001');
+        VALUES (v_uid, v_org, 'company', 'COMPANY', '["1001"]');
         RAISE EXCEPTION 'expected uq_scope_active_assignment to block duplicate active row';
     EXCEPTION WHEN unique_violation THEN
         v_trapped := TRUE;
@@ -293,9 +337,9 @@ BEGIN
     -- Revoke the first.
     UPDATE data_access.scope SET revoked_at = now() WHERE id = v_id;
 
-    -- Re-grant the same (user, org, kind, ref) — must SUCCEED.
+    -- Re-grant the same (user, org, kind, ref) — must SUCCEED. V21: JSON form.
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-    VALUES (v_uid, v_org, 'company', 'COMPANY', '1001');
+    VALUES (v_uid, v_org, 'company', 'COMPANY', '["1001"]');
     RAISE NOTICE 'PASS  re-grant after revoke succeeds (Codex 019dc8b4 iter-2 partial UNIQUE)';
 END $$;
 

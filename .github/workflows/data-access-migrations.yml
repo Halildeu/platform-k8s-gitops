@@ -22,6 +22,7 @@ on:
       - "sql/migration/V17__*.sql"
       - "sql/migration/V19__*.sql"
       - "sql/migration/V20__*.sql"
+      - "sql/migration/V21__*.sql"
       - "sql/migration/tests/**"
       - ".github/workflows/data-access-migrations.yml"
   push:
@@ -31,6 +32,7 @@ on:
       - "sql/migration/V17__*.sql"
       - "sql/migration/V19__*.sql"
       - "sql/migration/V20__*.sql"
+      - "sql/migration/V21__*.sql"
       - "sql/migration/tests/**"
   workflow_dispatch: {}
 
@@ -76,7 +78,8 @@ jobs:
             sql/migration/V16__reports.sql \
             sql/migration/V17__etl_lineage_columns.sql \
             sql/migration/V19__data_access.sql \
-            sql/migration/V20__data_access_depot_alter.sql; do
+            sql/migration/V20__data_access_depot_alter.sql \
+            sql/migration/V21__validate_scope_ref_json_parse.sql; do
             echo "::group::apply $f"
             psql -v ON_ERROR_STOP=1 -f "$f" > /tmp/migrate-$(basename "$f").log 2>&1 \
               || { echo "::error::failed: $f"; tail -50 /tmp/migrate-$(basename "$f").log; exit 1; }
@@ -130,8 +133,8 @@ jobs:
           # any assertion block is added/removed in the future, both this
           # count and the count claimed in the test file's summary block
           # need to move together.
-          if (( PASSES < 10 )); then
-            echo "::error::expected ≥10 PASS assertions; got ${PASSES}"
+          if (( PASSES < 13 )); then
+            echo "::error::expected ≥13 PASS assertions (V21 added 3); got ${PASSES}"
             exit 1
           fi
           if ! grep -q "ALL ASSERTIONS PASSED" /tmp/test-out.log; then
