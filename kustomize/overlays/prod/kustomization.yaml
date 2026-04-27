@@ -52,9 +52,11 @@ images:
     # (PR-C primitives layered + AccessScopeService + Controller + 23 new tests).
     digest: sha256:b75f23b18c5f9bc0b61d625e8cc92b5f56bf7c137a2d446c39d9071c136ed95c
   # Frontend prod variant (ai.acik.com + serban realm)
+  # Faz 21.3 PR-E merge (sha-57dc28e): mfe-access Veri Erişimi panel
+  # (5 tab + ScopeAssignModal + 4-locale i18n + nested Routes + 28 tests).
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
-    digest: sha256:33fb68110bc293f381de80a48523a6ad86f09d511b52e3b669339290a1e73f79
+    digest: sha256:d6baaf5838b9736527fc3483a380461ed576ed524e6944a120ab64f21772af45
 
 patches:
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz replace

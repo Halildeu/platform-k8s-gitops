@@ -63,9 +63,11 @@ images:
     # (PR-C primitives layered + AccessScopeService + Controller + 23 new tests).
     digest: sha256:b75f23b18c5f9bc0b61d625e8cc92b5f56bf7c137a2d446c39d9071c136ed95c
   # Frontend testai variant (testai.acik.com + platform-test realm)
+  # Faz 21.3 PR-E merge (sha-57dc28e): mfe-access Veri Erişimi panel
+  # (5 tab + ScopeAssignModal + 4-locale i18n + nested Routes + 28 tests).
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend-testai
-    digest: sha256:6229560c65bf0c0595af21958d7373f5fcd44c504867fbaedeb49e99523c5a70
+    digest: sha256:68f7167863632f17fa9190b7abe8482afe2c63914a8dcdb327a23c6e69c352eb
 
 patches:
   # Replica 0 default (scale-to-zero)
