@@ -48,22 +48,19 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # ADR-0012 RequireModuleInterceptor relation alias + numeric userId fix
-    # (sha-12480ef, platform-backend PR #18). Closes the granular UI action
-    # 403 gap discovered during D35-3 first canlı UI persona evidence run
-    # (platform-k8s-gitops PR #240/#241 amend):
-    #   - RELATION_ALIASES map: viewer→can_view, manager→can_manage, admin→
-    #     can_manage, editor→can_edit (legacy alias compat layer).
-    #   - extractUserId() now uses AuthenticatedUserLookupService.resolve(jwt)
-    #     so OpenFGA tuples seeded with numeric IDs match the interceptor's
-    #     user identifier (previously used UUID — 93.66% canary mismatch).
-    #   - 20 @RequireModule annotations migrated to canonical can_view/
-    #     can_manage form.
+    # Architectural unification + DD-5 governance (sha-b9ddc86, platform-backend
+    # PR #19 DD-5 + PR #20 superAdmin bypass). D35-3 FULL PASS programmatic
+    # chain (k8s-gitops PR #245) sırasında tespit edilen iki authz path
+    # tutarsızlığını eşitler:
+    #   - PR #20 superAdmin bypass: RequireModuleInterceptor.preHandle()
+    #     artık önce `organization:default#admin` check eder; org-admin ise
+    #     modül guard'larını skip eder. /v1/authz/me ile aynı pattern.
+    #   - PR #19 DD-5: annotation ↔ OpenFGA model relation drift CI guard.
     # Prod cluster D17 scale-to-zero unchanged — operator rolls out only
     # when D30 atomic cutover lands (Codex thread 019dd409 boundary).
-    # Includes everything from sha-943bd5f (V25/V26 alignment, PR-G outbox
-    # poller, PR-F Testcontainers, PR-D REST endpoints).
-    digest: sha256:43835e5167ba411ef3dd35aedb5c30399914b2009235dc17ceb7c14fb45f63ca
+    # Includes everything from sha-12480ef (RequireModuleInterceptor relation
+    # alias + numeric userId fix) and sha-943bd5f (V25/V26 alignment).
+    digest: sha256:f62c02f74e03d36a7b87f8a2112a1b518ad699aebec7ed8d84f2ae2f538ec1c3
   # Frontend prod variant (ai.acik.com + serban realm)
   # Faz 21.3 PR-E merge (sha-57dc28e): mfe-access Veri Erişimi panel
   # (5 tab + ScopeAssignModal + 4-locale i18n + nested Routes + 28 tests).
