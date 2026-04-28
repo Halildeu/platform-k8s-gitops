@@ -42,9 +42,13 @@ D35-3 PASS edilince Faz 21.3 D35 ladder **tam kapanır** (D35-0 + D35-1 + D35-2-
 
 ```bash
 RUN_ID="d35-3-ui-$(date +%Y%m%d-%H%M)"
-ADMIN_PERSONA_USER="<admin Keycloak username>"
-GRANTED_PERSONA_USER="<granted Keycloak username>"
-GRANTED_PERSONA_UID="<UUID — backend logs için correlation>"
+
+# Operatör Keycloak runbook tamamlanınca aşağıdakileri kendi env'inden export eder.
+# Agent transcript'inde gerçek username/UUID görmesin — bu blok sadece şablon.
+: "${ADMIN_PERSONA_USER:?set from RB-faz-21-3-d35-3-keycloak-admin-jwt.md Step 2}"
+: "${GRANTED_PERSONA_USER:?set from RB-faz-21-3-d35-3-keycloak-admin-jwt.md Step 3}"
+: "${GRANTED_PERSONA_UID:?Keycloak admin GET /users -> .[0].id; backend log correlation için kullanılır}"
+
 ORG_NAME="AÇIK"
 TENANT_COMPANY="Mikrolink Bilişim"  # OUR_COMPANY.COMP_ID=1 ile eşleşir
 

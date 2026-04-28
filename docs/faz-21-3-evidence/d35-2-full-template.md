@@ -51,14 +51,19 @@ D35-2-limited'in **manual SQL INSERT bypass** caveat'ı kalkar; controller layer
 
 ```bash
 RUN_ID="d35-2-full-$(date +%Y%m%d-%H%M)"
-USER_UID_GRANTED="<receive-scope user UUID>"
-USER_UID_DENIED="<negative-assertion user UUID>"
+
+# Aşağıdaki env'ler operatör tarafından kendi shell session'unda export edilir
+# (RB-faz-21-3-d35-3-keycloak-admin-jwt.md Step 4 + persona create runları sonrası).
+# Agent transcript'inde gerçek değerler görünmemeli — bu blok template.
+: "${USER_UID_GRANTED:?receive-scope persona UUID; Keycloak admin GET /users}"
+: "${USER_UID_DENIED:?negative-assertion persona UUID}"
+: "${JWT_ADMIN:?Bearer token; RB-keycloak Step 4 sonrası export edilmeli}"
+
 ORG_ID=1                        # AÇIK
 SCOPE_KIND="COMPANY"             # case-insensitive at controller; ScopeKind.COMPANY enum
 SCOPE_REF='["1"]'                # V25 canonical: OUR_COMPANY.COMP_ID=1
 EXPECTED_TUPLE_OBJECT="company:wc-our-company-1"
 GRANT_USER="user:${USER_UID_GRANTED}"
-JWT_ADMIN="<from RB-faz-21-3-d35-3-keycloak-admin-jwt.md>"
 API_BASE="https://testai.acik.com"
 
 # OpenFGA store/model

@@ -55,7 +55,9 @@ KC_ADMIN_TOKEN=$(curl -sf -X POST \
 
 # Yeni admin persona create (D35-3 testleri için)
 PERSONA_USERNAME="d35-admin-persona"
-PERSONA_PASSWORD="<güçlü-şifre — Vault'a kaydet>"
+# Operatör güçlü bir şifre üretir ve Vault'a kaydeder (örn. `pwgen 24 1` veya
+# Vault transit). Bu satıra LITERAL şifre yazılmaz; env'den alınır.
+: "${PERSONA_PASSWORD:?üretip Vault'a kaydet (\`vault kv patch kv/platform/d35-3 admin_persona_password=...\`); kullanıcı/operatör adımı}"
 
 curl -sf -X POST "${KC_BASE}/admin/realms/${KC_REALM}/users" \
   -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \
@@ -92,7 +94,7 @@ vault kv patch kv/platform/d35-3 admin_persona_uid="${PERSONA_UID}" admin_person
 
 ```bash
 GRANTED_USERNAME="d35-granted-persona"
-GRANTED_PASSWORD="<güçlü-şifre>"
+: "${GRANTED_PASSWORD:?üretip Vault'a kaydet (\`vault kv patch kv/platform/d35-3 granted_persona_password=...\`); kullanıcı/operatör adımı}"
 
 curl -sf -X POST "${KC_BASE}/admin/realms/${KC_REALM}/users" \
   -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \

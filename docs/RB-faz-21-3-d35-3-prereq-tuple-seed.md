@@ -29,8 +29,9 @@ Her iki relation `type module` (`backend/openfga/model.fga`). Admin persona içi
 ### 1. Env'i set et
 
 ```bash
-ADMIN_UID="<admin persona UUID — Keycloak'tan>"
-GRANTED_UID="<granted persona UUID, opsiyonel — list endpoint test edilecekse>"
+# Operatör Vault'tan veya kendi shell env'inden export eder (Keycloak runbook Step 2 sonrası).
+: "${ADMIN_UID:?admin persona UUID, Keycloak admin GET /users -> .[0].id}"
+GRANTED_UID="${GRANTED_UID:-}"  # opsiyonel; list endpoint test edilecekse set
 
 STORE_ID=$(vault kv get -field=store_id kv/platform/openfga)
 MODEL_ID=$(vault kv get -field=model_id kv/platform/openfga)
@@ -132,7 +133,8 @@ ssh halil@staging-sw "pkill -f 'port-forward.*openfga' || true"
 Manuel adımlar tek script ile koşulabilir:
 
 ```bash
-ADMIN_UID="<uuid>" GRANTED_UID="<uuid>" \
+# Env'leri operatör shell'inden export et; agent transcript'ine UUID literal yazılmasın.
+ADMIN_UID="${ADMIN_UID}" GRANTED_UID="${GRANTED_UID:-}" \
   ./scripts/d35-3/openfga-access-tuple-seed.sh
 ```
 
