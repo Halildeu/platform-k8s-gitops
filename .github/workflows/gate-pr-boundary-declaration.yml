@@ -1,0 +1,57 @@
+# ADR-0011 BG-1 — PR boundary declaration CI gate (Codex 019dd409 PARTIAL/REVISE)
+#
+# Per-PR governance hard gate: PR description must contain the ADR-0011
+# §2.3 boundary declaration block + 6 expected classes + at least one
+# marked + user-approval evidence + label for credential-read/write/
+# state-mutation-prod/boundary-cross classes.
+#
+# Authority: Codex consensus only (read-only PR body validation).
+
+name: ADR-0011 BG-1 — PR Boundary Declaration
+
+on:
+  pull_request:
+    # `labeled`/`unlabeled` ensures the gate re-runs after operator adds
+    # `user-approval-required` label.
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+jobs:
+  boundary-declaration:
+    name: ADR-0011 BG-1 — PR boundary declaration validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate PR boundary declaration (event payload)
+        run: |
+          python3 scripts/governance/check_pr_boundary_declaration.py \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --verbose
+
+      - name: BG-1 JSON artifact
+        if: always()
+        run: |
+          python3 scripts/governance/check_pr_boundary_declaration.py \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --json > /tmp/bg-1-report.json || true
+          cat /tmp/bg-1-report.json
+
+      - name: Upload BG-1 report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bg-1-boundary-declaration-report
+          path: /tmp/bg-1-report.json
+          retention-days: 7
+
+      - name: Run unit tests
+        run: |
+          python3 -m unittest tests.governance.test_check_pr_boundary_declaration -v

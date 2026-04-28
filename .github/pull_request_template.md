@@ -52,3 +52,18 @@
 - Runbook referans: `<docs/...>`
 - Dev repo bağımlılık (platform-ssot): `<PR # veya YOK>`
 - Ops bağımlılık (Vault/sysadmin): `<varsa>`
+
+## Boundary declaration (ADR-0011 §2.3)
+
+> **ZORUNLU**: `gate-pr-boundary-declaration` CI gate (BG-1) bu blok'un eksiksiz doldurulmasını ister. En az bir madde işaretli olmalı; `none of the above` işaretli ise diğer 5 işaretsiz olmalı. credential-read/write/state-mutation (production)/boundary-cross işaretli ise PR'a `user-approval-required` label eklenmeli ve User-approval evidence link verilmelidir. Detay: `docs/RB-adr-0011-bg-1-pr-boundary-declaration.md`.
+
+This PR includes:
+
+- [ ] credential-read
+- [ ] credential-write
+- [ ] state-mutation (test cluster)
+- [ ] state-mutation (production)
+- [ ] boundary-cross
+- [ ] none of the above (Codex consensus only)
+
+User-approval evidence: `<link veya N/A — N/A sadece "none of the above" için kabul edilir>`
