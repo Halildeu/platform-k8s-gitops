@@ -67,10 +67,44 @@ that introduces drift.
 Codex consensus only — no operator approval. Read-only static analysis,
 no state mutation, no credential read.
 
+## DD-2 — ETL canonical JSON contract guard
+
+`check_drift_etl_contract.py` — ETL `make_source_pk()` canonical output ↔ DB
+side (V26 final function + V16/V17 lineage TEXT contract) symmetric guard.
+
+6 check fonksiyonu:
+
+1. **`make_source_pk_static_contract`** — AST/source body kontratı (json.dumps
+   + canonical separators + ensure_ascii=False + None preservation)
+2. **`make_source_pk_runtime_outputs`** — import + sample calls (5 sample:
+   single, composite, None, non-ASCII, COMP_ID)
+3. **`make_source_pk_unit_tests_present`** — `test_transform.py` exact
+   canonical assertions (3 cases)
+4. **`v26_accepts_etl_canonical_p_ref`** — V26 final function her branch'te
+   `alias.source_pk = p_ref` canonical + `= v_pk` raw fallback acceptance
+5. **`pg_lineage_source_pk_text_contract`** — V16/V17 anchor tables `source_pk
+   TEXT` + UNIQUE INDEX (source_schema, source_table, source_pk)
+6. **`anchor_idempotency_keys_documented`** — `tables.yaml` 5 anchor entry
+   `idempotency_key` map + `validation.fail_on_pk_mismatch` flag
+
+```bash
+python3 scripts/drift_detection/check_drift_etl_contract.py
+python3 scripts/drift_detection/check_drift_etl_contract.py --verbose --json
+
+# Negative regression tests
+python3 scripts/drift_detection/check_drift_etl_contract.py \
+  --transform-path tests/drift_detection/fixtures/transform_etl_contract_regression.py
+# → 2 checks fail (static + runtime)
+
+python3 scripts/drift_detection/check_drift_etl_contract.py \
+  --v26-path tests/drift_detection/fixtures/V26_no_canonical_p_ref_regression.sql
+# → 1 check fail (v26_accepts_etl_canonical_p_ref)
+
+python3 -m unittest tests.drift_detection.test_check_drift_etl_contract -v
+```
+
 ## Roadmap (next DD/AC/BG PRs)
 
-- **DD-2**: ETL `make_source_pk` canonical JSON contract guard
-  (`scripts/migration/etl_worker/etl_worker/transform.py` vs SQL extraction).
 - **DD-3**: quarterly cron schema-service snapshot diff vs `reports_db` actual.
 - **DD-4**: env-prefix + Python compat + Dockerfile keyring lint.
 - **AC-1**: drill evidence template + first-drill runbook.

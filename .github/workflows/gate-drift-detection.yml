@@ -1,19 +1,18 @@
-# ADR-0011 DD-1 — Plan-time Drift Detection (anchor table + V25/V26 contract guards)
+# ADR-0011 Drift Detection (umbrella workflow — DD-1 + DD-2 + future DD-N)
 #
-# Codex thread `019dd409` PARTIAL/AGREE-with-revisions: workflow + script +
-# negative test fixture tek PR'da. Failure CI red → blocks merge of any
-# data_access schema change PR (eğer branch protection ile required check
-# olarak set'lendiyse).
+# Codex `019dd409` PARTIAL/AGREE-with-revisions: tek workflow, multiple drift
+# scripts. Failure CI red → blocks merge of any data_access schema / ETL
+# contract change PR.
 #
 # Triggers:
 #   - workflow_dispatch (manuel debug + ad-hoc run)
 #   - schedule weekly Mon 03:30 UTC (regression catch on stale main)
-#   - pull_request paths filter (data_access schema, ADR-0008/0011, ETL anchor manifest)
+#   - pull_request paths filter (data_access schema, ETL contract, ADR docs)
 #
 # Authority: Codex consensus only (no operator approval — read-only static
-# analysis, no state mutation).
+# analysis, no state mutation, no credential read).
 
-name: ADR-0011 DD-1 Drift Detection (anchor + V25/V26 contract)
+name: ADR-0011 Drift Detection (anchor + ETL contract)
 
 on:
   workflow_dispatch:
@@ -29,10 +28,14 @@ on:
       - "docs/migration/workcube-schema.json"
       - "docs/adr/0008-*.md"
       - "docs/adr/0011-*.md"
+      # DD-2 ETL contract additions
+      - "scripts/migration/etl_worker/etl_worker/transform.py"
+      - "scripts/migration/etl_worker/tests/test_transform.py"
+      - "scripts/migration/etl_worker/config/tables.yaml"
 
 jobs:
   drift-detection:
-    name: ADR-0011 DD-1 — anchor table + V25/V26 contract drift check
+    name: ADR-0011 — anchor + ETL contract drift checks (DD-1 + DD-2)
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -45,24 +48,39 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Run drift detection (default = green run)
+      - name: DD-1 — anchor table + V25/V26 contract drift check
         run: |
           python3 scripts/drift_detection/check_drift_anchor_table.py --verbose
 
-      - name: Run drift detection (JSON output for CI artifact)
+      - name: DD-2 — ETL canonical JSON contract drift check
+        run: |
+          python3 scripts/drift_detection/check_drift_etl_contract.py --verbose
+
+      - name: DD-1 JSON artifact
         if: always()
         run: |
-          python3 scripts/drift_detection/check_drift_anchor_table.py --json > /tmp/drift-report.json || true
-          cat /tmp/drift-report.json
+          python3 scripts/drift_detection/check_drift_anchor_table.py --json > /tmp/drift-anchor-report.json || true
+          cat /tmp/drift-anchor-report.json
 
-      - name: Upload drift report artifact
+      - name: DD-2 JSON artifact
+        if: always()
+        run: |
+          python3 scripts/drift_detection/check_drift_etl_contract.py --json > /tmp/drift-etl-report.json || true
+          cat /tmp/drift-etl-report.json
+
+      - name: Upload drift reports artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: drift-detection-report
-          path: /tmp/drift-report.json
+          name: drift-detection-reports
+          path: |
+            /tmp/drift-anchor-report.json
+            /tmp/drift-etl-report.json
           retention-days: 7
 
-      - name: Run unit tests (positive + negative)
+      - name: Run unit tests (positive + negative for both DD-1 and DD-2)
         run: |
-          python3 -m unittest tests.drift_detection.test_check_drift_anchor_table -v
+          python3 -m unittest \
+            tests.drift_detection.test_check_drift_anchor_table \
+            tests.drift_detection.test_check_drift_etl_contract \
+            -v
