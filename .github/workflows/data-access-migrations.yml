@@ -25,6 +25,7 @@ on:
       - "sql/migration/V21__*.sql"
       - "sql/migration/V22__*.sql"
       - "sql/migration/V23__*.sql"
+      - "sql/migration/V25__*.sql"
       - "sql/migration/tests/**"
       - ".github/workflows/data-access-migrations.yml"
   push:
@@ -37,6 +38,7 @@ on:
       - "sql/migration/V21__*.sql"
       - "sql/migration/V22__*.sql"
       - "sql/migration/V23__*.sql"
+      - "sql/migration/V25__*.sql"
       - "sql/migration/tests/**"
   workflow_dispatch: {}
 
@@ -45,7 +47,7 @@ permissions:
 
 jobs:
   pg-regression:
-    name: V16 → V17 → V19 → V20 + assertion suite
+    name: V16 → V17 → V19 → V20 → V21 → V22 → V23 → V25 + assertion suite
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -69,7 +71,7 @@ jobs:
           sudo apt-get update -y -qq
           sudo apt-get install -y -qq postgresql-client
 
-      - name: Apply migrations (V16 → V17 → V19 → V20)
+      - name: Apply migrations (V16 → V17 → V19 → V20 → V21 → V22 → V23 → V25)
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -85,7 +87,8 @@ jobs:
             sql/migration/V20__data_access_depot_alter.sql \
             sql/migration/V21__validate_scope_ref_json_parse.sql \
             sql/migration/V22__data_access_scope_outbox.sql \
-            sql/migration/V23__outbox_tuple_typed_columns.sql; do
+            sql/migration/V23__outbox_tuple_typed_columns.sql \
+            sql/migration/V25__tenant_anchor_fix.sql; do
             echo "::group::apply $f"
             psql -v ON_ERROR_STOP=1 -f "$f" > /tmp/migrate-$(basename "$f").log 2>&1 \
               || { echo "::error::failed: $f"; tail -50 /tmp/migrate-$(basename "$f").log; exit 1; }

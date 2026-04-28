@@ -93,12 +93,17 @@ REVOKE CREATE ON SCHEMA data_access FROM permission_reports_writer;
 
 GRANT USAGE ON SCHEMA workcube_mikrolink TO permission_reports_writer;
 
--- 4 anchor tables matching the 4 branches in validate_scope_ref():
---   company → COMPANY → workcube_mikrolink.company
---   project → PRO_PROJECTS → workcube_mikrolink.pro_projects
---   branch  → BRANCH → workcube_mikrolink.branch
---   depot   → DEPARTMENT → workcube_mikrolink.department
-GRANT SELECT ON workcube_mikrolink.company
+-- Anchor tables matching the 4 branches in validate_scope_ref() (V25 hybrid):
+--   company → OUR_COMPANY (anchor; V25 corrected from COMPANY directory)
+--   project → PRO_PROJECTS (+ COMPANY 2-hop join for tenant predicate)
+--   branch  → BRANCH (+ COMPANY 2-hop join for tenant predicate)
+--   depot   → DEPARTMENT (+ OUR_COMPANY 1-hop join for tenant predicate)
+--
+-- COMPANY itself is also granted because:
+--   1. branch + project predicates 2-hop through it
+--   2. financial reports (downstream of permission-service authz check) read it
+GRANT SELECT ON workcube_mikrolink.our_company
+              , workcube_mikrolink.company
               , workcube_mikrolink.pro_projects
               , workcube_mikrolink.branch
               , workcube_mikrolink.department
@@ -109,8 +114,12 @@ GRANT SELECT ON workcube_mikrolink.company
 --    019dd2af recommendation)
 -- ============================================================================
 
--- validate_scope_ref(text, text, text) — INSERT trigger guard
-GRANT EXECUTE ON FUNCTION data_access.validate_scope_ref(TEXT, TEXT, TEXT)
+-- validate_scope_ref — INSERT trigger guard. V25 widened signature to 4 args
+-- (added p_org_id BIGINT). This grant covers the V25 4-arg signature; the
+-- old V19/V20/V21 3-arg signature was DROPped by V25 and is no longer
+-- present in pg_proc. If you re-apply this ops SQL on a pre-V25 database,
+-- the GRANT will fail; apply V25 first.
+GRANT EXECUTE ON FUNCTION data_access.validate_scope_ref(TEXT, TEXT, TEXT, BIGINT)
   TO permission_reports_writer;
 
 -- scope_validate_trg() — trigger function (called by trigger as caller, but

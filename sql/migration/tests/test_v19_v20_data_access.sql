@@ -35,39 +35,87 @@ BEGIN;
 -- V22 outbox FK references scope.id; CASCADE truncates outbox alongside.
 TRUNCATE data_access.scope RESTART IDENTITY CASCADE;
 
--- workcube_mikrolink fixtures: 1 row per scope_kind anchor table.
+-- workcube_mikrolink fixtures: V25 hybrid contract.
+-- Anchor: OUR_COMPANY (was COMPANY); + COMPANY/BRANCH/DEPARTMENT/PRO_PROJECTS
+-- with FK columns wired to OUR_COMPANY for tenant predicate join testing.
 -- V16 imposes NOT-NULL columns on each table; we set the minimum needed
--- to satisfy them.  We also TRUNCATE first to keep this test idempotent
--- across re-runs (ETL evidence rows would otherwise pile up).
-TRUNCATE workcube_mikrolink.company,
+-- to satisfy them. TRUNCATE first for idempotency across re-runs.
+
+-- V22 outbox FK references scope.id; CASCADE truncates outbox alongside.
+-- Already done on line 36. Add organization_company truncate (V25 default
+-- semantic).
+TRUNCATE data_access.organization_company RESTART IDENTITY;
+
+TRUNCATE workcube_mikrolink.our_company,
+         workcube_mikrolink.company,
          workcube_mikrolink.pro_projects,
          workcube_mikrolink.branch,
          workcube_mikrolink.department
-RESTART IDENTITY;
+RESTART IDENTITY CASCADE;
 
+-- OUR_COMPANY: tenant boundary anchor (V25). source_pk = lineage of COMP_ID.
+-- Two rows simulating two tenant orgs (only one belongs to AÇIK; the other
+-- exists but belongs to a different org → tenant boundary test).
+INSERT INTO workcube_mikrolink.our_company (
+    source_pk, source_schema, source_table, content_hash,
+    comp_id, company_name
+) VALUES
+  ('1', 'workcube_mikrolink', 'OUR_COMPANY', 'test-hash-our-1', 1, 'AÇIK Tenant Mikrolink'),
+  ('99', 'workcube_mikrolink', 'OUR_COMPANY', 'test-hash-our-99', 99, 'Other Tenant');
+
+-- COMPANY directory rows: includes both AÇIK (our_company_id=1) and other
+-- tenant (our_company_id=99); used for project/branch 2-hop predicate tests.
 INSERT INTO workcube_mikrolink.company (
     source_pk, source_schema, source_table, content_hash,
-    company_status, companycat_id, company_id
-) VALUES ('1001', 'workcube_mikrolink', 'COMPANY', 'test-hash-1001',
-          true, 1, 1001);
+    company_status, companycat_id, company_id, our_company_id
+) VALUES
+  ('1001', 'workcube_mikrolink', 'COMPANY', 'test-hash-1001',
+   true, 1, 1001, 1),    -- AÇIK tenant
+  ('1099', 'workcube_mikrolink', 'COMPANY', 'test-hash-1099',
+   true, 1, 1099, 99);   -- Other tenant
 
+-- PRO_PROJECTS: linked to AÇIK COMPANY (1001) for tenant predicate positive,
+-- and to Other COMPANY (1099) for negative.
 INSERT INTO workcube_mikrolink.pro_projects (
     source_pk, source_schema, source_table, content_hash,
-    project_id, project_head
-) VALUES ('1204', 'workcube_mikrolink', 'PRO_PROJECTS', 'test-hash-1204',
-          1204, 'Test Project 1204');
+    project_id, project_head, company_id
+) VALUES
+  ('1204', 'workcube_mikrolink', 'PRO_PROJECTS', 'test-hash-1204',
+   1204, 'Test Project 1204 (AÇIK)', 1001),
+  ('9999', 'workcube_mikrolink', 'PRO_PROJECTS', 'test-hash-9999',
+   9999, 'Test Project 9999 (Other)', 1099);
 
+-- BRANCH: same pattern as PRO_PROJECTS (2-hop tenant predicate).
 INSERT INTO workcube_mikrolink.branch (
     source_pk, source_schema, source_table, content_hash,
-    branch_status, branch_id, branch_name
-) VALUES ('7', 'workcube_mikrolink', 'BRANCH', 'test-hash-7',
-          true, 7, 'Test Branch 7');
+    branch_status, branch_id, branch_name, company_id
+) VALUES
+  ('7', 'workcube_mikrolink', 'BRANCH', 'test-hash-7',
+   true, 7, 'Test Branch 7 (AÇIK)', 1001),
+  ('77', 'workcube_mikrolink', 'BRANCH', 'test-hash-77',
+   true, 77, 'Test Branch 77 (Other)', 1099);
 
+-- DEPARTMENT: 1-hop tenant predicate via OUR_COMPANY_ID.
 INSERT INTO workcube_mikrolink.department (
     source_pk, source_schema, source_table, content_hash,
-    department_id, department_head
-) VALUES ('3792', 'workcube_mikrolink', 'DEPARTMENT', 'test-hash-3792',
-          3792, 'Test Depot 3792');
+    department_id, department_head, our_company_id
+) VALUES
+  ('3792', 'workcube_mikrolink', 'DEPARTMENT', 'test-hash-3792',
+   3792, 'Test Depot 3792 (AÇIK)', 1),
+  ('3799', 'workcube_mikrolink', 'DEPARTMENT', 'test-hash-3799',
+   3799, 'Test Depot 3799 (Other)', 99);
+
+-- V25 reseed: organization_company mapping for AÇIK tenant.
+-- (V25 migration moved the V19 CROSS JOIN seed out; in production this is
+-- done via Faz 16.2.A runbook after OUR_COMPANY ETL load. In tests we seed
+-- explicitly to exercise the mapping.)
+INSERT INTO data_access.organization_company
+    (org_id, workcube_company_source_pk, source_schema, source_table)
+SELECT o.id, '1', 'workcube_mikrolink', 'OUR_COMPANY'
+FROM data_access.organization o
+WHERE o.name = 'AÇIK';
+-- Note: source_pk='99' (Other tenant) deliberately NOT seeded — used in
+-- negative tenant boundary tests below.
 
 -- ============================================================================
 -- 1. AÇIK org seed assertion (V19)
@@ -94,20 +142,25 @@ DECLARE
 BEGIN
     SELECT id INTO v_org FROM data_access.organization WHERE name = 'AÇIK';
 
+    -- V25 canonical: scope_source_table OUR_COMPANY for company kind.
+    -- Tenant predicate validated via organization_company mapping seeded above.
     -- V21 canonical: scope_ref = JSON array string per ADR-0008 § Object id encoding
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-    VALUES ('11111111-1111-1111-1111-111111111111', v_org, 'company', 'COMPANY', '["1001"]');
+    VALUES ('11111111-1111-1111-1111-111111111111', v_org, 'company', 'OUR_COMPANY', '["1"]');
 
+    -- project: PRO_PROJECTS (1204) → COMPANY (1001) → OUR_COMPANY (1) → AÇIK
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
     VALUES ('22222222-2222-2222-2222-222222222222', v_org, 'project', 'PRO_PROJECTS', '["1204"]');
 
+    -- branch: BRANCH (7) → COMPANY (1001) → OUR_COMPANY (1) → AÇIK
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
     VALUES ('33333333-3333-3333-3333-333333333333', v_org, 'branch', 'BRANCH', '["7"]');
 
+    -- depot: DEPARTMENT (3792) → OUR_COMPANY (1) → AÇIK
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
     VALUES ('44444444-4444-4444-4444-444444444444', v_org, 'depot', 'DEPARTMENT', '["3792"]');
 
-    RAISE NOTICE 'PASS  4 positive INSERTs (one per scope_kind, JSON array form)';
+    RAISE NOTICE 'PASS  4 positive INSERTs (V25 hybrid contract — anchor + tenant predicate)';
 END $$;
 
 -- ============================================================================
@@ -204,7 +257,7 @@ BEGIN
     -- company/COMPANY but scope_ref does not exist in workcube_mikrolink.company.
     BEGIN
         INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-        VALUES ('88888888-8888-8888-8888-888888888888', v_org, 'company', 'COMPANY', '["999999"]');
+        VALUES ('88888888-8888-8888-8888-888888888888', v_org, 'company', 'OUR_COMPANY', '["999"]');
         RAISE EXCEPTION 'expected trigger to reject scope_ref=["999999"], but INSERT succeeded';
     EXCEPTION WHEN raise_exception THEN
         v_trapped := TRUE;
@@ -232,7 +285,7 @@ BEGIN
     v_trapped := FALSE;
     BEGIN
         INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-        VALUES ('aabbccdd-aabb-ccdd-eeff-aabbccddeeff', v_org, 'company', 'COMPANY', 'not-json{');
+        VALUES ('aabbccdd-aabb-ccdd-eeff-aabbccddeeff', v_org, 'company', 'OUR_COMPANY', 'not-json{');
         RAISE EXCEPTION 'expected V21 trigger to reject malformed JSON';
     EXCEPTION WHEN raise_exception THEN
         v_trapped := TRUE;
@@ -246,7 +299,7 @@ BEGIN
     v_trapped := FALSE;
     BEGIN
         INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-        VALUES ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', v_org, 'company', 'COMPANY', '[]');
+        VALUES ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', v_org, 'company', 'OUR_COMPANY', '[]');
         RAISE EXCEPTION 'expected V21 trigger to reject empty array';
     EXCEPTION WHEN raise_exception THEN
         v_trapped := TRUE;
@@ -259,7 +312,7 @@ BEGIN
     -- V21: numeric scalar (encoder also accepts) — `[1001]` → ->>0 returns "1001" text
     -- This is a positive case validating numeric scalar parity with string scalar.
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-    VALUES ('ddffeeaa-ddff-eeaa-ddff-eeaaddffeeaa', v_org, 'company', 'COMPANY', '[1001]');
+    VALUES ('ddffeeaa-ddff-eeaa-ddff-eeaaddffeeaa', v_org, 'company', 'OUR_COMPANY', '[1]');
     RAISE NOTICE 'PASS  V21 trigger accepts numeric scalar [1001] (parity with ["1001"])';
 
     -- Cleanup the V21 numeric-scalar row (so subsequent tests have clean state)
@@ -286,7 +339,7 @@ BEGIN
         granted_at, revoked_at
     )
     VALUES (
-        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_org, 'company', 'COMPANY', '["999999"]',
+        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_org, 'company', 'OUR_COMPANY', '["999"]',
         now() - INTERVAL '1 hour', now() - INTERVAL '30 minutes'
     )
     RETURNING id INTO v_id;
@@ -323,13 +376,13 @@ BEGIN
 
     -- Initial grant. V21: JSON form scope_ref.
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-    VALUES (v_uid, v_org, 'company', 'COMPANY', '["1001"]')
+    VALUES (v_uid, v_org, 'company', 'OUR_COMPANY', '["1"]')
     RETURNING id INTO v_id;
 
     -- Same triple again while still ACTIVE — must FAIL via uq_scope_active_assignment.
     BEGIN
         INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-        VALUES (v_uid, v_org, 'company', 'COMPANY', '["1001"]');
+        VALUES (v_uid, v_org, 'company', 'OUR_COMPANY', '["1"]');
         RAISE EXCEPTION 'expected uq_scope_active_assignment to block duplicate active row';
     EXCEPTION WHEN unique_violation THEN
         v_trapped := TRUE;
@@ -344,7 +397,7 @@ BEGIN
 
     -- Re-grant the same (user, org, kind, ref) — must SUCCEED. V21: JSON form.
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-    VALUES (v_uid, v_org, 'company', 'COMPANY', '["1001"]');
+    VALUES (v_uid, v_org, 'company', 'OUR_COMPANY', '["1"]');
     RAISE NOTICE 'PASS  re-grant after revoke succeeds (Codex 019dc8b4 iter-2 partial UNIQUE)';
 END $$;
 
@@ -364,7 +417,7 @@ BEGIN
 
     -- Create a scope row to attach outbox to (V22 outbox FK references scope.id)
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-    VALUES ('cccccccc-cccc-cccc-cccc-cccccccccccc', v_org, 'company', 'COMPANY', '["1001"]')
+    VALUES ('cccccccc-cccc-cccc-cccc-cccccccccccc', v_org, 'company', 'OUR_COMPANY', '["1"]')
     RETURNING id INTO v_scope_id;
 
     -- V22 outbox PENDING row INSERT (V23: tuple_* columns NOT NULL)
@@ -606,7 +659,7 @@ BEGIN
 
     -- 1. First grant: scope_id=A, outbox GRANT
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-    VALUES ('11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_org, 'company', 'COMPANY', '["1001"]')
+    VALUES ('11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_org, 'company', 'OUR_COMPANY', '["1"]')
     RETURNING id INTO v_scope_id_a;
 
     INSERT INTO data_access.scope_outbox (
@@ -636,7 +689,7 @@ BEGIN
 
     -- 3. Re-grant: NEW scope_id=B (V19 partial UNIQUE allows post-revoke)
     INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
-    VALUES ('11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_org, 'company', 'COMPANY', '["1001"]')
+    VALUES ('11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_org, 'company', 'OUR_COMPANY', '["1"]')
     RETURNING id INTO v_scope_id_b;
 
     INSERT INTO data_access.scope_outbox (
@@ -701,12 +754,109 @@ BEGIN
 END $$;
 
 -- ============================================================================
+-- 11. V25 tenant predicate negative tests (anchor + tenant-membership guard)
+-- ============================================================================
+
+-- Test 11.a: company OUR_COMPANY exists in workcube_mikrolink, but NOT mapped
+-- to AÇIK org via organization_company → trigger reject (tenant boundary).
+DO $$
+DECLARE
+    v_org BIGINT;
+BEGIN
+    SELECT id INTO v_org FROM data_access.organization WHERE name = 'AÇIK';
+    BEGIN
+        INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
+        VALUES ('11dd0099-aaaa-bbbb-cccc-dddd00009999', v_org, 'company', 'OUR_COMPANY', '["99"]');
+        RAISE EXCEPTION 'V25 tenant predicate FAIL: company OUR_COMPANY=99 (other tenant) accepted, expected reject';
+    EXCEPTION
+        WHEN raise_exception THEN
+            RAISE NOTICE 'PASS  V25 tenant boundary: company OUR_COMPANY=99 (no AÇIK mapping) rejected';
+        WHEN OTHERS THEN
+            RAISE EXCEPTION 'V25 tenant predicate fired wrong exception: %', SQLERRM;
+    END;
+END $$;
+
+-- Test 11.b: branch BRANCH=77 references COMPANY=1099 (other tenant) →
+-- trigger reject (2-hop tenant predicate).
+DO $$
+DECLARE
+    v_org BIGINT;
+BEGIN
+    SELECT id INTO v_org FROM data_access.organization WHERE name = 'AÇIK';
+    BEGIN
+        INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
+        VALUES ('22dd0099-aaaa-bbbb-cccc-dddd00007777', v_org, 'branch', 'BRANCH', '["77"]');
+        RAISE EXCEPTION 'V25 tenant predicate FAIL: branch BRANCH=77 (via other tenant COMPANY) accepted, expected reject';
+    EXCEPTION
+        WHEN raise_exception THEN
+            RAISE NOTICE 'PASS  V25 tenant boundary 2-hop: branch BRANCH=77 (Other tenant company) rejected';
+        WHEN OTHERS THEN
+            RAISE EXCEPTION 'V25 branch predicate fired wrong exception: %', SQLERRM;
+    END;
+END $$;
+
+-- Test 11.c: project PRO_PROJECTS=9999 references COMPANY=1099 (other tenant) →
+-- trigger reject (2-hop tenant predicate).
+DO $$
+DECLARE
+    v_org BIGINT;
+BEGIN
+    SELECT id INTO v_org FROM data_access.organization WHERE name = 'AÇIK';
+    BEGIN
+        INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
+        VALUES ('33dd0099-aaaa-bbbb-cccc-dddd00009999', v_org, 'project', 'PRO_PROJECTS', '["9999"]');
+        RAISE EXCEPTION 'V25 tenant predicate FAIL: project PRO_PROJECTS=9999 (via other tenant COMPANY) accepted, expected reject';
+    EXCEPTION
+        WHEN raise_exception THEN
+            RAISE NOTICE 'PASS  V25 tenant boundary 2-hop: project PRO_PROJECTS=9999 (Other tenant company) rejected';
+        WHEN OTHERS THEN
+            RAISE EXCEPTION 'V25 project predicate fired wrong exception: %', SQLERRM;
+    END;
+END $$;
+
+-- Test 11.d: depot DEPARTMENT=3799 references OUR_COMPANY=99 (other tenant) →
+-- trigger reject (1-hop tenant predicate).
+DO $$
+DECLARE
+    v_org BIGINT;
+BEGIN
+    SELECT id INTO v_org FROM data_access.organization WHERE name = 'AÇIK';
+    BEGIN
+        INSERT INTO data_access.scope (user_id, org_id, scope_kind, scope_source_table, scope_ref)
+        VALUES ('44dd0099-aaaa-bbbb-cccc-dddd00003799', v_org, 'depot', 'DEPARTMENT', '["3799"]');
+        RAISE EXCEPTION 'V25 tenant predicate FAIL: depot DEPARTMENT=3799 (other tenant OUR_COMPANY) accepted, expected reject';
+    EXCEPTION
+        WHEN raise_exception THEN
+            RAISE NOTICE 'PASS  V25 tenant boundary 1-hop: depot DEPARTMENT=3799 (Other tenant OUR_COMPANY) rejected';
+        WHEN OTHERS THEN
+            RAISE EXCEPTION 'V25 depot predicate fired wrong exception: %', SQLERRM;
+    END;
+END $$;
+
+-- Test 11.e: validate_scope_ref function signature is widened (4-arg). Test
+-- that the 3-arg version is gone (V25 explicit DROP CASCADE).
+DO $$
+DECLARE
+    v_count BIGINT;
+BEGIN
+    SELECT count(*) INTO v_count
+    FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'data_access'
+      AND p.proname = 'validate_scope_ref'
+      AND pg_get_function_identity_arguments(p.oid) = 'p_kind text, p_source_table text, p_ref text';
+    IF v_count <> 0 THEN
+        RAISE EXCEPTION 'V25 signature widening FAIL: 3-arg validate_scope_ref still exists, expected DROPped';
+    END IF;
+    RAISE NOTICE 'PASS  V25 signature widening: 3-arg validate_scope_ref dropped (only 4-arg present)';
+END $$;
+
+-- ============================================================================
 -- Final summary
 -- ============================================================================
 
 DO $$
 BEGIN
-    RAISE NOTICE '=== test_v19_v20_data_access: ALL ASSERTIONS PASSED ===';
+    RAISE NOTICE '=== test_v19_v20_data_access: ALL ASSERTIONS PASSED (V25 hybrid contract) ===';
 END $$;
 
 ROLLBACK;
