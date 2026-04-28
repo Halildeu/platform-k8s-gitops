@@ -1,0 +1,72 @@
+# ADR-0011 DD-3 — Schema-service snapshot drift detection (operator-loop)
+#
+# Codex 019dd409 B-prime: ayrı workflow (DD-1+DD-2 umbrella'dan farklı
+# cadence + farklı boundary semantiği). Quarterly cron + workflow_dispatch +
+# pull_request paths filter.
+#
+# Authority: operator-loop (artifact refresh) + Codex consensus (CI validate).
+# CI graceful pending: artifact yoksa exit 0 + warn; varsa hard validate.
+
+name: ADR-0011 DD-3 Schema-Service Snapshot Drift
+
+on:
+  workflow_dispatch:
+    inputs:
+      strict:
+        description: "Treat PENDING as FAIL (artifact must be present)"
+        type: boolean
+        default: false
+  schedule:
+    # Quarterly check — first Monday of Jan/Apr/Jul/Oct, 04:00 UTC
+    - cron: "0 4 1-7 1,4,7,10 1"
+  pull_request:
+    paths:
+      - ".github/workflows/gate-drift-schema-service-snapshot.yml"
+      - "scripts/drift_detection/check_drift_reports_db_snapshot.py"
+      - "scripts/drift_detection/export_reports_db_schema.sql"
+      - "tests/drift_detection/test_check_drift_reports_db_snapshot.py"
+      - "docs/RB-faz-21-3-adr-0011-dd-3-schema-snapshot.md"
+      - "docs/migration/workcube-schema.json"
+      - "docs/migration/reports-db-workcube-actual-schema.json"
+      - "scripts/migration/etl_worker/config/tables.yaml"
+
+jobs:
+  schema-snapshot-drift:
+    name: ADR-0011 DD-3 — schema snapshot drift validate (graceful pending)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: DD-3 — schema snapshot drift check (default = graceful pending OK)
+        run: |
+          if [ "${{ github.event.inputs.strict }}" = "true" ]; then
+            python3 scripts/drift_detection/check_drift_reports_db_snapshot.py --verbose --strict
+          else
+            python3 scripts/drift_detection/check_drift_reports_db_snapshot.py --verbose
+          fi
+
+      - name: DD-3 JSON artifact
+        if: always()
+        run: |
+          python3 scripts/drift_detection/check_drift_reports_db_snapshot.py --json > /tmp/dd-3-report.json || true
+          cat /tmp/dd-3-report.json
+
+      - name: Upload DD-3 report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dd-3-schema-snapshot-report
+          path: /tmp/dd-3-report.json
+          retention-days: 90  # quarterly cadence — longer retention
+
+      - name: Run unit tests
+        run: |
+          python3 -m unittest tests.drift_detection.test_check_drift_reports_db_snapshot -v

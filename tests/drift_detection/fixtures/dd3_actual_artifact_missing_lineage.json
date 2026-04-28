@@ -1,0 +1,32 @@
+{
+  "generated_at": "2099-01-01T00:00:00Z",
+  "source_snapshot_sha256": "DD3_TEST_PLACEHOLDER_HASH",
+  "schema": "workcube_mikrolink",
+  "tables": {
+    "OUR_COMPANY": {
+      "columns": [
+        {"name": "comp_id", "data_type": "integer"}
+      ]
+    },
+    "COMPANY": {
+      "columns": [
+        {"name": "company_id", "data_type": "integer"}
+      ]
+    },
+    "BRANCH": {
+      "columns": [
+        {"name": "branch_id", "data_type": "integer"}
+      ]
+    },
+    "DEPARTMENT": {
+      "columns": [
+        {"name": "department_id", "data_type": "integer"}
+      ]
+    },
+    "PRO_PROJECTS": {
+      "columns": [
+        {"name": "project_id", "data_type": "integer"}
+      ]
+    }
+  }
+}

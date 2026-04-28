@@ -1,0 +1,57 @@
+{
+  "generated_at": "2099-01-01T00:00:00Z",
+  "source_snapshot_sha256": "DD3_TEST_PLACEHOLDER_HASH",
+  "schema": "workcube_mikrolink",
+  "tables": {
+    "OUR_COMPANY": {
+      "columns": [
+        {"name": "comp_id", "data_type": "integer", "is_nullable": "NO"},
+        {"name": "company_name", "data_type": "character varying", "is_nullable": "YES"},
+        {"name": "source_schema", "data_type": "character varying", "is_nullable": "NO"},
+        {"name": "source_table", "data_type": "character varying", "is_nullable": "NO"},
+        {"name": "source_pk", "data_type": "text", "is_nullable": "YES"},
+        {"name": "content_hash", "data_type": "character", "is_nullable": "YES"}
+      ]
+    },
+    "COMPANY": {
+      "columns": [
+        {"name": "company_id", "data_type": "integer", "is_nullable": "NO"},
+        {"name": "our_company_id", "data_type": "integer", "is_nullable": "YES"},
+        {"name": "source_schema", "data_type": "character varying", "is_nullable": "NO"},
+        {"name": "source_table", "data_type": "character varying", "is_nullable": "NO"},
+        {"name": "source_pk", "data_type": "text", "is_nullable": "YES"},
+        {"name": "content_hash", "data_type": "character", "is_nullable": "YES"}
+      ]
+    },
+    "BRANCH": {
+      "columns": [
+        {"name": "branch_id", "data_type": "integer", "is_nullable": "NO"},
+        {"name": "company_id", "data_type": "integer", "is_nullable": "YES"},
+        {"name": "source_schema", "data_type": "character varying", "is_nullable": "NO"},
+        {"name": "source_table", "data_type": "character varying", "is_nullable": "NO"},
+        {"name": "source_pk", "data_type": "text", "is_nullable": "YES"},
+        {"name": "content_hash", "data_type": "character", "is_nullable": "YES"}
+      ]
+    },
+    "DEPARTMENT": {
+      "columns": [
+        {"name": "department_id", "data_type": "integer", "is_nullable": "NO"},
+        {"name": "our_company_id", "data_type": "integer", "is_nullable": "YES"},
+        {"name": "source_schema", "data_type": "character varying", "is_nullable": "NO"},
+        {"name": "source_table", "data_type": "character varying", "is_nullable": "NO"},
+        {"name": "source_pk", "data_type": "text", "is_nullable": "YES"},
+        {"name": "content_hash", "data_type": "character", "is_nullable": "YES"}
+      ]
+    },
+    "PRO_PROJECTS": {
+      "columns": [
+        {"name": "project_id", "data_type": "integer", "is_nullable": "NO"},
+        {"name": "company_id", "data_type": "integer", "is_nullable": "YES"},
+        {"name": "source_schema", "data_type": "character varying", "is_nullable": "NO"},
+        {"name": "source_table", "data_type": "character varying", "is_nullable": "NO"},
+        {"name": "source_pk", "data_type": "text", "is_nullable": "YES"},
+        {"name": "content_hash", "data_type": "character", "is_nullable": "YES"}
+      ]
+    }
+  }
+}

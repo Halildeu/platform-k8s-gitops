@@ -103,9 +103,42 @@ python3 scripts/drift_detection/check_drift_etl_contract.py \
 python3 -m unittest tests.drift_detection.test_check_drift_etl_contract -v
 ```
 
+## DD-3 — Schema-service snapshot drift (operator-loop)
+
+`check_drift_reports_db_snapshot.py` — committed source snapshot
+(`workcube-schema.json`) ile canlı PG `reports_db.workcube_mikrolink.*`
+actual schema arasındaki **runtime drift**'i yakalar. Quarterly cadence.
+
+**Operator-loop**: artifact (`docs/migration/reports-db-workcube-actual-schema.json`)
+operatör tarafından read-only psql export ile üretilir + PR olarak commit
+edilir. Runbook: `docs/RB-faz-21-3-adr-0011-dd-3-schema-snapshot.md`.
+
+**Graceful pending state**: artifact yoksa script `PENDING` raporlar +
+exit 0 (CI green). Artifact varsa hard validation:
+
+1. `actual_artifact_present` — dosya var mı?
+2. `actual_artifact_freshness` — ≤120 days
+3. `actual_artifact_source_hash_match` — `source_snapshot_sha256` field current `workcube-schema.json` SHA'ya eşit
+4. `etl_managed_tables_in_source` — `tables.yaml` ETL-managed entry'leri source'ta var
+5. `etl_managed_tables_in_actual` — aynı entry'ler PG actual'da var
+6. `pg_lineage_columns_present` — V17 lineage cols (`source_schema, source_table, source_pk, content_hash`)
+
+```bash
+# PENDING state (default — current main, no artifact)
+python3 scripts/drift_detection/check_drift_reports_db_snapshot.py --verbose
+
+# Strict mode (PENDING treated as fail)
+python3 scripts/drift_detection/check_drift_reports_db_snapshot.py --strict
+
+python3 -m unittest tests.drift_detection.test_check_drift_reports_db_snapshot -v
+```
+
+Workflow: `.github/workflows/gate-drift-schema-service-snapshot.yml`
+(quarterly cron + workflow_dispatch + `pull_request` paths filter; ayrı
+workflow çünkü cadence + boundary semantiği farklı).
+
 ## Roadmap (next DD/AC/BG PRs)
 
-- **DD-3**: quarterly cron schema-service snapshot diff vs `reports_db` actual.
 - **DD-4**: env-prefix + Python compat + Dockerfile keyring lint.
 - **AC-1**: drill evidence template + first-drill runbook.
 - **BG-1**: per-PR boundary declaration template + check_pr_description CI gate.
