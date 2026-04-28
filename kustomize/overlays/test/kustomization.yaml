@@ -290,35 +290,17 @@ patches:
       - op: replace
         path: /data/PERMISSION_AUTHZ_USER_TABLE
         value: "users"
-      # Faz 21.3 D35 first-evidence: outbox poller + secondary HikariPool require
-      # this flag at runtime. Test-overlay-only; base/prod stay fail-closed (false)
-      # until Vault populates `reports_db_*` properties for the dedicated role
-      # (Codex 019dd296 verdict B follow-up).
+      # Faz 21.3 outbox runtime: outbox poller + secondary HikariPool require
+      # this flag at runtime. Test-overlay-only override; base + prod stay
+      # fail-closed (REPORTS_DB_ENABLED=false in base) until per-env operator
+      # rollout. Codex `019dd296` shared-cred era patch retired in
+      # `019dd2af` follow-up — REPORTS_DB_USERNAME/PASSWORD now flow through
+      # the base ExternalSecret contract from dedicated Vault keys
+      # `reports_db_username`/`reports_db_password` populated by the
+      # `docs/d35-dedicated-reports-role-runbook.md` operator step.
       - op: replace
         path: /data/REPORTS_DB_ENABLED
         value: "true"
-
-  # Faz 21.3 D35 first-evidence — credential delivery patch (Codex 019dd296 B):
-  # Vault `kv/platform/permission-service` currently has only db_username/
-  # db_password (the platform owner role); reports_db_username/password are
-  # not yet populated. To run D35 first evidence on staging-sw without
-  # operator-stalling on a Vault patch, render REPORTS_DB_USERNAME / PASSWORD
-  # from the same real Vault keys. Caveat documented in evidence file:
-  # this is NOT least-privilege proof; dedicated reports role + Vault populate
-  # remain follow-up. Patch lives in test overlay only — base/prod base/eso
-  # contract stays designed (separate `reports_db_*` properties).
-  - target:
-      group: external-secrets.io
-      version: v1
-      kind: ExternalSecret
-      name: permission-service-secrets
-    patch: |-
-      - op: replace
-        path: /spec/data/6/remoteRef/property
-        value: db_username
-      - op: replace
-        path: /spec/data/7/remoteRef/property
-        value: db_password
 
   # Dilim 2: scale-to-zero 5 backend (D17)
   - target:
