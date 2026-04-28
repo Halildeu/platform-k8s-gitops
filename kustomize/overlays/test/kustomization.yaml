@@ -59,22 +59,22 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # ADR-0012 RequireModuleInterceptor relation alias + numeric userId fix
-    # (sha-12480ef, platform-backend PR #18). Closes the granular UI action
-    # 403 gap discovered during D35-3 first canlı UI persona evidence run
-    # (platform-k8s-gitops PR #240/#241 amend):
-    #   - RELATION_ALIASES map: viewer→can_view, manager→can_manage, admin→
-    #     can_manage, editor→can_edit (legacy alias compat layer).
-    #   - extractUserId() now uses AuthenticatedUserLookupService.resolve(jwt)
-    #     so OpenFGA tuples seeded with numeric IDs (user:1204) match the
-    #     interceptor's user identifier (previously used UUID — 93.66% canary
-    #     mismatch per OI-03).
-    #   - 20 @RequireModule annotations migrated to canonical can_view/
-    #     can_manage form (AccessControllerV1×13 + AuditEventController×6 +
-    #     AuditCompareController×1).
-    # Includes everything from sha-943bd5f (V25/V26 alignment, PR-G outbox
-    # poller, PR-F Testcontainers, PR-D REST endpoints, PR-C dual datasource).
-    digest: sha256:43835e5167ba411ef3dd35aedb5c30399914b2009235dc17ceb7c14fb45f63ca
+    # Architectural unification + DD-5 governance (sha-b9ddc86, platform-backend
+    # PR #19 DD-5 + PR #20 superAdmin bypass). D35-3 FULL PASS programmatic
+    # chain (k8s-gitops PR #245) sırasında tespit edilen iki authz path
+    # tutarsızlığını eşitler:
+    #   - PR #20: RequireModuleInterceptor.preHandle() artık önce
+    #     `organization:default#admin` check eder; org-admin ise modül
+    #     guard'larını skip eder (AuthorizationControllerV1.checkOrganizationAdmin
+    #     pattern'i ile aynı). Frontend `superAdmin: true` görüyorsa interceptor
+    #     da geçer — D35-3 retest'te workaround olarak gereken 7 module tuple
+    #     seedleme artık gerekmez (1 organization tuple yeterli).
+    #   - PR #19: DD-5 alignment guard CI lane (annotation ↔ OpenFGA model
+    #     relation drift'i hard-gate eder; bu fix pattern'inin tekrarlamasını
+    #     önler).
+    # Önceki sha-12480ef (PR #18 alias + numeric userId fix) base layer
+    # üzerine architectural unification + drift detection ekledi.
+    digest: sha256:f62c02f74e03d36a7b87f8a2112a1b518ad699aebec7ed8d84f2ae2f538ec1c3
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-2dc3734 — D36 manuel pin sync (Renovate Faz N
   # öncesi). Önceki pin sha-57dc28e ile ~24 saatlik drift kapatıldı.
