@@ -12,7 +12,7 @@
 # Authority: Codex consensus only (no operator approval — read-only static
 # analysis, no state mutation, no credential read).
 
-name: ADR-0011 Drift Detection (anchor + ETL contract)
+name: ADR-0011 Drift Detection Guards
 
 on:
   workflow_dispatch:
@@ -32,10 +32,16 @@ on:
       - "scripts/migration/etl_worker/etl_worker/transform.py"
       - "scripts/migration/etl_worker/tests/test_transform.py"
       - "scripts/migration/etl_worker/config/tables.yaml"
+      # DD-4 env+Dockerfile+Python compat
+      - "scripts/migration/etl_worker/etl_worker/config.py"
+      - "scripts/migration/etl_worker/Dockerfile"
+      - "scripts/migration/etl_worker/pyproject.toml"
+      - "scripts/migration/etl_worker/README.md"
+      - ".github/workflows/etl-worker-tests.yml"
 
 jobs:
   drift-detection:
-    name: ADR-0011 — anchor + ETL contract drift checks (DD-1 + DD-2)
+    name: ADR-0011 — DD-1 + DD-2 + DD-4 drift guards
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -56,6 +62,10 @@ jobs:
         run: |
           python3 scripts/drift_detection/check_drift_etl_contract.py --verbose
 
+      - name: DD-4 — env prefix + Python compat + Dockerfile keyring lint
+        run: |
+          python3 scripts/drift_detection/check_drift_env_dockerfile.py --verbose
+
       - name: DD-1 JSON artifact
         if: always()
         run: |
@@ -68,6 +78,12 @@ jobs:
           python3 scripts/drift_detection/check_drift_etl_contract.py --json > /tmp/drift-etl-report.json || true
           cat /tmp/drift-etl-report.json
 
+      - name: DD-4 JSON artifact
+        if: always()
+        run: |
+          python3 scripts/drift_detection/check_drift_env_dockerfile.py --json > /tmp/drift-env-dockerfile-report.json || true
+          cat /tmp/drift-env-dockerfile-report.json
+
       - name: Upload drift reports artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,11 +92,13 @@ jobs:
           path: |
             /tmp/drift-anchor-report.json
             /tmp/drift-etl-report.json
+            /tmp/drift-env-dockerfile-report.json
           retention-days: 7
 
-      - name: Run unit tests (positive + negative for both DD-1 and DD-2)
+      - name: Run unit tests (DD-1 + DD-2 + DD-4)
         run: |
           python3 -m unittest \
             tests.drift_detection.test_check_drift_anchor_table \
             tests.drift_detection.test_check_drift_etl_contract \
+            tests.drift_detection.test_check_drift_env_dockerfile \
             -v

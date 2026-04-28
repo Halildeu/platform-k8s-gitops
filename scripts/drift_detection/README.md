@@ -137,6 +137,42 @@ Workflow: `.github/workflows/gate-drift-schema-service-snapshot.yml`
 (quarterly cron + workflow_dispatch + `pull_request` paths filter; ayrı
 workflow çünkü cadence + boundary semantiği farklı).
 
+## DD-4 — env + Dockerfile + Python compat lint
+
+`check_drift_env_dockerfile.py` — Session 32 drift events 2'sini kapsar
+(etl-worker env prefix + Dockerfile signing convention). 5 check:
+
+1. **`env_prefix_consistency`** — config.py fallback hierarchy 4 prefix
+   içeriyor (MSSQL_, REPORT_MSSQL_, SCHEMA_MSSQL_, WORKCUBE_MSSQL_)
+2. **`python_version_compat`** — Python 3.12 tutarlılığı (pyproject
+   requires-python + ruff target + mypy + Dockerfile FROM + workflow
+   python-version)
+3. **`dockerfile_keyring_signing`** — msodbcsql18 install + signed-by= +
+   gpg --dearmor pattern (Debian 12 Bookworm sqv-based verification)
+4. **`tables_yaml_schema_validity`** — minimum field set (name,
+   source_schema, columns, idempotency_key, parametric, reports) +
+   3 validation flag
+5. **`readme_docs_sync`** — make_source_pk + env prefix references
+   (warn-only)
+
+```bash
+python3 scripts/drift_detection/check_drift_env_dockerfile.py --verbose
+python3 scripts/drift_detection/check_drift_env_dockerfile.py --json
+
+# Negative tests
+python3 scripts/drift_detection/check_drift_env_dockerfile.py \
+  --config-path tests/drift_detection/fixtures/config_dd4_missing_prefix.py
+# → env_prefix_consistency fail
+
+python3 scripts/drift_detection/check_drift_env_dockerfile.py \
+  --dockerfile-path tests/drift_detection/fixtures/Dockerfile_dd4_no_signed_by.txt
+# → dockerfile_keyring_signing fail
+
+python3 -m unittest tests.drift_detection.test_check_drift_env_dockerfile -v
+```
+
+DD-4 umbrella workflow'a entegre (`gate-drift-detection.yml` — DD-1 + DD-2 + DD-4 birlikte).
+
 ## Roadmap (next DD/AC/BG PRs)
 
 - **DD-4**: env-prefix + Python compat + Dockerfile keyring lint.
