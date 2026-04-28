@@ -41,25 +41,20 @@ tables:
       - { name: TAX_OFFICE,    pg_type: VARCHAR(50),    nullable: true,  max_length: 50 }
       - { name: TAX_NO,        pg_type: VARCHAR(50),    nullable: true,  max_length: 50 }
 
-  # COMPANY remains for financial reports + 2-hop tenant predicates
-  # (BRANCH/PRO_PROJECTS join through COMPANY to OUR_COMPANY). NOT the
-  # anchor for company scope_kind (that role is now OUR_COMPANY per V25).
-  - name: COMPANY
-    source_schema: workcube_mikrolink
-    parametric: false
-    idempotency_key: [COMPANY_ID]
-    reports: [fin-company-listing]
-    notes: "113 kolon canonical; Day 7 dry-run minimal subset, full set Faz 16.3.E. NOT D35-1 anchor — that's OUR_COMPANY (V25)."
-    columns:
-      - { name: COMPANY_ID,    pg_type: INTEGER,        nullable: false }
-      - { name: COMPANYCAT_ID, pg_type: INTEGER,        nullable: false }
-      - { name: COMPANY_STATUS, pg_type: BOOLEAN,       nullable: false }
-      - { name: NICKNAME,      pg_type: VARCHAR(150),   nullable: true,  max_length: 150 }
-      - { name: FULLNAME,      pg_type: VARCHAR(250),   nullable: true,  max_length: 250 }
-      - { name: TAXOFFICE,     pg_type: VARCHAR(50),    nullable: true,  max_length: 50 }
-      - { name: TAXNO,         pg_type: VARCHAR(43),    nullable: true,  max_length: 43 }
-      - { name: COMPANY_EMAIL, pg_type: VARCHAR(100),   nullable: true,  max_length: 100 }
-      - { name: OUR_COMPANY_ID, pg_type: INTEGER,       nullable: true }
+  # COMPANY (workcube_mikrolink) ETL scope dışı — kullanıcı 2026-04-29:
+  # "COMPANY buna gerek yokki". Workcube'de COMPANY = harici şirketler
+  # (carı/müşteri/tedarikçi), bizim scope picker (Şirket/Proje/Depo/Şube)
+  # için anchor değil. V25 alignment'tan beri company scope_kind anchor'ı
+  # OUR_COMPANY (idi, hâlâ öyle). BRANCH/PRO_PROJECTS join'leri COMPANY
+  # FK'si ile gelirdi ama tenant predicate V25'te OUR_COMPANY üzerinden
+  # çalışıyor — COMPANY artık ETL kapsamı dışı.
+  #
+  # data_access.scope CHECK constraint zaten company → OUR_COMPANY map'i
+  # (COMPANY tablosuna referans yok), kaldırma side-effect'i yok.
+  #
+  # Eğer ileride financial reports COMPANY listing isterse Faz N (post-D35)
+  # ayrı concern (ETL allowlist'ini değil reports endpoint'i scope dışı
+  # data fetch'i kullanır).
 
   - name: BRANCH
     source_schema: workcube_mikrolink
