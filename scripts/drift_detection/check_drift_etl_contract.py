@@ -46,9 +46,14 @@ DEFAULT_V16_PATH = "sql/migration/V16__reports.sql"
 DEFAULT_V17_PATH = "sql/migration/V17__etl_lineage_columns.sql"
 DEFAULT_V26_PATH = "sql/migration/V26__source_pk_dual_format.sql"
 
+# COMPANY (workcube_mikrolink) 2026-04-29 itibarıyla ETL kapsamı dışı —
+# kullanıcı kararı: "COMPANY buna gerek yokki". V25 alignment'tan beri
+# company scope_kind anchor'ı OUR_COMPANY (data_access.scope CHECK
+# constraint scope_kind='company' AND scope_source_table='OUR_COMPANY').
+# Harici şirket tablosu (cari/müşteri/tedarikçi) scope picker için
+# gerekli değil; financial reports COMPANY listing ileride ayrı concern.
 EXPECTED_IDEMPOTENCY_KEYS = {
     "OUR_COMPANY": ["COMP_ID"],
-    "COMPANY": ["COMPANY_ID"],
     "BRANCH": ["BRANCH_ID"],
     "PRO_PROJECTS": ["PROJECT_ID"],
     "DEPARTMENT": ["DEPARTMENT_ID"],
