@@ -7,13 +7,15 @@
 
 ## Purpose
 
-Load **minimum 1 real Workcube COMPANY row** from MSSQL into PostgreSQL `workcube_mikrolink.company` on staging-sw `reports_db`. Produce D35-1 evidence file. **Unblocks D35-2** (= "D35 first evidence" per ADR-0009 §"D35 Evidence Ladder").
+Load **minimum 1 real Workcube OUR_COMPANY row** from MSSQL into PostgreSQL `workcube_mikrolink.our_company` on staging-sw `reports_db`. Produce D35-1 evidence file. **Unblocks D35-2** (= "D35 first evidence" per ADR-0009 §"D35 Evidence Ladder").
+
+**Anchor table correction** (V25 / PR-2 of OUR_COMPANY drift fix sequence): The D35-1 anchor is `workcube_mikrolink.OUR_COMPANY` (42 rows in Workcube source — AÇIK tenant boundary), NOT `workcube_mikrolink.COMPANY` (80,246 rows directory of all companies). V25 migration corrects validate_scope_ref + organization_company contract; this runbook loads the matching anchor.
 
 **This is NOT Faz 16.2.P (parametric ETL)**. It is a strict subset:
 - Only canonical schema `workcube_mikrolink` (NOT `workcube_mikrolink_<year>` parametric).
-- Only `COMPANY` table (other 3 anchor tables — `pro_projects`, `branch`, `department` — extend in follow-up only when D35-2/3 actually need them).
-- Minimum row count: 1 (the AÇIK org's COMPANY in Workcube). More is OK; not the goal.
-- **Not** product-data-loading; this is anchor-existence-only for the lineage trigger guard.
+- Only `OUR_COMPANY` table (3 other anchor tables — `pro_projects`, `branch`, `department` — extend in follow-up only when D35-2/3 actually need them).
+- Minimum row count: 1 (any of AÇIK org's 42 OUR companies in Workcube). All-42 load also acceptable per Codex `019dd34e` recommendation (small set; cleaner contract).
+- **Not** product-data-loading; this is anchor-existence-only for the V25 tenant predicate trigger guard.
 
 ## Pre-conditions
 
@@ -32,12 +34,12 @@ ssh halil@staging-sw "cd ~/platform-k8s-gitops/scripts/migration/etl_worker && \
   source .venv/bin/activate && pip install -e . >/dev/null 2>&1
   echo '--- validate manifest:'
   etl-worker validate-manifest
-  echo '--- inspect COMPANY (NTLM ReadOnly probe, no writes):'
-  etl-worker inspect-source --tables COMPANY"
+  echo '--- inspect OUR_COMPANY (NTLM ReadOnly probe, no writes):'
+  etl-worker inspect-source --tables OUR_COMPANY"
 ```
 
 Expected:
-- Manifest validation: `OK` for COMPANY entry.
+- Manifest validation: `OK` for OUR_COMPANY entry.
 - Inspect: prints column count + row count from MSSQL source. Row count > 0 (we'll load just 1 row, but source must have data).
 
 ## Step 1 — Dry-run on a single row
@@ -47,20 +49,20 @@ ssh halil@staging-sw "cd ~/platform-k8s-gitops/scripts/migration/etl_worker && \
   source .venv/bin/activate
   RUN_ID=\$(uuidgen)
   echo \"RUN_ID=\$RUN_ID\"
-  etl-worker run --mode dry-run --run-id \"\$RUN_ID\" --tables COMPANY --limit 1 \
+  etl-worker run --mode dry-run --run-id \"\$RUN_ID\" --tables OUR_COMPANY --limit 1 \
     | tee /tmp/dr6-dry-run-\${RUN_ID}.log"
 ```
 
 Expected:
-- Worker reads 1 COMPANY row from MSSQL
+- Worker reads 1 OUR_COMPANY row from MSSQL
 - Audit module records `mode=dry-run, status=SUCCESS, rows_extracted=1, rows_loaded=0`
-- No PG writes (`workcube_mikrolink.company` row count unchanged)
+- No PG writes (`workcube_mikrolink.our_company` row count unchanged)
 
 Verify (separate command):
 ```bash
 ssh halil@staging-sw 'PG_PWD=$(sudo grep "^REPORT_PG_PASSWORD=" /home/halil/platform/env/backend.env | cut -d= -f2)
 docker exec -e PGPASSWORD="$PG_PWD" platform-pg-test psql -U platform -d reports_db -c \
-  "SELECT count(*) FROM workcube_mikrolink.company;"'
+  "SELECT count(*) FROM workcube_mikrolink.our_company;"'
 ```
 
 Expected: 0.
@@ -74,13 +76,13 @@ ssh halil@staging-sw "cd ~/platform-k8s-gitops/scripts/migration/etl_worker && \
   source .venv/bin/activate
   RUN_ID=\$(uuidgen)
   echo \"RUN_ID=\$RUN_ID\" | tee -a /tmp/dr6-live-run.log
-  etl-worker run --mode initial --run-id \"\$RUN_ID\" --tables COMPANY --limit 1 \
+  etl-worker run --mode initial --run-id \"\$RUN_ID\" --tables OUR_COMPANY --limit 1 \
     | tee -a /tmp/dr6-live-run.log"
 ```
 
 Expected:
-- Worker reads 1 COMPANY row from MSSQL
-- Worker upserts into `workcube_mikrolink.company` (V17 lineage columns auto-populated)
+- Worker reads 1 OUR_COMPANY row from MSSQL
+- Worker upserts into `workcube_mikrolink.our_company` (V17 lineage columns auto-populated)
 - Audit row: `mode=initial, status=SUCCESS, rows_extracted=1, rows_loaded=1, rows_rejected=0`
 
 ## Step 3 — Reconcile (mandatory per Codex `019dd2c9` §2.4 + Faz 16 reconcile contract)
@@ -104,21 +106,21 @@ Expected:
 ```bash
 ssh halil@staging-sw 'PG_PWD=$(sudo grep "^REPORT_PG_PASSWORD=" /home/halil/platform/env/backend.env | cut -d= -f2)
 docker exec -e PGPASSWORD="$PG_PWD" platform-pg-test psql -U platform -d reports_db <<EOF
-SELECT count(*) AS company_count FROM workcube_mikrolink.company;
-SELECT source_pk, source_schema, source_table FROM workcube_mikrolink.company LIMIT 3;
-SELECT row_to_json(t) FROM workcube_mikrolink.company t LIMIT 1;
+SELECT count(*) AS our_company_count FROM workcube_mikrolink.our_company;
+SELECT source_pk, source_schema, source_table FROM workcube_mikrolink.our_company LIMIT 3;
+SELECT row_to_json(t) FROM workcube_mikrolink.our_company t LIMIT 1;
 EOF'
 ```
 
 Expected:
-- `company_count >= 1`
+- `our_company_count >= 1`
 - `source_pk` non-empty (this is the value D35-2 uses as `SCOPE_REF` JSON element)
 - `source_schema = workcube_mikrolink`
-- `source_table = COMPANY`
+- `source_table = OUR_COMPANY`
 
 ## Step 5 — Re-seed `data_access.organization_company` (auto from V19 trigger or manual)
 
-V19 had a CROSS JOIN seed step that produced 0 rows when `workcube_mikrolink.company` was empty. With Step 2-4 complete, re-run the seed:
+V19 had a CROSS JOIN seed step that produced 0 rows when `workcube_mikrolink.our_company` was empty. With Step 2-4 complete, re-run the seed:
 
 ```bash
 ssh halil@staging-sw 'PG_PWD=$(sudo grep "^REPORT_PG_PASSWORD=" /home/halil/platform/env/backend.env | cut -d= -f2)
@@ -126,9 +128,9 @@ docker exec -e PGPASSWORD="$PG_PWD" platform-pg-test psql -U platform -d reports
 INSERT INTO data_access.organization_company (
     org_id, workcube_company_source_pk, source_schema, source_table
 )
-SELECT o.id, c.source_pk, '\''workcube_mikrolink'\'', '\''COMPANY'\''
+SELECT o.id, c.source_pk, '\''workcube_mikrolink'\'', '\''OUR_COMPANY'\''
 FROM data_access.organization o
-CROSS JOIN workcube_mikrolink.company c
+CROSS JOIN workcube_mikrolink.our_company c
 WHERE o.name = '\''AÇIK'\'' AND c.source_schema = '\''workcube_mikrolink'\''
 ON CONFLICT (org_id, workcube_company_source_pk) DO NOTHING;
 
@@ -152,7 +154,7 @@ EVIDENCE="docs/faz-21-3-evidence/$(date -u +%Y-%m-%d)-d35-1-scope-anchor-load-${
 
 Required captures (per template):
 - Faz 16.2.A `etl_worker` runbook executed (this runbook reference)
-- `workcube_mikrolink.company` row count >= 1 with at least 1 real source_pk shown
+- `workcube_mikrolink.our_company` row count >= 1 with at least 1 real source_pk shown
 - `migration_audit.migration_runs` row with mode + status + counts
 - Reconcile evidence (rejected_rows = 0)
 - `data_access.organization_company` mapping for AÇIK org → real source_pk
@@ -177,7 +179,7 @@ RUN_ID=<from failing step>
 
 docker exec -e PGPASSWORD="$PG_PWD" platform-pg-test psql -U postgres -d reports_db <<EOF
 -- Identify rows from this run via lineage
-SELECT count(*) FROM workcube_mikrolink.company
+SELECT count(*) FROM workcube_mikrolink.our_company
   WHERE (source_schema, source_table) = ('\''workcube_mikrolink'\'', '\''COMPANY'\'')
     AND source_pk IN (
       SELECT source_pk FROM migration_audit.migration_table_state
