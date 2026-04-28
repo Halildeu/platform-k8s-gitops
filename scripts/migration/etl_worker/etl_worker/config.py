@@ -26,12 +26,50 @@ class Config:
 
     @classmethod
     def from_env(cls) -> "Config":
-        mssql_host = os.environ.get("MSSQL_HOST", "10.9.193.201")
-        mssql_port = os.environ.get("MSSQL_PORT", "1433")
-        mssql_user = os.environ.get("MSSQL_USER", "AlUser_App")
-        mssql_password = os.environ.get("MSSQL_PASSWORD", "")
-        mssql_db = os.environ.get("MSSQL_DATABASE", "workcube_mikrolink")
-        mssql_domain = os.environ.get("MSSQL_DOMAIN", "boreas")
+        # Multi-prefix env var fallback (Faz 19.MSSQL.X 2026-04-28).
+        # Historical context: backend.env on staging-sw uses prefixed env vars
+        # (REPORT_MSSQL_*, SCHEMA_MSSQL_*, WORKCUBE_MSSQL_*) for the same
+        # Workcube source. Original etl-worker only read unprefixed MSSQL_*.
+        # Result: `--env-file backend.env` injected REPORT_MSSQL_PASSWORD into
+        # the container but config.py read MSSQL_PASSWORD ("") → 18456 login
+        # failed despite credentials being correct (DR-6 readiness 2026-04-28).
+        # Fix: try unprefixed first (back-compat for explicit -e MSSQL_*=...),
+        # then fall back to REPORT_MSSQL_* and WORKCUBE_MSSQL_* prefixes.
+        def _env_first(*names: str, default: str = "") -> str:
+            for name in names:
+                v = os.environ.get(name)
+                if v:
+                    return v
+            return default
+
+        mssql_host = _env_first(
+            "MSSQL_HOST", "REPORT_MSSQL_HOST", "WORKCUBE_MSSQL_HOST",
+            default="10.9.193.201",
+        )
+        mssql_port = _env_first(
+            "MSSQL_PORT", "REPORT_MSSQL_PORT", "WORKCUBE_MSSQL_PORT",
+            default="1433",
+        )
+        mssql_user = _env_first(
+            "MSSQL_USER", "MSSQL_USERNAME",
+            "REPORT_MSSQL_USERNAME", "REPORT_MSSQL_USER",
+            "WORKCUBE_MSSQL_USERNAME", "WORKCUBE_MSSQL_USER",
+            default="AlUser_App",
+        )
+        mssql_password = _env_first(
+            "MSSQL_PASSWORD",
+            "REPORT_MSSQL_PASSWORD", "WORKCUBE_MSSQL_PASSWORD",
+            default="",
+        )
+        mssql_db = _env_first(
+            "MSSQL_DATABASE", "MSSQL_DB",
+            "REPORT_MSSQL_DB", "WORKCUBE_MSSQL_DB",
+            default="workcube_mikrolink",
+        )
+        mssql_domain = _env_first(
+            "MSSQL_DOMAIN", "REPORT_MSSQL_DOMAIN", "WORKCUBE_MSSQL_DOMAIN",
+            default="boreas",
+        )
 
         # NTLM authentication için ODBC string
         mssql_dsn = (
