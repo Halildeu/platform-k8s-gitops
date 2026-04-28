@@ -42,32 +42,38 @@ class Config:
                     return v
             return default
 
+        # 4-prefix fallback (DD-4 fix 2026-04-28): SCHEMA_MSSQL_* added so
+        # schema-service shared MSSQL credentials are picked up when
+        # etl-worker runs from the same backend.env. Codex 019dd409 DD-4
+        # AGREE: comment/code drift mismatch resolution.
         mssql_host = _env_first(
-            "MSSQL_HOST", "REPORT_MSSQL_HOST", "WORKCUBE_MSSQL_HOST",
+            "MSSQL_HOST", "REPORT_MSSQL_HOST", "SCHEMA_MSSQL_HOST", "WORKCUBE_MSSQL_HOST",
             default="10.9.193.201",
         )
         mssql_port = _env_first(
-            "MSSQL_PORT", "REPORT_MSSQL_PORT", "WORKCUBE_MSSQL_PORT",
+            "MSSQL_PORT", "REPORT_MSSQL_PORT", "SCHEMA_MSSQL_PORT", "WORKCUBE_MSSQL_PORT",
             default="1433",
         )
         mssql_user = _env_first(
             "MSSQL_USER", "MSSQL_USERNAME",
             "REPORT_MSSQL_USERNAME", "REPORT_MSSQL_USER",
+            "SCHEMA_MSSQL_USERNAME", "SCHEMA_MSSQL_USER",
             "WORKCUBE_MSSQL_USERNAME", "WORKCUBE_MSSQL_USER",
             default="AlUser_App",
         )
         mssql_password = _env_first(
             "MSSQL_PASSWORD",
-            "REPORT_MSSQL_PASSWORD", "WORKCUBE_MSSQL_PASSWORD",
+            "REPORT_MSSQL_PASSWORD", "SCHEMA_MSSQL_PASSWORD", "WORKCUBE_MSSQL_PASSWORD",
             default="",
         )
         mssql_db = _env_first(
             "MSSQL_DATABASE", "MSSQL_DB",
-            "REPORT_MSSQL_DB", "WORKCUBE_MSSQL_DB",
+            "REPORT_MSSQL_DB", "SCHEMA_MSSQL_DB", "WORKCUBE_MSSQL_DB",
             default="workcube_mikrolink",
         )
         mssql_domain = _env_first(
-            "MSSQL_DOMAIN", "REPORT_MSSQL_DOMAIN", "WORKCUBE_MSSQL_DOMAIN",
+            "MSSQL_DOMAIN",
+            "REPORT_MSSQL_DOMAIN", "SCHEMA_MSSQL_DOMAIN", "WORKCUBE_MSSQL_DOMAIN",
             default="boreas",
         )
 
