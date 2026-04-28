@@ -74,3 +74,18 @@ data:
   # Logging
   LOGGING_LEVEL_ROOT: "INFO"
   LOGGING_LEVEL_COM_ACIK: "INFO"
+
+  # 2026-04-29: Default admin role + OpenFGA tuple ensure on startup
+  # (DefaultAdminRoleAssignmentInitializer). Triggered after D35-3 closure
+  # gözleminde admin@example.com için organization:default#admin tuple eksik
+  # tespit edildi (kullanıcının kendi browser session'ında 403 toast).
+  # Initializer:
+  #   1. Listede tüm email'lere DB ADMIN role assign (ensureRoleAssignment)
+  #   2. OpenFGA organization:default#admin tuple ensure (writeTuple, idempotent)
+  # Bu, runtime drift'e karşı kalıcı koruma: pod restart sonrası admin'ler
+  # tekrar seedlenir; admin user'ların 403 hatası ile karşılaşması engellenir.
+  PERMISSION_BOOTSTRAP_DEFAULT_ADMIN_ASSIGNMENTS_ENABLED: "true"
+  # Admin user listesi — yeni admin eklendikçe bu listeye eklenmeli
+  # (D37 D-karar pending: dinamik DB-driven mod tasarımı).
+  PERMISSION_BOOTSTRAP_DEFAULT_ADMIN_ASSIGNMENTS_ADMIN_EMAILS: "admin@example.com,d35-admin@example.com"
+  PERMISSION_BOOTSTRAP_DEFAULT_ADMIN_ASSIGNMENTS_USER_TABLE: "user_service.users"
