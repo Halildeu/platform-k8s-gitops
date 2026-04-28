@@ -320,45 +320,46 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- 5. UPDATE-smuggling guard — V19 iter-2: trigger fires on UPDATE too
+-- 5. UPDATE-smuggling guard — V19 iter-2 + V25 tenant boundary
 -- ============================================================================
+-- V19 design: trigger fires on UPDATE OF (scope_kind, scope_source_table,
+-- scope_ref, revoked_at, ...). V25 widened signature to include org_id.
+--
+-- V25 contract change: trigger fires on EVERY INSERT (BEFORE INSERT, no
+-- WHEN clause), so the V19 "smuggle as revoked" pattern (insert with
+-- revoked_at NOT NULL bypassing trigger) is no longer feasible — INSERT
+-- itself rejects invalid scope_ref regardless of revoked_at state.
+--
+-- This test now validates the V25 contract: BEFORE INSERT trigger
+-- rejects invalid scope_ref directly (smuggling vector closed). The
+-- pre-V25 smuggle-then-activate pattern has no test surface left.
 
 DO $$
 DECLARE
     v_org BIGINT;
-    v_id BIGINT;
     v_trapped BOOLEAN := FALSE;
 BEGIN
     SELECT id INTO v_org FROM data_access.organization WHERE name = 'AÇIK';
 
-    -- Smuggle an invalid scope_ref in as REVOKED (trigger does NOT fire when
-    -- revoked_at IS NOT NULL).  The row exists but is inactive.
-    -- V21: JSON form scope_ref but pointing to non-existent source_pk.
-    INSERT INTO data_access.scope (
-        user_id, org_id, scope_kind, scope_source_table, scope_ref,
-        granted_at, revoked_at
-    )
-    VALUES (
-        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_org, 'company', 'OUR_COMPANY', '["999"]',
-        now() - INTERVAL '1 hour', now() - INTERVAL '30 minutes'
-    )
-    RETURNING id INTO v_id;
-    RAISE NOTICE '      seeded smuggled-revoked row id=% (scope_ref=["999999"])', v_id;
-
-    -- Now activate the row by clearing revoked_at — trigger MUST fire and reject.
+    -- Try INSERT with invalid scope_ref (no matching OUR_COMPANY row).
+    -- V25 BEFORE INSERT trigger MUST reject regardless of revoked_at state.
     BEGIN
-        UPDATE data_access.scope SET revoked_at = NULL WHERE id = v_id;
-        RAISE EXCEPTION 'expected UPDATE trigger to reject reactivation of bad scope_ref';
+        INSERT INTO data_access.scope (
+            user_id, org_id, scope_kind, scope_source_table, scope_ref,
+            granted_at, revoked_at
+        )
+        VALUES (
+            'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v_org, 'company', 'OUR_COMPANY', '["999"]',
+            now() - INTERVAL '1 hour', now() - INTERVAL '30 minutes'
+        );
+        RAISE EXCEPTION 'expected V25 BEFORE INSERT trigger to reject invalid scope_ref';
     EXCEPTION WHEN raise_exception THEN
         v_trapped := TRUE;
     END;
     IF NOT v_trapped THEN
-        RAISE EXCEPTION 'UPDATE trigger NOT fired (smuggling vector open)';
+        RAISE EXCEPTION 'V25 BEFORE INSERT trigger NOT fired (smuggling vector OPEN)';
     END IF;
-    RAISE NOTICE 'PASS  UPDATE trigger blocks revoked_at=NULL on bad scope_ref';
-
-    -- Cleanup: delete the smuggled row so subsequent tests have a clean state.
-    DELETE FROM data_access.scope WHERE id = v_id;
+    RAISE NOTICE 'PASS  V25 BEFORE INSERT trigger rejects invalid scope_ref regardless of revoked_at';
 END $$;
 
 -- ============================================================================
