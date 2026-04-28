@@ -1,0 +1,20 @@
+# gitleaks ignore list
+#
+# Format: <commit>:<file>:<rule>:<line>
+#
+# Each entry should be paired with a comment explaining the false positive.
+# Avoid blanket entries; prefer rewriting the source line in a follow-up
+# commit and removing the ignore once the fingerprint is unreachable.
+
+# PR #222 (D35-3 prereq runbooks) — gitleaks scans every commit on the PR
+# branch individually; the fix commit (1c2d9e4) replaced the angle-bracket
+# placeholders with `${VAR:?error}` env-var pattern, but the original commit
+# (19665a0) still contains the high-entropy strings and re-trips the
+# generic-api-key rule on its own line 46.
+#
+# All three flagged "secrets" are documentation placeholders for env vars
+# the operator exports from Keycloak runbook output — no real credential
+# is or was committed. Verified by reading lines 45-47 of the original
+# commit and the fix commit replacement (HEAD content uses `:?error msg`
+# pattern which gitleaks does not flag).
+19665a05c2ff8c3fabf15fcf34e327624c69a2af:docs/faz-21-3-evidence/d35-3-product-path-template.md:generic-api-key:46
