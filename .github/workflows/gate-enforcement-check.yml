@@ -68,27 +68,7 @@ jobs:
         if: always()
         run: |
           if [ -f /tmp/enforcement-rules-report.json ]; then
-            python3 -c "
-            import json
-            d = json.load(open('/tmp/enforcement-rules-report.json'))
-            print('=== Enforcement Rules Summary ===')
-            print(f\"  Status: {d.get('status', '?')}\")
-            print(f\"  Generated at: {d.get('generated_at', '?')}\")
-            print(f\"  Rules checked: {d.get('rules_count', '?')}\")
-            print(f\"  Findings: {d.get('findings_count', '?')}\")
-            print(f\"  Errors: {d.get('error_count', '?')}\")
-            print(f\"  Warnings: {d.get('warning_count', '?')}\")
-            by_rule = d.get('by_rule', {})
-            non_zero = {k: v for k, v in by_rule.items() if v > 0}
-            print(f\"  Rules with hits: {len(non_zero)} of {len(by_rule)}\")
-            for rule, n in non_zero.items():
-                print(f\"    {rule}: {n} hits\")
-            violations = d.get('violations', [])
-            for v in violations[:5]:
-                print(f\"    - {v.get('rule', '?')}: {v.get('file', '?')}:{v.get('line', '?')}\")
-            if len(violations) > 5:
-                print(f\"    ... and {len(violations) - 5} more (see artifact)\")
-            "
+            python3 ci/_summarize_enforcement_report.py /tmp/enforcement-rules-report.json
           else
             echo "No report file produced"
             exit 1
