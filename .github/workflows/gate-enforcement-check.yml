@@ -1,0 +1,103 @@
+name: gate-enforcement-check
+
+# Faz 19.11.D PR-B — port `ci/check_enforcement_rules.py` to a CI gate.
+# Codex thread `019dd322` canary verdict: PR-A ✓ shim landed; PR-B
+# is the first canary-passing script (0 violations on dry-run, 17 EP
+# rules supported).
+#
+# Triggers:
+#   - push/pull_request on changes to ci/, src/, policies/ (file scope)
+#   - weekly cron Mon 03:00 UTC (drift-detect cadence; matches
+#     etl-worker-tests + openfga-model-drift pattern)
+#   - workflow_dispatch (manual run)
+#
+# What it checks: regex-based policy violations across the repo. Replaces
+# semgrep for non-AST rules; AST rules (EP-006, EP-009, EP-014) require
+# semgrep separately (NOT in this gate).
+#
+# Output:
+#   - JSON report at /tmp/enforcement-rules-report.json
+#   - Uploaded as workflow artifact (retention 30 days)
+#   - Exit code 0 = pass, non-zero = fail (any rule violation triggers fail)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ci/check_enforcement_rules.py'
+      - 'ci/check_enforcement_rules_*.py'
+      - 'src/**'
+      - 'policies/**'
+      - '.github/workflows/gate-enforcement-check.yml'
+  pull_request:
+    paths:
+      - 'ci/check_enforcement_rules.py'
+      - 'ci/check_enforcement_rules_*.py'
+      - 'src/**'
+      - 'policies/**'
+      - '.github/workflows/gate-enforcement-check.yml'
+  schedule:
+    # Drift-detect: weekly Monday 03:00 UTC.
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+jobs:
+  enforcement-check:
+    name: Enforcement Rules Check (script-based)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run enforcement rules check
+        id: enforce
+        run: |
+          set -euo pipefail
+          python3 ci/check_enforcement_rules.py \
+            --repo-root . \
+            --out /tmp/enforcement-rules-report.json
+          echo "report-path=/tmp/enforcement-rules-report.json" >> "$GITHUB_OUTPUT"
+
+      - name: Show report summary
+        if: always()
+        run: |
+          if [ -f /tmp/enforcement-rules-report.json ]; then
+            python3 -c "
+            import json
+            d = json.load(open('/tmp/enforcement-rules-report.json'))
+            print('=== Enforcement Rules Summary ===')
+            print(f\"  Status: {d.get('status', '?')}\")
+            print(f\"  Generated at: {d.get('generated_at', '?')}\")
+            print(f\"  Rules checked: {d.get('rules_count', '?')}\")
+            print(f\"  Findings: {d.get('findings_count', '?')}\")
+            print(f\"  Errors: {d.get('error_count', '?')}\")
+            print(f\"  Warnings: {d.get('warning_count', '?')}\")
+            by_rule = d.get('by_rule', {})
+            non_zero = {k: v for k, v in by_rule.items() if v > 0}
+            print(f\"  Rules with hits: {len(non_zero)} of {len(by_rule)}\")
+            for rule, n in non_zero.items():
+                print(f\"    {rule}: {n} hits\")
+            violations = d.get('violations', [])
+            for v in violations[:5]:
+                print(f\"    - {v.get('rule', '?')}: {v.get('file', '?')}:{v.get('line', '?')}\")
+            if len(violations) > 5:
+                print(f\"    ... and {len(violations) - 5} more (see artifact)\")
+            "
+          else
+            echo "No report file produced"
+            exit 1
+          fi
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enforcement-rules-report-${{ github.run_id }}
+          path: /tmp/enforcement-rules-report.json
+          retention-days: 30
