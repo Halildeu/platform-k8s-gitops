@@ -10,7 +10,7 @@ This document gives every PR a deterministic place to declare its relationship t
 
 - **Always** include the `## D35 ladder declaration` block in PR descriptions if the change touches **any** of:
   - permission-service code or image digest
-  - ETL / `etl_worker` / `data_access` schema / `workcube_mikrolink.company`
+  - ETL / `etl_worker` / `data_access` schema / `workcube_mikrolink.our_company` (V25 anchor; was `workcube_mikrolink.company` pre-V25 — see ADR-0008 + ADR-0009 transition map)
   - OpenFGA model / store / tuple writer / poller
   - `kustomize/overlays/{test,prod}/kustomization.yaml` permission-service or related
   - Vault `kv/data/platform/permission-service` keys (via DR-3 wrapper)
@@ -90,8 +90,9 @@ Optional:
 
 Required captures:
 - Faz 16.2.A `etl_worker` runbook executed
-- `workcube_mikrolink.company` row count (>= 1) with at least 1 real
-  source_pk shown
+- `workcube_mikrolink.our_company` row count (>= 1) with at least 1 real
+  source_pk shown (V25 anchor; was `workcube_mikrolink.company` pre-V25 —
+  see ADR-0008 § Object id encoding for transition map)
 - `migration_audit.migration_runs` row visible with mode + status + counts
 - Reconcile evidence (rejected_rows = 0)
 - `data_access.organization_company` mapping for AÇIK org → real source_pk

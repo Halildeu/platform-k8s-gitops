@@ -89,7 +89,8 @@ Detay komut sequence'i: `docs/openfga-multi-org-rollout.md` Step 9.
 7. **Outbox row reaches `PROCESSED`** (eventual consistency): poll PG until
    status flips PENDING/PROCESSING → PROCESSED + processed_at non-null.
 8. **OpenFGA `/check` allows granted user**: `{"allowed": true}` for
-   `user:<uid>#viewer@company:wc-company-1001`.
+   `user:<uid>#viewer@company:wc-our-company-<COMP_ID>` (V25: was
+   `company:wc-company-<id>` pre-V25; see ADR-0008 § Object id encoding).
 9. **Negative user remains denied**: `{"allowed": false}` for non-granted
    user. (D29 third-level synthetic deny enforce — D35 canlı'da da kalır.)
 10. **Revoke creates REVOKE outbox row + allow flips to deny**: DELETE 204 +
@@ -129,14 +130,14 @@ ADR-0010 D35 bar'ı **azaltmaz**, ama altına stratifiye edilmiş
 | Tier | İsim | Captures | Synthetic data toleransı | D35 bar tatmin? |
 |---|---|---|---|---|
 | **D35-0** | Runtime Preflight | Image digest, env vars, HikariPool startup, OutboxPoller scheduler, V22+V23 schema present, outbox empty (no rows yet) | Yok (canlı cluster) | Hayır — preflight |
-| **D35-1** | Scope Anchor Prereq | Real Workcube `COMPANY` row(s) loaded into `workcube_mikrolink.company` via `etl_worker`; reconcile + audit row produced | Yok — gerçek Workcube | Hayır — prereq satisfaction |
+| **D35-1** | Scope Anchor Prereq | Real Workcube `OUR_COMPANY` row(s) loaded into `workcube_mikrolink.our_company` via `etl_worker` Faz 16.2.A; reconcile + audit row produced. **2026-04-28 V25 update**: anchor table corrected from COMPANY (80,246 row directory) to OUR_COMPANY (42 row tenant boundary) per Codex `019dd34e`. | Yok — gerçek Workcube | Hayır — prereq satisfaction |
 | **D35-2** | Scoped Grant/Revoke E2E | 11-step sequence with real `source_pk`; outbox PROCESSED + OpenFGA allow→deny chain | Yok | **EVET — D35 first evidence** |
 | **D35-3** | Product Path | UI panel + real user persona; scope-grant flow product behavior beyond REST-only | Yok — real user identity | Tatmin et + product confidence |
 
 **Per-tier kontrat**:
 
 - **D35-0** examples: PR #192 evidence file (`docs/faz-21-3-evidence/2026-04-28-outbox-isolated-preflight.md`) → tier marker `D35-0`. Yeni image rolling sonrası her zaman bir D35-0 alınır (regression-detect lane).
-- **D35-1** kontrat: `etl_worker` Faz 16.2.A "Scope Anchor Load" runbook (DR-6 PR'sında). Ürettiği audit row + `workcube_mikrolink.company.source_pk` örneği D35-1 evidence olarak commit edilir.
+- **D35-1** kontrat: `etl_worker` Faz 16.2.A "Scope Anchor Load" runbook (DR-6 PR'sında, 2026-04-28 V25 update sonrası `--tables OUR_COMPANY`). Ürettiği audit row + `workcube_mikrolink.our_company.source_pk` (= COMP_ID lineage) örneği D35-1 evidence olarak commit edilir. V25 öncesi `workcube_mikrolink.company` referansı yanlıştı (80,246 row directory ≠ 42 row tenant boundary).
 - **D35-2** kontrat: `docs/openfga-multi-org-rollout.md` Step 9.1-9.11 hep birlikte (yukarıdaki 11 madde). DR-7'de yapılır.
 - **D35-3** kontrat: UI flow + real persona → scope-grant + revoke + check; ayrı evidence dosyası, D35-2'den bağımsız (UI'nın endpoint'leri farklı; D35-2 REST-only, D35-3 UI-driven).
 
