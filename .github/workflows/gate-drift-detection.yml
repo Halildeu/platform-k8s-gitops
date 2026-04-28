@@ -1,0 +1,68 @@
+# ADR-0011 DD-1 — Plan-time Drift Detection (anchor table + V25/V26 contract guards)
+#
+# Codex thread `019dd409` PARTIAL/AGREE-with-revisions: workflow + script +
+# negative test fixture tek PR'da. Failure CI red → blocks merge of any
+# data_access schema change PR (eğer branch protection ile required check
+# olarak set'lendiyse).
+#
+# Triggers:
+#   - workflow_dispatch (manuel debug + ad-hoc run)
+#   - schedule weekly Mon 03:30 UTC (regression catch on stale main)
+#   - pull_request paths filter (data_access schema, ADR-0008/0011, ETL anchor manifest)
+#
+# Authority: Codex consensus only (no operator approval — read-only static
+# analysis, no state mutation).
+
+name: ADR-0011 DD-1 Drift Detection (anchor + V25/V26 contract)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly Mon 03:30 UTC — catches drift on main after last merge week
+    - cron: "30 3 * * 1"
+  pull_request:
+    paths:
+      - ".github/workflows/gate-drift-detection.yml"
+      - "scripts/drift_detection/**"
+      - "tests/drift_detection/**"
+      - "sql/migration/V*.sql"
+      - "docs/migration/workcube-schema.json"
+      - "docs/adr/0008-*.md"
+      - "docs/adr/0011-*.md"
+
+jobs:
+  drift-detection:
+    name: ADR-0011 DD-1 — anchor table + V25/V26 contract drift check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run drift detection (default = green run)
+        run: |
+          python3 scripts/drift_detection/check_drift_anchor_table.py --verbose
+
+      - name: Run drift detection (JSON output for CI artifact)
+        if: always()
+        run: |
+          python3 scripts/drift_detection/check_drift_anchor_table.py --json > /tmp/drift-report.json || true
+          cat /tmp/drift-report.json
+
+      - name: Upload drift report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-detection-report
+          path: /tmp/drift-report.json
+          retention-days: 7
+
+      - name: Run unit tests (positive + negative)
+        run: |
+          python3 -m unittest tests.drift_detection.test_check_drift_anchor_table -v
