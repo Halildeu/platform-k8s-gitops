@@ -58,11 +58,28 @@ jobs:
       - name: Run enforcement rules check
         id: enforce
         run: |
-          set -euo pipefail
+          # Warning-tolerant: don't fail on script's non-zero exit (warnings).
+          # Fail-on-errors logic is in the next step (parse error_count from
+          # report). Codex `019dd322` recommendation: "errors/warnings
+          # politikası net olmalı".
           python3 ci/check_enforcement_rules.py \
             --repo-root . \
-            --out /tmp/enforcement-rules-report.json
+            --out /tmp/enforcement-rules-report.json \
+            || true
           echo "report-path=/tmp/enforcement-rules-report.json" >> "$GITHUB_OUTPUT"
+
+      - name: Fail on errors (warnings tolerated)
+        run: |
+          if [ ! -f /tmp/enforcement-rules-report.json ]; then
+            echo "ERROR: report file missing"
+            exit 1
+          fi
+          ERRORS=$(python3 -c "import json; print(json.load(open('/tmp/enforcement-rules-report.json')).get('error_count', 0))")
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "FAIL: $ERRORS error-severity findings"
+            exit 1
+          fi
+          echo "PASS: 0 error-severity findings (warnings may exist; see summary)"
 
       - name: Show report summary
         if: always()
