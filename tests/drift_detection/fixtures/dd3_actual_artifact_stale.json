@@ -1,0 +1,12 @@
+{
+  "generated_at": "2020-01-01T00:00:00Z",
+  "source_snapshot_sha256": "OLD_HASH_FROM_2020",
+  "schema": "workcube_mikrolink",
+  "tables": {
+    "OUR_COMPANY": {
+      "columns": [
+        {"name": "comp_id", "data_type": "integer"}
+      ]
+    }
+  }
+}
