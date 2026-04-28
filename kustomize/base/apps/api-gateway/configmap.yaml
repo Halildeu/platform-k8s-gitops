@@ -186,11 +186,18 @@ data:
 
   # Keycloak (host-level, ExternalName Service üzerinden)
   KEYCLOAK_URL: "http://keycloak:8080"
-  # Source repo k8s profile fallback'i `serban`; GitOps tarafında explicit baz
-  # değeri bırakıyoruz ama overlay'ler issuer'ı token `iss` claim'i ile aynı
-  # edge hostname'e çevirir. JWK ise cluster içi Keycloak üzerinden okunur.
-  KEYCLOAK_ISSUER_URI: "http://keycloak:8080/realms/serban"
-  KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+  # CLAUDE.md "Yaygın Pitfalls #1": base'de literal realm yerine
+  # OVERLAY_MUST_OVERRIDE placeholder. Test overlay platform-test, prod
+  # overlay serban'a override eder. Önceki (Apr 24) baz değer "serban" idi
+  # — Faz 21.3 D35-2-full evidence run sırasında api-gateway-config'in
+  # selective apply'la base apply edilmesi sebebiyle test cluster'da
+  # `serban` realm'ine drift oldu (kullanıcının `platform-test` JWT'si
+  # gateway tarafında `JwtException: No suitable decoder accepted the
+  # token` ile reddedildi → /api/v1/access/scope HTTP 500). Düzeltme:
+  # base'de fail-closed placeholder; overlay her zaman gerçek değeri
+  # set etmek zorunda. Codex 019dd409 gateway external 500 root cause.
+  KEYCLOAK_ISSUER_URI: "OVERLAY_MUST_OVERRIDE"
+  KEYCLOAK_JWKS_URI: "OVERLAY_MUST_OVERRIDE"
 
   # Spring Cloud Gateway — PoC Dilim 1 için minimum route (application-k8s.yml
   # içinde tanımlı olabilir, burası sadece URL override eder)

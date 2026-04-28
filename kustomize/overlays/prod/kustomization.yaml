@@ -75,6 +75,13 @@ patches:
       - op: replace
         path: /data/KEYCLOAK_ISSUER_URI
         value: "https://ai.acik.com/realms/serban"
+      # Faz 21.3 D35-2-full follow-up (Codex 019dd409 gateway external 500
+      # root cause fix): base'de KEYCLOAK_JWKS_URI artık OVERLAY_MUST_OVERRIDE
+      # placeholder; prod overlay explicit JWKS path set etmeli (issuer
+      # external `https://...` ama JWKS internal cluster Keycloak'tan okunur).
+      - op: replace
+        path: /data/KEYCLOAK_JWKS_URI
+        value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
   - target:
       kind: ConfigMap
       name: variant-service-config
