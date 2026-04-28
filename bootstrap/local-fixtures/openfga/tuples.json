@@ -1,5 +1,5 @@
 {
-  "_comment": "Faz 19.11 Step 3 + Faz 21.3 fixture activation — NOT_FOR_PROD. Mac k3d-dev seed.",
+  "_comment": "Faz 19.11 Step 3 + Faz 21.3 fixture activation (V25 OUR_COMPANY anchor) — NOT_FOR_PROD. Mac k3d-dev seed.",
   "_notes": [
     "Mac k3d-dev cluster'ında openfga StatefulSet ayağa kalktıktan sonra dev-seed.sh",
     "(a) bu fixture dizininden model.fga'yı render edip OpenFGA store'a yazar (Faz 19.11 Step 3),",
@@ -8,7 +8,8 @@
     "company|project|warehouse|branch#viewer@user explicit assignment'tan gelir.",
     "Loading gate: (a) backend PR #11 explicit-scope model.fga merged, (b) dev-seed.sh model reload (THIS PR).",
     "PG↔FGA naming: scope_kind='depot' → object_type 'warehouse' (ADR-0008 § Naming).",
-    "Codex 019dc8b4 iter-1/iter-2 absorbed; multi-org tuples promoted from _future to active."
+    "V25 namespace (Codex 019dd34e hybrid contract): company FGA object id flipped from `wc-company-<id>` to `wc-our-company-<COMP_ID>` per ADR-0008 § \"Object id encoding\" V25 update — mirrors the staging-sw D35-2 canlı evidence (`docs/faz-21-3-evidence/2026-04-28-d35-2-first-canli-eventual-consistency.md`).",
+    "Codex 019dc8b4 iter-1/iter-2 absorbed; multi-org tuples promoted from _future to active. V25 namespace alignment Codex 019dd3dc final note + Session 33 hygiene cleanup."
   ],
   "model": "bootstrap/local-fixtures/openfga/model.fga",
   "tuples": [
@@ -18,7 +19,7 @@
     {"user": "user:viewer@localtest.me",            "relation": "viewer",  "object": "project:dev-local"},
     {"user": "user:admin@localtest.me",             "relation": "admin",   "object": "organization:acik"},
     {"user": "user:member@localtest.me",            "relation": "member",  "object": "organization:acik"},
-    {"user": "user:company-viewer@localtest.me",    "relation": "viewer",  "object": "company:wc-company-1001"},
+    {"user": "user:company-viewer@localtest.me",    "relation": "viewer",  "object": "company:wc-our-company-1"},
     {"user": "user:project-viewer@localtest.me",    "relation": "viewer",  "object": "project:wc-project-1204"},
     {"user": "user:branch-viewer@localtest.me",     "relation": "viewer",  "object": "branch:wc-branch-7"},
     {"user": "user:depot-viewer@localtest.me",      "relation": "viewer",  "object": "warehouse:wc-department-3792"}
@@ -31,9 +32,9 @@
     {"description": "admin can administer AÇIK", "expected": true,
      "check": {"user": "user:admin@localtest.me", "relation": "admin", "object": "organization:acik"}},
     {"description": "org member CANNOT view company (explicit-scope contract — UI mandate)", "expected": false,
-     "check": {"user": "user:member@localtest.me", "relation": "viewer", "object": "company:wc-company-1001"}},
+     "check": {"user": "user:member@localtest.me", "relation": "viewer", "object": "company:wc-our-company-1"}},
     {"description": "explicit company viewer can view that company", "expected": true,
-     "check": {"user": "user:company-viewer@localtest.me", "relation": "viewer", "object": "company:wc-company-1001"}},
+     "check": {"user": "user:company-viewer@localtest.me", "relation": "viewer", "object": "company:wc-our-company-1"}},
     {"description": "explicit depot viewer can view that depot", "expected": true,
      "check": {"user": "user:depot-viewer@localtest.me", "relation": "viewer", "object": "warehouse:wc-department-3792"}},
     {"description": "depot viewer CANNOT view sub-depot (no transitive parent_warehouse — ADR-0008 alt C reddedildi)", "expected": false,
