@@ -64,23 +64,53 @@ karşılanır. Bu kalıcı CI gate'tir.
 
 ### D35 (canlı) bar — yeni
 
-Bir feature canlı ürün davranışı kanıtlı sayılması için **5 bağımsız
-adımın hepsi staging-sw k3d-test üzerinde gerçekleşmeli ve kanıt
-toplanmalı**:
+**2026-04-28 update (V22+V23+PR-G outbox merge sonrası)**: D35 bar 5 adımdan
+**11 adıma** genişledi. Outbox transactional pattern (ADR-0008 Tuple writer
+flow + Codex `019dd0e0` iter-2) sync-grant semantiğini eventual-consistency
+ile değiştirdiği için "POST → immediate allow" assertion artık geçersiz —
+"POST → outbox row → poller processed → eventual allow" kanıtlanmalı.
 
-1. **UI scope grant**: admin Veri Erişimi panel üzerinden user'a
-   scope atar (örn. `company:wc-company-1001` viewer).
-2. **REST INSERT**: backend `/api/v1/access/scope` POST 200 döner;
-   response body `scope_id` + `openfga_tuple_id` içerir.
-3. **PG INSERT**: `data_access.scope` tablosunda satır görünür;
-   trigger fire etmiş (`validate_scope_ref` lineage var; kötü
-   scope_ref denenmişse RAISE EXCEPTION ile geri dönmüş).
-4. **OpenFGA tuple write**: `permission-service` tuple writer
-   outbox/sync ile `company:wc-company-1001#viewer@user:<uid>`
-   tuple'ını yazar; OpenFGA `/check` aynı tuple'ı görür.
-5. **Authz check**: business endpoint (`/api/v1/reports/...`) veya
-   `/authz/me` ilgili user için **allow** döner; başka bir user
-   için **deny** döner. Allow + deny her ikisi kanıtlanmalı.
+Bir feature canlı ürün davranışı kanıtlı sayılması için **11 bağımsız adımın
+hepsi staging-sw k3d-test üzerinde gerçekleşmeli ve kanıt toplanmalı**.
+Detay komut sequence'i: `docs/openfga-multi-org-rollout.md` Step 9.
+
+1. **Artifact digest match**: `kubectl get pod permission-service` imageID
+   ile gitops kustomize digest pin eşleşmesi.
+2. **REPORTS_DB_ENABLED + datasource env**: `REPORTS_DB_*` env vars present,
+   `ERP_OPENFGA_ENABLED=true` confirmed.
+3. **Outbox poller enabled + config visible**: HikariPool-2 (reports_db)
+   started + OutboxPoller scheduler log line.
+4. **POST grant creates `data_access.scope` row**: REST 201 + scopeId +
+   outboxId + `tupleSyncStatus="PENDING"`.
+5. **`data_access.scope` row visible in PG**: scope_ref JSON canonical form
+   (`["1001"]`), revoked_at NULL.
+6. **Matching `data_access.scope_outbox` PENDING row**: V23 typed columns
+   (tuple_user, tuple_relation, tuple_object) populated, attempt_count 0.
+7. **Outbox row reaches `PROCESSED`** (eventual consistency): poll PG until
+   status flips PENDING/PROCESSING → PROCESSED + processed_at non-null.
+8. **OpenFGA `/check` allows granted user**: `{"allowed": true}` for
+   `user:<uid>#viewer@company:wc-company-1001`.
+9. **Negative user remains denied**: `{"allowed": false}` for non-granted
+   user. (D29 third-level synthetic deny enforce — D35 canlı'da da kalır.)
+10. **Revoke creates REVOKE outbox row + allow flips to deny**: DELETE 204 +
+    REVOKE outbox row PROCESSED + originally-granted user `/check` now
+    `{"allowed": false}`.
+11. **Zero terminal `FAILED` rows**: `data_access.scope_outbox WHERE status='FAILED'
+    AND created_at >= now() - 10min` count = 0.
+
+Önceki 5-adım kontratın değişim haritası:
+- Old step 1 (UI grant) → new step 4 (REST grant — UI flow operator tarafından
+  Veri Erişimi panel üzerinden yapılır, REST trigger aynı).
+- Old step 2 (REST INSERT) → new step 4 (response semantik genişledi:
+  `tupleSyncStatus`, `outboxId`, `processedAt`).
+- Old step 3 (PG INSERT) → new step 5 (scope_ref V21 JSON canonical).
+- Old step 4 (FGA tuple write) → new steps 6+7 (outbox row PENDING → PROCESSED
+  eventual; sync-write artık yok).
+- Old step 5 (allow + deny) → new steps 8+9 (allow + deny ayrı assertion;
+  her ikisi de eventual-consistency sonrası ölçülür).
+
+Yeni adımlar: 1 (digest), 3 (poller config), 6 (outbox row), 7 (PROCESSED),
+10 (revoke + flip), 11 (FAILED rows).
 
 ### Failure modu ayrımı
 

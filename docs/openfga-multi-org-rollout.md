@@ -321,8 +321,329 @@ or equivalent appears (proves the secondary datasource initialised). Without tha
 the flag flip is inert; PR-D's REST `/api/v1/access/scope` endpoint will return
 500 because `DataAccessScopeRepository` won't be wired.
 
-Backend now writes tuples on `data_access.scope INSERT` once PR-D delivers the
-REST contract that triggers `DataAccessScopeTupleWriter.writeScopeTuple()`.
+After PR-G (V22 + V23 outbox migration + backend poller) merge: grant/revoke
+no longer write to OpenFGA synchronously. Backend writes a row to
+`data_access.scope_outbox` in the same transaction as the `data_access.scope`
+INSERT/UPDATE; the `OutboxPoller` background service (in permission-service)
+claims `PENDING` rows via `FOR UPDATE SKIP LOCKED`, calls OpenFGA, and marks
+the row `PROCESSED`. **D35 evidence semantic shifts from "POST → immediate
+allow" to "POST → outbox row → poller processed → eventual allow"** — see
+Step 9 below.
+
+## Step 9 — D35 first evidence (post-V22+V23+PR-G — eventual consistency)
+
+Faz 21.3 outbox lands a transactional outbox between PG `scope` row and
+OpenFGA tuple write. D35 evidence MUST validate the FULL eventual-consistency
+chain rather than synchronous grant→allow. Codex `019dd0e0` iter-2 explicit
+verdict: D35 evidence after V22+V23 must include `outbox row state`,
+`poller evidence`, and `OpenFGA allow/deny` together.
+
+### 11-step evidence sequence
+
+Each step yields a captured artifact saved to
+`docs/faz-21-3-evidence/2026-XX-XX-d35-first-smoke-staging-test.md`.
+
+```bash
+# Setup (operator runs once per evidence pass)
+RUN_ID="d35-$(date +%Y%m%d-%H%M)"
+USER_UID_GRANTED="<actual user uuid that should receive scope>"
+USER_UID_DENIED="<other user uuid for negative assertion>"
+ORG_ID=1  # AÇIK
+SCOPE_KIND="company"
+SCOPE_REF='["1001"]'  # canonical JSON form, V21 contract
+EXPECTED_TUPLE_OBJECT="company:wc-company-1001"
+GRANT_USER="user:${USER_UID_GRANTED}"
+
+mkdir -p docs/faz-21-3-evidence
+EVIDENCE="docs/faz-21-3-evidence/${RUN_ID}.md"
+echo "# D35 first evidence — ${RUN_ID}" > ${EVIDENCE}
+echo "Started: $(date -Iseconds)" >> ${EVIDENCE}
+```
+
+#### Step 9.1 — Artifact digest match
+
+Confirm the running permission-service is the post-V22+V23 image (sha-`<merge_sha>`
+or later):
+
+```bash
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  get pod -l app=permission-service \
+  -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'"
+# expect ghcr.io/halildeu/platform-backend-permission-service@sha256:<digest>
+# Match against gitops kustomize/overlays/test/kustomization.yaml current pin.
+```
+
+Append the imageID line to ${EVIDENCE}.
+
+**Operator gate**: digest matches the gitops overlay pin. If not, ArgoCD sync
+hasn't propagated yet — wait or force `argocd app sync platform-test`.
+
+#### Step 9.2 — REPORTS_DB_ENABLED + datasource env evidence
+
+```bash
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  exec deploy/permission-service -- env | \
+  grep -E 'REPORTS_DB_(ENABLED|URL|USERNAME|PASSWORD)|ERP_OPENFGA_ENABLED'"
+# expect:
+#   REPORTS_DB_ENABLED=true
+#   REPORTS_DB_URL=jdbc:postgresql://postgres:5432/reports_db
+#   REPORTS_DB_USERNAME=<populated>
+#   REPORTS_DB_PASSWORD=<populated, redacted in evidence>
+#   ERP_OPENFGA_ENABLED=true
+```
+
+Append to ${EVIDENCE} (redact PASSWORD value).
+
+**Operator gate**: all 5 env vars present. Missing → re-run Step 8 ESO refresh.
+
+#### Step 9.3 — Outbox poller enabled + config visible
+
+```bash
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  logs deploy/permission-service --tail=200 | \
+  grep -E 'OutboxPoller|app.outbox|HikariPool-(1|2) - Start completed'"
+# expect at least:
+#   - "HikariPool-1 - Start completed." (primary auth_db)
+#   - "HikariPool-2 - Start completed." (secondary reports_db)
+#   - OutboxPoller scheduler started (config: batch_size=25, poll_interval=5s, etc.)
+```
+
+Append to ${EVIDENCE}. Operator gate: secondary HikariPool started + scheduler
+log line.
+
+#### Step 9.4 — POST grant creates `data_access.scope` row
+
+```bash
+# JWT token from ${USER_UID_GRANTED} as actor (or admin-on-behalf-of pattern)
+JWT_ADMIN="<admin token who has module:ACCESS#can_manage>"
+
+GRANT_RESPONSE=$(curl -s -X POST https://testai.acik.com/api/v1/access/scope \
+  -H "Authorization: Bearer ${JWT_ADMIN}" \
+  -H 'Content-Type: application/json' \
+  -d @- <<EOF
+{
+  "userId": "${USER_UID_GRANTED}",
+  "orgId": ${ORG_ID},
+  "scopeKind": "${SCOPE_KIND^^}",
+  "scopeRef": "${SCOPE_REF}"
+}
+EOF
+)
+echo "${GRANT_RESPONSE}" >> ${EVIDENCE}
+
+SCOPE_ID=$(echo "${GRANT_RESPONSE}" | jq -r .scopeId)
+OUTBOX_ID=$(echo "${GRANT_RESPONSE}" | jq -r .outboxId)
+TUPLE_SYNC_STATUS_INITIAL=$(echo "${GRANT_RESPONSE}" | jq -r .tupleSyncStatus)
+
+echo "scope_id=${SCOPE_ID} outbox_id=${OUTBOX_ID} initial=${TUPLE_SYNC_STATUS_INITIAL}" >> ${EVIDENCE}
+```
+
+**Operator gate**: HTTP 201 + `scopeId` numeric + `outboxId` numeric +
+`tupleSyncStatus="PENDING"` + `processedAt=null`.
+
+#### Step 9.5 — `data_access.scope` row visible in PG
+
+```bash
+ssh halil@staging-sw "PGPASSWORD='<...>' psql -h 172.19.0.6 -U postgres \
+  -d reports_db -c '
+SELECT id, user_id, org_id, scope_kind, scope_ref, granted_at, revoked_at
+FROM data_access.scope WHERE id = ${SCOPE_ID};
+'"
+# expect 1 row, revoked_at = NULL, scope_ref matches '["1001"]' (JSON canonical)
+```
+
+Append to ${EVIDENCE}. Operator gate: row exists, scope_ref is JSON form, no
+revoked_at.
+
+#### Step 9.6 — Matching `data_access.scope_outbox` PENDING row
+
+```bash
+ssh halil@staging-sw "PGPASSWORD='<...>' psql -h 172.19.0.6 -U postgres \
+  -d reports_db -c '
+SELECT id, scope_id, action, status, attempt_count, tuple_user, tuple_relation, tuple_object,
+       next_attempt_at, locked_by, locked_until, created_at, processed_at, last_error
+FROM data_access.scope_outbox WHERE id = ${OUTBOX_ID};
+'"
+# expect:
+#   - status: PENDING (or PROCESSING/PROCESSED if poller already claimed)
+#   - tuple_user: user:${USER_UID_GRANTED}
+#   - tuple_relation: viewer
+#   - tuple_object: company:wc-company-1001
+#   - attempt_count: 0 (or 1 if PROCESSING)
+#   - last_error: NULL
+```
+
+Append. Operator gate: row exists with V23 typed columns populated correctly.
+
+#### Step 9.7 — Outbox row reaches `PROCESSED` (eventual consistency assertion)
+
+```bash
+# Poll up to 30s for status transition (poller default poll_interval=5s)
+for i in $(seq 1 6); do
+  STATUS=$(ssh halil@staging-sw "PGPASSWORD='<...>' psql -h 172.19.0.6 \
+    -U postgres -d reports_db -t -c \
+    \"SELECT status FROM data_access.scope_outbox WHERE id = ${OUTBOX_ID};\"" | xargs)
+  echo "  attempt ${i}: status=${STATUS}" | tee -a ${EVIDENCE}
+  if [[ "${STATUS}" == "PROCESSED" ]]; then break; fi
+  sleep 5
+done
+
+# Final state assertion
+ssh halil@staging-sw "PGPASSWORD='<...>' psql -h 172.19.0.6 -U postgres \
+  -d reports_db -c '
+SELECT id, status, processed_at, attempt_count
+FROM data_access.scope_outbox WHERE id = ${OUTBOX_ID};
+'" >> ${EVIDENCE}
+# expect status='PROCESSED' + processed_at non-null + attempt_count >= 1
+```
+
+**Operator gate**: outbox row reaches `PROCESSED` within ~30s. If still
+`PENDING` after 60s → poller not running. If `FAILED` → see Step 9.11.
+
+#### Step 9.8 — OpenFGA `/check` allows granted user
+
+```bash
+STORE_ID=$(vault kv get -field=store_id kv/platform/openfga)
+MODEL_ID=$(vault kv get -field=model_id kv/platform/openfga)
+
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  exec deploy/openfga -- curl -s \
+  http://localhost:8080/stores/${STORE_ID}/check \
+  -H 'Content-Type: application/json' \
+  -d @- <<EOF
+{
+  \"authorization_model_id\": \"${MODEL_ID}\",
+  \"tuple_key\": {
+    \"user\": \"${GRANT_USER}\",
+    \"relation\": \"viewer\",
+    \"object\": \"${EXPECTED_TUPLE_OBJECT}\"
+  }
+}
+EOF
+" | tee -a ${EVIDENCE}
+# expect {"allowed": true}
+```
+
+Operator gate: `allowed=true` for granted user.
+
+#### Step 9.9 — Negative user remains denied
+
+```bash
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  exec deploy/openfga -- curl -s \
+  http://localhost:8080/stores/${STORE_ID}/check \
+  -H 'Content-Type: application/json' \
+  -d @- <<EOF
+{
+  \"authorization_model_id\": \"${MODEL_ID}\",
+  \"tuple_key\": {
+    \"user\": \"user:${USER_UID_DENIED}\",
+    \"relation\": \"viewer\",
+    \"object\": \"${EXPECTED_TUPLE_OBJECT}\"
+  }
+}
+EOF
+" | tee -a ${EVIDENCE}
+# expect {"allowed": false}
+```
+
+Operator gate: `allowed=false` for non-granted user. (D29 third level —
+synthetic deny enforce.)
+
+#### Step 9.10 — Revoke creates REVOKE outbox row + allow flips to deny
+
+```bash
+curl -s -X DELETE "https://testai.acik.com/api/v1/access/scope/${SCOPE_ID}" \
+  -H "Authorization: Bearer ${JWT_ADMIN}" \
+  -w '%{http_code}\n' | tee -a ${EVIDENCE}
+# expect HTTP 204
+
+# Verify REVOKE outbox row appears
+ssh halil@staging-sw "PGPASSWORD='<...>' psql -h 172.19.0.6 -U postgres \
+  -d reports_db -c '
+SELECT id, scope_id, action, status, tuple_user, tuple_object
+FROM data_access.scope_outbox WHERE scope_id = ${SCOPE_ID} ORDER BY id;
+'" >> ${EVIDENCE}
+# expect 2 rows: GRANT (PROCESSED) + REVOKE (PENDING/PROCESSING/PROCESSED)
+
+# Wait for REVOKE PROCESSED
+for i in $(seq 1 6); do
+  STATUS=$(ssh halil@staging-sw "PGPASSWORD='<...>' psql -h 172.19.0.6 \
+    -U postgres -d reports_db -t -c \
+    \"SELECT status FROM data_access.scope_outbox \
+       WHERE scope_id = ${SCOPE_ID} AND action='REVOKE' \
+       ORDER BY id DESC LIMIT 1;\"" | xargs)
+  echo "  revoke poll ${i}: status=${STATUS}" | tee -a ${EVIDENCE}
+  if [[ "${STATUS}" == "PROCESSED" ]]; then break; fi
+  sleep 5
+done
+
+# Allow flip — granted user now denied
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  exec deploy/openfga -- curl -s \
+  http://localhost:8080/stores/${STORE_ID}/check \
+  -H 'Content-Type: application/json' \
+  -d @- <<EOF
+{
+  \"authorization_model_id\": \"${MODEL_ID}\",
+  \"tuple_key\": {
+    \"user\": \"${GRANT_USER}\",
+    \"relation\": \"viewer\",
+    \"object\": \"${EXPECTED_TUPLE_OBJECT}\"
+  }
+}
+EOF
+" | tee -a ${EVIDENCE}
+# expect {"allowed": false} — same user as Step 9.8 now denied
+```
+
+**Operator gate**: REVOKE outbox PROCESSED + originally-granted user now
+denied (allow flipped to deny). This is the eventual-consistency proof.
+
+#### Step 9.11 — Zero terminal `FAILED` rows for this evidence run
+
+```bash
+ssh halil@staging-sw "PGPASSWORD='<...>' psql -h 172.19.0.6 -U postgres \
+  -d reports_db -c '
+SELECT count(*) AS failed_count
+FROM data_access.scope_outbox
+WHERE status = '\''FAILED'\''
+  AND created_at >= now() - INTERVAL '\''10 minutes'\'';
+'" | tee -a ${EVIDENCE}
+# expect failed_count: 0
+```
+
+If non-zero → check `last_error` column for diagnostic; this is a real
+failure signal (operator alert candidate per PR-G `OUTBOX FAILED terminal`
+log line).
+
+```bash
+echo "" >> ${EVIDENCE}
+echo "Completed: $(date -Iseconds)" >> ${EVIDENCE}
+echo "Verdict: $(if grep -q 'allowed.: true' ${EVIDENCE} && \
+                  grep -q 'allowed.: false' ${EVIDENCE} && \
+                  grep -q 'PROCESSED' ${EVIDENCE} && \
+                  ! grep -q 'failed_count: [1-9]' ${EVIDENCE}; \
+                  then echo PASS; else echo FAIL — review steps; fi)" >> ${EVIDENCE}
+```
+
+### D35 evidence handoff
+
+After all 11 steps captured, commit the evidence file to gitops:
+
+```bash
+cd ~/Documents/platform-k8s-gitops
+git checkout -b docs/d35-evidence-${RUN_ID}
+cp ${EVIDENCE} docs/faz-21-3-evidence/
+git add docs/faz-21-3-evidence/${RUN_ID}.md
+git commit -m "docs(d35): first evidence ${RUN_ID} — V22+V23+PR-G eventual consistency PASS"
+git push -u origin docs/d35-evidence-${RUN_ID}
+gh pr create --title "docs(d35): first evidence ${RUN_ID}"
+```
+
+PR review confirms evidence completeness; merge anchors D35 first evidence in
+repo history (per ADR-0009 D35 ownership: operator captures, agent reviews +
+merges).
 
 ## Rollback
 
