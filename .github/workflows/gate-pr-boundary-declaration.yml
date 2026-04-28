@@ -32,12 +32,15 @@ jobs:
     timeout-minutes: 3
 
     steps:
-      - name: Checkout base repository (BG-1.1 — base SHA, NOT PR HEAD)
+      - name: Checkout base repository (BG-1.2 — base ref HEAD, NOT PR HEAD)
         uses: actions/checkout@v4
         with:
-          # Trusted: base branch SHA. PR HEAD checkout YASAK
-          # (pull_request_target security pattern).
-          ref: ${{ github.event.pull_request.base.sha }}
+          # Trusted: base BRANCH HEAD (main HEAD), NOT base SHA (PR fork-point).
+          # BG-1.1 used base.sha but that pointed to old commits for stale
+          # dependabot PRs (script file didn't exist in fork-point commit).
+          # BG-1.2 fix: base.ref → main HEAD → güncel script + workflow.
+          # PR HEAD checkout YASAK (pull_request_target security pattern).
+          ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
