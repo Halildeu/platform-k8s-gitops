@@ -63,13 +63,51 @@
 
 PR #189 runbook Step 9.4-9.11 walks the full eventual-consistency chain: REST `POST /api/v1/access/scope` → `data_access.scope` row → outbox PROCESSED → OpenFGA allow → DELETE → outbox REVOKE PROCESSED → OpenFGA deny. Step 9.4 `INSERT INTO data_access.scope` triggers `validate_scope_ref()` which queries `workcube_mikrolink.company.source_pk = (jsonb->>0)`. Without ETL load, `workcube_mikrolink.company` is empty → no real source_pk → trigger raises P0001. Per Kural #9 (no fake/cosmetic work) + 2026-04-26 user mandate ("Workcube MSSQL kaynak şeması her zaman schema-service üzerinden alınır. Agent sentetik tablo/kolon/FK üretmemeli"), seeding a stub row would falsify D35 "canlı scoped evidence" claim. Codex `019dd2a2` rationale: _"`source_pk='1001'` canonical tablo şekline uygun olsa bile Workcube kaynağından veya ETL lineage'ından gelmeyen ürün verisidir; bu ancak ayrı adlandırılmış 'outbox isolated preflight' olabilir, D35 first evidence olamaz."_
 
+### Vault DR keyset drift — KRİTİK BULGU 2026-04-28
+
+**Test vault** (`platform-vault-test` container, port 8301; shares=3, threshold=2): unseal keyset partially stale.
+
+| Test | Sonuç |
+|---|---|
+| `vault operator generate-root` init via container CLI | OK (OTP + nonce alındı) |
+| KEY1 (`/home/halil/platform/state/vault/vault-unseal-key-1`) submit | Progress 1/2 (kabul) |
+| KEY2 submit | 400 `error decrypting using seal shamir: cipher: message authentication failed` |
+| KEY3 submit (alternatif) | Aynı hata |
+
+→ **DR mevcut durumda imkansız**: KEY1 valid, KEY2 ve KEY3 stale (vault re-key edilmiş, dosyalar güncellenmemiş). Test vault crash olursa:
+- Unseal yapılamaz → secrets erişilemez
+- Root regen yapılamaz → admin recovery yok
+- ESO sync devam eder (cluster-internal token cached) ama yeniden başlatılamaz
+
+**Prod vault DR durumu**: read-only verify yapılmadı (operatorial care, ADR-0010 §2.5 user-approval'a tabi).
+
+**ADR-0010 (this PR)**: Vault Credential Lifecycle + DR + Operator/Agent Authority ADR'i kabul edildi. 9-PR yol haritası başlatıldı (DR-1 = bu PR, DR-2 policy split, DR-3 wrapper, DR-4 SoD unblock, DR-5 D35 ladder, DR-6 anchor ETL, DR-7 D35-2 first real, DR-8 prod prep, DR-9 prod promotion gate).
+
+**Faz 21.3 SoD remediation Step 4 (Vault populate) BLOCKED** — DR-2 + DR-3 tamamlandığında bootstrap-writer AppRole ile root token bağımsız çözüm yolu açılır. Şu an `permission_reports_writer` rol oluşturuldu ve DB-side smoke gate 14/14 PASS (Codex `019dd2af` matrix), Vault populate adımı bekliyor.
+
 ### Sıradaki adımlar
 
-1. **D35 first evidence**: OPEN BLOCKER pending Faz 16.2.P ETL load (real Workcube `workcube_mikrolink.company` rows). When ETL prereq met, run PR #189 runbook Step 9.4-9.11 with real source_pk values, capture as separate evidence file.
-2. **Dedicated reports_db role + Vault populate** (out-of-scope chip queued): create `permission_reports_writer` Postgres role with read+DML on `data_access.scope`/`scope_outbox` only, populate `kv/platform/permission-service` with `reports_db_username`/`reports_db_password`, revert PR #191 test overlay shared-cred patches, capture second evidence with proper SoD.
-3. **mfe-access UI surface update**: consume `tupleSyncStatus`/`outboxId`/`processedAt` fields in scope-grant response (deferred until D35 first evidence proves the eventual-consistency semantic).
-4. **Optional CI drift-detection job**: gitops vs README SHA-256 audit (low-priority).
-5. **Items from Session 30 still applicable**: Faz 19.11.A workflow distribution to platform-backend + platform-web (sandbox-blocked at cross-repo intent classifier); ci/ Python check script port (substantial fresh work).
+**ADR-0010 driven (this is the long-term path, not ad-hoc fixes)**:
+
+1. **DR-2 (next PR)**: `bootstrap/vault-policies/common/bootstrap-writer.hcl` full policy + apply runbook + `capabilities-self` test scaffold. Codex consensus sufficient.
+2. **DR-3**: `scripts/platform-ops-vault-patch.sh` wrapper — KV v2 patch via bootstrap-writer AppRole, no root token. Codex consensus sufficient (script only).
+3. **DR-4**: SoD unblock test — apply bootstrap-writer to test Vault, run `reports_db_*` populate via wrapper, ESO refresh, rollout, capture preflight evidence with shared-cred caveat removed. **User approval required** (test Vault state mutation).
+4. **DR-5**: ADR-0009 transition map + D35-0/1/2/3 evidence taxonomy + per-PR declaration template. Codex consensus sufficient (docs).
+5. **DR-6**: `etl_worker` Faz 16.2.A "Scope Anchor Load" narrow profile + runbook (NOT parametric ETL). Codex consensus sufficient (code only).
+6. **DR-7**: D35-2 first canlı evidence — Step 9.4-9.11 with real `source_pk`. **User approval required** (first canlı Workcube row).
+7. **DR-8 / DR-9**: Prod Vault DR verify (read-only) → bootstrap-writer prod policy + per-service population. **User approval required** (prod read-only verify and prod write rotation).
+
+**ADR-0010 user-approval boundary (§2.5)**:
+
+- User approval required: prod Vault rekey/restart/root regen, test Vault re-init/reseed, credential sharing, external secret manager migrations, D35 semantic adjustments, first canlı Workcube ETL row movement.
+- Codex consensus sufficient: ADR drafts, policy HCL, runbook docs, evidence taxonomy, wrapper script designs, read-only Vault inventory, test bootstrap-writer policy + negative tests, D35 ladder docs, Scope Anchor ETL code/runbook preparation.
+
+**Out-of-scope chips queued (independent tracks)**:
+
+- `ci/` Python check script workflow port (Faz 19.11.D, 4-PR plan)
+- mfe-access UI surface update (`tupleSyncStatus`/`outboxId`/`processedAt`) — deferred until D35-2 evidence
+- Optional CI drift-detection job (gitops vs README SHA-256 audit, low-priority)
+- Faz 19.11.A workflow distribution to platform-backend + platform-web (sandbox-blocked cross-repo)
 
 ---
 
