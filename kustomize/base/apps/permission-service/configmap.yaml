@@ -88,4 +88,6 @@ data:
   # Admin user listesi — yeni admin eklendikçe bu listeye eklenmeli
   # (D37 D-karar pending: dinamik DB-driven mod tasarımı).
   PERMISSION_BOOTSTRAP_DEFAULT_ADMIN_ASSIGNMENTS_ADMIN_EMAILS: "admin@example.com,d35-admin@example.com"
-  PERMISSION_BOOTSTRAP_DEFAULT_ADMIN_ASSIGNMENTS_USER_TABLE: "user_service.users"
+  # Primary datasource permission_db.users (id, email columns) — initializer
+  # email lookup buradan yapar. user_service.users (users_db) farklı datasource'ta.
+  PERMISSION_BOOTSTRAP_DEFAULT_ADMIN_ASSIGNMENTS_USER_TABLE: "users"
