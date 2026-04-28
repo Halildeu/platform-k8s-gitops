@@ -222,8 +222,15 @@ COMMENT ON FUNCTION data_access.scope_validate_trg() IS
     'org_id added to error message for diagnostic clarity.';
 
 -- ============================================================================
--- 5. Trigger rebind (DROP CASCADE in step 3 dropped it; recreate)
+-- 5. Trigger rebind
+--    DROP IF EXISTS — V19 created this trigger; DROP FUNCTION CASCADE in
+--    step 3 only drops dependents of the function being dropped (the
+--    3-arg validate_scope_ref). The trigger depends on scope_validate_trg
+--    (the trigger function), not on validate_scope_ref directly, so it
+--    survives the CASCADE. Drop explicitly so we can rebind cleanly.
 -- ============================================================================
+
+DROP TRIGGER IF EXISTS scope_validate_before_write ON data_access.scope;
 
 CREATE TRIGGER scope_validate_before_write
     BEFORE INSERT OR UPDATE OF
