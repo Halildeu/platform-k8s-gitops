@@ -23,12 +23,33 @@ annex_ref: "docs/migration/report-source-annex.yaml"
 # ============================================================================
 
 tables:
+  # Faz 21.3 D35-1 anchor: OUR_COMPANY is the AÇIK org's tenant-scoped table
+  # (42 rows in source). PR-3 of ADR-0010 OUR_COMPANY drift fix sequence;
+  # Codex `019dd34e` hybrid contract — anchor for company scope_kind in V25.
+  # Snapshot: docs/migration/workcube-schema.json shows 68 columns; minimum
+  # subset here for D35-1 evidence. Full set extends post-D35-2 if needed.
+  - name: OUR_COMPANY
+    source_schema: workcube_mikrolink
+    parametric: false
+    idempotency_key: [COMP_ID]
+    reports: [d35-1-anchor]
+    notes: "Tenant-scoped (AÇIK org's 42 OUR companies). D35-1 anchor table per Codex 019dd34e + V25 hybrid contract. PK = COMP_ID."
+    columns:
+      - { name: COMP_ID,       pg_type: INTEGER,        nullable: false }
+      - { name: COMPANY_NAME,  pg_type: VARCHAR(200),   nullable: true,  max_length: 200 }
+      - { name: NICK_NAME,     pg_type: VARCHAR(50),    nullable: true,  max_length: 50 }
+      - { name: TAX_OFFICE,    pg_type: VARCHAR(50),    nullable: true,  max_length: 50 }
+      - { name: TAX_NO,        pg_type: VARCHAR(50),    nullable: true,  max_length: 50 }
+
+  # COMPANY remains for financial reports + 2-hop tenant predicates
+  # (BRANCH/PRO_PROJECTS join through COMPANY to OUR_COMPANY). NOT the
+  # anchor for company scope_kind (that role is now OUR_COMPANY per V25).
   - name: COMPANY
     source_schema: workcube_mikrolink
     parametric: false
     idempotency_key: [COMPANY_ID]
     reports: [fin-company-listing]
-    notes: "113 kolon canonical; Day 7 dry-run minimal subset, full set Faz 16.3.E."
+    notes: "113 kolon canonical; Day 7 dry-run minimal subset, full set Faz 16.3.E. NOT D35-1 anchor — that's OUR_COMPANY (V25)."
     columns:
       - { name: COMPANY_ID,    pg_type: INTEGER,        nullable: false }
       - { name: COMPANYCAT_ID, pg_type: INTEGER,        nullable: false }
@@ -38,6 +59,7 @@ tables:
       - { name: TAXOFFICE,     pg_type: VARCHAR(50),    nullable: true,  max_length: 50 }
       - { name: TAXNO,         pg_type: VARCHAR(43),    nullable: true,  max_length: 43 }
       - { name: COMPANY_EMAIL, pg_type: VARCHAR(100),   nullable: true,  max_length: 100 }
+      - { name: OUR_COMPANY_ID, pg_type: INTEGER,       nullable: true }
 
   - name: BRANCH
     source_schema: workcube_mikrolink
