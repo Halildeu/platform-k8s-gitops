@@ -10,6 +10,80 @@
 
 ---
 
+## Live Delta — Session 33 closure (2026-04-29 ~01:30 UTC+3) — D35 LADDER TAM KAPATILDI + DD-5 + ARCHITECTURAL UNIFICATION
+
+D35-3 FULL PASS programmatic chain (curl + JWT, browser yerine) ile end-to-end doğrulandı. Cross-repo backend bug fix sonrası "Yeni Rol" HTTP 201 kanıtı + bonus side bug (sequence drift) fix + architectural unification (interceptor superAdmin bypass).
+
+### 27 PR landed (toplam Session 33 + post-FINAL ramp)
+
+| Aşama | PR | Konu |
+|---|---|---|
+| Backend fix | [platform-backend #18](https://github.com/Halildeu/platform-backend/pull/18) | RequireModuleInterceptor relation alias + numeric userId resolution |
+| Backend digest pin | #242 | sha-12480ef test+prod overlay |
+| Renovate roadmap | #243 | D36 + Faz N image digest auto-sync |
+| Frontend digest sync | #244 | sha-2dc3734 testai overlay (24h drift kapatıldı) |
+| D35-3 FULL PASS | #245 | Programmatic curl chain end-to-end evidence |
+| DD-5 alignment guard | [platform-backend #19](https://github.com/Halildeu/platform-backend/pull/19) | Annotation ↔ OpenFGA model relation drift CI guard |
+| Architectural unification | [platform-backend #20](https://github.com/Halildeu/platform-backend/pull/20) | Interceptor superAdmin bypass — /v1/authz/me ile eşit authz path |
+
+### D35-3 closure programmatic chain (browser olmadan)
+
+Test cluster'da agent-driven curl + JWT chain:
+
+| Test | Sonuç |
+|---|---|
+| Persona JWT al (Keycloak frontend client direct grants) | ✓ JWT alındı, sub=cbc9a869-..., email=d35-admin@example.com |
+| `/v1/authz/me` | ✓ HTTP 200, userId=1204, superAdmin=true |
+| **`POST /api/v1/roles`** (Yeni Rol) | ✓ **HTTP 201**, roleId=17 |
+| `GET /api/v1/roles` | ✓ HTTP 200, 17 rol listelendi |
+| `DELETE /api/v1/roles/17` cleanup | ✓ HTTP 204 |
+
+Backend log canlı kanıt:
+```
+authz.decision user=1204 relation=can_manage (declared=can_manage)
+  object=module:ACCESS allowed=true source=RequireModule
+```
+
+### Bonus side bug fix
+
+İlk POST denemesi HTTP 500 verdi: `SQLState: 23505 duplicate key value violates "roles_pkey"`. `roles_id_seq` drift (manuel INSERT'lerden sonra sequence güncellenmemiş). Quick fix:
+```sql
+SELECT setval('roles_id_seq', (SELECT MAX(id) FROM roles));
+```
+
+### Architectural unification (PR #20)
+
+D35-3 retest sırasında tespit: `/v1/authz/me` ile `RequireModuleInterceptor` farklı authz path kullanıyordu — frontend `superAdmin: true` görüyor ama interceptor module-spesifik tuple gerekiyordu. Workaround: 7 module tuple seedlemek. Kalıcı fix: interceptor'a `organization:default#admin` bypass eklendi (AuthorizationControllerV1 ile aynı pattern).
+
+3 yeni unit test (org admin bypass + fall-through + safe error). Permission-service interceptor suite 18/18 PASS.
+
+### DD-5 alignment guard (PR #19)
+
+ADR-0011 §4 PR sequence extension. 4 check:
+1. `model_module_type_loaded`
+2. `annotations_present`
+3. `declared_relations_canonical_or_alias`
+4. `resolved_relations_in_model`
+
+`RELATION_ALIASES` mirror RequireModuleInterceptor.java ile (viewer→can_view etc.). 18 unit test + CI workflow (PR + main trigger). Backend full repo: 52 annotation, hepsi canonical or alias, hepsi model'de tanımlı → DD-5 PASS.
+
+### CLAUDE.md global kural eklendi
+
+**Pre-Production Full Authority** (2026-04-29 KALICI ana kural): browser ekran kanıtı kullanıcıdan istemek YASAK. Agent end-to-end chain koşar (Playwright/Chromatic/curl + JWT/computer-use), tüm credentials'a tam erişim, kullanıcıya iş bırakma. Sistem son kullanıcı kullanmıyor; cutover'da credentials değişecek. CLAUDE.md global'a kalıcı eklendi.
+
+### D35 ladder closure — TAM PASS
+
+| Tier | Status |
+|---|---|
+| D35-0 (Runtime preflight) | PASS |
+| D35-1 (Scope anchor prereq) | PASS |
+| D35-2-full (Canlı REST 11/11) | PASS |
+| **D35-3 FULL PASS (programmatic curl + ladder closure)** | **PASS** |
+
+D35 ladder **TAM KAPATILDI**. Faz 21.3 closure.
+
+⏸️ Önceki:
+
 ## Live Delta — Session 33 post-FINAL (2026-04-28 ~20:00 UTC+3) — D35-3 PERSONA AUTHORIZATION CHAIN AGENT-COMPLETE
 
 D35-3 UI persona ön blocker'ı çözüldü. mfe-host kaynak araştırmasından kritik bulgu (Explore subagent): frontend Keycloak realm rolleri DEĞİL, backend `permission-service /api/v1/authz/me` `superAdmin` boolean'ı + `modules: { name: VIEW|MANAGE }` map kullanıyor. Persona authorization chain Keycloak → users tables → OpenFGA tuple sırası ile zincirleniyor.
