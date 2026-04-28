@@ -76,15 +76,13 @@ images:
     # üzerine architectural unification + drift detection ekledi.
     digest: sha256:f62c02f74e03d36a7b87f8a2112a1b518ad699aebec7ed8d84f2ae2f538ec1c3
   # Frontend testai variant (testai.acik.com + platform-test realm)
-  # 2026-04-29 update: sha-2dc3734 — D36 manuel pin sync (Renovate Faz N
-  # öncesi). Önceki pin sha-57dc28e ile ~24 saatlik drift kapatıldı.
-  # Cluster runtime'da operatör tarafından deploy edilen ara digest
-  # (6229560c...) gitops pin'le hizalanır. mfe-access PR-E merge sonrası
-  # son 2 saatte 5 ardışık image push (1ad52d1, 1c7d391, da77a24, bd884de,
-  # 2dc3734) — bu pin GHCR latest sha-2dc3734 ile eşleşir.
+  # 2026-04-29 update: sha-6c8c030 — RoleDrawer catalog query fix
+  # (platform-web PR #68). Önceki sha-2dc3734 üzerine: Yeni Rol modal'ında
+  # reports/modules/actions/pages alanları catalog query disabled olduğundan
+  # boş render ediyordu. Fix: enabled koşulu basitleştir (open).
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend-testai
-    digest: sha256:7686ab553f0a8d2caab5d95e62e644fb067c935c9be82c9ad0c06e918cda9d1f
+    digest: sha256:244557577d2e87dd0f274f4c940b43802b93049412b26da627d82716d1bed658
 
 patches:
   # Replica 0 default (scale-to-zero)
