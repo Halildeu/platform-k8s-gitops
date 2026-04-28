@@ -199,6 +199,61 @@ Hepsi `/check`: `{"allowed":true,"resolution":""}`.
 
 Bu **iki path eşitlenebilir**: interceptor'a superAdmin bypass eklenirse (`organization:default#admin` check), tek tuple ile tüm guard'lar geçer. **Ayrı PR** scope'unda — bu retest'e bloklayan değil, mimari uyum.
 
+## Architectural unification — verified 2026-04-29 (sha-b9ddc86)
+
+D35-3 FULL PASS sonrası architectural unification PR chain:
+
+| PR | Konu |
+|---|---|
+| platform-backend #19 | DD-5 alignment guard (annotation ↔ OpenFGA model relation drift CI) |
+| platform-backend #20 | RequireModuleInterceptor superAdmin bypass — `organization:default#admin` check |
+| platform-k8s-gitops #247 | Digest pin sha-b9ddc86 (DD-5 + bypass) |
+
+### Bypass verification chain (programmatic — module tuple OLMADAN)
+
+```bash
+# Step 1: 7 module:X#can_manage tuples DELETE (eski workaround temizleme)
+curl -X POST .../write -d '{"deletes":{"tuple_keys":[...7 module tuples...]}}'
+# → HTTP 200
+
+# Step 2: /check module:ACCESS#can_manage → false (tuple yok artık)
+curl -X POST .../check -d '{...module:ACCESS#can_manage...}'
+# → {"allowed":false,"resolution":""}
+
+# Step 3: /check organization:default#admin → true (org admin tuple sabit)
+curl -X POST .../check -d '{...organization:default#admin...}'
+# → {"allowed":true,"resolution":""}
+
+# Step 4: API retest
+GET /api/v1/roles → HTTP 200, 17 roles (bypass aktif)
+POST /api/v1/roles → HTTP 201, roleId=18 (bypass aktif, module tuple OLMADAN)
+DELETE cleanup → HTTP 204
+```
+
+### D35-3 retest pattern güncellendi
+
+**Önceki retest pattern** (sha-12480ef ile):
+1. Persona register (3 users tablosu + 16 role / 31 permission)
+2. **7 module tuple seed** (`user:1204 can_manage module:ACCESS|AUDIT|...|THEME`)
+3. `organization:default#admin` tuple seed
+4. API testleri PASS
+
+**Yeni retest pattern** (sha-b9ddc86 ile):
+1. Persona register (aynı)
+2. **1 organization tuple yeterli** (`user:1204 admin organization:default`)
+3. API testleri PASS — interceptor bypass yapar
+
+**Tasarruf**: 7 modül-spesifik tuple seed gereksiz, 1 organization-level tuple yeterli. Persona authorization setup 7x daha basit.
+
+### Backend log canlı kanıt (sha-b9ddc86)
+
+```
+RequireModule SUPER-ADMIN BYPASS: user=1204 module=ACCESS relation=can_manage
+  (declared=can_manage) — organization:default#admin
+```
+
+Yeni log line `SUPER-ADMIN BYPASS` source belirtir; module-level check çağrısı atlanır.
+
 ## D35 ladder kapanış — TAM PASS
 
 | Tier | Status | Evidence |
