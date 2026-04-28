@@ -94,7 +94,7 @@ SELECT has_table_privilege('permission_reports_writer','workcube_mikrolink.pro_p
 SELECT has_table_privilege('permission_reports_writer','workcube_mikrolink.branch','SELECT')            AS wc_branch_can_select;
 SELECT has_table_privilege('permission_reports_writer','workcube_mikrolink.department','SELECT')        AS wc_dept_can_select;
 SELECT has_function_privilege('permission_reports_writer','data_access.validate_scope_ref(text,text,text)','EXECUTE') AS can_execute_validate;
-SELECT has_function_privilege('permission_reports_writer','data_access.recover_stuck_outbox_rows(interval)','EXECUTE') AS can_execute_recover;
+SELECT has_function_privilege('permission_reports_writer','data_access.recover_stuck_outbox_rows()','EXECUTE') AS can_execute_recover;
 SELECT has_sequence_privilege('permission_reports_writer','data_access.scope_id_seq','USAGE')           AS scope_seq_usable;
 SELECT has_sequence_privilege('permission_reports_writer','data_access.scope_outbox_id_seq','USAGE')    AS outbox_seq_usable;
 EOF
