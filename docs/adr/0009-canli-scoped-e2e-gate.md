@@ -112,6 +112,63 @@ Detay komut sequence'i: `docs/openfga-multi-org-rollout.md` Step 9.
 Yeni adımlar: 1 (digest), 3 (poller config), 6 (outbox row), 7 (PROCESSED),
 10 (revoke + flip), 11 (FAILED rows).
 
+### D35 Evidence Ladder (ADR-0010 §2.3)
+
+**2026-04-28 update — ADR-0010 yan ürünü**: Yukarıdaki 11 adımı tek atışta
+canlı koşmak için tüm prereq'lerin (image digest, ESO secret delivery,
+permission-service pod ready, outbox poller alive, V22+V23 schema applied,
+real Workcube `workcube_mikrolink.company` row mevcut, OpenFGA store/model
+seeded, JWT actor) eş zamanlı tutulması gerekir. Pratik durumda bu
+prereq'ler farklı zamanlarda tamamlanır; "her şey tamam → 11 adımı koş"
+beklemek "hiç kanıt yok" durumuna yol açar (PR #192 outbox preflight
+sırasında yaşandığı gibi).
+
+ADR-0010 D35 bar'ı **azaltmaz**, ama altına stratifiye edilmiş
+**evidence ladder**'ı tanımlar:
+
+| Tier | İsim | Captures | Synthetic data toleransı | D35 bar tatmin? |
+|---|---|---|---|---|
+| **D35-0** | Runtime Preflight | Image digest, env vars, HikariPool startup, OutboxPoller scheduler, V22+V23 schema present, outbox empty (no rows yet) | Yok (canlı cluster) | Hayır — preflight |
+| **D35-1** | Scope Anchor Prereq | Real Workcube `COMPANY` row(s) loaded into `workcube_mikrolink.company` via `etl_worker`; reconcile + audit row produced | Yok — gerçek Workcube | Hayır — prereq satisfaction |
+| **D35-2** | Scoped Grant/Revoke E2E | 11-step sequence with real `source_pk`; outbox PROCESSED + OpenFGA allow→deny chain | Yok | **EVET — D35 first evidence** |
+| **D35-3** | Product Path | UI panel + real user persona; scope-grant flow product behavior beyond REST-only | Yok — real user identity | Tatmin et + product confidence |
+
+**Per-tier kontrat**:
+
+- **D35-0** examples: PR #192 evidence file (`docs/faz-21-3-evidence/2026-04-28-outbox-isolated-preflight.md`) → tier marker `D35-0`. Yeni image rolling sonrası her zaman bir D35-0 alınır (regression-detect lane).
+- **D35-1** kontrat: `etl_worker` Faz 16.2.A "Scope Anchor Load" runbook (DR-6 PR'sında). Ürettiği audit row + `workcube_mikrolink.company.source_pk` örneği D35-1 evidence olarak commit edilir.
+- **D35-2** kontrat: `docs/openfga-multi-org-rollout.md` Step 9.1-9.11 hep birlikte (yukarıdaki 11 madde). DR-7'de yapılır.
+- **D35-3** kontrat: UI flow + real persona → scope-grant + revoke + check; ayrı evidence dosyası, D35-2'den bağımsız (UI'nın endpoint'leri farklı; D35-2 REST-only, D35-3 UI-driven).
+
+**Per-PR declaration template** (`docs/d35-evidence-template.md`):
+
+PR description'ında D35-X tier(s) advance veya affect ediliyorsa açıkça
+beyan edilir. Format:
+
+```text
+## D35 ladder declaration
+
+This PR (advances | affects | does NOT touch) the following D35 tier(s):
+
+- [ ] D35-0 — Runtime preflight (regression-detect)
+- [ ] D35-1 — Scope anchor prereq (real Workcube row)
+- [ ] D35-2 — Scoped grant/revoke E2E (= D35 first evidence)
+- [ ] D35-3 — Product path (UI persona)
+
+If "advances": evidence file path + tier marker.
+If "affects": brief explanation.
+If "does NOT touch": no annotation needed.
+```
+
+**Stub data ban (Kural #9 + 2026-04-26 user mandate)**:
+
+Canlı `workcube_mikrolink.company`'ye stub row INSERT YASAK. Stub data
+yalnızca:
+- Ephemeral CI fixtures (e.g., `data-access-migrations.yml` test PG container)
+- `D29-integration-smoke` etiketli evidence içinde (synthetic kanıt formu, **D35 değil**)
+
+D35-0/1/2/3 tier'lerinin hiçbiri stub data ile geçemez.
+
 ### Failure modu ayrımı
 
 D29 fail (fixture smoke kırılır) **canlı sistemde** scope assignment

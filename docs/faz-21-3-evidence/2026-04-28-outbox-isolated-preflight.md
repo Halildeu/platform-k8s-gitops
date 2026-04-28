@@ -1,13 +1,26 @@
-# Faz 21.3 — Outbox Isolated Preflight (NOT D35 first evidence)
+# D35-0 — Outbox Isolated Preflight (Faz 21.3)
 
+**Tier**: D35-0 (Runtime Preflight — regression-detect baseline)
 **Date**: 2026-04-28
 **Cluster**: k3d-test on staging-sw (host bridge 172.19.0.x)
-**Codex thread**: `019dd2a2` (verdict β)
+**Permission-service image digest**: sha256:b6d59f0ab5d1791289544b530130d60493f503529c4fdb9515efb0bf8c0ca3fb
+**Codex threads**: `019dd2a2` (β verdict — synthetic seed forbidden) + `019dd2c9` (xhigh — D35 ladder retroactive classification)
+**Operator**: agent (kubernetes6 session, Kural #7 SSH+sudo+kubectl authority)
+
+**Tier classification (retroactive per ADR-0010 §2.3)**: This file was originally
+authored before ADR-0010 introduced the D35 evidence ladder. Per ADR-0010 §2.3
++ ADR-0009 § "D35 Evidence Ladder", this evidence is correctly classified as
+**D35-0 Runtime Preflight** — proves the runtime infrastructure is alive
+(image digest, env, HikariPool-2 startup, OutboxPoller scheduler, V22+V23
+schema present, outbox empty), but does NOT prove D35-2 (= "D35 first
+evidence" — full eventual-consistency POST→outbox→FGA chain with real
+Workcube data).
+
 **Scope**: Permission-service runtime prereq's for the V22+V23 outbox eventual-consistency
 flow — image digest match, ESO/Vault credential delivery, secondary datasource bootstrap,
-outbox poller scheduling. **Does NOT** cover D35 canlı scoped E2E evidence (ADR-0009 §
-D35 bar) — that remains an OPEN BLOCKER until ETL load populates
-`workcube_mikrolink.company` with real Workcube source_pk values.
+outbox poller scheduling. **Does NOT** cover D35-2 (= "D35 first evidence" canlı scoped E2E
+proof per ADR-0009) — that remains an OPEN BLOCKER until ETL load populates
+`workcube_mikrolink.company` with real Workcube source_pk values (D35-1 prereq).
 
 ## Why this is preflight, not D35
 
