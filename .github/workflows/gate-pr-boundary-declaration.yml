@@ -1,19 +1,29 @@
 # ADR-0011 BG-1 — PR boundary declaration CI gate (Codex 019dd409 PARTIAL/REVISE)
+# BG-1.1 follow-up: dependabot coverage gap fix (Codex 019dd409 A-prime)
 #
 # Per-PR governance hard gate: PR description must contain the ADR-0011
 # §2.3 boundary declaration block + 6 expected classes + at least one
 # marked + user-approval evidence + label for credential-read/write/
 # state-mutation-prod/boundary-cross classes.
 #
-# Authority: Codex consensus only (read-only PR body validation).
+# Trigger: `pull_request_target` (BG-1.1) — fires on dependabot PRs as well,
+# unlike `pull_request` which GitHub restricts for fork/dependabot security
+# policy. Metadata-only validation (PR body + labels via event payload);
+# NO PR HEAD checkout, NO secrets, NO write permissions.
+#
+# Authority: Codex consensus only (read-only PR metadata validation).
 
 name: ADR-0011 BG-1 — PR Boundary Declaration
 
 on:
-  pull_request:
+  pull_request_target:
     # `labeled`/`unlabeled` ensures the gate re-runs after operator adds
     # `user-approval-required` label.
     types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
   boundary-declaration:
@@ -22,8 +32,12 @@ jobs:
     timeout-minutes: 3
 
     steps:
-      - name: Checkout
+      - name: Checkout base repository (BG-1.1 — base SHA, NOT PR HEAD)
         uses: actions/checkout@v4
+        with:
+          # Trusted: base branch SHA. PR HEAD checkout YASAK
+          # (pull_request_target security pattern).
+          ref: ${{ github.event.pull_request.base.sha }}
 
       - name: Setup Python
         uses: actions/setup-python@v5

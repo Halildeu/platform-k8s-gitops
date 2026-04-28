@@ -135,7 +135,7 @@ Beklenen: `BG-1 PR boundary declaration: PASS (6/6)`.
 
 ## CI workflow events
 
-`pull_request:` trigger types:
+`pull_request_target:` trigger types (BG-1.1 update — Codex 019dd409 A-prime):
 - `opened` — PR ilk açılış
 - `edited` — body güncellemesi
 - `synchronize` — yeni commit push
@@ -143,7 +143,26 @@ Beklenen: `BG-1 PR boundary declaration: PASS (6/6)`.
 - `labeled` — `user-approval-required` label eklendiğinde
 - `unlabeled` — label kaldırıldığında
 
-Bu beş trigger BG-1'in label state değişimine reactive olmasını sağlar.
+Bu altı trigger BG-1'in label state değişimine reactive olmasını sağlar.
+
+### Neden `pull_request_target` (BG-1.1)?
+
+Initial BG-1 (PR #233) `pull_request` event kullanıyordu. Dependabot PR'larında
+GitHub Actions security policy nedeniyle workflow fire **etmiyor**. Sonuç: BG-1
+hard gate dependabot PR sınıfı için çalışmıyordu — coverage gap.
+
+`pull_request_target` ile metadata (body + labels) event payload üzerinden
+okunur; PR HEAD checkout edilmez, secrets kullanılmaz, write permissions yok.
+Dependabot PR'larında da fire eder.
+
+**Güvenlik kuralları (Codex 019dd409 A-prime)**:
+- ✅ Base SHA checkout (`github.event.pull_request.base.sha`)
+- ✅ Permissions: `contents: read`, `pull-requests: read`
+- ❌ PR HEAD checkout YASAK
+- ❌ `gh pr checkout` YASAK
+- ❌ Secrets kullanma
+- ❌ Label/body mutate etme
+- ❌ PR title/body içeriğini shell komutuna interpolate etme
 
 ## Roadmap
 
