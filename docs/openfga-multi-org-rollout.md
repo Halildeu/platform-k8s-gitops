@@ -200,8 +200,11 @@ curl -X POST .../authz/check \
 # expect {"allowed": true}
 
 # Deny case 1 — org member ≠ company viewer (explicit-only contract)
+# V25 contract (Codex 019dd34e): company FGA object id is `wc-our-company-<COMP_ID>`.
+# Pre-V25 narrative used `wc-company-<id>`; see ADR-0008 § "Object id encoding"
+# V25 transition map.
 curl -X POST .../authz/check \
-  -d '{"user":"user:<member-only>","relation":"viewer","object":"company:wc-company-1001"}'
+  -d '{"user":"user:<member-only>","relation":"viewer","object":"company:wc-our-company-1"}'
 # expect {"allowed": false}
 
 # Deny case 2 — depot hierarchy auto-grant absent
@@ -331,6 +334,20 @@ allow" to "POST → outbox row → poller processed → eventual allow"** — se
 Step 9 below.
 
 ## Step 9 — D35 first evidence (post-V22+V23+PR-G — eventual consistency)
+
+> **V25 transition note (Codex `019dd34e` hybrid contract)**: This Step 9
+> sequence was authored pre-V25 (V19/V20/V21 era; SCOPE_REF=`'["1001"]'`,
+> EXPECTED_TUPLE_OBJECT=`company:wc-company-1001`). V25 anchor flip
+> (`workcube_mikrolink.OUR_COMPANY` instead of `COMPANY` directory) +
+> ADR-0008 § "Object id encoding" V25 update changed the canonical contract
+> to SCOPE_REF=`'["1"]'` + `company:wc-our-company-<COMP_ID>`. **Use
+> [`docs/faz-21-3-evidence/d35-2-full-template.md`](faz-21-3-evidence/d35-2-full-template.md)
+> for V25-aligned D35-2-full evidence runs**; the canonical 11-step
+> sequence is reproduced there with V25-correct env vars + drift detection
+> (encoder regression catch). The Step 9 below is preserved as historical
+> reference for V19/V20 era debugging — do not run it against the
+> V25-aligned `permission-service` image (`sha-943bd5f` or later) without
+> adjusting the literals.
 
 Faz 21.3 outbox lands a transactional outbox between PG `scope` row and
 OpenFGA tuple write. D35 evidence MUST validate the FULL eventual-consistency
