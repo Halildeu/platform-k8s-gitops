@@ -10,6 +10,66 @@
 
 ---
 
+## Live Delta — Session 33 post-FINAL (2026-04-28 ~20:00 UTC+3) — D35-3 PERSONA AUTHORIZATION CHAIN AGENT-COMPLETE
+
+D35-3 UI persona ön blocker'ı çözüldü. mfe-host kaynak araştırmasından kritik bulgu (Explore subagent): frontend Keycloak realm rolleri DEĞİL, backend `permission-service /api/v1/authz/me` `superAdmin` boolean'ı + `modules: { name: VIEW|MANAGE }` map kullanıyor. Persona authorization chain Keycloak → users tables → OpenFGA tuple sırası ile zincirleniyor.
+
+### Findings — `d35-admin-persona` users tablolarına register edilmemişti
+
+| Kontrol | Sonuç |
+|---|---|
+| Keycloak `platform-test` realm | `d35-admin-persona` UID `cbc9a869-...`, `d35-granted-persona` UID `05178b50-...` var |
+| `users_db.user_service.users` (1203 row) | persona email YOK |
+| `users_db.public.users` (1 row, `admin@example.com`) | persona email YOK |
+| `permission_db.users` (3 row) | persona email YOK |
+| user-service `/api/users/by-email/d35-admin@example.com` | HTTP 404 |
+
+**Sonuç**: D35-2-full evidence muhtemelen `admin@example.com` (id=1) ile koştu — persona ile değil. Persona Keycloak'ta var ama users tablolarına hiç register edilmemiş, JWT email lookup → 404 → permission-service authz fail.
+
+### Persona authorization chain — agent-complete
+
+| Aşama | Aksiyon | Sonuç |
+|---|---|---|
+| `users_db.public.users` INSERT | id=1204 d35-admin@example.com (ADMIN), id=1205 d35-granted@example.com (USER) | INSERT 0 2 |
+| `users_db.user_service.users` INSERT (yedek) | id=1204, 1205 | INSERT 0 2 |
+| `permission_db.users` INSERT (`postgres` superuser) | id=1204, 1205 (numeric ID alignment) | INSERT 0 2 |
+| OpenFGA tuple seed (test store) | `user:1204 admin organization:default` + `user:1205 can_view module:ACCESS` | `{}` write OK |
+| OpenFGA `/check` doğrulama | `user:1204 admin organization:default` → `{"allowed":true}` | ✓ |
+| OpenFGA `/check` doğrulama | `user:1205 can_view module:ACCESS` → `{"allowed":true}` | ✓ |
+| user-service `/api/users/by-email/d35-admin@example.com` | HTTP 200 → `{id:1204, role:"ADMIN"}` | ✓ |
+| user-service `/api/users/by-email/d35-granted@example.com` | HTTP 200 → `{id:1205, role:"USER"}` | ✓ |
+
+### permission-service /v1/authz/me chain (verified analitik)
+
+```
+JWT (d35-admin-persona, sub=cbc9a869-..., email=d35-admin@example.com)
+  → AuthenticatedUserLookupService:
+    1. jwt.userId claim — none
+    2. jwt.uid claim — none
+    3. sub.parseLong — fails (UUID, non-numeric)
+    4. email lookup → user-service /api/users/by-email/d35-admin@example.com → id=1204
+  → AuthorizationControllerV1.checkOrganizationAdmin(1204)
+    → OpenFGA /check user:1204 admin organization:default → allowed:true
+  → /v1/authz/me response: {"superAdmin":true, modules:{...}, ...}
+  → mfe-host ProtectedRoute: isSuperAdmin() → true → bypass module guard → /admin/data-access render
+```
+
+### Artifact: `docs/RB-faz-21-3-d35-3-persona-rol-atama.md`
+
+194 satır runbook (commit `5ef2d49` `fix/bg-1-2-checkout-base-ref` branch'inde): superAdmin tuple yolu + numeric userId resolution + boundary table + 7 step + cleanup. ADR-0011 §2.3 boundary class: `state-mutation (test cluster)` + `credential-read` (postgres password — operatör boundary).
+
+### Operator-pending — UI verify only
+
+1. Browser logout / incognito
+2. testai.acik.com → login `d35-admin-persona`
+3. URL `testai.acik.com/admin/data-access`
+4. Beklenen: 5-tab "Veri Erişimi" panel render
+5. (Sanity) DevTools Network → `/api/v1/authz/me` → `{"superAdmin":true,...}`
+
+UI panel açıldığında D35-3 evidence run başlar (`docs/RB-faz-21-3-d35-3-ui-persona-checklist.md`).
+
+⏸️ Önceki:
+
 ## Live Delta — Session 33 FINAL (2026-04-28 ~19:30 UTC+3) — ADR-0011 GOVERNANCE LAYER COMPLETE
 
 ### 7 ek PR landed bu FINAL sub-block (Session 33 toplam 15 PR)
