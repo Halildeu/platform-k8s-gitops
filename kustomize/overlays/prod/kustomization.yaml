@@ -48,19 +48,16 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # Architectural unification + DD-5 governance (sha-b9ddc86, platform-backend
-    # PR #19 DD-5 + PR #20 superAdmin bypass). D35-3 FULL PASS programmatic
-    # chain (k8s-gitops PR #245) sırasında tespit edilen iki authz path
-    # tutarsızlığını eşitler:
-    #   - PR #20 superAdmin bypass: RequireModuleInterceptor.preHandle()
-    #     artık önce `organization:default#admin` check eder; org-admin ise
-    #     modül guard'larını skip eder. /v1/authz/me ile aynı pattern.
-    #   - PR #19 DD-5: annotation ↔ OpenFGA model relation drift CI guard.
+    # Master data scope picker endpoints (sha-8302249, platform-backend PR #21).
+    # 4 yeni REST endpoint: GET /api/v1/master-data/{companies,projects,
+    # branches,departments} → reports_db secondary datasource'tan
+    # workcube_mikrolink tabloları direct SQL read.
     # Prod cluster D17 scale-to-zero unchanged — operator rolls out only
-    # when D30 atomic cutover lands (Codex thread 019dd409 boundary).
-    # Includes everything from sha-12480ef (RequireModuleInterceptor relation
-    # alias + numeric userId fix) and sha-943bd5f (V25/V26 alignment).
-    digest: sha256:f62c02f74e03d36a7b87f8a2112a1b518ad699aebec7ed8d84f2ae2f538ec1c3
+    # when D30 atomic cutover lands.
+    # Includes everything from sha-b9ddc86 (PR #19 DD-5 + PR #20 superAdmin
+    # bypass), sha-12480ef (RequireModuleInterceptor relation alias), and
+    # sha-943bd5f (V25/V26 alignment).
+    digest: sha256:dc05fcfd29da0a64654fd419d54a8acf83246b14bde5cc290c2dfc1e95b51430
   # Frontend prod variant (ai.acik.com + serban realm)
   # Faz 21.3 PR-E merge (sha-57dc28e): mfe-access Veri Erişimi panel
   # (5 tab + ScopeAssignModal + 4-locale i18n + nested Routes + 28 tests).

@@ -59,30 +59,25 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # Architectural unification + DD-5 governance (sha-b9ddc86, platform-backend
-    # PR #19 DD-5 + PR #20 superAdmin bypass). D35-3 FULL PASS programmatic
-    # chain (k8s-gitops PR #245) sırasında tespit edilen iki authz path
-    # tutarsızlığını eşitler:
-    #   - PR #20: RequireModuleInterceptor.preHandle() artık önce
-    #     `organization:default#admin` check eder; org-admin ise modül
-    #     guard'larını skip eder (AuthorizationControllerV1.checkOrganizationAdmin
-    #     pattern'i ile aynı). Frontend `superAdmin: true` görüyorsa interceptor
-    #     da geçer — D35-3 retest'te workaround olarak gereken 7 module tuple
-    #     seedleme artık gerekmez (1 organization tuple yeterli).
-    #   - PR #19: DD-5 alignment guard CI lane (annotation ↔ OpenFGA model
-    #     relation drift'i hard-gate eder; bu fix pattern'inin tekrarlamasını
-    #     önler).
-    # Önceki sha-12480ef (PR #18 alias + numeric userId fix) base layer
-    # üzerine architectural unification + drift detection ekledi.
-    digest: sha256:f62c02f74e03d36a7b87f8a2112a1b518ad699aebec7ed8d84f2ae2f538ec1c3
+    # Master data scope picker endpoints (sha-8302249, platform-backend PR #21).
+    # 4 yeni REST endpoint: GET /api/v1/master-data/{companies,projects,
+    # branches,departments} → reports_db secondary datasource'tan
+    # workcube_mikrolink tabloları direct SQL read. ScopeAssignModal
+    # text input → dropdown geçişi için (platform-web PR #69 paired).
+    # Kullanıcı 2026-04-29 feedback: "şirket proje depo şubeyi de ekleyecekti
+    # onlarıda veritanaından almıştık".
+    # Önceki sha-b9ddc86 (PR #19 DD-5 + PR #20 superAdmin bypass) üzerine
+    # MasterDataController + MasterDataService + reportsDbJdbcTemplate ek.
+    digest: sha256:dc05fcfd29da0a64654fd419d54a8acf83246b14bde5cc290c2dfc1e95b51430
   # Frontend testai variant (testai.acik.com + platform-test realm)
-  # 2026-04-29 update: sha-6c8c030 — RoleDrawer catalog query fix
-  # (platform-web PR #68). Önceki sha-2dc3734 üzerine: Yeni Rol modal'ında
-  # reports/modules/actions/pages alanları catalog query disabled olduğundan
-  # boş render ediyordu. Fix: enabled koşulu basitleştir (open).
+  # 2026-04-29 update: sha-bc2b3d2 — ScopeAssignModal master data dropdown
+  # (platform-web PR #69). useMasterData hook + scope ref text input → select
+  # geçişi (4 endpoint: companies/projects/branches/departments). Empty
+  # fallback (master data ETL henüz koşmamışsa) manuel ID input + i18n hint.
+  # Önceki sha-6c8c030 (PR #68 RoleDrawer catalog fix) üzerine.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend-testai
-    digest: sha256:244557577d2e87dd0f274f4c940b43802b93049412b26da627d82716d1bed658
+    digest: sha256:396432463ca2974ccd43d03cd146bea0cd7a624b8442e87fa600dcf03b06280e
 
 patches:
   # Replica 0 default (scale-to-zero)
