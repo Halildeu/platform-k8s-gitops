@@ -76,11 +76,15 @@ images:
     # poller, PR-F Testcontainers, PR-D REST endpoints, PR-C dual datasource).
     digest: sha256:43835e5167ba411ef3dd35aedb5c30399914b2009235dc17ceb7c14fb45f63ca
   # Frontend testai variant (testai.acik.com + platform-test realm)
-  # Faz 21.3 PR-E merge (sha-57dc28e): mfe-access Veri Erişimi panel
-  # (5 tab + ScopeAssignModal + 4-locale i18n + nested Routes + 28 tests).
+  # 2026-04-29 update: sha-2dc3734 — D36 manuel pin sync (Renovate Faz N
+  # öncesi). Önceki pin sha-57dc28e ile ~24 saatlik drift kapatıldı.
+  # Cluster runtime'da operatör tarafından deploy edilen ara digest
+  # (6229560c...) gitops pin'le hizalanır. mfe-access PR-E merge sonrası
+  # son 2 saatte 5 ardışık image push (1ad52d1, 1c7d391, da77a24, bd884de,
+  # 2dc3734) — bu pin GHCR latest sha-2dc3734 ile eşleşir.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend-testai
-    digest: sha256:68f7167863632f17fa9190b7abe8482afe2c63914a8dcdb327a23c6e69c352eb
+    digest: sha256:7686ab553f0a8d2caab5d95e62e644fb067c935c9be82c9ad0c06e918cda9d1f
 
 patches:
   # Replica 0 default (scale-to-zero)
