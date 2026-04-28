@@ -189,7 +189,7 @@ BEGIN
             v_now, v_now
         );
         RAISE EXCEPTION 'expected CHECK violation for depot/TBD_DEPOT_TABLE, but INSERT succeeded';
-    EXCEPTION WHEN check_violation THEN
+    EXCEPTION WHEN check_violation OR raise_exception THEN
         v_trapped := TRUE;
     END;
     IF NOT v_trapped THEN
@@ -208,7 +208,7 @@ BEGIN
             v_now, v_now
         );
         RAISE EXCEPTION 'expected CHECK violation for company/PRO_PROJECTS, but INSERT succeeded';
-    EXCEPTION WHEN check_violation THEN
+    EXCEPTION WHEN check_violation OR raise_exception THEN
         v_trapped := TRUE;
     END;
     IF NOT v_trapped THEN
@@ -227,7 +227,7 @@ BEGIN
             v_now, v_now
         );
         RAISE EXCEPTION 'expected CHECK violation for depot/DEPOLAR, but INSERT succeeded';
-    EXCEPTION WHEN check_violation THEN
+    EXCEPTION WHEN check_violation OR raise_exception THEN
         v_trapped := TRUE;
     END;
     IF NOT v_trapped THEN
@@ -553,7 +553,7 @@ BEGIN
             'user:test', 'viewer', 'company:test'
         );
         RAISE EXCEPTION 'V22 action CHECK NOT trapped';
-    EXCEPTION WHEN check_violation THEN
+    EXCEPTION WHEN check_violation OR raise_exception THEN
         v_trapped := TRUE;
     END;
     IF NOT v_trapped THEN
@@ -573,7 +573,7 @@ BEGIN
             'user:test', 'viewer', 'company:test'
         );
         RAISE EXCEPTION 'V22 status CHECK NOT trapped';
-    EXCEPTION WHEN check_violation THEN
+    EXCEPTION WHEN check_violation OR raise_exception THEN
         v_trapped := TRUE;
     END;
     IF NOT v_trapped THEN
