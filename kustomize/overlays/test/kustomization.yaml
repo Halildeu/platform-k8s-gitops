@@ -59,9 +59,11 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # Faz 21.3 PR-D merge (sha-ecdb551): REST /api/v1/access/scope endpoints
-    # (PR-C primitives layered + AccessScopeService + Controller + 23 new tests).
-    digest: sha256:b75f23b18c5f9bc0b61d625e8cc92b5f56bf7c137a2d446c39d9071c136ed95c
+    # Faz 21.3 PR-G follow-up merge (sha-4f408f4): outbox poller + AccessScopeService
+    # refactor (V22+V23 transactional outbox pattern, CAS-fenced finalize, tuple-key
+    # ordering guard, @Validated config) + custom claim repository fragment.
+    # Includes PR-D REST endpoints + PR-F Testcontainers integration test layer.
+    digest: sha256:b6d59f0ab5d1791289544b530130d60493f503529c4fdb9515efb0bf8c0ca3fb
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # Faz 21.3 PR-E merge (sha-57dc28e): mfe-access Veri Erişimi panel
   # (5 tab + ScopeAssignModal + 4-locale i18n + nested Routes + 28 tests).
