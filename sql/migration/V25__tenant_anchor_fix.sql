@@ -143,9 +143,9 @@ BEGIN
         JOIN workcube_mikrolink.company c
           ON c.company_id = p.company_id
         JOIN workcube_mikrolink.our_company oc
-          ON oc.our_company_id = c.our_company_id
+          ON oc.comp_id = c.our_company_id
         JOIN data_access.organization_company oc_map
-          ON oc_map.workcube_company_source_pk = oc.source_pk
+          ON oc_map.workcube_company_source_pk = oc.comp_id::text
         WHERE p.source_pk = v_pk
           AND p.source_schema = 'workcube_mikrolink'
           AND oc_map.org_id = p_org_id;
@@ -158,9 +158,9 @@ BEGIN
         JOIN workcube_mikrolink.company c
           ON c.company_id = b.company_id
         JOIN workcube_mikrolink.our_company oc
-          ON oc.our_company_id = c.our_company_id
+          ON oc.comp_id = c.our_company_id
         JOIN data_access.organization_company oc_map
-          ON oc_map.workcube_company_source_pk = oc.source_pk
+          ON oc_map.workcube_company_source_pk = oc.comp_id::text
         WHERE b.source_pk = v_pk
           AND b.source_schema = 'workcube_mikrolink'
           AND oc_map.org_id = p_org_id;
@@ -174,9 +174,9 @@ BEGIN
         SELECT count(*) INTO v_count
         FROM workcube_mikrolink.department d
         JOIN workcube_mikrolink.our_company oc
-          ON oc.our_company_id = d.our_company_id
+          ON oc.comp_id = d.our_company_id
         JOIN data_access.organization_company oc_map
-          ON oc_map.workcube_company_source_pk = oc.source_pk
+          ON oc_map.workcube_company_source_pk = oc.comp_id::text
         WHERE d.source_pk = v_pk
           AND d.source_schema = 'workcube_mikrolink'
           AND d.our_company_id IS NOT NULL
