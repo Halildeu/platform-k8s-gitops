@@ -138,23 +138,37 @@ writer mapping yapar (yukarıdaki PG↔FGA tablosu).
 
 ### Object id encoding
 
-DB'de `data_access.scope.scope_ref` canonical JSON form
-(`["1001"]`). OpenFGA object id API-safe representation gerektirir;
-deterministic encoding:
+DB'de `data_access.scope.scope_ref` canonical JSON form. OpenFGA object id
+API-safe representation gerektirir; deterministic encoding.
 
-| DB scope_kind | DB scope_ref | OpenFGA object id |
-|---|---|---|
-| `company` | `["1001"]` | `company:wc-company-1001` |
-| `project` | `["1204"]` | `project:wc-project-1204` |
-| `depot` | `["3792"]` | `warehouse:wc-department-3792` |
-| `branch` | `["7"]` | `branch:wc-branch-7` |
+**2026-04-28 V25 update** (Codex `019dd34e` + PR #213 V25 migration): company
+scope_kind anchor table = `OUR_COMPANY` (was `COMPANY` directory). Object id
+encoding güncellendi: `wc-our-company-<COMP_ID>` (was `wc-company-<id>`).
+Discovery: `docs/faz-21-3-evidence/2026-04-28-our-company-anchor-discovery.md`.
+
+| DB scope_kind | DB scope_ref | OpenFGA object id | Anchor table |
+|---|---|---|---|
+| `company` | `["1"]` | `company:wc-our-company-1` | OUR_COMPANY (V25) |
+| `project` | `["1204"]` | `project:wc-project-1204` | PRO_PROJECTS |
+| `depot` | `["3792"]` | `warehouse:wc-department-3792` | DEPARTMENT |
+| `branch` | `["7"]` | `branch:wc-branch-7` | BRANCH |
 
 Encoding kuralları:
 - prefix: `wc-` (workcube source)
-- entity tip: `company`/`project`/`department`/`branch` (lowercase, plural→singular)
-- pk: `scope_ref` JSON array'inden ilk element (string olarak); composite pk için `-` ile birleştir.
+- entity tip: `our-company` for company scope (V25 tenant boundary; was
+  `company` pre-V25), `project`/`department`/`branch` diğerler (lowercase,
+  plural→singular)
+- pk: `scope_ref` JSON array'inden ilk element (string olarak); company
+  için `OUR_COMPANY.COMP_ID` lineage source_pk; composite pk için `-` ile birleştir.
 
-Mapping deterministic; backend tuple writer bu fonksiyonu paylaşmalı.
+**V25 transition map** (pre-V25 → V25):
+
+| Era | scope_ref | object id | Anchor SQL ref |
+|---|---|---|---|
+| Pre-V25 (V19/V20/V21) | `["1001"]` | `company:wc-company-1001` | `workcube_mikrolink.company` (80,246 row directory) — INCORRECT |
+| **V25 onwards** | `["1"]` | `company:wc-our-company-1` | `workcube_mikrolink.our_company` (42 row tenant) — CORRECT |
+
+Mapping deterministic; backend tuple writer + UI selector bu fonksiyonu paylaşmalı. V25 öncesi yazılmış tuple/scope row'lar mevcut staging-sw test cluster'da YOK (drift pre-load yakalandı), production'da hiç yazılmadı — backward-compat layer gerekmedi.
 
 ### Tuple writer flow
 
