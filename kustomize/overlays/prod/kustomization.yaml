@@ -48,10 +48,14 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # Faz 21.3 PR-G follow-up merge (sha-4f408f4): outbox poller + AccessScopeService
-    # refactor (V22+V23 transactional outbox pattern, CAS-fenced finalize, tuple-key
-    # ordering guard, @Validated config) + custom claim repository fragment.
-    digest: sha256:b6d59f0ab5d1791289544b530130d60493f503529c4fdb9515efb0bf8c0ca3fb
+    # Faz 21.3 V25/V26 alignment merge (sha-943bd5f, platform-backend PR #17):
+    # AccessScopeService.expectedSourceTable(COMPANY) → "OUR_COMPANY" + tuple
+    # encoder COMPANY → "wc-our-company-<COMP_ID>". Closes the V25 contract gap
+    # the prior pin (sha-4f408f4) carried; D35-2 canlı evidence FGA namespace
+    # `company:wc-our-company-1` is now reachable via the REST flow.
+    # Codex thread `019dd3dc` Option B' AGREE. Prod cluster D17 scale-to-zero
+    # is unchanged — operator rolls out only when D30 atomic cutover lands.
+    digest: sha256:219b053777478fa048fbe04b4f990f477a1091d2e2a49c0691e18c340a5c9406
   # Frontend prod variant (ai.acik.com + serban realm)
   # Faz 21.3 PR-E merge (sha-57dc28e): mfe-access Veri Erişimi panel
   # (5 tab + ScopeAssignModal + 4-locale i18n + nested Routes + 28 tests).
