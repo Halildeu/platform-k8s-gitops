@@ -875,6 +875,36 @@ Bu repo'da DEĞİL, ana repo'da yapılacaklar. Manifest yazımıyla eş zamanlı
 
 **Yürütme penceresi**: Faz 15 T+72h rollback-window kapanışı sonrası (≥ 2026-04-27 01:25 UTC+3). 2-3 hafta süre (single dev), 1-2 hafta (paralel team).
 
+#### Faz 16.2.A — Scope Anchor Load (D35-1 prereq) — DR-6 (ADR-0010)
+
+**Karar tarihi**: 2026-04-28 (Codex thread `019dd2c9` xhigh effort verdict, ADR-0010 §2.4).
+
+**Durum**: AÇIK — operator-driven. Runbook: `docs/RB-faz-16-2-A-scope-anchor-load.md`.
+
+**Amaç**: D35-2 first canlı evidence'ı açabilmek için `workcube_mikrolink.company`'ye **minimum 1 gerçek Workcube COMPANY row**'u ETL ile yüklemek. Sentetik fixture YASAK (Kural #9 + 2026-04-26 mandate); gerçek Workcube source path zorunlu.
+
+**Kapsam (sıkı subset)**:
+- Sadece canonical schema `workcube_mikrolink` (parametric `workcube_mikrolink_<year>` değil).
+- Sadece `COMPANY` tablo (D35 anchor table; diğer 3 anchor — `pro_projects`, `branch`, `department` — D35-2/3 onları gerektiğinde follow-up).
+- Minimum row: 1 (AÇIK org'un Workcube COMPANY satırı).
+- Mevcut `etl_worker` üstüne dar profil; YENİ ETL stack DEĞİL.
+
+**Ürettiği D35-1 evidence** (per `docs/d35-evidence-template.md`):
+- `migration_audit.migration_runs` row (mode=initial, status=SUCCESS, rows_loaded>=1, rejected=0)
+- Reconcile MATCH artifact (`docs/migration/reconcile-<run-id>.{md,json}`)
+- `data_access.organization_company` mapping AÇIK org → real source_pk
+- `workcube_mikrolink.company.source_pk` örnek (DR-7 SCOPE_REF olarak kullanır)
+
+**Bağımlılıklar (üst akış)**: V16+V17+V19+V20+V21+V22+V23 reports_db'ye applied (2026-04-28 outbox preflight'da tamamlandı, `current-state.md`).
+
+**Bağımlılıklar (alt akış)**: DR-7 (D35-2 first canlı evidence) bu Fazın çıktı `source_pk`'sini kullanır.
+
+**Operator approval gate** (per ADR-0010 §2.5): Step 2 "Live load" = first canlı Workcube row movement → user onay zorunlu.
+
+**Faz 16.2.P ile ilişki**: Faz 16.2.P parametric ETL **defer kalır**. 16.2.A onun içinde **değil**, ondan **bağımsız dar bir prereq**. Drift guard'lar (sentetik fixture yasağı) korunur.
+
+**Codex thread**: `019dd2c9` (xhigh, ADR-0010 input).
+
 #### Faz 16.2.P — Parametric (multi-tenant + yearly schema) ETL — DEFERRED INDEFINITELY
 
 **Karar tarihi**: 2026-04-26 (Codex thread `019dc88c` iter-4 AGREE).
