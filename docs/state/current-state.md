@@ -8,6 +8,52 @@
 
 ---
 
+## Live Delta — Session 32 (2026-04-28 ~09:10 UTC+3) — D35-1 ANCHOR DRIFT (COMPANY → OUR_COMPANY) TEŞHİS EDİLDİ
+
+### Bulgu
+
+User feedback ("company tablosu değil our_COMPANY gibi birşey olacaktı") + schema-service snapshot inspection = V19/V20/V21 + V22/V23 + tables.yaml + Faz 16.2.A runbook **tüm yerlerde yanlış anchor table** kullanılmış. Doğru anchor `workcube_mikrolink.OUR_COMPANY` (42 row, AÇIK tenant scope), yanlışlıkla `workcube_mikrolink.COMPANY` (80,246 row, all-companies directory) referans alınmış. Tenant boundary çiğneniyor (V19 validate_scope_ref any directory row passes).
+
+### Kanıt
+
+- Schema-service snapshot (`docs/migration/workcube-schema.json`, 1509 tables) inspection: OUR_COMPANY (anchor, PK COMP_ID NOT NULL) vs COMPANY (directory, OUR_COMPANY_ID nullable FK).
+- Live MSSQL (NTLM + DR-6 readiness PR #211 unblock): COMPANY=80,246 rows, OUR_COMPANY=42 rows (Mikrolink Bilişim, Pasif Boreas, Serban Mühendislik, +39 more — domain "boreas" + realm "serban" matches OUR_COMPANY samples).
+- Codex `019dd34e` PARTIAL/AGREE-with-revisions: hybrid contract — company → OUR_COMPANY direct, depot/branch/project → tenant predicate via FK chain.
+
+### State (live, 2026-04-28)
+
+- `data_access.scope` rows: 0 (no scopes inserted yet — D35-2 hasn't run)
+- `data_access.organization_company` rows: 0 (V19 seed CROSS JOIN to empty workcube_mikrolink.company yielded 0)
+- `workcube_mikrolink.company` in reports_db: 0 (ETL not loaded)
+- DR-6 Step 1: PASS (PR #211 multi-prefix env fix); inspect-source returns 80,246 COMPANY rows + OUR_COMPANY discovery
+- **No data corruption** — drift caught BEFORE any scope inserted. Fix-forward clean.
+
+### Discovery evidence file
+
+`docs/faz-21-3-evidence/2026-04-28-our-company-anchor-discovery.md` (this PR PR-1).
+
+### 4-PR fix sequence (Codex 019dd34e AGREE-with-revisions)
+
+| PR | Scope |
+|---|---|
+| **PR-1** (this PR) | Discovery doc + drift note (current-state) |
+| PR-2 | V25 migration: tenant-aware validate_scope_ref + organization_company reseed + ops grant (OUR_COMPANY SELECT) + regression tests |
+| PR-3 | tables.yaml OUR_COMPANY entry + Faz 16.2.A runbook revize (COMPANY → OUR_COMPANY, all-42 load mantığı) |
+| PR-4 | ADR-0008 + ADR-0009 + D35 ladder + PLAN.md update (anchor contract correction; object id encoding `wc-our-company-<COMP_ID>` per Codex tercihi) |
+
+### Operator sequence (post-PR-2/3 merged)
+
+1. Apply V25 to reports_db.
+2. Re-run Faz 16.2.A runbook with `--tables OUR_COMPANY` (corrected manifest).
+3. Capture D35-1 evidence with proper anchor.
+4. DR-7 D35-2 first canlı evidence with real `OUR_COMPANY.COMP_ID` as scope_ref.
+
+### Planning gap captured (Codex 019dd34e §4)
+
+V19/V20/V21 plan-time review threads (`019dc8b4`, `019dcfb0`, `019dd0e0`) didn't catch this — Workcube source schema convention + live row-count semantics weren't cross-referenced. Lesson: data_access scope-kind anchor decisions MUST cross-check schema-service snapshot at plan-time.
+
+---
+
 ## Live Delta — Session 32 (2026-04-28 ~07:40 UTC+3) — ADR-0010 9-PR SEQUENCE LANDED (kalıcı mimari)
 
 ### ADR-0010 PR table (this session)
