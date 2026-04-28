@@ -1,218 +1,252 @@
-# RB Faz 21.3 D35-3 Prereq — Persona realm role atama (operatör boundary)
+# RB Faz 21.3 D35-3 Prereq — Persona Authorization (OpenFGA superAdmin tuple, operatör boundary)
 
-> **Tetikleyici**: D35-3 UI persona evidence run öncesi. `d35-admin-persona` Keycloak'ta yaratıldı ama default rollerle (`offline_access, default-roles-platform-test, uma_authorization`); frontend `THEME` / `ACCESS` / `USERS` gibi module-role beklediğinden `/unauthorized`'a redirect ediliyor.
-> **Authority**: **kullanıcı / operatör only**. Agent runbook yazar, fiili realm role atama operatör boundary'sinde kalır (admin token transcript'e girmesin).
-> **Bağlam (2026-04-28)**: testai.acik.com → `Modül erişimi yok — Bu modül rolünüzde tanımlı değil. Gerekli modül: THEME` ekranı. d35-admin-persona UID `cbc9a869-1833-4d9c-beea-a9fa52fa851e`.
+> **Tetikleyici**: D35-3 UI persona evidence run öncesi. `d35-admin-persona` Keycloak'ta yaratıldı + Keycloak realm role default'lar var, ama frontend `/v1/authz/me` `superAdmin: false` + boş `modules: {}` döndüğünden `/unauthorized`'a redirect ediliyor.
+> **Authority**: agent yapabilir test cluster'da (CLAUDE.md HARD RULE #7 + ADR-0010 §2.5 + ADR-0011 §2.3 → `state-mutation (test cluster)` class, user-approval gerekmez). Operator-pending olan **sadece psql/user-service email lookup** (kullanıcı boundary'sinde lokal credential).
+> **Bağlam (2026-04-28)**: testai.acik.com → `Modül erişimi yok — Bu modül rolünüzde tanımlı değil. Gerekli modül: THEME` ekranı. d35-admin-persona Keycloak UID `cbc9a869-1833-4d9c-beea-a9fa52fa851e`, email `d35-admin@example.com`.
 
-## Neden gerekli
+## Kritik bulgu: Authorization yolu
 
-mfe-host frontend module guard:
-- Login token claim'inden `realm_access.roles` listesi okuyor
-- Her modülün entry route'unda role gate (örn. `/admin/data-access` → `ACCESS` realm role gerek)
-- Default roller (`offline_access`, `default-roles-platform-test`, `uma_authorization`) Keycloak built-in; module access vermez
-- D35-3 evidence için persona admin UI panel'lerine girebilmeli (Veri Erişimi → "Kullanıcı Erişimleri")
+**Frontend authorization yolu Keycloak realm rolleri DEĞİL.** Doğru flow:
 
-## Boundary kuralları
+1. Kullanıcı Keycloak'tan JWT alır (rolleriyle birlikte ama frontend ROL ÇEKMEZ)
+2. Frontend `GET /api/v1/authz/me` çağırır (permission-service)
+3. Permission-service JWT'den **numeric userId** çözer (sırayla: `userId` claim, `uid` claim, `sub` claim numeric mi, email fallback)
+4. Permission-service OpenFGA `/check` ile `user:<numericId>` `admin` `organization:default` sorar
+5. Allowed = true ise response'da `superAdmin: true` → frontend tüm modül kapılarını açar
+6. Allowed = false ise her modül için `module:<NAME> can_manage|can_view` ayrı check → tek tek module access
 
-- **Yapma**: Agent admin token al, role atama curl'ünü kendi terminalinde koş, JWT decode → log
-- **Yap**: Operatör runbook'u kendi terminalinde koşar; her adımdan sonra agent'a "atama yapıldı, role list X" sinyali verir
-- **Agent koşacak adımlar (read-only / sandbox-safe)**: token endpoint healthcheck, persona UID Vault read
+**Sonuç**: Tek bir OpenFGA tuple (`organization:default#admin`) seed'i ile persona'ya tüm modül access verilebilir.
+
+## Boundary
+
+- **Yapma**: Production OpenFGA tuple seed (kullanıcı-only, dual-clearance)
+- **Yap**: Test cluster'da agent SSH+kubectl+OpenFGA write yapabilir; Codex consensus (`019dd409` PARTIAL/REVISE) zaten `module:ACCESS` tuple seed için yetki vermişti — bu runbook aynı kapsamda **organization:default#admin** ekliyor.
+- **Operator-only adım**: persona'nın **numeric userId**'sini bulma (psql veya user-service email lookup). Numeric ID Vault'a kaydedilir, agent transcript'ine literal değer girmesin.
 
 ## Prereq
 
-- [ ] `d35-admin-persona` Keycloak'ta var (RB-faz-21-3-d35-3-keycloak-admin-jwt.md Step 2 tamamlandı)
-- [ ] `d35-granted-persona` Keycloak'ta var (Step 3 tamamlandı)
-- [ ] Operatör Keycloak admin token alabiliyor (Step 1)
-- [ ] PERSONA_UID Vault'tan okunabiliyor: `vault kv get -field=admin_persona_uid kv/platform/d35-3`
+- [ ] `d35-admin-persona` Keycloak'ta var (RB-keycloak-admin-jwt.md Step 2 tamamlandı)
+- [ ] Persona email = `d35-admin@example.com`
+- [ ] OpenFGA STORE_ID + MODEL_ID Vault'tan okunabilir (`vault kv get kv/platform/openfga`)
+- [ ] OpenFGA endpoint reachable (test cluster in-cluster service veya port-forward)
 
-## Step 1 — Admin token + realm role list (operatör koşar)
+## Step 1 — Persona'nın numeric userId'sini bul (operatör koşar)
 
-```bash
-# Operatör kendi terminalinde — admin password agent transcript'ine girmesin
-KC_BASE="https://testai.acik.com/auth"
-KC_REALM="platform-test"
+Backend `AuthenticatedUserLookupService` JWT → numeric userId çözüm sırası:
+1. JWT `userId` claim (numeric)
+2. JWT `uid` claim
+3. JWT `sub` claim parse-as-long (Keycloak UUID değil)
+4. Email lookup → local `users` table veya user-service `/api/users/by-email/{email}`
 
-# Admin password lokal dosyadan oku (Vault entegre değilse host-compose secret)
-KC_ADMIN_PASSWORD=$(cat ~/Documents/host-compose/keycloak/test/secrets/kc_admin_password.txt)
-
-KC_ADMIN_TOKEN=$(curl -sk -X POST \
-  "${KC_BASE}/realms/master/protocol/openid-connect/token" \
-  --data-urlencode "client_id=admin-cli" \
-  --data-urlencode "username=admin" \
-  --data-urlencode "password=${KC_ADMIN_PASSWORD}" \
-  --data-urlencode "grant_type=password" | jq -r .access_token)
-
-# Token alındı mı kontrol
-[ -n "$KC_ADMIN_TOKEN" ] && [ "$KC_ADMIN_TOKEN" != "null" ] && echo "✓ token alındı" || echo "✗ token boş — şifre/URL kontrol"
-
-# platform-test realm'in tüm realm rollerini listele (agent'a paylaşılabilir — sadece role isimleri, sensitive değil)
-curl -sk -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \
-  "${KC_BASE}/admin/realms/${KC_REALM}/roles" | jq -r '.[].name' | sort
-```
-
-**Beklenen çıktı (örnek)**: `admin`, `default-roles-platform-test`, `offline_access`, `uma_authorization`, `THEME`, `ACCESS`, `USERS`, `SCHEMA`, vs. modül-spesifik roller.
-
-**Gate**: Realm role listesi alındı. **Bu listeyi agent'a paylaş** — atanması gereken module rolleri agent'tan tespit edilsin.
-
-## Step 2 — Atanacak rolleri tespit et (agent + operatör birlikte)
-
-mfe-host'un module → realm role mapping'i:
-
-| Modül entry route | Beklenen realm role | Açıklama |
-|---|---|---|
-| `/admin/data-access` | `ACCESS` veya `admin` | Veri erişimi yönetim paneli |
-| `/admin/users` | `USERS` veya `admin` | Kullanıcı yönetimi |
-| `/admin/schema-explorer` | `SCHEMA` veya `admin` | Schema gezgini |
-| `/access/roles` | `ACCESS` | Rol yönetimi |
-| Tema/UI | `THEME` | Tema değişim |
-
-> **Not**: Eğer Step 1 listesinde `admin` realm role varsa **tek başına yeterli olabilir** (mfe-host muhtemelen `admin || moduleSpecific` OR mantığıyla bakar). Önce `admin` ata, re-login sonrası test et; yetmezse module-spesifik rolleri tek tek ekle.
-
-## Step 3 — Admin persona'ya `admin` realm role ata (operatör koşar)
+**Yol A: psql ile reports_db / auth_db users table**
 
 ```bash
-# Persona UID'i al
-PERSONA_UID=$(vault kv get -field=admin_persona_uid kv/platform/d35-3 2>/dev/null \
-  || echo "cbc9a869-1833-4d9c-beea-a9fa52fa851e")  # fallback bilinen UID
+# Operatör staging-sw'de psql ile:
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  exec deploy/permission-service -- env | grep -E 'DB_|DATABASE_URL' | head -5"
+# DB host/db/user/password bilgisini al
 
-# admin role JSON object'ini al
-ADMIN_ROLE_JSON=$(curl -sk -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \
-  "${KC_BASE}/admin/realms/${KC_REALM}/roles/admin")
+# permission-service hangi tabloda lookup yapıyor — 'users' tablosu (default).
+# DB'ye bağlanıp email ile id çek:
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  exec -i deploy/permission-service -- psql \"\${DATABASE_URL}\" \
+  -c \"SELECT id, email FROM users WHERE email = 'd35-admin@example.com' LIMIT 1\""
+# Beklenen: id=<numeric>, email=d35-admin@example.com
 
-# Atama POST
-curl -sk -X POST \
-  "${KC_BASE}/admin/realms/${KC_REALM}/users/${PERSONA_UID}/role-mappings/realm" \
-  -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d "[${ADMIN_ROLE_JSON}]"
-# Beklenen: HTTP 204 No Content (boş response)
-
-# Atama doğrula
-curl -sk -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \
-  "${KC_BASE}/admin/realms/${KC_REALM}/users/${PERSONA_UID}/role-mappings/realm" \
-  | jq -r '.[].name' | sort
-# Beklenen liste: admin + default rollerin yanında
+# Veya direkt PG cluster'a bağlanma (eğer permission-service CLI'sı yoksa):
+ssh halil@staging-sw "docker exec platform-pg-test psql -U postgres -d permission_db \
+  -c \"SELECT id, email FROM users WHERE email = 'd35-admin@example.com'\""
 ```
 
-**Operator gate**: `admin` role listede görünüyor.
-
-## Step 4 — Module-spesifik roller (admin yetmezse — opsiyonel)
+**Yol B: user-service REST endpoint (varsa)**
 
 ```bash
-# admin persona için module rolleri tek seferde JSON array hazırla
-ROLES_TO_ASSIGN=("THEME" "ACCESS" "USERS" "SCHEMA")  # Step 1 listesinden mevcut olanları seç
-
-ROLES_JSON_ARRAY="["
-FIRST=true
-for ROLE_NAME in "${ROLES_TO_ASSIGN[@]}"; do
-  ROLE_JSON=$(curl -sk -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \
-    "${KC_BASE}/admin/realms/${KC_REALM}/roles/${ROLE_NAME}" 2>/dev/null)
-  if [ -n "$ROLE_JSON" ] && [ "$ROLE_JSON" != "null" ] && echo "$ROLE_JSON" | jq -e .id >/dev/null 2>&1; then
-    [ "$FIRST" = false ] && ROLES_JSON_ARRAY="${ROLES_JSON_ARRAY},"
-    ROLES_JSON_ARRAY="${ROLES_JSON_ARRAY}${ROLE_JSON}"
-    FIRST=false
-    echo "✓ ${ROLE_NAME} role bulundu"
-  else
-    echo "✗ ${ROLE_NAME} role yok (atlanacak)"
-  fi
-done
-ROLES_JSON_ARRAY="${ROLES_JSON_ARRAY}]"
-
-# Bulk atama
-curl -sk -X POST \
-  "${KC_BASE}/admin/realms/${KC_REALM}/users/${PERSONA_UID}/role-mappings/realm" \
-  -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d "${ROLES_JSON_ARRAY}"
-
-# Doğrula
-curl -sk -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \
-  "${KC_BASE}/admin/realms/${KC_REALM}/users/${PERSONA_UID}/role-mappings/realm" \
-  | jq -r '.[].name' | sort
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  exec deploy/user-service -- curl -sf \
+  http://localhost:8080/api/users/by-email/d35-admin@example.com | jq .id"
 ```
 
-## Step 5 — Re-login + token claim doğrulama (operatör browser + curl)
+**Yol C: Persona register et (eğer DB'de hiç yoksa)**
+
+D35-2-full'ün geçtiği bağlam: persona Keycloak'tan token alabildi → `/api/v1/access/scope` POST (admin) PASS oldu. Demek ki numeric userId resolution **bir şekilde** çalıştı. Önce Yol A/B ile numeric userId'yi bul; bulunamazsa user-service / permission-service register endpoint'inden persona kaydet.
+
+**Operator gate**: `ADMIN_NUMERIC_UID` (numeric integer) elde edildi ve Vault'a kaydedildi:
 
 ```bash
-# 1. Browser: testai.acik.com → logout → re-login as d35-admin-persona
-# 2. Yeni token al (curl ile decode et — sadece role claim doğrulaması)
-PERSONA_USERNAME="d35-admin-persona"
-PERSONA_PASSWORD="<RB-keycloak-admin-jwt.md Step 2'de set edilen şifre — kendi notundan oku>"
-
-NEW_JWT=$(curl -sk -X POST \
-  "${KC_BASE}/realms/${KC_REALM}/protocol/openid-connect/token" \
-  --data-urlencode "client_id=frontend" \
-  --data-urlencode "username=${PERSONA_USERNAME}" \
-  --data-urlencode "password=${PERSONA_PASSWORD}" \
-  --data-urlencode "grant_type=password" \
-  --data-urlencode "scope=openid" | jq -r .access_token)
-
-# Role claim'leri inspect — agent transcript'ine sadece role isimleri gidebilir, JWT body komple gitmesin
-echo "$NEW_JWT" | cut -d. -f2 | base64 -d 2>/dev/null | jq '.realm_access.roles'
-# Beklenen array: ["admin", "default-roles-platform-test", "offline_access", "uma_authorization", ...]
+vault kv patch kv/platform/d35-3 admin_persona_numeric_uid="${ADMIN_NUMERIC_UID}"
 ```
 
-**Operator gate**: Yeni token claim'inde `admin` (veya module rolleri) var.
+## Step 2 — `organization:default#admin` tuple seed (agent veya operatör)
 
-## Step 6 — Browser verify (operatör — UI run)
+```bash
+# Env set
+ADMIN_NUMERIC_UID=$(vault kv get -field=admin_persona_numeric_uid kv/platform/d35-3)
+STORE_ID=$(vault kv get -field=store_id kv/platform/openfga)
+MODEL_ID=$(vault kv get -field=model_id kv/platform/openfga)
 
-1. Browser cache + cookie temizle (incognito en güvenli)
+# Agent SSH üzerinden test cluster OpenFGA endpoint'e write
+ssh halil@staging-sw "curl -sf -X POST \
+  http://10.44.3.209:8080/stores/${STORE_ID}/write \
+  -H 'Content-Type: application/json' \
+  -d @- <<EOF
+{
+  \"authorization_model_id\": \"${MODEL_ID}\",
+  \"writes\": {
+    \"tuple_keys\": [
+      {\"user\": \"user:${ADMIN_NUMERIC_UID}\", \"relation\": \"admin\", \"object\": \"organization:default\"}
+    ]
+  }
+}
+EOF
+"
+# Beklenen: HTTP 200 + body {} (idempotent — tuple varsa 409 sessizce yutulur)
+```
+
+**Doğrulama**:
+
+```bash
+ssh halil@staging-sw "curl -sf -X POST \
+  http://10.44.3.209:8080/stores/${STORE_ID}/check \
+  -H 'Content-Type: application/json' \
+  -d \"{
+    \\\"authorization_model_id\\\":\\\"${MODEL_ID}\\\",
+    \\\"tuple_key\\\":{\\\"user\\\":\\\"user:${ADMIN_NUMERIC_UID}\\\",\\\"relation\\\":\\\"admin\\\",\\\"object\\\":\\\"organization:default\\\"}
+  }\""
+# Beklenen: {"allowed":true}
+```
+
+## Step 3 — `/v1/authz/me` end-to-end doğrula (agent koşar)
+
+Persona JWT al + permission-service /authz/me çağır:
+
+```bash
+# Operatör'den JWT_ADMIN export edildi (RB-keycloak-admin-jwt.md Step 4)
+[ -z "$JWT_ADMIN" ] && echo "✗ JWT_ADMIN env set değil — operatör'den iste" && exit 1
+
+# permission-service in-cluster çağrı
+ssh halil@staging-sw "curl -sf \
+  -H \"Authorization: Bearer \$JWT_ADMIN\" \
+  http://10.44.3.209:8095/api/v1/authz/me | jq '{superAdmin, modules, allowedModules, roles}'"
+# Beklenen: {"superAdmin": true, "modules": {...}, "allowedModules": [...], "roles": [...]}
+```
+
+**Gate**: `superAdmin: true`. Frontend artık tüm modül kapılarını bypass eder.
+
+## Step 4 — Browser re-login + UI doğrula (operatör)
+
+1. Browser cache + cookie temizle (incognito)
 2. testai.acik.com → login (`d35-admin-persona` / persona şifresi)
-3. URL bar: `testai.acik.com/admin/data-access` (veya home → "Veri Erişimi" panel)
-4. Beklenen: panel render etti (5 sekme: Kullanıcılar / Roller / Şirket / İş Birimi / Veri Yöneticileri)
+3. URL bar: `testai.acik.com/admin/data-access`
+4. Beklenen: 5-tab "Veri Erişimi" panel render etti (Kullanıcılar / Roller / Şirket / İş Birimi / Veri Yöneticileri)
 5. **D35-3 evidence run** başlat (RB-faz-21-3-d35-3-ui-persona-checklist.md)
 
-## Step 7 — Granted persona için minimum role (opsiyonel)
+## Step 5 — Granted persona için minimum tuple (opsiyonel)
 
-`d35-granted-persona` UI'da kendi tuple'ını görmek için sınırlı role yeterli:
+`d35-granted-persona` UI'da kendi tuple'ını görmek için sınırlı access yeterli. **superAdmin verme**; sadece module-spesifik:
 
 ```bash
-# UID al
-GRANTED_UID=$(vault kv get -field=granted_persona_uid kv/platform/d35-3 2>/dev/null \
-  || echo "05178b50-9e4d-42a9-9373-f45a04ad094e")
+GRANTED_NUMERIC_UID=$(vault kv get -field=granted_persona_numeric_uid kv/platform/d35-3)
 
-# Sadece "ACCESS view" benzeri role (eğer mfe-access read-only path ayrı role kullanıyorsa).
-# Eğer view = role yok = panel'e girer ama write gizli kalır pattern'i ise default rollerle kalsın.
-# D35-3 evidence run sırasında panel render'ı OK, write disabled gösteren ekranı evidence'a ekle.
+ssh halil@staging-sw "curl -sf -X POST \
+  http://10.44.3.209:8080/stores/${STORE_ID}/write \
+  -H 'Content-Type: application/json' \
+  -d @- <<EOF
+{
+  \"authorization_model_id\": \"${MODEL_ID}\",
+  \"writes\": {
+    \"tuple_keys\": [
+      {\"user\": \"user:${GRANTED_NUMERIC_UID}\", \"relation\": \"can_view\", \"object\": \"module:ACCESS\"}
+    ]
+  }
+}
+EOF
+"
 ```
 
-## Cleanup
+Bu tuple ile granted persona `/access/*` route'larına view-only erişebilir. write'lar gizli kalır.
 
-D35-3 evidence runları bittikten sonra rolleri geri al (test temizliği):
+## Step 6 — Cleanup (D35-3 evidence sonrası)
 
 ```bash
-# admin role'ünü kaldır
-curl -sk -X DELETE \
-  "${KC_BASE}/admin/realms/${KC_REALM}/users/${PERSONA_UID}/role-mappings/realm" \
-  -H "Authorization: Bearer ${KC_ADMIN_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d "[${ADMIN_ROLE_JSON}]"
+# Admin tuple kaldır
+ssh halil@staging-sw "curl -sf -X POST \
+  http://10.44.3.209:8080/stores/${STORE_ID}/write \
+  -H 'Content-Type: application/json' \
+  -d @- <<EOF
+{
+  \"authorization_model_id\": \"${MODEL_ID}\",
+  \"deletes\": {
+    \"tuple_keys\": [
+      {\"user\": \"user:${ADMIN_NUMERIC_UID}\", \"relation\": \"admin\", \"object\": \"organization:default\"}
+    ]
+  }
+}
+EOF
+"
 
 # Persona delete (RB-keycloak-admin-jwt.md Cleanup section)
 ```
 
-## Pratik notlar
+## OpenFGA model referansı
 
-- **Default roles atanmış pattern**: Keycloak realm config'de `default-roles-platform-test` composite role var; yeni user create ederken bu otomatik geliyor ama module access vermez.
-- **Composite role olasılığı**: `admin` realm role bir composite olabilir; içinde `realm-management/manage-users` gibi client role'ler var. Bizim için önemli olan **realm role isminin** mfe-host module guard'ında match etmesi.
-- **mfe-host kaynak verify**: Eğer atama sonrası hâlâ `/unauthorized` → mfe-host `permissions.ts` veya `auth-context.tsx` mantığını oku, role string'i case-sensitive mi / namespace prefix var mı kontrol et.
-- **Token cache**: SPA kendi token cache'ini tutar; Browser localStorage temizle veya hard refresh (`Cmd+Shift+R`).
+`backend/openfga/model.fga` tipleri:
+
+```
+type user
+
+type organization
+  relations
+    define admin: [user]            <-- BURASI: superAdmin = organization:default#admin
+    define member: [user]
+
+type module
+  relations
+    define can_edit: [user] but not blocked
+    define can_manage: [user] or can_edit but not blocked
+    define can_view: [user] or can_manage but not blocked
+    define blocked: [user]
+
+# ... company, project, warehouse, branch, action, report types
+```
+
+Module sabitleri (`PermissionCatalogService`):
+- `USER_MANAGEMENT`, `ACCESS`, `AUDIT`, `REPORT`, `WAREHOUSE`, `PURCHASE`, `THEME`
+
+## permission-service authz/me logic referansı
+
+`AuthorizationControllerV1.doGetMe()` (line 105+):
+- Line 134-138: `isSuperAdmin = checkOrganizationAdmin(numericUserId) || permissions.contains("admin")`
+- Line 494-512: modules map populate (RolePermission → effectiveGrants → MODULE filter)
+- Line 534-536: per-module sequential `can_manage` then `can_view` check
+- Line 705-710: `superAdmin: true` ise tüm modüller `MANAGE` level'a fallback
 
 ## Fail troubleshooting
 
 | Symptom | Sebep | Aksiyon |
 |---|---|---|
-| `/unauthorized` re-login sonrası da | Role atandı ama mfe-host farklı string match ediyor | mfe-host frontend kodu oku — role-name expectations |
-| HTTP 404 role atama POST | Role realm'de yok | Step 1 listesinden mevcut isim kullan; case-sensitive |
-| HTTP 403 admin token | Admin user'ın realm-management yetkisi yok | Master realm admin'iyle koş, persona realm değil |
-| `admin` role atandı ama claim'de yok | Token TTL eski + cache | Logout + cache clear + re-login |
+| `/v1/authz/me` `superAdmin: false` rağmen tuple yazıldı | Numeric userId yanlış | Step 1'i tekrar koş; psql → `SELECT id FROM users WHERE email = ...` |
+| `/check` HTTP 400 invalid_authorization_model_id | MODEL_ID Vault'tan eski | Vault'tan tekrar oku, fresh model ID al |
+| Browser hâlâ /unauthorized | Token cache eski | Logout + browser cache clear + re-login (token TTL 5dk) |
+| permission-service authz/me HTTP 401 | JWT TTL geçti | RB-keycloak-admin-jwt.md Step 4'i koş, fresh JWT al |
+| `users` table'da persona yok | DB lookup fail | Persona register edilmemiş; user-service register endpoint koş veya manuel INSERT |
+
+## Boundary declaration (ADR-0011 §2.3)
+
+This RB execution includes (operator boundary):
+- [x] state-mutation (test cluster) — OpenFGA tuple write on test store
+- [ ] credential-read (psql password — operatör boundary, agent transcript'inde değil)
+
+User-approval gerekmez (Codex consensus + Kural #7 + Codex `019dd409` PARTIAL/REVISE — test cluster tuple write agent yetkisi).
 
 ## References
 
-- RB-faz-21-3-d35-3-keycloak-admin-jwt.md (persona create + JWT)
-- RB-faz-21-3-d35-3-prereq-tuple-seed.md (OpenFGA tuple seed)
-- RB-faz-21-3-d35-3-ui-persona-checklist.md (UI evidence checklist)
+- [RB-faz-21-3-d35-3-keycloak-admin-jwt.md](RB-faz-21-3-d35-3-keycloak-admin-jwt.md) (persona create + JWT)
+- [RB-faz-21-3-d35-3-prereq-tuple-seed.md](RB-faz-21-3-d35-3-prereq-tuple-seed.md) (`module:ACCESS` tuple seed; bu runbook organization:default#admin ile complement)
+- [RB-faz-21-3-d35-3-ui-persona-checklist.md](RB-faz-21-3-d35-3-ui-persona-checklist.md) (UI evidence checklist)
 - ADR-0010 §2.5 (operator/agent boundary matrix)
-- ADR-0011 §2.3 (boundary class — credential-read for admin token, state-mutation test cluster for role assignment)
-- CLAUDE.md HARD RULE #7 (SSH+sudo+kubectl yetkisi); #9 (no fake work — atama doğrulanmadan iş bitti sayılmaz)
-- mfe-host module guard kaynak (Faz 21.3 evidence ladder bağlantısı)
+- ADR-0011 §2.3 (boundary class)
+- CLAUDE.md HARD RULE #7 (SSH+sudo+kubectl yetkisi); #9 (no fake work — superAdmin: true doğrulanmadan iş bitti sayılmaz)
+- `backend/openfga/model.fga` (organization#admin + module relations)
+- `permission-service/AuthorizationControllerV1.java` (line 134-138 superAdmin determination)
+- `permission-service/AuthenticatedUserLookupService.java` (JWT → numeric userId resolution)
+- Codex thread `019dd409` PARTIAL/REVISE (test OpenFGA tuple write yetkisi)
