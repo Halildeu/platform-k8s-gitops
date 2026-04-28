@@ -119,8 +119,9 @@ GRANT EXECUTE ON FUNCTION data_access.scope_validate_trg()
   TO permission_reports_writer;
 
 -- recover_stuck_outbox_rows() — V22 ops cleanup (called by poller's
--- recoverStuckRows path; metrics confirmed alive in 2026-04-28 preflight)
-GRANT EXECUTE ON FUNCTION data_access.recover_stuck_outbox_rows(INTERVAL)
+-- recoverStuckRows path; metrics confirmed alive in 2026-04-28 preflight).
+-- V22 signature: NO parameters (verified at sql/migration/V22__...sql:97).
+GRANT EXECUTE ON FUNCTION data_access.recover_stuck_outbox_rows()
   TO permission_reports_writer;
 
 -- ============================================================================
