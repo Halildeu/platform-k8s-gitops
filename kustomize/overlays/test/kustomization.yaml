@@ -389,6 +389,26 @@ patches:
         path: /spec/replicas
         value: 1
 
+  # 2026-04-29 (Codex 019dd818 PARTIAL feedback): test cluster ResourceQuota
+  # 8 CPU limit + 9 service × 750m = 6.75 CPU + frontend 200m + api-gateway
+  # 1 CPU = 7.95 CPU dolu. Surge-based rollout (maxSurge=1) yer açamadığı
+  # için yeni pod scheduling'den FailedCreate dönüyor; eski pod'u manuel
+  # terminate etmek zorunda kaldık (sha-d58fa61 → sha-93a2ad6 cycle).
+  # Test overlay için strategy patch: maxUnavailable=1/maxSurge=0 — yeni
+  # pod yer için eski pod'u terminate edebilir (kısa süreli tek-replica
+  # outage kabul edilir test cluster'da). Prod base'i etkilenmez (zero-
+  # downtime maxSurge=1/maxUnavailable=0 korunur).
+  - target:
+      kind: Deployment
+      name: permission-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 0
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 1
+
   # Dilim 3: OpenFGA datastore URI (S2-A1 follow-up: shortname base'de zaten,
   # ama openfga_db + 'change-me-local-only' stub şifre bu patch'te test-specific.
   # ESO aktif olunca (S2-B1 pilot externalsecret.yaml) bu patch kaldırılır.)
