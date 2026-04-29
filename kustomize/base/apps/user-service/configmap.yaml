@@ -46,3 +46,13 @@ data:
   # Logging level (prod'da INFO, test'te DEBUG override edilir)
   LOGGING_LEVEL_ROOT: "INFO"
   LOGGING_LEVEL_COM_ACIK: "INFO"
+
+  # 2026-04-29: authz user-table fix (kullanıcı feedback "/admin/users
+  # yetkim bozulmuş", ADMIN drawer modülleri boş).
+  # AuthenticatedUserLookupService default `user_service.users` tablosunda
+  # admin@example.com id=1201 (farklı seed pattern). Ama OpenFGA tuple'lar
+  # public.users ID'leri ile seedli (user:1 admin organization:default)
+  # — permission_db.users ile aynı IDs. user-service'in JWT email→id
+  # resolution'ı `public.users` (Spring 'users' default) üzerinden olmalı;
+  # aksi halde ScopeContext.superAdmin=false → tüm /api/v1/users 403.
+  AUTHZ_USER_TABLE: "users"
