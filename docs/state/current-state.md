@@ -10,6 +10,46 @@
 
 ---
 
+## Live Delta — Session 34 (2026-04-29 ~07:35 UTC+3) — ADMIN ROLE RESTORE CYCLE + Codex 3-iter PARTIAL→AGREE
+
+**Trigger**: Kullanıcı feedback `https://testai.acik.com/admin/access` role drawer save kontrolleri "passive değiştirme yetkim yok". Asıl kök neden: browser JWT/session expire (gateway 401 UNAUTHORIZED, frontend stale `superAdmin:false` cache). Yan kök neden: 2026-04-28 manuel SQL ADMIN restore'umda `permission_id NULL` granule shortcut model satırları → `PermissionDataInitializer` startup NPE (sha-d58fa61 rollout CrashLoopBackOff).
+
+**8 PR + 1 DB cleanup** (cross-repo backend + gitops):
+
+| Aşama | PR | Konu |
+|---|---|---|
+| Frontend digest sync | [#260](https://github.com/Halildeu/platform-k8s-gitops/pull/260) | sha-3a0c5f1 testai (PR #73 RoleDrawer dual-shape parser + PR #74 user roles fallback debug) |
+| Backend diag log | [platform-backend #23](https://github.com/Halildeu/platform-backend/pull/23) | /authz/me INFO breakdown (numericUserId/orgAdmin/superAdmin) |
+| Backend NPE fix | [platform-backend #24](https://github.com/Halildeu/platform-backend/pull/24) | PermissionDataInitializer null Permission FK tolerance |
+| Backend diag log REVISE | [platform-backend #25](https://github.com/Halildeu/platform-backend/pull/25) | INFO→DEBUG + email kaldır (Codex iter-1 Q5 PII guard) |
+| Backend digest pin | [#261](https://github.com/Halildeu/platform-k8s-gitops/pull/261) | sha-93a2ad6 (PR #23+#24) |
+| Strategy patch | [#262](https://github.com/Halildeu/platform-k8s-gitops/pull/262) | test overlay maxSurge=0/maxUnavailable=1 (quota workaround) |
+| Backend digest pin | [#263](https://github.com/Halildeu/platform-k8s-gitops/pull/263) | sha-149f62e (PR #25 absorb) |
+| Replicas + postmortem | [#264](https://github.com/Halildeu/platform-k8s-gitops/pull/264) | replicas=1 patch + `docs/postmortem-2026-04-29-admin-role-restore-cycle.md` |
+| DB cleanup | psql | `role_permissions WHERE role_id=2 AND key IN (SISTEM_Y_NETIMI, REPORTING)` DELETE 2 rows (canonical key drift) |
+
+**Canlı kanıt** — `/v1/authz/me` log capture (07:14:11):
+```
+authz/me: numericUserId=1, orgAdmin=true, permsAdmin=false, superAdmin=true, email=admin@example.com
+```
+3 ardışık /me 200 OK. Backend zinciri sağlam.
+
+**Codex thread chain**: `019dd818-dca7-76d0-8bba-6253a00623cd` — iter-1 PARTIAL (5 concern + 4 ek bulgu) → iter-2 PARTIAL/küçük REVISE (4 action item) → iter-3 **AGREE** (tüm action item'lar kapatıldı).
+
+**Verified state**:
+- permission-service Deployment (kustomize render = live): replicas=1, maxSurge=0, maxUnavailable=1, image sha-149f62e (`sha256:17a5db02d9530...`)
+- frontend Deployment: image sha-3a0c5f1 (`sha256:640c81248f985...`)
+- DEBUG env LIVE'da set DEĞİL (sessiz observability default)
+- Null FK envanter: 70 toplam, 11 null FK, **11/11 valid granule**, 0 invalid → sistematik problem yok
+
+**P2/P3 follow-up'lar açık** (postmortem'de track):
+- P2 ürün borcu: frontend silent fallback fix (401 → "oturum yenile" UX vs "yetkin yok")
+- P2 kod refactor: PermissionDataInitializer null FK hardening + `getPermission().getCode()` dereference path scan
+- P3 disiplin: aynı strategy patch pattern diğer scale-1 backend'lere generalize edilebilir mi
+- P3 doc: force-delete pattern runbook standardization
+
+---
+
 ## Live Delta — Session 33 closure (2026-04-29 ~01:30 UTC+3) — D35 LADDER TAM KAPATILDI + DD-5 + ARCHITECTURAL UNIFICATION
 
 D35-3 FULL PASS programmatic chain (curl + JWT, browser yerine) ile end-to-end doğrulandı. Cross-repo backend bug fix sonrası "Yeni Rol" HTTP 201 kanıtı + bonus side bug (sequence drift) fix + architectural unification (interceptor superAdmin bypass).

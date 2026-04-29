@@ -1,6 +1,6 @@
 # Postmortem — 2026-04-29 ADMIN Role Restore + permission-service NPE Cycle
 
-> **Status:** Resolved | **Severity:** P2 (browser-only, prod-impact yok) | **Duration:** ~2h | **Codex thread:** 019dd818-dca7-76d0-8bba-6253a00623cd
+> **Status:** Mitigated; P2/P3 follow-up tracked | **Severity:** P2 (browser-only, prod-impact yok) | **Duration:** ~2h | **Codex thread:** 019dd818-dca7-76d0-8bba-6253a00623cd (iter-1 PARTIAL → iter-2 PARTIAL/küçük REVISE → iter-3 **AGREE**)
 
 ## TL;DR
 
@@ -50,7 +50,7 @@ Aynı çözüm cycle'ında ortaya çıkan ek bug: 2026-04-28 manuel SQL ile ADMI
 | #261 | gitops | permission-service sha-93a2ad6 pin | merged |
 | #262 | gitops | test overlay rollout strategy patch (maxSurge=0/maxUnavailable=1) | merged |
 | #263 | gitops | permission-service sha-149f62e pin | merged |
-| **THIS PR** | gitops | replicas=1 patch (live drift kapat) + bu postmortem | open |
+| #264 | gitops | replicas=1 patch (live drift kapat) + bu postmortem | merged |
 | DB cleanup | psql | role_permissions WHERE role_id=2 AND key IN (SISTEM_Y_NETIMI, REPORTING) DELETE 2 rows | done |
 
 ## Recurrence guard (manuel SQL restore tekrarını önle)
