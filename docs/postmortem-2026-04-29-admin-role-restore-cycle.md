@@ -1,6 +1,6 @@
 # Postmortem — 2026-04-29 ADMIN Role Restore + permission-service NPE Cycle
 
-> **Status:** Mitigated; P2/P3 follow-up tracked | **Severity:** P2 (browser-only, prod-impact yok) | **Duration:** ~2h | **Codex thread:** 019dd818-dca7-76d0-8bba-6253a00623cd (iter-1 PARTIAL → iter-2 PARTIAL/küçük REVISE → iter-3 **AGREE**)
+> **Status:** Resolved; P2/P3 follow-up tracked | **Severity:** P2 (browser-only, prod-impact yok) | **Duration:** ~5h | **Codex thread:** 019dd818-dca7-76d0-8bba-6253a00623cd (iter-1 PARTIAL → ... → iter-9 AGREE C kalıcı çözüm)
 
 ## TL;DR
 
@@ -112,19 +112,51 @@ Manuel restore SQL'i çalıştırmadan önce Codex thread aç + plan göster + A
 - Aktivasyon: `kubectl set env deploy/permission-service LOGGING_LEVEL_COM_EXAMPLE_PERMISSION=DEBUG`
 - Deaktivasyon (incident bitince zorunlu): `kubectl set env deploy/permission-service LOGGING_LEVEL_COM_EXAMPLE_PERMISSION-`
 
-## Open follow-up'lar
+## Open follow-up'lar (Codex iter-9 AGREE C kapsamı sonrası güncel — 12:09)
 
-| Öncelik | Konu | Owner |
+### ✅ Bu cycle'da kapatıldılar (P1)
+
+| Madde | PR(lar) |
+|---|---|
+| Frontend silent fallback semantic (Codex Q2) | platform-web #76 (sessionExpired state), #77 (event dispatch + listener), #79 (shell toast/CTA + drawer reason) |
+| Pre-existing ESLint cleanup | platform-web #75 (auth pkg), #78 (shell + 2 drawer) |
+| Diag log PII guard (Q5) | platform-backend #25 |
+| GitOps drift kapatma (replicas+strategy) | platform-k8s-gitops #262, #264 |
+| Canonical module key drift (Q4) | DB DELETE 2 row + recurrence guard |
+| Recovery via initialData (iter-6 blocker) | platform-web #76 commit deea2780 |
+
+### 📋 Açık P2/P3 borçlar (Codex iter-9 8 maddelik roadmap)
+
+| Öncelik | Madde | Owner |
 |---|---|---|
-| P2 | Frontend silent fallback fix: 401 → "oturum yenile" UX (Codex Q2 + ek concern #4) | TBD frontend-cycle |
-| P2 | PermissionDataInitializer null FK hardening + dereference scan (Codex Q3) | TBD backend-cycle |
-| P3 | docs/state/current-state.md update (PR #260+#261+#262+#263+THIS) | TBD doc-cycle |
-| P3 | Aynı strategy patch pattern diğer scale-1 backend'lere generalize edilebilir mi (Codex iter-1 ek concern #1 follow-up) | TBD |
+| P2 | PermissionDataInitializer null FK hardening + dereference scan (Codex Q3) | backend-cycle |
+| P2 | Canonical module key DB guard (Flyway/CHECK constraint veya restore script validator) | backend-cycle |
+| P2 | `registerUnauthorizedHandler` API decision (event sistemi sonrası deprecate/contract) | frontend-cycle |
+| P3 | `PermissionProvider.loading` state cleanup | frontend-cycle |
+| P3 | `fetchAuthzVersion` 403 davranışı netleştirme | frontend-cycle |
+| P3 | `CheckReason` backend integration (Codex: gerek yok) | — |
+| P3 | Strategy patch pattern diğer scale-1 backend'lere generalize | gitops-cycle |
+| P3 | Force-delete pattern runbook standardization | gitops-cycle |
 
 ## References
 
-- Codex thread: 019dd818-dca7-76d0-8bba-6253a00623cd
-- backend PRs: #23, #24, #25
-- gitops PRs: #260, #261, #262, #263
+- Codex thread: 019dd818-dca7-76d0-8bba-6253a00623cd (iter-1..iter-9)
+- backend PRs: #23 (diag log), #24 (NPE fix), #25 (DEBUG seviyesi)
+- frontend PRs: #75 (auth cleanup), #76 (sessionExpired semantic), #77 (event dispatch + listener), #78 (shell+drawers cleanup), #79 (shell UX + drawer reason)
+- gitops PRs: #260, #261, #262, #263, #264, #265, #266
 - DB diff: role_permissions row 123 (SISTEM_Y_NETIMI) + row 124 (REPORTING) DELETE'd
-- AuthzVersionService bumps: 21→22 (cache invalidate trigger), 22→23, 23→24
+- AuthzVersionService bumps: 21→22→23→24
+
+## Codex iter timeline
+
+| iter | Verdict | Konu |
+|---|---|---|
+| 1 | PARTIAL | 5 concern + 4 ek bulgu absorb |
+| 2 | PARTIAL/REVISE | 4 action item (DEBUG kontrolü, replicas drift, null FK envanter, postmortem guard) |
+| 3 | AGREE | gitops cycle bitti |
+| 4 | PARTIAL/REVISE | A/B reddet → B-prime focused semantic plan |
+| 5 | AGREE B | cleanup-first stratejisi |
+| 6 | PARTIAL → AGREE | initialData recovery blocker fix |
+| 7 | PARTIAL/REVISE-plan | PR-2 → PR-2a + PR-2b ayrım, 7 düzeltme |
+| 8 | AGREE B (geçici) | PR-2b stash kararı (kullanıcı sonra "kalıcı çözüm" istedi) |
+| 9 | AGREE C | cleanup + PR-2b complete + 8 madde P2/P3 roadmap |
