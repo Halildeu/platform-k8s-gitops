@@ -48,16 +48,14 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # Master data scope picker endpoints (sha-8302249, platform-backend PR #21).
-    # 4 yeni REST endpoint: GET /api/v1/master-data/{companies,projects,
-    # branches,departments} → reports_db secondary datasource'tan
-    # workcube_mikrolink tabloları direct SQL read.
+    # our_company comp_status fix (sha-4c8c6a9, platform-backend PR #22).
+    # MasterDataService SQL column adı düzeltildi.
     # Prod cluster D17 scale-to-zero unchanged — operator rolls out only
     # when D30 atomic cutover lands.
-    # Includes everything from sha-b9ddc86 (PR #19 DD-5 + PR #20 superAdmin
-    # bypass), sha-12480ef (RequireModuleInterceptor relation alias), and
-    # sha-943bd5f (V25/V26 alignment).
-    digest: sha256:dc05fcfd29da0a64654fd419d54a8acf83246b14bde5cc290c2dfc1e95b51430
+    # Includes sha-8302249 (PR #21 master data endpoints), sha-b9ddc86
+    # (PR #19 DD-5 + PR #20 superAdmin bypass), sha-12480ef
+    # (RequireModuleInterceptor relation alias).
+    digest: sha256:1da34913a4b24412c60f0f5819c6fc691ff607453d297823ef5cf41b636fe4b2
   # Frontend prod variant (ai.acik.com + serban realm)
   # Faz 21.3 PR-E merge (sha-57dc28e): mfe-access Veri Erişimi panel
   # (5 tab + ScopeAssignModal + 4-locale i18n + nested Routes + 28 tests).

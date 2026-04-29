@@ -59,25 +59,22 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # Master data scope picker endpoints (sha-8302249, platform-backend PR #21).
-    # 4 yeni REST endpoint: GET /api/v1/master-data/{companies,projects,
-    # branches,departments} → reports_db secondary datasource'tan
-    # workcube_mikrolink tabloları direct SQL read. ScopeAssignModal
-    # text input → dropdown geçişi için (platform-web PR #69 paired).
-    # Kullanıcı 2026-04-29 feedback: "şirket proje depo şubeyi de ekleyecekti
-    # onlarıda veritanaından almıştık".
-    # Önceki sha-b9ddc86 (PR #19 DD-5 + PR #20 superAdmin bypass) üzerine
-    # MasterDataController + MasterDataService + reportsDbJdbcTemplate ek.
-    digest: sha256:dc05fcfd29da0a64654fd419d54a8acf83246b14bde5cc290c2dfc1e95b51430
+    # our_company comp_status fix (sha-4c8c6a9, platform-backend PR #22).
+    # PR #21'deki SQL `COALESCE(status, true)` workcube_mikrolink.our_company
+    # tablosunda yoktu (column adı comp_status) → DataAccessException →
+    # safeQuery catch → empty list. Live smoke companies HTTP 200 + items=0
+    # tespitiyle bulundu, fix: COALESCE(comp_status, true).
+    # Diğer 3 tablo (BRANCH, DEPARTMENT, PRO_PROJECTS) status pattern doğru.
+    digest: sha256:1da34913a4b24412c60f0f5819c6fc691ff607453d297823ef5cf41b636fe4b2
   # Frontend testai variant (testai.acik.com + platform-test realm)
-  # 2026-04-29 update: sha-bc2b3d2 — ScopeAssignModal master data dropdown
-  # (platform-web PR #69). useMasterData hook + scope ref text input → select
-  # geçişi (4 endpoint: companies/projects/branches/departments). Empty
-  # fallback (master data ETL henüz koşmamışsa) manuel ID input + i18n hint.
-  # Önceki sha-6c8c030 (PR #68 RoleDrawer catalog fix) üzerine.
+  # 2026-04-29 update: sha-9f624af — ScopeAssignModal user picker dropdown
+  # (platform-web PR #70). userId text input → user-service /v1/users
+  # dropdown. Empty fallback manuel UUID input. Kullanıcı feedback:
+  # "şirket depo şube proje user'dan atanmalı".
+  # Önceki sha-bc2b3d2 (PR #69 master data dropdown) üzerine.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend-testai
-    digest: sha256:396432463ca2974ccd43d03cd146bea0cd7a624b8442e87fa600dcf03b06280e
+    digest: sha256:8e069ee95f56eeea808d88450f143fb241ad59901844c23168fbbadc8a9d7789
 
 patches:
   # Replica 0 default (scale-to-zero)
