@@ -59,18 +59,46 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # 2026-04-29 update: sha-ac09c72 — Codex 019dd818 iter-11/12 Plan A+:
-    # PR #26 fix(permission-service): canonicalize legacy permissions.module_name
-    # - Runtime: ModuleNameCanonicalizer + AccessRoleService.toDto() byModule
-    #   canonical mapping (Kullanıcı Yönetimi→USER_MANAGEMENT, Sistem Yönetimi→
-    #   ACCESS, reporting/Raporlama→REPORT, ...)
-    # - Migration V14: permissions.module_name DB normalize (whitelist'li
-    #   Sistem Yönetimi→ACCESS for 4 well-known role/permission codes).
-    # Live diagnostic 2026-04-29 kullanıcı browser test sonrası gerçek kök
-    # neden bulundu: tüm rollerde role drawer modules "—" gösteriyordu çünkü
-    # byModule grouping mangled label'lar üretiyordu. Plan A+ ile kalıcı fix.
-    # Önceki sha-149f62e (PR #25 diag log DEBUG) üzerine.
-    digest: sha256:93efa6bda783c14d3fb06b3859ea6a15f056ddfc22b96d80ff0be8cf367b42ed
+    # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
+    #
+    # Phase 2 permanent fix for "rol tanımlama kaydetme güncellme mevcut kaydı
+    # açtığında içeriğin doğrulanmaması" — 3-layer (read/write/boot) +
+    # role-level marker + predicate parity. Cycle close iter-18 AGREE.
+    #
+    # PR chain (cumulative; this digest = PR #31 head):
+    #   #26 (sha-ac09c72) Plan A+   ModuleNameCanonicalizer + V14 (read path)
+    #   #28 (sha-086edab) Plan B    Aggregate-native replace + V15 (write)
+    #   #30 (sha-9610fbd) Plan A14  PermissionDataInitializer skip + V16 (boot)
+    #   #31 (sha-0d9c6cc) Plan C    permission_model marker + V17 + 409 guard
+    #
+    # Live verify (post-rollout 2026-04-29 12:41):
+    #   - V17 auto-applied "now at version v17 (00:00.093s)"
+    #   - Backfill: 10 GRANULE (ROLE_MANAGE, ADMIN, WAREHOUSE_OPERATOR,
+    #     FINANCE_MANAGER, SYSTEM_CONFIGURE, AUDIT_READ, USER_VIEWER,
+    #     REPORT_VIEWER, USER_MANAGE, REPORT_MANAGER) +
+    #     6 LEGACY (PURCHASE_MANAGER, FINANCE_VIEWER, PERMISSION_MANAGE,
+    #     USER_MANAGER, VARIANT_SCOPE_CANARY, FULL_ACCESS_EXTRA)
+    #   - 0 mixed FK rows (V15+V16+V17 chain success)
+    #   - 0 orphan-LEGACY (Codex iter-17 smoke check)
+    #   - authzVersion bumped 36→37 (frontend cache invalidate)
+    #   - All 11 granule roles skipped legacy seed (initializer log)
+    #
+    # Test coverage: 58/58 PASS (14 ModuleNameCanonicalizerTest +
+    # 20 AccessRoleServiceTest + 3 RoleAggregateHelpersTest +
+    # 3 AccessControllerV1UpdateRoleGranulesTest +
+    # 7 PermissionDataInitializerGranuleAwareTest +
+    # 7 AccessControllerV1LegacyWriteRejectionTest +
+    # 3 AccessControllerV1Test + 1 FlywayMigrationTest).
+    #
+    # Postmortem: docs/postmortem-2026-04-29-admin-role-restore-cycle.md
+    # (Phase 2 section, iter-10..18).
+    #
+    # Önceki pin sha-ac09c72 (PR #26 only) üzerine — bu commit aradaki PR #28,
+    # #30, #31'i de pinliyor. Image #28..#30 manual ctr import ile cluster'a
+    # yüklenmişti; PR #31 ise bu digest pin sonrası ArgoCD/standard pull akışına
+    # döner. iter-18 follow-up (cloneRole marker propagate, ArchUnit guard,
+    # mixed-roles metric) spawn task chip'leri ile kayda alındı.
+    digest: sha256:58f35f50119daa53ddf85db5bcb00912accc15836dc9020869ede54c547b8370
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
