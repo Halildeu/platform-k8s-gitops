@@ -67,16 +67,15 @@ images:
     # Diğer 3 tablo (BRANCH, DEPARTMENT, PRO_PROJECTS) status pattern doğru.
     digest: sha256:1da34913a4b24412c60f0f5819c6fc691ff607453d297823ef5cf41b636fe4b2
   # Frontend testai variant (testai.acik.com + platform-test realm)
-  # 2026-04-29 update: sha-42cfcb0 — RoleDrawer reports inline tree pattern
-  # (platform-web PR #71). 3-level rol bazlı yetki: NONE/VIEW/MANAGE.
-  # Modül-gruplu accordion (<details>) + per-report <select>. Active count
-  # badge + default open if any active grant. Kullanıcı feedback "raporlar
-  # inline aşağı doğru açılsın tek tek de yetki verebileyim rol bazlı".
-  # Backend GrantType enum zaten destekliyor (geriye uyumlu legacy ALLOW→VIEW).
-  # Önceki sha-9f624af (PR #70 user picker) üzerine.
+  # 2026-04-29 update: sha-5f189a2 — RoleDrawer legacy policies parse fix
+  # (platform-web PR #72). Backend GET /v1/roles/{id} legacy `policies`
+  # shape (moduleKey/level) frontend granule parser tarafından okunmadığı
+  # için ADM in role drawer modüller "—" gözüküyordu, save eski permissions
+  # siliyordu. Fix: legacy policies → moduleGrants fallback (geriye uyumlu).
+  # Önceki sha-42cfcb0 (PR #71 reports inline tree) üzerine.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend-testai
-    digest: sha256:eb5a3bdf3001099d4f2934cff9ea4ea0f5d4e1edeebb7fd1efa6c3c4e48e510e
+    digest: sha256:874c7fee582832d6b190793ccdf0aa0f10a3cbbc025e15c8e99794d5e12b7ea8
 
 patches:
   # Replica 0 default (scale-to-zero)
