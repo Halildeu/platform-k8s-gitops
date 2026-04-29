@@ -406,6 +406,14 @@ patches:
       - op: replace
         path: /spec/strategy/rollingUpdate/maxUnavailable
         value: 1
+      # 2026-04-29 Codex 019dd818 iter-2 PARTIAL ek bulgu: live cluster
+      # permission-service replicas=1 (manuel scale geçmişi), base default 2
+      # ile drift. Test overlay'de replicas=1 patch ile gitops desired-state
+      # ↔ live state senkron. Quota matematiği zaten 1 replica üzerinden
+      # düşünülmüştü (8 CPU - 7.45 used = 550m headroom; 750m surge fail).
+      - op: replace
+        path: /spec/replicas
+        value: 1
 
   # Dilim 3: OpenFGA datastore URI (S2-A1 follow-up: shortname base'de zaten,
   # ama openfga_db + 'change-me-local-only' stub şifre bu patch'te test-specific.
