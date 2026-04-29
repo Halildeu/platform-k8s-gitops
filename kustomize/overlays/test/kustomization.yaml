@@ -67,14 +67,16 @@ images:
     # Diğer 3 tablo (BRANCH, DEPARTMENT, PRO_PROJECTS) status pattern doğru.
     digest: sha256:1da34913a4b24412c60f0f5819c6fc691ff607453d297823ef5cf41b636fe4b2
   # Frontend testai variant (testai.acik.com + platform-test realm)
-  # 2026-04-29 update: sha-9f624af — ScopeAssignModal user picker dropdown
-  # (platform-web PR #70). userId text input → user-service /v1/users
-  # dropdown. Empty fallback manuel UUID input. Kullanıcı feedback:
-  # "şirket depo şube proje user'dan atanmalı".
-  # Önceki sha-bc2b3d2 (PR #69 master data dropdown) üzerine.
+  # 2026-04-29 update: sha-42cfcb0 — RoleDrawer reports inline tree pattern
+  # (platform-web PR #71). 3-level rol bazlı yetki: NONE/VIEW/MANAGE.
+  # Modül-gruplu accordion (<details>) + per-report <select>. Active count
+  # badge + default open if any active grant. Kullanıcı feedback "raporlar
+  # inline aşağı doğru açılsın tek tek de yetki verebileyim rol bazlı".
+  # Backend GrantType enum zaten destekliyor (geriye uyumlu legacy ALLOW→VIEW).
+  # Önceki sha-9f624af (PR #70 user picker) üzerine.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend-testai
-    digest: sha256:8e069ee95f56eeea808d88450f143fb241ad59901844c23168fbbadc8a9d7789
+    digest: sha256:eb5a3bdf3001099d4f2934cff9ea4ea0f5d4e1edeebb7fd1efa6c3c4e48e510e
 
 patches:
   # Replica 0 default (scale-to-zero)
