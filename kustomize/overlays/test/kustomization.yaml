@@ -56,7 +56,16 @@ images:
     digest: sha256:1d38fe3f3439067eeaae1d2015d470a3273074c6509589b54e7422fd749cc8b1
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
-    digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
+    # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
+    # iter-22..30f master-data live MSSQL reader (companies/projects/branches/
+    # departments full list, IS_STORE filter, DEPARTMENT_HEAD priority); iter-31
+    # AntPathRequestMatcher security fix; iter-32 diagnostic controller path
+    # /master-data-diagnostic → /master-data/diagnostic (slash hierarchy fix).
+    # Live verify (post-rollout 2026-04-29 23:45):
+    #   - companies=42, projects=29142, branches=144, departments=200
+    #   - /master-data/diagnostic/departments → HTTP 200 (was 401 in iter-30d/30e/31)
+    #   - HEAD priority confirmed: "2022_P01_Çanakkale Hilton Otel" (not address)
+    digest: sha256:2a7076c903fa4b551479d23f083aac6c6aefc48f8b4d80b7a1b9ad1f8a6b3afc
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
@@ -112,7 +121,11 @@ images:
   # Açık 8 madde P2/P3 roadmap postmortem'de tracked.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend-testai
-    digest: sha256:bb2e4de8dae933ed6b09464de7be505b7f21780d61725f9df590193bf23a6712
+    # 2026-04-30: bumped to iter-31 (sha-4aea44f) — UserDetailDrawer scope tab
+    # search + code prefix (PR #88, iter-30) + ScopeAssignModal SingleScopePicker
+    # search picker for 29k+ projects (PR #89, iter-31). Frontend live with
+    # the search UX that supersedes native <select> for scope picking.
+    digest: sha256:5a99d7e32bac8d5d24dbedc77231914f9f3211641af36d87bd7c294eb2d982f7
 
 patches:
   # Replica 0 default (scale-to-zero)
