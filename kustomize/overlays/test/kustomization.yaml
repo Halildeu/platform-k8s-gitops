@@ -107,7 +107,15 @@ images:
     # yüklenmişti; PR #31 ise bu digest pin sonrası ArgoCD/standard pull akışına
     # döner. iter-18 follow-up (cloneRole marker propagate, ArchUnit guard,
     # mixed-roles metric) spawn task chip'leri ile kayda alındı.
-    digest: sha256:58f35f50119daa53ddf85db5bcb00912accc15836dc9020869ede54c547b8370
+    #
+    # 2026-04-30 update: sha-7ae5e8b — Codex 019dda1c iter-33. SuperAdmin
+    # grant/revoke endpoints + UI integration (PR #48 BE, PR #90 WEB).
+    # POST/DELETE /api/v1/permissions/super-admin/users/{id}; equals-or-higher
+    # privilege gate (only super-admins can grant/revoke), atomic DB+OpenFGA,
+    # last-admin protection (409 if leaving zero), audit (SUPER_ADMIN_GRANTED/
+    # REVOKED), bootstrap-list warning. 13 controller tests, 261/261 full
+    # suite PASS.
+    digest: sha256:60c6358389ea39faa9d3eeeaec49673aeea9cb6d9af01b4aec853e63eda4030d
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
@@ -123,9 +131,14 @@ images:
     newName: ghcr.io/halildeu/platform-web-frontend-testai
     # 2026-04-30: bumped to iter-31 (sha-4aea44f) — UserDetailDrawer scope tab
     # search + code prefix (PR #88, iter-30) + ScopeAssignModal SingleScopePicker
-    # search picker for 29k+ projects (PR #89, iter-31). Frontend live with
-    # the search UX that supersedes native <select> for scope picking.
-    digest: sha256:5a99d7e32bac8d5d24dbedc77231914f9f3211641af36d87bd7c294eb2d982f7
+    # search picker for 29k+ projects (PR #89, iter-31).
+    #
+    # 2026-04-30 update: sha-a6413c1 — iter-33 SuperAdmin grant/revoke menu
+    # items in UserActions dropdown (PR #90). Visible only to current
+    # super-admins; calls POST/DELETE /v1/permissions/super-admin/users/{id};
+    # idempotent toasts surface alreadyHadGrant / hadActiveGrant; bootstrap
+    # warning rendered as toast description.
+    digest: sha256:ee158eeee4c90752cc931a4ec0841e298b9ad07dee4c0fc7ebe3c60b502f8e5d
 
 patches:
   # Replica 0 default (scale-to-zero)
