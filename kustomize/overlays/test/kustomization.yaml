@@ -66,19 +66,19 @@ images:
     # Önceki sha-93a2ad6 (PR #23 diag log + PR #24 null FK NPE fix) üzerine.
     digest: sha256:17a5db02d9530a856363851cd97a00545d4da0813aa774a9a4580c1b129c6500
   # Frontend testai variant (testai.acik.com + platform-test realm)
-  # 2026-04-29 update: sha-a7d90cf — Codex 019dd818 iter-7 (B-prime PR-2a):
-  # - PR #76 (sha-e63df6d9): packages/auth session_expired semantic — 401 vs
-  #   403 vs server error ayrımı + sessionExpired state + recovery via initialData
-  # - PR #77 (sha-a7d90cf): shared-http 401 event dispatch
-  #   (window.dispatchEvent('app:auth:unauthorized')) + PermissionProvider
-  #   global event listener — object-level 401'larda 60s poll'a kadar
-  #   beklemeden cache invalidate.
-  # Önceki sha-3a0c5f1 (PR #73 + #74 RoleDrawer parse v2 + UserDetailDrawer
-  # fallback debug) üzerine. PR-2b (shell toast UX + drawer reason ayrımı)
-  # ayrı PR'da gelecek.
+  # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
+  # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
+  # PR #76 (sha-e63df6d9): session_expired semantic + recovery via initialData
+  # PR #77: shared-http 401 event dispatch + PermissionProvider listener
+  # PR #78 (cleanup): shell+drawers ESLint warnings 31→0
+  # PR #79: shell toast/CTA UX + drawer reason ayrımı + i18n keys (5 locale)
+  # PR #80: edge case fix (token refresh ref reset) + 10/10 PASS test
+  #   (safe redirect contract + episode-based dedupe semantic)
+  # Önceki sha-a7d90cf (PR #76+#77) üzerine. Codex iter-1..10 cycle kapandı.
+  # Açık 8 madde P2/P3 roadmap postmortem'de tracked.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend-testai
-    digest: sha256:f7cf5cb426f441ea0f0a733f2fc98d1855967dd33ae3b51edd6c2384ff8fee9b
+    digest: sha256:bb2e4de8dae933ed6b09464de7be505b7f21780d61725f9df590193bf23a6712
 
 patches:
   # Replica 0 default (scale-to-zero)
