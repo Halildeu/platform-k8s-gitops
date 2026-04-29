@@ -59,12 +59,18 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # 2026-04-29 update: sha-149f62e — Codex 019dd818 PARTIAL absorb cycle 2:
-    # PR #25 chore(authz-me): diag log INFO → DEBUG + email field kaldırıldı
-    #   (PII guard + polling-noise minimum). LOGGING_LEVEL_COM_EXAMPLE_PERMISSION
-    #   env override ile incident-aktif edilebilir.
-    # Önceki sha-93a2ad6 (PR #23 diag log + PR #24 null FK NPE fix) üzerine.
-    digest: sha256:17a5db02d9530a856363851cd97a00545d4da0813aa774a9a4580c1b129c6500
+    # 2026-04-29 update: sha-ac09c72 — Codex 019dd818 iter-11/12 Plan A+:
+    # PR #26 fix(permission-service): canonicalize legacy permissions.module_name
+    # - Runtime: ModuleNameCanonicalizer + AccessRoleService.toDto() byModule
+    #   canonical mapping (Kullanıcı Yönetimi→USER_MANAGEMENT, Sistem Yönetimi→
+    #   ACCESS, reporting/Raporlama→REPORT, ...)
+    # - Migration V14: permissions.module_name DB normalize (whitelist'li
+    #   Sistem Yönetimi→ACCESS for 4 well-known role/permission codes).
+    # Live diagnostic 2026-04-29 kullanıcı browser test sonrası gerçek kök
+    # neden bulundu: tüm rollerde role drawer modules "—" gösteriyordu çünkü
+    # byModule grouping mangled label'lar üretiyordu. Plan A+ ile kalıcı fix.
+    # Önceki sha-149f62e (PR #25 diag log DEBUG) üzerine.
+    digest: sha256:93efa6bda783c14d3fb06b3859ea6a15f056ddfc22b96d80ff0be8cf367b42ed
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
