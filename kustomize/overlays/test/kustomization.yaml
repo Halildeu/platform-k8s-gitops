@@ -59,13 +59,14 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # our_company comp_status fix (sha-4c8c6a9, platform-backend PR #22).
-    # PR #21'deki SQL `COALESCE(status, true)` workcube_mikrolink.our_company
-    # tablosunda yoktu (column adı comp_status) → DataAccessException →
-    # safeQuery catch → empty list. Live smoke companies HTTP 200 + items=0
-    # tespitiyle bulundu, fix: COALESCE(comp_status, true).
-    # Diğer 3 tablo (BRANCH, DEPARTMENT, PRO_PROJECTS) status pattern doğru.
-    digest: sha256:1da34913a4b24412c60f0f5819c6fc691ff607453d297823ef5cf41b636fe4b2
+    # 2026-04-29 update: sha-93a2ad6 — combined fix + diagnostic:
+    # PR #23 diag(/authz/me): isSuperAdmin computation breakdown log
+    #   (numericUserId, orgAdmin, permsAdmin, superAdmin, email).
+    # PR #24 fix(PermissionDataInitializer): null Permission FK tolerance
+    #   — startup'ta NPE'siz; dual data model (legacy code FK + Codex S1-S2
+    #   granule type+key shortcut) co-exist edebilir.
+    # Önceki sha-1da3491 (PR #22 our_company comp_status fix) üzerine.
+    digest: sha256:8230d9888d6fce9474d0ee11a8a9b2c7ec07d6aad9b07e8081feb123426e38b1
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-3a0c5f1 — combined PR #73 + #74:
   # - RoleDrawer parse fix v2: granules (typed) ve legacy {moduleKey,level}
