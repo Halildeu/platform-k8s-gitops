@@ -175,6 +175,22 @@ data:
   SPRING_CLOUD_GATEWAY_ROUTES_17_URI: "http://permission-service:8090"
   SPRING_CLOUD_GATEWAY_ROUTES_17_PREDICATES_0: "Path=/api/v1/access/scope/**,/api/v1/access/scope"
 
+  # Faz 21.3 follow-up (2026-04-29) — master data scope picker endpoints.
+  # Backend: permission-service MasterDataController
+  # @RequestMapping("/api/v1/master-data") (PR #21).
+  # Endpoints:
+  #   GET /api/v1/master-data/companies    → workcube_mikrolink.our_company
+  #   GET /api/v1/master-data/projects     → workcube_mikrolink.pro_projects
+  #   GET /api/v1/master-data/branches     → workcube_mikrolink.branch
+  #   GET /api/v1/master-data/departments  → workcube_mikrolink.department
+  # Auth: @RequireModule(value="ACCESS", relation="can_view") +
+  # RequireModuleInterceptor superAdmin bypass (organization:default#admin).
+  # Frontend mfe-access ScopeAssignModal dropdown bu endpoint'leri tüketir
+  # (platform-web PR #69). NOT: StripPrefix YOK (controller native path tam eşler).
+  SPRING_CLOUD_GATEWAY_ROUTES_18_ID: "permission-service-v1-master-data-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_18_URI: "http://permission-service:8090"
+  SPRING_CLOUD_GATEWAY_ROUTES_18_PREDICATES_0: "Path=/api/v1/master-data/**"
+
   # D7: Eureka yok → K8s svc DNS
   AUTH_SERVICE_URL: "http://auth-service:8088"
   # Dilim 2+:
