@@ -67,15 +67,17 @@ images:
     # Diğer 3 tablo (BRANCH, DEPARTMENT, PRO_PROJECTS) status pattern doğru.
     digest: sha256:1da34913a4b24412c60f0f5819c6fc691ff607453d297823ef5cf41b636fe4b2
   # Frontend testai variant (testai.acik.com + platform-test realm)
-  # 2026-04-29 update: sha-5f189a2 — RoleDrawer legacy policies parse fix
-  # (platform-web PR #72). Backend GET /v1/roles/{id} legacy `policies`
-  # shape (moduleKey/level) frontend granule parser tarafından okunmadığı
-  # için ADM in role drawer modüller "—" gözüküyordu, save eski permissions
-  # siliyordu. Fix: legacy policies → moduleGrants fallback (geriye uyumlu).
-  # Önceki sha-42cfcb0 (PR #71 reports inline tree) üzerine.
+  # 2026-04-29 update: sha-3a0c5f1 — combined PR #73 + #74:
+  # - RoleDrawer parse fix v2: granules (typed) ve legacy {moduleKey,level}
+  #   shape ikisini de okur. v1 fix'in (sha-5f189a2) yetersiz kaldığı durum
+  #   düzeldi → ADMIN drawer modüller artık doğru görünür.
+  # - UserDetailDrawer roles fallback console.warn + parsed.length kontrolü:
+  #   /v1/roles 200 dönerken catch'e düşüp 5 hardcoded fallback gösterme
+  #   davranışı debug edilebilir.
+  # Önceki sha-5f189a2 (PR #72 v1 parse fix) üzerine.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend-testai
-    digest: sha256:874c7fee582832d6b190793ccdf0aa0f10a3cbbc025e15c8e99794d5e12b7ea8
+    digest: sha256:640c81248f985fe46cb9b58fac807e54c2efc6b01140b207500cf45a57e6bdeb
 
 patches:
   # Replica 0 default (scale-to-zero)
