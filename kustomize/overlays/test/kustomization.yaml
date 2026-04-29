@@ -59,14 +59,12 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # 2026-04-29 update: sha-93a2ad6 — combined fix + diagnostic:
-    # PR #23 diag(/authz/me): isSuperAdmin computation breakdown log
-    #   (numericUserId, orgAdmin, permsAdmin, superAdmin, email).
-    # PR #24 fix(PermissionDataInitializer): null Permission FK tolerance
-    #   — startup'ta NPE'siz; dual data model (legacy code FK + Codex S1-S2
-    #   granule type+key shortcut) co-exist edebilir.
-    # Önceki sha-1da3491 (PR #22 our_company comp_status fix) üzerine.
-    digest: sha256:8230d9888d6fce9474d0ee11a8a9b2c7ec07d6aad9b07e8081feb123426e38b1
+    # 2026-04-29 update: sha-149f62e — Codex 019dd818 PARTIAL absorb cycle 2:
+    # PR #25 chore(authz-me): diag log INFO → DEBUG + email field kaldırıldı
+    #   (PII guard + polling-noise minimum). LOGGING_LEVEL_COM_EXAMPLE_PERMISSION
+    #   env override ile incident-aktif edilebilir.
+    # Önceki sha-93a2ad6 (PR #23 diag log + PR #24 null FK NPE fix) üzerine.
+    digest: sha256:17a5db02d9530a856363851cd97a00545d4da0813aa774a9a4580c1b129c6500
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-3a0c5f1 — combined PR #73 + #74:
   # - RoleDrawer parse fix v2: granules (typed) ve legacy {moduleKey,level}
