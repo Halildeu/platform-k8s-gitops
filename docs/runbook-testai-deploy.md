@@ -1,16 +1,30 @@
 # Runbook — testai.acik.com Auto-Deploy
 
 > iter-50 Step 3.3 — `repository_dispatch` ile platform-web image push'undan testai.acik.com'a otomatik deploy.
+>
+> **iter-50 Step 5 B (Tier 2) update**: Host nginx static mount artık yok. Edge proxy SNI routing (`host-compose/proxy/conf/nginx.conf`) testai → k3d-test ingress yapıyor; pod doğrudan serve ediyor.
 
-## Bağlam
+## Bağlam (Tier 2 — current state)
 
-`testai.acik.com` üç ayrı yerden servis edilir:
+`testai.acik.com` artık tek yerden servis edilir:
 
-1. **k3d-test pod** (`platform-test/frontend` Deployment) — kubectl set image hedefi.
-2. **Host nginx Docker container** (`platform-web-nginx-stage`) — `/usr/share/nginx/html` bind mount: `/home/halil/platform/web-stage/releases/ac35567`. Kullanıcının browser'ı buradan servis alır.
-3. **`current` symlink** — `/home/halil/platform/web-stage/current` → `releases/<sha>`. Mount path henüz takip etmiyor (Step 5 long-term refactor).
+```
+DNS testai.acik.com → 10.9.10.53 (staging-sw)
+  → host edge proxy nginx :443 (host-compose/proxy)
+    → SNI routing: testai → http://test_k3d_ingress (127.0.0.1:31080)
+      → k3d-test ingress-nginx-controller
+        → platform-test/platform Ingress
+          → /     → frontend:80 (pod nginx static serve)
+          → /api  → api-gateway:8080
+          → /auth → api-gateway:8080
+          → /actuator, /users, /variants, /core, /reports, /schemas → api-gateway:8080
+```
 
-**Kritik**: Mount path **hardcoded** `releases/ac35567`. Yeni release dir oluşturmak yetmez; hardcoded path'e mirror etmek zorunlu. Atomic mv -T riskli (Docker bind mount inode'a bağlanabilir; container restart isterdi).
+Host static mount path (`/home/halil/platform/web-stage/releases/ac35567`) ve `platform-web-nginx-stage` container artık **trafik almıyor** (Step 5 B keşif kanıtı: container down + testai yine 200 döner). Cleanup runbook aşağıda.
+
+## Legacy (pre-Step 5 B, sadece referans)
+
+Eski yapı host nginx Docker container `platform-web-nginx-stage` üzerinden static serve yapıyordu — bu artık geçerli değil; commit history'de yer alıyor (PR #283 baseline).
 
 ## Workflow trigger
 
@@ -31,13 +45,13 @@ Bu repo'da `.github/workflows/deploy-testai.yml` dinler ve self-hosted runner'da
 
 ## Verify chain (4 gate)
 
-Workflow her deploy'da 4 gate koşar:
+Workflow her deploy'da 4 gate koşar (**Step 5 B sonrası: 5. step "Sync host nginx static" kaldırıldı**):
 
 | Gate | İçerik | Fail davranışı |
 |---|---|---|
 | 1a | Pod imageID digest == GHCR manifest digest (containerd `docker-pullable://...@sha256:...` normalize) | fail-fast (rollout başarısız sayılır) |
-| 1b | `/index.html` 200 + `/assets/<rootEntry>` 200 | fail-fast |
-| 1c | `/build-info.json` JSON parse + `.sha == expected` | fail-fast (eğer JSON yoksa warn-only — pre-Step-2 image fallback) |
+| 1b | `/index.html` 200 + `/assets/<rootEntry>` 200 (edge proxy → k3d ingress → frontend pod) | fail-fast |
+| 1c | `/build-info.json` JSON parse + `.sha == expected` (pod doğrudan serve) | fail-fast (eğer JSON yoksa warn-only — pre-Step-2 image fallback) |
 | 2 | Playwright login → `/admin/users` → row dblclick → `[role="dialog"]` | warn-only eğer secret yoksa; secret varsa fail |
 
 ## İlk kurulum (one-time setup)
@@ -143,29 +157,46 @@ gh workflow run deploy-testai.yml \
   -f image_digest=sha256:<64-char>
 ```
 
-### Tam manual rsync (runner down ise)
+### Manuel kubectl set image (runner down ise)
+
+Step 5 B (Tier 2) sonrası rsync gereksiz; pod imageID set edilir, edge proxy otomatik yansıtır:
 
 ```bash
-ssh halil@staging-sw 'set -euo pipefail
-POD=$(kubectl --context=k3d-test get pod -n platform-test -l app.kubernetes.io/name=frontend -o jsonpath="{.items[0].metadata.name}")
-SHA_SHORT=<7-char>
-TMP=/tmp/web-deploy-$SHA_SHORT-$$
-RELEASE_DIR=/home/halil/platform/web-stage/releases/$SHA_SHORT
-HARDCODED=/home/halil/platform/web-stage/releases/ac35567
+ssh halil@staging-sw '
+EXPECTED_DIGEST=sha256:<64-char>
+kubectl --context=k3d-test set image deployment/frontend \
+  frontend=ghcr.io/halildeu/platform-web-frontend-testai@${EXPECTED_DIGEST} \
+  -n platform-test
+kubectl --context=k3d-test rollout status deployment/frontend -n platform-test --timeout=300s
 
-kubectl --context=k3d-test cp platform-test/$POD:/usr/share/nginx/html $TMP
-mkdir -p $RELEASE_DIR
-rsync -a --delete $TMP/ $RELEASE_DIR/
-ln -snf $RELEASE_DIR /home/halil/platform/web-stage/current
-rsync -a --delete --delay-updates --delete-delay $RELEASE_DIR/ $HARDCODED/
-rm -rf $TMP
-
-# Verify
-HOST_ENTRY=$(grep -oE "index-[A-Za-z0-9_-]+\.js" $HARDCODED/index.html | head -1)
-echo "HOST entry: $HOST_ENTRY"
+# Verify (pod doğrudan serve eder, edge proxy → k3d ingress)
 curl -sk https://testai.acik.com/build-info.json | jq -r .sha
 '
 ```
+
+### Step 5 B legacy cleanup (one-time, manuel)
+
+`platform-web-nginx-stage` container ve `/home/halil/platform/web-stage/` dizini artık trafik almıyor (edge proxy SNI routing testai → k3d ingress). One-time cleanup:
+
+```bash
+ssh halil@staging-sw '
+# 1. Legacy stage container'ı durdur + sil (manuel run, compose-managed değil)
+docker stop platform-web-nginx-stage 2>/dev/null || true
+docker rm platform-web-nginx-stage 2>/dev/null || true
+
+# 2. Legacy releases dizini (artık kullanılmıyor)
+# DİKKAT: tek-yönlü silme. Önce backup almak isterseniz tar -czf
+sudo rm -rf /home/halil/platform/web-stage/releases/
+sudo rm -rf /home/halil/platform/web-stage/current
+# nginx config'i isteğe bağlı:
+# sudo rm -rf /home/halil/platform/web-stage/nginx/
+
+# 3. Verify testai still serves correctly
+curl -sk https://testai.acik.com/build-info.json | jq -r .sha
+'
+```
+
+Cleanup sonrası tek path: edge proxy → k3d ingress → frontend pod. Drift guard: docker inspect platform-web-nginx-stage → "No such object" (silinmiş kanıtı).
 
 ## Failure recovery
 
@@ -215,35 +246,35 @@ docker compose restart runner
 docker compose down && docker compose up -d
 ```
 
-## Step 5 long-term refactor (defer)
+## Step 5 B — Tier 2 (current state)
 
-Mount path hardcode'unu kaldırma seçenekleri:
+Step 5 B keşif kanıtı (2026-04-30):
 
-**A) Mount → "current" symlink** (kısa-orta vade):
-```yaml
-# docker-compose.yml host nginx
-volumes:
-  - /home/halil/platform/web-stage/current:/usr/share/nginx/html:ro
-```
-Riski: container bind mount inode resolution; symlink follow her container'da farklı olabilir. Test gerek.
+1. Edge proxy nginx (`host-compose/proxy/conf/nginx.conf`) zaten testai → k3d-test ingress (`http://test_k3d_ingress` = 127.0.0.1:31080) SNI routing yapıyor.
+2. K3d-test cluster ingress (`platform-test/platform`) zaten 9 gündür kurulu: `/` → frontend:80, `/api/auth/users/...` → api-gateway:8080. TLS: ingress kendi cert (default veya secret).
+3. `platform-web-nginx-stage` container DURDURULDU + testai 200 dönmeye devam etti → container legacy artık.
+4. Pod imageID Gate 1a guarantee + edge proxy direct ingress = host static rsync gereksiz.
 
-**B) testai → k3d ingress + LB** (uzun vade):
-- Host nginx tamamen kaldır
-- k3d-test ingress controller + ExternalDNS
-- Çift-surface deploy ortadan kalkar
-
-**C) Status quo + auto-rsync** (Codex 019dded6 değerlendirmesi: "sadece geçici"):
-- Mevcut Step 3 yeterli
-- Mount refactor opt out
-
-Karar ADR-level (Codex tercihi: A → B → C az tercihli).
+Bu sebeple A/B/C kademe planı **gereksiz**: Tier 2 mimari zaten gerçekleşmiş. Cleanup adımları yukarıdaki "Step 5 B legacy cleanup" bölümünde.
 
 ## Drift guard
 
-Bu runbook'un hardcoded path'ı (`releases/ac35567`) gerçeği yansıtıyor mu, periyodik kontrol:
+Step 5 B Tier 2 sonrası periyodik kontroller:
 
 ```bash
-ssh halil@staging-sw 'docker inspect platform-web-nginx-stage --format "{{range .Mounts}}{{.Type}} {{.Source}} -> {{.Destination}}{{println}}{{end}}"'
+ssh halil@staging-sw '
+# 1. Edge proxy testai → k3d ingress yönlendirmesi aktif mi?
+grep -A 5 "testai.acik.com" /home/halil/platform/platform-k8s-gitops/host-compose/proxy/conf/nginx.conf | grep proxy_pass
+
+# 2. K3d ingress çalışıyor mu?
+kubectl --context=k3d-test get ingress -n platform-test platform
+
+# 3. Stage container silinmiş mi (drift kanıtı)?
+docker inspect platform-web-nginx-stage 2>&1 | grep -q "No such object" && echo "OK: stage removed" || echo "DRIFT: stage container still exists"
+
+# 4. End-to-end (edge proxy → ingress → pod) hala 200 mu?
+curl -sk https://testai.acik.com/build-info.json | jq -r .sha
+'
 ```
 
 Çıktıda `/home/halil/platform/web-stage/releases/ac35567` yoksa runbook + `deploy-testai.yml` env güncellemeli.

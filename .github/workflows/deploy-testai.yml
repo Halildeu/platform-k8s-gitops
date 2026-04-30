@@ -1,18 +1,22 @@
 name: Deploy testai (auto)
 
 # iter-50 Step 3.3 — testai.acik.com auto-deploy on platform-web image push.
+# iter-50 Step 5 B — Tier 2 cleanup: host nginx static mount path
+# KALDIRILDI. Edge proxy SNI routing testai → k3d-test ingress yapıyor;
+# frontend pod doğrudan serve ediyor; pod imageID Gate 1a guarantee.
 #
 # Trigger: `repository_dispatch` event_type=testai-deploy fired by
 # platform-web's ci-web-image-push.yml after a successful testai variant
 # build + GHCR push. Payload carries the commit sha + image digest +
-# image tag so this workflow can pin by digest, atomically refresh the
-# host nginx static mount, and verify deploy reachability end-to-end.
+# image tag so this workflow can pin by digest and verify deploy
+# reachability end-to-end (digest match + asset 200 + build-info.json sha
+# + behavior smoke opt-in).
 #
 # Why this lives in platform-k8s-gitops (not platform-web):
 #   - Deploy graph belongs with kustomize overlays + ci-live-smoke +
 #     drift-detection (see PR #129 revert message in platform-web).
 #   - Self-hosted runner runs on staging-sw (private intranet, can reach
-#     k3d-test cluster + host nginx mount). GitHub-hosted runners cannot.
+#     k3d-test cluster). GitHub-hosted runners cannot.
 #
 # Verify chain (Codex 019dded6 sertleştirme):
 #   Gate 1 (fail-fast):
@@ -63,15 +67,14 @@ env:
   K8S_DEPLOYMENT: frontend
   K8S_LABEL_SELECTOR: app.kubernetes.io/name=frontend
   TESTAI_URL: https://testai.acik.com
-  HOST_RELEASES_DIR: /home/halil/platform/web-stage/releases
-  # Codex 019dded6 S5: bind mount path hardcoded — kullanıcı container
-  # restart yapana kadar atomic mv -T riskli (inode bağlanması). In-place
-  # rsync mirror yeterli. Long-term Step 5: mount → "current" symlink.
-  HOST_NGINX_MOUNT_DIR: /home/halil/platform/web-stage/releases/ac35567
+  # iter-50 Step 5 B (Tier 2): host static mount references kaldırıldı.
+  # Edge proxy SNI routing zaten testai → k3d ingress yapıyor; pod doğrudan
+  # serve ediyor. HOST_RELEASES_DIR / HOST_NGINX_MOUNT_DIR artık
+  # gerekli değil (kullanılmıyordu — keşif Step 5 B sırasında doğrulandı).
 
 jobs:
   deploy:
-    name: Deploy testai (digest pin + host static mirror + verify)
+    name: Deploy testai (digest pin + verify)
     # Codex 019dded6 S1: tek amaçlı runner, label-fenced.
     runs-on: [self-hosted, staging-sw, testai-deploy]
     timeout-minutes: 15
@@ -182,40 +185,18 @@ jobs:
           fi
           echo "✓ pod imageID digest == GHCR manifest digest"
 
-      - name: Sync host nginx static (kubectl cp + rsync)
-        env:
-          POD: ${{ steps.pod.outputs.name }}
-          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
-        run: |
-          set -euo pipefail
-          REMOTE_TMP="/tmp/web-deploy-${SHORT_SHA}-${GITHUB_RUN_ID}"
-          REMOTE_RELEASE="${HOST_RELEASES_DIR}/${SHORT_SHA}"
-
-          # 1. kubectl cp pod -> /tmp
-          rm -rf "${REMOTE_TMP}"
-          kubectl --context="${K8S_CONTEXT}" cp \
-            "${K8S_NAMESPACE}/${POD}:/usr/share/nginx/html" \
-            "${REMOTE_TMP}"
-
-          # 2. Materialize releases/<sha>/
-          mkdir -p "${REMOTE_RELEASE}"
-          rsync -a --delete "${REMOTE_TMP}/" "${REMOTE_RELEASE}/"
-
-          # 3. Update "current" symlink (future-proof; mount henüz takip
-          #    etmiyor, ama Step 5 mount refactor için release tag aktif).
-          ln -snf "${REMOTE_RELEASE}" /home/halil/platform/web-stage/current
-
-          # 4. Mirror to hardcoded mount path. Codex S5: rsync `--delay-updates`
-          #    + `--delete-delay` window'u kısaltır ama atomic değil. Pre-prod
-          #    için kabul edilebilir.
-          rsync -a --delete --delay-updates --delete-delay \
-            "${REMOTE_RELEASE}/" "${HOST_NGINX_MOUNT_DIR}/"
-
-          # 5. Cleanup
-          rm -rf "${REMOTE_TMP}"
-
-          echo "Materialized: ${REMOTE_RELEASE}"
-          echo "Mirrored to:  ${HOST_NGINX_MOUNT_DIR}"
+      # iter-50 Step 5 B (Tier 2 cleanup): "Sync host nginx static" step
+      # KALDIRILDI. Edge proxy nginx (host-compose/proxy) zaten
+      # testai.acik.com → http://test_k3d_ingress (127.0.0.1:31080)
+      # SNI routing yapıyor; trafiği direkt k3d-test ingress-nginx
+      # controller'a geçiriyor; ingress de frontend pod'a (`/` → frontend:80,
+      # `/api` → api-gateway:8080) yönlendiriyor. Pod imageID Gate 1a ile
+      # zaten doğrulandığı için ek host static rsync gereksizdir; pod
+      # serve eden bundle = Gate 1c'de doğrulanan bundle.
+      #
+      # Legacy `platform-web-nginx-stage` container artık trafik almıyor
+      # (Step 5 B keşif kanıtı: container down + testai still serving 200
+      # via k3d ingress); cleanup runbook docs/runbook-testai-deploy.md'de.
 
       - name: Gate 1b — public surface 200 + entry asset reachable
         env:
