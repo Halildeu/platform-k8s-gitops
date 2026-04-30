@@ -59,17 +59,9 @@ images:
   # Frontend prod variant (ai.acik.com + serban realm)
   # Faz 21.3 PR-E merge (sha-57dc28e): mfe-access Veri Erişimi panel
   # (5 tab + ScopeAssignModal + 4-locale i18n + nested Routes + 28 tests).
-  #
-  # 2026-04-30 update: sha-64b6f2c — platform-web PR #131 build-time
-  # AG_GRID_LICENSE_KEY injection (Dockerfile ARG/ENV + workflow
-  # secrets.AG_GRID_LICENSE_KEY build-arg). Yeni trial key (AG-127779,
-  # geçerlilik 30 May 2026) GitHub repo secret olarak set; build
-  # sırasında window.__env__'e inject. AG Grid trial console nag +
-  # watermark kalkar. Hem test hem prod overlay aynı sha-64b6f2c'ye
-  # bumped (matrix dual-build).
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
-    digest: sha256:38834259accec743516bf6520ff552527429f34bf6c2e8b535a709b9378a342a
+    digest: sha256:d6baaf5838b9736527fc3483a380461ed576ed524e6944a120ab64f21772af45
 
 patches:
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz replace
