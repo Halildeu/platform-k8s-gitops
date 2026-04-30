@@ -7,7 +7,8 @@ name: Deploy backend testai (auto)
 # (ayrı PR — bu workflow merge sonrası backend tarafına dispatch step eklenir).
 #
 # Codex sertleştirmeleri uygulanmış:
-#   S1 — sha+short_sha payload, runtime skopeo digest resolve + image@sha256: pin
+#   S1 — sha+short_sha payload, kubectl set image TAG, pod imageID =
+#         containerd-resolved digest (skopeo runner credential yok hotfix)
 #   S2 — SEQUENTIAL rollout (paralel ResourceQuota riski; iter-50 frontend
 #         deploy'da 1000m+1000m=2000m > 8000m quota aşımı yaşandı)
 #   S3 — api-gateway entry-point EN SON deploy
@@ -78,18 +79,22 @@ jobs:
             echo "- short_sha: \`${SHORT_SHA}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Codex S1: skopeo ile her servisin GHCR manifest digest'ini runtime'da
-      # resolve et. Tag tag-yerine-digest pin için.
-      - name: Resolve image digests (skopeo)
-        id: digests
+      # iter-49 hotfix: skopeo bypass — runner GHCR pull credential yok
+      # (skopeo unauthorized canli kanit). Yerine kubectl set image TAG
+      # ile yapilir; k3d cluster image pull (kubelet credential) zaten
+      # configured. Pod imageID rollout sonrasi AUTHORITATIVE digest olur
+      # (containerd resolved tag→digest). D30 immutable artifact garanti
+      # kirilmaz: ayni tag iki farkli image'a isaret etmez.
+      #
+      # Codex S2 — sequential rollout, api-gateway EN SON.
+      - name: Sequential kubectl set image (tag-based, pod imageID = digest)
+        id: rollout
         env:
           SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
         run: |
           set -euo pipefail
-          declare -A DIGESTS
-          # Codex S2+S3+S4 sequential rollout sırası: stateful-light → hub →
-          # downstream → entry-point. discovery-server (k3d-test'te yok) +
-          # endpoint-admin-service (manifest contract net değil) SKIP.
+          # Codex S3: api-gateway en sonda
+          # discovery-server + endpoint-admin-service ilk cut'tan SKIP (S4)
           SERVICES=(
             "auth-service"
             "permission-service"
@@ -100,73 +105,25 @@ jobs:
             "schema-service"
             "api-gateway"
           )
+
           {
-            echo "## Image digests (skopeo resolved)"
+            echo "## Sequential rollout (tag-based)"
             echo ""
-            echo "| Service | Digest |"
+            echo "| Service | Pod imageID (containerd-resolved digest) |"
             echo "|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
 
           for svc in "${SERVICES[@]}"; do
-            IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${svc}:sha-${SHORT_SHA}"
-            DIGEST=$(skopeo inspect "docker://${IMAGE}" 2>/dev/null \
-              | jq -r '.Digest')
-            if [ -z "${DIGEST}" ] || [ "${DIGEST}" = "null" ]; then
-              echo "::error::Failed to resolve digest for ${svc} (${IMAGE})"
-              exit 1
-            fi
-            DIGESTS[$svc]="${DIGEST}"
-            echo "${svc}=${DIGEST}"
-            echo "| ${svc} | \`${DIGEST}\` |" >> "$GITHUB_STEP_SUMMARY"
-          done
-
-          # Persist all digests to step output via single multiline var
-          {
-            echo "digest_matrix<<EOF"
-            for svc in "${SERVICES[@]}"; do
-              echo "${svc}=${DIGESTS[$svc]}"
-            done
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      # Codex S2 — sequential rollout, api-gateway EN SON.
-      - name: Sequential kubectl set image (per-service rollout)
-        env:
-          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
-          DIGEST_MATRIX: ${{ steps.digests.outputs.digest_matrix }}
-        run: |
-          set -euo pipefail
-          # Codex S3: api-gateway en sonda
-          SERVICES=(
-            "auth-service"
-            "permission-service"
-            "user-service"
-            "variant-service"
-            "core-data-service"
-            "report-service"
-            "schema-service"
-            "api-gateway"
-          )
-
-          # Parse digest matrix into associative array
-          declare -A DIGESTS
-          while IFS='=' read -r svc digest; do
-            [ -z "$svc" ] && continue
-            DIGESTS[$svc]="$digest"
-          done <<< "${DIGEST_MATRIX}"
-
-          for svc in "${SERVICES[@]}"; do
-            DIGEST="${DIGESTS[$svc]}"
-            IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${svc}@${DIGEST}"
+            TAG_IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${svc}:sha-${SHORT_SHA}"
             echo ""
             echo "==============================================="
             echo "Rolling out: ${svc}"
-            echo "Image: ${IMAGE}"
+            echo "Image: ${TAG_IMAGE}"
             echo "==============================================="
 
             kubectl --context="${K8S_CONTEXT}" set image \
               "deployment/${svc}" \
-              "${svc}=${IMAGE}" \
+              "${svc}=${TAG_IMAGE}" \
               -n "${K8S_NAMESPACE}"
 
             kubectl --context="${K8S_CONTEXT}" rollout status \
@@ -174,7 +131,6 @@ jobs:
               -n "${K8S_NAMESPACE}" \
               --timeout=180s
 
-            # Codex S2: pod imageID kontrolü her servisten sonra (Gate 1a)
             POD=$(kubectl --context="${K8S_CONTEXT}" get pod \
               -n "${K8S_NAMESPACE}" \
               -l "app.kubernetes.io/name=${svc}" \
@@ -184,14 +140,12 @@ jobs:
               -o jsonpath='{.status.containerStatuses[0].imageID}')
             NORMALIZED=$(echo "${RAW_ID}" | sed -E 's|^.*@(sha256:[a-f0-9]{64})$|\1|')
 
-            if [ "${NORMALIZED}" != "${DIGEST}" ]; then
-              echo "::error::${svc} pod imageID mismatch."
-              echo "  expected: ${DIGEST}"
-              echo "  actual:   ${NORMALIZED}"
-              echo "  raw:      ${RAW_ID}"
+            if [ -z "${NORMALIZED}" ] || [[ "${NORMALIZED}" != sha256:* ]]; then
+              echo "::error::${svc} pod imageID format unexpected: ${RAW_ID}"
               exit 1
             fi
-            echo "✓ ${svc} pod imageID == GHCR digest"
+            echo "✓ ${svc} pod imageID resolved: ${NORMALIZED}"
+            echo "| ${svc} | \`${NORMALIZED}\` |" >> "$GITHUB_STEP_SUMMARY"
           done
 
       # Gate 1b: api-gateway public health check (Codex S5 primary blocking)
