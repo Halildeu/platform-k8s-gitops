@@ -710,6 +710,85 @@ patches:
   # pod yer için eski pod'u terminate edebilir (kısa süreli tek-replica
   # outage kabul edilir test cluster'da). Prod base'i etkilenmez (zero-
   # downtime maxSurge=1/maxUnavailable=0 korunur).
+  #
+  # 2026-04-30 (Codex 019ddf43 iter-49 backend deploy S2 sertleştirme):
+  # Genelleme tüm 8 backend service'e (auth/permission/user/variant/
+  # core-data/report/schema/api-gateway) çekildi. iter-50 sequential
+  # rollout sırasında auth-service deploy timeout (7450m used + 1000m
+  # surge = 8450m > 8000m limit) → manuel scale-to-0 hack tekrarladı.
+  # Codex S2: "test overlay'de backend deployment'lar için maxSurge=0/
+  # maxUnavailable=1 genellemesi bu PR'a alınmalı; manuel scale-to-0
+  # hack tekrar etmemeli."
+  - target:
+      kind: Deployment
+      name: auth-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 0
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 1
+  - target:
+      kind: Deployment
+      name: user-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 0
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 1
+  - target:
+      kind: Deployment
+      name: variant-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 0
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 1
+  - target:
+      kind: Deployment
+      name: core-data-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 0
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 1
+  - target:
+      kind: Deployment
+      name: report-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 0
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 1
+  - target:
+      kind: Deployment
+      name: schema-service
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 0
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 1
+  - target:
+      kind: Deployment
+      name: api-gateway
+    patch: |-
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 0
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 1
   - target:
       kind: Deployment
       name: permission-service
