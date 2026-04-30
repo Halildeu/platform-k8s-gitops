@@ -1,0 +1,97 @@
+# endpoint-admin-service Deployment skeleton — Faz 22 (sprint PR-9)
+#
+# Codex 019de00f öneri:
+# - "Manifest skeleton ekle, ama image/replicas canlı deploy etmeyecek
+#   şekilde fail-closed bırak."
+# - image: OVERLAY_MUST_OVERRIDE pattern (placeholder leak guard)
+# - replicas: 0 default (D17 scale-to-zero) — overlay set eder
+#
+# Bu skeleton kabul edildi (ADR-0012-EA charter); image/digest/replicas
+# 5 user clarify cevabı + DD-EA guard inventory PR-9b sonrası set edilir.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: endpoint-admin-service
+  labels:
+    app.kubernetes.io/name: endpoint-admin-service
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: platform
+spec:
+  replicas: 0  # D17 scale-to-zero default; overlay sets 1 (test) or 2 (prod)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: endpoint-admin-service
+    spec:
+      automountServiceAccountToken: false
+      serviceAccountName: endpoint-admin-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: endpoint-admin-service
+          # PLACEHOLDER — overlay MUST set via images: + newName + digest
+          # Fail-closed: literal "OVERLAY_MUST_OVERRIDE" sızması →
+          # gate-enforcement-check.yml CI guard reddeder.
+          image: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service:OVERLAY_MUST_OVERRIDE
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: management
+              containerPort: 8081
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: endpoint-admin-service-config
+            - secretRef:
+                name: endpoint-admin-service-secrets
+                optional: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: management
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz/live
+              port: management
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      imagePullSecrets:
+        - name: ghcr-pull
+      volumes:
+        - name: tmp
+          emptyDir: {}
