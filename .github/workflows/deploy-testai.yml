@@ -232,19 +232,42 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Index.html 200 + entry asset extract
-          INDEX_BODY=$(curl -sk "${TESTAI_URL}/" || true)
-          ROOT_ENTRY=$(echo "${INDEX_BODY}" | grep -oE 'index-[A-Za-z0-9_-]+\.js' | head -1 || true)
+          # iter-49 follow-up (run 25189093564 ölçümü): pod imageID Gate 1a
+          # PASS olsa bile host nginx → k3d ingress → frontend pod chain'inde
+          # NodePort 31080 propagation race (~1-2 sn) 502 Bad Gateway dönebiliyor.
+          # Retry logic: 5 attempt × 3 sn sleep = max 15 sn tolerance.
+          # 200 + valid root entry pattern = chain alive.
+
+          INDEX_BODY=""
+          ROOT_ENTRY=""
+          for attempt in 1 2 3 4 5; do
+            INDEX_BODY=$(curl -sk "${TESTAI_URL}/" || true)
+            ROOT_ENTRY=$(echo "${INDEX_BODY}" | grep -oE 'index-[A-Za-z0-9_-]+\.js' | head -1 || true)
+            if [ -n "${ROOT_ENTRY}" ]; then
+              echo "✓ index.html valid (attempt ${attempt}/5)"
+              break
+            fi
+            echo "⊘ attempt ${attempt}/5: index.html missing root entry (502/race?), retrying in 3s..."
+            sleep 3
+          done
 
           if [ -z "${ROOT_ENTRY}" ]; then
-            echo "::error::Could not extract root entry asset from /index.html"
+            echo "::error::Could not extract root entry asset from /index.html after 5 retries"
             echo "${INDEX_BODY}" | head -50
             exit 1
           fi
 
-          ASSET_STATUS=$(curl -sko /dev/null -w '%{http_code}' "${TESTAI_URL}/assets/${ROOT_ENTRY}")
+          ASSET_STATUS=""
+          for attempt in 1 2 3; do
+            ASSET_STATUS=$(curl -sko /dev/null -w '%{http_code}' "${TESTAI_URL}/assets/${ROOT_ENTRY}" || echo "000")
+            if [ "${ASSET_STATUS}" = "200" ]; then
+              break
+            fi
+            echo "⊘ asset attempt ${attempt}/3: ${ASSET_STATUS}, retrying in 2s..."
+            sleep 2
+          done
           if [ "${ASSET_STATUS}" != "200" ]; then
-            echo "::error::Root entry asset /${ROOT_ENTRY} returned ${ASSET_STATUS}"
+            echo "::error::Root entry asset /${ROOT_ENTRY} returned ${ASSET_STATUS} after 3 retries"
             exit 1
           fi
           echo "✓ root entry asset reachable: ${ROOT_ENTRY} (HTTP ${ASSET_STATUS})"
