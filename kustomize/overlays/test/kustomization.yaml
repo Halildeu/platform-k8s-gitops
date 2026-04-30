@@ -178,7 +178,32 @@ images:
     #   PR #108 iter-39 P2 section count badges + skeleton loading
     # Live verify post-edge-sync 2026-04-30: Playwright 2/2 PASS, drawer
     # interactive, dirty close guard active. 9 vitest cases pass.
-    digest: sha256:a0ac338d6ace07f696755f7ef4a2612e2dab8d31c339275c551c5fa8aa30550b
+    #
+    # 2026-04-30 update: sha-c1a76bb — Codex 019dddf4 iter-43.
+    # DS FormDrawer `leading?: ReactNode` slot prop + UserDetailDrawer
+    # first consumer (initial-circle Avatar in drawer header). LTR-neutral
+    # slot name; backward-compatible (existing consumers unchanged). Header
+    # DOM restructured per Codex review: outer items-start unchanged, new
+    # left group items-start gap-3 + leading wrapper shrink-0 mt-0.5 for
+    # cap-height alignment when subtitle wraps to two lines.
+    #
+    # mfe-users: getInitials utility (toUpperCase, NOT toLocaleUpperCase
+    # — keeps "Çiğdem Öz" → "ÇÖ"); Avatar size="lg" + aria-hidden="true"
+    # so screen readers announce title once via aria-label.
+    #
+    # Tests:
+    #   DS:        524 files, 8317 PASS — 8 new (6 leading slot + 2 a11y)
+    #   mfe-users: 6 files, 44 PASS — 17 new (12 getInitials contract +
+    #              5 UserDetailDrawer.leadingAvatar real DS render)
+    #
+    # Out of scope (deferred):
+    #   iter-44 — RoleDrawer + AuditDetailDrawer same pattern
+    #   iter-45 — DS focus-trap epic (cross-consumer overlay-engine)
+    #   defer  — Quick Actions (note/force-logout/audit) — needs product spec
+    #
+    # Spawn task chip captured: ag-grid onRowDoubleClick prop name typo
+    # in UsersGrid.ui.tsx:765 (separate UX bug, not iter-43).
+    digest: sha256:f593e36c341fd08eafcc6bac846dc74562cfd407181619c635ce963b6dae6332
 
 patches:
   # Replica 0 default (scale-to-zero)
