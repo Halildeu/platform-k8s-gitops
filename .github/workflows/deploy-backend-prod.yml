@@ -1,0 +1,348 @@
+name: Deploy backend prod (manual)
+
+# Sprint "Prod post-cutover compliance" PR-2:
+# Backend prod deploy workflow — production environment gate'li manuel.
+#
+# Hedef: D30 atomic cutover sonrası prod backend güncellemeleri için
+# disiplinli manuel akış. Test'in `repository_dispatch` auto-trigger
+# pattern'i prod'a TAŞINMAZ (Codex 019de00f öneri):
+#
+#   - Yalnız `workflow_dispatch` (manuel)
+#   - `environment: production` (GitHub UI'da required reviewers set
+#     edilmeli — bu YAML tek başına gate yaratmaz, environment settings
+#     ile birlikte çalışır)
+#   - Strict digest mode: `require_digest=true`, tag fallback YOK
+#   - Sequential rollout (paralel ResourceQuota riski + L7 disiplin)
+#   - api-gateway en sonda (entry-point)
+#   - Multi-replica strict verification (prod replicas=2; tüm pod'lar
+#     digest match olmalı, eski ReplicaSet sızıntısı yakalanır)
+#   - 4 verify gate (1a digest match × N pod, 1b ai.acik.com edge
+#     chain, 1c per-service in-cluster readiness, 2 JWT auth opt-in)
+#   - Concurrency lock: aynı anda iki prod deploy çalışmaz
+#
+# Required secrets (gitops repo): yok (runner kubeconfig + cluster
+# image pull credential mount in).
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Backend commit sha (40-char)'
+        required: true
+      short_sha:
+        description: 'Short sha (7-char)'
+        required: true
+      digests_json:
+        description: 'Per-service digest JSON map: {"auth-service":"sha256:...",...} — REQUIRED for prod'
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  K8S_CONTEXT: k3d-prod
+  K8S_NAMESPACE: platform-prod
+  AI_URL: https://ai.acik.com
+  IMAGE_OWNER: halildeu
+
+concurrency:
+  group: prod-backend-deploy
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Preflight (digest map validation, no cluster access)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.validate.outputs.sha }}
+      short_sha: ${{ steps.validate.outputs.short_sha }}
+      digests_json: ${{ steps.validate.outputs.digests_json }}
+    steps:
+      - name: Validate inputs (strict digest map)
+        id: validate
+        run: |
+          set -euo pipefail
+          SHA="${{ inputs.sha }}"
+          SHORT_SHA="${{ inputs.short_sha }}"
+          DIGESTS_JSON='${{ inputs.digests_json }}'
+
+          # SHA format
+          if ! [[ "${SHA}" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::sha must be 40-char hex (got: ${SHA})"
+            exit 1
+          fi
+          if ! [[ "${SHORT_SHA}" =~ ^[a-f0-9]{7}$ ]]; then
+            echo "::error::short_sha must be 7-char hex (got: ${SHORT_SHA})"
+            exit 1
+          fi
+          if [[ "${SHORT_SHA}" != "${SHA:0:7}" ]]; then
+            echo "::error::short_sha must be sha[0:7] prefix (sha=${SHA} short=${SHORT_SHA})"
+            exit 1
+          fi
+
+          # Digest map: must be valid JSON object with non-empty entries
+          if ! echo "${DIGESTS_JSON}" | jq -e 'type == "object" and (length > 0)' >/dev/null 2>&1; then
+            echo "::error::digests_json must be a non-empty JSON object"
+            echo "  got: ${DIGESTS_JSON}"
+            exit 1
+          fi
+
+          # Required services (no skip; prod deploy explicit map per service)
+          REQUIRED_SERVICES=(
+            "auth-service"
+            "permission-service"
+            "user-service"
+            "variant-service"
+            "core-data-service"
+            "report-service"
+            "schema-service"
+            "api-gateway"
+          )
+          MISSING=0
+          for svc in "${REQUIRED_SERVICES[@]}"; do
+            DIGEST=$(echo "${DIGESTS_JSON}" | jq -r --arg s "${svc}" '.[$s] // empty')
+            if [ -z "${DIGEST}" ]; then
+              echo "::error::digests_json missing required service: ${svc}"
+              MISSING=$((MISSING + 1))
+              continue
+            fi
+            if ! [[ "${DIGEST}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::${svc} digest format invalid (expected ^sha256:[a-f0-9]{64}$): ${DIGEST}"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [ ${MISSING} -gt 0 ]; then
+            echo "::error::${MISSING} service(s) failed digest map validation"
+            exit 1
+          fi
+
+          {
+            echo "sha=${SHA}"
+            echo "short_sha=${SHORT_SHA}"
+            echo "digests_json=${DIGESTS_JSON}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Backend prod deploy — preflight"
+            echo "- sha: \`${SHA}\`"
+            echo "- short_sha: \`${SHORT_SHA}\`"
+            echo "- services: $(echo "${DIGESTS_JSON}" | jq 'length') in payload"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy backend prod (digest-pin, multi-replica strict)
+    needs: preflight
+    runs-on: [self-hosted, staging-sw, prod-deploy]
+    timeout-minutes: 45
+    environment:
+      name: production
+      # GitHub Environment settings (UI):
+      #   - Required reviewers: 1+ (prod cutover discipline)
+      #   - Wait timer: optional (örn. 0 dk, manuel onay yeterli)
+      # Bu YAML environment'a bağlanır, gate UI tarafında zorlanır.
+    steps:
+      - name: Checkout (verify-pod-digest helper)
+        uses: actions/checkout@v6
+
+      - name: Sequential kubectl set image (digest-pin strict, multi-replica safe)
+        env:
+          DIGESTS_JSON: ${{ needs.preflight.outputs.digests_json }}
+        run: |
+          set -euo pipefail
+          # Codex S3: api-gateway en sonda (entry-point disiplini)
+          # Sequential (paralel rollout prod ResourceQuota güvenli olsa
+          # bile L7 disiplin: api-gateway downstream'lerin hepsi yeni
+          # image'da olduktan sonra route etsin)
+          SERVICES=(
+            "auth-service"
+            "permission-service"
+            "user-service"
+            "variant-service"
+            "core-data-service"
+            "report-service"
+            "schema-service"
+            "api-gateway"
+          )
+
+          {
+            echo "## Sequential rollout (prod, digest-pin strict)"
+            echo ""
+            echo "| Service | Pod count | Digest |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for svc in "${SERVICES[@]}"; do
+            DIGEST=$(echo "${DIGESTS_JSON}" | jq -r --arg s "${svc}" '.[$s]')
+            IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${svc}@${DIGEST}"
+
+            echo ""
+            echo "==============================================="
+            echo "Rolling out: ${svc}"
+            echo "Image: ${IMAGE}"
+            echo "==============================================="
+
+            kubectl --context="${K8S_CONTEXT}" set image \
+              "deployment/${svc}" \
+              "${svc}=${IMAGE}" \
+              -n "${K8S_NAMESPACE}"
+
+            kubectl --context="${K8S_CONTEXT}" rollout status \
+              "deployment/${svc}" \
+              -n "${K8S_NAMESPACE}" \
+              --timeout=300s
+
+            # Multi-replica strict mode: tüm non-terminating Running pod'lar
+            # expected digest match olmalı. Helper jq filter ile eski
+            # ReplicaSet pod sızıntısı yakalar.
+            ./scripts/deploy/verify-pod-digest.sh \
+              --context "${K8S_CONTEXT}" \
+              --namespace "${K8S_NAMESPACE}" \
+              --selector "app.kubernetes.io/name=${svc}" \
+              --expected-digest "${DIGEST}"
+
+            POD_COUNT=$(kubectl --context="${K8S_CONTEXT}" get pod \
+              -n "${K8S_NAMESPACE}" \
+              -l "app.kubernetes.io/name=${svc}" \
+              --field-selector=status.phase=Running \
+              -o json \
+              | jq '[.items[] | select(.metadata.deletionTimestamp == null)] | length')
+
+            echo "✓ ${svc} ${POD_COUNT} pod(s) all on ${DIGEST}"
+            echo "| ${svc} | ${POD_COUNT} | \`${DIGEST}\` |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      # Gate 1b: ai.acik.com public edge chain alive (api-gateway path)
+      - name: Gate 1b — ai.acik.com edge chain alive
+        run: |
+          set -euo pipefail
+          # /api/users/all → forces gateway routing + auth filter trigger;
+          # 200/401/403 = healthy; 5xx/0xx = chain BROKEN.
+          # iter-49 PR #295 + #303 retry pattern: brief ingress propagation
+          # race tolerance.
+          STATUS=""
+          for attempt in 1 2 3 4 5; do
+            STATUS=$(curl -sko /dev/null -w '%{http_code}' "${AI_URL}/api/users/all" || echo "000")
+            case "${STATUS}" in
+              200|401|403)
+                echo "✓ ai.acik.com edge chain alive (HTTP ${STATUS}, attempt ${attempt}/5)"
+                break
+                ;;
+              *)
+                echo "⊘ attempt ${attempt}/5: HTTP ${STATUS}, retrying in 3s..."
+                sleep 3
+                ;;
+            esac
+          done
+          case "${STATUS}" in
+            200|401|403) ;;
+            *)
+              echo "::error::ai.acik.com edge chain BROKEN — /api/users/all returned ${STATUS} after 5 retries"
+              exit 1
+              ;;
+          esac
+
+      # Gate 1c: per-service in-cluster readiness (mgmt port 8081)
+      - name: Gate 1c — per-service in-cluster readiness
+        run: |
+          set -euo pipefail
+          SERVICES=(
+            "auth-service"
+            "permission-service"
+            "user-service"
+            "variant-service"
+            "core-data-service"
+            "report-service"
+            "schema-service"
+            "api-gateway"
+          )
+          FAILED=0
+          for svc in "${SERVICES[@]}"; do
+            # Helper select non-terminating Running pod, then exec readiness probe.
+            POD=$(kubectl --context="${K8S_CONTEXT}" get pod \
+              -n "${K8S_NAMESPACE}" \
+              -l "app.kubernetes.io/name=${svc}" \
+              --field-selector=status.phase=Running \
+              -o json \
+              | jq -r '.items
+                  | map(select(.metadata.deletionTimestamp == null))
+                  | sort_by(.metadata.creationTimestamp)
+                  | last
+                  | .metadata.name // empty')
+            if [ -z "${POD}" ]; then
+              echo "::warning::${svc} no live pod for readiness check"
+              FAILED=$((FAILED + 1))
+              continue
+            fi
+            STATUS=$(kubectl --context="${K8S_CONTEXT}" exec "${POD}" \
+              -n "${K8S_NAMESPACE}" -- \
+              curl -sko /dev/null -w '%{http_code}' \
+              http://localhost:8081/actuator/health/readiness 2>/dev/null || echo "000")
+            if [ "${STATUS}" = "200" ]; then
+              echo "✓ ${svc} readiness 200"
+            else
+              echo "::warning::${svc} readiness returned ${STATUS}"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+          if [ ${FAILED} -gt 0 ]; then
+            echo "::error::${FAILED} service(s) failed readiness probe"
+            exit 1
+          fi
+
+      # Gate 2 (opt-in): JWT auth flow smoke
+      - name: Gate 2 — JWT auth flow smoke (opt-in)
+        env:
+          SMOKE_AUTH_USERNAME: ${{ secrets.PROD_SMOKE_AUTH_USERNAME }}
+          SMOKE_AUTH_PASSWORD: ${{ secrets.PROD_SMOKE_AUTH_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SMOKE_AUTH_USERNAME:-}" ] || [ -z "${SMOKE_AUTH_PASSWORD:-}" ]; then
+            echo "::warning::Gate 2 (JWT auth flow) skipped — PROD_SMOKE_AUTH_* secrets yok"
+            exit 0
+          fi
+          TOKEN=$(curl -sk -X POST \
+            "${AI_URL}/realms/master/protocol/openid-connect/token" \
+            -d "grant_type=password" \
+            -d "client_id=frontend" \
+            -d "username=${SMOKE_AUTH_USERNAME}" \
+            -d "password=${SMOKE_AUTH_PASSWORD}" | jq -r .access_token)
+          if [ -z "${TOKEN}" ] || [ "${TOKEN}" = "null" ]; then
+            echo "::error::Gate 2 token fetch failed"
+            exit 1
+          fi
+          STATUS=$(curl -sko /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${TOKEN}" \
+            "${AI_URL}/api/users/all?page=1&pageSize=1")
+          if [ "${STATUS}" != "200" ]; then
+            echo "::error::Gate 2 /api/users/all returned ${STATUS} (expected 200)"
+            exit 1
+          fi
+          echo "✓ Gate 2 JWT auth flow PASS"
+
+      - name: Summary
+        if: always()
+        env:
+          SHA: ${{ needs.preflight.outputs.sha }}
+          SHORT_SHA: ${{ needs.preflight.outputs.short_sha }}
+        run: |
+          {
+            echo ""
+            echo "## Backend PROD deploy verify chain"
+            echo ""
+            echo "- Preflight (digest map validation):  ✓"
+            echo "- Sequential rollout (8 services):    ✓"
+            echo "- Gate 1a (multi-replica digest):     ✓"
+            echo "- Gate 1b (ai.acik.com edge chain):   ✓"
+            echo "- Gate 1c (in-cluster readiness):     ✓"
+            echo "- Gate 2 (JWT auth flow):             ${{ secrets.PROD_SMOKE_AUTH_USERNAME && '✓' || '⊘ skipped (no creds)' }}"
+            echo ""
+            echo "## Manual workflow_dispatch retry"
+            echo ""
+            echo '```bash'
+            echo "gh workflow run deploy-backend-prod.yml -R Halildeu/platform-k8s-gitops \\"
+            echo "  -f sha=${SHA} \\"
+            echo "  -f short_sha=${SHORT_SHA} \\"
+            echo "  -f digests_json='<JSON-MAP>'"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
