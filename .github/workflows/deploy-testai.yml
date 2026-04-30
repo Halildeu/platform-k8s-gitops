@@ -151,9 +151,24 @@ jobs:
         id: pod
         run: |
           set -euo pipefail
+          # iter-49 frontend deploy race fix: rolling update sırasında
+          # eski (terminating) + yeni (ready) pod aynı anda label
+          # selector'a match olabilir. items[0] ALFAbetik veya
+          # creationTimestamp asc sıralı dönerken eski pod'u alır →
+          # Gate 1a digest mismatch (run 25186593450 ölçümü).
+          # Düzeltme: --sort-by=.metadata.creationTimestamp + son
+          # item (items[-1:]) en yeni pod'u garantiler. Ayrıca
+          # deletionTimestamp boş olanı filtrele (terminating'i atla).
           POD=$(kubectl --context="${K8S_CONTEXT}" get pod -n "${K8S_NAMESPACE}" \
             -l "${K8S_LABEL_SELECTOR}" \
-            -o jsonpath='{.items[0].metadata.name}')
+            --field-selector=status.phase=Running \
+            --sort-by=.metadata.creationTimestamp \
+            -o jsonpath='{range .items[?(@.metadata.deletionTimestamp == "")]}{.metadata.name}{"\n"}{end}' \
+            | tail -n 1)
+          if [ -z "${POD}" ]; then
+            echo "::error::No live (Running + non-terminating) pod found for selector ${K8S_LABEL_SELECTOR}"
+            exit 1
+          fi
           IMAGE_ID=$(kubectl --context="${K8S_CONTEXT}" get pod "${POD}" \
             -n "${K8S_NAMESPACE}" \
             -o jsonpath='{.status.containerStatuses[0].imageID}')
