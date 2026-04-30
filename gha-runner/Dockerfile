@@ -36,9 +36,8 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. kubectl (k3d-test context için)
-RUN curl -sLO "https://dl.k8s.io/release/v1.31.0/bin/linux/${TARGETARCH:-amd64}/kubectl" && \
-    install -m 0755 kubectl /usr/local/bin/kubectl && \
-    rm kubectl
+RUN curl -fsSL "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl && \
+    chmod +x /usr/local/bin/kubectl
 
 # 3. skopeo (image manifest digest karşılaştırma)
 RUN apt-get update && apt-get install -y --no-install-recommends skopeo && \
@@ -59,7 +58,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     rm -rf /var/lib/apt/lists/*
 
 # 6. Runner kullanıcısı
-RUN useradd -m -s /bin/bash runner && \
+# UID 1001 host halil ile uyumlu (kubeconfig + releases bind mount permission)
+RUN useradd -u 1001 -m -s /bin/bash runner && \
     usermod -aG sudo runner && \
     echo "runner ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/runner
 
@@ -73,16 +73,16 @@ RUN curl -sL "https://github.com/actions/runner/releases/download/v${RUNNER_VERS
 RUN /home/runner/bin/installdependencies.sh
 
 # 9. Playwright Chromium preinstall (build-time; runtime'da indirme yok)
-USER runner
-WORKDIR /home/runner
-
 # Codex S4: Gate 2 behavior smoke için Chromium gerek.
-# `npx playwright install chromium --with-deps` runtime'da deps indirmek
-# istiyor (apt-get); build-time'da yapıp `--with-deps` flag'siz yeniden
-# install edersek deps zaten kurulu (yukarıda apt-get'le ekledik).
+# /opt/playwright root olarak oluşturulur + chown runner; npm install -g
+# root yetkisi ister; sonra USER runner switch yapılır.
 RUN mkdir -p /opt/playwright && \
     npm install -g playwright@${PLAYWRIGHT_BROWSERS_VERSION#v} && \
-    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright playwright install chromium
+    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright playwright install chromium && \
+    chown -R runner:runner /opt/playwright
+
+USER runner
+WORKDIR /home/runner
 
 # 10. Entrypoint
 USER root
