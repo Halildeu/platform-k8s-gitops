@@ -14,22 +14,37 @@ Codex `019dded6` S1 sertleştirmesi:
 
 ## Kurulum (one-time setup)
 
-### 1. PAT (platform-web → gitops dispatch için)
+### İki ayrı PAT gerek (least-privilege ayrımı)
 
-> Bu PAT runner'a değil, platform-web'in dispatch step'ine gerekli. Runner'a registration token gerek (aşağıda).
+#### PAT #1 — `GITOPS_DISPATCH_PAT` (platform-web → gitops dispatch)
+
+> Bu PAT platform-web repo'da secret olarak saklanır. Runner'a değil, platform-web'in dispatch step'ine gerekli.
 
 1. GitHub UI: Settings → Developer settings → Personal access tokens → Fine-grained tokens
 2. **Generate new token**:
    - Token name: `platform-web → gitops dispatch`
-   - Expiration: 1 yıl (veya policy'ye göre)
+   - Expiration: 1 yıl
    - Repository access: **Only select repositories** → `Halildeu/platform-k8s-gitops`
-   - Repository permissions: **Contents: Write** (Codex S2 — repository_dispatch endpoint için yeter)
+   - Repository permissions: **Contents: Write** (Codex S2 — repository_dispatch endpoint için)
 3. Token'ı kopyala
 4. **platform-web** repo'sunda: Settings → Secrets and variables → Actions → New repository secret
    - Name: `GITOPS_DISPATCH_PAT`
    - Value: yapıştır
 
-### 2. Runner image build + start
+#### PAT #2 — `RUNNER_PAT` (runner entrypoint → registration-token endpoint)
+
+> Bu PAT staging-sw host'ta `.env` dosyasında saklanır. Codex 019dded6 ek sertleştirme: `--ephemeral` runner her start'ta TAZE registration token alır; PAT bunu API'den fetch etmeyi sağlar.
+
+1. GitHub UI: Settings → Developer settings → Personal access tokens → Fine-grained tokens
+2. **Generate new token**:
+   - Token name: `staging-sw runner → registration-token`
+   - Expiration: 1 yıl
+   - Repository access: **Only select repositories** → `Halildeu/platform-k8s-gitops`
+   - Repository permissions: **Administration: Write** (`POST /repos/.../actions/runners/registration-token` endpoint için)
+   - Repository permissions: **Metadata: Read** (default, gerekli)
+3. Token'ı kopyala (sonraki adımda `.env`'e yapıştır)
+
+### Runner image build + start
 
 staging-sw'de:
 
@@ -42,17 +57,17 @@ cd platform-k8s-gitops/gha-runner
 
 # 2. .env doldur
 cp .env.example .env
-
-# 3. Registration token al:
-#    GitHub UI: platform-k8s-gitops repo → Settings → Actions → Runners
-#                → New self-hosted runner → Linux x64
-#    Çıkan registration token'ı kopyala (1h geçerli)
-#    .env içine RUNNER_REGISTRATION_TOKEN=... yapıştır
+# RUNNER_PAT=<PAT #2 from yukarıda>
+# (RUNNER_REPO, RUNNER_NAME, RUNNER_LABELS default OK)
 vim .env
 
-# 4. Image build + container up
+# 3. Image build + container up
 docker compose build
 docker compose up -d
+
+# 4. Logs ile runner registration kontrol
+docker compose logs -f runner --tail=50
+# Beklenen: "[entrypoint] Registered: staging-sw-testai-deploy (labels: ...)"
 
 # 5. GitHub UI: Settings → Actions → Runners
 #    `staging-sw-testai-deploy` runner online görünmeli (yeşil nokta)
@@ -83,13 +98,15 @@ cd /home/halil/platform/platform-k8s-gitops/gha-runner
 docker compose restart runner
 ```
 
-### Yeni registration token (token expired)
+### PAT rotation (yıllık)
 
-Registration token 1h geçerli. Container restart'ta runner yeniden register olur (ephemeral). Token expire olduysa:
+`RUNNER_PAT` 1 yıl geçerli (PAT generation sırasında set edilen expiration). Yenileme:
 
-1. GitHub UI'da yeni token al (yukarıdaki adım 3)
-2. `.env` dosyasında `RUNNER_REGISTRATION_TOKEN` güncelle
-3. `docker compose up -d` (otomatik restart)
+1. GitHub UI: yeni fine-grained PAT oluştur (Administration: Write scope)
+2. `.env` dosyasında `RUNNER_PAT` güncelle
+3. `docker compose restart runner`
+
+> NOT: registration token (1h) entrypoint tarafından otomatik fetch edilir. Kullanıcı bu token'ı manuel doldurmak zorunda değil; PAT geçerli olduğu sürece runner kendi yenilemesini yapar.
 
 ### Runner image upgrade
 

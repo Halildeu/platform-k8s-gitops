@@ -33,7 +33,11 @@ services:
 
     environment:
       RUNNER_REPO: ${RUNNER_REPO}
-      RUNNER_REGISTRATION_TOKEN: ${RUNNER_REGISTRATION_TOKEN}
+      # Codex 019dded6 ek sertleştirme: --ephemeral runner her start'ta
+      # GitHub API'den fresh registration-token alır (.env'de statik
+      # token kırılır; token 1h TTL + single-use). PAT scope:
+      # Administration: Write on Halildeu/platform-k8s-gitops.
+      RUNNER_PAT: ${RUNNER_PAT}
       RUNNER_NAME: ${RUNNER_NAME:-staging-sw-testai-deploy}
       # Codex S1: tek amaçlı label set
       RUNNER_LABELS: ${RUNNER_LABELS:-self-hosted,staging-sw,testai-deploy}
