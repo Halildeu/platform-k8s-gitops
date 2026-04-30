@@ -156,15 +156,27 @@ jobs:
           # selector'a match olabilir. items[0] ALFAbetik veya
           # creationTimestamp asc sıralı dönerken eski pod'u alır →
           # Gate 1a digest mismatch (run 25186593450 ölçümü).
-          # Düzeltme: --sort-by=.metadata.creationTimestamp + son
-          # item (items[-1:]) en yeni pod'u garantiler. Ayrıca
-          # deletionTimestamp boş olanı filtrele (terminating'i atla).
+          #
+          # PR #298 v1 hatası (run 25186907768): deletionTimestamp
+          # filter `@.metadata.deletionTimestamp == ""` kubectl jsonpath
+          # syntax'ında alan UNSET olduğunda match etmiyor (k8s API
+          # eksik alan döndürür, "" değil). Tüm Running pod'lar
+          # filtrelendi → empty.
+          #
+          # PR #298 v2 düzeltme: jq ile filtreleme. Pod listesi JSON
+          # olarak çekilir, jq ile (a) phase=Running ve (b)
+          # deletionTimestamp eksik veya null olanı seç, sonra
+          # creationTimestamp asc sıralı son item'ı al. Bu kubectl
+          # jsonpath limitleri olmadan exact eşleme verir.
           POD=$(kubectl --context="${K8S_CONTEXT}" get pod -n "${K8S_NAMESPACE}" \
             -l "${K8S_LABEL_SELECTOR}" \
             --field-selector=status.phase=Running \
-            --sort-by=.metadata.creationTimestamp \
-            -o jsonpath='{range .items[?(@.metadata.deletionTimestamp == "")]}{.metadata.name}{"\n"}{end}' \
-            | tail -n 1)
+            -o json \
+            | jq -r '.items
+                | map(select(.metadata.deletionTimestamp == null))
+                | sort_by(.metadata.creationTimestamp)
+                | last
+                | .metadata.name // empty')
           if [ -z "${POD}" ]; then
             echo "::error::No live (Running + non-terminating) pod found for selector ${K8S_LABEL_SELECTOR}"
             exit 1
