@@ -339,7 +339,50 @@ images:
     #   iter-47c — useFocusRestore deprecation + tabIndex={-1} cleanup
     #     + @public API maturity announce + docs matrix.
     #   defer  — Quick Actions (note/force-logout/audit) needs product spec
-    digest: sha256:ba69fb0424b3f8866c5e915d02a61de146c8df79a516d15f9a54328904503b0c
+    # 2026-04-30 update: sha-1093d2f — Codex 019dde60 iter-47b1.
+    # Layer-aware focus trap + Escape + outside-click. Hooks now gate
+    # at EVENT TIME against participation-aware selectors so only the
+    # topmost qualifying layer fires. Backward-compatible: legacy
+    # consumers without `layerId` keep iter-45 behavior.
+    #
+    # Engine + selectors (Codex REVISE → AGREE):
+    #   - LayerParticipation metadata captures COMPONENT capability,
+    #     not runtime prop state — disableFocusTrap=true keeps layer
+    #     registered as focusTrap:true; hook gates inside decide
+    #   - registerLayer(id, type, options?) 3-arg overload (BC)
+    #   - Defaults per type:
+    #       modal     → both true
+    #       dropdown  → focusTrap:false, dismissal:true
+    #       popover   → focusTrap:false, dismissal:true (NEW type)
+    #       toast     → both false
+    #   - Selectors: isTopFocusTrapLayer / isTopDismissableLayer
+    #   - useFocusTrap: layerId opt + Tab gate at event time +
+    #     active-transition restore (mounted, no double focus) +
+    #     disconnected restore target check
+    #   - useEscapeKey 3rd arg: { layerId? }; gate-excluded layer
+    #     does NOT preventDefault (would steal Escape from topmost)
+    #   - useOutsideClick: layerId opt; mousedown gates LIFO
+    #
+    # Wire-up: FormDrawer + DetailDrawer + Drawer + Popover.
+    # Popover registers new 'popover' type (z-index band shared with
+    # dropdown — visual stacking unchanged per Codex review).
+    #
+    # Tests:
+    #   DS:         527 files, 8379 PASS — 13 new
+    #               (selectors + Escape LIFO + Tab gate + restore
+    #               transition + disconnected target + backward-compat)
+    #   mfe-users:  44 PASS — unchanged
+    #   mfe-access: 43 PASS — unchanged
+    #   mfe-audit:  74 PASS — unchanged
+    #
+    # Out of scope (Codex split iter-47b → b1 + b2):
+    #   iter-47b2 — Modal-over-X auto-close registry + restore-target
+    #     transfer + portal-root zIndex alignment (registerLayer's
+    #     z-index applied to panel inline style)
+    #   iter-47c — useFocusRestore deprecation + tabIndex={-1} cleanup
+    #     + @public API maturity announce + docs matrix
+    #   defer  — Quick Actions (note/force-logout/audit) needs spec
+    digest: sha256:098d1c07b5a33540a0198a558fa2110a6450a6161a718133c2c55615b28860b5
 
 patches:
   # Replica 0 default (scale-to-zero)
