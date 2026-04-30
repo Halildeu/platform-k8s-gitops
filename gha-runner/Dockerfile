@@ -36,9 +36,8 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. kubectl (k3d-test context için)
-RUN curl -sLO "https://dl.k8s.io/release/v1.31.0/bin/linux/${TARGETARCH:-amd64}/kubectl" && \
-    install -m 0755 kubectl /usr/local/bin/kubectl && \
-    rm kubectl
+RUN curl -fsSL "https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl && \
+    chmod +x /usr/local/bin/kubectl
 
 # 3. skopeo (image manifest digest karşılaştırma)
 RUN apt-get update && apt-get install -y --no-install-recommends skopeo && \
