@@ -1,0 +1,199 @@
+# Grafana Dashboard ConfigMap — api-gateway SLO matrix
+#
+# iter-49 B (Codex 019ddf43 PARTIAL→AGREE) — api-gateway HTTP status code
+# matrix observability + SLO candidate dashboard.
+#
+# Sidecar provisioner auto-import: label grafana_dashboard=1
+# Helm: helm-values/kube-prometheus-stack/values.yaml sidecar.dashboards.enabled: true
+#
+# Metric kanıtı (canlı 2026-04-30, /actuator/prometheus):
+#   - http_server_requests_seconds_{count,sum,max} {method,outcome,status,uri,exception,error}
+#     ⚠ uri="UNKNOWN" gateway-routed request'ler için (server-side route info kayboluyor)
+#   - http_client_requests_seconds_{count,sum,max} {http_method,http_status_code,
+#     spring_cloud_gateway_route_id,spring_cloud_gateway_route_uri,error}
+#     ✅ route_id ile per-route panel sağlanır
+#
+# 5 panel:
+#   1. Server-side request rate by status (server view, total in/out)
+#   2. Per-route request rate by status (downstream client view)
+#   3. 4xx/5xx error rate per route (alert candidate)
+#   4. Latency p50/p95/p99 per route (downstream client)
+#   5. SLO candidate gauge: 99.9% 2xx for /api/v1/authz/* (rate ratio)
+#
+# Codex sertleştirme: pre-prod "SLO candidate" dili, formal SLA değil. Alert
+# delivery ayrı PR (Slack/PagerDuty receiver netleşince). Bu dashboard +
+# PrometheusRule warning seviyesi yeter.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-gateway-slo-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: grafana-dashboard
+data:
+  api-gateway-slo.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "title": "api-gateway — SLO matrix (iter-49 B)",
+      "uid": "api-gateway-slo",
+      "tags": ["platform", "api-gateway", "slo", "iter-49"],
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {"from": "now-6h", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "panels": [
+        {
+          "id": 1,
+          "title": "Server-side request rate by status (5m rate)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+          "targets": [
+            {
+              "expr": "sum by (status) (rate(http_server_requests_seconds_count{job=\"api-gateway\"}[5m]))",
+              "legendFormat": "{{status}}",
+              "refId": "A"
+            }
+          ],
+          "options": {
+            "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "lastNotNull"]},
+            "tooltip": {"mode": "multi"}
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "normal"}}
+            }
+          }
+        },
+        {
+          "id": 2,
+          "title": "Per-route request rate (downstream client, 5m)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "targets": [
+            {
+              "expr": "sum by (spring_cloud_gateway_route_id) (rate(http_client_requests_seconds_count{job=\"api-gateway\"}[5m]))",
+              "legendFormat": "{{spring_cloud_gateway_route_id}}",
+              "refId": "A"
+            }
+          ],
+          "options": {
+            "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "lastNotNull"]},
+            "tooltip": {"mode": "multi"}
+          },
+          "fieldConfig": {
+            "defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10}}
+          }
+        },
+        {
+          "id": 3,
+          "title": "4xx + 5xx error rate per route (alert candidate)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "targets": [
+            {
+              "expr": "sum by (spring_cloud_gateway_route_id) (rate(http_client_requests_seconds_count{job=\"api-gateway\",http_status_code=~\"4..|5..\"}[5m]))",
+              "legendFormat": "{{spring_cloud_gateway_route_id}} (errors)",
+              "refId": "A"
+            }
+          ],
+          "options": {
+            "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "lastNotNull"]},
+            "tooltip": {"mode": "multi"}
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 20},
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 0.1},
+                  {"color": "red", "value": 1}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 4,
+          "title": "Downstream latency p50 / p95 / p99 per route (5m)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum by (spring_cloud_gateway_route_id, le) (rate(http_client_requests_seconds_bucket{job=\"api-gateway\"}[5m])))",
+              "legendFormat": "p50 {{spring_cloud_gateway_route_id}}",
+              "refId": "A"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum by (spring_cloud_gateway_route_id, le) (rate(http_client_requests_seconds_bucket{job=\"api-gateway\"}[5m])))",
+              "legendFormat": "p95 {{spring_cloud_gateway_route_id}}",
+              "refId": "B"
+            },
+            {
+              "expr": "histogram_quantile(0.99, sum by (spring_cloud_gateway_route_id, le) (rate(http_client_requests_seconds_bucket{job=\"api-gateway\"}[5m])))",
+              "legendFormat": "p99 {{spring_cloud_gateway_route_id}}",
+              "refId": "C"
+            }
+          ],
+          "options": {
+            "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "lastNotNull"]},
+            "tooltip": {"mode": "multi"}
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {"drawStyle": "line", "lineWidth": 1}
+            }
+          }
+        },
+        {
+          "id": 5,
+          "title": "SLO candidate: 2xx ratio per route (last 1h, target ≥99.9%)",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+          "targets": [
+            {
+              "expr": "sum by (spring_cloud_gateway_route_id) (rate(http_client_requests_seconds_count{job=\"api-gateway\",http_status_code=~\"2..\"}[1h])) / sum by (spring_cloud_gateway_route_id) (rate(http_client_requests_seconds_count{job=\"api-gateway\"}[1h]))",
+              "legendFormat": "{{spring_cloud_gateway_route_id}}",
+              "refId": "A"
+            }
+          ],
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": ""}
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "yellow", "value": 0.99},
+                  {"color": "green", "value": 0.999}
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
