@@ -148,16 +148,35 @@ jobs:
             echo "| ${svc} | \`${NORMALIZED}\` |" >> "$GITHUB_STEP_SUMMARY"
           done
 
-      # Gate 1b: api-gateway public health check (Codex S5 primary blocking)
-      - name: Gate 1b — api-gateway public health
+      # Gate 1b: api-gateway public edge chain health (Codex S5 primary blocking)
+      #
+      # iter-49 fix (run 25184239631): /actuator/health public exposure
+      # PROTECTED via JWT (return 401), prod security best-practice
+      # (info disclosure block). Liveness check management port'tan (Gate 1c).
+      #
+      # Bu gate edge → host nginx → k3d ingress → api-gateway POD chain'i
+      # doğrular. Geçerli sinyal:
+      #   - 200/401/403 → gateway ALIVE (request gateway pod'una ulaştı,
+      #     auth filter / route filter çalıştı)
+      #   - 502/503/504/000 → chain BROKEN (gateway pod down, ingress
+      #     misconfig, network split)
+      # 401 specifically iter-49 A.1 production fix (BadJwtException) ile
+      # pozitif sinyal: gateway JWT filter alive + audz chain reachable.
+      - name: Gate 1b — api-gateway public edge chain alive
         run: |
           set -euo pipefail
-          STATUS=$(curl -sko /dev/null -w '%{http_code}' "${TESTAI_URL}/actuator/health")
-          if [ "${STATUS}" != "200" ]; then
-            echo "::error::api-gateway public /actuator/health returned ${STATUS}"
-            exit 1
-          fi
-          echo "✓ api-gateway /actuator/health 200"
+          # /api/users/all → forces gateway routing (downstream user-service)
+          # + auth filter trigger; 401 unauthenticated = healthy edge chain
+          STATUS=$(curl -sko /dev/null -w '%{http_code}' "${TESTAI_URL}/api/users/all")
+          case "${STATUS}" in
+            200|401|403)
+              echo "✓ api-gateway edge chain alive (HTTP ${STATUS})"
+              ;;
+            *)
+              echo "::error::api-gateway edge chain BROKEN — /api/users/all returned ${STATUS} (expected 200/401/403)"
+              exit 1
+              ;;
+          esac
 
       # Gate 1c: 8 service in-cluster /actuator/health/readiness 200
       # Codex S4: management port 8081, readiness sub-path
