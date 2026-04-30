@@ -82,7 +82,7 @@ jobs:
 
       - name: Upload junit + coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: etl-worker-pytest-${{ github.run_id }}
           path: |
