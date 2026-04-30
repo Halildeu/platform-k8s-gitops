@@ -87,10 +87,16 @@ jobs:
       # kirilmaz: ayni tag iki farkli image'a isaret etmez.
       #
       # Codex S2 — sequential rollout, api-gateway EN SON.
-      - name: Sequential kubectl set image (tag-based, pod imageID = digest)
+      # iter-49 B.3 hardening: digest-pin mode + tag-based fallback
+      # (backward-compat). client_payload.digests JSON map varsa
+      # @sha256:<digest> direct pin (D30 immutable cutover-ready);
+      # yoksa tag-based set image + pod imageID verification fallback
+      # (skopeo bypass continue, mevcut davranış).
+      - name: Sequential kubectl set image (digest-pin or tag-based)
         id: rollout
         env:
           SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
+          DIGESTS_JSON: ${{ toJSON(github.event.client_payload.digests) }}
         run: |
           set -euo pipefail
           # Codex S3: api-gateway en sonda
@@ -106,24 +112,55 @@ jobs:
             "api-gateway"
           )
 
+          # Digest-pin mode detect: dispatch payload digests map?
+          # toJSON(null) → "null"; geçerli JSON object → "{...}"
+          DIGEST_MODE="false"
+          if [ -n "${DIGESTS_JSON:-}" ] && [ "${DIGESTS_JSON}" != "null" ] && \
+             echo "${DIGESTS_JSON}" | jq -e 'type == "object"' >/dev/null 2>&1; then
+            DIGEST_MODE="true"
+            echo "✓ Digest-pin mode active (dispatch payload contains digests map)"
+          else
+            echo "⊘ Tag-based fallback mode (dispatch payload missing digests; backward-compat)"
+          fi
+
           {
-            echo "## Sequential rollout (tag-based)"
+            if [ "${DIGEST_MODE}" = "true" ]; then
+              echo "## Sequential rollout (digest-pin)"
+            else
+              echo "## Sequential rollout (tag-based fallback)"
+            fi
             echo ""
             echo "| Service | Pod imageID (containerd-resolved digest) |"
             echo "|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
 
           for svc in "${SERVICES[@]}"; do
-            TAG_IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${svc}:sha-${SHORT_SHA}"
+            if [ "${DIGEST_MODE}" = "true" ]; then
+              # Direct digest pin (B.3 hardening)
+              DIGEST=$(echo "${DIGESTS_JSON}" | jq -r --arg s "${svc}" '.[$s] // empty')
+              if [ -z "${DIGEST}" ]; then
+                echo "::error::${svc} digest missing from payload"
+                exit 1
+              fi
+              if [[ "${DIGEST}" != sha256:* ]]; then
+                echo "::error::${svc} digest format invalid: ${DIGEST}"
+                exit 1
+              fi
+              IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${svc}@${DIGEST}"
+            else
+              # Tag-based fallback (mevcut davranış, runtime'da pod imageID = digest)
+              IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${svc}:sha-${SHORT_SHA}"
+            fi
+
             echo ""
             echo "==============================================="
             echo "Rolling out: ${svc}"
-            echo "Image: ${TAG_IMAGE}"
+            echo "Image: ${IMAGE}"
             echo "==============================================="
 
             kubectl --context="${K8S_CONTEXT}" set image \
               "deployment/${svc}" \
-              "${svc}=${TAG_IMAGE}" \
+              "${svc}=${IMAGE}" \
               -n "${K8S_NAMESPACE}"
 
             kubectl --context="${K8S_CONTEXT}" rollout status \
@@ -144,6 +181,14 @@ jobs:
               echo "::error::${svc} pod imageID format unexpected: ${RAW_ID}"
               exit 1
             fi
+
+            # Digest-pin mode: payload digest == pod imageID assertion
+            # (her iki taraf @sha256:<hash> aynı olmalı; D30 invariant)
+            if [ "${DIGEST_MODE}" = "true" ] && [ "${NORMALIZED}" != "${DIGEST}" ]; then
+              echo "::error::${svc} digest mismatch — payload=${DIGEST} pod=${NORMALIZED}"
+              exit 1
+            fi
+
             echo "✓ ${svc} pod imageID resolved: ${NORMALIZED}"
             echo "| ${svc} | \`${NORMALIZED}\` |" >> "$GITHUB_STEP_SUMMARY"
           done
