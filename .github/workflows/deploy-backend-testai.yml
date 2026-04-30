@@ -114,14 +114,38 @@ jobs:
 
           # Digest-pin mode detect: dispatch payload digests map?
           # toJSON(null) → "null"; geçerli JSON object → "{...}"
+          # iter-49 B.3 follow-up (run 25185749414 ölçümü): backend
+          # ci-image-push.yml `gh api -F client_payload[digests]=<json>`
+          # syntax'i ile gönderildiğinde GitHub webhook payload'da
+          # `digests` alanı STRING (escaped JSON) olarak gelir;
+          # toJSON sonrası "{\\\"svc\\\":\\\"...\\\"}". Bu yüzden
+          # 1. raw type check (object form, native nested case)
+          # 2. string→fromjson normalize (string form, gh api -F case)
+          # iki path'i de destekle.
           DIGEST_MODE="false"
-          if [ -n "${DIGESTS_JSON:-}" ] && [ "${DIGESTS_JSON}" != "null" ] && \
-             echo "${DIGESTS_JSON}" | jq -e 'type == "object"' >/dev/null 2>&1; then
+          DIGESTS_PARSED=""
+          if [ -n "${DIGESTS_JSON:-}" ] && [ "${DIGESTS_JSON}" != "null" ]; then
+            # Step 1: try direct object parse
+            if echo "${DIGESTS_JSON}" | jq -e 'type == "object"' >/dev/null 2>&1; then
+              DIGESTS_PARSED="${DIGESTS_JSON}"
+            # Step 2: try string→fromjson normalize
+            elif echo "${DIGESTS_JSON}" | jq -e 'type == "string"' >/dev/null 2>&1; then
+              CANDIDATE=$(echo "${DIGESTS_JSON}" | jq -r 'fromjson? // empty')
+              if [ -n "${CANDIDATE}" ] && echo "${CANDIDATE}" | jq -e 'type == "object"' >/dev/null 2>&1; then
+                DIGESTS_PARSED="${CANDIDATE}"
+              fi
+            fi
+          fi
+          # Empty object → tag-based fallback (digests yok değil ama dolmamış)
+          if [ -n "${DIGESTS_PARSED}" ] && \
+             [ "$(echo "${DIGESTS_PARSED}" | jq 'length')" -gt 0 ]; then
             DIGEST_MODE="true"
-            echo "✓ Digest-pin mode active (dispatch payload contains digests map)"
+            echo "✓ Digest-pin mode active ($(echo "${DIGESTS_PARSED}" | jq 'length') services in payload)"
           else
             echo "⊘ Tag-based fallback mode (dispatch payload missing digests; backward-compat)"
           fi
+          # Override DIGESTS_JSON with normalized (object-form) for downstream jq
+          DIGESTS_JSON="${DIGESTS_PARSED:-null}"
 
           {
             if [ "${DIGEST_MODE}" = "true" ]; then
