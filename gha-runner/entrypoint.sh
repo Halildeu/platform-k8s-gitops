@@ -72,6 +72,11 @@ while true; do
     continue
   fi
 
+  # iter-47c hotfix — actions/runner --replace some versions still
+  # reject re-config with "already configured". Clean stale .runner
+  # state at each iteration so config.sh stays idempotent.
+  ./config.sh remove --token "${TOKEN}" 2>/dev/null || true
+
   ./config.sh \
     --url "https://github.com/${RUNNER_REPO}" \
     --token "${TOKEN}" \
