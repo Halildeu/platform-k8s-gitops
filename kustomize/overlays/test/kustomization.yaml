@@ -138,7 +138,18 @@ images:
     # super-admins; calls POST/DELETE /v1/permissions/super-admin/users/{id};
     # idempotent toasts surface alreadyHadGrant / hadActiveGrant; bootstrap
     # warning rendered as toast description.
-    digest: sha256:ee158eeee4c90752cc931a4ec0841e298b9ad07dee4c0fc7ebe3c60b502f8e5d
+    #
+    # 2026-04-30 update: sha-267fcdd — Codex 019ddd5b/019ddd78 UX+UI cycle:
+    #   PR #104 iter-36 P0 Save Safety: load guard + sticky footer slot +
+    #     dirty close guard + save scope label
+    #   PR #107 iter-37 P1 Roller human-readable + search + neutral subtitles
+    #     (Codex AGREE on microcopy; "Roller ve İzinler" overpromise dropped)
+    #   PR #108 iter-38 P1 DetailDrawer → FormDrawer primitive migration
+    #     (Codex 019ddd78 PARTIAL → migrate now, focus-trap deferred)
+    #   PR #108 iter-39 P2 section count badges + skeleton loading
+    # Live verify post-edge-sync 2026-04-30: Playwright 2/2 PASS, drawer
+    # interactive, dirty close guard active. 9 vitest cases pass.
+    digest: sha256:a0ac338d6ace07f696755f7ef4a2612e2dab8d31c339275c551c5fa8aa30550b
 
 patches:
   # Replica 0 default (scale-to-zero)
