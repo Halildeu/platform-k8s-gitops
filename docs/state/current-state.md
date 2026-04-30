@@ -10,6 +10,107 @@
 
 ---
 
+## Live Delta — Session 35 (2026-04-30 ~22:55 UTC+3) — iter-49 CYCLE CLOSE + BACKEND/FRONTEND DEPLOY AUTOMATION DIGEST-PIN MODE LIVE
+
+**Mandate**: kullanıcı 2026-04-30 mesajı "önem sırasına göre otomatik olarak otonom şekilde yapabilirsin adım adım hepsini" + Codex thread `019ddf43` (iter-49 cycle close) + `019de00f` (post-cycle PARTIAL adversarial review).
+
+### Backend deploy automation chain — FULL E2E LIVE
+
+```
+platform-backend push main
+  ↓ ci-image-push.yml — 9 service GHCR build (matrix)
+  ↓ matrix → /tmp/digests/<service> bare 64-hex → upload-artifact (×9)
+  ↓ dispatch job: download-artifact → jq aggregation → JSON map
+  ↓ gh api -F client_payload[digests]={"<svc>":"sha256:<hex>",...}
+gitops repository_dispatch backend-testai-deploy (auto-trigger)
+  ↓ Resolve dispatch payload (sha + digests)
+  ↓ Digest-pin mode detect: ✓ ACTIVE (9 services in payload)
+  ↓ Sequential set image @sha256:<digest> × 8 backend (api-gateway last)
+  ↓ Per-service: payload digest === pod imageID === GHCR digest D30 invariant
+  ↓ Gate 1a digest match × 8 services
+  ↓ Gate 1b /api/users/all 200/401/403 (edge chain alive)
+  ↓ Gate 1c per-service /actuator/health/readiness :8081
+  ↓ Gate 2 JWT auth flow (opt-in)
+```
+
+**Live verified** (run 25186247133): tüm 8 backend service `@sha256:<digest>` pinned, 1/1 ready, payload-pod-GHCR digest üçlü doğrulama.
+
+### Cycle close PR'ları (12 PR landed)
+
+| # | PR | Konu | Codex |
+|---|---|---|---|
+| 1 | gitops [#286](https://github.com/Halildeu/platform-k8s-gitops/pull/286) | testai cluster-authoritative (host nginx → k3d ingress 31080) | 019ddf23 |
+| 2 | gitops [#270](https://github.com/Halildeu/platform-k8s-gitops/pull/270) | endpoint-admin-service governance docs (962 satır) | 019dd895 iter-3 AGREE |
+| 3 | gitops [#181](https://github.com/Halildeu/platform-k8s-gitops/pull/181) | dependabot setup-python 5→6 | — |
+| 4 | gitops [#294](https://github.com/Halildeu/platform-k8s-gitops/pull/294) | maxSurge=0/maxUnavailable=1 × 7 backend (Codex S2 generalize) | 019dd818 |
+| 5 | gitops [#295](https://github.com/Halildeu/platform-k8s-gitops/pull/295) | Gate 1b → /api/users/all 200/401/403 (gateway protects /actuator) | 019ddf43 |
+| 6 | gitops [#296](https://github.com/Halildeu/platform-k8s-gitops/pull/296) | digest-pin mode initial (string→object normalize) | 019ddf43 |
+| 7 | backend [#54](https://github.com/Halildeu/platform-backend/pull/54) | per-service digest aggregation + dispatch payload | 019ddf43 |
+| 8 | gitops [#297](https://github.com/Halildeu/platform-k8s-gitops/pull/297) | string-form digest payload normalize (run 25185749414 ölçümü) | 019ddf43 |
+| 9 | gitops [#298+#299](https://github.com/Halildeu/platform-k8s-gitops/pull/299) | frontend pod capture race fix (jq filter v2) | 019ddf43 |
+| 10 | gitops [#182](https://github.com/Halildeu/platform-k8s-gitops/pull/182) | dependabot actions/checkout v4→v6 | — |
+| 11 | gitops [#300](https://github.com/Halildeu/platform-k8s-gitops/pull/300) | actions/upload-artifact v4→v7 (replay #180) | — |
+| 12 | gitops [#301](https://github.com/Halildeu/platform-k8s-gitops/pull/301) | backend deploy items[0] race + strict digest mode | 019de00f |
+
+### Live cluster snapshot (2026-04-30 ~22:00 UTC+3)
+
+| Servis | Replicas | Image |
+|---|---|---|
+| auth-service | 1/1 | `@sha256:c84bc6b04f...da9ed37` |
+| permission-service | 1/1 | `@sha256:7968fff58c1c...44e7d` |
+| user-service | 1/1 | `@sha256:548c1831719...774b390b` |
+| variant-service | 1/1 | `@sha256:393387a01a5a...697e4` |
+| core-data-service | 1/1 | `@sha256:7d6748516d0e...796ace` |
+| report-service | 1/1 | `@sha256:234360312dffb...79748` |
+| schema-service | 1/1 | `@sha256:b660b25a5f6d...20c3` |
+| api-gateway | 1/1 | `@sha256:16451b81a144...afc358` |
+| frontend | 1/1 | `@sha256:799969c5f16b...428da3` |
+| endpoint-admin-service | 1/1 | (manual deploy, skip iter-49) |
+
+### Public smoke (live)
+
+| URL | HTTP | Yorum |
+|---|---|---|
+| `https://testai.acik.com/` | 200 | Frontend cluster-authoritative (public hash == pod hash) |
+| `https://testai.acik.com/api/users/all` | 401 | Gateway alive + JWT filter alive (D29 Functional layer) |
+| `https://testai.acik.com/realms/platform-test/.well-known/openid-configuration` | 200 | Keycloak (host-compose) |
+| `https://testai.acik.com/actuator/health` | 401 | JWT-protected (security best-practice; Gate 1b artık /api/* kontrol) |
+
+### Codex 019de00f PARTIAL absorb
+
+Bu cycle close öncesi Codex'e adversarial review sorduk; PARTIAL VERDICT geldi. 4 bulgu absorb:
+
+1. **#1 Backend pod capture race** → PR #301 (frontend v2 jq pattern backend'e yayıldı)
+2. **#2 Strict digest mode** → PR #301 (payload field varsa parse fail = hard fail; regex ^sha256:[a-f0-9]{64}$)
+3. **#3 Docs truth** → bu Live Delta + `docs/runbook-backend-testai-deploy.md` rewrite
+4. **#4 Test overlay scale-to-zero precondition** → runbook'a Önkoşullar bölümü eklendi
+
+### iter-49 sub-task closure
+
+| Sub-task | Status |
+|---|---|
+| A — Gateway status code matrix | ✅ MERGED + LIVE |
+| A.1 — BadJwtException production fix | ✅ MERGED + LIVE |
+| A.2 — Two-stub test infra baseline | ✅ MERGED |
+| A.3 — Deep test infra (Spring bean override) | ⊘ ABANDONED (production fix yeter) |
+| B — Grafana SLO dashboard | ✅ MERGED |
+| B.2 — PrometheusRule warnings | ✅ MERGED |
+| B.3 — Digest-pin payload chain | ✅ MERGED + **LIVE D30 invariant verified** |
+| C — ADR-0012 Phase 3 defer | ✅ MERGED |
+| Backend deploy automation | ✅ MERGED + LIVE digest-pin |
+| Frontend deploy automation | ✅ MERGED + LIVE (PR #298+#299 race fix) |
+
+### Açık follow-up'lar (Codex 019de00f next-sprint roadmap)
+
+- D30 prod cutover öncesi:
+  - Multi-replica pod doğrulama (şu an replicas=1; prod scale 2+ için Gate 1a "all non-terminating Running pods digest match")
+  - Prod overlay `maxSurge=1/maxUnavailable=0` zero-downtime KORUNUR (test overlay `maxSurge=0` taşınmamalı)
+  - Rollback command exact + warm compose kapsamı + 72h gözlem sinyalleri canlı dokümante
+- ai.acik.com prod cutover prep
+- endpoint-admin governance integration (Faz 22)
+
+---
+
 ## Live Delta — Session 34 (2026-04-29 ~07:35 UTC+3) — ADMIN ROLE RESTORE CYCLE + Codex 3-iter PARTIAL→AGREE
 
 **Trigger**: Kullanıcı feedback `https://testai.acik.com/admin/access` role drawer save kontrolleri "passive değiştirme yetkim yok". Asıl kök neden: browser JWT/session expire (gateway 401 UNAUTHORIZED, frontend stale `superAdmin:false` cache). Yan kök neden: 2026-04-28 manuel SQL ADMIN restore'umda `permission_id NULL` granule shortcut model satırları → `PermissionDataInitializer` startup NPE (sha-d58fa61 rollout CrashLoopBackOff).
