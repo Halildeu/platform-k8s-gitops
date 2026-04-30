@@ -181,29 +181,44 @@ images:
     #
     # 2026-04-30 update: sha-c1a76bb — Codex 019dddf4 iter-43.
     # DS FormDrawer `leading?: ReactNode` slot prop + UserDetailDrawer
-    # first consumer (initial-circle Avatar in drawer header). LTR-neutral
-    # slot name; backward-compatible (existing consumers unchanged). Header
-    # DOM restructured per Codex review: outer items-start unchanged, new
-    # left group items-start gap-3 + leading wrapper shrink-0 mt-0.5 for
-    # cap-height alignment when subtitle wraps to two lines.
+    # first consumer (initial-circle Avatar in drawer header).
     #
-    # mfe-users: getInitials utility (toUpperCase, NOT toLocaleUpperCase
-    # — keeps "Çiğdem Öz" → "ÇÖ"); Avatar size="lg" + aria-hidden="true"
-    # so screen readers announce title once via aria-label.
+    # 2026-04-30 update: sha-2128a86 — Codex 019dde0c iter-44.
+    # DS DetailDrawer.leading slot symmetric with FormDrawer.leading.
+    # New IconShield (plain shield path, NOT ShieldCheck per Codex
+    # review — verified/success semantics conflict with system-role
+    # badges in tags slot). RoleDrawer (mfe-access) becomes second
+    # iter-43-pattern consumer:
+    #   leading={<IconShield className="h-8 w-8 text-text-secondary"
+    #                         aria-hidden="true" />}
+    # 32px size + neutral text-secondary color per Codex; bare SVG at
+    # 40px would dominate, text-action-primary would compete with the
+    # existing colored badges in tags. is_system stays in tags, NOT
+    # leading (Codex semantic split).
     #
-    # Tests:
-    #   DS:        524 files, 8317 PASS — 8 new (6 leading slot + 2 a11y)
-    #   mfe-users: 6 files, 44 PASS — 17 new (12 getInitials contract +
-    #              5 UserDetailDrawer.leadingAvatar real DS render)
+    # Tests (iter-43 + iter-44 cumulative):
+    #   DS:         524 files, 8324 PASS — 7 new in iter-44
+    #               (6 leading slot contract + 1 a11y axe)
+    #               + 8 from iter-43 = 15 leading-slot tests total.
+    #   mfe-users:  6 files, 44 PASS — iter-43 17 new (FormDrawer + Avatar)
+    #   mfe-access: 10 files, 43 PASS — iter-44 5 new (real DS render)
     #
     # Out of scope (deferred):
-    #   iter-44 — RoleDrawer + AuditDetailDrawer same pattern
-    #   iter-45 — DS focus-trap epic (cross-consumer overlay-engine)
-    #   defer  — Quick Actions (note/force-logout/audit) — needs product spec
+    #   iter-45 — DS focus-trap epic. Survey complete: useFocusTrap
+    #     hook EXISTS in overlay-engine/focus-trap.tsx but FormDrawer/
+    #     DetailDrawer don't wire it (current trap is "fake" —
+    #     accidental containment via small content). Risk M, 3-phase
+    #     rollout planned (Phase A foundation, Phase B opt-in, Phase C
+    #     cleanup). No external libs, no MFE conflicts.
+    #   B path — RoleDrawer DetailDrawer→FormDrawer migration. 1160 LoC
+    #     + inline granule editor; separate iter, not bundled with iter-44.
+    #   defer — Quick Actions (note/force-logout/audit) — product spec.
     #
-    # Spawn task chip captured: ag-grid onRowDoubleClick prop name typo
-    # in UsersGrid.ui.tsx:765 (separate UX bug, not iter-43).
-    digest: sha256:f593e36c341fd08eafcc6bac846dc74562cfd407181619c635ce963b6dae6332
+    # Spawn task chip still open: ag-grid onRowDoubleClick prop name typo
+    # in UsersGrid.ui.tsx:765 + RoleDrawer same pattern (drawer doesn't
+    # open via row dblclick on testai). Test coverage proves DOM render
+    # of leading slot independently; UX bug is a separate fix.
+    digest: sha256:dcb7cf719efd09e3c38cc389ff40ce447b353dd143068710ea1d99ff8261ff2f
 
 patches:
   # Replica 0 default (scale-to-zero)
