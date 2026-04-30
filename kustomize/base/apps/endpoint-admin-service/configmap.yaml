@@ -1,0 +1,49 @@
+# endpoint-admin-service ConfigMap skeleton — Faz 22 (sprint PR-9)
+#
+# Fail-closed: kritik URI'lar OVERLAY_MUST_OVERRIDE pattern; overlay
+# set etmezse runtime sızıntı placeholder-leak-check.yaml CI guard
+# tarafından yakalanır (ADR-0011 BG-1 mevcut pattern).
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: endpoint-admin-service-config
+  labels:
+    app.kubernetes.io/name: endpoint-admin-service
+data:
+  # Application identity
+  APP_NAME: "endpoint-admin-service"
+  APP_VERSION: "0.0.0-skeleton"
+
+  # Listen ports
+  HTTP_PORT: "8080"
+  MANAGEMENT_PORT: "8081"
+
+  # Authz integration — permission-service Zanzibar plane (ADR-0012-EA §Authorization)
+  PERMISSION_SERVICE_BASE_URL: "http://permission-service:8084"
+  AUTHZ_USER_TABLE: "users"
+
+  # Identity / OIDC — overlay sets realm
+  KEYCLOAK_ISSUER_URI: "OVERLAY_MUST_OVERRIDE"
+  KEYCLOAK_JWKS_URI: "OVERLAY_MUST_OVERRIDE"
+  ADMIN_AUTH_CLIENT_ID: "endpoint-admin-portal"
+
+  # Audit / immutable storage (DD-EA-6)
+  AUDIT_LOG_BACKEND: "OVERLAY_MUST_OVERRIDE"  # postgres/clickhouse/loki — pilot tier kararı
+  AUDIT_LOG_RETENTION_DAYS: "365"
+
+  # Pilot tier (ADR-0012-EA §Pilot tier matrisi)
+  PILOT_TIER: "OVERLAY_MUST_OVERRIDE"  # lab|pilot|restricted — test=lab, prod kullanıcı kararı
+
+  # Identity discovery (Faz 22.1 lab; Faz 22.2/22.3 sub-faz aktif eder)
+  DISCOVERY_LOCAL_WINDOWS_ENABLED: "false"
+  DISCOVERY_AD_ENABLED: "false"
+  DISCOVERY_ENTRA_ENABLED: "false"
+  DISCOVERY_M365_ENABLED: "false"
+
+  # Code signing verify (DD-EA-4)
+  COSIGN_VERIFY_ENABLED: "true"
+  COSIGN_KEY_REF: "OVERLAY_MUST_OVERRIDE"  # azure-kms://... — Azure Trusted Signing default
+
+  # Logging
+  LOG_LEVEL: "INFO"

@@ -1,0 +1,22 @@
+# endpoint-admin-service base kustomization — Faz 22 (sprint PR-9)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# app.kubernetes.io/name selector + Service selector + Deployment pod
+# selector aynı label ile eşleşsin
+labels:
+  - pairs:
+      app.kubernetes.io/name: endpoint-admin-service
+    includeSelectors: true
+    includeTemplates: true
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: true
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - configmap.yaml
+  - serviceaccount.yaml
+  - secret-stub.yaml  # ESO bind path; overlay-specific ExternalSecret production-time inject
