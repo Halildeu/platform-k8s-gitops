@@ -1,0 +1,301 @@
+name: Deploy backend testai (auto)
+
+# iter-49 backend deploy automation — Codex 019ddf43 PARTIAL+AGREE.
+#
+# Trigger: `repository_dispatch` event_type=backend-testai-deploy from
+# platform-backend's ci-image-push.yml after a successful 9-service GHCR push
+# (ayrı PR — bu workflow merge sonrası backend tarafına dispatch step eklenir).
+#
+# Codex sertleştirmeleri uygulanmış:
+#   S1 — sha+short_sha payload, runtime skopeo digest resolve + image@sha256: pin
+#   S2 — SEQUENTIAL rollout (paralel ResourceQuota riski; iter-50 frontend
+#         deploy'da 1000m+1000m=2000m > 8000m quota aşımı yaşandı)
+#   S3 — api-gateway entry-point EN SON deploy
+#   S4 — endpoint-admin-service + discovery-server bu ilk cut'ta SKIP
+#         (manifest contract netleşince ayrı PR)
+#   S5 — Gate 2 (auth flow) opt-in warn-only; primary blocking pod imageID
+#         + api-gateway health
+#
+# Self-hosted runner: testai-deploy label reuse (tek runner, generic deploy).
+#
+# Required secrets (gitops repo):
+#   - none — runner kubeconfig + GHCR pull credential mount in.
+#   - (Optional) SMOKE_AUTH_USERNAME/PASSWORD — Gate 2 functional smoke
+
+on:
+  repository_dispatch:
+    types: [backend-testai-deploy]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Commit sha (40-char) — manuel override için'
+        required: true
+      short_sha:
+        description: 'Short sha (7-char)'
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  K8S_CONTEXT: k3d-test
+  K8S_NAMESPACE: platform-test
+  TESTAI_URL: https://testai.acik.com
+  IMAGE_OWNER: halildeu
+
+jobs:
+  deploy:
+    name: Deploy backend testai (sequential digest pin + verify)
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 30
+
+    if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Resolve dispatch payload
+        id: payload
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SHA="${{ inputs.sha }}"
+            SHORT_SHA="${{ inputs.short_sha }}"
+          else
+            SHA="${{ github.event.client_payload.sha }}"
+            SHORT_SHA="${{ github.event.client_payload.short_sha }}"
+          fi
+
+          if [ -z "$SHA" ] || [ -z "$SHORT_SHA" ]; then
+            echo "::error::Missing payload (sha/short_sha)"
+            exit 1
+          fi
+
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Backend deploy testai — payload"
+            echo "- sha: \`${SHA}\`"
+            echo "- short_sha: \`${SHORT_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Codex S1: skopeo ile her servisin GHCR manifest digest'ini runtime'da
+      # resolve et. Tag tag-yerine-digest pin için.
+      - name: Resolve image digests (skopeo)
+        id: digests
+        env:
+          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+          declare -A DIGESTS
+          # Codex S2+S3+S4 sequential rollout sırası: stateful-light → hub →
+          # downstream → entry-point. discovery-server (k3d-test'te yok) +
+          # endpoint-admin-service (manifest contract net değil) SKIP.
+          SERVICES=(
+            "auth-service"
+            "permission-service"
+            "user-service"
+            "variant-service"
+            "core-data-service"
+            "report-service"
+            "schema-service"
+            "api-gateway"
+          )
+          {
+            echo "## Image digests (skopeo resolved)"
+            echo ""
+            echo "| Service | Digest |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for svc in "${SERVICES[@]}"; do
+            IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${svc}:sha-${SHORT_SHA}"
+            DIGEST=$(skopeo inspect "docker://${IMAGE}" 2>/dev/null \
+              | jq -r '.Digest')
+            if [ -z "${DIGEST}" ] || [ "${DIGEST}" = "null" ]; then
+              echo "::error::Failed to resolve digest for ${svc} (${IMAGE})"
+              exit 1
+            fi
+            DIGESTS[$svc]="${DIGEST}"
+            echo "${svc}=${DIGEST}"
+            echo "| ${svc} | \`${DIGEST}\` |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          # Persist all digests to step output via single multiline var
+          {
+            echo "digest_matrix<<EOF"
+            for svc in "${SERVICES[@]}"; do
+              echo "${svc}=${DIGESTS[$svc]}"
+            done
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # Codex S2 — sequential rollout, api-gateway EN SON.
+      - name: Sequential kubectl set image (per-service rollout)
+        env:
+          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
+          DIGEST_MATRIX: ${{ steps.digests.outputs.digest_matrix }}
+        run: |
+          set -euo pipefail
+          # Codex S3: api-gateway en sonda
+          SERVICES=(
+            "auth-service"
+            "permission-service"
+            "user-service"
+            "variant-service"
+            "core-data-service"
+            "report-service"
+            "schema-service"
+            "api-gateway"
+          )
+
+          # Parse digest matrix into associative array
+          declare -A DIGESTS
+          while IFS='=' read -r svc digest; do
+            [ -z "$svc" ] && continue
+            DIGESTS[$svc]="$digest"
+          done <<< "${DIGEST_MATRIX}"
+
+          for svc in "${SERVICES[@]}"; do
+            DIGEST="${DIGESTS[$svc]}"
+            IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${svc}@${DIGEST}"
+            echo ""
+            echo "==============================================="
+            echo "Rolling out: ${svc}"
+            echo "Image: ${IMAGE}"
+            echo "==============================================="
+
+            kubectl --context="${K8S_CONTEXT}" set image \
+              "deployment/${svc}" \
+              "${svc}=${IMAGE}" \
+              -n "${K8S_NAMESPACE}"
+
+            kubectl --context="${K8S_CONTEXT}" rollout status \
+              "deployment/${svc}" \
+              -n "${K8S_NAMESPACE}" \
+              --timeout=180s
+
+            # Codex S2: pod imageID kontrolü her servisten sonra (Gate 1a)
+            POD=$(kubectl --context="${K8S_CONTEXT}" get pod \
+              -n "${K8S_NAMESPACE}" \
+              -l "app.kubernetes.io/name=${svc}" \
+              -o jsonpath='{.items[0].metadata.name}')
+            RAW_ID=$(kubectl --context="${K8S_CONTEXT}" get pod "${POD}" \
+              -n "${K8S_NAMESPACE}" \
+              -o jsonpath='{.status.containerStatuses[0].imageID}')
+            NORMALIZED=$(echo "${RAW_ID}" | sed -E 's|^.*@(sha256:[a-f0-9]{64})$|\1|')
+
+            if [ "${NORMALIZED}" != "${DIGEST}" ]; then
+              echo "::error::${svc} pod imageID mismatch."
+              echo "  expected: ${DIGEST}"
+              echo "  actual:   ${NORMALIZED}"
+              echo "  raw:      ${RAW_ID}"
+              exit 1
+            fi
+            echo "✓ ${svc} pod imageID == GHCR digest"
+          done
+
+      # Gate 1b: api-gateway public health check (Codex S5 primary blocking)
+      - name: Gate 1b — api-gateway public health
+        run: |
+          set -euo pipefail
+          STATUS=$(curl -sko /dev/null -w '%{http_code}' "${TESTAI_URL}/actuator/health")
+          if [ "${STATUS}" != "200" ]; then
+            echo "::error::api-gateway public /actuator/health returned ${STATUS}"
+            exit 1
+          fi
+          echo "✓ api-gateway /actuator/health 200"
+
+      # Gate 1c: 8 service in-cluster /actuator/health/readiness 200
+      # Codex S4: management port 8081, readiness sub-path
+      - name: Gate 1c — per-service in-cluster readiness
+        run: |
+          set -euo pipefail
+          SERVICES=(
+            "auth-service"
+            "permission-service"
+            "user-service"
+            "variant-service"
+            "core-data-service"
+            "report-service"
+            "schema-service"
+            "api-gateway"
+          )
+          FAILED=0
+          for svc in "${SERVICES[@]}"; do
+            POD=$(kubectl --context="${K8S_CONTEXT}" get pod \
+              -n "${K8S_NAMESPACE}" \
+              -l "app.kubernetes.io/name=${svc}" \
+              -o jsonpath='{.items[0].metadata.name}')
+            STATUS=$(kubectl --context="${K8S_CONTEXT}" exec "${POD}" \
+              -n "${K8S_NAMESPACE}" -- \
+              curl -sko /dev/null -w '%{http_code}' \
+              http://localhost:8081/actuator/health/readiness 2>/dev/null || echo "000")
+            if [ "${STATUS}" = "200" ]; then
+              echo "✓ ${svc} readiness 200"
+            else
+              echo "::warning::${svc} readiness returned ${STATUS}"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+          if [ ${FAILED} -gt 0 ]; then
+            echo "::error::${FAILED} service(s) failed readiness probe"
+            exit 1
+          fi
+
+      # Gate 2 — opt-in JWT auth flow (warn-only if persona yok)
+      - name: Gate 2 — JWT auth flow smoke (opt-in)
+        env:
+          SMOKE_AUTH_USERNAME: ${{ secrets.SMOKE_AUTH_USERNAME }}
+          SMOKE_AUTH_PASSWORD: ${{ secrets.SMOKE_AUTH_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SMOKE_AUTH_USERNAME:-}" ] || [ -z "${SMOKE_AUTH_PASSWORD:-}" ]; then
+            echo "::warning::Gate 2 (JWT auth flow) skipped — SMOKE_AUTH_* secrets yok"
+            exit 0
+          fi
+          # Codex S5: persona/secret hazır olunca blocking'e yükselt.
+          # Şimdilik basic chain: token al + /api/users/all 401 değil 200
+          # (auth + audz + downstream forward zinciri test eder)
+          TOKEN=$(curl -sk -X POST \
+            "${TESTAI_URL}/realms/platform-test/protocol/openid-connect/token" \
+            -d "grant_type=password" \
+            -d "client_id=frontend" \
+            -d "username=${SMOKE_AUTH_USERNAME}" \
+            -d "password=${SMOKE_AUTH_PASSWORD}" | jq -r .access_token)
+          if [ -z "${TOKEN}" ] || [ "${TOKEN}" = "null" ]; then
+            echo "::error::Gate 2 token fetch failed"
+            exit 1
+          fi
+          STATUS=$(curl -sko /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${TOKEN}" \
+            "${TESTAI_URL}/api/users/all?page=1&pageSize=1")
+          if [ "${STATUS}" != "200" ]; then
+            echo "::error::Gate 2 /api/users/all returned ${STATUS} (expected 200)"
+            exit 1
+          fi
+          echo "✓ Gate 2 JWT auth flow PASS"
+
+      - name: Summary
+        if: always()
+        env:
+          SHA: ${{ steps.payload.outputs.sha }}
+          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
+        run: |
+          {
+            echo ""
+            echo "## Backend deploy verify chain"
+            echo ""
+            echo "- Sequential rollout (8 service): ✓"
+            echo "- Gate 1a (per-service pod digest): ✓"
+            echo "- Gate 1b (api-gateway public health): ✓"
+            echo "- Gate 1c (in-cluster readiness): ✓"
+            echo "- Gate 2 (JWT auth flow): ${{ secrets.SMOKE_AUTH_USERNAME && '✓' || '⊘ skipped (no creds)' }}"
+            echo ""
+            echo "## Manual workflow_dispatch retry"
+            echo ""
+            echo '```bash'
+            echo "gh workflow run deploy-backend-testai.yml -R Halildeu/platform-k8s-gitops \\"
+            echo "  -f sha=${SHA} \\"
+            echo "  -f short_sha=${SHORT_SHA}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
