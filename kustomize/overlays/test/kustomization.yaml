@@ -294,7 +294,52 @@ images:
     #   iter-47c — useFocusRestore deprecation + tabIndex cleanup +
     #     @public API maturity (after 47a + 47b stable)
     #   defer  — Quick Actions (note/force-logout/audit) needs product spec
-    digest: sha256:770d1781057d3e51b91190217aae36f9b0412cd7a06555ed7f6f37dbc3f511b9
+    # 2026-04-30 update: sha-d86f529 — Codex 019dde4e iter-47a.
+    # Sibling isolation for overlay backgrounds. Native `inert` on
+    # root-level siblings while modal-style overlay open. Removes
+    # background from BOTH keyboard tab order AND a11y tree (Tab
+    # Tab leak via non-trapped layers eliminated, screen readers no
+    # longer read background while modal up).
+    #
+    # Engine + hook design (Codex 3 REVISE rounds → AGREE):
+    #   - Hook-free engine helpers: acquireSiblingIsolation /
+    #     releaseSiblingIsolation (test-friendly)
+    #   - React hook: useSiblingIsolation({ active, layerId, panelRef })
+    #   - Global WeakMap<HTMLElement, ElementState> ref count
+    #   - originallyInert captured ONLY on first acquire (prevents
+    #     "A inert → B sees inert → release leaves stale" bug)
+    #   - Root-level containing-subtree exclusion: portal hosts NOT
+    #     inerted (otherwise overlay would inert itself)
+    #   - data-isolation-allowlist for non-modal helpers (live-region,
+    #     toast); narrow scope, NOT a modal-content escape hatch
+    #   - SCRIPT/STYLE/META/LINK always skipped
+    #   - Native `inert` only; NO aria-hidden fallback
+    #   - Browser baseline: Chrome 102+, Safari 15.5+, Firefox 112+
+    #
+    # Wire-up: FormDrawer + DetailDrawer + Drawer call
+    # useSiblingIsolation gated on (open && !disableFocusTrap) —
+    # same opt-out covers BOTH trap + isolation. Popover NOT wired
+    # (non-modal default; modal-style isolation deferred to iter-47b).
+    #
+    # Tests:
+    #   DS:         526 files, 8366 PASS — 11 new contract cases
+    #               (single, nested, sibling, portaled, pre-existing
+    #               inert, out-of-order release, idempotent, allowlist,
+    #               SCRIPT skip, hook activate, hook no-op)
+    #   mfe-users:  44 PASS — unchanged
+    #   mfe-access: 43 PASS — unchanged
+    #   mfe-audit:  74 PASS — unchanged
+    #
+    # Out of scope (Codex deferred to iter-47b/c):
+    #   iter-47b — Layer-aware focus trap + Escape + outside-click
+    #     (event-time isTopLayer check, top-interactive vs top-
+    #     dismissable layer types, opener restore chain test, modal-
+    #     over-popover auto-close policy, portal-root zIndex contract).
+    #     Codex thread 019dde60 currently REVISE; revised plan pending.
+    #   iter-47c — useFocusRestore deprecation + tabIndex={-1} cleanup
+    #     + @public API maturity announce + docs matrix.
+    #   defer  — Quick Actions (note/force-logout/audit) needs product spec
+    digest: sha256:ba69fb0424b3f8866c5e915d02a61de146c8df79a516d15f9a54328904503b0c
 
 patches:
   # Replica 0 default (scale-to-zero)
