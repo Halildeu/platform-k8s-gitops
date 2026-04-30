@@ -257,7 +257,44 @@ images:
     # in UsersGrid.ui.tsx:765 + RoleDrawer same pattern (drawer doesn't
     # open via row dblclick on testai). Test coverage proves DOM render
     # of leading slot independently; UX bug is a separate fix.
-    digest: sha256:0f5cc2da908319b3a930d4f5f4773841ae9a3ed80e7679d3584fbaf6707cc452
+    # 2026-04-30 update: sha-463c143 — Codex 019dde3d iter-46.
+    # Real focus trap rolled out to remaining DS overlay primitives:
+    #   - Drawer (primitive): same iter-45 pattern, useFocusTrap +
+    #     disableFocusTrap escape hatch (default false)
+    #   - Popover (primitive): opt-in enableFocusTrap (default false).
+    #     Non-modal default preserved (Tab can leave, click-outside
+    #     closes); modal-style consumers opt in to wrap-around +
+    #     aria-modal="true".
+    #   - AuditDetailDrawer: consumer-side automatic win, no MFE-side
+    #     change (uses real DS DetailDrawer which got the trap in iter-45)
+    #
+    # New a11y matrix file (overlay-a11y-matrix.test.tsx) locks the
+    # interaction between focus-trap, scroll-lock, escape, outside-
+    # click with 6 deterministic cases. Per Codex review nested overlay
+    # case deferred to iter-47b — stacking contract not finalized.
+    #
+    # Tests (iter-46):
+    #   DS:         525 files, 8355 PASS — 13 new (3 Drawer + 4
+    #               Popover + 6 a11y matrix) + 2 reworked legacy
+    #               (focus-order-audit Drawer cases)
+    #   mfe-audit:  9 files, 74 PASS — 2 new in
+    #               AuditDetailDrawer.focusTrap.spec.tsx (consumer-side
+    #               regression proving auto win)
+    #   mfe-users:  44 PASS — unchanged
+    #   mfe-access: 43 PASS — unchanged
+    #
+    # Out of scope (Codex deferred to iter-47):
+    #   iter-47a — Inert/aria-hidden siblings isolation (single
+    #     behavior PR; engine helper + WeakMap ref-count + root-level
+    #     containing subtree exclusion + 8 test cases — Codex AGREE
+    #     captured in thread 019dde4e)
+    #   iter-47b — Nested overlay stacking + layer-aware trap (escape +
+    #     outside-click + opener restore + portal root + modal-over-
+    #     popover kapanma sırası contract)
+    #   iter-47c — useFocusRestore deprecation + tabIndex cleanup +
+    #     @public API maturity (after 47a + 47b stable)
+    #   defer  — Quick Actions (note/force-logout/audit) needs product spec
+    digest: sha256:770d1781057d3e51b91190217aae36f9b0412cd7a06555ed7f6f37dbc3f511b9
 
 patches:
   # Replica 0 default (scale-to-zero)
