@@ -382,7 +382,15 @@ images:
     #   iter-47c — useFocusRestore deprecation + tabIndex={-1} cleanup
     #     + @public API maturity announce + docs matrix
     #   defer  — Quick Actions (note/force-logout/audit) needs spec
-    digest: sha256:098d1c07b5a33540a0198a558fa2110a6450a6161a718133c2c55615b28860b5
+    #
+    # 2026-04-30 update: sha-64b6f2c — platform-web PR #131 build-time
+    # AG_GRID_LICENSE_KEY injection (Dockerfile ARG/ENV + workflow
+    # secrets.AG_GRID_LICENSE_KEY build-arg). Yeni trial key (AG-127779,
+    # geçerlilik 30 May 2026) GitHub repo secret olarak set; build
+    # sırasında window.__env__'e inject. Önceki host nginx HTML patch
+    # (geçici) bu rebuild ile kalıcı artifact'e taşınır. AG Grid trial
+    # console nag + watermark kalkar.
+    digest: sha256:60dbd3cca0325bdb62b0d8d14b027476f3f0753b664273c9b81cd27a2170950c
 
 patches:
   # Replica 0 default (scale-to-zero)
