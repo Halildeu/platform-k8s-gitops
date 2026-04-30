@@ -73,16 +73,16 @@ RUN curl -sL "https://github.com/actions/runner/releases/download/v${RUNNER_VERS
 RUN /home/runner/bin/installdependencies.sh
 
 # 9. Playwright Chromium preinstall (build-time; runtime'da indirme yok)
-USER runner
-WORKDIR /home/runner
-
 # Codex S4: Gate 2 behavior smoke için Chromium gerek.
-# `npx playwright install chromium --with-deps` runtime'da deps indirmek
-# istiyor (apt-get); build-time'da yapıp `--with-deps` flag'siz yeniden
-# install edersek deps zaten kurulu (yukarıda apt-get'le ekledik).
+# /opt/playwright root olarak oluşturulur + chown runner; npm install -g
+# root yetkisi ister; sonra USER runner switch yapılır.
 RUN mkdir -p /opt/playwright && \
     npm install -g playwright@${PLAYWRIGHT_BROWSERS_VERSION#v} && \
-    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright playwright install chromium
+    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright playwright install chromium && \
+    chown -R runner:runner /opt/playwright
+
+USER runner
+WORKDIR /home/runner
 
 # 10. Entrypoint
 USER root
