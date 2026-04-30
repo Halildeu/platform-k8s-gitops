@@ -1,0 +1,108 @@
+# PrometheusRule — api-gateway SLO warnings (iter-49 B.2)
+#
+# Codex 019ddf43 PARTIAL+AGREE: pre-prod scope, paging receiver netleşmediği
+# için SADECE warning seviye + annotation. Slack/PagerDuty receiver eklenince
+# severity=critical paging rule'ları ayrı PR'da (B.3).
+#
+# Apply: monitoring base kustomize ile (kube-prometheus-stack Prometheus CR
+# ruleSelector `release: kube-prometheus-stack` label match).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: api-gateway-slo-warnings
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack   # Prom Operator selector
+spec:
+  groups:
+    - name: api-gateway.slo-warnings
+      interval: 30s
+      rules:
+        # 5xx error rate per route — server-side downstream client metric
+        # Codex iter-49 B canlı kanıt: http_client_requests_seconds_count
+        # {http_method, http_status_code, spring_cloud_gateway_route_id, ...}
+        # Pre-prod warning threshold: 1 req/min sustained 5xx → not critical
+        # ama dikkat çekici. Prod cutover sonrası threshold sıkılaşır.
+        - alert: ApiGatewayDownstream5xxWarning
+          expr: |
+            sum by (spring_cloud_gateway_route_id) (
+              rate(http_client_requests_seconds_count{
+                job="api-gateway",
+                http_status_code=~"5.."
+              }[5m])
+            ) > 0.0167
+          for: 5m
+          labels:
+            severity: warning
+            component: api-gateway
+            slo_class: error-rate
+          annotations:
+            summary: "api-gateway downstream 5xx rate yüksek ({{ $labels.spring_cloud_gateway_route_id }})"
+            description: "Route '{{ $labels.spring_cloud_gateway_route_id }}' downstream 5xx rate son 5dk {{ $value | humanize }}/s. Pre-prod warning eşiği 1/min."
+            runbook_url: "docs/runbook-api-gateway-slo.md"
+            dashboard_url: "https://ai.acik.com/grafana/d/api-gateway-slo"
+
+        # 4xx error rate (auth fail + client error sinyal) — primary client
+        # error sinyali. Production'da yüksek 4xx genelde frontend buggy
+        # request veya phishing/scanner. Pre-prod sadece warning.
+        - alert: ApiGatewayDownstream4xxWarning
+          expr: |
+            sum by (spring_cloud_gateway_route_id) (
+              rate(http_client_requests_seconds_count{
+                job="api-gateway",
+                http_status_code=~"4.."
+              }[5m])
+            ) > 0.0833
+          for: 5m
+          labels:
+            severity: warning
+            component: api-gateway
+            slo_class: error-rate
+          annotations:
+            summary: "api-gateway downstream 4xx rate yüksek ({{ $labels.spring_cloud_gateway_route_id }})"
+            description: "Route '{{ $labels.spring_cloud_gateway_route_id }}' 4xx rate {{ $value | humanize }}/s (5dk). Pre-prod warning eşiği 5/min — frontend bug veya scanner sinyali."
+            runbook_url: "docs/runbook-api-gateway-slo.md"
+
+        # Latency p99 — downstream histogram_quantile
+        # Pre-prod warning eşiği p99 > 2s sustained 5dk. Production
+        # cutover sonrası SLO target sıkılaşır (p99 < 1s).
+        - alert: ApiGatewayLatencyP99Warning
+          expr: |
+            histogram_quantile(0.99,
+              sum by (spring_cloud_gateway_route_id, le) (
+                rate(http_client_requests_seconds_bucket{job="api-gateway"}[5m])
+              )
+            ) > 2
+          for: 5m
+          labels:
+            severity: warning
+            component: api-gateway
+            slo_class: latency
+          annotations:
+            summary: "api-gateway p99 latency yüksek ({{ $labels.spring_cloud_gateway_route_id }})"
+            description: "Route '{{ $labels.spring_cloud_gateway_route_id }}' p99 latency {{ $value | humanize }}s (5dk). Pre-prod eşiği 2s."
+            runbook_url: "docs/runbook-api-gateway-slo.md"
+
+        # Rate limit exceeded — AuthzGuardFilter 429 sinyal
+        # /api/v1/authz/check rate limit 60/min default. 429 spike → DoS
+        # sinyali veya burst pattern. Pre-prod warning, prod cutover sonrası
+        # adaptive threshold + alarm receiver.
+        - alert: ApiGatewayAuthzRateLimitWarning
+          expr: |
+            sum (
+              rate(http_server_requests_seconds_count{
+                job="api-gateway",
+                status="429"
+              }[5m])
+            ) > 0.167
+          for: 5m
+          labels:
+            severity: warning
+            component: api-gateway
+            slo_class: rate-limit
+          annotations:
+            summary: "api-gateway 429 rate limit aşımı yüksek"
+            description: "/api/v1/authz/* rate limit 429 trigger {{ $value | humanize }}/s (5dk eşik 10/min). DoS veya bot davranışı sinyali."
+            runbook_url: "docs/runbook-api-gateway-slo.md"
