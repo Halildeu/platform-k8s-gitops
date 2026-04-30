@@ -41,13 +41,31 @@ images:
     digest: sha256:c84bc6b04f7f17cc145024d6eeff2c624c52704a259ce843aeea63444da9ed37
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
-    digest: sha256:5e7f0d48bfe080e59034ece9399390e6543c97d13c8e799c4a1bb9d1e9cd0d09
+    # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
+    # iter-42: gateway 503 + JSON body byte-for-byte preservation
+    # (downstream_503_status_and_body_preserved_byteForByte test).
+    # Combined with permission-service ResponseStatusException(503) +
+    # variant-service typed exceptions, end-to-end empty-body race
+    # eliminated. 76/76 GatewaySecurityTest PASS.
+    digest: sha256:a0a48aa9a1adfdbbd83e272c046fef8746a0f597d524ce087034bd9b0806a7c0
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     digest: sha256:df8b84d0cd02d064cf455f40017bd5cb4ca1be271e5e7068afeb36fc4526a7f1
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
-    digest: sha256:4a51a49f1b07cf6e211bff5bd01cc68946a85b522c5d7cc171718ac85d892d13
+    # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
+    # PERMANENT FIX for "/v1/variants 401 with valid JWT" bug:
+    # PermissionServiceAuthzClient now throws typed exceptions instead
+    # of swallowing all errors and returning empty AuthzMeResponse:
+    #   AuthzDependencyUnavailableException → 503 (upstream timeout/5xx)
+    #   AuthzUpstreamInvalidResponseException → 502 (2xx empty/malformed)
+    #   AuthzIdentityResolutionException → 500 (identity invariant broken)
+    # VariantController + V1 replace generic 401 path with proper status
+    # codes per Codex status matrix (401=token-only, 403=permission-denied,
+    # 500/502/503=upstream classes). Cache supplier no longer caches
+    # failures (doesNotCacheUpstreamFailures test proves recovery).
+    # 22/22 variant tests PASS (5 authz + 17 other).
+    digest: sha256:393387a01a5aee3b09e3164eb0611d5ae22f9e7eb9172d03dd5c5402951697e4
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-backend-core-data-service
     digest: sha256:b803507ac6b17240a8cced6878606f2aad7b31856140d6b5071352135babf37f
@@ -115,7 +133,18 @@ images:
     # last-admin protection (409 if leaving zero), audit (SUPER_ADMIN_GRANTED/
     # REVOKED), bootstrap-list warning. 13 controller tests, 261/261 full
     # suite PASS.
-    digest: sha256:60c6358389ea39faa9d3eeeaec49673aeea9cb6d9af01b4aec853e63eda4030d
+    #
+    # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
+    # PERMANENT FIX for empty-body race in /api/v1/authz/me:
+    # AuthorizationControllerV1 catch path was returning
+    #   ResponseEntity.status(503).body(null)
+    # which gateway was forwarding inconsistently (200 + body="" first
+    # call, JSON second call ~1.5s later). Now throws
+    #   ResponseStatusException(SERVICE_UNAVAILABLE,
+    #       "AUTHZ_DEGRADED: authz service degraded; retry", ex)
+    # so status + body are consistent through gateway forward path.
+    # 1264/1264 unit + 13/13 AuthorizationControllerV1Test PASS.
+    digest: sha256:7968fff58c1c806d2a31e851acc246d10d249565ddb5885febc03912ebb44e7d
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
