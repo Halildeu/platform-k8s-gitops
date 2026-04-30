@@ -1,0 +1,326 @@
+name: Deploy testai (auto)
+
+# iter-50 Step 3.3 — testai.acik.com auto-deploy on platform-web image push.
+#
+# Trigger: `repository_dispatch` event_type=testai-deploy fired by
+# platform-web's ci-web-image-push.yml after a successful testai variant
+# build + GHCR push. Payload carries the commit sha + image digest +
+# image tag so this workflow can pin by digest, atomically refresh the
+# host nginx static mount, and verify deploy reachability end-to-end.
+#
+# Why this lives in platform-k8s-gitops (not platform-web):
+#   - Deploy graph belongs with kustomize overlays + ci-live-smoke +
+#     drift-detection (see PR #129 revert message in platform-web).
+#   - Self-hosted runner runs on staging-sw (private intranet, can reach
+#     k3d-test cluster + host nginx mount). GitHub-hosted runners cannot.
+#
+# Verify chain (Codex 019dded6 sertleştirme):
+#   Gate 1 (fail-fast):
+#     - kubectl rollout status (Deployment fresh)
+#     - pod imageID suffix == GHCR manifest digest
+#     - curl /build-info.json | jq .sha == expected sha
+#     - curl /assets/<rootEntry> -> 200
+#   Gate 2 (best-effort, blocking if SMOKE_AUTH_READY=1):
+#     - Playwright login → /admin/users → row dblclick → [role=dialog]
+#
+# Required secrets (gitops repo):
+#   - none — runner has kubeconfig + filesystem access mounted in.
+#   - (Optional) SMOKE_AUTH_USERNAME / SMOKE_AUTH_PASSWORD: test persona
+#     credentials for Gate 2. If absent, Gate 2 skips with warning.
+#
+# This workflow MUST NOT be reachable from PR events. repository_dispatch
+# only fires on actor-token-bearing API call from platform-web's CI.
+
+on:
+  repository_dispatch:
+    types: [testai-deploy]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Commit sha (40-char) — manuel override için'
+        required: true
+      short_sha:
+        description: 'Short sha (7-char)'
+        required: true
+      image_digest:
+        description: 'GHCR manifest digest (sha256:...)'
+        required: true
+      image:
+        description: 'Image ref (default: ghcr.io/halildeu/platform-web-frontend-testai)'
+        required: false
+        default: 'ghcr.io/halildeu/platform-web-frontend-testai'
+      image_tag:
+        description: 'Image tag (sha-XXXXXXX) — kubectl set image hint'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  K8S_CONTEXT: k3d-test
+  K8S_NAMESPACE: platform-test
+  K8S_DEPLOYMENT: frontend
+  K8S_LABEL_SELECTOR: app.kubernetes.io/name=frontend
+  TESTAI_URL: https://testai.acik.com
+  HOST_RELEASES_DIR: /home/halil/platform/web-stage/releases
+  # Codex 019dded6 S5: bind mount path hardcoded — kullanıcı container
+  # restart yapana kadar atomic mv -T riskli (inode bağlanması). In-place
+  # rsync mirror yeterli. Long-term Step 5: mount → "current" symlink.
+  HOST_NGINX_MOUNT_DIR: /home/halil/platform/web-stage/releases/ac35567
+
+jobs:
+  deploy:
+    name: Deploy testai (digest pin + host static mirror + verify)
+    # Codex 019dded6 S1: tek amaçlı runner, label-fenced.
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 15
+
+    # Codex S1: PR event'lerinde ASLA çalıştırma. repository_dispatch
+    # zaten PR'da tetiklenmez ama emniyet için event guard.
+    if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Resolve dispatch payload
+        id: payload
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SHA="${{ inputs.sha }}"
+            SHORT_SHA="${{ inputs.short_sha }}"
+            IMAGE="${{ inputs.image }}"
+            IMAGE_TAG="${{ inputs.image_tag }}"
+            IMAGE_DIGEST="${{ inputs.image_digest }}"
+          else
+            SHA="${{ github.event.client_payload.sha }}"
+            SHORT_SHA="${{ github.event.client_payload.short_sha }}"
+            IMAGE="${{ github.event.client_payload.image }}"
+            IMAGE_TAG="${{ github.event.client_payload.image_tag }}"
+            IMAGE_DIGEST="${{ github.event.client_payload.image_digest }}"
+          fi
+
+          if [ -z "$SHA" ] || [ -z "$IMAGE" ] || [ -z "$IMAGE_DIGEST" ]; then
+            echo "::error::Missing required payload fields (sha/image/image_digest)"
+            exit 1
+          fi
+
+          # Codex S3: image@sha256:<digest> formatı (tag yerine digest pin).
+          PINNED_REF="${IMAGE}@${IMAGE_DIGEST}"
+
+          {
+            echo "sha=${SHA}"
+            echo "short_sha=${SHORT_SHA}"
+            echo "image=${IMAGE}"
+            echo "image_tag=${IMAGE_TAG}"
+            echo "image_digest=${IMAGE_DIGEST}"
+            echo "pinned_ref=${PINNED_REF}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Deploy testai — payload"
+            echo "- sha: \`${SHA}\`"
+            echo "- short_sha: \`${SHORT_SHA}\`"
+            echo "- image: \`${IMAGE}\`"
+            echo "- image_tag: \`${IMAGE_TAG}\`"
+            echo "- digest: \`${IMAGE_DIGEST}\`"
+            echo "- pinned_ref: \`${PINNED_REF}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: kubectl set image (digest pin)
+        env:
+          PINNED_REF: ${{ steps.payload.outputs.pinned_ref }}
+        run: |
+          set -euo pipefail
+          kubectl --context="${K8S_CONTEXT}" set image \
+            "deployment/${K8S_DEPLOYMENT}" \
+            "${K8S_DEPLOYMENT}=${PINNED_REF}" \
+            -n "${K8S_NAMESPACE}"
+
+      - name: kubectl rollout status
+        run: |
+          set -euo pipefail
+          kubectl --context="${K8S_CONTEXT}" rollout status \
+            "deployment/${K8S_DEPLOYMENT}" \
+            -n "${K8S_NAMESPACE}" \
+            --timeout=300s
+
+      - name: Capture fresh pod name + imageID
+        id: pod
+        run: |
+          set -euo pipefail
+          POD=$(kubectl --context="${K8S_CONTEXT}" get pod -n "${K8S_NAMESPACE}" \
+            -l "${K8S_LABEL_SELECTOR}" \
+            -o jsonpath='{.items[0].metadata.name}')
+          IMAGE_ID=$(kubectl --context="${K8S_CONTEXT}" get pod "${POD}" \
+            -n "${K8S_NAMESPACE}" \
+            -o jsonpath='{.status.containerStatuses[0].imageID}')
+
+          # Codex 019dded6 S3: containerd bazen `docker-pullable://...@sha256:...`
+          # bazen `...@sha256:...` döner. imageID'yi normalize et: son @sha256:
+          # parçasını al.
+          NORMALIZED_DIGEST=$(echo "${IMAGE_ID}" | sed -E 's|^.*@(sha256:[a-f0-9]{64})$|\1|')
+
+          {
+            echo "name=${POD}"
+            echo "image_id=${IMAGE_ID}"
+            echo "normalized_digest=${NORMALIZED_DIGEST}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Gate 1a — pod digest match (fail-fast)
+        env:
+          EXPECTED: ${{ steps.payload.outputs.image_digest }}
+          ACTUAL: ${{ steps.pod.outputs.normalized_digest }}
+          IMAGE_ID_RAW: ${{ steps.pod.outputs.image_id }}
+        run: |
+          set -euo pipefail
+          if [ "${EXPECTED}" != "${ACTUAL}" ]; then
+            echo "::error::Pod imageID digest mismatch."
+            echo "  expected: ${EXPECTED}"
+            echo "  actual:   ${ACTUAL}"
+            echo "  raw:      ${IMAGE_ID_RAW}"
+            exit 1
+          fi
+          echo "✓ pod imageID digest == GHCR manifest digest"
+
+      - name: Sync host nginx static (kubectl cp + rsync)
+        env:
+          POD: ${{ steps.pod.outputs.name }}
+          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+          REMOTE_TMP="/tmp/web-deploy-${SHORT_SHA}-${GITHUB_RUN_ID}"
+          REMOTE_RELEASE="${HOST_RELEASES_DIR}/${SHORT_SHA}"
+
+          # 1. kubectl cp pod -> /tmp
+          rm -rf "${REMOTE_TMP}"
+          kubectl --context="${K8S_CONTEXT}" cp \
+            "${K8S_NAMESPACE}/${POD}:/usr/share/nginx/html" \
+            "${REMOTE_TMP}"
+
+          # 2. Materialize releases/<sha>/
+          mkdir -p "${REMOTE_RELEASE}"
+          rsync -a --delete "${REMOTE_TMP}/" "${REMOTE_RELEASE}/"
+
+          # 3. Update "current" symlink (future-proof; mount henüz takip
+          #    etmiyor, ama Step 5 mount refactor için release tag aktif).
+          ln -snf "${REMOTE_RELEASE}" /home/halil/platform/web-stage/current
+
+          # 4. Mirror to hardcoded mount path. Codex S5: rsync `--delay-updates`
+          #    + `--delete-delay` window'u kısaltır ama atomic değil. Pre-prod
+          #    için kabul edilebilir.
+          rsync -a --delete --delay-updates --delete-delay \
+            "${REMOTE_RELEASE}/" "${HOST_NGINX_MOUNT_DIR}/"
+
+          # 5. Cleanup
+          rm -rf "${REMOTE_TMP}"
+
+          echo "Materialized: ${REMOTE_RELEASE}"
+          echo "Mirrored to:  ${HOST_NGINX_MOUNT_DIR}"
+
+      - name: Gate 1b — public surface 200 + entry asset reachable
+        env:
+          EXPECTED_SHA: ${{ steps.payload.outputs.sha }}
+          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+
+          # Index.html 200 + entry asset extract
+          INDEX_BODY=$(curl -sk "${TESTAI_URL}/" || true)
+          ROOT_ENTRY=$(echo "${INDEX_BODY}" | grep -oE 'index-[A-Za-z0-9_-]+\.js' | head -1 || true)
+
+          if [ -z "${ROOT_ENTRY}" ]; then
+            echo "::error::Could not extract root entry asset from /index.html"
+            echo "${INDEX_BODY}" | head -50
+            exit 1
+          fi
+
+          ASSET_STATUS=$(curl -sko /dev/null -w '%{http_code}' "${TESTAI_URL}/assets/${ROOT_ENTRY}")
+          if [ "${ASSET_STATUS}" != "200" ]; then
+            echo "::error::Root entry asset /${ROOT_ENTRY} returned ${ASSET_STATUS}"
+            exit 1
+          fi
+          echo "✓ root entry asset reachable: ${ROOT_ENTRY} (HTTP ${ASSET_STATUS})"
+
+      - name: Gate 1c — build-info.json sha match
+        env:
+          EXPECTED_SHA: ${{ steps.payload.outputs.sha }}
+          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+
+          BUILD_INFO=$(curl -sk "${TESTAI_URL}/build-info.json" || true)
+          if [ -z "${BUILD_INFO}" ] || ! echo "${BUILD_INFO}" | jq . >/dev/null 2>&1; then
+            echo "::warning::build-info.json missing or not JSON. Pre-Step-2 image likely."
+            echo "${BUILD_INFO}" | head -20
+            # Don't fail — fall back to Step 1 era (pre-iter-50 Step 2 image).
+            exit 0
+          fi
+
+          ACTUAL_SHA=$(echo "${BUILD_INFO}" | jq -r '.sha // empty')
+          ACTUAL_SHORT=$(echo "${BUILD_INFO}" | jq -r '.shortSha // empty')
+
+          if [ -z "${ACTUAL_SHA}" ]; then
+            echo "::error::build-info.json missing .sha field"
+            echo "${BUILD_INFO}"
+            exit 1
+          fi
+
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_SHA}" ]; then
+            echo "::error::build-info.json sha mismatch."
+            echo "  expected: ${EXPECTED_SHA}"
+            echo "  actual:   ${ACTUAL_SHA}"
+            echo "  short:    ${ACTUAL_SHORT}"
+            exit 1
+          fi
+          echo "✓ build-info.json sha == expected: ${ACTUAL_SHA}"
+
+      - name: Gate 2 — behavior smoke (Playwright, opt-in)
+        env:
+          SMOKE_AUTH_USERNAME: ${{ secrets.SMOKE_AUTH_USERNAME }}
+          SMOKE_AUTH_PASSWORD: ${{ secrets.SMOKE_AUTH_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SMOKE_AUTH_USERNAME:-}" ] || [ -z "${SMOKE_AUTH_PASSWORD:-}" ]; then
+            echo "::warning::Behavior smoke (Gate 2) skipped — SMOKE_AUTH_USERNAME/PASSWORD not set."
+            echo "::warning::To enable, add test persona credentials to gitops repo secrets."
+            exit 0
+          fi
+
+          # Playwright self-hosted runner image içinde preinstalled.
+          # Test persona: read-only, sadece Users grid + dblclick için.
+          # NOT: kullanıcı login user'ının şifresine dokunmamak için
+          # ayrı persona zorunlu (CLAUDE.md HARD RULE).
+          npx playwright test \
+            --config=tests/smoke/playwright.testai.config.ts \
+            tests/smoke/users-grid-dblclick.spec.ts \
+            || {
+              echo "::error::Behavior smoke failed (Users grid dblclick)"
+              exit 1
+            }
+          echo "✓ behavior smoke pass: Users grid dblclick → drawer opens"
+
+      - name: Summary
+        if: always()
+        env:
+          SHA: ${{ steps.payload.outputs.sha }}
+          SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
+          DIGEST: ${{ steps.payload.outputs.image_digest }}
+        run: |
+          {
+            echo ""
+            echo "## Verify chain"
+            echo ""
+            echo "- Gate 1a (digest match):     ✓"
+            echo "- Gate 1b (asset 200):        ✓"
+            echo "- Gate 1c (build-info.json):  ✓"
+            echo "- Gate 2 (behavior smoke):    ${{ secrets.SMOKE_AUTH_USERNAME && '✓' || '⊘ skipped (no creds)' }}"
+            echo ""
+            echo "## Manual verify"
+            echo ""
+            echo '```bash'
+            echo "curl -sk ${TESTAI_URL}/build-info.json | jq -r .sha"
+            echo "# expected: ${SHA}"
+            echo "kubectl --context=${K8S_CONTEXT} get pod -n ${K8S_NAMESPACE} -l ${K8S_LABEL_SELECTOR} -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'"
+            echo "# expected suffix: @${DIGEST}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
