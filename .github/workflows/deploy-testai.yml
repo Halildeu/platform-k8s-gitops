@@ -147,70 +147,25 @@ jobs:
             -n "${K8S_NAMESPACE}" \
             --timeout=300s
 
-      - name: Capture fresh pod name + imageID
-        id: pod
-        run: |
-          set -euo pipefail
-          # iter-49 frontend deploy race fix: rolling update sırasında
-          # eski (terminating) + yeni (ready) pod aynı anda label
-          # selector'a match olabilir. items[0] ALFAbetik veya
-          # creationTimestamp asc sıralı dönerken eski pod'u alır →
-          # Gate 1a digest mismatch (run 25186593450 ölçümü).
-          #
-          # PR #298 v1 hatası (run 25186907768): deletionTimestamp
-          # filter `@.metadata.deletionTimestamp == ""` kubectl jsonpath
-          # syntax'ında alan UNSET olduğunda match etmiyor (k8s API
-          # eksik alan döndürür, "" değil). Tüm Running pod'lar
-          # filtrelendi → empty.
-          #
-          # PR #298 v2 düzeltme: jq ile filtreleme. Pod listesi JSON
-          # olarak çekilir, jq ile (a) phase=Running ve (b)
-          # deletionTimestamp eksik veya null olanı seç, sonra
-          # creationTimestamp asc sıralı son item'ı al. Bu kubectl
-          # jsonpath limitleri olmadan exact eşleme verir.
-          POD=$(kubectl --context="${K8S_CONTEXT}" get pod -n "${K8S_NAMESPACE}" \
-            -l "${K8S_LABEL_SELECTOR}" \
-            --field-selector=status.phase=Running \
-            -o json \
-            | jq -r '.items
-                | map(select(.metadata.deletionTimestamp == null))
-                | sort_by(.metadata.creationTimestamp)
-                | last
-                | .metadata.name // empty')
-          if [ -z "${POD}" ]; then
-            echo "::error::No live (Running + non-terminating) pod found for selector ${K8S_LABEL_SELECTOR}"
-            exit 1
-          fi
-          IMAGE_ID=$(kubectl --context="${K8S_CONTEXT}" get pod "${POD}" \
-            -n "${K8S_NAMESPACE}" \
-            -o jsonpath='{.status.containerStatuses[0].imageID}')
+      # Sprint "Prod post-cutover compliance" PR-1: shared verify-pod-digest.sh
+      # helper kullanımı. Multi-replica strict mode (testai replicas=1 →
+      # trivial single-pod doğrulama; aynı helper prod replicas=2'de tüm
+      # pod'ları doğrular). Eski Capture+Gate 1a iki step'i tek "Gate 1a"
+      # step'inde birleşti; race fix, format check, mismatch reporting
+      # helper içinde.
+      - name: Checkout (for verify-pod-digest helper)
+        uses: actions/checkout@v6
 
-          # Codex 019dded6 S3: containerd bazen `docker-pullable://...@sha256:...`
-          # bazen `...@sha256:...` döner. imageID'yi normalize et: son @sha256:
-          # parçasını al.
-          NORMALIZED_DIGEST=$(echo "${IMAGE_ID}" | sed -E 's|^.*@(sha256:[a-f0-9]{64})$|\1|')
-
-          {
-            echo "name=${POD}"
-            echo "image_id=${IMAGE_ID}"
-            echo "normalized_digest=${NORMALIZED_DIGEST}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Gate 1a — pod digest match (fail-fast)
+      - name: Gate 1a — pod digest match (fail-fast, multi-replica safe)
         env:
           EXPECTED: ${{ steps.payload.outputs.image_digest }}
-          ACTUAL: ${{ steps.pod.outputs.normalized_digest }}
-          IMAGE_ID_RAW: ${{ steps.pod.outputs.image_id }}
         run: |
           set -euo pipefail
-          if [ "${EXPECTED}" != "${ACTUAL}" ]; then
-            echo "::error::Pod imageID digest mismatch."
-            echo "  expected: ${EXPECTED}"
-            echo "  actual:   ${ACTUAL}"
-            echo "  raw:      ${IMAGE_ID_RAW}"
-            exit 1
-          fi
-          echo "✓ pod imageID digest == GHCR manifest digest"
+          ./scripts/deploy/verify-pod-digest.sh \
+            --context "${K8S_CONTEXT}" \
+            --namespace "${K8S_NAMESPACE}" \
+            --selector "${K8S_LABEL_SELECTOR}" \
+            --expected-digest "${EXPECTED}"
 
       # iter-50 Step 5 B (Tier 2 cleanup): "Sync host nginx static" step
       # KALDIRILDI. Edge proxy nginx (host-compose/proxy) zaten

@@ -92,6 +92,13 @@ jobs:
       # @sha256:<digest> direct pin (D30 immutable cutover-ready);
       # yoksa tag-based set image + pod imageID verification fallback
       # (skopeo bypass continue, mevcut davranış).
+      #
+      # Sprint "Prod post-cutover compliance" PR-1: digest-pin mode
+      # assertion artık scripts/deploy/verify-pod-digest.sh helper'ını
+      # kullanır (multi-replica strict mode ortak helper).
+      - name: Checkout (for verify-pod-digest helper)
+        uses: actions/checkout@v6
+
       - name: Sequential kubectl set image (digest-pin or tag-based)
         id: rollout
         env:
@@ -211,44 +218,48 @@ jobs:
               -n "${K8S_NAMESPACE}" \
               --timeout=180s
 
-            # Codex 019de00f PARTIAL #1: items[0] race fix.
-            # maxSurge=0/maxUnavailable=1 ile eski pod terminate edilirken
-            # kısa pencerede her iki pod label match edebilir; items[0]
-            # creationTimestamp asc → eski pod döner. Frontend deploy
-            # workflow PR #299 jq pattern'i ile aynı non-terminating
-            # Running pod + en yeni filtreleme.
-            POD=$(kubectl --context="${K8S_CONTEXT}" get pod \
-              -n "${K8S_NAMESPACE}" \
-              -l "app.kubernetes.io/name=${svc}" \
-              --field-selector=status.phase=Running \
-              -o json \
-              | jq -r '.items
-                  | map(select(.metadata.deletionTimestamp == null))
-                  | sort_by(.metadata.creationTimestamp)
-                  | last
-                  | .metadata.name // empty')
-            if [ -z "${POD}" ]; then
-              echo "::error::${svc} no live (Running + non-terminating) pod found"
-              exit 1
-            fi
-            RAW_ID=$(kubectl --context="${K8S_CONTEXT}" get pod "${POD}" \
-              -n "${K8S_NAMESPACE}" \
-              -o jsonpath='{.status.containerStatuses[0].imageID}')
-            NORMALIZED=$(echo "${RAW_ID}" | sed -E 's|^.*@(sha256:[a-f0-9]{64})$|\1|')
+            if [ "${DIGEST_MODE}" = "true" ]; then
+              # Digest-pin mode: shared helper (multi-replica strict mode).
+              # Tüm non-terminating Running pod'lar expected digest ile
+              # eşleşmeli. Tek pod (testai replicas=1) için trivially geçer;
+              # prod replicas=2 için her iki pod doğrulanır.
+              ./scripts/deploy/verify-pod-digest.sh \
+                --context "${K8S_CONTEXT}" \
+                --namespace "${K8S_NAMESPACE}" \
+                --selector "app.kubernetes.io/name=${svc}" \
+                --expected-digest "${DIGEST}"
+              # Helper success → record digest in summary
+              NORMALIZED="${DIGEST}"
+            else
+              # Tag-based fallback: pod imageID extract + record (no
+              # expected digest to verify against). Inline pattern korunur;
+              # newest non-terminating Running pod seçilir.
+              POD=$(kubectl --context="${K8S_CONTEXT}" get pod \
+                -n "${K8S_NAMESPACE}" \
+                -l "app.kubernetes.io/name=${svc}" \
+                --field-selector=status.phase=Running \
+                -o json \
+                | jq -r '.items
+                    | map(select(.metadata.deletionTimestamp == null))
+                    | sort_by(.metadata.creationTimestamp)
+                    | last
+                    | .metadata.name // empty')
+              if [ -z "${POD}" ]; then
+                echo "::error::${svc} no live (Running + non-terminating) pod found"
+                exit 1
+              fi
+              RAW_ID=$(kubectl --context="${K8S_CONTEXT}" get pod "${POD}" \
+                -n "${K8S_NAMESPACE}" \
+                -o jsonpath='{.status.containerStatuses[0].imageID}')
+              NORMALIZED=$(echo "${RAW_ID}" | sed -E 's|^.*@(sha256:[a-f0-9]{64})$|\1|')
 
-            if [ -z "${NORMALIZED}" ] || [[ "${NORMALIZED}" != sha256:* ]]; then
-              echo "::error::${svc} pod imageID format unexpected: ${RAW_ID}"
-              exit 1
+              if [ -z "${NORMALIZED}" ] || [[ "${NORMALIZED}" != sha256:* ]]; then
+                echo "::error::${svc} pod imageID format unexpected: ${RAW_ID}"
+                exit 1
+              fi
+              echo "✓ ${svc} pod imageID resolved: ${NORMALIZED}"
             fi
 
-            # Digest-pin mode: payload digest == pod imageID assertion
-            # (her iki taraf @sha256:<hash> aynı olmalı; D30 invariant)
-            if [ "${DIGEST_MODE}" = "true" ] && [ "${NORMALIZED}" != "${DIGEST}" ]; then
-              echo "::error::${svc} digest mismatch — payload=${DIGEST} pod=${NORMALIZED}"
-              exit 1
-            fi
-
-            echo "✓ ${svc} pod imageID resolved: ${NORMALIZED}"
             echo "| ${svc} | \`${NORMALIZED}\` |" >> "$GITHUB_STEP_SUMMARY"
           done
 
