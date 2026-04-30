@@ -58,7 +58,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     rm -rf /var/lib/apt/lists/*
 
 # 6. Runner kullanıcısı
-RUN useradd -m -s /bin/bash runner && \
+# UID 1001 host halil ile uyumlu (kubeconfig + releases bind mount permission)
+RUN useradd -u 1001 -m -s /bin/bash runner && \
     usermod -aG sudo runner && \
     echo "runner ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/runner
 
