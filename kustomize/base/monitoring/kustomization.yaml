@@ -19,6 +19,7 @@ resources:
   - backup-freshness-rule.yaml    # Codex iter-8 day-2 ek — backup_last_success metric + 5 alert
   - dr-drill-rule.yaml            # Session 28 paralel cleanup (c) — dr_drill_last_run_* metric + 4 alert (PLAN.md D23 quarterly)
   - recording-rules.yaml          # Pre-compute expensive PromQL (Grafana + alert hızlandırma)
+  - api-gateway-slo-rule.yaml     # iter-49 B.2 — api-gateway SLO warning rules (4 alert, dev-observable)
   # Grafana dashboard ConfigMap'ler — kube-prometheus-stack sidecar provisioner
   # otomatik import (label grafana_dashboard=1). Helm values
   # helm-values/kube-prometheus-stack/values.yaml sidecar.dashboards.enabled: true.
