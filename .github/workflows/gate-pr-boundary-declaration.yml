@@ -63,7 +63,7 @@ jobs:
 
       - name: Upload BG-1 report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bg-1-boundary-declaration-report
           path: /tmp/bg-1-report.json
