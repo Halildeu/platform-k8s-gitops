@@ -196,6 +196,45 @@ images:
     # existing colored badges in tags. is_system stays in tags, NOT
     # leading (Codex semantic split).
     #
+    # 2026-04-30 update: sha-8de6c9d — Codex 019dde20 iter-45.
+    # REAL focus trap for DS drawers. Pre-iter-45 trap was "fake":
+    # panel tabIndex={-1} + one-shot panel.focus() but NO Tab keydown
+    # handler — Tab from the close button leaked to the address bar.
+    # iter-45 wires the existing useFocusTrap hook into FormDrawer +
+    # DetailDrawer:
+    #   - Tab/Shift+Tab wrap at the panel boundary (Close → b1 → b2
+    #     → ... → Close) instead of leaking outside.
+    #   - autoFocus moves focus to the first focusable on activation
+    #     (close button by DOM order — header renders before body).
+    #   - restoreFocus to the previously focused element on close.
+    #   - Per-keydown DOM scan picks up dynamically added focusable
+    #     elements (form fields appearing while open).
+    #   - New `disableFocusTrap?: boolean` escape hatch (default
+    #     `false` — a11y baseline kept; opt-out makes bypass explicit).
+    #
+    # DS hook hardened: `offsetParent === null` hidden check (browser-
+    # layout dependent, jsdom-broken) replaced with
+    # `getComputedStyle/hidden` based isHidden(). Environment-portable.
+    #
+    # Tests:
+    #   DS:         524 files, 8344 PASS — 17 new in
+    #               focus-trap.contract.test.tsx (wrap, autoFocus,
+    #               restore, dynamic, hidden, inert, empty, wrapper)
+    #               + 5 new in FormDrawer + DetailDrawer
+    #               (boundary wrap-around + autoFocus + disableFocusTrap)
+    #   mfe-users:  44 PASS — unchanged
+    #   mfe-access: 43 PASS — unchanged
+    #
+    # Out of scope (Codex deferred):
+    #   iter-46 — Drawer + Popover wire-up; MFE smoke (UserDetailDrawer
+    #     + RoleDrawer + AuditDetailDrawer); a11y matrix (focus +
+    #     scroll-lock + escape + outside-click combination).
+    #   iter-47 — Inert/aria-hidden siblings isolation; cleanup
+    #     tabIndex={-1} workarounds; useFocusRestore deprecation;
+    #     `@public` API maturity.
+    #   defer  — Quick Actions (note/force-logout/audit) — needs
+    #     product spec.
+    #
     # Tests (iter-43 + iter-44 cumulative):
     #   DS:         524 files, 8324 PASS — 7 new in iter-44
     #               (6 leading slot contract + 1 a11y axe)
@@ -218,7 +257,7 @@ images:
     # in UsersGrid.ui.tsx:765 + RoleDrawer same pattern (drawer doesn't
     # open via row dblclick on testai). Test coverage proves DOM render
     # of leading slot independently; UX bug is a separate fix.
-    digest: sha256:dcb7cf719efd09e3c38cc389ff40ce447b353dd143068710ea1d99ff8261ff2f
+    digest: sha256:0f5cc2da908319b3a930d4f5f4773841ae9a3ed80e7679d3584fbaf6707cc452
 
 patches:
   # Replica 0 default (scale-to-zero)
