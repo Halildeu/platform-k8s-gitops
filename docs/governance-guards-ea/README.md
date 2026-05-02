@@ -12,16 +12,18 @@
 
 ADR-0011 governance layer pattern (DD-1..DD-4 + BG-1) ile uyumlu, endpoint-admin domain için analog (DD-EA-1..7 + BG-EA-1).
 
-| Guard | Hedef | Trigger | Implementasyon (post-sprint) |
+**Repo dağılımı (PR-8b user 2026-05-02 fill-in)**: endpoint-admin domain 4 component / 4 repo'ya yayılıyor; her guard ilgili repo CI'sında implement edilir.
+
+| Guard | Hedef | Repo + Trigger | Implementasyon (post-sprint) |
 |---|---|---|---|
-| **DD-EA-1** | Manifest contract drift (kustomize render bytes) | `pull_request` paths `kustomize/base/apps/endpoint-admin-service/**` | `.github/workflows/gate-drift-endpoint-admin-manifest.yml` (planned) |
-| **DD-EA-2** | OpenFGA tuple writer YALNIZ permission-service | `pull_request` paths Go source `*.go` (endpoint-admin repo) | Cross-repo guard, endpoint-admin repo CI'da; BG-EA-1 koordine |
-| **DD-EA-3** | Image digest pin (deploy workflow strict mode) | deploy-endpoint-admin-prod.yml workflow | ADR-0011 D30 ile uyumlu, helper `verify-pod-digest.sh` reuse |
-| **DD-EA-4** | Code signing verify (cosign verify on deploy) | deploy-endpoint-admin-prod.yml workflow step | Azure Trusted Signing default (ADR-0012-EA §Code signing) |
-| **DD-EA-5** | Vault secret path allowlist (`kv/platform/endpoint-admin/*`) | ESO ExternalSecret CR PR check | `gate-drift-eso-endpoint-admin-secret-paths.yml` (planned) |
-| **DD-EA-6** | Destructive command audit log immutable | endpoint-admin repo runtime test (Go integration) | Cross-repo, audit retention 365d |
-| **DD-EA-7** | Identity discovery PII boundary (no PII in logs) | endpoint-admin repo unit/integration tests | Cross-repo, gitleaks + custom matcher |
-| **BG-EA-1** | Per-PR boundary declaration (ADR-0011 BG-1 analog) | Both endpoint-admin repo + gitops repo PR'ları | gitops mevcut `gate-pr-boundary-declaration.yml` reuse + endpoint-admin repo'da paralel |
+| **DD-EA-1** | Manifest contract drift (kustomize render bytes) | `platform-k8s-gitops` `pull_request` paths `kustomize/base/apps/endpoint-admin-service/**` | `.github/workflows/gate-drift-endpoint-admin-manifest.yml` (planned, bu repo) |
+| **DD-EA-2** | OpenFGA tuple writer YALNIZ permission-service (cross-service tuple discipline) | `platform-backend` `pull_request` paths `endpoint-admin-service/**/*.go` | platform-backend monorepo guard (mevcut DD-5 pattern reuse) |
+| **DD-EA-3** | Image digest pin (deploy workflow strict mode) | `platform-k8s-gitops` `deploy-endpoint-admin-prod.yml` workflow | ADR-0011 D30 ile uyumlu, helper `verify-pod-digest.sh` reuse (PR #304) |
+| **DD-EA-4** | Code signing verify (cosign verify on deploy + Authenticode 22.2+) | `platform-k8s-gitops` deploy workflow + `platform-agent` build pipeline | Azure Trusted Signing default; runtime cosign verify deploy workflow + ConfigMap `COSIGN_KEY_REF` public key (Azure KMS URI). 22.1 lab `lab-only-evidence` flag kabul. **Private key Vault/ESO DEĞİL** — supply-chain RoT, build-time CI pipeline |
+| **DD-EA-5** | Vault secret path allowlist (`kv/platform/endpoint-admin/*` only) | `platform-k8s-gitops` ESO ExternalSecret CR PR check | `gate-drift-eso-endpoint-admin-secret-paths.yml` (planned). Allowlist: oidc-client-secret, audit-log-dsn, ad-bind-credentials, entra-app-credentials (22.3+), internal-api-key, agent-enrollment-secret. Code signing key NOT in allowlist (supply-chain pipeline) |
+| **DD-EA-6** | Destructive command audit log immutable | `platform-backend` runtime integration test + `platform-k8s-gitops` audit log retention configmap | Cross-repo, audit retention 365d. backend integration test (Go test), gitops manifest config |
+| **DD-EA-7** | Identity discovery PII boundary (no PII in logs) | `platform-backend` + `platform-agent` + `platform-web/apps/mfe-endpoint-admin/` (paralel guard her repo'da) | gitleaks + custom matcher (per-repo CI). 22.1 + 22.2 scope sadece acik.local discovery; future Entra/M365 (22.3+) |
+| **BG-EA-1** | Per-PR boundary declaration (ADR-0011 BG-1 analog) | Both `platform-backend` + `platform-agent` + `platform-web` + `platform-k8s-gitops` (4 repo) | gitops mevcut `gate-pr-boundary-declaration.yml` reuse + diğer 3 repo'da paralel implementation |
 
 ## Implementasyon sırası (post-sprint)
 

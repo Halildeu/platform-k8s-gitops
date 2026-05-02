@@ -24,26 +24,39 @@ data:
   AUTHZ_USER_TABLE: "users"
 
   # Identity / OIDC — overlay sets realm
+  # PR-8b düzeltme (user 2026-05-02): prod realm 'serban' (Keycloak built-in
+  # 'master' realm KULLANILMAYACAK), test realm 'platform-test'.
   KEYCLOAK_ISSUER_URI: "OVERLAY_MUST_OVERRIDE"
   KEYCLOAK_JWKS_URI: "OVERLAY_MUST_OVERRIDE"
-  ADMIN_AUTH_CLIENT_ID: "endpoint-admin-portal"
+  ADMIN_AUTH_CLIENT_ID: "endpoint-admin-portal"  # opsiyonel ayrı client; web shell mevcut client reuse edebilir
 
   # Audit / immutable storage (DD-EA-6)
   AUDIT_LOG_BACKEND: "OVERLAY_MUST_OVERRIDE"  # postgres/clickhouse/loki — pilot tier kararı
   AUDIT_LOG_RETENTION_DAYS: "365"
 
   # Pilot tier (ADR-0012-EA §Pilot tier matrisi)
-  PILOT_TIER: "OVERLAY_MUST_OVERRIDE"  # lab|pilot|restricted — test=lab, prod kullanıcı kararı
+  # PR-8b düzeltme: 22.1 Lab → 22.2 IT-owned acik.local → 22.3 Restricted
+  # 22.1 + 22.2 scope: SADECE acik.local; BOREAS + CESS Faz 22 dışı
+  PILOT_TIER: "OVERLAY_MUST_OVERRIDE"  # lab|it-pilot|restricted — test=lab, prod 22.2 başlangıçta=it-pilot
 
-  # Identity discovery (Faz 22.1 lab; Faz 22.2/22.3 sub-faz aktif eder)
+  # Identity discovery scope (Faz 22.1 lab + 22.2 acik.local pilot)
+  # PR-8b düzeltme: 22.3+'a kadar SADECE acik.local; Entra/M365 future expansion
   DISCOVERY_LOCAL_WINDOWS_ENABLED: "false"
-  DISCOVERY_AD_ENABLED: "false"
-  DISCOVERY_ENTRA_ENABLED: "false"
-  DISCOVERY_M365_ENABLED: "false"
+  DISCOVERY_AD_ACIK_LOCAL_ENABLED: "false"  # 22.2'den itibaren overlay'de true
+  DISCOVERY_AD_BOREAS_ENABLED: "false"      # Faz 22.3+ (out of initial scope)
+  DISCOVERY_AD_CESS_ENABLED: "false"        # Faz 22.3+ (out of initial scope)
+  DISCOVERY_ENTRA_ENABLED: "false"          # Faz 22.3+ (BOREAS/CESS hibrit gerek)
+  DISCOVERY_M365_ENABLED: "false"           # Faz 22.3+ (aynı)
 
   # Code signing verify (DD-EA-4)
+  # PR-8b düzeltme (user 2026-05-02): COSIGN_KEY_REF SADECE public key reference
+  # (Azure KMS URI gibi). Private key Vault/ESO runtime secret değil; build-time
+  # CI pipeline supply-chain RoT (platform-agent + platform-backend CI workflow).
+  # Runtime cosign verify deploy workflow + bu reference ile public key check.
   COSIGN_VERIFY_ENABLED: "true"
-  COSIGN_KEY_REF: "OVERLAY_MUST_OVERRIDE"  # azure-kms://... — Azure Trusted Signing default
+  COSIGN_KEY_REF: "OVERLAY_MUST_OVERRIDE"  # azure-kms://<uri> — Azure Trusted Signing public key ref
+  # 22.1 lab tier: lab-only-evidence imza kabul (self-signed flag)
+  COSIGN_LAB_ONLY_EVIDENCE: "false"  # 22.1 overlay'de true; 22.2+ false
 
   # Logging
   LOG_LEVEL: "INFO"
