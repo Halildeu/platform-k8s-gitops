@@ -1,0 +1,64 @@
+{
+  "_comment": "Faz 22.1.1 BE-009 OpenFGA tuple seed — endpoint-admin-service test overlay live smoke için.",
+  "_purpose": "Test admin subject + organization:default tuple seed. Wildcard YASAK; specific subject:object explicit assignment.",
+  "_scope": "test-only bootstrap exception (Codex 019de00f revize: tuple writer permission-service onaylı bootstrap yolundan; doğrudan OpenFGA seed job tutmamak için).",
+  "_reference": "ADR-0012-EA: docs/adr/0012-EA-endpoint-admin-governance-charter.md (DD-EA-2 OpenFGA tuple writer YALNIZ permission-service)",
+  "_invariants": [
+    "Wildcard subject (user:*) YASAK — explicit user IDs only",
+    "Production realm 'serban' tuple SET edilmez (test=platform-test only)",
+    "Test admin subject = numeric user ID (mock IT admin persona, prod kullanıcısı DEĞİL)",
+    "Idempotent: aynı tuple iki kez yazılırsa OpenFGA no-op (writeTuple semantic)"
+  ],
+  "_apply_via": "permission-service admin OpenFGA bootstrap endpoint (BE-009 final config'da exposed). Doğrudan OpenFGA gRPC/REST kullanma (DD-EA-2 boundary).",
+  "model": "endpoint-admin module relation set (define endpoint, policy, command, inventory, audit + can_view, can_assign, can_execute, can_signoff, can_revoke)",
+
+  "tuples": [
+    {
+      "_role": "endpoint admin (test persona) — full module access",
+      "user": "user:9001",
+      "relation": "admin",
+      "object": "module:endpoint-admin"
+    },
+    {
+      "_role": "endpoint admin (test persona) — organization member",
+      "user": "user:9001",
+      "relation": "admin",
+      "object": "organization:default"
+    },
+    {
+      "_role": "endpoint viewer (test persona) — read-only access",
+      "user": "user:9002",
+      "relation": "viewer",
+      "object": "module:endpoint-admin"
+    },
+    {
+      "_role": "endpoint viewer (test persona) — organization member",
+      "user": "user:9002",
+      "relation": "member",
+      "object": "organization:default"
+    }
+  ],
+
+  "smoke_checks": [
+    {
+      "description": "Test admin (user:9001) /api/v1/admin/endpoints allow",
+      "expected": true,
+      "check": {"user": "user:9001", "relation": "admin", "object": "module:endpoint-admin"}
+    },
+    {
+      "description": "Test admin (user:9001) organization:default admin allow",
+      "expected": true,
+      "check": {"user": "user:9001", "relation": "admin", "object": "organization:default"}
+    },
+    {
+      "description": "Test viewer (user:9002) admin module DENY (sadece viewer)",
+      "expected": false,
+      "check": {"user": "user:9002", "relation": "admin", "object": "module:endpoint-admin"}
+    },
+    {
+      "description": "Unauthenticated user (user:0) admin module DENY",
+      "expected": false,
+      "check": {"user": "user:0", "relation": "admin", "object": "module:endpoint-admin"}
+    }
+  ]
+}
