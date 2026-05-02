@@ -233,22 +233,138 @@ ADR-0011 analog:
 
 Yani: **probe-based evidence + IT review/sign-off** — tek tarafa bağımlı değil.
 
-## 22.1 sub-track scope (PR-8c clarify)
+## 22.1 sub-track scope (PR-8c clarify + PR-8d Codex revize)
 
-**Önemli düzeltme**: 22.1 sıfırdan skeleton DEĞİL. Backend ve agent için mevcut state'ler var; 22.1 lab/release **hardening** + integration smoke hazırlığı yapılır.
+**Önemli düzeltme** (PR-8c): 22.1 sıfırdan skeleton DEĞİL. Backend ve agent için mevcut state'ler var; 22.1 lab/release **hardening** + integration smoke hazırlığı yapılır.
+
+**Codex revize sertleştirmesi** (PR-8d, thread `019de00f`): Sub-faz milestone numaralama + ephemeral signing pattern + 22.1 invariantları + 22.2 pre-req docs çerçevesi.
+
+### Sub-faz milestone'ları (Codex sırası)
+
+| Milestone | Konu | Önkoşul |
+|---|---|---|
+| **22.1.0** | **Agent CI/release foundation** (mandatory ilk) — go test + cross-build + paket + lab-only-evidence imza + BG-EA-1 + gitleaks + SBOM + release dry-run | — |
+| **22.1.1** | BE-009 OpenFGA live (Up + Functional + Secured ayrı kanıt; admin allow/deny + unauthenticated deny + tuple/model seed + gateway behavior + audit trace) | — |
+| **22.1.2** | BE-013 maintenance token live (token issuance/validation/expiry/deny/audit; OpenFGA ile çakışmayan bakım yetki modeli) | BE-009 yetki modeli (acceptance sırası) |
+| **22.1.3** | GitOps lab reconcile + DD-EA-1 + DD-EA-5 minimal ESO allowlist (paralel 22.1.1/22.1.2 ile) | — |
+| **22.1.IT** | EndpointPilot OU + 1 IT-owned Windows 10/11 cihaz inventory baseline | **Async IT track** — mühendislik onu beklemez |
+
+### Track ↔ repo dağılımı
 
 | Track | 22.1 scope (Lab) | 22.2 scope (IT-owned acik.local) |
 |---|---|---|
-| **Agent (`platform-agent`)** ana track | Local state review + GitHub remote bootstrap + build/test pipeline + Windows artifact packaging (`endpoint-agent.exe` + ps1 install/uninstall + windows-amd64 zip + SHA256SUMS) + lab-only-evidence imza + Parallels lab Windows service test | Authenticode trusted signing (Azure Trusted Signing) + MSI/signed zip + EDR allowlist + agent enrollment live + heartbeat backend integration |
-| **Backend (`platform-backend/endpoint-admin-service/`)** paralel | BE-009 OpenFGA live gate paralel + BE-013 maintenance token live gate paralel + `endpoint-admin-service` manifest reconcile (gitops bu repo) | Agent-backend integration smoke + BE-011 cross-component live |
-| **GitOps (`platform-k8s-gitops`)** | Mevcut endpoint-admin-service manifest skeleton (PR #312) reconcile + BE-009/BE-013 live gate referansı | Overlay-specific deploy workflow (`deploy-endpoint-admin-prod.yml`) |
-| **Web (`platform-web/apps/mfe-endpoint-admin/`)** | Mock/plan olabilir | Ana iş (admin portal MFE) |
-| **AD/IT (`acik.local`)** | EndpointPilot OU oluşturma + 1-3 IT kontrollü Windows 10/11 test cihaz hazırlığı | Pilot cihaz enrollment + agent live deployment |
+| **Agent (`platform-agent`)** ana track | CI workflow setup + go test/lint + Windows amd64 cross-build + paket (exe + ps1 + zip + SHA256SUMS) + **ephemeral lab signing** + BG-EA-1 + gitleaks + SBOM + Parallels Win11 install/start/status/stop/uninstall + tamper protection live evidence (CI-driven artifact üzerinden tekrar üretilebilir) | Authenticode trusted signing (Azure Trusted Signing) + MSI/signed zip + EDR allowlist + agent enrollment live + heartbeat backend integration |
+| **Backend (`platform-backend/endpoint-admin-service/`)** paralel | BE-009 OpenFGA live gate (Up + Functional + Secured) + BE-013 maintenance token live gate (token expiry/audit) + BG-EA-1 (platform-backend repo'da paralel) | Agent-backend integration smoke + BE-011 cross-component live + BE-014..BE-019 |
+| **GitOps (`platform-k8s-gitops`)** | endpoint-admin-service test overlay tier=lab reconcile (replicas=1, digest pin) + DD-EA-1 manifest contract drift gate + DD-EA-5 minimal ESO allowlist (sadece OIDC + audit DSN + maintenance/enrollment) + BE-009/BE-013 live evidence runbook | DD-EA-3 prod deploy digest-pin workflow + `deploy-endpoint-admin-prod.yml` + DD-EA-4 deploy-side trusted signing verification + prod replicas/approval gate |
+| **Web (`platform-web/apps/mfe-endpoint-admin/`)** | **22.1 DIŞI** (Codex AGREE — mock MFE contract drift'i sahte yüzeyle perdeler) | Ana iş (admin portal MFE) WEB-001 başlangıç |
+| **AD/IT (`acik.local`)** | EndpointPilot OU + 1 IT-owned Windows 10/11 cihaz hazırlığı | Pilot cihaz enrollment + agent live deployment + 1-3 cihaz inventory baseline |
 
-**Acik.local ölçeği** (user 2026-05-02 PR-8c bilgisi):
-- Toplam ~800 cihaz `acik.local` domain'inde
-- Pilot OU `EndpointPilot`: 1-3 test cihaz (sınırlı + IT kontrollü)
-- Domain-wide deployment **22.3+ scope** (gradual rollout)
+**Acik.local ölçeği**:
+- Toplam ~800 cihaz domain'inde
+- Pilot OU `EndpointPilot`: 1-3 test cihaz (22.2 başlangıç) — minimum 1 cihaz 22.2 unlock için yeter
+- Domain-wide deployment **22.3+ scope** (gradual rollout, EDR allowlist + IT onayı şart)
+
+## 22.1 invariantları — yapılMAYACAK (Codex revize)
+
+22.1 boyunca **kesinlikle yapılmaz**:
+
+- ❌ **Password reset** (lokal SAM, AD, Entra, M365 — hepsi Faz 22.2+ scope; AG-016 BLOCKED)
+- ❌ **Arbitrary file access** (Desktop/Documents/Downloads whitelist 22.2+; AG-017 RISK gate)
+- ❌ **Destructive command execution** (D35-EA-3/-4/-5 dual-control gate 22.2+)
+- ❌ **BOREAS / CESS** domain işlemleri (initial scope acik.local only; 22.3+)
+- ❌ **Trusted signing olmadan EndpointPilot dışı dağıtım** (lab-only-evidence imza Parallels lab cihazlarına yetkilidir, IT-owned cihazlara değil)
+- ❌ **Web MFE** (22.2'de WEB-001 ile başlar)
+- ❌ **Prod overlay endpoint-admin-service aktivasyon** (22.1'de test overlay scope; prod 22.2+)
+
+## 22.1 ephemeral signing pattern (Codex revize)
+
+**Önemli düzeltme**: Self-signed PFX'i GitHub Secret olarak SAKLAMAYIZ. Lab-only-evidence imza her CI run'da **ephemeral cert** ile yapılır:
+
+```yaml
+# .github/workflows/ci-build-test.yml (örnek pattern)
+- name: Generate ephemeral self-signed cert (lab-only-evidence)
+  shell: pwsh
+  run: |
+    $cert = New-SelfSignedCertificate -Type CodeSigning \
+      -Subject "CN=platform-agent-lab-evidence-${{ github.run_id }}" \
+      -KeyExportPolicy Exportable \
+      -KeySpec Signature -KeyLength 2048 \
+      -CertStoreLocation Cert:\CurrentUser\My
+    $thumbprint = $cert.Thumbprint
+    Export-PfxCertificate -Cert "Cert:\CurrentUser\My\$thumbprint" \
+      -FilePath ./lab-cert.pfx \
+      -Password (ConvertTo-SecureString -String "ephemeral" -Force -AsPlainText)
+    echo "thumbprint=$thumbprint" >> $env:GITHUB_OUTPUT
+
+- name: Sign with ephemeral cert
+  run: |
+    signtool sign /f ./lab-cert.pfx /p ephemeral \
+      /tr http://timestamp.digicert.com /td sha256 /fd sha256 \
+      ./endpoint-agent.exe
+
+- name: Verify signature
+  run: signtool verify /pa /v ./endpoint-agent.exe
+
+- name: Upload artifact (with thumbprint + verify log)
+  uses: actions/upload-artifact@v7
+  with:
+    name: endpoint-agent-lab-evidence-${{ github.run_id }}
+    path: |
+      ./endpoint-agent.exe
+      ./lab-cert.pfx
+      ./signtool-verify.log
+```
+
+**Sonuç**: Persistent private key yok, GitHub Secret'a kalıcı PFX yüklenmez. Artifact'te thumbprint + verify log evidence olarak kalır. 22.2 trusted signing geçişinde **operasyon borcu yok**.
+
+## 22.2 pre-req docs (22.1'de hazırlanır)
+
+Codex revize: 22.2 Authenticode trusted signing geçişi öncesi 22.1 boyunca aşağıdaki dokümantasyon **netleşir**:
+
+1. **Azure Trusted Signing onaylı mı?** Default tercih ADR'da; sahip onayı + tenant/subscription owner netleşmesi
+2. **CI auth modeli**: GitHub OIDC (`azure/login@v2` ile workload identity); uzun ömürlü secret YOK
+3. **Certificate profile**: subject metadata, OID, EKU
+4. **Timestamp endpoint**: RFC 3161 sağlayıcı (Azure veya DigiCert)
+5. **Role assignments**: Azure RBAC — Trusted Signing Identity Verifier + Trusted Signing Certificate Profile Signer
+6. **Release promotion modeli**: beta lab artifact (22.1 ephemeral) → IT pilot signed artifact (22.2 Trusted Signing) ayrımı; **artifact naming** + tag scheme
+7. **Trusted signed artifact olmadan EndpointPilot dışı yok** invariant doc
+
+Bu dokümantasyon `docs/22-2-trusted-signing-onboarding.md` dosyasında 22.1 son haftasında hazırlanır.
+
+## 22.1 → 22.2 geçiş kriteri (Codex revize sertleştirme)
+
+Dört evidence sınıfı + 5 invariant kontrolü → 22.2 unlock:
+
+### Evidence sınıfları (Up + Functional + Secured ayrı kanıt)
+
+| Track | Evidence |
+|---|---|
+| **Agent** | CI'den üretilen lab-evidence artifact ile Parallels Win11'de install/start/status/stop/uninstall + tamper protection live; `signtool verify /pa` çıktısı + thumbprint artifact'te. Yerel evidence tarihsel kanıt; release-driven yeniden koş |
+| **Backend** | BE-009 OpenFGA live: admin allow + admin deny + unauthenticated deny + tuple seed + audit trace (Up: pod ready + Functional: API 200/401/403 + Secured: deny tarafı RBAC enforced); BE-013 maintenance token: issuance + validation + expiry + revoke + audit (Up + Functional + Secured) |
+| **GitOps** | test overlay rollout digest match + pod imageID === GHCR digest + ESO secret sync + 0 placeholder secret kalıntısı (DD-EA-5 enforce kanıtı) |
+| **IT** | EndpointPilot OU oluşturuldu + minimum 1 IT-owned Windows 10/11 cihaz inventory baseline (BIOS, OS version, AD join state, agent reachability) |
+
+### Invariant kontrol (yukarıdaki 5 yapılMAYACAK)
+
+22.2 unlock öncesi 5 invariantın **violated edilmediği** docs'ta kanıtla teyit edilir.
+
+## 22.1 PR seti — sertleştirilmiş (Codex 6 PR + IT action)
+
+| # | PR/Action | Repo | Milestone |
+|---|---|---|---|
+| 1 | Agent CI workflow (go test + lint + Windows amd64 cross-build + paket + ephemeral lab signing + release artifact dry-run) | `platform-agent` | 22.1.0 |
+| 2 | Agent BG-EA-1 + gitleaks + SBOM hardening (22.1.0 ile birlikte veya hemen ardı) | `platform-agent` | 22.1.0 |
+| 3 | Backend BE-009 OpenFGA live gate (k8s smoke + Up/Functional/Secured runbook) | `platform-backend` (kod) + `platform-k8s-gitops` (manifest reconcile + runbook) | 22.1.1 |
+| 4 | Backend BE-013 maintenance token live gate (image + GitOps + Up/Functional/Secured runbook) | `platform-backend` + `platform-k8s-gitops` | 22.1.2 |
+| 5 | GitOps lab reconcile + DD-EA-1 + DD-EA-5 minimal ESO allowlist | `platform-k8s-gitops` | 22.1.3 |
+| 6 | Docs evidence/runbook + 22.2 pre-req docs (Trusted Signing onboarding) | `platform-k8s-gitops` | 22.1.3 sonu |
+| **IT** | EndpointPilot OU + 1 IT-owned cihaz inventory baseline | **Kullanıcı/IT (PR değil)** | 22.1.IT async |
+| 🚫 | Web PR | — | **22.2'ye bırak** |
+| 🚫 | Prod deploy workflow endpoint-admin | — | **22.2** |
+
+## Sprint süre
+
+Codex: 1 hafta agresif, **8-10 iş günü daha gerçekçi**. Hedef "22.1 evidence pack üretildi + 22.2 no-go listesi netleşti" — takvim değil **evidence-driven**.
 
 ## Build artifact + distribution stratejisi (PR-8c clarify)
 
