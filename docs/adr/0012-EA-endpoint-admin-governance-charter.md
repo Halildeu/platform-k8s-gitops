@@ -1,28 +1,34 @@
 # ADR-0012-EA — Endpoint Admin Service Governance Charter
 
-> **Status**: ACTIVE (5 clarify question RESOLVED 2026-05-02)
-> **Date**: 2026-05-01 (draft) → 2026-05-02 (resolved fill-in PR-8b)
-> **Sprint**: "Prod post-cutover compliance" PR-8 + PR-8b fill-in
+> **Status**: ACTIVE (5 clarify RESOLVED + 22.1 scope clarify 2026-05-02 PR-8c)
+> **Date**: 2026-05-01 (draft) → 2026-05-02 (PR-8b fill-in + PR-8c clarify)
+> **Sprint**: "Prod post-cutover compliance" PR-8 + PR-8b fill-in + PR-8c clarify
 > **Codex thread**: `019dd895-17c1-79f0-b652-e316f64d4d79` (mutabakat raporu PR #270, iter-3 AGREE) + `019de00f-4b40-75c1-8ead-01b79c5819c1` (sprint review)
-> **Provenance**: Cross-repo governance assessment `docs/2026-04-29-endpoint-admin-service-uyum-mutabakati.md` (962 satır, PR #270 merged) + 2026-05-02 kullanıcı fill-in mesajı (5 cevap)
+> **Provenance**: Cross-repo governance assessment `docs/2026-04-29-endpoint-admin-service-uyum-mutabakati.md` (962 satır, PR #270 merged) + 2026-05-02 kullanıcı fill-in (5 cevap) + 2026-05-02 PR-8c scope clarify
 >
 > **Konvansiyon**: ADR-0012 numarası mevcut ([@RequireModule WebMvcTest defer]); bu charter `0012-EA` (Endpoint Admin) namespace'i ile ayrı dosya.
 
 ## Bağlam
 
-Faz 22 ile yeni domain: **Endpoint Admin** — Windows endpoint'lerin merkezi yönetimi (group policy push, command exec, audit, identity discovery). 4 component:
+Faz 22 ile yeni domain: **Endpoint Admin** — Windows endpoint'lerin merkezi yönetimi (group policy push, command exec, audit, identity discovery). 4 component, 4 repo'ya yayılı; **runtime manifest tek yerde, source kod ilgili platform repolarında** (PR-8c clarify):
 
-1. **Backend service** (`platform-backend/endpoint-admin-service/`) — Go REST API, OIDC + RequireScope middleware, OpenFGA cross-service authz consumer
-2. **Agent** (`platform-agent` — ayrı repo) — Windows binary (Go), enrollment, heartbeat, command exec, identity discovery
-3. **Web UI** (`platform-web/apps/mfe-endpoint-admin/`) — admin portal MFE
-4. **GitOps manifest** (`platform-k8s-gitops/kustomize/base/apps/endpoint-admin-service/`) — bu repo, deploy disipline
+| Component | Repo | Path / Status |
+|---|---|---|
+| Backend service | `Halildeu/platform-backend` | `endpoint-admin-service/` sub-dir; **sıfırdan değil — BE-009 OpenFGA live gate + BE-013 maintenance token live gate kod-test ve gitops runtime kanıtları MEVCUT** |
+| Agent | `Halildeu/platform-agent` | `/Users/halilkocoglu/Documents/platform-agent` lokal mevcut; GitHub remote oluşturma/push pending. **22.1 sıfırdan skeleton DEĞİL** — local state review + remote bootstrap + build/release pipeline hardening |
+| Web UI MFE | `Halildeu/platform-web` | `apps/mfe-endpoint-admin/` (mevcut MFE convention); 22.2'de aktif iş |
+| GitOps manifest | `Halildeu/platform-k8s-gitops` (bu repo) | `kustomize/base/apps/endpoint-admin-service/` skeleton mevcut (PR #312); 22.1'de manifest reconcile (BE-009/BE-013 live gate referansı) |
 
-**Cross-component bağlantılar** (PR #270 mutabakat + 2026-05-02 user fill-in):
-- 4 component, 4 farklı repo (NOT monorepo + agent yine ayrı; user 2026-05-02 kararı)
+**"Repo bölünmez" yorumu (PR-8c clarify)**:
+> Runtime manifest ve GitOps desired-state tek yerde `platform-k8s-gitops` içinde tutulur. Uygulama kaynak kodu ilgili platform repolarında kalır. **"Repo bölünmez" ifadesi YALNIZ GitOps manifest governance için geçerlidir; kaynak kodun tek repo olması anlamına gelmez.**
+
+**Cross-component bağlantılar**:
+- 4 component, 4 farklı repo (PR-8b user fill-in)
 - OpenFGA tuple writer permission-service üstünden (cross-service tuple discipline)
 - D35-EA ladder (0..5) D35 Zanzibar ladder ile paralel ama ayrı domain
 - ADR-0011 governance layer pattern (DD/AC/BG) → endpoint-admin için "DD-EA-1..7 + BG-EA-1" analog
-- Code signing: supply-chain RoT (build-time pipeline), Vault/ESO runtime secret DEĞİL (user 2026-05-02 düzeltme)
+- Code signing: supply-chain RoT (build-time pipeline), Vault/ESO runtime secret DEĞİL
+- **Naming convention**: repo geniş tutulur (`platform-agent` — ileride macOS/Linux genişleme), binary/service endpoint odaklı (`endpoint-agent.exe`, `EndpointAgent` Windows service)
 
 ## Karar (ACTIVE)
 
@@ -227,20 +233,50 @@ ADR-0011 analog:
 
 Yani: **probe-based evidence + IT review/sign-off** — tek tarafa bağımlı değil.
 
+## 22.1 sub-track scope (PR-8c clarify)
+
+**Önemli düzeltme**: 22.1 sıfırdan skeleton DEĞİL. Backend ve agent için mevcut state'ler var; 22.1 lab/release **hardening** + integration smoke hazırlığı yapılır.
+
+| Track | 22.1 scope (Lab) | 22.2 scope (IT-owned acik.local) |
+|---|---|---|
+| **Agent (`platform-agent`)** ana track | Local state review + GitHub remote bootstrap + build/test pipeline + Windows artifact packaging (`endpoint-agent.exe` + ps1 install/uninstall + windows-amd64 zip + SHA256SUMS) + lab-only-evidence imza + Parallels lab Windows service test | Authenticode trusted signing (Azure Trusted Signing) + MSI/signed zip + EDR allowlist + agent enrollment live + heartbeat backend integration |
+| **Backend (`platform-backend/endpoint-admin-service/`)** paralel | BE-009 OpenFGA live gate paralel + BE-013 maintenance token live gate paralel + `endpoint-admin-service` manifest reconcile (gitops bu repo) | Agent-backend integration smoke + BE-011 cross-component live |
+| **GitOps (`platform-k8s-gitops`)** | Mevcut endpoint-admin-service manifest skeleton (PR #312) reconcile + BE-009/BE-013 live gate referansı | Overlay-specific deploy workflow (`deploy-endpoint-admin-prod.yml`) |
+| **Web (`platform-web/apps/mfe-endpoint-admin/`)** | Mock/plan olabilir | Ana iş (admin portal MFE) |
+| **AD/IT (`acik.local`)** | EndpointPilot OU oluşturma + 1-3 IT kontrollü Windows 10/11 test cihaz hazırlığı | Pilot cihaz enrollment + agent live deployment |
+
+**Acik.local ölçeği** (user 2026-05-02 PR-8c bilgisi):
+- Toplam ~800 cihaz `acik.local` domain'inde
+- Pilot OU `EndpointPilot`: 1-3 test cihaz (sınırlı + IT kontrollü)
+- Domain-wide deployment **22.3+ scope** (gradual rollout)
+
+## Build artifact + distribution stratejisi (PR-8c clarify)
+
+| Tier | Artifact | Distribution channel |
+|---|---|---|
+| **22.1 Lab** | `endpoint-agent.exe` + `install.ps1` + `uninstall.ps1` + `endpoint-agent-windows-amd64.zip` + `SHA256SUMS` + `lab-only-evidence` flag | GitHub Releases (private asset) veya repo artifact çıktısı; manuel install lab cihazlarda |
+| **22.2 IT pilot** | Authenticode signed `.exe` + signed zip veya MSI + `release manifest signature` + EDR allowlist info | GitHub Releases (private asset, signed) + RDP/manuel veya `EndpointPilot` OU üzerinden GPO/Intune (IT kontrolü) |
+| **22.3 Restricted** | Signed MSI + signed update manifest + SBOM + SHA256/SHA512 | Intune / GPO / SCCM (kurumsal dağıtım) + signed update manifest + staged rollout |
+
+**GHCR kullanımı**: Container image değil, agent binary için **ana kanal değil** (GitHub Releases öncelikli). Backend container image GHCR'da kalır (deploy workflow değişmez).
+
 ## Sonuç (ACTIVE)
 
-5 clarify question RESOLVED 2026-05-02. Charter ACTIVE durumda; manifest skeleton PR #312 ile zaten merge'lendi (PR-9). Bu PR-8b ile:
-- ADR'da `Open Questions` → `Resolved Questions` (kullanıcı kararları)
-- Architecture: 4-component, 4-repo yapı
-- Code signing: supply-chain RoT separate pipeline note
-- Pilot tier: acik.local-only initial scope
-- Manifest düzeltmeleri (configmap.yaml + secret-stub.yaml)
-- PLAN.md Faz 22 entry update
+5 clarify RESOLVED + 22.1 scope clarify 2026-05-02 (PR-8b + PR-8c). Charter ACTIVE durumda; manifest skeleton PR #312 ile merge'lendi (PR-9), ADR fill-in PR #313 ile detaylandı (PR-8b), 22.1 scope düzeltmesi bu PR (PR-8c).
+
+**Ana düzeltmeler kümesi**:
+- ADR'da `Open Questions` → `Resolved Questions`
+- Architecture: 4-component, 4-repo (kaynak kod ayrı, manifest tek)
+- Code signing: supply-chain RoT separate pipeline (Vault/ESO runtime DEĞİL)
+- Pilot tier: acik.local-only initial scope (BOREAS/CESS Faz 22 dışı)
+- 22.1 scope clarify: agent ana track + backend paralel (BE-009/BE-013 live gate) + gitops manifest reconcile + AD/IT EndpointPilot OU; web 22.2'ye
+- 800 cihaz acik.local ölçeği + 1-3 pilot test cihaz scope
+- Naming: `platform-agent` repo + `endpoint-agent` binary
 
 Sub-faz roadmap finalized:
-- **22.1** (Lab) — `platform-agent` skeleton + Parallels lab + lab-only-evidence imza
-- **22.2** (IT-owned pilot) — `acik.local` domain-joined + Azure Trusted Signing + agent enrollment
-- **22.3** (Restricted) — sınırlı gerçek kullanıcı + EDR allowlist + IT onayı
+- **22.1** (Lab) — agent local state review + GitHub remote bootstrap + Windows artifact packaging + lab-only-evidence imza + backend BE-009/BE-013 paralel + gitops manifest reconcile + EndpointPilot OU hazırlığı
+- **22.2** (IT-owned acik.local pilot) — Authenticode trusted signing + agent enrollment + heartbeat backend integration + web MFE ana iş + 1-3 IT-owned Windows pilot cihaz
+- **22.3** (Restricted) — sınırlı gerçek kullanıcı + EDR allowlist + IT onayı + staged rollout (acik.local 800 cihaz gradual)
 
 ## Bağlantılı kararlar
 
