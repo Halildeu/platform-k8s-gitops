@@ -1,0 +1,71 @@
+# ADR-0012-EA DD-EA-1 — Manifest Contract Drift Gate
+#
+# Codex `019ded8d` AGREE plan-time consensus (Session 37, 2026-05-03).
+#
+# endpoint-admin-service kustomize render bytes baseline + sha256 hash compare.
+# PR sonrası base manifest değişikliği render hash'i invalidate eder; intentional
+# değişim için baseline update + Codex review.
+#
+# Scope (22.1.3 lab tier):
+#   - kustomize/base/apps/endpoint-admin-service
+#
+# Future scope (22.1.3 reconcile + 22.2):
+#   - kustomize/overlays/test/apps/endpoint-admin-service
+#   - kustomize/overlays/prod/apps/endpoint-admin-service (22.2 prod tier)
+#
+# Triggers:
+#   - workflow_dispatch (manual baseline refresh test)
+#   - pull_request paths filter (endpoint-admin manifest + script + baseline)
+#
+# Authority: Codex consensus only (no operator approval — read-only render
+# + hash compare, no state mutation, no credential read).
+
+name: ADR-0012-EA DD-EA-1 — Manifest Contract Drift
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/gate-dd-ea-1-manifest-contract.yml"
+      - "scripts/governance/check_endpoint_admin_manifest_contract.py"
+      - "tests/governance/fixtures/dd-ea-1-endpoint-admin-base.sha256"
+      - "kustomize/base/apps/endpoint-admin-service/**"
+      - "docs/adr/0012-EA-*.md"
+
+jobs:
+  dd-ea-1-manifest-contract:
+    name: ADR-0012-EA DD-EA-1 — Manifest contract drift validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.31.0"
+
+      - name: DD-EA-1 — kustomize render bytes drift check
+        run: |
+          python3 scripts/governance/check_endpoint_admin_manifest_contract.py --verbose
+
+      - name: DD-EA-1 JSON artifact
+        if: always()
+        run: |
+          python3 scripts/governance/check_endpoint_admin_manifest_contract.py --json > /tmp/dd-ea-1-report.json || true
+          cat /tmp/dd-ea-1-report.json
+
+      - name: Upload DD-EA-1 report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dd-ea-1-manifest-contract-report
+          path: /tmp/dd-ea-1-report.json
+          retention-days: 7
