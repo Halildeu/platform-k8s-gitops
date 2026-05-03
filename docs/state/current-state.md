@@ -1,12 +1,193 @@
 # Current State — Platform K8s Migration
 
-> **Status as of**: 2026-05-01 ~01:00 UTC+3 (Session 36 — **PROD POST-CUTOVER COMPLIANCE SPRINT BAŞLADI**: D30 atomic cutover T+7 günü; prod deploy discipline formal hale geldi (deploy-backend-prod.yml + deploy-frontend-prod.yml + shared verify-pod-digest.sh helper + production environment gate). T0=2026-04-24 cutover stable, 72h rollback-window 2026-04-27'de doldu, post-T+72h prod cluster-authoritative kabul ediliyor. Bu sprint'te (Codex 019de00f AGREE-with-revisions, 9 PR plan): PR-1 shared digest helper LIVE smoke (multi-replica + newest-only verified), PR-2 deploy-backend-prod.yml MERGED (workflow_dispatch + environment + strict digest), PR-3 deploy-frontend-prod.yml MERGED (aynı disipline), kalan 6 PR (truth refresh / rollback runbook / compose inventory / retire plan / Faz 22 charter / endpoint-admin skeleton). Prod live state: 9 backend service 2/2 ready hepsi `@sha256:<digest>` pinned, frontend 2/2 ready, ai.acik.com cluster-authoritative (host nginx → 30443 NodePort), compose stateful (PG/KC/Vault) D6 contract korumalı. iter-49 series + AG Grid license fix LIVE doğrulandı testai'da. ⏸️ Önceki 2026-04-30 ~22:55 UTC+3 (Session 35 — iter-49 CYCLE CLOSE + BACKEND/FRONTEND DEPLOY AUTOMATION DIGEST-PIN MODE LIVE: 12 PR landed cycle close, B.3 chain auto-trigger LIVE verified). ⏸️ Önceki 2026-04-28 ~19:30 UTC+3 (Session 33 FINAL — **ADR-0011 GOVERNANCE LAYER COMPLETE (DD-1..DD-4 + AC-1 + BG-1 + BG-2) + D35-2-FULL FIRST CANLI EVIDENCE 11/11 PASS + 15 PR LANDED (1 backend + 14 gitops)**: Bu session block ADR-0011 §4 PR sequence'ini tamamladı: 4 drift detection guard (anchor + V25/V26 contract, ETL canonical JSON, schema-service snapshot scaffold, env+Dockerfile lint), 1 audit cadence scaffold (drill evidence template + first-drill runbook), 2 boundary governance (per-PR boundary declaration CI gate + sandbox-blocking pattern playbook + 3 gray-area decision records). Tüm PR'lar Codex `019dd409` consensus akışı ile (PARTIAL/AGREE-with-revisions iter'leri absorb edildi). BG-1 self-validating gate ([PR #233](https://github.com/Halildeu/platform-k8s-gitops/pull/233)) kendi PR'ını da validate etti — boundary block + 6 class checkbox + user-approval evidence + label hard gate yeşil. ADR-0011 governance layer çalışıyor. Drift detection coverage Session 32-33 4 drift event'i kapatır: V19/V20/V21 anchor (DD-1), V25 jsonb extraction format (DD-2), etl-worker env prefix (DD-4 + config.py 4-prefix fallback fix), Dockerfile keyring (DD-4). DD-3 schema snapshot operator-loop scaffold; AC-1b operator first drill (Phase 1 Vault test rekey) post-merge user-approval ile. Codex thread chain (Session 33 toplam): `019dd34e` (V25 hybrid) → `019dd3dc` (Option B' AGREE) → `019dd409` (D35-3 prereq + DD/AC/BG sequence + sandbox-blocking pattern). Kalan operator-pending: D35-3 UI persona evidence (browser session) + AC-1b drill execution. ⏸️ Önceki 2026-04-28 ~16:45 UTC+3 (Session 33 mid #2 — **D35-2-FULL FIRST CANLI EVIDENCE 11/11 PASS + GATEWAY EXTERNAL 500 ROOT CAUSE FIX + 7 PR LANDED (1 backend + 6 gitops)**: D35-2-limited (PR #218) "manuel SQL bypass" caveat'i KALKTI. REST controller layer V25-aligned eventual-consistency canlı yakalandı staging-sw test cluster'da: `POST /api/v1/access/scope` → 201 + scopeId=3 + outboxId=3 + openFgaObjectId=`wc-our-company-1` (V25 namespace) + outbox PROCESSED in 907ms + /check ALLOW granted + DENY negative + DELETE 204 + REVOKE PROCESSED 5s + FLIP DENY + 0 FAILED rows. D35-2-full evidence ([PR #225](https://github.com/Halildeu/platform-k8s-gitops/pull/225), `docs/faz-21-3-evidence/2026-04-28-d35-2-full-canli-rest-flow.md`). Gateway external `testai.acik.com` 500 root cause: Session 33 PR-G follow-up ROUTES_17 fix sırasında `kubectl apply -f base/configmap.yaml` selective apply overlay patch'lerini atladı, base'in literal `serban` realm değerini live cluster'a yazdı → `JwtException: No suitable decoder accepted the token` → AuthenticationServiceException → 500. Live'da düzeltildi (overlay-built ConfigMap apply + rolling restart api-gateway → external `testai.acik.com` POST 201) + drift-prevention guard ([PR #226](https://github.com/Halildeu/platform-k8s-gitops/pull/226): base ISSUER_URI/JWKS_URI = `OVERLAY_MUST_OVERRIDE` + prod overlay JWKS_URI explicit add — CLAUDE.md "Yaygın Pitfalls #1" pattern). Codex thread chain: `019dd34e` (V25 hybrid) → `019dd3dc` (Option B' AGREE) → `019dd409` (D35-3 prereq + api-gateway route drift A-prime + persona credential boundary). Kalan kritik path: D35-3 UI persona evidence (browser session — operatör + agent correlation). ⏸️ Önceki 2026-04-28 ~12:55 UTC+3 (Session 33 — **V25 ALIGNMENT CROSS-REPO + D35-3 PREREQ INFRASTRUCTURE LANDED + STAGING-SW ROLLED OUT (3 PR: 1 backend + 2 gitops)**: V25 OUR_COMPANY anchor + `wc-our-company-` FGA namespace contract drift was carried by `permission-service` image `sha-4f408f4` (PR-G follow-up); fix-forward landed via [`platform-backend#17`](https://github.com/Halildeu/platform-backend/pull/17) sha-`943bd5f` (`expectedSourceTable(COMPANY)→OUR_COMPANY` + encoder COMPANY case `wc-our-company-<COMP_ID>`) + 5 unit-test files retargeted + 3 new V25/V26 Testcontainers contract tests + V25/V26 SQL copied to test classpath + V90 fixture rewritten with OUR_COMPANY anchor. [`platform-k8s-gitops#221`](https://github.com/Halildeu/platform-k8s-gitops/pull/221) digest-pin in test+prod overlays (`sha256:219b053777478fa048fbe04b4f990f477a1091d2e2a49c0691e18c340a5c9406`). Operator rollout on `k3d-test`: pod Running, immutable digest match, HikariPool-2 (reportsDb) + JPA EntityManagerFactory `reportsDb` validate cleanly against V25/V26 schema, app start 41.5s clean, 0 ERROR/Exception in boot logs, DB outbox state intact (0 PENDING / 0 FAILED / 2 PROCESSED from D35-2-limited preserved). [`platform-k8s-gitops#222`](https://github.com/Halildeu/platform-k8s-gitops/pull/222) **D35-3 prereq infrastructure** — 7 dosya, 1668 satır: `d35-2-full-template.md` + `d35-3-product-path-template.md` (evidence templates, V25-aligned 11-step + UI persona checklist), 3 runbook (RB-prereq-tuple-seed agent-yapılabilir, RB-keycloak-admin-jwt operatör-only, RB-ui-persona-checklist browser flow), 2 script (`openfga-access-tuple-seed.sh` idempotent + `rest-grant-runner.sh` 11-step canonical runner with V25 namespace drift detection). Codex thread chain: `019dd34e` (V25 hybrid) → `019dd3dc` (Option B' AGREE single-image scope) → `019dd409` (D35-3 prereq strategy PARTIAL/AGREE — K-serisi defer, D35-2-full ayrı tier, prereq paket execute). Spawned hygiene chip: gitops `wc-company-*` references in docs/fixtures/SQL surfaces (Codex `019dd3dc` final note). ⏸️ Önceki 2026-04-28 ~10:40 UTC+3 (Session 32 FINAL — **D35-2 FIRST CANLI EVIDENCE CAPTURED + ADR-0010 9-PR SEQUENCE LANDED + OUR_COMPANY DRIFT FIXED + 31 PR THIS SESSION BLOCK**: Full D35 ladder closure D35-0 → D35-1 → D35-2 (D35-3 product path UI persona = downstream). Codex `019dd2c9` xhigh effort architecture (ADR-0010 9-PR sequence) + Codex `019dd34e` PARTIAL/AGREE-with-revisions (OUR_COMPANY drift fix 4-PR sequence + V26 source_pk dual-format hot-fix) + Codex `019dd333` Session 32 retrospective discipline applied. **D35-2 verified live (10/11 canonical steps PASS + 1 limited)**: GRANT scope_id=2 → outbox PROCESSED <8s → OpenFGA `allowed:true` granted user → REVOKE outbox PROCESSED <2s → flip → `allowed:false` originally-granted user → 0 FAILED outbox rows in 10min window. Step 4 (REST POST grant) bypassed manual SQL INSERT (D35-2-limited tag); full REST flow downstream of Keycloak admin JWT + module:ACCESS#can_manage tuple seed + AccessScopeController.grant exercise = D35-3 product path PR. Migration chain: V16 → V17 → V19 → V20 → V21 → V22 → V23 → V25 → V26 (V25 anchor table OUR_COMPANY + tenant predicate + signature widen org_id; V26 source_pk dual-format ETL JSON canonical vs jsonb extraction). Backend contract discovered live: OutboxPoller payload.tuple = `{user, relation, objectType, objectId}` (cross-repo Explore agent verified). Operator authority used per Kural #7 + ADR-0010 §2.5 + auto-mode + Codex consensus + sandbox enforcement.
+> **Status as of**: 2026-05-03 ~14:30 UTC+3 (Session 37 — **FAZ 19 PROD MIGRATION TAMAMLANDI + AG GRID LISANS BYTES FIX + DRIFT BACKLOG AUDIT**: ai.acik.com edge nginx cluster-authoritative migration LIVE — host disk static serving → cluster ingress proxy_pass (testai pattern + ai-spesifik istisnalar). Manual rsync döngüsü ortadan kalktı, GitOps digest pin + cluster pod truth public flow'a otomatik yansır. AG Grid Enterprise lisansı her iki public host'ta valid:true (LicenseManager getLicenseDetails programmatic kanıt, AG-128070, expiry 2 June 2026). Drift backlog 6 → 1 (ek #4 fix kalıcı, #1+#6 kapandı bu session, #2+#5 audit ile stale, sadece #3 runner labels açık). Codex `019ded8d` AGREE post-impl. platform-web `hotfix/ag-grid-license-rebuild` branch geçici release source (4 commit live ama main'e merge edilmedi — main build kırık: Vite 8 + Module Federation top-level await). main-fix sub-task spawn'da paralel ilerliyor. ⏸️ Önceki 2026-05-01 ~01:00 UTC+3 (Session 36 — **PROD POST-CUTOVER COMPLIANCE SPRINT BAŞLADI**: D30 atomic cutover T+7 günü; prod deploy discipline formal hale geldi (deploy-backend-prod.yml + deploy-frontend-prod.yml + shared verify-pod-digest.sh helper + production environment gate). T0=2026-04-24 cutover stable, 72h rollback-window 2026-04-27'de doldu, post-T+72h prod cluster-authoritative kabul ediliyor. Bu sprint'te (Codex 019de00f AGREE-with-revisions, 9 PR plan): PR-1 shared digest helper LIVE smoke (multi-replica + newest-only verified), PR-2 deploy-backend-prod.yml MERGED (workflow_dispatch + environment + strict digest), PR-3 deploy-frontend-prod.yml MERGED (aynı disipline), kalan 6 PR (truth refresh / rollback runbook / compose inventory / retire plan / Faz 22 charter / endpoint-admin skeleton). Prod live state: 9 backend service 2/2 ready hepsi `@sha256:<digest>` pinned, frontend 2/2 ready, ai.acik.com cluster-authoritative (host nginx → 30443 NodePort), compose stateful (PG/KC/Vault) D6 contract korumalı. iter-49 series + AG Grid license fix LIVE doğrulandı testai'da. ⏸️ Önceki 2026-04-30 ~22:55 UTC+3 (Session 35 — iter-49 CYCLE CLOSE + BACKEND/FRONTEND DEPLOY AUTOMATION DIGEST-PIN MODE LIVE: 12 PR landed cycle close, B.3 chain auto-trigger LIVE verified). ⏸️ Önceki 2026-04-28 ~19:30 UTC+3 (Session 33 FINAL — **ADR-0011 GOVERNANCE LAYER COMPLETE (DD-1..DD-4 + AC-1 + BG-1 + BG-2) + D35-2-FULL FIRST CANLI EVIDENCE 11/11 PASS + 15 PR LANDED (1 backend + 14 gitops)**: Bu session block ADR-0011 §4 PR sequence'ini tamamladı: 4 drift detection guard (anchor + V25/V26 contract, ETL canonical JSON, schema-service snapshot scaffold, env+Dockerfile lint), 1 audit cadence scaffold (drill evidence template + first-drill runbook), 2 boundary governance (per-PR boundary declaration CI gate + sandbox-blocking pattern playbook + 3 gray-area decision records). Tüm PR'lar Codex `019dd409` consensus akışı ile (PARTIAL/AGREE-with-revisions iter'leri absorb edildi). BG-1 self-validating gate ([PR #233](https://github.com/Halildeu/platform-k8s-gitops/pull/233)) kendi PR'ını da validate etti — boundary block + 6 class checkbox + user-approval evidence + label hard gate yeşil. ADR-0011 governance layer çalışıyor. Drift detection coverage Session 32-33 4 drift event'i kapatır: V19/V20/V21 anchor (DD-1), V25 jsonb extraction format (DD-2), etl-worker env prefix (DD-4 + config.py 4-prefix fallback fix), Dockerfile keyring (DD-4). DD-3 schema snapshot operator-loop scaffold; AC-1b operator first drill (Phase 1 Vault test rekey) post-merge user-approval ile. Codex thread chain (Session 33 toplam): `019dd34e` (V25 hybrid) → `019dd3dc` (Option B' AGREE) → `019dd409` (D35-3 prereq + DD/AC/BG sequence + sandbox-blocking pattern). Kalan operator-pending: D35-3 UI persona evidence (browser session) + AC-1b drill execution. ⏸️ Önceki 2026-04-28 ~16:45 UTC+3 (Session 33 mid #2 — **D35-2-FULL FIRST CANLI EVIDENCE 11/11 PASS + GATEWAY EXTERNAL 500 ROOT CAUSE FIX + 7 PR LANDED (1 backend + 6 gitops)**: D35-2-limited (PR #218) "manuel SQL bypass" caveat'i KALKTI. REST controller layer V25-aligned eventual-consistency canlı yakalandı staging-sw test cluster'da: `POST /api/v1/access/scope` → 201 + scopeId=3 + outboxId=3 + openFgaObjectId=`wc-our-company-1` (V25 namespace) + outbox PROCESSED in 907ms + /check ALLOW granted + DENY negative + DELETE 204 + REVOKE PROCESSED 5s + FLIP DENY + 0 FAILED rows. D35-2-full evidence ([PR #225](https://github.com/Halildeu/platform-k8s-gitops/pull/225), `docs/faz-21-3-evidence/2026-04-28-d35-2-full-canli-rest-flow.md`). Gateway external `testai.acik.com` 500 root cause: Session 33 PR-G follow-up ROUTES_17 fix sırasında `kubectl apply -f base/configmap.yaml` selective apply overlay patch'lerini atladı, base'in literal `serban` realm değerini live cluster'a yazdı → `JwtException: No suitable decoder accepted the token` → AuthenticationServiceException → 500. Live'da düzeltildi (overlay-built ConfigMap apply + rolling restart api-gateway → external `testai.acik.com` POST 201) + drift-prevention guard ([PR #226](https://github.com/Halildeu/platform-k8s-gitops/pull/226): base ISSUER_URI/JWKS_URI = `OVERLAY_MUST_OVERRIDE` + prod overlay JWKS_URI explicit add — CLAUDE.md "Yaygın Pitfalls #1" pattern). Codex thread chain: `019dd34e` (V25 hybrid) → `019dd3dc` (Option B' AGREE) → `019dd409` (D35-3 prereq + api-gateway route drift A-prime + persona credential boundary). Kalan kritik path: D35-3 UI persona evidence (browser session — operatör + agent correlation). ⏸️ Önceki 2026-04-28 ~12:55 UTC+3 (Session 33 — **V25 ALIGNMENT CROSS-REPO + D35-3 PREREQ INFRASTRUCTURE LANDED + STAGING-SW ROLLED OUT (3 PR: 1 backend + 2 gitops)**: V25 OUR_COMPANY anchor + `wc-our-company-` FGA namespace contract drift was carried by `permission-service` image `sha-4f408f4` (PR-G follow-up); fix-forward landed via [`platform-backend#17`](https://github.com/Halildeu/platform-backend/pull/17) sha-`943bd5f` (`expectedSourceTable(COMPANY)→OUR_COMPANY` + encoder COMPANY case `wc-our-company-<COMP_ID>`) + 5 unit-test files retargeted + 3 new V25/V26 Testcontainers contract tests + V25/V26 SQL copied to test classpath + V90 fixture rewritten with OUR_COMPANY anchor. [`platform-k8s-gitops#221`](https://github.com/Halildeu/platform-k8s-gitops/pull/221) digest-pin in test+prod overlays (`sha256:219b053777478fa048fbe04b4f990f477a1091d2e2a49c0691e18c340a5c9406`). Operator rollout on `k3d-test`: pod Running, immutable digest match, HikariPool-2 (reportsDb) + JPA EntityManagerFactory `reportsDb` validate cleanly against V25/V26 schema, app start 41.5s clean, 0 ERROR/Exception in boot logs, DB outbox state intact (0 PENDING / 0 FAILED / 2 PROCESSED from D35-2-limited preserved). [`platform-k8s-gitops#222`](https://github.com/Halildeu/platform-k8s-gitops/pull/222) **D35-3 prereq infrastructure** — 7 dosya, 1668 satır: `d35-2-full-template.md` + `d35-3-product-path-template.md` (evidence templates, V25-aligned 11-step + UI persona checklist), 3 runbook (RB-prereq-tuple-seed agent-yapılabilir, RB-keycloak-admin-jwt operatör-only, RB-ui-persona-checklist browser flow), 2 script (`openfga-access-tuple-seed.sh` idempotent + `rest-grant-runner.sh` 11-step canonical runner with V25 namespace drift detection). Codex thread chain: `019dd34e` (V25 hybrid) → `019dd3dc` (Option B' AGREE single-image scope) → `019dd409` (D35-3 prereq strategy PARTIAL/AGREE — K-serisi defer, D35-2-full ayrı tier, prereq paket execute). Spawned hygiene chip: gitops `wc-company-*` references in docs/fixtures/SQL surfaces (Codex `019dd3dc` final note). ⏸️ Önceki 2026-04-28 ~10:40 UTC+3 (Session 32 FINAL — **D35-2 FIRST CANLI EVIDENCE CAPTURED + ADR-0010 9-PR SEQUENCE LANDED + OUR_COMPANY DRIFT FIXED + 31 PR THIS SESSION BLOCK**: Full D35 ladder closure D35-0 → D35-1 → D35-2 (D35-3 product path UI persona = downstream). Codex `019dd2c9` xhigh effort architecture (ADR-0010 9-PR sequence) + Codex `019dd34e` PARTIAL/AGREE-with-revisions (OUR_COMPANY drift fix 4-PR sequence + V26 source_pk dual-format hot-fix) + Codex `019dd333` Session 32 retrospective discipline applied. **D35-2 verified live (10/11 canonical steps PASS + 1 limited)**: GRANT scope_id=2 → outbox PROCESSED <8s → OpenFGA `allowed:true` granted user → REVOKE outbox PROCESSED <2s → flip → `allowed:false` originally-granted user → 0 FAILED outbox rows in 10min window. Step 4 (REST POST grant) bypassed manual SQL INSERT (D35-2-limited tag); full REST flow downstream of Keycloak admin JWT + module:ACCESS#can_manage tuple seed + AccessScopeController.grant exercise = D35-3 product path PR. Migration chain: V16 → V17 → V19 → V20 → V21 → V22 → V23 → V25 → V26 (V25 anchor table OUR_COMPANY + tenant predicate + signature widen org_id; V26 source_pk dual-format ETL JSON canonical vs jsonb extraction). Backend contract discovered live: OutboxPoller payload.tuple = `{user, relation, objectType, objectId}` (cross-repo Explore agent verified). Operator authority used per Kural #7 + ADR-0010 §2.5 + auto-mode + Codex consensus + sandbox enforcement.
 >
 > **Bu session 31 PR** (#194-#218): ADR-0010 9-PR sequence (#196-#204 + supporting #194 V24 + #195 sig fix) + Faz 19.11.D ci/ port (#205 PR-A shim + #206 PR-B gate-enforcement-check + #207 + #208 hot-fix dual + #209 PR-C scope decision + #210 PR-D budget baseline + #211 etl-worker env multi-prefix) + OUR_COMPANY drift fix sequence (#212 PR-1 discovery + #213 PR-2 V25 + #214 PR-3 ETL manifest + #215 PR-4 ADR docs + #216 V26 dual-format) + D35 evidence (#217 D35-1 + #218 D35-2 first canlı). 0 cross-repo PR; all within-repo. ⏸️ Önceki 2026-04-28 ~07:40 UTC+3 (Session 32 mid — ADR-0010 9-PR SEQUENCE LANDED + DR + SoD + D35 LADDER kalıcı mimari kabul edildi): Codex `019dd2c9` xhigh effort architecture review → ADR-0010 Vault Credential Lifecycle + DR + Operator/Agent Authority. 6/9 PR merged + 4 supporting docs (15 PR total this session block: #194 V24 ops + #195 sig fix + #196 ADR-0010 + #197 bootstrap-writer policy/runbook/verify + #198 vault-patch wrapper + #199 D35 evidence ladder + #200 Faz 16.2.A scope anchor runbook + #201 Dockerfile keyring fix + DR-6 readiness evidence + #202 test vault DR rekey runbook + #203 prod DR-8/DR-9 runbooks). 3 user-driven items pending: AlUser_App MSSQL credential refresh (DR-6 Step 2 unblocker), test vault DR rekey execution (PR #202 runbook → admin token → DR-4 unblocker), prod DR-8 read-only inventory (PR #203 runbook → DR-9 readiness). Codex consensus + auto-mode sandbox correctly enforced ADR-0010 §2.5 user-approval gate on Vault credential operations even on test vault. ⏸️ Önceki 2026-04-28 ~06:05 UTC+3 (Session 31 — FAZ 21.3 OUTBOX RUNTIME ON STAGING-SW + D35 OPEN BLOCKER): 4 within-repo PR merged (#189 D35 11-step runbook, #190 PR-G follow-up digest pin, #191 test overlay shared-cred patch, #192 outbox isolated preflight evidence) + cross-repo platform-backend PR #16 + multiple V-series migrations (V21+V22+V23). Operator-driven on staging-sw k3d-test: V16+V17+V19+V20+V21+V22+V23 applied to reports_db, ESO sync REPORTS_DB_USERNAME/PASSWORD via Codex 019dd296 verdict B (test overlay aliases onto Vault `db_username`/`db_password` — caveat documented), permission-service rolled to PR-G follow-up digest `sha256:b6d59f0a...` (sha-4f408f4), Spring Boot Started in 42s, HikariPool-2 + reportsDb persistence unit + outbox poller alive (17 successful poll cycles ~85s, zero exceptions, V22+V23 schema verified). D35 first evidence (PR #189 Step 9.4-9.11) **superseded by ADR-0010 §2.3 D35 ladder**: PR #192 evidence retroactively classified as D35-0 (Runtime Preflight), D35-1 (Scope Anchor Prereq) needs real Workcube ETL row (Faz 16.2.A), D35-2 = "D35 first evidence" depends on D35-1, D35-3 = product path UI persona. Out-of-scope chip queued: dedicated reports_db role + Vault populate + revert PR #191 — partially resolved by ADR-0010 sequence (PR #194 V24 + PR #197 bootstrap-writer + PR #201 DR-6 readiness; full closure pending user action 2 = test vault DR rekey). ⏸️ Önceki 2026-04-26 ~22:10 UTC+3 (Session 30 — FAZ 19.11 STEP 1-4 + FAZ 21.A + FAZ 21.3 EXPLICIT-SCOPE FIXTURE + FAZ 16 ETL CI): 9 within-repo PR merged (#168-#176) + 2 cross-repo PR merged (platform-backend #10/#11). OpenFGA model migrated from platform-ssot to local fixtures + dev-seed.sh writes it before tuples (model_id explicit) + semantic-JSON drift gate vs upstream platform-backend + fixture smoke gate (10 checks: 5 allow + 3 deny + 2 containment-deny). data_access PG schema (V19+V20) regression CI gate (V16→V17→V19→V20 + 11-assertion suite). etl_worker pytest CI (159 tests) + ruff (19→0) + mypy strict (10→0). Codex retrospective `019dcbc8` consulted post-#172, absorbed in #173. Within-repo agent-actionable work exhausted; remaining items operator-gated (Faz 21.1b ETL run on staging-sw via PR #162 runbook) or sandbox-blocked (cross-repo PR-C/D/E Java/REST/UI). Handoff docs: `docs/session-handoff-2026-04-26-faz-21-3-zanzibar-fixture-sealed.md` + `docs/session-handoff-2026-04-26-supplement-pr-172-175.md`. ⏸️ Önceki 2026-04-25 — **FAZ 19.MSSQL.A-O LIVE**: Workcube MSSQL bridge canlı, 31 rapor + 12 dashboard, 8/8 backend endpoint 200 (handoff: `docs/session-handoff-2026-04-25-faz-19-mssql-closure.md`). ⏸️ Önceki 2026-04-24 ~15:30 UTC+3 — **FAZ 18.3 CROSS-REPO + HOST OPS**: ssot PR #550 + #551 MERGED (cross-repo), `platform-service-manager-1` container stop+rm canlı, zero regression (410 tombstone + 200 diğer routes). User direktif kaynak repo amacı netleştirildi: "Kaynak repo tek amacı eski geliştirmeleri yeni sisteme taşıma kaynağı, başka amaç yok" → Faz 19 Kaynak Repo Full Decommission plan-time Codex istişare sıradaki. 22 cross-repo PR merged (19 gitops + 3 ssot) Session 29'da. ⏸️ Önceki ~14:10 Session 29 +12 — **FAZ 18.2 CANLI DEPLOY PASS + PR-A AÇILDI**: `/api/services/` HTTP 410 Gone her iki domain (ai.acik.com + testai.acik.com) deploy PASS, zero regression. platform-ssot cross-repo PR #550 açıldı (MFE admin UI retire + Ops Links compat page + ShellHeader permission fix + i18n 4 dil, net -797 satır cleanup, linked worktree + `--worktree-mode` light gate PASS). 18 PR bu repo + 1 PR ssot = 19 cross-repo PR. ⏸️ Önceki ~12:45 Session 29 WRAP — **FAZ 17 TAM IMPL (10 PR MERGED 4070 satır) + FAZ 16.0/16.1 DRAFT + FAZ 16.2 PLAN AGREE**: Faz 17 Local Dev Environment Parity 9 sub-faz (17.0 naming + 17.1 fixtures + 17.2 profile overlays + 17.2.5 app base split + 17.3 scripts + 17.4 promotion-contract + 17.5 README + 17.X TLS + 17.Y image handoff) + CI 5/5 green. Faz 16.0 data contract DRAFT/RFC + Faz 16.1 annex 2A crawler 44 unique tablo + 2B 9 sys.* catalog. Codex 3 thread (019dbe80 Faz 17 iter-4 AGREE, 019dbe92 Faz 16.0 iter-4 AGREE DRAFT/RFC, 019dbf15 Faz 16.2 plan istişare). Kalan: Faz 17 secondary codex exec (user codex login), Faz 16.1 SEAL dış paydaş (Workcube admin 8 sourceQuery manuel + schema-service-parity-adr), Faz 16.2 Flyway V16 platform-ssot cross-repo PR. ⏸️ Önceki ~09:55 UTC+3 Session 29 — üç-katman (lokal dev Mac / test staging-sw k3d-test / prod staging-sw k3d-prod+compose) netleştirildi, Mac k3d mirror'ları stop (RAM relief ~7 GB→130 MB), staging-sw k3d-test auth-service RSA PEM placeholder fix (Vault `kv/platform/auth-service` jwt_private_key/public_key initialize) → **9/9 platform-test pod 1/1 Ready + testai.acik.com 200**, staging-sw k3d-prod 49 Running korundu. Faz 13 rollback-window kullanıcı direktifi ile iptal (canlı kullanıcı yok). Faz 17 Local Dev Environment Parity + Faz 16.0 Data Contract paralel plan draft (Plan subagent + Codex adversarial review bekleniyor). ⏸️ Önceki Session 28 T0 — **FAZ 13 HYBRID GO CANLI KANITLI**: Codex verdict PARTIAL+GO (thread `019dbc86`). Kontrat ADR-0002 Faz D6 (stateful PG+KC+Vault K8s-dışı, host-compose'da) ile uyumlu: "Full cutover" (K8s KC deploy + compose decommission) ADR aykırı → reddedildi. **Atomic cutover anlamı kalibre edildi**: `ai.acik.com` authoritative prod yolu K8s workload'a bağlı (byte-perfect canlı kanıt: public=127.0.0.1:30443 NodePort 200 15666B eşleşme) + stateful tier compose'da kalıcı + **72h rollback-window başladı T0=2026-04-24 01:25 UTC+3**. Session 28 açılış 5-komut refresh 5/5 Session 27 canonical eşleşme, T0 minimum teyit 3/3 PASS. Kalan paralel cleanup (non-blocking): ArgoCD cosmetic OutOfSync (RespectIgnoreDifferences syncOption), drill quarterly cron, prod non-superAdmin scoped allow seed.
 > **Verified by**: Codex + live `ssh staging-sw`
 > **Source set**: Live `kubectl`, `curl`, `docker`, `ssh staging-sw` outputs + repo HEAD
 > **Supersedes**: `docs/session-handoff-2026-04-20-k8s-migration-faz-b-c.md` bölümlerindeki `%99.5`, `DONE + LIVE (Faz H)`, `soft cutover` ifadeleri
 > **Interpretation gate**: Önce [../../AGENTS.md](../../AGENTS.md), ardından [../context-priority-rules.md](../context-priority-rules.md) okunur; bu dosya canlı truth snapshot'tır, repo-geneli kural sözleşmesi değildir.
+
+---
+
+## Live Delta — Session 37 (2026-05-03 ~14:30 UTC+3) — FAZ 19 PROD MIGRATION + AG GRID LISANS BYTES + DRIFT AUDIT
+
+**Mandate**: kullanıcı 2026-05-03 oturumu açılış "AG Grid invalid license" bug raporu + sonrasında "tek kaynak olsun heryerde key yazmasın daha standart" + "öncelik ve iş akışına göre önceli sırası belirleyin codex ile" → Codex thread `019ded8d-f321-71d1-829b-c4dcf9ac4b78` AGREE-with-revisions sequence verdict.
+
+### Edge nginx prod cluster-authoritative migration (drift #1+#6 KAPANDI)
+
+**Önceki durum (Faz 19 prod migration unfinished)**:
+- `ai.acik.com` host edge nginx (`platform-web-nginx` Docker container) `root /usr/share/nginx/html` ile **diskten** servis veriyordu
+- Bind mount: `/home/halil/platform/web/releases/<sha> -> /usr/share/nginx/html`
+- k3d-prod cluster pod'ları Running ama **bypass** ediliyordu — public flow host static disk'e bağlıydı
+- Her frontend deploy için **manuel rsync** gerekiyordu (pod tar export → host filesystem → nginx reload)
+- `testai.acik.com` zaten 2026-04-30'da migration yapılmıştı (Codex 019ddf23 AGREE) — prod'a uyarlanmadı
+
+**Yapılan migration**:
+- Backup: `/home/halil/platform/web/nginx/default.conf.bak-20260503-1425` (9219 byte)
+- Yeni `default.conf` (229 satır) — ai.acik.com server block testai pattern + ai-spesifik istisnalar:
+  - **Kaldırılan**: `root /usr/share/nginx/html`, `index index.html`, `location = /`, `location = /index.html`, `location = /remoteEntry.js`, `location ~ ^/remotes/.../remoteEntry.js`, `location /assets/`, `location /remotes/`, `location @remotes_k8s_proxy`
+  - **Korunan**: `/admin/master/ → 403`, `/admin/realms/ → 403`, `/nginx-healthz`, `/cockpit-api/ → 503`, `/api/services/ → 410` (Faz 18.2 tombstone), `/api/ → cluster proxy`, `/realms/ → :8081`, `/resources/ → :8081`
+  - **Yeni**: `location / { proxy_pass https://127.0.0.1:30443 + proxy_ssl_server_name on + proxy_ssl_name ai.acik.com + proxy_ssl_verify off + WebSocket headers }`
+- Apply sequence: `cp /tmp/edge-nginx-new.conf /home/halil/platform/web/nginx/default.conf` → `docker exec platform-web-nginx nginx -t` (PASS) → `docker exec platform-web-nginx nginx -s reload` (PASS)
+- **Rollback path** (test edilmedi, yazılı runbook):
+  ```bash
+  cp /home/halil/platform/web/nginx/default.conf.bak-20260503-1425 \
+    /home/halil/platform/web/nginx/default.conf
+  docker exec platform-web-nginx nginx -t
+  docker exec platform-web-nginx nginx -s reload
+  ```
+
+**Post-reload smoke (Codex AGREE evidence)**:
+
+| Eksen | testai.acik.com | ai.acik.com |
+|---|---|---|
+| `/` | 200 | 200 |
+| `/build-info.json` | 200, sha 331c515, JSON | **200, sha 331c515, JSON** (önce HTML SPA fallback) |
+| `/admin/reports/fin-fatura-satirlari` | 200 | 200 |
+| `/api/users/all` (cluster gateway) | 401 application/json `{"error":"unauthorized","message":"JWT token zorunludur."}` | 401 application/json (aynı body) |
+| `/api/v1/authz/me` | 401 application/json | 401 application/json |
+| `/realms/.../openid-configuration` | 200 (platform-test) | 200 (serban) |
+| `/api/services/` tombstone | 410 | 410 |
+| `/admin/master/` deny | (testai'de yok) | 403 |
+| AG Grid `LicenseManager.getLicenseDetails().valid` | true (AG-128070, 2 June 2026) | **true** (önceki bundle invalid, build #25276216345 sonrası valid) |
+
+### AG Grid Enterprise lisansı bytes-fix + single-source refactor
+
+**Sorun zinciri**:
+1. Kullanıcı 2026-05-03 yeni AG Grid trial license (AG-128070, expiry 2 June 2026) clipboard'tan paylaştı (markdown rendering bytes ile bozulmuş — hash mismatch, valid:false)
+2. Email markdown link strip ile gerçek bytes çıkarıldı: 800 byte (mailto link inclusive) → 538 byte plain text → md5(body) === suffix PASS (`3b05b3beb13d041ff50c205666d14797`)
+3. Build #25275466940 testai variant `AG-128070` valid; prod variant **Docker buildx GHA cache hit** ile eski Secret değerini (`AG-127779`) bundle'a gömdü
+4. Cache-bust commit `fb5f835e` (Dockerfile RUN'a `BUILD_SHA` reference) yetersiz — BuildKit cache key'e ARG değişimi default girmiyor
+5. Cache scope rename `331c5159` (`scope=${variant}-v2`) eski cache'i unreachable yaptı — fresh build #25276216345 her iki variant valid bytes ile tamamlandı
+6. Prod cluster pod yeni image (sha256:cc487c55...) ama edge nginx static disk eski bundle (AG-127779) sunuyordu — **drift #1 (edge static)** root cause olarak ortaya çıktı (yukarıdaki migration'ın motivasyonu)
+
+**Single-source refactor** (kullanıcı isteği "tek kaynak olsun heryerde key yazmasın daha standart"):
+- `VITE_AG_GRID_LICENSE_KEY` standardı (Vite naming convention)
+- Bundle `window.__env__` artık tek kopya (önce `AG_GRID_LICENSE_KEY` + `VITE_AG_GRID_LICENSE_KEY` iki kopya vardı)
+- 5 dosya: Dockerfile, ci-web-image-push.yml, mfe-shell/vite.config.ts, mfe-users/vite.config.ts, packages/design-system/src/lib/ag-grid-license.ts, .env.local.example
+- GitHub Secret repo ismi `AG_GRID_LICENSE_KEY` (geriye dönük uyumlu); CI workflow build-arg olarak `VITE_AG_GRID_LICENSE_KEY` ile inject
+
+### Drift backlog audit sonuçları (Codex 019ded8d AGREE)
+
+| Drift | Önceki rapor | Audit + post-impl gerçek |
+|---|---|---|
+| #1 Edge nginx prod static serving | 🔴 OPEN | ✅ **KAPANDI** (bu session) |
+| #2 Workflow gate 1c sırası | 🔴 OPEN | ❌ **STALE** — workflow `deploy-frontend-prod.yml` line 127 set image → 145 Gate 1a → 159 Gate 1b → 196 Gate 1c sıra zaten doğru. Önceki failure root cause #1 (edge static disk eski build-info.json sha sunuyordu) |
+| #3 Self-hosted runner labels persistence | 🟡 OPEN | 🟡 **OPEN** (düşük öncelik, runtime add yapıldı `gh api`, restart sonrası belirsiz) |
+| #4 Docker buildx cache invalidation | ✅ FIX | ✅ **KAPANDI** (cache scope rename pattern kalıcı, hotfix branch'da `331c5159`) |
+| #5 Live cluster vs overlay yaml drift | 🔴 OPEN | ❌ **STALE** — origin/main `platform-web-frontend(-testai)` zaten doğru pin'liyor; eski yorum satırlarındaki `platform-ssot-frontend` referansları yanılttı |
+| #6 build-info.json prod nginx config | 🟡 OPEN | ✅ **KAPANDI** — #1 ile birlikte cluster pod nginx config `/build-info.json` serve ediyor |
+
+### platform-web `hotfix/ag-grid-license-rebuild` branch (geçici release source)
+
+**Live çalışan ama main'e merge edilmedi** (4 commit, last-success base `8bdc7bc2`):
+- `73bb20d4` refactor: single-source VITE_AG_GRID_LICENSE_KEY (5 dosya)
+- `35f48ad5` chore: re-trigger CI for new trial license bytes
+- `fb5f835e` fix: cache-bust Vite build RUN BUILD_SHA reference
+- `331c5159` fix: rename buildx GHA cache scope
+
+**Draft PR**: https://github.com/Halildeu/platform-web/pull/171 (blocker: main build broken)
+
+**main blocker**: Vite 8 + `@module-federation/vite` + rolldown experimental incompatibility — top-level await error in MF virtual modules (`mfe_access__loadShare__react_mf_2_dom__loadShare__.mjs:32:26`). Last successful build: `8bdc7bc2` (2026-05-02 22:56). Sonrası 4 commit (faz-21-4-e1/e2/f1/f2) main'e geldi → 5 ardı ardına CI failure.
+
+**main-fix sub-task**: spawn'da paralel ilerliyor (kullanıcı tek tıkla başlatabilir). Hedef: fix-forward, force override yok, feature commits korunacak. Codex önerisi sıra: rolldown disable → target audit → @module-federation/vite matrix → 60-90dk içinde toolchain rollback fallback.
+
+### Aktif drift listesi (post-Session 37)
+
+- 🟡 **#3 Self-hosted runner labels persistence** (düşük öncelik) — `prod-deploy` label runtime add edildi (`gh api repos/.../actions/runners/63/labels` POST `prod-deploy`); service restart sonrası kaybolma testi yapılmadı. Çözüm: runner config.sh `--labels` flag persist + systemd service reload.
+
+### 22.1.1 milestone reframe — A0 contract probe sonucu (Codex 019ded8d AGREE)
+
+**BE-009 acceptance live yapılamıyor** — sub-branch state inconsistency tespit edildi:
+
+**Sub-branch HEAD `451422e` (codex/be-001-...) tree** (`git ls-tree -r` doğrulaması):
+- Mevcut: DeviceCredential ailesi, EnrollmentToken, HmacSignatureSupport, JwtTenantContextResolver, TenantContextResolver vb. (BE-001..BE-008 implementation)
+- **Yok olan dosyalar** (22 dosya, lokal worktree'de **untracked**, hiçbir branch'a commit edilmemiş):
+  - `security/EndpointAdminAuthz.java` (relation constants — BE-009 authz)
+  - `config/EndpointAdminRequireModuleInterceptor.java`, `EndpointAdminWebMvcConfig.java`, `OpenFgaAuthzConfig.java`
+  - `controller/AdminMaintenanceTokenController.java`, `AgentMaintenanceTokenController.java` (BE-013 controllers)
+  - `dto/v1/admin/{Create,EndpointMaintenanceToken}*.java`, `dto/v1/agent/Consume*.java`
+  - `exception/MaintenanceTokenExpiredException.java`
+  - `model/EndpointMaintenanceToken.java` (JPA entity), `MaintenanceAction.java` (enum)
+
+**`git log --all --diff-filter=A`**: bu 22 dosya **hiçbir branch'a commit edilmemiş** — sadece lokal halil@machine working tree dirty state'te.
+
+**Image content probe** (Docker pull + Python zipfile.ZipFile inspection):
+```python
+matched class entries: 0  (AdminMaintenance|EndpointAdminAuthz|RequireModule|MaintenanceToken)
+total matches: 0
+```
+
+Image (sha256:89be36653bf6...) sub-branch tree'sine sadık — class'lar gerçekten yok. **Artifact provenance conflict değil; implementation kesin missing.**
+
+**3-tier drift A0 probe sonucu** (Codex revize'den):
+| Boyut | Code (varsayım) | Seed JSON (gitops PR #317 MERGED) | Live Model |
+|---|---|---|---|
+| Module name | `ENDPOINT_ADMIN` (uppercase) | `endpoint-admin` (lowercase) | `module` (generic) |
+| Relations | `viewer`, `manager` (uncommitted) | `admin`, `viewer` | `can_view`, `can_manage`, `can_edit`, `blocked` |
+
+Hiçbir 2 boyut eşleşmiyor. A1.1-prime alignment commit (`bf59897` lokal) class sub-branch'ta yokken anlamsız → push edilmiyor.
+
+### 22.1.1 milestone split (Codex AGREE D29 dilini koruyor)
+
+- **22.1.1a Runtime prep — STATUS: current** ✅
+  - Image build var (sha-451422e, sha256:89be36653bf6f2992d937a0d5e30cb6900c21a1a52daf89a5669cfc54a46416f)
+  - Manifest skeleton var (gitops PR #312)
+  - Application config var (PR #55 application-k8s.yml MERGED to sub-branch)
+  - Tuple seed JSON committed (gitops PR #317)
+  - Acceptance runbook var (gitops PR #317 docs/RB-22-1-1-be-009-openfga-live.md)
+  - **Live acceptance blocker**: controller/authz implementation source-of-truth branch'inde commit edilmemiş
+
+- **22.1.1b Live authz acceptance — STATUS: blocked by III review** 🔴
+  - Committed implementation (III review verdict sonrası)
+  - Rebuilt image (controller + authz dahil)
+  - Route smoke (`/api/v1/endpoint-admin/admin/*`)
+  - Tuple seed live + allow/deny/audit/fail-closed (D29 4-katman)
+  - **Pending**: III review verdict (commit/no-commit per file) + artifact parity check
+
+### III review sub-task (Codex AGREE'd, read-only)
+
+Scope: lokal worktree 22 untracked dosya code review:
+1. Tag her dosya: BE-009 mu, BE-013 mü, ikisinin karışımı mı
+2. Kod uygunluk:
+   - `@RequireModule` annotation route + relation contract (live OpenFGA model uyumu)
+   - Controller routes (RB-22.1.1 runbook'taki path'ler)
+   - DTO/Model JPA entity DB migration gereksinimi (Flyway scripts)
+   - Audit trace gerçek kod mu, runbook varsayımı mı
+   - Fail-closed davranış (OpenFGA down/model missing/tuple missing)
+   - Test coverage (allow/deny/unauth/fail-closed)
+3. **Artifact parity check**: untracked 22 dosya ↔ image jar class list → image'da var/yok yazılı
+4. NO PUSH — sadece review report
+
+**Verdict path**:
+- III → I-controlled: kod uygun, küçük düzeltmelerle sub-branch'a PR (relation alignment + tuple seed revise + image rebuild)
+- III → II-confirmed: prototip kalır; 22.1.1 implementation sprint yeniden planlanır
+
+### Faz 22.1.x sprint backlog (Codex 019ded8d sıra önerisi, AGREE post-A0 probe)
+
+1. ✅ Edge migration (Session 37) — kapandı
+2. ✅ AG Grid lisans bytes-fix + single-source refactor + cache invalidation — Session 37
+3. **22.1.1a config/runtime prep — current state (live acceptance blocked)**
+4. **III review sub-task** — lokal 22 dosya kod review + artifact parity
+5. **22.1.1b live authz acceptance** — III verdict sonrası
+6. **BE-013 maintenance token live** — BE-009b (22.1.1b) sonrası, controller absence nedeniyle live gate block
+7. **DD-EA-1 manifest contract drift gate + DD-EA-5 ESO secret allowlist** — gitops paralel, BE runtime authz hattından bağımsız
+8. **#3 runner labels persistence** — düşük öncelik, deploy reliability
+9. **22.1.IT EndpointPilot OU + 1 cihaz baseline** — IT 5 soru cevap bekliyor (async)
+10. **22.1.0 follow-up + 22.2 Trusted Signing pre-req docs** — düşük öncelik
+
+**Acceptance kabul edilebilir dil**:
+- ✅ "BE-009 config/image/runbook prep: done/current"
+- ✅ "BE-009 live acceptance: blocked by missing committed implementation"
+- ✅ "BE-013 live acceptance: blocked by BE-009 implementation and maintenance token controller absence"
+- ❌ "BE-009 accepted" / "22.1.1 closed" / "Zanzibar-ready" / "BE-013 can start live"
+
+**Cross-repo product release train healthy iddiası verilemez** — platform-web main CI yeşile dönmeden cross-repo train healthy değil. 22.1.1a config-only ilerlemesi platform-web main kırıklığına bağlı değil.
+
+### Codex thread referansları (Session 37)
+
+- `019ded8d-f321-71d1-829b-c4dcf9ac4b78` — drift backlog öncelik sırası + edge migration plan-time PARTIAL → audit absorbed → post-impl AGREE → A0 contract probe (3-tier drift) → A1.1-prime varsayım çürüdü (sub-branch state inconsistency) → III + II interim REVISE → 22.1.1a/b split AGREE
 
 ---
 

@@ -2,11 +2,23 @@
 
 > **Sprint**: "Prod post-cutover compliance" — Faz 22.1.1 milestone (Codex 019de00f revize)
 > **Owner**: Engineering (platform-backend BE-009 + platform-k8s-gitops manifest reconcile)
-> **Status**: HAZIR (live smoke için tuple seed + acceptance runbook)
+> **Status**: ⚠️ **BLOCKED — pending III review** (Codex `019ded8d` AGREE post-A0 probe, 2026-05-03 Session 37)
+> **Status detail**: 22.1.1 milestone Codex AGREE ile **22.1.1a (Runtime prep — current) + 22.1.1b (Live authz acceptance — blocked)** olarak bölündü
+>
+> **⚠️ ACCEPTANCE EXECUTION GUIDANCE**:
+>  - **22.1.1a Runtime prep (current)**: image build (sha-451422e, sha256:89be36653bf6...) var; manifest skeleton var (gitops PR #312); application config var (PR #55 application-k8s.yml MERGED to sub-branch); tuple seed JSON committed (gitops PR #317); bu runbook committed
+>  - **22.1.1b Live acceptance (blocked)**: 22 dosya implementation (controller/authz/interceptor/DTO/model) **source-of-truth branch'inde commit edilmemiş** (lokal halil@machine working tree dirty state). Image content probe match=0 (jar'da class yok). Acceptance D29 4-katman execute edilemez — endpoint mevcut değil
+>  - **III review sub-task açılacak**: lokal 22 dosya code review + artifact parity. Verdict path: I-controlled (PR uygunluk) veya II-confirmed (scope reset)
+>  - **3-tier drift A0 probe** (Codex revize): code (uncommitted varsayım `viewer`/`manager`) + seed JSON (gitops PR #317 `admin`/`viewer`) + live model (`can_view`/`can_manage`/`can_edit`/`blocked`) hiçbiri uyuşmuyor. III review verdict sonrası A1.1-prime relation alignment commit (`bf59897` lokal, push edilmedi) yeniden değerlendirilir
+>
+> **Bu runbook'taki tuple seed shape ve acceptance command'ları III review sonrası canonical shape'e çekilecek.** Şu an execute edilmemeli.
+>
 > **Reference**:
 >  - ADR-0012-EA: `docs/adr/0012-EA-endpoint-admin-governance-charter.md`
->  - platform-backend: `endpoint-admin-service/` (BE-009 IN_PROGRESS)
->  - tuple seed: `bootstrap/openfga/endpoint-admin-tuples.json`
+>  - Codex thread `019ded8d-f321-71d1-829b-c4dcf9ac4b78` — drift backlog audit + 22.1.1a/b split + A0 probe + REVISE→AGREE chain
+>  - Session 37 truth: `docs/state/current-state.md` (Live Delta — Session 37 22.1.1a/b milestone split)
+>  - platform-backend: `endpoint-admin-service/` (BE-009 IMPLEMENTATION PENDING — III review)
+>  - tuple seed: `bootstrap/openfga/endpoint-admin-tuples.json` (relations revize III sonrası)
 
 ## Bağlam
 
