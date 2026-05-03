@@ -1,0 +1,27 @@
+# Fixture: DD-EA-5 compliant ExternalSecret manifest example.
+# Tüm remoteRef.key değerleri ADR-0012-EA §111-117 allowlist içinde.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: endpoint-admin-service-secrets-compliant
+  namespace: platform-test
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: vault-platform-gitops
+  target:
+    name: endpoint-admin-service-secrets
+  data:
+    - secretKey: OIDC_CLIENT_SECRET
+      remoteRef:
+        key: kv/platform/endpoint-admin/oidc-client-secret
+        property: client_secret
+    - secretKey: AUDIT_LOG_DSN
+      remoteRef:
+        key: kv/platform/endpoint-admin/audit-log-dsn
+        property: dsn
+    - secretKey: AGENT_ENROLLMENT_SECRET
+      remoteRef:
+        key: kv/platform/endpoint-admin/agent-enrollment-secret
+        property: token

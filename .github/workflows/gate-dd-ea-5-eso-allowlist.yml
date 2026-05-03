@@ -1,0 +1,82 @@
+# ADR-0012-EA DD-EA-5 — ESO Secret Path Allowlist Gate
+#
+# Codex `019ded8d` AGREE plan-time consensus (Session 37, 2026-05-03).
+#
+# endpoint-admin-service ExternalSecret manifest'lerinde Vault path scope
+# enforcement. Sadece ADR-0012-EA §"ESO secret path scope" altında listelenen
+# 6 key kabul edilir; başka path → drift.
+#
+# Allowlist (ADR-0012-EA §111-117):
+#   - kv/platform/endpoint-admin/oidc-client-secret
+#   - kv/platform/endpoint-admin/audit-log-dsn
+#   - kv/platform/endpoint-admin/ad-bind-credentials
+#   - kv/platform/endpoint-admin/entra-app-credentials
+#   - kv/platform/endpoint-admin/internal-api-key
+#   - kv/platform/endpoint-admin/agent-enrollment-secret
+#
+# Strict allowlist enforcement: code-signing-key supply-chain pipeline scope'u
+# ESO runtime'da kabul edilmez (build-time CI sign + public key reference only).
+#
+# Triggers:
+#   - workflow_dispatch (manual debug)
+#   - pull_request paths filter (endpoint-admin ExternalSecret + script + tests)
+#
+# Authority: Codex consensus only (no operator approval — read-only static
+# analysis, no state mutation, no credential read).
+
+name: ADR-0012-EA DD-EA-5 — ESO Secret Path Allowlist
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/gate-dd-ea-5-eso-allowlist.yml"
+      - "scripts/governance/check_eso_secret_allowlist.py"
+      - "tests/governance/test_check_eso_secret_allowlist.py"
+      - "tests/governance/fixtures/eso-allowlist-*.yaml"
+      - "kustomize/base/apps/endpoint-admin-service/**/*.yaml"
+      - "kustomize/overlays/test/apps/endpoint-admin-service/**/*.yaml"
+      - "kustomize/overlays/prod/apps/endpoint-admin-service/**/*.yaml"
+      - "kustomize/overlays/test/eso/endpoint-admin-*"
+      - "kustomize/overlays/prod/eso/endpoint-admin-*"
+      - "docs/adr/0012-EA-*.md"
+
+jobs:
+  dd-ea-5-allowlist:
+    name: ADR-0012-EA DD-EA-5 — ESO secret path allowlist validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: DD-EA-5 — ESO secret path allowlist check
+        run: |
+          python3 scripts/governance/check_eso_secret_allowlist.py --verbose
+
+      - name: DD-EA-5 JSON artifact
+        if: always()
+        run: |
+          python3 scripts/governance/check_eso_secret_allowlist.py --json > /tmp/dd-ea-5-report.json || true
+          cat /tmp/dd-ea-5-report.json
+
+      - name: Upload DD-EA-5 report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dd-ea-5-allowlist-report
+          path: /tmp/dd-ea-5-report.json
+          retention-days: 7
+
+      - name: Run unit tests
+        run: |
+          python3 -m unittest tests.governance.test_check_eso_secret_allowlist -v
