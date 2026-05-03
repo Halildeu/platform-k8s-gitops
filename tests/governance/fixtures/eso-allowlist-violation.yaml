@@ -1,0 +1,31 @@
+# Fixture: DD-EA-5 violation ExternalSecret manifest example.
+# remoteRef.key değerleri ADR-0012-EA §111-117 allowlist DIŞINDA → drift.
+# DD-EA-5 gate bu manifest'i reject etmeli (exit 1).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: endpoint-admin-service-secrets-violation
+  namespace: platform-test
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: vault-platform-gitops
+  target:
+    name: endpoint-admin-service-secrets
+  data:
+    # VIOLATION: code-signing-key supply-chain pipeline kapsamı, ESO runtime'da yasak
+    - secretKey: AUTHENTICODE_KEY
+      remoteRef:
+        key: kv/platform/endpoint-admin/code-signing-key
+        property: pfx_b64
+    # VIOLATION: kv/platform/permission-service/* başka servisin path scope'u
+    - secretKey: PERMISSION_DB_PASSWORD
+      remoteRef:
+        key: kv/platform/permission-service/db-password
+        property: value
+    # VIOLATION: kv/global/* root path allowlist dışı
+    - secretKey: GLOBAL_API_KEY
+      remoteRef:
+        key: kv/global/some-shared-key
+        property: value
