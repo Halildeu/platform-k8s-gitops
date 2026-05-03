@@ -48,20 +48,24 @@ images:
     digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
-    # our_company comp_status fix (sha-4c8c6a9, platform-backend PR #22).
-    # MasterDataService SQL column adı düzeltildi.
-    # Prod cluster D17 scale-to-zero unchanged — operator rolls out only
-    # when D30 atomic cutover lands.
-    # Includes sha-8302249 (PR #21 master data endpoints), sha-b9ddc86
-    # (PR #19 DD-5 + PR #20 superAdmin bypass), sha-12480ef
-    # (RequireModuleInterceptor relation alias).
-    digest: sha256:1da34913a4b24412c60f0f5819c6fc691ff607453d297823ef5cf41b636fe4b2
+    # 2026-05-03 Session 37 ArgoCD OutOfSync drift realign:
+    # Prod cluster `kubectl set image` ile yeni digest'e geçirildi (manual
+    # promotion önceki sprint'lerden), overlay yaml update edilmedi → ArgoCD
+    # `platform-prod` application OutOfSync. Yeni digest cluster gerçeği ile
+    # uyumlu. Önceki digest sha256:1da34913 (RequireModuleInterceptor relation
+    # alias, PR #19+#20+#21+#22 chain) — replaced by sha256:10cba617 prod live.
+    digest: sha256:10cba61702cd66798330c86b0eecdfb1786eae8ad65f60c80067056698d06d96
   # Frontend prod variant (ai.acik.com + serban realm)
-  # Faz 21.3 PR-E merge (sha-57dc28e): mfe-access Veri Erişimi panel
-  # (5 tab + ScopeAssignModal + 4-locale i18n + nested Routes + 28 tests).
+  # 2026-05-03 Session 37: AG Grid lisans bytes-fix + single-source refactor +
+  # buildx cache scope-v2 rename hotfix branch (`hotfix/ag-grid-license-rebuild`,
+  # main-fix sub-task spawn'da blocked: Vite 8 + Module Federation top-level
+  # await). Image build #25276216345 sha-331c515 prod variant. Cluster `kubectl
+  # set image` Session 37 edge migration sırasında apply edildi. Önceki digest
+  # sha256:d6baaf5838 (Faz 21.3 PR-E mfe-access Veri Erişimi panel) — replaced
+  # by sha256:cc487c5584 cluster live.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
-    digest: sha256:d6baaf5838b9736527fc3483a380461ed576ed524e6944a120ab64f21772af45
+    digest: sha256:cc487c5584f96d78bb86101e871963203de2de5cc7f5741253e32a638a5d3b55
 
 patches:
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz replace
