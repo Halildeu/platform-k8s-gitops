@@ -97,21 +97,97 @@
 
 - 🟡 **#3 Self-hosted runner labels persistence** (düşük öncelik) — `prod-deploy` label runtime add edildi (`gh api repos/.../actions/runners/63/labels` POST `prod-deploy`); service restart sonrası kaybolma testi yapılmadı. Çözüm: runner config.sh `--labels` flag persist + systemd service reload.
 
-### Faz 22.1.x sprint backlog (Codex 019ded8d sıra önerisi, AGREE)
+### 22.1.1 milestone reframe — A0 contract probe sonucu (Codex 019ded8d AGREE)
+
+**BE-009 acceptance live yapılamıyor** — sub-branch state inconsistency tespit edildi:
+
+**Sub-branch HEAD `451422e` (codex/be-001-...) tree** (`git ls-tree -r` doğrulaması):
+- Mevcut: DeviceCredential ailesi, EnrollmentToken, HmacSignatureSupport, JwtTenantContextResolver, TenantContextResolver vb. (BE-001..BE-008 implementation)
+- **Yok olan dosyalar** (22 dosya, lokal worktree'de **untracked**, hiçbir branch'a commit edilmemiş):
+  - `security/EndpointAdminAuthz.java` (relation constants — BE-009 authz)
+  - `config/EndpointAdminRequireModuleInterceptor.java`, `EndpointAdminWebMvcConfig.java`, `OpenFgaAuthzConfig.java`
+  - `controller/AdminMaintenanceTokenController.java`, `AgentMaintenanceTokenController.java` (BE-013 controllers)
+  - `dto/v1/admin/{Create,EndpointMaintenanceToken}*.java`, `dto/v1/agent/Consume*.java`
+  - `exception/MaintenanceTokenExpiredException.java`
+  - `model/EndpointMaintenanceToken.java` (JPA entity), `MaintenanceAction.java` (enum)
+
+**`git log --all --diff-filter=A`**: bu 22 dosya **hiçbir branch'a commit edilmemiş** — sadece lokal halil@machine working tree dirty state'te.
+
+**Image content probe** (Docker pull + Python zipfile.ZipFile inspection):
+```python
+matched class entries: 0  (AdminMaintenance|EndpointAdminAuthz|RequireModule|MaintenanceToken)
+total matches: 0
+```
+
+Image (sha256:89be36653bf6...) sub-branch tree'sine sadık — class'lar gerçekten yok. **Artifact provenance conflict değil; implementation kesin missing.**
+
+**3-tier drift A0 probe sonucu** (Codex revize'den):
+| Boyut | Code (varsayım) | Seed JSON (gitops PR #317 MERGED) | Live Model |
+|---|---|---|---|
+| Module name | `ENDPOINT_ADMIN` (uppercase) | `endpoint-admin` (lowercase) | `module` (generic) |
+| Relations | `viewer`, `manager` (uncommitted) | `admin`, `viewer` | `can_view`, `can_manage`, `can_edit`, `blocked` |
+
+Hiçbir 2 boyut eşleşmiyor. A1.1-prime alignment commit (`bf59897` lokal) class sub-branch'ta yokken anlamsız → push edilmiyor.
+
+### 22.1.1 milestone split (Codex AGREE D29 dilini koruyor)
+
+- **22.1.1a Runtime prep — STATUS: current** ✅
+  - Image build var (sha-451422e, sha256:89be36653bf6f2992d937a0d5e30cb6900c21a1a52daf89a5669cfc54a46416f)
+  - Manifest skeleton var (gitops PR #312)
+  - Application config var (PR #55 application-k8s.yml MERGED to sub-branch)
+  - Tuple seed JSON committed (gitops PR #317)
+  - Acceptance runbook var (gitops PR #317 docs/RB-22-1-1-be-009-openfga-live.md)
+  - **Live acceptance blocker**: controller/authz implementation source-of-truth branch'inde commit edilmemiş
+
+- **22.1.1b Live authz acceptance — STATUS: blocked by III review** 🔴
+  - Committed implementation (III review verdict sonrası)
+  - Rebuilt image (controller + authz dahil)
+  - Route smoke (`/api/v1/endpoint-admin/admin/*`)
+  - Tuple seed live + allow/deny/audit/fail-closed (D29 4-katman)
+  - **Pending**: III review verdict (commit/no-commit per file) + artifact parity check
+
+### III review sub-task (Codex AGREE'd, read-only)
+
+Scope: lokal worktree 22 untracked dosya code review:
+1. Tag her dosya: BE-009 mu, BE-013 mü, ikisinin karışımı mı
+2. Kod uygunluk:
+   - `@RequireModule` annotation route + relation contract (live OpenFGA model uyumu)
+   - Controller routes (RB-22.1.1 runbook'taki path'ler)
+   - DTO/Model JPA entity DB migration gereksinimi (Flyway scripts)
+   - Audit trace gerçek kod mu, runbook varsayımı mı
+   - Fail-closed davranış (OpenFGA down/model missing/tuple missing)
+   - Test coverage (allow/deny/unauth/fail-closed)
+3. **Artifact parity check**: untracked 22 dosya ↔ image jar class list → image'da var/yok yazılı
+4. NO PUSH — sadece review report
+
+**Verdict path**:
+- III → I-controlled: kod uygun, küçük düzeltmelerle sub-branch'a PR (relation alignment + tuple seed revise + image rebuild)
+- III → II-confirmed: prototip kalır; 22.1.1 implementation sprint yeniden planlanır
+
+### Faz 22.1.x sprint backlog (Codex 019ded8d sıra önerisi, AGREE post-A0 probe)
 
 1. ✅ Edge migration (Session 37) — kapandı
-2. **#3 runner labels persistence** — düşük öncelik, deploy reliability
-3. **BE-009 sub-branch ilerlet** (PR #55 platform-backend) — main broken'dan bağımsız
-4. **BE-013 maintenance token** — BE-009 D29 4-katman acceptance sonrası sıralı
-5. **DD-EA-1 manifest contract drift gate + DD-EA-5 ESO secret allowlist** — gitops paralel
-6. **22.1.IT EndpointPilot OU + 1 cihaz baseline** — IT 5 soru cevap bekliyor (async)
-7. **22.1.0 follow-up + 22.2 Trusted Signing pre-req docs** — düşük öncelik
+2. ✅ AG Grid lisans bytes-fix + single-source refactor + cache invalidation — Session 37
+3. **22.1.1a config/runtime prep — current state (live acceptance blocked)**
+4. **III review sub-task** — lokal 22 dosya kod review + artifact parity
+5. **22.1.1b live authz acceptance** — III verdict sonrası
+6. **BE-013 maintenance token live** — BE-009b (22.1.1b) sonrası, controller absence nedeniyle live gate block
+7. **DD-EA-1 manifest contract drift gate + DD-EA-5 ESO secret allowlist** — gitops paralel, BE runtime authz hattından bağımsız
+8. **#3 runner labels persistence** — düşük öncelik, deploy reliability
+9. **22.1.IT EndpointPilot OU + 1 cihaz baseline** — IT 5 soru cevap bekliyor (async)
+10. **22.1.0 follow-up + 22.2 Trusted Signing pre-req docs** — düşük öncelik
 
-**Cross-repo product release train healthy iddiası verilemez** — platform-web main CI yeşile dönmeden cross-repo train healthy değil. BE-009 sub-branch ilerlemesi platform-web main kırıklığına bağlı değil.
+**Acceptance kabul edilebilir dil**:
+- ✅ "BE-009 config/image/runbook prep: done/current"
+- ✅ "BE-009 live acceptance: blocked by missing committed implementation"
+- ✅ "BE-013 live acceptance: blocked by BE-009 implementation and maintenance token controller absence"
+- ❌ "BE-009 accepted" / "22.1.1 closed" / "Zanzibar-ready" / "BE-013 can start live"
+
+**Cross-repo product release train healthy iddiası verilemez** — platform-web main CI yeşile dönmeden cross-repo train healthy değil. 22.1.1a config-only ilerlemesi platform-web main kırıklığına bağlı değil.
 
 ### Codex thread referansları (Session 37)
 
-- `019ded8d-f321-71d1-829b-c4dcf9ac4b78` — drift backlog öncelik sırası + edge migration plan-time PARTIAL → audit absorbed → post-impl AGREE
+- `019ded8d-f321-71d1-829b-c4dcf9ac4b78` — drift backlog öncelik sırası + edge migration plan-time PARTIAL → audit absorbed → post-impl AGREE → A0 contract probe (3-tier drift) → A1.1-prime varsayım çürüdü (sub-branch state inconsistency) → III + II interim REVISE → 22.1.1a/b split AGREE
 
 ---
 
