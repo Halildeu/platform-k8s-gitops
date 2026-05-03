@@ -104,6 +104,32 @@ patches:
         path: /data/KEYCLOAK_ISSUER_URI
         value: "https://ai.acik.com/realms/serban"
 
+  # 2026-05-04 Faz 22.1.x: Prod'da REPORTS_DB_ENABLED=false → reports_db
+  # secondary datasource bean instantiate olmaz (permission-service
+  # ReportsDbDataSourceConfig @ConditionalOnProperty). Ama ExternalSecret
+  # base'de reports_db_username + reports_db_password remoteRef referans var
+  # → Vault'ta field yok → ESO SecretSyncedError → ArgoCD platform-prod
+  # Healthy=Degraded.
+  #
+  # Codex 019dd296 verdict B test pattern: test cluster'da Vault'a
+  # `reports_db_username/password` field'ları db_username/password aliases
+  # olarak yazılmış (test scope, REPORTS_DB_ENABLED=true). Prod scope için
+  # security separation: reports_db için ayrı read-only DB user gerek
+  # (manuel operatör iş, ADR-0010 §2.5 Vault credential lifecycle).
+  #
+  # Geçici çözüm (REPORTS_DB_ENABLED=true olunca add-back):
+  # ExternalSecret data[6]+data[7] (reports_db_username/password) prod
+  # overlay'de remove. Base manifest aynı kalır (test'te 8 entry hepsi
+  # gerekli). Prod'da 6 entry → ESO SecretSyncedError çözülür.
+  - target:
+      kind: ExternalSecret
+      name: permission-service-secrets
+    patch: |-
+      - op: remove
+        path: /spec/data/7
+      - op: remove
+        path: /spec/data/6
+
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:
       kind: Ingress
