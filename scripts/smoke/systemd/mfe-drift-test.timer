@@ -1,0 +1,12 @@
+[Unit]
+Description=MFE Remote Drift Detector — test cluster cadence
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/blob/main/scripts/smoke/mfe-drift-detect.sh
+
+[Timer]
+# 30min cadence (matches drift-test + smoke-test pattern)
+OnBootSec=15min
+OnUnitActiveSec=30min
+Unit=mfe-drift-test.service
+
+[Install]
+WantedBy=timers.target

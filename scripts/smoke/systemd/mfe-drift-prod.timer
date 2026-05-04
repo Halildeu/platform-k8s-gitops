@@ -1,0 +1,12 @@
+[Unit]
+Description=MFE Remote Drift Detector — prod cluster cadence
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/blob/main/scripts/smoke/mfe-drift-detect.sh
+
+[Timer]
+# 15min cadence (matches drift-prod + smoke-prod priority pattern)
+OnBootSec=10min
+OnUnitActiveSec=15min
+Unit=mfe-drift-prod.service
+
+[Install]
+WantedBy=timers.target
