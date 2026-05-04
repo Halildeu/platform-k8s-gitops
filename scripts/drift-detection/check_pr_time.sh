@@ -44,15 +44,25 @@ else
   echo "[OK]  All ghcr.io image refs are @sha256: pinned"
 fi
 
-# Check 2: GHCR manifest existence — count unique pinned digests
-# (full verification needs CI GHCR auth — deferred; runtime detector
-# catches GC'd digests within 5min)
+# Check 2: GHCR manifest existence — real verification via OCI registry API
+# (Codex Sprint A P0 Item 4 hardening — was deferred when CI auth wasn't
+# yet configured; now uses GITHUB_TOKEN bearer flow to HEAD each manifest)
 echo
 echo "=== Check 2: GHCR manifest existence ==="
-total_images=$(echo "$RENDER" | grep -oE 'image:\s*ghcr\.io/[^@]+@sha256:[a-f0-9]+' | sort -u | wc -l | tr -d ' ')
-echo "[INFO] $total_images unique pinned image digests"
-echo "[NOTE] GHCR manifest existence verification needs CI auth — deferred"
-echo "       (runtime detector catches GC'd digests within 5min)"
+VERIFIER="$REPO_ROOT/scripts/drift-detection/verify_ghcr_manifests.py"
+if [[ -x "$VERIFIER" ]]; then
+  check2_output=$(echo "$RENDER" | python3 "$VERIFIER" 2>&1)
+  check2_rc=$?
+  echo "$check2_output"
+  if [[ $check2_rc -eq 1 ]]; then
+    EXIT_CODE=1
+  elif [[ $check2_rc -eq 2 ]]; then
+    echo "[WARN] GHCR verification inconclusive (network/auth) — runtime detector remains line of defense"
+  fi
+else
+  total_images=$(echo "$RENDER" | grep -oE 'image:\s*ghcr\.io/[^@]+@sha256:[a-f0-9]+' | sort -u | wc -l | tr -d ' ')
+  echo "[INFO] $total_images unique pinned image digests (verifier missing — fallback count-only)"
+fi
 
 # Check 3: ConfigMap invariants for JWT-validating services
 # (Codex AGREE retrospective tur — hardening per item "ConfigMap Invariant"):
