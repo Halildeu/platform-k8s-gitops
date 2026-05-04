@@ -1,0 +1,13 @@
+[Unit]
+Description=D29 Smoke Runner — prod cluster cadence
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/blob/main/scripts/smoke/d29-smoke-runner.sh
+
+[Timer]
+# Runs 15 minutes after boot, then every 15 minutes (faster cadence
+# than test, matches drift-prod timer; prod evidence is critical path)
+OnBootSec=15min
+OnUnitActiveSec=15min
+Unit=smoke-prod.service
+
+[Install]
+WantedBy=timers.target

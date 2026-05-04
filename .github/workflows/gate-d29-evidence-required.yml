@@ -1,0 +1,64 @@
+name: D29 Evidence Required — prod promotion gate (Codex P0 Sprint A Item 3)
+
+# Blocks prod promotion PRs that introduce a new image digest without
+# corresponding D29-GREEN ledger evidence. This is the central D30
+# pre-cutover gate: no digest reaches prod cluster without proven
+# Up + Functional + Zanzibar pass on test cluster first.
+#
+# Architecture:
+#   1. PR touches kustomize/overlays/prod/** → this gate runs
+#   2. Compute new digests (head - base)
+#   3. For each new digest, require:
+#      - release-candidates/<repo>/<sha>.json exists
+#      - promotion.test.smoke_evidence.d29_up.status == GREEN
+#      - promotion.test.smoke_evidence.d29_functional.status == GREEN
+#      - promotion.test.smoke_evidence.d29_zanzibar.status in (GREEN, AMBER)
+#      - promotion.test.verified_at is non-null
+#   4. Missing evidence → CI red → merge blocked
+#
+# Codex retrospective Sprint A — central D30 gate.
+
+on:
+  pull_request:
+    paths:
+      - "kustomize/overlays/prod/**"
+      - "scripts/promotion/gate-evidence-check.py"
+      - ".github/workflows/gate-d29-evidence-required.yml"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  d29-evidence-gate:
+    name: D29 evidence required for prod digest changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --quiet jsonschema PyYAML
+
+      - name: Install kubectl
+        run: |
+          # We need kubectl for `kubectl kustomize` — same approach as gate-drift-pr-time.yml
+          KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+          curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+      - name: Check D29 evidence for prod digest changes
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # base.sha is the merge-base, not a remote ref — use it directly
+          python3 scripts/promotion/gate-evidence-check.py \
+            --base "$PR_BASE_SHA" \
+            --head HEAD

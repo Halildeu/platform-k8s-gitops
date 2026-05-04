@@ -1,0 +1,13 @@
+[Unit]
+Description=D29 Smoke Runner — test cluster cadence
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/blob/main/scripts/smoke/d29-smoke-runner.sh
+
+[Timer]
+# Runs 30 minutes after boot, then every 30 minutes (cadence chosen to
+# match drift-test timer + give cluster time to stabilize after deploy)
+OnBootSec=30min
+OnUnitActiveSec=30min
+Unit=smoke-test.service
+
+[Install]
+WantedBy=timers.target
