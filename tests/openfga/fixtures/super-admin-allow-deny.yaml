@@ -1,0 +1,97 @@
+# Super-admin allow/deny fixture (Codex P0 — used by smoke test)
+#
+# Format: YAML list of test cases. Each case:
+#   - name: human-readable test name
+#     user: user:<id> (matches users_db.users.id)
+#     check: { object: <type>:<id>, relation: <rel> }
+#     expected: allow | deny
+#     reason: tek cümle açıklama (audit + future CI rationale)
+#
+# Bu fixture canonical contract'ı (docs/authz/openfga-model-contract.md)
+# behavioral test ile mühürler. Schema rev olduğunda bu fixture güncellenmeli;
+# CI gate fixture'ı OpenFGA test cluster'ında çalıştırıp allow/deny doğrular.
+
+cases:
+  # --- Super-admin canonical tuple — TEK satır = tüm modüllere erişim ---
+  - name: "admin@example.com (user:1201) — canonical super-admin allow user-read"
+    user: "user:1201"
+    check:
+      object: "action:user-read"
+      relation: "allowed"
+    expected: allow
+    reason: |
+      organization:default#admin@user:1201 tuple → action:* allowed implicit
+      via "from organization:default#admin" relation. user-read action erişimi
+      organization admin'ten miras alınır.
+
+  - name: "halil.kocoglu (user:1204) — super-admin module:USER_MANAGEMENT can_manage"
+    user: "user:1204"
+    check:
+      object: "module:USER_MANAGEMENT"
+      relation: "can_manage"
+    expected: allow
+    reason: |
+      Session 37'de halil için yazılan tek tuple
+      (organization:default#admin@user:1204) tüm module:*#can_manage
+      kontrollerini geçirir. Bu fixture'ın PASS olması canonical pattern'i
+      doğrular.
+
+  - name: "halil — module:VARIANTS_READ can_view"
+    user: "user:1204"
+    check:
+      object: "module:VARIANTS_READ"
+      relation: "can_view"
+    expected: allow
+    reason: |
+      can_view de organization admin'ten miras alınır. can_manage > can_view
+      hierarchy yok; her ikisi de organization:default#admin'den çözer.
+
+  # --- Regular user — super-admin tuple yok ---
+  - name: "regular USER (user:9999, fictional) — module:USER_MANAGEMENT can_manage DENY"
+    user: "user:9999"
+    check:
+      object: "module:USER_MANAGEMENT"
+      relation: "can_manage"
+    expected: deny
+    reason: |
+      organization:default#admin@user:9999 tuple yok + explicit
+      module:USER_MANAGEMENT#can_manage@user:9999 tuple yok → deny.
+      Sentetik test: regular kullanıcı admin olmadığını kanıtlar.
+
+  - name: "regular USER — action:user-read DENY"
+    user: "user:9999"
+    check:
+      object: "action:user-read"
+      relation: "allowed"
+    expected: deny
+    reason: |
+      Aynı mantık: super-admin tuple yok, action:user-read için explicit
+      tuple yok → deny. Frontend bu kullanıcıya "Bu işlemi gerçekleştirmek
+      için user-read yetkisine sahip olmalısınız" hata gösterir.
+
+  # --- Anti-pattern: 39 explicit tuple (user:920001) — deprecation kanıtı ---
+  - name: "user:920001 — module:USER_MANAGEMENT can_manage allow (legacy 39-tuple)"
+    user: "user:920001"
+    check:
+      object: "module:USER_MANAGEMENT"
+      relation: "can_manage"
+    expected: allow
+    reason: |
+      EXPLICIT module:USER_MANAGEMENT#can_manage@user:920001 tuple var.
+      Bu legacy pattern (39 tuple per user) deprecation listesinde — Codex
+      P1 schema migration sprint'inde organization:default#admin'e
+      consolidate edilecek.
+
+  - name: "user:920001 — action:user-read DENY (legacy gap)"
+    user: "user:920001"
+    check:
+      object: "action:user-read"
+      relation: "allowed"
+    expected: deny
+    reason: |
+      user:920001 39 tuple'a sahip ama action:user-read içinde DEĞİL
+      (Session 37 audit). Bu, legacy "explicit tuple per object" pattern'inin
+      neden kırılgan olduğunu gösterir: yeni action eklendiğinde her user
+      için tuple güncellenmeli, kaçırırsa silent deny.
+      organization:default#admin pattern'inde bu kaçak yok — yeni action
+      otomatik eligible olur.
