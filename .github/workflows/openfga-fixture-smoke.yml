@@ -98,18 +98,22 @@ jobs:
       - name: Install Python dependencies for super-admin fixture
         run: python3 -m pip install --quiet PyYAML
 
-      - name: Run super-admin canonical fixture (Codex P0 #5 — informational)
-        # Codex Sprint A P0 Item 5 — makes tests/openfga/fixtures/super-admin-allow-deny.yaml
-        # executable via the CI ephemeral OpenFGA. Without this step the YAML fixture
-        # was documentation-only (kural #9 fake-test territory). This step seeds canonical
-        # super-admin tuples and asserts allow/deny per case.
+      - name: Run super-admin canonical fixture (Codex P0 #5 — target-state coverage)
+        # 2026-05-04 empirical finding (Codex thread 019df310 follow-up):
+        # bootstrap/local-fixtures/openfga/model.fga and upstream
+        # Halildeu/platform-backend:backend/openfga/model.fga both do NOT implement
+        # organization:default#admin -> module/action/report inheritance.
         #
-        # 2026-05-04 first-run finding: bootstrap fixture model.fga does NOT implement
-        # the canonical super-admin inheritance rules (organization:default#admin@user:X
-        # → action:* + module:*). Production model has these; bootstrap fixture lags.
-        # Real fix: bootstrap/local-fixtures/openfga/model.fga update — separate PR.
-        # Until then: continue-on-error so this step REPORTS the gap (visible in CI log)
-        # but doesn't block unrelated PRs from merging.
+        # The OpenFGA Model Drift Gate (Faz 19.11 Step 4) enforces parity between
+        # local fixture and upstream backend model. Initial B0a attempt to add
+        # inheritance to local fixture diverged from upstream → drift gate fail
+        # (correctly). Therefore this super-admin fixture is target-state coverage
+        # (documentation of the desired contract), NOT a current model gate.
+        #
+        # It remains continue-on-error until the platform-backend OpenFGA schema rev
+        # + tuple migration lands and the drift gate proves upstream parity. At that
+        # point bootstrap fixture model.fga will get inheritance via drift-sync PR
+        # and this step will become a hard gate.
         continue-on-error: true
         env:
           OPENFGA_URL: http://localhost:8080
@@ -120,10 +124,10 @@ jobs:
             echo "[SKIP] tests/openfga/run_super_admin_fixture.py not present"
           fi
 
-      - name: Super-admin fixture annotation
+      - name: Super-admin target-state fixture annotation
         if: always()
         run: |
-          echo "::warning title=Super-admin canonical fixture (informational)::Bootstrap fixture model.fga does NOT yet implement canonical super-admin inheritance. Production model does. Track follow-up to update bootstrap/local-fixtures/openfga/model.fga + run_super_admin_fixture.py to align dev fixture with production pattern (Codex P0 #5 second-pass)."
+          echo "::warning title=Super-admin target-state fixture::Current upstream OpenFGA model does not implement organization admin inheritance for module/action/report checks. This fixture documents target-state behavior and must become a hard gate only after platform-backend model migration + live tuple migration evidence."
 
       - name: Dump OpenFGA logs on failure
         if: failure()
