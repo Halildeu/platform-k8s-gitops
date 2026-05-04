@@ -1,0 +1,54 @@
+name: Drift — ResourceQuota Headroom Preflight (Codex P0 #4)
+
+on:
+  pull_request:
+    paths:
+      - 'kustomize/overlays/**'
+      - 'kustomize/base/**'
+      - 'scripts/drift-detection/check_quota_headroom.sh'
+      - '.github/workflows/gate-quota-headroom.yml'
+
+jobs:
+  quota-headroom:
+    name: ResourceQuota headroom preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        env: [test, prod]
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup kubectl (kustomize built-in)
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.31.0'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pyyaml
+        run: pip install pyyaml
+
+      - name: Quota headroom preflight (${{ matrix.env }})
+        env:
+          PLATFORM_GITOPS_REPO: ${{ github.workspace }}
+        run: |
+          chmod +x scripts/drift-detection/check_quota_headroom.sh
+          # exit 1 (fail) blocks merge; exit 2 (warn) allowed for now,
+          # converted to fail in P1 hardening (when memory budget reviewed)
+          set +e
+          bash scripts/drift-detection/check_quota_headroom.sh ${{ matrix.env }}
+          rc=$?
+          if [ $rc -eq 1 ]; then
+            echo "::error::Strict rollout would fail — quota headroom insufficient"
+            exit 1
+          elif [ $rc -eq 2 ]; then
+            echo "::warning::Quota tight (<25% headroom) — review before merge"
+            exit 0  # warn-only for MVP
+          fi
+          exit $rc
