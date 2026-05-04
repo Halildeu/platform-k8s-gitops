@@ -1,0 +1,54 @@
+# Break-glass ServiceAccount — Codex Sprint C pre-cutover RBAC
+#
+# Audited cluster-admin path for emergency operations during D30 atomic
+# cutover + 72h rollback window. Operator's regular kubeconfig SHOULD become
+# read-only post-cutover (Sprint C Faz 3, post-cutover); break-glass SA is
+# the explicit, tracked path for state mutation.
+#
+# Usage:
+#   bash scripts/operations/break-glass-token.sh "<reason>"
+#   → issues 1h TTL token, logs to /var/log/break-glass-audit.log, opens GH audit issue
+#
+# Audit:
+#   - All kubectl ops with this SA logged in cluster audit log (kube-apiserver)
+#   - Reconciliation PR REQUIRED within 30min of any state change
+#     (template: .github/PULL_REQUEST_TEMPLATE/break-glass-reconciliation.md)
+#
+# Why kube-system namespace:
+#   ops-break-glass is a cluster-level SA (cluster-admin binding). Living in
+#   kube-system makes it visible in standard k8s management workflows and
+#   keeps it separate from platform workload namespaces.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ops-break-glass
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: ops-break-glass
+    app.kubernetes.io/part-of: rbac-break-glass
+    app.kubernetes.io/managed-by: gitops
+  annotations:
+    description: |
+      Audited cluster-admin path. Use only when ArgoCD sync is blocked
+      AND immediate state mutation is required (D30 cutover or rollback).
+      Reconciliation PR REQUIRED within 30min of token use.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ops-break-glass-cluster-admin
+  labels:
+    app.kubernetes.io/name: ops-break-glass
+    app.kubernetes.io/part-of: rbac-break-glass
+    app.kubernetes.io/managed-by: gitops
+  annotations:
+    audit-policy: "all-operations-logged"
+    reconciliation-required: "30min-after-state-mutation"
+subjects:
+  - kind: ServiceAccount
+    name: ops-break-glass
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
