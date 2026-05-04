@@ -54,33 +54,91 @@ echo "[INFO] $total_images unique pinned image digests"
 echo "[NOTE] GHCR manifest existence verification needs CI auth — deferred"
 echo "       (runtime detector catches GC'd digests within 5min)"
 
-# Check 3: KEYCLOAK_ISSUER_URI present on JWT-validating services
+# Check 3: ConfigMap invariants for JWT-validating services
+# (Codex AGREE retrospective tur — hardening per item "ConfigMap Invariant"):
+#   - Both KEYCLOAK_ISSUER_URI AND KEYCLOAK_JWKS_URI must be present
+#   - OVERLAY_MUST_OVERRIDE placeholder must NOT leak into rendered overlay
+#   - Issuer must match expected per environment:
+#       test  → https://testai.acik.com/realms/platform-test  (or internal http://keycloak:8080/realms/platform-test)
+#       prod  → https://ai.acik.com/realms/serban
+#   - JWKS path must end with /protocol/openid-connect/certs
 echo
-echo "=== Check 3: ConfigMap KEYCLOAK_ISSUER_URI parity ==="
+echo "=== Check 3: ConfigMap invariants (Codex hardening) ==="
 JWT_SERVICES="api-gateway user-service variant-service permission-service schema-service report-service"
 check3_output=$(echo "$RENDER" | python3 -c "
-import sys, yaml
+import sys, yaml, re
+
+ENV = '$ENV'
+EXPECTED_ISSUERS = {
+    'prod': ['https://ai.acik.com/realms/serban'],
+    'test': [
+        'https://testai.acik.com/realms/platform-test',
+        'http://keycloak:8080/realms/platform-test',
+        'http://keycloak:8080/realms/serban',  # legacy fallback (some test fixtures use serban)
+    ],
+}
+expected = EXPECTED_ISSUERS.get(ENV, [])
+
 docs = list(yaml.safe_load_all(sys.stdin))
-issuer_map = {}
-for d in docs:
-    if not isinstance(d, dict): continue
-    if d.get('kind') != 'ConfigMap': continue
-    name = d.get('metadata', {}).get('name', '')
-    if not name.endswith('-config'): continue
-    svc = name[:-len('-config')]
-    issuer = (d.get('data') or {}).get('KEYCLOAK_ISSUER_URI', '')
-    issuer_map[svc] = issuer
+fail_count = 0
 for svc in '$JWT_SERVICES'.split():
-    val = issuer_map.get(svc)
-    if val is None:
-        print(f'[SKIP] {svc}-config not in render')
-    elif val:
-        print(f'[OK]  {svc} KEYCLOAK_ISSUER_URI={val}')
-    else:
-        print(f'[FAIL] {svc} missing KEYCLOAK_ISSUER_URI')
+    cm = next(
+        (d for d in docs
+         if isinstance(d, dict) and d.get('kind') == 'ConfigMap'
+         and d.get('metadata', {}).get('name') == f'{svc}-config'),
+        None,
+    )
+    if cm is None:
+        print(f'[SKIP] {svc}-config not in render (services.yaml gate will handle this in P0 next)')
+        continue
+
+    data = cm.get('data') or {}
+    issuer = data.get('KEYCLOAK_ISSUER_URI', '')
+    jwks = data.get('KEYCLOAK_JWKS_URI', '')
+
+    # Check 1: presence
+    if not issuer:
+        print(f'[FAIL] {svc} KEYCLOAK_ISSUER_URI missing')
+        fail_count += 1
+        continue
+    if not jwks:
+        print(f'[FAIL] {svc} KEYCLOAK_JWKS_URI missing')
+        fail_count += 1
+        continue
+
+    # Check 2: placeholder leak
+    if 'OVERLAY_MUST_OVERRIDE' in issuer:
+        print(f'[FAIL] {svc} KEYCLOAK_ISSUER_URI = OVERLAY_MUST_OVERRIDE placeholder leaked into {ENV} render')
+        fail_count += 1
+        continue
+    if 'OVERLAY_MUST_OVERRIDE' in jwks:
+        print(f'[FAIL] {svc} KEYCLOAK_JWKS_URI = OVERLAY_MUST_OVERRIDE placeholder leaked into {ENV} render')
+        fail_count += 1
+        continue
+
+    # Check 3: issuer matches env expectation
+    if expected and issuer not in expected:
+        print(f'[FAIL] {svc} KEYCLOAK_ISSUER_URI={issuer} not in expected for {ENV}: {expected}')
+        fail_count += 1
+        continue
+
+    # Check 4: JWKS path
+    if not jwks.endswith('/protocol/openid-connect/certs'):
+        print(f'[FAIL] {svc} KEYCLOAK_JWKS_URI={jwks} does not end with /protocol/openid-connect/certs')
+        fail_count += 1
+        continue
+
+    print(f'[OK]  {svc} ISSUER+JWKS valid')
+
+if fail_count > 0:
+    print(f'')
+    print(f'Total: {fail_count} ConfigMap invariant violation(s)')
+    sys.exit(1)
+sys.exit(0)
 " 2>&1)
+check3_rc=$?
 echo "$check3_output"
-if echo "$check3_output" | grep -q '\[FAIL\]'; then
+if [ $check3_rc -ne 0 ]; then
   EXIT_CODE=1
 fi
 
