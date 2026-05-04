@@ -1,0 +1,13 @@
+[Unit]
+Description=Cutover Bundle — nightly stateful tier backup cadence
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/blob/main/scripts/cutover/cutover-bundle.sh
+
+[Timer]
+# Runs daily at 03:00 local time (low traffic window)
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=cutover-bundle-nightly.service
+
+[Install]
+WantedBy=timers.target
