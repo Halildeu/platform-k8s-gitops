@@ -1,0 +1,75 @@
+name: Promotion Bot — scheduled prod-candidate scan (Codex Sprint B B5)
+
+# Daily scheduled run of scripts/promotion/scan-promotion-candidates.sh.
+# Walks release-candidates/<repo>/<sha>.json entries, finds those that are
+# verified-in-test but NOT yet promoted-to-prod, and opens DRAFT prod-candidate
+# PRs for operator review.
+#
+# Schedule: Pazartesi-Cuma 08:00 UTC (covers Türkiye business hours start).
+# workflow_dispatch: also manual trigger for ad-hoc scans.
+#
+# This is the central B-side automation: combines B1 primitives (scan script)
+# with scheduled cadence + GitHub App credential context.
+
+on:
+  schedule:
+    # Mon-Fri 08:00 UTC — operator review window opens around this time
+    - cron: "0 8 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Optional repo filter (platform-backend or platform-web; empty = all)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Dry-run mode (validate only, no PR creation)'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write   # bot needs to push branch with prod overlay digest update
+  pull-requests: write  # bot needs to open DRAFT PR
+
+jobs:
+  scan-candidates:
+    name: Scan ledger entries + open prod-candidate PRs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python3 -m pip install --quiet jsonschema PyYAML
+
+      - name: Configure git
+        run: |
+          git config user.name "promotion-bot[bot]"
+          git config user.email "promotion-bot@noreply.github.com"
+
+      - name: Run scan-promotion-candidates
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          PROMOTION_DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: |
+          chmod +x scripts/promotion/scan-promotion-candidates.sh
+          if [ -n "${{ inputs.repo }}" ]; then
+            bash scripts/promotion/scan-promotion-candidates.sh "${{ inputs.repo }}"
+          else
+            bash scripts/promotion/scan-promotion-candidates.sh
+          fi
+
+      - name: Summary annotation
+        if: always()
+        run: |
+          echo "::notice title=Promotion bot scan complete::Daily scheduled scan finished. Check this run's log for opened DRAFT PRs (auto-promotion label). Operator review needed before merge."
