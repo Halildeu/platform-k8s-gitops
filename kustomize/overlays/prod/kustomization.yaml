@@ -132,6 +132,23 @@ patches:
       - op: replace
         path: /data/KEYCLOAK_ISSUER_URI
         value: "https://ai.acik.com/realms/serban"
+  # 2026-05-04 Session 37 follow-up: schema-service + report-service KC
+  # issuer prod override. Same pattern — base sets internal KC, prod points
+  # to ai.acik.com for the iss claim match.
+  - target:
+      kind: ConfigMap
+      name: schema-service-config
+    patch: |-
+      - op: replace
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://ai.acik.com/realms/serban"
+  - target:
+      kind: ConfigMap
+      name: report-service-config
+    patch: |-
+      - op: replace
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://ai.acik.com/realms/serban"
   - target:
       kind: ConfigMap
       name: permission-service-config

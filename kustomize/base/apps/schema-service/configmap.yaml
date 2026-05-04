@@ -41,3 +41,10 @@ data:
   # Logging level (prod'da INFO, test'te DEBUG override edilir)
   LOGGING_LEVEL_ROOT: "INFO"
   LOGGING_LEVEL_COM_ACIK: "INFO"
+  # 2026-05-04 Session 37: KC OIDC config — was missing in base, caused
+  # JWT validation to fail on prod (anonymous SecurityContext, 401 on
+  # all authenticated endpoints). Mirrors api-gateway/permission-service
+  # pattern. Test cluster uses internal KC svc DNS; prod overlay overrides
+  # ISSUER to ai.acik.com (see overlays/prod/kustomization.yaml patches).
+  KEYCLOAK_ISSUER_URI: "http://keycloak:8080/realms/serban"
+  KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
