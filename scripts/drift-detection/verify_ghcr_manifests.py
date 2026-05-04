@@ -131,7 +131,7 @@ def extract_pairs(render: str) -> set[tuple[str, str]]:
 
 
 def main() -> int:
-    strict = "--strict" in sys.argv
+    strict = "--strict" in sys.argv or os.environ.get("GHCR_STRICT", "").lower() in ("1", "true", "yes")
 
     render = sys.stdin.read()
     if not render.strip():
@@ -177,6 +177,18 @@ def main() -> int:
     print(f"auth_fail:    {len(auth_fails)}")
     print(f"network_fail: {len(network_fails)}")
 
+    # Heuristic: if ALL pairs return MISSING (404), it's almost certainly a
+    # cross-repo auth issue, not real garbage collection. GHCR returns 404
+    # for both "doesn't exist" AND "no read permission" (security through
+    # obscurity). Treat all-404 as inconclusive → AUTH_FAIL classification.
+    if missing and not (network_fails or auth_fails) and len(missing) == len(pairs):
+        print()
+        print("[HEURISTIC] all digests returned 404 — likely cross-repo packages:read")
+        print("            permission missing (GITHUB_TOKEN scoped to this repo only).")
+        print("            Reclassifying as AUTH_FAIL (inconclusive, not real GC).")
+        auth_fails = missing
+        missing = []
+
     if missing:
         print()
         print("=== MISSING manifests (BLOCKING — would cause ImagePullBackOff) ===")
@@ -192,15 +204,16 @@ def main() -> int:
 
     if auth_fails:
         # Auth fails are inconclusive but not fatal in default mode.
-        # Most likely cause: public repo with anonymous endpoint hiccup, or
-        # CI token doesn't have packages:read. Print warning and exit 0
-        # (rely on runtime detector as second line of defense).
-        # In --strict mode, treat AUTH_FAIL as hard failure.
+        # Most likely cause: cross-repo packages:read permission missing,
+        # or anonymous endpoint hiccup for public packages. Print warning
+        # and exit 0 (rely on runtime detector as second line of defense).
+        # GHCR_STRICT=true → treat AUTH_FAIL as hard failure (opt-in for
+        # repos where a PAT with full packages:read is configured).
         print()
-        print("[WARN] auth failures — manifest existence not verified for some digests")
-        print("       (runtime drift detector will catch GC'd digests within 5min)")
+        print("[WARN] auth/permission failures — manifest existence not verified")
+        print("       (runtime drift detector catches real GC'd digests within 5min)")
         if strict:
-            print("[STRICT] --strict mode: AUTH_FAIL counts as hard failure")
+            print("[STRICT] GHCR_STRICT=true: AUTH_FAIL counts as hard failure")
             return 1
 
     return 0
