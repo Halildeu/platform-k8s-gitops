@@ -81,6 +81,42 @@ Bu setting olmadan archive tag delete'lenebilir → "1+ yıl recovery" iddiası 
 ## Diğer ops scripts
 
 - `platform-ops-vault-patch.sh` — Vault memory online resize (Session 37 Codex absorb)
+- `systemd/git-cleanup-audit-logrotate.conf` — AI cleanup audit log rotation policy (1 yıl retention, tamper-detection, forensic note)
+
+## Audit log integrity
+
+`~/.claude/logs/git-cleanup.log` POSIX append-only, ama default mode 0644 yazılabilir (operator-edit risk).
+
+Tamper-detection için rotation sonrası rotated dosyalar read-only (0400). Operator edit ister sudo gerekir, audit trail bozulmaz.
+
+Rotation kurulumu:
+
+```bash
+# Operator manual setup
+sudo cp scripts/ops/systemd/git-cleanup-audit-logrotate.conf /etc/logrotate.d/git-cleanup-audit
+sudo logrotate -d /etc/logrotate.d/git-cleanup-audit  # dry-run validate
+sudo logrotate -f /etc/logrotate.d/git-cleanup-audit  # force first rotation
+```
+
+Tamper-evident pattern (post-rotation):
+```bash
+ls -la ~/.claude/logs/git-cleanup.log.*.gz
+# -r-------- 1 halil halil ... git-cleanup.log.1.gz   ← read-only post-rotation
+```
+
+Editing rotated logs requires `sudo chmod` first → leaves trace.
+
+## Tag protection (GitHub Settings — operator manual)
+
+D pattern recovery güvencesi için **Settings → Rules → Tag rulesets**:
+```
+Pattern: archive/**
+- Restrict deletions: ON
+- Restrict force-update: ON
+- Bypass: NONE (operator dahil immutable)
+```
+
+Bu setting OLMADAN: 1+ yıl recovery iddiası politikaya bağlı kalır (Codex 019df310 absorb).
 
 ## Bağlantılar
 
