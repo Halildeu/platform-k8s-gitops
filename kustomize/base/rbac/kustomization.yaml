@@ -1,0 +1,11 @@
+# Codex Sprint C base RBAC — break-glass SA + future restricted operator/CI bindings.
+# Apply via overlay (kustomize/overlays/<env>/rbac kustomization references this).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# kube-system is the canonical namespace for cluster-level admin SAs
+namespace: kube-system
+
+resources:
+  - break-glass-sa.yaml
+  # Future Sprint C Faz 3+: operator-readonly.yaml, ci-runner-deploy.yaml
