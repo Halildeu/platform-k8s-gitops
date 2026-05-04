@@ -1,0 +1,12 @@
+[Unit]
+Description=Run test drift detection every 15 minutes (Codex P2 cadence)
+Requires=drift-test.service
+
+[Timer]
+OnBootSec=180s
+OnUnitActiveSec=15min
+AccuracySec=30s
+Unit=drift-test.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Run prod drift detection every 5 minutes (Codex P1 cadence)
+Requires=drift-prod.service
+
+[Timer]
+# 5-minute cadence after boot, then every 5 minutes
+OnBootSec=120s
+OnUnitActiveSec=5min
+AccuracySec=15s
+Unit=drift-prod.service
+
+[Install]
+WantedBy=timers.target
