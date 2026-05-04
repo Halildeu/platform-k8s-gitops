@@ -1,0 +1,34 @@
+name: Drift Detection — PR-time Gate
+
+on:
+  pull_request:
+    paths:
+      - 'kustomize/overlays/**'
+      - 'kustomize/base/**'
+      - 'scripts/drift-detection/**'
+      - '.github/workflows/gate-drift-pr-time.yml'
+
+jobs:
+  drift-pr-time:
+    name: Drift PR-time render gate (Codex P0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        env: [test, prod]
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup kubectl (kustomize built-in)
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.31.0'
+
+      - name: Drift PR-time check (${{ matrix.env }})
+        env:
+          PLATFORM_GITOPS_REPO: ${{ github.workspace }}
+        run: |
+          chmod +x scripts/drift-detection/check_pr_time.sh
+          bash scripts/drift-detection/check_pr_time.sh ${{ matrix.env }}
