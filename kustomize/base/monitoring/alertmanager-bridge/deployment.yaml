@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager-bridge
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager-bridge
+    app.kubernetes.io/part-of: monitoring
+spec:
+  replicas: 1   # D21 — HPA yok
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager-bridge
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: alertmanager-bridge
+    spec:
+      serviceAccountName: alertmanager-bridge
+      containers:
+        - name: bridge
+          # Use ghcr.io/cli/cli image as it ships gh CLI + Python runtime is added via init
+          # Alternatif: alpine:3.19 + apk add github-cli python3 (smaller).
+          # Codex consult after first run for image baseline preference.
+          image: alpine/git:2.43.0   # placeholder; overlay'de specific image override
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              # Install runtime deps (cached on layer once we move to dedicated image)
+              apk add --no-cache python3 github-cli > /dev/null
+              # Run bridge
+              python3 /opt/bridge/alertmanager-bridge.py
+          envFrom:
+            - configMapRef:
+                name: alertmanager-bridge
+          env:
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: alertmanager-bridge-gh-token
+                  key: token
+                  optional: true   # Bootstrap'ta gh auth fallback
+          ports:
+            - containerPort: 9093
+              name: http
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9093
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9093
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: script
+              mountPath: /opt/bridge
+              readOnly: true
+            - name: log
+              mountPath: /var/log/bridge
+      volumes:
+        - name: script
+          configMap:
+            name: alertmanager-bridge-script
+            defaultMode: 0755
+        - name: log
+          emptyDir: {}
+---
+# ServiceAccount for bridge pod (gh CLI auth via env GITHUB_TOKEN OR
+# token volume; future: workload identity)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alertmanager-bridge
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager-bridge
+---
+# Script ConfigMap — alertmanager-bridge.py mounted at /opt/bridge/
+# Note: kustomize configMapGenerator pattern alternative
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-bridge-script
+  namespace: monitoring
+data:
+  alertmanager-bridge.py: |
+    # Note: gerçek script kustomize patches ile inject edilir
+    # veya configMapGenerator ile dosyadan üretilir
+    # Bu placeholder — overlay'de gerçek dosyaya pointer
+    print("alertmanager-bridge stub; overlay must inject scripts/alerting/alertmanager-bridge.py")
