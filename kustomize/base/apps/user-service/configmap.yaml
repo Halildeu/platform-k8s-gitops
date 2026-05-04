@@ -56,3 +56,11 @@ data:
   # resolution'ı `public.users` (Spring 'users' default) üzerinden olmalı;
   # aksi halde ScopeContext.superAdmin=false → tüm /api/v1/users 403.
   AUTHZ_USER_TABLE: "users"
+  # 2026-05-04 Session 37: KC OIDC config — was missing, caused JWT
+  # validation to fail in user-service (anonymous SecurityContext on every
+  # /api/v1/users/* call → 401 for halil.kocoglu / sezerataasik prod login).
+  # Other services (api-gateway, permission-service, variant-service) had
+  # these envs in base; user-service was the only outlier. Test cluster uses
+  # internal keycloak svc DNS; prod overlay overrides ISSUER to ai.acik.com.
+  KEYCLOAK_ISSUER_URI: "http://keycloak:8080/realms/serban"
+  KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"

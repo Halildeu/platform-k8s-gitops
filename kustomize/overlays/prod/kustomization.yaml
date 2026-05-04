@@ -107,6 +107,17 @@ patches:
       - op: add
         path: /data/SECURITY_JWT_AUDIENCE
         value: "account"
+  # 2026-05-04 Session 37 follow-up: user-service KC issuer prod override.
+  # Base now has KEYCLOAK_ISSUER_URI set to internal cluster KC for test;
+  # prod must point to the external issuer (ai.acik.com) so JWT validation
+  # matches the iss claim emitted by the prod KC instance.
+  - target:
+      kind: ConfigMap
+      name: user-service-config
+    patch: |-
+      - op: replace
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://ai.acik.com/realms/serban"
   - target:
       kind: ConfigMap
       name: permission-service-config
