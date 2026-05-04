@@ -80,8 +80,43 @@ def get_latest_model_id(store_id: str) -> str:
     return models[0]["id"]
 
 
+def safe_write_tuple(store_id: str, model_id: str, tuple_key: dict, label: str) -> bool:
+    """Write a tuple idempotently. Returns True if written or already exists."""
+    try:
+        http_call(
+            "POST",
+            f"/stores/{store_id}/write",
+            {
+                "writes": {"tuple_keys": [tuple_key]},
+                "authorization_model_id": model_id,
+            },
+        )
+        print(f"  [SEED] {label} written")
+        return True
+    except urllib.error.HTTPError as e:
+        if e.code in (400, 422):
+            try:
+                existing = http_call(
+                    "POST",
+                    f"/stores/{store_id}/read",
+                    {"tuple_key": tuple_key},
+                ).get("tuples", [])
+                if existing:
+                    print(f"  [SEED] {label} already exists")
+                    return True
+            except Exception:
+                pass
+            print(
+                f"  [SEED] {label} write failed ({e.code}) — model may not support this tuple shape",
+                file=sys.stderr,
+            )
+            return False
+        print(f"  [SEED] {label} write error: {e.code}", file=sys.stderr)
+        return False
+
+
 def write_super_admin_tuples(store_id: str, model_id: str) -> int:
-    """Seed canonical super-admin tuples for known user IDs. Idempotent (writes existing tuples are no-ops via upsert pattern)."""
+    """Seed canonical super-admin tuples for known user IDs."""
     written = 0
     for uid in SUPER_ADMIN_USER_IDS:
         tuple_key = {
@@ -89,39 +124,38 @@ def write_super_admin_tuples(store_id: str, model_id: str) -> int:
             "relation": "admin",
             "object": "organization:default",
         }
-        try:
-            http_call(
-                "POST",
-                f"/stores/{store_id}/write",
-                {
-                    "writes": {"tuple_keys": [tuple_key]},
-                    "authorization_model_id": model_id,
-                },
-            )
+        if safe_write_tuple(store_id, model_id, tuple_key, f"user:{uid} admin@organization:default"):
             written += 1
-        except urllib.error.HTTPError as e:
-            # 400 = tuple may already exist (write_existing not supported in some versions)
-            # 422 = invalid type — model doesn't have organization
-            if e.code in (400, 422):
-                # Try to verify it exists already via read
-                existing = http_call(
-                    "POST",
-                    f"/stores/{store_id}/read",
-                    {"tuple_key": tuple_key},
-                ).get("tuples", [])
-                if existing:
-                    print(f"  [SEED] user:{uid} admin@organization:default already exists")
-                else:
-                    print(
-                        f"  [SEED] user:{uid} write failed ({e.code}): "
-                        f"model may lack 'organization' type",
-                        file=sys.stderr,
-                    )
-            else:
-                print(f"  [SEED] user:{uid} write error: {e.code}", file=sys.stderr)
-                raise
-        else:
-            print(f"  [SEED] user:{uid} admin@organization:default written")
+    return written
+
+
+def seed_org_links_for_cases(store_id: str, model_id: str, cases: list[dict]) -> int:
+    """For each unique check object in the cases, seed <object>#org@organization:default
+    so canonical super-admin inheritance can resolve.
+
+    Required because module/action/report types declare 'org: [organization]' relation;
+    super-admin grants flow via 'admin from org' inheritance rule. Without the org link,
+    canonical super-admin tuple alone cannot resolve module/action/report checks.
+    """
+    seen_objects: set[str] = set()
+    written = 0
+    for case in cases:
+        obj = case.get("check", {}).get("object", "")
+        if not obj or obj in seen_objects:
+            continue
+        seen_objects.add(obj)
+
+        otype = obj.split(":", 1)[0] if ":" in obj else ""
+        if otype not in ("module", "action", "report"):
+            continue
+
+        tuple_key = {
+            "user": "organization:default",
+            "relation": "org",
+            "object": obj,
+        }
+        if safe_write_tuple(store_id, model_id, tuple_key, f"{obj}#org@organization:default"):
+            written += 1
     return written
 
 
@@ -186,14 +220,18 @@ def main() -> int:
     print(f"model={model_id}")
     print()
 
-    print("--- Seeding canonical super-admin tuples ---")
-    write_super_admin_tuples(store_id, model_id)
-    print()
-
     cases = parse_yaml_fixture(FIXTURE_PATH)
     if not cases:
         print("ERR: fixture has no cases", file=sys.stderr)
         return 2
+
+    print("--- Seeding canonical super-admin tuples ---")
+    write_super_admin_tuples(store_id, model_id)
+    print()
+
+    print("--- Seeding org→object links for inheritance ---")
+    seed_org_links_for_cases(store_id, model_id, cases)
+    print()
 
     print(f"--- Running {len(cases)} cases ---")
     passes = 0
