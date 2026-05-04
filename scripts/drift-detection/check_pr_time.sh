@@ -142,10 +142,86 @@ if [ $check3_rc -ne 0 ]; then
   EXIT_CODE=1
 fi
 
-# Check 4: service catalog parity (P2 — deferred until services.yaml lands)
+# Check 4: service catalog parity — services.yaml is SSOT
+# (Codex P0 retrospective: services.yaml manifest closes endpoint-admin-service
+# untracked drift by declaring deferred intent)
 echo
-echo "=== Check 4: service catalog parity (deferred until services.yaml) ==="
-echo "[NOTE] Will compare prod ↔ test service set when service catalog manifest exists"
+echo "=== Check 4: service catalog parity ==="
+CATALOG="$REPO_ROOT/docs/operations/services.yaml"
+if [[ ! -f "$CATALOG" ]]; then
+  echo "[FAIL] service catalog missing: $CATALOG (required by Codex Sprint A P0)"
+  EXIT_CODE=1
+else
+  check4_output=$(echo "$RENDER" | python3 -c "
+import sys, yaml
+
+ENV = '$ENV'
+docs = list(yaml.safe_load_all(sys.stdin))
+catalog = yaml.safe_load(open('$CATALOG'))
+
+# Services declared in render (Deployment + StatefulSet)
+rendered = set()
+for d in docs:
+    if not isinstance(d, dict): continue
+    if d.get('kind') in ('Deployment', 'StatefulSet'):
+        labels = d.get('metadata', {}).get('labels') or {}
+        name = labels.get('app.kubernetes.io/name')
+        if name:
+            rendered.add(name)
+
+# Catalog declarations for this env
+catalog_enabled = set()
+catalog_deferred = set()
+catalog_disabled = set()
+for svc in catalog.get('services', []):
+    status = svc.get('environments', {}).get(ENV, 'unknown')
+    if status == 'enabled':
+        catalog_enabled.add(svc['name'])
+    elif status == 'deferred':
+        catalog_deferred.add(svc['name'])
+    elif status == 'disabled':
+        catalog_disabled.add(svc['name'])
+
+# Findings
+fails = 0
+
+# Catalog enabled but not in render → missing service
+missing = catalog_enabled - rendered
+for svc in sorted(missing):
+    print(f'[FAIL] {svc} declared enabled for {ENV} in services.yaml but not in render')
+    fails += 1
+
+# Render contains service not in catalog at all (unknown) → fail
+unknown = rendered - catalog_enabled - catalog_deferred - catalog_disabled
+for svc in sorted(unknown):
+    print(f'[FAIL] {svc} in render but not in services.yaml (add to catalog)')
+    fails += 1
+
+# Render contains service marked deferred → fail
+should_be_absent = (catalog_deferred | catalog_disabled) & rendered
+for svc in sorted(should_be_absent):
+    print(f'[FAIL] {svc} marked deferred/disabled for {ENV} in services.yaml but appears in render')
+    fails += 1
+
+# OK report
+ok_count = len(catalog_enabled & rendered)
+print(f'[OK]  {ok_count} services correctly enabled+rendered')
+deferred_in_env = sorted(catalog_deferred)
+if deferred_in_env:
+    print(f'[OK]  {len(deferred_in_env)} services intentionally deferred for {ENV}: {deferred_in_env}')
+
+if fails > 0:
+    print(f'')
+    print(f'Total: {fails} service catalog violation(s)')
+    sys.exit(1)
+sys.exit(0)
+" 2>&1)
+  check4_rc=$?
+  echo "$check4_output"
+  if [ $check4_rc -ne 0 ]; then
+    EXIT_CODE=1
+  fi
+fi
 
 echo
 echo "=== Summary ==="

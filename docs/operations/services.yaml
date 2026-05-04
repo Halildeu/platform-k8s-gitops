@@ -1,0 +1,145 @@
+# Service Catalog Manifest — Codex Sprint A P0
+#
+# Single-source-of-truth for "which services exist in which environment".
+# Drift detection gates (PR-time + runtime) consult this file to decide
+# whether a service catalog mismatch is intentional (deferred) or a drift.
+#
+# Drift gate behavior per environment status:
+#   enabled  — service must render in overlay AND must run in cluster.
+#              Missing in render = FAIL. Missing in cluster = drift P1.
+#   deferred — service intentionally NOT in this env. Render absence OK.
+#              Cluster pod absence OK. If pod EXISTS in cluster → P1 drift
+#              (cluster running an unmanaged service).
+#   disabled — service permanently removed from this env. Same as deferred
+#              but signals retirement intent (not future enablement).
+#
+# Codex retrospective P0 — "services.yaml manifest" requirement:
+#   "endpoint-admin-service testte var prod'da yok ancak services.yaml ile
+#    intentional/deferred yapılırsa sağlıklı. Yoksa unmanaged service P2/P1
+#    sınırında kalır."
+
+schema_version: "1.0"
+
+services:
+  - name: auth-service
+    repo: platform-backend
+    description: Login orchestrator (BFF-style, KC-backed)
+    jwt_validates: false  # auth-service issues tokens via KC, doesn't validate inbound JWTs itself
+    route_external: true  # /auth/cookie/** path
+    environments:
+      test: enabled
+      prod: enabled
+
+  - name: api-gateway
+    repo: platform-backend
+    description: Spring Cloud Gateway — JWT validation + routing
+    jwt_validates: true
+    route_external: true  # ingress entry point
+    environments:
+      test: enabled
+      prod: enabled
+
+  - name: user-service
+    repo: platform-backend
+    description: Users CRUD + profile + session management
+    jwt_validates: true
+    route_external: false  # gateway-routed
+    environments:
+      test: enabled
+      prod: enabled
+
+  - name: variant-service
+    repo: platform-backend
+    description: Schema variant management (multi-tenant)
+    jwt_validates: true
+    route_external: false
+    environments:
+      test: enabled
+      prod: enabled
+
+  - name: core-data-service
+    repo: platform-backend
+    description: Core master-data API (companies, projects, warehouses, branches)
+    jwt_validates: false  # legacy: gateway-validated, no own JWT decoder
+    route_external: false
+    environments:
+      test: enabled
+      prod: enabled
+
+  - name: report-service
+    repo: platform-backend
+    description: HR/finance report aggregator
+    jwt_validates: true
+    route_external: false
+    environments:
+      test: enabled
+      prod: enabled
+
+  - name: schema-service
+    repo: platform-backend
+    description: MSSQL schema explorer + Workcube ETL coordinator
+    jwt_validates: true
+    route_external: false
+    environments:
+      test: enabled
+      prod: enabled
+
+  - name: permission-service
+    repo: platform-backend
+    description: OpenFGA-backed authorization service + admin endpoints
+    jwt_validates: true
+    route_external: false
+    environments:
+      test: enabled
+      prod: enabled
+
+  - name: openfga
+    repo: openfga/openfga
+    description: Zanzibar-style authorization engine (StatefulSet)
+    jwt_validates: false  # internal grpc, no Bearer
+    route_external: false
+    third_party: true
+    environments:
+      test: enabled
+      prod: enabled
+
+  - name: frontend
+    repo: platform-web
+    description: React/Vite MFE shell + remoteEntry modules
+    jwt_validates: false  # static SPA, JWT in cookies forwarded by gateway
+    route_external: true  # primary user entry
+    environments:
+      test: enabled    # variant: platform-web-frontend-testai
+      prod: enabled    # variant: platform-web-frontend
+
+  # --- DEFERRED services (intentionally not in target env) ---
+
+  - name: endpoint-admin-service
+    repo: platform-backend
+    description: |
+      Endpoint admin / governance API (Faz 22.1.3 lab tier — DD-EA-1 manifest
+      contract gate's subject). Currently dev/test only; prod scope decision
+      pending Faz 22.2 BG-EA-1 product review.
+    jwt_validates: true
+    route_external: false
+    environments:
+      test: enabled
+      prod: deferred  # Faz 22.2 product decision; drift gate accepts absence in prod
+
+# --- Future / disabled (placeholder for retirement signal) ---
+# (none yet — when a service is permanently removed, move it here with
+#  environments.{test,prod}: disabled)
+
+# Metadata
+metadata:
+  last_updated: "2026-05-04"
+  last_updated_by: "Session 37 — Codex Sprint A P0"
+  notes: |
+    Bu manifest Drift gate'lerinin (check_prod_drift.sh + check_pr_time.sh)
+    "service unmanaged" findings'ini intentional/error olarak ayırmasını
+    sağlar. endpoint-admin-service gibi test'te aktif prod'da deferred olan
+    service'ler artık P1/P2 alarm üretmez.
+
+    Yeni service eklendiğinde (örn. notification-service, etl-worker) bu
+    manifest'e entry eklenmeli — yoksa drift gate "unmanaged" diye fail
+    eder. PR-time gate Check 4 bunu enforce eder.
