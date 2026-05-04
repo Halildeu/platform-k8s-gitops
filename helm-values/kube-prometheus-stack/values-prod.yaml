@@ -68,6 +68,43 @@ alertmanager:
   ingress:
     enabled: false                    # admin-only, kubectl port-forward ile ulaş
 
+  # AlertManager → alarm_receiver bridge config (Codex Sprint A follow-up)
+  # Observability alarm'ları drift detection alarm_receiver pipeline'ına bağlanıyor.
+  # Bridge: alertmanager-bridge K8s service (kustomize/base/monitoring/alertmanager-bridge/).
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'severity']
+      group_wait: 10s
+      group_interval: 5m
+      repeat_interval: 4h
+      receiver: 'alarm-receiver-bridge'
+      routes:
+        # Critical: page immediately, no grouping
+        - matchers:
+            - severity = "critical"
+          receiver: 'alarm-receiver-bridge'
+          group_wait: 0s
+          repeat_interval: 1h
+        # Warning/info: standard route
+        - matchers:
+            - severity =~ "warning|info"
+          receiver: 'alarm-receiver-bridge'
+    receivers:
+      - name: 'alarm-receiver-bridge'
+        webhook_configs:
+          - url: 'http://alertmanager-bridge.monitoring.svc.cluster.local:9093/alert'
+            send_resolved: true
+            max_alerts: 50
+    inhibit_rules:
+      # Critical inhibits warning of same alertname
+      - source_matchers:
+          - severity = "critical"
+        target_matchers:
+          - severity = "warning"
+        equal: ['alertname', 'namespace']
+
 # ─── Grafana ───
 grafana:
   enabled: true

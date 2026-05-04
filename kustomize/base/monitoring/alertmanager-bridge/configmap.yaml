@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-bridge
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager-bridge
+    app.kubernetes.io/part-of: monitoring
+data:
+  # Bridge runtime config; overlays patch GITHUB_REPO + secret reference
+  GITHUB_REPO: "Halildeu/platform-k8s-gitops"
+  BRIDGE_PORT: "9093"
+  BRIDGE_LOG_LEVEL: "INFO"
+  BRIDGE_UNDELIVERED_LOG: "/var/log/bridge/undelivered.jsonl"

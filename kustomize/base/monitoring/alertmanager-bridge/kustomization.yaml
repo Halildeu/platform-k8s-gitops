@@ -1,0 +1,10 @@
+# AlertManager → alarm_receiver bridge (Codex Sprint A retrospective follow-up)
+# Routes Prometheus alerts → GitHub Issues via gh CLI (auto-dedup pattern).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - servicemonitor.yaml
