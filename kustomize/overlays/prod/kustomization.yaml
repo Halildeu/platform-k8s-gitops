@@ -103,6 +103,18 @@ patches:
       - op: replace
         path: /data/KEYCLOAK_ISSUER_URI
         value: "https://ai.acik.com/realms/serban"
+      # 2026-05-04 Session 37: prod-only super-admin bootstrap addition.
+      # halil.kocoglu@serban.com.tr was created as a Keycloak realm user
+      # (KC ID d14c0a96-4e61-4b9a-9a69-43e8424e14fb) per the operator's
+      # request. Bootstrap-admin-assigner re-asserts super-admin role on
+      # every permission-service pod restart for emails in this list, so
+      # adding halil.kocoglu here gives the account super-admin authority
+      # on first login (KC → user-service sync → permission-service seed).
+      # Test cluster keeps the base list (admin@example.com,
+      # d35-admin@example.com) — no halil.kocoglu spillover.
+      - op: replace
+        path: /data/PERMISSION_BOOTSTRAP_DEFAULT_ADMIN_ASSIGNMENTS_ADMIN_EMAILS
+        value: "admin@example.com,d35-admin@example.com,halil.kocoglu@serban.com.tr"
 
   # 2026-05-04 Faz 22.1.x: Prod'da REPORTS_DB_ENABLED=false → reports_db
   # secondary datasource bean instantiate olmaz (permission-service
