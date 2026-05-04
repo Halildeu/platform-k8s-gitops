@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/schema/promotion-ledger-v1.schema.json",
+  "title": "Promotion Ledger Entry — Codex P0 #2",
+  "description": "Per-(repo,sha) release-candidate ledger with test/prod promotion + D29 evidence. Validated on every PR that touches release-candidates/**.",
+  "type": "object",
+  "required": ["schema_version", "repo", "service", "git_sha", "git_short_sha", "image", "promotion", "metadata", "audit"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "repo": {
+      "type": "string",
+      "enum": ["platform-backend", "platform-web"]
+    },
+    "service": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Logical service name; e.g. 'user-service', 'frontend'. Must match service catalog services.yaml entries."
+    },
+    "git_sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40,64}$",
+      "description": "Full git SHA from upstream repo (40 chars min for git, 64 for OCI manifest digest)."
+    },
+    "git_short_sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{7,12}$"
+    },
+    "image": {
+      "type": "object",
+      "required": ["registry", "path", "digest", "tag"],
+      "additionalProperties": false,
+      "properties": {
+        "registry": { "type": "string", "enum": ["ghcr.io"] },
+        "path": { "type": "string", "pattern": "^[a-z0-9-]+/[a-z0-9-]+(?:-[a-z0-9-]+)*$" },
+        "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "tag": { "type": "string", "pattern": "^sha-[a-f0-9]{7,12}$" },
+        "push_run_id": { "type": ["integer", "null"], "minimum": 0 },
+        "pushed_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "promotion": {
+      "type": "object",
+      "required": ["test", "prod"],
+      "additionalProperties": false,
+      "properties": {
+        "test": { "$ref": "#/$defs/promotion_block" },
+        "prod": { "$ref": "#/$defs/promotion_block" }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["rollback_safe"],
+      "additionalProperties": false,
+      "properties": {
+        "required_migrations": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "backward_compatible_until": {
+          "type": ["string", "null"],
+          "description": "If non-null, prior digest must remain available until this timestamp (e.g. 7d window for rolling rollback)."
+        },
+        "rollback_safe": {
+          "type": "boolean",
+          "description": "True if this digest can be rolled forward/back without DB migration."
+        },
+        "rollback_to_digest": {
+          "type": ["string", "null"],
+          "pattern": "^(sha256:[a-f0-9]{64}|null)$",
+          "description": "Previous-known-good digest for emergency rollback."
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "required": ["created_at", "last_updated_at"],
+      "additionalProperties": false,
+      "properties": {
+        "created_at": { "type": "string", "format": "date-time" },
+        "last_updated_at": { "type": "string", "format": "date-time" },
+        "ci_run_url": { "type": ["string", "null"], "format": "uri" }
+      }
+    }
+  },
+  "$defs": {
+    "promotion_block": {
+      "type": "object",
+      "required": ["promoted_at", "promoted_by_pr", "argocd_revision", "smoke_evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "promoted_at": { "type": ["string", "null"], "format": "date-time" },
+        "promoted_by_pr": { "type": ["integer", "null"], "minimum": 1 },
+        "argocd_revision": { "type": ["string", "null"], "pattern": "^[a-f0-9]{7,64}$" },
+        "smoke_evidence": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/smoke_evidence" }
+          ]
+        },
+        "verified_at": { "type": ["string", "null"], "format": "date-time" },
+        "candidate_pr": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "DRAFT PR number (prod-side; null on test side)."
+        },
+        "candidate_pr_status": {
+          "type": ["string", "null"],
+          "enum": ["draft", "ready_for_review", "merged", "closed", null]
+        }
+      }
+    },
+    "smoke_evidence": {
+      "type": "object",
+      "required": ["d29_up", "d29_functional", "d29_zanzibar"],
+      "additionalProperties": false,
+      "properties": {
+        "d29_up": { "$ref": "#/$defs/smoke_step" },
+        "d29_functional": {
+          "allOf": [
+            { "$ref": "#/$defs/smoke_step" },
+            {
+              "properties": {
+                "endpoints": {
+                  "type": "array",
+                  "items": { "type": "string", "pattern": "^/" },
+                  "minItems": 1
+                }
+              },
+              "required": ["endpoints"]
+            }
+          ]
+        },
+        "d29_zanzibar": {
+          "allOf": [
+            { "$ref": "#/$defs/smoke_step" },
+            {
+              "properties": {
+                "allow_deny_synthetic": { "type": "string", "enum": ["PASS", "FAIL", "SKIP"] }
+              },
+              "required": ["allow_deny_synthetic"]
+            }
+          ]
+        }
+      }
+    },
+    "smoke_step": {
+      "type": "object",
+      "required": ["status", "checked_at"],
+      "properties": {
+        "status": { "type": "string", "enum": ["GREEN", "RED", "AMBER", "SKIP"] },
+        "checked_at": { "type": "string", "format": "date-time" },
+        "details": { "type": ["string", "null"] },
+        "evidence_url": { "type": ["string", "null"], "format": "uri" },
+        "endpoints": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "allow_deny_synthetic": {
+          "type": "string",
+          "enum": ["PASS", "FAIL", "SKIP"]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

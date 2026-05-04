@@ -1,0 +1,23 @@
+[Unit]
+Description=D29 Smoke Runner — test cluster (after-deploy evidence pipeline)
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/blob/main/scripts/smoke/d29-smoke-runner.sh
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=halil
+WorkingDirectory=/home/halil/platform/platform-k8s-gitops
+Environment=PLATFORM_GITOPS_REPO=/home/halil/platform/platform-k8s-gitops
+ExecStartPre=/usr/bin/git -C /home/halil/platform/platform-k8s-gitops fetch origin main --quiet
+ExecStartPre=/usr/bin/git -C /home/halil/platform/platform-k8s-gitops checkout origin/main -- kustomize/overlays/test scripts/smoke scripts/promotion release-candidates schema
+ExecStart=/bin/bash /home/halil/platform/platform-k8s-gitops/scripts/smoke/d29-smoke-runner.sh test
+# Codex P0 follow-up — ledger marker runs after smoke completes; opens
+# auto-promotion PR if evidence is GREEN
+ExecStartPost=/bin/bash -c 'latest=$(ls -t /tmp/smoke-report-test-*.json 2>/dev/null | head -1); [[ -n "$latest" ]] && /bin/bash /home/halil/platform/platform-k8s-gitops/scripts/promotion/ledger-mark-verified.sh "$latest"'
+StandardOutput=append:/var/log/platform-smoke-test.log
+StandardError=append:/var/log/platform-smoke-test.log
+TimeoutStartSec=300
+# Smoke RED is exit_code=1 — still acceptable from systemd POV; we don't
+# want systemd to flag the unit as failed when smoke detects a problem
+SuccessExitStatus=0 1

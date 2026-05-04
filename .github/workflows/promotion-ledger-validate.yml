@@ -1,0 +1,107 @@
+name: Promotion Ledger — schema validate (Codex P0 #2)
+
+# Validates release-candidates/<repo>/<sha>.json against
+# schema/promotion-ledger-v1.schema.json on every PR that touches
+# ledger files OR the schema itself.
+#
+# Cross-checks beyond schema:
+#   1. file path <repo>/<sha> matches manifest content
+#   2. service name in services.yaml catalog
+#   3. image.digest sha256:<64-hex> format
+#   4. git_short_sha is prefix of git_sha
+#   5. image.tag embedded sha consistency
+#
+# Codex retrospective Sprint A — Item 3 of D29 evidence pipeline.
+
+on:
+  pull_request:
+    paths:
+      - "release-candidates/**"
+      - "schema/promotion-ledger-v1.schema.json"
+      - "scripts/promotion/validate-ledger-schema.py"
+      - ".github/workflows/promotion-ledger-validate.yml"
+      - "tests/promotion/fixtures/**"
+  push:
+    branches: [main]
+    paths:
+      - "release-candidates/**"
+      - "schema/promotion-ledger-v1.schema.json"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate-fixtures:
+    name: Validate ledger schema fixtures (positive + negative)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --quiet jsonschema PyYAML
+
+      - name: Positive — valid fixture must pass
+        run: |
+          python3 scripts/promotion/validate-ledger-schema.py \
+            tests/promotion/fixtures/valid-test-ledger.json
+
+      - name: Negative — invalid fixture must fail
+        run: |
+          set +e
+          python3 scripts/promotion/validate-ledger-schema.py \
+            tests/promotion/fixtures/invalid-bad-digest.json
+          rc=$?
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::invalid-bad-digest.json fixture passed validation — schema not catching the error"
+            exit 1
+          fi
+          echo "OK: invalid fixture correctly rejected (exit $rc)"
+
+  validate-pr-changes:
+    name: Validate ledger files changed in this PR
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --quiet jsonschema PyYAML
+
+      - name: Validate changed ledger entries
+        run: |
+          # Ensure base ref available for diff
+          git fetch origin main --quiet || true
+          python3 scripts/promotion/validate-ledger-schema.py --pr-only
+
+  validate-all-on-main:
+    name: Full ledger directory scan (main push only)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --quiet jsonschema PyYAML
+
+      - name: Validate ALL ledger entries
+        run: python3 scripts/promotion/validate-ledger-schema.py
