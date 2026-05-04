@@ -120,10 +120,20 @@ services:
       Endpoint admin / governance API (Faz 22.1.3 lab tier — DD-EA-1 manifest
       contract gate's subject). Currently dev/test only; prod scope decision
       pending Faz 22.2 BG-EA-1 product review.
+
+      Status note (Codex Sprint A P0 truthful state — 2026-05-04):
+        Test cluster pod RUNNING (compose-era leftover / unmanaged), but NOT
+        in test gitops overlay (kustomize/overlays/test). Mark deferred from
+        gitops perspective — runtime drift detector will P1-alarm the
+        unmanaged cluster pod, surfacing the integration gap.
+
+        Faz 22.x onboard task: bring endpoint-admin-service into gitops
+        (kustomize base + test overlay), then flip test→enabled here. Until
+        then catalog reflects gitops-governed state, not cluster-actual state.
     jwt_validates: true
     route_external: false
     environments:
-      test: enabled
+      test: deferred  # NOT in gitops overlay yet (Faz 22.x onboard); cluster pod will P1-alarm
       prod: deferred  # Faz 22.2 product decision; drift gate accepts absence in prod
 
 # --- Future / disabled (placeholder for retirement signal) ---
