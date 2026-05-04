@@ -7,6 +7,11 @@ on:
       - 'kustomize/base/**'
       - 'scripts/drift-detection/**'
       - '.github/workflows/gate-drift-pr-time.yml'
+      - 'docs/operations/services.yaml'
+
+permissions:
+  contents: read
+  packages: read  # required for GHCR manifest existence check (Codex Sprint A P0 Item 4)
 
 jobs:
   drift-pr-time:
@@ -26,9 +31,19 @@ jobs:
         with:
           version: 'v1.31.0'
 
+      - name: Setup Python (for GHCR manifest verifier + ConfigMap invariants)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: python3 -m pip install --quiet PyYAML
+
       - name: Drift PR-time check (${{ matrix.env }})
         env:
           PLATFORM_GITOPS_REPO: ${{ github.workspace }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           chmod +x scripts/drift-detection/check_pr_time.sh
+          chmod +x scripts/drift-detection/verify_ghcr_manifests.py
           bash scripts/drift-detection/check_pr_time.sh ${{ matrix.env }}
