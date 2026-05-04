@@ -1,0 +1,25 @@
+[Unit]
+Description=Cutover Bundle — nightly stateful tier backup (Codex P0 #4)
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/blob/main/scripts/cutover/cutover-bundle.sh
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=halil
+WorkingDirectory=/home/halil/platform/platform-k8s-gitops
+Environment=PLATFORM_GITOPS_REPO=/home/halil/platform/platform-k8s-gitops
+# Operator must populate via /etc/systemd/system/cutover-bundle-nightly.service.d/override.conf:
+#   Environment=PGPASSWORD=<...>
+#   Environment=KC_ADMIN_USER=admin
+#   Environment=KC_ADMIN_PASSWORD=<...>
+#   Environment=VAULT_TOKEN=<...>
+#
+# (Without these, KC/Vault snapshots fall back to "deferred-operator-task" markers)
+ExecStartPre=/usr/bin/git -C /home/halil/platform/platform-k8s-gitops fetch origin main --quiet
+ExecStartPre=/usr/bin/git -C /home/halil/platform/platform-k8s-gitops checkout origin/main -- scripts/cutover
+ExecStart=/bin/bash /home/halil/platform/platform-k8s-gitops/scripts/cutover/cutover-bundle.sh
+StandardOutput=append:/var/log/platform-cutover-bundle.log
+StandardError=append:/var/log/platform-cutover-bundle.log
+TimeoutStartSec=600
+SuccessExitStatus=0
