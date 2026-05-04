@@ -28,24 +28,29 @@ images:
   - name: auth-service
     newName: ghcr.io/halildeu/platform-backend-auth-service
     digest: sha256:c84bc6b04f7f17cc145024d6eeff2c624c52704a259ce843aeea63444da9ed37
+  # 2026-05-04 Session 37: prod backend canonical realign — promote test cluster
+  # digest (built from same canonical main HEAD) to bring ai.acik.com level
+  # with testai. Was sha256:5e7f0d48 — replaced with test live digest.
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
-    digest: sha256:5e7f0d48bfe080e59034ece9399390e6543c97d13c8e799c4a1bb9d1e9cd0d09
+    digest: sha256:a0a48aa9a1adfdbbd83e272c046fef8746a0f597d524ce087034bd9b0806a7c0
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     digest: sha256:df8b84d0cd02d064cf455f40017bd5cb4ca1be271e5e7068afeb36fc4526a7f1
+  # 2026-05-04 Session 37: variant-service canonical realign — was sha256:4a51a49f.
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
-    digest: sha256:4a51a49f1b07cf6e211bff5bd01cc68946a85b522c5d7cc171718ac85d892d13
+    digest: sha256:393387a01a5aee3b09e3164eb0611d5ae22f9e7eb9172d03dd5c5402951697e4
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-backend-core-data-service
     digest: sha256:b803507ac6b17240a8cced6878606f2aad7b31856140d6b5071352135babf37f
   - name: report-service
     newName: ghcr.io/halildeu/platform-backend-report-service
     digest: sha256:1d38fe3f3439067eeaae1d2015d470a3273074c6509589b54e7422fd749cc8b1
+  # 2026-05-04 Session 37: schema-service canonical realign — was sha256:1a0e3f02.
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
-    digest: sha256:1a0e3f02664b5f431496a3443bd6603dfea3dd01a9bb7694e45e6e24d46f9a02
+    digest: sha256:2a7076c903fa4b551479d23f083aac6c6aefc48f8b4d80b7a1b9ad1f8a6b3afc
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-05-03 Session 37 ArgoCD OutOfSync drift realign:
@@ -54,7 +59,11 @@ images:
     # `platform-prod` application OutOfSync. Yeni digest cluster gerçeği ile
     # uyumlu. Önceki digest sha256:1da34913 (RequireModuleInterceptor relation
     # alias, PR #19+#20+#21+#22 chain) — replaced by sha256:10cba617 prod live.
-    digest: sha256:10cba61702cd66798330c86b0eecdfb1786eae8ad65f60c80067056698d06d96
+    #
+    # 2026-05-04 Session 37: canonical realign — was sha256:10cba617 (Session 37
+    # earlier sprint). Promote to test cluster digest sha256:7968fff5 so prod
+    # ships the same backend revision as canonical main HEAD.
+    digest: sha256:7968fff58c1c806d2a31e851acc246d10d249565ddb5885febc03912ebb44e7d
   # Frontend prod variant (ai.acik.com + serban realm)
   # 2026-05-03 Session 37: AG Grid lisans bytes-fix + single-source refactor +
   # buildx cache scope-v2 rename hotfix branch (`hotfix/ag-grid-license-rebuild`,
