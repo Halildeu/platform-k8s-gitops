@@ -11,8 +11,12 @@ WorkingDirectory=/home/halil/platform/platform-k8s-gitops
 ExecStartPre=/usr/bin/git -C /home/halil/platform/platform-k8s-gitops fetch origin main --quiet
 ExecStartPre=/usr/bin/git -C /home/halil/platform/platform-k8s-gitops checkout origin/main -- kustomize/overlays/prod scripts/drift-detection
 ExecStart=/bin/bash /home/halil/platform/platform-k8s-gitops/scripts/drift-detection/check_prod_drift.sh prod
+# Codex P0 follow-up — alarm receiver runs after detection, opens GitHub
+# issues for P1/P2 findings (auto-deduplicated by title match)
+ExecStartPost=/bin/bash -c 'latest=$(ls -t /tmp/drift-report-prod-*.json 2>/dev/null | head -1); [[ -n "$latest" ]] && /bin/bash /home/halil/platform/platform-k8s-gitops/scripts/drift-detection/alarm_receiver.sh "$latest"'
 StandardOutput=append:/var/log/platform-drift-prod.log
 StandardError=append:/var/log/platform-drift-prod.log
-TimeoutStartSec=120
-# Non-zero exit => unit fails; failure logged + journalctl/log file retains report path
-SuccessExitStatus=0
+TimeoutStartSec=180
+# Non-zero exit on detector triggers ExecStartPost; alarm receiver also runs
+# on clean state but exits early with no findings.
+SuccessExitStatus=0 1 2
