@@ -3,6 +3,9 @@
 scripts/promotion/gate-evidence-check.py
 
 Codex Sprint A P0 Item 3 — D29 evidence enforcement gate.
++ Sprint A B0b — Zanzibar AMBER policy tightening per Codex retrospective:
+  "D30 prod gate'te Zanzibar-ready iddiası verilecekse core/authz-etkileyen
+   servislerde AMBER pass olmamalı."
 
 When a PR touches `kustomize/overlays/prod/**` and changes one or more image
 digests, this gate REQUIRES that each new digest has a corresponding
@@ -10,9 +13,15 @@ digests, this gate REQUIRES that each new digest has a corresponding
 
     promotion.test.smoke_evidence.d29_up.status == "GREEN"
     promotion.test.smoke_evidence.d29_functional.status == "GREEN"
-    promotion.test.smoke_evidence.d29_zanzibar.status in ("GREEN", "AMBER")
+    promotion.test.smoke_evidence.d29_zanzibar.status:
+      - For services with services.yaml jwt_validates=true (default for
+        backend Zanzibar consumers): "GREEN" required
+      - For services explicitly marked jwt_validates=false in services.yaml
+        (legacy core-data-service: gateway-validated, no own JWT decoder):
+        "GREEN" or "AMBER" OK
 
-Without verified test evidence, the prod promotion PR is BLOCKED at CI.
+Without verified test evidence (or with AMBER on a Zanzibar-required service),
+the prod promotion PR is BLOCKED at CI.
 
 Usage:
   python3 gate-evidence-check.py
@@ -107,10 +116,33 @@ def find_ledger_entries_by_digest(digest: str) -> list[Path]:
     return matches
 
 
-def check_evidence(entry: dict) -> tuple[bool, str]:
-    """Return (verified, reason). verified=True if D29 GREEN."""
+def load_zanzibar_required_services() -> dict[str, bool]:
+    """Read services.yaml and return {service_name: jwt_validates}. Used to
+    determine whether AMBER is acceptable for d29_zanzibar status (only for
+    services with jwt_validates=false; backend Zanzibar consumers need GREEN)."""
+    catalog_path = REPO_ROOT / "docs" / "operations" / "services.yaml"
+    if not catalog_path.exists():
+        # Without catalog, default to strict (require GREEN for all)
+        return {}
+
+    try:
+        import yaml
+    except ImportError:
+        return {}
+
+    catalog = yaml.safe_load(catalog_path.read_text()) or {}
+    return {
+        svc.get("name"): bool(svc.get("jwt_validates", True))
+        for svc in catalog.get("services", [])
+        if svc.get("name")
+    }
+
+
+def check_evidence(entry: dict, jwt_validates_map: dict[str, bool]) -> tuple[bool, str]:
+    """Return (verified, reason). verified=True if D29 GREEN per service policy."""
     test_block = entry.get("promotion", {}).get("test", {})
     smoke = test_block.get("smoke_evidence")
+    service = entry.get("service", "")
 
     if not smoke:
         return False, "promotion.test.smoke_evidence is null (smoke not run yet)"
@@ -123,14 +155,30 @@ def check_evidence(entry: dict) -> tuple[bool, str]:
         return False, f"d29_up status={up} (need GREEN)"
     if fn != "GREEN":
         return False, f"d29_functional status={fn} (need GREEN)"
-    if zb not in ("GREEN", "AMBER"):
-        return False, f"d29_zanzibar status={zb} (need GREEN or AMBER)"
+
+    # Sprint A B0b — Zanzibar AMBER policy tightening
+    # AMBER acceptable ONLY for services explicitly marked jwt_validates=false in services.yaml
+    # (legacy core-data-service style: gateway-validated, no own JWT decoder, no Zanzibar checks)
+    # All other services (default + jwt_validates=true) MUST be GREEN
+    requires_zanzibar = jwt_validates_map.get(service, True)  # default: requires Zanzibar
+    if requires_zanzibar:
+        if zb != "GREEN":
+            return (
+                False,
+                f"d29_zanzibar status={zb} (service '{service}' is Zanzibar-required per services.yaml, need GREEN)",
+            )
+    else:
+        if zb not in ("GREEN", "AMBER"):
+            return (
+                False,
+                f"d29_zanzibar status={zb} (service '{service}' jwt_validates=false, accept GREEN or AMBER)",
+            )
 
     verified_at = test_block.get("verified_at")
     if not verified_at:
         return False, "verified_at not set (incomplete promotion record)"
 
-    return True, f"verified at {verified_at}"
+    return True, f"verified at {verified_at} (zanzibar policy: {'GREEN-only' if requires_zanzibar else 'GREEN-or-AMBER'})"
 
 
 def main() -> int:
@@ -174,7 +222,15 @@ def main() -> int:
     for d in sorted(new_digests):
         print(f"  - {d}")
 
-    # Step 3: For each new digest, require D29-GREEN ledger entry
+    # Step 3: For each new digest, require D29-GREEN ledger entry per service policy
+    jwt_validates_map = load_zanzibar_required_services()
+    if jwt_validates_map:
+        zanzibar_required = sorted(s for s, v in jwt_validates_map.items() if v)
+        zanzibar_optional = sorted(s for s, v in jwt_validates_map.items() if not v)
+        print(f"[POLICY] Zanzibar GREEN required for: {zanzibar_required}")
+        if zanzibar_optional:
+            print(f"[POLICY] Zanzibar AMBER acceptable for: {zanzibar_optional}")
+
     fails = 0
     for digest in sorted(new_digests):
         entries = find_ledger_entries_by_digest(digest)
@@ -189,7 +245,7 @@ def main() -> int:
         # Use first match (digest is unique per build)
         entry_path = entries[0]
         entry = json.loads(entry_path.read_text())
-        verified, reason = check_evidence(entry)
+        verified, reason = check_evidence(entry, jwt_validates_map)
 
         if not verified:
             print(f"[FAIL] {digest}: ledger {entry_path.relative_to(REPO_ROOT)} — {reason}")
