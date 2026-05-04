@@ -63,9 +63,20 @@ images:
   # set image` Session 37 edge migration sırasında apply edildi. Önceki digest
   # sha256:d6baaf5838 (Faz 21.3 PR-E mfe-access Veri Erişimi panel) — replaced
   # by sha256:cc487c5584 cluster live.
+  #
+  # 2026-05-04 Session 37 — prod realign to canonical main HEAD (940c4c4b):
+  # testai is current with the latest scope-picker chip multi-select +
+  # lazy-options + preserve-query (PR #171/#194/#197) + chart work
+  # (PR #186/#190/#191/#192) + x-charts shared chart-size contract
+  # (PR #193) + reduced-motion resize (PR #195) + responsive defaults
+  # (PR #196) + scaleSpacing cleanup (PR #198) + piechart cross-filter
+  # (PR #199) + stryker baseline (PR #200). Prod (ai.acik.com) was on
+  # cc487c5584 (PR #321 era — pre-scope-picker, pre-chart-modernization).
+  # Operator request: bring prod up to canonical main. Latest CI run
+  # 25294004654 (sha-940c4c4) prod variant manifest digest pinned below.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
-    digest: sha256:cc487c5584f96d78bb86101e871963203de2de5cc7f5741253e32a638a5d3b55
+    digest: sha256:6d926376a58bfd47c3d5059e0e0025f8cb38d5c7fbf80767461b2eea136647f4
 
 patches:
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz replace
