@@ -42,32 +42,20 @@ type branch
     define company: [company]
     define viewer: [user]
 
-# Codex Sprint A P0 #5 follow-up (B0a) — canonical super-admin inheritance.
-# Per docs/authz/openfga-model-contract.md:
-#   organization:default#admin@user:<id> = SINGLE canonical super-admin tuple
-#   that grants module/action/report access via "admin from org" inheritance.
-#
-# To make inheritance work, every module/action/report instance must declare
-# its parent organization via the `org` relation (e.g. module:X#org@organization:default).
-# Bootstrap fixture seeds this link in run_super_admin_fixture.py for each
-# checked object.
 type module
   relations
-    define org: [organization]
-    define can_edit: [user] or admin from org but not blocked
-    define can_manage: [user] or can_edit or admin from org but not blocked
-    define can_view: [user] or can_manage or admin from org but not blocked
+    define can_edit: [user] but not blocked
+    define can_manage: [user] or can_edit but not blocked
+    define can_view: [user] or can_manage but not blocked
     define blocked: [user]
 
 type action
   relations
-    define org: [organization]
-    define allowed: [user] or admin from org but not blocked
+    define allowed: [user] but not blocked
     define blocked: [user]
 
 type report
   relations
-    define org: [organization]
-    define can_edit: [user] or admin from org but not blocked
-    define can_view: [user] or can_edit or admin from org but not blocked
+    define can_edit: [user] but not blocked
+    define can_view: [user] or can_edit but not blocked
     define blocked: [user]
