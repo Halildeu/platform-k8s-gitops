@@ -1,0 +1,103 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":disableRateLimiting",
+    ":enableVulnerabilityAlertsWithLabel(security)"
+  ],
+  "description": "Renovate config — D36 image digest auto-bump for gitops repo (Codex Faz N).",
+  "timezone": "Europe/Istanbul",
+  "schedule": ["after 7am every weekday"],
+  "labels": ["renovate", "auto-bump"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "rebaseWhen": "behind-base-branch",
+  "branchPrefix": "renovate/",
+  "commitMessagePrefix": "auto(deps):",
+  "platformAutomerge": false,
+
+  "kubernetes": {
+    "fileMatch": [
+      "kustomize/.+\\.ya?ml$",
+      "helm-values/.+\\.ya?ml$"
+    ]
+  },
+
+  "kustomize": {
+    "fileMatch": ["kustomize/.+/kustomization\\.ya?ml$"]
+  },
+
+  "github-actions": {
+    "fileMatch": ["^\\.github/workflows/.+\\.ya?ml$"]
+  },
+
+  "packageRules": [
+    {
+      "description": "TEST overlay digest auto-bump — auto-merge OFF; CI gates + reviewer approval (D36)",
+      "matchFileNames": ["kustomize/overlays/test/**"],
+      "matchDatasources": ["docker"],
+      "automerge": false,
+      "labels": ["renovate", "env:test", "auto-bump"],
+      "prBodyTemplate": "{{{header}}}\n\n{{{table}}}\n\n## Boundary declaration (ADR-0011 §2.3)\n\n- [ ] credential-read\n- [ ] credential-write\n- [x] state-mutation (test cluster)\n- [ ] state-mutation (production)\n- [ ] boundary-cross\n- [ ] none of the above\n\nUser-approval evidence: Renovate auto-bump, test cluster only. Reviewer must verify D29 evidence pipeline before merge.\n\n{{{notes}}}\n\n{{{footer}}}",
+      "commitMessageTopic": "{{depName}} (test)",
+      "commitMessageExtra": "to {{newDigestShort}}"
+    },
+    {
+      "description": "PROD overlay digest auto-bump — DRAFT PR, manuel review (D30 atomic cutover + D36)",
+      "matchFileNames": ["kustomize/overlays/prod/**"],
+      "matchDatasources": ["docker"],
+      "automerge": false,
+      "draftPR": true,
+      "labels": ["renovate", "env:prod", "auto-bump", "user-approval-required"],
+      "prBodyTemplate": "{{{header}}}\n\n{{{table}}}\n\n## ⚠️ PROD digest update — D30 atomic cutover discipline\n\n- [ ] D29 evidence ledger doğrulandı (release-candidates/<repo>/<sha>.json verified)\n- [ ] gate-d29-evidence-required CI yeşil\n- [ ] Operator manuel cutover decision\n- [ ] Pre-cutover bundle snapshot (T-24h) yapıldı\n- [ ] Rollback plan hazır (72h warm rollback window)\n\n## Boundary declaration (ADR-0011 §2.3)\n\n- [ ] credential-read\n- [ ] credential-write\n- [ ] state-mutation (test cluster)\n- [x] state-mutation (production)\n- [ ] boundary-cross\n- [ ] none of the above\n\nUser-approval evidence: Renovate auto-bump DRAFT, prod cluster atomic cutover discipline (D30). Operator must mark ready for review only after pre-cutover gates pass.\n\n{{{notes}}}\n\n{{{footer}}}",
+      "commitMessageTopic": "{{depName}} (prod)",
+      "commitMessageExtra": "to {{newDigestShort}}"
+    },
+    {
+      "description": "Helm chart upstream version bumps — minor/patch only (no major)",
+      "matchManagers": ["helm-values"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": false,
+      "labels": ["renovate", "helm"]
+    },
+    {
+      "description": "GitHub Actions — patch + digest pin updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["patch", "digest"],
+      "automerge": false,
+      "labels": ["renovate", "github-actions"]
+    },
+    {
+      "description": "Lock file maintenance off (we don't have lockfiles in gitops repo)",
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "enabled": false
+    },
+    {
+      "description": "Pin only digest updates for ghcr.io images — semver bumps are operator decision",
+      "matchPackageNames": ["ghcr.io/halildeu/**"],
+      "matchUpdateTypes": ["digest"],
+      "schedule": ["after 7am and before 11am every weekday"],
+      "groupName": "platform image digest sync",
+      "groupSlug": "platform-digest-sync"
+    }
+  ],
+
+  "vulnerabilityAlerts": {
+    "labels": ["security", "renovate"],
+    "automerge": false,
+    "schedule": ["at any time"]
+  },
+
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "release-candidates/**",
+    "tests/promotion/fixtures/**",
+    "schema/**"
+  ],
+
+  "ignoreDeps": [
+    "halildeu/platform-backend-endpoint-admin-service"
+  ]
+}
