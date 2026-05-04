@@ -1,0 +1,18 @@
+[Unit]
+Description=MFE Remote Drift Detector — prod cluster (frontend module federation regression)
+Documentation=https://github.com/Halildeu/platform-k8s-gitops/blob/main/scripts/smoke/mfe-drift-detect.sh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=halil
+WorkingDirectory=/home/halil/platform/platform-k8s-gitops
+ExecStartPre=/usr/bin/git -C /home/halil/platform/platform-k8s-gitops fetch origin main --quiet
+ExecStartPre=/usr/bin/git -C /home/halil/platform/platform-k8s-gitops checkout origin/main -- scripts/smoke
+ExecStart=/bin/bash /home/halil/platform/platform-k8s-gitops/scripts/smoke/mfe-drift-detect.sh prod
+ExecStartPost=/bin/bash -c 'latest=$(ls -t /tmp/drift-report-mfe-prod-*.json 2>/dev/null | head -1); [[ -n "$latest" ]] && /bin/bash /home/halil/platform/platform-k8s-gitops/scripts/drift-detection/alarm_receiver.sh "$latest"'
+StandardOutput=append:/var/log/platform-mfe-drift-prod.log
+StandardError=append:/var/log/platform-mfe-drift-prod.log
+TimeoutStartSec=120
+SuccessExitStatus=0 1
