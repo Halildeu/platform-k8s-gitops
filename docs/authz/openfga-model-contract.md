@@ -4,19 +4,47 @@
 > "OpenFGA tuple pattern'i ürün kontratı olmalı. Relation isimleri dağılırsa silent
 > deny veya accidental allow oluşur."
 >
-> Bu doküman, prod'da bir kullanıcının "super-admin" sayılması için **TEK** kanonik
-> tuple tanımını ve bu tuple'ın **tek başına** module/action/report tuple'ları
-> imply etmediğini açıklar.
+> **2026-05-04 truth-correction (Codex thread `019df310` follow-up)**: PR #348 B0a
+> deneyiminde `OpenFGA Model Drift Gate (Faz 19.11 Step 4)` kanıtladı ki
+> bootstrap local fixture VE upstream `platform-backend/backend/openfga/model.fga`
+> her ikisi de canonical inheritance içermiyor. Bu doküman target-state contract'ı
+> tanımlar; "Current implementation status" bölümü bunun şu an tam olarak
+> implement edilmediğini açıkça belirtir.
 
-## Kanonik Super-Admin Tuple
+## Current implementation status — 2026-05-04
+
+Empirical drift gate evidence shows that both:
+- `bootstrap/local-fixtures/openfga/model.fga`
+- upstream `platform-backend/backend/openfga/model.fga`
+
+do **not** currently encode `organization:default#admin` inheritance into
+`module:*`, `action:*`, or `report:*` relations.
+
+Therefore, `organization:default#admin@user:<id>` as a single tuple is the
+**target-state super-admin contract**, not the current model-enforced behavior.
+
+Current production access for known admins may be satisfied by one or more
+compatibility paths, such as explicit module/action/report tuples, backend-side
+superAdmin handling, existing role/bootstrap grants, or legacy tuple patterns.
+Do not claim single-tuple sufficiency until live tuple export + backend check-path
+evidence proves it.
+
+Target-state migration requires a platform-backend OpenFGA model revision,
+tuple/link migration, model_id rollout, and dual-read allow/deny smoke before
+this fixture can become a hard gate.
+
+## Target-State Canonical Super-Admin Tuple
+
+Target-state tuple:
 
 ```
 organization:default#admin@user:<users_db_id>
 ```
 
-**Bu tek tuple, prod'daki tüm authorization katmanları için super-admin yetkisi verir.**
+This is the **desired future contract**. It is not yet guaranteed by the current
+upstream OpenFGA model.
 
-Örnek (prod):
+Örnek (prod, halen mevcut tuples — test smoke + live audit kanıtı):
 
 ```
 organization:default | admin | user:1201    ← admin@example.com
@@ -24,11 +52,14 @@ organization:default | admin | user:1204    ← halil.kocoglu@serban.com.tr (Ses
 organization:default | admin | user:48102a7f-5144-4e5b-8e01-4b869fd73511    ← KC sub UUID
 ```
 
-### NEDEN bu tuple yeter
+Bu tuple'lar mevcut, ama **canonical inheritance ile çalışmıyor** çünkü model
+inheritance içermiyor. Dolayısıyla canlı erişim başka bir mekanizma ile
+sağlanıyor (yukarıda compatibility paths listesi).
 
-OpenFGA store schema'sında `organization` türünde `admin` ilişkisinin tüm child
-relations'ı (module#can_view, module#can_manage, action#allowed, report#can_view)
-implicit olarak `from organization:default#admin` üzerinden çözer. Yani:
+### Target-state inheritance (planned, not current)
+
+When the platform-backend OpenFGA model is migrated to the target schema, the
+inheritance rule will be:
 
 ```
 [Type] organization
@@ -37,20 +68,28 @@ implicit olarak `from organization:default#admin` üzerinden çözer. Yani:
 
 [Type] module
   relations:
-    define can_view: [user] or admin from organization:default
-    define can_manage: [user] or admin from organization:default
+    define org: [organization]
+    define can_view: [user] or admin from org
+    define can_manage: [user] or admin from org
 
 [Type] action
   relations:
-    define allowed: [user] or admin from organization:default
+    define org: [organization]
+    define allowed: [user] or admin from org
 
 [Type] report
   relations:
-    define can_view: [user] or admin from organization:default
+    define org: [organization]
+    define can_view: [user] or admin from org
 ```
 
+After model migration, every `module/action/report` instance will declare its
+parent `organization` via the `org` relation, and a single
+`organization:default#admin@user:<id>` tuple will resolve to all module/action/
+report access via `admin from org` inheritance.
+
 (Schema rev için `docs/authz/openfga-model-rev-history.md` referans, model
-migration runbook ile.)
+migration runbook ile. Migration runbook draft: Sprint D prep — bu repo.)
 
 ## NE DEĞİLDİR
 

@@ -118,9 +118,13 @@ PRs touching `kustomize/overlays/prod/**`. Runs
 2. For each new digest: require ledger entry with `promotion.test`:
    - `smoke_evidence.d29_up.status == GREEN`
    - `smoke_evidence.d29_functional.status == GREEN`
-   - `smoke_evidence.d29_zanzibar.status in (GREEN, AMBER)`
+   - `smoke_evidence.d29_zanzibar.status` per **service policy** (B0b tightening):
+     - For services with `jwt_validates: true` in services.yaml (default for
+       backend Zanzibar consumers): **GREEN required** (AMBER → BLOCKED)
+     - For services with `jwt_validates: false` (legacy core-data-service:
+       gateway-validated, no own JWT decoder): GREEN or AMBER OK
    - `verified_at != null`
-3. Missing or RED → CI red → merge BLOCKED
+3. Missing or RED (or AMBER on Zanzibar-required service) → CI red → merge BLOCKED
 
 This is **THE** D30 cutover gate that prevents:
 - Manual `kubectl set image` style direct prod promotion
