@@ -286,11 +286,17 @@ Source domain bilgisi audit/debug için. PII içermez.
 
 ### `notify.notification_intent`
 
+> **Schema drift fix (2026-05-05, PR2 plan-time Codex 019df9ae non-neg #2 absorb)**:
+> Önceki revizyonda `idempotency_key` kolonu burada görünüyordu — V1 migration'da
+> bu kolon notification_intent'ten **kaldırıldı**, ayrı `notify.idempotency_key`
+> tablosuna taşındı (24h TTL window fix). Live schema authoritative; bu doc
+> şimdi V1 migration ile uyumlu.
+
 ```sql
 CREATE TABLE notify.notification_intent (
   id BIGSERIAL PRIMARY KEY,
   intent_id VARCHAR(64) NOT NULL UNIQUE,
-  idempotency_key VARCHAR(255) NOT NULL,
+  -- idempotency_key kolonu YOK; ayrı notify.idempotency_key tablosunda (V1 migration)
   correlation_id VARCHAR(128),
   org_id VARCHAR(64) NOT NULL,
   topic_key VARCHAR(128) NOT NULL,
@@ -332,7 +338,11 @@ CREATE TABLE notify.idempotency_key (
 );
 
 CREATE INDEX idx_idem_expires ON notify.idempotency_key (expires_at);  -- cron purge
-CREATE INDEX idx_idem_lookup ON notify.idempotency_key (org_id, idempotency_key) WHERE expires_at > NOW();
+-- partial unique index `WHERE expires_at > NOW()` PG'de **YASAK** (now() immutable
+-- değil; partial index predicate'inde kullanılamaz). Service-layer
+-- pg_advisory_xact_lock + transactional check alternatif. Detail:
+-- platform-backend notification-orchestrator/.../IdempotencyService.java
+CREATE INDEX idx_idem_lookup ON notify.idempotency_key (org_id, idempotency_key, expires_at);
 ```
 
 Lookup logic (Spring Boot):
