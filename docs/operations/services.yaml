@@ -133,7 +133,7 @@ services:
     jwt_validates: true
     route_external: false
     environments:
-      test: deferred  # NOT in gitops overlay yet (Faz 22.x onboard); cluster pod will P1-alarm
+      test: deferred  # Faz 22.1.1b 3-tier drift fix LANDED 2026-05-05 (image sha-bd1e5c8 ready); FULL onboard ayrı sprint (configmap patch + ESO ExternalSecret + Secret populate)
       prod: deferred  # Faz 22.2 product decision; drift gate accepts absence in prod
 
   - name: notification-orchestrator

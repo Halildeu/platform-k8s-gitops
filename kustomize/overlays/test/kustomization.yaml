@@ -399,6 +399,17 @@ images:
     # console nag + watermark kalkar.
     digest: sha256:60dbd3cca0325bdb62b0d8d14b027476f3f0753b664273c9b81cd27a2170950c
 
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
+    newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
+    # 2026-05-05: Faz 22.1.1b 3-tier drift fix LIVE (Codex 019df86f III review absorb).
+    # platform-backend PR #56 + #56 build fix bd1e5c8: 22 untracked Java/SQL dosya
+    # commit + EndpointAdminAuthz MODULE constant kebab-case (ENDPOINT_ADMIN →
+    # endpoint-admin) + Dockerfile multi-module build (common-auth + endpoint-admin).
+    # Cross-repo paralel: gitops PR #363 bootstrap/openfga seed JSON relation align
+    # (admin/viewer → can_manage/can_view).
+    # Build run: 25387160094 (10 service, all PASS).
+    digest: sha256:047fc16aea195899215d87cca7c1015529238742c5ce71b83911a5d570fdbae2
+
 patches:
   # Replica 0 default (scale-to-zero)
   - target:
