@@ -48,8 +48,11 @@ spec:
           image: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service:OVERLAY_MUST_OVERRIDE
           imagePullPolicy: IfNotPresent
           ports:
+            # Faz 22.1.1b live-aligned 2026-05-05: uygulama Spring Boot 8096
+            # listen ediyor (live ConfigMap SERVER_PORT=8096). Önceki 8080
+            # charter skeleton drift idi.
             - name: http
-              containerPort: 8080
+              containerPort: 8096
               protocol: TCP
             - name: management
               containerPort: 8081

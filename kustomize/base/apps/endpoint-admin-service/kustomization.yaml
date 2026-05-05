@@ -19,4 +19,7 @@ resources:
   - service.yaml
   - configmap.yaml
   - serviceaccount.yaml
-  - secret-stub.yaml  # ESO bind path; overlay-specific ExternalSecret production-time inject
+  # secret-stub.yaml KALDIRILDI Faz 22.1.1b onboard 2026-05-05:
+  # ESO ExternalSecret direkt Secret oluşturuyor (target.creationPolicy: Owner).
+  # Stub yerine overlay-specific ExternalSecret kullanılır (Vault path
+  # kv/platform/endpoint-admin-service/* — D6 host-compose vault).

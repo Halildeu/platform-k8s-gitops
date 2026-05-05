@@ -20,10 +20,7 @@ resources:
   - namespace.yaml    # Namespace + labels (platform=true env=test, ApplicationSet prereq)
   - ../../base
   - ../../base/apps/ops-bundle    # Faz 17.2.5: ExternalSecret + ServiceMonitor CRD paketi (runtime'dan ayrı)
-  # Faz 22.1.1b: endpoint-admin-service test overlay revert 2026-05-05 (drift dürüstlüğü)
-  # - manifest charter skeleton 18 key, live cluster ConfigMap 30+ uygulama-spesifik key
-  # - apply edilirse pod CrashLoopBackOff (port/issuer/datasource mismatch)
-  # - FULL onboard sprint pending (live → gitops reverse engineering)
+  - ../../base/apps/endpoint-admin-service    # Faz 22.1.1b live-aligned 2026-05-05
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster
   - endpoints-workcube-mssql.yaml    # 172.19.0.8 (workcube-mssql-proxy-test, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
@@ -403,10 +400,16 @@ images:
     # console nag + watermark kalkar.
     digest: sha256:60dbd3cca0325bdb62b0d8d14b027476f3f0753b664273c9b81cd27a2170950c
 
-  # Faz 22.1.1b endpoint-admin-service digest pin REMOVED 2026-05-05 (drift dürüstlüğü).
-  # Image sha-bd1e5c8 (sha256:047fc16a) GHCR'da hazır AMA test overlay resource'ta
-  # değil — render'a girmediği için images section'da entry tutmak gereksiz +
-  # Check 4 catalog parity confused. FULL onboard sprint sonrası geri eklenir.
+  # Faz 22.1.1b endpoint-admin-service onboard live-aligned (2026-05-05).
+  # Image sha-bd1e5c8 GHCR'a push edildi (PR #56 build run 25387160094).
+  # ConfigMap + ExternalSecret + Service port live cluster state'e hizalandı
+  # (35 ConfigMap key + 4 ExternalSecret key + port 8096).
+  # Cluster live pod imageID şu an sha-05692ae3; bu PR sonrası rolling restart
+  # ile sha-bd1e5c8 digest'e geçecek (selective apply + kubectl rollout
+  # restart per CLAUDE.md D17 koruma).
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
+    newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
+    digest: sha256:047fc16aea195899215d87cca7c1015529238742c5ce71b83911a5d570fdbae2
 
 patches:
   # Replica 0 default (scale-to-zero)

@@ -133,8 +133,8 @@ services:
     jwt_validates: true
     route_external: false
     environments:
-      test: deferred  # Faz 22.1.1b drift LIVE detected 2026-05-05: cluster pod 6d 20h Running with eski digest sha256:05692ae3 + farklı ConfigMap schema (uygulama-spesifik 30+ key). Gitops manifest charter skeleton scope (18 key) — schema drift. Onboard sprint pending: gitops base/configmap.yaml live cluster ConfigMap'e hizalama + ESO ExternalSecret populate. Detail: docs/faz-22-evidence/2026-05-05-22-1-1b-onboard-drift-detected.md
-      prod: deferred  # Faz 22.2 product decision (it-pilot tier acik.local + ESO populate); drift gate accepts absence in prod
+      test: enabled   # Faz 22.1.1b onboard COMPLETE 2026-05-05: gitops manifest live'a hizalandı (35 ConfigMap key + 4 ExternalSecret key + port 8096) + image digest pin sha-bd1e5c8. ESO ClusterSecretStore vault-platform-gitops zaten Ready, kv/platform/endpoint-admin-service Vault path populated. D29-EA smoke pending (kubectl apply sonrası).
+      prod: deferred  # Faz 22.2 product decision (it-pilot tier acik.local + prod realm 'serban' + Azure Trusted Signing); drift gate accepts absence in prod
 
   - name: notification-orchestrator
     repo: platform-backend
