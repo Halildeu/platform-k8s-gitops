@@ -1,0 +1,96 @@
+# notification-orchestrator (Faz 23 — ADR-0013) — DRAFT skeleton.
+# replicas:0 default until Faz 23.1 implementation lands (image yet to be built
+# in platform-backend repo). D7 (K8s DNS), D21 (no HPA), D22/D24 (resource
+# discipline), D27 (upstream-first, no custom operators).
+#
+# IMPORTANT: This deployment is intentionally NOT functional yet. Image
+# placeholder will be replaced when Faz 23.1 Kernel implementation produces
+# first GHCR image. services.yaml marks this as `deferred` per env until
+# image + cluster deploy completes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-orchestrator
+  labels:
+    app.kubernetes.io/name: notification-orchestrator
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: platform
+spec:
+  # 0 by default — overlay'de Faz 23.1 implementation sonrası 1 (test) / 2 (prod) yapılacak
+  replicas: 0
+  minReadySeconds: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notification-orchestrator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: notification-orchestrator
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/part-of: platform
+    spec:
+      serviceAccountName: notification-orchestrator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: notification-orchestrator
+          # Image placeholder — Faz 23.1'de overlay GHCR digest pin ile değiştirilecek
+          image: ghcr.io/halildeu/platform-backend-notification-orchestrator:placeholder
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8089
+              protocol: TCP
+            - name: management
+              containerPort: 8081
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: notification-orchestrator-config
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "k8s"
+            - name: JAVA_OPTS
+              value: "-Xmx384m"
+          resources:
+            requests:
+              cpu: 150m
+              memory: 384Mi
+            limits:
+              cpu: 750m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

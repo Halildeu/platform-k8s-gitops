@@ -136,14 +136,44 @@ services:
       test: deferred  # NOT in gitops overlay yet (Faz 22.x onboard); cluster pod will P1-alarm
       prod: deferred  # Faz 22.2 product decision; drift gate accepts absence in prod
 
+  - name: notification-orchestrator
+    repo: platform-backend
+    description: |
+      Multi-channel notification orchestration platform (Faz 23 — ADR-0013).
+      Kernel/Closed Beta (Faz 23.1) implementation kapsamında: email + Slack +
+      webhook + outbox + retry/DLQ + audit + OpenFGA + PII redaction + metrics
+      + Mailpit/WireMock CI test. Production MVP geniş'te (Faz 23.3) SMS
+      (NetGSM) + in-app inbox API eklenecek.
+
+      Status note (Faz 23.0 charter close — 2026-05-05):
+        Manifest skeleton mevcut (kustomize/base/apps/notification-orchestrator/),
+        replicas: 0 placeholder. Image yet to be built in platform-backend
+        repo (cross-repo write, boundary-cross + user-approval-required —
+        ADR-0011 BG-1). Faz 23.1 Kernel implementation Faz 22.1.1b III
+        review verdict (I-staged-pending-schema-rev) fix-forward sonrası
+        başlayabilir.
+
+        Detail: docs/adr/0013-notification-orchestration.md +
+        docs/runbooks/RB-faz-23-1-kernel-impl-checklist.md
+
+        Drift gate behavior: notification-orchestrator manifest mevcut ama
+        replicas:0 + image:placeholder, cluster pod yok — gitops-as-source-
+        of-truth açısından tutarlı (deferred kabul). Faz 23.1 implementation
+        sonrası replicas:1 (test) + image digest pin → enabled flip.
+    jwt_validates: true
+    route_external: false
+    environments:
+      test: deferred  # Faz 23.1 implementation pending; manifest skeleton ready
+      prod: deferred  # Faz 23.9 prod cutover'da enabled olur
+
 # --- Future / disabled (placeholder for retirement signal) ---
 # (none yet — when a service is permanently removed, move it here with
 #  environments.{test,prod}: disabled)
 
 # Metadata
 metadata:
-  last_updated: "2026-05-04"
-  last_updated_by: "Session 37 — Codex Sprint A P0"
+  last_updated: "2026-05-05"
+  last_updated_by: "Faz 23.0 charter — Codex 019df86f post-impl absorb"
   notes: |
     Bu manifest Drift gate'lerinin (check_prod_drift.sh + check_pr_time.sh)
     "service unmanaged" findings'ini intentional/error olarak ayırmasını
