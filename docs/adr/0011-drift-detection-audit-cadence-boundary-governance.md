@@ -113,7 +113,7 @@ Per ADR-0010 §2.5: drill on test does NOT imply prod readiness. Prod drill = se
 
 ADR-0010 §2.5 defined the user-approval matrix. ADR-0011 formalizes the **action taxonomy** that determines which side any new operation falls on:
 
-#### 2.3.1 Action taxonomy (4 classes)
+#### 2.3.1 Action taxonomy (5 classes)
 
 | Class | Definition | Default authority |
 |---|---|---|
@@ -121,6 +121,7 @@ ADR-0010 §2.5 defined the user-approval matrix. ADR-0011 formalizes the **actio
 | **credential-write** | Write/rotate of credential material (Vault kv patch, AppRole secret-id rotation, root regen) | User-approval REQUIRED. Sandbox MUST block agent. May be wrapped via DR-3 platform-ops-vault-patch (per ADR-0010 §2.1) which itself uses bootstrap-writer AppRole — wrapper invocation is bootstrap-only, NOT runtime credential-write. |
 | **state-mutation** | DDL on shared/production DB, prod kustomize apply, prod image rotation, prod K8s service mutation | User-approval REQUIRED for prod. Test = Codex consensus + Kural #7. Hot-patch via psql heredoc bypassing migration path = always blocked. |
 | **boundary-cross** | Cross-repo writes, cloud IAM operations, external secret manager migrations | User-approval REQUIRED. Sandbox blocks unless explicit `bypassPermissions` workflow defined. |
+| **user-communication** (ADR-0013 D45 BG-NOTIFY-1) | Notification orchestration prod template/workflow/audience/provider değişikliği — production'da kullanıcılara giden mesaj akışı, channel routing, opt-out effect, recipient list etkileyen değişiklik | User-approval REQUIRED. PR'da blast radius + sample render + recipient class + opt-out effect + rollback strategy zorunlu. |
 
 Operations not in these classes (read-only inventory, runbook drafting, ADR docs, CI script port, evidence file capture) = Codex consensus sufficient.
 
@@ -137,6 +138,7 @@ This PR includes (multi-select):
 - [ ] state-mutation (test cluster)
 - [ ] state-mutation (production)
 - [ ] boundary-cross
+- [ ] user-communication
 - [ ] none of the above (Codex consensus only)
 
 If any class checked: explicit operator step + user-approval evidence link.

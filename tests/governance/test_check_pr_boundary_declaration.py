@@ -47,10 +47,10 @@ class TestBlockPresence(unittest.TestCase):
         c = next(c for c in report.checks if c.name == "boundary_block_present")
         self.assertFalse(c.passed)
 
-    def test_block_with_six_classes_passes_presence(self) -> None:
+    def test_block_with_seven_classes_passes_presence(self) -> None:
         body = _make_body(marked=["none of the above"])
         report = check_bg1.run_all_checks(body, [])
-        c = next(c for c in report.checks if c.name == "six_classes_present")
+        c = next(c for c in report.checks if c.name == "seven_classes_present")
         self.assertTrue(c.passed)
 
 
@@ -160,6 +160,7 @@ This PR includes:
 - [ ] state-mutation (test cluster)
 - [ ] state-mutation (production)
 - [ ] boundary-cross
+- [ ] user-communication
 - [x] none of the above (Codex consensus only — read-only static analysis)
 """
         report = check_bg1.run_all_checks(body, [])
@@ -169,6 +170,30 @@ This PR includes:
                 for d in c.details:
                     print(f"      → {d}")
         self.assertEqual(report.overall, "PASS")
+
+
+class TestUserCommunicationClass(unittest.TestCase):
+    """ADR-0013 D45 BG-NOTIFY-1: user-communication class added."""
+
+    def test_user_communication_in_expected_classes(self) -> None:
+        self.assertIn("user-communication", check_bg1.EXPECTED_CLASSES)
+
+    def test_user_communication_requires_user_approval(self) -> None:
+        self.assertIn("user-communication", check_bg1.USER_APPROVAL_CLASSES)
+
+    def test_user_communication_marked_requires_evidence(self) -> None:
+        body = _make_body(marked=["user-communication"])
+        report = check_bg1.run_all_checks(body, ["user-approval-required"])
+        c = next(c for c in report.checks if c.name == "user_approval_evidence")
+        self.assertFalse(c.passed)
+
+    def test_user_communication_with_evidence_and_label_passes(self) -> None:
+        body = _make_body(marked=["user-communication"], with_evidence=True)
+        report = check_bg1.run_all_checks(body, ["user-approval-required"])
+        c = next(c for c in report.checks if c.name == "user_approval_evidence")
+        self.assertTrue(c.passed)
+        c = next(c for c in report.checks if c.name == "user_approval_label")
+        self.assertTrue(c.passed)
 
 
 if __name__ == "__main__":
