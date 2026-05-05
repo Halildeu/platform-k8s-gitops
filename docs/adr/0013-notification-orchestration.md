@@ -1,6 +1,6 @@
 # ADR-0013 — Notification Orchestration Platform
 
-> **Status**: DRAFT (Faz 23.0 charter — plan-time consensus 2026-05-05; user onay 2026-05-05)
+> **Status**: ACTIVE (Faz 23.0 charter — plan-time consensus 2026-05-05; user onay 2026-05-05; OQ resolution 2026-05-05 Codex 019df86f Q4 PARTIAL absorb — 6 OQ tentative+resolved, 2 legal/ops sub-faz öncesi clarify)
 > **Date**: 2026-05-05
 > **Sprint**: Faz 23.0 (charter + ADR + event contract + ladder + roadmap + feature matrix + must-have checklist)
 > **Codex thread**: `019df86f-89aa-7200-bb6c-b7b903860148` (REVISE-then-AGREE; 10-aday kıyas tablosu, custom Spring Boot baseline 9/10 skor; 4-tier ayrımı + 12 v1-taşıma + 5 yeni kategori + 10 must-have çizgisi mühürlendi)
@@ -310,16 +310,35 @@ PR template:
 | 23.9 | Prod cutover | atomic | 1 hafta | 23.4-23.8 stable | k3d-prod + 72h observation |
 | 23.X | v2 (later) | code | 8-12 hafta | v1 stable | A/B + workflow editor + WhatsApp + voice + per-tenant provider |
 
-## Open Questions (kullanıcı clarify gerek)
+## Open Questions — Resolution (2026-05-05 Codex 019df86f Q4 PARTIAL absorb)
 
-- **OQ-1**: Corporate SMTP relay var mı, yoksa Postal self-host mi default? (D44 sub-faz 23.2)
-- **OQ-2**: SMS primary provider tercihi NetGSM mi, yoksa İletimerkezi mi? (D40)
-- **OQ-3**: IYS kaydı zaten var mı yoksa kapsama dahil mi? (D40-IYS)
-- **OQ-4**: Audit retention süre tercihi? (30/90/180/365 — D42)
-- **OQ-5**: Slack workspace kanal isimleri — `#alerts`, `#audit`, `#ops` veya farklı mı? (D44 sub-faz 23.6)
-- **OQ-6**: Mobile push FCM project + APNS bundle id mevcut mu? (Faz 22 ile bağlantı)
-- **OQ-7**: In-app inbox MFE Novu inbox component vs custom React tercihi onay? (D38 — Codex custom önerdi)
-- **OQ-8**: 3rd party email service (SendGrid/Mailgun) kullanım izni var mı, yoksa fully self-host zorunlu mu? (D44 sub-faz 23.2)
+Codex revize verdict: bazı OQ'lar agent default ile kapatılabilir, bazıları **legal/ops/operatör** confirmation gerektirir. Aşağıdaki tablo her OQ'yu sınıflar:
+
+| OQ | Soru | Durum | Resolution |
+|---|---|:---:|---|
+| OQ-1 | SMTP delivery layer | 🟡 Tentative default | **Corporate SMTP relay first**; Postal self-host **sadece** corporate relay yoksa ve **ops onayıyla**. Faz 23.2'de operasyon clarify gerekecek; Mailpit Kernel/Closed Beta için yeter. |
+| OQ-2 | SMS primary provider | 🟡 Tentative default | **NetGSM primary, İletimerkezi secondary** (yaygın TR provider). **Ama prod/provider sözleşmesi kullanıcı onayı** ile aktive edilir. Faz 23.3 öncesi clarify. |
+| OQ-3 | IYS (TR commercial SMS) kaydı | 🔴 Pending legal/ops | **Transactional MVP'de skip** (transactional/OTP IYS'den muaf). **Commercial SMS kapsamı çıkarsa legal/ops confirm**. D40-IYS sub-faz drift olarak track edilir; Faz 23.3+ commercial SMS işine girilirse açılır. |
+| OQ-4 | Audit retention süre | 🟡 Tentative default | **90 gün teknik default** (D42). **Legal confirm gerekecek** — KVKK Art. 7 saklama süresi + sektörel regulatif. Sub-faz 23.2 drift adayı. |
+| OQ-5 | Slack workspace kanal isimleri | 🟡 Tentative default | **Test placeholder OK**: `#alerts`, `#audit`, `#ops`. **Prod webhook kullanıcı/ops confirm** ile activate. 23.6 sub-faz scope. |
+| OQ-6 | FCM project + APNS bundle id | ⏳ Deferred | **Henüz absent**. Faz 22.2 endpoint-admin agent ile birlikte aktive edilir. 23.7 sub-faz öncesi clarify. |
+| OQ-7 | In-app inbox React component tercihi | ✅ Resolved (agent default) | **Custom React** (Codex `019df86f` Q1 REVISE — Novu deferred lab candidate). Sub-faz 23.4. |
+| OQ-8 | 3rd party SMTP (SendGrid/Mailgun) izni | 🔴 Pending legal | **Default: disabled**. Legal/KVKK confirm olmadan açılmaz. Self-host (corporate relay/Postal) first preference. Faz 23.2 sub-faz drift. |
+
+**Status legend**:
+- ✅ Resolved (agent default kabul edildi, ADR ACTIVE'e geçer)
+- 🟡 Tentative default (agent öneri yazıldı, sub-faz öncesi confirm)
+- 🔴 Pending legal/ops (confirm zorunlu, blocked until)
+- ⏳ Deferred (Faz 22 ile bağlantılı, 23.7 öncesi açılır)
+
+### Charter Close Eşiği
+
+ADR-0013 **DRAFT → ACTIVE** geçişi için:
+- ✅ + 🟡 OQ'ları kabul edilmiş sayılır (3/8: OQ-7 + OQ-1/2/4/5 tentative)
+- 🔴 OQ-3 + OQ-8 **legal/ops confirm beklemiyor charter close için** — Faz 23.3 (SMS) ve 23.2 (3rd party SMTP) sub-faz öncesi açılır
+- ⏳ OQ-6 charter close için bağımsız (Faz 22.2 paralel)
+
+**Sonuç**: Faz 23.0 charter ACTIVE statüsüne geçebilir. Sub-faz öncesi clarify zincirleri runbook'larda track edilir.
 
 ## Sonuç (DRAFT)
 

@@ -1,6 +1,6 @@
 # RB-faz-23-charter — Notification Orchestration Sub-Faz Roadmap
 
-> **Status**: DRAFT (Faz 23.0 charter — 2026-05-05)
+> **Status**: ACTIVE (Faz 23.0 charter — 2026-05-05; OQ resolution Codex 019df86f Q4 absorb)
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md)
 > **Codex thread**: `019df86f-89aa-7200-bb6c-b7b903860148`
 > **Yardımcı artifact**:
@@ -31,7 +31,7 @@ Bu runbook **takip edilebilir yol haritası**dır. Her sub-faz için: kapsam, ba
 
 | # | Sub-faz | Tier | Süre | Bağımlılık | Status |
 |---|---|---|---:|---|:---:|
-| **23.0** | Charter | docs | 1 hafta | — | 🟡 in-progress |
+| **23.0** | Charter | docs | 1 hafta | — | 🟢 ACTIVE (PR #362 + 5 follow-up commits) |
 | 23.1 | Kernel/Closed Beta | code | 3-4 hafta | 23.0 + Faz 22.1.1b III review verdict | ⏳ blocked |
 | 23.2 | Production MVP dar | code | 2-3 hafta | 23.1 | ⏳ |
 | 23.3 | Production MVP geniş | code | 3 hafta | 23.2 | ⏳ |
@@ -376,19 +376,25 @@ Her sub-faz tamamlandığında:
 
 ---
 
-## 8 Open Question (kullanıcı clarify)
+## 8 Open Question — 2026-05-05 Resolution (Codex 019df86f Q4 PARTIAL absorb)
 
-| OQ | Soru | Kim cevaplar | Status |
-|---|---|---|---|
-| OQ-1 | Corporate SMTP relay var mı, yoksa Postal self-host? | ops + kullanıcı | ⏳ |
-| OQ-2 | SMS primary NetGSM mi İletimerkezi mi? | kullanıcı | ⏳ |
-| OQ-3 | IYS kaydı mevcut mu? | ops | ⏳ |
-| OQ-4 | Audit retention süre tercihi (30/90/180/365)? | kullanıcı + legal | ⏳ |
-| OQ-5 | Slack workspace kanal isimleri? | kullanıcı | ⏳ |
-| OQ-6 | FCM project + APNS bundle id mevcut mu? | mobile/ops | ⏳ |
-| OQ-7 | In-app inbox custom React vs Novu component onay? | kullanıcı | 🟡 (Codex önerdi: custom) |
-| OQ-8 | 3rd party SMTP (SendGrid/Mailgun) izinli mi? | kullanıcı + legal | ⏳ |
+| OQ | Soru | Kim cevaplar | Status | Resolution |
+|---|---|---|---|---|
+| OQ-1 | Corporate SMTP relay var mı, yoksa Postal self-host? | ops + kullanıcı | 🟡 Tentative | **Corporate relay first**; Postal yedek + ops onayı. 23.2'de clarify. |
+| OQ-2 | SMS primary NetGSM mi İletimerkezi mi? | kullanıcı | 🟡 Tentative | **NetGSM primary**, İletimerkezi secondary. Prod sözleşme kullanıcı onayı. 23.3 öncesi clarify. |
+| OQ-3 | IYS kaydı mevcut mu? | ops + legal | 🔴 Pending | Transactional MVP'de skip; commercial SMS gerekirse legal confirm. D40-IYS sub-faz. |
+| OQ-4 | Audit retention süre tercihi (30/90/180/365)? | kullanıcı + legal | 🟡 Tentative | **90 gün teknik default**, legal confirm. 23.2 sub-faz drift. |
+| OQ-5 | Slack workspace kanal isimleri? | kullanıcı | 🟡 Tentative | Test: `#alerts`/`#audit`/`#ops`. Prod webhook kullanıcı/ops confirm. 23.6 scope. |
+| OQ-6 | FCM project + APNS bundle id mevcut mu? | mobile/ops | ⏳ Deferred | Henüz absent. Faz 22.2 ile birlikte aktive. 23.7 öncesi clarify. |
+| OQ-7 | In-app inbox custom React vs Novu component onay? | kullanıcı | ✅ Resolved | **Custom React** (Codex 019df86f Q1 REVISE absorb — Novu deferred lab). 23.4 sub-faz. |
+| OQ-8 | 3rd party SMTP (SendGrid/Mailgun) izinli mi? | kullanıcı + legal | 🔴 Pending | Default: disabled. Legal/KVKK confirm yoksa açılmaz. 23.2 sub-faz drift. |
 
-OQ-1, OQ-2, OQ-4, OQ-5, OQ-7, OQ-8 = **23.0 charter close için zorunlu** (ADR DRAFT → ACTIVE)
-OQ-3 = 23.3'te SMS sub-faz öncesi cevap gerek
-OQ-6 = 23.7'de push sub-faz öncesi cevap gerek
+**Status legend**:
+- ✅ Resolved (agent default kabul, ADR ACTIVE)
+- 🟡 Tentative default (agent öneri, sub-faz öncesi confirm)
+- 🔴 Pending legal/ops (sub-faz öncesi confirm zorunlu)
+- ⏳ Deferred (Faz 22 ile bağlantılı)
+
+**Charter Close Eşiği**: ✅ + 🟡 OQ'ları kabul edilmiş sayılır → ADR-0013 **DRAFT → ACTIVE**. 🔴 + ⏳ OQ'lar sub-faz öncesi clarify zincirleri runbook'larda track edilir.
+
+**Charter close için tüm OQ'lar geçti** — ADR-0013 statüsü ACTIVE.
