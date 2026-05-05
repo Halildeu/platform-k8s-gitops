@@ -42,23 +42,27 @@ from pathlib import Path
 
 BOUNDARY_HEADING = "## Boundary declaration (ADR-0011 §2.3)"
 
-# 6 expected boundary classes (exact match in PR body)
+# 7 expected boundary classes (exact match in PR body)
+# ADR-0013 D45 BG-NOTIFY-1: user-communication class added (Faz 23 Notification
+# Orchestration — prod template/workflow/audience/provider değişikliği için).
 EXPECTED_CLASSES = [
     "credential-read",
     "credential-write",
     "state-mutation (test cluster)",
     "state-mutation (production)",
     "boundary-cross",
+    "user-communication",
     "none of the above",
 ]
 
 # Classes that require user-approval evidence + label (Codex 019dd409 revise:
-# credential-read added to this set)
+# credential-read added to this set; ADR-0013 D45: user-communication added).
 USER_APPROVAL_CLASSES = {
     "credential-read",
     "credential-write",
     "state-mutation (production)",
     "boundary-cross",
+    "user-communication",
 }
 
 USER_APPROVAL_LABEL = "user-approval-required"
@@ -144,21 +148,21 @@ def check_block_present(body: str) -> CheckResult:
     )
 
 
-def check_six_classes_present(body: str) -> CheckResult:
+def check_seven_classes_present(body: str) -> CheckResult:
     block, err = extract_boundary_block(body)
     if err:
-        return CheckResult(name="six_classes_present", passed=False, message=err)
+        return CheckResult(name="seven_classes_present", passed=False, message=err)
     states = parse_checkbox_states(block)
     missing = [cls for cls, state in states.items() if state is None]
     if missing:
         return CheckResult(
-            name="six_classes_present",
+            name="seven_classes_present",
             passed=False,
             message=f"Boundary block missing {len(missing)} class(es)",
             details=[f"missing: {m}" for m in missing],
         )
     return CheckResult(
-        name="six_classes_present",
+        name="seven_classes_present",
         passed=True,
         message=f"All {len(EXPECTED_CLASSES)} boundary classes present",
     )
@@ -305,7 +309,7 @@ def read_event_payload(event_path: str) -> tuple[str, list[str]]:
 def run_all_checks(body: str, labels: list[str]) -> GateReport:
     checks = [
         check_block_present(body),
-        check_six_classes_present(body),
+        check_seven_classes_present(body),
         check_at_least_one_marked(body),
         check_none_exclusivity(body),
         check_user_approval_evidence(body),

@@ -55,9 +55,11 @@
 
 ## Boundary declaration (ADR-0011 §2.3)
 
-> **ZORUNLU**: `gate-pr-boundary-declaration` CI gate (BG-1) bu blok'un eksiksiz doldurulmasını ister. En az bir madde işaretli olmalı; `none of the above` işaretli ise diğer 5 işaretsiz olmalı. credential-read/write/state-mutation (production)/boundary-cross işaretli ise PR'a `user-approval-required` label eklenmeli ve User-approval evidence link verilmelidir. Detay: `docs/RB-adr-0011-bg-1-pr-boundary-declaration.md`.
+> **ZORUNLU**: `gate-pr-boundary-declaration` CI gate (BG-1) bu blok'un eksiksiz doldurulmasını ister. En az bir madde işaretli olmalı; `none of the above` işaretli ise diğer 6 işaretsiz olmalı. credential-read/write/state-mutation (production)/boundary-cross/user-communication işaretli ise PR'a `user-approval-required` label eklenmeli ve User-approval evidence link verilmelidir. Detay: `docs/RB-adr-0011-bg-1-pr-boundary-declaration.md`.
 >
 > Boundary guidance + 3 gray-area kararı: `docs/RB-adr-0011-bg-2-sandbox-blocking-playbook.md` (BG-2 playbook).
+>
+> **`user-communication`** (ADR-0013 D45 BG-NOTIFY-1): Notification orchestration prod template/workflow/audience/provider değişikliği — blast radius (kaç kullanıcıya gider) + sample render + recipient class + opt-out effect + rollback strategy zorunlu.
 
 This PR includes:
 
@@ -66,6 +68,7 @@ This PR includes:
 - [ ] state-mutation (test cluster)
 - [ ] state-mutation (production)
 - [ ] boundary-cross
+- [ ] user-communication
 - [ ] none of the above (Codex consensus only)
 
 User-approval evidence: `<link veya N/A — N/A sadece "none of the above" için kabul edilir>`
