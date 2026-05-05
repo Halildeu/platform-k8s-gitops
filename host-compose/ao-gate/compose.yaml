@@ -1,0 +1,174 @@
+# GPP-2 AO Gate Runtime — operator-owned host-compose
+#
+# Codex 019dd24f post-merge follow-up brief. Two services localhost-bound (no
+# public 80/443 — TLS + public routing live in host-compose/web-nginx; the
+# /ao-gate/* routes are added there in a separate frontend follow-up).
+#
+# Localhost ports:
+#   - 127.0.0.1:18081 → policy-service     (program_id "GPP-2q")
+#   - 127.0.0.1:18082 → release-gate       (program_id "GPP-2w")
+#
+# Network: attached to the existing platform-prod-net so the gates can resolve
+# Vault as platform-vault-prod:8200 (mirrors the keycloak-prod / vault-prod
+# attachment pattern). 127.0.0.1 inside a container is NOT the host, so Vault
+# must be reachable through the prod network rather than a host loopback bind.
+#
+# Tag strategy: defaults to ":main" (auto-follows latest main push from the
+# ao-kernel CI). For GPP-2 evidence, override via .env to a per-build
+# ":sha-<SHA>" tag — both tags are pushed by the ao-kernel container-publish
+# workflows (policy-container-publish.yml, ao-release-gate-container-publish.yml).
+#
+# Hardening (Codex iter-3 + back1 review + 019dfa18 absorb):
+#   - non-root user 10001:10001 (matches Dockerfile USER ao-kernel)
+#   - read-only filesystem with /tmp tmpfs (gunicorn + Python need writable /tmp)
+#   - no new privileges
+#   - per-service memory + CPU caps
+#   - json-file log rotation 20m × 5
+#
+# What this file does NOT do:
+#   - public TLS / 80 / 443 (lives in host-compose/web-nginx)
+#   - GitHub App webhook config / branch protection / required checks
+#   - any live adapter execution beyond /healthz
+
+services:
+  policy-service:
+    image: ghcr.io/halildeu/ao-kernel-live-adapter-gate-policy-service:${AO_POLICY_IMAGE_TAG:-main}
+    container_name: ao-gate-policy
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18081:8000"
+    environment:
+      # Service runtime
+      PORT: "8000"
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      WEB_THREADS: ${WEB_THREADS:-4}
+      WEB_TIMEOUT: ${WEB_TIMEOUT:-30}
+      # Secrets provider (Vault) — only IDs/paths here, never values.
+      # VAULT_TOKEN is required by ao_kernel/_internal/secrets/hashicorp_vault_provider.py;
+      # absent → secret resolution returns None and /github/* callbacks fail.
+      SECRETS_PROVIDER: ${SECRETS_PROVIDER:-hashicorp_vault}
+      VAULT_ADDR: ${VAULT_ADDR:-http://platform-vault-prod:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:?set VAULT_TOKEN on the operator host (Vault auth required by ao-kernel hashicorp_vault provider)}
+      VAULT_SECRET_MOUNT: ${VAULT_SECRET_MOUNT:-secret}
+      # GitHub App identity — fail-fast on empty (operator-public, but required
+      # at /github/* callback time; an empty value would silently 4xx in prod).
+      AO_GITHUB_API_URL: ${AO_GITHUB_API_URL:-https://api.github.com}
+      AO_GITHUB_APP_ID: ${AO_GITHUB_APP_ID:?set AO_GITHUB_APP_ID on the operator host (numeric GitHub App ID, required by callback path)}
+      AO_GITHUB_APP_PRIVATE_KEY_PEM_ID: ${AO_GITHUB_APP_PRIVATE_KEY_PEM_ID:-gpp2/github/private-key-pem}
+      AO_LIVE_ADAPTER_GATE_WEBHOOK_SECRET_ID: ${AO_LIVE_ADAPTER_GATE_WEBHOOK_SECRET_ID:-gpp2/policy/webhook-secret}
+      AO_POLICY_SERVICE_MAX_BODY_BYTES: ${AO_POLICY_SERVICE_MAX_BODY_BYTES:-1048576}
+    # UID 10001 = `ao-kernel` user created by deploy/live-adapter-gate-policy-service/Dockerfile.
+    # Keeping the override explicit (rather than dropping it) documents the
+    # contract; if the upstream Dockerfile USER changes, this line must be
+    # updated in lock-step.
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # Validates more than HTTP 200: program_id MUST equal GPP-2q. A wrong
+      # runtime artefact (e.g. release-gate accidentally built into the policy
+      # image) flips this to unhealthy instead of silently passing.
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import json, urllib.request
+          r = urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)
+          body = json.load(r)
+          assert body.get('program_id') == 'GPP-2q', body
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - platform-prod-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+  release-gate:
+    image: ghcr.io/halildeu/ao-kernel-ao-release-gate-service:${AO_RELEASE_GATE_IMAGE_TAG:-main}
+    container_name: ao-gate-release
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18082:8000"
+    environment:
+      # Service runtime
+      PORT: "8000"
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      WEB_THREADS: ${WEB_THREADS:-4}
+      WEB_TIMEOUT: ${WEB_TIMEOUT:-30}
+      # Secrets provider (Vault) — only IDs/paths here, never values.
+      SECRETS_PROVIDER: ${SECRETS_PROVIDER:-hashicorp_vault}
+      VAULT_ADDR: ${VAULT_ADDR:-http://platform-vault-prod:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:?set VAULT_TOKEN on the operator host (Vault auth required by ao-kernel hashicorp_vault provider)}
+      VAULT_SECRET_MOUNT: ${VAULT_SECRET_MOUNT:-secret}
+      AO_GITHUB_API_URL: ${AO_GITHUB_API_URL:-https://api.github.com}
+      AO_GITHUB_APP_ID: ${AO_GITHUB_APP_ID:?set AO_GITHUB_APP_ID on the operator host (numeric GitHub App ID, required by callback path)}
+      AO_GITHUB_APP_PRIVATE_KEY_PEM_ID: ${AO_GITHUB_APP_PRIVATE_KEY_PEM_ID:-gpp2/github/private-key-pem}
+      AO_RELEASE_GATE_WEBHOOK_SECRET_ID: ${AO_RELEASE_GATE_WEBHOOK_SECRET_ID:-gpp2/release-gate/webhook-secret}
+      # ao_release_gate_runtime requires a GPP status JSON file; absent →
+      # /github/ao-release-gate raises ao_release_gate_runtime_gpp_status_unavailable.
+      # Mount source (host path) supplied via AO_RELEASE_GATE_GPP_STATUS_HOST_PATH
+      # in .env (operator maintains the file content).
+      AO_RELEASE_GATE_GPP_STATUS_PATH: /app/gpp_status.v1.json
+      AO_RELEASE_GATE_MAX_BODY_BYTES: ${AO_RELEASE_GATE_MAX_BODY_BYTES:-1048576}
+    volumes:
+      # Long syntax + bind.create_host_path: false (Codex 019dfa1f absorb).
+      # Default create_host_path is true and would silently auto-mkdir an empty
+      # directory at the host path on a typo, leaving /healthz green while
+      # /github/ao-release-gate raises gpp_status_unavailable on first POST.
+      # Failing the bring-up is the safer contract.
+      - type: bind
+        source: ${AO_RELEASE_GATE_GPP_STATUS_HOST_PATH:?set AO_RELEASE_GATE_GPP_STATUS_HOST_PATH (read-only host path to gpp_status.v1.json)}
+        target: /app/gpp_status.v1.json
+        read_only: true
+        bind:
+          create_host_path: false
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import json, urllib.request
+          r = urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)
+          body = json.load(r)
+          assert body.get('program_id') == 'GPP-2w', body
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - platform-prod-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+networks:
+  platform-prod-net:
+    external: true
