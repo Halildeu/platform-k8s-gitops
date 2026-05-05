@@ -10,8 +10,10 @@ spec:
   selector:
     app.kubernetes.io/name: endpoint-admin-service
   ports:
+    # Faz 22.1.1b live-aligned 2026-05-05: uygulama 8096 listen ediyor.
+    # Service port 8096 → targetPort http (8096) — clusterIP routing tutarlı.
     - name: http
-      port: 8080
+      port: 8096
       targetPort: http
       protocol: TCP
     - name: management

@@ -1,8 +1,16 @@
-# endpoint-admin-service ConfigMap skeleton — Faz 22 (sprint PR-9)
+# endpoint-admin-service ConfigMap — Faz 22.1.1b live-aligned (2026-05-05)
 #
-# Fail-closed: kritik URI'lar OVERLAY_MUST_OVERRIDE pattern; overlay
-# set etmezse runtime sızıntı placeholder-leak-check.yaml CI guard
-# tarafından yakalanır (ADR-0011 BG-1 mevcut pattern).
+# Live cluster (k3d-test platform-test) ConfigMap reverse-engineered into
+# gitops base. Önceki charter skeleton (18 key, OVERLAY_MUST_OVERRIDE pattern)
+# uygulamayla uyumsuzdu — bu revision live-aligned 35 key uygulama-spesifik
+# config kontratı.
+#
+# Codex 019df86f drift dürüstlüğü mandate (PR #366 sonrası onboard sprint):
+# live state authoritative, gitops manifest live'a hizalanır.
+#
+# Env-specific override: KEYCLOAK_ISSUER_URI + KEYCLOAK_JWKS_URI +
+# SECURITY_JWT_AUDIENCE prod overlay tarafında (test base default'ları kabul,
+# prod realm 'serban' için overlay patch).
 
 apiVersion: v1
 kind: ConfigMap
@@ -11,52 +19,61 @@ metadata:
   labels:
     app.kubernetes.io/name: endpoint-admin-service
 data:
-  # Application identity
-  APP_NAME: "endpoint-admin-service"
-  APP_VERSION: "0.0.0-skeleton"
+  # Listen ports (uygulama Spring Boot default 8096)
+  SERVER_PORT: "8096"
+  SERVER_SHUTDOWN: "graceful"
+  MANAGEMENT_SERVER_PORT: "8081"
+  SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: "30s"
 
-  # Listen ports
-  HTTP_PORT: "8080"
-  MANAGEMENT_PORT: "8081"
+  # Datasource (host-compose Postgres test cluster — D6 stateful contract)
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/endpoint_admin"
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "5"
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "2"
+  DB_POOL_MAX: "5"
 
-  # Authz integration — permission-service Zanzibar plane (ADR-0012-EA §Authorization)
-  PERMISSION_SERVICE_BASE_URL: "http://permission-service:8084"
-  AUTHZ_USER_TABLE: "users"
+  # JPA / Flyway — uygulama Flyway kullanmıyor; Hibernate ddl-auto=update
+  SPRING_FLYWAY_ENABLED: "false"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
+  ENDPOINT_ADMIN_DB_SCHEMA: "endpoint_admin_service"
 
-  # Identity / OIDC — overlay sets realm
-  # PR-8b düzeltme (user 2026-05-02): prod realm 'serban' (Keycloak built-in
-  # 'master' realm KULLANILMAYACAK), test realm 'platform-test'.
-  KEYCLOAK_ISSUER_URI: "OVERLAY_MUST_OVERRIDE"
-  KEYCLOAK_JWKS_URI: "OVERLAY_MUST_OVERRIDE"
-  ADMIN_AUTH_CLIENT_ID: "endpoint-admin-portal"  # opsiyonel ayrı client; web shell mevcut client reuse edebilir
+  # Identity / OIDC — test=platform-test realm; prod overlay 'serban'
+  KEYCLOAK_ISSUER_URI: "https://testai.acik.com/realms/platform-test"
+  KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
 
-  # Audit / immutable storage (DD-EA-6)
-  AUDIT_LOG_BACKEND: "OVERLAY_MUST_OVERRIDE"  # postgres/clickhouse/loki — pilot tier kararı
-  AUDIT_LOG_RETENTION_DAYS: "365"
+  # JWT Security
+  SECURITY_AUTH_ALLOWED_CLIENT_IDS: "frontend,admin-cli,serban-web,account"
+  SECURITY_JWT_AUDIENCE: "endpoint-admin-service,frontend,account,serban-web"
 
-  # Pilot tier (ADR-0012-EA §Pilot tier matrisi)
-  # PR-8b düzeltme: 22.1 Lab → 22.2 IT-owned acik.local → 22.3 Restricted
-  # 22.1 + 22.2 scope: SADECE acik.local; BOREAS + CESS Faz 22 dışı
-  PILOT_TIER: "OVERLAY_MUST_OVERRIDE"  # lab|it-pilot|restricted — test=lab, prod 22.2 başlangıçta=it-pilot
+  # Eureka / Spring Cloud (D7 — Eureka kaldırıldı)
+  EUREKA_CLIENT_ENABLED: "false"
+  SPRING_CLOUD_DISCOVERY_ENABLED: "false"
+  SPRING_CLOUD_SERVICE_REGISTRY_AUTO_REGISTRATION_ENABLED: "false"
 
-  # Identity discovery scope (Faz 22.1 lab + 22.2 acik.local pilot)
-  # PR-8b düzeltme: 22.3+'a kadar SADECE acik.local; Entra/M365 future expansion
-  DISCOVERY_LOCAL_WINDOWS_ENABLED: "false"
-  DISCOVERY_AD_ACIK_LOCAL_ENABLED: "false"  # 22.2'den itibaren overlay'de true
-  DISCOVERY_AD_BOREAS_ENABLED: "false"      # Faz 22.3+ (out of initial scope)
-  DISCOVERY_AD_CESS_ENABLED: "false"        # Faz 22.3+ (out of initial scope)
-  DISCOVERY_ENTRA_ENABLED: "false"          # Faz 22.3+ (BOREAS/CESS hibrit gerek)
-  DISCOVERY_M365_ENABLED: "false"           # Faz 22.3+ (aynı)
+  # Agent auth (HMAC nonce + timestamp window)
+  ENDPOINT_ADMIN_AGENT_AUTH_NONCE_TTL_SECONDS: "600"
+  ENDPOINT_ADMIN_AGENT_AUTH_NONCE_CLEANUP_INITIAL_DELAY_MS: "600000"
+  ENDPOINT_ADMIN_AGENT_AUTH_NONCE_CLEANUP_INTERVAL_MS: "600000"
+  ENDPOINT_ADMIN_AGENT_AUTH_TIMESTAMP_WINDOW_SECONDS: "300"
 
-  # Code signing verify (DD-EA-4)
-  # PR-8b düzeltme (user 2026-05-02): COSIGN_KEY_REF SADECE public key reference
-  # (Azure KMS URI gibi). Private key Vault/ESO runtime secret değil; build-time
-  # CI pipeline supply-chain RoT (platform-agent + platform-backend CI workflow).
-  # Runtime cosign verify deploy workflow + bu reference ile public key check.
-  COSIGN_VERIFY_ENABLED: "true"
-  COSIGN_KEY_REF: "OVERLAY_MUST_OVERRIDE"  # azure-kms://<uri> — Azure Trusted Signing public key ref
-  # 22.1 lab tier: lab-only-evidence imza kabul (self-signed flag)
-  COSIGN_LAB_ONLY_EVIDENCE: "false"  # 22.1 overlay'de true; 22.2+ false
+  # Command claim TTL
+  ENDPOINT_ADMIN_COMMAND_CLAIM_TTL_SECONDS: "300"
+
+  # Enrollment token
+  ENDPOINT_ADMIN_ENROLLMENT_DEFAULT_TOKEN_TTL_MINUTES: "1440"
+  ENDPOINT_ADMIN_ENROLLMENT_MAX_TOKEN_TTL_MINUTES: "10080"
+  ENDPOINT_ADMIN_ENROLLMENT_CONSUME_RATE_LIMIT_PER_MINUTE: "5"
+
+  # Secret encryption (key version + rotation grace; key kendisi Vault/ESO)
+  ENDPOINT_ADMIN_SECRET_ENCRYPTION_KEY_VERSION: "k8s-v1"
+  ENDPOINT_ADMIN_SECRET_ROTATION_GRACE_HOURS: "24"
 
   # Logging
-  LOG_LEVEL: "INFO"
+  LOGGING_LEVEL_ROOT: "INFO"
+  LOGGING_LEVEL_COM_EXAMPLE_ENDPOINTADMIN: "INFO"
+
+  # Management / actuator
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "never"
+  MANAGEMENT_TRACING_ENABLED: "false"
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.1"

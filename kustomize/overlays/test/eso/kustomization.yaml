@@ -7,6 +7,7 @@ kind: Kustomization
 resources:
   - ../../../base/eso
   - externalsecret-ghcr-pull.yaml    # platform-test ns (W1 Opsiyon B)
+  - endpoint-admin/externalsecret.yaml    # Faz 22.1.1b live-aligned (2026-05-05)
 
 patches:
   - target:
