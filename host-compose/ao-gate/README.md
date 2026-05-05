@@ -44,6 +44,13 @@ cp .env.example .env
 #   AO_GITHUB_APP_ID                     (numeric GitHub App ID, public-safe)
 #   AO_RELEASE_GATE_GPP_STATUS_HOST_PATH (read-only host path to gpp_status.v1.json)
 # Optional: pin AO_POLICY_IMAGE_TAG / AO_RELEASE_GATE_IMAGE_TAG to :sha-<SHA> for evidence.
+
+# Pre-flight: confirm the GPP status file exists at the host path BEFORE bring-up.
+# The bind uses create_host_path: false so a missing/typo'd path fails the up,
+# rather than silently auto-mkdir'ing an empty directory.
+test -f "$(grep ^AO_RELEASE_GATE_GPP_STATUS_HOST_PATH .env | cut -d= -f2-)" \
+  || { echo "AO_RELEASE_GATE_GPP_STATUS_HOST_PATH points at a missing file"; exit 1; }
+
 docker compose --env-file .env up -d
 docker compose ps
 ```

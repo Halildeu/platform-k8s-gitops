@@ -18,8 +18,8 @@
 # ":sha-<SHA>" tag — both tags are pushed by the ao-kernel container-publish
 # workflows (policy-container-publish.yml, ao-release-gate-container-publish.yml).
 #
-# Hardening (Codex iter-3 + back1 review additions):
-#   - non-root user (1000:1000)
+# Hardening (Codex iter-3 + back1 review + 019dfa18 absorb):
+#   - non-root user 10001:10001 (matches Dockerfile USER ao-kernel)
 #   - read-only filesystem with /tmp tmpfs (gunicorn + Python need writable /tmp)
 #   - no new privileges
 #   - per-service memory + CPU caps
@@ -125,7 +125,17 @@ services:
       AO_RELEASE_GATE_GPP_STATUS_PATH: /app/gpp_status.v1.json
       AO_RELEASE_GATE_MAX_BODY_BYTES: ${AO_RELEASE_GATE_MAX_BODY_BYTES:-1048576}
     volumes:
-      - ${AO_RELEASE_GATE_GPP_STATUS_HOST_PATH:?set AO_RELEASE_GATE_GPP_STATUS_HOST_PATH (read-only host path to gpp_status.v1.json)}:/app/gpp_status.v1.json:ro
+      # Long syntax + bind.create_host_path: false (Codex 019dfa1f absorb).
+      # Default create_host_path is true and would silently auto-mkdir an empty
+      # directory at the host path on a typo, leaving /healthz green while
+      # /github/ao-release-gate raises gpp_status_unavailable on first POST.
+      # Failing the bring-up is the safer contract.
+      - type: bind
+        source: ${AO_RELEASE_GATE_GPP_STATUS_HOST_PATH:?set AO_RELEASE_GATE_GPP_STATUS_HOST_PATH (read-only host path to gpp_status.v1.json)}
+        target: /app/gpp_status.v1.json
+        read_only: true
+        bind:
+          create_host_path: false
     user: "10001:10001"
     read_only: true
     tmpfs:
