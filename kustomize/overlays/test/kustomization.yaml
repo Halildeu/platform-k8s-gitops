@@ -71,7 +71,14 @@ images:
     digest: sha256:b803507ac6b17240a8cced6878606f2aad7b31856140d6b5071352135babf37f
   - name: report-service
     newName: ghcr.io/halildeu/platform-backend-report-service
-    digest: sha256:1d38fe3f3439067eeaae1d2015d470a3273074c6509589b54e7422fd749cc8b1
+    # 2026-05-05: Muavin v3 LIVE bump (test cluster) — kullanıcı explicit yetki.
+    # platform-ssot PR #561 b445ba96 (muavin code) + PR #563 8b9eea01 (deploy
+    # workflow Faz 18 fix). File-based SQL templates + 8-layer EUR fallback +
+    # multi-year BRANCH_UNION_THEN_OUTER + hidden audit columns.
+    # Codex thread 019df4ed iter-13 (build success post-package-access-grant).
+    # Image: sha-8b9eea0 (workflow_dispatch run 25370257017).
+    # Prod overlay AYRI PR ile (kasıtlı, test smoke sonrası).
+    digest: sha256:7b271f1927afa5690c2731f1d2def77ecba27f4564ce1b4831fa8df04922fca6
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
