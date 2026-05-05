@@ -39,10 +39,24 @@ of those are in scope here.
 
 ```bash
 cp .env.example .env
-# fill AO_GITHUB_APP_ID; optionally pin AO_POLICY_IMAGE_TAG / AO_RELEASE_GATE_IMAGE_TAG
+# Fill REQUIRED values (compose fails-fast on empty):
+#   VAULT_TOKEN                          (Vault auth, read from operator vault setup)
+#   AO_GITHUB_APP_ID                     (numeric GitHub App ID, public-safe)
+#   AO_RELEASE_GATE_GPP_STATUS_HOST_PATH (read-only host path to gpp_status.v1.json)
+# Optional: pin AO_POLICY_IMAGE_TAG / AO_RELEASE_GATE_IMAGE_TAG to :sha-<SHA> for evidence.
 docker compose --env-file .env up -d
 docker compose ps
 ```
+
+### GPP status file
+
+The release-gate runtime requires a JSON status file mounted at
+`/app/gpp_status.v1.json`. Operator places the file on the host (suggested
+`/srv/platform/stateful/prod/ao-release-gate/gpp_status.v1.json`) and points
+`AO_RELEASE_GATE_GPP_STATUS_HOST_PATH` at it; the file is mounted read-only.
+Without this mount the `/github/ao-release-gate` callback raises
+`ao_release_gate_runtime_gpp_status_unavailable` (Codex `019dfa18` finding 2
+absorb). `/healthz` itself does NOT need the file — only the callback path.
 
 ## Localhost smoke (acceptance)
 
@@ -91,7 +105,7 @@ outage returns a JSON 503 instead of falling through to the SPA's
 
 | Setting | Value | Why |
 |---|---|---|
-| `user` | `1000:1000` | Non-root; matches the gunicorn UID inside the image. |
+| `user` | `10001:10001` | Non-root; matches the `ao-kernel` UID created by `deploy/live-adapter-gate-policy-service/Dockerfile` (and the parallel release-gate Dockerfile). Codex `019dfa18` finding 4 absorb. |
 | `read_only` | `true` | Image filesystem is immutable at runtime. |
 | `tmpfs` | `/tmp` | gunicorn + Python need a writable scratch dir. |
 | `security_opt` | `no-new-privileges:true` | No setuid escalation paths. |

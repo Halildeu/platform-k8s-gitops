@@ -40,17 +40,28 @@ services:
     environment:
       # Service runtime
       PORT: "8000"
-      WEB_CONCURRENCY: "1"
-      WEB_THREADS: "4"
-      WEB_TIMEOUT: "30"
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      WEB_THREADS: ${WEB_THREADS:-4}
+      WEB_TIMEOUT: ${WEB_TIMEOUT:-30}
       # Secrets provider (Vault) — only IDs/paths here, never values.
+      # VAULT_TOKEN is required by ao_kernel/_internal/secrets/hashicorp_vault_provider.py;
+      # absent → secret resolution returns None and /github/* callbacks fail.
       SECRETS_PROVIDER: ${SECRETS_PROVIDER:-hashicorp_vault}
       VAULT_ADDR: ${VAULT_ADDR:-http://platform-vault-prod:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:?set VAULT_TOKEN on the operator host (Vault auth required by ao-kernel hashicorp_vault provider)}
       VAULT_SECRET_MOUNT: ${VAULT_SECRET_MOUNT:-secret}
-      AO_GITHUB_APP_ID: ${AO_GITHUB_APP_ID}
+      # GitHub App identity — fail-fast on empty (operator-public, but required
+      # at /github/* callback time; an empty value would silently 4xx in prod).
+      AO_GITHUB_API_URL: ${AO_GITHUB_API_URL:-https://api.github.com}
+      AO_GITHUB_APP_ID: ${AO_GITHUB_APP_ID:?set AO_GITHUB_APP_ID on the operator host (numeric GitHub App ID, required by callback path)}
       AO_GITHUB_APP_PRIVATE_KEY_PEM_ID: ${AO_GITHUB_APP_PRIVATE_KEY_PEM_ID:-gpp2/github/private-key-pem}
       AO_LIVE_ADAPTER_GATE_WEBHOOK_SECRET_ID: ${AO_LIVE_ADAPTER_GATE_WEBHOOK_SECRET_ID:-gpp2/policy/webhook-secret}
-    user: "1000:1000"
+      AO_POLICY_SERVICE_MAX_BODY_BYTES: ${AO_POLICY_SERVICE_MAX_BODY_BYTES:-1048576}
+    # UID 10001 = `ao-kernel` user created by deploy/live-adapter-gate-policy-service/Dockerfile.
+    # Keeping the override explicit (rather than dropping it) documents the
+    # contract; if the upstream Dockerfile USER changes, this line must be
+    # updated in lock-step.
+    user: "10001:10001"
     read_only: true
     tmpfs:
       - /tmp
@@ -95,17 +106,27 @@ services:
     environment:
       # Service runtime
       PORT: "8000"
-      WEB_CONCURRENCY: "1"
-      WEB_THREADS: "4"
-      WEB_TIMEOUT: "30"
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      WEB_THREADS: ${WEB_THREADS:-4}
+      WEB_TIMEOUT: ${WEB_TIMEOUT:-30}
       # Secrets provider (Vault) — only IDs/paths here, never values.
       SECRETS_PROVIDER: ${SECRETS_PROVIDER:-hashicorp_vault}
       VAULT_ADDR: ${VAULT_ADDR:-http://platform-vault-prod:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:?set VAULT_TOKEN on the operator host (Vault auth required by ao-kernel hashicorp_vault provider)}
       VAULT_SECRET_MOUNT: ${VAULT_SECRET_MOUNT:-secret}
-      AO_GITHUB_APP_ID: ${AO_GITHUB_APP_ID}
+      AO_GITHUB_API_URL: ${AO_GITHUB_API_URL:-https://api.github.com}
+      AO_GITHUB_APP_ID: ${AO_GITHUB_APP_ID:?set AO_GITHUB_APP_ID on the operator host (numeric GitHub App ID, required by callback path)}
       AO_GITHUB_APP_PRIVATE_KEY_PEM_ID: ${AO_GITHUB_APP_PRIVATE_KEY_PEM_ID:-gpp2/github/private-key-pem}
       AO_RELEASE_GATE_WEBHOOK_SECRET_ID: ${AO_RELEASE_GATE_WEBHOOK_SECRET_ID:-gpp2/release-gate/webhook-secret}
-    user: "1000:1000"
+      # ao_release_gate_runtime requires a GPP status JSON file; absent →
+      # /github/ao-release-gate raises ao_release_gate_runtime_gpp_status_unavailable.
+      # Mount source (host path) supplied via AO_RELEASE_GATE_GPP_STATUS_HOST_PATH
+      # in .env (operator maintains the file content).
+      AO_RELEASE_GATE_GPP_STATUS_PATH: /app/gpp_status.v1.json
+      AO_RELEASE_GATE_MAX_BODY_BYTES: ${AO_RELEASE_GATE_MAX_BODY_BYTES:-1048576}
+    volumes:
+      - ${AO_RELEASE_GATE_GPP_STATUS_HOST_PATH:?set AO_RELEASE_GATE_GPP_STATUS_HOST_PATH (read-only host path to gpp_status.v1.json)}:/app/gpp_status.v1.json:ro
+    user: "10001:10001"
     read_only: true
     tmpfs:
       - /tmp
