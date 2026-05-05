@@ -18,3 +18,10 @@
 # commit and the fix commit replacement (HEAD content uses `:?error msg`
 # pattern which gitleaks does not flag).
 19665a05c2ff8c3fabf15fcf34e327624c69a2af:docs/faz-21-3-evidence/d35-3-product-path-template.md:generic-api-key:46
+
+# PR #368 (D29-EA evidence dökümanı) — fake JWT placeholder örneği için
+# `curl -H 'Authorization: Bearer <fake>'` literal'i 'curl-auth-header' rule
+# tetikledi (false positive — invalid JWT test smoke evidence). Fix commit
+# 1515cad psödo-örnek prosa stiline çevirdi; ilk commit (37079e2) hâlâ
+# history'de.
+37079e206c865f1cb1fd253da52f50e106dea5c5:docs/faz-22-evidence/2026-05-05-22-1-1b-d29-ea-canli.md:curl-auth-header:85
