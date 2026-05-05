@@ -165,7 +165,15 @@ images:
   # Önceki sha-a7d90cf (PR #76+#77) üzerine. Codex iter-1..10 cycle kapandı.
   # Açık 8 madde P2/P3 roadmap postmortem'de tracked.
   - name: frontend
-    newName: ghcr.io/halildeu/platform-web-frontend-testai
+    # 2026-05-06: GHCR repo path migration platform-web-frontend-testai →
+    # platform-ssot-frontend-testai. Frontend-image workflow chose the
+    # ssot-prefixed path months ago; overlay had been pinned to the legacy
+    # path, so PR #569 (cache scope rotation) and PR #570 (filter pushdown +
+    # company picker) builds never reached the cluster. Migrating now.
+    # Live evidence: build run 25402739413 pushed
+    # ghcr.io/halildeu/platform-ssot-frontend-testai:sha-34712d0
+    # @sha256:7ed7c45e28ecece11a742ec7771473c983cd344e4ddad9ccaa8582960b253bdc
+    newName: ghcr.io/halildeu/platform-ssot-frontend-testai
     # 2026-04-30: bumped to iter-31 (sha-4aea44f) — UserDetailDrawer scope tab
     # search + code prefix (PR #88, iter-30) + ScopeAssignModal SingleScopePicker
     # search picker for 29k+ projects (PR #89, iter-31).
@@ -398,7 +406,20 @@ images:
     # sırasında window.__env__'e inject. Önceki host nginx HTML patch
     # (geçici) bu rebuild ile kalıcı artifact'e taşınır. AG Grid trial
     # console nag + watermark kalkar.
-    digest: sha256:60dbd3cca0325bdb62b0d8d14b027476f3f0753b664273c9b81cd27a2170950c
+    #
+    # 2026-05-06 update: sha-34712d0 — platform-ssot PR #570 (squash
+    # 34712d0f8e7573f3bf560fe2227d38f2adb4aad8). Three sub-fixes baked in:
+    #   1) AG Grid column filterModel forwarded as advancedFilter JSON
+    #      (muavin "Cari Adı = serban" filter was never reaching backend).
+    #   2) sortModel emitted as JSON.stringify([{colId, sort}]) (legacy CSV
+    #      "colId,asc" couldn't be parsed by ReportController.parseJson).
+    #   3) CompanyPicker MVP — 1-43 hardcode dropdown, X-Company-Id header
+    #      switched via localStorage[reporting:currentCompanyId].
+    # Frontend-image build run 25402739413 SUCCESS, push verified.
+    # Codex peer review thread 019df9f0-89fc-7a91-8a49-a40667ea5d00 → AGREE.
+    # Repo path migration: platform-web-frontend-testai → platform-ssot-
+    # frontend-testai (workflow choice; overlay was lagging).
+    digest: sha256:7ed7c45e28ecece11a742ec7771473c983cd344e4ddad9ccaa8582960b253bdc
 
   # Faz 22.1.1b endpoint-admin-service onboard live-aligned (2026-05-05).
   # Image sha-bd1e5c8 GHCR'a push edildi (PR #56 build run 25387160094).
