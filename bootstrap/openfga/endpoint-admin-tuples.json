@@ -12,23 +12,25 @@
   "_apply_via": "permission-service admin OpenFGA bootstrap endpoint (BE-009 final config'da exposed). Doğrudan OpenFGA gRPC/REST kullanma (DD-EA-2 boundary).",
   "model": "endpoint-admin module relation set (define endpoint, policy, command, inventory, audit + can_view, can_assign, can_execute, can_signoff, can_revoke)",
 
+  "_drift_fix_2026_05_05": "Faz 22.1.1b III review (Codex 019df86f) — 3-tier drift fix. Önceki seed `relation: admin/viewer` ve `module:endpoint-admin` instance'ı code/live model'le uyumsuzdu. Şimdi: relation `can_manage`/`can_view` (live model `module` type kontratı) + module:endpoint-admin (kebab-case, code constants ile hizalı). Production deployment'a kadar drift kapatılıyor.",
+
   "tuples": [
     {
-      "_role": "endpoint admin (test persona) — full module access",
+      "_role": "endpoint admin (test persona) — full module access via can_manage",
       "user": "user:9001",
-      "relation": "admin",
+      "relation": "can_manage",
       "object": "module:endpoint-admin"
     },
     {
-      "_role": "endpoint admin (test persona) — organization member",
+      "_role": "endpoint admin (test persona) — organization super-admin tuple (org-level inheritance)",
       "user": "user:9001",
       "relation": "admin",
       "object": "organization:default"
     },
     {
-      "_role": "endpoint viewer (test persona) — read-only access",
+      "_role": "endpoint viewer (test persona) — read-only access via can_view",
       "user": "user:9002",
-      "relation": "viewer",
+      "relation": "can_view",
       "object": "module:endpoint-admin"
     },
     {
@@ -41,9 +43,14 @@
 
   "smoke_checks": [
     {
-      "description": "Test admin (user:9001) /api/v1/admin/endpoints allow",
+      "description": "Test admin (user:9001) module:endpoint-admin can_manage allow",
       "expected": true,
-      "check": {"user": "user:9001", "relation": "admin", "object": "module:endpoint-admin"}
+      "check": {"user": "user:9001", "relation": "can_manage", "object": "module:endpoint-admin"}
+    },
+    {
+      "description": "Test admin (user:9001) module:endpoint-admin can_view allow (can_manage inheritance)",
+      "expected": true,
+      "check": {"user": "user:9001", "relation": "can_view", "object": "module:endpoint-admin"}
     },
     {
       "description": "Test admin (user:9001) organization:default admin allow",
@@ -51,14 +58,19 @@
       "check": {"user": "user:9001", "relation": "admin", "object": "organization:default"}
     },
     {
-      "description": "Test viewer (user:9002) admin module DENY (sadece viewer)",
-      "expected": false,
-      "check": {"user": "user:9002", "relation": "admin", "object": "module:endpoint-admin"}
+      "description": "Test viewer (user:9002) module:endpoint-admin can_view allow",
+      "expected": true,
+      "check": {"user": "user:9002", "relation": "can_view", "object": "module:endpoint-admin"}
     },
     {
-      "description": "Unauthenticated user (user:0) admin module DENY",
+      "description": "Test viewer (user:9002) module:endpoint-admin can_manage DENY (sadece can_view)",
       "expected": false,
-      "check": {"user": "user:0", "relation": "admin", "object": "module:endpoint-admin"}
+      "check": {"user": "user:9002", "relation": "can_manage", "object": "module:endpoint-admin"}
+    },
+    {
+      "description": "Unauthenticated user (user:0) module:endpoint-admin can_view DENY",
+      "expected": false,
+      "check": {"user": "user:0", "relation": "can_view", "object": "module:endpoint-admin"}
     }
   ]
 }
