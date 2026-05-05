@@ -177,13 +177,29 @@ def main() -> int:
     print(f"auth_fail:    {len(auth_fails)}")
     print(f"network_fail: {len(network_fails)}")
 
-    # Heuristic: if ALL pairs return MISSING (404), it's almost certainly a
-    # cross-repo auth issue, not real garbage collection. GHCR returns 404
-    # for both "doesn't exist" AND "no read permission" (security through
-    # obscurity). Treat all-404 as inconclusive → AUTH_FAIL classification.
-    if missing and not (network_fails or auth_fails) and len(missing) == len(pairs):
+    # Heuristic: if ALL or NEARLY-ALL pairs return MISSING (404), it's almost
+    # certainly a cross-repo auth issue, not real garbage collection. GHCR
+    # returns 404 for both "doesn't exist" AND "no read permission" (security
+    # through obscurity). Treat (near-)all-404 as inconclusive → AUTH_FAIL
+    # classification.
+    #
+    # 2026-05-05 hardening (Faz 22.1.1b): threshold ≥80% missing (not strictly
+    # all). Reason: when a new package gets pushed within the workflow's own
+    # repo (e.g., endpoint-admin-service via current PR's image build), it
+    # receives [OK] while cross-org packages still 404 due to PAT scope. This
+    # would falsely flip the heuristic OFF and surface 9 cross-org 404's as
+    # real GC. Threshold ≥80% covers the "1-2 same-repo OK + N cross-repo 404"
+    # pattern without losing real GC detection.
+    threshold = max(1, int(len(pairs) * 0.8))
+    if missing and not (network_fails or auth_fails) and len(missing) >= threshold:
         print()
-        print("[HEURISTIC] all digests returned 404 — likely cross-repo packages:read")
+        if len(missing) == len(pairs):
+            print("[HEURISTIC] all digests returned 404 — likely cross-repo packages:read")
+        else:
+            ok_count = len(pairs) - len(missing)
+            print(f"[HEURISTIC] {len(missing)}/{len(pairs)} digests returned 404 (≥80% threshold)")
+            print(f"            — {ok_count} OK likely current-repo same-org package(s);")
+            print(f"            cross-repo 404 = packages:read permission missing.")
         print("            permission missing (GITHUB_TOKEN scoped to this repo only).")
         print("            Reclassifying as AUTH_FAIL (inconclusive, not real GC).")
         auth_fails = missing

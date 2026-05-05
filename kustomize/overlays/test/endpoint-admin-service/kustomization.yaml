@@ -1,0 +1,21 @@
+# endpoint-admin-service test overlay kustomization (Faz 22.1.1b FULL onboard)
+# ConfigMap patch + Secret stub patch — test cluster (k3d-test platform-test ns).
+#
+# Production (k3d-prod platform-prod) Faz 22.2 it-pilot tier sub-faz,
+# ESO ExternalSecret + Vault populate sonrası ayrı overlay.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Patch resources from base via merge (configmap + secret inline override)
+resources:
+  - ../../../base/apps/endpoint-admin-service
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    path: configmap-patch.yaml
+  - target:
+      kind: Secret
+      name: endpoint-admin-service-secrets
+    path: secret-patch.yaml
