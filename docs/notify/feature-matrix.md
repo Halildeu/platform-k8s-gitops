@@ -4,7 +4,11 @@
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md)
 > **Roadmap**: [RB-faz-23-charter](../runbooks/RB-faz-23-charter.md)
 
-11 kategori × ~140 özellik. Her özellik için tier (Kernel/MVP-dar/MVP-geniş/v1/v2/scope-dışı) + sub-faz + status. Sub-faz tamamlandığında status güncellenir.
+**16 kategori** × ~140 özellik. Her özellik için tier (Kernel/MVP-dar/MVP-geniş/v1/v2/scope-dışı) + sub-faz + status. Sub-faz tamamlandığında status güncellenir.
+
+> **Not 1**: Kategori sayısı **11 → 16** artışı: ADR-0013 D45 ile 5 yeni kategori eklendi (Deliverability, Abuse/spam, Accessibility, Incident/degraded, Data classification).
+> **Not 2**: SMS tier **MVP-geniş (23.3)** olarak mühürlendi. ADR D40 metnindeki "tier v1" yorumu D44 channel coverage ile çelişti; D44 + feature matrix authoritative — SMS MVP-geniş, DLR callback v1.
+> **Not 3**: DKIM/SPF/DMARC config implementation tier **23.2 MVP-dar**, ancak ADR D29-NOTIFY-Functional Email "DKIM signed" gerektirir. Kernel email D29-Functional için **Mailpit dev DKIM signing** kullanılır (production DKIM 23.2'de aktivasyon).
 
 **Status legend**: ☐ pending · 🟡 in-progress · 🟢 done · ✗ scope-dışı
 

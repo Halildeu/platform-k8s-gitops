@@ -182,7 +182,21 @@ Bu doküman platform içi servislerin **notification-orchestrator** ile konuşma
 }
 ```
 
-External tip için OpenFGA scope check **bypass** edilir (subscriber yok), preference yok, default kanal (email).
+External tip için OpenFGA `subscriber#can_receive` check **bypass** edilir (subscriber yok), ama **source service authority check** zorunlu (Codex `019df86f` post-impl bulgu #4 absorb — security boundary açığı kapatma):
+
+```
+service_account:<source-service>#can_send_external notification_topic:<topic_key>
+```
+
+Yani source service ancak izinli olduğu topic'lerde external recipient'a gönderebilir. Template-level alternatif:
+
+```sql
+notify.notification_template.external_allowed BOOLEAN DEFAULT FALSE
+```
+
+`external_allowed=false` ise external recipient reddedilir + audit `BLOCKED_EXTERNAL_NOT_ALLOWED`. Admin invite/password reset/onboarding template'leri `external_allowed=true` flag'iyle whitelist edilir.
+
+External recipient için preference yok (subscriber yok), default kanal email; cross-org veri sızması source service authority + template flag çift kapı ile engellenir.
 
 ### `template` (zorunlu)
 
@@ -294,14 +308,44 @@ CREATE TABLE notify.notification_intent (
   preference_override JSONB,
   status VARCHAR(20) NOT NULL DEFAULT 'PENDING',  -- PENDING/PROCESSING/COMPLETED/EXPIRED
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  CONSTRAINT uq_intent_idempotency UNIQUE (org_id, idempotency_key)
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX idx_intent_status_scheduled ON notify.notification_intent (status, scheduled_at);
 CREATE INDEX idx_intent_org_topic ON notify.notification_intent (org_id, topic_key);
 CREATE INDEX idx_intent_correlation ON notify.notification_intent (correlation_id);
 ```
+
+### `notify.idempotency_key` (ayrı tablo — 24h window TTL fix)
+
+> **Not** (Codex `019df86f` post-impl Q1 bulgu #3 absorb): Önceki revizyon `notification_intent (org_id, idempotency_key)` UNIQUE constraint kullanıyordu. Bu constraint 24h sonra aynı key'in yeni intent kabul etmesini engelledi (kalıcı yasak). Ayrı `idempotency_key` tablosu + `expires_at` çözümü:
+
+```sql
+CREATE TABLE notify.idempotency_key (
+  id BIGSERIAL PRIMARY KEY,
+  org_id VARCHAR(64) NOT NULL,
+  idempotency_key VARCHAR(255) NOT NULL,
+  intent_id VARCHAR(64) NOT NULL REFERENCES notify.notification_intent(intent_id),
+  expires_at TIMESTAMPTZ NOT NULL,  -- created_at + 24h
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT uq_idem_active UNIQUE (org_id, idempotency_key, expires_at)
+);
+
+CREATE INDEX idx_idem_expires ON notify.idempotency_key (expires_at);  -- cron purge
+CREATE INDEX idx_idem_lookup ON notify.idempotency_key (org_id, idempotency_key) WHERE expires_at > NOW();
+```
+
+Lookup logic (Spring Boot):
+```java
+Optional<IdempotencyKey> existing = idempotencyKeyRepo
+  .findActiveKey(orgId, key, NOW());  // expires_at > NOW()
+if (existing.isPresent()) {
+  return existing.get().getIntentId();  // 409 returned to caller
+}
+// else proceed with new intent + INSERT idempotency_key with expires_at = NOW() + 24h
+```
+
+Cron purge: `DELETE FROM notify.idempotency_key WHERE expires_at < NOW() - INTERVAL '7 days';` (7 gün grace).
 
 ### `notify.notification_delivery`
 
@@ -328,6 +372,118 @@ CREATE TABLE notify.notification_delivery (
 CREATE INDEX idx_delivery_intent ON notify.notification_delivery (intent_id);
 CREATE INDEX idx_delivery_status_retry ON notify.notification_delivery (status, next_retry_at);
 CREATE INDEX idx_delivery_recipient_hash ON notify.notification_delivery (recipient_hash);
+```
+
+### `notify.notification_template`
+
+```sql
+CREATE TABLE notify.notification_template (
+  id BIGSERIAL PRIMARY KEY,
+  template_id VARCHAR(128) NOT NULL,
+  version INT NOT NULL,
+  locale VARCHAR(16) NOT NULL,
+  subject TEXT,
+  body_html TEXT,
+  body_text TEXT,
+  external_allowed BOOLEAN DEFAULT FALSE,  -- security boundary (Codex post-impl #4)
+  active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  created_by VARCHAR(128),
+  CONSTRAINT uq_template_version_locale UNIQUE (template_id, version, locale)
+);
+
+CREATE INDEX idx_template_active ON notify.notification_template (template_id, locale) WHERE active = TRUE;
+
+-- Version immutability (D46 #9 must-have safe interpolation + version invariance)
+CREATE RULE template_no_update AS ON UPDATE TO notify.notification_template DO INSTEAD NOTHING;
+```
+
+### `notify.subscriber_preference`
+
+```sql
+CREATE TABLE notify.subscriber_preference (
+  id BIGSERIAL PRIMARY KEY,
+  subscriber_id VARCHAR(128) NOT NULL,
+  org_id VARCHAR(64) NOT NULL,
+  topic_key VARCHAR(128),  -- NULL = all topics
+  channel VARCHAR(32),  -- NULL = all channels
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  quiet_hours JSONB,  -- {"from":"22:00","to":"08:00","tz":"Europe/Istanbul"}
+  frequency_limit_per_day INT,
+  bypass_for_critical BOOLEAN DEFAULT TRUE,  -- D46 #8 critical bypass
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT uq_pref_subscriber_topic_channel UNIQUE (subscriber_id, COALESCE(topic_key,''), COALESCE(channel,''))
+);
+
+CREATE INDEX idx_pref_lookup ON notify.subscriber_preference (subscriber_id, org_id);
+```
+
+### `notify.provider_config`
+
+```sql
+CREATE TABLE notify.provider_config (
+  id BIGSERIAL PRIMARY KEY,
+  provider_key VARCHAR(64) NOT NULL,  -- smtp-corporate, netgsm-primary, slack-workspace-1
+  channel VARCHAR(32) NOT NULL,  -- email/sms/slack/webhook/push-fcm
+  environment VARCHAR(16) NOT NULL,  -- test/prod
+  version INT NOT NULL,
+  config JSONB NOT NULL,  -- non-secret config (host, port, sender_id, rate_limit)
+  credential_ref VARCHAR(255),  -- vault://kv/platform/notify/<provider>
+  active BOOLEAN DEFAULT FALSE,  -- only one active per (provider_key, environment)
+  priority INT DEFAULT 100,  -- failover order (lower = higher priority)
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  activated_at TIMESTAMPTZ,
+  CONSTRAINT uq_provider_version UNIQUE (provider_key, environment, version)
+);
+
+CREATE UNIQUE INDEX idx_provider_active ON notify.provider_config (provider_key, environment) WHERE active = TRUE;
+CREATE INDEX idx_provider_priority ON notify.provider_config (channel, environment, active, priority);
+```
+
+### `notify.provider_config_history` (rollback için — D30-NOTIFY)
+
+```sql
+CREATE TABLE notify.provider_config_history (
+  id BIGSERIAL PRIMARY KEY,
+  provider_config_id BIGINT NOT NULL,
+  provider_key VARCHAR(64) NOT NULL,
+  environment VARCHAR(16) NOT NULL,
+  version INT NOT NULL,
+  config JSONB NOT NULL,
+  credential_ref VARCHAR(255),
+  activated_at TIMESTAMPTZ,
+  deactivated_at TIMESTAMPTZ,
+  deactivation_reason TEXT
+);
+
+CREATE INDEX idx_provider_history_lookup ON notify.provider_config_history (provider_key, environment, deactivated_at);
+
+-- Append-only (rollback audit integrity)
+CREATE RULE provider_history_no_update AS ON UPDATE TO notify.provider_config_history DO INSTEAD NOTHING;
+CREATE RULE provider_history_no_delete AS ON DELETE TO notify.provider_config_history DO INSTEAD NOTHING;
+```
+
+### `notify.dead_letter` (max retry sonrası DLQ)
+
+```sql
+CREATE TABLE notify.dead_letter (
+  id BIGSERIAL PRIMARY KEY,
+  intent_id VARCHAR(64) NOT NULL,
+  delivery_id BIGINT NOT NULL,
+  channel VARCHAR(32) NOT NULL,
+  recipient_hash VARCHAR(64) NOT NULL,
+  provider VARCHAR(64),
+  attempt_count INT NOT NULL,
+  last_failure_reason TEXT,
+  last_failure_at TIMESTAMPTZ NOT NULL,
+  moved_to_dlq_at TIMESTAMPTZ DEFAULT NOW(),
+  replayed BOOLEAN DEFAULT FALSE,
+  replayed_at TIMESTAMPTZ,
+  replayed_by VARCHAR(128)  -- admin user id
+);
+
+CREATE INDEX idx_dlq_unreplayed ON notify.dead_letter (replayed, moved_to_dlq_at) WHERE replayed = FALSE;
 ```
 
 ### `notify.audit_event`

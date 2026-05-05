@@ -113,7 +113,7 @@ NetGSM / İletimerkezi / Mutlucell adapter'ları Spring Boot içinde Java client
 - GSM-7/UCS-2 segment, Türkçe karakter, sender ID kayıt
 - IYS (İleti Yönetim Sistemi) lookup: ticari mesaj zorunlu, OTP/transactional muaf — **sub-faz drift D40-IYS**
 
-**Tier**: SMS **v1** (Codex revize). MVP'de email + Slack + webhook + in-app backend yeter.
+**Tier**: SMS **MVP-geniş (Faz 23.3)** — D44 channel coverage tier authoritative. SMS DLR callback ingestion v1 (Faz 23.4). MVP-dar (23.2)'de SMS yok. Kernel/Closed Beta (23.1)'de email + Slack + webhook + outbox + retry/DLQ + audit + OpenFGA + PII + metrics + Mailpit/WireMock.
 
 ### D41 — Multi-Tenancy Boundary = `org_id + OpenFGA` (atomik)
 
@@ -220,7 +220,7 @@ Detay: `docs/notify/must-have-checklist.md`. Özet:
 - Queue depth < threshold (DLQ count = 0)
 
 **D29-NOTIFY-Functional per channel** (her kanal **AYRI**):
-- Email: template render OK + SMTP test recipient delivery (Mailpit lab; corporate relay test mailbox prod) + DKIM signed
+- Email: template render OK + SMTP test recipient delivery (Mailpit lab; corporate relay test mailbox prod). **DKIM**: Kernel (23.1) Mailpit dev DKIM signing yeter; production DKIM/SPF/DMARC config 23.2 (MVP-dar) sub-faz runbook'unda aktive edilir. Kernel D29-Functional **DKIM live infra'ya takılmaz**.
 - SMS: template render + provider sandbox/canary number → DELIVERED status
 - In-app: WS connection + test subscriber inbox row INSERT + read receipt
 - Slack: incoming webhook 200 + message visible in test channel
