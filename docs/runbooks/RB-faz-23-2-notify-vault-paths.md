@@ -215,8 +215,9 @@ vault read -format=json sys/audit | jq '.data.audit_devices'
 ## Referans
 
 - **Test overlay** (canonical apply target): `kustomize/overlays/test/eso/notify/externalsecret-notify.yaml`
-  (notification-orchestrator-secrets ExternalSecret, 14 keys: db × 2, smtp × 3,
-  redaction × 1, webhook × 1, slack × 1, authz × 1, sms/netgsm × 3, system × 2)
+  (notification-orchestrator-secrets ExternalSecret, 12 data entries: db × 2,
+  smtp × 3, redaction × 1, webhook × 1, slack × 1, authz × 1, sms/netgsm × 3 —
+  Faz 23.3.1: 9 → 12 transition, +3 NetGSM SMS keys)
 - Base secret-stub (pod-startup safety net): `kustomize/base/apps/notification-orchestrator/secret-stub.yaml`
 - Base older-pattern ExternalSecret (legacy ops/ dir, not canonical): `kustomize/base/apps/notification-orchestrator/ops/externalsecret.yaml`
 - ADR-0013-notification-orchestration §6 (security)
