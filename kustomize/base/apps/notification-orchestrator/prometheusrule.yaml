@@ -1,0 +1,148 @@
+# notification-orchestrator PrometheusRule (Faz 23.2 PR-C — Codex 019dfae5 Q7).
+#
+# Critical alerts (page):
+#   - service down / readiness probe fail
+#   - notify.authz.disabled.state > 0 (security regression)
+#   - DLQ rate sustained
+#   - DKIM/TLS prod guard fail (validator startup) — manifested as pod restart
+#
+# Warning alerts (channel/email):
+#   - p99 intent processing duration > 30s
+#   - dispatch failed rate > 1/min
+#   - queue backlog growth (pending intents > 1000 sustained)
+#   - retry due growth (retry queue > 500 sustained)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: notification-orchestrator
+  labels:
+    app.kubernetes.io/name: notification-orchestrator
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: platform
+    release: prometheus
+spec:
+  groups:
+    - name: notification-orchestrator-critical
+      interval: 30s
+      rules:
+        - alert: NotifyAuthzDisabledRegression
+          expr: notify_authz_disabled_state > 0
+          for: 1m
+          labels:
+            severity: critical
+            service: notification-orchestrator
+            page: "true"
+          annotations:
+            summary: "Notify authz disabled (security regression)"
+            description: |
+              notification-orchestrator pod has notify.authz.enabled=false.
+              This is a security regression — notification recipients can
+              receive without OpenFGA authz check. Investigate ConfigMap +
+              ESO ExternalSecret + ProductionConfigValidator gate.
+              Runbook: docs/runbooks/RB-faz-23-2-notify-incident-response.md
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/runbooks/RB-faz-23-2-notify-incident-response.md"
+
+        - alert: NotifyAuthzBypassed
+          expr: rate(notify_authz_disabled_bypass_total[5m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+            service: notification-orchestrator
+            page: "true"
+          annotations:
+            summary: "Notify authz bypass observed"
+            description: |
+              DeliveryEligibilityService skipped authz guard
+              ({{ $value | humanize }} bypass/sec). Check
+              notify.authz.enabled config + restart recent pods.
+
+        - alert: NotifyDlqSustained
+          expr: rate(notify_dlq_terminated_total[15m]) > 5
+          for: 15m
+          labels:
+            severity: critical
+            service: notification-orchestrator
+            page: "true"
+          annotations:
+            summary: "Notify DLQ rate sustained (provider degradation)"
+            description: |
+              {{ $value | humanize }} deliveries/sec moving to DLQ over 15min.
+              Check provider config + adapter health + Vault secret rotation.
+
+        - alert: NotifyServiceDown
+          expr: up{job="notification-orchestrator",namespace=~"platform-(test|prod)"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            service: notification-orchestrator
+            page: "true"
+          annotations:
+            summary: "Notify service down"
+            description: |
+              notification-orchestrator pod {{ $labels.pod }} in
+              {{ $labels.namespace }} is unreachable for 2min. Check pod
+              status + readiness probe + ESO secret population.
+
+    - name: notification-orchestrator-warn
+      interval: 30s
+      rules:
+        - alert: NotifyIntentProcessingSlow
+          expr: histogram_quantile(0.99, rate(notify_intent_processing_duration_seconds_bucket[5m])) > 30
+          for: 10m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify intent processing p99 > 30s"
+            description: |
+              p99 intent dispatch duration {{ $value | humanizeDuration }}.
+              Check provider response times + DB query plan + worker batch
+              size config.
+
+        - alert: NotifyDispatchFailureRate
+          expr: rate(notify_dispatch_outcome_total{status="FAILED"}[5m]) > 0.0167
+          for: 10m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify dispatch FAILED rate > 1/min"
+            description: |
+              {{ $value | humanize }} permanent failures/sec over 5min.
+              Check provider error logs + recipient validity + template lint.
+
+        - alert: NotifyQueueBacklog
+          expr: notify_queue_pending_intents > 1000
+          for: 15m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify queue backlog > 1000 intents"
+            description: |
+              {{ $value }} PENDING intents queued for 15min. Worker batch
+              size + poll-delay + replica count tuning candidate.
+
+        - alert: NotifyRetryQueueBacklog
+          expr: notify_queue_retry_due > 500
+          for: 15m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify retry queue > 500 deliveries due"
+            description: |
+              {{ $value }} RETRY deliveries due. RetryWorker may be
+              throttled or provider sustained failure.
+
+        - alert: NotifyDlqUnreplayed
+          expr: notify_dlq_unreplayed > 100
+          for: 30m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify DLQ unreplayed > 100"
+            description: |
+              {{ $value }} DLQ rows accumulated. Operator review +
+              replayed=true marker after triage.

@@ -1,0 +1,40 @@
+# notification-orchestrator ServiceMonitor (Faz 23.2 PR-C — Codex 019dfae5 Q7).
+#
+# kube-prometheus-stack scrape: /actuator/prometheus on management port 8081.
+# Metrics include:
+#   - notify.queue.pending.intents (gauge)
+#   - notify.queue.retry.due (gauge)
+#   - notify.dlq.unreplayed (gauge)
+#   - notify.authz.disabled.state (gauge — 1=disabled, 0=enabled)
+#   - notify.authz.disabled.bypass{channel} (counter)
+#   - notify.dispatch.outcome{channel,status} (counter)
+#   - notify.intent.processing.duration (timer)
+#   - notify.adapter.send.duration{channel,status} (timer)
+#   - notify.dlq.terminated{reason} (counter)
+#   - notify.intent.terminated{terminal} (counter)
+#   - notify.worker.cycles{worker,outcome} (counter)
+#   - notify.worker.errors{worker,stage} (counter)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: notification-orchestrator
+  labels:
+    app.kubernetes.io/name: notification-orchestrator
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: platform
+    # Selector için kube-prometheus-stack default label (operator helm values)
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notification-orchestrator
+  namespaceSelector:
+    matchNames:
+      - platform-test
+      - platform-prod
+  endpoints:
+    - port: management
+      path: /actuator/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+      honorLabels: true
