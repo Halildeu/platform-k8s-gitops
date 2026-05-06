@@ -21,9 +21,9 @@ resources:
   - apps/openfga          # Dilim 3 — authz engine (StatefulSet)
   - apps/permission-service  # Zanzibar-25 Dilim 2 gap closure (2026-04-19, PR #502 uyumlu)
                              # D-003 TRANSFORMED: OpenFGA authz hub, Service 8090→8084
-  - apps/notification-orchestrator  # Faz 23 (ADR-0013) — multi-channel notification.
-                                    # Test cluster activation: PR-D.2 (replicas=1).
-                                    # Prod activation: PR-D.3 (replicas=2 + ESO + k8s,prod).
+  # apps/notification-orchestrator: services.yaml prod=deferred; her overlay
+  # (test) explicit include eder; prod cluster activation D29 evidence gate
+  # gerektirir → PR-D.3.x.
   - apps/frontend         # Dilim 3 — MFE shell (nginx)
   - ingress
   - netpol         # D15 + Codex Tur-4 C modeli (default-deny + allowlist)
