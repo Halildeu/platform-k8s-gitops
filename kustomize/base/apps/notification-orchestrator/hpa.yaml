@@ -1,10 +1,19 @@
-# notification-orchestrator HPA (Faz 23.2 PR-C — Codex 019dfae5 Q8 REVISE).
+# notification-orchestrator HPA (Faz 23.2 PR-C base + PR-D.4 custom metric).
 #
-# Production baseline (Codex Q8 absorb):
-#   - replicas 1-3 (HPA scales 1→3 on CPU)
-#   - 70% CPU target (Spring Boot worker thread + DB pool active)
+# Production baseline:
+#   - replicas 1-3 (CPU/Memory base + custom metric backlog)
+#   - 70% CPU + 80% memory target
+#   - PR-D.4: notify_queue_pending_intents external metric (Prometheus Adapter)
 #   - PR-B-foundation: 200/sec sustained throughput target
 #   - 10k intent/min target ise Faz 23.3 (geniş scope) load test sonrası
+#
+# PR-D.4 absorb (Codex 019dfae5/019dfe0f Q5 PARTIAL):
+#   - Prometheus Adapter prerequisite (helm-values/prometheus-adapter/values.yaml)
+#   - External metric `notify_queue_pending_intents`: scale on OutboxPoller
+#     backlog. CPU/Memory may not reflect intake backpressure if pod is
+#     disk/network bound.
+#   - Adapter not installed → External metric source unavailable, HPA falls
+#     back to CPU/Memory primary (graceful degradation).
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -33,6 +42,16 @@ spec:
         target:
           type: Utilization
           averageUtilization: 80
+    # PR-D.4 — Prometheus Adapter external metric (custom metric API server).
+    # Adapter installed → HPA scales when backlog avg per-pod exceeds 200.
+    # Adapter absent → metric source unavailable; HPA falls back to CPU/Memory.
+    - type: External
+      external:
+        metric:
+          name: notify_queue_pending_intents
+        target:
+          type: AverageValue
+          averageValue: "200"
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 300
