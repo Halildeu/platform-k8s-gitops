@@ -1,0 +1,8 @@
+# notification-orchestrator/ops — CRD-gated resources (Faz 23.2 PR-D.3).
+# Included by ops-bundle (test/prod overlay only; local-* overlay'lerde
+# ESO/Prom Operator yok).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - externalsecret.yaml

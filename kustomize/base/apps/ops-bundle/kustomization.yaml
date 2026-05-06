@@ -24,3 +24,5 @@ resources:
   - ../schema-service/ops
   - ../permission-service/ops
   - ../openfga/ops
+  # Faz 23.2 PR-D.3 — notification-orchestrator ESO ExternalSecret
+  - ../notification-orchestrator/ops

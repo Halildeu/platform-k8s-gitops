@@ -191,6 +191,24 @@ data:
   SPRING_CLOUD_GATEWAY_ROUTES_18_URI: "http://permission-service:8090"
   SPRING_CLOUD_GATEWAY_ROUTES_18_PREDICATES_0: "Path=/api/v1/master-data/**"
 
+  # Faz 23.2 PR-D.3 — notification-orchestrator admin endpoints (KVKK erasure)
+  # Gateway level: .authenticated() only (.anyExchange() default in SecurityConfig).
+  # Role-based authorization (ROLE_PRIVACY_OFFICER allowlist) backend
+  # SecurityConfig responsibility — PR-D.3.x follow-up. Currently
+  # AdminErasureController has no @PreAuthorize; KVKK runbook
+  # RB-faz-23-2-kvkk-erasure.md operator discipline + evidence_ref audit is
+  # the compliance contract until backend role gate lands.
+  SPRING_CLOUD_GATEWAY_ROUTES_19_ID: "notification-orchestrator-admin-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_19_URI: "http://notification-orchestrator:8089"
+  SPRING_CLOUD_GATEWAY_ROUTES_19_PREDICATES_0: "Path=/api/v1/admin/notify/**"
+
+  # Faz 23.2 PR-D.3 — notification-orchestrator submit + status endpoints
+  # (intent submission API + GET intent status; for completeness, frontend or
+  # service-to-service calls).
+  SPRING_CLOUD_GATEWAY_ROUTES_20_ID: "notification-orchestrator-v1-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_20_URI: "http://notification-orchestrator:8089"
+  SPRING_CLOUD_GATEWAY_ROUTES_20_PREDICATES_0: "Path=/api/v1/notify/**"
+
   # D7: Eureka yok → K8s svc DNS
   AUTH_SERVICE_URL: "http://auth-service:8088"
   # Dilim 2+:
