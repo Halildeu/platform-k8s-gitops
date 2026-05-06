@@ -48,7 +48,24 @@ images:
     # Combined with permission-service ResponseStatusException(503) +
     # variant-service typed exceptions, end-to-end empty-body race
     # eliminated. 76/76 GatewaySecurityTest PASS.
-    digest: sha256:a0a48aa9a1adfdbbd83e272c046fef8746a0f597d524ce087034bd9b0806a7c0
+    #
+    # 2026-05-06 update: sha-76c517b — platform-backend PR #63
+    # (76c517bbed8186023e657fdbf1cdacf7f18931c2). AuthCookieEndpoint now
+    # serves both POST /api/auth/cookie and POST /api/auth/cookie/refresh
+    # (single handler, two paths). Resolves the 404 NoResourceFoundException
+    # the frontend AuthBootstrapper hit on every silent token refresh, which
+    # wiped the httpOnly cookie and forced re-login every ~5 minutes.
+    # Live evidence: testai gateway logs flooded with "POST /api/auth/cookie/
+    # refresh -> 404" then GET /api/v1/authz/me -> 401 storm. User reported
+    # "10 kere yeniden login oldum" before the hotfix.
+    # GHCR push: build run 25409697721 SUCCESS.
+    # Backstory: same fix originally landed in deprecated platform-ssot as
+    # PR #571 but the ssot pipeline cannot push to platform-backend-* (403
+    # Forbidden), so this canonical PR is the one that actually reaches the
+    # cluster image.
+    # Hotfix cleanup: once this digest rolls out, delete the temporary
+    # ingress rewrite muavin-auth-cookie-refresh-rewrite in platform-test.
+    digest: sha256:a7ab4dc6274cdf57ae5306b1e51e6486509ed9a6a88d317b46d212a4cacf7b32
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     digest: sha256:df8b84d0cd02d064cf455f40017bd5cb4ca1be271e5e7068afeb36fc4526a7f1
