@@ -1,6 +1,7 @@
-# notification-orchestrator configmap (Faz 23 — ADR-0013)
+# notification-orchestrator configmap (Faz 23 — ADR-0013, PR5 absorb).
 # Non-secret config only. Provider credentials Vault/ESO üzerinden secret-stub'a
-# inject edilir (Faz 23.2 sub-faz scope).
+# inject edilir (Faz 23.1 PR5: SMTP, redaction pepper, webhook signing, slack URL,
+# authz internal-api-key — overlay/eso/notify/externalsecret.yaml).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,17 +14,45 @@ data:
   SERVER_PORT: "8089"
   MANAGEMENT_SERVER_PORT: "8081"
   SPRING_DATASOURCE_URL: "OVERLAY_MUST_OVERRIDE"
-  NOTIFY_OUTBOX_POLL_INTERVAL_MS: "5000"
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "20"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "validate"
+  NOTIFY_DB_SCHEMA: "notify"
+
+  # PR2 dispatch toggle — PR4'te aktif; PR5'te authz/preference guard'lı
+  NOTIFY_DISPATCH_ENABLED: "true"
+  NOTIFY_INTAKE_MAX_PENDING: "10000"
+
+  # PR4 worker config (Codex 019dfa47 absorb)
+  NOTIFY_WORKER_POLL_DELAY_MS: "5000"
+  NOTIFY_WORKER_INTENT_BATCH_SIZE: "25"
+  NOTIFY_WORKER_RETRY_BATCH_SIZE: "50"
+  NOTIFY_WORKER_LEASE_DURATION_MS: "60000"
+  NOTIFY_WORKER_SCHEDULING_ENABLED: "true"
+
+  # PR4 retry config (Codex absorb iter-2)
   NOTIFY_RETRY_MAX_ATTEMPTS: "5"
   NOTIFY_RETRY_BACKOFF_INITIAL_MS: "30000"
   NOTIFY_RETRY_BACKOFF_MULTIPLIER: "2.5"
+  NOTIFY_RETRY_MAX_BACKOFF_MS: "3600000"
+  NOTIFY_RETRY_JITTER_RATIO: "0.25"
+
+  # PR2 audit + idempotency (PR2 contract)
   NOTIFY_AUDIT_RETENTION_DAYS: "90"
   NOTIFY_IDEMPOTENCY_WINDOW_HOURS: "24"
   NOTIFY_DEDUPE_WINDOW_MINUTES: "5"
-  NOTIFY_OPENFGA_CHECK_TIMEOUT_MS: "2000"
-  NOTIFY_PROVIDER_CIRCUIT_BREAKER_FAILURE_THRESHOLD: "10"
-  NOTIFY_PROVIDER_CIRCUIT_BREAKER_RESET_MS: "60000"
+
+  # PR5 absorb (Codex 019dfaaa): preference + authz guard activation
+  NOTIFY_PREFERENCES_ENABLED: "true"
+  NOTIFY_AUTHZ_ENABLED: "true"
   # Permission service URL (mevcut Zanzibar plane reuse — D38)
-  PERMISSION_SERVICE_URL: "http://permission-service.platform-test.svc.cluster.local:8090"
+  NOTIFY_AUTHZ_PERMISSION_SERVICE_URL: "http://permission-service.platform-test.svc.cluster.local:8080"
+
+  # SMTP / Slack / Webhook adapter defaults — provider URLs etc. ConfigMap;
+  # secrets ESO ExternalSecret üzerinden inject edilir.
+  NOTIFY_ADAPTERS_SMTP_HOST: "OVERLAY_MUST_OVERRIDE"
+  NOTIFY_ADAPTERS_SMTP_PORT: "587"
+  NOTIFY_ADAPTERS_SMTP_FROM_ADDRESS: "noreply@testai.acik.com"
+  NOTIFY_ADAPTERS_SMTP_FROM_NAME: "ACIK Platform"
+
   # Outage fallback bypass receiver names (Alertmanager — D43)
   NOTIFY_OUTAGE_FALLBACK_DOCS: "docs/runbooks/RB-notification-outage-fallback.md"

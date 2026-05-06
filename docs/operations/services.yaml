@@ -163,7 +163,7 @@ services:
     jwt_validates: true
     route_external: false
     environments:
-      test: deferred  # Faz 23.1 implementation pending; manifest skeleton ready
+      test: enabled   # Faz 23.1 PR5 D29-NOTIFY (2026-05-06) — backend PR #65 merged + GHCR sha-4b886bc digest pin
       prod: deferred  # Faz 23.9 prod cutover'da enabled olur
 
 # --- Future / disabled (placeholder for retirement signal) ---
