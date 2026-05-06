@@ -206,8 +206,16 @@ patches:
 
   # Faz 23.2 PR-D.3 — notification-orchestrator prod ACTIVATION DEFERRED.
   # D29 evidence gate: test promotion + smoke + ledger entry öncül; sonra
-  # PR-D.3.x'te prod overlay Deployment patch (replicas=2 + k8s,prod profile)
-  # + ConfigMap patch (DATASOURCE + OTLP) eklenir.
+  # PR-D.3.x'te prod overlay Deployment patch + ConfigMap patch
+  # (DATASOURCE + OTLP) eklenir.
+  #
+  # ÖNEMLİ — Faz 23.3 PR-E.3 SSE inbox stream multi-pod kısıtı:
+  # InboxSseController SseEmitter map + ApplicationEventPublisher JVM-local.
+  # PR-E.4 cross-pod broadcast (Redis pub/sub / STOMP+broker) gelene kadar
+  # prod activation HPA'yı min=max=1 KİLİTLEMELİ (Deployment replicas=2 NİYE
+  # YANLIŞ). Test overlay PR #385 ile bu kilidi uyguladı; prod activation
+  # PR'ında aynı patch zorunlu. Eski "replicas=2" planı PR-E.4 sonrası
+  # geri açılabilir.
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:
