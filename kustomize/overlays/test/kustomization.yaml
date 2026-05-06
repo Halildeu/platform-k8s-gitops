@@ -182,15 +182,20 @@ images:
   # Önceki sha-a7d90cf (PR #76+#77) üzerine. Codex iter-1..10 cycle kapandı.
   # Açık 8 madde P2/P3 roadmap postmortem'de tracked.
   - name: frontend
-    # 2026-05-06: GHCR repo path migration platform-web-frontend-testai →
-    # platform-ssot-frontend-testai. Frontend-image workflow chose the
-    # ssot-prefixed path months ago; overlay had been pinned to the legacy
-    # path, so PR #569 (cache scope rotation) and PR #570 (filter pushdown +
-    # company picker) builds never reached the cluster. Migrating now.
-    # Live evidence: build run 25402739413 pushed
-    # ghcr.io/halildeu/platform-ssot-frontend-testai:sha-34712d0
-    # @sha256:7ed7c45e28ecece11a742ec7771473c983cd344e4ddad9ccaa8582960b253bdc
-    newName: ghcr.io/halildeu/platform-ssot-frontend-testai
+    # 2026-05-06: GHCR repo path migration ssot → canonical.
+    # The earlier comment block claimed platform-web-frontend-testai →
+    # platform-ssot-frontend-testai, but that was during the deprecation
+    # confusion: ssot pipeline lost GHCR push rights for the
+    # platform-{web,backend}-* packages (HTTP 403). Canonical authority
+    # for frontend image builds is platform-web (Faz 19, ADR-0004), which
+    # publishes to ghcr.io/halildeu/platform-web-frontend-testai. Pointing
+    # the overlay back at the canonical path so cluster pulls the canonical
+    # build instead of the now-archived ssot artifacts.
+    # Live evidence: platform-web build run 25410138334 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-b782cb2
+    # @sha256:3f9baca643f153a059f7e0a06053735bc8c1bcb21170d2bc7dcd8b6a2a2eaab1
+    # ssot Halildeu/platform-ssot was archived 2026-05-06 (gh repo archive).
+    newName: ghcr.io/halildeu/platform-web-frontend-testai
     # 2026-04-30: bumped to iter-31 (sha-4aea44f) — UserDetailDrawer scope tab
     # search + code prefix (PR #88, iter-30) + ScopeAssignModal SingleScopePicker
     # search picker for 29k+ projects (PR #89, iter-31).
@@ -436,7 +441,25 @@ images:
     # Codex peer review thread 019df9f0-89fc-7a91-8a49-a40667ea5d00 → AGREE.
     # Repo path migration: platform-web-frontend-testai → platform-ssot-
     # frontend-testai (workflow choice; overlay was lagging).
-    digest: sha256:7ed7c45e28ecece11a742ec7771473c983cd344e4ddad9ccaa8582960b253bdc
+    #
+    # 2026-05-06 update: sha-b782cb2 — platform-web canonical PR #257
+    # (b782cb224f5f4881c7131ba70f9fd65570ce279c).
+    # Three muavin v3 frontend behaviors restored on the canonical path
+    # (the deprecated platform-ssot copies never reached the cluster):
+    #   1) X-Company-Id header forwarding on metadata/data/export (from
+    #      ssot PR #564 frontend half).
+    #   2) Filter pushdown: AG Grid column filterModel merged into
+    #      advancedFilter JSON; sortModel migrated from CSV to
+    #      JSON.stringify ([{colId,sort}]) for ReportController.parseJson
+    #      (from ssot PR #570).
+    #   3) CompanyPicker MVP (1-43 hardcode) writing
+    #      localStorage[reporting:currentCompanyId] (from ssot PR #570).
+    # Canonical platform-web also carries PR #222 ensureColumnMeta await fix
+    # ("dynamic report grid renders zero rows despite total"), preserved
+    # untouched by this PR.
+    # Build evidence: platform-web run 25410138334 SUCCESS, push verified.
+    # ssot Halildeu/platform-ssot archived 2026-05-06 (gh repo archive).
+    digest: sha256:3f9baca643f153a059f7e0a06053735bc8c1bcb21170d2bc7dcd8b6a2a2eaab1
 
   # Faz 22.1.1b endpoint-admin-service onboard live-aligned (2026-05-05).
   # Image sha-bd1e5c8 GHCR'a push edildi (PR #56 build run 25387160094).
