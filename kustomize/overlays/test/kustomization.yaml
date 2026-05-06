@@ -460,7 +460,20 @@ images:
     # untouched by this PR.
     # Build evidence: platform-web run 25410138334 SUCCESS, push verified.
     # ssot Halildeu/platform-ssot archived 2026-05-06 (gh repo archive).
-    digest: sha256:3f9baca643f153a059f7e0a06053735bc8c1bcb21170d2bc7dcd8b6a2a2eaab1
+    #
+    # 2026-05-06 update: sha-d421b38 — platform-web PR #260 + PR #261.
+    # PR #261 reverts mfe-endpoint-admin remote registration (PR #258 was
+    # crashing the SPA into a blank screen on testai because the lazy
+    # remote import resolved to an unreachable port 3009 even with the
+    # 'default OFF' flag).
+    # PR #260 wires module.renderFilters into ReportPage's
+    # toolbarExtras slot so the dynamic-report CompanyPicker dropdown
+    # finally renders next to the Grupla / Filtre / Reset Filters buttons
+    # on the muavin grid (it was sitting in the bundle since sha-b782cb2
+    # but had no DOM mount point because canonical ReportPage stopped
+    # calling renderFilters during the Faz 19 split refactor).
+    # Build run: 25411746720 SUCCESS.
+    digest: sha256:eec92b34c1417e20bd6b1c682932779cc9cabf3ded11f69d62bcc52246fb7210
 
   # Faz 22.1.1b endpoint-admin-service onboard live-aligned (2026-05-05).
   # Image sha-bd1e5c8 GHCR'a push edildi (PR #56 build run 25387160094).
