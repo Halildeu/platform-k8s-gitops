@@ -43,8 +43,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: notification-orchestrator
-          # Image placeholder — Faz 23.1'de overlay GHCR digest pin ile değiştirilecek
-          image: ghcr.io/halildeu/platform-backend-notification-orchestrator:placeholder
+          # Base placeholder — overlay digest pin (D30 immutable) ile override edilir
+          image: ghcr.io/halildeu/platform-backend-notification-orchestrator
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
