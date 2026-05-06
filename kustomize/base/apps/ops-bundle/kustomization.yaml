@@ -24,3 +24,5 @@ resources:
   - ../schema-service/ops
   - ../permission-service/ops
   - ../openfga/ops
+  # Faz 23.2 PR-C — notification-orchestrator ops (ServiceMonitor + PrometheusRule)
+  - ../notification-orchestrator/ops

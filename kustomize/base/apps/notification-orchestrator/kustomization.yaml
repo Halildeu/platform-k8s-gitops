@@ -22,3 +22,4 @@ resources:
   - service.yaml
   - configmap.yaml
   - serviceaccount.yaml
+  - pdb.yaml

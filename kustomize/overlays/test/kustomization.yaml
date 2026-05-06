@@ -411,6 +411,15 @@ images:
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
     digest: sha256:047fc16aea195899215d87cca7c1015529238742c5ce71b83911a5d570fdbae2
 
+  # Faz 23.2 PR-C — notification-orchestrator activation (Codex 019dfc3e Q1 AGREE).
+  # Source build: platform-backend main commit f7760e8 (PR #67 PR-B merged).
+  # GitHub Actions image-push run: tag sha-f7760e8.
+  # NOTE: dispatch.enabled=false default — submit-only mode in test cluster
+  # until full smoke. Worker activation post-validation via env var override.
+  - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
+    newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
+    digest: sha256:317f68f3b10c1db51f17d110a0227de31166cc4e19e26ff82c1d735723564934
+
 patches:
   # Replica 0 default (scale-to-zero)
   - target:
@@ -699,6 +708,20 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 0
+
+  # Faz 23.2 PR-C — notification-orchestrator activation (test cluster)
+  # replicas=1 (D17 single replica test default). Smoke verification first;
+  # prod=2 (HA) overlay separate.
+  - target:
+      kind: Deployment
+      name: notification-orchestrator
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/env/1/value
+        value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
 
   # Dilim 3: OpenFGA scale-to-zero (D17 — test default, mode=normal)
   - target:

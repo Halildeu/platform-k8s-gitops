@@ -1,0 +1,8 @@
+# notification-orchestrator/ops — CRD-gated resources (Faz 23.2 PR-C)
+# Included by ops-bundle (test/prod overlay only; local-* overlay'lerde Prom Operator yok).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - servicemonitor.yaml
+  - prometheusrule.yaml

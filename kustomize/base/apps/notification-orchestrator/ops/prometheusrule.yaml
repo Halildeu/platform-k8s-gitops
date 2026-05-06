@@ -1,0 +1,154 @@
+# notification-orchestrator PrometheusRule (Faz 23.2 PR-C — Codex 019dfc3e Q4 PARTIAL absorb)
+#
+# Alarm coverage:
+#   CRITICAL — service down, authz disabled (security regression), authz bypass real signal
+#   WARN     — backlog, error rate, dispatch failure ratio, p99 latency
+#
+# Metric namespace: notify_* (Micrometer Java dotted → Prometheus underscore;
+# counter suffix _total automatic). Source: WorkerMetrics.java.
+#
+# Codex Q4 PARTIAL absorb:
+#   - Failure ratio uses minimum traffic gate (sum > 0.05/s) to avoid div-by-zero
+#     storms when service is idle.
+#   - Latency rule reads notify_intent_processing_duration_seconds_bucket
+#     (histogram_quantile) — histogram-percentiles enabled in application.yml.
+#   - authz_disabled_bypass per-namespace severity differentiation: prod=CRITICAL,
+#     test=WARN (bypass real delivery signal in prod; expected in test fixtures).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: notification-orchestrator
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: notification-orchestrator-availability
+      rules:
+        - alert: NotificationOrchestratorDown
+          expr: up{job="notification-orchestrator"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: notification-orchestrator
+          annotations:
+            summary: "notification-orchestrator pod unreachable {{ $labels.namespace }}"
+            description: |
+              Prometheus cannot scrape notification-orchestrator /actuator/prometheus.
+              All notification delivery (email, slack, webhook) is halted.
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/runbooks/RB-notify-incident-response.md"
+
+        - alert: NotificationAuthzDisabled
+          expr: notify_authz_disabled_state > 0
+          for: 1m
+          labels:
+            severity: critical
+            service: notification-orchestrator
+          annotations:
+            summary: "notify.authz.enabled=false in {{ $labels.namespace }} — security regression"
+            description: |
+              DeliveryEligibilityService authz guard is disabled. All deliveries
+              skip permission-service check (subscriber#can_receive). This is a
+              CRITICAL security regression — re-enable notify.authz.enabled=true.
+
+        - alert: NotificationAuthzBypassProd
+          expr: rate(notify_authz_disabled_bypass_total{namespace="platform-prod"}[5m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+            service: notification-orchestrator
+            environment: prod
+          annotations:
+            summary: "Authz bypass occurred in production ({{ $value | humanize }} req/s)"
+            description: |
+              DeliveryEligibilityService skipped authz guard for at least one
+              delivery. In prod this means at least one message went out without
+              permission-service check. Investigate notify.authz.enabled config
+              and DeliveryEligibilityService recent code paths.
+
+    - name: notification-orchestrator-backlog
+      rules:
+        - alert: NotificationPendingIntentBacklog
+          expr: notify_queue_pending_intents > 1000
+          for: 5m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Pending intent backlog > 1000 ({{ $value }})"
+            description: |
+              OutboxPoller cannot drain PENDING intents fast enough. Check
+              worker pod health, DB connection pool saturation, adapter
+              latency (provider outage).
+
+        - alert: NotificationRetryDueBacklog
+          expr: notify_queue_retry_due > 500
+          for: 10m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Retry queue backlog > 500 ({{ $value }})"
+            description: |
+              RetryWorker cannot drain RETRY deliveries within next_retry_at
+              budget. Investigate worker error rate and adapter availability.
+
+        - alert: NotificationDlqUnreplayedHigh
+          expr: notify_dlq_unreplayed > 50
+          for: 10m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "DLQ unreplayed deliveries > 50 ({{ $value }})"
+            description: |
+              Dead-letter queue accumulating exhausted deliveries. Operator
+              review required (manual replay or DLQ root-cause).
+
+    - name: notification-orchestrator-quality
+      rules:
+        - alert: NotificationWorkerErrorRate
+          expr: rate(notify_worker_errors_total[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Worker error rate > 0.1/s ({{ $labels.worker }} {{ $labels.stage }})"
+            description: |
+              OutboxPoller / RetryWorker / DLQ worker raising errors.
+
+        - alert: NotificationDispatchFailureRatio
+          expr: |
+            sum(rate(notify_dispatch_outcome_total[5m])) > 0.05
+            and
+            (
+              sum(rate(notify_dispatch_outcome_total{status="FAILED"}[5m]))
+              /
+              sum(rate(notify_dispatch_outcome_total[5m]))
+            ) > 0.2
+          for: 10m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Dispatch failure ratio > 20% (traffic > 0.05/s)"
+            description: |
+              At active traffic, more than 20% of dispatch attempts result in
+              FAILED status. Provider outage likely; check adapter logs.
+
+        - alert: NotificationIntentProcessingLatencyP99High
+          expr: |
+            histogram_quantile(
+              0.99,
+              sum(rate(notify_intent_processing_duration_seconds_bucket[5m])) by (le)
+            ) > 30
+          for: 10m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Intent processing p99 > 30s"
+            description: |
+              99th-percentile intent dispatch duration exceeded 30s threshold.
+              Indicates DB pool saturation, slow template render, or adapter
+              IO timeout. Check Tempo/OTel traces (Faz 23.2 PR-D activation).

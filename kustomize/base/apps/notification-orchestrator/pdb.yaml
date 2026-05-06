@@ -1,0 +1,12 @@
+# notification-orchestrator PodDisruptionBudget (Faz 23.2 PR-C — Codex Q5 AGREE)
+# Prod minAvailable=1 with replicas=2 (HA); test overlay can patch out via
+# `disruptionsAllowed`-style replacement if test runs single replica.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: notification-orchestrator
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notification-orchestrator
