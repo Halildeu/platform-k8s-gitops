@@ -59,7 +59,9 @@ vault kv put kv/platform/notify \
 ESO bu Secret değişimini 1h refresh interval ile pickup eder; manuel hızlandırma:
 
 ```bash
-kubectl --context k3d-test apply -k kustomize/base/apps/notification-orchestrator/ops
+# Test overlay (canonical apply target — base/apps/...ops/ASA path tek-kaynak
+# DEĞİL; test cluster'da overlay'in notify/eso dizini reconciliation hedefi):
+kubectl --context k3d-test apply -k kustomize/overlays/test/eso/notify
 kubectl --context k3d-test -n platform-test get externalsecret notification-orchestrator-secrets
 
 # Sync zorla (annotation rolldown):
@@ -76,23 +78,41 @@ kubectl --context k3d-test -n platform-test get externalsecret \
 
 # Beklenen: type=Ready status=True reason=SecretSynced
 
-# Secret values (redacted via base64):
+# Secret data keys (sadece anahtar varlığı, değer YAZMA):
 kubectl --context k3d-test -n platform-test get secret \
-  notification-orchestrator-secrets -o yaml | head -30
+  notification-orchestrator-secrets -o jsonpath='{.data}' | jq 'keys'
 
-# Pod env injection (rolling restart sonrası):
+# IMPORTANT (envFrom semantics): çalışan pod env'i Secret update'ten
+# etkilenmez. Yeni env var'ları görmek için rolling restart + status wait:
 kubectl --context k3d-test -n platform-test rollout restart deploy/notification-orchestrator
+kubectl --context k3d-test -n platform-test rollout status deploy/notification-orchestrator
+
+# YENİ pod'da env doğrulama (sadece anahtar varlığı, değer asla print etme):
 kubectl --context k3d-test -n platform-test exec deploy/notification-orchestrator -- \
-  printenv | grep -E 'SPRING_DATASOURCE_USERNAME|NOTIFY_REDACTION_PEPPER' | head -3
+  printenv | grep -oE '^(SPRING_DATASOURCE_USERNAME|NOTIFY_REDACTION_PEPPER)='
 ```
 
 ### 4. SMS NetGSM aktivasyonu (Faz 23.3.1)
 
-NetGSM REST v2 SMS provider için Vault path setup. Path **boş kalırsa**
-adapter fail-closed davranır: `DELIVERED` yok, her send `FAILED("netgsm
-credentials missing")` döner; smoke OK ama runtime SMS delivery yok.
+NetGSM REST v2 SMS provider için Vault path setup.
+
+**ÖNEMLİ — pre-merge zorunluluk** (Codex review iter-1 P1 absorb):
+ExternalSecret `data[].remoteRef` reconcile zamanında zorunlu. Vault path
+**hiç yok** ise mevcut `Synced` status `Ready=False` (SecretSyncedError) olur
+ve diğer 11 secret key reconcile'ı da bozar. Çözüm: PR merge **öncesinde**
+operatör Vault path'ini en azından placeholder değerlerle yaratır. Boş
+string seed pattern güvenlidir — adapter username empty olduğu için fail-closed
+davranır (DELIVERED yok, FAILED("netgsm credentials missing")), runtime SMS
+yok ama ESO sync OK + diğer key'ler hâlâ Ready=True.
 
 ```bash
+# A) Pre-merge placeholder seed (path olduğunu garantilemek):
+vault kv put kv/platform/notify/sms/netgsm \
+  username='' \
+  password='' \
+  msgheader='Notify'
+
+# B) Production aktivasyon (real creds):
 # DEV/TEST cluster — NetGSM test/staging account
 vault kv put kv/platform/notify/sms/netgsm \
   username='<netgsm-test-username>' \
@@ -106,18 +126,30 @@ vault kv put kv/platform/notify/sms/netgsm \
   msgheader='<approved sender ID — IYS registered>'
 ```
 
-ESO sync + verification:
+ESO sync + verification (envFrom-aware sıra):
 
 ```bash
+# 1) ESO force-sync (refresh interval beklemeden Vault'tan oku)
 kubectl --context k3d-test -n platform-test annotate externalsecret \
   notification-orchestrator-secrets force-sync=$(date +%s) --overwrite
 
-# Verify env injection
-kubectl --context k3d-test -n platform-test exec deploy/notification-orchestrator -- \
-  printenv | grep -E 'NOTIFY_ADAPTERS_SMS_NETGSM_(USERNAME|MSGHEADER)' | head -2
+# 2) ExternalSecret status Ready=True doğrula
+kubectl --context k3d-test -n platform-test get externalsecret \
+  notification-orchestrator-secrets -o jsonpath='{.status.conditions}'
 
-# Pod restart (envFrom secret pickup)
+# 3) Secret data keys redacted check (yeni 3 NetGSM anahtarı eklenmiş mi)
+kubectl --context k3d-test -n platform-test get secret \
+  notification-orchestrator-secrets -o jsonpath='{.data}' | \
+  jq 'keys[] | select(test("NOTIFY_ADAPTERS_SMS_NETGSM"))'
+
+# 4) Rolling restart + status wait (envFrom Secret pickup container start'ta)
 kubectl --context k3d-test -n platform-test rollout restart deploy/notification-orchestrator
+kubectl --context k3d-test -n platform-test rollout status deploy/notification-orchestrator
+
+# 5) YENİ pod'da env injection doğrula (anahtar varlığı, değer print ETME)
+kubectl --context k3d-test -n platform-test exec deploy/notification-orchestrator -- \
+  printenv | grep -oE '^NOTIFY_ADAPTERS_SMS_NETGSM_(USERNAME|MSGHEADER)='
+# Beklenen: USERNAME ve MSGHEADER satırları görünür (PASSWORD print edilmez)
 ```
 
 **Not (KVKK + IYS uyum)**:
@@ -125,8 +157,8 @@ kubectl --context k3d-test -n platform-test rollout restart deploy/notification-
   sender ID code 40 (provider FAILED) döner.
 - IYS opt-out (consent reddetmiş alıcı) provider code 70 (FAILED) ile döner;
   audit row'da görünür. Pre-send IYS check (Faz 23.3.2) henüz yok — KVKK
-  uyumu için operatör provider-side IYS gate'e güvenir + post-send code 70
-  audit'i izler.
+  full compliance closure değil; provider-side IYS gate + post-send code 70
+  audit izleme bu PR scope'unda yeterli operasyonel posture sayılır.
 
 ### 5. Webhook key rotation (operasyon disiplini)
 
@@ -182,7 +214,11 @@ vault read -format=json sys/audit | jq '.data.audit_devices'
 
 ## Referans
 
-- `kustomize/base/apps/notification-orchestrator/ops/externalsecret.yaml`
-- `kustomize/base/apps/notification-orchestrator/secret-stub.yaml`
+- **Test overlay** (canonical apply target): `kustomize/overlays/test/eso/notify/externalsecret-notify.yaml`
+  (notification-orchestrator-secrets ExternalSecret, 14 keys: db × 2, smtp × 3,
+  redaction × 1, webhook × 1, slack × 1, authz × 1, sms/netgsm × 3, system × 2)
+- Base secret-stub (pod-startup safety net): `kustomize/base/apps/notification-orchestrator/secret-stub.yaml`
+- Base older-pattern ExternalSecret (legacy ops/ dir, not canonical): `kustomize/base/apps/notification-orchestrator/ops/externalsecret.yaml`
 - ADR-0013-notification-orchestration §6 (security)
 - Vault AppRole + ESO ClusterSecretStore: `kustomize/base/eso/clustersecretstore.yaml`
+- NetGSM SMS adapter (Faz 23.3.1): `Halildeu/platform-backend#77`
