@@ -153,47 +153,54 @@ ErasureService.java kodu ile birebir):
 > Yeni verification subscriber_id üzerinden audit event ve recipients_snapshot
 > JSONB containment ile yapılır — pepper-free.
 
+> **Codex 019dfc6a iter-2 P1 absorb**: önceki verification "global org payload IS NULL"
+> filter'ı subject-specific değildi (başka subject'in zaten silinmiş kayıtlarını da
+> match edebilirdi → yanlış pozitif). Doğru pattern: önce `audit_event.intent_id`'yi
+> bu subject'in erasure event'inden topla, sonra sadece o intent ID setini doğrula.
+
 ```sql
--- 1) Audit event SUBSCRIBER_ERASURE_REQUEST var (en güvenilir kanıt)
-SELECT event_type, occurred_at, details
-  FROM notify.audit_event
- WHERE event_type = 'SUBSCRIBER_ERASURE_REQUEST'
-   AND details->>'subscriber_id' = '<subscriber-id>'
-   AND org_id = '<org-id>'
- ORDER BY occurred_at DESC LIMIT 1;
--- Beklenti: 1 row, details = {erasure_reason, evidence_ref, subscriber_id,
+-- 1) Audit event SUBSCRIBER_ERASURE_REQUEST var (canonical kanıt)
+--    Bu sorgu hem proof hem subject-specific intent_id seti üretir.
+WITH erasure_audits AS (
+  SELECT event_type, occurred_at, details, intent_id
+    FROM notify.audit_event
+   WHERE event_type = 'SUBSCRIBER_ERASURE_REQUEST'
+     AND details->>'subscriber_id' = '<subscriber-id>'
+     AND org_id = '<org-id>'
+)
+SELECT * FROM erasure_audits ORDER BY occurred_at DESC LIMIT 1;
+-- Beklenti: ≥1 row; details = {erasure_reason, evidence_ref, subscriber_id,
 --                              deliveries_anonymized}
 
--- 2) Subject'e ait intent payload tümü NULL olmalı (recipients_snapshot
---    pre-erasure containment match; post-erasure snapshot NULL olur)
-SELECT intent_id, payload IS NULL AS payload_purged,
-       recipients_snapshot IS NULL AS snapshot_purged,
-       metadata IS NULL AS metadata_purged
-  FROM notify.notification_intent
- WHERE org_id = '<org-id>'
-   AND intent_id IN (
-     -- intent_id'leri audit'ten alabiliriz, veya delivery üzerinden:
-     -- (subscriber_id'ye bağlı delivery.recipient_id artık NULL ama
-     -- intent_id eşleşmesi için son audit event'in correlation_id'si)
-     SELECT DISTINCT i.intent_id
-       FROM notify.notification_intent i
-       JOIN notify.notification_delivery d ON d.intent_id = i.intent_id
-      WHERE d.recipient_id IS NULL  -- post-erasure: recipient_id null
-        AND i.org_id = '<org-id>'
-        AND i.payload IS NULL
+-- 2) Subject'in erasure-edilen intent'leri için payload tümü NULL olmalı
+--    (audit'ten gelen intent_id seti subject-specific filter sağlar — başka
+--    subject'in zaten silinmiş kayıtlarına yanlış match yapmaz).
+SELECT i.intent_id,
+       i.payload IS NULL AS payload_purged,
+       i.recipients_snapshot IS NULL AS snapshot_purged,
+       i.metadata IS NULL AS metadata_purged
+  FROM notify.notification_intent i
+ WHERE i.org_id = '<org-id>'
+   AND i.intent_id IN (
+     SELECT DISTINCT intent_id
+       FROM notify.audit_event
+      WHERE event_type = 'SUBSCRIBER_ERASURE_REQUEST'
+        AND details->>'subscriber_id' = '<subscriber-id>'
+        AND org_id = '<org-id>'
    );
--- Beklenti: payload_purged=t, snapshot_purged=t, metadata_purged=t (tümü TRUE)
+-- Beklenti: her row için payload_purged=t, snapshot_purged=t, metadata_purged=t
 
--- 3) Subject delivery rows recipient_id NULL olmalı (recipient_hash KORUNUR)
-SELECT id, intent_id, channel, recipient_id, recipient_hash
+-- 3) Subject delivery rows recipient_id NULL olmalı (recipient_hash KORUNUR).
+--    Aynı subject-specific intent_id seti ile JOIN.
+SELECT d.id, d.intent_id, d.channel, d.recipient_id, d.recipient_hash
   FROM notify.notification_delivery d
- WHERE EXISTS (
-   SELECT 1 FROM notify.notification_intent i
-    WHERE i.intent_id = d.intent_id
-      AND i.org_id = '<org-id>'
-      AND i.payload IS NULL  -- post-erasure marker
- )
- AND d.recipient_id IS NULL;
+ WHERE d.intent_id IN (
+   SELECT DISTINCT intent_id
+     FROM notify.audit_event
+    WHERE event_type = 'SUBSCRIBER_ERASURE_REQUEST'
+      AND details->>'subscriber_id' = '<subscriber-id>'
+      AND org_id = '<org-id>'
+ );
 -- Beklenti: rows present; recipient_id IS NULL; recipient_hash IS NOT NULL
 ```
 
@@ -235,8 +242,14 @@ ederek 90 gün öncesi audit row'larını kaldırır. Bu, erasure event'in 90 g�
 
 ## Yasaklar
 
-- Direct pod port / `kubectl port-forward` ile erasure çağrısı **YASAK**
-  (ROLE_PRIVACY_OFFICER gate'i bypass)
+- **Steady-state (PR-D sonrası gateway route + role allowlist aktif olduğunda)**:
+  Direct pod port / `kubectl port-forward` ile erasure çağrısı **YASAK**
+  (ROLE_PRIVACY_OFFICER gate'i bypass eder).
+- **PR-C interim (gateway route henüz yok)**: DPO authorized operator
+  port-forward ile erasure çağırabilir; bu **bilinçli interim disiplin**:
+  - Sadece DPO tarafından çalıştırılır (cluster admin yetkisi gerek)
+  - Her çağrı pre-flight + post-verification adımlarına tâbi
+  - PR-D gateway route + JWT role gate gelince bu yol kapatılır
 - Boş `evidence_ref` ile erasure **operasyonel disiplin gereği YASAK**
 - Subject'in dolaylı yöneticisinin (HR, manager) talebi tek başına kâfi değil;
   subject onayı veya court order gerekir

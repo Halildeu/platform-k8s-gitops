@@ -21,5 +21,6 @@ resources:
   - deployment.yaml
   - service.yaml
   - configmap.yaml
+  - secret-stub.yaml
   - serviceaccount.yaml
   - pdb.yaml

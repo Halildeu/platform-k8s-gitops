@@ -56,6 +56,11 @@ spec:
           envFrom:
             - configMapRef:
                 name: notification-orchestrator-config
+            - secretRef:
+                # Codex 019dfc6a iter-2 P0 absorb: DB credentials + redaction
+                # pepper + webhook signing secret + authz API key. ESO overrides
+                # in test/prod via PR-D ExternalSecret (same name, Owner policy).
+                name: notification-orchestrator-secrets
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: "k8s"

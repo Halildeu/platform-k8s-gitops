@@ -2,9 +2,12 @@
 # Non-secret config only. Provider credentials Vault/ESO üzerinden secret-stub'a
 # inject edilir (Faz 23.2 sub-faz scope; PR-D ESO setup).
 #
-# Codex 019dfc6a iter-1 absorb (PR-C):
-# - SPRING_DATASOURCE_URL must be patched per overlay (test/prod) — base
-#   placeholder value left intact for fail-closed safety.
+# Codex 019dfc6a iter-1+iter-2 absorb (PR-C):
+# - SPRING_DATASOURCE_URL: cluster-internal short DNS (postgres:5432/notify_db).
+#   Postgres host bridge Endpoints test/prod overlay'de patch'lenir; URL kendisi
+#   namespace-agnostik kalır.
+# - SPRING_DATASOURCE_USERNAME/PASSWORD: secret-stub.yaml'den envFrom secretRef
+#   (PR-D ESO setup ile Vault'tan override).
 # - NOTIFY_AUTHZ_PERMISSION_SERVICE_URL env name matches backend application.yml
 #   (notify.authz.permission-service.url). Was incorrectly named
 #   PERMISSION_SERVICE_URL pre-PR-C; backend ignored it and fell back to default.
