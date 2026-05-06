@@ -25,6 +25,8 @@ resources:
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster
   - endpoints-workcube-mssql.yaml    # 172.19.0.8 (workcube-mssql-proxy-test, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
+  # Faz 23.2 PR-D.2 — Tempo OTLP egress (notification-orchestrator → monitoring/tempo)
+  - netpol-notification-tempo.yaml
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)
@@ -927,6 +929,30 @@ patches:
       - op: add
         path: /data/LOGGING_LEVEL_COM_SERBAN_NOTIFY
         value: "DEBUG"
+      # Faz 23.2 PR-D.2 — OTLP runtime activation (Codex 019dfe0f Q4 absorb).
+      # PR-C tracing readiness (sampling=0.0, endpoint empty) → PR-D.2 test
+      # cluster activation: 10% sampling, Tempo direct OTLP HTTP receiver.
+      # Prod activation PR-D.3 atomic plan (defer).
+      - op: add
+        path: /data/MANAGEMENT_OTLP_TRACING_ENDPOINT
+        value: "http://tempo.monitoring.svc.cluster.local:4318/v1/traces"
+      - op: add
+        path: /data/MANAGEMENT_TRACING_SAMPLING_PROBABILITY
+        value: "0.1"
+
+  # Faz 23.2 PR-D.2 — pod-template annotation rollout trigger (Codex Q4 absorb).
+  # ConfigMap envFrom değişmesi pod restart tetiklemez; annotation bump rolling
+  # update tetikler. PR-D.2 sonrası başka activation gerektiğinde değer yenilenir.
+  # Base deployment'ta annotations object yok → object'i komple ekle (JSON Patch
+  # `add` parent var olmazsa fail; bu pattern kustomize merge için doğru).
+  - target:
+      kind: Deployment
+      name: notification-orchestrator
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          observability.acik.com/tempo-otlp-activation: "pr-d-2"
 
   - target:
       kind: Deployment

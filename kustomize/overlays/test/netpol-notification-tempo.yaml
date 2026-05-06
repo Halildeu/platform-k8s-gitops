@@ -1,0 +1,34 @@
+# Faz 23.2 PR-D.2 — notification-orchestrator → tempo monitoring cross-namespace egress
+# (Codex 019dfe0f Q5 absorb).
+#
+# Base default-deny egress (kustomize/base/netpol/default-deny.yaml) + intra-ns
+# allowlist (kustomize/base/netpol/allow-egress-dns-and-host.yaml) cross-namespace
+# egress'i kapsamıyor. notification-orchestrator OTLP HTTP 4318'e Tempo'ya
+# trace push edebilmek için bu policy explicit egress izni verir.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-notification-orchestrator-egress-tempo
+  annotations:
+    platform.acik.com/faz: "23.2"
+    platform.acik.com/sub-pr: "D.2"
+    platform.acik.com/codex-thread: "019dfe0f"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notification-orchestrator
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tempo
+      ports:
+        - protocol: TCP
+          port: 4318  # OTLP HTTP (notification-orchestrator default)
+        - protocol: TCP
+          port: 4317  # OTLP gRPC (forward-compat)

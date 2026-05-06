@@ -1,0 +1,57 @@
+# Tempo (test cluster) — Faz 23.2 PR-D.2 (Codex 019dfe0f Q2 absorb).
+#
+# Test scope vs prod (helm-values/tempo/values.yaml):
+# - persistence.enabled=false (ephemeral; pod restart trace kaybı kabul)
+# - retention 24h (test traffic düşük; depolama küçük)
+# - metrics-generator off (Prom remote_write karmaşıklığı yok)
+# - resource limits modest (D17 quota uyumlu)
+#
+# ADR-0002 boundary: "test logs/traces nice-to-have" sınırı PR-D.2 ile bilinçli
+# genişletildi (tracing readiness + test smoke evidence için Tempo gerekli).
+# Activation kaynağı: Faz 23.2 PR-C tracing readiness + PR-D.2 OTLP runtime.
+
+tempo:
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal
+
+  retention: 24h
+
+  # OTLP receivers (HTTP + gRPC). notification-orchestrator OTLP HTTP 4318 kullanır.
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+  # Metrics-generator off (test scope — Prom remote_write entegrasyon yok)
+  metricsGenerator:
+    enabled: false
+
+  # Codex iter-1 P1 #1 absorb: resources MUST be under `tempo.resources` per
+  # grafana/tempo helm chart schema; top-level `resources:` chart tarafından
+  # ignore edilir → effective resources={}. D17 quota uyumlu için modest.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Codex iter-1 P1 #1 absorb: chart default mem-ballast 1024MB; test cluster
+  # 512Mi limit ile uyumlu olması için ballast düşürüldü.
+  memBallastSizeMbs: 64
+
+# Persistence kapalı — test cluster için emptyDir / pod ephemeral
+persistence:
+  enabled: false
+
+# Ingress YOK — test Grafana yok (test cluster'da grafana.enabled=false);
+# Tempo /api/search verification kubectl port-forward ile.
