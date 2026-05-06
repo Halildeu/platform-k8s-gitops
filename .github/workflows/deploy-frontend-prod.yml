@@ -160,13 +160,30 @@ jobs:
         run: |
           set -euo pipefail
           # iter-49 PR #303 retry pattern: brief ingress propagation race.
+          # Module Federation refactor (platform-web 2026-05) renamed the
+          # entry bundle from /assets/index-<hash>.js to /mf-entry-bootstrap-<n>.js
+          # at the document root. Extract the actual src from the first
+          # type="module" script tag using a Perl pass that tolerates
+          # attribute order, spacing, single/double quotes and multiline
+          # tags (Codex iter-1 absorb on PR #383). Then enforce same-origin
+          # path layout via a case statement so a stray CDN/absolute URL
+          # fails closed instead of producing a wrong probe URL.
           INDEX_BODY=""
           ROOT_ENTRY=""
+          ENTRY_URL=""
           for attempt in 1 2 3 4 5; do
             INDEX_BODY=$(curl -sk "${AI_URL}/" || true)
-            ROOT_ENTRY=$(echo "${INDEX_BODY}" | grep -oE 'index-[A-Za-z0-9_-]+\.js' | head -1 || true)
+            ROOT_ENTRY=$(printf '%s' "${INDEX_BODY}" | perl -0777 -ne '
+              while (m{<script\b([^>]*)>}gis) {
+                my $attrs = $1;
+                next unless $attrs =~ m{\btype\s*=\s*(['"'"'"])module\1}i;
+                next unless $attrs =~ m{\bsrc\s*=\s*(['"'"'"])([^'"'"'"]+\.js(?:\?[^'"'"'"]*)?)\1}i;
+                print "$2\n";
+                exit 0;
+              }
+            ' || true)
             if [ -n "${ROOT_ENTRY}" ]; then
-              echo "✓ index.html valid (attempt ${attempt}/5)"
+              echo "✓ index.html valid (attempt ${attempt}/5): entry=${ROOT_ENTRY}"
               break
             fi
             echo "⊘ attempt ${attempt}/5: retrying in 3s..."
@@ -174,21 +191,39 @@ jobs:
           done
 
           if [ -z "${ROOT_ENTRY}" ]; then
-            echo "::error::Could not extract root entry asset from /index.html after 5 retries"
+            echo "::error::Could not extract module entry script from /index.html after 5 retries"
             echo "${INDEX_BODY}" | head -50
             exit 1
           fi
 
-          ASSET_STATUS=""
+          # Same-origin path enforcement (fail-closed for CDN / cross-origin / relative).
+          # Both the Module Federation entry (/mf-entry-bootstrap-*.js) and the
+          # legacy Vite bundle (/assets/index-*.js) are accepted so a D30 warm
+          # rollback to a pre-MF image still passes Gate 1b.
+          case "${ROOT_ENTRY}" in
+            /mf-entry-bootstrap-*.js|/mf-entry-bootstrap-*.js\?*|/assets/index-*.js|/assets/index-*.js\?*)
+              ENTRY_URL="${AI_URL}${ROOT_ENTRY}"
+              ;;
+            http://*|https://*|//*)
+              echo "::error::Module entry must be same-origin path, got: ${ROOT_ENTRY}"
+              exit 1
+              ;;
+            *)
+              echo "::error::Unexpected module entry path layout, got: ${ROOT_ENTRY}"
+              exit 1
+              ;;
+          esac
+
+          ASSET_STATUS="000"
           for attempt in 1 2 3; do
-            ASSET_STATUS=$(curl -sko /dev/null -w '%{http_code}' "${AI_URL}/assets/${ROOT_ENTRY}" || echo "000")
+            ASSET_STATUS=$(curl -sko /dev/null -w '%{http_code}' "${ENTRY_URL}" || echo "000")
             if [ "${ASSET_STATUS}" = "200" ]; then
               break
             fi
             sleep 2
           done
           if [ "${ASSET_STATUS}" != "200" ]; then
-            echo "::error::Root entry asset /${ROOT_ENTRY} returned ${ASSET_STATUS}"
+            echo "::error::Root entry asset ${ROOT_ENTRY} returned ${ASSET_STATUS}"
             exit 1
           fi
           echo "✓ root entry asset reachable: ${ROOT_ENTRY} (HTTP ${ASSET_STATUS})"
