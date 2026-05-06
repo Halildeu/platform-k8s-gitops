@@ -34,13 +34,20 @@ tempo:
   metricsGenerator:
     enabled: false
 
-resources:
-  requests:
-    cpu: 50m
-    memory: 128Mi
-  limits:
-    cpu: 500m
-    memory: 512Mi  # 256Mi OOM riski; test için 512Mi pragmatik (Codex Q2 absorb)
+  # Codex iter-1 P1 #1 absorb: resources MUST be under `tempo.resources` per
+  # grafana/tempo helm chart schema; top-level `resources:` chart tarafından
+  # ignore edilir → effective resources={}. D17 quota uyumlu için modest.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Codex iter-1 P1 #1 absorb: chart default mem-ballast 1024MB; test cluster
+  # 512Mi limit ile uyumlu olması için ballast düşürüldü.
+  memBallastSizeMbs: 64
 
 # Persistence kapalı — test cluster için emptyDir / pod ephemeral
 persistence:

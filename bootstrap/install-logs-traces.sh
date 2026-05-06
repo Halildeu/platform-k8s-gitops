@@ -81,11 +81,12 @@ log "kurulum tamam"
 kubectl --context "${ctx}" -n monitoring get pods | grep -E "loki|promtail|tempo" || true
 
 log ""
-log "Hızlı test:"
-log "  Tempo health: kubectl --context ${ctx} -n monitoring port-forward svc/tempo 3200:3200"
-log "  curl -sf http://127.0.0.1:3200/ready"
-log "  Search: curl -G 'http://127.0.0.1:3200/api/search' --data-urlencode 'tags=service.name=notification-orchestrator'"
+log "Hızlı test (Codex iter-1 P1 #2 absorb: chart default HTTP API port=3100):"
+log "  Tempo health: kubectl --context ${ctx} -n monitoring port-forward svc/tempo 3100:3100"
+log "  curl -sf http://127.0.0.1:3100/ready"
+log "  Search: curl -G 'http://127.0.0.1:3100/api/search' --data-urlencode 'tags=service.name=notification-orchestrator'"
 if [ "${install_loki_promtail}" -eq 1 ]; then
-  log "  Loki: kubectl --context ${ctx} -n monitoring port-forward svc/loki 3100:3100"
+  # Loki port also 3100 — port-forward conflict; use different local port
+  log "  Loki: kubectl --context ${ctx} -n monitoring port-forward svc/loki 3101:3100  # local 3101 (Tempo 3100 conflict)"
   log "  Grafana datasource'lara ekleme: bootstrap/configure-grafana-datasources.sh"
 fi
