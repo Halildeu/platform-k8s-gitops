@@ -1,0 +1,8 @@
+# notification-orchestrator ESO — Faz 23.1 PR5 (Codex 019dfaaa absorb).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-test
+
+resources:
+  - externalsecret-notify.yaml

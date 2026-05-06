@@ -56,6 +56,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: notification-orchestrator-config
+            - secretRef:
+                name: notification-orchestrator-secrets
+                optional: true  # ESO populates; pod start without secrets uses dev defaults
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: "k8s"

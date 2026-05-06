@@ -21,6 +21,7 @@ resources:
   - ../../base
   - ../../base/apps/ops-bundle    # Faz 17.2.5: ExternalSecret + ServiceMonitor CRD paketi (runtime'dan ayrı)
   - ../../base/apps/endpoint-admin-service    # Faz 22.1.1b live-aligned 2026-05-05
+  - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster
   - endpoints-workcube-mssql.yaml    # 172.19.0.8 (workcube-mssql-proxy-test, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
@@ -472,6 +473,15 @@ images:
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
     digest: sha256:047fc16aea195899215d87cca7c1015529238742c5ce71b83911a5d570fdbae2
 
+  # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
+  # CI image-push matrix'e notification-orchestrator eklendi (PR #65); ilk
+  # GHCR push sonrası tag/digest pin buraya yansır. Şimdilik :latest tag —
+  # CI workflow main merge sonrası "sha-<short>" + digest yayınlayacak;
+  # Codex deploy dispatch otomatik bu digest'i pinleyecek (D30 immutable).
+  - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
+    newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
+    newTag: latest
+
 patches:
   # Replica 0 default (scale-to-zero)
   - target:
@@ -869,6 +879,42 @@ patches:
       - op: replace
         path: /spec/strategy/rollingUpdate/maxUnavailable
         value: 1
+  # Faz 23.1 PR5 D29-NOTIFY: notification-orchestrator activation (Codex 019dfaaa).
+  # replicas=1 (test cluster); maxSurge=0/maxUnavailable=1 (quota-aware rollout).
+  # ConfigMap patch: SPRING_DATASOURCE_URL + KEYCLOAK + JWT issuer test realm.
+  - target:
+      kind: Deployment
+      name: notification-orchestrator
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxSurge
+        value: 0
+      - op: replace
+        path: /spec/strategy/rollingUpdate/maxUnavailable
+        value: 1
+  - target:
+      kind: ConfigMap
+      name: notification-orchestrator-config
+    patch: |-
+      - op: replace
+        path: /data/SPRING_DATASOURCE_URL
+        value: "jdbc:postgresql://postgres:5432/notify_db"
+      - op: replace
+        path: /data/NOTIFY_ADAPTERS_SMTP_HOST
+        value: "mailpit.platform-test.svc.cluster.local"
+      - op: add
+        path: /data/SPRING_FLYWAY_ENABLED
+        value: "true"
+      - op: add
+        path: /data/LOGGING_LEVEL_ROOT
+        value: "INFO"
+      - op: add
+        path: /data/LOGGING_LEVEL_COM_SERBAN_NOTIFY
+        value: "DEBUG"
+
   - target:
       kind: Deployment
       name: permission-service
