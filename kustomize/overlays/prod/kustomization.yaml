@@ -92,6 +92,15 @@ images:
     newName: ghcr.io/halildeu/platform-web-frontend
     digest: sha256:6d926376a58bfd47c3d5059e0e0025f8cb38d5c7fbf80767461b2eea136647f4
 
+# Faz 23.2 PR-D.3 — notification-orchestrator prod IMAGE PIN DEFERRED.
+# D29 evidence gate (Codex P0 Sprint A Item 3) requires:
+#   1. test cluster promotion + D29 smoke evidence GREEN
+#   2. release-candidates/ ledger entry
+#   3. then prod promotion via auto-promotion bot
+# PR-D.3 manifest-only: ESO ExternalSecret + ops-bundle include + base manifest
+# include. Prod replicas stays at 0 (D17 default); notification activation in
+# prod cluster awaits PR-D.3.x (test smoke + ledger).
+
 patches:
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz replace
   # patches KALDIRILDI. Base zaten shortname (postgres:5432, keycloak:8080,
@@ -194,6 +203,11 @@ patches:
         path: /spec/data/7
       - op: remove
         path: /spec/data/6
+
+  # Faz 23.2 PR-D.3 — notification-orchestrator prod ACTIVATION DEFERRED.
+  # D29 evidence gate: test promotion + smoke + ledger entry öncül; sonra
+  # PR-D.3.x'te prod overlay Deployment patch (replicas=2 + k8s,prod profile)
+  # + ConfigMap patch (DATASOURCE + OTLP) eklenir.
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:
