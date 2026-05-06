@@ -21,6 +21,8 @@ resources:
   - deployment.yaml
   - service.yaml
   - configmap.yaml
+  - secret-stub.yaml       # PR-C iter-2 (Codex 019dfc6a P0): bootstrap dev secrets;
+                           #   PR-D ESO ExternalSecret overlay'de override eder
   - serviceaccount.yaml
   # Faz 23.2 PR-C — production foundation (Codex 019dfae5)
   - servicemonitor.yaml    # kube-prometheus-stack scrape
