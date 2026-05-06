@@ -16,6 +16,9 @@ broken.
 - ilk PR-D.3 deploy (test veya prod cluster)
 - Vault re-init / disaster recovery
 - Secret rotation (webhook signing key, redaction pepper, authz API key)
+- Faz 23.3.1 SMS adapter aktivasyonu (NetGSM): `kv/platform/notify/sms/netgsm`
+  path'ine username/password/msgheader yazımı (operatör — credential-write
+  boundary). Aşağıda "Adım 4 — SMS NetGSM aktivasyonu" detayı.
 
 ## Ön-koşul
 
@@ -83,7 +86,49 @@ kubectl --context k3d-test -n platform-test exec deploy/notification-orchestrato
   printenv | grep -E 'SPRING_DATASOURCE_USERNAME|NOTIFY_REDACTION_PEPPER' | head -3
 ```
 
-### 4. Webhook key rotation (operasyon disiplini)
+### 4. SMS NetGSM aktivasyonu (Faz 23.3.1)
+
+NetGSM REST v2 SMS provider için Vault path setup. Path **boş kalırsa**
+adapter fail-closed davranır: `DELIVERED` yok, her send `FAILED("netgsm
+credentials missing")` döner; smoke OK ama runtime SMS delivery yok.
+
+```bash
+# DEV/TEST cluster — NetGSM test/staging account
+vault kv put kv/platform/notify/sms/netgsm \
+  username='<netgsm-test-username>' \
+  password='<netgsm-test-password>' \
+  msgheader='Notify'
+
+# PROD cluster — NetGSM production account (operatör credential-write)
+vault kv put kv/platform/notify/sms/netgsm \
+  username='<netgsm-prod-username>' \
+  password='<netgsm-prod-password>' \
+  msgheader='<approved sender ID — IYS registered>'
+```
+
+ESO sync + verification:
+
+```bash
+kubectl --context k3d-test -n platform-test annotate externalsecret \
+  notification-orchestrator-secrets force-sync=$(date +%s) --overwrite
+
+# Verify env injection
+kubectl --context k3d-test -n platform-test exec deploy/notification-orchestrator -- \
+  printenv | grep -E 'NOTIFY_ADAPTERS_SMS_NETGSM_(USERNAME|MSGHEADER)' | head -2
+
+# Pod restart (envFrom secret pickup)
+kubectl --context k3d-test -n platform-test rollout restart deploy/notification-orchestrator
+```
+
+**Not (KVKK + IYS uyum)**:
+- `msgheader` (sender ID) NetGSM hesabında **kayıtlı + onaylı** olmalı; kayıtsız
+  sender ID code 40 (provider FAILED) döner.
+- IYS opt-out (consent reddetmiş alıcı) provider code 70 (FAILED) ile döner;
+  audit row'da görünür. Pre-send IYS check (Faz 23.3.2) henüz yok — KVKK
+  uyumu için operatör provider-side IYS gate'e güvenir + post-send code 70
+  audit'i izler.
+
+### 5. Webhook key rotation (operasyon disiplini)
 
 PR-A kid-aware HMAC registry: rotation `webhook_signing_secret_next` ekle, sonra
 `webhook_active_kid` bump. ESO refresh + pod restart bağımsız.

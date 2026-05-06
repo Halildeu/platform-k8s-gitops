@@ -28,7 +28,7 @@ externalsecret-notify-fcm.yaml          # Faz 23.7 push
 | `kv/platform/notify/smtp` | host, port, username, password, dkim_key, from_address | 23.1 |
 | `kv/platform/notify/slack` | webhook_url, bot_token (opsiyonel) | 23.1 |
 | `kv/platform/notify/webhook` | hmac_secret | 23.1 |
-| `kv/platform/notify/netgsm` | api_username, api_password, sender_id | 23.3 |
+| `kv/platform/notify/sms/netgsm` | username, password, msgheader | 23.3.1 |
 | `kv/platform/notify/iletimerkezi` | api_username, api_password, sender_id | 23.3 |
 | `kv/platform/notify/fcm` | service_account_json | 23.7 |
 | `kv/platform/monitoring/fallback` | slack_webhook_url, smtp_user, smtp_password (D43 outage bypass — ayrı path) | 23.2 |
