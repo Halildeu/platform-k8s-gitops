@@ -6,6 +6,33 @@
 
 ---
 
+## HARD RULE — `platform-ssot` is DEPRECATED, code there is YASAK (2026-05-06)
+
+`Halildeu/platform-ssot` is **DEPRECATED, audit-only**. Faz 19 split-repo authority transfer completed 2026-04-25. **No commits, no PRs, no workflow / Dockerfile / governance changes in `platform-ssot`.**
+
+**Why:** ssot's GHCR push rights for `platform-{backend,web}-*` packages have been **revoked** (403 Forbidden). Image builds there are orphaned — never reach the cluster. Live evidence: deploy-backend run `25408778230` failed with the same 403.
+
+**Repo mapping:**
+
+| Old (`platform-ssot`) | Canonical |
+|---|---|
+| `backend/<service>/` | `platform-backend/<service>/` |
+| `web/apps/mfe-*/` | `platform-web/apps/mfe-*/` |
+| `kustomize/`, `argocd/` | `platform-k8s-gitops/` (this repo) |
+
+**Existing ssot residue (audit-only):**
+
+PRs #561/#564/#567/#568/#570/#571/#572 merged in ssot 2026-05-05 never reached the cluster (GHCR 403). Their diffs were re-applied in canonical repos:
+
+- platform-backend PR #63: AuthCookieEndpoint /refresh path matcher (from ssot #571)
+- platform-web PR #257: muavin v3 frontend (from ssot #564 + #570)
+- platform-k8s-gitops PR #372: api-gateway digest bump to sha-76c517b (the one that actually rolls the fix to the cluster)
+- platform-backend muavin v3 mega PR: pending
+
+**This repo (`platform-k8s-gitops`)** is the correct canonical for kustomize overlays + ArgoCD/manual deploy manifests. Image digests must come from canonical builds (`platform-backend-*`, `platform-web-*`); never pin a digest produced by an ssot pipeline.
+
+---
+
 ## Proje Bağlamı
 
 `autonomous-orchestrator` platformunun Docker Compose → Kubernetes geçişi için GitOps manifest repo. İki k3d cluster (test + prod), host nginx SSL edge, Vault + ESO secret flow, Zanzibar authz plane (permission-service + OpenFGA).
