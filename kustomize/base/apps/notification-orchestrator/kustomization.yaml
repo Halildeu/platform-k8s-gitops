@@ -22,3 +22,8 @@ resources:
   - service.yaml
   - configmap.yaml
   - serviceaccount.yaml
+  # Faz 23.2 PR-C — production foundation (Codex 019dfae5)
+  - servicemonitor.yaml    # kube-prometheus-stack scrape
+  - prometheusrule.yaml    # critical + warn alerts
+  - hpa.yaml               # 1-3 replicas, 70% CPU target
+  - pdb.yaml               # minAvailable=1

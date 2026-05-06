@@ -1,0 +1,15 @@
+# notification-orchestrator PDB (Faz 23.2 PR-C — Codex 019dfae5 Q8).
+# Production: 1 pod minimum during disruption (test cluster — D17 quota).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: notification-orchestrator
+  labels:
+    app.kubernetes.io/name: notification-orchestrator
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notification-orchestrator

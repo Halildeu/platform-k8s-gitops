@@ -487,12 +487,13 @@ images:
     digest: sha256:047fc16aea195899215d87cca7c1015529238742c5ce71b83911a5d570fdbae2
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
-  # Backend PR #65 main merge sonrası ilk GHCR push:
-  #   build run 25411098073 SUCCESS, tag sha-4b886bc.
+  # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
+  # (PR-A security foundation + PR-B audit + KVKK erasure + observability).
+  # build run 25413391435 SUCCESS.
   # D30 immutable: digest pin zorunlu (drift gate :latest reddeder).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:b7f681cc9eaf66b6427352a9e1aaf8fc9e37f8106c07fcbba2249a532edad6db
+    digest: sha256:317f68f3b10c1db51f17d110a0227de31166cc4e19e26ff82c1d735723564934
 
 patches:
   # Replica 0 default (scale-to-zero)
