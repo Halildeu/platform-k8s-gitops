@@ -56,12 +56,23 @@ Beklenen sayılar log/ticket'a kaydedilir; erasure sonrası verification için k
 
 ### 3. Endpoint çağrı
 
-Direct pod port veya service URL **YASAK**. Erasure mutlaka **api-gateway** üzerinden
-ROLE_PRIVACY_OFFICER allowlist gate'i ile yapılır.
+Erasure çağrısı api-gateway üzerinden ROLE_PRIVACY_OFFICER role gate'i ile yapılır.
+
+> **PR-C scope notu**: api-gateway'in `/api/v1/admin/notify/**` route + role
+> allowlist konfigürasyonu PR-D scope'unda. PR-C'de api-gateway-config içinde
+> notification admin route YOK. Gateway route gelene kadar erasure `kubectl
+> port-forward` ile cluster içinden yapılır (DPO authorized operator):
+>
+> ```bash
+> # Pre-PR-D fallback (operator-only, audit'li)
+> kubectl --context k3d-prod -n platform-prod port-forward svc/notification-orchestrator 8089:8089 &
+> ```
+
+**Üretim ortamı** (PR-D sonrası, gateway route aktif):
 
 ```bash
-# Üretim çağrısı (testai üzerinden)
-curl -X POST 'https://app.testai.acik.com/api/v1/admin/notify/erasure' \
+# Prod: ai.acik.com (canonical prod hostname)
+curl -X POST 'https://ai.acik.com/api/v1/admin/notify/erasure' \
   -H 'Authorization: Bearer <jwt-with-ROLE_PRIVACY_OFFICER>' \
   -H 'Content-Type: application/json' \
   -d '{
@@ -70,6 +81,15 @@ curl -X POST 'https://app.testai.acik.com/api/v1/admin/notify/erasure' \
     "reason": "GDPR Art 17 / KVKK §11 subject request",
     "evidence_ref": "TICKET-DPO-2026-001"
   }'
+```
+
+**Test cluster smoke** (testai.acik.com):
+
+```bash
+curl -X POST 'https://testai.acik.com/api/v1/admin/notify/erasure' \
+  -H 'Authorization: Bearer <test-jwt-with-ROLE_PRIVACY_OFFICER>' \
+  -H 'Content-Type: application/json' \
+  -d '{"org_id":"default","subscriber_id":"smoke-erasure","reason":"smoke","evidence_ref":"SMOKE-RB-23-2"}'
 ```
 
 **JSON wire format** (snake_case via `@JsonProperty`):
@@ -111,41 +131,70 @@ kayıt yok).
   `data_classification`, status timestamps
 - Audit event'ler (append-only `audit_event_no_delete` rule)
 
-**Yeni audit event** (append-only):
+**Yeni audit event** (append-only — Codex 019dfc6a P1 absorb: field adları
+ErasureService.java kodu ile birebir):
 - `event_type`: `SUBSCRIBER_ERASURE_REQUEST`
 - `details.subscriber_id`: <subscriber-id> (pseudonymous internal id, e-posta değil)
-- `details.reason`: <reason>
+- `details.erasure_reason`: <reason>
 - `details.evidence_ref`: <evidence-ref>
-- `details.intents_erased`: <count>
 - `details.deliveries_anonymized`: <count>
 - `occurred_at`: now()
 
+> Code reference: `ErasureService.eraseSubscriber()` — `details.put("erasure_reason", ...)`,
+> `details.put("subscriber_id", ...)`, `details.put("evidence_ref", ...)`,
+> `details.put("deliveries_anonymized", ...)`. **NOT** `reason` veya `intents_erased`
+> (önceki runbook draft hatasıydı).
+
 ### 5. Verification (zorunlu post-step)
 
+> **Codex 019dfc6a P1 absorb**: önceki draft `recipient_hash` filter
+> kullanıyordu ama `recipient_hash` HMAC-SHA256(pepper) ile hesaplanıyor
+> ve operatör için praktik değil (Vault'tan pepper okumak gerekirdi).
+> Yeni verification subscriber_id üzerinden audit event ve recipients_snapshot
+> JSONB containment ile yapılır — pepper-free.
+
 ```sql
--- 1) Subject'e ait intent payload tümü NULL olmalı
-SELECT intent_id, payload, recipients_snapshot, metadata
-  FROM notify.notification_intent
- WHERE org_id = '<org-id>'
-   AND intent_id IN (
-     SELECT intent_id FROM notify.notification_delivery
-      WHERE recipient_hash = '<hash-of-erased-subscriber>'
-   );
--- Beklenti: payload IS NULL, recipients_snapshot IS NULL, metadata IS NULL
-
--- 2) Subject delivery rows recipient_id NULL olmalı; recipient_hash kalmalı
-SELECT id, intent_id, channel, recipient_id, recipient_hash
-  FROM notify.notification_delivery
- WHERE recipient_hash = '<hash-of-erased-subscriber>';
--- Beklenti: recipient_id IS NULL; recipient_hash IS NOT NULL
-
--- 3) Audit event SUBSCRIBER_ERASURE_REQUEST var
+-- 1) Audit event SUBSCRIBER_ERASURE_REQUEST var (en güvenilir kanıt)
 SELECT event_type, occurred_at, details
   FROM notify.audit_event
  WHERE event_type = 'SUBSCRIBER_ERASURE_REQUEST'
    AND details->>'subscriber_id' = '<subscriber-id>'
+   AND org_id = '<org-id>'
  ORDER BY occurred_at DESC LIMIT 1;
--- Beklenti: 1 row (SUBSCRIBER_ERASURE_REQUEST event)
+-- Beklenti: 1 row, details = {erasure_reason, evidence_ref, subscriber_id,
+--                              deliveries_anonymized}
+
+-- 2) Subject'e ait intent payload tümü NULL olmalı (recipients_snapshot
+--    pre-erasure containment match; post-erasure snapshot NULL olur)
+SELECT intent_id, payload IS NULL AS payload_purged,
+       recipients_snapshot IS NULL AS snapshot_purged,
+       metadata IS NULL AS metadata_purged
+  FROM notify.notification_intent
+ WHERE org_id = '<org-id>'
+   AND intent_id IN (
+     -- intent_id'leri audit'ten alabiliriz, veya delivery üzerinden:
+     -- (subscriber_id'ye bağlı delivery.recipient_id artık NULL ama
+     -- intent_id eşleşmesi için son audit event'in correlation_id'si)
+     SELECT DISTINCT i.intent_id
+       FROM notify.notification_intent i
+       JOIN notify.notification_delivery d ON d.intent_id = i.intent_id
+      WHERE d.recipient_id IS NULL  -- post-erasure: recipient_id null
+        AND i.org_id = '<org-id>'
+        AND i.payload IS NULL
+   );
+-- Beklenti: payload_purged=t, snapshot_purged=t, metadata_purged=t (tümü TRUE)
+
+-- 3) Subject delivery rows recipient_id NULL olmalı (recipient_hash KORUNUR)
+SELECT id, intent_id, channel, recipient_id, recipient_hash
+  FROM notify.notification_delivery d
+ WHERE EXISTS (
+   SELECT 1 FROM notify.notification_intent i
+    WHERE i.intent_id = d.intent_id
+      AND i.org_id = '<org-id>'
+      AND i.payload IS NULL  -- post-erasure marker
+ )
+ AND d.recipient_id IS NULL;
+-- Beklenti: rows present; recipient_id IS NULL; recipient_hash IS NOT NULL
 ```
 
 Verification fail olursa endpoint çağrı tekrar edilir (idempotent — ikinci çağrı
@@ -198,20 +247,30 @@ ederek 90 gün öncesi audit row'larını kaldırır. Bu, erasure event'in 90 g�
 
 ## Test (smoke)
 
-Pre-prod test:
+Pre-prod test (ConfigMap routing PR-D sonrası):
 
 ```bash
-# Test ortamında dummy subscriber id ile çağrı
-curl -X POST 'https://test.testai.acik.com/api/v1/admin/notify/erasure' \
+# Test ortamı (testai.acik.com authoritative test surface)
+curl -X POST 'https://testai.acik.com/api/v1/admin/notify/erasure' \
   -H 'Authorization: Bearer <test-jwt>' \
   -H 'Content-Type: application/json' \
-  -d '{"org_id":"default","subscriber_id":"test-subscriber-erasure","reason":"smoke","evidence_ref":"SMOKE-RB-23-2"}'
+  -d '{"org_id":"default","subscriber_id":"smoke-erasure","reason":"smoke","evidence_ref":"SMOKE-RB-23-2"}'
 
-# Beklenen: 200 + status either "completed" or "no_op"
+# Beklenen: 200 + {"intents_erased":N,"deliveries_anonymized":M,"status":"completed|no_op"}
+```
+
+PR-C scope'unda gateway route henüz yok; pre-PR-D test cluster smoke için
+operatör `kubectl port-forward` kullanır:
+
+```bash
+kubectl --context k3d-test -n platform-test port-forward svc/notification-orchestrator 8089:8089
+curl -X POST http://localhost:8089/api/v1/admin/notify/erasure -H 'Content-Type: application/json' \
+  -d '{"org_id":"default","subscriber_id":"smoke-erasure","reason":"smoke","evidence_ref":"SMOKE-RB-23-2"}'
 ```
 
 Test cluster'da real subscriber data **YOK**; smoke endpoint reachability
-doğrular. Real KVKK erasure sadece prod'da operatör tarafından yapılır.
+doğrular. Real KVKK erasure sadece prod'da operatör tarafından yapılır
+(PR-D gateway route + JWT role gate aktif sonrası).
 
 ---
 

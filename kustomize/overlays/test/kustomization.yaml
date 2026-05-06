@@ -418,7 +418,7 @@ images:
   # until full smoke. Worker activation post-validation via env var override.
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:317f68f3b10c1db51f17d110a0227de31166cc4e19e26ff82c1d735723564934
+    digest: sha256:2f72d9b2d66e9933c4fb703d8fb1b313016e8a03984f766df65cff67318c191a
 
 patches:
   # Replica 0 default (scale-to-zero)
@@ -712,6 +712,8 @@ patches:
   # Faz 23.2 PR-C — notification-orchestrator activation (test cluster)
   # replicas=1 (D17 single replica test default). Smoke verification first;
   # prod=2 (HA) overlay separate.
+  # Codex 019dfc6a iter-1 P2 absorb: env index 1 is now JAVA_TOOL_OPTIONS
+  # (was JAVA_OPTS — exec entrypoint form ignored shell expansion).
   - target:
       kind: Deployment
       name: notification-orchestrator

@@ -1,6 +1,16 @@
-# notification-orchestrator configmap (Faz 23 — ADR-0013)
+# notification-orchestrator configmap (Faz 23 — ADR-0013).
 # Non-secret config only. Provider credentials Vault/ESO üzerinden secret-stub'a
-# inject edilir (Faz 23.2 sub-faz scope).
+# inject edilir (Faz 23.2 sub-faz scope; PR-D ESO setup).
+#
+# Codex 019dfc6a iter-1 absorb (PR-C):
+# - SPRING_DATASOURCE_URL must be patched per overlay (test/prod) — base
+#   placeholder value left intact for fail-closed safety.
+# - NOTIFY_AUTHZ_PERMISSION_SERVICE_URL env name matches backend application.yml
+#   (notify.authz.permission-service.url). Was incorrectly named
+#   PERMISSION_SERVICE_URL pre-PR-C; backend ignored it and fell back to default.
+# - Cluster-local short DNS: http://permission-service:8090 — namespace-relative,
+#   resolves correctly in both platform-test and platform-prod without overlay
+#   patches. Port 8090 = permission-service Service external port (D-003).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -12,7 +22,11 @@ metadata:
 data:
   SERVER_PORT: "8089"
   MANAGEMENT_SERVER_PORT: "8081"
-  SPRING_DATASOURCE_URL: "OVERLAY_MUST_OVERRIDE"
+  # Postgres host bridge (D7): cluster-internal DNS short form. Test/prod
+  # overlay'ler postgres Endpoints'i kendi cluster'larındaki host bridge IP'sine
+  # patch eder (test 172.19.0.4, prod 10.9.10.53). DB name: notify_db.
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/notify_db"
+  NOTIFY_DB_SCHEMA: "notify"
   NOTIFY_OUTBOX_POLL_INTERVAL_MS: "5000"
   NOTIFY_RETRY_MAX_ATTEMPTS: "5"
   NOTIFY_RETRY_BACKOFF_INITIAL_MS: "30000"
@@ -23,7 +37,7 @@ data:
   NOTIFY_OPENFGA_CHECK_TIMEOUT_MS: "2000"
   NOTIFY_PROVIDER_CIRCUIT_BREAKER_FAILURE_THRESHOLD: "10"
   NOTIFY_PROVIDER_CIRCUIT_BREAKER_RESET_MS: "60000"
-  # Permission service URL (mevcut Zanzibar plane reuse — D38)
-  PERMISSION_SERVICE_URL: "http://permission-service.platform-test.svc.cluster.local:8090"
+  # Permission service URL — backend env name (Codex 019dfc6a P0 #1 absorb)
+  NOTIFY_AUTHZ_PERMISSION_SERVICE_URL: "http://permission-service:8090"
   # Outage fallback bypass receiver names (Alertmanager — D43)
   NOTIFY_OUTAGE_FALLBACK_DOCS: "docs/runbooks/RB-notification-outage-fallback.md"

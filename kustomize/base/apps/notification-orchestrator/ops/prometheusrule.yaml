@@ -1,19 +1,18 @@
-# notification-orchestrator PrometheusRule (Faz 23.2 PR-C — Codex 019dfc3e Q4 PARTIAL absorb)
+# notification-orchestrator PrometheusRule (Faz 23.2 PR-C — Codex 019dfc3e Q4 PARTIAL absorb,
+# Codex 019dfc6a iter-1 P2 absorb).
 #
-# Alarm coverage:
-#   CRITICAL — service down, authz disabled (security regression), authz bypass real signal
-#   WARN     — backlog, error rate, dispatch failure ratio, p99 latency
+# Alarm coverage (9 total — counted explicitly):
+#   CRITICAL (3) — service down, authz disabled, authz bypass in prod
+#   WARN     (6) — pending backlog, retry due backlog, DLQ unreplayed,
+#                  worker error rate, dispatch failure ratio, p99 latency
 #
 # Metric namespace: notify_* (Micrometer Java dotted → Prometheus underscore;
 # counter suffix _total automatic). Source: WorkerMetrics.java.
 #
-# Codex Q4 PARTIAL absorb:
-#   - Failure ratio uses minimum traffic gate (sum > 0.05/s) to avoid div-by-zero
-#     storms when service is idle.
-#   - Latency rule reads notify_intent_processing_duration_seconds_bucket
-#     (histogram_quantile) — histogram-percentiles enabled in application.yml.
-#   - authz_disabled_bypass per-namespace severity differentiation: prod=CRITICAL,
-#     test=WARN (bypass real delivery signal in prod; expected in test fixtures).
+# Codex absorb history:
+#   - Q4 PARTIAL: traffic-gate ratio + p99 histogram + authz bypass prod-only
+#   - iter-1 P2: alert count corrected (9 not 8); runbook URL placeholder note;
+#     namespace differentiation explicit per alert
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -35,7 +34,9 @@ spec:
             description: |
               Prometheus cannot scrape notification-orchestrator /actuator/prometheus.
               All notification delivery (email, slack, webhook) is halted.
-            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/runbooks/RB-notify-incident-response.md"
+            # Runbook placeholder — RB-notify-incident-response.md PR-D scope (operator
+            # incident response procedure + escalation chain + recovery steps).
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/tree/main/docs/runbooks"
 
         - alert: NotificationAuthzDisabled
           expr: notify_authz_disabled_state > 0

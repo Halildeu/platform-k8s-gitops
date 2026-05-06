@@ -59,7 +59,11 @@ spec:
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: "k8s"
-            - name: JAVA_OPTS
+            # Codex 019dfc6a iter-1 P2 absorb: Dockerfile ENTRYPOINT ["java","-jar",...]
+            # exec form does NOT shell-expand JAVA_OPTS. Use JAVA_TOOL_OPTIONS,
+            # which the JDK reads automatically without shell. Overlay patches
+            # this index for env-specific tuning.
+            - name: JAVA_TOOL_OPTIONS
               value: "-Xmx384m"
           resources:
             requests:

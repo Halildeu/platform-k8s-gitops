@@ -92,13 +92,15 @@ images:
     newName: ghcr.io/halildeu/platform-web-frontend
     digest: sha256:6d926376a58bfd47c3d5059e0e0025f8cb38d5c7fbf80767461b2eea136647f4
 
-  # Faz 23.2 PR-C — notification-orchestrator activation (prod).
-  # Source: platform-backend main commit f7760e8 (PR-A + PR-B merged).
-  # NOTE: dispatch.enabled=false default — prod cutover live-fire only after
-  # test cluster smoke + Faz 23.9 prod cutover atomic plan.
+  # Faz 23.2 PR-C — notification-orchestrator image digest pin (prod).
+  # Codex 019dfc6a P1 absorb: PR-C scope reduced to "test cluster activation
+  # only". Prod overlay carries image digest pin for traceability + manifest
+  # readiness, but Deployment patch (replicas=2 + SPRING_PROFILES_ACTIVE=k8s,prod
+  # + Secret/ESO setup) deferred to PR-D atomic prod cutover plan
+  # (Faz 23.9 alignment).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:317f68f3b10c1db51f17d110a0227de31166cc4e19e26ff82c1d735723564934
+    digest: sha256:2f72d9b2d66e9933c4fb703d8fb1b313016e8a03984f766df65cff67318c191a
 
 patches:
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz replace
@@ -247,19 +249,14 @@ patches:
         path: /subsets/0/ports/0/port
         value: 8200
 
-  # Faz 23.2 PR-C — notification-orchestrator activation (prod cluster).
-  # replicas=2 (D21 HA + PDB minAvailable=1). dispatch.enabled=false default;
-  # production live-fire ancak Faz 23.9 cutover atomic plan ile açılır.
-  - target:
-      kind: Deployment
-      name: notification-orchestrator
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 2
-      - op: replace
-        path: /spec/template/spec/containers/0/env/1/value
-        value: "-Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=100"
+  # Faz 23.2 PR-C scope reduced (Codex 019dfc6a P1 absorb): prod cluster
+  # notification-orchestrator activation deferred to PR-D atomic plan with
+  # SPRING_PROFILES_ACTIVE=k8s,prod (ProductionConfigValidator DKIM/TLS/HMAC),
+  # Secret/ESO for redaction pepper + authz internal key + webhook secret +
+  # DB credentials, gateway route + ROLE_PRIVACY_OFFICER allowlist. Base
+  # deployment manifest stays at replicas=0 in prod (D17 fail-closed default).
+  # PR-C delivers: image digest pin + ServiceMonitor + PrometheusRule + PDB +
+  # KVKK runbook documentation.
 
   # Prod ResourceQuota: 2 replica + openfga/job toplam limit bütçesi
   - target:
