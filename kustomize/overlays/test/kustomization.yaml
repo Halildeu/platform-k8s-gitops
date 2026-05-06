@@ -955,6 +955,22 @@ patches:
         value:
           observability.acik.com/tempo-otlp-activation: "pr-d-2"
 
+  # Faz 23.3 PR-E.3 SSE inbox stream — HPA min=max=1 kilidi (Codex iter-1 P1.4
+  # absorb). InboxSseController'ın SseEmitter map'i + ApplicationEventPublisher
+  # JVM-local; multi-pod scale durumunda subscriber A pod'a bağlıyken pod B'de
+  # row insert olursa SSE event kaybedilir. PR-E.4 cross-pod broadcast (Redis
+  # pub/sub veya STOMP+broker) gelene kadar single-pod kilidi zorunlu.
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: notification-orchestrator
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 1
+
   - target:
       kind: Deployment
       name: permission-service

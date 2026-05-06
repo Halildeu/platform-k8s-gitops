@@ -73,7 +73,30 @@ watch -n 5 'kubectl --context k3d-test -n platform-test get hpa,pod -l app.kuber
 ```
 
 `notify_queue_pending_intents > 200 avg per-pod` olunca HPA pod artırır
-(maxReplicas=3 sınırı).
+(base manifest maxReplicas=3 sınırı).
+
+### Faz 23.3 PR-E.3 SSE single-pod lock (2026-05-06)
+
+Backend PR Halildeu/platform-backend#84 SSE inbox stream eklendi.
+SseEmitter map + ApplicationEventPublisher JVM-local; multi-pod scale SSE
+delivery'i kırar. Test overlay HPA `min=max=1` lock zorunlu kılındı
+(gitops PR #385).
+
+Operasyonel etki:
+- Test cluster'da `kubectl get hpa notification-orchestrator -n platform-test`
+  artık `MIN PODS: 1, MAX PODS: 1` gösterir
+- External metric `notify_queue_pending_intents` veri akışı korunur (gözlem +
+  alert için), ama scale-out Faz 23.3 PR-E.3 boyunca beklenmez
+- PR-E.4 cross-pod broadcast (Redis pub/sub / STOMP+broker) merge edilince
+  HPA `maxReplicas=3` geri açılabilir; o iter'da bu runbook + overlay patch
+  birlikte revert edilmeli
+
+Rollout preflight:
+```bash
+kubectl --context k3d-test -n platform-test get deploy,hpa,pod \
+  -l app.kubernetes.io/name=notification-orchestrator
+# Live current replicas >1 ise apply sonrası downscale + SSE client reconnect bekle
+```
 
 ---
 
