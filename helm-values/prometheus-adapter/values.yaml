@@ -1,0 +1,67 @@
+# prometheus-adapter (Faz 23.2 PR-D.4 — Codex 019dfae5/019dfe0f Q5 PARTIAL absorb).
+#
+# Custom metrics API server: Prometheus → kubernetes.io/external/* metrics
+# bridge. Required for HPA `External` metric type (notify_queue_pending_intents).
+#
+# Installation (helm):
+#   helm install prometheus-adapter prometheus-community/prometheus-adapter \
+#     --namespace monitoring -f helm-values/prometheus-adapter/values.yaml
+#
+# Verification:
+#   kubectl get apiservice v1beta1.external.metrics.k8s.io
+#   kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/platform-test/notify_queue_pending_intents"
+
+# Connect to existing kube-prometheus-stack Prometheus
+prometheus:
+  url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local
+  port: 9090
+
+# Resource limits modest (D17 test cluster compatible)
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+replicas: 1
+
+# External metrics rules — mapping Prometheus queries to k8s external metrics
+rules:
+  external:
+    # notify_queue_pending_intents: notification-orchestrator OutboxPoller
+    # backlog gauge. HPA scaleTarget can use this to scale on intent backlog
+    # (CPU may not reflect intake backpressure if pod is disk/network bound).
+    - seriesQuery: 'notify_queue_pending_intents{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: { resource: namespace }
+          pod: { resource: pod }
+      name:
+        as: "notify_queue_pending_intents"
+      metricsQuery: 'sum(notify_queue_pending_intents{<<.LabelMatchers>>})'
+
+    # notify_queue_retry_due: RetryWorker due deliveries gauge.
+    # Useful for scaling RetryWorker pods (when implemented as separate
+    # deployment in future scope).
+    - seriesQuery: 'notify_queue_retry_due{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: { resource: namespace }
+          pod: { resource: pod }
+      name:
+        as: "notify_queue_retry_due"
+      metricsQuery: 'sum(notify_queue_retry_due{<<.LabelMatchers>>})'
+
+    # notify_dlq_unreplayed: DLQ accumulating gauge. NOT for autoscale (DLQ
+    # signals problem, not capacity), but exposed for ops visibility via
+    # external.metrics.k8s.io API (kubectl proxy + custom dashboards).
+    - seriesQuery: 'notify_dlq_unreplayed{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: { resource: namespace }
+          pod: { resource: pod }
+      name:
+        as: "notify_dlq_unreplayed"
+      metricsQuery: 'sum(notify_dlq_unreplayed{<<.LabelMatchers>>})'
