@@ -69,7 +69,32 @@ images:
     # cluster image.
     # Hotfix cleanup: once this digest rolls out, delete the temporary
     # ingress rewrite muavin-auth-cookie-refresh-rewrite in platform-test.
-    digest: sha256:a7ab4dc6274cdf57ae5306b1e51e6486509ed9a6a88d317b46d212a4cacf7b32
+    #
+    # 2026-05-08 update: sha-26e2901 — platform-backend PR #120
+    # (af25b76, fix/api-gateway-notify-route). Adds notify route to
+    # `application-k8s.yml` (the active Spring profile in the test/prod
+    # clusters): `Path=/api/v1/notify/**` → notification-orchestrator:8089
+    # without StripPrefix (backend controllers expect the full
+    # `/api/v1/notify/...` path verbatim).
+    #
+    # Live evidence (testai 2026-05-07): browser console showed
+    # `/api/v1/notify/inbox/me` returning 404 even though the
+    # notification-orchestrator pod was up and the controller was
+    # mapped (kubectl exec smoke confirmed 401 for the same path —
+    # auth filter reject). Root cause: gateway k8s profile only
+    # declared the legacy 6-route table (`/auth, /users, /variants,
+    # /core, /reports, /schemas`); no /api/v1/notify/** entry. The
+    # k8s configmap carried `SPRING_CLOUD_GATEWAY_ROUTES_20_*` env
+    # vars but those use the legacy `spring.cloud.gateway.routes`
+    # namespace; the modern `spring.cloud.gateway.server.webflux.routes`
+    # namespace was never bound, so live route table fell back to
+    # the YAML profile.
+    #
+    # `application.properties` already carried the route under the
+    # modern namespace (covered by `NotifyRouteContractTest`). PR #120
+    # restores k8s-profile parity. Cross-AI peer review: Codex thread
+    # `019e0465` AGREE. Build run 25523950180.
+    digest: sha256:7c4f6fac2c9f7c5e5ff3c226639446534ead085acd951cc54989611b17c973aa
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     digest: sha256:df8b84d0cd02d064cf455f40017bd5cb4ca1be271e5e7068afeb36fc4526a7f1
