@@ -42,7 +42,11 @@
 #       ./backfill-subscriber-id-attributes.sh
 #
 set -euo pipefail
-shopt -s lastpipe
+# (Codex thread `019e03de` REVISE iter-3 absorb): no `shopt -s lastpipe`
+# — that option is Bash 4.2+ only and macOS ships Bash 3.2 by default,
+# so the script would fail on its very first line in dev-local. This
+# script does not have any pipeline-scope-dependent loops, so the
+# option is not actually needed.
 
 # ─── Config (env-overridable) ───────────────────────────────────────────
 

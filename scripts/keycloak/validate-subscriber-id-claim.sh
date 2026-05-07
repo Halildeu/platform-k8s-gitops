@@ -36,7 +36,11 @@
 #     reports only the boolean outcome and the maskeli claim type.
 #
 set -euo pipefail
-shopt -s lastpipe
+# (Codex thread `019e03de` REVISE iter-3 absorb): no `shopt -s lastpipe`
+# — that option is Bash 4.2+ only and macOS ships Bash 3.2 by default,
+# so the script would fail on its very first line in dev-local. The
+# validator uses here-strings for its `while` loops, so the option is
+# not actually needed.
 
 # ─── Config (env-overridable) ───────────────────────────────────────────
 
