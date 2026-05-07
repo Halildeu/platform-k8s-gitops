@@ -178,7 +178,7 @@ curl --no-buffer -N \
 SSE_PID=$!
 sleep 3
 # BASELINE: initial event geldi mi? (genelde 1)
-BASELINE=$(grep -c 'event: unread-count' /tmp/sse-A.log)
+BASELINE=$(grep -cE 'event: ?unread-count' /tmp/sse-A.log)
 echo "BASELINE event count: $BASELINE"
 [ "$BASELINE" -lt 1 ] && { echo "FAIL: initial unread-count event yok"; kill $SSE_PID $PF_PID; exit 1; }
 
@@ -212,7 +212,7 @@ kubectl --context $CTX -n $NS run psql-smoke-$$ --rm -i --restart=Never \
 #    Listener post-commit NOTIFY aldı → recompute count → Spring event →
 #    SSE emitter Pod A client'a push.
 sleep 5
-FINAL=$(grep -c 'event: unread-count' /tmp/sse-A.log)
+FINAL=$(grep -cE 'event: ?unread-count' /tmp/sse-A.log)
 echo "FINAL event count: $FINAL"
 if [ "$FINAL" -gt "$BASELINE" ]; then
   echo "PASS: cross-pod delivery doğrulandı ($BASELINE → $FINAL event)"
