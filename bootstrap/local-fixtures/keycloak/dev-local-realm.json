@@ -1,5 +1,5 @@
 {
-  "_comment": "Faz 17.1 fake KC realm — NOT_FOR_PROD. Mac dev k3d-dev cluster seed.",
+  "_comment": "Faz 17.1 fake KC realm — NOT_FOR_PROD. Mac dev k3d-dev cluster seed. Faz 23.6 PR-2: subscriberId protocol mapper added (Codex thread `019e03de` AGREE iter-1 model C — built-in oidc-usermodel-attribute-mapper, not custom SPI).",
   "realm": "dev-local",
   "enabled": true,
   "displayName": "Dev Local Realm (fake)",
@@ -38,7 +38,11 @@
       "credentials": [
         {"type": "password", "value": "dev", "temporary": false}
       ],
-      "realmRoles": ["ADMIN", "USER"]
+      "realmRoles": ["ADMIN", "USER"],
+      "_attribute_comment": "Faz 23.6 PR-2 (Codex thread `019e03de` REVISE iter-2 absorb): subscriberId attribute now mirrors the actual user-service `users.id` row that bootstrap/local-fixtures/postgres/seed-dev.sql writes for this email — UUID, not numeric. The backend SubscriberIdentityGuard accepts the claim as a string, so UUID is wire-compatible. Numeric IDs are used in environments where user-service uses bigint primary keys; the realm fixture follows whatever the canonical seed actually inserts.",
+      "attributes": {
+        "subscriberId": ["00000000-0000-0000-0000-000000000001"]
+      }
     },
     {
       "username": "viewer@localtest.me",
@@ -50,7 +54,26 @@
       "credentials": [
         {"type": "password", "value": "viewer", "temporary": false}
       ],
-      "realmRoles": ["VIEWER"]
+      "realmRoles": ["VIEWER"],
+      "attributes": {
+        "subscriberId": ["00000000-0000-0000-0000-000000000002"]
+      }
+    },
+    {
+      "_user_comment": "Faz 23.6 PR-2: dedicated test persona for the validate-subscriber-id-claim.sh dry-run script. NEVER set this user's password to the operator's login password — see global HARD RULE 'Kullanıcı Aktif Credential'ına Dokunma'. Use scripts/keycloak/validate-subscriber-id-claim.sh and pass EXPECTED_SUBSCRIBER_ID=1204 for a clean check.",
+      "username": "subscriber-claim-test@localtest.me",
+      "email": "subscriber-claim-test@localtest.me",
+      "firstName": "Subscriber",
+      "lastName": "Claim Test",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {"type": "password", "value": "subscriber-test-NOT_FOR_PROD", "temporary": false}
+      ],
+      "realmRoles": ["USER"],
+      "attributes": {
+        "subscriberId": ["1204"]
+      }
     }
   ],
 
@@ -71,7 +94,25 @@
       "webOrigins": ["*"],
       "attributes": {
         "access.token.lifespan": "300"
-      }
+      },
+      "_protocolMappers_comment": "Faz 23.6 PR-2 (Codex thread `019e03de` AGREE iter-1): subscriberId mapper inlined on the gateway client so direct-access-grant tokens (the dry-run validator's path) carry the claim. Prod/test realms should hoist this into a dedicated `canonical-subscriber-id` client scope and add it as a default scope on user-facing clients; for the dev fixture the inline shape keeps the seed file flat and easy to read.",
+      "protocolMappers": [
+        {
+          "name": "subscriberId",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "subscriberId",
+            "claim.name": "subscriberId",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
     },
     {
       "clientId": "platform-frontend",
@@ -82,7 +123,25 @@
       "redirectUris": [
         "http://app.localtest.me:8443/*"
       ],
-      "webOrigins": ["*"]
+      "webOrigins": ["*"],
+      "_protocolMappers_comment": "Faz 23.6 PR-2: same subscriberId mapper on the public frontend client so browser tokens (auth code + PKCE) also carry the canonical claim. Without this the SPA would still get tokens missing the claim and the strict-cutover backend flip would 403 every browser session.",
+      "protocolMappers": [
+        {
+          "name": "subscriberId",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "subscriberId",
+            "claim.name": "subscriberId",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
     }
   ]
 }
