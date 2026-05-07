@@ -128,6 +128,9 @@ Cross-pod smoke deterministik (pod sayısı ≥2 olunca):
 # Codex iter-1 absorb: Pod A → Pod B yönü deterministik. Bir pod'a SSE
 # bağlanırken mutation'ı diğer pod'a yönlendirmeden cross-pod kanıtı
 # eksik kalır. Aşağıdaki sıra "A bağlı + B mutate + A event aldı" üçlüsü.
+# Codex iter-2 absorb: container/service port 8089 (8080 değil); psql
+# notification-orchestrator imajında kurulu DEĞİL → ephemeral postgres
+# client pod kullan; tablo qualified (notify.notification_inbox).
 
 CTX="k3d-test"; NS="platform-test"
 PODS=( $(kubectl --context $CTX -n $NS get pod -l app.kubernetes.io/name=notification-orchestrator -o jsonpath='{.items[*].metadata.name}') )
@@ -135,26 +138,40 @@ PODS=( $(kubectl --context $CTX -n $NS get pod -l app.kubernetes.io/name=notific
 POD_A=${PODS[0]}; POD_B=${PODS[1]}
 
 # 1) Pod A'ya port-forward + SSE client (curl --no-buffer, başka shell'de)
-kubectl --context $CTX -n $NS port-forward $POD_A 8080:8080 &
+#    Container http port 8089 (deployment.yaml + service.yaml).
+kubectl --context $CTX -n $NS port-forward $POD_A 8089:8089 &
 PF_PID=$!
 sleep 2
-# Önce Pod A'nın "InboxNotifyListener listening" log mesajını gör:
+# Önce Pod A'nın "inbox LISTEN started" log mesajını gör (cross-pod hat
+# açıldı kanıtı):
 kubectl --context $CTX -n $NS logs $POD_A | grep -E "inbox LISTEN started" | tail -1
 
-# 2) Başka shell veya & ile arka plan: SSE bağlan, event sayar
+# 2) Başka shell veya & ile arka plan: SSE bağlan, event sayar.
+#    URL port 8089 (http port-forward target'ı ile aynı).
 curl --no-buffer -N -H 'Accept: text/event-stream' \
-  "http://localhost:8080/api/v1/notify/inbox/me/stream?orgId=default&subscriberId=smoke-x" > /tmp/sse-A.log &
+  "http://localhost:8089/api/v1/notify/inbox/me/stream?orgId=default&subscriberId=smoke-x" > /tmp/sse-A.log &
 SSE_PID=$!
 sleep 3
 
-# 3) Pod B üzerinden Direct DB ile NOTIFY tetikle (publish path bu
-#    pod'da çalışan kodla aynı transaction'da kalır):
-kubectl --context $CTX -n $NS exec $POD_B -- \
-  psql -h postgres -U notify -d notify_db -c \
-  "INSERT INTO notification_inbox(org_id,intent_id,subscriber_id,locale,topic_key,severity,state,created_at) \
-   VALUES('default','smoke-intent-'\$(date +%s),'smoke-x','tr-TR','test.topic','info','UNREAD',now());"
+# 3) Cross-pod NOTIFY tetikle. notification-orchestrator imajı JRE-only —
+#    psql kurulu değil. Ephemeral postgres-client pod ile DB'ye direct
+#    bağlanıp INSERT yap (Pod B'nin bunu publish etmesi gerekmiyor; cross-
+#    pod kanıtı için NOTIFY'ın hangi process'ten geldiği önemli değil —
+#    önemli olan Pod A'ya bağlı SSE client'ın event almasıdır):
+PGPASS=$(kubectl --context $CTX -n $NS get secret notification-orchestrator-secrets \
+  -o jsonpath='{.data.SPRING_DATASOURCE_PASSWORD}' | base64 -d)
+INTENT_ID="smoke-intent-$(date +%s)"
+kubectl --context $CTX -n $NS run psql-smoke-$$ --rm -i --restart=Never \
+  --image=postgres:15-alpine \
+  --env=PGPASSWORD="$PGPASS" -- \
+  psql "postgresql://notify@postgres:5432/notify_db" -c \
+  "INSERT INTO notify.notification_inbox \
+   (org_id,intent_id,subscriber_id,locale,topic_key,severity,state,created_at) \
+   VALUES('default','$INTENT_ID','smoke-x','tr-TR','test.topic','info','UNREAD',now());"
 
-# 4) Beklenen: /tmp/sse-A.log'a 'event: unread-count' satırı geldi
+# 4) Beklenen: /tmp/sse-A.log'a 'event: unread-count' satırı geldi.
+#    Pod A'nın listener'ı NOTIFY'ı yakaladı + Spring event publish etti +
+#    SSE emitter küresel client'a push'ladı.
 sleep 5
 grep -c 'event: unread-count' /tmp/sse-A.log
 # 1+ olmalı
@@ -165,10 +182,12 @@ kill $SSE_PID $PF_PID 2>/dev/null
 
 Alternatif kontrol — log delivery zinciri (sadece pasif gözlem):
 ```bash
-kubectl --context $CTX -n $NS logs $POD_B --tail=50 | grep "inbox NOTIFY"
-kubectl --context $CTX -n $NS logs $POD_A --tail=50 | grep -E "inbox SSE event send|InboxNotifyListener.*default::smoke-x"
-# B'de "NOTIFY: orgId=default subscriberId=smoke-x bytes=N"
-# A'da "SSE event send" başarılı gözükmeli
+# Hangi pod NOTIFY emit etti, hangi pod SSE event send etti — pasif izleme.
+# B (publisher) loglarında: "inbox NOTIFY: orgId=default subscriberId=smoke-x"
+# A (subscriber-bound emitter) loglarında: "inbox SSE event send" + key
+kubectl --context $CTX -n $NS logs --all-containers --tail=100 \
+  -l app.kubernetes.io/name=notification-orchestrator \
+  | grep -E "inbox NOTIFY|inbox SSE event send"
 ```
 
 ---
@@ -183,6 +202,39 @@ helm --kube-context k3d-test -n monitoring uninstall prometheus-adapter
 kubectl --context k3d-test -n platform-test get hpa notification-orchestrator
 # External metric "<unknown>" → CPU/Memory primary
 ```
+
+### PR-E.4 cross-pod smoke fail recovery (Codex iter-2 absorb, 2026-05-07)
+
+Eğer post-revert (HPA min=1 max=3 base default) cross-pod smoke FAIL ise
+(Pod A'ya bağlı SSE client Pod B'den tetiklenen NOTIFY için event
+ALMIYOR), aşağıdaki sırayla geri çekil:
+
+1. **Geçici HPA single-pod re-lock** (operatör unblock — repo truth ile
+   senkron olmasa da pre-prod kabul edilebilir):
+   ```bash
+   kubectl --context k3d-test -n platform-test patch hpa notification-orchestrator \
+     --type=json -p='[
+       {"op":"replace","path":"/spec/minReplicas","value":1},
+       {"op":"replace","path":"/spec/maxReplicas","value":1}
+     ]'
+   kubectl --context k3d-test -n platform-test rollout status deploy/notification-orchestrator
+   ```
+
+2. **Repo'ya yansıt**: PR #387 revert'inin reverse'ünü hemen yeni branch'a
+   çıkar (`fix/notify-pr-e-4-rollback-hpa-relock`) → kustomize/overlays/
+   test/kustomization.yaml'a HPA min=max=1 patch'ini geri ekle → açık ve
+   merge et. Live patch sadece geçici; gitops desired-state ile drift
+   bırakma.
+
+3. **Digest rollback (opsiyonel)** — eğer fail kök sebebi PR #89 image
+   bug'ı ise (örn. listener thread başlatma fail, NOTIFY publish 0 byte
+   payload), AYRI PR ile digest'i bir önceki bilinen-iyi sha-b758571'e
+   geri al. Bunu HPA re-lock PR'ı ile karıştırma — iki bağımsız değişim,
+   ayrı audit trail.
+
+4. **Backend yeni iter**: PR-E.4 image'ını fix et, yeni digest, yeni
+   image promotion PR + HPA tekrar revert PR. Tam döngüyü kullanıcıya
+   raporla.
 
 ---
 
