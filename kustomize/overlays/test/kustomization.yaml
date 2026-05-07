@@ -93,14 +93,38 @@ images:
     digest: sha256:b803507ac6b17240a8cced6878606f2aad7b31856140d6b5071352135babf37f
   - name: report-service
     newName: ghcr.io/halildeu/platform-backend-report-service
-    # 2026-05-05: Muavin v3 LIVE bump (test cluster) — kullanıcı explicit yetki.
-    # platform-ssot PR #561 b445ba96 (muavin code) + PR #563 8b9eea01 (deploy
-    # workflow Faz 18 fix). File-based SQL templates + 8-layer EUR fallback +
-    # multi-year BRANCH_UNION_THEN_OUTER + hidden audit columns.
-    # Codex thread 019df4ed iter-13 (build success post-package-access-grant).
-    # Image: sha-8b9eea0 (workflow_dispatch run 25370257017).
-    # Prod overlay AYRI PR ile (kasıtlı, test smoke sonrası).
-    digest: sha256:7b271f1927afa5690c2731f1d2def77ecba27f4564ce1b4831fa8df04922fca6
+    # 2026-05-07: canonical bump sha-9beed5f (platform-backend HEAD,
+    # build run 25480597483). Closes the live `/api/v1/reports/.../data`
+    # 400-cascade bug observed on testai 2026-05-07 ~05:36 (UUID-actor
+    # super-admin → audit POST 400 VALIDATION_ERROR loop).
+    #
+    # Cumulative coverage of THIS digest vs. previous (sha-8b9eea0,
+    # built from deprecated platform-ssot pipeline before GHCR 403):
+    #   PR #79  (sha-6a11969) PR-0.2 single-level GROUP BY backend
+    #   PR #81  (sha-b60f7fe) PR-0.3 multi-level GROUP BY + groupKeys
+    #   PR #82  (sha-86d3b97) fin-muhasebe-detay first capability flip
+    #   PR #86  (sha-2715866) 2nd wave opt-in (DEPT/BRANCH/PROJECT/CURRENCY)
+    #                          + ISNULL/NULLIF/LTRIM/RTRIM sentinel
+    #   PR #87  (sha-9a0f3ed) audit DTO @NotNull drop + ReportAuditClient
+    #                          actorIdentifier+actorKind metadata for
+    #                          UUID-only actors (THE audit 400 fix)
+    #   PR #88  (sha-9beed5f) MSSQL Testcontainers integration tests —
+    #                          test-only delta vs. #87 runtime (Codex
+    #                          thread 019e0119 iter-2 AGREE, CI 9/9).
+    #
+    # Why bump the report-service image (DTO change is in
+    # permission-service): PR #87 also touched ReportAuditClient to
+    # surface the immutable actorIdentifier (Keycloak sub UUID) in
+    # audit metadata even when performedBy is null. Without this image
+    # bump, the report side keeps dropping the actor identity field
+    # and the live audit table loses traceability for super-admin
+    # accesses — see permission-service block below for the symmetrical
+    # bump that drops @NotNull on the DTO.
+    #
+    # Cross-AI peer review: Codex thread 019e0119-7c9d-7541-8059-
+    # f9553c3303ce iter-2 AGREE on PR #88 (the test-only PR riding on
+    # top of #87's runtime delta).
+    digest: sha256:718ad4826c803a78c678bdd7749ac96ba5c2b394a907db4e15ddb0713278a3d8
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
@@ -173,7 +197,40 @@ images:
     #       "AUTHZ_DEGRADED: authz service degraded; retry", ex)
     # so status + body are consistent through gateway forward path.
     # 1264/1264 unit + 13/13 AuthorizationControllerV1Test PASS.
-    digest: sha256:7968fff58c1c806d2a31e851acc246d10d249565ddb5885febc03912ebb44e7d
+    #
+    # 2026-05-07 update: sha-9beed5f — platform-backend PR #87
+    # (9a0f3ed2) absorbed into HEAD. AuditEventIngestRequestDto loses
+    # @NotNull on `performedBy`; the field now accepts NULL for
+    # UUID-only actors (Keycloak realm super-admin, JWT.sub is a
+    # 36-char UUID, no numeric mapping available synchronously at the
+    # audit dispatch site). AuditEventService.recordMirroredEvent
+    # already preserves the null through the JPA save() path
+    # (`performedBy` column has no `nullable=false`).
+    #
+    # Bug closed: live `400 VALIDATION_ERROR` loop on
+    # POST /api/v1/internal/audit/events for every REPORT_ACCESS event
+    # mirrored by report-service. Symptom on testai 2026-05-07 ~05:36:
+    # AG Grid `/api/v1/reports/fin-muhasebe-detay/data` GET surfaced
+    # the audit failure as a downstream cascade; report-service caught
+    # the WebClient 400 internally as WARN but the audit row was
+    # silently dropped. Permission-service is the canonical source of
+    # truth for `permission_audit_events`; without this image bump the
+    # super-admin audit trail stays gapped.
+    #
+    # Test coverage delta (PR #87 head):
+    #   - InternalAuditEventControllerSecurityTest:
+    #       ingestEvent_acceptsNullPerformedBy → 201 (was 400 pre-fix)
+    #   - AuditEventServiceTest:
+    #       recordMirroredEvent_persistsNullPerformedBy_whenActorIs
+    #       KeycloakUuid → JPA save preserves null + actorIdentifier
+    #       in metadata
+    #
+    # Cross-AI peer review: Codex thread 019e0119-7c9d-7541-8059-
+    # f9553c3303ce iter-2 AGREE on the canonical bump rationale.
+    # Build run: 25480597483 (head=9beed5f2, status=success,
+    # workflow="CI - Image Build + GHCR Push"). PR #88 only added
+    # MSSQL Testcontainers tests — same runtime as sha-9a0f3ed.
+    digest: sha256:54a49c70304b0ea3b5b26876df6f187981c21c284a91e6359f7de3cb94f8631c
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
