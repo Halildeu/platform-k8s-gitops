@@ -75,27 +75,48 @@ watch -n 5 'kubectl --context k3d-test -n platform-test get hpa,pod -l app.kuber
 `notify_queue_pending_intents > 200 avg per-pod` olunca HPA pod artırır
 (base manifest maxReplicas=3 sınırı).
 
-### Faz 23.3 PR-E.3 SSE single-pod lock (2026-05-06)
+### Faz 23.3 PR-E.3 SSE single-pod lock — RESOLVED in PR-E.4 (2026-05-07)
 
-Backend PR Halildeu/platform-backend#84 SSE inbox stream eklendi.
-SseEmitter map + ApplicationEventPublisher JVM-local; multi-pod scale SSE
-delivery'i kırar. Test overlay HPA `min=max=1` lock zorunlu kılındı
-(gitops PR #385).
+**Tarihsel bağlam (artık geçerli değil)**: Backend PR
+Halildeu/platform-backend#84 SSE inbox stream eklendiğinde SseEmitter map +
+ApplicationEventPublisher JVM-local olduğu için multi-pod scale SSE
+delivery'i kırardı. Test overlay HPA `min=max=1` lock geçici olarak
+zorunlu kılındı (gitops PR #385).
 
-Operasyonel etki:
-- Test cluster'da `kubectl get hpa notification-orchestrator -n platform-test`
-  artık `MIN PODS: 1, MAX PODS: 1` gösterir
-- External metric `notify_queue_pending_intents` veri akışı korunur (gözlem +
-  alert için), ama scale-out Faz 23.3 PR-E.3 boyunca beklenmez
-- PR-E.4 cross-pod broadcast (Redis pub/sub / STOMP+broker) merge edilince
-  HPA `maxReplicas=3` geri açılabilir; o iter'da bu runbook + overlay patch
-  birlikte revert edilmeli
+**Çözüm (Faz 23.4 PR-E.4 — Halildeu/platform-backend#89)**: PG LISTEN/NOTIFY
+cross-pod broadcast pattern eklendi (ADR-0002 §7.1 PG-only;
+Redis pub/sub / STOMP+broker YASAK). Her pod'un `InboxNotifyListener`'ı
+NOTIFY event'lerini post-commit alır + lokal Spring event re-emit eder ⇒
+hangi pod handle ederse etsin tüm SSE client'lar update alır.
+@TransactionalEventListener(AFTER_COMMIT, fallbackExecution=true) ile
+single-pod fallback'da phantom event önlenir (rollback durumunda listener
+fire etmez).
 
-Rollout preflight:
+**Gitops revert**: PR #385 patch (HPA min=max=1) **kaldırıldı**;
+HPA base default (min=1, max=3) restored — CPU/memory autoscaling tekrar
+aktif.
+
+Operasyonel etki (revert sonrası):
+- `kubectl get hpa notification-orchestrator -n platform-test`
+  → `MIN PODS: 1, MAX PODS: 3` (base default)
+- CPU > %70 veya Memory > %80 olunca scale-out aktif; SSE delivery PG
+  LISTEN/NOTIFY üzerinden cross-pod sağlanır
+- External metric `notify_queue_pending_intents` veri akışı + scale-out
+  reaktivasyonu (alert + autoscale)
+
+Rollout preflight (gitops revert apply sonrası):
 ```bash
 kubectl --context k3d-test -n platform-test get deploy,hpa,pod \
   -l app.kubernetes.io/name=notification-orchestrator
-# Live current replicas >1 ise apply sonrası downscale + SSE client reconnect bekle
+# HPA MIN PODS: 1 / MAX PODS: 3 doğrula
+# Backend image: notification-orchestrator pod'ları PR #89 image digest'inde mi?
+kubectl --context k3d-test -n platform-test get pod -l app.kubernetes.io/name=notification-orchestrator -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'
+```
+
+Cross-pod smoke (pod sayısı >1 olunca):
+```bash
+# Pod A'ya SSE bağlan; Pod B'de inbox row insert; SSE client A event almalı
+kubectl --context k3d-test -n platform-test logs -l app.kubernetes.io/name=notification-orchestrator --tail=50 | grep -E "inbox NOTIFY|inbox SSE event send|InboxNotifyListener"
 ```
 
 ---
