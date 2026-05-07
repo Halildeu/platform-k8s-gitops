@@ -94,7 +94,33 @@ images:
     # modern namespace (covered by `NotifyRouteContractTest`). PR #120
     # restores k8s-profile parity. Cross-AI peer review: Codex thread
     # `019e0465` AGREE. Build run 25523950180.
-    digest: sha256:7c4f6fac2c9f7c5e5ff3c226639446534ead085acd951cc54989611b17c973aa
+    #
+    # 2026-05-08 update: sha-38a94f2 — platform-backend PR #121
+    # (6ee9151, fix/api-gateway-sse-cookie-auth). Live evidence
+    # 2026-05-08 testai: `/api/v1/notify/inbox/me/stream?...` returned
+    # a permanent stream of 401s in the browser console — native
+    # EventSource cannot send the Authorization header (DOM standard
+    # limitation), so Spring Security's default
+    # ServerBearerTokenAuthenticationConverter rejected every SSE
+    # request before any downstream filter could promote the
+    # erp_access_token cookie into a header.
+    #
+    # PR #121 introduces CookieAwareBearerTokenConverter — a
+    # gateway-level ServerAuthenticationConverter that delegates to
+    # the standard header converter first and falls back to the
+    # erp_access_token HttpOnly cookie ONLY when:
+    #   method == GET, path == /api/v1/notify/inbox/me/stream,
+    #   Authorization header absent, cookie value non-blank.
+    # The narrow path scope keeps every other authenticated route on
+    # the standard header-only contract; SubscriberIdentityGuard at
+    # the notification-orchestrator inner boundary stays the inner
+    # authorization perimeter (no service-level changes).
+    #
+    # Cross-AI peer review: Codex thread `019e0494` AGREE iter-1
+    # (cookie scope + path lock; rejected query-param token,
+    # fetch-event-source FE rewrite, WebSocket, permitAll). Build
+    # run 25526394372 SUCCESS, GHCR push verified.
+    digest: sha256:6fa95c3e34e9db05751e764f035756de4dd2228434ac92c26774cefd706320ac
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     digest: sha256:df8b84d0cd02d064cf455f40017bd5cb4ca1be271e5e7068afeb36fc4526a7f1
