@@ -209,13 +209,14 @@ patches:
   # PR-D.3.x'te prod overlay Deployment patch + ConfigMap patch
   # (DATASOURCE + OTLP) eklenir.
   #
-  # ÖNEMLİ — Faz 23.3 PR-E.3 SSE inbox stream multi-pod kısıtı:
-  # InboxSseController SseEmitter map + ApplicationEventPublisher JVM-local.
-  # PR-E.4 cross-pod broadcast (Redis pub/sub / STOMP+broker) gelene kadar
-  # prod activation HPA'yı min=max=1 KİLİTLEMELİ (Deployment replicas=2 NİYE
-  # YANLIŞ). Test overlay PR #385 ile bu kilidi uyguladı; prod activation
-  # PR'ında aynı patch zorunlu. Eski "replicas=2" planı PR-E.4 sonrası
-  # geri açılabilir.
+  # SSE multi-pod kısıtı RESOLVED (Faz 23.4 PR-E.4 — backend PR #89):
+  # InboxNotifyListener PG LISTEN/NOTIFY ile cross-pod broadcast yapıyor.
+  # PG-only stateful kanonik referansı ADR-0013 §"Stateful" (Mongo/Redis/
+  # RabbitMQ YASAK) + PLAN D38/D39 notification authority kararı
+  # (ADR-0002 §7.1 platform fiziksel taban; notification-spesifik kural
+  # ADR-0013'tedir). Prod activation PR'ında HPA min=max=1 KİLİDİ ARTIK
+  # GEREKMİYOR; base HPA default (min=1, max=3) kullanılabilir, replicas=2
+  # baseline planı geçerli.
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:

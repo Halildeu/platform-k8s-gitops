@@ -998,6 +998,21 @@ patches:
       - op: add
         path: /data/LOGGING_LEVEL_COM_SERBAN_NOTIFY
         value: "DEBUG"
+      # Faz 23.4 PR-E.4 follow-up (Codex 019e015f iter-4 absorb):
+      # notification-orchestrator JWT issuer test cluster'da
+      # https://testai.acik.com/realms/platform-test olmalı; backend default
+      # http://localhost:8081/realms/serban (application.yml SECURITY_JWT_ISSUER_URI:default)
+      # test cluster'da invalid → /api/v1/notify/** authenticated endpoint'ler
+      # JWT verify fail eder. Bu drift permission-service + report-service'da
+      # zaten set'li (SECURITY_JWT_ISSUER + SECURITY_JWT_JWK_SET_URI), ama
+      # notification-orchestrator-config'a hiç eklenmemiş. PR-E.4 cross-pod
+      # SSE smoke için bu override gerekli; pre-existing gap kapatılır.
+      - op: add
+        path: /data/SECURITY_JWT_ISSUER_URI
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
       # Faz 23.2 PR-D.2 — OTLP runtime activation (Codex 019dfe0f Q4 absorb).
       # PR-C tracing readiness (sampling=0.0, endpoint empty) → PR-D.2 test
       # cluster activation: 10% sampling, Tempo direct OTLP HTTP receiver.
@@ -1023,21 +1038,17 @@ patches:
         value:
           observability.acik.com/tempo-otlp-activation: "pr-d-2"
 
-  # Faz 23.3 PR-E.3 SSE inbox stream — HPA min=max=1 kilidi (Codex iter-1 P1.4
-  # absorb). InboxSseController'ın SseEmitter map'i + ApplicationEventPublisher
-  # JVM-local; multi-pod scale durumunda subscriber A pod'a bağlıyken pod B'de
-  # row insert olursa SSE event kaybedilir. PR-E.4 cross-pod broadcast (Redis
-  # pub/sub veya STOMP+broker) gelene kadar single-pod kilidi zorunlu.
-  - target:
-      kind: HorizontalPodAutoscaler
-      name: notification-orchestrator
-    patch: |-
-      - op: replace
-        path: /spec/minReplicas
-        value: 1
-      - op: replace
-        path: /spec/maxReplicas
-        value: 1
+  # Faz 23.4 PR-E.4 absorb (revert PR-E.3 HPA min=max=1 lock):
+  # Backend PR Halildeu/platform-backend#89 lands cross-pod broadcast via PG
+  # LISTEN/NOTIFY. PG-only stateful kanonik referansı ADR-0013 §"Stateful"
+  # (Mongo/Redis/RabbitMQ YASAK) + PLAN D38/D39 notification authority;
+  # ADR-0002 §7.1 fiziksel taban kuralı, notification-spesifik kural
+  # ADR-0013'tedir. Each pod's InboxNotifyListener now receives all NOTIFY
+  # events post-commit and re-emits the local Spring event so its SSE
+  # clients are updated regardless of which pod handled the original
+  # mutation. The JVM-local SseEmitter map + ApplicationEventPublisher race
+  # that motivated PR-385 single-pod lock is eliminated. HPA min=1/max=3
+  # base default is restored — CPU/memory autoscaling re-engaged.
 
   - target:
       kind: Deployment
