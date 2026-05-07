@@ -550,10 +550,21 @@ images:
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
   # (PR-A security foundation + PR-B audit + KVKK erasure + observability).
   # build run 25413391435 SUCCESS.
+  #
+  # 2026-05-07 update: Faz 23.4 PR-E.4 MERGED — bump to sha-b8673e9.
+  # Backend PR Halildeu/platform-backend#89 lands cross-pod SSE broadcast
+  # via PG LISTEN/NOTIFY (InboxNotifyListener post-commit recompute,
+  # @TransactionalEventListener AFTER_COMMIT phantom-event guard, dedicated
+  # PGSimpleDataSource avoiding HikariCP starvation). PR-E.3 single-pod
+  # constraint resolved → gitops PR #387 (HPA min=max=1 lock revert) can
+  # follow this digest bump; smoke kanıtı sonrası PR #387 merge edilir.
+  # Cross-AI peer review: Codex thread 019e00ec iter-3 AGREE
+  # ready_to_merge:true (PR #89). CI 9/9 SUCCESS, build run 25482497815
+  # job 74769833689 SUCCESS, GHCR push verified.
   # D30 immutable: digest pin zorunlu (drift gate :latest reddeder).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:317f68f3b10c1db51f17d110a0227de31166cc4e19e26ff82c1d735723564934
+    digest: sha256:b329d2e74fc7b75c1cbb4b47ee8e0f1a0253d670e4efd1dd652de54e48dba125
 
 patches:
   # Replica 0 default (scale-to-zero)
