@@ -131,14 +131,26 @@ Cross-pod smoke deterministik (pod sayısı ≥2 olunca):
 # Codex iter-2 absorb: container/service port 8089 (8080 değil); psql
 # notification-orchestrator imajında kurulu DEĞİL → ephemeral postgres
 # client pod kullan; tablo qualified (notify.notification_inbox).
+# Codex iter-3 absorb: SSE endpoint authenticated → JWT zorunlu;
+# INSERT tek başına NOTIFY tetiklemez (DB trigger yok; publishViaPgNotify
+# Java katmanında); SSE log post-mutation event sayısı initial event ile
+# karışmamalı (BEFORE/AFTER count delta zorunlu).
 
 CTX="k3d-test"; NS="platform-test"
 PODS=( $(kubectl --context $CTX -n $NS get pod -l app.kubernetes.io/name=notification-orchestrator -o jsonpath='{.items[*].metadata.name}') )
 [ ${#PODS[@]} -lt 2 ] && { echo "Pod sayısı <2; HPA scale-out tetikle veya manuel scale et"; exit 1; }
 POD_A=${PODS[0]}; POD_B=${PODS[1]}
 
-# 1) Pod A'ya port-forward + SSE client (curl --no-buffer, başka shell'de)
-#    Container http port 8089 (deployment.yaml + service.yaml).
+# 0) Test JWT al (Keycloak test realm; admin-cli client password grant).
+#    SSE endpoint /api/v1/notify/** authenticated; port-forward gateway'i
+#    bypass eder ama Spring Security hâlâ token bekler.
+KC_URL="https://testai.acik.com/realms/platform-test/protocol/openid-connect/token"
+JWT=$(curl -s -X POST "$KC_URL" \
+  -d "client_id=admin-cli&grant_type=password&username=test-admin&password=$TEST_ADMIN_PASS" \
+  | jq -r '.access_token')
+[ -z "$JWT" ] || [ "$JWT" = "null" ] && { echo "FAIL: JWT alınamadı"; exit 1; }
+
+# 1) Pod A'ya port-forward (container http port 8089).
 kubectl --context $CTX -n $NS port-forward $POD_A 8089:8089 &
 PF_PID=$!
 sleep 2
@@ -146,35 +158,56 @@ sleep 2
 # açıldı kanıtı):
 kubectl --context $CTX -n $NS logs $POD_A | grep -E "inbox LISTEN started" | tail -1
 
-# 2) Başka shell veya & ile arka plan: SSE bağlan, event sayar.
-#    URL port 8089 (http port-forward target'ı ile aynı).
-curl --no-buffer -N -H 'Accept: text/event-stream' \
+# 2) SSE bağlan with JWT. Initial event hemen gelir; BASELINE event sayısı
+#    log'lanır. Sonra BEFORE marker bırakılır ve mutation tetiklenir.
+curl --no-buffer -N \
+  -H "Authorization: Bearer $JWT" \
+  -H 'Accept: text/event-stream' \
   "http://localhost:8089/api/v1/notify/inbox/me/stream?orgId=default&subscriberId=smoke-x" > /tmp/sse-A.log &
 SSE_PID=$!
 sleep 3
+# BASELINE: initial event geldi mi? (genelde 1)
+BASELINE=$(grep -c 'event: unread-count' /tmp/sse-A.log)
+echo "BASELINE event count: $BASELINE"
+[ "$BASELINE" -lt 1 ] && { echo "FAIL: initial unread-count event yok"; kill $SSE_PID $PF_PID; exit 1; }
 
-# 3) Cross-pod NOTIFY tetikle. notification-orchestrator imajı JRE-only —
-#    psql kurulu değil. Ephemeral postgres-client pod ile DB'ye direct
-#    bağlanıp INSERT yap (Pod B'nin bunu publish etmesi gerekmiyor; cross-
-#    pod kanıtı için NOTIFY'ın hangi process'ten geldiği önemli değil —
-#    önemli olan Pod A'ya bağlı SSE client'ın event almasıdır):
+# 3) Cross-pod NOTIFY tetikle. publishViaPgNotify Java'da
+#    SELECT pg_notify('inbox_updated', '{"orgId":...,"subscriberId":...}')
+#    çalıştırır; DB trigger YOK. Smoke recipe iki yol:
+#    (A) publishViaPgNotify iş mantığını ephemeral psql ile re-create:
+#        BEGIN; INSERT ... ; SELECT pg_notify(...); COMMIT;
+#        — listener post-commit NOTIFY alır → countUnreadBySubscriber → 1
+#    (B) gateway-auth'lu yol: POST /api/v1/notify/submit (her pod'da
+#        publish path'ini exercise eder ama JWT permission gerekir;
+#        operatör isterse alternatif).
+#    Aşağıda (A) kullanılıyor.
 PGPASS=$(kubectl --context $CTX -n $NS get secret notification-orchestrator-secrets \
   -o jsonpath='{.data.SPRING_DATASOURCE_PASSWORD}' | base64 -d)
 INTENT_ID="smoke-intent-$(date +%s)"
 kubectl --context $CTX -n $NS run psql-smoke-$$ --rm -i --restart=Never \
   --image=postgres:15-alpine \
   --env=PGPASSWORD="$PGPASS" -- \
-  psql "postgresql://notify@postgres:5432/notify_db" -c \
-  "INSERT INTO notify.notification_inbox \
-   (org_id,intent_id,subscriber_id,locale,topic_key,severity,state,created_at) \
-   VALUES('default','$INTENT_ID','smoke-x','tr-TR','test.topic','info','UNREAD',now());"
+  psql "postgresql://notify@postgres:5432/notify_db" -c "
+    BEGIN;
+    INSERT INTO notify.notification_inbox
+      (org_id,intent_id,subscriber_id,locale,topic_key,severity,state,created_at)
+    VALUES
+      ('default','$INTENT_ID','smoke-x','tr-TR','test.topic','info','UNREAD',now());
+    SELECT pg_notify('inbox_updated', '{\"orgId\":\"default\",\"subscriberId\":\"smoke-x\"}');
+    COMMIT;
+  "
 
-# 4) Beklenen: /tmp/sse-A.log'a 'event: unread-count' satırı geldi.
-#    Pod A'nın listener'ı NOTIFY'ı yakaladı + Spring event publish etti +
-#    SSE emitter küresel client'a push'ladı.
+# 4) Beklenen: BASELINE'dan sonra 1+ event daha geldi (BASELINE+1 ≥ 2).
+#    Listener post-commit NOTIFY aldı → recompute count → Spring event →
+#    SSE emitter Pod A client'a push.
 sleep 5
-grep -c 'event: unread-count' /tmp/sse-A.log
-# 1+ olmalı
+FINAL=$(grep -c 'event: unread-count' /tmp/sse-A.log)
+echo "FINAL event count: $FINAL"
+if [ "$FINAL" -gt "$BASELINE" ]; then
+  echo "PASS: cross-pod delivery doğrulandı ($BASELINE → $FINAL event)"
+else
+  echo "FAIL: post-mutation event yok ($BASELINE = $FINAL)"
+fi
 
 # Cleanup
 kill $SSE_PID $PF_PID 2>/dev/null
@@ -183,8 +216,9 @@ kill $SSE_PID $PF_PID 2>/dev/null
 Alternatif kontrol — log delivery zinciri (sadece pasif gözlem):
 ```bash
 # Hangi pod NOTIFY emit etti, hangi pod SSE event send etti — pasif izleme.
-# B (publisher) loglarında: "inbox NOTIFY: orgId=default subscriberId=smoke-x"
-# A (subscriber-bound emitter) loglarında: "inbox SSE event send" + key
+# Smoke ile karıştırma: bu komut sadece tüm pod'ların log'unda NOTIFY
+# çıkıp çıkmadığını + hangi pod'da SSE send olduğunu gösterir. NOTIFY
+# fail durumunda root cause hızlı bulmak için kullanılır.
 kubectl --context $CTX -n $NS logs --all-containers --tail=100 \
   -l app.kubernetes.io/name=notification-orchestrator \
   | grep -E "inbox NOTIFY|inbox SSE event send"
