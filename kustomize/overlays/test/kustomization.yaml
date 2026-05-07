@@ -1057,6 +1057,14 @@ patches:
   # Faz 23.1 PR5 D29-NOTIFY: notification-orchestrator activation (Codex 019dfaaa).
   # replicas=1 (test cluster); maxSurge=0/maxUnavailable=1 (quota-aware rollout).
   # ConfigMap patch: SPRING_DATASOURCE_URL + KEYCLOAK + JWT issuer test realm.
+  #
+  # PR-Notify-1 GitOps follow-up (2026-05-07): CPU limit overlay-down to 400m
+  # (base default 750m). Live evidence: namespace platform-quota.limits.cpu = 8;
+  # used = 7.85; base 750m would push the new RS to 8.6 → FailedCreate. The
+  # 400m override fits within quota headroom AND is sufficient for the
+  # JVM warm-up (paired with PR #394 startupProbe 200s+ ceiling). Production
+  # overlay does NOT inherit this patch when notification-orchestrator
+  # activation lands in PR-D.3.x (prod cluster has separate quota).
   - target:
       kind: Deployment
       name: notification-orchestrator
@@ -1070,6 +1078,9 @@ patches:
       - op: replace
         path: /spec/strategy/rollingUpdate/maxUnavailable
         value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "400m"
   - target:
       kind: ConfigMap
       name: notification-orchestrator-config
