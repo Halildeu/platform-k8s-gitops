@@ -652,8 +652,8 @@ images:
     # sha256:be3f6233...
     # Companion runtime patch: deployment strategy bumped to
     # maxSurge=0/maxUnavailable=1 so the new pod terminates the old
-    # before scheduling (fits within quota); same patch should land
-    # in the overlay/strategy patch in a follow-up.
+    # before scheduling (fits within quota); same patch lands in this
+    # PR's strategy override below.
     digest: sha256:64fc98910164b0753a5b54f4441306ae4288e458f3a7924d4ef18254c798b8f9
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
