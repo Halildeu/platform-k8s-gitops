@@ -78,7 +78,7 @@ When all three conditions hold, the cutover is the env flip + a rolling restart 
 
 ## HARD RULE notes
 
-* **Operator login protection**: F4 backfill MUST always pass `OPERATOR_LOGIN_USERNAME=<your-username>` so the script skips the operator's own user. The script's default skips no one — you'll see `skippedOperator: 0` in the report — so this is a per-run decision the runbook surfaces.
+* **Operator login protection** (Codex thread `019e03de` REVISE iter-2 fail-closed): F4 backfill is now hard-gated. `APPLY=1` aborts up-front when `OPERATOR_LOGIN_USERNAME` is empty (override: `ALLOW_OPERATOR_UNPROTECTED=1`). After the sweep, `APPLY=1` aborts when `skippedOperator==0` (proof the protection actually fired); override: `OPERATOR_USER_NOT_IN_REALM_OK=1`. Both overrides are intentional escape hatches — use them only when the realm genuinely has no operator login user.
 * **No password mutation**: neither script touches passwords. The dev-local fixture seeds the test persona's password as `subscriber-test-NOT_FOR_PROD`, but staging/prod realms must never have personas seeded with a password the operator did not author.
 * **Pre-prod authority**: per "Pre-Production Full Authority", the agent can run F2-F4 end-to-end against the pre-prod cluster with admin credentials, write the dry-run evidence to `docs/evidence/pr2-...`, and report. Live (prod) realm runs are still operator decisions because the cutover gate (F5) is irreversible at the metric level (a botched flip will 403 every browser session for as long as it takes to re-roll).
 

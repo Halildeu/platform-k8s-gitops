@@ -61,8 +61,22 @@ ALLOW_OVERWRITE="${ALLOW_OVERWRITE:-0}"
 
 # Operator's own login username — protected from the backfill sweep.
 # Empty by default; set via env in real runs so the operator can
-# never accidentally touch their own user.
+# never accidentally touch their own user. Codex thread `019e03de`
+# REVISE iter-2: the script now FAILS CLOSED — `APPLY=1` aborts when
+# this is empty unless `ALLOW_OPERATOR_UNPROTECTED=1` is set
+# (intentional override for runs where no operator login user lives
+# in the target realm at all).
 OPERATOR_LOGIN_USERNAME="${OPERATOR_LOGIN_USERNAME:-}"
+
+# Operator-protection guards (HARD RULE, fail-closed):
+#   1. APPLY=1 + empty OPERATOR_LOGIN_USERNAME → abort, unless
+#      ALLOW_OPERATOR_UNPROTECTED=1 explicitly opts out.
+#   2. APPLY=1 + OPERATOR_LOGIN_USERNAME set + skippedOperator==0
+#      after the sweep → abort, unless OPERATOR_USER_NOT_IN_REALM_OK=1
+#      explicitly acknowledges the operator does not exist in this
+#      realm.
+ALLOW_OPERATOR_UNPROTECTED="${ALLOW_OPERATOR_UNPROTECTED:-0}"
+OPERATOR_USER_NOT_IN_REALM_OK="${OPERATOR_USER_NOT_IN_REALM_OK:-0}"
 
 # ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -79,6 +93,12 @@ die() {
     echo "ERROR: $*" >&2
     exit 1
 }
+
+# ─── 0. Fail-closed pre-flight (Codex thread `019e03de` REVISE iter-2) ──
+
+if [ "$APPLY" = "1" ] && [ -z "$OPERATOR_LOGIN_USERNAME" ] && [ "$ALLOW_OPERATOR_UNPROTECTED" != "1" ]; then
+    die "APPLY=1 requires OPERATOR_LOGIN_USERNAME to be set (HARD RULE — never touch the operator's login user attributes). Set OPERATOR_LOGIN_USERNAME=<your-username> or, if no operator login user lives in this realm, explicitly opt out with ALLOW_OPERATOR_UNPROTECTED=1."
+fi
 
 # ─── 1. Admin token ─────────────────────────────────────────────────────
 
@@ -244,4 +264,15 @@ conflict_count="$(printf '%s' "$conflicts_json" | jq 'length')"
 if [ "$conflict_count" -gt 0 ] && [ "$ALLOW_OVERWRITE" != "1" ]; then
     exit 1
 fi
+
+# Codex thread `019e03de` REVISE iter-2 fail-closed gate #2:
+# APPLY=1 with OPERATOR_LOGIN_USERNAME set MUST result in
+# skippedOperator>=1 (proof the protection actually fired). If the
+# operator user is genuinely not in this realm, opt out explicitly
+# with OPERATOR_USER_NOT_IN_REALM_OK=1.
+if [ "$APPLY" = "1" ] && [ -n "$OPERATOR_LOGIN_USERNAME" ] && [ "$skipped_operator" -eq 0 ] && [ "$OPERATOR_USER_NOT_IN_REALM_OK" != "1" ]; then
+    echo "ERROR: APPLY=1 + OPERATOR_LOGIN_USERNAME='$OPERATOR_LOGIN_USERNAME' but skippedOperator==0 (the operator user was not seen in this realm). This means the operator-protection guard NEVER FIRED — that is either a typo in OPERATOR_LOGIN_USERNAME or the operator user genuinely does not exist in this realm. If the latter is intentional, opt out with OPERATOR_USER_NOT_IN_REALM_OK=1." >&2
+    exit 1
+fi
+
 exit 0

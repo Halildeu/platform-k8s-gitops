@@ -139,7 +139,21 @@ else
     done <<<"$default_scope_names"
 fi
 
-[ "$mapper_present" = "true" ] || die "subscriberId mapper not found on client=$OIDC_CLIENT_ID (realm=$KEYCLOAK_REALM); add the oidc-usermodel-attribute-mapper inline or via a default client scope"
+if [ "$mapper_present" != "true" ]; then
+    # Codex thread `019e03de` REVISE iter-2 (non-blocking): emit a
+    # structured fail JSON instead of dying with a bare error so the
+    # runbook can pipe the output to evidence files even on failure.
+    jq -n \
+        --arg realm "$KEYCLOAK_REALM" \
+        --arg client "$OIDC_CLIENT_ID" \
+        '{
+           realm: $realm,
+           client: $client,
+           mapperPresent: false,
+           failureReason: "subscriberId mapper not found on the OIDC client (checked inline + default client scopes); add the built-in oidc-usermodel-attribute-mapper or hoist into a canonical-subscriber-id client scope"
+         }' >&2
+    exit 1
+fi
 
 # ─── 3. (Optional) Ensure test persona has subscriberId attribute ──────
 

@@ -39,9 +39,9 @@
         {"type": "password", "value": "dev", "temporary": false}
       ],
       "realmRoles": ["ADMIN", "USER"],
-      "_attribute_comment": "Faz 23.6 PR-2: subscriberId attribute populated for the dev login user so the dev token already carries the canonical claim. Value matches the user-service users.id row that the dev seed creates.",
+      "_attribute_comment": "Faz 23.6 PR-2 (Codex thread `019e03de` REVISE iter-2 absorb): subscriberId attribute now mirrors the actual user-service `users.id` row that bootstrap/local-fixtures/postgres/seed-dev.sql writes for this email — UUID, not numeric. The backend SubscriberIdentityGuard accepts the claim as a string, so UUID is wire-compatible. Numeric IDs are used in environments where user-service uses bigint primary keys; the realm fixture follows whatever the canonical seed actually inserts.",
       "attributes": {
-        "subscriberId": ["1"]
+        "subscriberId": ["00000000-0000-0000-0000-000000000001"]
       }
     },
     {
@@ -56,7 +56,7 @@
       ],
       "realmRoles": ["VIEWER"],
       "attributes": {
-        "subscriberId": ["2"]
+        "subscriberId": ["00000000-0000-0000-0000-000000000002"]
       }
     },
     {
