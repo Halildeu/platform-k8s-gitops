@@ -71,17 +71,20 @@ spec:
             limits:
               cpu: 750m
               memory: 512Mi
-          # PR-Notify-1 GitOps follow-up (2026-05-07): startupProbe added so the
-          # JVM warm-up phase (~120 s under tight CPU budgets) cannot trip the
-          # liveness probe mid-boot. Live evidence (testai.acik.com 2026-05-07):
-          # without this probe, `Started NotificationOrchestratorApplication
-          # in 121.798 seconds` was followed immediately by liveness-driven
-          # shutdown, producing a 5+ restart CrashLoopBackOff that masked the
-          # real fix. Failure ceiling = 40 × 5 s = 200 s, generous enough for
-          # cold-start under the test cluster's 250 m CPU limit, low enough
-          # that a truly stuck JVM still surfaces within ~3 minutes. Once the
-          # startupProbe succeeds, liveness/readiness take over with the
-          # original cadence (no semantic change to runtime probes).
+          # PR-Notify-1 GitOps follow-up (2026-05-07; Codex iter-1 absorb):
+          # startupProbe added so the JVM warm-up phase (~120 s under
+          # constrained CPU scheduling — base request 150m, namespace quota
+          # pressure on the test cluster) cannot trip the liveness probe
+          # mid-boot. Live evidence (testai.acik.com 2026-05-07): without
+          # this probe, `Started NotificationOrchestratorApplication in
+          # 121.798 seconds` was followed immediately by liveness-driven
+          # shutdown, producing a 5+ restart CrashLoopBackOff that masked
+          # the real fix. Effective worst-case kill window is ~215 s
+          # (initialDelaySeconds 15 + failureThreshold 40 × periodSeconds 5),
+          # generous enough for cold-start while still surfacing a truly
+          # stuck JVM within ~3.5 minutes. Once the startupProbe succeeds,
+          # liveness/readiness take over with the original cadence (no
+          # semantic change to runtime probes).
           startupProbe:
             httpGet:
               path: /actuator/health/liveness
