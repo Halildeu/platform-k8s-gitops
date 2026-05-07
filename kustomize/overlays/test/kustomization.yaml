@@ -998,6 +998,21 @@ patches:
       - op: add
         path: /data/LOGGING_LEVEL_COM_SERBAN_NOTIFY
         value: "DEBUG"
+      # Faz 23.4 PR-E.4 follow-up (Codex 019e015f iter-4 absorb):
+      # notification-orchestrator JWT issuer test cluster'da
+      # https://testai.acik.com/realms/platform-test olmalı; backend default
+      # http://localhost:8081/realms/serban (application.yml SECURITY_JWT_ISSUER_URI:default)
+      # test cluster'da invalid → /api/v1/notify/** authenticated endpoint'ler
+      # JWT verify fail eder. Bu drift permission-service + report-service'da
+      # zaten set'li (SECURITY_JWT_ISSUER + SECURITY_JWT_JWK_SET_URI), ama
+      # notification-orchestrator-config'a hiç eklenmemiş. PR-E.4 cross-pod
+      # SSE smoke için bu override gerekli; pre-existing gap kapatılır.
+      - op: add
+        path: /data/SECURITY_JWT_ISSUER_URI
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: add
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
       # Faz 23.2 PR-D.2 — OTLP runtime activation (Codex 019dfe0f Q4 absorb).
       # PR-C tracing readiness (sampling=0.0, endpoint empty) → PR-D.2 test
       # cluster activation: 10% sampling, Tempo direct OTLP HTTP receiver.

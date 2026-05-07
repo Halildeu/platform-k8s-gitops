@@ -123,23 +123,34 @@ kubectl --context k3d-test -n platform-test get pod \
 # tamamlanmamış veya pinleme drift'i var.
 ```
 
-Cross-pod smoke deterministik (pod sayısı ≥2 olunca):
+Cross-pod smoke deterministik — DB-direct NOTIFY yaklaşımı (pod sayısı ≥2 olunca):
 ```bash
-# Codex iter-1 absorb: Pod A → Pod B yönü deterministik. Bir pod'a SSE
-# bağlanırken mutation'ı diğer pod'a yönlendirmeden cross-pod kanıtı
-# eksik kalır. Aşağıdaki sıra "A bağlı + B mutate + A event aldı" üçlüsü.
-# Codex iter-2 absorb: container/service port 8089 (8080 değil); psql
+# Cross-pod kanıtı: bir pod'a (POD_A) SSE bağlan; NOTIFY publish'i
+# **POD_A'nın kendi process'inden DEĞİL** — cluster dışındaki ephemeral
+# psql client'tan gelir. POD_A'nın SSE client'ı bu NOTIFY'a karşılık
+# event aldıysa, bu LISTEN/NOTIFY hattının çalıştığını ve JVM-local
+# event publisher race'inin (PR-E.3 motivasyonu) kapandığını kanıtlar.
+# POD_B aynı pattern'i ayrı bir tarafta confirm eder ama tek pod'a SSE
+# bağlamak yeterli kanıt; smoke recipe POD_A'ya odaklı.
+#
+# Codex iter-1 absorb: deterministik recipe (eski log grep yetmez).
+# Codex iter-2 absorb: container http port 8089 (8080 değil); psql
 # notification-orchestrator imajında kurulu DEĞİL → ephemeral postgres
-# client pod kullan; tablo qualified (notify.notification_inbox).
-# Codex iter-3 absorb: SSE endpoint authenticated → JWT zorunlu;
-# INSERT tek başına NOTIFY tetiklemez (DB trigger yok; publishViaPgNotify
-# Java katmanında); SSE log post-mutation event sayısı initial event ile
-# karışmamalı (BEFORE/AFTER count delta zorunlu).
+# client pod; tablo qualified (notify.notification_inbox).
+# Codex iter-3 absorb: SSE endpoint authenticated → JWT; INSERT tek
+# başına NOTIFY tetiklemez (DB trigger yok; publishViaPgNotify Java
+# katmanında); SSE log post-mutation event sayısı BASELINE/FINAL delta.
+# Codex iter-4 absorb: notification-orchestrator-config test overlay'de
+# SECURITY_JWT_ISSUER_URI override'ı eklendi (PR #387 same-PR; backend
+# default localhost:8081/realms/serban test cluster için invalid).
+# Narrative drift düzeltildi: POD_B mutate yapısı kaldırıldı; recipe
+# DB-direct NOTIFY smoke odaklı (cross-pod kanıtı için yeterli).
 
 CTX="k3d-test"; NS="platform-test"
 PODS=( $(kubectl --context $CTX -n $NS get pod -l app.kubernetes.io/name=notification-orchestrator -o jsonpath='{.items[*].metadata.name}') )
-[ ${#PODS[@]} -lt 2 ] && { echo "Pod sayısı <2; HPA scale-out tetikle veya manuel scale et"; exit 1; }
-POD_A=${PODS[0]}; POD_B=${PODS[1]}
+[ ${#PODS[@]} -lt 1 ] && { echo "Pod yok; deploy aktif değil"; exit 1; }
+[ ${#PODS[@]} -lt 2 ] && echo "UYARI: pod sayısı <2 — cross-pod kanıtı zayıf; HPA scale-out tetikle veya manuel scale ile pod sayısını artır."
+POD_A=${PODS[0]}
 
 # 0) Test JWT al (Keycloak test realm; admin-cli client password grant).
 #    SSE endpoint /api/v1/notify/** authenticated; port-forward gateway'i
