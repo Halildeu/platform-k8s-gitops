@@ -533,7 +533,38 @@ images:
     # but had no DOM mount point because canonical ReportPage stopped
     # calling renderFilters during the Faz 19 split refactor).
     # Build run: 25411746720 SUCCESS.
-    digest: sha256:eec92b34c1417e20bd6b1c682932779cc9cabf3ded11f69d62bcc52246fb7210
+    #
+    # 2026-05-07 update: sha-bdc8474 — platform-web PR #280
+    # (bdc84749fa397824c47ed428d9e09e09c79a0d56). Safe re-apply of the
+    # mfe-endpoint-admin skeleton + status surface that PR #261
+    # reverted. The white-screen root cause (eager remote loader
+    # resolving the data-URI STUB at SPA boot for unreachable port
+    # 3009) is closed by gating the loader push on
+    # `isEndpointAdminRemoteEnabled()`; flag is default OFF so this
+    # overlay does NOT activate the route at runtime — endpoint-admin
+    # remains shell-safe-but-dark until FE-001 prerequisites are
+    # verified end-to-end: backend image platform-backend-
+    # endpoint-admin-service `e9cb8dd0` pod digest live in test,
+    # OpenFGA seed for `module:endpoint-admin` applied + allow/deny
+    # smoke verified, `/v1/authz/me` exposes ENDPOINT_ADMIN for the
+    # intended persona, and flag-OFF cluster smoke proves no white-
+    # screen plus `/endpoint-admin/*` redirects to /home.
+    # Hard rules at this overlay flip:
+    #   - Feature flag `VITE_SHELL_ENABLE_ENDPOINT_ADMIN_REMOTE` stays
+    #     unset (default false). No live/admin E2E claim.
+    #   - No claim wiring; `/endpoint-admin/*` redirects to /home.
+    #   - No prod overlay change in this PR.
+    # Build run: 25492914244 (CI - Web Image Build + GHCR Push, prod
+    # + testai variants both green). Auto-deploy dispatch fired
+    # gitops `Deploy testai (auto)` run 25493085454 which already ran
+    # `kubectl set image` against the live deployment. Gate 1a
+    # digest match, Gate 1b public entry asset, and Gate 1c
+    # build-info SHA checks passed; behavior smoke was skipped
+    # because no test persona credentials were configured. This PR
+    # closes the overlay drift so an ArgoCD reconcile (or any
+    # kustomize build | apply) does not roll the cluster back to
+    # sha-d421b38.
+    digest: sha256:042cb288043578a9070da0f96df307e58cb56cd934c67e3b2969186747d188ef
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
