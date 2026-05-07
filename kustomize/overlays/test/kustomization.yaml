@@ -617,9 +617,30 @@ images:
   # ready_to_merge:true (PR #89). CI 9/9 SUCCESS, build run 25482497815
   # job 74769833689 SUCCESS, GHCR push verified.
   # D30 immutable: digest pin zorunlu (drift gate :latest reddeder).
+  #
+  # 2026-05-07 update (Faz 23.5 → 23.6 + Faz 24/PR-5.1 chain):
+  # Bump to sha-a2f267f (commit a2f267f on platform-backend main).
+  # This single bump carries the chain of merged backend PRs since
+  # PR-E.4:
+  #   - PR #109/110: Faz 23.5 PR1 mark-all-read bulk endpoint
+  #   - PR #113: Faz 23.5 hardening — NetGSM DLR code → category mapping
+  #   - PR #114: Phase 2 Program 2c — RC-004 schema truth existence
+  #     cross-check (report-service, schema-service)
+  #   - PR #115: Faz 23.6 PR-A1 — preferences restore-defaults atomic
+  #     endpoint + audit event
+  #   - PR #116: Faz 23.6 PR-A2 — preferences mute-channel atomic endpoint
+  #     (Codex N2/C absorb: shadow-deny over topic-wide allows)
+  #   - PR #117: Faz 23.5 hardening — multi-pod DB-clock cutoff for inbox
+  #     bulk operations (V14 migration, native NOW(), Instant return type)
+  #   - PR #118: Faz 24 / PR-5.1 — notify.org.access.match metric for
+  #     cutover gate (NotifyOrgAccessGuard instrumentation)
+  # All PRs CI-green + Codex AGREE pre-merge; image build PR #118
+  # post-merge (run 25520314692) SUCCESS, GHCR push verified.
+  # Schema migrations applied automatically on pod startup (V14 idempotent
+  # ALTER + COMMENT ON COLUMN).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:b329d2e74fc7b75c1cbb4b47ee8e0f1a0253d670e4efd1dd652de54e48dba125
+    digest: sha256:dd763a88fbae42ac178c4ce738aa87dabb0ad50732f7824d95d04fafe7cd282e
 
 patches:
   # Replica 0 default (scale-to-zero)
