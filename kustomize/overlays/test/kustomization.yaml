@@ -564,7 +564,23 @@ images:
     # closes the overlay drift so an ArgoCD reconcile (or any
     # kustomize build | apply) does not roll the cluster back to
     # sha-d421b38.
-    digest: sha256:042cb288043578a9070da0f96df307e58cb56cd934c67e3b2969186747d188ef
+    #
+    # 2026-05-08 update: sha-c968e10 — platform-web PR #305 (MF
+    # tree-shake fix for `mfe_endpoint_admin/shell-services`). This
+    # is the FIRST successful post-merge image build since FE-001
+    # reapply — previously every build hit
+    # `Rolldown failed to resolve import "mfe_endpoint_admin/shell-services"`.
+    # The bundle therefore lagged 2 PRs behind main:
+    #   - PR #301 (Faz 23.6 PR-C2 mute-channel UI two-stage confirm)
+    #   - PR #303 (Faz 23.6 PR-3 canonical subscriberId selector;
+    #     mapKeycloakProfile reads JWT subscriberId claim → identity
+    #     selector pipeline canonical-first → eliminates the
+    #     `subscriberId=1 ↔ UUID` race observed in browser console)
+    #   - PR #305 (the MF tree-shake fix that unblocked the build)
+    # Build evidence: run 25523399373 — testai variant push manifest
+    # `sha256:f58deab...`, prod variant `sha256:ef6e895...`.
+    # Cross-AI peer review: Codex thread 019e0455 AGREE on PR #305.
+    digest: sha256:f58deab18021739bd02e12fb59e70abeeb91b105f589e97403d1ffb66f7ebb38
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
