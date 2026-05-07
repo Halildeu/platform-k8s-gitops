@@ -632,29 +632,32 @@ images:
     # `sha256:f58deab...`, prod variant `sha256:ef6e895...`.
     # Cross-AI peer review: Codex thread 019e0455 AGREE on PR #305.
     #
-    # 2026-05-08 update: sha-c539875 — platform-web PR #306
-    # (PR-HTTP-3: shell-owned auth-ready gate + ESLint guard) +
-    # transitively PR #304 (PR-Reporting-2: shared metadata cache +
-    # epoch fence). Live evidence: testai.acik.com cold reload on
-    # f58deab1 produced 1000+ /api/v1/reports/.../metadata 401s and
-    # an FSM loop where the LoginPage reloaded after every Keycloak
-    # redirect — root cause was the OLD bundle missing both the
+    # 2026-05-08 update: sha-224728d — platform-web PR #307
+    # (PR-Refresh-4: single-flight 401 refresh-and-retry pipeline)
+    # on top of PR #306 (PR-HTTP-3: shell-owned auth-ready gate +
+    # ESLint guard) + transitively PR #304 (PR-Reporting-2: shared
+    # metadata cache + epoch fence). Live evidence: testai.acik.com
+    # cold reload on f58deab1 produced 1000+ /api/v1/reports/.../metadata
+    # 401s and an FSM loop where the LoginPage reloaded after every
+    # Keycloak redirect — root cause was the OLD bundle missing the
     # shared-cache (#304) and the auth-ready gate (#306). Runtime
-    # state at fix time: deployment.spec already carried
-    # sha256:64fc9891 (someone bumped the spec via `kubectl set image`)
+    # state at fix time: deployment.spec carried sha256:64fc9891
+    # (PR-HTTP-3 build, someone bumped the spec via `kubectl set image`)
     # but the running pod was the previous f58deab1 because the
     # rollout never completed (maxSurge=1 + 200m CPU exceeded
-    # ResourceQuota platform-quota.limits.cpu=8 hard cap). This PR
-    # closes the gitops drift so an ArgoCD reconcile (or any
+    # ResourceQuota platform-quota.limits.cpu=8 hard cap). The
+    # `auto-deploy` workflow then pushed sha-224728d (#307 squash)
+    # on top, so the live pod is now sha256:8378609f. This PR closes
+    # the gitops drift so an ArgoCD reconcile (or any
     # `kubectl apply -k`) doesn't pull the cluster back to f58deab1.
-    # Build evidence: platform-web run 25525244388 — testai variant
-    # push manifest sha256:64fc9891..., prod variant
-    # sha256:be3f6233...
+    # Build evidence: platform-web run 25527042782 — testai variant
+    # push manifest sha256:8378609f..., prod variant
+    # sha256:f752a137...
     # Companion runtime patch: deployment strategy bumped to
     # maxSurge=0/maxUnavailable=1 so the new pod terminates the old
     # before scheduling (fits within quota); same patch lands in this
     # PR's strategy override below.
-    digest: sha256:64fc98910164b0753a5b54f4441306ae4288e458f3a7924d4ef18254c798b8f9
+    digest: sha256:8378609fcb1c01aff84da0a1bf75d44ecb49b242b4e4518e0b9c1164d3951623
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
