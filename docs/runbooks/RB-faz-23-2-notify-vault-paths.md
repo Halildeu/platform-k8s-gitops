@@ -107,23 +107,30 @@ yok ama ESO sync OK + diğer key'ler hâlâ Ready=True.
 
 ```bash
 # A) Pre-merge placeholder seed (path olduğunu garantilemek):
+# Faz 23.4 PR-F: dlr_token field eklendi. Boş kalırsa DlrController
+# fail-closed (tüm DLR webhook request'leri 401).
 vault kv put kv/platform/notify/sms/netgsm \
   username='' \
   password='' \
-  msgheader='Notify'
+  msgheader='Notify' \
+  dlr_token=''
 
-# B) Production aktivasyon (real creds):
+# B) Production aktivasyon (real creds + DLR token):
 # DEV/TEST cluster — NetGSM test/staging account
 vault kv put kv/platform/notify/sms/netgsm \
   username='<netgsm-test-username>' \
   password='<netgsm-test-password>' \
-  msgheader='Notify'
+  msgheader='Notify' \
+  dlr_token="$(openssl rand -hex 32)"
 
 # PROD cluster — NetGSM production account (operatör credential-write)
+# dlr_token: openssl rand -hex 32 ile üret; aynı değer NetGSM admin UI
+# webhook header'ında configure edilir.
 vault kv put kv/platform/notify/sms/netgsm \
   username='<netgsm-prod-username>' \
   password='<netgsm-prod-password>' \
-  msgheader='<approved sender ID — IYS registered>'
+  msgheader='<approved sender ID — IYS registered>' \
+  dlr_token="$(openssl rand -hex 32)"
 ```
 
 ESO sync + verification (envFrom-aware sıra):
@@ -155,10 +162,21 @@ kubectl --context k3d-test -n platform-test exec deploy/notification-orchestrato
 **Not (KVKK + IYS uyum)**:
 - `msgheader` (sender ID) NetGSM hesabında **kayıtlı + onaylı** olmalı; kayıtsız
   sender ID code 40 (provider FAILED) döner.
-- IYS opt-out (consent reddetmiş alıcı) provider code 70 (FAILED) ile döner;
-  audit row'da görünür. Pre-send IYS check (Faz 23.3.2) henüz yok — KVKK
-  full compliance closure değil; provider-side IYS gate + post-send code 70
-  audit izleme bu PR scope'unda yeterli operasyonel posture sayılır.
+- IYS opt-out (consent reddetmiş alıcı) DLR webhook ile gelir (code 17/70 →
+  delivery row FAILED + audit `DELIVERY_DLR_RECEIVED`). Faz 23.4 PR-F ACCEPTED
+  state foundation + DLR ingest (provider terminal authority) ile bu artık
+  doğru kayıt ediyor; KVKK Art 17 right-to-erasure pipeline'ında IYS opt-out
+  audit'i izlenebilir.
+
+**DLR webhook URL (NetGSM admin UI)**:
+- URL: `https://ai.acik.com/api/v1/notify/dlr/netgsm` (prod) veya
+  `https://testai.acik.com/api/v1/notify/dlr/netgsm` (test)
+- Header: `X-NetGSM-DLR-Token: <dlr_token Vault'ta yazılan değer>`
+- Method: POST, Content-Type: application/json
+- Provider DLR shape: `{"jobid": "...", "code": "00|04|05|16|17|70|...",
+  "no": "905...", "delivered_at": "2026-...", "description": "..."}`
+- DlrController fail-closed: token mismatch → 401, jobid/code missing → 400,
+  delivery row not found → 200 + action=NOT_FOUND (provider retry önle)
 
 ### 5. Webhook key rotation (operasyon disiplini)
 
