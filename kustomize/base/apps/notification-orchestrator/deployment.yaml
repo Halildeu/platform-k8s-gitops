@@ -71,6 +71,25 @@ spec:
             limits:
               cpu: 750m
               memory: 512Mi
+          # PR-Notify-1 GitOps follow-up (2026-05-07): startupProbe added so the
+          # JVM warm-up phase (~120 s under tight CPU budgets) cannot trip the
+          # liveness probe mid-boot. Live evidence (testai.acik.com 2026-05-07):
+          # without this probe, `Started NotificationOrchestratorApplication
+          # in 121.798 seconds` was followed immediately by liveness-driven
+          # shutdown, producing a 5+ restart CrashLoopBackOff that masked the
+          # real fix. Failure ceiling = 40 × 5 s = 200 s, generous enough for
+          # cold-start under the test cluster's 250 m CPU limit, low enough
+          # that a truly stuck JVM still surfaces within ~3 minutes. Once the
+          # startupProbe succeeds, liveness/readiness take over with the
+          # original cadence (no semantic change to runtime probes).
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 40
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
