@@ -1025,13 +1025,15 @@ patches:
 
   # Faz 23.4 PR-E.4 absorb (revert PR-E.3 HPA min=max=1 lock):
   # Backend PR Halildeu/platform-backend#89 lands cross-pod broadcast via PG
-  # LISTEN/NOTIFY (ADR-0002 §7.1 PG-only — Redis pub/sub / STOMP+broker
-  # YASAK). Each pod's InboxNotifyListener now receives all NOTIFY events
-  # post-commit and re-emits the local Spring event so its SSE clients are
-  # updated regardless of which pod handled the original mutation. The
-  # JVM-local SseEmitter map + ApplicationEventPublisher race that motivated
-  # PR-385 single-pod lock is eliminated. HPA min=1/max=3 base default is
-  # restored — CPU/memory autoscaling re-engaged.
+  # LISTEN/NOTIFY. PG-only stateful kanonik referansı ADR-0013 §"Stateful"
+  # (Mongo/Redis/RabbitMQ YASAK) + PLAN D38/D39 notification authority;
+  # ADR-0002 §7.1 fiziksel taban kuralı, notification-spesifik kural
+  # ADR-0013'tedir. Each pod's InboxNotifyListener now receives all NOTIFY
+  # events post-commit and re-emits the local Spring event so its SSE
+  # clients are updated regardless of which pod handled the original
+  # mutation. The JVM-local SseEmitter map + ApplicationEventPublisher race
+  # that motivated PR-385 single-pod lock is eliminated. HPA min=1/max=3
+  # base default is restored — CPU/memory autoscaling re-engaged.
 
   - target:
       kind: Deployment

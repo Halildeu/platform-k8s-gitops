@@ -84,10 +84,12 @@ delivery'i kırardı. Test overlay HPA `min=max=1` lock geçici olarak
 zorunlu kılındı (gitops PR #385).
 
 **Çözüm (Faz 23.4 PR-E.4 — Halildeu/platform-backend#89)**: PG LISTEN/NOTIFY
-cross-pod broadcast pattern eklendi (ADR-0002 §7.1 PG-only;
-Redis pub/sub / STOMP+broker YASAK). Her pod'un `InboxNotifyListener`'ı
-NOTIFY event'lerini post-commit alır + lokal Spring event re-emit eder ⇒
-hangi pod handle ederse etsin tüm SSE client'lar update alır.
+cross-pod broadcast pattern eklendi. PG-only stateful kanonik
+referansı: [ADR-0013 §"Stateful"](../adr/0013-notification-orchestration.md)
+(Mongo/Redis/RabbitMQ YASAK) + PLAN.md D38/D39 notification authority
+kararı. Her pod'un `InboxNotifyListener`'ı NOTIFY event'lerini post-commit
+alır + lokal Spring event re-emit eder ⇒ hangi pod handle ederse etsin
+tüm SSE client'lar update alır.
 @TransactionalEventListener(AFTER_COMMIT, fallbackExecution=true) ile
 single-pod fallback'da phantom event önlenir (rollback durumunda listener
 fire etmez).
@@ -109,14 +111,64 @@ Rollout preflight (gitops revert apply sonrası):
 kubectl --context k3d-test -n platform-test get deploy,hpa,pod \
   -l app.kubernetes.io/name=notification-orchestrator
 # HPA MIN PODS: 1 / MAX PODS: 3 doğrula
-# Backend image: notification-orchestrator pod'ları PR #89 image digest'inde mi?
-kubectl --context k3d-test -n platform-test get pod -l app.kubernetes.io/name=notification-orchestrator -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'
+
+# Tüm pod'ların PR #89 image digest'inde olduğunu doğrula
+# (Codex iter-1 absorb: HPA scale-out ile pod sayısı >1; tek pod kontrolü
+# stale rollout maskelenebilir).
+EXPECTED_DIGEST="sha256:b329d2e74fc7b75c1cbb4b47ee8e0f1a0253d670e4efd1dd652de54e48dba125"
+kubectl --context k3d-test -n platform-test get pod \
+  -l app.kubernetes.io/name=notification-orchestrator \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[0].imageID}{"\n"}{end}'
+# Her satırın imageID'si EXPECTED_DIGEST içermeli; içermiyorsa rollout
+# tamamlanmamış veya pinleme drift'i var.
 ```
 
-Cross-pod smoke (pod sayısı >1 olunca):
+Cross-pod smoke deterministik (pod sayısı ≥2 olunca):
 ```bash
-# Pod A'ya SSE bağlan; Pod B'de inbox row insert; SSE client A event almalı
-kubectl --context k3d-test -n platform-test logs -l app.kubernetes.io/name=notification-orchestrator --tail=50 | grep -E "inbox NOTIFY|inbox SSE event send|InboxNotifyListener"
+# Codex iter-1 absorb: Pod A → Pod B yönü deterministik. Bir pod'a SSE
+# bağlanırken mutation'ı diğer pod'a yönlendirmeden cross-pod kanıtı
+# eksik kalır. Aşağıdaki sıra "A bağlı + B mutate + A event aldı" üçlüsü.
+
+CTX="k3d-test"; NS="platform-test"
+PODS=( $(kubectl --context $CTX -n $NS get pod -l app.kubernetes.io/name=notification-orchestrator -o jsonpath='{.items[*].metadata.name}') )
+[ ${#PODS[@]} -lt 2 ] && { echo "Pod sayısı <2; HPA scale-out tetikle veya manuel scale et"; exit 1; }
+POD_A=${PODS[0]}; POD_B=${PODS[1]}
+
+# 1) Pod A'ya port-forward + SSE client (curl --no-buffer, başka shell'de)
+kubectl --context $CTX -n $NS port-forward $POD_A 8080:8080 &
+PF_PID=$!
+sleep 2
+# Önce Pod A'nın "InboxNotifyListener listening" log mesajını gör:
+kubectl --context $CTX -n $NS logs $POD_A | grep -E "inbox LISTEN started" | tail -1
+
+# 2) Başka shell veya & ile arka plan: SSE bağlan, event sayar
+curl --no-buffer -N -H 'Accept: text/event-stream' \
+  "http://localhost:8080/api/v1/notify/inbox/me/stream?orgId=default&subscriberId=smoke-x" > /tmp/sse-A.log &
+SSE_PID=$!
+sleep 3
+
+# 3) Pod B üzerinden Direct DB ile NOTIFY tetikle (publish path bu
+#    pod'da çalışan kodla aynı transaction'da kalır):
+kubectl --context $CTX -n $NS exec $POD_B -- \
+  psql -h postgres -U notify -d notify_db -c \
+  "INSERT INTO notification_inbox(org_id,intent_id,subscriber_id,locale,topic_key,severity,state,created_at) \
+   VALUES('default','smoke-intent-'\$(date +%s),'smoke-x','tr-TR','test.topic','info','UNREAD',now());"
+
+# 4) Beklenen: /tmp/sse-A.log'a 'event: unread-count' satırı geldi
+sleep 5
+grep -c 'event: unread-count' /tmp/sse-A.log
+# 1+ olmalı
+
+# Cleanup
+kill $SSE_PID $PF_PID 2>/dev/null
+```
+
+Alternatif kontrol — log delivery zinciri (sadece pasif gözlem):
+```bash
+kubectl --context $CTX -n $NS logs $POD_B --tail=50 | grep "inbox NOTIFY"
+kubectl --context $CTX -n $NS logs $POD_A --tail=50 | grep -E "inbox SSE event send|InboxNotifyListener.*default::smoke-x"
+# B'de "NOTIFY: orgId=default subscriberId=smoke-x bytes=N"
+# A'da "SSE event send" başarılı gözükmeli
 ```
 
 ---
