@@ -31,10 +31,10 @@ This runbook closes the loop with a one-line GitOps env override that drops the 
 | | |
 |---|---|
 | **Giriş şartı** | `platform-web` PR-3 merged + mfe-shell image rebuild done + cluster overlay digest pinned |
-| **Komut** | `kubectl --context k3d-<env> -n platform-<env> get pods -l app=mfe-shell -o jsonpath='{.items[*].status.containerStatuses[*].imageID}'` |
-| **Beklenen** | Pod imageID matches the new GHCR digest from PR-3's build |
-| **Fail sinyali** | Old digest still serving → rollout did not propagate; check `kubectl describe deploy/mfe-shell` for image pull / config issues |
-| **Devam eşiği** | Pod imageID == GHCR digest from PR-3 |
+| **Komut** (Codex iter-2 absorb — actual K8s labels: deployment is `frontend`, label is `app.kubernetes.io/name=frontend`) | <pre>kubectl --context k3d-<env> -n platform-<env> get pods \\<br/>  -l app.kubernetes.io/name=frontend \\<br/>  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.containerStatuses[?(@.name=="frontend")].imageID}{"\n"}{end}'<br/><br/>kubectl --context k3d-<env> -n platform-<env> get deploy/frontend \\<br/>  -o jsonpath='{.spec.template.spec.containers[?(@.name=="frontend")].image}'</pre> |
+| **Beklenen** | Pod imageID matches the new GHCR digest from PR-3's build; deployment image pin shows the same digest |
+| **Fail sinyali** | Old digest still serving → rollout did not propagate; check `kubectl describe deploy/frontend` for image pull / config issues |
+| **Devam eşiği** | Pod imageID == GHCR digest from PR-3 AND deployment image pin matches |
 | **Rollback** | None — verification step, no mutation |
 
 ### F2 — Fresh login token claim verification (5 dk)
@@ -59,13 +59,15 @@ This runbook closes the loop with a one-line GitOps env override that drops the 
 
 ### F4 — GitOps env override (5 dk)
 
+> Codex iter-2 absorb: do **NOT** patch `kustomize/base/apps/notification-orchestrator/configmap.yaml` and `kubectl apply -f` it directly. The test/prod overlays patch the same ConfigMap with JWT issuer, JWKS URL, SMTP, tracing and other overlay-only values; a base-level direct apply would silently strip those values from the live ConfigMap and trigger a real outage. Test strict flip lives in the **test overlay only**; prod strict flip lives in the **prod overlay only**, applied at F6 after the prod gate is closed.
+
 | | |
 |---|---|
-| **Komut (test cluster first)** | Patch `kustomize/base/apps/notification-orchestrator/configmap.yaml` (or test overlay configmap.yaml) to add `NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_CLAIMS: "subscriberId"`. Selective apply: `kubectl --context k3d-test -n platform-test apply -f kustomize/base/apps/notification-orchestrator/configmap.yaml` |
-| **Beklenen** | `kubectl get configmap notification-orchestrator-config -o yaml \| grep SUBSCRIBER_IDENTITY` shows `"subscriberId"` |
-| **Fail sinyali** | Apply errors → check kustomize build sanity first (`kubectl kustomize kustomize/overlays/test`); ConfigMap missing key → check the configmap file, not the apply call |
-| **Devam eşiği** | ConfigMap reflects new value AND F5 rolling restart picked it up |
-| **Rollback** | Patch the file back to remove the env var (default reverts to legacy-compatible application.yml value) + rolling restart |
+| **Komut (test cluster only — F6 mirrors with prod overlay)** | <pre>kubectl kustomize kustomize/overlays/test \\<br/>  \| yq 'select(.kind == "ConfigMap" and .metadata.name == "notification-orchestrator-config")' \\<br/>  \| kubectl --context k3d-test -n platform-test apply -f -</pre><br/>The kustomize render is what guarantees the overlay's other patches stay intact; the `yq` filter narrows the apply to a single ConfigMap so unrelated overlay resources are not collateral-mutated. Add the `NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_CLAIMS: "subscriberId"` line in `kustomize/overlays/test/notification-orchestrator/configmap-patch.yaml` (create if missing) so the kustomize render emits the new value. |
+| **Beklenen** | `kubectl get configmap notification-orchestrator-config -n platform-test -o yaml \| grep SUBSCRIBER_IDENTITY` shows `"subscriberId"` AND none of the overlay-only values (JWT issuer, JWKS, SMTP host, etc.) regressed |
+| **Fail sinyali** | Apply errors → check `kubectl kustomize kustomize/overlays/test` build sanity first; overlay-only env vars missing post-apply → the `yq` filter dropped extra resources you needed; widen to all ConfigMaps the overlay produces. |
+| **Devam eşiği** | ConfigMap reflects new value, all overlay env vars intact, AND F5 rolling restart picked it up |
+| **Rollback** | Patch the overlay configmap-patch.yaml back to remove the env var (default reverts to legacy-compatible `application.yml` value) + rolling restart |
 
 ### F5 — Rolling restart + post-flip smoke (10 dk)
 
@@ -73,7 +75,7 @@ This runbook closes the loop with a one-line GitOps env override that drops the 
 |---|---|
 | **Komut** | `kubectl --context k3d-<env> -n platform-<env> rollout restart deploy/notification-orchestrator` then `kubectl rollout status deploy/notification-orchestrator -w` |
 | **Beklenen** | All pods Running with new ConfigMap mounted; pod environment shows `NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_CLAIMS=subscriberId` (verify via `kubectl exec`) |
-| **Smoke** | Hit `GET /api/v1/notify/inbox/me` with a fresh-login JWT → 200 OK; same call with a hand-crafted JWT missing the `subscriberId` claim → 403; metric `notify_subscriber_identity_match_total{claim="subscriberId"}` increments; `claim=~"userId\|sub\|none"` does NOT increment after the restart timestamp |
+| **Smoke** (Codex iter-2 absorb — distinguish 401 vs 403 paths) | Three explicit cases:<br/>• **canonical OK (200)**: fresh-login JWT carrying `subscriberId` claim → `GET /api/v1/notify/inbox/me` returns 200<br/>• **strict miss (403)**: a **valid Keycloak-signed** JWT that does NOT carry the `subscriberId` claim → 403. Sources for this token: a test persona whose `attributes.subscriberId` was never backfilled (controlled fixture), or a temporary client/scope that produces a signed token without the claim. **Do not** test with an unsigned/hand-crafted JWT — that path errors out at the resource-server layer with 401 and never reaches `SubscriberIdentityGuard`'s strict 403 branch.<br/>• **invalid token (401)**: any unsigned / wrong-signature JWT → 401 (resource-server reject).<br/>• Metric: `notify_subscriber_identity_match_total{claim="subscriberId"}` increments after the restart timestamp; `claim=~"userId\|sub\|none"` does NOT increment after the restart timestamp. |
 | **Fail sinyali** | 403 on legitimate fresh-login session → either the realm mapper regressed or the token in flight is too old (TTL not expired); check `kubectl logs deploy/notification-orchestrator \| grep "subscriber identity"` for the rejection reason |
 | **Devam eşiği** | Smoke 200/403 split is correct AND metric trend is canonical-only |
 | **Rollback** | Revert F4 ConfigMap patch + rolling restart again. Both backend and FE continue to function on legacy claims because PR-3 left the fallback chain in place. |
