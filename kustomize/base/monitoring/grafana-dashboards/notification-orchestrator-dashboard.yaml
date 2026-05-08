@@ -1,0 +1,294 @@
+# Grafana Dashboard ConfigMap — notification-orchestrator
+#
+# Step B.3 (Codex thread 019e0892 strategic retrospective priority 2 follow-up).
+# Visual companion to the PrometheusRule alerts merged in PRs #425 + #428 + #430.
+# Sidecar provisioner auto-import: label grafana_dashboard=1
+#
+# Panel scope (6 rows, 12 panels — final post Codex 019e0935 iter-1 absorb):
+#
+# Row 1 — Strict cutover health (Faz 23.6 PR-5.4/5.5):
+#   1. Match counter source distribution stacked area
+#      (notify_org_access_match_total{source=org_id|default|none|tenant|allowed_orgs|claim})
+#      Used for F3 cutover gate observation; source="default" must be 0 in steady state.
+#   2. Denied counter rate (NotifyOrgAccessGuard + SubscriberIdentityGuard)
+#      Pair-view shows auth-chain failure correlation.
+#
+# Row 2 — Subscriber identity claim distribution:
+#   3. notify_subscriber_identity_match_total{claim=...} — claim usage breakdown
+#      (subscriberId / userId / sub) — guides legacy claim deprecation.
+#
+# Row 3 — Audit retention (Faz 23.7 Step C):
+#   4. Last successful tick age — gauge in hours since cron run.
+#      time() - notify_audit_retention_last_success_timestamp_seconds
+#   5. Partition operations counters — created/detached/dropped over time.
+#   6. Errors by phase (last 2h, matches NotifyAuditRetentionErrors window).
+#
+# Row 4 — Queue health (split per Codex iter-1 P2.1; each panel matches its alert):
+#   7. Pending intents (alert >1000 NotifyQueueBacklog).
+#   10. Retry-due deliveries (alert >500 NotifyRetryQueueBacklog).
+#   8. Dispatch outcome by channel + status — pairs NotifyDispatchFailureRate.
+#
+# Row 5 — Worker + DLQ (split per Codex iter-1 P1.2):
+#   9. Worker cycles {worker, outcome} — diagnostic context, no dedicated alert
+#      (read alongside Queue/DLQ/Dispatch alerts).
+#   11. DLQ — termination rate (NotifyDlqSustained at >5/sec) + unreplayed gauge
+#       (NotifyDlqUnreplayed at >100). Field overrides per series.
+#
+# Row 6 — Audit retention alert state (Codex iter-1 P2.2):
+#   12. NeverSucceeded alert state stat — companion to Panel 4 (last-success age).
+#
+# Metric provenance: confirmed live via
+# `kubectl --context k3d-prod -n platform-prod exec deploy/notification-
+# orchestrator -- wget -qO- localhost:8081/actuator/prometheus`. Audit retention
+# metrics emit only when NOTIFY_AUDIT_RETENTION_ENABLED=true (PR #427 LIVE).
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-orchestrator-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: grafana-dashboard
+data:
+  notification-orchestrator.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "title": "notification-orchestrator — strict cutover + retention + dispatch",
+      "uid": "notification-orchestrator",
+      "tags": ["platform", "notification-orchestrator", "faz-23"],
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {"from": "now-6h", "to": "now"},
+      "panels": [
+        {
+          "id": 1,
+          "title": "Match Counter — Source Distribution (F3 Cutover Gate)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "sum by (source) (rate(notify_org_access_match_total{namespace=\"platform-prod\"}[5m]))",
+            "refId": "A",
+            "legendFormat": "source={{source}}"
+          }],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "stacking": {"mode": "normal"}}}},
+          "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]}},
+          "description": "F3 cutover gate sentinel. After Faz 23.6 PR-5.4 (NOTIFY_SECURITY_DEFAULT_ORG_ID=\"\"), source=\"default\" and source=\"none\" must stay at 0. Non-zero indicates env regression or auth chain drift."
+        },
+        {
+          "id": 2,
+          "title": "Denied Counter — Org + Subscriber (Pair View)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {
+              "expr": "sum by (reason) (rate(notify_org_access_denied_total{namespace=\"platform-prod\"}[5m]))",
+              "refId": "A",
+              "legendFormat": "org-denied reason={{reason}}"
+            },
+            {
+              "expr": "sum by (reason) (rate(notify_subscriber_identity_denied_total{namespace=\"platform-prod\"}[5m]))",
+              "refId": "B",
+              "legendFormat": "subscriber-denied reason={{reason}}"
+            }
+          ],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "fieldConfig": {"defaults": {"unit": "ops"}},
+          "options": {"legend": {"displayMode": "table", "placement": "right"}},
+          "description": "Both denied counters together. Simultaneous spike on both = upstream auth-chain failure. Solo spikes have specific causes (org_id missing vs subscriberId missing)."
+        },
+        {
+          "id": 3,
+          "title": "Subscriber Identity — Match Counter by Claim",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "sum by (claim) (rate(notify_subscriber_identity_match_total{namespace=\"platform-prod\"}[5m]))",
+            "refId": "A",
+            "legendFormat": "claim={{claim}}"
+          }],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "fieldConfig": {"defaults": {"unit": "ops"}},
+          "options": {"legend": {"displayMode": "table", "placement": "right"}},
+          "description": "Distribution of which JWT claim resolved the subscriber identity. Watch legacy `userId`/`sub` decline as canonical `subscriberId` mapper rolls out. claim=\"none\" is fail-close path."
+        },
+        {
+          "id": 4,
+          "title": "Audit Retention — Last Successful Tick Age",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "(time() - max by (namespace) (notify_audit_retention_last_success_timestamp_seconds{namespace=\"platform-prod\"})) and on(namespace) max by (namespace) (notify_audit_retention_last_success_timestamp_seconds{namespace=\"platform-prod\"}) > 0",
+            "refId": "A",
+            "legendFormat": "platform-prod"
+          }],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 86400}, {"color": "red", "value": 93600}]}}},
+          "options": {"colorMode": "background", "graphMode": "area"},
+          "description": "Seconds since last successful retention cron tick. Green <24h, yellow 24-26h, red >26h. Empty until PR #427 first tick at 02:00 UTC."
+        },
+        {
+          "id": 5,
+          "title": "Audit Retention — Partition Operations",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {
+              "expr": "sum by (namespace) (increase(notify_audit_retention_future_partitions_total{namespace=\"platform-prod\"}[1h]))",
+              "refId": "A",
+              "legendFormat": "future-created"
+            },
+            {
+              "expr": "sum by (namespace) (increase(notify_audit_retention_partitions_detached_total{namespace=\"platform-prod\"}[1h]))",
+              "refId": "B",
+              "legendFormat": "detached"
+            },
+            {
+              "expr": "sum by (namespace) (increase(notify_audit_retention_partitions_dropped_total{namespace=\"platform-prod\"}[1h]))",
+              "refId": "C",
+              "legendFormat": "dropped"
+            }
+          ],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+          "fieldConfig": {"defaults": {"unit": "short"}},
+          "options": {"legend": {"displayMode": "table", "placement": "right"}},
+          "description": "Partition lifecycle counters per cron tick. Detached/dropped will stay 0 while NOTIFY_AUDIT_RETENTION_DRY_RUN=true (PR #427); flipped to false in C.2 follow-up."
+        },
+        {
+          "id": 6,
+          "title": "Audit Retention — Errors by Phase (last 2h)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "sum by (phase) (increase(notify_audit_retention_errors_total{namespace=\"platform-prod\"}[2h]))",
+            "refId": "A",
+            "legendFormat": "phase={{phase}}"
+          }],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+          "options": {"legend": {"displayMode": "table", "placement": "right"}},
+          "description": "Retention error increase over 2h (matches NotifyAuditRetentionErrors alert window). Phases: partition_create, partition_detach, partition_drop, lock_acquire, cron_tick, unknown. Any non-zero fires the alert."
+        },
+        {
+          "id": 7,
+          "title": "Pending Intents (alert >1000)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "max by (namespace) (notify_queue_pending_intents{namespace=\"platform-prod\"})",
+            "refId": "A",
+            "legendFormat": "pending"
+          }],
+          "gridPos": {"h": 8, "w": 6, "x": 0, "y": 24},
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 500}, {"color": "red", "value": 1000}]}}},
+          "options": {"legend": {"displayMode": "list"}},
+          "description": "PENDING intents queued for OutboxPoller. NotifyQueueBacklog alert fires at >1000 sustained 15m."
+        },
+        {
+          "id": 10,
+          "title": "Retry Due Deliveries (alert >500)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "max by (namespace) (notify_queue_retry_due{namespace=\"platform-prod\"})",
+            "refId": "A",
+            "legendFormat": "retry-due"
+          }],
+          "gridPos": {"h": 8, "w": 6, "x": 6, "y": 24},
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 250}, {"color": "red", "value": 500}]}}},
+          "options": {"legend": {"displayMode": "list"}},
+          "description": "RETRY deliveries due for RetryWorker. NotifyRetryQueueBacklog alert fires at >500 sustained 15m."
+        },
+        {
+          "id": 8,
+          "title": "Dispatch Outcome by Channel + Status",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "sum by (channel, status) (rate(notify_dispatch_outcome_total{namespace=\"platform-prod\"}[5m]))",
+            "refId": "A",
+            "legendFormat": "{{channel}} status={{status}}"
+          }],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+          "fieldConfig": {"defaults": {"unit": "ops"}},
+          "options": {"legend": {"displayMode": "table", "placement": "right"}},
+          "description": "Dispatch outcome rate. status=FAILED elevations alert via NotifyDispatchFailureRate."
+        },
+        {
+          "id": 9,
+          "title": "Worker Cycles ({worker, outcome})",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "sum by (worker, outcome) (rate(notify_worker_cycles_total{namespace=\"platform-prod\"}[5m]))",
+            "refId": "A",
+            "legendFormat": "{{worker}} outcome={{outcome}}"
+          }],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+          "fieldConfig": {"defaults": {"unit": "ops"}},
+          "options": {"legend": {"displayMode": "table", "placement": "right"}},
+          "description": "OutboxPoller + RetryWorker tick rate by outcome. Diagnostic context only — no dedicated alert in this group; read alongside NotifyQueueBacklog / NotifyRetryQueueBacklog (queue panels 7+10) and NotifyDispatchFailureRate (panel 8). Persistent error outcomes here usually correlate with one of those alerts firing."
+        },
+        {
+          "id": 11,
+          "title": "DLQ — Termination Rate + Unreplayed Backlog",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {
+              "expr": "sum by (reason) (rate(notify_dlq_terminated_total{namespace=\"platform-prod\"}[15m]))",
+              "refId": "A",
+              "legendFormat": "terminated rate reason={{reason}}"
+            },
+            {
+              "expr": "max by (namespace) (notify_dlq_unreplayed{namespace=\"platform-prod\"})",
+              "refId": "B",
+              "legendFormat": "dlq-unreplayed (gauge)"
+            }
+          ],
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+          "fieldConfig": {
+            "defaults": {"unit": "short"},
+            "overrides": [
+              {
+                "matcher": {"id": "byFrameRefID", "options": "A"},
+                "properties": [
+                  {"id": "unit", "value": "ops"},
+                  {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 5}]}}
+                ]
+              },
+              {
+                "matcher": {"id": "byFrameRefID", "options": "B"},
+                "properties": [
+                  {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 50}, {"color": "red", "value": 100}]}}
+                ]
+              }
+            ]
+          },
+          "options": {"legend": {"displayMode": "table", "placement": "right"}},
+          "description": "Critical DLQ visibility. Series A (terminated rate) — pairs NotifyDlqSustained alert at >5/sec (red threshold). Series B (unreplayed gauge) — pairs NotifyDlqUnreplayed alert at >100 (yellow=50/red=100). Per-series field overrides keep each metric semantically aligned with its own alert. Operator sets replayed=true after triage."
+        },
+        {
+          "id": 12,
+          "title": "Audit Retention — Alert State (Never Succeeded)",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "max(ALERTS{alertname=\"NotifyAuditRetentionNeverSucceeded\", alertstate=~\"pending|firing\"}) or vector(0)",
+            "refId": "A",
+            "legendFormat": "NeverSucceeded"
+          }],
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 40},
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "mappings": [{"options": {"0": {"text": "OK"}, "1": {"text": "PENDING/FIRING"}}, "type": "value"}]}},
+          "options": {"colorMode": "background", "graphMode": "none"},
+          "description": "Companion to Panel 4 (last-success age). When the gauge stays at 0 (cron never ran), Panel 4 shows 'No data' due to the > 0 filter; this stat exposes the NotifyAuditRetentionNeverSucceeded alert state directly. PENDING after 0s for 26h, FIRING after 26h."
+        }
+      ]
+    }
