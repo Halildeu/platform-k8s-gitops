@@ -120,7 +120,27 @@ images:
     # (cookie scope + path lock; rejected query-param token,
     # fetch-event-source FE rewrite, WebSocket, permitAll). Build
     # run 25526394372 SUCCESS, GHCR push verified.
-    digest: sha256:6fa95c3e34e9db05751e764f035756de4dd2228434ac92c26774cefd706320ac
+    #
+    # 2026-05-08 update: sha-3f37d1d — platform-backend PR #122
+    # (PR-BE-7: gateway 401 telemetry + cookie rate limit). Adds
+    # `gateway_auth_unauthorized_total` + `gateway_auth_forbidden_total`
+    # Micrometer counters tagged with bounded route_group + auth_mode
+    # (cookie/bearer/none), and an in-memory token-bucket rate
+    # limiter on POST /api/auth/cookie + /refresh (refresh storm
+    # dampener). Soft throttle — HPA replicas multiply effective
+    # threshold cluster-wide; documented in MultiBucketGate javadoc.
+    # Cross-AI peer review: Codex thread `019e0518` iter-4 AGREE
+    # post-impl (32/32 tests pass). The auto-deploy workflow already
+    # kubectl-set-image'd the cluster to this digest right after #122
+    # merged (run 25531759395); this PR closes the gitops drift so
+    # ArgoCD reconcile or `kubectl apply -k` doesn't pull the cluster
+    # back to sha-38a94f2.
+    # Build evidence: platform-backend run 25531759395 — testai
+    # variant push manifest sha256:1bc58af6f41c3bd48726f0690d6616244c518430a61c16116d5dfbb25586405b.
+    # Companion alerts in monitoring/api-gateway-slo-rule.yaml
+    # (PR-BE-7b #403 GatewayAuthRefreshStorm + GatewayUnauthScannerProbe
+    # + GatewayAuthCookieRateLimitTriggered).
+    digest: sha256:1bc58af6f41c3bd48726f0690d6616244c518430a61c16116d5dfbb25586405b
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     digest: sha256:df8b84d0cd02d064cf455f40017bd5cb4ca1be271e5e7068afeb36fc4526a7f1
