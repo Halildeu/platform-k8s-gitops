@@ -936,7 +936,33 @@ images:
     #
     # Image build run: 25574875582 (success), testai digest
     # sha256:c2e33ac512c142bb47ef07685185094211ebe62ae1433b6785b7e720db4284de.
-    digest: sha256:c2e33ac512c142bb47ef07685185094211ebe62ae1433b6785b7e720db4284de
+    #
+    # 2026-05-08 update: sha-156ba88 — platform-web PR #332 (PR-FE-4
+    # ProtectedRoute authorizationReady gate). Live smoke after the
+    # PR-FE-1+2+3 deploy showed /admin/users still redirecting to
+    # /unauthorized despite /api/v1/users 200 OK. Root cause: the
+    # router-level ProtectedRoute waited on PermissionProvider's
+    # `initialized` flag (true even on 401/null-authz), so isSuperAdmin/
+    # hasModule returned false against an empty authz snapshot and
+    # bounced the user to /unauthorized — even though /authz/me
+    # eventually had MANAGE on the required module.
+    #
+    # Fix introduces a dedicated `authorizationReady` context flag
+    # distinct from `initialized`: provider exposes
+    # `authorizationReady = permitAll || Boolean(authz?.userId)` —
+    # only true when a real identity has populated the snapshot.
+    # ProtectedRoute reads `authorizationReady`; 401/network/null-authz
+    # paths keep it on the still-loading branch (returns null) until
+    # silent SSO / login recovery completes.
+    #
+    # Cross-AI peer review: Codex thread 019e08e2 iter-15 plan AGREE
+    # on (b) authorizationReady over (a) FSM-phase reuse or (c) tri-
+    # state isSuperAdmin; iter-16 post-impl AGREE ready_to_merge true.
+    # Test surface 803 PASS / 0 fail / 3 skip (was 801, +2 new cases).
+    #
+    # Image build run: 25576298345 (success), testai digest
+    # sha256:7d0b933d3097678515746db2523db472725e8554ba5023a634dd474e1c1babf6.
+    digest: sha256:7d0b933d3097678515746db2523db472725e8554ba5023a634dd474e1c1babf6
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
