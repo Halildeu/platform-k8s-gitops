@@ -847,9 +847,38 @@ images:
   #
   # Cross-AI peer review: Codex thread `019e0649` AGREE iter-3
   # `ready_to_merge: true`. Build run 25542004277.
+  #
+  # 2026-05-08 update: sha-6bcc8f5 — platform-backend PR #124 (Faz 24
+  # PR-5.2). Wires `NotifyOrgAccessGuard` into `NotificationIntentController`
+  # submit/status path so the PR-5.1 `notify_org_access_match_total`
+  # metric finally sees the intent surface and PR-5.4 has the data it
+  # needs before flipping `defaultOrgId=""`.
+  #
+  # Behaviour: POST `/api/v1/notify/intents` accepts `X-Org-Id` as an
+  # optional backward-compat selector (must equal body `orgId` if
+  # provided), then runs `orgGuard.requireOrgAccessOrThrow(request.orgId())`
+  # so the JWT principal proves access via `org_id > tenant_id >
+  # allowed_orgs > defaultOrgId`. GET status path inverts the order:
+  # guard first, repository second — unauthorized org selectors now
+  # return 403 before reaching the repo, while own-authorized-org
+  # missing-intent lookups still 404 (existence-disclosure preserved
+  # for the caller's actual tenant).
+  #
+  # Strict mode is NOT flipped here. `defaultOrgId` fallback stays
+  # open; this PR is canary mode. PR-5.3 migrates the FE to a real
+  # state-source for `orgId`, PR-5.4 closes the fallback once the
+  # `source="default"` and `source="none"` counters are zero for the
+  # observation window, PR-5.5 strict-cuts the subscriber identity
+  # claim list.
+  #
+  # Cross-AI peer review: Codex thread `019e0675` AGREE iter-1 (plan)
+  # + AGREE iter-2 (post-impl: non-JWT silent-pass revert correct,
+  # `anonymousAuth_silentPass` preserved, cross-org test rename
+  # `getStatusCrossOrgRejectedByGuard` 403 acceptable). Build run
+  # 25543819560.
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:657dc541012becfb66582214199da425212e7ed61c4abf57db6f850b2065838c
+    digest: sha256:834cd8c2e63928f708722bd4aa5c1f8a540659c67cb73411e44f8965fe0c4ab6
 
 patches:
   # Replica 0 default (scale-to-zero)
