@@ -897,9 +897,34 @@ images:
   # `anonymousAuth_silentPass` preserved, cross-org test rename
   # `getStatusCrossOrgRejectedByGuard` 403 acceptable). Build run
   # 25543819560.
+  #
+  # 2026-05-08 update: sha-a81a423 — platform-backend PR #125 (Faz 24
+  # PR-5.2.1 follow-up). Wires `NotifyOrgAccessGuard` into the user
+  # browser path: `InboxController` (5 endpoints) + `InboxSseController`
+  # (the /me/stream SSE entry, with the guard running BEFORE
+  # `SseEmitter` allocation so a denied request leaves no emitter
+  # side-effect). Required because the PR-5.1 metric was reading zero
+  # under PR-5.2 alone — only intent submit/status + admin DLR paths
+  # were guarded, and the user never hits those during normal browser
+  # smoke. Real cutover-gate signal needs the inbox/SSE traffic to
+  # flow through `requireOrgAccessOrThrow` so `default` / `none` /
+  # `org_id` source distribution is observable.
+  #
+  # F3 gate definition (Codex iter-5):
+  #   sum(increase(notify_org_access_match_total[24h])) > 0
+  #   sum(increase(notify_org_access_match_total{source="default"}[24h])) == 0
+  #   sum(increase(notify_org_access_match_total{source="none"}[24h])) == 0
+  #   sum(increase(notify_org_access_match_total{source=~"org_id|tenant_id|allowed_orgs"}[24h])) > 0
+  #
+  # Cross-AI peer review: Codex thread `019e0675` AGREE iter-6
+  # `ready_to_merge: true`. Build run 25547065406. After this rollout
+  # the cluster should start emitting `source="default"` increments
+  # on every browser inbox call until the Keycloak `org_id` mapper
+  # ships and admin@example.com is backfilled — that is the expected
+  # canary signal, not a regression.
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:834cd8c2e63928f708722bd4aa5c1f8a540659c67cb73411e44f8965fe0c4ab6
+    digest: sha256:cd42c5fea42c62f47ad357d6a2740166fbe71f175e01c4f5caae1903ee981e6f
 
 patches:
   # Replica 0 default (scale-to-zero)
