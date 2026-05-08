@@ -5,9 +5,10 @@
 # SLO definition: 99.5% of dispatched notifications succeed (i.e., terminate
 # successfully — NOT moved to DLQ).
 #
-# SLI numerator: notify_dlq_terminated_total (failed deliveries that exhausted retries)
-# SLI denominator: notify_dispatch_outcome_total (all dispatch attempts terminating
-# in success/failure — excludes RETRY transient outcomes).
+# SLO error numerator: notify_dlq_terminated_total (failed deliveries that exhausted retries)
+# SLO denominator: notify_dispatch_outcome_total{status=~"SUCCESS|FAILED"} (terminal-only
+# dispatches; RETRY transient outcomes excluded so retry storms don't artificially
+# improve the burn rate).
 #
 # Error budget: (1 - 0.995) = 0.5% over a 28d window.
 #
@@ -168,12 +169,17 @@ spec:
     - name: notification-orchestrator-dlq-slo-alerts
       interval: 30s
       rules:
-        # Multi-window multi-burn-rate alert per Google SRE workbook §4.
-        # Page when SHORT (1h) AND LONG (5min in this case = current rate) both
-        # exceed threshold — guards against single-spike false positives. The
-        # burn rate recording rule is itself a 1h average so we treat it as
-        # the long signal; the gating uses absolute DLQ rate to confirm the
-        # incident is current, not an artifact of an old window.
+        # Multi-window multi-burn-rate alerts per Google SRE workbook §4
+        # (final form post Codex 019e094a iter-1 + iter-2 absorb).
+        # Pattern: LONG-window AND SHORT-window burn rates must BOTH exceed
+        # threshold for a critical/page alert. Long-window catches sustained
+        # regressions; short-window confirms the incident is current (not an
+        # artifact of an old window).
+        #
+        # Slow alert is suppressed when Fast alert's full predicate is true
+        # (`unless ((1h > 14.4) and (5m > 14.4))`) to avoid duplicate P1 paging
+        # through AlertManager group_by alertname. Slow still fires alone when
+        # Fast subsides but the 6h burn persists.
         #
         # Threshold rationale (Google SRE table):
         #   1h fast: 14.4× → page (consumes 2% in 1h, full 28d budget in 2 days)
@@ -222,7 +228,11 @@ spec:
               notify:dlq:burn_rate:30m > 6.0
             )
             unless on(namespace)
-            notify:dlq:burn_rate:1h > 14.4
+            (
+              notify:dlq:burn_rate:1h > 14.4
+              and on(namespace)
+              notify:dlq:burn_rate:5m > 14.4
+            )
           for: 5m
           labels:
             severity: critical
