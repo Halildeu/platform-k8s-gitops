@@ -346,7 +346,36 @@ images:
     #     existing operator/member tuples via viewer query)
     # Image build run: 25571116552 (success), digest
     # sha256:b40211278beeb941a23236eedfff9075419ec4bb4c83a32ddff11c3c1dc4a5ec.
-    digest: sha256:b40211278beeb941a23236eedfff9075419ec4bb4c83a32ddff11c3c1dc4a5ec
+    #
+    # 2026-05-08 update: sha-6fb3711 — platform-backend PR #129 (PR-BE-14
+    # superAdmin scope reader returns persisted tuples). Closes the
+    # testai UserDetailDrawer "Veri Erişimi → Şirketler" UX bug for
+    # superAdmin users: save 200 OK, OpenFGA tuples persisted (live
+    # verified user:1 had 7 companies + 6 projects), but re-opening
+    # showed empty selection because the reader discarded persisted
+    # IDs for superAdmin (matched the legacy DB-backed empty behaviour).
+    #
+    # Fix: OpenFgaScopeReader.fetchFromOpenFga superAdmin path now
+    # populates allowed*Ids via the parallel future joins. readScope
+    # Summary drops the `if (superAdmin) return emptyMap()` guard.
+    # Bypass guarantee preserved via existing short-circuit in
+    # ScopeContext.canAccessCompany/Project/Warehouse/Branch
+    # (`superAdmin || allowed.contains(id)`).
+    #
+    # Semantic clarification: allowedScopes now means "explicit
+    # assigned scopes / observable assignments" — populated for ALL
+    # users including superAdmin. Policy decisions still treat
+    # superAdmin=true as universal bypass at predicate layer.
+    #
+    # Cross-AI peer review: Codex thread 019e0938 iter-7 strategic
+    # AGREE on Option A (reader semantic adjustment) over Option B
+    # (UI hint only); Codex thread 019e0940 iter-1 post-impl AGREE
+    # ready_to_merge true. Test surface: common-auth 155 PASS / 0 fail
+    # (was 144, +11 net). Permission-service 274 PASS unchanged.
+    #
+    # Image build run: 25577730179 (success), digest
+    # sha256:da1f6418986f7d29595d51f09afca4a67d0d1c3d32137f14b334df477e8f062f.
+    digest: sha256:da1f6418986f7d29595d51f09afca4a67d0d1c3d32137f14b334df477e8f062f
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
