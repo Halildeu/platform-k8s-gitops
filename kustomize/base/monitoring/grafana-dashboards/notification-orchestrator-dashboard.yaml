@@ -4,7 +4,7 @@
 # Visual companion to the PrometheusRule alerts merged in PRs #425 + #428 + #430.
 # Sidecar provisioner auto-import: label grafana_dashboard=1
 #
-# Panel scope (5 rows, 9 panels):
+# Panel scope (6 rows, 12 panels — final post Codex 019e0935 iter-1 absorb):
 #
 # Row 1 — Strict cutover health (Faz 23.6 PR-5.4/5.5):
 #   1. Match counter source distribution stacked area
@@ -21,15 +21,21 @@
 #   4. Last successful tick age — gauge in hours since cron run.
 #      time() - notify_audit_retention_last_success_timestamp_seconds
 #   5. Partition operations counters — created/detached/dropped over time.
-#   6. Errors by phase — partition_create / partition_detach / partition_drop /
-#      lock_acquire / cron_tick / unknown.
+#   6. Errors by phase (last 2h, matches NotifyAuditRetentionErrors window).
 #
-# Row 4 — Dispatch + queue health:
-#   7. Pending intents + retry-due gauges — operational backlog.
-#   8. Dispatch outcome rate by status — SUCCESS / FAILED / RETRY.
+# Row 4 — Queue health (split per Codex iter-1 P2.1; each panel matches its alert):
+#   7. Pending intents (alert >1000 NotifyQueueBacklog).
+#   10. Retry-due deliveries (alert >500 NotifyRetryQueueBacklog).
+#   8. Dispatch outcome by channel + status — pairs NotifyDispatchFailureRate.
 #
-# Row 5 — Worker cycles + DLQ:
-#   9. Worker cycles {worker, outcome} + DLQ unreplayed gauge.
+# Row 5 — Worker + DLQ (split per Codex iter-1 P1.2):
+#   9. Worker cycles {worker, outcome} — diagnostic context, no dedicated alert
+#      (read alongside Queue/DLQ/Dispatch alerts).
+#   11. DLQ — termination rate (NotifyDlqSustained at >5/sec) + unreplayed gauge
+#       (NotifyDlqUnreplayed at >100). Field overrides per series.
+#
+# Row 6 — Audit retention alert state (Codex iter-1 P2.2):
+#   12. NeverSucceeded alert state stat — companion to Panel 4 (last-success age).
 #
 # Metric provenance: confirmed live via
 # `kubectl --context k3d-prod -n platform-prod exec deploy/notification-
@@ -228,7 +234,7 @@ data:
           "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
           "fieldConfig": {"defaults": {"unit": "ops"}},
           "options": {"legend": {"displayMode": "table", "placement": "right"}},
-          "description": "OutboxPoller + RetryWorker tick rate by outcome. NotifyWorker* warning alerts trigger on persistent error outcomes."
+          "description": "OutboxPoller + RetryWorker tick rate by outcome. Diagnostic context only — no dedicated alert in this group; read alongside NotifyQueueBacklog / NotifyRetryQueueBacklog (queue panels 7+10) and NotifyDispatchFailureRate (panel 8). Persistent error outcomes here usually correlate with one of those alerts firing."
         },
         {
           "id": 11,
@@ -239,7 +245,7 @@ data:
             {
               "expr": "sum by (reason) (rate(notify_dlq_terminated_total{namespace=\"platform-prod\"}[15m]))",
               "refId": "A",
-              "legendFormat": "terminated reason={{reason}}"
+              "legendFormat": "terminated rate reason={{reason}}"
             },
             {
               "expr": "max by (namespace) (notify_dlq_unreplayed{namespace=\"platform-prod\"})",
@@ -248,9 +254,26 @@ data:
             }
           ],
           "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
-          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 50}, {"color": "red", "value": 100}]}}},
+          "fieldConfig": {
+            "defaults": {"unit": "short"},
+            "overrides": [
+              {
+                "matcher": {"id": "byFrameRefID", "options": "A"},
+                "properties": [
+                  {"id": "unit", "value": "ops"},
+                  {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 5}]}}
+                ]
+              },
+              {
+                "matcher": {"id": "byFrameRefID", "options": "B"},
+                "properties": [
+                  {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 50}, {"color": "red", "value": 100}]}}
+                ]
+              }
+            ]
+          },
           "options": {"legend": {"displayMode": "table", "placement": "right"}},
-          "description": "Critical DLQ visibility. Termination rate (15m window) pairs NotifyDlqSustained at >5/sec; unreplayed gauge pairs NotifyDlqUnreplayed at >100. Operator sets replayed=true after triage."
+          "description": "Critical DLQ visibility. Series A (terminated rate) — pairs NotifyDlqSustained alert at >5/sec (red threshold). Series B (unreplayed gauge) — pairs NotifyDlqUnreplayed alert at >100 (yellow=50/red=100). Per-series field overrides keep each metric semantically aligned with its own alert. Operator sets replayed=true after triage."
         },
         {
           "id": 12,

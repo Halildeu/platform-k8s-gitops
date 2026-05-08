@@ -29,7 +29,7 @@ resources:
   - grafana-dashboards/edge-synthetic-dashboard.yaml
   - grafana-dashboards/jvm-db-hikari-dashboard.yaml     # Codex iter-7 day-2 4. dashboard
   - grafana-dashboards/api-gateway-slo-dashboard.yaml   # iter-49 B — api-gateway status code matrix + SLO candidate (Codex 019ddf43)
-  - grafana-dashboards/notification-orchestrator-dashboard.yaml  # Step B.3 (Codex 019e0892) — strict cutover + retention + dispatch (9 panels)
+  - grafana-dashboards/notification-orchestrator-dashboard.yaml  # Step B.3 (Codex 019e0892 + 019e0935 iter-1) — 6 rows, 12 panels (strict cutover + retention + queue/dispatch + DLQ + alert state)
 
 # Kullanım:
 # Apply sadece S3 session'da (testai soak başlangıcı öncesi):
