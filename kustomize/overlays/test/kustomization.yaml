@@ -699,7 +699,27 @@ images:
     # Cross-AI peer review: Codex thread 019e04d0 iter-2 AGREE
     # post-impl + iter-1 AGREE plan-time (ready_for_impl=true, 6 P0 +
     # 7 P1 + 5 P2 acceptance items absorbed).
-    digest: sha256:f697295223e46bcdb8ecfe01ca0b6a381a46d8f4dafeea149798942951b98ac3
+    #
+    # 2026-05-08 update: sha-d213efa — platform-web PR #311 hotfix.
+    # User reported "girmiyor login olamıyorum" on testai.acik.com:
+    # the "Güvenli Kurumsal Giriş" button was a silent no-op. Browser
+    # MCP debug found a chain bug: AuthBootstrapper kc.init() Promise
+    # pending → initialized=false sustained → LoginPage useEffect's
+    # `[initialized]` dep caused unmount/remount loop → loginHref
+    # state thrown away → handleLogin's `if (!initialized) return`
+    # made every click a no-op. Fix: drop `initialized` from useEffect
+    # deps + drop `!initialized` early return from handleLogin. Live
+    # browser test post-deploy: button click → Keycloak redirect →
+    # auth code returned → token stored → store.auth.token+kcAuth
+    # both true. Login restored.
+    # Build evidence: platform-web run for d213efa4 — testai digest
+    # sha256:cf5ee43e012df1f0112599a13405e4d6d5ca0f03ae7591f5596283aa3a8ada21.
+    # Live pod confirmed (kubectl get pod frontend imageID match).
+    # Cross-AI peer review: Codex thread 019e05d7 iter-0 PARTIAL +
+    # ready_to_merge: true (P2 test coverage gap noted, not blocker).
+    # Follow-up tracked: keycloak.createLoginUrl race when adapter
+    # not yet initialized (cosmetic console error, not UX-blocking).
+    digest: sha256:cf5ee43e012df1f0112599a13405e4d6d5ca0f03ae7591f5596283aa3a8ada21
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
