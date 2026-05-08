@@ -157,40 +157,48 @@ data:
         },
         {
           "id": 6,
-          "title": "Audit Retention — Errors by Phase",
+          "title": "Audit Retention — Errors by Phase (last 2h)",
           "type": "timeseries",
           "datasource": {"type": "prometheus", "uid": "prometheus"},
           "targets": [{
-            "expr": "sum by (phase) (increase(notify_audit_retention_errors_total{namespace=\"platform-prod\"}[1h]))",
+            "expr": "sum by (phase) (increase(notify_audit_retention_errors_total{namespace=\"platform-prod\"}[2h]))",
             "refId": "A",
             "legendFormat": "phase={{phase}}"
           }],
           "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
           "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
           "options": {"legend": {"displayMode": "table", "placement": "right"}},
-          "description": "Retention error counter by phase tag. Phases: partition_create, partition_detach, partition_drop, lock_acquire, cron_tick, unknown. Any non-zero rate fires NotifyAuditRetentionErrors alert."
+          "description": "Retention error increase over 2h (matches NotifyAuditRetentionErrors alert window). Phases: partition_create, partition_detach, partition_drop, lock_acquire, cron_tick, unknown. Any non-zero fires the alert."
         },
         {
           "id": 7,
-          "title": "Queue Health — Pending Intents + Retry Due",
+          "title": "Pending Intents (alert >1000)",
           "type": "timeseries",
           "datasource": {"type": "prometheus", "uid": "prometheus"},
-          "targets": [
-            {
-              "expr": "max by (namespace) (notify_queue_pending_intents{namespace=\"platform-prod\"})",
-              "refId": "A",
-              "legendFormat": "pending"
-            },
-            {
-              "expr": "max by (namespace) (notify_queue_retry_due{namespace=\"platform-prod\"})",
-              "refId": "B",
-              "legendFormat": "retry-due"
-            }
-          ],
-          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+          "targets": [{
+            "expr": "max by (namespace) (notify_queue_pending_intents{namespace=\"platform-prod\"})",
+            "refId": "A",
+            "legendFormat": "pending"
+          }],
+          "gridPos": {"h": 8, "w": 6, "x": 0, "y": 24},
           "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 500}, {"color": "red", "value": 1000}]}}},
-          "options": {"legend": {"displayMode": "table", "placement": "right"}},
-          "description": "Intent + delivery queue depth. NotifyQueueBacklog alert at >1000 pending; NotifyRetryQueueBacklog at >500 retry-due."
+          "options": {"legend": {"displayMode": "list"}},
+          "description": "PENDING intents queued for OutboxPoller. NotifyQueueBacklog alert fires at >1000 sustained 15m."
+        },
+        {
+          "id": 10,
+          "title": "Retry Due Deliveries (alert >500)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "max by (namespace) (notify_queue_retry_due{namespace=\"platform-prod\"})",
+            "refId": "A",
+            "legendFormat": "retry-due"
+          }],
+          "gridPos": {"h": 8, "w": 6, "x": 6, "y": 24},
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 250}, {"color": "red", "value": 500}]}}},
+          "options": {"legend": {"displayMode": "list"}},
+          "description": "RETRY deliveries due for RetryWorker. NotifyRetryQueueBacklog alert fires at >500 sustained 15m."
         },
         {
           "id": 8,
@@ -209,25 +217,55 @@ data:
         },
         {
           "id": 9,
-          "title": "Worker Cycles + DLQ",
+          "title": "Worker Cycles ({worker, outcome})",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "sum by (worker, outcome) (rate(notify_worker_cycles_total{namespace=\"platform-prod\"}[5m]))",
+            "refId": "A",
+            "legendFormat": "{{worker}} outcome={{outcome}}"
+          }],
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+          "fieldConfig": {"defaults": {"unit": "ops"}},
+          "options": {"legend": {"displayMode": "table", "placement": "right"}},
+          "description": "OutboxPoller + RetryWorker tick rate by outcome. NotifyWorker* warning alerts trigger on persistent error outcomes."
+        },
+        {
+          "id": 11,
+          "title": "DLQ — Termination Rate + Unreplayed Backlog",
           "type": "timeseries",
           "datasource": {"type": "prometheus", "uid": "prometheus"},
           "targets": [
             {
-              "expr": "sum by (worker, outcome) (rate(notify_worker_cycles_total{namespace=\"platform-prod\"}[5m]))",
+              "expr": "sum by (reason) (rate(notify_dlq_terminated_total{namespace=\"platform-prod\"}[15m]))",
               "refId": "A",
-              "legendFormat": "{{worker}} outcome={{outcome}}"
+              "legendFormat": "terminated reason={{reason}}"
             },
             {
               "expr": "max by (namespace) (notify_dlq_unreplayed{namespace=\"platform-prod\"})",
               "refId": "B",
-              "legendFormat": "dlq-unreplayed"
+              "legendFormat": "dlq-unreplayed (gauge)"
             }
           ],
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32},
-          "fieldConfig": {"defaults": {"unit": "short"}},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 50}, {"color": "red", "value": 100}]}}},
           "options": {"legend": {"displayMode": "table", "placement": "right"}},
-          "description": "Worker tick rate (OutboxPoller + RetryWorker) by outcome. DLQ unreplayed gauge — operator triages by setting replayed=true. NotifyDlqUnreplayed alert at >100."
+          "description": "Critical DLQ visibility. Termination rate (15m window) pairs NotifyDlqSustained at >5/sec; unreplayed gauge pairs NotifyDlqUnreplayed at >100. Operator sets replayed=true after triage."
+        },
+        {
+          "id": 12,
+          "title": "Audit Retention — Alert State (Never Succeeded)",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "max(ALERTS{alertname=\"NotifyAuditRetentionNeverSucceeded\", alertstate=~\"pending|firing\"}) or vector(0)",
+            "refId": "A",
+            "legendFormat": "NeverSucceeded"
+          }],
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 40},
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "mappings": [{"options": {"0": {"text": "OK"}, "1": {"text": "PENDING/FIRING"}}, "type": "value"}]}},
+          "options": {"colorMode": "background", "graphMode": "none"},
+          "description": "Companion to Panel 4 (last-success age). When the gauge stays at 0 (cron never ran), Panel 4 shows 'No data' due to the > 0 filter; this stat exposes the NotifyAuditRetentionNeverSucceeded alert state directly. PENDING after 0s for 26h, FIRING after 26h."
         }
       ]
     }
