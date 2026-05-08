@@ -194,15 +194,27 @@ spec:
             runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/operations/RUNBOOKS/RB-notify-strict-subscriberid-cutover.md"
 
         - alert: NotifySubscriberIdentityDeniedStorm
+          # Codex iter-2 P0 absorb (thread 019e08fa): downgraded from
+          # severity=critical to severity=warning. Reason: existing
+          # alertmanager-bridge.py routes by `severity` (critical → P1
+          # immediate), ignores the `page=true` label. Removing only
+          # page=true didn't change actual paging — both alerts still
+          # produced two P1 incidents. Demoting this alert to warning
+          # + `security_impact: critical` annotation preserves the
+          # incident grouping semantics (both visible together) without
+          # double-paging when an auth-chain failure fires both at once.
+          # If the SubscriberIdentity storm fires *alone* (without the
+          # OrgAccess pair), the warning still surfaces in the dashboards
+          # and Alertmanager grouping; the upstream impact is real but
+          # the immediate response is the same as for the OrgAccess
+          # critical (bisect auth chain → guard logs → rollback path).
           expr: sum by (namespace) (rate(notify_subscriber_identity_denied_total[5m])) > 0.1
           for: 5m
           labels:
-            severity: critical
+            severity: warning
             service: notification-orchestrator
-            # No page=true — paired with NotifyOrgAccessDeniedStorm; that one
-            # carries the page when the auth chain breaks. This alert remains
-            # critical for incident grouping but doesn't double-page.
           annotations:
+            security_impact: "critical"
             summary: "SubscriberIdentityGuard fail-close storm > 0.1/sec"
             description: |
               {{ $value | humanize }} subscriber-identity denials/sec over 5m
@@ -211,7 +223,9 @@ spec:
               guarded route). Inspect denied{reason} distribution via
               `notify_subscriber_identity_denied_total{reason=...}` per-series.
               Pair-check: NotifyOrgAccessDeniedStorm — if both fire at once
-              the root cause is upstream auth-chain failure.
+              the root cause is upstream auth-chain failure (treat as one
+              incident; the Org alert paged this one didn't to avoid double
+              paging).
             runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/operations/RUNBOOKS/RB-notify-strict-subscriberid-cutover.md"
 
         - alert: NotifyOrgAccessSourceDefaultRegression

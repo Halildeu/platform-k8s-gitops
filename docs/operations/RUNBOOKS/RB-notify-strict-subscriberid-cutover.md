@@ -158,12 +158,44 @@ Triggered by:
    - `cross_org_lookup_attempt` (Org only) — repo lookup with denied org
 
 3. **Quick rollback path** (if regression suspected):
-   - PR-5.5 strict flip: revert `NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT="true"`
-     to `false` via overlay ConfigMap patch + selective apply + rolling restart.
-   - PR-5.4 default-org close: revert `NOTIFY_SECURITY_DEFAULT_ORG_ID=""`
-     to `"default"` (legacy fallback) — same overlay patch path.
-   - Both rollbacks: see `docs/runbooks/RB-faz-23-2-notify-incident-response.md`
-     §rollback for the kubectl one-liner.
+
+   PR-5.5 strict subscriberId rollback:
+   ```bash
+   # Edit overlay configmap patch
+   # File: kustomize/overlays/{test,prod}/kustomization.yaml
+   # Find the notification-orchestrator-config patch block, change:
+   #   NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT: "true"
+   # to:
+   #   NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT: "false"
+
+   # Selective apply + rolling restart (D17 koruma — full overlay apply YASAK):
+   kubectl kustomize kustomize/overlays/{env} \
+     | yq 'select(.kind == "ConfigMap" and .metadata.name == "notification-orchestrator-config")' \
+     | kubectl --context k3d-{env} -n platform-{env} apply -f -
+
+   kubectl --context k3d-{env} -n platform-{env} rollout restart deploy/notification-orchestrator
+
+   # Verify env reverted:
+   kubectl --context k3d-{env} -n platform-{env} exec deploy/notification-orchestrator -- \
+     env | grep NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT
+   ```
+
+   PR-5.4 default-org close rollback:
+   ```bash
+   # Same pattern, different env var:
+   #   NOTIFY_SECURITY_DEFAULT_ORG_ID: ""           (current strict)
+   # to:
+   #   NOTIFY_SECURITY_DEFAULT_ORG_ID: "default"    (legacy fallback)
+
+   # Apply via the same kustomize | yq | kubectl apply chain above.
+   ```
+
+   Both rollbacks restore the legacy "silent pass" / fallback paths the
+   FE / auth-service stack worked under before Faz 23.6. Pods retain
+   existing in-flight requests; new requests after rolling restart use
+   the legacy behaviour. PRs to revert the overlay env in git follow
+   immediately afterwards (cross-AI peer review HARD RULE applies even
+   for revert PRs).
 
 ### F3 gate regression response (source default/none)
 
