@@ -271,22 +271,198 @@ spec:
               upstream auth-service JWT enrichment + Keycloak realm org_id
               mapper config. Runbook: see SubscriberId cutover doc.
 
-        - alert: NotifyStrictCutoverTelemetryAbsent
-          # Codex iter-1 P2 absorb: if Prometheus stops scraping the target
-          # entirely, the rate/increase queries above silently evaluate to 0
-          # → false sense of safety. This alert catches the "scrape gone"
-          # case explicitly. Pair-check with NotifyServiceDown which catches
-          # `up == 0` for known series; this catches the absent-target case.
-          expr: absent(up{job=~"notification-orchestrator", namespace=~"platform-(test|prod)"})
+        # Per-namespace absent guard (Codex 019e08fa iter-2 P2 absorb;
+        # 019e090d iter-2 follow-up). Two separate `absent()` expressions
+        # so a partial namespace outage (one cluster scrape disappears,
+        # other stays) fires the alert. The previous combined absent({test,
+        # prod}) only fired when BOTH disappeared.
+        - alert: NotifyStrictCutoverTelemetryAbsentTest
+          expr: absent(up{job=~"notification-orchestrator", namespace="platform-test"})
           for: 5m
           labels:
             severity: warning
             service: notification-orchestrator
           annotations:
-            summary: "Notify strict-cutover telemetry absent (no scrape target)"
+            summary: "Notify strict-cutover telemetry absent in platform-test"
             description: |
               No `up` series for notification-orchestrator job in
-              platform-test or platform-prod for 5m. Strict cutover counter
-              alerts evaluate against zero series → silent-green risk. Check
-              ServiceMonitor selector + Service endpoints + Prometheus
-              scrape config render.
+              platform-test for 5m. Strict cutover counter alerts evaluate
+              against zero series → silent-green risk. Check ServiceMonitor
+              selector + Service endpoints + Prometheus scrape config.
+
+        - alert: NotifyStrictCutoverTelemetryAbsentProd
+          expr: absent(up{job=~"notification-orchestrator", namespace="platform-prod"})
+          for: 5m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify strict-cutover telemetry absent in platform-prod"
+            description: |
+              No `up` series for notification-orchestrator job in
+              platform-prod for 5m. Strict cutover counter alerts evaluate
+              against zero series → silent-green risk. Check ServiceMonitor
+              selector + Service endpoints + Prometheus scrape config.
+
+    # ----- Faz 23.7 Step C audit retention alerts (Codex 019e090d iter-1
+    # follow-up; activates after PR #427 NOTIFY_AUDIT_RETENTION_ENABLED=true
+    # rolls out) -----
+    #
+    # AuditPartitionRetentionService is `@Scheduled(cron="0 0 2 * * *",
+    # zone="UTC")`. These alerts catch:
+    # 1. Stale: cron tick hasn't advanced last_success in 26h
+    #    (one missed daily tick + 2h grace)
+    # 2. Errors: any error counter increment over 1h
+    # 3. Telemetry absent: per-namespace, no retention metric series at all
+    #    (means @ConditionalOnProperty disabled the bean)
+    # 4. Lock skipped sustained: advisory lock contention (multi-pod race)
+    #
+    # Codex C.2 prereq: these alerts must be live BEFORE flipping
+    # NOTIFY_AUDIT_RETENTION_DRY_RUN=false in follow-up PR — without them,
+    # a silent failure on the first non-dry-run tick (DETACH/DROP regression)
+    # would have no observability.
+
+    - name: notification-orchestrator-audit-retention
+      interval: 30s
+      rules:
+        - alert: NotifyAuditRetentionStale
+          # Codex iter-1 P1 absorb (thread 019e0921):
+          # 1. `max by(namespace)` instead of `sum by(namespace)`. Prod has
+          #    replicas=2 + HPA up to 3; sum on a timestamp gauge double/
+          #    triples epoch and breaks `time() - sum` arithmetic. max gives
+          #    "most recent successful tick across pods".
+          # 2. Age expression (time() - max(...)) on LHS so `$value` is age
+          #    in seconds — humanizeDuration renders correctly.
+          # 3. `> 0` guard on RHS: excludes "never succeeded" case
+          #    (timestamp=0). NeverSucceeded handled by separate alert below.
+          # Cron is daily 02:00 UTC; 26h threshold = one missed tick + 2h
+          # grace for clock skew / pod restart timing.
+          expr: |
+            (time() - max by (namespace) (notify_audit_retention_last_success_timestamp_seconds)) > 93600
+            and on(namespace)
+            max by (namespace) (notify_audit_retention_last_success_timestamp_seconds) > 0
+          for: 30m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify audit retention stale (>26h since last successful tick)"
+            description: |
+              {{ $value | humanizeDuration }} since last successful retention
+              cycle in namespace {{ $labels.namespace }}. Cron is daily 02:00
+              UTC; 26h threshold = one missed tick + 2h grace. Check pod
+              schedule + advisory lock contention + DB connectivity. Triage
+              steps in `RB-faz-23-2-notify-vault-paths.md` retention section
+              (or extend that runbook in the same PR that flips
+              dry-run=false).
+
+        - alert: NotifyAuditRetentionNeverSucceeded
+          # Companion to Stale (Codex iter-1 P1.2). NotifyAuditRetentionStale
+          # excludes the gauge=0 case via the `> 0` RHS clause; this alert
+          # catches it. Threshold 26h means: post-activation, if the bean
+          # emits `last_success_timestamp_seconds=0` for a full day plus
+          # grace, the cron isn't actually running. Either scheduling-enabled
+          # was false, the cron expr was malformed at boot, or the lock
+          # acquisition is failing on every tick.
+          expr: max by (namespace) (notify_audit_retention_last_success_timestamp_seconds) == 0
+          for: 26h
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify audit retention never succeeded (gauge=0 for >26h)"
+            description: |
+              `last_success_timestamp_seconds` has been 0 for >26h in namespace
+              {{ $labels.namespace }}. AuditPartitionRetentionService bean is
+              up but no successful tick observed. Check
+              `kubectl logs deploy/notification-orchestrator | grep
+              AuditPartitionRetentionService` for activation log + tick errors;
+              verify `notify.audit.retention-scheduling-enabled=true`; verify
+              cron expression parses; verify advisory lock isn't stuck.
+
+        - alert: NotifyAuditRetentionErrors
+          # Codex iter-1 P2 absorb: switched from rate(...[1h]) > 0 (fragile,
+          # single error may not stay positive for the matching `for` clause)
+          # to increase(...[2h]) > 0 with short `for: 30m` — semantic intent:
+          # "any error in the last 2h, alert after 30m sustained signal".
+          expr: sum by (namespace, phase) (increase(notify_audit_retention_errors_total[2h])) > 0
+          for: 30m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify audit retention errors in {{ $labels.phase }}"
+            description: |
+              {{ $value | humanize }} retention errors in phase
+              `{{ $labels.phase }}` over 2h (namespace {{ $labels.namespace }}).
+              Phase tags: `partition_create`, `partition_detach`, `partition_drop`,
+              `lock_acquire`, `cron_tick`, `unknown`. Investigate via
+              `kubectl logs deploy/notification-orchestrator | grep
+              AuditPartitionRetentionService`. May indicate DB privilege drift,
+              partition lock contention, or schema invariant violation.
+
+        - alert: NotifyAuditRetentionTelemetryAbsentTest
+          # `@ConditionalOnProperty` gates the bean. Absent metric means
+          # NOTIFY_AUDIT_RETENTION_ENABLED was reverted, OR scrape target is
+          # down (different from "ServiceMonitor scrape gone" caught by
+          # NotifyStrictCutoverTelemetryAbsentTest), OR pod is in extended
+          # restart cycle.
+          expr: absent(notify_audit_retention_last_success_timestamp_seconds{namespace="platform-test"})
+          for: 30m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify audit retention telemetry absent in platform-test"
+            description: |
+              No `notify_audit_retention_last_success_timestamp_seconds` series
+              in platform-test for 30m. Possible causes (Codex iter-1 P2
+              absorb): (1) NOTIFY_AUDIT_RETENTION_ENABLED env reverted to
+              false (config drift); (2) ServiceMonitor selector / scrape
+              dropped target — pair-check NotifyStrictCutoverTelemetryAbsentTest;
+              (3) extended pod restart cycle (>30m). Inspect ConfigMap
+              `notification-orchestrator-config` + `kubectl get pod`
+              + `kubectl logs deploy/... | grep
+              AuditPartitionRetentionService` for activation message.
+
+        - alert: NotifyAuditRetentionTelemetryAbsentProd
+          expr: absent(notify_audit_retention_last_success_timestamp_seconds{namespace="platform-prod"})
+          for: 30m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify audit retention telemetry absent in platform-prod"
+            description: |
+              No `notify_audit_retention_last_success_timestamp_seconds` series
+              in platform-prod for 30m. Possible causes (Codex iter-1 P2
+              absorb): (1) NOTIFY_AUDIT_RETENTION_ENABLED env reverted to
+              false (config drift); (2) ServiceMonitor selector / scrape
+              dropped target — pair-check NotifyStrictCutoverTelemetryAbsentProd;
+              (3) extended pod restart cycle (>30m). Inspect ConfigMap
+              `notification-orchestrator-config` + `kubectl get pod`
+              + `kubectl logs deploy/... | grep
+              AuditPartitionRetentionService` for activation message.
+
+        - alert: NotifyAuditRetentionLockSkippedSustained
+          # Codex iter-1 P1 absorb: previous threshold (rate ~10/hour for 2h)
+          # was inert for a daily cron — single-day skips can never sustain
+          # 2h on a daily emission cadence. Switched to "any skip in 26h"
+          # which catches the daily-cron pattern correctly (single skip
+          # over a 26h window = daily cron skip detected). For repeated-day
+          # skips, increase the window to 49h with >= 2 threshold.
+          expr: sum by (namespace) (increase(notify_audit_retention_lock_skipped_total[26h])) > 0
+          for: 30m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify audit retention advisory-lock contention (cron skip)"
+            description: |
+              {{ $value | humanize }} retention cron tick(s) skipped due to
+              advisory-lock contention over 26h (namespace {{ $labels.namespace }}).
+              Daily-cadence cron means a single skip = a missed nightly cycle.
+              Multi-pod race or long-running tick blocking the next one. Check
+              pod replica count + retention cycle duration; consider splitting
+              across leader election or reducing future-months pre-create
+              batch.
