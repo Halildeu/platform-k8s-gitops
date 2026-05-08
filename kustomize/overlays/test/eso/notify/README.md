@@ -1,44 +1,40 @@
-# Notify ESO Test Overlay (Faz 23 — Placeholder)
+# Notify ESO Test Overlay (Faz 23.9 Step D — ACTIVE)
 
-> **Status**: PENDING (Faz 23.1 implementation pending)
+> **Status**: ACTIVE (Faz 23.9 Step D — Codex thread `019e08df` REVISE absorb 2026-05-08)
 > **ADR**: [ADR-0013-notification-orchestration](../../../../docs/adr/0013-notification-orchestration.md)
+> **Vault path**: `kv/platform/notification-orchestrator` (flat single-path; matches prod overlay)
 
-Bu dizin Faz 23.1 Kernel implementation öncesi **placeholder**. ESO ExternalSecret manifest'leri Faz 23.1 sub-faz'ında Vault path populate sonrası eklenecek.
+Bu dizin Faz 23.1 PR5'te kuruldu, Faz 23.9 Step D'de flat path consolidation
+(Codex `019e08df` iter-1 absorb) ile prod manifest'e hizalandı.
 
-## Beklenen ExternalSecret'lar (Faz 23.1+)
+## Vault path layout (flat)
 
-```
-externalsecret-notify-smtp.yaml         # Vault: kv/platform/notify/smtp
-externalsecret-notify-slack.yaml        # Vault: kv/platform/notify/slack
-externalsecret-notify-webhook.yaml      # Vault: kv/platform/notify/webhook (HMAC secret)
-```
+`kv/platform/notification-orchestrator`:
 
-## Faz 23.3+ ek ExternalSecret'lar
-
-```
-externalsecret-notify-netgsm.yaml       # SMS primary
-externalsecret-notify-iletimerkezi.yaml # SMS secondary
-externalsecret-notify-fcm.yaml          # Faz 23.7 push
-```
-
-## Vault Path Plan
-
-| Path | İçerik | Sub-faz |
+| Property | Secret env var | Note |
 |---|---|---|
-| `kv/platform/notify/smtp` | host, port, username, password, dkim_key, from_address | 23.1 |
-| `kv/platform/notify/slack` | webhook_url, bot_token (opsiyonel) | 23.1 |
-| `kv/platform/notify/webhook` | hmac_secret | 23.1 |
-| `kv/platform/notify/netgsm` | api_username, api_password, sender_id | 23.3 |
-| `kv/platform/notify/iletimerkezi` | api_username, api_password, sender_id | 23.3 |
-| `kv/platform/notify/fcm` | service_account_json | 23.7 |
-| `kv/platform/monitoring/fallback` | slack_webhook_url, smtp_user, smtp_password (D43 outage bypass — ayrı path) | 23.2 |
+| `db_username` | `SPRING_DATASOURCE_USERNAME` | platform user (paylaşılan) |
+| `db_password` | `SPRING_DATASOURCE_PASSWORD` | scram-sha-256 hash |
+| `webhook_signing_secret` | `NOTIFY_ADAPTERS_WEBHOOK_SIGNING_SECRET` | HMAC; rotation `*_NEXT` follow-up |
+| `authz_internal_api_key` | `NOTIFY_AUTHZ_INTERNAL_API_KEY` | permission-service S2S |
+| `redaction_pepper` | `NOTIFY_REDACTION_PEPPER` | HMAC recipient hash |
 
-## Activation
+> **History**: This file was originally split path (kv/platform/notify/{db,
+> redaction,webhook,authz,smtp,slack}) — over-engineered for SMTP/Slack
+> channels not yet wired. ExternalSecret stayed in `SecretSyncedError` from
+> 2026-05-07 to 2026-05-08. Faz 23.9 Step D rewrite consolidates to flat
+> single-path matching the 10 working platform service ExternalSecrets.
 
-1. Ops Vault populate (kullanıcı/operatör — `boundary-cross + credential-write`)
-2. ExternalSecret manifest dosyaları bu dizine eklenir
-3. `kustomization.yaml` oluşturulur (`resources: [...]`)
-4. `kustomize/overlays/test/eso/kustomization.yaml`'a `../eso/notify` reference eklenir
-5. `kubectl --context k3d-test apply -k kustomize/overlays/test/eso/notify`
+## Activation Sequence
 
-Detay: `docs/runbooks/RB-faz-23-1-kernel-impl-checklist.md` Hafta 1 önkoşul.
+1. Operator populates Vault test path with 5 keys (one-shot, scripted in
+   `docs/runbooks/RB-faz-23-2-notify-vault-paths.md`)
+2. ExternalSecret applied: `kubectl --context k3d-test apply -f
+   kustomize/overlays/test/eso/notify/externalsecret-notify.yaml`
+3. Verify SecretSynced=True + ownerReferences=ExternalSecret
+
+## Pending follow-up (test cluster operator action)
+
+Test Vault path henüz populate edilmedi (this PR scope dışı). Activation
+şartı: operator one-shot Vault write — `RB-faz-23-2-notify-vault-paths.md`
+adımlarını izle.

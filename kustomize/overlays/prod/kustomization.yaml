@@ -131,6 +131,26 @@ patches:
   # patches KALDIRILDI. Base zaten shortname (postgres:5432, keycloak:8080,
   # auth-service:8088, gateway routes 0-5). Prod-specific override YOK,
   # overlay sadece namespace (platform-prod) + Ingress host + Endpoints pin.
+
+  # Faz 23.9 Step D (Codex thread 019e08df iter-2 REVISE absorb 2026-05-08):
+  # notify-orch base secret-stub.yaml workload render'a "dev-only-..." sentinel
+  # değerlerle bir Secret yazıyor (kustomize/base/apps/notification-orchestrator/
+  # secret-stub.yaml). ESO ExternalSecret aynı Secret adını creationPolicy=Owner
+  # ile yönetmek istiyor. Aynı target Secret'in iki Application tarafından
+  # yönetilmesi (platform-prod düz Secret + platform-eso-prod ExternalSecret)
+  # full sync sırasında dev sentinel'a geri yazma penceresi açar. Stub'ı
+  # base'den çıkarmak local/test bootstrap'i kırardı; prod overlay'de delete
+  # patch ile yalnız prod render'dan kaldırıyoruz.
+  - target:
+      kind: Secret
+      name: notification-orchestrator-secrets
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: notification-orchestrator-secrets
+
   - target:
       kind: ConfigMap
       name: api-gateway-config
