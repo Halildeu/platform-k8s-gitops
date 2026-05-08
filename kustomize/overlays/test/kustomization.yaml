@@ -1004,9 +1004,28 @@ images:
   # on every browser inbox call until the Keycloak `org_id` mapper
   # ships and admin@example.com is backfilled — that is the expected
   # canary signal, not a regression.
+  #
+  # 2026-05-08 update: sha-204042d — PR-5.5 subscriber identity strict
+  # cutover (platform-backend PR #126; Codex thread `019e07d6` iter-1
+  # PARTIAL absorb + Spring binding overload-removal fix).
+  # `SubscriberIdentityGuard` now fail-closes for requests arriving
+  # without an authenticated JWT principal (no Authentication or
+  # non-Jwt principal — anonymous, username/password) when the new
+  # toggle `NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT=true` is
+  # set. Strict-mode denials surface on the new
+  # `notify_subscriber_identity_denied_total{reason="no_auth"|"non_jwt"}`
+  # counter, kept separate from the existing match counter so the
+  # claim-tag cardinality stays bounded.
+  #
+  # The previous F3 gate close (PR-5.4) and the /inbox/me 400 cycle
+  # (PR-5.0/5.2/5.3 + #316/#317/#318 + #413/#414) confirmed the live
+  # filter chain injects `JwtAuthenticationToken` on every protected
+  # route, so flipping strict to `true` here does not regress the
+  # browser-verified happy path. Build run 25559965587, image push
+  # ~14:05Z.
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:cd42c5fea42c62f47ad357d6a2740166fbe71f175e01c4f5caae1903ee981e6f
+    digest: sha256:ef0f487f295359563a7c3d601db369cc6b2faf098f27740615bd1d02408daf09
 
 patches:
   # Replica 0 default (scale-to-zero)
@@ -1543,6 +1562,32 @@ patches:
       - op: add
         path: /data/NOTIFY_SECURITY_DEFAULT_ORG_ID
         value: ""
+      # PR-5.5 strict subscriber identity cutover (platform-backend PR
+      # #126; Codex thread `019e07d6` iter-1 PARTIAL absorb).
+      #
+      # When set to "true", `SubscriberIdentityGuard` fail-closes the
+      # silent-pass branches (no Authentication in SecurityContextHolder;
+      # principal that is not a `Jwt`). The previous code paths that let
+      # anonymous / non-JWT calls through were intentional for slice tests
+      # (`@WebMvcTest(addFilters=false)`) but unacceptable on a live route
+      # where every `/api/v1/notify/**` request must carry a real JWT
+      # principal.
+      #
+      # Strict-mode denials surface on the new
+      # `notify_subscriber_identity_denied_total{reason="no_auth"|"non_jwt"}`
+      # counter, kept separate from the existing match counter so the
+      # claim-tag cardinality stays bounded. The browser-verified happy
+      # path (PR-5.4 default-org strict flip) confirmed the live filter
+      # chain injects `JwtAuthenticationToken` on every protected route,
+      # so flipping this strict flag does not regress legitimate traffic.
+      #
+      # Rollback: drop this `add` op and re-apply; backend reverts to
+      # `application.yml` default `false`. Browser verify HARD RULE will
+      # catch any regression: SSE stream stable 200 and the `denied`
+      # counter must stay at zero in normal traffic.
+      - op: add
+        path: /data/NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT
+        value: "true"
       # Faz 23.2 PR-D.2 — OTLP runtime activation (Codex 019dfe0f Q4 absorb).
       # PR-C tracing readiness (sampling=0.0, endpoint empty) → PR-D.2 test
       # cluster activation: 10% sampling, Tempo direct OTLP HTTP receiver.
@@ -1567,6 +1612,12 @@ patches:
         path: /spec/template/metadata/annotations
         value:
           observability.acik.com/tempo-otlp-activation: "pr-d-2"
+          # PR-5.5 subscriber identity strict cutover — annotation bump
+          # forces a rolling restart so the new ConfigMap value
+          # NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT=true is picked up
+          # via envFrom (ConfigMap envFrom does not auto-trigger pod
+          # restart). Codex thread `019e07d6` iter-1 absorb.
+          security.acik.com/subscriber-identity-strict-cutover: "pr-5-5"
 
   # Faz 23.4 PR-E.4 absorb (revert PR-E.3 HPA min=max=1 lock):
   # Backend PR Halildeu/platform-backend#89 lands cross-pod broadcast via PG
