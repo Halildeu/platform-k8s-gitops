@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-backend",
+  "service": "notification-orchestrator",
+  "git_sha": "204042dd699e3f6add5bf919303db0e7d665c9e1",
+  "git_short_sha": "204042d",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-backend-notification-orchestrator",
+    "digest": "sha256:ef0f487f295359563a7c3d601db369cc6b2faf098f27740615bd1d02408daf09",
+    "tag": "sha-204042d",
+    "push_run_id": 25559965587,
+    "pushed_at": "2026-05-08T14:05:00Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-05-08T13:35:00Z",
+      "promoted_by_pr": 416,
+      "argocd_revision": "cef4066",
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-05-08T13:36:30Z",
+          "details": "Pod notification-orchestrator-5f69bc477c-srd76 1/1 Running, rolling restart success after kubectl set image; pod imageID matches sha-204042d digest.",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/pull/416"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-05-08T13:38:00Z",
+          "details": "Browser /inbox/me 200x2, SSE stream pending 200, RTK Query cache status:fulfilled dataItems:0; notify_subscriber_identity_match{claim=subscriberId}=7.0 verified via actuator/prometheus.",
+          "evidence_url": "https://github.com/Halildeu/platform-backend/pull/126",
+          "endpoints": [
+            "/api/v1/notify/inbox/me",
+            "/api/v1/notify/inbox/me/stream",
+            "/api/v1/notify/inbox/me/unread-count"
+          ]
+        },
+        "d29_zanzibar": {
+          "status": "GREEN",
+          "checked_at": "2026-05-08T15:45:24Z",
+          "details": "PR-5.4 default-org-id strict mode + PR-5.5 subscriber identity strict mode jointly verified: 41+ minutes sustained source=default/source=none/denied counter all at zero increment under live admin@example.com traffic. Strict cutover boundary holds end-to-end via NotifyOrgAccessGuard + SubscriberIdentityGuard chain.",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/pull/418",
+          "allow_deny_synthetic": "PASS"
+        }
+      },
+      "verified_at": "2026-05-08T15:45:24Z",
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": 419,
+      "candidate_pr_status": "ready_for_review"
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:cd42c5fea42c62f47ad357d6a2740166fbe71f175e01c4f5caae1903ee981e6f"
+  },
+  "audit": {
+    "created_at": "2026-05-08T15:55:00Z",
+    "last_updated_at": "2026-05-08T15:55:00Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-backend/actions/runs/25559965587"
+  }
+}
