@@ -1716,6 +1716,12 @@ patches:
           # via envFrom (ConfigMap envFrom does not auto-trigger pod
           # restart). Codex thread `019e07d6` iter-1 absorb.
           security.acik.com/subscriber-identity-strict-cutover: "pr-5-5"
+          # Faz 23.7 Step C audit retention activation (Codex thread
+          # 019e090d iter-1 absorb): ConfigMap envFrom only reads at pod
+          # start → annotation bump forces rolling restart so
+          # AuditPartitionRetentionService bean gets instantiated under
+          # NOTIFY_AUDIT_RETENTION_ENABLED=true.
+          compliance.acik.com/audit-retention-dry-run: "pr-c-1-2026-05-08"
 
   # Faz 23.4 PR-E.4 absorb (revert PR-E.3 HPA min=max=1 lock):
   # Backend PR Halildeu/platform-backend#89 lands cross-pod broadcast via PG

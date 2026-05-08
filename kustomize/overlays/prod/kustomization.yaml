@@ -345,6 +345,12 @@ patches:
         path: /spec/template/metadata/annotations
         value:
           security.acik.com/strict-cutover-activation: "faz-23-9-prod"
+          # Faz 23.7 Step C audit retention activation rollout trigger
+          # (Codex thread 019e090d iter-1 absorb): ConfigMap envFrom only
+          # reads at pod start → annotation bump forces rolling restart so
+          # AuditPartitionRetentionService bean gets instantiated under
+          # the new NOTIFY_AUDIT_RETENTION_ENABLED=true config.
+          compliance.acik.com/audit-retention-dry-run: "pr-c-1-2026-05-08"
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:
