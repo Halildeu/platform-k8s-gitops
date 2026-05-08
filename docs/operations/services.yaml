@@ -160,11 +160,19 @@ services:
         replicas:0 + image:placeholder, cluster pod yok — gitops-as-source-
         of-truth açısından tutarlı (deferred kabul). Faz 23.1 implementation
         sonrası replicas:1 (test) + image digest pin → enabled flip.
+
+      Faz 23.9 prod activation (2026-05-08): prod=enabled. Test cluster
+      4h+ sustained PR-5.4 strict default-org-id flip + 41+ min PR-5.5
+      strict subscriber identity cutover smoke evidence (release-candidates/
+      platform-backend/204042dd...json D29 ledger). Prod overlay
+      kustomize/overlays/prod/kustomization.yaml notification-orchestrator
+      base + image digest sha-204042d + ConfigMap patch (NOTIFY_SECURITY_*
+      strict envs from boot, no transitional default fallback) + replicas:2.
     jwt_validates: true
     route_external: false
     environments:
       test: enabled   # Faz 23.1 PR5 D29-NOTIFY (2026-05-06) — backend PR #65 merged + GHCR sha-4b886bc digest pin
-      prod: deferred  # Faz 23.9 prod cutover'da enabled olur
+      prod: enabled   # Faz 23.9 prod cutover (2026-05-08) — D29 evidence ledger sha-204042d + PR #419 (PR-5.4 + PR-5.5 strict from boot)
 
 # --- Future / disabled (placeholder for retirement signal) ---
 # (none yet — when a service is permanently removed, move it here with

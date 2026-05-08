@@ -12,6 +12,16 @@ resources:
   - namespace.yaml    # Namespace + labels (platform=true env=prod, ApplicationSet prereq)
   - ../../base
   - ../../base/apps/ops-bundle    # Faz 17.2.5: ExternalSecret + ServiceMonitor CRD paketi (runtime'dan ayrı)
+  # Faz 23.9 prod cutover (2026-05-08, tek-user pre-prod context):
+  # notification-orchestrator base manifests aktive edildi. D29 evidence
+  # gate testai cluster'da bugün karşılandı: PR-5.4 strict default-org-id
+  # flip + PR-5.5 strict subscriber identity cutover LIVE; 6 snapshot
+  # 4h sustained source="default"=0 + source="none"=0 + denied counter=0
+  # + browser /inbox/me 200x2 + SSE 200 + pod log 0 ERROR + 41+ min
+  # storm-free smoke. Bu cycle Codex thread `019e0675` iter-7 absorb
+  # plus Faz 23.4 PR-E.4 cross-pod broadcast (PG LISTEN/NOTIFY) ile HPA
+  # min=max=1 lock'u kaldırdı; replicas=2 base ile prod'a giriyor.
+  - ../../base/apps/notification-orchestrator
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster (network teşhisi sonrası — k3d cluster → 10.9.193.0/24 routing fail)
   - endpoints-workcube-mssql.yaml    # 172.21.0.7 (workcube-mssql-proxy-prod, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.21.0.7/32:11433
@@ -91,6 +101,21 @@ images:
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
     digest: sha256:6d926376a58bfd47c3d5059e0e0025f8cb38d5c7fbf80767461b2eea136647f4
+
+  # Faz 23.9 prod cutover (2026-05-08): notification-orchestrator
+  # canonical activation. Image promoted from testai's bugün-LIVE digest
+  # sha-204042d (platform-backend PR #126 squash, image build run
+  # 25559965587, image push ~14:05Z). The same binary carries:
+  #   - PR-5.4 strict default-org-id semantics (NotifyOrgAccessGuard
+  #     fail-closes when env value is blank)
+  #   - PR-5.5 strict subscriber identity cutover (config-driven flag
+  #     SubscriberIdentityGuard fail-closes the silent-pass branches)
+  #   - tracing autoconfig disabled via management.tracing.enabled=false
+  #     (Tempo deploy DEFER until Faz 23.8 minimal observability cycle)
+  # Prod ConfigMap patch below sets these env values explicitly.
+  - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
+    newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
+    digest: sha256:ef0f487f295359563a7c3d601db369cc6b2faf098f27740615bd1d02408daf09
 
 # Faz 23.2 PR-D.3 — notification-orchestrator prod IMAGE PIN DEFERRED.
 # D29 evidence gate (Codex P0 Sprint A Item 3) requires:
@@ -204,19 +229,85 @@ patches:
       - op: remove
         path: /spec/data/6
 
-  # Faz 23.2 PR-D.3 — notification-orchestrator prod ACTIVATION DEFERRED.
-  # D29 evidence gate: test promotion + smoke + ledger entry öncül; sonra
-  # PR-D.3.x'te prod overlay Deployment patch + ConfigMap patch
-  # (DATASOURCE + OTLP) eklenir.
+  # Faz 23.9 prod cutover (2026-05-08, tek-user pre-prod context):
+  # notification-orchestrator-config prod overrides. Tüm strict mode
+  # env'leri test cluster'da 41+ min sustained doğrulandı. Prod
+  # cutover PR-5.4/5.5'i ai.acik.com'da aktive ediyor:
   #
-  # SSE multi-pod kısıtı RESOLVED (Faz 23.4 PR-E.4 — backend PR #89):
-  # InboxNotifyListener PG LISTEN/NOTIFY ile cross-pod broadcast yapıyor.
-  # PG-only stateful kanonik referansı ADR-0013 §"Stateful" (Mongo/Redis/
-  # RabbitMQ YASAK) + PLAN D38/D39 notification authority kararı
-  # (ADR-0002 §7.1 platform fiziksel taban; notification-spesifik kural
-  # ADR-0013'tedir). Prod activation PR'ında HPA min=max=1 KİLİDİ ARTIK
-  # GEREKMİYOR; base HPA default (min=1, max=3) kullanılabilir, replicas=2
-  # baseline planı geçerli.
+  # - SPRING_DATASOURCE_URL: prod PG (notify_db, host bridge)
+  # - SECURITY_JWT_ISSUER + JWK_SET_URI: prod KC (https://ai.acik.com/realms/serban
+  #   public iss; internal cluster KC JWK URL — JwtDecoder bean
+  #   permission-service'tekiyle aynı pattern)
+  # - MANAGEMENT_TRACING_ENABLED=false + SAMPLING=0.0: Tempo deploy
+  #   DEFER (Faz 23.8); tracing autoconfig komple disable
+  # - NOTIFY_SECURITY_DEFAULT_ORG_ID="" (PR-5.4 strict)
+  # - NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT="true" (PR-5.5 strict)
+  - target:
+      kind: ConfigMap
+      name: notification-orchestrator-config
+    patch: |-
+      - op: replace
+        path: /data/SPRING_DATASOURCE_URL
+        value: "jdbc:postgresql://postgres:5432/notify_db"
+      - op: add
+        path: /data/SPRING_FLYWAY_ENABLED
+        value: "true"
+      - op: add
+        path: /data/LOGGING_LEVEL_ROOT
+        value: "INFO"
+      - op: add
+        path: /data/LOGGING_LEVEL_COM_SERBAN_NOTIFY
+        value: "INFO"
+      # JWT validation — prod public issuer + internal cluster KC JWK
+      # (JwtDecoder bean: NimbusJwtDecoder.withJwkSetUri + JwtValidators
+      # .createDefaultWithIssuer; public-domain hairpin yok).
+      - op: add
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://ai.acik.com/realms/serban"
+      # Faz 23.6 PR-5.4 strict default-org-id flip (test cluster bugün
+      # LIVE, sustained 4h+ source="default"=0 increase; aynı strict
+      # boundary prod'da da geçerli — multi-tenant canlı öncesi gate).
+      - op: add
+        path: /data/NOTIFY_SECURITY_DEFAULT_ORG_ID
+        value: ""
+      # Faz 23.6 PR-5.5 strict subscriber identity cutover (test cluster
+      # bugün LIVE, denied counter sıfır kaldı 41+ min; aynı strict
+      # mode prod'da da geçerli).
+      - op: add
+        path: /data/NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT
+        value: "true"
+      # Tracing fully disabled — Tempo collector prod'da da deploy
+      # edilmemiş; OTLP autoconfig'i aktive etmek pod boot'u kırardı
+      # (test cluster'da PR #417 sırasında OtlpHttpSpanExporter
+      # "Invalid endpoint" CrashLoopBackOff yaşandı). Faz 23.8 minimal
+      # observability cycle'ında Tempo deploy + re-activate.
+      - op: add
+        path: /data/MANAGEMENT_TRACING_ENABLED
+        value: "false"
+      - op: add
+        path: /data/MANAGEMENT_TRACING_SAMPLING_PROBABILITY
+        value: "0.0"
+
+  # Faz 23.9 prod cutover — notification-orchestrator pod-template
+  # annotation rollout trigger + replicas override. ConfigMap envFrom
+  # değişmesi pod restart tetiklemez; bu annotation rolling restart
+  # sağlar. Base D17 scale-to-zero (replicas: 0) → prod replicas: 2
+  # (D21 prod replica baseline; SSE multi-pod cross-broadcast PR-E.4
+  # PG LISTEN/NOTIFY ile çözüldü, HPA min=max=1 lock kaldırıldı).
+  - target:
+      kind: Deployment
+      name: notification-orchestrator
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          security.acik.com/strict-cutover-activation: "faz-23-9-prod"
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:
