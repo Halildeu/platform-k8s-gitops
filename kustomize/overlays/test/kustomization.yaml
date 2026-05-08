@@ -1510,6 +1510,39 @@ patches:
       - op: add
         path: /data/SECURITY_JWT_ISSUER
         value: "https://testai.acik.com/realms/platform-test"
+      # PR-5.4 strict cutover — close NotifyOrgAccessGuard's transitional
+      # default-org fallback (Codex thread `019e0675` iter-7
+      # `ready_for_impl=true`).
+      #
+      # F3 cutover gate close evidence (pre-prod 4h observation window):
+      #   T0   2026-05-08T09:27:26Z  default=5.0 org_id=4.0
+      #   T+34 2026-05-08T10:01:30Z  default=5.0 org_id=7.0  (Δ default 0)
+      #   T+1h 2026-05-08T10:33:16Z  default=5.0 org_id=10.0 (Δ default 0)
+      #   T+1h38 2026-05-08T11:05:12Z default=5.0 org_id=13.0 (Δ default 0)
+      #   T+2h26 2026-05-08T11:53:22Z default=5.0 org_id=25.0 (Δ default 0)
+      #   T+3h58 2026-05-08T13:25:48Z default=5.0 org_id=57.0 (Δ default 0)
+      # `notify_org_access_match_total{source="default"}` increment stays
+      # at zero across the full 4h window; `source="none"` never appears.
+      # Real user traffic resolves identity through the JWT's `org_id`
+      # claim path, the legacy single-tenant default fallback is dead
+      # weight.
+      #
+      # Setting the env to the empty string flips
+      # `NotifyOrgAccessGuard` into strict mode: requests whose JWT
+      # carries no `org_id` / `tenant_id` / `allowed_orgs` claim fall
+      # through to 401/403 instead of silently being routed to the
+      # `"default"` org. This is the safety boundary the
+      # `source="default"` counter has been guarding all along; closing
+      # the fallback now also unblocks PR-5.5 subscriber identity strict
+      # cutover.
+      #
+      # Rollback: drop this `add` op and re-apply; backend reverts to
+      # the application.yml default `"default"`. Browser verify HARD
+      # RULE will catch a regression: SSE 200 must hold and
+      # `notify_org_access_match_total{source="none"}` must stay at zero.
+      - op: add
+        path: /data/NOTIFY_SECURITY_DEFAULT_ORG_ID
+        value: ""
       # Faz 23.2 PR-D.2 — OTLP runtime activation (Codex 019dfe0f Q4 absorb).
       # PR-C tracing readiness (sampling=0.0, endpoint empty) → PR-D.2 test
       # cluster activation: 10% sampling, Tempo direct OTLP HTTP receiver.
