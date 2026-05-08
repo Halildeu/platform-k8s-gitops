@@ -110,11 +110,121 @@ legacy_increase_24h == 0 AND canonical_increase_24h > 0 AND none_increase_24h ==
 * **No `--admin` merge** (HARD RULE): the GitOps PR carrying F4's ConfigMap patch goes through normal CI gates. If CI is red, fix the underlying issue rather than bypassing.
 * **Cross-AI peer review** (HARD RULE): the GitOps PR for F4 needs Codex post-impl review before merge.
 
-## Out of scope (Codex iter-1 PARTIAL)
+## Out of scope (Codex iter-1 PARTIAL → 2026-05-08 Step B extension)
 
-This runbook covers ONLY **A: subscriberId strict flip**.
+This runbook covered ONLY **A: subscriberId strict flip** at iter-1 time.
 
-**B: Org strict tenancy** (FE `DEFAULT_ORG_ID = 'default'` removal + `NotifyOrgAccessGuard` default fallback close + Keycloak `org_id` mapper) is tracked separately as **Faz 24 / PR-5**. Per Codex's analysis combining A+B in the same cutover would conflate 403 failure modes — keep them sequential so the metric signal stays attributable.
+**B: Org strict tenancy** (FE `DEFAULT_ORG_ID = 'default'` removal +
+`NotifyOrgAccessGuard` default fallback close + Keycloak `org_id` mapper)
+went LIVE 2026-05-08 as Faz 23.6 PR-5.4 (default-org strict flip). Both A
+and B share the same incident response patterns (denied counter storms,
+match-counter source distribution drift, fail-close 403 spike). The
+sections below extend this runbook to cover both guards.
+
+## Strict cutover storm response (Step B alert absorb 2026-05-08)
+
+Triggered by:
+- `NotifyOrgAccessDeniedStorm` (severity=critical, page=true — single P1 source)
+- `NotifySubscriberIdentityDeniedStorm` (severity=warning + `security_impact=critical` annotation, no P1 page — paired with above; bridge routes by severity, demoted to warning to avoid double P1)
+- `NotifyOrgAccessSourceDefaultRegression` (warning — F3 gate sentinel)
+- `NotifyOrgAccessSourceNoneRegression` (warning — pre-401/403 anomaly)
+- `NotifyStrictCutoverTelemetryAbsent` (warning — silent-green guard)
+
+### Incident triage (denied storm)
+
+1. **Pair check**: are both Org + Subscriber denied alerts firing?
+   - **Both** → upstream auth chain failure (filter chain not injecting JWT,
+     auth-service down, Keycloak realm down). Check
+     `kubectl logs deploy/api-gateway` for upstream JWT decode errors first.
+   - **Only Org** → org_id resolve regression (Keycloak `org_id` mapper
+     missing, ConfigMap env reverted, FE sending wrong header). Check
+     guard logs `kubectl logs deploy/notification-orchestrator | grep
+     OrgAccessDenied`.
+   - **Only Subscriber** → subscriberId claim missing. Check Keycloak realm
+     `subscriberId` mapper (PR-2 setup) + `attributes.subscriberId`
+     populated for live users.
+
+2. **Reason distribution**: query per-series counters to identify reason:
+   ```bash
+   kubectl --context k3d-prod -n platform-prod exec deploy/notification-orchestrator -- \
+     wget -qO- localhost:8081/actuator/prometheus | \
+     grep -E "notify_(org_access|subscriber_identity)_denied_total"
+   ```
+   Reasons:
+   - `no_auth` — SecurityContextHolder empty (filter chain broken)
+   - `non_jwt` — anonymous / username-password principal hitting guard
+   - `missing_org_id` (Org only) — claim chain returned null
+   - `mismatch_org_id` (Org only) — caller-supplied org_id ≠ resolved
+   - `cross_org_lookup_attempt` (Org only) — repo lookup with denied org
+
+3. **Quick rollback path** (if regression suspected):
+
+   PR-5.5 strict subscriberId rollback:
+   ```bash
+   # Edit overlay configmap patch
+   # File: kustomize/overlays/{test,prod}/kustomization.yaml
+   # Find the notification-orchestrator-config patch block, change:
+   #   NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT: "true"
+   # to:
+   #   NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT: "false"
+
+   # Selective apply + rolling restart (D17 koruma — full overlay apply YASAK):
+   kubectl kustomize kustomize/overlays/{env} \
+     | yq 'select(.kind == "ConfigMap" and .metadata.name == "notification-orchestrator-config")' \
+     | kubectl --context k3d-{env} -n platform-{env} apply -f -
+
+   kubectl --context k3d-{env} -n platform-{env} rollout restart deploy/notification-orchestrator
+
+   # Verify env reverted:
+   kubectl --context k3d-{env} -n platform-{env} exec deploy/notification-orchestrator -- \
+     env | grep NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT
+   ```
+
+   PR-5.4 default-org close rollback:
+   ```bash
+   # Same pattern, different env var:
+   #   NOTIFY_SECURITY_DEFAULT_ORG_ID: ""           (current strict)
+   # to:
+   #   NOTIFY_SECURITY_DEFAULT_ORG_ID: "default"    (legacy fallback)
+
+   # Apply via the same kustomize | yq | kubectl apply chain above.
+   ```
+
+   Both rollbacks restore the legacy "silent pass" / fallback paths the
+   FE / auth-service stack worked under before Faz 23.6. Pods retain
+   existing in-flight requests; new requests after rolling restart use
+   the legacy behaviour. PRs to revert the overlay env in git follow
+   immediately afterwards (cross-AI peer review HARD RULE applies even
+   for revert PRs).
+
+### F3 gate regression response (source default/none)
+
+**source="default" non-zero**: F3 cutover gate was supposed to be 0 post-PR-5.4.
+Check:
+1. Has the env override been reverted? `kubectl -n platform-{env} get configmap
+   notification-orchestrator-config -o yaml | grep DEFAULT_ORG_ID`
+2. If env is correct but the counter still emits, the org_id resolve chain
+   regressed somewhere upstream — check auth-service JWT enrichment via
+   `kubectl logs deploy/auth-service | grep -i "org_id"`.
+
+**source="none" non-zero**: indicates a request reached the guard with no
+resolvable org id (no claim, no tenant, no allowed_orgs). Almost always
+a multi-tenant onboarding gap:
+1. Is the user a new tenant? Their JWT may not carry the `org_id` claim
+   if Keycloak realm mapper isn't extended for them.
+2. If sustained from a known-good user, see "denied storm" above.
+
+### Telemetry absent response
+
+`NotifyStrictCutoverTelemetryAbsent` fires when ServiceMonitor stops
+seeing the target. This means denied-storm alerts above are silently
+zero. Check:
+1. ServiceMonitor selector: `kubectl get servicemonitor -A | grep notification`
+2. Service endpoints: `kubectl -n platform-{env} get endpoints
+   notification-orchestrator` — must list `<podIP>:8081`.
+3. Prometheus scrape config render: see `kubectl -n monitoring exec
+   prometheus-... -c prometheus -- cat /etc/prometheus/config_out/prometheus.env.yaml`
+   and grep for `notification-orchestrator`.
 
 ## Referans
 
