@@ -301,7 +301,52 @@ images:
     # Build run: 25480597483 (head=9beed5f2, status=success,
     # workflow="CI - Image Build + GHCR Push"). PR #88 only added
     # MSSQL Testcontainers tests — same runtime as sha-9a0f3ed.
-    digest: sha256:54a49c70304b0ea3b5b26876df6f187981c21c284a91e6359f7de3cb94f8631c
+    #
+    # 2026-05-08 update: sha-6869a41 — platform-backend PR #127 + #128
+    # bundled (PR-BE-9 relation alignment + PR-BE-10 OpenFgaScopeReader
+    # read-path migration).
+    #
+    # PR-BE-9 (#127, sha-a9df3d3): TupleSyncService.syncScopeTuples
+    # warehouse 'operator' → 'viewer', branch 'member' → 'viewer';
+    # ScopeContextFilter branch 'member' → 'viewer'. Aligns WRITE
+    # relations with the canonical Faz 21.3 ADR-0008 explicit-scope
+    # model (backend/openfga/model.fga) where all scope types use
+    # 'viewer'. Live cluster currently runs the legacy multi-tier
+    # model (root openfga/model.fga) where alias chain
+    # 'viewer = [user] or operator/member' makes both write paths
+    # functional, so PR-BE-9 is regression-safe and future-proof for
+    # the eventual ADR-0008 cluster migration (PR-BE-12 backlog).
+    #
+    # PR-BE-10 (#128, sha-6869a41): OpenFgaScopeReader (new common-auth
+    # bean) extracts the parallel listObjectIds × 4 + ScopeContextCache
+    # + relation map path from ScopeContextFilter so admin-side services
+    # share the same authoritative read. UserScopeService.listUserScopes
+    # and AuthorizationQueryService.getUserScopeSummary now read from
+    # OpenFGA via the reader (production with erp.openfga.enabled=true);
+    # DB user_permission_scopes fallback preserved for dev/permitAll
+    # local profile.
+    #
+    # Closes the testai.acik.com /admin/users UserDetailDrawer
+    # "şirket yetkileri kayıt olmuyor" production bug: POST /assignments
+    # writes OpenFGA tuples (always did); GET /v1/roles/users/{id}/scopes
+    # used to read DB which the bulk POST never touched. After this
+    # bump, GET reads OpenFGA and returns exactly what the latest save
+    # wrote — re-fetch-after-save reflects the persisted state.
+    #
+    # Cross-AI peer review:
+    #   - Codex thread 019e0891 iter-2 AGREE plan-time (Option B,
+    #     ready_for_impl=true; relation drift + reusable bean +
+    #     read-path migration all absorbed)
+    #   - Codex thread 019e0891 iter-4 AGREE post-impl (PR #128 diff
+    #     review; reader API design + filter delegation backward compat
+    #     + cache reuse all sound; ready_to_merge=true)
+    #   - Codex thread 019e0891 iter-5 AGREE ready_for_deploy=true
+    #     (live OpenFGA model dump captured at this overlay bump time;
+    #     legacy multi-tier alias chain confirms PR-BE-10 reader sees
+    #     existing operator/member tuples via viewer query)
+    # Image build run: 25571116552 (success), digest
+    # sha256:b40211278beeb941a23236eedfff9075419ec4bb4c83a32ddff11c3c1dc4a5ec.
+    digest: sha256:b40211278beeb941a23236eedfff9075419ec4bb4c83a32ddff11c3c1dc4a5ec
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
