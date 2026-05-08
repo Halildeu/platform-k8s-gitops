@@ -1603,10 +1603,18 @@ patches:
       #
       # Tempo deploy + OTLP re-activation Faz 23.8 minimal observability
       # cycle'ında geri gelecek (monitoring namespace + Tempo Helm chart).
-      # O zamana kadar bu blank values pod log'u temiz tutar.
+      #
+      # PR-417 ilk denemesi blank endpoint set etti — Spring Boot
+      # OtlpHttpSpanExporter "Invalid endpoint, must start with
+      # http:// or https://" diye boot fail ettirdi (CrashLoopBackOff
+      # yaşandı). Doğru disable yolu: MANAGEMENT_TRACING_ENABLED=false
+      # ile tüm tracing autoconfig'i kapat. OTLP endpoint geçerli URL
+      # olarak kalır (parser çalışır) ama exporter hiç çağrılmaz çünkü
+      # tracing autoconfig disabled. Sampling 0.0 belt-and-suspenders
+      # — tracing enabled bile olsa hiçbir span üretilmez.
       - op: add
-        path: /data/MANAGEMENT_OTLP_TRACING_ENDPOINT
-        value: ""
+        path: /data/MANAGEMENT_TRACING_ENABLED
+        value: "false"
       - op: add
         path: /data/MANAGEMENT_TRACING_SAMPLING_PROBABILITY
         value: "0.0"
