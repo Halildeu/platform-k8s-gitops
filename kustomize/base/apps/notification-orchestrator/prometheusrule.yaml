@@ -146,3 +146,78 @@ spec:
             description: |
               {{ $value }} DLQ rows accumulated. Operator review +
               replayed=true marker after triage.
+
+    # ----- Faz 23.6 PR-5.4/5.5 strict cutover alerts (Step B Codex 019e0892) -----
+    # New strict-mode counters (NotifyOrgAccessGuard + SubscriberIdentityGuard)
+    # emit when guards fail-close. In steady state post-cutover, denied counter
+    # rate must be 0; non-zero is either an attack or a regression. F3 cutover
+    # gate also lives here: source="default" / source="none" must be 0 once
+    # NOTIFY_SECURITY_DEFAULT_ORG_ID="" (Faz 23.6 PR-5.4) is the default.
+
+    - name: notification-orchestrator-strict-cutover
+      interval: 30s
+      rules:
+        - alert: NotifyOrgAccessDeniedStorm
+          expr: rate(notify_org_access_denied_total[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: critical
+            service: notification-orchestrator
+            page: "true"
+          annotations:
+            summary: "NotifyOrgAccessGuard fail-close storm > 0.1/sec"
+            description: |
+              {{ $value | humanize }} org-access denials/sec over 5m. Either
+              an active attack (caller forging org_id) or a regression in
+              org_id resolve chain. Check guard logs + auth-service JWT
+              enrichment + inspect denied{reason} tag distribution.
+              Runbook: docs/runbooks/RB-notify-strict-subscriberid-cutover.md
+
+        - alert: NotifySubscriberIdentityDeniedStorm
+          expr: rate(notify_subscriber_identity_denied_total[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: critical
+            service: notification-orchestrator
+            page: "true"
+          annotations:
+            summary: "SubscriberIdentityGuard fail-close storm > 0.1/sec"
+            description: |
+              {{ $value | humanize }} subscriber-identity denials/sec over 5m.
+              Strict mode reasons: no_auth (filter chain not injecting JWT) or
+              non_jwt (anonymous principal hitting guarded route). Check
+              ProductionConfigValidator + auth-service refresh path.
+              Runbook: docs/runbooks/RB-notify-strict-subscriberid-cutover.md
+
+        - alert: NotifyOrgAccessSourceDefaultRegression
+          expr: rate(notify_org_access_match_total{source="default"}[10m]) > 0
+          for: 10m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "NotifyOrgAccessGuard source=\"default\" fallback re-emit"
+            description: |
+              {{ $value | humanize }} requests/sec hitting the default-org
+              fallback over 10m. F3 cutover gate (Faz 23.6 PR-5.4) expects
+              this counter to be 0 in steady state — non-zero means either
+              the env override `NOTIFY_SECURITY_DEFAULT_ORG_ID=""` was
+              reverted, or org_id resolve chain regressed and is falling
+              back to the default-org fast-path that was supposed to be
+              closed. Inspect the request set hitting this branch + audit
+              recent ConfigMap changes + restart history.
+
+        - alert: NotifyOrgAccessSourceNoneRegression
+          expr: rate(notify_org_access_match_total{source="none"}[10m]) > 0
+          for: 10m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "NotifyOrgAccessGuard source=\"none\" miss"
+            description: |
+              {{ $value | humanize }} requests/sec where neither claim, tenant,
+              nor allowed_orgs resolved an org id over 10m. This precedes a
+              fail-close 401/403; if sustained likely a multi-tenant onboarding
+              user without org_id claim. Inspect upstream auth-service JWT
+              enrichment + Keycloak realm org_id mapper config.
