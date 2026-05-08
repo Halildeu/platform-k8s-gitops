@@ -271,26 +271,16 @@ spec:
               upstream auth-service JWT enrichment + Keycloak realm org_id
               mapper config. Runbook: see SubscriberId cutover doc.
 
-        # Per-namespace absent guard (Codex 019e08fa iter-2 P2 absorb;
-        # 019e090d iter-2 follow-up). Two separate `absent()` expressions
-        # so a partial namespace outage (one cluster scrape disappears,
-        # other stays) fires the alert. The previous combined absent({test,
-        # prod}) only fired when BOTH disappeared.
-        - alert: NotifyStrictCutoverTelemetryAbsentTest
-          expr: absent(up{job=~"notification-orchestrator", namespace="platform-test"})
-          for: 5m
-          labels:
-            severity: warning
-            service: notification-orchestrator
-          annotations:
-            summary: "Notify strict-cutover telemetry absent in platform-test"
-            description: |
-              No `up` series for notification-orchestrator job in
-              platform-test for 5m. Strict cutover counter alerts evaluate
-              against zero series → silent-green risk. Check ServiceMonitor
-              selector + Service endpoints + Prometheus scrape config.
-
-        - alert: NotifyStrictCutoverTelemetryAbsentProd
+        # Per-namespace absent guard. Originally split into Test+Prod
+        # alerts (Codex 019e08fa iter-2 P2 absorb), but live verification
+        # showed test cluster has no Prometheus/operator at all (k3d-prod
+        # is the only monitored cluster; k3d-test pods are not scraped by
+        # any Prometheus). The `*Test` alert variant fired permanent
+        # false-positive `pending` because the namespace-scoped `absent()`
+        # cannot resolve in the prod Prometheus. Removed test variant
+        # 2026-05-08 (PR fix/notify-prom-test-ns-absent-removal). Kept the
+        # prod-only variant which catches the actual silent-green risk.
+        - alert: NotifyStrictCutoverTelemetryAbsent
           expr: absent(up{job=~"notification-orchestrator", namespace="platform-prod"})
           for: 5m
           labels:
@@ -401,31 +391,15 @@ spec:
               AuditPartitionRetentionService`. May indicate DB privilege drift,
               partition lock contention, or schema invariant violation.
 
-        - alert: NotifyAuditRetentionTelemetryAbsentTest
-          # `@ConditionalOnProperty` gates the bean. Absent metric means
-          # NOTIFY_AUDIT_RETENTION_ENABLED was reverted, OR scrape target is
-          # down (different from "ServiceMonitor scrape gone" caught by
-          # NotifyStrictCutoverTelemetryAbsentTest), OR pod is in extended
-          # restart cycle.
-          expr: absent(notify_audit_retention_last_success_timestamp_seconds{namespace="platform-test"})
-          for: 30m
-          labels:
-            severity: warning
-            service: notification-orchestrator
-          annotations:
-            summary: "Notify audit retention telemetry absent in platform-test"
-            description: |
-              No `notify_audit_retention_last_success_timestamp_seconds` series
-              in platform-test for 30m. Possible causes (Codex iter-1 P2
-              absorb): (1) NOTIFY_AUDIT_RETENTION_ENABLED env reverted to
-              false (config drift); (2) ServiceMonitor selector / scrape
-              dropped target — pair-check NotifyStrictCutoverTelemetryAbsentTest;
-              (3) extended pod restart cycle (>30m). Inspect ConfigMap
-              `notification-orchestrator-config` + `kubectl get pod`
-              + `kubectl logs deploy/... | grep
-              AuditPartitionRetentionService` for activation message.
-
-        - alert: NotifyAuditRetentionTelemetryAbsentProd
+        # Removed NotifyAuditRetentionTelemetryAbsentTest (2026-05-08 PR
+        # fix/notify-prom-test-ns-absent-removal). Test cluster has no
+        # Prometheus/operator → namespace-scoped absent() in prod Prometheus
+        # cannot resolve test series → permanent false-positive pending state.
+        # Test retention activation observability is currently blackbox
+        # (verified by `kubectl logs deploy/notification-orchestrator | grep
+        # AuditPartitionRetentionService`). Future fix: federation or test
+        # cluster Prometheus deployment, see Faz 23.8 monitoring follow-up.
+        - alert: NotifyAuditRetentionTelemetryAbsent
           expr: absent(notify_audit_retention_last_success_timestamp_seconds{namespace="platform-prod"})
           for: 30m
           labels:
@@ -438,7 +412,7 @@ spec:
               in platform-prod for 30m. Possible causes (Codex iter-1 P2
               absorb): (1) NOTIFY_AUDIT_RETENTION_ENABLED env reverted to
               false (config drift); (2) ServiceMonitor selector / scrape
-              dropped target — pair-check NotifyStrictCutoverTelemetryAbsentProd;
+              dropped target — pair-check NotifyStrictCutoverTelemetryAbsent;
               (3) extended pod restart cycle (>30m). Inspect ConfigMap
               `notification-orchestrator-config` + `kubectl get pod`
               + `kubectl logs deploy/... | grep
