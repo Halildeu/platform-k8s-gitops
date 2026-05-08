@@ -292,7 +292,7 @@ PR template:
 | In-app inbox MFE | `Halildeu/platform-web` | `apps/mfe-notification-inbox/` (yeni MFE) |
 | Templates (Thymeleaf) | `Halildeu/platform-backend` | `notification-orchestrator/src/main/resources/templates/` |
 | ESO secret manifest | `Halildeu/platform-k8s-gitops` | `kustomize/overlays/{test,prod}/eso/notify/` |
-| Vault path | (ops, runtime) | `kv/platform/notify/{provider}` |
+| Vault path | (ops, runtime) | `kv/platform/notification-orchestrator` (flat, Step D rewrite — Codex thread `019e08df`) |
 
 ## Sub-faz Roadmap (özet — detay `docs/runbooks/RB-faz-23-charter.md`)
 

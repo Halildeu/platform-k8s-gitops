@@ -24,5 +24,10 @@ resources:
   - ../schema-service/ops
   - ../permission-service/ops
   - ../openfga/ops
-  # Faz 23.2 PR-D.3 — notification-orchestrator ESO ExternalSecret
-  - ../notification-orchestrator/ops
+  # Faz 23.9 Step D (Codex thread 019e08df REVISE absorb 2026-05-08):
+  # notification-orchestrator ExternalSecret moved out of ops-bundle to
+  # per-environment overlays (overlays/{test,prod}/eso/notify) to eliminate
+  # dual-owner conflict between platform-{env} and platform-eso-{env} Argo
+  # Applications. Each environment now manages its own notify ExternalSecret
+  # with flat Vault path kv/platform/notification-orchestrator. Old per-app
+  # ops/ directory deleted in same PR.
