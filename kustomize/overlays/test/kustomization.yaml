@@ -780,7 +780,31 @@ images:
     # → impl iter-2 REVISE (cache-vs-identity drift caught) → iter-3
     # PARTIAL kod AGREE → iter-4 metadata AGREE / `ready_to_merge: true`.
     # Build run 25554415300, image push 12:03Z.
-    digest: sha256:a1c1e1ee94dc68685b6d4090639525dfe3206d87cc30f75972de518344f756c5
+    #
+    # 2026-05-08 update: sha-0da0898 — PR #317 close /inbox/me 400
+    # follow-up. Live verification after the PR-316 deploy showed the
+    # page-load 400s were still hitting the orchestrator: the RTK Query
+    # cache held `listInbox({"orgId":"default","subscriberId":"1"}) →
+    # status:rejected, errStatus:400 MissingRequestHeader: X-Org-Id`
+    # while a manual `fetch(..., { headers })` with the same identity
+    # returned 200. Endpoint-level `headers: identityHeaders(arg)` was
+    # being dropped between the query config and the actual `Request`
+    # in the production bundle (RTK 2.11.2 + fetchBaseQuery interaction
+    # not yet isolated; a separate investigation is queued).
+    #
+    # PR #317 routes identity through `prepareHeaders` from the auth
+    # slice — the contract-guaranteed wire-safety hook that always
+    # runs. Endpoint-level headers stay for cache-key parity ("intent");
+    # `prepareHeaders` is "wire safety". Codex iter-2 drift concern
+    # accepted under the current single-tenant `NotificationCenter`
+    # boundary (`arg === state` by construction; `skipToken` already
+    # short-circuits null-identity dispatches before prepareHeaders
+    # runs).
+    #
+    # Cross-AI peer review: Codex thread `019e075d` iter-5 PARTIAL kod
+    # AGREE; PR body softened to "accepted under boundary" per Codex
+    # P3 nit. Build run 25556009558, image push ~12:39Z.
+    digest: sha256:065b794ef8b8c093329e5c59b1c2ef5a94948531855ac5df5834dd57cc6525b7
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
