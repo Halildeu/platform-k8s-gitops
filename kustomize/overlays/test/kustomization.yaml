@@ -699,7 +699,22 @@ images:
     # Cross-AI peer review: Codex thread 019e04d0 iter-2 AGREE
     # post-impl + iter-1 AGREE plan-time (ready_for_impl=true, 6 P0 +
     # 7 P1 + 5 P2 acceptance items absorbed).
-    digest: sha256:f697295223e46bcdb8ecfe01ca0b6a381a46d8f4dafeea149798942951b98ac3
+    #
+    # 2026-05-08 update: sha-d486e84 — platform-web PR #319
+    # (fix(shared-http): manifest URL same-origin default).
+    # Production browser console showed
+    #   GET http://localhost:8080/manifest/v1/manifest.json ERR_CONNECTION_REFUSED
+    # because Vite-time VITE_GATEWAY_URL was unset → bundle baked the
+    # localhost:8080 default. Fix changes resolveGatewayOrigin() to return
+    # null when env is missing and falls back to same-origin relative
+    # `/manifest/v1`, so production bundles served from any host fetch the
+    # manifest from that host's gateway via ingress. Cross-AI peer review:
+    # Codex thread 019e088f AGREE (ready_to_merge: true) + Plan subagent
+    # third-AI fallback AGREE (Codex MCP rate-limited at the time of first
+    # review, recovered before merge).
+    # Image build run: 25569092840 (success), testai digest
+    # sha256:2a3b18ce8e5a215c0e10c57b28eac4dc1fe0676f01e9cbccc558d9a829c8c388.
+    digest: sha256:2a3b18ce8e5a215c0e10c57b28eac4dc1fe0676f01e9cbccc558d9a829c8c388
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
