@@ -85,7 +85,7 @@ Banner aksiyonları: "Sayfayı yenile" (`window.location.reload()`) + "Yeniden g
 | 401 storm eliminated | verified by integration | protected request'ler `transportReady` öncesi atılmıyor; `AuthNotReadyError` interceptor pinned |
 | Bootstrap deadlock eliminated | verified by integration | `__skipAuthReadyGate` 6 endpoint için pinned (cookie/authz/login/profile/register) |
 | Re-login storm eliminated | verified by live cluster | gateway `/auth/cookie/refresh` 404 fix (canonical sha-76c517b) + frontend single-flight refresh |
-| Bundle drift muğlaklığı çözüldü | verified by GitOps PR | maxSurge=0 strategy patch + immutable digest pin (PR #400 + PR #401) |
+| Bundle drift muğlaklığı çözüldü | partially verified; canonical GitOps pin in-flight | maxSurge=0 strategy patch verified by PR #400 (merged); sha-9d06576 canonical pin in-flight via PR #401 |
 | PII-free fetch telemetry | verified by unit | 51 shared-http + 21 mfe-shell observability tests; URL hiç label değil |
 | Degraded UI banner derived state | verified by unit | 10-case selector test + StrictMode dedup test |
 
