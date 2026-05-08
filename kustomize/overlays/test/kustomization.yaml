@@ -804,7 +804,41 @@ images:
     # Cross-AI peer review: Codex thread `019e075d` iter-5 PARTIAL kod
     # AGREE; PR body softened to "accepted under boundary" per Codex
     # P3 nit. Build run 25556009558, image push ~12:39Z.
-    digest: sha256:065b794ef8b8c093329e5c59b1c2ef5a94948531855ac5df5834dd57cc6525b7
+    #
+    # 2026-05-08 update: sha-901dee7 — PR #318 close /inbox/me 400 root
+    # cause. Browser-side smoking gun captured in DevTools after the
+    # PR-317 deploy: `fetch(url, { headers })` returned 200 while
+    # `fetch(new Request(url, { headers }))` with the exact same
+    # headers returned 400 MissingRequestHeader. Both calls carried
+    # identical key/value pairs (asserted via header-entries spy) —
+    # the only difference was the Request-vs-string input form. The
+    # frontend pod's nginx (or some intermediate proxy/runtime layer
+    # not yet isolated) drops custom headers on the Request-object
+    # form. RTK Query 2.x's fetchBaseQuery defaults to
+    # `new Request(url, init)` → `fetch(request)`, which is why all
+    # the wire-level fixes (PR #316 skipToken, PR #317 prepareHeaders)
+    # could not move the cache out of `status: rejected, errStat: 400`
+    # despite the bundle source being correct.
+    #
+    # PR #318 registers a custom `fetchFn` on fetchBaseQuery that
+    # unwraps an incoming Request and re-issues the call with the
+    # string URL + plain init shape. Full Request semantics preserved
+    # (signal, referrerPolicy, keepalive — Codex iter-7 REVISE absorb
+    # caught the missing signal which would have silently disabled
+    # RTK Query's abort/timeout/cancel for inbox queries). Body only
+    # copied for non-GET/HEAD methods with input.body !== null.
+    #
+    # Live verification post-deploy: RTK Query cache reads
+    # `listInbox({...}) → status: fulfilled, dataItems: 0`, pod log
+    # last 60s shows 0 MissingRequest, drawer "Bildirimlerim (0)" tab
+    # renders correctly, console clean.
+    #
+    # Cross-AI peer review: Codex thread `019e075d` iter-7 REVISE →
+    # iter-8 absorb / kod AGREE. The underlying proxy/runtime cause
+    # of the Request-form header drop is queued as a separate
+    # investigation (Tempo OTLP DNS noise also queued; both unrelated
+    # to the user-path 400). Build run 25557464289, image push ~13:14Z.
+    digest: sha256:4b33bf16d00ffcb0f6b239263b15650ce37bfea2d43809f919374215c11282d9
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
