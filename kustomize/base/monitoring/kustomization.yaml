@@ -20,6 +20,7 @@ resources:
   - dr-drill-rule.yaml            # Session 28 paralel cleanup (c) — dr_drill_last_run_* metric + 4 alert (PLAN.md D23 quarterly)
   - recording-rules.yaml          # Pre-compute expensive PromQL (Grafana + alert hızlandırma)
   - api-gateway-slo-rule.yaml     # iter-49 B.2 — api-gateway SLO warning rules (4 alert, dev-observable)
+  - notify-dlq-slo-rule.yaml      # Step B.4 (Codex 019e0892 + 019e094a iter-1) — notify DLQ SLO + true multi-window burn rate alerts (4 alert, 18 recording rules incl. 5m/30m short windows, 99.5% target, 28d window, slow `unless` fast suppression)
   - alertmanager-bridge           # Codex Sprint A follow-up — AlertManager → GitHub Issues bridge
   # Grafana dashboard ConfigMap'ler — kube-prometheus-stack sidecar provisioner
   # otomatik import (label grafana_dashboard=1). Helm values

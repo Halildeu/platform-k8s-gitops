@@ -1,0 +1,291 @@
+# PrometheusRule — notification-orchestrator DLQ SLO + burn rate alerts
+#
+# Step B.4 (Codex thread 019e0892 strategic retrospective priority 2 follow-up).
+#
+# SLO definition: 99.5% of dispatched notifications succeed (i.e., terminate
+# successfully — NOT moved to DLQ).
+#
+# SLO error numerator: notify_dlq_terminated_total (failed deliveries that exhausted retries)
+# SLO denominator: notify_dispatch_outcome_total{status=~"SUCCESS|FAILED"} (terminal-only
+# dispatches; RETRY transient outcomes excluded so retry storms don't artificially
+# improve the burn rate).
+#
+# Error budget: (1 - 0.995) = 0.5% over a 28d window.
+#
+# Burn rate alert design (Google SRE workbook §4 multi-window strategy):
+#   - 1h burn rate >14.4× → consumes full 28d budget in ~2 days (PAGE)
+#   - 6h burn rate >6.0×  → consumes full 28d budget in ~5 days (PAGE)
+#   - 24h burn rate >3.0× → consumes full 28d budget in ~10 days (TICKET)
+#   - 72h burn rate >1.0× → exhausts budget over the full 28d (TICKET)
+#
+# PAGE alerts have severity=critical + page=true (route through alertmanager-bridge
+# to GitHub issues per ADR-0014). TICKET alerts severity=warning, no page.
+#
+# Recording rules pre-compute the burn rates so dashboards + alerts share one
+# source-of-truth expression.
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: notification-orchestrator-dlq-slo
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/name: notification-orchestrator
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: notification-orchestrator-dlq-slo-recording
+      interval: 30s
+      rules:
+        # Total dispatch attempts (success + failure terminal outcomes).
+        # NOTE: status="RETRY" is transient and not counted as a final outcome.
+        # Codex 019e094a iter-1 P1 absorb: added short-window (5m, 30m) totals
+        # so burn rate alerts can implement the true Google SRE multi-window
+        # pattern (long-window AND short-window must both exceed threshold).
+        - record: notify:dispatch:terminal_total:rate5m
+          expr: |
+            sum by (namespace) (
+              rate(notify_dispatch_outcome_total{namespace="platform-prod", status=~"SUCCESS|FAILED"}[5m])
+            )
+
+        - record: notify:dispatch:terminal_total:rate30m
+          expr: |
+            sum by (namespace) (
+              rate(notify_dispatch_outcome_total{namespace="platform-prod", status=~"SUCCESS|FAILED"}[30m])
+            )
+
+        - record: notify:dispatch:terminal_total:rate1h
+          expr: |
+            sum by (namespace) (
+              rate(notify_dispatch_outcome_total{namespace="platform-prod", status=~"SUCCESS|FAILED"}[1h])
+            )
+
+        - record: notify:dispatch:terminal_total:rate6h
+          expr: |
+            sum by (namespace) (
+              rate(notify_dispatch_outcome_total{namespace="platform-prod", status=~"SUCCESS|FAILED"}[6h])
+            )
+
+        - record: notify:dispatch:terminal_total:rate24h
+          expr: |
+            sum by (namespace) (
+              rate(notify_dispatch_outcome_total{namespace="platform-prod", status=~"SUCCESS|FAILED"}[24h])
+            )
+
+        - record: notify:dispatch:terminal_total:rate72h
+          expr: |
+            sum by (namespace) (
+              rate(notify_dispatch_outcome_total{namespace="platform-prod", status=~"SUCCESS|FAILED"}[72h])
+            )
+
+        # DLQ termination rate over each burn window. A delivery moves to DLQ
+        # after retry budget is exhausted, so this is the "error numerator"
+        # signal for SLO purposes (Codex 019e094a iter-1 P3 terminology absorb:
+        # `notify_dlq_terminated_total` is the SLO error numerator, not a
+        # generic SLI numerator).
+        - record: notify:dlq:terminated_total:rate5m
+          expr: |
+            sum by (namespace) (rate(notify_dlq_terminated_total{namespace="platform-prod"}[5m]))
+
+        - record: notify:dlq:terminated_total:rate30m
+          expr: |
+            sum by (namespace) (rate(notify_dlq_terminated_total{namespace="platform-prod"}[30m]))
+
+        - record: notify:dlq:terminated_total:rate1h
+          expr: |
+            sum by (namespace) (rate(notify_dlq_terminated_total{namespace="platform-prod"}[1h]))
+
+        - record: notify:dlq:terminated_total:rate6h
+          expr: |
+            sum by (namespace) (rate(notify_dlq_terminated_total{namespace="platform-prod"}[6h]))
+
+        - record: notify:dlq:terminated_total:rate24h
+          expr: |
+            sum by (namespace) (rate(notify_dlq_terminated_total{namespace="platform-prod"}[24h]))
+
+        - record: notify:dlq:terminated_total:rate72h
+          expr: |
+            sum by (namespace) (rate(notify_dlq_terminated_total{namespace="platform-prod"}[72h]))
+
+        # Burn rate = (DLQ rate / total rate) / SLO error rate (0.005).
+        # Multiplier shows how fast the budget is consumed vs steady-state.
+        #
+        # Codex 019e094a iter-1 P2 absorb: `clamp_min(...,0.0001)` introduces a
+        # floor (0.36 dispatches/hour minimum assumption) which can amplify a
+        # single DLQ in low-traffic windows. Acceptable design choice for
+        # pre-prod where any DLQ is meaningful, but documented here so future
+        # multi-tenant scaling can revisit. Comment about `or vector(0)`
+        # removed — only clamp_min is in use.
+        - record: notify:dlq:burn_rate:5m
+          expr: |
+            (
+              notify:dlq:terminated_total:rate5m
+              /
+              clamp_min(notify:dispatch:terminal_total:rate5m, 0.0001)
+            ) / 0.005
+
+        - record: notify:dlq:burn_rate:30m
+          expr: |
+            (
+              notify:dlq:terminated_total:rate30m
+              /
+              clamp_min(notify:dispatch:terminal_total:rate30m, 0.0001)
+            ) / 0.005
+
+        - record: notify:dlq:burn_rate:1h
+          expr: |
+            (
+              notify:dlq:terminated_total:rate1h
+              /
+              clamp_min(notify:dispatch:terminal_total:rate1h, 0.0001)
+            ) / 0.005
+
+        - record: notify:dlq:burn_rate:6h
+          expr: |
+            (
+              notify:dlq:terminated_total:rate6h
+              /
+              clamp_min(notify:dispatch:terminal_total:rate6h, 0.0001)
+            ) / 0.005
+
+        - record: notify:dlq:burn_rate:24h
+          expr: |
+            (
+              notify:dlq:terminated_total:rate24h
+              /
+              clamp_min(notify:dispatch:terminal_total:rate24h, 0.0001)
+            ) / 0.005
+
+        - record: notify:dlq:burn_rate:72h
+          expr: |
+            (
+              notify:dlq:terminated_total:rate72h
+              /
+              clamp_min(notify:dispatch:terminal_total:rate72h, 0.0001)
+            ) / 0.005
+
+    - name: notification-orchestrator-dlq-slo-alerts
+      interval: 30s
+      rules:
+        # Multi-window multi-burn-rate alerts per Google SRE workbook §4
+        # (final form post Codex 019e094a iter-1 + iter-2 absorb).
+        # Pattern: LONG-window AND SHORT-window burn rates must BOTH exceed
+        # threshold for a critical/page alert. Long-window catches sustained
+        # regressions; short-window confirms the incident is current (not an
+        # artifact of an old window).
+        #
+        # Slow alert is suppressed when Fast alert's full predicate is true
+        # (`unless ((1h > 14.4) and (5m > 14.4))`) to avoid duplicate P1 paging
+        # through AlertManager group_by alertname. Slow still fires alone when
+        # Fast subsides but the 6h burn persists.
+        #
+        # Threshold rationale (Google SRE table):
+        #   1h fast: 14.4× → page (consumes 2% in 1h, full 28d budget in 2 days)
+        #   6h slow: 6.0×  → page (consumes 4.5% in 6h, full budget in 5 days)
+        #   24h:     3.0× → ticket (consumes 9% in 24h, full budget in 10 days)
+        #   72h:     1.0× → ticket (steady-state at-budget over the 28d window)
+
+        - alert: NotifyDlqSloBurnRateFast
+          # Codex 019e094a iter-1 P0 absorb: true Google SRE workbook §4
+          # multi-window pattern. Long-window (1h) AND short-window (5m) burn
+          # rates must both exceed threshold. The short-window guard ensures
+          # the incident is current (not an artifact of an old spike).
+          # Page=true → AlertManager critical → PagerDuty/GitHub issue.
+          expr: |
+            notify:dlq:burn_rate:1h > 14.4
+            and on(namespace)
+            notify:dlq:burn_rate:5m > 14.4
+          for: 2m
+          labels:
+            severity: critical
+            service: notification-orchestrator
+            page: "true"
+            slo: dispatch-success-99-5
+          annotations:
+            summary: "Notify DLQ SLO 1h burn rate {{ $value | humanize }}x (target 14.4x)"
+            description: |
+              DLQ-terminated dispatches are burning the 99.5% success budget
+              {{ $value | humanize }}× faster than steady-state over the past 1h
+              AND 5m (in namespace {{ $labels.namespace }}). At this rate the
+              full 28d error budget would exhaust in ~2 days. Investigate
+              provider outage / template lint regression / recipient invalidation
+              storm. Pair-check NotifyDispatchFailureRate + Grafana panel 11.
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/operations/RUNBOOKS/RB-notify-strict-subscriberid-cutover.md"
+
+        - alert: NotifyDlqSloBurnRateSlow
+          # Codex 019e094a iter-1 P0 + P1 + iter-2 P1 absorb:
+          # - True multi-window pattern (6h AND 30m must both exceed threshold)
+          # - `unless ((1h > 14.4) AND (5m > 14.4))` clause suppresses this
+          #   alert only when Fast's full predicate is genuinely firing —
+          #   avoids the iter-2 blind-spot edge case where `1h > 14.4` was
+          #   true but `5m <= 14.4` still left Slow incorrectly suppressed.
+          #   Avoids two P1 pages for the same incident through AlertManager
+          #   group_by alertname. When Fast subsides (either window drops),
+          #   Slow fires alone for the sustained 6h regression.
+          expr: |
+            (
+              notify:dlq:burn_rate:6h > 6.0
+              and on(namespace)
+              notify:dlq:burn_rate:30m > 6.0
+            )
+            unless on(namespace)
+            (
+              notify:dlq:burn_rate:1h > 14.4
+              and on(namespace)
+              notify:dlq:burn_rate:5m > 14.4
+            )
+          for: 5m
+          labels:
+            severity: critical
+            service: notification-orchestrator
+            page: "true"
+            slo: dispatch-success-99-5
+          annotations:
+            summary: "Notify DLQ SLO 6h burn rate {{ $value | humanize }}x (target 6x)"
+            description: |
+              DLQ-terminated dispatches burning 99.5% budget {{ $value | humanize }}×
+              over the past 6h AND 30m (namespace {{ $labels.namespace }}); Fast
+              alert NOT firing. At this rate the 28d budget exhausts in ~5 days.
+              Sustained signal — investigate provider config drift, ESO secret
+              rotation, retry policy regression. If both Fast + Slow would
+              normally fire, this alert is suppressed by `unless` clause to
+              avoid duplicate paging.
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/operations/RUNBOOKS/RB-notify-strict-subscriberid-cutover.md"
+
+        - alert: NotifyDlqSloBurnRateMedium
+          # 3× burn over 24h. Ticket-only — not paging. Operator triages
+          # within business hours.
+          expr: notify:dlq:burn_rate:24h > 3.0
+          for: 1h
+          labels:
+            severity: warning
+            service: notification-orchestrator
+            slo: dispatch-success-99-5
+          annotations:
+            summary: "Notify DLQ SLO 24h burn rate {{ $value | humanize }}x (target 3x)"
+            description: |
+              DLQ-terminated dispatches burning 99.5% budget {{ $value | humanize }}×
+              over the past 24h (namespace {{ $labels.namespace }}). At this rate
+              the 28d budget exhausts in ~10 days. Ticket — investigate the
+              {{ $labels.namespace }} dispatch failure profile during business
+              hours. May indicate gradual provider degradation.
+
+        - alert: NotifyDlqSloErrorBudgetBurning
+          # 1× burn over 72h. The longest window — catches steady-state at-budget
+          # consumption that doesn't trigger faster-window alerts.
+          expr: notify:dlq:burn_rate:72h > 1.0
+          for: 6h
+          labels:
+            severity: warning
+            service: notification-orchestrator
+            slo: dispatch-success-99-5
+          annotations:
+            summary: "Notify DLQ SLO error budget consuming at steady-state ({{ $value | humanize }}x)"
+            description: |
+              DLQ-terminated dispatches burning 99.5% budget at {{ $value | humanize }}×
+              over the past 72h. Means the 28d budget is being fully consumed at
+              this rate — i.e., we're tracking "at SLO threshold" with no margin.
+              Plan budget recovery (provider tuning, retry policy review,
+              recipient hygiene) within the current window.
