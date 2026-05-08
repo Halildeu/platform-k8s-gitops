@@ -735,7 +735,28 @@ images:
     # Build evidence: platform-web run for 9e3d87d5 — testai digest
     # sha256:5671ee5dc28fed3b8f9865ba37ef25dbb55176a468d3558db9e4fe2b14315489.
     # Live pod confirmed.
-    digest: sha256:5671ee5dc28fed3b8f9865ba37ef25dbb55176a468d3558db9e4fe2b14315489
+    #
+    # 2026-05-08 update: sha-4053276 — platform-web PR #315 (Faz 24
+    # PR-5.3 FE orgId JWT state-source + multi-org fail-closed).
+    # `mapKeycloakProfile` now reads `org_id` (preferred) / `tenant_id`
+    # (alias) → `profile.orgId`, and `allowed_orgs[]` → `profile.allowedOrgs`
+    # without auto-promoting `allowedOrgs[0]` to a current selection.
+    # `selectNotifyIdentity` falls back to the legacy `DEFAULT_ORG_ID`
+    # only for tokens with neither claim AND `allowedOrgs.length <= 1`;
+    # multi-org operators without a committed selection get a
+    # fail-closed `null` so the inbox call is skipped instead of
+    # silently writing to the default tenant.
+    #
+    # Until the Keycloak realm `org_id` mapper is wired (operator step
+    # in PR-2 follow-up), the live testai persona's JWT carries
+    # neither claim, so the selector still emits
+    # `orgId: 'default'` and the backend metric counter increments
+    # `notify_org_access_match_total{source="default"}`. PR-5.4 closes
+    # the fallback once the gate window reads zero.
+    #
+    # Cross-AI peer review: Codex thread `019e0675` AGREE iter-4
+    # `ready_to_merge: true`. Build run 25545692600.
+    digest: sha256:78a3d3113cba45ea79c84dfa1f1a28268f552fd8ec02fb7bb6c53cf63af1ba2c
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
