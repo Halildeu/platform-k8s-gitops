@@ -162,12 +162,18 @@ spec:
     # via the runbook URL or `kubectl exec wget actuator/prometheus | grep
     # <metric>{reason=...}`.
     #
-    # Severity choice (Codex iter-1 P1): only NotifyOrgAccessDeniedStorm is
-    # critical+page (always indicates real abuse or major regression).
-    # NotifySubscriberIdentityDeniedStorm is severity=critical without page —
-    # during JWT migration / auth-service refresh transitions, this counter
-    # can briefly spike legitimately. Both feed the same incident; runbook
-    # treats them as paired indicators of a single auth-chain incident.
+    # Severity choice (Codex iter-1 P1 → iter-2 P0 absorb): only
+    # NotifyOrgAccessDeniedStorm is severity=critical (and page=true) —
+    # always indicates real abuse or major regression.
+    # NotifySubscriberIdentityDeniedStorm is severity=warning with
+    # `security_impact: critical` annotation. Reason: alertmanager-bridge.py
+    # routes by `severity` only; severity=critical → P1 page regardless of
+    # the `page` label. Demoting to warning prevents double-paging when an
+    # auth-chain failure fires both alerts simultaneously, while the
+    # security_impact annotation preserves dashboard / incident-grouping
+    # signal that this is still a security-critical event. Both alerts
+    # feed the same incident; runbook treats them as paired indicators
+    # of a single auth-chain incident.
 
     - name: notification-orchestrator-strict-cutover
       interval: 30s

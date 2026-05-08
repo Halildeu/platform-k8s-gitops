@@ -124,8 +124,8 @@ sections below extend this runbook to cover both guards.
 ## Strict cutover storm response (Step B alert absorb 2026-05-08)
 
 Triggered by:
-- `NotifyOrgAccessDeniedStorm` (critical, page=true)
-- `NotifySubscriberIdentityDeniedStorm` (critical, no page — paired with above)
+- `NotifyOrgAccessDeniedStorm` (severity=critical, page=true — single P1 source)
+- `NotifySubscriberIdentityDeniedStorm` (severity=warning + `security_impact=critical` annotation, no P1 page — paired with above; bridge routes by severity, demoted to warning to avoid double P1)
 - `NotifyOrgAccessSourceDefaultRegression` (warning — F3 gate sentinel)
 - `NotifyOrgAccessSourceNoneRegression` (warning — pre-401/403 anomaly)
 - `NotifyStrictCutoverTelemetryAbsent` (warning — silent-green guard)
