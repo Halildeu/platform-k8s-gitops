@@ -1297,31 +1297,39 @@ patches:
       # notification-orchestrator-config'a hiç eklenmemiş. PR-E.4 cross-pod
       # SSE smoke için bu override gerekli; pre-existing gap kapatılır.
       #
-      # 2026-05-08 fix: SECURITY_JWT_ISSUER_URI removed. Spring Security's
-      # `withIssuerLocation()` builder triggers `.well-known/openid-configuration`
-      # auto-discovery against the issuer URI when it is set, even when
-      # `jwk-set-uri` is also provided. The cluster's `default-deny-egress`
-      # NetworkPolicy + lack of public-domain hairpin routing means
-      # `https://testai.acik.com/realms/platform-test/.well-known/...` times
-      # out (5s) on the very first JWT decode attempt — surface symptom:
-      # `JwtDecoderInitializationException` on every `/api/v1/notify/inbox/me`
-      # request (HTTP 500). Live evidence:
+      # 2026-05-08 fix v2: SECURITY_JWT_ISSUER restored alongside
+      # SECURITY_JWT_JWK_SET_URI. Backend now ships a custom
+      # `JwtDecoder` bean (notification-orchestrator PR #123, mirroring
+      # permission-service's existing pattern) that combines:
+      #   - NimbusJwtDecoder.withJwkSetUri(jwkSetUri)  ← internal Keycloak
+      #     JWK URL only; resolves on cluster DNS in milliseconds, never
+      #     triggers `.well-known/openid-configuration` auto-discovery
+      #     (which is what timed out before — see live evidence below).
+      #   - JwtValidators.createDefaultWithIssuer(issuer)  ← string compare
+      #     against the public Keycloak frontend URL, no network call.
+      # The pair gives us the same security posture permission-service
+      # has run with for months: signature validation + issuer claim
+      # assertion + audience allow-list, all without hitting the
+      # public-domain hairpin.
+      #
+      # Earlier (v1) attempt removed SECURITY_JWT_ISSUER_URI to escape
+      # the auto-discovery timeout but left issuer claim assertion off
+      # entirely, which is unacceptable in pre-prod. Codex thread
+      # `019e0649` flagged the gap; this v2 closes it.
+      #
+      # Live evidence (2026-05-08 testai before v2):
       #   notify-orch /actuator/prometheus
       #   http_server_requests_seconds_count{
       #     error="JwtDecoderInitializationException",
       #     status="500", uri="/api/v1/notify/inbox/me"} 17
       #   curl from notify-orch pod to public testai.acik.com → 5s timeout
       #   curl from permission-service pod → same timeout (cluster-wide)
-      # With only `jwk-set-uri` set, Spring Boot uses `NimbusJwtDecoder.withJwkSetUri()`
-      # which fetches JWK directly from the internal Keycloak service
-      # (resolves on cluster DNS in 2ms) and skips the issuer auto-discovery.
-      # Token signature is still validated against the JWK; issuer claim
-      # validation is skipped — acceptable for the test cluster (signature
-      # alone proves authenticity). For prod we keep the same legacy gap
-      # until a backend code-level custom JwtValidator is wired.
       - op: add
         path: /data/SECURITY_JWT_JWK_SET_URI
         value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://testai.acik.com/realms/platform-test"
       # Faz 23.2 PR-D.2 — OTLP runtime activation (Codex 019dfe0f Q4 absorb).
       # PR-C tracing readiness (sampling=0.0, endpoint empty) → PR-D.2 test
       # cluster activation: 10% sampling, Tempo direct OTLP HTTP receiver.
