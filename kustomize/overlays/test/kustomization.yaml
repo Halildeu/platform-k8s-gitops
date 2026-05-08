@@ -1592,12 +1592,24 @@ patches:
       # PR-C tracing readiness (sampling=0.0, endpoint empty) → PR-D.2 test
       # cluster activation: 10% sampling, Tempo direct OTLP HTTP receiver.
       # Prod activation PR-D.3 atomic plan (defer).
+      #
+      # 2026-05-08 fix — Tempo collector deploy DEFER edildi (cluster'da
+      # `monitoring` namespace yok, `tempo` svc/pod hiç yok). OTLP exporter
+      # her 13 saniyede bir UnknownHostException atıyor ve pod log'unu
+      # kirletiyordu (kullanıcı /inbox/me 400 debug sırasında gerçek
+      # hataları bulmayı engelliyordu). Tek-user pre-prod context'inde
+      # tracing kritik değil — endpoint blank ile OTLP exporter no-op'a
+      # geçer, sampling de 0.0'a çekilerek tracing tamamen disable edilir.
+      #
+      # Tempo deploy + OTLP re-activation Faz 23.8 minimal observability
+      # cycle'ında geri gelecek (monitoring namespace + Tempo Helm chart).
+      # O zamana kadar bu blank values pod log'u temiz tutar.
       - op: add
         path: /data/MANAGEMENT_OTLP_TRACING_ENDPOINT
-        value: "http://tempo.monitoring.svc.cluster.local:4318/v1/traces"
+        value: ""
       - op: add
         path: /data/MANAGEMENT_TRACING_SAMPLING_PROBABILITY
-        value: "0.1"
+        value: "0.0"
 
   # Faz 23.2 PR-D.2 — pod-template annotation rollout trigger (Codex Q4 absorb).
   # ConfigMap envFrom değişmesi pod restart tetiklemez; annotation bump rolling
