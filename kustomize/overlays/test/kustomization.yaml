@@ -991,7 +991,36 @@ images:
     #
     # Image build run: 25576298345 (success), testai digest
     # sha256:7d0b933d3097678515746db2523db472725e8554ba5023a634dd474e1c1babf6.
-    digest: sha256:7d0b933d3097678515746db2523db472725e8554ba5023a634dd474e1c1babf6
+    #
+    # 2026-05-08 update: sha-86c9d00 — platform-web PR #333 (PR-FE-5
+    # UserDetailDrawer scopes array shape parser).
+    #
+    # Bug: testai live (admin@example.com user 1, post PR-BE-14 deploy)
+    # backend /v1/roles/users/1/scopes returns 16 scope entries (7
+    # COMPANY, 6 PROJECT, 3 WAREHOUSE) but UserDetailDrawer rendered
+    # all dropdown selections empty. Same surface for any non-superAdmin
+    # user with persisted scopes - shape mismatch was independent of
+    # PR-BE-14, just unmasked by it.
+    #
+    # Root cause: UserDetailDrawer.userScopesQuery cast res.data as the
+    # grouped object shape { companyIds, projectIds, warehouseIds,
+    # branchIds } which never existed on the live API. Backend
+    # AccessControllerV1.listUserScopes always returns
+    # List<ScopeSummaryDto> array [{scopeType, scopeRefId}, ...].
+    # Pre-fix data.companyIds was always undefined so the fallback []
+    # populated selectedCompanyIds and the chips never rendered.
+    #
+    # Fix Option A: parse the canonical array into grouped numeric IDs
+    # locally via filter+map. Backend contract unchanged. Single
+    # consumer per repo grep, low blast radius.
+    #
+    # Cross-AI peer review: Codex thread 019e0954 iter-1 AGREE on
+    # Option A; risk surface low; ready_for_impl yes. Test surface 53
+    # PASS / 0 fail (unchanged, mock updated to canonical array shape).
+    #
+    # Image build run: 25579376343 (success), testai digest
+    # sha256:cba070cd66be2f039baf965d2ea7b6a142ad28bd6b04eda967e870fd2e151cbe.
+    digest: sha256:cba070cd66be2f039baf965d2ea7b6a142ad28bd6b04eda967e870fd2e151cbe
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
