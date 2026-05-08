@@ -657,7 +657,29 @@ images:
     # maxSurge=0/maxUnavailable=1 so the new pod terminates the old
     # before scheduling (fits within quota); same patch lands in this
     # PR's strategy override below.
-    digest: sha256:8378609fcb1c01aff84da0a1bf75d44ecb49b242b4e4518e0b9c1164d3951623
+    #
+    # 2026-05-08 update: sha-9d06576 — platform-web PR #309
+    # (PR-Obs-5: PII-free fetch telemetry + AuthFsmObserver +
+    # AuthDegradedBanner + structured phase-transition logs). Closes
+    # the observability piece of the MFE Auth Transport Contract:
+    # request counters keyed by status_class + method (URL never a
+    # label); refresh-attempt counter only increments for the
+    # single-flight OWNER (waiters tracked separately); recent
+    # refresh-failure ring (max 20 entries, 5 min TTL) drives the
+    # degraded banner; periodic 1/min telemetry snapshot via the
+    # existing telemetryClient.emit pipeline (no new endpoint).
+    # The auto-deploy workflow already kubectl-set-image'd the cluster
+    # to this digest right after PR #309 merged; this PR closes the
+    # gitops drift so ArgoCD reconcile or `kubectl apply -k` doesn't
+    # pull the cluster back to sha-224728d.
+    # Build evidence: platform-web run 25529118695 — testai digest
+    # sha256:f697295223e46bcdb8ecfe01ca0b6a381a46d8f4dafeea149798942951b98ac3.
+    # Live pod confirmed (kubectl get pod frontend -o jsonpath imageID
+    # matches this digest exactly).
+    # Cross-AI peer review: Codex thread 019e04d0 iter-2 AGREE
+    # post-impl + iter-1 AGREE plan-time (ready_for_impl=true, 6 P0 +
+    # 7 P1 + 5 P2 acceptance items absorbed).
+    digest: sha256:f697295223e46bcdb8ecfe01ca0b6a381a46d8f4dafeea149798942951b98ac3
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
