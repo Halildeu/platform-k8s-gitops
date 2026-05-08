@@ -1,68 +1,84 @@
 # RB-faz-23-2-notify-vault-paths — notification-orchestrator Vault path setup
 
-> **Status**: ACTIVE (Faz 23.2 PR-D.3 ESO setup operasyon runbook)
+> **Status**: ACTIVE (Faz 23.9 Step D rewrite — Codex thread `019e08df`
+> REVISE absorb)
 > **ADR**: ADR-0013-notification-orchestration
-> **Vault**: kv/platform/notify
+> **Vault path**: `kv/platform/notification-orchestrator` (flat, single-path
+> convention; matches auth-service / user-service)
 
-Bu runbook ESO ExternalSecret'in Vault'tan okuduğu path'lerin **operatör tarafından
-manuel kurulumunu** anlatır. Path olmadan ExternalSecret SecretSyncedError verir
-ve pod boot stub Secret değerleriyle (dev sentinels) çalışır — production posture
-broken.
+Bu runbook ESO ExternalSecret'in Vault'tan okuduğu path'in **operatör tarafından
+manuel kurulumunu** anlatır. Path olmadan ExternalSecret SecretSyncedError
+verir ve pod boot stub Secret değerleriyle (dev sentinels) çalışır —
+ProductionConfigValidator fail-closed.
+
+> **Migration note (2026-05-08, Faz 23.9 Step D)**: Faz 23.2 PR-D.3 split path
+> `kv/platform/notify/{db,redaction,webhook,authz,smtp,slack}` over-engineered
+> for SMTP/Slack channels not yet wired. Test ExternalSecret stayed in
+> `SecretSyncedError` from 2026-05-07 to 2026-05-08. This runbook now reflects
+> the flat single-path convention. Existing test/prod Vault data migrated by
+> writing to the new path; old split path remains in Vault for one-cycle
+> safety, deletion deferred to follow-up rotation PR.
 
 ---
 
 ## Tetikleyici
 
-- ilk PR-D.3 deploy (test veya prod cluster)
+- ilk Step D deploy (test veya prod cluster)
 - Vault re-init / disaster recovery
 - Secret rotation (webhook signing key, redaction pepper, authz API key)
 
 ## Ön-koşul
 
 - Vault server erişilebilir (`vault status`)
-- Vault token: `vault login` ROOT veya `kv/platform/*` write yetkisi
-- ESO ClusterSecretStore `vault-platform-gitops` healthy (mevcut)
+- Vault token: `vault login` ROOT veya `kv/platform/notification-orchestrator`
+  write yetkisi (bootstrap-writer policy)
+- ESO ClusterSecretStore `vault-platform-gitops` healthy
+- ESO AppRole `eso-runtime` policy includes
+  `kv/data/platform/notification-orchestrator` read
+  (`bootstrap/vault-policies/common/eso-runtime.hcl`)
 
 ## Adımlar
 
 ### 1. Vault path setup (ilk deploy)
 
 ```bash
-# DEV/TEST cluster — daha gevşek değerler kabul edilebilir
-vault kv put kv/platform/notify \
-  db_username='platform' \
-  db_password='<test-db-password>' \
-  redaction_pepper='<32-byte random hex>' \
-  webhook_signing_secret='<32-byte random hex>' \
-  webhook_signing_secret_next='' \
-  webhook_active_kid='kid-1' \
-  authz_internal_api_key='<32-byte random>'
+# DEV/TEST cluster
+docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-test \
+  vault kv put kv/platform/notification-orchestrator \
+    db_username='platform' \
+    db_password='<test-db-password>' \
+    redaction_pepper="$(openssl rand -hex 32)" \
+    webhook_signing_secret="$(openssl rand -hex 32)" \
+    authz_internal_api_key="$(openssl rand -hex 32)"
 
 # PROD cluster — strict secret hygiene
-# Tüm değerler operatör tarafından üretilmiş (openssl rand -hex 32) +
-# Vault'ta bir kere yazılır + access audited.
-vault kv put kv/platform/notify \
-  db_username='platform' \
-  db_password="$(vault kv get -field=password kv/platform/postgres-platform-user)" \
-  redaction_pepper="$(openssl rand -hex 32)" \
-  webhook_signing_secret="$(openssl rand -hex 32)" \
-  webhook_signing_secret_next='' \
-  webhook_active_kid='kid-1' \
-  authz_internal_api_key="$(openssl rand -hex 32)"
+docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
+  vault kv put kv/platform/notification-orchestrator \
+    db_username='platform' \
+    db_password="$(vault kv get -field=password kv/platform/postgres-platform-user)" \
+    redaction_pepper="$(openssl rand -hex 32)" \
+    webhook_signing_secret="$(openssl rand -hex 32)" \
+    authz_internal_api_key="$(openssl rand -hex 32)"
 ```
 
-### 2. ExternalSecret apply
+### 2. ExternalSecret apply (selective, D17 koruma)
 
-ESO bu Secret değişimini 1h refresh interval ile pickup eder; manuel hızlandırma:
+ESO bu Secret değişimini 1h refresh interval ile pickup eder; selective apply:
 
 ```bash
-kubectl --context k3d-test apply -k kustomize/base/apps/notification-orchestrator/ops
-kubectl --context k3d-test -n platform-test get externalsecret notification-orchestrator-secrets
+# Test cluster
+kubectl --context k3d-test apply -f kustomize/overlays/test/eso/notify/externalsecret-notify.yaml
 
-# Sync zorla (annotation rolldown):
-kubectl --context k3d-test -n platform-test annotate externalsecret \
-  notification-orchestrator-secrets force-sync=$(date +%s) --overwrite
+# Prod cluster
+kubectl --context k3d-prod apply -f kustomize/overlays/prod/eso/notify/externalsecret-notify.yaml
+
+# Verify
+kubectl --context k3d-test -n platform-test get externalsecret notification-orchestrator-secrets
+# Beklenen: STATUS=SecretSynced READY=True LAST SYNC=<seconds>
 ```
+
+> **D17 koruma**: `kubectl apply -k overlays/{env}/eso` YASAK — tüm ESO
+> ExternalSecret'leri re-apply eder. Tek manifest selective apply yeterli.
 
 ### 3. Verification
 
@@ -70,42 +86,25 @@ kubectl --context k3d-test -n platform-test annotate externalsecret \
 # Secret synced status
 kubectl --context k3d-test -n platform-test get externalsecret \
   notification-orchestrator-secrets -o jsonpath='{.status.conditions}'
-
 # Beklenen: type=Ready status=True reason=SecretSynced
 
-# Secret values (redacted via base64):
+# Secret ownership (must be ExternalSecret-owned, not direct kubectl)
 kubectl --context k3d-test -n platform-test get secret \
-  notification-orchestrator-secrets -o yaml | head -30
+  notification-orchestrator-secrets -o jsonpath='{.metadata.ownerReferences}'
+# Beklenen: kind=ExternalSecret, name=notification-orchestrator-secrets
 
-# Pod env injection (rolling restart sonrası):
+# Pod env injection (rolling restart sonrası — yeni pod boot eder)
 kubectl --context k3d-test -n platform-test rollout restart deploy/notification-orchestrator
 kubectl --context k3d-test -n platform-test exec deploy/notification-orchestrator -- \
   printenv | grep -E 'SPRING_DATASOURCE_USERNAME|NOTIFY_REDACTION_PEPPER' | head -3
 ```
 
-### 4. Webhook key rotation (operasyon disiplini)
+### 4. Webhook key rotation (Faz 23.7 follow-up)
 
-PR-A kid-aware HMAC registry: rotation `webhook_signing_secret_next` ekle, sonra
-`webhook_active_kid` bump. ESO refresh + pod restart bağımsız.
-
-```bash
-# 1. Yeni key Vault'a write (next slot)
-vault kv patch kv/platform/notify webhook_signing_secret_next="$(openssl rand -hex 32)"
-
-# 2. ESO sync + pod restart (next key load; both old + new active for grace)
-kubectl annotate externalsecret notification-orchestrator-secrets force-sync=$(date +%s) --overwrite
-kubectl rollout restart deploy/notification-orchestrator
-
-# 3. 24h grace sonrası: active kid bump (old key drop, next promote to active)
-vault kv patch kv/platform/notify \
-  webhook_active_kid=kid-2 \
-  webhook_signing_secret="$(vault kv get -field=webhook_signing_secret_next kv/platform/notify)" \
-  webhook_signing_secret_next=''
-
-# 4. Final pod restart
-kubectl annotate externalsecret notification-orchestrator-secrets force-sync=$(date +%s) --overwrite
-kubectl rollout restart deploy/notification-orchestrator
-```
+Rotation runbook (`*_NEXT` + `ACTIVE_KID` registry) henüz bu PR'da yok.
+Activation şartı: prod webhook traffic > 0 + receiver registry hazır.
+Detay: ayrı `RB-notify-webhook-rotation.md` (TODO). Bu runbook tek-key
+state'i kurar; rotation extension follow-up PR ile gelir.
 
 ## Rollback
 
@@ -113,10 +112,17 @@ ExternalSecret manifest revert + pod restart:
 
 ```bash
 # ExternalSecret silersek stub Secret tekrar geçerli olur (dev sentinels);
-# pod boot olur ama production posture degraded
-kubectl --context k3d-test -n platform-test delete externalsecret notification-orchestrator-secrets
+# pod boot olur ama ProductionConfigValidator fail-closed yakalar
+kubectl --context k3d-test -n platform-test delete externalsecret \
+  notification-orchestrator-secrets
 kubectl --context k3d-test -n platform-test rollout restart deploy/notification-orchestrator
 ```
+
+> **Live recovery (2026-05-08 deneyim)**: prod cutover'da Vault setup
+> deferred edildi → direct `kubectl create secret` ile bootstrap yapıldı.
+> Step D ESO migration sırasında ESO `creationPolicy=Owner` byte-identical
+> içerikle ownership aldı, pod restart gerek olmadı. Aynı pattern recovery
+> için kullanılabilir.
 
 ## Audit
 
@@ -130,14 +136,16 @@ vault read -format=json sys/audit | jq '.data.audit_devices'
 
 - Vault token'ı git'e commit etmek **YASAK**
 - Stub Secret değerlerini production'da tutmak **YASAK**
-  (ProductionConfigValidator fail-closed yakalar — `dev-only-pepper-not-for-production`
-  whitespace check raise eder)
-- Webhook key rotation'ı sıralı yapmamak **YASAK** (downtime'a neden olur:
-  receivers eski key'le validate eder, biz yeni key ile imzalıyorsak)
+  (ProductionConfigValidator fail-closed yakalar)
+- Webhook key rotation'ı sıralı yapmamak **YASAK** (downtime'a neden olur)
+- Eski split path (`kv/platform/notify/*`) yazmaya devam etmek **YASAK**
+  (Faz 23.9 Step D itibarıyla deprecated)
 
 ## Referans
 
-- `kustomize/base/apps/notification-orchestrator/ops/externalsecret.yaml`
-- `kustomize/base/apps/notification-orchestrator/secret-stub.yaml`
+- `kustomize/overlays/prod/eso/notify/externalsecret-notify.yaml` (prod manifest)
+- `kustomize/overlays/test/eso/notify/externalsecret-notify.yaml` (test manifest)
+- `kustomize/base/apps/notification-orchestrator/secret-stub.yaml` (bootstrap stub)
+- `bootstrap/vault-policies/common/eso-runtime.hcl` (`kv/data/platform/notification-orchestrator` read policy)
 - ADR-0013-notification-orchestration §6 (security)
-- Vault AppRole + ESO ClusterSecretStore: `kustomize/base/eso/clustersecretstore.yaml`
+- Codex thread `019e08df` (REVISE absorb — flat path consolidation)

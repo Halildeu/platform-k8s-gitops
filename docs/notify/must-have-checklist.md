@@ -136,8 +136,9 @@ curl -X POST .../intents -d '{"org_id":"default","recipient":"sub:9999","topic":
 **Sub-faz**: 23.1 (Kernel)
 
 **Kabul kriteri**:
-- [ ] Vault path `kv/platform/notify/{smtp,slack,netgsm,...}` mevcut
+- [ ] Vault path `kv/platform/notification-orchestrator` mevcut (flat path, Faz 23.9 Step D Codex thread `019e08df` — auth-service / user-service convention; SMTP/Slack/NetGSM provider creds aynı path'e property olarak eklenir veya provider-specific path'lere ayrılır gerek olduğunda)
 - [ ] ESO ExternalSecret manifest `kustomize/overlays/{test,prod}/eso/notify/`
+- [ ] Vault policy `eso-runtime` `kv/data/platform/notification-orchestrator` read içerir (`bootstrap/vault-policies/common/eso-runtime.hcl`)
 - [ ] Spring Boot @Value injection (env var) — kod içinde hardcoded credential yok
 - [ ] Log audit: `grep -i "password\|token\|secret\|api[_-]key" stdout` → 0 match
 - [ ] Provider config DB row: encrypted at rest (PG default) + credential reference (Vault path) only
@@ -145,7 +146,7 @@ curl -X POST .../intents -d '{"org_id":"default","recipient":"sub:9999","topic":
 **Kanıt**:
 ```bash
 kubectl get externalsecret -n platform-test | grep notify
-psql -c "SELECT credential_ref FROM notify.provider_config LIMIT 1"  # vault://kv/platform/notify/smtp, no plain
+psql -c "SELECT credential_ref FROM notify.provider_config LIMIT 1"  # vault://kv/platform/notification-orchestrator (or provider-specific path)
 kubectl logs deploy/notification-orchestrator | grep -iE "password|token|secret" | wc -l  # 0
 ```
 

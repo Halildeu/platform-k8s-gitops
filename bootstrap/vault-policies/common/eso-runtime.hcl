@@ -36,6 +36,15 @@ path "kv/data/platform/permission-service" {
   capabilities = ["read"]
 }
 
+# --- Faz 23.9 Step D notification-orchestrator (flat path; auth-service convention) ---
+# Codex thread 019e08df REVISE absorb: ExternalSecret reads kv/platform/notification-
+# orchestrator with 5 keys (db_username, db_password, webhook_signing_secret,
+# authz_internal_api_key, redaction_pepper). Future SMTP/Slack additions extend the
+# same path with extra properties; no need to split until rotation policies diverge.
+path "kv/data/platform/notification-orchestrator" {
+  capabilities = ["read"]
+}
+
 # --- OpenFGA Store + Model ID (D-008 runtime kontrat) ---
 path "kv/data/platform/openfga" {
   capabilities = ["read"]
