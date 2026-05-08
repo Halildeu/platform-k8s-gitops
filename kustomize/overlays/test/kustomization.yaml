@@ -824,9 +824,32 @@ images:
   # Schema migrations applied automatically on pod startup (V14 idempotent
   # ALTER + COMMENT ON COLUMN; PR #99/#107 earlier migrations also
   # idempotent in the Flyway version table).
+  #
+  # 2026-05-08 update: sha-749077c — platform-backend PR #123
+  # (commit da81b60). Adopts the permission-service / api-gateway custom
+  # JwtDecoder bean pattern so notification-orchestrator no longer
+  # depends on Spring Boot's `OAuth2ResourceServerJwtConfiguration`
+  # auto-discovery (which timed out against the public Keycloak URL
+  # inside the cluster). The new bean uses
+  # `NimbusJwtDecoder.withJwkSetUri()` (no `.well-known` call) plus
+  # `JwtValidators.createDefaultWithIssuer()` (string compare against
+  # the `iss` claim) plus an `AudienceValidator` mirror of
+  # permission-service's class.
+  #
+  # Pairs with platform-k8s-gitops PR #407 which added
+  # `SECURITY_JWT_ISSUER=https://testai.acik.com/realms/platform-test`
+  # to this same configmap patch. Apply order (Codex thread `019e0649`
+  # iter-3 verdict): ConfigMap/env first (PR #407, already applied),
+  # then this digest bump rolls the new image; the new pod boots with
+  # both the new image AND the new env in place. Reverse order would
+  # boot the new image with the old configmap (no SECURITY_JWT_ISSUER),
+  # fall back to the localhost placeholder default, and 401-storm.
+  #
+  # Cross-AI peer review: Codex thread `019e0649` AGREE iter-3
+  # `ready_to_merge: true`. Build run 25542004277.
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:dd763a88fbae42ac178c4ce738aa87dabb0ad50732f7824d95d04fafe7cd282e
+    digest: sha256:657dc541012becfb66582214199da425212e7ed61c4abf57db6f850b2065838c
 
 patches:
   # Replica 0 default (scale-to-zero)
