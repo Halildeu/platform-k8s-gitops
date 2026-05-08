@@ -838,7 +838,24 @@ images:
     # of the Request-form header drop is queued as a separate
     # investigation (Tempo OTLP DNS noise also queued; both unrelated
     # to the user-path 400). Build run 25557464289, image push ~13:14Z.
-    digest: sha256:4b33bf16d00ffcb0f6b239263b15650ce37bfea2d43809f919374215c11282d9
+    #
+    # 2026-05-08 update: sha-d486e84 — platform-web PR #319
+    # (fix(shared-http): manifest URL same-origin default).
+    # Production browser console showed
+    #   GET http://localhost:8080/manifest/v1/manifest.json ERR_CONNECTION_REFUSED
+    # because Vite-time VITE_GATEWAY_URL was unset → bundle baked the
+    # localhost:8080 default, so testai.acik.com browsers tried to reach
+    # localhost:8080 directly and failed. Fix changes resolveGatewayOrigin()
+    # to return null when env is missing and falls back to same-origin
+    # relative `/manifest/v1`, so production bundles served from any host
+    # fetch the manifest from that host's gateway via ingress.
+    # Cross-AI peer review: Codex thread `019e088f` AGREE
+    # (`ready_to_merge: true`); Plan subagent third-AI fallback AGREE
+    # (Codex MCP rate-limited at the time of first review, recovered
+    # before merge); platform-web PR #319 merged d486e842 at
+    # 2026-05-08T17:14:39Z. Image build run: 25569092840 (success),
+    # testai digest sha256:2a3b18ce8e5a215c0e10c57b28eac4dc1fe0676f01e9cbccc558d9a829c8c388.
+    digest: sha256:2a3b18ce8e5a215c0e10c57b28eac4dc1fe0676f01e9cbccc558d9a829c8c388
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
