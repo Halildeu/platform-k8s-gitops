@@ -215,12 +215,15 @@ spec:
             runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/operations/RUNBOOKS/RB-notify-strict-subscriberid-cutover.md"
 
         - alert: NotifyDlqSloBurnRateSlow
-          # Codex 019e094a iter-1 P0 + P1 absorb:
+          # Codex 019e094a iter-1 P0 + P1 + iter-2 P1 absorb:
           # - True multi-window pattern (6h AND 30m must both exceed threshold)
-          # - `unless notify:dlq:burn_rate:1h > 14.4` clause suppresses this
-          #   alert when the Fast alert is already firing. Avoids two P1 pages
-          #   for the same incident through AlertManager (group_by alertname).
-          #   When fast subsides but slow persists, slow still fires.
+          # - `unless ((1h > 14.4) AND (5m > 14.4))` clause suppresses this
+          #   alert only when Fast's full predicate is genuinely firing —
+          #   avoids the iter-2 blind-spot edge case where `1h > 14.4` was
+          #   true but `5m <= 14.4` still left Slow incorrectly suppressed.
+          #   Avoids two P1 pages for the same incident through AlertManager
+          #   group_by alertname. When Fast subsides (either window drops),
+          #   Slow fires alone for the sustained 6h regression.
           expr: |
             (
               notify:dlq:burn_rate:6h > 6.0
