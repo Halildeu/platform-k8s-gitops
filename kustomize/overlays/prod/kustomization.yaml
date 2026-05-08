@@ -310,6 +310,23 @@ patches:
       - op: add
         path: /data/MANAGEMENT_TRACING_SAMPLING_PROBABILITY
         value: "0.0"
+      # Faz 23.7 Step C audit retention activation (Codex thread `019e0892`
+      # priority 3, KVKK Art.7 compliance — saklama süresi sınırlandırma).
+      # AuditPartitionRetentionService is @ConditionalOnProperty
+      # (notify.audit.retention-enabled=true); base default is false.
+      # Activated here with retention-dry-run=true initial cycle so the
+      # 02:00 UTC cron-driven daily tick logs intent without DETACH/DROP
+      # for one observation window. Once
+      # `notify_audit_retention_last_success_timestamp_seconds` advances
+      # in Prometheus and audit log shows the partition list is sane,
+      # follow-up PR flips dry-run=false. retention-days=90 inherited
+      # from base configmap (KVKK default).
+      - op: add
+        path: /data/NOTIFY_AUDIT_RETENTION_ENABLED
+        value: "true"
+      - op: add
+        path: /data/NOTIFY_AUDIT_RETENTION_DRY_RUN
+        value: "true"
 
   # Faz 23.9 prod cutover — notification-orchestrator pod-template
   # annotation rollout trigger + replicas override. ConfigMap envFrom
@@ -328,6 +345,12 @@ patches:
         path: /spec/template/metadata/annotations
         value:
           security.acik.com/strict-cutover-activation: "faz-23-9-prod"
+          # Faz 23.7 Step C audit retention activation rollout trigger
+          # (Codex thread 019e090d iter-1 absorb): ConfigMap envFrom only
+          # reads at pod start → annotation bump forces rolling restart so
+          # AuditPartitionRetentionService bean gets instantiated under
+          # the new NOTIFY_AUDIT_RETENTION_ENABLED=true config.
+          compliance.acik.com/audit-retention-dry-run: "pr-c-1-2026-05-08"
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:

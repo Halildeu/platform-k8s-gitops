@@ -1716,6 +1716,22 @@ patches:
       - op: add
         path: /data/MANAGEMENT_TRACING_SAMPLING_PROBABILITY
         value: "0.0"
+      # Faz 23.7 Step C audit retention activation (Codex thread `019e0892`
+      # priority 3, KVKK Art.7 compliance — saklama süresi sınırlandırma).
+      # AuditPartitionRetentionService is @ConditionalOnProperty
+      # (notify.audit.retention-enabled=true); base default is false.
+      # Activated here with retention-dry-run=true initial cycle so the
+      # 02:00 UTC cron-driven daily tick logs intent without DETACH/DROP
+      # for one observation window in test. Once
+      # `notify_audit_retention_last_success_timestamp_seconds` advances
+      # and audit log shows partition list is sane, follow-up PR flips
+      # dry-run=false. retention-days=90 inherited from base configmap.
+      - op: add
+        path: /data/NOTIFY_AUDIT_RETENTION_ENABLED
+        value: "true"
+      - op: add
+        path: /data/NOTIFY_AUDIT_RETENTION_DRY_RUN
+        value: "true"
 
   # Faz 23.2 PR-D.2 — pod-template annotation rollout trigger (Codex Q4 absorb).
   # ConfigMap envFrom değişmesi pod restart tetiklemez; annotation bump rolling
@@ -1736,6 +1752,12 @@ patches:
           # via envFrom (ConfigMap envFrom does not auto-trigger pod
           # restart). Codex thread `019e07d6` iter-1 absorb.
           security.acik.com/subscriber-identity-strict-cutover: "pr-5-5"
+          # Faz 23.7 Step C audit retention activation (Codex thread
+          # 019e090d iter-1 absorb): ConfigMap envFrom only reads at pod
+          # start → annotation bump forces rolling restart so
+          # AuditPartitionRetentionService bean gets instantiated under
+          # NOTIFY_AUDIT_RETENTION_ENABLED=true.
+          compliance.acik.com/audit-retention-dry-run: "pr-c-1-2026-05-08"
 
   # Faz 23.4 PR-E.4 absorb (revert PR-E.3 HPA min=max=1 lock):
   # Backend PR Halildeu/platform-backend#89 lands cross-pod broadcast via PG
