@@ -719,7 +719,23 @@ images:
     # ready_to_merge: true (P2 test coverage gap noted, not blocker).
     # Follow-up tracked: keycloak.createLoginUrl race when adapter
     # not yet initialized (cosmetic console error, not UX-blocking).
-    digest: sha256:cf5ee43e012df1f0112599a13405e4d6d5ca0f03ae7591f5596283aa3a8ada21
+    #
+    # 2026-05-08 update: sha-9e3d87d — platform-web PR #312 (2nd hotfix).
+    # Closes the cosmetic console error from PR #311. Re-introduces
+    # `initialized` dep on the LoginPage useEffect (so URL build only
+    # runs after kc.init() resolves and adapter is ready), while
+    # KEEPING the first hotfix's removal of the !initialized guard
+    # from handleLogin (so the button stays clickable pre-init via
+    # startKeycloakLogin fallback).
+    # Live browser smoke post-deploy:
+    #   bundle: bootstrap-Cu3rZRsG.js (was bootstrap-xrD94aNr.js)
+    #   [AuthBootstrapper] bootstrap completed (clean)
+    #   [Auth] keycloak.createLoginUrl() RESOLVED (was: failed TypeError)
+    #   kcReady: true; UX intact
+    # Build evidence: platform-web run for 9e3d87d5 — testai digest
+    # sha256:5671ee5dc28fed3b8f9865ba37ef25dbb55176a468d3558db9e4fe2b14315489.
+    # Live pod confirmed.
+    digest: sha256:5671ee5dc28fed3b8f9865ba37ef25dbb55176a468d3558db9e4fe2b14315489
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
