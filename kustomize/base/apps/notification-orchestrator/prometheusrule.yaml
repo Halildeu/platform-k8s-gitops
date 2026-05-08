@@ -147,18 +147,33 @@ spec:
               {{ $value }} DLQ rows accumulated. Operator review +
               replayed=true marker after triage.
 
-    # ----- Faz 23.6 PR-5.4/5.5 strict cutover alerts (Step B Codex 019e0892) -----
+    # ----- Faz 23.6 PR-5.4/5.5 strict cutover alerts (Step B Codex 019e0892
+    # priority 2; iter-1 REVISE absorb thread 019e08fa) -----
+    #
     # New strict-mode counters (NotifyOrgAccessGuard + SubscriberIdentityGuard)
     # emit when guards fail-close. In steady state post-cutover, denied counter
     # rate must be 0; non-zero is either an attack or a regression. F3 cutover
     # gate also lives here: source="default" / source="none" must be 0 once
     # NOTIFY_SECURITY_DEFAULT_ORG_ID="" (Faz 23.6 PR-5.4) is the default.
+    #
+    # Aggregation choice (Codex iter-1 P0): expressions use
+    # `sum by (namespace) (rate(...[5m]))` so service-wide storms aren't masked
+    # by per-pod / per-reason label distribution. Per-reason inspection happens
+    # via the runbook URL or `kubectl exec wget actuator/prometheus | grep
+    # <metric>{reason=...}`.
+    #
+    # Severity choice (Codex iter-1 P1): only NotifyOrgAccessDeniedStorm is
+    # critical+page (always indicates real abuse or major regression).
+    # NotifySubscriberIdentityDeniedStorm is severity=critical without page —
+    # during JWT migration / auth-service refresh transitions, this counter
+    # can briefly spike legitimately. Both feed the same incident; runbook
+    # treats them as paired indicators of a single auth-chain incident.
 
     - name: notification-orchestrator-strict-cutover
       interval: 30s
       rules:
         - alert: NotifyOrgAccessDeniedStorm
-          expr: rate(notify_org_access_denied_total[5m]) > 0.1
+          expr: sum by (namespace) (rate(notify_org_access_denied_total[5m])) > 0.1
           for: 5m
           labels:
             severity: critical
@@ -167,30 +182,43 @@ spec:
           annotations:
             summary: "NotifyOrgAccessGuard fail-close storm > 0.1/sec"
             description: |
-              {{ $value | humanize }} org-access denials/sec over 5m. Either
-              an active attack (caller forging org_id) or a regression in
-              org_id resolve chain. Check guard logs + auth-service JWT
-              enrichment + inspect denied{reason} tag distribution.
-              Runbook: docs/runbooks/RB-notify-strict-subscriberid-cutover.md
+              {{ $value | humanize }} org-access denials/sec over 5m
+              (aggregated by namespace). Either an active attack
+              (caller forging org_id) or a regression in org_id resolve
+              chain. Check guard logs + auth-service JWT enrichment +
+              inspect denied{reason} tag distribution via
+              `notify_org_access_denied_total{reason=...}` per-series query.
+              Pair-check: NotifySubscriberIdentityDeniedStorm — if both fire
+              at once the root cause is upstream auth-chain failure (filter
+              chain not injecting JWT, auth-service down, etc.).
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/operations/RUNBOOKS/RB-notify-strict-subscriberid-cutover.md"
 
         - alert: NotifySubscriberIdentityDeniedStorm
-          expr: rate(notify_subscriber_identity_denied_total[5m]) > 0.1
+          expr: sum by (namespace) (rate(notify_subscriber_identity_denied_total[5m])) > 0.1
           for: 5m
           labels:
             severity: critical
             service: notification-orchestrator
-            page: "true"
+            # No page=true — paired with NotifyOrgAccessDeniedStorm; that one
+            # carries the page when the auth chain breaks. This alert remains
+            # critical for incident grouping but doesn't double-page.
           annotations:
             summary: "SubscriberIdentityGuard fail-close storm > 0.1/sec"
             description: |
-              {{ $value | humanize }} subscriber-identity denials/sec over 5m.
-              Strict mode reasons: no_auth (filter chain not injecting JWT) or
-              non_jwt (anonymous principal hitting guarded route). Check
-              ProductionConfigValidator + auth-service refresh path.
-              Runbook: docs/runbooks/RB-notify-strict-subscriberid-cutover.md
+              {{ $value | humanize }} subscriber-identity denials/sec over 5m
+              (aggregated by namespace). Strict mode reasons: no_auth (filter
+              chain not injecting JWT) or non_jwt (anonymous principal hitting
+              guarded route). Inspect denied{reason} distribution via
+              `notify_subscriber_identity_denied_total{reason=...}` per-series.
+              Pair-check: NotifyOrgAccessDeniedStorm — if both fire at once
+              the root cause is upstream auth-chain failure.
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/operations/RUNBOOKS/RB-notify-strict-subscriberid-cutover.md"
 
         - alert: NotifyOrgAccessSourceDefaultRegression
-          expr: rate(notify_org_access_match_total{source="default"}[10m]) > 0
+          # `increase` over the [10m] window with `for: 10m` — semantic intent:
+          # "any non-zero default-source emission for 10 minutes" (Codex
+          # 019e08fa iter-1 P2 absorb).
+          expr: sum by (namespace) (increase(notify_org_access_match_total{source="default"}[10m])) > 0
           for: 10m
           labels:
             severity: warning
@@ -198,17 +226,17 @@ spec:
           annotations:
             summary: "NotifyOrgAccessGuard source=\"default\" fallback re-emit"
             description: |
-              {{ $value | humanize }} requests/sec hitting the default-org
-              fallback over 10m. F3 cutover gate (Faz 23.6 PR-5.4) expects
-              this counter to be 0 in steady state — non-zero means either
-              the env override `NOTIFY_SECURITY_DEFAULT_ORG_ID=""` was
-              reverted, or org_id resolve chain regressed and is falling
-              back to the default-org fast-path that was supposed to be
-              closed. Inspect the request set hitting this branch + audit
-              recent ConfigMap changes + restart history.
+              {{ $value | humanize }} default-source matches over 10m.
+              F3 cutover gate (Faz 23.6 PR-5.4) expects this counter to be 0
+              in steady state — non-zero means either the env override
+              `NOTIFY_SECURITY_DEFAULT_ORG_ID=""` was reverted, or org_id
+              resolve chain regressed and is falling back to the default-org
+              fast-path that was supposed to be closed. Inspect the request
+              set hitting this branch + audit recent ConfigMap changes +
+              restart history.
 
         - alert: NotifyOrgAccessSourceNoneRegression
-          expr: rate(notify_org_access_match_total{source="none"}[10m]) > 0
+          expr: sum by (namespace) (increase(notify_org_access_match_total{source="none"}[10m])) > 0
           for: 10m
           labels:
             severity: warning
@@ -216,8 +244,29 @@ spec:
           annotations:
             summary: "NotifyOrgAccessGuard source=\"none\" miss"
             description: |
-              {{ $value | humanize }} requests/sec where neither claim, tenant,
-              nor allowed_orgs resolved an org id over 10m. This precedes a
-              fail-close 401/403; if sustained likely a multi-tenant onboarding
-              user without org_id claim. Inspect upstream auth-service JWT
-              enrichment + Keycloak realm org_id mapper config.
+              {{ $value | humanize }} none-source matches over 10m
+              (no claim, no tenant, no allowed_orgs resolved an org id).
+              This precedes a fail-close 401/403; if sustained likely a
+              multi-tenant onboarding user without org_id claim. Inspect
+              upstream auth-service JWT enrichment + Keycloak realm org_id
+              mapper config. Runbook: see SubscriberId cutover doc.
+
+        - alert: NotifyStrictCutoverTelemetryAbsent
+          # Codex iter-1 P2 absorb: if Prometheus stops scraping the target
+          # entirely, the rate/increase queries above silently evaluate to 0
+          # → false sense of safety. This alert catches the "scrape gone"
+          # case explicitly. Pair-check with NotifyServiceDown which catches
+          # `up == 0` for known series; this catches the absent-target case.
+          expr: absent(up{job=~"notification-orchestrator", namespace=~"platform-(test|prod)"})
+          for: 5m
+          labels:
+            severity: warning
+            service: notification-orchestrator
+          annotations:
+            summary: "Notify strict-cutover telemetry absent (no scrape target)"
+            description: |
+              No `up` series for notification-orchestrator job in
+              platform-test or platform-prod for 5m. Strict cutover counter
+              alerts evaluate against zero series → silent-green risk. Check
+              ServiceMonitor selector + Service endpoints + Prometheus
+              scrape config render.
