@@ -900,7 +900,43 @@ images:
     # before merge); platform-web PR #319 merged d486e842 at
     # 2026-05-08T17:14:39Z. Image build run: 25569092840 (success),
     # testai digest sha256:2a3b18ce8e5a215c0e10c57b28eac4dc1fe0676f01e9cbccc558d9a829c8c388.
-    digest: sha256:2a3b18ce8e5a215c0e10c57b28eac4dc1fe0676f01e9cbccc558d9a829c8c388
+    #
+    # 2026-05-08 update: sha-bace6b1 — platform-web PR #327 + #328 + #331
+    # bundled (PR-FE-1 mfe-users auth-ready gate + PR-FE-2 admin route
+    # aliases + PR-FE-3 yearly report tenant_selection_required gate).
+    #
+    # PR-FE-1 (#327, sha-fbb12c): mfe-users shell-services full
+    # AuthReadyResult contract (mirroring mfe-reporting); UsersGrid.
+    # runAccessProbe awaits auth.ready() before fetchUsers; new
+    # 'auth-not-ready' transient state with retry CTA (toast suppressed).
+    # Closes the testai /admin/users cold-load
+    # "auth-not-ready: unauthenticated" toast + empty grid.
+    #
+    # PR-FE-2 (#328, sha-340d51): AppRouter route alias drift.
+    # /admin/access/* + /admin/audit/events + /admin/audit/* aliases
+    # added so direct navigation to admin URL space variants no longer
+    # falls through to /home. Backwards-compatible additive change.
+    #
+    # PR-FE-3 (#331, sha-acff42): mfe-reporting yearly report tenant
+    # gate. New TenantSelectionRequiredError class, lifted from 400/
+    # error:'tenant_selection_required' on metadata + flat data + grouped
+    # POST /query paths. ReportPage suppresses AG Grid datasource and
+    # renders a CompanyPicker block with "Bu rapor için şirket seçimi
+    # zorunlu" copy. Picker reload pattern clears the gate on next
+    # mount via X-Company-Id header.
+    #
+    # Cross-AI peer review: Codex thread `019e08e2` 13 iterations.
+    # iter-7 strategic AGREE (3-PR sequence identified file:line
+    # precisely); iter-8 PR-FE-1 REVISE absorb (auth-not-ready transient
+    # state with retry CTA, INLINE_ONLY_ACCESS_STATES); iter-9 AGREE;
+    # iter-10 PR-FE-2 AGREE (additive aliases preferred over canonical
+    # rename); iter-11 PR-FE-3 implementation plan AGREE; iter-12
+    # PR-FE-3 REVISE absorb (data-fetch path also gates); iter-13 final
+    # AGREE.
+    #
+    # Image build run: 25574875582 (success), testai digest
+    # sha256:c2e33ac512c142bb47ef07685185094211ebe62ae1433b6785b7e720db4284de.
+    digest: sha256:c2e33ac512c142bb47ef07685185094211ebe62ae1433b6785b7e720db4284de
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
