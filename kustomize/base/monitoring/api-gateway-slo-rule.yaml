@@ -106,3 +106,76 @@ spec:
             summary: "api-gateway 429 rate limit aşımı yüksek"
             description: "/api/v1/authz/* rate limit 429 trigger {{ $value | humanize }}/s (5dk eşik 10/min). DoS veya bot davranışı sinyali."
             runbook_url: "docs/runbook-api-gateway-slo.md"
+
+        # Phase 2 PR-BE-7b (Codex thread 019e0518 iter-2 absorb): MFE auth
+        # transport contract storm signal. The frontend (PR-Refresh-4 + PR-Obs-5)
+        # exposes its own counters; the gateway counter complements them from
+        # the server side and is independent of the MFE bundle being live.
+        #
+        # `gateway_auth_unauthorized_total{route_group, auth_mode}` increments
+        # on every 401 returned by Spring Security. The alert filters
+        # `auth_mode!="none"` so unauthenticated scanner probes don't trigger
+        # refresh-storm alarm — they're a separate signal in the
+        # GatewayUnauthScannerProbe rule below.
+        #
+        # Threshold 0.167/s ≈ 10/min for 5+ min ≈ 50 401s in a window where
+        # authenticated callers should rarely fail. Soft threshold —
+        # promotion to critical after prod cutover + Slack/PagerDuty wired.
+        - alert: GatewayAuthRefreshStorm
+          expr: |
+            sum by (route_group, auth_mode) (
+              rate(gateway_auth_unauthorized_total{job="api-gateway",auth_mode!="none"}[5m])
+            ) > 0.167
+          for: 5m
+          labels:
+            severity: warning
+            component: api-gateway
+            slo_class: auth-storm
+          annotations:
+            summary: "Authenticated 401 storm: {{ $labels.route_group }} ({{ $labels.auth_mode }})"
+            description: "401 rate {{ $value | humanize }}/s for route_group={{ $labels.route_group }} auth_mode={{ $labels.auth_mode }} sustained 5+ min. Possible refresh storm — cross-check frontend AuthFsmObserver telemetry + recent recordRefreshAttempt counters."
+            runbook_url: "docs/runbook-api-gateway-slo.md"
+
+        # Phase 2 PR-BE-7b: scanner / no-token probe rate. Separate from
+        # the refresh-storm alert because root cause differs: no-token 401s
+        # are usually scanners or misconfigured clients, not user-facing
+        # refresh problems.
+        # Threshold 1.67/s ≈ 100/min — info-only sentinel for ops.
+        - alert: GatewayUnauthScannerProbe
+          expr: |
+            sum by (route_group) (
+              rate(gateway_auth_unauthorized_total{job="api-gateway",auth_mode="none"}[5m])
+            ) > 1.67
+          for: 5m
+          labels:
+            severity: info
+            component: api-gateway
+            slo_class: scanner-probe
+          annotations:
+            summary: "No-token 401 probe rate elevated: {{ $labels.route_group }}"
+            description: "Unauthenticated 401 rate {{ $value | humanize }}/s for {{ $labels.route_group }} sustained 5+ min. Scanner or misconfigured client (not a refresh storm — see GatewayAuthRefreshStorm)."
+            runbook_url: "docs/runbook-api-gateway-slo.md"
+
+        # Phase 2 PR-BE-7b: AuthCookieRateLimitWebFilter 429 sentinel.
+        # When this fires, real users are being throttled — either the
+        # frontend single-flight is broken (refresh storm got past the
+        # frontend dampener and now hits the gateway dampener) OR a
+        # focused abuse attempt is underway. Either case needs ops eyes.
+        - alert: GatewayAuthCookieRateLimitTriggered
+          expr: |
+            sum (
+              rate(http_server_requests_seconds_count{
+                job="api-gateway",
+                uri=~"/api/auth/cookie.*",
+                status="429"
+              }[5m])
+            ) > 0.0167
+          for: 5m
+          labels:
+            severity: warning
+            component: api-gateway
+            slo_class: rate-limit
+          annotations:
+            summary: "auth-cookie rate limit triggered (≥1/min sustained)"
+            description: "POST /api/auth/cookie or /refresh hitting 429 at {{ $value | humanize }}/s. Frontend single-flight may be broken OR focused abuse — investigate gateway rate-limit logs (search 'auth-cookie rate limit denied')."
+            runbook_url: "docs/runbook-api-gateway-slo.md"
