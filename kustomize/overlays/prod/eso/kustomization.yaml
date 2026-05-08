@@ -24,6 +24,7 @@ kind: Kustomization
 resources:
   - ../../../base/eso
   - externalsecret-ghcr-pull.yaml    # platform-prod ns (W1 Opsiyon B)
+  - notify                            # notification-orchestrator-secrets (Faz 23.9 Step D)
 
 patches:
   - target:
