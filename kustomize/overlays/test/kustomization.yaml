@@ -756,7 +756,31 @@ images:
     #
     # Cross-AI peer review: Codex thread `019e0675` AGREE iter-4
     # `ready_to_merge: true`. Build run 25545692600.
-    digest: sha256:78a3d3113cba45ea79c84dfa1f1a28268f552fd8ec02fb7bb6c53cf63af1ba2c
+    #
+    # 2026-05-08 update: sha-dec128b — PR #316 close /inbox/me 400
+    # page-load race. NotificationCenter now passes `skipToken` to
+    # `useListInboxQuery` while identity is unresolved (instead of the
+    # placeholder `{ orgId: '', subscriberId: '' }` that briefly slipped
+    # blank-header requests through during AuthBootstrapper's repeated
+    # init cycles). `notify-inbox.api.ts` keeps endpoint-level
+    # `headers: identityHeaders(arg)` as the only source of identity
+    # headers (`prepareHeaders` is intentionally a no-op) so cache-key
+    # vs request-identity drift cannot leak one tenant's inbox into
+    # another's cache slot. Blank-arg requests fail-closed at the
+    # orchestrator (400 MissingRequestHeader) — the correct safety
+    # boundary now that the call site never sends them.
+    #
+    # Live evidence pre-fix (2026-05-08T11:43Z): page load showed 4× 400
+    # `MissingRequestHeader: X-Org-Id` from /inbox/me; refetches after a
+    # tab-switch returned 200 with proper headers. Pre-fix root cause was
+    # confirmed by browser MCP spy: the 200 path carried `x-org-id` /
+    # `x-subscriber-id` while the 400 path arrived header-blank.
+    #
+    # Cross-AI peer review: Codex thread `019e075d` plan iter-1 PARTIAL
+    # → impl iter-2 REVISE (cache-vs-identity drift caught) → iter-3
+    # PARTIAL kod AGREE → iter-4 metadata AGREE / `ready_to_merge: true`.
+    # Build run 25554415300, image push 12:03Z.
+    digest: sha256:a1c1e1ee94dc68685b6d4090639525dfe3206d87cc30f75972de518344f756c5
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
