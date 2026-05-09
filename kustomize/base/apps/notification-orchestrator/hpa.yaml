@@ -36,12 +36,9 @@ spec:
         target:
           type: Utilization
           averageUtilization: 70
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: 80
+    # 2026-05-10 (PR #472 iter-20 absorb): Memory metric KALDIRILDI
+    # — Java Spring Boot heap idle %40+, scale-down blocker. Custom
+    # backlog metric + CPU yeterli sinyal.
     # PR-D.4 — Prometheus Adapter external metric (custom metric API server).
     # Adapter installed → HPA scales when backlog avg per-pod exceeds 200.
     # Adapter absent → metric source unavailable; HPA falls back to CPU/Memory.

@@ -22,18 +22,17 @@ spec:
   minReplicas: 1
   maxReplicas: 3
   metrics:
+    # 2026-05-10 (PR #472 / iter-20 absorb): Memory metric KALDIRILDI.
+    # Java Spring Boot servisler idle'da bile heap %40+ kullanır;
+    # memory target=80%% scale-down'ı bloklar (Codex iter-20 P0).
+    # Sadece CPU metric ile HPA cost optimization çalışır; memory
+    # right-sizing yapılırsa ileride geri eklenebilir.
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
           averageUtilization: 70
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: 80
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 300

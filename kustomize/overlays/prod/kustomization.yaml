@@ -127,74 +127,78 @@ images:
 # prod cluster awaits PR-D.3.x (test smoke + ledger).
 
 patches:
-  # 2026-05-10 — PR-471 HPA foundation (Codex iter-18 absorb)
-  # Base HPA'lar min=1 (test overlay behavior-neutral). Prod overlay
-  # 9 servisin HPA'sını min=2'ye override eder (HA path; mevcut
-  # Deploy.replicas=2 ile uyumlu, behavior-neutral). PR-471b: selected
-  # domain services için min=1 indirme metrics-server smoke sonrası.
+  # 2026-05-10 — PR-471b prod replicas=1 default (kullanıcı 2026-05-10 kararı)
+  # > "prodda tek olsun varsayılan"
+  # Pre-prod tek user için cost optimization. metrics-server kuruldu (PR-471
+  # post-merge), HPA min=1 max=3 yük altında otomatik scale-up sağlar.
+  # Edge servisler dahil tüm 9 servis prod'da min=1 (kullanıcı kararı net).
+  # Eski PR-471 "prod overlay min=2 override" SUPERSEDED.
+  #
+  # Deploy.spec.replicas: base 2 → prod 1 patch.
+  # HPA.spec.minReplicas: base 1 (override yok, base default kalır).
   - target:
-      kind: HorizontalPodAutoscaler
+      kind: Deployment
       name: auth-service
     patch: |-
       - op: replace
-        path: /spec/minReplicas
-        value: 2
+        path: /spec/replicas
+        value: 1
   - target:
-      kind: HorizontalPodAutoscaler
+      kind: Deployment
       name: api-gateway
     patch: |-
       - op: replace
-        path: /spec/minReplicas
-        value: 2
+        path: /spec/replicas
+        value: 1
   - target:
-      kind: HorizontalPodAutoscaler
+      kind: Deployment
       name: frontend
     patch: |-
       - op: replace
-        path: /spec/minReplicas
-        value: 2
+        path: /spec/replicas
+        value: 1
   - target:
-      kind: HorizontalPodAutoscaler
+      kind: Deployment
       name: permission-service
     patch: |-
       - op: replace
-        path: /spec/minReplicas
-        value: 2
+        path: /spec/replicas
+        value: 1
   - target:
-      kind: HorizontalPodAutoscaler
+      kind: Deployment
       name: core-data-service
     patch: |-
       - op: replace
-        path: /spec/minReplicas
-        value: 2
+        path: /spec/replicas
+        value: 1
   - target:
-      kind: HorizontalPodAutoscaler
+      kind: Deployment
       name: report-service
     patch: |-
       - op: replace
-        path: /spec/minReplicas
-        value: 2
+        path: /spec/replicas
+        value: 1
   - target:
-      kind: HorizontalPodAutoscaler
+      kind: Deployment
       name: schema-service
     patch: |-
       - op: replace
-        path: /spec/minReplicas
-        value: 2
+        path: /spec/replicas
+        value: 1
   - target:
-      kind: HorizontalPodAutoscaler
+      kind: Deployment
       name: user-service
     patch: |-
       - op: replace
-        path: /spec/minReplicas
-        value: 2
+        path: /spec/replicas
+        value: 1
   - target:
-      kind: HorizontalPodAutoscaler
+      kind: Deployment
       name: variant-service
     patch: |-
       - op: replace
-        path: /spec/minReplicas
-        value: 2
+        path: /spec/replicas
+        value: 1
 
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz replace
   # patches KALDIRILDI. Base zaten shortname (postgres:5432, keycloak:8080,
@@ -416,9 +420,11 @@ patches:
       kind: Deployment
       name: notification-orchestrator
     patch: |-
+      # 2026-05-10 (PR-471b): replicas 2 → 1 (kullanıcı kararı: prod default 1).
+      # HPA min=1 max=3, custom metric backlog ile yük altında scale-up.
       - op: replace
         path: /spec/replicas
-        value: 2
+        value: 1
       - op: add
         path: /spec/template/metadata/annotations
         value:
