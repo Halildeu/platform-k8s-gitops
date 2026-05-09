@@ -189,6 +189,32 @@ Eski `S0-S4` seviye snapshot'ı ve oturum-özel sıra listeleri historical bağl
 | D47 | Notification Faz 23 süre tahmini ve tier sequencing | **Codex `019df86f` Q5 PARTIAL absorb**: 1 senior Java + 0.5 frontend + 0.5 ops varsayımı. **23.0 Charter** 1 hafta. **23.1 Kernel/Closed Beta** 3-4 hafta (Email + Slack + webhook + outbox + retry/DLQ + audit + OpenFGA + Mailpit/WireMock). **23.2 Production MVP dar** 2-3 hafta (preference API + erasure + provider versioning + Grafana/alerts + fallback bypass). **23.3 Production MVP geniş** 3 hafta (SMS NetGSM + in-app backend API). **23.4-23.8 v1** +4-6 hafta. **23.9 Prod cutover** 1 hafta + 72h observation. **Toplam Charter → Prod cutover: 14-18 hafta** (3.5-4.5 ay). v2 (later) +8-12 hafta. **23.0 paralel** ilerleyebilir; 23.1 başlangıcı için **Faz 22.1.1b III review verdict** zorunlu. **Snapshot 2026-05-09 (Session 39, Codex `019e0bff` iter-1 absorb)**: 23.0 🟢 done (1/11); 23.1 🟡 (service runtime LIVE, D29-Functional 3-channel evidence pending); 23.2 🟡 (Session 39 hardening 3/3 done — KVKK retention/Vault/SLO; original MVP-dar acceptance 2/8 done); 23.4 🟡 (in-app UI + identity guards LIVE, SMS DLR + archive UI pending); 23.8 🟡 (alerts LIVE, Tempo/bounce/per-tenant pending); 23.9 🟡 (activation LIVE 2026-05-08, 72h observation T+72h=2026-05-11, rollback prova + browser SSO pending); 23.3/23.5/23.6/23.7/23.X ⏳. 7/10 must-have 🟢 + 2 partial + 1 pending = ~80% must-have coverage. Net v1 readiness ~30%. Naming discipline: improvise label OK if cross-references canonical sub-faz ID; canonical status authority = Sub-Faz Tablosu marker'lar. |
 | D48 | MFE Auth Transport Contract | Protected MFE HTTP **MUST** wait for shell auth `transportReady`; only bootstrap-chain requests **MAY** bypass the gate (`__skipAuthReadyGate: true` on cookie/authz/login/profile/register endpoints); 401 refresh **MUST** be single-flight and restore token + cookie + authz + Redux + phase state via full closure; observability **MUST** be URL/PII-free (status_class+method counters only, bounded reason enums). Roadmap: PR-Auth-1 #302 → PR-Reporting-2 #304 → PR-HTTP-3 #306 → PR-Refresh-4 #307 → PR-Obs-5 #309 (DONE) + PR-E2E-6 + PR-BE-7 (planned). Detay: ADR-0014. |
 
+### Decision Register Status (Faz 23 — Session 39 truth alignment 2026-05-09)
+
+| ID | Karar | Status | Implementation Reference |
+|---|---|:---:|---|
+| D38 | Notification orchestration baseline (Custom Spring Boot) | 🟢 implemented | notification-orchestrator service LIVE prod 2026-05-08; PG-only stateful confirmed; permission-service Zanzibar reuse working |
+| D39 | Notification stateful = Postgres-only | 🟢 implemented | V1+V8+V9-staging migrations LIVE; no Mongo/Redis/RabbitMQ added; outbox pattern live (alarm-receiver PR #347) |
+| D40 | TR SMS provider native Java adapter (tier v1) | 🟡 specified, deferred | Charter 23.3 chain; T3.1 sprint plan; R1 NetGSM contract risk active |
+| D41 | Notification multi-tenancy = `org_id` + OpenFGA hard-deny | 🟢 implemented | NotifyOrgAccessGuard strict cutover LIVE (PR-5.4 default-org close + PR-5.5 subscriberId strict); 25 PrometheusRule alerts |
+| D42 | Notification KVKK / GDPR disiplin | 🟡 partial | Retention 90 day LIVE (PR #427/#437); PII redaction LIVE (Vault pepper); erasure API + right-to-information ⏳ pending T1.2 (M3 23.2.B) |
+| D43 | Notification outage fallback bypass | 🔴 pending | Charter 23.2.D; T1.4 sprint plan; runbook + drill execution; R9 active risk |
+| D44 | Notification channel coverage tier | 🟢 specified | Charter sub-faz mapping (Kernel/MVP-dar/MVP-geniş/v1/v2 with feature-matrix); D29-NOTIFY 3-katman per channel evidence partial |
+| D45 | Notification 5 yeni kategori (policy axis) | 🟡 partial | (1) Deliverability: pending DKIM prod activation (R3); (2) Abuse: pending T1.6 (23.2.F); (3) Accessibility: pending; (4) Incident/degraded: pending T1.4 D43; (5) Data classification: pending T1.5 (23.2.E) |
+| D46 | Notification 10 must-have çizgisi | 🟡 partial | 7 🟢 (#1-#6, #9) + 2 🟡 (#7, #10) + 1 ⏳ (#8); detay [must-have-checklist.md](docs/notify/must-have-checklist.md) |
+| D47 | Notification Faz 23 süre tahmini ve tier sequencing | 🟢 specified | Sub-faz tablosu + M0..M9 milestone tracker [milestones.md](docs/notify/milestones.md); estimation ~280h v1 + ~144h v2 |
+| D48 | MFE Auth Transport Contract | 🟢 implemented | PR-Auth-1 #302 + PR-Reporting-2 #304 + PR-HTTP-3 #306 + PR-Refresh-4 #307 + PR-Obs-5 #309 LIVE; PR-E2E-6 + PR-BE-7 pending |
+
+**Status Legend**: 🟢 implemented (live cluster) · 🟢 specified (charter authoritative, no impl) · 🟡 partial · 🔴 pending · ⏳ deferred
+
+**Cross-references**:
+- [risk-register.md](docs/notify/risk-register.md) — risk gates per D-karar
+- [sprint-plan.md](docs/notify/sprint-plan.md) — task breakdown per pending D
+- [milestones.md](docs/notify/milestones.md) — milestone-level closure dates
+- [test-strategy.md](docs/notify/test-strategy.md) — test coverage per sub-faz
+- [dependency-graph.md](docs/notify/dependency-graph.md) — task dependency + critical path
+- [stakeholder-plan.md](docs/notify/stakeholder-plan.md) — communication discipline
+
 **HARD RULES:**
 - **D16 gereği**: `prod` ve `test` **AYRI k3d cluster**'larında çalışır (aynı host'ta ama farklı control plane). Her cluster'da kendi `platform-*` ns'i, kendi `ingress-nginx` + `external-secrets` ns'i. Prod cluster'ında ayrıca `argocd` + `monitoring` ns'leri.
 - Her iki cluster da **ayrı host-level PG/KC/Vault** instance'ı kullanır (D6, D20)
