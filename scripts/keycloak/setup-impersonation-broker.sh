@@ -459,21 +459,22 @@ else
     [ -z "$U_TRIM" ] && continue
 
     # Step a: exact username lookup (avoid partial/ambiguous match)
+    # Codex iter-9 P1 absorb: argv ile geç (env race yok, ilk user fail riskini kapatır).
     USER_INFO=$($KC get users -r "$REALM" --query "username=$U_TRIM" --query exact=true \
                   --fields id,username,enabled 2>/dev/null \
-                  | python3 -c '
-import json,sys,os
-exact=os.environ["U_TRIM"]
-d=json.load(sys.stdin)
-m=[u for u in d if u.get("username")==exact]
+                  | python3 - "$U_TRIM" <<'PYEOF'
+import json, sys
+exact = sys.argv[1]
+d = json.load(sys.stdin)
+m = [u for u in d if u.get("username") == exact]
 if not m:
     print("MISSING")
 elif not m[0].get("enabled"):
     print("DISABLED")
 else:
-    print("OK:"+m[0]["id"])
-' 2>/dev/null) || USER_INFO="LOOKUP_FAIL"
-    export U_TRIM
+    print("OK:" + m[0]["id"])
+PYEOF
+) || USER_INFO="LOOKUP_FAIL"
 
     case "$USER_INFO" in
       MISSING)
@@ -519,7 +520,6 @@ print("yes" if any(r.get("name")=="impersonation" for r in d) else "no")
       GRANT_FAIL=$((GRANT_FAIL + 1))
     fi
   done
-  unset U_TRIM
 
   if [ "$GRANT_FAIL" -gt 0 ]; then
     echo "ERROR: $GRANT_FAIL impersonator grant(s) failed (Codex iter-8 P1-1 fail-fast)" >&2
