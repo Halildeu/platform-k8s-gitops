@@ -1,0 +1,34 @@
+# ArgoCD Application — metrics-server (prod cluster, kube-system ns)
+#
+# 2026-05-10 (Codex iter-22 absorb): metrics-server cluster-addon ayrı
+# Application; platform overlay namespace transform'undan korunur.
+#
+# Bağımlılık: PR-471 + PR-472 cost mode (HPA Resource cpu metric).
+#
+# selfHeal: false — D30 atomic kontrol kuralı (prod manuel sync).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server-prod
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: cluster-addon
+    platform: "true"
+    env: prod
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Halildeu/platform-k8s-gitops.git
+    targetRevision: main
+    path: kustomize/base/metrics-server
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: false       # kube-system add-on silinme risk
+      selfHeal: false    # D30 atomic kontrol — prod manuel sync
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true

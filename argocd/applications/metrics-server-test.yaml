@@ -1,0 +1,39 @@
+# ArgoCD Application — metrics-server (test cluster, kube-system ns)
+#
+# 2026-05-10 (Codex iter-22 absorb): metrics-server platform overlay'in
+# içinde değil, ayrı cluster-addon ArgoCD Application olarak deploy edilir.
+# Sebep: namespace transform riski — platform overlay namespace=platform-test
+# transformer kube-system resource'larını platform namespace'e taşıyabilir;
+# extension-apiserver-authentication-reader RoleBinding'e bağımlılık kırılır.
+#
+# Source: kustomize/base/metrics-server/ (kubernetes-sigs v0.8.1 + k3d
+# --kubelet-insecure-tls patch).
+#
+# Bağımlılık: PR-471 (HPA foundation) + PR-472 (PROD cost mode) sonrası
+# HPA Resource type cpu metric için metrics.k8s.io API gerekli.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server-test
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: cluster-addon
+    platform: "true"
+    env: test
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Halildeu/platform-k8s-gitops.git
+    targetRevision: main
+    path: kustomize/base/metrics-server
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: false       # kube-system add-on silinme risk; manual prune
+      selfHeal: true     # test cluster dev ergonomics
+    syncOptions:
+      - CreateNamespace=false   # kube-system zaten var
+      - ServerSideApply=true

@@ -11,7 +11,6 @@ namespace: platform-prod
 resources:
   - namespace.yaml    # Namespace + labels (platform=true env=prod, ApplicationSet prereq)
   - ../../base
-  - ../../base/metrics-server    # 2026-05-10: HPA Resource metric (cpu) için zorunlu (PR #471/472 sonrası)
   - ../../base/apps/ops-bundle    # Faz 17.2.5: ExternalSecret + ServiceMonitor CRD paketi (runtime'dan ayrı)
   # Faz 23.9 prod cutover (2026-05-08, tek-user pre-prod context):
   # notification-orchestrator base manifests aktive edildi. D29 evidence

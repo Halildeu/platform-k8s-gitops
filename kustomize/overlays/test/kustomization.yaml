@@ -20,7 +20,6 @@ namespace: platform-test
 resources:
   - namespace.yaml    # Namespace + labels (platform=true env=test, ApplicationSet prereq)
   - ../../base
-  - ../../base/metrics-server    # 2026-05-10: HPA Resource metric (cpu) için zorunlu (PR #471/472 sonrası)
   - ../../base/apps/ops-bundle    # Faz 17.2.5: ExternalSecret + ServiceMonitor CRD paketi (runtime'dan ayrı)
   - ../../base/apps/endpoint-admin-service    # Faz 22.1.1b live-aligned 2026-05-05
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06

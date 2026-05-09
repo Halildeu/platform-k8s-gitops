@@ -40,13 +40,13 @@ options:
       # ServiceLB (Klipper) kapalı — host port yeterli
       - arg: "--disable=servicelb"
         nodeFilters: [server:*]
-      # 2026-05-10: metrics-server upstream-disable KALDIRILDI (PR-471/472).
-      # HPA Resource type cpu metric için metrics.k8s.io API gerekli; bunu
-      # kustomize/base/metrics-server üzerinden kuruyoruz (Codex iter-16 P0
-      # absorb). k3d kendi metrics-server'ını başlatmasın diye bu disable
-      # opsiyonu eski idi; şimdi declarative GitOps install zorunlu.
-      # NOT: Cluster recreate gerek değil — mevcut cluster için kubectl apply
-      # yapıldı; bu config sadece yeni cluster bootstrap'larında etkili.
+      # 2026-05-10 (Codex iter-22 absorb): k3s built-in metrics-server
+      # KAPALI — GitOps declarative install (kustomize/base/metrics-server +
+      # ArgoCD metrics-server-prod Application) ile kuruluyor. K3s ve
+      # GitOps aynı add-on'u yönetirse duplicate resource / ownership drift /
+      # add-on manager kavgası. Disable korunur, GitOps tek kaynak.
+      - arg: "--disable=metrics-server"
+        nodeFilters: [server:*]
       # Flannel kapalı, Calico kuracağız
       - arg: "--flannel-backend=none"
         nodeFilters: [server:*]
