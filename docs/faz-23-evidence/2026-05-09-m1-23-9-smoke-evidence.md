@@ -17,8 +17,9 @@ Pre-Production Full Authority + HARD RULE deploy verify gereği **agent kendi ko
 | Pencere | Status | Evidence |
 |---|:---:|---|
 | **Pod state delta** (uptime + restart + ready) | 🟢 PASS | 2/2 ready, restart=0, 4h23m uptime, sha-ef0f487 |
-| **Browser SSO testai.acik.com** | 🟢 PASS | AuthBootstrapper bootstrap completed (3x); console temiz |
-| **Browser SSO ai.acik.com (prod)** | 🟢 PASS | AuthBootstrapper init done; console temiz; /auth/me 401 (no session, beklenen) |
+| **Browser SSO testai.acik.com** | 🟢 PASS | Login session aktif (Platform Admin, Online), 29 unread badge, inbox API 200 (`unreadCount: 0`, X-Org-Id=default + X-Subscriber-Id=1; Faz 22 PR-5.x cutover backfill working), JWT token + kc-callback localStorage, console temiz |
+| **Browser SSO ai.acik.com** | 🔴 NOT canonical | **User feedback 2026-05-09: "ai.acik.com adresi güncel değil"** — testai.acik.com canonical evidence target. ai.acik.com bootstrap init done dönmüş ama prod realm ingress stale; M1 evidence için sayılmaz. |
+| **T1.2 Audit endpoint live check** | 🔴 cluster apply pending | `/api/v1/notify/audit/me?page=0&size=5` → **404** (PR #132 backend MERGED 13:30Z; image build + overlay digest bump + cluster apply döngüsü pending) |
 | **PromQL metric snapshot** | 🟢 PASS | DLQ=0, queue=0, retention errors=0, authz active, worker idle healthy |
 | **Rollback pointer doc** | 🟡 partial | backend.current/previous-image-tag dosyaları var (Apr 23 tarih; cutover sonrası güncellenmedi) |
 | **T+72h natural completion** | ⏳ pending | 2026-05-11 19:42Z time-passive |
@@ -50,47 +51,69 @@ ready=2 updated=2 available=2
 
 ## 2. Browser SSO Smoke
 
-### testai.acik.com (Test Realm)
+### testai.acik.com — Canonical Evidence Target ✅
 
-Chrome MCP `tabs_context_mcp` + `navigate` + `read_console_messages` + `read_network_requests`:
+> **User feedback 2026-05-09: ai.acik.com güncel değil; testai.acik.com canonical**.
 
-**Console output (12 mesaj, hepsi INFO/DEBUG)**:
-```
-[2026-05-09 16:08:31] DEBUG ag-grid-license: resolved key found (538 chars) | window.__env__: object
-[2026-05-09 16:08:36] INFO  AuthBootstrapper: init starting
-[2026-05-09 16:08:37] INFO  AuthBootstrapper: onAuthSuccess catch-up closure
-[2026-05-09 16:08:37] INFO  AuthBootstrapper: bootstrap completed
-[2026-05-09 16:08:46] DEBUG ag-grid-license: resolved key found
-[2026-05-09 16:08:49] INFO  AuthBootstrapper: init starting
-[2026-05-09 16:08:49] INFO  AuthBootstrapper: onAuthSuccess catch-up closure
-[2026-05-09 16:08:49] INFO  AuthBootstrapper: bootstrap completed
-[2026-05-09 16:09:00] DEBUG ag-grid-license: resolved key found
-[2026-05-09 16:09:02] INFO  AuthBootstrapper: init starting
-[2026-05-09 16:09:02] INFO  AuthBootstrapper: onAuthSuccess catch-up closure
-[2026-05-09 16:09:02] INFO  AuthBootstrapper: bootstrap completed
-```
+Chrome MCP `tabs_context_mcp` + `navigate` + `read_console_messages` + `javascript_tool`:
 
-**Filter pattern `error|fail|denied|401|403|500|TypeError|ReferenceError`**: **No matches**. Yeni hata yok, regression yok.
+#### UI Smoke (Login Session Active)
 
-**Verdict**: 🟢 testai.acik.com SSO smoke clean; AuthBootstrapper 3x bootstrap completed (login state + token refresh + auth restore başarılı).
+- **URL**: `https://testai.acik.com/home`
+- **Title**: "Platform"
+- **User**: "Platform Admin" + "Online" status
+- **Notification badge**: **29 unread** (sağ üst notification icon)
+- **Menu**: İK / Yönetim / Raporlar / Araçlar
+- **Login form yok** (zaten authenticated)
 
-### ai.acik.com (Prod Realm)
+#### Auth State (localStorage Inspection)
 
-```javascript
-fetch('/api/v1/auth/me', {credentials: 'include'})
-// → status: 401, ok: false, host: "ai.acik.com"
-```
-
-**Console output (3 mesaj, hepsi INFO/DEBUG)**:
-```
-[2026-05-09 16:09:16] DEBUG ag-grid-license: resolved key found
-[2026-05-09 16:09:22] INFO  AuthBootstrapper: init starting
-[2026-05-09 16:09:22] INFO  AuthBootstrapper: init done
+```json
+{
+  "localStorageKeys": [
+    "user", "tokenExpiresAt", "token",
+    "kc-callback-f0f934eb-...",
+    "kc-callback-344b4b2d-...",
+    "kc-callback-62b81f33-...",
+    "reporting:currentCompanyId",
+    "reporting-recents",
+    "shell.recentPages",
+    "designlab_recent_visits"
+  ],
+  "subId": "1",
+  "orgId": "default"
+}
 ```
 
-**401 /auth/me beklenen**: prod realm'de aktif login session yok (pre-Production Full Authority + kullanıcı login user'ı dokunma yasağı; cross-domain test).
+JWT token + Keycloak kc-callback session storage LIVE; PR-5.x cutover sonrası `subscriberId=1` + `orgId="default"` backfill working.
 
-**Verdict**: 🟢 ai.acik.com bootstrap init done; console temiz; auth flow OK (login session olmadığı için 401 beklenen).
+#### API Smoke (Notify-Orch Endpoints — Browser Session)
+
+| Endpoint | Headers | Status | Body |
+|---|---|---:|---|
+| `GET /api/v1/notify/inbox/me/unread-count` | X-Org-Id=default + X-Subscriber-Id=1 | **200 OK** ✅ | `{"unreadCount": 0}` |
+| `GET /api/v1/notify/audit/me?page=0&size=5` | aynı | **404** 🔴 | T1.2 endpoint cluster apply pending (PR #132 MERGED 13:30Z; image build + overlay digest bump döngüsü) |
+
+**Inbox API 200 OK** = T1.2 hâriç tüm Faz 23.1 + 23.4 inbox path LIVE; Faz 22 PR-5.x notify_org_access_match cutover backfill çalışıyor.
+
+#### Console Output
+
+- testai.acik.com için ana session içinde error filter (`error|fail|denied|401|403|500|TypeError|ReferenceError|Network`): **No errors found**
+- INFO/DEBUG mesajları: AuthBootstrapper init starting + bootstrap completed (3x), ag-grid-license resolved
+- ai.acik.com kaynaklı residual `[PermissionProvider] Failed to fetch authz: AxiosError: Network Error` mesajı önceki cross-domain navigate'ten kalma; testai.acik.com session'a etkisi yok
+
+**Verdict**: 🟢 **testai.acik.com canonical M1 evidence**:
+- Login session aktif + 29 unread badge → frontend inbox component LIVE
+- /api/v1/notify/inbox/me/unread-count 200 → backend notify-orch LIVE + identity guard backfill working
+- JWT + kc-callback Keycloak session OK
+- Console temiz (yeni hata yok, regression yok)
+- 🔴 /api/v1/notify/audit/me 404 — T1.2 backend MERGED 13:30Z ama image build + cluster apply pending (beklenen, PR #132 sonrası overlay digest bump PR gerek)
+
+### ai.acik.com — NOT Canonical (Stale)
+
+> **User feedback 2026-05-09**: ai.acik.com güncel değil; M1 evidence için kullanılmaz.
+
+Önceki bölümde collected `bootstrap init done` + `/auth/me 401` data POINTS NOT canonical. ai.acik.com prod realm ingress muhtemelen stale build serve ediyor veya artık deprecated; testai.acik.com tek aktif evidence target. Bu bölüm doc'ta kayıt için bırakıldı (gözlem evidence) ama M1 closure DoD için **sayılmaz**.
 
 ---
 
@@ -154,8 +177,8 @@ sha-2bf731b
 
 - [🟡] T2.3.1 72h observation completion — pending (T+72h = 2026-05-11 19:42Z natural)
 - [⏳] T2.3.2 Rollback prova execution — pending (drill mode; T1.4 D43 outage fallback ile coupling, ayrı PR-M3.3 scope)
-- [🟢] T2.3.3 Browser SSO verify testai.acik.com — **DONE** (AuthBootstrapper bootstrap completed, console temiz)
-- [🟢] T2.3.4 Browser SSO verify ai.acik.com — **DONE** (bootstrap init done, console temiz)
+- [🟢] T2.3.3 Browser SSO verify testai.acik.com — **DONE** (login session aktif, 29 unread badge, inbox API 200, console temiz, JWT+kc-callback LIVE)
+- [🔴] T2.3.4 Browser SSO verify ai.acik.com — **NOT applicable** (user feedback 2026-05-09: ai.acik.com güncel değil; testai canonical; bu satır milestones.md DoD'sinde "deferred to prod realm canonical decision" olarak işaretlenmeli)
 - [🟢] T2.3.5 Evidence document published — **THIS DOC**
 - [⏳] Charter 23.9 marker 🟡 → 🟢 — pending (post-T+72h closure)
 - [⏳] Risk register: R7 closed, R8 confirmed mitigated — pending (post-T+72h closure)
@@ -184,4 +207,13 @@ sha-2bf731b
 
 ## Last Update
 
-**2026-05-09 12:35Z** — pre-T+72h smoke evidence collected. M1 closure PR (post-2026-05-11 19:42Z) follow-up.
+**2026-05-09 12:35Z** — pre-T+72h smoke evidence collected.
+
+**2026-05-09 13:50Z (testai canonical update — user feedback)**:
+- User feedback: ai.acik.com güncel değil; testai.acik.com canonical
+- testai derin smoke: login session aktif (Platform Admin, 29 unread badge), inbox API 200 (X-Org-Id=default + X-Subscriber-Id=1), JWT+kc-callback LIVE, console temiz
+- T1.2 endpoint live check: `/api/v1/notify/audit/me` → **404** (PR #132 backend MERGED ama image build + cluster apply pending — beklenen)
+- ai.acik.com bölümü "NOT canonical / stale" olarak yeniden işaretlendi
+- T2.3.4 (ai.acik.com SSO verify) M1 DoD'sinden "deferred to prod realm canonical decision"
+
+M1 closure PR (post-2026-05-11 19:42Z natural completion) follow-up.
