@@ -40,9 +40,13 @@ options:
       # ServiceLB (Klipper) kapalı — host port yeterli
       - arg: "--disable=servicelb"
         nodeFilters: [server:*]
-      # metrics-server kapalı — kube-prometheus-stack kendi node-exporter'ı var
-      - arg: "--disable=metrics-server"
-        nodeFilters: [server:*]
+      # 2026-05-10: metrics-server upstream-disable KALDIRILDI (PR-471/472).
+      # HPA Resource type cpu metric için metrics.k8s.io API gerekli; bunu
+      # kustomize/base/metrics-server üzerinden kuruyoruz (Codex iter-16 P0
+      # absorb). k3d kendi metrics-server'ını başlatmasın diye bu disable
+      # opsiyonu eski idi; şimdi declarative GitOps install zorunlu.
+      # NOT: Cluster recreate gerek değil — mevcut cluster için kubectl apply
+      # yapıldı; bu config sadece yeni cluster bootstrap'larında etkili.
       # Flannel kapalı, Calico kuracağız
       - arg: "--flannel-backend=none"
         nodeFilters: [server:*]

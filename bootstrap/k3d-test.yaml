@@ -35,8 +35,9 @@ options:
         nodeFilters: [server:*]
       - arg: "--disable=servicelb"
         nodeFilters: [server:*]
-      - arg: "--disable=metrics-server"
-        nodeFilters: [server:*]
+      # 2026-05-10: metrics-server disable KALDIRILDI (PR-471/472 HPA
+      # Resource cpu metric için metrics.k8s.io gerekli). Kuruluş
+      # kustomize/base/metrics-server üzerinden GitOps declarative.
       - arg: "--flannel-backend=none"
         nodeFilters: [server:*]
       - arg: "--disable-network-policy"
