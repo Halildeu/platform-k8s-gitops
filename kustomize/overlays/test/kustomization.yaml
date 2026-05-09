@@ -1189,7 +1189,19 @@ images:
     #
     # Image build run: 25602628507 (success), testai digest
     # sha256:5c27f11ad2d77a94ad211733bac156187430a0cb33cb37cf90e9d8dfc9dd88a2.
-    digest: sha256:5c27f11ad2d77a94ad211733bac156187430a0cb33cb37cf90e9d8dfc9dd88a2
+    #
+    # 2026-05-09 update: sha-85e67b3 — platform-web PR #349
+    # (PR-FE-12 hierarchical scope picker view, OUR_COMPANY tree).
+    # Backend wire contract from PR-BE-15 (#135 platform-backend).
+    # View toggle: Düz Liste / Hiyerarşik. HierarchicalScopePicker
+    # component renders company tree with assigned children +
+    # orphan bucket + unknown company placeholders. Radiogroup
+    # ARIA pattern with arrow-key roving focus.
+    # Codex thread 019e0df3: iter-1 partial → iter-3 AGREE.
+    # mfe-users 60/60 tests PASS (53 prior + 7 new).
+    # Image build run: 25608846181, digest:
+    # sha256:e72f3eaadb834b749ff12c28ebfde44d825253a36a0bf6da1c6c38999c0abe89.
+    digest: sha256:e72f3eaadb834b749ff12c28ebfde44d825253a36a0bf6da1c6c38999c0abe89
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
