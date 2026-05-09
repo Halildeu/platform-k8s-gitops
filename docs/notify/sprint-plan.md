@@ -39,19 +39,19 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 ---
 
-## Tier 1: 23.2 Production MVP Dar Closure (2-3 weeks, ~50-60h residual)
+## Tier 1: 23.2 Production MVP Dar Closure (2.5-3.5 weeks, ~52-55h residual + ~60-70h provisional sprint)
 
-> **M3 stale audit 2026-05-09 re-baseline** (Codex `019e0c28` strategic finding): Backend code scan göstermiştir ki T1.1.1-T1.1.5 + T1.2 + T1.3 + T1.5 **source-ready**. Gerçek residual:
+> **M3 stale audit 2026-05-09 re-baseline iter-2 corrected** (Codex `019e0c28` strategic finding): Backend code scan göstermiştir ki T1.1.1-T1.1.4 + T1.2 admin scope + T1.3 partial + T1.5 **source-ready/live**; T1.2 subscriber self-service GERÇEK PENDING. Gerçek residual:
 > - T1.1 ~3h (acceptance test only) — preference + bypass + opt-out source LIVE
-> - T1.2 ~2h (legal review wait, R2 active) — KVKK erasure source LIVE
+> - T1.2 ~12-15h (admin source-ready/R2 legal wait + **subscriber self-service `DELETE/GET /audit/me` gerçek pending ~10h** + integration test) — subscriber endpoint backend'de YOK
 > - T1.3 ~5h (acceptance gate) — provider rollback partial source-ready
 > - T1.4 ~15h (gerçek pending) — D43 outage fallback (R9 drill blocker)
 > - T1.5 ~2h (acceptance test) — data classification source LIVE (enum + service)
 > - T1.6 ~15h (gerçek pending) — abuse guards (R13/R19 storm risks)
 >
-> **Toplam residual = ~42h + acceptance gate testing + Codex iter overhead = ~50-60h sprint**.
+> **Toplam residual = ~52-55h + acceptance gate testing + Codex iter overhead = ~60-70h provisional sprint**.
 >
-> Önceki ~100h estimate stale/pessimistic (sprint-plan T1.1.1-T1.1.5 + T1.2 + T1.3 + T1.5 hâlâ 🔴 pending görünüyordu, ama backend code zaten LIVE). 4-6 hafta target → 2-3 hafta gerçekçi (credential RAID I6 + R2 legal gate açılınca). Detay: `docs/notify/m3-stale-audit-2026-05-09.md`.
+> Önceki ~100h estimate stale/pessimistic, ama iter-1'in ~42h iddiası da iyimserdi (T1.2 subscriber endpoint hesabı dışında bırakmıştı). 4-6 hafta target → 2.5-3.5 hafta provisional (credential RAID I6 + R2 legal gate açılınca + T1.2 subscriber impl + T1.4/T1.6 tamamlanırsa). Detay: `docs/notify/m3-stale-audit-2026-05-09.md`.
 
 ### T1.1 — 23.2.A Preference + Opt-out + Critical Bypass (must-have #8)
 
@@ -93,14 +93,14 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T1.3.1 | V9 migration: `notify.provider_config_history` table (version + diff) | backend | 2 | dev | None | 🔴 |
-| T1.3.2 | Domain service: provider config versioning | backend | 3 | dev | T1.3.1 | 🔴 |
-| T1.3.3 | Atomic switch + cache invalidate API | backend | 3 | dev | T1.3.2 | 🔴 |
+| T1.3.1 | V9 migration: `notify.provider_config_history` table (version + diff) | backend | 2 | dev | None | 🟢 (M3 audit: provider_config_history schema LIVE) |
+| T1.3.2 | Domain service: provider config versioning | backend | 3 | dev | T1.3.1 | 🟡 (`ProviderConfigHistory` + Repository LIVE; service partial) |
+| T1.3.3 | Atomic switch + cache invalidate API | backend | 3 | dev | T1.3.2 | 🔴 (acceptance gate) |
 | T1.3.4 | Integration test: rollback scenario | backend | 3 | dev | T1.3.3 | 🔴 |
 | T1.3.5 | Runbook: `RB-notify-provider-config-rollback.md` | docs | 1 | agent | T1.3.4 | 🔴 |
 | T1.3.6 | Codex peer review + merge | docs | 1 | agent | T1.3.5 | 🔴 |
 
-**Total**: 13h
+**Total estimate**: 13h. **M3 stale audit re-baseline**: T1.3.1 source-ready/live, T1.3.2 partial; residual ~5h (atomic switch + integration test + runbook).
 
 ### T1.4 — 23.2.D Outage Fallback Bypass D43 (must-have #10 closure)
 
@@ -122,9 +122,9 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T1.5.1 | V9 migration: `notification_intent.data_classification` field | backend | 1 | dev | None | 🔴 |
-| T1.5.2 | Enum + validator (transactional/security/commercial/system) | backend | 2 | dev | T1.5.1 | 🔴 |
-| T1.5.3 | Send pipeline: classification-bound retention + opt-out behavior | backend | 4 | dev | T1.5.2, T1.1.5 | 🔴 |
+| T1.5.1 | V9 migration: `notification_intent.data_classification` field | backend | 1 | dev | None | 🟢 source-ready/live (V1 schema'da field LIVE) |
+| T1.5.2 | Enum + validator (transactional/security/commercial/system) | backend | 2 | dev | T1.5.1 | 🟢 source-ready/live (`NotificationIntent.DataClassification` enum) |
+| T1.5.3 | Send pipeline: classification-bound retention + opt-out behavior | backend | 4 | dev | T1.5.2, T1.1.5 | 🟡 partial (IntentSubmissionService + DeliveryEligibilityService source-ready; acceptance test gate) |
 | T1.5.4 | Integration test: 4 classifications + edge cases | backend | 3 | dev | T1.5.3 | 🔴 |
 | T1.5.5 | Runbook update | docs | 1 | agent | T1.5.4 | 🔴 |
 | T1.5.6 | Codex peer review + merge | docs | 1 | agent | T1.5.5 | 🔴 |
@@ -145,7 +145,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 **Total**: 15h
 
-**Tier 1 Total**: ~100h productive work (~10-13 day blocks; exact sum 99.5h)
+**Tier 1 Total estimate**: ~99.5h plan-time. **M3 stale audit 2026-05-09 re-baseline**: ~52-55h residual (T1.1 ~3h + T1.2 ~12-15h + T1.3 ~5h + T1.4 ~15h + T1.5 ~2h + T1.6 ~15h); +acceptance gate +Codex iter overhead = ~60-70h provisional sprint (önceki ~100h pessimistic).
 
 ---
 

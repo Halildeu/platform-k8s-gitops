@@ -10,17 +10,17 @@ Bu audit Codex'in önerdiği **5-state matrix** (Source-ready / Live-deployed / 
 
 ## Executive Summary
 
-Sprint-plan T1 (23.2 closure) **gerçek residual ~30-50h band**, önceki ~100h estimate'in çok altında. Backend implementation T1.1.1-T1.1.5 + T1.2 + T1.3 + T1.5 **source-ready**; T1.4 (D43 outage fallback) + T1.6 (abuse guards) gerçek pending.
+Sprint-plan T1 (23.2 closure) **gerçek residual ~52-55h band** (iter-2 absorb sonrası iter-1'in ~42h iddiası düzeltildi), önceki ~100h estimate'in altında ama iyimser olmayan. Backend implementation T1.1.1-T1.1.4 + T1.2 admin scope + T1.3 partial + T1.5 **source-ready/live**; T1.2 subscriber self-service (`DELETE/GET /audit/me`) gerçek pending; T1.4 (D43 outage fallback) + T1.6 (abuse guards) gerçek pending.
 
 | State | Count | Notes |
 |---|---:|---|
-| 🟢 **Source-ready** | 8/12 | T1.1.1-T1.1.5, T1.2, T1.3, T1.5 backend code LIVE |
-| 🟡 **Live-deployed** | 8/12 | Test cluster deploy tested; pod LIVE |
+| 🟢 **Source-ready** | 7/12 | T1.1.1-T1.1.4, T1.2 admin, T1.3 partial, T1.5 backend code LIVE; T1.2 subscriber self-service backend'de YOK |
+| 🟡 **Live-deployed** | 7/12 | Test cluster deploy tested; pod LIVE (subscriber self-service hariç) |
 | 🔴 **Evidence-backed** | 0/12 | M2 partial smoke yapıldı; full authenticated D29 BLOCKED (RAID I6) |
 | 🔴 **Acceptance complete** | 0/12 | Acceptance kriteri Charter'da hâlâ pending; M3 closure 🟡 |
-| 🟡 **Blocked** | 4/12 | T1.4 (R9 D43 drill), T1.6 (R13/R19 abuse), Keycloak credential (RAID I6), legal review (R2) |
+| 🟡 **Blocked** | 5/12 | T1.2 subscriber endpoint (yeni impl), T1.4 (R9 D43 drill), T1.6 (R13/R19 abuse), Keycloak credential (RAID I6), legal review (R2) |
 
-**M3 closure target**: 2026-06-08 → audit sonrası muhtemelen **2-3 hafta erken** (2026-05-22 - 2026-05-29 band) eğer credential + legal gate açılırsa.
+**M3 closure target**: 2026-06-08 → audit sonrası muhtemelen **2.5-3.5 hafta** (2026-05-25 - 2026-06-01 band) eğer credential + legal gate açılırsa + T1.2 subscriber endpoint impl + T1.4 + T1.6 tamamlanırsa.
 
 ---
 

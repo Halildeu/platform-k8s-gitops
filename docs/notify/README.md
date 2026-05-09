@@ -71,11 +71,11 @@ Bu dizin **Faz 23 notification orchestration** için canonical doküman setidir.
 - 🟡 **23.9** Prod cutover partial (LIVE; 72h observation T+72h=2026-05-11 + rollback prova + browser SSO pending)
 - ⏳ **23.X** v2 (deferred)
 
-### Must-Have Status
-- 🟢 7/10 fully done (#1-#6, #9) + 🟡 3 partial (M3 stale audit 2026-05-09: #7 source-ready + R2 legal/subscriber endpoint pending; #8 demoted ⏳→🟡 source-ready + RAID I6 acceptance gate; #10 LIVE + D43 pending) — coverage **~85%** (8.5/10)
-- 🟡 2 partial (#7 retention LIVE + erasure pending; #10 observability LIVE + D43 pending)
-- ⏳ 1 pending (#8 preference + critical bypass)
-- **~85% must-have coverage** (8.5/10 — M3 stale audit 5-state matrix re-baseline; NOT production-ready guarantee)
+### Must-Have Status (M3 stale audit 2026-05-09 5-state matrix re-baseline)
+- 🟢 7/10 fully done (#1, #2, #3, #4, #5, #6, #9)
+- 🟡 3 partial (#7 retention LIVE + admin erasure source-ready/R2 legal/subscriber endpoint pending; #8 ⏳→🟡 demote source-ready + RAID I6 acceptance gate; #10 observability LIVE + D43 pending)
+- ⏳ 0 pending
+- **~85% must-have coverage** (7×1.0 + 3×0.5 = 8.5/10; partial weight 0.5 semantik, source-ready bias var; NOT production-ready guarantee)
 
 ### Active Risks
 - 🟡 R1 NetGSM provider contract delay (23.3 blocker)
@@ -151,6 +151,6 @@ Bu doküman seti şunları sağlar:
 ✅ **Stakeholder communication** — cadence + audience patterns + cross-AI peer review
 ✅ **Decision register status** — D38-D48 status sync to live state
 
-**PM artifact baseline present** (10 capability tracker + risk + test + sprint + milestones + deps + stakeholders + decision register sync + update discipline). Production-ready guarantee değil; ~30% v1 scope coverage + 7/10 must-have done + 2 partial + 1 pending halinde **PM-ready execution discipline** kurulmuştur. Next step: any sub-faz closure work follows this canonical doc set; doc updates inline per PR; weekly summary + per-milestone evidence; risk register reviewed weekly.
+**PM artifact baseline present** (10 capability tracker + risk + test + sprint + milestones + deps + stakeholders + decision register sync + update discipline). Production-ready guarantee değil; ~30% v1 scope coverage (literal feature) + 7/10 must-have done + 3 partial source-ready bias = ~85% must-have coverage halinde **PM-ready execution discipline** kurulmuştur (M3 stale audit 2026-05-09 re-baseline per `docs/notify/m3-stale-audit-2026-05-09.md`). Next step: any sub-faz closure work follows this canonical doc set; doc updates inline per PR; weekly summary + per-milestone evidence; risk register reviewed weekly.
 
 > **Honesty disclaimer (Codex iter-2 absorb 2026-05-09)**: "Now we are PM-ready" overclaim'inden kaçınılmıştır. Yapısal PM capability'leri tamamlandı, ancak feature marker pass deferred (~178 row literal sweep follow-up) + cross-doc consistency sweep (Codex iter-1/2 absorb) + KVKK erasure sub-faz authority alignment = dokümantasyon kalitesi iyileştirme süreci aktif.
