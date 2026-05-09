@@ -28,7 +28,11 @@ services:
       KC_PROXY: edge
       KC_METRICS_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
-      KC_FEATURES: "token-exchange,admin-fine-grained-authz"
+      # User Impersonation v1 (PR-A spike-2): authorization feature gerekli
+      # — fine-grained authz REST endpoint client management/permissions için.
+      # admin-fine-grained-authz:v1 explicit (KC 26 default v2; v1 endpoint shape
+      # broker token-exchange policy attach script'i için lazım).
+      KC_FEATURES: "token-exchange,admin-fine-grained-authz:v1,authorization"
       JAVA_OPTS: "-Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=100"   # Test daha dar
     ports:
       - "127.0.0.1:8082:8080"
