@@ -208,6 +208,19 @@ kubectl --context k3d-test -n monitoring exec -it deploy/prometheus-operator-pro
 
 ### Step 4: Alertmanager native Slack+SMTP receiver routing match
 
+#### 4.0 Service/pod discovery (Codex iter-1 P2 #3 absorb)
+
+```bash
+# Discover canonical service + pod adlandırması (kube-prometheus-stack release'e göre)
+kubectl --context k3d-test -n monitoring get svc | grep -E 'prometheus|alertmanager'
+kubectl --context k3d-test -n monitoring get pods | grep -E 'prometheus|alertmanager'
+
+# Beklenen: kube-prometheus-stack-prometheus, kube-prometheus-stack-alertmanager
+# Bu çıktıdan canonical isim çıkar; aşağıdaki komutları o isimle güncelle.
+```
+
+#### 4.1 Drill window aç + receiver verify
+
 ```bash
 # Drill window aç
 helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
@@ -215,15 +228,27 @@ helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   -f helm-values/kube-prometheus-stack/values-test.yaml \
   -f helm-values/kube-prometheus-stack/values-test-d43-drill.yaml
 
-# Wait Alertmanager up
-kubectl --context k3d-test -n monitoring rollout status statefulset/alertmanager-kube-prometheus-stack-alertmanager
+# Wait Alertmanager up (statefulset adı discovery sonrası)
+kubectl --context k3d-test -n monitoring rollout status statefulset/<alertmanager-statefulset-name-from-discovery>
 
-# Verify direct-fallback receiver
-kubectl --context k3d-test -n monitoring exec alertmanager-kube-prometheus-stack-alertmanager-0 -- \
+# Verify direct-fallback receiver (pod adı discovery sonrası)
+kubectl --context k3d-test -n monitoring exec <alertmanager-pod-from-discovery> -- \
   amtool config show | grep -A 5 direct-fallback
 ```
 
-### Step 5: Drill scale=0 → fire NotifyServiceDown → fallback
+### Step 5: Drill scale=0 → fire NotifyServiceDown/NotifyServiceAbsent → fallback
+
+#### 5.1 PrometheusRule prereq
+
+T1.4 PR-4 (this runbook) ile eklenen `NotifyServiceAbsent` test-only rule. Scale-to-zero target disappearance coverage. PR LIVE doğrulama:
+
+```bash
+curl -s http://127.0.0.1:9090/api/v1/rules | \
+  jq '.data.groups[].rules[] | select(.name=="NotifyServiceAbsent")'
+# Expected: rule mevcut (test-only, namespace=platform-test selector)
+```
+
+#### 5.2 Trigger outage + native fallback evidence
 
 ```bash
 # Pre-drill snapshot (orchestrator UP)
@@ -232,13 +257,74 @@ kubectl --context k3d-test -n platform-test get pod -l app.kubernetes.io/name=no
 # Trigger outage
 kubectl --context k3d-test -n platform-test scale deploy/notification-orchestrator --replicas=0
 
-# Wait for=2m (NotifyServiceDown alert fire)
+# Wait for=2m (NotifyServiceDown VEYA NotifyServiceAbsent alert fire)
 sleep 130
 
-# Verify alert fired
+# Verify alert fired (her iki rule yakalar)
 curl -s http://127.0.0.1:9093/api/v2/alerts | \
-  jq '.[] | select(.labels.alertname=="NotifyServiceDown") | {status: .status.state, labels: .labels}'
-# Expected: status=active, labels include bypass_orchestrator=true, outage_fallback=true
+  jq '.[] | select(.labels.alertname=~"NotifyServiceDown|NotifyServiceAbsent") | {alertname: .labels.alertname, status: .status.state, labels: .labels}'
+# Expected: en az 1 alert active
+#   labels include bypass_orchestrator=true, outage_fallback=true
+```
+
+#### 5.3 alarm-receiver fallback hook execute (PR-2 source kanıtı)
+
+```bash
+# Test fixture report (drift detection sample)
+cat > /tmp/drift-report-test-drill.json <<'JSON'
+{
+  "environment": "test",
+  "timestamp": "2026-05-09T19:30:00Z",
+  "exit_code": 1,
+  "findings": [
+    {
+      "class": "P1",
+      "kind": "drift_d43_drill",
+      "message": "D43 drill — sample drift finding for alarm-receiver fallback evidence",
+      "details": "Drill execution; not real drift"
+    }
+  ]
+}
+JSON
+
+# Toggle ON, host port-forward URL override
+export ALARM_FALLBACK_ALERTMANAGER=1
+export ALARM_FALLBACK_ALERTMANAGER_MODE=parallel
+export ALERTMANAGER_FALLBACK_URL=http://127.0.0.1:9093/api/v2/alerts
+export DRIFT_ALARM_WEBHOOK=""  # generic webhook off; sadece Alertmanager fallback
+
+bash scripts/drift-detection/alarm_receiver.sh /tmp/drift-report-test-drill.json
+
+# Verify Alertmanager direct fallback alert
+curl -s http://127.0.0.1:9093/api/v2/alerts | \
+  jq '.[] | select(.labels.alertname=="DriftDetectionFallback") | {severity: .labels.severity, drift_class: .labels.drift_class, dedupe_key: .labels.dedupe_key}'
+# Expected: severity=critical, drift_class=P1, dedupe_key=<sha256 12 char prefix>
+```
+
+#### 5.4 break-glass dual-channel execute (PR-3 source kanıtı)
+
+```bash
+# orchestrator down, drill window'da
+export ALARM_FALLBACK_ALERTMANAGER=1
+export NOTIFY_ORCH_HEALTH_URL=http://127.0.0.1:8089/actuator/health
+export ALERTMANAGER_FALLBACK_URL=http://127.0.0.1:9093/api/v2/alerts
+
+# Test reason (no real mutation)
+bash scripts/operations/break-glass-token.sh "D43 drill — no mutation; fallback evidence only — non-destructive"
+
+# Expected output:
+# - Token issued (kubeconfig path; TOKEN VALUE STDOUT'TA YOK)
+# - GitHub issue opened (governance trail)
+# - orchestrator unreachable (port-forward 8089 deki orchestrator scale=0 ise)
+# - Alertmanager direct fallback delivered
+
+# Verify Alertmanager BreakGlassUsed
+curl -s http://127.0.0.1:9093/api/v2/alerts | \
+  jq '.[] | select(.labels.alertname=="BreakGlassUsed") | {severity: .labels.severity, ns: .labels.ns, sa: .labels.sa, dedupe_key: .labels.dedupe_key}'
+# Expected: severity=critical, ns=kube-system, sa=ops-break-glass
+
+# Cleanup geçici kubeconfig (no-token-log HARD RULE — dosya delete)
+rm -f /tmp/kubeconfig-break-glass-*
 ```
 
 ### Step 6: Slack direct receipt (drill webhook test channel)

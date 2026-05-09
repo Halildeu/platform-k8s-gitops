@@ -90,6 +90,30 @@ spec:
               {{ $labels.namespace }} is unreachable for 2min. Check pod
               status + readiness probe + ESO secret population.
 
+        - alert: NotifyServiceAbsent
+          # Faz 23.2.D T1.4 D43 outage fallback (Codex 019e0dea PR-4 iter-1 P1 #2 absorb):
+          # `scale=0` durumunda Prometheus target tamamen kaybolabilir; bu durumda
+          # `up{} == 0` yerine `absent(up{})` series üretilir. Drill için target
+          # disappearance coverage gerekir.
+          # Test-only kapsam (namespace=platform-test) — prod cluster'da false-positive
+          # geçmişi var (Codex iter-2 #5 absorb).
+          expr: absent(up{job="notification-orchestrator",namespace="platform-test"}) == 1
+          for: 2m
+          labels:
+            severity: critical
+            service: notification-orchestrator
+            page: "true"
+            bypass_orchestrator: "true"
+            outage_fallback: "true"
+            target_absent: "true"
+          annotations:
+            summary: "Notify service target absent (test cluster drill)"
+            description: |
+              notification-orchestrator scrape target tamamen kaybolmuş
+              (absent series; 2 dakikadır). Test cluster D43 drill için
+              `scale=0` failure mode kanıtı. Alertmanager direct-fallback
+              receiver bu alarmı NotifyServiceDown ile birlikte yakalar.
+
     - name: notification-orchestrator-warn
       interval: 30s
       rules:
