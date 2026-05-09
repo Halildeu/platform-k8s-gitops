@@ -48,7 +48,7 @@ Codex iter-2 finding F5 (thread `019e0c28`):
 | I3 | Charter sub-faz % rakamları PM bootstrap iter-1'de iyimser (Codex verdict PARTIAL) | 2026-05-09 | Low | Yorumlama disiplini düzeltildi (Codex thread `019e0c28` retrospective); rakamlar revize tablosuyla sunum | None — PM-doc reporting issue | agent | 🟢 Mitigated |
 | I4 | Feature matrix literal marker pass deferred (~178 row sweep) — semantic estimate ile literal marker drift | (devam) | Low | Marker discipline note eklendi; planlı follow-up (sub-faz closure'larında inline) | None — PM-doc tracking issue | agent | 🟡 Active |
 | I5 | TodoWrite session-scoped, kalıcı değil | (yapısal) | Low | PM artifact set kalıcı yazılı + Update Discipline HARD RULE her PR'da senkron tutar | None — process limitation | — | 🟢 Mitigated |
-| I6 | Keycloak test realm admin credential unavailable — Docker compose env password invalid, Vault'ta yok; M2 D29 authenticated intent-submit BLOCKED | 2026-05-09 | High | Codex `019e0c28` partial verdict: M2 partial closure (preflight + lab LIVE + smoke evidence); full authenticated path için disposable realm-admin credential Vault path veya approved admin reset window gerek; ayrı stakeholder credential ask | None — credential boundary issue (test cluster auth state); admin@example.com kullanıcı login user'ı dokunma yasak | ops + user | 🔴 Active |
+| I6 | Keycloak test realm admin credential unavailable — Docker compose env password invalid, Vault'ta yok; M2 D29 authenticated intent-submit BLOCKED | 2026-05-09 | High | Codex `019e0c28` partial verdict: M2 partial evidence/checkpoint (preflight + lab dependency/transport smoke); full authenticated path için disposable realm-admin credential Vault path veya approved admin reset window gerek; ayrı stakeholder credential ask | None — credential boundary issue (test cluster auth state); admin@example.com kullanıcı login user'ı dokunma yasak | ops + user | 🔴 Active |
 
 **Issue eskime prosedürü**: 14 gün üzerinde 🟡 Active issue → owner-level escalation + retrospective.
 
@@ -102,7 +102,7 @@ Risk boyutu ayrı [`risk-register.md`](risk-register.md) içinde tutulur (22 ris
 ## Last Update
 
 - **2026-05-09 (Session 39 iter-2)**: Initial RAID log oluşturuldu (Codex `019e0c28` F5 absorb). 10 assumption + 5 issue + 10 dependency.
-- **2026-05-09 (M2 D29 partial evidence + credential blocker)**: Yeni issue I6 — Keycloak test realm admin credential unavailable; M2 D29 authenticated full pipeline BLOCKED. PR #444 lab-deps MERGED, smoke evidence Mailpit + webhook receiver + Slack mock lab end-to-end LIVE. 23.1 sub-faz marker 🟡 partial kalır. Toplam: 10 A + 6 I + 10 D = 48 active boyut (önceki 47'ye +I6).
+- **2026-05-09 (M2 D29 partial evidence + credential blocker)**: Yeni issue I6 — Keycloak test realm admin credential unavailable; M2 D29 authenticated full pipeline BLOCKED. PR #444 lab-deps MERGED; lab dependency smoke LIVE: Mailpit + webhook receiver + Slack mock transport; authenticated notify-orch intent-submit path still BLOCKED. 23.1 sub-faz marker 🟡 partial kalır. Toplam: 10 A + 6 I + 10 D = 48 active boyut (önceki 47'ye +I6).
 
 ## Next Review
 
