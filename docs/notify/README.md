@@ -33,7 +33,7 @@ Bu dizin **Faz 23 notification orchestration** için canonical doküman setidir.
 | **RAID log** | [raid-log.md](raid-log.md) | Risk dışı **assumption + issue + dependency** ayrı boyut (10 + 5 + 10); Codex `019e0c28` F5 absorb |
 | **Checkpoint template** | [checkpoints/_TEMPLATE.md](checkpoints/_TEMPLATE.md) | Per-milestone immediate checkpoint pattern (weekly summary öncesi gate) — placeholder M1+M2: [2026-05-12-m1-m2-status.md](checkpoints/2026-05-12-m1-m2-status.md) |
 | **Test strategy** | [test-strategy.md](test-strategy.md) | Per sub-faz test coverage + 5 test types (unit/integration/E2E/manual/regression) + evidence |
-| **Sprint plan** | [sprint-plan.md](sprint-plan.md) | Task-level breakdown + estimation + ownership + Tier T1-T5 (~280h v1) |
+| **Sprint plan** | [sprint-plan.md](sprint-plan.md) | Task-level breakdown + estimation + ownership + Tier T1-T5 (~232-235h v1 residual; M3 stale audit 2026-05-09 re-baseline; ~280h historical baseline superseded) |
 | **Milestones** | [milestones.md](milestones.md) | M0-M9 + DoD checklist + critical path + slip detection |
 | **Dependency graph** | [dependency-graph.md](dependency-graph.md) | Task-level dependency + critical path + parallel tracks |
 | **Stakeholder plan** | [stakeholder-plan.md](stakeholder-plan.md) | Communication cadence + audience patterns + anti-patterns |
@@ -61,7 +61,7 @@ Bu dizin **Faz 23 notification orchestration** için canonical doküman setidir.
 ### Sub-Faz Status
 - 🟢 **23.0** Charter (done)
 - 🟡 **23.1** Kernel partial (D29-Functional evidence pending)
-- 🟡 **23.2** MVP-dar partial (3/8 — Session 39 hardening only; 6 pending)
+- 🟡 **23.2** MVP-dar partial (Session 39 hardening 5/8 LIVE; M3 stale audit 2026-05-09 — backend source-ready 7/9: preference + admin erasure + provider rollback partial + classification; gerçek pending T1.2 subscriber self-service erasure + T1.4 D43 outage fallback + T1.6 abuse guards ~52-55h residual)
 - ⏳ **23.3** SMS NetGSM (pending)
 - 🟡 **23.4** v1 DLR + In-app UI partial (UI LIVE; SMS DLR pending)
 - ⏳ **23.5** Preference UI (pending)
@@ -71,11 +71,11 @@ Bu dizin **Faz 23 notification orchestration** için canonical doküman setidir.
 - 🟡 **23.9** Prod cutover partial (LIVE; 72h observation T+72h=2026-05-11 + rollback prova + browser SSO pending)
 - ⏳ **23.X** v2 (deferred)
 
-### Must-Have Status
-- 🟢 7/10 fully done (#1-#6, #9)
-- 🟡 2 partial (#7 retention LIVE + erasure pending; #10 observability LIVE + D43 pending)
-- ⏳ 1 pending (#8 preference + critical bypass)
-- **~80% must-have coverage** (NOT production-ready guarantee)
+### Must-Have Status (M3 stale audit 2026-05-09 5-state matrix re-baseline)
+- 🟢 7/10 fully done (#1, #2, #3, #4, #5, #6, #9)
+- 🟡 3 partial (#7 retention LIVE + admin erasure source-ready/R2 legal/subscriber endpoint pending; #8 ⏳→🟡 demote source-ready + RAID I6 acceptance gate; #10 observability LIVE + D43 pending)
+- ⏳ 0 pending
+- **~85% must-have coverage** (7×1.0 + 3×0.5 = 8.5/10; partial weight 0.5 semantik, source-ready bias var; NOT production-ready guarantee)
 
 ### Active Risks
 - 🟡 R1 NetGSM provider contract delay (23.3 blocker)
@@ -151,6 +151,6 @@ Bu doküman seti şunları sağlar:
 ✅ **Stakeholder communication** — cadence + audience patterns + cross-AI peer review
 ✅ **Decision register status** — D38-D48 status sync to live state
 
-**PM artifact baseline present** (10 capability tracker + risk + test + sprint + milestones + deps + stakeholders + decision register sync + update discipline). Production-ready guarantee değil; ~30% v1 scope coverage + 7/10 must-have done + 2 partial + 1 pending halinde **PM-ready execution discipline** kurulmuştur. Next step: any sub-faz closure work follows this canonical doc set; doc updates inline per PR; weekly summary + per-milestone evidence; risk register reviewed weekly.
+**PM artifact baseline present** (10 capability tracker + risk + test + sprint + milestones + deps + stakeholders + decision register sync + update discipline). Production-ready guarantee değil; ~30% v1 scope coverage (literal feature) + 7/10 must-have done + 3 partial source-ready bias = ~85% must-have coverage halinde **PM-ready execution discipline** kurulmuştur (M3 stale audit 2026-05-09 re-baseline per `docs/notify/m3-stale-audit-2026-05-09.md`). Next step: any sub-faz closure work follows this canonical doc set; doc updates inline per PR; weekly summary + per-milestone evidence; risk register reviewed weekly.
 
 > **Honesty disclaimer (Codex iter-2 absorb 2026-05-09)**: "Now we are PM-ready" overclaim'inden kaçınılmıştır. Yapısal PM capability'leri tamamlandı, ancak feature marker pass deferred (~178 row literal sweep follow-up) + cross-doc consistency sweep (Codex iter-1/2 absorb) + KVKK erasure sub-faz authority alignment = dokümantasyon kalitesi iyileştirme süreci aktif.

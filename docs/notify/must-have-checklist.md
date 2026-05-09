@@ -18,17 +18,20 @@ Diğer ~130 özellik **negotiable** (kanal sayısı, UI yüzeyleri, workflow edi
 | 4 | Retry Exponential Backoff + DLQ + Manual Replay | 🟢 done | 23.1 |
 | 5 | OpenFGA Hard-Deny + Org Boundary | 🟢 done | 23.1 + 23.4 PR-5.x strict cutover |
 | 6 | Vault/ESO Provider Credentials + No Secret Logging | 🟢 done | 23.2 (PR #424) |
-| 7 | PII Redaction + Retention/Anonymization Policy (KVKK) | 🟡 partial (retention LIVE; erasure API pending) | 23.1 (PII) + 23.2 (retention LIVE PR #427/#437; 23.2.B erasure pending) |
-| 8 | Preference / Opt-out + Critical Bypass Policy | ⏳ pending | 23.2 (API) + 23.5 (UI) |
+| 7 | PII Redaction + Retention/Anonymization Policy (KVKK) | 🟡 partial (retention LIVE; admin erasure source-ready/R2 legal; **subscriber self-service `DELETE/GET /audit/me` GERÇEK PENDING** — M3 stale audit 2026-05-09) | 23.1 (PII) + 23.2 (retention LIVE PR #427/#437; admin erasure `AdminErasureController` source-ready; subscriber self-service endpoint backend'de YOK) |
+| 8 | Preference / Opt-out + Critical Bypass Policy | 🟡 partial (source-ready; D29-Authorized acceptance gate BLOCKED on RAID I6) | 23.2.A (API source-ready/live) + 23.5 (UI pending) — M3 stale audit 2026-05-09 |
 | 9 | Template Versioning + Safe Interpolation | 🟢 done | 23.1 |
 | 10 | Observability + Outage Fallback | 🟡 partial (observability LIVE; D43 outage fallback pending) | 23.2 (PR #425/#428/#430/#431/#433/#435/#436) |
 
 **Sayım** (Codex `019e0bff` iter-1 self-consistency fix):
 - 🟢 fully done: **7** (#1, #2, #3, #4, #5, #6, #9)
-- 🟡 partial: **2** (#7 retention LIVE + erasure pending; #10 observability LIVE + D43 pending)
-- ⏳ pending: **1** (#8 preference + critical bypass)
+- 🟡 partial: **3** (#7 retention LIVE + erasure source-ready/legal review pending; #8 preference source-ready + acceptance/auth gate; #10 observability LIVE + D43 pending) — M3 stale audit 2026-05-09 #8 status update
+- ⏳ pending: **0** (#8 source-ready demoted to partial)
 
-**Net must-have coverage estimate** (NOT a "production ready" guarantee — kabul kriteri evidence path tek tek doğrulanmadan production claim yapılmaz): 7 + 2×0.5 + 1×0 = **8/10 = ~80% must-have coverage**.
+**Net must-have coverage estimate** (NOT a "production ready" guarantee — kabul kriteri evidence path tek tek doğrulanmadan production claim yapılmaz; M3 stale audit 2026-05-09 5-state matrix re-baseline):
+- 7 done × 1.0 + 3 partial (source-ready/acceptance gate) × 0.5 = **8.5/10 = ~85% must-have coverage**
+- **Disclaimer**: "partial" weight 0.5 semantik — gerçek source-ready bias var; #7 erasure/legal review (R2), #8 preference acceptance gate (RAID I6), #10 D43 outage fallback gerçek implementation pending
+- Önceki "8/10 = ~80%" formülü 7+2+1 modeline aitti; #8 demote sonrası 7+3+0 modelinde formül 8.5/10
 
 ---
 
@@ -239,22 +242,24 @@ SELECT count(*) FROM notify.audit_event WHERE occurred_at < NOW() - INTERVAL '90
 
 ---
 
-## #8 — Preference / Opt-out + Critical Bypass Policy ⏳ pending
+## #8 — Preference / Opt-out + Critical Bypass Policy 🟡 partial (source-ready / acceptance pending)
+
+> **M3 Stale Audit 2026-05-09 update** (Codex `019e0c28` strategic finding): Backend code source-ready (V1 schema `subscriber_preference` table + `PreferenceController` 290 satır + `SubscriberPreferenceService` 414 satır + `DeliveryEligibilityService` BLOCKED_BY_PREFERENCE + critical bypass severity logic). Acceptance gate D29-Authorized BLOCKED on RAID I6 Keycloak credential. Detay: [m3-stale-audit-2026-05-09.md](m3-stale-audit-2026-05-09.md).
 
 **Açıklama**: Subscriber kanal/topic bazında opt-out edebilir. Ancak `severity=critical` veya `data_classification=security` bu opt-out'u **bypass eder**. Diğerleri respect.
 
 **Sub-faz**: 23.2 (MVP-dar API) + 23.5 (UI)
 
-**Kabul kriteri**:
-- [ ] `notify.subscriber_preference` tablosu (subscriber_id + topic_key + channel + enabled)
-- [ ] Preference API: `GET /preferences/me` + `PUT /preferences/me`
-- [ ] Send pipeline'da preference check: `enabled=false` → audit `BLOCKED_BY_PREFERENCE`, no delivery
-- [ ] **Critical bypass**: `severity=critical` OR `data_classification=security` → preference bypass + audit `PREFERENCE_BYPASSED_CRITICAL`
-- [ ] Quiet hours opt-out: `severity=critical` quiet'i geçer
-- [ ] Frequency limit opt-out: `severity=critical` frequency limit'i geçer
-- [ ] Unsubscribe link footer (email): RFC 8058 List-Unsubscribe-Post header (v1)
+**Kabul kriteri** (5-state matrix per Codex `019e0c28` strategic finding):
+- [x] `notify.subscriber_preference` tablosu (subscriber_id + topic_key + channel + enabled) — V1 schema source-ready/live-deployed ✅
+- [x] Preference API: `GET /preferences/me` + `PUT /preferences/me` + `DELETE /me/{id}` + `DELETE /me` — `PreferenceController` 290 satır source-ready/live-deployed ✅
+- [🟡] Send pipeline'da preference check: `enabled=false` → audit `BLOCKED_BY_PREFERENCE`, no delivery — `DeliveryEligibilityService` source-ready/live-deployed; **D29-Authorized acceptance test BLOCKED on RAID I6**
+- [🟡] **Critical bypass**: `severity=critical` OR `data_classification=security` → preference bypass + audit `PREFERENCE_BYPASSED_CRITICAL` — severity bypass source-ready; data_classification security bypass acceptance test gerek
+- [🟡] Quiet hours opt-out: `severity=critical` quiet'i geçer — partial source; acceptance gate
+- [🟡] Frequency limit opt-out: `severity=critical` frequency limit'i geçer — partial source; acceptance gate
+- [ ] Unsubscribe link footer (email): RFC 8058 List-Unsubscribe-Post header — TBD template engine review
 
-**Status**: ⏳ All 7 criteria pending. Faz 23.2.A planned task (~2-3 PR cycle: backend API + integration test + gitops env enable + FE settings page Faz 23.5).
+**Status**: 🟡 partial — **2/7 source-ready/live-deployed/acceptance complete (V1 + REST API)**, 4/7 source-ready/live-deployed (acceptance gate D29-Authorized BLOCKED on RAID I6), 1/7 TBD. Gerçek residual ~3h acceptance test + auth flow setup.
 
 **Kanıt**:
 ```bash
@@ -376,9 +381,9 @@ kubectl scale deploy/notification-orchestrator --replicas=0
 
 **Snapshot (2026-05-09 Session 39 truth alignment, Codex `019e0bff` self-consistency)**:
 - 🟢 fully done: 7 (#1, #2, #3, #4, #5, #6, #9)
-- 🟡 partial: 2 (#7 retention done + erasure pending; #10 observability done + D43 pending)
-- ⏳ pending: 1 (#8 preference + critical bypass)
-- **Net must-have coverage**: ~80% (must-have-only metric, NOT production-ready guarantee)
+- 🟡 partial: 3 (#7 retention LIVE + erasure source-ready/legal review pending; #8 preference source-ready + acceptance/auth gate; #10 observability LIVE + D43 pending) — M3 stale audit 2026-05-09 #8 demoted to partial source-ready bias
+- ⏳ pending: 0
+- **Net must-have coverage**: ~85% (8.5/10 — M3 stale audit 2026-05-09 5-state matrix; 7 done × 1.0 + 3 partial × 0.5; partial weight 0.5 semantik, source-ready bias var); **NOT production-ready guarantee** — #7 erasure subscriber self-service + R2 legal, #8 RAID I6 acceptance gate, #10 D43 gerçek pending
 - **Production MVP gates beyond must-have**: 23.1 D29-NOTIFY-Functional 3-channel evidence, 23.2 erasure/preference/outage fallback closure, 23.9 72h observation + rollback prova execution
 
 ---

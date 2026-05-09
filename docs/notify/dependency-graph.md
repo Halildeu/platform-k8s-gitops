@@ -319,7 +319,7 @@ M1 (23.9 Cutover Closure)
   ▼
 [Parallel: M2 (23.1 D29 evidence) + M6 (23.4 archive UI)]
   ▼
-M3 (23.2 closure) ──── critical path bottleneck (~100h, multiple risks)
+M3 (23.2 closure) ──── critical path bottleneck (~52-55h residual / ~60-70h provisional sprint, M3 stale audit 2026-05-09 re-baseline; önceki ~100h pessimistic)
   ├──▶ M5 (23.5 Preference UI) ─ blocked by T1.1
   │
   ▼
@@ -336,7 +336,7 @@ M9 (v2 deferred)
 ```
 
 **Critical path duration**: M0 → M3 → M4 → M7 = ~13-15 weeks (3-4 months)
-**Bottleneck milestones**: M3 (~100h, 6 sub-tasks), M7 (~99h, 3 v1 sub-faz parallel)
+**Bottleneck milestones**: M3 (~52-55h residual / ~60-70h provisional sprint, M3 stale audit 2026-05-09 re-baseline; 6 sub-tasks; T1.2 subscriber endpoint + T1.4 D43 + T1.6 abuse guards gerçek pending), M7 (~99h, 3 v1 sub-faz parallel)
 
 ---
 
@@ -349,7 +349,7 @@ M9 (v2 deferred)
 | T3.1 + T3.2 backend portion | While SMS contract pending, FE preference UI can start with T1.1.3 backend | ~10h saved |
 | T4.1 + T4.2 + T4.3 | v1 sub-faz independent | ~50h saved |
 
-**Total potential savings via parallelization**: ~100h (out of ~280h v1 total)
+**Total potential savings via parallelization**: ~80-90h (out of ~232-235h v1 residual; M3 stale audit 2026-05-09 re-baseline; önceki ~100h savings / ~280h v1 total historical)
 
 ---
 
