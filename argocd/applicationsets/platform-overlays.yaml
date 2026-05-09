@@ -49,8 +49,15 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
-      ignoreDifferences:
-        - group: apps
-          kind: Deployment
-          jsonPointers:
-            - /spec/replicas       # HPA veya manuel scale drift (D21 prod) / D17 test scale-to-zero
+      # 2026-05-10: ApplicationSet ortak template'ten /spec/replicas ignoreDifferences
+      # KALDIRILDI. Sebep: HARD RULE — TEST Cluster Scale-to-Zero YASAK; ortak
+      # template'te ignore varsa test cluster için backdoor olur (manuel scale=0
+      # drift self-heal'lenmez). Codex iter-14 P1 absorb.
+      #
+      # PROD HPA drift toleransı (D21) ApplicationSet aktive edildiğinde
+      # standalone `argocd/applications/platform-prod.yaml` (line 39-44) içinde
+      # zaten korunur. ApplicationSet aktive olduğunda prod-only ignore için
+      # template per-cluster patch veya 2 ayrı template (prod/test split) gerek.
+      # Şu an ApplicationSet DRAFT (üstteki yorum); aktive sırasında bu
+      # split yapılmalı.
+      ignoreDifferences: []

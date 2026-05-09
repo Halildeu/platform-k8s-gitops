@@ -8,7 +8,8 @@
 #   hem docker bağlantısını hem kubectl Endpoints patch'ini çalıştırır. Git truth
 #   bu ay kullanılan IP setini yansıtır; kalıcı çözüm için compose'da
 #   ipv4_address sabitlemek ayrı roadmap item'ı (platform-ssot repo değişikliği).
-# - Replica: 0 default (D17 scale-to-zero); test-toggle.sh up → 1
+# - Replica: 1 default (2026-05-10: HARD RULE — TEST Cluster Scale-to-Zero YASAK;
+#   D17 deprecated; multi-Claude paralel session koordinasyon için scale-down YASAK)
 # - Namespace: platform-test
 # - JVM daha dar heap (D24)
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -1436,14 +1437,14 @@ images:
     digest: sha256:eef18027f0d54b930e1c54c44215fe2c50e6aa752fe2dcbf93ea0eae2908d0b4
 
 patches:
-  # Replica 0 default (scale-to-zero)
+  # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
   - target:
       kind: Deployment
       name: auth-service
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 0
+        value: 1
       - op: replace
         path: /spec/template/spec/containers/0/env/1/value
         value: "-Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
@@ -1453,10 +1454,17 @@ patches:
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 0
+        value: 1
       - op: replace
         path: /spec/template/spec/containers/0/env/1/value
         value: "-Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:ActiveProcessorCount=1"
+  - target:
+      kind: Deployment
+      name: endpoint-admin-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
 
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz SPRING_DATASOURCE_URL
   # + KEYCLOAK_URL replace patch'leri KALDIRILDI (base zaten shortname).
@@ -1666,34 +1674,43 @@ patches:
         path: /data/REPORTS_DB_ENABLED
         value: "true"
 
-  # Dilim 2: scale-to-zero 5 backend (D17)
+  # Dilim 2: backend services replicas=1 default
+  # 2026-05-10: D17 "scale-to-zero default" DEPRECATED.
+  # HARD RULE — TEST Cluster Scale-to-Zero YASAK (kullanıcı 2026-05-10 kararı):
+  #   "ben servicelerin kapatılmasını istemiyorum çünkü buna tek oturum karar
+  #    verirse çok oturumda geliştirme yapıyorum patlıyor diğerleri"
+  # Multi-Claude session paralel geliştirme modelinde scale-to-zero unsafe;
+  # bir oturum down çekerse diğerlerin işi patlıyor + recovery overhead
+  # (Hibernate config drift + Vault password + ESO refresh) saatler sürüyor.
+  # Tüm backend servisleri default replicas=1 (sadece report-service için
+  # ek MSSQL env'leri devam ediyor).
   - target:
       kind: Deployment
       name: user-service
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 0
+        value: 1
   - target:
       kind: Deployment
       name: variant-service
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 0
+        value: 1
   - target:
       kind: Deployment
       name: core-data-service
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 0
+        value: 1
   - target:
       kind: Deployment
       name: report-service
     patch: |-
       # Faz 19.MSSQL.A activation (test cluster):
-      # - replicas=1 (D17 scale=0 override; MSSQL canlı 31 rapor + 12 dashboard)
+      # - replicas=1 (HARD RULE: scale-to-zero YASAK)
       # - REPORT_PG_USERNAME/PASSWORD valueFrom secret (PG metadata için)
       # - PostgresDataSourceConfig'in default 'postgres'/'postgres' yetersiz, mevcut
       #   secret'taki SPRING_DATASOURCE_PASSWORD'u alias'lar.
@@ -1722,16 +1739,16 @@ patches:
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 0
+        value: 1
 
-  # Dilim 3: OpenFGA scale-to-zero (D17 — test default, mode=normal)
+  # Dilim 3: OpenFGA replicas=1 (D17 scale-to-zero deprecated; HARD RULE)
   - target:
       kind: StatefulSet
       name: openfga
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 0
+        value: 1
   # 2026-04-20: testai.acik.com authoritative live (e2e kanıtlı: curl 212.115.26.190
   # → HTTP 200 2899B Module Federation HTML). Frontend always-on (replicas=1); D17
   # scale-to-zero exception: UI public entrypoint her zaman erişilebilir olmalı.
@@ -2189,22 +2206,26 @@ patches:
         path: /spec/minAvailable
         value: 0
 
-  # Test ResourceQuota daralt: 3GiB/1vCPU (PLAN §2.4)
+  # Test ResourceQuota (2026-05-10: scale-to-zero deprecation sonrasi tum 12
+  # deploy + STS replicas=1 sürekli çalışıyor; rolling update surge için
+  # extra headroom gerek).
   - target:
       kind: ResourceQuota
       name: platform-quota
     patch: |-
-      # Test quota (Dilim 1+2+3 tamamında 8+ pod çalışır; k3d lokal için)
-      # 8 Spring Boot pod × 150m req × 750m limit + openfga + frontend
+      # Test quota — 12 Deployment + OpenFGA STS replicas=1 default
+      # (HARD RULE — Scale-to-Zero YASAK). Ortalama declared usage ~7350m
+      # limit (91% of 8000m); surge için 10000m yapildi (1000m headroom +
+      # largest pod 1000m surge için).
       - op: replace
         path: /spec/hard/requests.cpu
-        value: "4"
+        value: "5"
       - op: replace
         path: /spec/hard/requests.memory
-        value: 8Gi
+        value: 10Gi
       - op: replace
         path: /spec/hard/limits.cpu
-        value: "8"
+        value: "10"
       - op: replace
         path: /spec/hard/limits.memory
-        value: 16Gi
+        value: 20Gi

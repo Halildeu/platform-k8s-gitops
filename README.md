@@ -28,7 +28,7 @@ Soru tipine göre otoriter kaynak:
 
 > **Ana karar:** [`docs/adr/0002-single-host-dual-cluster.md`](./docs/adr/0002-single-host-dual-cluster.md) — same-host + full stateful isolation
 
-- **Test cluster:** k3d-test (staging-sw, testai.acik.com) — default scale-to-zero
+- **Test cluster:** k3d-test (staging-sw, testai.acik.com) — **replicas=1 default** (2026-05-10: HARD RULE — Scale-to-Zero YASAK, D17 deprecated; multi-Claude paralel session güvenliği)
 - **Prod cluster:** k3d-prod (**staging-sw aynı host**, ai.acik.com) — D32 separate-host SUPERSEDED
 - **Host compose (ayrı instance prod/test):** PG/KC/Vault prod + PG/KC/Vault test (full isolation, `/srv/platform/stateful/{prod,test}/...`)
 - **K8s manifest:** 8 backend (auth/gateway/user/variant/core-data/report/schema/permission) + OpenFGA + frontend
@@ -198,7 +198,7 @@ Historical / superseded yol: `bootstrap/install-on-staging-sw-2.sh` + `docs/D32-
 ## Karar Logu (Highlights)
 
 - **D1/D16:** 2 k3d cluster (test + prod) aynı host pattern
-- **D17:** Test scale-to-zero (yoğun saatlerde RAM=0)
+- ~~**D17:** Test scale-to-zero (yoğun saatlerde RAM=0)~~ **DEPRECATED 2026-05-10** (HARD RULE: TEST Scale-to-Zero YASAK; multi-Claude paralel session safety)
 - **D18:** Host nginx SNI SSL termination
 - **D20:** Host bridge (test 172.19.0.x platform-test-net, prod 10.9.10.53)
 - **D28:** Handoff 5-alan (Bağlam/İddia/İspatlar/İspatlamaz/Bilinen boşluk)

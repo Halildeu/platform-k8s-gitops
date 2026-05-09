@@ -78,7 +78,7 @@ Agent'ın **staging-sw sunucusuna SSH** ile erişim ve kubectl operasyonlarını
 
 - `ssh halil@staging-sw "<command>"` — SSH komut çalıştırma
 - `kubectl --context k3d-{test,prod} -n platform-{test,prod} ...` — read+write
-- ConfigMap selective apply (D17 koruma kuralına uygun, full overlay apply YASAK)
+- ConfigMap selective apply (low blast-radius tercih; D17 koruma DEPRECATED 2026-05-10; full overlay apply artık güvenli ama küçük diff için selective tercih edilir)
 - Deployment rollout restart
 - Pod logs, exec (debug için, kullanıcı bilgisi sızdırmadan)
 - Sudo gerektiren ops işlemleri (örn. host nginx reload, edge release switch)
@@ -143,9 +143,10 @@ User mesajı (2026-04-25): "fake işlem istemiyorum sisteme gereksi olup fayda s
 - Overlay kustomization `namespace: platform-<env>` → tüm resource'lar o ns'e gider
 - **İstisna:** `kustomize/base/eso/` kustomization `namespace: external-secrets` (ClusterSecretStore için). ghcr-pull ExternalSecret overlay-specific (Codex iter-5 Opsiyon B).
 
-### Selective Apply (D17 koruma)
+### Selective Apply (low blast-radius pattern)
 
-`kubectl apply -k overlays/<env>` **D17 scale-to-zero patch'leri tekrar uygular** → mevcut Running pod outage riski. Selective:
+`kubectl apply -k overlays/<env>` tüm overlay'i uygular — büyük yüzey, geniş etki. Tek bir ConfigMap/Deployment fix için yine de selective apply tercih edilir:
+
 ```bash
 # Tek dosya apply
 kubectl --context k3d-<env> -n platform-<env> apply -f kustomize/base/apps/<svc>/configmap.yaml
@@ -153,6 +154,8 @@ kubectl --context k3d-<env> -n platform-<env> apply -f kustomize/base/apps/<svc>
 # Rolling restart (envFrom ConfigMap pickup için)
 kubectl --context k3d-<env> -n platform-<env> rollout restart deploy/<svc>
 ```
+
+> **NOT 2026-05-10**: Eski "D17 scale-to-zero patch'leri tekrar uygular → outage riski" gerekçesi DEPRECATED. HARD RULE — TEST Cluster Scale-to-Zero YASAK (global memory): test overlay artık `replicas=1` default; full apply scale=0 outage yaratmaz. Selective apply tercih sebebi sadece **blast radius** kontrolü.
 
 ### Codex Adversarial Protokol
 
@@ -180,7 +183,7 @@ Types: `feat` / `fix` / `refactor` / `docs` / `chore` / `test`
 
 1. **base/eso doğrudan apply:** FQDN placeholder (`OVERLAY_MUST_OVERRIDE`) → sessiz drift yerine fail-closed. Her zaman `overlays/<env>/eso`.
 
-2. **Full `apply -k` canlı cluster'a:** D17 test overlay replicas=0 patch'leri aktif pod'u durdurur. Selective apply ZORUNLU.
+2. **Full `apply -k` canlı cluster'a:** ~~D17 test overlay replicas=0 patch'leri aktif pod'u durdurur~~ DEPRECATED 2026-05-10 (test artık replicas=1 default; HARD RULE Scale-to-Zero YASAK). Selective apply hâlâ tercih sebebi: blast radius kontrolü.
 
 3. **ConfigMap değişimi sonrası pod restart eksik:** `envFrom` otomatik pickup etmez. `kubectl rollout restart deploy` gerek.
 

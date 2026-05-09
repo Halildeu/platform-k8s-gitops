@@ -25,14 +25,10 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-  ignoreDifferences:
-    # Scale-to-zero (D17) — test-toggle.sh ile 1'e çekildiğinde ArgoCD drift düzeltmesin
-    - group: apps
-      kind: Deployment
-      jsonPointers:
-        - /spec/replicas
-    # OpenFGA StatefulSet (aynı scale-to-zero)
-    - group: apps
-      kind: StatefulSet
-      jsonPointers:
-        - /spec/replicas
+  # 2026-05-10: D17 scale-to-zero ignoreDifferences DEPRECATED.
+  # HARD RULE — TEST Cluster Scale-to-Zero YASAK (kullanıcı 2026-05-10
+  # kararı): multi-Claude paralel session geliştirme modelinde scale-down
+  # unsafe; ArgoCD self-heal manuel scale=0 drift'ini geri alır.
+  # Eski yorum: "test-toggle.sh ile 1'e çekildiğinde ArgoCD drift düzeltmesin"
+  # Yeni davranış: hiç scale=0 olmamalı; drift olursa ArgoCD self-heal 1'e
+  # geri çekecek. ignoreDifferences boş bırakıldı (test cluster).
