@@ -207,7 +207,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 ---
 
-## Tier 4: 23.6 + 23.7 + 23.8 v1 (~6 weeks, ~80h)
+## Tier 4: 23.6 + 23.7 + 23.8 v1 (~5-6 weeks, ~99h)
 
 ### T4.1 — 23.6 Teams + Slack Zenginleştirme
 
