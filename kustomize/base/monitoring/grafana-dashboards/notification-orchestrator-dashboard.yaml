@@ -352,7 +352,7 @@ data:
           "gridPos": {"h": 4, "w": 6, "x": 18, "y": 40},
           "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 25}, {"color": "yellow", "value": 50}, {"color": "green", "value": 75}]}}},
           "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
-          "description": "Error budget remaining over the rolling 28d SLO window. Formula: `100 * (1 - min(burn_rate_28d, 1))` where burn_rate_28d = (DLQ rate / total rate) / 0.005. clamp_min(...,1) on the denominator prevents divide-by-zero (returns 0% if total rate is 0). At 100% no budget consumed (no DLQ events). At 0% budget exhausted (burning at ≥1× steady-state for full 28d)."
+          "description": "Error budget remaining over the rolling 28d SLO window. Formula: `100 * (1 - min(burn_rate_28d, 1))` where burn_rate_28d = (DLQ rate / total rate) / 0.005. clamp_min(denominator,1) handles the no-traffic case: when both DLQ=0 AND total=0, the formula returns 100% ('no budget consumed since no dispatches happened'). At 100% no budget consumed. At 0% budget exhausted (burning at ≥1× steady-state for full 28d). Codex 019e0bb6 iter-1 description correction."
         },
         {
           "id": 15,
@@ -367,7 +367,7 @@ data:
           "gridPos": {"h": 4, "w": 6, "x": 0, "y": 44},
           "fieldConfig": {"defaults": {"unit": "percent", "min": 99, "max": 100, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 99.0}, {"color": "yellow", "value": 99.5}, {"color": "green", "value": 99.9}]}}},
           "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
-          "description": "Notification dispatch success rate over rolling 28d window. SLO target = 99.5%. Formula: `100 * (1 - DLQ_rate / total_rate)`. Min/max [99,100] zoom shows tiny deviations from target — at 99.9% well above target, at 99.5% at-budget, at 99.0% half budget exhausted, at <99.0% over-budget."
+          "description": "Notification dispatch success rate over rolling 28d window. SLO target = 99.5%. Formula: `100 * (1 - DLQ_rate / total_rate)`. Min/max [99,100] zoom shows tiny deviations from target — at 99.9% healthy budget, at 99.5% sitting AT the SLO threshold (zero remaining budget), at 99.0% the SLO has been BREACHED (1% error rate vs 0.5% target = budget over-consumed by 100%). Codex 019e0bb6 iter-1 wording correction."
         }
       ]
     }
