@@ -1020,7 +1020,27 @@ images:
     #
     # Image build run: 25579376343 (success), testai digest
     # sha256:cba070cd66be2f039baf965d2ea7b6a142ad28bd6b04eda967e870fd2e151cbe.
-    digest: sha256:cba070cd66be2f039baf965d2ea7b6a142ad28bd6b04eda967e870fd2e151cbe
+    #
+    # 2026-05-09 update: sha-872c34d — platform-web PR #335 (PR-FE-6
+    # role drawer members invalidate + UX hint).
+    #
+    # Bug: USER_MANAGE rolü drawer'ında "2 Üye sayısı" header vs
+    # "ATANMIŞ KİŞİLER (3)" body — sayı tutarsızlığı. Plus user
+    # "Kaydet aktif değil" sordu üye Kaldır işleminden sonra.
+    #
+    # Fix: addMember/removeMember mutations onSuccess artık ['roles']
+    # query'sini de invalidate ediyor (pre-fix sadece role-members
+    # invalidate ediyordu, role list grid stale memberCount). Plus UX
+    # hint: "Üyeler eklediğinizde/kaldırdığınızda anlık kaydedilir;
+    # ayrıca Kaydet'e gerek yoktur." paragraph above members section.
+    #
+    # Cross-AI peer review: Codex thread 019e0bb4 iter-1 PARTIAL
+    # (English-only comments cleanup) absorbed in iter-2; ready_to_merge
+    # true post-CI. mfe-access 48 PASS / 0 fail unchanged.
+    #
+    # Image build run: 25595997012 (success), testai digest
+    # sha256:4b447bace53ed047a157aabca2cd393f268a357921c534953627db0720a7652f.
+    digest: sha256:4b447bace53ed047a157aabca2cd393f268a357921c534953627db0720a7652f
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
