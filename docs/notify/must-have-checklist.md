@@ -18,7 +18,7 @@ Diğer ~130 özellik **negotiable** (kanal sayısı, UI yüzeyleri, workflow edi
 | 4 | Retry Exponential Backoff + DLQ + Manual Replay | 🟢 done | 23.1 |
 | 5 | OpenFGA Hard-Deny + Org Boundary | 🟢 done | 23.1 + 23.4 PR-5.x strict cutover |
 | 6 | Vault/ESO Provider Credentials + No Secret Logging | 🟢 done | 23.2 (PR #424) |
-| 7 | PII Redaction + Retention/Anonymization Policy (KVKK) | 🟡 partial (retention LIVE; erasure API pending) | 23.2 (PR #427/#437) + 23.7 (erasure) |
+| 7 | PII Redaction + Retention/Anonymization Policy (KVKK) | 🟡 partial (retention LIVE; erasure API pending) | 23.1 (PII) + 23.2 (retention LIVE PR #427/#437; 23.2.B erasure pending) |
 | 8 | Preference / Opt-out + Critical Bypass Policy | ⏳ pending | 23.2 (API) + 23.5 (UI) |
 | 9 | Template Versioning + Safe Interpolation | 🟢 done | 23.1 |
 | 10 | Observability + Outage Fallback | 🟡 partial (observability LIVE; D43 outage fallback pending) | 23.2 (PR #425/#428/#430/#431/#433/#435/#436) |
@@ -197,14 +197,16 @@ kubectl logs deploy/notification-orchestrator | grep -iE "password|token|secret"
 
 **Açıklama**: Mail body, SMS body, kişisel bilgi log'a/audit'e yazılmaz. Sadece `template_id`, `recipient_hash` (sha256), `org_id`, `correlation_id`. Retention policy var.
 
-**Sub-faz**: 23.1 (Kernel — PII redaction LIVE) + 23.2 (MVP-dar retention LIVE) + 23.7 (erasure API pending)
+**Sub-faz**: 23.1 (Kernel — PII redaction LIVE) + 23.2 (MVP-dar retention LIVE PR #427/#437) + **23.2.B (erasure API + right-to-information — Faz 23.2 closure)**
+
+> **Sub-faz authority note (2026-05-09 truth alignment iter-2)**: Erasure API (KVKK Art.11) sub-faz authority = **23.2.B** per Charter [`RB-faz-23-charter.md`](../runbooks/RB-faz-23-charter.md) + sprint-plan T1.2 + milestones M3 DoD. Faz 23.7 yalnız Push (FCM/APNS/Web Push) hattıdır; KVKK erasure 23.7'ye dahil değildir.
 
 **Kabul kriteri**:
 - [x] `audit_event.details` JSONB: payload value yok, sadece metadata
 - [x] `notification_delivery.recipient_hash` sha256(address) — HMAC pepper from Vault `kv/platform/notification-orchestrator.redaction_pepper`
 - [x] Log MDC pattern: `correlation_id`, `org_id`, `template_id`, `recipient_hash` — body yok
 - [x] **Retention policy**: AuditPartitionRetentionService activated `dryRun=false` LIVE both clusters (PR #427 + #437); `retentionDays=90 cron=0 0 2 * * * graceHours=24 futureMonths=3`; first real cycle 2026-05-09 `Created future partition: audit_event_v2_2026_08`
-- [ ] **KVKK Art.11 erasure API**: `DELETE /audit/me` → payload purge, recipient_hash kalır — ⏳ pending Faz 23.7 backend
+- [ ] **KVKK Art.11 erasure API**: `DELETE /audit/me` → payload purge, recipient_hash kalır — ⏳ pending Faz **23.2.B** backend (sprint-plan T1.2)
 - [x] Audit append-only enforcement: `CREATE RULE no_update/delete` (V8 migration trigger)
 - [x] **Backend test coverage** (Session 39 PR #130): `AuditPartitionRetentionDetachDropTest` 4 methods covering DETACH/DROP/cutoff/idempotency code paths
 
@@ -214,7 +216,7 @@ kubectl logs deploy/notification-orchestrator | grep -iE "password|token|secret"
 - Codex thread `019e090d` C.2 prep + `019e0bb6` peer review chain
 - `bootstrap/vault-policies/common/eso-runtime.hcl` extended with `kv/data/platform/notification-orchestrator` read
 
-**Pending sub-tasks (23.7 KVKK erasure)**:
+**Pending sub-tasks (23.2.B KVKK erasure)**:
 - ⏳ `DELETE /api/v1/audit/me` endpoint (subscriber's own audit history erasure)
 - ⏳ `GET /api/v1/audit/me` endpoint (KVKK Art.13 right-to-information)
 - ⏳ Erasure runbook: payload purge SQL pattern + recipient_hash preservation
@@ -365,7 +367,7 @@ kubectl scale deploy/notification-orchestrator --replicas=0
 | 4 | Retry + DLQ + manual replay | 23.1 | 🟢 |
 | 5 | OpenFGA hard-deny + org boundary | 23.1 + 23.4 | 🟢 (strict cutover LIVE) |
 | 6 | Vault/ESO + no secret logging | 23.2 | 🟢 (PR #424) |
-| 7 | PII redaction + KVKK retention | 23.1 + 23.2 + 23.7 | 🟡 (retention LIVE; erasure API pending) |
+| 7 | PII redaction + KVKK retention | 23.1 + 23.2 (retention LIVE) + 23.2.B (erasure pending) | 🟡 (retention LIVE; erasure API pending) |
 | 8 | Preference + critical bypass | 23.2 | ⏳ |
 | 9 | Template versioning + safe interpolation | 23.1 | 🟢 |
 | 10 | Observability + outage fallback | 23.1 + 23.2 | 🟡 (observability LIVE; D43 outage fallback pending) |
