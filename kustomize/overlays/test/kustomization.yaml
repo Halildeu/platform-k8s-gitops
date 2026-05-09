@@ -1163,7 +1163,22 @@ images:
     #
     # Image build run: 25600714633 (success, cumulative on PR-FE-9
     # squash 879efe2), testai digest sha256:a77680c1ecd05016a4c0eb938cecab7a5755f8ae6c48be30414ff166574baa64.
-    digest: sha256:a77680c1ecd05016a4c0eb938cecab7a5755f8ae6c48be30414ff166574baa64
+    #
+    # 2026-05-09 update: sha-e8703f2 — platform-web PR #346
+    # (PR-FE-11 scope picker layout split + multi-select keep-open).
+    #
+    # User UX feedback: chip area now in a separate box BELOW the
+    # search input; multi-select keep-open; chip tooltip + uppercase
+    # code prefix; subtitle totals; empty state; clear-all confirm.
+    # DS Combobox internal chips suppressed via Tailwind
+    # [&_[data-created-tag]]:hidden.
+    #
+    # Cross-AI peer review: Codex thread 019e0ce8 — iter-1 partial
+    # (canEdit deps, code uppercase normalize), iter-2 AGREE.
+    #
+    # Image build run: 25602628507 (success), testai digest
+    # sha256:5c27f11ad2d77a94ad211733bac156187430a0cb33cb37cf90e9d8dfc9dd88a2.
+    digest: sha256:5c27f11ad2d77a94ad211733bac156187430a0cb33cb37cf90e9d8dfc9dd88a2
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
