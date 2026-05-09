@@ -376,7 +376,8 @@ roles = {r["name"] for r in json.load(sys.stdin)}
 required = {"impersonation","view-users","query-users"}
 missing = required - roles
 for r in required:
-    print(f"  {r}={\"present\" if r in roles else \"MISSING\"}")
+    state = "present" if r in roles else "MISSING"
+    print(f"  {r}={state}")
 print("FAIL" if missing else "PASS")
 ')
 echo "$ROLES_VERIFY"
@@ -389,10 +390,14 @@ PERM_DETAIL=$($KC get "clients/$REALM_MGMT_ID/authz/resource-server/permission/s
   | python3 -c '
 import json,sys
 p = json.load(sys.stdin)
-print(f"  permission_name: {p.get(\"name\")}")
-print(f"  permission_id: {p.get(\"id\",\"\")[:8]}...")
-print(f"  decision_strategy: {p.get(\"decisionStrategy\")}")
-print(f"  policy_count: {len(p.get(\"policies\",[]))}")
+name = p.get("name")
+pid = p.get("id","")
+ds = p.get("decisionStrategy")
+pc = len(p.get("policies",[]))
+print(f"  permission_name: {name}")
+print(f"  permission_id: {pid[:8]}...")
+print(f"  decision_strategy: {ds}")
+print(f"  policy_count: {pc}")
 '  )
 echo "$PERM_DETAIL"
 
@@ -459,10 +464,11 @@ else
     [ -z "$U_TRIM" ] && continue
 
     # Step a: exact username lookup (avoid partial/ambiguous match)
-    # Codex iter-9 P1 absorb: argv ile geç (env race yok, ilk user fail riskini kapatır).
+    # Codex iter-9 P1 absorb (revised): heredoc + pipe stdin race vardı;
+    # `-c '...'` inline + argv ile geç (deterministic).
     USER_INFO=$($KC get users -r "$REALM" --query "username=$U_TRIM" --query exact=true \
                   --fields id,username,enabled 2>/dev/null \
-                  | python3 - "$U_TRIM" <<'PYEOF'
+                  | python3 -c '
 import json, sys
 exact = sys.argv[1]
 d = json.load(sys.stdin)
@@ -473,8 +479,7 @@ elif not m[0].get("enabled"):
     print("DISABLED")
 else:
     print("OK:" + m[0]["id"])
-PYEOF
-) || USER_INFO="LOOKUP_FAIL"
+' "$U_TRIM" 2>/dev/null) || USER_INFO="LOOKUP_FAIL"
 
     case "$USER_INFO" in
       MISSING)
