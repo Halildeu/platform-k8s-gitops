@@ -1040,7 +1040,39 @@ images:
     #
     # Image build run: 25595997012 (success), testai digest
     # sha256:4b447bace53ed047a157aabca2cd393f268a357921c534953627db0720a7652f.
-    digest: sha256:4b447bace53ed047a157aabca2cd393f268a357921c534953627db0720a7652f
+    #
+    # 2026-05-09 update: sha-b7012b1 — platform-web PR #336 (PR-FE-7
+    # role drawer auto-save, drop save/cancel buttons).
+    #
+    # User UX directive (2026-05-09): "kullanıcı deneyimi açısından tek
+    # davranış olmalı kaydet ve vazgeç olmyacak şekilde ilerleyelim".
+    # All grant changes in RoleDrawer (Modüller / Aksiyonlar / Raporlar
+    # tabs) now auto-save after a 500ms debounce. Save / Cancel buttons
+    # removed; footer hosts an auto-save status indicator + retry
+    # button on failure.
+    #
+    # Hardening (Codex thread 019e0bdc, three review iterations):
+    #   - State machine: idle -> saving -> saved | error
+    #   - Single-in-flight + queued-latest model (no two PUTs racing on
+    #     server; queue carries only the freshest pending draft).
+    #   - Stale-response ownership guard: response-vars.{seq, roleId}
+    #     compared to active refs; mismatched stale responses dropped
+    #     silently without touching in-flight or queue state.
+    #   - Async gate via canEditRef: editAccess flips to readonly mid-
+    #     drawer cancel pending debounce + queue; in-flight allowed to
+    #     settle naturally.
+    #   - Read-only defense-in-depth: setters early-return on canEdit,
+    #     all 5 grant <select> elements get disabled={!canEdit}.
+    #   - Empty-granules canonical seed: zero-grant roles open the
+    #     autosave gate so the first edit becomes a real delta.
+    #
+    # Cross-AI peer review: Codex thread 019e0bdc — iter-1 ready=false
+    # (6 blockers), iter-2 ready=false (2 high), iter-3 ready=true.
+    # 50/50 vitest PASS (48 prior + 2 new edge tests).
+    #
+    # Image build run: 25597354629 (success), testai digest
+    # sha256:fe88bc8f3178be67096f8779f4c57b9c0e92474b3679625972e347a0ee324d27.
+    digest: sha256:fe88bc8f3178be67096f8779f4c57b9c0e92474b3679625972e347a0ee324d27
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
