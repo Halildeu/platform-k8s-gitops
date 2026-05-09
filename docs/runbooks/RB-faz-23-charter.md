@@ -32,7 +32,7 @@ Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorun
 |---|---|---:|
 | 23.0 | Charter | 1 hafta |
 | 23.1 | Kernel/Closed Beta | 3-4 hafta |
-| 23.2 | Production MVP dar | ~50-60h residual / 2-3 hafta (M3 stale audit 2026-05-09; backend code scan 7/9 source-ready; gerçek pending T1.4 D43 + T1.6 abuse guards ~30h + acceptance gate test ~15-20h; credential + legal gate açılınca) |
+| 23.2 | Production MVP dar | ~52-55h residual / ~60-70h provisional sprint / 2.5-3.5 hafta (M3 stale audit 2026-05-09 iter-3 absorb; backend code source-ready 7/9; gerçek pending T1.2 subscriber self-service erasure + T1.4 D43 + T1.6 abuse guards; credential RAID I6 + R2 legal gate açılınca) |
 | 23.3 | Production MVP geniş | 3 hafta |
 | 23.4-23.8 | v1 | +4-6 hafta |
 | 23.9 | Prod cutover | 1 hafta |
@@ -47,7 +47,7 @@ Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorun
 |---|---|---|---:|---|:---:|
 | **23.0** | Charter | docs | 1 hafta | — | 🟢 done (PR #362 + 5 follow-up commits + 2026-05-09 truth alignment) |
 | **23.1** | Kernel/Closed Beta | code | 3-4 hafta | 23.0 + Faz 22.1.1b III review | 🟡 partial (Codex `019e0bff` iter-1 absorb: service runtime LIVE prod, V8 partition + 3 channel adapters + OutboxPoller + RetryWorker + auth guards activated; **D29-NOTIFY-Functional 3-channel evidence still PENDING** per `docs/faz-23-evidence/2026-05-06-23-1-pr5-d29-notify.md`) |
-| **23.2** | Production MVP dar | code | ~50-60h residual / 2-3 hafta (M3 stale audit 2026-05-09 re-baseline) | 23.1 | 🟡 partial (Session 39 hardening: KVKK retention + Vault/ESO + Grafana 15-panel + 25 PrometheusRule + DLQ SLO 99.5% LIVE; **MVP-dar audit 2026-05-09: source-ready 7/9 + live-deployed 7/9 + acceptance-complete 1/9 — preference + erasure + provider rollback + classification source-ready/live, D29-Authorized BLOCKED on RAID I6 + R2 KVKK legal; gerçek pending T1.4 D43 outage fallback + T1.6 abuse guards**) |
+| **23.2** | Production MVP dar | code | ~52-55h residual / ~60-70h provisional sprint / 2.5-3.5 hafta (M3 stale audit 2026-05-09 iter-3 re-baseline) | 23.1 | 🟡 partial (Session 39 hardening: KVKK retention + Vault/ESO + Grafana 15-panel + 25 PrometheusRule + DLQ SLO 99.5% LIVE; **MVP-dar audit 2026-05-09: backend source-ready 7/9 + live-deployed 7/9 + acceptance-complete 1/9 — preference + admin erasure + provider rollback + classification source-ready/live, D29-Authorized BLOCKED on RAID I6 + R2 KVKK legal; gerçek pending T1.2 subscriber self-service `DELETE/GET /audit/me` + T1.4 D43 outage fallback + T1.6 abuse guards**) |
 | 23.3 | Production MVP geniş | code | 3 hafta | 23.2 | ⏳ pending (SMS NetGSM + in-app inbox API) |
 | **23.4** | v1 — DLR + in-app UI | code | 2 hafta | 23.3 | 🟡 partial (PR-5.x cycle in-app inbox + SSE LIVE + strict identity guards LIVE; **SMS DLR + archive UI + 30-day history pending**) |
 | 23.5 | v1 — preference UI | code | 1 hafta | 23.4 | ⏳ pending (FE preference settings page) |
@@ -167,7 +167,7 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 ## Faz 23.2 — Production MVP Dar
 
-**Tier**: Production MVP dar (~50-60h residual / 2-3 hafta — M3 stale audit 2026-05-09 re-baseline per `docs/notify/m3-stale-audit-2026-05-09.md`; backend code source-ready 7/9, gerçek pending T1.4 D43 + T1.6 abuse guards) — **🟡 partial (Codex `019e0c28` strategic finding)**
+**Tier**: Production MVP dar (~52-55h residual / ~60-70h provisional sprint / 2.5-3.5 hafta — M3 stale audit 2026-05-09 iter-3 re-baseline per `docs/notify/m3-stale-audit-2026-05-09.md`; backend code source-ready 7/9, gerçek pending T1.2 subscriber self-service erasure + T1.4 D43 + T1.6 abuse guards) — **🟡 partial (Codex `019e0c28` strategic finding)**
 
 **Acceptance breakdown** (Codex iter-1 absorb):
 - **Original MVP-dar 8 kabul kriteri: 2/8 done** (Grafana dashboard, Alertmanager DLQ rule)

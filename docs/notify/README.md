@@ -33,7 +33,7 @@ Bu dizin **Faz 23 notification orchestration** için canonical doküman setidir.
 | **RAID log** | [raid-log.md](raid-log.md) | Risk dışı **assumption + issue + dependency** ayrı boyut (10 + 5 + 10); Codex `019e0c28` F5 absorb |
 | **Checkpoint template** | [checkpoints/_TEMPLATE.md](checkpoints/_TEMPLATE.md) | Per-milestone immediate checkpoint pattern (weekly summary öncesi gate) — placeholder M1+M2: [2026-05-12-m1-m2-status.md](checkpoints/2026-05-12-m1-m2-status.md) |
 | **Test strategy** | [test-strategy.md](test-strategy.md) | Per sub-faz test coverage + 5 test types (unit/integration/E2E/manual/regression) + evidence |
-| **Sprint plan** | [sprint-plan.md](sprint-plan.md) | Task-level breakdown + estimation + ownership + Tier T1-T5 (~280h v1) |
+| **Sprint plan** | [sprint-plan.md](sprint-plan.md) | Task-level breakdown + estimation + ownership + Tier T1-T5 (~232-235h v1 residual; M3 stale audit 2026-05-09 re-baseline; ~280h historical baseline superseded) |
 | **Milestones** | [milestones.md](milestones.md) | M0-M9 + DoD checklist + critical path + slip detection |
 | **Dependency graph** | [dependency-graph.md](dependency-graph.md) | Task-level dependency + critical path + parallel tracks |
 | **Stakeholder plan** | [stakeholder-plan.md](stakeholder-plan.md) | Communication cadence + audience patterns + anti-patterns |

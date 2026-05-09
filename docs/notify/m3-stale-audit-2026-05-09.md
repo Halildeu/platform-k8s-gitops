@@ -144,16 +144,22 @@ Aramalar:
 
 **23.2 sub-faz marker**:
 - Şu an: `🟡 partial (Session 39 hardening 5/8 done; original acceptance 2/8 done)`
-- Re-baseline: `🟡 partial (Session 39 hardening 5/8 done; original acceptance source-ready 7/8 / live-deployed 7/8 / acceptance-complete 1/8 — D29-Authorized BLOCKED on RAID I6 + R2 KVKK legal)`
-- 23.2 duration `4-6 hafta / ~100h aggressive` → `~50-60h residual / 2-3 hafta credential+legal gate açılınca`
+- Re-baseline: `🟡 partial (Session 39 hardening 5/8 done; backend source-ready 7/9 / live-deployed 7/9 / acceptance-complete 1/9 — D29-Authorized BLOCKED on RAID I6 + R2 KVKK legal + T1.2 subscriber endpoint gerçek pending)`
+- 23.2 duration `4-6 hafta / ~100h aggressive` → `~52-55h residual / ~60-70h provisional sprint / 2.5-3.5 hafta (credential RAID I6 + R2 legal gate açılınca + T1.2 subscriber endpoint impl + T1.4 + T1.6 tamamlanırsa)`
 
 ### Sprint-Plan (sprint-plan.md)
 
 **T1 task status sweep**:
-- T1.1.1, T1.1.2, T1.1.3, T1.1.4, T1.1.5, T1.1.6, T1.1.7, T1.2.1, T1.2.2, T1.2.3, T1.2.6, T1.3.1, T1.5.1, T1.5.2, T1.5.3 → 🔴 → 🟡 (source-ready, acceptance pending)
-- T1.4 sub-tasks: 🔴 stays (gerçek pending)
-- T1.6 sub-tasks: 🔴 stays (gerçek pending)
-- "T1 ~100h" başlığı → "T1 ~50-60h residual" + actuals tracking note
+- T1.1.1, T1.1.2, T1.1.3, T1.1.4 → 🔴 → 🟢 source-ready/live (V1 schema + PreferenceController + service + send pipeline LIVE)
+- T1.1.5, T1.1.6, T1.1.7, T1.2.6, T1.5.3 → 🔴 → 🟡 partial (source-ready, acceptance gate)
+- T1.2.0 admin erasure → 🟢 source-ready/live (R2 legal review wait)
+- **T1.2.1, T1.2.2 subscriber self-service `DELETE/GET /audit/me` → 🔴 stays (gerçek pending — backend'de YOK; ~10h yeni impl)**
+- T1.2.3 append-only verify (V8 trigger) → 🟢 done
+- T1.3.1 → 🟢 source-ready/live; T1.3.2 → 🟡 partial
+- T1.5.1, T1.5.2 → 🟢 source-ready/live (V1 field + DataClassification enum)
+- T1.4 sub-tasks: 🔴 stays (gerçek pending; alertmanager-bridge backend code YOK)
+- T1.6 sub-tasks: 🔴 stays (gerçek pending; RateLimitGuard/AbuseGuard backend'de YOK)
+- "T1 ~100h" başlığı → "T1 ~52-55h residual / ~60-70h provisional sprint" + actuals tracking note
 
 ### Must-Have Checklist
 
