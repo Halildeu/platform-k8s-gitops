@@ -94,10 +94,10 @@ spec:
             periodSeconds: 30
           resources:
             requests:
-              cpu: 25m
+              cpu: 10m
               memory: 32Mi
             limits:
-              cpu: 100m
+              cpu: 25m
               memory: 128Mi
           securityContext:
             runAsNonRoot: true
