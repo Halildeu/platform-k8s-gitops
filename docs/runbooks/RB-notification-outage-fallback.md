@@ -92,6 +92,8 @@ Dual-channel:
 
 Bu drill için ESO ClusterSecretStore Ready=True olmalı. Mevcut incident: "invalid role or secret ID" 2-day drift.
 
+> **Detay runbook**: `docs/runbooks/RB-eso-vault-approle-rotate.md` — Vault AppRole rotation prosedürü, doğrulama, audit log + GitHub issue trail. Bu drill başlamadan önce o runbook adımları tamamlanmalı.
+
 ```bash
 # Vault root token ile (operator)
 ssh halil@staging-sw
