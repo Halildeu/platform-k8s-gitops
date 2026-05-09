@@ -33,6 +33,20 @@
 #   - Optional webhook fallback via DRIFT_ALARM_WEBHOOK env var
 #   - Retry with exponential backoff on 429/5xx
 #   - Capture gh stderr for actionable error messages
+#
+# Faz 23.2.D T1.4 PR-2 — D43 Outage Fallback Bypass (Codex 019e0dea iter-2):
+#   - Alertmanager direct fallback chain extension (cluster-internal `/api/v2/alerts`)
+#   - Trigger: ALARM_FALLBACK_ALERTMANAGER=1 + class=P1 + GH+webhook delivery fail
+#   - Stable labels (alertname/cluster/severity/outage_fallback/dedupe_key)
+#   - 4xx no-retry (auth/validation), 5xx/timeout retry exponential backoff
+#   - No-token-log guard (payload contains NO secret/token/credential)
+#   - Public Alertmanager exposure açılmaz; cluster-internal URL only
+#
+# Delivery chain (cascade order):
+#   1) GitHub Issues (default — orchestrator-route audit trail)
+#   2) DRIFT_ALARM_WEBHOOK generic webhook (GH 4xx/5xx/timeout sonrası)
+#   3) Alertmanager direct (P1 only + ALARM_FALLBACK_ALERTMANAGER=1; GH+webhook fail)
+#   4) Persistent undelivered log (all delivery paths failed)
 
 set -uo pipefail
 
@@ -43,6 +57,40 @@ REPO="${GITHUB_REPO:-Halildeu/platform-k8s-gitops}"
 UNDELIVERED_LOG="${ALARM_UNDELIVERED_LOG:-/var/log/platform-drift-alarm-undelivered.jsonl}"
 WEBHOOK_URL="${DRIFT_ALARM_WEBHOOK:-}"
 MAX_RETRIES=3
+
+# Faz 23.2.D T1.4 PR-2 — D43 Outage Fallback Bypass: Alertmanager direct fallback.
+#
+# Codex thread 019e0dea iter-2 absorb: notification-orchestrator down olduğunda
+# kritik drift alarm'larının Alertmanager üstünden direkt Slack/SMTP'ye gitmesi
+# için yeni fallback path. Mevcut webhook fallback (DRIFT_ALARM_WEBHOOK) generic;
+# Alertmanager native `/api/v2/alerts` payload format'ı için ayrı delivery path.
+#
+# Trigger sırası (Codex iter-2 absorb #2 fallback client trigger conditions):
+#   1) GitHub Issues delivery (mevcut, default — orchestrator-route audit trail)
+#   2) DRIFT_ALARM_WEBHOOK generic webhook (mevcut, GH 4xx/5xx/timeout sonrası)
+#   3) Alertmanager direct (YENİ, P1 critical class + ALARM_FALLBACK_ALERTMANAGER=1)
+#
+# URL: ALERTMANAGER_FALLBACK_URL default cluster-internal
+#   http://alertmanager.monitoring.svc.cluster.local:9093/api/v2/alerts
+#
+# Public Alertmanager exposure açılmaz (Codex iter-2 #7 absorb security).
+# Token/secret/credential payload'a YAZILMAZ (no-token-log guard).
+#
+# Stable labels (Alertmanager fingerprint stability — Codex iter-2 #7):
+#   alertname=DriftDetectionFallback
+#   cluster=<env>
+#   severity=<P1|P2>
+#   outage_fallback=true
+#   bypass_orchestrator=true
+#   dedupe_key=<sha256(env+kind+sig_msg first 60 char)>
+#
+# 4xx auth fail → no retry (immediate undelivered log + escalate).
+# 5xx/timeout/connection refused → retry MAX_RETRIES exponential backoff.
+#
+# Idempotency: dedupe_key stable across same finding; Alertmanager group_wait
+# kendi side'da dedupe yapar; agent burda explicit retry'da aynı key gönderir.
+ALERTMANAGER_FALLBACK_URL="${ALERTMANAGER_FALLBACK_URL:-http://alertmanager.monitoring.svc.cluster.local:9093/api/v2/alerts}"
+ALARM_FALLBACK_ALERTMANAGER="${ALARM_FALLBACK_ALERTMANAGER:-0}"
 
 # ------------------------------------------------------------
 # Pre-flight: gh auth + repo access
@@ -137,6 +185,94 @@ deliver_webhook() {
     2*) echo "  [webhook] delivered to $WEBHOOK_URL ($code)"; return 0 ;;
     *)  echo "  [webhook] FAILED ($code)"; return 1 ;;
   esac
+}
+
+# ------------------------------------------------------------
+# Faz 23.2.D T1.4 PR-2 — D43 Alertmanager direct fallback delivery.
+# Codex 019e0dea iter-2 absorb: cluster-internal Alertmanager `/api/v2/alerts`
+# POST; stable labels (alertname/cluster/severity/outage_fallback/dedupe_key);
+# 4xx no-retry (auth/validation), 5xx/timeout retry exponential backoff.
+# ------------------------------------------------------------
+deliver_alertmanager() {
+  local cls="$1"
+  local knd="$2"
+  local title="$3"
+  local msg="$4"
+
+  # Trigger gate: Codex iter-2 absorb — yalnız critical class + explicit toggle
+  if [[ "$ALARM_FALLBACK_ALERTMANAGER" != "1" ]]; then
+    return 1
+  fi
+
+  # Stable dedupe key — sha256 of env+kind+first 60 char message
+  local sig
+  sig=$(printf '%s|%s|%s' "$ENV" "$knd" "${msg:0:60}" | shasum -a 256 | awk '{print $1}')
+
+  # Compose Alertmanager v2 alerts payload
+  # [{labels:{...}, annotations:{...}, startsAt:..., generatorURL:...}]
+  local payload
+  payload=$(jq -nc \
+    --arg alertname "DriftDetectionFallback" \
+    --arg cluster "$ENV" \
+    --arg severity "$cls" \
+    --arg knd "$knd" \
+    --arg title "$title" \
+    --arg msg "$msg" \
+    --arg sig "$sig" \
+    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
+    --arg report "$REPORT" \
+    '[{
+      labels: {
+        alertname: $alertname,
+        cluster: $cluster,
+        severity: $severity,
+        kind: $knd,
+        outage_fallback: "true",
+        bypass_orchestrator: "true",
+        dedupe_key: $sig
+      },
+      annotations: {
+        summary: $title,
+        description: $msg,
+        report: $report
+      },
+      startsAt: $ts,
+      generatorURL: "https://github.com/Halildeu/platform-k8s-gitops"
+    }]')
+
+  # No-token-log guard — payload contains NO secret/token/credential
+  echo "  [alertmanager-fallback] POST $ALERTMANAGER_FALLBACK_URL (dedupe_key=${sig:0:12}...)"
+
+  # Retry with exponential backoff
+  local attempt=1
+  while [[ $attempt -le $MAX_RETRIES ]]; do
+    local code
+    code=$(curl -sf -o /dev/null -w '%{http_code}' --max-time 10 \
+      -X POST -H "Content-Type: application/json" \
+      -d "$payload" "$ALERTMANAGER_FALLBACK_URL" 2>/dev/null || echo "000")
+
+    case "$code" in
+      2*)
+        echo "  [alertmanager-fallback] delivered ($code)"
+        return 0
+        ;;
+      4*)
+        # No retry on auth/validation errors
+        echo "  [alertmanager-fallback] FAILED ($code) — non-transient (auth/validation), no retry"
+        return 1
+        ;;
+      *)
+        # 5xx/timeout/connection refused → retry
+        local backoff=$((2 ** attempt))
+        echo "  [alertmanager-fallback] attempt $attempt/$MAX_RETRIES failed ($code): sleeping ${backoff}s"
+        sleep "$backoff"
+        attempt=$((attempt + 1))
+        ;;
+    esac
+  done
+
+  echo "  [alertmanager-fallback] exhausted $MAX_RETRIES retries"
+  return 1
 }
 
 # ------------------------------------------------------------
@@ -284,9 +420,20 @@ Details: $details"; then
     fi
   fi
 
-  # Persistent undelivered log if both failed
+  # Faz 23.2.D T1.4 PR-2 — D43 Alertmanager direct fallback chain (Codex 019e0dea iter-2).
+  # GH + webhook fail edip class P1 ise Alertmanager `/api/v2/alerts` direct POST.
+  # Trigger: ALARM_FALLBACK_ALERTMANAGER=1 + cls=P1 + delivery_status="undelivered"
+  # Stable labels (alertname/cluster/severity/outage_fallback/dedupe_key) +
+  # cluster-internal URL only + no-token-log guard.
+  if [[ "$delivery_status" == "undelivered" ]] && [[ "$cls" == "P1" ]]; then
+    if deliver_alertmanager "$cls" "$knd" "$title" "$msg"; then
+      delivery_status="alertmanager"
+    fi
+  fi
+
+  # Persistent undelivered log if all delivery paths failed
   if [[ "$delivery_status" == "undelivered" ]]; then
-    log_undelivered "$cls" "$knd" "$title" "$body" "gh_failed_no_webhook"
+    log_undelivered "$cls" "$knd" "$title" "$body" "all_delivery_paths_failed"
     echo "  [UNDELIVERED] persisted to $UNDELIVERED_LOG"
   fi
 done
