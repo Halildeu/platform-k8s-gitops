@@ -90,6 +90,7 @@ spec:
               {{ $labels.namespace }} is unreachable for 2min. Check pod
               status + readiness probe + ESO secret population.
 
+
     - name: notification-orchestrator-warn
       interval: 30s
       rules:

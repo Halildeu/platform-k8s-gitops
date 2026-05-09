@@ -89,17 +89,17 @@ Aramalar:
 | T1.4.3 Alertmanager native fallback receiver | `helm-values/kube-prometheus-stack/values-test-d43-drill.yaml` (PR #457 MERGED self-contained config + secrets[] mount + with/else template) | 🟢 | 🔴 | helm upgrade drill window |
 | T1.4.4 Mailpit netpol monitoring SMTP | `kustomize/overlays/test/lab-deps/mailpit-netpol-from-monitoring.yaml` (PR #457 MERGED) | 🟢 | 🟡 | cluster apply |
 | T1.4.5 NotifyServiceDown stable labels | `kustomize/base/apps/notification-orchestrator/prometheusrule.yaml` (PR #457 iter-3 absorb bypass_orchestrator + outage_fallback) | 🟢 | 🟡 | cluster apply |
-| T1.4.6 Drift alarm-receiver fallback hook (script-only) | NOT FOUND in `scripts/drift-detection/alarm_receiver.sh` (PR-2 pending) | 🔴 | 🔴 | impl |
-| T1.4.7 Break-glass dual-channel | `scripts/operations/break-glass-token.sh` extension pending (PR-3) | 🔴 | 🔴 | impl |
-| T1.4.8 Runbook + drill + R9 evidence | TBD (PR-4) | 🔴 | 🔴 | drill window + R9 |
+| T1.4.6 Drift alarm-receiver fallback hook (script-only) | `scripts/drift-detection/alarm_receiver.sh` Alertmanager direct delivery extension (PR #462 MERGED) — parallel mode default + cascade order GH→webhook→Alertmanager + stable labels (severity=critical/warning convention) + sha256sum/shasum portability | 🟢 | 🟡 | drill execution |
+| T1.4.7 Break-glass dual-channel | `scripts/operations/break-glass-token.sh` extension (PR #463 MERGED) — orchestrator_reachable healthcheck (2xx/4xx/5xx ayrımı) + gh_failed flag + Alertmanager direct fallback + per-invocation dedupe (NOW+CTX+NS+SA+OPERATOR+REASON) + no-token-log HARD RULE + execution plane guard | 🟢 | 🟡 | drill execution |
+| T1.4.8 Runbook + drill + R9 evidence | `docs/runbooks/RB-notification-outage-fallback.md` rewrite (T1.4 PR-4) — 10-criteria closure prosedürü + execution plane (in-cluster runner OR host port-forward) + Vault AppRole drift resolve prereq + drill window helm upgrade override + post-recovery audit best-effort | 🟢 | 🔴 | drill execute (operator action) |
 
-**T1.4 Verdict (UPDATED 2026-05-09 18:56Z — PR #457 MERGED)**: **PR-1 source-ready** (Vault path + ESO + Alertmanager receiver + netpol + PrometheusRule labels). **Live-ready** Vault AppRole drift resolve sonrası ESO SecretSynced=True + helm drill upgrade. Codex thread `019e0dea` iter-1 PARTIAL → iter-2 AGREE-with-revisions → iter-3 PARTIAL → iter-4 AGREE/ready_to_merge=true (4 round absorb 8+4 bulgu). Gerçek residual ~10h (PR-2 alarm-receiver fallback ~2h + PR-3 break-glass ~3h + PR-4 runbook + drill + R9 evidence ~5h).
+**T1.4 Verdict (UPDATED 2026-05-09 19:30Z — PR #457 + #462 + #463 MERGED + PR #464 (PR-4 runbook) iter-3 review)**: **PR-1+PR-2+PR-3 source-ready/live-deployed; PR-4 source-ready candidate** (GitOps manifest + alarm-receiver fallback hook + break-glass dual-channel + runbook 10-criteria + NotifyServiceAbsent test-only overlay rule). **Live-ready** Vault AppRole drift resolve + drill execution sonrası R9 mitigated. Codex thread `019e0dea` iter chain: PR-1 4 round + PR-2 2 round + PR-3 2 round + PR-4 iter-1 PARTIAL → iter-2 absorb → iter-3 PARTIAL (3 absorb pending: NotifyServiceAbsent test-only overlay move, jq test() regex, drill side-effect explicit) — toplam ~22+ Codex iter T1.4 boyunca. Gerçek residual ~3-5h (drill execution + evidence collection — operator action gerekli; Vault drift dependency).
 
 Implementation order (Codex iter-2 absorb):
-1. PR-1 (MERGED 2026-05-09 18:56Z): GitOps + ESO + Alertmanager receiver + netpol — desired-state ✓
-2. PR-2 (pending): alarm-receiver fallback hook (script-only direct Alertmanager `/api/v2/alerts` POST; rate-limit; idempotency stable labels; cluster-internal only)
-3. PR-3 (pending): break-glass dual-channel (`scripts/operations/break-glass-token.sh` extension; no-token-log guard; `OUTAGE_FALLBACK_USED` audit best-effort post-recovery)
-4. PR-4 (pending): runbook + drill + R9 mitigated evidence (10-criteria closure)
+1. PR-1 (MERGED 2026-05-09 18:56Z #457): GitOps + ESO + Alertmanager receiver + netpol — desired-state ✓
+2. PR-2 (MERGED 2026-05-09 19:19Z #462): alarm-receiver fallback hook ✓
+3. PR-3 (MERGED 2026-05-09 19:23Z #463): break-glass dual-channel ✓
+4. PR-4 (#464 pending review): runbook rewrite + 10-criteria drill prosedürü + NotifyServiceAbsent test-only rule (Codex iter-1 P1 #2 absorb) (drill execution operator action — Vault AppRole drift resolve + helm drill upgrade + 10-criteria evidence collection)
 
 ### T1.5 — 23.2.E Data Classification
 
