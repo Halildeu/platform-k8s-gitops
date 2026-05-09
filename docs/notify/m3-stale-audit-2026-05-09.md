@@ -189,7 +189,7 @@ Aramalar:
 
 1. Bu PR (M3 stale audit) merge sonrası:
    - Charter sub-faz % re-baseline
-   - Sprint-plan T1 task status sweep + ~50-60h residual
+   - Sprint-plan T1 task status sweep + ~43-46h residual / ~50-60h provisional sprint
    - Must-have evidence/acceptance gate ayrımı
    - Feature-matrix marker sweep (5 kategori)
 2. M3 residual implementation:
