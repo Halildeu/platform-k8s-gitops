@@ -76,6 +76,13 @@ spec:
             severity: critical
             service: notification-orchestrator
             page: "true"
+            # Faz 23.2.D T1.4 D43 outage fallback labels (Codex 019e0dea iter-3 P2 #4):
+            # Alertmanager direct-fallback receiver routing match için stable labels.
+            # values-test-d43-drill.yaml ve gelecekteki prod direct-fallback config
+            # bu label set'i ile NotifyServiceDown alarmlarını fallback'e yönlendirir.
+            # window_ts label DEĞİL annotation'da (fingerprint stability).
+            bypass_orchestrator: "true"
+            outage_fallback: "true"
           annotations:
             summary: "Notify service down"
             description: |
