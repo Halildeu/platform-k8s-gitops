@@ -52,7 +52,7 @@ metadata:
   labels:
     app.kubernetes.io/name: webhook-receiver
     app.kubernetes.io/component: lab-dependency
-    app.kubernetes.io/part-of: notify-d29-evidence
+    app.kubernetes.io/part-of: platform
 spec:
   replicas: 1
   strategy:
@@ -65,6 +65,7 @@ spec:
       labels:
         app.kubernetes.io/name: webhook-receiver
         app.kubernetes.io/component: lab-dependency
+        app.kubernetes.io/part-of: platform
     spec:
       containers:
         - name: nginx
