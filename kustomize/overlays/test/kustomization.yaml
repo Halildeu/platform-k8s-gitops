@@ -1072,7 +1072,46 @@ images:
     #
     # Image build run: 25597354629 (success), testai digest
     # sha256:fe88bc8f3178be67096f8779f4c57b9c0e92474b3679625972e347a0ee324d27.
-    digest: sha256:fe88bc8f3178be67096f8779f4c57b9c0e92474b3679625972e347a0ee324d27
+    #
+    # 2026-05-09 update: sha-88bdbb7 — platform-web PR #337 (PR-FE-8
+    # user detail drawer auto-save, drop save/cancel buttons).
+    #
+    # Same UX consistency directive as PR-FE-7 ("kullanıcı deneyimi
+    # açısından tek davranış olmalı kaydet ve vazgeç olmyacak şekilde
+    # ilerleyelim") applied to UserDetailDrawer (mfe-users). All role
+    # / scope changes auto-save after a 500ms debounce. Footer hosts
+    # status indicator + retry button on failure. Save / Cancel +
+    # dirtyHint patterns removed.
+    #
+    # Hardening (Codex thread 019e0c12, two review iterations):
+    #   - Same state machine + refs + ownership guard pattern as
+    #     PR-FE-7 (RoleDrawer).
+    #   - Empty `roleIds` hard-block: scheduler entry, timer
+    #     callback, queue flush, and retry all refuse to POST a
+    #     draft with `roleIds: []` so the auto-save model cannot
+    #     wipe a user's effective access (legacy save button
+    #     enforced this via disable; we needed an explicit gate
+    #     once the button was gone).
+    #   - Error-state observer race: equality skip in
+    #     scheduleAutoSave now also excludes 'error' from the
+    #     auto-flip-to-saved branch so the "Kaydedilemedi" message
+    #     and retry button persist after a mock-fail until the
+    #     admin acts. NOTE: same bug exists in RoleDrawer (PR-FE-7);
+    #     a separate follow-up PR backports the one-line fix there.
+    #   - Effect S dependency tightened: `user?.id` instead of
+    #     `user` object reference, mirroring RoleDrawer's Effect A
+    #     same-id rerender hardening.
+    #   - userId type aligned with shared-types (`UserDetail['id']`
+    #     = string) at the autosave ref + mutation vars.
+    #
+    # Cross-AI peer review: Codex thread 019e0c12 — iter-1
+    # ready=false (4 blockers), iter-2 ready=true. mfe-users 53/53
+    # vitest PASS unchanged (51 prior + 2 updated to assert auto-
+    # save surface instead of legacy Save button).
+    #
+    # Image build run: 25598126582 (success), testai digest
+    # sha256:85145f5dc59ac13306c923bf3f9f4ec274186a9b900bc9419a4dbce6fa80bb42.
+    digest: sha256:85145f5dc59ac13306c923bf3f9f4ec274186a9b900bc9419a4dbce6fa80bb42
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
