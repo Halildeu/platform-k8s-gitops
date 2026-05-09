@@ -1,0 +1,7 @@
+# Alertmanager fallback ExternalSecret — Faz 23.2.D T1.4 D43 outage fallback.
+# Test cluster overlay; prod equivalent: kustomize/overlays/prod/eso/alertmanager/.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - externalsecret-alertmanager-fallback.yaml

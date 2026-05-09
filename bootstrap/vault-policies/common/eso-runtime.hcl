@@ -45,6 +45,30 @@ path "kv/data/platform/notification-orchestrator" {
   capabilities = ["read"]
 }
 
+# --- Faz 23.2.D T1.4 D43 outage fallback (Codex 019e0dea iter-2 AGREE-with-revisions) ---
+# notification-orchestrator down olduğunda Alertmanager bunu Slack/SMTP'ye direct
+# göndersin diye AYRI credential set. Orchestrator path'i ile aynı SMTP server, ama
+# AYRI SMTP user (alertmanager-fallback@) — bağımsız rotation. Orchestrator path
+# compromise olsa bile fallback kanalı sağ kalır (security defense-in-depth).
+#
+# 5 keys (operator init):
+#   SLACK_WEBHOOK_URL — Alertmanager direct slack receiver
+#   SMTP_HOST — fallback SMTP server (orchestrator ile aynı server)
+#   SMTP_PORT — 587 (orchestrator ile aynı)
+#   SMTP_USER — alertmanager-fallback@... (AYRI kullanıcı)
+#   SMTP_PASSWORD — fallback user'a ait şifre
+#
+# ESO ExternalSecret: kustomize/overlays/{test,prod}/eso/alertmanager/
+#   externalsecret-alertmanager-fallback.yaml
+# Mount: alertmanagerSpec.secrets[] → /etc/alertmanager/secrets/alertmanager-
+#   fallback-secrets/<key>
+#
+# Codex iter-2 absorb: ayrı `alertmanager-runtime` policy DEĞİL — eso-runtime
+# extend daha temiz (MVP). Ayrı AppRole/CSS gelecek SoD hardening (T1.4 scope dışı).
+path "kv/data/platform/alertmanager-fallback" {
+  capabilities = ["read"]
+}
+
 # --- OpenFGA Store + Model ID (D-008 runtime kontrat) ---
 path "kv/data/platform/openfga" {
   capabilities = ["read"]

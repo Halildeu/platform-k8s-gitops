@@ -11,6 +11,7 @@ kind: Kustomization
 resources:
   - mailpit.yaml
   - webhook-receiver.yaml
+  - mailpit-netpol-from-monitoring.yaml    # Faz 23.2.D T1.4 D43 drill (Codex 019e0dea iter-3 P1 #1)
 
 labels:
   - includeSelectors: false
