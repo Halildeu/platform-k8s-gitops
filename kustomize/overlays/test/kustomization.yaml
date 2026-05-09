@@ -2206,22 +2206,26 @@ patches:
         path: /spec/minAvailable
         value: 0
 
-  # Test ResourceQuota daralt: 3GiB/1vCPU (PLAN §2.4)
+  # Test ResourceQuota (2026-05-10: scale-to-zero deprecation sonrasi tum 12
+  # deploy + STS replicas=1 sürekli çalışıyor; rolling update surge için
+  # extra headroom gerek).
   - target:
       kind: ResourceQuota
       name: platform-quota
     patch: |-
-      # Test quota (Dilim 1+2+3 tamamında 8+ pod çalışır; k3d lokal için)
-      # 8 Spring Boot pod × 150m req × 750m limit + openfga + frontend
+      # Test quota — 12 Deployment + OpenFGA STS replicas=1 default
+      # (HARD RULE — Scale-to-Zero YASAK). Ortalama declared usage ~7350m
+      # limit (91% of 8000m); surge için 10000m yapildi (1000m headroom +
+      # largest pod 1000m surge için).
       - op: replace
         path: /spec/hard/requests.cpu
-        value: "4"
+        value: "5"
       - op: replace
         path: /spec/hard/requests.memory
-        value: 8Gi
+        value: 10Gi
       - op: replace
         path: /spec/hard/limits.cpu
-        value: "8"
+        value: "10"
       - op: replace
         path: /spec/hard/limits.memory
-        value: 16Gi
+        value: 20Gi
