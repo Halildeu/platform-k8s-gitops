@@ -10,6 +10,63 @@
 
 ---
 
+## Live Delta — Session 39 post-02:00 correction (2026-05-09 ~10:30 UTC+3) — FIRST CRON TICK CLEAN + LOCK SKIP ALERT FALSE-POSITIVE FIX
+
+**Mandate**: Codex `019e0b9f` strategic continuation A (C.2 prep) + B (dashboard extension) ladder. First cron tick observation gate fired 2026-05-09 02:00 UTC.
+
+### First 02:00 UTC cron tick evidence (clean dry-run)
+
+Per-pod evidence (post advisory-lock leader-follower split):
+
+- **Leader pod `notification-orchestrator-6857989f4-m77zh`**:
+  - `02:00:00.030 [dry-run] would CREATE partition audit_event_v2_2026_08 FOR VALUES FROM ('2026-08-01T00:00Z') TO ('2026-09-01T00:00Z')`
+  - `02:00:00.065 cycle: future_created=0 detached=0 dropped=0 dry_run=true`
+  - `notify_audit_retention_last_success_timestamp_seconds = 1.778292E9` (advanced)
+  - `notify_audit_retention_lock_skipped_total = 0`
+- **Follower pod `notification-orchestrator-6857989f4-pf8sd`**:
+  - `02:00:00.015 cycle skipped — advisory lock contention`
+  - `notify_audit_retention_last_success_timestamp_seconds = 0` (never won lock)
+  - `notify_audit_retention_lock_skipped_total = 1`
+
+**Critical C.2 evidence**: `detached=0 dropped=0` means **0 partitions older than retentionDays=90 exist**. First non-dry-run flip = **NO-OP for DETACH/DROP** (only future-month partition CREATE which is benign — currently audit_event_v2_2026_08 would be created at next 02:00 UTC tick).
+
+### NotifyAuditRetentionLockSkippedSustained alert false-positive (iter-2 absorb)
+
+iter-1 form `increase(...[26h]) > 0` interpreted ANY skip as failure. Multi-pod LEADER-FOLLOWER pattern legitimately produces 1 skip per non-leader per cron tick. Alert fired at ~02:30 UTC and stayed firing.
+
+iter-2 form: `unless`-pair-check with leader's gauge advance (`max_over_time` to handle pod restart memory reset):
+
+```
+sum by (namespace) (increase(lock_skipped[26h])) > 0
+unless on(namespace) (
+  (time() - max by (namespace) (max_over_time(last_success[26h]))) < 93600
+  and on(namespace)
+  max by (namespace) (max_over_time(last_success[26h])) > 0
+)
+```
+
+Codex `019e0ba9` iter-1 REVISE absorb — `max_over_time` wraps gauge to capture historical advance even after rollout-induced reset.
+
+### C.2 dry-run=false flip — readiness checklist (post evidence)
+
+| Gate | Status |
+|---|---|
+| §1 Bean activation | ✅ confirmed both pods |
+| §2 Leader gauge advance | ✅ 1.778292E9 (m77zh) |
+| §2 future_created=0 / detached=0 / dropped=0 | ✅ dry-run cycle proved |
+| §5 0 candidates older than 90 days | ✅ first flip = NO-OP |
+| Backend test gap (Codex 019e090d iter-1 P3) | ❌ BLOCKER |
+| §6 DB ownership check | 🟡 preflight script needs run with fixed container name |
+
+### Pre-flight script (`scripts/operations/notify-audit-retention-preflight.sh`)
+
+- Per-pod metric scrape (Codex 019e0ba9 iter-1 P1: explicit pod loop instead of round-robin `kubectl exec deploy/...`)
+- DB ownership check (Codex iter-1 P2: ownership-based privilege test, `TRIGGER` flag was misleading proxy)
+- Container name fix: `platform-pg-${ENV}` (NOT `platform-postgres-${ENV}`)
+- 7 sections + DECISION GATE checklist for C.2 PR evidence block
+
+---
+
 ## Live Delta — Session 39 (2026-05-08 ~20:00 UTC+3) — FAZ 23.6/23.7/23.8/23.9 OBSERVABILITY + KVKK + VAULT FULL CYCLE (7 PR LANDED)
 
 **Mandate**: kullanıcı 2026-05-08 oturum direktifi "tam yetki veriyorum sen yap" + "tam otonom yapalım sistem ile uyumlu şekilde" + Codex thread `019e0892` strategic retrospective priority A→D→B→C ladder. Cross-AI peer review HARD RULE (Code Claude → Codex review) her PR'da uygulandı; iter-1/2/3/4 absorb cycle her cycle'da çalıştı. Pre-prod tek-user context; multi-tenant Faz 21 = DEFER.

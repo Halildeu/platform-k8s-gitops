@@ -89,23 +89,46 @@ else
 fi
 
 # -----------------------------------------------------------------------
-# 2. Live retention metrics snapshot (actuator/prometheus)
+# 2. Live retention metrics snapshot (per-pod aware)
 # -----------------------------------------------------------------------
-section "2. Retention metrics snapshot"
+section "2. Retention metrics snapshot (per-pod — leader/follower disambiguation)"
 
-$KUBECTL exec deploy/notification-orchestrator -- wget -qO- localhost:8081/actuator/prometheus 2>/dev/null \
-  | grep -E "^notify_audit_retention_" \
-  | head -20 \
-  | tee -a "$LOG_FILE" || echo "WARN: actuator endpoint unreachable"
+# Codex 019e0ba9 iter-1 P1 absorb: `kubectl exec deploy/...` round-robins
+# across pods and produces non-deterministic leader vs follower. We need to
+# scrape EACH pod individually so the C.2 evidence block can prove which
+# pod was the leader (gauge>0, skip=0) and which was the follower (gauge=0,
+# skip=1) at first cron tick.
 
-echo
+PODS=$($KUBECTL get pods -l app.kubernetes.io/name=notification-orchestrator -o name 2>/dev/null \
+  | sed 's|pod/||' \
+  | head -10)
+
+if [[ -z "$PODS" ]]; then
+  echo "WARN: no pods found with selector app.kubernetes.io/name=notification-orchestrator"
+fi
+
+for POD in $PODS; do
+  echo "--- pod: $POD ---"
+  $KUBECTL exec "$POD" -- wget -qO- localhost:8081/actuator/prometheus 2>/dev/null \
+    | grep -E "^notify_audit_retention_" \
+    | tee -a "$LOG_FILE" || echo "WARN: actuator unreachable on $POD"
+  echo
+done
+
 echo "Interpretation:"
 echo "  notify_audit_retention_last_success_timestamp_seconds:"
-echo "    0      = bean activated but cron never ticked (NeverSucceeded; expected pre-first-tick)"
-echo "    > 0    = healthy if (time() - gauge) < 26h"
+echo "    0      = bean activated but this pod never won the advisory lock"
+echo "    > 0    = leader pod; healthy if (time() - gauge) < 26h"
+echo "  notify_audit_retention_lock_skipped_total:"
+echo "    0      = leader pod (won the lock that cron tick)"
+echo "    > 0    = follower pod, expected baseline = 1 per cron tick per non-leader pod"
 echo "  notify_audit_retention_partitions_detached_total:"
 echo "    must be 0 while DRY_RUN=true (any non-zero = bug — investigate)"
 echo "  notify_audit_retention_errors_total{phase=...}: any non-zero needs triage"
+echo
+echo "Multi-pod expected pattern (2 replicas + daily cron):"
+echo "  Exactly 1 pod has gauge>0 + skip=0 (leader)"
+echo "  Other(s) have gauge=0 + skip=1 (follower) — does NOT indicate failure"
 
 # -----------------------------------------------------------------------
 # 3. audit_retention_log table state
@@ -129,8 +152,11 @@ fi
 # We use psql via the postgres docker container (staging-sw host pattern).
 # Read-only queries — SELECT only.
 psql_select() {
+  # Codex 019e0ba9 iter-1 P2 absorb: container name is `platform-pg-${ENV}`,
+  # NOT `platform-postgres-${ENV}` (verified via `docker ps --format
+  # '{{.Names}}\t{{.Image}}' | grep -i postgres` on staging-sw).
   if [[ "$PG_AVAILABLE" == "1" ]]; then
-    $DOCKER_EXEC docker exec platform-postgres-${ENV} psql -U platform -d notify_db -c "$1" 2>&1 || true
+    $DOCKER_EXEC docker exec platform-pg-${ENV} psql -U platform -d notify_db -c "$1" 2>&1 || true
   else
     echo "(psql skipped — DB_URL unavailable)"
   fi
@@ -198,18 +224,45 @@ echo "  Empty CANDIDATE list = no-op flip (zero risk)"
 echo "  Default partition (audit_event_v2_default) NEVER detached (catches mis-routed inserts)"
 
 # -----------------------------------------------------------------------
-# 6. DB privilege verification
+# 6. DB privilege verification (Codex 019e0ba9 iter-1 P2 absorb)
 # -----------------------------------------------------------------------
-section "6. DB privilege check (DETACH/DROP capability for retention role)"
+section "6. DB privilege check (DETACH/DROP capability)"
 
-# AuditPartitionRetentionService uses the connection pool (SPRING_DATASOURCE_USERNAME).
-# Check if it has ALTER + DROP privileges on notify schema.
+# AuditPartitionRetentionService runs ALTER TABLE ... DETACH PARTITION
+# and DROP TABLE on partition children. PostgreSQL's authoritative signal
+# for these operations is OWNERSHIP — not has_table_privilege() flags.
+# Codex iter-1 P2 absorb: `TRIGGER` privilege is misleading; check ownership
+# of the audit_event_v2 root table + child partitions, plus schema CREATE.
 
 psql_select "SELECT
-  has_table_privilege(current_user, 'notify.audit_event_v2', 'TRIGGER') AS can_alter_audit_root,
-  has_schema_privilege(current_user, 'notify', 'CREATE') AS can_create_in_schema,
   current_user AS role_in_use,
-  session_user AS session_role;"
+  session_user AS session_role,
+  has_schema_privilege(current_user, 'notify', 'CREATE') AS can_create_in_schema,
+  pg_get_userbyid(c.relowner) AS audit_root_owner,
+  current_user = pg_get_userbyid(c.relowner) AS user_owns_audit_root,
+  has_table_privilege(current_user, 'notify.audit_event_v2', 'TRIGGER') AS legacy_trigger_check
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'notify' AND c.relname = 'audit_event_v2';"
+
+echo
+psql_select "SELECT
+  c.relname AS partition_name,
+  pg_get_userbyid(c.relowner) AS partition_owner,
+  current_user = pg_get_userbyid(c.relowner) AS user_owns_partition
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'notify'
+  AND c.relname ~ '^audit_event_v2_(\d{4}_\d{2}|default)$'
+ORDER BY c.relname;"
+
+echo
+echo "Interpretation:"
+echo "  user_owns_audit_root=t = current_user can ALTER ... DETACH on root table"
+echo "  user_owns_partition=t = current_user can DROP child partition table"
+echo "  Both must be true for non-dry-run retention to succeed."
+echo "  legacy_trigger_check is shown for backward compatibility comparison;"
+echo "  it does NOT prove DETACH/DROP capability."
 
 # -----------------------------------------------------------------------
 # 7. Prometheus alert state (NeverSucceeded + Stale + Errors)

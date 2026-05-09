@@ -443,9 +443,15 @@ spec:
             sum by (namespace) (increase(notify_audit_retention_lock_skipped_total[26h])) > 0
             unless on(namespace)
             (
-              (time() - max by (namespace) (notify_audit_retention_last_success_timestamp_seconds)) < 93600
+              (
+                time() - max by (namespace) (
+                  max_over_time(notify_audit_retention_last_success_timestamp_seconds[26h])
+                )
+              ) < 93600
               and on(namespace)
-              max by (namespace) (notify_audit_retention_last_success_timestamp_seconds) > 0
+              max by (namespace) (
+                max_over_time(notify_audit_retention_last_success_timestamp_seconds[26h])
+              ) > 0
             )
           for: 30m
           labels:
