@@ -50,7 +50,14 @@ spec:
           - CreateNamespace=true
           - ServerSideApply=true
       ignoreDifferences:
+        # 2026-05-10: D17 test scale-to-zero DEPRECATED.
+        # HARD RULE — TEST Cluster Scale-to-Zero YASAK; test için /spec/replicas
+        # drift ignore'u kaldırıldı (self-heal scale=0 manuel drift'i 1'e çeker).
+        # PROD için D21 HPA drift toleransı korunur — ApplicationSet ortak template
+        # olduğu için bu ignore prod scope'unda mantıklı; test için zarar vermez
+        # çünkü bu PR'la birlikte test overlay artık replicas=1 default + manuel
+        # scale=0 yasak. PROD HPA min/max davranışı bu ignore'la korunur.
         - group: apps
           kind: Deployment
           jsonPointers:
-            - /spec/replicas       # HPA veya manuel scale drift (D21 prod) / D17 test scale-to-zero
+            - /spec/replicas       # PROD HPA drift toleransı (D21); test scale=0 yasak (HARD RULE)
