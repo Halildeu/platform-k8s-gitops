@@ -317,7 +317,7 @@
 | Tier | Özellik sayısı | Süre |
 |---|---:|---|
 | **Kernel/Closed Beta** | 33 | 3-4 hafta |
-| **Production MVP dar** | 27 | ~52-55h residual / 2.5-3.5 hafta provisional (M3 stale audit 2026-05-09 re-baseline; önceki 4-6 hafta / ~100h pessimistic; backend source-ready 7/9 + gerçek pending T1.2 subscriber + T1.4 D43 + T1.6 abuse) |
+| **Production MVP dar** | 27 | ~17-22h residual / 1-1.5 hafta provisional (Session 41 re-baseline 2026-05-09 19:50Z post T1.6 LIVE + T1.4 4-PR source-ready; önceki 4-6 hafta / ~100h pessimistic; backend source-ready 12/12 + live-deployed 9/12 + acceptance 0/12; drill execution + acceptance gate operator action) |
 | **Production MVP geniş** | 4 | 3 hafta |
 | **v1** | ~55 | +4-6 hafta |
 | **v2** | ~13 | +8-12 hafta |

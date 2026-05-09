@@ -61,7 +61,7 @@ Bu dizin **Faz 23 notification orchestration** için canonical doküman setidir.
 ### Sub-Faz Status
 - 🟢 **23.0** Charter (done)
 - 🟡 **23.1** Kernel partial (D29-Functional evidence pending)
-- 🟡 **23.2** MVP-dar partial (Session 39 hardening 5/8 LIVE; M3 stale audit 2026-05-09 — backend source-ready 7/9: preference + admin erasure + provider rollback partial + classification; gerçek pending T1.2 subscriber self-service erasure + T1.4 D43 outage fallback + T1.6 abuse guards ~52-55h residual)
+- 🟡 **23.2** MVP-dar partial (Session 39 hardening 5/8 LIVE; Session 41 re-baseline 2026-05-09 19:50Z — backend source-ready 12/12 + live-deployed 9/12 + acceptance 0/12 + blocked 2/12; T1.6 abuse guards LIVE + T1.4 D43 4-PR source-ready; ~17-22h residual; drill execution + acceptance gate operator action; R13 + R19 mitigated)
 - ⏳ **23.3** SMS NetGSM (pending)
 - 🟡 **23.4** v1 DLR + In-app UI partial (UI LIVE; SMS DLR pending)
 - ⏳ **23.5** Preference UI (pending)
