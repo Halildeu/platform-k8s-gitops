@@ -1,7 +1,8 @@
-# auth-service HPA — 2026-05-10
-# Pre-prod tek user için min=1; yük artarsa max=3'e otomatik scale.
-# D21 "sabit 2 replica" baseline DEPRECATED; HPA dinamik cevap verir.
+# auth-service HPA — 2026-05-10 (PR-471 HPA foundation, behavior-neutral)
+# minReplicas=2 (current behavior preserved); maxReplicas=3 yük artısında.
 # Trigger: CPU 70% utilization veya Memory 80% utilization.
+# NOT: PR-471b sonrası metrics-server smoke kanıtı + selected services
+# için min=1 indirme yapılacak (cost optimization phase).
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
