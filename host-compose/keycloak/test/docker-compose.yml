@@ -12,7 +12,24 @@ services:
     # ADR-0002 §5.1: test default scale-to-zero (profiles: [manual] enforce)
     profiles: ["manual"]
     restart: "no"
-    command: ["start", "--optimized"]
+    # Not: --optimized flag'i KALDIRILDI cunku KC_FEATURES degistiginde
+    # augmentation cache mismatch fail-fast yapiyor. "start" auto-build yapar
+    # her startup'ta (~10s startup penalty, test icin kabul).
+    #
+    # Entrypoint wrapper: KC 26 _FILE suffix env'leri auto-resolve etmiyor (live
+    # kanit: 2026-05-09 spike-2 restart). Wrapper KC_DB_PASSWORD_FILE ve
+    # KEYCLOAK_ADMIN_PASSWORD_FILE icindeki dosyalari okuyup literal env'e
+    # cevirir, ardindan kc.sh'a exec eder. Secret YAML'a sizmaz; docker secrets
+    # mount ile gelir, sadece env'e propagation yapilir.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        [ -n "$$KC_DB_PASSWORD_FILE" ] && [ -f "$$KC_DB_PASSWORD_FILE" ] && export KC_DB_PASSWORD="$$(cat $$KC_DB_PASSWORD_FILE)"
+        [ -n "$$KEYCLOAK_ADMIN_PASSWORD_FILE" ] && [ -f "$$KEYCLOAK_ADMIN_PASSWORD_FILE" ] && export KEYCLOAK_ADMIN_PASSWORD="$$(cat $$KEYCLOAK_ADMIN_PASSWORD_FILE)"
+        exec /opt/keycloak/bin/kc.sh "$$@"
+      - --
+    command: ["start"]
     environment:
       KC_DB: postgres
       KC_DB_URL_HOST: platform-pg-test
@@ -28,7 +45,11 @@ services:
       KC_PROXY: edge
       KC_METRICS_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
-      KC_FEATURES: "token-exchange,admin-fine-grained-authz"
+      # User Impersonation v1 (PR-A spike-2): authorization feature gerekli
+      # — fine-grained authz REST endpoint client management/permissions için.
+      # admin-fine-grained-authz:v1 explicit (KC 26 default v2; v1 endpoint shape
+      # broker token-exchange policy attach script'i için lazım).
+      KC_FEATURES: "token-exchange,admin-fine-grained-authz:v1,authorization"
       JAVA_OPTS: "-Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=100"   # Test daha dar
     ports:
       - "127.0.0.1:8082:8080"
