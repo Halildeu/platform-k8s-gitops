@@ -35,6 +35,9 @@ options:
         nodeFilters: [server:*]
       - arg: "--disable=servicelb"
         nodeFilters: [server:*]
+      # 2026-05-10 (Codex iter-22 absorb): k3s built-in metrics-server
+      # KAPALI — GitOps declarative install (kustomize/base/metrics-server +
+      # ArgoCD metrics-server-test Application). Tek kaynak, GitOps tarafı.
       - arg: "--disable=metrics-server"
         nodeFilters: [server:*]
       - arg: "--flannel-backend=none"

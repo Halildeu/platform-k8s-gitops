@@ -1,0 +1,35 @@
+# metrics-server (kubernetes-sigs upstream v0.8.1)
+#
+# Source: https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+# Snapshotted: 2026-05-10
+#
+# Pre-prod kurulum runbook'tan declarative GitOps'a taşıma. Live install
+# 2026-05-10 22:55 TRT yapıldı (kubectl apply + --kubelet-insecure-tls
+# patch); bu manifest aynı state'i declarative tutar (HPA bağımlılığı
+# için PR #471 + PR #472 sonrası gerekli).
+#
+# k3d için TLS verify skip (--kubelet-insecure-tls) zorunlu —
+# kubelet self-signed cert kullanır; metrics-server validate'e takılır.
+# Production-grade ortamda kubelet'in cert chain'i metrics-server CA bundle'ına
+# eklenmeli; k3d/kind/minikube için skip kabul edilebilir.
+#
+# HPA bağımlılığı: metrics.k8s.io aggregated API; HPA Resource type cpu/memory
+# metric'lerini bu API'den okur. Aksi halde HPA "ScalingActive=False / failed
+# to get resource metric" durumuna düşer (Codex iter-16 P0 yakaladı).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - upstream-components.yaml
+
+patches:
+  # k3d --kubelet-insecure-tls patch: kubelet self-signed cert validate'e
+  # takılır; production-grade ortamda kubelet CA bundle eklenmeli.
+  - target:
+      kind: Deployment
+      name: metrics-server
+      namespace: kube-system
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--kubelet-insecure-tls"
