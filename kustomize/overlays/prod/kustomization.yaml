@@ -314,19 +314,28 @@ patches:
       # priority 3, KVKK Art.7 compliance — saklama süresi sınırlandırma).
       # AuditPartitionRetentionService is @ConditionalOnProperty
       # (notify.audit.retention-enabled=true); base default is false.
-      # Activated here with retention-dry-run=true initial cycle so the
-      # 02:00 UTC cron-driven daily tick logs intent without DETACH/DROP
-      # for one observation window. Once
-      # `notify_audit_retention_last_success_timestamp_seconds` advances
-      # in Prometheus and audit log shows the partition list is sane,
-      # follow-up PR flips dry-run=false. retention-days=90 inherited
-      # from base configmap (KVKK default).
+      # Activated 2026-05-08 with retention-dry-run=true initial cycle.
+      # First 02:00 UTC tick (2026-05-09) ran clean: leader pod m77zh
+      # logged `cycle: future_created=0 detached=0 dropped=0 dry_run=true`
+      # + `[dry-run] would CREATE partition audit_event_v2_2026_08`. NO
+      # `[dry-run] would DETACH ...` log lines = no eligible candidates
+      # for first non-dry-run flip (= NO-OP for DETACH/DROP).
+      #
+      # Step C.2 dry-run=false flip (Codex `019e0b9f` strategic continuation
+      # + `019e0bb6` peer review chain): retention-dry-run flipped to false
+      # so the next 02:00 UTC tick actually executes the
+      # CREATE/DETACH/DROP code paths. Backend test gap closed by
+      # platform-backend AuditPartitionRetentionDetachDropTest (PR #130);
+      # alert observability hardened by gitops PR #435 (LockSkipped multi-
+      # pod aware, preflight script schema-aligned, current-state truth
+      # delta); SLO visualization extended by PR #436 (panels 13-15).
+      # retention-days=90 inherited from base configmap (KVKK default).
       - op: add
         path: /data/NOTIFY_AUDIT_RETENTION_ENABLED
         value: "true"
       - op: add
         path: /data/NOTIFY_AUDIT_RETENTION_DRY_RUN
-        value: "true"
+        value: "false"
 
   # Faz 23.9 prod cutover — notification-orchestrator pod-template
   # annotation rollout trigger + replicas override. ConfigMap envFrom
@@ -350,7 +359,7 @@ patches:
           # reads at pod start → annotation bump forces rolling restart so
           # AuditPartitionRetentionService bean gets instantiated under
           # the new NOTIFY_AUDIT_RETENTION_ENABLED=true config.
-          compliance.acik.com/audit-retention-dry-run: "pr-c-1-2026-05-08"
+          compliance.acik.com/audit-retention-cycle: "pr-c-2-flip-2026-05-09"
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:

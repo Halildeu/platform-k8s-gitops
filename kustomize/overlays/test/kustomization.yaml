@@ -1807,15 +1807,19 @@ patches:
       # Activated here with retention-dry-run=true initial cycle so the
       # 02:00 UTC cron-driven daily tick logs intent without DETACH/DROP
       # for one observation window in test. Once
-      # `notify_audit_retention_last_success_timestamp_seconds` advances
-      # and audit log shows partition list is sane, follow-up PR flips
-      # dry-run=false. retention-days=90 inherited from base configmap.
+      # First cron tick observation done; flipping to dry-run=false in
+      # Step C.2 (Codex `019e0b9f` strategic continuation + `019e0bb6`
+      # peer review chain). Backend test gap closed by platform-backend
+      # AuditPartitionRetentionDetachDropTest (PR #130). Test cluster
+      # has no Prometheus operator so prod tick evidence (per-pod log)
+      # is the authoritative observation gate; test cluster will exercise
+      # the same code path on its own cron schedule.
       - op: add
         path: /data/NOTIFY_AUDIT_RETENTION_ENABLED
         value: "true"
       - op: add
         path: /data/NOTIFY_AUDIT_RETENTION_DRY_RUN
-        value: "true"
+        value: "false"
 
   # Faz 23.2 PR-D.2 — pod-template annotation rollout trigger (Codex Q4 absorb).
   # ConfigMap envFrom değişmesi pod restart tetiklemez; annotation bump rolling
@@ -1841,7 +1845,7 @@ patches:
           # start → annotation bump forces rolling restart so
           # AuditPartitionRetentionService bean gets instantiated under
           # NOTIFY_AUDIT_RETENTION_ENABLED=true.
-          compliance.acik.com/audit-retention-dry-run: "pr-c-1-2026-05-08"
+          compliance.acik.com/audit-retention-cycle: "pr-c-2-flip-2026-05-09"
 
   # Faz 23.4 PR-E.4 absorb (revert PR-E.3 HPA min=max=1 lock):
   # Backend PR Halildeu/platform-backend#89 lands cross-pod broadcast via PG
