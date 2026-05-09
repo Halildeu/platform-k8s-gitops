@@ -25,6 +25,20 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 ---
 
+## Actuals Tracking (Codex `019e0c28` F5 Absorb)
+
+> **Discipline**: Estimation alanları (`Est (h)`) **plan-time** rakamlarıdır; gerçekleşen efor (`Actual (h)`) task closure sırasında doldurulur. Her milestone closure'da actuals review + velocity adjustment + sprint-plan re-baseline.
+
+**Format addition**: Tier task tablolarındaki `Est (h)` kolonu yanına `Actual (h)` ve `Variance` (Actual - Est) kolonları eklenecek (per-task closure'da inline güncellenir).
+
+**Velocity audit cadence**:
+- Per-milestone closure (M1, M2, M3, ...): tüm closed task actuals → velocity gerçekleşen ratio → sonraki tier estimation revize
+- Confidence: low → medium → high progression sprint cycle'larında
+
+**Şu an**: Faz 23.0..23.9 done iddiası ~270h baseline; **actual measurement başlamadı** (Codex iter-2 verdict "historical investment proxy, low confidence"). M1+M2 closure ile actual tracking başlar; M3 closure'da T1 99.5h estimate vs gerçekleşen ratio belirlenir.
+
+---
+
 ## Tier 1: 23.2 Production MVP Dar Closure (4-6 weeks, ~100h aggressive target)
 
 > **Effort note (Codex iter-2 absorb 2026-05-09)**: T1 toplam = T1.1 27h + T1.2 17h + T1.3 13h + T1.4 15.5h + T1.5 12h + T1.6 15h ≈ **99.5h ~100h aggressive target**. Önceki "80h" başlığı R2 KVKK legal review beklemesini saymıyordu — iter-2 tek-sayı sweep ile T1 bottleneck = ~100h olarak sabitlenmiştir; M3 target 2026-06-08 "aggressive" etiketiyle.
