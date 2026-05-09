@@ -260,12 +260,25 @@ kubectl --context k3d-test -n platform-test scale deploy/notification-orchestrat
 # Wait for=2m (NotifyServiceDown VEYA NotifyServiceAbsent alert fire)
 sleep 130
 
-# Verify alert fired (her iki rule yakalar)
+# Verify alert fired (her iki rule yakalar; jq test() regex match — Codex iter-3 P1 #2 fix)
 curl -s http://127.0.0.1:9093/api/v2/alerts | \
-  jq '.[] | select(.labels.alertname=~"NotifyServiceDown|NotifyServiceAbsent") | {alertname: .labels.alertname, status: .status.state, labels: .labels}'
+  jq '.[] | select(.labels.alertname | test("^(NotifyServiceDown|NotifyServiceAbsent)$")) | {alertname: .labels.alertname, status: .status.state, labels: .labels}'
 # Expected: en az 1 alert active
 #   labels include bypass_orchestrator=true, outage_fallback=true
 ```
+
+#### Drill side-effect uyarısı (Codex iter-3 P2 #3 absorb)
+
+> **Önemli**: Step 5.3 ve Step 5.4 gerçek audit side-effect üretir:
+> - alarm-receiver: GitHub auth varsa drill için gerçek GitHub issue/comment
+>   açabilir (drill etiketiyle ayırt edilir)
+> - break-glass: gerçek TTL token üretir + GitHub issue + audit log entry
+>   (drill mutation yapılmasa bile token issuance event'i kayda girer)
+>
+> **Drill cleanup**:
+> - Token kullanılmaz; geçici kubeconfig silinir (`rm -f /tmp/kubeconfig-break-glass-*`)
+> - Drill GitHub issue'ları ya evidence olarak bırakılır ya da drill sonrası kapatılır
+> - Local audit log entry drill etiketiyle (REASON içinde "D43 drill" prefix) ayırt edilir
 
 #### 5.3 alarm-receiver fallback hook execute (PR-2 source kanıtı)
 

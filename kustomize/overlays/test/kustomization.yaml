@@ -28,6 +28,8 @@ resources:
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
   # Faz 23.2 PR-D.2 — Tempo OTLP egress (notification-orchestrator → monitoring/tempo)
   - netpol-notification-tempo.yaml
+  # Faz 23.2.D T1.4 PR-4 — D43 drill test-only NotifyServiceAbsent rule (Codex 019e0dea iter-3 P1 #1)
+  - notify-prometheusrule-absent.yaml
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)
