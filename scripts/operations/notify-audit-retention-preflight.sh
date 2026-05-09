@@ -220,7 +220,9 @@ ORDER BY partition_month NULLS LAST;"
 echo
 echo "Interpretation:"
 echo "  retention_decision='CANDIDATE' = first non-dry-run cron tick will DETACH this partition"
-echo "  Empty CANDIDATE list = no-op flip (zero risk)"
+echo "  Empty CANDIDATE list = no DETACH/DROP candidate for first flip"
+echo "    (NOT 'zero risk' — destructive DB operation discipline still applies"
+echo "     per Codex 019e0b9f; cf. backend test gap fix prerequisite)"
 echo "  Default partition (audit_event_v2_default) NEVER detached (catches mis-routed inserts)"
 
 # -----------------------------------------------------------------------
@@ -324,24 +326,38 @@ Before opening C.2 PR (dry-run=false) verify ALL of:
 [ ] §1: Bean activation log shows `AuditPartitionRetentionService activated:
         retentionDays=90 cron=0 0 2 * * * graceHours=24 dryRun=true ...`
 [ ] §2: notify_audit_retention_last_success_timestamp_seconds advanced to > 0
-        (post first 02:00 UTC cron tick)
+        on the LEADER pod (post first 02:00 UTC cron tick); per-pod
+        disambiguation in §2 above
 [ ] §2: notify_audit_retention_partitions_detached_total = 0 in dry-run cycle
-        (any non-zero value while DRY_RUN=true is a BUG)
+        (note: dry-run intentionally short-circuits before incrementing,
+         so this is non-authoritative — see §5 for real candidate proof)
 [ ] §2: notify_audit_retention_errors_total = 0 across all phases
 [ ] §3: audit_retention_log: empty OR only contains expected dry-run history
 [ ] §4: Partition inventory: every row has known partition_name + non-zero row count
-[ ] §5: CANDIDATE set is reviewed + acceptable (e.g., 0 candidates = no-op flip,
-        or N candidates with explicit operator approval for what gets dropped)
-[ ] §6: DB role has TRIGGER (ALTER) privilege on audit_event_v2 root +
-        CREATE on notify schema
-[ ] §7: NotifyAuditRetentionStale + Errors alerts inactive (healthy)
+[ ] §5: CANDIDATE set (partitions older than retentionDays=90) is reviewed +
+        acceptable (e.g., 0 candidates = no DETACH/DROP candidate for first
+        flip; OR N candidates with explicit operator approval for what gets
+        dropped). Authoritative source for "0 candidates" — log absence of
+        `[dry-run] would DETACH ...` lines + partition inventory query.
+[ ] §6: DB role OWNS audit_event_v2 root table + child partitions
+        (Codex 019e0ba9 iter-1 P2 absorb: ownership is authoritative,
+         not the legacy TRIGGER privilege check). user_owns_audit_root=t
+         AND user_owns_partition=t for every candidate partition.
+[ ] §6: schema CREATE privilege for new monthly partition creation
+[ ] §7: NotifyAuditRetentionStale + Errors + LockSkippedSustained alerts
+        inactive (healthy); LockSkippedSustained iter-2 form distinguishes
+        expected multi-pod skip from stuck-leader
 
-Backend test gap (Codex 019e090d iter-1 P3 BLOCKER):
-[ ] platform-backend AuditPartitionV8IntegrationTest exercises DETACH/DROP
-    code path with disposable partition (NOT retention-days=36500 sentinel)
+Backend test gap (Codex 019e090d iter-1 P3 → 019e0ba9 P3 BLOCKER):
+[ ] platform-backend has dedicated `AuditPartitionRetentionDetachDropTest`
+    class (separate from AuditPartitionV8IntegrationTest) with 4 methods
+    covering DETACH/DROP/cutoff/idempotency on disposable partition,
+    Testcontainers PG run 4/4 PASS in CI
 
 If ANY box unchecked → DO NOT flip dry-run=false.
 If all boxes checked → C.2 PR with this evidence block referenced.
+Reminder: pre-prod tek-user context reduces blast radius but does NOT
+remove destructive-DB-operation discipline (Codex 019e0b9f).
 EOF
 
 echo

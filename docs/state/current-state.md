@@ -28,7 +28,7 @@ Per-pod evidence (post advisory-lock leader-follower split):
   - `notify_audit_retention_last_success_timestamp_seconds = 0` (never won lock)
   - `notify_audit_retention_lock_skipped_total = 1`
 
-**Critical C.2 evidence**: `detached=0 dropped=0` means **0 partitions older than retentionDays=90 exist**. First non-dry-run flip = **NO-OP for DETACH/DROP** (only future-month partition CREATE which is benign — currently audit_event_v2_2026_08 would be created at next 02:00 UTC tick).
+**C.2 evidence (Codex 019e0bb6 absorb — claim corrected)**: dry-run cycle ran cleanly with `future_created=0 detached=0 dropped=0 dry_run=true`. The `detached=0`/`dropped=0` counters in dry-run mode do NOT prove "0 candidates" — they would be 0 regardless because `[dry-run] would DETACH/DROP` short-circuits before incrementing. Authoritative "0 candidate" evidence requires (a) partition inventory query (preflight script §4-5) showing no partition with range_end < (now - 90d), or (b) absence of `[dry-run] would DETACH ...` log lines in the cycle output. Live log shows only `[dry-run] would CREATE partition audit_event_v2_2026_08` — no `would DETACH` lines, confirming no eligible candidates. First non-dry-run flip = **NO DETACH/DROP candidate** for first cycle (future-month CREATE only).
 
 ### NotifyAuditRetentionLockSkippedSustained alert false-positive (iter-2 absorb)
 
