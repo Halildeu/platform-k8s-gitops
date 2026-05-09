@@ -38,6 +38,35 @@ AUDIT_LOG="${BREAK_GLASS_AUDIT_LOG:-/var/log/break-glass-audit.log}"
 GH_REPO="${GITHUB_REPO:-Halildeu/platform-k8s-gitops}"
 KUBECONFIG_OUT="/tmp/kubeconfig-break-glass-$$"
 
+# Faz 23.2.D T1.4 PR-3 — D43 Outage Fallback Bypass (Codex 019e0dea iter-2 + iter-3 absorb).
+#
+# Dual-channel break-glass audit:
+#   Primary path: GitHub Issues + local audit log (mevcut, governance trail)
+#   Fallback path: Alertmanager direct webhook (orchestrator down VEYA gh fail)
+#
+# Codex iter-2 absorb:
+#   - Token kesinlikle log/PR/message'a YAZILMAZ (no-token-log HARD RULE)
+#   - Sadece BreakGlassUsed event'i fallback'e gider (rare event, audit anlamlı)
+#   - "Tüm critical audit fallback" YASAK (outage gürültü + classification riski)
+#   - Recovery sonrası OUTAGE_FALLBACK_USED audit best-effort post-recovery
+#     (bash script'i hayatta tutmaz; ayrı cleanup runbook adımı PR-4'te belge)
+#
+# Codex iter-3 absorb (PR-2 uyumlu):
+#   - severity=critical (Alertmanager routing convention; drift_class N/A burda)
+#   - Stable dedupe_key (sha256(env+SA+ctx+title) — token DEĞİL)
+#   - sha256sum primary, shasum fallback
+#   - Cluster-internal URL only (public exposure açılmaz)
+#
+# Healthcheck guard: orchestrator reachable mi?
+#   curl -sf --max-time 5 $NOTIFY_ORCH_HEALTH_URL
+#   → fail (5xx/timeout/connection refused): outage detected → Alertmanager fallback
+#   → 200 OK: orchestrator up; sadece audit publish (gelecek backend PR'a kalır)
+NOTIFY_ORCH_HEALTH_URL="${NOTIFY_ORCH_HEALTH_URL:-http://notification-orchestrator.platform-test.svc.cluster.local:8089/actuator/health}"
+ALERTMANAGER_FALLBACK_URL="${ALERTMANAGER_FALLBACK_URL:-http://alertmanager.monitoring.svc.cluster.local:9093/api/v2/alerts}"
+ALARM_FALLBACK_ALERTMANAGER="${ALARM_FALLBACK_ALERTMANAGER:-0}"
+BREAK_GLASS_FALLBACK_TIMEOUT="${BREAK_GLASS_FALLBACK_TIMEOUT:-5}"
+MAX_RETRIES="${MAX_RETRIES:-3}"
+
 # ------------------------------------------------------------
 # Pre-flight
 # ------------------------------------------------------------
@@ -196,6 +225,140 @@ EOM
 else
   echo "[WARN] gh CLI unavailable or not authenticated — GitHub audit trail SKIPPED"
   echo "       Operator: open issue manually in $GH_REPO with label 'ops-audit,break-glass'"
+fi
+
+# ------------------------------------------------------------
+# Faz 23.2.D T1.4 PR-3 — D43 Alertmanager direct fallback (dual-channel)
+#
+# Codex 019e0dea iter-2 + iter-3 absorb: orchestrator down VEYA gh fail
+# durumunda BreakGlassUsed event Alertmanager `/api/v2/alerts`'e direct gönderilir.
+# Token KESİNLİKLE payload'a girmez (no-token-log HARD RULE).
+# ------------------------------------------------------------
+
+orchestrator_reachable() {
+  # Healthcheck: 200 OK = up; 5xx/timeout/connection refused = down
+  local code
+  code=$(curl -sf -o /dev/null -w '%{http_code}' --max-time "$BREAK_GLASS_FALLBACK_TIMEOUT" \
+    "$NOTIFY_ORCH_HEALTH_URL" 2>/dev/null || echo "000")
+
+  case "$code" in
+    2*) return 0 ;;  # up
+    *)  return 1 ;;  # down (4xx auth, 5xx, timeout, connection refused, DNS fail)
+  esac
+}
+
+deliver_alertmanager_breakglass() {
+  # Trigger gate: explicit toggle gerek (Codex iter-2 dar scope)
+  if [[ "$ALARM_FALLBACK_ALERTMANAGER" != "1" ]]; then
+    return 1
+  fi
+
+  local sig_input
+  # Dedupe input: env+SA+ctx+title (TOKEN YOK — no-token-log HARD RULE)
+  sig_input=$(printf '%s|%s|%s|%s' "$NS" "$SA" "$CURRENT_CTX" "${REASON:0:60}")
+
+  # sha256 portability (Codex iter-3 #3): sha256sum primary, shasum fallback
+  local sig
+  if command -v sha256sum > /dev/null 2>&1; then
+    sig=$(printf '%s' "$sig_input" | sha256sum | awk '{print $1}')
+  elif command -v shasum > /dev/null 2>&1; then
+    sig=$(printf '%s' "$sig_input" | shasum -a 256 | awk '{print $1}')
+  else
+    echo "  [alertmanager-fallback] ERROR: no sha256 implementation — cannot compute dedupe_key" >&2
+    return 1
+  fi
+
+  # Compose Alertmanager v2 alerts payload — TOKEN ABSOLUTELY EXCLUDED
+  local payload
+  payload=$(jq -nc \
+    --arg alertname "BreakGlassUsed" \
+    --arg cluster "$CURRENT_CTX" \
+    --arg severity "critical" \
+    --arg sa "$SA" \
+    --arg ns "$NS" \
+    --arg duration "$DURATION" \
+    --arg operator "$USER_ID@$HOST_ID" \
+    --arg reason "$REASON" \
+    --arg sig "$sig" \
+    --arg ts "${NOW%Z}.000Z" \
+    '[{
+      labels: {
+        alertname: $alertname,
+        cluster: $cluster,
+        severity: $severity,
+        ns: $ns,
+        sa: $sa,
+        outage_fallback: "true",
+        bypass_orchestrator: "true",
+        dedupe_key: $sig
+      },
+      annotations: {
+        summary: ("Break-glass token issued: " + $reason),
+        operator: $operator,
+        duration: $duration
+      },
+      startsAt: $ts,
+      generatorURL: "https://github.com/Halildeu/platform-k8s-gitops"
+    }]')
+
+  # No-token-log guard echo (token never appears in stderr/stdout)
+  echo "  [alertmanager-fallback] POST $ALERTMANAGER_FALLBACK_URL (alertname=BreakGlassUsed, dedupe_key=${sig:0:12}...)"
+
+  # Retry with exponential backoff (4xx no-retry, 5xx/timeout retry)
+  local attempt=1
+  while [[ $attempt -le $MAX_RETRIES ]]; do
+    local code
+    code=$(curl -sf -o /dev/null -w '%{http_code}' --max-time 10 \
+      -X POST -H "Content-Type: application/json" \
+      -d "$payload" "$ALERTMANAGER_FALLBACK_URL" 2>/dev/null || echo "000")
+
+    case "$code" in
+      2*)
+        echo "  [alertmanager-fallback] delivered ($code)"
+        return 0
+        ;;
+      4*)
+        echo "  [alertmanager-fallback] FAILED ($code) — non-transient, no retry"
+        return 1
+        ;;
+      *)
+        local backoff=$((2 ** attempt))
+        echo "  [alertmanager-fallback] attempt $attempt/$MAX_RETRIES failed ($code): sleeping ${backoff}s"
+        sleep "$backoff"
+        attempt=$((attempt + 1))
+        ;;
+    esac
+  done
+
+  echo "  [alertmanager-fallback] exhausted $MAX_RETRIES retries"
+  return 1
+}
+
+# Trigger fallback delivery — orchestrator down OR gh failed
+fallback_needed=0
+fallback_reason=""
+
+if ! orchestrator_reachable; then
+  fallback_needed=1
+  fallback_reason="orchestrator_down"
+  echo "[break-glass] notification-orchestrator unreachable ($NOTIFY_ORCH_HEALTH_URL) — outage detected"
+fi
+
+# gh fail durumu zaten yukarıda warned ediliyor; explicit takip için flag yok
+# (mevcut script gh hata durumunda exit etmiyor sadece warn). Eğer GH unavailable
+# (sa cli / auth fail) bile orchestrator up ise, primary audit trail orchestrator
+# audit publish (gelecek backend PR'a) — şu an local audit log + Alertmanager fallback
+# (toggle açıksa).
+
+if [[ "$fallback_needed" -eq 1 ]] && [[ "$ALARM_FALLBACK_ALERTMANAGER" == "1" ]]; then
+  echo "[break-glass] dual-channel fallback active (reason=$fallback_reason); BreakGlassUsed → Alertmanager direct"
+  if deliver_alertmanager_breakglass; then
+    echo "[break-glass] Alertmanager direct fallback delivered"
+  else
+    echo "[break-glass] [WARN] Alertmanager direct fallback failed — local audit log only"
+    echo "[break-glass] Operator: post-recovery, write OUTAGE_FALLBACK_USED audit event"
+    echo "                 (notification-orchestrator audit publish — best-effort idempotent)"
+  fi
 fi
 
 # ------------------------------------------------------------
