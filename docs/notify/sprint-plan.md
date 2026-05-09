@@ -37,7 +37,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | T1.1.2 | Domain entity + repository + service (preference CRUD) | backend | 4 | dev | T1.1.1 | 🔴 |
 | T1.1.3 | REST API: `PUT /preferences/me` + `GET /preferences/me` | backend | 3 | dev | T1.1.2 | 🔴 |
 | T1.1.4 | Send pipeline preference check + `BLOCKED_BY_PREFERENCE` audit | backend | 3 | dev | T1.1.3 | 🔴 |
-| T1.1.5 | Critical bypass logic (severity=critical OR data_classification=security) | backend | 2 | dev | T1.1.4, T1.5.1 | 🔴 |
+| T1.1.5 | Critical bypass logic (severity=critical OR data_classification=security) | backend | 2 | dev | T1.1.4, T1.5.2 | 🔴 |
 | T1.1.6 | Quiet hours bypass | backend | 2 | dev | T1.1.4 | 🔴 |
 | T1.1.7 | Frequency limit bypass | backend | 2 | dev | T1.1.4 | 🔴 |
 | T1.1.8 | Unsubscribe link footer (email template) | backend | 2 | dev | T1.1.3 | 🔴 |

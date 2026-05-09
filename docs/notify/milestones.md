@@ -127,7 +127,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 - [ ] Charter markers all updated
 - [ ] Risk register: R11, R16 closed
 
-**Blockers**: M3-M5 stable
+**Blockers**: M5 done + M6a/M6b done (split closure) — M3 + M4 zaten önceki kapı
 **Owner**: dev + ops + gitops
 
 ### M8 — Multi-tenant Trigger Gate (🔴 target 2026-09-01)

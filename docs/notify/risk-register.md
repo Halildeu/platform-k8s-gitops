@@ -31,7 +31,7 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 | R1 | NetGSM provider sözleşme + sandbox account gecikmesi | High | High | **High** | Backup: İletimerkezi secondary; pre-prod testing Mailpit pattern | ops + legal | 🟡 Active | 23.3 | 2026-05-09 |
 | R2 | KVKK erasure scope yanlış implement → audit fail / legal exposure | Medium | Critical | **High** | Legal review öncesi merge yasak; runbook + integration test pre-prod | legal/dev | 🟡 Active | 23.2.B | 2026-05-09 |
 | R3 | DKIM/SPF/DMARC prod activation breaks email delivery | Medium | High | **Medium** | Mailpit dev test + canary domain + 24h pre-cutover validation | ops/dev | 🟡 Active | 23.2 sub-faz drift | 2026-05-09 |
-| R4 | Audit retention DETACH/DROP destructive bug (data loss) | Low | Critical | **Medium** | Backend test PR #130 + dry-run observation + ownership check | dev | 🟢 Mitigated | 23.7 | 2026-05-09 |
+| R4 | Audit retention DETACH/DROP destructive bug (data loss) | Low | Critical | **Medium** | Backend test PR #130 + dry-run observation + ownership check | dev | 🟢 Mitigated | 23.2 (retention) | 2026-05-09 |
 | R5 | Multi-pod cron lock contention causing missed retention cycles | Low | Medium | **Low** | LockSkippedSustained alert (PR #435 multi-pod aware) | dev | 🟢 Mitigated | — | 2026-05-09 |
 | R6 | Codex API limit / cross-AI peer review HARD RULE blocker | Low | Medium | **Low** | Multi-thread strategy + queue-based review + offline absorb pattern | agent | 🟡 Active | — | 2026-05-09 |
 | R7 | Browser SSO verify user availability blocking 23.9 closure | Medium | Low | **Low** | Headless verify alternative (Playwright + JWT direct) | agent | 🟡 Active | 23.9 | 2026-05-09 |
@@ -42,7 +42,7 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 | R12 | Provider config rollback transaction race (atomic switch) | Low | High | **Low** | provider_config_history immutable rows + cache invalidate test | dev | 🔴 Pending | 23.2.C | 2026-05-09 |
 | R13 | Webhook fan-out cap exhausted → DLQ flood | Medium | Medium | **Medium** | Abuse guards 23.2.F + rate limit + circuit breaker | dev | 🔴 Pending | 23.2.F | 2026-05-09 |
 | R14 | Frontend bundle size regression (in-app inbox + preference UI) | Low | Medium | **Low** | Bundle analyzer + threshold gate + lazy-load | dev | 🟡 Active | 23.4 + 23.5 | 2026-05-09 |
-| R15 | Audit retention legal challenge (90 day insufficient for some KVKK clauses) | Low | High | **Low** | Configurable retention-days + sub-faz drift review (30/180/365) | legal | 🟡 Active | 23.7 | 2026-05-09 |
+| R15 | Audit retention legal challenge (90 day insufficient for some KVKK clauses) | Low | High | **Low** | Configurable retention-days + sub-faz drift review (30/180/365) | legal | 🟡 Active | 23.2.B (legal retention drift) | 2026-05-09 |
 | R16 | Cross-cluster Prometheus federation cardinality explosion | Medium | Medium | **Medium** | Federation design + cardinality budget + rollback plan | ops | 🟡 Active | 23.8 federation | 2026-05-09 |
 | R17 | Vault root token compromise (operator credential) | Low | Critical | **Medium** | break-glass-token.sh + audit log + Vault audit device + token rotation | ops | 🟡 Active | — | 2026-05-09 |
 | R18 | OpenFGA tuple drift (auth-service ↔ permission-service ↔ notify) | Medium | High | **Medium** | DD-5 cross-repo guard + tuple seed CommandLineRunner + integration test | dev | 🟢 Mitigated | — | 2026-05-09 |
