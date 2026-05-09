@@ -1,8 +1,11 @@
-# user-service HPA — 2026-05-10 (PR-471 HPA foundation, behavior-neutral)
-# minReplicas=2 (current behavior preserved); maxReplicas=3 yük artısında.
-# Trigger: CPU 70% utilization veya Memory 80% utilization.
-# NOT: PR-471b sonrası metrics-server smoke kanıtı + selected services
-# için min=1 indirme yapılacak (cost optimization phase).
+# user-service HPA — 2026-05-10 (PR-471 base foundation)
+# Base default: min=1 (test overlay behavior-neutral; PR #470 replicas=1).
+# Prod overlay: HPA patch min=2 override (HA path; mevcut Deploy.replicas=2
+# ile behavior-neutral).
+# maxReplicas=3 yük artışında otomatik scale.
+# Trigger: CPU 70% utilization + Memory 80% utilization.
+# PR-471b: metrics-server smoke kanıtı + prod selected domain services
+# için min=1 indirme (cost optimization phase).
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -16,7 +19,7 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: user-service
-  minReplicas: 2
+  minReplicas: 1
   maxReplicas: 3
   metrics:
     - type: Resource
