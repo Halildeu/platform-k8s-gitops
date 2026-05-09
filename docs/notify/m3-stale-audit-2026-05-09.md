@@ -60,15 +60,15 @@ Aramalar:
 | Task | File | Line | Source | Live | Evidence | Acceptance | Blocker |
 |---|---|---:|:---:|:---:|:---:|:---:|---|
 | T1.2.x **admin** erasure `POST /api/v1/admin/notify/erasure` | `AdminErasureController.java` | 129 | 🟢 | 🟢 | 🟡 | 🔴 | R2 legal review |
-| T1.2.1 **Subscriber self-service** `DELETE /audit/me` (KVKK Art.11) | `SubscriberErasureController.java` (PR #132 MERGED 2026-05-09) | 195 | 🟢 | 🟡 (image build pending) | 🔴 | 🔴 | RAID I6 acceptance gate |
-| T1.2.2 **Subscriber right-to-info** `GET /audit/me` (KVKK Art.13) | `SubscriberErasureController.java` (same controller, same PR) | (same) | 🟢 | 🟡 | 🔴 | 🔴 | RAID I6 acceptance gate |
+| T1.2.1 **Subscriber self-service** `DELETE /audit/me` (KVKK Art.11) | `SubscriberErasureController.java` (PR #132 MERGED + PR #452 cluster apply 14:00Z) | 195 | 🟢 | 🟢 | 🔴 | 🔴 | RAID I6 acceptance gate |
+| T1.2.2 **Subscriber right-to-info** `GET /audit/me` (KVKK Art.13) | `SubscriberErasureController.java` (same controller, same PR; route LIVE 14:00Z, /audit/me 404→401 transition) | (same) | 🟢 | 🟢 | 🔴 | 🔴 | RAID I6 acceptance gate |
 | T1.2.3 Append-only verify | V8 trigger no_update/delete | (V8) | 🟢 | 🟢 | 🟢 | 🟢 | — |
 | T1.2.4-5 Integration test | (test files admin scope) | TBD | 🟡 | N/A | 🔴 | 🔴 | TC config + self-service endpoint |
 | T1.2.6 Runbook | `RB-notify-kvkk-erasure.md` | exists | 🟢 | N/A | 🟢 | 🔴 | legal review |
 | T1.2.7 Legal review | external | — | — | — | — | 🔴 | R2 active |
 | T1.2.8 Codex review + merge | (audit) | — | — | — | — | 🔴 | post-impl |
 
-**T1.2 Verdict (UPDATED 2026-05-09 — PR #132 MERGED)**: **Admin erasure source-ready (R2 legal block); subscriber self-service `DELETE/GET /audit/me` ARTIK source-ready** (PR #132: `SubscriberErasureController` 195 satır + `SubscriberErasureService` 175 satır + 2 DTO + security boundary tests 10/10 PASS + service unit tests 6/6 PASS + 59/59 regression PASS). Backend image build pending; cluster apply sonrası live-deployed. **Acceptance gate** D29-Authorized BLOCKED on RAID I6 Keycloak credential. T1.2 sprint-plan ~17h estimate; gerçek residual ~3-5h (image build + cluster apply + acceptance test) + R2 legal review (2-3h).
+**T1.2 Verdict (UPDATED 2026-05-09 14:00Z — PR #132 + PR #452 MERGE + cluster apply CONFIRMED)**: **Admin erasure source-ready (R2 legal block); subscriber self-service `DELETE/GET /audit/me` ARTIK source-ready/live-deployed** (PR #132: `SubscriberErasureController` 195 satır + `SubscriberErasureService` 175 satır + 2 DTO + security boundary tests 10/10 PASS + service unit tests 6/6 PASS + 59/59 regression PASS; PR #452 image bump sha-7bdfb7d cluster apply CONFIRMED → /audit/me 404→401 transition). **Acceptance gate** D29-Authorized BLOCKED on RAID I6 Keycloak credential. T1.2 sprint-plan ~17h estimate; gerçek residual ~2-4h (acceptance test + R2 legal review coordination).
 
 ### T1.3 — 23.2.C Provider Config Rollback
 
@@ -125,7 +125,7 @@ Aramalar:
 | Tier | Original Estimate (sprint-plan) | Re-Baselined Real Residual | Drift |
 |---|---:|---:|---|
 | **T1.1** Preference + bypass + opt-out | 27h | ~3h (acceptance test only) | -24h |
-| **T1.2** KVKK erasure (admin source-ready + subscriber self-service source-ready PR #132 MERGED) | 17h | ~3-5h (image build + cluster apply + acceptance gate + R2 legal) | -12 / -14h |
+| **T1.2** KVKK erasure (admin + subscriber self-service source-ready/live; PR #132+#452 MERGE 14:00Z apply CONFIRMED) | 17h | ~2-4h (acceptance test + R2 legal review coordination) | -13 / -15h |
 | **T1.3** Provider rollback | 13h | ~5h (acceptance gate) | -8h |
 | **T1.4** Outage fallback (D43) | 15.5h | ~15h (gerçek pending) | 0h |
 | **T1.5** Data classification | 12h | ~2h (acceptance test) | -10h |
@@ -134,7 +134,7 @@ Aramalar:
 
 **M3 closure realistic estimate (post PR #132 MERGE)**: ~43-46h **+** acceptance gate testing **+** Codex review iter overhead = **~50-60h provisional sprint** (önceki ~60-70h provisional'dan -10h; T1.2 subscriber endpoint impl LIVE source-ready). 4-6 hafta yerine **2-3 hafta** mümkün (eğer RAID I6 credential + R2 legal + T1.4 D43 + T1.6 abuse guards tamamlanırsa).
 
-> **Provisional iddia disclaimer (Codex `019e0c28` iter-2)**: Bu rakam canonical değil; T1.2 endpoint truth düzeltmesi sonrası iter-2 sonrası iter-3 audit ile sabitlenir. "credential + legal + acceptance gates open" şartıyla.
+> **Provisional disclaimer (Codex `019e0c28` iter-3 absorb)**: Provisional until RAID I6 (Keycloak credential) + R2 (KVKK legal) acceptance gates close. T1.4 D43 + T1.6 abuse guards gerçek pending implementation.
 
 ---
 
@@ -208,3 +208,7 @@ Aramalar:
 **2026-05-09 12:35Z** — backend code scan + 5-state matrix audit, ~50-60h residual re-baseline
 
 **2026-05-09 13:45Z (PR #132 MERGE update)** — T1.2 subscriber self-service erasure backend MERGED (`SubscriberErasureController` + `SubscriberErasureService` + 16 unit/security test PASS). T1.2.1/T1.2.2 🔴 → 🟢 source-ready. T1 toplam residual ~52-55h → ~43-46h (-10h). M3 closure 2-3 hafta provisional.
+
+**2026-05-09 14:00Z (PR #452 cluster apply CONFIRMED)** — Image bump sha-ef0f487 → sha-7bdfb7d (sha256:ca2587f...) test cluster apply success. Pod notification-orchestrator-85b9894cdc-z4vvc 1/1 Running. /api/v1/notify/audit/me **404→401 transition** (route LIVE; "JWT token zorunludur" auth required). T1.2 source-ready/**live-deployed** CONFIRMED. T1 residual ~43-46h → ~38-41h (image build + cluster apply effort artık done). Acceptance gate hâlâ RAID I6 + R2.
+
+**2026-05-09 14:15Z (Codex iter-3 absorb)** — Intra-doc re-baseline drift fix: T1.2.1/T1.2.2 detail satırları live=🟢 (önceki 🟡 image build pending), residual ~3-5h → ~2-4h, provisional disclaimer iter-3 dili düzeltildi.
