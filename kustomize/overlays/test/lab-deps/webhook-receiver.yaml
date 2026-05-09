@@ -1,0 +1,135 @@
+# Webhook receiver — D29-NOTIFY-Functional Webhook evidence için test cluster lab dependency
+# HMAC sha256 trace yakalamak için minimal echo server (nginx + log)
+# Faz 23.1 M2 closure 2026-05-12 (Codex 019e0c28 hibrit B + A-minimal)
+# Sadece test overlay'a özel; prod'a deploy edilmez.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: webhook-receiver-config
+  labels:
+    app.kubernetes.io/name: webhook-receiver
+    app.kubernetes.io/component: lab-dependency
+data:
+  default.conf: |
+    log_format webhook_evidence escape=json
+      '{'
+        '"time":"$time_iso8601",'
+        '"remote":"$remote_addr",'
+        '"method":"$request_method",'
+        '"uri":"$request_uri",'
+        '"hmac_sig":"$http_x_signature_sha256",'
+        '"hmac_key_id":"$http_x_signature_key_id",'
+        '"correlation":"$http_x_correlation_id",'
+        '"intent":"$http_x_intent_id",'
+        '"length":"$content_length",'
+        '"status":$status'
+      '}';
+
+    server {
+      listen 8080;
+      access_log /var/log/nginx/access.log webhook_evidence;
+      error_log /var/log/nginx/error.log warn;
+
+      # Receive webhook POST + return 200 (HMAC validation log'da kanıt)
+      location / {
+        return 200 '{"received":true,"path":"$request_uri","correlation":"$http_x_correlation_id"}';
+        add_header Content-Type application/json;
+      }
+
+      # Health check
+      location /health {
+        access_log off;
+        return 200 '{"status":"ok","service":"webhook-receiver"}';
+        add_header Content-Type application/json;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-receiver
+  labels:
+    app.kubernetes.io/name: webhook-receiver
+    app.kubernetes.io/component: lab-dependency
+    app.kubernetes.io/part-of: notify-d29-evidence
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: webhook-receiver
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: webhook-receiver
+        app.kubernetes.io/component: lab-dependency
+    spec:
+      containers:
+        - name: nginx
+          # nginx:1.27-alpine (D30 immutable artifact pattern)
+          image: nginx:1.27-alpine@sha256:62223d644fa234c3a1cc785ee14242ec47a77364226f1c811d2f669f96dc2ac8
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/conf.d
+            - name: cache
+              mountPath: /var/cache/nginx
+            - name: pid
+              mountPath: /var/run
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: config
+          configMap:
+            name: webhook-receiver-config
+        - name: cache
+          emptyDir: {}
+        - name: pid
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-receiver
+  labels:
+    app.kubernetes.io/name: webhook-receiver
+    app.kubernetes.io/component: lab-dependency
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: webhook-receiver
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
