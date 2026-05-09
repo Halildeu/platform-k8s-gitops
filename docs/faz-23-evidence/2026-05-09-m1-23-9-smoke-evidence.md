@@ -165,7 +165,7 @@ sha-2bf731b
 
 - **Window start**: 2026-05-08 19:42Z (cutover activation)
 - **Window end**: 2026-05-11 19:42Z (natural T+72h completion)
-- **Şu an**: 2026-05-09 12:30Z, **~31 saat kaldı**
+- **Şu an**: 2026-05-09 ~12:30Z (initial smoke) → ~14:00Z (T1.2 cluster apply post-merge), **~54-55 saat kaldı** (Codex iter-2 P2 absorb: tutarsız "~31 saat" düzeltildi; gerçek 2026-05-09 ~14Z → 2026-05-11 19:42Z = ~54 saat)
 - Pre-window evidence collection: bu doc
 - Post-window closure: ayrı M1 evidence PR (T+72h sonrası tamamlama)
 
@@ -196,12 +196,14 @@ sha-2bf731b
 
 ## Canonical Doc Sync (per Update Discipline HARD RULE)
 
-- [x] `docs/state/current-state.md` — pod state delta + smoke evidence cross-ref (post-merge update)
-- [x] `docs/notify/milestones.md` — M1 DoD checklist update
-- [ ] `docs/runbooks/RB-faz-23-charter.md` — 23.9 marker (T+72h sonrası 🟡 → 🟢)
-- [x] `docs/notify/checkpoints/2026-05-12-m1-m2-status.md` — M1 paralel hazırlık reference
-- [x] `docs/notify/risk-register.md` — R7 (browser SSO) status: 🟡 → 🟢 mitigated (agent self-served)
-- [x] `docs/notify/raid-log.md` — A3 (browser SSO availability) — agent self-served, no longer blocker
+> **Codex iter-2 P1 absorb**: Bu PR yalnız `docs/faz-23-evidence/2026-05-09-m1-23-9-smoke-evidence.md` dosyasını ekliyor. Aşağıdaki canonical doc sync **planned (PR-M1.E.2 follow-up)** veya **post-T+72h M1 closure PR** scope'unda yapılacak. `[x]` iddiaları yanlıştı; gerçek state `[ ] planned`.
+
+- [ ] `docs/state/current-state.md` — pod state delta + smoke evidence cross-ref (planned post-T+72h closure)
+- [ ] `docs/notify/milestones.md` — M1 DoD checklist update + T2.3.4 ai.acik.com → testai canonical fix (planned ayrı follow-up PR)
+- [ ] `docs/runbooks/RB-faz-23-charter.md` — 23.9 marker (T+72h sonrası 🟡 → 🟢, planned post-2026-05-11)
+- [ ] `docs/notify/checkpoints/2026-05-12-m1-m2-status.md` — M1 paralel hazırlık reference (planned)
+- [ ] `docs/notify/risk-register.md` — R7 (browser SSO) status: 🟡 → 🟢 mitigated (agent self-served, planned)
+- [ ] `docs/notify/raid-log.md` — A3 (browser SSO availability) — agent self-served, no longer blocker (planned)
 
 ---
 
@@ -215,5 +217,17 @@ sha-2bf731b
 - T1.2 endpoint live check: `/api/v1/notify/audit/me` → **404** (PR #132 backend MERGED ama image build + cluster apply pending — beklenen)
 - ai.acik.com bölümü "NOT canonical / stale" olarak yeniden işaretlendi
 - T2.3.4 (ai.acik.com SSO verify) M1 DoD'sinden "deferred to prod realm canonical decision"
+
+**2026-05-09 ~14:00Z (T1.2 cluster apply LIVE confirmation)**:
+- PR #452 MERGED (test overlay digest bump sha-7bdfb7d); kubectl set image apply
+- Pod `notification-orchestrator-85b9894cdc-z4vvc` 1/1 Running with new image @sha256:ca2587f21ca7f8d51ef4e7b70f6478d3c6b40ee685f655f865a6885472ff1fcb
+- `/api/v1/notify/audit/me` → **404 → 401** transition (endpoint LIVE; "JWT token zorunludur" — auth required, route exists)
+- T1.2 source-ready/live-deployed transition CONFIRMED
+- Acceptance gate (D29-Authorized + RAID I6 credential) hâlâ açık
+
+**2026-05-09 ~14:10Z (Codex iter-2 absorb)**:
+- Canonical Doc Sync checklist `[x]` → `[ ] planned` düzeltildi (4 finding P1)
+- T+72h kalan süre tutarsızlığı `~31 saat` → `~54-55 saat` düzeltildi (P2)
+- Diff iddiası dürüst hale getirildi (PR sadece bu dosyayı ekliyor)
 
 M1 closure PR (post-2026-05-11 19:42Z natural completion) follow-up.
