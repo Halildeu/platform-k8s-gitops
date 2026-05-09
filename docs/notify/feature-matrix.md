@@ -304,10 +304,10 @@
 
 | # | Özellik | Tier | Sub-faz | Status |
 |---|---|---|---|:---:|
-| P1 | `data_classification` field in intent (transactional/security/commercial/system) | **MVP-dar** | 23.2 | ☐ |
-| P2 | Quiet bypass policy per classification | **MVP-dar** | 23.2 | ☐ |
-| P3 | Retention default per classification (90/180/30/30) | **MVP-dar** | 23.2 | ☐ |
-| P4 | Marketing kapsam ayrımı (commercial = açık rıza zorunlu) | **MVP-dar** | 23.2 | ☐ |
+| P1 | `data_classification` field in intent (transactional/security/commercial/system) | **MVP-dar** | 23.2 | 🟢 (M3 audit: enum 4 değer + IntentSubmissionService LIVE) |
+| P2 | Quiet bypass policy per classification | **MVP-dar** | 23.2 | 🟡 (severity bypass live, classification security bypass acceptance test) |
+| P3 | Retention default per classification (90/180/30/30) | **MVP-dar** | 23.2 | ☐ (retention LIVE per audit 90d; per-classification differentiation pending) |
+| P4 | Marketing kapsam ayrımı (commercial = açık rıza zorunlu) | **MVP-dar** | 23.2 | ☐ (transactional kapsam D42 confirmed; commercial track separation pending) |
 | P5 | Classification-driven channel restriction (security → no commercial channel) | v1 | 23.4 | ☐ |
 
 ---

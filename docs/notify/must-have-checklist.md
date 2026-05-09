@@ -18,8 +18,8 @@ Diğer ~130 özellik **negotiable** (kanal sayısı, UI yüzeyleri, workflow edi
 | 4 | Retry Exponential Backoff + DLQ + Manual Replay | 🟢 done | 23.1 |
 | 5 | OpenFGA Hard-Deny + Org Boundary | 🟢 done | 23.1 + 23.4 PR-5.x strict cutover |
 | 6 | Vault/ESO Provider Credentials + No Secret Logging | 🟢 done | 23.2 (PR #424) |
-| 7 | PII Redaction + Retention/Anonymization Policy (KVKK) | 🟡 partial (retention LIVE; erasure API pending) | 23.1 (PII) + 23.2 (retention LIVE PR #427/#437; 23.2.B erasure pending) |
-| 8 | Preference / Opt-out + Critical Bypass Policy | ⏳ pending | 23.2 (API) + 23.5 (UI) |
+| 7 | PII Redaction + Retention/Anonymization Policy (KVKK) | 🟡 partial (retention LIVE; admin erasure source-ready/R2 legal; **subscriber self-service `DELETE/GET /audit/me` GERÇEK PENDING** — M3 stale audit 2026-05-09) | 23.1 (PII) + 23.2 (retention LIVE PR #427/#437; admin erasure `AdminErasureController` source-ready; subscriber self-service endpoint backend'de YOK) |
+| 8 | Preference / Opt-out + Critical Bypass Policy | 🟡 partial (source-ready; D29-Authorized acceptance gate BLOCKED on RAID I6) | 23.2.A (API source-ready/live) + 23.5 (UI pending) — M3 stale audit 2026-05-09 |
 | 9 | Template Versioning + Safe Interpolation | 🟢 done | 23.1 |
 | 10 | Observability + Outage Fallback | 🟡 partial (observability LIVE; D43 outage fallback pending) | 23.2 (PR #425/#428/#430/#431/#433/#435/#436) |
 
@@ -28,7 +28,10 @@ Diğer ~130 özellik **negotiable** (kanal sayısı, UI yüzeyleri, workflow edi
 - 🟡 partial: **3** (#7 retention LIVE + erasure source-ready/legal review pending; #8 preference source-ready + acceptance/auth gate; #10 observability LIVE + D43 pending) — M3 stale audit 2026-05-09 #8 status update
 - ⏳ pending: **0** (#8 source-ready demoted to partial)
 
-**Net must-have coverage estimate** (NOT a "production ready" guarantee — kabul kriteri evidence path tek tek doğrulanmadan production claim yapılmaz): 7 + 2×0.5 + 1×0 = **8/10 = ~80% must-have coverage**.
+**Net must-have coverage estimate** (NOT a "production ready" guarantee — kabul kriteri evidence path tek tek doğrulanmadan production claim yapılmaz; M3 stale audit 2026-05-09 5-state matrix re-baseline):
+- 7 done × 1.0 + 3 partial (source-ready/acceptance gate) × 0.5 = **8.5/10 = ~85% must-have coverage**
+- **Disclaimer**: "partial" weight 0.5 semantik — gerçek source-ready bias var; #7 erasure/legal review (R2), #8 preference acceptance gate (RAID I6), #10 D43 outage fallback gerçek implementation pending
+- Önceki "8/10 = ~80%" formülü 7+2+1 modeline aitti; #8 demote sonrası 7+3+0 modelinde formül 8.5/10
 
 ---
 
@@ -380,7 +383,7 @@ kubectl scale deploy/notification-orchestrator --replicas=0
 - 🟢 fully done: 7 (#1, #2, #3, #4, #5, #6, #9)
 - 🟡 partial: 3 (#7 retention LIVE + erasure source-ready/legal review pending; #8 preference source-ready + acceptance/auth gate; #10 observability LIVE + D43 pending) — M3 stale audit 2026-05-09 #8 demoted to partial source-ready bias
 - ⏳ pending: 0
-- **Net must-have coverage**: ~80% (must-have-only metric, NOT production-ready guarantee)
+- **Net must-have coverage**: ~85% (8.5/10 — M3 stale audit 2026-05-09 5-state matrix; 7 done × 1.0 + 3 partial × 0.5; partial weight 0.5 semantik, source-ready bias var); **NOT production-ready guarantee** — #7 erasure subscriber self-service + R2 legal, #8 RAID I6 acceptance gate, #10 D43 gerçek pending
 - **Production MVP gates beyond must-have**: 23.1 D29-NOTIFY-Functional 3-channel evidence, 23.2 erasure/preference/outage fallback closure, 23.9 72h observation + rollback prova execution
 
 ---

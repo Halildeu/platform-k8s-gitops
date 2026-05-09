@@ -61,7 +61,7 @@ Bu dizin **Faz 23 notification orchestration** için canonical doküman setidir.
 ### Sub-Faz Status
 - 🟢 **23.0** Charter (done)
 - 🟡 **23.1** Kernel partial (D29-Functional evidence pending)
-- 🟡 **23.2** MVP-dar partial (3/8 — Session 39 hardening only; 6 pending)
+- 🟡 **23.2** MVP-dar partial (Session 39 hardening 5/8 LIVE; M3 stale audit 2026-05-09 — backend source-ready 7/9: preference + admin erasure + provider rollback partial + classification; gerçek pending T1.2 subscriber self-service erasure + T1.4 D43 outage fallback + T1.6 abuse guards ~52-55h residual)
 - ⏳ **23.3** SMS NetGSM (pending)
 - 🟡 **23.4** v1 DLR + In-app UI partial (UI LIVE; SMS DLR pending)
 - ⏳ **23.5** Preference UI (pending)
@@ -72,10 +72,10 @@ Bu dizin **Faz 23 notification orchestration** için canonical doküman setidir.
 - ⏳ **23.X** v2 (deferred)
 
 ### Must-Have Status
-- 🟢 7/10 fully done (#1-#6, #9)
+- 🟢 7/10 fully done (#1-#6, #9) + 🟡 3 partial (M3 stale audit 2026-05-09: #7 source-ready + R2 legal/subscriber endpoint pending; #8 demoted ⏳→🟡 source-ready + RAID I6 acceptance gate; #10 LIVE + D43 pending) — coverage **~85%** (8.5/10)
 - 🟡 2 partial (#7 retention LIVE + erasure pending; #10 observability LIVE + D43 pending)
 - ⏳ 1 pending (#8 preference + critical bypass)
-- **~80% must-have coverage** (NOT production-ready guarantee)
+- **~85% must-have coverage** (8.5/10 — M3 stale audit 5-state matrix re-baseline; NOT production-ready guarantee)
 
 ### Active Risks
 - 🟡 R1 NetGSM provider contract delay (23.3 blocker)

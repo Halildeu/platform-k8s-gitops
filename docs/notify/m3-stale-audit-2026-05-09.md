@@ -59,15 +59,16 @@ Aramalar:
 
 | Task | File | Line | Source | Live | Evidence | Acceptance | Blocker |
 |---|---|---:|:---:|:---:|:---:|:---:|---|
-| T1.2.1 DELETE `/audit/me` | `AdminErasureController.java` | 129 | 🟢 | 🟢 | 🟡 | 🔴 | R2 legal review |
-| T1.2.2 GET `/audit/me` (right-to-info) | `AdminErasureController.java` | (same) | 🟢 | 🟢 | 🟡 | 🔴 | R2 |
+| T1.2.x **admin** erasure `POST /api/v1/admin/notify/erasure` | `AdminErasureController.java` | 129 | 🟢 | 🟢 | 🟡 | 🔴 | R2 legal review |
+| T1.2.1 **Subscriber self-service** `DELETE /audit/me` (KVKK Art.11) | NOT FOUND in code (admin scope only) | — | 🔴 | 🔴 | 🔴 | 🔴 | gerçek pending implementation |
+| T1.2.2 **Subscriber right-to-info** `GET /audit/me` (KVKK Art.13) | NOT FOUND in code | — | 🔴 | 🔴 | 🔴 | 🔴 | gerçek pending implementation |
 | T1.2.3 Append-only verify | V8 trigger no_update/delete | (V8) | 🟢 | 🟢 | 🟢 | 🟢 | — |
-| T1.2.4-5 Integration test | (test files) | TBD | 🟡 | N/A | 🔴 | 🔴 | TC config |
+| T1.2.4-5 Integration test | (test files admin scope) | TBD | 🟡 | N/A | 🔴 | 🔴 | TC config + self-service endpoint |
 | T1.2.6 Runbook | `RB-notify-kvkk-erasure.md` | exists | 🟢 | N/A | 🟢 | 🔴 | legal review |
 | T1.2.7 Legal review | external | — | — | — | — | 🔴 | R2 active |
 | T1.2.8 Codex review + merge | (audit) | — | — | — | — | 🔴 | post-impl |
 
-**T1.2 Verdict**: **Source-ready**, **acceptance BLOCKED on R2 KVKK legal review** (ETA 2026-05-25).
+**T1.2 Verdict**: **Admin erasure source-ready (R2 legal block)**; **subscriber self-service `DELETE /audit/me` + right-to-info `GET /audit/me` GERÇEK PENDING** — endpoint'ler backend'de YOK; sprint-plan T1.2 ~17h estimate, gerçek residual ~10-12h (sadece subscriber self-service implementation + integration test) + R2 legal review (2-3h). **Önceki iddia "source-ready" KISMEN YANLIŞTI** — admin scope source-ready, subscriber scope pending.
 
 ### T1.3 — 23.2.C Provider Config Rollback
 
@@ -124,14 +125,16 @@ Aramalar:
 | Tier | Original Estimate (sprint-plan) | Re-Baselined Real Residual | Drift |
 |---|---:|---:|---|
 | **T1.1** Preference + bypass + opt-out | 27h | ~3h (acceptance test only) | -24h |
-| **T1.2** KVKK erasure | 17h | ~2h (legal review wait) | -15h (R2 dependent) |
+| **T1.2** KVKK erasure (admin source-ready, subscriber self-service + right-to-info pending) | 17h | ~12-15h (subscriber endpoint impl + integration test + R2 legal) | -2-5h |
 | **T1.3** Provider rollback | 13h | ~5h (acceptance gate) | -8h |
 | **T1.4** Outage fallback (D43) | 15.5h | ~15h (gerçek pending) | 0h |
 | **T1.5** Data classification | 12h | ~2h (acceptance test) | -10h |
 | **T1.6** Abuse guards | 15h | ~15h (gerçek pending) | 0h |
-| **Toplam T1** | **99.5h (~100h)** | **~42h** | **-57.5h** |
+| **Toplam T1** | **99.5h (~100h)** | **~52-55h** | **-44 / -47h** |
 
-**M3 closure realistic estimate**: ~42h **+** acceptance gate testing **+** Codex review iter overhead = **~50-60h sprint** (4-6 hafta yerine **2-3 hafta** mümkün eğer credential + legal gate açılırsa).
+**M3 closure realistic estimate**: ~52-55h **+** acceptance gate testing **+** Codex review iter overhead = **~60-70h provisional sprint** (4-6 hafta yerine **2.5-3.5 hafta** mümkün eğer RAID I6 credential + R2 legal + T1.2 subscriber endpoint impl + T1.4/T1.6 gerçek pending tamamlanırsa).
+
+> **Provisional iddia disclaimer (Codex `019e0c28` iter-2)**: Bu rakam canonical değil; T1.2 endpoint truth düzeltmesi sonrası iter-2 sonrası iter-3 audit ile sabitlenir. "credential + legal + acceptance gates open" şartıyla.
 
 ---
 

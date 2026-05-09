@@ -191,18 +191,20 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 **Bağımlılık**: 23.1 done
 
-**Kabul kriteri**:
+**Kabul kriteri** (M3 stale audit 2026-05-09 5-state matrix per `docs/notify/m3-stale-audit-2026-05-09.md`):
 
 | Madde | Status | Kanıt |
 |---|:---:|---|
-| Preference API canlı | ⏳ pending | `curl /preferences/me` returns subscriber row — backend code not yet written |
-| Erasure path test | ⏳ pending | DELETE → audit `details.payload = null`, recipient_hash kalır — Faz 23.7 KVKK push ile birlikte |
-| Provider config rollback | ⏳ pending | history table + atomic switch (test override) — provider_config_history migration pending |
+| Preference API canlı | 🟡 source-ready/live, acceptance gate | `PreferenceController` 290 satır LIVE: GET/PUT `/api/v1/notify/preferences/me` + DELETE `/me/{id}` + DELETE `/me`; D29-Authorized acceptance test BLOCKED on RAID I6 Keycloak credential |
+| Admin erasure path | 🟡 source-ready, R2 legal review | `AdminErasureController` 129 satır LIVE: `POST /api/v1/admin/notify/erasure` (admin scope); R2 legal review ETA 2026-05-25 |
+| **Subscriber self-service erasure** (`DELETE /audit/me`) | ⏳ **gerçek pending** | Endpoint backend'de YOK — KVKK Art.11 self-service için yeni implementation gerek (~5h) |
+| **Subscriber right-to-info** (`GET /audit/me`) | ⏳ **gerçek pending** | Endpoint backend'de YOK — KVKK Art.13 için yeni implementation gerek (~5h) |
+| Provider config rollback | 🟡 partial source-ready | `ProviderConfigHistory` + Repository LIVE; atomic switch + cache invalidate acceptance gate |
 | **Grafana dashboard** | 🟢 done | PR #431 + #436 → 15 panel (strict cutover + retention + queue + DLQ + SLO burn rate); sidecar imported `notification-orchestrator-dashboard` ConfigMap LIVE prod monitoring ns |
 | **Alertmanager DLQ rule** | 🟢 done | PR #425 + #428 + #430 + #433 → 25 PrometheusRule alerts LIVE: NotifyDlqSustained (>5/sec critical), NotifyDlqUnreplayed (>100), NotifyDlqSloBurnRateFast/Slow/Medium (1h/6h/24h burn rate), all with runbook_url annotations |
-| Outage fallback bypass | ⏳ pending | orchestrator down → Slack #alerts'e direct mesaj geldi — D43 critical bypass ConfigMap + alertmanager-bridge config pending |
-| Data classification | ⏳ pending | `severity=critical` quiet bypass — backend `data_classification` field implementation pending |
-| Abuse guard | ⏳ pending | rate limit 429 + audit `RATE_LIMITED` — D45 implementation pending |
+| Outage fallback bypass (D43) | ⏳ **gerçek pending** | orchestrator down → Slack #alerts'e direct mesaj — alertmanager-bridge backend code YOK; T1.4 ~15h gerçek pending (R9 drill blocker) |
+| Data classification | 🟢 substantively LIVE | `NotificationIntent.DataClassification` enum (transactional/security/commercial/system) + `IntentSubmissionService` + `DeliveryEligibilityService` source-ready/live; acceptance test gate |
+| Abuse guard | ⏳ **gerçek pending** | `RateLimitGuard`/`AbuseGuard` backend'de YOK; T1.6 ~15h gerçek pending (R13/R19 risks) |
 | **KVKK Art.7 audit retention** (charter ek, Session 39) | 🟢 done | PR #427 + #437 → AuditPartitionRetentionService activated dryRun=false LIVE prod+test; retention-days=90 + grace=24h; first cycle clean (CREATE phase produces audit_event_v2_2026_08, DETACH/DROP=0 candidates); backend test PR #130 covers DETACH/DROP path with disposable partition |
 | **Vault/ESO production secret management** (charter ek) | 🟢 done | PR #424 → flat path `kv/platform/notification-orchestrator` (5 keys: db_username/password, webhook_signing_secret, authz_internal_api_key, redaction_pepper); ExternalSecret creationPolicy=Owner byte-identical takeover; eso-runtime policy extended; legacy split path `kv/platform/notify/*` retired |
 | **DLQ SLO definition + burn rate alerts** (charter ek) | 🟢 done | PR #433 → 99.5% target, 18 recording rules + 4 alerts (Google SRE workbook §4 multi-window pattern: 1h+5m / 6h+30m / 24h / 72h burn rates); slow `unless` fast suppression to avoid duplicate P1 paging |
@@ -217,15 +219,15 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 - `scripts/operations/notify-audit-retention-preflight.sh` (7-section read-only inventory + DECISION GATE checklist)
 - `docs/operations/RUNBOOKS/RB-notify-strict-subscriberid-cutover.md` (extended with strict cutover storm response + retention triage)
 
-**Sub-faz 23.2 closure plan**:
-- ⏳ **23.2.A**: Preference API backend (`PUT/GET /preferences/me`) + integration test
-- ⏳ **23.2.B**: KVKK Art.11 erasure (`DELETE /audit/me`) + Art.13 right-to-information (`GET /audit/me`)
-- ⏳ **23.2.C**: Provider config versioning + rollback (`provider_config_history` table + V9 migration)
-- ⏳ **23.2.D**: Outage fallback bypass (D43) — alertmanager-bridge direct → SMTP/Slack ayrı kredensiyel + runbook
-- ⏳ **23.2.E**: Data classification policy enforcement (transactional/security/commercial/system) — `intent.data_classification` field + behavior
-- ⏳ **23.2.F**: Abuse prevention guards (D45) — rate limit per source, duplicate flood, fan-out cap
+**Sub-faz 23.2 closure plan** (M3 stale audit 2026-05-09 re-baseline):
+- 🟡 **23.2.A**: Preference API backend ZATEN LIVE (`PreferenceController` + service + send pipeline); residual ~3h acceptance test (RAID I6 credential gate)
+- 🟡 **23.2.B**: KVKK admin erasure source-ready (`AdminErasureController`), R2 legal review wait; **subscriber self-service `DELETE/GET /audit/me` GERÇEK PENDING ~10h** (yeni endpoint impl)
+- 🟡 **23.2.C**: Provider config rollback partial source-ready; ~5h acceptance gate
+- ⏳ **23.2.D**: Outage fallback bypass (D43) — **gerçek pending T1.4 ~15h** (alertmanager-bridge backend code YOK; R9 drill blocker)
+- 🟢 **23.2.E**: Data classification substantively LIVE (enum + IntentSubmissionService + DeliveryEligibilityService); ~2h acceptance test
+- ⏳ **23.2.F**: Abuse prevention guards (D45) — **gerçek pending T1.6 ~15h** (RateLimitGuard yok; R13/R19 storm)
 
-Estimated remaining work: ~10 PR cycle (5 backend + 5 gitops/docs).
+Estimated remaining work: **~52-55h sprint** + acceptance + Codex iter overhead = ~60-70h provisional 2.5-3.5 hafta (önceki ~100h estimate'den -44 / -47h drift).
 
 ---
 

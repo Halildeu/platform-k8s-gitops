@@ -57,36 +57,37 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T1.1.1 | V9 migration: `notify.subscriber_preference` table | backend | 2 | dev | None | 🔴 |
-| T1.1.2 | Domain entity + repository + service (preference CRUD) | backend | 4 | dev | T1.1.1 | 🔴 |
-| T1.1.3 | REST API: `PUT /preferences/me` + `GET /preferences/me` | backend | 3 | dev | T1.1.2 | 🔴 |
-| T1.1.4 | Send pipeline preference check + `BLOCKED_BY_PREFERENCE` audit | backend | 3 | dev | T1.1.3 | 🔴 |
-| T1.1.5 | Critical bypass logic (severity=critical OR data_classification=security) | backend | 2 | dev | T1.1.4, T1.5.2 | 🔴 |
-| T1.1.6 | Quiet hours bypass | backend | 2 | dev | T1.1.4 | 🔴 |
-| T1.1.7 | Frequency limit bypass | backend | 2 | dev | T1.1.4 | 🔴 |
-| T1.1.8 | Unsubscribe link footer (email template) | backend | 2 | dev | T1.1.3 | 🔴 |
-| T1.1.9 | Integration test: preference scenarios | backend | 4 | dev | T1.1.5 | 🔴 |
+| T1.1.1 | V9 migration: `notify.subscriber_preference` table | backend | 2 | dev | None | 🟢 source-ready/live (V1 schema) |
+| T1.1.2 | Domain entity + repository + service (preference CRUD) | backend | 4 | dev | T1.1.1 | 🟢 source-ready/live (`SubscriberPreferenceService` 414 satır) |
+| T1.1.3 | REST API: `PUT /preferences/me` + `GET /preferences/me` + `DELETE /me/{id}` + `DELETE /me` | backend | 3 | dev | T1.1.2 | 🟢 source-ready/live (`PreferenceController` 290 satır) |
+| T1.1.4 | Send pipeline preference check + `BLOCKED_BY_PREFERENCE` audit | backend | 3 | dev | T1.1.3 | 🟢 source-ready/live (`DeliveryEligibilityService`) |
+| T1.1.5 | Critical bypass logic (severity=critical OR data_classification=security) | backend | 2 | dev | T1.1.4, T1.5.2 | 🟡 partial (severity bypass live; data_classification security bypass acceptance test gerek) |
+| T1.1.6 | Quiet hours bypass | backend | 2 | dev | T1.1.4 | 🟡 partial source |
+| T1.1.7 | Frequency limit bypass | backend | 2 | dev | T1.1.4 | 🟡 partial source |
+| T1.1.8 | Unsubscribe link footer (email template) | backend | 2 | dev | T1.1.3 | 🔴 (template engine review pending) |
+| T1.1.9 | Integration test: preference scenarios | backend | 4 | dev | T1.1.5 | 🔴 (acceptance gate, RAID I6 credential blocker) |
 | T1.1.10 | Gitops env enable test+prod overlays | gitops | 1 | gitops | T1.1.9 | 🔴 |
 | T1.1.11 | Codex peer review + merge | docs | 1 | agent | T1.1.10 | 🔴 |
 | T1.1.12 | Charter + must-have-checklist marker update | docs | 1 | agent | T1.1.11 | 🔴 |
 
-**Total**: 27h
+**Total estimate**: 27h. **M3 stale audit 2026-05-09 re-baseline**: T1.1.1-T1.1.4 source-ready/live (~12h done iş); residual ~3h acceptance test + auth flow setup + RAID I6 resolution. Detay: `m3-stale-audit-2026-05-09.md`.
 
 ### T1.2 — 23.2.B KVKK Erasure + Right-to-Information (must-have #7 closure)
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T1.2.1 | REST API: `DELETE /audit/me` (payload purge, recipient_hash kalır) | backend | 3 | dev | None | 🔴 |
-| T1.2.2 | REST API: `GET /audit/me` (subscriber's own history) | backend | 2 | dev | None | 🔴 |
-| T1.2.3 | Append-only enforcement verification (V8 trigger LIVE; test) | backend | 1 | dev | None | 🔴 |
-| T1.2.4 | Integration test: erasure flow + recipient_hash preservation | backend | 4 | dev | T1.2.1 | 🔴 |
+| T1.2.0 | **Admin erasure** `POST /api/v1/admin/notify/erasure` | backend | (existing) | dev | None | 🟢 source-ready/live (`AdminErasureController` 129 satır; R2 legal review wait) |
+| T1.2.1 | **Subscriber self-service** `DELETE /audit/me` (payload purge, recipient_hash kalır, KVKK Art.11) | backend | 5 | dev | None | 🔴 **gerçek pending** — endpoint backend'de YOK (M3 stale audit 2026-05-09 finding) |
+| T1.2.2 | **Subscriber right-to-info** `GET /audit/me` (KVKK Art.13) | backend | 5 | dev | None | 🔴 **gerçek pending** — endpoint backend'de YOK |
+| T1.2.3 | Append-only enforcement verification (V8 trigger LIVE; test) | backend | 1 | dev | None | 🟢 done (V8 trigger LIVE) |
+| T1.2.4 | Integration test: erasure flow (admin + self-service) + recipient_hash preservation | backend | 4 | dev | T1.2.1 | 🔴 |
 | T1.2.5 | Integration test: right-to-information | backend | 2 | dev | T1.2.2 | 🔴 |
-| T1.2.6 | Runbook: `RB-notify-kvkk-erasure.md` update with API examples | docs | 1 | agent | T1.2.4 | 🔴 |
-| T1.2.7 | Legal review (KVKK Art.11 + Art.13 compliance) | review | 2 | legal | T1.2.6 | 🔴 |
+| T1.2.6 | Runbook: `RB-notify-kvkk-erasure.md` update with API examples (admin + self-service) | docs | 1 | agent | T1.2.4 | 🟡 partial (admin runbook LIVE; self-service section pending) |
+| T1.2.7 | Legal review (KVKK Art.11 + Art.13 compliance) | review | 2 | legal | T1.2.6 | 🔴 (R2 active, ETA 2026-05-25) |
 | T1.2.8 | Codex peer review + merge | docs | 1 | agent | T1.2.7 | 🔴 |
 | T1.2.9 | Charter + must-have-checklist marker update | docs | 1 | agent | T1.2.8 | 🔴 |
 
-**Total**: 17h
+**Total estimate**: 17h. **M3 stale audit 2026-05-09 re-baseline**: T1.2.0 admin source-ready/live; T1.2.1 + T1.2.2 subscriber endpoint **GERÇEK PENDING ~10h** (yeni implementation gerek); residual ~12-15h.
 
 ### T1.3 — 23.2.C Provider Config Versioning + Rollback
 
@@ -301,12 +302,12 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 | Tier | Scope | Total Effort | Calendar Span | Critical Risk |
 |---|---|---:|---|---|
-| **T1** 23.2 closure | preference + erasure + provider rollback + outage fallback + classification + abuse | ~100h | 4-6 hafta | R2 (KVKK), R9 (D43), R13 (abuse) |
+| **T1** 23.2 closure | preference + erasure + provider rollback + outage fallback + classification + abuse | ~52-55h residual (~100h original; M3 stale audit 2026-05-09 re-baseline -44/-47h) | 2.5-3.5 hafta provisional | R2 (KVKK), R9 (D43), R13 (abuse), RAID I6 (Keycloak credential) |
 | **T2** 23.1+23.4+23.9 closure | D29-Functional + archive UI + 72h observation | ~19h | 1 hafta | R7 (browser verify) |
 | **T3** 23.3+23.5 | SMS NetGSM + Preference UI | ~65h | 3 hafta | R1 (NetGSM contract), R3 (DKIM) |
 | **T4** 23.6+23.7+23.8 v1 | Teams + Push + Tempo + bounce | ~99h | 5-6 hafta | R11 (Tempo), R16 (federation) |
 | **T5** 23.X v2 | multi-tenant features | ~144h | 8-12 hafta | R10 (multi-tenant migration) |
-| **Total v1 (T1-T4)** | Faz 23.0 → 23.9 v1 closure | ~280h | **3-4 ay** (with parallelization) | — |
+| **Total v1 (T1-T4)** | Faz 23.0 → 23.9 v1 closure | ~232-235h residual (T1 ~52-55h + T2 ~19h + T3 ~65h + T4 ~99h; M3 stale audit re-baseline -44/-47h) | **~3 ay** (with parallelization) | — |
 | **Total + v2** | Faz 23.0 → 23.X | ~424h | **6-8 ay** | — |
 
 **Estimation accuracy**: ±25% based on Codex peer review iter overhead + integration test discovery + cluster apply gates.
