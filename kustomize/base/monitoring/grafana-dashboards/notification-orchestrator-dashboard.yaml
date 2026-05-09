@@ -4,7 +4,7 @@
 # Visual companion to the PrometheusRule alerts merged in PRs #425 + #428 + #430.
 # Sidecar provisioner auto-import: label grafana_dashboard=1
 #
-# Panel scope (6 rows, 12 panels — final post Codex 019e0935 iter-1 absorb):
+# Panel scope (7 rows, 15 panels — Step B.3 + Step B.3.2 burn rate extension):
 #
 # Row 1 — Strict cutover health (Faz 23.6 PR-5.4/5.5):
 #   1. Match counter source distribution stacked area
@@ -36,6 +36,13 @@
 #
 # Row 6 — Audit retention alert state (Codex iter-1 P2.2):
 #   12. NeverSucceeded alert state stat — companion to Panel 4 (last-success age).
+#
+# Row 7 — DLQ SLO burn rate visualization (Step B.3.2 follow-up to Step B.4 SLO):
+#   13. Burn rate multi-window overlay (5m/30m/1h/6h/24h/72h with alert-aligned
+#       threshold colors).
+#   14. Error budget remaining (28d) — stat, percent, color-graded.
+#   15. 28d compliance % — stat zoomed to [99,100] showing distance from
+#       SLO target.
 #
 # Metric provenance: confirmed live via
 # `kubectl --context k3d-prod -n platform-prod exec deploy/notification-
@@ -289,6 +296,78 @@ data:
           "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "mappings": [{"options": {"0": {"text": "OK"}, "1": {"text": "PENDING/FIRING"}}, "type": "value"}]}},
           "options": {"colorMode": "background", "graphMode": "none"},
           "description": "Companion to Panel 4 (last-success age). When the gauge stays at 0 (cron never ran), Panel 4 shows 'No data' due to the > 0 filter; this stat exposes the NotifyAuditRetentionNeverSucceeded alert state directly. PENDING after 0s for 26h, FIRING after 26h."
+        },
+        {
+          "id": 13,
+          "title": "DLQ SLO — Burn Rate Multi-Window Overlay",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {
+              "expr": "notify:dlq:burn_rate:5m{namespace=\"platform-prod\"}",
+              "refId": "A",
+              "legendFormat": "5m"
+            },
+            {
+              "expr": "notify:dlq:burn_rate:30m{namespace=\"platform-prod\"}",
+              "refId": "B",
+              "legendFormat": "30m"
+            },
+            {
+              "expr": "notify:dlq:burn_rate:1h{namespace=\"platform-prod\"}",
+              "refId": "C",
+              "legendFormat": "1h"
+            },
+            {
+              "expr": "notify:dlq:burn_rate:6h{namespace=\"platform-prod\"}",
+              "refId": "D",
+              "legendFormat": "6h"
+            },
+            {
+              "expr": "notify:dlq:burn_rate:24h{namespace=\"platform-prod\"}",
+              "refId": "E",
+              "legendFormat": "24h"
+            },
+            {
+              "expr": "notify:dlq:burn_rate:72h{namespace=\"platform-prod\"}",
+              "refId": "F",
+              "legendFormat": "72h"
+            }
+          ],
+          "gridPos": {"h": 8, "w": 12, "x": 6, "y": 40},
+          "fieldConfig": {"defaults": {"unit": "none", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "orange", "value": 3}, {"color": "red", "value": 6}, {"color": "purple", "value": 14.4}]}}},
+          "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]}},
+          "description": "Multi-window burn rate overlay (Step B.4 Codex 019e094a). Thresholds match alert thresholds: 1× steady-state at-budget (NotifyDlqSloErrorBudgetBurning 72h), 3× ticket (NotifyDlqSloBurnRateMedium 24h), 6× page (NotifyDlqSloBurnRateSlow 6h+30m), 14.4× page (NotifyDlqSloBurnRateFast 1h+5m). Multiple windows overlaid show whether a burn is fast (short windows spike first, slowly propagating to long) vs sustained (all windows climb together)."
+        },
+        {
+          "id": 14,
+          "title": "DLQ SLO — Error Budget Remaining (28d)",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "100 * (1 - clamp_max(\n  sum by (namespace) (\n    increase(notify_dlq_terminated_total{namespace=\"platform-prod\"}[28d])\n  )\n  /\n  clamp_min(\n    sum by (namespace) (\n      increase(notify_dispatch_outcome_total{namespace=\"platform-prod\", status=~\"SUCCESS|FAILED\"}[28d])\n    ),\n    1\n  )\n  / 0.005,\n  1\n))",
+            "refId": "A",
+            "legendFormat": "Budget remaining"
+          }],
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 40},
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 25}, {"color": "yellow", "value": 50}, {"color": "green", "value": 75}]}}},
+          "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "description": "Error budget remaining over the rolling 28d SLO window. Formula: `100 * (1 - min(burn_rate_28d, 1))` where burn_rate_28d = (DLQ rate / total rate) / 0.005. clamp_min(...,1) on the denominator prevents divide-by-zero (returns 0% if total rate is 0). At 100% no budget consumed (no DLQ events). At 0% budget exhausted (burning at ≥1× steady-state for full 28d)."
+        },
+        {
+          "id": 15,
+          "title": "DLQ SLO — 28d Compliance %",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{
+            "expr": "100 * (\n  1 -\n  sum by (namespace) (\n    increase(notify_dlq_terminated_total{namespace=\"platform-prod\"}[28d])\n  )\n  /\n  clamp_min(\n    sum by (namespace) (\n      increase(notify_dispatch_outcome_total{namespace=\"platform-prod\", status=~\"SUCCESS|FAILED\"}[28d])\n    ),\n    1\n  )\n)",
+            "refId": "A",
+            "legendFormat": "Compliance"
+          }],
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 44},
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 99, "max": 100, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 99.0}, {"color": "yellow", "value": 99.5}, {"color": "green", "value": 99.9}]}}},
+          "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "description": "Notification dispatch success rate over rolling 28d window. SLO target = 99.5%. Formula: `100 * (1 - DLQ_rate / total_rate)`. Min/max [99,100] zoom shows tiny deviations from target — at 99.9% well above target, at 99.5% at-budget, at 99.0% half budget exhausted, at <99.0% over-budget."
         }
       ]
     }
