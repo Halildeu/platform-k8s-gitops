@@ -22,14 +22,14 @@ Bu dizin **Faz 23 notification orchestration** için canonical doküman setidir.
 | Doküman | Path | Amaç |
 |---|---|---|
 | **Event contract** | [event-contract.md](event-contract.md) | Intent JSON schema + PG schema + REST API + PII redaction + outage fallback |
-| **Feature matrix** | [feature-matrix.md](feature-matrix.md) | 16 kategori × ~140 özellik canlı tracker (☐/🟡/🟢) + tier (Kernel/MVP-dar/MVP-geniş/v1/v2) |
+| **Feature matrix** | [feature-matrix.md](feature-matrix.md) | 16 kategori × ~178 özellik canlı tracker (☐/🟡/🟢) + tier (Kernel/MVP-dar/MVP-geniş/v1/v2) |
 | **Must-have checklist** | [must-have-checklist.md](must-have-checklist.md) | 10 must-have çizgisi + kabul kriteri + evidence path |
 
 ### 3. Project Management (nasıl yönetilir)
 
 | Doküman | Path | Amaç |
 |---|---|---|
-| **Risk register** | [risk-register.md](risk-register.md) | 20 active risk + probability × impact + mitigation + owner |
+| **Risk register** | [risk-register.md](risk-register.md) | 22 active risk (R1-R22; R21 provider rate-limit + R22 GHCR outage Codex iter-2 absorb) + probability × impact + mitigation + owner |
 | **Test strategy** | [test-strategy.md](test-strategy.md) | Per sub-faz test coverage + 5 test types (unit/integration/E2E/manual/regression) + evidence |
 | **Sprint plan** | [sprint-plan.md](sprint-plan.md) | Task-level breakdown + estimation + ownership + Tier T1-T5 (~280h v1) |
 | **Milestones** | [milestones.md](milestones.md) | M0-M9 + DoD checklist + critical path + slip detection |
@@ -141,7 +141,7 @@ Bu doküman seti şunları sağlar:
 ✅ **Trackable plan** — feature-matrix + must-have-checklist + sprint-plan
 ✅ **Completed marked** — Sub-Faz Tablosu + must-have-checklist [x] + status emoji
 ✅ **Completion criteria** — kabul kriteri tabloları + DoD per milestone
-✅ **Risk management** — 20 risk register + probability × impact + mitigation
+✅ **Risk management** — 22 risk register + probability × impact + mitigation
 ✅ **Test planning** — 5 test types + per-sub-faz coverage + evidence path
 ✅ **Sprint estimation** — task-level hours + tier breakdown + velocity baseline
 ✅ **Milestone tracking** — M0-M9 + critical path + slip detection
@@ -149,4 +149,6 @@ Bu doküman seti şunları sağlar:
 ✅ **Stakeholder communication** — cadence + audience patterns + cross-AI peer review
 ✅ **Decision register status** — D38-D48 status sync to live state
 
-**Now we are PM-ready.** Next step: any sub-faz closure work follows this canonical doc set; doc updates inline per PR; weekly summary + per-milestone evidence; risk register reviewed weekly.
+**PM artifact baseline present** (10 capability tracker + risk + test + sprint + milestones + deps + stakeholders + decision register sync + update discipline). Production-ready guarantee değil; ~30% v1 scope coverage + 7/10 must-have done + 2 partial + 1 pending halinde **PM-ready execution discipline** kurulmuştur. Next step: any sub-faz closure work follows this canonical doc set; doc updates inline per PR; weekly summary + per-milestone evidence; risk register reviewed weekly.
+
+> **Honesty disclaimer (Codex iter-2 absorb 2026-05-09)**: "Now we are PM-ready" overclaim'inden kaçınılmıştır. Yapısal PM capability'leri tamamlandı, ancak feature marker pass deferred (~178 row literal sweep follow-up) + cross-doc consistency sweep (Codex iter-1/2 absorb) + KVKK erasure sub-faz authority alignment = dokümantasyon kalitesi iyileştirme süreci aktif.

@@ -28,7 +28,7 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 
 | ID | Risk | Probability | Impact | Severity | Mitigation | Owner | Status | Sub-faz | Last Review |
 |---|---|:---:|:---:|:---:|---|---|:---:|---|---|
-| R1 | NetGSM provider sözleşme + sandbox account gecikmesi | High | High | **High** | Backup: İletimerkezi secondary; pre-prod testing Mailpit pattern | ops | 🟡 Active | 23.3 | 2026-05-09 |
+| R1 | NetGSM provider sözleşme + sandbox account gecikmesi | High | High | **High** | Backup: İletimerkezi secondary; pre-prod testing Mailpit pattern | ops + legal | 🟡 Active | 23.3 | 2026-05-09 |
 | R2 | KVKK erasure scope yanlış implement → audit fail / legal exposure | Medium | Critical | **High** | Legal review öncesi merge yasak; runbook + integration test pre-prod | legal/dev | 🟡 Active | 23.2.B | 2026-05-09 |
 | R3 | DKIM/SPF/DMARC prod activation breaks email delivery | Medium | High | **Medium** | Mailpit dev test + canary domain + 24h pre-cutover validation | ops/dev | 🟡 Active | 23.2 sub-faz drift | 2026-05-09 |
 | R4 | Audit retention DETACH/DROP destructive bug (data loss) | Low | Critical | **Medium** | Backend test PR #130 + dry-run observation + ownership check | dev | 🟢 Mitigated | 23.7 | 2026-05-09 |
@@ -48,6 +48,8 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 | R18 | OpenFGA tuple drift (auth-service ↔ permission-service ↔ notify) | Medium | High | **Medium** | DD-5 cross-repo guard + tuple seed CommandLineRunner + integration test | dev | 🟢 Mitigated | — | 2026-05-09 |
 | R19 | Mass notification sending storm (abuse / compromised key) | Low | Critical | **Medium** | Abuse guards 23.2.F + rate limit + sender reputation alert | ops | 🔴 Pending | 23.2.F | 2026-05-09 |
 | R20 | Audit log immutability bypass via direct DB access | Low | High | **Low** | V8 trigger no_update/delete + DB role privilege restriction | dev | 🟢 Mitigated | — | 2026-05-09 |
+| R21 | Provider rate-limit / quota exhaustion (Mailgun/Slack/SMS) → silent throttling | Medium | High | **Medium** | Per-provider quota dashboard + 429 alert + fallback chain (R13 ile partial örtüşür ama explicit external-throttling failure mode) | ops + dev | 🟡 Active | 23.2 + 23.3 | 2026-05-09 |
+| R22 | GHCR / artifact registry outage → image pull fail blocks rollout | Low | High | **Low** | imagePullPolicy:IfNotPresent + node-cached images + secondary registry mirror plan + manual import runbook | ops | 🟡 Active | — (cross-cutting) | 2026-05-09 |
 
 ---
 
@@ -80,6 +82,7 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 ## Risk Review History
 
 - 2026-05-09 (Session 39 bootstrap): Initial 20 risks identified during PM artifact creation. R4/R5/R8/R18/R20 marked Mitigated based on Session 39 Codex review evidence.
+- 2026-05-09 (Codex iter-2 absorb PR #441): R1 owner extended `ops → ops + legal` (NetGSM commercial contract). 2 yeni risk: R21 (provider rate-limit external throttling) + R22 (GHCR registry outage). Toplam aktif risk: 22.
 
 ## Next Review
 

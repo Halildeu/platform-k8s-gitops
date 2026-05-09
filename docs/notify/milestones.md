@@ -90,17 +90,32 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 **Owner**: dev (frontend)
 **Dependencies**: T1.1 (preference API), M3
 
-### M6 — 23.4 Closure (🟡 target 2026-06-15)
+### M6 — 23.4 Closure (🟡 split into M6a + M6b — Codex iter-2 absorb)
+
+> **Split rationale (2026-05-09)**: 23.4 closure iki bağımsız part'a bölündü; M6a (archive + history filter) M3 ile paralel, M6b (SMS DLR UI) M4 sonrası gate'lidir.
+
+#### M6a — 23.4 Archive + History (🟡 target 2026-06-15, parallel with M3)
 
 **Definition of Done**:
 - [ ] T2.2.1 Archive UI button
-- [ ] T2.2.3 30d notification history filter
-- [ ] T2.2.4 Integration test
-- [ ] SMS DLR callback UI (deferred to M4 chain)
-- [ ] Charter 23.4 marker 🟡 → 🟢
+- [ ] T2.2.2-3 30d notification history filter (FE + BE)
+- [ ] T2.2.4 Integration test (archive + history)
+- [ ] Charter 23.4 marker (archive/history portion) 🟡 → 🟢
 
-**Blockers**: M4 (SMS DLR portion)
+**Blockers**: None (parallel with M3)
 **Owner**: dev (frontend + backend)
+**Dependencies**: M1 stable (cluster + auth)
+
+#### M6b — 23.4 SMS DLR UI (🔴 target post-M4, ~2026-06-29)
+
+**Definition of Done**:
+- [ ] FE inbox SMS DLR badge (status: sent/delivered/failed)
+- [ ] T3.1.7 DLR callback endpoint LIVE (M4 dep)
+- [ ] Charter 23.4 marker (SMS DLR portion) ⏳ → 🟢
+- [ ] Charter 23.4 fully 🟢 only when both M6a + M6b done
+
+**Blockers**: M4 (SMS NetGSM + DLR callback)
+**Owner**: dev (frontend)
 
 ### M7 — v1 Closure (🔴 target 2026-08-15)
 
@@ -140,25 +155,28 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 ## Critical Path Visualization
 
 ```
-M0 ───────▶ M1 ──────▶ M2 ──────▶ M3 ──────────────▶ M4 ──▶ M5 ──▶ M6 ──▶ M7 ──▶ M8 ──▶ M9
-(charter)  (cutover) (D29 evid)  (23.2 closure)    (SMS)  (UI)   (DLR)  (v1)   (mt)  (v2)
-                                  │                          │
-                                  ▼                          │
-                                 Risk gates:                 │
-                                 R2 KVKK, R9 D43             │
-                                 R13 abuse, R19 storm        │
-                                                             ▼
-                                                       Risk gates:
-                                                       R3 DKIM,
-                                                       R1 NetGSM contract
+                             ┌─── M2 (D29 evidence)  ─── parallel
+                             │
+M0 ──▶ M1 ───────────────────┼──▶ M3 ─────▶ M4 ──┬──▶ M6b ──┐
+(charter)  (cutover)         │   (23.2)   (SMS)  │  (DLR UI)│
+                             │     │             ▼          │
+                             │     ▼          M5 (UI)       ▼
+                             │   Risk gates:                M7 ──▶ M8 ──▶ M9
+                             │   R2 KVKK, R9 D43            (v1)  (mt)  (v2)
+                             │   R13 abuse, R19 storm
+                             │
+                             └─── M6a (archive/history) ─── parallel with M3
 ```
 
-**Critical path**: M0 → M1 → M3 → M4 → M5 → M7 → M8
+**Critical path** (longest dependent chain):
+**M0 → M1 → M3 → M4 → M5 → M7 → M8**
 
 **Parallel tracks**:
 - M2 (D29 evidence) parallel with M1 closure
-- M6 (23.4 closure) parallel with M3 (23.2)
+- M6a (23.4 archive/history) parallel with M3 (23.2)
+- M6b (23.4 SMS DLR UI) gated by M4 (post-SMS); not on critical path
 - M5 (Preference UI) blocked by M3 backend (T1.1)
+- M7 v1 sub-faz tracks (23.6/23.7/23.8) parallel after M5 unblocked
 
 ---
 

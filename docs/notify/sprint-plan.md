@@ -25,7 +25,9 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 ---
 
-## Tier 1: 23.2 Production MVP Dar Closure (4-6 weeks, ~80h)
+## Tier 1: 23.2 Production MVP Dar Closure (4-6 weeks, ~100h aggressive target)
+
+> **Effort note (Codex iter-2 absorb 2026-05-09)**: T1 toplam = T1.1 27h + T1.2 17h + T1.3 13h + T1.4 15.5h + T1.5 12h + T1.6 15h ≈ **99.5h ~100h aggressive target**. Önceki "80h" başlığı R2 KVKK legal review beklemesini saymıyordu — iter-2 tek-sayı sweep ile T1 bottleneck = ~100h olarak sabitlenmiştir; M3 target 2026-06-08 "aggressive" etiketiyle.
 
 ### T1.1 — 23.2.A Preference + Opt-out + Critical Bypass (must-have #8)
 
@@ -118,7 +120,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 **Total**: 15h
 
-**Tier 1 Total**: ~99.5h productive work (~10-13 day blocks)
+**Tier 1 Total**: ~100h productive work (~10-13 day blocks; exact sum 99.5h)
 
 ---
 

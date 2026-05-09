@@ -4,7 +4,7 @@
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md)
 > **Roadmap**: [RB-faz-23-charter](../runbooks/RB-faz-23-charter.md)
 
-**16 kategori** × ~140 özellik. Her özellik için tier (Kernel/MVP-dar/MVP-geniş/v1/v2/scope-dışı) + sub-faz + status. Sub-faz tamamlandığında status güncellenir.
+**16 kategori** × **~178 özellik** (literal row count 178; önceki "~140" rakamı semantic estimate idi — Codex iter-2 absorb 2026-05-09'da 178 olarak sabitlenmiştir). Her özellik için tier (Kernel/MVP-dar/MVP-geniş/v1/v2/scope-dışı) + sub-faz + status. Sub-faz tamamlandığında status güncellenir.
 
 > **Not 1**: Kategori sayısı **11 → 16** artışı: ADR-0013 D45 ile 5 yeni kategori eklendi (Deliverability, Abuse/spam, Accessibility, Incident/degraded, Data classification).
 > **Not 2**: SMS tier **MVP-geniş (23.3)** olarak mühürlendi. ADR D40 metnindeki "tier v1" yorumu D44 channel coverage ile çelişti; D44 + feature matrix authoritative — SMS MVP-geniş, DLR callback v1.
@@ -48,7 +48,7 @@
 - Pending: ~115 features
 - Coverage estimate: **~30% v1 scope, ~50% Kernel scope, ~25% MVP-dar scope**
 
-> **Marker discipline (Codex `019e0bff` iter-1)**: Snapshot semantic roll-up'tır, literal matrix değil. Aşağıdaki kategori tablolarındaki literal ☐/🟡/🟢 markerları zaman içinde update edilecek (full pass deferred follow-up; ~140 row sweep). Snapshot ve literal arasındaki sayı farkı bu nedenle (10 done vs ~50 semantic) — doc-drift'in kabul edilmiş kalıntısı, planlı remediation'da.
+> **Marker discipline (Codex `019e0bff` iter-1)**: Snapshot semantic roll-up'tır, literal matrix değil. Aşağıdaki kategori tablolarındaki literal ☐/🟡/🟢 markerları zaman içinde update edilecek (full pass deferred follow-up; ~178 row sweep). Snapshot ve literal arasındaki sayı farkı bu nedenle (10 done vs ~50 semantic) — doc-drift'in kabul edilmiş kalıntısı, planlı remediation'da.
 
 ---
 

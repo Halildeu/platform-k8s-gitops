@@ -50,7 +50,7 @@ T1.1.3 REST API
        │            │
        │            ├──▶ T1.1.7 Frequency limit bypass
        │            │
-       │            └──▶ T1.1.5 Critical bypass ◀─── T1.5.1 (data classification)
+       │            └──▶ T1.1.5 Critical bypass ◀─── T1.5.2 (data classification enum + validator)
        │                              │
        │                              ▼
        │                         T1.1.9 Integration test
@@ -69,7 +69,7 @@ T1.1.3 REST API
 
 **Critical path**: T1.1.1 → T1.1.2 → T1.1.3 → T1.1.4 → T1.1.5 → T1.1.9 → T1.1.10 → T1.1.11 (~22h serial)
 **Parallel branches**: T1.1.6, T1.1.7, T1.1.8 (~6h saved if parallelized)
-**Cross-tier dep**: T1.5.1 (data classification field) blocks T1.1.5 critical bypass
+**Cross-tier dep**: T1.5.2 (data classification enum + validator) blocks T1.1.5 critical bypass — T1 ve T1.5 tracks **bağımsız değil**, orchestration zorunlu
 
 ### T1.2 KVKK Erasure (23.2.B must-have #7 closure)
 
@@ -319,7 +319,7 @@ M1 (23.9 Cutover Closure)
   ▼
 [Parallel: M2 (23.1 D29 evidence) + M6 (23.4 archive UI)]
   ▼
-M3 (23.2 closure) ──── critical path bottleneck (~80h, multiple risks)
+M3 (23.2 closure) ──── critical path bottleneck (~100h, multiple risks)
   ├──▶ M5 (23.5 Preference UI) ─ blocked by T1.1
   │
   ▼
@@ -336,7 +336,7 @@ M9 (v2 deferred)
 ```
 
 **Critical path duration**: M0 → M3 → M4 → M7 = ~13-15 weeks (3-4 months)
-**Bottleneck milestones**: M3 (~80h, 6 sub-tasks), M7 (~99h, 3 v1 sub-faz parallel)
+**Bottleneck milestones**: M3 (~100h, 6 sub-tasks), M7 (~99h, 3 v1 sub-faz parallel)
 
 ---
 
@@ -344,7 +344,7 @@ M9 (v2 deferred)
 
 | Tracks | Reason | Saving |
 |---|---|---:|
-| T1.1 + T1.2 + T1.3 + T1.4 + T1.5 + T1.6 | All 23.2 sub-tasks independent | ~30h serial → ~10h parallel |
+| T1.2 + T1.3 + T1.4 + T1.6 | 23.2 sub-tasks **mostly** independent (T1.1 ↔ T1.5 cross-tier dep var; T1.1.5 critical bypass T1.5.2 enum+validator'a blocked, T1.5.3 send pipeline T1.1.4'e blocked — bu iki track partial paralel only) | ~25h serial → ~12h parallel |
 | T2.1 + T2.2 + T2.3 | M2/M6/M1 closure parallel | ~10h saved |
 | T3.1 + T3.2 backend portion | While SMS contract pending, FE preference UI can start with T1.1.3 backend | ~10h saved |
 | T4.1 + T4.2 + T4.3 | v1 sub-faz independent | ~50h saved |
