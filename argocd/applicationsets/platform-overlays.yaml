@@ -49,15 +49,15 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
-      ignoreDifferences:
-        # 2026-05-10: D17 test scale-to-zero DEPRECATED.
-        # HARD RULE — TEST Cluster Scale-to-Zero YASAK; test için /spec/replicas
-        # drift ignore'u kaldırıldı (self-heal scale=0 manuel drift'i 1'e çeker).
-        # PROD için D21 HPA drift toleransı korunur — ApplicationSet ortak template
-        # olduğu için bu ignore prod scope'unda mantıklı; test için zarar vermez
-        # çünkü bu PR'la birlikte test overlay artık replicas=1 default + manuel
-        # scale=0 yasak. PROD HPA min/max davranışı bu ignore'la korunur.
-        - group: apps
-          kind: Deployment
-          jsonPointers:
-            - /spec/replicas       # PROD HPA drift toleransı (D21); test scale=0 yasak (HARD RULE)
+      # 2026-05-10: ApplicationSet ortak template'ten /spec/replicas ignoreDifferences
+      # KALDIRILDI. Sebep: HARD RULE — TEST Cluster Scale-to-Zero YASAK; ortak
+      # template'te ignore varsa test cluster için backdoor olur (manuel scale=0
+      # drift self-heal'lenmez). Codex iter-14 P1 absorb.
+      #
+      # PROD HPA drift toleransı (D21) ApplicationSet aktive edildiğinde
+      # standalone `argocd/applications/platform-prod.yaml` (line 39-44) içinde
+      # zaten korunur. ApplicationSet aktive olduğunda prod-only ignore için
+      # template per-cluster patch veya 2 ayrı template (prod/test split) gerek.
+      # Şu an ApplicationSet DRAFT (üstteki yorum); aktive sırasında bu
+      # split yapılmalı.
+      ignoreDifferences: []
