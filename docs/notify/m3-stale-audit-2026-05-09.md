@@ -82,17 +82,24 @@ Aramalar:
 
 ### T1.4 — 23.2.D Outage Fallback Bypass (D43, must-have #10)
 
-| Task | Source File | Source | Blocker |
-|---|---|:---:|---|
-| T1.4.1 Vault fallback path | NOT FOUND in code | 🔴 | **R9 active** |
-| T1.4.2 ESO ExternalSecret | `vault-paths-runbook` | 🟡 partial | R9 |
-| T1.4.3 Alertmanager dual-route | TBD | 🔴 | drill |
-| T1.4.5 Drift alarm-receiver | TBD | 🔴 | drill |
-| T1.4.6 Break-glass dual-channel | TBD | 🔴 | drill |
-| T1.4.7 Runbook | TBD | 🔴 | — |
-| T1.4.8 Drill execution | scheduled | 🔴 | R9 |
+| Task | Source File | Source | Live | Blocker |
+|---|---|:---:|:---:|---|
+| T1.4.1 Vault path declaration | `bootstrap/vault-policies/common/eso-runtime.hcl` (PR #457 MERGED) `kv/data/platform/alertmanager-fallback` read | 🟢 | 🟡 | Vault operator init runbook + AppRole drift resolve |
+| T1.4.2 ESO ExternalSecret test+prod | `kustomize/overlays/{test,prod}/eso/alertmanager/externalsecret-alertmanager-fallback.yaml` (PR #457 MERGED 5 keys) | 🟢 | 🟡 | ESO Vault AppRole "invalid role or secret ID" 2-day drift |
+| T1.4.3 Alertmanager native fallback receiver | `helm-values/kube-prometheus-stack/values-test-d43-drill.yaml` (PR #457 MERGED self-contained config + secrets[] mount + with/else template) | 🟢 | 🔴 | helm upgrade drill window |
+| T1.4.4 Mailpit netpol monitoring SMTP | `kustomize/overlays/test/lab-deps/mailpit-netpol-from-monitoring.yaml` (PR #457 MERGED) | 🟢 | 🟡 | cluster apply |
+| T1.4.5 NotifyServiceDown stable labels | `kustomize/base/apps/notification-orchestrator/prometheusrule.yaml` (PR #457 iter-3 absorb bypass_orchestrator + outage_fallback) | 🟢 | 🟡 | cluster apply |
+| T1.4.6 Drift alarm-receiver fallback hook (script-only) | NOT FOUND in `scripts/drift-detection/alarm_receiver.sh` (PR-2 pending) | 🔴 | 🔴 | impl |
+| T1.4.7 Break-glass dual-channel | `scripts/operations/break-glass-token.sh` extension pending (PR-3) | 🔴 | 🔴 | impl |
+| T1.4.8 Runbook + drill + R9 evidence | TBD (PR-4) | 🔴 | 🔴 | drill window + R9 |
 
-**T1.4 Verdict**: **PENDING — gerçek residual ~15h** (R9 D43 outage fallback drill blocker).
+**T1.4 Verdict (UPDATED 2026-05-09 18:56Z — PR #457 MERGED)**: **PR-1 source-ready** (Vault path + ESO + Alertmanager receiver + netpol + PrometheusRule labels). **Live-ready** Vault AppRole drift resolve sonrası ESO SecretSynced=True + helm drill upgrade. Codex thread `019e0dea` iter-1 PARTIAL → iter-2 AGREE-with-revisions → iter-3 PARTIAL → iter-4 AGREE/ready_to_merge=true (4 round absorb 8+4 bulgu). Gerçek residual ~10h (PR-2 alarm-receiver fallback ~2h + PR-3 break-glass ~3h + PR-4 runbook + drill + R9 evidence ~5h).
+
+Implementation order (Codex iter-2 absorb):
+1. PR-1 (MERGED 2026-05-09 18:56Z): GitOps + ESO + Alertmanager receiver + netpol — desired-state ✓
+2. PR-2 (pending): alarm-receiver fallback hook (script-only direct Alertmanager `/api/v2/alerts` POST; rate-limit; idempotency stable labels; cluster-internal only)
+3. PR-3 (pending): break-glass dual-channel (`scripts/operations/break-glass-token.sh` extension; no-token-log guard; `OUTAGE_FALLBACK_USED` audit best-effort post-recovery)
+4. PR-4 (pending): runbook + drill + R9 mitigated evidence (10-criteria closure)
 
 ### T1.5 — 23.2.E Data Classification
 
