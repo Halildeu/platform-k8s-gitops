@@ -162,13 +162,16 @@ psql_select() {
   fi
 }
 
-psql_select "SELECT partition_name, action, executed_at, drop_after FROM notify.audit_retention_log ORDER BY executed_at DESC LIMIT 20;"
+psql_select "SELECT partition_name, status, dry_run, detached_at, drop_after, dropped_at, error_message, created_at FROM notify.audit_retention_log ORDER BY created_at DESC LIMIT 20;"
 
 echo
-echo "Interpretation:"
+echo "Interpretation (Codex 019e0bb6 iter-2 P3 absorb — actual schema):"
 echo "  Empty result + bean activated = clean state, no historical retention runs"
-echo "  action='detach' rows with drop_after <= now() = candidates for next cron tick to DROP"
-echo "  action='drop' rows = already-dropped partition history"
+echo "  status='detached' rows with drop_after <= now() AND dropped_at IS NULL ="
+echo "    candidates for next cron tick to DROP"
+echo "  status='dropped' rows = already-dropped partition history"
+echo "  status='failed' rows = DROP failed (error_message has detail; manual triage)"
+echo "  dry_run=true rows = recorded during dry-run mode (no actual DETACH/DROP executed)"
 
 # -----------------------------------------------------------------------
 # 4. Partition inventory
