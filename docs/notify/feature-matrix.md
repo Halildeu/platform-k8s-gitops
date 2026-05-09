@@ -28,7 +28,7 @@
 - §1 Channel Coverage: 5/19 LIVE (Email A1, Slack A2, Webhook A3, in-app API A5, in-app UI A6)
 - §2 Workflow/Routing: 5/16 LIVE (single-channel B1, fan-out B2, retry B4, DLQ B5, code-based B6)
 - §3 Template Management: substantially LIVE (Kernel)
-- §4 Subscriber/Preferences: ⏳ pending (preference API + UI + critical bypass)
+- §4 Subscriber/Preferences: 🟡 partial (preference REST API + service + critical bypass source-ready/live-deployed; D29-Authorized BLOCKED on RAID I6; UI 23.5 pending) — M3 stale audit 2026-05-09
 - §5 Tenant/Multi-tenancy/Branding: 🟡 multi-tenancy guard LIVE; per-tenant brand pending
 - §6 Audit/Compliance: 🟡 audit append-only LIVE; KVKK retention LIVE; erasure/right-to-info pending
 - §7 Analytics/Observability: 🟡 metrics + alerts + dashboard + SLO LIVE; tracing (Tempo) + bounce loop + per-tenant dashboard pending
@@ -39,8 +39,8 @@
 - §12 Deliverability: ⏳ pending (DKIM/SPF/DMARC config)
 - §13 Abuse/Spam: ⏳ pending
 - §14 Accessibility (WCAG): ⏳ pending
-- §15 Incident/Degraded Mode: 🟡 alerts LIVE; D43 outage fallback bypass pending
-- §16 Data Classification: ⏳ pending
+- §15 Incident/Degraded Mode: 🟡 alerts/SLO/dashboard LIVE; **D43 outage fallback bypass gerçek pending T1.4 ~15h (R9 drill blocker)** — M3 stale audit confirmed
+- §16 Data Classification: 🟢 substantively LIVE (enum 4 değer transactional/security/commercial/system + IntentSubmissionService + DeliveryEligibilityService source-ready/live; acceptance test gate) — M3 stale audit 2026-05-09
 
 **Overall**:
 - Substantively LIVE features: ~30-35 of ~178 (excluding scope-dışı 5)

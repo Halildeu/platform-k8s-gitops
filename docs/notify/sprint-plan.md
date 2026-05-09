@@ -39,9 +39,19 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 ---
 
-## Tier 1: 23.2 Production MVP Dar Closure (4-6 weeks, ~100h aggressive target)
+## Tier 1: 23.2 Production MVP Dar Closure (2-3 weeks, ~50-60h residual)
 
-> **Effort note (Codex iter-2 absorb 2026-05-09)**: T1 toplam = T1.1 27h + T1.2 17h + T1.3 13h + T1.4 15.5h + T1.5 12h + T1.6 15h ≈ **99.5h ~100h aggressive target**. Önceki "80h" başlığı R2 KVKK legal review beklemesini saymıyordu — iter-2 tek-sayı sweep ile T1 bottleneck = ~100h olarak sabitlenmiştir; M3 target 2026-06-08 "aggressive" etiketiyle.
+> **M3 stale audit 2026-05-09 re-baseline** (Codex `019e0c28` strategic finding): Backend code scan göstermiştir ki T1.1.1-T1.1.5 + T1.2 + T1.3 + T1.5 **source-ready**. Gerçek residual:
+> - T1.1 ~3h (acceptance test only) — preference + bypass + opt-out source LIVE
+> - T1.2 ~2h (legal review wait, R2 active) — KVKK erasure source LIVE
+> - T1.3 ~5h (acceptance gate) — provider rollback partial source-ready
+> - T1.4 ~15h (gerçek pending) — D43 outage fallback (R9 drill blocker)
+> - T1.5 ~2h (acceptance test) — data classification source LIVE (enum + service)
+> - T1.6 ~15h (gerçek pending) — abuse guards (R13/R19 storm risks)
+>
+> **Toplam residual = ~42h + acceptance gate testing + Codex iter overhead = ~50-60h sprint**.
+>
+> Önceki ~100h estimate stale/pessimistic (sprint-plan T1.1.1-T1.1.5 + T1.2 + T1.3 + T1.5 hâlâ 🔴 pending görünüyordu, ama backend code zaten LIVE). 4-6 hafta target → 2-3 hafta gerçekçi (credential RAID I6 + R2 legal gate açılınca). Detay: `docs/notify/m3-stale-audit-2026-05-09.md`.
 
 ### T1.1 — 23.2.A Preference + Opt-out + Critical Bypass (must-have #8)
 
