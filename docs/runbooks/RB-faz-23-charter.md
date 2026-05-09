@@ -5,7 +5,7 @@
 > **Codex thread**: `019df86f-89aa-7200-bb6c-b7b903860148` (charter) + `019e0892` (Session 39 strategic retrospective) + `019e0bb6` (PR review chain)
 > **Yardımcı artifact**:
 > - `docs/notify/event-contract.md` — Intent contract spec
-> - `docs/notify/feature-matrix.md` — 11 kategori × tier × özellik canlı tracker
+> - `docs/notify/feature-matrix.md` — 16 kategori × tier × özellik canlı tracker (D45 ile 11 → 16 genişletildi)
 > - `docs/notify/must-have-checklist.md` — 10 must-have çizgisi
 
 Bu runbook **takip edilebilir yol haritası**dır. Her sub-faz için: kapsam, bağımlılık, süre, kabul kriteri, evidence path, status. Sub-faz tamamlandığında `Status` sütunu `🟢 done` işaretlenir; eksik kabul kriteri varsa `🟡 in-progress`.
@@ -63,7 +63,7 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 - Done (whole sub-faz fully closed): 23.0 (1/11 = 9%)
 - Partial (substantial progress, kabul kriteri eksikleri var): 23.1, 23.2, 23.4, 23.8, 23.9 (5/11 = 45%)
 - Pending: 23.3, 23.5, 23.6, 23.7, 23.X (5/11 = 45%)
-- Effective progress estimation: **~40% of v1 scope** (semantic — counts partials as half)
+- Effective progress estimation: **~30% of v1 scope** (semantic estimate — counts each partial sub-faz as 0.5 toward done; exact denominator NOT literal feature matrix count)
 - **Note**: Earlier "23.1/23.4/23.9 🟢 done" claim was overclaim per Codex review. Service runtime is LIVE but each sub-faz has explicit kabul kriteri eksikleri (D29-Functional evidence for 23.1, SMS DLR + archive for 23.4, 72h observation + rollback prova for 23.9). Marker accuracy correction is part of "going forward, mark only when ALL kabul kriteri are 🟢" discipline.
 
 ---

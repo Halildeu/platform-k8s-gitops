@@ -119,7 +119,7 @@ Bu repo için güncel ana strateji:
 - `docs/semantic-architecture.md` (runtime + promotion semantiği)
 - `docs/adr/0013-notification-orchestration.md` (Faz 23 ana ADR — DRAFT)
 - `docs/notify/event-contract.md` (Faz 23 notification intent contract spec)
-- `docs/notify/feature-matrix.md` (Faz 23 11 kategori × tier × özellik canlı tracker)
+- `docs/notify/feature-matrix.md` (Faz 23 16 kategori × tier × özellik canlı tracker, D45 ile 11 → 16)
 - `docs/notify/must-have-checklist.md` (Faz 23 10 must-have çizgisi)
 - `docs/runbooks/RB-faz-23-charter.md` (Faz 23 sub-faz roadmap)
 - Eski: `docs/D32-bootstrap-runbook.md` (historical, SUPERSEDED)
