@@ -337,87 +337,19 @@ patches:
         path: /data/NOTIFY_AUDIT_RETENTION_DRY_RUN
         value: "false"
 
-  # 2026-05-10: PROD pre-prod stage — replicas=1 (D21 HA 2 replica
-  # DEPRECATED). Tek kullanıcı (kullanıcı kendisi); HA gereği yok.
-  # Host RAM 23 GiB sıkışık (74% used); PROD 21 pod 10.66 GiB tüketiyor.
-  # 2 → 1 replica = ~5 GiB tasarruf. D30 atomic cutover sonrası canlı
-  # user gelirse tekrar 2'ye yükseltilir (revert PR).
-  - target:
-      kind: Deployment
-      name: auth-service
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
-  - target:
-      kind: Deployment
-      name: api-gateway
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
-  - target:
-      kind: Deployment
-      name: core-data-service
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
-  - target:
-      kind: Deployment
-      name: frontend
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
-  - target:
-      kind: Deployment
-      name: permission-service
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
-  - target:
-      kind: Deployment
-      name: report-service
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
-  - target:
-      kind: Deployment
-      name: schema-service
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
-  - target:
-      kind: Deployment
-      name: user-service
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
-  - target:
-      kind: Deployment
-      name: variant-service
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
-
   # Faz 23.9 prod cutover — notification-orchestrator pod-template
   # annotation rollout trigger + replicas override. ConfigMap envFrom
   # değişmesi pod restart tetiklemez; bu annotation rolling restart
-  # sağlar. 2026-05-10: replicas=1 (HPA min=1, max=3 dinamik; pre-prod
-  # tek user için 1 yeter).
+  # sağlar. Base D17 scale-to-zero (replicas: 0) → prod replicas: 2
+  # (D21 prod replica baseline; SSE multi-pod cross-broadcast PR-E.4
+  # PG LISTEN/NOTIFY ile çözüldü, HPA min=max=1 lock kaldırıldı).
   - target:
       kind: Deployment
       name: notification-orchestrator
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 1
+        value: 2
       - op: add
         path: /spec/template/metadata/annotations
         value:
