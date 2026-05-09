@@ -10,17 +10,17 @@ Bu audit Codex'in önerdiği **5-state matrix** (Source-ready / Live-deployed / 
 
 ## Executive Summary
 
-Sprint-plan T1 (23.2 closure) **gerçek residual ~52-55h band** (iter-2 absorb sonrası iter-1'in ~42h iddiası düzeltildi), önceki ~100h estimate'in altında ama iyimser olmayan. Backend implementation T1.1.1-T1.1.4 + T1.2 admin scope + T1.3 partial + T1.5 **source-ready/live**; T1.2 subscriber self-service (`DELETE/GET /audit/me`) gerçek pending; T1.4 (D43 outage fallback) + T1.6 (abuse guards) gerçek pending.
+Sprint-plan T1 (23.2 closure) **gerçek residual ~43-46h band** (post PR #132 + PR #452 MERGE 2026-05-09 14:00Z; T1.2 subscriber self-service source-ready/live-deployed). Backend implementation T1.1.1-T1.1.4 + **T1.2 admin + subscriber self-service** + T1.3 partial + T1.5 **source-ready/live**; T1.4 (D43 outage fallback) + T1.6 (abuse guards) gerçek pending.
 
 | State | Count | Notes |
 |---|---:|---|
-| 🟢 **Source-ready** | 7/12 | T1.1.1-T1.1.4, T1.2 admin, T1.3 partial, T1.5 backend code LIVE; T1.2 subscriber self-service backend'de YOK |
-| 🟡 **Live-deployed** | 7/12 | Test cluster deploy tested; pod LIVE (subscriber self-service hariç) |
+| 🟢 **Source-ready** | 8/12 | T1.1.1-T1.1.4, T1.2 admin + **subscriber self-service** (PR #132 MERGED), T1.3 partial, T1.5 backend code LIVE |
+| 🟢 **Live-deployed** | 8/12 | Test cluster deploy LIVE (T1.2 subscriber endpoint cluster apply CONFIRMED 2026-05-09 14:00Z, /api/v1/notify/audit/me 404→401 transition; PR #452 image bump) |
 | 🔴 **Evidence-backed** | 0/12 | M2 partial smoke yapıldı; full authenticated D29 BLOCKED (RAID I6) |
 | 🔴 **Acceptance complete** | 0/12 | Acceptance kriteri Charter'da hâlâ pending; M3 closure 🟡 |
-| 🟡 **Blocked** | 5/12 | T1.2 subscriber endpoint (yeni impl), T1.4 (R9 D43 drill), T1.6 (R13/R19 abuse), Keycloak credential (RAID I6), legal review (R2) |
+| 🟡 **Blocked** | 4/12 | T1.4 (R9 D43 drill), T1.6 (R13/R19 abuse), Keycloak credential (RAID I6), legal review (R2) — T1.2 subscriber endpoint blocker RESOLVED (PR #132 + #452 MERGE) |
 
-**M3 closure target**: 2026-06-08 → audit sonrası muhtemelen **2.5-3.5 hafta** (2026-05-25 - 2026-06-01 band) eğer credential + legal gate açılırsa + T1.2 subscriber endpoint impl + T1.4 + T1.6 tamamlanırsa.
+**M3 closure target**: 2026-06-08 → audit sonrası muhtemelen **2-3 hafta** (2026-05-22 - 2026-05-29 band) eğer credential + legal gate açılırsa + T1.4 + T1.6 tamamlanırsa.
 
 ---
 
@@ -144,22 +144,22 @@ Aramalar:
 
 **23.2 sub-faz marker**:
 - Şu an: `🟡 partial (Session 39 hardening 5/8 done; original acceptance 2/8 done)`
-- Re-baseline: `🟡 partial (Session 39 hardening 5/8 done; backend source-ready 7/9 / live-deployed 7/9 / acceptance-complete 1/9 — D29-Authorized BLOCKED on RAID I6 + R2 KVKK legal + T1.2 subscriber endpoint gerçek pending)`
-- 23.2 duration `4-6 hafta / ~100h aggressive` → `~52-55h residual / ~60-70h provisional sprint / 2.5-3.5 hafta (credential RAID I6 + R2 legal gate açılınca + T1.2 subscriber endpoint impl + T1.4 + T1.6 tamamlanırsa)`
+- Re-baseline (post PR #132 + #452 MERGE 2026-05-09 14:00Z): `🟡 partial (Session 39 hardening 5/8 done; backend source-ready 8/9 / live-deployed 8/9 / acceptance-complete 1/9 — D29-Authorized BLOCKED on RAID I6 + R2 KVKK legal; T1.2 subscriber self-service endpoint LIVE, T1.4 + T1.6 gerçek pending)`
+- 23.2 duration `4-6 hafta / ~100h aggressive` → `~43-46h residual / ~50-60h provisional sprint / 2-3 hafta (credential RAID I6 + R2 legal gate açılınca + T1.4 + T1.6 tamamlanırsa)`
 
 ### Sprint-Plan (sprint-plan.md)
 
-**T1 task status sweep**:
+**T1 task status sweep (post PR #132 + #452 MERGE 2026-05-09 14:00Z)**:
 - T1.1.1, T1.1.2, T1.1.3, T1.1.4 → 🔴 → 🟢 source-ready/live (V1 schema + PreferenceController + service + send pipeline LIVE)
 - T1.1.5, T1.1.6, T1.1.7, T1.2.6, T1.5.3 → 🔴 → 🟡 partial (source-ready, acceptance gate)
 - T1.2.0 admin erasure → 🟢 source-ready/live (R2 legal review wait)
-- **T1.2.1, T1.2.2 subscriber self-service `DELETE/GET /audit/me` → 🔴 stays (gerçek pending — backend'de YOK; ~10h yeni impl)**
+- **T1.2.1, T1.2.2 subscriber self-service `DELETE/GET /audit/me` → 🟢 source-ready/live (PR #132 MERGED + PR #452 cluster apply CONFIRMED; /audit/me 404→401 transition)**
 - T1.2.3 append-only verify (V8 trigger) → 🟢 done
 - T1.3.1 → 🟢 source-ready/live; T1.3.2 → 🟡 partial
 - T1.5.1, T1.5.2 → 🟢 source-ready/live (V1 field + DataClassification enum)
 - T1.4 sub-tasks: 🔴 stays (gerçek pending; alertmanager-bridge backend code YOK)
 - T1.6 sub-tasks: 🔴 stays (gerçek pending; RateLimitGuard/AbuseGuard backend'de YOK)
-- "T1 ~100h" başlığı → "T1 ~52-55h residual / ~60-70h provisional sprint" + actuals tracking note
+- "T1 ~100h" başlığı → "T1 ~43-46h residual / ~50-60h provisional sprint" + actuals tracking note
 
 ### Must-Have Checklist
 
