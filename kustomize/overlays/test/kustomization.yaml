@@ -208,7 +208,18 @@ images:
     # 66 PASS (20 yeni + 46 mevcut, 0 regression). MSSQL Testcontainers
     # PR-0.5 SUCCESS. RC003 strict regex (boundary-aware single-tenant
     # sourceQuery FAIL, sourceSchema iter-5 §3 absorb yearly-only).
-    digest: sha256:63b1bf17bce773dee8fbb6802f866bdd0e4b5b7e603dd8e437570fad3deb6399
+    #
+    # 2026-05-09 update: sha-fd2482b — platform-backend PR #133 merged.
+    # Codex 019e0d06 4-iter consensus (REVISE→AGREE→PARTIAL→AGREE).
+    # Bug fix: satis-ozet + stok-durum schemaMode=static + hardcoded
+    # workcube_mikrolink_1 sourceSchema → schemaMode=current +
+    # CurrentTenantSchemaResolver runtime per-tenant resolution. Önceki
+    # davranış: tüm tenant'lar için tenant 1 verisi gözüküyordu. Yeni:
+    # workcube_mikrolink_<companyId>. Plus iter-3 absorb: schemaMode-based
+    # dispatch + ReportRegistry fail-closed validation startup'ta.
+    # Tests: 76 PASS (5 yeni CurrentTenantSchemaResolverTest + RC-004
+    # 5→4 absorb).
+    digest: sha256:8744c9860b0a5153c5c88f1ccad177f985982f247fa14c618ba8d9547425cfe6
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
