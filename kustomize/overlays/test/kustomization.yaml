@@ -1391,9 +1391,35 @@ images:
   # CI 10/10 SUCCESS (Maven full reactor + Testcontainers PG dahil).
   # Browser smoke 2026-05-09 13:50Z testai.acik.com /api/v1/notify/audit/me
   # → 404 → bu bump sonrası 200 beklenen (T1.2 endpoint LIVE gate).
+  #
+  # 2026-05-09 update (Faz 23.2.F — T1.6 abuse guards backend):
+  # Bump to sha-0a55a6d (commit 0a55a6d3 on platform-backend main; PR #134
+  # MERGED 18:10:27Z; image build run 25608224665 SUCCESS, GHCR push verified
+  # @ sha256:eef18027f0d54b930e1c54c44215fe2c50e6aa752fe2dcbf93ea0eae2908d0b4).
+  # The PREVIOUS pin sha-7bdfb7d corresponds to PR #132 (T1.2 subscriber
+  # self-service KVKK erasure 2026-05-09 13:30Z). Delta 7bdfb7d..0a55a6d for
+  # notification-orchestrator/ adds:
+  #   - PR #134 (0a55a6d): Faz 23.2.F M3 abuse prevention guards —
+  #     AbuseGuardService (240 satır rate limit + webhook fan-out cap +
+  #     critical bypass scope dar) + AbuseGuardBlockedException (HTTP 429) +
+  #     IntentSubmissionService Step 1.5 wiring + AuditEventPublisher
+  #     publishStandaloneRequiresNew (Propagation.REQUIRES_NEW for audit row
+  #     survival on 429 rollback) + PiiRedactor whitelist extend
+  #     (count, limit, window_ms, webhook_count, cap) + 8/8 unit tests PASS.
+  # Codex thread `019e0c28` cross-AI peer review iter-1+2+3 AGREE/REVISE+
+  # PARTIAL→AGREE iter-3 ready_for_merge=true. Iter-2 P1 KRITIK fix:
+  # @Transactional(REQUIRES_NEW) propagation so 429 throw sonrası audit
+  # row outer rollback'i atlatır. Iter-3 P3: stale comment cleanup.
+  # CI 10/10 SUCCESS (Maven full reactor + Testcontainers PG dahil).
+  # Multi-pod soft enforcement note: in-process ConcurrentHashMap +
+  # AtomicLong; effective_limit = pod_count × per_pod_limit (PG/Redis
+  # follow-up out-of-scope MVP). Critical bypass kasıtlı dar tutuldu:
+  # severity=critical only; data_classification=security bypass kaldırıldı
+  # (DTO client-controlled, authority signal yok). Webhook fan-out cap
+  # HARD safety limit — severity=critical bile bypass etmez.
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:ca2587f21ca7f8d51ef4e7b70f6478d3c6b40ee685f655f865a6885472ff1fcb
+    digest: sha256:eef18027f0d54b930e1c54c44215fe2c50e6aa752fe2dcbf93ea0eae2908d0b4
 
 patches:
   # Replica 0 default (scale-to-zero)
