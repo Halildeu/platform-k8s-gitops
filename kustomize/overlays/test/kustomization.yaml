@@ -1111,7 +1111,46 @@ images:
     #
     # Image build run: 25598126582 (success), testai digest
     # sha256:85145f5dc59ac13306c923bf3f9f4ec274186a9b900bc9419a4dbce6fa80bb42.
-    digest: sha256:85145f5dc59ac13306c923bf3f9f4ec274186a9b900bc9419a4dbce6fa80bb42
+    #
+    # 2026-05-09 update: sha-879efe2 — cumulative bump for PR-FE-9
+    # (#340 drawer status fade + close-flush) and PR-FE-10 (#341
+    # design-system MultiFilterModule register), both merged
+    # 2026-05-09 in main.
+    #
+    # PR-FE-9 (RoleDrawer + UserDetailDrawer hardening):
+    #   - Status fade: 'saved' indicator now fades to 'idle' after
+    #     4 seconds instead of persisting indefinitely (visual
+    #     noise reduction observed during PR-FE-7/8 browser smoke)
+    #   - Close-flush: drawer dismissal during 500ms-pending
+    #     debounce now flushes the buffered draft before unmount
+    #     (data-loss footgun closed; legacy dirty-close confirm
+    #     popup removed under the auto-save model)
+    #   - TanStack mutation scope: per-drawer scope.id serializes
+    #     in-flight + close-flush mutations so a slow earlier POST
+    #     cannot overwrite a fresher final state on the server
+    #   - Equality-skip functional setter + autoSaveStatus deps
+    #     drop: closes the fade-self-revert race where the
+    #     observer effect promoted 'idle' back to 'saved'
+    #
+    # PR-FE-10 (design-system MultiFilterModule):
+    #   - Closes the AG Grid console error #200 cascade observed
+    #     during PR-FE-7/8 browser smoke (8 instances per page
+    #     load on /access/roles + /admin/users)
+    #   - Enables the agMultiColumnFilter + floatingFilter UI
+    #     that GridShell defaults referenced
+    #
+    # Cross-AI peer review:
+    #   - PR-FE-9 thread 019e0c84: iter-1 ready=false (2 blockers
+    #     — fade self-revert + close-flush queue loss), iter-2
+    #     ready=false (1 blocker — close-flush ordering race),
+    #     iter-3 ready=true (TanStack scope serialization
+    #     accepted)
+    #   - PR-FE-10 thread 019e0c89: iter-1 ready=true (mechanical
+    #     module registration, no blockers)
+    #
+    # Image build run: 25600714633 (success, cumulative on PR-FE-9
+    # squash 879efe2), testai digest sha256:a77680c1ecd05016a4c0eb938cecab7a5755f8ae6c48be30414ff166574baa64.
+    digest: sha256:a77680c1ecd05016a4c0eb938cecab7a5755f8ae6c48be30414ff166574baa64
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
