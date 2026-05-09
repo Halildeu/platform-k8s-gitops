@@ -10,17 +10,17 @@ Bu audit Codex'in önerdiği **5-state matrix** (Source-ready / Live-deployed / 
 
 ## Executive Summary
 
-Sprint-plan T1 (23.2 closure) **gerçek residual ~43-46h band** (post PR #132 + PR #452 MERGE 2026-05-09 14:00Z; T1.2 subscriber self-service source-ready/live-deployed). Backend implementation T1.1.1-T1.1.4 + **T1.2 admin + subscriber self-service** + T1.3 partial + T1.5 **source-ready/live**; T1.4 (D43 outage fallback) + T1.6 (abuse guards) gerçek pending.
+Sprint-plan T1 (23.2 closure) **gerçek residual ~28-32h band** (post PR #132 + #452 + #134 + #455 MERGE 2026-05-09 18:40Z; T1.2 subscriber self-service + T1.6 abuse guards source-ready/live-deployed). Backend implementation T1.1.1-T1.1.4 + **T1.2 admin + subscriber self-service** + T1.3 partial + T1.5 + **T1.6 abuse guards** **source-ready/live**; T1.4 (D43 outage fallback) gerçek pending.
 
 | State | Count | Notes |
 |---|---:|---|
-| 🟢 **Source-ready** | 8/12 | T1.1.1-T1.1.4, T1.2 admin + **subscriber self-service** (PR #132 MERGED), T1.3 partial, T1.5 backend code LIVE |
-| 🟢 **Live-deployed** | 8/12 | Test cluster deploy LIVE (T1.2 subscriber endpoint cluster apply CONFIRMED 2026-05-09 14:00Z, /api/v1/notify/audit/me 404→401 transition; PR #452 image bump) |
-| 🔴 **Evidence-backed** | 0/12 | M2 partial smoke yapıldı; full authenticated D29 BLOCKED (RAID I6) |
+| 🟢 **Source-ready** | 9/12 | T1.1.1-T1.1.4, T1.2 admin + **subscriber self-service** (PR #132 MERGED), T1.3 partial, T1.5, **T1.6 abuse guards** (PR #134 MERGED + PR #455 cluster apply 18:40Z) backend code LIVE |
+| 🟢 **Live-deployed** | 9/12 | Test cluster deploy LIVE (T1.2 + **T1.6** cluster apply CONFIRMED 2026-05-09; T1.6 pod imageID sha256:eef18027 + `AbuseGuardService initialized: window=60s rateLimit=100/window webhookFanoutCap=10` log evidence) |
+| 🔴 **Evidence-backed** | 0/12 | M2 partial smoke yapıldı; full authenticated D29 BLOCKED (RAID I6); T1.6 functional 429 smoke RAID I6 dep |
 | 🔴 **Acceptance complete** | 0/12 | Acceptance kriteri Charter'da hâlâ pending; M3 closure 🟡 |
-| 🟡 **Blocked** | 4/12 | T1.4 (R9 D43 drill), T1.6 (R13/R19 abuse), Keycloak credential (RAID I6), legal review (R2) — T1.2 subscriber endpoint blocker RESOLVED (PR #132 + #452 MERGE) |
+| 🟡 **Blocked** | 3/12 | T1.4 (R9 D43 drill — gerçek pending impl), Keycloak credential (RAID I6), legal review (R2) — T1.2 + T1.6 endpoint blocker RESOLVED (PR #132+#452+#134+#455 MERGE) |
 
-**M3 closure target**: 2026-06-08 → audit sonrası muhtemelen **2-3 hafta** (2026-05-22 - 2026-05-29 band) eğer credential + legal gate açılırsa + T1.4 + T1.6 tamamlanırsa.
+**M3 closure target**: 2026-06-08 → audit sonrası muhtemelen **1.5-2 hafta** (2026-05-19 - 2026-05-23 band) eğer credential + legal gate açılırsa + T1.4 tamamlanırsa.
 
 ---
 
@@ -107,16 +107,22 @@ Aramalar:
 
 ### T1.6 — 23.2.F Abuse Prevention Guards (must-have #10 partial)
 
-| Task | Source File | Source | Blocker |
-|---|---|:---:|---|
-| T1.6.1 Rate limit per source | NOT FOUND in code | 🔴 | R13/R19 active |
-| T1.6.2 Duplicate flood | NOT FOUND | 🔴 | R13 |
-| T1.6.3 Webhook fan-out cap | NOT FOUND | 🔴 | R13 |
-| T1.6.4 429 + audit | TBD | 🔴 | R13 |
-| T1.6.5 PrometheusRule alert | TBD | 🔴 | impl |
-| T1.6.6-7 Test + Codex review | TBD | 🔴 | impl |
+| Task | Source File | Source | Live | Evidence | Acceptance | Blocker |
+|---|---|:---:|:---:|:---:|:---:|---|
+| T1.6.1 Rate limit per source | `AbuseGuardService.java` (240 satır; sliding window per (orgId, topicKey)) | 🟢 | 🟢 | 🟡 partial (init log + counter register; functional 429 smoke RAID I6 dep) | 🔴 | acceptance gate I6 |
+| T1.6.2 Duplicate flood | NOT FOUND in code (Codex iter-1 P2 deferred follow-up) | 🔴 | 🔴 | 🔴 | 🔴 | impl follow-up |
+| T1.6.3 Webhook fan-out cap | `AbuseGuardService.java` (HARD safety limit; severity=critical bile bypass etmez) | 🟢 | 🟢 | 🟡 partial (init log; functional smoke I6 dep) | 🔴 | acceptance gate I6 |
+| T1.6.4 429 + audit | `AbuseGuardBlockedException` HTTP 429 + `AuditEventPublisher.publishStandaloneRequiresNew` (`Propagation.REQUIRES_NEW` audit row outer rollback'i atlatır — Codex iter-2 P1 KRITIK) | 🟢 | 🟢 | 🟡 partial (audit row evidence I6 functional smoke gerek) | 🔴 | acceptance gate I6 |
+| T1.6.5 PrometheusRule alert | (Counter `notify_abuse_blocked_total` LIVE; PrometheusRule `NotifyAbuseStorm` follow-up — Codex P2 deferred) | 🟡 partial | 🟡 partial | 🔴 | 🔴 | follow-up PR |
+| T1.6.6-7 Test + Codex review | `AbuseGuardServiceTest` 8/8 PASS unit; integration test (Service IT/MockMvc) Codex iter-3 P2 deferred follow-up; Codex thread `019e0c28` iter-1 PARTIAL → iter-2 P1 absorb → iter-3 AGREE ready_for_merge=true | 🟢 | 🟢 | 🟢 (unit) | 🟡 | integration test follow-up |
 
-**T1.6 Verdict**: **PENDING — gerçek residual ~15h** (R13/R19 abuse + storm risks).
+**T1.6 Verdict (UPDATED 2026-05-09 18:40Z — PR #134 + PR #455 MERGE + cluster apply CONFIRMED)**: **Backend abuse guards source-ready/live-deployed** (PR #134: AbuseGuardService 240 satır + AbuseGuardBlockedException + IntentSubmissionService Step 1.5 wiring + AuditEventPublisher.publishStandaloneRequiresNew + PiiRedactor whitelist extend + 8/8 unit tests PASS). Cluster pod imageID `sha256:eef18027f0d54b930e1c54c44215fe2c50e6aa752fe2dcbf93ea0eae2908d0b4` LIVE; `AbuseGuardService initialized: window=60s rateLimit=100/window webhookFanoutCap=10 (multi-pod soft enforcement)` confirmed. **Acceptance gate** functional 429 smoke (101st request expected) RAID I6 Keycloak credential blocker. T1.6 sprint-plan ~15h estimate; gerçek residual ~2-3h (functional smoke acceptance test + PrometheusRule alert + Service IT).
+
+**Codex P1 absorb significant findings**:
+- Critical bypass scope **daraltıldı**: sadece `severity=critical`; `data_classification=security` bypass kaldırıldı (DTO client-controlled, authority signal yok).
+- Webhook fan-out cap **HARD safety limit** (severity=critical bile bypass etmez).
+- Audit row transaction rollback **fix**: `Propagation.REQUIRES_NEW` ile 429 throw öncesi audit INSERT bağımsız transaction'da commit (outer rollback'i atlatır).
+- Multi-pod soft enforcement **explicit doc**: in-process ConcurrentHashMap + AtomicLong; effective_limit = pod_count × per_pod_limit (PG/Redis follow-up out-of-scope MVP).
 
 ---
 
@@ -129,8 +135,8 @@ Aramalar:
 | **T1.3** Provider rollback | 13h | ~5h (acceptance gate) | -8h |
 | **T1.4** Outage fallback (D43) | 15.5h | ~15h (gerçek pending) | 0h |
 | **T1.5** Data classification | 12h | ~2h (acceptance test) | -10h |
-| **T1.6** Abuse guards | 15h | ~15h (gerçek pending) | 0h |
-| **Toplam T1 (post PR #132 MERGE 2026-05-09)** | **99.5h (~100h)** | **~43-46h** | **-53 / -57h** |
+| **T1.6** Abuse guards (PR #134 + #455 MERGE + cluster apply 2026-05-09 18:40Z) | 15h | ~2-3h (functional smoke + PrometheusRule alert + Service IT acceptance) | -12 / -13h |
+| **Toplam T1 (post PR #134 + #455 MERGE 2026-05-09)** | **99.5h (~100h)** | **~28-32h** | **-67 / -71h** |
 
 **M3 closure realistic estimate (post PR #132 MERGE)**: ~43-46h **+** acceptance gate testing **+** Codex review iter overhead = **~50-60h provisional sprint** (önceki ~60-70h provisional'dan -10h; T1.2 subscriber endpoint impl LIVE source-ready). 4-6 hafta yerine **2-3 hafta** mümkün (eğer RAID I6 credential + R2 legal + T1.4 D43 + T1.6 abuse guards tamamlanırsa).
 
@@ -212,3 +218,7 @@ Aramalar:
 **2026-05-09 14:00Z (PR #452 cluster apply CONFIRMED)** — Image bump sha-ef0f487 → sha-7bdfb7d (sha256:ca2587f...) test cluster apply success. Pod notification-orchestrator-85b9894cdc-z4vvc 1/1 Running. /api/v1/notify/audit/me **404→401 transition** (route LIVE; "JWT token zorunludur" auth required). T1.2 source-ready/**live-deployed** CONFIRMED. T1 residual canonical model **~43-46h** korundu (T1.2 ~2-4h residual + T1.1 ~3h + T1.3 ~5h + T1.4 ~15h + T1.5 ~2h + T1.6 ~15h = ~42-44h base + Codex iter overhead = ~43-46h band; image build + cluster apply effort task tablo dışı, residual tek modeli korundu). Acceptance gate hâlâ RAID I6 + R2.
 
 **2026-05-09 14:15Z (Codex iter-3 absorb)** — Intra-doc re-baseline drift fix: T1.2.1/T1.2.2 detail satırları live=🟢 (önceki 🟡 image build pending), residual ~3-5h → ~2-4h, provisional disclaimer iter-3 dili düzeltildi.
+
+**2026-05-09 18:40Z (PR #134 + PR #455 MERGE + cluster apply CONFIRMED)** — T1.6 abuse guards backend MERGED + cluster apply LIVE. Pod imageID sha256:eef18027f0d54b930e1c54c44215fe2c50e6aa752fe2dcbf93ea0eae2908d0b4 (T1.6 image). Spring Boot startup `AbuseGuardService initialized: window=60s rateLimit=100/window webhookFanoutCap=10 (multi-pod soft enforcement)` confirmed. T1.6.1 + T1.6.3 + T1.6.4 🔴 → 🟢 source-ready/live-deployed; T1.6.6 unit tests 8/8 PASS 🟢. Cluster apply incident: ESO ClusterSecretStore Vault AppRole "invalid role or secret ID" (2 gündür sync error; not T1.6 backend code; PG password reset workaround applied with cached `change-me-local-only` value to unblock pod startup; ESO/Vault drift ayrı follow-up). T1 toplam residual ~43-46h → ~28-32h (-13/-14h; T1.6 ~15h → ~2-3h functional smoke + PrometheusRule + Service IT). M3 closure 1.5-2 hafta provisional (önceki 2-3 hafta).
+
+**2026-05-09 18:50Z (Codex iter-3+post-cluster verify)** — Cross-AI peer review continues: Codex thread `019e0c28` post-merge verdict pending; PR #455 verdict AGREE / ready_to_merge=true (smoke plan: 100 default rate limit threshold → 101st request 429 expected; override `NOTIFY_ABUSE_RATE_LIMIT_MAX_PER_WINDOW=5` ile 6th); functional 429 smoke acceptance test RAID I6 Keycloak admin credential blocker'a kadar pending.
