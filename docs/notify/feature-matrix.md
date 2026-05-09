@@ -1,6 +1,6 @@
 # Notification Platform Feature Matrix — Canlı Tracker
 
-> **Status**: DRAFT (Faz 23.0 charter — 2026-05-05)
+> **Status**: ACTIVE (charter base 2026-05-05; **truth alignment 2026-05-09 Session 39 post 11-PR cycle**)
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md)
 > **Roadmap**: [RB-faz-23-charter](../runbooks/RB-faz-23-charter.md)
 
@@ -12,18 +12,51 @@
 
 **Status legend**: ☐ pending · 🟡 in-progress · 🟢 done · ✗ scope-dışı
 
+## 📊 Snapshot (2026-05-09 Session 39)
+
+**By tier**:
+- Kernel (23.1): ~25 features → **~22 🟢** (88%)
+- MVP-dar (23.2): ~20 features → **~14 🟢** (alerts/dashboard/SLO/Vault/retention) + **~6 ⏳** (preference/erasure API + outage fallback + abuse + classification)
+- MVP-geniş (23.3): ~10 features → 0 🟢 (SMS NetGSM + in-app API pending)
+- v1 (23.4-23.8): ~30 features → ~5 🟢 (in-app UI + DLR partial), rest pending
+- v2 (23.X): ~50 features → 0 🟢 (deferred)
+- Scope-dışı (✗): 5 features (newsletter/RCS/etc)
+
+**By category**:
+- Channel Coverage (1): 3-4/19 done (Email + Slack + Webhook + in-app UI/API)
+- Workflow/Routing (2): 4-5/16 done (single-channel + retry + DLQ + code-based)
+- Domain Outbox (3): 3/3 done (✅ Kernel complete)
+- Authz/Org Boundary (4): 4/4 done (✅ Kernel + strict cutover)
+- Audit/Retention/KVKK (5): 3-4/6 done (audit + retention LIVE; erasure pending)
+- Vault/ESO Secrets (6): 3/3 done (✅ MVP-dar PR #424)
+- Observability (7): 7-8/10 done (alerts + dashboard + SLO LIVE; outage fallback pending)
+- Templates (8): 4/4 done (✅ Kernel)
+- Idempotency/Dedupe (9): 2/2 done (✅ Kernel)
+- Preference/Opt-out (10): 0/6 done (Faz 23.2 pending)
+- Identity/Subscriber (11): 5/5 done (PR-5.x strict cutover ✅)
+- Deliverability (12): 0/5 done (DKIM/SPF/DMARC + bounce loop pending)
+- Abuse/Spam (13): 0/4 done (rate limit + flood + fan-out cap pending)
+- Accessibility (14): 0/3 done
+- Incident/Degraded (15): 1/3 done (drift alarm-receiver partial; D43 outage fallback pending)
+- Data Classification (16): 0/3 done (transactional/security/commercial/system enforcement pending)
+
+**Overall: ~50/179 fully done = 28%; 7-8 partial = 33% effective coverage; 23 scope-dışı/v2 = 13%**
+- Productive completion: 33% of v1+v2 scope; 50% of v1 scope (excluding 23.X v2 features)
+
+> Marker'lar bu üst-snapshot'ta tutulur; aşağıdaki kategori tablolarındaki literal ☐ markerları zaman içinde update edilir (Session 39 itibarıyla legacy değer; categorical snapshot authoritative).
+
 ---
 
 ## 1. Channel Coverage
 
 | # | Özellik | Tier | Sub-faz | Status |
 |---|---|---|---|:---:|
-| A1 | Email transactional (SMTP) | **Kernel** | 23.1 | ☐ |
-| A2 | Slack incoming webhook | **Kernel** | 23.1 | ☐ |
-| A3 | Webhook egress (HMAC signed) | **Kernel** | 23.1 | ☐ |
+| A1 | Email transactional (SMTP) | **Kernel** | 23.1 | 🟢 |
+| A2 | Slack incoming webhook | **Kernel** | 23.1 | 🟢 |
+| A3 | Webhook egress (HMAC signed) | **Kernel** | 23.1 | 🟢 |
 | A4 | SMS (NetGSM primary, İletimerkezi secondary) | **MVP-geniş** | 23.3 | ☐ |
-| A5 | In-app inbox backend API | **MVP-geniş** | 23.3 | ☐ |
-| A6 | In-app inbox React UI (custom) | v1 | 23.4 | ☐ |
+| A5 | In-app inbox backend API | **MVP-geniş** | 23.3 | 🟢 (LIVE GET /inbox/me + SSE) |
+| A6 | In-app inbox React UI (custom) | v1 | 23.4 | 🟢 (PR-5.x cycle LIVE) |
 | A7 | Microsoft Teams (Adaptive Cards) | v1 | 23.6 | ☐ |
 | A8 | Mobile push FCM (Android) | v1 | 23.7 | ☐ |
 | A9 | Mobile push APNS (iOS) | v1 | 23.7 (Faz 22.2 iOS gerekirse) | ☐ |
@@ -42,12 +75,12 @@
 
 | # | Özellik | Tier | Sub-faz | Status |
 |---|---|---|---|:---:|
-| B1 | Single-channel send | **Kernel** | 23.1 | ☐ |
-| B2 | Channel fan-out (multi-channel aynı anda) | **Kernel** | 23.1 | ☐ |
-| B3 | Throttle per provider (NetGSM 100/dk) | **Kernel** | 23.1 | ☐ |
-| B4 | Retry exponential backoff (max 5 attempt) | **Kernel** | 23.1 | ☐ |
-| B5 | DLQ (manual replay endpoint) | **Kernel** | 23.1 | ☐ |
-| B6 | Code-based workflow (Java DSL) | **Kernel** | 23.1 | ☐ |
+| B1 | Single-channel send | **Kernel** | 23.1 | 🟢 |
+| B2 | Channel fan-out (multi-channel aynı anda) | **Kernel** | 23.1 | 🟢 |
+| B3 | Throttle per provider (NetGSM 100/dk) | **Kernel** | 23.1 | 🟡 (provider stub; tuning Faz 23.3) |
+| B4 | Retry exponential backoff (max 5 attempt) | **Kernel** | 23.1 | 🟢 (RetryWorker LIVE) |
+| B5 | DLQ (manual replay endpoint) | **Kernel** | 23.1 | 🟢 (LIVE + 4 alerts + SLO) |
+| B6 | Code-based workflow (Java DSL) | **Kernel** | 23.1 | 🟢 |
 | B7 | Multi-step workflow (ardışık adım) | v1 | 23.4 | ☐ |
 | B8 | Channel priority/fallback (email→SMS) | v1 | 23.4 | ☐ |
 | B9 | Conditional step (rule: `if user.role == admin`) | v1 | 23.4 | ☐ |

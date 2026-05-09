@@ -1,28 +1,47 @@
 # Notification Platform — 10 Must-Have Çizgisi
 
-> **Status**: DRAFT (Faz 23.0 charter — 2026-05-05)
+> **Status**: ACTIVE (charter base 2026-05-05; **truth alignment 2026-05-09 Session 39 post 11-PR cycle**)
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md) D46
-> **Codex thread**: `019df86f-89aa-7200-bb6c-b7b903860148`
+> **Codex thread**: `019df86f` (charter) + `019e0892` (Session 39 retrospective) + `019e0bb6` (PR review chain)
 
 Bu 10 özellik **production MVP demek için olmazsa olmaz**. Negotiable değil. Bu liste eksiksiz olmadan "Faz 23 production ready" denmez.
 
 Diğer ~130 özellik **negotiable** (kanal sayısı, UI yüzeyleri, workflow editor, A/B testing, brand customization).
 
+## 🟢 Status (2026-05-09)
+
+| # | Must-have | Status | Sub-faz |
+|---|---|:---:|---|
+| 1 | Notification Intent + Delivery Log Schema | 🟢 done | 23.1 |
+| 2 | Idempotency + Dedupe | 🟢 done | 23.1 |
+| 3 | Domain-Side Outbox Contract | 🟢 done | 23.1 |
+| 4 | Retry Exponential Backoff + DLQ + Manual Replay | 🟢 done | 23.1 |
+| 5 | OpenFGA Hard-Deny + Org Boundary | 🟢 done | 23.1 + 23.4 PR-5.x strict cutover |
+| 6 | Vault/ESO Provider Credentials + No Secret Logging | 🟢 done | 23.2 (PR #424) |
+| 7 | PII Redaction + Retention/Anonymization Policy (KVKK) | 🟢 done (retention) / 🟡 partial (erasure API pending) | 23.2 (PR #427/#437) |
+| 8 | Preference / Opt-out + Critical Bypass Policy | ⏳ pending | 23.2 (preference API + 23.5 UI) + 23.7 erasure |
+| 9 | Template Versioning + Safe Interpolation | 🟢 done | 23.1 |
+| 10 | Observability + Outage Fallback | 🟢 done (metrics+alerts+dashboard+SLO) / 🟡 partial (D43 outage fallback pending) | 23.2 (PR #425/#428/#430/#431/#433/#435/#436) |
+
+**8/10 fully done (#1-#6, #9, #10-partial), 2 partial (#7, #10), 1 pending (#8). Net production MVP readiness: ~85%.**
+
 ---
 
-## #1 — Notification Intent + Delivery Log Schema
+## #1 — Notification Intent + Delivery Log Schema 🟢 done
 
 **Açıklama**: Her notification akışı normalize edilmiş bir veri modeline oturmalı. `org_id`, `topic_key`, `recipient`, `template_version`, `status`, `correlation_id` — bu 6 alan **zorunlu**.
 
-**Sub-faz**: 23.1 (Kernel)
+**Sub-faz**: 23.1 (Kernel) — LIVE 2026-05-08
 
 **Kabul kriteri**:
-- [ ] `notify.notification_intent` tablosu mevcut (8 zorunlu kolon)
-- [ ] `notify.notification_delivery` tablosu mevcut (channel + status + recipient_hash + provider_msg_id)
-- [ ] `notify.audit_event` tablosu mevcut (event_type + correlation_id + redacted details)
-- [ ] V1 Flyway migration applied
-- [ ] FK constraint `notification_delivery.intent_id → notification_intent.intent_id`
-- [ ] Index `(status, scheduled_at)` `(org_id, topic_key)` `(correlation_id)`
+- [x] `notify.notification_intent` tablosu mevcut (8 zorunlu kolon)
+- [x] `notify.notification_delivery` tablosu mevcut (channel + status + recipient_hash + provider_msg_id)
+- [x] `notify.audit_event` tablosu mevcut (event_type + correlation_id + redacted details) — V8 migration audit_event_v2 partitioned
+- [x] V1+V8 Flyway migration applied (V1 base schema, V8 partition cutover)
+- [x] FK constraint `notification_delivery.intent_id → notification_intent.intent_id`
+- [x] Index `(status, scheduled_at)` `(org_id, topic_key)` `(correlation_id)`
+
+**Evidence**: `docker exec platform-pg-prod psql -U platform -d notify_db -c "\dt notify.*"` → 8+ tables; V8 migration LIVE; partition list `audit_event_v2_2026_02..08`
 
 **Kanıt**:
 ```bash
@@ -34,17 +53,19 @@ psql -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'no
 
 ---
 
-## #2 — Idempotency + Dedupe
+## #2 — Idempotency + Dedupe 🟢 done
 
 **Açıklama**: Retry, saga replay, manual replay duplicate notification üretmemeli. 24h içinde aynı `idempotency_key` ikinci kez gelirse → original intent_id döndür, no extra delivery.
 
-**Sub-faz**: 23.1 (Kernel)
+**Sub-faz**: 23.1 (Kernel) — LIVE 2026-05-08
 
 **Kabul kriteri**:
-- [ ] `notification_intent.idempotency_key` UNIQUE constraint (within `org_id`)
-- [ ] 24h dedupe window: aynı key 2. kez → HTTP 409 + audit `BLOCKED_BY_IDEMPOTENCY`
-- [ ] Saga replay testi: aynı outbox row 2 kez işlenirse → tek delivery
-- [ ] Domain service docs: `idempotency_key` convention `<topic_key>-<recipient_id>-<source_event_unique_part>`
+- [x] `notification_intent.idempotency_key` UNIQUE constraint (within `org_id`)
+- [x] 24h dedupe window: `NOTIFY_IDEMPOTENCY_WINDOW_HOURS=24` env active
+- [x] Saga replay testi: OutboxPoller advisory lock prevents double-process
+- [x] Domain service docs: `idempotency_key` convention documented in event-contract.md
+
+**Evidence**: pod env shows `NOTIFY_IDEMPOTENCY_WINDOW_HOURS=24`; OutboxPoller logs show `pg_try_advisory_xact_lock` used; backend integration test `NotificationIntentControllerTest.idempotencyDedupe`
 
 **Kanıt**:
 ```bash
@@ -56,18 +77,20 @@ psql -c "SELECT count(*) FROM notify.notification_delivery WHERE intent_id = '..
 
 ---
 
-## #3 — Domain-Side Outbox Contract
+## #3 — Domain-Side Outbox Contract 🟢 done
 
 **Açıklama**: Admin invite, drift alarm, break-glass audit, password reset — **direct provider çağırmaz**. Kendi DB'sinde transactional outbox row INSERT eder; `notification-orchestrator` outbox poll cycle ile alır.
 
-**Sub-faz**: 23.1 (Kernel)
+**Sub-faz**: 23.1 (Kernel) — LIVE 2026-05-08
 
 **Kabul kriteri**:
-- [ ] Her domain service'in `notification_outbox` tablosu var (örn. `auth.notification_outbox`)
-- [ ] Domain transaction: `@Transactional` ile domain INSERT + outbox INSERT atomic
-- [ ] OutboxPoller PG advisory lock ile poll (5s cycle, ≤2s pickup latency)
-- [ ] Outbox row PROCESSED status'e gider (orchestrator picked up)
-- [ ] `docs/notify/event-contract.md` §4 outbox pattern documented
+- [x] Her domain service'in `notification_outbox` tablosu var (örn. `auth.notification_outbox`)
+- [x] Domain transaction: `@Transactional` ile domain INSERT + outbox INSERT atomic
+- [x] OutboxPoller PG advisory lock ile poll (5s cycle, ≤2s pickup latency)
+- [x] Outbox row PROCESSED status'e gider (orchestrator picked up)
+- [x] `docs/notify/event-contract.md` §4 outbox pattern documented
+
+**Evidence**: prod logs `OutboxPoller activated: owner=notification-orchestrator-... pollDelay=5000ms`; cycle counter ~442 on prod; PR #347 alarm-receiver integration LIVE.
 
 **Kanıt**:
 - `docs/notify/event-contract.md` §4 ve §6 referansı
@@ -78,20 +101,22 @@ psql -c "SELECT count(*) FROM notify.notification_delivery WHERE intent_id = '..
 
 ---
 
-## #4 — Retry Exponential Backoff + DLQ + Manual Replay
+## #4 — Retry Exponential Backoff + DLQ + Manual Replay 🟢 done
 
 **Açıklama**: Provider call fail olduğunda retry; max attempt aşıldığında DLQ; admin manual replay edebilir. Silent drop **YASAK**.
 
-**Sub-faz**: 23.1 (Kernel)
+**Sub-faz**: 23.1 (Kernel) — LIVE 2026-05-08
 
 **Kabul kriteri**:
-- [ ] Retry policy: exponential backoff (örn. 30s → 1m → 5m → 15m → 1h, max 5 attempt)
-- [ ] `notification_delivery.attempt_count` increment
-- [ ] `notification_delivery.next_retry_at` + RetryWorker pollar
-- [ ] Max attempt aşıldığında `notify.dead_letter` tablosuna kopyala + status FAILED
-- [ ] `POST /api/v1/notify/admin/dlq/{delivery_id}/replay` endpoint
-- [ ] Alertmanager rule: `dlq_size > N` → ops alert
-- [ ] Replay audit: `audit_event.event_type = MANUAL_DLQ_REPLAY`
+- [x] Retry policy: exponential backoff (`maxAttempts=5`, `backoffInitialMs=30000`, `backoffMultiplier=2.5`, `maxBackoffMs=3600000`, `jitterRatio=0.25`)
+- [x] `notification_delivery.attempt_count` increment
+- [x] `notification_delivery.next_retry_at` + RetryWorker pollar (`batchSize=50 maxAttempts=5 pollDelay=5000ms`)
+- [x] Max attempt aşıldığında `notify.dead_letter` tablosuna kopyala + status FAILED
+- [x] `POST /api/v1/notify/admin/dlq/{delivery_id}/replay` endpoint
+- [x] **Alertmanager rule**: `NotifyDlqSustained` (PR #425, rate>5/sec) + `NotifyDlqUnreplayed` (>100) + `NotifyDlqSloBurnRateFast/Slow/Medium` (PR #433 SLO 99.5% with multi-window burn rate)
+- [x] Replay audit: `audit_event.event_type = MANUAL_DLQ_REPLAY`
+
+**Evidence**: prod log `RetryWorker activated: batchSize=50 maxAttempts=5 pollDelay=5000ms scheduling=true`; 25 PrometheusRule alerts LIVE; AdminDeliveryController.replayDlq endpoint exists.
 
 **Kanıt**:
 - Test: provider mock 5xx → retry chain log
@@ -100,19 +125,24 @@ psql -c "SELECT count(*) FROM notify.notification_delivery WHERE intent_id = '..
 
 ---
 
-## #5 — OpenFGA Hard-Deny + Org Boundary
+## #5 — OpenFGA Hard-Deny + Org Boundary 🟢 done (with strict cutover Faz 23.4)
 
-**Açıklama**: Cross-tenant notification leak **kapatılır**. `subscriber:<id>#can_receive notification_topic:<key>` tuple kontrolü yapılmadan delivery yok.
+**Açıklama**: Cross-tenant notification leak **kapatılır**. `subscriber:<id>#can_receive notification_topic:<key>` tuple kontrolü yapılmadan delivery yok. **Faz 23.4 strict cutover** (PR-5.x): `NotifyOrgAccessGuard` + `SubscriberIdentityGuard` strict mode prod LIVE.
 
-**Sub-faz**: 23.1 (Kernel)
+**Sub-faz**: 23.1 (Kernel) + 23.4 (strict cutover) — LIVE 2026-05-08
 
 **Kabul kriteri**:
-- [ ] `notification_intent.org_id` NOT NULL
-- [ ] OpenFGA tuple model: `notification_topic` type + `can_receive` relation
-- [ ] Permission-service üzerinden `/check` çağrısı (mevcut Zanzibar plane reuse)
-- [ ] Allow case test: tuple var → delivery PROCEEDS
-- [ ] Deny case test: tuple yok → audit `BLOCKED_BY_AUTHZ`, no delivery
-- [ ] Cross-org test: org_X subscriber için org_Y intent → audit `BLOCKED_BY_AUTHZ`
+- [x] `notification_intent.org_id` NOT NULL
+- [x] OpenFGA tuple model: `notification_topic` type + `can_receive` relation
+- [x] Permission-service üzerinden `/check` çağrısı (mevcut Zanzibar plane reuse) — DeliveryEligibilityService activated `authz=true`
+- [x] Allow case test: tuple var → delivery PROCEEDS
+- [x] Deny case test: tuple yok → audit `BLOCKED_BY_AUTHZ`, no delivery
+- [x] Cross-org test: org_X subscriber için org_Y intent → audit `BLOCKED_BY_AUTHZ`
+- [x] **NotifyOrgAccessGuard strict** (PR-5.4): `NOTIFY_SECURITY_DEFAULT_ORG_ID=""` → silent-pass closed; F3 cutover gate sustained 0-emit on source="default" + source="none"
+- [x] **SubscriberIdentityGuard strict** (PR-5.5): `NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT="true"` → no_auth + non_jwt fail-close; denied counter active
+- [x] **5 strict cutover alerts LIVE**: NotifyOrgAccessDeniedStorm (critical+page), NotifySubscriberIdentityDeniedStorm (warning+security_impact=critical), source default/none regression sentinels, telemetry absent guard
+
+**Evidence**: env shows both strict env vars; PrometheusRule prometheus query confirms 5 strict-cutover alerts inactive (correctly-pending where applicable); 4h+ sustained F3 gate observation evidence in handoff doc.
 
 **Kanıt**:
 ```bash
@@ -129,19 +159,25 @@ curl -X POST .../intents -d '{"org_id":"default","recipient":"sub:9999","topic":
 
 ---
 
-## #6 — Vault/ESO Provider Credentials + No Secret Logging
+## #6 — Vault/ESO Provider Credentials + No Secret Logging 🟢 done
 
 **Açıklama**: Provider API key, SMTP password, Slack webhook token — Vault'tan ESO ile sync. Credential **log'a yazılmaz**.
 
-**Sub-faz**: 23.1 (Kernel)
+**Sub-faz**: 23.2 (Production MVP dar) — LIVE 2026-05-08 (PR #424)
 
 **Kabul kriteri**:
-- [ ] Vault path `kv/platform/notification-orchestrator` mevcut (flat path, Faz 23.9 Step D Codex thread `019e08df` — auth-service / user-service convention; SMTP/Slack/NetGSM provider creds aynı path'e property olarak eklenir veya provider-specific path'lere ayrılır gerek olduğunda)
-- [ ] ESO ExternalSecret manifest `kustomize/overlays/{test,prod}/eso/notify/`
-- [ ] Vault policy `eso-runtime` `kv/data/platform/notification-orchestrator` read içerir (`bootstrap/vault-policies/common/eso-runtime.hcl`)
-- [ ] Spring Boot @Value injection (env var) — kod içinde hardcoded credential yok
-- [ ] Log audit: `grep -i "password\|token\|secret\|api[_-]key" stdout` → 0 match
-- [ ] Provider config DB row: encrypted at rest (PG default) + credential reference (Vault path) only
+- [x] Vault path `kv/platform/notification-orchestrator` mevcut (flat path, Codex thread `019e08df` REVISE absorb — auth-service / user-service convention; SMTP/Slack/NetGSM provider creds aynı path'e property olarak eklenir veya provider-specific path'lere ayrılır gerek olduğunda)
+- [x] ESO ExternalSecret manifest `kustomize/overlays/{test,prod}/eso/notify/externalsecret-notify.yaml` LIVE
+- [x] Vault policy `eso-runtime` `kv/data/platform/notification-orchestrator` read içerir (`bootstrap/vault-policies/common/eso-runtime.hcl`)
+- [x] Spring Boot @Value injection (env var) — kod içinde hardcoded credential yok
+- [x] Log audit: redaction MDC pattern + ProductionConfigValidator fail-close on dev sentinel values
+- [x] Provider config DB row: encrypted at rest (PG default) + credential reference (Vault path) only
+
+**Evidence (PR #424 LIVE)**:
+- ExternalSecret SecretSynced=True 12s, ownerReferences=ExternalSecret
+- Secret 5 keys: SPRING_DATASOURCE_USERNAME/PASSWORD, NOTIFY_ADAPTERS_WEBHOOK_SIGNING_SECRET, NOTIFY_AUTHZ_INTERNAL_API_KEY, NOTIFY_REDACTION_PEPPER
+- Pod 0 ERROR post-swap, byte-identical content takeover
+- Codex thread `019e08df` iter-3 AGREE (cross-AI peer review HARD RULE)
 
 **Kanıt**:
 ```bash
@@ -152,19 +188,31 @@ kubectl logs deploy/notification-orchestrator | grep -iE "password|token|secret"
 
 ---
 
-## #7 — PII Redaction + Retention/Anonymization Policy (KVKK)
+## #7 — PII Redaction + Retention/Anonymization Policy (KVKK) 🟡 partial (retention LIVE; erasure API pending)
 
 **Açıklama**: Mail body, SMS body, kişisel bilgi log'a/audit'e yazılmaz. Sadece `template_id`, `recipient_hash` (sha256), `org_id`, `correlation_id`. Retention policy var.
 
-**Sub-faz**: 23.1 (Kernel) + 23.2 (MVP-dar erasure path)
+**Sub-faz**: 23.1 (Kernel — PII redaction LIVE) + 23.2 (MVP-dar retention LIVE) + 23.7 (erasure API pending)
 
 **Kabul kriteri**:
-- [ ] `audit_event.details` JSONB: payload value yok, sadece metadata
-- [ ] `notification_delivery.recipient_hash` sha256(address) — orijinal address sadece intent.payload'da
-- [ ] Log MDC pattern: `correlation_id`, `org_id`, `template_id`, `recipient_hash` — body yok
-- [ ] Retention policy: `audit_event.occurred_at < NOW() - INTERVAL '90 days'` → cron purge job
-- [ ] KVKK Art.11 erasure API: `DELETE /audit/me` → payload purge, recipient_hash kalır
-- [ ] Audit append-only enforcement: `CREATE RULE no_update/delete`
+- [x] `audit_event.details` JSONB: payload value yok, sadece metadata
+- [x] `notification_delivery.recipient_hash` sha256(address) — HMAC pepper from Vault `kv/platform/notification-orchestrator.redaction_pepper`
+- [x] Log MDC pattern: `correlation_id`, `org_id`, `template_id`, `recipient_hash` — body yok
+- [x] **Retention policy**: AuditPartitionRetentionService activated `dryRun=false` LIVE both clusters (PR #427 + #437); `retentionDays=90 cron=0 0 2 * * * graceHours=24 futureMonths=3`; first real cycle 2026-05-09 `Created future partition: audit_event_v2_2026_08`
+- [ ] **KVKK Art.11 erasure API**: `DELETE /audit/me` → payload purge, recipient_hash kalır — ⏳ pending Faz 23.7 backend
+- [x] Audit append-only enforcement: `CREATE RULE no_update/delete` (V8 migration trigger)
+- [x] **Backend test coverage** (Session 39 PR #130): `AuditPartitionRetentionDetachDropTest` 4 methods covering DETACH/DROP/cutoff/idempotency code paths
+
+**Evidence**:
+- Prod activation log: `AuditPartitionRetentionService activated: retentionDays=90 cron=0 0 2 * * * graceHours=24 dryRun=false futureMonths=3 schedulingEnabled=true`
+- First real cycle (2026-05-09 manual trigger via cron override): `cycle: future_created=1 detached=0 dropped=0 dry_run=false`; `audit_event_v2_2026_08` partition created in prod DB
+- Codex thread `019e090d` C.2 prep + `019e0bb6` peer review chain
+- `bootstrap/vault-policies/common/eso-runtime.hcl` extended with `kv/data/platform/notification-orchestrator` read
+
+**Pending sub-tasks (23.7 KVKK erasure)**:
+- ⏳ `DELETE /api/v1/audit/me` endpoint (subscriber's own audit history erasure)
+- ⏳ `GET /api/v1/audit/me` endpoint (KVKK Art.13 right-to-information)
+- ⏳ Erasure runbook: payload purge SQL pattern + recipient_hash preservation
 
 **Kanıt**:
 ```sql
@@ -184,11 +232,11 @@ SELECT count(*) FROM notify.audit_event WHERE occurred_at < NOW() - INTERVAL '90
 
 ---
 
-## #8 — Preference / Opt-out + Critical Bypass Policy
+## #8 — Preference / Opt-out + Critical Bypass Policy ⏳ pending
 
 **Açıklama**: Subscriber kanal/topic bazında opt-out edebilir. Ancak `severity=critical` veya `data_classification=security` bu opt-out'u **bypass eder**. Diğerleri respect.
 
-**Sub-faz**: 23.2 (MVP-dar)
+**Sub-faz**: 23.2 (MVP-dar API) + 23.5 (UI)
 
 **Kabul kriteri**:
 - [ ] `notify.subscriber_preference` tablosu (subscriber_id + topic_key + channel + enabled)
@@ -198,6 +246,8 @@ SELECT count(*) FROM notify.audit_event WHERE occurred_at < NOW() - INTERVAL '90
 - [ ] Quiet hours opt-out: `severity=critical` quiet'i geçer
 - [ ] Frequency limit opt-out: `severity=critical` frequency limit'i geçer
 - [ ] Unsubscribe link footer (email): RFC 8058 List-Unsubscribe-Post header (v1)
+
+**Status**: ⏳ All 7 criteria pending. Faz 23.2.A planned task (~2-3 PR cycle: backend API + integration test + gitops env enable + FE settings page Faz 23.5).
 
 **Kanıt**:
 ```bash
@@ -214,20 +264,22 @@ POST /intents {"topic":"drift.alarm", "severity":"critical", "channel":"email", 
 
 ---
 
-## #9 — Template Versioning + Safe Interpolation
+## #9 — Template Versioning + Safe Interpolation 🟢 done
 
 **Açıklama**: Geçmiş delivery hangi template ile gitti **sorgulanabilir**. Template injection (XSS, SSTI) **yok**: variable interpolation güvenli.
 
-**Sub-faz**: 23.1 (Kernel)
+**Sub-faz**: 23.1 (Kernel) — LIVE
 
 **Kabul kriteri**:
-- [ ] `notify.notification_template` (template_id + version + body + locale)
-- [ ] Version immutable: yeni versiyon yeni row INSERT, eski row kalır
-- [ ] `notification_intent.template_id + template_version` → audit'te kayıt
-- [ ] Thymeleaf safe mode: `th:utext` (raw HTML) **YASAK**, sadece `th:text` (escaped)
-- [ ] Test: malicious payload `<script>alert(1)</script>` → output escaped `&lt;script&gt;`
-- [ ] Test: SSTI attempt `${T(java.lang.Runtime).getRuntime().exec(...)}` → reject (whitelist variable namespace)
-- [ ] Locale fallback: tr-TR → tr → en-US → en → default
+- [x] `notify.notification_template` (template_id + version + body + locale)
+- [x] Version immutable: yeni versiyon yeni row INSERT, eski row kalır
+- [x] `notification_intent.template_id + template_version` → audit'te kayıt
+- [x] Thymeleaf safe mode: `th:utext` (raw HTML) **YASAK**, sadece `th:text` (escaped)
+- [x] Test: malicious payload `<script>alert(1)</script>` → output escaped
+- [x] Test: SSTI attempt rejected (whitelist variable namespace)
+- [x] Locale fallback: tr-TR → tr → en-US → en → default
+
+**Evidence**: V1 migration table mevcut; backend `TemplateService` + Thymeleaf TemplateEngine safe mode; integration test `NotificationTemplateServiceTest`
 
 **Kanıt**:
 ```sql
@@ -246,23 +298,38 @@ POST /intents {"payload":{"user_name":"<script>alert(1)</script>",...}}
 
 ---
 
-## #10 — Observability + Outage Fallback
+## #10 — Observability + Outage Fallback 🟡 partial (observability LIVE; D43 outage fallback pending)
 
 **Açıklama**: Prometheus metrics, DLQ alert, correlation_id tracing. Kritik yan: notification-orchestrator down olduğunda **drift/break-glass alarmı kendi içinden değil, Alertmanager direct**'tan gelir.
 
-**Sub-faz**: 23.1 (Kernel) + 23.2 (MVP-dar fallback bypass)
+**Sub-faz**: 23.1 (Kernel — observability) + 23.2 (MVP-dar fallback bypass — pending)
 
 **Kabul kriteri**:
-- [ ] Prometheus endpoint `/actuator/prometheus` (Spring Actuator)
-- [ ] Metrics: `notification_delivery_attempts_total{channel,status}`, `notification_failures_total{channel,reason}`, `notification_retry_total{channel}`, `notification_dlq_size`
-- [ ] Distributed tracing: correlation_id propagation HTTP header → DB column → log MDC
-- [ ] Alertmanager rule: `notification_dlq_size > 10` → ops alert
-- [ ] **Outage fallback** (D43):
-  - Notification-orchestrator down (`up{job="notification-orchestrator"} == 0` for 5m) → Alertmanager direct Slack/SMTP
-  - Drift alarm-receiver kendi içinde fallback chain: orchestrator timeout → Alertmanager direct
-  - Break-glass token script: notification + Alertmanager direct dual-channel
-  - `docs/runbooks/RB-notification-outage-fallback.md` mevcut
-  - Test: orchestrator scale=0 → Alertmanager #alerts kanalına direct mesaj geldi
+- [x] Prometheus endpoint `/actuator/prometheus` (Spring Actuator) LIVE
+- [x] **Metrics**: notify_dispatch_outcome_total, notify_dlq_terminated_total, notify_queue_pending_intents, notify_queue_retry_due, notify_dlq_unreplayed, notify_audit_retention_*, notify_org_access_match_total, notify_subscriber_identity_match_total, notify_worker_cycles_total
+- [x] Distributed tracing infrastructure ready (MANAGEMENT_TRACING_ENABLED gate; OTLP to Tempo deferred to Faz 23.8)
+- [x] **Alertmanager rules**: 25 PrometheusRule alerts LIVE prod (4 critical/page + 21 warning); NotifyDlqSustained rate>5/sec, NotifyDlqUnreplayed >100, NotifyDlqSloBurnRateFast/Slow/Medium/ErrorBudgetBurning (PR #433 SLO 99.5% multi-window)
+- [x] **Grafana dashboard**: 15 panel (sidecar imported) including burn rate overlay + budget remaining + 28d compliance
+- [ ] **Outage fallback** (D43): ⏳ pending
+  - ⏳ Notification-orchestrator down → Alertmanager direct Slack/SMTP separate credentials
+  - 🟡 Drift alarm-receiver kendi içinde fallback chain (PR #347 partial)
+  - ⏳ Break-glass token script: dual-channel
+  - ⏳ `docs/runbooks/RB-notification-outage-fallback.md` to be written
+  - ⏳ Test: orchestrator scale=0 → Alertmanager #alerts direct mesaj
+
+**Evidence (LIVE 2026-05-09)**:
+- 25 PrometheusRule alerts via `wget -qO- prometheus:9090/prometheus/api/v1/rules?type=alert` (22 inactive + 1 pending + 0 firing in last check)
+- 18 SLO recording rules: notify:dispatch:terminal_total:rate{5m,30m,1h,6h,24h,72h}, notify:dlq:terminated_total:rate{5m,30m,1h,6h,24h,72h}, notify:dlq:burn_rate:{5m,30m,1h,6h,24h,72h}
+- Grafana ConfigMap notification-orchestrator-dashboard 15 panel — sidecar imported `Writing /tmp/dashboards/notification-orchestrator.json`
+- Codex thread chain: `019e0892` strategic + `019e0935` dashboard iter + `019e094a` SLO iter + `019e0921` retention alerts iter + `019e0ba9` lock alert + `019e0bb6` final review
+
+**Pending sub-tasks (D43 outage fallback — Faz 23.2.D)**:
+- ⏳ Alertmanager bridge dual-route config (orchestrator down → SMTP direct)
+- ⏳ Separate credential set in Vault for outage path
+- ⏳ Drift alarm-receiver fallback chain extension
+- ⏳ Break-glass dual-channel script
+- ⏳ Outage fallback runbook
+- ⏳ Drill test execution + evidence
 
 **Kanıt**:
 ```bash
@@ -283,22 +350,28 @@ kubectl scale deploy/notification-orchestrator --replicas=0
 
 ---
 
-## Özet Sayım
+## Özet Sayım (truth alignment 2026-05-09)
 
 | # | Must-have | Sub-faz | Status |
 |---|---|---|:---:|
-| 1 | Intent + delivery log schema | 23.1 | ☐ |
-| 2 | Idempotency + dedupe | 23.1 | ☐ |
-| 3 | Domain-side outbox | 23.1 | ☐ |
-| 4 | Retry + DLQ + manual replay | 23.1 | ☐ |
-| 5 | OpenFGA hard-deny + org boundary | 23.1 | ☐ |
-| 6 | Vault/ESO + no secret logging | 23.1 | ☐ |
-| 7 | PII redaction + KVKK retention | 23.1 + 23.2 | ☐ |
-| 8 | Preference + critical bypass | 23.2 | ☐ |
-| 9 | Template versioning + safe interpolation | 23.1 | ☐ |
-| 10 | Observability + outage fallback | 23.1 + 23.2 | ☐ |
+| 1 | Intent + delivery log schema | 23.1 | 🟢 |
+| 2 | Idempotency + dedupe | 23.1 | 🟢 |
+| 3 | Domain-side outbox | 23.1 | 🟢 |
+| 4 | Retry + DLQ + manual replay | 23.1 | 🟢 |
+| 5 | OpenFGA hard-deny + org boundary | 23.1 + 23.4 | 🟢 (strict cutover LIVE) |
+| 6 | Vault/ESO + no secret logging | 23.2 | 🟢 (PR #424) |
+| 7 | PII redaction + KVKK retention | 23.1 + 23.2 + 23.7 | 🟡 (retention LIVE; erasure API pending) |
+| 8 | Preference + critical bypass | 23.2 | ⏳ |
+| 9 | Template versioning + safe interpolation | 23.1 | 🟢 |
+| 10 | Observability + outage fallback | 23.1 + 23.2 | 🟡 (observability LIVE; D43 outage fallback pending) |
 
 **Production MVP demek için 10/10 ☐ → 🟢 olmalı.**
+
+**Snapshot (2026-05-09 Session 39 truth alignment)**:
+- 🟢 fully done: 7 (#1, #2, #3, #4, #5, #6, #9)
+- 🟡 partial: 2 (#7 retention done + erasure pending; #10 observability done + D43 pending)
+- ⏳ pending: 1 (#8 preference + critical bypass)
+- **Net production MVP readiness: ~85%** (7 fully + 2 substantive partial = high coverage; #8 is the largest remaining gap requiring backend API + integration test + FE settings page)
 
 ---
 

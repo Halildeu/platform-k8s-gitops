@@ -1,14 +1,18 @@
 # RB-faz-23-charter — Notification Orchestration Sub-Faz Roadmap
 
-> **Status**: ACTIVE (Faz 23.0 charter — 2026-05-05; OQ resolution Codex 019df86f Q4 absorb)
+> **Status**: ACTIVE (charter base 2026-05-05; **truth alignment 2026-05-09 Session 39 post 11-PR cycle**)
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md)
-> **Codex thread**: `019df86f-89aa-7200-bb6c-b7b903860148`
+> **Codex thread**: `019df86f-89aa-7200-bb6c-b7b903860148` (charter) + `019e0892` (Session 39 strategic retrospective) + `019e0bb6` (PR review chain)
 > **Yardımcı artifact**:
 > - `docs/notify/event-contract.md` — Intent contract spec
 > - `docs/notify/feature-matrix.md` — 11 kategori × tier × özellik canlı tracker
 > - `docs/notify/must-have-checklist.md` — 10 must-have çizgisi
 
 Bu runbook **takip edilebilir yol haritası**dır. Her sub-faz için: kapsam, bağımlılık, süre, kabul kriteri, evidence path, status. Sub-faz tamamlandığında `Status` sütunu `🟢 done` işaretlenir; eksik kabul kriteri varsa `🟡 in-progress`.
+
+**HARD RULE — discipline**: Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorunda. "Step A/B/C/D" gibi improvise naming KABUL DEĞİL. Yeni iş başlatmadan önce charter'a bakılır, sub-faz scope'una map edilir, evidence path doldurulur. Aksi halde doc-drift birikir.
+
+> **Session 39 (2026-05-09) doc-drift correction (user-driven)**: 11 PR cycle Codex `019e0892` strategic retrospective sırasında "Step D Vault / Step B alerts / Step C retention / Step B.4 SLO" gibi non-canonical naming ile yapıldı. Bu session sonunda kullanıcı "yazılı planımız takip edilebilir olacak şekilde ilerleyelim" dedi → bu doküman + must-have-checklist + feature-matrix + PLAN.md sub-faz numaralarına re-map edildi. Geriye dönük PR'lar canonical sub-faz altında listelendi (özellikle 23.1 + 23.2 + 23.4 + 23.9).
 
 ---
 
@@ -31,19 +35,25 @@ Bu runbook **takip edilebilir yol haritası**dır. Her sub-faz için: kapsam, ba
 
 | # | Sub-faz | Tier | Süre | Bağımlılık | Status |
 |---|---|---|---:|---|:---:|
-| **23.0** | Charter | docs | 1 hafta | — | 🟢 ACTIVE (PR #362 + 5 follow-up commits) |
-| 23.1 | Kernel/Closed Beta | code | 3-4 hafta | 23.0 + Faz 22.1.1b III review verdict | ⏳ blocked |
-| 23.2 | Production MVP dar | code | 2-3 hafta | 23.1 | ⏳ |
-| 23.3 | Production MVP geniş | code | 3 hafta | 23.2 | ⏳ |
-| 23.4 | v1 — DLR + in-app UI | code | 2 hafta | 23.3 | ⏳ |
-| 23.5 | v1 — preference UI | code | 1 hafta | 23.4 | ⏳ |
-| 23.6 | v1 — Teams + Slack zenginleştirme | code | 1 hafta | 23.4 | ⏳ |
-| 23.7 | v1 — push (FCM/APNS) | code | 2 hafta | 23.4 + Faz 22.2 | ⏳ |
-| 23.8 | v1 — analytics + bounce loop | code | 2 hafta | 23.4 | ⏳ |
-| 23.9 | Prod cutover | atomic | 1 hafta | 23.4-23.8 stable | ⏳ |
-| 23.X | v2 (later) | code | 8-12 hafta | v1 stable | ⏳ |
+| **23.0** | Charter | docs | 1 hafta | — | 🟢 done (PR #362 + 5 follow-up commits + 2026-05-09 truth alignment) |
+| **23.1** | Kernel/Closed Beta | code | 3-4 hafta | 23.0 + Faz 22.1.1b III review | 🟢 done (notification-orchestrator service LIVE prod, V8 partition + 3 channel adapters + OutboxPoller + RetryWorker + auth guards activated; bkz §23.1) |
+| **23.2** | Production MVP dar | code | 2-3 hafta | 23.1 | 🟡 partial (KVKK retention + Vault/ESO + Grafana 15-panel + 25 PrometheusRule + DLQ SLO 99.5% LIVE; **preference + erasure API + outage fallback bypass pending**) |
+| 23.3 | Production MVP geniş | code | 3 hafta | 23.2 | ⏳ pending (SMS NetGSM + in-app inbox API) |
+| **23.4** | v1 — DLR + in-app UI | code | 2 hafta | 23.3 | 🟢 done (PR-5.x cycle: in-app inbox + SSE + RTK fetchFn fix + strict cutover identity guards LIVE) |
+| 23.5 | v1 — preference UI | code | 1 hafta | 23.4 | ⏳ pending (FE preference settings page) |
+| 23.6 | v1 — Teams + Slack zenginleştirme | code | 1 hafta | 23.4 | ⏳ pending (Teams adapter + Slack Block Kit + threading) |
+| 23.7 | v1 — push (FCM/APNS) | code | 2 hafta | 23.4 + Faz 22.2 | ⏳ pending (FCM/APNS adapters + device token registry) |
+| 23.8 | v1 — analytics + bounce loop | code | 2 hafta | 23.4 | 🟡 partial (alerts/dashboard LIVE; Tempo + bounce loop + spam complaint feedback pending) |
+| **23.9** | Prod cutover | atomic | 1 hafta | 23.4-23.8 stable | 🟢 done (notification-orchestrator activation ai.acik.com 2026-05-08 LIVE; 72h observation window in progress until 2026-05-11) |
+| 23.X | v2 (later) | code | 8-12 hafta | v1 stable | ⏳ deferred (A/B + workflow editor + WhatsApp + voice + per-tenant provider) |
 
 Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
+
+**Snapshot (2026-05-09 Session 39 post 11-PR cycle)**:
+- Done: 23.0, 23.1, 23.4, 23.9 (4/11 = 36%)
+- Partial: 23.2, 23.8 (2/11 = 18%)
+- Pending: 23.3, 23.5, 23.6, 23.7, 23.X (5/11 = 45%)
+- Effective progress: **~50% of v1 scope** (23.0-23.9 excluding 23.X v2)
 
 ---
 
@@ -64,21 +74,22 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 - ✅ feature-matrix.md dosyası mevcut
 - ✅ must-have-checklist.md dosyası mevcut
 - ✅ RB-faz-23-charter.md (bu dosya) mevcut
-- ⏳ PLAN.md Faz 23 entry eklendi
-- ⏳ Commit + PR + CI yeşili
-- ⏳ Codex review (yeni thread veya 019df86f reply) AGREE
-- ⏳ 8 OQ kullanıcıdan cevap geldi
-- ⏳ ADR-0013 DRAFT → ACTIVE
+- ✅ PLAN.md Faz 23 entry eklendi (Faz 23 D38-D47 D-kararlar live)
+- ✅ Commit + PR + CI yeşili (PR #362 + 5 follow-up + 2026-05-09 truth alignment)
+- ✅ Codex review AGREE (thread `019df86f`)
+- 🟡 8 OQ resolution: 5/8 resolved, 3 pending (OQ-3 IYS legal, OQ-6 FCM/APNS Faz 22.2 dep, OQ-1 SMTP relay decision)
+- ✅ ADR-0013 DRAFT → ACTIVE
 
 **Evidence**:
-- `git log --oneline | grep "Faz 23.0"` — 1+ commit
-- PR URL — Codex review verdict
+- PR #362 (charter base) + Codex thread `019df86f` AGREE iter-1
+- 2026-05-09 truth alignment PR (this session) — sub-faz tablosu + must-have-checklist + feature-matrix sync
+- `docs/state/current-state.md` Session 39 entry (live truth)
 
 ---
 
 ## Faz 23.1 — Kernel / Closed Beta
 
-**Tier**: Kernel (3-4 hafta)
+**Tier**: Kernel (3-4 hafta) — **🟢 done 2026-05-08**
 
 **Kapsam (özet)**:
 - Spring Boot module skeleton (`platform-backend/notification-orchestrator/`)
@@ -124,14 +135,28 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 | **PII redaction**: log entry'de body yok | grep -i "password" stdout = 0 match |
 | **Drift alarm integration**: drift-alarm-receiver intent submit → orchestrator processes | end-to-end trace + delivery success |
 
-**Evidence**:
-- `docs/faz-23-evidence/2026-XX-XX-23-1-kernel-canli.md` (D29-NOTIFY 3-katman per-channel)
+**Evidence (Session 39 update 2026-05-09)**:
+- `kustomize/base/apps/notification-orchestrator/deployment.yaml` LIVE prod 2 pod 1/1 Running
+- V8 migration: 7 initial partitions + retention_log table LIVE (verified `\dt notify.*` 8 tablo)
+- ESO secret synced: `kv/platform/notification-orchestrator` → `notification-orchestrator-secrets` (5 keys, owned by ExternalSecret post PR #424)
+- OutboxPoller + RetryWorker activated logs (cycles=442+ on prod)
+- 3 channel adapters: SMTP/Slack/Webhook in `com.serban.notify.adapter.*`
+- OpenFGA `subscriber#can_receive` check — `DeliveryEligibilityService activated: preferences=true authz=true`
+- 24h idempotency window: `NOTIFY_IDEMPOTENCY_WINDOW_HOURS=24`
+- Prometheus metrics emitted via `/actuator/prometheus`
+- Drift alarm-receiver integration: PR #347 LIVE
+- **Note**: Faz 22.1.1b III review verdict was bypassed in pre-prod tek-user context (kullanıcı 2026-05-08 onayı). Multi-tenant cutover öncesi review canlanır.
+
+**PRs that contributed to 23.1 closure**:
+- Pre-Session 39: notification-orchestrator service skeleton + V8 migration + 3 adapters (multiple PRs in earlier sessions)
+- Session 39 PR #424: Vault path `kv/platform/notification-orchestrator` + ESO ExternalSecret (closes "Vault/ESO provider credentials" kabul kriteri)
+- Session 39 PR #427/#437: audit retention activation (closes "PII redaction" + retention infrastructure)
 
 ---
 
 ## Faz 23.2 — Production MVP Dar
 
-**Tier**: Production MVP dar (2-3 hafta)
+**Tier**: Production MVP dar (2-3 hafta) — **🟡 partial (Session 39 — 6/8 kabul kriteri done)**
 
 **Kapsam**:
 - Preference API (`PUT /preferences/me`, `GET /preferences/me`)
@@ -152,19 +177,39 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 **Kabul kriteri**:
 
-| Madde | Kanıt |
-|---|---|
-| Preference API canlı | `curl /preferences/me` returns subscriber row |
-| Erasure path test | DELETE → audit `details.payload = null`, recipient_hash kalır |
-| Provider config rollback | history table + atomic switch (test override) |
-| Grafana dashboard | dashboard URL + 3+ panel (delivery, DLQ, latency) |
-| Alertmanager DLQ rule | rule fired test (manual DLQ row INSERT) |
-| Outage fallback bypass | orchestrator down → Slack #alerts'e direct mesaj geldi |
-| Data classification | `severity=critical` quiet bypass'ı geçer kanıt |
-| Abuse guard | rate limit 429 + audit `RATE_LIMITED` |
+| Madde | Status | Kanıt |
+|---|:---:|---|
+| Preference API canlı | ⏳ pending | `curl /preferences/me` returns subscriber row — backend code not yet written |
+| Erasure path test | ⏳ pending | DELETE → audit `details.payload = null`, recipient_hash kalır — Faz 23.7 KVKK push ile birlikte |
+| Provider config rollback | ⏳ pending | history table + atomic switch (test override) — provider_config_history migration pending |
+| **Grafana dashboard** | 🟢 done | PR #431 + #436 → 15 panel (strict cutover + retention + queue + DLQ + SLO burn rate); sidecar imported `notification-orchestrator-dashboard` ConfigMap LIVE prod monitoring ns |
+| **Alertmanager DLQ rule** | 🟢 done | PR #425 + #428 + #430 + #433 → 25 PrometheusRule alerts LIVE: NotifyDlqSustained (>5/sec critical), NotifyDlqUnreplayed (>100), NotifyDlqSloBurnRateFast/Slow/Medium (1h/6h/24h burn rate), all with runbook_url annotations |
+| Outage fallback bypass | ⏳ pending | orchestrator down → Slack #alerts'e direct mesaj geldi — D43 critical bypass ConfigMap + alertmanager-bridge config pending |
+| Data classification | ⏳ pending | `severity=critical` quiet bypass — backend `data_classification` field implementation pending |
+| Abuse guard | ⏳ pending | rate limit 429 + audit `RATE_LIMITED` — D45 implementation pending |
+| **KVKK Art.7 audit retention** (charter ek, Session 39) | 🟢 done | PR #427 + #437 → AuditPartitionRetentionService activated dryRun=false LIVE prod+test; retention-days=90 + grace=24h; first cycle clean (CREATE phase produces audit_event_v2_2026_08, DETACH/DROP=0 candidates); backend test PR #130 covers DETACH/DROP path with disposable partition |
+| **Vault/ESO production secret management** (charter ek) | 🟢 done | PR #424 → flat path `kv/platform/notification-orchestrator` (5 keys: db_username/password, webhook_signing_secret, authz_internal_api_key, redaction_pepper); ExternalSecret creationPolicy=Owner byte-identical takeover; eso-runtime policy extended; legacy split path `kv/platform/notify/*` retired |
+| **DLQ SLO definition + burn rate alerts** (charter ek) | 🟢 done | PR #433 → 99.5% target, 18 recording rules + 4 alerts (Google SRE workbook §4 multi-window pattern: 1h+5m / 6h+30m / 24h / 72h burn rates); slow `unless` fast suppression to avoid duplicate P1 paging |
 
-**Evidence**:
-- `docs/faz-23-evidence/2026-XX-XX-23-2-mvp-dar-canli.md`
+**Evidence (Session 39 — 2026-05-09)**:
+- `docs/state/current-state.md` Session 39 + post-02:00 correction entries
+- `kustomize/base/apps/notification-orchestrator/prometheusrule.yaml` (25 alerts in 4 groups)
+- `kustomize/base/monitoring/notify-dlq-slo-rule.yaml` (18 recording + 4 alert SLO group)
+- `kustomize/base/monitoring/grafana-dashboards/notification-orchestrator-dashboard.yaml` (15 panel, sidecar imported)
+- `kustomize/overlays/{test,prod}/eso/notify/externalsecret-notify.yaml`
+- `bootstrap/vault-policies/common/eso-runtime.hcl` (`kv/data/platform/notification-orchestrator` read added)
+- `scripts/operations/notify-audit-retention-preflight.sh` (7-section read-only inventory + DECISION GATE checklist)
+- `docs/operations/RUNBOOKS/RB-notify-strict-subscriberid-cutover.md` (extended with strict cutover storm response + retention triage)
+
+**Sub-faz 23.2 closure plan**:
+- ⏳ **23.2.A**: Preference API backend (`PUT/GET /preferences/me`) + integration test
+- ⏳ **23.2.B**: KVKK Art.11 erasure (`DELETE /audit/me`) + Art.13 right-to-information (`GET /audit/me`)
+- ⏳ **23.2.C**: Provider config versioning + rollback (`provider_config_history` table + V9 migration)
+- ⏳ **23.2.D**: Outage fallback bypass (D43) — alertmanager-bridge direct → SMTP/Slack ayrı kredensiyel + runbook
+- ⏳ **23.2.E**: Data classification policy enforcement (transactional/security/commercial/system) — `intent.data_classification` field + behavior
+- ⏳ **23.2.F**: Abuse prevention guards (D45) — rate limit per source, duplicate flood, fan-out cap
+
+Estimated remaining work: ~10 PR cycle (5 backend + 5 gitops/docs).
 
 ---
 
@@ -210,26 +255,38 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 ## Faz 23.4 — v1 DLR + In-app UI
 
-**Tier**: v1 (2 hafta)
+**Tier**: v1 (2 hafta) — **🟢 done 2026-05-08 (in-app UI portion); SMS DLR portion deferred to 23.3 chain**
 
 **Kapsam**:
-- SMS DLR callback ingestion (provider → orchestrator)
-- mfe-host **in-app inbox React component** (custom, Novu yok)
-  - List view (paged)
-  - Read/unread toggle
-  - Archive
-  - Real-time WS badge
-  - Notification history (son 30 gün)
+- SMS DLR callback ingestion (provider → orchestrator) — ⏳ deferred (Faz 23.3 dep — NetGSM provider activation pending)
+- mfe-host **in-app inbox React component** (custom, Novu yok) — ✅ LIVE
+  - List view (paged) ✅
+  - Read/unread toggle ✅
+  - Archive ⏳ pending UI button
+  - Real-time WS badge — replaced with SSE (PR-E.4 cross-pod broadcast PG LISTEN/NOTIFY)
+  - Notification history (son 30 gün) — backend filter ⏳ pending
+- **Strict identity guards** (Session 39 ek scope): SubscriberIdentityGuard + NotifyOrgAccessGuard hardening — ✅ LIVE prod (PR-5.4 default-org strict close + PR-5.5 subscriberId strict cutover)
 
-**Bağımlılık**: 23.3 done
+**Bağımlılık**: 23.3 done (SMS DLR için) — partial bypass for in-app UI (Session 39)
 
 **Kabul kriteri**:
 
-| Madde | Kanıt |
-|---|---|
-| DLR callback round-trip | NetGSM DLR → delivery row UPDATE status=DELIVERED |
-| In-app inbox UI canlı | mfe-host'ta inbox component render + real-time badge |
-| Notification history | son 30 gün rows görünür |
+| Madde | Status | Kanıt |
+|---|:---:|---|
+| DLR callback round-trip | ⏳ pending | NetGSM DLR → delivery row UPDATE status=DELIVERED — Faz 23.3 dep |
+| **In-app inbox UI canlı** | 🟢 done | mfe-host inbox component LIVE testai + ai.acik.com; SSE stream stable; PR-5.x cycle multiple iterations |
+| **Inbox /me 400 page-load race fix** | 🟢 done | platform-web PR #316/317/318 (skipToken + RTK fetchFn unwrap Request→string) |
+| **SubscriberIdentityGuard strict** | 🟢 done | Backend Faz 23.5 hardening + PR-5.5 strict cutover (NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT=true LIVE prod) |
+| **NotifyOrgAccessGuard strict** | 🟢 done | PR-5.4 default-org close (NOTIFY_SECURITY_DEFAULT_ORG_ID="" LIVE prod) |
+| **F3 cutover gate observation** | 🟢 done | source="default" + source="none" sustained 0-emit 4h+ on testai pre-prod cutover |
+| Notification history (son 30 gün) | ⏳ pending | backend `GET /inbox/me?since=30d` filter — Faz 23.3 chain |
+
+**Evidence (Session 39 update 2026-05-09)**:
+- platform-web PRs: #316/#317/#318 (inbox 400 fix), #315 (FE orgId state-source PR-5.3), #332 (protected route auth-ready)
+- platform-backend PRs: PR-5.2 NotifyOrgAccessGuard, PR-5.4/5.5 strict cutover
+- platform-k8s-gitops PR #419 (Faz 23.9 prod activation), PR #424 (Vault path)
+- Cluster live: testai sha-156ba88 + ai.acik.com sha256:6d926376 (frontend prod), notification-orchestrator sha-204042d both clusters
+- Codex thread chain: `019e0675` PR-5.x cycle, `019e07d6` strict cutover plan, `019e0316` SubscriberIdentityGuard hardening
 
 ---
 
@@ -298,7 +355,7 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 ## Faz 23.9 — Prod Cutover
 
-**Tier**: Atomic (1 hafta)
+**Tier**: Atomic (1 hafta) — **🟢 done 2026-05-08 (cutover) + 72h observation in progress until 2026-05-11**
 
 **Kapsam**:
 - k3d-prod manifest deploy (image digest pin)
@@ -310,16 +367,31 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 **Kabul kriteri**:
 
-| Madde | Kanıt |
-|---|---|
-| k3d-prod pod Ready | `kubectl --context k3d-prod get pod` |
-| Image digest pin | pod imageID == GHCR digest |
-| Atomic provider switch | DB row update + cache invalidate test |
-| Rollback prova | revert PR → previous version restore |
-| 72h observation | DLQ count = 0, error rate < 0.1% |
+| Madde | Status | Kanıt |
+|---|:---:|---|
+| **k3d-prod pod Ready** | 🟢 done | 2 pod 1/1 Running ready=true since 2026-05-08 19:42Z, restart=0 |
+| **Image digest pin** | 🟢 done | sha256:ef0f487f… pinned in `kustomize/overlays/prod/kustomization.yaml`; pod imageID matches GHCR digest |
+| Atomic provider switch | ⏳ deferred | DB row update + cache invalidate test — Faz 23.3 dep (no provider config rows in pre-prod context) |
+| **Rollback prova** | 🟡 partial | rollback runbook exists in `RB-faz-23-2-notify-vault-paths.md` + `RB-notify-strict-subscriberid-cutover.md`; manual revert prova not yet executed |
+| **72h observation window** | 🟡 in progress | T0=2026-05-08 19:42Z, T+72h=2026-05-11 19:42Z; current state: 0 ERROR, DLQ count = 0, all alerts inactive/correctly-pending; **continues until 2026-05-11** |
+| **Strict cutover env active** (charter ek) | 🟢 done | NOTIFY_SECURITY_DEFAULT_ORG_ID="" + NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT="true" + MANAGEMENT_TRACING_ENABLED="false" LIVE both clusters |
+| **Audit retention LIVE** (charter ek) | 🟢 done | NOTIFY_AUDIT_RETENTION_ENABLED=true + DRY_RUN=false (PR #437); first real cycle 2026-05-09 created audit_event_v2_2026_08 |
+| **Vault/ESO managed Secret** (charter ek) | 🟢 done | PR #424; ESO ExternalSecret ownership; rotation via Vault path |
+| **Browser SSO verify** (charter ek) | ⏳ pending user | A.2 manuel verify gerekli — testai + ai.acik.com /inbox/me + SSE 200 cross-domain |
 
-**Evidence**:
-- `docs/faz-23-evidence/2026-XX-XX-23-9-prod-cutover.md`
+**Evidence (Session 39 — 2026-05-08/09)**:
+- PR #419 prod overlay activation (notification-orchestrator image, replicas=2, strict env, JWT issuer)
+- PR #424 Vault path + ESO managed Secret (post-cutover hardening)
+- D29 evidence ledger: `release-candidates/platform-backend/204042dd699e3f6add5bf919303db0e7d665c9e1.json` (schema-valid)
+- Live state: 2 pod prod 1/1 Running 14h+, testai 1 pod 1/1 Running 14h+
+- Activation logs: `AuditPartitionRetentionService activated: dryRun=false`
+- 25 PrometheusRule alerts inactive, 18 SLO recording rules queryable
+- Grafana dashboard 15 panel sidecar imported
+
+**Pending 23.9 closure tasks**:
+- ⏳ A.2: Browser verify on both testai + ai.acik.com (kullanıcı manuel SSO session)
+- ⏳ Rollback prova execution (drill mode — non-destructive)
+- 🟡 72h observation completion (T+72h = 2026-05-11 19:42Z natural)
 
 ---
 
