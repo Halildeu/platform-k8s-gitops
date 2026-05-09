@@ -39,19 +39,21 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 ---
 
-## Tier 1: 23.2 Production MVP Dar Closure (2.5-3.5 weeks, ~52-55h residual + ~60-70h provisional sprint)
+## Tier 1: 23.2 Production MVP Dar Closure (1-1.5 weeks provisional, ~17-22h residual)
 
-> **M3 stale audit 2026-05-09 re-baseline iter-2 corrected** (Codex `019e0c28` strategic finding): Backend code scan göstermiştir ki T1.1.1-T1.1.4 + T1.2 admin scope + T1.3 partial + T1.5 **source-ready/live**; T1.2 subscriber self-service GERÇEK PENDING. Gerçek residual:
-> - T1.1 ~3h (acceptance test only) — preference + bypass + opt-out source LIVE
-> - T1.2 ~12-15h (admin source-ready/R2 legal wait + **subscriber self-service `DELETE/GET /audit/me` gerçek pending ~10h** + integration test) — subscriber endpoint backend'de YOK
-> - T1.3 ~5h (acceptance gate) — provider rollback partial source-ready
-> - T1.4 ~15h (gerçek pending) — D43 outage fallback (R9 drill blocker)
-> - T1.5 ~2h (acceptance test) — data classification source LIVE (enum + service)
-> - T1.6 ~15h (gerçek pending) — abuse guards (R13/R19 storm risks)
+> **Session 41 update 2026-05-09 19:50Z** (post PR #134/#455/#456/#457/#462/#463/#464 MERGED): T1.6 abuse guards backend cluster LIVE; T1.4 D43 outage fallback PR-1+PR-2+PR-3+PR-4 source-ready (drill execution operator-bound). 5-state matrix Source-ready 12/12, Live-deployed 9/12, Acceptance 0/12, Blocked 2/12 (RAID I6 + R2 legal). Detay: `docs/notify/m3-stale-audit-2026-05-09.md`.
 >
-> **Toplam residual = ~52-55h + acceptance gate testing + Codex iter overhead = ~60-70h provisional sprint**.
+> **Gerçek residual** (Session 41 sonu):
+> - T1.1 ~3h (acceptance test only — RAID I6 dep)
+> - T1.2 ~2-4h (admin + subscriber LIVE; acceptance test + R2 legal review wait)
+> - T1.3 ~5h (acceptance gate)
+> - T1.4 ~3-5h (PR-1+2+3+4 source-ready; drill execution operator-bound; Vault AppRole drift dep)
+> - T1.5 ~2h (acceptance test)
+> - T1.6 ~2-3h (functional 429 smoke RAID I6 dep + PrometheusRule alert + Service IT)
 >
-> Önceki ~100h estimate stale/pessimistic, ama iter-1'in ~42h iddiası da iyimserdi (T1.2 subscriber endpoint hesabı dışında bırakmıştı). 4-6 hafta target → 2.5-3.5 hafta provisional (credential RAID I6 + R2 legal gate açılınca + T1.2 subscriber impl + T1.4/T1.6 tamamlanırsa). Detay: `docs/notify/m3-stale-audit-2026-05-09.md`.
+> **Toplam residual = ~17-22h** (Session 41) — önceki Session 40 ~28-32h (-10h T1.4 4-PR completion).
+>
+> Önceki ~100h estimate stale/pessimistic; T1.6 + T1.4 source-ready completion ile T1 effort 99.5h plan → 17-22h gerçek (drift -77/-82h). 4-6 hafta target → **1-1.5 hafta provisional** (RAID I6 + R2 legal + drill execution operator action).
 
 ### T1.1 — 23.2.A Preference + Opt-out + Critical Bypass (must-have #8)
 
@@ -145,7 +147,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 **Total**: 15h
 
-**Tier 1 Total estimate**: ~99.5h plan-time. **M3 stale audit 2026-05-09 re-baseline**: ~52-55h residual (T1.1 ~3h + T1.2 ~12-15h + T1.3 ~5h + T1.4 ~15h + T1.5 ~2h + T1.6 ~15h); +acceptance gate +Codex iter overhead = ~60-70h provisional sprint (önceki ~100h pessimistic).
+**Tier 1 Total estimate**: ~99.5h plan-time. **Session 41 sonu re-baseline 2026-05-09 19:50Z** (post T1.6 LIVE + T1.4 4-PR source-ready): **~17-22h residual** (T1.1 ~3h + T1.2 ~2-4h + T1.3 ~5h + T1.4 ~3-5h + T1.5 ~2h + T1.6 ~2-3h); drift -77/-82h. Calendar **1-1.5 hafta provisional** (RAID I6 + R2 legal + drill execution operator action gerekli).
 
 ---
 
@@ -302,12 +304,12 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 | Tier | Scope | Total Effort | Calendar Span | Critical Risk |
 |---|---|---:|---|---|
-| **T1** 23.2 closure | preference + erasure + provider rollback + outage fallback + classification + abuse | ~52-55h residual (~100h original; M3 stale audit 2026-05-09 re-baseline -44/-47h) | 2.5-3.5 hafta provisional | R2 (KVKK), R9 (D43), R13 (abuse), RAID I6 (Keycloak credential) |
+| **T1** 23.2 closure | preference + erasure + provider rollback + outage fallback + classification + abuse | ~17-22h residual (~100h original; Session 41 re-baseline post T1.6 LIVE + T1.4 4-PR source-ready -77/-82h) | 1-1.5 hafta provisional | R2 (KVKK legal), R9 (D43 drill operator-bound), RAID I6 (Keycloak credential) — R13 + R19 mitigated (T1.6 abuse guards LIVE) |
 | **T2** 23.1+23.4+23.9 closure | D29-Functional + archive UI + 72h observation | ~19h | 1 hafta | R7 (browser verify) |
 | **T3** 23.3+23.5 | SMS NetGSM + Preference UI | ~65h | 3 hafta | R1 (NetGSM contract), R3 (DKIM) |
 | **T4** 23.6+23.7+23.8 v1 | Teams + Push + Tempo + bounce | ~99h | 5-6 hafta | R11 (Tempo), R16 (federation) |
 | **T5** 23.X v2 | multi-tenant features | ~144h | 8-12 hafta | R10 (multi-tenant migration) |
-| **Total v1 (T1-T4)** | Faz 23.0 → 23.9 v1 closure | ~232-235h residual (T1 ~52-55h + T2 ~19h + T3 ~65h + T4 ~99h; M3 stale audit re-baseline -44/-47h) | **~3 ay** (with parallelization) | — |
+| **Total v1 (T1-T4)** | Faz 23.0 → 23.9 v1 closure | ~200-205h residual (T1 ~17-22h + T2 ~19h + T3 ~65h + T4 ~99h; Session 41 re-baseline post T1.6 LIVE + T1.4 4-PR source-ready -77/-82h vs ~280h baseline) | **~3 ay** (with parallelization) | — |
 | **Total + v2** | Faz 23.0 → 23.X | ~424h | **6-8 ay** | — |
 
 **Estimation accuracy**: ±25% based on Codex peer review iter overhead + integration test discovery + cluster apply gates.

@@ -21,7 +21,7 @@ Diğer ~130 özellik **negotiable** (kanal sayısı, UI yüzeyleri, workflow edi
 | 7 | PII Redaction + Retention/Anonymization Policy (KVKK) | 🟡 partial (retention LIVE; admin erasure source-ready/R2 legal; **subscriber self-service `DELETE/GET /audit/me` GERÇEK PENDING** — M3 stale audit 2026-05-09) | 23.1 (PII) + 23.2 (retention LIVE PR #427/#437; admin erasure `AdminErasureController` source-ready; subscriber self-service endpoint backend'de YOK) |
 | 8 | Preference / Opt-out + Critical Bypass Policy | 🟡 partial (source-ready; D29-Authorized acceptance gate BLOCKED on RAID I6) | 23.2.A (API source-ready/live) + 23.5 (UI pending) — M3 stale audit 2026-05-09 |
 | 9 | Template Versioning + Safe Interpolation | 🟢 done | 23.1 |
-| 10 | Observability + Outage Fallback | 🟡 partial (observability LIVE; D43 outage fallback pending) | 23.2 (PR #425/#428/#430/#431/#433/#435/#436) |
+| 10 | Observability + Outage Fallback | 🟡 partial (observability LIVE; **T1.4 D43 outage fallback 4-PR source-ready** Session 41 2026-05-09 — drill execution operator-bound) | 23.2 (PR #425/#428/#430/#431/#433/#435/#436 + #457/#462/#463/#464) |
 
 **Sayım** (Codex `019e0bff` iter-1 self-consistency fix):
 - 🟢 fully done: **7** (#1, #2, #3, #4, #5, #6, #9)
