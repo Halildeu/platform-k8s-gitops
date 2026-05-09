@@ -419,24 +419,54 @@ spec:
               AuditPartitionRetentionService` for activation message.
 
         - alert: NotifyAuditRetentionLockSkippedSustained
-          # Codex iter-1 P1 absorb: previous threshold (rate ~10/hour for 2h)
-          # was inert for a daily cron — single-day skips can never sustain
-          # 2h on a daily emission cadence. Switched to "any skip in 26h"
-          # which catches the daily-cron pattern correctly (single skip
-          # over a 26h window = daily cron skip detected). For repeated-day
-          # skips, increase the window to 49h with >= 2 threshold.
-          expr: sum by (namespace) (increase(notify_audit_retention_lock_skipped_total[26h])) > 0
+          # Codex iter-1 P1 → live verification 2026-05-09 02:00 UTC iter-2 absorb:
+          # iter-1 form (`increase(...[26h]) > 0`) interpreted as "any skip = missed
+          # nightly cycle" but didn't account for multi-pod LEADER-FOLLOWER pattern
+          # which legitimately produces 1 skip per non-leader pod per cron tick.
+          # With 2 replicas + daily cron, expected baseline = 1 skip/26h on the
+          # follower pod. iter-1 form fired permanent false-positive after first
+          # cron cycle.
+          #
+          # Live evidence (post first 02:00 UTC tick on prod):
+          #   - Pod m77zh (leader): last_success_timestamp=1.778292E9 (advanced),
+          #     lock_skipped=0 — winner of advisory lock, ran cycle.
+          #   - Pod pf8sd (follower): last_success_timestamp=0, lock_skipped=1 —
+          #     lost lock, skipped (expected).
+          #   - cycle log: future_created=0 detached=0 dropped=0 dry_run=true
+          #     proves leader DID complete successful tick.
+          #
+          # iter-2 form: alert only when `lock_skipped > 0` AND no successful
+          # tick advanced the gauge in the same window. This catches the real
+          # failure mode (lock stuck on a defunct leader, no pod successfully
+          # ran the cycle) while ignoring expected multi-pod skips.
+          expr: |
+            sum by (namespace) (increase(notify_audit_retention_lock_skipped_total[26h])) > 0
+            unless on(namespace)
+            (
+              (
+                time() - max by (namespace) (
+                  max_over_time(notify_audit_retention_last_success_timestamp_seconds[26h])
+                )
+              ) < 93600
+              and on(namespace)
+              max by (namespace) (
+                max_over_time(notify_audit_retention_last_success_timestamp_seconds[26h])
+              ) > 0
+            )
           for: 30m
           labels:
             severity: warning
             service: notification-orchestrator
           annotations:
-            summary: "Notify audit retention advisory-lock contention (cron skip)"
+            summary: "Notify audit retention advisory-lock stuck (no successful tick despite skips)"
             description: |
               {{ $value | humanize }} retention cron tick(s) skipped due to
-              advisory-lock contention over 26h (namespace {{ $labels.namespace }}).
-              Daily-cadence cron means a single skip = a missed nightly cycle.
-              Multi-pod race or long-running tick blocking the next one. Check
-              pod replica count + retention cycle duration; consider splitting
-              across leader election or reducing future-months pre-create
-              batch.
+              advisory-lock contention over 26h (namespace {{ $labels.namespace }})
+              AND the leader pod did NOT successfully advance
+              `last_success_timestamp_seconds` in the same window. This is the
+              real failure mode: lock stuck on a defunct or hung leader. Multi-
+              pod expected skip baseline (1 skip/cron-tick per non-leader pod)
+              is filtered out by the `unless` clause checking the gauge advance.
+              Investigate: leader pod liveness, advisory lock holder
+              (`SELECT * FROM pg_locks WHERE locktype='advisory'`), retention
+              cycle duration vs cron interval.
