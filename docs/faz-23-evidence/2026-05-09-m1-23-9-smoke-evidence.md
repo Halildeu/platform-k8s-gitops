@@ -19,7 +19,7 @@ Pre-Production Full Authority + HARD RULE deploy verify gereği **agent kendi ko
 | **Pod state delta** (uptime + restart + ready) | 🟢 PASS | 2/2 ready, restart=0, 4h23m uptime, sha-ef0f487 |
 | **Browser SSO testai.acik.com** | 🟢 PASS | Login session aktif (Platform Admin, Online), 29 unread badge, inbox API 200 (`unreadCount: 0`, X-Org-Id=default + X-Subscriber-Id=1; Faz 22 PR-5.x cutover backfill working), JWT token + kc-callback localStorage, console temiz |
 | **Browser SSO ai.acik.com** | 🔴 NOT canonical | **User feedback 2026-05-09: "ai.acik.com adresi güncel değil"** — testai.acik.com canonical evidence target. ai.acik.com bootstrap init done dönmüş ama prod realm ingress stale; M1 evidence için sayılmaz. |
-| **T1.2 Audit endpoint live check** | 🔴 cluster apply pending | `/api/v1/notify/audit/me?page=0&size=5` → **404** (PR #132 backend MERGED 13:30Z; image build + overlay digest bump + cluster apply döngüsü pending) |
+| **T1.2 Audit endpoint live check** | 🟢 route LIVE / 🔴 acceptance pending | `/api/v1/notify/audit/me` **404 (13:50Z pre-apply) → 401 (14:00Z post-apply)** transition; PR #132+#452 MERGE sonrası endpoint LIVE; "JWT token zorunludur" auth required (D29-Authorized RAID I6 pending) |
 | **PromQL metric snapshot** | 🟢 PASS | DLQ=0, queue=0, retention errors=0, authz active, worker idle healthy |
 | **Rollback pointer doc** | 🟡 partial | backend.current/previous-image-tag dosyaları var (Apr 23 tarih; cutover sonrası güncellenmedi) |
 | **T+72h natural completion** | ⏳ pending | 2026-05-11 19:42Z time-passive |
@@ -92,9 +92,9 @@ JWT token + Keycloak kc-callback session storage LIVE; PR-5.x cutover sonrası `
 | Endpoint | Headers | Status | Body |
 |---|---|---:|---|
 | `GET /api/v1/notify/inbox/me/unread-count` | X-Org-Id=default + X-Subscriber-Id=1 | **200 OK** ✅ | `{"unreadCount": 0}` |
-| `GET /api/v1/notify/audit/me?page=0&size=5` | aynı | **404** 🔴 | T1.2 endpoint cluster apply pending (PR #132 MERGED 13:30Z; image build + overlay digest bump döngüsü) |
+| `GET /api/v1/notify/audit/me?page=0&size=5` | aynı | **404 (13:50Z pre-apply) → 401 (14:00Z post-apply)** | T1.2 endpoint LIVE (PR #132+#452 MERGE); route exists, JWT auth required; D29-Authorized acceptance gate RAID I6 |
 
-**Inbox API 200 OK** = T1.2 hâriç tüm Faz 23.1 + 23.4 inbox path LIVE; Faz 22 PR-5.x notify_org_access_match cutover backfill çalışıyor.
+**Inbox API 200 OK** = Faz 23.1 + 23.4 inbox path LIVE; Faz 22 PR-5.x notify_org_access_match cutover backfill çalışıyor. **T1.2 endpoint** post-14:00Z PR #452 cluster apply ile route LIVE (auth gate RAID I6 pending).
 
 #### Console Output
 
@@ -107,7 +107,7 @@ JWT token + Keycloak kc-callback session storage LIVE; PR-5.x cutover sonrası `
 - /api/v1/notify/inbox/me/unread-count 200 → backend notify-orch LIVE + identity guard backfill working
 - JWT + kc-callback Keycloak session OK
 - Console temiz (yeni hata yok, regression yok)
-- 🔴 /api/v1/notify/audit/me 404 — T1.2 backend MERGED 13:30Z ama image build + cluster apply pending (beklenen, PR #132 sonrası overlay digest bump PR gerek)
+- 🟢 /api/v1/notify/audit/me **404 → 401** transition (PR #132+#452 MERGE 14:00Z; route LIVE, "JWT token zorunludur" auth required; D29-Authorized acceptance gate RAID I6 pending)
 
 ### ai.acik.com — NOT Canonical (Stale)
 
