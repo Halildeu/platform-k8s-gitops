@@ -195,7 +195,20 @@ images:
     # Cross-AI peer review: Codex thread 019e0119-7c9d-7541-8059-
     # f9553c3303ce iter-2 AGREE on PR #88 (the test-only PR riding on
     # top of #87's runtime delta).
-    digest: sha256:718ad4826c803a78c678bdd7749ac96ba5c2b394a907db4e15ddb0713278a3d8
+    #
+    # 2026-05-09: bumped to sha-7d04479 — platform-backend PR #131 merged.
+    # Codex 019e0c99 6-iter consensus (REVISE→REVISE→PARTIAL→AGREE→REVISE
+    # →AGREE). Bug fix: 6 finansal raporda hardcoded
+    # `[workcube_mikrolink_7].[SETUP_PROCESS_CAT]` literal'i
+    # `{tenantSetupProcessCatRelation}` placeholder'a çevrildi; SqlBuilder
+    # per-tenant resolution + empty-rowset degrade fallback +
+    # X-Report-Degraded header propagation. Affected reports: fin-cari-islemler,
+    # fin-masraf-detay, fin-kaynak-eslesme, fin-stok-fis-detay,
+    # fin-muhasebe-detay (kullanıcı raporladı), fin-tutar-mutabakat. Tests:
+    # 66 PASS (20 yeni + 46 mevcut, 0 regression). MSSQL Testcontainers
+    # PR-0.5 SUCCESS. RC003 strict regex (boundary-aware single-tenant
+    # sourceQuery FAIL, sourceSchema iter-5 §3 absorb yearly-only).
+    digest: sha256:63b1bf17bce773dee8fbb6802f866bdd0e4b5b7e603dd8e437570fad3deb6399
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
