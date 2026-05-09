@@ -82,8 +82,32 @@ if [ "$VERIFY_ONLY" != "1" ]; then
   fi
 fi
 
+# ─── 0. KC features pre-flight (Codex 019e0dfb iter-7 absorb) ──────────────
+# Spike-2 sirasinda PR-A apply edildi ama KC_FEATURES'da `authorization` ve
+# `admin-fine-grained-authz:v1` eksikti -> Step 4 management/permissions
+# endpoint "Feature not enabled" verdi. Kullanici PR #465 ile bu features
+# eklendi. Bu fail-fast guard rai:
+echo "=== Step 0/7: KC features pre-flight check ==="
+KC_FEATURES_RUNTIME=$(docker exec "$KC_CONTAINER" /opt/keycloak/bin/kc.sh show-config 2>&1 \
+                     | grep -E '^\s*kc.features\s*=' | head -1 || echo "")
+MISSING_FEATURES=""
+for required in "token-exchange" "admin-fine-grained-authz" "authorization"; do
+  if ! echo "$KC_FEATURES_RUNTIME" | grep -q "$required"; then
+    MISSING_FEATURES="$MISSING_FEATURES $required"
+  fi
+done
+if [ -n "$MISSING_FEATURES" ]; then
+  echo "ERROR: KC_FEATURES missing required features:$MISSING_FEATURES" >&2
+  echo "       Required: token-exchange, admin-fine-grained-authz:v1, authorization" >&2
+  echo "       Update host-compose/keycloak/${ENV}/docker-compose.yml KC_FEATURES env" >&2
+  echo "       Then restart: docker compose up -d --force-recreate keycloak" >&2
+  exit 1
+fi
+echo "✓ Required features active: token-exchange, admin-fine-grained-authz, authorization"
+
 # ─── 1. Login (master realm) ───────────────────────────────────────────────
-echo "=== Step 1/6: Login to Keycloak master realm ==="
+echo ""
+echo "=== Step 1/7: Login to Keycloak master realm ==="
 ADMIN_PASS=$(sudo cat "$ADMIN_PASS_FILE" | tr -d '\n')
 $KC config credentials \
   --server http://localhost:8080 \
@@ -99,7 +123,7 @@ echo "✓ Logged in (target realm: $REALM)"
 # ─── 2. Provision broker client — DESIRED STATE (Codex iter-4 P1-1) ──────
 if [ "$VERIFY_ONLY" = "1" ]; then
   echo ""
-  echo "=== Step 2/6: VERIFY_ONLY — read existing client ==="
+  echo "=== Step 2/7: VERIFY_ONLY — read existing client ==="
   EXISTING_ID=$($KC get clients -r "$REALM" --query "clientId=$CLIENT_ID" --fields id 2>/dev/null \
                 | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[0]["id"] if d else "")' 2>/dev/null || echo "")
   if [ -z "$EXISTING_ID" ]; then
@@ -110,7 +134,7 @@ if [ "$VERIFY_ONLY" = "1" ]; then
   echo "✓ Existing client: ${BROKER_ID:0:8}..."
 else
   echo ""
-  echo "=== Step 2/6: Apply desired state for $CLIENT_ID client ==="
+  echo "=== Step 2/7: Apply desired state for $CLIENT_ID client ==="
   EXISTING_ID=$($KC get clients -r "$REALM" --query "clientId=$CLIENT_ID" --fields id 2>/dev/null \
                 | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[0]["id"] if d else "")' 2>/dev/null || echo "")
 
@@ -158,7 +182,7 @@ fi
 
 # ─── 3. Service account roles (idempotent — re-assignment OK) ────────────
 echo ""
-echo "=== Step 3/6: Assign service account roles ==="
+echo "=== Step 3/7: Assign service account roles ==="
 SA_USERNAME="service-account-${CLIENT_ID}"
 
 # Track role assignment failures (Codex iter-4 P0-2: fail-fast)
@@ -193,7 +217,7 @@ fi
 
 # ─── 4. Fine-grained token-exchange permission (Codex iter-4 P0-2 fail-fast) ─
 echo ""
-echo "=== Step 4/6: Fine-grained authz on $CLIENT_AUDIENCE client ==="
+echo "=== Step 4/7: Fine-grained authz on $CLIENT_AUDIENCE client ==="
 AUDIENCE_ID=$($KC get clients -r "$REALM" --query "clientId=$CLIENT_AUDIENCE" --fields id 2>/dev/null \
               | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[0]["id"] if d else "")' 2>/dev/null || echo "")
 
@@ -263,20 +287,43 @@ if [ "$VERIFY_ONLY" != "1" ]; then
   fi
 
   # Attach policy to token-exchange permission (fail-fast)
+  # Codex 019e0dfb iter-7 absorb (Spike-2 manual patch): kcadm 26.x'te
+  # `-s "policies=[...]"` form "unknown_error" donuyor (array-of-strings
+  # serializer broken). `-f JSON` form file-based PUT calisir.
+  TE_PERM_NAME=$($KC get "clients/$REALM_MGMT_ID/authz/resource-server/permission/scope/$TE_PERM_ID" -r "$REALM" 2>/dev/null \
+                 | python3 -c 'import json,sys;print(json.load(sys.stdin).get("name",""))' 2>/dev/null || echo "")
+  ATTACH_JSON_HOST="/tmp/_imperson_attach_${TE_PERM_ID}.json"
+  ATTACH_JSON_CONTAINER="/tmp/imperson-attach.json"
+  cat > "$ATTACH_JSON_HOST" <<EOF
+{
+  "id": "$TE_PERM_ID",
+  "name": "$TE_PERM_NAME",
+  "type": "scope",
+  "logic": "POSITIVE",
+  "decisionStrategy": "UNANIMOUS",
+  "policies": ["$POLICY_ID"]
+}
+EOF
+  docker cp "$ATTACH_JSON_HOST" "$KC_CONTAINER:$ATTACH_JSON_CONTAINER" >/dev/null 2>&1 \
+    || { echo "ERROR: docker cp policy attach JSON failed" >&2; rm -f "$ATTACH_JSON_HOST"; exit 2; }
+
   ATTACH_OUT=$($KC update "clients/$REALM_MGMT_ID/authz/resource-server/permission/scope/$TE_PERM_ID" -r "$REALM" \
-    -s "policies=[\"$POLICY_ID\"]" 2>&1 || true)
+    -f "$ATTACH_JSON_CONTAINER" 2>&1 || true)
+  rm -f "$ATTACH_JSON_HOST"
+  docker exec "$KC_CONTAINER" rm -f "$ATTACH_JSON_CONTAINER" 2>/dev/null || true
+
   if echo "$ATTACH_OUT" | grep -qiE "(error|fail|exception)"; then
-    echo "ERROR: policy attach failed: $ATTACH_OUT" >&2
+    echo "ERROR: policy attach (-f JSON form) failed: $ATTACH_OUT" >&2
     exit 2
   fi
-  echo "✓ Policy attached to token-exchange permission"
+  echo "✓ Policy attached to token-exchange permission (via -f JSON form)"
 else
   POLICY_ID="$EXISTING_POLICY"
 fi
 
 # ─── 5. Verify provisioning (Codex iter-4 P1-2: fail-fast assertions) ────
 echo ""
-echo "=== Step 5/6: Verify (machine-readable assertions) ==="
+echo "=== Step 5/7: Verify (machine-readable assertions) ==="
 
 # Assertion 1: client config
 CLIENT_VERIFY=$($KC get "clients/$BROKER_ID" -r "$REALM" 2>/dev/null \
@@ -358,9 +405,44 @@ print('PASS' if broker_id in str(clients) else 'FAIL')
 echo "$POLICY_CLIENTS"
 echo "$POLICY_CLIENTS" | tail -1 | grep -q "^PASS$" || { echo "ERROR: broker not in policy clients" >&2; exit 3; }
 
-# ─── 6. Vault secret handoff ──────────────────────────────────────────────
+# ─── 6. Impersonator role grant (Codex 019e0dfb iter-7 absorb) ───────────
+# Spike-2 sirasinda token exchange "subject not allowed to impersonate"
+# verdi cunku subject token sahibi user'da realm-management/impersonation
+# role yoktu. Her impersonator persona'ya bu role atanmali.
+#
+# IMPERSONATOR_USERNAMES: virgul ile ayrilmis liste, yoksa skip (operator
+# manuel atayacak, audit doc icin uyari verir).
+#
 echo ""
-echo "=== Step 6/6: Vault secret handoff ==="
+echo "=== Step 6/7: Impersonator role grant ==="
+if [ "$VERIFY_ONLY" = "1" ]; then
+  echo "(verify-only mode — skipping role grant)"
+elif [ -n "${IMPERSONATOR_USERNAMES:-}" ]; then
+  IFS=',' read -ra USERS <<<"$IMPERSONATOR_USERNAMES"
+  for U in "${USERS[@]}"; do
+    U_TRIM=$(echo "$U" | xargs)
+    [ -z "$U_TRIM" ] && continue
+    OUT=$($KC add-roles -r "$REALM" --uusername "$U_TRIM" \
+            --cclientid realm-management --rolename impersonation 2>&1 || true)
+    if echo "$OUT" | grep -qiE "(already|conflict|409)"; then
+      echo "  ✓ $U_TRIM (already has impersonation)"
+    elif [ -z "$OUT" ] || echo "$OUT" | grep -q "^$"; then
+      echo "  ✓ $U_TRIM (impersonation granted)"
+    else
+      echo "  ✗ $U_TRIM: $OUT" >&2
+    fi
+  done
+else
+  echo "(IMPERSONATOR_USERNAMES env unset — operator manuel role grant gerek)"
+  echo "  Per impersonator user manual:"
+  echo "    docker exec $KC_CONTAINER /opt/keycloak/bin/kcadm.sh add-roles \\"
+  echo "      -r $REALM --uusername <USERNAME> \\"
+  echo "      --cclientid realm-management --rolename impersonation"
+fi
+
+# ─── 7. Vault secret handoff ──────────────────────────────────────────────
+echo ""
+echo "=== Step 7/7: Vault secret handoff ==="
 if [ "$VERIFY_ONLY" = "1" ]; then
   echo "(verify-only mode — no secret handoff)"
 elif [ -n "${SECRET_OUT:-}" ] && [ -f "$SECRET_OUT" ]; then
