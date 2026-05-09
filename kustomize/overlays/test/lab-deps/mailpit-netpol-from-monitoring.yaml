@@ -1,0 +1,37 @@
+# Mailpit ingress NetworkPolicy — Faz 23.2.D T1.4 D43 outage fallback drill.
+#
+# Bağlam: D43 drill sırasında Alertmanager (monitoring ns) Mailpit'e (platform-test
+# ns) doğrudan SMTP göndermeli (notification-orchestrator bypass'lı). Mevcut
+# default-deny ingress NetworkPolicy bu trafiği engellediği için explicit allow.
+#
+# Codex thread 019e0dea iter-2 absorb #6: Mailpit NetworkPolicy gap kanıtlandı
+# (default-deny ingress + monitoring-scrape sadece 8081/web-ui açıyor; SMTP 587
+# kapalı). Drill kanıt üretmek için bu netpol gerekli.
+#
+# Codex iter-2 absorb #1: namespaceSelector `kubernetes.io/metadata.name` label
+# kullanılmalı (repo pattern; Kubernetes 1.21+ otomatik label).
+#
+# Apply: kubectl apply -k kustomize/overlays/test/lab-deps/
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailpit-allow-monitoring-smtp
+  namespace: platform-test
+  labels:
+    app.kubernetes.io/name: mailpit
+    app.kubernetes.io/component: lab-dep
+    app.kubernetes.io/part-of: platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mailpit
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 587
