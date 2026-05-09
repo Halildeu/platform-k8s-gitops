@@ -41,13 +41,13 @@ Codex iter-2 finding F5 (thread `019e0c28`):
 
 ## I — Active Issues (Risk Materialized veya Live Problem)
 
-| ID | Issue | Detected | Severity | Mitigation in Progress | Owner | Status |
-|---|---|---|:---:|---|---|:---:|
-| I1 | Prod SMTP connection refused (notification-orchestrator pod logs 2026-05-09) | 2026-05-09 | Medium | Email gateway prod activation pending (R3 DKIM/SPF/DMARC bağımlı); D29-Functional evidence test cluster (Mailpit) üzerinde toplanır | ops + dev | 🟡 Active |
-| I2 | platform-prod ArgoCD application "OutOfSync" gösteriyor ama "successfully synced (all tasks run)" mesajı | 2026-05-09 | Low | ArgoCD diff hesaplama farkı, gerçek drift yok; manuel `argocd app diff` ile doğrulanmalı | gitops | 🟡 Active |
-| I3 | Charter sub-faz % rakamları PM bootstrap iter-1'de iyimser (Codex verdict PARTIAL) | 2026-05-09 | Low | Yorumlama disiplini düzeltildi (Codex thread `019e0c28` retrospective); rakamlar revize tablosuyla sunum | agent | 🟢 Mitigated |
-| I4 | Feature matrix literal marker pass deferred (~178 row sweep) — semantic estimate ile literal marker drift | (devam) | Low | Marker discipline note eklendi; planlı follow-up (sub-faz closure'larında inline) | agent | 🟡 Active |
-| I5 | TodoWrite session-scoped, kalıcı değil | (yapısal) | Low | PM artifact set kalıcı yazılı + Update Discipline HARD RULE her PR'da senkron tutar | — | 🟢 Mitigated |
+| ID | Issue | Detected | Severity | Mitigation in Progress | Related Risk | Owner | Status |
+|---|---|---|:---:|---|---|---|:---:|
+| I1 | Prod SMTP connection refused (notification-orchestrator pod logs 2026-05-09) | 2026-05-09 | Medium | Email gateway prod activation pending; D29-Functional evidence test cluster (Mailpit) üzerinde toplanır | R3 partial (DKIM/SPF/DMARC delivery auth); root-cause SMTP gateway connectivity activation | ops + dev | 🟡 Active |
+| I2 | platform-prod ArgoCD application "OutOfSync" gösteriyor ama "successfully synced (all tasks run)" mesajı | 2026-05-09 | Low | ArgoCD diff hesaplama farkı, gerçek drift yok; manuel `argocd app diff` ile doğrulanmalı | None — ops/gitops cosmetic issue | gitops | 🟡 Active |
+| I3 | Charter sub-faz % rakamları PM bootstrap iter-1'de iyimser (Codex verdict PARTIAL) | 2026-05-09 | Low | Yorumlama disiplini düzeltildi (Codex thread `019e0c28` retrospective); rakamlar revize tablosuyla sunum | None — PM-doc reporting issue | agent | 🟢 Mitigated |
+| I4 | Feature matrix literal marker pass deferred (~178 row sweep) — semantic estimate ile literal marker drift | (devam) | Low | Marker discipline note eklendi; planlı follow-up (sub-faz closure'larında inline) | None — PM-doc tracking issue | agent | 🟡 Active |
+| I5 | TodoWrite session-scoped, kalıcı değil | (yapısal) | Low | PM artifact set kalıcı yazılı + Update Discipline HARD RULE her PR'da senkron tutar | None — process limitation | — | 🟢 Mitigated |
 
 **Issue eskime prosedürü**: 14 gün üzerinde 🟡 Active issue → owner-level escalation + retrospective.
 
@@ -74,7 +74,9 @@ Codex iter-2 finding F5 (thread `019e0c28`):
 
 ## R — Cross-Reference: Risk Register
 
-Risk boyutu ayrı [`risk-register.md`](risk-register.md) içinde tutulur (22 risk: R1-R22). RAID log onu **çoğaltmaz**; sadece risk → issue transition'larını kayıt eder (Issue tablosu I1, I2, I3, I4 zaten ilgili R-N risk register entry'lerine cross-ref).
+Risk boyutu ayrı [`risk-register.md`](risk-register.md) içinde tutulur (22 risk: R1-R22). RAID log onu **çoğaltmaz**.
+
+**Issue tablosu risk-register'ı çoğaltmaz**: `Related Risk` kolonu varsa R-N bağlantısını gösterir (örn. I1 → R3 partial); R-N karşılığı olmayan issue'lar **issue-only** olarak kalır (ops/gitops cosmetic, PM-doc tracking, process limitation gibi). Issue **escalate olursa** yeni risk satırına taşınır (severity Medium → High geçişi veya production-impact tespit edilirse).
 
 | RAID Boyutu | Doküman | Sayı |
 |---|---|---:|

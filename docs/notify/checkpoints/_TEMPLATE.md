@@ -75,6 +75,19 @@
 - Browser console (HARD RULE deploy verify): screenshot path veya MCP tab snapshot
 - Test execution log: pytest/Maven output reference
 
+### Canonical Doc Sync (Update Discipline HARD RULE)
+
+Per `docs/notify/README.md` Update Discipline; her checkpoint closure'da:
+
+- [ ] `docs/state/current-state.md` live truth delta işlendi veya no-delta notu bırakıldı
+- [ ] `docs/notify/milestones.md` DoD/status güncellendi
+- [ ] `docs/runbooks/RB-faz-23-charter.md` sub-faz marker güncellendi veya değişmedi notu bırakıldı
+- [ ] `docs/notify/must-have-checklist.md` acceptance/evidence güncellendi veya no-delta
+- [ ] `docs/notify/feature-matrix.md` marker güncellendi veya no-delta
+- [ ] `docs/notify/sprint-plan.md` task status + actuals güncellendi
+- [ ] `docs/notify/risk-register.md` / `docs/notify/raid-log.md` delta işlendi
+- [ ] `PLAN.md` D-row status değiştiyse güncellendi
+
 ### Last Update
 
 YYYY-MM-DD HH:MMZ
