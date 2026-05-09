@@ -76,21 +76,32 @@ MAX_RETRIES=3
 # Public Alertmanager exposure açılmaz (Codex iter-2 #7 absorb security).
 # Token/secret/credential payload'a YAZILMAZ (no-token-log guard).
 #
-# Stable labels (Alertmanager fingerprint stability — Codex iter-2 #7):
+# Stable labels (Alertmanager fingerprint stability — Codex iter-2 #7 + iter-3):
 #   alertname=DriftDetectionFallback
 #   cluster=<env>
-#   severity=<P1|P2>
+#   severity=critical            (P1 → critical; P2 → warning — Alertmanager routing convention)
+#   drift_class=<P1|P2>          (orijinal sınıf ayrı label — Codex iter-3 #1)
+#   kind=<finding kind>
 #   outage_fallback=true
 #   bypass_orchestrator=true
-#   dedupe_key=<sha256(env+kind+sig_msg first 60 char)>
+#   dedupe_key=<sha256(env+kind+title+full_msg)>   (Codex iter-3 #4 expanded input)
 #
 # 4xx auth fail → no retry (immediate undelivered log + escalate).
 # 5xx/timeout/connection refused → retry MAX_RETRIES exponential backoff.
 #
 # Idempotency: dedupe_key stable across same finding; Alertmanager group_wait
 # kendi side'da dedupe yapar; agent burda explicit retry'da aynı key gönderir.
+#
+# Mode (Codex iter-3 #2):
+#   ALARM_FALLBACK_ALERTMANAGER_MODE=parallel  (default — D43 amacı: GH/webhook başarılı
+#                                                olsa bile P1 + toggle aktifse Alertmanager
+#                                                paralel gönderim; orchestrator-bypass
+#                                                receipt kanıtı korunur)
+#   ALARM_FALLBACK_ALERTMANAGER_MODE=last_resort (eski cascade davranışı; sadece
+#                                                  GH+webhook fail sonrası gönderim)
 ALERTMANAGER_FALLBACK_URL="${ALERTMANAGER_FALLBACK_URL:-http://alertmanager.monitoring.svc.cluster.local:9093/api/v2/alerts}"
 ALARM_FALLBACK_ALERTMANAGER="${ALARM_FALLBACK_ALERTMANAGER:-0}"
+ALARM_FALLBACK_ALERTMANAGER_MODE="${ALARM_FALLBACK_ALERTMANAGER_MODE:-parallel}"
 
 # ------------------------------------------------------------
 # Pre-flight: gh auth + repo access
@@ -204,9 +215,32 @@ deliver_alertmanager() {
     return 1
   fi
 
-  # Stable dedupe key — sha256 of env+kind+first 60 char message
+  # Codex iter-3 #1: severity Alertmanager routing convention `critical`/`warning`;
+  # orijinal drift sınıfı (P1/P2) ayrı `drift_class` label'ında taşınır.
+  # Repo Alertmanager routing `severity = "critical"` üzerinden çalışıyor.
+  local sev_label
+  case "$cls" in
+    P1) sev_label="critical" ;;
+    P2) sev_label="warning" ;;
+    *)  sev_label="info" ;;
+  esac
+
+  # Codex iter-3 #4: Dedupe input expanded — env+kind+title+full_msg.
+  # First 60 char dar; iki farklı P1 finding aynı prefix paylaşırsa collision.
+  # Hash output sabit uzunlukta olduğu için label maliyeti artmaz.
+  local sig_input
+  sig_input=$(printf '%s|%s|%s|%s' "$ENV" "$knd" "$title" "$msg")
+
+  # Codex iter-3 #3: sha256 portability — sha256sum primary (Linux), shasum fallback (macOS).
   local sig
-  sig=$(printf '%s|%s|%s' "$ENV" "$knd" "${msg:0:60}" | shasum -a 256 | awk '{print $1}')
+  if command -v sha256sum > /dev/null 2>&1; then
+    sig=$(printf '%s' "$sig_input" | sha256sum | awk '{print $1}')
+  elif command -v shasum > /dev/null 2>&1; then
+    sig=$(printf '%s' "$sig_input" | shasum -a 256 | awk '{print $1}')
+  else
+    echo "  [alertmanager-fallback] ERROR: no sha256 implementation (sha256sum/shasum) — cannot compute dedupe_key" >&2
+    return 1
+  fi
 
   # Compose Alertmanager v2 alerts payload
   # [{labels:{...}, annotations:{...}, startsAt:..., generatorURL:...}]
@@ -214,7 +248,8 @@ deliver_alertmanager() {
   payload=$(jq -nc \
     --arg alertname "DriftDetectionFallback" \
     --arg cluster "$ENV" \
-    --arg severity "$cls" \
+    --arg severity "$sev_label" \
+    --arg drift_class "$cls" \
     --arg knd "$knd" \
     --arg title "$title" \
     --arg msg "$msg" \
@@ -226,6 +261,7 @@ deliver_alertmanager() {
         alertname: $alertname,
         cluster: $cluster,
         severity: $severity,
+        drift_class: $drift_class,
         kind: $knd,
         outage_fallback: "true",
         bypass_orchestrator: "true",
@@ -420,14 +456,35 @@ Details: $details"; then
     fi
   fi
 
-  # Faz 23.2.D T1.4 PR-2 — D43 Alertmanager direct fallback chain (Codex 019e0dea iter-2).
-  # GH + webhook fail edip class P1 ise Alertmanager `/api/v2/alerts` direct POST.
-  # Trigger: ALARM_FALLBACK_ALERTMANAGER=1 + cls=P1 + delivery_status="undelivered"
-  # Stable labels (alertname/cluster/severity/outage_fallback/dedupe_key) +
-  # cluster-internal URL only + no-token-log guard.
-  if [[ "$delivery_status" == "undelivered" ]] && [[ "$cls" == "P1" ]]; then
-    if deliver_alertmanager "$cls" "$knd" "$title" "$msg"; then
-      delivery_status="alertmanager"
+  # Faz 23.2.D T1.4 PR-2 — D43 Alertmanager direct fallback (Codex 019e0dea iter-2 + iter-3).
+  #
+  # Iter-3 #2 absorb: parallel mode default — D43 amacı "orchestrator down iken
+  # kritik alarm Alertmanager bypass kanalına da düşsün". Cascade-only davranış
+  # GH/webhook başarılı olduğunda Alertmanager hiç tetiklenmez → bypass kanıt
+  # üretilemez. Toggle açıkken P1 her durumda Alertmanager'a paralel gönderim.
+  #
+  # Mode (ALARM_FALLBACK_ALERTMANAGER_MODE):
+  #   parallel (default)  — P1 + toggle → her zaman gönder (D43 bypass amacı)
+  #   last_resort         — P1 + toggle + delivery_status=undelivered (eski cascade)
+  if [[ "$cls" == "P1" ]] && [[ "$ALARM_FALLBACK_ALERTMANAGER" == "1" ]]; then
+    should_send=0
+    case "$ALARM_FALLBACK_ALERTMANAGER_MODE" in
+      parallel) should_send=1 ;;
+      last_resort)
+        [[ "$delivery_status" == "undelivered" ]] && should_send=1
+        ;;
+      *)
+        echo "  [alertmanager-fallback] WARN: unknown mode '$ALARM_FALLBACK_ALERTMANAGER_MODE'; defaulting to parallel" >&2
+        should_send=1
+        ;;
+    esac
+
+    if [[ "$should_send" -eq 1 ]]; then
+      if deliver_alertmanager "$cls" "$knd" "$title" "$msg"; then
+        # Codex iter-3 #2: parallel mode'da delivery_status'u override etme
+        # (GH başarısı korunsun); only override when no prior success.
+        [[ "$delivery_status" == "undelivered" ]] && delivery_status="alertmanager"
+      fi
     fi
   fi
 
