@@ -25,10 +25,11 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: kube-system
+  # 2026-05-10 (Codex iter-23 P1 absorb): D30 atomic kontrol için
+  # `automated` bloğu KALDIRILDI. Sadece `selfHeal: false` yetmez —
+  # `automated` field varlığı auto-sync'i açar; new commit prod'a
+  # manuel olmaz. Pattern: argocd/applications/platform-prod.yaml.
   syncPolicy:
-    automated:
-      prune: false       # kube-system add-on silinme risk
-      selfHeal: false    # D30 atomic kontrol — prod manuel sync
     syncOptions:
       - CreateNamespace=false
       - ServerSideApply=true
