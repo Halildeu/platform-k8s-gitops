@@ -32,7 +32,7 @@ Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorun
 |---|---|---:|
 | 23.0 | Charter | 1 hafta |
 | 23.1 | Kernel/Closed Beta | 3-4 hafta |
-| 23.2 | Production MVP dar | 2-3 hafta |
+| 23.2 | Production MVP dar | 4-6 hafta / ~100h (PM re-baseline Session 39 iter-2; original 2-3 hafta superseded by sprint-plan T1 detailed estimation) |
 | 23.3 | Production MVP geniş | 3 hafta |
 | 23.4-23.8 | v1 | +4-6 hafta |
 | 23.9 | Prod cutover | 1 hafta |
@@ -47,7 +47,7 @@ Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorun
 |---|---|---|---:|---|:---:|
 | **23.0** | Charter | docs | 1 hafta | — | 🟢 done (PR #362 + 5 follow-up commits + 2026-05-09 truth alignment) |
 | **23.1** | Kernel/Closed Beta | code | 3-4 hafta | 23.0 + Faz 22.1.1b III review | 🟡 partial (Codex `019e0bff` iter-1 absorb: service runtime LIVE prod, V8 partition + 3 channel adapters + OutboxPoller + RetryWorker + auth guards activated; **D29-NOTIFY-Functional 3-channel evidence still PENDING** per `docs/faz-23-evidence/2026-05-06-23-1-pr5-d29-notify.md`) |
-| **23.2** | Production MVP dar | code | 2-3 hafta | 23.1 | 🟡 partial (Session 39 hardening: KVKK retention + Vault/ESO + Grafana 15-panel + 25 PrometheusRule + DLQ SLO 99.5% LIVE; **original MVP-dar acceptance 2/8 — preference + erasure API + provider rollback + outage fallback + data classification + abuse guards pending**) |
+| **23.2** | Production MVP dar | code | 4-6 hafta / ~100h (PM re-baseline; orig 2-3 hafta superseded) | 23.1 | 🟡 partial (Session 39 hardening: KVKK retention + Vault/ESO + Grafana 15-panel + 25 PrometheusRule + DLQ SLO 99.5% LIVE; **original MVP-dar acceptance 2/8 — preference + erasure API + provider rollback + outage fallback + data classification + abuse guards pending**) |
 | 23.3 | Production MVP geniş | code | 3 hafta | 23.2 | ⏳ pending (SMS NetGSM + in-app inbox API) |
 | **23.4** | v1 — DLR + in-app UI | code | 2 hafta | 23.3 | 🟡 partial (PR-5.x cycle in-app inbox + SSE LIVE + strict identity guards LIVE; **SMS DLR + archive UI + 30-day history pending**) |
 | 23.5 | v1 — preference UI | code | 1 hafta | 23.4 | ⏳ pending (FE preference settings page) |
@@ -167,7 +167,7 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 ## Faz 23.2 — Production MVP Dar
 
-**Tier**: Production MVP dar (2-3 hafta) — **🟡 partial (Codex `019e0bff` re-baseline)**
+**Tier**: Production MVP dar (4-6 hafta / ~100h aggressive — PM re-baseline Session 39 iter-2; original 2-3 hafta superseded by sprint-plan T1) — **🟡 partial (Codex `019e0bff` re-baseline)**
 
 **Acceptance breakdown** (Codex iter-1 absorb):
 - **Original MVP-dar 8 kabul kriteri: 2/8 done** (Grafana dashboard, Alertmanager DLQ rule)

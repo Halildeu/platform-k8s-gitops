@@ -317,7 +317,7 @@
 | Tier | Özellik sayısı | Süre |
 |---|---:|---|
 | **Kernel/Closed Beta** | 33 | 3-4 hafta |
-| **Production MVP dar** | 27 | 2-3 hafta |
+| **Production MVP dar** | 27 | 4-6 hafta / ~100h (PM re-baseline Session 39 iter-2; original 2-3 hafta superseded) |
 | **Production MVP geniş** | 4 | 3 hafta |
 | **v1** | ~55 | +4-6 hafta |
 | **v2** | ~13 | +8-12 hafta |
