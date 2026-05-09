@@ -183,6 +183,8 @@ fi
 # GitHub issue (governance trail)
 # ------------------------------------------------------------
 
+# Codex iter-3 #1 absorb: gh_failed flag — fallback trigger gh fail durumunu da kapsar
+gh_failed=0
 if command -v gh > /dev/null 2>&1 && gh auth status > /dev/null 2>&1; then
   ISSUE_TITLE="[break-glass] $CURRENT_CTX: $(echo "$REASON" | head -c 60)"
   ISSUE_BODY=$(cat <<EOM
@@ -221,10 +223,12 @@ EOM
     echo "[audit] GitHub issue opened"
   else
     echo "[WARN] GitHub issue creation failed; audit log + reconciliation PR are still required"
+    gh_failed=1
   fi
 else
   echo "[WARN] gh CLI unavailable or not authenticated — GitHub audit trail SKIPPED"
   echo "       Operator: open issue manually in $GH_REPO with label 'ops-audit,break-glass'"
+  gh_failed=1
 fi
 
 # ------------------------------------------------------------
@@ -236,14 +240,22 @@ fi
 # ------------------------------------------------------------
 
 orchestrator_reachable() {
-  # Healthcheck: 200 OK = up; 5xx/timeout/connection refused = down
+  # Codex iter-3 #4 absorb: 4xx (401/403) "servis reachable + auth gerek" değil
+  # outage; ayrı sınıflandırılır. Sadece 2xx OK; 5xx/timeout/000 (connection
+  # refused/DNS fail) = down; 4xx = auth/config error (NOT outage trigger).
+  #
+  # Dönüş kodları:
+  #   0 — up (2xx)
+  #   1 — down (5xx, timeout, connection refused, DNS fail)
+  #   2 — auth/config error (4xx) — fallback trigger DEĞİL
   local code
   code=$(curl -sf -o /dev/null -w '%{http_code}' --max-time "$BREAK_GLASS_FALLBACK_TIMEOUT" \
     "$NOTIFY_ORCH_HEALTH_URL" 2>/dev/null || echo "000")
 
   case "$code" in
-    2*) return 0 ;;  # up
-    *)  return 1 ;;  # down (4xx auth, 5xx, timeout, connection refused, DNS fail)
+    2*) return 0 ;;       # up
+    4*) return 2 ;;       # auth/config error (NOT outage)
+    *)  return 1 ;;       # down (5xx, timeout, connection refused, DNS fail)
   esac
 }
 
@@ -254,8 +266,12 @@ deliver_alertmanager_breakglass() {
   fi
 
   local sig_input
-  # Dedupe input: env+SA+ctx+title (TOKEN YOK — no-token-log HARD RULE)
-  sig_input=$(printf '%s|%s|%s|%s' "$NS" "$SA" "$CURRENT_CTX" "${REASON:0:60}")
+  # Codex iter-3 #3 absorb: dedupe per break-glass invocation canonical.
+  # NOW + full REASON (60 char DEĞİL) + ctx/ns/sa/operator. Aynı reason ile
+  # iki token issuance → ayrı event (NOW farklı). Retry içinde NOW sabit
+  # kalacağı için aynı dedupe_key.
+  # TOKEN ABSOLUTELY EXCLUDED (no-token-log HARD RULE).
+  sig_input=$(printf '%s|%s|%s|%s|%s|%s' "$NOW" "$CURRENT_CTX" "$NS" "$SA" "$USER_ID@$HOST_ID" "$REASON")
 
   # sha256 portability (Codex iter-3 #3): sha256sum primary, shasum fallback
   local sig
@@ -334,24 +350,54 @@ deliver_alertmanager_breakglass() {
   return 1
 }
 
-# Trigger fallback delivery — orchestrator down OR gh failed
+# Trigger fallback delivery — Codex iter-3 #1 absorb: gh fail VEYA orchestrator down
+# Codex iter-3 #2 execution plane absorb: cluster.local DNS host'tan çözmeyebilir;
+# operator override gerek (NOTIFY_ORCH_HEALTH_URL + ALERTMANAGER_FALLBACK_URL).
+# PR-4 runbook'ta in-cluster runner veya host port-forward yöntemi belge.
 fallback_needed=0
 fallback_reason=""
 
-if ! orchestrator_reachable; then
-  fallback_needed=1
-  fallback_reason="orchestrator_down"
-  echo "[break-glass] notification-orchestrator unreachable ($NOTIFY_ORCH_HEALTH_URL) — outage detected"
-fi
+orchestrator_reachable
+orch_status=$?
+case "$orch_status" in
+  0)  # up — fallback gerekmez
+      ;;
+  1)  fallback_needed=1
+      fallback_reason="orchestrator_down"
+      echo "[break-glass] notification-orchestrator unreachable ($NOTIFY_ORCH_HEALTH_URL) — outage detected"
+      ;;
+  2)  # 4xx auth/config error — outage DEĞİL, fallback trigger DEĞİL
+      echo "[break-glass] notification-orchestrator returned 4xx (auth/config error, NOT outage) — no fallback"
+      echo "                 Healthcheck URL: $NOTIFY_ORCH_HEALTH_URL"
+      echo "                 If endpoint requires auth, override with NOTIFY_ORCH_HEALTH_URL pointing"
+      echo "                 to a 2xx-returning unauthenticated endpoint (e.g., /actuator/health/liveness)"
+      ;;
+esac
 
-# gh fail durumu zaten yukarıda warned ediliyor; explicit takip için flag yok
-# (mevcut script gh hata durumunda exit etmiyor sadece warn). Eğer GH unavailable
-# (sa cli / auth fail) bile orchestrator up ise, primary audit trail orchestrator
-# audit publish (gelecek backend PR'a) — şu an local audit log + Alertmanager fallback
-# (toggle açıksa).
+# Codex iter-3 #1: gh fail durumunda Alertmanager fallback'e git (governance trail kaybolmasın)
+if [[ "$gh_failed" -eq 1 ]]; then
+  fallback_needed=1
+  if [[ -n "$fallback_reason" ]]; then
+    fallback_reason="${fallback_reason}+gh_failed"
+  else
+    fallback_reason="gh_failed"
+  fi
+  echo "[break-glass] GitHub audit trail unavailable — Alertmanager fallback active"
+fi
 
 if [[ "$fallback_needed" -eq 1 ]] && [[ "$ALARM_FALLBACK_ALERTMANAGER" == "1" ]]; then
   echo "[break-glass] dual-channel fallback active (reason=$fallback_reason); BreakGlassUsed → Alertmanager direct"
+
+  # Execution plane guard (Codex iter-3 #2): cluster.local DNS uyarısı
+  if [[ "$ALERTMANAGER_FALLBACK_URL" == *".cluster.local"* ]] || [[ "$NOTIFY_ORCH_HEALTH_URL" == *".cluster.local"* ]]; then
+    echo "  [WARN] Default URLs use Kubernetes DNS (.cluster.local); these only resolve in-cluster."
+    echo "         If running from host (staging-sw), override with port-forward or public URL:"
+    echo "         export NOTIFY_ORCH_HEALTH_URL=http://127.0.0.1:8089/actuator/health"
+    echo "         export ALERTMANAGER_FALLBACK_URL=http://127.0.0.1:9093/api/v2/alerts"
+    echo "         (Then: kubectl port-forward -n platform-test svc/notification-orchestrator 8089"
+    echo "                kubectl port-forward -n monitoring svc/alertmanager 9093 in separate terminals)"
+  fi
+
   if deliver_alertmanager_breakglass; then
     echo "[break-glass] Alertmanager direct fallback delivered"
   else
