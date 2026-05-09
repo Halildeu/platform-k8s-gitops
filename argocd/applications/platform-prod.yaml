@@ -37,7 +37,10 @@ spec:
       # Ref: https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/#respect-ignore-difference-configs
       - RespectIgnoreDifferences=true
   ignoreDifferences:
-    # Prod replicas (D21: sabit 2, HPA yok) — ArgoCD drift düzeltmesin
+    # 2026-05-10 (PR-471): Prod replicas HPA-managed — ArgoCD /spec/replicas
+    # drift düzeltmesin. HPA scale subresource desired replica'yı yönetir;
+    # manifest minReplicas policy (overlay patch min=2 edge+domain) ile
+    # sınırlar. Eski D21 "sabit 2 replica HPA yok" SUPERSEDED.
     - group: apps
       kind: Deployment
       jsonPointers:

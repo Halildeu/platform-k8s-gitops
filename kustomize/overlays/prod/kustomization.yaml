@@ -127,6 +127,75 @@ images:
 # prod cluster awaits PR-D.3.x (test smoke + ledger).
 
 patches:
+  # 2026-05-10 — PR-471 HPA foundation (Codex iter-18 absorb)
+  # Base HPA'lar min=1 (test overlay behavior-neutral). Prod overlay
+  # 9 servisin HPA'sını min=2'ye override eder (HA path; mevcut
+  # Deploy.replicas=2 ile uyumlu, behavior-neutral). PR-471b: selected
+  # domain services için min=1 indirme metrics-server smoke sonrası.
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: auth-service
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 2
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: api-gateway
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 2
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: frontend
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 2
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: permission-service
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 2
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: core-data-service
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 2
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: report-service
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 2
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: schema-service
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 2
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: user-service
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 2
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: variant-service
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 2
+
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz replace
   # patches KALDIRILDI. Base zaten shortname (postgres:5432, keycloak:8080,
   # auth-service:8088, gateway routes 0-5). Prod-specific override YOK,
