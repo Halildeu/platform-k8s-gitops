@@ -8,7 +8,7 @@ Bu 10 özellik **production MVP demek için olmazsa olmaz**. Negotiable değil. 
 
 Diğer ~130 özellik **negotiable** (kanal sayısı, UI yüzeyleri, workflow editor, A/B testing, brand customization).
 
-## 🟢 Status (2026-05-09)
+## 🟢 Status (2026-05-09 Session 39, Codex `019e0bff` iter-1 absorb)
 
 | # | Must-have | Status | Sub-faz |
 |---|---|:---:|---|
@@ -18,12 +18,17 @@ Diğer ~130 özellik **negotiable** (kanal sayısı, UI yüzeyleri, workflow edi
 | 4 | Retry Exponential Backoff + DLQ + Manual Replay | 🟢 done | 23.1 |
 | 5 | OpenFGA Hard-Deny + Org Boundary | 🟢 done | 23.1 + 23.4 PR-5.x strict cutover |
 | 6 | Vault/ESO Provider Credentials + No Secret Logging | 🟢 done | 23.2 (PR #424) |
-| 7 | PII Redaction + Retention/Anonymization Policy (KVKK) | 🟢 done (retention) / 🟡 partial (erasure API pending) | 23.2 (PR #427/#437) |
-| 8 | Preference / Opt-out + Critical Bypass Policy | ⏳ pending | 23.2 (preference API + 23.5 UI) + 23.7 erasure |
+| 7 | PII Redaction + Retention/Anonymization Policy (KVKK) | 🟡 partial (retention LIVE; erasure API pending) | 23.2 (PR #427/#437) + 23.7 (erasure) |
+| 8 | Preference / Opt-out + Critical Bypass Policy | ⏳ pending | 23.2 (API) + 23.5 (UI) |
 | 9 | Template Versioning + Safe Interpolation | 🟢 done | 23.1 |
-| 10 | Observability + Outage Fallback | 🟢 done (metrics+alerts+dashboard+SLO) / 🟡 partial (D43 outage fallback pending) | 23.2 (PR #425/#428/#430/#431/#433/#435/#436) |
+| 10 | Observability + Outage Fallback | 🟡 partial (observability LIVE; D43 outage fallback pending) | 23.2 (PR #425/#428/#430/#431/#433/#435/#436) |
 
-**8/10 fully done (#1-#6, #9, #10-partial), 2 partial (#7, #10), 1 pending (#8). Net production MVP readiness: ~85%.**
+**Sayım** (Codex `019e0bff` iter-1 self-consistency fix):
+- 🟢 fully done: **7** (#1, #2, #3, #4, #5, #6, #9)
+- 🟡 partial: **2** (#7 retention LIVE + erasure pending; #10 observability LIVE + D43 pending)
+- ⏳ pending: **1** (#8 preference + critical bypass)
+
+**Net must-have coverage estimate** (NOT a "production ready" guarantee — kabul kriteri evidence path tek tek doğrulanmadan production claim yapılmaz): 7 + 2×0.5 + 1×0 = **8/10 = ~80% must-have coverage**.
 
 ---
 
@@ -367,11 +372,12 @@ kubectl scale deploy/notification-orchestrator --replicas=0
 
 **Production MVP demek için 10/10 ☐ → 🟢 olmalı.**
 
-**Snapshot (2026-05-09 Session 39 truth alignment)**:
+**Snapshot (2026-05-09 Session 39 truth alignment, Codex `019e0bff` self-consistency)**:
 - 🟢 fully done: 7 (#1, #2, #3, #4, #5, #6, #9)
 - 🟡 partial: 2 (#7 retention done + erasure pending; #10 observability done + D43 pending)
 - ⏳ pending: 1 (#8 preference + critical bypass)
-- **Net production MVP readiness: ~85%** (7 fully + 2 substantive partial = high coverage; #8 is the largest remaining gap requiring backend API + integration test + FE settings page)
+- **Net must-have coverage**: ~80% (must-have-only metric, NOT production-ready guarantee)
+- **Production MVP gates beyond must-have**: 23.1 D29-NOTIFY-Functional 3-channel evidence, 23.2 erasure/preference/outage fallback closure, 23.9 72h observation + rollback prova execution
 
 ---
 

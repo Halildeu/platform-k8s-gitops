@@ -10,7 +10,17 @@
 
 Bu runbook **takip edilebilir yol haritası**dır. Her sub-faz için: kapsam, bağımlılık, süre, kabul kriteri, evidence path, status. Sub-faz tamamlandığında `Status` sütunu `🟢 done` işaretlenir; eksik kabul kriteri varsa `🟡 in-progress`.
 
-**HARD RULE — discipline**: Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorunda. "Step A/B/C/D" gibi improvise naming KABUL DEĞİL. Yeni iş başlatmadan önce charter'a bakılır, sub-faz scope'una map edilir, evidence path doldurulur. Aksi halde doc-drift birikir.
+**HARD RULE — discipline (Codex `019e0bff` iter-1 softened)**:
+
+Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorunda.
+
+**İzinli pattern**: Geçici stratejik label kullanılabilir (örn. Codex retrospective "Step A/B/C/D" / "Tier X" / "Cycle Y"). Şart: her label PR title'ında ve PR body'sinde canonical sub-faz ID'ye map edilmek zorunda — `Step D Vault → 23.2 §Vault/ESO must-have #6` gibi.
+
+**Yasak pattern**: Canonical sub-faz numarasını hiç anmadan improvise label ile çalışmak. Bu doc-drift birikimine yol açar.
+
+**Canonical status authority**: Sub-Faz Tablosu marker'ları + her sub-faz bölümünün kabul kriteri tablosu authoritative truth. Strategic retrospective ladder/label improvise framing olabilir, ama status tracking yalnız 23.x marker'dan türetilir.
+
+**Mark discipline**: Sub-faz `🟢 done` ancak ALL kabul kriteri 🟢 olduğunda işaretlenir. Substantial progress + missing criteria = 🟡 partial. Codex `019e0bff` iter-1: Session 39'da "23.1/23.4/23.9 done" claim overclaim'di — runtime LIVE olsa da D29-Functional evidence + SMS DLR + 72h observation gibi kabul kriteri eksikleri vardı.
 
 > **Session 39 (2026-05-09) doc-drift correction (user-driven)**: 11 PR cycle Codex `019e0892` strategic retrospective sırasında "Step D Vault / Step B alerts / Step C retention / Step B.4 SLO" gibi non-canonical naming ile yapıldı. Bu session sonunda kullanıcı "yazılı planımız takip edilebilir olacak şekilde ilerleyelim" dedi → bu doküman + must-have-checklist + feature-matrix + PLAN.md sub-faz numaralarına re-map edildi. Geriye dönük PR'lar canonical sub-faz altında listelendi (özellikle 23.1 + 23.2 + 23.4 + 23.9).
 
@@ -36,24 +46,25 @@ Bu runbook **takip edilebilir yol haritası**dır. Her sub-faz için: kapsam, ba
 | # | Sub-faz | Tier | Süre | Bağımlılık | Status |
 |---|---|---|---:|---|:---:|
 | **23.0** | Charter | docs | 1 hafta | — | 🟢 done (PR #362 + 5 follow-up commits + 2026-05-09 truth alignment) |
-| **23.1** | Kernel/Closed Beta | code | 3-4 hafta | 23.0 + Faz 22.1.1b III review | 🟢 done (notification-orchestrator service LIVE prod, V8 partition + 3 channel adapters + OutboxPoller + RetryWorker + auth guards activated; bkz §23.1) |
-| **23.2** | Production MVP dar | code | 2-3 hafta | 23.1 | 🟡 partial (KVKK retention + Vault/ESO + Grafana 15-panel + 25 PrometheusRule + DLQ SLO 99.5% LIVE; **preference + erasure API + outage fallback bypass pending**) |
+| **23.1** | Kernel/Closed Beta | code | 3-4 hafta | 23.0 + Faz 22.1.1b III review | 🟡 partial (Codex `019e0bff` iter-1 absorb: service runtime LIVE prod, V8 partition + 3 channel adapters + OutboxPoller + RetryWorker + auth guards activated; **D29-NOTIFY-Functional 3-channel evidence still PENDING** per `docs/faz-23-evidence/2026-05-06-23-1-pr5-d29-notify.md`) |
+| **23.2** | Production MVP dar | code | 2-3 hafta | 23.1 | 🟡 partial (Session 39 hardening: KVKK retention + Vault/ESO + Grafana 15-panel + 25 PrometheusRule + DLQ SLO 99.5% LIVE; **original MVP-dar acceptance 2/8 — preference + erasure API + provider rollback + outage fallback + data classification + abuse guards pending**) |
 | 23.3 | Production MVP geniş | code | 3 hafta | 23.2 | ⏳ pending (SMS NetGSM + in-app inbox API) |
-| **23.4** | v1 — DLR + in-app UI | code | 2 hafta | 23.3 | 🟢 done (PR-5.x cycle: in-app inbox + SSE + RTK fetchFn fix + strict cutover identity guards LIVE) |
+| **23.4** | v1 — DLR + in-app UI | code | 2 hafta | 23.3 | 🟡 partial (PR-5.x cycle in-app inbox + SSE LIVE + strict identity guards LIVE; **SMS DLR + archive UI + 30-day history pending**) |
 | 23.5 | v1 — preference UI | code | 1 hafta | 23.4 | ⏳ pending (FE preference settings page) |
 | 23.6 | v1 — Teams + Slack zenginleştirme | code | 1 hafta | 23.4 | ⏳ pending (Teams adapter + Slack Block Kit + threading) |
 | 23.7 | v1 — push (FCM/APNS) | code | 2 hafta | 23.4 + Faz 22.2 | ⏳ pending (FCM/APNS adapters + device token registry) |
 | 23.8 | v1 — analytics + bounce loop | code | 2 hafta | 23.4 | 🟡 partial (alerts/dashboard LIVE; Tempo + bounce loop + spam complaint feedback pending) |
-| **23.9** | Prod cutover | atomic | 1 hafta | 23.4-23.8 stable | 🟢 done (notification-orchestrator activation ai.acik.com 2026-05-08 LIVE; 72h observation window in progress until 2026-05-11) |
+| **23.9** | Prod cutover | atomic | 1 hafta | 23.4-23.8 stable | 🟡 partial (activation LIVE 2026-05-08 ai.acik.com; **72h observation in progress until 2026-05-11; rollback prova + browser SSO verify pending user**) |
 | 23.X | v2 (later) | code | 8-12 hafta | v1 stable | ⏳ deferred (A/B + workflow editor + WhatsApp + voice + per-tenant provider) |
 
 Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
-**Snapshot (2026-05-09 Session 39 post 11-PR cycle)**:
-- Done: 23.0, 23.1, 23.4, 23.9 (4/11 = 36%)
-- Partial: 23.2, 23.8 (2/11 = 18%)
+**Snapshot (2026-05-09 Session 39 post 11-PR cycle, Codex `019e0bff` iter-1 absorb)**:
+- Done (whole sub-faz fully closed): 23.0 (1/11 = 9%)
+- Partial (substantial progress, kabul kriteri eksikleri var): 23.1, 23.2, 23.4, 23.8, 23.9 (5/11 = 45%)
 - Pending: 23.3, 23.5, 23.6, 23.7, 23.X (5/11 = 45%)
-- Effective progress: **~50% of v1 scope** (23.0-23.9 excluding 23.X v2)
+- Effective progress estimation: **~40% of v1 scope** (semantic — counts partials as half)
+- **Note**: Earlier "23.1/23.4/23.9 🟢 done" claim was overclaim per Codex review. Service runtime is LIVE but each sub-faz has explicit kabul kriteri eksikleri (D29-Functional evidence for 23.1, SMS DLR + archive for 23.4, 72h observation + rollback prova for 23.9). Marker accuracy correction is part of "going forward, mark only when ALL kabul kriteri are 🟢" discipline.
 
 ---
 
@@ -89,7 +100,7 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 ## Faz 23.1 — Kernel / Closed Beta
 
-**Tier**: Kernel (3-4 hafta) — **🟢 done 2026-05-08**
+**Tier**: Kernel (3-4 hafta) — **🟡 partial (Session 39 — service runtime LIVE; D29-NOTIFY-Functional 3-channel evidence pending)**
 
 **Kapsam (özet)**:
 - Spring Boot module skeleton (`platform-backend/notification-orchestrator/`)
@@ -156,7 +167,12 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 ## Faz 23.2 — Production MVP Dar
 
-**Tier**: Production MVP dar (2-3 hafta) — **🟡 partial (Session 39 — 6/8 kabul kriteri done)**
+**Tier**: Production MVP dar (2-3 hafta) — **🟡 partial (Codex `019e0bff` re-baseline)**
+
+**Acceptance breakdown** (Codex iter-1 absorb):
+- **Original MVP-dar 8 kabul kriteri: 2/8 done** (Grafana dashboard, Alertmanager DLQ rule)
+- **Session 39 hardening (charter ek)** 3/3 done: KVKK Art.7 audit retention, Vault/ESO managed Secret, DLQ SLO 99.5% multi-window
+- **Pending**: preference API, erasure path, provider config rollback, outage fallback bypass, data classification, abuse prevention guards (6 kriter)
 
 **Kapsam**:
 - Preference API (`PUT /preferences/me`, `GET /preferences/me`)
@@ -255,7 +271,11 @@ Estimated remaining work: ~10 PR cycle (5 backend + 5 gitops/docs).
 
 ## Faz 23.4 — v1 DLR + In-app UI
 
-**Tier**: v1 (2 hafta) — **🟢 done 2026-05-08 (in-app UI portion); SMS DLR portion deferred to 23.3 chain**
+**Tier**: v1 (2 hafta) — **🟡 partial (Codex `019e0bff` iter-1 absorb)**
+
+**Acceptance state**:
+- **Done**: in-app inbox UI LIVE (PR-5.x cycle), strict identity guards LIVE (PR-5.4/5.5)
+- **Pending**: SMS DLR callback ingestion (Faz 23.3 dep — NetGSM provider activation öncesi mümkün değil), archive UI button, 30-day notification history filter
 
 **Kapsam**:
 - SMS DLR callback ingestion (provider → orchestrator) — ⏳ deferred (Faz 23.3 dep — NetGSM provider activation pending)
@@ -355,7 +375,14 @@ Estimated remaining work: ~10 PR cycle (5 backend + 5 gitops/docs).
 
 ## Faz 23.9 — Prod Cutover
 
-**Tier**: Atomic (1 hafta) — **🟢 done 2026-05-08 (cutover) + 72h observation in progress until 2026-05-11**
+**Tier**: Atomic (1 hafta) — **🟡 partial (Codex `019e0bff` iter-1 absorb)**
+
+**Acceptance state**:
+- **Done (activation)**: notification-orchestrator deployment LIVE ai.acik.com; image digest pin (sha-204042d); strict cutover env active; Vault/ESO managed Secret; audit retention LIVE
+- **Partial**: rollback prova (runbook exists, drill not executed); 72h observation window (T+72h = 2026-05-11 19:42Z, in progress)
+- **Pending**: browser SSO verify (manual user action), atomic provider switch test (Faz 23.3 dep)
+
+**Mark discipline**: Even though service is LIVE prod, "Faz 23.9 done" requires 72h observation closure + rollback drill execution. Currently 🟡 partial.
 
 **Kapsam**:
 - k3d-prod manifest deploy (image digest pin)

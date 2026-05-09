@@ -12,38 +12,43 @@
 
 **Status legend**: ☐ pending · 🟡 in-progress · 🟢 done · ✗ scope-dışı
 
-## 📊 Snapshot (2026-05-09 Session 39)
+## 📊 Snapshot (2026-05-09 Session 39, Codex `019e0bff` iter-1 absorb — actual category names)
 
-**By tier**:
-- Kernel (23.1): ~25 features → **~22 🟢** (88%)
-- MVP-dar (23.2): ~20 features → **~14 🟢** (alerts/dashboard/SLO/Vault/retention) + **~6 ⏳** (preference/erasure API + outage fallback + abuse + classification)
-- MVP-geniş (23.3): ~10 features → 0 🟢 (SMS NetGSM + in-app API pending)
-- v1 (23.4-23.8): ~30 features → ~5 🟢 (in-app UI + DLR partial), rest pending
-- v2 (23.X): ~50 features → 0 🟢 (deferred)
-- Scope-dışı (✗): 5 features (newsletter/RCS/etc)
+**Semantic roll-up** (NOT literal table marker count — gerçek satır markerları aşağıdaki kategori tablolarında, çoğu hâlâ ☐; full marker pass deferred follow-up).
 
-**By category**:
-- Channel Coverage (1): 3-4/19 done (Email + Slack + Webhook + in-app UI/API)
-- Workflow/Routing (2): 4-5/16 done (single-channel + retry + DLQ + code-based)
-- Domain Outbox (3): 3/3 done (✅ Kernel complete)
-- Authz/Org Boundary (4): 4/4 done (✅ Kernel + strict cutover)
-- Audit/Retention/KVKK (5): 3-4/6 done (audit + retention LIVE; erasure pending)
-- Vault/ESO Secrets (6): 3/3 done (✅ MVP-dar PR #424)
-- Observability (7): 7-8/10 done (alerts + dashboard + SLO LIVE; outage fallback pending)
-- Templates (8): 4/4 done (✅ Kernel)
-- Idempotency/Dedupe (9): 2/2 done (✅ Kernel)
-- Preference/Opt-out (10): 0/6 done (Faz 23.2 pending)
-- Identity/Subscriber (11): 5/5 done (PR-5.x strict cutover ✅)
-- Deliverability (12): 0/5 done (DKIM/SPF/DMARC + bounce loop pending)
-- Abuse/Spam (13): 0/4 done (rate limit + flood + fan-out cap pending)
-- Accessibility (14): 0/3 done
-- Incident/Degraded (15): 1/3 done (drift alarm-receiver partial; D43 outage fallback pending)
-- Data Classification (16): 0/3 done (transactional/security/commercial/system enforcement pending)
+**By tier (semantic estimate)**:
+- Kernel (23.1) features substantively LIVE: schema, idempotency, outbox, retry/DLQ, authz strict, templates (~18-20 of 25)
+- MVP-dar (23.2) Session 39 hardening LIVE: Vault/ESO + audit retention + Grafana + alerts + SLO (5 of 8 acceptance)
+- MVP-dar (23.2) original kabul kriteri: 2/8 done (Grafana + Alertmanager); 6 pending (preference, erasure, provider rollback, outage fallback, classification, abuse)
+- MVP-geniş (23.3): 0 LIVE
+- v1 (23.4-23.8): ~5-6 LIVE (in-app UI + identity guards + dashboard SLO panels)
+- v2 (23.X): 0 LIVE (deferred)
 
-**Overall: ~50/179 fully done = 28%; 7-8 partial = 33% effective coverage; 23 scope-dışı/v2 = 13%**
-- Productive completion: 33% of v1+v2 scope; 50% of v1 scope (excluding 23.X v2 features)
+**By actual category** (from §1..§16 below):
+- §1 Channel Coverage: 5/19 LIVE (Email A1, Slack A2, Webhook A3, in-app API A5, in-app UI A6)
+- §2 Workflow/Routing: 5/16 LIVE (single-channel B1, fan-out B2, retry B4, DLQ B5, code-based B6)
+- §3 Template Management: substantially LIVE (Kernel)
+- §4 Subscriber/Preferences: ⏳ pending (preference API + UI + critical bypass)
+- §5 Tenant/Multi-tenancy/Branding: 🟡 multi-tenancy guard LIVE; per-tenant brand pending
+- §6 Audit/Compliance: 🟡 audit append-only LIVE; KVKK retention LIVE; erasure/right-to-info pending
+- §7 Analytics/Observability: 🟡 metrics + alerts + dashboard + SLO LIVE; tracing (Tempo) + bounce loop + per-tenant dashboard pending
+- §8 Provider Management: 🟡 provider abstraction LIVE; versioning/rollback pending
+- §9 Developer Experience: 🟡 partial
+- §10 UI/Self-service: 🟡 in-app inbox UI LIVE; preference UI pending
+- §11 Security/Trust: 🟡 strict identity guards LIVE; DKIM signing pending production
+- §12 Deliverability: ⏳ pending (DKIM/SPF/DMARC config)
+- §13 Abuse/Spam: ⏳ pending
+- §14 Accessibility (WCAG): ⏳ pending
+- §15 Incident/Degraded Mode: 🟡 alerts LIVE; D43 outage fallback bypass pending
+- §16 Data Classification: ⏳ pending
 
-> Marker'lar bu üst-snapshot'ta tutulur; aşağıdaki kategori tablolarındaki literal ☐ markerları zaman içinde update edilir (Session 39 itibarıyla legacy değer; categorical snapshot authoritative).
+**Overall**:
+- Substantively LIVE features: ~30-35 of ~178 (excluding scope-dışı 5)
+- Partial coverage: ~25-30 features
+- Pending: ~115 features
+- Coverage estimate: **~30% v1 scope, ~50% Kernel scope, ~25% MVP-dar scope**
+
+> **Marker discipline (Codex `019e0bff` iter-1)**: Snapshot semantic roll-up'tır, literal matrix değil. Aşağıdaki kategori tablolarındaki literal ☐/🟡/🟢 markerları zaman içinde update edilecek (full pass deferred follow-up; ~140 row sweep). Snapshot ve literal arasındaki sayı farkı bu nedenle (10 done vs ~50 semantic) — doc-drift'in kabul edilmiş kalıntısı, planlı remediation'da.
 
 ---
 
