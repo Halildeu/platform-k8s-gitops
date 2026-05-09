@@ -1363,9 +1363,26 @@ images:
   # route, so flipping strict to `true` here does not regress the
   # browser-verified happy path. Build run 25559965587, image push
   # ~14:05Z.
+  # 2026-05-09 update (Faz 23.2.B — T1.2 subscriber self-service KVKK
+  # erasure):
+  # Bump to sha-7bdfb7d (commit 7bdfb7d on platform-backend main; PR #132
+  # MERGED 13:30Z; image build run 25602537973 SUCCESS, GHCR push verified).
+  # The PREVIOUS pin sha-ef0f487 corresponds to PR #437 (audit retention
+  # dry-run flip 2026-05-08). Delta ef0f487..7bdfb7d for notification-
+  # orchestrator/ adds:
+  #   - PR #132 (7bdfb7d): Faz 23.2.B M3 stale audit closure — subscriber
+  #     self-service KVKK erasure (DELETE /audit/me Art.11 + GET /audit/me
+  #     Art.13). SubscriberErasureController (195 satır) +
+  #     SubscriberErasureService (175 satır) + 2 DTO + 16 unit/security
+  #     tests PASS (10 controller security + 6 service). ErasureService
+  #     EVENT_ADMIN_ERASURE / EVENT_SELF_SERVICE_ERASURE event type ayrım.
+  # Codex thread `019e0c28` cross-AI peer review iter-1+2 AGREE/REVISE→AGREE.
+  # CI 10/10 SUCCESS (Maven full reactor + Testcontainers PG dahil).
+  # Browser smoke 2026-05-09 13:50Z testai.acik.com /api/v1/notify/audit/me
+  # → 404 → bu bump sonrası 200 beklenen (T1.2 endpoint LIVE gate).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:ef0f487f295359563a7c3d601db369cc6b2faf098f27740615bd1d02408daf09
+    digest: sha256:ca2587f21ca7f8d51ef4e7b70f6478d3c6b40ee685f655f865a6885472ff1fcb
 
 patches:
   # Replica 0 default (scale-to-zero)
