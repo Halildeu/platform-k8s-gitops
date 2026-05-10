@@ -1,9 +1,10 @@
 # Faz 23.2.E Data Classification — Acceptance Evidence
 
-**Date**: 2026-05-10  
-**Author**: Claude (auto-mode, post-merge live evidence)  
-**Repo**: platform-backend PR #149 (acceptance test) + platform-k8s-gitops (charter doc + evidence)  
-**Charter reference**: `docs/runbooks/RB-faz-23-charter.md` Faz 23.2.E line 227
+- **Date**: 2026-05-10
+- **Author**: Claude (auto-mode; evidence drafted alongside PR #149 + #503 — final state achieved post-merge)
+- **Repo**: platform-backend PR #149 (acceptance test) + platform-k8s-gitops PR #503 (charter doc + evidence)
+- **Charter reference**: `docs/runbooks/RB-faz-23-charter.md` Faz 23.2.E line 227
+- **Status**: PR-time draft; post-merge state achieves Charter 23.2.E 🟢 FULL ACCEPTANCE
 
 ---
 
@@ -42,7 +43,7 @@ Total assertions:
 
 ## 3. Implementation reference
 
-### Source code (LIVE)
+### Source code (LIVE on prod cluster — sha-204042d binary; sha-c4a03fc on test cluster)
 
 | File | Purpose |
 |---|---|
@@ -53,11 +54,24 @@ Total assertions:
 | `notification-orchestrator/src/main/java/com/serban/notify/redaction/PiiRedactor.java:59` | `"data_classification"` whitelist allow |
 | `notification-orchestrator/src/main/java/com/serban/notify/eligibility/DeliveryEligibilityService.java` | Pre-dispatch guard chain (external policy → preference → authz) |
 
-### Test code (NEW — PR #149)
+### Test code (NEW — PR #149 pending merge + Codex review)
 
 | File | Tests |
 |---|---|
-| `notification-orchestrator/src/test/java/com/serban/notify/classification/DataClassificationAcceptanceTest.java` | **8 acceptance tests** (matrix coverage) |
+| `notification-orchestrator/src/test/java/com/serban/notify/classification/DataClassificationAcceptanceTest.java` | **9 acceptance tests** (matrix coverage + warning severity edge) |
+
+Tests:
+1. `transactionalClassificationAccepted` (info severity)
+2. `securityClassificationAccepted` (info severity)
+3. `commercialClassificationAccepted` (info severity)
+4. `systemClassificationAccepted` (info severity)
+5. `criticalSecurityCombination` (critical x security)
+6. `criticalCommercialCombination` (critical x commercial)
+7. `enumRoundTripAllValues` (DB persistence 4-way round-trip)
+8. `piiRedactorAllowsDataClassificationField` (PII whitelist boundary — explicit `containsEntry("data_classification", ...)` assert)
+9. `warningSystemCombination` (warning severity edge — Codex iter-1 P2 absorb)
+
+Audit serialization assertions added in `runAcceptanceMatrix()` helper (Codex iter-1 P1 absorb): every test verifies `audit.getDetails()` contains exact `data_classification` + `severity` entries.
 
 ### Existing test coverage (verified)
 
