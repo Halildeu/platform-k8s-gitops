@@ -70,19 +70,37 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
-          readinessProbe:
+          # Probe pattern aligned with auth-service / api-gateway / report-service
+          # / notification-orchestrator (Spring Boot Actuator standard paths +
+          # startupProbe gate). Pre-fix the deployment used non-existent
+          # `/healthz/live` and `/healthz/ready` paths (skeleton-era artifact)
+          # AND lacked a startupProbe, so liveness ran the 45s grace clock
+          # against a Spring Boot startup that takes 50-60 seconds; every
+          # restart was killed at the 45-second mark before the management
+          # server could serve. 11-day silent CrashLoopBackOff (paired with
+          # the eso-runtime missing-policy bug; once ESO sync started working,
+          # the probe timing bug surfaced).
+          startupProbe:
             httpGet:
-              path: /healthz/ready
+              path: /actuator/health/liveness
               port: management
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            failureThreshold: 6
+            failureThreshold: 30
+            periodSeconds: 5        # 30*5 = 150 sn startup toleransı
           livenessProbe:
             httpGet:
-              path: /healthz/live
+              path: /actuator/health/liveness
               port: management
-            initialDelaySeconds: 15
+            initialDelaySeconds: 0
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            initialDelaySeconds: 0
             periodSeconds: 10
+            timeoutSeconds: 3
             failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
