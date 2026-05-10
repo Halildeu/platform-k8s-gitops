@@ -116,15 +116,17 @@ images:
   #     after test smoke; D29 gate then accepts prod digest change.
   #
   # Why prod profile flip with old binary is safe (transition pattern):
-  #   - Old binary has 8 of 9 production guards (P0.4 base-url guard ADDED
-  #     in PR #147 = sha-c4a03fc which is NOT in prod yet).
-  #   - SPRING_PROFILES_ACTIVE=k8s,prod activates 8 working guards (SMTP TLS
-  #     x2, redaction pepper, webhook secret, authz key+enabled, preferences,
-  #     unsubscribe signing-secret).
-  #   - Base-url guard absence is acceptable because NOTIFY_DISPATCH_ENABLED=
-  #     false means NO emails dispatched → NO subscribers click unsubscribe
-  #     link → wrong-host risk does not materialize.
-  #   - PR-B prod digest promotion enables P0.4 base-url guard alongside
+  #   - Old binary has 7 of 9 production guards (Codex git show 204042d
+  #     verified). Missing in old: unsubscribe signing-secret guard (added
+  #     PR #144) + base-url URI parser allowlist (added PR #147). Both in
+  #     sha-c4a03fc which is NOT in prod yet.
+  #   - SPRING_PROFILES_ACTIVE=k8s,prod activates 7 working guards: SMTP
+  #     TLS enforce + check-server-identity, redaction pepper, webhook
+  #     signing-secret, authz key + enabled, preferences enabled.
+  #   - Missing guards safe in PR-A because NOTIFY_DISPATCH_ENABLED=false
+  #     means NO emails dispatched → NO subscribers click unsubscribe link
+  #     → wrong-host + signing-secret risks do not materialize.
+  #   - PR-B prod digest promotion enables full 9-guard set alongside
   #     dispatch flip (R1 NetGSM contract activation 2026-05-30).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator

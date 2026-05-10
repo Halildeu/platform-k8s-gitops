@@ -112,7 +112,10 @@ kubectl --context k3d-prod -n platform-prod exec $POD -- \
 kubectl --context k3d-prod -n platform-prod logs $POD | \
   grep -E "ProductionConfigValidator|all production guards"
 # Expected: "ProductionConfigValidator: all production guards PASSED"
-# PR-A: 7 guards; PR-B: 9 guards (count visible in validator log message)
+# Validator log message is identical for PR-A and PR-B (no count); pair the
+# PASS log with imageID check above to determine which guard set is active:
+#   imageID sha256:ef0f487f... → 7 working guards (PR-A old binary)
+#   imageID sha256:70491543... → 9 working guards (PR-B new binary)
 
 # Step 7 — health endpoint smoke (Codex iter-2 fix: management port 8081,
 # not service port 8089/8080. Actuator /health binds to management port.)
