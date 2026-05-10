@@ -543,12 +543,20 @@ patches:
         path: /data/SPRING_MAIL_SMTP_AUTH
         value: "true"
       # NOTIFY_ADAPTERS_SMTP_HOST + FROM_ADDRESS prod overrides (placeholder fix)
+      # Session 44 user clipboard share: Office 365 service account ai@acik.com
+      # (display name: "Ai - Açık Holding"). FROM_ADDRESS = SMTP AUTH username
+      # (Office 365 default policy: username == From; aksi halde "Send As" izni
+      # gerekir Microsoft 365 admin'de). noreply@acik.com alias için ayrı PR
+      # gerekirse — şu anki seçim user mailbox direct.
       - op: replace
         path: /data/NOTIFY_ADAPTERS_SMTP_HOST
         value: "smtp.office365.com"
       - op: replace
         path: /data/NOTIFY_ADAPTERS_SMTP_FROM_ADDRESS
-        value: "noreply@acik.com"
+        value: "ai@acik.com"
+      - op: replace
+        path: /data/NOTIFY_ADAPTERS_SMTP_FROM_NAME
+        value: "Ai - Açık Holding"
       # A4 DKIM env prep — Codex iter (019e1307) RED absorb 2026-05-11:
       # NOTIFY_DKIM_ENABLED=false unchanged because prod overlay hâlâ
       # sha-204042d binary'sini çalıştırıyor (PR #126 era). PR #151 DKIM full
