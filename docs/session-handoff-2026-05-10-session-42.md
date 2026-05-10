@@ -44,6 +44,8 @@ Session 42 zinciri:
 
 ### Cluster Live State
 
+> **Not**: `docs/state/current-state.md` Session 39 snapshot pinned (full re-baseline ayrı PR). Bu §3 cluster evidence Session 42 directly observed via `kubectl --context k3d-test exec` (post-PR #482 + #483 + operational fixes).
+
 ```bash
 # Auth-service env (PR #479 LIVE)
 kubectl --context k3d-test -n platform-test exec deploy/auth-service -- env | grep '^AUTH_IMPERSONATION_'
@@ -94,7 +96,7 @@ kv/data/platform/notification-orchestrator (canonical flat path):
 
 ### Cross-AI Codex Review Chain
 
-5 Codex thread: `019e108d` → `019e1093` (PR #479) | `019e109b` → `019e10a4` (PR #482) | `019e10b4` → `019e10b9` (PR #483)
+6 Codex thread / 6 iter: `019e108d` → `019e1093` (PR #479) | `019e109b` → `019e10a4` (PR #482) | `019e10b4` → `019e10b9` (PR #483)
 
 3 cycle: REVISE absorb → AGREE → merge pattern (HARD RULE 2026-05-05).
 
@@ -203,7 +205,7 @@ ssh halil@staging-sw "cd platform-k8s-gitops && kubectl --context k3d-test apply
 | R21 | 23.2 + 23.3 | 🟡 Active | Provider rate-limit external throttling |
 | R22 | cross-cutting | 🟡 Active | GHCR registry outage |
 
-**22 risk total**: 8 mitigated + 12 active + 1 deferred + 1 pending.
+**22 risk total**: 8 mitigated (R4/R5/R8/R9/R13/R18/R19/R20) + 13 active (R1/R2/R3/R6/R7/R11/R12/R14/R15/R16/R17/R21/R22) + 1 deferred (R10).
 
 ---
 
