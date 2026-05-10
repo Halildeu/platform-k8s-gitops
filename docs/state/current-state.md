@@ -10,6 +10,92 @@
 
 ---
 
+## Live Delta — Session 42 (2026-05-10 ~07:55 UTC+3) — M4 23.3.1 NetGSM Vault Path Infrastructure LIVE + 7 PR / 16-iter Codex Chain
+
+**Mandate**: Continuous Autonomous Mode 9+ saat zincir. Session 41 final handoff (PR #480) sonrası kullanıcı talimatı: "tam otonom devam edelim". Session 42'de gitops-local saturation noktasına kadar devam.
+
+### 7 PR MERGED Session 42
+
+| PR | Title | Squash | Codex |
+|---|---|---|---|
+| #479 | fix(auth-service): add auth.impersonation.* config | `36bebfb` | iter-1 REVISE → iter-2 AGREE |
+| #482 | feat(notify-23.3.1): NetGSM SMS canonical Vault path | `2ae040d` | iter-3 REVISE → iter-4 AGREE |
+| #483 | docs(notify-23.3.1): M4 evidence + doc-set sync | `2b78162` | iter-1 REVISE → iter-2 AGREE |
+| #484 | docs(handoff): Session 42 ana handoff (3 PR + M4 LIVE) | `33f9db5` | iter-1/2/3 chain → AGREE |
+| #485 | feat(notify-23.3.1): NetGSM DLR token Vault entry | `fa314c0` | iter-1/2/3 chain → AGREE |
+| #487 | chore(overlay-test): bump ResourceQuota CPU 10→12 (drift fix) | `0421260` | iter-1 REVISE → iter-2 AGREE |
+| #490 | docs(handoff): Session 42 supplement (DLR + Quota + saturation) | `724b2fa` | iter-1/2/3/4/5/6 chain → AGREE |
+
+**Plus 2 PR closed (superseded)**: #384 (split-path NetGSM) + #486 (quota fix base drift).
+
+### M4 23.3.1 NetGSM Vault Path Infrastructure LIVE
+
+**Vault canonical path** (`kv/platform/notification-orchestrator`) 5 → 9 keys:
+- 5 base: db_username, db_password, webhook_signing_secret, authz_internal_api_key, redaction_pepper
+- 3 NetGSM core: sms_netgsm_username (empty), sms_netgsm_password (empty), sms_netgsm_msgheader=Notify
+- 1 DLR: dlr_token (empty fail-closed)
+
+**ESO ExternalSecret** `notification-orchestrator-secrets` → 9/9 Ready=True.
+
+**Pod env injection** (4/4 NetGSM env vars LIVE on pod):
+```
+NOTIFY_ADAPTERS_SMS_NETGSM_DLR_TOKEN=
+NOTIFY_ADAPTERS_SMS_NETGSM_MSGHEADER=Notify
+NOTIFY_ADAPTERS_SMS_NETGSM_PASSWORD=
+NOTIFY_ADAPTERS_SMS_NETGSM_USERNAME=
+```
+
+Both pods (skhxq + n8b96) 1/1 Running post-rollout.
+
+**Fail-closed pattern**: Empty credentials → SmsAdapter `FAILED("netgsm credentials missing")`. Real credentials post-NetGSM contract activation R1 (ETA 2026-05-30).
+
+### Operasyonel Mutasyonlar (gitops manifest ile sync)
+
+1. **PG password rotation** (Vault sync): `notify_db` ALTER USER platform WITH PASSWORD (alphanumeric 2026-05-10 06:54Z); ESO Owner mode'da first force-sync drift hit oldu (Hikari auth fail), rotation pattern (PG ALTER + Vault patch + ESO sync + rollout) ile çözüldü.
+2. **ResourceQuota** patched live 8 → 12 CPU + 16 → 24Gi memory (PR #487 manifest sync ile drift kapandı).
+3. **Pod rollout 3×**: post-NetGSM apply + post-PG-rotation + post-DLR apply.
+
+### Charter 23.3 Promotion
+
+- Önceki: ⏳ pending
+- **Şimdi: 🟡 partial** (23.3.1 sub-component LIVE)
+- Effective progress: ~30% → **~33%** of v1 scope
+- Snapshot: 1/11 done + 6/11 partial + 4/11 pending (vs 1/11 + 5/11 + 5/11 önceki)
+
+### Risk Register Sync
+
+- **R1** mitigation extended (Vault infrastructure 🟢 LIVE; contract activation pending)
+- **R12** Provider rollback: 🔴 Pending → 🟡 Active (T1.3 Testcontainers spawn_task chip user-side)
+- 22 risk total: 8 mitigated + 13 active + 1 deferred (vs 41 sonu: 8 + 12 + 1 + 1 pending)
+
+### HARD RULE Compliance Session 42
+
+- ❌ "Yarın YASAK" (2026-05-10 §1, yeni global kural) — hiç ihlal yok
+- ❌ TEST scale-to-zero YASAK (2026-05-10 §2, yeni global kural) — quota artırıldı, replicas=1 default korundu
+- ❌ Admin merge YASAK (2026-05-05) — 7 PR normal merge
+- ❌ Login user şifresine dokunma YASAK (2026-04-29) — sadece `platform` DB ServiceAccount rotation
+- ✅ Cross-AI peer review (2026-05-05) — 16+ thread / 16+ iter chain
+- ✅ Browser console verify (2026-05-08) — testai.acik.com console temiz
+- ✅ Continuous Autonomous Mode (2026-04-25) — 9+ saat zincir, saturation noktasına kadar
+
+### Saturation Notu
+
+gitops worktree'de yapılabilir P0 iş kalmadı:
+- M4 manifest + cluster + Vault + ESO + pod env senkron
+- Drift fixes current live/repo truth ile uyumlu (PG + Quota)
+- Browser regression yok
+- Risk register + Charter + feature-matrix triple consistent
+
+**Sıradaki gate**: cross-repo (T1.3 + T1.1.6/7/8 + M6a spawn_task chips), timer-bound (M1 milestone gate 2026-05-11 19:42Z), external coordination (R1 + R2 — haftalar).
+
+### Refs
+
+- Session 42 ana handoff: `docs/session-handoff-2026-05-10-session-42.md` (PR #484)
+- Session 42 supplement: `docs/session-handoff-2026-05-10-session-42-supplement.md` (PR #490)
+- M4 evidence: `docs/faz-23-evidence/2026-05-10-m4-netgsm-canonical-live.md` (PR #483)
+
+---
+
 ## Live Delta — Session 39 post-02:00 correction (2026-05-09 ~10:30 UTC+3) — FIRST CRON TICK CLEAN + LOCK SKIP ALERT FALSE-POSITIVE FIX
 
 **Mandate**: Codex `019e0b9f` strategic continuation A (C.2 prep) + B (dashboard extension) ladder. First cron tick observation gate fired 2026-05-09 02:00 UTC.
