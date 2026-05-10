@@ -227,7 +227,7 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 - 🟢 **23.2.E**: Data classification substantively LIVE (enum + IntentSubmissionService + DeliveryEligibilityService); ~2h acceptance test
 - 🟢 **23.2.F**: Abuse prevention guards (D45) — **T1.6 FULL ACCEPTANCE Session 41 2026-05-09 23:45Z** (PR #134 + #455 + acceptance evidence; sliding window 100/orgId-topicKey/60s; R13 + R19 🟢 Mitigated)
 
-Estimated remaining work (Session 42 sonu): **T1.1.7/8 follow-up implementation+test ~12-15 days** (Explore agent scope analysis: quiet hours enforcement + per-user frequency limit + unsubscribe footer/JWT; impl + test gerek) + R2 KVKK legal review external coordination ETA 2026-05-25.
+Estimated remaining work (Session 43 sonu): **T1.1.7/8 follow-up implementation+test ~8-11 days** (T1.1.6 quiet hours done Session 43 PR #142; residual: per-user frequency limit ~5-6 days + unsubscribe footer/JWT ~4-5 days; impl + test gerek) + R2 KVKK legal review external coordination ETA 2026-05-25.
 
 **Historical (M3 stale audit 2026-05-09)**: önceki ~100h estimate / Session 41 sonrasında ~52-55h drift; Session 42 T1.3 MERGED ile residual T1.1.7/8 impl+test'e indirgendi.
 
