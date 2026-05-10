@@ -39,24 +39,26 @@
 ### Charter 23.2 Sub-Faz Final State Session 43
 
 **5/6 sub-faz fully 🟢 source-ready + 1 sub-faz 🟡 partial** (5-state matrix Source-ready 12/12 + Live-deployed 12/12 + Evidence-backed 12/12 + Acceptance complete 11/12 + Blocked 0/12):
-- 🟢 **23.2.A**: T1.1 trilogy 3/3 MERGED (T1.1.6 + T1.1.7 + T1.1.8 PR-A/B/C) + P0.1-P0.5 follow-up Session 44 (gitops PR #498 charter doc + **test ESO 15. key** + **test Vault seed** ✅; backend PR #147 prod-host guard URI parser allowlist + e2e integration test). **Prod profile activation deferred to P1.2 M3 next gate** (Codex iter-3 RED absorb: prod desired-state ESO/ConfigMap/Vault completion required first)
+- 🟢 **23.2.A**: T1.1 trilogy 3/3 MERGED (T1.1.6 + T1.1.7 + T1.1.8 PR-A/B/C) + P0.1-P0.5 follow-up Session 44 (gitops PR #498 charter doc + test ESO 15. key + test Vault seed; backend PR #147 prod-host guard URI parser allowlist + e2e integration test) + **P1.2 M3 next gate Session 44 prod desired-state completion** (prod ESO 5→15 + prod Vault seed + prod ConfigMap NOTIFY_UNSUBSCRIBE_BASE_URL + SMTP TLS env + SPRING_PROFILES_ACTIVE=k8s,prod profile flip — single atomic transaction PR)
 - 🟢 **23.2.B**: Subscriber self-service T1.2 FULL ACCEPTANCE Session 41
 - 🟢 **23.2.C**: Provider config rollback R12 🟢 Mitigated (T1.3 PR #140)
 - 🟢 **23.2.D**: Outage fallback bypass T1.4 FULL ACCEPTANCE Session 41 first drill
 - 🟡 **23.2.E**: Data classification substantively LIVE (`DataClassification` enum + `IntentSubmissionService` + `DeliveryEligibilityService`); ~2h acceptance test residual (single-source-of-truth: this is the 11/12 acceptance gap reflected in matrix)
 - 🟢 **23.2.F**: Abuse prevention guards T1.6 FULL ACCEPTANCE Session 41
 
-**Residual** (P1.2 M3 next gate + R2 external):
-- **P1.2 M3 next gate PR** (prod desired-state completion before validator activation):
-  - Prod ESO ExternalSecret: extend 5→15 keys matching test overlay
-  - Prod Vault seed: `unsubscribe_signing_secret` + DLR token + Teams/Slack/FCM/APNS/VAPID (Pre-Production Full Authority)
-  - Prod ConfigMap: `NOTIFY_UNSUBSCRIBE_BASE_URL=https://ai.acik.com/...` + SMTP TLS enforce env bindings
-  - Prod profile flip: `SPRING_PROFILES_ACTIVE=k8s,prod` (validator activation)
-  - Prod pod startup smoke verify
+**Residual** (R2 external + 23.2.E acceptance test):
 - 23.2.E: ~2h Data classification acceptance test (single residual within Source-ready scope)
 - R2 KVKK admin erasure legal review external ETA 2026-05-25
 
-**Codex iter-3 RED absorb (`019e1307`)**: Initial PR #498 SPRING_PROFILES_ACTIVE=k8s,prod patch attempted to activate prod validator early; Codex caught prod desired-state still inconsistent (ESO 5-key, ConfigMap unsubscribe base-url missing, SMTP TLS enforce env not set, Vault prod seed pending). Apply would have fail-closed prod pod startup. Correct sequence: prod profile activation gates on M3 next gate desired-state completion. PR #498 reverted profile patch; activation moved to P1.2.
+**P1.2 M3 next gate Session 44 prod desired-state completion** (in PR — atomic):
+- ✅ Prod ESO ExternalSecret 5→15 keys (kustomize/overlays/prod/eso/notify/externalsecret-notify.yaml)
+- ✅ Prod Vault seed `unsubscribe_signing_secret` + 9 channel keys (Pre-Production Full Authority — operator on staging-sw)
+- ✅ Prod ConfigMap `NOTIFY_UNSUBSCRIBE_BASE_URL=https://ai.acik.com/api/v1/notify/unsubscribe`
+- ✅ Prod ConfigMap SMTP TLS env: `NOTIFY_SMTP_TLS_ENFORCE=true`, `SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE=true`, `STARTTLS_REQUIRED=true`, `SSL_CHECKSERVERIDENTITY=true`
+- ✅ Prod profile flip `SPRING_PROFILES_ACTIVE=k8s,prod` (validator activation)
+- ⏳ Post-merge: cluster apply + prod pod startup smoke verify
+
+**Codex iter-3 RED absorb (`019e1307`)**: Initial PR #498 SPRING_PROFILES_ACTIVE=k8s,prod patch attempted to activate prod validator early; Codex caught prod desired-state still inconsistent (ESO 5-key, ConfigMap unsubscribe base-url missing, SMTP TLS enforce env not set, Vault prod seed pending). Apply would have fail-closed prod pod startup. Correct sequence: prod profile activation gates on M3 next gate desired-state completion (this P1.2 PR). All 5 prerequisites complete in single atomic transaction.
 
 ### HARD RULE Compliance Session 43
 

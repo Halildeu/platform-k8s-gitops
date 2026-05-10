@@ -205,33 +205,38 @@ patches:
   # auth-service:8088, gateway routes 0-5). Prod-specific override YOK,
   # overlay sadece namespace (platform-prod) + Ingress host + Endpoints pin.
 
-  # Faz 23.2.A T1.1.8 P0.4 Codex iter-3 (019e1307) RED absorb 2026-05-10:
-  # SPRING_PROFILES_ACTIVE=k8s,prod patch DEFERRED to P1.2 M3 next gate PR.
-  #
-  # Why deferred (Codex iter-3 P0 finding): activating "prod" profile in
-  # ProductionConfigValidator before prod desired-state is complete causes
-  # pod startup fail-closed:
-  #   1. Prod ESO ExternalSecret still has 5 keys (test has 15); missing
-  #      NOTIFY_UNSUBSCRIBE_SIGNING_SECRET → validateSecret() FAIL
-  #   2. Prod ConfigMap lacks NOTIFY_UNSUBSCRIBE_BASE_URL → default
-  #      `https://testai.acik.com/...` leaks to prod → validateUnsubscribeBaseUrl()
-  #      FAIL on test/dev/staging subdomain blocklist
-  #   3. SMTP TLS enforce env binding (NOTIFY_SMTP_TLS_ENFORCE=true,
-  #      SPRING_MAIL_SMTP_STARTTLS_ENABLE=true, mail.smtp.starttls.required=true)
-  #      not set in prod ConfigMap → smtp.tls.enforce=false default → FAIL
-  #   4. Prod Vault seed for unsubscribe_signing_secret not yet executed
-  #
-  # Correct sequence: P1.2 M3 next gate PR will (a) extend prod ESO to 15 keys
-  # matching test, (b) add prod Vault seed for new keys, (c) add prod
-  # ConfigMap NOTIFY_UNSUBSCRIBE_BASE_URL=https://ai.acik.com/... + SMTP TLS
-  # enforce env bindings, (d) flip prod profile to k8s,prod, (e) verify prod
-  # pod startup smoke.
-  #
-  # This PR (#498) keeps prod profile = "k8s" (base default) — validator stays
-  # silent on prod path; test cluster validator has source-ready guard via
-  # `test` profile (covered by ProductionConfigValidator.isProductionProfile()
-  # SKIP path). This is correct for source-ready stage; prod activation
-  # gates on M3 next gate desired-state completion.
+  # Faz 23.2.A T1.1.8 P0.4 / P1.2 M3 next gate ACTIVATION 2026-05-10:
+  # SPRING_PROFILES_ACTIVE=k8s,prod activates ProductionConfigValidator on
+  # prod cluster path. Prerequisites complete (P1.2 sequence above):
+  #   ✅ Prod ESO ExternalSecret extended 5→15 keys (parity with test)
+  #   ✅ Prod Vault seed unsubscribe_signing_secret + 9 channel keys (Pre-Prod Full Authority)
+  #   ✅ Prod ConfigMap NOTIFY_UNSUBSCRIBE_BASE_URL=https://ai.acik.com/...
+  #   ✅ Prod ConfigMap NOTIFY_SMTP_TLS_ENFORCE=true + STARTTLS required + check-server-identity
+  #   ✅ ProductionConfigValidator URI parser allowlist (PR #147 backend MERGED)
+  # Validator startup fail-closed gate now safe to activate; pod ready means
+  # all 9 production guards PASS.
+  - target:
+      kind: Deployment
+      name: notification-orchestrator
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0
+        value:
+          name: SPRING_PROFILES_ACTIVE
+          value: "k8s,prod"
+
+  # Codex iter-3 (019e1307) RED absorb history:
+  # PR #498 initially attempted SPRING_PROFILES_ACTIVE=k8s,prod patch but Codex
+  # iter-3 RED caught prod desired-state inconsistency (ESO 5-key, ConfigMap
+  # base-url missing, SMTP TLS enforce missing, Vault prod seed pending).
+  # Apply would have fail-closed prod pod startup. Patch deferred to this
+  # P1.2 M3 next gate PR which completes all 5 prerequisites in single
+  # atomic transaction (single PR = single render = single rollout):
+  #   1. Prod ESO ExternalSecret 5→15 keys (line 74-141 above)
+  #   2. Prod Vault seed (Pre-Production Full Authority — operator runs)
+  #   3. Prod ConfigMap NOTIFY_UNSUBSCRIBE_BASE_URL + SMTP TLS env (line 442+)
+  #   4. Prod profile flip k8s→k8s,prod (line 218 above)
+  #   5. Backend ProductionConfigValidator URI parser allowlist (PR #147 MERGED)
 
   # Faz 23.9 Step D (Codex thread 019e08df iter-2 REVISE absorb 2026-05-08):
   # notify-orch base secret-stub.yaml workload render'a "dev-only-..." sentinel
@@ -437,6 +442,33 @@ patches:
       - op: add
         path: /data/NOTIFY_AUDIT_RETENTION_DRY_RUN
         value: "false"
+      # P1.2 M3 next gate (Faz 23.2.A T1.1.8 P0.4 prod activation,
+      # Codex 019e1307 iter-3 RED absorb 2026-05-10):
+      # Unsubscribe email-link base URL prod-host. ProductionConfigValidator
+      # validateUnsubscribeBaseUrl() URI parser allowlist:
+      # - HTTPS scheme required
+      # - Host: exact ai.acik.com OR .acik.com suffix (multi-tenant)
+      # - Test/dev subdomain blocklist (testai, test.*, dev.*, staging.*, staging-sw.*)
+      - op: add
+        path: /data/NOTIFY_UNSUBSCRIBE_BASE_URL
+        value: "https://ai.acik.com/api/v1/notify/unsubscribe"
+      # SMTP TLS hard enforcement (Codex 019e1307 iter-3 prerequisite for
+      # ProductionConfigValidator activation; aynı pattern test cluster'da
+      # 41+ min sustained doğrulandı). validateSecret() ve validateSmtp*()
+      # guards prod profile'da fail-closed; default false → NotifyConfigVal
+      # exception → pod CrashLoopBackOff.
+      - op: add
+        path: /data/NOTIFY_SMTP_TLS_ENFORCE
+        value: "true"
+      - op: add
+        path: /data/SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE
+        value: "true"
+      - op: add
+        path: /data/SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED
+        value: "true"
+      - op: add
+        path: /data/SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_CHECKSERVERIDENTITY
+        value: "true"
 
   # Faz 23.9 prod cutover — notification-orchestrator pod-template
   # annotation rollout trigger + replicas override. ConfigMap envFrom
