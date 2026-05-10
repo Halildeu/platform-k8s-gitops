@@ -199,7 +199,7 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 | Admin erasure path | 🟡 source-ready, R2 legal review | `AdminErasureController` 129 satır LIVE: `POST /api/v1/admin/notify/erasure` (admin scope); R2 legal review ETA 2026-05-25 |
 | **Subscriber self-service erasure** (`DELETE /audit/me`) | ⏳ **gerçek pending** | Endpoint backend'de YOK — KVKK Art.11 self-service için yeni implementation gerek (~5h) |
 | **Subscriber right-to-info** (`GET /audit/me`) | ⏳ **gerçek pending** | Endpoint backend'de YOK — KVKK Art.13 için yeni implementation gerek (~5h) |
-| Provider config rollback | 🟡 partial source-ready | `ProviderConfigHistory` + Repository LIVE; atomic switch + cache invalidate acceptance gate |
+| Provider config rollback | 🟢 done | `ProviderConfigHistory` + Repository LIVE; `ProviderConfigService.switchActive()` @Transactional SERIALIZABLE + TransactionSynchronization.afterCommit cache invalidation; 4 Testcontainers integration tests CI GREEN (atomic_switch + concurrent_switch_race + cache_invalidate + rollback_on_fail); platform-backend PR #140 MERGED 2026-05-10 (Codex iter-1 RED → iter-2 AGREE thread `019e116e`/`019e1173`); R12 🟢 Mitigated |
 | **Grafana dashboard** | 🟢 done | PR #431 + #436 → 15 panel (strict cutover + retention + queue + DLQ + SLO burn rate); sidecar imported `notification-orchestrator-dashboard` ConfigMap LIVE prod monitoring ns |
 | **Alertmanager DLQ rule** | 🟢 done | PR #425 + #428 + #430 + #433 → 25 PrometheusRule alerts LIVE: NotifyDlqSustained (>5/sec critical), NotifyDlqUnreplayed (>100), NotifyDlqSloBurnRateFast/Slow/Medium (1h/6h/24h burn rate), all with runbook_url annotations |
 | Outage fallback bypass (D43) | ⏳ **gerçek pending** | orchestrator down → Slack #alerts'e direct mesaj — alertmanager-bridge backend code YOK; T1.4 ~15h gerçek pending (R9 drill blocker) |
@@ -222,7 +222,7 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 **Sub-faz 23.2 closure plan** (M3 stale audit 2026-05-09 re-baseline):
 - 🟡 **23.2.A**: Preference API backend ZATEN LIVE (`PreferenceController` + service + send pipeline); residual ~3h acceptance test (RAID I6 credential gate)
 - 🟡 **23.2.B**: KVKK admin erasure source-ready (`AdminErasureController`), R2 legal review wait; **subscriber self-service `DELETE/GET /audit/me` GERÇEK PENDING ~10h** (yeni endpoint impl)
-- 🟡 **23.2.C**: Provider config rollback partial source-ready; ~5h acceptance gate
+- 🟢 **23.2.C**: Provider config rollback FULL ACCEPTANCE 2026-05-10 (platform-backend PR #140 MERGED — `switchActive()` @Transactional SERIALIZABLE + afterCommit cache + 4 Testcontainers tests CI GREEN; R12 🟢 Mitigated)
 - ⏳ **23.2.D**: Outage fallback bypass (D43) — **gerçek pending T1.4 ~15h** (alertmanager-bridge backend code YOK; R9 drill blocker)
 - 🟢 **23.2.E**: Data classification substantively LIVE (enum + IntentSubmissionService + DeliveryEligibilityService); ~2h acceptance test
 - ⏳ **23.2.F**: Abuse prevention guards (D45) — **gerçek pending T1.6 ~15h** (RateLimitGuard yok; R13/R19 storm)
