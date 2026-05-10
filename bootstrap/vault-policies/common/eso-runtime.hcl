@@ -36,6 +36,20 @@ path "kv/data/platform/permission-service" {
   capabilities = ["read"]
 }
 
+# --- Faz 22.1.1b BE-001 endpoint-admin-service (missing-policy hot-fix 2026-05-10) ---
+# Service introduced 2026-04-29 (Faz 22.1.1b BE-001) but the eso-runtime policy
+# was never updated to grant ESO read access to its kv/data/platform path. The
+# omission caused a silent 11-day outage: ESO sync returned 403 since first
+# deploy, the K8s Secret never landed, the pod entered CrashLoopBackOff every
+# time it was restarted (most recently during the 2026-05-09 cluster operations).
+# Same shape as auth-service / report-service / etc. — single flat path, 4 keys
+# (db_username, db_password, enrollment_token_pepper, device_secret_encryption_key).
+# Live patch applied to vault-test 2026-05-10T17:30Z; this file makes the change
+# canonical so the next vault-bootstrap drill cannot regress.
+path "kv/data/platform/endpoint-admin-service" {
+  capabilities = ["read"]
+}
+
 # --- Faz 23.9 Step D notification-orchestrator (flat path; auth-service convention) ---
 # Codex thread 019e08df REVISE absorb: ExternalSecret reads kv/platform/notification-
 # orchestrator with 5 keys (db_username, db_password, webhook_signing_secret,
