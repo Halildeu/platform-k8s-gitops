@@ -1,0 +1,95 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-backend",
+  "service": "notification-orchestrator",
+  "git_sha": "c4a03fc46ff0674c238bf38cc7b7f56240977b2c",
+  "git_short_sha": "c4a03fc",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-backend-notification-orchestrator",
+    "digest": "sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3",
+    "tag": "sha-c4a03fc",
+    "push_run_id": 25636201775,
+    "pushed_at": "2026-05-10T18:19:12Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-05-10T18:55:00Z",
+      "promoted_by_pr": 501,
+      "argocd_revision": "f4191b4",
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-05-10T19:03:29Z",
+          "details": "Pod notification-orchestrator-fcb8d49bd-9qkhv 1/1 Running, post-PG-rotation rolling restart success; pod imageID matches sha-c4a03fc digest sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3 (verified via kubectl --context k3d-test get pod -o jsonpath='{.status.containerStatuses[0].imageID}'); Started NotificationOrchestratorApplication in 76.686 seconds.",
+          "evidence_url": "https://github.com/Halildeu/platform-backend/pull/147"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-05-10T19:03:53Z",
+          "details": "T1.1 trilogy + P0.4 service init logs verified live in test cluster: 'FrequencyLimitService initialized: window=24h', 'UnsubscribeTokenService initialized: ttl=90d', 'UnsubscribeUrlBuilder initialized: baseUrl=https://testai.acik.com/api/v1/notify/unsubscribe', 'ProductionConfigValidator: non-prod profile, validation SKIPPED'. Plus unsubscribe endpoint smoke: GET /api/v1/notify/unsubscribe?token=foo.bar → HTTP 401 (HMAC verify fail-closed). Vault test seed unsubscribe_signing_secret + 14 other keys via ESO sync 15-key Secret. PG password rotation pattern applied (Pre-Production Full Authority).",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/pull/501",
+          "endpoints": [
+            "/api/v1/notify/unsubscribe",
+            "/actuator/health"
+          ]
+        },
+        "d29_zanzibar": {
+          "status": "AMBER",
+          "checked_at": "2026-05-10T19:03:53Z",
+          "details": "AMBER: D29-Authorized full OpenFGA allow/deny synthetic blocked on RAID I6 Keycloak admin credential (D29 evidence partial 60%; authenticated full pipeline outbox→adapter→delivery+OpenFGA pending). NotifyOrgAccessGuard + SubscriberIdentityGuard chain inherited from PR #126 era binary (sha-204042d) and preserved in this binary. Strict cutover env binding (NOTIFY_SECURITY_DEFAULT_ORG_ID='', NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT=true) unchanged. PR-A profile flip prod activation (k8s,prod) deferred to D29 ledger entry; this entry establishes the ledger.",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/faz-23-evidence/2026-05-09-23-1-d29-partial.md",
+          "allow_deny_synthetic": "PARTIAL"
+        }
+      },
+      "verified_at": "2026-05-10T19:03:53Z",
+      "candidate_pr": null,
+      "candidate_pr_status": null,
+      "feature_payload": [
+        "T1.1.6 quiet hours enforcement (PR #142, 7 unit tests)",
+        "T1.1.7 frequency limit per user (PR #143, 4-iter Codex chain)",
+        "T1.1.8 unsubscribe trilogy: token (PR #144) + url builder (PR #145) + revoke service (PR #146)",
+        "P0.4 ProductionConfigValidator unsubscribe base-url URI parser allowlist + signing-secret guard (PR #147)",
+        "P0.5 UnsubscribeRevokeService e2e integration test (4 testcontainers tests CI Linux Docker PASS)"
+      ],
+      "session_evidence": {
+        "session_id": "Session 44 (2026-05-10)",
+        "live_test_apply_chain": [
+          "kubectl set image deploy/notification-orchestrator -n platform-test (sha-eef18027 → sha-c4a03fc)",
+          "PG password drift recovery: ALTER USER + vault kv patch v8 + ESO force-sync + rollout restart",
+          "Pod ready=true 2026-05-10T19:03:29Z (76.686s startup)",
+          "endpoint smoke /api/v1/notify/unsubscribe?token=foo.bar → 401 (HMAC fail-closed)"
+        ]
+      }
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": null,
+      "candidate_pr_status": "draft"
+    }
+  },
+  "metadata": {
+    "required_migrations": [
+      "V14 already applied (no new migrations in this digest)"
+    ],
+    "backward_compatible_until": "sha-204042d (PR #126 era; old binary 7-guard subset)",
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:ef0f487f295359563a7c3d601db369cc6b2faf098f27740615bd1d02408daf09",
+    "guard_set_added": [
+      "ProductionConfigValidator unsubscribe signing-secret guard (PR #144)",
+      "ProductionConfigValidator unsubscribe base-url URI parser allowlist (PR #147)"
+    ]
+  },
+  "audit": {
+    "created_at": "2026-05-10T20:45:00Z",
+    "last_updated_at": "2026-05-10T20:45:00Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-backend/actions/runs/25636201775",
+    "codex_review_chain": [
+      "019e1307 (4-iter chain: T1.1.8 P0.4+P0.5 + P1.2 PR-A + DKIM A4)"
+    ]
+  }
+}

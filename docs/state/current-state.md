@@ -60,7 +60,7 @@
 - ✅ Prod profile flip `SPRING_PROFILES_ACTIVE=k8s,prod` — activates **7-guard subset** on OLD binary (sha-204042d)
 - ⏳ Post-merge: ordered two-app rollout (RB-faz-23-2-A-P1-2-prod-activation.md 8-step) + prod pod startup smoke
 
-**PR-B (follow-up)**: prod backend digest promotion sha-204042d → sha-c4a03fc:
+**PR-B (Session 44 follow-up — this PR)**: prod backend digest promotion sha-204042d → sha-c4a03fc:
 - Auto-promotion bot creates release-candidate ledger entry from test smoke
 - D29 evidence gate accepts prod digest change
 - Activates **9-guard full set** (adds unsubscribe signing-secret + base-url URI parser allowlist)

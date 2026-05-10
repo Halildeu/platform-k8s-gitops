@@ -103,34 +103,31 @@ images:
     digest: sha256:6d926376a58bfd47c3d5059e0e0025f8cb38d5c7fbf80767461b2eea136647f4
 
   # Faz 23.9 prod cutover (2026-05-08): notification-orchestrator
-  # canonical activation. Pin remains sha-204042d (PR #126 era) until D29
-  # evidence ledger gate clears for newer digest sha-c4a03fc (PR #147).
+  # canonical activation. Initial pin sha-204042d (PR #126); P1.2 PR-A
+  # Session 44 prod env/ESO/profile prep MERGED (PR #501); P1.2 PR-B
+  # Session 44 prod backend digest promotion sha-204042d → sha-c4a03fc
+  # (PR #147 binary; T1.1 trilogy + P0.4 base-url URI parser allowlist +
+  # P0.5 UnsubscribeRevokeService e2e).
   #
-  # P1.2 M3 next gate Session 44 split sequence (Codex 019e1307 D29 absorb):
-  #   - PR-A (this PR #501): test overlay → sha-c4a03fc + prod ESO 5→15 +
-  #     prod ConfigMap NOTIFY_UNSUBSCRIBE_BASE_URL + SMTP TLS env +
-  #     prod profile flip k8s,prod + NOTIFY_DISPATCH_ENABLED=false. Prod
-  #     digest stays sha-204042d (old PR #126 era binary).
-  #   - PR-B (follow-up after D29 ledger): prod overlay digest bump
-  #     sha-204042d → sha-c4a03fc. Auto-promotion bot creates ledger entry
-  #     after test smoke; D29 gate then accepts prod digest change.
+  # D29 evidence ledger entry: release-candidates/platform-backend/c4a03fc...
+  # — test promotion 2026-05-10T18:55Z, smoke evidence:
+  #   - d29_up GREEN: pod imageID match + 76.686s startup
+  #   - d29_functional GREEN: T1.1 trilogy bean init + endpoint 401 smoke
+  #   - d29_zanzibar AMBER: RAID I6 Keycloak credential blocker (D29
+  #     authenticated full pipeline 60% — outbox→adapter→delivery+OpenFGA
+  #     allow/deny pending external; not blocking prod promotion since old
+  #     binary inherits same Zanzibar guard chain)
   #
-  # Why prod profile flip with old binary is safe (transition pattern):
-  #   - Old binary has 7 of 9 production guards (Codex git show 204042d
-  #     verified). Missing in old: unsubscribe signing-secret guard (added
-  #     PR #144) + base-url URI parser allowlist (added PR #147). Both in
-  #     sha-c4a03fc which is NOT in prod yet.
-  #   - SPRING_PROFILES_ACTIVE=k8s,prod activates 7 working guards: SMTP
-  #     TLS enforce + check-server-identity, redaction pepper, webhook
-  #     signing-secret, authz key + enabled, preferences enabled.
-  #   - Missing guards safe in PR-A because NOTIFY_DISPATCH_ENABLED=false
-  #     means NO emails dispatched → NO subscribers click unsubscribe link
-  #     → wrong-host + signing-secret risks do not materialize.
-  #   - PR-B prod digest promotion enables full 9-guard set alongside
-  #     dispatch flip (R1 NetGSM contract activation 2026-05-30).
+  # Guard set transition (sha-204042d 7-guard → sha-c4a03fc 9-guard):
+  #   ✅ ProductionConfigValidator unsubscribe signing-secret guard (added)
+  #   ✅ ProductionConfigValidator unsubscribe base-url URI allowlist (added)
+  #   ✅ All 7 inherited guards (TLS x2, redaction, webhook, authz x2, preferences)
+  #
+  # NOTIFY_DISPATCH_ENABLED=false unchanged (R1 NetGSM contract activation
+  # 2026-05-30 sonrası flip true + real SMTP gateway config — separate PR).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:ef0f487f295359563a7c3d601db369cc6b2faf098f27740615bd1d02408daf09
+    digest: sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3
 
 # Faz 23.2 PR-D.3 — notification-orchestrator prod IMAGE PIN DEFERRED.
 # D29 evidence gate (Codex P0 Sprint A Item 3) requires:
