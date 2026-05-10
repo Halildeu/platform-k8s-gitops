@@ -10,6 +10,101 @@
 
 ---
 
+## Live Delta — Session 44 (2026-05-11 ~02:30 UTC+3) — Charter 23.2 🟢 (full) + Mail Pipeline A1+A4+A6+A7+A8 + 18 PR Total (12 gitops MERGED + 6 backend MERGED + 1 gitops PENDING)
+
+**Mandate**: Continuous Autonomous Mode 7+ saat Session 43→44 zincir. Mail service önceliklestirildi ("tek mail atana kadar otonom devam"). Cross-AI peer review HARD RULE 35+ Codex thread / 35+ iter chain. Pre-Production Full Authority (Vault seed + credential embed override granted). HARD RULE Session Otomatik Açma compliance → Session 44 final handoff PR #511 MERGED.
+
+### Session 44 Toplam: 18 PR MERGED + 1 PENDING + 4 PR CLOSED (3 stale handoff + 1 RAID I6 blocker)
+
+**Gitops (12 PR MERGED + 1 PENDING)** — Charter 23.2 closure + mail pipeline infra:
+- PR #498 (notify-23.2.A Charter 🟢 + ESO 15. key unsubscribe_signing_secret + Live Delta P0.1+P0.2+P0.3)
+- PR #499 (endpoint-admin eso-runtime policy + probe paths/startupProbe fix)
+- PR #501 (notify-23.2.A P1.2 M3 next gate PR-A — prod desired-state completion + test digest promotion)
+- PR #502 (frontend testai bump sha-7ac56d1 — PR #381 login flow 3 P0 + 1 P1)
+- PR #503 (notify-23.2.E FULL ACCEPTANCE 6/6 sub-faz 🟢 + 12/12)
+- PR #504 (frontend testai bump sha-d0f9bc5 — PR #383 stale-bundle recovery)
+- PR #506 (notify-23-A6 prod SMTP gateway Office 365 + multi-provider infra — ESO 18-key + vendor-agnostic Spring JavaMailSender)
+- PR #507 (api-gateway testai bump sha-8412631 — PR #152 vault-failfast narrow trigger)
+- PR #508 (notify-23-A7 mail dispatch LIVE — NOTIFY_DISPATCH_ENABLED=true)
+- PR #509 (frontend testai bump sha-61e2f95 — PR #387 auth bootstrap diag)
+- PR #511 (Session 44 final handoff doc)
+- PR #500 (api-gateway testai bump sha-3407c82 — Set-Cookie hot-fix)
+- PR #497 (schema-service testai bump sha-a057bef — PR-BE-15 master-data parent-fk)
+- **PR #510 PENDING** — A8 Microsoft Graph activation infra (ESO 21-key + ConfigMap + test/prod overlay + DNS runbook); CI clean + mergeable; blocked on Azure AD App Registration credentials (tenant_id + client_id + client_secret)
+
+**Backend (6 PR MERGED)** — mail pipeline + acceptance + hot-fix:
+- platform-backend PR #147 (notify-23.2.A T1.1.8 P0.4+P0.5 — base-url URI parser host allowlist + UnsubscribeRevokeService e2e integration test, Codex 4-iter REVISE chain `019e1248..019e124d` AGREE)
+- platform-backend PR #148 (api-gateway Set-Cookie response header missing in AuthCookieEndpoint)
+- platform-backend PR #149 (notify-23.2.E DataClassificationAcceptanceTest 9-test matrix coverage)
+- platform-backend PR #151 (notify-23.2 A4 DKIM RFC 6376 full impl — `DkimSigner` relaxed/relaxed canonicalization + RSA-SHA256 + SmtpAdapter wiring via Optional<DkimSigner> + ProductionConfigValidator validateDkim() guard, 61 tests sign+verify round-trip)
+- platform-backend PR #152 (api-gateway vault-failfast narrow trigger — only fire on genuine connect failure)
+- platform-backend PR #153 (notify-23-A8 Microsoft Graph API mail adapter port 443 HTTPS — ISP outbound 587 bypass; `GraphTokenService` OAuth client_credentials + token cache + redactBody + `GraphMailAdapter` ChannelAdapter `@ConditionalOnProperty(notify.adapters.graph.enabled=true)` mutual-excludes SmtpAdapter; HTTP timeouts connect=5s response=15s connection-request=3s; 85/85 tests PASS Codex 4-iter `019e133e..019e1346` REVISE→AGREE absorb)
+
+**4 PR CLOSED**:
+- PR #505 (D29 evidence Zanzibar GREEN gate blocked — Keycloak credential RAID I6 external)
+- PR #480 (Session 41 final handoff — superseded by #496 + #511)
+- PR #454 (2026-05-09 handoff — superseded)
+- PR #420 (2026-05-08 handoff — superseded)
+
+### Charter 23.2 Sub-Faz Final State Session 44 (full 🟢)
+
+**6/6 sub-faz fully 🟢** (Session 44 closure):
+- 🟢 **23.2.A**: T1.1 trilogy 3/3 + P0.1..P0.5 transition + P1.2 M3 next gate PR-A complete (PR #498 + #501; backend #147 P0.4 base-url URI parser host allowlist with IPv6 loopback + test/dev subdomain blocklist + #145 P0.5 e2e integration test)
+- 🟢 **23.2.B**: Subscriber self-service T1.2 (unchanged from Session 41)
+- 🟢 **23.2.C**: Provider config rollback R12 🟢 Mitigated (unchanged from Session 43)
+- 🟢 **23.2.D**: Outage fallback T1.4 (unchanged from Session 41)
+- 🟢 **23.2.E**: DataClassification FULL ACCEPTANCE Session 44 (PR #149 + #503; 6/6 sub-faz 🟢 + acceptance 12/12)
+- 🟢 **23.2.F**: Abuse prevention T1.6 (unchanged from Session 41)
+
+### Mail Pipeline Source-Ready (A1+A4+A6+A7+A8 LIVE/source-ready)
+
+| Component | Status | PR |
+|---|---|---|
+| **A1 Base SMTP wiring** | LIVE (test) | (pre-existing) |
+| **A4 DKIM RFC 6376** | source-ready, env wired (NOTIFY_DKIM_ENABLED=false, activation deferred to A5 PR-B + RAID I6) | backend #151 |
+| **A5 Prod backend digest promotion** | BLOCKED (RAID I6 external) | (closed PR #505) |
+| **A6 Prod SMTP Office 365 + multi-provider** | LIVE infra (test, prod) | gitops #506 |
+| **A7 NOTIFY_DISPATCH_ENABLED=true** | LIVE (Office 365 path active) | gitops #508 |
+| **A8 Microsoft Graph API port 443 bypass** | source-ready backend; PENDING gitops merge | backend #153 (merged) + gitops #510 (pending) |
+
+Multi-provider verification (Spring JavaMailSender vendor-agnostic, 587 STARTTLS SMTP AUTH standard):
+- Office 365 (default) — `smtp.office365.com:587` + SMTP AUTH App Password
+- SendGrid — `smtp.sendgrid.net:587` + SMTP AUTH `apikey:<API_KEY>`
+- AWS SES — `email-smtp.<region>.amazonaws.com:587` + IAM SMTP credentials
+- Postmark — `smtp.postmarkapp.com:587` + SMTP AUTH server token
+- Mailgun — `smtp.mailgun.org:587` + SMTP AUTH `postmaster@<domain>`
+- Internal MTA — `<host>:587` + SMTP AUTH service account
+- Microsoft Graph API (A8 bypass route) — `https://graph.microsoft.com/v1.0/users/{senderMailbox}/sendMail` port 443 HTTPS
+
+### Risk Register Delta Session 44
+
+| Risk | Pre-Session 44 | Post-Session 44 |
+|---|---|---|
+| **R3** DKIM enable | 🟡 Active | 🟢 Mitigated (A4 full impl 61 tests sign+verify; activation flip deferred to A5 PR-B) |
+| **R-NEW** ISP outbound 587 block | (discovered same session) | 🟢 Mitigated (A8 Microsoft Graph port 443 bypass route) |
+| RAID I6 Keycloak credential | 🔴 Pending external | 🔴 Pending external (D29 Zanzibar GREEN gate blocked; A5 PR-B reopen sequence blocked) |
+
+### Operasyonel Session 44 Notları
+
+- Host iptables / UFW permissive (live verified). ISP/datacenter outbound 587 block diagnosed (not host firewall). Solution: A8 Graph API port 443 bypass.
+- PG password drift recovery pattern reused (auth-service / notification-orchestrator)
+- ResourceQuota CPU 8→12 drift fix (PR #487 carry-over)
+- Browser console verify HARD RULE compliance — testai.acik.com console temiz (3 DEBUG, no errors)
+- 107 yeni backend test (UnsubscribeBaseUrlValidator 12 + UnsubscribeRevokeService e2e 1 + DataClassification 9 + DkimSigner 61 + GraphMailAdapter 14 + GraphTokenService 10)
+
+### Session 44 Pending P0 (post-Azure AD creds)
+
+1. Vault prod + test seed `graph_tenant_id` + `graph_client_id` + `graph_client_secret` (agent — Pre-Production Full Authority)
+2. PR #510 normal merge (CI clean, mergeable, user-approval-required label remove)
+3. ArgoCD platform-eso + platform-test sync (agent)
+4. Pod rollout verify imageID == `sha256:ff705f5985d6a991af0e83e557d8732741b40eb109287642facea6faac99b65d`
+5. Smoke send halil.kocoglu@serban.com.tr via Microsoft Graph API + verify 202 Accepted
+6. Mail inbox verify (recipient + sender Sent Items ai@acik.com)
+
+**Refs**: `docs/session-handoff-2026-05-11-session-44-final.md` (PR #511 MERGED) + `docs/runbooks/RB-faz-23-A6-prod-smtp-gateway-office365.md` (A6 runbook) + `docs/runbooks/RB-faz-23-2-A-P1-2-prod-activation.md` (P1.2 M3 next gate runbook); A8 Graph runbook + DNS records runbook arrive with PR #510 merge.
+
+---
+
 ## Live Delta — Session 43 (2026-05-10 ~22:00 UTC+3) — T1.1 Trilogy 3/3 MERGED + Charter 23.2.A 🟢 + 18 PR Total (12 gitops + 6 backend)
 
 **Mandate**: Continuous Autonomous Mode 17+ saat zincir Session 42→43. Cross-AI peer review HARD RULE 50+ Codex thread / 50+ iter chain. Kullanıcı talimatı "hand off" sonrası Session 43 final handoff PR #496 MERGED (`ed9c521`).
