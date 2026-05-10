@@ -2,7 +2,7 @@
 
 > **Format**: D28 5-alan + sıradaki agent action list
 > **Önceki**: `docs/session-handoff-2026-05-10-session-42-supplement.md` (PR #490)
-> **Bu doc**: Session 42 supplement sonrası 17 PR cumulative cycle (Session 42 + 43 bridge)
+> **Bu doc**: Session 42 supplement sonrası 17 PR cumulative cycle (Session 42 + 43 bridge — 11 gitops + 6 backend)
 
 ---
 
@@ -27,9 +27,9 @@ Session 42 + 43 bridge (kullanıcı talimatı: **Continuous Autonomous Mode + ta
 
 ---
 
-## 2. İddia (MERGED PR'lar — 17 toplam)
+## 2. İddia (MERGED PR'lar — 17 toplam: 11 gitops + 6 backend)
 
-### Gitops (12)
+### Gitops (11)
 
 | PR | Title | SHA |
 |---|---|---|
@@ -45,7 +45,7 @@ Session 42 + 43 bridge (kullanıcı talimatı: **Continuous Autonomous Mode + ta
 | #493 | docs(charter): 23.2.A T1.1.6 partial acceptance | `63b3a2a` |
 | #494 | feat(notify-23.6-23.7-prep): ESO 5 yeni key M7 prep | `2695805` |
 
-### Backend (5)
+### Backend (6)
 
 | PR | Title | SHA |
 |---|---|---|
@@ -133,16 +133,18 @@ testai.acik.com console temiz (3 DEBUG mesajı, hiç error/401/403/500).
 
 | # | İş | Effort |
 |---|---|---|
-| **P0.1** | Charter 23.2.A 🟡→🟢 gitops PR (T1.1 trilogy 3/3 closure) | ~30dk |
-| **P0.2** | ESO Vault entry: unsubscribe_signing_secret + base-url + ProductionConfigValidator base-url guard PR-C.1 | ~1h |
-| **P0.3** | UnsubscribeRevokeService integration test e2e (Testcontainers PG; subscribe → email → click → preference disabled) | ~1-2h |
+| **P0.1** | Charter 23.2.A 🟡→🟢 + current-state Live Delta Session 43 (gitops, ~30dk) |
+| **P0.2** | ESO ExternalSecret entry: `unsubscribe_signing_secret` 15. key (gitops, ~30dk) |
+| **P0.3** | Vault seed: `unsubscribe_signing_secret` (Pre-Prod Full Authority, ops + agent, ~15dk) |
+| **P0.4** | ProductionConfigValidator: `notify.unsubscribe.base-url` prod-host guard (platform-backend, ~30dk) |
+| **P0.5** | UnsubscribeRevokeService integration test e2e (subscribe → email → click → preference disabled) (platform-backend, ~1-2h) |
 
 ### P1 — Timer-Bound
 
 | # | İş | Hedef Saat |
 |---|---|---|
 | **P1.1** | M1 milestone gate (Charter 23.9 🟢) | **2026-05-11 19:42Z** (T+72h) |
-| **P1.2** | M3 closure final PR (Charter 23.2 🟢) | post-T1.1.8 deploy + R2 legal init |
+| **P1.2** | M3 next gate PR (Charter 23.2 🟢 transition) | post-P0.1..P0.5 + R2 legal init |
 
 ### P2 — Paralel
 
@@ -167,7 +169,7 @@ testai.acik.com console temiz (3 DEBUG mesajı, hiç error/401/403/500).
 |---|---|---|
 | 23.0 | 🟢 done | unchanged |
 | 23.1 | 🟡 partial | unchanged |
-| **23.2** | 🟡 near-🟢 | **5/6 fully 🟢** (B + **C** + D + F + **A T1.1.6/7/8 trilogy 3/3 done; deploy + R2 legal kalan**) |
+| **23.2** | 🟡 near-🟢 | backend merge complete: T1.1 trilogy 3/3 + T1.3 (B + C + D + F fully 🟢 + A backend done); **canonical charter 23.2.A 🟡→🟢 transition gitops PR pending** (P0.1) |
 | **23.3** | **🟡 partial** | promoted ⏳→🟡 (23.3.1 NetGSM Vault canonical LIVE) |
 | 23.4 | 🟡 partial | M6a pending |
 | 23.5 | ⏳ pending | unchanged |
