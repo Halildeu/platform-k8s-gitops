@@ -3,7 +3,7 @@
 > **Format**: D28 5-alan supplement
 > **Önceki**: `docs/session-handoff-2026-05-10-session-42.md` (PR #484, 4 PR + M4 LIVE)
 > **Bu doc**: PR #484 sonrası 3 ek PR (#485 + #487 + #488) + cluster post-rollout state + saturation noktası
-> **Sonraki**: Session 43+ (M1 closure timer 2026-05-11 19:42Z + cross-repo spawn chips)
+> **Sonraki**: Session 43+ (M1 milestone gate timer 2026-05-11 19:42Z + cross-repo spawn chips)
 
 ---
 
@@ -58,7 +58,7 @@ status.used:
   limits.memory: ~16Gi
 ```
 
-Manifest = live state ✅ (drift kapandı).
+Manifest = live state ✅ (current live/repo truth ile uyumlu).
 
 ### Notification Orchestrator Pods (post-rollout)
 
@@ -127,8 +127,8 @@ Network: page-internal MFE assets, no 401/403/404/500
 | **T1.3 backend Testcontainers** | dev | spawn chip user-side | platform-backend repo |
 | **T1.1.6/7/8 follow-up tests** | dev | spawn chip user-side | platform-backend repo |
 | **M6a 23.4 archive** | dev | spawn chip user-side | platform-backend + platform-web |
-| **M1 closure 23.9 🟢** | ops + agent | **2026-05-11 19:42Z** | T+72h natural |
-| **M3 closure 23.2 🟢** | mixed | post-T1.3 + R2 init | M3 final PR |
+| **M1 milestone gate 23.9 🟢** | ops + agent | **2026-05-11 19:42Z** | T+72h natural |
+| **M3 next milestone gate 23.2 🟢** | mixed | post-T1.3 + R2 init | M3 final PR |
 | **R2 KVKK legal review** | legal | 2026-05-25 | external coordination |
 | **R1 NetGSM contract** | ops + legal | 2026-05-30 | external vendor |
 
@@ -159,8 +159,8 @@ Network: page-internal MFE assets, no 401/403/404/500
 
 | # | İş | Hedef saat |
 |---|---|---|
-| **P1.1** | M1 closure (Charter 23.9 🟢) | **2026-05-11 19:42Z** (T+72h natural) |
-| **P1.2** | M3 closure final PR (Charter 23.2 🟡→🟢) | post-T1.3 MERGED + R2 legal initiated |
+| **P1.1** | M1 milestone gate (Charter 23.9 🟢) | **2026-05-11 19:42Z** (T+72h natural) |
+| **P1.2** | M3 next milestone gate final PR (Charter 23.2 🟡→🟢) | post-T1.3 MERGED + R2 legal initiated |
 
 ### P2 — Paralel
 
@@ -172,7 +172,7 @@ Network: page-internal MFE assets, no 401/403/404/500
 ### P3 — Sonraki sprint
 
 - M5 23.5 Preference UI (frontend)
-- M7 v1 closure (Teams + Push + Tempo, ~99h)
+- M7 v1 residual path (Teams + Push + Tempo, ~99h)
 - R2 KVKK legal review (external, ETA 2026-05-25)
 
 ---
@@ -190,7 +190,7 @@ Network: page-internal MFE assets, no 401/403/404/500
 | 23.6 | ⏳ pending | unchanged |
 | 23.7 | ⏳ pending | unchanged |
 | 23.8 | 🟡 partial | unchanged |
-| 23.9 | 🟡 partial | M1 closure timer 2026-05-11 19:42Z |
+| 23.9 | 🟡 partial | M1 milestone gate timer 2026-05-11 19:42Z |
 | 23.X | ⏳ deferred | unchanged |
 
 **Effective progress**: ~30% → **~33%** of v1 scope.
@@ -223,20 +223,20 @@ gh api repos/Halildeu/platform-k8s-gitops/pulls?state=open --jq '.[] | {number, 
 
 ## 8. Saturation Notu (2026-05-10 ~07:55Z)
 
-**gitops worktree'de yapılabilir P0 iş kalmadı.**
+**gitops worktree'de gitops-local P0 sırada görünmüyor; sıradaki gate cross-repo + timer + external.**
 
 - M4 23.3.1 manifest + cluster + Vault + ESO + pod env tam senkron
-- ResourceQuota drift kapandı
-- PG password drift kapandı
+- ResourceQuota current live/repo truth ile uyumlu
+- PG password current live/repo truth ile uyumlu
 - Browser regression yok
 - Risk register + Charter + feature-matrix triple consistent
 
 **Sıradaki iş tipleri**:
 - Cross-repo (backend + frontend): spawn_task chip kullanıcı side
-- Timer-bound (M1 closure): 24+ saat sonra otomatik
+- Timer-bound (M1 milestone gate): 24+ saat sonra otomatik
 - External coordination (R1 + R2): haftalar
 
-**Continuous Autonomous Mode** + "yarın YASAK" rule consistent: agent zincir tamamladı, doğru noktada doygun. Yeni session 43+ açılışı için context hazır.
+**Continuous Autonomous Mode** + "yarın YASAK" rule consistent: current sırada: gitops-local saturation; cross-repo + timer-bound + external coordination devamda, doğru noktada doygun. Yeni session 43+ açılışı için context hazır.
 
 ---
 
