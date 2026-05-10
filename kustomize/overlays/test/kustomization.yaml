@@ -163,7 +163,37 @@ images:
     # Companion alerts in monitoring/api-gateway-slo-rule.yaml
     # (PR-BE-7b #403 GatewayAuthRefreshStorm + GatewayUnauthScannerProbe
     # + GatewayAuthCookieRateLimitTriggered).
-    digest: sha256:1bc58af6f41c3bd48726f0690d6616244c518430a61c16116d5dfbb25586405b
+    #
+    # 2026-05-10 update: sha-3407c82 — platform-backend PR #148
+    # (a0abc35, fix/api-gateway-auth-cookie-set-cookie-header).
+    # Hotfix: AuthCookieEndpoint emits Set-Cookie via
+    # ResponseEntity.header(HttpHeaders.SET_COOKIE, cookie.toString())
+    # instead of exchange.getResponse().addCookie() + ResponseEntity.ok()
+    # .build(). The previous `.build()` call constructs a fresh response
+    # (Spring WebFlux ServerResponse) that overrides the exchange writer
+    # — Set-Cookie added directly to the exchange before .build() was
+    # silently dropped, returning 200 OK with NO Set-Cookie header.
+    # User-visible symptom: every login attempt completed at the IdP
+    # (Keycloak) but the browser cookie jar stayed empty, so subsequent
+    # /api/v1/authz/me requests landed without erp_access_token cookie
+    # and got 401 → frontend bounced back to login screen → infinite
+    # login loop. Pre-PR-D2 user impersonation work was technically
+    # LIVE (smoke endpoints 200/401 correct shapes) but no human user
+    # could reach the UI.
+    #
+    # PR #148 ResponseEntity chain pins Set-Cookie at the controller
+    # response builder; cookie attributes (HttpOnly, Secure, SameSite,
+    # Max-Age, Path) preserved verbatim. 6 new WebFluxTest cases
+    # (AuthCookieEndpointTest) including exactly-one-Set-Cookie
+    # regression guard. 69/73 api-gateway suite PASS, Maven full
+    # reactor (all 9 modules) GREEN.
+    #
+    # Cross-AI peer review: Codex thread `019e10bf` post-impl iter-2
+    # AGREE ready_to_merge:true conditional on Maven full reactor
+    # green (satisfied at run 25635894681 SUCCESS).
+    # Build evidence: platform-backend run 25635894681 — api-gateway
+    # push manifest sha256:6cdfb2fce98804957a8e90f323d405314344fec65b7377beca823da72c55ee01.
+    digest: sha256:6cdfb2fce98804957a8e90f323d405314344fec65b7377beca823da72c55ee01
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     digest: sha256:df8b84d0cd02d064cf455f40017bd5cb4ca1be271e5e7068afeb36fc4526a7f1
