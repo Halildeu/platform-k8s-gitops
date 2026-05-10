@@ -207,7 +207,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | T3.1.4 | GSM-7/UCS-2 segment + Türkçe karakter + sender ID | backend | 3 | dev | T3.1.3 | 🔴 |
 | T3.1.5 | `İletimerkezi` secondary client | backend | 4 | dev | T3.1.2 | 🔴 |
 | T3.1.6 | Provider failover (pre-accept fail auto) | backend | 3 | dev | T3.1.5 | 🔴 |
-| T3.1.7 | DLR callback endpoint | backend | 3 | dev | T3.1.3 | 🔴 |
+| T3.1.7 | DLR callback endpoint | backend | 3 | dev | T3.1.3 | 🟡 (Session 44 close: backend PR #85 MERGED 2026-05-07 DlrController+DlrIngestService+permitAll+19 tests; api-gateway PR #154 MERGED — gateway permitAll gap closed, Codex 019e1440 AGREE; **live smoke + sprint-plan 🟢 transition** post-gateway digest bump + NetGSM contract R1 ETA 2026-05-30) |
 | T3.1.8 | 4 workflow live test (admin invite, password reset, drift alarm, break-glass) | backend | 4 | dev | T3.1.7 | 🔴 |
 | T3.1.9 | Vault path `kv/platform/notification-orchestrator` SMS provider creds | ops | 1 | ops | T3.1.1 | 🔴 |
 | T3.1.10 | In-app inbox API closure (paged + read + archive + WS endpoint) | backend | 6 | dev | None | 🟡 |

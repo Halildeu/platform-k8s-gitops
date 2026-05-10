@@ -221,7 +221,23 @@ images:
     #
     # Build evidence: platform-backend run 25639546067 — api-gateway
     # push manifest sha256:103ba82a8d09604e6a5ab8aa3e3c110d0df0fb09c141b75cea1a670364879f57.
-    digest: sha256:103ba82a8d09604e6a5ab8aa3e3c110d0df0fb09c141b75cea1a670364879f57
+    #
+    # 2026-05-11 update: sha-26fa8f1 — platform-backend PR #154 (Faz 23.4
+    # T3.1.7 SMS DLR + Faz 23.2.A T1.1.8 unsubscribe public path gateway
+    # permitAll gap). Pre-PR gateway `.anyExchange().authenticated()`
+    # matrisi /api/v1/notify/** tüm path'leri JWT zorunlu kıldığı için
+    # NetGSM external DLR webhook POST → 401 + email recipient
+    # unsubscribe link → 401 gateway tarafında düşüyordu. Backend tarafı
+    # (notification-orchestrator) zaten permitAll yapmış (PR #85 DLR +
+    # PR #144 unsubscribe) ama gateway gap silent durmuştu.
+    # Fix: HttpMethod.POST `/api/v1/notify/dlr/**` permitAll +
+    # exact `/api/v1/notify/unsubscribe` permitAll (Codex 019e1440 P1
+    # absorb: wildcard sıkılaştırıldı, RFC 8058 POST claim daraltıldı).
+    # 19/19 GatewaySecurityTest PASS (12 mevcut + 5 DLR + 2 unsubscribe).
+    # Codex cross-AI peer review thread 019e1440 AGREE + ready_for_merge.
+    # Build evidence: platform-backend run 25643108415 — api-gateway push
+    # manifest sha256:c54f9f4baec7f34454ff686698463fa0f94c333dceeafb7a5ce8141fda47b70f.
+    digest: sha256:c54f9f4baec7f34454ff686698463fa0f94c333dceeafb7a5ce8141fda47b70f
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     digest: sha256:df8b84d0cd02d064cf455f40017bd5cb4ca1be271e5e7068afeb36fc4526a7f1
