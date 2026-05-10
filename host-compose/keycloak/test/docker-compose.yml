@@ -40,8 +40,20 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD_FILE: /run/secrets/kc_admin_password
       KC_HTTP_ENABLED: "true"
+      # KC_HOSTNAME_STRICT: keep false during the transition — internal
+      # backends (auth-service, api-gateway, JWKS cache) still talk to
+      # KC via the internal http://keycloak:8080 path which has a
+      # different host. Hardening to strict belongs in a separate PR
+      # with its own internal-path smoke (Codex peer-review 019e142d).
       KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "false"
+      # KC_HOSTNAME_STRICT_HTTPS removed (was "false"):
+      # Hostname v1 family option, deprecated in Keycloak 26 and the
+      # source of the remaining startup warning even after this hotfix:
+      #   WARNING: Hostname v1 options [hostname-strict-https] are
+      #   still in use, please review your configuration.
+      # With KC_HOSTNAME explicitly set to a full https:// URL the
+      # strict-https knob is redundant — KC v2 hostname provider
+      # already derives the scheme from KC_HOSTNAME.
       # 2026-05-11 hotfix (login flow root cause):
       # KC_PROXY=edge is DEPRECATED in Keycloak 26 (silently ignored).
       # Without proxy-header trust KC sees inbound requests as HTTP and

@@ -14,7 +14,35 @@ services:
     image: quay.io/keycloak/keycloak:26.5.5
     container_name: platform-kc-prod
     restart: unless-stopped
-    command: ["start", "--optimized"]
+    # 2026-05-11 follow-on to KC_PROXY_HEADERS migration:
+    # --optimized requires the augmentation cache (built via kc.sh build)
+    # to be present in the persistent data dir AND for the build-time
+    # env vars to match the runtime ones. Changing KC_PROXY_HEADERS /
+    # KC_HOSTNAME invalidates the cache and causes a crash loop:
+    #   "The '--optimized' flag was used for first ever server start.
+    #    Please don't use this flag for the first startup or use
+    #    'kc.sh build' to build the server first."
+    # Match the test overlay pattern: use plain "start" which auto-runs
+    # the build step on every startup (~10–30s penalty). Acceptable for
+    # this single-host install; eliminates the env-drift crash class
+    # entirely.
+    #
+    # Entrypoint wrapper (mirrored from test compose): KC 26 does NOT
+    # auto-resolve KC_DB_PASSWORD_FILE / KEYCLOAK_ADMIN_PASSWORD_FILE at
+    # runtime (live evidence 2026-05-09 spike-2). With --optimized the
+    # previously-baked augmentation cache carried the resolved values;
+    # with plain "start" runtime resolution is required so the wrapper
+    # exports them before exec'ing kc.sh. Secrets stay in docker secret
+    # mounts; only env propagation happens, no YAML leak.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        [ -n "$$KC_DB_PASSWORD_FILE" ] && [ -f "$$KC_DB_PASSWORD_FILE" ] && export KC_DB_PASSWORD="$$(cat $$KC_DB_PASSWORD_FILE)"
+        [ -n "$$KEYCLOAK_ADMIN_PASSWORD_FILE" ] && [ -f "$$KEYCLOAK_ADMIN_PASSWORD_FILE" ] && export KEYCLOAK_ADMIN_PASSWORD="$$(cat $$KEYCLOAK_ADMIN_PASSWORD_FILE)"
+        exec /opt/keycloak/bin/kc.sh "$$@"
+      - --
+    command: ["start"]
     environment:
       # DB bağlantı (prod PG instance, aynı network)
       KC_DB: postgres
@@ -28,8 +56,19 @@ services:
       KEYCLOAK_ADMIN_PASSWORD_FILE: /run/secrets/kc_admin_password
       # HTTP (SSL upstream — host nginx edge)
       KC_HTTP_ENABLED: "true"
+      # KC_HOSTNAME_STRICT: keep false during the transition — internal
+      # backends still talk to KC via the internal http://keycloak:8080
+      # path which has a different host. Hardening to strict belongs
+      # in a separate PR with internal-path smoke (Codex peer-review
+      # 019e142d).
       KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "false"
+      # KC_HOSTNAME_STRICT_HTTPS removed (was "false"): Hostname v1
+      # family option, deprecated in Keycloak 26 — the source of the
+      # remaining "Hostname v1 options [hostname-strict-https] are
+      # still in use" startup warning even after the proxy-headers
+      # hotfix. With KC_HOSTNAME set to a full https:// URL the
+      # strict-https knob is redundant; KC v2 derives the scheme
+      # directly from KC_HOSTNAME.
       # 2026-05-11 hotfix (login flow root cause, mirrored from
       # host-compose/keycloak/test/docker-compose.yml):
       # KC_PROXY=edge is DEPRECATED in Keycloak 26 (silently ignored)
