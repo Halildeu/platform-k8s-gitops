@@ -1311,7 +1311,50 @@ images:
     # retention (backend session-aware stop endpoint follow-up).
     # Image build run: 25624704513, digest:
     # sha256:9a53fe82737ed929bcf80da1ab48e2d68a9da3208895519a26214e96ca28e7e9.
-    digest: sha256:9a53fe82737ed929bcf80da1ab48e2d68a9da3208895519a26214e96ca28e7e9
+    #
+    # 2026-05-10 update: sha-7ac56d1 — platform-web PR #381
+    # (dccc7e96, fix/login-flow-three-p0-bugs). Login flow 3 P0 + 1 P1
+    # hot-fix following gateway PR #148 (Set-Cookie). Owner-reported
+    # "ilk tıklayınca açılmıyor + bug var" — DevTools audit confirmed:
+    #
+    #   P0 #1 — first-click no-op: button used `disabled={!loginHrefReady}`,
+    #     so users saw a silent ignore during kc.init() race.
+    #     Fix: button always clickable; handleLogin falls back to
+    #     startKeycloakLogin (which awaits OIDC discovery internally).
+    #
+    #   P0 #2 — `redirect=/login` infinite loop: stale bookmarks /
+    #     post-SSO browser-back caused KC redirect_uri to point at
+    #     /login → KC sent browser back to /login → user paid an extra
+    #     round-trip. Fix: filter `/login*` (with case-insensitive +
+    #     hash/query strip + open-redirect guard for //evil/javascript:).
+    #
+    #   P0 #3 — `createLoginUrl: TypeError redirectUri undefined`:
+    #     keycloak-js sets `keycloak.adapter` AFTER its init() promise
+    #     resolves, but Redux `initialized` flag fired BEFORE adapter
+    #     was wired. Fix: poll public `endpoints.authorize` (set after
+    #     OIDC discovery fetch) before calling createLoginUrl.
+    #
+    #   P1 — stale `kc-callback-*` localStorage cleanup: keycloak-js
+    #     leaves PKCE state+nonce+code_verifier behind on aborted flows.
+    #     Live cluster smoke observed 21+ stale entries. Fix: GC at
+    #     bootstrap with `expires <= now` predicate (matches keycloak-js
+    #     own clearInvalidValues semantics).
+    #
+    # Cross-AI peer review: Codex thread 019e1336 (adversarial audit
+    # informed design); thread 019e1341 iter-1 REVISE caught 3 P1
+    # issues (waitForKcAdapter pollig private #adapter, redirect filter
+    # missed `/login#hash`/`/LOGIN`/`//evil`, TTL math `now-expires>1h`
+    # = 2h stale). All absorbed in iter-2; Codex iter-2 verdict AGREE
+    # ready_to_merge:true.
+    #
+    # Tests: LoginPage.ui.test.tsx 15/15 pass (5 existing + 10 new
+    # parameterized edge cases). Hard CI gates GREEN (Token Drift,
+    # a11y, bundle, contrast, tree-shake, xss, gitleaks, osv-scan,
+    # CodeQL, Visual Invariant Matrix, lint).
+    #
+    # Build evidence: platform-web run 25637506324 — testai variant
+    # push manifest sha256:f2ef124b201acdbe65aa716fe053cda622e3e470fc5d83860805c6037a3dcc85.
+    digest: sha256:f2ef124b201acdbe65aa716fe053cda622e3e470fc5d83860805c6037a3dcc85
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
