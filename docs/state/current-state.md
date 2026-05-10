@@ -50,15 +50,29 @@
 - 23.2.E: ~2h Data classification acceptance test (single residual within Source-ready scope)
 - R2 KVKK admin erasure legal review external ETA 2026-05-25
 
-**P1.2 M3 next gate Session 44 prod desired-state completion** (in PR — atomic):
-- ✅ Prod ESO ExternalSecret 5→15 keys (kustomize/overlays/prod/eso/notify/externalsecret-notify.yaml)
-- ✅ Prod Vault seed `unsubscribe_signing_secret` + 9 channel keys (Pre-Production Full Authority — operator on staging-sw)
-- ✅ Prod ConfigMap `NOTIFY_UNSUBSCRIBE_BASE_URL=https://ai.acik.com/api/v1/notify/unsubscribe`
-- ✅ Prod ConfigMap SMTP TLS env: `NOTIFY_SMTP_TLS_ENFORCE=true`, `SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE=true`, `STARTTLS_REQUIRED=true`, `SSL_CHECKSERVERIDENTITY=true`
-- ✅ Prod profile flip `SPRING_PROFILES_ACTIVE=k8s,prod` (validator activation)
-- ⏳ Post-merge: cluster apply + prod pod startup smoke verify
+**P1.2 M3 next gate Session 44 split sequence** (PR #501 PR-A + follow-up PR-B):
 
-**Codex iter-3 RED absorb (`019e1307`)**: Initial PR #498 SPRING_PROFILES_ACTIVE=k8s,prod patch attempted to activate prod validator early; Codex caught prod desired-state still inconsistent (ESO 5-key, ConfigMap unsubscribe base-url missing, SMTP TLS enforce env not set, Vault prod seed pending). Apply would have fail-closed prod pod startup. Correct sequence: prod profile activation gates on M3 next gate desired-state completion (this P1.2 PR). All 5 prerequisites complete in single atomic transaction.
+**PR-A (PR #501)**: prod env/ESO/profile prep + test digest promotion (5 changes):
+- ✅ Test overlay digest sha-204042d → sha-c4a03fc (PR #147 build)
+- ✅ Prod ESO ExternalSecret 5→15 keys (kustomize/overlays/prod/eso/notify/externalsecret-notify.yaml)
+- ✅ Prod Vault seed `unsubscribe_signing_secret` + 9 channel keys (Pre-Production Full Authority — operator on staging-sw 2026-05-10 18:22Z DONE)
+- ✅ Prod ConfigMap `NOTIFY_UNSUBSCRIBE_BASE_URL=https://ai.acik.com/api/v1/notify/unsubscribe` + SMTP TLS env (4 keys) + `NOTIFY_DISPATCH_ENABLED=false`
+- ✅ Prod profile flip `SPRING_PROFILES_ACTIVE=k8s,prod` — activates **7-guard subset** on OLD binary (sha-204042d)
+- ⏳ Post-merge: ordered two-app rollout (RB-faz-23-2-A-P1-2-prod-activation.md 8-step) + prod pod startup smoke
+
+**PR-B (follow-up)**: prod backend digest promotion sha-204042d → sha-c4a03fc:
+- Auto-promotion bot creates release-candidate ledger entry from test smoke
+- D29 evidence gate accepts prod digest change
+- Activates **9-guard full set** (adds unsubscribe signing-secret + base-url URI parser allowlist)
+- Followed eventually by R1 NetGSM contract activation 2026-05-30 → dispatch flip true
+
+**Why PR-A old-binary safe transition pattern**: Old binary (sha-204042d, PR #126 era) has 7 of 9 production guards. Missing: unsubscribe signing-secret (added PR #144) + base-url URI allowlist (added PR #147). NOTIFY_DISPATCH_ENABLED=false silences email path → no subscribers click unsubscribe → wrong-host risk does not materialize. PR-B promotion enables full 9-guard set safely after D29 ledger.
+
+**Codex 4-iter chain absorb (`019e1307`)**:
+- iter-3 (PR #498) RED: prod profile flip premature → reverted, deferred to P1.2
+- iter-1 (PR #501) RED: backend digest mismatch + atomic rollout topology + SMTP placeholder leak → split sequence + runbook + dispatch=false
+- iter-2 (PR #501) REVISE: ArgoCD wait + port-forward + manifest comment honesty
+- iter-3 (PR #501) REVISE: D29 evidence + 7-guard truth + PR-A/PR-B residual
 
 ### HARD RULE Compliance Session 43
 

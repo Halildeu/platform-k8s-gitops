@@ -218,16 +218,35 @@ patches:
   # auth-service:8088, gateway routes 0-5). Prod-specific override YOK,
   # overlay sadece namespace (platform-prod) + Ingress host + Endpoints pin.
 
-  # Faz 23.2.A T1.1.8 P0.4 / P1.2 M3 next gate ACTIVATION 2026-05-10:
+  # Faz 23.2.A T1.1.8 P0.4 / P1.2 M3 next gate PR-A ACTIVATION 2026-05-10:
   # SPRING_PROFILES_ACTIVE=k8s,prod activates ProductionConfigValidator on
-  # prod cluster path. Prerequisites complete (P1.2 sequence above):
+  # prod cluster path running OLD binary sha-204042d (PR #126 era).
+  #
+  # PR-A activates 7 working guards (old binary):
+  #   ✅ SMTP TLS enforce
+  #   ✅ SMTP TLS check-server-identity
+  #   ✅ redaction pepper (default value check)
+  #   ✅ webhook signing-secret (default value check)
+  #   ✅ authz enabled
+  #   ✅ authz internal-api-key
+  #   ✅ preferences enabled
+  #
+  # PR-A does NOT activate (added in PR #144/#147 = sha-c4a03fc, NOT in prod):
+  #   ❌ unsubscribe signing-secret guard (PR #144)
+  #   ❌ unsubscribe base-url URI parser allowlist (PR #147)
+  # These activate after PR-B prod backend digest promotion.
+  #
+  # PR-A safe transition reasoning:
+  #   - NOTIFY_DISPATCH_ENABLED=false → no emails dispatched → no subscribers
+  #     click unsubscribe link → wrong-host risk does not materialize
+  #   - 7 working guards still fail-closed prod startup if env regression
+  #
+  # Prerequisites complete in PR-A:
   #   ✅ Prod ESO ExternalSecret extended 5→15 keys (parity with test)
   #   ✅ Prod Vault seed unsubscribe_signing_secret + 9 channel keys (Pre-Prod Full Authority)
   #   ✅ Prod ConfigMap NOTIFY_UNSUBSCRIBE_BASE_URL=https://ai.acik.com/...
   #   ✅ Prod ConfigMap NOTIFY_SMTP_TLS_ENFORCE=true + STARTTLS required + check-server-identity
-  #   ✅ ProductionConfigValidator URI parser allowlist (PR #147 backend MERGED)
-  # Validator startup fail-closed gate now safe to activate; pod ready means
-  # all 9 production guards PASS.
+  #   ✅ Prod ConfigMap NOTIFY_DISPATCH_ENABLED=false (Codex iter-1 P1 absorb)
   #
   # Rollout reality (Codex iter-2 P2 absorb): single PR / single commit, but
   # **ordered two-app rollout** required because workload (`platform-prod`)

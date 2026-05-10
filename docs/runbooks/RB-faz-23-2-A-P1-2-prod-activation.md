@@ -6,19 +6,42 @@
 
 ## Context
 
-P1.2 M3 next gate completes prod desired-state for `notification-orchestrator`
-ProductionConfigValidator activation (`SPRING_PROFILES_ACTIVE=k8s,prod`). 5
-prerequisites in single PR (#501):
+P1.2 M3 next gate split sequence:
 
-1. Prod ESO ExternalSecret 5→15 keys
-2. Prod Vault seed (Pre-Production Full Authority done 2026-05-10 18:22Z)
-3. Prod ConfigMap `NOTIFY_UNSUBSCRIBE_BASE_URL` + SMTP TLS env
-4. Prod profile flip `k8s,prod`
-5. Prod backend digest bump → `sha-c4a03fc` (carrying P0.4 URI parser allowlist)
+**PR-A (this PR #501)** completes prod desired-state for ProductionConfigValidator
+activation. 4 prerequisites + test digest promotion (5 changes):
+
+1. Test overlay digest sha-204042d → sha-c4a03fc (PR #147 build)
+2. Prod ESO ExternalSecret 5→15 keys
+3. Prod Vault seed (Pre-Production Full Authority done 2026-05-10 18:22Z)
+4. Prod ConfigMap `NOTIFY_UNSUBSCRIBE_BASE_URL` + SMTP TLS env + dispatch=false
+5. Prod profile flip `SPRING_PROFILES_ACTIVE=k8s,prod` (7-guard activation
+   on OLD binary sha-204042d)
+
+**PR-B (follow-up after D29 ledger)**: prod backend digest bump
+sha-204042d → sha-c4a03fc (after auto-promotion bot creates ledger entry
+from test smoke). PR-B activates 9 full guards (7 old + unsubscribe
+signing-secret + base-url URI parser allowlist).
 
 Repo topology: `platform-prod` (workload) and `platform-eso-prod` (ESO) are
 **separate ArgoCD apps**. Apply ordering matters — wrong sequence triggers
 pod CrashLoop.
+
+PR-A guard activation matrix (sha-204042d binary):
+| Guard | Active? |
+|---|---|
+| SMTP TLS enforce | ✅ |
+| SMTP TLS check-server-identity | ✅ |
+| redaction pepper | ✅ |
+| webhook signing-secret | ✅ |
+| authz enabled | ✅ |
+| authz internal-api-key | ✅ |
+| preferences enabled | ✅ |
+| unsubscribe signing-secret | ❌ (added PR #144 / sha-c4a03fc) |
+| unsubscribe base-url URI allowlist | ❌ (added PR #147 / sha-c4a03fc) |
+
+PR-B post-promotion adds last 2 guards. Profile flip with old 7-guard binary
+safe because NOTIFY_DISPATCH_ENABLED=false silences email path.
 
 ## Apply sequence (zorunlu sıra)
 
@@ -76,7 +99,11 @@ POD=$(kubectl --context k3d-prod -n platform-prod \
 
 kubectl --context k3d-prod -n platform-prod \
   get pod $POD -o jsonpath='{.status.containerStatuses[0].imageID}'
-# Expected: ...platform-backend-notification-orchestrator@sha256:70491543...
+# PR-A expected: ...platform-backend-notification-orchestrator@sha256:ef0f487f...
+#   (sha-204042d, PR #126 era — old binary, 7 working guards)
+# PR-B expected: ...platform-backend-notification-orchestrator@sha256:70491543...
+#   (sha-c4a03fc, PR #147 — new binary, 9 working guards including
+#   unsubscribe signing-secret + base-url URI allowlist)
 
 kubectl --context k3d-prod -n platform-prod exec $POD -- \
   env | grep '^SPRING_PROFILES_ACTIVE='
@@ -85,6 +112,7 @@ kubectl --context k3d-prod -n platform-prod exec $POD -- \
 kubectl --context k3d-prod -n platform-prod logs $POD | \
   grep -E "ProductionConfigValidator|all production guards"
 # Expected: "ProductionConfigValidator: all production guards PASSED"
+# PR-A: 7 guards; PR-B: 9 guards (count visible in validator log message)
 
 # Step 7 — health endpoint smoke (Codex iter-2 fix: management port 8081,
 # not service port 8089/8080. Actuator /health binds to management port.)
@@ -102,12 +130,17 @@ kill $PF_PID
 
 ## Verification gates (MUST PASS)
 
+PR-A apply gates:
 - [ ] ESO Secret 15-key (Step 3)
-- [ ] Pod imageID == `sha256:70491543...` (Step 6)
+- [ ] Pod imageID == `sha256:ef0f487f...` (Step 6 — old prod binary stays)
 - [ ] `SPRING_PROFILES_ACTIVE=k8s,prod` (Step 6)
-- [ ] Validator log "all production guards PASSED" (Step 6)
+- [ ] Validator log "all production guards PASSED" — 7 guards (Step 6)
 - [ ] Health endpoint UP (Step 7)
 - [ ] Browser console + network smoke (Step 8)
+
+PR-B apply gates (after auto-promotion ledger):
+- [ ] Pod imageID == `sha256:70491543...` (sha-c4a03fc, PR #147 binary)
+- [ ] Validator log 9 guards PASSED (full set including base-url URI allowlist)
 
 ## Rollback (fail-closed startup case)
 
