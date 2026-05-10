@@ -230,7 +230,7 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 - 🟢 **23.2.E**: Data classification acceptance candidate Session 44 2026-05-10 (PR #149 platform-backend `DataClassificationAcceptanceTest` 9-test matrix-coverage: enum 4-way persistence + severity x classification matrix + DB round-trip + PiiRedactor whitelist boundary + warning severity edge + audit serialization assert; FULL ACCEPTANCE state achieved post-merge of PR #149 + #503; evidence: `docs/faz-23-evidence/2026-05-10-23-2-e-data-classification-acceptance.md`)
 - 🟢 **23.2.F**: Abuse prevention guards (D45) — **T1.6 FULL ACCEPTANCE Session 41 2026-05-09 23:45Z** (PR #134 + #455 + acceptance evidence; sliding window 100/orgId-topicKey/60s; R13 + R19 🟢 Mitigated)
 
-Estimated remaining work (Session 44 sonu): **R2 KVKK legal review external coordination ETA 2026-05-25 only** (T1.1 trilogy 3/3 MERGED Session 43 + P0.1-P0.5 + P1.2 PR-A MERGED Session 44; T1.3 MERGED Session 42; 23.2.E acceptance MERGED Session 44 PR #149).
+Estimated remaining work (Session 44 sonu): **R2 KVKK legal review external coordination ETA 2026-05-25 only** (T1.1 trilogy 3/3 MERGED Session 43 + P0.1-P0.5 + P1.2 PR-A MERGED Session 44; T1.3 MERGED Session 42; 23.2.E acceptance candidate Session 44 PR #149 → FULL ACCEPTANCE post-merge of PR #149 + #503).
 
 **Historical**: önceki ~100h estimate / Session 41 sonrasında ~52-55h drift; Session 42 T1.3 + Session 43 T1.1 trilogy + Session 44 P0.1-P0.5 + 23.2.E ile residual sıfıra indirgendi (R2 external dışında).
 

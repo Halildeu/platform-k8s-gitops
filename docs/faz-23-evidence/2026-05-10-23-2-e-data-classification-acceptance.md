@@ -14,7 +14,7 @@
 > IntentSubmissionService + DeliveryEligibilityService); **~2h acceptance test**
 > *(charter line 227, source-ready Session 41)*
 
-Acceptance gate'i kapatmak için 8-test matrix-coverage acceptance suite eklendi:
+Acceptance gate'i kapatmak için 9-test matrix-coverage acceptance suite eklendi (Codex iter absorb sonrası warning severity edge dahil):
 **DataClassificationAcceptanceTest** (`platform-backend` PR #149).
 
 ---
