@@ -46,7 +46,15 @@ images:
 
   - name: auth-service
     newName: ghcr.io/halildeu/platform-backend-auth-service
-    digest: sha256:c84bc6b04f7f17cc145024d6eeff2c624c52704a259ce843aeea63444da9ed37
+    # 2026-05-10 update: sha-a918534 — User Impersonation v1 PR-B
+    # (platform-backend #137) merged. Auth-service now ships:
+    #   - KeycloakBrokerClient RFC 8693 token exchange
+    #   - ImpersonationController public POST/DELETE/POST-revoke endpoints
+    #   - SuperAdminAuthority service (delegates to /authz/me)
+    #   - ImpersonationSessionClient + ImpersonationAuditClient (internal)
+    #   - 8 BLOCKED/FAILED audit branches with V19 context columns
+    # Image build: ci-image-push.yml run 25616255008 (commit a918534).
+    digest: sha256:ddaf13d9d174e53c6424e6a80b8e4e64997db2dce617361b45b0cadc1cc9f482
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -402,7 +410,18 @@ images:
     #
     # Image build run: 25577730179 (success), digest
     # sha256:da1f6418986f7d29595d51f09afca4a67d0d1c3d32137f14b334df477e8f062f.
-    digest: sha256:da1f6418986f7d29595d51f09afca4a67d0d1c3d32137f14b334df477e8f062f
+    #
+    # 2026-05-10 update: sha-a918534 — User Impersonation v1 PR-B
+    # (platform-backend #137) merged. permission-service now ships:
+    #   - V19 migration (impersonation_sessions table + permission_audit_events
+    #     V19 columns: impersonator_*, target_*, sessionId, reason, is_impersonated)
+    #   - ImpersonationSessionService (start/stop/revoke/sweep)
+    #   - InternalImpersonationSessionController + InternalImpersonationAuditController
+    #   - ImpersonationAuditWriter (5 typed event writers)
+    #   - ImpersonationContextFilter (jti_session_lookup binding fail-closed)
+    #   - ImpersonationSessionSweeper @Scheduled (60s default TTL sweep)
+    # Image build run: 25616255008 (commit a918534).
+    digest: sha256:f2e0fc0fa64aa0dff4885f79da9e6ac5c19e6c9d08c954f7aa8da5eccc692a60
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
