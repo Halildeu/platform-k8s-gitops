@@ -609,9 +609,27 @@ patches:
       # 7. Verify Secret 18-key (was 15: +smtp_username +smtp_password +dkim_private_key_pem)
       # 8. Final flip: separate PR replace NOTIFY_DISPATCH_ENABLED=false → true
       #    (after smoke: outbound mail Mailpit/inbox delivered + DKIM-Signature header)
+      #
+      # A7 ACTIVATION (Session 44 — this PR):
+      # - PR #506 MERGED (A6 SMTP gateway infra + Office 365 + multi-provider)
+      # - Vault prod seed Session 44: smtp_username=ai@acik.com + smtp_password
+      #   (Pre-Production Full Authority + user explicit override 2026-05-11)
+      # - ESO sync 18-key Secret LIVE (post PR #506 merge + ArgoCD sync)
+      # - Backend code: SmtpAdapter Optional<DkimSigner> wiring (PR #151 sha-264ba7f8)
+      #   not in prod yet (sha-204042d eski binary); prod cluster signed mail
+      #   olmaz ama unsigned dispatch live olur — Office 365 SMTP path active.
+      # - DKIM live activation deferred A5 PR-B + RAID I6 unblock sonrası
+      #   (DKIM-Signature header → mail-tester ≥9/10 score sonra).
+      #
+      # NOTIFY_DISPATCH_ENABLED=true → backend dispatch path active:
+      # - SMTP adapter: ai@acik.com → smtp.office365.com:587 STARTTLS SMTP AUTH
+      # - Subscriber preferences gate (T1.1 trilogy)
+      # - Audit chain (DELIVERY_ATTEMPTED + DELIVERY_DELIVERED events)
+      # - Unsubscribe link generation (UnsubscribeUrlBuilder)
+      # - DKIM signing OFF (DKIM_ENABLED=false, eski binary, post A5 PR-B activation)
       - op: replace
         path: /data/NOTIFY_DISPATCH_ENABLED
-        value: "false"
+        value: "true"
 
   # Faz 23.9 prod cutover — notification-orchestrator pod-template
   # annotation rollout trigger + replicas override. ConfigMap envFrom
