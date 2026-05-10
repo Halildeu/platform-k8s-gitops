@@ -54,32 +54,50 @@ docker exec -e VAULT_TOKEN=\$ROOT_TOKEN -e VAULT_ADDR=http://127.0.0.1:8200 \
 "
 ```
 
-### Step 4: DKIM key generation + Vault seed — agent yapabilir
+### Step 4: DKIM key generation + Vault seed — DEFERRED to A5 PR-B unblock
+
+⚠️ **DKIM activation gerçek mail signing için PR #151 binary (sha-264ba7f8)
+prod'a promote edilmeli**. Şu an prod overlay sha-204042d binary'de — o
+binary'de SmtpAdapter DkimSigner inject etmez, DKIM-Signature header üretilmez.
+
+DKIM activation sequence:
+1. RAID I6 unblock (KC admin credential)
+2. A5 PR-B reopen → prod backend digest promotion sha-264ba7f8
+3. Step 4 (bu adım) execute
+4. Step 5 (DNS records) — DKIM TXT
+5. Separate PR: NOTIFY_DKIM_ENABLED=false → true flip
+6. Outbound mail DKIM-Signature header verify
+
+**Step 4 runbook (A5 PR-B reopen sonrası execute)** — staging-sw remote
+shell tek session içinde key gen + Vault seed (lokal/remote karışıklığı yok):
 
 ```bash
-# Generate DKIM private key (RSA 2048, PKCS#8)
-openssl genrsa -out /tmp/dkim-prod.pem 2048
-openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt \
-  -in /tmp/dkim-prod.pem -out /tmp/dkim-prod-pkcs8.pem
+ssh halil@staging-sw "
+# Generate DKIM private key on staging-sw (no local /tmp dependency)
+mkdir -p /tmp/dkim-prod-\$(date +%s)
+cd /tmp/dkim-prod-\$(date +%s)
+openssl genrsa -out dkim-prod.pem 2048
+openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in dkim-prod.pem -out dkim-prod-pkcs8.pem
 
 # Extract public key for DNS TXT record
-openssl rsa -in /tmp/dkim-prod.pem -pubout -outform PEM | \
-  sed -e '1d;$d' | tr -d '\n' > /tmp/dkim-prod-pub.txt
+PUBKEY=\$(openssl rsa -in dkim-prod.pem -pubout -outform PEM | sed -e '1d;\$d' | tr -d '\n')
+echo \"DKIM DNS TXT record value (Step 5):\"
+echo \"v=DKIM1; k=rsa; p=\$PUBKEY\"
 
-# Display DNS TXT record value
-echo "DKIM DNS TXT record (acik2026._domainkey.acik.com):"
-echo "v=DKIM1; k=rsa; p=$(cat /tmp/dkim-prod-pub.txt)"
-
-# Vault prod seed (Pre-Production Full Authority)
-ssh halil@staging-sw "
+# Vault prod seed via stdin (no shell quoting fragility)
 ROOT_TOKEN=\$(python3 -c 'import json; print(json.load(open(\"/home/halil/bootstrap-drill/vault-init-prod.json\"))[\"root_token\"])')
-docker exec -e VAULT_TOKEN=\$ROOT_TOKEN -e VAULT_ADDR=http://127.0.0.1:8200 \
+cat dkim-prod-pkcs8.pem | docker exec -i -e VAULT_TOKEN=\$ROOT_TOKEN -e VAULT_ADDR=http://127.0.0.1:8200 \
   platform-vault-prod vault kv patch kv/platform/notification-orchestrator \
-    dkim_private_key_pem=\"\$(cat /tmp/dkim-prod-pkcs8.pem)\"
-"
+    dkim_private_key_pem=-
 
-# CLEAN UP local key files (security hygiene)
-shred -u /tmp/dkim-prod.pem /tmp/dkim-prod-pkcs8.pem /tmp/dkim-prod-pub.txt
+# Verify Vault key written
+docker exec -e VAULT_TOKEN=\$ROOT_TOKEN -e VAULT_ADDR=http://127.0.0.1:8200 \
+  platform-vault-prod vault kv get -field=dkim_private_key_pem kv/platform/notification-orchestrator | head -3
+
+# CLEAN UP key files (security hygiene)
+shred -u dkim-prod.pem dkim-prod-pkcs8.pem
+cd /tmp && rmdir /tmp/dkim-prod-\$(date +%s) 2>/dev/null
+"
 ```
 
 ### Step 5: DNS records — operator external (acik.com DNS provider)
@@ -152,9 +170,10 @@ Expected:
 - SPRING_MAIL_HOST=smtp.office365.com
 - NOTIFY_DKIM_ENABLED=true
 
-### Step 8: A7 dispatch flip — separate PR
+### Step 8: A7 dispatch flip — separate PR (post-credentials seeded)
 
-PR creation post-Step 7 (after Vault seed + DNS verify):
+PR creation post-Step 7 (after smtp_username + smtp_password Vault'ta seeded
++ pod env'e geldiği verify edildikten sonra):
 
 ```yaml
 # kustomize/overlays/prod/kustomization.yaml ConfigMap patch:
@@ -166,9 +185,20 @@ PR creation post-Step 7 (after Vault seed + DNS verify):
 Then:
 1. Apply prod overlay
 2. ESO sync + pod rollout
-3. Smoke send: `curl POST /api/v1/notify/intent` with valid JWT (test persona)
-4. Mailpit verify: outbound mail received with DKIM-Signature header
-5. Browser verify: deliverability check via mail-tester.com (≥9/10 score expected)
+3. Smoke send: `curl POST /api/v1/notify/intent` with valid JWT (test persona — RAID I6 unblock sonrası)
+4. **Real Office 365 acceptance kriteri** (Mailpit lab kanıtı yetmez):
+   - M365 admin message trace: outbound mail listed with delivered status
+   - External recipient mailbox header inspection:
+     * `Authentication-Results` SPF=pass + DKIM=pass (post-A5 PR-B + DKIM activation) + DMARC=pass
+     * `Received-SPF` Office 365 IP range
+     * `DKIM-Signature` header present (post-A5 PR-B)
+   - mail-tester.com ≥9/10 score (post-A5 PR-B + DKIM activation)
+5. M365 audit log: SMTP AUTH success events; no auth failure spike
+
+⚠️ **DKIM activation prerequisite** — A7 dispatch flip yaparken DKIM_ENABLED=false ise mail unsigned çıkar; bu spam folder riski. Sequence:
+- A6 PR (this) → SMTP credential prep + DKIM env binding prep
+- A7 dispatch flip → mail dispatched WITHOUT DKIM signature (DKIM_ENABLED=false)
+- A5 PR-B unblock + DKIM live PR → DKIM_ENABLED=true + signed mail
 
 ## Multi-Provider Switching
 

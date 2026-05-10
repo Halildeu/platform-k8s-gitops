@@ -549,16 +549,32 @@ patches:
       - op: replace
         path: /data/NOTIFY_ADAPTERS_SMTP_FROM_ADDRESS
         value: "noreply@acik.com"
-      # A4 DKIM RFC 6376 activation (Faz 23.2 R3 mitigation — backend PR #151).
-      # ProductionConfigValidator validateDkim() fail-closed gate enforces:
-      # - notify.dkim.enabled=true required
-      # - selector + domain + private-key-pem populated (Vault inject via ESO)
-      # DKIM signs ALL outbound mail (DKIM-Signature header on send) when
-      # notify.dkim.enabled=true bean activated. DNS TXT record (operator
-      # external) at acik2026._domainkey.acik.com — see ESO comment.
+      # A4 DKIM env prep — Codex iter (019e1307) RED absorb 2026-05-11:
+      # NOTIFY_DKIM_ENABLED=false unchanged because prod overlay hâlâ
+      # sha-204042d binary'sini çalıştırıyor (PR #126 era). PR #151 DKIM full
+      # impl + SmtpAdapter wiring binary sha-264ba7f8'de; A5 PR-B (sha-c4a03fc
+      # → veya sha-264ba7f8 promote) RAID I6 KC admin credential blocker
+      # nedeniyle bekliyor. Eski binary'de SmtpAdapter DkimSigner inject
+      # etmez → DKIM_ENABLED=true set edilirse mail signed olmaz + bean
+      # parse fail riski (private-key-pem boş = IllegalStateException startup).
+      #
+      # DKIM live activation sequence:
+      # 1. RAID I6 unblocked (KC admin credential)
+      # 2. A5 PR-B reopen → prod backend digest sha-204042d → sha-264ba7f8
+      #    (DKIM full impl binary)
+      # 3. Vault prod seed: dkim_private_key_pem=<PKCS#8 RSA 2048>
+      # 4. DNS TXT record propagation: acik2026._domainkey.acik.com
+      # 5. Separate PR: NOTIFY_DKIM_ENABLED=false → true flip
+      # 6. Verify pod log: "DkimSigner activated" + outbound mail
+      #    DKIM-Signature header
+      #
+      # Selector + domain config env binding NOW prep — pod env değer
+      # alınca activation hazır. NOTIFY_DKIM_ENABLED=false kaldığı sürece
+      # backend DkimSigner bean ConditionalOnProperty disabled → SmtpAdapter
+      # Optional<DkimSigner> empty → no DKIM-Signature header.
       - op: add
         path: /data/NOTIFY_DKIM_ENABLED
-        value: "true"
+        value: "false"
       - op: add
         path: /data/NOTIFY_DKIM_SELECTOR
         value: "acik2026"
