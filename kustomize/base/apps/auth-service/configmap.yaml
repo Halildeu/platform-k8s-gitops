@@ -61,6 +61,15 @@ data:
   ERP_OPENFGA_ENABLED: "true"
   ERP_OPENFGA_API_URL: "http://openfga:8080"
 
+  # User Impersonation v1 (PR-B platform-backend #137 + GitOps #478):
+  # KeycloakBrokerClient RFC 8693 token exchange endpoint.
+  # Realm "serban" matches existing KC base config. Broker client
+  # secret comes from ESO/Vault (auth-impersonation-broker secret) —
+  # populated via overlay-specific ExternalSecret + Deployment env.
+  AUTH_IMPERSONATION_KEYCLOAK_TOKEN_URL: "http://keycloak:8080/realms/serban/protocol/openid-connect/token"
+  AUTH_IMPERSONATION_BROKER_CLIENT_ID: "impersonation-broker"
+  AUTH_IMPERSONATION_EXCHANGE_AUDIENCE: "frontend"
+
   # Tracing (Tempo için; base'de kapalı, monitoring kurulunca aç)
   MANAGEMENT_TRACING_ENABLED: "false"
   MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.1"
