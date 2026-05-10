@@ -30,7 +30,20 @@ services:
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
-      KC_PROXY: edge
+      # 2026-05-11 hotfix (login flow root cause, mirrored from
+      # host-compose/keycloak/test/docker-compose.yml):
+      # KC_PROXY=edge is DEPRECATED in Keycloak 26 (silently ignored)
+      # and breaks the CORS preflight on /token from a HTTPS SPA. The
+      # KC startup log itself warns:
+      #   "With HTTPS not enabled, proxy-headers unset, and
+      #    hostname-strict=false, ... requests from the proxy to the
+      #    server will fail CORS checks with 403s ..."
+      # Fix: switch to xforwarded mode (host edge nginx already sets
+      # X-Forwarded-Proto/Host/For). KC_HOSTNAME locks the public
+      # canonical URL so KC builds correct redirect URLs even before
+      # the SPA echoes them back.
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME: https://ai.acik.com
       KC_METRICS_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       KC_FEATURES: "token-exchange,admin-fine-grained-authz"
