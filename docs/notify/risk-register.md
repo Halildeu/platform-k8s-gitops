@@ -1,9 +1,9 @@
 # Notification Platform — Risk Register
 
-> **Status**: ACTIVE (Session 39 PM artifact bootstrap 2026-05-09)
+> **Status**: ACTIVE (Session 42 update 2026-05-10)
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md)
 > **Charter**: [RB-faz-23-charter](../runbooks/RB-faz-23-charter.md)
-> **Last review**: 2026-05-09
+> **Last review**: 2026-05-10
 
 Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için: ID, açıklama, probability, impact, mitigation, owner, status, last review tarihi.
 
@@ -24,7 +24,7 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 
 ---
 
-## Active Risks (Session 39)
+## Active Risks (Session 42 update)
 
 | ID | Risk | Probability | Impact | Severity | Mitigation | Owner | Status | Sub-faz | Last Review |
 |---|---|:---:|:---:|:---:|---|---|:---:|---|---|
@@ -83,6 +83,7 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 
 - 2026-05-09 (Session 39 bootstrap): Initial 20 risks identified during PM artifact creation. R4/R5/R8/R18/R20 marked Mitigated based on Session 39 Codex review evidence.
 - 2026-05-09 (Codex iter-2 absorb PR #441): R1 owner extended `ops → ops + legal` (NetGSM commercial contract). 2 yeni risk: R21 (provider rate-limit external throttling) + R22 (GHCR registry outage). Toplam aktif risk: 22.
+- 2026-05-10 (Session 42 PR #482 + #483 absorb): R1 mitigation row extended — Vault path infrastructure 🟢 LIVE (canonical kv/platform/notification-orchestrator + 3 sms_netgsm_* keys + ESO 8/8 Ready + pod env injected fail-closed). Sub-faz 23.3 → 23.3.1. Last review 2026-05-09 → 2026-05-10. Contract activation pending R1 ETA 2026-05-30.
 
 ## Next Review
 

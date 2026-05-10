@@ -59,12 +59,12 @@ Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorun
 
 Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
-**Snapshot (2026-05-09 Session 39 post 11-PR cycle, Codex `019e0bff` iter-1 absorb)**:
+**Snapshot (2026-05-10 Session 42 post PR #482 + #483, Codex `019e10b4` iter-1 absorb)**:
 - Done (whole sub-faz fully closed): 23.0 (1/11 = 9%)
-- Partial (substantial progress, kabul kriteri eksikleri var): 23.1, 23.2, 23.4, 23.8, 23.9 (5/11 = 45%)
-- Pending: 23.3, 23.5, 23.6, 23.7, 23.X (5/11 = 45%)
-- Effective progress estimation: **~30% of v1 scope** (semantic estimate — counts each partial sub-faz as 0.5 toward done; exact denominator NOT literal feature matrix count)
-- **Note**: Earlier "23.1/23.4/23.9 🟢 done" claim was overclaim per Codex review. Service runtime is LIVE but each sub-faz has explicit kabul kriteri eksikleri (D29-Functional evidence for 23.1, SMS DLR + archive for 23.4, 72h observation + rollback prova for 23.9). Marker accuracy correction is part of "going forward, mark only when ALL kabul kriteri are 🟢" discipline.
+- Partial (substantial progress, kabul kriteri eksikleri var): 23.1, 23.2, **23.3**, 23.4, 23.8, 23.9 (6/11 = 55%) — **23.3 promoted Session 42 via 23.3.1 NetGSM Vault path canonical LIVE PR #482**
+- Pending: 23.5, 23.6, 23.7, 23.X (4/11 = 36%)
+- Effective progress estimation: **~33% of v1 scope** (semantic estimate — counts each partial sub-faz as 0.5 toward done; exact denominator NOT literal feature matrix count)
+- **Note**: Earlier "23.1/23.4/23.9 🟢 done" claim was overclaim per Codex review. Service runtime is LIVE but each sub-faz has explicit kabul kriteri eksikleri (D29-Functional evidence for 23.1, SMS DLR + archive for 23.4, 72h observation + rollback prova for 23.9). Marker accuracy correction is part of "going forward, mark only when ALL kabul kriteri are 🟢" discipline. **23.3 promotion (Session 42 2026-05-10): 23.3.1 NetGSM Vault path canonical LIVE; 23.3 still 🟡 partial — NetGSM contract activation R1 + DLR + IYS + multi-provider failover + in-app inbox API kabul kriteri pending.**
 
 ---
 
