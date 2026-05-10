@@ -193,7 +193,35 @@ images:
     # green (satisfied at run 25635894681 SUCCESS).
     # Build evidence: platform-backend run 25635894681 — api-gateway
     # push manifest sha256:6cdfb2fce98804957a8e90f323d405314344fec65b7377beca823da72c55ee01.
-    digest: sha256:6cdfb2fce98804957a8e90f323d405314344fec65b7377beca823da72c55ee01
+    #
+    # 2026-05-10 update: sha-8412631 — platform-backend PR #152
+    # (bb6ba4d, fix/gateway-vault-failfast-narrow-trigger). VaultFailfast
+    # narrow-trigger hot-fix. Owner reported "site açılmıyor" in earlier
+    # session; gateway VaultFailfastFallbackHandler was unconditionally
+    # converting every WebClientRequestException into a 503 +
+    # VAULT_UNAVAILABLE response, even for HTTP-level transient errors
+    # that the loadbalancer retry should heal. Misleading 503 surfaced
+    # as a fake "vault outage" page on /api/auth/cookie POST and broke
+    # cookie write → token exchange chain → user bounced to /login.
+    #
+    # Fix: shouldHandle() narrowed to genuine connection-level failures
+    # via cause-chain walk (ConnectException, NoRouteToHostException,
+    # SocketTimeoutException, TimeoutException). Non-connection
+    # WebClientRequestException now writes explicit 502 Bad Gateway
+    # with distinct outage code GATEWAY_TRANSIENT (separate from
+    # VAULT_UNAVAILABLE so client/observability can differentiate
+    # transient vs vault outage). Preserves existing genuine-vault-down
+    # contract. 5/5 tests pass.
+    #
+    # Cross-AI peer review: Codex thread 019e139e iter-1 REVISE → 3 P1
+    # absorbs (explicit 502 contract owned, scope clarification, nested
+    # cause test) → iter-2 PARTIAL ready_to_merge:true → iter-2.5
+    # comment cleanup. Maven full reactor + 7 hard gates + 3
+    # Testcontainers integration tests GREEN.
+    #
+    # Build evidence: platform-backend run 25639546067 — api-gateway
+    # push manifest sha256:103ba82a8d09604e6a5ab8aa3e3c110d0df0fb09c141b75cea1a670364879f57.
+    digest: sha256:103ba82a8d09604e6a5ab8aa3e3c110d0df0fb09c141b75cea1a670364879f57
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     digest: sha256:df8b84d0cd02d064cf455f40017bd5cb4ca1be271e5e7068afeb36fc4526a7f1
