@@ -48,7 +48,7 @@ Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorun
 | **23.0** | Charter | docs | 1 hafta | — | 🟢 done (PR #362 + 5 follow-up commits + 2026-05-09 truth alignment) |
 | **23.1** | Kernel/Closed Beta | code | 3-4 hafta | 23.0 + Faz 22.1.1b III review | 🟡 partial (Codex `019e0bff` iter-1 absorb: service runtime LIVE prod, V8 partition + 3 channel adapters + OutboxPoller + RetryWorker + auth guards activated; **D29-NOTIFY-Functional 3-channel evidence still PENDING** per `docs/faz-23-evidence/2026-05-06-23-1-pr5-d29-notify.md`) |
 | **23.2** | Production MVP dar | code | ~52-55h residual / ~60-70h provisional sprint / 2.5-3.5 hafta (M3 stale audit 2026-05-09 iter-3 re-baseline) | 23.1 | 🟡 partial (Session 39 hardening: KVKK retention + Vault/ESO + Grafana 15-panel + 25 PrometheusRule + DLQ SLO 99.5% LIVE; **MVP-dar audit 2026-05-09: backend source-ready 7/9 + live-deployed 7/9 + acceptance-complete 1/9 — preference + admin erasure + provider rollback + classification source-ready/live, D29-Authorized BLOCKED on RAID I6 + R2 KVKK legal; gerçek pending T1.2 subscriber self-service `DELETE/GET /audit/me` + T1.4 D43 outage fallback + T1.6 abuse guards**) |
-| 23.3 | Production MVP geniş | code | 3 hafta | 23.2 | ⏳ pending (SMS NetGSM + in-app inbox API) |
+| 23.3 | Production MVP geniş | code | 3 hafta | 23.2 | 🟡 partial (Session 42: **23.3.1 NetGSM Vault path canonical LIVE 2026-05-10 06:55Z** PR #482 — kv/platform/notification-orchestrator + 3 sms_netgsm_* keys + ESO 8/8 + pod env injected fail-closed; **NetGSM contract activation R1 pending ETA 2026-05-30**; in-app inbox API + IYS gate + DLR token + multi-provider failover pending) |
 | **23.4** | v1 — DLR + in-app UI | code | 2 hafta | 23.3 | 🟡 partial (PR-5.x cycle in-app inbox + SSE LIVE + strict identity guards LIVE; **SMS DLR + archive UI + 30-day history pending**) |
 | 23.5 | v1 — preference UI | code | 1 hafta | 23.4 | ⏳ pending (FE preference settings page) |
 | 23.6 | v1 — Teams + Slack zenginleştirme | code | 1 hafta | 23.4 | ⏳ pending (Teams adapter + Slack Block Kit + threading) |
@@ -59,12 +59,12 @@ Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorun
 
 Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
-**Snapshot (2026-05-09 Session 39 post 11-PR cycle, Codex `019e0bff` iter-1 absorb)**:
+**Snapshot (2026-05-10 Session 42 post PR #482 + #483, Codex `019e10b4` iter-1 absorb)**:
 - Done (whole sub-faz fully closed): 23.0 (1/11 = 9%)
-- Partial (substantial progress, kabul kriteri eksikleri var): 23.1, 23.2, 23.4, 23.8, 23.9 (5/11 = 45%)
-- Pending: 23.3, 23.5, 23.6, 23.7, 23.X (5/11 = 45%)
-- Effective progress estimation: **~30% of v1 scope** (semantic estimate — counts each partial sub-faz as 0.5 toward done; exact denominator NOT literal feature matrix count)
-- **Note**: Earlier "23.1/23.4/23.9 🟢 done" claim was overclaim per Codex review. Service runtime is LIVE but each sub-faz has explicit kabul kriteri eksikleri (D29-Functional evidence for 23.1, SMS DLR + archive for 23.4, 72h observation + rollback prova for 23.9). Marker accuracy correction is part of "going forward, mark only when ALL kabul kriteri are 🟢" discipline.
+- Partial (substantial progress, kabul kriteri eksikleri var): 23.1, 23.2, **23.3**, 23.4, 23.8, 23.9 (6/11 = 55%) — **23.3 promoted Session 42 via 23.3.1 NetGSM Vault path canonical LIVE PR #482**
+- Pending: 23.5, 23.6, 23.7, 23.X (4/11 = 36%)
+- Effective progress estimation: **~33% of v1 scope** (semantic estimate — counts each partial sub-faz as 0.5 toward done; exact denominator NOT literal feature matrix count)
+- **Note**: Earlier "23.1/23.4/23.9 🟢 done" claim was overclaim per Codex review. Service runtime is LIVE but each sub-faz has explicit kabul kriteri eksikleri (D29-Functional evidence for 23.1, SMS DLR + archive for 23.4, 72h observation + rollback prova for 23.9). Marker accuracy correction is part of "going forward, mark only when ALL kabul kriteri are 🟢" discipline. **23.3 promotion (Session 42 2026-05-10): 23.3.1 NetGSM Vault path canonical LIVE; 23.3 still 🟡 partial — NetGSM contract activation R1 + DLR + IYS + multi-provider failover + in-app inbox API kabul kriteri pending.**
 
 ---
 
