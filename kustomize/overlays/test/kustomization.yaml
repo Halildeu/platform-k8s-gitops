@@ -1517,6 +1517,15 @@ patches:
       - op: add
         path: /data/SECURITY_JWT_AUDIENCE
         value: "account,frontend,auth-service"
+      # User Impersonation v1 (PR-B): test cluster runs the platform-test
+      # realm (not prod's `serban`). Without this overlay patch the broker
+      # token-exchange would hit the wrong realm and fail with
+      # TOKEN_EXCHANGE_FAILED even after broker-client-secret is wired.
+      # Codex review iter-1 (thread 019e108a) flagged the realm drift; base
+      # value (realms/serban) stays correct for prod desired state.
+      - op: replace
+        path: /data/AUTH_IMPERSONATION_KEYCLOAK_TOKEN_URL
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/token"
 
   # Dilim 2: 5 backend ConfigMap patches (DDL-auto + FLYWAY test override)
   # Faz 19.MSSQL.N (2026-04-25): SECURITY_JWT_* + KEYCLOAK_* (platform-test realm)
