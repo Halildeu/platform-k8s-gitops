@@ -167,7 +167,7 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 ## Faz 23.2 — Production MVP Dar
 
-**Tier**: Production MVP dar (~52-55h residual / ~60-70h provisional sprint / 2.5-3.5 hafta — M3 stale audit 2026-05-09 iter-3 re-baseline per `docs/notify/m3-stale-audit-2026-05-09.md`; backend code source-ready 7/9, gerçek pending T1.2 subscriber self-service erasure + T1.4 D43 + T1.6 abuse guards) — **🟡 partial (Codex `019e0c28` strategic finding)**
+**Tier**: Production MVP dar (Session 42 sonu: 23.2.B + 23.2.C + 23.2.D + 23.2.F 4 sub-faz fully 🟢 — T1.2 + T1.3 + T1.4 + T1.6 FULL ACCEPTANCE; residual T1.1.6/7/8 follow-up impl + R2 KVKK legal review external coordination) — **🟡 partial near-🟢 (Codex `019e0c28` strategic finding superseded by Session 41+42 evidence)**
 
 **Acceptance breakdown** (Codex iter-1 absorb):
 - **Original MVP-dar 8 kabul kriteri: 6/8 done** (Grafana dashboard, Alertmanager DLQ rule, **provider config rollback** Session 42 PR #140, outage fallback bypass Session 41, data classification, abuse prevention guards Session 41)
@@ -227,7 +227,9 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 - 🟢 **23.2.E**: Data classification substantively LIVE (enum + IntentSubmissionService + DeliveryEligibilityService); ~2h acceptance test
 - 🟢 **23.2.F**: Abuse prevention guards (D45) — **T1.6 FULL ACCEPTANCE Session 41 2026-05-09 23:45Z** (PR #134 + #455 + acceptance evidence; sliding window 100/orgId-topicKey/60s; R13 + R19 🟢 Mitigated)
 
-Estimated remaining work: **~52-55h sprint** + acceptance + Codex iter overhead = ~60-70h provisional 2.5-3.5 hafta (önceki ~100h estimate'den -44 / -47h drift).
+Estimated remaining work (Session 42 sonu): **T1.1.6/7/8 follow-up implementation+test ~12-15 days** (Explore agent scope analysis: quiet hours enforcement + per-user frequency limit + unsubscribe footer/JWT; impl + test gerek) + R2 KVKK legal review external coordination ETA 2026-05-25.
+
+**Historical (M3 stale audit 2026-05-09)**: önceki ~100h estimate / Session 41 sonrasında ~52-55h drift; Session 42 T1.3 MERGED ile residual T1.1.6/7/8 impl+test'e indirgendi.
 
 ---
 
