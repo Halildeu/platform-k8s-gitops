@@ -39,7 +39,7 @@
 ### Charter 23.2 Sub-Faz Final State Session 43
 
 **5/6 sub-faz fully 🟢 source-ready + 1 sub-faz 🟡 partial** (5-state matrix Source-ready 12/12 + Live-deployed 12/12 + Evidence-backed 12/12 + Acceptance complete 11/12 + Blocked 0/12):
-- 🟢 **23.2.A**: T1.1 trilogy 3/3 MERGED (T1.1.6 + T1.1.7 + T1.1.8 PR-A/B/C) + P0.1-P0.5 follow-up Session 44 (gitops PR #498 charter doc + ESO 15. key + prod profile + Vault seed; backend PR #147 prod-host guard + e2e integration test)
+- 🟢 **23.2.A**: T1.1 trilogy 3/3 MERGED (T1.1.6 + T1.1.7 + T1.1.8 PR-A/B/C) + P0.1-P0.5 follow-up Session 44 (gitops PR #498 charter doc + **test ESO 15. key** + **test Vault seed** ✅; backend PR #147 prod-host guard URI parser allowlist + e2e integration test). **Prod profile activation deferred to P1.2 M3 next gate** (Codex iter-3 RED absorb: prod desired-state ESO/ConfigMap/Vault completion required first)
 - 🟢 **23.2.B**: Subscriber self-service T1.2 FULL ACCEPTANCE Session 41
 - 🟢 **23.2.C**: Provider config rollback R12 🟢 Mitigated (T1.3 PR #140)
 - 🟢 **23.2.D**: Outage fallback bypass T1.4 FULL ACCEPTANCE Session 41 first drill
