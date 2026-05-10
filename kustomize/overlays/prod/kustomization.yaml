@@ -512,15 +512,79 @@ patches:
       - op: add
         path: /data/SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_CHECKSERVERIDENTITY
         value: "true"
-      # Codex 019e1307 P1 absorb (PR #501 iter-1):
-      # Base configmap NOTIFY_ADAPTERS_SMTP_HOST="OVERLAY_MUST_OVERRIDE" +
-      # FROM="noreply@testai.acik.com" prod cutover öncesi gerçek SMTP gateway
-      # yok. Pre-prod context: son kullanıcı yok, email dispatch gerek yok;
-      # unsubscribe link generation runtime'da çalışır (UnsubscribeUrlBuilder)
-      # ama email dispatch path inactive. R1 contract activation
-      # (NetGSM ETA 2026-05-30) sonrası prod SMTP gateway config + dispatch
-      # flip true. Şimdilik dispatch disabled — pod ready/health endpoint OK,
-      # validator startup PASS, runtime dispatch path silent.
+      # A6 prod SMTP gateway config (Session 44 user kararı: Office 365 default
+      # + multi-provider — Codex 019e1307 + user input).
+      #
+      # Backend Spring Boot JavaMailSender autoconfig vendor-agnostic; STARTTLS
+      # 587 SMTP AUTH standart kontrat. Multi-provider switching: ConfigMap
+      # SPRING_MAIL_HOST + ESO smtp_username/password değişimi yeterli
+      # (kod değişikliği YOK).
+      #
+      # Office 365 default:
+      # - Host: smtp.office365.com (Microsoft 365 SMTP relay)
+      # - Port: 587 (STARTTLS standard)
+      # - Auth: SMTP AUTH (service account App Password — 2FA bypass)
+      # - From: noreply@acik.com (DKIM signed via DKIM RFC 6376 PR #151)
+      # - Service account: notify-noreply@acik.com (operator: Microsoft 365 admin)
+      #
+      # Switch to other vendor (config-only):
+      # - SendGrid: SPRING_MAIL_HOST=smtp.sendgrid.net + smtp_username='apikey'
+      # - AWS SES: SPRING_MAIL_HOST=email-smtp.<region>.amazonaws.com + IAM SMTP
+      # - Postmark: smtp.postmarkapp.com + server token
+      # - Mailgun: smtp.mailgun.org + postmaster@<domain>
+      # - Internal MTA: <host> + service account
+      - op: add
+        path: /data/SPRING_MAIL_HOST
+        value: "smtp.office365.com"
+      - op: add
+        path: /data/SPRING_MAIL_PORT
+        value: "587"
+      - op: add
+        path: /data/SPRING_MAIL_SMTP_AUTH
+        value: "true"
+      # NOTIFY_ADAPTERS_SMTP_HOST + FROM_ADDRESS prod overrides (placeholder fix)
+      - op: replace
+        path: /data/NOTIFY_ADAPTERS_SMTP_HOST
+        value: "smtp.office365.com"
+      - op: replace
+        path: /data/NOTIFY_ADAPTERS_SMTP_FROM_ADDRESS
+        value: "noreply@acik.com"
+      # A4 DKIM RFC 6376 activation (Faz 23.2 R3 mitigation — backend PR #151).
+      # ProductionConfigValidator validateDkim() fail-closed gate enforces:
+      # - notify.dkim.enabled=true required
+      # - selector + domain + private-key-pem populated (Vault inject via ESO)
+      # DKIM signs ALL outbound mail (DKIM-Signature header on send) when
+      # notify.dkim.enabled=true bean activated. DNS TXT record (operator
+      # external) at acik2026._domainkey.acik.com — see ESO comment.
+      - op: add
+        path: /data/NOTIFY_DKIM_ENABLED
+        value: "true"
+      - op: add
+        path: /data/NOTIFY_DKIM_SELECTOR
+        value: "acik2026"
+      - op: add
+        path: /data/NOTIFY_DKIM_DOMAIN
+        value: "acik.com"
+      # NOTIFY_DISPATCH_ENABLED=false BAĞLANTILI: dispatch flip true sadece
+      # smtp_username + smtp_password Vault'ta dolu olduğunda yapılmalı.
+      # Operator post-merge sequence:
+      # 1. Microsoft 365 admin: notify-noreply@acik.com service account create
+      # 2. Microsoft 365 admin: App Password generate (2FA bypass for SMTP AUTH)
+      # 3. Operator vault prod seed (Pre-Production Full Authority):
+      #    vault kv patch kv/platform/notification-orchestrator \
+      #      smtp_username='notify-noreply@acik.com' smtp_password='<app-password>'
+      # 4. DKIM key generation + Vault seed:
+      #    openssl genrsa -out dkim-prod.pem 2048
+      #    openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in dkim-prod.pem -out dkim-prod-pkcs8.pem
+      #    vault kv patch ... dkim_private_key_pem="$(cat dkim-prod-pkcs8.pem)"
+      # 5. DNS TXT records (operator: acik.com domain DNS provider):
+      #    acik2026._domainkey.acik.com IN TXT "v=DKIM1; k=rsa; p=<base64-public-key>"
+      #    acik.com IN TXT "v=spf1 include:spf.protection.outlook.com -all"
+      #    _dmarc.acik.com IN TXT "v=DMARC1; p=quarantine; rua=mailto:dmarc@acik.com"
+      # 6. ESO force-sync: kubectl annotate externalsecret notification-orchestrator-secrets force-sync=$(date +%s)
+      # 7. Verify Secret 18-key (was 15: +smtp_username +smtp_password +dkim_private_key_pem)
+      # 8. Final flip: separate PR replace NOTIFY_DISPATCH_ENABLED=false → true
+      #    (after smoke: outbound mail Mailpit/inbox delivered + DKIM-Signature header)
       - op: replace
         path: /data/NOTIFY_DISPATCH_ENABLED
         value: "false"
