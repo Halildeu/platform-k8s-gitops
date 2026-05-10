@@ -32,7 +32,7 @@ Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorun
 |---|---|---:|
 | 23.0 | Charter | 1 hafta |
 | 23.1 | Kernel/Closed Beta | 3-4 hafta |
-| 23.2 | Production MVP dar | **near-🟢** Session 42 sonu 2026-05-10 ~14:00Z — 5-state matrix: Source-ready 12/12 + Live-deployed 12/12 + **Evidence-backed 10/12** + **Acceptance complete 10/12** + Blocked 0/12; 4/6 sub-faz fully 🟢 (23.2.B subscriber self-service + **23.2.C provider config rollback R12 MITIGATED T1.3 backend MERGED** + 23.2.D outage fallback **R9 MITIGATED first drill** + 23.2.F abuse guards FULL acceptance); 23.2.A/E partial 🟡 (T1.1.6/7/8 follow-up acceptance + R2 KVKK admin erasure legal review ETA 2026-05-25); legal coordination kalan |
+| 23.2 | Production MVP dar | **near-🟢** Session 42 sonu 2026-05-10 ~14:00Z — 5-state matrix: Source-ready 12/12 + Live-deployed 12/12 + **Evidence-backed 10/12** + **Acceptance complete 10/12** + Blocked 0/12; 4/6 sub-faz fully 🟢 (23.2.B subscriber self-service + **23.2.C provider config rollback R12 MITIGATED T1.3 backend MERGED** + 23.2.D outage fallback **R9 MITIGATED first drill** + 23.2.F abuse guards FULL acceptance); 23.2.A/E partial 🟡 (T1.1.7/8 follow-up acceptance + R2 KVKK admin erasure legal review ETA 2026-05-25); legal coordination kalan |
 | 23.3 | Production MVP geniş | 3 hafta |
 | 23.4-23.8 | v1 | +4-6 hafta |
 | 23.9 | Prod cutover | 1 hafta |
@@ -47,7 +47,7 @@ Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorun
 |---|---|---|---:|---|:---:|
 | **23.0** | Charter | docs | 1 hafta | — | 🟢 done (PR #362 + 5 follow-up commits + 2026-05-09 truth alignment) |
 | **23.1** | Kernel/Closed Beta | code | 3-4 hafta | 23.0 + Faz 22.1.1b III review | 🟡 partial (Codex `019e0bff` iter-1 absorb: service runtime LIVE prod, V8 partition + 3 channel adapters + OutboxPoller + RetryWorker + auth guards activated; **D29-NOTIFY-Functional 3-channel evidence still PENDING** per `docs/faz-23-evidence/2026-05-06-23-1-pr5-d29-notify.md`) |
-| **23.2** | Production MVP dar | code | residual T1.1.6/7/8 follow-up impl + R2 legal review | 23.1 | 🟡 partial near-🟢 (Session 42 sonu 2026-05-10: KVKK retention + Vault/ESO + Grafana 15-panel + 25 PrometheusRule + DLQ SLO 99.5% LIVE; 5-state matrix Source-ready 12/12 + Live-deployed 12/12 + **Evidence-backed 10/12 + Acceptance complete 10/12** + Blocked 0/12; **4/6 sub-faz fully 🟢: 23.2.B subscriber self-service + 23.2.C provider config rollback (R12 Mitigated PR #140) + 23.2.D outage fallback (R9 Mitigated) + 23.2.F abuse guards**; 23.2.A preference T1.1.6/7/8 follow-up + 23.2.E retention partial 🟡; R2 KVKK legal review external ETA 2026-05-25) |
+| **23.2** | Production MVP dar | code | residual T1.1.7/8 follow-up impl + R2 legal review | 23.1 | 🟡 partial near-🟢 (Session 42 sonu 2026-05-10: KVKK retention + Vault/ESO + Grafana 15-panel + 25 PrometheusRule + DLQ SLO 99.5% LIVE; 5-state matrix Source-ready 12/12 + Live-deployed 12/12 + **Evidence-backed 10/12 + Acceptance complete 10/12** + Blocked 0/12; **4/6 sub-faz fully 🟢: 23.2.B subscriber self-service + 23.2.C provider config rollback (R12 Mitigated PR #140) + 23.2.D outage fallback (R9 Mitigated) + 23.2.F abuse guards**; 23.2.A preference T1.1.7/8 follow-up + 23.2.E retention partial 🟡; R2 KVKK legal review external ETA 2026-05-25) |
 | 23.3 | Production MVP geniş | code | 3 hafta | 23.2 | 🟡 partial (Session 42: **23.3.1 NetGSM Vault path canonical LIVE 2026-05-10** PR #482 + #485 DLR follow-up — kv/platform/notification-orchestrator + 4 NetGSM keys (username/password/msgheader/dlr_token all empty fail-closed) + ESO 9/9 Ready + 4/4 pod env vars injected; **NetGSM contract activation R1 pending ETA 2026-05-30**; in-app inbox API + IYS gate + multi-provider failover pending) |
 | **23.4** | v1 — DLR + in-app UI | code | 2 hafta | 23.3 | 🟡 partial (PR-5.x cycle in-app inbox + SSE LIVE + strict identity guards LIVE; **SMS DLR + archive UI + 30-day history pending**) |
 | 23.5 | v1 — preference UI | code | 1 hafta | 23.4 | ⏳ pending (FE preference settings page) |
@@ -167,12 +167,12 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 ## Faz 23.2 — Production MVP Dar
 
-**Tier**: Production MVP dar (Session 42 sonu: 23.2.B + 23.2.C + 23.2.D + 23.2.F 4 sub-faz fully 🟢 — T1.2 + T1.3 + T1.4 + T1.6 FULL ACCEPTANCE; residual T1.1.6/7/8 follow-up impl + R2 KVKK legal review external coordination) — **🟡 partial near-🟢 (Codex `019e0c28` strategic finding superseded by Session 41+42 evidence)**
+**Tier**: Production MVP dar (Session 42 sonu: 23.2.B + 23.2.C + 23.2.D + 23.2.F 4 sub-faz fully 🟢 — T1.2 + T1.3 + T1.4 + T1.6 FULL ACCEPTANCE; residual T1.1.7/8 follow-up impl + R2 KVKK legal review external coordination) — **🟡 partial near-🟢 (Codex `019e0c28` strategic finding superseded by Session 41+42 evidence)**
 
 **Acceptance breakdown** (Codex iter-1 absorb):
 - **Original MVP-dar 8 kabul kriteri: 6/8 done** (Grafana dashboard, Alertmanager DLQ rule, **provider config rollback** Session 42 PR #140, outage fallback bypass Session 41, data classification, abuse prevention guards Session 41)
 - **Session 39 hardening (charter ek)** 3/3 done: KVKK Art.7 audit retention, Vault/ESO managed Secret, DLQ SLO 99.5% multi-window
-- **Pending**: preference API (T1.1.6/7/8 follow-up), erasure path (R2 KVKK legal review external) — 2 kriter
+- **Pending**: preference API (T1.1.7/8 follow-up), erasure path (R2 KVKK legal review external) — 2 kriter
 
 **Kapsam**:
 - Preference API (`PUT /preferences/me`, `GET /preferences/me`)
@@ -227,9 +227,9 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 - 🟢 **23.2.E**: Data classification substantively LIVE (enum + IntentSubmissionService + DeliveryEligibilityService); ~2h acceptance test
 - 🟢 **23.2.F**: Abuse prevention guards (D45) — **T1.6 FULL ACCEPTANCE Session 41 2026-05-09 23:45Z** (PR #134 + #455 + acceptance evidence; sliding window 100/orgId-topicKey/60s; R13 + R19 🟢 Mitigated)
 
-Estimated remaining work (Session 42 sonu): **T1.1.6/7/8 follow-up implementation+test ~12-15 days** (Explore agent scope analysis: quiet hours enforcement + per-user frequency limit + unsubscribe footer/JWT; impl + test gerek) + R2 KVKK legal review external coordination ETA 2026-05-25.
+Estimated remaining work (Session 42 sonu): **T1.1.7/8 follow-up implementation+test ~12-15 days** (Explore agent scope analysis: quiet hours enforcement + per-user frequency limit + unsubscribe footer/JWT; impl + test gerek) + R2 KVKK legal review external coordination ETA 2026-05-25.
 
-**Historical (M3 stale audit 2026-05-09)**: önceki ~100h estimate / Session 41 sonrasında ~52-55h drift; Session 42 T1.3 MERGED ile residual T1.1.6/7/8 impl+test'e indirgendi.
+**Historical (M3 stale audit 2026-05-09)**: önceki ~100h estimate / Session 41 sonrasında ~52-55h drift; Session 42 T1.3 MERGED ile residual T1.1.7/8 impl+test'e indirgendi.
 
 ---
 
