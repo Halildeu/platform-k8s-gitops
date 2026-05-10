@@ -1,9 +1,19 @@
 # Runbook — `auth-impersonation-broker` Client Secret Provisioning
 
 **Tetik:** User Impersonation v1 (PR-B) post-deploy — auth-service runtime
-returns `502 TOKEN_EXCHANGE_FAILED` from `POST /api/v1/auth/impersonation/start`
-because `KeycloakBrokerClient` cannot authenticate to the Keycloak token
-endpoint without `AUTH_IMPERSONATION_BROKER_CLIENT_SECRET`.
+returns `502 TOKEN_EXCHANGE_FAILED` from
+`POST /api/v1/impersonation/sessions` because `KeycloakBrokerClient`
+cannot authenticate to the Keycloak token endpoint without
+`AUTH_IMPERSONATION_BROKER_CLIENT_SECRET`.
+
+**Pre-sync gate (HARD):** Do **not** apply the ExternalSecret manifest
+in any cluster before the matching `impersonation_broker_client_secret`
+field is provisioned in that cluster's Vault path. ESO will otherwise
+fail to materialise the rendered Secret with `SecretSyncedError`,
+which can ripple through other keys in the same `auth-service-secrets`
+target (PG creds, JWT keys, KC client secret) once the existing key
+revisions roll. Steps 1 → 2 → 3 must run in that order **per
+environment**.
 
 **Scope:** test cluster (`platform-test` realm) and prod cluster
 (`serban` realm) — run once per environment.
@@ -119,6 +129,12 @@ kubectl --context k3d-test -n platform-test rollout status deploy/auth-service -
 
 ## Step 4 — Smoke test (functional verify)
 
+> Codex review iter-4 (thread `019e108a`) absorb: real PR-B contract is
+> `POST /api/v1/impersonation/sessions`, body requires `targetUserId`
+> (numeric, not optional), and the response shape is
+> `{sessionId, exchangedToken, expiresAt, errorCode, errorMessage}` —
+> there is no `status` field.
+
 ```bash
 # Get a SuperAdmin admin token (real test admin, not the broker)
 ADMIN_TOKEN=$(curl -sf -X POST \
@@ -129,48 +145,84 @@ ADMIN_TOKEN=$(curl -sf -X POST \
   -d 'password=<persona-password>' \
   | jq -r '.access_token')
 
-# Call impersonation/start
-curl -sf -X POST https://testai.acik.com/api/v1/auth/impersonation/start \
+# Call impersonation start (real PR-B contract)
+curl -sf -X POST https://testai.acik.com/api/v1/impersonation/sessions \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"targetSubject":"<target-user-keycloak-sub>","reason":"smoke-test"}' \
-  | jq '{status: .status, sessionId: .sessionId}'
+  -d '{
+    "targetUserId": <platform-user-id>,
+    "targetSubject": "<target-user-keycloak-sub>",
+    "targetEmail": "<target-email>",
+    "reason": "smoke-test"
+  }' \
+  | jq '{sessionId, expiresAt, hasToken: (.exchangedToken != null), errorCode, errorMessage}'
 ```
 
-**Expected:** HTTP 201 Created, JSON body with `status: "ACTIVE"` and
-a UUID `sessionId`. Auth-service log shows `IMPERSONATION_STARTED`
-audit event written via `ImpersonationAuditClient`.
+**Expected:** HTTP 201 Created, JSON body with non-null `sessionId`
+(UUID), non-null `expiresAt` (ISO timestamp), `hasToken: true`, and
+both `errorCode` and `errorMessage` null.
+
+Auth-service log shows `IMPERSONATION_STARTED` audit event written via
+`ImpersonationAuditClient` (best-effort path; absence does not fail
+the request).
 
 **Failure shape — broker secret still missing:**
 
-```
-502 — TOKEN_EXCHANGE_FAILED — keycloak token endpoint returned 401
+```json
+{ "errorCode": "TOKEN_EXCHANGE_FAILED",
+  "errorMessage": "..." }
 ```
 
-→ re-run Step 1 (Vault path/property check) + Step 2 (ESO refresh).
+with HTTP 502 → re-run Step 1 (Vault path/property check) + Step 2
+(ESO refresh).
 
 **Failure shape — broker client missing token-exchange permission:**
 
-```
-502 — TOKEN_EXCHANGE_FAILED — keycloak returned access_denied
+```json
+{ "errorCode": "TOKEN_EXCHANGE_FAILED",
+  "errorMessage": "...access_denied..." }
 ```
 
 → Step 0.2 (Keycloak Authorization tab → token-exchange permission).
+
+**Failure shape — gateway route missing (`/api/v1/impersonation/**`):**
+
+```
+HTTP 404 from gateway (request never reaches auth-service)
+```
+
+→ This PR also adds the route to
+`kustomize/base/apps/api-gateway/configmap.yaml` (Codex iter-4
+absorb). If running the runbook against a cluster where the route
+is not yet applied, port-forward auth-service directly:
+
+```bash
+kubectl --context k3d-test -n platform-test port-forward deploy/auth-service 8088:8088
+# then hit http://127.0.0.1:8088/api/v1/impersonation/sessions
+```
 
 ---
 
 ## Step 5 — Audit verify (DoD #6)
 
+> Codex review iter-4 absorb: the real V19 schema uses the **plural**
+> table `permission_audit_events`, the discriminator column is
+> `event_type` (not `status`), and the timestamp column is
+> `occurred_at` (not `started_at`).
+
 ```bash
 sudo docker exec platform-pg-test psql -U postgres -d permission_db \
-  -c "SELECT action, status, target_email, started_at
-      FROM permission_audit_event
-      WHERE action LIKE 'IMPERSONATION_%'
+  -c "SELECT event_type, action, target_email,
+             impersonation_session_id, occurred_at
+      FROM permission_audit_events
+      WHERE event_type = 'IMPERSONATION_STARTED'
       ORDER BY id DESC LIMIT 5;"
 ```
 
-**Expected:** `IMPERSONATION_STARTED` row with the smoke target user,
-non-null `impersonation_session_id`, `status='SUCCESS'`.
+**Expected:** an `IMPERSONATION_STARTED` row with the smoke target's
+`target_email` (or null if KC sub-only), non-null
+`impersonation_session_id` (matches the `sessionId` returned by Step 4),
+recent `occurred_at`.
 
 ---
 
@@ -179,26 +231,57 @@ non-null `impersonation_session_id`, `status='SUCCESS'`.
 If broker secret rollout breaks auth-service:
 
 ```bash
-# Revert the ExternalSecret to the previous version (drop the new key)
+# 1. Revert the ExternalSecret + runbook + gateway-route PR
 git revert <this-PR-merge-sha>
 git push origin main
 
-# ESO will rotate auth-service-secrets without the broker key
-# Auth-service rolling restart removes AUTH_IMPERSONATION_BROKER_CLIENT_SECRET
-# Impersonation/start endpoint returns 502 again (pre-PR state),
-# but no other auth-service endpoint is affected.
+# 2. Force ESO to drop the broker key from the rendered Secret
+kubectl --context k3d-test -n platform-test annotate externalsecret \
+  auth-service-secrets force-sync="$(date +%s)" --overwrite
+
+# 3. Verify the key is gone from the rendered Secret
+kubectl --context k3d-test -n platform-test get secret auth-service-secrets \
+  -o jsonpath='{.data}' | jq 'keys' \
+  | grep -v AUTH_IMPERSONATION_BROKER_CLIENT_SECRET
+
+# 4. Rolling restart auth-service so the env drops the variable
+kubectl --context k3d-test -n platform-test rollout restart deploy/auth-service
+kubectl --context k3d-test -n platform-test rollout status deploy/auth-service --timeout=120s
+```
+
+**Optional cleanup (hygiene only — not required):**
+
+```bash
+# Drop the field from Vault path so it isn't materialised on a future
+# accidental re-apply. Other keys at the path are preserved.
+sudo docker exec -e VAULT_TOKEN=<root> -e VAULT_ADDR=http://127.0.0.1:8200 \
+  platform-vault-test \
+  vault kv patch -remove-key=impersonation_broker_client_secret \
+    kv/platform/auth-service
+```
+
+After rollback, `POST /api/v1/impersonation/sessions` returns
+502 `TOKEN_EXCHANGE_FAILED` (pre-PR state). No other auth-service
+endpoint is affected.
 ```
 
 ---
 
 ## Notes / Boundary
 
-This runbook involves **credential read** (KC admin → Vault) and
-**state-mutation** (Vault patch + cluster Secret refresh + Deployment
-rollout). It is intentionally operator-domain because the in-process
-agent sandbox blocks credential exploration; the agent contributed the
-declarative ExternalSecret mapping (this PR) but cannot harvest the
-broker secret value autonomously.
+This runbook involves **credential-read** (KC admin → Vault),
+**credential-write** (Vault patch), and **state-mutation** (cluster
+Secret refresh + Deployment rollout). It is intentionally
+operator-domain because the in-process agent sandbox blocks credential
+exploration; the agent contributed the declarative ExternalSecret
+mapping (this PR) but cannot harvest the broker secret value
+autonomously.
+
+**PR boundary vs runbook boundary:** the PR diff itself is
+declarative-only (`credential-write` wiring, no real secrets in repo).
+The runbook execution adds `credential-read` (operator opens KC admin
+console + reads existing client secret). The PR body distinguishes
+these two boundary scopes.
 
 **Refs:**
 
