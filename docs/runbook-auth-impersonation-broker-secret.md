@@ -35,6 +35,52 @@ five-step script below.
 
 ---
 
+## Step 0.5 — Pre-merge sequencing for `platform-test` (HARD)
+
+> Codex review iter-5 absorb: `argocd/applications/platform-test.yaml`
+> has automated sync enabled, and the test overlay transitively
+> includes this ExternalSecret via
+> `kustomize/base/apps/ops-bundle → ../auth-service/ops`. Merging the
+> PR without a Vault property in test ⇒ ArgoCD apply ⇒ ESO renders
+> `SecretSyncedError` on `auth-service-secrets`, which can ripple
+> through other keys in the same Secret target (PG creds, JWT keys,
+> KC client secret) on the next reconcile cycle.
+
+Before merging the PR, **one of the following must be true for
+test**:
+
+**Option A (preferred): pre-provision the test Vault property.**
+
+Run Step 1 below against `platform-vault-test` first; the field can
+hold the real KC client secret immediately, or a placeholder you
+will replace via the same `vault kv patch` once the broker client
+secret is verified in Step 0. Then merge the PR. Then run Steps 2–5.
+
+**Option B: pause test ArgoCD auto-sync.**
+
+```bash
+# Pause auto-sync on the test ApplicationSet so merge does not
+# auto-apply the ESO change. (Replace <argocd-ns> as appropriate.)
+kubectl --context k3d-test -n <argocd-ns> patch application platform-test \
+  --type merge \
+  -p '{"spec":{"syncPolicy":{"automated":null}}}'
+```
+
+Merge PR → run Steps 1–4 → re-enable auto-sync:
+
+```bash
+kubectl --context k3d-test -n <argocd-ns> patch application platform-test \
+  --type merge \
+  -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+```
+
+**Production (`platform-prod`) does not need this gate** — its
+ArgoCD Application is manual-sync, so the prod path stays
+operator-gated by default. Just be sure to run Step 1 against
+`platform-vault-prod` before any prod overlay sync after this PR.
+
+---
+
 ## Step 0 — Verify (or create) the `impersonation-broker` client
 
 1. Open Keycloak admin console for the target realm:
@@ -240,9 +286,10 @@ kubectl --context k3d-test -n platform-test annotate externalsecret \
   auth-service-secrets force-sync="$(date +%s)" --overwrite
 
 # 3. Verify the key is gone from the rendered Secret
+#    (jq -e returns non-zero exit code if the key still exists)
 kubectl --context k3d-test -n platform-test get secret auth-service-secrets \
-  -o jsonpath='{.data}' | jq 'keys' \
-  | grep -v AUTH_IMPERSONATION_BROKER_CLIENT_SECRET
+  -o jsonpath='{.data}' \
+  | jq -e 'has("AUTH_IMPERSONATION_BROKER_CLIENT_SECRET") | not'
 
 # 4. Rolling restart auth-service so the env drops the variable
 kubectl --context k3d-test -n platform-test rollout restart deploy/auth-service
@@ -256,7 +303,7 @@ kubectl --context k3d-test -n platform-test rollout status deploy/auth-service -
 # accidental re-apply. Other keys at the path are preserved.
 sudo docker exec -e VAULT_TOKEN=<root> -e VAULT_ADDR=http://127.0.0.1:8200 \
   platform-vault-test \
-  vault kv patch -remove-key=impersonation_broker_client_secret \
+  vault kv patch -remove-data=impersonation_broker_client_secret \
     kv/platform/auth-service
 ```
 
