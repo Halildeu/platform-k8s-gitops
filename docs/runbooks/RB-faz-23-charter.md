@@ -197,14 +197,14 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 |---|:---:|---|
 | Preference API canlı | 🟡 source-ready/live, acceptance gate | `PreferenceController` 290 satır LIVE: GET/PUT `/api/v1/notify/preferences/me` + DELETE `/me/{id}` + DELETE `/me`; D29-Authorized acceptance test BLOCKED on RAID I6 Keycloak credential |
 | Admin erasure path | 🟡 source-ready, R2 legal review | `AdminErasureController` 129 satır LIVE: `POST /api/v1/admin/notify/erasure` (admin scope); R2 legal review ETA 2026-05-25 |
-| **Subscriber self-service erasure** (`DELETE /audit/me`) | ⏳ **gerçek pending** | Endpoint backend'de YOK — KVKK Art.11 self-service için yeni implementation gerek (~5h) |
-| **Subscriber right-to-info** (`GET /audit/me`) | ⏳ **gerçek pending** | Endpoint backend'de YOK — KVKK Art.13 için yeni implementation gerek (~5h) |
+| **Subscriber self-service erasure** (`DELETE /audit/me`) | 🟢 done | T1.2 FULL ACCEPTANCE Session 41 (PR #134 + acceptance evidence 2026-05-09) — endpoint LIVE + integration test |
+| **Subscriber right-to-info** (`GET /audit/me`) | 🟢 done | T1.2 FULL ACCEPTANCE Session 41 (PR #134 + acceptance evidence 2026-05-09) — endpoint LIVE + integration test |
 | Provider config rollback | 🟢 done | `ProviderConfigHistory` + Repository LIVE; `ProviderConfigService.switchActive()` @Transactional SERIALIZABLE + TransactionSynchronization.afterCommit cache invalidation; 4 Testcontainers integration tests CI GREEN (atomic_switch + concurrent_switch_race + cache_invalidate + rollback_on_fail); platform-backend PR #140 MERGED 2026-05-10 (Codex iter-1 RED → iter-2 AGREE thread `019e116e`/`019e1173`); R12 🟢 Mitigated |
 | **Grafana dashboard** | 🟢 done | PR #431 + #436 → 15 panel (strict cutover + retention + queue + DLQ + SLO burn rate); sidecar imported `notification-orchestrator-dashboard` ConfigMap LIVE prod monitoring ns |
 | **Alertmanager DLQ rule** | 🟢 done | PR #425 + #428 + #430 + #433 → 25 PrometheusRule alerts LIVE: NotifyDlqSustained (>5/sec critical), NotifyDlqUnreplayed (>100), NotifyDlqSloBurnRateFast/Slow/Medium (1h/6h/24h burn rate), all with runbook_url annotations |
-| Outage fallback bypass (D43) | ⏳ **gerçek pending** | orchestrator down → Slack #alerts'e direct mesaj — alertmanager-bridge backend code YOK; T1.4 ~15h gerçek pending (R9 drill blocker) |
+| Outage fallback bypass (D43) | 🟢 done | T1.4 D43 outage fallback FULL ACCEPTANCE Session 41 2026-05-10 00:18-00:24Z (PR #457+#462+#463+#464+#467+#468 — Alertmanager native receiver + ESO Vault fallback secret + PrometheusRule stable labels + first controlled drill: scale=0 → NotifyServiceAbsent firing → Mailpit SMTP delivery 00:22:33Z); R9 🟢 Mitigated |
 | Data classification | 🟢 substantively LIVE | `NotificationIntent.DataClassification` enum (transactional/security/commercial/system) + `IntentSubmissionService` + `DeliveryEligibilityService` source-ready/live; acceptance test gate |
-| Abuse guard | ⏳ **gerçek pending** | `RateLimitGuard`/`AbuseGuard` backend'de YOK; T1.6 ~15h gerçek pending (R13/R19 risks) |
+| Abuse guard | 🟢 done | T1.6 abuse guards FULL ACCEPTANCE Session 41 2026-05-09 23:45Z (PR #134 + #455 + acceptance evidence: 100×202 + 5×429 burst + RATE_LIMITED audit rows + notify_abuse_blocked_total Prometheus counter; sliding window rate limit max-per-window=100/(orgId, topicKey)/60s window; webhookFanoutCap=10 HARD safety limit; PiiRedactor whitelist OK); R13 + R19 🟢 Mitigated |
 | **KVKK Art.7 audit retention** (charter ek, Session 39) | 🟢 done | PR #427 + #437 → AuditPartitionRetentionService activated dryRun=false LIVE prod+test; retention-days=90 + grace=24h; first cycle clean (CREATE phase produces audit_event_v2_2026_08, DETACH/DROP=0 candidates); backend test PR #130 covers DETACH/DROP path with disposable partition |
 | **Vault/ESO production secret management** (charter ek) | 🟢 done | PR #424 → flat path `kv/platform/notification-orchestrator` (5 keys: db_username/password, webhook_signing_secret, authz_internal_api_key, redaction_pepper); ExternalSecret creationPolicy=Owner byte-identical takeover; eso-runtime policy extended; legacy split path `kv/platform/notify/*` retired |
 | **DLQ SLO definition + burn rate alerts** (charter ek) | 🟢 done | PR #433 → 99.5% target, 18 recording rules + 4 alerts (Google SRE workbook §4 multi-window pattern: 1h+5m / 6h+30m / 24h / 72h burn rates); slow `unless` fast suppression to avoid duplicate P1 paging |
@@ -221,11 +221,11 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 **Sub-faz 23.2 closure plan** (M3 stale audit 2026-05-09 re-baseline):
 - 🟡 **23.2.A**: Preference API backend ZATEN LIVE (`PreferenceController` + service + send pipeline); residual ~3h acceptance test (RAID I6 credential gate)
-- 🟡 **23.2.B**: KVKK admin erasure source-ready (`AdminErasureController`), R2 legal review wait; **subscriber self-service `DELETE/GET /audit/me` GERÇEK PENDING ~10h** (yeni endpoint impl)
+- 🟢 **23.2.B**: KVKK admin erasure source-ready (`AdminErasureController`), R2 legal review external coordination ETA 2026-05-25; **subscriber self-service `DELETE/GET /audit/me` 🟢 T1.2 FULL ACCEPTANCE Session 41** (PR #134 + acceptance evidence)
 - 🟢 **23.2.C**: Provider config rollback FULL ACCEPTANCE 2026-05-10 (platform-backend PR #140 MERGED — `switchActive()` @Transactional SERIALIZABLE + afterCommit cache + 4 Testcontainers tests CI GREEN; R12 🟢 Mitigated)
-- ⏳ **23.2.D**: Outage fallback bypass (D43) — **gerçek pending T1.4 ~15h** (alertmanager-bridge backend code YOK; R9 drill blocker)
+- 🟢 **23.2.D**: Outage fallback bypass (D43) — **T1.4 FULL ACCEPTANCE Session 41 2026-05-10 first controlled drill** (PR #457+#462+#463+#464+#467+#468; R9 🟢 Mitigated)
 - 🟢 **23.2.E**: Data classification substantively LIVE (enum + IntentSubmissionService + DeliveryEligibilityService); ~2h acceptance test
-- ⏳ **23.2.F**: Abuse prevention guards (D45) — **gerçek pending T1.6 ~15h** (RateLimitGuard yok; R13/R19 storm)
+- 🟢 **23.2.F**: Abuse prevention guards (D45) — **T1.6 FULL ACCEPTANCE Session 41 2026-05-09 23:45Z** (PR #134 + #455 + acceptance evidence; sliding window 100/orgId-topicKey/60s; R13 + R19 🟢 Mitigated)
 
 Estimated remaining work: **~52-55h sprint** + acceptance + Codex iter overhead = ~60-70h provisional 2.5-3.5 hafta (önceki ~100h estimate'den -44 / -47h drift).
 
