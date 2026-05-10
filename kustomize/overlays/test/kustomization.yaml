@@ -1233,7 +1233,24 @@ images:
     # mfe-users 60/60 tests PASS (53 prior + 7 new).
     # Image build run: 25608846181, digest:
     # sha256:e72f3eaadb834b749ff12c28ebfde44d825253a36a0bf6da1c6c38999c0abe89.
-    digest: sha256:e72f3eaadb834b749ff12c28ebfde44d825253a36a0bf6da1c6c38999c0abe89
+    #
+    # 2026-05-10 update: sha-132c896 — PR-C2 mfe-shell FSM integration
+    # (platform-web PR #375 squash, Codex thread 019e109c 8-iter consensus).
+    # 16 commit cycle: M1-M5 initial (auth.slice impersonation substate +
+    # AuthBootstrapper hydrate guard + audit-complete stop revoke-first +
+    # shared-http event contract + audit live stream reconnect),
+    # M6-M10 iter-5 absorb (errorCode-first extractor + onAuthSuccess
+    # impersonation guard + recoverFromLifecycleExpiry + logout cleanup +
+    # auth-cookie.ts removal), M11-M13 iter-6 absorb (broker cookie drop
+    # 4 paths + canonical onTokenChange epoch-aware + Approach A extraction),
+    # M14-M16 iter-7 absorb (audit stream synchronous isStreaming clear +
+    # enter rollback to admin cookie + logout awaits broker cookie drop).
+    # Test count: mfe-shell 918 + mfe-audit 131 + mfe-users 60 + shared-http 57
+    # + @mfe/auth 77. Security debt note: originalAdminToken localStorage
+    # retention (backend session-aware stop endpoint follow-up).
+    # Image build run: 25624704513, digest:
+    # sha256:9a53fe82737ed929bcf80da1ab48e2d68a9da3208895519a26214e96ca28e7e9.
+    digest: sha256:9a53fe82737ed929bcf80da1ab48e2d68a9da3208895519a26214e96ca28e7e9
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
