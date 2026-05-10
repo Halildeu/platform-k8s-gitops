@@ -205,6 +205,25 @@ patches:
   # auth-service:8088, gateway routes 0-5). Prod-specific override YOK,
   # overlay sadece namespace (platform-prod) + Ingress host + Endpoints pin.
 
+  # Faz 23.2.A T1.1.8 P0.4 Codex iter-2 (019e1307) REVISE absorb 2026-05-10:
+  # ProductionConfigValidator (notify.unsubscribe.base-url + signing-secret +
+  # SMTP TLS + redaction pepper + webhook secret + authz key + preferences)
+  # only runs when active profiles contain "prod" or "production". Base
+  # manifest sets SPRING_PROFILES_ACTIVE=k8s for ESO/K8s wiring; without
+  # explicit prod override the validator's startup fail-closed gate stays
+  # silent on the prod cluster path. This patch flips the prod profile to
+  # `k8s,prod` so the validator activates fail-closed before pod ready and
+  # blocks dev-default secret/host leaks on prod.
+  - target:
+      kind: Deployment
+      name: notification-orchestrator
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0
+        value:
+          name: SPRING_PROFILES_ACTIVE
+          value: "k8s,prod"
+
   # Faz 23.9 Step D (Codex thread 019e08df iter-2 REVISE absorb 2026-05-08):
   # notify-orch base secret-stub.yaml workload render'a "dev-only-..." sentinel
   # değerlerle bir Secret yazıyor (kustomize/base/apps/notification-orchestrator/

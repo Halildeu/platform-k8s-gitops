@@ -38,19 +38,16 @@
 
 ### Charter 23.2 Sub-Faz Final State Session 43
 
-**5/6 sub-faz fully 🟢 source-ready** (5-state matrix Source-ready 12/12 + Live-deployed 12/12 + Evidence-backed 12/12 + Acceptance complete 11/12 + Blocked 0/12):
-- 🟢 **23.2.A**: T1.1 trilogy 3/3 MERGED (T1.1.6 + T1.1.7 + T1.1.8 PR-A/B/C)
+**5/6 sub-faz fully 🟢 source-ready + 1 sub-faz 🟡 partial** (5-state matrix Source-ready 12/12 + Live-deployed 12/12 + Evidence-backed 12/12 + Acceptance complete 11/12 + Blocked 0/12):
+- 🟢 **23.2.A**: T1.1 trilogy 3/3 MERGED (T1.1.6 + T1.1.7 + T1.1.8 PR-A/B/C) + P0.1-P0.5 follow-up Session 44 (gitops PR #498 charter doc + ESO 15. key + prod profile + Vault seed; backend PR #147 prod-host guard + e2e integration test)
 - 🟢 **23.2.B**: Subscriber self-service T1.2 FULL ACCEPTANCE Session 41
 - 🟢 **23.2.C**: Provider config rollback R12 🟢 Mitigated (T1.3 PR #140)
 - 🟢 **23.2.D**: Outage fallback bypass T1.4 FULL ACCEPTANCE Session 41 first drill
-- 🟢 **23.2.E**: Data classification substantively LIVE (~2h acceptance test residual)
+- 🟡 **23.2.E**: Data classification substantively LIVE (`DataClassification` enum + `IntentSubmissionService` + `DeliveryEligibilityService`); ~2h acceptance test residual (single-source-of-truth: this is the 11/12 acceptance gap reflected in matrix)
 - 🟢 **23.2.F**: Abuse prevention guards T1.6 FULL ACCEPTANCE Session 41
 
-**Residual** (~3-4h impl + R2 external):
-- P0.2 ESO ExternalSecret 15. key `unsubscribe_signing_secret`
-- P0.3 Vault seed `unsubscribe_signing_secret`
-- P0.4 ProductionConfigValidator `notify.unsubscribe.base-url` prod-host guard
-- P0.5 UnsubscribeRevokeService integration test e2e
+**Residual** (R2 external only — P0.1-P0.5 closed Session 44 via gitops PR #498 + backend PR #147):
+- 23.2.E: ~2h Data classification acceptance test (single residual within Source-ready scope)
 - R2 KVKK admin erasure legal review external ETA 2026-05-25
 
 ### HARD RULE Compliance Session 43
