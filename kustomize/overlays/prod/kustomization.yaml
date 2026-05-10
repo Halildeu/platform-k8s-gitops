@@ -557,6 +557,34 @@ patches:
       - op: replace
         path: /data/NOTIFY_ADAPTERS_SMTP_FROM_NAME
         value: "Ai - Açık Holding"
+      # A8 Microsoft Graph API mail adapter activation (port 443 bypass
+      # outbound 587 ISP block — backend PR #153 MERGED 2026-05-11).
+      # Activation prerequisites:
+      #   1. Azure AD App Registration (operator: portal.azure.com)
+      #      - Mail.Send Application permission + admin consent
+      #      - Client secret value
+      #      - Tenant ID + Client ID
+      #   2. Vault prod seed (Pre-Prod Full Authority — agent):
+      #      graph_tenant_id + graph_client_id + graph_client_secret
+      #   3. ESO 21-key Secret render (post sync)
+      #   4. NOTIFY_ADAPTERS_GRAPH_ENABLED=true → SmtpAdapter @ConditionalOnProperty
+      #      auto-disable (mutual exclusion); GraphMailAdapter active
+      #   5. Backend image bump sha-585b64f6 (Graph adapter binary)
+      #
+      # Mail dispatch path post-activation:
+      # POST https://graph.microsoft.com/v1.0/users/ai@acik.com/sendMail
+      # OAuth Bearer (cached 1h TTL) → 202 Accepted → mail dispatched
+      # DKIM signing otomatik (Office 365 outbound flow)
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_GRAPH_ENABLED
+        value: "true"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_GRAPH_SENDER_MAILBOX
+        value: "ai@acik.com"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_GRAPH_SAVE_TO_SENT_ITEMS
+        value: "false"
+
       # A4 DKIM env prep — Codex iter (019e1307) RED absorb 2026-05-11:
       # NOTIFY_DKIM_ENABLED=false unchanged because prod overlay hâlâ
       # sha-204042d binary'sini çalıştırıyor (PR #126 era). PR #151 DKIM full

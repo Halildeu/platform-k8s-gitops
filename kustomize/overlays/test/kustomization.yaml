@@ -1681,15 +1681,19 @@ images:
   # (DTO client-controlled, authority signal yok). Webhook fan-out cap
   # HARD safety limit — severity=critical bile bypass etmez.
   #
-  # 2026-05-10 update (Faz 23.2.A T1.1 trilogy + P0.4 P1.2):
-  # Bump to sha-c4a03fc (PR #147 squash MERGED 2026-05-10 18:19Z; image
-  # build run 25636201775 SUCCESS, GHCR push @
-  # sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3).
-  # Carries T1.1.6 quiet hours + T1.1.7 frequency limit + T1.1.8 unsubscribe
-  # trilogy + ProductionConfigValidator URI parser allowlist (P0.4 P0.5).
+  # 2026-05-11 update (Faz 23.A8 Microsoft Graph API mail adapter):
+  # Bump to sha-585b64f (PR #153 squash MERGED 2026-05-10 22:58Z; image
+  # build run 25642125743 SUCCESS, GHCR push @
+  # sha256:ff705f5985d6a991af0e83e557d8732741b40eb109287642facea6faac99b65d).
+  # Carries cumulative: T1.1.6 quiet hours + T1.1.7 frequency limit +
+  # T1.1.8 unsubscribe trilogy + ProductionConfigValidator URI parser
+  # allowlist (P0.4 P0.5) + DKIM RFC 6376 full impl + SmtpAdapter wiring
+  # (PR #151) + **Microsoft Graph API mail adapter** (PR #153, port 443
+  # bypass outbound 587 ISP block). Multi-provider switching via
+  # notify.adapters.graph.enabled flag.
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3
+    digest: sha256:ff705f5985d6a991af0e83e557d8732741b40eb109287642facea6faac99b65d
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
@@ -2176,6 +2180,25 @@ patches:
       - op: replace
         path: /data/NOTIFY_ADAPTERS_SMTP_HOST
         value: "mailpit.platform-test.svc.cluster.local"
+      # A8 Microsoft Graph API mail adapter test cluster smoke activation.
+      # Vault test seed gerekli (graph_tenant_id + client_id + client_secret).
+      # Backend PR #153 binary (sha-585b64f) Graph adapter dahil.
+      # Activation chain:
+      #   1. NOTIFY_ADAPTERS_GRAPH_ENABLED=true → SmtpAdapter ConditionalOnProperty
+      #      auto-disable (mutual exclusion, matchIfMissing=true)
+      #   2. GraphMailAdapter @ConditionalOnProperty active → channelKey="email"
+      #   3. POST /v1.0/users/ai@acik.com/sendMail → port 443 outbound (zaten açık)
+      #   4. OAuth 2.0 client_credentials Bearer (cached 1h TTL)
+      # Mail smoke: ai@acik.com → halil.kocoglu@serban.com.tr external delivery.
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_GRAPH_ENABLED
+        value: "true"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_GRAPH_SENDER_MAILBOX
+        value: "ai@acik.com"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_GRAPH_SAVE_TO_SENT_ITEMS
+        value: "true"
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "true"
