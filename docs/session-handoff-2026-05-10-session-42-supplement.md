@@ -9,7 +9,7 @@
 
 ## 1. Bağlam (Bu Supplement Ne Kapsıyor)
 
-PR #484 (Session 42 ana handoff) merge edildikten sonra Session 42 doğal kapanış noktasına gidene kadar 3 ek iş yapıldı:
+PR #484 (Session 42 ana handoff) merge edildikten sonra Session 42 supplement kapsamına 3 ek iş yapıldı:
 
 1. **PR #485** — DLR token Vault entry follow-up (PR #482 deferred scope)
 2. **PR #487** — ResourceQuota manifest 10→12 CPU drift fix (PR #485 deploy operasyonel fix sonucu)
