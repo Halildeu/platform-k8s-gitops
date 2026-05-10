@@ -54,7 +54,19 @@ images:
     #   - ImpersonationSessionClient + ImpersonationAuditClient (internal)
     #   - 8 BLOCKED/FAILED audit branches with V19 context columns
     # Image build: ci-image-push.yml run 25616255008 (commit a918534).
-    digest: sha256:ddaf13d9d174e53c6424e6a80b8e4e64997db2dce617361b45b0cadc1cc9f482
+    #
+    # 2026-05-10 update: sha-c5df886 — PR #141 hot-fix `@Profile` gate for
+    # `ServiceJwtConfiguration#jwtDecoder` (PR-B regression; R-2 LIVE smoke
+    # ortaya çıkardı). Spring Boot OAuth2 auto-config primary `JwtDecoder`
+    # now wins on k8s/prod profiles → KC RS256 tokens validate correctly →
+    # `POST /api/v1/impersonation/sessions` etc. accept Bearer admin tokens
+    # instead of returning 401 "Invalid signature". Cross-AI peer review
+    # thread `019e1183` 3-iter consensus (iter-1 REVISE @Profile gate +
+    # discriminating tests, iter-2 REVISE gitleaks-runtime keypair, iter-3
+    # AGREE). 4/4 tests PASS, full reactor green, CI required gates green.
+    # Squash merged at platform-backend `c5df886`. Image build run
+    # 25633481822 → digest below.
+    digest: sha256:1bfe6baa15f251e841a8f8f2e8ff69d3b29e1ef174f0372afe8aa7dde81f0bc0
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
