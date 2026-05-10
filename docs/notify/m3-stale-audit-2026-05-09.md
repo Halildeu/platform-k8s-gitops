@@ -12,15 +12,24 @@ Bu audit Codex'in önerdiği **5-state matrix** (Source-ready / Live-deployed / 
 
 Sprint-plan T1 (23.2 closure) **gerçek residual ~28-32h band** (post PR #132 + #452 + #134 + #455 MERGE 2026-05-09 18:40Z; T1.2 subscriber self-service + T1.6 abuse guards source-ready/live-deployed). Backend implementation T1.1.1-T1.1.4 + **T1.2 admin + subscriber self-service** + T1.3 partial + T1.5 + **T1.6 abuse guards** **source-ready/live**; T1.4 (D43 outage fallback) gerçek pending.
 
-| State | Count | Notes |
+| State | Count | Notes (Session 41 sonu 2026-05-09 23:45Z) |
 |---|---:|---|
-| 🟢 **Source-ready** | 9/12 | T1.1.1-T1.1.4, T1.2 admin + **subscriber self-service** (PR #132 MERGED), T1.3 partial, T1.5, **T1.6 abuse guards** (PR #134 MERGED + PR #455 cluster apply 18:40Z) backend code LIVE |
-| 🟢 **Live-deployed** | 9/12 | Test cluster deploy LIVE (T1.2 + **T1.6** cluster apply CONFIRMED 2026-05-09; T1.6 pod imageID sha256:eef18027 + `AbuseGuardService initialized: window=60s rateLimit=100/window webhookFanoutCap=10` log evidence) |
-| 🔴 **Evidence-backed** | 0/12 | M2 partial smoke yapıldı; full authenticated D29 BLOCKED (RAID I6); T1.6 functional 429 smoke RAID I6 dep |
-| 🔴 **Acceptance complete** | 0/12 | Acceptance kriteri Charter'da hâlâ pending; M3 closure 🟡 |
-| 🟡 **Blocked** | 3/12 | T1.4 (R9 D43 drill — gerçek pending impl), Keycloak credential (RAID I6), legal review (R2) — T1.2 + T1.6 endpoint blocker RESOLVED (PR #132+#452+#134+#455 MERGE) |
+| 🟢 **Source-ready** | 12/12 | Tüm T1 sub-task'lar source-ready (T1.4 PR-1+2+3+4 LIVE) |
+| 🟢 **Live-deployed** | 9/12 | T1.6 + T1.2 LIVE acceptance evidence kanıtlandı; T1.4 drill execution operator action |
+| 🟢 **Evidence-backed** | **6/12** ⬆️ | T1.6.1 (rate limit 100×202+5×429+RATE_LIMITED audit+Prometheus counter), T1.2.1 (KVKK Art.11 DELETE 200 evidence_ref), T1.2.2 (KVKK Art.13 GET 200 paginated), **T1.1 (preference REST PUT/GET 200 + bypassForCritical)**, **T1.5 (data classification + severity=critical bypass; notify_abuse_bypassed_total counter increment)**, T1.6 critical bypass live evidence (severity=critical 202 + bypass counter 1.0) |
+| 🟢 **Acceptance complete** | **6/12** ⬆️ | T1.6.1 + T1.6 critical bypass + T1.2.1 + T1.2.2 + T1.1 + T1.5 — D29-NOTIFY triple gate LIVE (Up + Functional + Authorized — Allow Mailpit + Deny 101 BLOCKED_BY_AUTHZ) |
+| 🟡 **Blocked** | 1/12 | R2 KVKK legal review (admin erasure ETA 2026-05-25); T1.4 drill execution operator-bound separate; **R13 + R19 mitigated FULL acceptance**; **RAID I6 RESOLVED** (test persona pipeline LIVE Session 41) |
 
-**M3 closure target**: 2026-06-08 → audit sonrası muhtemelen **1.5-2 hafta** (2026-05-19 - 2026-05-23 band) eğer credential + legal gate açılırsa + T1.4 tamamlanırsa.
+**M3 closure target**: 2026-06-08 → Session 41 sonu **3-7 gün** (2026-05-12 - 2026-05-16 band) — T1.4 drill execution + R2 KVKK legal review + remaining acceptance follow-up sonrası Charter 23.2 🟡 → 🟢. Acceptance evidence 6/12 LIVE Session 41 sonu (önceki 0/12).
+
+**Session 41 acceptance summary** (2026-05-09 23:34-23:45Z):
+- T1.6 abuse guards: 100×202 + 5×429 burst + RATE_LIMITED audit + Prometheus counter
+- T1.6 critical bypass: severity=critical 202 + `notify_abuse_bypassed_total{reason="critical_severity"} 1.0`
+- T1.2 KVKK Art.13 GET /audit/me: 200 paginated
+- T1.2 KVKK Art.11 DELETE /audit/me: 200 `evidence_ref="self-service-kvkk-art-11"`
+- T1.1 preference PUT/GET /preferences/me: 200 + bypassForCritical=true
+- T1.5 data classification claim flow: dataClassification "transactional"/"system" RATE_LIMITED audit + critical bypass acceptance
+- D29-NOTIFY triple gate: Up (pod 1/1) + Functional (3 endpoint family 200/202/429) + Authorized (Allow Mailpit + Deny 101 BLOCKED_BY_AUTHZ)
 
 ---
 
