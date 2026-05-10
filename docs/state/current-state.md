@@ -38,17 +38,17 @@
 
 ### Charter 23.2 Sub-Faz Final State Session 43
 
-**5/6 sub-faz fully 🟢 source-ready + 1 sub-faz 🟡 partial** (5-state matrix Source-ready 12/12 + Live-deployed 12/12 + Evidence-backed 12/12 + Acceptance complete 11/12 + Blocked 0/12):
+**6/6 sub-faz fully 🟢 (post-merge PR #149 + #503; PR-time: 5/6 fully 🟢 + 23.2.E acceptance candidate)** — 5-state matrix at PR-time: Source 12/12 + Live 12/12 + Evidence 12/12 + Acceptance 11/12 + Blocked 0/12 → post-merge 12/12:
 - 🟢 **23.2.A**: T1.1 trilogy 3/3 MERGED (T1.1.6 + T1.1.7 + T1.1.8 PR-A/B/C) + P0.1-P0.5 follow-up Session 44 (gitops PR #498 charter doc + test ESO 15. key + test Vault seed; backend PR #147 prod-host guard URI parser allowlist + e2e integration test) + **P1.2 M3 next gate Session 44 split sequence**: PR-A prod env/ESO/profile prep + test digest promotion (PR #501) + PR-B prod backend digest promotion residual (after D29 ledger entry from test smoke)
 - 🟢 **23.2.B**: Subscriber self-service T1.2 FULL ACCEPTANCE Session 41
 - 🟢 **23.2.C**: Provider config rollback R12 🟢 Mitigated (T1.3 PR #140)
 - 🟢 **23.2.D**: Outage fallback bypass T1.4 FULL ACCEPTANCE Session 41 first drill
-- 🟡 **23.2.E**: Data classification substantively LIVE (`DataClassification` enum + `IntentSubmissionService` + `DeliveryEligibilityService`); ~2h acceptance test residual (single-source-of-truth: this is the 11/12 acceptance gap reflected in matrix)
+- 🟢 **23.2.E**: Data classification acceptance candidate Session 44 PR #149 — `DataClassificationAcceptanceTest` 9-test matrix-coverage (transactional/security/commercial/system enum 4-way + severity x classification + DB round-trip + PiiRedactor whitelist boundary + warning severity edge + audit serialization explicit assert); FULL ACCEPTANCE state post-merge PR #149 + #503; evidence: `docs/faz-23-evidence/2026-05-10-23-2-e-data-classification-acceptance.md`
 - 🟢 **23.2.F**: Abuse prevention guards T1.6 FULL ACCEPTANCE Session 41
 
-**Residual** (R2 external + 23.2.E acceptance test):
-- 23.2.E: ~2h Data classification acceptance test (single residual within Source-ready scope)
-- R2 KVKK admin erasure legal review external ETA 2026-05-25
+**Residual** (R2 external only post-merge):
+- R2 KVKK admin erasure legal review external ETA 2026-05-25 (after PR #149 + #503 merge: only acceptance gap; all internal gates green)
+- PR-time: 23.2.E acceptance gate candidate via PR #149 awaits Codex review + CI Linux Docker Testcontainers PG run
 
 **P1.2 M3 next gate Session 44 split sequence** (PR #501 PR-A + follow-up PR-B):
 
