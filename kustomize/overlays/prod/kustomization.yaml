@@ -205,24 +205,33 @@ patches:
   # auth-service:8088, gateway routes 0-5). Prod-specific override YOK,
   # overlay sadece namespace (platform-prod) + Ingress host + Endpoints pin.
 
-  # Faz 23.2.A T1.1.8 P0.4 Codex iter-2 (019e1307) REVISE absorb 2026-05-10:
-  # ProductionConfigValidator (notify.unsubscribe.base-url + signing-secret +
-  # SMTP TLS + redaction pepper + webhook secret + authz key + preferences)
-  # only runs when active profiles contain "prod" or "production". Base
-  # manifest sets SPRING_PROFILES_ACTIVE=k8s for ESO/K8s wiring; without
-  # explicit prod override the validator's startup fail-closed gate stays
-  # silent on the prod cluster path. This patch flips the prod profile to
-  # `k8s,prod` so the validator activates fail-closed before pod ready and
-  # blocks dev-default secret/host leaks on prod.
-  - target:
-      kind: Deployment
-      name: notification-orchestrator
-    patch: |-
-      - op: replace
-        path: /spec/template/spec/containers/0/env/0
-        value:
-          name: SPRING_PROFILES_ACTIVE
-          value: "k8s,prod"
+  # Faz 23.2.A T1.1.8 P0.4 Codex iter-3 (019e1307) RED absorb 2026-05-10:
+  # SPRING_PROFILES_ACTIVE=k8s,prod patch DEFERRED to P1.2 M3 next gate PR.
+  #
+  # Why deferred (Codex iter-3 P0 finding): activating "prod" profile in
+  # ProductionConfigValidator before prod desired-state is complete causes
+  # pod startup fail-closed:
+  #   1. Prod ESO ExternalSecret still has 5 keys (test has 15); missing
+  #      NOTIFY_UNSUBSCRIBE_SIGNING_SECRET → validateSecret() FAIL
+  #   2. Prod ConfigMap lacks NOTIFY_UNSUBSCRIBE_BASE_URL → default
+  #      `https://testai.acik.com/...` leaks to prod → validateUnsubscribeBaseUrl()
+  #      FAIL on test/dev/staging subdomain blocklist
+  #   3. SMTP TLS enforce env binding (NOTIFY_SMTP_TLS_ENFORCE=true,
+  #      SPRING_MAIL_SMTP_STARTTLS_ENABLE=true, mail.smtp.starttls.required=true)
+  #      not set in prod ConfigMap → smtp.tls.enforce=false default → FAIL
+  #   4. Prod Vault seed for unsubscribe_signing_secret not yet executed
+  #
+  # Correct sequence: P1.2 M3 next gate PR will (a) extend prod ESO to 15 keys
+  # matching test, (b) add prod Vault seed for new keys, (c) add prod
+  # ConfigMap NOTIFY_UNSUBSCRIBE_BASE_URL=https://ai.acik.com/... + SMTP TLS
+  # enforce env bindings, (d) flip prod profile to k8s,prod, (e) verify prod
+  # pod startup smoke.
+  #
+  # This PR (#498) keeps prod profile = "k8s" (base default) — validator stays
+  # silent on prod path; test cluster validator has source-ready guard via
+  # `test` profile (covered by ProductionConfigValidator.isProductionProfile()
+  # SKIP path). This is correct for source-ready stage; prod activation
+  # gates on M3 next gate desired-state completion.
 
   # Faz 23.9 Step D (Codex thread 019e08df iter-2 REVISE absorb 2026-05-08):
   # notify-orch base secret-stub.yaml workload render'a "dev-only-..." sentinel

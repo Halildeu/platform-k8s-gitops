@@ -46,9 +46,17 @@
 - 🟡 **23.2.E**: Data classification substantively LIVE (`DataClassification` enum + `IntentSubmissionService` + `DeliveryEligibilityService`); ~2h acceptance test residual (single-source-of-truth: this is the 11/12 acceptance gap reflected in matrix)
 - 🟢 **23.2.F**: Abuse prevention guards T1.6 FULL ACCEPTANCE Session 41
 
-**Residual** (R2 external only — P0.1-P0.5 closed Session 44 via gitops PR #498 + backend PR #147):
+**Residual** (P1.2 M3 next gate + R2 external):
+- **P1.2 M3 next gate PR** (prod desired-state completion before validator activation):
+  - Prod ESO ExternalSecret: extend 5→15 keys matching test overlay
+  - Prod Vault seed: `unsubscribe_signing_secret` + DLR token + Teams/Slack/FCM/APNS/VAPID (Pre-Production Full Authority)
+  - Prod ConfigMap: `NOTIFY_UNSUBSCRIBE_BASE_URL=https://ai.acik.com/...` + SMTP TLS enforce env bindings
+  - Prod profile flip: `SPRING_PROFILES_ACTIVE=k8s,prod` (validator activation)
+  - Prod pod startup smoke verify
 - 23.2.E: ~2h Data classification acceptance test (single residual within Source-ready scope)
 - R2 KVKK admin erasure legal review external ETA 2026-05-25
+
+**Codex iter-3 RED absorb (`019e1307`)**: Initial PR #498 SPRING_PROFILES_ACTIVE=k8s,prod patch attempted to activate prod validator early; Codex caught prod desired-state still inconsistent (ESO 5-key, ConfigMap unsubscribe base-url missing, SMTP TLS enforce env not set, Vault prod seed pending). Apply would have fail-closed prod pod startup. Correct sequence: prod profile activation gates on M3 next gate desired-state completion. PR #498 reverted profile patch; activation moved to P1.2.
 
 ### HARD RULE Compliance Session 43
 
