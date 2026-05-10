@@ -421,7 +421,17 @@ images:
     #   - ImpersonationContextFilter (jti_session_lookup binding fail-closed)
     #   - ImpersonationSessionSweeper @Scheduled (60s default TTL sweep)
     # Image build run: 25616255008 (commit a918534).
-    digest: sha256:f2e0fc0fa64aa0dff4885f79da9e6ac5c19e6c9d08c954f7aa8da5eccc692a60
+    #
+    # 2026-05-10 update: sha-5ddc935 — PR-D2 audit dashboard FGA gating + leak closure
+    # (platform-backend PR #139 squash, Codex thread 019e10bf 4-iter consensus).
+    # Adds: IMPERSONATION_AUDIT module key + AuditReadScope enum (GENERIC vs IMPERSONATION) +
+    # ImpersonationActionPredicate (5-event allowlist) + scope-aware export-job download
+    # (filter_snapshot marker fail-closed) + at-source SSE leak suppression +
+    # granule-managed ADMIN seed (RoleChangeEvent → propagateRoleChange after-commit).
+    # Strict filter[action] enum (alias `IMPERSONATION` + 5 specific or 400 — no silent rewrite).
+    # ADR-0014 audit-module-gating documents the boundary.
+    # Image build run: 25624087995 (commit 5ddc935).
+    digest: sha256:a973be6502e6d26cab9e200fb7f343b35e62c26793b94b100bd03b513b64bc49
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
