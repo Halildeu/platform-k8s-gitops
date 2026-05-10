@@ -209,6 +209,17 @@ data:
   SPRING_CLOUD_GATEWAY_ROUTES_20_URI: "http://notification-orchestrator:8089"
   SPRING_CLOUD_GATEWAY_ROUTES_20_PREDICATES_0: "Path=/api/v1/notify/**"
 
+  # User Impersonation v1 (PR-B / R-2 follow-up): auth-service exposes
+  # /api/v1/impersonation/sessions (start), /current/stop (stop),
+  # /sessions/{id}/revoke. Native path preserved (no StripPrefix).
+  # Without this route, edge → gateway → 404 since /auth/** route only
+  # matches /auth/* paths. Codex review thread 019e108a iter-4 (PR #481)
+  # flagged the missing public route.
+  SPRING_CLOUD_GATEWAY_ROUTES_21_ID: "auth-service-impersonation-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_21_URI: "http://auth-service:8088"
+  SPRING_CLOUD_GATEWAY_ROUTES_21_PREDICATES_0: "Path=/api/v1/impersonation/**"
+  # StripPrefix yok — native route preserved
+
   # D7: Eureka yok → K8s svc DNS
   AUTH_SERVICE_URL: "http://auth-service:8088"
   # Dilim 2+:
