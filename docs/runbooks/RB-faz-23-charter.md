@@ -32,7 +32,7 @@ Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorun
 |---|---|---:|
 | 23.0 | Charter | 1 hafta |
 | 23.1 | Kernel/Closed Beta | 3-4 hafta |
-| 23.2 | Production MVP dar | ~52-55h residual / ~60-70h provisional sprint / 2.5-3.5 hafta (M3 stale audit 2026-05-09 iter-3 absorb; backend code source-ready 7/9; gerçek pending T1.2 subscriber self-service erasure + T1.4 D43 + T1.6 abuse guards; credential RAID I6 + R2 legal gate açılınca) |
+| 23.2 | Production MVP dar | **near-🟢** Session 41 sonu 2026-05-10 00:30Z — 5-state matrix: Source-ready 12/12 + Live-deployed 12/12 + **Evidence-backed 9/12** + **Acceptance complete 9/12** + Blocked 0/12; 3/6 sub-faz fully 🟢 (23.2.B subscriber self-service + 23.2.D outage fallback **R9 MITIGATED first drill** + 23.2.F abuse guards FULL acceptance); 23.2.A/C/E partial 🟡 (T1.3 backend integration test + T1.1.6/7/8 follow-up acceptance + R2 KVKK admin erasure legal review ETA 2026-05-25); ~3h agent action + ~2h legal coordination kalan |
 | 23.3 | Production MVP geniş | 3 hafta |
 | 23.4-23.8 | v1 | +4-6 hafta |
 | 23.9 | Prod cutover | 1 hafta |
