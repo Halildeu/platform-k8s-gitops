@@ -310,7 +310,6 @@ sudo docker exec -e VAULT_TOKEN=<root> -e VAULT_ADDR=http://127.0.0.1:8200 \
 After rollback, `POST /api/v1/impersonation/sessions` returns
 502 `TOKEN_EXCHANGE_FAILED` (pre-PR state). No other auth-service
 endpoint is affected.
-```
 
 ---
 
