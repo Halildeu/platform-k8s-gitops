@@ -195,7 +195,7 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 | Madde | Status | Kanıt |
 |---|:---:|---|
-| Preference API canlı | 🟡 source-ready/live, acceptance gate | `PreferenceController` 290 satır LIVE: GET/PUT `/api/v1/notify/preferences/me` + DELETE `/me/{id}` + DELETE `/me`; D29-Authorized acceptance test BLOCKED on RAID I6 Keycloak credential |
+| Preference API canlı | 🟡 source-ready/live, partial acceptance | `PreferenceController` 290 satır LIVE: GET/PUT `/api/v1/notify/preferences/me` + DELETE `/me/{id}` + DELETE `/me`; **T1.1.6 quiet hours enforcement Session 43 platform-backend PR #142 (5+2 unit tests pass: cross-day window + critical bypass + non-UTC tz + critical no-bypass deny + invalid config fail-open)**; T1.1.7 frequency_limit + T1.1.8 unsubscribe_footer pending; D29-Authorized acceptance test BLOCKED on RAID I6 Keycloak credential |
 | Admin erasure path | 🟡 source-ready, R2 legal review | `AdminErasureController` 129 satır LIVE: `POST /api/v1/admin/notify/erasure` (admin scope); R2 legal review ETA 2026-05-25 |
 | **Subscriber self-service erasure** (`DELETE /audit/me`) | 🟢 done | T1.2 FULL ACCEPTANCE Session 41 (PR #134 + acceptance evidence 2026-05-09) — endpoint LIVE + integration test |
 | **Subscriber right-to-info** (`GET /audit/me`) | 🟢 done | T1.2 FULL ACCEPTANCE Session 41 (PR #134 + acceptance evidence 2026-05-09) — endpoint LIVE + integration test |
@@ -220,7 +220,7 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 - `docs/operations/RUNBOOKS/RB-notify-strict-subscriberid-cutover.md` (extended with strict cutover storm response + retention triage)
 
 **Sub-faz 23.2 closure plan** (M3 stale audit 2026-05-09 re-baseline):
-- 🟡 **23.2.A**: Preference API backend ZATEN LIVE (`PreferenceController` + service + send pipeline); residual ~3h acceptance test (RAID I6 credential gate)
+- 🟡 **23.2.A**: Preference API backend ZATEN LIVE; **T1.1.6 quiet hours enforcement Session 43 platform-backend PR #142** (`SubscriberPreferenceService.evaluate()` quiet hours guard + Clock injection + cross-day window + critical bypass; 7 unit tests pass); residual T1.1.7 frequency_limit_per_user + T1.1.8 unsubscribe_footer impl pending
 - 🟢 **23.2.B**: KVKK admin erasure source-ready (`AdminErasureController`), R2 legal review external coordination ETA 2026-05-25; **subscriber self-service `DELETE/GET /audit/me` 🟢 T1.2 FULL ACCEPTANCE Session 41** (PR #134 + acceptance evidence)
 - 🟢 **23.2.C**: Provider config rollback FULL ACCEPTANCE 2026-05-10 (platform-backend PR #140 MERGED — `switchActive()` @Transactional SERIALIZABLE + afterCommit cache + 4 Testcontainers tests CI GREEN; R12 🟢 Mitigated)
 - 🟢 **23.2.D**: Outage fallback bypass (D43) — **T1.4 FULL ACCEPTANCE Session 41 2026-05-10 first controlled drill** (PR #457+#462+#463+#464+#467+#468; R9 🟢 Mitigated)
