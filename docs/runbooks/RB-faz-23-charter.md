@@ -47,7 +47,7 @@ Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorun
 |---|---|---|---:|---|:---:|
 | **23.0** | Charter | docs | 1 hafta | — | 🟢 done (PR #362 + 5 follow-up commits + 2026-05-09 truth alignment) |
 | **23.1** | Kernel/Closed Beta | code | 3-4 hafta | 23.0 + Faz 22.1.1b III review | 🟡 partial (Codex `019e0bff` iter-1 absorb: service runtime LIVE prod, V8 partition + 3 channel adapters + OutboxPoller + RetryWorker + auth guards activated; **D29-NOTIFY-Functional 3-channel evidence still PENDING** per `docs/faz-23-evidence/2026-05-06-23-1-pr5-d29-notify.md`) |
-| **23.2** | Production MVP dar | code | ~52-55h residual / ~60-70h provisional sprint / 2.5-3.5 hafta (M3 stale audit 2026-05-09 iter-3 re-baseline) | 23.1 | 🟡 partial (Session 39 hardening: KVKK retention + Vault/ESO + Grafana 15-panel + 25 PrometheusRule + DLQ SLO 99.5% LIVE; **MVP-dar audit 2026-05-09: backend source-ready 7/9 + live-deployed 7/9 + acceptance-complete 1/9 — preference + admin erasure + provider rollback + classification source-ready/live, D29-Authorized BLOCKED on RAID I6 + R2 KVKK legal; gerçek pending T1.2 subscriber self-service `DELETE/GET /audit/me` + T1.4 D43 outage fallback + T1.6 abuse guards**) |
+| **23.2** | Production MVP dar | code | residual T1.1.6/7/8 follow-up impl + R2 legal review | 23.1 | 🟡 partial near-🟢 (Session 42 sonu 2026-05-10: KVKK retention + Vault/ESO + Grafana 15-panel + 25 PrometheusRule + DLQ SLO 99.5% LIVE; 5-state matrix Source-ready 12/12 + Live-deployed 12/12 + **Evidence-backed 10/12 + Acceptance complete 10/12** + Blocked 0/12; **4/6 sub-faz fully 🟢: 23.2.B subscriber self-service + 23.2.C provider config rollback (R12 Mitigated PR #140) + 23.2.D outage fallback (R9 Mitigated) + 23.2.F abuse guards**; 23.2.A preference T1.1.6/7/8 follow-up + 23.2.E retention partial 🟡; R2 KVKK legal review external ETA 2026-05-25) |
 | 23.3 | Production MVP geniş | code | 3 hafta | 23.2 | 🟡 partial (Session 42: **23.3.1 NetGSM Vault path canonical LIVE 2026-05-10** PR #482 + #485 DLR follow-up — kv/platform/notification-orchestrator + 4 NetGSM keys (username/password/msgheader/dlr_token all empty fail-closed) + ESO 9/9 Ready + 4/4 pod env vars injected; **NetGSM contract activation R1 pending ETA 2026-05-30**; in-app inbox API + IYS gate + multi-provider failover pending) |
 | **23.4** | v1 — DLR + in-app UI | code | 2 hafta | 23.3 | 🟡 partial (PR-5.x cycle in-app inbox + SSE LIVE + strict identity guards LIVE; **SMS DLR + archive UI + 30-day history pending**) |
 | 23.5 | v1 — preference UI | code | 1 hafta | 23.4 | ⏳ pending (FE preference settings page) |
@@ -170,9 +170,9 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 **Tier**: Production MVP dar (~52-55h residual / ~60-70h provisional sprint / 2.5-3.5 hafta — M3 stale audit 2026-05-09 iter-3 re-baseline per `docs/notify/m3-stale-audit-2026-05-09.md`; backend code source-ready 7/9, gerçek pending T1.2 subscriber self-service erasure + T1.4 D43 + T1.6 abuse guards) — **🟡 partial (Codex `019e0c28` strategic finding)**
 
 **Acceptance breakdown** (Codex iter-1 absorb):
-- **Original MVP-dar 8 kabul kriteri: 2/8 done** (Grafana dashboard, Alertmanager DLQ rule)
+- **Original MVP-dar 8 kabul kriteri: 6/8 done** (Grafana dashboard, Alertmanager DLQ rule, **provider config rollback** Session 42 PR #140, outage fallback bypass Session 41, data classification, abuse prevention guards Session 41)
 - **Session 39 hardening (charter ek)** 3/3 done: KVKK Art.7 audit retention, Vault/ESO managed Secret, DLQ SLO 99.5% multi-window
-- **Pending**: preference API, erasure path, provider config rollback, outage fallback bypass, data classification, abuse prevention guards (6 kriter)
+- **Pending**: preference API (T1.1.6/7/8 follow-up), erasure path (R2 KVKK legal review external) — 2 kriter
 
 **Kapsam**:
 - Preference API (`PUT /preferences/me`, `GET /preferences/me`)
