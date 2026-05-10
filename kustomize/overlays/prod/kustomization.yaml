@@ -103,19 +103,25 @@ images:
     digest: sha256:6d926376a58bfd47c3d5059e0e0025f8cb38d5c7fbf80767461b2eea136647f4
 
   # Faz 23.9 prod cutover (2026-05-08): notification-orchestrator
-  # canonical activation. Image promoted from testai's bugün-LIVE digest
-  # sha-204042d (platform-backend PR #126 squash, image build run
-  # 25559965587, image push ~14:05Z). The same binary carries:
-  #   - PR-5.4 strict default-org-id semantics (NotifyOrgAccessGuard
-  #     fail-closes when env value is blank)
-  #   - PR-5.5 strict subscriber identity cutover (config-driven flag
-  #     SubscriberIdentityGuard fail-closes the silent-pass branches)
-  #   - tracing autoconfig disabled via management.tracing.enabled=false
-  #     (Tempo deploy DEFER until Faz 23.8 minimal observability cycle)
-  # Prod ConfigMap patch below sets these env values explicitly.
+  # canonical activation. Initial pin sha-204042d (PR #126); P1.2 M3 next
+  # gate Session 44 promotes to sha-c4a03fc (PR #147 MERGED 2026-05-10
+  # 18:19Z) which carries the ProductionConfigValidator URI parser allowlist
+  # (P0.4 Codex iter-2 absorb) consumed by SPRING_PROFILES_ACTIVE=k8s,prod
+  # patch + 9-guard fail-closed activation:
+  #   - PR-5.4 strict default-org-id semantics (NotifyOrgAccessGuard)
+  #   - PR-5.5 strict subscriber identity cutover (SubscriberIdentityGuard)
+  #   - T1.1.6 quiet hours enforcement (PR #142)
+  #   - T1.1.7 frequency limit per user (PR #143)
+  #   - T1.1.8 unsubscribe trilogy: token (PR #144) + url builder (PR #145)
+  #     + revoke service (PR #146)
+  #   - P0.4 ProductionConfigValidator unsubscribe base-url URI parser
+  #     allowlist + signing-secret guard (PR #147)
+  # Prod ConfigMap patch below sets strict env values + NOTIFY_UNSUBSCRIBE_BASE_URL
+  # + SMTP TLS enforce env. tracing autoconfig disabled via
+  # management.tracing.enabled=false (Tempo deploy DEFER until Faz 23.8).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:ef0f487f295359563a7c3d601db369cc6b2faf098f27740615bd1d02408daf09
+    digest: sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3
 
 # Faz 23.2 PR-D.3 — notification-orchestrator prod IMAGE PIN DEFERRED.
 # D29 evidence gate (Codex P0 Sprint A Item 3) requires:
@@ -443,7 +449,7 @@ patches:
         path: /data/NOTIFY_AUDIT_RETENTION_DRY_RUN
         value: "false"
       # P1.2 M3 next gate (Faz 23.2.A T1.1.8 P0.4 prod activation,
-      # Codex 019e1307 iter-3 RED absorb 2026-05-10):
+      # Codex 019e1307 iter-1+iter-3 RED absorb 2026-05-10):
       # Unsubscribe email-link base URL prod-host. ProductionConfigValidator
       # validateUnsubscribeBaseUrl() URI parser allowlist:
       # - HTTPS scheme required
@@ -469,6 +475,18 @@ patches:
       - op: add
         path: /data/SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_CHECKSERVERIDENTITY
         value: "true"
+      # Codex 019e1307 P1 absorb (PR #501 iter-1):
+      # Base configmap NOTIFY_ADAPTERS_SMTP_HOST="OVERLAY_MUST_OVERRIDE" +
+      # FROM="noreply@testai.acik.com" prod cutover öncesi gerçek SMTP gateway
+      # yok. Pre-prod context: son kullanıcı yok, email dispatch gerek yok;
+      # unsubscribe link generation runtime'da çalışır (UnsubscribeUrlBuilder)
+      # ama email dispatch path inactive. R1 contract activation
+      # (NetGSM ETA 2026-05-30) sonrası prod SMTP gateway config + dispatch
+      # flip true. Şimdilik dispatch disabled — pod ready/health endpoint OK,
+      # validator startup PASS, runtime dispatch path silent.
+      - op: replace
+        path: /data/NOTIFY_DISPATCH_ENABLED
+        value: "false"
 
   # Faz 23.9 prod cutover — notification-orchestrator pod-template
   # annotation rollout trigger + replicas override. ConfigMap envFrom

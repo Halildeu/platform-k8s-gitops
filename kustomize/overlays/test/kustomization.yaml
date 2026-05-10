@@ -1539,9 +1539,16 @@ images:
   # severity=critical only; data_classification=security bypass kaldırıldı
   # (DTO client-controlled, authority signal yok). Webhook fan-out cap
   # HARD safety limit — severity=critical bile bypass etmez.
+  #
+  # 2026-05-10 update (Faz 23.2.A T1.1 trilogy + P0.4 P1.2):
+  # Bump to sha-c4a03fc (PR #147 squash MERGED 2026-05-10 18:19Z; image
+  # build run 25636201775 SUCCESS, GHCR push @
+  # sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3).
+  # Carries T1.1.6 quiet hours + T1.1.7 frequency limit + T1.1.8 unsubscribe
+  # trilogy + ProductionConfigValidator URI parser allowlist (P0.4 P0.5).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:eef18027f0d54b930e1c54c44215fe2c50e6aa752fe2dcbf93ea0eae2908d0b4
+    digest: sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
