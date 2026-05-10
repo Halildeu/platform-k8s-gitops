@@ -112,10 +112,10 @@ testai.acik.com console temiz (3 DEBUG mesajı, hiç error/401/403/500).
 
 | Item | Owner | ETA | Trigger |
 |---|---|---|---|
-| **Charter 23.2.A 🟡→🟢 gitops PR** | agent | hemen | T1.1 trilogy 3/3 closure update |
+| **Charter 23.2.A 🟡→🟢 gitops PR** | agent | hemen | T1.1 trilogy 3/3 transition update |
 | **ESO Vault entry: unsubscribe_signing_secret** | agent | hemen | 15. key + base-url config |
 | **M1 milestone gate** | ops + agent | **2026-05-11 19:42Z** | T+72h timer |
-| **M3 closure final PR** | mixed | post-T1.1.8 deploy + R2 init | Charter 23.2 🟢 |
+| **M3 next gate PR (Charter 23.2 transition)** | mixed | post-T1.1.8 deploy + R2 init | Charter 23.2 🟢 |
 | **R2 KVKK legal review** | legal | 2026-05-25 | external |
 | **R1 NetGSM contract activation** | ops + legal | 2026-05-30 | external |
 | **DLR token activation** | dev | post-R1 contract | Vault put real token |
@@ -227,7 +227,7 @@ gh api repos/Halildeu/platform-backend/pulls?state=open --jq '.[] | {number, tit
 - Drift fixes (PG + Quota) live/repo truth uyumlu
 
 **Sıradaki gerçek scope**:
-- Gitops Charter 23.2.A 🟢 closure PR (~30dk; agent-actionable)
+- Gitops Charter 23.2.A 🟢 transition PR (~30dk; agent-actionable)
 - ESO unsubscribe key + base-url config (~1h)
 - M1 timer-bound 24+ saat (2026-05-11 19:42Z)
 - Cross-repo M6a archive + T4.1 Teams + T4.2 Push (haftalar)
@@ -246,4 +246,4 @@ gh api repos/Halildeu/platform-backend/pulls?state=open --jq '.[] | {number, tit
 - Charter: `docs/runbooks/RB-faz-23-charter.md`
 - Risk register: `docs/notify/risk-register.md`
 
-**Session 42+43 toplam**: 17 PR MERGED + 2 PR CLOSED + 45+ Codex iter chain + 16+ saat Continuous Autonomous Mode + Charter 23.2 5/6 fully 🟢 + 23.3 promoted + 4 backend agent-actionable acceptance gate (T1.3 + T1.1.6 + T1.1.7 + T1.1.8 trilogy).
+**Session 42+43 toplam**: 17 PR MERGED + 2 PR CLOSED + 45+ Codex iter chain + 16+ saat Continuous Autonomous Mode + Charter 23.2 backend merge complete (canonical 23.2.A transition gitops PR pending P0.1) + 23.3 promoted + 4 backend agent-actionable acceptance gate (T1.3 + T1.1.6 + T1.1.7 + T1.1.8 trilogy).
