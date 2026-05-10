@@ -28,7 +28,7 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 
 | ID | Risk | Probability | Impact | Severity | Mitigation | Owner | Status | Sub-faz | Last Review |
 |---|---|:---:|:---:|:---:|---|---|:---:|---|---|
-| R1 | NetGSM provider sözleşme + sandbox account gecikmesi | High | High | **High** | Backup: İletimerkezi secondary; pre-prod testing Mailpit pattern; **Vault path infrastructure 🟢 LIVE 2026-05-10 06:55Z (PR #482 canonical kv/platform/notification-orchestrator + 3 sms_netgsm_* keys + ESO 8/8 Ready + pod env injected fail-closed)**; contract activation pending | ops + legal | 🟡 Active | 23.3.1 | 2026-05-10 |
+| R1 | NetGSM provider sözleşme + sandbox account gecikmesi | High | High | **High** | Backup: İletimerkezi secondary; pre-prod testing Mailpit pattern; **Vault path infrastructure 🟢 LIVE 2026-05-10 (PR #482 canonical + PR #485 DLR follow-up) — kv/platform/notification-orchestrator + 4 NetGSM keys (username/password/msgheader/dlr_token all empty fail-closed) + ESO 9/9 Ready + 4/4 pod env vars injected**; contract activation pending | ops + legal | 🟡 Active | 23.3.1 | 2026-05-10 |
 | R2 | KVKK erasure scope yanlış implement → audit fail / legal exposure | Medium | Critical | **High** | Legal review öncesi merge yasak; runbook + integration test pre-prod | legal/dev | 🟡 Active | 23.2.B | 2026-05-09 |
 | R3 | DKIM/SPF/DMARC prod activation breaks email delivery | Medium | High | **Medium** | Mailpit dev test + canary domain + 24h pre-cutover validation | ops/dev | 🟡 Active | 23.2 sub-faz drift | 2026-05-09 |
 | R4 | Audit retention DETACH/DROP destructive bug (data loss) | Low | Critical | **Medium** | Backend test PR #130 + dry-run observation + ownership check | dev | 🟢 Mitigated | 23.2 (retention) | 2026-05-09 |

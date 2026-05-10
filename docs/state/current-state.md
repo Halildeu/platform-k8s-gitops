@@ -14,7 +14,7 @@
 
 **Mandate**: Continuous Autonomous Mode 9+ saat zincir. Session 41 final handoff (PR #480) sonrası kullanıcı talimatı: "tam otonom devam edelim". Session 42'de gitops-local saturation noktasına kadar devam.
 
-### 7 PR MERGED Session 42
+### 7 PR MERGED Session 42 (M4/handoff chain)
 
 | PR | Title | Squash | Codex |
 |---|---|---|---|
@@ -27,6 +27,8 @@
 | #490 | docs(handoff): Session 42 supplement (DLR + Quota + saturation) | `724b2fa` | iter-1/2/3/4/5/6 chain → AGREE |
 
 **Plus 2 PR closed (superseded)**: #384 (split-path NetGSM) + #486 (quota fix base drift).
+
+**Plus paralel session timeline**: PR #488 (permission-service sha-5ddc935 PR-D2 audit FGA) + PR #489 (frontend testai sha-132c896 PR-C2 FSM integration) — separate session iş, M4/handoff chain dışı ama Session 42 timeline'ında merged.
 
 ### M4 23.3.1 NetGSM Vault Path Infrastructure LIVE
 
