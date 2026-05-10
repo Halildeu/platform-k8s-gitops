@@ -1418,7 +1418,41 @@ images:
     #
     # Build evidence: platform-web run 25638649777 — testai variant
     # push manifest sha256:b0c3f70d4d5ce91dcfa74b388df5751e5b013d29a2f63c4211c245b65769e8e7.
-    digest: sha256:b0c3f70d4d5ce91dcfa74b388df5751e5b013d29a2f63c4211c245b65769e8e7
+    #
+    # 2026-05-11 update: sha-61e2f95 — platform-web PR #387
+    # (f350ca89, fix/auth-bootstrap-url-code-exchange-race). AuthBootstrapper
+    # semantic cleanup + diagnostic logging for "açılmıyor" investigation.
+    #
+    # User-reported live failure: click "Güvenli Kurumsal Giriş" → KC
+    # redirects with auth code → SPA at / sees /#code=... → kc.init()
+    # finishes ("bootstrap completed") but NO /token request fires →
+    # kc.authenticated stays false → router bounces to /login → user
+    # stuck. Cross-AI Codex review (thread 019e13ef) verified iter-1
+    # hypothesis ("onLoad='check-sso' blocks URL callback") was wrong
+    # via direct keycloak-js@26.2.4 source inspection — library's
+    # #processInit() parses URL callback BEFORE onLoad switch
+    # (keycloak.js:803-832).
+    #
+    # PR #387 ships two changes:
+    #   1. Semantic cleanup: omit onLoad when URL has auth code (Codex
+    #      AGREE — kc-js processes callback unconditionally).
+    #   2. Diagnostic logging at kc.init() start when URL has auth code:
+    #      logs urlStatePrefix, callbackExists, totalCallbacks. Safe
+    #      payload (no code/token/PKCE verifier). Will surface the real
+    #      root cause in production logs once deployed — storage-miss
+    #      vs validation-fail vs Router-race.
+    #
+    # NOT YET FIXED: the actual "no /token request" bug. PR #387 is a
+    # diagnostic enabler, not a fix. Follow-up PR will target whichever
+    # hypothesis the diagnostic log confirms.
+    #
+    # Cross-AI peer review: Codex thread 019e13ef iter-1 REVISE → iter-2
+    # REVISE (wrong root-cause in comments) → iter-3 AGREE
+    # ready_to_merge:true after reframe.
+    #
+    # Build evidence: platform-web run 25640... (post-merge auto-trigger)
+    # — testai variant push manifest sha256:0de87754d7fc2ed386a90b3193b5d06102f407ea22ec558e81e6fb8ee5944b46.
+    digest: sha256:0de87754d7fc2ed386a90b3193b5d06102f407ea22ec558e81e6fb8ee5944b46
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
