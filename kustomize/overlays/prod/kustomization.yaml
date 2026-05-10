@@ -221,6 +221,15 @@ patches:
   #   ✅ ProductionConfigValidator URI parser allowlist (PR #147 backend MERGED)
   # Validator startup fail-closed gate now safe to activate; pod ready means
   # all 9 production guards PASS.
+  #
+  # Rollout reality (Codex iter-2 P2 absorb): single PR / single commit, but
+  # **ordered two-app rollout** required because workload (`platform-prod`)
+  # and ESO (`platform-eso-prod`) are SEPARATE ArgoCD apps. Operator must
+  # follow RB-faz-23-2-A-P1-2-prod-activation.md 8-step sequence:
+  #   1. sync platform-eso-prod first
+  #   2. ESO refresh + Secret 15-key gate verify
+  #   3. then sync platform-prod (workload)
+  # Otherwise workload sync first → 5-key Secret + new binary → CrashLoop.
   - target:
       kind: Deployment
       name: notification-orchestrator

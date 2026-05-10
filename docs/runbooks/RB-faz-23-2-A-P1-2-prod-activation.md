@@ -27,9 +27,13 @@ pod CrashLoop.
 kubectl --context k3d-prod -n argocd patch app platform-eso-prod \
   --type merge -p '{"operation":{"sync":{}}}'
 
-# Wait for ArgoCD sync
-kubectl --context k3d-prod -n argocd wait \
-  --for=condition=Synced=true app/platform-eso-prod --timeout=120s
+# Wait for ArgoCD sync (Codex iter-2 fix: ArgoCD Application sync.status is
+# a JSON status field, not a Kubernetes condition. `kubectl wait
+# --for=condition=Synced=true` produces a false-negative timeout.)
+until [[ "$(kubectl --context k3d-prod -n argocd get app platform-eso-prod \
+  -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null)" == "Synced/Healthy" ]]; do
+  echo "... waiting platform-eso-prod sync"; sleep 5
+done
 
 # Step 2 — force ESO refresh (Secret render new 10 keys)
 kubectl --context k3d-prod -n platform-prod \
@@ -55,8 +59,11 @@ print(f'Keys ({len(d)}):', sorted(d.keys()))
 kubectl --context k3d-prod -n argocd patch app platform-prod \
   --type merge -p '{"operation":{"sync":{}}}'
 
-kubectl --context k3d-prod -n argocd wait \
-  --for=condition=Synced=true app/platform-prod --timeout=180s
+# Wait for ArgoCD sync (jsonpath status field, not condition)
+until [[ "$(kubectl --context k3d-prod -n argocd get app platform-prod \
+  -o jsonpath='{.status.sync.status}/{.status.health.status}' 2>/dev/null)" == "Synced/Healthy" ]]; do
+  echo "... waiting platform-prod sync"; sleep 5
+done
 
 # Step 5 — wait for rolling restart
 kubectl --context k3d-prod -n platform-prod rollout status \
@@ -79,9 +86,10 @@ kubectl --context k3d-prod -n platform-prod logs $POD | \
   grep -E "ProductionConfigValidator|all production guards"
 # Expected: "ProductionConfigValidator: all production guards PASSED"
 
-# Step 7 — health endpoint smoke
+# Step 7 — health endpoint smoke (Codex iter-2 fix: management port 8081,
+# not service port 8089/8080. Actuator /health binds to management port.)
 kubectl --context k3d-prod -n platform-prod \
-  port-forward svc/notification-orchestrator 9999:8080 &
+  port-forward svc/notification-orchestrator 9999:8081 &
 PF_PID=$!
 sleep 3
 curl -sf http://localhost:9999/actuator/health | jq -c
