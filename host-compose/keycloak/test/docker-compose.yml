@@ -40,9 +40,36 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD_FILE: /run/secrets/kc_admin_password
       KC_HTTP_ENABLED: "true"
+      # KC_HOSTNAME_STRICT: keep false during the transition — internal
+      # backends (auth-service, api-gateway, JWKS cache) still talk to
+      # KC via the internal http://keycloak:8080 path which has a
+      # different host. Hardening to strict belongs in a separate PR
+      # with its own internal-path smoke (Codex peer-review 019e142d).
       KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "false"
-      KC_PROXY: edge
+      # KC_HOSTNAME_STRICT_HTTPS removed (was "false"):
+      # Hostname v1 family option, deprecated in Keycloak 26 and the
+      # source of the remaining startup warning even after this hotfix:
+      #   WARNING: Hostname v1 options [hostname-strict-https] are
+      #   still in use, please review your configuration.
+      # With KC_HOSTNAME explicitly set to a full https:// URL the
+      # strict-https knob is redundant — KC v2 hostname provider
+      # already derives the scheme from KC_HOSTNAME.
+      # 2026-05-11 hotfix (login flow root cause):
+      # KC_PROXY=edge is DEPRECATED in Keycloak 26 (silently ignored).
+      # Without proxy-header trust KC sees inbound requests as HTTP and
+      # refuses cross-origin operations from the SPA — exact symptom KC
+      # logs at startup:
+      #   "With HTTPS not enabled, proxy-headers unset, and
+      #    hostname-strict=false, the server is running in an insecure
+      #    context. ... requests from the proxy to the server will fail
+      #    CORS checks with 403s because the wrong origin will be
+      #    determined. Make sure proxy-headers are configured properly."
+      # That is the user-facing "açılmıyor" — SPA POST /token fails
+      # CORS preflight; kc.init() resolves with no token; user lands
+      # back at /login with no observable error.
+      # Fix: enable xforwarded mode (host edge nginx sets X-Forwarded-*).
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME: https://testai.acik.com
       KC_METRICS_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       # User Impersonation v1 (PR-A spike-2): authorization feature gerekli
