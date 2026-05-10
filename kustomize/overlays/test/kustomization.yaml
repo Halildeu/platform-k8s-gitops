@@ -254,7 +254,26 @@ images:
     #   - companies=42, projects=29142, branches=144, departments=200
     #   - /master-data/diagnostic/departments → HTTP 200 (was 401 in iter-30d/30e/31)
     #   - HEAD priority confirmed: "2022_P01_Çanakkale Hilton Otel" (not address)
-    digest: sha256:2a7076c903fa4b551479d23f083aac6c6aefc48f8b4d80b7a1b9ad1f8a6b3afc
+    #
+    # 2026-05-10 update: sha-a057bef — platform-backend PR #135
+    # (PR-BE-15) merged 2026-05-09; master-data parent FK fields
+    # added to MasterDataItemDto (parentCompanyId, parentBranchId,
+    # parentProjectId) for the frontend hierarchical scope picker
+    # (PR-FE-12, mfe-users #349 already LIVE).
+    #
+    # Pre-fix the cluster was pinned to the previous digest
+    # `sha256:2a7076c903fa...` which is no longer present in GHCR
+    # — schema-service pod went into ImagePullBackOff (4859 retries
+    # over 18h) with the new digest never propagating into the
+    # GitOps overlay. PR-FE-12 frontend was reading parent FKs but
+    # backend was returning the legacy DTO shape (parents as
+    # null) because the schema-service pod was down; the frontend
+    # gracefully fell back to the orphan-bucket rendering, but
+    # the hierarchical view's tree grouping never lit up.
+    #
+    # Build run: 25608239209 (PR-BE-15 squash, success).
+    # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:890eeea33fb0e1b4505a723eddd58c5b9e3479a207a07a6e98cbcaf4dc40a324
+    digest: sha256:890eeea33fb0e1b4505a723eddd58c5b9e3479a207a07a6e98cbcaf4dc40a324
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
