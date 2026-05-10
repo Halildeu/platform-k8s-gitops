@@ -20,7 +20,7 @@
 - Kernel (23.1) features substantively LIVE: schema, idempotency, outbox, retry/DLQ, authz strict, templates (~18-20 of 25)
 - MVP-dar (23.2) Session 39 hardening LIVE: Vault/ESO + audit retention + Grafana + alerts + SLO (5 of 8 acceptance)
 - MVP-dar (23.2) original kabul kriteri: 2/8 done (Grafana + Alertmanager); 6 pending (preference, erasure, provider rollback, outage fallback, classification, abuse)
-- MVP-geniş (23.3): 0 LIVE end-to-end (NetGSM contract pending R1); **infrastructure progress Session 42: 23.3.1 NetGSM Vault path canonical LIVE 2026-05-10 PR #482 — kv/platform/notification-orchestrator + 3 sms_netgsm_* keys + ESO 8/8 Ready + pod env injected fail-closed**
+- MVP-geniş (23.3): 0 LIVE end-to-end (NetGSM contract pending R1); **infrastructure progress Session 42: 23.3.1 NetGSM Vault path canonical LIVE 2026-05-10 (PR #482 + #485 DLR follow-up) — kv/platform/notification-orchestrator + 4 NetGSM keys (username/password/msgheader/dlr_token all empty fail-closed) + ESO 9/9 Ready + 4/4 pod env vars injected**
 - v1 (23.4-23.8): ~5-6 LIVE (in-app UI + identity guards + dashboard SLO panels)
 - v2 (23.X): 0 LIVE (deferred)
 
