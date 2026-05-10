@@ -1354,7 +1354,43 @@ images:
     #
     # Build evidence: platform-web run 25637506324 — testai variant
     # push manifest sha256:f2ef124b201acdbe65aa716fe053cda622e3e470fc5d83860805c6037a3dcc85.
-    digest: sha256:f2ef124b201acdbe65aa716fe053cda622e3e470fc5d83860805c6037a3dcc85
+    #
+    # 2026-05-10 update: sha-d0f9bc5 — platform-web PR #383
+    # (76afe864, fix/spa-stale-bundle-deploy-recovery). SPA stale-bundle
+    # deploy recovery — auto-reload on stale chunk 404. Owner reported
+    # "site açılmıyor" after PR #381 deploy; root cause: tab open across
+    # deploy held in-memory references to OLD hashed asset names; any
+    # subsequent dynamic import (route change, lazy chunk, MFE remote,
+    # image preload) tried to fetch the OLD path → 404 → app failed
+    # silently → blank page. nginx side already correct (index.html /
+    # mf-entry-bootstrap-0.js / remoteEntry.js → no-store; assets/* →
+    # immutable max-age=3600); the runtime gap was the missing client
+    # safety net.
+    #
+    # New file app/runtime/stale-bundle-recovery.ts installs three
+    # early listeners in src/index.tsx BEFORE dynamic
+    # import('./app/bootstrap'):
+    #   1. vite:preloadError event (static import preload failures)
+    #   2. unhandledrejection (dynamic import + MF loadRemote()
+    #      rejections + uncaught fetch of 404'd hashed assets)
+    #   3. error capture phase on SCRIPT/LINK elements with
+    #      same-origin /assets/ or /remotes/ paths
+    # Recovery: window.location.reload() re-fetches index.html
+    # (no-store) → fresh asset hashes. Two-layer loop guard: in-page
+    # reloadScheduled flag (deduplicates same-cause signals) + cross-
+    # page sessionStorage history (max 2 reloads / 60s window) so a
+    # real persistent outage doesn't infinite-thrash.
+    #
+    # Cross-AI peer review: Codex thread 019e1372 iter-1 REVISE → 4 P1
+    # absorbs (install in index.tsx earliest under ESM hoisting,
+    # reloadScheduled in-page guard, isOwnAssetUrl() same-origin parse,
+    # SCRIPT/LINK tag allowlist) → iter-2 PARTIAL ready_to_merge:true
+    # source-review (production smoke = P1 #6 follow-up Playwright
+    # harness). 12/12 vitest pass.
+    #
+    # Build evidence: platform-web run 25638649777 — testai variant
+    # push manifest sha256:b0c3f70d4d5ce91dcfa74b388df5751e5b013d29a2f63c4211c245b65769e8e7.
+    digest: sha256:b0c3f70d4d5ce91dcfa74b388df5751e5b013d29a2f63c4211c245b65769e8e7
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
