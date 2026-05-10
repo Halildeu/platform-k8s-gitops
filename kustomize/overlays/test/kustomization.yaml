@@ -2243,17 +2243,18 @@ patches:
     patch: |-
       # Test quota — 12 Deployment + OpenFGA STS replicas=1 default
       # (HARD RULE — Scale-to-Zero YASAK). Ortalama declared usage ~7350m
-      # limit (91% of 8000m); surge için 10000m yapildi (1000m headroom +
-      # largest pod 1000m surge için).
+      # Session 42 evidence: PR #485 DLR rollout FailedCreate at 7675m+400m=8075m
+      # over 8000m hard cap. Manifest 10 CPU previously not synced to cluster.
+      # 12 CPU + 6 requests = matched live cluster patch 2026-05-10 07:48Z.
       - op: replace
         path: /spec/hard/requests.cpu
-        value: "5"
+        value: "6"
       - op: replace
         path: /spec/hard/requests.memory
-        value: 10Gi
+        value: 12Gi
       - op: replace
         path: /spec/hard/limits.cpu
-        value: "10"
+        value: "12"
       - op: replace
         path: /spec/hard/limits.memory
-        value: 20Gi
+        value: 24Gi
