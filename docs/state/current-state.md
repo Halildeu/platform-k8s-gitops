@@ -10,6 +10,39 @@
 
 ---
 
+## Live Delta — Session 45 Report Signed Amounts (2026-05-11 ~13:45 UTC+3) — fin-muhasebe-detay Borç pozitif / Alacak negatif tutarlar
+
+**Trigger**: Kullanıcı `fin-muhasebe-detay` raporunda tüm tutarların `Borç` için artı, `Alacak` için eksi gösterilmesini ve işlemlerde/toplamlarda bu signed değerin dikkate alınmasını istedi.
+
+### Source + artifact
+
+| Katman | Kanıt | Yorum |
+|---|---|---|
+| Backend source | platform-backend PR #157, squash `abf2fd1` | `fin-muhasebe-detay.json` sourceQuery tutar alanlarını BA'ya göre signed döndürüyor |
+| Signed fields | PR #157 | `AMOUNT`, `AMOUNT_2`, `OTHER_AMOUNT`: `BA=1` -> `ABS(...)`; `BA=0` -> `-ABS(...)`; diğer/null BA için ham değer |
+| İşlem/toplam semantiği | PR #157 | Dönüşüm sourceQuery seviyesinde olduğu için satır görünümü, filtre/sıralama, export ve server-side group sum aynı signed projection'ı kullanır |
+| Test | `./mvnw -pl report-service -Dtest=ReportDefinitionContractTest test` | 39 test PASS; yeni contract test signed CASE ifadelerini ve `AMOUNT` sum aggregation kontratını sabitliyor |
+| Image | backend build run `25665121330` | `ghcr.io/halildeu/platform-backend-report-service@sha256:04e6d7de2a8df494141254a46ff8dfaa61ccc12f661903443c351ea3dde06e09` üretildi |
+
+### Testai live truth
+
+| Katman | Kanıt | Yorum |
+|---|---|---|
+| Deploy workflow | GitOps run `25665190828` | `Deploy backend testai (auto)` success; Gate 2 JWT smoke secret yokluğu nedeniyle skipped, diğer gates PASS |
+| Deployment | `report-service 1/1` in `k3d-test/platform-test` | Spec image yeni immutable digest'e pinli |
+| Pod artifact | pod `report-service-5c6d47d86f-scmnk`, imageID `ghcr.io/halildeu/platform-backend-report-service@sha256:04e6d7de2a8df494141254a46ff8dfaa61ccc12f661903443c351ea3dde06e09` | D30 artifact match sağlandı |
+| Readiness | in-pod `/actuator/health/readiness` -> `{"status":"UP"}` | Up/readiness kanıtı var |
+| Public edge | `https://testai.acik.com/` -> 200; `/api/users/all` no-token -> 401; `/api/v1/reports/fin-muhasebe-detay/metadata` no-token -> 401 | External edge ve auth gate beklenen kodda |
+| Deployed JSON | live pod `/app/app.jar` içindeki `BOOT-INF/classes/reports/fin-muhasebe-detay.json` | `ABS(ACR.AMOUNT)`, `-ABS(ACR.AMOUNT)`, `ABS(ACR.AMOUNT_2)`, `-ABS(ACR.AMOUNT_2)`, `ABS(ACR.OTHER_AMOUNT)`, `-ABS(ACR.OTHER_AMOUNT)` pakette mevcut |
+
+### Desired-state sync
+
+`kustomize/overlays/test/kustomization.yaml` report-service digest'i `sha256:e3c94398e6d560b97bd12b0f61591b7dbd8b5a6e82c92b79ef7c209c592c94c5` -> `sha256:04e6d7de2a8df494141254a46ff8dfaa61ccc12f661903443c351ea3dde06e09` olarak pinlenir. Bu PR live `kubectl set image` state'ini repo desired-state'e geri bağlar.
+
+Authenticated browser grid smoke bu oturumda Codex Chrome Extension yokluğu nedeniyle agent tarafında yakalanmadı; backend source, CI, deployed jar ve live pod digest kanıtı doğrulandı.
+
+---
+
 ## Live Delta — Session 45 Report Amount 2 Fields (2026-05-11 ~13:25 UTC+3) — fin-muhasebe-detay `AMOUNT_2` + `AMOUNT_CURRENCY_2`
 
 **Trigger**: Kullanıcı `ACCOUNT_CARD_ROWS` kaynaklı raporda `AMOUNT_2` ve `AMOUNT_CURRENCY_2` alanlarının eksik olduğunu belirtti; bu iki alanın `fin-muhasebe-detay` raporuna alınmasını istedi.
