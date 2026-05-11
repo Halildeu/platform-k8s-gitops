@@ -43,6 +43,34 @@ Authenticated browser grid smoke bu oturumda Codex Chrome Extension yokluğu ned
 
 ---
 
+## Live Delta — Session 45 Prod User Impersonation Broker (2026-05-11 ~13:45 UTC+3) — Keycloak prepared, Vault write still blocked
+
+**Trigger**: Kullanıcı PR zincirinin sunucuya alındığını ve gerekli adımlarla devam edilmesini istedi. Test User Impersonation E2E smoke daha önce `testai.acik.com` üzerinde geçti; prod tarafında broker secret delivery blocker'ı canlıda kaldı.
+
+### Prod Keycloak live truth
+
+| Katman | Kanıt | Yorum |
+|---|---|---|
+| Source PR | platform-k8s-gitops PR #528 | `host-compose/keycloak/prod/docker-compose.yml` prod `KC_FEATURES` değeri `token-exchange,admin-fine-grained-authz:v1,authorization` olarak hizalandı |
+| Host apply | `platform-kc-prod` recreate | Container `running healthy`; networks `platform-prod-net platform_microservice-network`; `kc.features` exact hedef değer |
+| Broker client | `impersonation-broker` client count = 1 | Confidential/service-account broker client prod realm `serban` içinde oluşturuldu |
+| Broker service account | `realm-management` roles | `impersonation`, `view-users`, `query-users` rolleri broker service-account üzerinde verify edildi |
+| Token-exchange policy | custom permission `impersonation-broker-token-exchange` | Generated management permission attach Keycloak 26'da no-op kaldı; rollback'i net olan ek scope permission üzerinde `impersonation-broker-only` policy bağlı |
+| Impersonator role | `admin@example.com` | Effective `realm-management/impersonation` role read-back geçti; gerçek kullanıcı şifresine dokunulmadı |
+
+### Remaining blocker
+
+| Katman | Kanıt | Yorum |
+|---|---|---|
+| Vault write | `platform-vault-prod` root token file invalid; `backend-deploy-prod` AppRole login fail; ESO AppRole capability `read` only | `impersonation_broker_client_secret` hâlâ Vault `kv/platform/auth-service` path'ine yazılamadı |
+| Generate-root | Vault unsealed, threshold 3/5; mevcut key dosyalarıyla sadece iki geçerli share bulunabildi | Generate-root denemeleri root token üretmedi; active generate-root session iptal edildi; Vault sealed=false |
+| ESO | `auth-service-secrets` `Ready=False / SecretSyncedError` | K8s Secret hâlâ `AUTH_IMPERSONATION_BROKER_CLIENT_SECRET` içermiyor |
+| Functional prod smoke | not attempted | Broker secret auth-service env'e materialize edilmeden prod impersonation E2E smoke anlamlı değil |
+
+**Next gate**: geçerli prod Vault admin token veya üçüncü geçerli unseal key sağlanırsa `kv patch kv/platform/auth-service impersonation_broker_client_secret=<broker secret>` yapılır, ardından `auth-service-secrets` force-sync, auth-service rollout ve prod E2E smoke alınır. Direct Kubernetes Secret patch'i canonical olmayan geçici bypass olduğu için bu oturumda uygulanmadı.
+
+---
+
 ## Live Delta — Session 45 Report Amount 2 Fields (2026-05-11 ~13:25 UTC+3) — fin-muhasebe-detay `AMOUNT_2` + `AMOUNT_CURRENCY_2`
 
 **Trigger**: Kullanıcı `ACCOUNT_CARD_ROWS` kaynaklı raporda `AMOUNT_2` ve `AMOUNT_CURRENCY_2` alanlarının eksik olduğunu belirtti; bu iki alanın `fin-muhasebe-detay` raporuna alınmasını istedi.
