@@ -93,10 +93,17 @@ services:
     url: ${CORE_DATA_URL:http://core-data-service.platform-prod.svc.cluster.local:8092}
   # ... (auth-service'in gerçekte çağırdığı servislere göre)
 
-# Keycloak (host-level, ExternalName Service üzerinden)
+# Keycloak (host-level, Service + manual Endpoints — see
+# kustomize/base/host-services/keycloak-svc.yaml)
 keycloak:
   auth-server-url: ${KEYCLOAK_URL:http://keycloak.platform-prod.svc.cluster.local:8080}
-  # svc.cluster.local → Service+Endpoints → host 10.9.10.53:8081 (prod) / 8082 (test)
+  # svc.cluster.local → Service+Endpoints → Docker bridge IP of the
+  # host KC container (verified live 2026-05-11):
+  #   prod: 172.21.0.5:8080  (platform-prod-net)
+  #   test: 172.19.0.5:8080  (platform-test-net)
+  # Old "host 10.9.10.53:8081 (prod) / 8082 (test)" model is deprecated;
+  # PR #517 dropped the 10.9.10.53:8082 LAN bind on test compose.
+  # Local operator paths still use 127.0.0.1:8081 (prod) / 127.0.0.1:8082 (test).
 
 # Database (host-level, ExternalName Service üzerinden)
 spring:
