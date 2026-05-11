@@ -1,0 +1,76 @@
+# Faz 23 A6 + A7 + A8 — notification-orchestrator → mail provider egress
+#
+# default-deny-egress (kustomize/base/netpol/default-deny.yaml) + intra-ns
+# allowlist external mail provider egress'i kapsamıyor. Bu policy iki ana
+# mail route için explicit egress izni verir:
+#
+#   - Office 365 SMTP gateway (smtp.office365.com:587 STARTTLS) — A6 native
+#     SmtpAdapter path (sha-c4a03fc binary'de aktif, NOTIFY_DISPATCH_ENABLED=true
+#     A7 PR #508)
+#   - Microsoft Graph API (graph.microsoft.com:443 + login.microsoftonline.com:443)
+#     — A8 GraphMailAdapter port 443 HTTPS bypass route (sha-585b64f binary'de
+#     conditional active; PR #510 prep)
+#
+# Diagnostic context (Session 44 sonu 2026-05-11 ~02:00 UTC):
+#   - IT firewall outbound 587 host-level open ✅ (host-level smtp.office365.com:587
+#     reachable from staging-sw)
+#   - Pod-level outbound 587 BLOCKED ❌ (NetworkPolicy default-deny-egress
+#     active on platform-test namespace; notification-orchestrator pod
+#     egress sadece DNS + intra-ns + host-bridge + tempo'ya açık)
+#
+# Bu policy gap'i kapatır. Codex consult: cluster-egress + SMTP/Graph
+# allowlist HARD RULE Cross-AI peer review öncesi cross-check.
+#
+# Pragmatic CIDR strategy: explicit Microsoft 365 IP range'leri Microsoft'un
+# resmi yayınlamasına göre dinamik (ranges güncellenebilir). Bu policy
+# CIDR-wise PUBLIC range'ler hariç (RFC1918 dışında) tüm egress'i 587 ve
+# 443 portlarına için açar. Daha sıkı kısıtlama için Microsoft'un IP feed'i
+# parse edilip CIDR list'i otomatik update edilebilir (future hardening).
+#
+# Security model: notification-orchestrator pod CSRF/PII guard'ları ile
+# zaten dahili çıkış yapıyor; outbound 587/443 üzerinden bulgu sadece mail
+# adapter context'inde + audit trail'de geçecek.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-notification-orchestrator-egress-mail-providers
+  namespace: platform-test
+  annotations:
+    platform.acik.com/faz: "23.A6+A7+A8"
+    platform.acik.com/codex-thread: "019e1433"  # PR #510 review thread + post-587-IT-open follow-up
+spec:
+  podSelector:
+    matchLabels:
+      # Codex 019e15ee P1 absorb: triple-label selector (name + component
+      # + part-of) — label collision riskini azaltır, dispatcher scope creep'i
+      # engeller (örn. başka servis aynı `app.kubernetes.io/name` alırsa
+      # yanlışlıkla mail egress kazanmaz).
+      app.kubernetes.io/name: notification-orchestrator
+      app.kubernetes.io/component: backend
+      app.kubernetes.io/part-of: platform
+  policyTypes:
+    - Egress
+  egress:
+    # Office 365 SMTP outbound (A6 SmtpAdapter — port 587 STARTTLS)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8       # RFC1918 — cluster-internal
+              - 172.16.0.0/12    # RFC1918 — docker/k3d bridge
+              - 192.168.0.0/16   # RFC1918 — home/office LAN
+      ports:
+        - protocol: TCP
+          port: 587  # SMTP submission STARTTLS (Office 365, SendGrid, AWS SES, Postmark, Mailgun)
+    # HTTPS outbound for Graph API + OAuth + DKIM key API (A8 GraphMailAdapter
+    # + GraphTokenService)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443  # graph.microsoft.com + login.microsoftonline.com (OAuth client_credentials + Mail.Send)

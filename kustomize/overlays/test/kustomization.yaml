@@ -31,6 +31,8 @@ resources:
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
   # Faz 23.2 PR-D.2 — Tempo OTLP egress (notification-orchestrator → monitoring/tempo)
   - netpol-notification-tempo.yaml
+  # Faz 23.A6+A7+A8 — notification-orchestrator → mail provider egress (Office 365 SMTP 587 + Graph 443)
+  - netpol-notification-egress-mail-providers.yaml
   # Faz 23.2.D T1.4 PR-4 — D43 drill test-only NotifyServiceAbsent rule (Codex 019e0dea iter-3 P1 #1)
   - notify-prometheusrule-absent.yaml
 
@@ -2228,9 +2230,36 @@ patches:
       - op: replace
         path: /data/SPRING_DATASOURCE_URL
         value: "jdbc:postgresql://postgres:5432/notify_db"
+      # A6 + A7 LIVE — Office 365 SMTP gateway test cluster aktif Session 44
+      # close 2026-05-11 (Codex 019e15ee P0 absorb): test ConfigMap'te
+      # NOTIFY_ADAPTERS_SMTP_HOST mailpit'ten Office 365'e yönlendiriliyor,
+      # SPRING_MAIL_* envs prod overlay'le simetrik (Codex P0 #1: desired-state
+      # gap kapanması). Mailpit historic test path artık SmtpAdapter Office 365
+      # gateway için yedek; gerekirse routing config-only switch ile geri alınır.
       - op: replace
         path: /data/NOTIFY_ADAPTERS_SMTP_HOST
-        value: "mailpit.platform-test.svc.cluster.local"
+        value: "smtp.office365.com"
+      - op: add
+        path: /data/SPRING_MAIL_HOST
+        value: "smtp.office365.com"
+      - op: add
+        path: /data/SPRING_MAIL_PORT
+        value: "587"
+      - op: add
+        path: /data/SPRING_MAIL_SMTP_AUTH
+        value: "true"
+      - op: add
+        path: /data/SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE
+        value: "true"
+      - op: add
+        path: /data/SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED
+        value: "true"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMTP_FROM_ADDRESS
+        value: "ai@acik.com"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMTP_FROM_NAME
+        value: "Ai - Açık Holding (test)"
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "true"
