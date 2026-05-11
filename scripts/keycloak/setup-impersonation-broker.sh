@@ -272,6 +272,7 @@ if [ -z "$REALM_MGMT_ID" ]; then
 fi
 
 POLICY_NAME="impersonation-broker-only"
+CUSTOM_TE_PERMISSION_NAME="impersonation-broker-token-exchange"
 
 EXISTING_POLICY=$($KC get "clients/$REALM_MGMT_ID/authz/resource-server/policy" -r "$REALM" \
                   --query "name=$POLICY_NAME" --fields id 2>/dev/null \
@@ -337,6 +338,42 @@ PYEOF
     exit 2
   fi
   echo "✓ Policy attached to token-exchange permission (via -f JSON form, race-safe)"
+
+  # Keycloak 26.x can accept the PUT above but leave the generated management
+  # permission without associated policies. Keep the generated permission intact
+  # and add an explicit scope permission for the same client resource/scope.
+  BUILTIN_ATTACHED=$($KC get "clients/$REALM_MGMT_ID/authz/resource-server/permission/scope/$TE_PERM_ID/associatedPolicies" -r "$REALM" 2>/dev/null \
+    | python3 -c '
+import json,sys
+ps=json.load(sys.stdin)
+print("yes" if any(p.get("name")=="impersonation-broker-only" for p in ps) else "no")
+' 2>/dev/null || echo "no")
+
+  if [ "$BUILTIN_ATTACHED" != "yes" ]; then
+    CUSTOM_TE_PERMISSION_ID=$($KC get "clients/$REALM_MGMT_ID/authz/resource-server/permission" -r "$REALM" \
+      --query "name=$CUSTOM_TE_PERMISSION_NAME" --fields id 2>/dev/null \
+      | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[0]["id"] if d else "")' 2>/dev/null || echo "")
+
+    if [ -z "$CUSTOM_TE_PERMISSION_ID" ]; then
+      RESOURCE_NAME="client.resource.$AUDIENCE_ID"
+      CUSTOM_OUT=$($KC create "clients/$REALM_MGMT_ID/authz/resource-server/permission/scope" -r "$REALM" \
+        -s "name=$CUSTOM_TE_PERMISSION_NAME" \
+        -s "description=Allow impersonation-broker to token-exchange for $CLIENT_AUDIENCE" \
+        -s "resources=[\"$RESOURCE_NAME\"]" \
+        -s 'scopes=["token-exchange"]' \
+        -s "policies=[\"$POLICY_NAME\"]" \
+        -s decisionStrategy=UNANIMOUS \
+        -s logic=POSITIVE \
+        -i 2>&1 || true)
+      if echo "$CUSTOM_OUT" | grep -qiE "(error|fail|exception)"; then
+        echo "ERROR: custom token-exchange permission create failed: $CUSTOM_OUT" >&2
+        exit 2
+      fi
+      echo "✓ Custom token-exchange permission created: $CUSTOM_TE_PERMISSION_NAME"
+    else
+      echo "✓ Custom token-exchange permission exists: $CUSTOM_TE_PERMISSION_NAME"
+    fi
+  fi
 else
   POLICY_ID="$EXISTING_POLICY"
 fi
@@ -402,20 +439,39 @@ print(f"  policy_count: {pc}")
 echo "$PERM_DETAIL"
 
 # Get policies on permission
-POLICIES_ON_PERM=$($KC get "clients/$REALM_MGMT_ID/authz/resource-server/permission/scope/$TE_PERM_ID/associatedPolicies" -r "$REALM" 2>/dev/null \
+POLICIES_ON_GENERATED_PERM=$($KC get "clients/$REALM_MGMT_ID/authz/resource-server/permission/scope/$TE_PERM_ID/associatedPolicies" -r "$REALM" 2>/dev/null \
   | python3 -c '
 import json,sys
 ps = json.load(sys.stdin)
 names = [p.get("name") for p in ps]
-print(f"  attached_policies: {names}")
+print(f"  generated_permission_attached_policies: {names}")
 print("PASS" if "impersonation-broker-only" in names else "FAIL")
 '  )
-echo "$POLICIES_ON_PERM"
-echo "$POLICIES_ON_PERM" | tail -1 | grep -q "^PASS$" || {
-  echo "ERROR: policy 'impersonation-broker-only' NOT attached to token-exchange permission" >&2
+echo "$POLICIES_ON_GENERATED_PERM"
+
+CUSTOM_TE_PERMISSION_ID=$($KC get "clients/$REALM_MGMT_ID/authz/resource-server/permission" -r "$REALM" \
+  --query "name=$CUSTOM_TE_PERMISSION_NAME" --fields id 2>/dev/null \
+  | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[0]["id"] if d else "")' 2>/dev/null || echo "")
+
+CUSTOM_POLICY_VERIFY="FAIL"
+if [ -n "$CUSTOM_TE_PERMISSION_ID" ]; then
+  CUSTOM_POLICY_VERIFY=$($KC get "clients/$REALM_MGMT_ID/authz/resource-server/permission/scope/$CUSTOM_TE_PERMISSION_ID/associatedPolicies" -r "$REALM" 2>/dev/null \
+    | python3 -c '
+import json,sys
+ps = json.load(sys.stdin)
+names = [p.get("name") for p in ps]
+print(f"  custom_permission_attached_policies: {names}")
+print("PASS" if "impersonation-broker-only" in names else "FAIL")
+'  )
+  echo "$CUSTOM_POLICY_VERIFY"
+fi
+
+if ! echo "$POLICIES_ON_GENERATED_PERM" | tail -1 | grep -q "^PASS$" \
+   && ! echo "$CUSTOM_POLICY_VERIFY" | tail -1 | grep -q "^PASS$"; then
+  echo "ERROR: policy 'impersonation-broker-only' NOT attached to generated or custom token-exchange permission" >&2
   echo "       Manual console fallback may be needed; re-run with VERIFY_ONLY=1" >&2
   exit 3
-}
+fi
 
 # Assertion 4: policy clients list contains broker
 POLICY_CLIENTS=$($KC get "clients/$REALM_MGMT_ID/authz/resource-server/policy/client/$POLICY_ID" -r "$REALM" 2>/dev/null \
