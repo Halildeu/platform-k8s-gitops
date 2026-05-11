@@ -106,7 +106,14 @@ Production gözlemleme ve doğrulama kapıları:
 - Public edge:
   - [ ] `ai.acik.com -> 212.115.26.190` DNS A kaydı (inbound edge IP; outbound NAT: 31.145.18.18)
   - [ ] `Host: ai.acik.com` için binding, vhost veya route tanımlı
-  - [ ] hedef backend `10.9.10.53:8082` veya production iç hedef
+  - [ ] hedef backend k3d-prod cluster ingress (`127.0.0.1:30080`) — host edge
+        nginx SNI-route `ai.acik.com:443 → 127.0.0.1:30080` (canonical path,
+        see `host-compose/proxy/conf/nginx.conf`). Standalone host
+        Keycloak/Postgres compose ports stay localhost-only (`127.0.0.1:8081/5432`)
+        by design — never as a primary edge target. The old
+        `10.9.10.53:8082` LAN bind on test KC was dropped 2026-05-11
+        (PR #517) as LAN-spoof hardening after KC_PROXY_HEADERS=xforwarded
+        landed; do not reintroduce it on prod cutover paths.
   - [ ] TLS sertifikası aktif
   - [ ] `dig ai.acik.com` beklenen IP'yi döndürüyor
   - [ ] `curl -I https://ai.acik.com` HTTP cevap veriyor

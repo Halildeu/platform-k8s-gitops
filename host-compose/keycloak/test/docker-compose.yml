@@ -79,8 +79,19 @@ services:
       KC_FEATURES: "token-exchange,admin-fine-grained-authz:v1,authorization"
       JAVA_OPTS: "-Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=100"   # Test daha dar
     ports:
+      # 2026-05-11 hardening (Codex 019e142d follow-up): drop the
+      # 10.9.10.53:8082 LAN bind. With KC_PROXY_HEADERS=xforwarded now
+      # trusting X-Forwarded-* headers from the edge proxy, a LAN-
+      # accessible non-localhost port on the same KC is a header-
+      # injection surface — an attacker on the LAN could spoof
+      # X-Forwarded-Proto/Host to bypass the host nginx terminator.
+      # The k3d cluster reaches KC via the Docker bridge IP
+      # 172.19.0.5:8080 directly (overlays/test Endpoints patch), so
+      # the LAN bind is unused. host nginx routes testai.acik.com:443
+      # → k3d-test ingress (127.0.0.1:31080), never via this bind.
+      # Local kcadm/operator scripts use 127.0.0.1:8082 below.
+      # Matches prod compose (also localhost-only).
       - "127.0.0.1:8082:8080"
-      - "10.9.10.53:8082:8080"
     volumes:
       - /srv/platform/stateful/test/keycloak:/opt/keycloak/data
     secrets:
