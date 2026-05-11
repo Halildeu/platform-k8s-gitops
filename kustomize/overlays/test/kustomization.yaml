@@ -1468,7 +1468,44 @@ images:
     #
     # Build evidence: platform-web run 25640... (post-merge auto-trigger)
     # — testai variant push manifest sha256:0de87754d7fc2ed386a90b3193b5d06102f407ea22ec558e81e6fb8ee5944b46.
-    digest: sha256:0de87754d7fc2ed386a90b3193b5d06102f407ea22ec558e81e6fb8ee5944b46
+    #
+    # 2026-05-11 update: sha-d3ef67e — platform-web PR #390 (real fix for
+    # login açılmıyor). PR #387's diagnostic logging exposed the actual
+    # bug: AuthBootstrapper's subscribeAuthState listener was receiving
+    # an immediate replay of configureShellServices' boot-time
+    # broadcastAuthState({token: null}) seed because subscribeAuthState
+    # cached self-originated payloads as if they were external cross-tab
+    # events. That fired dispatch(logout()) + dispatch(setAuthInitialized
+    # (true)) BEFORE kc.init() processed the URL fragment, AppRouter's /
+    # route then did <Navigate to="/login" replace>, the auth-code
+    # fragment was lost, and the SPA stayed on /login.
+    #
+    # End-to-end repro on the prior bundle (sha-0de8775) with Playwright
+    # headless from this machine: framenavigated to /#state=...&code=...
+    # captured; AuthBootstrapper init starting logged isLoginRoute=true /
+    # urlHasAuthCode=false; POST /openid-connect/token never fired
+    # (waitForResponse 20s timeout); final URL = /login. Pre-fix bug
+    # reproduced cleanly even with the live KC compose fix
+    # (platform-k8s-gitops#512 KC_PROXY_HEADERS=xforwarded; CORS preflight
+    # already 200 on both edges).
+    #
+    # PR #390 fix: sourceId === tabId guard in subscribeAuthState's
+    # immediate-fire branch. Self-originated payloads are book-keeping
+    # for determineEvent (LOGIN vs REFRESH vs LOGOUT lookups against the
+    # previous local transition) and must not be replayed as if they
+    # were external. Cross-tab semantics preserved (peer payloads come
+    # through notifyListeners with a different sourceId, still replay).
+    #
+    # Cross-AI peer review: Codex thread 019e1457 AGREE (Reviewer ≠
+    # Implementer). Codex non-blocking notes (added to follow-up TODO,
+    # not required for this hotfix): unit tests for auth-sync.ts +
+    # AGENTS.md "comments English" cleanup of the Turkish "açılmıyor"
+    # snippet in source comments.
+    #
+    # Image build run: platform-web 25643667491 (success).
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-d3ef67e
+    # @sha256:d40f7554a59b7880ac7c4f237a01edddd0f85f30abade446f8a8dc488fcfa875
+    digest: sha256:d40f7554a59b7880ac7c4f237a01edddd0f85f30abade446f8a8dc488fcfa875
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
