@@ -337,7 +337,16 @@ images:
     # image build run 25664260004 pushed this digest, Deploy backend testai
     # (auto) run 25664380492 success, testai deployment/pod imageID matched,
     # readiness UP, deployed jar contains the new sourceQuery columns.
-    digest: sha256:e3c94398e6d560b97bd12b0f61591b7dbd8b5a6e82c92b79ef7c209c592c94c5
+    #
+    # 2026-05-11 update: sha-abf2fd1 — platform-backend PR #157 merged.
+    # User-facing report fix: all fin-muhasebe-detay amount fields are signed
+    # by BA at sourceQuery level: BA=1 Borç -> positive ABS(...), BA=0 Alacak
+    # -> negative -ABS(...). Fields covered: AMOUNT, AMOUNT_2, OTHER_AMOUNT.
+    # Evidence: ReportDefinitionContractTest PASS (39 tests), PR checks green,
+    # image build run 25665121330 pushed this digest, Deploy backend testai
+    # (auto) run 25665190828 success, testai deployment/pod imageID matched,
+    # readiness UP, deployed jar contains the signed amount CASE expressions.
+    digest: sha256:04e6d7de2a8df494141254a46ff8dfaa61ccc12f661903443c351ea3dde06e09
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
