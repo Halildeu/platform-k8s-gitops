@@ -10,6 +10,39 @@
 
 ---
 
+## Live Delta — Session 45 Report Amount 2 Aggregation (2026-05-11 ~14:00 UTC+3) — fin-muhasebe-detay `Tutar 2` sum aggregation
+
+**Trigger**: Kullanıcı `Tutar 2` için neden `Tutar (TL)` gibi value aggregation / toplam görünmediğini sordu. Root cause: `AMOUNT_2` kolonu rapora eklenmişti fakat metadata'da `aggregatable=true` ve `defaultAggFunc=sum` yoktu.
+
+### Source + artifact
+
+| Katman | Kanıt | Yorum |
+|---|---|---|
+| Backend source | platform-backend PR #158, merge `cc96fdb` | `fin-muhasebe-detay.json` içinde `AMOUNT_2` artık `aggregatable=true`, `defaultAggFunc=sum` |
+| Aggregation semantics | PR #158 + PR #157 | `AMOUNT_2` toplamı server/grid aggregation yüzeyinde açıldı; signed değer BA'ya göre sourceQuery seviyesinde geldiği için `Borç` artı, `Alacak` eksi olarak toplanır |
+| Currency caveat | report metadata | `AMOUNT_2` ikinci/dinamik döviz tutarıdır; karışık `Para Birimi 2` içeren gruplarda plain sum farklı para birimlerini de sayısal olarak toplar. Kullanıcı isteği doğrultusunda `Tutar (TL)` gibi sum açıldı |
+| Test | `./mvnw -pl report-service -Dtest=ReportDefinitionContractTest test` | 39 test PASS; contract test `AMOUNT_2` aggregation metadata'sını sabitliyor |
+| Image | backend build run `25665815094` | `ghcr.io/halildeu/platform-backend-report-service@sha256:58b8e373aabb0e0c7a438617930daa94c5e7ed89c1420e652726fb319202415e` üretildi |
+
+### Testai live truth
+
+| Katman | Kanıt | Yorum |
+|---|---|---|
+| Deploy workflow | GitOps run `25665928603` | `Deploy backend testai (auto)` success |
+| Deployment | `report-service 1/1` in `k3d-test/platform-test` | Spec image yeni immutable digest'e pinli |
+| Pod artifact | pod `report-service-6bc6bd9f7c-qdzzj`, imageID `ghcr.io/halildeu/platform-backend-report-service@sha256:58b8e373aabb0e0c7a438617930daa94c5e7ed89c1420e652726fb319202415e` | D30 artifact match sağlandı |
+| Readiness | in-pod `/actuator/health/readiness` -> `{"status":"UP"}` | Up/readiness kanıtı var |
+| Public edge | `https://testai.acik.com/` -> 200; `/api/users/all` no-token -> 401; `/api/v1/reports/fin-muhasebe-detay/metadata` no-token -> 401 | External edge ve auth gate beklenen kodda |
+| Deployed JSON | live pod `/app/app.jar` içindeki `BOOT-INF/classes/reports/fin-muhasebe-detay.json` | `AMOUNT_2`, `Tutar 2`, `aggregatable: true`, `defaultAggFunc: "sum"` pakette mevcut |
+
+### Desired-state sync
+
+`kustomize/overlays/test/kustomization.yaml` report-service digest'i `sha256:04e6d7de2a8df494141254a46ff8dfaa61ccc12f661903443c351ea3dde06e09` -> `sha256:58b8e373aabb0e0c7a438617930daa94c5e7ed89c1420e652726fb319202415e` olarak pinlenir. Bu PR live auto-deploy state'ini repo desired-state'e geri bağlar.
+
+Authenticated browser grid smoke bu oturumda Codex Chrome Extension yokluğu nedeniyle agent tarafında yakalanmadı; backend source, CI, deployed jar ve live pod digest kanıtı doğrulandı.
+
+---
+
 ## Live Delta — Session 45 Report Signed Amounts (2026-05-11 ~13:45 UTC+3) — fin-muhasebe-detay Borç pozitif / Alacak negatif tutarlar
 
 **Trigger**: Kullanıcı `fin-muhasebe-detay` raporunda tüm tutarların `Borç` için artı, `Alacak` için eksi gösterilmesini ve işlemlerde/toplamlarda bu signed değerin dikkate alınmasını istedi.
