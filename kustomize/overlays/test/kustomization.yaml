@@ -346,7 +346,17 @@ images:
     # image build run 25665121330 pushed this digest, Deploy backend testai
     # (auto) run 25665190828 success, testai deployment/pod imageID matched,
     # readiness UP, deployed jar contains the signed amount CASE expressions.
-    digest: sha256:04e6d7de2a8df494141254a46ff8dfaa61ccc12f661903443c351ea3dde06e09
+    #
+    # 2026-05-11 update: sha-cc96fdb — platform-backend PR #158 merged.
+    # User-facing report fix: fin-muhasebe-detay Tutar 2 (AMOUNT_2) now
+    # supports value aggregation with aggregatable=true and defaultAggFunc=sum,
+    # matching Tutar (TL). Signed amount semantics still come from sourceQuery,
+    # so BA=1 Borç rows are positive and BA=0 Alacak rows are negative in sums.
+    # Evidence: ReportDefinitionContractTest PASS (39 tests), PR checks green,
+    # image build run 25665815094 pushed this digest, Deploy backend testai
+    # (auto) run 25665928603 success, testai deployment/pod imageID matched,
+    # readiness UP, deployed jar contains AMOUNT_2 aggregatable/defaultAggFunc.
+    digest: sha256:58b8e373aabb0e0c7a438617930daa94c5e7ed89c1420e652726fb319202415e
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
