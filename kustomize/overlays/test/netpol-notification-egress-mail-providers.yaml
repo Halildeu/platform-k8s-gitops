@@ -41,7 +41,13 @@ metadata:
 spec:
   podSelector:
     matchLabels:
+      # Codex 019e15ee P1 absorb: triple-label selector (name + component
+      # + part-of) — label collision riskini azaltır, dispatcher scope creep'i
+      # engeller (örn. başka servis aynı `app.kubernetes.io/name` alırsa
+      # yanlışlıkla mail egress kazanmaz).
       app.kubernetes.io/name: notification-orchestrator
+      app.kubernetes.io/component: backend
+      app.kubernetes.io/part-of: platform
   policyTypes:
     - Egress
   egress:
