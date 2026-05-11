@@ -320,7 +320,16 @@ images:
     # dispatch + ReportRegistry fail-closed validation startup'ta.
     # Tests: 76 PASS (5 yeni CurrentTenantSchemaResolverTest + RC-004
     # 5→4 absorb).
-    digest: sha256:8744c9860b0a5153c5c88f1ccad177f985982f247fa14c618ba8d9547425cfe6
+    #
+    # 2026-05-11 update: sha-dde7bdf — platform-backend PR #155 merged.
+    # User-facing report fix: fin-muhasebe-detay BA indicator now renders
+    # BA=1 as Borç and BA=0 as Alacak; BA column is text/header
+    # "Borç/Alacak" instead of numeric "B/A". Evidence: report-service
+    # contract test PASS, image build run 25662848654 pushed this digest,
+    # testai pod imageID matched after a transient GHCR DNS pull delay.
+    # Deploy workflow run 25662928732 timed out during rollout, so keep
+    # that workflow failure separate from the final live pod readiness.
+    digest: sha256:1e01f2c96b6c9c5f30ea216f02ebf155e44dc65cf87b2892627e32ec2e517d08
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.

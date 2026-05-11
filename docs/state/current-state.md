@@ -10,6 +10,37 @@
 
 ---
 
+## Live Delta — Session 45 Report BA Label (2026-05-11 ~13:00 UTC+3) — fin-muhasebe-detay BA=1 Borç / BA=0 Alacak
+
+**Trigger**: Kullanıcı `testai.acik.com/admin/reports/fin-muhasebe-detay` ekranında `B/A` kolonunun `1/0` numerik gösterdiğini raporladı ve "BA=1 için borç, BA=0 sütundaki gösterge ona göre" düzeltmesini onayladı.
+
+### Source + artifact
+
+| Katman | Kanıt | Yorum |
+|---|---|---|
+| Backend source | platform-backend PR #155, squash `dde7bdf` | `fin-muhasebe-detay.json` içinde `ACR.BA` artık `CASE WHEN ACR.BA = 1 THEN N'Borç' WHEN ACR.BA = 0 THEN N'Alacak' ELSE N'Bilinmiyor' END AS BA`; kolon header `Borç/Alacak`, type `text` |
+| Test | `./mvnw -pl report-service -Dtest=ReportDefinitionContractTest test` | 37 test PASS; yeni contract test BA header/type ve SQL label mapping'i sabitliyor |
+| Image | backend build run `25662848654` | `ghcr.io/halildeu/platform-backend-report-service@sha256:1e01f2c96b6c9c5f30ea216f02ebf155e44dc65cf87b2892627e32ec2e517d08` üretildi |
+
+### Testai live truth
+
+| Katman | Kanıt | Yorum |
+|---|---|---|
+| Deployment | `report-service 1/1` in `k3d-test/platform-test` | Spec image yeni immutable digest'e pinli |
+| Pod artifact | pod `report-service-687fd547c-mfgtk`, imageID `ghcr.io/halildeu/platform-backend-report-service@sha256:1e01f2c96b6c9c5f30ea216f02ebf155e44dc65cf87b2892627e32ec2e517d08` | D30 artifact match sağlandı |
+| Readiness | in-pod `/actuator/health/readiness` → `{"status":"UP"}` | Up/readiness kanıtı var; browser-level kullanıcının grid refresh'i ayrıca gözlenmeli |
+| Deployed JSON | live pod `/app/app.jar` içindeki `BOOT-INF/classes/reports/fin-muhasebe-detay.json` | `Borç`, `Alacak`, header `Borç/Alacak`, type `text` pakette mevcut |
+
+### Deploy caveat
+
+`Deploy backend testai (auto)` run `25662928732` kırmızı kapandı: `report-service` rollout sırasında GHCR DNS/pull gecikmesi nedeniyle `kubectl rollout status` timeout verdi. Canlı pod birkaç dakika sonra aynı digest ile `1/1 Running` oldu. Bu yüzden workflow sonucu `failure`, canlı state ise `ready + digest match`; ikisi ayrı raporlanmalı.
+
+### Desired-state sync
+
+`kustomize/overlays/test/kustomization.yaml` report-service digest'i `sha256:8744c9860b0a5153c5c88f1ccad177f985982f247fa14c618ba8d9547425cfe6` → `sha256:1e01f2c96b6c9c5f30ea216f02ebf155e44dc65cf87b2892627e32ec2e517d08` olarak pinlenir. Bu PR live `kubectl set image` drift'ini repo desired-state'e geri bağlar.
+
+---
+
 ## Live Delta — Session 45 TPG-RESET Baseline (2026-05-11 ~12:15 UTC+3) — test recovery evidence + prod auth-service secret drift
 
 **Mandate**: Kullanıcı direktifi: "kontrollü ve kök nedene yönelik adım adım kanıtlayarak ilerleyelim". Bu delta, 2026-05-11 test PostgreSQL stateful reset sınıfı için read-only canlı baseline'dır; live mutation içermez.
