@@ -90,18 +90,18 @@ REQUIRED_DUMP_MARKERS: tuple[RequiredMarker, ...] = (
     RequiredMarker(
         "table.openfga.tuple",
         re.compile(
-            r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?public\.tuple\b",
+            r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public|openfga)\.tuple\b",
             re.IGNORECASE,
         ),
-        "OpenFGA tuple store",
+        "OpenFGA tuple store; live dumps may use public.* or openfga.* schema",
     ),
     RequiredMarker(
         "table.openfga.authorization_model",
         re.compile(
-            r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?public\.authorization_model\b",
+            r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public|openfga)\.authorization_model\b",
             re.IGNORECASE,
         ),
-        "OpenFGA authorization model store",
+        "OpenFGA authorization model store; live dumps may use public.* or openfga.* schema",
     ),
 )
 
