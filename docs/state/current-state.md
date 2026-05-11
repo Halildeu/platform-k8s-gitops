@@ -78,6 +78,21 @@ Read-only follow-up after SSH recovery:
 
 Controlled remediation order: (1) prod `serban` realm `impersonation-broker` client create/verify, (2) client secret value'yu `kv/platform/auth-service.impersonation_broker_client_secret` olarak `vault kv patch` ile ekleme, (3) prod `auth-service-secrets` force-sync, (4) `auth-service` rollout restart, (5) `/api/v1/impersonation/sessions` smoke + audit row. Bu adımlar `credential-read`, `credential-write` ve prod `state-mutation` sınırıdır; runbook: `docs/runbook-auth-impersonation-broker-secret.md`.
 
+### Test User Impersonation E2E smoke — 2026-05-11 ~13:02 UTC+3
+
+Controlled test-only mutation and cleanup:
+
+| Katman | Kanıt | Yorum |
+|---|---|---|
+| Synthetic persona setup | `d35-admin-persona` ve `d35-granted-persona` Keycloak password reset edildi; gerçek kullanıcıya dokunulmadı | Test-only state mutation; temp Keycloak admin users cleanup sonrası `codex-temp-admin-*` count=0 |
+| Admin identity fix | `d35-admin-persona` `userId=1204`, `d35-granted-persona` `userId=1205` Keycloak attribute'leri hizalandı | `ImpersonationController.extractUserIdClaim()` yalnız JWT `userId` claim okuyor; önceki deneme `401 ADMIN_IDENTITY_MISSING` ile fail etti |
+| SuperAdmin preflight | `GET https://testai.acik.com/api/v1/authz/me` → 200, `superAdmin=true`, `userId=1204`, allowedModules includes `ACCESS`, `USER_MANAGEMENT`, `IMPERSONATION_AUDIT` | Permission/OpenFGA authority path çalışıyor |
+| Start smoke | `POST /api/v1/impersonation/sessions` → 201; response summary: `sessionIdPresent=true`, `hasToken=true`, `expiresAtPresent=true`, `errorCode=null`, `errorMessage=null` | Test feature-level route + broker secret + Keycloak token exchange zinciri çalışıyor |
+| Audit | `public.permission_audit_events` row id `841`, `event_type=IMPERSONATION_STARTED`, `action=IMPERSONATION_STARTED`, `target_email=d35-granted@example.com`, session id `6b4035c0-b913-4eb9-8dd7-87a9690f2630` | DoD audit row kanıtı mevcut; `permission_service.permission_audit_events` aynı event'i tutmuyor |
+| Cleanup | `DELETE /api/v1/impersonation/sessions/current` → 204; session `6b4035c0-b913-4eb9-8dd7-87a9690f2630` `STOPPED/USER_STOP` | Smoke aktif session bırakmadı |
+
+Test hükmü: User Impersonation `testai.acik.com` için Up + Functional + audit-backed feature smoke kanıtı mevcut. Prod için bu kanıt otomatik taşınmaz; prod RCA'da hem `serban` broker client hem Vault property eksikliği devam ediyor.
+
 ### Guardrail PR'ları
 
 - PR #522 — `guard(test-pg): add stateful reset checks`: test PG data-dir `PG_VERSION`, backup semantic marker, endpoint-admin rendered label guard ve runbook.
