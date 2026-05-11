@@ -1,0 +1,88 @@
+name: TPG reset guardrails
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/tpg-reset-guardrails.yml"
+      - "scripts/operations/check_test_pg_stateful_guard.py"
+      - "scripts/governance/check_endpoint_admin_template_labels.py"
+      - "tests/operations/fixtures/test-pg-semantic-dump.sql"
+      - "docs/runbooks/RB-test-pg-stateful-reset-guard.md"
+      - "host-compose/postgres/test/**"
+      - "kustomize/base/apps/endpoint-admin-service/**"
+      - "kustomize/overlays/test/**"
+      - "kustomize/overlays/prod/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tpg-reset-guardrails.yml"
+      - "scripts/operations/check_test_pg_stateful_guard.py"
+      - "scripts/governance/check_endpoint_admin_template_labels.py"
+      - "tests/operations/fixtures/test-pg-semantic-dump.sql"
+      - "docs/runbooks/RB-test-pg-stateful-reset-guard.md"
+      - "host-compose/postgres/test/**"
+      - "kustomize/base/apps/endpoint-admin-service/**"
+      - "kustomize/overlays/test/**"
+      - "kustomize/overlays/prod/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  tpg-reset-guardrails:
+    name: test PG reset + endpoint-admin label guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.31.0"
+
+      - name: Install Python dependencies
+        run: python3 -m pip install --quiet PyYAML
+
+      - name: Backup semantic guard
+        run: |
+          python3 scripts/operations/check_test_pg_stateful_guard.py \
+            --dump tests/operations/fixtures/test-pg-semantic-dump.sql \
+            --json
+
+      - name: Data-dir guard positive and negative controls
+        run: |
+          set -euo pipefail
+          TMPDIR="$(mktemp -d)"
+          trap 'rm -rf "${TMPDIR}"' EXIT
+
+          mkdir -p "${TMPDIR}/healthy"
+          echo "16" > "${TMPDIR}/healthy/PG_VERSION"
+          python3 scripts/operations/check_test_pg_stateful_guard.py \
+            --data-dir "${TMPDIR}/healthy"
+
+          mkdir -p "${TMPDIR}/empty"
+          if python3 scripts/operations/check_test_pg_stateful_guard.py \
+              --data-dir "${TMPDIR}/empty"; then
+            echo "::error::empty data dir without --allow-empty-init must fail"
+            exit 1
+          fi
+
+          python3 scripts/operations/check_test_pg_stateful_guard.py \
+            --data-dir "${TMPDIR}/empty" \
+            --allow-empty-init
+
+      - name: Endpoint-admin rendered pod-template labels
+        run: |
+          python3 scripts/governance/check_endpoint_admin_template_labels.py \
+            --kustomize-path kustomize/base/apps/endpoint-admin-service \
+            --kustomize-path kustomize/overlays/test \
+            --json
