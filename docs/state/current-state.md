@@ -35,6 +35,18 @@
 | Secret drift | `auth-service-secrets` `Ready=False / SecretSyncedError / could not get secret data from provider` | Prod User Impersonation secret wiring ayrı blocker; test PG reset RCA'sına karıştırılmamalı |
 | ArgoCD | `platform-prod`, `platform-eso-prod`, `platform-system` `Synced/Degraded`; `metrics-server-prod` `OutOfSync/Healthy` | Degraded ana sinyal prod auth-service ExternalSecret drift'i ile uyumlu |
 
+### Prod User Impersonation RCA addendum — 2026-05-11 ~12:35 UTC+3
+
+Read-only follow-up after SSH recovery:
+
+| Kanıt | Test | Prod | Yorum |
+|---|---|---|---|
+| `auth-service-secrets` rendered key set | `AUTH_IMPERSONATION_BROKER_CLIENT_SECRET` mevcut | `AUTH_IMPERSONATION_BROKER_CLIENT_SECRET` yok | Prod Vault path `kv/platform/auth-service` içinde `impersonation_broker_client_secret` eksik |
+| ExternalSecret event | `SecretSynced=True` | `cannot find secret data for key: "impersonation_broker_client_secret"` | Repo manifest iki ortamda da aynı property'yi bekliyor; drift prod secret-data tarafında |
+| Keycloak client metadata | `platform-test` realm içinde `impersonation-broker` enabled/confidential/service-account client mevcut | `serban` realm içinde sadece default `broker` client görünüyor; `impersonation-broker` yok | Prod fix yalnız Vault patch değildir; önce prod realm broker client oluşturulmalı veya prod impersonation disabled truth kararı yazılmalı |
+
+Controlled remediation order: (1) prod `serban` realm `impersonation-broker` client create/verify, (2) client secret value'yu `kv/platform/auth-service.impersonation_broker_client_secret` olarak `vault kv patch` ile ekleme, (3) prod `auth-service-secrets` force-sync, (4) `auth-service` rollout restart, (5) `/api/v1/impersonation/sessions` smoke + audit row. Bu adımlar `credential-read`, `credential-write` ve prod `state-mutation` sınırıdır; runbook: `docs/runbook-auth-impersonation-broker-secret.md`.
+
 ### Guardrail PR'ları
 
 - PR #522 — `guard(test-pg): add stateful reset checks`: test PG data-dir `PG_VERSION`, backup semantic marker, endpoint-admin rendered label guard ve runbook.
@@ -42,7 +54,7 @@
 
 ### Sıradaki kapılar
 
-1. Prod `auth-service-secrets` için eksik Vault property kararı: secret seed + ESO sync veya impersonation prod-disabled truth kaydı.
+1. Prod User Impersonation kararı: `serban` realm broker client + Vault secret seed + ESO sync veya prod impersonation disabled truth kaydı.
 2. OpenFGA config hygiene: ConfigMap URI ve Secret URI/password çift kaynaklı; tek canonical kaynak seçilmeli.
 3. TPG hourly live baseline cron: PR #522/#523 guard'ları CI/runbook katmanında; host-level periyodik read-only check ayrı PR ile eklenmeli.
 
