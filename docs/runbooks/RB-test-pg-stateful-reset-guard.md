@@ -60,8 +60,8 @@ Aranan minimum marker'lar:
 - `CREATE SCHEMA data_access`
 - `CREATE TABLE data_access.scope`
 - `CREATE DATABASE openfga`
-- `CREATE TABLE public.tuple`
-- `CREATE TABLE public.authorization_model`
+- `CREATE TABLE public.tuple` veya `CREATE TABLE openfga.tuple`
+- `CREATE TABLE public.authorization_model` veya `CREATE TABLE openfga.authorization_model`
 
 ### 3. Endpoint-admin rendered label guard
 

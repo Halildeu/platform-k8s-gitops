@@ -20,9 +20,10 @@ CREATE TABLE data_access.scope (
 
 CREATE DATABASE openfga;
 \connect openfga
-CREATE TABLE public.tuple (
+CREATE SCHEMA openfga;
+CREATE TABLE openfga.tuple (
     store text NOT NULL
 );
-CREATE TABLE public.authorization_model (
+CREATE TABLE openfga.authorization_model (
     id text PRIMARY KEY
 );
