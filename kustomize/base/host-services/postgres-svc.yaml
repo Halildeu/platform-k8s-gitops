@@ -1,8 +1,17 @@
 # Host-level PostgreSQL bridge (D19: Service + Endpoints, IP pin değil ExternalName)
-# Host IP ve port overlays'de override edilir:
-#   prod (staging-sw): 10.9.10.53:5432
-#   test (staging-sw): 10.9.10.53:5433
+# Host IP ve port overlays'de override edilir. Live values (2026-05-11):
+#   prod (staging-sw): 172.21.0.4:5432   (Docker bridge IP, platform-prod-net)
+#   test (staging-sw): 172.19.0.6:5432   (Docker bridge IP, platform-test-net)
 #   local (Docker Desktop): host.docker.internal (resolve edilen IP)
+#
+# 2026-05-11 (PR #519): the older host-LAN model (10.9.10.53:5432 prod,
+# 10.9.10.53:5433 test) is deprecated for cluster traffic. Overlays
+# patch the Endpoint to the Docker bridge IP of the host postgres
+# container directly so k3d pods reach PG over the bridge network, not
+# the host LAN. Host compose binds are localhost-only by design
+# (host-compose/postgres/{prod,test}/docker-compose.yml). Local
+# admin/drill on the host still uses 127.0.0.1:5432 (prod) /
+# 127.0.0.1:5433 (test).
 ---
 apiVersion: v1
 kind: Service

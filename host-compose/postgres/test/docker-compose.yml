@@ -15,8 +15,23 @@ services:
     profiles: ["manual"]
     restart: "no"
     ports:
-      - "127.0.0.1:5433:5432"   # Host-local admin/drill erişimi
-      - "10.9.10.53:5433:5432"  # k3d-test pod'lar için host-bridge erişimi
+      # 2026-05-11 hardening (Codex 019e15dd follow-up to PR #517 KC
+      # bind drop). Same pattern: the 10.9.10.53:5433 LAN bind comment
+      # claimed "k3d-test pod'lar için host-bridge erişimi" but the
+      # overlays/test kustomization patches the postgres Endpoint to
+      # the Docker bridge IP directly (172.19.0.6:5432), so k3d-test
+      # pods reach PG through the Docker bridge — NOT via the host
+      # LAN bind. Verified live: `kubectl -n platform-test get endpoints
+      # postgres` returns `172.19.0.6:5432`.
+      #
+      # Risk: PG admin port on the LAN is a higher blast-radius
+      # surface than the equivalent KC bind that #517 dropped. Even
+      # with strong auth, anyone on the LAN could brute-force the
+      # password file or exploit a CVE. Localhost-only matches the
+      # prod compose pattern and the rest of the host-service stack.
+      #
+      # Local admin/drill on the host still uses 127.0.0.1:5433.
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
