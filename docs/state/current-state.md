@@ -10,6 +10,44 @@
 
 ---
 
+## Live Delta — Session 45 TPG-RESET Baseline (2026-05-11 ~12:15 UTC+3) — test recovery evidence + prod auth-service secret drift
+
+**Mandate**: Kullanıcı direktifi: "kontrollü ve kök nedene yönelik adım adım kanıtlayarak ilerleyelim". Bu delta, 2026-05-11 test PostgreSQL stateful reset sınıfı için read-only canlı baseline'dır; live mutation içermez.
+
+### Test baseline — `k3d-test/platform-test`
+
+| Katman | Kanıt | Yorum |
+|---|---|---|
+| Up | 13/13 Deployment `readyReplicas=desired=1`; kritik podlar `api-gateway`, `auth-service`, `endpoint-admin-service`, `openfga-0`, `permission-service`, `report-service`, `variant-service` Running/ready, restart=0 | TPG sonrası servis yüzeyi ayakta |
+| Endpoint | `endpoint-admin-service`, `openfga`, `permission-service`, `variant-service` endpoint adresleri dolu | NetworkPolicy/selector kaynaklı endpoint boşluğu yok |
+| Secret delivery | 13/13 `ExternalSecret` `Ready=True / SecretSynced` | Test ESO zinciri sağlıklı |
+| Stateful PG | `platform-pg-test` `status=running health=healthy image=postgres:16-alpine`; `/srv/platform/stateful/test/postgres/PG_VERSION` mevcut | Silent-empty-init riski PR #522/#523 guard ile CI/runbook katmanına taşındı |
+| Product schema | `variant_service.themes`, `data_access.scope`, OpenFGA `openfga.tuple`, `openfga.authorization_model` canlı DB'de mevcut | İlk `public.*` kontrolü MISSING verdi; doğru canlı schema `openfga.*` olarak teyit edildi ve PR #523 guard'ı buna hizaladı |
+| Public smoke | `https://testai.acik.com/` → 200; `/api/v1/authz/me` no-token → 401; `/api/v1/theme-registry` → 200 | External edge temel kontrat beklenen kodda |
+| Zanzibar signal | `openfga-0` loglarında gerçek gRPC `Check` ve `ListObjects` çağrıları `grpc_code=0`, allowed/list responses var | Zanzibar-ready için daha sıkı synthetic allow/deny hâlâ ayrı acceptance gate olarak tutulmalı |
+
+### Prod baseline — `k3d-prod/platform-prod`
+
+| Katman | Kanıt | Yorum |
+|---|---|---|
+| Up | 10/10 prod Deployment `readyReplicas=desired=1`; kritik podlar Running/ready | Prod workload yüzeyi ayakta |
+| Public smoke | `https://ai.acik.com/` → 200; `/api/v1/authz/me` no-token → 401; `/api/v1/theme-registry` → 200 | Public temel kontrat beklenen kodda |
+| Secret drift | `auth-service-secrets` `Ready=False / SecretSyncedError / could not get secret data from provider` | Prod User Impersonation secret wiring ayrı blocker; test PG reset RCA'sına karıştırılmamalı |
+| ArgoCD | `platform-prod`, `platform-eso-prod`, `platform-system` `Synced/Degraded`; `metrics-server-prod` `OutOfSync/Healthy` | Degraded ana sinyal prod auth-service ExternalSecret drift'i ile uyumlu |
+
+### Guardrail PR'ları
+
+- PR #522 — `guard(test-pg): add stateful reset checks`: test PG data-dir `PG_VERSION`, backup semantic marker, endpoint-admin rendered label guard ve runbook.
+- PR #523 — `fix(test-pg): accept openfga schema dump markers`: OpenFGA dump guard hem `public.*` hem canlıda görülen `openfga.*` schema formatını kabul eder.
+
+### Sıradaki kapılar
+
+1. Prod `auth-service-secrets` için eksik Vault property kararı: secret seed + ESO sync veya impersonation prod-disabled truth kaydı.
+2. OpenFGA config hygiene: ConfigMap URI ve Secret URI/password çift kaynaklı; tek canonical kaynak seçilmeli.
+3. TPG hourly live baseline cron: PR #522/#523 guard'ları CI/runbook katmanında; host-level periyodik read-only check ayrı PR ile eklenmeli.
+
+---
+
 ## Live Delta — Session 44 (2026-05-11 ~02:30 UTC+3) — Charter 23.2 🟢 (full) + Mail Pipeline A1+A4+A6+A7+A8 + 18 PR Total (12 gitops MERGED + 6 backend MERGED + 1 gitops PENDING)
 
 **Mandate**: Continuous Autonomous Mode 7+ saat Session 43→44 zincir. Mail service önceliklestirildi ("tek mail atana kadar otonom devam"). Cross-AI peer review HARD RULE 35+ Codex thread / 35+ iter chain. Pre-Production Full Authority (Vault seed + credential embed override granted). HARD RULE Session Otomatik Açma compliance → Session 44 final handoff PR #511 MERGED.
