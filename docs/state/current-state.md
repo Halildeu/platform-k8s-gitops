@@ -10,6 +10,38 @@
 
 ---
 
+## Live Delta — Session 45 Report Amount 2 Fields (2026-05-11 ~13:25 UTC+3) — fin-muhasebe-detay `AMOUNT_2` + `AMOUNT_CURRENCY_2`
+
+**Trigger**: Kullanıcı `ACCOUNT_CARD_ROWS` kaynaklı raporda `AMOUNT_2` ve `AMOUNT_CURRENCY_2` alanlarının eksik olduğunu belirtti; bu iki alanın `fin-muhasebe-detay` raporuna alınmasını istedi.
+
+### Source + artifact
+
+| Katman | Kanıt | Yorum |
+|---|---|---|
+| Backend source | platform-backend PR #156, squash `0e27cd9` | `fin-muhasebe-detay.json` sourceQuery artık `ACR.AMOUNT_2` ve `ACR.AMOUNT_CURRENCY_2` seçiyor |
+| Report columns | PR #156 | `AMOUNT_2` header `Tutar 2`, type `number`; `AMOUNT_CURRENCY_2` header `Para Birimi 2`, type `text`, groupable |
+| Test | `./mvnw -pl report-service -Dtest=ReportDefinitionContractTest test` | 38 test PASS; yeni contract test field order, header/type ve sourceQuery alanlarını sabitliyor |
+| Image | backend build run `25664260004` | `ghcr.io/halildeu/platform-backend-report-service@sha256:e3c94398e6d560b97bd12b0f61591b7dbd8b5a6e82c92b79ef7c209c592c94c5` üretildi |
+
+### Testai live truth
+
+| Katman | Kanıt | Yorum |
+|---|---|---|
+| Deploy workflow | GitOps run `25664380492` | `Deploy backend testai (auto)` success |
+| Deployment | `report-service 1/1` in `k3d-test/platform-test` | Spec image yeni immutable digest'e pinli |
+| Pod artifact | pod `report-service-68f5c885cf-tkqnc`, imageID `ghcr.io/halildeu/platform-backend-report-service@sha256:e3c94398e6d560b97bd12b0f61591b7dbd8b5a6e82c92b79ef7c209c592c94c5` | D30 artifact match sağlandı |
+| Readiness | in-pod `/actuator/health/readiness` -> `{"status":"UP"}` | Up/readiness kanıtı var |
+| Public edge | `https://testai.acik.com/` -> 200; `/api/users/all` no-token -> 401; `/api/v1/reports/fin-muhasebe-detay/metadata` no-token -> 401 | External edge ve auth gate beklenen kodda |
+| Deployed JSON | live pod `/app/app.jar` içindeki `BOOT-INF/classes/reports/fin-muhasebe-detay.json` | `ACR.AMOUNT_2`, `ACR.AMOUNT_CURRENCY_2`, `Tutar 2`, `Para Birimi 2` pakette mevcut |
+
+### Desired-state sync
+
+`kustomize/overlays/test/kustomization.yaml` report-service digest'i `sha256:1e01f2c96b6c9c5f30ea216f02ebf155e44dc65cf87b2892627e32ec2e517d08` -> `sha256:e3c94398e6d560b97bd12b0f61591b7dbd8b5a6e82c92b79ef7c209c592c94c5` olarak pinlenir. Bu PR live `kubectl set image` state'ini repo desired-state'e geri bağlar.
+
+Authenticated browser grid smoke bu oturumda Codex Chrome Extension yokluğu nedeniyle agent tarafında yakalanmadı; backend metadata ve deployed jar kanıtı canlı testai podundan doğrulandı.
+
+---
+
 ## Live Delta — Session 45 Report BA Label (2026-05-11 ~13:00 UTC+3) — fin-muhasebe-detay BA=1 Borç / BA=0 Alacak
 
 **Trigger**: Kullanıcı `testai.acik.com/admin/reports/fin-muhasebe-detay` ekranında `B/A` kolonunun `1/0` numerik gösterdiğini raporladı ve "BA=1 için borç, BA=0 sütundaki gösterge ona göre" düzeltmesini onayladı.
