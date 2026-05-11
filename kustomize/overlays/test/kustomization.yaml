@@ -29,6 +29,8 @@ resources:
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
   # Faz 23.2 PR-D.2 — Tempo OTLP egress (notification-orchestrator → monitoring/tempo)
   - netpol-notification-tempo.yaml
+  # Faz 23.A6+A7+A8 — notification-orchestrator → mail provider egress (Office 365 SMTP 587 + Graph 443)
+  - netpol-notification-egress-mail-providers.yaml
   # Faz 23.2.D T1.4 PR-4 — D43 drill test-only NotifyServiceAbsent rule (Codex 019e0dea iter-3 P1 #1)
   - notify-prometheusrule-absent.yaml
 
