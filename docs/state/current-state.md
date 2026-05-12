@@ -10,6 +10,77 @@
 
 ---
 
+## Live Delta — Session 47 Stabilization: 10-cell Acceptance Matrix + BUG #4 405 Mapping Fix LIVE (2026-05-12 ~23:30 UTC+3)
+
+**Trigger**: Session 47 UX overhaul (below) GREEN sonrası kullanıcı direktifi: "User Impersonation için uçtan uca test edelim diğer kullancılarile de hataları bulalım önceliyici. tetsleri yazalım bu işi düzügn olcak şekilde stabil hale getirelim."
+
+### Codex strategy (thread `019e1dc5`)
+
+AGREE-with-revisions absorb: P0 live smoke + P1 BE IT paralel; force-single concurrent policy zaten implement; M9 force-expire ile, M10 Playwright ile; BE IT framework = @SpringBootTest + Testcontainers PG + WireMock KC.
+
+### Live smoke matrix (6/6 GREEN on testai 2026-05-12 ~22:30 UTC+3)
+
+Verified end-to-end with 5 users (admin/testuser/d35-admin/d35-granted/mcp-tester):
+
+| Cell | Outcome | Audit/DB |
+|---|---|---|
+| **M1** admin → admin (self) | FE button hidden ✓ + JS bypass 403 `SELF_IMPERSONATION_FORBIDDEN` ✓ | audit row 909 `IMPERSONATION_BLOCKED`, 0 session leak |
+| **M3** admin → d35-admin (alt admin) | 201, session ACTIVE (revoked after smoke) | started + revoked audit |
+| **M4** admin → d35-granted (USER role) | UI 201 + identity swap "DG D35 Granted Per..." + `authz/me userId=1205 superAdmin=false` + admin grid 403 "yetkiniz bulunmuyor" | full lifecycle audit |
+| **M5** admin → mcp-tester (60min config) | 201, expiresAt = now + **60min fixed** (NOT target.sessionTimeoutMinutes) | started + revoked audit |
+| **M7** reason='short' (5 char) | 400 `VALIDATION_ERROR`, `fieldErrors[reason]="boyut '10' ile '500' arasında olmalı"` | none |
+| **M8** concurrent (admin already ACTIVE) | 409 `ACTIVE_IMPERSONATION_EXISTS` (force-single policy already in BE) | none |
+| **M6** disabled user | Skipped live (shared cluster mutation); covered by Mockito `rejectsDisabledTargetWith403` | unit-level |
+| **M9/M10** timeout + viewport | Deferred to P2 Playwright + operator force-expire runbook | follow-up |
+
+### Bugs discovered
+
+| # | Bug | Status | PR |
+|---|---|---|---|
+| **#1** | `target_email` empty on `IMPERSONATION_BLOCKED` audit when guard fires BEFORE user-service resolution (e.g. self-id-equality 1b) — compliance trail gap | TODO | follow-up |
+| **#2** | `user_role_assignments` 33x duplicate rows per user/role in `permission_db.user_role_assignments` (independent of impersonation, observed during M1 drawer side-effect) | TODO (separate epic) | scope outside impersonation |
+| **#3** | FE `ERROR_CODE_MESSAGES` map doesn't catch `VALIDATION_ERROR` shape (uses `fieldErrors[]` not `errorCode`); user sees generic error on reason validation failure | TODO | platform-web follow-up |
+| **#4** | `GET /api/v1/impersonation/sessions?status=ACTIVE` returned 500 `INTERNAL_ERROR` (`HttpRequestMethodNotSupportedException` caught by `handleGeneric` instead of mapped to 405) | **FIXED + LIVE** | [platform-backend#163](https://github.com/Halildeu/platform-backend/pull/163) |
+
+### Design notes
+
+- **NOTE #1**: Impersonation TTL hardcoded **60min**, NOT derived from `target.sessionTimeoutMinutes`. Intentional separation of impersonation lifecycle from regular user session.
+- **NOTE #2**: Raw JS `POST /sessions` creates BE session BUT FE banner/identity swap requires the FE orchestration to run (PR #411 `impersonation-orchestration.ts` via UI button). Raw API consumers must call additional state refresh.
+- **NOTE #3**: Concurrent policy = **force-single per admin** (409 `ACTIVE_IMPERSONATION_EXISTS`) already implemented in BE `ImpersonationSessionService`.
+
+### BUG #4 fix delivered (PR #163, Codex `019e1dd6` AGREE after REVISE-1 absorb)
+
+**Diff** (`auth-service`):
+- `GlobalExceptionHandler.handleMethodNotAllowed`: new `@ExceptionHandler(HttpRequestMethodNotSupportedException.class)` → 405 `METHOD_NOT_ALLOWED` + `Allow` response header (RFC 7231 §6.5.5) via `ex.getSupportedMethods()`, null-safe.
+- `GlobalExceptionHandlerTest`: 5 tests including MockMvc standalone routing test with `PostOnlyFixtureController` fixture mirroring `ImpersonationController` geometry (proves dispatcher → controller-advice integration, not just direct handler call).
+- `docs/runbooks/RB-impersonation-live-smoke.md`: 10-cell acceptance matrix (M1-M10) with DevTools-pasteable JS snippets, audit queries, expected outcomes, bug list, design notes.
+
+**Live verification** (testai, 2026-05-12 ~23:30 UTC+3, post-deploy `auth-service@sha256:9705343b9daf3dcc9db5a727d107b1049f389436eeb535a216b66cc8cc3e5b94`):
+```
+GET /api/v1/impersonation/sessions?status=ACTIVE
+→ 405 Method Not Allowed
+→ Allow: POST
+→ {"error":"METHOD_NOT_ALLOWED","message":"Bu endpoint için 'GET' metodu desteklenmiyor."}
+```
+
+Pre-fix was 500 `INTERNAL_ERROR`.
+
+### Codex iter chain (Session 47 stabilization)
+
+- `019e1dc5-3f0d-7b12-a76e-d0b1b87f6907`: strategy AGREE-with-revisions (P0+P1 paralel, force-single confirmed, WireMock+Testcontainers IT framework, Playwright for FE E2E, 60-min TTL hardcoded design discussion)
+- `019e1dd6-83a4-7051-8aef-04675cf29324`: PR #163 review REVISE-1 (Allow header + MockMvc routing + M2 runbook) → absorbed → AGREE
+
+### Follow-up (P1-P2)
+
+1. **BUG #1 fix** (platform-backend): populate `target_email` on BLOCKED audit when request body has it, even before user-service resolution.
+2. **BUG #3 fix** (platform-web): extend `ERROR_CODE_MESSAGES` map to handle `error: "VALIDATION_ERROR"` + `fieldErrors[]` shape.
+3. **BE IT (full WireMock)** (platform-backend): `ImpersonationControllerIntegrationTest` with @SpringBootTest + Testcontainers PG + WireMock for KC + user-service + permission-service. Lock happy path + 5 negative gates + revoke + concurrent at integration level.
+4. **FE Playwright E2E** (platform-web): scaffold check + impersonation suite (start UI button → identity swap → banner → stop → revert). Covers M9/M10 + multi-tab edge cases.
+5. **KC issuer drift fix** (gitops): `localhost:8081/realms/serban` → `http://keycloak:8080` in user-service overlay; once fixed, revert `kcSubject` from public DTOs and restore internal service-token endpoint.
+6. **BUG #2 (role assignment dedup)**: out-of-scope from impersonation; separate platform-backend permission-service epic.
+
+---
+
 ## Live Delta — Session 47 testai Impersonation UI 1.0 UX Overhaul (2026-05-12 ~22:18 UTC+3) — self-guard + automatic subject resolution + disabled gate + error mapping + banner overflow fix, full 201/204 lifecycle browser smoke PASS after Session 46 screenshot-driven UX feedback
 
 **Trigger**: Session 46 D29 GREEN sonrası kullanıcı iki screenshot yolladı:
