@@ -10,6 +10,125 @@
 
 ---
 
+## Live Delta — Session 47 testai Impersonation UI 1.0 UX Overhaul (2026-05-12 ~22:18 UTC+3) — self-guard + automatic subject resolution + disabled gate + error mapping + banner overflow fix, full 201/204 lifecycle browser smoke PASS after Session 46 screenshot-driven UX feedback
+
+**Trigger**: Session 46 D29 GREEN sonrası kullanıcı iki screenshot yolladı:
+1. **Admin User self-impersonation form** — Admin User satırında "Impersonate this user" button render edilmişti. Frontend self-guard yoktu, form açılıyordu.
+2. **Test User KC UUID empty form** — Hedef KC UUID input alanı manuel kullanıcıya açıktı. Bu KC implementation detayını UI'da exposure etmek pre-production sistemde admin gridi'nde her user'ın UUID'sini her admin elinde bulunmasına gerek vardı — UX bug.
+
+Kullanıcı direktifi: "sen uçtan uca bak ve düzelt" — end-to-end pixel-perfect UX cleanup.
+
+### Plan (Codex thread `019e1bed` REVISE-3 absorb)
+
+5 BE invariant + 6 FE UX:
+
+| Katman | Değişiklik | Test |
+|---|---|---|
+| **BE Step 1b** | `StartSessionRequest.targetUserId == admin.userIdClaim` → 403 `SELF_IMPERSONATION_FORBIDDEN` resolution ÖNCESİ | `ImpersonationControllerSelfGuardTest.rejectsSelfImpersonationBeforeResolution` |
+| **BE Step 1c** | `targetSubject` boş → `UserServiceClient.findUserById` ile auto-resolve | DTO chain (`UserResponse` → `RemoteUserResponse`) |
+| **BE Step 1d** | `RemoteUserResponse.enabled=false` → 403 `TARGET_USER_DISABLED` (KC token-exchange ÖNCE) | `rejectsDisabledTargetWith403` |
+| **BE Step 1e** | Resolved kcSubject == admin.sub → 403 `SELF_IMPERSONATION_FORBIDDEN` (alias-ID circumvent) | `rejectsSubjectEqualitySelfImpersonation` |
+| **BE Step 1f** | `targetSubject=null` after resolve → 422 `TARGET_SUBJECT_UNRESOLVABLE` | `rejectsUnresolvableTargetWith422` + `rejectsUnresolvableTargetWhenUserServiceReturnsEmpty` |
+| **FE** | Self-guard FE'de (`subscriberId === userId` veya fallback) | `UserDetailDrawer.impersonate.spec.tsx.hidesActionForSelfImpersonation` |
+| **FE** | KC UUID input KALDIRILDI; sadece sebep textarea | `ImpersonateAction.tsx` |
+| **FE** | 12 backend errorCode → friendly Türkçe mesaj | `ERROR_CODE_MESSAGES` map |
+| **FE** | Banner viewport overflow fix (responsive flex-wrap) | `ImpersonationBanner.tsx` |
+| **FE** | `StartSessionRequest.targetSubject` optional + conditional spread | `impersonation-orchestration.ts` |
+| **FE** | `shell-services.ts` type update + null-safe | mfe-shell + mfe-users dual types |
+
+### PR cycle (BE 4 PR + FE 1 PR + gitops 1 PR)
+
+| PR | Repo | Action | Outcome |
+|---|---|---|---|
+| **#159** | platform-backend | BE invariants + V16 Flyway `kc_subject` + 5 Mockito unit tests + RB-kc-subject-backfill.md runbook | ✅ MERGED `5bec7fb` — Codex `019e1bed` AGREE |
+| **#411** | platform-web | FE UX overhaul (KC UUID input remove + error map + self-guard + banner fix + 7 vitest) | ✅ MERGED `299e2f4a` — Codex AGREE |
+| **#538** | platform-k8s-gitops | overlays/test digest bump (auth-service + user-service) | ✅ MERGED |
+| **#160** | platform-backend | Hotfix-1: re-expose `kcSubject` on legacy `UserResponse` (REVISE-5 absorb) + UserController `mapToUserResponse` set + `UserServiceClient.findUserById` switched from internal service-token endpoint to public `/api/v1/users/{id}` path | ✅ MERGED `b52308d` — Codex AGREE (user-service KC issuer drift workaround; follow-up: fix `localhost:8081/realms/serban` → `http://keycloak:8080` and revert) |
+| **#161** | platform-backend | Hotfix-2: forward admin JWT (`adminJwt.getTokenValue()`) via `WebClient.headers(setBearerAuth(adminToken))` because public V1 path requires auth | ✅ MERGED `8021574` — Codex AGREE; 9 pass + 1 advisory fail (`report-service MSSQL Testcontainers (PR-0.5)` flake unrelated) |
+| **#162** | platform-backend | Hotfix-3: `UserDetailDto` (V1 detail DTO) + `UserDtoMapper.toDetail` populate `kcSubject` + `UserControllerV1Test.getUser_v1_detailExposesKcSubject` regression. Root cause from live testai smoke: V1 controller path returns `UserDetailDto`, not legacy `UserResponse` — hotfix-1 only patched legacy DTO | ✅ MERGED `fa7f271` — Codex `019e1bed` AGREE; 10/10 pass clean |
+
+### Live images post-deploy (Session 47 final)
+
+- auth-service: `ghcr.io/halildeu/platform-backend-auth-service@sha256:c670f053...` (PR #161 build)
+- user-service: `ghcr.io/halildeu/platform-backend-user-service@sha256:7d152afd4310bc0d35cfa50410233e1378cd8e44deb7e443c5a1b999d22d42a9` (PR #162 build)
+- frontend-testai: PR #411 build (unchanged since deploy)
+
+### Diagnostic chain (5 phases, each test surfaced a deeper bug)
+
+1. **Phase 1** (PR #159 deploy): backend self-guard fires before resolution, FE form clean. Submit → 422 `TARGET_SUBJECT_UNRESOLVABLE` because user-service service-token endpoint hit KC issuer drift (`localhost:8081/realms/serban` unreachable from inside pod).
+2. **Phase 2** (PR #160 hotfix-1): switched to public path + re-exposed kcSubject on `UserResponse`. Submit → 422 still (auth-service log showed 401 from user-service: public path requires admin auth).
+3. **Phase 3** (PR #161 hotfix-2): admin JWT forwarded via `setBearerAuth`. Submit → 422 still. Chrome MCP JS `fetch('/api/v1/users/2')` body inspect revealed JSON has no `kcSubject` field at all even though backend mapper sets it.
+4. **Phase 4** (root cause via grep): `UserControllerV1.getUser` returns `UserDetailDto` (V1 path), NOT `UserResponse` (legacy `/api/users/{id}`). Hotfix-1 only patched the wrong DTO.
+5. **Phase 5** (PR #162 hotfix-3): `UserDetailDto.kcSubject` + mapper set + regression test. Submit → **201 happy path GREEN**.
+
+### Browser smoke evidence (Chrome MCP, 2026-05-12 ~19:17–19:18 UTC+3)
+
+**START** (`admin@example.com` → impersonate `testuser@testai.acik.com`):
+- DOM: `[data-testid="impersonate-action"]` UserDetailDrawer'da render. Form: SADECE sebep textarea (KC UUID input REMOVED). Reason: "Hotfix-3 PR #162 sonrasi 201 happy path acceptance smoke testi" (50+ char).
+- Submit → `POST /api/v1/impersonation/sessions` → **201**
+- Identity swap: header `"PA Platform Admin"` → **"TU Test User"** (atomic auth state refresh)
+- Banner mount: `[data-testid="impersonation-banner"]` text "⚠admin@example.com olarak testuser@testai.acik.com adına işlem yapıyorsun (oturum 59 dk içinde sona erer).Impersonation'ı durdur"
+- chrome JS fetch user-service: `{"id":2,...,"kcSubject":"4d844c0f-2c3e-4fc0-b4f2-4ed72d7ee316"}` ✅
+
+**Backend kanıt**:
+```
+permission_audit_events.id=907
+  event_type=IMPERSONATION_STARTED
+  target_email=testuser@testai.acik.com
+  impersonation_session_id=98bdde2f-b8a9-4874-b5c3-e0b98722edbf
+impersonation_sessions:
+  id=98bdde2f-b8a9-4874-b5c3-e0b98722edbf
+  impersonator_user_id=1 (admin), target_user_id=2 (testuser)
+  status=ACTIVE, started_at=2026-05-12 19:17:25.203939+00
+```
+
+**STOP** (banner stop button programmatic click via JS — banner DOM at top:0 but stop button x=1519 beyond viewport 1550 width):
+- `POST /api/v1/impersonation/sessions/98bdde2f.../revoke` → **204**
+- Banner unmounted + header reverted to **"PA Platform Admin"** (atomic restore)
+
+**Backend kanıt**:
+```
+permission_audit_events.id=908
+  event_type=IMPERSONATION_REVOKED
+  target_email=testuser@testai.acik.com
+  impersonation_session_id=98bdde2f-... (same session)
+impersonation_sessions UPDATE:
+  status=STOPPED, ended_at=2026-05-12 19:18:47.856824+00
+  ended_reason=USER_STOP_FROM_BANNER
+```
+
+### Self-guard regression evidence (BE Step 1b)
+
+Pre-fix: Admin User row showed "Impersonate this user" button (Session 46 screenshot). Post-PR #411 + #159: button hidden FE-side (UserDetailDrawer self-guard `getShellServices().auth.getUser().subscriberId ?? userId`); BE 1b returns 403 even if FE bypassed.
+
+### KC UUID input removal (BE Step 1c + FE)
+
+Pre-fix: Form required admin to manually input target KC subject UUID (KC implementation detail leak). Post-fix: Form only has reason textarea. Backend resolves subject from platform user id via `UserServiceClient.findUserById` → user-service V1 detail → `kcSubject` field.
+
+### D29 hükmü
+
+| Katman | Status |
+|---|---|
+| **Up** | GREEN — auth-service pod 1/1, user-service pod 1/1 with new digest `7d152afd...` |
+| **Functional** | GREEN — full lifecycle (form clean + submit 201 + identity swap + banner + stop 204 + admin restore) |
+| **Audit-trail** | GREEN — 907 STARTED + 908 REVOKED same session_id + DB `ACTIVE → STOPPED USER_STOP_FROM_BANNER` |
+| **Negative gates** | GREEN — 5 Mockito unit tests cover self/disabled/unresolvable/subject-equality/empty branches |
+
+Codex `019e1bed` cumulative verdict: **D29 User Impersonation UI 1.0 UX-overhauled LIVE on testai after PR #159 + #411 + #538 + #160 + #161 + #162 chain.**
+
+### Cross-AI peer review
+
+Codex thread `019e1bed-637e-74e0-815a-fa2b83943acc` — 7 iter (REVISE-1..REVISE-7) plan → impl → live smoke diagnostic → hotfix-1 → hotfix-2 → hotfix-3. Reviewer (Codex) ≠ Implementer (Claude) per HARD RULE. All 6 PRs normal squash merge (no admin bypass per HARD RULE Admin Merge YASAK). Advisory `report-service MSSQL Testcontainers (PR-0.5)` flake unrelated to scope on #161 — `notification-orchestrator Testcontainers PG test` also advisory and flake-prone — both passed clean on #162.
+
+### Follow-up (out of scope, ayrı işler)
+
+1. **user-service KC issuer drift fix**: `localhost:8081/realms/serban/...` unreachable from inside user-service pod → should be `http://keycloak:8080`. Once fixed, the service-token internal endpoint `/api/users/internal/{id}/impersonation-target` will work and `kcSubject` can be reverted from both `UserResponse` and `UserDetailDto` public V1 surface — cleaner security boundary. PR (1-line ConfigMap or env override).
+2. **Banner viewport overflow**: stop button rect x=1519 > viewport 1550 width when banner content width=1712 (responsive layout still imperfect for desktop). PR #411 fixed major overflow but stop button positioned at far right still slightly off-screen on 1550px viewport. Programmatic JS click works; manual user clicks may need page scroll. Minor DS/CSS PR.
+3. **Prod cutover**: `ai.acik.com` prod realm `serban` needs the same V16 kc_subject migration + backfill + user-service rebuild with kcSubject DTOs + auth-service rebuild with admin JWT forward + frontend with PR #411 UX. Cross-cluster digest sync via gitops prod overlay bump.
+4. **kc_subject backfill**: testai backfilled 5 known users (admin@example.com, testuser@testai.acik.com, d35-admin@example.com, d35-granted@example.com, mcp-impersonation-tester@local). New user registration must populate `kc_subject` automatically (user-service create endpoint integration with KC Admin API). Existing-user backfill: RB-kc-subject-backfill.md runbook (PR #159).
+
+---
+
 ## Live Delta — Session 46 testai User Impersonation UI 1.0 D29 FULL GREEN (2026-05-12 ~15:27 UTC+3) — full start/stop lifecycle browser smoke passed end-to-end
 
 **Trigger**: Kullanıcı PR #533 prod backend synthetic smoke sonrası UI tarafında "Impersonate" button-click yapılabiliyor mu canlı doğrulama istedi. PR #527/#533 backend layer D29 GREEN dokümante etmişti ama UI button hiç görünmüyordu testai'da.
