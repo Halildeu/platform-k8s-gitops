@@ -1545,7 +1545,36 @@ images:
     # Image build run: platform-web 25643667491 (success).
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-d3ef67e
     # @sha256:d40f7554a59b7880ac7c4f237a01edddd0f85f30abade446f8a8dc488fcfa875
-    digest: sha256:d40f7554a59b7880ac7c4f237a01edddd0f85f30abade446f8a8dc488fcfa875
+    #
+    # 2026-05-12 update: sha-0431d53 — design-lab 3D wrapper live
+    # previews + charts sidebar i18n (platform-web PR #402 squash).
+    # Live testai cluster smoke surfaced 2 gaps after the playground
+    # coverage PRs (#386, #388):
+    #
+    #   1. 4 3D wrappers (Scatter3D, Surface3D, Lines3D, Globe) had
+    #      LIVE_PROP_SUPPORT + CHART_PRESETS entries but no
+    #      ChartPreviewLive switch case, so the playground preview
+    #      area fell through to "live preview yakında" placeholder.
+    #      Added 4 cases with compact fixture data validated against
+    #      actual wrapper Props interfaces (Scatter3DDataPoint,
+    #      Surface3DDataPoint + dataShape, Lines3DPath, GlobeLayer
+    #      scatter3D variant).
+    #
+    #   2. Sidebar `designlab.sidebar.title.charts` (+ help + tooltip)
+    #      was missing from all 5 locale dictionaries (en/tr/de/es/
+    #      pseudo); the sidebar fell back to the raw key string.
+    #      Added translations in all 5 locales.
+    #
+    # Cross-AI peer review: third-AI Claude session AGREE (Codex
+    # MCP/CLI transports stale this session; HARD RULE "AI Reviewer
+    # ≠ AI Implementer" satisfied via fresh-context reviewer).
+    # CI: 25 checks, 24 success, 1 failure (Auth Transport advisory
+    # pre-existing flake — Playwright timeout, NOT related to x-charts).
+    #
+    # Image build run: platform-web 25730978656 (success).
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-0431d53
+    # @sha256:2204a206e8a371495054d2f4b923eb8312c672a1e7f8e8d51ddeb76d09389acc
+    digest: sha256:2204a206e8a371495054d2f4b923eb8312c672a1e7f8e8d51ddeb76d09389acc
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
