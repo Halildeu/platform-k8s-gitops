@@ -1602,7 +1602,27 @@ images:
     # Image build run: platform-web 25734958638 (success).
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-01645b1
     # @sha256:80b9b9a54776a301704b943a96596e2b27786819299f459812c0c66ab3aaf86d
-    digest: sha256:80b9b9a54776a301704b943a96596e2b27786819299f459812c0c66ab3aaf86d
+    #
+    # 2026-05-12 update: sha-63f847f — Surface3D/Lines3D/Globe canvas
+    # mount fix (platform-web PR #410). Live cluster smoke surfaced
+    # that JSX-inline fixture arrays + dataShape tuples + path coords
+    # were creating fresh references on every PlaygroundTab re-render,
+    # which triggered each wrapper's option useMemo deps to recompute
+    # every tick → setOption flood → echarts-gl canvas mount stalled
+    # (only Scatter3D worked because its option memo doesn't observe
+    # dataShape and the 8-point data array was small enough to mount
+    # before the next tick).
+    #
+    # Fix: hoist all 4 3D fixtures (SCATTER_3D_FIXTURE, SURFACE_3D_FIXTURE
+    # + SURFACE_3D_SHAPE, LINES_3D_FIXTURE, GLOBE_FIXTURE_LAYERS) to
+    # module scope so reference identity holds across renders.
+    # Cross-AI peer review: third-AI Claude session AGREE.
+    # CI: 24 checks, 23 success, 1 failure (Auth Transport advisory).
+    #
+    # Image build run: platform-web 25746598898 (success).
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-63f847f
+    # @sha256:22c8065becc6b35dabce89ca7ac7d73603e4faac29f0fe8945e1d71f13c70bad
+    digest: sha256:22c8065becc6b35dabce89ca7ac7d73603e4faac29f0fe8945e1d71f13c70bad
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
