@@ -3,32 +3,20 @@
 #
 # PR-S1 (PERF-INIT-V2): PG user password rotation runbook tooling.
 #
-# Vault canonical password -> PG ALTER USER -> ESO force-sync -> rollout
-# restart -> pod-network smoke (NOT 127.0.0.1=trust).
+# Vault canonical password -> shared-user precheck -> PG ALTER USER ->
+# ESO force-sync + K8s Secret value compare -> rollout restart -> pod
+# Ready + /actuator/health/readiness body check (DB indicator UP).
 #
 # Usage:
-#   rotate-pg-vault-user.sh <service> [--cluster k3d-test|k3d-prod]
+#   rotate-pg-vault-user.sh <service> [--cluster k3d-test|k3d-prod] [--dry-run]
 #
 # Examples:
 #   rotate-pg-vault-user.sh report-service
 #   rotate-pg-vault-user.sh permission-service --cluster k3d-test
 #
-# Why this script exists (PMD §4.1 PR-S1):
-#   - PG `platform` user (and per-service users) drift between Vault canonical
-#     and the PG user table is the root cause of the recurring cluster
-#     "Spring `${VAULT_PW}` placeholder bug" + "Hibernate Unable to determine
-#     Dialect" zincir-fail (see 2026-05-10 Session 43 incident, multi-service
-#     CrashLoopBackOff).
-#   - pg_hba.conf on test cluster has `127.0.0.1 = trust`, meaning host-level
-#     smoke (`psql -h 127.0.0.1`) returns success for ANY password. That is a
-#     false-positive trap. The real auth check happens from the pod network
-#     (10.44.x.x range) which uses `scram-sha-256`. This script enforces the
-#     pod-network smoke as the only acceptance signal.
-#   - The script is idempotent: re-running on an already-canonical PG user
-#     is a no-op (PG ALTER USER overwrites with same hash).
-#
-# Companion: docs/RB-pg-vault-secret-parity.md (runbook)
-#            docs/policy/alphanumeric-password-policy.md (policy)
+# Companion: docs/RB-pg-vault-secret-parity.md
+#            docs/policy/alphanumeric-password-policy.md
+#            scripts/ops/kc-bootstrap-admin-recovery.sh
 
 set -euo pipefail
 
@@ -40,36 +28,34 @@ mkdir -p "$(dirname "${AUDIT_LOG}")"
 log() {
   local ts
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  echo "[${ts}] [${SCRIPT_NAME}] $*" | tee -a "${AUDIT_LOG}"
+  printf '[%s] [%s] %s\n' "${ts}" "${SCRIPT_NAME}" "$*" | tee -a "${AUDIT_LOG}"
 }
 
 usage() {
   cat >&2 <<EOF
-Usage: ${SCRIPT_NAME} <service> [--cluster k3d-test|k3d-prod]
+Usage: ${SCRIPT_NAME} <service> [options]
 
 Arguments:
   service            Vault path tail under kv/platform/<service>
-                     (e.g. report-service, permission-service)
 
 Options:
   --cluster CTX      Kubernetes context (default: k3d-test)
-  --namespace NS     Namespace (default: platform-test for k3d-test,
-                                       platform-prod for k3d-prod)
+  --namespace NS     Namespace (default: platform-<env>)
   --dry-run          Print actions but do not execute mutations
   --help             This help
 
 Environment:
-  VAULT_TOKEN        Required. Vault root or rotator-capable token.
-                     Default: read from ~/bootstrap-drill/vault-init-<env>.json
-  PG_CONTAINER       PG docker container (default: platform-pg-<env>)
-  VAULT_CONTAINER    Vault docker container (default: platform-vault-<env>)
+  VAULT_TOKEN        Required. Default: ~/bootstrap-drill/vault-init-<env>.json
+  PG_CONTAINER       Default: platform-pg-<env>
+  VAULT_CONTAINER    Default: platform-vault-<env>
 
 Exit codes:
-  0   success (rotation applied + smoke pass)
+  0   success
   1   invalid usage
-  2   pre-flight failure (Vault unreachable, PG unreachable)
-  3   policy violation (password not alphanumeric)
-  4   smoke failure (pod-network auth still fails)
+  2   pre-flight failure
+  3   alphanumeric / length policy violation
+  4   shared-user parity mismatch (multiple Vault paths, different passwords)
+  5   smoke failure (pod auth or health/readiness DB UP)
 EOF
 }
 
@@ -126,7 +112,6 @@ if [[ -z "${SERVICE}" ]]; then
   exit 1
 fi
 
-# Derive env from cluster context
 if [[ "${CLUSTER_CTX}" == "k3d-test" ]]; then
   ENV_NAME="test"
 elif [[ "${CLUSTER_CTX}" == "k3d-prod" ]]; then
@@ -156,17 +141,7 @@ if [[ -z "${VAULT_TOKEN:-}" ]]; then
 fi
 export VAULT_TOKEN
 
-run() {
-  if [[ ${DRY_RUN} -eq 1 ]]; then
-    log "DRY-RUN: $*"
-  else
-    log "EXEC: $*"
-    "$@"
-  fi
-}
-
 mask() {
-  # Mask all but the first 4 and last 2 chars of a secret for logging.
   local s="$1"
   local len=${#s}
   if [[ ${len} -le 6 ]]; then
@@ -176,159 +151,269 @@ mask() {
   fi
 }
 
-# --- Step 1: fetch canonical password from Vault ----------------------------
+# Hash a string (sha256) for parity comparison without leaking value
+hash_value() {
+  printf '%s' "$1" | shasum -a 256 | awk '{print $1}'
+}
+
+# Fetch a Vault path's username + password (returns "user:pass" on stdout)
+fetch_vault_creds() {
+  local path="$1"
+  local data
+  data="$(docker exec -e VAULT_TOKEN "${VAULT_CONTAINER}" \
+    vault kv get -mount=kv -format=json "${path}" 2>/dev/null || echo '{}')"
+  local u p
+  u="$(echo "${data}" | jq -r '.data.data.db_username // .data.data.username // empty')"
+  p="$(echo "${data}" | jq -r '.data.data.db_password // .data.data.password // empty')"
+  printf '%s:%s' "${u}" "${p}"
+}
+
+# --- Step 1: fetch canonical credentials from Vault -------------------------
 
 log "Service=${SERVICE} cluster=${CLUSTER_CTX} ns=${NAMESPACE} dry-run=${DRY_RUN}"
 
-VAULT_PATH="kv/platform/${SERVICE}"
-log "Step 1/6 — fetching canonical credentials from Vault (${VAULT_PATH})"
+VAULT_PATH="platform/${SERVICE}"
+log "Step 1/8 — fetching canonical credentials from Vault (kv/${VAULT_PATH})"
 
-VAULT_DATA="$(docker exec -e VAULT_TOKEN "${VAULT_CONTAINER}" \
-  vault kv get -mount=kv -format=json "platform/${SERVICE}" 2>&1)" || {
-  log "FATAL: vault kv get failed for ${VAULT_PATH}"
-  log "Vault response: ${VAULT_DATA}"
-  exit 2
-}
+CREDS="$(fetch_vault_creds "${VAULT_PATH}")"
+PG_USER="${CREDS%%:*}"
+PG_PASSWORD="${CREDS#*:}"
 
-PG_USER="$(echo "${VAULT_DATA}" | jq -r '.data.data.db_username // .data.data.username // empty')"
-PG_PASSWORD="$(echo "${VAULT_DATA}" | jq -r '.data.data.db_password // .data.data.password // empty')"
-
-if [[ -z "${PG_USER}" ]]; then
-  log "FATAL: no db_username/username field at ${VAULT_PATH}"
+if [[ -z "${PG_USER}" || -z "${PG_PASSWORD}" ]]; then
+  log "FATAL: missing db_username/db_password at kv/${VAULT_PATH}"
   exit 2
 fi
-if [[ -z "${PG_PASSWORD}" ]]; then
-  log "FATAL: no db_password/password field at ${VAULT_PATH}"
-  exit 2
-fi
+log "  -> user='${PG_USER}' password='$(mask "${PG_PASSWORD}")' (len=${#PG_PASSWORD})"
 
-log "  -> Vault returns user='${PG_USER}' password='$(mask "${PG_PASSWORD}")' (len=${#PG_PASSWORD})"
+# --- Step 2: alphanumeric + length policy enforcement -----------------------
 
-# --- Step 2: alphanumeric policy enforcement --------------------------------
-
-# Spring `${...}` placeholder parser + Hibernate JDBC URL build break on
-# special characters in passwords. See docs/policy/alphanumeric-password-policy.md
-log "Step 2/6 — alphanumeric password policy check"
+log "Step 2/8 — alphanumeric + minimum-length policy check"
 
 if [[ ! "${PG_PASSWORD}" =~ ^[A-Za-z0-9]+$ ]]; then
   log "FATAL: Vault password for ${SERVICE} contains non-alphanumeric chars"
-  log "       Spring/Hibernate placeholder parser will break — rotate password"
   log "       Policy: docs/policy/alphanumeric-password-policy.md"
   exit 3
 fi
-log "  -> alphanumeric OK"
 
-# --- Step 3: PG ALTER USER (literal password, NOT a variable!) --------------
+if [[ ${#PG_PASSWORD} -lt 24 ]]; then
+  log "FATAL: Vault password for ${SERVICE} is ${#PG_PASSWORD} chars (<24 minimum)"
+  log "       Policy: docs/policy/alphanumeric-password-policy.md"
+  exit 3
+fi
 
-log "Step 3/6 — ALTER USER ${PG_USER} on ${PG_CONTAINER}"
+# PG SQL identifier safety — username must match standard identifier pattern
+if [[ ! "${PG_USER}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+  log "FATAL: PG_USER '${PG_USER}' is not a safe SQL identifier (^[A-Za-z_][A-Za-z0-9_]*$)"
+  exit 3
+fi
 
-# Use a heredoc literal so bash variable expansion happens once, then psql
-# sees the plain literal. Single-quote-inside-double-quote would NOT expand
-# the variable inside `'${...}'` — that bug is what caused the 2026-05-10
-# false-rotation incident.
+log "  -> policy OK (alphanumeric, len=${#PG_PASSWORD} >= 24, identifier-safe)"
+
+# --- Step 3: shared-user parity precheck ------------------------------------
+
+# Some platform services share the same PG user (e.g. `platform` user used by
+# permission/variant/core-data/etc.). If two Vault paths declare the same
+# username with DIFFERENT passwords, sequential rotation breaks every other
+# service. Detect that BEFORE issuing ALTER USER.
+log "Step 3/8 — shared-user parity precheck across all kv/platform/* paths"
+
+ALL_SERVICES="$(docker exec -e VAULT_TOKEN "${VAULT_CONTAINER}" \
+  vault kv list -format=json kv/platform 2>/dev/null \
+  | jq -r '.[]' 2>/dev/null || echo "")"
+
+OUR_HASH="$(hash_value "${PG_PASSWORD}")"
+MISMATCH=0
+MISMATCH_LIST=""
+
+while IFS= read -r svc; do
+  [[ -z "${svc}" ]] && continue
+  [[ "${svc}" == "${SERVICE}" ]] && continue
+  # Skip non-service paths (subdirectories like notify/ or keycloak/)
+  if [[ "${svc}" == */ ]]; then
+    continue
+  fi
+
+  CREDS_OTHER="$(fetch_vault_creds "platform/${svc}")"
+  OTHER_USER="${CREDS_OTHER%%:*}"
+  OTHER_PASS="${CREDS_OTHER#*:}"
+
+  if [[ -z "${OTHER_USER}" || -z "${OTHER_PASS}" ]]; then
+    continue
+  fi
+
+  if [[ "${OTHER_USER}" == "${PG_USER}" ]]; then
+    OTHER_HASH="$(hash_value "${OTHER_PASS}")"
+    if [[ "${OTHER_HASH}" != "${OUR_HASH}" ]]; then
+      MISMATCH=1
+      MISMATCH_LIST+="    - kv/platform/${svc} (hash=${OTHER_HASH:0:12}...)\n"
+    fi
+  fi
+done <<< "${ALL_SERVICES}"
+
+if [[ ${MISMATCH} -eq 1 ]]; then
+  log "FATAL: shared-user parity violation for PG user '${PG_USER}'"
+  log "       This Vault path (kv/${VAULT_PATH}) hash=${OUR_HASH:0:12}..."
+  log "       Conflicting paths with SAME username but DIFFERENT password:"
+  printf '%b' "${MISMATCH_LIST}" | tee -a "${AUDIT_LOG}"
+  log "       Action: reconcile Vault paths to single canonical, then re-run."
+  log "       Helper: docs/RB-pg-vault-secret-parity.md §3 'shared user reconciliation'"
+  exit 4
+fi
+log "  -> shared-user parity OK (no conflicting Vault paths for user '${PG_USER}')"
+
+# --- Step 4: PG ALTER USER (literal password via stdin) ---------------------
+
+log "Step 4/8 — ALTER USER ${PG_USER} on ${PG_CONTAINER}"
+
+# stdin pipe avoids the 2026-05-10 bash-quoting bug (where `'$VAULT_PW'`
+# literal reached PG). printf is more deterministic than echo for arbitrary
+# bytes (though alphanumeric password is safe with echo too).
 ALTER_SQL="ALTER USER ${PG_USER} WITH PASSWORD '${PG_PASSWORD}';"
 
 if [[ ${DRY_RUN} -eq 1 ]]; then
   log "DRY-RUN: would execute ALTER USER (password masked)"
 else
-  # Pipe the SQL via stdin so the literal does not appear on the docker exec
-  # argv (cleaner shell history).
-  if echo "${ALTER_SQL}" | docker exec -i "${PG_CONTAINER}" \
+  if printf '%s\n' "${ALTER_SQL}" | docker exec -i "${PG_CONTAINER}" \
         psql -U postgres -d postgres -v ON_ERROR_STOP=1 >/dev/null 2>&1; then
     log "  -> ALTER USER succeeded"
   else
     log "FATAL: ALTER USER failed (see PG container logs)"
-    exit 4
+    exit 5
   fi
 fi
 
-# --- Step 4: ESO force-sync --------------------------------------------------
+# --- Step 5: ESO force-sync + K8s Secret value compare ---------------------
 
-# ESO refreshes externalsecrets every refreshInterval (1h default). Force-sync
-# annotation triggers immediate reconcile.
-log "Step 4/6 — ESO force-sync for externalsecret/${SERVICE}-secrets"
+log "Step 5/8 — ESO force-sync + K8s Secret value parity check"
 
 ES_NAME="${SERVICE}-secrets"
 
 if kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
      get externalsecret "${ES_NAME}" >/dev/null 2>&1; then
-  run kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
-    annotate externalsecret "${ES_NAME}" \
-    "force-sync=$(date +%s)" --overwrite >/dev/null
 
-  # Wait up to 30s for SecretSynced=True
+  # Capture pre-rotation Secret resourceVersion so we can detect that ESO
+  # actually wrote a new value.
+  PRE_RV="$(kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
+    get secret "${ES_NAME}" -o jsonpath='{.metadata.resourceVersion}' 2>/dev/null || echo "0")"
+
+  if [[ ${DRY_RUN} -eq 0 ]]; then
+    kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
+      annotate externalsecret "${ES_NAME}" \
+      "force-sync=$(date +%s)" --overwrite >/dev/null
+  fi
+
+  # Wait up to 30s for the Secret's resourceVersion to increment AND for
+  # the password field (typically SPRING_DATASOURCE_PASSWORD or DB_PASSWORD)
+  # to match the Vault canonical hash.
   local_deadline=$(($(date +%s) + 30))
+  SECRET_OK=0
   while [[ $(date +%s) -lt ${local_deadline} ]]; do
-    STATUS="$(kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
-      get externalsecret "${ES_NAME}" \
-      -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")"
-    if [[ "${STATUS}" == "True" ]]; then
-      log "  -> ExternalSecret READY=True"
-      break
+    CUR_RV="$(kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
+      get secret "${ES_NAME}" -o jsonpath='{.metadata.resourceVersion}' 2>/dev/null || echo "0")"
+
+    if [[ "${CUR_RV}" != "${PRE_RV}" ]]; then
+      # Resource version bumped — now verify password value
+      SECRET_PW="$(kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
+        get secret "${ES_NAME}" -o json 2>/dev/null \
+        | jq -r '.data | (.SPRING_DATASOURCE_PASSWORD // .DB_PASSWORD // .password // empty)' \
+        | base64 -d 2>/dev/null || echo "")"
+
+      if [[ -n "${SECRET_PW}" ]]; then
+        SECRET_HASH="$(hash_value "${SECRET_PW}")"
+        if [[ "${SECRET_HASH}" == "${OUR_HASH}" ]]; then
+          log "  -> Secret resourceVersion=${PRE_RV}->${CUR_RV}, password hash matches Vault canonical"
+          SECRET_OK=1
+          break
+        fi
+      fi
     fi
     sleep 2
   done
 
-  if [[ "${STATUS}" != "True" ]]; then
-    log "WARN: ExternalSecret did not reach Ready=True within 30s (continuing)"
+  if [[ ${SECRET_OK} -ne 1 && ${DRY_RUN} -eq 0 ]]; then
+    log "WARN: K8s Secret did not reach parity with Vault within 30s"
+    log "      pre_rv=${PRE_RV} cur_rv=${CUR_RV:-unknown}"
+    log "      Continuing with rollout but downstream pods may fail auth"
   fi
 else
-  log "  -> no externalsecret/${ES_NAME} (service may use direct Secret); skipping"
+  log "  -> no externalsecret/${ES_NAME} (service uses direct Secret); skipping ESO step"
 fi
 
-# --- Step 5: rollout restart -------------------------------------------------
+# --- Step 6: rollout restart -----------------------------------------------
 
-log "Step 5/6 — rollout restart deploy/${SERVICE}"
+log "Step 6/8 — rollout restart deploy/${SERVICE}"
 
 if kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
      get deploy "${SERVICE}" >/dev/null 2>&1; then
-  run kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
-    rollout restart deploy/"${SERVICE}"
+
   if [[ ${DRY_RUN} -eq 0 ]]; then
+    kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
+      rollout restart deploy/"${SERVICE}" >/dev/null
+
     if ! kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
             rollout status deploy/"${SERVICE}" --timeout=240s; then
       log "FATAL: rollout did not complete within 240s"
-      exit 4
+      exit 5
     fi
+  else
+    log "DRY-RUN: would rollout restart deploy/${SERVICE}"
   fi
 else
   log "FATAL: deploy/${SERVICE} not found in ${NAMESPACE}"
-  exit 4
+  exit 5
 fi
 
-# --- Step 6: pod-network smoke (NOT 127.0.0.1=trust) -------------------------
+# --- Step 7: pod-network DB indicator smoke (NOT 127.0.0.1=trust) ----------
 
-log "Step 6/6 — pod-network smoke (NOT 127.0.0.1=trust)"
-
-# Test from inside the new pod that the DB credential works. The pod connects
-# via the service DNS name (postgres.platform-test.svc.cluster.local or
-# Docker network alias) which goes through scram-sha-256 not the trust line.
-
-POD_NAME="$(kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
-  get pod -l app.kubernetes.io/name="${SERVICE}" \
-  --field-selector status.phase=Running \
-  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")"
-
-if [[ -z "${POD_NAME}" ]]; then
-  log "FATAL: no running pod for ${SERVICE} after rollout"
-  exit 4
-fi
-
-# Use the pod's own /actuator/health endpoint as the canonical smoke. If the
-# DB connection failed, Spring Boot's health indicator goes DOWN and the pod
-# never reaches 1/1 Ready — so rollout success above is already a strong
-# signal. Re-confirm here for the audit log.
+log "Step 7/8 — pod /actuator/health/readiness DB indicator check"
 
 if [[ ${DRY_RUN} -eq 0 ]]; then
-  if kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
-        wait --for=condition=Ready "pod/${POD_NAME}" --timeout=60s >/dev/null 2>&1; then
-    log "  -> pod/${POD_NAME} Ready=True (pod-network DB auth implicitly OK)"
+  POD_NAME="$(kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
+    get pod -l app.kubernetes.io/name="${SERVICE}" \
+    --field-selector status.phase=Running \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")"
+
+  if [[ -z "${POD_NAME}" ]]; then
+    log "FATAL: no running pod for ${SERVICE} after rollout"
+    exit 5
+  fi
+
+  if ! kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
+          wait --for=condition=Ready "pod/${POD_NAME}" --timeout=60s >/dev/null 2>&1; then
+    log "FATAL: pod/${POD_NAME} not Ready within 60s"
+    log "       Inspect: kubectl logs ${POD_NAME} --tail=50"
+    exit 5
+  fi
+
+  # Hit /actuator/health/readiness inside the pod (management port 8081).
+  # The default Spring Boot 3 readiness group does NOT include DB by default,
+  # but our backend services explicitly opt in via
+  # `management.endpoint.health.group.readiness.include=db,readinessState`.
+  # If a service doesn't have that config, this smoke degrades to pod Ready
+  # (still a strong signal because Hikari startup would have failed).
+  HEALTH_BODY="$(kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
+    exec "${POD_NAME}" -- \
+    sh -c 'wget -qO- http://127.0.0.1:8081/actuator/health/readiness 2>/dev/null || curl -sS --fail-with-body http://127.0.0.1:8081/actuator/health/readiness 2>/dev/null' \
+    2>/dev/null || echo '{}')"
+
+  STATUS="$(echo "${HEALTH_BODY}" | jq -r '.status // "UNKNOWN"' 2>/dev/null || echo "PARSE_ERR")"
+
+  if [[ "${STATUS}" == "UP" ]]; then
+    DB_STATUS="$(echo "${HEALTH_BODY}" | jq -r '.components.db.status // .components.dataSource.status // "ABSENT"' 2>/dev/null || echo "ABSENT")"
+    if [[ "${DB_STATUS}" == "UP" || "${DB_STATUS}" == "ABSENT" ]]; then
+      log "  -> /actuator/health/readiness UP (db=${DB_STATUS})"
+    else
+      log "FATAL: readiness UP but db indicator=${DB_STATUS}"
+      exit 5
+    fi
+  elif [[ "${STATUS}" == "UNKNOWN" || "${STATUS}" == "PARSE_ERR" ]]; then
+    log "WARN: readiness endpoint not reachable from inside pod; falling back to Ready=True only"
   else
-    log "FATAL: pod/${POD_NAME} not Ready within 60s — DB auth likely failed"
-    log "       Inspect: kubectl --context ${CLUSTER_CTX} -n ${NAMESPACE} logs ${POD_NAME} --tail=50"
-    exit 4
+    log "FATAL: /actuator/health/readiness status=${STATUS}"
+    log "       Body: ${HEALTH_BODY}"
+    exit 5
   fi
 fi
 
-log "DONE — rotation for ${SERVICE} on ${CLUSTER_CTX} completed successfully"
+log "Step 8/8 — DONE — rotation for ${SERVICE} on ${CLUSTER_CTX} completed"
 exit 0

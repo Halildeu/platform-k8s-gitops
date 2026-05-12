@@ -65,13 +65,56 @@ Bu komut:
 
 ### 3.2 Toplu (zincir-fail durumu)
 
+**ÖNEMLİ — shared-user trap'i**: birden çok servis aynı PG user'ını kullanıyorsa (örn. `platform` user permission/variant/core-data/notify-orch/user/auth/report tarafından paylaşılıyor), her servisin Vault path'inde **aynı canonical password** olduğundan emin olun. Aksi halde script'in §4 shared-user parity precheck'i her ikinci servis için exit 4 verecek.
+
+**Önce shared-user reconciliation** (manuel):
+
 ```bash
+# 1. Hangi servisler aynı PG user'ını kullanıyor tespit et
+for svc in $(docker exec -e VAULT_TOKEN platform-vault-test \
+              vault kv list -format=json kv/platform | jq -r '.[]'); do
+  [[ "${svc}" == */ ]] && continue   # subdirectories skip
+  USER=$(docker exec -e VAULT_TOKEN platform-vault-test \
+          vault kv get -mount=kv -format=json "platform/${svc}" 2>/dev/null \
+          | jq -r '.data.data.db_username // .data.data.username // "-"')
+  HASH=$(docker exec -e VAULT_TOKEN platform-vault-test \
+          vault kv get -mount=kv -format=json "platform/${svc}" 2>/dev/null \
+          | jq -r '.data.data.db_password // .data.data.password // ""' \
+          | shasum -a 256 | awk '{print $1}')
+  printf '%-32s user=%-20s hash=%s\n' "${svc}" "${USER}" "${HASH:0:16}"
+done
+```
+
+Aynı user için farklı hash gözüküyorsa **canonical seç + diğer path'leri patch** et:
+
+```bash
+CANONICAL_PASS="$(docker exec -e VAULT_TOKEN platform-vault-test \
+  vault kv get -mount=kv -format=json platform/report-service \
+  | jq -r '.data.data.db_password')"
+
+for svc in permission-service variant-service core-data-service \
+           notification-orchestrator user-service auth-service; do
+  docker exec -e VAULT_TOKEN platform-vault-test \
+    vault kv patch "kv/platform/${svc}" db_password="${CANONICAL_PASS}"
+done
+```
+
+**Sonra toplu rotate**:
+
+```bash
+# Tek servisle çalıştır; shared-user'lı diğer servisler bu rotation'dan
+# zaten faydalanacak çünkü PG ALTER USER tüm user için tek hash yazıyor.
+bash scripts/ops/rotate-pg-vault-user.sh report-service --cluster k3d-test
+
+# Sonra her servis için rollout restart (PG canonical artık eşleşti)
 for svc in permission-service variant-service core-data-service \
            notification-orchestrator user-service auth-service \
-           report-service endpoint-admin-service; do
-  bash scripts/ops/rotate-pg-vault-user.sh "${svc}" --cluster k3d-test || \
-    echo "WARN: ${svc} failed, continuing"
+           endpoint-admin-service; do
+  kubectl --context k3d-test -n platform-test rollout restart deploy/"${svc}"
 done
+
+# Pod-network Ready bekle
+kubectl --context k3d-test -n platform-test get pod -A
 ```
 
 ### 3.3 Dry-run

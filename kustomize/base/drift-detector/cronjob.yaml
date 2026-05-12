@@ -14,6 +14,10 @@
 #     the resource hook ready and audit-tracked.
 #   - Actual scheduling/execution is gated by overlay-level activation
 #     (D17 selective apply protection — base never deploys live).
+#   - Current CI placeholder-leak check (.github/workflows/ci.yml) grep'i
+#     ESO overlay'lerini hedef alıyor; bu base henüz any overlay'e dahil
+#     edilmediği için render edilmeden duruyor. Activation PR'ı bu base'i
+#     overlay'e dahil ettiğinde ek guard kapsamı genişletilecek.
 #
 # Once activated, the job runs every 30 minutes and:
 #   1. Compares md5(Vault db_password) for each service vs md5 PG hash
@@ -131,7 +135,7 @@ metadata:
   labels:
     app.kubernetes.io/name: secret-drift-detector
 rules:
-  # Read ExternalSecret status across all platform namespaces
+  # Read ExternalSecret status (list/watch needed to enumerate all per-service ES)
   - apiGroups:
       - external-secrets.io
     resources:
@@ -150,14 +154,29 @@ rules:
       - get
       - list
       - watch
-  # Read secrets (only for hash comparison; never write)
+  # Read secrets for hash comparison only.
+  # Narrowed via resourceNames to known per-service secrets only. Future
+  # services added to the platform need this list extended. The conscious
+  # "secret inventory reader" pattern is documented in
+  # docs/policy/alphanumeric-password-policy.md §5.
   - apiGroups:
       - ""
     resources:
       - secrets
+    resourceNames:
+      - auth-service-secrets
+      - user-service-secrets
+      - variant-service-secrets
+      - core-data-service-secrets
+      - report-service-secrets
+      - schema-service-secrets
+      - permission-service-secrets
+      - endpoint-admin-service-secrets
+      - notification-orchestrator-secrets
+      - openfga-secrets
+      - alertmanager-fallback-secrets
     verbs:
       - get
-      - list
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
