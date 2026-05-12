@@ -37,7 +37,12 @@ images:
 
   - name: auth-service
     newName: ghcr.io/halildeu/platform-backend-auth-service
-    digest: sha256:c84bc6b04f7f17cc145024d6eeff2c624c52704a259ce843aeea63444da9ed37
+    # 2026-05-12 Session 45 prod User Impersonation parity:
+    # live prod rejected frontend JWTs with "Invalid signature" because this
+    # overlay still pinned the pre-PR #141 auth-service image. The digest below
+    # matches the test-proven ServiceJwt decoder @Profile gate fix
+    # (platform-backend c5df886) and the live prod pod imageID.
+    digest: sha256:1bfe6baa15f251e841a8f8f2e8ff69d3b29e1ef174f0372afe8aa7dde81f0bc0
   # 2026-05-04 Session 37: prod backend canonical realign — promote test cluster
   # digest (built from same canonical main HEAD) to bring ai.acik.com level
   # with testai. PR #331 first promoted to sha256:a0a48aa9 (test overlay yaml)
@@ -78,7 +83,12 @@ images:
     # 2026-05-04 Session 37: canonical realign — was sha256:10cba617 (Session 37
     # earlier sprint). Promote to test cluster digest sha256:7968fff5 so prod
     # ships the same backend revision as canonical main HEAD.
-    digest: sha256:7968fff58c1c806d2a31e851acc246d10d249565ddb5885febc03912ebb44e7d
+    # 2026-05-12 Session 45 prod User Impersonation parity:
+    # prod image lacked InternalImpersonationSessionController and
+    # InternalImpersonationAuditController, causing auth-service session create
+    # to hit permission-service static-resource 404/500. This digest matches
+    # test's PR-B internal controller image and the live prod pod imageID.
+    digest: sha256:a973be6502e6d26cab9e200fb7f343b35e62c26793b94b100bd03b513b64bc49
   # Frontend prod variant (ai.acik.com + serban realm)
   # 2026-05-03 Session 37: AG Grid lisans bytes-fix + single-source refactor +
   # buildx cache scope-v2 rename hotfix branch (`hotfix/ag-grid-license-rebuild`,
@@ -300,6 +310,19 @@ patches:
       metadata:
         name: notification-orchestrator-secrets
 
+  - target:
+      kind: ConfigMap
+      name: auth-service-config
+    patch: |-
+      # 2026-05-12 Session 45 prod User Impersonation parity:
+      # Prod KC tokens carry the public issuer. Keep JWKS internal to avoid
+      # public-domain hairpin while preserving issuer validation.
+      - op: add
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://ai.acik.com/realms/serban"
+      - op: add
+        path: /data/KEYCLOAK_JWKS_URI
+        value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
   - target:
       kind: ConfigMap
       name: api-gateway-config

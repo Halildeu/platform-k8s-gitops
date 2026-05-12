@@ -1,0 +1,95 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-backend",
+  "service": "permission-service",
+  "git_sha": "5ddc93517b5a34eba964c5c400299f4135c6bacc",
+  "git_short_sha": "5ddc935",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-backend-permission-service",
+    "digest": "sha256:a973be6502e6d26cab9e200fb7f343b35e62c26793b94b100bd03b513b64bc49",
+    "tag": "sha-5ddc935",
+    "push_run_id": 25624087995,
+    "pushed_at": "2026-05-10T00:00:00Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-05-10T00:00:00Z",
+      "promoted_by_pr": 488,
+      "argocd_revision": null,
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-05-10T00:00:00Z",
+          "details": "test overlay pinned permission-service to sha256:a973be65...; permission-service pod reached readiness with User Impersonation PR-B/PR-D2 internals.",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/pull/488"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-05-10T00:00:00Z",
+          "details": "Internal impersonation session/audit controllers and V19 session/audit schema were present in the test-promoted image; test User Impersonation E2E progressed through session persistence instead of static-resource 404.",
+          "evidence_url": "https://github.com/Halildeu/platform-backend/pull/139",
+          "endpoints": [
+            "/api/v1/internal/impersonation/sessions",
+            "/api/v1/internal/impersonation/audit-events",
+            "/api/v1/authz/me"
+          ]
+        },
+        "d29_zanzibar": {
+          "status": "GREEN",
+          "checked_at": "2026-05-10T00:00:00Z",
+          "details": "Permission-service is the authoritative Zanzibar-backed authz service; test promotion retained /authz/me superAdmin checks and User Impersonation session persistence path.",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/pull/488",
+          "allow_deny_synthetic": "PASS"
+        }
+      },
+      "verified_at": "2026-05-10T00:00:00Z",
+      "candidate_pr": 488,
+      "candidate_pr_status": "merged"
+    },
+    "prod": {
+      "promoted_at": "2026-05-12T05:30:00Z",
+      "promoted_by_pr": 533,
+      "argocd_revision": null,
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-05-12T05:30:00Z",
+          "details": "Live prod permission-service pod imageID matched sha256:a973be65... and readiness was true."
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-05-12T05:41:14Z",
+          "details": "ai.acik.com synthetic smoke: start-session 201, active lookup 200, stop/current 204, DB row STOPPED with USER_STOP.",
+          "endpoints": [
+            "/api/v1/internal/impersonation/sessions",
+            "/api/v1/internal/impersonation/audit-events",
+            "/api/v1/authz/me"
+          ]
+        },
+        "d29_zanzibar": {
+          "status": "GREEN",
+          "checked_at": "2026-05-12T05:41:14Z",
+          "details": "OpenFGA admin tuple check returned allowed=true; permission-service /authz/me returned superAdmin=true before the start-session call.",
+          "allow_deny_synthetic": "PASS"
+        }
+      },
+      "verified_at": "2026-05-12T05:41:14Z",
+      "candidate_pr": 533,
+      "candidate_pr_status": "ready_for_review"
+    }
+  },
+  "metadata": {
+    "required_migrations": [
+      "permission-service V19__user_impersonation_audit_context.sql"
+    ],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:7968fff58c1c806d2a31e851acc246d10d249565ddb5885febc03912ebb44e7d"
+  },
+  "audit": {
+    "created_at": "2026-05-12T05:45:00Z",
+    "last_updated_at": "2026-05-12T05:45:00Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-backend/actions/runs/25624087995"
+  }
+}

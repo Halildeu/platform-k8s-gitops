@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-backend",
+  "service": "auth-service",
+  "git_sha": "c5df8869d424d872739b21ee70e7555fbd8d9624",
+  "git_short_sha": "c5df886",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-backend-auth-service",
+    "digest": "sha256:1bfe6baa15f251e841a8f8f2e8ff69d3b29e1ef174f0372afe8aa7dde81f0bc0",
+    "tag": "sha-c5df886",
+    "push_run_id": 25633481822,
+    "pushed_at": "2026-05-10T00:00:00Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-05-10T00:00:00Z",
+      "promoted_by_pr": 495,
+      "argocd_revision": null,
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-05-10T00:00:00Z",
+          "details": "test overlay pinned auth-service to sha256:1bfe6baa...; auth-service pod reached readiness after the PR #141 JwtDecoder @Profile gate hot-fix.",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/pull/495"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-05-10T00:00:00Z",
+          "details": "User Impersonation R-2 smoke regression moved from 401 Invalid signature to authenticated controller flow; Spring OAuth2 Keycloak JWKS decoder wins on k8s/prod profiles.",
+          "evidence_url": "https://github.com/Halildeu/platform-backend/pull/141",
+          "endpoints": [
+            "/api/v1/impersonation/sessions",
+            "/api/v1/impersonation/sessions/current",
+            "/api/v1/authz/me"
+          ]
+        },
+        "d29_zanzibar": {
+          "status": "GREEN",
+          "checked_at": "2026-05-10T00:00:00Z",
+          "details": "Auth-service SuperAdminAuthority delegates to permission-service /authz/me and the test User Impersonation path reached the Zanzibar-backed authorization step without JWT signature rejection.",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/pull/495",
+          "allow_deny_synthetic": "PASS"
+        }
+      },
+      "verified_at": "2026-05-10T00:00:00Z",
+      "candidate_pr": 495,
+      "candidate_pr_status": "merged"
+    },
+    "prod": {
+      "promoted_at": "2026-05-12T05:31:00Z",
+      "promoted_by_pr": 533,
+      "argocd_revision": null,
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-05-12T05:31:00Z",
+          "details": "Live prod auth-service pod imageID matched sha256:1bfe6baa... and readiness was true."
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-05-12T05:41:14Z",
+          "details": "ai.acik.com synthetic smoke: /authz/me 200 superAdmin=true, POST /api/v1/impersonation/sessions 201, active lookup 200, stop/current 204.",
+          "endpoints": [
+            "/api/v1/authz/me",
+            "/api/v1/impersonation/sessions",
+            "/api/v1/impersonation/sessions/active",
+            "/api/v1/impersonation/sessions/current"
+          ]
+        },
+        "d29_zanzibar": {
+          "status": "GREEN",
+          "checked_at": "2026-05-12T05:41:14Z",
+          "details": "OpenFGA admin tuple check returned allowed=true before start-session; authz/me returned superAdmin=true for the same synthetic user.",
+          "allow_deny_synthetic": "PASS"
+        }
+      },
+      "verified_at": "2026-05-12T05:41:14Z",
+      "candidate_pr": 533,
+      "candidate_pr_status": "ready_for_review"
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:c84bc6b04f7f17cc145024d6eeff2c624c52704a259ce843aeea63444da9ed37"
+  },
+  "audit": {
+    "created_at": "2026-05-12T05:45:00Z",
+    "last_updated_at": "2026-05-12T05:45:00Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-backend/actions/runs/25633481822"
+  }
+}
