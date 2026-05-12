@@ -53,15 +53,19 @@ cd /home/halil/platform-k8s-gitops
 bash scripts/ops/rotate-pg-vault-user.sh report-service --cluster k3d-test
 ```
 
-Bu komut:
+Bu komut **8 step** yürütür:
 
-1. Vault'tan `kv/platform/report-service` `db_username` + `db_password` çeker
-2. **Alphanumeric policy** check (özel karakter varsa exit 3 — rotate gerek; bkz §5)
-3. PG `platform-pg-test` container'ında `ALTER USER ... WITH PASSWORD '...';`
-4. ExternalSecret force-sync + `Ready=True` bekle
-5. `rollout restart deploy/<service>` + `rollout status` timeout 240 s
-6. Pod-network smoke: pod `Ready=True` (NOT 127.0.0.1=trust)
-7. Audit log: `~/.claude/logs/pg-vault-rotation.log`
+1. Vault'tan `kv/platform/report-service` `db_username` + `db_password` çeker (masked log)
+2. **Policy check**: alphanumeric (`[A-Za-z0-9]+`) + minimum 24 char + PG identifier safety (`^[A-Za-z_][A-Za-z0-9_]*$`). Fail → exit 3 (bkz §6)
+3. **Shared-user parity precheck**: `kv/platform/*` altında aynı user'a sahip diğer path'lerin password hash'ini karşılaştır. Mismatch → exit 4 + conflicting paths listesi (bkz §5)
+4. PG `platform-pg-test` container'ında `printf '%s\n' "ALTER USER ... WITH PASSWORD '...';" | psql -i` (stdin pipe + literal — eski bash quoting bug'ından korunma)
+5. ESO force-sync **+ K8s Secret value compare**: pre/post resourceVersion + decoded password hash == Vault canonical hash. **Mismatch → exit 5** (ExternalSecret varsa parity zorunlu)
+6. `rollout restart deploy/<service>` + `rollout status` timeout 240 s
+7. **Pod-network DB indicator smoke**: pod'dan `wget /actuator/health/readiness` body parse + `.components.db.status == UP` check:
+   - `UP` → DB auth proven ✓
+   - `ABSENT` (readiness group'a db dahil değil) → **exit 5** (DB auth NOT proven); override için `--allow-ready-only` flag
+   - `DOWN` veya status != UP → exit 5
+8. Audit log: `~/.claude/logs/pg-vault-rotation.log` (passwords masked, sadece sha256 hash prefix loglanır)
 
 ### 3.2 Toplu (zincir-fail durumu)
 
@@ -129,21 +133,24 @@ Hiçbir mutasyon yapılmaz; sadece yapılacak işlemleri log'a yazar.
 
 ## 4. Keycloak master-admin recovery (KC drift)
 
-KC password drift'i farklı bir akıştır çünkü KC `kc.sh bootstrap-admin` komutu ile temp admin oluşturur, ardından mevcut `admin` user'ının password'ünü Admin REST API üzerinden sıfırlar.
+KC password drift'i farklı bir akıştır. Running KC `kc.sh bootstrap-admin user` komutu **port 9000 conflict** ile fail eder (`Address already in use`); bunun yerine **temp container approach** kullanılır.
 
 ```bash
 bash scripts/ops/kc-bootstrap-admin-recovery.sh test
 ```
 
-Adımlar:
+Adımlar (5 step + trap cleanup):
 
-1. Temp recovery admin (32-char random password) bootstrap
-2. Temp admin ile master realm token al
-3. `admin` user password = canonical file value (`kc_admin_password.txt`)
-4. Temp recovery admin sil (audit clean)
-5. Verify: admin login → token alınabiliyor
+1. **Pre-flight + DB env extract**: main KC container'dan `KC_DB`, `KC_DB_URL_HOST`, `KC_DB_URL_PORT`, `KC_DB_URL_DATABASE`, `KC_DB_USERNAME`, `KC_DB_PASSWORD_FILE` env'lerini al (compose layout ile birebir uyumlu)
+2. **Temp container spawn**: aynı KC image + aynı PG network + secrets mount, `--entrypoint sleep 300`. :9000 host'a publish edilmez → port conflict yok
+3. **bootstrap-admin user**: temp container içinde `sh -lc 'export KC_DB_PASSWORD=$(cat $KC_DB_PASSWORD_FILE) && kc.sh bootstrap-admin user --username temp-recovery-... --password:env KC_TEMP_PASS --no-prompt'`. Wrapper entrypoint çalışmadığı için `KC_DB_PASSWORD` literal manuel export edilir
+4. Temp container tear down
+5. Main KC's Admin REST API ile token al → `admin` user password reset → temp user delete (trap'lı, fail durumunda orphan detected)
+6. Verify: admin login → token
 
-KC container yeniden başlatılması gerekmez; password DB'ye doğrudan yazılır.
+**Main KC restart YOK**; password değişiklikleri shared PG DB üzerinden anında main KC'ye yansır.
+
+**Trap cleanup**: temp container ve temp user `EXIT|INT|TERM` trap ile garanti temizlenir. Temp user delete fail olursa `exit 5` + manuel cleanup uyarısı.
 
 ---
 

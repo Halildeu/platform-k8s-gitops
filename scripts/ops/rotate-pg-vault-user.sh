@@ -25,6 +25,10 @@ readonly SCRIPT_NAME
 readonly AUDIT_LOG="${HOME}/.claude/logs/pg-vault-rotation.log"
 mkdir -p "$(dirname "${AUDIT_LOG}")"
 
+# Acceptance gate strictness (default: strict; set to 1 to allow degraded
+# acceptance when /actuator/health/readiness has no DB indicator).
+ALLOW_READY_ONLY="${ALLOW_READY_ONLY:-0}"
+
 log() {
   local ts
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -39,10 +43,13 @@ Arguments:
   service            Vault path tail under kv/platform/<service>
 
 Options:
-  --cluster CTX      Kubernetes context (default: k3d-test)
-  --namespace NS     Namespace (default: platform-<env>)
-  --dry-run          Print actions but do not execute mutations
-  --help             This help
+  --cluster CTX            Kubernetes context (default: k3d-test)
+  --namespace NS           Namespace (default: platform-<env>)
+  --dry-run                Print actions but do not execute mutations
+  --allow-ready-only       Allow acceptance when /actuator/health/readiness has
+                           no DB indicator (pod Ready=True only). Default off
+                           (strict mode: DB indicator UP required).
+  --help                   This help
 
 Environment:
   VAULT_TOKEN        Required. Default: ~/bootstrap-drill/vault-init-<env>.json
@@ -83,6 +90,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dry-run)
       DRY_RUN=1
+      shift
+      ;;
+    --allow-ready-only)
+      ALLOW_READY_ONLY=1
       shift
       ;;
     --help|-h)
@@ -331,12 +342,15 @@ if kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
   done
 
   if [[ ${SECRET_OK} -ne 1 && ${DRY_RUN} -eq 0 ]]; then
-    log "WARN: K8s Secret did not reach parity with Vault within 30s"
-    log "      pre_rv=${PRE_RV} cur_rv=${CUR_RV:-unknown}"
-    log "      Continuing with rollout but downstream pods may fail auth"
+    log "FATAL: K8s Secret did not reach parity with Vault within 30s"
+    log "       pre_rv=${PRE_RV} cur_rv=${CUR_RV:-unknown}"
+    log "       Vault canonical hash=${OUR_HASH:0:16}... but Secret value differs"
+    log "       ExternalSecret '${ES_NAME}' exists — parity is mandatory."
+    log "       Inspect: kubectl describe externalsecret ${ES_NAME} -n ${NAMESPACE}"
+    exit 5
   fi
 else
-  log "  -> no externalsecret/${ES_NAME} (service uses direct Secret); skipping ESO step"
+  log "  -> no externalsecret/${ES_NAME} (service uses direct Secret); skipping ESO parity check"
 fi
 
 # --- Step 6: rollout restart -----------------------------------------------
@@ -400,14 +414,38 @@ if [[ ${DRY_RUN} -eq 0 ]]; then
 
   if [[ "${STATUS}" == "UP" ]]; then
     DB_STATUS="$(echo "${HEALTH_BODY}" | jq -r '.components.db.status // .components.dataSource.status // "ABSENT"' 2>/dev/null || echo "ABSENT")"
-    if [[ "${DB_STATUS}" == "UP" || "${DB_STATUS}" == "ABSENT" ]]; then
-      log "  -> /actuator/health/readiness UP (db=${DB_STATUS})"
+    if [[ "${DB_STATUS}" == "UP" ]]; then
+      log "  -> /actuator/health/readiness UP, db=UP (DB auth proven)"
+    elif [[ "${DB_STATUS}" == "ABSENT" ]]; then
+      # Spring Boot default readiness group does NOT include db; service
+      # must opt in via `management.endpoint.health.group.readiness.include=db`.
+      # If absent, we cannot prove DB auth via the readiness endpoint.
+      if [[ ${ALLOW_READY_ONLY} -eq 1 ]]; then
+        log "WARN: db indicator ABSENT; --allow-ready-only override active (DB auth NOT proven, pod Ready=True only)"
+        log "      Action: add 'management.endpoint.health.group.readiness.include=db' to ${SERVICE} config to enable strict gate"
+      else
+        log "FATAL: db indicator ABSENT in /actuator/health/readiness body"
+        log "       This means readiness group does not include the DB contributor;"
+        log "       pod Ready=True alone is NOT proof that DB auth works."
+        log "       Fix: add 'management.endpoint.health.group.readiness.include=db' to service config."
+        log "       Or override: re-run with --allow-ready-only (degraded acceptance)."
+        log "       Body: ${HEALTH_BODY}"
+        exit 5
+      fi
     else
       log "FATAL: readiness UP but db indicator=${DB_STATUS}"
+      log "       Body: ${HEALTH_BODY}"
       exit 5
     fi
   elif [[ "${STATUS}" == "UNKNOWN" || "${STATUS}" == "PARSE_ERR" ]]; then
-    log "WARN: readiness endpoint not reachable from inside pod; falling back to Ready=True only"
+    if [[ ${ALLOW_READY_ONLY} -eq 1 ]]; then
+      log "WARN: readiness endpoint unreachable; --allow-ready-only override active"
+    else
+      log "FATAL: /actuator/health/readiness unreachable inside pod"
+      log "       Body: ${HEALTH_BODY}"
+      log "       Override: --allow-ready-only flag (degraded acceptance)"
+      exit 5
+    fi
   else
     log "FATAL: /actuator/health/readiness status=${STATUS}"
     log "       Body: ${HEALTH_BODY}"
