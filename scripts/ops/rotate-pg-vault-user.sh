@@ -302,44 +302,59 @@ ES_NAME="${SERVICE}-secrets"
 if kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
      get externalsecret "${ES_NAME}" >/dev/null 2>&1; then
 
-  # Capture pre-rotation Secret resourceVersion so we can detect that ESO
-  # actually wrote a new value.
+  # Helper: read the password field from the K8s Secret and return its
+  # sha256 hash (empty string if not present).
+  read_secret_hash() {
+    local sec_pw sec_hash
+    sec_pw="$(kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
+      get secret "${ES_NAME}" -o json 2>/dev/null \
+      | jq -r '.data | (.SPRING_DATASOURCE_PASSWORD // .DB_PASSWORD // .password // empty)' \
+      | base64 -d 2>/dev/null || echo "")"
+    if [[ -z "${sec_pw}" ]]; then
+      echo ""
+      return
+    fi
+    sec_hash="$(hash_value "${sec_pw}")"
+    echo "${sec_hash}"
+  }
+
+  # Capture pre-state for audit.
   PRE_RV="$(kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
     get secret "${ES_NAME}" -o jsonpath='{.metadata.resourceVersion}' 2>/dev/null || echo "0")"
 
-  if [[ ${DRY_RUN} -eq 0 ]]; then
-    kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
-      annotate externalsecret "${ES_NAME}" \
-      "force-sync=$(date +%s)" --overwrite >/dev/null
+  SECRET_OK=0
+
+  # Idempotency check — if Secret already matches Vault canonical, no-op.
+  PRE_HASH="$(read_secret_hash)"
+  if [[ -n "${PRE_HASH}" && "${PRE_HASH}" == "${OUR_HASH}" ]]; then
+    log "  -> Secret already in parity with Vault canonical (hash=${PRE_HASH:0:16}...); no annotation needed"
+    SECRET_OK=1
   fi
 
-  # Wait up to 30s for the Secret's resourceVersion to increment AND for
-  # the password field (typically SPRING_DATASOURCE_PASSWORD or DB_PASSWORD)
-  # to match the Vault canonical hash.
-  local_deadline=$(($(date +%s) + 30))
-  SECRET_OK=0
-  while [[ $(date +%s) -lt ${local_deadline} ]]; do
-    CUR_RV="$(kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
-      get secret "${ES_NAME}" -o jsonpath='{.metadata.resourceVersion}' 2>/dev/null || echo "0")"
-
-    if [[ "${CUR_RV}" != "${PRE_RV}" ]]; then
-      # Resource version bumped — now verify password value
-      SECRET_PW="$(kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
-        get secret "${ES_NAME}" -o json 2>/dev/null \
-        | jq -r '.data | (.SPRING_DATASOURCE_PASSWORD // .DB_PASSWORD // .password // empty)' \
-        | base64 -d 2>/dev/null || echo "")"
-
-      if [[ -n "${SECRET_PW}" ]]; then
-        SECRET_HASH="$(hash_value "${SECRET_PW}")"
-        if [[ "${SECRET_HASH}" == "${OUR_HASH}" ]]; then
-          log "  -> Secret resourceVersion=${PRE_RV}->${CUR_RV}, password hash matches Vault canonical"
-          SECRET_OK=1
-          break
-        fi
-      fi
+  if [[ ${SECRET_OK} -ne 1 ]]; then
+    if [[ ${DRY_RUN} -eq 0 ]]; then
+      kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
+        annotate externalsecret "${ES_NAME}" \
+        "force-sync=$(date +%s)" --overwrite >/dev/null
     fi
-    sleep 2
-  done
+
+    # Wait up to 30s for the Secret's password hash to converge on the
+    # Vault canonical. The resourceVersion bump is logged as audit but
+    # is NOT the acceptance gate (ESO may no-op write if value already
+    # matched; the hash comparison is authoritative).
+    local_deadline=$(($(date +%s) + 30))
+    while [[ $(date +%s) -lt ${local_deadline} ]]; do
+      CUR_HASH="$(read_secret_hash)"
+      if [[ "${CUR_HASH}" == "${OUR_HASH}" ]]; then
+        CUR_RV="$(kubectl --context "${CLUSTER_CTX}" -n "${NAMESPACE}" \
+          get secret "${ES_NAME}" -o jsonpath='{.metadata.resourceVersion}' 2>/dev/null || echo "0")"
+        log "  -> Secret hash matches Vault canonical (resourceVersion ${PRE_RV} -> ${CUR_RV})"
+        SECRET_OK=1
+        break
+      fi
+      sleep 2
+    done
+  fi
 
   if [[ ${SECRET_OK} -ne 1 && ${DRY_RUN} -eq 0 ]]; then
     log "FATAL: K8s Secret did not reach parity with Vault within 30s"
