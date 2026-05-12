@@ -1574,7 +1574,35 @@ images:
     # Image build run: platform-web 25730978656 (success).
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-0431d53
     # @sha256:2204a206e8a371495054d2f4b923eb8312c672a1e7f8e8d51ddeb76d09389acc
-    digest: sha256:2204a206e8a371495054d2f4b923eb8312c672a1e7f8e8d51ddeb76d09389acc
+    #
+    # 2026-05-12 update: sha-01645b1 — design-lab WebGL2 gate for 3D
+    # wrappers + actionable banner (platform-web PR #405 squash).
+    # Live cluster smoke (Apple M4 Pro Chrome 147, WebGL1 only)
+    # reproduced an echarts-gl silent failure: 3D canvas mounted
+    # blank with no indication of why. Root cause: useRequiredEChartsGL
+    # gated only on cap.supported (true for WebGL1), but echarts-gl
+    # 2.x ships shaders that need WebGL2 for any visible output.
+    #
+    # Fix: useRequiredEChartsGL new requireWebGL2 boolean (default
+    # true) — probe WebGL2 BEFORE the dynamic import; reject with
+    # reason='webgl2-required' when missing. describeEChartsGLReason
+    # helper for centralised actionable copy. 4 3D wrappers (Scatter3D,
+    # Surface3D, Lines3D, Globe) updated to use the helper and switch
+    # to flex+text-center+px-4 so the longer banner wraps inside the
+    # 300px-tall preview surface.
+    #
+    # Banner copy: "3D rendering requires WebGL2. Your browser reports
+    # WebGL1 only — enable hardware acceleration in chrome://settings/
+    # system (or chrome://flags → 'WebGL 2.0') and reload."
+    #
+    # Cross-AI peer review: third-AI Claude session AGREE.
+    # CI: 28 checks, 27 success, 1 failure (Auth Transport advisory
+    # pre-existing flake — Playwright timeout, NOT related).
+    #
+    # Image build run: platform-web 25734958638 (success).
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-01645b1
+    # @sha256:80b9b9a54776a301704b943a96596e2b27786819299f459812c0c66ab3aaf86d
+    digest: sha256:80b9b9a54776a301704b943a96596e2b27786819299f459812c0c66ab3aaf86d
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
