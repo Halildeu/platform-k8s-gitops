@@ -358,6 +358,9 @@ patches:
       - op: replace
         path: /data/KEYCLOAK_ISSUER_URI
         value: "https://ai.acik.com/realms/serban"
+      # Session 47 stabilization (Codex 019e1df7 REVISE):
+      # SERVICE_AUTH_* uses auth-service-issued tokens (NOT KC), so the
+      # base defaults are environment-agnostic. No overlay patch needed.
   # 2026-05-04 Session 37 follow-up: schema-service + report-service KC
   # issuer prod override. Same pattern — base sets internal KC, prod points
   # to ai.acik.com for the iss claim match.

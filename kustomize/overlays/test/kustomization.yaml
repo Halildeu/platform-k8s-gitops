@@ -1999,6 +1999,12 @@ patches:
       - op: add
         path: /data/SECURITY_JWT_AUDIENCE
         value: "account,frontend,user-service"
+      # Session 47 stabilization (Codex 019e1df7 REVISE):
+      # SERVICE_AUTH_* uses auth-service-issued tokens (NOT Keycloak),
+      # so the base defaults are environment-agnostic. No overlay patch
+      # needed — base configmap already sets:
+      #   SERVICE_AUTH_ISSUER=auth-service
+      #   SERVICE_AUTH_JWK_SET_URI=http://auth-service:8088/oauth2/jwks
   - target:
       kind: ConfigMap
       name: variant-service-config
