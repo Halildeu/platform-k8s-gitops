@@ -1648,7 +1648,41 @@ images:
     # Image build run: platform-web 25746598898 (success).
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-63f847f
     # @sha256:22c8065becc6b35dabce89ca7ac7d73603e4faac29f0fe8945e1d71f13c70bad
-    digest: sha256:22c8065becc6b35dabce89ca7ac7d73603e4faac29f0fe8945e1d71f13c70bad
+    #
+    # 2026-05-13 update: sha-81495f5 — DemographicDashboard custom-widget →
+    # @mfe/x-charts migration Phase 1 (platform-web PR #412). Two
+    # hand-rolled visuals swapped for canonical wrappers:
+    #   - `GaugeLocal` big-number `<div>` → `<XGaugeChart>` with 3-stop
+    #     threshold ramp (red ≤ 50% target, amber ≤ target, green ≤ max),
+    #     unit-aware max derivation, valueFormatter. Affects 6 call sites
+    #     (DEI Gostergeleri × 4 + Yonetici/Calisan Oranlari × 2 area).
+    #   - `Maas Farki Trendi` `<svg><polyline>` (6 quarter pay-gap points)
+    #     → `<XLineChart>` with dots, grid, % formatter, aria description.
+    # Test-setup polyfill: jsdom `ResizeObserver` stub added so contract
+    # tests that mount real chart wrappers run cleanly (211/211 vitest).
+    # Cross-AI peer review: third-AI Claude session AGREE / ready_to_merge.
+    # CI: Unit (jsdom) PASS, Web Test Gate aggregator PASS, Visual
+    # Invariant Matrix PASS (no snapshot churn); Auth Transport E2E
+    # advisory pre-existing flake (Playwright timeout, NOT related).
+    # Image build run: platform-web 25761494421 (success).
+    # Auto-deploy workflow (Deploy testai run 25761676707) applied
+    # kubectl set image + rollout + 4-gate verify (pod digest match,
+    # public surface 200, build-info.json sha, Playwright smoke). The
+    # cluster has been live on this digest since 2026-05-12T20:55Z;
+    # this commit closes the gitops drift so the manifest matches what
+    # is actually running.
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-81495f5
+    # @sha256:ca085221eb47302d6ffc640c4763570f8865c2f7573a12359d4f3abeb2d38b4b
+    # Browser smoke verified LIVE (HARD RULE):
+    #   - 6 `[data-testid="gauge-chart"]` canvases with real arcs +
+    #     threshold needles (DEI Gostergeleri row + others).
+    #   - 1 `[data-testid="line-chart"]` canvas in Maas Farki Trendi
+    #     card; aria-label "Ceyrekler bazinda cinsiyet maas farki
+    #     yuzdesi" matches the new `description` prop.
+    #   - Zero `<polyline>` elements remain in the Maas Farki Trendi
+    #     ChartCard subtree.
+    #   - 22 total `[_echarts_instance_]` mounted on hr-demografik-yapi.
+    digest: sha256:ca085221eb47302d6ffc640c4763570f8865c2f7573a12359d4f3abeb2d38b4b
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
