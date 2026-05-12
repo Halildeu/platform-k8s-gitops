@@ -153,7 +153,22 @@ KC_IMAGE="${KC_IMAGE:-$(docker inspect "${KC_CONTAINER}" --format '{{.Config.Ima
 KC_NETWORK="$(docker inspect "${KC_CONTAINER}" --format '{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}' | head -1)"
 SECRETS_MOUNT_SRC="$(dirname "${KC_PASS_FILE}")"
 
-log "  -> image=${KC_IMAGE} network=${KC_NETWORK} secrets_src=${SECRETS_MOUNT_SRC}"
+# Compose `secrets:` directive maps host file `./secrets/kc_db_password.txt`
+# to in-container path `/run/secrets/kc_db_password` (NO `.txt` suffix —
+# secret name in compose is `kc_db_password`). Our temp container does NOT
+# use compose; we must explicitly bind-mount the host file to the exact
+# in-container target path so `cat $KC_DB_PASSWORD_FILE` (= /run/secrets/
+# kc_db_password) finds it.
+KC_DB_PASSWORD_HOST_FILE="${SECRETS_MOUNT_SRC}/kc_db_password.txt"
+if [[ ! -r "${KC_DB_PASSWORD_HOST_FILE}" ]]; then
+  log "FATAL: KC DB password host file not readable: ${KC_DB_PASSWORD_HOST_FILE}"
+  log "       Compose maps this file to ${KC_DB_PASSWORD_FILE_VAL} inside the container."
+  exit 2
+fi
+
+log "  -> image=${KC_IMAGE} network=${KC_NETWORK}"
+log "  -> secrets host file: ${KC_DB_PASSWORD_HOST_FILE}"
+log "  -> secrets target path: ${KC_DB_PASSWORD_FILE_VAL}"
 
 # --- Setup trap-guaranteed cleanup ------------------------------------------
 
@@ -222,7 +237,8 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   log "DRY-RUN: would spawn temp container ${TEMP_CONTAINER_NAME} and bootstrap admin"
 else
   # Spawn temp container with split DB env vars (matching main compose),
-  # secrets mounted, and sleep as entrypoint so :9000 is NOT bound.
+  # explicit file-to-file secret mount (compose-secret semantic preserved),
+  # and sleep as entrypoint so :9000 is NOT bound.
   if ! docker run --rm -d \
         --name "${TEMP_CONTAINER_NAME}" \
         --network "${KC_NETWORK}" \
@@ -233,7 +249,7 @@ else
         -e KC_DB_USERNAME="${KC_DB_USERNAME_VAL}" \
         -e KC_DB_PASSWORD_FILE="${KC_DB_PASSWORD_FILE_VAL}" \
         -e KC_TEMP_PASS="${TEMP_PASS}" \
-        -v "${SECRETS_MOUNT_SRC}:/run/secrets:ro" \
+        -v "${KC_DB_PASSWORD_HOST_FILE}:${KC_DB_PASSWORD_FILE_VAL}:ro" \
         --entrypoint sleep \
         "${KC_IMAGE}" \
         300 >/dev/null; then
