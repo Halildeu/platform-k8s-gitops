@@ -86,5 +86,5 @@ data:
   # Once this lands and the service-token internal endpoint works again,
   # a follow-up platform-backend PR will revert `kcSubject` from both
   # public DTOs and restore the cleaner internal-endpoint contract.
-  SERVICE_AUTH_ISSUER: "auth-service"
+  SERVICE_AUTH_ISSUER: "http://localhost:8081/realms/serban"
   SERVICE_AUTH_JWK_SET_URI: "http://auth-service:8088/oauth2/jwks"
