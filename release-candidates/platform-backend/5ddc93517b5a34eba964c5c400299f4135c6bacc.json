@@ -60,7 +60,12 @@
         "d29_functional": {
           "status": "GREEN",
           "checked_at": "2026-05-12T05:41:14Z",
-          "details": "ai.acik.com synthetic smoke: start-session 201, active lookup 200, stop/current 204, DB row STOPPED with USER_STOP."
+          "details": "ai.acik.com synthetic smoke: start-session 201, active lookup 200, stop/current 204, DB row STOPPED with USER_STOP.",
+          "endpoints": [
+            "/api/v1/internal/impersonation/sessions",
+            "/api/v1/internal/impersonation/audit-events",
+            "/api/v1/authz/me"
+          ]
         },
         "d29_zanzibar": {
           "status": "GREEN",

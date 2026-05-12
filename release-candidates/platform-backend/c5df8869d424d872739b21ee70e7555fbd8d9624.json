@@ -60,7 +60,13 @@
         "d29_functional": {
           "status": "GREEN",
           "checked_at": "2026-05-12T05:41:14Z",
-          "details": "ai.acik.com synthetic smoke: /authz/me 200 superAdmin=true, POST /api/v1/impersonation/sessions 201, active lookup 200, stop/current 204."
+          "details": "ai.acik.com synthetic smoke: /authz/me 200 superAdmin=true, POST /api/v1/impersonation/sessions 201, active lookup 200, stop/current 204.",
+          "endpoints": [
+            "/api/v1/authz/me",
+            "/api/v1/impersonation/sessions",
+            "/api/v1/impersonation/sessions/active",
+            "/api/v1/impersonation/sessions/current"
+          ]
         },
         "d29_zanzibar": {
           "status": "GREEN",
