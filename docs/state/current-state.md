@@ -10,6 +10,96 @@
 
 ---
 
+## Live Delta — Session 46 testai User Impersonation UI 1.0 D29 FULL GREEN (2026-05-12 ~15:27 UTC+3) — full start/stop lifecycle browser smoke passed end-to-end
+
+**Trigger**: Kullanıcı PR #533 prod backend synthetic smoke sonrası UI tarafında "Impersonate" button-click yapılabiliyor mu canlı doğrulama istedi. PR #527/#533 backend layer D29 GREEN dokümante etmişti ama UI button hiç görünmüyordu testai'da.
+
+### Root cause zinciri (Codex `019e1bed` thread, 5 iter)
+
+UI render gate `isAdmin = isSuperAdmin()` runtime fail oluyordu. Backend `/api/v1/authz/me` `superAdmin=true` veriyordu ama `usePermissions()` hook'u mfe-users içinde **duplicated PermissionContext default**'undan okuyordu (`isSuperAdmin: () => false`). Module Federation share scope'a `@mfe/auth` register edilmemişti.
+
+### PR cycle (4 PR + 2 revert)
+
+| PR | Action | Outcome |
+|---|---|---|
+| **#403** | `apps/mfe-users/package.json` + `vite.config.ts` MF `sharedProdOnly` içine `@mfe/auth: { singleton: true, requiredVersion: false }` ekle | ✅ MERGED → federation diagnostic `mfe_users.sharedKeys` `@mfe/auth` GREEN ama UI hala gizli (Vite alias bypass) |
+| **#404** | `resolve.alias` block'tan `@mfe/auth` kaldır (mfe-access pattern) | ❌ Build fail `mfPreloadHelperIsolation` plugin gate: "2 loadShare chunk(s) still reference auth loadShare token after rewrite" → **#406 revert** |
+| **#407** | C-prime: shell-services `isSuperAdmin(): boolean` API + UserDetailDrawer/ImpersonateAction gate'i `getShellServices().auth.isSuperAdmin()` ile değiştir | ❌ LIVE crash `TypeError: Cannot read properties of null (reading 'id')` UsersApp errorBoundary → **#408 revert** |
+| **#409** | C-prime + null-safe `impersonationTarget` guard (`user && user.id` IIFE) + `UserDetailDrawer.impersonate.spec.tsx` 5 yeni vitest (regression PR #408 + 4 C-prime invariant) | ✅ MERGED + LIVE — Codex `019e1bed` APPROVE post-impl review |
+
+**Live image**: `ghcr.io/halildeu/platform-web-frontend-testai@sha256:0147f3c075ec8c011f3b9c1bd7f589e76ded4882ab95f37f5060af0aae41d3be` (tag `sha-d3fae93`, BUILD_SHA `d3fae930028b...`).
+
+### KC operator prerequisite (deploy sonrası yakalanan environment drift)
+
+PR #409 deploy edilince UI button render edildi + form çalıştı + submit edildi → backend `errorCode=ADMIN_IDENTITY_MISSING` 401. Auth-service `ImpersonationController.extractUserIdClaim()` JWT'den `userId` claim okuyor; `admin@example.com` user'ında KC `userId` attribute yoktu (PR #527 sadece `d35-admin-persona` ve `d35-granted-persona` için set etmişti).
+
+Operator action (KC test realm `platform-test`):
+1. KC DB direct insert: `user_attribute (id, name='userId', user_id='3520324b-3035-4510-8fca-a8a18dbd1da2', value='1')` — admin@example.com'a `userId=1` attribute eklendi
+2. `realm-management/impersonation` rolü zaten admin'e grant'liydi (verified via `user_role_mapping`)
+3. KC frontend client `platform-userId` mapper aktif (`user.attribute=userId → claim.name=userId`)
+4. KC test container restart (`docker restart platform-kc-test`) → in-memory user-attribute cache flush
+5. Admin re-login (KC silent SSO sonrası fresh JWT'de `userId=1` claim)
+
+### Browser smoke evidence (Chrome MCP, 2026-05-12 ~15:24–15:27 UTC+3)
+
+**START** (`admin@example.com` → impersonate D35 Granted Persona):
+- DOM: `[data-testid="impersonate-action"]` UserDetailDrawer'da render edildi (PR #409 c-prime gate)
+- Form: Sebep textarea + Keycloak Subject UUID input + "Impersonate başlat" submit
+- Form fill: sebep ≥ 10 char + UUID `05178b50-9e4d-42a9-9373-f45a04ad094e` (D35 Granted KC subject)
+- `POST /api/v1/impersonation/sessions` → **201**
+- Frontend identity swap: header `"PA Platform Admin"` → `"DG D35 Granted Persona"` (no flash, no re-login)
+- Impersonation banner mount: `[data-testid="impersonation-banner"]` text "⚠️ admin@example.com olarak d35-granted@example.com adına işlem yapıyorsun (oturum 59 dk içinde sona erer)"
+- D35 Granted USER rolü → admin grid'i 403 "Kullanıcı verilerini görmek için yetkiniz bulunmuyor" (authz state target user'a göre **gerçekten** yeniden çözüldü)
+
+Backend kanıt:
+```
+permission_audit_events.id=901
+  event_type=IMPERSONATION_STARTED, action=IMPERSONATION_STARTED
+  target_email=d35-granted@example.com
+  impersonation_session_id=86a320b6-a52d-4de7-bc38-b90e11d3e0b6
+impersonation_sessions.id=86a320b6-a52d-4de7-bc38-b90e11d3e0b6
+  impersonator_user_id=1 (admin), target_user_id=1205 (d35-granted)
+  status=ACTIVE, started_at=2026-05-12 15:24:51.173378+00
+```
+
+**STOP** (banner stop button click):
+- Banner `[data-testid="impersonation-stop-btn"]` programatik click (banner viewport sağına taşmıştı)
+- Banner kayboldu + header **"PA Platform Admin"**'e geri döndü (atomik authz snapshot restore)
+
+Backend kanıt:
+```
+permission_audit_events.id=902
+  event_type=IMPERSONATION_REVOKED, action=IMPERSONATION_REVOKED
+  target_email=d35-granted@example.com
+  impersonation_session_id=86a320b6-... (aynı session)
+impersonation_sessions UPDATE:
+  status=STOPPED, ended_at=2026-05-12 15:27:57.155198+00
+  ended_reason=USER_STOP_FROM_BANNER
+```
+
+### D29 hükmü
+
+| Katman | Status |
+|---|---|
+| **Up** | GREEN — frontend pod `sha256:0147f3c0...` 1/1 Running, federation diagnostic `mfe_users.sharedKeys` `@mfe/auth` content |
+| **Functional** | GREEN — full lifecycle (start 201 + identity swap + target authz refresh + banner + stop revoke + admin restore) |
+| **Audit-trail** | GREEN — `IMPERSONATION_STARTED` + `IMPERSONATION_REVOKED` same session_id + DB `ACTIVE → STOPPED` |
+
+Codex `019e1bed` final verdict: **D29 User Impersonation UI 1.0 LIVE and functionally GREEN on testai after PR #409 + KC admin userId attribute prerequisite remediation.**
+
+### Bilinen follow-up (out of scope, ayrı işler)
+
+1. **Prod provisioning automation**: prod realm (`serban`) admin user'ları için `userId` KC attribute backfill mekanizması. Direct KC DB insert sadece test/emergency operator action olmalı; user-service create endpoint'inde KC Admin API idempotent set otomatik olmalı. Existing prod admin'ler için reconcile script lazım.
+2. **FE arch debt**: mfe-users `@mfe/auth` Vite alias kalıcı kaldırma + `mfPreloadHelperIsolation` plugin'in tüm `__loadShare__` consumer chunk'larına genişletilmesi (PR #404 build fail'in altındaki gerçek borç). Ayrı PR/epic.
+3. **Prod cutover**: `ai.acik.com` için `sha-d3fae93` prod variant (`@sha256:74ffab03...`) zaten build edildi, prod overlay digest bump + prod realm operator action (`admin@example.com` veya equivalent prod admin user'lara `userId` attribute set) + prod browser smoke (start/stop) D29 acceptance zinciri ayrı kapanmalı.
+4. **Banner viewport overflow**: stop button banner sağına taşıyor (rect left=1519, width=176 > viewport 1568). DS bug — banner responsive layout veya container-query gerek. Klick programatik çalışıyor, manuel kullanıcı için iyileştirilebilir.
+
+### Cross-AI peer review
+
+Codex thread `019e1bed-637e-74e0-815a-fa2b83943acc` — 5 iter (plan AGREE → C-prime REVISE → APPROVE → PR #408 root-cause REVISE → Fix4 AGREE → final D29 APPROVE). Reviewer (Codex) ≠ Implementer (Claude). HARD RULE — Admin Merge YASAK uyumlu (4 PR normal squash merge, hiçbiri admin bypass).
+
+---
+
 ## Live Delta — Session 45 Prod User Impersonation E2E (2026-05-12 ~08:45 UTC+3) — start/stop/audit smoke passed with synthetic users
 
 **Trigger**: Prod Vault root/admin token canonical kaynaktan doğrulandı; önceki `Vault write still blocked` kaydı stale oldu. Ama canlı smoke boyunca birden fazla root cause ayrıştırıldı; D29 gereği `Up`, `Functional`, `Zanzibar-ready/audit` ayrı değerlendirildi.
