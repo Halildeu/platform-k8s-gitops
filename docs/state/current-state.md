@@ -10,6 +10,43 @@
 
 ---
 
+## Live Delta — Session 45 Prod User Impersonation E2E (2026-05-12 ~08:45 UTC+3) — start/stop/audit smoke passed with synthetic users
+
+**Trigger**: Prod Vault root/admin token canonical kaynaktan doğrulandı; önceki `Vault write still blocked` kaydı stale oldu. Ama canlı smoke boyunca birden fazla root cause ayrıştırıldı; D29 gereği `Up`, `Functional`, `Zanzibar-ready/audit` ayrı değerlendirildi.
+
+### Prod live remediation chain
+
+| Katman | Canlı bulgu | Uygulanan düzeltme / kanıt |
+|---|---|---|
+| Vault / ESO | `auth-service-secrets` içinde `AUTH_IMPERSONATION_BROKER_CLIENT_SECRET` yoktu | Operator-provided prod Vault token ile `kv/platform/auth-service` patch edildi; `auth-service-secrets` force-sync sonrası `Ready=True / SecretSynced`; K8s Secret key render oldu; auth-service env içinde broker secret mevcut |
+| api-gateway route | Live ConfigMap route 21 vardı ama pod env sadece route 18'e kadardı | api-gateway rollout sonrası `SPRING_CLOUD_GATEWAY_ROUTES_21_ID=auth-service-impersonation-route` pod env'e geldi; `/api/v1/impersonation/**` auth-service'e yönleniyor |
+| auth-service JWT decoder | Prod image eski digest `sha256:c84bc6...`; frontend JWT validation `Invalid signature` | Live image `ghcr.io/halildeu/platform-backend-auth-service@sha256:1bfe6baa15f251e841a8f8f2e8ff69d3b29e1ef174f0372afe8aa7dde81f0bc0`; `KEYCLOAK_ISSUER_URI=https://ai.acik.com/realms/serban`, `KEYCLOAK_JWKS_URI=http://keycloak:8080/realms/serban/protocol/openid-connect/certs`; pod ready |
+| permission-service internal API | Prod image eski digest `sha256:7968fff...`; auth-service internal session create permission-service'de static-resource 404/500 | Live image `ghcr.io/halildeu/platform-backend-permission-service@sha256:a973be6502e6d26cab9e200fb7f343b35e62c26793b94b100bd03b513b64bc49`; pod ready; internal impersonation controllers present |
+| Keycloak frontend mapper | Prod `frontend` tokenlarında `uid` vardı ama auth-service controller sadece `userId` claim okuyor | `frontend` client'a `userId-claim` mapper eklendi; smoke `frontend_userId_mapper_count=1`, token `claim_userId=<numeric>` |
+| Keycloak token exchange subject authority | Broker policy tek başına yetmedi; synthetic admin user `realm-management/impersonation` role almadan exchange `403 Client not allowed to exchange` verdi | Synthetic admin'e `realm-management/impersonation` role grant edildi; read-back `admin_impersonation_role=True`; token exchange sonrası `start_session_http=201` |
+
+### Prod E2E synthetic smoke evidence
+
+| Step | Evidence |
+|---|---|
+| Synthetic users | `correlation_id=codex-prod-imp-20260512084036-16198`; temporary admin/target users created and cleanup trap executed |
+| OpenFGA superAdmin authority | `openfga_check_allowed=True` for `user:<adminUid>#admin@organization:default` |
+| JWT claims | `iss=https://ai.acik.com/realms/serban`, `azp=frontend`, `userId=<adminUid>`, `email=<synthetic>` |
+| Authz | `GET https://ai.acik.com/api/v1/authz/me` -> `200`, `superAdmin=True`, `userId=<adminUid>` |
+| Start | `POST https://ai.acik.com/api/v1/impersonation/sessions` -> `201`, `sessionId_present=True`, `exchangedToken_present=True` |
+| Active lookup | `GET /api/v1/impersonation/sessions/active` -> `200` |
+| Stop | `DELETE /api/v1/impersonation/sessions/current` -> `204` |
+| DB session | `impersonation_sessions` row -> `STOPPED,<adminUid>,<targetUid>,USER_STOP` |
+| Audit | Session-bound query shows `IMPERSONATION_STARTED` + `IMPERSONATION_STOPPED` rows for the same `impersonation_session_id` |
+
+### Remaining precision notes
+
+- Audit rows did not preserve the incoming `X-Correlation-Id`; they used the generated session binding correlation (`onrtna:*`). D29 audit evidence exists by `impersonation_session_id`, but correlation propagation should be treated as a follow-up if external traceability requires exact header carry-through.
+- This live parity is being written back into desired-state in the companion PR: prod auth-service digest, prod permission-service digest, auth-service prod issuer/JWKS override, Keycloak setup script file-based admin password fallback, and frontend `userId-claim` mapper enforcement.
+- Existing real prod users still need the `realm-management/impersonation` role if they are intended to start impersonation. The smoke proves the contract with a synthetic user; it does not grant all real admins by default.
+
+---
+
 ## Live Delta — Session 45 Report Amount 2 Aggregation (2026-05-11 ~14:00 UTC+3) — fin-muhasebe-detay `Tutar 2` sum aggregation
 
 **Trigger**: Kullanıcı `Tutar 2` için neden `Tutar (TL)` gibi value aggregation / toplam görünmediğini sordu. Root cause: `AMOUNT_2` kolonu rapora eklenmişti fakat metadata'da `aggregatable=true` ve `defaultAggFunc=sum` yoktu.

@@ -22,7 +22,7 @@
 #
 #   # Prod realm — explicit confirmation gate (Codex iter-4 §5)
 #   CONFIRM_PROD_IMPERSONATION_BROKER=serban \
-#   REALM=serban CLIENT_AUDIENCE=serban-web \
+#   REALM=serban CLIENT_AUDIENCE=frontend \
 #   SECRET_OUT=/tmp/impersonation-broker-secret-prod.txt \
 #     ./setup-impersonation-broker.sh
 #
@@ -70,9 +70,24 @@ esac
 KC="docker exec ${KC_CONTAINER} /opt/keycloak/bin/kcadm.sh"
 ADMIN_PASS_FILE="/home/halil/platform-k8s-gitops/host-compose/keycloak/${ENV}/secrets/kc_admin_password.txt"
 
+read_admin_password() {
+  if [ -f "$ADMIN_PASS_FILE" ]; then
+    sudo cat "$ADMIN_PASS_FILE" | tr -d '\n'
+    return
+  fi
+
+  # Newer host-compose uses Docker secrets exposed only inside the KC
+  # container. VERIFY_ONLY needs the same fallback; otherwise prod verification
+  # can fail even while the live container has a valid admin password file.
+  docker exec "$KC_CONTAINER" sh -lc 'cat "$KEYCLOAK_ADMIN_PASSWORD_FILE"' 2>/dev/null | tr -d '\n'
+}
+
 if [ "$VERIFY_ONLY" != "1" ]; then
-  if [ ! -f "$ADMIN_PASS_FILE" ]; then
-    echo "ERROR: KC admin password file not found: $ADMIN_PASS_FILE" >&2
+  if [ ! -f "$ADMIN_PASS_FILE" ] \
+      && ! docker exec "$KC_CONTAINER" sh -lc 'test -r "$KEYCLOAK_ADMIN_PASSWORD_FILE"' >/dev/null 2>&1; then
+    echo "ERROR: KC admin password not found in host file or container secret" >&2
+    echo "       Host file checked: $ADMIN_PASS_FILE" >&2
+    echo "       Container env checked: KEYCLOAK_ADMIN_PASSWORD_FILE" >&2
     exit 1
   fi
   if [ -z "$SECRET_OUT" ]; then
@@ -120,7 +135,8 @@ echo "✓ Required features active: token-exchange, admin-fine-grained-authz:v1,
 # ─── 1. Login (master realm) ───────────────────────────────────────────────
 echo ""
 echo "=== Step 1/7: Login to Keycloak master realm ==="
-ADMIN_PASS=$(sudo cat "$ADMIN_PASS_FILE" | tr -d '\n')
+ADMIN_PASS=$(read_admin_password)
+[ -n "$ADMIN_PASS" ] || { echo "ERROR: resolved KC admin password is empty" >&2; exit 1; }
 $KC config credentials \
   --server http://localhost:8080 \
   --realm master \
@@ -237,6 +253,67 @@ if [ -z "$AUDIENCE_ID" ]; then
   echo "ERROR: audience client '$CLIENT_AUDIENCE' not found in $REALM" >&2
   exit 1
 fi
+
+# Auth-service's ImpersonationController requires a numeric `userId` JWT
+# claim. Prod frontend tokens previously carried only `uid`; start-session
+# failed with ADMIN_IDENTITY_MISSING until this mapper was added live.
+# Keep it on the same audience client used by the broker exchange flow.
+USERID_MAPPER_ID=$($KC get "clients/$AUDIENCE_ID/protocol-mappers/models" -r "$REALM" 2>/dev/null \
+                 | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("name")=="userId-claim"]; print(m[0].get("id","") if m else "")' 2>/dev/null || echo "")
+
+if [ "$VERIFY_ONLY" != "1" ]; then
+  USERID_MAPPER_HOST="$(mktemp "/tmp/_imperson_userid_mapper_${AUDIENCE_ID}.XXXXXX.json")"
+  USERID_MAPPER_CONTAINER="/tmp/imperson-userid-mapper-${AUDIENCE_ID}-$$.json"
+  cat > "$USERID_MAPPER_HOST" <<'JSON'
+{
+  "name": "userId-claim",
+  "protocol": "openid-connect",
+  "protocolMapper": "oidc-usermodel-attribute-mapper",
+  "consentRequired": false,
+  "config": {
+    "user.attribute": "userId",
+    "claim.name": "userId",
+    "jsonType.label": "long",
+    "id.token.claim": "true",
+    "access.token.claim": "true",
+    "userinfo.token.claim": "true",
+    "multivalued": "false"
+  }
+}
+JSON
+  docker cp "$USERID_MAPPER_HOST" "$KC_CONTAINER:$USERID_MAPPER_CONTAINER" >/dev/null 2>&1 \
+    || { echo "ERROR: docker cp userId mapper JSON failed" >&2; rm -f "$USERID_MAPPER_HOST"; exit 1; }
+  if [ -n "$USERID_MAPPER_ID" ]; then
+    $KC update "clients/$AUDIENCE_ID/protocol-mappers/models/$USERID_MAPPER_ID" -r "$REALM" \
+      -f "$USERID_MAPPER_CONTAINER" >/dev/null \
+      || { echo "ERROR: userId mapper update failed" >&2; rm -f "$USERID_MAPPER_HOST"; exit 1; }
+    echo "✓ userId-claim mapper exists — converged to desired state"
+  else
+    $KC create "clients/$AUDIENCE_ID/protocol-mappers/models" -r "$REALM" \
+      -f "$USERID_MAPPER_CONTAINER" >/dev/null \
+      || { echo "ERROR: userId mapper create failed" >&2; rm -f "$USERID_MAPPER_HOST"; exit 1; }
+    echo "✓ userId-claim mapper created on $CLIENT_AUDIENCE"
+  fi
+  rm -f "$USERID_MAPPER_HOST"
+  docker exec "$KC_CONTAINER" rm -f "$USERID_MAPPER_CONTAINER" >/dev/null 2>&1 || true
+fi
+
+USERID_MAPPER_VERIFY=$($KC get "clients/$AUDIENCE_ID/protocol-mappers/models" -r "$REALM" 2>/dev/null \
+  | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+matches=[
+  x for x in d
+  if x.get("name")=="userId-claim"
+  and x.get("protocolMapper")=="oidc-usermodel-attribute-mapper"
+  and x.get("config",{}).get("user.attribute")=="userId"
+  and x.get("config",{}).get("claim.name")=="userId"
+  and x.get("config",{}).get("access.token.claim")=="true"
+]
+print(len(matches))
+' 2>/dev/null || echo "0")
+[ "$USERID_MAPPER_VERIFY" -ge 1 ] || { echo "ERROR: userId-claim mapper verify FAIL" >&2; exit 3; }
+echo "✓ userId-claim mapper verify PASS"
 
 if [ "$VERIFY_ONLY" != "1" ]; then
   # Codex iter-4 P0-2: explicit error capture
