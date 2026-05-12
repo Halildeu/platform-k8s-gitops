@@ -1,0 +1,35 @@
+# kustomize/base/drift-detector/kustomization.yaml
+#
+# PR-S1 (PERF-INIT-V2): Secret drift detector base kustomization.
+#
+# SKELETON STATUS:
+#   - cronjob.yaml ships with suspend=true and image=OVERLAY_MUST_OVERRIDE
+#   - No overlay currently activates this; activation gated on follow-up
+#     PR (PR-S1.b or PR-OPS-1) once:
+#     (a) container image is built and published
+#     (b) operator confirms alert sink target (Slack/email/webhook) — PMD §16 Q4
+#
+# Once activated, overlay patches will:
+#   - Set namespace: platform-test (or platform-prod)
+#   - Override image: ghcr.io/halildeu/platform-secret-drift-detector@sha256:...
+#   - Set suspend: false
+#   - Provide ExternalSecret for `secret-drift-detector-vault` (AppRole) and
+#     `secret-drift-detector-alert` (webhook URL)
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - cronjob.yaml
+
+# Default labels applied to all resources in this base
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: platform
+      app.kubernetes.io/managed-by: kustomize
+
+# Note: overlay-level kustomization.yaml will:
+# - Set namespace (`namespace: platform-test`)
+# - Override images (`images: - name: ghcr.io/OVERLAY_MUST_OVERRIDE/...`)
+# - Patch suspend=false (`patches: ... op: replace path: /spec/suspend value: false`)
