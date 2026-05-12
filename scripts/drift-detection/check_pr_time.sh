@@ -9,7 +9,9 @@
 #   1. All image refs use @sha256:<digest> (no moving tags like :latest, :main-stable)
 #   2. GHCR manifest existence — pinned digests must exist (catches GC'd digests
 #      like the sha256:2a7076c9 schema-service incident)
-#   3. ConfigMap KEYCLOAK_ISSUER_URI present for JWT-validating services
+#   3. ConfigMap invariants:
+#      - KEYCLOAK_ISSUER_URI present for JWT-validating services
+#      - user-service SERVICE_AUTH_* points to auth-service, never KC/localhost
 #   4. Service catalog parity — both env overlays should declare same service
 #      set OR allowlist mismatch in services.yaml (deferred when allowlist
 #      file doesn't exist yet)
@@ -72,6 +74,8 @@ fi
 #       test  → https://testai.acik.com/realms/platform-test  (or internal http://keycloak:8080/realms/platform-test)
 #       prod  → https://ai.acik.com/realms/serban
 #   - JWKS path must end with /protocol/openid-connect/certs
+#   - user-service SERVICE_AUTH_* must stay on the auth-service-issued-token
+#     verifier contract (Session 47 recurrence guard; Codex 019e1df7 REVISE)
 echo
 echo "=== Check 3: ConfigMap invariants (Codex hardening) ==="
 JWT_SERVICES="api-gateway user-service variant-service permission-service schema-service report-service"
@@ -139,6 +143,42 @@ for svc in '$JWT_SERVICES'.split():
         continue
 
     print(f'[OK]  {svc} ISSUER+JWKS valid')
+
+SERVICE_AUTH_EXPECTED = {
+    'SERVICE_AUTH_ISSUER': 'auth-service',
+    'SERVICE_AUTH_JWK_SET_URI': 'http://auth-service:8088/oauth2/jwks',
+}
+SERVICE_AUTH_FORBIDDEN_SUBSTRINGS = ('localhost:8081', 'keycloak:8080', '/realms/')
+
+user_cm = next(
+    (d for d in docs
+     if isinstance(d, dict) and d.get('kind') == 'ConfigMap'
+     and d.get('metadata', {}).get('name') == 'user-service-config'),
+    None,
+)
+if user_cm is None:
+    print(f'[FAIL] user-service-config missing in {ENV} render; cannot verify SERVICE_AUTH_* invariants')
+    fail_count += 1
+else:
+    user_data = user_cm.get('data') or {}
+    for key, expected_value in SERVICE_AUTH_EXPECTED.items():
+        if key not in user_data:
+            print(f'[FAIL] user-service {key} missing from user-service-config in {ENV} render')
+            fail_count += 1
+            continue
+
+        value = user_data.get(key)
+        if value != expected_value:
+            print(f'[FAIL] user-service {key}={value!r} must equal {expected_value!r} in {ENV} render')
+            fail_count += 1
+
+        for forbidden in SERVICE_AUTH_FORBIDDEN_SUBSTRINGS:
+            if forbidden in str(value):
+                print(f'[FAIL] user-service {key}={value!r} contains forbidden SERVICE_AUTH drift marker {forbidden!r}')
+                fail_count += 1
+
+    if all(user_data.get(key) == expected for key, expected in SERVICE_AUTH_EXPECTED.items()):
+        print('[OK]  user-service SERVICE_AUTH_* valid')
 
 if fail_count > 0:
     print(f'')
