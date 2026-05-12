@@ -1,0 +1,188 @@
+# kustomize/base/drift-detector/cronjob.yaml
+#
+# PR-S1 (PERF-INIT-V2): Secret drift detector CronJob skeleton.
+#
+# This is a SKELETON. Image and overlay activation are intentionally
+# placeholder-only so the base manifest can land safely. Activation
+# requires:
+#   - A built image (separate initiative — PR-S1.b or PR-OPS-1)
+#   - Overlay-specific replicas + image override
+#   - Alert sink configuration (Slack webhook, email, etc.) — PMD §16 Q4
+#
+# Why skeleton-only:
+#   - PMD §4.1 PR-S1 scope includes the CronJob YAML so the cluster has
+#     the resource hook ready and audit-tracked.
+#   - Actual scheduling/execution is gated by overlay-level activation
+#     (D17 selective apply protection — base never deploys live).
+#
+# Once activated, the job runs every 30 minutes and:
+#   1. Compares md5(Vault db_password) for each service vs md5 PG hash
+#   2. Reports ExternalSecret status across all platform-* namespaces
+#   3. Counts pod CrashLoopBackOff incidents in the last 30 min
+#   4. Sends alert if drift detected
+#
+# Operator config (PMD §16 Q4 — pending answer):
+#   - Slack webhook URL → Vault kv/platform/drift-detector/slack-webhook
+#   - Email SMTP target → reuses alertmanager-fallback config
+#   - Webhook generic → operator-supplied URL
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: secret-drift-detector
+  labels:
+    app.kubernetes.io/name: secret-drift-detector
+    app.kubernetes.io/component: ops
+    app.kubernetes.io/part-of: platform
+spec:
+  schedule: "*/30 * * * *"   # Every 30 minutes
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 60
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  suspend: true              # SKELETON: suspended by default; overlay activates
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: secret-drift-detector
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: secret-drift-detector
+          automountServiceAccountToken: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: detector
+              # SKELETON image — overlay MUST override.
+              # gate-enforcement-check.yml CI guard rejects literal OVERLAY_MUST_OVERRIDE
+              # in committed live overlays.
+              image: ghcr.io/OVERLAY_MUST_OVERRIDE/platform-secret-drift-detector:OVERLAY_MUST_OVERRIDE
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: TARGET_NAMESPACES
+                  valueFrom:
+                    configMapKeyRef:
+                      name: secret-drift-detector-config
+                      key: target_namespaces
+                - name: ALERT_SINK
+                  valueFrom:
+                    configMapKeyRef:
+                      name: secret-drift-detector-config
+                      key: alert_sink
+                - name: VAULT_ADDR
+                  valueFrom:
+                    configMapKeyRef:
+                      name: secret-drift-detector-config
+                      key: vault_addr
+                - name: VAULT_ROLE_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: secret-drift-detector-vault
+                      key: role_id
+                - name: VAULT_SECRET_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: secret-drift-detector-vault
+                      key: secret_id
+                - name: ALERT_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: secret-drift-detector-alert
+                      key: webhook_url
+                      optional: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: secret-drift-detector
+  labels:
+    app.kubernetes.io/name: secret-drift-detector
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: secret-drift-detector
+  labels:
+    app.kubernetes.io/name: secret-drift-detector
+rules:
+  # Read ExternalSecret status across all platform namespaces
+  - apiGroups:
+      - external-secrets.io
+    resources:
+      - externalsecrets
+    verbs:
+      - get
+      - list
+      - watch
+  # Read pod state for CrashLoopBackOff detection
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - events
+    verbs:
+      - get
+      - list
+      - watch
+  # Read secrets (only for hash comparison; never write)
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: secret-drift-detector
+  labels:
+    app.kubernetes.io/name: secret-drift-detector
+subjects:
+  - kind: ServiceAccount
+    name: secret-drift-detector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: secret-drift-detector
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: secret-drift-detector-config
+  labels:
+    app.kubernetes.io/name: secret-drift-detector
+data:
+  # Comma-separated target namespaces
+  target_namespaces: "platform-test"
+  # Alert sink kind: stdout|slack|email|webhook
+  alert_sink: "stdout"
+  # Vault address (in-cluster service or host-bridged)
+  vault_addr: "http://vault.platform-test.svc.cluster.local:8200"
