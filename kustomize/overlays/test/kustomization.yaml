@@ -1999,6 +1999,16 @@ patches:
       - op: add
         path: /data/SECURITY_JWT_AUDIENCE
         value: "account,frontend,user-service"
+      # Session 47 stabilization: ServiceTokenAuthenticationFilter needs
+      # its own issuer/JWKS env vars; defaults in application.properties
+      # hardcode unreachable localhost:8081/realms/serban. Match the
+      # platform-test realm used by the OIDC JWT decoder above.
+      - op: replace
+        path: /data/SERVICE_AUTH_ISSUER
+        value: "https://testai.acik.com/realms/platform-test"
+      - op: replace
+        path: /data/SERVICE_AUTH_JWK_SET_URI
+        value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
   - target:
       kind: ConfigMap
       name: variant-service-config

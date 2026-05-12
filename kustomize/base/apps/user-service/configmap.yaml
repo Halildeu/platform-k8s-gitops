@@ -64,3 +64,23 @@ data:
   # internal keycloak svc DNS; prod overlay overrides ISSUER to ai.acik.com.
   KEYCLOAK_ISSUER_URI: "http://keycloak:8080/realms/serban"
   KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+
+  # 2026-05-12 Session 47 stabilization (Codex 019e1dc5 follow-up):
+  # ServiceTokenAuthenticationFilter for /api/users/internal/* endpoints
+  # uses a SEPARATE Spring property chain (security.service-auth.*)
+  # whose defaults in application.properties hardcode
+  # `http://localhost:8081/realms/serban` — unreachable from inside the
+  # user-service pod, breaking the internal service-token contract.
+  # Session 47 worked around this by going via public /api/v1/users/{id}
+  # + admin JWT forward (PR #160 + #161 + #162), which forced the
+  # `kcSubject` field to be leaked on UserResponse + UserDetailDto.
+  #
+  # Fix: set the service-auth issuer/JWKS to the SAME KC realm endpoints
+  # the OIDC JWT decoder uses (KEYCLOAK_*). Test overlay patches these
+  # alongside KEYCLOAK_ISSUER_URI to `platform-test`; prod overlay
+  # likewise to ai.acik.com / `serban`. Once this lands and the
+  # service-token internal endpoint works again, a follow-up
+  # platform-backend PR will revert `kcSubject` from both public DTOs
+  # and restore the cleaner internal-endpoint contract.
+  SERVICE_AUTH_ISSUER: "http://keycloak:8080/realms/serban"
+  SERVICE_AUTH_JWK_SET_URI: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"

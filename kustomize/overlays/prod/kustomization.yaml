@@ -358,6 +358,11 @@ patches:
       - op: replace
         path: /data/KEYCLOAK_ISSUER_URI
         value: "https://ai.acik.com/realms/serban"
+      # Session 47 stabilization (Codex 019e1dc5): ServiceTokenAuthenticationFilter
+      # issuer override prod — matches the OIDC JWT decoder issuer above.
+      - op: replace
+        path: /data/SERVICE_AUTH_ISSUER
+        value: "https://ai.acik.com/realms/serban"
   # 2026-05-04 Session 37 follow-up: schema-service + report-service KC
   # issuer prod override. Same pattern — base sets internal KC, prod points
   # to ai.acik.com for the iss claim match.
