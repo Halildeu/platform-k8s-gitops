@@ -70,7 +70,20 @@ images:
     # AGREE). 4/4 tests PASS, full reactor green, CI required gates green.
     # Squash merged at platform-backend `c5df886`. Image build run
     # 25633481822 → digest below.
-    digest: sha256:1bfe6baa15f251e841a8f8f2e8ff69d3b29e1ef174f0372afe8aa7dde81f0bc0
+    #
+    # 2026-05-12 update: bump to sha-5bec7fb (platform-backend#159 — Codex
+    # 019e1bed impersonation UX overhaul). New behavior:
+    #   - StartSessionRequest.targetSubject optional; backend resolves
+    #     KC UUID server-side via user-service service-token endpoint
+    #     /api/users/internal/{id}/impersonation-target
+    #   - Self-id guard (Step 1b) rejects impersonatorUserId==targetUserId
+    #     BEFORE user-service lookup → SELF_IMPERSONATION_FORBIDDEN
+    #   - Disabled target gate (Step 1d) rejects enabled=false →
+    #     TARGET_USER_DISABLED before KC token-exchange
+    #   - Subject-equality self-guard (Step 1e) defense-in-depth
+    #   - 5 unit tests (ImpersonationControllerSelfGuardTest) pin each branch
+    #   - Pairs with platform-web#411 (FE UX overhaul)
+    digest: sha256:a35f34ab4c1d9705ffe7642aa6f970b570e5f42ab9d1fe6999bbb128fbca2f41
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -244,7 +257,20 @@ images:
     digest: sha256:c54f9f4baec7f34454ff686698463fa0f94c333dceeafb7a5ce8141fda47b70f
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
-    digest: sha256:df8b84d0cd02d064cf455f40017bd5cb4ca1be271e5e7068afeb36fc4526a7f1
+    # 2026-05-12 update: bump to sha-5bec7fb (platform-backend#159 — Codex
+    # 019e1bed impersonation UX overhaul). New behavior in this digest:
+    #   - V16 migration: users.kc_subject column added (nullable + partial
+    #     unique index on non-null). Backfill operator action required —
+    #     see docs/runbooks/RB-kc-subject-backfill.md
+    #   - New internal endpoint /api/users/internal/{id}/impersonation-target
+    #     (service-token protected, PERM_users:internal scope) returns
+    #     ImpersonationTargetResponse(id, email, kcSubject, enabled)
+    #   - Public /api/v1/users/{id} response unchanged (kcSubject stays
+    #     server-side; admin grid never sees KC UUID)
+    #   - User entity + DTO updated to surface kc_subject at the
+    #     internal boundary
+    #   - Pairs with platform-web#411 (FE UX overhaul)
+    digest: sha256:545b6df3058a9a2d6037ce0738ec7861457f3bc49a866abb08bf15c0dadb04a6
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
