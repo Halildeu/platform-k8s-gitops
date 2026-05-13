@@ -125,9 +125,24 @@ def _normalize_volume_mounts(vm: list | None) -> list:
 
 
 def _normalize_volumes(volumes: list | None) -> list:
+    """Normalize volume defaults injected by the Kubernetes API server.
+
+    Codex 019e2327 review #4 — `configMap.defaultMode`, `secret.defaultMode`,
+    `projected.defaultMode` are injected as 420 (0644 octal) when absent.
+    Without normalization the live ↔ desired diff produces false-positive
+    drift on every Deployment that uses configMap/secret volumes.
+    """
     if not volumes:
         return []
-    return sorted(volumes, key=lambda v: v.get("name", ""))
+    normalized: list[dict] = []
+    for v in volumes:
+        v = copy.deepcopy(v)
+        for key in ("configMap", "secret", "projected"):
+            sub = v.get(key)
+            if isinstance(sub, dict):
+                sub.setdefault("defaultMode", 420)
+        normalized.append(v)
+    return sorted(normalized, key=lambda v: v.get("name", ""))
 
 
 def _normalize_image_pull_secrets(secrets: list | None) -> list:
@@ -154,7 +169,17 @@ def _container_contract_view(container: dict) -> dict:
 
 
 def template_contract_view(deploy: dict) -> dict:
-    """Project a Deployment dict to its drift-comparable template surface."""
+    """Project a Deployment / StatefulSet dict to its contract surface.
+
+    Codex 019e2327 review #3 — works for any workload with `.spec.template`,
+    i.e. Deployment + StatefulSet. Jobs use `.spec.template` too but their
+    probe-contract is exempt; callers gate by workload_kind.
+
+    Codex 019e2327 review #5 — pod-level `securityContext` and
+    `terminationGracePeriodSeconds` are part of the contract surface.
+    Initial drafts only compared container-level securityContext; pod-level
+    drift (runAsUser/fsGroup) escaped semantic diff.
+    """
     template = (deploy.get("spec") or {}).get("template") or {}
     template_meta = template.get("metadata") or {}
     spec = template.get("spec") or {}
@@ -171,6 +196,8 @@ def template_contract_view(deploy: dict) -> dict:
         "labels": template_meta.get("labels") or {},
         "serviceAccountName": spec.get("serviceAccountName"),
         "automountServiceAccountToken": spec.get("automountServiceAccountToken"),
+        "terminationGracePeriodSeconds": spec.get("terminationGracePeriodSeconds"),
+        "podSecurityContext": spec.get("securityContext") or {},
         "imagePullSecrets": _normalize_image_pull_secrets(spec.get("imagePullSecrets")),
         "volumes": _normalize_volumes(spec.get("volumes")),
         "containers": container_views,

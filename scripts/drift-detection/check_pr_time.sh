@@ -312,13 +312,16 @@ if [[ -x "$CONTRACT_CLI" ]]; then
     --output text 2>&1)
   check5_rc=$?
   echo "$check5_output"
-  if [[ $check5_rc -eq 1 ]]; then
+  # Codex 019e2327 review #1 — fail-closed semantics. Anything non-zero blocks
+  # the PR; warn-on-2 / silent-on-3 disabled.
+  if [[ $check5_rc -ne 0 ]]; then
+    echo "[FAIL] check_deployment_contracts CLI returned rc=$check5_rc — blocking PR"
     EXIT_CODE=1
-  elif [[ $check5_rc -eq 2 ]]; then
-    echo "[WARN] P2 finding(s) only — not blocking but worth attention"
   fi
 else
-  echo "[WARN] $CONTRACT_CLI missing or not executable — skipping contract gate"
+  # Gate cannot run = gate broken = fail-closed.
+  echo "[FAIL] $CONTRACT_CLI missing or not executable — contract gate cannot run"
+  EXIT_CODE=1
 fi
 
 echo

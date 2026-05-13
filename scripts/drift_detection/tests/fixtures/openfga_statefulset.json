@@ -1,0 +1,39 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "StatefulSet",
+  "metadata": {
+    "name": "openfga",
+    "namespace": "platform-test",
+    "labels": {
+      "app.kubernetes.io/name": "openfga",
+      "app.kubernetes.io/part-of": "platform"
+    }
+  },
+  "spec": {
+    "serviceName": "openfga",
+    "replicas": 1,
+    "template": {
+      "metadata": {"labels": {"app.kubernetes.io/name": "openfga", "app.kubernetes.io/part-of": "platform"}},
+      "spec": {
+        "containers": [
+          {
+            "name": "openfga",
+            "image": "openfga/openfga:v1.6.0",
+            "ports": [
+              {"name": "http", "containerPort": 8080},
+              {"name": "grpc", "containerPort": 8081}
+            ],
+            "livenessProbe": {
+              "httpGet": {"path": "/healthz", "port": "http"},
+              "periodSeconds": 10
+            },
+            "readinessProbe": {
+              "httpGet": {"path": "/healthz", "port": "http"},
+              "periodSeconds": 10
+            }
+          }
+        ]
+      }
+    }
+  }
+}

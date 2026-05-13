@@ -53,6 +53,12 @@ from lib.services_catalog import (  # noqa: E402
 SCOPE_LABEL = "app.kubernetes.io/part-of"
 SCOPE_VALUE = "platform"  # Codex iter-3 note #2 — exclude monitoring/lab deps
 
+EXEC_ERROR_EXIT = 3  # Codex 019e2327 review #2 — runtime exec failure must
+                    # signal exit 3, not be downgraded into a P1 finding.
+
+# Workload kinds covered by this gate (have spec.template).
+TEMPLATE_WORKLOAD_KINDS = {"Deployment", "StatefulSet"}
+
 
 # --- Helpers ---
 
@@ -88,30 +94,36 @@ def _kustomize_render(overlay_dir: str) -> list[dict]:
     return docs
 
 
-def _kubectl_get_deployments(context: str, namespace: str) -> list[dict]:
+def _kubectl_get_deployments_and_statefulsets(context: str, namespace: str) -> list[dict]:
+    """Codex 019e2327 review #3 — fetch both Deployment and StatefulSet so the
+    motor can apply template-contract checks to workloads like openfga.
+    """
     if not shutil.which("kubectl"):
         raise RuntimeError("kubectl not found on PATH")
-    proc = subprocess.run(
-        [
-            "kubectl",
-            f"--context={context}",
-            "-n",
-            namespace,
-            "get",
-            "deployments",
-            "-o",
-            "json",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"kubectl get deployments ctx={context} ns={namespace} failed: {proc.stderr.strip()}"
+    items: list[dict] = []
+    for kind in ("deployments", "statefulsets"):
+        proc = subprocess.run(
+            [
+                "kubectl",
+                f"--context={context}",
+                "-n",
+                namespace,
+                "get",
+                kind,
+                "-o",
+                "json",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
-    payload = json.loads(proc.stdout)
-    return payload.get("items", [])
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"kubectl get {kind} ctx={context} ns={namespace} failed: {proc.stderr.strip()}"
+            )
+        payload = json.loads(proc.stdout)
+        items.extend(payload.get("items", []))
+    return items
 
 
 def _kubectl_get_replicasets(context: str, namespace: str) -> list[dict]:
@@ -137,10 +149,11 @@ def _kubectl_get_replicasets(context: str, namespace: str) -> list[dict]:
     return json.loads(proc.stdout).get("items", [])
 
 
-def _filter_deployments(docs: list[dict]) -> list[dict]:
+def _filter_template_workloads(docs: list[dict]) -> list[dict]:
+    """Codex 019e2327 review #3 — accept Deployment AND StatefulSet."""
     out = []
     for d in docs:
-        if d.get("kind") != "Deployment":
+        if d.get("kind") not in TEMPLATE_WORKLOAD_KINDS:
             continue
         if not _is_platform_scoped(d):
             continue
@@ -155,12 +168,14 @@ def run_pr_time(
     overlay_dir: str,
     env: str,
     catalog: ServicesCatalog,
-) -> list[dict]:
+):
+    """Returns (findings, exec_error_str_or_None)."""
     findings: list[dict] = []
 
     try:
         docs = _kustomize_render(overlay_dir)
     except RuntimeError as exc:
+        # PR-time render failure is a drift bug (manifest broken), exit 1.
         return [
             make_finding(
                 "P1",
@@ -168,28 +183,28 @@ def run_pr_time(
                 "(overlay)",
                 f"{overlay_dir}: {exc}",
             )
-        ]
+        ], None
 
-    rendered = _filter_deployments(docs)
+    rendered = _filter_template_workloads(docs)
     rendered_by_name = {_deploy_name(d): d for d in rendered}
 
-    # 1. enabled spring-actuator/http-healthz service → must render in overlay
+    # 1. enabled template-workload service → must render in overlay
     for svc in catalog.enabled_in(env):
-        if svc.workload_kind != "Deployment":
-            continue  # StatefulSet / Job handled by other gates
+        if svc.workload_kind not in TEMPLATE_WORKLOAD_KINDS:
+            continue  # Job / external out of scope
         if svc.name not in rendered_by_name:
             findings.append(
                 make_finding(
                     "P1",
                     "missing_render",
                     svc.name,
-                    f"catalog enabled in {env} but no Deployment rendered by {overlay_dir}",
+                    f"catalog enabled in {env} but no {svc.workload_kind} rendered by {overlay_dir}",
                 )
             )
 
-    # 2. rendered Deployment → must be in catalog + classified
+    # 2. rendered workload → must be in catalog + classified
     known = known_contracts()
-    for name, deploy in rendered_by_name.items():
+    for name, workload in rendered_by_name.items():
         svc = catalog.get(name)
         if svc is None:
             findings.append(
@@ -211,18 +226,18 @@ def run_pr_time(
                 )
             )
 
-    # 3. probe contract assertion for enabled + non-exempt services
+    # 3. probe contract assertion for enabled + non-exempt template workloads
     for svc in catalog.enabled_in(env):
         if svc.probe_contract == EXEMPT_CONTRACT:
             continue
-        if svc.workload_kind != "Deployment":
+        if svc.workload_kind not in TEMPLATE_WORKLOAD_KINDS:
             continue
-        deploy = rendered_by_name.get(svc.name)
-        if deploy is None:
+        workload = rendered_by_name.get(svc.name)
+        if workload is None:
             continue  # already flagged in step 1
-        findings.extend(assert_probe_contract(deploy, svc.probe_contract, svc.name))
+        findings.extend(assert_probe_contract(workload, svc.probe_contract, svc.name))
 
-    return findings
+    return findings, None
 
 
 # --- Mode: runtime ---
@@ -235,22 +250,32 @@ def run_runtime(
     env: str,
     catalog: ServicesCatalog,
     rs_split_grace_seconds: int = 300,
-) -> list[dict]:
+):
+    """Returns (findings, exec_error_str_or_None).
+
+    Codex 019e2327 review #2 — exec errors must NOT be downgraded into
+    P1 findings; the caller emits exit 3 so wrappers can distinguish "drift"
+    from "gate-broken / cluster unreachable".
+    """
     findings: list[dict] = []
 
     try:
         docs = _kustomize_render(overlay_dir)
-        live_deployments = _kubectl_get_deployments(context, namespace)
+        live_deployments = _kubectl_get_deployments_and_statefulsets(context, namespace)
         replicasets = _kubectl_get_replicasets(context, namespace)
     except RuntimeError as exc:
-        return [make_finding("P1", "runtime_exec_error", "(cluster)", str(exc))]
+        return [], str(exc)
 
-    rendered_by_name = {_deploy_name(d): d for d in _filter_deployments(docs)}
-    live_by_name = {_deploy_name(d): d for d in live_deployments if _is_platform_scoped(d)}
+    rendered_by_name = {_deploy_name(d): d for d in _filter_template_workloads(docs)}
+    live_by_name = {
+        _deploy_name(d): d
+        for d in live_deployments
+        if _is_platform_scoped(d)
+    }
 
-    # 6. Deployment spec drift — semantic template diff
+    # 6. Workload spec drift — semantic template diff (Deployment + StatefulSet)
     for svc in catalog.enabled_in(env):
-        if svc.workload_kind != "Deployment":
+        if svc.workload_kind not in TEMPLATE_WORKLOAD_KINDS:
             continue
         desired = rendered_by_name.get(svc.name)
         live = live_by_name.get(svc.name)
@@ -293,7 +318,7 @@ def run_runtime(
     # 7. ReplicaSet split detection (ownerReferences authoritative)
     findings.extend(_check_rs_split(live_deployments, replicasets, rs_split_grace_seconds))
 
-    return findings
+    return findings, None
 
 
 def _short(value: Any, limit: int = 80) -> str:
@@ -413,12 +438,12 @@ def main(argv: list[str] | None = None) -> int:
         return 3
 
     if args.mode == "pr-time":
-        findings = run_pr_time(args.render_source, args.env, catalog)
+        findings, exec_error = run_pr_time(args.render_source, args.env, catalog)
     else:
         if not args.live_context or not args.live_namespace:
             _err("runtime mode requires --live-context and --live-namespace")
-            return 3
-        findings = run_runtime(
+            return EXEC_ERROR_EXIT
+        findings, exec_error = run_runtime(
             overlay_dir=args.render_source,
             context=args.live_context,
             namespace=args.live_namespace,
@@ -426,6 +451,15 @@ def main(argv: list[str] | None = None) -> int:
             catalog=catalog,
             rs_split_grace_seconds=args.rs_split_grace_seconds,
         )
+
+    if exec_error:
+        _err(f"runtime exec error: {exec_error}")
+        if args.output == "json":
+            sys.stdout.write(
+                json.dumps({"env": args.env, "exec_error": exec_error, "findings": []})
+            )
+            sys.stdout.write("\n")
+        return EXEC_ERROR_EXIT
 
     return _emit(findings, args.output, args.env)
 
