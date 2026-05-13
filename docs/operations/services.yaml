@@ -17,6 +17,34 @@
 #   "endpoint-admin-service testte var prod'da yok ancak services.yaml ile
 #    intentional/deferred yapılırsa sağlıklı. Yoksa unmanaged service P2/P1
 #    sınırında kalır."
+#
+# === 2026-05-13 Codex 019e2319 iter-3 AGREE — Deployment Contract Drift Gate ===
+#
+# Each service entry now carries 4 additional fields used by drift gates:
+#
+#   workload_kind: Deployment | StatefulSet | Job | external
+#     What kind of Kubernetes workload renders this service. Determines
+#     whether template-drift / probe-contract / RS-split checks apply.
+#
+#   runtime_class: spring-backend | nginx | openfga | job | lab-tool
+#     Coarse classification driving contract selection + JVM warm-up grace.
+#
+#   probe_contract: spring-actuator | http-healthz | exempt
+#     Mandatory probe shape PR-time gate asserts on render:
+#       spring-actuator → startupProbe required;
+#                         livenessProbe.path = /actuator/health/liveness;
+#                         readinessProbe.path = /actuator/health/readiness;
+#                         port = management or numeric 8081.
+#       http-healthz   → liveness/readiness path in {/healthz,/healthz/live,
+#                         /healthz/ready}; startup optional.
+#       exempt         → no probe assertion (Jobs, lab tools, third-party
+#                         workloads with own readiness model).
+#
+#   jvm_warmup_extra: true | false (default false)
+#     Deploy CI stability gate extends the post-rollout no-restart window
+#     from 2 min to 3 min for services with cold-start JWT decoder /
+#     entity-manager warmup (auth-service KC decoder; endpoint-admin
+#     Hibernate UI grade).
 
 schema_version: "1.0"
 
@@ -26,6 +54,10 @@ services:
     description: Login orchestrator (BFF-style, KC-backed)
     jwt_validates: false  # auth-service issues tokens via KC, doesn't validate inbound JWTs itself
     route_external: true  # /auth/cookie/** path
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
+    jvm_warmup_extra: true   # KC JWT decoder + RSA key warm-up
     environments:
       test: enabled
       prod: enabled
@@ -35,6 +67,9 @@ services:
     description: Spring Cloud Gateway — JWT validation + routing
     jwt_validates: true
     route_external: true  # ingress entry point
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
     environments:
       test: enabled
       prod: enabled
@@ -44,6 +79,9 @@ services:
     description: Users CRUD + profile + session management
     jwt_validates: true
     route_external: false  # gateway-routed
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
     environments:
       test: enabled
       prod: enabled
@@ -53,6 +91,9 @@ services:
     description: Schema variant management (multi-tenant)
     jwt_validates: true
     route_external: false
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
     environments:
       test: enabled
       prod: enabled
@@ -62,6 +103,9 @@ services:
     description: Core master-data API (companies, projects, warehouses, branches)
     jwt_validates: false  # legacy: gateway-validated, no own JWT decoder
     route_external: false
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
     environments:
       test: enabled
       prod: enabled
@@ -71,6 +115,9 @@ services:
     description: HR/finance report aggregator
     jwt_validates: true
     route_external: false
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
     environments:
       test: enabled
       prod: enabled
@@ -80,6 +127,9 @@ services:
     description: MSSQL schema explorer + Workcube ETL coordinator
     jwt_validates: true
     route_external: false
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
     environments:
       test: enabled
       prod: enabled
@@ -89,6 +139,9 @@ services:
     description: OpenFGA-backed authorization service + admin endpoints
     jwt_validates: true
     route_external: false
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
     environments:
       test: enabled
       prod: enabled
@@ -99,6 +152,9 @@ services:
     jwt_validates: false  # internal grpc, no Bearer
     route_external: false
     third_party: true
+    workload_kind: StatefulSet
+    runtime_class: openfga
+    probe_contract: http-healthz   # /healthz default
     environments:
       test: enabled
       prod: enabled
@@ -108,6 +164,9 @@ services:
     description: React/Vite MFE shell + remoteEntry modules
     jwt_validates: false  # static SPA, JWT in cookies forwarded by gateway
     route_external: true  # primary user entry
+    workload_kind: Deployment
+    runtime_class: nginx
+    probe_contract: http-healthz   # /healthz nginx
     environments:
       test: enabled    # variant: platform-web-frontend-testai
       prod: enabled    # variant: platform-web-frontend
@@ -132,6 +191,10 @@ services:
         then catalog reflects gitops-governed state, not cluster-actual state.
     jwt_validates: true
     route_external: false
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
+    jvm_warmup_extra: true   # Hibernate JPA EntityManagerFactory cold-start 30-50s; observed 16h CrashLoop with 45s liveness grace (2026-05-13)
     environments:
       test: enabled   # Faz 22.1.1b onboard COMPLETE 2026-05-05: gitops manifest live'a hizalandı (35 ConfigMap key + 4 ExternalSecret key + port 8096) + image digest pin sha-bd1e5c8. ESO ClusterSecretStore vault-platform-gitops zaten Ready, kv/platform/endpoint-admin-service Vault path populated. D29-EA smoke pending (kubectl apply sonrası).
       prod: deferred  # Faz 22.2 product decision (it-pilot tier acik.local + prod realm 'serban' + Azure Trusted Signing); drift gate accepts absence in prod
@@ -170,6 +233,9 @@ services:
       strict envs from boot, no transitional default fallback) + replicas:2.
     jwt_validates: true
     route_external: false
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator
     environments:
       test: enabled   # Faz 23.1 PR5 D29-NOTIFY (2026-05-06) — backend PR #65 merged + GHCR sha-4b886bc digest pin
       prod: enabled   # Faz 23.9 prod cutover (2026-05-08) — D29 evidence ledger sha-204042d + PR #419 (PR-5.4 + PR-5.5 strict from boot)
@@ -180,8 +246,8 @@ services:
 
 # Metadata
 metadata:
-  last_updated: "2026-05-05"
-  last_updated_by: "Faz 23.0 charter — Codex 019df86f post-impl absorb"
+  last_updated: "2026-05-13"
+  last_updated_by: "Codex 019e2319 iter-3 AGREE — Deployment Contract Drift Gate (PR-1)"
   notes: |
     Bu manifest Drift gate'lerinin (check_prod_drift.sh + check_pr_time.sh)
     "service unmanaged" findings'ini intentional/error olarak ayırmasını
@@ -191,3 +257,8 @@ metadata:
     Yeni service eklendiğinde (örn. notification-service, etl-worker) bu
     manifest'e entry eklenmeli — yoksa drift gate "unmanaged" diye fail
     eder. PR-time gate Check 4 bunu enforce eder.
+
+    2026-05-13 — 4 new fields per service:
+      workload_kind, runtime_class, probe_contract, jvm_warmup_extra
+    consumed by scripts/drift_detection/check_deployment_contracts.py
+    (Codex thread 019e2319 iter-3 AGREE).

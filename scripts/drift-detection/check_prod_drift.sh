@@ -186,6 +186,43 @@ if [[ -n "$QUOTA_RAW" ]]; then
   fi
 fi
 
+# 6. Deployment template + probe contract drift (Codex 019e2319 iter-3 AGREE)
+#    Single Python CLI captures both semantic template diff + RS-split detection.
+#    Catches the endpoint-admin /healthz/* probe drift that produced a 16h
+#    silent CrashLoopBackOff on 2026-05-13 (apply-gap class drift).
+CONTRACT_CLI="$REPO_ROOT/scripts/drift_detection/check_deployment_contracts.py"
+if [[ -x "$CONTRACT_CLI" ]]; then
+  CONTRACT_JSON=$(python3 "$CONTRACT_CLI" \
+    --mode runtime \
+    --env "$ENV" \
+    --render-source "$OVERLAY" \
+    --live-context "$CONTEXT" \
+    --live-namespace "$NAMESPACE" \
+    --catalog "$REPO_ROOT/docs/operations/services.yaml" \
+    --output json 2>/dev/null)
+  contract_rc=$?
+  # Codex 019e2327 review #1 — fail-closed semantics. Exec error (rc=3) emits
+  # a P1 finding; we do NOT silently treat it as "no drift".
+  if [[ $contract_rc -eq 3 ]]; then
+    add_finding P1 contract_gate_exec_error "check_deployment_contracts CLI exec failure (kubectl/render unreachable)" "rc=$contract_rc"
+    bump_exit 3
+  elif [[ -n "$CONTRACT_JSON" ]]; then
+    # Merge contract findings into the existing FINDINGS array.
+    while IFS= read -r entry; do
+      [[ -z "$entry" ]] && continue
+      FINDINGS+=("$entry")
+      cls=$(echo "$entry" | jq -r '.class')
+      case "$cls" in
+        P1) bump_exit 1 ;;
+        P2) bump_exit 2 ;;
+      esac
+    done < <(echo "$CONTRACT_JSON" | jq -c '.findings[]?' 2>/dev/null)
+  fi
+else
+  add_finding P1 contract_gate_missing "check_deployment_contracts CLI not executable — gate cannot run"
+  bump_exit 1
+fi
+
 # 5. Output JSON report
 {
   echo "{"
