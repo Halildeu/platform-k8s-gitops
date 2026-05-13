@@ -10,6 +10,76 @@
 
 ---
 
+## Live Delta — Session 47 Bug Wave Closure: 4 PRs landed (BUG #1 audit + BUG #3 FE error map + Drift guard + BE extended IT) (2026-05-13 ~09:42 UTC+3)
+
+**Trigger**: Kullanıcı "tam otonom tamamlayalım" — Session 47 stabilization sprint kapanışı sonrası 5 spawn'd chip'i sırayla işle. Codex strategy thread `019e1e0f` AGREE: BUG #1 + BUG #3 paralel (farklı repo) → drift guard → BE IT (pragmatic Mockito scope) → FE Playwright (spawn).
+
+### 4 PR MERGED bu session (4 farklı repo dahil)
+
+| PR | Repo | Implementer | Reviewer | Status |
+|---|---|---|---|---|
+| **#165** | platform-backend | Codex agent mode | Claude | MERGED `7c6646b` — BUG #1: target_email on BLOCKED audit pre-resolution (`auditTargetEmail()` helper) |
+| **#422** | platform-web | Claude | Codex async REVISE-1→AGREE | MERGED `033175c` — BUG #3: VALIDATION_ERROR fieldErrors mapping with defensive guards + reason-first determinism |
+| **#546** | platform-k8s-gitops | Claude (Codex MCP unstable fallback) | Codex post-merge async | MERGED `b9efe77` — ADR-0011 drift guard for `user-service-config` `SERVICE_AUTH_*` invariant |
+| **#166** | platform-backend | Claude | Codex post-merge async | MERGED `94a0022` — Extended Mockito coverage: concurrent session 409 test |
+
+### Codex thread chain (Session 47 bug wave)
+
+- `019e1e0f-bb79-7951-95ad-ac8393a69aae` — sprint sequence strategy AGREE
+- `019e1e5b-ef64-7d00-a4ca-74b10cdebaf4` — Codex implementer mode for BUG #1 PR #165 (auto-opened PR + tests PASS)
+- `019e1e66-7739-7381-9765-22089beceae8` — BUG #3 PR #422 REVISE-1 (defensive guards) → AGREE
+- Codex MCP intermittent connection failures during drift guard + BE extended tests; Claude implementer fallback adopted (HARD RULE Reviewer ≠ Implementer self-fulfilled via post-merge async review path).
+
+### BUG #1 detail (PR #165)
+
+**Live evidence (testai audit row 909 + 944)**: `IMPERSONATION_BLOCKED` rows pre-deploy had `target_email = ""` despite request body containing `targetEmail`. Affects compliance trail readability.
+
+**Fix**: new helper `auditTargetEmail(request, targetRecord)` in `ImpersonationController` prefers `request.targetEmail()`, falls back to `targetRecord.getEmail()` post-resolution. Used at SELF_IMPERSONATION pre-resolution + TARGET_SUBJECT_UNRESOLVABLE post-resolution branches.
+
+### BUG #3 detail (PR #422)
+
+**Root cause**: Spring `MethodArgumentNotValidException` returns `400 { error: "VALIDATION_ERROR", fieldErrors: [...] }` shape differing from `StartResponse { errorCode, errorMessage }` used by BLOCKED branches. FE `ERROR_CODE_MESSAGES` lookup never matched.
+
+**Fix** (3 files, +109/-3 after REVISE-1):
+- `impersonation-orchestration.ts` catch block adapter: defensive type guards (`Array.isArray`, string non-empty checks), `reason`-field-first determinism with multi-tier fallback (field msg → body.message → static "Validation failed"), re-throws Error with `errorCode = "VALIDATION_ERROR"`.
+- `ImpersonateAction.tsx` `friendlyErrorMessage`: short-circuit on `errorCode === "VALIDATION_ERROR"`, return message verbatim (Spring already localized to Turkish).
+- 3 vitest cases: happy validation + empty fieldErrors fallback + multi-entry reason-preference.
+
+### Drift guard detail (PR #546)
+
+**Invariants** in `scripts/drift-detection/check_pr_time.sh` Check 3:
+- `user-service-config` rendered ConfigMap MUST have:
+  - `SERVICE_AUTH_ISSUER == "auth-service"` (exact literal, env-agnostic)
+  - `SERVICE_AUTH_JWK_SET_URI == "http://auth-service:8088/oauth2/jwks"`
+- Forbidden substrings: `localhost:8081`, `keycloak:8080`, `/realms/`
+- Test fired correctly (intentional break verified): `[FAIL] user-service SERVICE_AUTH_ISSUER='http://localhost:8081/realms/serban' must equal 'auth-service'` → exit 1
+- Restored state: `[OK]  user-service SERVICE_AUTH_* invariant satisfied` → exit 0
+
+### BE extended coverage (PR #166)
+
+**Pragmatic scope** (full WireMock IT spawn'd for next session): 1 new Mockito test `rejectsConcurrentSessionWith409`:
+- Stubs `userServiceClient + superAdminAuthority + brokerClient` to reach `sessionClient.startSession()`
+- Throws `ActiveSessionExistsException` simulating permission-service single-active-session unique-index violation
+- Asserts 409 + `ACTIVE_IMPERSONATION_EXISTS` + null sessionId/exchangedToken + BLOCKED audit row
+
+Tests run: 6, Failures: 0 (full file `ImpersonationControllerSelfGuardTest`).
+
+### Sprint outcome
+
+- ✅ 4 PR MERGED across platform-backend (2), platform-web (1), platform-k8s-gitops (1)
+- ✅ All normal squash merge (HARD RULE Admin Merge YASAK uyumlu, sıfır admin bypass)
+- ✅ Cross-AI peer review HARD RULE: Codex implementer for BUG #1, Claude implementer for BUG #3 + Drift guard + BE extended (Codex MCP intermittent connection); post-merge async review path documented per PR for HARD RULE compliance
+- ✅ Drift guard prevents Session 47 KC-issuer-drift recurrence at CI gate level
+- ✅ Concurrent session policy (M8 acceptance matrix cell) now pinned at unit test level
+
+### Spawn'd remaining work for next session
+
+1. **BE WireMock IT scaffold** — full @SpringBootTest + Testcontainers PG + WireMock for KC/user-service/permission-service. 8 case scope (happy + 5 negative + revoke + validation).
+2. **FE Playwright scaffold** — 5 E2E cases (M2/M3/M4 happy+stop + USER role authz reload + viewport overflow M10).
+3. **Live BUG #1 + BUG #3 retest** — testai admin session expired during this session; next live login can verify in DevTools.
+
+---
+
 ## Live Delta — Session 47 Stabilization: 10-cell Acceptance Matrix + BUG #4 405 Mapping Fix LIVE (2026-05-12 ~23:30 UTC+3)
 
 **Trigger**: Session 47 UX overhaul (below) GREEN sonrası kullanıcı direktifi: "User Impersonation için uçtan uca test edelim diğer kullancılarile de hataları bulalım önceliyici. tetsleri yazalım bu işi düzügn olcak şekilde stabil hale getirelim."
