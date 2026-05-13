@@ -344,6 +344,40 @@ jobs:
             exit 1
           fi
 
+      # Gate 1d — Pod stability window (Codex 019e2319 iter-3 AGREE — PR-2)
+      #
+      # Runs AFTER Gate 1c (immediate readiness) and asserts the freshly
+      # rolled Deployments stay stable for a catalog-driven window (2 min
+      # default, 3 min for jvm_warmup_extra services like auth-service /
+      # endpoint-admin-service). Closes the bug class where rollout
+      # completes + Gate 1c sees readiness 200, then the new pod crashes
+      # 30-60 s later — the endpoint-admin /healthz/* probe drift
+      # fingerprint that caused 16h silent CrashLoopBackOff on 2026-05-13.
+      - name: Gate 1d — Pod stability window
+        run: |
+          set -euo pipefail
+          SERVICES=(
+            "auth-service"
+            "permission-service"
+            "user-service"
+            "variant-service"
+            "core-data-service"
+            "report-service"
+            "schema-service"
+            "api-gateway"
+          )
+          for svc in "${SERVICES[@]}"; do
+            echo ""
+            echo "==============================================="
+            echo "Stability window: ${svc}"
+            echo "==============================================="
+            ./scripts/deploy/gate-stability-window.sh \
+              --service "${svc}" \
+              --context "${K8S_CONTEXT}" \
+              --namespace "${K8S_NAMESPACE}" \
+              --catalog docs/operations/services.yaml
+          done
+
       # Gate 2 — opt-in JWT auth flow (warn-only if persona yok)
       - name: Gate 2 — JWT auth flow smoke (opt-in)
         env:
@@ -391,6 +425,7 @@ jobs:
             echo "- Gate 1a (per-service pod digest): ✓"
             echo "- Gate 1b (api-gateway public health): ✓"
             echo "- Gate 1c (in-cluster readiness): ✓"
+            echo "- Gate 1d (post-rollout stability window 2-3 min): ✓"
             echo "- Gate 2 (JWT auth flow): ${{ secrets.SMOKE_AUTH_USERNAME && '✓' || '⊘ skipped (no creds)' }}"
             echo ""
             echo "## Manual workflow_dispatch retry"

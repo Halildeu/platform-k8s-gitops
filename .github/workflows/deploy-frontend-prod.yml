@@ -256,6 +256,19 @@ jobs:
             exit 1
           fi
 
+      # Gate 1d — Pod stability window (Codex 019e2319 iter-3 AGREE — PR-2)
+      # Frontend stays single-container nginx; restart risk exists when a
+      # config volume churns (probe path, /healthz misconfig). Catalog
+      # window 120s (no jvm_warmup_extra for nginx runtime_class).
+      - name: Gate 1d — Pod stability window
+        run: |
+          set -euo pipefail
+          ./scripts/deploy/gate-stability-window.sh \
+            --service "frontend" \
+            --context "${K8S_CONTEXT}" \
+            --namespace "${K8S_NAMESPACE}" \
+            --catalog docs/operations/services.yaml
+
       # Gate 2 (opt-in): Playwright behavior smoke
       - name: Gate 2 — Playwright behavior smoke (opt-in)
         run: |
@@ -285,6 +298,7 @@ jobs:
             echo "- Gate 1a (multi-replica digest):     ✓"
             echo "- Gate 1b (ai.acik.com edge chain):   ✓"
             echo "- Gate 1c (build-info.json sha):      ✓"
+            echo "- Gate 1d (post-rollout 2 min stable):   ✓"
             echo ""
             echo "## Manual workflow_dispatch retry"
             echo ""

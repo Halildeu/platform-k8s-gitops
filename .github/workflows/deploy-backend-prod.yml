@@ -290,6 +290,35 @@ jobs:
             exit 1
           fi
 
+      # Gate 1d — Pod stability window (Codex 019e2319 iter-3 AGREE — PR-2)
+      # Catalog-driven post-rollout assertion. See gate-stability-window.sh
+      # for the full fail-condition list. Defends against the bug class
+      # where Gate 1c sees readiness 200 but the pod crashes 30-60 s later.
+      - name: Gate 1d — Pod stability window
+        run: |
+          set -euo pipefail
+          SERVICES=(
+            "auth-service"
+            "permission-service"
+            "user-service"
+            "variant-service"
+            "core-data-service"
+            "report-service"
+            "schema-service"
+            "api-gateway"
+          )
+          for svc in "${SERVICES[@]}"; do
+            echo ""
+            echo "==============================================="
+            echo "Stability window (prod): ${svc}"
+            echo "==============================================="
+            ./scripts/deploy/gate-stability-window.sh \
+              --service "${svc}" \
+              --context "${K8S_CONTEXT}" \
+              --namespace "${K8S_NAMESPACE}" \
+              --catalog docs/operations/services.yaml
+          done
+
       # Gate 2 (opt-in): JWT auth flow smoke
       - name: Gate 2 — JWT auth flow smoke (opt-in)
         env:
@@ -335,6 +364,7 @@ jobs:
             echo "- Gate 1a (multi-replica digest):     ✓"
             echo "- Gate 1b (ai.acik.com edge chain):   ✓"
             echo "- Gate 1c (in-cluster readiness):     ✓"
+            echo "- Gate 1d (post-rollout 2-3 min stable): ✓"
             echo "- Gate 2 (JWT auth flow):             ${{ secrets.PROD_SMOKE_AUTH_USERNAME && '✓' || '⊘ skipped (no creds)' }}"
             echo ""
             echo "## Manual workflow_dispatch retry"
