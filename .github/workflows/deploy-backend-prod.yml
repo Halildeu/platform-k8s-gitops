@@ -134,7 +134,10 @@ jobs:
     name: Deploy backend prod (digest-pin, multi-replica strict)
     needs: preflight
     runs-on: [self-hosted, staging-sw, prod-deploy]
-    timeout-minutes: 45
+    # Codex 019e233b review #1 — Gate 1d adds deterministic 17 min budget;
+    # prior 45m left no slack against rollout (8 * 300s = 40m) + Gate 1c +
+    # Gate 2. Headroom widened so failures signal the gate, not job timeout.
+    timeout-minutes: 75
     environment:
       name: production
       # GitHub Environment settings (UI):

@@ -114,7 +114,10 @@ jobs:
     name: Deploy frontend prod (digest-pin, multi-replica strict)
     needs: preflight
     runs-on: [self-hosted, staging-sw, prod-deploy]
-    timeout-minutes: 15
+    # Codex 019e233b review #1 — frontend Gate 1d adds 2 min window. 15 min
+    # leaves headroom for single-service rollout + Gate 1c retry loop +
+    # Gate 1d. Bumped to 20 min for safety.
+    timeout-minutes: 20
     environment:
       name: production
       # GitHub Environment settings (UI'dan):
