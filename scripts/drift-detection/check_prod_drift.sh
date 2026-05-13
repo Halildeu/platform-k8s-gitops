@@ -186,6 +186,32 @@ if [[ -n "$QUOTA_RAW" ]]; then
   fi
 fi
 
+# 6. Deployment template + probe contract drift (Codex 019e2319 iter-3 AGREE)
+#    Single Python CLI captures both semantic template diff + RS-split detection.
+#    Catches the endpoint-admin /healthz/* probe drift that produced a 16h
+#    silent CrashLoopBackOff on 2026-05-13 (apply-gap class drift).
+CONTRACT_CLI="$REPO_ROOT/scripts/drift_detection/check_deployment_contracts.py"
+if [[ -x "$CONTRACT_CLI" ]]; then
+  CONTRACT_JSON=$(python3 "$CONTRACT_CLI" \
+    --mode runtime \
+    --env "$ENV" \
+    --render-source "$OVERLAY" \
+    --live-context "$CONTEXT" \
+    --live-namespace "$NAMESPACE" \
+    --catalog "$REPO_ROOT/docs/operations/services.yaml" \
+    --output json 2>/dev/null || echo '{"findings":[]}')
+  # Merge contract findings into the existing FINDINGS array.
+  while IFS= read -r entry; do
+    [[ -z "$entry" ]] && continue
+    FINDINGS+=("$entry")
+    cls=$(echo "$entry" | jq -r '.class')
+    case "$cls" in
+      P1) bump_exit 1 ;;
+      P2) bump_exit 2 ;;
+    esac
+  done < <(echo "$CONTRACT_JSON" | jq -c '.findings[]?' 2>/dev/null)
+fi
+
 # 5. Output JSON report
 {
   echo "{"

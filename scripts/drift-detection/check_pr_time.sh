@@ -16,6 +16,11 @@
 #   4. Service catalog parity — both env overlays should declare same service
 #      set OR allowlist mismatch in services.yaml (deferred when allowlist
 #      file doesn't exist yet)
+#   5. Deployment template + probe contract gate (Codex 019e2319 iter-3 AGREE):
+#      Spring-actuator backend services must carry startupProbe +
+#      /actuator/health/{liveness,readiness} probes; nginx/openfga http-healthz;
+#      others exempt. Catches the endpoint-admin /healthz/* skeleton-era drift
+#      that caused 16h silent CrashLoopBackOff (2026-05-13).
 #
 # Exit:
 #   0 — clean (PR is mergeable)
@@ -291,6 +296,29 @@ sys.exit(0)
   if [ $check4_rc -ne 0 ]; then
     EXIT_CODE=1
   fi
+fi
+
+# Check 5: Deployment template + probe contract drift gate
+# (Codex 019e2319 iter-3 AGREE — Deployment Contract Drift Gate PR-1)
+echo
+echo "=== Check 5: Deployment template + probe contract drift ==="
+CONTRACT_CLI="$REPO_ROOT/scripts/drift_detection/check_deployment_contracts.py"
+if [[ -x "$CONTRACT_CLI" ]]; then
+  check5_output=$(python3 "$CONTRACT_CLI" \
+    --mode pr-time \
+    --env "$ENV" \
+    --render-source "$OVERLAY" \
+    --catalog "$CATALOG" \
+    --output text 2>&1)
+  check5_rc=$?
+  echo "$check5_output"
+  if [[ $check5_rc -eq 1 ]]; then
+    EXIT_CODE=1
+  elif [[ $check5_rc -eq 2 ]]; then
+    echo "[WARN] P2 finding(s) only — not blocking but worth attention"
+  fi
+else
+  echo "[WARN] $CONTRACT_CLI missing or not executable — skipping contract gate"
 fi
 
 echo
