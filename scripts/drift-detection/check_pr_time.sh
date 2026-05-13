@@ -9,7 +9,10 @@
 #   1. All image refs use @sha256:<digest> (no moving tags like :latest, :main-stable)
 #   2. GHCR manifest existence — pinned digests must exist (catches GC'd digests
 #      like the sha256:2a7076c9 schema-service incident)
-#   3. ConfigMap KEYCLOAK_ISSUER_URI present for JWT-validating services
+#   3. ConfigMap KEYCLOAK_ISSUER_URI present for JWT-validating services +
+#      user-service SERVICE_AUTH_* invariants (Codex 019e1e0f Session 47
+#      stabilization follow-up — prevents kcSubject leak recurrence by
+#      pinning auth-service-issued service-token verifier endpoints).
 #   4. Service catalog parity — both env overlays should declare same service
 #      set OR allowlist mismatch in services.yaml (deferred when allowlist
 #      file doesn't exist yet)
@@ -139,6 +142,63 @@ for svc in '$JWT_SERVICES'.split():
         continue
 
     print(f'[OK]  {svc} ISSUER+JWKS valid')
+
+# Codex 019e1e0f follow-up — Session 47 stabilization invariant.
+# user-service's ServiceTokenAuthenticationFilter uses a SEPARATE
+# property chain (security.service-auth.*) from the OIDC JWT decoder
+# (security.oauth2.resourceserver.jwt.*). The application.properties
+# defaults hardcode unreachable `localhost:8081/realms/serban` — if
+# a future refactor drops the env override in user-service-config,
+# Session 47 drift recurs silently (internal service-token endpoint
+# 401s, kcSubject leaks back to public DTOs).
+#
+# Service tokens are minted by auth-service ServiceTokenProvider
+# (iss=auth-service, signed with auth-service RSA key, JWKS at
+# /oauth2/jwks). Values are environment-agnostic — same in test/prod.
+SERVICE_AUTH_EXPECTED_ISSUER = 'auth-service'
+SERVICE_AUTH_EXPECTED_JWKS = 'http://auth-service:8088/oauth2/jwks'
+SERVICE_AUTH_FORBIDDEN_SUBSTRINGS = ['localhost:8081', 'keycloak:8080', '/realms/']
+
+user_svc_cm = next(
+    (d for d in docs
+     if isinstance(d, dict) and d.get('kind') == 'ConfigMap'
+     and d.get('metadata', {}).get('name') == 'user-service-config'),
+    None,
+)
+if user_svc_cm is not None:
+    data = user_svc_cm.get('data') or {}
+    sa_issuer = data.get('SERVICE_AUTH_ISSUER', '')
+    sa_jwks = data.get('SERVICE_AUTH_JWK_SET_URI', '')
+
+    if not sa_issuer:
+        print(f'[FAIL] user-service SERVICE_AUTH_ISSUER missing (Session 47 drift recurrence)')
+        fail_count += 1
+    elif sa_issuer != SERVICE_AUTH_EXPECTED_ISSUER:
+        print(f'[FAIL] user-service SERVICE_AUTH_ISSUER={sa_issuer!r} must equal {SERVICE_AUTH_EXPECTED_ISSUER!r}')
+        fail_count += 1
+    else:
+        for forbidden in SERVICE_AUTH_FORBIDDEN_SUBSTRINGS:
+            if forbidden in sa_issuer:
+                print(f'[FAIL] user-service SERVICE_AUTH_ISSUER contains forbidden substring {forbidden!r}')
+                fail_count += 1
+                break
+
+    if not sa_jwks:
+        print(f'[FAIL] user-service SERVICE_AUTH_JWK_SET_URI missing (Session 47 drift recurrence)')
+        fail_count += 1
+    elif sa_jwks != SERVICE_AUTH_EXPECTED_JWKS:
+        print(f'[FAIL] user-service SERVICE_AUTH_JWK_SET_URI={sa_jwks!r} must equal {SERVICE_AUTH_EXPECTED_JWKS!r}')
+        fail_count += 1
+    else:
+        for forbidden in SERVICE_AUTH_FORBIDDEN_SUBSTRINGS:
+            if forbidden in sa_jwks:
+                print(f'[FAIL] user-service SERVICE_AUTH_JWK_SET_URI contains forbidden substring {forbidden!r}')
+                fail_count += 1
+                break
+
+    if data.get('SERVICE_AUTH_ISSUER') == SERVICE_AUTH_EXPECTED_ISSUER \
+            and data.get('SERVICE_AUTH_JWK_SET_URI') == SERVICE_AUTH_EXPECTED_JWKS:
+        print(f'[OK]  user-service SERVICE_AUTH_* invariant satisfied')
 
 if fail_count > 0:
     print(f'')
