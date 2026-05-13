@@ -151,14 +151,110 @@ def _normalize_image_pull_secrets(secrets: list | None) -> list:
     return sorted(secrets, key=lambda s: s.get("name", ""))
 
 
+# --- Resource quantity normalization (Codex 019e234e baseline cleanup) ---
+#
+# Kubernetes treats "1" and "1000m" as the same CPU quantity, and "1Gi" and
+# "1024Mi" as the same memory quantity. Without parsing these to canonical
+# numeric form the runtime detector flags every Deployment that pins integer
+# CPU (e.g. limits.cpu="1") because the API server stores "1" while overlays
+# render "1000m" (or vice versa). Same problem with memory binary vs decimal.
+
+_MEMORY_SUFFIX_MULTIPLIERS: dict[str, int] = {
+    "": 1,
+    "K": 1000, "Ki": 1024,
+    "M": 1000 ** 2, "Mi": 1024 ** 2,
+    "G": 1000 ** 3, "Gi": 1024 ** 3,
+    "T": 1000 ** 4, "Ti": 1024 ** 4,
+    "P": 1000 ** 5, "Pi": 1024 ** 5,
+    "E": 1000 ** 6, "Ei": 1024 ** 6,
+}
+
+# Order matters: Ti must match before T, etc.
+_MEMORY_SUFFIX_ORDER: tuple[str, ...] = (
+    "Ei", "Pi", "Ti", "Gi", "Mi", "Ki",
+    "E", "P", "T", "G", "M", "K",
+    "",
+)
+
+
+def _parse_cpu_to_millicores(value) -> int | None:
+    """Convert a Kubernetes CPU quantity to integer millicores.
+
+    Examples:
+        "1"      → 1000
+        "1000m"  → 1000
+        "0.5"    → 500
+        "250m"   → 250
+        None     → None
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    if s.endswith("m"):
+        return int(float(s[:-1]))
+    return int(round(float(s) * 1000))
+
+
+def _parse_memory_to_bytes(value) -> int | None:
+    """Convert a Kubernetes memory quantity to integer bytes.
+
+    Examples:
+        "1Gi"     → 1073741824
+        "1024Mi"  → 1073741824  (== "1Gi")
+        "500M"    → 500000000
+        "100Ki"   → 102400
+        None      → None
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    for suffix in _MEMORY_SUFFIX_ORDER:
+        if suffix == "":
+            return int(float(s))
+        if s.endswith(suffix):
+            number = s[: len(s) - len(suffix)]
+            return int(float(number) * _MEMORY_SUFFIX_MULTIPLIERS[suffix])
+    return int(float(s))  # pragma: no cover (unreachable; "" suffix always matches)
+
+
+def _normalize_resources(resources: dict | None) -> dict:
+    """Canonicalize requests/limits cpu+memory into comparable numeric form."""
+    if not resources:
+        return {}
+    out: dict[str, dict] = {}
+    for section_key in ("requests", "limits"):
+        section = resources.get(section_key) or {}
+        if not section:
+            continue
+        normalized_section: dict[str, object] = {}
+        for resource_name, raw in section.items():
+            if resource_name == "cpu":
+                normalized_section[resource_name] = _parse_cpu_to_millicores(raw)
+            elif resource_name == "memory":
+                normalized_section[resource_name] = _parse_memory_to_bytes(raw)
+            else:
+                normalized_section[resource_name] = raw
+        out[section_key] = normalized_section
+    return out
+
+
 def _container_contract_view(container: dict) -> dict:
-    """Extract the contract-relevant subset of a container spec."""
+    """Extract the contract-relevant subset of a container spec.
+
+    Codex 019e234e baseline cleanup — `resources` is now normalized to
+    canonical numeric form (millicores / bytes) so cpu "1" == "1000m" and
+    memory "1Gi" == "1024Mi" stop producing false-positive drift.
+    """
     return {
         "ports": _normalize_ports(container.get("ports")),
         "startupProbe": _normalize_probe(container.get("startupProbe")),
         "livenessProbe": _normalize_probe(container.get("livenessProbe")),
         "readinessProbe": _normalize_probe(container.get("readinessProbe")),
-        "resources": container.get("resources") or {},
+        "resources": _normalize_resources(container.get("resources")),
         "env": _normalize_env_list(container.get("env")),
         "envFrom": _normalize_envfrom_list(container.get("envFrom")),
         "command": container.get("command") or [],
@@ -192,11 +288,18 @@ def template_contract_view(deploy: dict) -> dict:
             continue
         container_views[name] = _container_contract_view(c)
 
+    # Codex 019e234e baseline cleanup — Kubernetes API server injects
+    # `terminationGracePeriodSeconds: 30` when the field is absent. Treat
+    # missing == 30 so live state matches desired without manifest churn.
+    tgp = spec.get("terminationGracePeriodSeconds")
+    if tgp is None:
+        tgp = 30
+
     return {
         "labels": template_meta.get("labels") or {},
         "serviceAccountName": spec.get("serviceAccountName"),
         "automountServiceAccountToken": spec.get("automountServiceAccountToken"),
-        "terminationGracePeriodSeconds": spec.get("terminationGracePeriodSeconds"),
+        "terminationGracePeriodSeconds": tgp,
         "podSecurityContext": spec.get("securityContext") or {},
         "imagePullSecrets": _normalize_image_pull_secrets(spec.get("imagePullSecrets")),
         "volumes": _normalize_volumes(spec.get("volumes")),
