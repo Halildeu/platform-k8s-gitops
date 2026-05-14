@@ -1,0 +1,25 @@
+# PERF-INIT-V2 PR-B5b3e Phase 2 — status ConfigMap (pre-created).
+#
+# Codex thread `019e25a7` iter-1 P1 absorb: Kubernetes RBAC
+# `resourceNames` cannot tighten `create` (collection endpoint receives
+# no object name at authz time).  Pre-create the ConfigMap as
+# GitOps-managed; the CronJob writer then only needs `patch` permission
+# on the named resource.
+#
+# `data` is dynamic — the smoke CronJob upserts lastFire/result/failures
+# on every fire.  Argo CD must ignore `/data` for this resource (see
+# argocd/applications/platform-{test,prod}.yaml).
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-federation-smoke-status
+  labels:
+    app.kubernetes.io/name: frontend-federation-smoke
+    app.kubernetes.io/component: status
+    app.kubernetes.io/part-of: platform
+data:
+  # Initial values overwritten by the first cron fire after deployment.
+  lastFire: "(uninitialised — awaiting first cron fire)"
+  result: "(uninitialised)"
+  failures: "0"

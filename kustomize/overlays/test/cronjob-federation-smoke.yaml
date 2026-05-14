@@ -166,14 +166,16 @@ data:
     fi
 
     # Phase 2 status ConfigMap writer (Codex `019e2580` Sprint 1 E
-    # absorb): write last-fire state + PASS/FAIL result + failure
-    # count to a cluster ConfigMap so Argo CD / Grafana / operator
-    # console can sync the single observability surface.
+    # absorb + `019e25a7` iter-1 P1 revisions absorb):
+    # PATCH (merge-patch+json) the GitOps pre-created status ConfigMap
+    # with last-fire state + PASS/FAIL result + failure count.  RBAC
+    # is `verbs: ["get", "patch"]` only — no create/update/delete/list.
     #
     # Uses the in-pod mounted ServiceAccount token + CA to call the
-    # Kubernetes REST API directly (no kubectl binary needed; the
-    # curlimages/curl image already has everything).  Failures here
-    # do NOT change the smoke verdict — writer is best-effort.
+    # Kubernetes REST API directly (no kubectl binary needed).
+    # Failures here do NOT change the smoke verdict — writer is
+    # best-effort; smoke verdict reflects cache/federation invariants,
+    # NOT observability infrastructure health.
     RESULT=$([ $FAIL -eq 0 ] && echo "PASS" || echo "FAIL")
     TIMESTAMP=$(date -u +%FT%TZ)
     TOKEN_FILE=/var/run/secrets/kubernetes.io/serviceaccount/token
@@ -184,46 +186,28 @@ data:
       NS=$(cat "$NS_FILE")
       API="https://kubernetes.default.svc"
       CM_NAME="frontend-federation-smoke-status"
-      PAYLOAD=$(cat <<PYEOF
-    {
-      "apiVersion": "v1",
-      "kind": "ConfigMap",
-      "metadata": { "name": "$CM_NAME", "labels": {
-        "app.kubernetes.io/name": "frontend-federation-smoke",
-        "app.kubernetes.io/component": "status",
-        "app.kubernetes.io/part-of": "platform"
-      }},
-      "data": {
-        "lastFire": "$TIMESTAMP",
-        "result": "$RESULT",
-        "failures": "$FAIL"
-      }
-    }
+      # Codex `019e25a7` iter-1 P1: merge-patch payload — only update
+      # data fields; let the GitOps-managed metadata/labels remain.
+      PATCH_PAYLOAD=$(cat <<PYEOF
+    {"data": {"lastFire": "$TIMESTAMP", "result": "$RESULT", "failures": "$FAIL"}}
     PYEOF
     )
-      # Try update first; if 404, create.  Failures swallowed so the
-      # writer never changes the smoke job's exit code (best-effort).
+      # Codex `019e25a7` iter-1 P3: collapse curl-failure `|| echo "000"`
+      # into a clean `|| HTTP="000"` assignment so curl's own `%{http_code}=000`
+      # on connection failure doesn't get echo'd twice.
       HTTP=$(curl -sS -o /tmp/writer_resp -w '%{http_code}' \
         --cacert "$CA_FILE" \
         -H "Authorization: Bearer $TOKEN" \
-        -H "Content-Type: application/json" \
-        -X PUT --data "$PAYLOAD" \
-        "$API/api/v1/namespaces/$NS/configmaps/$CM_NAME" 2>/dev/null || echo "000")
-      if [ "$HTTP" = "404" ]; then
-        HTTP=$(curl -sS -o /tmp/writer_resp -w '%{http_code}' \
-          --cacert "$CA_FILE" \
-          -H "Authorization: Bearer $TOKEN" \
-          -H "Content-Type: application/json" \
-          -X POST --data "$PAYLOAD" \
-          "$API/api/v1/namespaces/$NS/configmaps" 2>/dev/null || echo "000")
-      fi
-      if [ "$HTTP" = "200" ] || [ "$HTTP" = "201" ]; then
-        echo "[STATUS] wrote ConfigMap $CM_NAME (HTTP $HTTP, result=$RESULT, failures=$FAIL)"
+        -H "Content-Type: application/merge-patch+json" \
+        -X PATCH --data "$PATCH_PAYLOAD" \
+        "$API/api/v1/namespaces/$NS/configmaps/$CM_NAME" 2>/dev/null) || HTTP="000"
+      if [ "$HTTP" = "200" ]; then
+        echo "[STATUS] patched ConfigMap $CM_NAME (HTTP $HTTP, result=$RESULT, failures=$FAIL)"
       else
         echo "[STATUS][WARN] ConfigMap writer HTTP $HTTP (best-effort; smoke verdict unaffected)"
       fi
     else
-      echo "[STATUS][WARN] ServiceAccount token not mounted (automountServiceAccountToken=false?) — skipping writer"
+      echo "[STATUS][WARN] ServiceAccount token not mounted — skipping writer"
     fi
 
     if [ $FAIL -ne 0 ]; then

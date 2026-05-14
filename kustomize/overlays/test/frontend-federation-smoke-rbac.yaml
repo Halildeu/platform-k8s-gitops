@@ -37,10 +37,15 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["configmaps"]
-    # Narrow to the single status ConfigMap — Codex `019e2580` privilege-
-    # minimization guidance.  No list/watch/delete; no other namespaces.
+    # Codex `019e25a7` iter-1 P1 absorb: Kubernetes RBAC `resourceNames`
+    # cannot tighten `create` (collection endpoint doesn't carry name at
+    # authz time).  Status ConfigMap is GitOps pre-created
+    # (frontend-federation-smoke-status.yaml); writer only needs `patch`
+    # on the named resource.  Optional `get` retained for human debug
+    # ("can this SA at least read the CM?"); `create`/`update`/`list`/
+    # `watch`/`delete` intentionally absent.
     resourceNames: ["frontend-federation-smoke-status"]
-    verbs: ["get", "create", "update", "patch"]
+    verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

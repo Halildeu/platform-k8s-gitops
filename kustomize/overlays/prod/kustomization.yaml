@@ -33,12 +33,17 @@ resources:
   # points at platform-prod ClusterIP; namespace transformer applied.
   # Schedule: every 6h Europe/Istanbul.
   - cronjob-federation-smoke.yaml
-  # PERF-INIT-V2 PR-B5b3e Phase 2 (Codex `019e2580` Sprint 1 E absorb):
-  # status ConfigMap writer RBAC — same narrow Role/RoleBinding as test
-  # variant.  Namespace-scoped to platform-prod; permission limited to
-  # `configmaps[frontend-federation-smoke-status]` with verbs
-  # get/create/update/patch only (NO list/watch/delete/cross-resource).
+  # PERF-INIT-V2 PR-B5b3e Phase 2 (Codex `019e2580` Sprint 1 E absorb
+  # + `019e25a7` iter-1 P1 revisions):
+  # status writer infrastructure — 3 manifests:
+  #   - RBAC: ServiceAccount + Role[configmaps:get,patch on
+  #     frontend-federation-smoke-status only] + RoleBinding
+  #   - Status ConfigMap (pre-created GitOps; writer only PATCHes /data)
+  #   - NetworkPolicy: explicit egress allow for the API service
+  #     ClusterIP 10.43.0.1:443 (prod cluster kubernetes.default.svc)
   - frontend-federation-smoke-rbac.yaml
+  - frontend-federation-smoke-status.yaml
+  - frontend-federation-smoke-netpol.yaml
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile)

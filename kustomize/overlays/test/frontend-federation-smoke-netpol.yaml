@@ -1,0 +1,36 @@
+# PERF-INIT-V2 PR-B5b3e Phase 2 — Kubernetes API egress for status writer.
+#
+# Codex thread `019e25a7` iter-1 P1 absorb: namespace default-deny
+# egress (kustomize/base/netpol/default-deny.yaml) blocks every pod
+# from reaching outside its namespace unless an explicit allow exists.
+# The status writer needs to reach `kubernetes.default.svc:443` to
+# upsert the status ConfigMap; without this allow it fails with
+# connection refused.
+#
+# Egress is scoped to ONLY the kubernetes API service ClusterIP +
+# port 443, NOT broader internet/egress.
+#
+# Test cluster `kubernetes.default.svc` ClusterIP: 10.45.0.1
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-federation-smoke-kubernetes-api
+  labels:
+    app.kubernetes.io/name: frontend-federation-smoke
+    app.kubernetes.io/component: smoke
+    app.kubernetes.io/part-of: platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: frontend-federation-smoke
+      app.kubernetes.io/component: smoke
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.45.0.1/32
+      ports:
+        - protocol: TCP
+          port: 443

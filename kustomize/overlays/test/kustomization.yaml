@@ -41,13 +41,18 @@ resources:
   # label transformer rewriting CronJob labels into the frontend pod
   # selector (Service/PDB collision).
   - cronjob-federation-smoke.yaml
-  # PERF-INIT-V2 PR-B5b3e Phase 2 (Codex `019e2580` Sprint 1 E absorb):
-  # status ConfigMap writer RBAC — ServiceAccount + narrow Role
-  # (configmaps[frontend-federation-smoke-status]: get/create/update/
-  # patch) + RoleBinding.  CronJob script upserts a single status
-  # ConfigMap so Argo CD / Grafana / operator console can sync the
-  # smoke verdict + last-fire timestamp from one canonical source.
+  # PERF-INIT-V2 PR-B5b3e Phase 2 (Codex `019e2580` Sprint 1 E absorb
+  # + `019e25a7` iter-1 P1 revisions):
+  # status writer infrastructure — 3 manifests:
+  #   - RBAC: ServiceAccount + Role[configmaps:get,patch on
+  #     frontend-federation-smoke-status only] + RoleBinding
+  #   - Status ConfigMap (pre-created GitOps; writer only PATCHes /data
+  #     — Codex iter-1 P1: RBAC resourceNames cannot tighten `create`)
+  #   - NetworkPolicy: explicit egress allow for the API service
+  #     ClusterIP:443 (default-deny namespace egress in base)
   - frontend-federation-smoke-rbac.yaml
+  - frontend-federation-smoke-status.yaml
+  - frontend-federation-smoke-netpol.yaml
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)
