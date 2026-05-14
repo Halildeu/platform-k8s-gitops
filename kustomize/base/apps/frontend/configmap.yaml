@@ -1,10 +1,21 @@
 # nginx MFE shell config — Module Federation için cache discipline:
 #   /, /index.html, /remoteEntry.js, /remotes/*/remoteEntry.js → NO-STORE
-#   /assets/*, /remotes/*/assets/* → hashed, 1h immutable
+#   /assets/*, /remotes/<remote>/assets/* → hashed, 1y immutable (B3c)
 #
-# TODO: Gerçek HTML içeriği (index.html, assets/, remotes/) henüz image'da YOK.
-# Dilim 4+ initContainer: ghcr.io/halildeu/platform-ssot-web:<sha> artefaktı
-# tar.gz extract → /usr/share/nginx/html VEYA PVC mount (ReadOnlyMany).
+# PERF-INIT-V2 PR-B3c (Codex thread `019e240d` AGREE / iter-3 P1 absorb):
+# hashed Vite chunks get long-cache (1y immutable). Content-hash filenames
+# auto-invalidate on every new build. This ConfigMap is the source of
+# truth — overrides the Dockerfile-baked default (see platform-web
+# Dockerfile heredoc + PR #470 for the parallel canonical default).
+#
+# Surface invariants:
+#   - Entry surfaces (`/`, `/index.html`, `*remoteEntry.js`) retain
+#     `no-store, must-revalidate` so SPA shell + MF manifest stay live.
+#   - Hashed assets under `/assets/` (root + remote-merged) get 1y
+#     immutable. Without `always` keyword so 404 stale-bundle responses
+#     do NOT inherit long-cache.
+#   - `/remotes/<remote>/assets/*` regex location matches the
+#     `build-single-domain.mjs` layout (remote dist copied to that path).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -29,7 +40,13 @@ data:
       location = /remoteEntry.js { try_files $uri =404; add_header Cache-Control "no-store" always; }
       location ~ ^/remotes/[^/]+/remoteEntry\.js$ { try_files $uri =404; add_header Cache-Control "no-store" always; }
 
-      # Hashed assets immutable 1h
-      location /assets/ { try_files $uri =404; expires 1h; add_header Cache-Control "public, max-age=3600, immutable"; }
+      # PERF-INIT-V2 PR-B3c iter-3 absorb: hashed assets 1y immutable.
+      # No `always` keyword so 404 responses don't inherit long-cache.
+      location /assets/ { try_files $uri =404; access_log off; add_header Cache-Control "public, max-age=31536000, immutable"; }
+      # PR-B3c iter-3 P1.2: per-remote hashed assets get same policy.
+      # MUST precede parent /remotes/ catch-all (regex specificity wins).
+      location ~ ^/remotes/[^/]+/assets/ { try_files $uri =404; access_log off; add_header Cache-Control "public, max-age=31536000, immutable"; }
+      # Parent /remotes/ catch-all for non-asset paths (e.g. fonts, images
+      # if remote ships any outside /assets/). Stays 1h.
       location /remotes/ { try_files $uri =404; expires 1h; add_header Cache-Control "public, max-age=3600, immutable"; }
     }
