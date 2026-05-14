@@ -54,7 +54,7 @@ Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorun
 | 23.6 | v1 — Teams + Slack zenginleştirme | code | 1 hafta | 23.4 | ⏳ pending (Teams adapter + Slack Block Kit + threading) |
 | 23.7 | v1 — push (FCM/APNS) | code | 2 hafta | 23.4 + Faz 22.2 | ⏳ pending (FCM/APNS adapters + device token registry) |
 | 23.8 | v1 — analytics + bounce loop | code | 2 hafta | 23.4 | 🟡 partial (alerts/dashboard LIVE; Tempo + bounce loop + spam complaint feedback pending) |
-| **23.9** | Prod cutover | atomic | 1 hafta | 23.4-23.8 stable | 🟡 partial (activation LIVE 2026-05-08 ai.acik.com; **72h observation in progress until 2026-05-11; rollback prova + browser SSO verify pending user**) |
+| **23.9** | Prod cutover | atomic | 1 hafta | 23.4-23.8 stable | 🟢 **FULL CLOSURE Session 49 2026-05-14** (activation LIVE 2026-05-08 ai.acik.com; 72h observation T+72h 2026-05-11 PASS; rollback prova ADR-0010 §2.5 + drill 2026-05-10; **testai + ai.acik.com SSO LIVE evidence 2026-05-14** — Pre-Production Full Authority HARD RULE agent headless tool, R7 + R8 🟢 closed; evidence doc `docs/faz-23-evidence/2026-05-14-m1-23-9-cutover-closure-evidence.md`) |
 | 23.X | v2 (later) | code | 8-12 hafta | v1 stable | ⏳ deferred (A/B + workflow editor + WhatsApp + voice + per-tenant provider) |
 
 Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
