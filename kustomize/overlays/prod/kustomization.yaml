@@ -414,6 +414,15 @@ patches:
       - op: replace
         path: /data/KEYCLOAK_ISSUER_URI
         value: "https://ai.acik.com/realms/serban"
+      # D1.3 (2026-05-14): SECURITY_JWT_* programmatic JWT decoder env'leri
+      # prod realm 'serban' için override. Base'de OVERLAY_MUST_OVERRIDE
+      # fail-closed placeholder; AUDIENCE base'de env-agnostic literal.
+      - op: replace
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://ai.acik.com/realms/serban"
+      - op: replace
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
       # 2026-05-04 Session 37: prod-only super-admin bootstrap addition.
       # halil.kocoglu@serban.com.tr was created as a Keycloak realm user
       # (KC ID d14c0a96-4e61-4b9a-9a69-43e8424e14fb) per the operator's
