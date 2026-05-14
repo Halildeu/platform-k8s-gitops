@@ -12,9 +12,13 @@
 # remains the user-facing closure (D29 disipline preserved per
 # docs/context-priority-rules.md §157).
 #
-# Schedule: every 6h Europe/Istanbul.
-# Initial scope: test cluster only; prod CronJob lands in a separate
-# PR after 48h test stability per Codex revision.
+# Schedule: every 6h Europe/Istanbul, prod OFFSET :30 vs test :00 so
+# the two clusters do not fire simultaneously (alert/triage correlation
+# + observability surface separation — Codex `019e256f` P2 absorb).
+# Prod promote rationale (Codex `019e256f` iter-1 absorb): observed
+# short stability on test variant + low-risk read-only curl-only
+# detector + significant prod monitor gap.  First-fire manual verify
+# required; 48h observation continues post-merge.
 #
 # Asset URL discovery: index.html parsed dynamically; ONLY the 7 remote
 # slug names are hardcoded (suggestions/ethic/schema-explorer/users/
@@ -180,9 +184,11 @@ metadata:
     app.kubernetes.io/component: smoke
     app.kubernetes.io/part-of: platform
 spec:
-  # Every 6 hours, Europe/Istanbul.  Initial cadence per Codex revision
-  # — short enough for prompt feedback, low resource cost (~5s job).
-  schedule: "0 */6 * * *"
+  # Every 6 hours, Europe/Istanbul, OFFSET :30 vs test cluster's :00.
+  # Codex `019e256f` P2: avoid simultaneous test+prod fire so alert
+  # correlation + downstream observability surface are not bundled
+  # into the same minute.
+  schedule: "30 */6 * * *"
   timeZone: Europe/Istanbul
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
@@ -201,14 +207,14 @@ spec:
         spec:
           restartPolicy: OnFailure
           automountServiceAccountToken: false
-          # Codex recommended digest-pin for curl image.  This is the
-          # current latest curlimages/curl multiarch digest at PR time.
-          # Re-pin via `docker pull curlimages/curl:8.10.1 ; docker
-          # inspect --format '{{.RepoDigests}}' curlimages/curl:8.10.1`
-          # if the upstream image is updated.
+          # Codex `019e256f` P1: digest-pin curl image (D30 immutable
+          # artifact discipline — moving tag YASAK).  Pin verified via
+          # `docker pull curlimages/curl:8.10.1 && docker inspect
+          # --format '{{.RepoDigests}}' curlimages/curl:8.10.1` on
+          # 2026-05-14.  Re-pin when upstream rolls (Renovate or manual).
           containers:
             - name: smoke
-              image: curlimages/curl:8.10.1
+              image: curlimages/curl:8.10.1@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b
               imagePullPolicy: IfNotPresent
               command:
                 - /bin/sh
@@ -228,6 +234,12 @@ spec:
                 runAsUser: 100
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
+                # Codex `019e256f` P1: PodSecurity restricted requires
+                # seccompProfile.  RuntimeDefault is behavior-neutral
+                # (same syscall surface as default docker runtime) and
+                # silences the warning every job creation emits.
+                seccompProfile:
+                  type: RuntimeDefault
                 capabilities:
                   drop: ["ALL"]
               volumeMounts:

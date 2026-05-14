@@ -12,9 +12,11 @@
 # remains the user-facing closure (D29 disipline preserved per
 # docs/context-priority-rules.md §157).
 #
-# Schedule: every 6h Europe/Istanbul.
-# Initial scope: test cluster only; prod CronJob lands in a separate
-# PR after 48h test stability per Codex revision.
+# Schedule: every 6h Europe/Istanbul.  Test fires at :00; prod variant
+# (kustomize/overlays/prod/cronjob-federation-smoke.yaml) offsets to
+# :30 so the two clusters do not fire simultaneously — Codex `019e256f`
+# P2 absorb (alert/triage correlation + observability surface
+# separation).
 #
 # Asset URL discovery: index.html parsed dynamically; ONLY the 7 remote
 # slug names are hardcoded (suggestions/ethic/schema-explorer/users/
@@ -201,14 +203,14 @@ spec:
         spec:
           restartPolicy: OnFailure
           automountServiceAccountToken: false
-          # Codex recommended digest-pin for curl image.  This is the
-          # current latest curlimages/curl multiarch digest at PR time.
-          # Re-pin via `docker pull curlimages/curl:8.10.1 ; docker
-          # inspect --format '{{.RepoDigests}}' curlimages/curl:8.10.1`
-          # if the upstream image is updated.
+          # Codex `019e256f` P1 absorb (parity with prod variant):
+          # digest-pin curl image (D30 immutable artifact discipline —
+          # moving tag YASAK).  Pin verified via `docker pull
+          # curlimages/curl:8.10.1 && docker inspect --format
+          # '{{.RepoDigests}}' curlimages/curl:8.10.1` on 2026-05-14.
           containers:
             - name: smoke
-              image: curlimages/curl:8.10.1
+              image: curlimages/curl:8.10.1@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b
               imagePullPolicy: IfNotPresent
               command:
                 - /bin/sh
@@ -228,6 +230,11 @@ spec:
                 runAsUser: 100
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
+                # Codex `019e256f` P1: PodSecurity restricted requires
+                # seccompProfile.  RuntimeDefault is behavior-neutral
+                # and silences the warning every job creation emits.
+                seccompProfile:
+                  type: RuntimeDefault
                 capabilities:
                   drop: ["ALL"]
               volumeMounts:
