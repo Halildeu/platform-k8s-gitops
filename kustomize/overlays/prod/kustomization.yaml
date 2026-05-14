@@ -380,6 +380,16 @@ patches:
       # Session 47 stabilization (Codex 019e1df7 REVISE):
       # SERVICE_AUTH_* uses auth-service-issued tokens (NOT KC), so the
       # base defaults are environment-agnostic. No overlay patch needed.
+      #
+      # D1.2 (2026-05-14): SECURITY_JWT_* programmatic JWT decoder env'leri
+      # prod realm 'serban' için override. Base'de OVERLAY_MUST_OVERRIDE
+      # fail-closed placeholder; AUDIENCE base'de env-agnostic literal.
+      - op: replace
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://ai.acik.com/realms/serban"
+      - op: replace
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
   # 2026-05-04 Session 37 follow-up: schema-service + report-service KC
   # issuer prod override. Same pattern — base sets internal KC, prod points
   # to ai.acik.com for the iss claim match.
