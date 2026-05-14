@@ -2007,15 +2007,28 @@ patches:
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "false"
-      # Codex 019e258a iter-5 D1.1a 2nd pass — PR #566 selective apply
-      # surfaced live keys missing from desired-state ConfigMap. Without
-      # SPRING_DATASOURCE_URL Spring boot's JDBC autoconfig cannot init
-      # the DataSource → Hibernate "Unable to determine Dialect without
-      # JDBC metadata" → CrashLoop. SPRING_DATASOURCE_USERNAME/PASSWORD
-      # already flow via envFrom auth-service-secrets; only URL + dialect
-      # hints + Hikari fail-timeout are config-side. Live recovery already
-      # applied via `kubectl set env` 2026-05-14 ~12:00 UTC+3; this PR
-      # cleans up that imperative override into GitOps desired-state.
+      # Codex 019e258a iter-5 + 019e25ba — D1.1a 2nd pass: PR #566 selective
+      # apply dropped the inline env array (kubectl replace --force) and the
+      # pod crashed with `Unable to determine Dialect without JDBC metadata`.
+      # Root cause (Codex 019e25ba clarification): base ConfigMap already
+      # carried `SPRING_DATASOURCE_URL` (verified via render of PR #566
+      # merge commit 1ac92b3); the missing piece was the explicit Hibernate
+      # dialect property + Hikari fail-timeout that the inline override was
+      # carrying alone. Spring Boot JDBC autoconfig opened the connection
+      # but Hibernate's dialect auto-detection failed without an explicit
+      # `spring.jpa.properties.hibernate.dialect`.
+      #
+      # SPRING_DATASOURCE_URL is pinned here too (defensive parity with
+      # live override after kubectl set env recovery on 2026-05-14 ~12:00);
+      # base value is identical so render is unaffected.
+      # SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT is the canonical Spring
+      # relaxed-binding path the auto-config consults.
+      # HIBERNATE_DIALECT is the legacy convention from the inline override
+      # (kept as a live-recovery breadcrumb; not bound by Spring directly
+      # in this codebase per application-k8s.yml). Remove in D1.1b cleanup.
+      # SPRING_DATASOURCE_HIKARI_INITIALIZATION_FAIL_TIMEOUT=30000 keeps
+      # the pool seed tolerant of host-bridge PG short hiccups (already
+      # paired with Hikari connection-timeout=30s in application-k8s.yml).
       - op: add
         path: /data/SPRING_DATASOURCE_URL
         value: "jdbc:postgresql://postgres:5432/auth_db"
