@@ -1,0 +1,158 @@
+# PrometheusRule — Continuous cluster alerting for rollout + RS split + crash loops
+#
+# Codex 019e256f Session 49 strategic consultation — PR-4 of the Deployment
+# Contract Drift Gate initiative. Builds on:
+#   * PR #551 — PR-time + runtime drift detection (timer cadence)
+#   * PR #552 — deploy-time pod stability window (Gate 1d, single deploy run)
+#
+# Closes the observation gap: the timer detector catches drift within 15
+# minutes, but a stalled rollout / RS split / crash loop between timer ticks
+# is invisible until the next run. These three alerts give continuous
+# kube-state-metrics-driven visibility plus runbook annotations pointing
+# operators at the drift gate + manual reconcile path.
+#
+# Bug class motivation (2026-05-13 endpoint-admin 16h silent CrashLoop):
+#   The new ReplicaSet ran 273 restarts over 16 hours; the old RS stayed
+#   Ready so service traffic kept flowing. Without RS-split + CrashLoop
+#   alerts the only signal was a manual `kubectl get pod` long after the
+#   fact. PR-4 makes that pattern fire within minutes.
+#
+# Selector scope: every alert is namespace-filtered to platform-test +
+# platform-prod so monitoring/lab namespaces do not generate noise.
+#
+# Apply: kustomize/base/monitoring/kustomization.yaml resources list.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: rollout-replicaset-crash
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: rollout.crash.observability
+      interval: 30s
+      rules:
+        # ---- 1. KubeDeploymentRolloutStuck ----
+        #
+        # Fires when a Deployment carries `Progressing=False` for >15 minutes.
+        # This is the "rollout truly failed" condition emitted by the
+        # Deployment controller after progressDeadlineSeconds elapses.
+        #
+        # Why 15m: progressDeadlineSeconds defaults to 600s (10m); 15m gives
+        # margin so a normal long rollout doesn't flap.
+        - alert: KubeDeploymentRolloutStuck
+          expr: |
+            max by (namespace, deployment) (
+              kube_deployment_status_condition{
+                condition="Progressing", status="false",
+                namespace=~"platform-(test|prod)"
+              }
+            ) == 1
+          for: 15m
+          labels:
+            severity: warning
+            component: k8s-rollout
+            cluster_scope: same-cluster
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.deployment }} rollout stuck >15 min"
+            description: |
+              Deployment {{ $labels.deployment }} in {{ $labels.namespace }}
+              has Progressing=False for more than 15 minutes. This usually
+              means progressDeadlineSeconds elapsed without enough ready
+              replicas. Check rollout status, recent events, and image pulls.
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/runbooks/deploy-stability-window.md#rollout-stuck"
+
+        # ---- 2. KubeReplicaSetSplit ----
+        #
+        # Fires when a Deployment has >1 active ReplicaSet (spec.replicas>0)
+        # AND at least one of those active RSes has zero ready replicas for
+        # >10 minutes. This catches the endpoint-admin 2026-05-13 fingerprint:
+        # old RS stays Ready, new RS spins up but never reaches readiness,
+        # service traffic keeps flowing on the stale spec.
+        #
+        # Codex 019e257b review #1 — earlier draft multiplied
+        # `kube_replicaset_status_ready_replicas == 0` into spec.replicas,
+        # which silently returns 0 (PromQL `== 0` sample value is 0 without
+        # `bool` modifier). Switched to set-operator semantics so the inner
+        # predicate is presence-based, not arithmetic.
+        #
+        # Codex 019e257b review #2 — earlier annotation claimed "newest RS"
+        # but the PromQL did not select newest. Tightened wording to
+        # "an active RS with ready=0", which fingerprint requires anyway.
+        #
+        # Why 10m: shorter than a typical multi-pod rollout but long enough
+        # to ignore a normal "1 surge + 0 unavailable" transition.
+        - alert: KubeReplicaSetSplit
+          expr: |
+            (
+              count by (namespace, owner_name) (
+                kube_replicaset_owner{
+                  owner_kind="Deployment",
+                  namespace=~"platform-(test|prod)"
+                }
+                * on (namespace, replicaset)
+                group_left ()
+                (kube_replicaset_spec_replicas > 0)
+              ) > 1
+            )
+            and on (namespace, owner_name) (
+              count by (namespace, owner_name) (
+                kube_replicaset_owner{
+                  owner_kind="Deployment",
+                  namespace=~"platform-(test|prod)"
+                }
+                * on (namespace, replicaset)
+                group_left ()
+                (kube_replicaset_spec_replicas > 0)
+                and on (namespace, replicaset)
+                (kube_replicaset_status_ready_replicas == 0)
+              ) > 0
+            )
+          for: 10m
+          labels:
+            severity: critical
+            component: k8s-rollout
+            cluster_scope: same-cluster
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.owner_name }} ReplicaSet split (active RS ready=0) >10 min"
+            description: |
+              Deployment {{ $labels.owner_name }} in {{ $labels.namespace }}
+              has multiple active ReplicaSets and at least one of them has
+              no ready replicas for over 10 minutes. The old ReplicaSet is
+              keeping service traffic alive while another spec silently
+              fails — this is the endpoint-admin 2026-05-13 silent
+              CrashLoopBackOff fingerprint. Investigate pod logs of the
+              newest active ReplicaSet.
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/runbooks/deploy-stability-window.md#replicaset-split"
+
+        # ---- 3. KubePodCrashLooping ----
+        #
+        # Fires when any container in a platform-{test,prod} pod is
+        # waiting with reason=CrashLoopBackOff for >5 minutes. Catches
+        # the case where Gate 1d already passed (deploy completed) but
+        # the pod started crashing later.
+        - alert: KubePodCrashLooping
+          expr: |
+            max by (namespace, pod, container) (
+              kube_pod_container_status_waiting_reason{
+                reason="CrashLoopBackOff",
+                namespace=~"platform-(test|prod)"
+              }
+            ) > 0
+          for: 5m
+          labels:
+            severity: critical
+            component: k8s-workload
+            cluster_scope: same-cluster
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} container {{ $labels.container }} CrashLoopBackOff >5 min"
+            description: |
+              Pod {{ $labels.pod }} container {{ $labels.container }} in
+              {{ $labels.namespace }} has been in CrashLoopBackOff for more
+              than 5 minutes. The drift detection timer + Gate 1d cover
+              probe/spec drift causes; this alert catches any other crash
+              cause (image pull, OOM, config error, dependency outage).
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/runbooks/deploy-stability-window.md#crashloopbackoff"
