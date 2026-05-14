@@ -1688,7 +1688,21 @@ images:
     #   - Zero `<polyline>` elements remain in the Maas Farki Trendi
     #     ChartCard subtree.
     #   - 22 total `[_echarts_instance_]` mounted on hr-demografik-yapi.
-    digest: sha256:ca085221eb47302d6ffc640c4763570f8865c2f7573a12359d4f3abeb2d38b4b
+    #
+    # 2026-05-14 update: sha-103805c — PERF-INIT-V2 PR-B5b2-hostfix
+    # (platform-web #476 squash, BUILD_SHA 103805ce5c02e2fec86ad03675fd5b9098027339).
+    # CRITICAL functional regression fix: host MF instance lookup
+    # mismatch — all 7 on-demand canary routes (suggestions/ethic/
+    # schema-explorer/users/audit/access/reporting) rendered classified
+    # fallback in production because every wrapper + ensure-remote-
+    # shell-services used exact-equality lookup
+    # `instance.options.name === 'mfe_shell'`, while @module-federation/
+    # vite emits the host as `__mfe_internal__mfe_shell` at runtime.
+    # Codex cross-AI peer review thread `019e2528` iter-3 AGREE
+    # (ready_for_merge:true).  Image build run 25846515784 (success).
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-103805c
+    # @sha256:f7d2b90528349276cf62debb34e7853a21c54b5def15530a083f6da97d6b178c
+    digest: sha256:f7d2b90528349276cf62debb34e7853a21c54b5def15530a083f6da97d6b178c
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
