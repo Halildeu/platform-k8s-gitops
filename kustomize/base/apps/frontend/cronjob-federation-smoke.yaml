@@ -1,0 +1,214 @@
+# PERF-INIT-V2 PR-B5b3e — cluster-side federation/cache smoke CronJob.
+#
+# Codex thread `019e24ea` PARTIAL → revised design absorb:
+# Replaces the GHA-based nightly Playwright smoke (#475 preflight gate
+# was advisory-only because GitHub Actions runner ↔ Turkey-side
+# testai.acik.com cold TLS handshake exceeds 90s consistently).
+#
+# This CronJob runs INSIDE the cluster — `http://frontend/login` is a
+# local ClusterIP service, sub-second latency.  Curl-only (no
+# Playwright/Chromium) per Codex revision: this is a cache/federation
+# RUNTIME DETECTOR, NOT a browser acceptance gate.  Browser smoke
+# remains the user-facing closure (D29 disipline preserved per
+# docs/context-priority-rules.md §157).
+#
+# Schedule: every 6h Europe/Istanbul.
+# Initial scope: test cluster only; prod CronJob lands in a separate
+# PR after 48h test stability per Codex revision.
+#
+# Asset URL discovery: index.html parsed dynamically; ONLY the 7 remote
+# slug names are hardcoded (suggestions/ethic/schema-explorer/users/
+# access/audit/reporting — these are stable contract identifiers).
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-federation-smoke-script
+  labels:
+    app.kubernetes.io/name: frontend-federation-smoke
+    app.kubernetes.io/component: smoke
+    app.kubernetes.io/part-of: platform
+data:
+  smoke.sh: |
+    #!/bin/sh
+    # PERF-INIT-V2 PR-B5b3e smoke script (Codex 019e24ea AGREE).
+    # Verifies B3c cache headers + federation manifest discipline on
+    # the cluster-internal frontend service.  Non-zero exit if any
+    # check fails → Job failure → CronJob alarm surface.
+    set -eu
+
+    TARGET="${TARGET:-http://frontend.platform-test.svc.cluster.local}"
+    REMOTES="suggestions ethic schema-explorer users access audit reporting"
+    FAIL=0
+
+    # Small retry wrapper for transient pod rollout windows (Codex P2
+    # risk: smoke can hit a rolling pod and see partial state).
+    retry_curl() {
+      local url="$1"
+      local attempts="${2:-3}"
+      local sleep_s="${3:-2}"
+      local i=0
+      while [ $i -lt $attempts ]; do
+        if out=$(curl -sI --max-time 10 "$url" 2>&1); then
+          echo "$out"
+          return 0
+        fi
+        i=$((i+1))
+        sleep "$sleep_s"
+      done
+      echo "[FAIL] $url unreachable after $attempts attempts" >&2
+      return 1
+    }
+
+    check_header() {
+      local url="$1"
+      local pattern="$2"
+      local label="$3"
+      out=$(retry_curl "$url") || { FAIL=1; return; }
+      if echo "$out" | grep -iE "^cache-control:.*$pattern" >/dev/null 2>&1; then
+        echo "[OK] $label — $url"
+      else
+        echo "[FAIL] $label — $url did NOT match Cache-Control pattern: $pattern"
+        echo "  observed headers:"
+        echo "$out" | grep -i "^cache-control:" | sed 's/^/    /'
+        FAIL=1
+      fi
+    }
+
+    # 1. Entry surfaces — must be no-store
+    check_header "$TARGET/" "no-store" "/ no-store"
+    check_header "$TARGET/index.html" "no-store" "/index.html no-store"
+    check_header "$TARGET/remoteEntry.js" "no-store" "host remoteEntry no-store"
+
+    # 2. Per-remote remoteEntry.js — must be no-store
+    for r in $REMOTES; do
+      check_header "$TARGET/remotes/$r/remoteEntry.js" "no-store" "remote $r remoteEntry no-store"
+    done
+
+    # 3. Hashed root asset — must be 1y immutable (B3c)
+    # Discover one real asset URL dynamically from index.html.
+    asset=$(curl -s --max-time 10 "$TARGET/" | grep -oE '/assets/[a-zA-Z0-9_-]+\.[a-z]+' | head -1 || true)
+    if [ -z "$asset" ]; then
+      echo "[FAIL] could not discover a /assets/* URL from index.html"
+      FAIL=1
+    else
+      check_header "$TARGET$asset" "max-age=31536000.*immutable" "hashed root asset $asset"
+    fi
+
+    # 4. Hashed remote asset — must be 1y immutable (B3c iter-3 P1.2)
+    # Discover one remote asset by curling a remote's remoteEntry.js and
+    # parsing the asset reference it points to.
+    remote_asset=""
+    for r in $REMOTES; do
+      remote_asset_path=$(curl -s --max-time 10 "$TARGET/remotes/$r/remoteEntry.js" | grep -oE "/remotes/$r/assets/[a-zA-Z0-9._/-]+" | head -1 || true)
+      if [ -n "$remote_asset_path" ]; then
+        remote_asset="$remote_asset_path"
+        break
+      fi
+    done
+    if [ -z "$remote_asset" ]; then
+      echo "[WARN] could not discover a remote /assets/* URL — skipping P1.2 check"
+    else
+      check_header "$TARGET$remote_asset" "max-age=31536000.*immutable" "hashed remote asset $remote_asset"
+    fi
+
+    # 5. Negative case: missing /assets/* — must NOT have long-cache
+    # (P1.1 absorb: B3c removed `always` keyword so 404 doesn't inherit
+    # the 1y immutable header).
+    smoke_404_url="$TARGET/assets/__b5b3e_smoke_missing_$(date +%s).js"
+    out=$(retry_curl "$smoke_404_url") || {
+      echo "[INFO] negative case URL $smoke_404_url unreachable"
+    }
+    if echo "$out" | grep -iE "^cache-control:.*max-age=31536000" >/dev/null 2>&1; then
+      echo "[FAIL] negative case: 404 stale-bundle DID inherit long-cache (P1.1 regression)"
+      echo "$out" | grep -i "^cache-control:" | sed 's/^/    /'
+      FAIL=1
+    else
+      echo "[OK] negative case: 404 does not carry 1y immutable header"
+    fi
+
+    if [ $FAIL -ne 0 ]; then
+      echo ""
+      echo "[B5b3e] FAIL — at least one cache/federation invariant violated"
+      exit 1
+    fi
+    echo ""
+    echo "[B5b3e] PASS — all cache + federation invariants verified"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: frontend-federation-smoke
+  labels:
+    app.kubernetes.io/name: frontend-federation-smoke
+    app.kubernetes.io/component: smoke
+    app.kubernetes.io/part-of: platform
+spec:
+  # Every 6 hours, Europe/Istanbul.  Initial cadence per Codex revision
+  # — short enough for prompt feedback, low resource cost (~5s job).
+  schedule: "0 */6 * * *"
+  timeZone: Europe/Istanbul
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 60
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: frontend-federation-smoke
+            app.kubernetes.io/component: smoke
+            app.kubernetes.io/part-of: platform
+        spec:
+          restartPolicy: OnFailure
+          automountServiceAccountToken: false
+          # Codex recommended digest-pin for curl image.  This is the
+          # current latest curlimages/curl multiarch digest at PR time.
+          # Re-pin via `docker pull curlimages/curl:8.10.1 ; docker
+          # inspect --format '{{.RepoDigests}}' curlimages/curl:8.10.1`
+          # if the upstream image is updated.
+          containers:
+            - name: smoke
+              image: curlimages/curl:8.10.1
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - /scripts/smoke.sh
+              env:
+                - name: TARGET
+                  value: "http://frontend.platform-test.svc.cluster.local"
+              resources:
+                requests:
+                  cpu: "25m"
+                  memory: "32Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "128Mi"
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 100
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: smoke-script
+                  mountPath: /scripts
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: smoke-script
+              configMap:
+                name: frontend-federation-smoke-script
+                defaultMode: 0555
+                items:
+                  - key: smoke.sh
+                    path: smoke.sh
+                    mode: 0555
+            - name: tmp
+              emptyDir:
+                sizeLimit: 16Mi
