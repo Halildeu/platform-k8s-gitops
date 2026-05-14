@@ -1714,7 +1714,29 @@ images:
     # (ready_for_merge:true).  Image build run 25846515784 (success).
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-103805c
     # @sha256:f7d2b90528349276cf62debb34e7853a21c54b5def15530a083f6da97d6b178c
-    digest: sha256:f7d2b90528349276cf62debb34e7853a21c54b5def15530a083f6da97d6b178c
+    #
+    # 2026-05-14 update: sha-a966969 — PR-X13 GeoMap overlay campaign
+    # closure batch (platform-web PRs #479/#480/#481/#482/#483 squash
+    # merged in sequence; BUILD_SHA a96696918e915983d49e92ac36d72c917358e030).
+    # 5 GeoOverlay layer types now live:
+    #   - PR-X13a #479 `bubble` (sqrt-scale symbolSize)
+    #   - PR-X13b #480 `effectScatter` (rippleEffect.number=0 reduced-motion)
+    #   - PR-X13c #481 `flow` (lines linear/sqrt width, OD edges)
+    #   - PR-X13d #482 `heatmap` (dedicated visualMap, dimension:2,
+    #     non-interactive raster contract per echarts@5.6.0 source)
+    #   - PR-X13e #483 `marker` (safe-symbol whitelist + path:// SVG +
+    #     external URL rejection, campaign closure)
+    # Cross-AI peer review (HARD RULE 2026-05-05): 5 Codex threads,
+    # 18 iter cycles total (plan + post-impl), all AGREE / admin-yok
+    # normal merge per HARD RULE 2026-05-05 admin-merge yasak. Net:
+    # ~150 new tests across builder/visualMap helper/dispatcher/wrapper
+    # option-shape/click contract/a11y SR suites; 11 public type exports;
+    # foundation contract preserved (option.geo, geoIndex:0, visualMap[0].
+    # seriesIndex:0, _overlay namespace, notMerge:true, sanitization
+    # helpers). Image build run 25856984174 (success). GHCR push:
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-a966969
+    # @sha256:a563a01e8d288535df7155dbf7ec4f6c713ed992672cc57fccc849c18ae7014d
+    digest: sha256:a563a01e8d288535df7155dbf7ec4f6c713ed992672cc57fccc849c18ae7014d
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
