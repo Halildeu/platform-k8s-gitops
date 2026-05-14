@@ -19,9 +19,16 @@ spec:
   policyTypes:
     - Egress
   egress:
+    # Service CIDR + docker bridge CIDR — see test variant comment.
     - to:
         - ipBlock:
-            cidr: 10.43.0.1/32
+            cidr: 10.43.0.1/32        # kubernetes.default.svc ClusterIP (pre-DNAT)
       ports:
         - protocol: TCP
           port: 443
+    - to:
+        - ipBlock:
+            cidr: 172.21.0.0/16       # k3d-prod docker bridge (control-plane endpoint)
+      ports:
+        - protocol: TCP
+          port: 6443
