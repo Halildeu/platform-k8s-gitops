@@ -10,6 +10,51 @@
 
 ---
 
+## Live Delta — Session 49 Sequel-4 Codex Exec Fresh-Context Audit + Overclaim Cleanup (2026-05-14 ~22:45 UTC+3)
+
+**Bağlam**: Sequel-3 honest closure sonrası kullanıcı "codex ile istişre et codex exec ile etki bağlamdan dolayı yanılmasın" direktifi. Önceki Codex MCP thread context bias'ından bağımsız doğrulama için `codex exec` CLI fresh session ile audit yapıldı.
+
+**Codex exec fresh-context bulguları (6 kritik)**:
+
+1. **Spec readiness race (test bug, runtime değil)**: `seedSuperAdmin` store yoksa direkt throw atıyor; B1-B4 `page.goto(..., 'domcontentloaded')` sonrası store readiness beklemeden çağırıyor. PR #510'un env-reader fix'i doğru olsa bile aynı "No store surface" semptomunu üretir. → **PR #511 açıldı** (`waitForStoreSurface` helper + diagnostic dump + `expect.poll` captured-body fix).
+
+2. **Captured-body serialization bug**: B1'in `captured` Node-side object'i `page.waitForFunction` browser context'e serialize ediyor; Node mutate'i izlemiyor. → PR #511'de `expect.poll` ile düzeltildi.
+
+3. **"~%98 source-level coverage" abartılı**: denominator yok, B1-B4 "browser proof ✅" yazılmıştı ama gerçekte spec yazıldı + harness boot fail. Doğru dil: "Source regression coverage high; browser-flow and live acceptance gates remain open".
+
+4. **BUG #1 audit branch kapsamı yanlış genişletildi**: PR #181 sadece **4 branch** fix'ledi (Step 1b, Step 1f, 409, SESSION_PERSIST_FAILED). ImpersonationController'da hâlâ `request.targetEmail()` kullanan **9+ branch** var: NESTED_IMPERSONATION_FORBIDDEN (line 117), ADMIN_IDENTITY_MISSING (139), TARGET_USER_DISABLED (248), SELF post-resolution (272), INSUFFICIENT_AUTHORITY (295), TOKEN_EXCHANGE_FAILED (319), TARGET_SUBJECT_MISMATCH (344), EXCHANGED_TOKEN_NOT_BROKER_ISSUED (365), EXCHANGED_TOKEN_EXPIRED (387). Eğer compliance invariant "her BLOCKED/FAILED audit row resolved target email taşımalı" ise, parametrik audit-target-email testi ve helper unification gerekir. → **Decision question for next session** (spawn task chip).
+
+5. **#191 scope dar**: "kc_subject provisioning gap closed" abartılı. Doğrusu: `/internal/provision` `kcSubject` taşırsa persist + mevcut değer korunur; deprecated/register path hâlâ `kcSubject=null` bırakıyor ve test bunu **bilerek pinliyor**.
+
+6. **Closure dili overclaim**: "15 PR MERGED + 1 CLOSED + 4 catch" metriği temiz ama "final closure", "~%98", "browser/runtime ✅" gibi dil sprint için fazla kapanış hissi veriyor. Doğru başlık: "Session 49 impersonation source hardening status: merged PR set, known catches, open browser-flow RCA".
+
+**Düzeltilmiş claim'ler (Codex exec verdict'i ile uyumlu)**:
+
+| Önceki claim | Düzeltilmiş |
+|---|---|
+| ~%98 source-level coverage | Source regression coverage high; browser-flow + live acceptance gates open |
+| BE BUG #1 all audit branches fixed | 4 of ~13 audit branches fixed (Step 1b/1f/409/SESSION_PERSIST_FAILED); 9+ branches still use request.targetEmail() — invariant decision pending |
+| FE Faz 2 B1-B4 browser proof ✅ | Playwright spec landed; harness boot still failing (PR #511 readiness fix in CI) |
+| kc_subject provisioning gap closed | /internal/provision kcSubject path closed; register path (deprecated) intentionally pinned at null |
+| Session 49 final closure | Session 49 impersonation source hardening status; open browser-flow RCA + audit invariant decision for next session |
+
+**Sequel-4 MERGED (in progress)**:
+
+- **platform-web PR #511** (CI iter-1 in progress): `fix(test): FE Faz 2 harness readiness + captured-body proof` — Codex `019e27bf` fresh-context #1 + #2 findings absorb. `waitForStoreSurface` helper (60s poll + diagnostic dump) + `expect.poll` captured-body verify.
+
+**Codex exec fresh-context value proof**: MCP thread context'ten bağımsız Codex exec audit, 6 ayrı overclaim + 2 gerçek test bug yakaladı. **Bu 5. cross-AI catch** bu session block için (önceki 4 catch + bu).
+
+**Sıradaki session P0 (revize edilmiş, honest)**:
+1. **PR #511 merge sonrası operator FE Faz 2 dispatch** — readiness helper + diagnostic dump ile gerçek root cause sinyali (AppProviders crash / remote preload / etc.) görünür hale gelir
+2. **Audit target-email global invariant decision** — 4 branch vs ~13 branch scope kararı, parametrik test + helper unification mı yoksa "4 known + documented gap" mı (spawn task chip)
+3. **Live testai E2E retest** — fresh Playwright persona (KC admin API ile scoped)
+4. **Prod cutover ai.acik.com** (owner go bekleniyor)
+5. **D dalga 1.2-1.7 Vault rotation containment**
+
+**Codex thread chain (final)**: `019e2022` (16+ iter, expired) → `019e27bf` (P1 fix AGREE + sequel-4 fresh-context audit via codex exec) → next session: 2nd RCA + audit invariant decision
+
+---
+
 ## Live Delta — Session 49 Sequel-3 Honest Closure: FE Faz 2 Re-Dispatch Confirms 2nd RCA Needed (2026-05-14 ~22:00 UTC+3)
 
 **Bağlam**: Sequel-2'de Codex async review (`019e27bf` AGREE) ile **P1 shell-test-infra root-cause fix** (PR #510) MERGED edildi (safe env reader + workflow profile bug fix + 8 Vitest gate cases). Hipotez: Vite client bundle `process.env` inline etmiyordu, env reader sadece `process.env` okuyordu → `window.__env__` runtime override hiç kullanılmıyordu. Fix sonrası **FE Faz 2 workflow re-dispatch** tetiklendi (run 25879721107).
