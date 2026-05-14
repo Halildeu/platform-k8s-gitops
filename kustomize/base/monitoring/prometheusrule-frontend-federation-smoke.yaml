@@ -1,0 +1,147 @@
+# PR-V2.1-Ops-B core impl (Codex `019e26c5` spike AGREE + 7 revision absorb):
+# Status writer monotonic alert PrometheusRule via kube-state-metrics annotation scrape.
+# Option C (annotation-based pattern): no Pushgateway, no custom exporter.
+#
+# Dependencies (atomic Step 1-4):
+#   1. CronJob script PATCH_PAYLOAD annotation extension (overlays/{test,prod})
+#   2. This PrometheusRule manifest (release: kube-prometheus-stack discovery)
+#   3. kube-state-metrics `--metric-annotations-allowlist=configmaps=[...]` helm delta
+#   4. ArgoCD `ignoreDifferences` /metadata/annotations/<3 keys> extension
+#
+# Receiver attach (Step 5-7) Ops-A merge sonrası ayrı PR.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: frontend-federation-smoke-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: frontend-federation-smoke
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: platform
+    # Codex `019e26c5` R5 absorb: kube-prometheus-stack PrometheusRule discovery
+    # contract (mevcut rollout-replicaset-crash-rule.yaml ile aynı pattern).
+    release: kube-prometheus-stack
+    team: perf
+spec:
+  groups:
+    - name: frontend-federation-smoke
+      interval: 5m
+      rules:
+        # 1. failures>0 alert (Codex R3 regex numeric pattern absorb)
+        - alert: PerfFederationSmokeFailing
+          expr: |
+            kube_configmap_annotations{
+              namespace=~"platform-(test|prod)",
+              configmap="frontend-federation-smoke-status",
+              annotation_frontend_federation_smoke_io_failures=~"[1-9][0-9]*"
+            } == 1
+          for: 5m
+          labels:
+            severity: warning
+            team: perf
+            alert_class: federation-smoke
+          annotations:
+            summary: "Frontend federation smoke failing (failures > 0)"
+            description: |
+              Cluster {{ $labels.namespace }} smoke writer reports failures > 0.
+              Check: kubectl -n {{ $labels.namespace }} get cm {{ $labels.configmap }} -o jsonpath='{.data}'
+              Runbook: docs/runbooks/V2.1-ABM-1-reproducibility-soak.md §5.1
+
+        # 2. result=FAIL alert
+        - alert: PerfFederationSmokeResultFail
+          expr: |
+            kube_configmap_annotations{
+              namespace=~"platform-(test|prod)",
+              configmap="frontend-federation-smoke-status",
+              annotation_frontend_federation_smoke_io_result="FAIL"
+            } == 1
+          for: 5m
+          labels:
+            severity: critical
+            team: perf
+            alert_class: federation-smoke
+          annotations:
+            summary: "Frontend federation smoke result=FAIL"
+            description: |
+              Cluster {{ $labels.namespace }} smoke verdict FAIL — cache/federation invariant violation.
+              Logs: kubectl -n {{ $labels.namespace }} logs job/<last-cron-job-name>
+
+        # 3. Codex R1 absorb: stale detect via changes(resourceVersion[12h]) + creation guard
+        # (resourceVersion timestamp DEĞİL; change-detector pattern).
+        - alert: PerfFederationSmokeStale
+          expr: |
+            (
+              max by (namespace, configmap) (
+                changes(kube_configmap_metadata_resource_version{
+                  namespace=~"platform-(test|prod)",
+                  configmap="frontend-federation-smoke-status"
+                }[12h])
+              ) == 0
+            )
+            and on (namespace, configmap)
+            (
+              time() - max by (namespace, configmap) (
+                kube_configmap_created{
+                  namespace=~"platform-(test|prod)",
+                  configmap="frontend-federation-smoke-status"
+                }
+              ) > 43200
+            )
+          for: 5m
+          labels:
+            severity: warning
+            team: perf
+            alert_class: federation-smoke
+          annotations:
+            summary: "Frontend federation smoke stale (no fire >12h)"
+            description: |
+              Cluster {{ $labels.namespace }} cron scheduler may be down. Expected schedule:
+              - test: 0 */6 Europe/Istanbul (UTC 03:00/09:00/15:00/21:00)
+              - prod: 30 */6 Europe/Istanbul (UTC 03:30/09:30/15:30/21:30)
+              Maintenance window istisnası: maintenance log ile annotate (ABM-1 runbook §5.1).
+
+        # 4. Codex `019e273a` R9 absorb: per-namespace expected-vector absent
+        # (global absent tek namespace eksik olursa fire etmez; per-namespace
+        # `or` chain expected vectors için). Annotation label selector ile
+        # `ConfigMap var ama annotation writer/allowlist yok` durumunu da yakala.
+        - alert: PerfFederationSmokeStatusAbsentTest
+          expr: |
+            absent(kube_configmap_annotations{
+              namespace="platform-test",
+              configmap="frontend-federation-smoke-status",
+              annotation_frontend_federation_smoke_io_result=~".+"
+            })
+          for: 5m
+          labels:
+            severity: critical
+            team: perf
+            alert_class: federation-smoke
+            cluster_target: test
+          annotations:
+            summary: "Frontend federation smoke status ConfigMap absent (test)"
+            description: |
+              kube-state-metrics frontend-federation-smoke-status ConfigMap annotation
+              metric absent on platform-test. Olası sebepler:
+              - ConfigMap silindi
+              - kube-state-metrics annotation allowlist eksik (helm values --metric-annotations-allowlist)
+              - PrometheusRule discovery label mismatch (release: kube-prometheus-stack)
+              - Annotation writer henüz fire etmedi (CronJob ilk fire bekleniyor)
+        - alert: PerfFederationSmokeStatusAbsentProd
+          expr: |
+            absent(kube_configmap_annotations{
+              namespace="platform-prod",
+              configmap="frontend-federation-smoke-status",
+              annotation_frontend_federation_smoke_io_result=~".+"
+            })
+          for: 5m
+          labels:
+            severity: critical
+            team: perf
+            alert_class: federation-smoke
+            cluster_target: prod
+          annotations:
+            summary: "Frontend federation smoke status ConfigMap absent (prod)"
+            description: |
+              kube-state-metrics frontend-federation-smoke-status ConfigMap annotation
+              metric absent on platform-prod. Aynı root cause set test gibi (allowlist /
+              writer / discovery / pre-first-fire).

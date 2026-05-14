@@ -246,6 +246,12 @@ kube-state-metrics:
       memory: 32Mi
     limits:
       memory: 64Mi
+  # Ops-B core (Codex `019e26c5` R2 absorb): annotation allowlist gerekli ki
+  # `kube_configmap_annotations` metric'i frontend-federation-smoke.io/* keylerini
+  # label olarak expose etsin. Allowlist olmadan ConfigMap annotation default scrape
+  # edilmez. PrometheusRule (frontend-federation-smoke-alerts) bu metric'e bağlı.
+  extraArgs:
+    - --metric-annotations-allowlist=configmaps=[frontend-federation-smoke.io/last-fire,frontend-federation-smoke.io/result,frontend-federation-smoke.io/failures]
 
 # ─── node-exporter ───
 nodeExporter:

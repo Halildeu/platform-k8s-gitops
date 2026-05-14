@@ -64,6 +64,11 @@ kube-state-metrics:
     requests:
       memory: 32Mi
       cpu: "25m"
+  # Ops-B core (Codex `019e26c5` R2 absorb): annotation allowlist gerekli ki
+  # `kube_configmap_annotations` metric'i frontend-federation-smoke.io/* keylerini
+  # label olarak expose etsin.
+  extraArgs:
+    - --metric-annotations-allowlist=configmaps=[frontend-federation-smoke.io/last-fire,frontend-federation-smoke.io/result,frontend-federation-smoke.io/failures]
 
 # node-exporter — host metric'leri
 prometheus-node-exporter:

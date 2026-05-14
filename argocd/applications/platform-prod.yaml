@@ -95,3 +95,9 @@ spec:
       name: frontend-federation-smoke-status
       jsonPointers:
         - /data
+        # Ops-B core (Codex `019e26c5` R3 absorb): writer annotation extension
+        # ile aynı 3 key dinamik update; Argo self-heal revert etmemeli (~1 = /
+        # JSON pointer escape).
+        - /metadata/annotations/frontend-federation-smoke.io~1last-fire
+        - /metadata/annotations/frontend-federation-smoke.io~1result
+        - /metadata/annotations/frontend-federation-smoke.io~1failures
