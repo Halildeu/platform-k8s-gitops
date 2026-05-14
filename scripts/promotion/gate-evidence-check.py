@@ -53,6 +53,19 @@ PROD_OVERLAY = REPO_ROOT / "kustomize" / "overlays" / "prod"
 
 DIGEST_PATTERN = re.compile(r"@(sha256:[a-f0-9]{64})")
 
+# IMAGE_PATTERN captures the full `image: <ref>@sha256:<digest>` line so
+# the gate can distinguish promotion-pipeline images (Halildeu canonical
+# repos — `ghcr.io/halildeu/platform-*`) from 3rd-party utility images
+# (curl, busybox, alpine, etc.) which are NOT built by this org's
+# pipeline and therefore have no release-candidates/ ledger entry.
+IMAGE_PATTERN = re.compile(r"image:\s*(\S+)@(sha256:[a-f0-9]{64})")
+
+# Image-ref prefixes that require ledger evidence (canonical pipeline).
+# Any digest attached to a ref NOT matching one of these prefixes is a
+# 3rd-party utility image (curl, alpine, busybox, runner sidecar) which
+# is governed by upstream registry, not this repo's promotion ledger.
+LEDGER_REQUIRED_PREFIXES = ("ghcr.io/halildeu/platform-",)
+
 
 def run(cmd: list[str], cwd: Path | None = None) -> str:
     return subprocess.check_output(cmd, cwd=cwd or REPO_ROOT, text=True)
@@ -96,7 +109,18 @@ def render_overlay(ref: str | None = None) -> str:
 
 
 def extract_digests_from_render(render: str) -> set[str]:
-    return set(DIGEST_PATTERN.findall(render))
+    """Return the set of digests for images that the promotion pipeline
+    governs (canonical Halildeu/platform-* repos).  3rd-party utility
+    images — curl, alpine, busybox, etc. — are NOT promotion-pipeline
+    artifacts and DO NOT need a release-candidates/ ledger entry; their
+    digest pins are governed by upstream registry hygiene + Renovate-
+    style refresh, not by this gate.
+    """
+    pipeline_digests: set[str] = set()
+    for ref, digest in IMAGE_PATTERN.findall(render):
+        if any(ref.startswith(p) for p in LEDGER_REQUIRED_PREFIXES):
+            pipeline_digests.add(digest)
+    return pipeline_digests
 
 
 def find_ledger_entries_by_digest(digest: str) -> list[Path]:
