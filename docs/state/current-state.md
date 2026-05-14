@@ -10,6 +10,49 @@
 
 ---
 
+## Live Delta — Session 49 Sequel-3 Honest Closure: FE Faz 2 Re-Dispatch Confirms 2nd RCA Needed (2026-05-14 ~22:00 UTC+3)
+
+**Bağlam**: Sequel-2'de Codex async review (`019e27bf` AGREE) ile **P1 shell-test-infra root-cause fix** (PR #510) MERGED edildi (safe env reader + workflow profile bug fix + 8 Vitest gate cases). Hipotez: Vite client bundle `process.env` inline etmiyordu, env reader sadece `process.env` okuyordu → `window.__env__` runtime override hiç kullanılmıyordu. Fix sonrası **FE Faz 2 workflow re-dispatch** tetiklendi (run 25879721107).
+
+**Sonuç**: Run **FAIL** — aynı "Error: page.evaluate: Error: No store surface" hatası 5 case için tekrar üretildi. Codex'in `019e27bf` verdict'inde öngörülen 2nd RCA noktasına geldik:
+
+> "Eğer hâlâ `No store surface` gelirse, yeni diagnostic çıktısı bizi ikinci RCA'ya taşır: early bootstrap exception mı, React root mount crash mi, remote federation boot mu, yoksa route-level users remote mu."
+
+**Honest assessment**: PR #510'un fix'i `import.meta.env`/`process.env`/`window.__env__` precedence path'i için doğruydu (8 Vitest case PASS), ama hâlâ undefined kalıyor. Olasılıklar:
+
+1. **AppProviders mount edilmiyor**: shell `/login` redirect'inde takılı veya Module Federation remote preload öncesi React root mount çakıyor
+2. **`installAuthContractE2eProbe` throwing**: `Object.defineProperty` writable:false flag re-render'da fail edebilir (StrictMode), `__authContractProbe` undefined kalır
+3. **Workflow profile fix etkili değil**: `pnpm start` background process readiness curl'e cevap veriyor ama JS bundle tam load olmamış
+4. **Module Federation remote not ready**: shell index serve ediyor ama `/admin/users` remote chunk yüklenmemiş
+
+**Bu noktada agent context boundary**: 2nd RCA için local repro (pnpm install + pnpm dev + chrome devtools + react devtools) gerek. Bu **operator-driven debugging session** scope'u, agent iter cycle'da verimsiz.
+
+**Sequel-3 kararı**: FE Faz 2 dispatch harness'i **operator iter** olarak işaretlendi. Source-level coverage (Vitest + Mockito + WireMock IT) zaten ~%98, bu acceptance gap browser-flow CI tarafında.
+
+**Cross-AI HARD RULE değer kazanım (4 catch — değişiklik yok)**:
+1. BUG #1 in 409/SESSION_PERSIST_FAILED audit (PR #181)
+2. kc_subject provisioning gap (PR #191)
+3. DataExportDialog import drift cleanup (PR #504 bonus)
+4. Vite env inline limitation root cause (PR #510) — **hipotez doğrulandı + fix landed, ama 2nd RCA ortaya çıktı**
+
+**Session 49 + sequel-1 + sequel-2 + sequel-3 final totals**:
+- **14 PR MERGED** (BE: #176, #181, #191; gitops: #549, #602, #612, #613, #622, #626, #629; FE: #493, #495, #504, #509, #510)
+- **1 PR CLOSED** (PR #486 deferred)
+- **4 cross-AI peer review catches**
+- **~%98 source-level coverage**
+- **FE Faz 2 browser harness: 2nd RCA needed** (operator iter, agent context dışı)
+- Codex MCP stabil ~22 iter cycle, sıfır connection closed
+
+**Sıradaki session P0 (kalan iş, honest)**:
+1. **FE Faz 2 dev-mode 2nd RCA** — operator local repro: pnpm dev + chrome devtools + AppProviders mount kontrolü, `installAuthContractE2eProbe` throw kontrolü, Module Federation remote preload timing
+2. Live testai E2E retest — fresh Playwright persona (KC admin API ile scoped test persona setup)
+3. Prod cutover ai.acik.com (owner go)
+4. D dalga 1.2-1.7 Vault rotation containment
+
+**Codex thread chain (Session 49 + sequels)**: `019e2022` (16+ iter, expired) → `019e27bf` (P1 fix AGREE) → next session 2nd RCA için yeni thread
+
+---
+
 ## Live Delta — Session 49 Sequel-2: Row-Level Impersonate UI + P1 Shell-Test-Infra Root-Cause Fix MERGED (2026-05-14 ~21:30 UTC+3)
 
 **Bağlam**: Session 49 sequel-1 closure sonrası kullanıcı "🎯 Direkt impersonation (3 item) öncelikle tam otonom tamamla" direktifi. 3 item paralel başlatıldı, sonuç:
