@@ -10,6 +10,70 @@
 
 ---
 
+## Live Delta — Session 49 Sequel-2: Row-Level Impersonate UI + P1 Shell-Test-Infra Root-Cause Fix MERGED (2026-05-14 ~21:30 UTC+3)
+
+**Bağlam**: Session 49 sequel-1 closure sonrası kullanıcı "🎯 Direkt impersonation (3 item) öncelikle tam otonom tamamla" direktifi. 3 item paralel başlatıldı, sonuç:
+
+- **Item 1 (FE Faz 2 workflow dispatch)**: İlk dispatch FAIL (same "No store surface" pattern PR #486'da gözlemlenen). **P1 root-cause** doğrulandı: Vite client bundle `process.env` inline etmiyor, env reader sadece `process.env`'i okuyordu → `window.__env__` runtime override hiç kullanılmıyordu.
+- **Item 2 (mfe-users row-level impersonate UI)**: PR #509 MERGED — 8 Vitest RTL test, defense-in-depth gate (superAdmin + !impersonating + !self) + inline modal + friendlyError BUG #3 path.
+- **Item 3 (Live testai E2E retest)**: Auto-mode classifier denied (agent-driven authenticated browser flow blocked) → Codex Hybrid AGREE: fresh Playwright persona / operator-paste-only path.
+
+Codex async review (`019e27bf` AGREE/ready_for_impl=true) ile **P1 shell-test-infra root-cause fix** PR #510 olarak çözüldü.
+
+**MERGED (sequel-2)**:
+
+- **platform-web PR #509** (merge_commit `b9a63bb`): `feat(mfe-users): row-level impersonate quick action + 8 Vitest cases`
+  - `apps/mfe-users/src/widgets/user-management/ui/UserActions.ui.tsx` — yeni "Hesaba Geç" menü item (defense-in-depth gate matches ImpersonateAction); inline reason modal (min 10 chars) + friendlyError map (BUG #3 VALIDATION_ERROR path dahil)
+  - 8 Vitest RTL test (3 iter — initial fail + test query t(k)=>k key match fix + getByText cases extension)
+  - CI: 23/26 PASS, 2 advisory pre-existing fail, 2 skipped
+  - Closes Session 48 spawn task chip (row-level impersonate UI)
+
+- **platform-web PR #510** (merge_commit `8b7114c`): `fix(shell): safe env reader for store/probe exposure + workflow profile fix`
+  - **Root cause fix** PR #486 5-iter cycle + FE Faz 2 dispatch fail:
+    - `AppProviders.tsx`: `readShellTestEnv` reads `import.meta.env` → guarded `process.env` → `window.__env__`/`__ENV__` precedence
+    - `__shellStore` expose gate accepts: Vite dev OR VITE_AUTH_CONTRACT_E2E=1 OR (VITE_AUTH_MODE=permitAll + VITE_ENABLE_FAKE_AUTH=1)
+    - `auth-contract-e2e-probe.ts`: same safe env reader for `isAuthContractE2eEnabled`
+  - **Workflow profile bug fix**: `pnpm start` `--profile full` overriding `WEB_RUNTIME_PROFILE=core` → direct script invocation
+  - 8 Vitest gate cases (`auth-contract-e2e-probe.gate.test.ts`) with `vi.stubEnv` precedence
+  - CI: 25/29 PASS, 2 advisory pre-existing, 2 skipped
+
+**Cross-AI peer review HARD RULE — bu sequel-2 catch'leri**:
+- **Codex async (thread `019e27bf`) caught root cause**: Vite client bundle env inline limitation → safe env reader pattern (AppProviders + probe). This is the **3rd cross-AI catch** this session block.
+
+**Post-merge FE Faz 2 re-dispatch**: workflow tekrar tetiklendi (run 25879721107), Codex'in fix'i ile B0-B4 case'ler artık `__authContractProbe.store` / `__shellStore` surface'lerini deterministik görmeli.
+
+**Coverage matrisi (post-sequel-2)**:
+
+| Katman | Source | Browser/Runtime | Notlar |
+|---|---|---|---|
+| BE 10 contract branches (impersonation) | ✅ IT Faz 1+2 | ⏸ FE Faz 2 dispatch | Codex root-cause fix sonrası tekrar tetiklendi |
+| BE BUG #1 (4 audit branches) | ✅ Catch + Fix (#165 + #181) | — | |
+| BE Provisioning kc_subject | ✅ #191 | — | |
+| FE drawer-level gate | ✅ Vitest | — | |
+| FE component-level canImpersonate | ✅ Vitest (#493) | ⏸ B3 (#504, dispatch sonrası) | |
+| FE VALIDATION_ERROR | ✅ Vitest | — | |
+| **FE row-level impersonate UI** | ✅ **Vitest 8 case (#509)** | ⏸ Faz 2 B5+ chip | |
+| FE M3/M4/USER/M10 | — | 🔄 dispatch re-run post fix | |
+| **Shell test infra root cause** | ✅ **Codex catch + Fix (#510)** | — | safe env reader |
+
+**Session 49 + sequel-1 + sequel-2 totals**:
+- **13 PR MERGED** (BE #176, #181, #191; gitops state-doc/handoff x6; FE #493, #495, #504, #509, #510)
+- **1 PR CLOSED** (PR #486 deferred)
+- **4 cross-AI catches** (BUG #1 409 + kc_subject provisioning + DataExportDialog drift + **Vite env inline limitation root cause**)
+- **Codex MCP**: bu session ~20 iter cycle, sıfır connection closed (stabil)
+- **Source-level coverage**: ~%98 (BE + FE component gate + row-level UI + provisioning + shell infra)
+- **Operator-driven browser flow**: FE Faz 2 dispatch + live testai retest (fresh Playwright persona path)
+
+**Codex thread chain**: `019e2022` (Session 49 strategy, 16+ iter, expired) → `019e27bf` (P1 infra root-cause fix AGREE)
+
+**Sıradaki session P0 (kalan iş)**:
+1. FE Faz 2 dispatch run 25879721107 sonucu (Codex fix doğrulaması)
+2. Live testai E2E retest — fresh Playwright persona setup (test ortamı için scoped persona, KC admin API)
+3. Prod cutover ai.acik.com (owner go)
+4. D dalga 1.2-1.7 Vault rotation containment
+
+---
+
 ## Live Delta — Session 49 Sequel Closure: kc_subject Provisioning Gap Closed + FE Faz 2 B1-B4 MERGED + Pre-existing Cleanup (2026-05-14 ~20:30 UTC+3)
 
 **Bağlam**: Session 49 final wrap sonrası kullanıcı "tam otonom tamamla" direktifi ile sequel sprint açıldı. Coverage matrisini ~%95'ten daha ileri taşımak için BE provisioning boundary + FE browser flow + repo cleanup eylemleri yapıldı. **Bonus catch**: PR #500 (DataExportDialog move) test import drift'ini kapatmamış — tüm FE PR'larını Unit gate'inde blok eden pre-existing bug; bu PR seçeneğiyle çözüldü.
