@@ -10,6 +10,49 @@
 
 ---
 
+## Live Delta — Session 49 Faz 1 Closure: BE WireMock IT MERGED + FE Playwright Faz 1 CI Gate (2026-05-14 ~17:30 UTC+3)
+
+**Bağlam**: Session 47 Bug Wave handoff (PR #549) tamamlandı, sonra Codex `019e2022` strategy AGREE'd "faz fazlı pattern" ile spawn'd 2 büyük scope (BE WireMock IT 8-case + FE Playwright 5-case) Faz 1 olarak başlatıldı.
+
+**MERGED**:
+
+- **platform-backend PR #176** `feat/auth-impersonation-wiremock-it` MERGED — auth-service Impersonation Broker WireMock IT Faz 1 (3 case + REVISE-2 absorbed)
+  - `happy_full_chain`: permission-service start-session contract handoff verified — 201 + body shape (impersonatorUserId/targetUserId/targetSubject/targetEmail/issuer/jti/sid/reason)
+  - `self_impersonation_pre_resolution_emits_blocked_audit`: **BUG #1 IT-level proof** — Step 1b SELF guard fires before user-service resolution, audit-events BLOCKED row carries non-null targetEmail, broker.exchange verified `never()`
+  - `validation_empty_reason_short_circuits`: bean validation rejects empty reason → 400 VALIDATION_ERROR + `reason` field error, zero downstream calls (user-service + permission-service + audit + broker)
+  - Fixture choices: `@MockBean KeycloakBrokerClient + ServiceTokenProvider`, WireMock for user-service + permission-service, `TestTokens` helper (no inline credential literals), `MockMvcBuilders.apply(springSecurity())` for jwt() postProcessor, `static final WireMockServer` + lazy start in `@DynamicPropertySource`
+  - REVISE-2 absorb: CI lane `auth-service-impersonation-it` added (`ci-mvn-check.yml` — Surefire `*IT` suffix invisible to full-reactor `-DskipTests`), validation case audit zero-call assertion, header verify helper (Authorization Bearer + X-Internal-Api-Key)
+  - Local + CI: 3/3 PASS, BUILD SUCCESS, `auth-service impersonation WireMock IT (Session 47 Faz 1)` lane green
+  - Cross-AI peer review HARD RULE: Claude implementer + Codex async reviewer (REVISE-1 → REVISE-2 → AGREE)
+
+**OPEN (CI pending)**:
+
+- **platform-web PR #486** `feat/impersonation-playwright-e2e-faz1` — FE Playwright authz boundary smoke Faz 1 (2 case + REVISE-2 absorbed)
+  - `action_visible_for_super_admin`: Admin → /admin/users → mocked row → drawer → `impersonate-open-btn` visible → click opens `impersonate-reason` textarea
+  - `action_hidden_for_user_role`: USER profile → drawer (or page) present but `impersonate-open-btn` testId NEVER matches
+  - REVISE-2 absorb: `seedSuperAdminSnapshot(page, boolean)` shell Redux `auth/setKeycloakSession` dispatch with `authzSnapshot.superAdmin` (BLOCKER #1 — gate reads from store not local permissions array), PR-time CI lane `.github/workflows/impersonation-pw-faz1.yml` builds mfe-shell + vite preview + runs chromium spec (BLOCKER #2 — no actual run proof without CI), USER case stubs user list + tries to open drawer for explicit-state proof (REVISE #3 — determinism)
+  - CI Monitor altında: `Impersonation Faz 1 spec (chromium)` lane in-progress; auxiliary gates (CSSOM Canary/Full, Token Drift, Visual Invariant Matrix, gitleaks, osv-scan, pnpm install + lint) already PASS
+  - Cross-AI peer review HARD RULE: Claude implementer + Codex async reviewer (BLOCKER + REVISE → ready_to_merge=false initially → REVISE-2 absorbed)
+
+**Spawn task chips** (Faz 2 — ayrı session):
+
+- **BE Faz 2**: kalan 5 WireMock IT case (target_user_disabled / target_subject_unresolvable / insufficient_authority / active_session_conflict / revoke_session). Faz 1 infra üzerine bina edilecek.
+- **FE Faz 2**: kalan 3 Playwright case (M3/M4 happy + stop, M10 viewport overflow). `seedSuperAdminSnapshot` + CI workflow Faz 1 pattern reusable.
+
+**Diğer notlar**:
+
+- **Live BUG #1+#3 retest** testai üzerinde **credential gate blocked**: admin@example.com JWT 6 saat expired, refresh token yok, HARD RULE Kullanıcı Aktif Credential'ına Dokunma YASAK admin şifresi rotate'i engelliyor; secret exploration auto-mode classifier tarafından blocked. Browser smoke Playwright Faz 2 fresh context'e devredildi (kalıcı E2E gate haline gelecek).
+- **Codex MCP stability**: bu session 8+ Codex MCP call sırasında "Connection closed" hatası yok. codex-cli 0.125.0, log temiz, server Connected. Önceki session pattern'i transient olarak değerlendirildi — özel fix gerekmiyor.
+- **GitHub API rate limit**: GraphQL endpoint mid-session full kullanıldı; REST endpoint'ler ile (PR create, merge, check-runs) süreklilik sağlandı. ~36 dk reset window.
+- **Handoff PR #549** önce konuşulan Session 47 Bug Wave closure handoff doc — MERGED + forensic archive tag `archive/2026/05/chore-handoff-2026-05-13-session-47-bug-wave-closure-pr549`.
+
+**Codex thread referansları**:
+
+- `019e2022` (Session 49 strategy + Faz 1 ping-pong reviewer)
+- Önceki Session 47 chain: `019e1e0f` + `019e1bed` + `019df310`
+
+---
+
 ## Live Delta — Session 47 Bug Wave Closure: 4 PRs landed (BUG #1 audit + BUG #3 FE error map + Drift guard + BE extended IT) (2026-05-13 ~09:42 UTC+3)
 
 **Trigger**: Kullanıcı "tam otonom tamamlayalım" — Session 47 stabilization sprint kapanışı sonrası 5 spawn'd chip'i sırayla işle. Codex strategy thread `019e1e0f` AGREE: BUG #1 + BUG #3 paralel (farklı repo) → drift guard → BE IT (pragmatic Mockito scope) → FE Playwright (spawn).
