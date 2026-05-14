@@ -59,7 +59,7 @@ kubectl -n "$NS" logs "$POD" --tail=80
 
 ## replicaset-split
 
-**Tetik**: Bir Deployment için 2+ active ReplicaSet (spec.replicas>0) ve **en yeni RS** 0 ready replicaslara sahip, 10 dakikadan uzun süredir.
+**Tetik**: Bir Deployment için 2+ active ReplicaSet (spec.replicas>0) ve **en az bir active RS** 0 ready replicaslara sahip, 10 dakikadan uzun süredir. (Endpoint-admin fingerprint senaryosunda non-ready RS yeni olan; ama PromQL `topk newest` seçmiyor — herhangi bir non-ready active RS alarmı tetikler.)
 
 **Kanonik fingerprint** (2026-05-13 endpoint-admin 16h silent CrashLoop):
 - Eski RS: spec.replicas=1, status.readyReplicas=1 (Ready, traffic akıyor)
