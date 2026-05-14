@@ -35,6 +35,12 @@ resources:
   - netpol-notification-egress-mail-providers.yaml
   # Faz 23.2.D T1.4 PR-4 — D43 drill test-only NotifyServiceAbsent rule (Codex 019e0dea iter-3 P1 #1)
   - notify-prometheusrule-absent.yaml
+  # PERF-INIT-V2 PR-B5b3e (Codex 019e24ea AGREE iter-2 absorb): cluster-side
+  # federation/cache smoke CronJob.  Test cluster only — moved OUT of
+  # frontend base to (a) avoid prod overlay leak, (b) avoid frontend
+  # label transformer rewriting CronJob labels into the frontend pod
+  # selector (Service/PDB collision).
+  - cronjob-federation-smoke.yaml
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile, slash değil)

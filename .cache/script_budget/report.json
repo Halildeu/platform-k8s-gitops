@@ -1,0 +1,134 @@
+{
+  "baseline_ref_used": "HEAD~1",
+  "exceeded_hard": [],
+  "exceeded_soft": [],
+  "function_hard": [],
+  "function_soft": [
+    {
+      "end_line": 230,
+      "hard": 400,
+      "lines": 143,
+      "path": "ci/check_module_delivery_lanes.py",
+      "qualname": "main",
+      "soft": 120,
+      "start_line": 88
+    },
+    {
+      "end_line": 191,
+      "hard": 400,
+      "lines": 162,
+      "path": "ci/check_standards_lock.py",
+      "qualname": "main",
+      "soft": 120,
+      "start_line": 30
+    }
+  ],
+  "git": {
+    "available": true,
+    "baseline_ref_exists": false,
+    "dirty": true
+  },
+  "grandfathered_growth_check": [
+    {
+      "baseline_lines": 1894,
+      "baseline_ref": "PINNED",
+      "current_lines": 1894,
+      "delta_lines": 0,
+      "max_allowed_lines": 1894,
+      "mode": "no_growth_only",
+      "path": "PLAN.md",
+      "status": "OK"
+    },
+    {
+      "baseline_lines": 2697,
+      "baseline_ref": "PINNED",
+      "current_lines": 2697,
+      "delta_lines": 0,
+      "max_allowed_lines": 2697,
+      "mode": "no_growth_only",
+      "path": "docs/faz-19-evidence/sha-map-platform-backend.txt",
+      "status": "OK"
+    },
+    {
+      "baseline_lines": 2697,
+      "baseline_ref": "PINNED",
+      "current_lines": 2697,
+      "delta_lines": 0,
+      "max_allowed_lines": 2697,
+      "mode": "no_growth_only",
+      "path": "docs/faz-19-evidence/sha-map-platform-web.txt",
+      "status": "OK"
+    },
+    {
+      "baseline_lines": 1676,
+      "baseline_ref": "PINNED",
+      "current_lines": 1676,
+      "delta_lines": 0,
+      "max_allowed_lines": 1676,
+      "mode": "no_growth_only",
+      "path": "docs/state/current-state.md",
+      "status": "OK"
+    },
+    {
+      "baseline_lines": 2586,
+      "baseline_ref": "PINNED",
+      "current_lines": 2586,
+      "delta_lines": 0,
+      "max_allowed_lines": 2586,
+      "mode": "no_growth_only",
+      "path": "sql/migration/V16__reports.sql",
+      "status": "OK"
+    }
+  ],
+  "status": "WARN",
+  "text_budget_summary": {
+    "fail": 0,
+    "hard_lines": 2000,
+    "ok": 671,
+    "soft_lines": 1200,
+    "total": 671,
+    "warn": 0
+  },
+  "top_largest_text": [
+    {
+      "lines": 2697,
+      "path": "docs/faz-19-evidence/sha-map-platform-backend.txt"
+    },
+    {
+      "lines": 2697,
+      "path": "docs/faz-19-evidence/sha-map-platform-web.txt"
+    },
+    {
+      "lines": 2586,
+      "path": "sql/migration/V16__reports.sql"
+    },
+    {
+      "lines": 1894,
+      "path": "PLAN.md"
+    },
+    {
+      "lines": 1676,
+      "path": "docs/state/current-state.md"
+    },
+    {
+      "lines": 1047,
+      "path": "docs/architecture/context/ui-library-component-roadmap.v1.json"
+    },
+    {
+      "lines": 957,
+      "path": "ci/check_script_budget.py"
+    },
+    {
+      "lines": 836,
+      "path": "policies/policy_work_intake.v2.json"
+    },
+    {
+      "lines": 733,
+      "path": "docs/phase16-8-decommission-runbook.md"
+    },
+    {
+      "lines": 712,
+      "path": "sql/migration/tests/test_v19_v20_data_access.sql"
+    }
+  ]
+}

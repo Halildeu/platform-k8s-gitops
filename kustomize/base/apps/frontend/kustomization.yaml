@@ -18,6 +18,5 @@ resources:
   - pdb.yaml
   - serviceaccount.yaml
   - hpa.yaml             # 2026-05-10: HPA min=1 max=3 (CPU 70% / Mem 80%)
-  - cronjob-federation-smoke.yaml  # PERF-INIT-V2 PR-B5b3e: cluster-side cache/federation smoke (Codex 019e24ea AGREE)
 # ServiceMonitor yok — default nginx /metrics yayınlamaz.
 # İleride nginx-prometheus-exporter sidecar ile eklenebilir.

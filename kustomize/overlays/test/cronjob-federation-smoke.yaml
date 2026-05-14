@@ -87,7 +87,10 @@ data:
 
     # 3. Hashed root asset — must be 1y immutable (B3c)
     # Discover one real asset URL dynamically from index.html.
-    asset=$(curl -s --max-time 10 "$TARGET/" | grep -oE '/assets/[a-zA-Z0-9_-]+\.[a-z]+' | head -1 || true)
+    # Codex iter-2 P2 absorb: regex broader to handle multi-dot filenames
+    # + nested paths inside /assets/.  Matches `/assets/<path>` up to
+    # the first quote, space, or `?` (query string).
+    asset=$(curl -s --max-time 10 "$TARGET/" | grep -oE '/assets/[^"'"'"' ?]+' | head -1 || true)
     if [ -z "$asset" ]; then
       echo "[FAIL] could not discover a /assets/* URL from index.html"
       FAIL=1
