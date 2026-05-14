@@ -522,6 +522,13 @@ Diğer adımlar (kozmetik refactor, test, doc) spec-level AGREE final sayılır.
 | 2026-05-14 | ~13:25 | Adım 8 | Codex iter-7 **REVISE-2**: (1) `ReportSchemaContextController:222 extractEmail()` residual + (2) RC-003 pre-existing fail CI'da merge blocker (admin bypass YASAK) → ayrı fix PR | ✅ Absorb + spawn chip (RC-003) | `019e258f` iter-7 verdict |
 | 2026-05-14 | ~13:30 | Adım 8 | ReportSchemaContextController :215 + :222-226 refactor → JwtClaimExtractor.extractAuditUsername(jwt); JwtClaimExtractor import eklendi | ✅ Code change ready, mvn test bekleniyor | n/a |
 | 2026-05-14 | ~13:32 | Adım 1.5 | gitops test overlay digest bump: `sha-9beed5f` → `sha-cb87f5d` (`sha256:d3e870ae2996b...`) — line 391 `kustomize/overlays/test/kustomization.yaml` Edit done | ⏳ PR + Codex review + merge + cluster apply | n/a |
+| 2026-05-14 | ~13:35 | Adım 1.5 | PR [platform-k8s-gitops#576](https://github.com/Halildeu/platform-k8s-gitops/pull/576) açıldı (branch `feat/report-service-sha-cb87f5d-workcube-interim-gate`) | ⏳ CI bekleniyor (12/13 pass, BG-1 fail 2x boundary fix) | n/a |
+| 2026-05-14 | ~13:40 | Adım 1.5 | Codex iter-8 **AGREE / ready_to_merge: true** (PR #576); typo correction comment + cross-AI consensus + rollout strategy ArgoCD auto-first → manual fallback | ✅ Cross-AI consensus | `019e258f` iter-8 |
+| 2026-05-14 | ~13:45 | Adım 1.5 | PR #576 BG-1 fail fix: `state-mutation (test cluster — image rollout)` → exact `state-mutation (test cluster)` + label `user-approval-required` eklendi; failed run re-triggered | ⏳ BG-1 re-check pending | n/a |
+| 2026-05-14 | ~13:42 | Adım 8 | Codex iter-8 PART A: AGREE / ready_to_merge: **false** (RC-003 blocker; admin bypass YASAK); Sıralama (a) RC-003 fix önce → main yeşil → PR #168 rebase + merge | ⏳ RC-003 fix spawn task bekleniyor | `019e258f` iter-8 |
+| 2026-05-14 | ~13:48 | Adım 1.5 | **KRİTİK BULGU**: SSH staging-sw cluster pre-deploy baseline → pod `report-service-79cfcf5ccc-p2xhz` 13dk Running, imageID **`sha256:d3e870ae...`** (yeni digest); Deployment spec image aynı yeni digest. Deploy workflow image build sonrası test cluster'a otomatik push etmiş (deploy-backend-test). **Adım 1.5 cluster CLUSTER LIVE** zaten (gitops PR audit trail için) | ✅ **LIVE on test cluster** | n/a |
+| 2026-05-14 | ~13:49 | Adım 1.5 | No-auth `/api/v1/workcube/views` → `401 unauthorized` (Spring Security chain JWT zorunlu; interim guard'ı bypass etmez ama 401 expected baseline); Adım 1.5 acceptance 3-persona smoke ayrı ping-pong | ✅ Baseline 401 confirm | n/a |
+| 2026-05-14 | ~13:50 | Adım 1.5 | PR #576 BG-1 fail → empty commit `f413c89` push (yeni CI event); poll bekleniyor | ⏳ CI re-run | n/a |
 
 ---
 
