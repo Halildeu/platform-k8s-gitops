@@ -2007,6 +2007,27 @@ patches:
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "false"
+      # Codex 019e258a iter-5 D1.1a 2nd pass — PR #566 selective apply
+      # surfaced live keys missing from desired-state ConfigMap. Without
+      # SPRING_DATASOURCE_URL Spring boot's JDBC autoconfig cannot init
+      # the DataSource → Hibernate "Unable to determine Dialect without
+      # JDBC metadata" → CrashLoop. SPRING_DATASOURCE_USERNAME/PASSWORD
+      # already flow via envFrom auth-service-secrets; only URL + dialect
+      # hints + Hikari fail-timeout are config-side. Live recovery already
+      # applied via `kubectl set env` 2026-05-14 ~12:00 UTC+3; this PR
+      # cleans up that imperative override into GitOps desired-state.
+      - op: add
+        path: /data/SPRING_DATASOURCE_URL
+        value: "jdbc:postgresql://postgres:5432/auth_db"
+      - op: add
+        path: /data/HIBERNATE_DIALECT
+        value: "org.hibernate.dialect.PostgreSQLDialect"
+      - op: add
+        path: /data/SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT
+        value: "org.hibernate.dialect.PostgreSQLDialect"
+      - op: add
+        path: /data/SPRING_DATASOURCE_HIKARI_INITIALIZATION_FAIL_TIMEOUT
+        value: "30000"
       - op: add
         path: /data/KEYCLOAK_ISSUER_URI
         value: "https://testai.acik.com/realms/platform-test"
