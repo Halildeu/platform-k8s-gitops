@@ -63,6 +63,15 @@ data:
   KEYCLOAK_ISSUER_URI: "http://keycloak:8080/realms/serban"
   KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
 
+  # 2026-05-14 D1.3 reconcile: 3 SECURITY_JWT_* programmatic decoder env'leri
+  # inline'dan ConfigMap'e taşındı (D1.1a pattern: intended inline=2; gerisi
+  # envFrom üzerinden). SecurityConfig.java + LocalJwtDecoderConfiguration.java
+  # programmatic environment.getProperty() ile bu env'leri okur. ISSUER +
+  # JWK_SET_URI overlay-spesifik (D26 fail-closed); AUDIENCE env-agnostic literal.
+  SECURITY_JWT_ISSUER: "OVERLAY_MUST_OVERRIDE"
+  SECURITY_JWT_JWK_SET_URI: "OVERLAY_MUST_OVERRIDE"
+  SECURITY_JWT_AUDIENCE: "account,frontend,permission-service"
+
   # Internal API key security (PR #502; secret'ten gelir)
   SECURITY_INTERNAL_API_KEY_ENABLED: "true"
   SECURITY_LEGACY_API_KEY_ENABLED: "false"
