@@ -166,17 +166,20 @@ data:
     fi
 
     # Phase 2 status ConfigMap writer (Codex `019e2580` Sprint 1 E
-    # absorb + `019e25a7` iter-1 P1 revisions absorb):
+    # absorb + `019e25a7` iter-1 P1 revisions absorb + heredoc/strict-
+    # mode fix `019e25...` follow-up):
     # PATCH (merge-patch+json) the GitOps pre-created status ConfigMap
     # with last-fire state + PASS/FAIL result + failure count.  RBAC
     # is `verbs: ["get", "patch"]` only — no create/update/delete/list.
     #
-    # Uses the in-pod mounted ServiceAccount token + CA to call the
-    # Kubernetes REST API directly (no kubectl binary needed).
     # Failures here do NOT change the smoke verdict — writer is
-    # best-effort; smoke verdict reflects cache/federation invariants,
-    # NOT observability infrastructure health.
-    RESULT=$([ $FAIL -eq 0 ] && echo "PASS" || echo "FAIL")
+    # best-effort.  We explicitly DISABLE `set -eu` for the writer
+    # block: any unexpected variable expansion or subshell-pipeline
+    # quirk would otherwise crash the whole script *after* it already
+    # produced the authoritative cache/federation verdict.  Wrapper
+    # restores `set -eu` at the end.
+    set +eu
+    if [ $FAIL -eq 0 ]; then RESULT="PASS"; else RESULT="FAIL"; fi
     TIMESTAMP=$(date -u +%FT%TZ)
     TOKEN_FILE=/var/run/secrets/kubernetes.io/serviceaccount/token
     NS_FILE=/var/run/secrets/kubernetes.io/serviceaccount/namespace
@@ -186,20 +189,20 @@ data:
       NS=$(cat "$NS_FILE")
       API="https://kubernetes.default.svc"
       CM_NAME="frontend-federation-smoke-status"
-      # Codex `019e25a7` iter-1 P1: merge-patch payload — only update
-      # data fields; let the GitOps-managed metadata/labels remain.
-      PATCH_PAYLOAD=$(cat <<PYEOF
-    {"data": {"lastFire": "$TIMESTAMP", "result": "$RESULT", "failures": "$FAIL"}}
-    PYEOF
-    )
+      # Plain string interpolation instead of heredoc — avoids YAML
+      # block-scalar indent edge cases that were silently dropping the
+      # writer block on first iter.  JSON values double-quoted; values
+      # are shell-safe (timestamps, PASS/FAIL, integer).
+      PATCH_PAYLOAD="{\"data\":{\"lastFire\":\"$TIMESTAMP\",\"result\":\"$RESULT\",\"failures\":\"$FAIL\"}}"
       # Codex `019e25a7` iter-1 P3: collapse curl-failure `|| echo "000"`
-      # into a clean `|| HTTP="000"` assignment so curl's own `%{http_code}=000`
-      # on connection failure doesn't get echo'd twice.
+      # into a clean `|| HTTP="000"` assignment so curl's own
+      # `%{http_code}=000` on connection failure doesn't get echo'd twice.
       HTTP=$(curl -sS -o /tmp/writer_resp -w '%{http_code}' \
         --cacert "$CA_FILE" \
         -H "Authorization: Bearer $TOKEN" \
         -H "Content-Type: application/merge-patch+json" \
         -X PATCH --data "$PATCH_PAYLOAD" \
+        --max-time 10 \
         "$API/api/v1/namespaces/$NS/configmaps/$CM_NAME" 2>/dev/null) || HTTP="000"
       if [ "$HTTP" = "200" ]; then
         echo "[STATUS] patched ConfigMap $CM_NAME (HTTP $HTTP, result=$RESULT, failures=$FAIL)"
@@ -209,6 +212,7 @@ data:
     else
       echo "[STATUS][WARN] ServiceAccount token not mounted — skipping writer"
     fi
+    set -eu
 
     if [ $FAIL -ne 0 ]; then
       echo ""
