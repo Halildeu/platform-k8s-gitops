@@ -5,3 +5,5 @@ kind: Kustomization
 
 resources:
   - externalsecret-alertmanager-fallback.yaml
+  # V2.1 Ops-A — Perf alert receiver (Codex 019e267a spike AGREE_AFTER_REVISIONS)
+  - externalsecret-perf-alertmanager.yaml
