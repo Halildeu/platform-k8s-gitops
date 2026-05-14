@@ -393,6 +393,20 @@ patches:
   # 2026-05-04 Session 37 follow-up: schema-service + report-service KC
   # issuer prod override. Same pattern — base sets internal KC, prod points
   # to ai.acik.com for the iss claim match.
+  #
+  # D1.4 (2026-05-14): core-data-service prod overlay'inde KEYCLOAK_* patch yoktu
+  # — base default `serban` ile uyumlu. Bu PR SECURITY_JWT_* için fail-closed
+  # base placeholder (D26) override eden minimal patch ekliyor.
+  - target:
+      kind: ConfigMap
+      name: core-data-service-config
+    patch: |-
+      - op: replace
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://ai.acik.com/realms/serban"
+      - op: replace
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
   - target:
       kind: ConfigMap
       name: schema-service-config

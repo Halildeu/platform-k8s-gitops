@@ -49,3 +49,12 @@ data:
   # Logging level (prod'da INFO, test'te DEBUG override edilir)
   LOGGING_LEVEL_ROOT: "INFO"
   LOGGING_LEVEL_COM_ACIK: "INFO"
+
+  # 2026-05-14 D1.4 reconcile: 3 SECURITY_JWT_* programmatic decoder env'leri
+  # inline'dan ConfigMap'e taşındı (D1.1a pattern: intended inline=2; gerisi
+  # envFrom üzerinden). SecurityConfig.java + LocalJwtDecoderConfiguration.java
+  # programmatic environment.getProperty() ile bu env'leri okur. ISSUER +
+  # JWK_SET_URI overlay-spesifik (D26 fail-closed); AUDIENCE env-agnostic literal.
+  SECURITY_JWT_ISSUER: "OVERLAY_MUST_OVERRIDE"
+  SECURITY_JWT_JWK_SET_URI: "OVERLAY_MUST_OVERRIDE"
+  SECURITY_JWT_AUDIENCE: "account,frontend,core-data-service"

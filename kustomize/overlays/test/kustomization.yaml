@@ -2177,15 +2177,14 @@ patches:
       - op: add
         path: /data/KEYCLOAK_JWKS_URI
         value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
-      - op: add
+      # D1.4 (2026-05-14): base'de OVERLAY_MUST_OVERRIDE placeholder var; replace.
+      # AUDIENCE base'de env-agnostic literal — overlay patch gereksiz.
+      - op: replace
         path: /data/SECURITY_JWT_ISSUER
         value: "https://testai.acik.com/realms/platform-test"
-      - op: add
+      - op: replace
         path: /data/SECURITY_JWT_JWK_SET_URI
         value: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
-      - op: add
-        path: /data/SECURITY_JWT_AUDIENCE
-        value: "account,frontend,core-data-service"
   - target:
       kind: ConfigMap
       name: report-service-config
