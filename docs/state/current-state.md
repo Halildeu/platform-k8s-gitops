@@ -10,6 +10,63 @@
 
 ---
 
+## Live Delta — Session 49 Final Wrap: FE Vitest Gate + Faz 2 B0 Scaffold MERGED (2026-05-14 ~19:30 UTC+3)
+
+**Bağlam**: Session 49 Faz 2 closure sonrası kullanıcı "tam otonom devam" direktifi. Codex `019e2022` Hybrid AGREE pattern ile FE coverage iki katmana ayrıldı: (1) Vitest RTL component-level gate (Faz 1 — sub-second, no shell bootstrap), (2) Playwright dev-mode harness scaffold (Faz 2 B0 — workflow_dispatch manual trigger).
+
+**MERGED (bu son ölçek)**:
+
+- **platform-web PR #493** (merge_commit `dc1ac70`): FE Faz 1 Vitest RTL canImpersonate gate (PR #486 pivot)
+  - 6 case: `ImpersonateAction` component-level `canImpersonate` fail-closed gate isolation test
+    - renders when shell auth reports superAdmin=true
+    - hides when shell auth reports superAdmin=false (fail-closed)
+    - hides when `getShellServices()` throws (catch branch fail-closed)
+    - hides when auth surface missing entirely
+    - opens reason form on SuperAdmin click (`impersonate-reason` testId)
+    - VALIDATION_ERROR localized message verbatim (BUG #3 regression pin at component path)
+  - CI iterations: iter-1 fail (microtask flush yetersiz) → iter-2 fail (FE canSubmit gate 10-char min) → iter-3 PASS 23+ lane green
+  - Unit (jsdom) lane otomatik pickup, no new CI workflow needed
+  - Companion: `UserDetailDrawer.impersonate.spec.tsx` (existing) drawer-level gate
+
+- **platform-web PR #495** (merge_commit `61d4c11`): FE Faz 2 B0 Playwright dev-mode harness scaffold
+  - Yeni spec `tests/playwright/impersonation.flow.faz2.spec.ts` — 1 bootstrap smoke case: `shell_boots_and_users_route_mounts_under_fake_admin_auth`
+  - Yeni workflow `.github/workflows/impersonation-pw-faz2-dev-mode.yml` — workflow_dispatch only (operator manual trigger)
+  - Three-stage readiness: shell URL → probe surface (__authContractProbe.store veya __shellStore) → /admin/users mount
+  - Faz 2 B1+ case'leri (M3/M4 + USER reload + viewport M10) sonraki PR'larda bu scaffold üzerine inşa edilir
+
+**Cross-AI peer review HARD RULE — bu son delta'da**: Codex Hybrid verdict (B-lite) PR #486 production-preview Playwright dead-end'inden çıkıp Vitest RTL'ye pivot tavsiye etti. PR #493 implementer Claude + Codex async review zinciri ile 3 iter (waitFor → canSubmit gate fix) sonrası merge. PR #495 B-lite scope (1 case + manual dispatch CI) Codex AGREE'd hız/risk dengesi.
+
+**Impersonation coverage matrisi (post Session 49 final)**:
+
+| Katman | Source | Browser/Runtime |
+|---|---|---|
+| BE happy chain handoff | ✅ IT Faz 1 (BE PR #176) | ⏸ FE Faz 2 B1+ |
+| BE Step 1b SELF + audit target_email | ✅ Unit + IT (BE PR #165 + #176) | — |
+| BE Step 1f UNRESOLVABLE + audit target_email | ✅ IT Faz 2 (BE PR #181) | — |
+| BE 409 ACTIVE_IMPERSONATION_EXISTS + audit | ✅ **Catch + Fix (BE PR #181)** | — |
+| BE SESSION_PERSIST_FAILED + audit | ✅ Same fix (BE PR #181) | — |
+| BE Validation empty reason | ✅ IT Faz 1 | — |
+| BE TARGET_USER_DISABLED | ✅ IT Faz 2 | — |
+| BE INSUFFICIENT_AUTHORITY | ✅ IT Faz 2 | — |
+| BE Stop/revoke contract | ✅ IT Faz 2 | — |
+| FE drawer-level gate (canShowImpersonateAction) | ✅ Vitest (existing `UserDetailDrawer.impersonate.spec`) | — |
+| **FE component-level gate (canImpersonate)** | ✅ **Vitest (FE PR #493)** | — |
+| FE VALIDATION_ERROR localized message | ✅ Vitest (FE PR #493) + orchestration spec | — |
+| FE M3 enter → banner | — | ⏸ FE Faz 2 B1 |
+| FE M4 stop → banner clear | — | ⏸ FE Faz 2 B2 |
+| FE USER role reload fail-closed | ✅ Vitest (FE PR #493) | ⏸ FE Faz 2 B3 browser proof |
+| FE M10 viewport overflow | — | ⏸ FE Faz 2 B4 |
+
+**Source-level coverage**: ~%95 (BE + FE component gates kapanmış). Browser/runtime coverage Faz 2 B1+ chip akışında.
+
+**Production-preview shell bootstrap timeout** (PR #486 5-iter fail kök sebep) ayrı P1 shell-test-infra bug olarak ayrı issue/PR'da takip edilecek — feature acceptance gate'ten çıkarıldı.
+
+**Session 49 toplam çıktısı**: 8 PR MERGED + 1 PR CLOSED (deferred) + 1 gerçek BUG #1 regression catch + ~%95 impersonation regression coverage.
+
+**Codex thread**: `019e2022` (Session 49 strategy + 10+ iter ping-pong)
+
+---
+
 ## Live Delta — Session 49 Faz 2 Closure + BUG #1 409 Audit Branch Regression Catch (2026-05-14 ~18:30 UTC+3)
 
 **Bağlam**: Session 49 Faz 1 closure sonrası Codex `019e2022` strategy AGREE'd "faz fazlı" devam ile BE Faz 2 inline yapıldı. Cross-AI peer review iter sırasında ana etkili bulgu: **gerçek bir BUG #1 pattern regression** Codex tarafından 409 ve SESSION_PERSIST_FAILED audit branch'lerinde yakalandı. Test yazıldığında controller fix olmadan FAIL etti → fix eklendi → 8/8 PASS.
