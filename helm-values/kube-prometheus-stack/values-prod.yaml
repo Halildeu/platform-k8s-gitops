@@ -81,10 +81,11 @@ alertmanager:
   # Observability alarm'ları drift detection alarm_receiver pipeline'ına bağlanıyor.
   # Bridge: alertmanager-bridge K8s service (kustomize/base/monitoring/alertmanager-bridge/).
   #
-  # V2.1 Ops-A extension (Codex 019e267a spike AGREE_AFTER_REVISIONS):
-  # `team=perf` veya `alert_class=federation-smoke` matched alert'ler perf-alerts-slack
-  # receiver'a (#perf-alerts kanalı) yönlendirilir; throttle group_interval: 5m,
-  # repeat_interval: 6h (alarm fatigue azaltma).
+  # V2.1 Ops-A extension (Codex 019e267a spike AGREE_AFTER_REVISIONS +
+  # 019e2772 post-impl review P0/P1/P2 absorb):
+  # `team=perf` matched alert'ler perf-alerts-slack receiver'a (#perf-alerts);
+  # critical perf alarmları DUAL delivery (Slack + bridge P1 yolu korunuyor);
+  # throttle group_interval: 5m, repeat_interval: 6h (alarm fatigue azaltma).
   config:
     global:
       resolve_timeout: 5m
@@ -95,7 +96,26 @@ alertmanager:
       repeat_interval: 4h
       receiver: 'alarm-receiver-bridge'
       routes:
-        # V2.1 Ops-A — Perf alerts → Slack receiver (team=perf matcher)
+        # V2.1 Ops-A — Critical perf alarms DUAL delivery (Codex 019e2772 P1 absorb):
+        # 1. perf-alerts-slack (continue:true → 2. critical bridge route'a düşer)
+        # alertmanager-bridge-design.md §critical = P1 operator action <10min;
+        # critical perf alarm Slack visibility + bridge P1 pipeline her ikisi.
+        - matchers:
+            - team = "perf"
+            - severity = "critical"
+          receiver: 'perf-alerts-slack'
+          group_by: ['alertname', 'namespace']
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 6h
+          continue: true
+        # Critical generic: page immediately, no grouping (catches DUAL-delivered perf-critical too)
+        - matchers:
+            - severity = "critical"
+          receiver: 'alarm-receiver-bridge'
+          group_wait: 0s
+          repeat_interval: 1h
+        # V2.1 Ops-A — Non-critical perf alarms Slack-only (warning/info)
         # Codex 019e267a tur-1 R1 absorb (throttle + dedupe + resolved lifecycle).
         - matchers:
             - team = "perf"
@@ -105,13 +125,7 @@ alertmanager:
           group_interval: 5m
           repeat_interval: 6h
           continue: false
-        # Critical: page immediately, no grouping
-        - matchers:
-            - severity = "critical"
-          receiver: 'alarm-receiver-bridge'
-          group_wait: 0s
-          repeat_interval: 1h
-        # Warning/info: standard route
+        # Warning/info generic: standard route
         - matchers:
             - severity =~ "warning|info"
           receiver: 'alarm-receiver-bridge'
@@ -121,7 +135,9 @@ alertmanager:
           - url: 'http://alertmanager-bridge.monitoring.svc.cluster.local:9093/alert'
             send_resolved: true
             max_alerts: 50
-      # V2.1 Ops-A — Perf alerts Slack receiver (Codex 019e267a spike absorb)
+      # V2.1 Ops-A — Perf alerts Slack receiver (Codex 019e267a spike absorb +
+      # 019e2772 P0 #2 template fix: `default` Sprig fonksiyonu Alertmanager Go
+      # template'inde desteklenmez; `with ... else ... end` pattern).
       # api_url_file: ESO `perf-alertmanager-secrets` Secret → file mount;
       # owner Vault `kv/platform/perf-alertmanager.SLACK_WEBHOOK_URL` yazımı sonrası
       # ESO 1h refresh-interval içinde Secret oluşturur; Alertmanager pod restart
@@ -132,12 +148,12 @@ alertmanager:
             channel: '#perf-alerts'
             send_resolved: true
             title: 'V2.1 Perf Alert | {{ .GroupLabels.alertname }}'
-            text: |
+            text: |-
               *Status:* {{ .Status | toUpper }}
               *Severity:* {{ .CommonLabels.severity }}
-              *Namespace:* {{ .CommonLabels.namespace | default "n/a" }}
+              *Namespace:* {{ with .CommonLabels.namespace }}{{ . }}{{ else }}n/a{{ end }}
               *Description:* {{ range .Alerts }}{{ .Annotations.description }}{{ end }}
-              *Runbook:* {{ range .Alerts }}{{ .Annotations.runbook_url | default "—" }}{{ end }}
+              *Runbook:* {{ range .Alerts }}{{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}{{ end }}
     inhibit_rules:
       # Critical inhibits warning of same alertname
       - source_matchers:

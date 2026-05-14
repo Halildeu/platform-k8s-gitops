@@ -83,6 +83,26 @@ path "kv/data/platform/alertmanager-fallback" {
   capabilities = ["read"]
 }
 
+# --- V2.1 Ops-A — Perf alert receiver (A2 isolation path) ---
+# Codex `019e2772` post-impl peer review iter-3 P0 blocker absorb:
+# ESO `perf-alertmanager-secrets` ExternalSecret bu path'i okuyor;
+# policy genişletilmeden owner Vault write tek başına yeterli olmaz (403).
+#
+# Vault path: kv/platform/perf-alertmanager
+#   SLACK_WEBHOOK_URL — #perf-alerts Slack channel incoming webhook
+#
+# ESO ExternalSecret: kustomize/overlays/{test,prod}/eso/alertmanager/
+#   externalsecret-perf-alertmanager.yaml
+# Mount: alertmanagerSpec.secrets[] → /etc/alertmanager/secrets/perf-
+#   alertmanager-secrets/SLACK_WEBHOOK_URL
+#
+# D43 fallback ile AYRI Slack kanalı (#perf-alerts vs #alerts-d43-drill).
+# Spike Codex `019e267a` A2 isolation tercih + V2.1 Ops-A impl prep PR
+# Codex `019e2772` post-impl P0 fix absorb.
+path "kv/data/platform/perf-alertmanager" {
+  capabilities = ["read"]
+}
+
 # --- OpenFGA Store + Model ID (D-008 runtime kontrat) ---
 path "kv/data/platform/openfga" {
   capabilities = ["read"]
