@@ -284,10 +284,13 @@ Eğer Vault rotation bozulduysa veya Vault canonical farklı bir değere drift o
 # kadar deferred. Smoke PASS ise dosya zaten silindi → rollback C için
 # eski Deployment revision template'inden çıkar (kubectl get rs).
 
-# Yöntem 1 — $TMP hâlâ mevcutsa (smoke henüz tamamlanmadı):
-ssh halil@staging-sw "kubectl --context k3d-test -n platform-test set env \
-  deploy/auth-service SPRING_DATASOURCE_PASSWORD=\"\$(cat \"\$TMP\")\""
-# \$TMP = Adım 1'de mktemp ile oluşturulan tmpfs dosyası; operator shell var.
+# Yöntem 1 — $TMP hâlâ mevcutsa (smoke henüz tamamlanmadı).
+# ÖNEMLİ: operator Adım 1'i staging-sw hidden shell'de çalıştırıyor; $TMP
+# o shell scope'unda var. ssh wrapper KULLANMA — remote shell $TMP'i göremez
+# ve command substitution boş dönerek SPRING_DATASOURCE_PASSWORD="" set eder.
+# Komut doğrudan staging-sw hidden shell'de:
+kubectl --context k3d-test -n platform-test set env \
+  deploy/auth-service SPRING_DATASOURCE_PASSWORD="$(cat "$TMP")"
 # NOT: kubectl set env --from-file FLAG DESTEKLEMİYOR; --env-file destekliyor
 # ama formatı KEY=VALUE.  Tek key için inline shell substitution kullanılır.
 
