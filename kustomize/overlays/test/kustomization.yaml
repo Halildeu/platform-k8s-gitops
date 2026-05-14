@@ -1982,9 +1982,16 @@ patches:
       - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: "DEBUG"
+      # Codex 019e234e iter-5 + 019e258a — D1.1a containment safety hold.
+      # Live effective state has `DDL_AUTO=none` via inline override; this
+      # PR removes the inline override (envFrom Secret canonical password
+      # is now hash-parity PASS), so ConfigMap MUST match the safe behavior
+      # to avoid Hibernate `update` mode running against a Flyway-managed
+      # schema. D1.1b restoration (`validate` + Flyway=true) deferred until
+      # Flyway state proof in a separate PR.
       - op: add
         path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
-        value: "update"
+        value: "none"
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "false"
