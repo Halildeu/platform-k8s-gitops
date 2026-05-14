@@ -1,0 +1,44 @@
+name: Cross-AI Peer Review Audit (V2.1-GOV-1)
+
+# PR body Cross-AI structured field enum validate (HARD RULE provider seviyesinde)
+# PMD v9.1 §7 + scripts/ci/pr-cross-ai-audit.mjs
+#
+# Required check (V2.1 GOV-1 10 must-pass):
+# - Implementer AI ≠ Reviewer AI (case-insensitive provider name match)
+# - Codex thread UUID format veya N/A
+# - Verdict enum (AGREE/REVISE/PARTIAL/RED)
+# - Same-provider exception → user-explicit-approval beyanı PR body'de
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  cross-ai-audit:
+    # Codex `019e2693` HIGH-1: canonical check context PMD §2.10 must-pass list
+    # branch protection ruleset bu exact context'i arıyor (`cross-ai-audit`).
+    name: cross-ai-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run cross-AI audit
+        run: |
+          node scripts/ci/pr-cross-ai-audit.mjs \
+            --event-path "$GITHUB_EVENT_PATH"

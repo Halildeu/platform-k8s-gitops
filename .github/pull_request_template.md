@@ -40,11 +40,30 @@
 - [ ] **IP sanitize:** Dış kullanıcı-facing response/doc'ta iç ağ IP yok
 - [ ] **Handoff update:** Büyük delta ise `docs/session-handoff-<latest>.md` güncel
 
-## Codex İstişare (plan-time adversarial review)
+## Cross-AI Peer Review (HARD RULE — provider seviyesinde)
 
-- [ ] Codex plan-time review yapıldı — Thread: `<id>`
-- [ ] VERDICT: AGREE / PARTIAL / REVISE / RED
-- [ ] Absorb edilen düzeltmeler: `<liste>`
+> **ZORUNLU** (V2.1-GOV-1): Code yazan AI sağlayıcı (provider) ≠ Reviewer sağlayıcı. Aynı sağlayıcının farklı session/subagent'i de YASAK. CI gate `gate-cross-ai-audit` aşağıdaki structured field'ları validate eder.
+>
+> Detay: `docs/performance/PERF-INIT-V2-prod-readiness-v9.1.md` §7.
+
+```yaml
+# Cross-AI structured field enum — CI parser bu blok'u okur (## Cross-AI heading altı, scoped)
+Implementer AI:   Claude
+Reviewer AI:      Codex
+Codex thread:     019eXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
+Verdict:          AGREE
+Verdict reason:   <1-2 cümle>
+Same-provider exception: N/A
+# Exception reason: <≥10 karakter — sadece "Same-provider exception: user-explicit-approval" durumunda zorunlu>
+# Cross-AI exempt reason: <≥10 karakter — sadece "Codex thread: N/A" durumunda zorunlu, örn. "docs-only handoff PR, no code change">
+Absorb edilen düzeltmeler: <liste veya N/A (AGREE initial verdict)>
+```
+
+**Field semantik** (Codex `019e2693` REVISE absorb):
+- `Implementer AI` / `Reviewer AI`: known-canonical providers `Claude` / `Codex` / `Gemini` / `Other` (alias tolerance: `Anthropic Claude`, `OpenAI Codex`, `Google Gemini`)
+- `Codex thread`: full UUID (kısa hash YASAK); `N/A` sadece **`Cross-AI exempt reason:`** field dolu ise (docs-only/governance exempt durumlarda)
+- `Same-provider exception: user-explicit-approval` → zorunlu **`Exception reason:`** field (≥10 karakter, commit/comment evidence link)
+- `-` alias YASAK; explicit `N/A` + reason field zorunlu
 
 ## Referans
 
