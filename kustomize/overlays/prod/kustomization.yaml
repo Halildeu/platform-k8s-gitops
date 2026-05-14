@@ -421,6 +421,15 @@ patches:
       - op: replace
         path: /data/KEYCLOAK_ISSUER_URI
         value: "https://ai.acik.com/realms/serban"
+      # D1.5 (2026-05-14): SECURITY_JWT_* programmatic JWT decoder env'leri
+      # prod realm 'serban' için override. Base'de OVERLAY_MUST_OVERRIDE
+      # fail-closed placeholder; AUDIENCE base'de env-agnostic literal.
+      - op: replace
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://ai.acik.com/realms/serban"
+      - op: replace
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
   - target:
       kind: ConfigMap
       name: permission-service-config

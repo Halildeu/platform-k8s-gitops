@@ -56,3 +56,19 @@ data:
   # ISSUER to ai.acik.com (see overlays/prod/kustomization.yaml patches).
   KEYCLOAK_ISSUER_URI: "http://keycloak:8080/realms/serban"
   KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+
+  # 2026-05-14 D1.5 reconcile: 3 SECURITY_JWT_* programmatic decoder env'leri
+  # inline'dan ConfigMap'e taşındı (D1.1a pattern: intended inline=2; gerisi
+  # envFrom üzerinden). SecurityConfig.java + LocalJwtDecoderConfiguration.java
+  # programmatic environment.getProperty() ile bu env'leri okur. ISSUER +
+  # JWK_SET_URI overlay-spesifik (D26 fail-closed); AUDIENCE env-agnostic literal.
+  SECURITY_JWT_ISSUER: "OVERLAY_MUST_OVERRIDE"
+  SECURITY_JWT_JWK_SET_URI: "OVERLAY_MUST_OVERRIDE"
+  SECURITY_JWT_AUDIENCE: "account,frontend,report-service"
+
+  # D1.5 OpenFGA Zanzibar runtime + permission-service hub URL — inline'dan
+  # ConfigMap'e taşındı. API_URL + ENABLED literal (env-agnostic, intra-ns
+  # shortname). STORE_ID + MODEL_ID Secret'tan gelir (kv/platform/openfga).
+  ERP_OPENFGA_ENABLED: "true"
+  ERP_OPENFGA_API_URL: "http://openfga:8080"
+  PERMISSION_SERVICE_BASE_URL: "http://permission-service:8090"
