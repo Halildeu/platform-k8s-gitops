@@ -194,7 +194,10 @@ data:
       # Plain string interpolation instead of heredoc — avoids YAML
       # block-scalar indent edge cases that were silently dropping the
       # writer block on first iter.
-      PATCH_PAYLOAD="{\"data\":{\"lastFire\":\"$TIMESTAMP\",\"result\":\"$RESULT\",\"failures\":\"$FAIL\"}}"
+      # Ops-B core (Codex `019e26c5` Option C absorb): annotation patch combined
+      # data + metadata.annotations PATCH; kube-state-metrics `kube_configmap_annotations`
+      # scrape PrometheusRule signal source (annotation-based pattern, no Pushgateway).
+      PATCH_PAYLOAD="{\"metadata\":{\"annotations\":{\"frontend-federation-smoke.io/last-fire\":\"$TIMESTAMP\",\"frontend-federation-smoke.io/result\":\"$RESULT\",\"frontend-federation-smoke.io/failures\":\"$FAIL\"}},\"data\":{\"lastFire\":\"$TIMESTAMP\",\"result\":\"$RESULT\",\"failures\":\"$FAIL\"}}"
       # Codex `019e25a7` iter-1 P3: clean `|| HTTP="000"` on curl failure.
       HTTP=$(curl -sS -o /tmp/writer_resp -w '%{http_code}' \
         --cacert "$CA_FILE" \

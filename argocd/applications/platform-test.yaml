@@ -43,6 +43,11 @@ spec:
       name: frontend-federation-smoke-status
       jsonPointers:
         - /data
+        # Ops-B core (Codex `019e26c5` R3 absorb): writer annotation extension
+        # ile aynı 3 key dinamik update; Argo self-heal revert etmemeli.
+        - /metadata/annotations/frontend-federation-smoke.io~1last-fire
+        - /metadata/annotations/frontend-federation-smoke.io~1result
+        - /metadata/annotations/frontend-federation-smoke.io~1failures
   # 2026-05-10: D17 scale-to-zero ignoreDifferences DEPRECATED.
   # HARD RULE — TEST Cluster Scale-to-Zero YASAK (kullanıcı 2026-05-10
   # kararı): multi-Claude paralel session geliştirme modelinde scale-down
