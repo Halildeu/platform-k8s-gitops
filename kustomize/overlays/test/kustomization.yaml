@@ -388,7 +388,17 @@ images:
     # image build run 25665815094 pushed this digest, Deploy backend testai
     # (auto) run 25665928603 success, testai deployment/pod imageID matched,
     # readiness UP, deployed jar contains AMOUNT_2 aggregatable/defaultAggFunc.
-    digest: sha256:58b8e373aabb0e0c7a438617930daa94c5e7ed89c1420e652726fb319202415e
+    #
+    # 2026-05-14 update: sha-cb87f5d — platform-backend PR #167 squash merge.
+    # Adım 1.5 Workcube interim admin-only gate: WorkcubeAccessGuard bean +
+    # class-level @PreAuthorize on WorkcubeReportController. Pre-prod
+    # compensating control while WorkcubeQueryAdapter (plan §7 Adım 11) is
+    # under development; non-admin → 403 / no-auth → 401 / super-admin →
+    # 200|503. Test cluster keeps REPORT_MSSQL_ENABLED=true (dev velocity);
+    # prod stays false. Codex thread 019e258f iter-4 A-prime AGREE + iter-6
+    # ready_to_merge. Plan ref: docs/plan-reporting-refactor-2026-05-14.md
+    # §7 Adım 1.5. Image build run 25858739015.
+    digest: sha256:d3e870ae2996b24153b4579a5906ca76b39a01ce8395d46cdb323d71d412a766
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
