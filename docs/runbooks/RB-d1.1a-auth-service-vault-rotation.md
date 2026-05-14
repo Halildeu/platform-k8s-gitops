@@ -139,15 +139,18 @@ Hash parity PASS sonrası agent şu PR'ı açar:
 ### Adım 7: Selective apply
 
 ```bash
-# Pre-apply snapshot (rollback B kaynağı). Live ConfigMap'i kaydet; sonradan
-# rollback gerekirse bu snapshot'ı uygula. NOT: kustomize HEAD~1 base ile
-# yetinilemez — test overlay'in KEYCLOAK_ISSUER_URI/SECURITY_JWT_*/audience
-# patch'leri base'de yok.
+# Pre-apply ConfigMap snapshot (rollback B kaynağı). Live ConfigMap'i
+# kaydet; sonradan rollback gerekirse bu snapshot'ı uygula. NOT: kustomize
+# HEAD~1 base ile yetinilemez — test overlay'in KEYCLOAK_ISSUER_URI /
+# SECURITY_JWT_* / audience patch'leri base'de yok.
+#
+# Codex 019e258a iter-3 — DEPLOY SNAPSHOT ALMA YASAK: live Deployment
+# inline SPRING_DATASOURCE_PASSWORD plaintext taşıyor; agent /tmp'ye
+# Deployment YAML yazarsa boundary ihlal olur. Rollback A için
+# `kubectl rollout undo` yeterli; deploy snapshot gerekmez.
 ssh halil@staging-sw "kubectl --context k3d-test -n platform-test get cm \
   auth-service-config -o yaml > /tmp/auth-cm.pre-d1.1a.yaml"
-ssh halil@staging-sw "kubectl --context k3d-test -n platform-test get deploy \
-  auth-service -o yaml > /tmp/auth-deploy.pre-d1.1a.yaml"
-echo "Pre-apply snapshots written to staging-sw:/tmp/auth-{cm,deploy}.pre-d1.1a.yaml"
+echo "Pre-apply ConfigMap snapshot: staging-sw:/tmp/auth-cm.pre-d1.1a.yaml"
 
 # Render auth-service deployment + ConfigMap'i izole et
 kubectl kustomize kustomize/overlays/test > /tmp/test-overlay.yaml
@@ -283,7 +286,8 @@ Eğer Vault rotation bozulduysa veya Vault canonical farklı bir değere drift o
 
 # Yöntem 1 — $TMP hâlâ mevcutsa (smoke henüz tamamlanmadı):
 ssh halil@staging-sw "kubectl --context k3d-test -n platform-test set env \
-  deploy/auth-service SPRING_DATASOURCE_PASSWORD=\"\$(cat /dev/shm/auth-pw.XXXXXX)\""
+  deploy/auth-service SPRING_DATASOURCE_PASSWORD=\"\$(cat \"\$TMP\")\""
+# \$TMP = Adım 1'de mktemp ile oluşturulan tmpfs dosyası; operator shell var.
 # NOT: kubectl set env --from-file FLAG DESTEKLEMİYOR; --env-file destekliyor
 # ama formatı KEY=VALUE.  Tek key için inline shell substitution kullanılır.
 
