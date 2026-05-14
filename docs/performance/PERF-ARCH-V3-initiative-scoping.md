@@ -106,6 +106,7 @@ V3 açılma kararı için **owner approval gerekli** 5 madde:
 5. ☐ **Owner explicit decision** — V3 açılma kararı commit/comment'ta beyan
 6. ☐ **Trigger #3 ek checklist** (Codex `019e26d2` absorb): Faz G prod cutover sonrası **minimum 4 hafta field telemetry** + low-bandwidth/device segment + user complaint trend
 7. ☐ **V3 açılışında analyzer evidence pack zorunlu** (Codex `019e26d2`): route + BUILD_SHA + cache mode + transfer + decoded + top dependency contributors + before/after ratio
+8. ☐ **Cross-cluster observability federation pre-cond** (Session 52 Update 2 follow-up — `docs/performance/V2.1-remote-write-test-to-prod-hub-issue.md`): V3 trigger §1 (Auth route hard fail) M2a centralized metric eval + cross-cluster alert chain LIVE proof gereksin. Mevcut V2.1 #4 source-side LIVE prod cluster local; cross-cluster (test cluster annotation prod-hub'a propagate) **kopuk** (remote_write placeholder URL). Çözüm yolları: V3 entegre Thanos/Prom federation (TERCİH) veya owner kararı V3 dışı separate observability initiative.
 
 ---
 
@@ -125,6 +126,7 @@ V3 açılması **high blast-radius**:
 | **R8** MF loadShare cycle/deadlock (@mfe/auth runtime bağımlılık) | L × H | MF runtime sentinel + circular dependency analyzer; B5d0 PoC pattern |
 | **R9** `@mfe/x-charts` ownership drift (V3 charts boundary vs mevcut paket) | M × M | Pre-Tier-2 reconciliation kararı (rebrand vs koexistans); migration plan explicit |
 | **R10** Measurement validity karışıklığı (cache/SW/Brotli/CDN transfer vs decoded muddle) | M × M | Median-of-N + ABM-1 soak pattern (PMD §2.7 ABM-1 + G2 sliding baseline); transfer/decoded **ayrı** gate threshold |
+| **R11** Cross-cluster observability federation kopuk (test→prod-hub remote_write placeholder URL) | M × M | V3 §3.5 candidate scope item — Thanos/Prom federation veya owner separate observability initiative; mevcut V2.1 source-side LIVE local-scope intact, cross-cluster cosmetic (panic-page değil) |
 
 ---
 
