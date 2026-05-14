@@ -37,7 +37,7 @@ spec:
     # TCP only on the two kube-apiserver ports.
     - to:
         - ipBlock:
-            cidr: 10.45.0.0/16        # k3d-test service CIDR
+            cidr: 10.45.0.1/32        # kubernetes.default.svc ClusterIP (pre-DNAT)
       ports:
         - protocol: TCP
           port: 443

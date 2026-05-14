@@ -22,7 +22,7 @@ spec:
     # Service CIDR + docker bridge CIDR — see test variant comment.
     - to:
         - ipBlock:
-            cidr: 10.43.0.0/16        # k3d-prod service CIDR
+            cidr: 10.43.0.1/32        # kubernetes.default.svc ClusterIP (pre-DNAT)
       ports:
         - protocol: TCP
           port: 443
