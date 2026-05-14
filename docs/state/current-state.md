@@ -10,6 +10,51 @@
 
 ---
 
+## Live Delta — Session 49 Faz 2 Closure + BUG #1 409 Audit Branch Regression Catch (2026-05-14 ~18:30 UTC+3)
+
+**Bağlam**: Session 49 Faz 1 closure sonrası Codex `019e2022` strategy AGREE'd "faz fazlı" devam ile BE Faz 2 inline yapıldı. Cross-AI peer review iter sırasında ana etkili bulgu: **gerçek bir BUG #1 pattern regression** Codex tarafından 409 ve SESSION_PERSIST_FAILED audit branch'lerinde yakalandı. Test yazıldığında controller fix olmadan FAIL etti → fix eklendi → 8/8 PASS.
+
+**MERGED**:
+
+- **platform-backend PR #181** (merge_commit `724d74a`): WireMock IT Faz 2 + BUG #1 409 branch regression fix
+  - **Runtime fix** (minimal, BUG #1 pattern aynısı): `ImpersonationController.java` — `ActiveSessionExistsException` ve `ImpersonationSessionClientException` audit branch'leri `request.targetEmail()` yerine `resolvedTargetEmail` kullanıyor (PR #165 Step 1b/1f fix'inin atladığı kuyruk branch'leri)
+  - 5 yeni @Test methodu (Faz 1 + Faz 2 birleşik suite 8/8 PASS):
+    - `target_user_disabled_emits_blocked_audit` — 403 TARGET_USER_DISABLED + audit target_email
+    - `target_subject_unresolvable_step1f_emits_blocked_audit` — **BUG #1 Step 1f branch IT proof**, 422 TARGET_SUBJECT_UNRESOLVABLE + audit target_email
+    - `insufficient_authority_when_authz_returns_not_super_admin` — 403 + user-service lookup IS called (countGetsTo == 1) + zero session/broker
+    - `active_session_conflict_returns_409_with_resolved_target_email_in_audit` — **BUG #1 409 branch test + fix** — full chain up through session create, 409 audit body asserted (eventType BLOCKED + errorCode + targetEmail resolved)
+    - `revoke_active_session_returns_204` — DELETE /current flow: GET active query (impersonatorUserId=1) + DELETE on session id (X-Stop-Reason: USER_STOP + X-Internal-Api-Key headers asserted) + 204
+  - Cross-AI peer review HARD RULE: Claude implementer + Codex async reviewer (REVISE-3 absorbed)
+  - CI: 11/11 lane PASS (auth-service-impersonation-it + Maven full reactor + permission-service IT + report-service MSSQL IT + notification-orchestrator + 6 governance/security/contract gates)
+
+**OPEN (CI iterating)**:
+
+- **platform-web PR #486** — FE Playwright authz boundary smoke Faz 1 (iter-5 actionTimeout override + auth helper bypass + AuthContract probe surface). Production-preview shell bootstrap için `actionTimeout` config cap (15s) explicit override'ları geçmiyordu — iter-5'te `test.use({ actionTimeout: 60_000, navigationTimeout: 60_000 })` ile 60s ceiling + setTimeout 180s. CI iter-5 in progress. Auth Transport Contract E2E pre-existing baseline failure (advisory, my changes ile alakasız, aynı 15s cap pattern'i).
+
+**Cross-AI peer review HARD RULE — bu session'da kanıtlı catch**:
+
+> Codex async reviewer PR #181 üzerinde **gerçek bir regression** yakaladı (BUG #1 pattern 409/SESSION_PERSIST_FAILED audit branch'lerinde). Test yazıldı, fix olmadan FAIL etti, fix push'landı, CI 11/11 PASS. Bu cross-AI HARD RULE'un (Reviewer ≠ Implementer) gerçek değer kazanım örneği — Claude'un kendi yazdığı testleri kendi review eden bir akış olsaydı bu bulgu sessizce geçebilirdi.
+
+**Impersonation regression coverage matrisi (post-Faz 2)**:
+
+| Branch / hata kodu | Status |
+|---|---|
+| Step 1b SELF pre-resolution audit target_email | ✅ Fixed PR #165 + IT test Faz 1 |
+| Step 1f UNRESOLVABLE audit target_email | ✅ Fixed PR #165 + IT test Faz 2 |
+| **409 ACTIVE_IMPERSONATION_EXISTS audit target_email** | ⚠️ **Catch + Fix this session (PR #181)** |
+| **SESSION_PERSIST_FAILED audit target_email** | ⚠️ **Same fix this session (PR #181)** |
+| Validation empty reason | ✅ IT test Faz 1 |
+| Happy contract handoff | ✅ IT test Faz 1 (body + headers) |
+| TARGET_USER_DISABLED | ✅ IT test Faz 2 |
+| INSUFFICIENT_AUTHORITY | ✅ IT test Faz 2 |
+| Stop/revoke flow contract | ✅ IT test Faz 2 (headers + query param) |
+
+**FE Faz 2 + live browser smoke** spawn task chip'lerde devam (ayrı session).
+
+**Codex thread referansları**: `019e2022` (Session 49 strategy + Faz 1/Faz 2 ping-pong reviewer chain — 7+ iter)
+
+---
+
 ## Live Delta — Session 49 Faz 1 Progress: BE WireMock IT MERGED + FE Playwright CI Iterating (2026-05-14 ~17:30 UTC+3)
 
 **Bağlam**: Session 47 Bug Wave handoff (PR #549) tamamlandı, sonra Codex `019e2022` strategy AGREE'd "faz fazlı pattern" ile spawn'd 2 büyük scope (BE WireMock IT 8-case + FE Playwright 5-case) Faz 1 olarak başlatıldı.
