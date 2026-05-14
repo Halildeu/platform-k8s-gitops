@@ -540,6 +540,12 @@ Diğer adımlar (kozmetik refactor, test, doc) spec-level AGREE final sayılır.
 | 2026-05-14 | ~18:10 | Adım 5 | Codex iter-16 **AGREE** / `ready_to_merge: true` 2 normal kapanış şartıyla (CI yeşil + PR description scope notu) | ✅ Cross-AI consensus | `019e258f` iter-16 verdict |
 | 2026-05-14 | ~18:15 | Adım 5 | PR #179 description scope notu eklendi ("PR-1 scope: schema-bound yearly/current only; Workcube direct endpoints deferred to Adım 11") | ⏳ CI yeşil bekleniyor (Maven full reactor PASS + 3 Testcontainers IT pending) | n/a |
 | 2026-05-14 | ~18:20 | Plan doc | Handoff doc Session 50 PR [platform-k8s-gitops#608](https://github.com/Halildeu/platform-k8s-gitops/pull/608) açıldı (branch `docs/session-50-reporting-refactor-handoff`); BG-1 + cross-AI body format düzeltildi | ⏳ CI re-check pending | n/a |
+| 2026-05-14 | ~18:25 | Adım 5 PR-1 | PR [platform-backend#179](https://github.com/Halildeu/platform-backend/pull/179) **MERGED** (Codex iter-16 AGREE + CI yeşil + normal squash; admin bypass yok); cleanup tag `archive/2026/05/feat-program-2-tenant-boundary-guard-pr179` | ✅ **MERGED** | `019e258f` iter-16 AGREE |
+| 2026-05-14 | ~18:30 | Adım 10 | PR [platform-k8s-gitops#598](https://github.com/Halildeu/platform-k8s-gitops/pull/598) **MERGED** (ADR-0008 Observability — Metrics 6 generic + 4 query-shape; Codex iter-13 AGREE) | ✅ **MERGED** | `019e258f` iter-13 AGREE |
+| 2026-05-14 | ~18:32 | Handoff doc | PR [platform-k8s-gitops#608](https://github.com/Halildeu/platform-k8s-gitops/pull/608) **MERGED** (Session 50 progress doc + plan §10 tracking; doc-only) | ✅ **MERGED** | n/a |
+| 2026-05-14 | ~18:35 | Adım 11 | Codex iter-17 PARTIAL: 5-PR breakdown (11.1 RC-011 + 11.2 adapter core + 11.3 controller adoption + 11.4 interim gate removal + 11.5 prod cutover); BUILD_VALIDATION enum YOK (mevcut BUILD_DETERMINISTIC + ayrı ContractRule); ReportingAllowlist hardcoded Java Set (no sibling-repo CI dep) | ✅ Plan-time consensus | `019e258f` iter-17 |
+| 2026-05-14 | ~18:40 | Adım 11.1 | RC-011 + ReportingAllowlist V1 (30 tables: 23 ADR-0012-SS + 7 regression) + ContractValidator chain 11 → 12 + 8 unit test; 585/585 PASS | ✅ Impl done | n/a |
+| 2026-05-14 | ~18:50 | Adım 11.1 | PR [platform-backend#182](https://github.com/Halildeu/platform-backend/pull/182) açıldı; Codex iter-18 PARTIAL clarity (2 Javadoc/PR-body revision, code-behavior change YOK); iter-19 **AGREE** `ready_to_merge: true` | ⏳ CI yeşillenmesi bekleniyor → normal squash | `019e258f` iter-18 PARTIAL + iter-19 AGREE |
 
 ---
 
