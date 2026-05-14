@@ -87,3 +87,11 @@ spec:
       name: openfga-config
       jsonPointers:
         - /data/OPENFGA_DATASTORE_URI
+    # 2026-05-14: Phase 2 status ConfigMap writer (Codex `019e25a7`
+    # iter-1 P1 absorb).  The smoke CronJob upserts `/data` fields of
+    # `frontend-federation-smoke-status` on every fire; Argo must not
+    # revert those dynamic values during manual sync.
+    - kind: ConfigMap
+      name: frontend-federation-smoke-status
+      jsonPointers:
+        - /data

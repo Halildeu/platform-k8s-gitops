@@ -167,6 +167,50 @@ data:
       echo "[OK] negative case: 404 + no long-cache header"
     fi
 
+    # Phase 2 status ConfigMap writer (Codex `019e2580` Sprint 1 E
+    # absorb + `019e25a7` iter-1 P1 revisions absorb):
+    # PATCH (merge-patch+json) the GitOps pre-created status ConfigMap
+    # with last-fire state + PASS/FAIL result + failure count.  RBAC
+    # is `verbs: ["get", "patch"]` only — no create/update/delete/list.
+    #
+    # Uses the in-pod mounted ServiceAccount token + CA to call the
+    # Kubernetes REST API directly (no kubectl binary needed).
+    # Failures here do NOT change the smoke verdict — writer is
+    # best-effort; smoke verdict reflects cache/federation invariants,
+    # NOT observability infrastructure health.
+    RESULT=$([ $FAIL -eq 0 ] && echo "PASS" || echo "FAIL")
+    TIMESTAMP=$(date -u +%FT%TZ)
+    TOKEN_FILE=/var/run/secrets/kubernetes.io/serviceaccount/token
+    NS_FILE=/var/run/secrets/kubernetes.io/serviceaccount/namespace
+    CA_FILE=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    if [ -r "$TOKEN_FILE" ] && [ -r "$NS_FILE" ] && [ -r "$CA_FILE" ]; then
+      TOKEN=$(cat "$TOKEN_FILE")
+      NS=$(cat "$NS_FILE")
+      API="https://kubernetes.default.svc"
+      CM_NAME="frontend-federation-smoke-status"
+      # Codex `019e25a7` iter-1 P1: merge-patch payload — only update
+      # data fields; let the GitOps-managed metadata/labels remain.
+      PATCH_PAYLOAD=$(cat <<PYEOF
+    {"data": {"lastFire": "$TIMESTAMP", "result": "$RESULT", "failures": "$FAIL"}}
+    PYEOF
+    )
+      # Codex `019e25a7` iter-1 P3: collapse curl-failure `|| echo "000"`
+      # into a clean `|| HTTP="000"` assignment.
+      HTTP=$(curl -sS -o /tmp/writer_resp -w '%{http_code}' \
+        --cacert "$CA_FILE" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/merge-patch+json" \
+        -X PATCH --data "$PATCH_PAYLOAD" \
+        "$API/api/v1/namespaces/$NS/configmaps/$CM_NAME" 2>/dev/null) || HTTP="000"
+      if [ "$HTTP" = "200" ]; then
+        echo "[STATUS] patched ConfigMap $CM_NAME (HTTP $HTTP, result=$RESULT, failures=$FAIL)"
+      else
+        echo "[STATUS][WARN] ConfigMap writer HTTP $HTTP (best-effort; smoke verdict unaffected)"
+      fi
+    else
+      echo "[STATUS][WARN] ServiceAccount token not mounted — skipping writer"
+    fi
+
     if [ $FAIL -ne 0 ]; then
       echo ""
       echo "[B5b3e] FAIL — at least one cache/federation invariant violated"
@@ -206,7 +250,14 @@ spec:
             app.kubernetes.io/part-of: platform
         spec:
           restartPolicy: OnFailure
-          automountServiceAccountToken: false
+          # Phase 2 status ConfigMap writer (Codex `019e2580` Sprint 1 E):
+          # mount the ServiceAccount token so the script can call the
+          # Kubernetes REST API directly to upsert the status ConfigMap.
+          # Permission is narrowly scoped via Role (see
+          # frontend-federation-smoke-rbac.yaml): only get/create/update/
+          # patch on the single status ConfigMap, nothing else.
+          serviceAccountName: frontend-federation-smoke
+          automountServiceAccountToken: true
           # Codex `019e256f` P1: digest-pin curl image (D30 immutable
           # artifact discipline — moving tag YASAK).  Pin verified via
           # `docker pull curlimages/curl:8.10.1 && docker inspect

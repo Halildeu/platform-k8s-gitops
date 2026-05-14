@@ -1,0 +1,27 @@
+# PERF-INIT-V2 PR-B5b3e Phase 2 — Kubernetes API egress for status writer.
+#
+# Codex thread `019e25a7` iter-1 P1 absorb: see test variant for
+# context.  Prod cluster `kubernetes.default.svc` ClusterIP: 10.43.0.1
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-federation-smoke-kubernetes-api
+  labels:
+    app.kubernetes.io/name: frontend-federation-smoke
+    app.kubernetes.io/component: smoke
+    app.kubernetes.io/part-of: platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: frontend-federation-smoke
+      app.kubernetes.io/component: smoke
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.43.0.1/32
+      ports:
+        - protocol: TCP
+          port: 443

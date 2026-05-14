@@ -1,0 +1,62 @@
+# PERF-INIT-V2 PR-B5b3e Phase 2 — status ConfigMap writer RBAC.
+#
+# Codex thread `019e2580` Sprint 1 (E) absorb + `019e256f` iter-1
+# note: "Status ConfigMap writer ayrı PR olmalı, çünkü API write +
+# RBAC ekler ve bu PR'ın curl-only/read-only risk profilini değiştirir."
+#
+# Adds ServiceAccount + Role + RoleBinding so the smoke CronJob can
+# write its PASS/FAIL result + last-fire timestamp into a cluster
+# ConfigMap (`frontend-federation-smoke-status`).  Argo CD + Grafana
+# (when wired) can sync this ConfigMap as a single observability
+# surface — operator panel sees "last smoke ran at X, result Y" without
+# needing to grep kubectl jobs history.
+#
+# Permission scope is intentionally NARROW:
+#   - resourceNames: only the single status ConfigMap
+#   - verbs: get/create/update/patch (NO list, watch, delete, or
+#            cross-resource access)
+# This is the minimum needed for the writer to upsert one ConfigMap.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend-federation-smoke
+  labels:
+    app.kubernetes.io/name: frontend-federation-smoke
+    app.kubernetes.io/component: smoke
+    app.kubernetes.io/part-of: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: frontend-federation-smoke-status-writer
+  labels:
+    app.kubernetes.io/name: frontend-federation-smoke
+    app.kubernetes.io/component: smoke
+    app.kubernetes.io/part-of: platform
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    # Codex `019e25a7` iter-1 P1 absorb: Kubernetes RBAC `resourceNames`
+    # cannot tighten `create` (collection endpoint doesn't carry name at
+    # authz time).  Status ConfigMap is GitOps pre-created
+    # (frontend-federation-smoke-status.yaml); writer only needs `patch`
+    # on the named resource.
+    resourceNames: ["frontend-federation-smoke-status"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: frontend-federation-smoke-status-writer
+  labels:
+    app.kubernetes.io/name: frontend-federation-smoke
+    app.kubernetes.io/component: smoke
+    app.kubernetes.io/part-of: platform
+subjects:
+  - kind: ServiceAccount
+    name: frontend-federation-smoke
+roleRef:
+  kind: Role
+  name: frontend-federation-smoke-status-writer
+  apiGroup: rbac.authorization.k8s.io

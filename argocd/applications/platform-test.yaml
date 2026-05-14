@@ -25,6 +25,24 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      # 2026-05-14: Phase 2 status ConfigMap writer (Codex `019e25a7`
+      # iter-1 P1 absorb).  The smoke CronJob upserts `/data` fields
+      # of `frontend-federation-smoke-status` on every fire; without
+      # `RespectIgnoreDifferences` Argo auto-sync + selfHeal would
+      # repeatedly revert those dynamic values to the GitOps-empty
+      # baseline, creating drift-fight noise.  This option, combined
+      # with the targeted `ignoreDifferences` block below, makes the
+      # GitOps manifest the source of truth for metadata/labels but
+      # leaves `/data` to the runtime writer.
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    # Status ConfigMap `/data` is runtime-managed by the smoke CronJob
+    # writer (Codex `019e2580` Sprint 1 E + `019e25a7` iter-1 P1).
+    # Argo must NOT revert the dynamic last-fire/result/failures fields.
+    - kind: ConfigMap
+      name: frontend-federation-smoke-status
+      jsonPointers:
+        - /data
   # 2026-05-10: D17 scale-to-zero ignoreDifferences DEPRECATED.
   # HARD RULE — TEST Cluster Scale-to-Zero YASAK (kullanıcı 2026-05-10
   # kararı): multi-Claude paralel session geliştirme modelinde scale-down
