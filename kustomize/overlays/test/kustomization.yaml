@@ -1746,7 +1746,22 @@ images:
     # helpers). Image build run 25856984174 (success). GHCR push:
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-a966969
     # @sha256:a563a01e8d288535df7155dbf7ec4f6c713ed992672cc57fccc849c18ae7014d
-    digest: sha256:a563a01e8d288535df7155dbf7ec4f6c713ed992672cc57fccc849c18ae7014d
+    #
+    # 2026-05-14 update: sha-c0fdf76 — PR-X14 HR adoption first
+    # consumer (platform-web #485 squash, BUILD_SHA
+    # c0fdf76b34d54ec30e2289589301237d692dbf4f). PR-X13 campaign'in
+    # ilk gerçek HR consumer adoption PR'ı: DemographicDashboard
+    # "Lokasyon Dagilimi" iki PieChart widget'ı → tek canonical
+    # <LocationGeoMap /> (GeoMap + bubble overlay + DetailDrawer).
+    # 81 TR il dataset + 231 alias + GeoJSON asset (OSM ODbL).
+    # location-to-geomap adapter (Istanbul Avrupa/Anadolu merge,
+    # Belirtilmemis isolation, unmatched tracking). Filter parity
+    # (4 → 82 option). 31 new tests (245 total PASS).
+    # Cross-AI peer review: Codex thread 019e26a9 6-iter cycle.
+    # Image build run 25867240574 (success). GHCR push:
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-c0fdf76
+    # @sha256:da98250ea5e20fb962f65db9896c5d01fc34bec8ecb8df79b1888e0a5c744cd2
+    digest: sha256:da98250ea5e20fb962f65db9896c5d01fc34bec8ecb8df79b1888e0a5c744cd2
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
