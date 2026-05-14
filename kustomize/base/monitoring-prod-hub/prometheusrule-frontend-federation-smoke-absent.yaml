@@ -1,0 +1,99 @@
+# PR-V2.1-Ops-B core impl follow-up (Codex `019e2772` iter-4 absorb):
+# PROD-HUB-ONLY cross-cluster absent detection.
+#
+# Bu dosya YALNIZCA prod-hub Prometheus'unda deploy edilir. Cross-cluster
+# absent detection prod-hub'ın işi: hem yerel `platform-prod` ConfigMap'i
+# scrape ediyor hem de remote_write ile gelen `platform-test` ConfigMap
+# metric'lerini değerlendiriyor.
+#
+# Test cluster local Prometheus'una bu dosya DEPLOY EDİLMEMELİ — test
+# cluster local'inde cross-cluster boundary nedeniyle false-positive
+# firing üretir (test cluster prod ConfigMap'i göremez ve tersi).
+#
+# Apply path:
+#   # Test cluster (sadece common):
+#   kubectl --context k3d-test apply -k kustomize/base/monitoring
+#
+#   # Prod cluster (common + absent):
+#   kubectl --context k3d-prod apply -k kustomize/base/monitoring
+#   kubectl --context k3d-prod apply -k kustomize/base/monitoring-prod-hub
+#
+# Codex iter-4 verdict (`019e2772`): "Option 1 rafine — resource/overlay
+# split". PrometheusRule resource'unu test cluster'a sync ETME pattern'i;
+# rule içindeki cluster_target label tek başına Prometheus Operator
+# ruleSelector için yetmez (label-based ruleSelector filter
+# `release: kube-prometheus-stack` ile çakışır; daha keskin
+# `alert_target: prod-hub-only` label kullanılırsa yapılabilir, ancak
+# asıl güvence overlay resource inclusion'dadır).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: frontend-federation-smoke-absent-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: frontend-federation-smoke
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: platform
+    release: kube-prometheus-stack
+    team: perf
+    # Codex `019e2772` iter-4 absorb: keskin alert_target label, prod-hub-only
+    # resource inclusion ile birlikte savunma katmanı (defense-in-depth).
+    alert_target: prod-hub-only
+spec:
+  groups:
+    - name: frontend-federation-smoke-absent
+      interval: 5m
+      rules:
+        # 4. Codex `019e273a` R9 absorb: per-namespace expected-vector absent
+        # (global absent tek namespace eksik olursa fire etmez; per-namespace
+        # `or` chain expected vectors için). Annotation label selector ile
+        # `ConfigMap var ama annotation writer/allowlist yok` durumunu da yakala.
+        #
+        # PROD-HUB ONLY: test cluster metric'leri remote_write ile prod-hub'a
+        # geliyor; absent test cluster'da değil prod-hub'da değerlendiriliyor.
+        - alert: PerfFederationSmokeStatusAbsentTest
+          expr: |
+            absent(kube_configmap_annotations{
+              namespace="platform-test",
+              configmap="frontend-federation-smoke-status",
+              annotation_frontend_federation_smoke_io_result=~".+"
+            })
+          for: 5m
+          labels:
+            severity: critical
+            team: perf
+            alert_class: federation-smoke
+            cluster_target: test
+            alert_target: prod-hub-only
+          annotations:
+            summary: "Frontend federation smoke status ConfigMap absent (test, prod-hub eval)"
+            description: |
+              kube-state-metrics frontend-federation-smoke-status ConfigMap annotation
+              metric absent on platform-test (prod-hub Prometheus tarafından remote_write
+              üzerinden değerlendiriliyor). Olası sebepler:
+              - Test cluster ConfigMap silindi
+              - Test cluster kube-state-metrics annotation allowlist eksik
+              - Test cluster Prometheus remote_write down (test → prod metric akışı kesildi)
+              - Test cluster annotation writer henüz fire etmedi (CronJob ilk fire bekleniyor)
+              - PrometheusRule discovery label mismatch (release: kube-prometheus-stack)
+        - alert: PerfFederationSmokeStatusAbsentProd
+          expr: |
+            absent(kube_configmap_annotations{
+              namespace="platform-prod",
+              configmap="frontend-federation-smoke-status",
+              annotation_frontend_federation_smoke_io_result=~".+"
+            })
+          for: 5m
+          labels:
+            severity: critical
+            team: perf
+            alert_class: federation-smoke
+            cluster_target: prod
+            alert_target: prod-hub-only
+          annotations:
+            summary: "Frontend federation smoke status ConfigMap absent (prod, prod-hub local eval)"
+            description: |
+              kube-state-metrics frontend-federation-smoke-status ConfigMap annotation
+              metric absent on platform-prod (prod-hub Prometheus local eval). Aynı root
+              cause set test gibi (allowlist / writer / discovery / pre-first-fire) +
+              prod cluster-side KSM allowlist deployment ek root cause.

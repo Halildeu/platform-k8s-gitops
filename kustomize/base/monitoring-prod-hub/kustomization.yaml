@@ -1,0 +1,22 @@
+# Monitoring prod-hub-only base — Codex 019e2772 iter-4 absorb
+# (cross-cluster absent rule split pattern).
+#
+# Bu kustomization YALNIZCA prod-hub cluster'a apply edilir:
+#   kubectl --context k3d-prod apply -k kustomize/base/monitoring-prod-hub
+#
+# Test cluster'a apply EDİLMEMELİ (cross-cluster boundary nedeniyle
+# false-positive firing).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: platform
+      app.kubernetes.io/component: monitoring
+    includeSelectors: false
+    includeTemplates: false
+
+resources:
+  - prometheusrule-frontend-federation-smoke-absent.yaml
