@@ -14,9 +14,36 @@ labels:
 resources:
   - deployment.yaml
   - service.yaml
-  - configmap.yaml
   - pdb.yaml
   - serviceaccount.yaml
   - hpa.yaml             # 2026-05-10: HPA min=1 max=3 (CPU 70% / Mem 80%)
+
+# PERF-INIT-V2 PR-V2.1-B3c-prod (Codex `019e2650` 3-tur AGREE):
+# configMapGenerator with hashSuffix replaces static configmap.yaml so that
+# any change to nginx-default.conf produces a new ConfigMap name
+# (nginx-config-<sha>). Kustomize's nameReference transformer rewrites the
+# deployment volumeMount to the new name; that changes the Deployment pod
+# template hash → ReplicaSet rolls automatically. This closes the
+# subPath ConfigMap mount drift (kubelet does NOT update subPath mounts on
+# in-place ConfigMap edit; pods retain the old config until restart).
+#
+# Live evidence (root cause): prod frontend pod started 2026-05-04 with
+# Dockerfile-baked nginx default (max-age=3600). Static `nginx-config`
+# ConfigMap was updated 2026-05-13 with B3c directives but pod did not
+# restart because subPath mount projection is one-shot. CronJob smoke
+# detected the drift (status CM result=FAIL, failures=1) on 2026-05-14;
+# manual `kubectl rollout restart deploy/frontend` fixed live state
+# (status CM result=PASS, failures=0). This kustomize change makes the
+# fix permanent — future ConfigMap edits propagate automatically.
+configMapGenerator:
+  - name: nginx-config
+    files:
+      - default.conf=nginx-default.conf
+    options:
+      # disableNameSuffixHash: false (default) → hash suffix appended.
+      # Deployment volumeMount referans (volumes[].configMap.name) kustomize
+      # nameReference ile otomatik resolve edilir.
+      disableNameSuffixHash: false
+
 # ServiceMonitor yok — default nginx /metrics yayınlamaz.
 # İleride nginx-prometheus-exporter sidecar ile eklenebilir.
