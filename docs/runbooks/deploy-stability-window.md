@@ -35,8 +35,10 @@ DEPLOY="<alert label deployment>"
 # 1. Rollout durumu özet
 kubectl -n "$NS" rollout status deploy/"$DEPLOY" --timeout=10s
 
-# 2. Yeni ReplicaSet seç + olaylar
-NEW_RS=$(kubectl -n "$NS" describe deploy "$DEPLOY" | grep -E 'NewReplicaSet|OldReplicaSets')
+# 2. En yeni ReplicaSet'i seç (creationTimestamp sort) + olaylar
+NEW_RS=$(kubectl -n "$NS" get rs -l app.kubernetes.io/name="$DEPLOY" \
+  --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}')
+echo "newest RS: $NEW_RS"
 kubectl -n "$NS" describe rs "$NEW_RS" | tail -30
 
 # 3. Yeni pod log + state

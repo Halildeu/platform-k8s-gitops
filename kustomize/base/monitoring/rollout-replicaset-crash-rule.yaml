@@ -63,42 +63,52 @@ spec:
               has Progressing=False for more than 15 minutes. This usually
               means progressDeadlineSeconds elapsed without enough ready
               replicas. Check rollout status, recent events, and image pulls.
-            runbook_url: "docs/runbooks/deploy-stability-window.md#rollout-stuck"
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/runbooks/deploy-stability-window.md#rollout-stuck"
 
         # ---- 2. KubeReplicaSetSplit ----
         #
         # Fires when a Deployment has >1 active ReplicaSet (spec.replicas>0)
-        # AND the newest of those active RSes has zero ready replicas for
-        # >10 minutes. This is the endpoint-admin 2026-05-13 fingerprint:
+        # AND at least one of those active RSes has zero ready replicas for
+        # >10 minutes. This catches the endpoint-admin 2026-05-13 fingerprint:
         # old RS stays Ready, new RS spins up but never reaches readiness,
         # service traffic keeps flowing on the stale spec.
         #
+        # Codex 019e257b review #1 — earlier draft multiplied
+        # `kube_replicaset_status_ready_replicas == 0` into spec.replicas,
+        # which silently returns 0 (PromQL `== 0` sample value is 0 without
+        # `bool` modifier). Switched to set-operator semantics so the inner
+        # predicate is presence-based, not arithmetic.
+        #
+        # Codex 019e257b review #2 — earlier annotation claimed "newest RS"
+        # but the PromQL did not select newest. Tightened wording to
+        # "an active RS with ready=0", which fingerprint requires anyway.
+        #
         # Why 10m: shorter than a typical multi-pod rollout but long enough
         # to ignore a normal "1 surge + 0 unavailable" transition.
-        #
-        # The kube_replicaset_owner join makes "deployment" labels usable
-        # in the summary; without it the alert only carries replicaset names.
         - alert: KubeReplicaSetSplit
           expr: |
             (
               count by (namespace, owner_name) (
-                kube_replicaset_owner{owner_kind="Deployment", namespace=~"platform-(test|prod)"}
+                kube_replicaset_owner{
+                  owner_kind="Deployment",
+                  namespace=~"platform-(test|prod)"
+                }
                 * on (namespace, replicaset)
                 group_left ()
                 (kube_replicaset_spec_replicas > 0)
               ) > 1
             )
             and on (namespace, owner_name) (
-              max by (namespace, owner_name) (
-                kube_replicaset_owner{owner_kind="Deployment", namespace=~"platform-(test|prod)"}
+              count by (namespace, owner_name) (
+                kube_replicaset_owner{
+                  owner_kind="Deployment",
+                  namespace=~"platform-(test|prod)"
+                }
                 * on (namespace, replicaset)
                 group_left ()
-                (
-                  (kube_replicaset_spec_replicas > 0)
-                  * on (namespace, replicaset)
-                  group_left ()
-                  (kube_replicaset_status_ready_replicas == 0)
-                )
+                (kube_replicaset_spec_replicas > 0)
+                and on (namespace, replicaset)
+                (kube_replicaset_status_ready_replicas == 0)
               ) > 0
             )
           for: 10m
@@ -107,15 +117,16 @@ spec:
             component: k8s-rollout
             cluster_scope: same-cluster
           annotations:
-            summary: "{{ $labels.namespace }}/{{ $labels.owner_name }} ReplicaSet split (newest ready=0) >10 min"
+            summary: "{{ $labels.namespace }}/{{ $labels.owner_name }} ReplicaSet split (active RS ready=0) >10 min"
             description: |
               Deployment {{ $labels.owner_name }} in {{ $labels.namespace }}
-              has multiple active ReplicaSets and the newest one has no ready
-              replicas for over 10 minutes. The old ReplicaSet is keeping
-              service traffic alive while the new spec silently crashes —
-              this is the endpoint-admin 2026-05-13 silent CrashLoopBackOff
-              fingerprint. Investigate pod logs of the newest ReplicaSet.
-            runbook_url: "docs/runbooks/deploy-stability-window.md#replicaset-split"
+              has multiple active ReplicaSets and at least one of them has
+              no ready replicas for over 10 minutes. The old ReplicaSet is
+              keeping service traffic alive while another spec silently
+              fails — this is the endpoint-admin 2026-05-13 silent
+              CrashLoopBackOff fingerprint. Investigate pod logs of the
+              newest active ReplicaSet.
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/runbooks/deploy-stability-window.md#replicaset-split"
 
         # ---- 3. KubePodCrashLooping ----
         #
@@ -144,4 +155,4 @@ spec:
               than 5 minutes. The drift detection timer + Gate 1d cover
               probe/spec drift causes; this alert catches any other crash
               cause (image pull, OOM, config error, dependency outage).
-            runbook_url: "docs/runbooks/deploy-stability-window.md#crashloopbackoff"
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/runbooks/deploy-stability-window.md#crashloopbackoff"
