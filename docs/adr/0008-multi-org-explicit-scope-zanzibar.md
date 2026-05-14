@@ -281,9 +281,59 @@ ayrı ADR (ADR-0009?) ile değerlendirilir.
 - [ ] D29 Zanzibar-ready üçüncü seviye disiplini korundu: synthetic
       allow + deny enforce kanıtlı (yeni tipler için negatif testler).
 
+## Observability — Metrics (plan §7 Adım 10 extension, 2026-05-14)
+
+> Codex thread `019e258f` iter-7,8,9,12 audit identification: ADR-0008 explicit-scope/observability bölümü olarak metric matrix. 10 metric (6 generic + 4 query-shape). Label cardinality budget + privacy note + alerting intent per metric.
+>
+> Plan ref: `docs/plan-reporting-refactor-2026-05-14.md` §7 Adım 10. Implementation PR ayrı (Prometheus exporter + Grafana dashboard + alert rules).
+
+### Generic Schema-Truth Metrics (Program 8 facade)
+
+| Metric | Type | Labels | Cardinality Budget | Privacy | Alerting Intent |
+|---|---|---|---:|---|---|
+| `schema_truth_lookup_total` | Counter | `service`, `tier` (`schema_service`\|`committed_snapshot`\|`registry_type`\|`miss`) | ~5×4=20 | OK | Tier 1 miss rate >5% → page |
+| `schema_truth_fallback_total` | Counter | `from_tier`, `to_tier` | ~12 | OK | Tier 2 → Tier 3 fallback >0.1% → warn |
+| `schema_truth_cache_hit_total` | Counter | `service`, `cache_type` (`caffeine`\|`snapshot`) | ~10 | OK | Cache hit rate <70% → warn |
+| `schema_truth_snapshot_age_days` | Gauge | `schema` | ~30 | OK | >7 days → warn, >30 days → page |
+| `schema_truth_snapshot_age_warn_total` | Counter | `schema`, `severity` (`warn`\|`page`) | ~60 | OK | Trend monitoring |
+| `schema_truth_cache_miss_burst_total` | Counter | `service` | ~5 | OK | Cold start / mass invalidation event |
+
+### Query-Shape Metrics — Adım 10 Extension
+
+> Plan §7 Adım 10 (Codex iter-1 audit identification: "Per-report query-shape audit / metrics"). **Label patlamasını engelle**: raw filter value, raw tenant id, SQL text label OLARAK YASAK.
+
+| Metric | Type | Labels | Cardinality Budget | Privacy | Alerting Intent |
+|---|---|---|---:|---|---|
+| `report_filter_count` | Histogram | `report_key` (registry-bounded) | ~50 reports × buckets (1,5,20,100,1000,10000) | OK — count only | >10000 filter → page (suspicious query) |
+| `report_join_count` | Gauge | `report_key` | ~50 | OK — static per report | Trend; static value rarely changes |
+| `report_exec_plan_hash` | Counter | `report_key`, `plan_hash` (PG `pg_stat_statements` queryid hash, bounded ~100 plans/report) | ~50×100=5000 | OK — hash, not raw SQL | New plan_hash > N/day → warn (regression detection) |
+| `report_tenant_cardinality` | Histogram | `tenant_size_bucket` (`small`<100\|`medium`<10000\|`large`≥10000) | **3 buckets** (NOT raw tenant_id) | **Privacy-safe** | Outlier large tenant >100k rows → warn |
+
+### Label Patlaması Engelleme Kuralları
+
+1. **Raw filter value YASAK**: filter value loglamak `cardinality explosion + PII exposure` riski. Sadece count (`report_filter_count`).
+2. **Raw tenant_id YASAK**: tenant_id directly label olamaz (binlerce tenant'lı sistem). Size bucket OK.
+3. **SQL text label YASAK**: full SQL string label olarak emitlenir → her unique query yeni time series. `plan_hash` (PG queryid bigint, hex string) OK.
+4. **Cardinality budget per service**: <100k unique label combinations/Prometheus instance; tier1+tier2+tier3 budget allocation.
+
+### Implementation (Ayrı PR, plan §7 Adım 10 doc+impl ayrımı)
+
+- **Backend**: `report-service/src/main/java/com/example/report/observability/` Micrometer `MeterRegistry` bean'leri + `ReportRuntimeMetrics` recording wrapper
+- **Grafana dashboard JSON**: `kustomize/base/monitoring/dashboards/report-runtime-metrics.json` (yeni dosya)
+- **Alert rules**: `kustomize/base/monitoring/PrometheusRule/report-runtime.yaml` (yeni dosya)
+- **Implementation effort**: 3-5 gün (Codex iter-12 önerisi)
+- **Cross-AI gate**: boundary-changing (metrics extension); Codex post-impl review zorunlu
+
+### Out-of-Scope (Bu ADR Revision)
+
+- Per-tenant query log (privacy bulwark; ayrı KVKK PR)
+- Per-user query attribution (audit'de zaten var, metric'te değil)
+- Real-time query streaming (Tempo OTel; ayrı sub-faz)
+
 ## References
 
 - Codex thread `019dc8b4` iter-1/2/3 (Faz 21.A + 21.1 + 21.3)
+- Codex thread `019e258f` iter-7,8,9,12 (Adım 10 metrics extension)
 - `decisions/topics/zanzibar-openfga.v1.json` (D-001..D-008 + C-008 final)
 - `bootstrap/local-fixtures/openfga/tuples.json` (current dev fixture)
 - `kustomize/base/apps/openfga/` (StatefulSet + migrate-job + ESO)
