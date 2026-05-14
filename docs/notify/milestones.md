@@ -47,22 +47,24 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 **Owner**: ops
 **Dependencies**: M1 (cluster stable)
 
-### M3 — 23.2 Production MVP Dar Closure (🔴 target 2026-06-08)
+### M3 — 23.2 Production MVP Dar Closure (🟡 ALMOST CLOSED — 2026-05-14 audit)
+
+**Status update 2026-05-14 (Session 49)**: 7/8 task done. Tek blocker R2 KVKK legal review (external dependency).
 
 **Definition of Done** (must-have #6 + #7 + #8 + #9 + #10 fully closed):
-- [ ] T1.1 23.2.A Preference API + critical bypass merged + LIVE
-- [ ] T1.2 23.2.B KVKK erasure + right-to-information merged + LIVE
-- [ ] T1.3 23.2.C Provider config rollback merged
-- [ ] T1.4 23.2.D Outage fallback bypass D43 merged + drill executed
-- [ ] T1.5 23.2.E Data classification policy merged
-- [ ] T1.6 23.2.F Abuse prevention guards merged
-- [ ] All Faz 23.2 kabul kriteri 🟢 (8/8)
-- [ ] Charter 23.2 marker 🟡 → 🟢
-- [ ] Risk register: R2 closed, R9 mitigated, R12 closed, R13 mitigated, R19 mitigated
+- [x] T1.1 23.2.A Preference API + critical bypass merged + LIVE — Session 41 acceptance evidence
+- [~] T1.2 23.2.B KVKK erasure + right-to-information merged + LIVE — **subscriber self-service LIVE**; admin erasure source-ready, R2 legal review external pending
+- [x] T1.3 23.2.C Provider config rollback merged — platform-backend PR #140 MERGED (2026-05-10, R12 mitigated FULL ACCEPTANCE evidence)
+- [x] T1.4 23.2.D Outage fallback bypass D43 merged + drill executed — first controlled drill 2026-05-10 (R9 mitigated)
+- [x] T1.5 23.2.E Data classification policy merged — 2026-05-10 LIVE acceptance
+- [x] T1.6 23.2.F Abuse prevention guards merged — Session 41 FULL ACCEPTANCE (R13+R19 mitigated)
+- [~] All Faz 23.2 kabul kriteri 🟡 (7/8 done, 1 external blocker)
+- [~] Charter 23.2 marker 🟢 source-ready + acceptance candidate — final legal closure R2 sonrası
+- [~] Risk register: R2 active (KVKK legal review), R9 🟢 mitigated, R12 🟢 mitigated, R13 🟢 mitigated, R19 🟢 mitigated
 
-**Blockers**: R2 (KVKK legal review), R9 (drill execution)
-**Owner**: dev + legal + ops
-**Dependencies**: M1 (cluster stable for testing)
+**Remaining blocker**: R2 (KVKK legal review external) — admin erasure compliance attestation. ETA 2026-05-25.
+**Owner**: legal (R2 closure)
+**Dependencies**: cluster stability dependency satisfied; M1 browser SSO/cutover closure tracked separately
 
 ### M4 — 23.3 SMS NetGSM Activation (🔴 target 2026-06-22)
 
