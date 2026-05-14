@@ -31,6 +31,8 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: endpoint-admin-service
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/part-of: platform
     spec:
       automountServiceAccountToken: false
       serviceAccountName: endpoint-admin-service
