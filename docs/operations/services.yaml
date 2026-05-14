@@ -101,7 +101,7 @@ services:
   - name: core-data-service
     repo: platform-backend
     description: Core master-data API (companies, projects, warehouses, branches)
-    jwt_validates: false  # legacy: gateway-validated, no own JWT decoder
+    jwt_validates: true  # D1.4 (2026-05-14): SECURITY_JWT_* envFrom reconcile + LocalJwtDecoderConfiguration programmatic decoder LIVE (was: legacy gateway-validated; Codex 019e2651 follow-up note)
     route_external: false
     workload_kind: Deployment
     runtime_class: spring-backend
