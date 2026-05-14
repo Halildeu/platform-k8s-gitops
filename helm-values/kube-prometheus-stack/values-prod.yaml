@@ -65,12 +65,26 @@ alertmanager:
             requests:
               storage: 1Gi
 
+    # V2.1 Ops-A — Perf alert receiver secret mount (Codex 019e267a spike absorb)
+    # ESO `perf-alertmanager-secrets` K8s Secret pod'a file mount edilir;
+    # Alertmanager config `slack_configs.api_url_file` ile path okur (env injection DEĞİL).
+    # Mount path: /etc/alertmanager/secrets/perf-alertmanager-secrets/SLACK_WEBHOOK_URL
+    secrets:
+      - perf-alertmanager-secrets
+      # D43 fallback secret (mevcut, audit only — alarm-receiver-bridge baseline path)
+      - alertmanager-fallback-secrets
+
   ingress:
     enabled: false                    # admin-only, kubectl port-forward ile ulaş
 
   # AlertManager → alarm_receiver bridge config (Codex Sprint A follow-up)
   # Observability alarm'ları drift detection alarm_receiver pipeline'ına bağlanıyor.
   # Bridge: alertmanager-bridge K8s service (kustomize/base/monitoring/alertmanager-bridge/).
+  #
+  # V2.1 Ops-A extension (Codex 019e267a spike AGREE_AFTER_REVISIONS):
+  # `team=perf` veya `alert_class=federation-smoke` matched alert'ler perf-alerts-slack
+  # receiver'a (#perf-alerts kanalı) yönlendirilir; throttle group_interval: 5m,
+  # repeat_interval: 6h (alarm fatigue azaltma).
   config:
     global:
       resolve_timeout: 5m
@@ -81,6 +95,16 @@ alertmanager:
       repeat_interval: 4h
       receiver: 'alarm-receiver-bridge'
       routes:
+        # V2.1 Ops-A — Perf alerts → Slack receiver (team=perf matcher)
+        # Codex 019e267a tur-1 R1 absorb (throttle + dedupe + resolved lifecycle).
+        - matchers:
+            - team = "perf"
+          receiver: 'perf-alerts-slack'
+          group_by: ['alertname', 'namespace']
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 6h
+          continue: false
         # Critical: page immediately, no grouping
         - matchers:
             - severity = "critical"
@@ -97,6 +121,23 @@ alertmanager:
           - url: 'http://alertmanager-bridge.monitoring.svc.cluster.local:9093/alert'
             send_resolved: true
             max_alerts: 50
+      # V2.1 Ops-A — Perf alerts Slack receiver (Codex 019e267a spike absorb)
+      # api_url_file: ESO `perf-alertmanager-secrets` Secret → file mount;
+      # owner Vault `kv/platform/perf-alertmanager.SLACK_WEBHOOK_URL` yazımı sonrası
+      # ESO 1h refresh-interval içinde Secret oluşturur; Alertmanager pod restart
+      # gerekmez (file mount auto-update kube-prometheus-stack 84.x pattern).
+      - name: 'perf-alerts-slack'
+        slack_configs:
+          - api_url_file: /etc/alertmanager/secrets/perf-alertmanager-secrets/SLACK_WEBHOOK_URL
+            channel: '#perf-alerts'
+            send_resolved: true
+            title: 'V2.1 Perf Alert | {{ .GroupLabels.alertname }}'
+            text: |
+              *Status:* {{ .Status | toUpper }}
+              *Severity:* {{ .CommonLabels.severity }}
+              *Namespace:* {{ .CommonLabels.namespace | default "n/a" }}
+              *Description:* {{ range .Alerts }}{{ .Annotations.description }}{{ end }}
+              *Runbook:* {{ range .Alerts }}{{ .Annotations.runbook_url | default "—" }}{{ end }}
     inhibit_rules:
       # Critical inhibits warning of same alertname
       - source_matchers:
