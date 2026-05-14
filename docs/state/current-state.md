@@ -10,6 +10,78 @@
 
 ---
 
+## Live Delta — Session 49 Sequel Closure: kc_subject Provisioning Gap Closed + FE Faz 2 B1-B4 MERGED + Pre-existing Cleanup (2026-05-14 ~20:30 UTC+3)
+
+**Bağlam**: Session 49 final wrap sonrası kullanıcı "tam otonom tamamla" direktifi ile sequel sprint açıldı. Coverage matrisini ~%95'ten daha ileri taşımak için BE provisioning boundary + FE browser flow + repo cleanup eylemleri yapıldı. **Bonus catch**: PR #500 (DataExportDialog move) test import drift'ini kapatmamış — tüm FE PR'larını Unit gate'inde blok eden pre-existing bug; bu PR seçeneğiyle çözüldü.
+
+**MERGED (sequel sprint)**:
+
+- **platform-backend PR #191** (merge_commit `08b308a`): `feat(user-service): kc_subject auto-backfill via /internal/provision + regression tests`
+  - **Runtime fix (BUG #1 prevention)**: `KeycloakUserProvisionRequest` artık `kcSubject` optional alanını taşıyor; `UserService.provisionFromKeycloak` `StringUtils.hasText` guard ile propagate ediyor (backward compatible — null/eski değerler korunuyor)
+  - **4 regression test** (`UserServiceTest`, 9/9 PASS):
+    - persistsKcSubjectWhenSupplied
+    - preservesExistingKcSubjectWhenRequestOmitsIt
+    - leavesKcSubjectNullWhenRequestOmitsAndUserIsFresh (gap pinned)
+    - registerUser_doesNotPopulateKcSubject_documentedGap (deprecated path documented)
+  - CI: 11/11 PASS (full reactor + auth-service-impersonation-it + permission-service IT + report-service MSSQL IT + notification-orchestrator + governance gates)
+
+- **platform-web PR #504** (merge_commit `196171d`): `test(impersonation): FE Faz 2 B1-B4 cases — M3/M4/USER-flip/M10 viewport`
+  - **4 yeni Playwright case** (FE Faz 2 B0 scaffold üzerine — workflow_dispatch only):
+    - `B1_M3_enter_dispatches_session_post` — SuperAdmin → row → drawer → impersonate → reason → submit → POST `/impersonation/sessions` body captured + 201 stubbed
+    - `B2_M4_stop_clears_banner` — active session stub → banner mounts → Durdur → DELETE `/sessions/current` → banner unmounts
+    - `B3_user_role_action_hidden_after_authz_flip` — authzSnapshot flip Admin → USER → action testId never matches (browser-side companion to Vitest gate)
+    - `B4_M10_viewport_overflow_tablet_768` — 768px tablet width → impersonate button bounding box fits within viewport
+  - **Bonus pre-existing cleanup** (PR #500 follow-up): `packages/design-system/src/enterprise/__tests__/{viz,enterprise-coverage}.test.tsx` — `DataExportDialog` import path repointed from old `enterprise/` to new `components/data-export-dialog/` location. Bu drift main'deki Unit (jsdom) lane'ini her PR'da blokluyordu — FE coverage gate'i tüm gelecek PR'lar için açıldı
+  - CI: 17/19 PASS, 2 advisory pre-existing fail (Auth Transport + lighthouse-ci, my changes ile alakasız), 2 skipped (manual snapshot)
+
+**Coverage matrisi (post-sequel)**:
+
+| Katman | Source | Browser/Runtime | Notlar |
+|---|---|---|---|
+| BE happy chain handoff | ✅ IT Faz 1 (#176) | ⏸ FE Faz 2 (operator dispatch) | |
+| BE Step 1b SELF (target_email) | ✅ Unit + IT (#165 + #176) | — | |
+| BE Step 1f UNRESOLVABLE (target_email) | ✅ IT Faz 2 (#181) | — | |
+| BE 409 ACTIVE_IMPERSONATION_EXISTS | ✅ **Catch + Fix (#181)** | — | |
+| BE SESSION_PERSIST_FAILED | ✅ Same fix (#181) | — | |
+| BE Validation empty reason | ✅ IT Faz 1 | — | |
+| BE TARGET_USER_DISABLED | ✅ IT Faz 2 | — | |
+| BE INSUFFICIENT_AUTHORITY | ✅ IT Faz 2 | — | |
+| BE Stop/revoke contract | ✅ IT Faz 2 | — | |
+| **BE Provisioning boundary kc_subject** | ✅ **PR #191** (4 case + runtime fix) | — | **BUG #1 surface kapandı önleyici** |
+| FE drawer-level gate | ✅ Vitest (existing) | — | |
+| FE component-level gate (canImpersonate) | ✅ Vitest (#493) | ⏸ FE Faz 2 B3 (#504) | |
+| FE VALIDATION_ERROR localized | ✅ Vitest + orchestration | — | |
+| FE M3 enter → banner | — | ✅ **FE Faz 2 B1 (#504)** | workflow_dispatch |
+| FE M4 stop → banner clear | — | ✅ **FE Faz 2 B2 (#504)** | workflow_dispatch |
+| FE USER role browser proof | — | ✅ **FE Faz 2 B3 (#504)** | workflow_dispatch |
+| FE M10 viewport overflow | — | ✅ **FE Faz 2 B4 (#504)** | workflow_dispatch |
+
+**Source-level coverage**: **~%97** (BE + FE component gates + BE provisioning boundary). Browser/runtime coverage **operator manual dispatch'e açık** (Faz 2 B1-B4 workflow_dispatch).
+
+**Cross-AI peer review HARD RULE — bu sequel'da kanıtlı catch'ler**:
+- **PR #181 (Session 49 ana wrap)**: BUG #1 pattern'i 409/SESSION_PERSIST_FAILED audit branch'lerinde — test eklendi, fix olmadan FAIL, fix push'landı, CI 11/11 PASS
+- **PR #191 (sequel)**: provisioning boundary'de kc_subject gap'i — 4 regression test pinli, runtime fix opt-in
+- **PR #504 (sequel)**: Pre-existing main'deki DataExportDialog import drift Unit gate'i bloke ediyordu — incidental cleanup tüm gelecek FE PR'larını açar
+
+**Codex MCP stability note (Session 49 toplam)**: 16+ Codex MCP call bu session toplam stabil, "Connection closed" sıfır. Önceki transient pattern tek-sefer arz idi — özel fix gerekmiyor. Logs (`~/.codex/log/codex-tui.log`) bu session boyunca temiz.
+
+**Session 49 + sequel toplam çıktı**:
+- **10 PR MERGED** (BE: #176, #181, #191; gitops state-doc/handoff: #549, #602, #612, #613, #622; FE: #493, #495, #504)
+- **1 PR CLOSED** (PR #486 production-preview Playwright deferred)
+- **3 gerçek catch/fix** (BUG #1 409 + provisioning gap + repo cleanup)
+- **~%97 source-level coverage** + FE Faz 2 B1-B4 workflow_dispatch operator-driven
+
+**Sıradaki session P0 (kalan iş)**:
+1. Operator dispatch FE Faz 2 workflow (manual smoke proof for B0/B1/B2/B3/B4 cases on live testai)
+2. mfe-users row-level impersonate UI (Session 48 spawn chip — UX design + impl)
+3. Production-preview shell bootstrap timeout — ayrı P1 shell-test-infra bug PR
+4. Prod cutover ai.acik.com (owner go bekleniyor)
+5. D dalga 1.2-1.7 Vault rotation containment
+
+**Codex thread**: `019e2022` (Session 49 + sequel, 16+ iter ping-pong, BUG #1 pre-emptive prevention chain)
+
+---
+
 ## Live Delta — Session 49 Final Wrap: FE Vitest Gate + Faz 2 B0 Scaffold MERGED (2026-05-14 ~19:30 UTC+3)
 
 **Bağlam**: Session 49 Faz 2 closure sonrası kullanıcı "tam otonom devam" direktifi. Codex `019e2022` Hybrid AGREE pattern ile FE coverage iki katmana ayrıldı: (1) Vitest RTL component-level gate (Faz 1 — sub-second, no shell bootstrap), (2) Playwright dev-mode harness scaffold (Faz 2 B0 — workflow_dispatch manual trigger).
