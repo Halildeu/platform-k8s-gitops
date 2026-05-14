@@ -10,7 +10,7 @@
 
 ---
 
-## Live Delta — Session 49 Faz 1 Closure: BE WireMock IT MERGED + FE Playwright Faz 1 CI Gate (2026-05-14 ~17:30 UTC+3)
+## Live Delta — Session 49 Faz 1 Progress: BE WireMock IT MERGED + FE Playwright CI Iterating (2026-05-14 ~17:30 UTC+3)
 
 **Bağlam**: Session 47 Bug Wave handoff (PR #549) tamamlandı, sonra Codex `019e2022` strategy AGREE'd "faz fazlı pattern" ile spawn'd 2 büyük scope (BE WireMock IT 8-case + FE Playwright 5-case) Faz 1 olarak başlatıldı.
 
@@ -31,7 +31,8 @@
   - `action_visible_for_super_admin`: Admin → /admin/users → mocked row → drawer → `impersonate-open-btn` visible → click opens `impersonate-reason` textarea
   - `action_hidden_for_user_role`: USER profile → drawer (or page) present but `impersonate-open-btn` testId NEVER matches
   - REVISE-2 absorb: `seedSuperAdminSnapshot(page, boolean)` shell Redux `auth/setKeycloakSession` dispatch with `authzSnapshot.superAdmin` (BLOCKER #1 — gate reads from store not local permissions array), PR-time CI lane `.github/workflows/impersonation-pw-faz1.yml` builds mfe-shell + vite preview + runs chromium spec (BLOCKER #2 — no actual run proof without CI), USER case stubs user list + tries to open drawer for explicit-state proof (REVISE #3 — determinism)
-  - CI Monitor altında: `Impersonation Faz 1 spec (chromium)` lane in-progress; auxiliary gates (CSSOM Canary/Full, Token Drift, Visual Invariant Matrix, gitleaks, osv-scan, pnpm install + lint) already PASS
+  - CI durumu: ilk run impersonation lane FAIL ettı (`page.waitForFunction(__shellStore)` timeout, production preview gate'i kapalı); iki iter ile düzeltildi: `AppProviders.tsx` __shellStore expose koşulu genişletildi (NODE_ENV !== 'production' OR VITE_AUTH_CONTRACT_E2E=1 OR VITE_AUTH_MODE=permitAll + VITE_ENABLE_FAKE_AUTH=1) + Vite client bundle'da process.env inline edilmediği için `readEnv` helper'ı window.__env__ fallback ile yazıldı (commits `5ead70a` + `38ca70b`). Yeni CI run iterating.
+  - Auxiliary gates green: Visual Invariant Matrix (Chromium hard gate), CSSOM Canary/Full, Token Drift, gitleaks, osv-scan, pnpm install + lint, Unit (jsdom), Web Test Gate (aggregator), CodeQL, Analyze (javascript-typescript), size-limit, route budget + bundle taxonomy
   - Cross-AI peer review HARD RULE: Claude implementer + Codex async reviewer (BLOCKER + REVISE → ready_to_merge=false initially → REVISE-2 absorbed)
 
 **Spawn task chips** (Faz 2 — ayrı session):
