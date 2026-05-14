@@ -10,6 +10,64 @@
 
 ---
 
+## Live Delta — Session 49 Sequel-5: FE Faz 2 Root Cause Pinpointed — React Root Mount Crash (Body Empty, 2026-05-14 ~23:15 UTC+3)
+
+**Bağlam**: Sequel-4 sonrası kullanıcı "dispatch tekrar" mandate'i. PR #511 harness readiness helper + diagnostic dump MERGED edildi (Codex `019e27bf` finding #1+#2 absorb). Yeni dispatch run **25881861854** tetiklendi — readiness helper'ın diagnostic dump fonksiyonu Codex'in öngördüğü "concrete root cause signal" üretmesi bekleniyordu.
+
+**Diagnostic dump (smoking gun)**:
+
+```json
+{
+  "href": "http://127.0.0.1:3000/admin/users",
+  "readyState": "complete",
+  "bodySnippet": "",
+  "shellStore": "undefined",
+  "authContractProbe": "undefined",
+  "envKeys": ["VITE_ENABLE_FAKE_AUTH", "AUTH_MODE", "VITE_AUTH_MODE", "VITE_AUTH_CONTRACT_E2E", "NODE_ENV"],
+  "envViteAuthMode": "permitAll",
+  "envFakeAuth": "1",
+  "envContractE2e": "1"
+}
+```
+
+**Pinpointed root cause**: `bodySnippet: ""` + `readyState: "complete"` → bundle yüklendi, env doğru set'li, ama **React root document.body'ye render etmedi**. Codex'in 5 hipotezi içinden bu **"early bootstrap exception"** veya **"React root mount crash"** layer'ına işaret ediyor.
+
+Olası alt-layer'lar (operator iter scope'a daraltıldı):
+1. **Module Federation remote preload deadlock** — shell host bundle çalıştı ama remoteEntry chunks (mfe-users, mfe-design-system) load edemiyor, React render edemiyor
+2. **Bootstrap.tsx early exception** — `initRuntimeErrorMonitor`, `console.warn`/`console.debug` override, veya `installAuthContractE2eProbe` exception → React app crash
+3. **AppProviders unhandled error** — render içinde safe env reader veya store dispatch throw
+4. **Vite dev SPA history fallback eksik** — `/admin/users` direct navigate index.html serve edilmiyor (ama href doğru, readyState complete olduğu için olası değil)
+
+**Bu artık operator-driven local repro gerek**:
+- `pnpm install && pnpm start` veya `pnpm dev:shell`
+- Chrome devtools → console error log + source map
+- React devtools → AppProviders mount check
+- Network tab → remoteEntry.js status'ları
+
+**Sequel-5 value**: PR #511 ile codex'in öngördüğü "concrete root cause signal" deterministically üretildi. Önceki sequel'larda opaque "No store surface" iken, şimdi **layer pinpointed**: React root mount. Bu, gelecek operator iter'inin çok dar scope'lu olmasını sağlar.
+
+**Cross-AI peer review HARD RULE — 6. catch (running total)**:
+
+Codex exec audit'inde tespit ettiği "spec readiness race" düzeltmesi (PR #511) **çalışıyor** — opaque timeout artık concrete diagnostic dump'a dönüştü. Bu **agent-fix-then-operator-iter** pattern'in canlı kanıtı: agent test infra fix yapar, operator local repro ile feature root cause çözer.
+
+**Session 49 + sequel-5 totals**:
+- **17 PR MERGED** (Session 47 handoff + Session 49 main 8 + Sequel-1/2/3/4/5 docs + PR #511 harness)
+- **1 PR CLOSED** (#486)
+- **6 cross-AI catches** (BUG #1 audit + kc_subject + DataExportDialog drift + Vite env limitation + Codex exec audit 6 findings + spec readiness pinpoint)
+- **Codex MCP stability**: ~25 iter cycle, sıfır connection closed
+- **Coverage dili**: source regression coverage high; browser-flow gap pinpointed (React mount), live acceptance gates open
+
+**Sıradaki session P0 (revize — pinpointed)**:
+1. **Operator local repro**: pnpm dev + Chrome devtools → React root mount layer (Bootstrap.tsx / AppProviders / remoteEntry)
+2. **Audit invariant decision** — 9+ branch global fix (spawn chip aktif)
+3. **Live testai E2E retest** — fresh Playwright persona
+4. **Prod cutover** — owner go
+5. **D dalga 1.2-1.7** Vault rotation
+
+**Codex thread chain final**: `019e2022` → `019e27bf` (P1 fix + fresh-context audit) → next session: React mount RCA + audit invariant decision
+
+---
+
 ## Live Delta — Session 49 Sequel-4 Codex Exec Fresh-Context Audit + Overclaim Cleanup (2026-05-14 ~22:45 UTC+3)
 
 **Bağlam**: Sequel-3 honest closure sonrası kullanıcı "codex ile istişre et codex exec ile etki bağlamdan dolayı yanılmasın" direktifi. Önceki Codex MCP thread context bias'ından bağımsız doğrulama için `codex exec` CLI fresh session ile audit yapıldı.
