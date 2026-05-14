@@ -1,101 +1,126 @@
 # Runbook — D1.1a auth-service Vault Password Rotation Containment
 
-> Codex 019e234e + 019e256f Session 48/49 strategic consultation — D dalga 1.1 containment.
-> Plus boundary: agent vs operator authority per CLAUDE.md HARD RULE Pre-Production Full Authority + ADR-0011 §2.5.
+> Codex 019e234e + 019e256f + 019e258a Session 48/49 strategic consultation — D dalga 1.1 containment.
+> Authority boundary: ADR-0010 §2.5 + ADR-0011 §2.3 + CLAUDE.md HARD RULE Pre-Production Full Authority + Kullanıcı Aktif Credential.
 
 ## Bağlam
 
-2026-05-13 Session 48 supplement'inde tespit edildi: auth-service test cluster pod inline `SPRING_DATASOURCE_PASSWORD` ile çalışıyor (hash `6f765b6d1cc2317f`); Vault canonical secret farklı hash (`808bc9ef23cfa266`). Sibling servisler (user-service, permission-service) Vault canonical ile uyumlu.
+2026-05-14 Session 48 supplement'inde tespit edildi: auth-service test cluster pod inline `SPRING_DATASOURCE_PASSWORD` ile çalışıyor (hash `6f765b6d1cc2317f`); Vault canonical secret farklı hash (`808bc9ef23cfa266`). Sibling servisler (user-service, permission-service) Vault canonical ile uyumlu.
 
 **Risk:** Inline override aktif; eğer kaldırılırsa envFrom Secret'tan farklı password gelir → PG auth fail → CrashLoop. Plus ConfigMap'te `SPRING_JPA_HIBERNATE_DDL_AUTO=update + SPRING_FLYWAY_ENABLED=false` schema mutation tehlikesi (inline `none` ile override edilmiş).
 
 ## Authority Boundary
 
+ADR-0011 §2.3'e göre **credential material read/write** user-approval gate'i ister; agent-yapısal kapsamı dışında. CLAUDE.md HARD RULE Pre-Production Full Authority kubectl/system credential ops'i kapsar; **plaintext credential extraction veya Vault write** kapsamı dışında.
+
 | Step | Aktör | Sebep |
 |---|---|---|
-| 1. Inline password değerini çıkar (kubectl jsonpath) | **Agent** | Read-only system credential metadata; CLAUDE.md Pre-Production Full Authority kapsamı |
-| 2. Plaintext password'ü Vault'a yaz | **Operator** | Plaintext credential handling + Vault root token; ADR-0011 §2.5 user-approval gate |
-| 3. Vault root token / unseal material handling | **Operator** | Codex 019e256f: "agent'ın root token üretmesi/unseal yoluna girmesine izin verme" |
-| 4. ESO force-sync (kubectl annotate) | **Agent** | System credential ops; kubectl-level operation |
-| 5. Secret hash parity verify | **Agent** | Read-only verification (hash prefix kanıt, plaintext değil) |
+| 1. Inline password value extraction (plaintext read) | **Operator** | Plaintext credential material handling — ADR-0011 §2.3 user-approval gate |
+| 2. Plaintext password'ü Vault'a yaz | **Operator** | Plaintext credential + Vault root token; ADR-0010 §2.5 Vault credential ops gate |
+| 3. Vault root token / unseal material handling | **Operator** | Codex 019e256f §3: "agent'ın root token üretmesi/unseal yoluna girmesine izin verme" |
+| 4. ESO force-sync (kubectl annotate) | **Agent** | System credential ops; kubectl-level, plaintext yok |
+| 5. Secret hash parity verify | **Agent** | Read-only hash prefix kanıt, plaintext yok |
 | 6. Overlay ConfigMap safety hold PR | **Agent** | GitOps PR akışı; HARD RULE cross-AI peer review |
 | 7. Selective apply auth-service | **Agent** | Pre-prod Full Authority kapsamı |
 | 8. Rollout smoke + browser/API verify | **Agent** | Standard verification |
+| 9. Drift detector re-run | **Agent** | Read-only |
 
-## Operatör Adımları (Hidden Shell)
+**Hidden shell protokolü:** Operator adımları **agent transcript dışında** çalıştırılır. Agent'a yalnızca **hash prefix (16 char)** + status sinyali verilir; plaintext password, dosya yolu, veya başka credential material agent transcript'ine düşmez.
 
-Bu kısım kullanıcı/operatörün **agent context dışında** çalıştırması gereken adımlardır. Plaintext password agent transcript'inde, log'da veya commit history'de görünmemeli.
+## Operatör Adımları (Hidden Shell, agent context dışı)
 
-### Adım 1: Inline password'ü çıkar
+### Adım 1: Inline password'ü güvenli geçici dosyaya çıkar
 
 ```bash
-# Operatör staging-sw'da:
-ssh halil@staging-sw 'kubectl --context k3d-test -n platform-test get deploy auth-service \
-  -o json | jq -r ".spec.template.spec.containers[0].env[] | \
-  select(.name==\"SPRING_DATASOURCE_PASSWORD\") | .value"' \
-  | head -c 100 > /tmp/auth-pw.tmp
-# hash önizleme (plaintext değil):
-sha256sum /tmp/auth-pw.tmp | head -c 16
+# Operatör staging-sw shell'de (agent context dışında):
+umask 077
+TMP=$(mktemp /dev/shm/auth-pw.XXXXXX)
+trap 'shred -u "$TMP" 2>/dev/null || rm -f "$TMP"' EXIT
+
+# jq -rj newline eklemez; head -c truncate riski; tam string al
+kubectl --context k3d-test -n platform-test get deploy auth-service \
+  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SPRING_DATASOURCE_PASSWORD")].value}' \
+  > "$TMP"
+
+# Hash prefix önizleme (plaintext değil; sadece prefix agent'a paylaşılacak)
+HASH_PREFIX=$(sha256sum "$TMP" | head -c 16)
+echo "inline-password-hash-prefix: $HASH_PREFIX"
 # Beklenen: 6f765b6d1cc2317f
 ```
 
 ### Adım 2: Vault'a yaz
 
-Vault unseal + temp token. Operatör shell:
 ```bash
-# Eğer Vault sealed ise unseal (3 unseal key gerekli):
+# Vault unseal gerekirse (operatör shamir unseal keys ile)
 docker exec -it platform-vault-test vault operator unseal <key1>
 docker exec -it platform-vault-test vault operator unseal <key2>
 docker exec -it platform-vault-test vault operator unseal <key3>
 
-# Root login (init token):
+# Root login (init token; operatör elinde olmalı)
 docker exec -it platform-vault-test vault login <root-token>
 
-# Password patch:
-docker exec -i platform-vault-test vault kv patch \
-  kv/platform/auth-service db_password=@/tmp/auth-pw.tmp
+# Patch — container'a stdin ile pipe (host /tmp ↔ container /tmp eşleşmiyor)
+cat "$TMP" | docker exec -i platform-vault-test sh -c 'vault kv patch \
+  kv/platform/auth-service db_password=-'
+# Vault CLI `-` ile stdin'den value okur; `@file` host path container'da yok
 
-# Verify (hash prefix only):
+# Verify (hash prefix only — plaintext değil)
 docker exec platform-vault-test vault kv get -field=db_password \
   kv/platform/auth-service | sha256sum | head -c 16
-# Beklenen: 6f765b6d1cc2317f (inline ile match)
-
-# Cleanup:
-rm /tmp/auth-pw.tmp
+# Beklenen: 6f765b6d1cc2317f (inline ile match — agent'a iletilecek prefix)
 ```
 
 ### Adım 3: Onay sinyali
 
-Operatör adımları tamamlayıp agent'a şunu söyler:
-- "Vault rotation tamamlandı"
-- "Hash parity PASS (16 char prefix: 6f76b6d1cc2317f)"
+Operatör adımları tamamlayıp agent'a şunu iletir (chat/Slack/komentar):
 
-Agent bundan sonra Adım 4'ten devam eder.
+> Vault rotation tamamlandı. Hash parity PASS — prefix `6f765b6d1cc2317f` (Vault canonical = live inline).
+
+Plaintext password, dosya yolu, Vault token agent transcript'ine asla yazılmaz.
+
+`trap` cleanup tmpfs file'i kapanışta shred eder.
 
 ## Agent Adımları
 
 ### Adım 4: ESO force-sync
 
 ```bash
-kubectl --context k3d-test -n platform-test annotate externalsecret \
-  auth-service-secrets force-sync="$(date +%s)" --overwrite
-sleep 5
-# Doğrula:
-kubectl --context k3d-test -n platform-test get externalsecret auth-service-secrets \
-  -o jsonpath='{.status.refreshTime}{"\n"}{.status.conditions[0].status}{"\n"}'
-# Beklenen: yeni refreshTime + status: "True"
+# Pre-state snapshot (audit için resourceVersion)
+PRE_RV=$(ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  get secret auth-service-secrets -o jsonpath='{.metadata.resourceVersion}'")
+echo "PRE_RV=$PRE_RV"
+
+# Force sync annotate
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test annotate \
+  externalsecret auth-service-secrets force-sync=\"\$(date +%s)\" --overwrite"
 ```
 
-### Adım 5: Hash parity verify (agent-side)
+### Adım 5: Hash parity verify (hash-authoritative polling)
+
+`scripts/ops/rotate-pg-vault-user.sh` pattern'ini takip eder: resourceVersion bump audit, hash karşılaştırma authoritative.
 
 ```bash
-ssh halil@staging-sw 'kubectl --context k3d-test -n platform-test \
-  get secret auth-service-secrets -o jsonpath="{.data.SPRING_DATASOURCE_PASSWORD}" \
-  | base64 -d | sha256sum | head -c 16'
-# Beklenen: 6f765b6d1cc2317f
+EXPECTED="6f765b6d1cc2317f"  # operatörden gelen prefix
+DEADLINE=$(($(date +%s) + 120))
+while [[ $(date +%s) -lt $DEADLINE ]]; do
+  CUR_HASH=$(ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+    get secret auth-service-secrets \
+    -o jsonpath='{.data.SPRING_DATASOURCE_PASSWORD}' | base64 -d | \
+    sha256sum | head -c 16")
+  CUR_RV=$(ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+    get secret auth-service-secrets -o jsonpath='{.metadata.resourceVersion}'")
+  if [[ "$CUR_HASH" == "$EXPECTED" ]]; then
+    echo "PASS — hash parity (resourceVersion $PRE_RV → $CUR_RV)"
+    break
+  fi
+  sleep 3
+done
+if [[ "$CUR_HASH" != "$EXPECTED" ]]; then
+  echo "FAIL — hash parity not reached in 120s; CUR=$CUR_HASH EXPECTED=$EXPECTED"
+  echo "  inspect: kubectl describe externalsecret auth-service-secrets -n platform-test"
+  exit 1
+fi
 ```
-
-Eşleşmezse: ESO sync gecikmeli olabilir; 30s bekle + retry. 2 retry sonrası fail ise operator escalation.
 
 ### Adım 6: Overlay ConfigMap safety hold PR
 
@@ -103,36 +128,40 @@ Hash parity PASS sonrası agent şu PR'ı açar:
 
 **Branch**: `codex/d1.1a-auth-service-config-safety-hold`
 
-**Değişiklikler**:
+**Değişiklikler:**
 - `kustomize/overlays/test/kustomization.yaml` auth-service ConfigMap patch:
-  - `SPRING_JPA_HIBERNATE_DDL_AUTO=none` (live effective ile uyum — geçici safety hold)
-  - `SPRING_FLYWAY_ENABLED=false` (live effective ile uyum)
-  - Yorum: "Codex 019e234e iter-5 — temporary safety hold; D1.1b restoration (`validate + Flyway=true`) Flyway state kanıtı sonrası"
+  - `SPRING_JPA_HIBERNATE_DDL_AUTO: "none"` (live effective ile uyum — geçici safety hold)
+  - `SPRING_FLYWAY_ENABLED: "false"` (live effective ile uyum)
+  - Inline yorum: "Codex 019e234e iter-5 — temporary safety hold; D1.1b restoration (`validate + Flyway=true`) Flyway state kanıtı sonrası"
 
-**Cross-AI peer review** zorunlu (Claude impl → Codex review). VERDICT AGREE sonrası selective apply.
+**Cross-AI peer review** zorunlu (Claude impl ↔ Codex review). VERDICT AGREE sonrası selective apply.
 
 ### Adım 7: Selective apply
 
 ```bash
-# Render auth-service deployment'ı izole et
+# Render auth-service deployment + ConfigMap'i izole et
 kubectl kustomize kustomize/overlays/test > /tmp/test-overlay.yaml
 python3 -c "
 import yaml
 docs = list(yaml.safe_load_all(open('/tmp/test-overlay.yaml')))
+out = {'cm': None, 'deploy': None}
 for d in docs:
     if d and d.get('kind') == 'Deployment' and d.get('metadata',{}).get('name') == 'auth-service':
-        yaml.safe_dump(d, open('/tmp/auth-deploy.yaml', 'w')); break
+        out['deploy'] = d
     if d and d.get('kind') == 'ConfigMap' and d.get('metadata',{}).get('name') == 'auth-service-config':
-        yaml.safe_dump(d, open('/tmp/auth-cm.yaml', 'w'))
+        out['cm'] = d
+if out['cm']: yaml.safe_dump(out['cm'], open('/tmp/auth-cm.yaml','w'))
+if out['deploy']: yaml.safe_dump(out['deploy'], open('/tmp/auth-deploy.yaml','w'))
 "
 
-# Apply
-scp /tmp/auth-deploy.yaml halil@staging-sw:/tmp/
-scp /tmp/auth-cm.yaml halil@staging-sw:/tmp/
-ssh halil@staging-sw "kubectl --context k3d-test -n platform-test apply -f /tmp/auth-cm.yaml -f /tmp/auth-deploy.yaml"
+# Apply ConfigMap önce (Deployment env değişimi rollout tetikler)
+scp /tmp/auth-cm.yaml /tmp/auth-deploy.yaml halil@staging-sw:/tmp/
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test apply \
+  -f /tmp/auth-cm.yaml -f /tmp/auth-deploy.yaml"
 
 # Rollout
-ssh halil@staging-sw "kubectl --context k3d-test -n platform-test rollout status deploy/auth-service --timeout=180s"
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test rollout \
+  status deploy/auth-service --timeout=300s"
 ```
 
 ### Adım 8: Smoke
@@ -144,14 +173,14 @@ ssh halil@staging-sw "kubectl --context k3d-test -n platform-test get pod \
 # Beklenen: 1/1 Running, restartCount=0
 
 # Inline env temizliği doğrula
-ssh halil@staging-sw "kubectl --context k3d-test -n platform-test get deploy auth-service \
-  -o jsonpath='{.spec.template.spec.containers[0].env[*].name}'"
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test get deploy \
+  auth-service -o jsonpath='{.spec.template.spec.containers[0].env[*].name}'"
 # Beklenen: SPRING_PROFILES_ACTIVE JAVA_TOOL_OPTIONS (sadece 2 inline env)
 
 # Log check
-ssh halil@staging-sw "kubectl --context k3d-test -n platform-test logs deploy/auth-service \
-  --tail=50 | grep -E 'ERROR|Exception|Hibernate|Flyway|HikariPool'"
-# Beklenen: No ERROR/Exception; HikariPool-1 Started successfully; no Hibernate validate/update warnings
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test logs \
+  deploy/auth-service --tail=80 | grep -E 'ERROR|Exception|Hibernate|Flyway|HikariPool'"
+# Beklenen: HikariPool-1 Started successfully; ZERO Hibernate update/validate warnings; ZERO Flyway exception
 
 # Stability window
 ./scripts/deploy/gate-stability-window.sh \
@@ -175,6 +204,18 @@ ssh halil@staging-sw "cd /home/halil/platform/platform-k8s-gitops && \
 # Beklenen: 7→6 P1 (auth-service env drift düşmeli)
 ```
 
+## D1.1b Entry Gate
+
+D1.1b restoration başlamadan önce aşağıdaki D1.1a kapanış şartları sağlanmış olmalı:
+
+- ☑️ Adım 5 hash parity PASS
+- ☑️ Adım 7 rollout success
+- ☑️ Adım 8 stability window PASS (180s, restartCount=0)
+- ☑️ Adım 9 runtime drift detector 7→6 P1 (auth-service env drift kapandı)
+- ☑️ Browser smoke testai admin login + `/api/v1/authz/me` 200
+
+Bu şartlar tutturulmadan D1.1b (DDL_AUTO=validate + Flyway=true geçişi) başlatılmaz.
+
 ## D1.1b Restoration (Ayrı PR, Daha Sonra)
 
 Bu runbook sadece D1.1a containment'i kapsar. D1.1b kapsamı:
@@ -182,42 +223,72 @@ Bu runbook sadece D1.1a containment'i kapsar. D1.1b kapsamı:
 - `SPRING_JPA_HIBERNATE_DDL_AUTO=validate` + `SPRING_FLYWAY_ENABLED=true` geçişi
 - Gerekirse V-series migration cleanup
 
-Codex thread sırada açılacak D1.1b başlangıcında.
+Plan-time consultation D1.1b başlangıcında ayrı Codex thread'de.
 
 ## Rollback
 
-Eğer Adım 7-8 sırasında pod CrashLoop veya PG auth fail:
+D1.1a apply (Adım 7) sırasında pod CrashLoop veya PG auth fail oluştuysa:
+
+### Rollback A: Deployment revision'ı geri al
 
 ```bash
-# Rollback deployment
 ssh halil@staging-sw "kubectl --context k3d-test -n platform-test rollout undo \
   deploy/auth-service"
-
-# Veya ConfigMap restore (eğer ConfigMap patch sebep oldu)
-ssh halil@staging-sw "kubectl --context k3d-test -n platform-test get cm \
-  auth-service-config -o yaml | grep -A2 SPRING_JPA"
-# DDL_AUTO eski değere döndü mü kontrol
+# Pod template eski state'e döner (ConfigMap referansı aynı ama env spec eski)
+# Bu yalnız Deployment revision'ı etkiler; ConfigMap data aynı kalır
 ```
 
-Plus inline env restoration (Vault sync bozulduysa):
+### Rollback B: ConfigMap'i geri al + restart
+
+`kubectl rollout undo` ConfigMap'i revert etmez. Yeni ConfigMap envFrom üzerinden zaten okunuyor. Geri almak için ya:
+
 ```bash
-# Live inline override geri koy (operatör)
-ssh halil@staging-sw "kubectl --context k3d-test -n platform-test set env \
-  deploy/auth-service SPRING_DATASOURCE_PASSWORD=<original-value>"
+# B-1: kubectl edit ile manuel revert (DDL_AUTO=update + FLYWAY=false geri yazılır)
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test edit cm auth-service-config"
+# DDL_AUTO=update, FLYWAY=false yap, kaydet
+
+# Veya B-2: previous render'ı uygula (eğer cache'lenmiş overlay rendering varsa)
+git show HEAD~1:kustomize/base/apps/auth-service/configmap.yaml | \
+  ssh halil@staging-sw "kubectl --context k3d-test -n platform-test apply -f -"
+
+# Sonra restart (envFrom değişikliği otomatik rollout tetiklemez)
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test rollout \
+  restart deploy/auth-service"
 ```
+
+### Rollback C: Inline env restore (operatör)
+
+Eğer Vault rotation bozulduysa veya canlı password farklılaşırsa:
+
+```bash
+# OPERATOR shell — agent transcript dışı; hidden shell protokolü
+# Önceki inline value'yu eski Pod log'undan veya operatör backup'undan al
+docker exec -i platform-vault-test vault kv get -field=db_password \
+  kv/platform/auth-service > /dev/shm/old-pw.tmp
+
+# Set env back inline (yine plaintext; operatör shell)
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test set env \
+  deploy/auth-service --from-file=SPRING_DATASOURCE_PASSWORD=/dev/shm/old-pw.tmp"
+# Pod yeni inline ile restart; eski password ile PG'ye bağlanır
+shred -u /dev/shm/old-pw.tmp
+```
+
+Inline restore sadece **Vault sync bozulduğunda son çare**; tipik durumda Rollback A+B yeterli.
 
 ## Cross-References
 
 - Codex thread: `019e234e-77a5-7e01-8481-57d131512223` (Session 48 D1.1a strategy)
 - Codex thread: `019e256f-9219-7951-837f-e4e35c6a0666` (Session 49 boundary clarification)
-- Drift detector script: `scripts/drift_detection/check_deployment_contracts.py`
-- Gate 1d script: `scripts/deploy/gate-stability-window.sh`
-- Runbook (related): `docs/runbooks/deploy-stability-window.md`
-- ADR-0010 §2.5 boundary matrix
-- ADR-0011 §2.3 boundary declaration
+- Codex thread: `019e258a-9965-70a3-ab14-002353743cbf` (PR #564 peer review iter-1 REVISE absorb)
+- Hash-authoritative polling pattern: [`scripts/ops/rotate-pg-vault-user.sh:341-355`](../scripts/ops/rotate-pg-vault-user.sh)
+- Drift detector: `scripts/drift_detection/check_deployment_contracts.py`
+- Gate 1d: `scripts/deploy/gate-stability-window.sh`
+- Runbook (alarm response): `docs/runbooks/deploy-stability-window.md`
+- ADR-0010 §2.5 Vault credential lifecycle + boundary matrix
+- ADR-0011 §2.3 boundary declaration + GA-002 (ESO approle reads)
 - CLAUDE.md HARD RULE Pre-Production Full Authority (2026-04-29)
-- CLAUDE.md HARD RULE Kullanıcı Aktif Credential (2026-04-29) — admin@example.com login user'a dokunma; ama auth-service DB credential system credential, agent kapsamı
+- CLAUDE.md HARD RULE Kullanıcı Aktif Credential (2026-04-29)
 
 ## Authority Statement (özet)
 
-> Pre-prod context'inde agent system credential ops için tam yetkili (kubectl, SSH, ESO sync). Vault root token üretimi/unseal material handling **plaintext credential exposure** sınıfı; bu adım operatör hidden-shell'de yapılır, agent redacted output ile işine devam eder.
+> Pre-prod context'inde agent ESO sync, GitOps PR, selective apply, smoke için tam yetkili (kubectl/system credential ops). **Plaintext credential extraction veya Vault write** scope dışı — operator hidden-shell'de yapılır, agent yalnızca hash prefix (16 char) + status sinyali alır.
