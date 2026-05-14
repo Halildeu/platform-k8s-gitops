@@ -25,6 +25,14 @@ resources:
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster (network teşhisi sonrası — k3d cluster → 10.9.193.0/24 routing fail)
   - endpoints-workcube-mssql.yaml    # 172.21.0.7 (workcube-mssql-proxy-prod, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.21.0.7/32:11433
+  # PERF-INIT-V2 PR-B5b3e prod promote (Codex thread `019e24ea` revised
+  # design): cluster-side federation/cache smoke CronJob promoted from
+  # test cluster after observed stability — same curl-only script
+  # (entry no-store + 7 per-remote remoteEntry.js no-store + B3c hashed
+  # asset 1y immutable + negative-case 404 + no long-cache).  TARGET
+  # points at platform-prod ClusterIP; namespace transformer applied.
+  # Schedule: every 6h Europe/Istanbul.
+  - cronjob-federation-smoke.yaml
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile)
