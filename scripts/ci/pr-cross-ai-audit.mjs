@@ -73,25 +73,77 @@ function loadBody(args) {
   exit(2);
 }
 
-// Codex `019e2693` MED-4 absorb: scoped parser — only `## Cross-AI` section
-function extractCrossAiSection(body) {
+// Codex `019e2693` MED-4 + PR #589 parser bug fix + Codex `019e26ae` field-aware refactor:
+// PR body'sinde birden fazla "## Cross-AI" heading olabilir (audit summary + field block sıralı/ters).
+// Doğru kural: required field'ları İÇEREN son strict section; yoksa required field'ları içeren son
+// permissive section. Hiç valid candidate yoksa son strict/permissive section (diagnostic için).
+
+const REQUIRED_FIELD_KEYS = ['implementer ai', 'reviewer ai', 'codex thread', 'verdict'];
+
+function collectHeadingSections(body, strictMode) {
   const lines = body.split(/\r?\n/);
+  const matches = [];
   let inSection = false;
-  const sectionLines = [];
+  let currentSection = [];
+  const headingRe = strictMode
+    ? /^##\s+Cross-AI\s*$/i  // strict: exact "## Cross-AI" only
+    : /^##\s+Cross-AI/i;     // permissive: trailing text allowed
+
   for (const line of lines) {
-    if (/^##\s+Cross-AI/i.test(line)) {
+    if (headingRe.test(line)) {
+      if (inSection) {
+        matches.push(currentSection.join('\n'));
+      }
       inSection = true;
+      currentSection = [];
       continue;
     }
     if (inSection && /^##\s+/.test(line)) {
-      // Next section starts; stop
-      break;
+      matches.push(currentSection.join('\n'));
+      inSection = false;
+      currentSection = [];
+      continue;
     }
     if (inSection) {
-      sectionLines.push(line);
+      currentSection.push(line);
     }
   }
-  return sectionLines.join('\n');
+  if (inSection) {
+    matches.push(currentSection.join('\n'));
+  }
+  return matches;
+}
+
+function sectionHasRequiredFields(section) {
+  // Codex `019e26ae` tur-2 absorb: use real extractFields() parser (colon-form YAML field),
+  // not `.includes()` heuristic — audit table column headers da "Implementer AI" içerebilir
+  // ama gerçek YAML key:value değildir. Field-aware selection parser semantik uyumlu olmalı.
+  const fields = extractFields(section);
+  return REQUIRED_FIELD_KEYS.every((k) => fields[k]);
+}
+
+function extractCrossAiSection(body) {
+  // Pass 1: strict candidates
+  const strictMatches = collectHeadingSections(body, true);
+
+  // Pass 2: permissive candidates (excluded strict matches dahil, regex match'i überset)
+  const permissiveMatches = collectHeadingSections(body, false);
+
+  // Field-aware selection (Codex `019e26ae` blocking absorb):
+  //   1. Last strict section with all required fields
+  //   2. Last permissive section with all required fields
+  //   3. Fallback: last strict (diagnostic), then last permissive (diagnostic)
+
+  const lastValidStrict = [...strictMatches].reverse().find(sectionHasRequiredFields);
+  if (lastValidStrict !== undefined) return lastValidStrict;
+
+  const lastValidPermissive = [...permissiveMatches].reverse().find(sectionHasRequiredFields);
+  if (lastValidPermissive !== undefined) return lastValidPermissive;
+
+  // Diagnostic fallback: hiç valid candidate yoksa son strict varsa onu, yoksa son permissive
+  if (strictMatches.length > 0) return strictMatches[strictMatches.length - 1];
+  if (permissiveMatches.length > 0) return permissiveMatches[permissiveMatches.length - 1];
+  return '';
 }
 
 // Inline YAML comment strip + key/value extract from Cross-AI section
