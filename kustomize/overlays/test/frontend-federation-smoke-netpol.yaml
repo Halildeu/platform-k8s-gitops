@@ -28,9 +28,22 @@ spec:
   policyTypes:
     - Egress
   egress:
+    # Kubernetes API access — both Service ClusterIP (10.45.0.0/16 test
+    # service network, default 443) AND the actual control-plane endpoint
+    # CIDR (172.19.0.0/16 k3d docker bridge, default 6443).  Single /32
+    # service-IP allow didn't work — k3d Flannel evaluates egress
+    # NetworkPolicy AFTER kube-proxy DNAT in some packet flows, so the
+    # ipBlock must cover the post-DNAT endpoint too.  Both cluster-internal,
+    # TCP only on the two kube-apiserver ports.
     - to:
         - ipBlock:
-            cidr: 10.45.0.1/32
+            cidr: 10.45.0.0/16        # k3d-test service CIDR
       ports:
         - protocol: TCP
           port: 443
+    - to:
+        - ipBlock:
+            cidr: 172.19.0.0/16       # k3d-test docker bridge (control-plane endpoint)
+      ports:
+        - protocol: TCP
+          port: 6443
