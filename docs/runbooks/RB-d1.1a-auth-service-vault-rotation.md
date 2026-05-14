@@ -139,6 +139,16 @@ Hash parity PASS sonrası agent şu PR'ı açar:
 ### Adım 7: Selective apply
 
 ```bash
+# Pre-apply snapshot (rollback B kaynağı). Live ConfigMap'i kaydet; sonradan
+# rollback gerekirse bu snapshot'ı uygula. NOT: kustomize HEAD~1 base ile
+# yetinilemez — test overlay'in KEYCLOAK_ISSUER_URI/SECURITY_JWT_*/audience
+# patch'leri base'de yok.
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test get cm \
+  auth-service-config -o yaml > /tmp/auth-cm.pre-d1.1a.yaml"
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test get deploy \
+  auth-service -o yaml > /tmp/auth-deploy.pre-d1.1a.yaml"
+echo "Pre-apply snapshots written to staging-sw:/tmp/auth-{cm,deploy}.pre-d1.1a.yaml"
+
 # Render auth-service deployment + ConfigMap'i izole et
 kubectl kustomize kustomize/overlays/test > /tmp/test-overlay.yaml
 python3 -c "
@@ -240,40 +250,62 @@ ssh halil@staging-sw "kubectl --context k3d-test -n platform-test rollout undo \
 
 ### Rollback B: ConfigMap'i geri al + restart
 
-`kubectl rollout undo` ConfigMap'i revert etmez. Yeni ConfigMap envFrom üzerinden zaten okunuyor. Geri almak için ya:
+`kubectl rollout undo` ConfigMap'i revert etmez. Yeni ConfigMap envFrom üzerinden zaten okunuyor. Geri almak için **Adım 7'de alınan live snapshot** kullanılır:
 
 ```bash
-# B-1: kubectl edit ile manuel revert (DDL_AUTO=update + FLYWAY=false geri yazılır)
-ssh halil@staging-sw "kubectl --context k3d-test -n platform-test edit cm auth-service-config"
-# DDL_AUTO=update, FLYWAY=false yap, kaydet
-
-# Veya B-2: previous render'ı uygula (eğer cache'lenmiş overlay rendering varsa)
-git show HEAD~1:kustomize/base/apps/auth-service/configmap.yaml | \
-  ssh halil@staging-sw "kubectl --context k3d-test -n platform-test apply -f -"
+# B-1 (authoritative): pre-apply snapshot'ı uygula. Live state'i yakaladığı
+# için test overlay'in KEYCLOAK_ISSUER_URI / SECURITY_JWT_AUDIENCE / impersonation
+# realm patch'lerini koruyor. base render kullanmak YASAK — test overlay
+# patch'leri base'de yok.
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test apply \
+  -f /tmp/auth-cm.pre-d1.1a.yaml"
 
 # Sonra restart (envFrom değişikliği otomatik rollout tetiklemez)
 ssh halil@staging-sw "kubectl --context k3d-test -n platform-test rollout \
   restart deploy/auth-service"
+
+# B-2 (manuel düzeltme; sadece pre-apply snapshot kaybolmuşsa):
+# kubectl edit ile DDL_AUTO=update + FLYWAY=false yaz (live effective değerleri
+# Adım 1 öncesi neyse onları manuel restore et)
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test edit cm auth-service-config"
 ```
 
 ### Rollback C: Inline env restore (operatör)
 
-Eğer Vault rotation bozulduysa veya canlı password farklılaşırsa:
+Eğer Vault rotation bozulduysa veya Vault canonical farklı bir değere drift olmuşsa, Vault'a güvenmek yerine **Adım 1'de tmpfs'te tutulan known-good inline password** ile inline override geri konur:
 
 ```bash
 # OPERATOR shell — agent transcript dışı; hidden shell protokolü
-# Önceki inline value'yu eski Pod log'undan veya operatör backup'undan al
-docker exec -i platform-vault-test vault kv get -field=db_password \
-  kv/platform/auth-service > /dev/shm/old-pw.tmp
+# ÖN ŞART: Adım 1'deki $TMP dosyası D1.1a smoke (Adım 8) PASS olana
+# kadar tmpfs'te tutulmuş olmalı; trap cleanup smoke PASS sonrasına
+# kadar deferred. Smoke PASS ise dosya zaten silindi → rollback C için
+# eski Deployment revision template'inden çıkar (kubectl get rs).
 
-# Set env back inline (yine plaintext; operatör shell)
+# Yöntem 1 — $TMP hâlâ mevcutsa (smoke henüz tamamlanmadı):
 ssh halil@staging-sw "kubectl --context k3d-test -n platform-test set env \
-  deploy/auth-service --from-file=SPRING_DATASOURCE_PASSWORD=/dev/shm/old-pw.tmp"
-# Pod yeni inline ile restart; eski password ile PG'ye bağlanır
-shred -u /dev/shm/old-pw.tmp
+  deploy/auth-service SPRING_DATASOURCE_PASSWORD=\"\$(cat /dev/shm/auth-pw.XXXXXX)\""
+# NOT: kubectl set env --from-file FLAG DESTEKLEMİYOR; --env-file destekliyor
+# ama formatı KEY=VALUE.  Tek key için inline shell substitution kullanılır.
+
+# Yöntem 2 — $TMP silinmişse (smoke PASS sonrası): eski ReplicaSet'ten çıkar
+OLD_RS=$(ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  get rs -l app.kubernetes.io/name=auth-service \
+  --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-2].metadata.name}'")
+OLD_PW=$(ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+  get rs \"$OLD_RS\" -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name==\"SPRING_DATASOURCE_PASSWORD\")].value}'")
+# Hidden shell — OLD_PW agent transcript'ine yazılmaz; sadece operator shell'de
+# inline substitution ile uygulanır:
+ssh halil@staging-sw "kubectl --context k3d-test -n platform-test set env \
+  deploy/auth-service SPRING_DATASOURCE_PASSWORD=\"$OLD_PW\""
+unset OLD_PW
+
+# YANLIŞ KAYNAK: Vault canonical değeri kullanma — Vault rotation bozulduysa
+# orada da yanlış password olabilir. Authoritative kaynak: çalışan eski RS.
 ```
 
 Inline restore sadece **Vault sync bozulduğunda son çare**; tipik durumda Rollback A+B yeterli.
+
+NOT: `kubectl set env --from-file` flag'i **yok**; sadece `--env-file` (KEY=VALUE formatı) ve inline `KEY=value` substitution destekleniyor. Tek key restore için inline substitution + shell variable kullan.
 
 ## Cross-References
 
