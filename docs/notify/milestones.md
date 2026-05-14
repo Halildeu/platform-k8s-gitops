@@ -59,12 +59,12 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 - [x] T1.5 23.2.E Data classification policy merged — 2026-05-10 LIVE acceptance
 - [x] T1.6 23.2.F Abuse prevention guards merged — Session 41 FULL ACCEPTANCE (R13+R19 mitigated)
 - [~] All Faz 23.2 kabul kriteri 🟡 (7/8 done, 1 external blocker)
-- [ ] Charter 23.2 marker 🟡 → 🟢 — R2 closure sonrası
+- [~] Charter 23.2 marker 🟢 source-ready + acceptance candidate — final legal closure R2 sonrası
 - [~] Risk register: R2 active (KVKK legal review), R9 🟢 mitigated, R12 🟢 mitigated, R13 🟢 mitigated, R19 🟢 mitigated
 
 **Remaining blocker**: R2 (KVKK legal review external) — admin erasure compliance attestation. ETA 2026-05-25.
 **Owner**: legal (R2 closure)
-**Dependencies**: M1 (cluster stable) — done
+**Dependencies**: cluster stability dependency satisfied; M1 browser SSO/cutover closure tracked separately
 
 ### M4 — 23.3 SMS NetGSM Activation (🔴 target 2026-06-22)
 
