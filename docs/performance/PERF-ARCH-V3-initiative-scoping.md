@@ -120,6 +120,11 @@ V3 açılması **high blast-radius**:
 | MF share-scope topology rewrite breaks runtime | M × H | B5d0 PoC öğrenimleri (subpath alone yetmez); root retirement + multi-package atomik |
 | Effort overrun (4-8 hafta) | M × M | 3-tier staged rollout (Tier 3 last resort): §3.1 Root retirement first (2-3 hafta) → measurement → §3.2 Multi-package conditional |
 | Owner attention bandwidth (V2.1 + Faz G + V3 paralel) | H × H | V2.1 closure + Faz G transition tamamlanmadan V3 açma YASAK |
+| **R6** Multi-package semver/share-scope skew (R8/R9 reopen) | M × H | Independent semver + B5b3 federation-guard pattern reuse + share-scope diagnostic regression test |
+| **R7** Tokens/theme/providers global CSS side-effect order drift | M × M | CSS critical path migration (PMD v9.1 §2.7 B3d coupling); side-effect import order ESLint guard |
+| **R8** MF loadShare cycle/deadlock (@mfe/auth runtime bağımlılık) | L × H | MF runtime sentinel + circular dependency analyzer; B5d0 PoC pattern |
+| **R9** `@mfe/x-charts` ownership drift (V3 charts boundary vs mevcut paket) | M × M | Pre-Tier-2 reconciliation kararı (rebrand vs koexistans); migration plan explicit |
+| **R10** Measurement validity karışıklığı (cache/SW/Brotli/CDN transfer vs decoded muddle) | M × M | Median-of-N + ABM-1 soak pattern (PMD §2.7 ABM-1 + G2 sliding baseline); transfer/decoded **ayrı** gate threshold |
 
 ---
 
