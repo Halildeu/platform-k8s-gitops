@@ -84,16 +84,20 @@
 
 ### 4.1 Yüzey değişiklikler (Quick wins) — 1-2 gün
 
-| # | Değişiklik | Effort | Etki |
-|---|---|---|---|
-| 1 | `LIKE 'workcube_mikrolink%'` → config: `schema.discovery.patterns=[workcube_mikrolink%, eta_%, logo_%, ...]` | 30 dk | Çoklu pattern desteği |
-| 2 | Yearly pattern regex → config: `schema.yearly.pattern=^workcube_mikrolink_(\d{4})_(\d+)$` | 30 dk | Başka pattern (örn. ETA `eta_<year>_<branch>`) |
-| 3 | Alias map → JSON import (`schema.aliases.path=/config/aliases-workcube.json`) | 2-3 saat | Per-ERP alias dictionary |
-| 4 | Common FK map → JSON import | 1 saat | Per-ERP common FK |
-| 5 | Master data table list → config (`schema.master-data.tables=[BRANCH, DEPARTMENT, ...]`) | 1 saat | Per-ERP master data |
-| 6 | Default schema name → config (zaten parametrik) | — | OK |
+| # | Değişiklik | Effort | Etki | Durum |
+|---|---|---|---|---|
+| 1 | Schema discovery LIKE → config (`schema.discovery.patterns`) | 30 dk | Çoklu pattern desteği | ✅ PR #216 |
+| 2 | Yearly pattern → config (`schema.yearly.like-pattern` + `regex`) | 30 dk | Başka pattern (örn. ETA `eta_<year>_<branch>`) | ✅ PR #219 |
+| 3 | Alias map → JSON import (`schema.fk-heuristics.alias-path`) | 2-3 saat | Per-ERP alias dictionary | ✅ PR #221 |
+| 4 | Common FK map → JSON import (`schema.fk-heuristics.common-fk-path`) | 1 saat | Per-ERP common FK | ✅ PR #221 |
+| 5 | Master data **kind enablement** → config (`schema.master-data.enabled-kinds`) — subset gating | 1 saat | Per-ERP master data kind subset | ✅ PR #223 |
+| 6 | Default schema name → config (zaten parametrik) | — | OK | ✅ Mevcut |
 
 **Çıktı**: Aynı Workcube vendor'lı başka müşteri **out-of-the-box** çalışır; başka MSSQL ERP'lerde **per-ERP profile** ile çalışır.
+
+> **Phase 1 quick wins durumu (2026-05-16)**: 1-5/5 maddelerin tümü merge edildi (PR #216/#219/#221/#223; #6 zaten parametrikti). Kalan portability Phase 2 (adapter pattern) ve Phase 3 (ERP profile pack) ile gelir.
+>
+> **#5 kapsam düzeltmesi**: Bu madde başlangıçta "master data table list → config" diye planlanmıştı. Ancak `MasterDataReadService.KIND_MAP` salt tablo listesi değil, kind başına tam SQL-template allowlist'idir (SQL injection guard'ın temeli). SQL template'lerini config'e taşımak quick-win değildir — DTO projection contract + identifier validation + integration smoke gerektirir. Bu nedenle #5 **kind enablement** (subset gating; `KIND_MAP` kapalı allowlist aynen korunur) olarak daraltıldı; ERP table-mapping portability'si **Phase 3 ERP profile pack**'e (§4.3) ertelendi. Codex `019e2d7d` §5-6.
 
 ### 4.2 Adapter pattern — DB engine abstraction (2-3 hafta)
 
