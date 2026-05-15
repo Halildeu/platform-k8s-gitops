@@ -263,28 +263,33 @@ Codex `019e2a4f` Option B exec notları:
 
 ---
 
-## 4. Acceptance Criteria
+## 4. Acceptance Criteria (Historical v1 — §0 v2 path actual current truth)
 
-### Owner Step (3.1 + 3.2) — ~30-60dk
+> ⚠️ **Bu bölüm v1 plan-time draft acceptance.** Bölüm §0 (v2 addendum) actual successful path ve current truth ile süpersedes. Aşağıdaki dil M2a'yı tek atomic gate olarak gösterir — yanlış; gerçekte M2a iki alt-faz (M2a0 owner unlock + M2a1 authenticated route measurement).
 
-- [ ] Vault test-personas/perf-auth write OR K8s Secret waiver (Option A/B)
-- [ ] Keycloak `perf-test` user create platform realm
-- [ ] Password symmetric (Vault/Secret + Keycloak aynı)
-- [ ] Test login flow verify: `curl /realms/platform/protocol/openid-connect/token grant_type=password` → access_token döner
+### Owner Step (3.1 + 3.2) — ~30-60dk [M2a0 — execute edildi, evidence ayrı]
 
-### Agent Autonomous Step (3.3) — ~1-2 saat
+- [x] Vault test-personas/perf-auth write OR K8s Secret waiver (Option B executed — K8s Secret waiver path)
+- [x] Keycloak `perf-test` user create **platform-test realm** (v1 realm `platform` typo, gerçek `platform-test`)
+- [x] Password symmetric (K8s Secret + Keycloak aynı)
+- [x] Test login flow smoke verify: `curl /realms/platform-test/protocol/openid-connect/token grant_type=password client_id=admin-cli` → HTTP 200 + JWT shape (smoke only)
 
-- [ ] Platform-web M2a1 PR (auth-storage setup + 4 route budget spec)
-- [ ] GHA workflow gate-m2a-auth-route-budget
-- [ ] Codex peer review (cross-AI HARD RULE)
+### Agent Autonomous Step (3.3) — ~1-2 saat [M2a1 — hâlâ PENDING]
+
+- [ ] Platform-web M2a1 PR: runtime-gen storageState + **gerçek frontend OIDC client** (Keycloak discovery ile, admin-cli değil)
+- [ ] 4 route × N≥3 measurement matrix: `/home`, `/admin/users`, `/admin/access/roles`, `/admin/reports/fin-muhasebe-detay`
+- [ ] Rendered sentinel + BUILD_SHA + browser/cache metadata
+- [ ] GHA workflow `gate-m2a-auth-route-budget` (PR-time path-filter)
+- [ ] Codex cross-AI peer review (HARD RULE)
 - [ ] CI yeşil + AGREE → merge
-- [ ] V2.1 #3 closure evidence PR
+- [ ] V2.1 #3 hard gate close evidence PR
 
-### V2.1 Closure Final
+### V2.1 Closure (Doğru truth — Codex 019e2b00 REVISE)
 
-- [ ] V2.1 9/9 DONE (100%)
-- [ ] Faz G freeze gate full unlocked
-- [ ] D30 atomic cutover sign-off mümkün
+- [ ] V2.1 #3 hard gate close (M2a1 ölçüm matrix sonrası; M2a0 unlock yetmez)
+- [ ] V2.1 9/9 DONE — **M2a1 sonrası future target**
+- [ ] Faz G freeze gate full unlock — **M2a1 sonrası future target**
+- [ ] D30 atomic cutover sign-off — **M2a1 authenticated route evidence sonrası değerlendirilebilir**
 
 ---
 
@@ -298,18 +303,18 @@ PMD v9.1 wording: M2a1 ilk ölçüm **warn-only baseline seed** (G2 sliding base
 
 ---
 
-## 6. Faz G Freeze Gate Impact
+## 6. Faz G Freeze Gate Impact (Doğru truth — Codex 019e2b00 REVISE)
 
-Bu runbook execution sonrası:
+Bu runbook execution sonrası (M2a0 unlock):
 
-| Gate | Pre | Post |
+| Gate | Pre | Post bu runbook M2a0 |
 |---|---|---|
-| #3 M2a authenticated | 🟡 Owner | 🟢 DONE |
+| #3 M2a authenticated | 🟡 Owner pending | 🟡 **PARTIAL: M2a0 owner unlock done; M2a1 platform-web measurement pending** |
 | #4 Receiver E2E | 🟢 DONE (PR #666) | 🟢 |
 | #6 ABM-1 acceptance | 🟢 DONE (PR #660) | 🟢 |
 | #7 Branch protection | 🟢 DONE (PR #671) | 🟢 |
 
-**4/4 hard gate DONE** → D30 atomic cutover sign-off mümkün.
+**3/4 hard gate DONE + 1/4 PARTIAL** → **Faz G freeze gate sign-off NOT YET available**. D30 atomic cutover sign-off M2a1 authenticated route evidence sonrası değerlendirilebilir.
 
 ---
 
