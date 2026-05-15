@@ -393,22 +393,30 @@ Hedef olmayan: yeni reporting feature ekleme, performance optimization (P3 backl
 ---
 
 #### Adım 12 — etl-worker → schema-service contract consumer
-- **Status**: ⏳ Pending
+- **Status**: 🟡 PR-1 IN PROGRESS — `SchemaServiceClient` scaffold + 31 unit test merged path
+- **Provisional location**: `platform-backend/etl-worker/` top-level (Codex `019e2a5c` Opt-B; future `git filter-repo` split to `Halildeu/etl-worker` keeps history clean if/when user authorizes a new repo)
 - **Owner**: Claude (Python implement) + Codex review
 - **Bağımlılık**: Adım 6 (Program 8 facade hazır) + Adım 11 (named allowlist)
-- **DoD**:
+- **PR slicing** (Codex `019e2a5c` AGREE):
+  - **PR-1**: `SchemaServiceClient` + typed exceptions + contract models + pytest/ruff/mypy CI gate — [platform-backend#205](https://github.com/Halildeu/platform-backend/pull/205) (this session)
+  - **PR-2a**: config / CLI / client wiring (`SCHEMA_SERVICE_URL`, internal key env, schema/scope args, typed exit behaviour) — pending
+  - **PR-2b**: runner orchestration (retry, audit, resume, DB lifecycle) — pending
+  - **PR-3**: Dockerfile + K8s Job manifest + test cluster wiring — pending
+  - **PR-4**: live smoke against testai schema-service + reports DB writes — pending (operator gate)
+- **DoD** (Adım 12 overall):
   - `etl-worker/runner.py` → `SchemaServiceClient` (HTTP) integration
   - Allowlist consumer (named version)
   - Type mapping consumer (schema-service canonical type → pyodbc reader type hint)
   - Fallback: schema-service down → committed snapshot Tier 2 (read-only)
   - Live smoke: test cluster ETL run → schema-service hit → allowlist tables → reports_db insert
+- **Target contract — NOT current schema-service shape**: Adım 12 PR-1 hardens the consumer side against a **target** contract (`contract_version`, `allowlist_name`, `allowlist_version`, `tables` list with column `type`) that schema-service does not emit today (today: `version`, `metadata`, `tables` Map, column `dataType`). PR-2+ must coordinate the schema-service emission change. README of `etl-worker/` documents the side-by-side delta.
 - **Test**:
-  - Unit: SchemaServiceClient mock (200 / 503 / version mismatch)
-  - IT: docker-compose schema-service + etl-worker + PG + MSSQL
-  - Live smoke: testai ETL run (operator action)
+  - Unit: SchemaServiceClient mock (200 / 503 / version mismatch + 4xx + parse failures + auth header + `?schema=` selector) — **31 cases PR-1**
+  - IT: docker-compose schema-service + etl-worker + PG + MSSQL — PR-3 scope
+  - Live smoke: testai ETL run (operator action) — PR-4 scope
 - **Risk**: medium (ETL pipeline değişimi; rollback eski hardcoded allowlist)
-- **Effort**: 3-5 gün
-- **Codex thread ref**: TBD
+- **Effort**: 3-5 gün overall; PR-1 ~3-4 saat actual
+- **Codex thread ref**: `019e2a5c` (Opt-B AGREE + REVISE absorb + AGREE post-impl)
 
 ---
 
