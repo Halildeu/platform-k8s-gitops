@@ -1,6 +1,10 @@
-# ServiceMonitor — bridge'in kendi metrikleri (future: Prometheus scrape)
-# Şu an bridge metric exposure yok ama placeholder; gelecekte counter/histogram
-# metrics eklenecek (delivered_total, undelivered_total, github_api_latency).
+# ServiceMonitor — bridge liveness scrape + future metric exposure.
+# Session 53 P0 #5 fix (Codex 019e2a4f): /metrics endpoint bridge'de yok →
+# scrape 404 → up{job=alertmanager-bridge}=0 → AlertmanagerBridgeHealthzFail
+# false-positive pending. /healthz endpoint mevcut (200 OK) — scrape başarılı,
+# up{}=1, alert evaluator local Prom için doğru çalışır.
+# Future: bridge prometheus_client eklenince path: /metrics + counter/histogram
+# (delivered_total, undelivered_total, github_api_latency).
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -15,6 +19,6 @@ spec:
       app.kubernetes.io/name: alertmanager-bridge
   endpoints:
     - port: http
-      path: /metrics    # bridge prometheus_client eklenince çalışır; şu an 404 OK
+      path: /healthz    # scrape 200 OK → up{}=1; metrics yok ama liveness OK
       interval: 60s
       scrapeTimeout: 10s
