@@ -1,0 +1,18 @@
+{
+  "version": "4",
+  "status": "firing",
+  "groupLabels": {},
+  "commonLabels": {},
+  "commonAnnotations": {},
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "MinimalAlert"
+      },
+      "annotations": {},
+      "startsAt": "2026-05-15T08:00:00Z",
+      "endsAt": "0001-01-01T00:00:00Z"
+    }
+  ]
+}

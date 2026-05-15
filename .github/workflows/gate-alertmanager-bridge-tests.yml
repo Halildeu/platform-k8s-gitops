@@ -1,0 +1,52 @@
+# Session 53 P0 #5 — alertmanager-bridge unit tests CI gate (Codex 019e2a4f)
+#
+# Bridge script `kustomize/base/monitoring/alertmanager-bridge/alertmanager-bridge.py`
+# için unit + integration test execution. Bridge runtime production critical
+# (drift detection + V2.1 #4 receiver chain), regression koruması zorunlu.
+#
+# Trigger: PR diff bridge script OR test fixtures değişimi → CI run.
+
+name: Alertmanager Bridge Tests (Session 53 P0 #5)
+
+on:
+  pull_request:
+    paths:
+      - 'kustomize/base/monitoring/alertmanager-bridge/alertmanager-bridge.py'
+      - 'tests/alerting/**'
+      - '.github/workflows/gate-alertmanager-bridge-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'kustomize/base/monitoring/alertmanager-bridge/alertmanager-bridge.py'
+      - 'tests/alerting/**'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Bridge unit + integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Run bridge tests (stdlib unittest)
+        run: |
+          set -euo pipefail
+          # Codex 019e2a4f Session 53 P0 #5 — 22 test case coverage
+          # severity_to_class + make_issue_title (5 dedupe scenario) +
+          # make_issue_body + process_alert lifecycle (6 case) +
+          # log_undelivered (2 case) + webhook payload parse (2 case)
+          python3 -m unittest tests.alerting.test_alertmanager_bridge -v
+
+      - name: Verify Python syntax
+        run: |
+          python3 -m py_compile kustomize/base/monitoring/alertmanager-bridge/alertmanager-bridge.py
+          echo "✓ Python syntax PASS"

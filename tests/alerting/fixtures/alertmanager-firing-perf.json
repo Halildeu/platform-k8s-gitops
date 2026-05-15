@@ -1,0 +1,44 @@
+{
+  "version": "4",
+  "groupKey": "{}:{alertname=\"PerfFederationSmokeFailing\"}",
+  "status": "firing",
+  "receiver": "perf-alerts-github-issues",
+  "groupLabels": {
+    "alertname": "PerfFederationSmokeFailing"
+  },
+  "commonLabels": {
+    "alertname": "PerfFederationSmokeFailing",
+    "severity": "warning",
+    "namespace": "platform-prod",
+    "configmap": "frontend-federation-smoke-status",
+    "team": "perf",
+    "cluster": "prod"
+  },
+  "commonAnnotations": {
+    "summary": "Frontend federation smoke failing (failures > 0)",
+    "description": "Cluster platform-prod smoke writer reports failures > 0."
+  },
+  "externalURL": "http://alertmanager.monitoring.svc.cluster.local:9093",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "PerfFederationSmokeFailing",
+        "severity": "warning",
+        "namespace": "platform-prod",
+        "configmap": "frontend-federation-smoke-status",
+        "team": "perf",
+        "cluster": "prod"
+      },
+      "annotations": {
+        "summary": "Frontend federation smoke failing (failures > 0)",
+        "description": "Cluster platform-prod smoke writer reports failures > 0.",
+        "runbook_url": "docs/runbooks/V2.1-ABM-1-reproducibility-soak.md"
+      },
+      "startsAt": "2026-05-15T07:30:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://prometheus.monitoring.svc.cluster.local:9090/...",
+      "fingerprint": "abc123def456"
+    }
+  ]
+}
