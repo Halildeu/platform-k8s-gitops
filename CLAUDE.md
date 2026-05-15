@@ -205,18 +205,20 @@ Types: `feat` / `fix` / `refactor` / `docs` / `chore` / `test`
 
 | Kaynak | Konum | İçerik |
 |---|---|---|
-| **Snapshot dump (committed)** | `docs/migration/workcube-schema.json` (3.4 MB) | 1509 tablo, 26240 kolon, **1774 ilişki (FK)**, 27 domain. Canonical `workcube_mikrolink` schema'sı. |
-| **Live API** | `schema-service` `/api/v1/schema/snapshot` (port 8096) | Aynı yapıyı runtime'da döner. |
+| **Canonical snapshot (committed)** | `docs/migration/workcube-schema.json` (3.4 MB) | 1509 tablo, 26240 kolon, **1774 ilişki (FK)**, 27 domain. Sadece `workcube_mikrolink` canonical schema'sı (static master + HR + product). |
+| **Live schema listesi** | `schema-service` `GET /api/v1/schema/schemas` (port 8096) | Cluster içindeki tüm aktif schema'ları döner — canonical + 43 tenant-only (`workcube_mikrolink_<id>`) + 276 year-tenant (`workcube_mikrolink_<year>_<id>`) = **319+ schema**. JWT auth (audience `schema-service`) veya internal API key. |
+| **Live parametric snapshot** | `schema-service` `GET /api/v1/schema/snapshot?schema=<name>` | Belirli bir schema'nın full snapshot'ı (tablo + kolon + ilişki + domain). Year-tenant schema'lar transactional tablolar (`ACCOUNT_CARD`, `INVOICE`, `CARI_ACTIONS`, `STOCK_FIS`, vb.) buradan alınır. |
 | **ETL allowlist** | `docs/migration/mssql-inventory.md` | 40 tablo (23 canonical match + 17 parametric) — rapor scope baseline. |
 
-**Parametric (yıllık) tablolar** canonical snapshot'ta YOK; `workcube_mikrolink_<yıl>` schema'larında. 17 parametric tabloyu çekmek için schema-service'in yearly schema crawl'ı gerekiyor (Faz 16.2.P sprint).
+**Year-tenant schema'lar** (`workcube_mikrolink_<year>_<id>`) transactional tabloları barındırır; canonical snapshot'ta yok ama live endpoint ile **çekilebilir**. Örnek: `GET /api/v1/schema/snapshot?schema=workcube_mikrolink_2026_1` → 222 tablo döner (12 transactional finans tablosu dahil).
 
-**Agent için pratik**: tablo/kolon/FK gereksiniminde **önce** `workcube-schema.json` oku; hız + doğruluk + kural #9 uyumu. Sentetik şema yapma.
+**Agent için pratik**: tablo/kolon/FK gereksiniminde **önce** `workcube-schema.json` oku (canonical hızlı yol). Parametric/year-tenant tablo için `schema-service /api/v1/schema/snapshot?schema=<name>` çağır. Sentetik şema yapma.
 
-**Drift guard (Codex 019dc88c iter-4)**:
+**Drift guard (Codex 019dc88c iter-4 + 019e2c59 iter-3 revize)**:
 - Sentetik 17-tablo fixture işine **tekrar başlama**; daha önce yazılıp silindi (kural #9 ihlali tespit edildi).
-- Agent sandbox içinden **canlı parametric schema crawl** tasarlama/koşturma. Read-only auth boundary nedeniyle crawl operasyonu kullanıcı içi iştir; agent yalnız tool tasarlar, kullanıcı çalıştırır, çıktı snapshot dosyaları repo'ya gelir.
-- Faz 16.2.P (parametric ETL) **defer edildi** — `PLAN.md` Faz 16.2.P altındaki rationale'a bak. Yeniden başlatma şartı orada yazılı.
+- Agent **mevcut read-only schema-service endpoint'lerini** yetkili JWT ile **kullanabilir** (canlı evidence için). Ad-hoc crawler/script ve credential artefact commit edilmez.
+- Faz 16.2.P **parametric ETL** sprint hâlâ deferred (ayrı sprint). Ama "schema-service yearly schema crawl tool" satırı eskimiş — `/schemas` + `/snapshot?schema=` endpoint'leri canlı, ayrı feature gereksiz.
+- SEAL gate'inde schema cross-check için agent endpoint'ten direkt validation alabilir (kanıt: Annex 2A v2 PR #680).
 
 ## Repo İşleme
 
