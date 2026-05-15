@@ -1,0 +1,123 @@
+# V2.1 Ops-A — Alert Receiver workflow: Alertmanager webhook → GitHub Issue lifecycle
+#
+# Pattern: Codex `019e2a4f` Q1+Q2 consensus + spike PR #645 (Vault'tan bağımsız).
+# Alertmanager pod webhook_config → GitHub API repository_dispatch → bu workflow → Issue create/comment/close.
+#
+# Trigger: repository_dispatch types: [perf-alert]
+# Payload: Alertmanager v4 webhook format (alerts[] + commonLabels + status)
+#
+# Lifecycle:
+#   - status=firing + no open issue → create new issue
+#   - status=firing + open issue exists → comment "re-fired"
+#   - status=resolved + open issue → close + comment
+#   - status=resolved + no issue → no-op (already closed earlier)
+#
+# Dedupe key: alertname/<name>/<namespace> label
+# Auth: GITHUB_TOKEN (workflow-scoped, issues:write permission)
+
+name: Alert Receiver — Perf Alerts to Issues (V2.1 Ops-A)
+
+on:
+  repository_dispatch:
+    types: [perf-alert]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  process-alert:
+    name: Process Alertmanager webhook → GitHub Issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Parse + lifecycle action
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+
+          # Parse Alertmanager v4 webhook payload
+          STATUS=$(echo "$PAYLOAD" | jq -r '.status // .alerts[0].status // "unknown"')
+          ALERTNAME=$(echo "$PAYLOAD" | jq -r '.commonLabels.alertname // .alerts[0].labels.alertname // "unknown"')
+          SEVERITY=$(echo "$PAYLOAD" | jq -r '.commonLabels.severity // .alerts[0].labels.severity // "info"')
+          NAMESPACE=$(echo "$PAYLOAD" | jq -r '.commonLabels.namespace // .alerts[0].labels.namespace // "n/a"')
+          DESC=$(echo "$PAYLOAD" | jq -r '.alerts[0].annotations.description // "(no description)"')
+          SUMMARY=$(echo "$PAYLOAD" | jq -r '.alerts[0].annotations.summary // .alerts[0].labels.alertname // "alert"')
+          RUNBOOK=$(echo "$PAYLOAD" | jq -r '.alerts[0].annotations.runbook_url // "—"')
+
+          echo "Parsed:"
+          echo "  STATUS=$STATUS"
+          echo "  ALERTNAME=$ALERTNAME"
+          echo "  SEVERITY=$SEVERITY"
+          echo "  NAMESPACE=$NAMESPACE"
+          echo "  SUMMARY=$SUMMARY"
+
+          # Dedupe key: alert/<alertname>/<namespace>
+          DEDUPE_LABEL="alert/${ALERTNAME}/${NAMESPACE}"
+          echo "Dedupe label: $DEDUPE_LABEL"
+
+          # Lookup existing open issue
+          EXISTING=$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --label "$DEDUPE_LABEL" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty' || true)
+
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          if [[ "$STATUS" == "firing" && -z "$EXISTING" ]]; then
+            # New issue — first fire
+            echo "Action: create new issue (first fire)"
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "[ALERT $SEVERITY] $ALERTNAME ($NAMESPACE)" \
+              --body "$(cat <<EOF
+**Status**: 🔥 FIRING
+**Alert**: \`$ALERTNAME\`
+**Severity**: \`$SEVERITY\`
+**Namespace**: \`$NAMESPACE\`
+**Fired at**: $NOW
+
+## Summary
+$SUMMARY
+
+## Description
+$DESC
+
+## Runbook
+$RUNBOOK
+
+---
+Source: Alertmanager webhook (V2.1 Ops-A GitHub Issues receiver)
+Dedupe: \`$DEDUPE_LABEL\`
+EOF
+)" \
+              --label "$DEDUPE_LABEL,alert,severity/$SEVERITY"
+
+          elif [[ "$STATUS" == "firing" && -n "$EXISTING" ]]; then
+            # Re-fire on existing open issue — comment
+            echo "Action: comment on existing issue #$EXISTING (re-fire)"
+            gh issue comment "$EXISTING" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body "🔥 Re-fired at $NOW
+
+$DESC"
+
+          elif [[ "$STATUS" == "resolved" && -n "$EXISTING" ]]; then
+            # Resolved — close + comment
+            echo "Action: close issue #$EXISTING (resolved)"
+            gh issue comment "$EXISTING" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body "✅ Resolved at $NOW"
+            gh issue close "$EXISTING" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --reason "completed"
+
+          else
+            echo "Action: no-op (status=$STATUS existing=$EXISTING)"
+          fi
+
+          echo "::notice title=Alert processed::$ALERTNAME ($STATUS) — namespace=$NAMESPACE"

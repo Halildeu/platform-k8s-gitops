@@ -71,6 +71,12 @@ alertmanager:
     # Mount path: /etc/alertmanager/secrets/perf-alertmanager-secrets/SLACK_WEBHOOK_URL
     secrets:
       - perf-alertmanager-secrets
+      # V2.1 Ops-A GitHub Issues receiver (Codex 019e2a4f Q1+Q2 + PR #645 spike):
+      # Vault'tan bağımsız PAT mount; GHA secret olarak da configure edilebilir.
+      # Mount path: /etc/alertmanager/secrets/github-issues-receiver-token/GITHUB_TOKEN
+      # Owner action: kubectl create secret generic github-issues-receiver-token \
+      #   --from-literal=GITHUB_TOKEN=<PAT_with_repo_workflow_scope>
+      - github-issues-receiver-token
       # D43 fallback secret (mevcut, audit only — alarm-receiver-bridge baseline path)
       - alertmanager-fallback-secrets
 
@@ -96,10 +102,19 @@ alertmanager:
       repeat_interval: 4h
       receiver: 'alarm-receiver-bridge'
       routes:
-        # V2.1 Ops-A — Critical perf alarms DUAL delivery (Codex 019e2772 P1 absorb):
-        # 1. perf-alerts-slack (continue:true → 2. critical bridge route'a düşer)
-        # alertmanager-bridge-design.md §critical = P1 operator action <10min;
-        # critical perf alarm Slack visibility + bridge P1 pipeline her ikisi.
+        # V2.1 Ops-A — Critical perf alarms TRIPLE delivery (Codex 019e2772 P1 + 019e2a4f Q1+Q2):
+        # 1. perf-alerts-github-issues (continue:true → 2. + 3.) — Vault'tan bağımsız (V2.1 #4 closure)
+        # 2. perf-alerts-slack (continue:true → 3. critical bridge route) — Vault DR sonrası activate
+        # 3. critical bridge (P1 operator action <10min pipeline)
+        - matchers:
+            - team = "perf"
+            - severity = "critical"
+          receiver: 'perf-alerts-github-issues'
+          group_by: ['alertname', 'namespace']
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 6h
+          continue: true
         - matchers:
             - team = "perf"
             - severity = "critical"
@@ -115,8 +130,16 @@ alertmanager:
           receiver: 'alarm-receiver-bridge'
           group_wait: 0s
           repeat_interval: 1h
-        # V2.1 Ops-A — Non-critical perf alarms Slack-only (warning/info)
-        # Codex 019e267a tur-1 R1 absorb (throttle + dedupe + resolved lifecycle).
+        # V2.1 Ops-A — Non-critical perf alarms DUAL delivery (warning/info)
+        # GitHub Issues (V2.1 #4 closure path) + Slack (Vault DR sonrası).
+        - matchers:
+            - team = "perf"
+          receiver: 'perf-alerts-github-issues'
+          group_by: ['alertname', 'namespace']
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 6h
+          continue: true
         - matchers:
             - team = "perf"
           receiver: 'perf-alerts-slack'
@@ -154,6 +177,31 @@ alertmanager:
               *Namespace:* {{ with .CommonLabels.namespace }}{{ . }}{{ else }}n/a{{ end }}
               *Description:* {{ range .Alerts }}{{ .Annotations.description }}{{ end }}
               *Runbook:* {{ range .Alerts }}{{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}{{ end }}
+      # V2.1 Ops-A — Perf alerts GitHub Issues receiver (Codex 019e2a4f Q1+Q2 + PR #645 spike).
+      # Vault DR blocker bypass: GitHub PAT GHA secret olarak veya K8s Secret manual create.
+      # Alertmanager webhook → GitHub API repository_dispatch → .github/workflows/alert-receiver.yml
+      # → Issue create/comment/close lifecycle.
+      #
+      # http_config Bearer auth header_file:
+      #   /etc/alertmanager/secrets/github-issues-receiver-token/GITHUB_TOKEN
+      #
+      # Payload: Alertmanager v4 webhook format (status + commonLabels + alerts[] + annotations)
+      # Workflow parses STATUS, ALERTNAME, SEVERITY, NAMESPACE, DESC, RUNBOOK → Issue body.
+      # Dedupe: label `alert/<alertname>/<namespace>`; existing open issue → comment, no new.
+      # Resolved lifecycle: status=resolved → issue close + comment.
+      - name: 'perf-alerts-github-issues'
+        webhook_configs:
+          - url: 'https://api.github.com/repos/Halildeu/platform-k8s-gitops/dispatches'
+            http_config:
+              authorization:
+                type: Bearer
+                credentials_file: /etc/alertmanager/secrets/github-issues-receiver-token/GITHUB_TOKEN
+            send_resolved: true
+            max_alerts: 50
+            # Alertmanager webhook payload mapping → GitHub repository_dispatch:
+            # body = {"event_type": "perf-alert", "client_payload": <alertmanager v4 webhook>}
+            # Alertmanager Go template ile wrap edilemez; workflow parser PAYLOAD field'larını
+            # commonLabels/alerts[]/status üzerinden okur (toJSON GitHub Actions side).
     inhibit_rules:
       # Critical inhibits warning of same alertname
       - source_matchers:
