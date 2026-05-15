@@ -623,7 +623,18 @@ images:
     #
     # Build run: 25608239209 (PR-BE-15 squash, success).
     # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:890eeea33fb0e1b4505a723eddd58c5b9e3479a207a07a6e98cbcaf4dc40a324
-    digest: sha256:890eeea33fb0e1b4505a723eddd58c5b9e3479a207a07a6e98cbcaf4dc40a324
+    #
+    # 2026-05-16 update: sha-8e79612 — platform-backend PR #220 squash
+    # merge (Adım 12 PR-4a). New endpoint GET /api/v1/schema/reporting-contract
+    # emits the etl-worker target contract (ReportingContractSnapshot:
+    # contract_version + allowlist_name/version + tables LIST + column
+    # type, allowlist-filtered to the ReportingAllowlist V1 40-table
+    # set). Legacy /api/v1/schema/snapshot untouched — frontend +
+    # report-service SchemaTruthService Tier-1 unaffected. Codex
+    # 019e2d64 Opt-B' AGREE. Prereq for Adım 12 PR-4 testai live smoke.
+    # Image build run 25941823382 (PR #220 merge commit 8e79612).
+    # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:387ad01af0cc9e3c2cacb6b9a88d3ed7d9d3a402f94366d71d8b97a48d2e3311
+    digest: sha256:387ad01af0cc9e3c2cacb6b9a88d3ed7d9d3a402f94366d71d8b97a48d2e3311
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
