@@ -453,7 +453,55 @@ images:
     # suite 745/745 PASS. Image build run 25909411392 pushed
     # ghcr.io/halildeu/platform-backend-report-service:sha-f34995b
     # @sha256:426a2a7ce06c8a7745fabef876e89e6e5b7be7dc17f2bf2c5d089976c0a85825
-    digest: sha256:426a2a7ce06c8a7745fabef876e89e6e5b7be7dc17f2bf2c5d089976c0a85825
+    #
+    # 2026-05-15 update: sha-c98df8f — platform-backend PR #213 squash
+    # merged. PR-0.5a grand total row backend (Codex thread 019e2c61
+    # cross-AI peer review consensus: plan-time AGREE + post-impl
+    # AGREE/ready_to_merge:true after §High null-value bug absorb).
+    #
+    # New surface on the response envelope: optional
+    # `grandTotalRow: Map<String, Object>` on root SSRM grouped
+    # (non-pivot) requests with non-empty aggregations. Backend gates
+    # via currentLevel==0 && !pivotMode && !valueCols.isEmpty() so
+    # child stores keep bucket-level aggs only. The map is keyed by
+    # aggregation alias (== column field) and values mirror grouped
+    # path aggregate semantics (sum/avg/min/max/count/distinctcount/
+    # stddev/stddevp/median/percentilecont/weightedavg).
+    #
+    # SQL shape:
+    #   * Plain agg → SELECT SUM([col]) AS [col], … FROM <fromClause>
+    #     (no GROUP BY, no OFFSET/FETCH).
+    #   * PERCENTILE_CONT (median/percentilecont) → inner SELECT with
+    #     OVER () (no PARTITION BY → global window), outer MAX
+    #     collapse for single deterministic output row.
+    #   * weightedavg → SUM([v] * [w]) / NULLIF(SUM(CASE WHEN [v] IS
+    #     NOT NULL AND [w] IS NOT NULL THEN [w] END), 0) with weight
+    #     column projected into FROM (PR-0.4c projection contract
+    #     preserved).
+    #
+    # New capability flag: ReportCapabilitiesDto.supportsGrandTotal
+    # = !groupable.isEmpty() && !aggregatable.isEmpty(); pivot
+    # exclusion is at request time, not via metadata.
+    #
+    # Resilient degradation: executeGrandTotalRow returns null on any
+    # failure path so the dominant grouped flow keeps rendering even
+    # if the grand total fails transiently. Codex §High absorb
+    # replaced Map.copyOf (which rejects null values) with
+    # Collections.unmodifiableMap(LinkedHashMap) so JDBC aggregate
+    # rows with legitimate NULL values (empty filter set SUM/AVG,
+    # weightedavg denominator zero, percentile over empty set) can't
+    # NPE the canonical constructor.
+    #
+    # Evidence: SqlBuilderTest.BuildGrandTotalQuery 6 PASS, new
+    # QueryEngineTest.GrandTotalRowNullTolerance 4 PASS,
+    # PagedResultDtoTest 6 PASS, ReportControllerQueryTest.
+    # GrandTotalRowDispatch 4 PASS. Full report-service suite
+    # 765/765 PASS. Image build run 25930229979 pushed
+    # ghcr.io/halildeu/platform-backend-report-service:sha-c98df8f
+    # @sha256:f058b4c714d7c5a47cc42692fa08c92525d3e99d6ac0536f1db9028a20b1ea6e
+    # Frontend PR-0.5a-fe (platform-web PR #533) wires the new field
+    # into AG Grid pinnedBottomRowData on root-store responses.
+    digest: sha256:f058b4c714d7c5a47cc42692fa08c92525d3e99d6ac0536f1db9028a20b1ea6e
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
