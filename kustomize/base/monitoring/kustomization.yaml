@@ -27,6 +27,11 @@ resources:
   # AbsentTest/AbsentProd rule'ları `base/monitoring-prod-hub/` altında
   # (yalnızca prod-hub'a apply).
   - prometheusrule-frontend-federation-smoke-common.yaml
+  # Bridge self-watch (Session 53 P0 #6 — Codex 019e2a4f):
+  # Session 52 close tespit — bridge CrashLoopBackOff 10 gündür hiç alarm
+  # gelmedi (observability gap). 3 alert: BridgeDown / BridgeCrashLooping /
+  # BridgeHealthzFail. Prom k8s API state scrape bridge'den bağımsız.
+  - prometheusrule-alertmanager-bridge-self-watch.yaml
   - alertmanager-bridge           # Codex Sprint A follow-up — AlertManager → GitHub Issues bridge
   # Grafana dashboard ConfigMap'ler — kube-prometheus-stack sidecar provisioner
   # otomatik import (label grafana_dashboard=1). Helm values
