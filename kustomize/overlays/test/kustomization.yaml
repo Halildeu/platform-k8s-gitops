@@ -433,7 +433,27 @@ images:
     # suite 706/706 PASS. Image build run 25875570824 pushed this digest;
     # cross-AI peer review on Codex thread 019e2695 reached AGREE for both
     # PRs. testai deploy + browser smoke pending in this overlay bump.
-    digest: sha256:e6bb1cd6ea004c882fb56f21b4d31bfa8c3b7e1771cb9425a31eb289add38330
+    #
+    # 2026-05-15 update: sha-f34995b — platform-backend PR #209
+    # (PR-0.4c server-side weightedavg aggregator, flat path only).
+    # Adds the weighted-average function to the SqlBuilder +
+    # ReportController + ColumnDefinition + schema chain so reports
+    # can declare paired value/weight columns and get a null-safe
+    # weighted ratio per bucket:
+    #   SUM([value] * [weight]) / NULLIF(SUM(CASE WHEN [value] IS
+    #     NOT NULL AND [weight] IS NOT NULL THEN [weight] END), 0)
+    # Iter-2 (Codex 019e2acc absorb) added projection-side weight
+    # field handling so multi-schema UNION ALL and percentile-wrapper
+    # paths emit valid SQL. Pivot composition is deferred to PR-0.4h;
+    # controller rejects weightedavg inside a pivot request.
+    # Evidence: SqlBuilderTest.WeightedAverageAggregation 7 PASS,
+    # ReportControllerQueryTest.WeightedAverageValidation 5 PASS,
+    # SqlBuilderMssqlIntegrationTest 2 new IT pass (17.5/13.0 ratios
+    # + all-null bucket NULL + partial-null exclusion). Full backend
+    # suite 745/745 PASS. Image build run 25909411392 pushed
+    # ghcr.io/halildeu/platform-backend-report-service:sha-f34995b
+    # @sha256:426a2a7ce06c8a7745fabef876e89e6e5b7be7dc17f2bf2c5d089976c0a85825
+    digest: sha256:426a2a7ce06c8a7745fabef876e89e6e5b7be7dc17f2bf2c5d089976c0a85825
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
@@ -1845,7 +1865,42 @@ images:
     # 25907546953 pushed
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-42c892e
     # @sha256:3412f4561eb71237ac5cb6d54ba155c859b79f9c678f6354afdffd56ff194db5
-    digest: sha256:3412f4561eb71237ac5cb6d54ba155c859b79f9c678f6354afdffd56ff194db5
+    #
+    # 2026-05-15 update: sha-8b57ae4 — platform-web PR #525
+    # (PR-0.4g2 incomplete pivot state degradation). Live testai
+    # browser smoke surfaced four chip-removal transitions that
+    # tripped backend GROUPING_NOT_SUPPORTED 400 after PR-0.4d-fe2
+    # lit up the pivot UI: missing rowGroup, missing pivotCols,
+    # missing valueCols, and drill-down inside a complete pivot.
+    # normalizeServerSideRequest now degrades each broken-snapshot
+    # to the closest backend-supported shape so the grid stays
+    # interactive while the user iterates on chip placement:
+    #   * pivotMode + no rowGroup → flat (drop pivotMode +
+    #     pivotCols + valueCols + groupKeys).
+    #   * pivotMode + rowGroup + no pivotCols → grouped (drop
+    #     pivotMode + pivotCols, keep rowGroupCols + valueCols).
+    #   * pivotMode + rowGroup + pivotCols + no valueCols →
+    #     grouped (drop pivotMode + pivotCols + groupKeys).
+    #   * Complete pivot + groupKeys → strip groupKeys (PR-0.4b
+    #     single-level only; multi-level expansion is PR-0.4e).
+    # Codex thread `019e2a7f` iter-2 AGREE (Values-chip-missing
+    # gap absorbed). Tests: 14 PASS in
+    # normalize-server-side-request.test.ts (8 PR-0.4g + 6 PR-0.4g2),
+    # full mfe-reporting suite 315/315 PASS, pnpm build green.
+    # Image build run 25910218299 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-8b57ae4
+    # @sha256:bc61250f46f49d7d233af3e043333a90da3c41af618ca80582b802ce278e75a6
+    # Live testai browser smoke (2026-05-15 LIVE):
+    #   * Variant Serban opens with rowGroup=[PROJECT_NAME] +
+    #     pivotMode toggled on (Sütunlar panel) + BA dragged to
+    #     Column Labels → full pivot SQL: grid renders
+    #     `Borç / SUM(AMOUNT)`, `Borç / SUM(AMOUNT_2)`,
+    #     `Alacak / SUM(AMOUNT)`, `Alacak / SUM(AMOUNT_2)`
+    #     secondary headers with per-Proje totals.
+    #   * Remove Row Groups chip (Proje Adı X) → grid clears
+    #     gracefully, NO `GROUPING_NOT_SUPPORTED` toast, no ERR
+    #     row. Frontend sent a flat request after normalisation.
+    digest: sha256:bc61250f46f49d7d233af3e043333a90da3c41af618ca80582b802ce278e75a6
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
