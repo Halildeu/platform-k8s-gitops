@@ -995,7 +995,7 @@ Bu repo'da DEĞİL, ana repo'da yapılacaklar. Manifest yazımıyla eş zamanlı
 - V18 parametric DDL generator extension
 - Manifest `source_instances` enrichment
 - Runner parametric expansion (1 manifest entry → N TableMeta)
-- Schema-service yearly-schema crawl tool
+- ~~Schema-service yearly-schema crawl tool~~ — **EXCLUDED'dan kaldırıldı 2026-05-15** (Codex thread `019e2c59` iter-3 revize): mevcut `schema-service` `/api/v1/schema/schemas` ve `/api/v1/schema/snapshot?schema=<name>` endpoint'leri **canlı parametric schema crawl** sağlıyor (319+ schema: canonical + 43 tenant-only + 276 year-tenant). Ayrı yearly-schema crawl tool yazmaya gerek yok; Annex 2A SEAL validation bu endpoint'ler üzerinden 8/8 PASS oldu (PR #680). Parametric ETL pipeline (source_axis_key, partition, V18 generator, runner expansion) hâlâ deferred kalır — sadece schema discovery layer'ı zaten mevcut.
 
 **Korunan Faz 16 kapsamı (canonical only)**: 23 master-data tablosu Day 6+7+hotfix ile DONE. PR #157 (Day 6 audit/retry), #158 (Day 7 orchestrator+reconcile), #159 (Day 7 live smoke hotfix). Mac dev-pg smoke `VERDICT MATCH`, `checksum_pg = checksum_mssql`, idempotent upsert kanıtlı (`docs/migration/reconcile-20260426-1b4f8397-smoke-dev-pg.{md,json}`).
 
