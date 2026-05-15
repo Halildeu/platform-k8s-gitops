@@ -3,18 +3,26 @@ _meta:
   status: DRAFT
   seal_state: DRAFT
   # Adim 13 SEAL — agent pre-SEAL validation packet (Codex 019e2c59 B-prime).
-  # Bu blok kanonik SEAL alanlarini (status / seal_state / manually_validated /
-  # migration_action_default) DEGISTIRMEZ; operator sign-off icin review-ready.
-  # Detay: docs/migration/annex-2a-agent-validation-2026-05-15.md
+  # v2 revision: kullanici schema-service /api/v1/schema/schemas endpointinin
+  # 319+ schema (canonical + tenant-only + year-tenant) zaten tarayabildigini
+  # kesfetti. v1in 8/8 needs_review verdicti iptal; v2 sonucu 8/8 pass.
+  # Kanonik SEAL alanlari (status / seal_state / manually_validated /
+  # migration_action_default) DEGISTIRMEZ; domain decisions hala pending.
+  # Detay: docs/migration/annex-2a-agent-validation-2026-05-15-v2.md
   agent_validation_run:
     date: 2026-05-15
+    revision: v2
     actor: claude
     codex_thread: 019e2c59-1cdb-7ea3-a8e6-bf3fcabc62b2
-    verdict: pre-seal-validation-packet
-    pending_manual_validation_count: 8
-    needs_review_count: 8
-    needs_review_reason: parametric_schema_drift_guard
-    note: 'Canonical workcube-schema.json yearly parametric tables icermez; static profil temiz, schema cross-check operator parametric crawl sonrasi.'
+    verdict: pre-seal-validation-packet-v2
+    cross_check_count: 8
+    pass_count: 8
+    needs_review_count: 0
+    pass_reason: 'schema-service /snapshot?schema=<name> ile canonical + year-tenant tablolari cross-check edildi; 8/8 sourceQuery resolved.'
+    pending_domain_decisions:
+    - float_semantic_class (DBA + backend lead cift onay)
+    - timezone (ERP DBA yazili onay)
+    - migration_action_default per report (DBA + PO karar)
   generated_by: scripts/migration/extract-report-source-annex.py
   total_reports: 31
   direct_source_reports: 23
