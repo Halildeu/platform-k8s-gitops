@@ -11,9 +11,26 @@
 
 ## 1. Bağlam
 
-V2.1 prod-readiness sub-wave 9/9 DONE 🟢. Faz G freeze gate full unlocked. D30 atomic cutover (k8s prod → primary endpoint) son aşama.
+V2.1 prod-readiness sub-wave 9/9 DONE 🟢. V2.1 sub-wave freeze gate full unlocked.
 
-**Cutover modeli**: Edge proxy L4 atomic switch (compose → k8s). **Weighted DNS YASAK** (ADR-0002 §3.8). **72h warm rollback window**: staging-sw compose frozen + ayakta cutover sonrası 3 gün.
+### 1.1 ⚠️ Topology Truth (PR #695 Discovery + Codex `019e2d16` REVISE)
+
+**Önemli**: `ai.acik.com` frontend **zaten 2026-05-03'den beri cluster-authoritative** (Codex `019ded8d` PARTIAL → AGREE absorb). System-wide Faz G T0 = 2026-04-24 (PLAN.md line 34 🟢).
+
+**Bu yüzden D30 atomic cutover semantik clarify gerek**:
+- Frontend `ai.acik.com` → k3d-prod ingress NodePort 30443 ZATEN proxy_pass ✓
+- Backend services k3d-prod cluster ZATEN running (Session 36 prod migration sonrası 49 pod Running)
+- Stateful compose (PG/KC/Vault) D6 contract korunuyor (intentional)
+
+**D30 "atomic cutover" gerçek scope** (TBD owner clarification):
+- ❓ Possible A: Compose decommission (72h soak window sonrası containers stop)
+- ❓ Possible B: DNS/edge layer change (A-record, CDN proxy)
+- ❓ Possible C: Hibernate config drift fix epic (V2.1 reporting refactor track D dalga 1)
+- ❌ NOT: "Edge proxy L4 compose → k8s switch" (already done 2026-05-03)
+
+**Bu runbook eski §6.1 sed komutu (compose-backend.upstream → k8s-prod.upstream)** factually incorrect — V2.1 sub-wave context için preserved historical; gerçek D30 cutover scope owner kararı bekliyor.
+
+**Weighted DNS YASAK** (ADR-0002 §3.8). **72h warm rollback window** kontratı korunuyor.
 
 ---
 
@@ -181,13 +198,23 @@ dig +short ai.acik.com
 dig +short testai.acik.com
 "
 
-# Step 1: Edge proxy L4 atomic switch (compose → k8s)
-# Manual nginx config update — owner exec
-ssh halil@staging-sw "
-sudo sed -i.pre-cutover-backup 's/compose-backend.upstream/k8s-prod.upstream/g' /etc/nginx/sites-enabled/ai.acik.com
-sudo nginx -t
-sudo nginx -s reload
-"
+# ⚠️ HISTORICAL DRAFT (Codex `019e2d16` REVISE — factually incorrect for current topology):
+# Frontend ai.acik.com 2026-05-03'den beri cluster-served (host nginx → 30443 NodePort).
+# Aşağıdaki sed komutu sites-enabled path'inde DEĞIL (actual: platform-web-nginx container
+# /home/halil/platform/web/nginx/default.conf bind-mount). Bu komut çalıştırılırsa silent
+# no-op olur (file yok).
+#
+# REAL D30 cutover scope owner clarification gerek (§1.1):
+# - Possible A: Compose decommission (containers stop sonrası 72h grace remove)
+# - Possible B: DNS/edge layer change
+# - Possible C: Backend service Hibernate config drift fix epic
+#
+# Canonical rollback target available: default.conf.bak-20260503-1425 (PR #695 §1.2)
+# Real rollback chain: PR #695 §3 (test cluster rehearsal pattern)
+
+# Step 1: TBD per owner D30 scope clarification (placeholder draft kept for V2.1 sub-wave
+# audit trail; owner authorization gerek real exec için)
+echo "TBD per owner D30 scope clarification (see §1.1 topology truth)"
 
 # Step 2: Verify atomic switch (≤30 seconds)
 curl -sS -o /dev/null -w "post-cutover http=%{http_code} time=%{time_total}s\n" https://ai.acik.com/health

@@ -9,6 +9,28 @@
 
 ---
 
+## 0. ⚠️ Codex `019e2d16` REVISE Absorb (Enforcement Source vs Target Tracker)
+
+**Bu doc enforcement source DEĞİL** — V3 perf debt targets'in **discrete trackable owner/PR/wave mapping**'idir.
+
+**Enforcement sources** (gerçek runtime gate'leri):
+- `platform-web/performance-budgets.json` — route-level fail thresholds (flat schema)
+- `platform-web/tests/perf/baseline.json` — sliding history pattern (FIFO 30)
+- `platform-web/scripts/ci/route-performance-budget.mjs` — runner evaluate() flat field reader
+- `platform-web/scripts/perf/sliding-baseline-check.mjs` — G2 regression gate (TRACKED_METRICS: transferKB, decodedKB, resourceCount, tbtMs, longTaskTotalMs, lcpMs, fcpMs — **CLS YOK**)
+
+**Dual budget code-compat status** (Codex `019e2d16` finding):
+- `regressionGuard` + `targetBudget` nested schema şu an **code-incompatible**
+- Runner sadece flat `transferFailKB`/`decodedFailKB`/`lcpFailMs`/`clsFail` okuyor
+- Activation gerek için ya runner profile (`--budget-profile regressionGuard|targetBudget`) ekleme PR, ya da `sliding-baseline-check.mjs` hard gate model genişletme + CLS TRACKED_METRICS'e ekleme
+
+**Activation roadmap**:
+1. **Önce code PR**: runner profile veya sliding-baseline genişletme (CLS dahil)
+2. **Sonra schema extend PR**: `performance-budgets.json` dual budget format
+3. **En son hard-flip activation PR** (`_phase: warn-only` → `_phase: hard-fail-regression-guard-only`)
+
+---
+
 ## 1. Bağlam — Neden Bu Doc?
 
 PMD §2.2 (KPI Tiered Hedefler) + §2.3 (Leader-Target referans matrisi) formal hedefleri tanımlı. Ama:
@@ -81,8 +103,8 @@ Bu doc PMD §2.3 ↔ M2a1 actual karşılaştırmasından çıkan **9 discrete p
 |---|---|
 | ID | `V3-perf-debt-#1` |
 | Title | `/home cold-authenticated CLS 0.362 (3.6× leader) — layout shift fix` |
-| Priority | **P0** (critical UX, hard-flip activation blocker) |
-| V3 Wave | **B2 — CLS Optimization** |
+| Priority | **P0 — kritik UX + V3 target debt** (NOT hard-flip seed blocker per PMD §138: M2a1 ilk ölçüm "iyi/kötü değil, ölçüm zinciri kuruldu"; hard-flip activation regressionGuard baseline ratification ile, CLS 0.362 V3-B2 target — Codex `019e2d16` REVISE absorb) |
+| V3 Wave | **V3-B2 — CLS Optimization** (PMD V2 Wave B2 ≠ V3-B2 namespace collision avoid) |
 | Owner | TBD (frontend engineer + UX) |
 | Target | CLS ≤0.10 (Web Vitals + leader target) |
 | Effort | TBD (~16-32h initial) |
@@ -98,7 +120,7 @@ Bu doc PMD §2.3 ↔ M2a1 actual karşılaştırmasından çıkan **9 discrete p
 | ID | `V3-perf-debt-#2` |
 | Title | `/admin/* LCP 4,500-4,900ms (3-3.3× leader 1,500ms) — critical path optimization` |
 | Priority | **P0** (sektör 3× altında, user-perceived) |
-| V3 Wave | **B1 — LCP Critical Chain** |
+| V3 Wave | **V3-B1 — LCP Critical Chain** (PMD V2 Wave B1 closed ≠ V3-B1 namespace) |
 | Owner | TBD (frontend + backend) |
 | Target | LCP p75 ≤1,500ms (admin routes leader target) |
 | Effort | TBD (~40-80h estimated) |
@@ -113,7 +135,7 @@ Bu doc PMD §2.3 ↔ M2a1 actual karşılaştırmasından çıkan **9 discrete p
 | ID | `V3-perf-debt-#3` |
 | Title | `/home cold-authenticated LCP 2,176ms (leader 1,200ms +%81)` |
 | Priority | **P0** (CWV + hard-flip blocker) |
-| V3 Wave | **B1 — LCP Critical Chain** |
+| V3 Wave | **V3-B1 — LCP Critical Chain** (PMD V2 Wave B1 closed ≠ V3-B1 namespace) |
 | Owner | TBD |
 | Target | LCP p75 ≤1,200ms |
 | Effort | TBD (~24-40h) |
@@ -127,7 +149,7 @@ Bu doc PMD §2.3 ↔ M2a1 actual karşılaştırmasından çıkan **9 discrete p
 | ID | `V3-perf-debt-#4` |
 | Title | `Auth routes cold transfer 9-9.5 MB (leader 3-6 MB)` |
 | Priority | **P1** (bandwidth, mobile/3G zayıf) |
-| V3 Wave | **B1 — Bundle Size Wave** |
+| V3 Wave | **V3-B1 — Bundle Size Wave** (PMD V2 Wave B1 closed ≠ V3-B1 namespace) |
 | Owner | TBD (frontend) |
 | Target | /home ≤3,000 KB, /admin/* ≤6,000 KB |
 | Effort | TBD (~40-60h initial + ongoing) |
@@ -142,7 +164,7 @@ Bu doc PMD §2.3 ↔ M2a1 actual karşılaştırmasından çıkan **9 discrete p
 | ID | `V3-perf-debt-#5` |
 | Title | `Auth routes decoded 34-36 MB (leader 12-18 MB)` |
 | Priority | **P1** (parse/exec cost; main thread block) |
-| V3 Wave | **B1 — Bundle Size Wave** |
+| V3 Wave | **V3-B1 — Bundle Size Wave** (PMD V2 Wave B1 closed ≠ V3-B1 namespace) |
 | Owner | TBD (frontend) |
 | Target | /home ≤12 MB, /admin/* ≤18 MB |
 | Effort | Item #4 ile birlikte |
@@ -156,7 +178,7 @@ Bu doc PMD §2.3 ↔ M2a1 actual karşılaştırmasından çıkan **9 discrete p
 | ID | `V3-perf-debt-#6` |
 | Title | `/admin/reports/users CLS 0.161 (leader ≤0.10 +%61)` |
 | Priority | **P1** (mfe-reporting AG Grid render layout shift) |
-| V3 Wave | **B2 — CLS Optimization** |
+| V3 Wave | **V3-B2 — CLS Optimization** (PMD V2 Wave B2 ≠ V3-B2 namespace collision avoid) |
 | Owner | TBD (mfe-reporting team) |
 | Target | CLS p75 ≤0.10 |
 | Effort | TBD (~12-20h) |
@@ -170,7 +192,7 @@ Bu doc PMD §2.3 ↔ M2a1 actual karşılaştırmasından çıkan **9 discrete p
 | ID | `V3-perf-debt-#7` |
 | Title | `All cold-authenticated routes TBT 71-77ms (leader 30-50ms)` |
 | Priority | **P2** (main thread block; less critical than LCP) |
-| V3 Wave | **B3 — Long Task / Critical Path** |
+| V3 Wave | **V3-B3 — Long Task / Critical Path** (PMD V2 Wave B3 closed ≠ V3-B3 namespace) |
 | Owner | TBD |
 | Target | TBT p75 ≤50ms |
 | Effort | TBD (~20-40h) |
@@ -198,7 +220,7 @@ Bu doc PMD §2.3 ↔ M2a1 actual karşılaştırmasından çıkan **9 discrete p
 | ID | `V3-perf-debt-#9` |
 | Title | `Auth routes resource count 116-134 (leader ≤80, +%45-68)` |
 | Priority | **P3** (request count, less impact than byte) |
-| V3 Wave | **B3 — Lazy / Chunk Split** |
+| V3 Wave | **V3-B3 — Lazy / Chunk Split** (PMD V2 Wave B3 closed ≠ V3-B3 namespace) |
 | Owner | TBD |
 | Target | Resource count ≤80 per route |
 | Effort | TBD (~20-30h) |
@@ -209,7 +231,7 @@ Bu doc PMD §2.3 ↔ M2a1 actual karşılaştırmasından çıkan **9 discrete p
 
 ## 4. V3 Wave Mapping
 
-### Wave B1 — LCP + Bundle Size Critical (P0+P1)
+### Wave V3-B1 — LCP + Bundle Size Critical (P0+P1)
 
 Items: #2, #3, #4, #5, #8
 
@@ -221,7 +243,7 @@ Items: #2, #3, #4, #5, #8
 **Estimated effort**: 80-160h (~2-4 hafta full-time frontend)
 **Wave gate**: All 5 routes leader target byte + LCP sustained
 
-### Wave B2 — CLS Optimization (P0+P1)
+### Wave V3-B2 — CLS Optimization (P0+P1)
 
 Items: #1, #6
 
@@ -232,7 +254,7 @@ Items: #1, #6
 **Estimated effort**: 28-52h
 **Wave gate**: All 4 routes CLS p75 ≤0.10 sustained
 
-### Wave B3 — Long Task / Lazy Chunk (P2+P3)
+### Wave V3-B3 — Long Task / Lazy Chunk (P2+P3)
 
 Items: #7, #9
 
