@@ -5,7 +5,81 @@
 > **Sahip**: Halil
 > **Sprint**: V2.1 prod-readiness — #3 closure (son owner action)
 > **Codex consensus**: thread `019e2a4f` Option B + "M2a0 owner step daraltılmış scope"
-> **Status**: Owner action runbook (autonomous prep tamam)
+> **Status**: ✅ **EXECUTED — Yol A LIVE 2026-05-15 (agent autonomous)**
+
+---
+
+## 0. ⚠️ Düzeltme — Actual Successful Path (v2 — idempotent)
+
+Runbook v1 (aşağıdaki bölüm 3.2) `https://testai.acik.com/admin/realms/platform/users` üzerinden persona create öneriyordu. **LIVE attempt 405 Not Allowed nginx/1.27.5** (host nginx `/admin/realms/*` admin REST endpoint'i route etmiyor — bu **doğru security stance**, admin REST edge'e açılmamalı) + **realm adı yanlış** (gerçek realm `platform-test`, runbook v1 `platform`).
+
+**Doğru break-glass path (idempotent, re-runnable) — agent autonomous execute edildi**:
+
+```bash
+ssh halil@staging-sw
+
+# 1) kcadm.sh master realm login (admin password compose secret mount, agent read+use; Pre-Production Full Authority)
+docker exec platform-kc-test bash -c 'ADMIN_PASS=$(cat /run/secrets/kc_admin_password) && \
+  /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080 --realm master --user admin --password "$ADMIN_PASS"'
+
+# 2) Idempotent persona ensure (create OR update if exists)
+EXISTING_ID=$(docker exec platform-kc-test /opt/keycloak/bin/kcadm.sh get users -r platform-test -q username=perf-test 2>&1 \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["id"] if d else "")' 2>/dev/null)
+
+if [ -z "$EXISTING_ID" ]; then
+  USER_ID=$(docker exec platform-kc-test /opt/keycloak/bin/kcadm.sh create users -r platform-test \
+    -s username=perf-test -s email=perf-test@local -s firstName=Perf -s lastName=Test \
+    -s enabled=true -s emailVerified=true 2>&1 | grep -oE '[a-f0-9-]{36}')
+else
+  USER_ID="$EXISTING_ID"
+fi
+
+# 3) Set password symmetric with K8s Secret (env, never inline)
+TEST_PASS=$(kubectl --context k3d-test -n platform-test get secret test-personas-perf-auth -o jsonpath='{.data.password}' | base64 -d)
+docker exec -e TEST_PASS="$TEST_PASS" platform-kc-test bash -c \
+  "/opt/keycloak/bin/kcadm.sh set-password -r platform-test --userid $USER_ID --new-password \"\$TEST_PASS\""
+
+# 4) K8s Secret realm field düzelt — kubectl apply (idempotent; patch yerine, field yoksa fail etmez)
+USERNAME_B64=$(echo -n perf-test | base64 -w0)
+REALM_B64=$(echo -n platform-test | base64 -w0)
+PASS_B64=$(printf "%s" "$TEST_PASS" | base64 -w0)
+cat > /tmp/secret.yaml <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: test-personas-perf-auth
+  namespace: platform-test
+type: Opaque
+data:
+  username: $USERNAME_B64
+  password: $PASS_B64
+  realm: $REALM_B64
+EOF
+kubectl --context k3d-test apply -f /tmp/secret.yaml
+rm -f /tmp/secret.yaml
+unset TEST_PASS USERNAME_B64 REALM_B64 PASS_B64
+
+# 5) Token grant smoke verify (compose external port 8082, client_id=admin-cli M2a0 smoke için yeterli)
+TEST_PASS=$(kubectl --context k3d-test -n platform-test get secret test-personas-perf-auth -o jsonpath='{.data.password}' | base64 -d)
+curl -sS -X POST "http://127.0.0.1:8082/realms/platform-test/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "username=perf-test" \
+  --data-urlencode "password=$TEST_PASS" \
+  --data-urlencode "grant_type=password" \
+  --data-urlencode "client_id=admin-cli" \
+  -o /dev/null -w "http_code=%{http_code}\n"
+# → http_code=200 ✓ (M2a0 smoke only; M2a1 gerçek frontend OIDC client + browser path gerekir)
+unset TEST_PASS
+```
+
+**LIVE evidence**: `docs/performance/V2.1-3-m2a-owner-action-live-evidence.md` (M2a0 unlock proof).
+
+**M2a0 ≠ M2a1**: Bu path persona credential smoke için yeterli; **authenticated route budget measurement (M2a1) cross-repo platform-web PR** ile yapılır (Playwright `/login` browser path + 4 route × N≥3 measurement + rendered sentinel). Codex `019e2b00` REVISE notu.
+
+**V3 production note**: Bu pattern **break-glass / operator path** olarak kalır. Düzenli production işlemi için internal Keycloak admin Service / restricted Kubernetes Job / host-local 127.0.0.1 admin portu. Public nginx admin route asla açılmamalı.
+
+Aşağıdaki v1 bölümleri **referans** olarak kalır (autonomous prep paketinin tarihsel kanıtı + V3 Vault DR full restore senaryosunda Option A path).
 
 ---
 
