@@ -1,27 +1,32 @@
-# etl-worker — ad-hoc K8s Job for canonical MSSQL → PG ETL run.
+# etl-worker — ad-hoc K8s Job for schema-service → reports_db UPSERT
+# (Adım 12 PR-3c, replacing the Faz 16 MSSQL→PG dry-run model).
 #
 # Hard rules in this manifest:
 #   - NOT auto-applied. Operator runs `kubectl apply -f` per the
-#     docs/etl-worker-staging-dry-run.md runbook. ArgoCD does NOT
+#     PR-4 testai live-smoke runbook (DBA `etl_snapshot_runs`
+#     migration is the prerequisite gate). ArgoCD does NOT
 #     reconcile Jobs in this namespace by design.
 #   - run-id is a placeholder (PLACEHOLDER_RUN_ID). The runbook
 #     instructs the operator to substitute a fresh UUID before apply.
-#   - default `args` is `validate-manifest` (boot smoke, no DB writes).
-#     Phase B of the runbook explicitly sets `--mode=dry-run` for the
-#     real ETL pass. Production cutover (`--mode=final-delta`) goes
-#     through a separate gate.
-#   - image is pinned by **digest** (`@sha256:...`), not tag, per D30
-#     immutable artifact rule. The runbook builds, pushes, captures
-#     the digest, and substitutes `repo@sha256:<DIGEST>` for
-#     PLACEHOLDER_DIGEST below.
+#   - Image is pinned by **digest** (`@sha256:...`), not tag, per
+#     D30 immutable artifact rule. The digest is captured from the
+#     `platform-backend` `main` workflow run that publishes the
+#     etl-worker image (workflow `etl-worker — image build + GHCR push`,
+#     step "Summary — digest"). Operator substitutes
+#     `repo@sha256:<DIGEST>` for PLACEHOLDER_DIGEST below.
 #   - backoffLimit: 0 — the application's own retry/threshold logic
 #     owns recovery. K8s Job restart would corrupt audit state.
-#   - activeDeadlineSeconds: 3600 — first dry-run target is < 60 min
-#     for limit=1000 across 2 canonical tables.
+#   - activeDeadlineSeconds: 3600 — first live run target is < 60 min.
 #   - ttlSecondsAfterFinished: 86400 — keep logs reachable 24h for
-#     post-run inspection; runbook says to scrape them sooner anyway.
+#     post-run inspection.
+#   - `readOnlyRootFilesystem: true` (Codex 019e2d27 PR-3c AGREE).
+#     The audit JSONL + checkpoint JSON files write to an `emptyDir`
+#     mount at `/var/lib/etl-worker`. emptyDir is sufficient for a
+#     single-run model; cross-Job resume would need a PVC and is
+#     deferred until the operational pattern justifies it.
 #
-# Codex thread 019dc88c iter-4 AGREE on user-gated dry-run prep PR.
+# Codex thread `019e2a5c` (PR-3a plan-time AGREE) + `019e2d27`
+# (PR-3b post-impl AGREE on image + PR-3c manifest shape).
 
 apiVersion: batch/v1
 kind: Job
@@ -31,10 +36,10 @@ metadata:
     app.kubernetes.io/name: etl-worker
     app.kubernetes.io/component: migration
     app.kubernetes.io/part-of: platform
-    platform.acik.com/faz: "16"
+    platform.acik.com/adim: "12"
   annotations:
-    platform.acik.com/codex-thread: "019dc88c"
-    platform.acik.com/runbook: "docs/etl-worker-staging-dry-run.md"
+    platform.acik.com/codex-thread: "019e2a5c"
+    platform.acik.com/runbook: "docs/etl-worker-testai-smoke-runbook.md"
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 3600
@@ -54,28 +59,45 @@ spec:
         fsGroup: 1000
       containers:
         - name: etl-worker
-          image: ghcr.io/halildeu/platform/etl-worker@sha256:PLACEHOLDER_DIGEST
+          image: ghcr.io/halildeu/platform-backend-etl-worker@sha256:1f9c93da74354f92c4358914994066efd363ba97ef1a0e1ef39aabca3a9c858f
           imagePullPolicy: IfNotPresent
-          # Args overridden by runbook; default `validate-manifest` is a
-          # no-op smoke that proves boot-up + manifest load + PG conn.
+          # PR-3a CLI contract: `run --reports-db postgres` is the
+          # fail-closed switch that requires the full REPORTS_DB_*
+          # env profile (Codex 019e2a5c PR-3a plan-time AGREE).
+          # Audit + checkpoint paths land under the writable emptyDir
+          # mount so the rest of the rootfs stays read-only.
           args:
-            - "validate-manifest"
+            - "run"
+            - "--reports-db"
+            - "postgres"
+            - "--audit-path"
+            - "/var/lib/etl-worker/audit.jsonl"
+            - "--checkpoint-path"
+            - "/var/lib/etl-worker/checkpoint.json"
+            - "--run-id"
+            - "PLACEHOLDER_RUN_ID"
           envFrom:
             - configMapRef:
                 name: etl-worker-config
             - secretRef:
-                name: etl-worker-pg-secrets
+                name: etl-worker-reports-db-secrets
             - secretRef:
-                name: etl-worker-mssql-secrets
+                name: etl-worker-schema-service-secrets
+          volumeMounts:
+            - name: etl-worker-state
+              mountPath: /var/lib/etl-worker
           resources:
             requests:
-              cpu: "200m"
-              memory: "512Mi"
+              cpu: "100m"
+              memory: "256Mi"
             limits:
-              cpu: "1500m"
-              memory: "2Gi"
+              cpu: "500m"
+              memory: "512Mi"
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+      volumes:
+        - name: etl-worker-state
+          emptyDir: {}

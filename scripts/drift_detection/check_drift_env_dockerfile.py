@@ -140,11 +140,20 @@ def check_python_version_compat(pyproject_path: str, dockerfile_path: str, workf
         issues.append("Dockerfile: FROM python:3.12-* not found")
 
     # Workflow
+    # Adım 12 PR-3c (Codex 019e2d27 REVISE P1 #2): the canonical
+    # etl-worker pytest gate moved to platform-backend's
+    # ``.github/workflows/etl-worker.yml`` once PR-3a + PR-3b shipped
+    # the new schema-service contract consumer. The legacy
+    # ``scripts/migration/etl_worker/`` source tree stays here for
+    # forensic / git-log reference but its CI workflow was removed
+    # to avoid two parallel canonical-truth authorities. Missing
+    # workflow is therefore the **expected** state post-PR-3c, not a
+    # drift signal.
     try:
         wf = Path(workflow_path).read_text(encoding="utf-8")
     except FileNotFoundError:
-        # Workflow might be optional or named differently
-        issues.append(f"workflow not found: {workflow_path} (note: ETL workflow path may differ)")
+        # Workflow optional after Adım 12 PR-3c migration to platform-backend.
+        pass
     else:
         if not re.search(r'python-version:\s*"?3\.12', wf):
             issues.append(f"{workflow_path}: python-version: 3.12 not found")
