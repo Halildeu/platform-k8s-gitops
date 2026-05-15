@@ -70,14 +70,36 @@ def severity_to_class(severity: str) -> str:
 
 
 def make_issue_title(alert: dict[str, Any]) -> str:
-    """Stable title for auto-deduplication."""
+    """Stable title for auto-deduplication.
+
+    Codex `019e2a4f` Session 53 P0 #3 absorb (PMD DoD §2.4(d) dedupe key extend):
+    title format `[alertmanager-<cls>] <alertname>/<namespace>/<configmap-or-route>@<cluster>`
+    - alertname (mandatory)
+    - namespace (fallback "")
+    - configmap (status writer alert key) veya route (cross-namespace alert)
+    - cluster (Prom external_label; fallback "")
+    """
     labels = alert.get("labels", {})
     alertname = labels.get("alertname", "UnknownAlert")
     namespace = labels.get("namespace", "")
+    configmap = labels.get("configmap", "")
+    route = labels.get("route", "")
+    cluster = labels.get("cluster", "")
     severity = labels.get("severity", "warning")
     cls = severity_to_class(severity)
-    suffix = f"/{namespace}" if namespace else ""
-    return f"[alertmanager-{cls}] {alertname}{suffix}"
+
+    # PMD DoD §2.4(d) dedupe key:
+    parts = [alertname]
+    if namespace:
+        parts.append(namespace)
+    # configmap veya route — biri varsa unique key kompozisyonu
+    cm_or_route = configmap or route
+    if cm_or_route:
+        parts.append(cm_or_route)
+    suffix = "/".join(parts[1:])
+    suffix_str = f"/{suffix}" if suffix else ""
+    cluster_str = f"@{cluster}" if cluster else ""
+    return f"[alertmanager-{cls}] {parts[0]}{suffix_str}{cluster_str}"
 
 
 def make_issue_body(alert: dict[str, Any], group_labels: dict[str, str]) -> str:
@@ -217,6 +239,36 @@ def gh_issue_comment(num: int, body: str) -> bool:
     return False
 
 
+def gh_issue_close(num: int, reason: str = "completed") -> bool:
+    """Close existing issue with reason (Codex `019e2a4f` Session 53 P0 #2 absorb —
+    resolved lifecycle: send_resolved=true → issue close + final comment).
+    Returns True on success.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "issue",
+                "close",
+                str(num),
+                "--repo",
+                GH_REPO,
+                "--reason",
+                reason,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0:
+            log.info(f"closed #{num} (reason={reason})")
+            return True
+        log.error(f"gh issue close failed: {result.stderr[:200]}")
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        log.error(f"gh issue close exception: {e}")
+    return False
+
+
 def log_undelivered(alert: dict[str, Any], reason: str) -> None:
     """Persist failed delivery for retry/audit."""
     try:
@@ -240,22 +292,30 @@ def log_undelivered(alert: dict[str, Any], reason: str) -> None:
 
 
 def process_alert(alert: dict[str, Any], group_labels: dict[str, str]) -> bool:
-    """Process single firing alert. Returns True if delivered."""
+    """Process single firing alert. Returns True if delivered.
+
+    Codex `019e2a4f` Session 53 P0 #2 absorb (lifecycle):
+    - firing + no open issue → create new
+    - firing + existing open issue → comment recurrence
+    - resolved + existing open issue → comment resolved + CLOSE issue
+    - resolved + no open issue → no-op (already closed earlier)
+    """
     status = alert.get("status", "firing")
+    title = make_issue_title(alert)
+
     if status == "resolved":
-        # On resolution, find existing issue and comment "resolved at..."
-        title = make_issue_title(alert)
         existing = gh_issue_search_open(title)
         if existing:
             ends_at = alert.get("endsAt", "unknown")
-            return gh_issue_comment(
+            comment_ok = gh_issue_comment(
                 existing,
-                f"Alert resolved at `{ends_at}` (AlertManager send_resolved=true).",
+                f"✅ Alert resolved at `{ends_at}` (AlertManager send_resolved=true).",
             )
-        log.info(f"resolved alert {title} but no open issue found")
+            close_ok = gh_issue_close(existing, reason="completed")
+            return comment_ok and close_ok
+        log.info(f"resolved alert {title} but no open issue found (already closed)")
         return True
 
-    title = make_issue_title(alert)
     body = make_issue_body(alert, group_labels)
     labels = alert.get("labels", {})
     severity = labels.get("severity", "warning")
@@ -267,7 +327,7 @@ def process_alert(alert: dict[str, Any], group_labels: dict[str, str]) -> bool:
     if existing:
         starts_at = alert.get("startsAt", "unknown")
         return gh_issue_comment(
-            existing, f"Recurrence at `{starts_at}` (still firing)."
+            existing, f"🔥 Recurrence at `{starts_at}` (still firing)."
         )
 
     delivered = gh_issue_create(title, body, issue_labels)
