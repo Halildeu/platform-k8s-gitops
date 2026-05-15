@@ -567,7 +567,32 @@ images:
     # Image build run 25937663789 pushed
     # ghcr.io/halildeu/platform-backend-report-service:sha-1c8159e
     # @sha256:a8d32dddadad210512cdf534822fa17e18ec351dd3444ec97145b9ced1f72e29
-    digest: sha256:a8d32dddadad210512cdf534822fa17e18ec351dd3444ec97145b9ced1f72e29
+    #
+    # 2026-05-15 update: sha-883295c — platform-backend PR #218 squash
+    # merged. PR-0.5c set filter dynamic values endpoint (Codex thread
+    # 019e2d54 cross-AI peer review consensus: plan-time AGREE +
+    # post-impl REVISE → AGREE/ready_to_merge:true after warnings
+    # propagation + EOF + required-param absorb).
+    #
+    # New surface: GET /api/v1/reports/{key}/filter-values?column=
+    # &search=&limit= — distinct column values for the AG Grid set
+    # filter dropdown. Backend SqlBuilder.buildDistinctValuesQuery:
+    # SELECT DISTINCT [col] over a wrapper SELECT of the RLS
+    # fromClause, LIKE search with wildcard escape, ORDER BY +
+    # OFFSET/FETCH cap. Endpoint registered on the TenantBoundaryGuard
+    # path matrix (distinct values are row-derived, not metadata).
+    # Response {values, limit, truncated}; null preserved (AG Grid
+    # "(Blanks)"). X-Report-Degraded propagation matches /data.
+    # Structured 400 INVALID_COLUMN / INVALID_LIMIT.
+    #
+    # Tests in this digest: 798/798 PASS (was 785 + 13 new
+    # filter-values related). Image build run 25941061611 pushed
+    # ghcr.io/halildeu/platform-backend-report-service:sha-883295c
+    # @sha256:87476a37a4b3f7f239d178a040bb8e60bd0ee96d5377f6baf0ceb1ce768b9dcf
+    # Frontend PR-0.5c-fe (platform-web PR #540) wires the AG Grid
+    # set filter dropdown to this endpoint with a 60s epoch-aware
+    # in-memory cache.
+    digest: sha256:87476a37a4b3f7f239d178a040bb8e60bd0ee96d5377f6baf0ceb1ce768b9dcf
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
