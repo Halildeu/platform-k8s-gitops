@@ -52,12 +52,96 @@ UNDELIVERED_LOG = os.environ.get(
     "BRIDGE_UNDELIVERED_LOG",
     "/var/log/alertmanager-bridge-undelivered.jsonl",
 )
+# Codex `019e2a4f` Session 53 P0 C absorb: undelivered.jsonl bounded size guard
+# (PVC opsiyonel; pod restart kayıp accepted — metrics ile görünürlük).
+UNDELIVERED_MAX_BYTES = int(os.environ.get("BRIDGE_UNDELIVERED_MAX_BYTES", str(10 * 1024 * 1024)))  # 10 MB
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 log = logging.getLogger("alertmanager-bridge")
+
+
+# Codex `019e2a4f` Session 53 P0 C — Prometheus metrics (stdlib, no external deps)
+# /metrics endpoint exposes operational counters; ServiceMonitor scrape.
+# Future: prometheus_client library + histogram. Şu an pure stdlib pattern.
+_METRICS = {
+    "delivered_total": 0,
+    "undelivered_total": 0,
+    "undelivered_by_reason": {},  # reason → count
+    "github_api_call_total": 0,
+    "github_api_fail_total": 0,
+    "github_api_latency_seconds_sum": 0.0,
+    "github_api_latency_seconds_count": 0,
+    "last_delivery_success_timestamp": 0,
+    "last_delivery_failure_timestamp": 0,
+    "webhook_received_total": 0,
+}
+
+
+def metric_inc(name: str, value: int | float = 1) -> None:
+    """Increment counter metric."""
+    _METRICS[name] = _METRICS.get(name, 0) + value
+
+
+def metric_inc_reason(reason: str) -> None:
+    """Increment undelivered counter by reason."""
+    _METRICS["undelivered_by_reason"][reason] = _METRICS["undelivered_by_reason"].get(reason, 0) + 1
+
+
+def metric_observe_latency(seconds: float) -> None:
+    """Record GitHub API call latency (sum + count for histogram_quantile via Prom)."""
+    _METRICS["github_api_latency_seconds_sum"] += seconds
+    _METRICS["github_api_latency_seconds_count"] += 1
+
+
+def metric_set_timestamp(name: str, ts: float | None = None) -> None:
+    """Set timestamp gauge (last delivery success/failure)."""
+    _METRICS[name] = int(ts if ts is not None else time.time())
+
+
+def render_metrics() -> bytes:
+    """Render Prometheus text exposition format (no external lib)."""
+    lines = []
+    # Counter: delivered_total
+    lines.append("# HELP alertmanager_bridge_delivered_total Total alerts successfully delivered as GitHub issues (create/comment/close)")
+    lines.append("# TYPE alertmanager_bridge_delivered_total counter")
+    lines.append(f"alertmanager_bridge_delivered_total {_METRICS['delivered_total']}")
+    # Counter: undelivered_total + by_reason
+    lines.append("# HELP alertmanager_bridge_undelivered_total Total alerts that failed delivery")
+    lines.append("# TYPE alertmanager_bridge_undelivered_total counter")
+    lines.append(f"alertmanager_bridge_undelivered_total {_METRICS['undelivered_total']}")
+    lines.append("# HELP alertmanager_bridge_undelivered_by_reason_total Undelivered alerts by failure reason")
+    lines.append("# TYPE alertmanager_bridge_undelivered_by_reason_total counter")
+    for reason, count in _METRICS["undelivered_by_reason"].items():
+        # Escape reason label per Prom text format (basic — no quotes/newlines expected)
+        safe_reason = reason.replace('"', '\\"')
+        lines.append(f'alertmanager_bridge_undelivered_by_reason_total{{reason="{safe_reason}"}} {count}')
+    # Counter: github_api_call_total + fail_total
+    lines.append("# HELP alertmanager_bridge_github_api_call_total Total GitHub API calls (issue search/create/comment/close)")
+    lines.append("# TYPE alertmanager_bridge_github_api_call_total counter")
+    lines.append(f"alertmanager_bridge_github_api_call_total {_METRICS['github_api_call_total']}")
+    lines.append("# HELP alertmanager_bridge_github_api_fail_total GitHub API calls that returned non-zero exit (auth/rate-limit/network)")
+    lines.append("# TYPE alertmanager_bridge_github_api_fail_total counter")
+    lines.append(f"alertmanager_bridge_github_api_fail_total {_METRICS['github_api_fail_total']}")
+    # Summary: github_api_latency (sum + count, histogram_quantile via Prom rate)
+    lines.append("# HELP alertmanager_bridge_github_api_latency_seconds GitHub API call latency in seconds")
+    lines.append("# TYPE alertmanager_bridge_github_api_latency_seconds summary")
+    lines.append(f"alertmanager_bridge_github_api_latency_seconds_sum {_METRICS['github_api_latency_seconds_sum']:.6f}")
+    lines.append(f"alertmanager_bridge_github_api_latency_seconds_count {_METRICS['github_api_latency_seconds_count']}")
+    # Gauge: last delivery timestamps
+    lines.append("# HELP alertmanager_bridge_last_delivery_success_timestamp_seconds Unix timestamp of last successful delivery")
+    lines.append("# TYPE alertmanager_bridge_last_delivery_success_timestamp_seconds gauge")
+    lines.append(f"alertmanager_bridge_last_delivery_success_timestamp_seconds {_METRICS['last_delivery_success_timestamp']}")
+    lines.append("# HELP alertmanager_bridge_last_delivery_failure_timestamp_seconds Unix timestamp of last failed delivery")
+    lines.append("# TYPE alertmanager_bridge_last_delivery_failure_timestamp_seconds gauge")
+    lines.append(f"alertmanager_bridge_last_delivery_failure_timestamp_seconds {_METRICS['last_delivery_failure_timestamp']}")
+    # Counter: webhook_received_total
+    lines.append("# HELP alertmanager_bridge_webhook_received_total Total Alertmanager webhook POSTs received")
+    lines.append("# TYPE alertmanager_bridge_webhook_received_total counter")
+    lines.append(f"alertmanager_bridge_webhook_received_total {_METRICS['webhook_received_total']}")
+    return ("\n".join(lines) + "\n").encode()
 
 
 def severity_to_class(severity: str) -> str:
@@ -162,6 +246,8 @@ Close the issue once alert resolves (AlertManager `send_resolved: true` will not
 
 def gh_issue_search_open(title: str) -> int | None:
     """Find existing open issue by exact title. Returns issue number or None."""
+    metric_inc("github_api_call_total")
+    start = time.monotonic()
     try:
         result = subprocess.run(
             [
@@ -183,9 +269,14 @@ def gh_issue_search_open(title: str) -> int | None:
             text=True,
             timeout=10,
         )
+        metric_observe_latency(time.monotonic() - start)
         if result.returncode == 0 and result.stdout.strip():
             return int(result.stdout.strip().split("\n")[0])
+        if result.returncode != 0:
+            metric_inc("github_api_fail_total")
     except (subprocess.TimeoutExpired, ValueError, FileNotFoundError) as e:
+        metric_observe_latency(time.monotonic() - start)
+        metric_inc("github_api_fail_total")
         log.warning(f"gh issue search failed: {e}")
     return None
 
@@ -193,6 +284,8 @@ def gh_issue_search_open(title: str) -> int | None:
 def gh_issue_create(title: str, body: str, labels: list[str]) -> bool:
     """Open new GitHub issue. Returns True on success."""
     label_arg = ",".join(labels)
+    metric_inc("github_api_call_total")
+    start = time.monotonic()
     try:
         result = subprocess.run(
             [
@@ -212,17 +305,23 @@ def gh_issue_create(title: str, body: str, labels: list[str]) -> bool:
             text=True,
             timeout=15,
         )
+        metric_observe_latency(time.monotonic() - start)
         if result.returncode == 0:
             log.info(f"opened: {title}")
             return True
+        metric_inc("github_api_fail_total")
         log.error(f"gh issue create failed: {result.stderr[:200]}")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        metric_observe_latency(time.monotonic() - start)
+        metric_inc("github_api_fail_total")
         log.error(f"gh issue create exception: {e}")
     return False
 
 
 def gh_issue_comment(num: int, body: str) -> bool:
     """Comment on existing issue. Returns True on success."""
+    metric_inc("github_api_call_total")
+    start = time.monotonic()
     try:
         result = subprocess.run(
             ["gh", "issue", "comment", str(num), "--repo", GH_REPO, "--body", body],
@@ -230,11 +329,15 @@ def gh_issue_comment(num: int, body: str) -> bool:
             text=True,
             timeout=15,
         )
+        metric_observe_latency(time.monotonic() - start)
         if result.returncode == 0:
             log.info(f"commented #{num}")
             return True
+        metric_inc("github_api_fail_total")
         log.error(f"gh issue comment failed: {result.stderr[:200]}")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        metric_observe_latency(time.monotonic() - start)
+        metric_inc("github_api_fail_total")
         log.error(f"gh issue comment exception: {e}")
     return False
 
@@ -244,6 +347,8 @@ def gh_issue_close(num: int, reason: str = "completed") -> bool:
     resolved lifecycle: send_resolved=true → issue close + final comment).
     Returns True on success.
     """
+    metric_inc("github_api_call_total")
+    start = time.monotonic()
     try:
         result = subprocess.run(
             [
@@ -260,11 +365,15 @@ def gh_issue_close(num: int, reason: str = "completed") -> bool:
             text=True,
             timeout=15,
         )
+        metric_observe_latency(time.monotonic() - start)
         if result.returncode == 0:
             log.info(f"closed #{num} (reason={reason})")
             return True
+        metric_inc("github_api_fail_total")
         log.error(f"gh issue close failed: {result.stderr[:200]}")
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        metric_observe_latency(time.monotonic() - start)
+        metric_inc("github_api_fail_total")
         log.error(f"gh issue close exception: {e}")
     return False
 
@@ -272,12 +381,19 @@ def gh_issue_close(num: int, reason: str = "completed") -> bool:
 def log_undelivered(alert: dict[str, Any], reason: str) -> None:
     """Persist failed delivery for retry/audit.
 
-    Codex `019e2a4f` Session 53 P0 #1 syntax fix:
-    `global UNDELIVERED_LOG` declaration fonksiyon başına taşındı
-    (SyntaxError: 'UNDELIVERED_LOG used prior to global declaration' —
-    Path(UNDELIVERED_LOG) okumadan global declaration aynı scope'ta).
+    Codex `019e2a4f` Session 53 P0 #1 syntax fix + Session 53 P0 C absorb:
+    - global UNDELIVERED_LOG declaration fonksiyon başına taşındı
+    - Metric counters: undelivered_total + undelivered_by_reason
+    - Bounded size guard: UNDELIVERED_MAX_BYTES (10MB default) overflow rotate
+      (emptyDir storage; pod restart kayıp accepted — metric ile görünürlük).
     """
     global UNDELIVERED_LOG
+
+    # Metric increment (her undelivered çağrısında)
+    metric_inc("undelivered_total")
+    metric_inc_reason(reason)
+    metric_set_timestamp("last_delivery_failure_timestamp")
+
     try:
         log_dir = Path(UNDELIVERED_LOG).parent
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -291,6 +407,19 @@ def log_undelivered(alert: dict[str, Any], reason: str) -> None:
         "reason": reason,
     }
     try:
+        # Bounded size guard: dosya UNDELIVERED_MAX_BYTES'ı aşarsa rotate
+        # (emptyDir disk usage cap; pod restart kayıp accepted).
+        try:
+            size = Path(UNDELIVERED_LOG).stat().st_size
+            if size >= UNDELIVERED_MAX_BYTES:
+                rotated = f"{UNDELIVERED_LOG}.1"
+                Path(UNDELIVERED_LOG).replace(rotated)
+                log.warning(
+                    f"undelivered log rotated (size={size} > max={UNDELIVERED_MAX_BYTES}); old → {rotated}"
+                )
+        except FileNotFoundError:
+            pass  # ilk yazım, dosya yok
+
         with open(UNDELIVERED_LOG, "a") as f:
             f.write(json.dumps(entry) + "\n")
     except OSError as e:
@@ -324,7 +453,15 @@ def process_alert(alert: dict[str, Any], group_labels: dict[str, str]) -> bool:
                 log_undelivered(alert, "resolved_comment_failed")
             if not close_ok:
                 log_undelivered(alert, "resolved_close_failed")
-            return comment_ok and close_ok
+            if comment_ok and close_ok:
+                metric_inc("delivered_total")
+                metric_set_timestamp("last_delivery_success_timestamp")
+                return True
+            return False
+        # Codex `019e2a4f` Session 53 P0 C: resolved + no open issue = idempotent success
+        # (zaten kapanmış; counter increment delivery sayılır).
+        metric_inc("delivered_total")
+        metric_set_timestamp("last_delivery_success_timestamp")
         log.info(f"resolved alert {title} but no open issue found (already closed)")
         return True
 
@@ -338,12 +475,21 @@ def process_alert(alert: dict[str, Any], group_labels: dict[str, str]) -> bool:
     existing = gh_issue_search_open(title)
     if existing:
         starts_at = alert.get("startsAt", "unknown")
-        return gh_issue_comment(
+        comment_ok = gh_issue_comment(
             existing, f"🔥 Recurrence at `{starts_at}` (still firing)."
         )
+        if comment_ok:
+            metric_inc("delivered_total")
+            metric_set_timestamp("last_delivery_success_timestamp")
+        else:
+            log_undelivered(alert, "firing_recurrence_comment_failed")
+        return comment_ok
 
     delivered = gh_issue_create(title, body, issue_labels)
-    if not delivered:
+    if delivered:
+        metric_inc("delivered_total")
+        metric_set_timestamp("last_delivery_success_timestamp")
+    else:
         log_undelivered(alert, "gh_issue_create_failed")
     return delivered
 
@@ -359,6 +505,17 @@ class AlertHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
             self.wfile.write(b"OK")
+            return
+        # Codex `019e2a4f` Session 53 P0 C: Prometheus /metrics endpoint
+        # (stdlib pure, prometheus_client dep yok). ServiceMonitor scrape hedef.
+        if self.path == "/metrics":
+            payload = render_metrics()
+            self.send_response(200)
+            # Prometheus text exposition format v0.0.4
+            self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
             return
         self.send_response(404)
         self.end_headers()
@@ -382,6 +539,8 @@ class AlertHandler(BaseHTTPRequestHandler):
         # { version, groupKey, status, receiver, groupLabels, commonLabels, alerts: [...] }
         alerts = payload.get("alerts", [])
         group_labels = payload.get("groupLabels", {})
+        # Codex `019e2a4f` Session 53 P0 C: webhook_received_total counter
+        metric_inc("webhook_received_total")
         log.info(f"received {len(alerts)} alert(s) from group {group_labels}")
 
         delivered = 0
