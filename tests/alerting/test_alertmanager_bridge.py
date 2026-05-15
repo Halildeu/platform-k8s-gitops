@@ -295,5 +295,85 @@ class TestWebhookHandlerSmoke(unittest.TestCase):
         self.assertEqual(payload["alerts"][0]["status"], "resolved")
 
 
+class TestMetricsExposition(unittest.TestCase):
+    """Session 53 P0 C — Prometheus /metrics endpoint (stdlib pure)."""
+
+    def setUp(self):
+        # Reset metric state between tests (module-level dict isolation)
+        bridge._METRICS["delivered_total"] = 0
+        bridge._METRICS["undelivered_total"] = 0
+        bridge._METRICS["undelivered_by_reason"] = {}
+        bridge._METRICS["github_api_call_total"] = 0
+        bridge._METRICS["github_api_fail_total"] = 0
+        bridge._METRICS["github_api_latency_seconds_sum"] = 0.0
+        bridge._METRICS["github_api_latency_seconds_count"] = 0
+        bridge._METRICS["last_delivery_success_timestamp"] = 0
+        bridge._METRICS["last_delivery_failure_timestamp"] = 0
+        bridge._METRICS["webhook_received_total"] = 0
+
+    def test_metric_inc_counter(self):
+        bridge.metric_inc("delivered_total")
+        bridge.metric_inc("delivered_total", 5)
+        self.assertEqual(bridge._METRICS["delivered_total"], 6)
+
+    def test_metric_inc_reason_label(self):
+        bridge.metric_inc_reason("gh_auth_fail")
+        bridge.metric_inc_reason("gh_auth_fail")
+        bridge.metric_inc_reason("network_error")
+        self.assertEqual(bridge._METRICS["undelivered_by_reason"]["gh_auth_fail"], 2)
+        self.assertEqual(bridge._METRICS["undelivered_by_reason"]["network_error"], 1)
+
+    def test_metric_observe_latency(self):
+        bridge.metric_observe_latency(0.5)
+        bridge.metric_observe_latency(1.2)
+        self.assertAlmostEqual(bridge._METRICS["github_api_latency_seconds_sum"], 1.7, places=2)
+        self.assertEqual(bridge._METRICS["github_api_latency_seconds_count"], 2)
+
+    def test_metric_set_timestamp(self):
+        import time as _t
+        bridge.metric_set_timestamp("last_delivery_success_timestamp")
+        # Timestamp non-zero (recent)
+        self.assertGreater(bridge._METRICS["last_delivery_success_timestamp"], 0)
+        self.assertAlmostEqual(
+            bridge._METRICS["last_delivery_success_timestamp"], int(_t.time()), delta=2
+        )
+
+    def test_render_metrics_exposition_format(self):
+        """Prometheus text format v0.0.4 expected lines."""
+        bridge.metric_inc("delivered_total", 42)
+        bridge.metric_inc("undelivered_total", 3)
+        bridge.metric_inc_reason("gh_auth_fail")
+        bridge.metric_observe_latency(0.5)
+        bridge.metric_set_timestamp("last_delivery_success_timestamp", 1700000000)
+
+        out = bridge.render_metrics().decode("utf-8")
+
+        # HELP + TYPE + value lines
+        self.assertIn("# HELP alertmanager_bridge_delivered_total", out)
+        self.assertIn("# TYPE alertmanager_bridge_delivered_total counter", out)
+        self.assertIn("alertmanager_bridge_delivered_total 42", out)
+
+        self.assertIn("# HELP alertmanager_bridge_undelivered_total", out)
+        self.assertIn("alertmanager_bridge_undelivered_total 3", out)
+
+        # Label cardinality
+        self.assertIn('alertmanager_bridge_undelivered_by_reason_total{reason="gh_auth_fail"} 1', out)
+
+        # Summary (sum + count)
+        self.assertIn("alertmanager_bridge_github_api_latency_seconds_sum", out)
+        self.assertIn("alertmanager_bridge_github_api_latency_seconds_count 1", out)
+
+        # Gauge
+        self.assertIn("alertmanager_bridge_last_delivery_success_timestamp_seconds 1700000000", out)
+
+    def test_render_metrics_empty_state_valid(self):
+        """Empty counters render valid Prometheus text format."""
+        out = bridge.render_metrics().decode("utf-8")
+        self.assertIn("alertmanager_bridge_delivered_total 0", out)
+        self.assertIn("alertmanager_bridge_webhook_received_total 0", out)
+        # Format: trailing newline + line-per-metric
+        self.assertTrue(out.endswith("\n"))
+
+
 if __name__ == "__main__":
     unittest.main()
