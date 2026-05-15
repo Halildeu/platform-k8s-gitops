@@ -9,15 +9,16 @@
 
 ## SEAL Gate Kriterleri (mevcut report-source-annex.yaml `_meta.seal_gate`)
 
-1. ❌ **All sourceQuery reports manually validated** — 24/31 done, **7 pending**:
-   - `fin-cari-islemler`
-   - `fin-fatura-satirlari`
-   - `fin-kaynak-eslesme`
-   - `fin-masraf-detay`
-   - `fin-muhasebe-detay`
-   - `fin-stok-fis-detay`
-   - `fin-tutar-mutabakat`
-   - `hr-compensation-detay` (8th — sayım listede)
+1. ❌ **All sourceQuery reports manually validated** — **8 pending DBA review**
+   (24 reports `manually_validated: true`, 8 reports `manually_validated: false`):
+   1. `fin-cari-islemler`
+   2. `fin-fatura-satirlari`
+   3. `fin-kaynak-eslesme`
+   4. `fin-masraf-detay`
+   5. `fin-muhasebe-detay`
+   6. `fin-stok-fis-detay`
+   7. `fin-tutar-mutabakat`
+   8. `hr-compensation-detay`
 2. ⏳ **Zero tables with schema='UNKNOWN_AT_PARSE'** — manuel verify gerek
 3. ❌ **Zero tables with migration_action_default='pending_annex'** — 31/31 hâlâ `pending_annex`
 4. ⏳ **Workcube admin resolved all parametric_schemas** — DBA review
