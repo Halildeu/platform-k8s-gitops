@@ -1812,7 +1812,40 @@ images:
     # Image build run 25903735698 pushed
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-b0cc5de
     # @sha256:1c9621d1454b90f18bb8024da79a310924b7ab1ccdebef8fbcc69aa619a769a9
-    digest: sha256:1c9621d1454b90f18bb8024da79a310924b7ab1ccdebef8fbcc69aa619a769a9
+    #
+    # 2026-05-15 update: sha-42c892e — platform-web PR #517 (PR-0.4g
+    # variant rowGroup remove sync) + PR #518 (PR-0.4d-fe2 AG Grid
+    # pivot UI wiring) merged together. Hybrid pivot landing final
+    # frontend pieces.
+    #   * PR #517: SSRM request normaliser
+    #     (`normalizeServerSideRequest`) drops stale `valueCols` +
+    #     `groupKeys` when no grouping/pivot/expansion is requested,
+    #     so removing the last row-group chip degrades to a flat
+    #     query instead of tripping `GROUPING_NOT_SUPPORTED`. Codex
+    #     thread `019e2a7f` AGREE (iter-2 hardening absorb for
+    #     `groupKeys` edge).
+    #   * PR #518: pivot-mode AG Grid chrome — derives
+    #     `pivotEnabled` from `serverSidePivoting || (clientPivotAllowed
+    #     && client mode)` and gates `pivotPanelShow` + `sideBar`
+    #     (columns + filters tool panels). Without this wiring the
+    #     user had no UI affordance to drag a pivotable column into
+    #     the pivot bucket — backend pivot worked on direct API
+    #     calls but never lit up on the grid. Codex thread
+    #     `019e2a91` AGREE (post-source review, P3 notes only).
+    # Live testai browser smoke (2026-05-15):
+    #   * Variant remove: fin-muhasebe-detay "Serban" rowGroup chip
+    #     X → grid degrades to flat data, no toast, no ERR row.
+    #   * Pivot drag: Pivot Mode toggle → drag BA into Column
+    #     Labels → grid renders "Borç / SUM(AMOUNT)", "Borç /
+    #     SUM(AMOUNT_2)", "Alacak / SUM(AMOUNT)", "Alacak /
+    #     SUM(AMOUNT_2)" secondary headers with real per-bucket
+    #     totals matching direct API canary (100.01.001: 10554.79).
+    # Evidence: mfe-reporting vitest 279/279 PASS (PR-0.4g) and
+    # 273/273 PASS (PR-0.4d-fe2), pnpm build green. Image build run
+    # 25907546953 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-42c892e
+    # @sha256:3412f4561eb71237ac5cb6d54ba155c859b79f9c678f6354afdffd56ff194db5
+    digest: sha256:3412f4561eb71237ac5cb6d54ba155c859b79f9c678f6354afdffd56ff194db5
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
