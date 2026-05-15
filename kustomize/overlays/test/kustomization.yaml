@@ -1933,7 +1933,41 @@ images:
     # Image build run 25911038121 pushed
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-2d6b113
     # @sha256:ed2dc307776f726fcdbabd8c3aef762b4a716ef2b9965a96a2466cf72c674fd5
-    digest: sha256:ed2dc307776f726fcdbabd8c3aef762b4a716ef2b9965a96a2466cf72c674fd5
+    #
+    # 2026-05-15 update: sha-c5817b0 — platform-web PR #528 added the
+    # @mfe/auth federation singleton + dev alias + invariant guard. The
+    # singleton config alone proved insufficient on testai: the remote
+    # reporting bundle's local PermissionContext instance still did not
+    # observe the host shell's PermissionProvider state, and the auth
+    # filter inside ReportingHub kept dropping 38 of 52 catalog entries.
+    # Image build run 25912921718 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-c5817b0
+    # @sha256:39c0f8a6374bf920a2fea2f154bdc423d71de67b0d923818a2f6f35df962c12b
+    #
+    # 2026-05-15 update: sha-7153e8f — platform-web PR #531 closes the
+    # R15 user-visible blocker by mirroring the mfe-users PR-C2
+    # ImpersonateAction pattern: ReportingHub consults
+    # `getShellServices().auth.isSuperAdmin()` at render time
+    # (NOT via a useMemo with empty deps, which would freeze the
+    # first-render fallback `false`). Live testai browser smoke
+    # (2026-05-15, this overlay's acceptance evidence):
+    #   * Pod `frontend-55ddfc6c56-prk8t` imageID
+    #     `sha256:2586a436...` matches the GHCR push.
+    #   * ReportingHub Gallery prop `items.length = 52` (was 14):
+    #     `bySource = { dashboard: 12, dynamic: 31, static: 9 }`,
+    #     `byType  = { dashboard: 14, grid: 37, mixed: 1 }`.
+    #   * DOM Grid badge count = 38 (target ≥ 31).
+    #   * /admin/reports İK kategorisi 20 entry (was 9 dashboard
+    #     only). Visible Grid cards include "Ücret Detay Raporu",
+    #     "Bordro Detay Raporu", "Maaş Raporu", "İşe Giriş / Çıkış
+    #     Raporu", "İzin Raporu", "Personel Listesi", etc.
+    # Cross-AI peer review: Codex thread 019e2aef AGREE iter-7
+    # (`ready_to_merge: true`). Regression test
+    # ReportingHub.shellSuperAdmin.test.tsx pins the live contract.
+    # Image build run 25915075850 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-7153e8f
+    # @sha256:2586a436569c805a3f8de036ad3673c4abc6726160f5bb29a3856ead17884b04
+    digest: sha256:2586a436569c805a3f8de036ad3673c4abc6726160f5bb29a3856ead17884b04
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
