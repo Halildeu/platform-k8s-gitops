@@ -87,17 +87,7 @@ metadata:
   namespace: monitoring
   labels:
     app.kubernetes.io/name: alertmanager-bridge
----
-# Script ConfigMap — alertmanager-bridge.py mounted at /opt/bridge/
-# Note: kustomize configMapGenerator pattern alternative
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: alertmanager-bridge-script
-  namespace: monitoring
-data:
-  alertmanager-bridge.py: |
-    # Note: gerçek script kustomize patches ile inject edilir
-    # veya configMapGenerator ile dosyadan üretilir
-    # Bu placeholder — overlay'de gerçek dosyaya pointer
-    print("alertmanager-bridge stub; overlay must inject scripts/alerting/alertmanager-bridge.py")
+# NOT: Script ConfigMap placeholder kaldırıldı (Codex `019e2a4f` Session 53 P0 #1).
+# Gerçek script kustomization.yaml configMapGenerator ile dosyadan üretiliyor:
+#   alertmanager-bridge.py (canonical bridge dir altında)
+# hashSuffix LIVE → script edit'inde otomatik rolling restart kaskat.

@@ -310,6 +310,16 @@ prometheus:
     externalUrl: "https://ai.acik.com/prometheus"
     routePrefix: /prometheus
 
+    # External labels — Codex `019e2a4f` Session 53 P0 #1 P1 absorb:
+    # PMD DoD §2.4(d) dedupe key contract `alertname + cluster + namespace + configmap`
+    # için cluster label gerek. alertmanager-bridge make_issue_title() bu label'i
+    # `@<cluster>` suffix olarak kullanır (PR #650 absorb).
+    # Test cluster zaten `cluster=test` set ediyor (values-test.yaml:53-55); prod
+    # için aynı pattern.
+    externalLabels:
+      cluster: "prod"
+      environment: "prod"
+
   ingress:
     enabled: true
     ingressClassName: nginx

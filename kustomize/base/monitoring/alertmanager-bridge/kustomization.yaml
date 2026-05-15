@@ -1,5 +1,10 @@
-# AlertManager → alarm_receiver bridge (Codex Sprint A retrospective follow-up)
-# Routes Prometheus alerts → GitHub Issues via gh CLI (auto-dedup pattern).
+# AlertManager → GitHub Issues bridge (Codex 019e2a4f Session 53 P0 #1).
+# Routes Prometheus alerts → GitHub Issues via gh CLI (auto-dedup + close on resolved).
+#
+# Bridge restore: Session 52 close tespit — pod CrashLoopBackOff 10d, ConfigMap
+# script placeholder, gerçek script scripts/alerting/alertmanager-bridge.py 338
+# satır deploy chain'inde bağlanmamış. Bu PR script'i configMapGenerator ile
+# bağlar + hashSuffix rolling restart pattern.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -8,3 +13,18 @@ resources:
   - deployment.yaml
   - service.yaml
   - servicemonitor.yaml
+
+# configMapGenerator ile alertmanager-bridge-script ConfigMap üretilir:
+# - hashSuffix LIVE (disableNameSuffixHash: false) → script edit'inde otomatik rolling
+#   restart kaskat (PR #579 frontend nginx-config kalıcı pattern referans).
+# - Deployment volume.configMap.name kustomize tarafından auto-resolve.
+configMapGenerator:
+  - name: alertmanager-bridge-script
+    namespace: monitoring
+    files:
+      - alertmanager-bridge.py
+    options:
+      disableNameSuffixHash: false
+      labels:
+        app.kubernetes.io/name: alertmanager-bridge
+        app.kubernetes.io/part-of: monitoring
