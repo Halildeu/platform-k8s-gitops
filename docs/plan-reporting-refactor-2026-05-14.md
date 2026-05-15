@@ -393,13 +393,13 @@ Hedef olmayan: yeni reporting feature ekleme, performance optimization (P3 backl
 ---
 
 #### Adım 12 — etl-worker → schema-service contract consumer
-- **Status**: 🟡 PR-1 IN PROGRESS — `SchemaServiceClient` scaffold + 31 unit test merged path
+- **Status**: 🟡 PR-1 ✅ + PR-2a ✅ MERGED — schema-service contract consumer + CLI + exit-code contract delivered
 - **Provisional location**: `platform-backend/etl-worker/` top-level (Codex `019e2a5c` Opt-B; future `git filter-repo` split to `Halildeu/etl-worker` keeps history clean if/when user authorizes a new repo)
 - **Owner**: Claude (Python implement) + Codex review
 - **Bağımlılık**: Adım 6 (Program 8 facade hazır) + Adım 11 (named allowlist)
 - **PR slicing** (Codex `019e2a5c` AGREE):
-  - **PR-1**: `SchemaServiceClient` + typed exceptions + contract models + pytest/ruff/mypy CI gate — [platform-backend#205](https://github.com/Halildeu/platform-backend/pull/205) (this session)
-  - **PR-2a**: config / CLI / client wiring (`SCHEMA_SERVICE_URL`, internal key env, schema/scope args, typed exit behaviour) — pending
+  - **PR-1**: `SchemaServiceClient` + typed exceptions + contract models + pytest/ruff/mypy CI gate — [platform-backend#205](https://github.com/Halildeu/platform-backend/pull/205) ✅ MERGED
+  - **PR-2a**: config / CLI / client wiring (`SCHEMA_SERVICE_URL`, internal key env, schema/timeout args, sysexits exit-code matrix `0`/`64`/`70`/`75`/`76`, `etl-worker` console script) — [platform-backend#206](https://github.com/Halildeu/platform-backend/pull/206) ✅ MERGED (74 tests total)
   - **PR-2b**: runner orchestration (retry, audit, resume, DB lifecycle) — pending
   - **PR-3**: Dockerfile + K8s Job manifest + test cluster wiring — pending
   - **PR-4**: live smoke against testai schema-service + reports DB writes — pending (operator gate)
