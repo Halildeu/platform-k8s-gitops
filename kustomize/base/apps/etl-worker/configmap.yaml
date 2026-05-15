@@ -1,32 +1,49 @@
-# etl-worker (Faz 16) — non-secret runtime config
-# Codex thread 019dc88c iter-4 AGREE on user-gated dry-run staging-sw deploy.
+# etl-worker (Adım 12 PR-3c) — non-secret runtime config.
+#
+# Codex `019e2a5c` (PR-3a plan-time AGREE) + `019e2d27` (PR-3b
+# post-impl AGREE) replaced the Faz 16 dry-run MSSQL→PG batch model
+# with a schema-service contract consumer. The worker no longer
+# reads MSSQL directly — schema-service owns that side. The worker:
+#
+#   1. fetches a JSON snapshot from schema-service
+#   2. UPSERTs the canonical summary row into reports_db (PostgreSQL)
+#
+# So this ConfigMap intentionally drops MSSQL_*, ETL_BATCH_SIZE,
+# ETL_MAX_REJECT_RATIO, CONTRACT_VERSION, ANNEX_VERSION (none of
+# them are referenced by the PR-3a `Config.from_env` contract).
 #
 # Secrets live in:
-#   - workcube-mssql-creds (shared with schema-service via ESO Vault)
-#   - etl-worker-pg-secrets (PG user for reports_db)
+#   - `etl-worker-reports-db-secrets`   (REPORTS_DB_USER / REPORTS_DB_PASSWORD)
+#   - `etl-worker-schema-service-secrets` (SCHEMA_SERVICE_INTERNAL_API_KEY)
 #
-# This Job is NOT auto-applied via ArgoCD; the dry-run runbook walks the
-# operator through `kubectl apply -f ...` with explicit confirmation gates.
+# Both wired via ESO ExternalSecret over Vault in `ops/externalsecret.yaml`;
+# `secret-stub.yaml` stays for the local overlay only.
+#
+# This Job remains operator-gated (NOT auto-applied via ArgoCD)
+# until PR-4 testai live smoke + DBA `etl_snapshot_runs` migration.
 
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: etl-worker-config
 data:
-  # PG target
-  PG_HOST: "postgres"
-  PG_PORT: "5432"
-  PG_DATABASE: "reports_db"
+  # schema-service contract consumer (PR-3a `Config.from_env`)
+  SCHEMA_SERVICE_URL: "http://schema-service.platform-test:8096"
+  SCHEMA_SERVICE_TIMEOUT_SECONDS: "30"
+  SCHEMA_SERVICE_CONTRACT_VERSIONS: "1"
+  # SCHEMA_SERVICE_SCHEMA omitted on purpose — lets schema-service
+  # fall back to its configured default; operator overrides via the
+  # `--schema` CLI flag in the Job args if a parametric crawl is
+  # needed.
 
-  # MSSQL source (Workcube — same target as schema-service)
-  MSSQL_HOST: "workcube-mssql"
-  MSSQL_PORT: "11433"
-  MSSQL_DATABASE: "workcube_mikrolink"
-  MSSQL_DOMAIN: "boreas"
+  # reports_db (PR-3a PostgreSQL adapter)
+  REPORTS_DB_HOST: "postgres.platform-test"
+  REPORTS_DB_PORT: "5432"
+  REPORTS_DB_DATABASE: "reports_db"
+  # REPORTS_DB_SSLMODE intentionally unset — in-cluster traffic to
+  # the platform postgres uses the cluster network, not TLS. Toggle
+  # to "require" for cross-cluster / external reports_db deployments.
+  REPORTS_DB_CONNECT_TIMEOUT_SECONDS: "10"
 
   # Worker policy
-  ETL_BATCH_SIZE: "10000"
-  ETL_MAX_REJECT_RATIO: "0.0"
   LOG_LEVEL: "INFO"
-  CONTRACT_VERSION: "v1.0-DRAFT"
-  ANNEX_VERSION: "2A-2026-04-25"
