@@ -10,6 +10,118 @@
 
 ---
 
+## Live Delta — V2.1 9/9 CLOSURE + Faz G UNLOCK + V3 Prep (12 PR Merged, 2026-05-15)
+
+**Bağlam**: V2.1 prod-readiness sub-wave **9-madde exit criteria FULL CLOSURE** — V2.1 reporting track (Sessions 53-57) ile **paralel/bağımsız iz** olarak yürüdü. Bu V2.1 closure track: PMD v9.1 §2.9 9-madde exit + Faz G transition + D30 atomic cutover prep + V3 backlog scaffolding.
+
+### V2.1 9/9 DONE 🟢 (PR Map)
+
+| # | Kriter | PR | SHA |
+|---|---|---|---|
+| 1 | PMD v9.1 doc | #575 | (earlier) |
+| 2 | B3c-prod long-cache + cron fire | #579 + ABM-1 chain | (earlier) + bu chain |
+| **3** | **M2a authenticated route budget** | gitops #673 + platform-web #527 | f43022e + e3922a37b3 |
+| 4 | Alert receiver V2.1 (GitHub Issues E2E) | #666 | e8302f4 |
+| 5 | G2 + B3d cross-repo | #502 + #B3d | (earlier) |
+| 6 | ABM-1 acceptance + 7-fire chain | #660 + #682 jsonl | a3f3d8a + 092f921861 |
+| 7 | Branch protection 8 must-pass | #671 | 006e1b7 |
+| 8 | GOV-1 cross-AI audit | #587 | (earlier) |
+| 9 | V2.1 closure snapshot | **#682** | **092f921861** |
+
+### Faz G Cutover Prep PR Chain (5 PR — bu session)
+
+| PR | Konu | SHA |
+|---|---|---|
+| **#683** | Faz G transition plan post-V2.1-closure (freeze gate UNLOCKED reflected) | 7b6ee46eb3 |
+| **#685** | Faz G O1/O3/O6 agent verify (3/6 ops pre-conditions GREEN) | 4572f0eb9e |
+| **#687** | D30 atomic cutover operator runbook (T-7d → T+72h chain) | 0c6c19a4f5 |
+| **#689** | V3 M2a1 hard-flip activation runbook (2026-05-29 timer) | b437552cfd |
+| **#692** | Post-cutover validation playbook (5 flow × 5 checkpoint pass/fail matrix) | a473e5f011 |
+| **#694** | Cutover comms templates (10 timing × audience × template) | 28404562de |
+| **#695** | Rollback dry-run inspection runbook + actual nginx topology discovery | 21e657c2cd |
+
+**Cross-AI Codex audit chain**: 14+ round provider-level review:
+- `019e2a4f` V2.1 strategic consensus
+- `019e2b00` M2a1 8-round (R1 RED → R8 AGREE)
+- `019e2c83` Final R8 AGREE
+- `019e2cbf` Post-closure strategic gap analysis (6 gap identified)
+
+### Frontend Topology Discovery (PR #695)
+
+**Önemli truth**: `ai.acik.com` frontend **2026-05-03 itibarıyla ZATEN cluster-authoritative** (Codex `019ded8d` PARTIAL → AGREE absorb). `platform-web-nginx` container `default.conf` `/usr/share/nginx/html` host static disk serve → k3d-prod ingress NodePort HTTPS (30443, D18 contract) geçişi LIVE.
+
+**Canonical rollback target**: `default.conf.bak-20260503-1425` (PERMANENT retention).
+
+**D30 cutover semantics clarification gerek** (Codex gap #6 — bu doc'un amacı): "Edge proxy L4 atomic switch (compose → k8s)" partial misleading. Gerçek D30 cutover:
+- Frontend zaten geçmiş ✓
+- Backend k3d-prod cluster zaten 49 pod Running (Session 36 prod migration sonrası)
+- D30 atomic cutover = ???
+  - Possible: backend route layer DNS/edge change
+  - Possible: compose decommission (72h sonrası retire)
+  - Possible: Hibernate config drift fix epic
+
+### Faz G Freeze Gate State
+
+✅ **UNLOCKED 2026-05-15**
+
+- O1 Compose frozen state: 10+ container UP healthy (Vault prod/test, PG prod/test, KC prod/test, nginx, registry, gha-runner) ✓
+- O3 Rollback trigger criteria: plan §4 4-kategori explicit (latency/error rate, operational, sustained, manual) ✓
+- O6 Backup state: PG hourly (last 20:05 UTC) + Vault daily (last 02:00 UTC, 85K snapshots) + KC weekly (Sunday) ✓
+- O2 On-call rotation: **owner kararı pending** 🟡
+- O4 Cutover date + window: **owner kararı pending** 🟡 (Codex önerisi: Pazar 02:00 UTC / Türkiye 05:00, 4h+ window; 2026-05-29 çevresinden kaçın — hard-flip timer collision)
+- O5 Communication plan: **owner kararı pending** 🟡 (PR #694 templates ready)
+
+### ABM-1 Natural Cron Fire Chain (V2.1 #6 continued proof)
+
+**Prod 7-fire chain** (2026-05-14T12:30 → 2026-05-15T15:30 UTC):
+```
+2026-05-14T12:30:31Z PASS observed_lag=4906s (manual smoke)
+2026-05-14T15:30:04Z PASS lag=141s
+2026-05-14T16:16:02Z PASS lag=87s
+2026-05-14T21:30:04Z PASS lag=169s
+2026-05-15T03:30:04Z PASS lag=198s
+2026-05-15T09:30:04Z PASS lag=196s
+2026-05-15T15:30:04Z PASS lag=4537s
+```
+
+**Test 5-fire chain**: 5 PASS / 0 FAIL.
+
+**Aggregate**: **12 PASS / 0 FAIL across 12 natural fire (~28h window)**. PMD v9.1 §138 "min 3 fire/cluster sustained" deeply karşılandı.
+
+### Owner-Action: d35-admin Persona (2026-05-15)
+
+User SSH owner-action: Keycloak persona `d35-admin@example.com` create (id=2f1a1deb-fbcc-4b8e-9ee8-84fd9eb1abbc). Allowlist email match `PERMISSION_BOOTSTRAP_DEFAULT_ADMIN_ASSIGNMENTS_ADMIN_EMAILS` → auto-superAdmin=True + 11 modules + 16 admin roles.
+
+M2a1 4-route measurement enabler:
+- `/home`: VALIDITY OK; budget warn-only (transferKB=9275, decodedKB=34543, cls=0.36)
+- `/admin/users`: VALIDITY OK; budget warn-only
+- `/admin/access`: VALIDITY OK; budget warn-only (expectedPath=/access/roles redirect doğru)
+- `/admin/reports/users`: VALIDITY OK; budget warn-only
+
+### V3 Backlog (Post-Closure Follow-up)
+
+1. **GHA→testai connectivity** — staging-sw `platform-gha-runner-testai-deploy` container LIVE (UP 2 weeks, Playwright pre-installed, gitops repo only); platform-web cross-repo dispatch OR self-hosted runner registration
+2. **fin-muhasebe-detay dynamic seed** — MSSQL Workcube yearly schema seed
+3. **M2a1 baseline hard-flip** — 14-gün history → 2026-05-29 earliest (PR #689 runbook); FP gate (≤1/20, ≤3/100) + owner activation
+4. **Real-traffic 24-72h post-cutover** — RUM + ABM-1 continuous + dashboard (PR #692 §4 metric catalog)
+5. **Codex gap #6 docs truth refresh** — **bu PR**
+6. **Reporting MFE deep-link state management** — fin-muhasebe-detay deep-link routing fix
+
+### Codex Strategic Verdict Sequence (`019e2cbf`)
+
+Önerilen 7-14 day sequence (V2.1 closure'dan cutover'a):
+1. Owner gates (O2/O4/O5) + T-7/T-1 dry-run hazırlığı
+2. GHA→testai connectivity narrow PR (CI-gated continuous measurement enabler)
+3. Daily M2a1 history accumulation (paralel)
+4. Cutover + T+72h observation (hard-flip yok)
+5. Real-traffic RUM + ABM-1 continuous (post-cutover)
+6. fin-muhasebe-detay dynamic seed (post-cutover unless business-critical pre-cutover)
+7. M2a1 hard-flip (T+72h sonrası safe window; **cutover'ın önüne geçmemeli**)
+
+**Strategic verdict**: "Önce owner gate + GHA→testai + validation playbook; sonra cutover; sonra RUM/fin seed/hard-flip."
+
+⏸️
+
 ## Live Delta — Session 53-57: R15+R16+R13+PR-D0 COMPLETE (15 PR Merged, 2026-05-15)
 
 **Bağlam (Codex `019e2a83` plan-time istişare)**: Sessions 53-57 reporting refactor §7 Adım 11.4 finalize + R15 user-visible repair + R16 close-out discipline epic + R13 chart fix + PR-D0 RoleDrawer regression hotfix.
