@@ -401,8 +401,8 @@ Hedef olmayan: yeni reporting feature ekleme, performance optimization (P3 backl
   - **PR-1**: `SchemaServiceClient` + typed exceptions + contract models + pytest/ruff/mypy CI gate — [platform-backend#205](https://github.com/Halildeu/platform-backend/pull/205) ✅ MERGED
   - **PR-2a**: config / CLI / client wiring (`SCHEMA_SERVICE_URL`, internal key env, schema/timeout args, sysexits exit-code matrix `0`/`64`/`70`/`75`/`76`, `etl-worker` console script) — [platform-backend#206](https://github.com/Halildeu/platform-backend/pull/206) ✅ MERGED (74 tests total)
   - **PR-2b1**: runner **retry foundation** (`run` subcommand, bounded backoff, injectable sleeper, only `SchemaServiceUnavailable` retried; malformed + mismatch terminal; NaN/Inf guards) — [platform-backend#208](https://github.com/Halildeu/platform-backend/pull/208) ✅ MERGED (130 tests total)
-  - **PR-2b2**: audit log + checkpoint / resume — pending
-  - **PR-2b3**: reports_db writer stub interface + DB lifecycle boundaries — pending
+  - **PR-2b2a**: **audit trail foundation** (JSON Lines writer, `AuditEvent` schema, 6-event vocabulary, atomic single-`write(2)` `O_APPEND`, CLI `--audit-path` / `--run-id` flags, OSError → EX_SOFTWARE typed exit) — [platform-backend#210](https://github.com/Halildeu/platform-backend/pull/210) ✅ MERGED (157 tests total)
+  - **PR-2b2b/2b3**: checkpoint + resume + reports_db writer interface (designed together — resume semantics depend on DB transaction lifecycle) — pending
   - **PR-3**: Dockerfile + K8s Job manifest + test cluster wiring — pending
   - **PR-4**: live smoke against testai schema-service + reports DB writes — pending (operator gate)
 - **DoD** (Adım 12 overall):
