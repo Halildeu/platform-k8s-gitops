@@ -1,0 +1,114 @@
+# Alertmanager Bridge Self-Watch PrometheusRule (Session 53 P0 #6 — Codex 019e2a4f)
+#
+# Tetik: Session 52 close tespit — alertmanager-bridge pod CrashLoopBackOff 10
+# gündür hiç alarm gelmedi. Bu observability gap: bridge ölünce drift detection
+# + V2.1 #4 receiver delivery alarm pipeline susuyor, ama bridge'in kendisi
+# alarm üretemiyor (chicken-and-egg).
+#
+# Çözüm: bridge'i Prometheus tarafından scrape edilen pod state + ServiceMonitor
+# /healthz metric ile self-watch. Bu rule farklı path (Prom doğrudan k8s API
+# state'i scrape eder → bridge bağımsız).
+#
+# 3 alert:
+#   1. AlertmanagerBridgeDown — pod replicas < expected OR Running=false 5m
+#   2. AlertmanagerBridgeCrashLooping — pod restart count > 3 in 15m
+#   3. AlertmanagerBridgeHealthzFail — /healthz 200 OK olmayan 5m sustained
+#
+# Discovery contract: release=kube-prometheus-stack (PR #620 pattern ile aynı).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: alertmanager-bridge-self-watch
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager-bridge
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: platform
+    release: kube-prometheus-stack
+    team: ops
+spec:
+  groups:
+    - name: alertmanager-bridge-self-watch
+      interval: 1m
+      rules:
+        # 1. Bridge down — replicas <1 ya da Running 5m sustained değil
+        # Session 52 close incident: pod CrashLoopBackOff 10 gündür hiç alarm
+        # gelmedi çünkü mevcut PrometheusRule yoktu.
+        - alert: AlertmanagerBridgeDown
+          expr: |
+            (
+              kube_deployment_status_replicas_available{
+                namespace="monitoring",
+                deployment="alertmanager-bridge"
+              } < 1
+            )
+            or
+            (
+              absent(kube_deployment_status_replicas_available{
+                namespace="monitoring",
+                deployment="alertmanager-bridge"
+              })
+            )
+          for: 5m
+          labels:
+            severity: critical
+            team: ops
+            alert_class: observability-gap
+          annotations:
+            summary: "Alertmanager bridge down — drift detection + V2.1 alert delivery blocked"
+            description: |
+              alertmanager-bridge deployment has <1 available replica for >5m.
+              Impact: drift detection alarm pipeline + V2.1 #4 perf receiver delivery silent.
+              History: Session 52 close tespit — pod CrashLoopBackOff 10 gündür 2961 restart.
+
+              Diagnostic:
+                kubectl --context k3d-prod -n monitoring get pod -l app.kubernetes.io/name=alertmanager-bridge
+                kubectl --context k3d-prod -n monitoring logs deploy/alertmanager-bridge --tail=50
+                kubectl --context k3d-prod -n monitoring describe deploy/alertmanager-bridge
+
+              Runbook: docs/runbooks/RB-alertmanager-bridge-gh-token-seed.md
+
+        # 2. Bridge CrashLooping — restart count > 3 in 15m
+        - alert: AlertmanagerBridgeCrashLooping
+          expr: |
+            rate(kube_pod_container_status_restarts_total{
+              namespace="monitoring",
+              pod=~"alertmanager-bridge-.*",
+              container="bridge"
+            }[15m]) > 0.2
+          for: 5m
+          labels:
+            severity: warning
+            team: ops
+            alert_class: observability-gap
+          annotations:
+            summary: "Alertmanager bridge restarting frequently"
+            description: |
+              alertmanager-bridge container restart rate > 0.2/min over 15m window
+              (≥3 restart). Possible: gh CLI auth fail, script syntax, OOM.
+
+              Logs: kubectl --context k3d-prod -n monitoring logs deploy/alertmanager-bridge --tail=30
+
+        # 3. Bridge healthz endpoint fail — ServiceMonitor scrape probe
+        # ServiceMonitor /metrics path scrape (Python httpserver default metric YOK;
+        # bridge için custom /metrics endpoint gerekirse PR Session 53 P0 #6 P2 extend).
+        # Şu an: up{job="alertmanager-bridge"} based generic prometheus scrape state.
+        - alert: AlertmanagerBridgeHealthzFail
+          expr: |
+            up{job="alertmanager-bridge"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            team: ops
+            alert_class: observability-gap
+          annotations:
+            summary: "Alertmanager bridge /metrics scrape failing"
+            description: |
+              Prometheus cannot scrape alertmanager-bridge ServiceMonitor /metrics endpoint
+              for >5m. Pod may be running but http server not responding, or ServiceMonitor
+              endpoint config mismatch.
+
+              Diagnostic:
+                kubectl --context k3d-prod -n monitoring exec deploy/alertmanager-bridge -- wget -qO- http://localhost:9093/healthz
+                kubectl --context k3d-prod -n monitoring get svc alertmanager-bridge
+                kubectl --context k3d-prod -n monitoring get servicemonitor alertmanager-bridge -o yaml
