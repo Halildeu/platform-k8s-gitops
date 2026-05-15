@@ -501,7 +501,54 @@ images:
     # @sha256:f058b4c714d7c5a47cc42692fa08c92525d3e99d6ac0536f1db9028a20b1ea6e
     # Frontend PR-0.5a-fe (platform-web PR #533) wires the new field
     # into AG Grid pinnedBottomRowData on root-store responses.
-    digest: sha256:f058b4c714d7c5a47cc42692fa08c92525d3e99d6ac0536f1db9028a20b1ea6e
+    #
+    # 2026-05-15 update: sha-bf0249b — platform-backend PR #214 squash
+    # merged. PR-0.5b export with pivot/grouped output (Codex thread
+    # 019e2cd7 cross-AI peer review consensus: plan-time AGREE-with-
+    # revisions + post-impl REVISE absorb → AGREE/ready_to_merge:true
+    # after 5/5 findings closed).
+    #
+    # New surface: POST /api/v1/reports/{key}/export accepting AG Grid
+    # grid-state snapshot (rowGroupCols + valueCols + pivotCols +
+    # pivotMode + filterModel + sortModel). Backend dispatches to:
+    #   * buildPivotedGroupedExportQuery for single-level pivot
+    #     (1 rowGroup + 1 pivotCol + ≥1 valueCol + registry pivotValues)
+    #   * buildGroupedExportQuery for multi-level GROUP BY leaf bucket
+    #     table (every group col in GROUP BY, no expansion tree)
+    #   * buildExportQuery (legacy flat) for non-grouping payloads
+    # GET /export unchanged for backward compat.
+    #
+    # Codex iter-2 absorb (5 findings):
+    #   §High #1: registry capability allowlist applied — visibility
+    #     raised on ReportController.sanitizeAggregations +
+    #     singleLevelPivotRequest helpers; export reuses the live
+    #     /query path's validation contract
+    #   §High #2: aggParams request override via sanitizer (percentile,
+    #     weightedavg honoured; non-parametric + populated params
+    #     rejected)
+    #   §High #3: strict pivot dispatch (pivotMode + rowGroup +
+    #     pivotCols + valueCols required; mixed shapes → 400)
+    #   §Medium #4: structured ReportQueryErrorDto envelope on POST
+    #     errors (INVALID_AGGREGATION_REQUEST, PIVOT_NOT_CONFIGURED,
+    #     PIVOT_BUDGET_EXCEEDED, GROUPING_NOT_SUPPORTED)
+    #   §Medium #5: CSV escape quote-wrap extended to CR/tab so
+    #     leading-CR + formula-injection prefix combo cannot break
+    #     CSV record boundary
+    #
+    # ExportColumn(field, header) record decouples SQL alias from
+    # user-facing header label:
+    #   * Flat → header = ColumnDefinition.headerName()
+    #   * Grouped → header = AGG(displayName) for agg cols
+    #   * Pivot → header = pivotLabel / AGG(valueDisplayName)
+    #
+    # Tests in this digest: 785/785 PASS (was 765 pre-PR + 20 new
+    # export-related). Image build run 25935161158 pushed
+    # ghcr.io/halildeu/platform-backend-report-service:sha-bf0249b
+    # @sha256:e908a832730163d621140d9e93d6a290483db2c5723ddccb77a30a6786706950
+    # Frontend PR-0.5b-fe (platform-web PR #534) captures gridApi
+    # state and POSTs to /export when grouping/pivot intent present;
+    # flat snapshots fall through to legacy GET /export.
+    digest: sha256:e908a832730163d621140d9e93d6a290483db2c5723ddccb77a30a6786706950
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
