@@ -10,6 +10,61 @@
 
 ---
 
+## Live Delta — Session 49 Sequel-6: Audit Invariant Global Fix MERGED (6 Branches + 3 IT Cases, 2026-05-14 ~23:45 UTC+3)
+
+**Bağlam**: Sequel-5 sonrası kullanıcı "sıradaki kalan işler tam otonom tamamla" direktifi. Codex `019e27bf` fresh-context audit finding #4'ün Option B önerisi (post-resolution branches' helper unification + parametric IT) tam scope ile uygulandı.
+
+**MERGED**:
+
+- **platform-backend PR #198** (merge_commit `dec647c`): `fix(impersonation): audit target_email global invariant across 6 post-resolution branches (11/11 IT)`
+  - **Runtime fix (6 branches)**: ImpersonationController'da audit body `request.targetEmail()` yerine `auditTargetEmail(request, targetRecord)` veya yeni `auditTargetEmail(request, targetRecord, claims)` overload kullanıyor:
+    - Pre-exchange: TARGET_USER_DISABLED, SELF subject-equality, INSUFFICIENT_AUTHORITY, TokenExchangeException catch
+    - Post-exchange: TARGET_SUBJECT_MISMATCH, EXCHANGED_TOKEN_NOT_BROKER_ISSUED, EXCHANGED_TOKEN_EXPIRED
+  - **Helper overload**: yeni 3-arg `auditTargetEmail(request, targetRecord, claims)` — KC claims.email authoritative for post-exchange branches
+  - **2 branch intentionally left as-is**: NESTED_IMPERSONATION_FORBIDDEN (line 117) + ADMIN_IDENTITY_MISSING (line 139) — pre-Step 1c resolution, only `request.targetEmail()` available
+  - **3 yeni parametric IT case**: post_resolution_disabled / post_resolution_insufficient_authority / post_exchange_subject_mismatch — her biri `targetEmail` OMITTING ile post + resolved/claims email assertion
+  - CI: 11/11 PASS, BUILD SUCCESS
+
+**Audit invariant scope kapsama** (post sequel-6):
+
+| Branch | Status | Source |
+|---|---|---|
+| Step 0 NESTED_IMPERSONATION_FORBIDDEN | Pre-resolution, as-is | (only request.targetEmail() known) |
+| Step 1a ADMIN_IDENTITY_MISSING | Pre-resolution, as-is | (only request.targetEmail() known) |
+| Step 1b SELF pre-resolution | ✅ PR #165 | auditTargetEmail(request, null) |
+| Step 1d TARGET_USER_DISABLED | ✅ **PR #198** | auditTargetEmail(request, targetRecord) |
+| Step 1e SELF subject-equality | ✅ **PR #198** | auditTargetEmail(request, targetRecord) |
+| Step 1f UNRESOLVABLE | ✅ PR #165 | auditTargetEmail(request, targetRecord) |
+| Step 2 INSUFFICIENT_AUTHORITY | ✅ **PR #198** | auditTargetEmail(request, targetRecord) |
+| Step 3 catch TokenExchangeException | ✅ **PR #198** | auditTargetEmail(request, targetRecord) |
+| Step 3a TARGET_SUBJECT_MISMATCH | ✅ **PR #198** | auditTargetEmail(request, targetRecord, claims) |
+| Step 3b NOT_BROKER_ISSUED | ✅ **PR #198** | auditTargetEmail(request, targetRecord, claims) |
+| Step 3c EXCHANGED_TOKEN_EXPIRED | ✅ **PR #198** | auditTargetEmail(request, targetRecord, claims) |
+| 409 ACTIVE_IMPERSONATION_EXISTS | ✅ PR #181 | resolvedTargetEmail |
+| SESSION_PERSIST_FAILED | ✅ PR #181 | resolvedTargetEmail |
+
+**Toplam**: 11 of 13 audit branches resolved-email invariant uyumlu (PR #165 + #181 + #198). 2 pre-resolution branch intentional + documented.
+
+**Cross-AI HARD RULE 7th catch (running total)**:
+Codex exec fresh-context finding #4'ün "Option B önerilen baseline" verdict'i tam scope ile uygulandı; 6 branch fix + 3 parametric IT + helper overload + 2 intentional gap documented.
+
+**Session 49 + 6 sequel totals**:
+- **19 PR MERGED** (Session 47 handoff + Session 49 main 8 + Sequel-1/2/3/4/5/6)
+- **1 PR CLOSED** (#486)
+- **7 cross-AI peer review catches**
+- **Codex MCP stability**: ~28 iter cycle, sıfır connection closed
+- **Source-level coverage**: BE 11 of 13 audit branches invariant-uyumlu, FE source gates kapsanmış, browser harness React mount layer pinpointed (operator iter), live acceptance gates open
+
+**Sıradaki session P0 (revize edilmiş final)**:
+1. **FE Faz 2 React mount RCA** (operator local repro — pnpm dev + Chrome devtools)
+2. **Live testai E2E retest** (fresh Playwright persona setup)
+3. **Prod cutover ai.acik.com** (owner go)
+4. **D dalga 1.2-1.7 Vault rotation containment** (operator runbook execute)
+
+**Codex thread chain (final)**: `019e2022` (Session 49 strategy, 16+ iter, expired) → `019e27bf` (P1 + fresh-context audit + Option B Audit Invariant) → next session: React mount RCA + live retest
+
+---
+
 ## Live Delta — Session 49 Sequel-5: FE Faz 2 Root Cause Pinpointed — React Root Mount Crash (Body Empty, 2026-05-14 ~23:15 UTC+3)
 
 **Bağlam**: Sequel-4 sonrası kullanıcı "dispatch tekrar" mandate'i. PR #511 harness readiness helper + diagnostic dump MERGED edildi (Codex `019e27bf` finding #1+#2 absorb). Yeni dispatch run **25881861854** tetiklendi — readiness helper'ın diagnostic dump fonksiyonu Codex'in öngördüğü "concrete root cause signal" üretmesi bekleniyordu.
