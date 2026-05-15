@@ -17,7 +17,7 @@
 - `platform-web/performance-budgets.json` — route-level fail thresholds (flat schema)
 - `platform-web/tests/perf/baseline.json` — sliding history pattern (FIFO 30)
 - `platform-web/scripts/ci/route-performance-budget.mjs` — runner evaluate() flat field reader
-- `platform-web/scripts/perf/sliding-baseline-check.mjs` — G2 regression gate (TRACKED_METRICS: transferKB, decodedKB, resourceCount, tbtMs, longTaskTotalMs, lcpMs, fcpMs — **CLS YOK**)
+- `platform-web/scripts/perf/sliding-baseline-check.mjs` — G2 regression gate (TRACKED_METRICS: transferKB, decodedKB, resourceCount, tbtMs, longTaskTotalMs, lcpMs, fcpMs + **cls** + **inpMs** — platform-web PR #535 e60c9667 ile extended Phase 1 functional)
 
 **Dual budget code-compat status** (Codex `019e2d16` finding):
 - `regressionGuard` + `targetBudget` nested schema şu an **code-incompatible**
@@ -206,7 +206,7 @@ Bu doc PMD §2.3 ↔ M2a1 actual karşılaştırmasından çıkan **9 discrete p
 | ID | `V3-perf-debt-#8` |
 | Title | `All cold-authenticated routes FCP 2.1-2.4s (CWV good ≤1.8s, leader ≤1.0s)` |
 | Priority | **P2** (CWV good zone üstünde) |
-| V3 Wave | **B1 — Critical Path** |
+| V3 Wave | **V3-B1 — Critical Path** (PMD V2 Wave B1 closed ≠ V3-B1 namespace) |
 | Owner | TBD |
 | Target | FCP p75 ≤1.8s (CWV good) |
 | Effort | Item #2/#3 ile birlikte |
@@ -325,8 +325,8 @@ Hard-flip gate evaluates **regressionGuard** (current baseline +tolerans). Targe
 | Tier | Tanım | Pre-V2 | V2.1 Closure | V3 Target |
 |---|---|:-:|:-:|:-:|
 | **Hard regression gate** | Baseline'dan +%5 üstü değil | n/a | 🟡 Warn-only seed | 🟢 Hard-flip 2026-05-29 sonrası |
-| **Improvement milestone** | /home decoded ≤25-32MB, transfer ≤5MB | ❌ | ❌ FAİL (34/9 actual) | 🎯 V3 Wave B1 target |
-| **Leader target** | 12-aylık aspirational | /login partial | /login partial; auth 3× üstü | 🎯 V3 Wave B1+B2+B3 |
+| **Improvement milestone** | /home decoded ≤25-32MB, transfer ≤5MB | ❌ | ❌ FAİL (34/9 actual) | 🎯 V3-B1 wave target |
+| **Leader target** | 12-aylık aspirational | /login partial | /login partial; auth 3× üstü | 🎯 V3-B1+V3-B2+V3-B3 wave |
 
 ---
 
@@ -334,16 +334,16 @@ Hard-flip gate evaluates **regressionGuard** (current baseline +tolerans). Targe
 
 V3 perf debt wave **COMPLETE** kriterleri:
 
-### B1 Wave Done
+### V3-B1 Wave Done
 - [ ] All 4 cold-authenticated routes transfer ≤leader target (sustained 5 measurements)
 - [ ] All 4 routes decoded ≤leader target
 - [ ] All 4 routes LCP p75 ≤leader target
 - [ ] All 4 routes FCP p75 ≤1.8s (CWV good)
 
-### B2 Wave Done
+### V3-B2 Wave Done
 - [ ] All 4 routes CLS p75 ≤0.10 (CWV good)
 
-### B3 Wave Done
+### V3-B3 Wave Done
 - [ ] All 4 routes TBT p75 ≤50ms
 - [ ] All 4 routes resource count ≤80
 
