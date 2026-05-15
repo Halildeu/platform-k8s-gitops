@@ -45,8 +45,8 @@ kubectl --context k3d-test -n platform-test wait \
   --for=condition=Ready --timeout=120s
 
 # 3. Verify the synced Secret key names (do NOT print values).
-kubectl --context k3d-test -n platform-test get secret etl-worker-reports-db-secrets -o jsonpath='{.data}' | jq 'keys'
-kubectl --context k3d-test -n platform-test get secret etl-worker-schema-service-secrets -o jsonpath='{.data}' | jq 'keys'
+kubectl --context k3d-test -n platform-test get secret etl-worker-reports-db-secrets -o json | jq '.data | keys'
+kubectl --context k3d-test -n platform-test get secret etl-worker-schema-service-secrets -o json | jq '.data | keys'
 
 # 4. Substitute a fresh UUID for PLACEHOLDER_RUN_ID, then apply.
 RUN_ID=$(uuidgen | tr 'A-Z' 'a-z')
@@ -59,7 +59,13 @@ kubectl --context k3d-test -n platform-test wait \
 
 # 6. Capture evidence.
 kubectl --context k3d-test -n platform-test logs job/etl-worker-$RUN_ID > /tmp/etl-worker-$RUN_ID.log
-kubectl --context k3d-test -n platform-test get job etl-worker-$RUN_ID -o jsonpath='{.spec.template.spec.containers[0].image}' # must equal the digest above
+# Runtime imageID is the live proof that kubelet pulled the pinned
+# digest (spec.image is the manifest text, status.containerStatuses
+# imageID is what actually launched).
+kubectl --context k3d-test -n platform-test get pod \
+  -l job-name=etl-worker-$RUN_ID \
+  -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'
+# Acceptance gate: must equal the digest pinned in job.yaml.
 ```
 
 ## Acceptance gates
