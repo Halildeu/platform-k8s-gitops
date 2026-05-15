@@ -2117,7 +2117,29 @@ images:
     # Image build run 25915075850 pushed
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-7153e8f
     # @sha256:2586a436569c805a3f8de036ad3673c4abc6726160f5bb29a3856ead17884b04
-    digest: sha256:2586a436569c805a3f8de036ad3673c4abc6726160f5bb29a3856ead17884b04
+    #
+    # 2026-05-16 update: sha-6ea6185 — platform-web PR #543 (PR-0.5b2)
+    # ships the report export toolbar's raw-vs-view split: a single
+    # "İndir" dropdown with "Ham veri" (raw detail rows) and "Mevcut
+    # görünüm" (current grouped/pivot view), each as Excel + CSV. The
+    # build also carries PR-0.5c FE (#540, set-filter dynamic values)
+    # which was merged earlier and had no prior testai digest bump.
+    # Live testai browser smoke (2026-05-16, this overlay's acceptance):
+    #   * Pod `frontend-5c577cc544-l7tg4` imageID `sha256:deeccdf1...`
+    #     matches the GHCR push; build-info.json reports sha 6ea61856.
+    #   * Muhasebe Detay (grouped) toolbar shows the "İndir" dropdown;
+    #     Ham veri → Excel fired GET /reports/{key}/export?format=xlsx
+    #     → 200, Mevcut görünüm → Excel fired POST /reports/{key}/export
+    #     → 200 (raw flattens, view keeps the grouping).
+    #   * Audit report "Seviye" set filter rendered backend distinct
+    #     values ERROR/INFO/WARN on an empty grid (PR-0.5c FE live).
+    #   * Browser console clean — no new JS errors.
+    # Cross-AI peer review: Codex thread 019e2d85 AGREE
+    # (`ready_to_merge: true`, iter-2 re-review after the §P2 revert).
+    # Image build run 25944376400 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-6ea6185
+    # @sha256:deeccdf1e3b5aafa3aee1e57bb546c9f77d5dd79d930a1b68168b9f387eb288c
+    digest: sha256:deeccdf1e3b5aafa3aee1e57bb546c9f77d5dd79d930a1b68168b9f387eb288c
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
