@@ -548,7 +548,26 @@ images:
     # Frontend PR-0.5b-fe (platform-web PR #534) captures gridApi
     # state and POSTs to /export when grouping/pivot intent present;
     # flat snapshots fall through to legacy GET /export.
-    digest: sha256:e908a832730163d621140d9e93d6a290483db2c5723ddccb77a30a6786706950
+    #
+    # 2026-05-15 hotfix: sha-1c8159e — platform-backend PR #215 squash
+    # merged. Live cluster browser smoke (Chrome MCP, 19:25 UTC) caught
+    # a Spring serialisation 500 introduced by PR-0.5b:
+    #   HttpMessageNotWritableException: No converter for [class
+    #   ReportExportController$$Lambda] with preset Content-Type
+    #   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    # Root cause: ResponseEntity<?> generic erasure → Spring routes
+    # the SAM lambda happy-path body through the JSON message
+    # converter chain (instead of StreamingResponseBody handler),
+    # finds no match at xlsx content-type, returns 500.
+    # Fix: signature pinned to ResponseEntity<StreamingResponseBody>;
+    # error path wraps ReportQueryErrorDto in a StreamingResponseBody
+    # that streams ObjectMapper-serialised bytes with content-type
+    # application/json. FE Blob → JSON parser unchanged.
+    # Codex 019e2cd7 AGREE/ready_to_merge:true. 785/785 PASS.
+    # Image build run 25937663789 pushed
+    # ghcr.io/halildeu/platform-backend-report-service:sha-1c8159e
+    # @sha256:a8d32dddadad210512cdf534822fa17e18ec351dd3444ec97145b9ced1f72e29
+    digest: sha256:a8d32dddadad210512cdf534822fa17e18ec351dd3444ec97145b9ced1f72e29
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
