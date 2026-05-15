@@ -1900,7 +1900,40 @@ images:
     #   * Remove Row Groups chip (Proje Adı X) → grid clears
     #     gracefully, NO `GROUPING_NOT_SUPPORTED` toast, no ERR
     #     row. Frontend sent a flat request after normalisation.
-    digest: sha256:bc61250f46f49d7d233af3e043333a90da3c41af618ca80582b802ce278e75a6
+    #
+    # 2026-05-15 update: sha-2d6b113 — platform-web PR #526
+    # (R15 hotfix — useCatalog React Query refactor). Standalone
+    # MFE bootstrap was wrapped in ReportingProviders (Codex iter-2
+    # peer review on thread 019e2aef catch — without this wrapper
+    # useCatalog's new useQuery would throw "No QueryClient set"
+    # on the standalone bootstrap path). The useCatalog hook itself
+    # moved from useState/useEffect/active-flag to React Query,
+    # which removes the mount/unmount race that surfaced on
+    # /admin/reports as a 14-vs-43 entry gap (backend returned 31
+    # reports + 12 dashboards but the UI rendered 14 cards with
+    # zero Grid badges). Three regression cases under
+    # QueryClientProvider in useCatalog.test.ts (313/313 PASS).
+    # Cross-AI peer review: Codex thread 019e2aef AGREE iter-2
+    # (`ready_to_merge: true`).
+    # Live testai browser smoke (2026-05-15 LIVE):
+    #   * Auto-deploy pipeline pinned digest;
+    #     `kubectl get pod frontend-76c7b7d674-nhg7t` reports
+    #     `imageID: sha256:ed2dc307...` matching the GHCR push.
+    #   * Bundle assets contain `useQuery({queryKey:['catalog',
+    #     'dynamic-reports']...})` proving the fix is in the
+    #     deployed minified ReportingHub-*.js.
+    #   * React Query cache (window.__SHELL_QUERY_CLIENT__):
+    #     `['catalog','dynamic-reports']` state=success
+    #     dataLength=31; `['catalog','dashboards']` state=success
+    #     dataLength=12. Race tarafı kanıtlanmış kapanış.
+    # R15 user-visible 2nd half (role/reportGroup VIEW grant per
+    # the new PermissionCatalogService reportGroups slot) is the
+    # remaining blocker for "Grid badge 31" UI evidence; this
+    # overlay bump closes only the source/digest drift.
+    # Image build run 25911038121 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-2d6b113
+    # @sha256:ed2dc307776f726fcdbabd8c3aef762b4a716ef2b9965a96a2466cf72c674fd5
+    digest: sha256:ed2dc307776f726fcdbabd8c3aef762b4a716ef2b9965a96a2466cf72c674fd5
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
