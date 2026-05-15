@@ -270,13 +270,19 @@ def gh_issue_close(num: int, reason: str = "completed") -> bool:
 
 
 def log_undelivered(alert: dict[str, Any], reason: str) -> None:
-    """Persist failed delivery for retry/audit."""
+    """Persist failed delivery for retry/audit.
+
+    Codex `019e2a4f` Session 53 P0 #1 syntax fix:
+    `global UNDELIVERED_LOG` declaration fonksiyon başına taşındı
+    (SyntaxError: 'UNDELIVERED_LOG used prior to global declaration' —
+    Path(UNDELIVERED_LOG) okumadan global declaration aynı scope'ta).
+    """
+    global UNDELIVERED_LOG
     try:
         log_dir = Path(UNDELIVERED_LOG).parent
         log_dir.mkdir(parents=True, exist_ok=True)
     except OSError:
         # Fallback to /tmp
-        global UNDELIVERED_LOG
         UNDELIVERED_LOG = "/tmp/alertmanager-bridge-undelivered.jsonl"
 
     entry = {
@@ -312,6 +318,12 @@ def process_alert(alert: dict[str, Any], group_labels: dict[str, str]) -> bool:
                 f"✅ Alert resolved at `{ends_at}` (AlertManager send_resolved=true).",
             )
             close_ok = gh_issue_close(existing, reason="completed")
+            # Codex `019e2a4f` Session 53 P0 #1 P1 fix:
+            # resolved comment veya close fail olursa undelivered log audit/retry için
+            if not comment_ok:
+                log_undelivered(alert, "resolved_comment_failed")
+            if not close_ok:
+                log_undelivered(alert, "resolved_close_failed")
             return comment_ok and close_ok
         log.info(f"resolved alert {title} but no open issue found (already closed)")
         return True
