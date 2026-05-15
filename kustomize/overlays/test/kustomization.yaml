@@ -410,7 +410,30 @@ images:
     # prod stays false. Codex thread 019e258f iter-4 A-prime AGREE + iter-6
     # ready_to_merge. Plan ref: docs/plan-reporting-refactor-2026-05-14.md
     # §7 Adım 1.5. Image build run 25858739015.
-    digest: sha256:d3e870ae2996b24153b4579a5906ca76b39a01ce8395d46cdb323d71d412a766
+    #
+    # 2026-05-14 update: sha-cc60797 — platform-backend PR #189 (PR-0.4b
+    # backend single-level pivot SQL) + PR #192 (PR-0.4d-be pivotResultColumns
+    # response envelope) merged together. Backend half of the hybrid pivot
+    # landing.
+    #   * PR #189: SqlBuilder.buildPivotedGroupedQuery emits one CASE WHEN
+    #     aggregate per (pivotValue × valueCol) with bind-param literals;
+    #     registry-driven pivotValues (≤ 8 per column, ≤ 32 total output
+    #     columns); agg-specific null semantics (SUM=ELSE 0, AVG/COUNT/etc
+    #     no ELSE so denominator stays honest); alias collision guard.
+    #     ColumnDefinition.pivotValues registry field; ReportController
+    #     single-level pivot dispatch with PIVOT_NOT_CONFIGURED /
+    #     PIVOT_BUDGET_EXCEEDED structured 400s.
+    #   * PR #192: PagedResultDto.pivotResultColumns envelope —
+    #     alias-aligned {field, pivotField, pivotValue, pivotLabel,
+    #     aggFunc, valueField} so the frontend can render secondary
+    #     headers without re-fetching metadata.
+    # Evidence: SqlBuilderTest 18/18 PASS (pivot block), MSSQL Testcontainers
+    # IT 6/6 PASS (SUM correctness, AVG denominator, COUNT null-exclusion,
+    # RLS no-leak, filter+pivot compose, empty-bucket SUM=0), full backend
+    # suite 706/706 PASS. Image build run 25875570824 pushed this digest;
+    # cross-AI peer review on Codex thread 019e2695 reached AGREE for both
+    # PRs. testai deploy + browser smoke pending in this overlay bump.
+    digest: sha256:e6bb1cd6ea004c882fb56f21b4d31bfa8c3b7e1771cb9425a31eb289add38330
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
@@ -1761,7 +1784,35 @@ images:
     # Image build run 25867240574 (success). GHCR push:
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-c0fdf76
     # @sha256:da98250ea5e20fb962f65db9896c5d01fc34bec8ecb8df79b1888e0a5c744cd2
-    digest: sha256:da98250ea5e20fb962f65db9896c5d01fc34bec8ecb8df79b1888e0a5c744cd2
+    #
+    # 2026-05-15 update: sha-b0cc5de — platform-web PR #508 (PR-0.4d-fe
+    # frontend SSRM pivot wiring) merged. Frontend half of the hybrid pivot
+    # landing; pairs with platform-backend PR #189 + #192 (this overlay
+    # bumps both digests in the same commit so the cluster sees the full
+    # pivot contract atomically).
+    #   * Consumes the alias-aligned `pivotResultColumns` response envelope
+    #     (PR-0.4d-be) and registers AG Grid SSRM secondary columns via
+    #     api.setPivotResultColumns(...) with user-facing headers
+    #     `<pivotLabel> / <AGG>(<valueField>)`. No HTML in headerName —
+    #     plain string only (Codex iter-2 P3 defence-in-depth).
+    #   * applyPivotResultColumns helper carries three guard rails:
+    #     alignment guard (rolling-deploy drift defence — falls back to
+    #     pivotResultFields-only when backend ships PR-0.4b alone, no
+    #     PR-0.4d-be), signature-based churn avoidance via useRef so
+    #     identical back-to-back responses don't replay the AG Grid
+    #     column-state reconciliation, and stale cleanup that calls
+    #     setPivotResultColumns([]) when the response drops the pivot
+    #     envelope so ghost headers don't outlive the pivotMode toggle.
+    #   * Added `serverSidePivotResultFieldSeparator: '__'` to gridOptions
+    #     so the fallback pivotResultFields path parses backend aliases
+    #     (`pvt__<pivot>__<value>__<func>__<valueField>`) correctly.
+    # Evidence: pivot-result-columns.test.ts 17/17 PASS; full mfe-reporting
+    # vitest suite 273/273 PASS; pnpm build green; cross-AI peer review on
+    # Codex thread 019e2695 reached AGREE iter-2 (`ready_for_merge: true`).
+    # Image build run 25903735698 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-b0cc5de
+    # @sha256:1c9621d1454b90f18bb8024da79a310924b7ab1ccdebef8fbcc69aa619a769a9
+    digest: sha256:1c9621d1454b90f18bb8024da79a310924b7ab1ccdebef8fbcc69aa619a769a9
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
