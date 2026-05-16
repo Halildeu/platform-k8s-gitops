@@ -55,7 +55,7 @@ capability eksik kalırsa doğan hasar.
 | R7 | T-SQL parser (regex yerine) | inferred | P1 | 1 | Yüksek | Alias/CTE/subquery join kaçar | B2 |
 | R8 | SP/func/trigger parse | inferred+workload | P0 | 2 | Yüksek | ERP business logic görünmez | B2 |
 | R9 | Query workload mining (DMV/Query Store) | workload | P0 | 2 | Orta | "Şema var" ≠ "kullanılıyor" | B2 |
-| R10 | Domain dictionary versioning | manual | P1 | 0 | Düşük | Alias map kaynak/sahip izsiz | B1 |
+| R10 | Domain dictionary versioning | manual | P1 | 0 | Düşük | Alias map kaynak/sahip izsiz | B3 |
 | R11 | Relationship category ayrımı | manual+inferred | P1 | 1 | Orta | "Her *_ID aynı değil" karışır | B3 |
 | R12 | Negative evidence (false-positive bastırma) | sampled+inferred | P1 | 0 | Orta | Düşük-kalite ilişki şişer | B3 |
 
@@ -86,12 +86,14 @@ capability eksik kalırsa doğan hasar.
 
 | Slice | Gap sayısı | Karakter | Tipik impl risk |
 |---|---|---|---|
-| **B1** | 9 (R1, R2, R10, M1, M2, M3, M4, M6, M13, M15) | Authoritative `sys.*` extraction — read-only, deterministic | Düşük |
+| **B1** | 9 (R1, R2, M1, M2, M3, M4, M6, M13, M15) | Saf authoritative `sys.*` extraction — read-only, deterministic | Düşük |
 | **B2** | 7 (R5, R7, R8, R9, M8, M12, M17) | Parser + sampling + workload — PII/cost guardrail gerekir | Orta-Yüksek |
-| **B3** | 14 (R3, R4, R6, R11, R12, M5, M7, M9, M10, M11, M14, M16, M18) | UX + truth tier + ikincil derinleştirme | Orta |
+| **B3** | 14 (R3, R4, R6, R10, R11, R12, M5, M7, M9, M10, M11, M14, M16, M18) | UX + truth tier + manual-domain + ikincil derinleştirme | Orta |
 
-> B1 sayımı 10 satır içeriyor (M15 dahil) — M15 düşük risk authoritative,
-> B1'e uygun. Toplam 9+7+14 = 30. ✓
+> B1 saf authoritative `sys.*` extraction (9 madde). R10 (domain
+> dictionary versioning) `manual_domain` tier olduğu — `sys.*` extraction
+> kategorisine girmediği — için B3'e alındı (Codex `019e2d7d` REVISE).
+> Toplam 9 + 7 + 14 = 30. ✓
 
 ---
 
@@ -110,7 +112,7 @@ yeni model alanları **backward-compatible nullable** (gap-matrix §4).
 Sıra: M2 (column metadata — ROI 4, currency drift kritik) → R1+R2
 (real FK + unique — ROI 3, ilişki truth) → M3 (constraint inventory) →
 M4 (non-PK index) → M1 (object inventory) → M6 (storage+LOB) →
-M13 (CDC) → M15 (DB options) → R10 (domain dict versioning).
+M13 (CDC) → M15 (DB options).
 
 ### B2 — Parser + sampling + workload (gap-matrix Sprint 2 ≈)
 
@@ -119,11 +121,12 @@ Yüksek impl risk: T-SQL parser (R7), SP/trigger parse (R8, M8), sampling
 workload mining (R9, M12). Bu slice ADR-level karar gerektirir (sampling
 güvenlik sınırı, cost guardrail — gap-matrix §3.5).
 
-### B3 — UX + truth tier + ikincil (gap-matrix Sprint 3 ≈)
+### B3 — UX + truth tier + manual-domain + ikincil (gap-matrix Sprint 3 ≈)
 
 Truth tier UI badge, drift authoritative/inferred ayrımı, annotation/semantic
-layer, ikincil metadata (partitioning, statistics, security, synonym). B1+B2
-modeline bağımlı.
+layer, domain dictionary versioning (R10 — `manual_domain` tier: alias map'e
+owner + source + date + version), ikincil metadata (partitioning, statistics,
+security, synonym). B1+B2 modeline bağımlı.
 
 ---
 
