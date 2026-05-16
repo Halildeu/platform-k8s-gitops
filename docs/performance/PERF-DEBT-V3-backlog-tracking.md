@@ -14,20 +14,20 @@
 **Bu doc enforcement source DEĞİL** — V3 perf debt targets'in **discrete trackable owner/PR/wave mapping**'idir.
 
 **Enforcement sources** (gerçek runtime gate'leri):
-- `platform-web/performance-budgets.json` — route-level fail thresholds (flat schema)
+- `platform-web/performance-budgets.json` — route-level fail thresholds (flat schema + nested `regressionGuard`/`targetBudget` profiles, Phase 3)
 - `platform-web/tests/perf/baseline.json` — sliding history pattern (FIFO 30)
-- `platform-web/scripts/ci/route-performance-budget.mjs` — runner evaluate() flat field reader
+- `platform-web/scripts/ci/route-performance-budget.mjs` + `scripts/ci/lib/route-budget-evaluate.mjs` — runner + extracted `evaluate()` reader (flat schema default; `--budget-profile` selects a nested profile)
 - `platform-web/scripts/perf/sliding-baseline-check.mjs` — G2 regression gate (TRACKED_METRICS: transferKB, decodedKB, resourceCount, tbtMs, longTaskTotalMs, lcpMs, fcpMs + **cls** + **inpMs** — platform-web PR #535 e60c9667 ile extended Phase 1 functional)
 
-**Dual budget code-compat status** (Codex `019e2d16` finding):
-- `regressionGuard` + `targetBudget` nested schema şu an **code-incompatible**
-- Runner sadece flat `transferFailKB`/`decodedFailKB`/`lcpFailMs`/`clsFail` okuyor
-- Activation gerek için ya runner profile (`--budget-profile regressionGuard|targetBudget`) ekleme PR, ya da `sliding-baseline-check.mjs` hard gate model genişletme + CLS TRACKED_METRICS'e ekleme
+**Dual budget code-compat status** (Codex `019e2d16` → `019e2f6c` chain — ✅ resolved):
+- ✅ **Phase 2 DONE** (platform-web PR #549): `route-performance-budget.mjs` gained a `--budget-profile regressionGuard|targetBudget` reader; `evaluate()` extracted into the dependency-free `scripts/ci/lib/route-budget-evaluate.mjs`. Profile objects MUST use the suffixed flat key names (`transferFailKB`/`decodedFailKB`/`lcpFailMs`/`clsFail`); un-suffixed metric-key traps are fail-closed rejected.
+- ✅ **Phase 3 DONE** (platform-web PR #550): `performance-budgets.json` 4 cold-authenticated routes carry nested `regressionGuard` + `targetBudget` objects (§5.1/§5.2 values, suffixed keys).
+- ⏳ **Phase 4 pending**: hard-flip activation (`_phase` flip + activation evidence) — NOT immediate.
 
 **Activation roadmap**:
-1. **Önce code PR**: runner profile veya sliding-baseline genişletme (CLS dahil)
-2. **Sonra schema extend PR**: `performance-budgets.json` dual budget format
-3. **En son hard-flip activation PR** (`_phase: warn-only` → `_phase: hard-fail-regression-guard-only`)
+1. ✅ **Code PR** — runner `--budget-profile` reader (Phase 2, platform-web PR #549).
+2. ✅ **Schema extend PR** — `performance-budgets.json` dual budget format (Phase 3, platform-web PR #550).
+3. ⏳ **Hard-flip activation PR** — `_phase: warn-only` → `_phase: hard-fail-regression-guard-only` (Phase 4; needs daily history + flake budget + owner activation).
 
 ---
 
@@ -301,21 +301,24 @@ Leader target korunur — V3 B1/B2/B3 wave acceptance criteria:
 
 ### 5.3 Hard-Flip Activation Decision
 
-Codex round 9 (hard-flip PR) için iki ayrı eşik:
-- `_regressionGuard`: 5.1 mevcut baseline ratification
-- `_targetBudget`: 5.2 V3 wave acceptance (issue tracker)
+Hard-flip PR (Phase 4) için iki ayrı eşik:
+- `regressionGuard`: 5.1 mevcut baseline ratification
+- `targetBudget`: 5.2 V3 wave acceptance (issue tracker)
 
-`performance-budgets.json` schema extend:
+`performance-budgets.json` nested schema (Phase 3, platform-web PR #550 — LIVE).
+Profile objects use the **suffixed** flat threshold keys; the Phase 2 reader
+(`route-budget-evaluate.mjs`) fail-closed rejects un-suffixed metric names
+(`transferKB`/`lcpMs`/...):
 ```json
 {
   "route": "/home",
   "mode": "cold-authenticated",
-  "regressionGuard": { "transferKB": 10000, "decodedKB": 38000, "lcpMs": 2400, "clsFail": 0.40 },
-  "targetBudget":   { "transferKB":  3000, "decodedKB": 12000, "lcpMs": 1200, "clsFail": 0.10 },
-  "_phase": "hard-fail-regression-guard-only"
+  "regressionGuard": { "transferFailKB": 10000, "decodedFailKB": 38000, "lcpFailMs": 2400, "clsFail": 0.4 },
+  "targetBudget":   { "transferFailKB":  3000, "decodedFailKB": 12000, "lcpFailMs": 1200, "clsFail": 0.1 }
 }
 ```
 
+The `_phase` field is added by Phase 4 (hard-flip activation), not Phase 3 — see roadmap §0.
 Hard-flip gate evaluates **regressionGuard** (current baseline +tolerans). Target budget V3 wave tracker.
 
 ---
