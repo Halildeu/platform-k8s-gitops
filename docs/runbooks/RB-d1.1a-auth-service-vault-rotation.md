@@ -1,5 +1,7 @@
 # Runbook — D1.1a auth-service Vault Password Rotation Containment
 
+> ⚠️ **RETRACTED (2026-05-16, D1.1c Phase 3 RCA)** — Bu runbook'un hedef değeri (inline override hash `6f765b6d…`'i Vault'a yazma) **misdiagnosis**'ti: o inline değer hiç `scram-sha-256` ağ-auth'una karşı doğrulanmamıştı (aynı masking tuzağı — D1.1c §2.1 false positive, local `trust` hattı). D1.1c Phase 3 canlı kanıtı: gerçek kök neden credential drift; auth-service'in kullanması gereken doğru canonical `platform` password'ü hash prefix `808bc9ef…`. **Bu runbook'un Adım 1-3'ünü (inline extraction + `6f765b6d` Vault write) UYGULAMA.** Güncel fix runbook'u: [`RB-d1.1c-auth-service-credential-convergence.md`](./RB-d1.1c-auth-service-credential-convergence.md). RCA: `docs/d1.1c-flyway-rca-discovery-2026-05-14.md` §5.Y. Bu doküman audit/tarihçe için tutulur.
+
 > Codex 019e234e + 019e256f + 019e258a Session 48/49 strategic consultation — D dalga 1.1 containment.
 > Authority boundary: ADR-0010 §2.5 + ADR-0011 §2.3 + CLAUDE.md HARD RULE Pre-Production Full Authority + Kullanıcı Aktif Credential.
 
