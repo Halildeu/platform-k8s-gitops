@@ -633,8 +633,17 @@ images:
     # report-service SchemaTruthService Tier-1 unaffected. Codex
     # 019e2d64 Opt-B' AGREE. Prereq for Adım 12 PR-4 testai live smoke.
     # Image build run 25941823382 (PR #220 merge commit 8e79612).
-    # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:387ad01af0cc9e3c2cacb6b9a88d3ed7d9d3a402f94366d71d8b97a48d2e3311
-    digest: sha256:387ad01af0cc9e3c2cacb6b9a88d3ed7d9d3a402f94366d71d8b97a48d2e3311
+    #
+    # 2026-05-17 update: sha-af56e7c — platform-backend PR #233 squash merge.
+    # B1 capability sprint (B1-1..B1-8: 8 authoritative sys.* inventory +
+    # SchemaSnapshot builder) bu digest'le canlıya çıkıyor — overlay önceki
+    # sha-8e79612 (pre-B1) digest'inde drift'teydi. PR #233 ayrıca extractTables
+    # 60s query-timeout blocker'ını config-ize etti (MssqlConfig property
+    # schema.mssql.query-timeout-seconds); SCHEMA_MSSQL_QUERY_TIMEOUT_SECONDS=300
+    # bu PR'da schema-service-config test patch'ine eklendi (handoff §5 P0).
+    # Image build run 25975219093 (merge commit af56e7c).
+    # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:0882626b73cf72768d559090f69f06546594f8050ac5e94bb91cf9179ade7413
+    digest: sha256:0882626b73cf72768d559090f69f06546594f8050ac5e94bb91cf9179ade7413
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
@@ -2721,6 +2730,13 @@ patches:
       - op: add
         path: /data/SECURITY_JWT_AUDIENCE
         value: "account,frontend,schema-service"
+      # P0 (handoff §5): extractTables 60s query-timeout fix. schema-service
+      # property schema.mssql.query-timeout-seconds (platform-backend PR #233).
+      # workcube_mikrolink (1509 tablo) sys.* okumaları 60s default'ta timeout
+      # düşüyordu → /api/v1/schema/snapshot 500. 300s headroom.
+      - op: add
+        path: /data/SCHEMA_MSSQL_QUERY_TIMEOUT_SECONDS
+        value: "300"
 
   - target:
       kind: ConfigMap
