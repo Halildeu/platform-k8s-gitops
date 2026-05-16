@@ -2139,7 +2139,27 @@ images:
     # Image build run 25944376400 pushed
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-6ea6185
     # @sha256:deeccdf1e3b5aafa3aee1e57bb546c9f77d5dd79d930a1b68168b9f387eb288c
-    digest: sha256:deeccdf1e3b5aafa3aee1e57bb546c9f77d5dd79d930a1b68168b9f387eb288c
+    #
+    # 2026-05-16 update: sha-7dace39 — desired-state catch-up to the live
+    # testai pod. platform-web main advanced 5 PRs past sha-6ea6185 (#543):
+    #   * #547 fix(report-pr-0.5e) — restore layout draft after async
+    #     variant resolution.
+    #   * #548 docs(adim-14-pr4) — canonical grid decision doc (no runtime).
+    #   * #549 / #550 feat(perf) — route-budget dual-profile tooling
+    #     (CI/build config; no app runtime change).
+    #   * #551 feat(grid-contract) — consolidate all grids under
+    #     EntityGridTemplate + ESLint `no-restricted-syntax` enforcement;
+    #     AuditEventFeed (mfe-audit) raw AgGridReact → EntityGridTemplate
+    #     SSRM, GridTabPanel (context-health) → ColumnMeta/GridShell,
+    #     CompensationDashboard documented permanent exception.
+    # The live testai `frontend` deployment was already advanced to this
+    # digest out-of-band (kubectl set image); this overlay bump realigns
+    # desired-state so a future `apply -k` / reconcile does not silently
+    # roll the cluster back to sha-6ea6185 and revert PR #551.
+    # Image build run 25956168536 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-7dace39
+    # @sha256:8dd528b3bdfb4f8ec82d7b2c6ec055adec22abd452cdf42cbcd0756f46141445
+    digest: sha256:8dd528b3bdfb4f8ec82d7b2c6ec055adec22abd452cdf42cbcd0756f46141445
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
