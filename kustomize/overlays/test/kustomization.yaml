@@ -2159,7 +2159,21 @@ images:
     # Image build run 25956168536 pushed
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-7dace39
     # @sha256:8dd528b3bdfb4f8ec82d7b2c6ec055adec22abd452cdf42cbcd0756f46141445
-    digest: sha256:8dd528b3bdfb4f8ec82d7b2c6ec055adec22abd452cdf42cbcd0756f46141445
+    #
+    # 2026-05-16 update: sha-b317b02 — platform-web PR #553
+    # fix(grid-variants): authenticate raw-fetch variant calls via the
+    # @mfe/shared-http token. The design-system grid-variant API client
+    # built its Authorization header from an orphan token resolver no MFE
+    # ever registers, so every `GET /api/v1/variants?gridId=...` went
+    # without a Bearer header and the gateway 401'd it — grid-variant
+    # save/load was dead platform-wide (every grid after PR #551's
+    # EntityGridTemplate consolidation). getAuthHeaders() now falls back
+    # to @mfe/shared-http resolveAuthToken(), the same token source the
+    # shared axios `api` interceptor uses.
+    # Image build run 25969771873 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-b317b02
+    # @sha256:429580bcd12e0b7f9c4b4c9aff733b72e8e3663472f9bbdc2de9876b1a4335dd
+    digest: sha256:429580bcd12e0b7f9c4b4c9aff733b72e8e3663472f9bbdc2de9876b1a4335dd
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
