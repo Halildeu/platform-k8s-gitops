@@ -649,8 +649,14 @@ images:
     # non-fatal sorgu) olarak bölündü; bir enrichment yüzeyi fail etse snapshot
     # artık çökmüyor, base kolonlara degrade oluyor. Image build run 25976021018
     # (merge commit 55bf1d1).
-    # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:70106d05b75c3117d7ad72e316e9501e034556eab23610979652f5524e13d550
-    digest: sha256:70106d05b75c3117d7ad72e316e9501e034556eab23610979652f5524e13d550
+    #
+    # 2026-05-17 düzeltme: PR #730 yanlışlıkla 70106d05 pinledi — çok-servisli
+    # image build'de BAŞKA bir servisin digest'i; schema-service paketinde yok,
+    # apply edilse ImagePullBackOff olurdu. Doğru schema-service P1 digest'i
+    # build log job-section ("Build + Push schema-service") + CD deploy spec +
+    # canlı pod imageID üçüyle teyitli: sha256:7aad3043...
+    # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:7aad30439ba301c611f35cc7687311f8409beb02b678e6344d21df4d0bd0d123
+    digest: sha256:7aad30439ba301c611f35cc7687311f8409beb02b678e6344d21df4d0bd0d123
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
