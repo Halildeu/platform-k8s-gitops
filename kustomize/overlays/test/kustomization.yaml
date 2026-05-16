@@ -2173,7 +2173,22 @@ images:
     # Image build run 25969771873 pushed
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-b317b02
     # @sha256:429580bcd12e0b7f9c4b4c9aff733b72e8e3663472f9bbdc2de9876b1a4335dd
-    digest: sha256:429580bcd12e0b7f9c4b4c9aff733b72e8e3663472f9bbdc2de9876b1a4335dd
+    #
+    # 2026-05-16 update: sha-d1a521e — platform-web PR #554
+    # fix(report-pr-0.5f): locale-format aggregate-cell tooltip values.
+    # The PR-0.5f aggregate-cell tooltip leaked raw DB floats
+    # (-824820919.1300002) into the explainability tooltip — column-system
+    # number/currency columns format the visible cell via a cellRenderer
+    # and carry an EXPORT value-getter on valueFormatter, so a group /
+    # grand-total aggregate tooltip fell through resolveFormattedValue to
+    # the raw String(value) tier. tier-3 now locale-formats a finite
+    # number with the grid tr-TR locale (-824.820.919,13). Browser-verified
+    # live on testai before this overlay bump (group-row sum(Tutar TL)
+    # tooltip rendered the formatted value, not the raw float).
+    # Image build run 25971982467 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-d1a521e
+    # @sha256:090ae0ae6f3cb054bb92347a749f08cfbc213ca9644fc9ce5d7fb781ebc50c57
+    digest: sha256:090ae0ae6f3cb054bb92347a749f08cfbc213ca9644fc9ce5d7fb781ebc50c57
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
