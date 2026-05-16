@@ -642,8 +642,15 @@ images:
     # schema.mssql.query-timeout-seconds); SCHEMA_MSSQL_QUERY_TIMEOUT_SECONDS=300
     # bu PR'da schema-service-config test patch'ine eklendi (handoff §5 P0).
     # Image build run 25975219093 (merge commit af56e7c).
-    # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:0882626b73cf72768d559090f69f06546594f8050ac5e94bb91cf9179ade7413
-    digest: sha256:0882626b73cf72768d559090f69f06546594f8050ac5e94bb91cf9179ade7413
+    #
+    # 2026-05-17 update: sha-55bf1d1 — platform-backend PR #234 squash merge
+    # (handoff §5 P1). extractTables tek dev JOIN → extractBaseTables (zorunlu,
+    # fatal) + enrichTables (identity/default/computed — her biri ayrı
+    # non-fatal sorgu) olarak bölündü; bir enrichment yüzeyi fail etse snapshot
+    # artık çökmüyor, base kolonlara degrade oluyor. Image build run 25976021018
+    # (merge commit 55bf1d1).
+    # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:70106d05b75c3117d7ad72e316e9501e034556eab23610979652f5524e13d550
+    digest: sha256:70106d05b75c3117d7ad72e316e9501e034556eab23610979652f5524e13d550
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
