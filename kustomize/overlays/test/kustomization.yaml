@@ -2139,7 +2139,72 @@ images:
     # Image build run 25944376400 pushed
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-6ea6185
     # @sha256:deeccdf1e3b5aafa3aee1e57bb546c9f77d5dd79d930a1b68168b9f387eb288c
-    digest: sha256:deeccdf1e3b5aafa3aee1e57bb546c9f77d5dd79d930a1b68168b9f387eb288c
+    #
+    # 2026-05-16 update: sha-7dace39 — desired-state catch-up to the live
+    # testai pod. platform-web main advanced 5 PRs past sha-6ea6185 (#543):
+    #   * #547 fix(report-pr-0.5e) — restore layout draft after async
+    #     variant resolution.
+    #   * #548 docs(adim-14-pr4) — canonical grid decision doc (no runtime).
+    #   * #549 / #550 feat(perf) — route-budget dual-profile tooling
+    #     (CI/build config; no app runtime change).
+    #   * #551 feat(grid-contract) — consolidate all grids under
+    #     EntityGridTemplate + ESLint `no-restricted-syntax` enforcement;
+    #     AuditEventFeed (mfe-audit) raw AgGridReact → EntityGridTemplate
+    #     SSRM, GridTabPanel (context-health) → ColumnMeta/GridShell,
+    #     CompensationDashboard documented permanent exception.
+    # The live testai `frontend` deployment was already advanced to this
+    # digest out-of-band (kubectl set image); this overlay bump realigns
+    # desired-state so a future `apply -k` / reconcile does not silently
+    # roll the cluster back to sha-6ea6185 and revert PR #551.
+    # Image build run 25956168536 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-7dace39
+    # @sha256:8dd528b3bdfb4f8ec82d7b2c6ec055adec22abd452cdf42cbcd0756f46141445
+    #
+    # 2026-05-16 update: sha-b317b02 — platform-web PR #553
+    # fix(grid-variants): authenticate raw-fetch variant calls via the
+    # @mfe/shared-http token. The design-system grid-variant API client
+    # built its Authorization header from an orphan token resolver no MFE
+    # ever registers, so every `GET /api/v1/variants?gridId=...` went
+    # without a Bearer header and the gateway 401'd it — grid-variant
+    # save/load was dead platform-wide (every grid after PR #551's
+    # EntityGridTemplate consolidation). getAuthHeaders() now falls back
+    # to @mfe/shared-http resolveAuthToken(), the same token source the
+    # shared axios `api` interceptor uses.
+    # Image build run 25969771873 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-b317b02
+    # @sha256:429580bcd12e0b7f9c4b4c9aff733b72e8e3663472f9bbdc2de9876b1a4335dd
+    #
+    # 2026-05-16 update: sha-d1a521e — platform-web PR #554
+    # fix(report-pr-0.5f): locale-format aggregate-cell tooltip values.
+    # The PR-0.5f aggregate-cell tooltip leaked raw DB floats
+    # (-824820919.1300002) into the explainability tooltip — column-system
+    # number/currency columns format the visible cell via a cellRenderer
+    # and carry an EXPORT value-getter on valueFormatter, so a group /
+    # grand-total aggregate tooltip fell through resolveFormattedValue to
+    # the raw String(value) tier. tier-3 now locale-formats a finite
+    # number with the grid tr-TR locale (-824.820.919,13). Browser-verified
+    # live on testai before this overlay bump (group-row sum(Tutar TL)
+    # tooltip rendered the formatted value, not the raw float).
+    # Image build run 25971982467 pushed
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-d1a521e
+    # @sha256:090ae0ae6f3cb054bb92347a749f08cfbc213ca9644fc9ce5d7fb781ebc50c57
+    #
+    # 2026-05-17 update: sha-356babf — platform-web PR #560
+    # fix(grid): only user column events arm the layout-draft. The
+    # reporting grid's "Kaydedilmemiş görünüm değişiklikleri" badge
+    # stayed lit on every page refresh with zero user interaction:
+    # `VariantIntegration` armed the layout-draft auto-persist for ANY
+    # AG Grid column event, including programmatic ones (`api`, `flex`,
+    # `sizeColumnsToFit`, `gridInitializing`, …) fired while the grid
+    # loads / applies a variant / materialises auto-columns. The four
+    # column-event handlers now persist a draft only for genuine
+    # user-source events (`uiColumnResized`/`uiColumnMoved`/… +
+    # `toolPanelUi`/`contextMenu`/`columnMenu`). Carries the merged
+    # range past sha-d1a521e (incl. #557/#559/#561 CI + design-system
+    # changes). Image build run 25974358394.
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-356babf
+    # @sha256:f2d9322056e2800da1354b12771aab8838bfd47f4d601242290f8c62f59d8d92
+    digest: sha256:f2d9322056e2800da1354b12771aab8838bfd47f4d601242290f8c62f59d8d92
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
