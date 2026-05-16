@@ -98,6 +98,8 @@ M2a1 4-route measurement enabler:
 - `/admin/access`: VALIDITY OK; budget warn-only (expectedPath=/access/roles redirect doğru)
 - `/admin/reports/users`: VALIDITY OK; budget warn-only
 
+> **NOTE (2026-05-17)**: `/home cls=0.36` browser cold-auth ölçümünde reprodüksiyon vermedi (3 run CLS=0, observer self-test ile doğrulanmış; 4/4 route "good"). V3-B2 CLS de-scope + reconcile kaydı: `docs/performance/PERF-DEBT-V3-backlog-tracking.md` §2.6 (Codex `019e32ba`).
+
 ### V3 Backlog (Post-Closure Follow-up)
 
 1. **GHA→testai connectivity** — staging-sw `platform-gha-runner-testai-deploy` container LIVE (UP 2 weeks, Playwright pre-installed, gitops repo only); platform-web cross-repo dispatch OR self-hosted runner registration
