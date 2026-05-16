@@ -69,11 +69,13 @@ domains, analysis`. Her envanter additive — `report-service` mirror'ı
   B1-4 / B1-5 / PR-A / B1-6 / B1-7 / B1-8 hepsi REVISE×1 absorb→AGREE.
 - **CI**: her PR'da "schema-service standalone build" + "CI - Image Build +
   GHCR Push" yeşil; normal squash.
-- **Image deploy** (önceki session doğrulaması): test cluster pod
+- **Image deploy + canlı verify — BU SESSION**: test cluster pod
   `schema-service-6bdd76574f-jqqjg`, image `sha-3e16e9d` /
   digest `sha256:2e631bedf2c56c705fef7dd27f241fe0acb7e7ce2181c345ec3c7b31b723b5fa`,
-  Running 1/1. ⚠️ Bu session'da k3d-test cluster **unreachable**
-  (`127.0.0.1:7443 connection refused`) — re-verify gerekli.
+  Running 1/1 gözlendi; `/api/v1/schema/snapshot` çağrısı + pod log timeout
+  kanıtı (§4) bu session'da alındı. k3d-test cluster **handoff anında**
+  unreachable oldu (`127.0.0.1:7443 connection refused`) — sıradaki session
+  işe başlamadan pod state'ini yeniden doğrulamalı.
 
 ---
 
@@ -87,9 +89,12 @@ domains, analysis`. Her envanter additive — `report-service` mirror'ı
 - 🔴 **8 B1 envanteri canlı snapshot'ta hiç dolmadı.** `extractTables`,
   `buildSnapshot` adım-1 ve try-catch ile sarılı **DEĞİL** (tek arıza noktası)
   → tüm snapshot 500 dönüyor, 8 B1 extraction'a hiç ulaşılmıyor.
-- 🟠 **cluster pod canlı state** bu session'da doğrulanamadı (cluster unreachable).
-- Sonuç: B1 kod **MERGED**, image **DEPLOYED**, ama **uçtan uca canlı kanıt YOK**
-  (D29 disiplini: Up ≠ Functional).
+- 🟠 **cluster pod state handoff anında re-verify EDİLEMEDİ** — cluster handoff
+  sırasında unreachable oldu. Pod bu session erken aşamada `sha-3e16e9d`
+  Running 1/1 gözlenmişti; sıradaki session işe başlamadan tazece doğrulamalı.
+- Sonuç: B1 kod **MERGED**, image **DEPLOYED**, blocker bu session **canlı
+  gözlendi**, ama 8 B1 capability'sinin **uçtan uca çalıştığına dair canlı
+  kanıt YOK** (D29 disiplini: Up ≠ Functional).
 
 ---
 
@@ -100,9 +105,17 @@ Codex teşhis + fix planı: thread **`019e32da`**.
 ### 🔴 P0 — extractTables query timeout (BLOKER, en yüksek öncelik)
 - **Kök neden**: `schema-service/src/main/java/com/example/schema/config/MssqlConfig.java:17`
   — hard-coded `template.getJdbcTemplate().setQueryTimeout(60)`.
-- **Fix**: timeout'u property'ye al (örn. `schema.mssql.query-timeout-seconds`),
-  test cluster için 180/300 sn'e çıkar.
-- Effort: küçük, 1 PR.
+- **Fix tek bir kod satırı DEĞİL — tam runtime config yüzeyi**:
+  1. `MssqlConfig.java` — timeout'u property'ye al
+     (örn. `@Value("${schema.mssql.query-timeout-seconds:60}")`), default 60.
+  2. **test overlay ConfigMap/env** — `schema-service-config` ConfigMap'e
+     (platform-k8s-gitops `kustomize`) `SCHEMA_MSSQL_QUERY_TIMEOUT_SECONDS=180`
+     (veya 300) ekle + pod rollout restart. ⚠️ Bu adım atlanırsa kod PR'ı
+     merge olsa bile canlı timeout **hâlâ 60 sn** kalır (property default
+     değişmedi).
+  3. **image rebuild** (platform-backend CI) → **GitOps overlay digest bump**
+     (`kustomization.yaml:637`).
+- Effort: küçük kod PR'ı (platform-backend) + overlay PR'ı (platform-k8s-gitops).
 
 ### 🔴 P1 — extractTables split (base + enrichment)
 - `SchemaExtractService.extractTables` tek dev JOIN sorgusu → ikiye böl:
@@ -117,10 +130,17 @@ Codex teşhis + fix planı: thread **`019e32da`**.
   **503/504**; B1-1 enrichment'ları non-fatal; partial-status görünürlüğü.
 - Effort: orta, 1 PR (P1 ile birleşebilir).
 
-### 🟠 Re-deploy + re-verify
-- Fix sonrası schema-service image rebuild → test cluster rollout →
-  `GET /api/v1/schema/snapshot?schema=workcube_mikrolink` çağır → 8 B1 envanter
-  alanının dolu döndüğünü kanıtla (HARD RULE — uçtan uca / tarayıcı doğrulama).
+### 🟠 Re-deploy + re-verify — her satır AYRI kanıtlanır (D29: Up ≠ Functional)
+- [ ] `origin/main` — extractTables fix commit'i merge edildi
+- [ ] GHCR — fix image digest build edildi (`sha-<commit>`)
+- [ ] GitOps overlay — `kustomization.yaml:637` schema-service digest = build edilen digest
+- [ ] cluster — pod `imageID` == overlay digest (D30 immutable artifact)
+- [ ] `schema-service-config` ConfigMap `SCHEMA_MSSQL_QUERY_TIMEOUT_SECONDS` yeni
+      değerde + pod rollout restart edildi
+- [ ] `GET /api/v1/schema/snapshot?schema=workcube_mikrolink` → HTTP 200, timeout YOK
+- [ ] response JSON — B1 envanter alanları (`foreignKeys` / `uniqueConstraints` /
+      `checkConstraints` / `defaultConstraints` / `indexes` / `objects` /
+      `storage` / `changeData` / `databaseOptions`) DOLU döndü
 
 ### 🟠 GitOps overlay digest drift
 - `platform-k8s-gitops` `kustomize/overlays/test/kustomization.yaml:637`
