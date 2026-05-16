@@ -268,9 +268,11 @@ Bu doc PMD §2.3 ↔ M2a1 actual karşılaştırmasından çıkan **9 discrete p
 Items: #2, #3, #4, #5, #8
 
 **Strategic order**:
-1. **B1a Bundle taxonomy LIVE** — duplicate analyzer + tree-shake + Module Federation dedup (Items #4, #5)
+1. **B1a Bundle taxonomy LIVE** — duplicate analyzer ✅ 7-MFE LIVE (platform-web #564); tree-shake + Module Federation dedup → **B1a-dedup deferred, ayrı PR** (Items #4, #5)
 2. **B1b LCP critical path** — auth FSM + MFE bootstrap + AG Grid lazy-init (Items #2, #3)
 3. **B1c FCP optimization** — critical CSS + font preload (Item #8)
+
+> **STATUS (2026-05-17) — B1a analyzer 7-MFE LIVE**: platform-web PR #564 (merge `3cf5b699`, Codex `019e32ff` AGREE) — `bundleVisualizer` 7 MFE'ye bağlandı + `duplicate-package-detector` 0-byte size-extraction bug'ı düzeltildi → cross-MFE rapor LIVE. **Bulgu**: 7 MFE toplam 164.66 MB rendered / 37.60 MB gzip; ~64.6 MB rendered (~15 MB gzip) `ag-charts`/`echarts` chart stack'i — 7 MFE'de byte-identical + MF shared scope'ta DEĞİL. Detay: platform-web `docs/performance/bundle-duplication-v3b1a.md`. **B1a-dedup** (chart-lib MF-share/lazy + barrel kırma, ag-grid `hostOnly()` parity, shell lucide-react barrel) davranış/topoloji değişikliği → ayrı PR + build + browser smoke. B1b/B1c başlamadı.
 
 **Estimated effort**: 80-160h (~2-4 hafta full-time frontend)
 **Wave gate**: All 5 routes leader target byte + LCP sustained
