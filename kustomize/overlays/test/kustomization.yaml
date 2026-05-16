@@ -2188,7 +2188,23 @@ images:
     # Image build run 25971982467 pushed
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-d1a521e
     # @sha256:090ae0ae6f3cb054bb92347a749f08cfbc213ca9644fc9ce5d7fb781ebc50c57
-    digest: sha256:090ae0ae6f3cb054bb92347a749f08cfbc213ca9644fc9ce5d7fb781ebc50c57
+    #
+    # 2026-05-17 update: sha-356babf — platform-web PR #560
+    # fix(grid): only user column events arm the layout-draft. The
+    # reporting grid's "Kaydedilmemiş görünüm değişiklikleri" badge
+    # stayed lit on every page refresh with zero user interaction:
+    # `VariantIntegration` armed the layout-draft auto-persist for ANY
+    # AG Grid column event, including programmatic ones (`api`, `flex`,
+    # `sizeColumnsToFit`, `gridInitializing`, …) fired while the grid
+    # loads / applies a variant / materialises auto-columns. The four
+    # column-event handlers now persist a draft only for genuine
+    # user-source events (`uiColumnResized`/`uiColumnMoved`/… +
+    # `toolPanelUi`/`contextMenu`/`columnMenu`). Carries the merged
+    # range past sha-d1a521e (incl. #557/#559/#561 CI + design-system
+    # changes). Image build run 25974358394.
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-356babf
+    # @sha256:f2d9322056e2800da1354b12771aab8838bfd47f4d601242290f8c62f59d8d92
+    digest: sha256:f2d9322056e2800da1354b12771aab8838bfd47f4d601242290f8c62f59d8d92
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
