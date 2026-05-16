@@ -106,18 +106,12 @@ ssh halil@staging-sw "kubectl --context k3d-test -n platform-test rollout \
 İzole debug pod — auth-service image, `envFrom` aynı CM+Secret, inline `SPRING_JPA_HIBERNATE_DDL_AUTO=validate`, label `app.kubernetes.io/part-of=platform` (NetworkPolicy egress için zorunlu), `restartPolicy: Never`:
 
 - **Beklenen**: `Started AuthServiceApplication` (clean boot). Eski sonuç (D1.1c Phase 3, fix öncesi): `FATAL: password authentication failed`.
+- Debug pod credential'ı `envFrom` ile alır — agent plaintext credential'a **dokunmaz**.
 - Pod sonrası `kubectl delete pod` ile temizlenir.
 
-Alternatif kanıt: direct TCP/SCRAM —
-```bash
-# auth-service Secret değeriyle platform@auth_db TCP bağlantısı
-PW=$(... auth-service-secrets SPRING_DATASOURCE_PASSWORD base64 -d)
-docker exec -e PGPASSWORD="$PW" platform-pg-test \
-  psql -h 172.19.0.6 -U platform -d auth_db -tAc "SELECT current_user"
-# Beklenen: platform
-```
-
 Plus running pod log: `password authentication failed` / `HikariPool ... Exception during pool initialization` YOK.
+
+> **Boundary notu (Codex `019e32d8`)**: Direct TCP/SCRAM testi (Secret plaintext'ini shell değişkenine çıkarıp `psql`'e verir) **agent adımı DEĞİL** — credential-read sınıfı (ADR-0011 §2.3 + GA-002). Gerekirse operator hidden-shell'de yapılır; agent'a yalnız PASS/FAIL sinyali döner. Agent'ın acceptance kanıtı = izole debug pod clean boot + running pod log proof (ikisi de plaintext credential'a dokunmaz).
 
 ### Adım 7: Drift detector re-run
 
