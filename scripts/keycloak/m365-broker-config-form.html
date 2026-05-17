@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<!--
+  Microsoft 365 SSO — Broker Config Input Form
+  ADR-0021 / Codex 019e365b. Operator, Entra app registration sonrası
+  değerleri buraya girer; form iki çıktı üretir:
+    1) m365-broker-config.json  — secret İÇERMEZ, repo/araç tüketir
+    2) Vault komutu             — client secret'ı Vault'a yazar (git'e ASLA)
+  Tamamen client-side; backend yok. Tarayıcıda aç (file://), doldur, üret.
+-->
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Microsoft 365 SSO — Broker Config</title>
+<style>
+  :root { --bg:#0f1419; --card:#1a2330; --line:#2d3a4d; --fg:#e6edf3;
+          --muted:#8b98a9; --accent:#3b82f6; --ok:#3fb950; --warn:#d29922; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.55 -apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:860px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:15px; margin:28px 0 12px; color:var(--accent);
+       border-bottom:1px solid var(--line); padding-bottom:6px; }
+  p.lead { color:var(--muted); margin:0 0 8px; }
+  .card { background:var(--card); border:1px solid var(--line);
+          border-radius:10px; padding:18px 20px; margin-top:14px; }
+  label { display:block; font-weight:600; margin:14px 0 4px; }
+  .hint { color:var(--muted); font-weight:400; font-size:12.5px; }
+  input[type=text], input[type=password] {
+    width:100%; padding:9px 11px; background:#0d1117; color:var(--fg);
+    border:1px solid var(--line); border-radius:6px; font:13px monospace; }
+  input:focus { outline:none; border-color:var(--accent); }
+  input.bad { border-color:#f85149; }
+  .tenant-row { display:grid; grid-template-columns:1fr 1fr 1fr 1fr auto;
+                gap:8px; align-items:end; margin-top:10px; }
+  .tenant-row label { margin:0 0 3px; font-size:12px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px;
+           padding:9px 16px; font-size:13px; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; border:1px solid var(--line);
+                 color:var(--fg); }
+  button.sm { padding:6px 10px; font-size:12px; }
+  button:hover { filter:brightness(1.12); }
+  .row-del { background:transparent; border:1px solid var(--line);
+             color:var(--muted); padding:8px 10px; }
+  .actions { margin-top:22px; display:flex; gap:10px; align-items:center; }
+  pre { background:#0d1117; border:1px solid var(--line); border-radius:6px;
+        padding:12px 14px; overflow:auto; font:12.5px monospace;
+        white-space:pre-wrap; word-break:break-all; }
+  .out { display:none; margin-top:14px; }
+  .out.show { display:block; }
+  .secret-box { border-color:var(--warn); }
+  .badge { display:inline-block; font-size:11px; padding:1px 7px;
+           border-radius:10px; background:var(--line); color:var(--muted);
+           margin-left:6px; font-weight:600; }
+  .warn { color:var(--warn); }
+  .ok { color:var(--ok); }
+  .err { color:#f85149; font-size:12.5px; margin-top:8px; }
+  .copybar { display:flex; justify-content:space-between; align-items:center;
+             margin:18px 0 4px; }
+  .copybar h3 { margin:0; font-size:13.5px; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Microsoft 365 SSO — Broker Config</h1>
+  <p class="lead">Entra app registration değerlerini gir → form
+    <code>m365-broker-config.json</code> + Vault komutu üretir.
+    Adımlar: <code>docs/operations/RUNBOOKS/RB-m365-sso-broker.md</code></p>
+
+  <div class="card">
+    <h2>A — Microsoft Entra App</h2>
+    <label>Application (client) ID
+      <span class="hint">— Entra app registration → Overview → Application (client) ID. GUID.</span></label>
+    <input type="text" id="clientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off">
+
+    <label>Client secret <span class="badge">SECRET</span>
+      <span class="hint">— Certificates &amp; secrets → New client secret → <b>Value</b> (yalnız bir kez gösterilir).</span></label>
+    <input type="password" id="clientSecret" placeholder="client secret değeri" autocomplete="off">
+    <label style="font-weight:400;font-size:12.5px;margin-top:6px">
+      <input type="checkbox" id="showSecret" style="width:auto;vertical-align:middle"> secret'ı göster</label>
+
+    <label>Secret expiry <span class="hint">(opsiyonel — rotation hatırlatması için, örn. 2026-11-17)</span></label>
+    <input type="text" id="secretExpiry" placeholder="YYYY-MM-DD" autocomplete="off">
+  </div>
+
+  <div class="card">
+    <h2>B — İzin verilen tenant'lar</h2>
+    <p class="lead">Hangi Entra org'larının kullanıcıları girebilsin. Tenant ID
+      = Entra → Overview → Directory (tenant) ID. <b>Org / subscriberId</b>
+      alanları v1'de opsiyonel (v2 auto-provisioning içindir; v1 link-only).</p>
+    <div id="tenants"></div>
+    <button class="ghost sm" id="addTenant" style="margin-top:12px">+ Tenant ekle</button>
+  </div>
+
+  <div class="actions">
+    <button id="generate">Üret</button>
+    <button class="ghost" id="reset">Temizle</button>
+    <span id="formErr" class="err"></span>
+  </div>
+
+  <div class="out" id="out">
+    <h2>Çıktı</h2>
+
+    <div class="copybar">
+      <h3>1 — m365-broker-config.json <span class="ok">(secret YOK — güvenli)</span></h3>
+      <span>
+        <button class="ghost sm" data-copy="cfgJson">Kopyala</button>
+        <button class="ghost sm" id="dlJson">İndir</button>
+      </span>
+    </div>
+    <pre id="cfgJson"></pre>
+
+    <div class="copybar">
+      <h3 class="warn">2 — Client secret → Vault <span class="warn">(git'e ASLA)</span></h3>
+      <button class="ghost sm" data-copy="vaultCmd">Kopyala</button>
+    </div>
+    <pre id="vaultCmd" class="secret-box"></pre>
+    <p class="hint warn">⚠ Bu komutu <b>staging-sw</b> sunucusunda çalıştır.
+      Secret'ı dosyaya/commit'e/sohbete yapıştırma. Form tamamen yereldir —
+      girdiğin secret tarayıcıdan dışarı çıkmaz.</p>
+
+    <div class="copybar"><h3>3 — Sonra</h3></div>
+    <pre id="nextSteps"></pre>
+  </div>
+</div>
+
+<script>
+const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const DISCOVERY = "https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration";
+const VAULT_PATH = "kv/platform/keycloak-m365-broker";
+
+function tenantRow(t = {}) {
+  const d = document.createElement("div");
+  d.className = "tenant-row";
+  d.innerHTML = `
+    <div><label>Tenant ID (GUID)</label>
+      <input type="text" class="t-tid" placeholder="tenant id" value="${t.tid||""}"></div>
+    <div><label>Etiket</label>
+      <input type="text" class="t-label" placeholder="org adı" value="${t.label||""}"></div>
+    <div><label>Platform org <span class="hint">v2</span></label>
+      <input type="text" class="t-org" placeholder="opsiyonel" value="${t.org||""}"></div>
+    <div><label>subscriberId <span class="hint">v2</span></label>
+      <input type="text" class="t-sub" placeholder="opsiyonel" value="${t.subscriber_id||""}"></div>
+    <button class="row-del" title="Sil">✕</button>`;
+  d.querySelector(".row-del").onclick = () => d.remove();
+  return d;
+}
+
+const tenantsEl = document.getElementById("tenants");
+document.getElementById("addTenant").onclick = () => tenantsEl.appendChild(tenantRow());
+tenantsEl.appendChild(tenantRow());
+
+document.getElementById("showSecret").onchange = e =>
+  document.getElementById("clientSecret").type = e.target.checked ? "text" : "password";
+
+document.getElementById("reset").onclick = () => {
+  document.querySelectorAll("input").forEach(i => { i.value = ""; i.classList.remove("bad"); });
+  tenantsEl.innerHTML = ""; tenantsEl.appendChild(tenantRow());
+  document.getElementById("out").classList.remove("show");
+  document.getElementById("formErr").textContent = "";
+};
+
+function shellQuote(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+
+document.getElementById("generate").onclick = () => {
+  const err = document.getElementById("formErr");
+  err.textContent = "";
+  document.querySelectorAll("input").forEach(i => i.classList.remove("bad"));
+
+  const clientId = document.getElementById("clientId").value.trim();
+  const secret   = document.getElementById("clientSecret").value;
+  const expiry   = document.getElementById("secretExpiry").value.trim();
+  const problems = [];
+
+  if (!GUID.test(clientId)) {
+    document.getElementById("clientId").classList.add("bad");
+    problems.push("Client ID geçerli bir GUID değil");
+  }
+  if (!secret) {
+    document.getElementById("clientSecret").classList.add("bad");
+    problems.push("Client secret boş");
+  }
+
+  const tenants = [];
+  [...tenantsEl.querySelectorAll(".tenant-row")].forEach(row => {
+    const tid = row.querySelector(".t-tid").value.trim();
+    if (!tid) return;
+    if (!GUID.test(tid)) {
+      row.querySelector(".t-tid").classList.add("bad");
+      problems.push("Tenant ID geçerli bir GUID değil: " + tid);
+      return;
+    }
+    tenants.push({
+      tid,
+      label: row.querySelector(".t-label").value.trim(),
+      org: row.querySelector(".t-org").value.trim(),
+      subscriber_id: row.querySelector(".t-sub").value.trim()
+    });
+  });
+  if (tenants.length === 0) problems.push("En az bir izinli tenant gir");
+
+  if (problems.length) { err.textContent = "✗ " + problems.join(" · "); return; }
+
+  const cfg = {
+    version: 1,
+    generated_at: new Date().toISOString(),
+    broker: { alias: "microsoft", display_name: "Microsoft 365" },
+    entra: {
+      client_id: clientId,
+      discovery_url: DISCOVERY,
+      default_scopes: "openid profile email",
+      client_secret_expiry: expiry || null
+    },
+    allowed_tenants: tenants
+  };
+
+  document.getElementById("cfgJson").textContent = JSON.stringify(cfg, null, 2);
+  document.getElementById("vaultCmd").textContent =
+    "vault kv put " + VAULT_PATH + " \\\n" +
+    "  client_secret=" + shellQuote(secret);
+  document.getElementById("nextSteps").textContent =
+    "1. m365-broker-config.json'u indir → scripts/keycloak/ altına koy\n" +
+    "2. Vault komutunu staging-sw'de çalıştır (secret Vault'a)\n" +
+    "3. Claude'a haber ver: config + tenant'lar hazır\n" +
+    "   → setup-m365-broker.sh test realm'de (platform-test) koşar\n" +
+    "Detay: docs/operations/RUNBOOKS/RB-m365-sso-broker.md";
+
+  document.getElementById("out").classList.add("show");
+  document.getElementById("out").scrollIntoView({ behavior: "smooth" });
+};
+
+document.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => {
+  const txt = document.getElementById(b.dataset.copy).textContent;
+  navigator.clipboard.writeText(txt).then(() => {
+    const o = b.textContent; b.textContent = "✓ kopyalandı";
+    setTimeout(() => b.textContent = o, 1400);
+  });
+});
+
+document.getElementById("dlJson").onclick = () => {
+  const blob = new Blob([document.getElementById("cfgJson").textContent],
+                        { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "m365-broker-config.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+</script>
+</body>
+</html>
