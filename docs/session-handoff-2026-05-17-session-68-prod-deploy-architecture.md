@@ -2,7 +2,7 @@
 
 > Format: D28 5-alan + sıradaki agent aksiyon listesi
 > Önceki handoff: `session-handoff-2026-05-17-session-67-extracttables-q3-q4-complete.md`
-> Codex thread'ler: Q4 current-state delta `019e359e`, prod promotion + 6-PR mimari planı `019e35d1`
+> Codex thread'ler: Q4 current-state delta `019e359e`, prod promotion + 4-PR mimari planı `019e35d1`
 
 ---
 
@@ -78,7 +78,7 @@ PR-4'te — §5).
   (eski, 13 gün). Canlı prod rollout, kalıcı mekanizma (§5 P0 / PR-1)
   üzerinden yapılacak — bu session bilinçli olarak rollout'u tek-seferlik
   workaround ile yapmadı.
-- 6-PR prod-deploy-architecture projesi başlamadı.
+- Kalıcı prod-deploy-architecture projesi (4-PR) başlamadı.
 
 ---
 
