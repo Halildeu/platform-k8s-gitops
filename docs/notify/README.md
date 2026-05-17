@@ -7,6 +7,20 @@ Bu dizin **Faz 23 notification orchestration** için canonical doküman setidir.
 
 ---
 
+## GitHub Project Board (Faz 2 migration — 2026-05-17)
+
+Aktif Faz 23 durum takibi **[platform Roadmap board](https://github.com/users/Halildeu/projects/2)** üzerinde — `Faz` alanı `Faz 23` view. 28 item oluşturuldu: 1 umbrella (#751) + 10 milestone (#752-761) + 12 risk (#762-773) + 4 RAID issue (#774-777) + 1 must-have gate (#778). Post-review reconcile (current-state.md Session 44): R3 #764 + I1 #774 mitigated/resolved, R10 #766 Faz 21'e deferred → 3 item closed; **25 aktif**. Faz 23 ~Session 49'dan (2026-05-14) beri dormant.
+
+**Source-of-truth boundary** (Codex `019e361d` AGREE):
+
+- **Board canonical** — aktif iş, açık risk, açık issue, milestone/gate durumu. Board `Status` alanı aktif-iş ilerlemesinin canonical kaydı.
+- **Docs canonical** — spec (event-contract), kabul kriteri, evidence ledger, deferred inventory (feature-matrix 178 satır, sprint-plan tier T2-T5), DoD detayı, mitigated/closed risk arşivi.
+- Bir item için status hem board'da hem doc'ta **bağımsız yürütülmez** — board issue canonical. İki yönlü backlink: her doc'un üst migration banner'ı board `#N` mapping'ini taşır, board issue body'si `source-doc:` referansını taşır.
+- `needs-verification` label'lı item `Done / Mitigated / Closed / Accepted` statüsüne **taşınamaz** (governance rule).
+- `source-ready / desired-state / live-deployed / accepted` ayrı katmanlardır; board `Status=Done` yalnız **accepted/live** demektir — source-ready değil.
+
+---
+
 ## 📚 Doküman Hiyerarşisi
 
 ### 1. Strategic / Architecture (yön + karar)
@@ -56,59 +70,27 @@ Bu dizin **Faz 23 notification orchestration** için canonical doküman setidir.
 
 ---
 
-## 🎯 Quick Status (2026-05-09 Session 39)
+## 🎯 Quick Status
 
-### Sub-Faz Status
-- 🟢 **23.0** Charter (done)
-- 🟡 **23.1** Kernel partial (D29-Functional evidence pending)
-- 🟡 **23.2** MVP-dar partial (Session 39 hardening 5/8 LIVE; Session 41 re-baseline 2026-05-09 19:50Z — backend source-ready 12/12 + live-deployed 9/12 + acceptance 0/12 + blocked 2/12; T1.6 abuse guards LIVE + T1.4 D43 4-PR source-ready; ~17-22h residual; drill execution + acceptance gate operator action; R13 + R19 mitigated)
-- ⏳ **23.3** SMS NetGSM (pending)
-- 🟡 **23.4** v1 DLR + In-app UI partial (UI LIVE; SMS DLR pending)
-- ⏳ **23.5** Preference UI (pending)
-- ⏳ **23.6** Teams + Slack threading (pending)
-- ⏳ **23.7** Push FCM/APNS (pending)
-- 🟡 **23.8** Analytics + bounce loop partial (alerts LIVE; Tempo/bounce pending)
-- 🟡 **23.9** Prod cutover partial (LIVE; 72h observation T+72h=2026-05-11 + rollback prova + browser SSO pending)
-- ⏳ **23.X** v2 (deferred)
-
-### Must-Have Status (M3 stale audit 2026-05-09 5-state matrix re-baseline)
-- 🟢 7/10 fully done (#1, #2, #3, #4, #5, #6, #9)
-- 🟡 3 partial (#7 retention LIVE + admin erasure source-ready/R2 legal/subscriber endpoint pending; #8 ⏳→🟡 demote source-ready + RAID I6 acceptance gate; #10 observability LIVE + D43 pending)
-- ⏳ 0 pending
-- **~85% must-have coverage** (7×1.0 + 3×0.5 = 8.5/10; partial weight 0.5 semantik, source-ready bias var; NOT production-ready guarantee)
-
-### Active Risks
-- 🟡 R1 NetGSM provider contract delay (23.3 blocker)
-- 🟡 R2 KVKK erasure legal review (23.2.B blocker)
-- 🟡 R3 DKIM/SPF/DMARC prod activation
-- 🔴 R9 D43 outage fallback drill pending
-- 🔴 R10 Multi-tenant migration data drift (DEFER Faz 21)
-
-### Next Critical Milestone
-**M1**: 23.9 Cutover Closure (target 2026-05-12)
-- T2.3.1 72h observation completion (T+72h = 2026-05-11 19:42Z)
-- T2.3.2 Rollback prova execution
-- T2.3.3-4 Browser SSO verify (testai + ai.acik.com)
+> **Historical snapshot kaldırıldı (Faz 2 migration 2026-05-17)** — Eski "Quick Status" 2026-05-09 (Session 39) dondurulmuş bir kopyaydı; board-canonical kuralıyla ve `current-state.md` Session 43/44 ile çelişiyordu (örn. R3 hâlâ aktif gösteriliyordu — gerçekte 🟢 Mitigated). Güncel Faz 23 durumu için tek kaynak: **[platform Roadmap board](https://github.com/users/Halildeu/projects/2)** `Faz 23` view (milestone/risk/issue/gate item'ları). Runtime truth: `docs/state/current-state.md`.
 
 ---
 
 ## 🔄 Update Discipline
 
-**HARD RULE — every PR**:
-1. Charter sub-faz marker güncellenir (eğer status değiştiyse)
-2. must-have-checklist criteria 🟢 işaretlenir (kabul kriteri kapanırsa)
-3. feature-matrix marker güncellenir (özellik LIVE oldu)
-4. risk-register: yeni risk eklenir veya status update
-5. sprint-plan: task 🔴 → 🟡 → 🟢 ilerletilir
-6. milestones.md: M-N DoD checklist update
-7. current-state.md: live evidence delta
-8. PLAN.md D-karar status sync (gerekirse)
+**HARD RULE — board canonical (Faz 2/3 migration, 2026-05-17 sonrası)**:
 
-Inline doc update; dedicated doc-only PR yalnız retroaktif alignment veya taxonomy değişikliği için.
+- Aktif Faz 23 durum değişimi → ilgili **board issue** güncellenir (`Status` / `Kind` / alanlar). Aynı durumu doc'a paralel yazmak YASAK — drift kaynağı.
+- PR yalnız **değişen canonical yüzeyi** günceller: kod/runtime değişimi → board issue + `current-state.md`; spec / kabul kriteri / evidence → ilgili doc.
+- Yeni risk veya issue → board'da issue açılır + ilgili doc'a satır + **iki yönlü backlink**: doc'un üst migration banner'ındaki board mapping'ine `#N` eklenir, issue body'si `source-doc:` referansını taşır.
+- feature-matrix: aktifleşen özellik board'da issue alır (`tracked by #N`); row marker tek başına progress değildir.
+- `needs-verification` label'lı item closure statüsüne taşınamaz; `source-ready ≠ live-deployed ≠ accepted` ayrımı korunur.
 
-**Codex peer review HARD RULE**: Her PR cross-AI review (Code Claude → Codex AGREE/REVISE/RED).
+> Eski "her PR 8 dokümanı günceller" kuralı **superseded** — board'a göç öncesi disiplindi ve çoklu-yüzey güncelleme drift'in kaynağıydı (Codex `019e361d`).
 
-**Mark discipline**: Sub-faz `🟢 done` ancak ALL kabul kriteri 🟢 olduğunda işaretlenir. Substantial+missing = 🟡 partial.
+**Codex peer review HARD RULE**: Her implementation PR cross-AI review — implementer ≠ reviewer (farklı sağlayıcı: Claude ↔ Codex).
+
+**Mark discipline**: Board `Status=Done` ancak ALL kabul kriteri accepted/live olduğunda. Substantial + missing = `In Progress`. `needs-verification` varken closure YASAK.
 
 ---
 
@@ -151,6 +133,6 @@ Bu doküman seti şunları sağlar:
 ✅ **Stakeholder communication** — cadence + audience patterns + cross-AI peer review
 ✅ **Decision register status** — D38-D48 status sync to live state
 
-**PM artifact baseline present** (10 capability tracker + risk + test + sprint + milestones + deps + stakeholders + decision register sync + update discipline). Production-ready guarantee değil; ~30% v1 scope coverage (literal feature) + 7/10 must-have done + 3 partial source-ready bias = ~85% must-have coverage halinde **PM-ready execution discipline** kurulmuştur (M3 stale audit 2026-05-09 re-baseline per `docs/notify/m3-stale-audit-2026-05-09.md`). Next step: any sub-faz closure work follows this canonical doc set; doc updates inline per PR; weekly summary + per-milestone evidence; risk register reviewed weekly.
+**PM artifact baseline present** (capability tracker + risk + test + sprint + milestones + deps + stakeholders). 2026-05-17 Faz 2 migration sonrası: aktif PM tracking [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (`Faz 23` view); bu doküman seti acceptance criteria + spec + evidence + deferred inventory canonical yüzeyidir. Eski "~%85 must-have coverage / 7-3 split / doc updates inline per PR" ifadeleri 2026-05-09 (Session 39) snapshot'ıdır — güncel durum: board #778 gate + `docs/state/current-state.md`.
 
 > **Honesty disclaimer (Codex iter-2 absorb 2026-05-09)**: "Now we are PM-ready" overclaim'inden kaçınılmıştır. Yapısal PM capability'leri tamamlandı, ancak feature marker pass deferred (~178 row literal sweep follow-up) + cross-doc consistency sweep (Codex iter-1/2 absorb) + KVKK erasure sub-faz authority alignment = dokümantasyon kalitesi iyileştirme süreci aktif.

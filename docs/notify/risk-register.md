@@ -7,6 +7,8 @@
 
 Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için: ID, açıklama, probability, impact, mitigation, owner, status, last review tarihi.
 
+> **Faz 2 — GitHub Project migration (2026-05-17)** — Açık risk takibi [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (`Faz 23` view · `Kind=risk`) üzerinde. Bu doküman probability×impact / mitigation detayı + mitigated/closed/deferred risk arşivinin canonical kaynağı kalır. Açık risk board mapping: R1 #762 · R2 #763 · R6 #765 · R11 #767 · R14 #768 · R15 #769 · R16 #770 · R17 #771 · R21 #772 · R22 #773. (R3 #764 Session 44'te mitigated, R10 #766 Faz 21'e deferred → board item closed; ikisi de bu dokümanda kayıtlı.)
+
 **Review cadence**:
 - Per-PR: yeni risk gözlemlenirse R-N satırı eklenir
 - Weekly: tüm aktif riskler review edilir, status update
@@ -30,7 +32,7 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 |---|---|:---:|:---:|:---:|---|---|:---:|---|---|
 | R1 | NetGSM provider sözleşme + sandbox account gecikmesi | High | High | **High** | Backup: İletimerkezi secondary; pre-prod testing Mailpit pattern; **Vault path infrastructure 🟢 LIVE 2026-05-10 (PR #482 canonical + PR #485 DLR follow-up) — kv/platform/notification-orchestrator + 4 NetGSM keys (username/password/msgheader/dlr_token all empty fail-closed) + ESO 9/9 Ready + 4/4 pod env vars injected**; contract activation pending | ops + legal | 🟡 Active | 23.3.1 | 2026-05-10 |
 | R2 | KVKK erasure scope yanlış implement → audit fail / legal exposure | Medium | Critical | **High** | Legal review öncesi merge yasak; runbook + integration test pre-prod | legal/dev | 🟡 Active | 23.2.B | 2026-05-09 |
-| R3 | DKIM/SPF/DMARC prod activation breaks email delivery | Medium | High | **Medium** | Mailpit dev test + canary domain + 24h pre-cutover validation | ops/dev | 🟡 Active | 23.2 sub-faz drift | 2026-05-09 |
+| R3 | DKIM/SPF/DMARC prod activation breaks email delivery | Medium | High | **Medium** | A4 DKIM RFC 6376 full impl (backend PR #151, 61 test sign+verify); activation flip A5 PR-B deferred. Mailpit dev test + canary domain + 24h pre-cutover validation | ops/dev | 🟢 Mitigated | 23.2 | 2026-05-11 |
 | R4 | Audit retention DETACH/DROP destructive bug (data loss) | Low | Critical | **Medium** | Backend test PR #130 + dry-run observation + ownership check | dev | 🟢 Mitigated | 23.2 (retention) | 2026-05-09 |
 | R5 | Multi-pod cron lock contention causing missed retention cycles | Low | Medium | **Low** | LockSkippedSustained alert (PR #435 multi-pod aware) | dev | 🟢 Mitigated | — | 2026-05-09 |
 | R6 | Codex API limit / cross-AI peer review HARD RULE blocker | Low | Medium | **Low** | Multi-thread strategy + queue-based review + offline absorb pattern | agent | 🟡 Active | — | 2026-05-09 |

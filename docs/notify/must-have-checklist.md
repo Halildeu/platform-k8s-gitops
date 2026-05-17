@@ -8,6 +8,10 @@ Bu 10 özellik **production MVP demek için olmazsa olmaz**. Negotiable değil. 
 
 Diğer ~130 özellik **negotiable** (kanal sayısı, UI yüzeyleri, workflow editor, A/B testing, brand customization).
 
+> **Faz 2 — GitHub Project migration (2026-05-17)** — Production MVP gate takibi [platform Roadmap board](https://github.com/users/Halildeu/projects/2) #778 (`Kind=gate`). Bu doküman 10 must-have'in **kabul kriteri + evidence path**'inin canonical kaynağı kalır.
+>
+> **⚠️ Status marker'ları STALE — historical (2026-05-09 Session 39).** Bu dokümandaki tüm status ifadeleri (aşağıdaki "Status" tablosu, "#7/#8/#10 partial" bölüm başlıkları, "Özet Sayım", "~%85 coverage") 2026-05-09 dondurulmuş snapshot'tır; **canonical değildir**. Canonical live status: board #778 + `docs/state/current-state.md`. current-state.md Session 44'e göre güncel gerçek: Charter 23.2 = **6/6 sub-faz 🟢** (acceptance 12/12); must-have #7 PII/KVKK internal complete — tek residual **R2 external legal review** (KVKK admin erasure, ETA 2026-05-25); #8 Preference + #10 Observability/D43 internal acceptance **resolved**. Gerçek must-have durumu ~10/10 (yalnız #7'de external-legal residual) — eski "7 done + 3 partial / ~%85" rakamı stale.
+
 ## 🟢 Status (2026-05-09 Session 39, Codex `019e0bff` iter-1 absorb)
 
 | # | Must-have | Status | Sub-faz |

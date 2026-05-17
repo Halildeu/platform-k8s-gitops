@@ -8,6 +8,8 @@
 
 Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone slip görünürlüğü + dependency chain visualization.
 
+> **Faz 2 — GitHub Project migration (2026-05-17)** — Aktif milestone durum takibi [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (`Faz 23` view · `Kind=milestone`) üzerinde. Bu doküman DoD / critical path / slip detayının canonical kaynağı kalır. Board mapping: M0 #752 · M1 #753 · M2 #754 · M3 #755 · M4 #756 · M5 #757 · M6 #758 · M7 #759 · M8 #760 · M9 #761.
+
 ---
 
 ## Milestone Roadmap
@@ -203,14 +205,6 @@ M0 ──▶ M1 ───────────────────┼─�
 
 ---
 
-## Last Update: 2026-05-09 (Session 39)
+## Last Update
 
-Current state:
-- M0 🟢 (charter + truth alignment)
-- M1 🟡 (cutover LIVE, 72h observation in progress, T2.3 chain pending)
-- M2 🔴 (T2.1 D29 evidence pending)
-- M3-M9 🔴 (pending)
-
-Total v1 progress: 1/8 milestones (M0 done) = **12.5% milestone-level**.
-Total Faz 23 progress: 1/9 (incl. M9 v2 deferred) = **11%**.
-Combined with sub-faz partial credit: ~30% v1 scope (per charter snapshot).
+> **Historical snapshot kaldırıldı (Faz 2 migration 2026-05-17)** — Eski "Current state" 2026-05-09 (Session 39) dondurulmuş bir milestone kopyasıydı (M3-M9 🔴 pending) ve hem bu dosyanın M3 bölümüyle (2026-05-14 ALMOST CLOSED) hem board-canonical kuralıyla çelişiyordu. Güncel milestone durumu: **[platform Roadmap board](https://github.com/users/Halildeu/projects/2)** `Kind=milestone` (#752-761).

@@ -4,6 +4,8 @@
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md)
 > **Roadmap**: [RB-faz-23-charter](../runbooks/RB-faz-23-charter.md)
 
+> **Faz 2 — GitHub Project migration (2026-05-17)** — feature-matrix board'a issue olarak **taşınmadı**; 178 satır kasıtlı doc olarak kalır (Codex `019e361d` AGREE — issue listesi yapılmaz, coverage/evidence catalog'u olarak tutulur). Aktif çalışmaya alınan özellik [platform Roadmap board](https://github.com/users/Halildeu/projects/2)'da issue alır ve satırına `tracked by #N` eklenir; row marker tek başına PM progress sinyali değildir.
+
 **16 kategori** × **~178 özellik** (literal row count 178; önceki "~140" rakamı semantic estimate idi — Codex iter-2 absorb 2026-05-09'da 178 olarak sabitlenmiştir). Her özellik için tier (Kernel/MVP-dar/MVP-geniş/v1/v2/scope-dışı) + sub-faz + status. Sub-faz tamamlandığında status güncellenir.
 
 > **Not 1**: Kategori sayısı **11 → 16** artışı: ADR-0013 D45 ile 5 yeni kategori eklendi (Deliverability, Abuse/spam, Accessibility, Incident/degraded, Data classification).
@@ -336,3 +338,4 @@ Her sub-faz tamamlandığında:
 2. `git commit` mesajında bu dosyada güncellenen özellik ID'leri belirtilir (`feat(notify): A1+A2+A3 done; ref RB-faz-23-charter 23.1`)
 3. Toplu sayım tablosu kontrol edilir (sub-faz tier'ında ☐ kalmamalı, hepsi 🟢 olmalı)
 4. PR açılır, Codex review (D29-NOTIFY 3-katman evidence ile), merge sonrası bir sonraki sub-faz başlar
+5. **Faz 2 board linkage (2026-05-17)** — Aktif çalışmaya alınan özellik [platform Roadmap board](https://github.com/users/Halildeu/projects/2)'da issue alır; feature satırı `tracked by #N` notu taşır. Row-level `Status` marker tek başına PM progress sayılmaz — canonical aktif-iş durumu board issue'sundadır.
