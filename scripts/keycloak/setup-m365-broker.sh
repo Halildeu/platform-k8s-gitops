@@ -200,9 +200,11 @@ idp = {
 json.dump(idp, open(sys.argv[1], "w"))
 PYEOF
 
-  chmod 0644 "$IDP_JSON_HOST"
-  docker cp "$IDP_JSON_HOST" "$KC_CONTAINER:$IDP_JSON_CTR" >/dev/null 2>&1 \
-    || { echo "ERROR: docker cp IdP JSON failed" >&2; exit 1; }
+  # Host temp dosyası 0600 kalır (clientSecret içerir). Container-içi kopya
+  # docker exec -i ile keycloak uid'i altında, umask 077 ile oluşturulur —
+  # kcadm okur, host'ta world-readable secret penceresi yok (Codex 019e365b).
+  docker exec -i "$KC_CONTAINER" sh -lc "umask 077; cat > '$IDP_JSON_CTR'" < "$IDP_JSON_HOST" \
+    || { echo "ERROR: IdP JSON container'a yazılamadı" >&2; exit 1; }
 
   if [ "$IDP_EXISTS" = "yes" ]; then
     $KC update "identity-provider/instances/$ALIAS" -r "$REALM" -f "$IDP_JSON_CTR" 2>&1 \
@@ -244,9 +246,10 @@ m = {
 }
 json.dump(m, open(path, "w"))
 PYEOF
-  chmod 0644 "$mh"
-  docker cp "$mh" "$KC_CONTAINER:$mc" >/dev/null 2>&1 \
-    || { echo "ERROR: docker cp mapper $name failed" >&2; rm -f "$mh"; exit 1; }
+  # Container-içi kopya keycloak uid'i altında, umask 077 ile (IdP ile aynı
+  # pattern — host temp 0600 kalır; tutarlılık, Codex 019e365b).
+  docker exec -i "$KC_CONTAINER" sh -lc "umask 077; cat > '$mc'" < "$mh" \
+    || { echo "ERROR: mapper $name container'a yazılamadı" >&2; rm -f "$mh"; exit 1; }
   if [ -n "$existing" ]; then
     $KC update "identity-provider/instances/$ALIAS/mappers/$existing" -r "$REALM" -f "$mc" >/dev/null 2>&1 \
       || { echo "ERROR: mapper $name update failed" >&2; rm -f "$mh"; exit 1; }
