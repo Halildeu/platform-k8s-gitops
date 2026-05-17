@@ -1,4 +1,4 @@
-# Session Handoff — 2026-05-17 (Session 68) — Q3/Q4 prod GitOps landed; kalıcı prod-deploy mimarisi (Codex 6-PR planı) sıradaki
+# Session Handoff — 2026-05-17 (Session 68) — Q3/Q4 prod GitOps desired-state merged, canlı rollout pending; kalıcı prod-deploy mimarisi (Codex 4-PR planı) sıradaki
 
 > Format: D28 5-alan + sıradaki agent aksiyon listesi
 > Önceki handoff: `session-handoff-2026-05-17-session-67-extracttables-q3-q4-complete.md`
@@ -24,11 +24,12 @@ Bu session (68) devam etti:
 
 #749'un canlı prod rollout adımı, prod-deploy mekanizmasının **yapısal
 eksikliğini** ortaya çıkardı (§5). Kullanıcı tek-seferlik workaround değil
-**uzun vadeli kalıcı çözüm** istedi → Codex `019e35d1` 6-PR prod-deploy
-architecture planı verdi.
+**uzun vadeli kalıcı çözüm** istedi → Codex `019e35d1` 4-PR prod-deploy
+architecture planı verdi (PR-1..PR-4 + Q4 first-use rollout — "PR" sayısı 4;
+Q4 rollout PR-1'in ilk kullanımı olan operasyon, ayrı PR değil).
 
-Handoff sebebi: 6-PR prod-altyapı projesi + bekleyen Q4 canlı rollout, taze
-full-context session ister — prod-deploy workflow'u aceleyle/doğrulanmadan
+Handoff sebebi: 4-PR prod-altyapı projesi (PR-1..PR-4) + bekleyen Q4 canlı
+rollout (PR-1'in ilk kullanımı), taze full-context session ister — prod-deploy workflow'u aceleyle/doğrulanmadan
 yazılmamalı (No Fake Work). Session Otomatik Açma HARD RULE tetik #1 (context
 derinliği) + #4 (pre-completion natural break). Sıradaki session §5 P0 ile
 devam eder.
@@ -81,7 +82,7 @@ PR-4'te — §5).
 
 ---
 
-## 5. Bilinen Boşluk + Sıradaki Agent P0 — Codex 6-PR Prod-Deploy Architecture Planı
+## 5. Bilinen Boşluk + Sıradaki Agent P0 — Codex Prod-Deploy Architecture Planı (4-PR + Q4 first-use rollout)
 
 **Kök sorun**: prod deploy için temiz, eksiksiz, tek mekanizma yok —
 `deploy-backend-prod.yml` image-only (`kubectl set image`; ConfigMap/manifest
@@ -100,8 +101,11 @@ AÇILMAZ. `kubectl set image`/`apply -k` normal yol olmaktan çıkar.
   `sync_mode` (resources/full), `resources` (resource filter), `allow_prune`
   (default `false`), `confirm` (`SYNC-PROD`).
 - Workflow **yasak**: `kubectl apply`, `kubectl set image`, Deployment/ConfigMap
-  patch. **İzinli**: `argocd app get/diff/sync/wait` + `kubectl get/logs/rollout
-  status/exec` (verify/smoke okuması).
+  patch, **`kubectl exec`** (Codex `019e3615`: `pods/exec` mutation-capable
+  yüzey — "tek deployer ArgoCD" ilkesini zayıflatır). **İzinli**: `argocd app
+  get/diff/sync/wait` + `kubectl get/logs/rollout status` (verify okuması).
+  Derin acceptance smoke (pod runtime env doğrulaması vb.) workflow DIŞINDA —
+  agent'ın ayrı verify adımı / gerekirse PR-3 least-priv smoke SA tasarımı.
 - Sync primitive:
   ```bash
   argocd app get platform-prod --hard-refresh
