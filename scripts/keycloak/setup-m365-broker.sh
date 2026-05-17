@@ -203,6 +203,8 @@ if [ "$VERIFY_ONLY" != "1" ]; then
     $KC create "authentication/executions/$DETECT_ID/raise-priority" -r "$REALM" >/dev/null 2>&1 \
       || { echo "ERROR: detect priority raise failed" >&2; exit 1; }
   done
+  [ "$DI" -lt "$HI" ] \
+    || { echo "ERROR: detect, 'Handle Existing Account' önüne alınamadı (index $DI >= $HI)" >&2; exit 1; }
   echo "✓ detect → 'Handle Existing Account' önünde (priority OK)"
 fi
 
