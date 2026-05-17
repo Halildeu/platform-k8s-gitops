@@ -1,4 +1,4 @@
-# Session Handoff — 2026-05-17 (Session 67) — extractTables Fix Chain TAMAM: Q3 (503) + Q4 (storage catalog-view) MERGED
+# Session Handoff — 2026-05-17 (Session 67) — extractTables Q3 (503) + Q4 (storage catalog-view) MERGED; Q4 live smoke + cluster recovery devam ediyor
 
 > Format: D28 5-alan + sıradaki agent aksiyon listesi
 > Önceki handoff: `session-handoff-2026-05-17-session-66-p0-p1-extracttables-fix.md`
@@ -18,16 +18,19 @@ domain exception → HTTP 503) + **Q4** (`extractStorage` DMV → catalog view
 yeniden yazımı, izin-gerektirmez) merge edildi. Ek olarak `current-state.md`
 canonical truth doc'u P0+P1+Q3 LIVE state ile güncellendi (PR #740).
 
-**`extractTables` timeout fix zinciri artık uçtan uca KAPANDI** —
-P0 + P1 + Q3 + Q4 tamamı origin/main'de. Yan kazanım: Q4 `storage`
-envanterindeki "DMV izni yok → boş envanter" boşluğunu **kod tarafından**
-kapattı — operatör/DBA `GRANT VIEW DATABASE [PERFORMANCE] STATE` ihtiyacı
-tamamen ORTADAN KALKTI (PROHIBITED action — erişim-kontrolü değişimi — yerine
-catalog-view yeniden yazımı ile çözüldü).
+**`extractTables` timeout fix zincirinin 4 PR'ı (P0+P1+Q3+Q4) origin/main'de
+landed** — source + GitOps desired-state tarafı yerine oturdu; Q4'ün canlı
+`storage[]` functional smoke'u bekliyor (§4 + §5 P0). Q4 yan kazanımı:
+`storage` envanterindeki "DMV izni yok → boş envanter" boşluğu **source
+düzeyinde** kapatıldı — catalog-view yeniden yazımı, `GRANT VIEW DATABASE
+[PERFORMANCE] STATE` (PROHIBITED action — erişim-kontrolü değişimi) bağımlılığını
+kod yolundan kaldırdı; canlı `storage[]`'ın dolu geldiği §5 P0'da re-verify
+edilecek.
 
-Handoff sebebi: extractTables/storage thread'i tamamen kapandı — doğal
-milestone (HARD RULE — Session Otomatik Açma, tetik #4 pre-completion natural
-break). Sıradaki session yeni bir konuya taze context'le başlamalı.
+Handoff sebebi: extractTables/storage thread'inin source + GitOps tarafı
+landed, geriye canlı re-verify + cluster recovery kaldı — doğal milestone
+(HARD RULE — Session Otomatik Açma, tetik #4 pre-completion natural break).
+Sıradaki session §5 P0 ile devam eder.
 
 **Ek bulgu (bu handoff anında):** `k3d-test` cluster'ı durmuş bulundu
 (`k3d-test-server-0` container OOM-exit 137). `k3d cluster start test` ile
@@ -38,8 +41,11 @@ settle ediyor. Recovery durumu §3 + §5 P0'da.
 
 ## 2. İddia — bu session MERGE edilen PR'lar
 
-6 PR. Tümü cross-AI Codex peer review (AGREE), CI yeşil, **normal squash**
-(`--admin` yok — HARD RULE), `ai-post-merge-cleanup.sh` archive tag'li.
+6 PR. Tümü CI yeşil, **normal squash** (`--admin` yok — HARD RULE),
+`ai-post-merge-cleanup.sh` archive tag'li. Q3/Q4 kod PR'ları (#235/#237)
+cross-AI Codex peer review AGREE — thread referansları aşağıda; gitops
+digest-bump + doc PR'ları (#733/#735/#740/#745) merge öncesi tüm CI
+gate'lerinden (cross-ai-audit + boundary dahil) geçti.
 
 | PR | Repo | Konu |
 |----|------|------|
@@ -102,8 +108,9 @@ Calico CNI sandbox hataları — recovery §5 P0).
   doğrulanmadı.** `k3d-test` cluster bu handoff anında durmuş bulundu;
   restart sonrası API server hâlâ settle ediyor. Q4 catalog-view sorgusunun
   canlı `workcube_mikrolink` üzerinde **dolu `storage[]`** (eski boş yerine)
-  döndürdüğü, cluster geri geldiğinde teyit edilmeli. Q4 kod + 202-test +
-  immutable digest tarafı tamam; eksik olan tek şey canlı endpoint smoke'u.
+  döndürdüğü, cluster geri geldiğinde teyit edilmeli. Q4'ün source + 202-test
+  + immutable digest tarafı landed; bekleyen tek şey canlı endpoint smoke'u
+  (§5 P0).
 - 🟡 **`partial-status` metadata yapılmadı.** Q3 planının (#726 §5 / Codex
   `019e335c`) en az tanımlı parçası — degrade olan envanterleri
   `SchemaSnapshot` metadata'sında işaretleme — Codex tarafından "ayrı alt-iş
@@ -130,9 +137,16 @@ Calico CNI sandbox hataları — recovery §5 P0).
      `kubectl -n calico-system scale deploy calico-typha --replicas=0` →
      `delete pod -l k8s-app=calico-node` → `scale --replicas=1`.
   3. schema-service pod `Running` + imageID `sha256:894e492f…` (Q4) doğrula.
-  4. `GET /api/v1/schema/snapshot?schema=workcube_mikrolink` → HTTP 200 +
-     **`storage[]` DOLU** — Q4 catalog-view kanıtı; eski DMV-izin boşluğunun
-     kod tarafından kapandığının canlı ispatı.
+  4. schema-service'i port-forward'la + Q4 storage smoke'u koş (auth:
+     audience=`schema-service` JWT ya da internal API key —
+     `schema-service-config` ConfigMap'ten doğrula):
+     ```bash
+     kubectl --context k3d-test -n platform-test port-forward svc/schema-service 8096:8096
+     curl -s "http://localhost:8096/api/v1/schema/snapshot?schema=workcube_mikrolink" \
+       -H "Authorization: Bearer <schema-service-jwt>" | jq '.storage | length'
+     ```
+     Beklenen: HTTP 200 + `.storage` length > 0 (eski DMV-izin boşluğunda 0) —
+     Q4 catalog-view rewrite'ının canlı ispatı.
   5. Deploy sonrası tarayıcı console + network kontrolü (HARD RULE — Deploy
      Sonrası Tarayıcı Console Verifikasyonu) — schema-service backend-only ama
      onu tüketen frontend (schema explorer / report builder) varsa smoke et.
