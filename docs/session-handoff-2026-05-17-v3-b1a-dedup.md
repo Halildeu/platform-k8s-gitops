@@ -8,6 +8,41 @@
 
 ---
 
+## ⚠ DÜZELTME (2026-05-17 v2) — PR #570 REVERT EDİLDİ
+
+> **Bu handoff'un §2/§3/§5'i geçersiz: B1a-dedup fix'i diye gösterilen
+> platform-web PR #570 (`fcb919dd`) REVERT EDİLDİ — platform-web PR #571
+> (`95e6fb5d`).**
+>
+> **Sebep**: `hostOnly` (`import:false`) `@mfe/design-system` için — workspace
+> paketi, image-build context'inde derlenmiş `dist/` yok — `build:ubuntu:single-domain`
+> (post-merge `CI - Web Image Build + GHCR Push`) şununla kırdı:
+> `[UNLOADABLE_DEPENDENCY] Could not load
+> node_modules/@mfe/design-system/dist/esm/index.js`. PR'ın kendi CI'ı
+> (`build:raw`, source-alias federated build) bunu görmedi —
+> `build:ubuntu:single-domain` PR check setinde değil.
+>
+> **§5 P0 GEÇERSİZ** — "#570'i testai'ye deploy et" artık yok (#570 reverted).
+>
+> **Düzeltilmiş redo — Codex `019e3333` AGREE (2 adım)**:
+>
+> 1. `packages/design-system`'i temiz checkout'tan (stale `dist/` olmadan)
+>    temiz build edilebilir hale getir (mevcut x-charts type fragility'si dahil).
+> 2. `build-single-domain.mjs` (ve/veya Dockerfile) MFE build'lerinden **ÖNCE**
+>    `npm run build --prefix packages/design-system` koşsun;
+>    `packages/design-system/dist/esm/index.js` var-assert et.
+> 3. Sonra 6 remote'a DS `hostOnly()`'i yeniden uygula +
+>    `build:ubuntu:single-domain` yeşil doğrula. Ayrıca
+>    `build:ubuntu:single-domain`'i (veya hızlı canary) platform-web PR check
+>    setine ekle — bu break sınıfı merge öncesi yakalansın.
+>
+> **DS-dedup BULGUSU geçerli** (browser-verified: testai `/access/roles`'ta
+> 5× `@mfe/design-system` loadShare chunk, ~7 MB/route redundant transfer).
+> Yalnız fix-implementasyonu single-domain build-contract düzeltmesi
+> gerektiriyor. Aşağıdaki orijinal handoff tarihsel kayıt olarak korunur.
+
+---
+
 ## 1. Bağlam — Bu Session Ne Yaptı
 
 Önceki handoff (#729) **B1a-dedup**'ı sıradaki P0 olarak bırakmıştı (handoff'un
