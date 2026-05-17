@@ -2536,32 +2536,28 @@ patches:
       # pod crashed with `Unable to determine Dialect without JDBC metadata`.
       # Root cause (Codex 019e25ba clarification): base ConfigMap already
       # carried `SPRING_DATASOURCE_URL` (verified via render of PR #566
-      # merge commit 1ac92b3); the missing piece was the explicit Hibernate
-      # dialect property + Hikari fail-timeout that the inline override was
-      # carrying alone. Spring Boot JDBC autoconfig opened the connection
-      # but Hibernate's dialect auto-detection failed without an explicit
-      # `spring.jpa.properties.hibernate.dialect`.
+      # merge commit 1ac92b3). The inline override also carried an explicit
+      # Hibernate dialect property + Hikari fail-timeout; the dialect was
+      # *believed* mandatory at the time. D1.1d (note below) disproved that:
+      # the real cause was the D1.1c credential drift (broken DB connection
+      # blocked Hibernate's JDBC metadata probe), not missing dialect config.
       #
       # SPRING_DATASOURCE_URL is pinned here too (defensive parity with
       # live override after kubectl set env recovery on 2026-05-14 ~12:00);
       # base value is identical so render is unaffected.
-      # SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT is the canonical Spring
-      # relaxed-binding path the auto-config consults.
-      # HIBERNATE_DIALECT is the legacy convention from the inline override
-      # (kept as a live-recovery breadcrumb; not bound by Spring directly
-      # in this codebase per application-k8s.yml). Remove in D1.1b cleanup.
+      # D1.1d cleanup (2026-05-17): HIBERNATE_DIALECT +
+      # SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT removed — the PR #566
+      # `Unable to determine Dialect` crash was a symptom of the D1.1c
+      # credential drift (broken DB connection blocked Hibernate's JDBC
+      # metadata probe). Post-fix debug-pod proof: DDL_AUTO=validate, no
+      # explicit dialect -> clean boot, PostgreSQLDialect auto-detected.
+      # Codex 019e32d8 Q1 AGREE.
       # SPRING_DATASOURCE_HIKARI_INITIALIZATION_FAIL_TIMEOUT=30000 keeps
       # the pool seed tolerant of host-bridge PG short hiccups (already
       # paired with Hikari connection-timeout=30s in application-k8s.yml).
       - op: add
         path: /data/SPRING_DATASOURCE_URL
         value: "jdbc:postgresql://postgres:5432/auth_db"
-      - op: add
-        path: /data/HIBERNATE_DIALECT
-        value: "org.hibernate.dialect.PostgreSQLDialect"
-      - op: add
-        path: /data/SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT
-        value: "org.hibernate.dialect.PostgreSQLDialect"
       - op: add
         path: /data/SPRING_DATASOURCE_HIKARI_INITIALIZATION_FAIL_TIMEOUT
         value: "30000"
