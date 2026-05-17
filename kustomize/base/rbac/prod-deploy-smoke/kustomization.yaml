@@ -1,0 +1,18 @@
+# prod-deploy-smoke staged RBAC — Codex 019e380b (PR-3A).
+#
+# Standalone entrypoint: hiçbir overlay veya `kustomize/base/kustomization.yaml`
+# bu kustomization'ı `resources:`'ine ALMAZ. ArgoCD `platform-prod` Application
+# sync path'ine girmez → merge anında prod state mutasyonu olmaz.
+#
+# CI (`ci.yml` kustomize-build) yalnız `kustomize build` render sanity doğrular.
+# Canlıya alma: docs/operations/RUNBOOKS/RB-prod-rbac-least-privilege.md (PR-3C,
+# operator-gated).
+#
+# Kaynaklar iki namespace'e yayılır (argocd + platform-prod) — bu yüzden
+# kustomization seviyesinde `namespace:` override YOK; her kaynak kendi
+# `metadata.namespace`'ini taşır.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - prod-deploy-smoke.yaml

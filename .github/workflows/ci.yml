@@ -32,6 +32,12 @@ jobs:
         run: kustomize build kustomize/overlays/prod/eso > /tmp/prod-eso.yaml
       - name: Build base/monitoring
         run: kustomize build kustomize/base/monitoring > /tmp/monitoring.yaml
+      # PR-3A — staged RBAC entrypoint'leri (hiçbir overlay'e bağlı değil;
+      # yalnız render sanity — canlıya operator-gated apply ile gider)
+      - name: Build base/rbac (break-glass — staged)
+        run: kustomize build kustomize/base/rbac > /tmp/rbac-break-glass.yaml
+      - name: Build base/rbac/prod-deploy-smoke (PR-3A staged least-privilege)
+        run: kustomize build kustomize/base/rbac/prod-deploy-smoke > /tmp/rbac-prod-deploy-smoke.yaml
       # Faz 17.Z — PR'da blocking: local overlay'ler render sanity (lokal dev drift yakalama)
       - name: Build overlays/local-authn-min (Faz 17.2)
         run: kustomize build kustomize/overlays/local-authn-min > /tmp/local-authn-min.yaml
