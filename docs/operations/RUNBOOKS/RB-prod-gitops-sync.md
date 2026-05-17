@@ -7,9 +7,9 @@
 > (`k3d-prod`) sync edilmesi. Prod'un **tek normal deploy mekanizması**:
 > `production` environment gate'li `deploy-prod-gitops.yml` workflow'u.
 >
-> **Bu runbook ≠ rollback-to-previous-digest** — o senaryo için
-> `docs/RB-prod-deploy-rollback.md`. Bu runbook'un `full` + eski-revision
-> modu da rollback yapabilir (§5).
+> **Rollback**: bu runbook'un `full` + eski-revision modu rollback yapar
+> (§5 — dispatch mekaniği). Rollback **kararı** (tetik matrisi, önceki-iyi
+> revision bulma, follow-up) için `docs/RB-prod-deploy-rollback.md`.
 
 ## Bağlam — neden bu mekanizma
 
@@ -244,6 +244,10 @@ gh workflow run deploy-prod-gitops.yml \
 
 - `revision` `origin/main` ancestor olmalı (history'de durmalı).
 - `full` mode tüm app'i o revision'a sync eder.
+- ⚠️ **Kaynak ekleme/silme rollback sınırı**: rollback run `--prune` taşımaz
+  ve prune gate revision-aware değildir — eski revision'da bulunmayan (HEAD'de
+  sonradan eklenmiş) kaynak orphan kalır. Detay + Yol A/B kararı:
+  `docs/RB-prod-deploy-rollback.md` "Yol A sınırı".
 - ConfigMap-only geri-alınmaması gereken parity değişiklikleri (örn.
   schema-service 300s timeout — backward-compatible) için resources mode +
   HEAD ile selective forward-fix tercih edilir.
@@ -293,6 +297,7 @@ hijyen. Revoke sonrası eski token'la sync denemesi 401 alır.
 - `.github/workflows/deploy-prod-gitops.yml` — bu workflow
 - `helm-values/argocd/values.yaml` — `prod-gitops-sync` account + RBAC
 - `argocd/applications/platform-prod.yaml` — Application (manual syncPolicy)
-- `docs/RB-prod-deploy-rollback.md` — image-digest rollback (companion)
+- `docs/RB-prod-deploy-rollback.md` — prod rollback karar runbook'u (tetik
+  matrisi + önceki-revision bulma; dispatch mekaniği §5'e devreder)
 - Codex thread `019e35d1` (4-PR planı) + `019e362d` (PR-1 erişim
   yöntemi AGREE — Seçenek B)
