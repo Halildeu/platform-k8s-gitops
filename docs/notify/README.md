@@ -83,6 +83,7 @@ Aktif Faz 23 durum takibi **[platform Roadmap board](https://github.com/users/Ha
 - Aktif Faz 23 durum değişimi → ilgili **board issue** güncellenir (`Status` / `Kind` / alanlar). Aynı durumu doc'a paralel yazmak YASAK — drift kaynağı.
 - PR yalnız **değişen canonical yüzeyi** günceller: kod/runtime değişimi → board issue + `current-state.md`; spec / kabul kriteri / evidence → ilgili doc.
 - Yeni risk veya issue → board'da issue açılır + ilgili doc'a satır + **iki yönlü backlink**: doc'un üst migration banner'ındaki board mapping'ine `#N` eklenir, issue body'si `source-doc:` referansını taşır.
+- **Board curated — intake kuyruğu değil** (Codex `019e361d`): bir PR/issue sadece açıldığı için board'a girmez. Roadmap-visible iş (faz / milestone / gate / risk / RAID state'ini etkileyen) board'a alınır → `project-roadmap` label eklenir + Project #2'ye item-add + Faz/Track/Priority/Kind set edilir. Normal implementation / code PR board'a **eklenmez** — kendi repo'sunda kalır, ilgili milestone/gate/risk issue'suna link verir. Native auto-add yalnız `project-roadmap` label'lı item'ı çeker.
 - feature-matrix: aktifleşen özellik board'da issue alır (`tracked by #N`); row marker tek başına progress değildir.
 - `needs-verification` label'lı item closure statüsüne taşınamaz; `source-ready ≠ live-deployed ≠ accepted` ayrımı korunur.
 
