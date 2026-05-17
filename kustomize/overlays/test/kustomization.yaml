@@ -854,7 +854,18 @@ images:
     # Strict filter[action] enum (alias `IMPERSONATION` + 5 specific or 400 — no silent rewrite).
     # ADR-0014 audit-module-gating documents the boundary.
     # Image build run: 25624087995 (commit 5ddc935).
-    digest: sha256:a973be6502e6d26cab9e200fb7f343b35e62c26793b94b100bd03b513b64bc49
+    #
+    # 2026-05-17 update: sha-1a15d27 — platform-backend PR #236 (Codex thread
+    # 019e34df, plan-time REVISE → post-impl AGREE). /authz/me REPORT
+    # projection invariant: a positive REPORT-type grant now surfaces both
+    # modules.REPORT and the legacy REPORT_VIEW permission, and
+    # resolvePermissions merges OpenFGA module grants with DB legacy
+    # permissions instead of short-circuiting. Fixes the d35-granted
+    # impersonation finding — REPORT_VIEWER role had 16 ALLOW report-groups
+    # yet modules.REPORT/REPORT_VIEW absent → report-service denied every
+    # report → /api/v1/reports = 0 + "Raporlar" nav hidden.
+    # Image build run: 25985275529 (commit 1a15d27).
+    digest: sha256:52407b7fe42c7ad69bacbf41f711388699dc00650b28be83c2bfa6e2bb8e9697
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
