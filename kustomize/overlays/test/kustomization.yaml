@@ -2515,31 +2515,23 @@ patches:
       - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: "DEBUG"
-      # D1.1b REVERTED (2026-05-14, PR #581 rollback, Codex 019e2651 REVISE):
-      # PR #581 (DDL_AUTO=validate + FLYWAY_ENABLED=true) live boot fail:
-      #   org.postgresql.util.PSQLException: FATAL: password authentication
-      #   failed for user "platform"
-      #     at FlywayExecutor.execute / FlywayMigrationInitializer
-      # Pod CrashLoop, restart=2 in 2m10s.
-      #
-      # Recovery: inline override DDL_AUTO=none + FLYWAY=false → pod Running,
-      # /api/v1/authz/me 401 (anonymous expected).
-      #
-      # Manifest revert (D1.1a safety hold state) — source/live re-alignment.
-      # Inline override post-revert kaldırılır → effective state ConfigMap'ten
-      # gelir.
-      #
-      # Root cause araştırması D1.1c discovery (ayrı PR):
-      # - Spring Boot Flyway autoconfig DataSource bean'i inherit ediyor mu?
-      # - SPRING_FLYWAY_USER/PASSWORD env var stale ESO snapshot mu?
-      # - In-pod psql aynı namespace network ile aynı password ile çalışıyor mu?
-      # D1.1b yeniden denemesi yalnız D1.1c RCA sonrası.
+      # D1.1e (2026-05-17): Flyway RESTORED — DDL_AUTO=validate + FLYWAY=true.
+      # D1.1b'nin (PR #581) live boot fail'i (`FATAL: password authentication
+      # failed for user "platform"` at FlywayMigrationInitializer) bir Flyway
+      # sorunu değildi — credential drift semptomuydu. D1.1c Phase 3 RCA:
+      # auth-service'in Vault `db_password`'ü paylaşımlı `platform` PG rolünden
+      # ayrışmıştı; eager Flyway connection drift'i yalnız görünür kılıyordu.
+      # D1.1c (PR #727/#731) credential'ı düzeltti; D1.1d (PR #734) redundant
+      # dialect env'leri temizledi. D1.1e rehearsal (disposable PG kopyası):
+      # Flyway baseline v1 + V2 idempotent applied + Hibernate validate ile
+      # clean boot kanıtlandı. Codex 019e3371 AGREE.
+      # RCA: docs/d1.1c-flyway-rca-discovery-2026-05-14.md §5.Y
       - op: add
         path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
-        value: "none"
+        value: "validate"
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
-        value: "false"
+        value: "true"
       # Codex 019e258a iter-5 + 019e25ba — D1.1a 2nd pass: PR #566 selective
       # apply dropped the inline env array (kubectl replace --force) and the
       # pod crashed with `Unable to determine Dialect without JDBC metadata`.
