@@ -655,8 +655,17 @@ images:
     # apply edilse ImagePullBackOff olurdu. Doğru schema-service P1 digest'i
     # build log job-section ("Build + Push schema-service") + CD deploy spec +
     # canlı pod imageID üçüyle teyitli: sha256:7aad3043...
-    # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:7aad30439ba301c611f35cc7687311f8409beb02b678e6344d21df4d0bd0d123
-    digest: sha256:7aad30439ba301c611f35cc7687311f8409beb02b678e6344d21df4d0bd0d123
+    #
+    # 2026-05-17 update: sha-b9b40f7 — platform-backend PR #235 squash merge
+    # (handoff §5 Q3). buildSnapshot adım-1 extractTables (base extraction)
+    # try-catch'siz tek extraction'dı → base-fail generic HTTP 500'lüyordu.
+    # Q3: SnapshotUnavailableException + SchemaExceptionHandler → base-fail
+    # artık kontrollü HTTP 503 (sanitize body); 8 B1 inventory non-fatal kalır.
+    # Digest job-section + CD deploy spec iki-kaynak teyitli (P1 #730 çok-
+    # servisli digest hatası tekrarlanmadı). Image build run 25977247312
+    # (merge commit b9b40f7).
+    # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:bbf79dd96aea5fbd91a151e6440f491e8b6826f31ddee1c5c1af843bf24373f5
+    digest: sha256:bbf79dd96aea5fbd91a151e6440f491e8b6826f31ddee1c5c1af843bf24373f5
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
