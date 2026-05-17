@@ -8,7 +8,7 @@
 
 Bu doküman **Risks / Assumptions / Issues / Dependencies** dört boyutu ayrı tutar. Risk register zaten 22 risk takipli; RAID log onu **assumption + issue + dependency** ile genişletir.
 
-> **Faz 2 — GitHub Project migration (2026-05-17)** — Aktif Issue (I-serisi) takibi [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (`Faz 23` view · `Kind=issue`) üzerinde. Assumption (A) + Dependency (D) boyutları canonical olarak yalnız bu dokümanda. Aktif issue board mapping: I1 #774 · I2 #775 · I4 #776 · I6 #777.
+> **Faz 2 — GitHub Project migration (2026-05-17)** — Aktif Issue (I-serisi) takibi [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (`Faz 23` view · `Kind=issue`) üzerinde. Assumption (A) + Dependency (D) boyutları canonical olarak yalnız bu dokümanda. Aktif issue board mapping: I2 #775 · I4 #776 · I6 #777. (I1 #774 Session 44'te resolved → board item closed; bu dokümanda kayıtlı.)
 
 ## Neden Ayrı?
 
@@ -45,7 +45,7 @@ Codex iter-2 finding F5 (thread `019e0c28`):
 
 | ID | Issue | Detected | Severity | Mitigation in Progress | Related Risk | Owner | Status |
 |---|---|---|:---:|---|---|---|:---:|
-| I1 | Prod SMTP connection refused (notification-orchestrator pod logs 2026-05-09) | 2026-05-09 | Medium | Email gateway prod activation pending; D29-Functional evidence test cluster (Mailpit) üzerinde toplanır | R3 partial (DKIM/SPF/DMARC delivery auth); root-cause SMTP gateway connectivity activation | ops + dev | 🟡 Active |
+| I1 | Prod SMTP connection refused (notification-orchestrator pod logs 2026-05-09) | 2026-05-09 | Medium | Session 44 çözüldü: A6 Office 365 prod SMTP gateway + A7 NOTIFY_DISPATCH_ENABLED=true + A8 Microsoft Graph port-443 bypass LIVE; root-cause ISP/datacenter outbound 587 block | R3 (🟢 Mitigated) | ops + dev | 🟢 Resolved |
 | I2 | platform-prod ArgoCD application "OutOfSync" gösteriyor ama "successfully synced (all tasks run)" mesajı | 2026-05-09 | Low | ArgoCD diff hesaplama farkı, gerçek drift yok; manuel `argocd app diff` ile doğrulanmalı | None — ops/gitops cosmetic issue | gitops | 🟡 Active |
 | I3 | Charter sub-faz % rakamları PM bootstrap iter-1'de iyimser (Codex verdict PARTIAL) | 2026-05-09 | Low | Yorumlama disiplini düzeltildi (Codex thread `019e0c28` retrospective); rakamlar revize tablosuyla sunum | None — PM-doc reporting issue | agent | 🟢 Mitigated |
 | I4 | Feature matrix literal marker pass deferred (~178 row sweep) — semantic estimate ile literal marker drift | (devam) | Low | Marker discipline note eklendi; planlı follow-up (sub-faz closure'larında inline) | None — PM-doc tracking issue | agent | 🟡 Active |
