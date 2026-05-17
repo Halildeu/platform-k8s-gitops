@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "generated_at": "2026-05-17",
+  "broker": {
+    "alias": "microsoft",
+    "display_name": "Microsoft 365"
+  },
+  "entra": {
+    "client_id": "3b709448-3e67-4a6f-9bfd-a38a376ad339",
+    "discovery_url": "https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration",
+    "default_scopes": "openid profile email",
+    "client_secret_expiry": "2026-11-13"
+  },
+  "allowed_tenants": [
+    {
+      "tid": "6f49871e-cb5b-4b2f-b986-5b68f16365b9",
+      "label": "AÇIK HOLDING (mikrolinkas.onmicrosoft.com)",
+      "org": "",
+      "subscriber_id": ""
+    }
+  ]
+}
