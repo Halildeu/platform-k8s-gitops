@@ -140,7 +140,9 @@ if [ "$VERIFY_ONLY" != "1" ]; then
         || { echo "ERROR: $PROV disable failed" >&2; exit 1; }
       echo "✓ '$PROV' → DISABLED"
     else
-      echo "WARN: '$PROV' execution bulunamadı — test apply'da doğrula" >&2
+      echo "ERROR: '$PROV' execution flow'da bulunamadı — link-only invariant" >&2
+      echo "       kurulamaz (KC 26 flow yapısı farklı olabilir; manuel inceleme)" >&2
+      exit 1
     fi
   done
 fi
@@ -283,10 +285,43 @@ echo "$IDP_VERIFY"
 echo "$IDP_VERIFY" | tail -1 | grep -q "^PASS$" \
   || { echo "ERROR: IdP verify FAILED" >&2; exit 3; }
 
-MAP_COUNT=$($KC get "identity-provider/instances/$ALIAS/mappers" -r "$REALM" 2>/dev/null \
-  | python3 -c 'import json,sys; d=json.load(sys.stdin); n={x.get("name") for x in d}; print(len(n & {"entra-tid","entra-oid"}))' 2>/dev/null || echo "0")
-echo "  mappers (entra-tid,entra-oid): $MAP_COUNT/2"
-[ "$MAP_COUNT" = "2" ] || { echo "ERROR: mapper verify FAILED" >&2; exit 3; }
+MAP_VERIFY=$($KC get "identity-provider/instances/$ALIAS/mappers" -r "$REALM" 2>/dev/null \
+  | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+ok = True
+for name in ("entra-tid", "entra-oid"):
+    m = [x for x in d if x.get("name") == name]
+    if not m:
+        print(f"  mapper {name}=MISSING"); ok = False; continue
+    sm = m[0].get("config", {}).get("syncMode")
+    print(f"  mapper {name} syncMode={sm}")
+    if sm != "FORCE":
+        ok = False
+print("PASS" if ok else "FAIL")
+' 2>/dev/null || echo "FAIL: mapper verify error")
+echo "$MAP_VERIFY"
+echo "$MAP_VERIFY" | tail -1 | grep -q "^PASS$" \
+  || { echo "ERROR: mapper verify FAILED (presence / syncMode != FORCE)" >&2; exit 3; }
+
+# Link-only invariant — flow executions DISABLED read-back (Codex 019e365b P1).
+# Bu scriptin ana güvenlik kontratı; doğrulanmadan PASS verilmez.
+FLOW_VERIFY=$($KC get "authentication/flows/$FBL_FLOW/executions" -r "$REALM" 2>/dev/null \
+  | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+ok = True
+for prov in ("idp-create-user-if-unique", "idp-email-verification"):
+    m = [x for x in d if x.get("providerId") == prov]
+    r = m[0].get("requirement") if m else "MISSING"
+    print(f"  exec {prov}={r}")
+    if r != "DISABLED":
+        ok = False
+print("PASS" if ok else "FAIL")
+' 2>/dev/null || echo "FAIL: flow verify error")
+echo "$FLOW_VERIFY"
+echo "$FLOW_VERIFY" | tail -1 | grep -q "^PASS$" \
+  || { echo "ERROR: link-only flow verify FAILED — execution(s) not DISABLED" >&2; exit 3; }
 
 echo ""
 echo "=== M365 broker apply — PASS (realm=$REALM) ==="

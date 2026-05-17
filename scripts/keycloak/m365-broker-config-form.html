@@ -87,9 +87,10 @@
 
   <div class="card">
     <h2>B — İzin verilen tenant'lar</h2>
-    <p class="lead">Hangi Entra org'larının kullanıcıları girebilsin. Tenant ID
-      = Entra → Overview → Directory (tenant) ID. <b>Org / subscriberId</b>
-      alanları v1'de opsiyonel (v2 auto-provisioning içindir; v1 link-only).</p>
+    <p class="lead">İzin verilen tenant listesi — v1'de <b>audit-only</b>
+      (config + <code>entra_tid</code> attribute'una kaydedilir; v1 erişim
+      sınırı link-only, hard-gate v2 SPI işidir). Tenant ID = Entra →
+      Overview → Directory (tenant) ID. Org / subscriberId alanları v2 için.</p>
     <div id="tenants"></div>
     <button class="ghost sm" id="addTenant" style="margin-top:12px">+ Tenant ekle</button>
   </div>
