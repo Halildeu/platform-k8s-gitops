@@ -107,8 +107,8 @@ kanıtı `platform-test` 5/5 PASS apply'ında (yukarıda).
 
 - 🟠 **M365 test browser smoke YAPILMADI.** Test login sayfasında "Microsoft
   365" butonu render oluyor — ama tam interaktif login click-through (Microsoft
-  redirect → sign-in → re-auth → link → JWT claim doğrulama → `/authz/me` →
-  local fallback → logout/relogin) **koşulmadı**. Runbook `RB-m365-sso-broker.md`
+  redirect → sign-in → re-auth → link → claim/attribute doğrulama → `/authz/me`
+  → negatif link-only testi → local fallback → logout/relogin) **koşulmadı**. Runbook `RB-m365-sso-broker.md`
   Adım 5 madde 2-8 pending. HARD RULE — Tarayıcıdan Doğrulanmadan İş Bitmedi:
   M365 SSO **"tamamlandı" sayılmaz**.
 - 🟠 **M365 prod apply (`serban` realm) YAPILMADI** — ADR-0021 D7 + Codex
@@ -132,40 +132,42 @@ kanıtı `platform-test` 5/5 PASS apply'ında (yukarıda).
 
 ## 5. Bilinen Boşluk + Sıradaki Agent P0
 
-### 🟠 P0-A — M365 test browser smoke (yarım kalan işin tamamlanması)
+### 🟠 P0-A — M365 test browser smoke (yarım kalan interaktif işin tamamlanması)
 
 **Önkoşul (link-only v1):** federe giriş yalnız **mevcut** bir `platform-test`
 Keycloak kullanıcısına bağlanır. Smoke'tan önce, M365 test hesabının email'i ile
 **eşleşen email'e sahip** bir `platform-test` kullanıcısı doğrula/oluştur.
-Eşleşme yoksa federe giriş reddedilir (bu beklenen v1 davranışı — ama smoke'un
-"link" adımını test etmek için eşleşen kullanıcı gerekir).
 
-**Adımlar** (`RB-m365-sso-broker.md` Adım 5, madde 2-8):
+**Adımlar** (`RB-m365-sso-broker.md` Adım 5 + negatif test):
 1. Browser (Chrome MCP) → test login host (`testai.acik.com` veya realm login
    URL'i) → "Microsoft 365" butonu.
 2. Microsoft login sayfasına redirect → **interaktif credential** — kullanıcıya
    devret (agent Microsoft şifresi giremez).
 3. Callback → re-authentication → mevcut `platform-test` kullanıcısına link.
-4. JWT claim doğrula: `subscriberId` + `entra_tid` + `entra_oid` mevcut.
+4. **Claim/attribute doğrula** — iki ayrı yüzey:
+   - **JWT**: platform token'ında `subscriberId` claim'i mevcut (link-only;
+     mevcut kullanıcının claim'i taşınır).
+   - **KC user attribute** (kcadm / Admin API read-back, **JWT DEĞİL**):
+     `entra_tid` + `entra_oid` user attribute olarak yazılmış. v1'de bunlar JWT
+     claim değil — `oidc-user-attribute-idp-mapper` Entra claim'ini KC user
+     attribute'una yazar; JWT'ye taşınması v2 client protocol mapper işi.
 5. `/authz/me` 200 + beklenen scope/projeksiyon.
-6. Local username/password fallback hâlâ çalışıyor (regression check).
-7. Logout → relogin (idempotent link).
-8. Browser console + network temiz (HARD RULE — Deploy Sonrası Console Verify).
+6. **Negatif link-only testi**: email'i hiçbir `platform-test` kullanıcısıyla
+   eşleşmeyen M365 hesabı ile giriş → **reddedilmeli** (v1 invariant: auto-create
+   yok; runbook Adım 5'te bu negatif kontrol mevcut).
+7. Local username/password fallback hâlâ çalışıyor (regression check).
+8. Logout → relogin (idempotent link).
+9. Browser console + network temiz (HARD RULE — Deploy Sonrası Console Verify).
 
 **İzle:** admin consent (§4 son madde). Bloklanırsa → Global Admin consent
-verir veya AÇIK HOLDING tenant admin'i kullanılır.
+verir veya AÇIK HOLDING tenant admin'i kullanılır; smoke sonucu "tenant
+admin-consent policy ile bloklandı" olarak ayrı da kapanabilir.
 
-### 🟠 P0-B — M365 prod apply (`serban` realm) + prod browser smoke
+### 🟠 P0-B — prod-deploy PR-1 operator setup + Q4 schema-service prod rollout (Session 68'den devralındı — bayat live-risk; M365 prod'un ARKASINA atılmaz)
 
-P0-A yeşillendikten sonra:
-- `setup-m365-broker.sh` `serban` realm'ine + prod Keycloak'a apply.
-- **Önce doğrula:** prod realm için secret hangi Vault'ta — `kv/platform/
-  keycloak-m365-broker` prod Vault'a yazıldı; script'in prod apply'da bu path'i
-  okuduğunu teyit et.
-- Aynı `m365-broker-config.json` (realm-agnostic) kullanılır.
-- Prod browser smoke — P0-A ile aynı 8 madde, prod login host'unda.
-
-### 🟠 P0-C — prod-deploy PR-1 operator setup + Q4 schema-service rollout (Session 68'den devralındı, hâlâ P0)
+Q4 schema-service prod rollout yeni iş değil: desired-state #749'da merged, prod
+canlı hâlâ eski `sha256:b660b25a...` digest'inde (13+ gün bayat). Session 68 bunu
+zaten P0 devretti — M365 prod apply (P0-C) bunun önüne geçemez.
 
 1. ArgoCD helm upgrade — #780'deki `helm-values/argocd/values.yaml`
    (`prod-gitops-sync` apiKey account + RBAC) staging-sw ArgoCD'ye uygula.
@@ -177,15 +179,27 @@ P0-A yeşillendikten sonra:
 4. Codex `019e35d1` 4-PR planının PR-2 (image-only workflow emekli) / PR-3 (RBAC
    least-priv) / PR-4 (promotion ledger CI) hatları.
 
-### 🟡 P1 — staging-sw clone hizalama
+### 🟠 P0-C — M365 prod apply (`serban` realm) + prod browser smoke
 
-staging-sw'deki clone'da `setup-m365-broker.sh` #784 öncesi (hardening'siz)
-sürüm. Herhangi bir sonraki apply'dan önce orada:
+Bağımlılık: P0-A yeşil **ve** P0-B (prod-deploy/Q4) önceliğinin bilinçli ele
+alınmış olması.
+
+**Preflight (ZORUNLU — staging-sw clone hizalama):** staging-sw'deki clone'da
+`setup-m365-broker.sh` #784 öncesi (hardening'siz) sürüm taşıyor. Prod apply'dan
+**önce** orada script güncellenmeli — eski script ile prod apply doğrudan risk:
 ```bash
 git checkout scripts/keycloak/setup-m365-broker.sh && git pull
 ```
 
-### 🔵 P2 — (opsiyonel) `platform-bootstrap-writer` AppRole
+Apply:
+- `setup-m365-broker.sh` `serban` realm'ine + prod Keycloak'a apply.
+- **Önce doğrula:** prod realm için secret hangi Vault'ta — `kv/platform/
+  keycloak-m365-broker` prod Vault'a yazıldı; script'in prod apply'da bu path'i
+  okuduğunu teyit et.
+- Aynı `m365-broker-config.json` (realm-agnostic) kullanılır.
+- Prod browser smoke — P0-A ile aynı 9 madde, prod login host'unda.
+
+### 🔵 P1 — (opsiyonel) `platform-bootstrap-writer` AppRole
 
 Token-free otomatik Vault apply için AppRole; prod apply öncesi önerilir
 (zorunlu değil — root token ile de çalışır).
