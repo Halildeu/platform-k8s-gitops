@@ -75,26 +75,26 @@ jobs:
               --repo "${GITHUB_REPOSITORY}" \
               --title "[ALERT $SEVERITY] $ALERTNAME ($NAMESPACE)" \
               --body "$(cat <<EOF
-**Status**: 🔥 FIRING
-**Alert**: \`$ALERTNAME\`
-**Severity**: \`$SEVERITY\`
-**Namespace**: \`$NAMESPACE\`
-**Fired at**: $NOW
+          **Status**: 🔥 FIRING
+          **Alert**: \`$ALERTNAME\`
+          **Severity**: \`$SEVERITY\`
+          **Namespace**: \`$NAMESPACE\`
+          **Fired at**: $NOW
 
-## Summary
-$SUMMARY
+          ## Summary
+          $SUMMARY
 
-## Description
-$DESC
+          ## Description
+          $DESC
 
-## Runbook
-$RUNBOOK
+          ## Runbook
+          $RUNBOOK
 
----
-Source: Alertmanager webhook (V2.1 Ops-A GitHub Issues receiver)
-Dedupe: \`$DEDUPE_LABEL\`
-EOF
-)" \
+          ---
+          Source: Alertmanager webhook (V2.1 Ops-A GitHub Issues receiver)
+          Dedupe: \`$DEDUPE_LABEL\`
+          EOF
+          )" \
               --label "$DEDUPE_LABEL,alert,severity/$SEVERITY"
 
           elif [[ "$STATUS" == "firing" && -n "$EXISTING" ]]; then
@@ -104,7 +104,7 @@ EOF
               --repo "${GITHUB_REPOSITORY}" \
               --body "🔥 Re-fired at $NOW
 
-$DESC"
+          $DESC"
 
           elif [[ "$STATUS" == "resolved" && -n "$EXISTING" ]]; then
             # Resolved — close + comment
