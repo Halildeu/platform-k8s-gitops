@@ -1,6 +1,12 @@
 # ArgoCD Application — platform-prod overlay sync (MANUAL — D30 atomic cutover)
 # S2-C2: prod cluster overlay GitOps (staging-sw-2, D32 sonrasi)
 # Codex Tur 3: "Cutover atomic switch — auto-sync YOK, manual trigger"
+#
+# Sync mekanizması (Codex 019e35d1 PR-1, 2026-05-17): auto-sync KAPALI
+# kalır; bu app'in TEK normal deployer'ı `production` env-gate'li
+# `.github/workflows/deploy-prod-gitops.yml` workflow'udur (ArgoCD
+# `app sync`). Ad-hoc `argocd app sync` / `kubectl apply` normal yol DEĞİL.
+# Runbook: docs/operations/RUNBOOKS/RB-prod-gitops-sync.md
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -26,6 +32,7 @@ spec:
     # Codex PR #1 iter-9 tespit: `automated: {}` ArgoCD docs'a göre auto-sync
     # AÇAR (boş field yeterli). Manual sync için `automated` field TAMAMEN
     # olmamalı.
+    # Sync tetiği: deploy-prod-gitops.yml workflow'u (RB-prod-gitops-sync.md).
     # Ref: https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/
     syncOptions:
       - CreateNamespace=true

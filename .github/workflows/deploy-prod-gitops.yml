@@ -1,0 +1,398 @@
+name: Deploy prod GitOps sync
+
+# Kalıcı prod-deploy mekanizması — Codex 019e35d1 4-PR planı, PR-1.
+#
+# Sorun (Session 68): prod için temiz, tek deploy mekanizması yoktu —
+#   - deploy-backend-prod.yml image-only (`kubectl set image`; ConfigMap /
+#     manifest kapsamaz)
+#   - ArgoCD `platform-prod` auto-sync KAPALI (D30 kuralı) + sunucuda
+#     `argocd` CLI yok
+#   - ad-hoc `kubectl` prod mutasyonu guardrail-blocked
+#
+# Çözüm: prod'un TEK normal deployer'ı ArgoCD. Bu workflow ArgoCD'yi
+# `production` environment gate'li `workflow_dispatch` ile tetikler.
+# Auto-sync prod'da AÇILMAZ; tetik daima manuel + insan onayı.
+#
+# Tasarım kısıtları (Codex 019e362d AGREE — Seçenek B):
+#   - Workflow YASAK: `kubectl apply`, `kubectl set image`, Deployment /
+#     ConfigMap patch, `kubectl exec`. İZİN: `argocd app get/diff/sync/wait`
+#     + `kubectl get/logs/rollout status` (yalnız okuma doğrulaması).
+#   - ArgoCD erişimi: scoped API token (`prod-gitops-sync` local account,
+#     yalnız `platform-prod` app get+sync) + `kubectl port-forward
+#     svc/argocd-server` (runner host-net, ClusterIP routing'e bağımlı
+#     değil — port-forward k8s API tüneli).
+#   - argocd-server `server.insecure: true` → HTTP; port-forward :80 +
+#     `--plaintext` (ingress / `--grpc-web` / rootpath KULLANILMAZ).
+#   - Derin acceptance smoke (pod runtime env, snapshot vb.) bu workflow
+#     DIŞINDA — ayrı agent/operator verify adımı.
+#
+# Operator setup (tek seferlik — bu workflow çalışmadan önce ZORUNLU):
+#   docs/operations/RUNBOOKS/RB-prod-gitops-sync.md → "Operator setup".
+#   Helm upgrade (account+RBAC) → `argocd account generate-token` →
+#   `gh secret set ARGOCD_PROD_SYNC_TOKEN --env production`.
+#
+# Runner: `staging-sw-testai-deploy` (tek online self-hosted runner;
+#   `prod-deploy` label'ı hiçbir runner'da yok — deploy-backend-prod.yml'in
+#   beklediği label dead; PR-2 image-only workflow emekliliğinde ele alınır).
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: 'Hedef commit SHA (40-hane hex) — origin/main ancestor olmalı'
+        required: true
+      sync_mode:
+        description: 'resources = filtreli sync (revision == main HEAD şart); full = tüm app (eski ancestor rollback destekler)'
+        required: true
+        type: choice
+        options:
+          - resources
+          - full
+        default: resources
+      resources:
+        description: 'sync_mode=resources için zorunlu — virgülle ayrık GROUP:KIND:NAME (core grup boş). Örn: :ConfigMap:schema-service-config,apps:Deployment:schema-service'
+        required: false
+        default: ''
+      allow_prune:
+        description: 'ArgoCD desired-state dışı kaynakları prune (sil) edebilsin mi'
+        required: true
+        type: boolean
+        default: false
+      confirm:
+        description: 'Onay token — SYNC-PROD (normal) / SYNC-PROD-PRUNE (allow_prune=true) / SYNC-PROD-ROLLBACK (full mode + eski revision)'
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  ARGOCD_APP: platform-prod
+  ARGOCD_NS: argocd
+  ARGOCD_VERSION: v2.13.1
+  K8S_CONTEXT: k3d-prod
+  K8S_NAMESPACE: platform-prod
+
+concurrency:
+  group: prod-gitops-sync
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Preflight (girdi + revision doğrulama, cluster erişimi yok)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      revision: ${{ steps.validate.outputs.revision }}
+      sync_mode: ${{ steps.validate.outputs.sync_mode }}
+      is_rollback: ${{ steps.validate.outputs.is_rollback }}
+    steps:
+      - name: Guard — workflow main'den dispatch edilmeli
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_NAME}" != "main" ]; then
+            echo "::error::deploy-prod-gitops.yml yalnız 'main' ref'inden dispatch edilebilir (ref: ${GITHUB_REF_NAME})"
+            exit 1
+          fi
+          echo "✓ main'den dispatch edildi"
+
+      - name: Checkout (tam geçmiş — ancestor kontrolü)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Girdi + revision doğrula
+        id: validate
+        env:
+          IN_REVISION: ${{ inputs.revision }}
+          IN_SYNC_MODE: ${{ inputs.sync_mode }}
+          IN_RESOURCES: ${{ inputs.resources }}
+          IN_ALLOW_PRUNE: ${{ inputs.allow_prune }}
+          IN_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+
+          # --- revision: 40-hane lowercase hex ---
+          if ! [[ "${IN_REVISION}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::revision 40-hane lowercase hex commit SHA olmalı (alınan: ${IN_REVISION})"
+            exit 1
+          fi
+
+          # --- revision origin/main ancestor olmalı ---
+          git fetch origin main --quiet
+          ORIGIN_MAIN="$(git rev-parse origin/main)"
+          if ! git merge-base --is-ancestor "${IN_REVISION}" origin/main; then
+            echo "::error::revision ${IN_REVISION} origin/main (${ORIGIN_MAIN}) ancestor'ı değil"
+            exit 1
+          fi
+
+          IS_ROLLBACK=false
+          if [ "${IN_REVISION}" != "${ORIGIN_MAIN}" ]; then
+            IS_ROLLBACK=true
+          fi
+
+          # --- sync_mode'a özel kurallar ---
+          if [ "${IN_SYNC_MODE}" = "resources" ]; then
+            if [ -z "${IN_RESOURCES}" ]; then
+              echo "::error::sync_mode=resources boş olmayan 'resources' filtresi ister"
+              exit 1
+            fi
+            if [ "${IS_ROLLBACK}" = "true" ]; then
+              echo "::error::sync_mode=resources için revision == origin/main HEAD (${ORIGIN_MAIN}) olmalı; eski revision için sync_mode=full kullan"
+              exit 1
+            fi
+            IFS=',' read -ra _RES <<< "${IN_RESOURCES}"
+            for r in "${_RES[@]}"; do
+              if ! [[ "${r}" =~ ^[a-zA-Z0-9.*-]*:[A-Za-z]+:[a-zA-Z0-9.-]+$ ]]; then
+                echo "::error::geçersiz resources girdisi '${r}' — GROUP:KIND:NAME bekleniyor"
+                exit 1
+              fi
+            done
+          elif [ "${IN_SYNC_MODE}" = "full" ]; then
+            if [ -n "${IN_RESOURCES}" ]; then
+              echo "::error::sync_mode=full ile 'resources' filtresi verilemez"
+              exit 1
+            fi
+          else
+            echo "::error::bilinmeyen sync_mode '${IN_SYNC_MODE}'"
+            exit 1
+          fi
+
+          # --- prune + rollback aynı run'da desteklenmez ---
+          if [ "${IN_ALLOW_PRUNE}" = "true" ] && [ "${IS_ROLLBACK}" = "true" ]; then
+            echo "::error::allow_prune=true + eski-revision rollback aynı run'da desteklenmez — ayrı çalıştır"
+            exit 1
+          fi
+
+          # --- confirm token ---
+          EXPECTED="SYNC-PROD"
+          if [ "${IN_ALLOW_PRUNE}" = "true" ]; then
+            EXPECTED="SYNC-PROD-PRUNE"
+          elif [ "${IS_ROLLBACK}" = "true" ]; then
+            EXPECTED="SYNC-PROD-ROLLBACK"
+          fi
+          if [ "${IN_CONFIRM}" != "${EXPECTED}" ]; then
+            echo "::error::confirm token bu operasyon için '${EXPECTED}' olmalı (allow_prune=${IN_ALLOW_PRUNE}, rollback=${IS_ROLLBACK})"
+            exit 1
+          fi
+
+          {
+            echo "revision=${IN_REVISION}"
+            echo "sync_mode=${IN_SYNC_MODE}"
+            echo "is_rollback=${IS_ROLLBACK}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Prod GitOps sync — preflight ✓"
+            echo ""
+            echo "| Alan | Değer |"
+            echo "|---|---|"
+            echo "| revision | \`${IN_REVISION}\` |"
+            echo "| origin/main HEAD | \`${ORIGIN_MAIN}\` |"
+            echo "| sync_mode | ${IN_SYNC_MODE} |"
+            echo "| rollback | ${IS_ROLLBACK} |"
+            echo "| allow_prune | ${IN_ALLOW_PRUNE} |"
+            if [ "${IN_SYNC_MODE}" = "resources" ]; then
+              echo "| resources | \`${IN_RESOURCES}\` |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  sync:
+    name: ArgoCD sync (production env-gate'li)
+    needs: preflight
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 30
+    environment:
+      name: production
+      # GitHub Environment "production" settings (UI):
+      #   - Required reviewers: 1+ (prod deploy disiplini — insan onayı)
+      #   - Secret: ARGOCD_PROD_SYNC_TOKEN (operator setup; runbook'a bak)
+    env:
+      REVISION: ${{ needs.preflight.outputs.revision }}
+      SYNC_MODE: ${{ needs.preflight.outputs.sync_mode }}
+      IS_ROLLBACK: ${{ needs.preflight.outputs.is_rollback }}
+      IN_RESOURCES: ${{ inputs.resources }}
+      IN_ALLOW_PRUNE: ${{ inputs.allow_prune }}
+      ARGOCD_PROD_SYNC_TOKEN: ${{ secrets.ARGOCD_PROD_SYNC_TOKEN }}
+    steps:
+      - name: Checkout (main HEAD yeniden doğrulama)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Guard — production secret mevcut
+        run: |
+          set -euo pipefail
+          if [ -z "${ARGOCD_PROD_SYNC_TOKEN:-}" ]; then
+            echo "::error::ARGOCD_PROD_SYNC_TOKEN (production environment secret) yok — operator setup: docs/operations/RUNBOOKS/RB-prod-gitops-sync.md"
+            exit 1
+          fi
+          echo "✓ ARGOCD_PROD_SYNC_TOKEN mevcut"
+
+      - name: Guard — resources mode'da revision hâlâ main HEAD mi
+        if: ${{ needs.preflight.outputs.sync_mode == 'resources' }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --quiet
+          ORIGIN_MAIN="$(git rev-parse origin/main)"
+          if [ "${REVISION}" != "${ORIGIN_MAIN}" ]; then
+            echo "::error::preflight sonrası origin/main ${ORIGIN_MAIN}'e ilerledi — revision=${ORIGIN_MAIN} ile yeniden dispatch et"
+            exit 1
+          fi
+          echo "✓ revision hâlâ origin/main HEAD"
+
+      - name: argocd CLI kur
+        run: |
+          set -euo pipefail
+          curl -sSL --retry 3 -o "${RUNNER_TEMP}/argocd" \
+            "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64"
+          chmod +x "${RUNNER_TEMP}/argocd"
+          echo "${RUNNER_TEMP}" >> "$GITHUB_PATH"
+          "${RUNNER_TEMP}/argocd" version --client
+
+      - name: ArgoCD sync platform-prod
+        run: |
+          set -euo pipefail
+
+          # --- argocd-server port-forward (HTTP, server.insecure=true) ---
+          PF_PORT=18083
+          PF_LOG="${RUNNER_TEMP}/argocd-pf.log"
+          kubectl --context "${K8S_CONTEXT}" -n "${ARGOCD_NS}" \
+            port-forward svc/argocd-server "${PF_PORT}:80" >"${PF_LOG}" 2>&1 &
+          PF_PID=$!
+          cleanup() { kill "${PF_PID}" 2>/dev/null || true; wait "${PF_PID}" 2>/dev/null || true; }
+          trap cleanup EXIT
+
+          READY=false
+          for _ in $(seq 1 30); do
+            if curl -fsS -o /dev/null "http://127.0.0.1:${PF_PORT}/healthz" 2>/dev/null; then
+              READY=true; break
+            fi
+            if ! kill -0 "${PF_PID}" 2>/dev/null; then
+              echo "::error::port-forward süreci erken sonlandı"
+              cat "${PF_LOG}"
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "${READY}" != "true" ]; then
+            echo "::error::argocd-server port-forward 60s'de hazır olmadı"
+            cat "${PF_LOG}"
+            exit 1
+          fi
+          echo "✓ argocd-server erişilebilir: 127.0.0.1:${PF_PORT}"
+
+          export ARGOCD_SERVER="127.0.0.1:${PF_PORT}"
+          export ARGOCD_AUTH_TOKEN="${ARGOCD_PROD_SYNC_TOKEN}"
+          ARGOCD=(argocd --plaintext)
+
+          # --- hard refresh (auth + RBAC applications,get ilk kez sınanır) ---
+          if ! "${ARGOCD[@]}" app get "${ARGOCD_APP}" --hard-refresh -o wide; then
+            echo "::error::argocd app get başarısız — token / RBAC / erişim doğrula (runbook operator setup)"
+            exit 1
+          fi
+
+          # --- diff: exit-code 0=fark yok, 1=fark var, >=2=hata ---
+          DIFF_RC=0
+          "${ARGOCD[@]}" app diff "${ARGOCD_APP}" --revision "${REVISION}" --exit-code || DIFF_RC=$?
+          echo "argocd app diff exit code: ${DIFF_RC}"
+          case "${DIFF_RC}" in
+            0)
+              echo "::error::revision ${REVISION} ile fark yok — sync edilecek bir şey yok (app zaten desired-state'te ya da yanlış revision)"
+              exit 1
+              ;;
+            1)
+              echo "✓ fark var — beklenen yol"
+              ;;
+            *)
+              echo "::error::argocd app diff exit code ${DIFF_RC} ile başarısız"
+              exit 1
+              ;;
+          esac
+
+          # --- resource whitelist + prune gate ---
+          APP_JSON="$("${ARGOCD[@]}" app get "${ARGOCD_APP}" -o json)"
+
+          PRUNE_CANDIDATES="$(echo "${APP_JSON}" | jq -r '
+            [.status.resources[]? | select(.requiresPruning == true)
+             | "\(.group // ""):\(.kind):\(.name)"] | join(", ")')"
+          if [ -n "${PRUNE_CANDIDATES}" ] && [ "${IN_ALLOW_PRUNE}" != "true" ]; then
+            echo "::error::prune gerektiren kaynak var ama allow_prune=false — ABORT: ${PRUNE_CANDIDATES}"
+            exit 1
+          fi
+
+          OUT_OF_SYNC="$(echo "${APP_JSON}" | jq -r '
+            .status.resources[]? | select(.status != "Synced")
+            | "\(.group // ""):\(.kind):\(.name)"')"
+
+          if [ "${SYNC_MODE}" = "resources" ]; then
+            declare -A ALLOWED
+            IFS=',' read -ra _RES <<< "${IN_RESOURCES}"
+            for r in "${_RES[@]}"; do ALLOWED["${r}"]=1; done
+            UNEXPECTED=""
+            while IFS= read -r res; do
+              [ -z "${res}" ] && continue
+              if [ -z "${ALLOWED[${res}]:-}" ]; then
+                UNEXPECTED="${UNEXPECTED} ${res}"
+              fi
+            done <<< "${OUT_OF_SYNC}"
+            if [ -n "${UNEXPECTED}" ]; then
+              echo "::error::istenen filtre dışında out-of-sync kaynak var — ABORT:${UNEXPECTED}"
+              echo "  istenen filtre: ${IN_RESOURCES}"
+              exit 1
+            fi
+            echo "✓ tüm out-of-sync kaynaklar istenen filtre içinde"
+          fi
+
+          # --- sync argümanları ---
+          SYNC_ARGS=("${ARGOCD_APP}" --revision "${REVISION}" --timeout 900)
+          if [ "${SYNC_MODE}" = "resources" ]; then
+            IFS=',' read -ra _RES <<< "${IN_RESOURCES}"
+            for r in "${_RES[@]}"; do
+              SYNC_ARGS+=(--resource "${r}")
+            done
+          fi
+          if [ "${IN_ALLOW_PRUNE}" = "true" ]; then
+            SYNC_ARGS+=(--prune)
+          fi
+
+          echo "argocd app sync ${SYNC_ARGS[*]}"
+          "${ARGOCD[@]}" app sync "${SYNC_ARGS[@]}"
+
+          # --- operation + sync + health bekle ---
+          "${ARGOCD[@]}" app wait "${ARGOCD_APP}" --operation --sync --health --timeout 900
+
+          "${ARGOCD[@]}" app get "${ARGOCD_APP}" -o wide
+          echo "✓ ArgoCD sync tamamlandı"
+
+      - name: Verify — Deployment rollout (yalnız okuma)
+        if: ${{ needs.preflight.outputs.sync_mode == 'resources' }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra _RES <<< "${IN_RESOURCES}"
+          for r in "${_RES[@]}"; do
+            GROUP="${r%%:*}"
+            REST="${r#*:}"
+            KIND="${REST%%:*}"
+            NAME="${REST#*:}"
+            if [ "${GROUP}" = "apps" ] && [ "${KIND}" = "Deployment" ]; then
+              echo "rollout status: ${NAME}"
+              kubectl --context "${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+                rollout status "deployment/${NAME}" --timeout=120s
+            fi
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "## Prod GitOps sync — sonuç"
+            echo ""
+            echo "- App: \`${ARGOCD_APP}\`"
+            echo "- Revision: \`${REVISION}\`"
+            echo "- Mode: ${SYNC_MODE} (rollback=${IS_ROLLBACK}, allow_prune=${IN_ALLOW_PRUNE})"
+            echo "- Job sonucu: ${{ job.status }}"
+            echo ""
+            echo "Derin acceptance smoke bu workflow dışında — runbook'a bak:"
+            echo "\`docs/operations/RUNBOOKS/RB-prod-gitops-sync.md\`"
+          } >> "$GITHUB_STEP_SUMMARY"

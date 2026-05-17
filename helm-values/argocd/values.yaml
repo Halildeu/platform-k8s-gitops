@@ -25,6 +25,12 @@ configs:
     # Resource tracking method
     application.resourceTrackingMethod: annotation
 
+    # 2026-05-17 (Codex 019e35d1 PR-1): prod-deploy automation hesabı.
+    # deploy-prod-gitops.yml workflow'unun ArgoCD API token'ı bu local
+    # account'tan üretilir. apiKey-only (UI/login yetkisi yok). RBAC
+    # scoped — configs.rbac.policy.csv: yalnız platform-prod get + sync.
+    accounts.prod-gitops-sync: apiKey
+
     # Kaynak izleme — silme koruması
     resource.compareoptions: |
       ignoreAggregatedRoles: true
@@ -48,8 +54,14 @@ configs:
 
   rbac:
     policy.default: role:readonly
+    # 2026-05-17 (Codex 019e35d1 PR-1): prod-deploy automation — least
+    # privilege. deploy-prod-gitops.yml'in `prod-gitops-sync` account'u
+    # yalnız platform-prod app'ini get + sync edebilir; delete / override /
+    # update / app-create YOK. Token bu account'tan üretilir (runbook).
     policy.csv: |
       g, argocd-admins, role:admin
+      p, prod-gitops-sync, applications, get, default/platform-prod, allow
+      p, prod-gitops-sync, applications, sync, default/platform-prod, allow
 
   # Repo kimlik doğrulama — GitHub private repo için (Faz 14'e kadar boş)
   # repositories: |
