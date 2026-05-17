@@ -19,7 +19,8 @@
 # ============================================================================
 # 1. ALLOW — kv/data/platform/<service> write paths (KV v2)
 # ============================================================================
-# Write paths cover the 8 platform services + openfga + ghcr-token.
+# Write paths cover the platform services + the shared pg-platform-role canonical
+# path + openfga + ghcr-token.
 # `read` included so the wrapper can fetch existing data + merge before patch.
 # `delete` explicitly NOT granted (audit-trail preservation).
 
@@ -48,6 +49,21 @@ path "kv/data/platform/schema-service" {
 }
 
 path "kv/data/platform/permission-service" {
+  capabilities = ["create", "update", "read"]
+}
+
+# Credential consolidation Faz A — shared `platform` PG role canonical path.
+# docs/architecture/runtime/credential-consolidation-plan.md §4-§5 (Codex 019e3386).
+# Operator creates + populates kv/platform/pg-platform-role (db_username=platform,
+# db_password=platform role password) with this AppRole — no root token; see
+# runbook docs/runbooks/RB-credential-consolidation-preflight.md P2 for the
+# stdin-piped `vault kv put` command. PR-0 P0 precondition (plan §5): without this
+# write allowlist the bootstrap-writer cannot create the canonical path.
+# `create` is needed for the first put; `update` for later rotation.
+# NOTE: scripts/ops/platform-ops-vault-patch.sh does NOT yet allowlist this path
+# (its --service set covers the per-service paths only) — wrapper support for
+# pg-platform-role rotation is a follow-up; operators use the Vault CLI directly.
+path "kv/data/platform/pg-platform-role" {
   capabilities = ["create", "update", "read"]
 }
 

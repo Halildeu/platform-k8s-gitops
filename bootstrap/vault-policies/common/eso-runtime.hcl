@@ -103,6 +103,21 @@ path "kv/data/platform/perf-alertmanager" {
   capabilities = ["read"]
 }
 
+# --- Credential consolidation Faz A — shared `platform` PG role canonical path ---
+# docs/architecture/runtime/credential-consolidation-plan.md §4-§5 (Codex 019e3386).
+# 7 platform-role services (auth / user / core-data / variant / permission /
+# notification-orchestrator / endpoint-admin) will repoint SPRING_DATASOURCE_
+# USERNAME/PASSWORD to this single canonical path, eliminating the per-service
+# db_password drift class that caused the D1.1c auth-service silent outage.
+# P0 precondition (plan §5): without this allowlist entry ESO gets a 403 on the
+# canonical path → Secret sync fail. Added in PR-0 BEFORE any service repoint
+# (plan §6 sequencing: policy gate first, runtime repoint = separate sprint).
+# Service-specific secrets (JWT keys, keycloak_client_secret, peppers, internal
+# API keys) stay on the existing kv/data/platform/<svc> paths — unchanged.
+path "kv/data/platform/pg-platform-role" {
+  capabilities = ["read"]
+}
+
 # --- OpenFGA Store + Model ID (D-008 runtime kontrat) ---
 path "kv/data/platform/openfga" {
   capabilities = ["read"]

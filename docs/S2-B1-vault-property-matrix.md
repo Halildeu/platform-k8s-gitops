@@ -61,6 +61,19 @@
 | REPORT_MSSQL_USERNAME / SCHEMA_MSSQL_USERNAME | `kv/platform/mssql-external` | `username` | ⚠ **Opsiyonel** (D31, yorumlu ES) |
 | REPORT_MSSQL_PASSWORD / SCHEMA_MSSQL_PASSWORD | `kv/platform/mssql-external` | `password` | ⚠ **Opsiyonel** |
 
+### 1.6 Credential consolidation Faz A — `pg-platform-role` canonical path (PLANLANMIŞ, repoint beklemede)
+
+> **Durum**: PR-0 ile iki Vault policy allowlist'e eklendi; ESO-aktif **DEĞİL** — 7 servis repoint'i ayrı sprint (`docs/architecture/runtime/credential-consolidation-plan.md` §6/§8).
+
+Paylaşımlı `platform` PG rolü için tek canonical path. 7 platform-role servisi (auth / user / core-data / variant / permission / notification-orchestrator / endpoint-admin) `SPRING_DATASOURCE_USERNAME`/`PASSWORD`'ü buraya repoint edecek; her servisin ayrı `db_password` kopyası drift sınıfını doğurmuştu (D1.1c auth-service kök nedeni).
+
+| Secret Key | Vault Path | Property | Zorunlu |
+|---|---|---|---|
+| SPRING_DATASOURCE_USERNAME | `kv/platform/pg-platform-role` | `db_username` (=`platform`) | ⏳ Faz A repoint sonrası |
+| SPRING_DATASOURCE_PASSWORD | `kv/platform/pg-platform-role` | `db_password` (=`platform` rol password) | ⏳ Faz A repoint sonrası |
+
+Service-specific secret'lar (`KEYCLOAK_CLIENT_SECRET`, JWT key'leri, `internal_api_key`, pepper'lar) **mevcut `kv/platform/<svc>` path'lerinde kalır** — §1.2-§1.5 satırları repoint'e kadar değişmez.
+
 ## 2. Özet Vault KV Path Listesi
 
 ### 2.1 Zorunlu Path'ler (ESO apply için)
@@ -90,6 +103,18 @@ Codex AR2 WARN: "Tek Vault paylaşılırsa env-prefix zorunlu olur (`kv/platform
 **Mevcut mimari (D6 + D20):** Test ve prod **AYRI Vault instance** (staging-sw test Vault + staging-sw-2 D32 prod Vault). Path konvansiyonu **aynı** (`kv/platform/<svc>`), iki ayrı Vault'ta yaşar. Env-prefix gereksiz.
 
 **Eğer ileride tek Vault paylaşılır ise:** Path'ler `kv/platform/test/<svc>` + `kv/platform/prod/<svc>` olarak bölünür, ES overlay'de key path override edilir.
+
+### 2.4 Credential consolidation Faz A (PR-0 policy-ready, ESO-inactive)
+
+```
+kv/platform/pg-platform-role   (db_username, db_password — paylaşımlı `platform` PG rolü)
+```
+
+PR-0 ile iki Vault policy allowlist'e eklendi:
+- `bootstrap/vault-policies/common/eso-runtime.hcl` — ESO `read`
+- `bootstrap/vault-policies/common/bootstrap-writer.hcl` — `platform-bootstrap-writer` AppRole `create`/`update`/`read`
+
+Henüz hiçbir ExternalSecret bu path'i okumuyor (repoint = ayrı sprint). §2.1 zorunlu liste ve §3 zorunlu preflight script'ine **eklenmez** — path operator tarafından sprint parçası #2'de yaratılana kadar mevcut değil; mandatory listeye erken eklenirse preflight false-fail üretir. Faz A'ya özel preflight: `docs/runbooks/RB-credential-consolidation-preflight.md`.
 
 ## 3. Apply Preflight Script
 
