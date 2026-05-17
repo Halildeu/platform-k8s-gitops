@@ -426,6 +426,14 @@ patches:
       - op: replace
         path: /data/KEYCLOAK_ISSUER_URI
         value: "https://ai.acik.com/realms/serban"
+      # 2026-05-17 Session 67 (Codex 019e35d1 REVISE absorb): Q3/Q4 prod
+      # promotion P0 parity. schema-service Q4 image varsayilan 60s query
+      # timeout; workcube_mikrolink (1500+ tablo) sys.* okumalari 60s'de
+      # timeout dusup /snapshot'i fail ediyor. Test overlay'de zaten 300s
+      # (P0-gitops #728); prod'a parity icin eklendi.
+      - op: add
+        path: /data/SCHEMA_MSSQL_QUERY_TIMEOUT_SECONDS
+        value: "300"
   - target:
       kind: ConfigMap
       name: report-service-config
