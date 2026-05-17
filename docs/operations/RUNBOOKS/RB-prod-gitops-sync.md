@@ -279,7 +279,8 @@ hijyen. Revoke sonrası eski token'la sync denemesi 401 alır.
 - ❌ Canlı `argocd-cm` / `argocd-rbac-cm` elle patch (repo değerlerinden
   koparır — yalnız `helm-values/argocd/values.yaml` + helm upgrade).
 - ❌ `prod-gitops-sync` RBAC'ına `delete` / `override` / `update` / app
-  `create` ekleme — least privilege (get + sync yeter).
+  `create` ekleme — least privilege (mutasyon = yalnız platform-prod sync;
+  read default `role:readonly`'den gelir).
 - ❌ Workflow'a `kubectl apply` / `set image` / patch / `exec` ekleme —
   tek deployer ArgoCD ilkesini zayıflatır.
 - ❌ Token'ı repo'ya / log'a / config dosyasına yazma — yalnız GitHub

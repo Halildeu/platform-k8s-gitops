@@ -17,8 +17,8 @@ name: Deploy prod GitOps sync
 #   - Workflow YASAK: `kubectl apply`, `kubectl set image`, Deployment /
 #     ConfigMap patch, `kubectl exec`. İZİN: `argocd app get/diff/sync/wait`
 #     + `kubectl get/logs/rollout status` (yalnız okuma doğrulaması).
-#   - ArgoCD erişimi: scoped API token (`prod-gitops-sync` local account,
-#     yalnız `platform-prod` app get+sync) + `kubectl port-forward
+#   - ArgoCD erişimi: API token (`prod-gitops-sync` account — sync/write
+#     yalnız `platform-prod`) + `kubectl port-forward
 #     svc/argocd-server` (runner host-net, ClusterIP routing'e bağımlı
 #     değil — port-forward k8s API tüneli).
 #   - argocd-server `server.insecure: true` → HTTP; port-forward :80 +
