@@ -14,9 +14,9 @@ blocker'ını + P0/P1/Q3 fix planını devretti: `/api/v1/schema/snapshot`
 1509+ tablo).
 
 Bu session (66): **P0** (query timeout config-ize) + **P1** (`extractTables`
-split) tamamlandı, merge edildi ve **canlı test cluster'da uçtan uca
-doğrulandı**. **Q3** (`buildSnapshot` hardening) kaldı — bu handoff onu
-sıradaki session'a devreder.
+split) merge edildi ve **canlı test cluster'da uçtan uca doğrulandı**
+(live-kanıtlı). **Q3** (`buildSnapshot` hardening) açık — iş devam ediyor;
+bu handoff Q3'ü sıradaki session'a aktarır.
 
 Handoff sebebi: bu session 6 PR + 2 deploy + 2 uzun canlı snapshot
 doğrulaması yaptı; P0+P1 verified-live doğal bir milestone. Q3 tam bir PR
@@ -104,11 +104,29 @@ Codex fix planı: handoff #726 §5 / thread `019e32da`.
      `SnapshotUnavailableException` → HTTP **503** (veya 504), net JSON body.
   4. Partial-status görünürlüğü — degrade olan envanterleri (örn. storage)
      snapshot metadata'sında işaretle. Scope'u Codex ile netleştir (bu
-     bölüm #726 §5'te en az tanımlı kısım).
+     bölüm #726 §5'te en az tanımlı kısım; ayrı alt-iş olarak ertelenebilir).
+- **Kabul kriterleri** (sıradaki agent + Codex plan-time'da kesinleştirir):
+  - HTTP kodu: base-extraction fail → **503** (Service Unavailable — snapshot
+    şu an kurulamıyor); neden spesifik query-timeout ise **504**. Kesin
+    503/504 ayrımı Codex plan-time onayına bağlı.
+  - Error response JSON: ör. `{"error":"snapshot_unavailable",
+    "schema":"<ad>","reason":"<kısa mesaj>"}` — generic Spring 500 sayfası
+    değil; mevcut başarılı snapshot response shape'i etkilenmez.
+  - Test: `SchemaSnapshotServiceTest` — `extractTables` (base) throw →
+    `SnapshotUnavailableException` doğrulaması; controller/advice testi —
+    exception → 503/504 + body shape.
+  - Partial-status: degrade envanter alanı snapshot metadata contract'ında
+    tanımlanmalı; shape Codex plan-time'da netleşir.
 - **Effort**: orta, 1 PR (platform-backend) + sonra gitops digest bump +
   deploy + verify.
 - **Akış**: Codex plan-time istişare → impl → cross-AI post-impl review →
   CI yeşil → normal squash → gitops digest bump → deploy → re-verify.
+
+### 🟡 Canonical truth güncelle (sıradaki session erken adım)
+- `docs/state/current-state.md` ~2026-05-15'te kalmış (stale). Sıradaki
+  session `current-state.md`'i P0+P1 live state ile güncellemeli:
+  schema-service `7aad3043` image / `extractTables` split / query timeout
+  300s. Q3 öncesi veya Q3 PR'ıyla birlikte yapılabilir.
 
 ### 🟡 Storage permission (düşük öncelik — operatör/DBA, kod değil)
 - MSSQL `AlUser_App` hesabına `GRANT VIEW DATABASE STATE` → `storage`
@@ -137,5 +155,5 @@ git worktree add ~/Documents/.pb-worktrees/q3-buildsnapshot origin/main
 
 İlk iş: **Q3 — `buildSnapshot` adım-1 hardening + domain exception → 503/504.**
 Codex plan-time AGREE → impl → cross-AI review → CI → squash merge → gitops
-digest bump → deploy → re-verify. Q3 sonrası extractTables timeout fix
-zinciri (P0+P1+Q3) tam kapanır.
+digest bump → deploy → re-verify. Q3, extractTables timeout fix zincirinin
+(P0+P1+Q3) son halkası — sıradaki session onu sürdürür.
