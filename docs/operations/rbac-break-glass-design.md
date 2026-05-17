@@ -6,6 +6,16 @@
 > mandatory reconciliation PR. Admission/Kyverno/Gatekeeper şart değil;
 > önce RBAC + audit yeter."
 
+> **Güncelleme — 2026-05-18 (PR-2, Codex `019e35d1` 4-PR planı)**: Prod
+> image-only deploy workflow'ları `deploy-backend-prod.yml` +
+> `deploy-frontend-prod.yml` emekli edildi (silindi). Prod'un `kubectl set
+> image` CI yolu artık **yok** — tek normal writer ArgoCD: `production`
+> env-gate'li `deploy-prod-gitops.yml` (PR-1, `#780`). Aşağıdaki **Faz 4'ün
+> prod ayağı bu retire ile karşılandı**; `deploy-backend-testai.yml` (test
+> cluster) image-only deploy hâlâ Faz 4 kapsamında. Aşağıdaki audit
+> snapshot'ı Session 37 durumu — `deploy-backend-prod.yml:148` satır
+> referansı artık geçersiz.
+
 Bu doc, manuel `kubectl set image` müdahalelerinin nasıl D30 immutable
 artifact disiplinine sokulacağını belirler. Implementation ayrı PR;
 burada **design + audit + migration playbook** var.
