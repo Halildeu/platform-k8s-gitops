@@ -74,7 +74,7 @@ Session boyunca untracked'di (lokal üretildi + staging-sw'ye scp'lendi).
   diff exit-code 0/1/≥2 + requiresPruning + resource whitelist gate'leri.
 - `helm-values/argocd/values.yaml` — `accounts.prod-gitops-sync: apiKey` + RBAC
   `p, prod-gitops-sync, applications, get/sync, default/platform-prod`.
-- **NOT canlı**: workflow merge edildi ama operator setup yapılmadı (§5 P0-C).
+- **NOT canlı**: workflow merge edildi ama operator setup yapılmadı (§5 P0-B).
 
 **M365 PR-0 (#783):** 4 dosya merged, CI yeşil, Codex `019e365b` AGREE
 (`ready_to_merge=true`). Merge hiçbir cluster mutate etmedi (script manuel
