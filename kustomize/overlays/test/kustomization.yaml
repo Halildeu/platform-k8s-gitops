@@ -664,8 +664,16 @@ images:
     # Digest job-section + CD deploy spec iki-kaynak teyitli (P1 #730 çok-
     # servisli digest hatası tekrarlanmadı). Image build run 25977247312
     # (merge commit b9b40f7).
-    # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:bbf79dd96aea5fbd91a151e6440f491e8b6826f31ddee1c5c1af843bf24373f5
-    digest: sha256:bbf79dd96aea5fbd91a151e6440f491e8b6826f31ddee1c5c1af843bf24373f5
+    #
+    # 2026-05-17 update: sha-58bc2c9 — platform-backend PR #237 squash merge
+    # (Q4). extractStorage `sys.dm_db_partition_stats` DMV'sinden (VIEW DATABASE
+    # PERFORMANCE STATE izni şart) `sys.partitions` + `sys.allocation_units`
+    # catalog view'larına geçti — catalog view metadata-visibility ile okunur,
+    # DMV izni gerekmez. storage envanteri artık GRANT olmadan canlıda dolar.
+    # Digest job-section + CD deploy spec iki-kaynak teyitli. Image build run
+    # 25985721556 (merge commit 58bc2c9).
+    # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:894e492f029c93277ee7d84c993bad2535d970995b0d2df08a48ebb23340ae26
+    digest: sha256:894e492f029c93277ee7d84c993bad2535d970995b0d2df08a48ebb23340ae26
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
