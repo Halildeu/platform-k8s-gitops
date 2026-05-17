@@ -87,9 +87,21 @@ images:
   # PR #331 first promoted to sha256:2a7076c9 from test overlay yaml — that
   # digest had been garbage-collected from GHCR (manifest unknown). Test
   # cluster live imageID is sha256:b660b25a; GHCR-verified, used here.
+  #
+  # 2026-05-17 Session 67: prod promotion sha256:b660b25a -> sha-58bc2c9
+  # (digest sha256:894e492f...). schema-service Q3 (buildSnapshot base-fail
+  # -> SnapshotUnavailableException -> HTTP 503) + Q4 (extractStorage
+  # sys.dm_db_partition_stats DMV -> sys.partitions + sys.allocation_units
+  # catalog view, izin-free) prod'a terfi. Digest jump aradaki ~13 gunluk
+  # schema-service evrimini de tasir: B1 capability sprint (8 sys.* envanteri)
+  # + Adim 12 PR-4a reporting-contract endpoint + Phase 1 portability config
+  # — hepsi additive/backward-compatible. Test overlay ile ayni digest;
+  # staging-sw k3d-test'te verified (snapshot 1513 tablo / 26333 kolon,
+  # storage 1513 catalog-view, suite 202 test). platform-backend PR #237;
+  # gitops test pin PR #745.
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
-    digest: sha256:b660b25a5f6d6dc8080f11456e769f0ef54f9afe3a3e42b4b32e2f725c6c20c3
+    digest: sha256:894e492f029c93277ee7d84c993bad2535d970995b0d2df08a48ebb23340ae26
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-05-03 Session 37 ArgoCD OutOfSync drift realign:
