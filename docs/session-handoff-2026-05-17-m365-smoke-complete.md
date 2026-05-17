@@ -10,8 +10,8 @@
 
 PR #785 (Session 69 handoff) P0-A olarak "M365 test browser smoke"u devretti.
 Kullanıcı bu session'da smoke'u tetikledi (`halil.kocoglu@serban.com.tr` M365
-hesabını link hedefi olarak verdi). Smoke koşuldu — **tam kapsamlı PASS** — ve
-yol boyunca merged `setup-m365-broker.sh`'te (PR #783/#784) **2 gerçek bug**
+hesabını link hedefi olarak verdi). Smoke koşuldu — **link-only auth zinciri
+PASS** — ve yol boyunca merged `setup-m365-broker.sh`'te (PR #783/#784) **2 gerçek bug**
 ortaya çıktı. Her ikisi de `platform-test` realm'inde **canlı düzeltildi** (kcadm)
 ve smoke yeniden koşulup doğrulandı.
 
