@@ -43,6 +43,8 @@ VERIFY_ONLY="${VERIFY_ONLY:-0}"
 
 ALIAS="microsoft"
 FBL_FLOW="first broker login m365 link-only"
+# kcadm path segments must URL-encode spaces (KC 26 kcadm rejects raw spaces).
+FBL_FLOW_ENC="${FBL_FLOW// /%20}"
 
 # Entra multi-tenant /organizations/ endpoints (ADR-0021 — work/school accounts)
 AUTH_URL="https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize"
@@ -119,7 +121,7 @@ FLOW_EXISTS=$($KC get authentication/flows -r "$REALM" 2>/dev/null \
 
 if [ "$VERIFY_ONLY" != "1" ]; then
   if [ "$FLOW_EXISTS" = "no" ]; then
-    $KC create "authentication/flows/first broker login/copy" -r "$REALM" \
+    $KC create "authentication/flows/first%20broker%20login/copy" -r "$REALM" \
       -s "newName=$FBL_FLOW" >/dev/null 2>&1 \
       || { echo "ERROR: first-broker-login flow copy failed" >&2; exit 1; }
     echo "✓ Flow copied: $FBL_FLOW"
@@ -132,10 +134,10 @@ if [ "$VERIFY_ONLY" != "1" ]; then
   #     ile yapılır (realm SMTP'siz olabilir; kullanıcı mevcut hesap parolasıyla
   #     doğrular — kör email-link değil; Codex 019e365b).
   for PROV in idp-create-user-if-unique idp-email-verification; do
-    EXEC_ID=$($KC get "authentication/flows/$FBL_FLOW/executions" -r "$REALM" 2>/dev/null \
+    EXEC_ID=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
       | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("providerId")==sys.argv[1]]; print(m[0]["id"] if m else "")' "$PROV" 2>/dev/null || echo "")
     if [ -n "$EXEC_ID" ]; then
-      $KC update "authentication/flows/$FBL_FLOW/executions" -r "$REALM" \
+      $KC update "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" \
         -b "{\"id\":\"$EXEC_ID\",\"requirement\":\"DISABLED\"}" >/dev/null 2>&1 \
         || { echo "ERROR: $PROV disable failed" >&2; exit 1; }
       echo "✓ '$PROV' → DISABLED"
@@ -198,15 +200,18 @@ idp = {
 json.dump(idp, open(sys.argv[1], "w"))
 PYEOF
 
-  docker cp "$IDP_JSON_HOST" "$KC_CONTAINER:$IDP_JSON_CTR" >/dev/null 2>&1 \
-    || { echo "ERROR: docker cp IdP JSON failed" >&2; exit 1; }
+  # Host temp dosyası 0600 kalır (clientSecret içerir). Container-içi kopya
+  # docker exec -i ile keycloak uid'i altında, umask 077 ile oluşturulur —
+  # kcadm okur, host'ta world-readable secret penceresi yok (Codex 019e365b).
+  docker exec -i "$KC_CONTAINER" sh -lc "umask 077; cat > '$IDP_JSON_CTR'" < "$IDP_JSON_HOST" \
+    || { echo "ERROR: IdP JSON container'a yazılamadı" >&2; exit 1; }
 
   if [ "$IDP_EXISTS" = "yes" ]; then
-    $KC update "identity-provider/instances/$ALIAS" -r "$REALM" -f "$IDP_JSON_CTR" >/dev/null 2>&1 \
+    $KC update "identity-provider/instances/$ALIAS" -r "$REALM" -f "$IDP_JSON_CTR" 2>&1 \
       || { echo "ERROR: IdP update failed" >&2; exit 1; }
     echo "✓ IdP '$ALIAS' updated (converged to desired state)"
   else
-    $KC create "identity-provider/instances" -r "$REALM" -f "$IDP_JSON_CTR" >/dev/null 2>&1 \
+    $KC create "identity-provider/instances" -r "$REALM" -f "$IDP_JSON_CTR" 2>&1 \
       || { echo "ERROR: IdP create failed" >&2; exit 1; }
     echo "✓ IdP '$ALIAS' created"
   fi
@@ -241,8 +246,10 @@ m = {
 }
 json.dump(m, open(path, "w"))
 PYEOF
-  docker cp "$mh" "$KC_CONTAINER:$mc" >/dev/null 2>&1 \
-    || { echo "ERROR: docker cp mapper $name failed" >&2; rm -f "$mh"; exit 1; }
+  # Container-içi kopya keycloak uid'i altında, umask 077 ile (IdP ile aynı
+  # pattern — host temp 0600 kalır; tutarlılık, Codex 019e365b).
+  docker exec -i "$KC_CONTAINER" sh -lc "umask 077; cat > '$mc'" < "$mh" \
+    || { echo "ERROR: mapper $name container'a yazılamadı" >&2; rm -f "$mh"; exit 1; }
   if [ -n "$existing" ]; then
     $KC update "identity-provider/instances/$ALIAS/mappers/$existing" -r "$REALM" -f "$mc" >/dev/null 2>&1 \
       || { echo "ERROR: mapper $name update failed" >&2; rm -f "$mh"; exit 1; }
@@ -306,7 +313,7 @@ echo "$MAP_VERIFY" | tail -1 | grep -q "^PASS$" \
 
 # Link-only invariant — flow executions DISABLED read-back (Codex 019e365b P1).
 # Bu scriptin ana güvenlik kontratı; doğrulanmadan PASS verilmez.
-FLOW_VERIFY=$($KC get "authentication/flows/$FBL_FLOW/executions" -r "$REALM" 2>/dev/null \
+FLOW_VERIFY=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
   | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
