@@ -1,4 +1,4 @@
-# Session Handoff — 2026-05-17 (Session 69 devamı) — M365 test browser smoke TAM PASS; `setup-m365-broker.sh` 2-bug script fix + prod apply sıradaki
+# Session Handoff — 2026-05-17 (Session 69 devamı) — M365 link-only browser smoke PASS (subscriber-provisioned persona kapsam dışı); `setup-m365-broker.sh` 2-bug script fix + prod apply sıradaki
 
 > Format: D28 5-alan + sıradaki agent aksiyon listesi
 > Önceki handoff: `session-handoff-2026-05-17-session-69-m365-sso-test-apply.md` (PR #785)
@@ -39,7 +39,7 @@ Yapılanlar:
 
 ---
 
-## 3. İspatlar — M365 test browser smoke (tam kapsamlı PASS)
+## 3. İspatlar — M365 link-only browser smoke (PASS)
 
 Chrome MCP ile end-to-end (`testai.acik.com`, `platform-test` realm):
 
@@ -67,9 +67,13 @@ Chrome MCP ile end-to-end (`testai.acik.com`, `platform-test` realm):
   provider microsoft does not exist."* — user count 13 sabit (**auto-create yok**).
   Smoke user sonradan yeniden oluşturuldu + federated link kcadm ile geri eklendi.
 
-🟡 Not: `/api/v1/notify/inbox/me` + SSE → 403 — bare smoke kullanıcısının
-subscriber/org provizyonu yok; M365-SSO defekti değil, kullanıcı-provizyon
-meselesi. JWT'de `subscriberId` claim'i yok (aynı sebep — bare kullanıcı).
+🟡 **Kapsam sınırı (kapanmayan smoke kriteri):** smoke kullanıcısı bare —
+`subscriberId`/org provizyonu yok. Sonuç: JWT'de `subscriberId` claim'i **yok**
+ve `/api/v1/notify/inbox/me` + SSE → 403. Bu bir M365-SSO defekti DEĞİL
+(kullanıcı-provizyon meselesi), ama runbook smoke kriterindeki "JWT
+`subscriberId`" maddesi bu bare persona ile **kapanmadı** — subscriber/org
+provizyonlu bir persona ile ayrıca doğrulanmalı. Bu handoff'un "PASS"ı
+**link-only auth zinciri** içindir; tam runbook smoke kapsamı değil.
 
 ---
 
@@ -106,9 +110,12 @@ DISABLED edildikten SONRA, `if [ "$VERIFY_ONLY" != "1" ]` içinde):**
 
 ```
 # 1. "User creation or linking" subflow alias'ı: top-level flow executions'ta
-#    authenticationFlow==true && description=="Flow for the existing/non-existing
-#    user alternatives" olan execution'ın displayName'i.
-#    (authentication/flows yalnız TOP-LEVEL flow listeler — subflow alias oradan BULUNAMAZ.)
+#    authenticationFlow==true && displayName'i "User creation or linking" İÇEREN
+#    execution'ın displayName'i = subflow alias (kcadm path'inde URL-encode et).
+#    NOT: `authentication/flows` yalnız TOP-LEVEL flow listeler — subflow flowId'si
+#    oradan alias'a map EDİLEMEZ (empirik doğrulandı: flowId lookup boş döner).
+#    displayName-içeren-match tek güvenilir yol; copy flow'da displayName =
+#    "<yeni flow adı> User creation or linking" olur.
 # 2. idp-detect-existing-broker-user yoksa O SUBFLOW'a ekle:
 #    kcadm create "authentication/flows/<SUBFLOW_ALIAS_ENC>/executions/execution" -s provider=idp-detect-existing-broker-user
 #    (NOT: endpoint .../executions/execution — .../executions DEĞİL.)
@@ -162,8 +169,11 @@ ediyor. Ek:
 #### PR akışı
 1. Branch + `setup-m365-broker.sh` Step 2 (flow) + Step 4 (user-profile) + Step 5
    (verify) düzelt. `bash -n` + `shellcheck -S warning` temiz.
-2. Mümkünse `VERIFY_ONLY=1` ile `platform-test`'te idempotent re-run — flow zaten
-   düzeltildi, script'in onu bozmadan doğruladığını teyit et.
+2. `platform-test`'te idempotency kanıtı **iki kademe**: (a) `VERIFY_ONLY=1`
+   read-back verify; (b) secret ile **normal apply re-run** + tekrar verify.
+   `VERIFY_ONLY=1` tek başına yalnız read-back'tir — idempotency kanıtı DEĞİL;
+   idempotency ancak normal apply'ın mevcut düzeltilmiş flow/profile'ı
+   bozmamasıyla kanıtlanır.
 3. Cross-AI: Codex review (HARD RULE — implementer Claude, reviewer Codex).
 4. ADR-0011 boundary declaration + PR body formatı (bkz. PR #783/#784/#785).
 5. CI yeşil → normal squash → `ai-post-merge-cleanup.sh`.
