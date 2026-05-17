@@ -45,7 +45,10 @@ env:
   AI_URL: https://ai.acik.com
 
 concurrency:
-  group: prod-frontend-deploy
+  # Shared prod-deploy lock (Codex 019e3638 cross-workflow race fix):
+  # deploy-prod-gitops.yml + deploy-backend-prod.yml use the same group —
+  # only one prod deploy runs at a time.
+  group: prod-deploy
   cancel-in-progress: false
 
 jobs:

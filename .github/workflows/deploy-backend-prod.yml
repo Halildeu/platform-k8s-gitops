@@ -46,7 +46,10 @@ env:
   IMAGE_OWNER: halildeu
 
 concurrency:
-  group: prod-backend-deploy
+  # Shared prod-deploy lock (Codex 019e3638 cross-workflow race fix):
+  # deploy-prod-gitops.yml + deploy-frontend-prod.yml use the same group —
+  # only one prod deploy runs at a time.
+  group: prod-deploy
   cancel-in-progress: false
 
 jobs:

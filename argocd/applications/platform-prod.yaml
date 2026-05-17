@@ -22,7 +22,11 @@ spec:
     server: https://kubernetes.default.svc
     namespace: platform-prod
   syncPolicy:
-    # MANUAL sync — D30 HARD RULE: atomic cutover
+    # MANUAL sync — D30 HARD RULE: atomic cutover. Auto-sync prod'da AÇILMAZ.
+    # Kanonik sync giriş noktası: `.github/workflows/deploy-prod-gitops.yml`
+    # (workflow_dispatch + `environment: production` env-gate + `argocd app
+    # sync`). Ad-hoc `argocd app sync` / `kubectl apply -k` prod mutasyonu
+    # audit-dışı — kullanma. Runbook: docs/operations/RUNBOOKS/RB-prod-gitops-sync.md
     # Codex PR #1 iter-9 tespit: `automated: {}` ArgoCD docs'a göre auto-sync
     # AÇAR (boş field yeterli). Manual sync için `automated` field TAMAMEN
     # olmamalı.
