@@ -7,6 +7,20 @@ Bu dizin **Faz 23 notification orchestration** için canonical doküman setidir.
 
 ---
 
+## GitHub Project Board (Faz 2 migration — 2026-05-17)
+
+Aktif Faz 23 durum takibi **[platform Roadmap board](https://github.com/users/Halildeu/projects/2)** üzerinde — `Faz` alanı `Faz 23` view. 28 item migrate edildi: 1 umbrella (#751) + 10 milestone (#752-761) + 12 açık risk (#762-773) + 4 aktif RAID issue (#774-777) + 1 must-have gate (#778). Faz 23 ~Session 49'dan (2026-05-14) beri dormant.
+
+**Source-of-truth boundary** (Codex `019e361d` AGREE):
+
+- **Board canonical** — aktif iş, açık risk, açık issue, milestone/gate durumu. Board `Status` alanı aktif-iş ilerlemesinin canonical kaydı.
+- **Docs canonical** — spec (event-contract), kabul kriteri, evidence ledger, deferred inventory (feature-matrix 178 satır, sprint-plan tier T2-T5), DoD detayı, mitigated/closed risk arşivi.
+- Bir item için status hem board'da hem doc'ta **bağımsız yürütülmez** — board issue canonical; doc satırı `board: #N`, board issue body'si `source-doc:` backlink taşır.
+- `needs-verification` label'lı item `Done / Mitigated / Closed / Accepted` statüsüne **taşınamaz** (governance rule).
+- `source-ready / desired-state / live-deployed / accepted` ayrı katmanlardır; board `Status=Done` yalnız **accepted/live** demektir — source-ready değil.
+
+---
+
 ## 📚 Doküman Hiyerarşisi
 
 ### 1. Strategic / Architecture (yön + karar)
@@ -94,21 +108,19 @@ Bu dizin **Faz 23 notification orchestration** için canonical doküman setidir.
 
 ## 🔄 Update Discipline
 
-**HARD RULE — every PR**:
-1. Charter sub-faz marker güncellenir (eğer status değiştiyse)
-2. must-have-checklist criteria 🟢 işaretlenir (kabul kriteri kapanırsa)
-3. feature-matrix marker güncellenir (özellik LIVE oldu)
-4. risk-register: yeni risk eklenir veya status update
-5. sprint-plan: task 🔴 → 🟡 → 🟢 ilerletilir
-6. milestones.md: M-N DoD checklist update
-7. current-state.md: live evidence delta
-8. PLAN.md D-karar status sync (gerekirse)
+**HARD RULE — board canonical (Faz 2/3 migration, 2026-05-17 sonrası)**:
 
-Inline doc update; dedicated doc-only PR yalnız retroaktif alignment veya taxonomy değişikliği için.
+- Aktif Faz 23 durum değişimi → ilgili **board issue** güncellenir (`Status` / `Kind` / alanlar). Aynı durumu doc'a paralel yazmak YASAK — drift kaynağı.
+- PR yalnız **değişen canonical yüzeyi** günceller: kod/runtime değişimi → board issue + `current-state.md`; spec / kabul kriteri / evidence → ilgili doc.
+- Yeni risk veya issue → board'da issue açılır + ilgili doc'a satır + **iki yönlü backlink** (`board: #N` doc'ta ↔ `source-doc:` issue body'sinde).
+- feature-matrix: aktifleşen özellik board'da issue alır (`tracked by #N`); row marker tek başına progress değildir.
+- `needs-verification` label'lı item closure statüsüne taşınamaz; `source-ready ≠ live-deployed ≠ accepted` ayrımı korunur.
 
-**Codex peer review HARD RULE**: Her PR cross-AI review (Code Claude → Codex AGREE/REVISE/RED).
+> Eski "her PR 8 dokümanı günceller" kuralı **superseded** — board'a göç öncesi disiplindi ve çoklu-yüzey güncelleme drift'in kaynağıydı (Codex `019e361d`).
 
-**Mark discipline**: Sub-faz `🟢 done` ancak ALL kabul kriteri 🟢 olduğunda işaretlenir. Substantial+missing = 🟡 partial.
+**Codex peer review HARD RULE**: Her implementation PR cross-AI review — implementer ≠ reviewer (farklı sağlayıcı: Claude ↔ Codex).
+
+**Mark discipline**: Board `Status=Done` ancak ALL kabul kriteri accepted/live olduğunda. Substantial + missing = `In Progress`. `needs-verification` varken closure YASAK.
 
 ---
 

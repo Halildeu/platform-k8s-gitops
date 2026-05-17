@@ -8,6 +8,8 @@ Bu 10 özellik **production MVP demek için olmazsa olmaz**. Negotiable değil. 
 
 Diğer ~130 özellik **negotiable** (kanal sayısı, UI yüzeyleri, workflow editor, A/B testing, brand customization).
 
+> **Faz 2 — GitHub Project migration (2026-05-17)** — Production MVP gate takibi [platform Roadmap board](https://github.com/users/Halildeu/projects/2) #778 (`Kind=gate`). Bu doküman 10 must-have'in kabul kriteri + evidence path'inin canonical kaynağı kalır.
+
 ## 🟢 Status (2026-05-09 Session 39, Codex `019e0bff` iter-1 absorb)
 
 | # | Must-have | Status | Sub-faz |

@@ -7,6 +7,8 @@
 
 Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için: ID, açıklama, probability, impact, mitigation, owner, status, last review tarihi.
 
+> **Faz 2 — GitHub Project migration (2026-05-17)** — Açık risk takibi [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (`Faz 23` view · `Kind=risk`) üzerinde. Bu doküman probability×impact / mitigation detayı + mitigated/closed risk arşivinin canonical kaynağı kalır. Açık risk board mapping: R1 #762 · R2 #763 · R3 #764 · R6 #765 · R10 #766 · R11 #767 · R14 #768 · R15 #769 · R16 #770 · R17 #771 · R21 #772 · R22 #773.
+
 **Review cadence**:
 - Per-PR: yeni risk gözlemlenirse R-N satırı eklenir
 - Weekly: tüm aktif riskler review edilir, status update

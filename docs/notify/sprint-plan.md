@@ -9,6 +9,8 @@
 
 Bu doküman **task-level breakdown + estimation + ownership + dependency** sağlar. Her task: Sub-faz, Tier (T1..T5), Type (backend/frontend/gitops/docs), Estimation (h), Owner, Dependency, Status.
 
+> **Faz 2 — GitHub Project migration (2026-05-17)** — Faz 23 ~Session 49'dan beri dormant. Aktif iş [platform Roadmap board](https://github.com/users/Halildeu/projects/2)'da milestone (#752-761) + risk (#762-773) item'larında izleniyor — standalone sprint-task issue açılmadı. Bu doküman task-level breakdown / estimation / tier T1-T5 detayının canonical kaynağı; bir tier aktifleşince work-package'lar kendi code repo'sunda issue açılıp milestone issue'ya linklenir.
+
 ---
 
 ## Velocity Baseline

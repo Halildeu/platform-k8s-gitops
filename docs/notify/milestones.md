@@ -8,6 +8,8 @@
 
 Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone slip görünürlüğü + dependency chain visualization.
 
+> **Faz 2 — GitHub Project migration (2026-05-17)** — Aktif milestone durum takibi [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (`Faz 23` view · `Kind=milestone`) üzerinde. Bu doküman DoD / critical path / slip detayının canonical kaynağı kalır. Board mapping: M0 #752 · M1 #753 · M2 #754 · M3 #755 · M4 #756 · M5 #757 · M6 #758 · M7 #759 · M8 #760 · M9 #761.
+
 ---
 
 ## Milestone Roadmap

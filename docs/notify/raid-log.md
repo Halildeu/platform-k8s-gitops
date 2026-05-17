@@ -8,6 +8,8 @@
 
 Bu doküman **Risks / Assumptions / Issues / Dependencies** dört boyutu ayrı tutar. Risk register zaten 22 risk takipli; RAID log onu **assumption + issue + dependency** ile genişletir.
 
+> **Faz 2 — GitHub Project migration (2026-05-17)** — Aktif Issue (I-serisi) takibi [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (`Faz 23` view · `Kind=issue`) üzerinde. Assumption (A) + Dependency (D) boyutları canonical olarak yalnız bu dokümanda. Aktif issue board mapping: I1 #774 · I2 #775 · I4 #776 · I6 #777.
+
 ## Neden Ayrı?
 
 Codex iter-2 finding F5 (thread `019e0c28`):
