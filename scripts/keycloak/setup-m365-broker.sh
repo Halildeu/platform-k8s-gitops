@@ -112,8 +112,14 @@ unset ADMIN_PASS
 echo "✓ Logged in (realm: $REALM)"
 
 # ─── 2. Link-only first-broker-login flow ──────────────────────────────────
-# ADR-0021 D4: built-in "first broker login" kopyalanır, "Create User If
-# Unique" execution DISABLED → eşleşmeyen federe kullanıcı oluşturulmaz.
+# ADR-0021 D4 link-only (Codex 019e3796):
+#   - idp-create-user-if-unique       DISABLED → federe auto-create yok
+#   - idp-detect-existing-broker-user REQUIRED → mevcut kullanıcı tespiti
+#       (create-if-unique disable edilince built-in flow'un tespit adımı da
+#        kapanır; ayrı detect authenticator şart — yoksa eşleşen kullanıcı
+#        bulunamaz, flow AuthenticationFlowException ile düşer)
+#   - Handle Existing Account         REQUIRED, detect ondan ÖNCE çalışır
+#   - idp-email-verification          DISABLED → re-authentication ile doğrula
 echo ""
 echo "=== Step 2/5: Link-only first-broker-login flow ==="
 FLOW_EXISTS=$($KC get authentication/flows -r "$REALM" 2>/dev/null \
@@ -147,6 +153,57 @@ if [ "$VERIFY_ONLY" != "1" ]; then
       exit 1
     fi
   done
+
+  # ── Mevcut-kullanıcı tespiti — idp-detect-existing-broker-user (Codex 019e3796)
+  # idp-create-user-if-unique DISABLED edilince built-in flow'un tespit adımı da
+  # kapanır → EXISTING_USER_INFO set edilmez → idp-confirm-link "No duplication
+  # detected" der, flow düşer. Çözüm: detect authenticator'ı "User creation or
+  # linking" subflow'una REQUIRED ekle; "Handle Existing Account" REQUIRED yap;
+  # detect ondan önce çalışsın.
+  # NOT: `authentication/flows` yalnız TOP-LEVEL flow listeler — subflow alias'ı
+  # oradan map edilemez; subflow execution'ının displayName'i = subflow alias.
+  UCL_ALIAS=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("authenticationFlow") and "User creation or linking" in (x.get("displayName") or "")]; print(m[0]["displayName"] if m else "")' 2>/dev/null || echo "")
+  [ -n "$UCL_ALIAS" ] || { echo "ERROR: 'User creation or linking' subflow bulunamadı" >&2; exit 1; }
+  UCL_ENC="${UCL_ALIAS// /%20}"
+
+  DETECT_ID=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("providerId")=="idp-detect-existing-broker-user"]; print(m[0]["id"] if m else "")' 2>/dev/null || echo "")
+  if [ -z "$DETECT_ID" ]; then
+    $KC create "authentication/flows/$UCL_ENC/executions/execution" -r "$REALM" \
+      -s provider=idp-detect-existing-broker-user >/dev/null 2>&1 \
+      || { echo "ERROR: idp-detect-existing-broker-user eklenemedi" >&2; exit 1; }
+    DETECT_ID=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("providerId")=="idp-detect-existing-broker-user"]; print(m[0]["id"] if m else "")' 2>/dev/null || echo "")
+    echo "✓ 'idp-detect-existing-broker-user' eklendi"
+  else
+    echo "✓ 'idp-detect-existing-broker-user' mevcut"
+  fi
+  [ -n "$DETECT_ID" ] || { echo "ERROR: detect execution id alınamadı" >&2; exit 1; }
+  $KC update "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" \
+    -b "{\"id\":\"$DETECT_ID\",\"requirement\":\"REQUIRED\"}" >/dev/null 2>&1 \
+    || { echo "ERROR: detect REQUIRED set edilemedi" >&2; exit 1; }
+  echo "✓ 'idp-detect-existing-broker-user' → REQUIRED"
+
+  HANDLE_ID=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("authenticationFlow") and "Handle Existing Account" in (x.get("displayName") or "")]; print(m[0]["id"] if m else "")' 2>/dev/null || echo "")
+  [ -n "$HANDLE_ID" ] || { echo "ERROR: 'Handle Existing Account' subflow bulunamadı" >&2; exit 1; }
+  $KC update "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" \
+    -b "{\"id\":\"$HANDLE_ID\",\"requirement\":\"REQUIRED\"}" >/dev/null 2>&1 \
+    || { echo "ERROR: 'Handle Existing Account' REQUIRED set edilemedi" >&2; exit 1; }
+  echo "✓ 'Handle Existing Account' → REQUIRED"
+
+  # detect, "Handle Existing Account"tan ÖNCE çalışmalı (priority raise loop)
+  for _ in 1 2 3 4 5 6; do
+    DI=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("providerId")=="idp-detect-existing-broker-user"]; print(m[0]["index"] if m else 999)' 2>/dev/null || echo 999)
+    HI=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("authenticationFlow") and "Handle Existing Account" in (x.get("displayName") or "")]; print(m[0]["index"] if m else -1)' 2>/dev/null || echo -1)
+    [ "$DI" -lt "$HI" ] && break
+    $KC create "authentication/executions/$DETECT_ID/raise-priority" -r "$REALM" >/dev/null 2>&1 \
+      || { echo "ERROR: detect priority raise failed" >&2; exit 1; }
+  done
+  echo "✓ detect → 'Handle Existing Account' önünde (priority OK)"
 fi
 
 # ─── 3. Identity provider (desired-state create/update) ────────────────────
@@ -160,7 +217,7 @@ except Exception: print("no")' 2>/dev/null || echo "no")
 if [ "$VERIFY_ONLY" != "1" ]; then
   IDP_JSON_HOST="$(mktemp /tmp/_m365_idp.XXXXXX.json)"
   IDP_JSON_CTR="/tmp/m365-idp-$$.json"
-  trap 'rm -f "$IDP_JSON_HOST"; docker exec "$KC_CONTAINER" rm -f "$IDP_JSON_CTR" >/dev/null 2>&1 || true' EXIT
+  trap 'rm -f "$IDP_JSON_HOST" "${UP_HOST:-}"; docker exec "$KC_CONTAINER" rm -f "$IDP_JSON_CTR" "${UP_CTR:-}" >/dev/null 2>&1 || true' EXIT
 
   # Tüm değerler env üzerinden geçer (quoted heredoc — shell interpolation
   # yok). clientSecret IdP config'ine girer; stdout'a/log'a yazılmaz.
@@ -219,7 +276,7 @@ fi
 
 # ─── 4. Claim mappers (tid → entra_tid, oid → entra_oid) ───────────────────
 echo ""
-echo "=== Step 4/5: Claim mappers ==="
+echo "=== Step 4/5: Claim mappers + user-profile attributes ==="
 upsert_attr_mapper() {
   local name="$1" claim="$2" attr="$3"
   [ "$VERIFY_ONLY" = "1" ] && return 0
@@ -264,6 +321,47 @@ PYEOF
 }
 upsert_attr_mapper "entra-tid" "tid" "entra_tid"
 upsert_attr_mapper "entra-oid" "oid" "entra_oid"
+
+# ── User-profile attribute deklarasyonu (Codex 019e3796 / smoke bulgusu) ──
+# Keycloak 26 Declarative User Profile, unmanagedAttributePolicy DISABLED iken
+# deklare edilmemiş attribute'ları sessizce düşürür → yukarıdaki mapper'ların
+# entra_tid/entra_oid yazımları kalıcı olmaz. Attribute'lar profile'a deklare
+# edilir — mevcut profil korunur, yalnız eksik olan(lar) append edilir.
+if [ "$VERIFY_ONLY" != "1" ]; then
+  UP_HOST="$(mktemp /tmp/_m365_up.XXXXXX.json)"
+  UP_CTR="/tmp/m365-up-$$.json"
+  $KC get users/profile -r "$REALM" > "$UP_HOST" 2>/dev/null || true
+  [ -s "$UP_HOST" ] || { echo "ERROR: users/profile okunamadı" >&2; rm -f "$UP_HOST"; exit 1; }
+  UP_CHANGED=$(python3 - "$UP_HOST" <<'UPEOF'
+import json, sys
+path = sys.argv[1]
+prof = json.load(open(path))
+attrs = prof.setdefault("attributes", [])
+have = {a.get("name") for a in attrs}
+added = []
+for name, disp in (("entra_tid", "Entra Tenant ID"), ("entra_oid", "Entra Object ID")):
+    if name not in have:
+        attrs.append({"name": name, "displayName": disp,
+                      "permissions": {"view": ["admin"], "edit": ["admin"]},
+                      "multivalued": False})
+        added.append(name)
+json.dump(prof, open(path, "w"))
+print(",".join(added))
+UPEOF
+)
+  if [ -n "$UP_CHANGED" ]; then
+    docker exec -i "$KC_CONTAINER" sh -lc "umask 077; cat > '$UP_CTR'" < "$UP_HOST" \
+      || { echo "ERROR: user-profile JSON container'a yazılamadı" >&2; rm -f "$UP_HOST"; exit 1; }
+    $KC update users/profile -r "$REALM" -f "$UP_CTR" >/dev/null 2>&1 \
+      || { echo "ERROR: user-profile güncellenemedi" >&2; rm -f "$UP_HOST"; \
+           docker exec "$KC_CONTAINER" rm -f "$UP_CTR" >/dev/null 2>&1 || true; exit 1; }
+    echo "  ✓ user-profile: $UP_CHANGED deklare edildi"
+    docker exec "$KC_CONTAINER" rm -f "$UP_CTR" >/dev/null 2>&1 || true
+  else
+    echo "  ✓ user-profile: entra_tid + entra_oid zaten deklare"
+  fi
+  rm -f "$UP_HOST"
+fi
 
 # ─── 5. Verify (read-back assertions) ──────────────────────────────────────
 echo ""
@@ -311,24 +409,71 @@ echo "$MAP_VERIFY"
 echo "$MAP_VERIFY" | tail -1 | grep -q "^PASS$" \
   || { echo "ERROR: mapper verify FAILED (presence / syncMode != FORCE)" >&2; exit 3; }
 
-# Link-only invariant — flow executions DISABLED read-back (Codex 019e365b P1).
-# Bu scriptin ana güvenlik kontratı; doğrulanmadan PASS verilmez.
+# Link-only invariant — first-broker-login flow yapısı read-back (Codex
+# 019e365b P1 + 019e3796). Bu scriptin ana güvenlik kontratı; create-if-unique
+# /email-verification DISABLED + detect REQUIRED (Handle'dan önce) + Handle/
+# confirm-link/username-password-form REQUIRED doğrulanmadan PASS verilmez.
 FLOW_VERIFY=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
   | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
 ok = True
-for prov in ("idp-create-user-if-unique", "idp-email-verification"):
-    m = [x for x in d if x.get("providerId") == prov]
-    r = m[0].get("requirement") if m else "MISSING"
-    print(f"  exec {prov}={r}")
+def prov(p):
+    m = [x for x in d if x.get("providerId") == p]
+    return m[0] if m else None
+def sub(name):
+    m = [x for x in d if x.get("authenticationFlow") and name in (x.get("displayName") or "")]
+    return m[0] if m else None
+for p in ("idp-create-user-if-unique", "idp-email-verification"):
+    e = prov(p); r = e.get("requirement") if e else "MISSING"
+    print(f"  exec {p}={r}")
     if r != "DISABLED":
         ok = False
+for p in ("idp-detect-existing-broker-user", "idp-confirm-link", "idp-username-password-form"):
+    e = prov(p); r = e.get("requirement") if e else "MISSING"
+    print(f"  exec {p}={r}")
+    if r != "REQUIRED":
+        ok = False
+hea = sub("Handle Existing Account")
+hr = hea.get("requirement") if hea else "MISSING"
+print(f"  subflow Handle-Existing-Account={hr}")
+if hr != "REQUIRED":
+    ok = False
+det = prov("idp-detect-existing-broker-user")
+if det and hea:
+    di = det.get("index", 999); hi = hea.get("index", -1)
+    print(f"  detect.index={di} handle.index={hi}")
+    if not (di < hi):
+        ok = False
+else:
+    ok = False
 print("PASS" if ok else "FAIL")
 ' 2>/dev/null || echo "FAIL: flow verify error")
 echo "$FLOW_VERIFY"
 echo "$FLOW_VERIFY" | tail -1 | grep -q "^PASS$" \
-  || { echo "ERROR: link-only flow verify FAILED — execution(s) not DISABLED" >&2; exit 3; }
+  || { echo "ERROR: link-only flow verify FAILED — flow yapısı hatalı" >&2; exit 3; }
+
+# User-profile entra_tid/entra_oid deklarasyon read-back (Codex 019e3796 /
+# smoke bulgusu — KC 26 declarative profile deklare edilmemiş attribute düşürür).
+UP_VERIFY=$($KC get users/profile -r "$REALM" 2>/dev/null \
+  | python3 -c '
+import json, sys
+try:
+    prof = json.load(sys.stdin)
+except Exception:
+    print("FAIL: users/profile okunamadı"); sys.exit()
+names = {a.get("name") for a in prof.get("attributes", [])}
+ok = True
+for n in ("entra_tid", "entra_oid"):
+    present = n in names
+    print(f"  user-profile attr {n}={present}")
+    if not present:
+        ok = False
+print("PASS" if ok else "FAIL")
+' 2>/dev/null || echo "FAIL: user-profile verify error")
+echo "$UP_VERIFY"
+echo "$UP_VERIFY" | tail -1 | grep -q "^PASS$" \
+  || { echo "ERROR: user-profile verify FAILED — entra_tid/entra_oid deklare değil" >&2; exit 3; }
 
 echo ""
 echo "=== M365 broker apply — PASS (realm=$REALM) ==="
