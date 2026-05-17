@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-backend",
+  "service": "schema-service",
+  "git_sha": "58bc2c96c989d1328b21e7a38970e97c13a0a356",
+  "git_short_sha": "58bc2c9",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-backend-schema-service",
+    "digest": "sha256:894e492f029c93277ee7d84c993bad2535d970995b0d2df08a48ebb23340ae26",
+    "tag": "sha-58bc2c9",
+    "push_run_id": 25985721556,
+    "pushed_at": "2026-05-17T08:21:00Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-05-17T08:26:01Z",
+      "promoted_by_pr": 745,
+      "argocd_revision": null,
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-05-17T12:29:34Z",
+          "details": "Test cluster (staging-sw k3d-test) pod schema-service-6b474ffb6b-h24pv 1/1 Running, restarts=0; containerStatuses imageID sha256:894e492f029c93277ee7d84c993bad2535d970995b0d2df08a48ebb23340ae26 matches sha-58bc2c9 Q4 digest; deploy generation 95 fully rolled (updatedReplicas=readyReplicas=1). d29-smoke-runner Tier 1 GREEN (all 6 JWT services Running+Ready).",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/pull/745"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-05-17T08:27:46Z",
+          "details": "GET /api/v1/schema/snapshot?schema=workcube_mikrolink -> HTTP 200; 1513 tables / 26333 columns / 1787 relationships / 16 domains; storage inventory 1513 tables via Q4 catalog-view (sys.partitions + sys.allocation_units, permission-free). Server log: 'Extracted storage for 1513 tables from schema workcube_mikrolink' followed by 'Snapshot built in 113291ms'. NOTE: d29-smoke-runner Tier 2 returned 000000 for all services -- the ad-hoc runner host could not reach in-cluster service endpoints (network-path artifact, not a service failure); functional behaviour verified directly on the pod and via server logs instead.",
+          "evidence_url": "https://github.com/Halildeu/platform-backend/pull/237",
+          "endpoints": [
+            "/api/v1/schema/snapshot"
+          ]
+        },
+        "d29_zanzibar": {
+          "status": "GREEN",
+          "checked_at": "2026-05-17T12:38:00Z",
+          "details": "OpenFGA allow/deny synthetic on store 01KPP0CFP4G82K42Y6NYSPT4JF (ERP_OPENFGA_STORE_ID): allow check user:1204 admin organization:default -> {allowed:true}; deny check user:9999999 admin organization:default -> {allowed:false}. allow=true AND deny=false = PASS. NOTE: d29-smoke-runner Tier 4 SKIP'd because it reads ConfigMap key OPENFGA_STORE_ID which is empty; the live store id is ERP_OPENFGA_STORE_ID sourced from the pod runtime env -- the allow/deny check was run directly with the correct store id. schema-service's own /api/v1/schema/** endpoints are permitAll in its SecurityConfig (no per-resource OpenFGA PEP); its public surface is protected by gateway JWT (testai.acik.com no-token /reporting-contract and /snapshot both -> 401). The platform Zanzibar plane (OpenFGA) allow/deny synthetic is GREEN.",
+          "evidence_url": "https://github.com/Halildeu/platform-backend/pull/237",
+          "allow_deny_synthetic": "PASS"
+        }
+      },
+      "verified_at": "2026-05-17T12:38:00Z",
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": 749,
+      "candidate_pr_status": "ready_for_review"
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:b660b25a5f6d6dc8080f11456e769f0ef54f9afe3a3e42b4b32e2f725c6c20c3"
+  },
+  "audit": {
+    "created_at": "2026-05-17T12:38:00Z",
+    "last_updated_at": "2026-05-17T12:38:00Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-backend/actions/runs/25985721556"
+  }
+}
