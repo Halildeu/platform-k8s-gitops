@@ -26,11 +26,15 @@ Keycloak `serban` realm'ine Microsoft Entra ID **OIDC identity provider** ekleni
 ### D2 — Güvenlik invariantı: authn ≠ authz
 Entra'dan gelen kimlik doğrulama sinyali, platform org/scope/authz grant'i **değildir**. ADR-0008 explicit-scope kuralı geçerli: kullanıcı explicit scope atanmadan veri görmez. `organization#member` yalnız tenant binding'dir, data grant değildir.
 
-### D3 — Multi-tenant gating
-Multi-tenant Entra app = Microsoft tarafında herhangi bir Entra org kullanıcısı authenticate olabilir. Platform **gated** kalır — primary key Entra `tid` (tenant ID) allowlist; email domain yalnız yardımcı sinyal. İzin verilen tenant listesi `scripts/keycloak/m365-broker-config.json` `allowed_tenants` alanında.
+### D3 — Multi-tenant erişim sınırı
+Multi-tenant Entra app = Microsoft tarafında herhangi bir Entra org kullanıcısı authenticate olabilir. Platform erişim sınırı v1/v2'de farklı:
+- **v1 (bu ADR)**: erişim sınırı **link-only** — yalnız mevcut bir `serban` kullanıcısı, re-authentication ile doğrulayarak girer. `tid` (tenant) allowlist (`scripts/keycloak/m365-broker-config.json` `allowed_tenants`) v1'de **audit-only**: `entra_tid` user attribute'una yazılır, girişi reddetmek için kullanılmaz.
+- **v2**: custom authenticator SPI `tid` allowlist'i **hard-gate** eder + izinli tenant'lar için auto-provisioning.
+
+v1 "tenant allowlist ile gated" **değildir** — gate link-only + re-auth'tur; allowlist v1'de yalnız audit kaydıdır.
 
 ### D4 — v1 link-only / v2 SPI auto-provision
-- **v1 (bu ADR scope'u)**: First Broker Login flow **link-only** — "Create User If Unique" DISABLED. Federe giriş yalnız **mevcut** bir `serban` kullanıcısına (doğrulanmış email eşleşmesi) **link** eder. Eşleşme yoksa giriş reddedilir. Sonuç: `subscriberId`/org zaten mevcut kullanıcıda → eşleme işi YOK; `tid`/`oid` audit attribute olarak yazılır. SPI gerektirmez.
+- **v1 (bu ADR scope'u)**: First Broker Login flow **link-only** — `idp-create-user-if-unique` + `idp-email-verification` execution'ları DISABLED. Federe giriş yalnız **mevcut** bir `serban` kullanıcısına bağlanır: aday eşleşme email ile bulunur, kullanıcı mevcut hesabın parolasıyla **re-authentication** yaparak link'i doğrular (kör email-link yok; realm SMTP'siz çalışır). Eşleşme yoksa veya re-auth başarısızsa giriş reddedilir. Sonuç: `subscriberId`/org zaten mevcut kullanıcıda → eşleme işi YOK; `entra_tid`/`entra_oid` audit attribute olarak (`syncMode=FORCE`) yazılır. SPI gerektirmez.
 - **v2 (ayrı ADR/sprint)**: Custom Keycloak authenticator SPI — `tid` allowlist hard-gate + `entra_tid → org/subscriberId` mapping ile izinli tenant'lar için açık self-onboarding.
 
 v1, Codex `019e365b` "SPI deploy edilemezse → auto-create kapalı, pre-provision/pre-link" fallback'iyle birebir; küçük kullanıcı tabanı (14) + `registrationAllowed=false` posture'ı ile uyumlu.
@@ -57,7 +61,7 @@ IdP idempotent `kcadm.sh` script (`setup-m365-broker.sh`) ile yönetilir — `se
 
 ## Smoke kriterleri (test realm gate — prod öncesi zorunlu)
 
-Microsoft button render + callback · izinli tenant kullanıcısı login (mevcut hesaba link) · eşleşmeyen kullanıcı deny · JWT'de `subscriberId` + `entra_tid`/`entra_oid` · `/api/v1/authz/me` 200 · local username/password fallback hâlâ çalışıyor · logout/relogin.
+Microsoft button render + callback · mevcut `platform-test` kullanıcısı M365 ile login → re-authentication ile mevcut hesaba link · pre-provision edilmemiş (eşleşmeyen) kullanıcı deny · linked kullanıcının KC user attribute'larında `entra_tid` + `entra_oid` (Admin API read-back — v1'de bunlar JWT claim'i **değil**) · JWT'de `subscriberId` (mevcut mapper, değişmedi) · `/api/v1/authz/me` 200 · local username/password fallback hâlâ çalışıyor · logout/relogin.
 
 ## Rollback
 

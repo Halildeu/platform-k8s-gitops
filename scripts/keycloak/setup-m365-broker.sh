@@ -126,17 +126,23 @@ if [ "$VERIFY_ONLY" != "1" ]; then
   else
     echo "✓ Flow exists: $FBL_FLOW"
   fi
-  # "Create User If Unique" execution → DISABLED (link-only)
-  CUIU_ID=$($KC get "authentication/flows/$FBL_FLOW/executions" -r "$REALM" 2>/dev/null \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("providerId")=="idp-create-user-if-unique"]; print(m[0]["id"] if m else "")' 2>/dev/null || echo "")
-  if [ -n "$CUIU_ID" ]; then
-    $KC update "authentication/flows/$FBL_FLOW/executions" -r "$REALM" \
-      -b "{\"id\":\"$CUIU_ID\",\"requirement\":\"DISABLED\"}" >/dev/null 2>&1 \
-      || { echo "ERROR: Create-User-If-Unique disable failed" >&2; exit 1; }
-    echo "✓ 'Create User If Unique' → DISABLED (link-only)"
-  else
-    echo "WARN: 'idp-create-user-if-unique' execution bulunamadı — test apply'da doğrula" >&2
-  fi
+  # Link-only + SMTP-bağımsız — şu execution'lar DISABLED:
+  #   idp-create-user-if-unique → eşleşmeyen federe kullanıcı oluşturulmaz
+  #   idp-email-verification    → linking email-verify yerine re-authentication
+  #     ile yapılır (realm SMTP'siz olabilir; kullanıcı mevcut hesap parolasıyla
+  #     doğrular — kör email-link değil; Codex 019e365b).
+  for PROV in idp-create-user-if-unique idp-email-verification; do
+    EXEC_ID=$($KC get "authentication/flows/$FBL_FLOW/executions" -r "$REALM" 2>/dev/null \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("providerId")==sys.argv[1]]; print(m[0]["id"] if m else "")' "$PROV" 2>/dev/null || echo "")
+    if [ -n "$EXEC_ID" ]; then
+      $KC update "authentication/flows/$FBL_FLOW/executions" -r "$REALM" \
+        -b "{\"id\":\"$EXEC_ID\",\"requirement\":\"DISABLED\"}" >/dev/null 2>&1 \
+        || { echo "ERROR: $PROV disable failed" >&2; exit 1; }
+      echo "✓ '$PROV' → DISABLED"
+    else
+      echo "WARN: '$PROV' execution bulunamadı — test apply'da doğrula" >&2
+    fi
+  done
 fi
 
 # ─── 3. Identity provider (desired-state create/update) ────────────────────
@@ -224,7 +230,9 @@ m = {
   "identityProviderAlias": "microsoft",
   "identityProviderMapper": "oidc-user-attribute-idp-mapper",
   "config": {
-    "syncMode": "INHERIT",
+    # FORCE: her federe giriş attribute'u yeniden yazar; link-only v1'de
+    # kullanıcı zaten mevcut, IMPORT semantiği tetiklenmez (Codex 019e365b P2).
+    "syncMode": "FORCE",
     "claim": claim,
     "user.attribute": attr
   }

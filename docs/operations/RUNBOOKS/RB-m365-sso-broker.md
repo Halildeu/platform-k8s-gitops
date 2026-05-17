@@ -51,9 +51,10 @@ Microsoft Entra admin center (`entra.microsoft.com`) → **Identity → Applicat
    default vermiyorsa → **Add optional claim → ID → email**.
 
 > **Hangi tenant ID'ler allowlist'e?** Kendi org'unun tenant ID'si + giriş
-> yapmasına izin vereceğin diğer org'ların tenant ID'leri. Multi-tenant app
-> olduğu için başka org'un admini ilk kullanımda consent verir; allowlist
-> Keycloak tarafında kimin gerçekten gireceğini belirler.
+> yapmasına izin vereceğin diğer org'ların tenant ID'leri. v1'de bu liste
+> **audit-only** (`entra_tid` attribute'una yazılır) — v1 erişim sınırı
+> link-only'dir (yalnız önceden oluşturulmuş kullanıcı re-auth ile girer);
+> `tid` hard-gate v2 SPI işidir.
 
 ## 🧑 ADIM 2 — Config form
 
@@ -102,10 +103,13 @@ first-broker-login flow oluşturur/günceller. Exit 0 = PASS.
 `https://testai.acik.com` login sayfasında:
 
 - [ ] "Microsoft 365" butonu render oluyor
-- [ ] İzinli tenant kullanıcısı (önce `platform-test`'te oluşturulmuş, email
-      eşleşen) → Microsoft'a redirect → geri dönüş → giriş başarılı
-- [ ] Eşleşmeyen kullanıcı → giriş reddedilir (link-only)
-- [ ] JWT'de `subscriberId` + `entra_tid` + `entra_oid` claim'leri var
+- [ ] Mevcut `platform-test` kullanıcısı (önceden oluşturulmuş) M365 ile login
+      → Microsoft redirect → dönüş → re-authentication (mevcut parola) → link
+      → giriş başarılı
+- [ ] Pre-provision edilmemiş (eşleşmeyen) kullanıcı → giriş reddedilir
+- [ ] Linked kullanıcının KC user attribute'larında `entra_tid` + `entra_oid`
+      (Admin API read-back — v1'de JWT claim'i DEĞİL)
+- [ ] JWT'de `subscriberId` (mevcut mapper, değişmedi)
 - [ ] `/api/v1/authz/me` 200
 - [ ] Local username/password login hâlâ çalışıyor (fallback)
 - [ ] Logout → relogin temiz
