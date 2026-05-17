@@ -2536,11 +2536,11 @@ patches:
       # pod crashed with `Unable to determine Dialect without JDBC metadata`.
       # Root cause (Codex 019e25ba clarification): base ConfigMap already
       # carried `SPRING_DATASOURCE_URL` (verified via render of PR #566
-      # merge commit 1ac92b3); the missing piece was the explicit Hibernate
-      # dialect property + Hikari fail-timeout that the inline override was
-      # carrying alone. Spring Boot JDBC autoconfig opened the connection
-      # but Hibernate's dialect auto-detection failed without an explicit
-      # `spring.jpa.properties.hibernate.dialect`.
+      # merge commit 1ac92b3). The inline override also carried an explicit
+      # Hibernate dialect property + Hikari fail-timeout; the dialect was
+      # *believed* mandatory at the time. D1.1d (note below) disproved that:
+      # the real cause was the D1.1c credential drift (broken DB connection
+      # blocked Hibernate's JDBC metadata probe), not missing dialect config.
       #
       # SPRING_DATASOURCE_URL is pinned here too (defensive parity with
       # live override after kubectl set env recovery on 2026-05-14 ~12:00);
