@@ -41,7 +41,7 @@ Ayrıca sıradaki agent için 3 backlog (P0 project-scope E2E, P1 permission-ser
 
 ## 4. İspatlamaz (henüz CANLI DEĞİL)
 
-- **#242 / #585 / #587 testai cluster'a deploy EDİLMEDİ.** Fix'ler `main`'de ama testai pod'larında eski image çalışıyor. Authz leak browser'da hâlâ açık.
+- **#242 / #585 / #587 için test overlay desired-state henüz bump EDİLMEDİ.** Repo tarafında permission-service + frontend hâlâ eski digest pin'lerinde. Live pod `imageID` ayrıca doğrulanmadan "cluster eski image çalıştırıyor" closure claim'i kurulmaz — authz leak browser acceptance hâlâ açık kabul edilir.
 - P0 project-scope live grant → OpenFGA → RLS E2E: trigger blocker çözüldü (fixture seed + V21 join doğrulandı) ama canlı grant superadmin JWT'ye bağlı, tamamlanmadı.
 - M365 prod realm (`serban`) apply yapılmadı (sadece `platform-test`).
 
@@ -49,12 +49,11 @@ Ayrıca sıradaki agent için 3 backlog (P0 project-scope E2E, P1 permission-ser
 
 ### P0 — testai deploy (HARD RULE: browser-verify olmadan iş bitmedi)
 
-`kustomize/overlays/test/kustomization.yaml`:
-- **permission-service** image bloğu (satır ~638-826, digest satır **826**): #242 build'ine bump. Image tag `sha-74916a8`; digest GHCR'dan resolve et:
-  `gh api /orgs/halildeu/packages/container/platform-backend-permission-service/versions --jq '.[] | select(.metadata.container.tags[]? == "sha-74916a8") | .name'`
-- **platform-web-frontend-testai** image bloğu (digest satır **2142**, şu an `sha-6ea6185`): #587 build'ine bump. Image tag `sha-cffdfc8`; digest GHCR'dan resolve et benzer şekilde.
+`kustomize/overlays/test/kustomization.yaml` (satır numaraları `origin/main` `f4307ec` itibarıyla):
+- **permission-service** image bloğu: `- name: permission-service` satır **677**, `digest:` satır **876**. #242 build'ine bump — image tag `sha-74916a8`. Digest GHCR'dan resolve et.
+- **frontend** image bloğu: `- name: frontend` satır **888**, `newName: ghcr.io/halildeu/platform-web-frontend-testai` satır **902**, `digest:` satır **2257** (şu an `sha-356babf`). #587 build'ine bump — image tag `sha-cffdfc8`.
 
-Sıra: **backend önce** (permission-service rollout) → sonra frontend. Selective apply tercih (blast radius). `kubectl --context k3d-test -n platform-test apply -k ...` + `rollout status`.
+Sıra: **backend önce** → apply → rollout → pod `imageID` digest match → frontend apply → rollout → pod `imageID` digest match → browser verify. Selective apply tercih (blast radius). `kubectl --context k3d-test -n platform-test ...`.
 
 **Deploy sonrası ZORUNLU (HARD RULE)**: browser console + network sweep — modül yetkisi OLMAYAN kullanıcıda:
 - Sidebar'da "Şema Gezgini" görünmemeli / tıklanamaz olmalı
