@@ -155,6 +155,18 @@ kalabilir — kullanılmadığı sürece zararsız (yalnız izin verir, kimseden
 
 ## PR-3B — break-glass SA live activation (operator-gated)
 
+> **DURUM (2026-05-18)**: **Test-cluster drill yürütüldü** — `ops-break-glass` SA +
+> cluster-admin CRB k3d-test'e apply edildi, `break-glass-token.sh` koştu (exit 0),
+> 1h TTL token üretildi ve doğrulandı (`auth whoami` =
+> `system:serviceaccount:kube-system:ops-break-glass`, `auth can-i '*' '*'` = `yes`,
+> gerçek `get ns` token-canlı), audit log satırı yazıldı. Drill sonrası SA
+> k3d-test'ten silindi — net state değişimi sıfır. GitHub issue yolu `gh`
+> staging-sw'de kurulu olmadığından script'in graceful-skip dalından geçti (issue
+> oluşturma kodu inspection ile doğrulandı, exercise edilmedi); Alertmanager
+> fallback `ALARM_FALLBACK_ALERTMANAGER` default `0` → exercise edilmedi. Codex
+> `019e3a40`: test-cluster drill agent-actionable. **Prod activation (cluster-admin
+> CRB canlıya) hâlâ operator-gated** — aşağıdaki adımlar.
+
 `kustomize/base/rbac/break-glass-sa.yaml` (`ops-break-glass` SA + cluster-admin
 CRB) + `scripts/operations/break-glass-token.sh` repo'da **var ama** hiçbir
 overlay'e bağlı değil → canlıda **yok** (`kubectl -n kube-system get sa

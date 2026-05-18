@@ -44,6 +44,17 @@ kalan**: PR-3C Adım 3 (runner kubeconfig cutover + eski admin kubeconfig host't
 kaldırma), Adım 4 (`production` env-gate dispatch), PR-3B prod break-glass
 activation, PR-3D operator readonly identity — hepsi `docs/operations/RUNBOOKS/RB-prod-rbac-least-privilege.md`.
 
+**PR-3B break-glass test-cluster drill (2026-05-18)** — Codex `019e3a40` test-cluster
+drill'i agent-actionable temizledi. `ops-break-glass` SA + cluster-admin CRB k3d-test'e
+apply edildi, `break-glass-token.sh` koştu (exit 0): 1h TTL token üretildi ve doğrulandı
+(`auth whoami` = `system:serviceaccount:kube-system:ops-break-glass`, `auth can-i '*' '*'`
+= `yes`, gerçek `get ns` token-canlı), audit log satırı yazıldı. Drill sonrası SA
+k3d-test'ten silindi — **net state değişimi sıfır**. GitHub issue yolu (`gh` staging-sw'de
+kurulu değil) script'in graceful-skip dalından geçti — issue oluşturma kodu inspection ile
+doğrulandı, exercise edilmedi; Alertmanager fallback (`ALARM_FALLBACK_ALERTMANAGER` default
+`0`) exercise edilmedi. **PR-3B prod activation (cluster-admin CRB canlıya) hâlâ
+operator-gated** — mekanizma drill ile de-risk edildi.
+
 ## Live Delta — D29 Tier-2 Smoke Network-Path Fix (1 PR Merged, 2026-05-18)
 
 PR-4A handoff (`session-handoff-2026-05-18-prod-deploy-pr4a.md`) §5 Tier-2
