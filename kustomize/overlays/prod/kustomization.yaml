@@ -141,7 +141,7 @@ images:
   # 25294004654 (sha-940c4c4) prod variant manifest digest pinned below.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
-    digest: sha256:d8b7b6960e294ce0352c733308937182741c05e7019a648f17be25712f93beb8
+    digest: sha256:6d926376a58bfd47c3d5059e0e0025f8cb38d5c7fbf80767461b2eea136647f4
 
   # Faz 23.9 prod cutover (2026-05-08): notification-orchestrator
   # canonical activation. Pin remains sha-204042d (PR #126 era) until D29

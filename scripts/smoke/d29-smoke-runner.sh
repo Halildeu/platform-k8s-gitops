@@ -46,8 +46,10 @@ TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 TS_FILE=$(date -u +%Y%m%dT%H%M%SZ)
 REPORT="/tmp/smoke-report-${ENV}-${TS_FILE}.json"
 
-# Services to validate per D29 tiers
-JWT_SERVICES=(api-gateway user-service variant-service permission-service schema-service report-service)
+# Services validated per D29 tier — covers every backend service subject to
+# prod promotion (not only JWT-decoding services), so a prod-realign PR's full
+# digest set has per-service D29 evidence rather than a representative subset.
+D29_SERVICES=(api-gateway user-service variant-service permission-service schema-service report-service auth-service core-data-service notification-orchestrator)
 
 # Expected KC issuer per env (matches check_pr_time.sh Check 3)
 case "$ENV" in
@@ -69,7 +71,7 @@ tier_up() {
   local details=""
   local fail_count=0
 
-  for svc in "${JWT_SERVICES[@]}"; do
+  for svc in "${D29_SERVICES[@]}"; do
     local pod_status
     pod_status=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get pod \
       -l "app.kubernetes.io/name=$svc" \
@@ -106,7 +108,7 @@ tier_up() {
   fi
 
   if [[ -z "$details" ]]; then
-    details="all ${#JWT_SERVICES[@]} services Running+Ready"
+    details="all ${#D29_SERVICES[@]} services Running+Ready"
   fi
 
   TIER_UP_STATUS="$status"
@@ -209,7 +211,7 @@ tier_functional() {
   local details="" red_count=0 amber_count=0
   local checked_endpoints=()
 
-  for svc in "${JWT_SERVICES[@]}"; do
+  for svc in "${D29_SERVICES[@]}"; do
     local svc_ep
     case "$svc" in
       api-gateway) svc_ep="/actuator/health" ;;
@@ -218,6 +220,9 @@ tier_functional() {
       permission-service) svc_ep="/api/v1/permissions" ;;
       schema-service) svc_ep="/api/v1/schema/snapshot" ;;
       report-service) svc_ep="/api/v1/reports" ;;
+      auth-service) svc_ep="/actuator/health" ;;
+      core-data-service) svc_ep="/actuator/health" ;;
+      notification-orchestrator) svc_ep="/actuator/health" ;;
       *) continue ;;
     esac
     checked_endpoints+=("$svc_ep")
@@ -251,7 +256,7 @@ tier_functional() {
   fi
 
   if [[ -z "$details" ]]; then
-    details="all ${#JWT_SERVICES[@]} endpoints returned 200/401/403 (auth chain intact)"
+    details="all ${#D29_SERVICES[@]} endpoints returned 200/401/403 (auth chain intact)"
   fi
 
   TIER_FN_STATUS="$status"
@@ -269,10 +274,17 @@ tier_secured() {
   local details=""
   local fail_count=0
 
-  for svc in "${JWT_SERVICES[@]}"; do
+  for svc in "${D29_SERVICES[@]}"; do
     local cm_issuer
     cm_issuer=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get cm "${svc}-config" \
       -o jsonpath='{.data.KEYCLOAK_ISSUER_URI}' 2>/dev/null || echo "")
+
+    # Fallback: services that carry the issuer under SECURITY_JWT_ISSUER
+    # (notification-orchestrator convention) rather than KEYCLOAK_ISSUER_URI.
+    if [[ -z "$cm_issuer" ]]; then
+      cm_issuer=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get cm "${svc}-config" \
+        -o jsonpath='{.data.SECURITY_JWT_ISSUER}' 2>/dev/null || echo "")
+    fi
 
     if [[ -z "$cm_issuer" ]]; then
       details="${details}${svc}=MISSING;"
@@ -306,7 +318,7 @@ tier_secured() {
   fi
 
   if [[ -z "$details" ]]; then
-    details="all ${#JWT_SERVICES[@]} services have correct KC issuer for $ENV"
+    details="all ${#D29_SERVICES[@]} services have correct KC issuer for $ENV"
   fi
 
   TIER_SECURED_STATUS="$status"

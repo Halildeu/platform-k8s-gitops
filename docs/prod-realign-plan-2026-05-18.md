@@ -150,3 +150,46 @@ ArgoCD sync (auto-sync prod'da kapalı, D30 disiplini). Operatör setup:
 - frontend↔backend skew: koordineli realign (hepsi birlikte) skew'i önler.
 - Vault: yeni servisler yeni secret key isteyebilir → prod ESO + Vault yazma
   (blocker — RB-vault-root-token-recovery.md).
+
+---
+
+## 6. Güncelleme — D29 evidence + frontend split (2026-05-18, session devamı)
+
+PR #816 ilk halinde 9 digest (8 backend + frontend) bump'lıyordu. CI'da
+`D29 evidence required for prod digest changes` gate'i blokladı: prod overlay'e
+giren her yeni digest için `release-candidates/<repo>/<sha>.json` ledger
+entry'sinde D29-GREEN test smoke kanıtı şart.
+
+**Codex istişare (thread `019e3c3b`) — verdict:**
+- **Backend (8 digest):** manuel `generate-ledger.sh` + gerçek
+  `d29-smoke-runner.sh test` + ledger damgası = meşru unblock (kanıt gerçek
+  cluster smoke'undan; uydurma değil). → AGREE.
+- **Frontend prod-variant:** PR #816'dan **çıkarıldı** (REVISE → Opsiyon A).
+  Sebep: prod-variant digest `d8b7b696` hiçbir test cluster'da deployed değil
+  (k3d-test `-testai` variant `caf8639f` çalıştırıyor — ayrı imaj, aynı kaynak,
+  env-baking farkı). testai-variant smoke'u prod-variant için D29 kanıtı
+  sayılmaz (Codex: B=RED). Frontend prod promotion ayrı PR + kendi kanıt
+  yolu (gerçek prod-variant smoke veya `source-parity-with-test-verified-sibling`
+  evidence-class governance PR'ı — Codex Opsiyon C).
+
+**Yapılanlar (bu commit):**
+- Prod overlay frontend digest geri alındı (`d8b7b696` → mevcut prod
+  `6d926376`); PR #816 artık **backend-only realign** (8 digest).
+- `d29-smoke-runner.sh` genişletildi: `D29_SERVICES` artık prod promotion'a
+  giren tüm backend servislerini kapsıyor (auth-service, core-data-service,
+  notification-orchestrator eklendi) + Tier Secured `SECURITY_JWT_ISSUER`
+  fallback (notification-orchestrator `KEYCLOAK_ISSUER_URI` taşımıyor).
+- k3d-test'te genişletilmiş D29 smoke: **9/9 servis GREEN** (Up/Functional/
+  Secured/Zanzibar), report `2026-05-18T18:44:43Z`.
+- 8 `release-candidates/platform-backend/<digest>.json` ledger entry üretildi.
+  `git_sha` = OCI manifest digest-hex (şema `git_sha` alanı "64 = OCI manifest
+  digest"i açıkça tanıyor) — monorepo'da 4 servis tek commit `fa3cbbd5`'ten
+  build edildiği için git-commit-SHA dosya adı çakışması yaratıyordu; digest-hex
+  her artefakt için tekil. `promotion.test.smoke_evidence` D29 raporundan
+  damgalandı.
+- `gate-evidence-check.py` lokal: 8/8 digest D29-kanıtlı → gate satisfied.
+
+**Frontend follow-up (Faz 1b — ayrı PR):** prod-variant `d8b7b696` (build
+`sha-e6eeb62`, platform-web PR #596) prod promotion'ı; ya gerçek prod-variant
+pre-prod smoke kanıt yolu kurulur ya da env-baked variant'lar için ayrı
+evidence-class governance PR'ı açılır.
