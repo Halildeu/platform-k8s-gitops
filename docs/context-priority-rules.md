@@ -246,6 +246,7 @@ Aktif iş durumu, açık risk/issue ve milestone/gate `Status`'ü **[platform Ro
 - **Oturum ritüeli.** Oturum başında board okunur, uygun iş claim edilir (`scripts/board-sync.sh`); çalışırken `Status=In Progress` + kanıt comment'i; bitince acceptance evidence sonrası deliberate close → `Done`.
 - **Overclaim guard.** `Done` yalnız accepted/live (§4.1 D29 ile uyumlu — `source-ready ≠ live-deployed ≠ accepted`). PR-merge bir runtime issue'sunu otomatik `Done` yapmaz; runtime tracking issue'sunda PR body `Tracked by #N` kullanır, `Closes/Fixes/Resolves` değil. `Needs Verify` acceptance kuyruğudur.
 - **Curated board.** Board roadmap/risk yüzeyidir, intake kuyruğu değil. Normal code PR board'a girmez; roadmap-visible iş `project-roadmap` label ile alınır.
+- **Backlog lane (iter-3).** İş sırasında keşfedilen scope-dışı iş/sorun `board-sync.sh backlog-add` ile `Backlog` statüsünde yakalanır — kaybolmaz, ama eligible değil (roadmap view kirlenmez); triage'da `Todo`ya alınır. `spawn_task` chip'i tek başına yeterli değil (ephemeral; board truth üretmez).
 - **Source-of-truth sınırı.** Board aktif iş `Status`'ü için canonical; `current-state.md` runtime truth kalır; bir item iki yerde bağımsız yürütülmez.
 
 Detaylı protokol (agent-state şablonu, claim protokolü, comment taxonomy, eligible-work filtresi): **[docs/board-protocol.md](board-protocol.md)**.
