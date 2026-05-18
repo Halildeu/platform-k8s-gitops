@@ -1,15 +1,28 @@
 #!/usr/bin/env bash
 #
-# setup-m365-broker.sh — ADR-0021 Microsoft 365 SSO broker apply.
+# setup-m365-broker.sh — ADR-0021 Microsoft 365 SSO broker apply (v2 auto-provision).
 #
-# Codex architecture consensus: thread 019e365b.
+# Codex architecture consensus: thread 019e365b (v1 link-only), 019e3b72 (v2).
 # Runbook: docs/operations/RUNBOOKS/RB-m365-sso-broker.md
 #
-# Keycloak `serban`/`platform-test` realm'ine Microsoft Entra ID OIDC
-# identity provider'ı (alias `microsoft`) idempotent desired-state apply
-# eder: IdP + claim mapper'lar (tid/oid) + v1 link-only first-broker-login
-# flow. v1 = link-only — federe giriş yalnız MEVCUT kullanıcıya bağlanır
-# (auto-create yok; SPI yok). ADR-0021 D4.
+# Keycloak `serban`/`platform-test` realm'ine Microsoft Entra ID OIDC identity
+# provider'ı (alias `microsoft`) idempotent desired-state apply eder:
+#   - single-tenant Entra OIDC IdP (tenant hard-gate)
+#   - claim mapper'lar (tid → entra_tid, oid → entra_oid)
+#   - hardcoded default-role mapper (yeni kullanıcı → `viewer` salt-okunur)
+#   - v2 auto-provision first-broker-login flow
+#
+# v2 = AUTO-PROVISION (ADR-0021 D4 v2): izinli Entra tenant'ından M365 ile giren
+# çalışana eşleşen platform hesabı YOKSA otomatik açılır; eşleşen hesap VARSA
+# link akışı (re-authentication) çalışır. Tenant hard-gate: IdP endpoint'leri
+# tek-tenant (`/{tid}/`) — başka tenant Microsoft tarafında durur, Keycloak'a
+# hiç ulaşmaz. Yeni kullanıcı varsayılan `viewer` (salt-okunur) realm rolü alır;
+# yetki yükseltme admin kararıdır.
+#
+# NOT (kapsam): bu script Keycloak katmanını kurar — kullanıcının platforma
+# GİRMESİNİ sağlar. Uygulama veri-görünürlüğü (OpenFGA explicit-scope) ayrı bir
+# katmandır; auto-provision edilen kullanıcının veri görüp görmediği browser
+# smoke'ta (`/api/v1/authz/me` + salt-okunur route) doğrulanır.
 #
 # Usage:
 #   # Test realm (default)
@@ -26,13 +39,18 @@
 #   # Verify-only (no mutation)
 #   VERIFY_ONLY=1 bash scripts/keycloak/setup-m365-broker.sh
 #
+#   # Eski v1 link-only flow'u da sil (opsiyonel). PROD'da rollback için
+#   # varsayılan KORUNUR (Codex 019e3b72); yalnız stabilizasyon sonrası ayrı
+#   # run ile, IdP yeni flow'a bağlandığı doğrulandıktan sonra silinir.
+#   CLEANUP_OLD_M365_LINK_ONLY_FLOW=1 bash scripts/keycloak/setup-m365-broker.sh
+#
 # Exit codes:
 #   0  PASS — desired state + verify OK
 #   1  ERROR — input / login / config
 #   3  VERIFY_FAILED — apply ran but read-back assertion failed
 #
-# HARD RULE: client secret stdout'a/log'a YAZILMAZ (yalnız kcadm argv +
-# IdP config). Idempotent — re-run safe. Operator credentials'a dokunmaz.
+# HARD RULE: client secret stdout'a/log'a YAZILMAZ (yalnız kcadm argv + IdP
+# config). Idempotent — re-run safe. Operator credentials'a dokunmaz.
 #
 set -euo pipefail
 
@@ -40,17 +58,18 @@ REALM="${REALM:-platform-test}"
 M365_CONFIG="${M365_CONFIG:-scripts/keycloak/m365-broker-config.json}"
 M365_CLIENT_SECRET="${M365_CLIENT_SECRET:-}"
 VERIFY_ONLY="${VERIFY_ONLY:-0}"
+CLEANUP_OLD="${CLEANUP_OLD_M365_LINK_ONLY_FLOW:-0}"
 
 ALIAS="microsoft"
-FBL_FLOW="first broker login m365 link-only"
+# v2 auto-provision flow (v1 link-only flow'undan ayrı isim — rollback için
+# eski flow korunabilsin; Codex 019e3b72).
+FBL_FLOW="first broker login m365 auto-provision"
+OLD_FBL_FLOW="first broker login m365 link-only"
 # kcadm path segments must URL-encode spaces (KC 26 kcadm rejects raw spaces).
 FBL_FLOW_ENC="${FBL_FLOW// /%20}"
-
-# Entra multi-tenant /organizations/ endpoints (ADR-0021 — work/school accounts)
-AUTH_URL="https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize"
-TOKEN_URL="https://login.microsoftonline.com/organizations/oauth2/v2.0/token"
-JWKS_URL="https://login.microsoftonline.com/organizations/discovery/v2.0/keys"
-USERINFO_URL="https://graph.microsoft.com/oidc/userinfo"
+# Yeni kullanıcıya verilecek varsayılan realm rolü (salt-okunur, least-privilege).
+DEFAULT_ROLE="viewer"
+ROLE_MAPPER_NAME="default-role-${DEFAULT_ROLE}"
 
 # ─── Pre-flight: realm → container ─────────────────────────────────────────
 case "$REALM" in
@@ -68,7 +87,7 @@ esac
 KC="docker exec ${KC_CONTAINER} /opt/keycloak/bin/kcadm.sh"
 ADMIN_PASS_FILE="host-compose/keycloak/${ENV}/secrets/kc_admin_password.txt"
 
-# ─── Pre-flight: config + secret ───────────────────────────────────────────
+# ─── Pre-flight: config + secret + tenant hard-gate ────────────────────────
 if [ ! -f "$M365_CONFIG" ]; then
   echo "ERROR: config not found: $M365_CONFIG" >&2
   echo "       m365-broker-config-form.html ile üret (RB-m365-sso-broker.md Adım 2)" >&2
@@ -78,7 +97,28 @@ fi
 CLIENT_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["entra"]["client_id"])' "$M365_CONFIG" 2>/dev/null || echo "")
 SCOPES=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["entra"].get("default_scopes","openid profile email"))' "$M365_CONFIG" 2>/dev/null || echo "openid profile email")
 DISPLAY=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["broker"].get("display_name","Microsoft 365"))' "$M365_CONFIG" 2>/dev/null || echo "Microsoft 365")
-TENANTS=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(",".join(t["tid"] for t in d.get("allowed_tenants",[])))' "$M365_CONFIG" 2>/dev/null || echo "")
+
+# v2 tenant hard-gate: tam olarak 1 izinli tenant beklenir (Codex 019e3b72).
+# Tek-tenant endpoint'le auto-create güvenli açılır — başka tenant Microsoft
+# tarafında durur. Birden çok tenant gerekirse ayrı IdP alias tasarımı gerek.
+TENANT_COUNT=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1])).get("allowed_tenants",[])))' "$M365_CONFIG" 2>/dev/null || echo "0")
+if [ "$TENANT_COUNT" != "1" ]; then
+  echo "ERROR: v2 auto-provision tam olarak 1 allowed_tenants kaydı gerektirir (got: $TENANT_COUNT)" >&2
+  echo "       Çok-tenant senaryosu için tenant başına ayrı IdP alias tasarımı gerekir." >&2
+  exit 1
+fi
+TENANT_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["allowed_tenants"][0]["tid"])' "$M365_CONFIG" 2>/dev/null || echo "")
+if ! echo "$TENANT_ID" | grep -qE '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'; then
+  echo "ERROR: allowed_tenants[0].tid GUID formatında değil: '$TENANT_ID'" >&2
+  exit 1
+fi
+
+# Single-tenant Entra OIDC endpoints (v2 hard-gate — Codex 019e3b72).
+AUTH_URL="https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize"
+TOKEN_URL="https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token"
+JWKS_URL="https://login.microsoftonline.com/${TENANT_ID}/discovery/v2.0/keys"
+ISSUER="https://login.microsoftonline.com/${TENANT_ID}/v2.0"
+USERINFO_URL="https://graph.microsoft.com/oidc/userinfo"
 
 if [ -z "$CLIENT_ID" ]; then
   echo "ERROR: config'ten entra.client_id okunamadı: $M365_CONFIG" >&2
@@ -90,9 +130,10 @@ if [ "$VERIFY_ONLY" != "1" ] && [ -z "$M365_CLIENT_SECRET" ]; then
   exit 1
 fi
 
-echo "=== M365 broker apply — realm=$REALM container=$KC_CONTAINER ==="
-echo "  client_id:       $CLIENT_ID"
-echo "  allowed tenants: ${TENANTS:-<none>}  (v1 link-only — audit; v2 SPI hard-gate)"
+echo "=== M365 broker apply (v2 auto-provision) — realm=$REALM container=$KC_CONTAINER ==="
+echo "  client_id:      $CLIENT_ID"
+echo "  allowed tenant: $TENANT_ID  (single-tenant hard-gate — /{tid}/ endpoints)"
+echo "  default role:   $DEFAULT_ROLE  (yeni kullanıcı — least-privilege)"
 
 # ─── 1. Login (master realm) ───────────────────────────────────────────────
 echo ""
@@ -111,17 +152,20 @@ $KC config credentials --server http://localhost:8080 --realm master \
 unset ADMIN_PASS
 echo "✓ Logged in (realm: $REALM)"
 
-# ─── 2. Link-only first-broker-login flow ──────────────────────────────────
-# ADR-0021 D4 link-only (Codex 019e3796):
-#   - idp-create-user-if-unique       DISABLED → federe auto-create yok
-#   - idp-detect-existing-broker-user REQUIRED → mevcut kullanıcı tespiti
-#       (create-if-unique disable edilince built-in flow'un tespit adımı da
-#        kapanır; ayrı detect authenticator şart — yoksa eşleşen kullanıcı
-#        bulunamaz, flow AuthenticationFlowException ile düşer)
-#   - Handle Existing Account         REQUIRED, detect ondan ÖNCE çalışır
-#   - idp-email-verification          DISABLED → re-authentication ile doğrula
+# ─── 2. Auto-provision first-broker-login flow ─────────────────────────────
+# ADR-0021 D4 v2 (Codex 019e3b72):
+#   v2 flow = built-in "first broker login" kopyası, STOCK haliyle bırakılır:
+#     - Create User If Unique  ALTERNATIVE → eşleşmeyen federe kullanıcı OTOMATİK
+#         oluşturulur; eşleşen varsa EXISTING_USER_INFO set edilir, "Handle
+#         Existing Account"a devreder (built-in detection — ayrı detect YOK).
+#     - Handle Existing Account ALTERNATIVE → yalnız duplicate bulununca çalışır.
+#     - idp-detect-existing-broker-user → flow'da BULUNMAZ (create-if-unique
+#         zaten detection yapar; ayrı REQUIRED detect yeni-kullanıcı branch'ini
+#         kırar — Codex 019e3b72).
+#   Tek customization: idp-email-verification DISABLED (realm SMTP-bağımsız;
+#     existing-account linking re-authentication ile doğrulanır).
 echo ""
-echo "=== Step 2/5: Link-only first-broker-login flow ==="
+echo "=== Step 2/5: Auto-provision first-broker-login flow ==="
 FLOW_EXISTS=$($KC get authentication/flows -r "$REALM" 2>/dev/null \
   | python3 -c 'import json,sys; print("yes" if any(f.get("alias")==sys.argv[1] for f in json.load(sys.stdin)) else "no")' "$FBL_FLOW" 2>/dev/null || echo "no")
 
@@ -130,87 +174,62 @@ if [ "$VERIFY_ONLY" != "1" ]; then
     $KC create "authentication/flows/first%20broker%20login/copy" -r "$REALM" \
       -s "newName=$FBL_FLOW" >/dev/null 2>&1 \
       || { echo "ERROR: first-broker-login flow copy failed" >&2; exit 1; }
-    echo "✓ Flow copied: $FBL_FLOW"
+    echo "✓ Flow copied (stock built-in): $FBL_FLOW"
   else
     echo "✓ Flow exists: $FBL_FLOW"
   fi
-  # Link-only + SMTP-bağımsız — şu execution'lar DISABLED:
-  #   idp-create-user-if-unique → eşleşmeyen federe kullanıcı oluşturulmaz
-  #   idp-email-verification    → linking email-verify yerine re-authentication
-  #     ile yapılır (realm SMTP'siz olabilir; kullanıcı mevcut hesap parolasıyla
-  #     doğrular — kör email-link değil; Codex 019e365b).
-  for PROV in idp-create-user-if-unique idp-email-verification; do
-    EXEC_ID=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
-      | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("providerId")==sys.argv[1]]; print(m[0]["id"] if m else "")' "$PROV" 2>/dev/null || echo "")
-    if [ -n "$EXEC_ID" ]; then
-      $KC update "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" \
-        -b "{\"id\":\"$EXEC_ID\",\"requirement\":\"DISABLED\"}" >/dev/null 2>&1 \
-        || { echo "ERROR: $PROV disable failed" >&2; exit 1; }
-      echo "✓ '$PROV' → DISABLED"
-    else
-      echo "ERROR: '$PROV' execution flow'da bulunamadı — link-only invariant" >&2
-      echo "       kurulamaz (KC 26 flow yapısı farklı olabilir; manuel inceleme)" >&2
+
+  # update_exec_req_by_provider <providerId> <requirement> <missing-mode>
+  #   missing-mode = "error" → execution yoksa hata; "skip" → no-op.
+  update_exec_req_by_provider() {
+    local prov="$1" req="$2" missing="${3:-error}" eid
+    eid=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("providerId")==sys.argv[1]]; print(m[0]["id"] if m else "")' "$prov" 2>/dev/null || echo "")
+    if [ -z "$eid" ]; then
+      if [ "$missing" = "skip" ]; then
+        echo "  · '$prov' flow'da yok — skip (beklenen)"
+        return 0
+      fi
+      echo "ERROR: '$prov' execution flow'da bulunamadı" >&2
       exit 1
     fi
-  done
+    $KC update "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" \
+      -b "{\"id\":\"$eid\",\"requirement\":\"$req\"}" >/dev/null 2>&1 \
+      || { echo "ERROR: '$prov' → $req set edilemedi" >&2; exit 1; }
+    echo "✓ '$prov' → $req"
+  }
 
-  # ── Mevcut-kullanıcı tespiti — idp-detect-existing-broker-user (Codex 019e3796)
-  # idp-create-user-if-unique DISABLED edilince built-in flow'un tespit adımı da
-  # kapanır → EXISTING_USER_INFO set edilmez → idp-confirm-link "No duplication
-  # detected" der, flow düşer. Çözüm: detect authenticator'ı "User creation or
-  # linking" subflow'una REQUIRED ekle; "Handle Existing Account" REQUIRED yap;
-  # detect ondan önce çalışsın.
-  # NOT: `authentication/flows` yalnız TOP-LEVEL flow listeler — subflow alias'ı
-  # oradan map edilemez; subflow execution'ının displayName'i = subflow alias.
-  UCL_ALIAS=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("authenticationFlow") and "User creation or linking" in (x.get("displayName") or "")]; print(m[0]["displayName"] if m else "")' 2>/dev/null || echo "")
-  [ -n "$UCL_ALIAS" ] || { echo "ERROR: 'User creation or linking' subflow bulunamadı" >&2; exit 1; }
-  UCL_ENC="${UCL_ALIAS// /%20}"
+  # update_subflow_req <displayName-substring> <requirement>
+  update_subflow_req() {
+    local name="$1" req="$2" sid
+    sid=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("authenticationFlow") and sys.argv[1] in (x.get("displayName") or "")]; print(m[0]["id"] if m else "")' "$name" 2>/dev/null || echo "")
+    [ -n "$sid" ] || { echo "ERROR: '$name' subflow bulunamadı" >&2; exit 1; }
+    $KC update "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" \
+      -b "{\"id\":\"$sid\",\"requirement\":\"$req\"}" >/dev/null 2>&1 \
+      || { echo "ERROR: '$name' subflow → $req set edilemedi" >&2; exit 1; }
+    echo "✓ subflow '$name' → $req"
+  }
 
-  DETECT_ID=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("providerId")=="idp-detect-existing-broker-user"]; print(m[0]["id"] if m else "")' 2>/dev/null || echo "")
-  if [ -z "$DETECT_ID" ]; then
-    $KC create "authentication/flows/$UCL_ENC/executions/execution" -r "$REALM" \
-      -s provider=idp-detect-existing-broker-user >/dev/null 2>&1 \
-      || { echo "ERROR: idp-detect-existing-broker-user eklenemedi" >&2; exit 1; }
-    DETECT_ID=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
-      | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("providerId")=="idp-detect-existing-broker-user"]; print(m[0]["id"] if m else "")' 2>/dev/null || echo "")
-    echo "✓ 'idp-detect-existing-broker-user' eklendi"
-  else
-    echo "✓ 'idp-detect-existing-broker-user' mevcut"
-  fi
-  [ -n "$DETECT_ID" ] || { echo "ERROR: detect execution id alınamadı" >&2; exit 1; }
-  $KC update "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" \
-    -b "{\"id\":\"$DETECT_ID\",\"requirement\":\"REQUIRED\"}" >/dev/null 2>&1 \
-    || { echo "ERROR: detect REQUIRED set edilemedi" >&2; exit 1; }
-  echo "✓ 'idp-detect-existing-broker-user' → REQUIRED"
-
-  HANDLE_ID=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("authenticationFlow") and "Handle Existing Account" in (x.get("displayName") or "")]; print(m[0]["id"] if m else "")' 2>/dev/null || echo "")
-  [ -n "$HANDLE_ID" ] || { echo "ERROR: 'Handle Existing Account' subflow bulunamadı" >&2; exit 1; }
-  $KC update "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" \
-    -b "{\"id\":\"$HANDLE_ID\",\"requirement\":\"REQUIRED\"}" >/dev/null 2>&1 \
-    || { echo "ERROR: 'Handle Existing Account' REQUIRED set edilemedi" >&2; exit 1; }
-  echo "✓ 'Handle Existing Account' → REQUIRED"
-
-  # detect, "Handle Existing Account"tan ÖNCE çalışmalı (priority raise loop)
-  for _ in 1 2 3 4 5 6; do
-    DI=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
-      | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("providerId")=="idp-detect-existing-broker-user"]; print(m[0]["index"] if m else 999)' 2>/dev/null || echo 999)
-    HI=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
-      | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("authenticationFlow") and "Handle Existing Account" in (x.get("displayName") or "")]; print(m[0]["index"] if m else -1)' 2>/dev/null || echo -1)
-    [ "$DI" -lt "$HI" ] && break
-    $KC create "authentication/executions/$DETECT_ID/raise-priority" -r "$REALM" >/dev/null 2>&1 \
-      || { echo "ERROR: detect priority raise failed" >&2; exit 1; }
-  done
-  [ "$DI" -lt "$HI" ] \
-    || { echo "ERROR: detect, 'Handle Existing Account' önüne alınamadı (index $DI >= $HI)" >&2; exit 1; }
-  echo "✓ detect → 'Handle Existing Account' önünde (priority OK)"
+  # Stock auto-provision shape'e converge (idempotent — drift guard):
+  #   create-if-unique ALTERNATIVE, Handle Existing Account ALTERNATIVE,
+  #   email-verification DISABLED. Eski link-only run kalıntısı varsa
+  #   idp-detect-existing-broker-user DISABLED'a çekilir (Codex: REQUIRED kalırsa
+  #   yeni-kullanıcı branch'i kırılır).
+  update_exec_req_by_provider idp-create-user-if-unique ALTERNATIVE error
+  update_exec_req_by_provider idp-email-verification    DISABLED    error
+  update_exec_req_by_provider idp-detect-existing-broker-user DISABLED skip
+  update_subflow_req "Handle Existing Account" ALTERNATIVE
 fi
 
-# ─── 3. Identity provider (desired-state create/update) ────────────────────
+# ── Opsiyonel: eski v1 link-only flow cleanup ─────────────────────────────
+# PROD'da varsayılan KORUNUR (rollback: IdP'yi eski flow'a geri bağla).
+# CLEANUP_OLD_M365_LINK_ONLY_FLOW=1 ile, IdP yeni flow'a bağlandığı
+# doğrulandıktan SONRA silinir (Step 3 sonrası).
+
+# ─── 3. Identity provider (single-tenant, desired-state) ───────────────────
 echo ""
-echo "=== Step 3/5: Microsoft Entra OIDC identity provider ==="
+echo "=== Step 3/5: Microsoft Entra OIDC identity provider (single-tenant) ==="
 IDP_EXISTS=$($KC get "identity-provider/instances/$ALIAS" -r "$REALM" --fields alias 2>/dev/null \
   | python3 -c 'import json,sys
 try: print("yes" if json.load(sys.stdin).get("alias") else "no")
@@ -221,14 +240,15 @@ if [ "$VERIFY_ONLY" != "1" ]; then
   IDP_JSON_CTR="/tmp/m365-idp-$$.json"
   trap 'rm -f "$IDP_JSON_HOST" "${UP_HOST:-}"; docker exec "$KC_CONTAINER" rm -f "$IDP_JSON_CTR" "${UP_CTR:-}" >/dev/null 2>&1 || true' EXIT
 
-  # Tüm değerler env üzerinden geçer (quoted heredoc — shell interpolation
-  # yok). clientSecret IdP config'ine girer; stdout'a/log'a yazılmaz.
-  # multi-tenant: issuer per-tenant değişir → sabit issuer set edilmez
-  # (signature JWKS ile doğrulanır; tid allowlist v2 SPI hard-gate).
+  # Tüm değerler env üzerinden geçer (quoted heredoc — shell interpolation yok).
+  # clientSecret IdP config'ine girer; stdout'a/log'a yazılmaz.
+  # v2: single-tenant → issuer sabit, validate edilebilir; trustEmail=true →
+  # Entra (authoritative) email'iyle auto-created kullanıcı emailVerified gelir.
   export M365_ALIAS="$ALIAS" M365_DISPLAY="$DISPLAY" M365_CLIENT_ID="$CLIENT_ID" \
          M365_SCOPES="$SCOPES" M365_FBL_FLOW="$FBL_FLOW" \
          M365_AUTH_URL="$AUTH_URL" M365_TOKEN_URL="$TOKEN_URL" \
-         M365_JWKS_URL="$JWKS_URL" M365_USERINFO_URL="$USERINFO_URL"
+         M365_JWKS_URL="$JWKS_URL" M365_USERINFO_URL="$USERINFO_URL" \
+         M365_ISSUER="$ISSUER"
   python3 - "$IDP_JSON_HOST" <<'PYEOF'
 import json, os, sys
 idp = {
@@ -236,7 +256,9 @@ idp = {
   "displayName": os.environ["M365_DISPLAY"],
   "providerId": "oidc",
   "enabled": True,
-  "trustEmail": False,
+  # v2: Entra (single-tenant) email'i authoritative — auto-created kullanıcı
+  # emailVerified=true gelir (Codex 019e3b72).
+  "trustEmail": True,
   "storeToken": False,
   "linkOnly": False,
   "firstBrokerLoginFlowAlias": os.environ["M365_FBL_FLOW"],
@@ -248,24 +270,24 @@ idp = {
     "tokenUrl": os.environ["M365_TOKEN_URL"],
     "jwksUrl": os.environ["M365_JWKS_URL"],
     "userInfoUrl": os.environ["M365_USERINFO_URL"],
+    # Single-tenant issuer — JWKS signature'a ek olarak issuer doğrulaması
+    # (defense-in-depth, Codex 019e3b72).
+    "issuer": os.environ["M365_ISSUER"],
     "useJwksUrl": "true",
     "validateSignature": "true",
     "defaultScope": os.environ["M365_SCOPES"],
     "syncMode": "IMPORT",
     "pkceEnabled": "true",
     "pkceMethod": "S256",
-    # prompt=select_account: Microsoft her giriste hesap secici gosterir —
-    # kullanici dogru M365 hesabini secebilir / "use another account" yapabilir.
-    # Olmadan, tarayicida acik MS hesabi otomatik kullanilir (hesap degistirilemez).
+    # prompt=select_account: Microsoft her giriste hesap secici gosterir.
     "prompt": "select_account",
   },
 }
 json.dump(idp, open(sys.argv[1], "w"))
 PYEOF
 
-  # Host temp dosyası 0600 kalır (clientSecret içerir). Container-içi kopya
-  # docker exec -i ile keycloak uid'i altında, umask 077 ile oluşturulur —
-  # kcadm okur, host'ta world-readable secret penceresi yok (Codex 019e365b).
+  # Host temp 0600 kalır (clientSecret içerir). Container-içi kopya keycloak
+  # uid'i altında umask 077 ile — kcadm okur, world-readable secret penceresi yok.
   docker exec -i "$KC_CONTAINER" sh -lc "umask 077; cat > '$IDP_JSON_CTR'" < "$IDP_JSON_HOST" \
     || { echo "ERROR: IdP JSON container'a yazılamadı" >&2; exit 1; }
 
@@ -278,65 +300,97 @@ PYEOF
       || { echo "ERROR: IdP create failed" >&2; exit 1; }
     echo "✓ IdP '$ALIAS' created"
   fi
+
+  # IdP yeni flow'a bağlandı — şimdi (istenirse) eski link-only flow silinebilir.
+  if [ "$CLEANUP_OLD" = "1" ]; then
+    BOUND_FLOW=$($KC get "identity-provider/instances/$ALIAS" -r "$REALM" 2>/dev/null \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin).get("firstBrokerLoginFlowAlias",""))' 2>/dev/null || echo "")
+    if [ "$BOUND_FLOW" = "$FBL_FLOW" ]; then
+      OLD_FLOW_ID=$($KC get authentication/flows -r "$REALM" 2>/dev/null \
+        | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[f for f in d if f.get("alias")==sys.argv[1]]; print(m[0]["id"] if m else "")' "$OLD_FBL_FLOW" 2>/dev/null || echo "")
+      if [ -n "$OLD_FLOW_ID" ]; then
+        $KC delete "authentication/flows/$OLD_FLOW_ID" -r "$REALM" >/dev/null 2>&1 \
+          || { echo "ERROR: eski flow '$OLD_FBL_FLOW' silinemedi" >&2; exit 1; }
+        echo "✓ Eski flow silindi: $OLD_FBL_FLOW"
+      else
+        echo "  · Eski flow '$OLD_FBL_FLOW' zaten yok"
+      fi
+    else
+      echo "ERROR: IdP beklenen flow'a bağlı değil ('$BOUND_FLOW') — cleanup iptal" >&2
+      exit 1
+    fi
+  fi
 fi
 
-# ─── 4. Claim mappers (tid → entra_tid, oid → entra_oid) ───────────────────
+# ─── 4. Mappers: claim (tid/oid) + hardcoded default role ──────────────────
 echo ""
-echo "=== Step 4/5: Claim mappers + user-profile attributes ==="
-upsert_attr_mapper() {
-  local name="$1" claim="$2" attr="$3"
+echo "=== Step 4/5: Claim mappers + default-role mapper + user-profile ==="
+
+# update path PUT body'sinde 'id' bekler — id'siz body re-apply'da "update
+# failed" verir (idempotency). create path'te id konmaz.
+upsert_idp_mapper() {
+  # upsert_idp_mapper <name> <mapperType> <config-json>
+  local name="$1" mtype="$2" cfg="$3"
   [ "$VERIFY_ONLY" = "1" ] && return 0
-  local existing
+  local existing mh mc
   existing=$($KC get "identity-provider/instances/$ALIAS/mappers" -r "$REALM" 2>/dev/null \
     | python3 -c 'import json,sys; d=json.load(sys.stdin); m=[x for x in d if x.get("name")==sys.argv[1]]; print(m[0]["id"] if m else "")' "$name" 2>/dev/null || echo "")
-  local mh mc
   mh="$(mktemp /tmp/_m365_map.XXXXXX.json)"
   mc="/tmp/m365-map-$$-${name}.json"
-  python3 - "$mh" "$name" "$claim" "$attr" "$existing" <<'PYEOF'
-import json, sys
-_, path, name, claim, attr, existing = sys.argv
+  M365_MAP_NAME="$name" M365_MAP_TYPE="$mtype" M365_MAP_CFG="$cfg" M365_MAP_ID="$existing" \
+    python3 - "$mh" <<'PYEOF'
+import json, os, sys
 m = {
-  "name": name,
+  "name": os.environ["M365_MAP_NAME"],
   "identityProviderAlias": "microsoft",
-  "identityProviderMapper": "oidc-user-attribute-idp-mapper",
-  "config": {
-    # FORCE: her federe giriş attribute'u yeniden yazar; link-only v1'de
-    # kullanıcı zaten mevcut, IMPORT semantiği tetiklenmez (Codex 019e365b P2).
-    "syncMode": "FORCE",
-    "claim": claim,
-    "user.attribute": attr
-  }
+  "identityProviderMapper": os.environ["M365_MAP_TYPE"],
+  "config": json.loads(os.environ["M365_MAP_CFG"]),
 }
-# Update path'inde (mapper mevcut) Keycloak PUT body'sinde 'id' bekler —
-# id'siz body re-apply'da "update failed" verir (idempotency bug fix).
+existing = os.environ.get("M365_MAP_ID", "")
 if existing:
   m["id"] = existing
-json.dump(m, open(path, "w"))
+json.dump(m, open(sys.argv[1], "w"))
 PYEOF
-  # Container-içi kopya keycloak uid'i altında, umask 077 ile (IdP ile aynı
-  # pattern — host temp 0600 kalır; tutarlılık, Codex 019e365b).
   docker exec -i "$KC_CONTAINER" sh -lc "umask 077; cat > '$mc'" < "$mh" \
     || { echo "ERROR: mapper $name container'a yazılamadı" >&2; rm -f "$mh"; exit 1; }
   if [ -n "$existing" ]; then
     $KC update "identity-provider/instances/$ALIAS/mappers/$existing" -r "$REALM" -f "$mc" >/dev/null 2>&1 \
       || { echo "ERROR: mapper $name update failed" >&2; rm -f "$mh"; exit 1; }
-    echo "  ✓ mapper '$name' converged ($claim → $attr)"
+    echo "  ✓ mapper '$name' converged"
   else
     $KC create "identity-provider/instances/$ALIAS/mappers" -r "$REALM" -f "$mc" >/dev/null 2>&1 \
       || { echo "ERROR: mapper $name create failed" >&2; rm -f "$mh"; exit 1; }
-    echo "  ✓ mapper '$name' created ($claim → $attr)"
+    echo "  ✓ mapper '$name' created"
   fi
   rm -f "$mh"
   docker exec "$KC_CONTAINER" rm -f "$mc" >/dev/null 2>&1 || true
 }
-upsert_attr_mapper "entra-tid" "tid" "entra_tid"
-upsert_attr_mapper "entra-oid" "oid" "entra_oid"
 
-# ── User-profile attribute deklarasyonu (Codex 019e3796 / smoke bulgusu) ──
-# Keycloak 26 Declarative User Profile, unmanagedAttributePolicy DISABLED iken
-# deklare edilmemiş attribute'ları sessizce düşürür → yukarıdaki mapper'ların
-# entra_tid/entra_oid yazımları kalıcı olmaz. Attribute'lar profile'a deklare
-# edilir — mevcut profil korunur, yalnız eksik olan(lar) append edilir.
+# Claim mapper'lar: tid/oid → user attribute. FORCE — tid/oid immutable/audit
+# nitelikli, her federe giriş yeniden yazar (Codex 019e365b P2).
+upsert_idp_mapper "entra-tid" "oidc-user-attribute-idp-mapper" \
+  '{"syncMode":"FORCE","claim":"tid","user.attribute":"entra_tid"}'
+upsert_idp_mapper "entra-oid" "oidc-user-attribute-idp-mapper" \
+  '{"syncMode":"FORCE","claim":"oid","user.attribute":"entra_oid"}'
+
+# Hardcoded default-role mapper — yeni (auto-provision) kullanıcıya `viewer`
+# realm rolü. syncMode=IMPORT: rol ilk provision/link'te verilir, admin sonradan
+# kaldırırsa her login'de geri basılmaz (revocation semantics korunur — Codex
+# 019e3b72). default-roles-serban'a DOKUNULMAZ — M365-targeted kalır.
+if [ "$VERIFY_ONLY" != "1" ]; then
+  ROLE_EXISTS=$($KC get "roles/$DEFAULT_ROLE" -r "$REALM" --fields name 2>/dev/null \
+    | python3 -c 'import json,sys
+try: print("yes" if json.load(sys.stdin).get("name") else "no")
+except Exception: print("no")' 2>/dev/null || echo "no")
+  [ "$ROLE_EXISTS" = "yes" ] \
+    || { echo "ERROR: realm rolü '$DEFAULT_ROLE' yok — hardcoded-role mapper kurulamaz" >&2; exit 1; }
+fi
+upsert_idp_mapper "$ROLE_MAPPER_NAME" "oidc-hardcoded-role-idp-mapper" \
+  "{\"syncMode\":\"IMPORT\",\"role\":\"$DEFAULT_ROLE\"}"
+
+# ── User-profile attribute deklarasyonu (KC 26 Declarative User Profile) ───
+# unmanagedAttributePolicy DISABLED iken deklare edilmemiş attribute sessizce
+# düşer → entra_tid/entra_oid mapper yazımları kalıcı olmaz. Append-only.
 if [ "$VERIFY_ONLY" != "1" ]; then
   UP_HOST="$(mktemp /tmp/_m365_up.XXXXXX.json)"
   UP_CTR="/tmp/m365-up-$$.json"
@@ -376,22 +430,31 @@ fi
 # ─── 5. Verify (read-back assertions) ──────────────────────────────────────
 echo ""
 echo "=== Step 5/5: Verify ==="
+# IdP: single-tenant endpoints + issuer + trustEmail + auto-provision flow bind.
 IDP_VERIFY=$($KC get "identity-provider/instances/$ALIAS" -r "$REALM" 2>/dev/null \
-  | python3 -c '
-import json, sys
+  | M365_EXP_ISSUER="$ISSUER" M365_EXP_TENANT="$TENANT_ID" M365_EXP_FLOW="$FBL_FLOW" python3 -c '
+import json, os, sys
 try:
     idp = json.load(sys.stdin)
 except Exception:
     print("FAIL: IdP not found"); sys.exit()
 cfg = idp.get("config", {})
+tid = os.environ["M365_EXP_TENANT"]
+urls = [cfg.get("authorizationUrl",""), cfg.get("tokenUrl",""),
+        cfg.get("jwksUrl",""), cfg.get("issuer","")]
 checks = {
     "providerId_oidc": idp.get("providerId") == "oidc",
     "enabled": idp.get("enabled") in (True, "true"),
-    "link_only_flow": idp.get("firstBrokerLoginFlowAlias") == "first broker login m365 link-only",
+    "trustEmail_true": idp.get("trustEmail") in (True, "true"),
+    "auto_provision_flow": idp.get("firstBrokerLoginFlowAlias") == os.environ["M365_EXP_FLOW"],
     "client_id_set": bool(cfg.get("clientId")),
     "jwks_url_set": bool(cfg.get("jwksUrl")),
     "validate_signature": cfg.get("validateSignature") == "true",
     "prompt_select_account": cfg.get("prompt") == "select_account",
+    "syncMode_import": cfg.get("syncMode") == "IMPORT",
+    "issuer_single_tenant": cfg.get("issuer") == os.environ["M365_EXP_ISSUER"],
+    "endpoints_tenant_scoped": all(tid in u for u in urls[:3]),
+    "no_organizations_endpoint": not any("/organizations/" in u for u in urls),
 }
 for k, v in checks.items():
     print(f"  {k}={v}")
@@ -401,29 +464,46 @@ echo "$IDP_VERIFY"
 echo "$IDP_VERIFY" | tail -1 | grep -q "^PASS$" \
   || { echo "ERROR: IdP verify FAILED" >&2; exit 3; }
 
+# Mapper'lar: entra-tid/oid (FORCE) + default-role (IMPORT, role=viewer).
 MAP_VERIFY=$($KC get "identity-provider/instances/$ALIAS/mappers" -r "$REALM" 2>/dev/null \
-  | python3 -c '
-import json, sys
+  | M365_EXP_ROLEMAP="$ROLE_MAPPER_NAME" M365_EXP_ROLE="$DEFAULT_ROLE" python3 -c '
+import json, os, sys
 d = json.load(sys.stdin)
 ok = True
-for name in ("entra-tid", "entra-oid"):
+rolemap = os.environ["M365_EXP_ROLEMAP"]
+exprole = os.environ["M365_EXP_ROLE"]
+def find(name):
     m = [x for x in d if x.get("name") == name]
+    return m[0] if m else None
+for name in ("entra-tid", "entra-oid"):
+    m = find(name)
     if not m:
         print(f"  mapper {name}=MISSING"); ok = False; continue
-    sm = m[0].get("config", {}).get("syncMode")
+    sm = m.get("config", {}).get("syncMode")
     print(f"  mapper {name} syncMode={sm}")
     if sm != "FORCE":
         ok = False
+rm = find(rolemap)
+if not rm:
+    print(f"  mapper {rolemap}=MISSING"); ok = False
+else:
+    cfg = rm.get("config", {})
+    mt = rm.get("identityProviderMapper")
+    role = cfg.get("role")
+    sm = cfg.get("syncMode")
+    print(f"  mapper {rolemap} type={mt} role={role} syncMode={sm}")
+    if mt != "oidc-hardcoded-role-idp-mapper": ok = False
+    if role != exprole: ok = False
+    if sm != "IMPORT": ok = False
 print("PASS" if ok else "FAIL")
 ' 2>/dev/null || echo "FAIL: mapper verify error")
 echo "$MAP_VERIFY"
 echo "$MAP_VERIFY" | tail -1 | grep -q "^PASS$" \
-  || { echo "ERROR: mapper verify FAILED (presence / syncMode != FORCE)" >&2; exit 3; }
+  || { echo "ERROR: mapper verify FAILED" >&2; exit 3; }
 
-# Link-only invariant — first-broker-login flow yapısı read-back (Codex
-# 019e365b P1 + 019e3796). Bu scriptin ana güvenlik kontratı; create-if-unique
-# /email-verification DISABLED + detect REQUIRED (Handle'dan önce) + Handle/
-# confirm-link/username-password-form REQUIRED doğrulanmadan PASS verilmez.
+# Auto-provision flow invariant — create-if-unique ALTERNATIVE (auto-create
+# açık), email-verification DISABLED, Handle Existing Account ALTERNATIVE,
+# idp-detect-existing-broker-user REQUIRED DEĞİL (yoksa PASS, varsa DISABLED).
 FLOW_VERIFY=$($KC get "authentication/flows/$FBL_FLOW_ENC/executions" -r "$REALM" 2>/dev/null \
   | python3 -c '
 import json, sys
@@ -435,37 +515,33 @@ def prov(p):
 def sub(name):
     m = [x for x in d if x.get("authenticationFlow") and name in (x.get("displayName") or "")]
     return m[0] if m else None
-for p in ("idp-create-user-if-unique", "idp-email-verification"):
-    e = prov(p); r = e.get("requirement") if e else "MISSING"
-    print(f"  exec {p}={r}")
-    if r != "DISABLED":
-        ok = False
-for p in ("idp-detect-existing-broker-user", "idp-confirm-link", "idp-username-password-form"):
-    e = prov(p); r = e.get("requirement") if e else "MISSING"
-    print(f"  exec {p}={r}")
-    if r != "REQUIRED":
-        ok = False
+cui = prov("idp-create-user-if-unique")
+r = cui.get("requirement") if cui else "MISSING"
+print(f"  exec idp-create-user-if-unique={r}")
+if r != "ALTERNATIVE":
+    ok = False
+ev = prov("idp-email-verification")
+r = ev.get("requirement") if ev else "MISSING"
+print(f"  exec idp-email-verification={r}")
+if r != "DISABLED":
+    ok = False
+det = prov("idp-detect-existing-broker-user")
+dr = det.get("requirement") if det else "ABSENT"
+print(f"  exec idp-detect-existing-broker-user={dr}")
+if dr not in ("ABSENT", "DISABLED"):
+    ok = False
 hea = sub("Handle Existing Account")
 hr = hea.get("requirement") if hea else "MISSING"
 print(f"  subflow Handle-Existing-Account={hr}")
-if hr != "REQUIRED":
-    ok = False
-det = prov("idp-detect-existing-broker-user")
-if det and hea:
-    di = det.get("index", 999); hi = hea.get("index", -1)
-    print(f"  detect.index={di} handle.index={hi}")
-    if not (di < hi):
-        ok = False
-else:
+if hr != "ALTERNATIVE":
     ok = False
 print("PASS" if ok else "FAIL")
 ' 2>/dev/null || echo "FAIL: flow verify error")
 echo "$FLOW_VERIFY"
 echo "$FLOW_VERIFY" | tail -1 | grep -q "^PASS$" \
-  || { echo "ERROR: link-only flow verify FAILED — flow yapısı hatalı" >&2; exit 3; }
+  || { echo "ERROR: auto-provision flow verify FAILED — flow yapısı hatalı" >&2; exit 3; }
 
-# User-profile entra_tid/entra_oid deklarasyon read-back (Codex 019e3796 /
-# smoke bulgusu — KC 26 declarative profile deklare edilmemiş attribute düşürür).
+# User-profile entra_tid/entra_oid deklarasyon read-back.
 UP_VERIFY=$($KC get users/profile -r "$REALM" 2>/dev/null \
   | python3 -c '
 import json, sys
@@ -484,9 +560,10 @@ print("PASS" if ok else "FAIL")
 ' 2>/dev/null || echo "FAIL: user-profile verify error")
 echo "$UP_VERIFY"
 echo "$UP_VERIFY" | tail -1 | grep -q "^PASS$" \
-  || { echo "ERROR: user-profile verify FAILED — entra_tid/entra_oid deklare değil" >&2; exit 3; }
+  || { echo "ERROR: user-profile verify FAILED" >&2; exit 3; }
 
 echo ""
-echo "=== M365 broker apply — PASS (realm=$REALM) ==="
-echo "Next: browser smoke — RB-m365-sso-broker.md Adım 5 (test) / Adım 6 (prod)"
+echo "=== M365 broker apply (v2 auto-provision) — PASS (realm=$REALM) ==="
+echo "Next: browser smoke — RB-m365-sso-broker.md (yeni kullanıcı auto-create +"
+echo "      /api/v1/authz/me + salt-okunur route veri-görünürlük doğrulaması)."
 exit 0
