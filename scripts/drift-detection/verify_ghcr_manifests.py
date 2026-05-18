@@ -23,9 +23,12 @@ Usage:
   kubectl kustomize kustomize/overlays/prod | python3 verify_ghcr_manifests.py
 
 Exit codes:
-  0 — all manifests verified present
-  1 — at least one manifest missing (GC'd or never pushed)
-  2 — auth/network failure (cannot conclude)
+  0 — all manifests verified present, OR auth/permission inconclusive in
+      non-strict mode (near-all-unverified heuristic → AUTH_FAIL; runtime
+      drift detector is the backstop)
+  1 — at least one manifest genuinely missing (GC'd / never pushed), OR
+      auth/permission failure under GHCR_STRICT=true
+  2 — network / invocation failure (cannot conclude)
 """
 
 from __future__ import annotations
