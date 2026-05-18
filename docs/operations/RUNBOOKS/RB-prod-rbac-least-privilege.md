@@ -252,8 +252,40 @@ PR-3B (break-glass) canlı + token issuance doğrulanmadan yapılmaz.
 
 ## PR-3E — audit/alarm (Faz 5)
 
-break-glass kullanım alert'i + Forbidden/RBAC-violation telemetrisi + audit
-log retention. Ayrı PR; `rbac-break-glass-design.md` Faz 5.
+> Codex `019e3a40` scope: PR-3E **3 parçaya** ayrıldı — biri autonomous (A),
+> ikisi operator-gated (audit-policy + PR-3E-B).
+
+### PR-3E-A — RBAC Forbidden telemetri (autonomous, staged)
+
+`kustomize/base/monitoring/rbac-least-privilege-rule.yaml` — `PrometheusRule`
+(ns `monitoring`, `release: kube-prometheus-stack`): k8s API 403/Forbidden
+**PROXY-telemetrisi**.
+- **KubeAPIForbiddenMutatingRequest** — `apiserver_request_total{code="403",
+  verb=~"POST|PUT|PATCH|DELETE|CONNECT"}` increase >0 (least-privilege sonrası
+  yetkisiz mutate denemesi; `CONNECT` = pods/exec, pods/portforward yolları).
+- **KubeAPIForbiddenRequestSpike** — 403 oranı >0.2 req/s, 10dk (bozuk
+  kubeconfig / loop'ta yetkisiz job / yanlış token).
+- İkisi de `severity: warning` — canlı baseline sonrası threshold/severity
+  ayarlanabilir.
+- ⚠️ `apiserver_request_total` **tam RBAC audit log DEĞİL** — Forbidden
+  yanıtları için proxy sinyaldir. Tam audit (kim/ne/ne zaman) audit-policy
+  gerektirir (aşağı).
+- Staged: `kustomize/base/monitoring/kustomization.yaml` `resources:`'ine
+  eklendi; canlı firing `kubectl apply -k kustomize/base/monitoring` (prod
+  monitoring ns) + Prometheus rule reload sonrası (operatör / ArgoCD monitoring sync).
+
+### PR-3E — operator-gated kalanlar
+
+- **audit-policy.yaml** — kube-apiserver `--audit-policy-file` = k3d
+  control-plane launch config + host path mount + API server restart.
+  Kubernetes manifest DEĞİL → operator/cluster-admin, maintenance window.
+  Repo'da taslak/runbook olabilir; PR-3E-A acceptance bununla bloke değil.
+- **PR-3E-B — `BreakGlassUsed` Alertmanager route** (Slack/email out-of-band
+  receipt). break-glass kullanımının PRIMARY audit'i zaten `break-glass-token.sh`
+  (GitHub issue + local audit log); `BreakGlassUsed` script-push Alertmanager
+  alert'i — metric DEĞİL, PrometheusRule ile yakalanamaz. Native Slack/email
+  route prod Alertmanager config değişimi + secret readiness + Helm upgrade
+  gerektirir → ayrı operator-gated PR.
 
 ## NE YAPMA
 

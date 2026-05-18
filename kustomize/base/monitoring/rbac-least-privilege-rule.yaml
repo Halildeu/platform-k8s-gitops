@@ -1,0 +1,77 @@
+# PrometheusRule — RBAC Least-Privilege Forbidden Telemetry (PR-3E / Faz 5)
+#
+# prod-deploy 4-PR planı PR-3E (audit/alarm). Codex 019e3a40 scope kararı:
+# PR-3E-A = bu PrometheusRule — k8s API 403/Forbidden PROXY-telemetrisi.
+#
+# NOT: `apiserver_request_total{code="403"}` tam bir RBAC audit log DEĞİL —
+# API server'ın Forbidden yanıtları için proxy sinyaldir. Tam audit
+# (kim/ne/ne zaman) kube-apiserver audit-policy gerektirir = operator/
+# control-plane işi (RB-prod-rbac-least-privilege.md PR-3E bölümü).
+# break-glass kullanım sinyali ayrı yol: `break-glass-token.sh` GitHub issue
+# + local audit log + opsiyonel Alertmanager `BreakGlassUsed` push.
+#
+# kube-prometheus-stack Prometheus CR `ruleSelector` `release` label'ı ile eşleşir.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: rbac-least-privilege
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack   # Prom Operator selector
+spec:
+  groups:
+    - name: rbac.forbidden
+      interval: 30s
+      rules:
+        # Yetkisiz MUTATE denemesi — least-privilege sonrası en yüksek-sinyalli
+        # olay. POST/PUT/PATCH/DELETE/CONNECT 403 (CONNECT = pods/exec,
+        # pods/portforward yolları). SubjectAccessReview-tipi resource'lar
+        # hariç (auth can-i probe'ları zaten 403 üretmez; netlik için dışlanır).
+        - alert: KubeAPIForbiddenMutatingRequest
+          expr: |
+            sum by (verb, resource, subresource, scope) (
+              increase(apiserver_request_total{
+                code="403",
+                verb=~"POST|PUT|PATCH|DELETE|CONNECT",
+                resource!~"subjectaccessreviews|selfsubjectaccessreviews|selfsubjectrulesreviews|localsubjectaccessreviews|tokenreviews"
+              }[5m])
+            ) > 0
+          for: 2m
+          labels:
+            severity: warning
+            team: ops
+            component: rbac-least-privilege
+            alert_class: rbac-forbidden
+            cluster_scope: same-cluster
+          annotations:
+            summary: "Kubernetes API forbidden mutating request gözlendi"
+            description: |
+              apiserver_request_total HTTP 403 kaydetti — mutating verb
+              ({{ $labels.verb }} {{ $labels.resource }}/{{ $labels.subresource }}).
+              Least-privilege / RBAC-deny için PROXY sinyal — tam audit log
+              DEĞİL. Kontrol: son GitHub Actions deploy run'ları, operator
+              shell aktivitesi, prod-deploy-smoke / break-glass identity kullanımı.
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/operations/RUNBOOKS/RB-prod-rbac-least-privilege.md"
+
+        # Genel 403 fırtınası — bozuk kubeconfig, loop'ta yetkisiz job, yanlış/
+        # expired token. Threshold canlı baseline ile ayarlanmalı (0.2 req/s
+        # ≈ 60 forbidden / 5dk — ilk PR için konservatif).
+        - alert: KubeAPIForbiddenRequestSpike
+          expr: sum(rate(apiserver_request_total{code="403"}[5m])) > 0.2
+          for: 10m
+          labels:
+            severity: warning
+            team: ops
+            component: rbac-least-privilege
+            alert_class: rbac-forbidden
+            cluster_scope: same-cluster
+          annotations:
+            summary: "Kubernetes API forbidden request spike (>0.2 req/s, 10dk)"
+            description: |
+              apiserver_request_total 403 oranı 10dk boyunca >0.2 req/s.
+              Olası neden: bozuk kubeconfig, loop'ta yetkisiz job, yanlış/
+              expired token. PROXY sinyal — tam audit kube-apiserver
+              audit-policy gerektirir (operator işi).
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/operations/RUNBOOKS/RB-prod-rbac-least-privilege.md"
