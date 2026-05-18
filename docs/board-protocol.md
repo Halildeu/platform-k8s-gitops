@@ -1,6 +1,6 @@
 # Board Protocol — platform Roadmap (GitHub Project #2)
 
-> **Status**: ACTIVE (2026-05-18 — board automation iter-1)
+> **Status**: ACTIVE (2026-05-18 — board automation iter-1..3)
 > **Board**: [platform Roadmap](https://github.com/users/Halildeu/projects/2) (Project #2, owner `Halildeu`)
 > **Codex consensus**: thread `019e3a0d` (AGREE — iter-1 plan)
 
@@ -67,7 +67,8 @@ yalnız aktif çalışmaya alınan satır issue olur.
 
 | Status | Anlam |
 |---|---|
-| **Todo** | Başlanmadı; uygun (eligible) ise claim edilebilir |
+| **Backlog** | İş sırasında keşfedilmiş, henüz triage edilmemiş — **claim edilemez** (§16) |
+| **Todo** | Triage edilmiş, başlanmadı; uygun (eligible) ise claim edilebilir |
 | **In Progress** | Bir oturum tarafından claim'li + aktif çalışılıyor |
 | **Blocked** | Dış bağımlılık / başka item / operator-gate nedeniyle ilerleyemiyor |
 | **Needs Verify** | Merged / source-ready — **canlı/acceptance kanıtı bekliyor** (acceptance kuyruğu) |
@@ -119,7 +120,7 @@ Gövdenin başında makine-okunur blok + 5-alan state:
 ## Agent State
 
 <!-- agent-state:v1
-status: todo            # todo | in-progress | blocked | needs-verify | done
+status: todo            # backlog | todo | in-progress | blocked | needs-verify | done
 claim_session: none     # claim eden oturum id'si
 claim_worktree: none    # claim eden worktree path
 claim_branch: none      # roadmap-<issue>-<slug>
@@ -231,8 +232,9 @@ Sıralama: `Priority` (P0 → P3), sonra `created_at`.
 
 `board-sync.sh claim` bu filtreyi claim-time'da **hard gate** uygular:
 `Todo` veya lease'i geçmiş (stale) `In Progress` dışındaki Status
-(`Blocked` / `Needs Verify` / `Done`) ve `Kind=umbrella` issue'lar için
-claim reddedilir — yanlış issue numarasıyla overclaim/rollback engellenir.
+(`Backlog` / `Blocked` / `Needs Verify` / `Done`) ve `Kind=umbrella` issue'lar
+için claim reddedilir — yanlış issue numarasıyla overclaim/rollback engellenir.
+`Backlog` item önce triage edilip `Todo`ya alınmalı (§16).
 
 ---
 
@@ -272,13 +274,14 @@ Ritüelin mekaniğini taşıyan script. Alt komutlar:
 
 | Komut | İş |
 |---|---|
-| `list` | Eligible iş listesi (Priority sıralı) + In Progress claim durumu (stale tespiti) |
+| `list` | Eligible iş listesi (Priority sıralı) + In Progress claim durumu + `Backlog` sayısı |
 | `claim <issue>` | Deterministik claim protokolü (§8) — winner re-read ile belirlenir |
 | `heartbeat <issue>` | Aktif claim lease'ini uzat (`HEARTBEAT` comment + body `expires_at`) |
 | `release <issue>` | Claim'i bırak — yalnız sahibi; başkasının claim'i ancak `--force-stale` + lease expired ise |
 | `sync-state <issue>` | Gövde `agent-state` ↔ board `Status` senkron raporla |
 | `verify <issue> --pr <N> --pr-repo <repo>` | PR-merge evidence — board `Status` → `Needs Verify` + makine-okunur `EVIDENCE` comment (idempotent: `pr_repo`+`pr` anahtarı) |
 | `reap [--limit N]` | Lease'i geçmiş tüm `In Progress` claim'leri release et (scheduled reaper bunu çağırır) |
+| `backlog-add "<title>" [--note] [--kind] [--repo]` | Keşfedilen scope-dışı işi `Backlog` issue olarak yakala (§16) |
 
 `--dry-run` her komutta — write yapmadan ne yapacağını gösterir. `claim`
 lease'i `CLAIM_TTL_HOURS` (default 2 saat) sonra dolar; uzun iş için
@@ -296,7 +299,7 @@ Script başlangıçta `gh auth status` + project id sanity check yapar.
 Project          PVT_kwHOCx7tY84BIN2d   (Project #2, owner Halildeu)
 
 Status   field   PVTSSF_lAHOCx7tY84BIN2dzg4vgLw
-  Todo fcee11d3 · In Progress 02bba678 · Blocked bb5b35d7 · Needs Verify 3c8afb23 · Done fd2bcabd
+  Backlog 81ee9923 · Todo da11d7ac · In Progress 6e2ec368 · Blocked 5f6aac96 · Needs Verify 516d2beb · Done a099a451
 Faz      field   PVTSSF_lAHOCx7tY84BIN2dzhTGqF0
   Faz G a8f19c83 · Faz I a858eb09 · Faz 22 6fb80ca3 · Faz 23 7ff54758 · V2.1 b21e7ec5 · V3 68101ca0 · schema-service 0df88f76
 Track    field   PVTSSF_lAHOCx7tY84BIN2dzhTGqHY
@@ -307,10 +310,12 @@ Kind     field   PVTSSF_lAHOCx7tY84BIN2dzhTGxFk
   umbrella deb03eb5 · milestone 4efca8fc · gate ad398fa9 · risk e3a49d4e · issue 22b29779
 ```
 
-> `Status` option ID'leri 2026-05-18'de `Blocked`+`Needs Verify` eklemesiyle
-> yeniden üretildi (`updateProjectV2Field` option-set'i replace eder). Bu
-> alanı tekrar düzenlerken **tüm item'ların `Status` snapshot'ı önce alınır**,
-> mutation sonrası geri yüklenir.
+> `Status` option ID'leri her `updateProjectV2Field` çağrısında **yeniden
+> üretilir** (option-set replace — name-match ID korumaz; 2026-05-18'de iter-1
+> `Blocked`+`Needs Verify` ve iter-3 `Backlog` ile 2 kez oldu). Bu alanı tekrar
+> düzenlerken **tüm item'ların `Status` snapshot'ı önce alınır**, mutation
+> sonrası geri yüklenir; `board-sync.sh` `STATUS_*` constants + bu tablo
+> güncellenir.
 
 ---
 
@@ -324,6 +329,12 @@ Normal implementation/code PR board'a **eklenmez** — kendi repo'sunda kalır,
 ilgili milestone/gate/risk issue'suna link verir. `project-roadmap` label
 normal PR'lara verilmez. Native auto-add yalnız `project-roadmap` label'lı
 item'ı çeker (4 repo).
+
+**Backlog — tek meşru dar intake (iter-3)**: İş sırasında keşfedilen scope-dışı
+iş/sorun kaybolmasın diye `board-sync.sh backlog-add` ile board'a `Backlog`
+statüsünde alınır (§16). Bu firehose değil — agent keşfi *yargılayarak* alır;
+`Backlog` item'lar roadmap lane'lerinden (Todo/In Progress/...) ayrıdır,
+eligible değildir, triage bekler.
 
 ---
 
@@ -367,3 +378,46 @@ comment + body `todo` + board `Todo`).
 claim zaten race-correct (winner_of 8/8 unit-test); arbiter yalnız
 `concurrency` serialization eklerdi — correctness gerektirmiyor + ikinci bir
 claim giriş yolu açardı. Gerçek bir race-failure gözlenirse yeniden değerlendirilir.
+
+---
+
+## 16. İterasyon-3 — Backlog lane (keşfedilen işi yakalama)
+
+İş sırasında çıkan scope-dışı iş/sorun (başka bug, eksik test, stale doc,
+follow-up) **kaybolmamalı**. iter-3 bunun için `Backlog` statüsünü + tek-komut
+yakalamayı ekler.
+
+**Yakalama** — agent scope-dışı bir bulgu görünce:
+
+```
+board-sync.sh backlog-add "<kısa başlık>" --note "<bağlam>" [--repo <owner/repo>] [--kind issue|risk]
+```
+
+Bu, hedef repo'da `project-roadmap` label'lı bir issue açar (agent-state body,
+`status: backlog`), Project #2'ye ekler, `Kind` + `Status=Backlog` set eder.
+`backlog-add`, native `item-added → Todo` workflow'una karşı post-add status
+reconcile yapar (item `Backlog`'da kalsın — bounded retry).
+
+**Backlog ≠ eligible**: `Backlog` item'lar `board-sync.sh list` "Eligible"
+bölümünde **görünmez**, claim edilemez (§9 hard-gate). `list` yalnız bir
+Backlog **sayısı** gösterir (triage hatırlatması) — roadmap view kirlenmez.
+
+**Triage** (insan/agent yargısı): Backlog item gözden geçirilir →
+
+- gerçek iş ise → `Status=Todo` + `Faz` / `Track` / `Priority` + acceptance
+  kriteri / `Next Action` doldurulur (board UI veya `gh project item-edit`);
+  artık eligible.
+- gürültü / geçersiz ise → issue kapatılır.
+
+`Backlog` item triage edilmeden PR'da `Tracked by` ile bağlanmaz.
+
+**`backlog-add` vs `spawn_task`** — farklı amaçlar, ikisi de gerekebilir:
+
+| Mekanizma | Ne için | Kalıcılık |
+|---|---|---|
+| `backlog-add` | "Kaybolmasın, sonra triage edilsin" | Board'da kalıcı issue |
+| `spawn_task` | "Şimdi paralel session'da yapılsın" | Ephemeral chip — board truth üretmez |
+
+**Kural**: scope-dışı bulgu → **her zaman `backlog-add`** (kalıcı kayıt). Ek
+olarak iş *şimdi paralel* yapılacaksa `spawn_task` da açılır. spawn_task tek
+başına yeterli değildir — chip kaybolur, board'da iz bırakmaz.

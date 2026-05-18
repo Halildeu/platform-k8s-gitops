@@ -5,24 +5,27 @@
 # Makes the board an active, session-continuous, parallel-safe work surface.
 # Protocol (canonical): docs/board-protocol.md
 #
-# Usage: board-sync.sh <subcommand> [<issue>] [flags]
+# Usage: board-sync.sh <subcommand> [<arg>] [flags]
 #
 # Subcommands:
-#   list                  eligible Todo work + In Progress claim status
+#   list                  eligible Todo work + In Progress + Backlog counts
 #   claim      <issue>    deterministic race-safe claim
 #   heartbeat  <issue>    extend your active claim's lease
 #   release    <issue>    release your claim (ownership-checked)
 #   sync-state <issue>    report issue-body agent-state vs board Status
 #   verify     <issue>    PR-merge evidence: Status -> Needs Verify (--pr N)
 #   reap                  release every stale In Progress claim
+#   backlog-add "<title>" capture discovered work as a Backlog issue
 #
 # Flags:
 #   --dry-run             print mutations instead of executing them
 #   --force-stale         (release) release another session's expired claim
 #   --pr <N>              (verify) the merged PR number
 #   --pr-repo <owner/rp>  (verify) the merged PR's source repo
-#   --repo <owner/repo>   (verify) disambiguate a bare issue number
+#   --repo <owner/repo>   (verify) issue-ref disambig; (backlog-add) target repo
 #   --limit <N>           (reap) max items per run (default 20)
+#   --note "<text>"       (backlog-add) context for the captured item
+#   --kind issue|risk     (backlog-add) board Kind (default issue)
 #
 # <issue>: bare number (resolved via board), owner/repo#N, or full URL.
 # Session id: $BOARD_SESSION_ID if set, else generated and printed.
@@ -33,12 +36,17 @@ PROJECT_OWNER="Halildeu"
 PROJECT_NUMBER="2"
 PROJECT_ID="PVT_kwHOCx7tY84BIN2d"
 STATUS_FIELD="PVTSSF_lAHOCx7tY84BIN2dzg4vgLw"
-STATUS_TODO="fcee11d3"
-STATUS_INPROGRESS="02bba678"
-STATUS_NEEDSVERIFY="3c8afb23"
+STATUS_BACKLOG="81ee9923"
+STATUS_TODO="da11d7ac"
+STATUS_INPROGRESS="6e2ec368"
+STATUS_NEEDSVERIFY="516d2beb"
+STATUS_BACKLOG_NAME="Backlog"
 STATUS_TODO_NAME="Todo"
 STATUS_INPROGRESS_NAME="In Progress"
 STATUS_NEEDSVERIFY_NAME="Needs Verify"
+KIND_FIELD="PVTSSF_lAHOCx7tY84BIN2dzhTGxFk"
+KIND_ISSUE="22b29779"
+KIND_RISK="e3a49d4e"
 CLAIM_TTL_HOURS="2"
 
 DRY_RUN=0
@@ -47,6 +55,8 @@ OPT_PR=""
 OPT_PR_REPO=""
 OPT_REPO=""
 OPT_LIMIT=""
+OPT_NOTE=""
+OPT_KIND=""
 BOARD_CACHE=""
 
 # --- helpers ------------------------------------------------------------------
@@ -54,7 +64,7 @@ log()  { printf '%s\n' "$*" >&2; }
 die()  { printf 'board-sync: %s\n' "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '4,28p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '4,31p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -254,6 +264,12 @@ cmd_list() {
         | select(.content.type=="Issue" and .status=="Todo" and (.kind//"")!="umbrella")]
         | length')"
   [ "$n" -eq 0 ] && log "  (none)"
+
+  local bk
+  bk="$(board_json | jq -r '[.items[]
+        | select(.content.type=="Issue" and .status=="Backlog")] | length')"
+  log ""
+  log "== Backlog ($bk — triage needed; capture via backlog-add) =="
 
   log ""
   log "== In Progress (claim status) =="
@@ -588,6 +604,108 @@ cmd_reap() {
   log "reap — scanned=$scanned reaped=$reaped"
 }
 
+# fresh (uncached) board Status of one item
+item_status() {
+  gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
+    --format json --limit 200 \
+    | jq -r --arg id "$1" '.items[] | select(.id == $id) | .status // ""'
+}
+
+# --- subcommand: backlog-add --------------------------------------------------
+# Capture discovered out-of-scope work as a Backlog board issue. Backlog items
+# are not eligible for claim until a human/agent triages them to Todo.
+# Protocol: docs/board-protocol.md.
+cmd_backlog_add() {
+  [ -n "${1:-}" ] || die "backlog-add needs a \"<title>\""
+  local title="$1"
+  local repo="${OPT_REPO:-Halildeu/platform-k8s-gitops}"
+  local kind="${OPT_KIND:-issue}"
+  case "$kind" in
+    issue|risk) : ;;
+    *) die "backlog-add --kind must be 'issue' or 'risk'" ;;
+  esac
+  printf '%s' "$repo" | grep -Eq '^[^/ ]+/[^/ ]+$' \
+    || die "backlog-add --repo must be owner/repo"
+
+  # governance — the project-roadmap label must exist in the target repo
+  gh api "repos/$repo/labels/project-roadmap" >/dev/null 2>&1 \
+    || die "backlog-add — repo '$repo' has no 'project-roadmap' label (governance)"
+
+  local sid wt branch now kopt body
+  sid="$(session_id)"
+  wt="$(git rev-parse --show-toplevel 2>/dev/null || echo unknown)"
+  branch="$(git branch --show-current 2>/dev/null || echo unknown)"
+  now="$(iso_now)"
+  case "$kind" in issue) kopt="$KIND_ISSUE" ;; risk) kopt="$KIND_RISK" ;; esac
+
+  body="## Agent State
+
+<!-- agent-state:v1
+status: backlog
+claim_session: none
+claim_worktree: none
+claim_branch: none
+claim_updated_at: none
+expires_at: none
+-->
+
+**Kind:** $kind  ·  **Status:** Backlog (triage edilmedi)
+**Discovered from:** $wt @ $branch (session $sid) at $now
+
+### Context
+
+${OPT_NOTE:-(baglam verilmedi — backlog-add --note ile eklenir)}
+
+### Triage
+
+Bu item Backlog lane'inde — claim EDILEMEZ. Triage'da Status=Todo + Faz /
+Track / Priority + acceptance kriteri / Next Action doldurulur; sonra
+eligible is olur. Protokol: docs/board-protocol.md."
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "[dry-run] backlog-add — would create a Backlog issue in $repo"
+    log "  title: $title"
+    log "  kind:  $kind"
+    log "  note:  ${OPT_NOTE:-<none>}"
+    return 0
+  fi
+
+  local url item
+  url="$(printf '%s' "$body" | gh issue create --repo "$repo" --title "$title" \
+    --label project-roadmap --body-file - 2>/dev/null)" \
+    || die "backlog-add — failed to create issue in $repo"
+  log "backlog-add — created $url"
+  item="$(gh project item-add "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
+    --url "$url" --format json 2>/dev/null | jq -r '.id // empty')"
+  [ -n "$item" ] || die "backlog-add — failed to add $url to the board"
+  gh project item-edit --id "$item" --project-id "$PROJECT_ID" \
+    --field-id "$KIND_FIELD" --single-select-option-id "$kopt" >/dev/null \
+    || die "backlog-add — failed to set Kind"
+
+  # set Status=Backlog, then reconcile against the native item-added->Todo
+  # workflow (async — it can flip a freshly-added item back to Todo)
+  local cur i
+  gh project item-edit --id "$item" --project-id "$PROJECT_ID" \
+    --field-id "$STATUS_FIELD" --single-select-option-id "$STATUS_BACKLOG" >/dev/null \
+    || die "backlog-add — failed to set Status"
+  for i in 1 2 3 4 5; do
+    sleep 8
+    cur="$(item_status "$item")"
+    if [ "$cur" != "Backlog" ]; then
+      log "backlog-add — Status drifted to '${cur:-empty}' (item-added race/lag), re-setting (round $i)"
+      gh project item-edit --id "$item" --project-id "$PROJECT_ID" \
+        --field-id "$STATUS_FIELD" --single-select-option-id "$STATUS_BACKLOG" >/dev/null \
+        || die "backlog-add — failed to re-set Status"
+    fi
+  done
+  cur="$(item_status "$item")"
+  if [ "$cur" = "Backlog" ]; then
+    log "backlog-add — $url on board: Kind=$kind Status=$STATUS_BACKLOG_NAME (triage needed)"
+  else
+    log "WARN: backlog-add — $url Status is '${cur:-?}', not Backlog — set it manually"
+  fi
+}
+
 # --- arg parse + dispatch -----------------------------------------------------
 main() {
   local cmd="" args=()
@@ -599,6 +717,8 @@ main() {
       --pr-repo)     [ $# -ge 2 ] || die "--pr-repo needs a value"; OPT_PR_REPO="$2"; shift 2 ;;
       --repo)        [ $# -ge 2 ] || die "--repo needs a value"; OPT_REPO="$2"; shift 2 ;;
       --limit)       [ $# -ge 2 ] || die "--limit needs a value"; OPT_LIMIT="$2"; shift 2 ;;
+      --note)        [ $# -ge 2 ] || die "--note needs a value"; OPT_NOTE="$2"; shift 2 ;;
+      --kind)        [ $# -ge 2 ] || die "--kind needs a value"; OPT_KIND="$2"; shift 2 ;;
       -h|--help)     usage 0 ;;
       *) if [ -z "$cmd" ]; then cmd="$1"; else args+=("$1"); fi; shift ;;
     esac
@@ -614,6 +734,7 @@ main() {
     sync-state) cmd_sync_state "${args[@]:-}" ;;
     verify)     cmd_verify "${args[@]:-}" ;;
     reap)       cmd_reap ;;
+    backlog-add) cmd_backlog_add "${args[@]:-}" ;;
     *)          die "unknown subcommand: $cmd (try --help)" ;;
   esac
 }
