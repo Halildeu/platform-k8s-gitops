@@ -94,10 +94,11 @@ kubectl --context k3d-prod                  auth can-i '*' '*'                  
 ```
 
 > ⚠️ Subresource kontrolleri (`pods/portforward`, `pods/exec`) **`--subresource=`
-> flag**'iyle yazılmıştır. kubectl `auth can-i`'nin eski `pods/portforward` slash
-> formu modern kubectl'de (doğrulandı v1.36) subresource'u yanlış değerlendirip
-> false-`no` döndürür — `--subresource=` formu RBAC'ı doğru evaluate eder. Role
-> kuralı zaten `resources: [pods/portforward]`; gerçek izin doğru.
+> flag**'iyle yazılmıştır — `auth can-i` subresource kontrolünün canonical formu
+> budur. `pods/portforward` slash formu kubectl v1.36'da intended subresource
+> SAR'ını temsil etmeyip false-`no` döndürebilir; `--subresource=` formu RBAC'ı
+> doğru evaluate eder. Role kuralı zaten `resources: [pods/portforward]`; gerçek
+> izin doğru.
 
 Devam eşiği: ilk 6 `yes`, son 4 `no`. Aksi halde Role kapsamını incele,
 **Adım 3'e geçme**.
