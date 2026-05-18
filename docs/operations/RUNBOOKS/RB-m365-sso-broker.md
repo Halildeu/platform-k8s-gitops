@@ -3,8 +3,10 @@
 > ADR-0021. Codex architecture consensus: thread `019e365b`.
 >
 > **Scope**: Platforma "Microsoft 365 ile giriş" — Keycloak `serban` realm'ine
-> Microsoft Entra ID OIDC identity provider eklenmesi. v1 = link-only
-> (mevcut kullanıcıya bağlama; SPI yok).
+> Microsoft Entra ID OIDC identity provider eklenmesi. **v2 = auto-provision**
+> (ADR-0021 v2 amendment, Codex `019e3b72`): izinli Entra tenant'ından M365 ile
+> giren çalışana eşleşen KC hesabı yoksa kullanıcı OTOMATİK açılır; tek-tenant
+> endpoint hard-gate. v1 link-only superseded.
 >
 > **Roller**: 🧑 = operator (sen — Entra portal + Vault), 🤖 = agent (Claude —
 > kcadm apply + smoke).
@@ -50,11 +52,11 @@ Microsoft Entra admin center (`entra.microsoft.com`) → **Identity → Applicat
 9. (Opsiyonel) **Token configuration**: tenant ID token'da `email` claim'i
    default vermiyorsa → **Add optional claim → ID → email**.
 
-> **Hangi tenant ID'ler allowlist'e?** Kendi org'unun tenant ID'si + giriş
-> yapmasına izin vereceğin diğer org'ların tenant ID'leri. v1'de bu liste
-> **audit-only** (`entra_tid` attribute'una yazılır) — v1 erişim sınırı
-> link-only'dir (yalnız önceden oluşturulmuş kullanıcı re-auth ile girer);
-> `tid` hard-gate v2 SPI işidir.
+> **Hangi tenant ID allowlist'e?** v2 auto-provision **tam olarak 1** izinli
+> tenant gerektirir (script fail-fast) — kendi org'unun Directory (tenant) ID'si.
+> Bu tek tenant IdP OIDC endpoint'ine gömülür (`/{tid}/`) → **hard-gate**: yalnız
+> bu tenant'ın kullanıcıları kimlik doğrulayabilir, başka tenant Microsoft
+> tarafında durur. Çok-tenant gerekirse tenant başına ayrı IdP alias (ayrı iş).
 
 ## 🧑 ADIM 2 — Config form
 
@@ -94,25 +96,29 @@ M365_CLIENT_SECRET="$(vault kv get -field=client_secret kv/platform/keycloak-m36
   bash scripts/keycloak/setup-m365-broker.sh
 ```
 
-Script idempotent (desired-state apply): `microsoft` OIDC identity provider +
-claim mapper'lar (`tid→entra_tid`, `oid→entra_oid`, email, ad) + link-only
-first-broker-login flow oluşturur/günceller. Exit 0 = PASS.
+Script idempotent (desired-state apply): single-tenant `microsoft` OIDC identity
+provider + claim mapper'lar (`tid→entra_tid`, `oid→entra_oid`) + hardcoded
+`viewer` default-role mapper + `first broker login m365 auto-provision` flow
+oluşturur/günceller; 4 katmanlı read-back verify. Exit 0 = PASS.
 
-## 🤖 ADIM 5 — Test realm browser smoke
+## 🤖 ADIM 5 — Test realm browser smoke (v2 auto-provision)
 
 `https://testai.acik.com` login sayfasında:
 
 - [ ] "Microsoft 365" butonu render oluyor
-- [ ] Mevcut `platform-test` kullanıcısı (önceden oluşturulmuş) M365 ile login
-      → Microsoft redirect → dönüş → re-authentication (mevcut parola) → link
-      → giriş başarılı
-- [ ] Pre-provision edilmemiş (eşleşmeyen) kullanıcı → giriş reddedilir
-- [ ] Linked kullanıcının KC user attribute'larında `entra_tid` + `entra_oid`
-      (Admin API read-back — v1'de JWT claim'i DEĞİL)
-- [ ] JWT'de `subscriberId` (mevcut mapper, değişmedi)
-- [ ] `/api/v1/authz/me` 200
+- [ ] İzinli tenant'tan, `platform-test`'te KC hesabı OLMAYAN M365 kullanıcısı
+      login → Microsoft redirect → dönüş → KC kullanıcısı **OTOMATİK oluşturulur**
+      → giriş başarılı (deny DEĞİL)
+- [ ] Auto-created kullanıcıda: `entra_tid` + `entra_oid` attribute, `viewer`
+      realm rolü, `emailVerified=true` (Admin API read-back)
+- [ ] Eşleşen mevcut KC kullanıcısı M365 ile login → link akışı (re-auth) →
+      duplicate kullanıcı oluşmaz
+- [ ] `/api/v1/authz/me` 200 + temsilî bir salt-okunur route (veri-görünürlük —
+      yalnız KC rolü değil, OpenFGA explicit-scope da gözlemlenir)
+- [ ] Aktive edilen kullanıcıya mail GİTMEZ (KC SMTP'siz; notification yok)
 - [ ] Local username/password login hâlâ çalışıyor (fallback)
 - [ ] Logout → relogin temiz
+- [ ] (mümkünse) izinli tenant DIŞINDAN M365 hesabı → Microsoft tarafında durur
 
 ## 🤖 ADIM 6 — Prod apply (`serban`)
 
@@ -151,7 +157,9 @@ secret'ı sil. Tetik: expiry yaklaşması, sızıntı şüphesi.
 - ❌ Client secret'ı git'e / config JSON'a / log'a yazma — yalnız Vault.
 - ❌ `serban` realm'e doğrudan prod apply — önce `platform-test` smoke.
 - ❌ Entra app'i "personal Microsoft accounts dahil" multi-tenant yapma.
-- ❌ v1'de `groups` / Graph permission isteme — v2 SPI işi.
+- ❌ `groups` / Graph permission isteme — gerekmiyor (`tid`/`oid`/`email` yeter).
+- ❌ `allowed_tenants`'a 1'den fazla tenant koyma — script fail-fast (çok-tenant ayrı IdP alias işi).
+- ❌ Prod ilk apply'de eski link-only flow'u silme — rollback için tut.
 
 ## Referanslar
 
