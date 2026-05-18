@@ -391,6 +391,7 @@ checks = {
     "client_id_set": bool(cfg.get("clientId")),
     "jwks_url_set": bool(cfg.get("jwksUrl")),
     "validate_signature": cfg.get("validateSignature") == "true",
+    "prompt_select_account": cfg.get("prompt") == "select_account",
 }
 for k, v in checks.items():
     print(f"  {k}={v}")
