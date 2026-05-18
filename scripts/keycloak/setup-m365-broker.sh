@@ -254,6 +254,10 @@ idp = {
     "syncMode": "IMPORT",
     "pkceEnabled": "true",
     "pkceMethod": "S256",
+    # prompt=select_account: Microsoft her giriste hesap secici gosterir —
+    # kullanici dogru M365 hesabini secebilir / "use another account" yapabilir.
+    # Olmadan, tarayicida acik MS hesabi otomatik kullanilir (hesap degistirilemez).
+    "prompt": "select_account",
   },
 }
 json.dump(idp, open(sys.argv[1], "w"))
@@ -288,9 +292,9 @@ upsert_attr_mapper() {
   local mh mc
   mh="$(mktemp /tmp/_m365_map.XXXXXX.json)"
   mc="/tmp/m365-map-$$-${name}.json"
-  python3 - "$mh" "$name" "$claim" "$attr" <<'PYEOF'
+  python3 - "$mh" "$name" "$claim" "$attr" "$existing" <<'PYEOF'
 import json, sys
-_, path, name, claim, attr = sys.argv
+_, path, name, claim, attr, existing = sys.argv
 m = {
   "name": name,
   "identityProviderAlias": "microsoft",
@@ -303,6 +307,10 @@ m = {
     "user.attribute": attr
   }
 }
+# Update path'inde (mapper mevcut) Keycloak PUT body'sinde 'id' bekler —
+# id'siz body re-apply'da "update failed" verir (idempotency bug fix).
+if existing:
+  m["id"] = existing
 json.dump(m, open(path, "w"))
 PYEOF
   # Container-içi kopya keycloak uid'i altında, umask 077 ile (IdP ile aynı
