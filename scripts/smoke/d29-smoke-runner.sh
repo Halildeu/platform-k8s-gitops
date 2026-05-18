@@ -21,9 +21,11 @@
 #     }
 #
 # Exit:
-#   0 — all 4 tiers GREEN
+#   0 — all 4 tiers GREEN (eligible for ledger D29-verified promotion)
 #   1 — at least 1 tier RED
 #   2 — execution error (kubectl unreachable, etc.)
+#   3 — incomplete: a tier SKIP/AMBER, no RED (e.g. Zanzibar store_id
+#       unresolved) — NOT eligible for ledger D29-verified promotion
 #
 # Usage:
 #   bash d29-smoke-runner.sh test
@@ -233,6 +235,70 @@ tier_secured() {
 }
 
 # ------------------------------------------------------------
+# OpenFGA store_id resolver — Codex 019e39ea (PR-4A)
+# Canonical key is ERP_OPENFGA_STORE_ID. The permission-service ConfigMap
+# holds an empty stub; the real value is delivered by the
+# permission-service-secrets Secret (ESO from Vault kv/platform/openfga) and
+# wins at runtime via envFrom ordering. Resolver echoes "<store_id>|<source>"
+# ("|unresolved" when not found). Chain:
+#   1. D29_OPENFGA_STORE_ID env override
+#   2. permission-service-secrets   ERP_OPENFGA_STORE_ID
+#   3. permission-service-config    ERP_OPENFGA_STORE_ID  (stub-empty in live)
+#   4. legacy OPENFGA_STORE_ID      (secret then configmap — old-deploy compat)
+#   5. pod runtime env via exec — only if D29_STORE_ID_SOURCE=pod-env (opt-in;
+#      kubectl exec is a broad RBAC surface, kept off the default path)
+#   6. none → empty id (caller SKIPs Zanzibar, non-GREEN)
+# ------------------------------------------------------------
+resolve_store_id() {
+  local sid="" key
+
+  # 1. explicit env override
+  if [[ -n "${D29_OPENFGA_STORE_ID:-}" ]]; then
+    printf '%s|env:D29_OPENFGA_STORE_ID\n' "${D29_OPENFGA_STORE_ID}"
+    return
+  fi
+
+  # 2-4. Canonical key first across BOTH sources, then legacy key — so a
+  # populated canonical ConfigMap outranks a stale legacy Secret (Codex
+  # 019e39ea: canonical-before-legacy contract holds across sources).
+  for key in ERP_OPENFGA_STORE_ID OPENFGA_STORE_ID; do
+    # Secret — the real value (ESO from Vault kv/platform/openfga)
+    sid=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get secret permission-service-secrets \
+      -o "jsonpath={.data.$key}" 2>/dev/null | base64 -d 2>/dev/null || echo "")
+    if [[ -n "$sid" ]]; then
+      printf '%s|secret/permission-service-secrets:%s\n' "$sid" "$key"
+      return
+    fi
+    # ConfigMap — stub-empty in live, kept for old-deploy compat
+    sid=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get cm permission-service-config \
+      -o "jsonpath={.data.$key}" 2>/dev/null || echo "")
+    if [[ -n "$sid" ]]; then
+      printf '%s|configmap/permission-service-config:%s\n' "$sid" "$key"
+      return
+    fi
+  done
+
+  # 5. pod runtime env — opt-in only (kubectl exec is broad RBAC)
+  if [[ "${D29_STORE_ID_SOURCE:-}" == "pod-env" ]]; then
+    local pod
+    pod=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get pod \
+      -l app.kubernetes.io/name=permission-service \
+      -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    if [[ -n "$pod" ]]; then
+      sid=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" exec "$pod" -- \
+        printenv ERP_OPENFGA_STORE_ID 2>/dev/null || echo "")
+      if [[ -n "$sid" ]]; then
+        printf '%s|pod-env:%s:ERP_OPENFGA_STORE_ID\n' "$sid" "$pod"
+        return
+      fi
+    fi
+  fi
+
+  # 6. not found
+  printf '|unresolved\n'
+}
+
+# ------------------------------------------------------------
 # Tier 4: Zanzibar — OpenFGA allow + deny synthetic
 # ------------------------------------------------------------
 tier_zanzibar() {
@@ -241,18 +307,20 @@ tier_zanzibar() {
   local details=""
   local synthetic="PASS"
 
-  # Get OpenFGA store + model IDs from permission-service env
-  local store_id
-  store_id=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get cm permission-service-config \
-    -o jsonpath='{.data.OPENFGA_STORE_ID}' 2>/dev/null || echo "")
+  # Resolve OpenFGA store_id (resolver chain — see resolve_store_id above)
+  local store_id store_id_source resolved
+  resolved=$(resolve_store_id)
+  store_id="${resolved%%|*}"
+  store_id_source="${resolved#*|}"
 
   if [[ -z "$store_id" ]]; then
     TIER_ZANZIBAR_STATUS="SKIP"
     TIER_ZANZIBAR_SYNTHETIC="SKIP"
-    TIER_ZANZIBAR_DETAILS="OPENFGA_STORE_ID not in permission-service-config — Zanzibar tier deferred"
-    echo "  status=SKIP (no store_id)"
+    TIER_ZANZIBAR_DETAILS="store_id unresolved (tried D29_OPENFGA_STORE_ID env / permission-service-secrets / permission-service-config, ERP_ + legacy keys) — Zanzibar SKIP, non-GREEN; NOT eligible for ledger D29-verified"
+    echo "  status=SKIP (store_id unresolved)"
     return
   fi
+  echo "  store_id resolved via ${store_id_source}"
 
   # Port-forward to openfga
   local port=$((25000 + RANDOM % 5000))
@@ -287,15 +355,15 @@ tier_zanzibar() {
   if [[ "$allow_result" == "true" && "$deny_result" == "false" ]]; then
     status="GREEN"
     synthetic="PASS"
-    details="user:1204 admin=allow OK, user:9999999 admin=deny OK"
+    details="store_id_source=${store_id_source}; user:1204 admin=allow OK, user:9999999 admin=deny OK"
   elif [[ "$allow_result" == "error" || "$deny_result" == "error" ]]; then
     status="AMBER"
     synthetic="SKIP"
-    details="OpenFGA check API returned error (allow=$allow_result deny=$deny_result) — store may need rebootstrap"
+    details="store_id_source=${store_id_source}; OpenFGA check API returned error (allow=$allow_result deny=$deny_result) — store may need rebootstrap"
   else
     status="RED"
     synthetic="FAIL"
-    details="allow_expected=true_got=$allow_result, deny_expected=false_got=$deny_result"
+    details="store_id_source=${store_id_source}; allow_expected=true_got=$allow_result, deny_expected=false_got=$deny_result"
   fi
 
   TIER_ZANZIBAR_STATUS="$status"
@@ -334,12 +402,19 @@ tier_zanzibar
 # Combine results into Tier 3 in ledger schema (collapses Secured into d29_up details)
 # Schema: d29_up, d29_functional, d29_zanzibar (3 fields, Secured rolls into Up)
 # ------------------------------------------------------------
-# Compute overall (any RED → fail)
+# Compute overall exit code (Codex 019e39ea — PR-4A):
+#   0 — every tier GREEN (eligible for ledger D29-verified promotion)
+#   1 — at least 1 tier RED
+#   3 — incomplete: a tier SKIP/AMBER, no RED (e.g. Zanzibar store_id
+#       unresolved). A non-GREEN tier must never be carried into the ledger
+#       as D29-verified; RED (1) always outranks incomplete (3).
 OVERALL_RC=0
 for s in "$TIER_UP_STATUS" "$TIER_FN_STATUS" "$TIER_SECURED_STATUS" "$TIER_ZANZIBAR_STATUS"; do
-  if [[ "$s" == "RED" ]]; then
-    OVERALL_RC=1
-  fi
+  case "$s" in
+    RED)   OVERALL_RC=1 ;;
+    GREEN) : ;;
+    *)     [[ "$OVERALL_RC" -eq 0 ]] && OVERALL_RC=3 ;;
+  esac
 done
 
 # Up status combines tier 1 + tier 3 (Secured)

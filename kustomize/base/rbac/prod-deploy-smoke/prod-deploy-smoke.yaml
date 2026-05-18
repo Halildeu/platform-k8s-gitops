@@ -1,0 +1,110 @@
+# prod-deploy-smoke — least-privilege identity for the prod GitOps deploy runner
+#
+# Codex 019e380b (PR-3A staged RBAC contract). prod-deploy 4-PR planı PR-3.
+#
+# deploy-prod-gitops.yml sync job runner'ı şu an `admin@k3d-prod` cluster-admin
+# kubeconfig kullanıyor. Workflow'un kubectl ihtiyacı yalnız iki şey:
+#   1. argocd ns'de `kubectl port-forward svc/argocd-server` (ArgoCD API tüneli)
+#   2. platform-prod ns'de `kubectl rollout status deployment/<x>` (yalnız okuma)
+# ArgoCD app sync'i `argocd` CLI + ARGOCD_PROD_SYNC_TOKEN ile yapılır — ArgoCD
+# kendi RBAC'ı; bu k8s SA app-sync yetkisi GEREKTİRMEZ.
+#
+# Bu identity workload-mutate yetkisi taşımaz: deployment patch/update/delete,
+# configmap patch, pods/exec, platform-prod'da pods/portforward — hiçbiri YOK.
+#
+# DURUM: staged. Hiçbir overlay/base bu dosyayı consume ETMEZ; ArgoCD
+# `platform-prod` sync path'ine girmez. CI yalnız `kustomize build` render
+# sanity doğrular. Canlıya alma (apply + runner kubeconfig cutover) PR-3C —
+# operator-gated, state-mutation (production): docs/operations/RUNBOOKS/
+# RB-prod-rbac-least-privilege.md.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prod-deploy-smoke
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: prod-deploy-smoke
+    app.kubernetes.io/part-of: rbac-least-privilege
+    app.kubernetes.io/managed-by: gitops
+  annotations:
+    description: |
+      Least-privilege identity for the prod GitOps deploy runner
+      (deploy-prod-gitops.yml). Grants argocd-server port-forward +
+      platform-prod read/watch only. No workload mutation.
+---
+# argocd ns — argocd-server'a port-forward + pod/service keşfi (read).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prod-deploy-smoke-argocd
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: rbac-least-privilege
+rules:
+  # `kubectl port-forward svc/argocd-server` Service'i çözer + backing pod bulur.
+  # Asgari ihtiyaç: services/pods get,list. endpoints/endpointslices kubectl
+  # sürüm/servis-çözümleme uyumluluk tamponu (read-only, argocd ns-scoped —
+  # workload mutate açmaz).
+  - apiGroups: [""]
+    resources: ["services", "pods", "endpoints"]
+    verbs: ["get", "list"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list"]
+  # port-forward tünelinin kendisi — workload state mutasyonu DEĞİL.
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prod-deploy-smoke-argocd
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: rbac-least-privilege
+subjects:
+  - kind: ServiceAccount
+    name: prod-deploy-smoke
+    namespace: argocd
+roleRef:
+  kind: Role
+  name: prod-deploy-smoke-argocd
+  apiGroup: rbac.authorization.k8s.io
+---
+# platform-prod ns — `kubectl rollout status` için yalnız okuma + watch
+# (deployments ana ihtiyaç; replicasets/pods kubectl sürüm uyumluluk tamponu).
+# patch/update/delete/create YOK → kubectl set image / scale / apply fail eder.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prod-deploy-smoke-read
+  namespace: platform-prod
+  labels:
+    app.kubernetes.io/part-of: rbac-least-privilege
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+# RoleBinding platform-prod ns'de; subject SA argocd ns'de (cross-namespace
+# subject — RoleBinding her namespace'teki SA'yı refere edebilir).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prod-deploy-smoke-read
+  namespace: platform-prod
+  labels:
+    app.kubernetes.io/part-of: rbac-least-privilege
+subjects:
+  - kind: ServiceAccount
+    name: prod-deploy-smoke
+    namespace: argocd
+roleRef:
+  kind: Role
+  name: prod-deploy-smoke-read
+  apiGroup: rbac.authorization.k8s.io

@@ -31,9 +31,10 @@ name: Deploy prod GitOps sync
 #   Helm upgrade (account+RBAC) → `argocd account generate-token` →
 #   `gh secret set ARGOCD_PROD_SYNC_TOKEN --env production`.
 #
-# Runner: `staging-sw-testai-deploy` (tek online self-hosted runner;
-#   `prod-deploy` label'ı hiçbir runner'da yok — deploy-backend-prod.yml'in
-#   beklediği label dead; PR-2 image-only workflow emekliliğinde ele alınır).
+# Runner: `staging-sw-testai-deploy` (tek online self-hosted runner). Ölü
+#   `prod-deploy` label'ını bekleyen image-only `deploy-backend-prod.yml` /
+#   `deploy-frontend-prod.yml` workflow'ları PR-2 ile emekli edildi (silindi)
+#   — prod'un tek deploy/rollback yolu bu workflow.
 
 on:
   workflow_dispatch:

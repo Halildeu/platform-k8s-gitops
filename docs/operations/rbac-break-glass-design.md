@@ -6,9 +6,68 @@
 > mandatory reconciliation PR. Admission/Kyverno/Gatekeeper şart değil;
 > önce RBAC + audit yeter."
 
+> **Güncelleme — 2026-05-18 (PR-2, Codex `019e35d1` 4-PR planı)**: Prod
+> image-only deploy workflow'ları `deploy-backend-prod.yml` +
+> `deploy-frontend-prod.yml` emekli edildi (silindi). Prod'un `kubectl set
+> image` CI yolu artık **yok** — tek normal writer ArgoCD: `production`
+> env-gate'li `deploy-prod-gitops.yml` (PR-1, `#780`). Aşağıdaki **Faz 4'ün
+> prod ayağı bu retire ile karşılandı**; `deploy-backend-testai.yml` (test
+> cluster) image-only deploy hâlâ Faz 4 kapsamında. Aşağıdaki audit
+> snapshot'ı Session 37 durumu — `deploy-backend-prod.yml:148` satır
+> referansı artık geçersiz.
+
 Bu doc, manuel `kubectl set image` müdahalelerinin nasıl D30 immutable
 artifact disiplinine sokulacağını belirler. Implementation ayrı PR;
 burada **design + audit + migration playbook** var.
+
+## PR-3A güncelleme — 2026-05-18 (Codex `019e380b`)
+
+prod-deploy 4-PR planı (Codex `019e35d1`) PR-3, Codex `019e380b` scope kararı
+ile **alt-adımlara bölündü**. PR-3A repo-only contract; canlı RBAC enforcement
+PR-3B/C/D/E (operator-gated). Aşağıdaki "Codex P0 sequence" tablosu Session 37
+planıdır; güncel sıralama bu bölümdedir.
+
+### Faz 2 (break-glass SA) gerçek durumu
+
+`kustomize/base/rbac/break-glass-sa.yaml` + `kustomization.yaml` +
+`scripts/operations/break-glass-token.sh` repo'da **var**, ama
+`kustomize/base/rbac` hiçbir overlay'e veya `kustomize/base/kustomization.yaml`'a
+**bağlı değil** (orphan). Canlı doğrulama: `kubectl --context k3d-prod -n
+kube-system get sa ops-break-glass` → **NotFound**. Faz 2 "manifest yazıldı,
+hiçbir cluster'a deploy edilmedi" durumunda. Canlıya alma → PR-3B.
+
+### Faz 3 tasarım düzeltmesi
+
+Aşağıdaki Faz 3'teki "`admin@k3d-prod` user'a `view` ClusterRoleBinding ekle"
+yaklaşımı **teknik olarak eksik**: Kubernetes RBAC **additive**'dir — mevcut
+cluster-admin binding dururken ayrıca `view` bağlamak yetkiyi DÜŞÜRMEZ. Doğru
+Faz 3 (→ PR-3D): yeni readonly normal identity üret + günlük kullanıma al;
+eski `admin@k3d-prod`'u normal path'ten çıkar, yalnız break-glass/offline
+issuer olarak sakla.
+
+### PR-3A katkısı (bu PR, repo-only)
+
+- `kustomize/base/rbac/prod-deploy-smoke/` — `prod-deploy-smoke` SA + Role'ler:
+  `argocd` ns'de argocd-server port-forward + read; `platform-prod` ns'de
+  deployment/pod read+watch. Workload-mutate (patch / set image / scale / exec)
+  YOK.
+- Standalone kustomize entrypoint — hiçbir overlay/base consume etmez; ArgoCD
+  `platform-prod` sync path'ine girmez. CI yalnız `kustomize build` render
+  doğrular. **Merge anında canlı state değişmez.**
+- Runbook: `docs/operations/RUNBOOKS/RB-prod-rbac-least-privilege.md`.
+
+### Güncel sıralama (PR-3 alt-adımları)
+
+| Alt-PR | İş | Boundary |
+|---|---|---|
+| **PR-3A** (bu PR) | repo-only: prod-deploy-smoke staged manifest + runbook + bu güncelleme | none (no live mutation) |
+| **PR-3B** | break-glass SA live activation + token issuance smoke | state-mutation (prod) — operator-gated |
+| **PR-3C** | prod-deploy-smoke apply + runner kubeconfig least-privilege cutover | state-mutation (prod) — operator-gated |
+| **PR-3D** | operator readonly identity migration (Faz 3 düzeltilmiş) | state-mutation (prod) + owner coordination |
+| **PR-3E** | audit/alarm (Faz 5) | düşük |
+
+`deploy-backend-testai.yml` (test cluster) image-only `kubectl set image` yolu
+PR-3 kapsamı dışı — ayrı izlenir.
 
 ## Sorun: D30 disiplini bozuk
 
@@ -137,6 +196,11 @@ echo "Reconciliation PR REQUIRED within 30min of any state change."
 
 ### Faz 3 — Operator kubeconfig restrict (ayrı PR)
 
+> **Düzeltme — PR-3A (Codex `019e380b`)**: Aşağıdaki `view` ClusterRoleBinding
+> yaklaşımı eksik — RBAC additive; mevcut cluster-admin dururken `view` eklemek
+> yetki düşürmez. Doğru tasarım yukarıdaki "PR-3A güncelleme → Faz 3 tasarım
+> düzeltmesi" bölümünde (→ PR-3D yeni readonly identity).
+
 ```yaml
 # kustomize/base/rbac/operator-readonly.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -217,6 +281,9 @@ kubectl kustomize ... | diff <(kubectl get ... -o yaml)
 PR template: `.github/PULL_REQUEST_TEMPLATE/break-glass-reconciliation.md`
 
 ## Codex P0 sequence
+
+> Session 37 planı (tarihsel). Güncel sıralama: yukarıdaki "PR-3A güncelleme —
+> 2026-05-18" bölümü (4-PR prod-deploy planı PR-3 alt-adımları PR-3A..E).
 
 | Sıra | İş | Risk |
 |---|---|---|

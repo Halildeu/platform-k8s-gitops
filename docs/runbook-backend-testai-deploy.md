@@ -192,8 +192,10 @@ gh api "repos/Halildeu/platform-k8s-gitops/actions/jobs/${JOB_ID}/logs" \
   rule'lar pre-prod; receiver netleşince severity=critical paging ekle)
 - **endpoint-admin-service** + **discovery-server** dahil etme — manifest
   contract netleşince ayrı PR (Faz 22)
-- **Production deploy** — `deploy-backend-prod.yml` workflow_dispatch
-  + GitHub environment approval (D30 atomic cutover öncesi)
+- **Production deploy** — `deploy-prod-gitops.yml` workflow_dispatch
+  (`production` env-gate'li ArgoCD GitOps sync). Bkz.
+  `docs/operations/RUNBOOKS/RB-prod-gitops-sync.md`. Eski image-only
+  `deploy-backend-prod.yml` 2026-05-18 PR-2 ile emekli edildi.
 - **Multi-replica pod doğrulama** — şu an replicas=1; prod scale 2+
   olduğunda Gate 1a "all non-terminating Running pods digest match" gate'e
   dönüştürülmeli (Codex 019de00f öneri)
