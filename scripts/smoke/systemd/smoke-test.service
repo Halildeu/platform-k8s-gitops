@@ -20,6 +20,7 @@ StandardError=append:/var/log/platform-smoke-test.log
 TimeoutStartSec=300
 # Smoke exit codes (d29-smoke-runner.sh): 0=all tiers GREEN, 1=a tier RED,
 # 3=incomplete (a tier SKIP/AMBER, no RED — PR-4A). All three mean "the runner
-# completed"; systemd must not flag the unit failed, and the ExecStartPost
-# ledger marker must still run on 1/3 to record the smoke evidence.
+# completed"; systemd must not flag the unit failed, so the ExecStartPost
+# ledger marker still runs on 1/3 to evaluate the smoke report (its own guard
+# declines to mark a non-GREEN report — no false promotion).
 SuccessExitStatus=0 1 3
