@@ -182,7 +182,9 @@ kubectl --context k3d-prod apply -k kustomize/base/rbac     # ops-break-glass
 # ile çalıştır (test drill 2026-05-18 bulgusu — DURUM marker'a bak):
 cp ~/.kube/config /tmp/kc-bg-prod
 KUBECONFIG=/tmp/kc-bg-prod kubectl config use-context k3d-prod
-KUBECONFIG=/tmp/kc-bg-prod kubectl config current-context    # → k3d-prod OLMALI
+# PREFLIGHT fail-fast — yanlış context'te token/audit üretimini engelle:
+test "$(KUBECONFIG=/tmp/kc-bg-prod kubectl config current-context)" = "k3d-prod" \
+  || { echo "ABORT: context k3d-prod değil — token üretme"; exit 1; }
 KUBECONFIG=/tmp/kc-bg-prod bash scripts/operations/break-glass-token.sh "PR-3B activation smoke"
 rm -f /tmp/kc-bg-prod    # izole kubeconfig (creds içerir) — temizle
 ```
