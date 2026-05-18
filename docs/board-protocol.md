@@ -277,6 +277,8 @@ Ritüelin mekaniğini taşıyan script. Alt komutlar:
 | `heartbeat <issue>` | Aktif claim lease'ini uzat (`HEARTBEAT` comment + body `expires_at`) |
 | `release <issue>` | Claim'i bırak — yalnız sahibi; başkasının claim'i ancak `--force-stale` + lease expired ise |
 | `sync-state <issue>` | Gövde `agent-state` ↔ board `Status` senkron raporla |
+| `verify <issue> --pr <N>` | PR-merge evidence — board `Status` → `Needs Verify` + makine-okunur `EVIDENCE` comment (idempotent) |
+| `reap [--limit N]` | Lease'i geçmiş tüm `In Progress` claim'leri release et (scheduled reaper bunu çağırır) |
 
 `--dry-run` her komutta — write yapmadan ne yapacağını gösterir. `claim`
 lease'i `CLAIM_TTL_HOURS` (default 2 saat) sonra dolar; uzun iş için
@@ -325,13 +327,41 @@ item'ı çeker (4 repo).
 
 ---
 
-## 15. İterasyon-2 (ertelendi)
+## 15. İterasyon-2 — board automation Actions
 
-İter-1 disiplin + script ile çalışır. İterasyon-2 otomasyonu (Codex `019e3a0d`
-AGREE — sıraya göre), iter-1 pratikte oturduktan sonra:
+İter-1 disiplin + script üzerine, iter-2 iki GitHub Action ekler (Codex
+`019e3a0d` AGREE). Her ikisi de **thin wrapper** — tüm board-mutation mantığı
+`board-sync.sh`'de kalır. Auth: `ADD_TO_PROJECT_PAT` secret; workflow
+`permissions: contents: read` (yalnız checkout), mutasyonlar PAT ile.
 
-1. **PR-merge Action** — PR body'deki `Tracked by #N`'i parse eder, issue'ya
-   `EVIDENCE` comment'i atar, board `Status` → `Needs Verify` (asla `Done`).
-2. **`/claim` Action arbiter** — `concurrency: roadmap-claim-${issue}` ile
-   claim yarışını merkezi hale getirir (script protokolünü sertleştirir).
-3. **Scheduled stale-reaper** — yalnız stale claim'ler pratikte sık görünürse.
+**`.github/workflows/board-pr-evidence.yml`** — `pull_request: closed` (merged).
+PR body'sindeki `Tracked by <ref>` satırlarını parse eder, her ref için
+`board-sync.sh verify` çağırır.
+
+- Ref formatları: `#N`, `owner/repo#N`, tam issue URL'i — **cross-repo
+  `Tracked by` desteklenir** (board user-owned, issue repo-owned).
+- `Closes/Fixes/Resolves` parse EDİLMEZ — yalnız `Tracked by`. (`Closes`
+  issue'yu native kapatır → `item-closed → Done`.)
+- **Idempotent**: aynı PR tekrar event üretirse `EVIDENCE type=pr-merged
+  pr=<N>` zaten varsa skip; tekrar comment yok.
+- Asla downgrade: `Done` / `Blocked` / `Needs Verify` item'a dokunmaz; board'da
+  olmayan veya ambiguous ref → graceful skip (workflow fail değil). Gerçek
+  fail yalnız auth/API/script hatası.
+- `verify` PR-merge'de body `agent-state`'i `needs-verify` yapar + claim
+  alanlarını `none`'a çeker — implementation claim'i bitti, acceptance başka
+  oturum tarafından alınabilir.
+
+**`.github/workflows/board-stale-reaper.yml`** — `schedule` saatlik (+
+`workflow_dispatch` `dry_run` input). `board-sync.sh reap` çağırır → lease'i
+geçmiş her `In Progress` claim'i release eder (`HANDOFF released=stale-reaper`
+comment + body `todo` + board `Todo`).
+
+- Conservative: yalnız `In Progress` + gerçek issue + kayıtlı `claim_session` +
+  parse-edilebilir + geçmiş `expires_at`; `Blocked` / `Needs Verify` / `Done`
+  asla dokunulmaz.
+- Bounded: `--limit` (default 20) run başına.
+
+**Düşürülen — `/claim` arbiter Action**: `board-sync.sh claim` deterministik
+claim zaten race-correct (winner_of 8/8 unit-test); arbiter yalnız
+`concurrency` serialization eklerdi — correctness gerektirmiyor + ikinci bir
+claim giriş yolu açardı. Gerçek bir race-failure gözlenirse yeniden değerlendirilir.

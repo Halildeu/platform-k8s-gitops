@@ -13,13 +13,17 @@
 #   heartbeat  <issue>    extend your active claim's lease
 #   release    <issue>    release your claim (ownership-checked)
 #   sync-state <issue>    report issue-body agent-state vs board Status
+#   verify     <issue>    PR-merge evidence: Status -> Needs Verify (--pr N)
+#   reap                  release every stale In Progress claim
 #
 # Flags:
 #   --dry-run             print mutations instead of executing them
-#   --force-stale         (release) allow releasing another session's
-#                         claim only if its lease is expired/stale
+#   --force-stale         (release) release another session's expired claim
+#   --pr <N>              (verify) the merged PR number
+#   --repo <owner/repo>   (verify) disambiguate a bare issue number
+#   --limit <N>           (reap) max items per run (default 20)
 #
-# <issue>: bare number (resolved via board) or full issue URL.
+# <issue>: bare number (resolved via board), owner/repo#N, or full URL.
 # Session id: $BOARD_SESSION_ID if set, else generated and printed.
 set -euo pipefail
 
@@ -30,12 +34,17 @@ PROJECT_ID="PVT_kwHOCx7tY84BIN2d"
 STATUS_FIELD="PVTSSF_lAHOCx7tY84BIN2dzg4vgLw"
 STATUS_TODO="fcee11d3"
 STATUS_INPROGRESS="02bba678"
+STATUS_NEEDSVERIFY="3c8afb23"
 STATUS_TODO_NAME="Todo"
 STATUS_INPROGRESS_NAME="In Progress"
+STATUS_NEEDSVERIFY_NAME="Needs Verify"
 CLAIM_TTL_HOURS="2"
 
 DRY_RUN=0
 FORCE_STALE=0
+OPT_PR=""
+OPT_REPO=""
+OPT_LIMIT=""
 BOARD_CACHE=""
 
 # --- helpers ------------------------------------------------------------------
@@ -43,7 +52,7 @@ log()  { printf '%s\n' "$*" >&2; }
 die()  { printf 'board-sync: %s\n' "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '4,23p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '4,27p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -95,6 +104,17 @@ board_json() {
   cat "$BOARD_CACHE"
 }
 
+# board_matches <num> <repo-or-empty> -> tab lines: id status url title kind
+board_matches() {
+  board_json | jq -r --arg n "$1" --arg r "$2" '
+    [ .items[]
+      | select(.content.type == "Issue")
+      | select((.content.number | tostring) == $n)
+      | select($r == "" or (.content.url // "" | contains("/" + $r + "/")))
+    ]
+    | .[] | "\(.id)\t\(.status // "")\t\(.content.url // "")\t\(.title // "")\t\(.kind // "")"'
+}
+
 # resolve_issue <number|url> -> sets REPO NUM ITEM_ID ITEM_STATUS ITEM_TITLE
 resolve_issue() {
   local arg="$1"
@@ -110,13 +130,7 @@ resolve_issue() {
   printf '%s' "$NUM" | grep -Eq '^[0-9]+$' || die "bad issue ref: '$arg'"
 
   local matches
-  matches="$(board_json | jq -r --arg n "$NUM" --arg r "$REPO" '
-    [ .items[]
-      | select(.content.type == "Issue")
-      | select((.content.number | tostring) == $n)
-      | select($r == "" or (.content.url // "" | contains("/" + $r + "/")))
-    ]
-    | .[] | "\(.id)\t\(.status // "")\t\(.content.url // "")\t\(.title // "")\t\(.kind // "")"')"
+  matches="$(board_matches "$NUM" "$REPO")"
 
   local count
   count="$(printf '%s\n' "$matches" | grep -c . || true)"
@@ -440,15 +454,146 @@ cmd_sync_state() {
   esac
 }
 
+# --- subcommand: verify -------------------------------------------------------
+# PR-merge evidence: a merged PR's `Tracked by #N` -> board Status Needs Verify
+# + a machine-readable EVIDENCE comment. Idempotent; never downgrades Done /
+# Blocked / Needs Verify; skips (success) non-eligible items.
+cmd_verify() {
+  [ -n "${1:-}" ] || die "verify needs an <issue>"
+  [ -n "$OPT_PR" ] || die "verify needs --pr <N>"
+  printf '%s' "$OPT_PR" | grep -Eq '^[0-9]+$' || die "verify --pr must be a number"
+  local ref="$1"
+  if printf '%s' "$ref" | grep -Eq '^[^/ ]+/[^/ #]+#[0-9]+$'; then
+    ref="https://github.com/${ref%#*}/issues/${ref##*#}"
+  elif [ -n "$OPT_REPO" ] && printf '%s' "$ref" | grep -Eq '^[0-9]+$'; then
+    ref="https://github.com/$OPT_REPO/issues/$ref"
+  fi
+
+  # graceful skip if the ref is not a single board issue (curated board —
+  # not every issue is roadmap-tracked; ambiguity is not a hard error here)
+  local vnum vrepo cnt
+  if printf '%s' "$ref" | grep -q '^https://github.com/'; then
+    local rp
+    rp="${ref#https://github.com/}"
+    vrepo="${rp%%/issues/*}"
+    vnum="${rp##*/}"
+  else
+    vnum="$ref"
+    vrepo=""
+  fi
+  cnt="$(board_matches "$vnum" "$vrepo" | grep -c . || true)"
+  if [ "$cnt" -eq 0 ]; then
+    log "verify skip — #$vnum not on the board (curated — not a roadmap issue)"
+    return 0
+  fi
+  if [ "$cnt" -gt 1 ]; then
+    log "verify skip — #$vnum ambiguous across repos (use owner/repo#N)"
+    return 0
+  fi
+  resolve_issue "$ref"
+
+  if [ "$ITEM_KIND" = "umbrella" ]; then
+    log "verify skip — #$NUM Kind=umbrella"
+    return 0
+  fi
+  case "$ITEM_STATUS" in
+    Todo|"In Progress") : ;;
+    *)
+      log "verify skip — #$NUM Status='${ITEM_STATUS:-unset}' (no downgrade)"
+      return 0
+      ;;
+  esac
+
+  local seen
+  seen="$(gh issue view "$NUM" --repo "$REPO" --json comments 2>/dev/null \
+    | jq --arg pr "$OPT_PR" '[.comments[]
+        | select(.body | contains("EVIDENCE type=pr-merged pr=" + $pr + " "))] | length' \
+    2>/dev/null || echo 0)"
+  if [ "${seen:-0}" -gt 0 ]; then
+    log "verify skip — #$NUM already has EVIDENCE for pr=$OPT_PR (idempotent)"
+    return 0
+  fi
+
+  local now ev body
+  now="$(iso_now)"
+  ev="EVIDENCE type=pr-merged pr=$OPT_PR repo=$REPO at=$now
+Source-ready: PR #$OPT_PR merged.
+Runtime/acceptance evidence pending — board Status -> Needs Verify."
+  log "verify #$NUM ($REPO) — PR #$OPT_PR merged -> Needs Verify"
+  post_comment "$REPO" "$NUM" "$ev"
+  body="$(issue_body "$REPO" "$NUM")"
+  if printf '%s\n' "$body" | grep -q 'agent-state:v1'; then
+    printf '%s\n' "$body" \
+      | rewrite_state "needs-verify" "none" "none" "none" "none" "none" \
+      | write_body "$REPO" "$NUM"
+    log "issue body agent-state -> needs-verify (claim cleared)"
+  fi
+  set_board_status "$ITEM_ID" "$STATUS_NEEDSVERIFY" "$STATUS_NEEDSVERIFY_NAME"
+}
+
+# --- subcommand: reap ---------------------------------------------------------
+# Release every In Progress item whose claim lease has expired. Conservative:
+# only acts on a real, recorded, parseable, past lease; never touches
+# Blocked / Needs Verify / Done. Bounded by --limit (default 20).
+cmd_reap() {
+  local limit actor now_iso reaped=0 scanned=0
+  limit="${OPT_LIMIT:-20}"
+  printf '%s' "$limit" | grep -Eq '^[0-9]+$' || die "reap --limit must be a number"
+  actor="$(session_id)"
+  now_iso="$(iso_now)"
+  log "reap — scanning In Progress claims (limit $limit)"
+  local inprog
+  inprog="$(board_json | jq -r '
+    .items[]
+    | select(.content.type == "Issue" and .status == "In Progress")
+    | "\(.id)\t\(.content.number)\t\(.content.url // "")"')"
+  if [ -z "$inprog" ]; then
+    log "reap — no In Progress items"
+    return 0
+  fi
+  while IFS=$'\t' read -r item num url; do
+    [ -z "$num" ] && continue
+    if [ "$reaped" -ge "$limit" ]; then
+      log "reap — limit $limit reached"
+      break
+    fi
+    scanned=$((scanned + 1))
+    local repo path body bsess bexp
+    path="${url#https://github.com/}"
+    repo="${path%%/issues/*}"
+    body="$(issue_body "$repo" "$num")"
+    bsess="$(printf '%s\n' "$body" | state_get claim_session)"
+    bexp="$(printf '%s\n' "$body" | state_get expires_at)"
+    if [ -z "$bsess" ] || [ "$bsess" = "none" ]; then continue; fi
+    if [ -z "$bexp" ] || [ "$bexp" = "none" ]; then continue; fi
+    printf '%s' "$bexp" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' || continue
+    [[ "$bexp" < "$now_iso" ]] || continue
+    reaped=$((reaped + 1))
+    log "reap #$num ($repo) — stale claim session=$bsess expired=$bexp"
+    post_comment "$repo" "$num" \
+      "HANDOFF released=stale-reaper session=$bsess by=$actor at=$now_iso"
+    if printf '%s\n' "$body" | grep -q 'agent-state:v1'; then
+      printf '%s\n' "$body" \
+        | rewrite_state "todo" "none" "none" "none" "none" "none" \
+        | write_body "$repo" "$num"
+    fi
+    set_board_status "$item" "$STATUS_TODO" "$STATUS_TODO_NAME"
+  done <<< "$inprog"
+  log "reap — scanned=$scanned reaped=$reaped"
+}
+
 # --- arg parse + dispatch -----------------------------------------------------
 main() {
   local cmd="" args=()
-  for a in "$@"; do
-    case "$a" in
-      --dry-run)     DRY_RUN=1 ;;
-      --force-stale) FORCE_STALE=1 ;;
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run)     DRY_RUN=1; shift ;;
+      --force-stale) FORCE_STALE=1; shift ;;
+      --pr)          [ $# -ge 2 ] || die "--pr needs a value"; OPT_PR="$2"; shift 2 ;;
+      --repo)        [ $# -ge 2 ] || die "--repo needs a value"; OPT_REPO="$2"; shift 2 ;;
+      --limit)       [ $# -ge 2 ] || die "--limit needs a value"; OPT_LIMIT="$2"; shift 2 ;;
       -h|--help)     usage 0 ;;
-      *) if [ -z "$cmd" ]; then cmd="$a"; else args+=("$a"); fi ;;
+      *) if [ -z "$cmd" ]; then cmd="$1"; else args+=("$1"); fi; shift ;;
     esac
   done
   [ -n "$cmd" ] || usage 1
@@ -460,6 +605,8 @@ main() {
     heartbeat)  cmd_heartbeat "${args[@]:-}" ;;
     release)    cmd_release "${args[@]:-}" ;;
     sync-state) cmd_sync_state "${args[@]:-}" ;;
+    verify)     cmd_verify "${args[@]:-}" ;;
+    reap)       cmd_reap ;;
     *)          die "unknown subcommand: $cmd (try --help)" ;;
   esac
 }

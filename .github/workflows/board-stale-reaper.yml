@@ -1,0 +1,38 @@
+name: Board — stale claim reaper
+
+# Hourly: release every In Progress roadmap board item whose claim lease has
+# expired, so the next agent sees it as Todo. Thin wrapper over
+# scripts/board-sync.sh reap. Protocol: docs/board-protocol.md sections 8, 15.
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List stale claims without releasing them'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  reap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: board-sync reap
+        env:
+          GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT }}
+          REAP_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ "${REAP_DRY_RUN:-false}" = "true" ]; then
+            scripts/board-sync.sh reap --dry-run
+          else
+            scripts/board-sync.sh reap
+          fi
