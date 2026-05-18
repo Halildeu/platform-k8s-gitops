@@ -877,8 +877,9 @@ images:
     # 2026-05-18 update: sha-74916a8 — platform-backend PR #242 (SUGGESTIONS +
     # ETHIC permission modülleri: PermissionCatalogService.MODULES +
     # PermissionDataInitializer.buildAdminGranules) + PR #240 (@WebMvcTest
-    # slice context-load fix). Authz leak closure — İK Öneriler/Etik shell
-    # header + sidebar Schema Explorer module gating için backend yarısı.
+    # slice context-load fix). Authz leak fix backend prerequisite — İK
+    # Öneriler/Etik shell header + sidebar Schema Explorer module gating.
+    # main-forward: #236→#242 ara commit'leri (#237-#241) de taşınıyor.
     # Image build: merge commit 74916a8c (CI Image Build + GHCR Push success).
     digest: sha256:6cf81e19b7e3883626dfeb8cbfa3514dd46546aecba4c65ee70abf9c722a709f
   # Frontend testai variant (testai.acik.com + platform-test realm)
@@ -2266,8 +2267,11 @@ images:
     # SUGGESTIONS/ETHIC module gating: MODULE_KEYS, header-navigation.config
     # module:, AppRouter ProtectedRoute) + PR #585 (Schema Explorer sidebar
     # THEME gate: buildSidebarNavItems + isSearchableItemVisible predicate).
-    # Authz leak closure — yetkisiz kullanıcı İK Öneriler/Etik + Schema
-    # Explorer öğelerini görmemeli. Image build: merge commit cffdfc8d.
+    # Authz leak deploy candidate — browser acceptance remains required;
+    # kabul kriteri: yetkisiz kullanıcı İK Öneriler/Etik + Schema Explorer
+    # öğelerini görmemeli, ADMIN erişimi korunmalı.
+    # main-forward: #560→#587 ara commit'leri (#561-#586) de taşınıyor.
+    # Image build: merge commit cffdfc8d.
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-cffdfc8
     # @sha256:16ffc7f1cc33f8303efcd0c608e5eab66459e2d77055997e4cf7005f8428a860
     digest: sha256:16ffc7f1cc33f8303efcd0c608e5eab66459e2d77055997e4cf7005f8428a860
