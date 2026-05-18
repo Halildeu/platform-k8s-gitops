@@ -2,24 +2,25 @@
 # scripts/board-sync.sh
 #
 # platform Roadmap (GitHub Project #2) agent sync tool.
-#
-# Makes the board an active, session-continuous work surface: list eligible
-# work, claim it race-safely across parallel sessions, release it, and report
-# board <-> issue-body state consistency.
-#
+# Makes the board an active, session-continuous, parallel-safe work surface.
 # Protocol (canonical): docs/board-protocol.md
 #
+# Usage: board-sync.sh <subcommand> [<issue>] [flags]
+#
 # Subcommands:
-#   list                 eligible Todo work + In Progress claim status
-#   claim   <issue>      deterministic claim (CLAIM comment + re-read winner)
-#   release <issue>      release a claim (HANDOFF released comment)
-#   sync-state <issue>   report issue-body agent-state vs board Status
+#   list                  eligible Todo work + In Progress claim status
+#   claim      <issue>    deterministic race-safe claim
+#   heartbeat  <issue>    extend your active claim's lease
+#   release    <issue>    release your claim (ownership-checked)
+#   sync-state <issue>    report issue-body agent-state vs board Status
 #
 # Flags:
-#   --dry-run            print mutations instead of executing them
+#   --dry-run             print mutations instead of executing them
+#   --force-stale         (release) allow releasing another session's
+#                         claim only if its lease is expired/stale
 #
-# <issue> may be a bare number (resolved against the board) or a full issue URL.
-# Session identity: $BOARD_SESSION_ID if set, else generated and printed.
+# <issue>: bare number (resolved via board) or full issue URL.
+# Session id: $BOARD_SESSION_ID if set, else generated and printed.
 set -euo pipefail
 
 # --- board reference (see docs/board-protocol.md section 13) ------------------
@@ -34,6 +35,7 @@ STATUS_INPROGRESS_NAME="In Progress"
 CLAIM_TTL_HOURS="2"
 
 DRY_RUN=0
+FORCE_STALE=0
 BOARD_CACHE=""
 
 # --- helpers ------------------------------------------------------------------
@@ -41,7 +43,7 @@ log()  { printf '%s\n' "$*" >&2; }
 die()  { printf 'board-sync: %s\n' "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '3,18p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '4,23p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -57,15 +59,20 @@ epoch_to_iso() {
     || date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ
 }
 
+claim_expiry_iso() {
+  epoch_to_iso "$(( $(epoch_now) + CLAIM_TTL_HOURS * 3600 ))"
+}
+
 session_id() {
   if [ -n "${BOARD_SESSION_ID:-}" ]; then
     printf '%s' "$BOARD_SESSION_ID"
   else
-    local sid
-    sid="$(hostname -s 2>/dev/null || echo host)-$$-$(epoch_now)"
-    printf '%s' "$sid"
+    printf '%s' "$(hostname -s 2>/dev/null || echo host)-$$-$(epoch_now)"
   fi
 }
+
+# read one agent-state:v1 key from an issue body (stdin)
+state_get() { sed -n "s/^$1: *//p" | head -1; }
 
 preflight() {
   command -v gh >/dev/null 2>&1 || die "gh CLI not found in PATH"
@@ -79,7 +86,6 @@ preflight() {
 }
 
 board_json() {
-  # fetch board once per invocation, cache to a temp file
   if [ -z "$BOARD_CACHE" ]; then
     BOARD_CACHE="$(mktemp -t board-sync.XXXXXX)"
     gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
@@ -89,7 +95,7 @@ board_json() {
   cat "$BOARD_CACHE"
 }
 
-# resolve_issue <number|url> -> sets REPO, NUM, ITEM_ID, ITEM_STATUS
+# resolve_issue <number|url> -> sets REPO NUM ITEM_ID ITEM_STATUS ITEM_TITLE
 resolve_issue() {
   local arg="$1"
   REPO=""; NUM=""; ITEM_ID=""; ITEM_STATUS=""; ITEM_TITLE=""
@@ -103,7 +109,6 @@ resolve_issue() {
   fi
   printf '%s' "$NUM" | grep -Eq '^[0-9]+$' || die "bad issue ref: '$arg'"
 
-  # match the board item by issue number (+ repo if known)
   local matches
   matches="$(board_json | jq -r --arg n "$NUM" --arg r "$REPO" '
     [ .items[]
@@ -144,14 +149,26 @@ set_board_status() {
 }
 
 post_comment() {
-  # post_comment <repo> <num> <body> -> echoes the created comment url
+  # post_comment <repo> <num> <body>
   if [ "$DRY_RUN" -eq 1 ]; then
     log "[dry-run] comment on $1#$2: $3"
-    printf 'dry-run://comment'
     return 0
   fi
-  gh issue comment "$2" --repo "$1" --body "$3" 2>/dev/null \
+  gh issue comment "$2" --repo "$1" --body "$3" >/dev/null 2>&1 \
     || die "failed to post comment on $1#$2"
+}
+
+issue_body() { gh issue view "$2" --repo "$1" --json body --jq '.body' 2>/dev/null || echo ""; }
+
+write_body() {
+  # write_body <repo> <num> <new-body-on-stdin>
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "[dry-run] would update issue body of $1#$2"
+    cat >/dev/null
+    return 0
+  fi
+  gh issue edit "$2" --repo "$1" --body-file - >/dev/null \
+    || die "failed to update issue body of $1#$2"
 }
 
 rewrite_state() {
@@ -168,6 +185,37 @@ rewrite_state() {
     inb && /^expires_at:/      { print "expires_at: " ex; next }
     { print }
   '
+}
+
+# claim winner: earliest active CLAIM. A CLAIM is active when (a) its effective
+# lease — own expires extended by later same-session HEARTBEATs — is in the
+# future, and (b) no later same-session HANDOFF release voids it. Reads the
+# issue comments JSON on stdin; arg 1 is the current ISO time.
+winner_of() {
+  jq -r --arg now "$1" '
+    ([ .comments[]
+       | select(.body | startswith("HEARTBEAT "))
+       | { created: .createdAt,
+           session: (.body | capture("session=(?<s>[^ \n]+)").s // ""),
+           expires: (.body | capture("expires=(?<e>[^ \n]+)").e // "") } ]) as $hb
+    | ([ .comments[]
+         | select((.body | startswith("HANDOFF ")) and (.body | test("released=")))
+         | { created: .createdAt,
+             session: (.body | capture("session=(?<s>[^ \n]+)").s // "") } ]) as $rel
+    | [ .comments[]
+        | select(.body | startswith("CLAIM "))
+        | { created: .createdAt, id: .id,
+            session: (.body | capture("session=(?<s>[^ \n]+)").s // "?"),
+            cexp: (.body | capture("expires=(?<e>[^ \n]+)").e // "") }
+        | . as $c
+        | (([ $c.cexp ]
+            + [ $hb[] | select(.session == $c.session and .created > $c.created) | .expires ])
+           | max) as $eff
+        | select($eff > $now)
+        | select(([ $rel[] | select(.session == $c.session and .created > $c.created) ] | length) == 0)
+      ]
+    | sort_by(.created, .id)
+    | (.[0].session // "NONE")'
 }
 
 # --- subcommand: list ---------------------------------------------------------
@@ -206,12 +254,12 @@ cmd_list() {
     local repo path body expires sess
     path="${url#https://github.com/}"
     repo="${path%%/issues/*}"
-    body="$(gh issue view "$num" --repo "$repo" --json body --jq '.body' 2>/dev/null || echo "")"
-    expires="$(printf '%s\n' "$body" | sed -n 's/^expires_at: *//p' | head -1)"
-    sess="$(printf '%s\n' "$body" | sed -n 's/^claim_session: *//p' | head -1)"
+    body="$(issue_body "$repo" "$num")"
+    expires="$(printf '%s\n' "$body" | state_get expires_at)"
+    sess="$(printf '%s\n' "$body" | state_get claim_session)"
     if [ -z "$expires" ] || [ "$expires" = "none" ]; then
       log "  #$num $title — IN PROGRESS, no claim recorded (sync-state to inspect)"
-    elif [ "$expires" \< "$now_iso" ]; then
+    elif [[ "$expires" < "$now_iso" ]]; then
       log "  #$num $title — STALE CLAIM (expired $expires, session ${sess:-?}) — reclaimable"
     else
       log "  #$num $title — active claim (session ${sess:-?}, expires $expires)"
@@ -224,13 +272,12 @@ cmd_claim() {
   [ -n "${1:-}" ] || die "claim needs an <issue>"
   resolve_issue "$1"
 
-  local sid wt branch now exp_epoch exp slug claim_body winner
+  local sid wt branch now exp slug claim_body winner
   sid="$(session_id)"
   wt="$(git rev-parse --show-toplevel 2>/dev/null || echo unknown)"
   branch="$(git branch --show-current 2>/dev/null || echo unknown)"
   now="$(iso_now)"
-  exp_epoch="$(( $(epoch_now) + CLAIM_TTL_HOURS * 3600 ))"
-  exp="$(epoch_to_iso "$exp_epoch")"
+  exp="$(claim_expiry_iso)"
   slug="$(printf '%s' "$ITEM_TITLE" | tr '[:upper:]' '[:lower:]' \
     | tr -cs '[:alnum:]' '-' | sed 's/^-*//;s/-*$//' | cut -c1-32 | sed 's/-*$//')"
   [ -n "$slug" ] || slug="issue"
@@ -239,78 +286,99 @@ cmd_claim() {
   [ -n "${BOARD_SESSION_ID:-}" ] || log "note: BOARD_SESSION_ID unset — reuse: export BOARD_SESSION_ID=$sid"
 
   claim_body="CLAIM session=$sid worktree=$wt branch=roadmap-$NUM-$slug at=$now expires=$exp"
-  post_comment "$REPO" "$NUM" "$claim_body" >/dev/null
+  post_comment "$REPO" "$NUM" "$claim_body"
 
   if [ "$DRY_RUN" -eq 1 ]; then
     log "[dry-run] would re-read comments and determine winner"
     return 0
   fi
 
-  # re-read comments, determine the earliest active (non-expired, non-released) CLAIM
   local comments
   comments="$(gh issue view "$NUM" --repo "$REPO" --json comments 2>/dev/null)" \
     || die "failed to re-read comments"
-  winner="$(printf '%s' "$comments" | jq -r --arg now "$now" '
-    ([ .comments[]
-       | select(.body | test("released"))
-       | (.body | capture("session=(?<s>[^ \n]+)").s) ] ) as $released
-    | [ .comments[]
-        | select(.body | startswith("CLAIM "))
-        | { created: .createdAt, id: .id,
-            session: (.body | capture("session=(?<s>[^ \n]+)").s // "?"),
-            expires: (.body | capture("expires=(?<e>[^ \n]+)").e // "") }
-        | select(.expires > $now)
-        | select((.session as $s | $released | index($s)) | not)
-      ]
-    | sort_by(.created, .id)
-    | (.[0].session // "NONE")')"
+  winner="$(printf '%s' "$comments" | winner_of "$now")"
 
   log "claim race winner: session=$winner"
   if [ "$winner" != "$sid" ]; then
     post_comment "$REPO" "$NUM" \
-      "HANDOFF released=lost-race session=$sid at=$(iso_now)" >/dev/null
+      "HANDOFF released=lost-race session=$sid at=$(iso_now)"
     die "claim LOST to session=$winner — released; pick other work (board-sync.sh list)"
   fi
 
-  # won: update issue-body agent-state block + board Status
-  local body new_body
-  body="$(gh issue view "$NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")"
+  local body
+  body="$(issue_body "$REPO" "$NUM")"
   if printf '%s\n' "$body" | grep -q 'agent-state:v1'; then
-    new_body="$(printf '%s\n' "$body" \
-      | rewrite_state "in-progress" "$sid" "$wt" "roadmap-$NUM-$slug" "$now" "$exp")"
-    printf '%s\n' "$new_body" | gh issue edit "$NUM" --repo "$REPO" --body-file - >/dev/null \
-      || die "failed to update issue body"
+    printf '%s\n' "$body" \
+      | rewrite_state "in-progress" "$sid" "$wt" "roadmap-$NUM-$slug" "$now" "$exp" \
+      | write_body "$REPO" "$NUM"
     log "issue body agent-state -> in-progress"
   else
     log "WARN: issue #$NUM has no agent-state:v1 block — body not updated (see docs/board-protocol.md)"
   fi
   set_board_status "$ITEM_ID" "$STATUS_INPROGRESS" "$STATUS_INPROGRESS_NAME"
-  log "claim WON — #$NUM is yours (expires $exp; HEARTBEAT before then)"
+  log "claim WON — #$NUM is yours (lease $exp; run 'heartbeat $NUM' before it expires)"
+}
+
+# --- subcommand: heartbeat ----------------------------------------------------
+cmd_heartbeat() {
+  [ -n "${1:-}" ] || die "heartbeat needs an <issue>"
+  resolve_issue "$1"
+  local sid body bsess bwt bbr now exp
+  sid="$(session_id)"
+  body="$(issue_body "$REPO" "$NUM")"
+  bsess="$(printf '%s\n' "$body" | state_get claim_session)"
+  [ "$bsess" = "$sid" ] \
+    || die "heartbeat refused — #$NUM claimed by session '${bsess:-none}', not you ($sid)"
+  bwt="$(printf '%s\n' "$body" | state_get claim_worktree)"
+  bbr="$(printf '%s\n' "$body" | state_get claim_branch)"
+  now="$(iso_now)"
+  exp="$(claim_expiry_iso)"
+  log "heartbeat #$NUM ($REPO) — session=$sid lease -> $exp"
+  post_comment "$REPO" "$NUM" "HEARTBEAT session=$sid at=$now expires=$exp"
+  if printf '%s\n' "$body" | grep -q 'agent-state:v1'; then
+    printf '%s\n' "$body" \
+      | rewrite_state "in-progress" "$sid" "$bwt" "$bbr" "$now" "$exp" \
+      | write_body "$REPO" "$NUM"
+    log "issue body lease -> $exp"
+  fi
 }
 
 # --- subcommand: release ------------------------------------------------------
 cmd_release() {
   [ -n "${1:-}" ] || die "release needs an <issue>"
   resolve_issue "$1"
-  local sid reason
+  local sid reason body bsess bexp now_iso rel_session
   sid="$(session_id)"
   reason="${2:-manual}"
-  log "release #$NUM ($REPO) — session=$sid reason=$reason"
-  post_comment "$REPO" "$NUM" \
-    "HANDOFF released=$reason session=$sid at=$(iso_now)" >/dev/null
+  body="$(issue_body "$REPO" "$NUM")"
+  bsess="$(printf '%s\n' "$body" | state_get claim_session)"
+  bexp="$(printf '%s\n' "$body" | state_get expires_at)"
+  now_iso="$(iso_now)"
+  rel_session="$sid"
 
-  local body new_body
-  body="$(gh issue view "$NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")"
-  if printf '%s\n' "$body" | grep -q 'agent-state:v1'; then
-    new_body="$(printf '%s\n' "$body" \
-      | rewrite_state "todo" "none" "none" "none" "none" "none")"
-    if [ "$DRY_RUN" -eq 1 ]; then
-      log "[dry-run] would reset agent-state block to unclaimed"
+  # ownership guard — do not silently drop another live session's claim
+  if [ -n "$bsess" ] && [ "$bsess" != "none" ] && [ "$bsess" != "$sid" ]; then
+    if [ "$FORCE_STALE" -eq 1 ] && [ -n "$bexp" ] && [ "$bexp" != "none" ] \
+       && [[ "$bexp" < "$now_iso" ]]; then
+      log "force-stale: #$NUM claimed by '$bsess' but lease expired ($bexp) — reclaiming"
+      reason="stale-reclaim"
+      rel_session="$bsess"
     else
-      printf '%s\n' "$new_body" | gh issue edit "$NUM" --repo "$REPO" --body-file - >/dev/null \
-        || die "failed to update issue body"
-      log "issue body agent-state -> todo (unclaimed)"
+      die "release refused — #$NUM claimed by session '$bsess', not you ($sid); --force-stale only if its lease ($bexp) is expired"
     fi
+  fi
+
+  log "release #$NUM ($REPO) — session=$sid reason=$reason"
+  local note=""
+  [ "$rel_session" != "$sid" ] && note=" by=$sid"
+  post_comment "$REPO" "$NUM" \
+    "HANDOFF released=$reason session=$rel_session${note} at=$now_iso"
+
+  if printf '%s\n' "$body" | grep -q 'agent-state:v1'; then
+    printf '%s\n' "$body" \
+      | rewrite_state "todo" "none" "none" "none" "none" "none" \
+      | write_body "$REPO" "$NUM"
+    log "issue body agent-state -> todo (unclaimed)"
   fi
   if [ "$ITEM_STATUS" = "In Progress" ]; then
     set_board_status "$ITEM_ID" "$STATUS_TODO" "$STATUS_TODO_NAME"
@@ -323,25 +391,24 @@ cmd_sync_state() {
   [ -n "${1:-}" ] || die "sync-state needs an <issue>"
   resolve_issue "$1"
   local body bstatus bsess bexp now_iso
-  body="$(gh issue view "$NUM" --repo "$REPO" --json body --jq '.body' 2>/dev/null || echo "")"
-  bstatus="$(printf '%s\n' "$body" | sed -n 's/^status: *//p' | head -1)"
-  bsess="$(printf '%s\n' "$body" | sed -n 's/^claim_session: *//p' | head -1)"
-  bexp="$(printf '%s\n' "$body" | sed -n 's/^expires_at: *//p' | head -1)"
+  body="$(issue_body "$REPO" "$NUM")"
+  bstatus="$(printf '%s\n' "$body" | state_get status)"
+  bsess="$(printf '%s\n' "$body" | state_get claim_session)"
+  bexp="$(printf '%s\n' "$body" | state_get expires_at)"
   now_iso="$(iso_now)"
 
   log "sync-state #$NUM ($REPO)"
   log "  board Status      : ${ITEM_STATUS:-<unset>}"
   log "  body agent-state  : status=${bstatus:-<none>} session=${bsess:-<none>} expires=${bexp:-<none>}"
   if [ -n "$bexp" ] && [ "$bexp" != "none" ]; then
-    if [ "$bexp" \< "$now_iso" ]; then
-      log "  claim             : STALE (expired $bexp) — reclaimable"
+    if [[ "$bexp" < "$now_iso" ]]; then
+      log "  claim             : STALE (lease expired $bexp) — reclaimable"
     else
       log "  claim             : active until $bexp"
     fi
   else
     log "  claim             : unclaimed"
   fi
-  # consistency hint
   case "$ITEM_STATUS|$bstatus" in
     "In Progress|in-progress"|"Todo|todo"|"Blocked|blocked"|"Needs Verify|needs-verify"|"Done|done") : ;;
     "|"|"|none") : ;;
@@ -354,8 +421,9 @@ main() {
   local cmd="" args=()
   for a in "$@"; do
     case "$a" in
-      --dry-run) DRY_RUN=1 ;;
-      -h|--help) usage 0 ;;
+      --dry-run)     DRY_RUN=1 ;;
+      --force-stale) FORCE_STALE=1 ;;
+      -h|--help)     usage 0 ;;
       *) if [ -z "$cmd" ]; then cmd="$a"; else args+=("$a"); fi ;;
     esac
   done
@@ -365,6 +433,7 @@ main() {
   case "$cmd" in
     list)       cmd_list ;;
     claim)      cmd_claim "${args[@]:-}" ;;
+    heartbeat)  cmd_heartbeat "${args[@]:-}" ;;
     release)    cmd_release "${args[@]:-}" ;;
     sync-state) cmd_sync_state "${args[@]:-}" ;;
     *)          die "unknown subcommand: $cmd (try --help)" ;;

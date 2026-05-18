@@ -267,12 +267,15 @@ Ritüelin mekaniğini taşıyan script. Alt komutlar:
 
 | Komut | İş |
 |---|---|
-| `list` | Eligible iş listesi (Priority sıralı) + stale-claim tespiti |
-| `claim <issue>` | Deterministik claim protokolü (§8) |
-| `release <issue>` | Claim'i bırak (`HANDOFF released`) |
-| `sync-state <issue>` | Gövde `agent-state` + board `Status` senkron raporla |
+| `list` | Eligible iş listesi (Priority sıralı) + In Progress claim durumu (stale tespiti) |
+| `claim <issue>` | Deterministik claim protokolü (§8) — winner re-read ile belirlenir |
+| `heartbeat <issue>` | Aktif claim lease'ini uzat (`HEARTBEAT` comment + body `expires_at`) |
+| `release <issue>` | Claim'i bırak — yalnız sahibi; başkasının claim'i ancak `--force-stale` + lease expired ise |
+| `sync-state <issue>` | Gövde `agent-state` ↔ board `Status` senkron raporla |
 
-`--dry-run` her komutta — write yapmadan ne yapacağını gösterir. Script
+`--dry-run` her komutta — write yapmadan ne yapacağını gösterir. `claim`
+lease'i `CLAIM_TTL_HOURS` (default 2s) sonra dolar; uzun iş için `heartbeat`
+ile lease ileri taşınır (winner hesabı son heartbeat'i dikkate alır). Script
 başlangıçta `gh auth status` + project id sanity check yapar.
 
 ---
