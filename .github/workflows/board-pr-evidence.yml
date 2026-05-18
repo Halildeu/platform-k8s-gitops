@@ -1,0 +1,51 @@
+name: Board — PR merge evidence
+
+# A merged PR's `Tracked by <ref>` lines move the linked roadmap board item
+# to Needs Verify and post a machine-readable EVIDENCE comment. Thin wrapper:
+# all board logic lives in scripts/board-sync.sh (verify subcommand).
+# Protocol: docs/board-protocol.md sections 5 and 15.
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-evidence:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: board-sync verify for each Tracked-by ref
+        env:
+          GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_REPO: ${{ github.repository }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          # tracked-by line(s) -> ref token(s): #N, owner/repo#N, or issue URL.
+          refs="$(printf '%s\n' "${PR_BODY:-}" \
+            | grep -iE '^[[:space:]]*tracked[ -]?by\b' \
+            | grep -oE '(https://github\.com/[^ ]+/issues/[0-9]+|[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[0-9]+|#[0-9]+)' \
+            | head -20 || true)"
+          if [ -z "$refs" ]; then
+            echo "PR #$PR_NUMBER — no 'Tracked by' refs; nothing to do." \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          n=0
+          while IFS= read -r ref; do
+            [ -z "$ref" ] && continue
+            n=$((n + 1))
+            echo "::group::verify $ref (PR #$PR_NUMBER)"
+            scripts/board-sync.sh verify "${ref#\#}" --pr "$PR_NUMBER" --pr-repo "$PR_REPO"
+            echo "::endgroup::"
+          done <<< "$refs"
+          echo "PR #$PR_NUMBER — board-sync verify ran for $n Tracked-by ref(s)." \
+            | tee -a "$GITHUB_STEP_SUMMARY"
