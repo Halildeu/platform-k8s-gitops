@@ -18,6 +18,8 @@ ExecStartPost=/bin/bash -c 'latest=$(ls -t /tmp/smoke-report-test-*.json 2>/dev/
 StandardOutput=append:/var/log/platform-smoke-test.log
 StandardError=append:/var/log/platform-smoke-test.log
 TimeoutStartSec=300
-# Smoke RED is exit_code=1 — still acceptable from systemd POV; we don't
-# want systemd to flag the unit as failed when smoke detects a problem
-SuccessExitStatus=0 1
+# Smoke exit codes (d29-smoke-runner.sh): 0=all tiers GREEN, 1=a tier RED,
+# 3=incomplete (a tier SKIP/AMBER, no RED — PR-4A). All three mean "the runner
+# completed"; systemd must not flag the unit failed, and the ExecStartPost
+# ledger marker must still run on 1/3 to record the smoke evidence.
+SuccessExitStatus=0 1 3

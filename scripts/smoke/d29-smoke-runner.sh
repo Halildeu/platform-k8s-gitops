@@ -116,12 +116,97 @@ tier_up() {
 
 # ------------------------------------------------------------
 # Tier 2: Functional — endpoint shape (401 JWT required)
+#
+# probe_functional_endpoint port-forwards one service and classifies the
+# outcome into a 3-state verdict (Codex 019e3a17 — Tier-2 network-path fix):
+#   OK    — endpoint answered 200/401/403 (auth chain intact)
+#   RED   — wiring/build broken: service exposes no "http"-named port, has no
+#           ready endpoint, or the tunnel bound but the endpoint returned a
+#           5xx / 000 / otherwise-unexpected status
+#   AMBER — the port-forward tunnel itself never bound (local port collision,
+#           transient apiserver) — inconclusive, NOT evidence the build is bad
+#
+# Why a named port: every JWT service exposes its HTTP port under a distinct
+# number (api-gateway 8080, user-service 8089, permission-service 8090, ...)
+# but all under a port named "http"; the old hard-coded "$port:80" matched no
+# service, so Tier 2 was RED on every run. Why 3-state: AMBER (vs RED) lets a
+# transient tunnel-setup failure roll up to exit 3 "incomplete/retry" instead
+# of exit 1 "build is RED" — but once the tunnel is up, any bad answer is RED.
 # ------------------------------------------------------------
+probe_functional_endpoint() {
+  local svc="$1" svc_ep="$2"
+
+  # Wiring pre-check 1 — service must expose a port named "http". Caught here
+  # deterministically (RED) rather than surfacing as a port-forward error.
+  local http_named
+  http_named=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get svc "$svc" \
+    -o 'jsonpath={.spec.ports[?(@.name=="http")].name}' 2>/dev/null || echo "")
+  if [[ "$http_named" != "http" ]]; then
+    echo "RED|no http-named service port"
+    return
+  fi
+
+  # Wiring pre-check 2 — service must have at least one READY endpoint. Tier 1
+  # already checks pod Ready; an empty ready-endpoint set while Tier 1 is
+  # GREEN means selector/endpoint drift — a genuine wiring RED, not transient.
+  local ep_ips
+  ep_ips=$(kubectl --context "$CONTEXT" -n "$NAMESPACE" get endpoints "$svc" \
+    -o 'jsonpath={.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
+  if [[ -z "$ep_ips" ]]; then
+    echo "RED|service has no ready endpoints"
+    return
+  fi
+
+  # Port-forward via the named "http" port; capture output for classification.
+  local port pf_log pf_pid
+  port=$((20000 + RANDOM % 10000))
+  pf_log=$(mktemp "/tmp/d29-pf-${svc}-XXXXXX")
+  kubectl --context "$CONTEXT" -n "$NAMESPACE" port-forward "svc/$svc" "$port:http" \
+    > "$pf_log" 2>&1 &
+  pf_pid=$!
+
+  # Poll up to ~8s for the tunnel listener to bind ("Forwarding from ...").
+  local tunnel="down" i
+  for ((i = 0; i < 40; i++)); do
+    if grep -q "Forwarding from" "$pf_log" 2>/dev/null; then
+      tunnel="up"
+      break
+    fi
+    kill -0 "$pf_pid" 2>/dev/null || break   # port-forward exited before bind
+    sleep 0.2
+  done
+
+  local verdict
+  if [[ "$tunnel" != "up" ]]; then
+    # Tunnel never bound — mechanism failure, inconclusive (AMBER, not RED).
+    if grep -qi "address already in use" "$pf_log" 2>/dev/null; then
+      verdict="AMBER|local port collision - listener bind failed"
+    else
+      verdict="AMBER|port-forward tunnel did not establish - transient"
+    fi
+    echo "  [pf $svc] $(tr -d '\r\n' < "$pf_log" | tail -c 200)" >&2
+  else
+    # Tunnel is up — any non-(200/401/403) answer is now a genuine RED.
+    local code
+    code=$(curl -s -o /dev/null -w '%{http_code}' \
+      --connect-timeout 5 --max-time 10 \
+      "http://127.0.0.1:$port$svc_ep" 2>/dev/null || true)
+    code="${code:-000}"
+    case "$code" in
+      200|401|403) verdict="OK|$code" ;;
+      *)           verdict="RED|tunnel up, endpoint returned $code" ;;
+    esac
+  fi
+
+  kill "$pf_pid" 2>/dev/null || true
+  wait "$pf_pid" 2>/dev/null || true
+  rm -f "$pf_log"
+  echo "$verdict"
+}
+
 tier_functional() {
   echo "--- Tier 2: Functional ---"
-  local status="GREEN"
-  local details=""
-  local fail_count=0
+  local details="" red_count=0 amber_count=0
   local checked_endpoints=()
 
   for svc in "${JWT_SERVICES[@]}"; do
@@ -135,39 +220,34 @@ tier_functional() {
       report-service) svc_ep="/api/v1/reports" ;;
       *) continue ;;
     esac
-
-    # Port-forward, query, kill
-    local port=$((20000 + RANDOM % 10000))
-    kubectl --context "$CONTEXT" -n "$NAMESPACE" port-forward "svc/$svc" "$port:80" \
-      > /dev/null 2>&1 &
-    local pf_pid=$!
-    sleep 2
-
-    local code
-    code=$(curl -s -o /dev/null -w '%{http_code}' \
-      --connect-timeout 5 --max-time 10 \
-      "http://localhost:$port$svc_ep" 2>/dev/null || echo "000")
-
-    kill "$pf_pid" 2>/dev/null || true
-    wait "$pf_pid" 2>/dev/null || true
-
     checked_endpoints+=("$svc_ep")
 
-    # Acceptable: 200 (actuator), 401 (auth required), 403 (auth/forbidden)
-    # Failure: 500 (backend broken), 502/503/504 (upstream broken), 000 (unreachable)
-    case "$code" in
-      200|401|403)
-        : # OK
+    local probe verdict detail
+    probe=$(probe_functional_endpoint "$svc" "$svc_ep")
+    verdict="${probe%%|*}"
+    detail="${probe#*|}"
+    case "$verdict" in
+      OK)
+        : # auth chain intact
         ;;
-      *)
-        details="${details}${svc}@${svc_ep}=$code;"
-        fail_count=$((fail_count + 1))
+      AMBER)
+        details="${details}${svc}@${svc_ep}=AMBER(${detail});"
+        amber_count=$((amber_count + 1))
+        ;;
+      *) # RED — and any unexpected verdict, fail closed
+        details="${details}${svc}@${svc_ep}=RED(${detail});"
+        red_count=$((red_count + 1))
         ;;
     esac
   done
 
-  if [[ "$fail_count" -gt 0 ]]; then
+  # RED outranks AMBER: a 5xx/wiring failure is a build-RED; a pure
+  # tunnel-setup failure with no RED is inconclusive (AMBER → exit 3 retry).
+  local status="GREEN"
+  if [[ "$red_count" -gt 0 ]]; then
     status="RED"
+  elif [[ "$amber_count" -gt 0 ]]; then
+    status="AMBER"
   fi
 
   if [[ -z "$details" ]]; then
