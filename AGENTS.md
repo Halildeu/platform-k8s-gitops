@@ -24,7 +24,7 @@ Navigator ama karar kaynağı olmayan yüzeyler:
 ## 2. Repo Kimliği
 
 - Bu repo `platform-k8s-gitops` için **desired-state ve operasyon repo**'sudur.
-- Uygulama kaynak kodu, image build ve runtime artifact üretimi ayrı repo olan `platform-ssot` tarafındadır.
+- Uygulama kaynak kodu, image build ve runtime artifact üretimi canonical kaynak repo'larda yapılır — backend `platform-backend`, frontend `platform-web`. (`platform-ssot` 2026-04-25'ten beri DEPRECATED, audit-only — HARD RULE.)
 - Bu repo bir uygulama feature backlog'u değil; manifest, bootstrap, GitOps, secret delivery, cutover ve runtime governance repo'sudur.
 
 ## 3. HARD RULE

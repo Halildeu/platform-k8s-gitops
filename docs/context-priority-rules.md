@@ -82,7 +82,7 @@ Bir conflict varsa daha yukarıdaki katman aşağıdakini yener.
 - uygulama kaynak kodu repo'su değildir
 - backend feature geliştirme backlog'u değildir
 - image build otoritesi değildir
-- `platform-ssot` yerine geçen repo değildir
+- canonical kaynak repo'ların (`platform-backend` / `platform-web`) yerine geçen repo değildir
 
 ### 3.2 Bu Repo Ne İçindir
 
@@ -99,7 +99,7 @@ repo'sudur.
 
 Uygulama kaynak kodu ve artifact üretimi:
 
-- repo: `platform-ssot`
+- repo: `platform-backend` (backend) + `platform-web` (frontend) — canonical kaynak repo'lar (`platform-ssot` 2026-04-25'ten beri DEPRECATED, audit-only)
 - sorumluluk: backend/frontend code, Dockerfile, immutable image build, runtime config profilleri
 
 Bu repo ise o artifact'leri **digest/tag düzeyinde** consume eder ve cluster/edge'e taşır.
@@ -159,7 +159,7 @@ Doğru yaklaşım:
 
 Bu repo için promotion zinciri aşağıdaki sırayla yorumlanır:
 
-1. `platform-ssot` tarafında artifact üretilir
+1. `platform-backend` / `platform-web` CI'ında artifact (immutable image) üretilir
 2. artifact immutable referansla bu repoya taşınır
 3. `testai.acik.com` üzerinde D29 seviyeleri kanıtlanır
 4. soak / monitoring / blocker kapıları temizlenir
