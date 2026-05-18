@@ -49,7 +49,7 @@ drill'i agent-actionable temizledi. `ops-break-glass` SA + cluster-admin CRB k3d
 apply edildi, `break-glass-token.sh` koştu (exit 0): 1h TTL token üretildi ve doğrulandı
 (`auth whoami` = `system:serviceaccount:kube-system:ops-break-glass`, `auth can-i '*' '*'`
 = `yes`, gerçek `get ns` token-canlı), audit log satırı yazıldı. Drill sonrası SA
-k3d-test'ten silindi — **net state değişimi sıfır**. GitHub issue yolu (`gh` staging-sw'de
+k3d-test'ten silindi — **k3d-test Kubernetes state'i drill-öncesine döndü** (cluster net değişim sıfır; host-tarafı `/tmp` drill audit dosyası cleanup'ta silindi). GitHub issue yolu (`gh` staging-sw'de
 kurulu değil) script'in graceful-skip dalından geçti — issue oluşturma kodu inspection ile
 doğrulandı, exercise edilmedi; Alertmanager fallback (`ALARM_FALLBACK_ALERTMANAGER` default
 `0`) exercise edilmedi. **PR-3B prod activation (cluster-admin CRB canlıya) hâlâ

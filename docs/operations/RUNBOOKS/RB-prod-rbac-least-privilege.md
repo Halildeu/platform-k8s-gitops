@@ -160,7 +160,8 @@ kalabilir — kullanılmadığı sürece zararsız (yalnız izin verir, kimseden
 > 1h TTL token üretildi ve doğrulandı (`auth whoami` =
 > `system:serviceaccount:kube-system:ops-break-glass`, `auth can-i '*' '*'` = `yes`,
 > gerçek `get ns` token-canlı), audit log satırı yazıldı. Drill sonrası SA
-> k3d-test'ten silindi — net state değişimi sıfır. GitHub issue yolu `gh`
+> k3d-test'ten silindi — k3d-test Kubernetes state'i drill-öncesine döndü
+> (cluster net değişim sıfır). GitHub issue yolu `gh`
 > staging-sw'de kurulu olmadığından script'in graceful-skip dalından geçti (issue
 > oluşturma kodu inspection ile doğrulandı, exercise edilmedi); Alertmanager
 > fallback `ALARM_FALLBACK_ALERTMANAGER` default `0` → exercise edilmedi. Codex
@@ -174,14 +175,27 @@ ops-break-glass` → NotFound). PR-3B canlıya alır:
 
 ```bash
 kubectl --context k3d-prod apply -k kustomize/base/rbac     # ops-break-glass
-# token issuance smoke:
-bash scripts/operations/break-glass-token.sh "PR-3B activation smoke"
+
+# ⚠️ break-glass-token.sh `--context` ALMAZ — `kubectl config current-context`
+# kullanır. Yanlış-context token/audit riskini engellemek için izole bir
+# kubeconfig'i k3d-prod'a pinle + PREFLIGHT doğrula, script'i AYNI KUBECONFIG
+# ile çalıştır (test drill 2026-05-18 bulgusu — DURUM marker'a bak):
+cp ~/.kube/config /tmp/kc-bg-prod
+KUBECONFIG=/tmp/kc-bg-prod kubectl config use-context k3d-prod
+KUBECONFIG=/tmp/kc-bg-prod kubectl config current-context    # → k3d-prod OLMALI
+KUBECONFIG=/tmp/kc-bg-prod bash scripts/operations/break-glass-token.sh "PR-3B activation smoke"
+rm -f /tmp/kc-bg-prod    # izole kubeconfig (creds içerir) — temizle
 ```
 
-Doğrula: 1h TTL token üretilir, `/var/log/break-glass-audit.log` satırı +
-GitHub audit issue açılır. `kubectl create token` API server TTL cap'ine
-takılırsa cap'i kontrol et. **Static long-lived break-glass token YOK** —
-yalnız TTL token. Önce test cluster'da drill önerilir.
+Doğrula: 1h TTL token üretilir, `/var/log/break-glass-audit.log` satırı yazılır.
+**GitHub audit issue**: script `gh` kurulu + authenticated ise issue açar; aksi
+halde "gh CLI unavailable — SKIPPED" warning'i basıp devam eder. Prod
+activation'da `gh` kurulu/authenticated OLMALI — script gh-unavailable warning'i
+verirse operator issue'yu **manuel açmadan** acceptance vermez (governance trail
+zorunlu). `kubectl create token` API server TTL cap'ine takılırsa cap'i kontrol
+et. **Static long-lived break-glass token YOK** — yalnız TTL token. Test
+cluster'da drill: yukarıdaki DURUM marker (2026-05-18 yapıldı, mekanizma
+doğrulandı).
 
 ## PR-3D — operator readonly identity (ayrı owner-coordination)
 
