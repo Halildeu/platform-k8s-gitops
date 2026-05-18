@@ -238,17 +238,140 @@ et. **Static long-lived break-glass token YOK** — yalnız TTL token. Test
 cluster'da drill: yukarıdaki DURUM marker (2026-05-18 yapıldı, mekanizma
 doğrulandı).
 
-## PR-3D — operator readonly identity (ayrı owner-coordination)
+## PR-3D — operator readonly identity (owner-coordination)
 
-> `rbac-break-glass-design.md` Faz 3'teki "`admin@k3d-prod` user'a `view`
-> ClusterRoleBinding ekle" yaklaşımı **eksik**: Kubernetes RBAC additive'dir
-> — mevcut cluster-admin binding dururken `view` eklemek yetki DÜŞÜRMEZ.
+> **Boundary** — PR diff'i: **none of the above** (repo-only staged manifest +
+> CI render step + runbook doc; merge canlı cluster state'i DEĞİŞTİRMEZ).
+> Runbook execution (Adım 1-5): state-mutation (production) + credential
+> material issuance/read (Adım 3 SA-token Secret üretir + token okur) +
+> owner/operator-gate — Adım 1-5 operator'ün **günlük kubectl kimliğini**
+> değiştirir.
+>
+> **DURUM (2026-05-18)**:
+> - **Staged manifest yürürlükte** — `kustomize/base/rbac/prod-operator-readonly/`
+>   (`prod-operator-readonly` SA `kube-system` ns + `prod-operator-readonly-view`
+>   ClusterRoleBinding → built-in `view`). PR-3A pattern: standalone entrypoint,
+>   hiçbir overlay/base consume etmez → merge canlı state'i DEĞİŞTİRMEZ. CI
+>   `ci.yml` kustomize-build job'unda `kustomize build` render sanity.
+> - **Önkoşul karşılandı** — PR-3B `ops-break-glass` SA + cluster-admin CRB
+>   k3d-prod'da canlı (yukarıdaki PR-3B DURUM); token path k3d-test drill'inde
+>   kanıtlı. Operator readonly'ye geçtikten sonra mutate / exec / secret yolu
+>   break-glass üzerinden açık kalır.
+> - Aşağıdaki Adım 1-5 operator-gated, owner kararıyla yürütülür.
 
-Doğru PR-3D: yeni readonly normal identity üret + günlük kullanıma al; eski
-`admin@k3d-prod`'u normal path'ten çıkar, yalnız break-glass/offline issuer
-olarak sakla. Bu kullanıcının canlı kubectl-mutate alışkanlığını ve incident
-müdahale yolunu değiştirir → **açık owner/oncall koordinasyonu** gerekir;
-PR-3B (break-glass) canlı + token issuance doğrulanmadan yapılmaz.
+### Tasarım — neden yeni SA, `admin@k3d-prod`'a `view` DEĞİL
+
+`rbac-break-glass-design.md` Faz 3'ün orijinal yaklaşımı (`view` ClusterRoleBinding'i
+mevcut `admin@k3d-prod` User'a ekle) **eksik**: Kubernetes RBAC **additive** —
+cluster-admin binding dururken `view` eklemek yalnız izin EKLER, yetki DÜŞÜRMEZ.
+
+Doğru tasarım: yeni `prod-operator-readonly` ServiceAccount → yalnız `view`
+ClusterRoleBinding. Operator bu SA olarak authenticate eden kubeconfig'i günlük
+kullanıma alır → günlük yetki read-only'ye düşer. `admin@k3d-prod` günlük
+path'ten çıkar, yalnız break-glass / offline issuer olarak saklanır (silinmez).
+
+`view` — ClusterRoleBinding nedeniyle — `view` kapsamındaki (namespaced)
+kaynaklarda TÜM namespace'lerde get/list/watch + `pods/log` verir; secret read,
+pods/exec, pods/portforward, her türlü mutate VERMEZ. Cluster-scoped infra
+read'leri de (`nodes`, `persistentvolumes`, `storageclasses` — `view`
+namespaced-aggregated, bunları kapsamaz) kapsam dışı: bilinçli minimal
+başlangıç; operator adoption'ında düzenli bir gap çıkarsa ayrı supplementary
+ClusterRole follow-up'ı, mutate ihtiyacı `ops-break-glass` yolu.
+
+### Adım 1 — staged manifest'i prod cluster'a apply
+
+```bash
+kubectl --context k3d-prod apply -k kustomize/base/rbac/prod-operator-readonly
+```
+
+- **Beklenen**: `serviceaccount/prod-operator-readonly` (`kube-system`) +
+  `clusterrolebinding/prod-operator-readonly-view` created.
+- Additive RBAC — mevcut hiçbir binding'i kaldırmaz; `admin@k3d-prod` bu adımda
+  el değmeden durur (yetki düşürme Adım 4 kubeconfig cutover'ında olur).
+
+### Adım 2 — yetki matrisini doğrula (`auth can-i`, impersonation)
+
+```bash
+SA=system:serviceaccount:kube-system:prod-operator-readonly
+# İZİN VERİLMELİ (yes) — namespaced read (CRB her ns'de geçerli):
+kubectl --context k3d-prod -n platform-prod auth can-i get   pods                     --as=$SA
+kubectl --context k3d-prod -n platform-prod auth can-i watch deployments              --as=$SA
+kubectl --context k3d-prod -n platform-prod auth can-i get   pods --subresource=log   --as=$SA
+kubectl --context k3d-prod -n argocd        auth can-i list  services                 --as=$SA
+# REDDEDİLMELİ (no) — mutate / exec / secret:
+kubectl --context k3d-prod -n platform-prod auth can-i patch  deployments             --as=$SA
+kubectl --context k3d-prod -n platform-prod auth can-i delete pods                    --as=$SA
+kubectl --context k3d-prod -n platform-prod auth can-i create pods --subresource=exec --as=$SA
+kubectl --context k3d-prod -n platform-prod auth can-i get    secrets                 --as=$SA
+kubectl --context k3d-prod                  auth can-i '*' '*'                        --as=$SA
+# REDDEDİLMELİ (no) — cluster-scoped infra read (`view` namespaced-aggregated; bilinçli kapsam dışı):
+kubectl --context k3d-prod auth can-i get  nodes                          --as=$SA
+kubectl --context k3d-prod auth can-i list persistentvolumes              --as=$SA
+kubectl --context k3d-prod auth can-i list storageclasses.storage.k8s.io  --as=$SA
+```
+
+> ⚠️ Subresource kontrolleri (`pods/log`, `pods/exec`) `--subresource=` flag'iyle
+> — `auth can-i` subresource'un canonical formu; slash formu kubectl v1.36'da
+> false-`no` döndürebilir (PR-3C Adım 2 notuna bak).
+
+Devam eşiği: ilk 4 `yes`, son 8 `no`. Aksi halde ClusterRole/CRB'yi incele,
+**Adım 3'e geçme**.
+
+### Adım 3 — readonly kubeconfig kur
+
+`prod-deploy-smoke` (PR-3C Adım 3.1-3.2) ile aynı mekanizma — uzun-ömürlü
+SA-token Secret + restricted kubeconfig:
+
+```bash
+kubectl --context k3d-prod -n kube-system apply -f - <<'EOF'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: prod-operator-readonly-token
+  namespace: kube-system
+  annotations:
+    kubernetes.io/service-account.name: prod-operator-readonly
+type: kubernetes.io/service-account-token
+EOF
+
+TOKEN=$(kubectl --context k3d-prod -n kube-system get secret prod-operator-readonly-token \
+  -o jsonpath='{.data.token}' | base64 -d)
+# readonly kubeconfig kur — context adı `k3d-prod-ro` (günlük admin context'iyle
+# karışmasın); cluster `server` + `certificate-authority-data` mevcut admin
+# kubeconfig'inden, `users` bloğu yalnız SA token.
+```
+
+### Adım 4 — günlük kullanıma al + `admin@k3d-prod` stash (owner kararı)
+
+- Operator'ün günlük kubeconfig'i (`~/.kube/config`) `k3d-prod-ro` context'ine
+  geçer; `current-context` readonly olur.
+- `admin@k3d-prod` context + user girişi günlük kubeconfig'ten **çıkarılır**, ayrı
+  offline dosyaya (`~/.kube/admin-k3d-prod.offline`, `chmod 600`) taşınır —
+  SİLİNMEZ; break-glass dışı acil offline erişim için saklanır.
+- ⚠️ Host-paylaşımlı runner etkisi: `deploy-prod-gitops.yml` PR-3C cutover'ı
+  sonrası `production` env secret'taki restricted kubeconfig'i kullanır,
+  `~/.kube/config`'e bağımlı değil → readonly geçişi prod deploy workflow'unu
+  KIRMAZ. `deploy-testai.yml` k3d-test context'i kullanır, k3d-prod'dan etkilenmez.
+
+### Adım 5 — cutover doğrula
+
+```bash
+kubectl config current-context             # → k3d-prod-ro
+kubectl get  pods   -n platform-prod        # → çalışır (view)
+kubectl logs        -n platform-prod <pod>  # → çalışır (pods/log)
+kubectl delete pod  -n platform-prod <x>    # → Forbidden (mutate kapalı — beklenen)
+kubectl get  secret -n platform-prod <x>    # → Forbidden (view secret hariç — beklenen)
+```
+
+Mutate / exec / secret gerektiğinde: `ops-break-glass` TTL-token yolu (yukarıdaki
+PR-3B prosedürü) + 30dk reconciliation PR.
+
+### Rollback (PR-3D)
+
+Günlük kubeconfig `current-context`'ini `admin@k3d-prod`'a geri al (offline
+dosyadan context + user girişini geri ekle). `prod-operator-readonly` SA + CRB +
+token Secret cluster'da kalabilir — kullanılmadığı sürece zararsız (yalnız read
+izni verir, kimseden yetki ALMAZ).
 
 ## PR-3E — audit/alarm (Faz 5)
 
