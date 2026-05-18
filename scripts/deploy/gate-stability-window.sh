@@ -69,20 +69,24 @@ fi
 if [[ -n "$WINDOW_OVERRIDE" ]]; then
   WINDOW_SECONDS="$WINDOW_OVERRIDE"
 else
-  WINDOW_SECONDS=$(python3 - <<PY
-import sys, yaml
-catalog = yaml.safe_load(open("$CATALOG"))
-for svc in catalog.get("services", []):
-    if svc.get("name") == "$SERVICE":
-        base = 120
-        if svc.get("jvm_warmup_extra"):
-            base = 180
-        print(base)
-        sys.exit(0)
-# unknown service → default 120
-print(120)
-PY
-)
+  # Resolve jvm_warmup_extra for the service WITHOUT a YAML library — the
+  # self-hosted deploy runner has no PyYAML, and the previous `import yaml`
+  # crashed this gate on every backend deploy (ModuleNotFoundError). The
+  # catalog is a flat `services:` list of 2-space `- name:` blocks with
+  # 4-space scalar keys, so an indentation-anchored awk scan is exact here.
+  #   service found + jvm_warmup_extra: true  → 180s
+  #   service found + false / key absent      → 120s (default)
+  #   service not found                       → 120s (default)
+  WARMUP=$(awk -v svc="$SERVICE" '
+    /^[^ ]/        { in_svc = 0 }                       # new top-level key → leave the services list
+    /^  - name: /  { in_svc = ($3 == svc) }
+    in_svc && /^    jvm_warmup_extra:/ { print $2; exit }
+  ' "$CATALOG")
+  if [[ "$WARMUP" == "true" ]]; then
+    WINDOW_SECONDS=180
+  else
+    WINDOW_SECONDS=120
+  fi
 fi
 
 echo "[gate-stability] service=$SERVICE context=$CONTEXT ns=$NAMESPACE window=${WINDOW_SECONDS}s poll=${POLL_SECONDS}s"
