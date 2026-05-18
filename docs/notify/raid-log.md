@@ -8,7 +8,7 @@
 
 Bu doküman **Risks / Assumptions / Issues / Dependencies** dört boyutu ayrı tutar. Risk register zaten 22 risk takipli; RAID log onu **assumption + issue + dependency** ile genişletir.
 
-> **Faz 2 — GitHub Project migration (2026-05-17)** — Aktif Issue (I-serisi) takibi [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (`Faz 23` view · `Kind=issue`) üzerinde. Assumption (A) + Dependency (D) boyutları canonical olarak yalnız bu dokümanda. Aktif issue board mapping: I2 #775 · I4 #776 · I6 #777. (I1 #774 Session 44'te resolved → board item closed; bu dokümanda kayıtlı.)
+> **Faz 2 — GitHub Project migration (2026-05-17)** — Aktif Issue (I-serisi) takibi [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (`Faz 23` view · `Kind=issue`) üzerinde. Assumption (A) + Dependency (D) boyutları canonical olarak yalnız bu dokümanda. Aktif issue board mapping: I2 #775 · I4 #776. (I1 #774 + I6 #777 resolved → board item closed; bu dokümanda kayıtlı.)
 
 ## Neden Ayrı?
 
@@ -50,7 +50,7 @@ Codex iter-2 finding F5 (thread `019e0c28`):
 | I3 | Charter sub-faz % rakamları PM bootstrap iter-1'de iyimser (Codex verdict PARTIAL) | 2026-05-09 | Low | Yorumlama disiplini düzeltildi (Codex thread `019e0c28` retrospective); rakamlar revize tablosuyla sunum | None — PM-doc reporting issue | agent | 🟢 Mitigated |
 | I4 | Feature matrix literal marker pass deferred (~178 row sweep) — semantic estimate ile literal marker drift | (devam) | Low | Marker discipline note eklendi; planlı follow-up (sub-faz closure'larında inline) | None — PM-doc tracking issue | agent | 🟡 Active |
 | I5 | TodoWrite session-scoped, kalıcı değil | (yapısal) | Low | PM artifact set kalıcı yazılı + Update Discipline HARD RULE her PR'da senkron tutar | None — process limitation | — | 🟢 Mitigated |
-| I6 | Keycloak test realm admin credential unavailable — Docker compose env password invalid, Vault'ta yok; M2 D29 authenticated intent-submit BLOCKED | 2026-05-09 | High | Codex `019e0c28` partial verdict: M2 partial evidence/checkpoint (preflight + lab dependency/transport smoke); full authenticated path için disposable realm-admin credential Vault path veya approved admin reset window gerek; ayrı stakeholder credential ask | None — credential boundary issue (test cluster auth state); admin@example.com kullanıcı login user'ı dokunma yasak | ops + user | 🔴 Active |
+| I6 | Keycloak test realm admin credential unavailable — Docker compose env password invalid, Vault'ta yok; M2 D29 authenticated intent-submit BLOCKED | 2026-05-09 | High | **RESOLVED 2026-05-18** (board #777 closed): `scripts/ops/kc-bootstrap-admin-recovery.sh` ile master admin password canonical değere re-align edildi — evidence `docs/faz-23-evidence/2026-05-14-m2-credential-gate-unblocked.md`; 2026-05-18 live re-verify — `platform-kc-test` healthy, `kcadm` master login OK, D29 personaları (`notify-d29-test-persona`, `d29-evidence-tester`) realm'de mevcut. Cross-AI: Codex `019e3c74` AGREE (stale credential blocker; persona credential Vault formalization ayrı hardening — normal user, realm-admin değil). M2 D29 evidence/acceptance reconciliation ayrı item #754 | None — credential boundary issue (test cluster auth state); admin@example.com kullanıcı login user'ı dokunma yasak | ops + user | 🟢 Resolved |
 
 **Issue eskime prosedürü**: 14 gün üzerinde 🟡 Active issue → owner-level escalation + retrospective.
 
@@ -105,6 +105,7 @@ Risk boyutu ayrı [`risk-register.md`](risk-register.md) içinde tutulur (22 ris
 
 - **2026-05-09 (Session 39 iter-2)**: Initial RAID log oluşturuldu (Codex `019e0c28` F5 absorb). 10 assumption + 5 issue + 10 dependency.
 - **2026-05-09 (M2 D29 partial evidence + credential blocker)**: Yeni issue I6 — Keycloak test realm admin credential unavailable; M2 D29 authenticated full pipeline BLOCKED. PR #444 lab-deps MERGED; lab dependency smoke LIVE: Mailpit + webhook receiver + Slack mock transport; authenticated notify-orch intent-submit path still BLOCKED. 23.1 sub-faz marker 🟡 partial kalır. Toplam: 10 A + 6 I + 10 D = 48 active boyut (önceki 47'ye +I6).
+- **2026-05-18 (I6 stale-resolved → board #777 closed)**: RAID I6 Keycloak credential blocker 🔴 Active → 🟢 Resolved. Kanıt: 2026-05-14 `m2-credential-gate-unblocked.md` (`kc-bootstrap-admin-recovery.sh` master admin recovery) + 2026-05-18 live re-verify (`platform-kc-test` healthy, `kcadm` master login OK, D29 personaları mevcut). Codex `019e3c74` AGREE — stale credential blocker; M2 D29 evidence/acceptance reconciliation ayrı item #754, persona credential Vault formalization ayrı hardening backlog'u (normal user, realm-admin değil). Board açık I-serisi issue mapping'i I2/I4'e düştü; I6 satırı tarihsel kayıt olarak 🟢 Resolved.
 
 ## Next Review
 
