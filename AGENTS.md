@@ -12,6 +12,7 @@ Soru tipine göre otoriter kaynak:
 - **Canlı truth / blocker / sayaç**: `docs/state/current-state.md` + mümkünse doğrudan live evidence (`ssh`, `kubectl`, `curl`, `docker`)
 - **Aktif mimari karar**: `docs/adr/0002-single-host-dual-cluster.md`
 - **Roadmap / faz / done kriteri**: `PLAN.md`
+- **Aktif iş durumu / claim / sıradaki iş**: [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (Project #2) — protokol [docs/board-protocol.md](./docs/board-protocol.md)
 - **Uygulama adımı / operasyon**: ilgili runbook
 
 Navigator ama karar kaynağı olmayan yüzeyler:
@@ -35,6 +36,7 @@ Navigator ama karar kaynağı olmayan yüzeyler:
 - **D30 atomic cutover**: weighted DNS yok; atomic switch + `72h` rollback-window vardır.
 - **Test authoritative before prod**: `testai.acik.com` kanıtlanmadan `ai.acik.com` cutover hazır sayılmaz.
 - **Docs truth closure**: Canlı gerçek değiştiyse, sonraki karar öncesi canonical dokümanlarda drift notu bırakılır.
+- **Board canonical (aktif iş)**: Aktif iş durumu, açık risk/issue, milestone/gate `Status`'ü [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (Project #2)'da canonical. Agent oturum başında board'u okur + uygun işi claim eder (`scripts/board-sync.sh`); çalışırken `In Progress` + kanıt comment'i; bitince acceptance sonrası deliberate close → `Done`. Executable iş **gerçek issue** olur (draft item değil). PR-merge runtime issue'yu otomatik `Done` yapmaz — runtime issue'da `Tracked by #N` kullanılır, `Closes/Fixes/Resolves` değil. Protokol: [docs/board-protocol.md](./docs/board-protocol.md).
 
 ## 4. Çalışma Disiplini
 
