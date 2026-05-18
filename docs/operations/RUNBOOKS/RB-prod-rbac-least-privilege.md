@@ -190,23 +190,27 @@ kalabilir — kullanılmadığı sürece zararsız (yalnız izin verir, kimseden
 
 ## PR-3B — break-glass SA live activation (operator-gated)
 
-> **DURUM (2026-05-18)**: **Test-cluster drill yürütüldü** — `ops-break-glass` SA +
-> cluster-admin CRB k3d-test'e apply edildi, `break-glass-token.sh` koştu (exit 0),
-> 1h TTL token üretildi ve doğrulandı (`auth whoami` =
-> `system:serviceaccount:kube-system:ops-break-glass`, `auth can-i '*' '*'` = `yes`,
-> gerçek `get ns` token-canlı), audit log satırı yazıldı. Drill sonrası SA
-> k3d-test'ten silindi — k3d-test Kubernetes state'i drill-öncesine döndü
-> (cluster net değişim sıfır). GitHub issue yolu `gh`
-> staging-sw'de kurulu olmadığından script'in graceful-skip dalından geçti (issue
-> oluşturma kodu inspection ile doğrulandı, exercise edilmedi); Alertmanager
-> fallback `ALARM_FALLBACK_ALERTMANAGER` default `0` → exercise edilmedi. Codex
-> `019e3a40`: test-cluster drill agent-actionable. **Prod activation (cluster-admin
-> CRB canlıya) hâlâ operator-gated** — aşağıdaki adımlar.
+> **DURUM (2026-05-18)**:
+> - **Test-cluster drill yürütüldü** (#804) — `ops-break-glass` SA + cluster-admin
+>   CRB k3d-test'e apply + `break-glass-token.sh` exit 0 + 1h TTL token verified
+>   (`auth whoami` = `system:serviceaccount:kube-system:ops-break-glass`, `auth
+>   can-i '*' '*'` = `yes`, gerçek `get ns` token-canlı), audit log yazıldı; drill
+>   sonrası SA k3d-test'ten silindi. `gh` yok → issue graceful-skip; Alertmanager
+>   fallback toggle-off → exercise yok.
+> - **Prod RBAC activation yürütüldü** (owner "sen yap" + Codex `019e3a40`):
+>   `kubectl --context k3d-prod apply -k kustomize/base/rbac` → `ops-break-glass`
+>   SA + cluster-admin CRB k3d-prod'da **canlı** (server dry-run temiz); `auth
+>   can-i '*' '*' --as=system:serviceaccount:kube-system:ops-break-glass` = `yes`.
+>   **Prod'da token issuance bilerek exercise EDİLMEDİ** — token path k3d-test
+>   drill'de kanıtlı; prod'da gereksiz cluster-admin token + `gh`-yok governance
+>   sürtünmesi. Token üretimi yalnız gerçek break-glass incident'inde (aşağıdaki
+>   prosedür) + governance trail ile.
 
-`kustomize/base/rbac/break-glass-sa.yaml` (`ops-break-glass` SA + cluster-admin
-CRB) + `scripts/operations/break-glass-token.sh` repo'da **var ama** hiçbir
-overlay'e bağlı değil → canlıda **yok** (`kubectl -n kube-system get sa
-ops-break-glass` → NotFound). PR-3B canlıya alır:
+`ops-break-glass` SA + `ops-break-glass-cluster-admin` CRB **k3d-prod'da canlı**
+(2026-05-18 apply edildi — DURUM marker). Aşağıdaki bash, **gerçek bir
+break-glass incident'inde** (ArgoCD sync bloklu + acil state mutation gerekli)
+audited TTL token issuance prosedürüdür — rutin değil, yalnız incident; `apply`
+satırı idempotent (SA zaten canlı):
 
 ```bash
 kubectl --context k3d-prod apply -k kustomize/base/rbac     # ops-break-glass
@@ -226,10 +230,10 @@ rm -f /tmp/kc-bg-prod    # izole kubeconfig (creds içerir) — temizle
 
 Doğrula: 1h TTL token üretilir, `/var/log/break-glass-audit.log` satırı yazılır.
 **GitHub audit issue**: script `gh` kurulu + authenticated ise issue açar; aksi
-halde "gh CLI unavailable — SKIPPED" warning'i basıp devam eder. Prod
-activation'da `gh` kurulu/authenticated OLMALI — script gh-unavailable warning'i
-verirse operator issue'yu **manuel açmadan** acceptance vermez (governance trail
-zorunlu). `kubectl create token` API server TTL cap'ine takılırsa cap'i kontrol
+halde "gh CLI unavailable — SKIPPED" warning'i basıp devam eder. Gerçek
+break-glass token issuance'da `gh` kurulu/authenticated OLMALI — script
+gh-unavailable warning'i verirse operator issue'yu **manuel açmadan** kabul
+etmez (governance trail zorunlu). `kubectl create token` API server TTL cap'ine takılırsa cap'i kontrol
 et. **Static long-lived break-glass token YOK** — yalnız TTL token. Test
 cluster'da drill: yukarıdaki DURUM marker (2026-05-18 yapıldı, mekanizma
 doğrulandı).

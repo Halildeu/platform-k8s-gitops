@@ -261,12 +261,23 @@ jobs:
             echo "::error::beklenmeyen identity: ${WHO} (system:serviceaccount:argocd:prod-deploy-smoke bekleniyordu)"
             exit 1
           fi
-          # positive — argocd port-forward yolu çalışmalı
-          if ! kubectl --kubeconfig "${KC}" --context "${K8S_CONTEXT}" -n "${ARGOCD_NS}" \
-               auth can-i create pods --subresource=portforward >/dev/null 2>&1; then
-            echo "::error::restricted kubeconfig argocd port-forward yetkisi yok"
-            exit 1
-          fi
+          # positive — workflow'un gereken TÜM yetkileri fail-fast doğrulanır
+          # (RBAC/secret drift'i ArgoCD sync'e gelmeden yakala)
+          want() {  # ns verb resource [subresource]
+            local sr=""
+            [ -n "${4:-}" ] && sr="--subresource=$4"
+            if ! kubectl --kubeconfig "${KC}" --context "${K8S_CONTEXT}" -n "$1" \
+                 auth can-i "$2" "$3" $sr >/dev/null 2>&1; then
+              echo "::error::restricted kubeconfig: '$2 $3 $sr' ($1 ns) yetkisi yok — RBAC drift"
+              exit 1
+            fi
+          }
+          want "${ARGOCD_NS}"     get    services
+          want "${ARGOCD_NS}"     list   pods
+          want "${ARGOCD_NS}"     create pods         portforward
+          want "${K8S_NAMESPACE}" get    deployments
+          want "${K8S_NAMESPACE}" watch  deployments
+          want "${K8S_NAMESPACE}" get    pods
           # negative — workload-mutate KAPALI olmalı (fail-closed least-privilege)
           if kubectl --kubeconfig "${KC}" --context "${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
                auth can-i patch deployments >/dev/null 2>&1; then
