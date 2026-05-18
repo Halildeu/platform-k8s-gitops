@@ -1,0 +1,79 @@
+# prod-operator-readonly — least-privilege günlük operator identity'si (k3d-prod)
+#
+# Codex 019e35d1 prod-deploy 4-PR planı PR-3 → PR-3D. prod-deploy-smoke (PR-3A)
+# pattern'i: standalone staged manifest.
+#
+# Operator (halil) k3d-prod'a `admin@k3d-prod` cluster-admin kubeconfig'iyle
+# bağlanıyor — günlük diagnostic için her şey + secrets read + exec + mutate.
+# rbac-break-glass-design.md Hedef State: günlük operator identity'si yalnız
+# READ olmalı; mutate / exec / secret-read = `ops-break-glass` TTL-token yolu.
+#
+# Faz 3 tasarım düzeltmesi (design doc'taki orijinal yaklaşım eksikti):
+# `view` ClusterRoleBinding'i MEVCUT `admin@k3d-prod` User'a bağlamak yetkiyi
+# DÜŞÜRMEZ — Kubernetes RBAC additive'dir; cluster-admin binding dururken `view`
+# eklemek yalnız izin EKLER. Doğru tasarım: YENİ bir ServiceAccount üret, ona
+# YALNIZ `view` bağla. Operator bu SA olarak authenticate eden bir kubeconfig'i
+# günlük kullanıma alır → günlük yetki read-only'ye DÜŞER. Eski `admin@k3d-prod`
+# günlük path'ten çıkar, yalnız break-glass / offline issuer olarak saklanır.
+#
+# `view` built-in ClusterRole — ClusterRoleBinding ile `view` kapsamındaki
+# (namespaced) kaynaklarda TÜM namespace'lerde:
+#   VAR : pods / deployments / services / configmaps / events / ... get,list,
+#         watch; pods/log get (kubectl logs).
+#   YOK : secrets read (`view` secret'ları bilerek HARİÇ tutar — exfil yüzeyi
+#         kapalı); pods/exec, pods/portforward, pods/attach; her türlü mutate
+#         (patch / update / delete / create) → `ops-break-glass` yolu.
+#   YOK : cluster-scoped infra read (nodes / persistentvolumes / storageclasses)
+#         — `view` namespaced-aggregated, bunları kapsamaz → gerekirse ayrı
+#         supplementary ClusterRole follow-up'ı.
+#
+# SA neden `kube-system`: cluster-seviyesi bir identity (ClusterRoleBinding).
+# `kube-system`'de yaşaması standart k8s yönetim akışlarında görünür kılar ve
+# platform workload namespace'lerinden ayrı tutar (break-glass-sa.yaml ile aynı).
+#
+# DURUM: staged. Hiçbir overlay/base bu dosyayı consume ETMEZ; ArgoCD sync
+# path'ine girmez → merge anında canlı cluster state DEĞİŞMEZ. CI yalnız
+# `kustomize build` render sanity doğrular. Canlıya alma (apply + operator
+# kubeconfig adoption + `admin@k3d-prod` stash) PR-3D operator adımları —
+# state-mutation (production) + owner-coordination: docs/operations/RUNBOOKS/
+# RB-prod-rbac-least-privilege.md.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prod-operator-readonly
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: prod-operator-readonly
+    app.kubernetes.io/part-of: rbac-least-privilege
+    app.kubernetes.io/managed-by: gitops
+  annotations:
+    description: |
+      Least-privilege daily operator identity for k3d-prod. Cluster-wide
+      read-only (built-in `view` ClusterRole). No secret read, no exec /
+      port-forward, no mutation — those require the ops-break-glass
+      TTL-token path. Adoption (kubeconfig cutover + admin stash) is an
+      operator-gated runbook step; this manifest only stages the identity.
+# Bu SA bir dış kubeconfig identity'si — pod içinde token auto-mount'a
+# ihtiyacı yok (manuel SA-token Secret üretimini etkilemez).
+automountServiceAccountToken: false
+---
+# Cluster-genelinde read-only — built-in `view` ClusterRole.
+# Subject: prod-operator-readonly SA (User DEĞİL — bkz. header Faz 3 düzeltmesi:
+# `view`'i mevcut admin User'a eklemek additive olur, yetki düşürmez).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prod-operator-readonly-view
+  labels:
+    app.kubernetes.io/name: prod-operator-readonly
+    app.kubernetes.io/part-of: rbac-least-privilege
+    app.kubernetes.io/managed-by: gitops
+subjects:
+  - kind: ServiceAccount
+    name: prod-operator-readonly
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: view
+  apiGroup: rbac.authorization.k8s.io

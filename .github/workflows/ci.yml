@@ -38,6 +38,8 @@ jobs:
         run: kustomize build kustomize/base/rbac > /tmp/rbac-break-glass.yaml
       - name: Build base/rbac/prod-deploy-smoke (PR-3A staged least-privilege)
         run: kustomize build kustomize/base/rbac/prod-deploy-smoke > /tmp/rbac-prod-deploy-smoke.yaml
+      - name: Build base/rbac/prod-operator-readonly (PR-3D staged readonly identity)
+        run: kustomize build kustomize/base/rbac/prod-operator-readonly > /tmp/rbac-prod-operator-readonly.yaml
       # Faz 17.Z — PR'da blocking: local overlay'ler render sanity (lokal dev drift yakalama)
       - name: Build overlays/local-authn-min (Faz 17.2)
         run: kustomize build kustomize/overlays/local-authn-min > /tmp/local-authn-min.yaml

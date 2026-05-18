@@ -1,0 +1,17 @@
+# prod-operator-readonly staged RBAC — Codex 019e35d1 (PR-3D).
+#
+# Standalone entrypoint: ne bir overlay, ne `kustomize/base/kustomization.yaml`,
+# ne de `kustomize/base/rbac/kustomization.yaml` bu kustomization'ı `resources:`'ine
+# ALMAZ. ArgoCD sync path'ine girmez → merge anında prod state mutasyonu olmaz.
+#
+# CI (`ci.yml` kustomize-build) yalnız `kustomize build` render sanity doğrular.
+# Canlıya alma: docs/operations/RUNBOOKS/RB-prod-rbac-least-privilege.md (PR-3D
+# operator adımları — owner-coordination + operator-gated).
+#
+# SA `kube-system` ns'de, ClusterRoleBinding cluster-scoped — kustomization
+# seviyesinde `namespace:` override YOK; SA kendi `metadata.namespace`'ini taşır.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - prod-operator-readonly.yaml
