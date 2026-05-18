@@ -205,3 +205,14 @@ Absorb edilen düzeltmeler: KC admin recovery gate-first strategy; 3-channel evi
 ## Karar (tek cümle)
 
 M2 D29-NOTIFY-Functional **3-channel LIVE evidence** Session 49 D dalga closure sonrası tam yürütüldü (Email + Slack + Webhook hepsi DELIVERED + provider_msg_id + receiver evidence); Charter 23.1 🟡 → 🟢 transition ready (Layer 1 D29-Authorized LIVE, Layer 2 channel-level authz Faz 23.2 v2 scope).
+
+---
+
+## Addendum — 2026-05-18 (#754 board closure reconciliation)
+
+> Bu ek, 2026-05-14 evidence doc'una #754 board kapanışı sırasında eklendi (Codex thread `019e3c74`).
+
+- **§6 temporary env restore — LIVE doğrulandı**: 2026-05-18 SSH staging-sw — test `notification-orchestrator` deploy spec'inde `NOTIFY_AUTHZ_ENABLED` / `SPRING_MAIL_*` inline override YOK; pod 1/1 ready. §6'daki geçici override restore'u yapılmış, drift yok.
+- **§7 SMTP credential — durum güncel**: 2026-05-18 live audit — `SPRING_MAIL_PASSWORD` + `SPRING_MAIL_USERNAME` artık ESO-managed Secret `notification-orchestrator-secrets`'te (Vault-backed, ownerRef ExternalSecret). §7'nin istediği "Vault migration" yapılmış; ConfigMap'te plaintext değil. Residual = opsiyonel post-exposure rotation hygiene → board Backlog #822.
+- **Charter 23.1 marker düzeltmesi**: yukarıdaki §5 ve "Karar" cümlesindeki "Charter 23.1 🟡 → 🟢 transition ready" ifadesi **superseded**. Codex `019e3c74` verdict B: #754/M2 D29-Functional 3-channel + Layer-1 closure accepted (board #754 Done), ama charter 23.1 sub-faz marker'ı **🟡 kalır** — acceptance tablosundaki Layer-2 channel-level OpenFGA `subscriber#can_receive` kriteri Faz 23.2 v2'ye taşınana/kanıtlanana dek 🟢 overclaim olur.
+- **Cross-AI**: Codex thread `019e3c74` — #777 + #754 reconciliation disposition.

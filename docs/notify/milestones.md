@@ -35,17 +35,20 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 **Owner**: ops + user
 **Dependencies**: T2.3 task chain
 
-### M2 — 23.1 D29-NOTIFY-Functional Evidence (🔴 target 2026-05-12)
+### M2 — 23.1 D29-NOTIFY-Functional Evidence (🟢 accepted 2026-05-14 — board #754)
+
+> **Closure (2026-05-18, board #754)**: D29-Functional 3-channel evidence 2026-05-14'te toplandı (`docs/faz-23-evidence/2026-05-14-m2-d29-functional-3-channel-live.md`). M2 scope = D29-**Functional** 3-channel + D29-Authorized **Layer 1** org-boundary. Layer 2 channel-level OpenFGA authz Faz 23.2 v2 scope'unda — DoD'de `[~]` ile ayrı işaretli. Cross-AI: Codex `019e3c74` REVISE-absorb (DoD split = overclaim değil rescope; verdict B: charter 23.1 sub-faz marker'ı bu kapanışta 🟢'a çevrilmez).
 
 **Definition of Done**:
-- [ ] T2.1.1 Email D29-Functional (Mailpit screenshot + delivery row INSERT)
-- [ ] T2.1.2 Slack D29-Functional (test channel screenshot + delivery row)
-- [ ] T2.1.3 Webhook D29-Functional (HMAC trace + delivery row)
-- [ ] OpenFGA allow + deny case verified per channel (D29-Authorized)
-- [ ] Evidence document `docs/faz-23-evidence/2026-05-12-23-1-d29-functional.md`
-- [ ] Charter 23.1 marker 🟡 → 🟢
+- [x] T2.1.1 Email D29-Functional — Mailpit message metadata + PG delivery row INSERT (provider_msg_id)
+- [x] T2.1.2 Slack D29-Functional — test cluster mock incoming-webhook receiver POST 200 + PG delivery row (gerçek Slack workspace screenshot DEĞİL — test cluster'da workspace yok)
+- [x] T2.1.3 Webhook D29-Functional — HMAC-signed POST + webhook-receiver 200 + PG delivery row
+- [x] D29-Authorized **Layer 1** org-boundary — JWT `org_id` claim: allow HTTP 202, missing `org_id` deny HTTP 403
+- [~] D29-Authorized **Layer 2** channel-level OpenFGA (`subscriber#can_receive`) — Faz 23.2 v2 / `m3-supplement-openfga-model-extension-plan` ayrı takip
+- [x] Evidence document `docs/faz-23-evidence/2026-05-14-m2-d29-functional-3-channel-live.md`
+- [~] Charter 23.1 marker — D29-Functional + Layer-1 closure accepted; 23.1 sub-faz **🟡 kalır** (acceptance tablosundaki Layer-2 `subscriber#can_receive` kriteri 23.2 v2'ye taşınana/kanıtlanana dek — Codex `019e3c74` verdict B)
 
-**Blockers**: None (operator/agent action)
+**Blockers**: None
 **Owner**: ops
 **Dependencies**: M1 (cluster stable)
 
