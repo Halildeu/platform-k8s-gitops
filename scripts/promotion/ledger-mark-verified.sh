@@ -40,6 +40,27 @@ if [[ "$EXIT_CODE" -ne 0 ]]; then
   exit 0
 fi
 
+# Defense-in-depth (Codex 019e39ea — PR-4A): only mark verified if every D29
+# tier is GREEN. A SKIP/AMBER tier (e.g. Zanzibar store_id unresolved) — or a
+# missing tier in a malformed report — must NOT be carried into the ledger as
+# D29-verified even if exit_code somehow reads 0. Explicit required-key check.
+NON_GREEN=$(jq -r '
+  .tiers as $t
+  | ["d29_up", "d29_functional", "d29_zanzibar"]
+  | map(
+      . as $k
+      | ($t[$k].status // "MISSING") as $s
+      | select($s != "GREEN")
+      | "\($k)=\($s)"
+    )
+  | join(", ")
+' "$REPORT")
+if [[ -n "$NON_GREEN" ]]; then
+  echo "[ledger-mark-verified] non-GREEN D29 tier(s): $NON_GREEN — NOT marking ledger entries verified"
+  echo "                       Operator should investigate before promotion"
+  exit 0
+fi
+
 REPO_ROOT="${PLATFORM_GITOPS_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 OVERLAY="$REPO_ROOT/kustomize/overlays/${ENV}"
 LEDGER_DIR="$REPO_ROOT/release-candidates"
