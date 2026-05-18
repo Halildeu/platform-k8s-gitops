@@ -52,6 +52,15 @@ hiçbir şey uygulanmaz.
 
 > **Boundary**: state-mutation (production). Owner/operator açık onayı gerek.
 > Tetik: PR-3A merged + runner least-privilege'a geçiş kararı.
+>
+> **DURUM (2026-05-18)**: **Adım 1-2 yürütüldü** — `prod-deploy-smoke` SA + 4
+> RBAC objesi k3d-prod'da canlı, `auth can-i` acceptance matrisi 10/10. Codex
+> `019e3a40` Verdict A: Adım 1-2 (additive RBAC apply + read-only `auth can-i`
+> doğrulama) agent-otonom yürütülebilir — istişare verdict'i bu dar alt-adım
+> için operator-gate'i açtı (Pre-Production Full Authority; additive RBAC ≠
+> destructive). **Operator Adım 3'ten devam eder.** Adım 3-4 hâlâ
+> operator-gated (runner kubeconfig cutover + env-gate dispatch — gerçek
+> prod-deploy-infra değişimi). Adım 1-2 idempotent — yeniden koşulabilir.
 
 ### Adım 1 — staged manifest'i prod cluster'a apply
 
@@ -71,18 +80,24 @@ Operator kendi kubeconfig'iyle, SA'yı impersonate ederek (token üretmeden):
 ```bash
 SA=system:serviceaccount:argocd:prod-deploy-smoke
 # İZİN VERİLMELİ (yes) — port-forward path + rollout-status path:
-kubectl --context k3d-prod -n argocd        auth can-i get    services         --as=$SA
-kubectl --context k3d-prod -n argocd        auth can-i list   pods             --as=$SA
-kubectl --context k3d-prod -n argocd        auth can-i create pods/portforward --as=$SA
-kubectl --context k3d-prod -n platform-prod auth can-i get    deployments      --as=$SA
-kubectl --context k3d-prod -n platform-prod auth can-i watch  deployments      --as=$SA
-kubectl --context k3d-prod -n platform-prod auth can-i get    pods             --as=$SA
+kubectl --context k3d-prod -n argocd        auth can-i get    services                       --as=$SA
+kubectl --context k3d-prod -n argocd        auth can-i list   pods                           --as=$SA
+kubectl --context k3d-prod -n argocd        auth can-i create pods --subresource=portforward --as=$SA
+kubectl --context k3d-prod -n platform-prod auth can-i get    deployments                    --as=$SA
+kubectl --context k3d-prod -n platform-prod auth can-i watch  deployments                    --as=$SA
+kubectl --context k3d-prod -n platform-prod auth can-i get    pods                           --as=$SA
 # REDDEDİLMELİ (no):
-kubectl --context k3d-prod -n platform-prod auth can-i patch  deployments      --as=$SA
-kubectl --context k3d-prod -n platform-prod auth can-i create pods/exec        --as=$SA
-kubectl --context k3d-prod -n platform-prod auth can-i create pods/portforward --as=$SA
-kubectl --context k3d-prod                  auth can-i '*' '*'                 --as=$SA
+kubectl --context k3d-prod -n platform-prod auth can-i patch  deployments                    --as=$SA
+kubectl --context k3d-prod -n platform-prod auth can-i create pods --subresource=exec        --as=$SA
+kubectl --context k3d-prod -n platform-prod auth can-i create pods --subresource=portforward --as=$SA
+kubectl --context k3d-prod                  auth can-i '*' '*'                               --as=$SA
 ```
+
+> ⚠️ Subresource kontrolleri (`pods/portforward`, `pods/exec`) **`--subresource=`
+> flag**'iyle yazılmıştır. kubectl `auth can-i`'nin eski `pods/portforward` slash
+> formu modern kubectl'de (doğrulandı v1.36) subresource'u yanlış değerlendirip
+> false-`no` döndürür — `--subresource=` formu RBAC'ı doğru evaluate eder. Role
+> kuralı zaten `resources: [pods/portforward]`; gerçek izin doğru.
 
 Devam eşiği: ilk 6 `yes`, son 4 `no`. Aksi halde Role kapsamını incele,
 **Adım 3'e geçme**.
