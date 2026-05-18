@@ -8,4 +8,5 @@ namespace: kube-system
 
 resources:
   - break-glass-sa.yaml
-  # Future Sprint C Faz 3+: operator-readonly.yaml, ci-runner-deploy.yaml
+  # prod-operator-readonly (PR-3D, staged): standalone subdir prod-operator-readonly/
+  # Future: ci-runner-deploy.yaml
