@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-backend",
+  "service": "user-service",
+  "git_sha": "c94c057cde2b82e87dc025ff06f75d1aa35ae82ae8858cd15e61942d37f0dc21",
+  "git_short_sha": "c94c057c",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-backend-user-service",
+    "digest": "sha256:c94c057cde2b82e87dc025ff06f75d1aa35ae82ae8858cd15e61942d37f0dc21",
+    "tag": "sha-c94c057",
+    "push_run_id": 26055613237,
+    "pushed_at": "2026-05-18T19:30:02Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-05-18T19:30:53Z",
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-05-18T19:48:11Z",
+          "details": "up=all 9 services Running+Ready | secured=all 9 services have correct KC issuer for test"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-05-18T19:48:11Z",
+          "endpoints": [
+            "/actuator/health",
+            "/api/v1/users",
+            "/api/v1/variants",
+            "/api/v1/permissions",
+            "/api/v1/schema/snapshot",
+            "/api/v1/reports",
+            "/api/v1/impersonation/sessions",
+            "/api/v1/companies",
+            "/api/v1/notify/inbox/me"
+          ],
+          "details": "all 9 endpoints returned 200/401/403 (auth chain intact)"
+        },
+        "d29_zanzibar": {
+          "status": "GREEN",
+          "checked_at": "2026-05-18T19:48:11Z",
+          "allow_deny_synthetic": "PASS",
+          "details": "store_id_source=secret/permission-service-secrets:ERP_OPENFGA_STORE_ID; user:1204 admin=allow OK, user:9999999 admin=deny OK"
+        }
+      },
+      "verified_at": "2026-05-18T19:48:11Z",
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:c1316fbc7ce3dd9d5b63295e7a6aa05a0e92e460b85fc557fa62b8facc0d43fe"
+  },
+  "audit": {
+    "created_at": "2026-05-18T19:50:12Z",
+    "last_updated_at": "2026-05-18T19:50:12Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-backend/actions/runs/26055613237"
+  }
+}
