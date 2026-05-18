@@ -61,7 +61,7 @@ images:
     # overlay still pinned the pre-PR #141 auth-service image. The digest below
     # matches the test-proven ServiceJwt decoder @Profile gate fix
     # (platform-backend c5df886) and the live prod pod imageID.
-    digest: sha256:1bfe6baa15f251e841a8f8f2e8ff69d3b29e1ef174f0372afe8aa7dde81f0bc0
+    digest: sha256:81499ba09e248791123f82a660d5776f33dba4ea226e30ce4b465ed1f03bf3b5
   # 2026-05-04 Session 37: prod backend canonical realign — promote test cluster
   # digest (built from same canonical main HEAD) to bring ai.acik.com level
   # with testai. PR #331 first promoted to sha256:a0a48aa9 (test overlay yaml)
@@ -69,20 +69,20 @@ images:
   # sha256:16451b81. This cleanup PR uses the live test digest, GHCR-verified.
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
-    digest: sha256:16451b81a1446c46283b9ecba0442881693cfe001a4568cf587c1a2aceafc358
+    digest: sha256:bb95149a3d5fc5dc7e545d8d51de6cf9085e6000728cbaff853fe5f00236b3c9
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
-    digest: sha256:df8b84d0cd02d064cf455f40017bd5cb4ca1be271e5e7068afeb36fc4526a7f1
+    digest: sha256:c1316fbc7ce3dd9d5b63295e7a6aa05a0e92e460b85fc557fa62b8facc0d43fe
   # 2026-05-04 Session 37: variant-service canonical realign — was sha256:4a51a49f.
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
-    digest: sha256:393387a01a5aee3b09e3164eb0611d5ae22f9e7eb9172d03dd5c5402951697e4
+    digest: sha256:70106d05b75c3117d7ad72e316e9501e034556eab23610979652f5524e13d550
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-backend-core-data-service
-    digest: sha256:b803507ac6b17240a8cced6878606f2aad7b31856140d6b5071352135babf37f
+    digest: sha256:ec5cfd1b9ce3e84fc4ea81461ba488b2569170da8442b4c8c22c9198e37b573c
   - name: report-service
     newName: ghcr.io/halildeu/platform-backend-report-service
-    digest: sha256:1d38fe3f3439067eeaae1d2015d470a3273074c6509589b54e7422fd749cc8b1
+    digest: sha256:7f3f71d67eaee2943b651abefce519ae0ce1e3e0742f648e8774d46272470158
   # 2026-05-04 Session 37: schema-service canonical realign — was sha256:1a0e3f02.
   # PR #331 first promoted to sha256:2a7076c9 from test overlay yaml — that
   # digest had been garbage-collected from GHCR (manifest unknown). Test
@@ -119,7 +119,7 @@ images:
     # InternalImpersonationAuditController, causing auth-service session create
     # to hit permission-service static-resource 404/500. This digest matches
     # test's PR-B internal controller image and the live prod pod imageID.
-    digest: sha256:a973be6502e6d26cab9e200fb7f343b35e62c26793b94b100bd03b513b64bc49
+    digest: sha256:6cf81e19b7e3883626dfeb8cbfa3514dd46546aecba4c65ee70abf9c722a709f
   # Frontend prod variant (ai.acik.com + serban realm)
   # 2026-05-03 Session 37: AG Grid lisans bytes-fix + single-source refactor +
   # buildx cache scope-v2 rename hotfix branch (`hotfix/ag-grid-license-rebuild`,
@@ -141,7 +141,7 @@ images:
   # 25294004654 (sha-940c4c4) prod variant manifest digest pinned below.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
-    digest: sha256:6d926376a58bfd47c3d5059e0e0025f8cb38d5c7fbf80767461b2eea136647f4
+    digest: sha256:d8b7b6960e294ce0352c733308937182741c05e7019a648f17be25712f93beb8
 
   # Faz 23.9 prod cutover (2026-05-08): notification-orchestrator
   # canonical activation. Pin remains sha-204042d (PR #126 era) until D29
@@ -171,7 +171,7 @@ images:
   #     dispatch flip (R1 NetGSM contract activation 2026-05-30).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:ef0f487f295359563a7c3d601db369cc6b2faf098f27740615bd1d02408daf09
+    digest: sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3
 
 # Faz 23.2 PR-D.3 — notification-orchestrator prod IMAGE PIN DEFERRED.
 # D29 evidence gate (Codex P0 Sprint A Item 3) requires:
@@ -354,6 +354,28 @@ patches:
       - op: add
         path: /data/KEYCLOAK_JWKS_URI
         value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+      # 2026-05-18 prod realign: yeni auth-service image SECURITY_JWT_*
+      # programmatic decoder + Flyway env'lerini bekliyor — test-parity.
+      # AUDIENCE test değeriyle eşlendi (KC client/audience id'leri realm-portable
+      # varsayımı — Codex/operatör teyidi: bkz docs/prod-realign-plan-2026-05-18.md).
+      - op: add
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://ai.acik.com/realms/serban"
+      - op: add
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SECURITY_JWT_AUDIENCE
+        value: "account,frontend,auth-service,notification-orchestrator"
+      - op: add
+        path: /data/SPRING_DATASOURCE_HIKARI_INITIALIZATION_FAIL_TIMEOUT
+        value: "30000"
+      - op: add
+        path: /data/SPRING_FLYWAY_ENABLED
+        value: "true"
+      - op: add
+        path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: "validate"
   - target:
       kind: ConfigMap
       name: api-gateway-config
@@ -378,6 +400,23 @@ patches:
       - op: add
         path: /data/SECURITY_JWT_AUDIENCE
         value: "account"
+      # 2026-05-18 prod realign: AUTHZ_USER_TABLE + SECURITY_JWT issuer/jwks
+      # + Flyway test-parity.
+      - op: add
+        path: /data/AUTHZ_USER_TABLE
+        value: "users"
+      - op: add
+        path: /data/SECURITY_JWT_ISSUER
+        value: "https://ai.acik.com/realms/serban"
+      - op: add
+        path: /data/SECURITY_JWT_JWK_SET_URI
+        value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SPRING_FLYWAY_ENABLED
+        value: "false"
+      - op: add
+        path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: "update"
   # 2026-05-04 Session 37 follow-up: user-service KC issuer prod override.
   # Base now has KEYCLOAK_ISSUER_URI set to internal cluster KC for test;
   # prod must point to the external issuer (ai.acik.com) so JWT validation
@@ -402,6 +441,13 @@ patches:
       - op: replace
         path: /data/SECURITY_JWT_JWK_SET_URI
         value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+      # 2026-05-18 prod realign: Flyway test-parity.
+      - op: add
+        path: /data/SPRING_FLYWAY_ENABLED
+        value: "false"
+      - op: add
+        path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: "update"
   # 2026-05-04 Session 37 follow-up: schema-service + report-service KC
   # issuer prod override. Same pattern — base sets internal KC, prod points
   # to ai.acik.com for the iss claim match.
@@ -419,6 +465,19 @@ patches:
       - op: replace
         path: /data/SECURITY_JWT_JWK_SET_URI
         value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+      # 2026-05-18 prod realign: KEYCLOAK_* + Flyway test-parity.
+      - op: add
+        path: /data/KEYCLOAK_ISSUER_URI
+        value: "https://ai.acik.com/realms/serban"
+      - op: add
+        path: /data/KEYCLOAK_JWKS_URI
+        value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+      - op: add
+        path: /data/SPRING_FLYWAY_ENABLED
+        value: "false"
+      - op: add
+        path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: "update"
   - target:
       kind: ConfigMap
       name: schema-service-config
@@ -450,6 +509,13 @@ patches:
       - op: replace
         path: /data/SECURITY_JWT_JWK_SET_URI
         value: "http://keycloak:8080/realms/serban/protocol/openid-connect/certs"
+      # 2026-05-18 prod realign: Flyway test-parity.
+      - op: add
+        path: /data/SPRING_FLYWAY_ENABLED
+        value: "false"
+      - op: add
+        path: /data/SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: "update"
   - target:
       kind: ConfigMap
       name: permission-service-config
