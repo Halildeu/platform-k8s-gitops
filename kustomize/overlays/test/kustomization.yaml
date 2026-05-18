@@ -873,7 +873,14 @@ images:
     # yet modules.REPORT/REPORT_VIEW absent → report-service denied every
     # report → /api/v1/reports = 0 + "Raporlar" nav hidden.
     # Image build run: 25985275529 (commit 1a15d27).
-    digest: sha256:52407b7fe42c7ad69bacbf41f711388699dc00650b28be83c2bfa6e2bb8e9697
+    #
+    # 2026-05-18 update: sha-74916a8 — platform-backend PR #242 (SUGGESTIONS +
+    # ETHIC permission modülleri: PermissionCatalogService.MODULES +
+    # PermissionDataInitializer.buildAdminGranules) + PR #240 (@WebMvcTest
+    # slice context-load fix). Authz leak closure — İK Öneriler/Etik shell
+    # header + sidebar Schema Explorer module gating için backend yarısı.
+    # Image build: merge commit 74916a8c (CI Image Build + GHCR Push success).
+    digest: sha256:6cf81e19b7e3883626dfeb8cbfa3514dd46546aecba4c65ee70abf9c722a709f
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
@@ -2254,7 +2261,16 @@ images:
     # changes). Image build run 25974358394.
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-356babf
     # @sha256:f2d9322056e2800da1354b12771aab8838bfd47f4d601242290f8c62f59d8d92
-    digest: sha256:f2d9322056e2800da1354b12771aab8838bfd47f4d601242290f8c62f59d8d92
+    #
+    # 2026-05-18 update: sha-cffdfc8 — platform-web PR #587 (Öneriler/Etik
+    # SUGGESTIONS/ETHIC module gating: MODULE_KEYS, header-navigation.config
+    # module:, AppRouter ProtectedRoute) + PR #585 (Schema Explorer sidebar
+    # THEME gate: buildSidebarNavItems + isSearchableItemVisible predicate).
+    # Authz leak closure — yetkisiz kullanıcı İK Öneriler/Etik + Schema
+    # Explorer öğelerini görmemeli. Image build: merge commit cffdfc8d.
+    # ghcr.io/halildeu/platform-web-frontend-testai:sha-cffdfc8
+    # @sha256:16ffc7f1cc33f8303efcd0c608e5eab66459e2d77055997e4cf7005f8428a860
+    digest: sha256:16ffc7f1cc33f8303efcd0c608e5eab66459e2d77055997e4cf7005f8428a860
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
