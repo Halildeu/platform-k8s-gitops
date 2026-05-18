@@ -51,16 +51,18 @@ hiçbir şey uygulanmaz.
 ## PR-3C — prod-deploy-smoke runner cutover (operator-gated)
 
 > **Boundary**: state-mutation (production). Owner/operator açık onayı gerek.
-> Tetik: PR-3A merged + runner least-privilege'a geçiş kararı.
 >
-> **DURUM (2026-05-18)**: **Adım 1-2 yürütüldü** — `prod-deploy-smoke` SA + 4
-> RBAC objesi k3d-prod'da canlı, `auth can-i` acceptance matrisi 10/10. Codex
-> `019e3a40` Verdict A: Adım 1-2 (additive RBAC apply + read-only `auth can-i`
-> doğrulama) agent-otonom yürütülebilir — istişare verdict'i bu dar alt-adım
-> için operator-gate'i açtı (Pre-Production Full Authority; additive RBAC ≠
-> destructive). **Operator Adım 3'ten devam eder.** Adım 3-4 hâlâ
-> operator-gated (runner kubeconfig cutover + env-gate dispatch — gerçek
-> prod-deploy-infra değişimi). Adım 1-2 idempotent — yeniden koşulabilir.
+> **DURUM (2026-05-18)**:
+> - **Adım 1-2 yürütüldü** — `prod-deploy-smoke` SA + 4 RBAC objesi k3d-prod'da
+>   canlı, `auth can-i` acceptance matrisi 10/10 (Codex `019e3a40` Verdict A;
+>   agent-otonom — additive RBAC ≠ destructive).
+> - **Adım 3 yeniden tasarlandı** — runner host inventory (2026-05-18) eski
+>   "runner `~/.kube/config`'ini swap'la" modelini geçersiz kıldı (Adım 3'teki
+>   bulgu kutusuna bak). Yeni model: `deploy-prod-gitops.yml` restricted
+>   kubeconfig'i `production` env secret'tan runtime materialize eder;
+>   `~/.kube/config` el değmez. Codex `019e3a40` AGREE-with-revision.
+> - Adım 3.1-3.2 + workflow PR owner "sen yap" onayıyla agent-infazına açıldı;
+>   Adım 4 dispatch `production` env-gate (operator tıklaması) gerektirir.
 
 ### Adım 1 — staged manifest'i prod cluster'a apply
 
@@ -103,14 +105,27 @@ kubectl --context k3d-prod                  auth can-i '*' '*'                  
 Devam eşiği: ilk 6 `yes`, son 4 `no`. Aksi halde Role kapsamını incele,
 **Adım 3'e geçme**.
 
-### Adım 3 — runner kubeconfig'i prod-deploy-smoke token'ına çevir
+### Adım 3 — restricted kubeconfig'i `production` env secret olarak ver
 
-`prod-deploy-smoke` için **uzun ömürlü SA token Secret'ı** (elle oluşturulan
-`kubernetes.io/service-account-token` tipli Secret — runner aralıklı çalıştığı
-için kısa-TTL token uygun değil; blast-radius zaten port-forward+read ile
-sınırlı). Revoke = Secret delete + recreate; rotation cadence: token sızıntı
-şüphesi / runner devri / periyodik hijyen (break-glass'ın kısa-TTL token'ından
-ayrımı budur):
+> **Plan-değiştiren bulgu (2026-05-18 runner host inventory)**: `deploy-prod-gitops.yml`
+> runner'ı (`/home/halil/actions-runner-stage`, etiket `[self-hosted, staging-sw,
+> testai-deploy]`) **`halil` user'ı** olarak koşar — operator'ün login user'ının ta
+> kendisi. Aynı runner `deploy-testai.yml` + `deploy-backend-testai.yml`'i de koşar
+> (k3d-test). Workflow `KUBECONFIG` set etmiyordu → `~/.kube/config` (`k3d-prod`
+> admin + `k3d-test` admin) kullanılıyordu. **Eski "runner `~/.kube/config`'ini
+> swap'la" modeli bu düzende GEÇERSİZ** — (a) testai (k3d-test) deploy path'ini
+> kırar, (b) runner user = operator login user → o kubeconfig = operator'ün günlük
+> kubeconfig'i → PR-3D (operator identity) ile çakışır.
+
+**Yeni mekanizma**: `deploy-prod-gitops.yml` restricted kubeconfig'i **`production`
+GitHub environment secret**'tan (`PROD_DEPLOY_SMOKE_KUBECONFIG_B64`) runtime
+materialize eder — `$RUNNER_TEMP`'e yazar, `KUBECONFIG`'i pinler, fail-fast guard
+(identity + negatif `* *`/patch → `::error::`+exit) + `if: always()` cleanup.
+`~/.kube/config` ve testai workflow'ları DOKUNULMAZ. PR-3C, PR-3D'den decouple olur.
+
+**Adım 3.1 — `prod-deploy-smoke` için uzun-ömürlü SA-token Secret** (elle
+oluşturulan `kubernetes.io/service-account-token` tipli Secret — runner aralıklı
+çalışır, kısa-TTL uygun değil; blast-radius port-forward+read ile sınırlı):
 
 ```bash
 kubectl --context k3d-prod -n argocd apply -f - <<'EOF'
@@ -123,55 +138,79 @@ metadata:
     kubernetes.io/service-account.name: prod-deploy-smoke
 type: kubernetes.io/service-account-token
 EOF
-
-TOKEN=$(kubectl --context k3d-prod -n argocd get secret prod-deploy-smoke-token \
-  -o jsonpath='{.data.token}' | base64 -d)
 ```
 
-Token'la kısıtlı bir kubeconfig kur (cluster server + CA mevcut admin
-kubeconfig'inden kopyalanır; **user** bloğu token olur). Bu kubeconfig
-runner host'unda `deploy-prod-gitops.yml`'in `k3d-prod` context'i için
-kullanılan dosyanın yerine konur.
+**Adım 3.2 — restricted kubeconfig kur → `production` env secret**. context adı
+tam **`k3d-prod`** olmalı (workflow `kubectl --context k3d-prod` çağırır); cluster
+`server` + `certificate-authority-data` mevcut admin kubeconfig'inden, `users`
+bloğu yalnız SA token. base64 → env secret:
 
-> ⚠️ **Kritik**: runner host'unda eski `admin@k3d-prod` cluster-admin
-> kubeconfig'i runner user tarafından okunabilir kalırsa cutover eksik —
-> least-privilege bypass edilebilir. Eski admin kubeconfig'i runner user
-> erişiminden kaldır (host-spesifik yol operatör tarafından belirlenir;
-> `staging-sw-testai-deploy` runner'ın `KUBECONFIG`/`~/.kube/config` yolu).
+```bash
+TOKEN=$(kubectl --context k3d-prod -n argocd get secret prod-deploy-smoke-token \
+  -o jsonpath='{.data.token}' | base64 -d)
+# restricted kubeconfig kur — context: k3d-prod, user: prod-deploy-smoke (token).
+# Sonra base64'le (host-kalıcı dosya BIRAKMA — pipe ile) → production env secret:
+base64 -w0 < <restricted-kubeconfig> | \
+  gh secret set PROD_DEPLOY_SMOKE_KUBECONFIG_B64 --env production \
+    --repo Halildeu/platform-k8s-gitops
+```
 
-### Adım 4 — runner cutover doğrulama (canlı sync)
+> Revoke / rotation = `prod-deploy-smoke-token` Secret delete+recreate + env
+> secret güncelle (token sızıntı şüphesi / runner devri / periyodik hijyen).
+> Kubeconfig host'ta KALICI dosya olarak bırakılmaz — yalnız `production` env
+> secret; workflow job süresince `$RUNNER_TEMP`'te materialize edip cleanup'la siler.
+>
+> ⚠️ `~/.kube/config`'teki `admin@k3d-prod` PR-3C'de DOKUNULMAZ — operator'ün
+> manuel/break-glass erişimi. PR-3C iddiası dar: "prod **workflow** artık admin
+> kullanmıyor". Aynı Unix user'ında `admin@k3d-prod` durduğu sürece host/user
+> trust boundary kapanmaz — bu PR-3D'nin işi.
 
-PR-3C sonrası bir `deploy-prod-gitops.yml` no-op/küçük sync dispatch et;
-`production` env-gate onayıyla. Beklenen: port-forward kurulur, ArgoCD
-app get/diff/sync/wait çalışır, `rollout status` okur — job `success`.
-Fail sinyali: port-forward `Forbidden` → Role eksik; sync ArgoCD-tarafı
-401 → `ARGOCD_PROD_SYNC_TOKEN` ayrı sorun (k8s RBAC değil).
+### Adım 4 — cutover doğrulama (env-gate'li dispatch)
+
+Workflow PR merge sonrası `deploy-prod-gitops.yml`'i `production` env-gate
+onayıyla dispatch et. **No-op sync seçme** — workflow `argocd app diff` exit 0'ı
+(fark yok) hata sayabilir; runner RBAC başarısızlığı workflow business-guard
+başarısızlığıyla karışmasın diye küçük gerçek/düşük-riskli desired-state sync ya
+da kontrollü out-of-sync resource filtresi seç.
+
+Beklenen (job log): "Restricted kubeconfig — prod-deploy-smoke materialize +
+guard" adımı `identity: system:serviceaccount:argocd:prod-deploy-smoke` +
+guard'lar geçer; port-forward `argocd-server` kurulur; ArgoCD app
+get/diff/sync/wait çalışır; `rollout status` okur — job `success`. Fail sinyali:
+port-forward `Forbidden` → Role eksik; identity-guard fail → secret/kubeconfig
+yanlış; ArgoCD-tarafı 401 → `ARGOCD_PROD_SYNC_TOKEN` ayrı sorun (k8s RBAC değil).
 
 ### Rollback (PR-3C)
 
-Runner kubeconfig'ini önceki (admin) hâline geri al; `prod-deploy-smoke-token`
-Secret'ını sil. Manifest (`prod-deploy-smoke` SA/Role/RoleBinding) cluster'da
+`deploy-prod-gitops.yml`'in "Restricted kubeconfig" adımını + `env` girişini
+revert et (PR revert) → workflow `~/.kube/config`'e geri düşer. İstenirse
+`PROD_DEPLOY_SMOKE_KUBECONFIG_B64` env secret + `prod-deploy-smoke-token` Secret
+silinir. RBAC manifest'i (`prod-deploy-smoke` SA/Role/RoleBinding) cluster'da
 kalabilir — kullanılmadığı sürece zararsız (yalnız izin verir, kimseden almaz).
 
 ## PR-3B — break-glass SA live activation (operator-gated)
 
-> **DURUM (2026-05-18)**: **Test-cluster drill yürütüldü** — `ops-break-glass` SA +
-> cluster-admin CRB k3d-test'e apply edildi, `break-glass-token.sh` koştu (exit 0),
-> 1h TTL token üretildi ve doğrulandı (`auth whoami` =
-> `system:serviceaccount:kube-system:ops-break-glass`, `auth can-i '*' '*'` = `yes`,
-> gerçek `get ns` token-canlı), audit log satırı yazıldı. Drill sonrası SA
-> k3d-test'ten silindi — k3d-test Kubernetes state'i drill-öncesine döndü
-> (cluster net değişim sıfır). GitHub issue yolu `gh`
-> staging-sw'de kurulu olmadığından script'in graceful-skip dalından geçti (issue
-> oluşturma kodu inspection ile doğrulandı, exercise edilmedi); Alertmanager
-> fallback `ALARM_FALLBACK_ALERTMANAGER` default `0` → exercise edilmedi. Codex
-> `019e3a40`: test-cluster drill agent-actionable. **Prod activation (cluster-admin
-> CRB canlıya) hâlâ operator-gated** — aşağıdaki adımlar.
+> **DURUM (2026-05-18)**:
+> - **Test-cluster drill yürütüldü** (#804) — `ops-break-glass` SA + cluster-admin
+>   CRB k3d-test'e apply + `break-glass-token.sh` exit 0 + 1h TTL token verified
+>   (`auth whoami` = `system:serviceaccount:kube-system:ops-break-glass`, `auth
+>   can-i '*' '*'` = `yes`, gerçek `get ns` token-canlı), audit log yazıldı; drill
+>   sonrası SA k3d-test'ten silindi. `gh` yok → issue graceful-skip; Alertmanager
+>   fallback toggle-off → exercise yok.
+> - **Prod RBAC activation yürütüldü** (owner "sen yap" + Codex `019e3a40`):
+>   `kubectl --context k3d-prod apply -k kustomize/base/rbac` → `ops-break-glass`
+>   SA + cluster-admin CRB k3d-prod'da **canlı** (server dry-run temiz); `auth
+>   can-i '*' '*' --as=system:serviceaccount:kube-system:ops-break-glass` = `yes`.
+>   **Prod'da token issuance bilerek exercise EDİLMEDİ** — token path k3d-test
+>   drill'de kanıtlı; prod'da gereksiz cluster-admin token + `gh`-yok governance
+>   sürtünmesi. Token üretimi yalnız gerçek break-glass incident'inde (aşağıdaki
+>   prosedür) + governance trail ile.
 
-`kustomize/base/rbac/break-glass-sa.yaml` (`ops-break-glass` SA + cluster-admin
-CRB) + `scripts/operations/break-glass-token.sh` repo'da **var ama** hiçbir
-overlay'e bağlı değil → canlıda **yok** (`kubectl -n kube-system get sa
-ops-break-glass` → NotFound). PR-3B canlıya alır:
+`ops-break-glass` SA + `ops-break-glass-cluster-admin` CRB **k3d-prod'da canlı**
+(2026-05-18 apply edildi — DURUM marker). Aşağıdaki bash, **gerçek bir
+break-glass incident'inde** (ArgoCD sync bloklu + acil state mutation gerekli)
+audited TTL token issuance prosedürüdür — rutin değil, yalnız incident; `apply`
+satırı idempotent (SA zaten canlı):
 
 ```bash
 kubectl --context k3d-prod apply -k kustomize/base/rbac     # ops-break-glass
@@ -191,10 +230,10 @@ rm -f /tmp/kc-bg-prod    # izole kubeconfig (creds içerir) — temizle
 
 Doğrula: 1h TTL token üretilir, `/var/log/break-glass-audit.log` satırı yazılır.
 **GitHub audit issue**: script `gh` kurulu + authenticated ise issue açar; aksi
-halde "gh CLI unavailable — SKIPPED" warning'i basıp devam eder. Prod
-activation'da `gh` kurulu/authenticated OLMALI — script gh-unavailable warning'i
-verirse operator issue'yu **manuel açmadan** acceptance vermez (governance trail
-zorunlu). `kubectl create token` API server TTL cap'ine takılırsa cap'i kontrol
+halde "gh CLI unavailable — SKIPPED" warning'i basıp devam eder. Gerçek
+break-glass token issuance'da `gh` kurulu/authenticated OLMALI — script
+gh-unavailable warning'i verirse operator issue'yu **manuel açmadan** kabul
+etmez (governance trail zorunlu). `kubectl create token` API server TTL cap'ine takılırsa cap'i kontrol
 et. **Static long-lived break-glass token YOK** — yalnız TTL token. Test
 cluster'da drill: yukarıdaki DURUM marker (2026-05-18 yapıldı, mekanizma
 doğrulandı).

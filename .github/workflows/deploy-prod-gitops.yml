@@ -25,6 +25,10 @@ name: Deploy prod GitOps sync
 #     `--plaintext` (ingress / `--grpc-web` / rootpath KULLANILMAZ).
 #   - Derin acceptance smoke (pod runtime env, snapshot vb.) bu workflow
 #     DIŞINDA — ayrı agent/operator verify adımı.
+#   - Runner k8s identity (PR-3C): sync job cluster-admin DEĞİL — restricted
+#     `prod-deploy-smoke` kubeconfig `production` env secret'tan runtime
+#     materialize edilir (argocd port-forward + platform-prod read/watch;
+#     workload-mutate YOK). docs/operations/RUNBOOKS/RB-prod-rbac-least-privilege.md.
 #
 # Operator setup (tek seferlik — bu workflow çalışmadan önce ZORUNLU):
 #   docs/operations/RUNBOOKS/RB-prod-gitops-sync.md → "Operator setup".
@@ -207,6 +211,8 @@ jobs:
       # GitHub Environment "production" settings (UI):
       #   - Required reviewers: 1+ (prod deploy disiplini — insan onayı)
       #   - Secret: ARGOCD_PROD_SYNC_TOKEN (operator setup; runbook'a bak)
+      #   - Secret: PROD_DEPLOY_SMOKE_KUBECONFIG_B64 (PR-3C — restricted
+      #     prod-deploy-smoke kubeconfig base64; RB-prod-rbac-least-privilege.md)
     env:
       REVISION: ${{ needs.preflight.outputs.revision }}
       SYNC_MODE: ${{ needs.preflight.outputs.sync_mode }}
@@ -214,6 +220,7 @@ jobs:
       IN_RESOURCES: ${{ inputs.resources }}
       IN_ALLOW_PRUNE: ${{ inputs.allow_prune }}
       ARGOCD_PROD_SYNC_TOKEN: ${{ secrets.ARGOCD_PROD_SYNC_TOKEN }}
+      PROD_DEPLOY_SMOKE_KUBECONFIG_B64: ${{ secrets.PROD_DEPLOY_SMOKE_KUBECONFIG_B64 }}
     steps:
       - name: Checkout (main HEAD yeniden doğrulama)
         uses: actions/checkout@v6
@@ -228,6 +235,62 @@ jobs:
             exit 1
           fi
           echo "✓ ARGOCD_PROD_SYNC_TOKEN mevcut"
+
+      - name: Restricted kubeconfig — prod-deploy-smoke materialize + guard
+        run: |
+          set -euo pipefail
+          # PR-3C: sync job cluster-admin DEĞİL — restricted prod-deploy-smoke
+          # kubeconfig'i production env secret'tan runtime materialize edilir.
+          if [ -z "${PROD_DEPLOY_SMOKE_KUBECONFIG_B64:-}" ]; then
+            echo "::error::PROD_DEPLOY_SMOKE_KUBECONFIG_B64 (production env secret) yok — operator setup: docs/operations/RUNBOOKS/RB-prod-rbac-least-privilege.md"
+            exit 1
+          fi
+          umask 077
+          KC="${RUNNER_TEMP}/prod-deploy-smoke.kubeconfig"
+          printf '%s' "${PROD_DEPLOY_SMOKE_KUBECONFIG_B64}" | base64 -d > "${KC}"
+          chmod 600 "${KC}"
+
+          # context adı tam ${K8S_CONTEXT} olmalı (workflow kubectl --context onu çağırır)
+          if ! kubectl --kubeconfig "${KC}" config get-contexts "${K8S_CONTEXT}" >/dev/null 2>&1; then
+            echo "::error::restricted kubeconfig'te '${K8S_CONTEXT}' context yok"
+            exit 1
+          fi
+          WHO="$(kubectl --kubeconfig "${KC}" --context "${K8S_CONTEXT}" auth whoami -o jsonpath='{.status.userInfo.username}')"
+          echo "identity: ${WHO}"
+          if [ "${WHO}" != "system:serviceaccount:argocd:prod-deploy-smoke" ]; then
+            echo "::error::beklenmeyen identity: ${WHO} (system:serviceaccount:argocd:prod-deploy-smoke bekleniyordu)"
+            exit 1
+          fi
+          # positive — workflow'un gereken TÜM yetkileri fail-fast doğrulanır
+          # (RBAC/secret drift'i ArgoCD sync'e gelmeden yakala)
+          want() {  # ns verb resource [subresource]
+            local sr=""
+            [ -n "${4:-}" ] && sr="--subresource=$4"
+            if ! kubectl --kubeconfig "${KC}" --context "${K8S_CONTEXT}" -n "$1" \
+                 auth can-i "$2" "$3" $sr >/dev/null 2>&1; then
+              echo "::error::restricted kubeconfig: '$2 $3 $sr' ($1 ns) yetkisi yok — RBAC drift"
+              exit 1
+            fi
+          }
+          want "${ARGOCD_NS}"     get    services
+          want "${ARGOCD_NS}"     list   pods
+          want "${ARGOCD_NS}"     create pods         portforward
+          want "${K8S_NAMESPACE}" get    deployments
+          want "${K8S_NAMESPACE}" watch  deployments
+          want "${K8S_NAMESPACE}" get    pods
+          # negative — workload-mutate KAPALI olmalı (fail-closed least-privilege)
+          if kubectl --kubeconfig "${KC}" --context "${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" \
+               auth can-i patch deployments >/dev/null 2>&1; then
+            echo "::error::restricted kubeconfig platform-prod deployment patch edebiliyor — least-privilege ihlali"
+            exit 1
+          fi
+          if kubectl --kubeconfig "${KC}" --context "${K8S_CONTEXT}" \
+               auth can-i '*' '*' >/dev/null 2>&1; then
+            echo "::error::restricted kubeconfig cluster-wide '*' '*' yetkili — least-privilege ihlali"
+            exit 1
+          fi
+          echo "KUBECONFIG=${KC}" >> "${GITHUB_ENV}"
+          echo "✓ prod-deploy-smoke restricted kubeconfig aktif — sonraki adımlar KUBECONFIG'e pinli"
 
       - name: Guard — resources mode'da revision hâlâ main HEAD mi
         if: ${{ needs.preflight.outputs.sync_mode == 'resources' }}
@@ -397,3 +460,7 @@ jobs:
             echo "Derin acceptance smoke bu workflow dışında — runbook'a bak:"
             echo "\`docs/operations/RUNBOOKS/RB-prod-gitops-sync.md\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup — restricted kubeconfig
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/prod-deploy-smoke.kubeconfig"
