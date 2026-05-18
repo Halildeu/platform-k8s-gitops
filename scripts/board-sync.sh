@@ -466,7 +466,7 @@ cmd_sync_state() {
     log "  claim             : unclaimed"
   fi
   case "$ITEM_STATUS|$bstatus" in
-    "In Progress|in-progress"|"Todo|todo"|"Blocked|blocked"|"Needs Verify|needs-verify"|"Done|done") : ;;
+    "Backlog|backlog"|"In Progress|in-progress"|"Todo|todo"|"Blocked|blocked"|"Needs Verify|needs-verify"|"Done|done") : ;;
     "|"|"|none") : ;;
     *) log "  WARN: board Status and body agent-state disagree — reconcile" ;;
   esac
@@ -702,7 +702,7 @@ eligible is olur. Protokol: docs/board-protocol.md."
   if [ "$cur" = "Backlog" ]; then
     log "backlog-add — $url on board: Kind=$kind Status=$STATUS_BACKLOG_NAME (triage needed)"
   else
-    log "WARN: backlog-add — $url Status is '${cur:-?}', not Backlog — set it manually"
+    die "backlog-add — $url created + on board, but Status is '${cur:-?}', not Backlog — set it manually (capture incomplete)"
   fi
 }
 
