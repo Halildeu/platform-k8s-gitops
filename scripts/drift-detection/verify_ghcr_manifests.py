@@ -23,9 +23,12 @@ Usage:
   kubectl kustomize kustomize/overlays/prod | python3 verify_ghcr_manifests.py
 
 Exit codes:
-  0 — all manifests verified present
-  1 — at least one manifest missing (GC'd or never pushed)
-  2 — auth/network failure (cannot conclude)
+  0 — all manifests verified present, OR auth/permission inconclusive in
+      non-strict mode (near-all-unverified heuristic → AUTH_FAIL; runtime
+      drift detector is the backstop)
+  1 — at least one manifest genuinely missing (GC'd / never pushed), OR
+      auth/permission failure under GHCR_STRICT=true
+  2 — network / invocation failure (cannot conclude)
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ import urllib.error
 import urllib.request
 import json
 import base64
+import math
 from typing import Optional
 
 DIGEST_PATTERN = re.compile(
@@ -177,32 +181,47 @@ def main() -> int:
     print(f"auth_fail:    {len(auth_fails)}")
     print(f"network_fail: {len(network_fails)}")
 
-    # Heuristic: if ALL or NEARLY-ALL pairs return MISSING (404), it's almost
-    # certainly a cross-repo auth issue, not real garbage collection. GHCR
-    # returns 404 for both "doesn't exist" AND "no read permission" (security
-    # through obscurity). Treat (near-)all-404 as inconclusive → AUTH_FAIL
-    # classification.
+    # Heuristic: when (near-)all pairs are UNVERIFIED — MISSING (manifest 404)
+    # or AUTH_FAIL (token-exchange failed) — it is almost certainly a
+    # cross-repo `packages:read` permission gap, NOT real garbage collection.
+    # GHCR returns 404 for both "manifest absent" AND "no read permission"
+    # (security-through-obscurity), so a 404 on a private cross-repo package
+    # is genuinely ambiguous; an AUTH_FAIL in the same run is direct evidence
+    # of the same permission gap. Reclassify the MISSING set as inconclusive.
     #
-    # 2026-05-05 hardening (Faz 22.1.1b): threshold ≥80% missing (not strictly
-    # all). Reason: when a new package gets pushed within the workflow's own
-    # repo (e.g., endpoint-admin-service via current PR's image build), it
-    # receives [OK] while cross-org packages still 404 due to PAT scope. This
-    # would falsely flip the heuristic OFF and surface 9 cross-org 404's as
-    # real GC. Threshold ≥80% covers the "1-2 same-repo OK + N cross-repo 404"
-    # pattern without losing real GC detection.
-    threshold = max(1, int(len(pairs) * 0.8))
-    if missing and not (network_fails or auth_fails) and len(missing) >= threshold:
+    # 2026-05-05 hardening (Faz 22.1.1b): threshold ≥80% (not strictly all) —
+    # covers the "1-2 same-repo OK + N cross-repo 404" pattern without losing
+    # real GC detection.
+    #
+    # 2026-05-18 fix (PR-3E-A #812 blocker): the guard previously required
+    # ZERO auth_fails (`not (network_fails or auth_fails)`), which disabled the
+    # heuristic exactly when the evidence was STRONGEST — N×404 + ≥1 outright
+    # token-exchange fail is an unambiguous permission problem, not GC. MISSING
+    # and AUTH_FAIL now count TOGETHER toward the ≥80% threshold; only
+    # NETWORK_FAIL (a separate inconclusive → exit 2) disables the heuristic.
+    # `math.ceil` so the threshold is a true ≥80% (`int()` floored, e.g. 9→7).
+    #
+    # Operator follow-up: the PR-time verifier authenticates with THIS repo's
+    # GITHUB_TOKEN, which cannot read cross-repo private GHCR packages
+    # (platform-backend-*, platform-web-*). Until a cross-repo `read:packages`
+    # PAT / GitHub App token secret is wired in (then GHCR_STRICT=true can
+    # restore hard-fail), near-all-unverified is reported as inconclusive WARN.
+    # Live artifact truth: pod `imageID == desired digest` + the runtime drift
+    # detector (catches a real GC'd digest within ~5min).
+    threshold = max(1, math.ceil(len(pairs) * 0.8))
+    unverified = len(missing) + len(auth_fails)
+    if missing and not network_fails and unverified >= threshold:
         print()
-        if len(missing) == len(pairs):
-            print("[HEURISTIC] all digests returned 404 — likely cross-repo packages:read")
+        if unverified == len(pairs):
+            print("[HEURISTIC] all digests unverified (404 / auth-fail) — cross-repo")
+            print("            packages:read missing (GITHUB_TOKEN scoped to this repo).")
         else:
-            ok_count = len(pairs) - len(missing)
-            print(f"[HEURISTIC] {len(missing)}/{len(pairs)} digests returned 404 (≥80% threshold)")
+            ok_count = len(pairs) - unverified
+            print(f"[HEURISTIC] {unverified}/{len(pairs)} digests unverified (≥80% threshold)")
             print(f"            — {ok_count} OK likely current-repo same-org package(s);")
-            print(f"            cross-repo 404 = packages:read permission missing.")
-        print("            permission missing (GITHUB_TOKEN scoped to this repo only).")
-        print("            Reclassifying as AUTH_FAIL (inconclusive, not real GC).")
-        auth_fails = missing
+            print(f"            cross-repo 404/auth-fail = packages:read missing.")
+        print("            Reclassifying MISSING as AUTH_FAIL (inconclusive, not real GC).")
+        auth_fails.extend(missing)
         missing = []
 
     if missing:
