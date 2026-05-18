@@ -100,9 +100,9 @@ Bu doküman **per sub-faz test coverage requirements** + **regression scope** + 
 
 | Channel | D29-Up | D29-Functional | D29-Authorized | Sub-faz | Evidence Path | Status |
 |---|:---:|:---:|:---:|---|---|:---:|
-| **Email (Mailpit lab)** | ✅ pod ready | ⏳ Mailpit message visible | ⏳ OpenFGA allow → delivery | 23.1 | `docs/faz-23-evidence/2026-XX-XX-23-1-email-d29.md` | 🔴 Pending |
-| **Slack (test channel)** | ✅ pod ready | ⏳ Slack channel screenshot | ⏳ OpenFGA allow → delivery | 23.1 | `docs/faz-23-evidence/2026-XX-XX-23-1-slack-d29.md` | 🔴 Pending |
-| **Webhook (HMAC)** | ✅ pod ready | ⏳ wireshark/curl trace | ⏳ HMAC signature verification | 23.1 | `docs/faz-23-evidence/2026-XX-XX-23-1-webhook-d29.md` | 🔴 Pending |
+| **Email (Mailpit lab)** | ✅ pod ready | ✅ Mailpit message + PG delivery row (2026-05-14) | 🟡 L1 org-boundary ✅; L2 channel-level → 23.2 v2 | 23.1 | `docs/faz-23-evidence/2026-05-14-m2-d29-functional-3-channel-live.md` | 🟡 Functional+L1 accepted |
+| **Slack (mock receiver)** | ✅ pod ready | ✅ mock incoming-webhook receiver 200 + PG delivery row (2026-05-14) | 🟡 L1 ✅; L2 → 23.2 v2 | 23.1 | `docs/faz-23-evidence/2026-05-14-m2-d29-functional-3-channel-live.md` | 🟡 Functional+L1 accepted |
+| **Webhook (HMAC)** | ✅ pod ready | ✅ HMAC POST + webhook-receiver 200 + PG delivery row (2026-05-14) | 🟡 L1 ✅; L2 → 23.2 v2 | 23.1 | `docs/faz-23-evidence/2026-05-14-m2-d29-functional-3-channel-live.md` | 🟡 Functional+L1 accepted |
 | **In-app inbox** | ✅ SSE 200 | ✅ /inbox/me 200 | ✅ subscriberId match | 23.4 | Codex `019e07d6` PR-5.5 evidence | ✅ |
 | **SMS NetGSM** | — | — | — | 23.3 | — | ⏳ Faz 23.3 |
 | **Teams** | — | — | — | 23.6 | — | ⏳ Faz 23.6 |
