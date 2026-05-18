@@ -220,9 +220,9 @@ tier_functional() {
       permission-service) svc_ep="/api/v1/permissions" ;;
       schema-service) svc_ep="/api/v1/schema/snapshot" ;;
       report-service) svc_ep="/api/v1/reports" ;;
-      auth-service) svc_ep="/actuator/health" ;;
-      core-data-service) svc_ep="/actuator/health" ;;
-      notification-orchestrator) svc_ep="/actuator/health" ;;
+      auth-service) svc_ep="/api/v1/impersonation/sessions" ;;
+      core-data-service) svc_ep="/api/v1/companies" ;;
+      notification-orchestrator) svc_ep="/api/v1/notify/inbox/me" ;;
       *) continue ;;
     esac
     checked_endpoints+=("$svc_ep")
