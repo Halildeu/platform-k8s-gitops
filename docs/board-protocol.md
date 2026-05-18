@@ -229,6 +229,11 @@ Agent "en yüksek öncelikli Todo"yu kör seçmez. Bir item **eligible**'dır:
 
 Sıralama: `Priority` (P0 → P3), sonra `created_at`.
 
+`board-sync.sh claim` bu filtreyi claim-time'da **hard gate** uygular:
+`Todo` veya lease'i geçmiş (stale) `In Progress` dışındaki Status
+(`Blocked` / `Needs Verify` / `Done`) ve `Kind=umbrella` issue'lar için
+claim reddedilir — yanlış issue numarasıyla overclaim/rollback engellenir.
+
 ---
 
 ## 10. Evidence taxonomy
@@ -274,9 +279,10 @@ Ritüelin mekaniğini taşıyan script. Alt komutlar:
 | `sync-state <issue>` | Gövde `agent-state` ↔ board `Status` senkron raporla |
 
 `--dry-run` her komutta — write yapmadan ne yapacağını gösterir. `claim`
-lease'i `CLAIM_TTL_HOURS` (default 2s) sonra dolar; uzun iş için `heartbeat`
-ile lease ileri taşınır (winner hesabı son heartbeat'i dikkate alır). Script
-başlangıçta `gh auth status` + project id sanity check yapar.
+lease'i `CLAIM_TTL_HOURS` (default 2 saat) sonra dolar; uzun iş için
+`heartbeat` ile lease ileri taşınır — winner hesabı yalnız lease dolmadan
+atılan heartbeat'leri extension sayar (kopmuş zincir reclaim'e açık kalır).
+Script başlangıçta `gh auth status` + project id sanity check yapar.
 
 ---
 

@@ -98,7 +98,7 @@ board_json() {
 # resolve_issue <number|url> -> sets REPO NUM ITEM_ID ITEM_STATUS ITEM_TITLE
 resolve_issue() {
   local arg="$1"
-  REPO=""; NUM=""; ITEM_ID=""; ITEM_STATUS=""; ITEM_TITLE=""
+  REPO=""; NUM=""; ITEM_ID=""; ITEM_STATUS=""; ITEM_TITLE=""; ITEM_KIND=""
   if printf '%s' "$arg" | grep -q '^https://github.com/'; then
     local path
     path="${arg#https://github.com/}"
@@ -116,7 +116,7 @@ resolve_issue() {
       | select((.content.number | tostring) == $n)
       | select($r == "" or (.content.url // "" | contains("/" + $r + "/")))
     ]
-    | .[] | "\(.id)\t\(.status // "")\t\(.content.url // "")\t\(.title // "")"')"
+    | .[] | "\(.id)\t\(.status // "")\t\(.content.url // "")\t\(.title // "")\t\(.kind // "")"')"
 
   local count
   count="$(printf '%s\n' "$matches" | grep -c . || true)"
@@ -126,6 +126,7 @@ resolve_issue() {
   ITEM_ID="$(printf '%s' "$matches" | cut -f1)"
   ITEM_STATUS="$(printf '%s' "$matches" | cut -f2)"
   ITEM_TITLE="$(printf '%s' "$matches" | cut -f4)"
+  ITEM_KIND="$(printf '%s' "$matches" | cut -f5)"
   local url
   url="$(printf '%s' "$matches" | cut -f3)"
   if [ -z "$REPO" ] && [ -n "$url" ]; then
@@ -208,9 +209,10 @@ winner_of() {
             session: (.body | capture("session=(?<s>[^ \n]+)").s // "?"),
             cexp: (.body | capture("expires=(?<e>[^ \n]+)").e // "") }
         | . as $c
-        | (([ $c.cexp ]
-            + [ $hb[] | select(.session == $c.session and .created > $c.created) | .expires ])
-           | max) as $eff
+        | ( [ $hb[] | select(.session == $c.session and .created > $c.created) ]
+            | sort_by(.created)
+            | reduce .[] as $h ($c.cexp;
+                if $h.created <= . then ([., $h.expires] | max) else . end) ) as $eff
         | select($eff > $now)
         | select(([ $rel[] | select(.session == $c.session and .created > $c.created) ] | length) == 0)
       ]
@@ -272,6 +274,24 @@ cmd_claim() {
   [ -n "${1:-}" ] || die "claim needs an <issue>"
   resolve_issue "$1"
 
+  # eligible-status hard gate (docs/board-protocol.md §4, §9)
+  [ "$ITEM_KIND" = "umbrella" ] \
+    && die "claim refused — #$NUM is Kind=umbrella (rollup, not claimable work)"
+  case "$ITEM_STATUS" in
+    Todo) : ;;
+    "In Progress")
+      local cur_exp
+      cur_exp="$(issue_body "$REPO" "$NUM" | state_get expires_at)"
+      if [ -n "$cur_exp" ] && [ "$cur_exp" != "none" ] && [[ "$cur_exp" > "$(iso_now)" ]]; then
+        die "claim refused — #$NUM already In Progress, lease active until $cur_exp"
+      fi
+      log "note: #$NUM In Progress with stale/absent lease (${cur_exp:-none}) — reclaiming"
+      ;;
+    *)
+      die "claim refused — #$NUM Status='${ITEM_STATUS:-unset}' not eligible (claim only Todo or stale In Progress)"
+      ;;
+  esac
+
   local sid wt branch now exp slug claim_body winner
   sid="$(session_id)"
   wt="$(git rev-parse --show-toplevel 2>/dev/null || echo unknown)"
@@ -323,12 +343,16 @@ cmd_claim() {
 cmd_heartbeat() {
   [ -n "${1:-}" ] || die "heartbeat needs an <issue>"
   resolve_issue "$1"
-  local sid body bsess bwt bbr now exp
+  local sid body bsess bexp bwt bbr now exp
   sid="$(session_id)"
   body="$(issue_body "$REPO" "$NUM")"
   bsess="$(printf '%s\n' "$body" | state_get claim_session)"
   [ "$bsess" = "$sid" ] \
     || die "heartbeat refused — #$NUM claimed by session '${bsess:-none}', not you ($sid)"
+  bexp="$(printf '%s\n' "$body" | state_get expires_at)"
+  if [ -z "$bexp" ] || [ "$bexp" = "none" ] || [[ "$bexp" < "$(iso_now)" ]]; then
+    die "heartbeat refused — #$NUM lease expired/absent (${bexp:-none}); re-claim instead"
+  fi
   bwt="$(printf '%s\n' "$body" | state_get claim_worktree)"
   bbr="$(printf '%s\n' "$body" | state_get claim_branch)"
   now="$(iso_now)"
