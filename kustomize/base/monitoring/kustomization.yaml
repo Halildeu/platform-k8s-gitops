@@ -22,6 +22,7 @@ resources:
   - api-gateway-slo-rule.yaml     # iter-49 B.2 — api-gateway SLO warning rules (4 alert, dev-observable)
   - notify-dlq-slo-rule.yaml      # Step B.4 (Codex 019e0892 + 019e094a iter-1) — notify DLQ SLO + true multi-window burn rate alerts (4 alert, 18 recording rules incl. 5m/30m short windows, 99.5% target, 28d window, slow `unless` fast suppression)
   - rollout-replicaset-crash-rule.yaml  # Codex 019e256f PR-4 — KubeDeploymentRolloutStuck + KubeReplicaSetSplit + KubePodCrashLooping (continuous cluster alerting for drift gate observation layer)
+  - rbac-least-privilege-rule.yaml      # prod-deploy PR-3E (Codex 019e3a40) — k8s API 403/Forbidden proxy-telemetri: KubeAPIForbiddenMutatingRequest + KubeAPIForbiddenRequestSpike
   # Ops-B core common rules (Codex 019e26c5 + 019e2772 iter-4 split):
   # cluster-agnostic 3 alert (Failing, ResultFail, Stale). Cross-cluster
   # AbsentTest/AbsentProd rule'ları `base/monitoring-prod-hub/` altında
