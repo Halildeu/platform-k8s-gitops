@@ -250,7 +250,7 @@ Her runbook: tetik → adımlar (süre + komut + beklenen + fail sinyali + devam
 4. Memory: `~/.claude/projects/<slug>/memory/MEMORY.md` → feedback kuralları
 5. Codex thread: `PLAN.md` "Codex Thread" referanslar (ana + delta)
 6. Historical gerekiyorsa: `docs/session-handoff-<latest>.md`
-7. İş: kullanıcı explicit isteği varsa o, yoksa canonical truth + aktif blocker sırasındaki ilk iş
+7. İş seçimi + board: kullanıcı explicit isteği varsa o; yoksa **board'dan claim** — `scripts/board-sync.sh list` (en yüksek öncelikli uygun iş) → `board-sync.sh claim <issue>`. Aktif iş + risk + milestone/gate `Status` [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (Project #2)'da canonical; çalışırken item `In Progress` + kanıt comment'i, bitince acceptance sonrası `Done`. Protokol: `docs/board-protocol.md`.
 
 ## Test Öncesi
 

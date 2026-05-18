@@ -67,6 +67,7 @@ Bir conflict varsa daha yukarıdaki katman aşağıdakini yener.
 | "Şu an ne durumda?" | live evidence | `docs/state/current-state.md` | CI veya eski handoff tek başına yeterli değildir |
 | "Hedef mimari ne?" | `ADR-0002` | bu doküman | Aynı-host dual-cluster ana yoldur |
 | "Sıradaki faz ne?" | `PLAN.md` | `current-state` | Faz ilerleme iddiası live truth ile teyit edilir |
+| "Aktif iş ne / sıradaki ne?" | [platform Roadmap board](https://github.com/users/Halildeu/projects/2) | `docs/board-protocol.md` | Board aktif iş + risk + milestone/gate `Status` için canonical |
 | "Nasıl uygularız?" | ilgili runbook | `PLAN.md` | Runbook yoksa önce plan/kontrat netleştirilir |
 | "Bu repo neyi sahipleniyor?" | bu doküman | `README.md` | Repo sınırı aşağıda tanımlı |
 
@@ -215,6 +216,8 @@ Repo dışında yapılan hotfix, repo truth'una geri bağlanmadıkça geçici ka
 | `AGENTS.md` | giriş yüzeyi ve hard rule | en yüksek |
 | Bu doküman | bağlam çözümleme sözleşmesi | yüksek |
 | `docs/state/current-state.md` | canlı truth snapshot | live evidence altında |
+| platform Roadmap board (Project #2) | aktif iş + açık risk + milestone/gate `Status` | live evidence altında |
+| `docs/board-protocol.md` | board okuma/güncelleme protokol sözleşmesi | yüksek (board mekaniğinde) |
 | `docs/adr/*.md` | aktif mimari karar | current-state'i override etmez |
 | `PLAN.md` | roadmap ve faz kontratı | live truth'u override etmez |
 | Runbook'lar | operasyon uygulama sırası | karar üretmez, uygular |
@@ -232,3 +235,17 @@ Bu repoda yeni bir kritik kural eklenecekse:
 3. aynı kural rastgele farklı dosyalarda sessizce çoğaltılmaz
 
 Amaç, kural üretimini tek yerde toplamak; navigator ve historical dokümanlar yalnız bu çekirdeği yansıtmalıdır.
+
+---
+
+## 9. Board — Aktif İş Takibi
+
+Aktif iş durumu, açık risk/issue ve milestone/gate `Status`'ü **[platform Roadmap board](https://github.com/users/Halildeu/projects/2) (GitHub Project #2)** üzerinde canonical tutulur. Board pasif bir snapshot değil; agent'ların okuyup güncellediği aktif iş yüzeyidir.
+
+- **Executable iş = gerçek issue.** Agent'ın claim edeceği / PR bağlayacağı / state güncelleyeceği iş gerçek GitHub issue olur; draft item yalnız umbrella/roadmap özeti içindir. Issue, işin yapılacağı repo'da açılır.
+- **Oturum ritüeli.** Oturum başında board okunur, uygun iş claim edilir (`scripts/board-sync.sh`); çalışırken `Status=In Progress` + kanıt comment'i; bitince acceptance evidence sonrası deliberate close → `Done`.
+- **Overclaim guard.** `Done` yalnız accepted/live (§4.1 D29 ile uyumlu — `source-ready ≠ live-deployed ≠ accepted`). PR-merge bir runtime issue'sunu otomatik `Done` yapmaz; runtime tracking issue'sunda PR body `Tracked by #N` kullanır, `Closes/Fixes/Resolves` değil. `Needs Verify` acceptance kuyruğudur.
+- **Curated board.** Board roadmap/risk yüzeyidir, intake kuyruğu değil. Normal code PR board'a girmez; roadmap-visible iş `project-roadmap` label ile alınır.
+- **Source-of-truth sınırı.** Board aktif iş `Status`'ü için canonical; `current-state.md` runtime truth kalır; bir item iki yerde bağımsız yürütülmez.
+
+Detaylı protokol (agent-state şablonu, claim protokolü, comment taxonomy, eligible-work filtresi): **[docs/board-protocol.md](board-protocol.md)**.
