@@ -277,7 +277,7 @@ Ritüelin mekaniğini taşıyan script. Alt komutlar:
 | `heartbeat <issue>` | Aktif claim lease'ini uzat (`HEARTBEAT` comment + body `expires_at`) |
 | `release <issue>` | Claim'i bırak — yalnız sahibi; başkasının claim'i ancak `--force-stale` + lease expired ise |
 | `sync-state <issue>` | Gövde `agent-state` ↔ board `Status` senkron raporla |
-| `verify <issue> --pr <N>` | PR-merge evidence — board `Status` → `Needs Verify` + makine-okunur `EVIDENCE` comment (idempotent) |
+| `verify <issue> --pr <N> --pr-repo <repo>` | PR-merge evidence — board `Status` → `Needs Verify` + makine-okunur `EVIDENCE` comment (idempotent: `pr_repo`+`pr` anahtarı) |
 | `reap [--limit N]` | Lease'i geçmiş tüm `In Progress` claim'leri release et (scheduled reaper bunu çağırır) |
 
 `--dry-run` her komutta — write yapmadan ne yapacağını gösterir. `claim`
@@ -342,8 +342,10 @@ PR body'sindeki `Tracked by <ref>` satırlarını parse eder, her ref için
   `Tracked by` desteklenir** (board user-owned, issue repo-owned).
 - `Closes/Fixes/Resolves` parse EDİLMEZ — yalnız `Tracked by`. (`Closes`
   issue'yu native kapatır → `item-closed → Done`.)
-- **Idempotent**: aynı PR tekrar event üretirse `EVIDENCE type=pr-merged
-  pr=<N>` zaten varsa skip; tekrar comment yok.
+- **Idempotent**: aynı PR tekrar event üretirse skip — idempotency anahtarı
+  `pr_repo` + `pr` (PR numaraları repo-local; cross-repo collision önlenir).
+  EVIDENCE ilk satırı: `EVIDENCE type=pr-merged pr_repo=<repo> pr=<N>
+  issue_repo=<repo> at=<ts>`.
 - Asla downgrade: `Done` / `Blocked` / `Needs Verify` item'a dokunmaz; board'da
   olmayan veya ambiguous ref → graceful skip (workflow fail değil). Gerçek
   fail yalnız auth/API/script hatası.

@@ -25,6 +25,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_REPO: ${{ github.repository }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
@@ -43,7 +44,7 @@ jobs:
             [ -z "$ref" ] && continue
             n=$((n + 1))
             echo "::group::verify $ref (PR #$PR_NUMBER)"
-            scripts/board-sync.sh verify "${ref#\#}" --pr "$PR_NUMBER"
+            scripts/board-sync.sh verify "${ref#\#}" --pr "$PR_NUMBER" --pr-repo "$PR_REPO"
             echo "::endgroup::"
           done <<< "$refs"
           echo "PR #$PR_NUMBER — board-sync verify ran for $n Tracked-by ref(s)." \

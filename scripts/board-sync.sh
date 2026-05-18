@@ -20,6 +20,7 @@
 #   --dry-run             print mutations instead of executing them
 #   --force-stale         (release) release another session's expired claim
 #   --pr <N>              (verify) the merged PR number
+#   --pr-repo <owner/rp>  (verify) the merged PR's source repo
 #   --repo <owner/repo>   (verify) disambiguate a bare issue number
 #   --limit <N>           (reap) max items per run (default 20)
 #
@@ -43,6 +44,7 @@ CLAIM_TTL_HOURS="2"
 DRY_RUN=0
 FORCE_STALE=0
 OPT_PR=""
+OPT_PR_REPO=""
 OPT_REPO=""
 OPT_LIMIT=""
 BOARD_CACHE=""
@@ -52,7 +54,7 @@ log()  { printf '%s\n' "$*" >&2; }
 die()  { printf 'board-sync: %s\n' "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '4,27p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '4,28p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -462,6 +464,9 @@ cmd_verify() {
   [ -n "${1:-}" ] || die "verify needs an <issue>"
   [ -n "$OPT_PR" ] || die "verify needs --pr <N>"
   printf '%s' "$OPT_PR" | grep -Eq '^[0-9]+$' || die "verify --pr must be a number"
+  [ -n "$OPT_PR_REPO" ] || die "verify needs --pr-repo <owner/repo>"
+  printf '%s' "$OPT_PR_REPO" | grep -Eq '^[^/ ]+/[^/ ]+$' \
+    || die "verify --pr-repo must be owner/repo"
   local ref="$1"
   if printf '%s' "$ref" | grep -Eq '^[^/ ]+/[^/ #]+#[0-9]+$'; then
     ref="https://github.com/${ref%#*}/issues/${ref##*#}"
@@ -504,22 +509,23 @@ cmd_verify() {
       ;;
   esac
 
+  # idempotency key is pr_repo + pr (PR numbers are repo-local)
   local seen
   seen="$(gh issue view "$NUM" --repo "$REPO" --json comments 2>/dev/null \
-    | jq --arg pr "$OPT_PR" '[.comments[]
-        | select(.body | contains("EVIDENCE type=pr-merged pr=" + $pr + " "))] | length' \
+    | jq --arg pr "$OPT_PR" --arg pr_repo "$OPT_PR_REPO" '[.comments[]
+        | select(.body | contains("pr_repo=" + $pr_repo + " pr=" + $pr + " "))] | length' \
     2>/dev/null || echo 0)"
   if [ "${seen:-0}" -gt 0 ]; then
-    log "verify skip — #$NUM already has EVIDENCE for pr=$OPT_PR (idempotent)"
+    log "verify skip — #$NUM already has EVIDENCE for $OPT_PR_REPO#$OPT_PR (idempotent)"
     return 0
   fi
 
   local now ev body
   now="$(iso_now)"
-  ev="EVIDENCE type=pr-merged pr=$OPT_PR repo=$REPO at=$now
-Source-ready: PR #$OPT_PR merged.
+  ev="EVIDENCE type=pr-merged pr_repo=$OPT_PR_REPO pr=$OPT_PR issue_repo=$REPO at=$now
+Source-ready: $OPT_PR_REPO PR #$OPT_PR merged.
 Runtime/acceptance evidence pending — board Status -> Needs Verify."
-  log "verify #$NUM ($REPO) — PR #$OPT_PR merged -> Needs Verify"
+  log "verify #$NUM ($REPO) — $OPT_PR_REPO PR #$OPT_PR merged -> Needs Verify"
   post_comment "$REPO" "$NUM" "$ev"
   body="$(issue_body "$REPO" "$NUM")"
   if printf '%s\n' "$body" | grep -q 'agent-state:v1'; then
@@ -590,6 +596,7 @@ main() {
       --dry-run)     DRY_RUN=1; shift ;;
       --force-stale) FORCE_STALE=1; shift ;;
       --pr)          [ $# -ge 2 ] || die "--pr needs a value"; OPT_PR="$2"; shift 2 ;;
+      --pr-repo)     [ $# -ge 2 ] || die "--pr-repo needs a value"; OPT_PR_REPO="$2"; shift 2 ;;
       --repo)        [ $# -ge 2 ] || die "--repo needs a value"; OPT_REPO="$2"; shift 2 ;;
       --limit)       [ $# -ge 2 ] || die "--limit needs a value"; OPT_LIMIT="$2"; shift 2 ;;
       -h|--help)     usage 0 ;;
