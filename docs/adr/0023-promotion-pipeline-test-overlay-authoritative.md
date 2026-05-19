@@ -38,6 +38,10 @@ prod overlay == prod CANLI her serviste (prod GitOps-tutarlı ✓). Fakat `overl
 
 Shared `k3d-test` `platform-test` namespace'indeki **ana workload'lar** (Deployment/StatefulSet) yalnız `kustomize/overlays/test` üzerinden GitOps-managed olarak değişir. Ana workload'a doğrudan `kubectl set image` / `kubectl patch` / `kubectl edit` **YASAK** — overlay'i fiction'a çevirir, promotable truth'u yok eder.
 
+**Makine-okunur tanım** (guardrail PR-3/PR-4 enforcement bu ayrımı kullanır):
+- *ana workload* = `kustomize/overlays/test` render'ında çıkan, `docs/operations/services.yaml`'da enabled bir servisin Deployment/StatefulSet'i.
+- *transient workload* = ADR-0022 label kontratını taşıyan kaynak: `evidence.platform/transient-smoke` + `evidence.platform/smoke-run` label'ları olan, yönetilen bir servis adını taşımayan, TTL + `trap` cleanup zorunlu kaynak.
+
 İzin verilen istisnalar:
 - `k3d-dev` — serbest.
 - ADR-0022 `frontend-prod-variant-transient-smoke` gibi **transient** workload'lar (per-run etiketli, `trap` cleanup; ana workload'ı mutate etmez).
@@ -71,22 +75,23 @@ P0 onarım (mevcut bozuk durum) sırası: promotion freeze → `overlays/test` r
 
 ## Ek A — Promotion denetim baseline (2026-05-19)
 
-Digest'ler `sha256:` ön-ekinden sonra ilk 12 hane.
+Digest'ler `sha256:` ön-ekinden sonra ilk 12 hane. **Overlay drift** = `overlays/test` render'ı ≠ test CANLI pod imageID (ad-hoc `kubectl set image` overlay'e yansımamış).
 
-| Servis | test overlay | test CANLI | prod overlay | prod CANLI |
-|---|---|---|---|---|
-| api-gateway | `bb95149a3d5f` | `6175711ae208` ⚠ | `bb95149a3d5f` | `bb95149a3d5f` |
-| auth-service | `81499ba09e24` | `6820e91e57da` ⚠ | `81499ba09e24` | `81499ba09e24` |
-| core-data-service | `ec5cfd1b9ce3` | `040ddddf2163` ⚠ | `ec5cfd1b9ce3` | `ec5cfd1b9ce3` |
-| notification-orchestrator | `70491543fdc3` | `caf02c248bb6` ⚠ | `70491543fdc3` | `70491543fdc3` |
-| permission-service | `6cf81e19b7e3` | `a87b8c3959cd` ⚠ | `6cf81e19b7e3` | `6cf81e19b7e3` |
-| report-service | `5ddbc6199bf9` | `5ae0c4d6ee32` ⚠ | `7f3f71d67eae` | `7f3f71d67eae` |
-| schema-service | `894e492f029c` | `2f80e2a98c12` ⚠ | `894e492f029c` | `894e492f029c` |
-| variant-service | `70106d05b75c` | `00bcbc24f8fa` ⚠ | `70106d05b75c` | `70106d05b75c` |
-| user-service | `c94c057cde2b` | `fce3096eb994` | `fce3096eb994` ✓ | `fce3096eb994` ✓ |
-| frontend | `16ffc7f1cc33` (testai) | `b44b551af8e4` (testai) | `7e0999d1865a` (prod) ✓ | `7e0999d1865a` (prod) ✓ |
+| Servis | test overlay | test CANLI | overlay drift | prod overlay | prod CANLI |
+|---|---|---|---|---|---|
+| api-gateway | `bb95149a3d5f` | `6175711ae208` | ⚠ drift | `bb95149a3d5f` | `bb95149a3d5f` |
+| auth-service | `81499ba09e24` | `6820e91e57da` | ⚠ drift | `81499ba09e24` | `81499ba09e24` |
+| core-data-service | `ec5cfd1b9ce3` | `040ddddf2163` | ⚠ drift | `ec5cfd1b9ce3` | `ec5cfd1b9ce3` |
+| notification-orchestrator | `caf02c248bb6` | `caf02c248bb6` | — eşit | `70491543fdc3` | `70491543fdc3` |
+| permission-service | `6cf81e19b7e3` | `a87b8c3959cd` | ⚠ drift | `6cf81e19b7e3` | `6cf81e19b7e3` |
+| report-service | `5ddbc6199bf9` | `5ae0c4d6ee32` | ⚠ drift | `7f3f71d67eae` | `7f3f71d67eae` |
+| schema-service | `894e492f029c` | `2f80e2a98c12` | ⚠ drift | `894e492f029c` | `894e492f029c` |
+| variant-service | `70106d05b75c` | `00bcbc24f8fa` | ⚠ drift | `70106d05b75c` | `70106d05b75c` |
+| user-service | `c94c057cde2b` | `fce3096eb994` | ⚠ drift | `fce3096eb994` | `fce3096eb994` |
+| frontend | `16ffc7f1cc33` (testai) | `b44b551af8e4` (testai) | ⚠ drift | `7e0999d1865a` (prod) | `7e0999d1865a` (prod) |
+| endpoint-admin-service | `5bb0fa2600f0` | `5bb0fa2600f0` | — eşit | — (prod'da deploy yok) | — |
 
-⚠ = `overlays/test` ≠ test CANLI (overlay drift). user-service + frontend prod 2026-05-19 terfi edildi (PR #835/#837).
+Özet: `overlays/test` **8/10 backend servis + frontend**'de test CANLI'dan farklı (overlay drift); yalnız notification-orchestrator + endpoint-admin overlay==CANLI. **prod overlay == prod CANLI her serviste** (prod GitOps-tutarlı; ArgoCD `platform-prod` Synced+Healthy). user-service + frontend 2026-05-19 prod'a terfi edildi (PR #835/#837); kalan 8 backend prod'da hâlâ eski jenerasyonda.
 
 OpenFGA yetkilendirme modeli (image-dışı): test store modeli `01KRTJVEMAW80B2D35GN8HJDPG` → `report_group` tipi **var**; prod store modeli `01KPXCVBMDKXXRPGKFGPDRVBQX` → `report_group` tipi **yok**.
 
@@ -94,6 +99,6 @@ OpenFGA yetkilendirme modeli (image-dışı): test store modeli `01KRTJVEMAW80B2
 
 - Codex thread `019e40e4` — cross-AI mimari konsensüs (target model + P0 onarım + 7-PR guardrail train)
 - ADR-0002 (single-host dual-cluster), ADR-0022 (env-baked frontend variant evidence)
-- `docs/operations/promotion-ledger-design.md` — D29 evidence pipeline tasarımı
+- `docs/operations/promotion-ledger-design.md` + `docs/operations/d29-evidence-pipeline-design.md` — D29 evidence pipeline tasarımı
 - `docs/RB-openfga-report-group-migration.md` — image-dışı artifact gap'in canlı örneği (test-only koşulmuş runbook)
 - Mevcut guardrail'ler: `.github/workflows/gate-drift-detection.yml`, `gate-drift-pr-time.yml`, `openfga-model-drift.yml`, `gate-d29-evidence-required.yml`; `scripts/drift-detection/`
