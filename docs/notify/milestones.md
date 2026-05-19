@@ -56,16 +56,18 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 
 **Status update 2026-05-14 (Session 49)**: 7/8 task done. Tek blocker R2 KVKK legal review (external dependency).
 
+**Status revision 2026-05-19 (Session 42, Codex `019e4234`)**: T1.4 D43 closure dili gözden geçirildi — test drill SMTP-only kanıt + Slack leg sentinel-only (NXDOMAIN `drill-slack-mock.local`) realitesi "first controlled drill mitigation"u overclaim haline getirmişti. T1.4 `[x]` → `[~]` partial; R9 `🟢` → `🟡` partial. Faz 23.2 M3 kabul sayısı **6/8** (T1.2 R2 + T1.4 D43 partial). External blocker'lar: (a) R2 KVKK legal review (legal), (b) Slack `#alerts-d43-drill` real webhook + prod Vault seed (operator).
+
 **Definition of Done** (must-have #6 + #7 + #8 + #9 + #10 fully closed):
 - [x] T1.1 23.2.A Preference API + critical bypass merged + LIVE — Session 41 acceptance evidence
 - [~] T1.2 23.2.B KVKK erasure + right-to-information merged + LIVE — **subscriber self-service LIVE**; admin erasure source-ready, R2 legal review external pending
 - [x] T1.3 23.2.C Provider config rollback merged — platform-backend PR #140 MERGED (2026-05-10, R12 mitigated FULL ACCEPTANCE evidence)
-- [x] T1.4 23.2.D Outage fallback bypass D43 merged + drill executed — first controlled drill 2026-05-10 (R9 mitigated)
+- [~] T1.4 23.2.D Outage fallback bypass D43 merged + **partial drill** executed — first controlled test drill 2026-05-10 (Mailpit SMTP receipt LIVE; Slack leg sentinel-only, NXDOMAIN `drill-slack-mock.local`); **prod activation source-incomplete** (helm-values direct-fallback receiver/route eksikti — PR #855 staged config kapatır; Vault prod seed + helm upgrade + dual-receipt smoke owner-gated). R9 **partial mitigation** (Codex thread `019e4234` Session 42 audit). Real test webhook + prod activation: board issues #853 + #854.
 - [x] T1.5 23.2.E Data classification policy merged — 2026-05-10 LIVE acceptance
 - [x] T1.6 23.2.F Abuse prevention guards merged — Session 41 FULL ACCEPTANCE (R13+R19 mitigated)
 - [~] All Faz 23.2 kabul kriteri 🟡 (7/8 done, 1 external blocker)
 - [~] Charter 23.2 marker 🟢 source-ready + acceptance candidate — final legal closure R2 sonrası
-- [~] Risk register: R2 active (KVKK legal review), R9 🟢 mitigated, R12 🟢 mitigated, R13 🟢 mitigated, R19 🟢 mitigated
+- [~] Risk register: R2 active (KVKK legal review), R9 🟡 partial (Codex `019e4234` Session 42 audit: test SMTP drill LIVE; Slack leg sentinel-only #853; prod activation source-incomplete → PR #855 staged config + #854 owner-gated), R12 🟢 mitigated, R13 🟢 mitigated, R19 🟢 mitigated
 
 **Remaining blocker**: R2 (KVKK legal review external) — admin erasure compliance attestation. ETA 2026-05-25.
 **Owner**: legal (R2 closure)

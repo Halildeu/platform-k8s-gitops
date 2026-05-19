@@ -102,6 +102,54 @@ alertmanager:
       repeat_interval: 4h
       receiver: 'alarm-receiver-bridge'
       routes:
+        # D43 — notification-orchestrator outage fallback (Codex 019e4234 +
+        # 019e0dea iter-2 absorb #3; Codex 019e4234 post-impl P1 absorb:
+        # continue=true to preserve the existing P1 bridge evidence trail).
+        #
+        # NotifyServiceDown / NotifyServiceAbsent fire when the orchestrator is
+        # down/absent — these MUST bypass orchestrator-routed delivery and hit
+        # the direct-fallback receiver (Slack + SMTP combined via ESO
+        # `alertmanager-fallback-secrets`). `bypass_orchestrator=true` label is
+        # stable (PrometheusRule contract); the matcher uses alertname for
+        # readability + the label is the fingerprint anchor.
+        #
+        # `continue: true` is INTENTIONAL: Alertmanager route semantics say a
+        # matched child route delivers to its receiver and (if continue=false)
+        # STOPS sibling evaluation — the parent's `receiver` does NOT auto-fire.
+        # If we used continue=false here, the existing `severity=critical →
+        # alarm-receiver-bridge` route below would be bypassed for D43 alerts;
+        # the GitHub Issues P1 evidence trail would silently disappear during
+        # the very outages this route is supposed to make MORE visible. With
+        # continue=true, D43 delivers Slack + SMTP first, then the next-matching
+        # `severity=critical` sibling delivers to alarm-receiver-bridge, giving
+        # 3-channel defense-in-depth (Slack + SMTP + GitHub Issue). The bridge
+        # dedupes on alertname+namespace, so only one Issue is opened.
+        #
+        # SOURCE-OF-TRUTH ONLY — desired-state lands in values-prod.yaml on
+        # merge of #855 (PR-1 staged/gated). Prod cluster activation requires:
+        #   (a) Operator seeds Vault `kv/platform/alertmanager-fallback` with
+        #       real values (#alerts-d43-drill Slack webhook + prod SMTP relay
+        #       credentials);
+        #   (b) ESO sync → SecretSynced=True;
+        #   (c) `helm upgrade kube-prometheus-stack -n monitoring
+        #        -f helm-values/kube-prometheus-stack/values-prod.yaml`
+        #       (Alertmanager pod restart picks up the new config + Secret mount);
+        #   (d) Synthetic NotifyServiceDown smoke (scale orchestrator=0 in a
+        #       controlled window) → Slack receipt + SMTP receipt + GitHub
+        #       Issue + recovery.
+        # Until (a-c), Secret-driven legs (Slack via api_url_file, SMTP via
+        # auth_*_file) silently no-op when files are missing. continue=true
+        # ensures the operator-action gap is observable through the bridge
+        # P1 evidence path, not silent.
+        # Runbook: docs/runbooks/RB-notification-outage-fallback.md §3.2 prod
+        # sub-section + §6.5 activation procedure.
+        - matchers:
+            - alertname =~ "NotifyServiceDown|NotifyServiceAbsent"
+          receiver: direct-fallback
+          group_wait: 0s
+          group_interval: 5m
+          repeat_interval: 30m
+          continue: true
         # V2.1 Ops-A — Critical perf alarms TRIPLE delivery (Codex 019e2772 P1 + 019e2a4f Q1+Q2):
         # 1. perf-alerts-github-issues (continue:true → 2. + 3.) — Vault'tan bağımsız (V2.1 #4 closure)
         # 2. perf-alerts-slack (continue:true → 3. critical bridge route) — Vault DR sonrası activate
@@ -202,6 +250,65 @@ alertmanager:
             # body = {"event_type": "perf-alert", "client_payload": <alertmanager v4 webhook>}
             # Alertmanager Go template ile wrap edilemez; workflow parser PAYLOAD field'larını
             # commonLabels/alerts[]/status üzerinden okur (toJSON GitHub Actions side).
+      # D43 outage fallback direct receiver (Codex 019e4234 + 019e0dea iter-2
+      # absorb #3): Slack + SMTP combined in a single receiver — simpler than
+      # two sibling routes with continue:true (Codex iter-2 verdict). Both
+      # legs read credentials from ESO-mounted `alertmanager-fallback-secrets`
+      # Secret via file paths (NOT env injection; api_url_file + auth_*_file).
+      #
+      # Channel choices (prod-specific vs test drill):
+      #   * Slack channel `#alerts-d43-drill` — same as test drill default
+      #     (Codex 019e4234 verdict: sentinel YASAK; gerçek webhook gerek).
+      #     Operator owns the real workspace webhook URL (Slack admin artifact).
+      #   * SMTP `notify-ops@acik.com` — placeholder; operator confirms the
+      #     prod ops mail group. Smarthost `smtp.office365.com:587` mirrors
+      #     notification-orchestrator's Office 365 SMTP relay default.
+      #
+      # Templates: Alertmanager Go template — Sprig `default` is unsupported
+      # in Alertmanager (Codex 019e0dea iter-3 P1 #3); use `{{ with X }}{{ . }}
+      # {{ else }}fallback{{ end }}` pattern.
+      - name: direct-fallback
+        slack_configs:
+          - api_url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SLACK_WEBHOOK_URL
+            channel: '#alerts-d43-drill'
+            send_resolved: true
+            title: '[D43 PROD] {{ .CommonLabels.alertname }} — {{ .CommonLabels.severity }}'
+            text: |-
+              {{ range .Alerts }}
+              *Alert*: {{ .Labels.alertname }}
+              *Cluster*: {{ with .Labels.cluster }}{{ . }}{{ else }}prod{{ end }}
+              *Namespace*: {{ with .Labels.namespace }}{{ . }}{{ else }}n/a{{ end }}
+              *Severity*: {{ .Labels.severity }}
+              *Outage Fallback*: {{ with .Labels.outage_fallback }}{{ . }}{{ else }}false{{ end }}
+              *Bypass*: {{ with .Labels.bypass_orchestrator }}{{ . }}{{ else }}false{{ end }}
+              *Description*: {{ .Annotations.description }}
+              *Runbook*: {{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}
+              {{ end }}
+        email_configs:
+          - to: notify-ops@acik.com
+            from: alertmanager-fallback@acik.com
+            smarthost: 'smtp.office365.com:587'
+            auth_username_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SMTP_USER
+            auth_password_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SMTP_PASSWORD
+            require_tls: true
+            send_resolved: true
+            headers:
+              subject: '[D43 PROD] {{ .CommonLabels.alertname }}'
+            html: |-
+              <h3>D43 Outage Fallback — Prod</h3>
+              <ul>
+              {{ range .Alerts }}
+              <li>
+                <strong>{{ .Labels.alertname }}</strong> ({{ .Labels.severity }})<br/>
+                Cluster: {{ with .Labels.cluster }}{{ . }}{{ else }}prod{{ end }}<br/>
+                Namespace: {{ with .Labels.namespace }}{{ . }}{{ else }}n/a{{ end }}<br/>
+                Outage Fallback: {{ with .Labels.outage_fallback }}{{ . }}{{ else }}false{{ end }}<br/>
+                Bypass Orchestrator: {{ with .Labels.bypass_orchestrator }}{{ . }}{{ else }}false{{ end }}<br/>
+                Description: {{ .Annotations.description }}<br/>
+                Runbook: {{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}
+              </li>
+              {{ end }}
+              </ul>
     inhibit_rules:
       # Critical inhibits warning of same alertname
       - source_matchers:
