@@ -2547,9 +2547,27 @@ images:
   # GET /api/v1/notify/inbox/me/history endpoint + V16 idx_inbox_subscriber_history
   # (read-only 30-gün geçmiş; archive zaten mevcuttu). PR #254 main'den
   # JetSMS PR #252 sonrası branch'lendi — JetSMS-primary cutover korunur.
+  #
+  # 2026-05-19 update (Faz 23.4 — JetSMS SOAP transport additive):
+  # Bump to platform-backend PR #256 squash MERGED (main e9b0ce55); image
+  # build run 26127163073 SUCCESS, GHCR push @
+  # sha256:57384b706a4cb7025e0f95e99f5acd99fdc42c3a1d3eb793f1a3aea0725a1c13.
+  # JetSmsProvider'a SOAP Web Service transport eklendi (HTTP path additive
+  # korundu, byte-for-behavior). Yeni config notify.adapters.sms.jetsms.transport
+  # (default `soap` | `http`). KULLANICI KARARI: JetSMS HTTP API `mikrolink2`
+  # hesabını Status=-5 (Login error) ile reddediyor — hesap HTTP API'ye
+  # provisioned değil. SOAP API ise AYNI creds'le çalışıyor (canlı kanıt:
+  # bu session'da doğrudan SOAP SendSMS testi gerçek SMS + DLR Status 1
+  # gönderdi). Bu digest bump TEK BAŞINA cutover'ı tamamlar — yeni image'ın
+  # application.yml default'u `transport: soap`; eski image `transport` config
+  # alanını içermiyor → ortam değişkeni override'ı gerekmez. HTTP path
+  # Biotekno HTTP-API provisioning sonrası tek flag flip ile dönülebilir.
+  # Codex 019e421f cross-AI iter-1 REVISE (P2 password gate, P3 winning-bucket
+  # code) absorb → iter-2 AGREE. mvn test → 147 pass, 0 fail (JetSmsProviderSoapTest
+  # 46 yeni, JetSmsProviderTest 34 HTTP coverage korundu).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:8c9a22a7552e0786e209fc1f54d76615cd32ecaaea1ae3e9c7d856e7c49a23cf
+    digest: sha256:57384b706a4cb7025e0f95e99f5acd99fdc42c3a1d3eb793f1a3aea0725a1c13
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
