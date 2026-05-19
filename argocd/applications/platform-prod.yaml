@@ -42,6 +42,11 @@ spec:
       # ve OutOfSync cosmetic kalıcı. RespectIgnoreDifferences bu çakışmayı
       # çözer: ignore edilen jsonPointers sync sırasında dokunulmaz.
       # Ref: https://argo-cd.readthedocs.io/en/stable/user-guide/sync-options/#respect-ignore-difference-configs
+      # 2026-05-19 (Codex 019e41d7): RespectIgnoreDifferences yalnız TARGETED
+      # runtime field'lar için kalır (HPA /spec/replicas, dinamik ConfigMap
+      # /data + annotation path'leri) — blanket `/metadata` ignore ile ASLA
+      # birlikte kullanılmaz (managedFields'i SSA gövdesine taşıyıp sync'i
+      # `metadata.managedFields must be nil` ile bozar; bkz. ExternalSecret).
       - RespectIgnoreDifferences=true
   ignoreDifferences:
     # 2026-05-10 (PR-471): Prod replicas HPA-managed — ArgoCD /spec/replicas
