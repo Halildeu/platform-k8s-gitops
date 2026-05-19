@@ -79,10 +79,18 @@ esac
 KC="docker exec ${KC_CONTAINER} /opt/keycloak/bin/kcadm.sh"
 ADMIN_PASS_FILE="host-compose/keycloak/${ENV}/secrets/kc_admin_password.txt"
 
-# Guard: never operate on the operator's own login user.
-case "$PERSONA_USERNAME" in
+# Guard: never collide with the operator's own login user — username AND
+# email, case-insensitive (Codex 019e4012 review).
+PERSONA_USERNAME_LC=$(printf '%s' "$PERSONA_USERNAME" | tr '[:upper:]' '[:lower:]')
+PERSONA_EMAIL_LC=$(printf '%s' "$PERSONA_EMAIL" | tr '[:upper:]' '[:lower:]')
+case "$PERSONA_USERNAME_LC" in
   admin|admin@example.com)
-    echo "ERROR: refusing to operate on operator login user '$PERSONA_USERNAME'" >&2
+    echo "ERROR: refusing — PERSONA_USERNAME '$PERSONA_USERNAME' is the operator login user" >&2
+    exit 1 ;;
+esac
+case "$PERSONA_EMAIL_LC" in
+  admin@example.com)
+    echo "ERROR: refusing — PERSONA_EMAIL '$PERSONA_EMAIL' is the operator login email" >&2
     exit 1 ;;
 esac
 
@@ -162,6 +170,17 @@ else
 fi
 
 if [ "$VERIFY_ONLY" != "1" ] && [ "$NEED_PASSWORD" = "1" ]; then
+  # Preflight SECRET_OUT writability BEFORE set-password — never change the
+  # live Keycloak password without a place to record it (Codex 019e4012).
+  SECRET_DIR=$(dirname "$SECRET_OUT")
+  if [ ! -d "$SECRET_DIR" ] || [ ! -w "$SECRET_DIR" ]; then
+    echo "ERROR: SECRET_OUT dir not writable ($SECRET_DIR) — aborting before set-password" >&2
+    exit 1
+  fi
+  if [ -e "$SECRET_OUT" ] && [ ! -w "$SECRET_OUT" ]; then
+    echo "ERROR: SECRET_OUT exists but is not writable ($SECRET_OUT) — aborting before set-password" >&2
+    exit 1
+  fi
   PERSONA_PASS=$(openssl rand -base64 30 | tr -dc 'A-Za-z0-9' | head -c 32)
   [ "${#PERSONA_PASS}" -ge 24 ] || { echo "ERROR: password generation failed" >&2; exit 1; }
   $KC set-password -r "$REALM" --userid "$USER_ID" --new-password "$PERSONA_PASS" >/dev/null 2>&1 \
@@ -171,12 +190,14 @@ if [ "$VERIFY_ONLY" != "1" ] && [ "$NEED_PASSWORD" = "1" ]; then
 # D29 test persona credential — board #819 (setup-d29-test-persona.sh).
 # Operator: seed Vault, then shred this file.
 #   vault kv put $VAULT_PATH \\
-#     username=$PERSONA_USERNAME email=$PERSONA_EMAIL user_id=$USER_ID \\
+#     username=$PERSONA_USERNAME email=$PERSONA_EMAIL keycloak_user_id=$USER_ID \\
 #     password='<the password value below>'
 #   shred -u $SECRET_OUT   # or: rm -P $SECRET_OUT
+# keycloak_user_id = Keycloak user UUID — NOT the platform numeric user_id
+# used by D29 OpenFGA scope seeds (that is resolved backend-side, separately).
 username=$PERSONA_USERNAME
 email=$PERSONA_EMAIL
-user_id=$USER_ID
+keycloak_user_id=$USER_ID
 password=$PERSONA_PASS
 SECRET
   )
@@ -198,15 +219,31 @@ if [ "$V_EMAILVERIFIED" != "True" ]; then
   echo "✗ emailVerified=$V_EMAILVERIFIED (expected True)"; VERIFY_FAIL=1
 fi
 
-# Least-privilege: assert NO privileged realm role on the persona.
-ROLES=$($KC get "users/$USER_ID/role-mappings/realm" -r "$REALM" 2>/dev/null \
-  | python3 -c 'import json,sys; print(",".join(r.get("name","") for r in json.load(sys.stdin)))' 2>/dev/null || echo "")
-case ",$ROLES," in
+# Least-privilege: assert NO privileged role — realm roles AND client role
+# mappings (e.g. realm-management/manage-users). Contract: realm default
+# roles only, no explicit role assignment (Codex 019e4012 review).
+ALL_MAPPINGS=$($KC get "users/$USER_ID/role-mappings" -r "$REALM" 2>/dev/null || echo "{}")
+REALM_ROLES=$(printf '%s' "$ALL_MAPPINGS" | python3 -c 'import json,sys
+m=json.load(sys.stdin)
+print(",".join(r.get("name","") for r in m.get("realmMappings",[])))' 2>/dev/null || echo "")
+CLIENT_ROLES=$(printf '%s' "$ALL_MAPPINGS" | python3 -c 'import json,sys
+m=json.load(sys.stdin)
+out=[]
+for c,info in (m.get("clientMappings") or {}).items():
+    out += [c+"/"+r.get("name","") for r in info.get("mappings",[])]
+print(",".join(out))' 2>/dev/null || echo "")
+LP_OK=1
+case ",$REALM_ROLES," in
   *,admin,*|*,realm-admin,*|*,create-realm,*)
-    echo "✗ persona carries a privileged realm role: $ROLES"; VERIFY_FAIL=1 ;;
-  *)
-    echo "✓ least-privilege — no admin/realm-admin/create-realm realm role (realm roles: ${ROLES:-<none>})" ;;
+    echo "✗ persona carries a privileged realm role: $REALM_ROLES"; VERIFY_FAIL=1; LP_OK=0 ;;
 esac
+if [ -n "$CLIENT_ROLES" ]; then
+  echo "✗ persona carries direct client role mapping(s) — contract is realm default roles only: $CLIENT_ROLES"
+  VERIFY_FAIL=1; LP_OK=0
+fi
+if [ "$LP_OK" = "1" ]; then
+  echo "✓ least-privilege — no privileged realm role, no direct client role mappings (realm roles: ${REALM_ROLES:-<none>})"
+fi
 
 if [ "$VERIFY_FAIL" = "1" ]; then
   echo ""

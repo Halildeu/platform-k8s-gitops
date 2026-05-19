@@ -32,7 +32,7 @@
 | Roller | realm default rolleri — admin / realm-admin / create-realm **YOK** (least-privilege) |
 | Auth yolu | mevcut `smoke-client` confidential client üzerinden password grant → normal-user JWT |
 | Vault path | `kv/platform/keycloak/d29-test-persona` |
-| Vault fields | `username`, `email`, `user_id`, `password` |
+| Vault fields | `username`, `email`, `keycloak_user_id`, `password` |
 
 **Kapsam sınırı (Codex `019e4012` #5) — authentication ≠ authorization:** bu
 persona bir **kimlik doğrulama** credential'ıdır — D29'da `smoke-client`
@@ -41,6 +41,14 @@ ayrıdır**: D29 allow/deny kanıtı OpenFGA explicit-scope tuple'larına bağl�
 (örn. `PROJECT:1204` + `VARIANTS_READ` — `docs/handoff-smoke-client-keycloak.md`).
 Bu runbook tek başına "D29 Zanzibar-ready" **sağlamaz** — yalnız stabil,
 non-interactive kimlik sağlar; scope seed ayrı iştir.
+
+**Kimlik claim'i (Codex `019e4012` #3):** persona JWT'si standart Keycloak
+claim'lerini taşır — `sub` = Keycloak kullanıcı UUID'si, `preferred_username`,
+`email`. Vault'taki `keycloak_user_id` alanı bu **Keycloak UUID**'sidir. D29
+OpenFGA explicit-scope seed'lerinin kullandığı **platform numeric `user_id`**
+(örn. `docs/handoff-smoke-client-keycloak.md`'deki `user_id=2`) bundan
+**ayrıdır** — backend `users` tablosunda ilk-login sync ile çözülür; bu
+runbook onu formalize etmez.
 
 ## 🤖 ADIM 1 — Persona apply (`platform-test`)
 
@@ -61,7 +69,7 @@ Operator staging-sw'de, `SECRET_OUT` içindeki değerlerle:
 vault kv put kv/platform/keycloak/d29-test-persona \
   username=d29-test-persona \
   email=d29-test-persona@testai.acik.com \
-  user_id='<SECRET_OUT user_id>' \
+  keycloak_user_id='<SECRET_OUT keycloak_user_id>' \
   password='<SECRET_OUT password>'
 ```
 
