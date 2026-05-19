@@ -221,6 +221,68 @@ While ArgoCD hub is down, gitops sync stops. Operator may need to:
 2. Manually apply critical fixes via `kubectl apply -f` (ROLLBACK to gitops PR after recovery)
 3. Document break-glass actions in audit log + open reconciliation PR within 24h
 
+### Mode 5: repo-server cannot resolve argocd-redis (ComparisonError)
+
+**Symptom**:
+- Application sync status stuck `Unknown` (health may still read `Healthy`)
+- Application condition `ComparisonError: Failed to load target state: failed
+  to generate manifest ... rpc error: ... dial tcp: lookup argocd-redis ...
+  server misbehaving`
+- `deploy-prod-gitops.yml` fails at `argocd app wait` (900s timeout) even
+  though `argocd app sync` itself reported `Phase: Succeeded`
+
+**Diagnosis**:
+```bash
+# repo-server pod resolv.conf — healthy pods point at CoreDNS (10.43.0.10)
+RS=$(kubectl --context k3d-prod -n argocd get pod \
+  -l app.kubernetes.io/name=argocd-repo-server -o jsonpath='{.items[0].metadata.name}')
+kubectl --context k3d-prod -n argocd exec "$RS" -c repo-server -- cat /etc/resolv.conf
+# BAD: `nameserver 172.x.0.1`, `ndots:0`, no `search` line → node resolv.conf
+# GOOD: `nameserver 10.43.0.10`, `search ... svc.cluster.local`, `ndots:5`
+
+# Root cause: hostNetwork + dnsPolicy mismatch
+kubectl --context k3d-prod -n argocd get deploy argocd-repo-server \
+  -o jsonpath='hostNetwork={.spec.template.spec.hostNetwork} dnsPolicy={.spec.template.spec.dnsPolicy}{"\n"}'
+# GOOD: hostNetwork blank (field absent) or false — the healthy state.
+# BAD:  hostNetwork=true + dnsPolicy=ClusterFirst — invalid combo: a
+#       hostNetwork pod needs dnsPolicy ClusterFirstWithHostNet for cluster
+#       DNS, else it inherits the node resolv.conf and cannot resolve the
+#       argocd-redis Service.
+```
+
+**Recovery**:
+```bash
+# repo-server needs no host networking — remove the drift.
+mkdir -p ~/argocd-backups
+kubectl --context k3d-prod -n argocd get deploy argocd-repo-server -o yaml \
+  > ~/argocd-backups/argocd-repo-server-$(date -u +%Y%m%dT%H%M%SZ).yaml
+kubectl --context k3d-prod -n argocd patch deploy argocd-repo-server \
+  --type=merge -p '{"spec":{"template":{"spec":{"hostNetwork":false}}}}'
+kubectl --context k3d-prod -n argocd rollout status deploy/argocd-repo-server --timeout=150s
+
+# New pod gets cluster DNS — confirm, then refresh the app
+kubectl --context k3d-prod -n argocd annotate application platform-prod \
+  argocd.argoproj.io/refresh=hard --overwrite
+# Expected: sync status leaves Unknown → Synced, ComparisonError clears
+```
+
+`helm-values/argocd/values.yaml` carries an explicit
+`repoServer.hostNetwork: false`. Caveat — the argo-cd chart omits
+`hostNetwork` from the rendered manifest when false, so a `helm upgrade`
+does NOT actively strip an out-of-band `hostNetwork: true` from the live
+Deployment; the values entry only documents intent and makes a future
+values override to `true` reviewable. So after any ArgoCD `helm upgrade`,
+verify the live state and re-apply this patch if drift is present:
+
+```bash
+kubectl --context k3d-prod -n argocd get deploy argocd-repo-server \
+  -o jsonpath='hostNetwork={.spec.template.spec.hostNetwork}{"\n"}'
+# Expect blank or false. If true → re-run the patch above.
+```
+
+If hostNetwork is ever genuinely required, switch `dnsPolicy` to
+`ClusterFirstWithHostNet` instead — never leave `ClusterFirst` + hostNetwork.
+
 ## Repo credential backup
 
 ArgoCD repo credentials live in:
