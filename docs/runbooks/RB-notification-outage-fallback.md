@@ -520,13 +520,22 @@ kubectl --context k3d-prod -n monitoring exec \
 ### 6.5.5 Synthetic NotifyServiceDown smoke (controlled prod outage window)
 
 > Bu adım gerçek prod outage simulasyonu — Pre-Production Full Authority +
-> kullanıcı açık beyanı altında. Sıra: scale=0 → 130s bekle → alert fire →
-> direct-fallback delivery → scale=1 → recovery.
+> kullanıcı açık beyanı altında. Sıra: port-forward aç (6.5.5-6.5.7 boyunca
+> açık tutulur, sonra cleanup) → scale=0 → 130s bekle → alert fire →
+> direct-fallback + bridge tripple delivery → scale=1 → recovery → curl
+> resolve verify → port-forward cleanup.
 
 ```bash
 # Pre-smoke snapshot
 kubectl --context k3d-prod -n platform-prod get pod \
   -l app.kubernetes.io/name=notification-orchestrator
+
+# Open port-forward — kept open through §6.5.7 (cleanup at end of §6.5.7).
+kubectl --context k3d-prod -n monitoring port-forward \
+  svc/alertmanager-kube-prometheus-stack-alertmanager 9093:9093 &
+PF_PID=$!
+trap 'kill $PF_PID 2>/dev/null || true' EXIT
+sleep 3
 
 # Trigger outage (controlled — sadece smoke window)
 kubectl --context k3d-prod -n platform-prod scale \
@@ -534,28 +543,29 @@ kubectl --context k3d-prod -n platform-prod scale \
 
 sleep 130   # NotifyServiceDown/Absent firing window
 
-# Verify alert + routing
-kubectl --context k3d-prod -n monitoring port-forward \
-  svc/alertmanager-kube-prometheus-stack-alertmanager 9093:9093 &
-PF_PID=$!
-sleep 3
+# Verify alert + routing — receivers MULTI (continue:true) — direct-fallback
+# + alarm-receiver-bridge birlikte; sıra Alertmanager iç state'e bağlı, bu
+# yüzden `[receivers[].name]` array olarak kontrol et.
 curl -s http://127.0.0.1:9093/api/v2/alerts | \
-  jq '.[] | select(.labels.alertname | test("^(NotifyServiceDown|NotifyServiceAbsent)$")) | {alertname: .labels.alertname, status: .status.state, receiver: .receivers[0].name}'
-# Beklenen: at least 1 active alert, receiver direct-fallback
-kill $PF_PID 2>/dev/null || true
+  jq '.[] | select(.labels.alertname | test("^(NotifyServiceDown|NotifyServiceAbsent)$")) | {alertname: .labels.alertname, status: .status.state, receivers: [.receivers[].name]}'
+# Beklenen: at least 1 active alert; receivers array contains BOTH
+# "direct-fallback" AND "alarm-receiver-bridge" (continue:true 3-channel
+# defense-in-depth: Slack + SMTP + GitHub Issue).
 ```
 
-### 6.5.6 Acceptance — DUAL receipt
+### 6.5.6 Acceptance — TRIPLE receipt (continue:true)
 
 - **Slack `#alerts-d43-drill` (veya `#prod-outage-alerts`)**: `[D43 PROD]
   NotifyServiceDown — critical` mesajı + alert labels (Cluster=prod,
   outage_fallback=true, bypass_orchestrator=true).
 - **SMTP receipt**: ops mail group (`notify-ops@acik.com`) inbox'ında
   `[D43 PROD] NotifyServiceDown` subject'li email.
+- **GitHub Issue (alarm-receiver-bridge P1 evidence)**: Halildeu/platform-k8s-gitops repo'sunda yeni issue (alertmanager-bridge dedupe: alertname+namespace tek issue açar; recovery'de comment + close).
 
 ### 6.5.7 Recovery + audit
 
 ```bash
+# (port-forward §6.5.5'ten beri açık)
 kubectl --context k3d-prod -n platform-prod scale \
   deploy/notification-orchestrator --replicas=1
 kubectl --context k3d-prod -n platform-prod rollout status \
@@ -566,11 +576,33 @@ sleep 60   # Alertmanager resolve cycle
 curl -s http://127.0.0.1:9093/api/v2/alerts | \
   jq '.[] | select(.labels.alertname | test("^(NotifyServiceDown|NotifyServiceAbsent)$")) | .status.state'
 # Beklenen: empty (resolved)
+
+# Cleanup port-forward (trap zaten EXIT'te çağırır; explicit kill için)
+kill $PF_PID 2>/dev/null || true
+trap - EXIT
 ```
 
 Audit doc: `docs/faz-23-evidence/2026-XX-XX-d43-prod-activation.md` —
-pre/during/post snapshot + Slack screenshot + SMTP screenshot + 6.5.6 dual
-receipt evidence.
+pre/during/post snapshot + Slack screenshot + SMTP screenshot + GitHub
+Issue link + 6.5.6 triple receipt evidence.
+
+### 6.5.8 SMTP endpoint config — Vault değil, helm-values authoritative
+
+> Codex `019e4234` post-impl P3 absorb: Alertmanager `email_configs` Go
+> config'inde `smarthost` field'ı **string olarak doğrudan** beklenir;
+> Alertmanager **`smarthost_file` desteklemez**. Bu yüzden prod `smarthost:
+> 'smtp.office365.com:587'` `values-prod.yaml`'da hardcoded (canonical
+> truth). Vault'taki `SMTP_HOST` + `SMTP_PORT` ESO ExternalSecret schema
+> tutarlılığı için seed edilir (test cluster + prod cluster aynı key set'i
+> — manifest portability), ama Alertmanager runtime'ı bu iki key'i
+> okumaz. Vault'tan okunan tek SMTP key'leri `SMTP_USER` + `SMTP_PASSWORD`
+> (`auth_username_file` / `auth_password_file` file mount).
+>
+> **Vendor değişimi**: SMTP relay endpoint değişimi (örn. Office 365 →
+> SendGrid → AWS SES) `values-prod.yaml` PR + `helm upgrade` ile yapılır,
+> Vault seed patch'i ile değil. Vault'ta SMTP_HOST/PORT update edilse
+> Alertmanager davranışı **etkilenmez**. Vendor flip için her zaman PR
+> aç + cross-AI Codex review + acceptance smoke.
 
 ---
 
