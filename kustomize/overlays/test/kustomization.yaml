@@ -103,7 +103,7 @@ images:
     #   - Pairs with platform-web#411 (FE UX overhaul)
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:81499ba09e248791123f82a660d5776f33dba4ea226e30ce4b465ed1f03bf3b5
+    digest: sha256:6820e91e57dacef71a965f49435b3503465e227542edb4dd6969ecb55dc002c2
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -276,7 +276,7 @@ images:
     # manifest sha256:c54f9f4baec7f34454ff686698463fa0f94c333dceeafb7a5ce8141fda47b70f.
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:bb95149a3d5fc5dc7e545d8d51de6cf9085e6000728cbaff853fe5f00236b3c9
+    digest: sha256:6175711ae208da483828390ca9b528fe3fea52bb8305a7853694cf479c17319e
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     # 2026-05-12 update: bump to sha-5bec7fb (platform-backend#159 — Codex
@@ -294,7 +294,7 @@ images:
     #   - Pairs with platform-web#411 (FE UX overhaul)
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:c94c057cde2b82e87dc025ff06f75d1aa35ae82ae8858cd15e61942d37f0dc21
+    digest: sha256:fce3096eb994cdd8c3911c3c9e64369b082ca066d5a24ce430146a22a8585541
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -311,12 +311,12 @@ images:
     # 22/22 variant tests PASS (5 authz + 17 other).
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:70106d05b75c3117d7ad72e316e9501e034556eab23610979652f5524e13d550
+    digest: sha256:00bcbc24f8fa386e9f540293a6ec7b39feb64bd1c87698856bd1a05ea5728592
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-backend-core-data-service
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:ec5cfd1b9ce3e84fc4ea81461ba488b2569170da8442b4c8c22c9198e37b573c
+    digest: sha256:040ddddf21630bedb4ee33dfa4356ecdafd75b67b4e1edf0d0e20f731d6ca20f
   - name: report-service
     newName: ghcr.io/halildeu/platform-backend-report-service
     # 2026-05-07: canonical bump sha-9beed5f (platform-backend HEAD,
@@ -604,7 +604,7 @@ images:
     # in-memory cache.
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:5ddbc6199bf9af2c934eb77b40378e8a79f390104ce974e8e929f5bd34d09c8e
+    digest: sha256:5ae0c4d6ee32ce5aa2667748d8310fe9815ba5646347cf08f4a8fc9bdcba6f2b
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
@@ -685,7 +685,7 @@ images:
     # Digest job-section + CD deploy spec iki-kaynak teyitli. Image build run
     # 25985721556 (merge commit 58bc2c9).
     # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:894e492f029c93277ee7d84c993bad2535d970995b0d2df08a48ebb23340ae26
-    digest: sha256:894e492f029c93277ee7d84c993bad2535d970995b0d2df08a48ebb23340ae26
+    digest: sha256:2f80e2a98c1259c2aa1c2da4c841f7ef7d055bfe6ae54fb6b65d9f92387f449f
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
@@ -893,7 +893,7 @@ images:
     # Öneriler/Etik shell header + sidebar Schema Explorer module gating.
     # main-forward: #236→#242 ara commit'leri (#237-#241) de taşınıyor.
     # Image build: merge commit 74916a8c (CI Image Build + GHCR Push success).
-    digest: sha256:6cf81e19b7e3883626dfeb8cbfa3514dd46546aecba4c65ee70abf9c722a709f
+    digest: sha256:a87b8c3959cd65581da95eca8cbec5662041935a5dbb85fc7b5f1ccf324fca26
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
@@ -2286,7 +2286,7 @@ images:
     # Image build: merge commit cffdfc8d.
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-cffdfc8
     # @sha256:16ffc7f1cc33f8303efcd0c608e5eab66459e2d77055997e4cf7005f8428a860
-    digest: sha256:16ffc7f1cc33f8303efcd0c608e5eab66459e2d77055997e4cf7005f8428a860
+    digest: sha256:b44b551af8e48354d04b24445fe23bc6f71932955bffb1c704de4f47550d965a
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
