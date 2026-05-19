@@ -188,7 +188,7 @@ def check_at_least_one_marked(body: str) -> CheckResult:
 
 
 def check_none_exclusivity(body: str) -> CheckResult:
-    """If 'none of the above' marked, all 5 others must be unmarked."""
+    """If 'none of the above' marked, all 6 others must be unmarked."""
     block, err = extract_boundary_block(body)
     if err:
         return CheckResult(name="none_exclusivity", passed=False, message=err)

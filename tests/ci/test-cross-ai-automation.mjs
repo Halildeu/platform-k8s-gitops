@@ -4,8 +4,10 @@
 // #827 — regression test for the automation-PR exemption in
 // scripts/ci/pr-cross-ai-audit.mjs. Exercises the REAL script via synthetic
 // `--event-path` payloads (no network, no GitHub). Verifies:
-//   - a legitimate bot auto-PR (allowlisted branch + actor + body fields) passes
-//   - a human on an auto-* branch is blocked (the actor allowlist abuse gate)
+//   - a legitimate bot auto-PR (allowlisted branch + bot author + bot sender
+//     + body fields) passes
+//   - a human is blocked whether they OPEN an auto-* PR (pr.user) or only
+//     trigger an event on a bot-opened one (sender) — the actor+sender gate
 //   - missing / mismatched automation metadata fails
 //   - a fork PR cannot claim the exemption
 //   - a normal PR still gets the normal cross-AI peer-review audit
@@ -20,11 +22,22 @@ import { fileURLToPath } from 'node:url';
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCRIPT = join(REPO_ROOT, 'scripts', 'ci', 'pr-cross-ai-audit.mjs');
 const REPO = 'Halildeu/platform-k8s-gitops';
+const BOT = 'github-actions[bot]';
 const dir = mkdtempSync(join(tmpdir(), 'crossai-'));
 
-function runEvent(pullRequest) {
+// Build the GitHub event payload and run the real script; return its exit code.
+function runCase({ branch, actor, sender, headRepo = REPO, body }) {
+  const event = {
+    pull_request: {
+      body,
+      head: { ref: branch, repo: { full_name: headRepo } },
+      base: { repo: { full_name: REPO } },
+      user: { login: actor },
+    },
+    sender: { login: sender ?? actor },
+  };
   const f = join(dir, 'ev.json');
-  writeFileSync(f, JSON.stringify({ pull_request: pullRequest }));
+  writeFileSync(f, JSON.stringify(event));
   try {
     execFileSync('node', [SCRIPT, '--event-path', f], { stdio: 'pipe' });
     return 0;
@@ -32,13 +45,6 @@ function runEvent(pullRequest) {
     return e.status ?? -1;
   }
 }
-
-const pr = ({ branch, actor, headRepo = REPO, body }) => ({
-  body,
-  head: { ref: branch, repo: { full_name: headRepo } },
-  base: { repo: { full_name: REPO } },
-  user: { login: actor },
-});
 
 const autoBody = (src) =>
   `## Summary\nauto\n\n## Cross-AI\n` +
@@ -56,30 +62,32 @@ const LEDGER = 'scripts/promotion/ledger-mark-verified.sh';
 const SCAN = 'scripts/promotion/scan-promotion-candidates.sh';
 
 const cases = [
-  ['valid automation PR (auto-test-overlay, bot)',
-    pr({ branch: 'auto-test-overlay/backend-testai-live', actor: 'github-actions[bot]', body: autoBody(WF) }), 0],
-  ['auto-* branch + HUMAN actor -> blocked',
-    pr({ branch: 'auto-test-overlay/sneaky', actor: 'mallory', body: autoBody(WF) }), 1],
-  ['auto-* + bot, missing Automation source',
-    pr({ branch: 'auto-verified/x', actor: 'github-actions[bot]',
-         body: '## Cross-AI\nCross-AI exempt reason: machine PR no review claim\nAutomation evidence: https://x/y/z\n' }), 1],
-  ['auto-* + bot, wrong source for prefix',
-    pr({ branch: 'auto-verified/x', actor: 'github-actions[bot]', body: autoBody(WF) }), 1],
-  ['fork PR on auto-* branch -> blocked',
-    pr({ branch: 'auto-verified/x', actor: 'github-actions[bot]', headRepo: 'mallory/platform-k8s-gitops', body: autoBody(LEDGER) }), 1],
+  ['valid automation PR (auto-test-overlay, bot author + bot sender)',
+    { branch: 'auto-test-overlay/backend-testai-live', actor: BOT, sender: BOT, body: autoBody(WF) }, 0],
   ['valid auto-verified PR (bot)',
-    pr({ branch: 'auto-verified/test-20260519', actor: 'github-actions[bot]', body: autoBody(LEDGER) }), 0],
+    { branch: 'auto-verified/test-20260519', actor: BOT, sender: BOT, body: autoBody(LEDGER) }, 0],
   ['valid auto-promotion PR (bot)',
-    pr({ branch: 'auto-promotion/prod-platform-backend-abc1234', actor: 'github-actions[bot]', body: autoBody(SCAN) }), 0],
+    { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: BOT, sender: BOT, body: autoBody(SCAN) }, 0],
+  ['bot-opened auto-PR + HUMAN sender (synchronize bypass) -> blocked',
+    { branch: 'auto-test-overlay/backend-testai-live', actor: BOT, sender: 'mallory', body: autoBody(WF) }, 1],
+  ['human-opened auto-* branch -> blocked',
+    { branch: 'auto-test-overlay/sneaky', actor: 'mallory', sender: 'mallory', body: autoBody(WF) }, 1],
+  ['auto-* + bot, missing Automation source -> fail',
+    { branch: 'auto-verified/x', actor: BOT, sender: BOT,
+      body: '## Cross-AI\nCross-AI exempt reason: machine PR no review claim\nAutomation evidence: https://x/y/z\n' }, 1],
+  ['auto-* + bot, wrong source for prefix -> fail',
+    { branch: 'auto-verified/x', actor: BOT, sender: BOT, body: autoBody(WF) }, 1],
+  ['fork PR on auto-* branch -> blocked',
+    { branch: 'auto-verified/x', actor: BOT, sender: BOT, headRepo: 'mallory/platform-k8s-gitops', body: autoBody(LEDGER) }, 1],
   ['normal PR + valid peer review -> normal audit pass',
-    pr({ branch: 'roadmap-827-x', actor: 'halilkocoglu', body: peerBody }), 0],
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody }, 0],
   ['normal PR + no Cross-AI section -> fail',
-    pr({ branch: 'roadmap-827-x', actor: 'halilkocoglu', body: '## Summary\nno cross-ai here\n' }), 1],
+    { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: '## Summary\nno cross-ai here\n' }, 1],
 ];
 
 let fails = 0;
-for (const [name, prObj, expect] of cases) {
-  const rc = runEvent(prObj);
+for (const [name, spec, expect] of cases) {
+  const rc = runCase(spec);
   const ok = rc === expect;
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}  (rc=${rc}, expect=${expect})`);
   if (!ok) fails += 1;

@@ -19,12 +19,19 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 
 on:
   pull_request:
+    # #827: `ready_for_review` is deliberately omitted. An auto-* automation
+    # PR is opened DRAFT by a bot (auto-promotion/ prod candidates) and an
+    # operator marks it ready — a human-sender event. The automation-exemption
+    # gate rejects human-triggered re-runs; re-running on `ready_for_review`
+    # would break the legit operator DRAFT→ready flow, and special-casing it
+    # to PASS would launder a prior malicious human `synchronize`. The audit
+    # already ran on `opened` / `synchronize` (the content-changing events);
+    # the draft→ready flip changes no content.
     types:
       - opened
       - edited
       - synchronize
       - reopened
-      - ready_for_review
 
 permissions:
   contents: read

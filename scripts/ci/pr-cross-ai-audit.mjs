@@ -67,6 +67,15 @@ const AUTOMATION_BRANCH_CONTRACT = {
   'auto-verified/': 'scripts/promotion/ledger-mark-verified.sh',
   'auto-promotion/': 'scripts/promotion/scan-promotion-candidates.sh',
 };
+// `github-actions[bot]` covers generators that run inside GitHub Actions: the
+// deploy-backend-testai overlay-sync job (auto-test-overlay/, #827 PR-B) and
+// scan-promotion-candidates.sh via promotion-bot-scan-candidates.yml
+// (auto-promotion/). ledger-mark-verified.sh (auto-verified/) runs via host
+// systemd — its PRs are authored by the host `gh` identity, so auto-verified/
+// PRs are exemption-eligible only once that identity is a recognized
+// automation bot added here (a dedicated GitHub App / machine account, NEVER
+// a human account — #827 follow-up); until then they fall through to the
+// normal peer-review audit.
 const AUTOMATION_ACTORS = new Set(['github-actions[bot]']);
 
 function matchedAutomationPrefix(headRef) {
@@ -103,7 +112,12 @@ function loadInput(args) {
         headRef: pr.head?.ref ?? '',
         headRepo: pr.head?.repo?.full_name ?? '',
         baseRepo: pr.base?.repo?.full_name ?? '',
+        // `actor` = PR author (immutable once opened). `sender` = who
+        // triggered THIS event. Both must be a bot for the exemption — else a
+        // human could push a `synchronize` commit to / `edited` the body of a
+        // bot-opened auto-PR (pr.user stays the bot; sender is the human).
         actor: pr.user?.login ?? '',
+        sender: ev.sender?.login ?? '',
       },
     };
   }
@@ -394,17 +408,22 @@ function auditAutomation(body, prMeta) {
     detail: `head.ref "${prMeta.headRef}" matches allowlisted prefix "${prefix}"`,
   });
 
-  // 3. actor allowlist — the hard gate against human-authored spoofing. A
-  //    human PR has a human actor and can never satisfy this. (Not full bot
+  // 3. actor + sender allowlist — the hard gate against human-authored
+  //    spoofing. `actor` is the PR author, `sender` is who triggered this
+  //    event; BOTH must be an automation bot. Otherwise a human could push a
+  //    `synchronize` commit to (or `edited` the body of) a bot-opened auto-PR:
+  //    pr.user stays the bot, but the sender is the human. (Not full bot
   //    isolation: github-actions[bot] is shared across workflows — the wider
   //    contract chain + a future diff path allowlist bound a compromised bot.)
   const actorOk = AUTOMATION_ACTORS.has(prMeta.actor);
+  const senderOk = AUTOMATION_ACTORS.has(prMeta.sender);
   findings.push({
     check: 'automation_actor_allowlist',
-    pass: actorOk,
-    detail: actorOk
-      ? `actor "${prMeta.actor}" is an allowlisted automation bot`
-      : `actor "${prMeta.actor}" is not an automation bot — exemption denied`,
+    pass: actorOk && senderOk,
+    detail:
+      actorOk && senderOk
+        ? `PR author "${prMeta.actor}" and event sender "${prMeta.sender}" are both allowlisted automation bots`
+        : `PR author "${prMeta.actor}" / event sender "${prMeta.sender}" — both must be an automation bot (a human touching a bot-opened auto-PR forfeits the exemption); denied`,
   });
 
   // PR-body ## Cross-AI section fields

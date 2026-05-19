@@ -39,7 +39,7 @@
       "matchDatasources": ["docker"],
       "automerge": false,
       "labels": ["renovate", "env:test", "auto-bump"],
-      "prBodyTemplate": "{{{header}}}\n\n{{{table}}}\n\n## Boundary declaration (ADR-0011 §2.3)\n\n- [ ] credential-read\n- [ ] credential-write\n- [x] state-mutation (test cluster)\n- [ ] state-mutation (production)\n- [ ] boundary-cross\n- [ ] none of the above\n\nUser-approval evidence: Renovate auto-bump, test cluster only. Reviewer must verify D29 evidence pipeline before merge.\n\n{{{notes}}}\n\n{{{footer}}}",
+      "prBodyTemplate": "{{{header}}}\n\n{{{table}}}\n\n## Boundary declaration (ADR-0011 §2.3)\n\n- [ ] credential-read\n- [ ] credential-write\n- [x] state-mutation (test cluster)\n- [ ] state-mutation (production)\n- [ ] boundary-cross\n- [ ] user-communication\n- [ ] none of the above\n\nUser-approval evidence: Renovate auto-bump, test cluster only. Reviewer must verify D29 evidence pipeline before merge.\n\n{{{notes}}}\n\n{{{footer}}}",
       "commitMessageTopic": "{{depName}} (test)",
       "commitMessageExtra": "to {{newDigestShort}}"
     },
@@ -50,7 +50,7 @@
       "automerge": false,
       "draftPR": true,
       "labels": ["renovate", "env:prod", "auto-bump", "user-approval-required"],
-      "prBodyTemplate": "{{{header}}}\n\n{{{table}}}\n\n## ⚠️ PROD digest update — D30 atomic cutover discipline\n\n- [ ] D29 evidence ledger doğrulandı (release-candidates/<repo>/<sha>.json verified)\n- [ ] gate-d29-evidence-required CI yeşil\n- [ ] Operator manuel cutover decision\n- [ ] Pre-cutover bundle snapshot (T-24h) yapıldı\n- [ ] Rollback plan hazır (72h warm rollback window)\n\n## Boundary declaration (ADR-0011 §2.3)\n\n- [ ] credential-read\n- [ ] credential-write\n- [ ] state-mutation (test cluster)\n- [x] state-mutation (production)\n- [ ] boundary-cross\n- [ ] none of the above\n\nUser-approval evidence: Renovate auto-bump DRAFT, prod cluster atomic cutover discipline (D30). Operator must mark ready for review only after pre-cutover gates pass.\n\n{{{notes}}}\n\n{{{footer}}}",
+      "prBodyTemplate": "{{{header}}}\n\n{{{table}}}\n\n## ⚠️ PROD digest update — D30 atomic cutover discipline\n\n- [ ] D29 evidence ledger doğrulandı (release-candidates/<repo>/<sha>.json verified)\n- [ ] gate-d29-evidence-required CI yeşil\n- [ ] Operator manuel cutover decision\n- [ ] Pre-cutover bundle snapshot (T-24h) yapıldı\n- [ ] Rollback plan hazır (72h warm rollback window)\n\n## Boundary declaration (ADR-0011 §2.3)\n\n- [ ] credential-read\n- [ ] credential-write\n- [ ] state-mutation (test cluster)\n- [x] state-mutation (production)\n- [ ] boundary-cross\n- [ ] user-communication\n- [ ] none of the above\n\nUser-approval evidence: Renovate auto-bump DRAFT, prod cluster atomic cutover discipline (D30). Operator must mark ready for review only after pre-cutover gates pass.\n\n{{{notes}}}\n\n{{{footer}}}",
       "commitMessageTopic": "{{depName}} (prod)",
       "commitMessageExtra": "to {{newDigestShort}}"
     },

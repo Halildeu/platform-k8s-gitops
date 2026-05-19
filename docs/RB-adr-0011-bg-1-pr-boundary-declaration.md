@@ -119,6 +119,7 @@ cat > /tmp/pr-body.md <<'EOF'
 - [ ] state-mutation (test cluster)
 - [ ] state-mutation (production)
 - [ ] boundary-cross
+- [ ] user-communication
 - [ ] none of the above
 
 User-approval evidence: https://example.com/issue/1
