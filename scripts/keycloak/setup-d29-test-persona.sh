@@ -186,7 +186,14 @@ if [ "$VERIFY_ONLY" != "1" ] && [ "$NEED_PASSWORD" = "1" ]; then
   $KC set-password -r "$REALM" --userid "$USER_ID" --new-password "$PERSONA_PASS" >/dev/null 2>&1 \
     || { echo "ERROR: set-password failed" >&2; exit 1; }
   # SECRET_OUT — operator-only readable; password is NEVER echoed to stdout/log.
-  ( umask 077; cat > "$SECRET_OUT" <<SECRET
+  # Atomic 0600 temp-file write: shell redirection PRESERVES an existing file's
+  # mode, so a pre-existing loose-mode SECRET_OUT would keep its mode. Create a
+  # fresh 0600 temp file in the same dir and mv it into place (Codex 019e4012)
+  # — guarantees operator-only mode even if SECRET_OUT already existed.
+  SECRET_TMP=$(mktemp "${SECRET_OUT}.XXXXXX") \
+    || { echo "ERROR: could not create SECRET_OUT temp file" >&2; exit 1; }
+  chmod 600 "$SECRET_TMP"
+  cat > "$SECRET_TMP" <<SECRET
 # D29 test persona credential — board #819 (setup-d29-test-persona.sh).
 # Operator: seed Vault, then shred this file.
 #   vault kv put $VAULT_PATH \\
@@ -200,7 +207,8 @@ email=$PERSONA_EMAIL
 keycloak_user_id=$USER_ID
 password=$PERSONA_PASS
 SECRET
-  )
+  mv -f "$SECRET_TMP" "$SECRET_OUT"
+  chmod 600 "$SECRET_OUT"
   unset PERSONA_PASS
   echo "✓ password set — written to $SECRET_OUT (umask 077; operator seeds Vault + shreds)"
 fi
