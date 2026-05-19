@@ -169,6 +169,21 @@ and ExecStartPost runs `ledger-mark-verified.sh` for the produced report.
 6. Within 15min: `smoke-prod.service` fires → updates
    `promotion.prod.smoke_evidence`
 
+## Frontend profili — env-baked variant evidence (ADR-0022)
+
+Yukarıdaki akış **backend** servisleri içindir: aynı image önce test'te sonra prod'da koşar. **Frontend** (platform-web) env-baked bir Vite SPA'dır — ortam config'i (API base URL, KC realm/issuer, feature-flag) build-time'da bundle'a gömülür. Her commit iki ayrı artifact üretir: `platform-web-frontend-testai` ve `platform-web-frontend` (prod). Test cluster'ı testai variant'ı koşar; prod variant hiçbir yerde koşmaz → normal test→prod ledger akışı uygulanamaz.
+
+**Çözüm (ADR-0022 — `frontend-prod-variant-transient-smoke`)**: prod-variant artifact'ı k3d-test'te **transient** koşturulup smoke edilir.
+
+- Script: `scripts/smoke/d29-frontend-variant-smoke.sh` — `d29-smoke-runner.sh`'a ek, dedicated runner.
+- `platform-test` ns'de benzersiz etiketli (`evidence.platform/transient-smoke` + per-run id) Deployment+Service; `trap` cleanup; yönetilen `frontend` workload'ına dokunmaz.
+- Tier eşlemesi:
+  - `d29_up` GREEN — rollout + pod Ready + imageID digest match + `/build-info.json` source-sha.
+  - `d29_functional` GREEN — `/` + asset 200'leri + env-baking assertion (bundle'da `testai.acik.com`/`localhost:8080` YOK, `https://ai.acik.com` VAR) + `ai.acik.com` read-only public probe `2xx/401/403`.
+  - `d29_zanzibar` **AMBER** (`allow_deny_synthetic: SKIP`) — statik SPA, Zanzibar düzlemi yok (`jwt_validates: false`).
+- Gate uyumu: `gate-evidence-check.py` `jwt_validates:false` için `d29_zanzibar` GREEN/AMBER kabul eder → kod değişimi gerekmez. `SKIP` *status*'ü kabul edilmez; tier-status `AMBER`, alt-alan `allow_deny_synthetic` `SKIP`.
+- Ledger **elle** doldurulur — `ledger-mark-verified.sh` her tier GREEN ister, dürüst AMBER'ı reddeder; frontend profili bu otomasyonun açık istisnasıdır.
+
 ## Hata senaryoları
 
 ### Smoke RED on test
