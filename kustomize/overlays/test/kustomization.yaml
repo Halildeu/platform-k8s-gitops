@@ -2521,9 +2521,19 @@ images:
   # sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3).
   # Carries T1.1.6 quiet hours + T1.1.7 frequency limit + T1.1.8 unsubscribe
   # trilogy + ProductionConfigValidator URI parser allowlist (P0.4 P0.5).
+  #
+  # 2026-05-19 update (Faz 23.3 PR-5 — JetSMS cutover):
+  # Bump to sha-ab333c5 (platform-backend PR #252 squash MERGED; image build
+  # run 26095610991 SUCCESS, GHCR push @
+  # sha256:caf02c248bb68410be9ac5ee0aaf25a1ef8632f0f5cf22dedfb2ec0b2f01f303).
+  # JetSMS SMS multi-provider PR #249/#250/#252: SmsProvider abstraction +
+  # JetSmsProvider send + JetSMS DLR polling worker. ATOMİK: bu digest bump +
+  # NOTIFY_ADAPTERS_SMS_PRIMARY_PROVIDER=jetsms ConfigMap flip birlikte gelir —
+  # eski image JetSmsProvider içermez; flip tek başına SmsAdapter
+  # 'primary jetsms not registered' → SMS FAILED.
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3
+    digest: sha256:caf02c248bb68410be9ac5ee0aaf25a1ef8632f0f5cf22dedfb2ec0b2f01f303
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
@@ -3087,6 +3097,15 @@ patches:
       - op: add
         path: /data/NOTIFY_ADAPTERS_SMTP_FROM_NAME
         value: "Ai - Açık Holding (test)"
+      # Faz 23.3 PR-5 — JetSMS cutover: SMS primary provider flip.
+      # PR-4 base ConfigMap'e jetsms api-url/report-url eklemişti; bu flip
+      # SmsAdapter'ı JetSMS primary'ye çevirir (image sha-ab333c5 JetSmsProvider
+      # içerir — flip + digest bump atomik). secondary-provider BİLİNÇLİ set
+      # EDİLMEZ: NetGSM credential R1 (#762) blocker → boş secondary = JetSMS-
+      # primary degraded mode (NetGSM failover acceptance pending). Codex 019e4022.
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_PRIMARY_PROVIDER
+        value: "jetsms"
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "true"
