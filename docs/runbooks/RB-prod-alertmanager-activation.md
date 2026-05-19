@@ -1,10 +1,14 @@
 # RB-prod-alertmanager-activation — Prod Alertmanager release activation packet
 
-> **Status**: READY (staged config + activation prereq packet — 2026-05-19, Session 42)
+> **Status**: BLOCKED — pending sibling PR `values-prod.yaml` clean-up (`perf-alerts-github-issues` direct receiver + token mount removal, until payload wrapper bridge is added)
 > **Tracker**: [#857](https://github.com/Halildeu/platform-k8s-gitops/issues/857) — P0 prod Alertmanager release drift
-> **Codex thread**: `019e4256` (Session 42 audit + scope verdict)
+> **Codex thread**: `019e4256` (Session 42 audit + scope verdict — post-impl REVISE iter-2 P0 absorb)
 > **Sibling issues**: [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) test sentinel; [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) D43 prod activation
-> **Risk**: HIGH (3-channel monitoring delivery gap), `ready_for_helm_upgrade=false` until §2 artifacts complete
+> **Risk**: HIGH (3-channel monitoring delivery gap; direct receiver wrapper-bug active until sibling PR merge)
+> **`ready_for_helm_upgrade=false`** until:
+> 1. Sibling PR removes `perf-alerts-github-issues` direct receiver + `github-issues-receiver-token` mount from `values-prod.yaml` (Codex `019e4256` REVISE iter-2 absorb)
+> 2. §2 owner artifacts complete (Slack webhooks + SMTP credentials; GitHub PAT becomes OPTIONAL / future-only)
+> 3. Codex dry-run review consensus (separate iter on dry-run output)
 
 ---
 
@@ -36,8 +40,10 @@ Prod `kube-prometheus-stack` Helm release (revision 2, last upgrade 2026-05-14) 
 1. Slack workspace admin → Apps → Incoming Webhooks → Add (per channel, 1 URL each)
 2. URL'leri güvenli operator notebook'a kaydet (Vault seed komutu sırasında stdin pipe)
 
-### 2.2 GitHub PAT (`github-issues-receiver-token` Secret)
+### 2.2 GitHub PAT (`github-issues-receiver-token` Secret) — **OPTIONAL / future-only**
 
+> **#857 activation için GEREKLİ DEĞİL** (Codex `019e4256` REVISE iter-2 P0 absorb). Sibling PR `values-prod.yaml`'dan `perf-alerts-github-issues` direct receiver + bu Secret'in `secrets[]` mount'unu wrapper bridge gelene kadar kaldıracak. PAT artifact'i ancak wrapper PR'ı sonrası (future work) gerekli.
+>
 > **HARD RULE**: PAT plaintext PR/issue body'sine yazılmaz; operator `read -r -s` hidden prompt + stdin pipe + `unset` ile çalışır. Bash history + process argv güvenliği yazma anında, sonradan-temizleme ile değil.
 
 | Field | Detay |
@@ -253,24 +259,30 @@ helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
 
 ### 5.1 Config + mount verify
 
+> Sibling PR (post-#860 merge) `perf-alerts-github-issues` direct receiver + `github-issues-receiver-token` mount'u removes; bu acceptance ona göre **3 aktif receiver + 2 Secret mount**.
+
 ```bash
 ssh halil@staging-sw '
 # Pod restart sonrası yeni pod adını al
 POD=$(kubectl --context k3d-prod -n monitoring get pod -l app.kubernetes.io/name=alertmanager -o jsonpath="{.items[0].metadata.name}")
 echo "Pod: $POD"
 
-# Config show
-kubectl --context k3d-prod -n monitoring exec "$POD" -c alertmanager -- amtool config show | grep -E "^- name:|name: direct-fallback|name: perf-alerts"
-# Beklenen: 4 receiver: alarm-receiver-bridge, perf-alerts-slack, perf-alerts-github-issues, direct-fallback
+# Config show — 3 active receivers expected
+kubectl --context k3d-prod -n monitoring exec "$POD" -c alertmanager -- amtool config show | grep -E "^- name:|name: direct-fallback|name: perf-alerts-slack|name: alarm-receiver-bridge"
+# Beklenen: 3 aktif receiver:
+#   - alarm-receiver-bridge
+#   - perf-alerts-slack
+#   - direct-fallback
+# (perf-alerts-github-issues direct receiver: sibling PR ile KALDIRILDI — wrapper PR sonrası geri eklenir)
 
 # Routes
 kubectl --context k3d-prod -n monitoring exec "$POD" -c alertmanager -- amtool config routes show | head -30
 
-# Mount verify (5+1+1 = 7 files toplam)
+# Mount verify (5+1 = 6 files toplam; github-issues-receiver-token sibling PR ile KALDIRILDI)
 kubectl --context k3d-prod -n monitoring exec "$POD" -c alertmanager -- ls -la \
   /etc/alertmanager/secrets/alertmanager-fallback-secrets/ \
-  /etc/alertmanager/secrets/perf-alertmanager-secrets/ \
-  /etc/alertmanager/secrets/github-issues-receiver-token/
+  /etc/alertmanager/secrets/perf-alertmanager-secrets/
+# Note: /etc/alertmanager/secrets/github-issues-receiver-token/ klasörü YOK (sibling PR ile mount removed)
 '
 ```
 
@@ -322,9 +334,9 @@ curl -s http://127.0.0.1:9093/api/v2/alerts | \
 
 **Owner verify (channels — only Slack + bridge-driven GitHub Issue):**
 - Slack `#perf-alerts`: `[V2.1 Perf Alert] PerfCanarySmoke857` mesajı görüldü mü?
-- GitHub Issues repo `Halildeu/platform-k8s-gitops`: yeni issue açıldı mı (**alertmanager-bridge dispatch'inden** — NOT direct `perf-alerts-github-issues` receiver)?
+- GitHub Issues repo `Halildeu/platform-k8s-gitops`: yeni issue açıldı mı (**alertmanager-bridge dispatch'inden** — `perf-alerts-github-issues` direct receiver sibling PR ile values-prod.yaml'dan kaldırıldı; payload wrapper bridge gelene kadar future PR konusu)?
 
-**Acceptance**: Slack receipt + bridge-driven GitHub Issue = pass. Direct `perf-alerts-github-issues` receiver delivery is **scope-out of #857 acceptance** until a payload wrapper bridge is added (separate future PR).
+**Acceptance**: Slack receipt + bridge-driven GitHub Issue = pass. Direct `perf-alerts-github-issues` receiver delivery is **scope-out of #857 acceptance** AND **scope-out of values-prod.yaml** (sibling PR cleanup) until a payload wrapper bridge is added (separate future PR).
 
 ### 5.3 Synthetic D43 outage smoke (controlled, owner-approved window)
 
@@ -381,6 +393,13 @@ Plus audit doc: `docs/faz-23-evidence/2026-XX-XX-857-helm-upgrade-rollback.md`.
 ---
 
 ## 8. Last Update
+
+**2026-05-19 (Session 42 PR #860 — Codex `019e4256` REVISE iter-2 P0 absorb)** — Single new finding: known-blocked `perf-alerts-github-issues` direct receiver still live in `values-prod.yaml` would activate on helm upgrade (404/422 fail log spam every perf alert). Absorb (Codex tercih A):
+- Runbook front-matter Status: READY → **BLOCKED** until sibling PR cleanup.
+- §2.2 GitHub PAT: **OPTIONAL / future-only** (not required for #857 activation; wrapper PR's prereq).
+- §5.1 Config verify: 3 aktif receiver (alarm-receiver-bridge + perf-alerts-slack + direct-fallback); 6 mount file (5 fallback + 1 perf); github-issues-receiver-token mount klasörü YOK (sibling PR removed).
+- §5.2 Synthetic alert acceptance: Slack + bridge-driven GitHub Issue; direct receiver scope-out at both runbook and values-prod.yaml level.
+- Sibling PR scope: `values-prod.yaml` `perf-alerts-github-issues` route (both critical + non-critical) + receiver definition + `github-issues-receiver-token` mount removal. Wrapper PR sonra geri ekler.
 
 **2026-05-19 (Session 42 PR #860 — Codex `019e4256` REVISE absorb)** — 4-finding absorb:
 - **P0**: `perf-alerts-github-issues` direct receiver KNOWN-BLOCKED (Alertmanager v4 payload not wrapped into GitHub `repository_dispatch` schema; PR #648 RED reference). §2.2 + §5.2 spelled out; #857 acceptance via bridge GitHub Issue path, not direct receiver.
