@@ -266,6 +266,25 @@ kanıtlanmadığı açıkça yazılır.
 | **Oturum devri** | gövde `agent-state` güncel + `HANDOFF` comment |
 | **Blocker** | board `Status=Blocked` + `BLOCKED` comment (sebep + unblock sahibi) |
 
+**HARD RULE — claim-before-work (paralel-session çakışma guard'ı)**
+
+Kullanıcı paralel çoklu-oturum çalıştırır — iki oturumun aynı işi yapması riski
+buradan doğar.
+
+- **Önemli / çok-adımlı / roadmap-visible iş** — kullanıcı ad-hoc atasa bile —
+  çalışmaya başlamadan önce **claimed bir board issue** olmalı. Board issue
+  yoksa önce açılır (gerekirse `backlog-add` → triage) + `claim`'lenir.
+- Her oturumun **ilk komutu** `board-sync.sh list` — In Progress + claim'li işi
+  görür, üstüne binmez.
+- **İstisna**: trivial tek-seferlik fix board-dışı kalır — her küçük işi board'a
+  almak §14 curated kuralını bozar; küçük bir fix'in iki kez yapılması ucuzdur.
+  Pahalı çakışma büyük çok-adımlı iştedir; guard oraya odaklanır.
+
+**Sınır (dürüst)**: kural *advisory*. Aynı board issue için yarışı §8
+deterministik claim kesin çözer; ama (a) hiç board'a alınmayan iş ve (b) ritüeli
+atlayan oturum disipline bağlıdır — GitHub'da zorlayıcı bir mutex yok. Gerçek bir
+duplicate-work gözlenirse harness-enforced SessionStart hook değerlendirilir.
+
 ---
 
 ## 12. `scripts/board-sync.sh`

@@ -250,7 +250,7 @@ Her runbook: tetik → adımlar (süre + komut + beklenen + fail sinyali + devam
 4. Memory: `~/.claude/projects/<slug>/memory/MEMORY.md` → feedback kuralları
 5. Codex thread: `PLAN.md` "Codex Thread" referanslar (ana + delta)
 6. Historical gerekiyorsa: `docs/session-handoff-<latest>.md`
-7. İş seçimi + board: kullanıcı explicit isteği varsa o; yoksa **board'dan claim** — `scripts/board-sync.sh list` (en yüksek öncelikli uygun iş) → `board-sync.sh claim <issue>`. Aktif iş + risk + milestone/gate `Status` [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (Project #2)'da canonical; çalışırken item `In Progress` + kanıt comment'i, bitince acceptance sonrası `Done`. Çalışırken keşfedilen scope-dışı iş/sorun → `board-sync.sh backlog-add` (`Backlog`'a alınır, kaybolmaz; ephemeral `spawn_task` chip tek başına yetmez). Protokol: `docs/board-protocol.md`.
+7. İş seçimi + board: **önemli/çok-adımlı iş — kullanıcı explicit atasa bile — çalışmadan önce claimed board issue olmalı** (paralel-oturum çakışma guard'ı; trivial tek-seferlik fix istisna). Oturum-başı ilk komut `scripts/board-sync.sh list` (In Progress + claim'li iş görünür) → iş seç → `board-sync.sh claim <issue>` (board issue yoksa önce aç ya da `backlog-add`+triage). Aktif iş + risk + milestone/gate `Status` [platform Roadmap board](https://github.com/users/Halildeu/projects/2) (Project #2)'da canonical; çalışırken item `In Progress` + kanıt comment'i, bitince acceptance sonrası `Done`. Çalışırken keşfedilen scope-dışı iş/sorun → `board-sync.sh backlog-add` (`Backlog`'a alınır, kaybolmaz; ephemeral `spawn_task` chip tek başına yetmez). Protokol: `docs/board-protocol.md`.
 
 ## Test Öncesi
 
