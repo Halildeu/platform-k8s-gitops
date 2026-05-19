@@ -35,7 +35,7 @@ Detay:
 
 ## 3. İspatlar
 
-- 5 PR `git log` ile MERGED doğrulandı; base `origin/main` = `f79b7ba` (#845). Bu handoff PR (#846) branch HEAD = `c9f1259`, yalnız bu handoff dokümanını ekler — kod/manifest değişimi yok.
+- 5 PR `git log` ile MERGED doğrulandı; base `origin/main` = `f79b7ba` (#845). Bu handoff PR (#846) yalnız bu handoff dokümanını ekler — kod/manifest değişimi yok.
 - **M365-passive CANLI**: prod user-service digest `fce3096e`'ye rollout; browser smoke M365 first-login → `403 ACCOUNT_DISABLED` (task #5).
 - **UTF-8 fix CANLI**: prod frontend digest `7e0999d1`'e rollout; browser-verify Türkçe isim render (task #8).
 - **reports-403 kök neden**: prod OpenFGA model `01KPXCVBMDKXXRPGKFGPDRVBQX` → `report_group` tipi **yok**; test model `01KRTJVEMAW80B2D35GN8HJDPG` → **var**. "Halil Koçoğlu" (userId 1204) `reports.hr-compensation-detay.view` permission'ına sahip (`scopes:[]`) ama model tipin kendisi eksik → `type_not_found` HTTP 400 → circuit breaker → 403. `admin@example.com` superAdmin OpenFGA check'i short-circuit ettiği için etkilenmiyor.
