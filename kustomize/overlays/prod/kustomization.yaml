@@ -61,7 +61,7 @@ images:
     # overlay still pinned the pre-PR #141 auth-service image. The digest below
     # matches the test-proven ServiceJwt decoder @Profile gate fix
     # (platform-backend c5df886) and the live prod pod imageID.
-    digest: sha256:81499ba09e248791123f82a660d5776f33dba4ea226e30ce4b465ed1f03bf3b5
+    digest: sha256:6820e91e57dacef71a965f49435b3503465e227542edb4dd6969ecb55dc002c2
   # 2026-05-04 Session 37: prod backend canonical realign — promote test cluster
   # digest (built from same canonical main HEAD) to bring ai.acik.com level
   # with testai. PR #331 first promoted to sha256:a0a48aa9 (test overlay yaml)
@@ -69,7 +69,7 @@ images:
   # sha256:16451b81. This cleanup PR uses the live test digest, GHCR-verified.
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
-    digest: sha256:bb95149a3d5fc5dc7e545d8d51de6cf9085e6000728cbaff853fe5f00236b3c9
+    digest: sha256:6175711ae208da483828390ca9b528fe3fea52bb8305a7853694cf479c17319e
   # 2026-05-18: M365 auto-provision bridge (platform-backend PR #245, merge
   # commit 53646b5). Lazy-provisions the backend `users` row on an M365 SSO
   # first-login JWT — required before M365 v2 is enabled on the `serban`
@@ -93,13 +93,13 @@ images:
   # 2026-05-04 Session 37: variant-service canonical realign — was sha256:4a51a49f.
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
-    digest: sha256:70106d05b75c3117d7ad72e316e9501e034556eab23610979652f5524e13d550
+    digest: sha256:00bcbc24f8fa386e9f540293a6ec7b39feb64bd1c87698856bd1a05ea5728592
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-backend-core-data-service
-    digest: sha256:ec5cfd1b9ce3e84fc4ea81461ba488b2569170da8442b4c8c22c9198e37b573c
+    digest: sha256:040ddddf21630bedb4ee33dfa4356ecdafd75b67b4e1edf0d0e20f731d6ca20f
   - name: report-service
     newName: ghcr.io/halildeu/platform-backend-report-service
-    digest: sha256:7f3f71d67eaee2943b651abefce519ae0ce1e3e0742f648e8774d46272470158
+    digest: sha256:5ae0c4d6ee32ce5aa2667748d8310fe9815ba5646347cf08f4a8fc9bdcba6f2b
   # 2026-05-04 Session 37: schema-service canonical realign — was sha256:1a0e3f02.
   # PR #331 first promoted to sha256:2a7076c9 from test overlay yaml — that
   # digest had been garbage-collected from GHCR (manifest unknown). Test
@@ -118,7 +118,7 @@ images:
   # gitops test pin PR #745.
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
-    digest: sha256:894e492f029c93277ee7d84c993bad2535d970995b0d2df08a48ebb23340ae26
+    digest: sha256:2f80e2a98c1259c2aa1c2da4c841f7ef7d055bfe6ae54fb6b65d9f92387f449f
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-05-03 Session 37 ArgoCD OutOfSync drift realign:
@@ -136,7 +136,7 @@ images:
     # InternalImpersonationAuditController, causing auth-service session create
     # to hit permission-service static-resource 404/500. This digest matches
     # test's PR-B internal controller image and the live prod pod imageID.
-    digest: sha256:6cf81e19b7e3883626dfeb8cbfa3514dd46546aecba4c65ee70abf9c722a709f
+    digest: sha256:a87b8c3959cd65581da95eca8cbec5662041935a5dbb85fc7b5f1ccf324fca26
   # Frontend prod variant (ai.acik.com + serban realm)
   # 2026-05-03 Session 37: AG Grid lisans bytes-fix + single-source refactor +
   # buildx cache scope-v2 rename hotfix branch (`hotfix/ag-grid-license-rebuild`,
