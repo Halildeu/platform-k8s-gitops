@@ -179,7 +179,7 @@ Yukarıdaki akış **backend** servisleri içindir: aynı image önce test'te so
 - `platform-test` ns'de benzersiz etiketli (`evidence.platform/transient-smoke` + per-run id) Deployment+Service; `trap` cleanup; yönetilen `frontend` workload'ına dokunmaz.
 - Tier eşlemesi:
   - `d29_up` GREEN — rollout + pod Ready + imageID digest match + `/build-info.json` source-sha.
-  - `d29_functional` GREEN — `/` + asset 200'leri + env-baking assertion (bundle'da `testai.acik.com`/`localhost:8080` YOK, `https://ai.acik.com` VAR) + `ai.acik.com` read-only public probe `2xx/401/403`.
+  - `d29_functional` GREEN — `/` + entry/`remoteEntry.js` 200 + env-baking assertion (bundle'da `testai.acik.com`/`localhost:8080` host + `platform-test` realm YOK, `https://ai.acik.com` host + `serban` realm VAR) + `ai.acik.com` read-only public probe `2xx/401/403`.
   - `d29_zanzibar` **AMBER** (`allow_deny_synthetic: SKIP`) — statik SPA, Zanzibar düzlemi yok (`jwt_validates: false`).
 - Gate uyumu: `gate-evidence-check.py` `jwt_validates:false` için `d29_zanzibar` GREEN/AMBER kabul eder → kod değişimi gerekmez. `SKIP` *status*'ü kabul edilmez; tier-status `AMBER`, alt-alan `allow_deny_synthetic` `SKIP`.
 - Ledger **elle** doldurulur — `ledger-mark-verified.sh` her tier GREEN ister, dürüst AMBER'ı reddeder; frontend profili bu otomasyonun açık istisnasıdır.

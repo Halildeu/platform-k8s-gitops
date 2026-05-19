@@ -38,7 +38,7 @@ Smoke; benzersiz etiketli (`evidence.platform/transient-smoke` sınıf etiketi +
 | Tier | Verdict | Kanıt |
 |---|---|---|
 | `d29_up` | **GREEN** | rollout success + pod Ready + pod imageID digest == beklenen + `/build-info.json` `.sha` == kaynak commit SHA |
-| `d29_functional` | **GREEN** | `/` 200 + entry/remoteEntry asset'leri 200 + **env-baking assertion**'ları (bundle'da `testai.acik.com` ve `localhost:8080` YOK; prod-host fingerprint `https://ai.acik.com` VAR) + canlı prod API/OIDC yüzeyinin (`ai.acik.com`) read-only public probe'u `2xx/401/403` döner (`5xx/000` değil) |
+| `d29_functional` | **GREEN** | `/` 200 + entry + `/remoteEntry.js` asset'leri 200 + **env-baking assertion**'ları (bundle'da `testai.acik.com`/`localhost:8080` host **ve** `platform-test` realm YOK; prod-host `https://ai.acik.com` **ve** `serban` realm VAR) + canlı prod API/OIDC yüzeyinin (`ai.acik.com`) read-only public probe'u `2xx/401/403` döner (`5xx/000` değil) |
 | `d29_zanzibar` | **AMBER** (`allow_deny_synthetic: SKIP`) | frontend statik SPA — kendi JWT decoder'ı yok, Zanzibar authz düzlemi yok (`jwt_validates: false`, `services.yaml`). Zanzibar tier not-applicable; **AMBER dürüst non-GREEN verdict'idir** — sahte GREEN değil, anlamsız değil. |
 
 ### D4 — Gate uyumu (kod değişimi YOK)
