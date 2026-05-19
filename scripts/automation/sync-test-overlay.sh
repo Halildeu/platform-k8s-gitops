@@ -106,11 +106,20 @@ fi
 
 added=$(git diff -U0 -- "$KUSTOMIZATION" \
   | grep -cE '^\+[[:space:]]+digest: sha256:[a-f0-9]{64}$' || true)
-if [[ "$added" -gt 8 ]]; then
-  echo "::error::[sync-test-overlay] diff-guard: $added digest line(s) changed (>8 backend services)"
+deleted=$(git diff -U0 -- "$KUSTOMIZATION" \
+  | grep -cE '^-[[:space:]]+digest: sha256:[a-f0-9]{64}$' || true)
+# Pure-rewrite contract: each change removes one digest line and adds one, so
+# added == deleted. A mismatch means a digest line was purely added or deleted
+# — out of contract (Codex 019e407c P3).
+if [[ "$added" -ne "$deleted" ]]; then
+  echo "::error::[sync-test-overlay] diff-guard: digest add/remove mismatch (+${added} / -${deleted}) — expected a pure rewrite"
   exit 1
 fi
-echo "[sync-test-overlay] diff-guard OK — $added digest line(s) changed"
+if [[ "$added" -lt 1 || "$added" -gt 8 ]]; then
+  echo "::error::[sync-test-overlay] diff-guard: ${added} digest line(s) changed (expected 1..8 backend services)"
+  exit 1
+fi
+echo "[sync-test-overlay] diff-guard OK — ${added} digest line(s) rewritten"
 
 # ------------------------------------------------------------
 # Commit + force-push the rolling automation branch

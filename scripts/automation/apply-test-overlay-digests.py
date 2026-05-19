@@ -24,8 +24,8 @@ Usage:
 
 Exit:
   0 — applied (or, with --check, every mapped service resolvable + digests valid)
-  1 — drift/consistency error (bad digest value, service not found, entry has no
-      digest: field) — fail-closed, nothing written
+  1 — drift/consistency error (out-of-scope service, bad digest value, service
+      not found, entry has no digest: field) — fail-closed, nothing written
   2 — invocation error (no/!json digest map)
 """
 from __future__ import annotations
@@ -38,6 +38,22 @@ import sys
 from pathlib import Path
 
 DEFAULT_KUSTOMIZATION = "kustomize/overlays/test/kustomization.yaml"
+
+# The backend services deploy-backend-testai.yml rolls out (its SERVICES array).
+# The digest map must contain ONLY these — a key outside this set (e.g. a
+# non-rolled backend entry such as endpoint-admin-service /
+# notification-orchestrator) is a contract violation and is rejected
+# fail-closed (Codex 019e407c P3).
+SYNC_SERVICES = frozenset({
+    "auth-service",
+    "permission-service",
+    "user-service",
+    "variant-service",
+    "core-data-service",
+    "report-service",
+    "schema-service",
+    "api-gateway",
+})
 
 # An `images:` entry boundary — `  - name: <something>`.
 ENTRY_START_RE = re.compile(r"^[ \t]*-[ \t]+name:[ \t]*\S")
@@ -117,6 +133,15 @@ def index_digest_lines(lines: list[str]) -> dict[str, tuple[int, str, str]]:
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     digest_map = load_digest_map(args.digest_map or os.environ.get("DIGEST_MAP"))
+
+    out_of_scope = sorted(set(digest_map) - SYNC_SERVICES)
+    if out_of_scope:
+        print(
+            "[apply-test-overlay] FAIL — digest map contains service(s) outside "
+            f"the deploy-backend-testai.yml rollout scope: {', '.join(out_of_scope)}",
+            file=sys.stderr,
+        )
+        return 1
 
     kustomization = Path(args.kustomization)
     if not kustomization.is_file():

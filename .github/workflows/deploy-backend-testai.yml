@@ -517,18 +517,22 @@ jobs:
         id: preflight
         env:
           APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          if [ -n "${APP_ID:-}" ]; then
+          # BOTH secrets required — checking only APP_ID would let a half-seeded
+          # config (ID present, key missing) fail RED at create-github-app-token
+          # instead of green-skipping (Codex 019e407c P2).
+          if [ -n "${APP_ID:-}" ] && [ -n "${APP_PRIVATE_KEY:-}" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "✓ AUTOMATION_APP_ID present — test-overlay sync active"
+            echo "✓ AUTOMATION_APP_ID + AUTOMATION_APP_PRIVATE_KEY present — test-overlay sync active"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=test-overlay-sync inactive::AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY repo secrets not configured — the test-overlay digest sync is source-ready but operator-disabled. Setup: docs/operations/RUNBOOKS/RB-automation-overlay-sync.md"
+            echo "::notice title=test-overlay-sync inactive::AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY repo secrets absent or incomplete — the test-overlay digest sync is source-ready but operator-disabled. Setup: docs/operations/RUNBOOKS/RB-automation-overlay-sync.md"
             {
               echo "## test-overlay-sync — inactive (operator-disabled)"
               echo ""
-              echo "AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY repo secrets are absent."
+              echo "AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY repo secrets are absent or incomplete."
               echo "The sync job is source-ready; see docs/operations/RUNBOOKS/RB-automation-overlay-sync.md."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
