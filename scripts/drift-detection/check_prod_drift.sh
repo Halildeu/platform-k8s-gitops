@@ -81,10 +81,22 @@ bump_exit() {
   [[ $new -gt $EXIT_CODE ]] && EXIT_CODE=$new
 }
 
-# 1. ArgoCD application sync state
+# 1. ArgoCD application sync state.
+#    prod is ArgoCD-managed; k3d-test (and k3d-dev) are intentionally
+#    imperative — deploy-backend-testai.yml does `kubectl set image`, there is
+#    no platform-test ArgoCD Application by design. For non-prod, ArgoCD
+#    absence is EXPECTED, not drift (#828) — real non-prod drift is caught by
+#    the image-digest parity check (section 2). Only prod treats ArgoCD state
+#    as a P1 drift signal.
 ARGOCD_STATE=$(kubectl --context "$CONTEXT" -n argocd get application "platform-${ENV}" \
   -o jsonpath='{.status.sync.status}/{.status.health.status}/{.status.sync.revision}' 2>/dev/null || echo "ERR")
-if [[ "$ARGOCD_STATE" == "ERR" ]]; then
+if [[ "$ENV" != "prod" ]]; then
+  if [[ "$ARGOCD_STATE" == "ERR" ]]; then
+    add_finding OK argocd_unmanaged "platform-${ENV} is imperative (kubectl set image) — no ArgoCD Application by design; digest parity (section 2) covers drift"
+  else
+    add_finding OK argocd "platform-${ENV} ArgoCD $ARGOCD_STATE (informational — non-prod not GitOps-gated)"
+  fi
+elif [[ "$ARGOCD_STATE" == "ERR" ]]; then
   add_finding P1 argocd_unreachable "ArgoCD application platform-${ENV} not queryable"
   bump_exit 3
 elif [[ "$ARGOCD_STATE" != "Synced/Healthy"* ]]; then
