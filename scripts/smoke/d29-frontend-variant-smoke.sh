@@ -16,8 +16,9 @@
 # Tier eslemesi (ADR-0022 D3):
 #   d29_up          GREEN  rollout + pod Ready + imageID digest match
 #                          + /build-info.json .sha == kaynak commit SHA
-#   d29_functional  GREEN  / 200 + entry asset 200 + env-baking assertion
-#                          (bundle'da forbidden-host YOK, prod-host VAR)
+#   d29_functional  GREEN  / 200 + entry asset 200 + /remoteEntry.js 200
+#                          + env-baking assertion: bundle'da forbidden
+#                          host/realm YOK, expected host + realm VAR
 #                          + canli ai.acik.com read-only probe (5xx/000 degil)
 #   d29_zanzibar    AMBER  statik SPA, Zanzibar duzlemi yok
 #                          (jwt_validates:false); allow_deny_synthetic SKIP
@@ -29,15 +30,20 @@
 #     [--context k3d-test] [--namespace platform-test] \
 #     [--expected-host ai.acik.com] \
 #     [--forbidden-hosts testai.acik.com,localhost:8080] \
-#     [--prod-probe-base https://ai.acik.com] [--prod-realm serban] \
+#     [--expected-realm serban] [--forbidden-realms platform-test] \
+#     [--prod-probe-base https://ai.acik.com] \
 #     [--pull-secret ghcr-pull] [--report <path>] [--issue 820] \
 #     [--pf-port 18080] [--keep]
+#
+#   --image MUST be digest-pinned (...@sha256:<64hex>) — D30 immutable;
+#   this evidence class is digest-bound (a moving tag cannot be promoted).
 #
 # Exit:
 #   0  d29_up GREEN + d29_functional GREEN (promotion-eligible; d29_zanzibar
 #      AMBER beklenen)
 #   1  en az bir tier RED
-#   2  execution error (cluster unreachable / apply fail / preflight fail)
+#   2  execution error (cluster unreachable / apply fail / preflight fail /
+#      arg validation)
 
 set -uo pipefail
 
@@ -48,8 +54,9 @@ CONTEXT="k3d-test"
 NAMESPACE="platform-test"
 EXPECTED_HOST="ai.acik.com"
 FORBIDDEN_HOSTS="testai.acik.com,localhost:8080"
+EXPECTED_REALM="serban"
+FORBIDDEN_REALMS="platform-test"
 PROD_PROBE_BASE="https://ai.acik.com"
-PROD_REALM="serban"
 PULL_SECRET="ghcr-pull"
 REPORT=""
 ISSUE="820"
@@ -57,24 +64,25 @@ KEEP="false"
 ROLLOUT_TIMEOUT="180s"
 PF_PORT="18080"
 
-usage() { sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --image)           IMAGE="$2"; shift 2 ;;
-    --git-sha)         GIT_SHA="$2"; shift 2 ;;
-    --context)         CONTEXT="$2"; shift 2 ;;
-    --namespace)       NAMESPACE="$2"; shift 2 ;;
-    --expected-host)   EXPECTED_HOST="$2"; shift 2 ;;
-    --forbidden-hosts) FORBIDDEN_HOSTS="$2"; shift 2 ;;
-    --prod-probe-base) PROD_PROBE_BASE="$2"; shift 2 ;;
-    --prod-realm)      PROD_REALM="$2"; shift 2 ;;
-    --pull-secret)     PULL_SECRET="$2"; shift 2 ;;
-    --report)          REPORT="$2"; shift 2 ;;
-    --issue)           ISSUE="$2"; shift 2 ;;
-    --pf-port)         PF_PORT="$2"; shift 2 ;;
-    --keep)            KEEP="true"; shift ;;
-    -h|--help)         usage; exit 0 ;;
+    --image)            IMAGE="$2"; shift 2 ;;
+    --git-sha)          GIT_SHA="$2"; shift 2 ;;
+    --context)          CONTEXT="$2"; shift 2 ;;
+    --namespace)        NAMESPACE="$2"; shift 2 ;;
+    --expected-host)    EXPECTED_HOST="$2"; shift 2 ;;
+    --forbidden-hosts)  FORBIDDEN_HOSTS="$2"; shift 2 ;;
+    --expected-realm)   EXPECTED_REALM="$2"; shift 2 ;;
+    --forbidden-realms) FORBIDDEN_REALMS="$2"; shift 2 ;;
+    --prod-probe-base)  PROD_PROBE_BASE="$2"; shift 2 ;;
+    --pull-secret)      PULL_SECRET="$2"; shift 2 ;;
+    --report)           REPORT="$2"; shift 2 ;;
+    --issue)            ISSUE="$2"; shift 2 ;;
+    --pf-port)          PF_PORT="$2"; shift 2 ;;
+    --keep)             KEEP="true"; shift ;;
+    -h|--help)          usage; exit 0 ;;
     *) echo "ERR: unknown arg: $1" >&2; usage; exit 2 ;;
   esac
 done
@@ -82,10 +90,14 @@ done
 [ -n "$IMAGE" ]   || { echo "ERR: --image required" >&2; exit 2; }
 [ -n "$GIT_SHA" ] || { echo "ERR: --git-sha required" >&2; exit 2; }
 
-EXPECTED_DIGEST=""
+# --image MUST be digest-pinned — D30 immutable; this evidence class is
+# digest-bound (a moving tag is not a promotable artifact identity).
 case "$IMAGE" in
   *@sha256:*) EXPECTED_DIGEST="sha256:${IMAGE##*@sha256:}" ;;
+  *) echo "ERR: --image must be digest-pinned (…@sha256:<64hex>): $IMAGE" >&2; exit 2 ;;
 esac
+printf '%s' "$EXPECTED_DIGEST" | grep -qE '^sha256:[a-f0-9]{64}$' \
+  || { echo "ERR: --image digest malformed (need sha256:<64hex>): $EXPECTED_DIGEST" >&2; exit 2; }
 
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 RUN_ID="$(date -u +%Y%m%d%H%M%S)-$$"
@@ -239,14 +251,9 @@ if [ -n "$POD" ]; then
   RESOLVED_DIGEST="$(printf '%s' "$IMAGE_ID" | sed -E 's|^.*@(sha256:[a-f0-9]{64})$|\1|')"
 fi
 
-DIGEST_VERDICT="n/a"
-if [ -n "$EXPECTED_DIGEST" ]; then
-  if [ "$RESOLVED_DIGEST" = "$EXPECTED_DIGEST" ]; then
-    DIGEST_VERDICT="match"
-  else
-    DIGEST_VERDICT="MISMATCH(expected=${EXPECTED_DIGEST} actual=${RESOLVED_DIGEST:-none})"
-  fi
-fi
+# --image is digest-pinned (validated above) — digest match is mandatory.
+DIGEST_VERDICT="MISMATCH(expected=${EXPECTED_DIGEST} actual=${RESOLVED_DIGEST:-none})"
+[ "$RESOLVED_DIGEST" = "$EXPECTED_DIGEST" ] && DIGEST_VERDICT="match"
 
 # --- port-forward for HTTP tiers ---
 PF_UP="false"
@@ -283,19 +290,18 @@ if [ "$PF_UP" = "true" ]; then
 fi
 
 if [ "$ROLLOUT_OK" = "true" ] && [ "$READY" = "True" ] \
-   && { [ "$DIGEST_VERDICT" = "match" ] || [ "$DIGEST_VERDICT" = "n/a" ]; } \
-   && [ "$SHA_VERDICT" = "match" ]; then
+   && [ "$DIGEST_VERDICT" = "match" ] && [ "$SHA_VERDICT" = "match" ]; then
   UP_STATUS="GREEN"
 fi
-UP_DETAILS="rollout=${ROLLOUT_OK} pod=${POD:-none} ready=${READY:-none} digest=${DIGEST_VERDICT} build_info_sha=${SHA_VERDICT}"
+UP_DETAILS="rollout=${ROLLOUT_OK} pod=${POD:-none} ready=${READY:-none} digest=${DIGEST_VERDICT} build_info_sha=${SHA_VERDICT} evidence_class=frontend-prod-variant-transient-smoke"
 log "d29_up: $UP_STATUS — $UP_DETAILS"
 
 # ============ Tier d29_functional ============
 FN_STATUS="RED"
 FN_DETAILS=""
-ROOT_CODE="000"; ENTRY_PATH=""; ENTRY_CODE="000"
-FORBIDDEN_HIT=""; REQUIRED_OK="false"
-PROBE_ROOT="000"; PROBE_OIDC="000"
+ROOT_CODE="000"; ENTRY_PATH=""; ENTRY_CODE="000"; REMOTE_ENTRY_CODE="000"
+FORBIDDEN_HIT=""; REQUIRED_OK="false"; REALM_OK="false"
+PROBE_ROOT="000"; PROBE_OIDC="000"; JS_COUNT=0
 
 if [ "$PF_UP" != "true" ]; then
   FN_DETAILS="port-forward tunnel did not bind on 127.0.0.1:${PF_PORT}"
@@ -303,54 +309,72 @@ else
   ROOT_CODE="$(http_code "http://127.0.0.1:${PF_PORT}/")"
   INDEX_HTML="$(http_body "http://127.0.0.1:${PF_PORT}/")"
 
-  # asset js paths referenced by index.html (entry + modulepreload chunks)
-  ASSET_PATHS="$(printf '%s' "$INDEX_HTML" | grep -oE '/assets/[A-Za-z0-9._/-]+\.js' | sort -u || true)"
-  ENTRY_PATH="$(printf '%s\n' "$ASSET_PATHS" | grep -E '/assets/index[-.]' | head -1 || true)"
-  [ -z "$ENTRY_PATH" ] && ENTRY_PATH="$(printf '%s\n' "$ASSET_PATHS" | head -1 || true)"
+  # entry script — <script ... src="/...js"> in index.html. The Module
+  # Federation host bootstrap is at web-root (/mf-entry-bootstrap-*.js),
+  # NOT under /assets/, so match any root-relative .js src.
+  ENTRY_PATH="$(printf '%s' "$INDEX_HTML" | grep -oE '<script[^>]+src="/[^"]+\.js"' | grep -oE '/[^"]+\.js' | head -1 || true)"
   [ -n "$ENTRY_PATH" ] && ENTRY_CODE="$(http_code "http://127.0.0.1:${PF_PORT}${ENTRY_PATH}")"
+  # MF host remoteEntry — ADR-0022 D3 requires entry + remoteEntry assets 200.
+  REMOTE_ENTRY_CODE="$(http_code "http://127.0.0.1:${PF_PORT}/remoteEntry.js")"
 
-  # env-baking: concat index.html + all eager asset js, then string-assert
+  # env-baking bundle: index.html (window.__env__ build-time inject is the
+  # authoritative env surface) + entry bootstrap + remoteEntry + the chunks
+  # those eagerly import (one-level discovery, capped at 30 files).
   : > "$BUNDLE_FILE"
   printf '%s\n' "$INDEX_HTML" >> "$BUNDLE_FILE"
-  if [ -n "$ASSET_PATHS" ]; then
-    while IFS= read -r p; do
-      [ -n "$p" ] || continue
-      http_body "http://127.0.0.1:${PF_PORT}${p}" >> "$BUNDLE_FILE"
-      printf '\n' >> "$BUNDLE_FILE"
-    done <<< "$ASSET_PATHS"
-  fi
+  SEEN_JS=" "
+  fetch_js() {
+    local jp="$1"
+    case "$jp" in /*) : ;; *) return 0 ;; esac
+    case "$SEEN_JS" in *" $jp "*) return 0 ;; esac
+    SEEN_JS="${SEEN_JS}${jp} "
+    http_body "http://127.0.0.1:${PF_PORT}${jp}" >> "$BUNDLE_FILE"
+    printf '\n' >> "$BUNDLE_FILE"
+    JS_COUNT=$((JS_COUNT + 1))
+  }
+  [ -n "$ENTRY_PATH" ] && fetch_js "$ENTRY_PATH"
+  fetch_js "/remoteEntry.js"
+  while IFS= read -r jp; do
+    [ -n "$jp" ] || continue
+    [ "$JS_COUNT" -ge 30 ] && break
+    fetch_js "$jp"
+  done <<< "$(grep -oE '/(assets/)?[A-Za-z0-9._-]+\.js' "$BUNDLE_FILE" 2>/dev/null | sort -u || true)"
 
+  # env-baking: forbidden host/realm strings must be ABSENT, expected host +
+  # realm must be PRESENT — variant identity = public origin + KC realm.
   IFS=',' read -ra FHOSTS <<< "$FORBIDDEN_HOSTS"
   for fh in "${FHOSTS[@]}"; do
     [ -n "$fh" ] || continue
-    if grep -qF "$fh" "$BUNDLE_FILE" 2>/dev/null; then
-      FORBIDDEN_HIT="${FORBIDDEN_HIT}${fh} "
-    fi
+    grep -qF "$fh" "$BUNDLE_FILE" 2>/dev/null && FORBIDDEN_HIT="${FORBIDDEN_HIT}host:${fh} "
   done
-
-  if grep -qF "https://${EXPECTED_HOST}" "$BUNDLE_FILE" 2>/dev/null; then
-    REQUIRED_OK="true"
-  fi
+  IFS=',' read -ra FREALMS <<< "$FORBIDDEN_REALMS"
+  for fr in "${FREALMS[@]}"; do
+    [ -n "$fr" ] || continue
+    grep -qF "$fr" "$BUNDLE_FILE" 2>/dev/null && FORBIDDEN_HIT="${FORBIDDEN_HIT}realm:${fr} "
+  done
+  grep -qF "https://${EXPECTED_HOST}" "$BUNDLE_FILE" 2>/dev/null && REQUIRED_OK="true"
+  grep -qF "$EXPECTED_REALM" "$BUNDLE_FILE" 2>/dev/null && REALM_OK="true"
 
   # live prod surface read-only probe (from host — real internet egress)
   PROBE_ROOT="$(http_code "${PROD_PROBE_BASE}/")"
-  PROBE_OIDC="$(http_code "${PROD_PROBE_BASE}/realms/${PROD_REALM}/.well-known/openid-configuration")"
+  PROBE_OIDC="$(http_code "${PROD_PROBE_BASE}/realms/${EXPECTED_REALM}/.well-known/openid-configuration")"
   PROBE_OK="true"
   case "$PROBE_ROOT" in 5??|000) PROBE_OK="false" ;; esac
   [ "$PROBE_OIDC" = "200" ] || PROBE_OK="false"
 
   if [ "$ROOT_CODE" = "200" ] && [ -n "$ENTRY_PATH" ] && [ "$ENTRY_CODE" = "200" ] \
-     && [ -z "$FORBIDDEN_HIT" ] && [ "$REQUIRED_OK" = "true" ] && [ "$PROBE_OK" = "true" ]; then
+     && [ "$REMOTE_ENTRY_CODE" = "200" ] && [ -z "$FORBIDDEN_HIT" ] \
+     && [ "$REQUIRED_OK" = "true" ] && [ "$REALM_OK" = "true" ] && [ "$PROBE_OK" = "true" ]; then
     FN_STATUS="GREEN"
   fi
-  FN_DETAILS="root=${ROOT_CODE} entry=${ENTRY_PATH:-none}:${ENTRY_CODE} env_baking[forbidden_hit='${FORBIDDEN_HIT:-none}' required_${EXPECTED_HOST}=${REQUIRED_OK}] prod_probe[root=${PROBE_ROOT} oidc_${PROD_REALM}=${PROBE_OIDC}]"
+  FN_DETAILS="root=${ROOT_CODE} entry=${ENTRY_PATH:-none}:${ENTRY_CODE} remote_entry=/remoteEntry.js:${REMOTE_ENTRY_CODE} env_baking[bundle_js=${JS_COUNT} forbidden_hit='${FORBIDDEN_HIT:-none}' host_${EXPECTED_HOST}=${REQUIRED_OK} realm_${EXPECTED_REALM}=${REALM_OK}] prod_probe[root=${PROBE_ROOT} oidc_${EXPECTED_REALM}=${PROBE_OIDC}]"
 fi
 log "d29_functional: $FN_STATUS — $FN_DETAILS"
 
 # endpoints array (schema: minItems 1, each ^/)
 FN_EP=("/")
 [ -n "$ENTRY_PATH" ] && FN_EP+=("$ENTRY_PATH")
-FN_EP+=("/build-info.json")
+FN_EP+=("/remoteEntry.js" "/build-info.json")
 FN_ENDPOINTS_JSON="$(printf '%s\n' "${FN_EP[@]}" | jq -R . | jq -cs 'unique')"
 
 # ============ Tier d29_zanzibar ============

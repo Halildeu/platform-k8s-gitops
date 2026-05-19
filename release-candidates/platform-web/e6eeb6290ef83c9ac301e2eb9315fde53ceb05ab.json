@@ -14,33 +14,34 @@
   },
   "promotion": {
     "test": {
-      "promoted_at": "2026-05-19T10:41:10Z",
+      "promoted_at": "2026-05-19T11:04:27Z",
       "promoted_by_pr": null,
       "argocd_revision": null,
       "smoke_evidence": {
         "d29_up": {
           "status": "GREEN",
-          "checked_at": "2026-05-19T10:41:10Z",
-          "details": "rollout=true pod=fe-variant-smoke-20260519104110-4003935-7cd7c956d6-dvc4s ready=True digest=match build_info_sha=match"
+          "checked_at": "2026-05-19T11:04:27Z",
+          "details": "rollout=true pod=fe-variant-smoke-20260519110427-4032109-85869c9bfc-qbrv5 ready=True digest=match build_info_sha=match evidence_class=frontend-prod-variant-transient-smoke"
         },
         "d29_functional": {
           "status": "GREEN",
-          "checked_at": "2026-05-19T10:41:10Z",
-          "details": "root=200 entry=/mf-entry-bootstrap-0.js:200 env_baking[bundle_js=5 forbidden_hit='none' required_ai.acik.com=true] prod_probe[root=200 oidc_serban=200]",
+          "checked_at": "2026-05-19T11:04:27Z",
+          "details": "root=200 entry=/mf-entry-bootstrap-0.js:200 remote_entry=/remoteEntry.js:200 env_baking[bundle_js=5 forbidden_hit='none' host_ai.acik.com=true realm_serban=true] prod_probe[root=200 oidc_serban=200]",
           "endpoints": [
             "/",
             "/build-info.json",
-            "/mf-entry-bootstrap-0.js"
+            "/mf-entry-bootstrap-0.js",
+            "/remoteEntry.js"
           ]
         },
         "d29_zanzibar": {
           "status": "AMBER",
-          "checked_at": "2026-05-19T10:41:10Z",
+          "checked_at": "2026-05-19T11:04:27Z",
           "details": "frontend is a static SPA (jwt_validates:false, services.yaml) — no own JWT decoder, no OpenFGA/Zanzibar authz plane. Zanzibar tier not-applicable; AMBER is the honest non-GREEN verdict (ADR-0022).",
           "allow_deny_synthetic": "SKIP"
         }
       },
-      "verified_at": "2026-05-19T10:41:10Z",
+      "verified_at": "2026-05-19T11:04:27Z",
       "candidate_pr": null,
       "candidate_pr_status": null
     },
@@ -62,7 +63,7 @@
   },
   "audit": {
     "created_at": "2026-05-19T10:45:56Z",
-    "last_updated_at": "2026-05-19T10:45:56Z",
+    "last_updated_at": "2026-05-19T11:04:27Z",
     "ci_run_url": "https://github.com/Halildeu/platform-web/actions/runs/26041791563"
   }
 }
