@@ -1,10 +1,10 @@
 # RB-notification-outage-fallback — D43 Outage Fallback Bypass Runbook
 
-> **Status**: ACTIVE (Faz 23.2.D T1.4 PR-1+PR-2+PR-3 MERGED 2026-05-09)
+> **Status**: ACTIVE (Faz 23.2.D T1.4 PR-1+PR-2+PR-3 MERGED 2026-05-09; PR-1.5 prod staged config PR #855 Session 42 — Codex `019e4234`)
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md) D43 + D46 #10
 > **Sub-faz**: 23.2 (MVP-dar — outage fallback bypass T1.4)
-> **Codex thread**: `019df86f` Q4 PARTIAL absorb (initial); `019e0dea` iter-1+2+3+4 (T1.4 PR-1/2/3 cross-AI peer review)
-> **Risk**: R9 (D43 outage fallback drill) — risk register'a göre PENDING; bu drill execute olduğunda 🔴 → 🟢 mitigated
+> **Codex thread**: `019df86f` Q4 PARTIAL absorb (initial); `019e0dea` iter-1+2+3+4 (T1.4 PR-1/2/3 cross-AI peer review); `019e4234` Session 42 (prod activation scope split + truth alignment)
+> **Risk**: R9 — **current state 🟡 partial** (test SMTP drill LIVE 2026-05-10; Slack leg sentinel-only — board #853; prod activation source-incomplete → PR #855 staged config + #854 owner-gated). Full triple-receipt prod activation + real test Slack webhook sonrası 🟡 → 🟢 mitigated.
 
 ---
 
@@ -136,7 +136,8 @@ docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-test \
 verdict): Test Vault `SLACK_WEBHOOK_URL` **gerçek** `#alerts-d43-drill`
 Slack incoming webhook olmalı; `http://drill-slack-mock.local/webhook`
 sentinel kabul edilmez. Drill 10/10 acceptance ancak **dual receipt**
-(Slack + Mailpit) ile sağlanır; sentinel ile Slack leg sessizce kayıp olur
+(Slack + Mailpit) ile sağlanır (test cluster context — bridge ayrı path,
+test ESO Slack+SMTP fallback receiver tek hat); sentinel ile Slack leg sessizce kayıp olur
 ve runbook Step 6 "Slack `#alerts-d43-drill` channel mesajı manuel kanıt"
 maddesi kanıtsız kalır.
 
@@ -445,7 +446,7 @@ curl -s http://127.0.0.1:9093/api/v2/alerts | \
 ### Step 10: R9 risk register status mitigated
 
 `docs/notify/risk-register.md`:
-- R9 Pending → Mitigated (drill executed once + evidence collected)
+- R9 current 🟡 partial → 🟢 Mitigated (full triple-receipt drill: Slack + Mailpit test cluster + bridge GitHub Issue acceptance, plus prod activation triple-receipt acceptance; partial state from PR #855 closure absorb)
 - Last review tarihi güncellenir
 - Note: "mitigated by first controlled drill" — Codex iter-4 dil disiplini
 
@@ -522,7 +523,7 @@ kubectl --context k3d-prod -n monitoring exec \
 > Bu adım gerçek prod outage simulasyonu — Pre-Production Full Authority +
 > kullanıcı açık beyanı altında. Sıra: port-forward aç (6.5.5-6.5.7 boyunca
 > açık tutulur, sonra cleanup) → scale=0 → 130s bekle → alert fire →
-> direct-fallback + bridge tripple delivery → scale=1 → recovery → curl
+> direct-fallback + bridge triple delivery → scale=1 → recovery → curl
 > resolve verify → port-forward cleanup.
 
 ```bash
@@ -661,7 +662,7 @@ helm upgrade kube-prometheus-stack ... -f values-test.yaml  # override'sız
 
 **2026-05-19 (PR #855 — Session 42, Codex thread `019e4234`)** — Prod D43 activation staged/gated config + truth alignment:
 - §3.2 sub-divided test vs prod sub-sections; sentinel webhook prohibition added (Slack leg `drill-slack-mock.local` NXDOMAIN audit — board #853).
-- §6.5 added — prod activation procedure (helm upgrade + amtool config verify + Secret mount verify + synthetic NotifyServiceDown smoke + dual receipt + recovery), owner-gated until Vault prod seed.
+- §6.5 added — prod activation procedure (helm upgrade + amtool config verify + Secret mount verify + synthetic NotifyServiceDown smoke + **triple receipt** (Slack + SMTP + bridge GitHub Issue) + recovery), owner-gated until Vault prod seed.
 - §10 inventory split test drill vs prod staged-config rows.
 - Cross-doc truth alignment: PLAN.md D43 🔴→🟡 partial; D46 #10 partial detail; milestones.md M3 T1.4 partial drill; risk-register R9 🟢 Mitigated→🟡 Partial (eski "mitigated by first controlled drill" overclaim — Slack leg sentinel-only kanıtsız).
 
