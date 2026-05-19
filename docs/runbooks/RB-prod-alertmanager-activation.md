@@ -38,7 +38,7 @@ Prod `kube-prometheus-stack` Helm release (revision 2, last upgrade 2026-05-14) 
 
 ### 2.2 GitHub PAT (`github-issues-receiver-token` Secret)
 
-> **HARD RULE**: PAT plaintext PR/issue body'sine yazılmaz; operator kubectl create secret komutunda stdin pipe kullanır.
+> **HARD RULE**: PAT plaintext PR/issue body'sine yazılmaz; operator `read -r -s` hidden prompt + stdin pipe + `unset` ile çalışır. Bash history + process argv güvenliği yazma anında, sonradan-temizleme ile değil.
 
 | Field | Detay |
 |---|---|
@@ -48,12 +48,20 @@ Prod `kube-prometheus-stack` Helm release (revision 2, last upgrade 2026-05-14) 
 | Lifetime | 90+ gün; rotation reminder GitHub Apps yerine fine-grained PAT pattern'i tercih edilir |
 | Creator | Owner (Halildeu account → Settings → Developer settings → Personal access tokens) |
 
+**Important — direct receiver KNOWN-BLOCKED**: `perf-alerts-github-issues` Alertmanager receiver (defined in `values-prod.yaml`) sends the raw Alertmanager v4 webhook payload to GitHub `repository_dispatch` API, which requires a `{"event_type":"...","client_payload":{...}}` wrapper that Alertmanager `webhook_configs` does NOT produce. Reference: prior PR #648 was closed RED for exactly this reason (see `docs/session-52-handoff-final-honest-close.md:111`). Therefore:
+- This Secret + mount is staged for future activation when a payload wrapper bridge (sidecar/proxy) is added.
+- Until then, prod perf alert GitHub Issue trail flows through `alarm-receiver-bridge` → `alertmanager-bridge` pod (which DOES wrap into `client_payload`).
+- `#857` acceptance smoke uses `alarm-receiver-bridge` evidence path for GitHub Issue receipt, NOT direct `perf-alerts-github-issues` receiver.
+
 **Operator step**:
 ```bash
-ssh halil@staging-sw
-printf %s "<GITHUB_PAT>" | kubectl --context k3d-prod -n monitoring create secret generic github-issues-receiver-token \
+ssh halil@staging-sw '
+read -r -s -p "GitHub PAT (repo+workflow scope): " GH_PAT && echo
+printf "%s" "$GH_PAT" | kubectl --context k3d-prod -n monitoring create secret generic github-issues-receiver-token \
   --from-file=GITHUB_TOKEN=/dev/stdin \
   --dry-run=client -o yaml | kubectl --context k3d-prod -n monitoring apply -f -
+unset GH_PAT
+'
 ```
 
 ### 2.3 Prod SMTP relay credentials (D43 fallback)
@@ -75,15 +83,20 @@ printf %s "<GITHUB_PAT>" | kubectl --context k3d-prod -n monitoring create secre
 
 ### 3.1 perf-alertmanager (1 key)
 
+> **HARD RULE**: webhook URL hidden prompt + stdin pipe + `unset` ile yazılır; literal komut satırında değil (bash history/process argv safety).
+
 ```bash
 ssh halil@staging-sw '
-printf %s "<#perf-alerts WEBHOOK URL>" | \
-  docker exec -i -e VAULT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)" \
-    platform-vault-prod vault kv put kv/platform/perf-alertmanager SLACK_WEBHOOK_URL=-
+read -r -s -p "#perf-alerts incoming webhook URL: " WEBHOOK && echo
+printf "%s" "$WEBHOOK" | docker exec -i \
+  -e VAULT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)" \
+  platform-vault-prod \
+  vault kv put kv/platform/perf-alertmanager SLACK_WEBHOOK_URL=-
+unset WEBHOOK
 '
 ```
 
-Verify (no plaintext output):
+Verify (no plaintext output, length-only):
 ```bash
 ssh halil@staging-sw '
 docker exec -e VAULT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)" \
@@ -92,22 +105,48 @@ docker exec -e VAULT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vaul
 '
 ```
 
-### 3.2 alertmanager-fallback (5 keys)
+### 3.2 alertmanager-fallback (5 keys — secrets via stdin, non-secrets inline)
+
+> Secrets (Slack URL + SMTP password) hidden prompt + stdin pipe ile; non-secrets (HOST/PORT/USER) inline `vault kv patch`. Bu pattern bash history'ye sadece non-sensitive field'ları sızdırır.
 
 ```bash
 ssh halil@staging-sw '
 ROOT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)"
+
+# Step 1: Non-secret SMTP host/port/user — inline kv patch (initial put creates the path)
 docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
   vault kv put kv/platform/alertmanager-fallback \
-    SLACK_WEBHOOK_URL="<#alerts-d43-drill WEBHOOK URL>" \
     SMTP_HOST=smtp.office365.com \
     SMTP_PORT=587 \
-    SMTP_USER=alertmanager-fallback@acik.com \
-    SMTP_PASSWORD="<APP PASSWORD>"
+    SMTP_USER=alertmanager-fallback@acik.com
+
+# Step 2: Slack webhook — stdin pipe
+read -r -s -p "#alerts-d43-drill incoming webhook URL: " SLACK_URL && echo
+printf "%s" "$SLACK_URL" | docker exec -i \
+  -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
+  vault kv patch kv/platform/alertmanager-fallback SLACK_WEBHOOK_URL=-
+unset SLACK_URL
+
+# Step 3: SMTP App Password — stdin pipe
+read -r -s -p "SMTP App Password (alertmanager-fallback@acik.com): " SMTP_PWD && echo
+printf "%s" "$SMTP_PWD" | docker exec -i \
+  -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
+  vault kv patch kv/platform/alertmanager-fallback SMTP_PASSWORD=-
+unset SMTP_PWD
+
+unset ROOT_TOKEN
 '
 ```
 
-Note: bash history risk — operator komut historyden bu komutu temizler veya `set +o history` + `set -o history` pattern'i kullanır.
+Verify (length-only, no plaintext):
+```bash
+ssh halil@staging-sw '
+docker exec -e VAULT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)" \
+  platform-vault-prod vault kv get -mount=kv -format=json platform/alertmanager-fallback \
+  | jq ".data.data | to_entries | map({key, value_len: (.value | length)})"
+# Expected: 5 keys; SLACK_WEBHOOK_URL ~50-70 byte; SMTP_PASSWORD ~16-32 byte; others fixed
+'
+```
 
 ### 3.3 ESO force-sync + verify
 
@@ -150,6 +189,15 @@ helm get manifest kube-prometheus-stack -n monitoring --kube-context k3d-prod > 
 kubectl --context k3d-prod -n monitoring exec alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager -- \
   amtool config show > /tmp/amtool-pre-857.txt
 helm history kube-prometheus-stack -n monitoring --kube-context k3d-prod > /tmp/history-pre-857.txt
+
+# Capture PRE_REV as a stable rollback target (current deployed revision).
+# Codex 019e4256 P2 absorb: do NOT recompute PRE_REV at rollback time —
+# `--atomic` may have already taken history through a rollback cycle, and
+# status==superseded scan can pick the wrong revision.
+helm history kube-prometheus-stack -n monitoring --kube-context k3d-prod -o json \
+  | jq -r "map(select(.status==\"deployed\"))[-1].revision" \
+  > /tmp/pre-rev-857.txt
+echo "PRE_REV=$(cat /tmp/pre-rev-857.txt)"
 '
 ```
 
@@ -226,7 +274,13 @@ kubectl --context k3d-prod -n monitoring exec "$POD" -c alertmanager -- ls -la \
 '
 ```
 
-### 5.2 Synthetic perf alert smoke (V2.1 Ops-A)
+### 5.2 Synthetic perf alert smoke — Alertmanager direct API routing test
+
+> **Proves**: Alertmanager config route matching + receiver dispatch (perf-alerts-slack via api_url_file delivery; alarm-receiver-bridge webhook delivery to alertmanager-bridge pod which wraps into GitHub repository_dispatch).
+>
+> **Does NOT prove**: PrometheusRule fires with `team=perf` labels, real metric path, `for:` clause window. Real production smoke requires either an existing PrometheusRule with `team=perf` OR a controlled rule that fires on a real metric expression (separate acceptance gate).
+>
+> **Does NOT prove**: `perf-alerts-github-issues` **direct** receiver delivery — this receiver is KNOWN-BLOCKED (see §2.2; Alertmanager `webhook_configs` does NOT wrap payload into GitHub `repository_dispatch` schema). GitHub Issue trail is verified via `alarm-receiver-bridge` route (which dispatches to alertmanager-bridge pod that DOES wrap).
 
 ```bash
 ssh halil@staging-sw '
@@ -236,16 +290,18 @@ PF=$!
 trap "kill $PF 2>/dev/null || true" EXIT
 sleep 3
 
-curl -sX POST http://127.0.0.1:9093/api/v2/alerts -d "$(cat <<JSON
+curl --fail-with-body -sX POST http://127.0.0.1:9093/api/v2/alerts \
+  -H "Content-Type: application/json" \
+  -d "$(cat <<JSON
 [{
-  "labels": {
-    "alertname": "PerfCanarySmoke857",
-    "team": "perf",
-    "severity": "critical",
-    "namespace": "monitoring"
+  \"labels\": {
+    \"alertname\": \"PerfCanarySmoke857\",
+    \"team\": \"perf\",
+    \"severity\": \"critical\",
+    \"namespace\": \"monitoring\"
   },
-  "annotations": {
-    "description": "Synthetic perf alert smoke for #857 acceptance"
+  \"annotations\": {
+    \"description\": \"Synthetic perf alert smoke for #857 acceptance\"
   }
 }]
 JSON
@@ -254,15 +310,21 @@ JSON
 # Wait routing + delivery
 sleep 10
 
-# Verify
-curl -s http://127.0.0.1:9093/api/v2/alerts | jq ".[] | select(.labels.alertname==\"PerfCanarySmoke857\") | {receivers: [.receivers[].name]}"
-# Beklenen: receivers contains both perf-alerts-slack AND perf-alerts-github-issues (DUAL delivery, continue:true)
+# Verify — both perf-alerts-slack AND alarm-receiver-bridge should be in receivers
+# (perf-alerts-github-issues direct receiver may or may not appear; if present, it
+# will not actually deliver — KNOWN-BLOCKED per §2.2.)
+curl -s http://127.0.0.1:9093/api/v2/alerts | \
+  jq ".[] | select(.labels.alertname==\"PerfCanarySmoke857\") | {receivers: [.receivers[].name]}"
+# Expected: receivers contains perf-alerts-slack AND alarm-receiver-bridge (continue:true triple
+# delivery path; GitHub Issue receipt flows via alarm-receiver-bridge → alertmanager-bridge pod).
 '
 ```
 
-**Owner verify (channels):**
+**Owner verify (channels — only Slack + bridge-driven GitHub Issue):**
 - Slack `#perf-alerts`: `[V2.1 Perf Alert] PerfCanarySmoke857` mesajı görüldü mü?
-- GitHub Issues repo `Halildeu/platform-k8s-gitops`: yeni issue açıldı mı (alertmanager-bridge'in dispatch'inden)?
+- GitHub Issues repo `Halildeu/platform-k8s-gitops`: yeni issue açıldı mı (**alertmanager-bridge dispatch'inden** — NOT direct `perf-alerts-github-issues` receiver)?
+
+**Acceptance**: Slack receipt + bridge-driven GitHub Issue = pass. Direct `perf-alerts-github-issues` receiver delivery is **scope-out of #857 acceptance** until a payload wrapper bridge is added (separate future PR).
 
 ### 5.3 Synthetic D43 outage smoke (controlled, owner-approved window)
 
@@ -283,8 +345,15 @@ Eğer §5.1 amtool config 4 receiver göstermezse, pod CrashLoopBackOff'a girers
 
 ```bash
 ssh halil@staging-sw '
-# Helm rollback to revision before upgrade
-PRE_REV=$(helm history kube-prometheus-stack -n monitoring --kube-context k3d-prod -o json | jq -r ".[] | select(.status==\"superseded\")" | jq -s ".[-1].revision")
+# Use PRE_REV captured at §4.1 (stable rollback target — NOT recomputed at
+# rollback time, see Codex 019e4256 P2 absorb).
+if [ ! -s /tmp/pre-rev-857.txt ]; then
+  echo "ERROR: /tmp/pre-rev-857.txt missing — pre-upgrade snapshot did not run, abort manual rollback" >&2
+  exit 1
+fi
+PRE_REV=$(cat /tmp/pre-rev-857.txt)
+echo "Rolling back to revision $PRE_REV"
+
 helm rollback kube-prometheus-stack "$PRE_REV" -n monitoring --kube-context k3d-prod
 
 # Verify rollback
@@ -292,7 +361,8 @@ helm history kube-prometheus-stack -n monitoring --kube-context k3d-prod | head 
 kubectl --context k3d-prod -n monitoring rollout status statefulset/alertmanager-kube-prometheus-stack-alertmanager --timeout=180s
 
 # amtool config 3-receiver minimal (revert to pre-857 state) verify
-kubectl --context k3d-prod -n monitoring exec alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager -- amtool config show | grep -A 3 receivers
+kubectl --context k3d-prod -n monitoring exec alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager -- \
+  amtool config show | grep -A 3 receivers
 '
 ```
 
@@ -311,5 +381,11 @@ Plus audit doc: `docs/faz-23-evidence/2026-XX-XX-857-helm-upgrade-rollback.md`.
 ---
 
 ## 8. Last Update
+
+**2026-05-19 (Session 42 PR #860 — Codex `019e4256` REVISE absorb)** — 4-finding absorb:
+- **P0**: `perf-alerts-github-issues` direct receiver KNOWN-BLOCKED (Alertmanager v4 payload not wrapped into GitHub `repository_dispatch` schema; PR #648 RED reference). §2.2 + §5.2 spelled out; #857 acceptance via bridge GitHub Issue path, not direct receiver.
+- **P1**: §2.2 + §3.1 + §3.2 Vault/Secret commands rewritten to `read -r -s` hidden prompt + stdin pipe + `unset` pattern. Bash history + process argv safety at write time; non-secrets (SMTP_HOST/PORT/USER) remain inline (intentional).
+- **P1**: §5.2 acceptance scope spelled out — Proves: Alertmanager route + receiver dispatch (Slack + bridge); Does NOT prove: PrometheusRule fires, real metric path, `perf-alerts-github-issues` direct receiver delivery. `--fail-with-body` + `Content-Type: application/json` added.
+- **P2**: §4.1 captures `PRE_REV` (status==deployed at snapshot time) to `/tmp/pre-rev-857.txt`; §6 reads stable rollback target from file, no recomputation at rollback time.
 
 **2026-05-19 (Session 42 — Codex `019e4256` activation packet)** — Owner artifact checklist + Vault seed commands + helm upgrade dry-run/diff + acceptance smoke matrix + rollback procedure. `ready_for_helm_upgrade=false` until §2 artifacts arrive.
