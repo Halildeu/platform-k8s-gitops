@@ -1,12 +1,13 @@
 # RB-prod-alertmanager-activation — Prod Alertmanager release activation packet
 
-> **Status**: BLOCKED — pending sibling PR `values-prod.yaml` clean-up (`perf-alerts-github-issues` direct receiver + token mount removal, until payload wrapper bridge is added)
+> **Status**: **READY-PACKET** (source-of-truth and acceptance plan complete; cluster activation still owner-gated — see `ready_for_helm_upgrade` gate below)
 > **Tracker**: [#857](https://github.com/Halildeu/platform-k8s-gitops/issues/857) — P0 prod Alertmanager release drift
-> **Codex thread**: `019e4256` (Session 42 audit + scope verdict — post-impl REVISE iter-2 P0 absorb)
+> **Codex thread**: `019e4256` (Session 42 audit + scope verdict — post-impl REVISE iter-3 absorb chain)
+> **Sibling PRs**: #860 (this runbook), #861 (`values-prod.yaml` direct receiver removal — Codex iter-2 P0 absorb)
 > **Sibling issues**: [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) test sentinel; [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) D43 prod activation
-> **Risk**: HIGH (3-channel monitoring delivery gap; direct receiver wrapper-bug active until sibling PR merge)
+> **Risk**: HIGH (3-channel monitoring delivery gap until activation)
 > **`ready_for_helm_upgrade=false`** until:
-> 1. Sibling PR removes `perf-alerts-github-issues` direct receiver + `github-issues-receiver-token` mount from `values-prod.yaml` (Codex `019e4256` REVISE iter-2 absorb)
+> 1. ~~Sibling PR removes `perf-alerts-github-issues` direct receiver + `github-issues-receiver-token` mount from `values-prod.yaml`~~ — **satisfied by PR #861**
 > 2. §2 owner artifacts complete (Slack webhooks + SMTP credentials; GitHub PAT becomes OPTIONAL / future-only)
 > 3. Codex dry-run review consensus (separate iter on dry-run output)
 
@@ -219,11 +220,15 @@ helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
 '
 ```
 
-Owner + agent dry-run diff'i okur; özellikle bekleyen değişimler:
-- `Alertmanager` CR `secrets:` field — `[]` → `[perf-alertmanager-secrets, github-issues-receiver-token, alertmanager-fallback-secrets]`
-- `Alertmanager` CR `config` field (or generated Secret) — 4 receiver + 7 route
+Owner + agent dry-run diff'i okur; özellikle bekleyen değişimler (sibling PR #861 post-merge 3-receiver / 2-mount model):
+- `Alertmanager` CR `secrets:` field — `[]` → `[perf-alertmanager-secrets, alertmanager-fallback-secrets]` (2 mount; `github-issues-receiver-token` PR #861 ile kaldırıldı)
+- `Alertmanager` CR `config` field (or generated Secret) — 3 aktif receiver:
+  - `alarm-receiver-bridge`
+  - `perf-alerts-slack`
+  - `direct-fallback`
+- Route tree — 5 child route: D43 NotifyServiceDown/Absent → direct-fallback (continue:true); perf=critical → perf-alerts-slack (continue:true); severity=critical → alarm-receiver-bridge; perf catch-all → perf-alerts-slack (continue:true); warning/info → alarm-receiver-bridge
 - `Secret/alertmanager-kube-prometheus-stack-alertmanager-generated` — content değişir (new config)
-- (Beklenmedik değişim varsa abort)
+- (Beklenmedik değişim varsa abort — özellikle `perf-alerts-github-issues` receiver veya `github-issues-receiver-token` mount diff'te görünürse PR #861 revert hatasıyla revert et)
 
 Plus repo'da `gate-argocd-respect-ignore-diff` static analysis hala PASS (helm-values'da argocd App manifest değişimi yok — gate path filter'ı argocd/applications/'a focus).
 
@@ -353,7 +358,13 @@ Bu adım runbook'a havale: `docs/runbooks/RB-notification-outage-fallback.md` §
 
 ## 6. Rollback procedure
 
-Eğer §5.1 amtool config 4 receiver göstermezse, pod CrashLoopBackOff'a girerse, veya synthetic alert delivery fail ederse:
+Rollback tetik koşulları (sibling PR #861 post-merge 3-receiver model):
+- §5.1 `amtool config show` beklenen 3 aktif receiver set'ini (`alarm-receiver-bridge`, `perf-alerts-slack`, `direct-fallback`) eksik veya farklı gösterirse
+- Pod CrashLoopBackOff'a girerse
+- Synthetic alert delivery (§5.2) Slack veya bridge GitHub Issue ayağında fail ederse
+- Beklenmedik bir receiver canlıya gelirse (özellikle `perf-alerts-github-issues` — PR #861 ile bilinçli kaldırıldı; geri gelmesi PR #861 revert hatasının işareti)
+
+Bu durumda:
 
 ```bash
 ssh halil@staging-sw '
@@ -400,6 +411,12 @@ Plus audit doc: `docs/faz-23-evidence/2026-XX-XX-857-helm-upgrade-rollback.md`.
 - §5.1 Config verify: 3 aktif receiver (alarm-receiver-bridge + perf-alerts-slack + direct-fallback); 6 mount file (5 fallback + 1 perf); github-issues-receiver-token mount klasörü YOK (sibling PR removed).
 - §5.2 Synthetic alert acceptance: Slack + bridge-driven GitHub Issue; direct receiver scope-out at both runbook and values-prod.yaml level.
 - Sibling PR scope: `values-prod.yaml` `perf-alerts-github-issues` route (both critical + non-critical) + receiver definition + `github-issues-receiver-token` mount removal. Wrapper PR sonra geri ekler.
+
+**2026-05-19 (Session 42 PR #860 — Codex `019e4256` REVISE iter-3 absorb chain final)** — Codex iter-3 (post sibling PR #861 + #860 review) had 4 findings (2×P1 + 2×P2). Absorb:
+- §4.2 dry-run expected changes — 4-receiver/3-mount stale model replaced with sibling PR #861 post-merge 3-receiver / 2-mount model. Unexpected `perf-alerts-github-issues` / `github-issues-receiver-token` appearance in diff flagged as PR #861 revert error.
+- §6 rollback triggers — "4 receiver göstermezse" replaced with explicit 3-receiver expected set (`alarm-receiver-bridge`, `perf-alerts-slack`, `direct-fallback`). Unexpected direct receiver re-appearance flagged as revert tetik.
+- Front-matter Status: BLOCKED → **READY-PACKET** — sibling cleanup gate satisfied by PR #861 merge; helm upgrade still owner-gated by §2 artifacts + dry-run Codex consensus.
+- (P2 #861 non-critical perf comment — DUAL via Slack + bridge — already fixed in PR #861 commit `7931158`.)
 
 **2026-05-19 (Session 42 PR #860 — Codex `019e4256` REVISE absorb)** — 4-finding absorb:
 - **P0**: `perf-alerts-github-issues` direct receiver KNOWN-BLOCKED (Alertmanager v4 payload not wrapped into GitHub `repository_dispatch` schema; PR #648 RED reference). §2.2 + §5.2 spelled out; #857 acceptance via bridge GitHub Issue path, not direct receiver.
