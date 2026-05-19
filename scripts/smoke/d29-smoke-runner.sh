@@ -218,7 +218,16 @@ tier_functional() {
       user-service) svc_ep="/api/v1/users" ;;
       variant-service) svc_ep="/api/v1/variants" ;;
       permission-service) svc_ep="/api/v1/permissions" ;;
-      schema-service) svc_ep="/api/v1/schema/snapshot" ;;
+      # schema-service Tier-2 endpoint: /api/v1/schema/schemas — JWT-gated,
+      # returns 401 unauthenticated in <10ms (live-probed k3d-test 2026-05-19).
+      # Was /api/v1/schema/snapshot, a wrong probe on two counts: (1) it is
+      # permitAll, so an unauthenticated request gets 200 and the JWT auth
+      # chain Tier 2 exists to verify is never exercised; (2) a cold-cache
+      # call builds the full workcube_mikrolink snapshot (~1500 tables,
+      # multi-MB) and takes >25s, exceeding curl --max-time 10 → 000 →
+      # false-RED. /schemas is a light, auth-gated list endpoint — a true
+      # "401 JWT shape" probe, cache-warmth independent.
+      schema-service) svc_ep="/api/v1/schema/schemas" ;;
       report-service) svc_ep="/api/v1/reports" ;;
       auth-service) svc_ep="/api/v1/impersonation/sessions" ;;
       core-data-service) svc_ep="/api/v1/companies" ;;
