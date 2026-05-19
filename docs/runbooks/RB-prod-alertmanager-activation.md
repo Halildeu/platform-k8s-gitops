@@ -327,13 +327,16 @@ JSON
 # Wait routing + delivery
 sleep 10
 
-# Verify — both perf-alerts-slack AND alarm-receiver-bridge should be in receivers
-# (perf-alerts-github-issues direct receiver may or may not appear; if present, it
-# will not actually deliver — KNOWN-BLOCKED per §2.2.)
+# Verify — exactly the expected #857 delivery receivers are present.
+# `perf-alerts-github-issues` MUST NOT appear; if it does, PR #861 cleanup
+# was not reflected in the deployed values and the upgrade must abort/rollback
+# (see §6 rollback trigger #4).
 curl -s http://127.0.0.1:9093/api/v2/alerts | \
   jq ".[] | select(.labels.alertname==\"PerfCanarySmoke857\") | {receivers: [.receivers[].name]}"
-# Expected: receivers contains perf-alerts-slack AND alarm-receiver-bridge (continue:true triple
-# delivery path; GitHub Issue receipt flows via alarm-receiver-bridge → alertmanager-bridge pod).
+# Expected: receivers contains perf-alerts-slack AND alarm-receiver-bridge
+# (DUAL delivery path; GitHub Issue receipt flows via alarm-receiver-bridge →
+# alertmanager-bridge pod). Direct `perf-alerts-github-issues` receiver MUST
+# NOT be in the receivers array.
 '
 ```
 
