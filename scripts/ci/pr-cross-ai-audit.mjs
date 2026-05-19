@@ -67,16 +67,29 @@ const AUTOMATION_BRANCH_CONTRACT = {
   'auto-verified/': 'scripts/promotion/ledger-mark-verified.sh',
   'auto-promotion/': 'scripts/promotion/scan-promotion-candidates.sh',
 };
-// `github-actions[bot]` covers generators that run inside GitHub Actions: the
-// deploy-backend-testai overlay-sync job (auto-test-overlay/, #827 PR-B) and
-// scan-promotion-candidates.sh via promotion-bot-scan-candidates.yml
-// (auto-promotion/). ledger-mark-verified.sh (auto-verified/) runs via host
-// systemd — its PRs are authored by the host `gh` identity, so auto-verified/
-// PRs are exemption-eligible only once that identity is a recognized
-// automation bot added here (a dedicated GitHub App / machine account, NEVER
-// a human account — #827 follow-up); until then they fall through to the
-// normal peer-review audit.
-const AUTOMATION_ACTORS = new Set(['github-actions[bot]']);
+// Per-prefix actor contract (#827 PR-B, Codex `019e4048` Q2 REVISE). Each
+// automation prefix binds to the specific bot identity authorised to open its
+// PRs; a single global actor set would let any allowlisted bot claim any
+// prefix. The `auditAutomation` actor check requires BOTH the PR author and
+// the event sender to be in the matched prefix's set.
+//
+// `auto-test-overlay/` is opened by the deploy-backend-testai.yml
+// sync-test-overlay-pr job via a GitHub App installation token — NOT
+// GITHUB_TOKEN. A GITHUB_TOKEN-opened PR does not trigger the `pull_request`
+// workflows the required `cross-ai-audit` check needs, so the App is
+// mandatory; its bot login is `platform-automation[bot]` (the operator names
+// the GitHub App so its slug resolves to `platform-automation` — see
+// docs/operations/RUNBOOKS/RB-automation-overlay-sync.md).
+//
+// `auto-verified/` + `auto-promotion/` keep `github-actions[bot]` from #827
+// PR-A. They are GITHUB_TOKEN-opened and hit the same recursion-guard gap;
+// migrating them to a non-GITHUB_TOKEN App identity is a tracked follow-up
+// (#827 Q5 — promotion-bot-scan-candidates.yml / ledger-mark-verified.sh).
+const AUTOMATION_PREFIX_ACTORS = {
+  'auto-test-overlay/': new Set(['platform-automation[bot]']),
+  'auto-verified/': new Set(['github-actions[bot]']),
+  'auto-promotion/': new Set(['github-actions[bot]']),
+};
 
 function matchedAutomationPrefix(headRef) {
   return (
@@ -410,20 +423,22 @@ function auditAutomation(body, prMeta) {
 
   // 3. actor + sender allowlist — the hard gate against human-authored
   //    spoofing. `actor` is the PR author, `sender` is who triggered this
-  //    event; BOTH must be an automation bot. Otherwise a human could push a
-  //    `synchronize` commit to (or `edited` the body of) a bot-opened auto-PR:
-  //    pr.user stays the bot, but the sender is the human. (Not full bot
-  //    isolation: github-actions[bot] is shared across workflows — the wider
-  //    contract chain + a future diff path allowlist bound a compromised bot.)
-  const actorOk = AUTOMATION_ACTORS.has(prMeta.actor);
-  const senderOk = AUTOMATION_ACTORS.has(prMeta.sender);
+  //    event; BOTH must be the automation bot bound to THIS prefix
+  //    (AUTOMATION_PREFIX_ACTORS — a global set would let any allowlisted bot
+  //    claim any prefix). Otherwise a human could push a `synchronize` commit
+  //    to (or `edited` the body of) a bot-opened auto-PR: pr.user stays the
+  //    bot, but the sender is the human. (Not full bot isolation — the wider
+  //    contract chain + a diff path allowlist bound a compromised bot.)
+  const allowedActors = AUTOMATION_PREFIX_ACTORS[prefix] ?? new Set();
+  const actorOk = allowedActors.has(prMeta.actor);
+  const senderOk = allowedActors.has(prMeta.sender);
   findings.push({
     check: 'automation_actor_allowlist',
     pass: actorOk && senderOk,
     detail:
       actorOk && senderOk
-        ? `PR author "${prMeta.actor}" and event sender "${prMeta.sender}" are both allowlisted automation bots`
-        : `PR author "${prMeta.actor}" / event sender "${prMeta.sender}" — both must be an automation bot (a human touching a bot-opened auto-PR forfeits the exemption); denied`,
+        ? `PR author "${prMeta.actor}" and event sender "${prMeta.sender}" are both the automation bot bound to "${prefix}"`
+        : `PR author "${prMeta.actor}" / event sender "${prMeta.sender}" — both must be the automation bot bound to "${prefix}" (${[...allowedActors].join(', ') || 'none'}); denied`,
   });
 
   // PR-body ## Cross-AI section fields

@@ -63,6 +63,13 @@ jobs:
 
     if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
 
+    # #827 PR-B — expose the rolled-out digests + commit refs to the
+    # sync-test-overlay-pr job.
+    outputs:
+      digest_map: ${{ steps.rollout.outputs.digest_map }}
+      sha: ${{ steps.payload.outputs.sha }}
+      short_sha: ${{ steps.payload.outputs.short_sha }}
+
     steps:
       - name: Resolve dispatch payload
         id: payload
@@ -193,6 +200,10 @@ jobs:
             echo "|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
 
+          # #827 PR-B: accumulate the {service: digest} map for the
+          # sync-test-overlay-pr job (emitted as a step output after the loop).
+          DIGEST_MAP_JSON="{}"
+
           for svc in "${SERVICES[@]}"; do
             if [ "${DIGEST_MODE}" = "true" ]; then
               # Direct digest pin (B.3 hardening)
@@ -272,7 +283,21 @@ jobs:
             fi
 
             echo "| ${svc} | \`${NORMALIZED}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+            # #827 PR-B: record this service's resolved digest in the map.
+            DIGEST_MAP_JSON=$(jq -cn \
+              --argjson m "${DIGEST_MAP_JSON}" \
+              --arg s "${svc}" \
+              --arg d "${NORMALIZED}" \
+              '$m + {($s): $d}')
           done
+
+          # #827 PR-B: expose the full {service: digest} map to the
+          # sync-test-overlay-pr job. Reached only after all 8 services rolled
+          # out + verified — a failed run exits earlier, so the map (and the
+          # auto-PR) is never emitted for a partial rollout.
+          echo "digest_map=${DIGEST_MAP_JSON}" >> "$GITHUB_OUTPUT"
+          echo "✓ test-overlay digest map: ${DIGEST_MAP_JSON}"
 
       # Gate 1b: api-gateway public edge chain health (Codex S5 primary blocking)
       #
@@ -447,3 +472,93 @@ jobs:
             echo "  -f short_sha=${SHORT_SHA}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # #827 PR-B — test-overlay digest sync
+  #
+  # After a green rollout, open/update the auto-test-overlay/backend-testai PR
+  # that re-pins kustomize/overlays/test/kustomization.yaml's backend digest:
+  # lines to what was just deployed — so the recorded desired-state never
+  # silently drifts from the running cluster.
+  #
+  # The PR is opened with a GitHub App installation token (NOT GITHUB_TOKEN):
+  # a GITHUB_TOKEN-opened PR does not trigger the pull_request workflows the
+  # required cross-ai-audit check needs. The PR satisfies the #827 automation-PR
+  # governance contract (scripts/ci/pr-cross-ai-audit.mjs auditAutomation) via
+  # the auto-test-overlay/ branch prefix + the platform-automation[bot] App
+  # identity + the ## Cross-AI attestation block in the body.
+  #
+  # Operator dependency — until the AUTOMATION_APP_* repo secrets exist this
+  # job graceful-skips (source-ready, operator-disabled). Setup runbook:
+  # docs/operations/RUNBOOKS/RB-automation-overlay-sync.md
+  # ───────────────────────────────────────────────────────────────────────────
+  sync-test-overlay-pr:
+    name: Sync test-overlay digests (auto-PR)
+    needs: deploy
+    if: >-
+      needs.deploy.result == 'success' &&
+      needs.deploy.outputs.digest_map != '' &&
+      needs.deploy.outputs.digest_map != '{}'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # #827 PR-B — per-job write scope (top-level workflow stays contents: read).
+    # The git push / PR create use the App installation token; these
+    # GITHUB_TOKEN scopes are belt-and-suspenders.
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      # secrets.* is unavailable in job/step `if:` — pass it via `env:` and
+      # branch in the script (Codex 019e4048 Q3). Skip is explicit, never
+      # silent: a ::notice:: + job summary records the operator-disabled state.
+      - name: Preflight — automation App credentials present?
+        id: preflight
+        env:
+          APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # BOTH secrets required — checking only APP_ID would let a half-seeded
+          # config (ID present, key missing) fail RED at create-github-app-token
+          # instead of green-skipping (Codex 019e407c P2).
+          if [ -n "${APP_ID:-}" ] && [ -n "${APP_PRIVATE_KEY:-}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "✓ AUTOMATION_APP_ID + AUTOMATION_APP_PRIVATE_KEY present — test-overlay sync active"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=test-overlay-sync inactive::AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY repo secrets absent or incomplete — the test-overlay digest sync is source-ready but operator-disabled. Setup: docs/operations/RUNBOOKS/RB-automation-overlay-sync.md"
+            {
+              echo "## test-overlay-sync — inactive (operator-disabled)"
+              echo ""
+              echo "AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY repo secrets are absent or incomplete."
+              echo "The sync job is source-ready; see docs/operations/RUNBOOKS/RB-automation-overlay-sync.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Generate GitHub App token
+        id: app-token
+        if: steps.preflight.outputs.enabled == 'true'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+
+      - name: Checkout (App-token credentials)
+        if: steps.preflight.outputs.enabled == 'true'
+        uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Sync test overlay + open/update PR
+        if: steps.preflight.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          DIGEST_MAP: ${{ needs.deploy.outputs.digest_map }}
+          SHA: ${{ needs.deploy.outputs.sha }}
+          SHORT_SHA: ${{ needs.deploy.outputs.short_sha }}
+          RUN_ID: ${{ github.run_id }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: bash scripts/automation/sync-test-overlay.sh

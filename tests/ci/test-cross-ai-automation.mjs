@@ -9,6 +9,8 @@
 //   - a human is blocked whether they OPEN an auto-* PR (pr.user) or only
 //     trigger an event on a bot-opened one (sender) — the actor+sender gate
 //   - missing / mismatched automation metadata fails
+//   - the per-prefix actor contract is enforced — the bot bound to one prefix
+//     cannot claim another (#827 PR-B, Codex 019e4048)
 //   - a fork PR cannot claim the exemption
 //   - a normal PR still gets the normal cross-AI peer-review audit
 //
@@ -23,6 +25,9 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCRIPT = join(REPO_ROOT, 'scripts', 'ci', 'pr-cross-ai-audit.mjs');
 const REPO = 'Halildeu/platform-k8s-gitops';
 const BOT = 'github-actions[bot]';
+// #827 PR-B — the GitHub App identity bound to the auto-test-overlay/ prefix
+// (Codex 019e4048 Q2 — per-prefix actor contract).
+const APP_BOT = 'platform-automation[bot]';
 const dir = mkdtempSync(join(tmpdir(), 'crossai-'));
 
 // Build the GitHub event payload and run the real script; return its exit code.
@@ -62,14 +67,18 @@ const LEDGER = 'scripts/promotion/ledger-mark-verified.sh';
 const SCAN = 'scripts/promotion/scan-promotion-candidates.sh';
 
 const cases = [
-  ['valid automation PR (auto-test-overlay, bot author + bot sender)',
-    { branch: 'auto-test-overlay/backend-testai-live', actor: BOT, sender: BOT, body: autoBody(WF) }, 0],
+  ['valid automation PR (auto-test-overlay, App-bot author + App-bot sender)',
+    { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: APP_BOT, body: autoBody(WF) }, 0],
   ['valid auto-verified PR (bot)',
     { branch: 'auto-verified/test-20260519', actor: BOT, sender: BOT, body: autoBody(LEDGER) }, 0],
   ['valid auto-promotion PR (bot)',
     { branch: 'auto-promotion/prod-platform-backend-abc1234', actor: BOT, sender: BOT, body: autoBody(SCAN) }, 0],
-  ['bot-opened auto-PR + HUMAN sender (synchronize bypass) -> blocked',
-    { branch: 'auto-test-overlay/backend-testai-live', actor: BOT, sender: 'mallory', body: autoBody(WF) }, 1],
+  ['#827 PR-B: auto-test-overlay + github-actions[bot] (wrong bot for prefix) -> blocked',
+    { branch: 'auto-test-overlay/x', actor: BOT, sender: BOT, body: autoBody(WF) }, 1],
+  ['#827 PR-B: auto-verified + platform-automation[bot] (wrong bot for prefix) -> blocked',
+    { branch: 'auto-verified/x', actor: APP_BOT, sender: APP_BOT, body: autoBody(LEDGER) }, 1],
+  ['App-bot-opened auto-PR + HUMAN sender (synchronize bypass) -> blocked',
+    { branch: 'auto-test-overlay/backend-testai-live', actor: APP_BOT, sender: 'mallory', body: autoBody(WF) }, 1],
   ['human-opened auto-* branch -> blocked',
     { branch: 'auto-test-overlay/sneaky', actor: 'mallory', sender: 'mallory', body: autoBody(WF) }, 1],
   ['auto-* + bot, missing Automation source -> fail',
