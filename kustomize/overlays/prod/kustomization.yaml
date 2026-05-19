@@ -157,24 +157,27 @@ images:
   # Operator request: bring prod up to canonical main. Latest CI run
   # 25294004654 (sha-940c4c4) prod variant manifest digest pinned below.
   #
-  # 2026-05-19 board #820 — frontend prod-variant promotion.
-  # Artifact: build sha-e6eeb62, platform-web PR #596 (merge commit
-  # e6eeb6290ef83c9ac301e2eb9315fde53ceb05ab), CI run 26041791563 job
-  # "Build + Push prod" — env-baked VITE_KEYCLOAK_URL=https://ai.acik.com,
-  # VITE_KEYCLOAK_REALM=serban.
+  # 2026-05-19 board #820 — frontend prod-variant promotion (M365 chain +
+  # Turkish-name UTF-8 fix). Supersedes the never-deployed sha-e6eeb62 pin
+  # (PR #833, platform-web PR #596) — that artifact predated PR #608.
+  # Artifact: build sha-b567292, platform-web commit b567292d (PR #611),
+  # CI run 26095796755 job "Build + Push prod" — env-baked
+  # VITE_KEYCLOAK_URL=https://ai.acik.com, VITE_KEYCLOAK_REALM=serban.
+  # Carries platform-web PR #608 (decode JWT payload as UTF-8 — fixes the
+  # Turkish-name mojibake "Halil KoÃ§oÄlu" in the shell header + user grids).
   # D29 evidence (ADR-0022 frontend-prod-variant-transient-smoke): the prod
   # variant artifact was transient-run in k3d-test (platform-test ns) and
-  # smoked — d29_up GREEN (imageID digest + /build-info.json sha match),
-  # d29_functional GREEN (/ 200 + entry asset 200 + env-baking: no
-  # testai.acik.com / localhost:8080 leak, ai.acik.com present; ai.acik.com
-  # read-only probe 200/200), d29_zanzibar AMBER (static SPA,
-  # jwt_validates:false). Ledger:
-  # release-candidates/platform-web/e6eeb6290ef83c9ac301e2eb9315fde53ceb05ab.json
+  # smoked 2026-05-19T12:10:00Z — d29_up GREEN (imageID digest +
+  # /build-info.json sha match), d29_functional GREEN (/ 200 + entry asset
+  # 200 + remoteEntry 200 + env-baking: no testai.acik.com / localhost:8080
+  # leak, ai.acik.com + serban present; ai.acik.com read-only probe 200/200),
+  # d29_zanzibar AMBER (static SPA, jwt_validates:false). Ledger:
+  # release-candidates/platform-web/b567292de47d6bced9af518ae1192603abaef070.json
   # Rollback digest: sha256:6d926376a58bfd47c3d5059e0e0025f8cb38d5c7fbf80767461b2eea136647f4
-  # (prior prod, 2026-05-04 sha-940c4c4).
+  # (prior prod, 2026-05-04 sha-940c4c4 — last digest live on prod).
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
-    digest: sha256:d8b7b6960e294ce0352c733308937182741c05e7019a648f17be25712f93beb8
+    digest: sha256:7e0999d1865ad560e45374af7d76d7a2427c35d0791c1ee30a73598eb81861ce
 
   # Faz 23.9 prod cutover (2026-05-08): notification-orchestrator
   # canonical activation. Pin remains sha-204042d (PR #126 era) until D29
