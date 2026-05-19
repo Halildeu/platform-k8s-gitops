@@ -69,14 +69,17 @@ alertmanager:
     # ESO `perf-alertmanager-secrets` K8s Secret pod'a file mount edilir;
     # Alertmanager config `slack_configs.api_url_file` ile path okur (env injection DEĞİL).
     # Mount path: /etc/alertmanager/secrets/perf-alertmanager-secrets/SLACK_WEBHOOK_URL
+    #
+    # NOT: `github-issues-receiver-token` mount KALDIRILDI (Codex `019e4256`
+    # Session 42 REVISE iter-2 P0 absorb — sibling PR #857b). Alertmanager
+    # `webhook_configs` does not wrap payload into GitHub `repository_dispatch`
+    # schema `{event_type, client_payload}`, so the direct receiver fails 4xx;
+    # ref. PR #648 RED. GitHub Issue trail flows through
+    # `alarm-receiver-bridge` → `alertmanager-bridge` pod (which DOES wrap).
+    # The mount + token will be re-introduced when a payload wrapper bridge
+    # (sidecar/proxy) is built — separate future PR.
     secrets:
       - perf-alertmanager-secrets
-      # V2.1 Ops-A GitHub Issues receiver (Codex 019e2a4f Q1+Q2 + PR #645 spike):
-      # Vault'tan bağımsız PAT mount; GHA secret olarak da configure edilebilir.
-      # Mount path: /etc/alertmanager/secrets/github-issues-receiver-token/GITHUB_TOKEN
-      # Owner action: kubectl create secret generic github-issues-receiver-token \
-      #   --from-literal=GITHUB_TOKEN=<PAT_with_repo_workflow_scope>
-      - github-issues-receiver-token
       # D43 fallback secret (mevcut, audit only — alarm-receiver-bridge baseline path)
       - alertmanager-fallback-secrets
 
@@ -150,19 +153,13 @@ alertmanager:
           group_interval: 5m
           repeat_interval: 30m
           continue: true
-        # V2.1 Ops-A — Critical perf alarms TRIPLE delivery (Codex 019e2772 P1 + 019e2a4f Q1+Q2):
-        # 1. perf-alerts-github-issues (continue:true → 2. + 3.) — Vault'tan bağımsız (V2.1 #4 closure)
-        # 2. perf-alerts-slack (continue:true → 3. critical bridge route) — Vault DR sonrası activate
-        # 3. critical bridge (P1 operator action <10min pipeline)
-        - matchers:
-            - team = "perf"
-            - severity = "critical"
-          receiver: 'perf-alerts-github-issues'
-          group_by: ['alertname', 'namespace']
-          group_wait: 30s
-          group_interval: 5m
-          repeat_interval: 6h
-          continue: true
+        # V2.1 Ops-A — Critical perf alarms DUAL delivery (Codex `019e4256`
+        # REVISE iter-2 P0 absorb — perf-alerts-github-issues direct receiver
+        # KALDIRILDI; payload wrapper bridge gelene kadar). Akış:
+        # 1. perf-alerts-slack (continue:true → 2.) — Vault DR sonrası activate
+        # 2. critical bridge route (alarm-receiver-bridge → alertmanager-bridge
+        #    pod GitHub Issue wrap) — P1 operator action <10min pipeline
+        # Net: Slack + bridge GitHub Issue (2 channel, defense-in-depth).
         - matchers:
             - team = "perf"
             - severity = "critical"
@@ -178,16 +175,12 @@ alertmanager:
           receiver: 'alarm-receiver-bridge'
           group_wait: 0s
           repeat_interval: 1h
-        # V2.1 Ops-A — Non-critical perf alarms DUAL delivery (warning/info)
-        # GitHub Issues (V2.1 #4 closure path) + Slack (Vault DR sonrası).
-        - matchers:
-            - team = "perf"
-          receiver: 'perf-alerts-github-issues'
-          group_by: ['alertname', 'namespace']
-          group_wait: 30s
-          group_interval: 5m
-          repeat_interval: 6h
-          continue: true
+        # V2.1 Ops-A — Non-critical perf alarms SINGLE delivery via Slack
+        # (Codex `019e4256` REVISE iter-2 P0 absorb — perf-alerts-github-issues
+        # direct receiver removed; non-critical perf alarms are documented in
+        # warning/info bridge GitHub Issue trail via the catch-all severity
+        # route below). Payload wrapper bridge gelirse direct GitHub Issue
+        # leg geri eklenir.
         - matchers:
             - team = "perf"
           receiver: 'perf-alerts-slack'
@@ -195,7 +188,7 @@ alertmanager:
           group_wait: 30s
           group_interval: 5m
           repeat_interval: 6h
-          continue: false
+          continue: true
         # Warning/info generic: standard route
         - matchers:
             - severity =~ "warning|info"
@@ -225,31 +218,23 @@ alertmanager:
               *Namespace:* {{ with .CommonLabels.namespace }}{{ . }}{{ else }}n/a{{ end }}
               *Description:* {{ range .Alerts }}{{ .Annotations.description }}{{ end }}
               *Runbook:* {{ range .Alerts }}{{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}{{ end }}
-      # V2.1 Ops-A — Perf alerts GitHub Issues receiver (Codex 019e2a4f Q1+Q2 + PR #645 spike).
-      # Vault DR blocker bypass: GitHub PAT GHA secret olarak veya K8s Secret manual create.
-      # Alertmanager webhook → GitHub API repository_dispatch → .github/workflows/alert-receiver.yml
-      # → Issue create/comment/close lifecycle.
+      # V2.1 Ops-A — Perf alerts GitHub Issues receiver KALDIRILDI (Codex
+      # `019e4256` Session 42 REVISE iter-2 P0 absorb — PR #857b sibling).
       #
-      # http_config Bearer auth header_file:
-      #   /etc/alertmanager/secrets/github-issues-receiver-token/GITHUB_TOKEN
+      # Sebep: Alertmanager `webhook_configs` ham v4 payload gönderir; GitHub
+      # `repository_dispatch` API `{event_type, client_payload}` wrapper ister.
+      # Alertmanager Go template ile body wrap edilemez. Bu receiver canlıya
+      # alınırsa her perf alert için 4xx fail log spam üretir. PR #648 aynı
+      # nedenle RED/closed (ref. `docs/session-52-handoff-final-honest-close.md:111`).
       #
-      # Payload: Alertmanager v4 webhook format (status + commonLabels + alerts[] + annotations)
-      # Workflow parses STATUS, ALERTNAME, SEVERITY, NAMESPACE, DESC, RUNBOOK → Issue body.
-      # Dedupe: label `alert/<alertname>/<namespace>`; existing open issue → comment, no new.
-      # Resolved lifecycle: status=resolved → issue close + comment.
-      - name: 'perf-alerts-github-issues'
-        webhook_configs:
-          - url: 'https://api.github.com/repos/Halildeu/platform-k8s-gitops/dispatches'
-            http_config:
-              authorization:
-                type: Bearer
-                credentials_file: /etc/alertmanager/secrets/github-issues-receiver-token/GITHUB_TOKEN
-            send_resolved: true
-            max_alerts: 50
-            # Alertmanager webhook payload mapping → GitHub repository_dispatch:
-            # body = {"event_type": "perf-alert", "client_payload": <alertmanager v4 webhook>}
-            # Alertmanager Go template ile wrap edilemez; workflow parser PAYLOAD field'larını
-            # commonLabels/alerts[]/status üzerinden okur (toJSON GitHub Actions side).
+      # GitHub Issue trail prod perf alerts için şu an `alarm-receiver-bridge`
+      # route → `alertmanager-bridge` pod (Python wrapper) üzerinden akıyor;
+      # bridge payload'u doğru wrap eder. perf-alerts-slack receiver ise
+      # `api_url_file` ile çalışıyor (Slack webhook POST).
+      #
+      # Wrapper bridge (sidecar/proxy) PR'ı geldiğinde bu receiver + ilgili
+      # secret mount + 2 perf route geri eklenir. Bkz. board issue #857
+      # acceptance + RB-prod-alertmanager-activation.md §2.2.
       # D43 outage fallback direct receiver (Codex 019e4234 + 019e0dea iter-2
       # absorb #3): Slack + SMTP combined in a single receiver — simpler than
       # two sibling routes with continue:true (Codex iter-2 verdict). Both
