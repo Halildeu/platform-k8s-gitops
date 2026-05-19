@@ -120,6 +120,15 @@ server:
 repoServer:
   replicas: 1
 
+  # 2026-05-19: explicit pin (chart default, restated for drift-resistance).
+  # The live prod pod had drifted to hostNetwork: true (out-of-band edit) —
+  # with dnsPolicy: ClusterFirst that combination is invalid for cluster DNS,
+  # so the pod inherited the node resolv.conf and could not resolve the
+  # argocd-redis Service → ComparisonError, sync status stuck Unknown.
+  # repo-server needs no host networking (git/redis/k8s-API over pod net).
+  # See docs/runbooks/RB-argocd-hub-recovery.md Mode 5.
+  hostNetwork: false
+
   resources:
     requests:
       cpu: 50m
