@@ -22,6 +22,32 @@ göndermez — backend `HttpSmsReport` endpoint'ini periyodik poll eder
 (`JetSmsDlrPollingWorker`, fixedDelay 60s, `@ConditionalOnProperty
 notify.dispatch.enabled=true`).
 
+## Pre-PR-4 Gate — Vault blank-seed (TAMAMLANDI 2026-05-19)
+
+> **Neden zorunlu gate**: PR-4 ESO manifest'i (`externalsecret-notify.yaml`)
+> 3 yeni `remoteRef.property` (`sms_jetsms_username/password/originator`)
+> ekler. ESO Vault provider, var olan bir path'te EKSİK bir property için o
+> key'i boş bırakmaz — tüm `ExternalSecret` reconcile'ını fail eder
+> (`SecretSyncedError`). Property'nin **boş string değerle VAR olması** gerekir
+> (Codex `019e4022` S1). Bu yüzden PR-4 ESO değişikliğinin merge'inden ÖNCE
+> Vault'a boş seed yapılır — aksi halde umbrella `platform-test` ArgoCD
+> auto-sync ESO'yu degraded duruma sokar.
+
+Yapıldı (Pre-Production Full Authority, 2026-05-19) — `kv patch`, diğer
+key'lere dokunmaz:
+
+```bash
+docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-test \
+  vault kv patch kv/platform/notification-orchestrator \
+    sms_jetsms_username= sms_jetsms_password= sms_jetsms_originator=
+docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
+  vault kv patch kv/platform/notification-orchestrator \
+    sms_jetsms_username= sms_jetsms_password= sms_jetsms_originator=
+```
+
+Doğrulandı: test (secret version 12) + prod (version 5) — 3 `sms_jetsms_*`
+property boş string değerle mevcut. PR-4 ESO değişikliği artık apply-safe.
+
 ## Tetik
 
 PR-4 merged (ESO 3 JetSMS key + ConfigMap 2 URL) **ve** JetSMS API credential'ları
@@ -36,7 +62,10 @@ PR-4 merged (ESO 3 JetSMS key + ConfigMap 2 URL) **ve** JetSMS API credential'la
 
 ## Adımlar
 
-### 1. Vault JetSMS credential seed (test) — ~2 dk
+### 1. Vault JetSMS gerçek credential seed (test) — ~2 dk
+
+Pre-PR-4 Gate'te boş seed'lenen 3 key'i gerçek JetSMS credential'larıyla
+UPDATE eder (yine `kv patch`):
 
 ```bash
 docker exec -e VAULT_TOKEN="$TEST_ROOT_TOKEN" platform-vault-test \
