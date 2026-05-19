@@ -199,16 +199,18 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 ## Tier 3: 23.3 SMS + 23.5 Preference UI (~3 weeks, ~50h)
 
-### T3.1 — 23.3 SMS NetGSM + In-app Inbox API
+### T3.1 — 23.3 SMS JetSMS (primary) + NetGSM (secondary) + In-app Inbox API
+
+> **Provider kararı 2026-05-19 (kullanıcı)**: SMS primary **JetSMS** (canlı sözleşme + HTTP API), secondary **NetGSM** (contract R1 pending). Multi-provider failover 5-PR sequence — Codex `019e3f82` AGREE: PR-0 docs + PR-1 SmsProvider abstraction (behavior-neutral) + PR-2 JetSmsProvider send + failover + PR-3 JetSMS DLR polling + PR-4 gitops.
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T3.1.1 | NetGSM provider contract + sandbox account (R1 mitigation) | ops/legal | 8 | ops | None | 🔴 |
-| T3.1.2 | `SmsProvider` interface design | backend | 2 | dev | None | 🔴 |
-| T3.1.3 | `NetGsmClient` implementation (REST/SOAP per provider docs) | backend | 8 | dev | T3.1.2 | 🔴 |
-| T3.1.4 | GSM-7/UCS-2 segment + Türkçe karakter + sender ID | backend | 3 | dev | T3.1.3 | 🔴 |
-| T3.1.5 | `İletimerkezi` secondary client | backend | 4 | dev | T3.1.2 | 🔴 |
-| T3.1.6 | Provider failover (pre-accept fail auto) | backend | 3 | dev | T3.1.5 | 🔴 |
+| T3.1.1 | JetSMS canlı sözleşme + API erişim (primary) + NetGSM secondary contract (R1) | ops/legal | 8 | ops | None | 🟡 (JetSMS aktif; NetGSM R1 pending) |
+| T3.1.2 | `SmsProvider` interface + `SmsAdapter` facade design (PR-1) | backend | 3 | dev | None | 🟡 (Codex `019e3f82` AGREE; impl PR-1) |
+| T3.1.3 | `JetSmsProvider` HTTP API impl (iso-8859-9 + form-urlencoded + Status/MessageIDs parse) (PR-2) | backend | 10 | dev | T3.1.2 | 🔴 |
+| T3.1.4 | `NetGsmProvider` refactor (mevcut NetGsmSmsAdapter logic → SmsProvider, behavior-neutral) (PR-1) | backend | 4 | dev | T3.1.2 | 🔴 |
+| T3.1.5 | Provider failover matrix (`SmsFailureClass` taxonomy: failover-eligible vs not) (PR-2) | backend | 5 | dev | T3.1.3, T3.1.4 | 🔴 |
+| T3.1.6 | JetSMS DLR polling worker (HttpSmsReport pull + generic DlrIngest core) (PR-3) | backend | 12 | dev | T3.1.3 | 🔴 |
 | T3.1.7 | DLR callback endpoint | backend | 3 | dev | T3.1.3 | **🟢** (Session 44 close: backend PR #85 MERGED 2026-05-07 + api-gateway PR #154 MERGED 2026-05-11 Codex `019e1440` AGREE + gitops PR #514 MERGED + live smoke pipeline VERIFIED 2026-05-11 00:09Z via mock NetGSM provider — 5/5 acceptance gates PASS (gateway forward + token verify + UPDATED + NOOP idempotency + audit emit); evidence `docs/faz-23-evidence/2026-05-11-t3-1-7-dlr-live-smoke-pass.md`; real SMS go-live R1 contract ETA 2026-05-30 — pipeline 100% ready, no code change needed) |
 | T3.1.8 | 4 workflow live test (admin invite, password reset, drift alarm, break-glass) | backend | 4 | dev | T3.1.7 | 🔴 |
 | T3.1.9 | Vault path `kv/platform/notification-orchestrator` SMS provider creds | ops | 1 | ops | T3.1.1 | 🔴 |
@@ -308,7 +310,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 |---|---|---:|---|---|
 | **T1** 23.2 closure | preference + erasure + provider rollback + outage fallback + classification + abuse | ~17-22h residual (~100h original; Session 41 re-baseline post T1.6 LIVE + T1.4 4-PR source-ready -77/-82h) | 1-1.5 hafta provisional | R2 (KVKK legal), R9 (D43 drill operator-bound), RAID I6 (Keycloak credential) — R13 + R19 mitigated (T1.6 abuse guards LIVE) |
 | **T2** 23.1+23.4+23.9 closure | D29-Functional + archive UI + 72h observation | ~19h | 1 hafta | R7 (browser verify) |
-| **T3** 23.3+23.5 | SMS NetGSM + Preference UI | ~65h | 3 hafta | R1 (NetGSM contract), R3 (DKIM) |
+| **T3** 23.3+23.5 | SMS JetSMS primary + NetGSM secondary + Preference UI | ~65h | 3 hafta | R1 (NetGSM secondary contract — failover acceptance blocker), R3 (DKIM) |
 | **T4** 23.6+23.7+23.8 v1 | Teams + Push + Tempo + bounce | ~99h | 5-6 hafta | R11 (Tempo), R16 (federation) |
 | **T5** 23.X v2 | multi-tenant features | ~144h | 8-12 hafta | R10 (multi-tenant migration) |
 | **Total v1 (T1-T4)** | Faz 23.0 → 23.9 v1 closure | ~200-205h residual (T1 ~17-22h + T2 ~19h + T3 ~65h + T4 ~99h; Session 41 re-baseline post T1.6 LIVE + T1.4 4-PR source-ready -77/-82h vs ~280h baseline) | **~3 ay** (with parallelization) | — |

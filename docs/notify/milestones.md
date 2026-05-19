@@ -71,18 +71,22 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 **Owner**: legal (R2 closure)
 **Dependencies**: cluster stability dependency satisfied; M1 browser SSO/cutover closure tracked separately
 
-### M4 — 23.3 SMS NetGSM Activation (🔴 target 2026-06-22)
+### M4 — 23.3 SMS JetSMS primary + NetGSM secondary Activation (🔴 target 2026-06-22)
+
+> **Provider kararı 2026-05-19 (kullanıcı)**: SMS primary JetSMS (canlı sözleşme), secondary NetGSM. Multi-provider 5-PR sequence (PR-0 docs + PR-1 SmsProvider abstraction + PR-2 JetSmsProvider send/failover + PR-3 JetSMS DLR polling + PR-4 gitops) — Codex `019e3f82` AGREE.
 
 **Definition of Done**:
-- [ ] T3.1.1 NetGSM provider contract signed + sandbox account active
-- [ ] T3.1.3-T3.1.7 SMS adapter + DLR callback LIVE
+- [ ] PR-1 `SmsProvider` interface + `SmsAdapter` facade + `NetGsmProvider` refactor (behavior-neutral)
+- [ ] PR-2 `JetSmsProvider` HTTP API + failover matrix LIVE
+- [ ] PR-3 JetSMS DLR polling worker + generic DlrIngest core LIVE
+- [ ] PR-4 gitops Vault/ESO/ConfigMap (JetSMS primary)
 - [ ] T3.1.8 4 workflow live test passed (admin invite, password reset, drift alarm, break-glass)
-- [ ] D29-NOTIFY 3-katman SMS evidence
+- [ ] D29-NOTIFY 3-katman SMS evidence (JetSMS send + DLR poll round-trip)
 - [ ] Charter 23.3 marker ⏳ → 🟢
-- [ ] Risk register: R1 closed
+- [ ] Risk register: R1 — NetGSM secondary failover acceptance closed (JetSMS-primary live ayrı hüküm)
 
-**Blockers**: R1 (NetGSM contract delay)
-**Owner**: ops + dev + legal (contract)
+**Blockers**: R1 (NetGSM secondary contract delay — failover acceptance blocker; JetSMS primary activation blocker DEĞİL)
+**Owner**: ops + dev + legal (NetGSM secondary contract)
 **Dependencies**: M3 (23.2 stable)
 
 ### M5 — 23.5 Preference UI (🔴 target 2026-06-29)
@@ -121,7 +125,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 - [ ] Charter 23.4 marker (SMS DLR portion) ⏳ → 🟢
 - [ ] Charter 23.4 fully 🟢 only when both M6a + M6b done
 
-**Blockers**: M4 (SMS NetGSM + DLR callback)
+**Blockers**: M4 (SMS JetSMS primary + NetGSM secondary + DLR dual-mode)
 **Owner**: dev (frontend)
 
 ### M7 — v1 Closure (🔴 target 2026-08-15)
