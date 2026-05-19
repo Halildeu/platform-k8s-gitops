@@ -199,9 +199,16 @@ $(jq -c '.promotion.test.smoke_evidence' "$ledger_file")
 - [ ] state-mutation (test cluster)
 - [x] state-mutation (production)
 - [ ] boundary-cross
+- [ ] user-communication
 - [ ] none of the above
 
-User-approval evidence: scan-promotion-candidates.sh DRAFT pattern (operator manual merge required after review).
+User-approval evidence: scan-promotion-candidates.sh DRAFT pattern — operator manual review + merge required (this PR mutates the prod overlay desired-state).
+
+## Cross-AI
+
+Automation source: scripts/promotion/scan-promotion-candidates.sh
+Cross-AI exempt reason: Machine-generated prod-promotion-candidate DRAFT PR; no AI peer-review claim is made (issue 827 automation-PR governance contract).
+Automation evidence: release-candidates/${repo}/${git_sha}.json (test-verified ${test_verified})
 
 🤖 Auto-opened by scan-promotion-candidates.sh (Codex Sprint B B1)
 EOM
@@ -222,7 +229,7 @@ EOM
       --title "$title" \
       --body "$body" \
       --draft \
-      --label "auto-promotion,env:prod" 2>&1 | tail -1)
+      --label "auto-promotion,env:prod,user-approval-required" 2>&1 | tail -1)
 
     if [[ "$pr_url" =~ pull/[0-9]+ ]]; then
       pr_num=$(echo "$pr_url" | grep -oE '[0-9]+$')
