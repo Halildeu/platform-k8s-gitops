@@ -175,12 +175,15 @@ alertmanager:
           receiver: 'alarm-receiver-bridge'
           group_wait: 0s
           repeat_interval: 1h
-        # V2.1 Ops-A — Non-critical perf alarms SINGLE delivery via Slack
-        # (Codex `019e4256` REVISE iter-2 P0 absorb — perf-alerts-github-issues
-        # direct receiver removed; non-critical perf alarms are documented in
-        # warning/info bridge GitHub Issue trail via the catch-all severity
-        # route below). Payload wrapper bridge gelirse direct GitHub Issue
-        # leg geri eklenir.
+        # V2.1 Ops-A — Non-critical perf alarms DUAL delivery via Slack
+        # (`perf-alerts-slack` here, continue:true) + warning/info bridge
+        # GitHub Issue (catch-all `severity=~"warning|info"` route below also
+        # matches → `alarm-receiver-bridge` → alertmanager-bridge pod GitHub
+        # Issue wrap). Codex `019e4256` REVISE iter-2 P0 absorb —
+        # `perf-alerts-github-issues` direct receiver removed; bridge-wrapped
+        # GitHub Issue leg preserved through continue:true → catch-all path.
+        # Payload wrapper bridge gelirse direct GitHub Issue leg geri eklenir
+        # → DUAL → TRIPLE.
         - matchers:
             - team = "perf"
           receiver: 'perf-alerts-slack'
