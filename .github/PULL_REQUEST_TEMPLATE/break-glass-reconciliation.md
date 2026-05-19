@@ -51,6 +51,7 @@ Explain why ArgoCD sync OR a regular gitops PR couldn't address the issue:
 - [x] state-mutation (test cluster) — if test cluster touched
 - [x] state-mutation (production) — if prod cluster touched
 - [ ] boundary-cross
+- [ ] user-communication
 - [ ] none of the above
 
 User-approval evidence: break-glass audit issue #<num> + this reconciliation PR.

@@ -24,7 +24,7 @@ ADR-0011 §2.3 boundary declaration matrix'i her PR için **zorunlu kılar**. Au
 `scripts/governance/check_pr_boundary_declaration.py` 6 check:
 
 1. `boundary_block_present` — exact heading `## Boundary declaration (ADR-0011 §2.3)` var mı
-2. `six_classes_present` — 6 expected class checkbox şablona uygun
+2. `seven_classes_present` — 7 expected class checkbox şablona uygun
 3. `at_least_one_marked` — en az bir `[x]` işaret
 4. `none_exclusivity` — `none of the above` ile başka class çakışmasın
 5. `user_approval_evidence` — user-approval class işaretli ise `User-approval evidence: <link>` zorunlu (`N/A` reddedilir)
@@ -47,6 +47,7 @@ This PR includes:
 - [ ] state-mutation (test cluster)
 - [ ] state-mutation (production)
 - [ ] boundary-cross
+- [ ] user-communication
 - [x] none of the above (Codex consensus only)
 
 User-approval evidence: N/A
@@ -60,6 +61,7 @@ User-approval evidence: N/A
 - [x] state-mutation (test cluster)
 - [ ] state-mutation (production)
 - [ ] boundary-cross
+- [ ] user-communication
 - [ ] none of the above
 
 User-approval evidence: N/A
@@ -75,6 +77,7 @@ Label gerekmez. Codex consensus + Kural #7 agent yetkisi.
 - [x] state-mutation (test cluster)
 - [ ] state-mutation (production)
 - [ ] boundary-cross
+- [ ] user-communication
 - [ ] none of the above
 
 User-approval evidence: https://github.com/Halildeu/platform-k8s-gitops/discussions/X#comment-Y

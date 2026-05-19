@@ -6,13 +6,13 @@ Validates that every PR includes the ADR-0011 §2.3 boundary declaration block
 with required structure:
 
 1. Exact heading: `## Boundary declaration (ADR-0011 §2.3)`
-2. 6 expected checkboxes (credential-read, credential-write, state-mutation
-   (test cluster), state-mutation (production), boundary-cross, none of the
-   above)
+2. 7 expected checkboxes (credential-read, credential-write, state-mutation
+   (test cluster), state-mutation (production), boundary-cross,
+   user-communication, none of the above)
 3. At least one checkbox marked `[x]` or `[X]`
-4. If `none of the above` is marked, all 5 others must be unmarked
+4. If `none of the above` is marked, all 6 others must be unmarked
 5. If user-approval-required class marked (credential-read, credential-write,
-   state-mutation (production), boundary-cross), require:
+   state-mutation (production), boundary-cross, user-communication), require:
    - Body contains `User-approval evidence: <link or N/A-not-allowed>`
    - PR has `user-approval-required` label
 

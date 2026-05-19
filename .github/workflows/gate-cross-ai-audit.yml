@@ -8,6 +8,14 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # - Codex thread UUID format veya N/A
 # - Verdict enum (AGREE/REVISE/PARTIAL/RED)
 # - Same-provider exception → user-explicit-approval beyanı PR body'de
+#
+# #827 — automation-PR governance: a PR whose head branch matches an automation
+# prefix (auto-test-overlay/ · auto-verified/ · auto-promotion/) is audited in
+# pr-cross-ai-audit.mjs `auditAutomation` mode — a bot-generated PR is exempt
+# from the peer-review claim iff a multi-signal predicate holds (same-repo +
+# actor allowlist + Automation source/exempt-reason/evidence). PR-A keeps the
+# `pull_request` trigger; the `pull_request_target` + base-ref hardening is a
+# separate follow-up (PR-A2 — required-check migration, operator-coordinated).
 
 on:
   pull_request:
@@ -42,3 +50,10 @@ jobs:
         run: |
           node scripts/ci/pr-cross-ai-audit.mjs \
             --event-path "$GITHUB_EVENT_PATH"
+
+      # #827 — regression test for the automation-PR exemption logic
+      # (auditAutomation): legit bot auto-PRs pass, human-on-auto-branch is
+      # blocked, normal PRs still get the peer-review audit.
+      - name: Run automation-exemption regression test
+        run: |
+          node tests/ci/test-cross-ai-automation.mjs

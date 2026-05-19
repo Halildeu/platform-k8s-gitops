@@ -55,7 +55,7 @@ Codex AGREE alınmadan agent **işlemi denemez**.
 
 ## BG-1 + BG-2 ilişki
 
-- **BG-1** (`gate-pr-boundary-declaration` CI gate): per-PR enforcement — boundary declaration block + 6 class checkbox + user-approval evidence + label
+- **BG-1** (`gate-pr-boundary-declaration` CI gate): per-PR enforcement — boundary declaration block + 7 class checkbox + user-approval evidence + label
 - **BG-2** (this playbook + 3 GA decision records): pattern catalog + decision history; reference layer
 
 BG-1 hard gate (CI red); BG-2 reference (PR review + agent decision-making).

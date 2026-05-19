@@ -211,6 +211,25 @@ $(printf -- '- %s\n' "${UPDATED_FILES[@]}")
 
 This PR is safe to auto-merge after CI ledger-validate gate passes — content
 is generated, schema-validated, and represents observable cluster state.
+
+## Boundary declaration (ADR-0011 §2.3)
+
+- [ ] credential-read
+- [ ] credential-write
+- [ ] state-mutation (test cluster)
+- [ ] state-mutation (production)
+- [ ] boundary-cross
+- [ ] user-communication
+- [x] none of the above
+
+Ledger evidence update only — patches release-candidates/<repo>/<sha>.json
+with observed D29 smoke evidence; no cluster mutation, no credential I/O.
+
+## Cross-AI
+
+Automation source: scripts/promotion/ledger-mark-verified.sh
+Cross-AI exempt reason: Machine-generated D29-evidence ledger PR; no AI peer-review claim is made (issue 827 automation-PR governance contract).
+Automation evidence: D29 smoke report $REPORT (GREEN at $TS)
 " \
   --label "auto-promotion,smoke-verified,env:$ENV" 2>&1 || echo "[WARN] PR creation failed (may already exist or auth missing)"
 

@@ -48,6 +48,33 @@ const PROVIDER_ALIASES = {
   other: 'other',
 };
 
+// ── Automation-PR governance contract (#827) ──────────────────────────────
+// A machine-generated PR cannot make a cross-AI peer-review claim. It is
+// instead *exempt* from the peer-review requirement iff it proves — via a
+// multi-signal predicate, NOT a fake reviewer — that it is a genuine, known
+// automation source. The actor allowlist is the hard gate against
+// HUMAN-authored spoofing: a human PR has a human actor and can never satisfy
+// the exemption, no matter how the head branch is named or the body is
+// crafted. It is NOT full bot-token isolation — `github-actions[bot]` is
+// shared by every write-capable workflow; the same-repo + branch-prefix +
+// source-contract + evidence chain bounds the automation class, and a diff
+// path allowlist (#827 PR-A2 / PR-B) is what closes a compromised-bot blast
+// radius.
+// value = the generating file path; deliberately no `#<anchor>` — extractFields()
+// strips an inline `#` as a YAML comment, so the source identifier must be #-free.
+const AUTOMATION_BRANCH_CONTRACT = {
+  'auto-test-overlay/': '.github/workflows/deploy-backend-testai.yml',
+  'auto-verified/': 'scripts/promotion/ledger-mark-verified.sh',
+  'auto-promotion/': 'scripts/promotion/scan-promotion-candidates.sh',
+};
+const AUTOMATION_ACTORS = new Set(['github-actions[bot]']);
+
+function matchedAutomationPrefix(headRef) {
+  return (
+    Object.keys(AUTOMATION_BRANCH_CONTRACT).find((p) => headRef.startsWith(p)) ?? null
+  );
+}
+
 function parseArgs() {
   const args = {};
   for (let i = 2; i < argv.length; i++) {
@@ -61,13 +88,24 @@ function parseArgs() {
   return args;
 }
 
-function loadBody(args) {
+function loadInput(args) {
   if (args['body-file']) {
-    return readFileSync(args['body-file'], 'utf8');
+    // Local test mode — no PR metadata, so the automation-exemption path is
+    // unavailable and the normal peer-review audit runs.
+    return { body: readFileSync(args['body-file'], 'utf8'), prMeta: null };
   }
   if (args['event-path']) {
     const ev = JSON.parse(readFileSync(args['event-path'], 'utf8'));
-    return ev.pull_request?.body ?? '';
+    const pr = ev.pull_request ?? {};
+    return {
+      body: pr.body ?? '',
+      prMeta: {
+        headRef: pr.head?.ref ?? '',
+        headRepo: pr.head?.repo?.full_name ?? '',
+        baseRepo: pr.base?.repo?.full_name ?? '',
+        actor: pr.user?.login ?? '',
+      },
+    };
   }
   console.error('[cross-ai-audit] ERROR: --event-path veya --body-file gerekli');
   exit(2);
@@ -152,7 +190,7 @@ function extractFields(section) {
   // Strip fenced code block markers
   const cleaned = section.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
   const lines = cleaned.split(/\r?\n/);
-  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler)\s*:\s*(.*?)\s*$/i;
+  const keyRe = /^\s*(Implementer AI|Reviewer AI|Codex thread|Verdict|Verdict reason|Same-provider exception|Exception reason|Cross-AI exempt reason|Absorb edilen düzeltmeler|Automation source|Automation evidence)\s*:\s*(.*?)\s*$/i;
   for (const line of lines) {
     const m = line.match(keyRe);
     if (m) {
@@ -328,6 +366,97 @@ function audit(body) {
   return findings;
 }
 
+// ── Automation-PR exemption audit (#827) ──────────────────────────────────
+// Runs INSTEAD of audit() when the PR head branch matches an automation
+// prefix. A PR is exempt from the cross-AI peer-review requirement iff every
+// check below passes — proof the PR is a known, in-repo, bot-authored
+// automation artifact, NOT a fabricated peer review.
+function auditAutomation(body, prMeta) {
+  const findings = [];
+  const prefix = matchedAutomationPrefix(prMeta.headRef);
+  const expectedSource = AUTOMATION_BRANCH_CONTRACT[prefix];
+
+  // 1. same-repo — a fork PR can never claim the automation exemption
+  const sameRepo =
+    !!prMeta.headRepo && !!prMeta.baseRepo && prMeta.headRepo === prMeta.baseRepo;
+  findings.push({
+    check: 'automation_same_repo',
+    pass: sameRepo,
+    detail: sameRepo
+      ? `head & base both "${prMeta.baseRepo}"`
+      : `fork PR ("${prMeta.headRepo}" != "${prMeta.baseRepo}") — not exemption-eligible`,
+  });
+
+  // 2. head branch in the automation prefix allowlist (re-asserted for the report)
+  findings.push({
+    check: 'automation_branch_allowlist',
+    pass: true,
+    detail: `head.ref "${prMeta.headRef}" matches allowlisted prefix "${prefix}"`,
+  });
+
+  // 3. actor allowlist — the hard gate against human-authored spoofing. A
+  //    human PR has a human actor and can never satisfy this. (Not full bot
+  //    isolation: github-actions[bot] is shared across workflows — the wider
+  //    contract chain + a future diff path allowlist bound a compromised bot.)
+  const actorOk = AUTOMATION_ACTORS.has(prMeta.actor);
+  findings.push({
+    check: 'automation_actor_allowlist',
+    pass: actorOk,
+    detail: actorOk
+      ? `actor "${prMeta.actor}" is an allowlisted automation bot`
+      : `actor "${prMeta.actor}" is not an automation bot — exemption denied`,
+  });
+
+  // PR-body ## Cross-AI section fields
+  const section = extractCrossAiSection(body);
+  const fields = section ? extractFields(section) : {};
+
+  // 4. Automation source field present AND 1:1-consistent with the branch prefix
+  const src = fields['automation source'] || '';
+  if (!src) {
+    findings.push({
+      check: 'automation_source_field',
+      pass: false,
+      detail: '`Automation source:` field missing from the ## Cross-AI section',
+    });
+  } else if (src !== expectedSource) {
+    findings.push({
+      check: 'automation_source_field',
+      pass: false,
+      detail: `Automation source "${src}" does not match the contract "${expectedSource}" for prefix "${prefix}"`,
+    });
+  } else {
+    findings.push({
+      check: 'automation_source_field',
+      pass: true,
+      detail: `Automation source matches contract: ${src}`,
+    });
+  }
+
+  // 5. Cross-AI exempt reason — an explicit, non-trivial statement
+  const reason = fields['cross-ai exempt reason'] || '';
+  findings.push({
+    check: 'automation_exempt_reason',
+    pass: reason.length >= 10,
+    detail:
+      reason.length >= 10
+        ? `Cross-AI exempt reason provided (${reason.length}c)`
+        : '`Cross-AI exempt reason:` missing or shorter than 10 chars',
+  });
+
+  // 6. Automation evidence — a non-empty link to the generating run / report
+  const evidence = fields['automation evidence'] || '';
+  findings.push({
+    check: 'automation_evidence',
+    pass: evidence.length > 0,
+    detail: evidence.length > 0
+      ? 'Automation evidence link present'
+      : '`Automation evidence:` field missing or empty',
+  });
+
+  return findings;
+}
+
 function report(findings) {
   const passed = findings.filter((f) => f.pass).length;
   const total = findings.length;
@@ -345,7 +474,16 @@ function report(findings) {
 
 // Main
 const args = parseArgs();
-const body = loadBody(args);
-const findings = audit(body);
+const { body, prMeta } = loadInput(args);
+const automationPrefix = prMeta ? matchedAutomationPrefix(prMeta.headRef) : null;
+let findings;
+if (automationPrefix) {
+  console.log(
+    `[cross-ai-audit] automation-PR exemption mode — head.ref "${prMeta.headRef}" matches "${automationPrefix}"`,
+  );
+  findings = auditAutomation(body, prMeta);
+} else {
+  findings = audit(body);
+}
 const ok = report(findings);
 exit(ok ? 0 : 1);

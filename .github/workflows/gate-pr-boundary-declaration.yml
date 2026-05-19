@@ -2,9 +2,9 @@
 # BG-1.1 follow-up: dependabot coverage gap fix (Codex 019dd409 A-prime)
 #
 # Per-PR governance hard gate: PR description must contain the ADR-0011
-# §2.3 boundary declaration block + 6 expected classes + at least one
+# §2.3 boundary declaration block + 7 expected classes + at least one
 # marked + user-approval evidence + label for credential-read/write/
-# state-mutation-prod/boundary-cross classes.
+# state-mutation-prod/boundary-cross/user-communication classes.
 #
 # Trigger: `pull_request_target` (BG-1.1) — fires on dependabot PRs as well,
 # unlike `pull_request` which GitHub restricts for fork/dependabot security
