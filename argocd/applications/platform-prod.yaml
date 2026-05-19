@@ -60,8 +60,13 @@ spec:
     - group: external-secrets.io
       kind: ExternalSecret
       jsonPointers:
-        # /metadata tümü + /status (ServerSideApply field manager cosmetic)
-        - /metadata
+        # 2026-05-19 (Codex 019e41d7, bkz. PR #850 aynı fix): blanket `/metadata`
+        # ignore KALDIRILDI — ESO v1 CRD'sinde `/metadata` managedFields'i de
+        # kapsıyordu; RespectIgnoreDifferences ile birlikte SSA sync gövdesine
+        # managedFields taşıyıp `metadata.managedFields must be nil` ile sync'i
+        # bozardı. RespectIgnoreDifferences bu app'te HPA `/spec/replicas` +
+        # dinamik ConfigMap annotation'ları için KALIYOR; yalnız ExternalSecret
+        # `/metadata` ignore'u `/status`'a daraltıldı.
         - /status
       # 2026-04-24 Session 28 T+30 (d investigate): OutOfSync gerçek sebebi
       # ESO v1 API default field'ları (canlıda var, manifest'te yok):
