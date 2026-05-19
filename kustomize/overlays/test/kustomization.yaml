@@ -2286,7 +2286,15 @@ images:
     # Image build: merge commit cffdfc8d.
     # ghcr.io/halildeu/platform-web-frontend-testai:sha-cffdfc8
     # @sha256:16ffc7f1cc33f8303efcd0c608e5eab66459e2d77055997e4cf7005f8428a860
-    digest: sha256:b44b551af8e48354d04b24445fe23bc6f71932955bffb1c704de4f47550d965a
+    #
+    # 2026-05-19 update (Faz 23.4 M6a — inbox "Geçmiş (30 gün)" sekmesi):
+    # Bump to platform-web PR #614 (merge sha-943d82b); image build
+    # run 26114660718 SUCCESS, GHCR push @
+    # sha256:da605dbd6796264ba104d52473bca0686cd92d91146eb607ebcf45282f5c24c3.
+    # 3. tab "Geçmiş (30 gün)" + listHistory RTK endpoint. Backend M6a
+    # (notification-orchestrator 8c9a22a7, /me/history) gitops PR #848
+    # ile zaten test cluster'da canlı.
+    digest: sha256:da605dbd6796264ba104d52473bca0686cd92d91146eb607ebcf45282f5c24c3
 
   # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
   # BE-001 authz/test/CI fix promotion (2026-05-07).
