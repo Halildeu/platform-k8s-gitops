@@ -12,6 +12,10 @@
 >
 > **Authentication ≠ merge**: otomasyon PR'ı **açar/günceller**; merge yine
 > insan/governance gate'ine bağlıdır (admin-merge YASAK, CI-red merge YASAK).
+>
+> **#842 Part 2**: aynı `platform-automation` App `auto-promotion/` PR'larını da
+> açar (`promotion-bot-scan-candidates.yml` — scheduled prod-candidate scan).
+> Bu runbook'taki App kurulumu (ADIM 1-4) her iki otomasyonu da kapsar.
 
 ## Neden GitHub App — `GITHUB_TOKEN` değil
 
@@ -75,15 +79,17 @@ GitHub → Settings → Developer settings → **GitHub Apps** → New GitHub Ap
 
 ## 🧑 ADIM 4 — Branch ruleset (önerilen hardening)
 
-`auto-test-overlay/` branch-prefix'inin güçlü bir sinyal olması için, Settings →
-Rules → Rulesets → New branch ruleset:
+`auto-test-overlay/` + `auto-promotion/` branch-prefix'lerinin güçlü bir sinyal
+olması için, Settings → Rules → Rulesets → New branch ruleset:
 
-- **Target branches**: `auto-test-overlay/**`
+- **Target branches**: `auto-test-overlay/**` · `auto-promotion/**`
 - **Restrict creations / updates**: yalnız `platform-automation` App bypass listesinde.
 
-Bu, bir insanın `auto-test-overlay/*` dalına push edip exemption'ı taşıyamamasını
-garanti eder. (Aynı pattern `auto-verified/**` + `auto-promotion/**` için #827 Q5
-follow-up'ında uygulanır.)
+Bu, bir insanın bu dallara push edip exemption'ı taşıyamamasını garanti eder.
+`auto-promotion/**` aynı `platform-automation` App'iyle açılır (#842 Part 2 —
+`promotion-bot-scan-candidates.yml`). `auto-verified/**` ayrı follow-up
+(`ledger-mark-verified.sh` staging-sw host-systemd'de koşar — host-minted App
+token gerektirir).
 
 ## 🤖 ADIM 5 — Verify
 

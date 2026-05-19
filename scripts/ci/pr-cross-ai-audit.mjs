@@ -73,22 +73,23 @@ const AUTOMATION_BRANCH_CONTRACT = {
 // prefix. The `auditAutomation` actor check requires BOTH the PR author and
 // the event sender to be in the matched prefix's set.
 //
-// `auto-test-overlay/` is opened by the deploy-backend-testai.yml
-// sync-test-overlay-pr job via a GitHub App installation token — NOT
-// GITHUB_TOKEN. A GITHUB_TOKEN-opened PR does not trigger the `pull_request`
-// workflows the required `cross-ai-audit` check needs, so the App is
-// mandatory; its bot login is `platform-automation[bot]` (the operator names
-// the GitHub App so its slug resolves to `platform-automation` — see
+// `auto-test-overlay/` (deploy-backend-testai.yml sync-test-overlay-pr job)
+// and `auto-promotion/` (promotion-bot-scan-candidates.yml) are opened via a
+// GitHub App installation token — NOT GITHUB_TOKEN. A GITHUB_TOKEN-opened PR
+// does not trigger the `pull_request` workflows the required `cross-ai-audit`
+// check needs, so the App is mandatory; its bot login is
+// `platform-automation[bot]` (the operator names the GitHub App so its slug
+// resolves to `platform-automation` — see
 // docs/operations/RUNBOOKS/RB-automation-overlay-sync.md).
 //
-// `auto-verified/` + `auto-promotion/` keep `github-actions[bot]` from #827
-// PR-A. They are GITHUB_TOKEN-opened and hit the same recursion-guard gap;
-// migrating them to a non-GITHUB_TOKEN App identity is a tracked follow-up
-// (#827 Q5 — promotion-bot-scan-candidates.yml / ledger-mark-verified.sh).
+// `auto-verified/` keeps `github-actions[bot]` from #827 PR-A:
+// ledger-mark-verified.sh runs on a staging-sw host (not GitHub Actions), so
+// migrating it to a host-minted App token is a separate follow-up
+// (#842 / Codex `019e4094` Q3).
 const AUTOMATION_PREFIX_ACTORS = {
   'auto-test-overlay/': new Set(['platform-automation[bot]']),
+  'auto-promotion/': new Set(['platform-automation[bot]']),
   'auto-verified/': new Set(['github-actions[bot]']),
-  'auto-promotion/': new Set(['github-actions[bot]']),
 };
 
 function matchedAutomationPrefix(headRef) {
