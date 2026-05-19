@@ -35,11 +35,11 @@ Detay:
 
 ## 3. İspatlar
 
-- 5 PR `git log` ile MERGED doğrulandı; HEAD `f79b7ba` == `origin/main` == #845. Working tree temiz.
+- 5 PR `git log` ile MERGED doğrulandı; base `origin/main` = `f79b7ba` (#845). Bu handoff PR (#846) branch HEAD = `c9f1259`, yalnız bu handoff dokümanını ekler — kod/manifest değişimi yok.
 - **M365-passive CANLI**: prod user-service digest `fce3096e`'ye rollout; browser smoke M365 first-login → `403 ACCOUNT_DISABLED` (task #5).
 - **UTF-8 fix CANLI**: prod frontend digest `7e0999d1`'e rollout; browser-verify Türkçe isim render (task #8).
 - **reports-403 kök neden**: prod OpenFGA model `01KPXCVBMDKXXRPGKFGPDRVBQX` → `report_group` tipi **yok**; test model `01KRTJVEMAW80B2D35GN8HJDPG` → **var**. "Halil Koçoğlu" (userId 1204) `reports.hr-compensation-detay.view` permission'ına sahip (`scopes:[]`) ama model tipin kendisi eksik → `type_not_found` HTTP 400 → circuit breaker → 403. `admin@example.com` superAdmin OpenFGA check'i short-circuit ettiği için etkilenmiyor.
-- **4-nokta digest denetim matrisi** (ADR-0023 Ek A): prod overlay == prod CANLI **her serviste** (prod GitOps-tutarlı); `overlays/test` 8/10 backend + frontend'de test CANLI'dan drift.
+- **4-nokta digest denetim matrisi** (ADR-0023 Ek A — denetim anı / PR #845 öncesi snapshot): prod overlay == prod CANLI **her serviste** (prod GitOps-tutarlı); `overlays/test` 8/10 backend + frontend'de test CANLI'dan drift idi. PR #845 sonrası `overlays/test` test-live jenerasyona hizalı — overlay drift kapandı.
 - ADR-0023 + PR-2 design Codex peer review: thread `019e40e4`.
 
 ## 4. İspatlamaz (henüz CANLI DEĞİL / kanıtlanmadı)
@@ -56,7 +56,11 @@ Initiative task tracking: TaskList #1-#22 (bu session'ın local task seti). Comp
 
 ### P0-c (task #11) — OpenFGA `report_group` prod migration ← SIRADAKİ, kullanıcının bug'ını kapatır
 
-Runbook: `docs/RB-openfga-report-group-migration.md` (test'te koşuldu; **prod adımı atlandı** — bu handoff'un kök bug'ı). Adımlar:
+Runbook: `docs/RB-openfga-report-group-migration.md` (test'te koşuldu; **prod adımı atlandı** — bu handoff'un kök bug'ı).
+
+⚠ Runbook komutları tarihsel olarak `k3d-test` / `platform-test` / test Vault path odaklı. P0-c **prod** uygulanırken `kubectl` context, namespace ve Vault path bilinçli olarak prod'a çevrilmeli — runbook'taki literal test komutları aynen koşturulMAZ.
+
+Adımlar:
 
 1. Runbook'u oku — prod OpenFGA store'a `report_group` tipini içeren authorization model yaz (test modeli `01KRTJVEMAW80B2D35GN8HJDPG` referans şekil).
 2. Vault `kv/platform/...` `ERP_OPENFGA_MODEL_ID` → yeni prod model ID. ESO reconcile → secret render → permission-service rollout restart (prod overlay'deki mevcut digest `6cf81e19` ile; P0-d sonra yeni jenerasyona bump eder).
