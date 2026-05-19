@@ -2531,9 +2531,17 @@ images:
   # NOTIFY_ADAPTERS_SMS_PRIMARY_PROVIDER=jetsms ConfigMap flip birlikte gelir —
   # eski image JetSmsProvider içermez; flip tek başına SmsAdapter
   # 'primary jetsms not registered' → SMS FAILED.
+  #
+  # 2026-05-19 update (Faz 23.4 M6a — inbox 30-day history):
+  # Bump to platform-backend PR #254 squash MERGED (main 03fead8a); image
+  # build run 26112712877 SUCCESS, GHCR push @
+  # sha256:8c9a22a7552e0786e209fc1f54d76615cd32ecaaea1ae3e9c7d856e7c49a23cf.
+  # GET /api/v1/notify/inbox/me/history endpoint + V16 idx_inbox_subscriber_history
+  # (read-only 30-gün geçmiş; archive zaten mevcuttu). PR #254 main'den
+  # JetSMS PR #252 sonrası branch'lendi — JetSMS-primary cutover korunur.
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:caf02c248bb68410be9ac5ee0aaf25a1ef8632f0f5cf22dedfb2ec0b2f01f303
+    digest: sha256:8c9a22a7552e0786e209fc1f54d76615cd32ecaaea1ae3e9c7d856e7c49a23cf
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
