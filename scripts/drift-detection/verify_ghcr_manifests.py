@@ -197,8 +197,19 @@ def main() -> int:
     # ZERO auth_fails (`not (network_fails or auth_fails)`), which disabled the
     # heuristic exactly when the evidence was STRONGEST — N×404 + ≥1 outright
     # token-exchange fail is an unambiguous permission problem, not GC. MISSING
-    # and AUTH_FAIL now count TOGETHER toward the ≥80% threshold; only
-    # NETWORK_FAIL (a separate inconclusive → exit 2) disables the heuristic.
+    # and AUTH_FAIL now count TOGETHER toward the ≥80% threshold.
+    #
+    # 2026-05-18 fix (#821 follow-up, Codex 019e3f5b REVISE): the guard was
+    # `if missing and not network_fails and ...` — ONE transient GHCR timeout
+    # (NETWORK_FAIL) disabled the heuristic; control then fell through to
+    # `if missing: return 1` (which precedes the network branch) and produced
+    # a hard FALSE-RED while N cross-repo 404s were really just a packages:read
+    # gap. The `not network_fails` guard is removed so a transient timeout no
+    # longer disables the heuristic. NETWORK_FAIL is deliberately NOT added to
+    # the threshold count: only MISSING + AUTH_FAIL (the 404-class evidence)
+    # decide whether ≥80% is reached, so a timeout can never be the deciding
+    # vote that reclassifies an otherwise-suspicious missing-count — e.g.
+    # 7 MISSING + 1 NETWORK + 2 OK stays a hard fail (unverified 7 < threshold).
     # `math.ceil` so the threshold is a true ≥80% (`int()` floored, e.g. 9→7).
     #
     # Operator follow-up: the PR-time verifier authenticates with THIS repo's
@@ -210,7 +221,7 @@ def main() -> int:
     # detector (catches a real GC'd digest within ~5min).
     threshold = max(1, math.ceil(len(pairs) * 0.8))
     unverified = len(missing) + len(auth_fails)
-    if missing and not network_fails and unverified >= threshold:
+    if missing and unverified >= threshold:
         print()
         if unverified == len(pairs):
             print("[HEURISTIC] all digests unverified (404 / auth-fail) — cross-repo")
@@ -232,24 +243,30 @@ def main() -> int:
             print(f"    {detail}")
         return 1
 
+    # GHCR_STRICT=true is fail-closed — an inconclusive auth/permission result
+    # is a hard failure. Evaluated BEFORE the (non-strict, inconclusive)
+    # network branch so a concurrent transient timeout cannot mask a
+    # strict-mode hard failure (Codex 019e3f5b REVISE). GHCR_STRICT is opt-in
+    # for repos where a PAT with full cross-repo packages:read is configured.
+    if strict and auth_fails:
+        print()
+        print("[WARN] auth/permission failures — manifest existence not verified")
+        print("[STRICT] GHCR_STRICT=true: AUTH_FAIL counts as hard failure")
+        return 1
+
     if network_fails:
         print()
         print("[WARN] network failures — cannot conclude (returning 2)")
         return 2
 
     if auth_fails:
-        # Auth fails are inconclusive but not fatal in default mode.
-        # Most likely cause: cross-repo packages:read permission missing,
-        # or anonymous endpoint hiccup for public packages. Print warning
-        # and exit 0 (rely on runtime detector as second line of defense).
-        # GHCR_STRICT=true → treat AUTH_FAIL as hard failure (opt-in for
-        # repos where a PAT with full packages:read is configured).
+        # Auth fails are inconclusive but not fatal in default (non-strict)
+        # mode. Most likely cause: cross-repo packages:read permission missing,
+        # or an anonymous-endpoint hiccup for public packages. Print warning
+        # and exit 0 (rely on the runtime detector as second line of defense).
         print()
         print("[WARN] auth/permission failures — manifest existence not verified")
         print("       (runtime drift detector catches real GC'd digests within 5min)")
-        if strict:
-            print("[STRICT] GHCR_STRICT=true: AUTH_FAIL counts as hard failure")
-            return 1
 
     return 0
 
