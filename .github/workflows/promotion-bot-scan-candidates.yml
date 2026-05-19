@@ -37,28 +37,66 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # #842 Part 2 — promotion-bot opens auto-promotion/ PRs. With the default
+      # GITHUB_TOKEN those PRs do NOT trigger the required cross-ai-audit check
+      # (GitHub recursion guard), so the scan is opened with a GitHub App
+      # installation token (the same platform-automation[bot] App as the
+      # deploy-backend-testai.yml test-overlay sync — #827 PR-B).
+      #
+      # secrets.* is unavailable in job/step `if:` — pass it via `env:` and
+      # branch in the preflight. Skip is explicit (::notice::), never silent:
+      # the scan stays operator-disabled until the App is installed.
+      - name: Preflight — automation App credentials present?
+        id: preflight
+        env:
+          APP_ID: ${{ secrets.AUTOMATION_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "${APP_ID:-}" ] && [ -n "${APP_PRIVATE_KEY:-}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "✓ AUTOMATION_APP_* present — promotion-bot scan active"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=promotion-bot inactive::AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY repo secrets absent or incomplete — the scheduled prod-candidate scan is source-ready but operator-disabled. Setup: docs/operations/RUNBOOKS/RB-automation-overlay-sync.md"
+          fi
+
+      - name: Generate GitHub App token
+        id: app-token
+        if: steps.preflight.outputs.enabled == 'true'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+
       - name: Checkout
+        if: steps.preflight.outputs.enabled == 'true'
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Python
+        if: steps.preflight.outputs.enabled == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
+        if: steps.preflight.outputs.enabled == 'true'
         run: python3 -m pip install --quiet jsonschema PyYAML
 
       - name: Configure git
+        if: steps.preflight.outputs.enabled == 'true'
         run: |
-          git config user.name "promotion-bot[bot]"
-          git config user.email "promotion-bot@noreply.github.com"
+          git config user.name "platform-automation[bot]"
+          git config user.email "platform-automation[bot]@users.noreply.github.com"
 
       - name: Run scan-promotion-candidates
+        if: steps.preflight.outputs.enabled == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           GITHUB_REPO: ${{ github.repository }}
           PROMOTION_DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
         run: |
@@ -72,4 +110,8 @@ jobs:
       - name: Summary annotation
         if: always()
         run: |
-          echo "::notice title=Promotion bot scan complete::Daily scheduled scan finished. Check this run's log for opened DRAFT PRs (auto-promotion label). Operator review needed before merge."
+          if [ "${{ steps.preflight.outputs.enabled }}" != "true" ]; then
+            echo "::notice title=promotion-bot inactive::Scan skipped — AUTOMATION_APP_* repo secrets absent (operator-disabled). Setup: docs/operations/RUNBOOKS/RB-automation-overlay-sync.md"
+          else
+            echo "::notice title=Promotion bot scan complete::Scheduled scan finished. Check this run's log for opened DRAFT PRs (auto-promotion). Operator review needed before merge."
+          fi
