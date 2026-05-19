@@ -59,5 +59,17 @@ data:
   NOTIFY_ADAPTERS_SMTP_FROM_ADDRESS: "noreply@testai.acik.com"
   NOTIFY_ADAPTERS_SMTP_FROM_NAME: "ACIK Platform"
 
+  # Faz 23.3 SMS multi-provider — JetSMS endpoint URL'leri (non-secret;
+  # credential'lar ESO externalsecret-notify üzerinden). platform-backend
+  # PR #250/#252 JetSmsProvider. Behavior-neutral: değerler backend @Value
+  # inline default'larına eşit — GitOps config görünürlüğü için açık yazılır.
+  # Provider routing (primary-provider / secondary-provider) PR-4'te BİLİNÇLİ
+  # set EDİLMEZ: o flip PR-5 cutover'da, JetSMS-capable image digest bump ile
+  # atomik gelir (mevcut cluster image PR #249/#250/#252 öncesi → SmsAdapter
+  # 'primary jetsms not registered' FAILED döndürür). PR-4 sonrası backend
+  # default primary-provider=netgsm geçerli kalır. Codex thread 019e4022.
+  NOTIFY_ADAPTERS_SMS_JETSMS_API_URL: "https://api.jetsms.com.tr/SMS-Web/HttpSmsSend"
+  NOTIFY_ADAPTERS_SMS_JETSMS_REPORT_URL: "https://api.jetsms.com.tr/SMS-Web/HttpSmsReport"
+
   # Outage fallback bypass receiver names (Alertmanager — D43)
   NOTIFY_OUTAGE_FALLBACK_DOCS: "docs/runbooks/RB-notification-outage-fallback.md"
