@@ -22,7 +22,7 @@
 - Kernel (23.1) features substantively LIVE: schema, idempotency, outbox, retry/DLQ, authz strict, templates (~18-20 of 25)
 - MVP-dar (23.2) Session 39 hardening LIVE: Vault/ESO + audit retention + Grafana + alerts + SLO (5 of 8 acceptance)
 - MVP-dar (23.2) original kabul kriteri: 2/8 done (Grafana + Alertmanager); 6 pending (preference, erasure, provider rollback, outage fallback, classification, abuse)
-- MVP-geniş (23.3): 0 LIVE end-to-end (NetGSM contract pending R1); **infrastructure progress Session 42: 23.3.1 NetGSM Vault path canonical LIVE 2026-05-10 (PR #482 + #485 DLR follow-up) — kv/platform/notification-orchestrator + 4 NetGSM keys (username/password/msgheader/dlr_token all empty fail-closed) + ESO 9/9 Ready + 4/4 pod env vars injected**
+- MVP-geniş (23.3): 0 LIVE end-to-end; **provider kararı 2026-05-19 (kullanıcı): SMS primary JetSMS (canlı sözleşme var), secondary NetGSM (contract R1 pending)**. Infrastructure progress Session 42: NetGSM Vault path canonical LIVE 2026-05-10 (PR #482 + #485 DLR follow-up); JetSMS HTTP API adapter + failover Faz 23.3 SMS multi-provider PR sequence (PR-0..PR-4, Codex `019e3f82` AGREE)
 - v1 (23.4-23.8): ~5-6 LIVE (in-app UI + identity guards + dashboard SLO panels)
 - v2 (23.X): 0 LIVE (deferred)
 
@@ -61,7 +61,7 @@
 | A1 | Email transactional (SMTP) | **Kernel** | 23.1 | 🟢 |
 | A2 | Slack incoming webhook | **Kernel** | 23.1 | 🟢 |
 | A3 | Webhook egress (HMAC signed) | **Kernel** | 23.1 | 🟢 |
-| A4 | SMS (NetGSM primary, İletimerkezi secondary) | **MVP-geniş** | 23.3 | 🟡 (23.3.1 Vault path canonical LIVE Session 42 PR #482; backend SmsAdapter LIVE platform-backend #77; **NetGSM contract activation R1 ETA 2026-05-30 pending** + DLR + IYS + secondary failover) |
+| A4 | SMS (JetSMS primary, NetGSM secondary) | **MVP-geniş** | 23.3 | 🟡 (provider kararı 2026-05-19: JetSMS primary canlı sözleşme + NetGSM secondary failover; NetGSM Vault path canonical LIVE Session 42 PR #482; backend SmsAdapter LIVE platform-backend #77; **JetSMS HTTP API adapter + failover PR sequence Codex `019e3f82` AGREE**; NetGSM contract R1 ETA 2026-05-30 = secondary failover acceptance blocker, primary activation blocker DEĞİL) |
 | A5 | In-app inbox backend API | **MVP-geniş** | 23.3 | 🟢 (LIVE GET /inbox/me + SSE) |
 | A6 | In-app inbox React UI (custom) | v1 | 23.4 | 🟢 (PR-5.x cycle LIVE) |
 | A7 | Microsoft Teams (Adaptive Cards) | v1 | 23.6 | ☐ |

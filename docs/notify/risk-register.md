@@ -30,7 +30,7 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 
 | ID | Risk | Probability | Impact | Severity | Mitigation | Owner | Status | Sub-faz | Last Review |
 |---|---|:---:|:---:|:---:|---|---|:---:|---|---|
-| R1 | NetGSM provider sözleşme + sandbox account gecikmesi | High | High | **High** | Backup: İletimerkezi secondary; pre-prod testing Mailpit pattern; **Vault path infrastructure 🟢 LIVE 2026-05-10 (PR #482 canonical + PR #485 DLR follow-up) — kv/platform/notification-orchestrator + 4 NetGSM keys (username/password/msgheader/dlr_token all empty fail-closed) + ESO 9/9 Ready + 4/4 pod env vars injected**; contract activation pending | ops + legal | 🟡 Active | 23.3.1 | 2026-05-10 |
+| R1 | NetGSM secondary provider sözleşme gecikmesi → SMS failover acceptance blocker | Medium | Medium | **Medium** | **Semantik (2026-05-19 kullanıcı kararı)**: SMS primary artık **JetSMS** (canlı sözleşme + HTTP API aktif) — R1 SMS *primary activation* blocker DEĞİL. R1 yalnızca **NetGSM secondary failover acceptance** blocker'ıdır: JetSMS-only degraded mode SMS gönderir, ama "JetSMS primary + NetGSM secondary failover live-ready" kabul kriteri NetGSM contract aktivasyonuna bağlı. Backup: JetSMS-only degraded mode; **NetGSM Vault path infrastructure 🟢 LIVE 2026-05-10 (PR #482 + #485) — secondary hazır, contract activation pending ETA 2026-05-30** | ops + legal | 🟡 Active | 23.3.1 | 2026-05-19 |
 | R2 | KVKK erasure scope yanlış implement → audit fail / legal exposure | Medium | Critical | **High** | Legal review öncesi merge yasak; runbook + integration test pre-prod | legal/dev | 🟡 Active | 23.2.B | 2026-05-09 |
 | R3 | DKIM/SPF/DMARC prod activation breaks email delivery | Medium | High | **Medium** | A4 DKIM RFC 6376 full impl (backend PR #151, 61 test sign+verify); activation flip A5 PR-B deferred. Mailpit dev test + canary domain + 24h pre-cutover validation | ops/dev | 🟢 Mitigated | 23.2 | 2026-05-11 |
 | R4 | Audit retention DETACH/DROP destructive bug (data loss) | Low | Critical | **Medium** | Backend test PR #130 + dry-run observation + ownership check | dev | 🟢 Mitigated | 23.2 (retention) | 2026-05-09 |
@@ -86,9 +86,10 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 - 2026-05-09 (Session 39 bootstrap): Initial 20 risks identified during PM artifact creation. R4/R5/R8/R18/R20 marked Mitigated based on Session 39 Codex review evidence.
 - 2026-05-09 (Codex iter-2 absorb PR #441): R1 owner extended `ops → ops + legal` (NetGSM commercial contract). 2 yeni risk: R21 (provider rate-limit external throttling) + R22 (GHCR registry outage). Toplam aktif risk: 22.
 - 2026-05-10 (Session 42 PR #482 + #483 + #485 absorb): R1 mitigation row extended — Vault path infrastructure 🟢 LIVE (canonical kv/platform/notification-orchestrator + 4 NetGSM keys (username/password/msgheader/dlr_token all empty fail-closed) + ESO 9/9 Ready + 4/4 pod env vars injected). Sub-faz 23.3 → 23.3.1. Last review 2026-05-09 → 2026-05-10. Contract activation pending R1 ETA 2026-05-30. R12 🔴 Pending → 🟡 Active (T1.3 backend Testcontainers spawn_task chip user-side cross-repo platform-backend).
+- 2026-05-19 (SMS provider kararı — kullanıcı): SMS primary **NetGSM → JetSMS** (canlı sözleşme + HTTP API), secondary **İletimerkezi → NetGSM**. R1 severity **High → Medium** + semantik daraltıldı: artık SMS primary activation blocker değil, yalnızca NetGSM secondary failover acceptance blocker (JetSMS-only degraded mode SMS gönderir). Probability/Impact High/High → Medium/Medium. Multi-provider PR sequence Codex `019e3f82` AGREE.
 
 ## Next Review
 
 - **2026-05-12** (post 23.9 72h observation closure): R7 (browser verify), R8 (observation completion), R9 (outage fallback drill if 23.2.D started)
 - **2026-05-25** (23.2 closure milestone): R2/R12/R13/R19 (Faz 23.2.A..F implementation gates)
-- **2026-06-08** (23.3 SMS milestone): R1/R3 (NetGSM contract + DKIM activation)
+- **2026-06-08** (23.3 SMS milestone): R1 (NetGSM secondary contract — failover acceptance), R3 (DKIM activation)

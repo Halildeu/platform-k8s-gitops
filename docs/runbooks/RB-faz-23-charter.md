@@ -48,7 +48,7 @@ Tüm yapılan iş bu charter'daki sub-faz numaralandırmasına map edilmek zorun
 | **23.0** | Charter | docs | 1 hafta | — | 🟢 done (PR #362 + 5 follow-up commits + 2026-05-09 truth alignment) |
 | **23.1** | Kernel/Closed Beta | code | 3-4 hafta | 23.0 + Faz 22.1.1b III review | 🟡 partial (service runtime LIVE prod: V8 partition + 3 channel adapters + OutboxPoller + RetryWorker + auth guards activated; **D29-NOTIFY-Functional 3-channel evidence 2026-05-14 accepted** — board #754, `docs/faz-23-evidence/2026-05-14-m2-d29-functional-3-channel-live.md`: Email+Slack+Webhook DELIVERED + PG delivery rows + D29-Authorized Layer-1 org-boundary allow/deny LIVE. 23.1 **🟡 kalır**: acceptance tablosundaki Layer-2 channel-level OpenFGA `subscriber#can_receive` kriteri Faz 23.2 v2 scope'unda — Codex `019e3c74` verdict B) |
 | **23.2** | Production MVP dar | code | R2 KVKK legal review external | 23.1 | **🟢 source-ready + acceptance candidate** (Session 44 sonu 2026-05-10; FULL ACCEPTANCE post-merge PR #149 + #503: KVKK retention + Vault/ESO + Grafana 15-panel + 25 PrometheusRule + DLQ SLO 99.5% LIVE; 5-state matrix at PR-time Source 12/12 + Live 12/12 + Evidence 12/12 + Acceptance 11/12 + Blocked 0/12 → post-merge 12/12; **6/6 sub-faz post-merge: 23.2.A T1.1 trilogy MERGED 3/3 (PR #142+#143+#144+#145+#146+#147+#498+#501) + 23.2.B subscriber self-service + 23.2.C provider config rollback (R12 Mitigated PR #140) + 23.2.D outage fallback (R9 Mitigated) + 23.2.E data classification 9-test acceptance candidate (PR #149) + 23.2.F abuse guards**; R2 KVKK legal review external ETA 2026-05-25) |
-| 23.3 | Production MVP geniş | code | 3 hafta | 23.2 | 🟡 partial (Session 42: **23.3.1 NetGSM Vault path canonical LIVE 2026-05-10** PR #482 + #485 DLR follow-up — kv/platform/notification-orchestrator + 4 NetGSM keys (username/password/msgheader/dlr_token all empty fail-closed) + ESO 9/9 Ready + 4/4 pod env vars injected; **NetGSM contract activation R1 pending ETA 2026-05-30**; in-app inbox API + IYS gate + multi-provider failover pending) |
+| 23.3 | Production MVP geniş | code | 3 hafta | 23.2 | 🟡 partial (Session 42: NetGSM Vault path canonical LIVE 2026-05-10 PR #482 + #485 DLR follow-up; **SMS provider kararı 2026-05-19 (kullanıcı): primary JetSMS (canlı sözleşme + HTTP API), secondary NetGSM** — multi-provider 5-PR sequence PR-0..PR-4 Codex `019e3f82` AGREE; **NetGSM secondary contract R1 ETA 2026-05-30 = failover acceptance blocker (primary activation blocker DEĞİL)**; in-app inbox API + IYS gate pending) |
 | **23.4** | v1 — DLR + in-app UI | code | 2 hafta | 23.3 | 🟡 partial (PR-5.x cycle in-app inbox + SSE LIVE + strict identity guards LIVE; **SMS DLR T3.1.7 🟢 Session 44**: backend PR #85 + api-gateway PR #154 + gitops PR #514 MERGED + live smoke pipeline VERIFIED 2026-05-11 via mock provider 5/5 gates PASS (evidence `docs/faz-23-evidence/2026-05-11-t3-1-7-dlr-live-smoke-pass.md`); real SMS go-live R1 contract ETA 2026-05-30 — pipeline 100% ready; **archive UI + 30-day history kalan portion 🟡**) |
 | 23.5 | v1 — preference UI | code | 1 hafta | 23.4 | ⏳ pending (FE preference settings page) |
 | 23.6 | v1 — Teams + Slack zenginleştirme | code | 1 hafta | 23.4 | ⏳ pending (Teams adapter + Slack Block Kit + threading) |
@@ -241,13 +241,16 @@ Estimated remaining work (Session 44 sonu): **R2 KVKK legal review external coor
 **Tier**: Production MVP geniş (3 hafta)
 
 **Kapsam**:
-- **SMS adapter** (NetGSM primary, İletimerkezi secondary)
-  - SmsProvider interface
-  - NetGsmClient (REST/SOAP — provider docs)
-  - GSM-7/UCS-2 segment hesabı
-  - Sender ID config
-  - Failover (pre-accept fail auto)
-- DLR (Delivery Receipt) callback endpoint (provider POSTs delivery status)
+- **SMS adapter** (JetSMS primary, NetGSM secondary — 2026-05-19 kullanıcı kararı)
+  - `SmsProvider` interface + `SmsAdapter` failover facade (channelKey="sms")
+  - `JetSmsProvider` — JetSMS HTTP API (`api.jetsms.com.tr/SMS-Web`, form-urlencoded, iso-8859-9)
+  - `NetGsmProvider` — NetGSM REST v2 (mevcut NetGsmSmsAdapter refactor)
+  - GSM-7/UCS-2 vs ISO-8859-9 segment hesabı + charset capability route
+  - Sender ID config (JetSMS Originator / NetGSM msgheader)
+  - Failover matrix (`SmsFailureClass` taxonomy — failover-eligible vs kalıcı hata)
+- DLR (Delivery Receipt) dual-mode:
+  - NetGSM: webhook **push** (`/api/v1/notify/dlr/netgsm`)
+  - JetSMS: polling **pull** (`HttpSmsReport` worker — JetSMS webhook göndermez)
 - **In-app inbox backend API**:
   - `GET /inbox/me` (paged)
   - `POST /inbox/{id}/read`
@@ -266,7 +269,7 @@ Estimated remaining work (Session 44 sonu): **R2 KVKK legal review external coor
 
 | Madde | Kanıt |
 |---|---|
-| SMS NetGSM canlı | sandbox/canary number → DELIVERED |
+| SMS JetSMS canlı (primary) | sandbox/canary number → DELIVERED (JetSMS HTTP API) |
 | In-app API canlı | `GET /inbox/me` returns rows |
 | WS endpoint | unread count badge update |
 | 4 workflow live test | her biri D29-NOTIFY 3 katman PASS |
@@ -282,10 +285,10 @@ Estimated remaining work (Session 44 sonu): **R2 KVKK legal review external coor
 
 **Acceptance state**:
 - **Done**: in-app inbox UI LIVE (PR-5.x cycle), strict identity guards LIVE (PR-5.4/5.5)
-- **Pending**: SMS DLR callback ingestion (Faz 23.3 dep — NetGSM provider activation öncesi mümkün değil), archive UI button, 30-day notification history filter
+- **Pending**: SMS DLR ingestion (Faz 23.3 dep — JetSMS polling pull + NetGSM webhook push dual-mode), archive UI button, 30-day notification history filter
 
 **Kapsam**:
-- SMS DLR callback ingestion (provider → orchestrator) — ⏳ deferred (Faz 23.3 dep — NetGSM provider activation pending)
+- SMS DLR ingestion (provider → orchestrator) — ⏳ Faz 23.3 (JetSMS polling pull `HttpSmsReport` + NetGSM webhook push dual-mode; generic DlrIngest core PR-3)
 - mfe-host **in-app inbox React component** (custom, Novu yok) — ✅ LIVE
   - List view (paged) ✅
   - Read/unread toggle ✅
@@ -300,7 +303,7 @@ Estimated remaining work (Session 44 sonu): **R2 KVKK legal review external coor
 
 | Madde | Status | Kanıt |
 |---|:---:|---|
-| DLR callback round-trip | ⏳ pending | NetGSM DLR → delivery row UPDATE status=DELIVERED — Faz 23.3 dep |
+| DLR round-trip | ⏳ pending | JetSMS poll / NetGSM webhook DLR → delivery row UPDATE status=DELIVERED — Faz 23.3 dep |
 | **In-app inbox UI canlı** | 🟢 done | mfe-host inbox component LIVE testai + ai.acik.com; SSE stream stable; PR-5.x cycle multiple iterations |
 | **Inbox /me 400 page-load race fix** | 🟢 done | platform-web PR #316/317/318 (skipToken + RTK fetchFn unwrap Request→string) |
 | **SubscriberIdentityGuard strict** | 🟢 done | Backend Faz 23.5 hardening + PR-5.5 strict cutover (NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT=true LIVE prod) |
@@ -487,7 +490,7 @@ Her sub-faz tamamlandığında:
 | OQ | Soru | Kim cevaplar | Status | Resolution |
 |---|---|---|---|---|
 | OQ-1 | Corporate SMTP relay var mı, yoksa Postal self-host? | ops + kullanıcı | 🟡 Tentative | **Corporate relay first**; Postal yedek + ops onayı. 23.2'de clarify. |
-| OQ-2 | SMS primary NetGSM mi İletimerkezi mi? | kullanıcı | 🟡 Tentative | **NetGSM primary**, İletimerkezi secondary. Prod sözleşme kullanıcı onayı. 23.3 öncesi clarify. |
+| OQ-2 | SMS primary hangi provider? | kullanıcı | 🟢 Resolved | **JetSMS primary** (canlı sözleşme + HTTP API), **NetGSM secondary** (failover). Kullanıcı kararı 2026-05-19. İletimerkezi tertiary DEFERRED. |
 | OQ-3 | IYS kaydı mevcut mu? | ops + legal | 🔴 Pending | Transactional MVP'de skip; commercial SMS gerekirse legal confirm. D40-IYS sub-faz. |
 | OQ-4 | Audit retention süre tercihi (30/90/180/365)? | kullanıcı + legal | 🟡 Tentative | **90 gün teknik default**, legal confirm. 23.2 sub-faz drift. |
 | OQ-5 | Slack workspace kanal isimleri? | kullanıcı | 🟡 Tentative | Test: `#alerts`/`#audit`/`#ops`. Prod webhook kullanıcı/ops confirm. 23.6 scope. |

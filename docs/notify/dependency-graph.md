@@ -244,35 +244,33 @@ T2.3.3 + T2.3.4 Browser SSO verify (user, parallel) ──┐
 
 ## Task-Level Dependency (Tier 3: SMS + Preference UI)
 
-### T3.1 SMS NetGSM (23.3)
+### T3.1 SMS JetSMS primary + NetGSM secondary (23.3)
 
 ```
-T3.1.1 NetGSM contract (R1) ◀── BLOCKING dependency
+JetSMS canlı sözleşme (aktif) ── primary path NOT blocked
+NetGSM contract (R1) ◀── secondary failover acceptance dependency (NOT primary blocker)
         │
         ▼
-T3.1.9 Vault SMS creds path
-        │
-T3.1.2 SmsProvider interface ──┐
-                               ▼
-T3.1.3 NetGsmClient ──┐
-                      ▼
-T3.1.4 GSM-7/UCS-2 + sender ID
-        │
-T3.1.5 İletimerkezi secondary (parallel)
+T3.1.2 SmsProvider interface + SmsAdapter facade (PR-1, behavior-neutral) ──┐
+                                                                            ▼
+T3.1.4 NetGsmProvider refactor (PR-1) ──┐
+                                        ▼
+T3.1.3 JetSmsProvider HTTP API impl (PR-2, iso-8859-9 + form-urlencoded) ──┐
+                                                                           ▼
+T3.1.5 Provider failover matrix (PR-2, SmsFailureClass taxonomy)
         │
         ▼
-T3.1.6 Provider failover
-        │
-T3.1.7 DLR callback endpoint
+T3.1.6 JetSMS DLR polling worker + generic DlrIngest core (PR-3)
         │
         ▼
-T3.1.8 4 workflow live test
+T3.1.x gitops Vault/ESO/ConfigMap (PR-4) + 4 workflow live test
         │
 T3.1.10 In-app inbox API closure (independent track) ──┐
                                                         │
                                                         ▼
                                                   T3.1.11 Codex review + merge
 ```
+> Provider kararı 2026-05-19 (kullanıcı): SMS primary JetSMS, secondary NetGSM. 5-PR sequence (PR-0 docs + PR-1..PR-4) Codex `019e3f82` AGREE.
 
 ### T3.2 Preference UI (23.5)
 
@@ -323,7 +321,7 @@ M3 (23.2 closure) ──── critical path bottleneck (~17-22h residual / 1-1.
   ├──▶ M5 (23.5 Preference UI) ─ blocked by T1.1
   │
   ▼
-M4 (23.3 SMS NetGSM) ──── R1 contract risk
+M4 (23.3 SMS JetSMS primary + NetGSM secondary) ──── R1 = NetGSM secondary failover acceptance risk
   │
   ├──▶ T3.1.7 DLR callback closes M6 SMS portion
   │
@@ -359,7 +357,8 @@ M9 (v2 deferred)
 |---|---|---|:---:|
 | Faz 22.1.1b III review verdict | 23.1 | bypassed pre-prod | 🟡 |
 | Faz 22.2 endpoint-admin Lab tier | 23.7 | TBD | ⏳ |
-| NetGSM provider sandbox account (R1) | 23.3 | 2026-05-30 target | 🟡 |
+| JetSMS canlı sözleşme + API (SMS primary) | 23.3 | aktif | 🟢 |
+| NetGSM secondary contract + sandbox account (R1, failover acceptance) | 23.3 | 2026-05-30 target | 🟡 |
 | Legal KVKK Art.11 review (R2) | 23.2.B | 2026-05-25 target | 🔴 |
 | DKIM/SPF/DMARC prod domain config (R3) | 23.2 | TBD ops | 🟡 |
 | Browser SSO user availability (R7) | 23.9 | per-cutover | 🟡 |
