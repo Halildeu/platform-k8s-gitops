@@ -1,0 +1,28 @@
+# Fixture (FAIL) — RespectIgnoreDifferences=true with
+# `/metadata/annotations` and `/metadata/labels` container pointers
+# (no specific key segment → still broad enough to surface managedFields
+# in the SSA body).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fixture-fail-broad-annotations
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://example.invalid/repo.git
+    targetRevision: main
+    path: kustomize/overlays/test
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-test
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - kind: ConfigMap
+      name: writer-managed
+      jsonPointers:
+        - /metadata/annotations
+        - /metadata/labels

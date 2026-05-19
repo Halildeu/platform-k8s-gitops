@@ -1,0 +1,35 @@
+# Fixture (PASS) — mirrors `argocd/applications/platform-test.yaml` (the
+# live manifest at the time of writing). RespectIgnoreDifferences=true is
+# legitimate here because every `/metadata/*` pointer carries a specific
+# escaped annotation key after `/metadata/annotations/` and therefore does
+# NOT surface managedFields in the SSA body.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fixture-pass-platform-test
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://example.invalid/repo.git
+    targetRevision: main
+    path: kustomize/overlays/test
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-test
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - kind: ConfigMap
+      name: frontend-federation-smoke-status
+      jsonPointers:
+        - /data
+        - /metadata/annotations/frontend-federation-smoke.io~1last-fire
+        - /metadata/annotations/frontend-federation-smoke.io~1result
+        - /metadata/annotations/frontend-federation-smoke.io~1failures
