@@ -38,6 +38,14 @@ on:
 permissions:
   contents: read
 
+# #821 (Codex 019e3f2c AGREE): the rollout step pins 8 services sequentially.
+# A run cancelled mid-rollout would leave k3d-test on a partial digest set;
+# two concurrent backend rollouts would race the same Deployments. Serialise
+# every run and never cancel in-flight (queue instead).
+concurrency:
+  group: backend-testai-deploy
+  cancel-in-progress: false
+
 env:
   K8S_CONTEXT: k3d-test
   K8S_NAMESPACE: platform-test

@@ -101,7 +101,9 @@ images:
     #   - Subject-equality self-guard (Step 1e) defense-in-depth
     #   - 5 unit tests (ImpersonationControllerSelfGuardTest) pin each branch
     #   - Pairs with platform-web#411 (FE UX overhaul)
-    digest: sha256:a35f34ab4c1d9705ffe7642aa6f970b570e5f42ab9d1fe6999bbb128fbca2f41
+    # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
+    # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
+    digest: sha256:81499ba09e248791123f82a660d5776f33dba4ea226e30ce4b465ed1f03bf3b5
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -272,7 +274,9 @@ images:
     # Codex cross-AI peer review thread 019e1440 AGREE + ready_for_merge.
     # Build evidence: platform-backend run 25643108415 — api-gateway push
     # manifest sha256:c54f9f4baec7f34454ff686698463fa0f94c333dceeafb7a5ce8141fda47b70f.
-    digest: sha256:c54f9f4baec7f34454ff686698463fa0f94c333dceeafb7a5ce8141fda47b70f
+    # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
+    # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
+    digest: sha256:bb95149a3d5fc5dc7e545d8d51de6cf9085e6000728cbaff853fe5f00236b3c9
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     # 2026-05-12 update: bump to sha-5bec7fb (platform-backend#159 — Codex
@@ -288,7 +292,9 @@ images:
     #   - User entity + DTO updated to surface kc_subject at the
     #     internal boundary
     #   - Pairs with platform-web#411 (FE UX overhaul)
-    digest: sha256:545b6df3058a9a2d6037ce0738ec7861457f3bc49a866abb08bf15c0dadb04a6
+    # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
+    # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
+    digest: sha256:c94c057cde2b82e87dc025ff06f75d1aa35ae82ae8858cd15e61942d37f0dc21
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -303,10 +309,14 @@ images:
     # 500/502/503=upstream classes). Cache supplier no longer caches
     # failures (doesNotCacheUpstreamFailures test proves recovery).
     # 22/22 variant tests PASS (5 authz + 17 other).
-    digest: sha256:393387a01a5aee3b09e3164eb0611d5ae22f9e7eb9172d03dd5c5402951697e4
+    # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
+    # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
+    digest: sha256:70106d05b75c3117d7ad72e316e9501e034556eab23610979652f5524e13d550
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-backend-core-data-service
-    digest: sha256:b803507ac6b17240a8cced6878606f2aad7b31856140d6b5071352135babf37f
+    # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
+    # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
+    digest: sha256:ec5cfd1b9ce3e84fc4ea81461ba488b2569170da8442b4c8c22c9198e37b573c
   - name: report-service
     newName: ghcr.io/halildeu/platform-backend-report-service
     # 2026-05-07: canonical bump sha-9beed5f (platform-backend HEAD,
@@ -592,7 +602,9 @@ images:
     # Frontend PR-0.5c-fe (platform-web PR #540) wires the AG Grid
     # set filter dropdown to this endpoint with a 60s epoch-aware
     # in-memory cache.
-    digest: sha256:87476a37a4b3f7f239d178a040bb8e60bd0ee96d5377f6baf0ceb1ce768b9dcf
+    # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
+    # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
+    digest: sha256:5ddbc6199bf9af2c934eb77b40378e8a79f390104ce974e8e929f5bd34d09c8e
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
