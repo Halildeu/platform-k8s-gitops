@@ -74,10 +74,22 @@ images:
   # commit 53646b5). Lazy-provisions the backend `users` row on an M365 SSO
   # first-login JWT — required before M365 v2 is enabled on the `serban`
   # realm, else first-login arrives with a valid JWT but no profile row →
-  # 403 PROFILE_MISSING. Was sha256:c1316fbc (test-validated set, PR #818).
+  # 403 PROFILE_MISSING.
+  #
+  # 2026-05-19: M365 auto-provisioned users created PASSIVE + activation gate
+  # (platform-backend PR #251, merge commit 364bd20). The auto-provisioned row
+  # is now enabled=false; CurrentUserResolver rejects a passive profile with
+  # 403 ACCOUNT_DISABLED on the JWT path (local username/password login was
+  # already gated by Spring DisabledException — JWT/M365 auth bypassed that).
+  # An admin activates the account via the existing updateActivation endpoint.
+  # First M365 login now lands 403 ACCOUNT_DISABLED — no longer an immediately
+  # usable viewer account for any stranger from the allow-listed tenant.
+  # D29 test-verified: release-candidates/platform-backend/fce3096e...json
+  # (k3d-test smoke GREEN 2026-05-19T11:51:48Z, all 4 tiers).
+  # Was sha256:c1316fbc (PR #818) → sha256:c94c057c (PR #825 M365 bridge).
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
-    digest: sha256:c94c057cde2b82e87dc025ff06f75d1aa35ae82ae8858cd15e61942d37f0dc21
+    digest: sha256:fce3096eb994cdd8c3911c3c9e64369b082ca066d5a24ce430146a22a8585541
   # 2026-05-04 Session 37: variant-service canonical realign — was sha256:4a51a49f.
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
@@ -144,9 +156,28 @@ images:
   # cc487c5584 (PR #321 era — pre-scope-picker, pre-chart-modernization).
   # Operator request: bring prod up to canonical main. Latest CI run
   # 25294004654 (sha-940c4c4) prod variant manifest digest pinned below.
+  #
+  # 2026-05-19 board #820 — frontend prod-variant promotion (M365 chain +
+  # Turkish-name UTF-8 fix). Supersedes the never-deployed sha-e6eeb62 pin
+  # (PR #833, platform-web PR #596) — that artifact predated PR #608.
+  # Artifact: build sha-b567292, platform-web commit b567292d (PR #611),
+  # CI run 26095796755 job "Build + Push prod" — env-baked
+  # VITE_KEYCLOAK_URL=https://ai.acik.com, VITE_KEYCLOAK_REALM=serban.
+  # Carries platform-web PR #608 (decode JWT payload as UTF-8 — fixes the
+  # Turkish-name mojibake "Halil KoÃ§oÄlu" in the shell header + user grids).
+  # D29 evidence (ADR-0022 frontend-prod-variant-transient-smoke): the prod
+  # variant artifact was transient-run in k3d-test (platform-test ns) and
+  # smoked 2026-05-19T12:10:00Z — d29_up GREEN (imageID digest +
+  # /build-info.json sha match), d29_functional GREEN (/ 200 + entry asset
+  # 200 + remoteEntry 200 + env-baking: no testai.acik.com / localhost:8080
+  # leak, ai.acik.com + serban present; ai.acik.com read-only probe 200/200),
+  # d29_zanzibar AMBER (static SPA, jwt_validates:false). Ledger:
+  # release-candidates/platform-web/b567292de47d6bced9af518ae1192603abaef070.json
+  # Rollback digest: sha256:6d926376a58bfd47c3d5059e0e0025f8cb38d5c7fbf80767461b2eea136647f4
+  # (prior prod, 2026-05-04 sha-940c4c4 — last digest live on prod).
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
-    digest: sha256:6d926376a58bfd47c3d5059e0e0025f8cb38d5c7fbf80767461b2eea136647f4
+    digest: sha256:7e0999d1865ad560e45374af7d76d7a2427c35d0791c1ee30a73598eb81861ce
 
   # Faz 23.9 prod cutover (2026-05-08): notification-orchestrator
   # canonical activation. Pin remains sha-204042d (PR #126 era) until D29

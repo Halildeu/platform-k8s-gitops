@@ -189,7 +189,13 @@ entry'sinde D29-GREEN test smoke kanıtı şart.
   damgalandı.
 - `gate-evidence-check.py` lokal: 8/8 digest D29-kanıtlı → gate satisfied.
 
-**Frontend follow-up (Faz 1b — ayrı PR):** prod-variant `d8b7b696` (build
-`sha-e6eeb62`, platform-web PR #596) prod promotion'ı; ya gerçek prod-variant
-pre-prod smoke kanıt yolu kurulur ya da env-baked variant'lar için ayrı
-evidence-class governance PR'ı açılır.
+**Frontend follow-up (Faz 1b — board #820):** env-baked variant'lar için
+evidence-class governance kuruldu — ADR-0022 `frontend-prod-variant-transient-
+smoke` (Codex `019e3f7e` A-lite verdict; Option C `source-parity-with-test-
+verified-sibling` reddedildi). Prod-variant `d8b7b696` (build `sha-e6eeb62`,
+platform-web PR #596) k3d-test `platform-test` ns'inde transient koşturulup
+smoke edildi (`scripts/smoke/d29-frontend-variant-smoke.sh`): d29_up +
+d29_functional GREEN, d29_zanzibar AMBER (statik SPA, `jwt_validates:false`).
+Ledger `release-candidates/platform-web/e6eeb6290ef83c9ac301e2eb9315fde53ceb05ab.json`.
+Prod overlay frontend digest bump `6d926376` → `d8b7b696` aynı board #820
+PR'ında; prod sync operatör-gated (`deploy-prod-gitops.yml`).

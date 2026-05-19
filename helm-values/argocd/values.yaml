@@ -120,6 +120,22 @@ server:
 repoServer:
   replicas: 1
 
+  # 2026-05-19: explicit intent guard — restates the argo-cd chart default.
+  # NOTE: the chart omits hostNetwork from the rendered manifest when false,
+  # so this does NOT make `helm upgrade` actively strip an out-of-band
+  # `hostNetwork: true` drift from the live Deployment. Its value is (a)
+  # documenting intent and (b) making any future values override to `true`
+  # visible in review. The operational guardrail for live drift is the
+  # recovery patch in docs/runbooks/RB-argocd-hub-recovery.md Mode 5.
+  #
+  # Why it matters: the live prod repo-server pod had drifted out-of-band to
+  # hostNetwork: true while keeping dnsPolicy: ClusterFirst — an invalid
+  # combo for cluster DNS (a hostNetwork pod needs ClusterFirstWithHostNet),
+  # so the pod inherited the node resolv.conf, could not resolve the
+  # argocd-redis Service → ComparisonError, sync status stuck Unknown.
+  # repo-server needs no host networking (git/redis/k8s-API over pod net).
+  hostNetwork: false
+
   resources:
     requests:
       cpu: 50m
