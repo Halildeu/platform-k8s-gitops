@@ -4655,9 +4655,9 @@ Bu dokümanda ve sonraki iletişimde **kullanılmayacak**:
 
 | Vault path | State (length-only) |
 |---|---|
-| `graph_tenant_id` | **property absent** (Vault'ta key yok; ExternalSecret data[] specifies remoteRef.property but ESO reports SecretSyncedError on missing) |
-| `graph_client_id` | **property absent** |
-| `graph_client_secret` | **property absent** |
+| `graph_tenant_id` | **property absent** (Vault'ta key yok; PR #906 defer-aware refactor sonrası ExternalSecret data[] artık bu remoteRef'i istemez — commented out olarak deferred reactivation snippet inline). Eski additive state SecretSyncedError aggregate fail üretmişti. |
+| `graph_client_id` | **property absent** (aynı defer-aware refactor — commented out) |
+| `graph_client_secret` | **property absent** (aynı defer-aware refactor — commented out) |
 | ExternalSecret `notification-orchestrator-secrets` (prod) | **Defer-aware refactor 2026-05-20 (Codex `019e45f8` AGREE)**: Graph 3 `remoteRef` entries **commented out** (deferred reactivation snippet inline). ExternalSecret aggregate `Ready=True` for active channels (SPRING_DATASOURCE_*, SMS NetGSM/JetSMS, Teams/Slack, FCM/APNS/VAPID, SMTP, DKIM, unsubscribe) — JetSMS prod cutover artık ESO aggregate blocker'a takılmaz. Live verify pending (PR merge + Argo sync sonrası). **Pod runtime etkisi yok**: Graph flag `false` default + digest henüz Graph-binary-inclusive sha değil → `GraphMailAdapter` bean instantiate edilmez; `SmtpAdapter` aktif; mail delivery hep SMTP path. |
 | ExternalSecret (test) | **Aynı defer-aware refactor** (test+prod parity, Codex önerisi). Graph 3 remoteRef commented out → aggregate `Ready=True` for active channels. Live verify pending. |
 

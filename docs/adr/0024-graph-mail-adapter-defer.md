@@ -146,7 +146,7 @@ Bu ADR'a göre **bu repodaki** aşağıdaki kontrat noktaları **iç-tutarlı** 
 | `docs/notify/milestones.md` M3/M7 | SMTP canonical confirmed; Graph defer not blocker (M3); Graph scope-out v1 (M7) | ✅ Yansıtıldı |
 | `docs/notify/feature-matrix.md` A1/H14 | A1 Email parenthetical cross-ref; H14 §8 Provider Management Graph activation path deferred | ✅ Yansıtıldı |
 | `docs/state/current-state.md` | Entra state snapshot + Vault graph_* empty + ConfigMap flag false + SmtpAdapter expected/effective | ✅ Yansıtıldı |
-| `docs/runbooks/RB-graph-mail-adapter-activation.md` | DEFERRED ACTIVATION RUNBOOK + 5-step reactivation chain | ✅ Yansıtıldı |
+| `docs/runbooks/RB-graph-mail-adapter-activation.md` | DEFERRED ACTIVATION RUNBOOK + D5 reactivation chain (6 atomic step set including ESO re-enable PR step 4) | ✅ Yansıtıldı |
 | `kustomize/overlays/{test,prod}/eso/notify/externalsecret-notify.yaml` | Graph 3 `remoteRef` entries **commented out** (defer-aware refactor 2026-05-20, Codex `019e45f8` AGREE); deferred reactivation snippet stays inline. ESO aggregate `Ready=True` for active channels; Graph re-enable D5 reactivation chain step 4 (PR-gated, Cross-AI peer review) | ✅ Defer-aware refactor (A.1 issue #903 child) |
 | Board issue #892 (P3 Backlog) | Reactivation trigger conditions documented; claim yok future-only | ✅ Mevcut |
 
@@ -165,7 +165,7 @@ Bu ADR'a göre **bu repodaki** aşağıdaki kontrat noktaları **iç-tutarlı** 
 
 - Backend: [platform-backend PR #153](https://github.com/Halildeu/platform-backend/pull/153) — `GraphMailAdapter` + `GraphTokenService` + `MailAdapter` interface
 - Gitops: PR #872 (`feat(notify-23-A8): gitops Graph adapter ESO 3-key + DNS runbook — staged-only`)
-- Runbook: [docs/runbooks/RB-graph-mail-adapter-activation.md](../runbooks/RB-graph-mail-adapter-activation.md) — 5-step reactivation
+- Runbook: [docs/runbooks/RB-graph-mail-adapter-activation.md](../runbooks/RB-graph-mail-adapter-activation.md) — D5 reactivation chain (6 atomic step set)
 - Runbook (DNS): [docs/runbooks/RB-faz-23-dns-records-acik-com.md](../runbooks/RB-faz-23-dns-records-acik-com.md) — SPF/DMARC/DKIM
 - Runbook (D43 outage fallback): [docs/runbooks/RB-notification-outage-fallback.md](../runbooks/RB-notification-outage-fallback.md) — owner-artifact pattern reference
 - ADR-0013: [Notification orchestration](./0013-notification-orchestration.md) — D40+D44+D45 mail delivery context

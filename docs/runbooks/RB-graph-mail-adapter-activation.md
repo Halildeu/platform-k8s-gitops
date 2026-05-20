@@ -201,7 +201,7 @@ Hem test hem prod 3'er key.
 
 ### ESO yaml — Graph remoteRef entries re-enable (defer-aware refactor 2026-05-20 sonrası)
 
-**Önemli — Codex `019e45f8` defer-aware refactor (PR #905 sonrası)**: ESO yaml'lerinde Graph 3 `remoteRef` entry **commented out** durumdadır (ESO aggregate `Ready=False` blocker'ı çözmek için). Vault seed sonrası bu entries **re-enable** edilmeden ESO Graph 3 key'i sync etmez.
+**Önemli — Codex `019e45f8` defer-aware refactor (PR #906 sonrası)**: ESO yaml'lerinde Graph 3 `remoteRef` entry **commented out** durumdadır (ESO aggregate `Ready=False` blocker'ı çözmek için). Vault seed sonrası bu entries **re-enable** edilmeden ESO Graph 3 key'i sync etmez.
 
 Aşağıdaki commit zinciri uncomment + Argo sync + verify yapar:
 
