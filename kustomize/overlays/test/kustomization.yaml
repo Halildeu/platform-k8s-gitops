@@ -2581,7 +2581,17 @@ images:
     # ConfigMap patches (this PR aynı commit chain): SOAP_OPERATION=sendSMSSingle
     # + CHANNEL=VF + CHANNEL_ALLOWED=VF,VFO + CHANNEL_OTP_TOPIC_KEYS +
     # CHANNEL_OTP_MAX_LENGTH=160.
-    digest: sha256:30b0bf658dcd879c531451352c4e37680551fe14ab667a255eea36adbb281a5b
+    #
+    # 2026-05-20 update v3 (Faz 23.A4 PR-B2 — DKIM strategy enum):
+    # Bump from sha-6ed593e (PR-A3.1.1 baseline) to sha-6307428. Carries
+    # PR-B1 (platform-backend #268 MERGED 2026-05-20T19:46Z):
+    #   - notify.dkim.strategy enum (app|relay|disabled)
+    #   - ProductionConfigValidator validateDkimStrategy() switch branch
+    #   - validateDkimRelay() Office 365 Native pattern
+    #   - 10 yeni test (42/42 total PASS)
+    # Build evidence: gh run view 26185928228 -R Halildeu/platform-backend
+    # success 2026-05-20T~19:50Z; digest sha256:3b103e35e3978192556ea8dab8da60ef40f80514981d31ab1e001a27a005d74d.
+    digest: sha256:3b103e35e3978192556ea8dab8da60ef40f80514981d31ab1e001a27a005d74d
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
@@ -3222,6 +3232,27 @@ patches:
       - op: add
         path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_MAX_LENGTH
         value: "160"
+      # Faz 23.A4 DKIM relay strategy (Codex 019e4514 PR-B1 platform-backend
+      # PR #268 MERGED 2026-05-20T19:46Z, sha-6307428). Test cluster relay
+      # strategy validate eden ProductionConfigValidator branch'i smoke için.
+      # NOT: test profile prod profile değil → ProductionConfigValidator skip;
+      # DkimSigner @ConditionalOnProperty notify.dkim.enabled=true (default
+      # false) → bean disabled; SmtpAdapter Optional<DkimSigner> empty →
+      # mail unsigned. Test cluster mail unsigned beklendiği için (Mailpit
+      # localhost receiver) prod-level DKIM evidence yok. Bu config sadece
+      # backend new strategy enum'ı pod boot'ta render testi.
+      - op: add
+        path: /data/NOTIFY_DKIM_STRATEGY
+        value: "relay"
+      - op: add
+        path: /data/NOTIFY_DKIM_ENABLED
+        value: "false"
+      - op: add
+        path: /data/NOTIFY_DKIM_RELAY_PROVIDER
+        value: "office365"
+      - op: add
+        path: /data/NOTIFY_DKIM_RELAY_DOMAIN
+        value: "acik.com"
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "true"
