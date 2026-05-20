@@ -51,9 +51,24 @@ spec:
       rules:
         # Per-metric series count. Operators look at this via
         # `topk(20, cardinality:series:by_metric)` in Grafana Explore.
+        # NOTE on the label_replace: `count by (__name__) (...)` leaves the
+        # original metric name as the `__name__` label on every output
+        # series. The recording rule then overwrites `__name__` with
+        # `cardinality:series:by_metric`, and Prometheus refuses to store
+        # the result with the error `vector contains metrics with the
+        # same labelset after applying rule labels` (every output collapses
+        # to the same label tuple once `__name__` is rewritten). The
+        # `label_replace` copies the original metric name into a fresh
+        # `metric` label first, then we group by `metric` instead — every
+        # output now has a distinct labelset and the rule stores cleanly.
         - record: cardinality:series:by_metric
           expr: |
-            count by (__name__) ({__name__=~".+"})
+            count by (metric) (
+              label_replace(
+                {__name__=~".+"},
+                "metric", "$1", "__name__", "(.+)"
+              )
+            )
 
         # Total active-series gauge. Single number; goes on a dashboard
         # single-stat panel + the future budget alert builds on this.
