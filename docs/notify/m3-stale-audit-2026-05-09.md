@@ -84,10 +84,10 @@ Aramalar:
 | Task | File | Source | Acceptance | Blocker |
 |---|---|:---:|:---:|---|
 | T1.3.1 V_history table | (provider_config_history schema) | 🟢 | 🟢 | — |
-| T1.3.2 Versioning service | `ProviderConfigHistoryRepository.java` | 🟢 | 🔴 | acceptance gate |
-| T1.3.3 Atomic switch + cache | TBD | 🟡 | 🔴 | acceptance gate |
+| T1.3.2 Versioning service | `ProviderConfigHistoryRepository.java` + `ProviderConfigService.java` | 🟢 | 🟢 | — |
+| T1.3.3 Atomic switch + cache | `ProviderConfigService.switchActive` (@Transactional SERIALIZABLE + TransactionSynchronization.afterCommit cache invalidate) | 🟢 | 🟢 | — |
 
-**T1.3 Verdict**: Partial source-ready; acceptance gate.
+**T1.3 Verdict (UPDATED 2026-05-10 — platform-backend PR #140 MERGED, R12 Mitigated FULL ACCEPTANCE)**: All T1.3 sub-tasks source-ready/live with Testcontainers integration test acceptance evidence (4 test methods CI GREEN: `atomic_switch` + `concurrent_switch_race` + `cache_invalidate` + `rollback_on_fail`). Atomic switch uses `@Transactional` SERIALIZABLE isolation + `TransactionSynchronization.afterCommit` cache invalidation pattern (prevents stale config served between commit and invalidate). Cross-AI peer review: Codex thread (PR #140 chain) iter-1 RED (initial design issues) → iter-2 AGREE post-impl. R12 (provider config rollback transaction race) 🟢 Mitigated per `risk-register.md`. M3 milestones canonical: `T1.3 23.2.C Provider config rollback merged` ✅.
 
 ### T1.4 — 23.2.D Outage Fallback Bypass (D43, must-have #10)
 
