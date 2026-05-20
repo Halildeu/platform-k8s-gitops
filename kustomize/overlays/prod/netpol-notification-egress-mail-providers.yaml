@@ -1,0 +1,67 @@
+# Faz 23.3 prod cutover M4 A.3 — notification-orchestrator prod egress
+# (587 SMTP + 443 HTTPS — mail providers + JetSMS SOAP)
+#
+# Test overlay (kustomize/overlays/test/netpol-notification-egress-mail-providers.yaml)
+# pattern'inin prod paralel'i. Codex thread `019e4514` PR-A1 → PR-A3.2 test
+# cluster LIVE acceptance kanıtı 2026-05-20. Prod cutover gates A.3 close.
+#
+# default-deny-egress (kustomize/base/netpol/default-deny.yaml) + intra-ns
+# allowlist + host-bridge (5432/8080/8200 ports only) external mail/SMS
+# provider egress'i KAPSAMIYOR. Bu policy iki main outbound route için
+# explicit egress izni verir:
+#
+#   1. Port 587 STARTTLS — Office 365 SMTP gateway (smtp.office365.com:587)
+#      SmtpAdapter (test cluster A6 LIVE 2026-05-08; prod aktivasyon bu
+#      cutover ile)
+#   2. Port 443 HTTPS — JetSMS SOAP (api.jetsms.com.tr) + Microsoft Graph
+#      (graph.microsoft.com, login.microsoftonline.com) — Graph şu an
+#      deferred (ADR-0024); 443 kuralı JetSMS için load-bearing
+#
+# Selector: triple-label (Codex 019e15ee P1 absorb pattern — name + component
+# + part-of) label collision riski azaltır.
+#
+# Audit kanıtı (test cluster): 2026-05-20T17:26+ JetSMS SOAP ACCEPTED + DLR
+# DELIVERED full happy-path; kullanıcı +905551815564 multipart SMS DELIVERED.
+#
+# CIDR strategy: explicit Microsoft/Biotekno IP range'leri provider'a göre
+# dinamik (Microsoft IP feed update edilir); RFC1918 dışında public range'e
+# 587/443 egress açar. Future hardening: provider-specific CIDR feed parse.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-notification-orchestrator-egress-mail-providers
+  namespace: platform-prod
+  annotations:
+    platform.acik.com/faz: "23.3-M4-A.3"
+    platform.acik.com/codex-thread: "019e4514"  # PR-A1 → PR-A3.2 chain test LIVE
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notification-orchestrator
+      app.kubernetes.io/component: backend
+      app.kubernetes.io/part-of: platform
+  policyTypes:
+    - Egress
+  egress:
+    # Office 365 SMTP outbound (port 587 STARTTLS)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8       # RFC1918 — cluster-internal
+              - 172.16.0.0/12    # RFC1918 — docker/k3d bridge
+              - 192.168.0.0/16   # RFC1918 — home/office LAN
+      ports:
+        - protocol: TCP
+          port: 587  # SMTP submission STARTTLS (Office 365, SendGrid, AWS SES, Postmark, Mailgun)
+    # HTTPS outbound for JetSMS SOAP + Graph API + OAuth (port 443)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443  # api.jetsms.com.tr + graph.microsoft.com + login.microsoftonline.com
