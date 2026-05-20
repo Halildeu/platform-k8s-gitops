@@ -31,7 +31,11 @@ const APP_BOT = 'platform-automation[bot]';
 const dir = mkdtempSync(join(tmpdir(), 'crossai-'));
 
 // Build the GitHub event payload and run the real script; return its exit code.
-function runCase({ branch, actor, sender, headRepo = REPO, body }) {
+// `changedFiles` is an optional array → written to a temp file and passed via
+// `--changed-files-file`. `undefined` skips the flag entirely (older workflows
+// and the normal peer-review audit don't need it). `[]` writes an empty file
+// (fail-closed via dependabot_changed_files_present).
+function runCase({ branch, actor, sender, headRepo = REPO, body, changedFiles }) {
   const event = {
     pull_request: {
       body,
@@ -43,8 +47,14 @@ function runCase({ branch, actor, sender, headRepo = REPO, body }) {
   };
   const f = join(dir, 'ev.json');
   writeFileSync(f, JSON.stringify(event));
+  const cmdArgs = [SCRIPT, '--event-path', f];
+  if (Array.isArray(changedFiles)) {
+    const cf = join(dir, 'changed-files.txt');
+    writeFileSync(cf, changedFiles.join('\n'));
+    cmdArgs.push('--changed-files-file', cf);
+  }
   try {
-    execFileSync('node', [SCRIPT, '--event-path', f], { stdio: 'pipe' });
+    execFileSync('node', cmdArgs, { stdio: 'pipe' });
     return 0;
   } catch (e) {
     return e.status ?? -1;
@@ -65,6 +75,15 @@ const peerBody =
 const WF = '.github/workflows/deploy-backend-testai.yml';
 const LEDGER = 'scripts/promotion/ledger-mark-verified.sh';
 const SCAN = 'scripts/promotion/scan-promotion-candidates.sh';
+
+// #898 — Dependabot bot PR exemption (Codex `019e4517` AGREE).
+// Dependabot doesn't fill the Cross-AI body fields; the exemption is gated by
+// (branch prefix + same-repo + dual-actor + changed-file allowlist), all of
+// which the audit reads from event payload + injected changed-files file.
+const DEPENDABOT_BOT = 'dependabot[bot]';
+const dependabotBody =
+  `## Summary\nBumps actions/setup-node from 4 to 6.\n\n` +
+  `Dependabot release notes elided for brevity.\n`;
 
 const cases = [
   ['valid automation PR (auto-test-overlay, App-bot author + App-bot sender)',
@@ -94,6 +113,26 @@ const cases = [
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: peerBody }, 0],
   ['normal PR + no Cross-AI section -> fail',
     { branch: 'roadmap-827-x', actor: 'halilkocoglu', sender: 'halilkocoglu', body: '## Summary\nno cross-ai here\n' }, 1],
+
+  // #898 — Dependabot bot PR exemption (Codex `019e4517` AGREE 3-iter consensus).
+  ['#898 valid dependabot PR (prefix + dependabot[bot] author/sender + same-repo + github-actions allowlist diff) -> exempt PASS',
+    { branch: 'dependabot/github_actions/actions/setup-node-6', actor: DEPENDABOT_BOT, sender: DEPENDABOT_BOT,
+      body: dependabotBody, changedFiles: ['.github/workflows/ci.yml'] }, 0],
+  ['#898 dependabot PR with non-allowlisted diff path (src/main.py) -> blocked',
+    { branch: 'dependabot/python_pkg/foo', actor: DEPENDABOT_BOT, sender: DEPENDABOT_BOT,
+      body: dependabotBody, changedFiles: ['.github/workflows/ci.yml', 'src/main.py'] }, 1],
+  ['#898 human-opened dependabot/spoof branch -> blocked (actor gate)',
+    { branch: 'dependabot/spoof', actor: 'mallory', sender: 'mallory',
+      body: dependabotBody, changedFiles: ['.github/workflows/ci.yml'] }, 1],
+  ['#898 dependabot[bot] author + human sender (synchronize bypass) -> blocked',
+    { branch: 'dependabot/github_actions/actions/setup-node-6', actor: DEPENDABOT_BOT, sender: 'mallory',
+      body: dependabotBody, changedFiles: ['.github/workflows/ci.yml'] }, 1],
+  ['#898 fork PR on dependabot/* branch -> blocked (same-repo gate)',
+    { branch: 'dependabot/github_actions/actions/checkout-6', actor: DEPENDABOT_BOT, sender: DEPENDABOT_BOT,
+      headRepo: 'mallory/platform-k8s-gitops', body: dependabotBody, changedFiles: ['.github/workflows/ci.yml'] }, 1],
+  ['#898 dependabot PR missing changed-files input -> blocked (fail-closed)',
+    { branch: 'dependabot/github_actions/actions/setup-node-6', actor: DEPENDABOT_BOT, sender: DEPENDABOT_BOT,
+      body: dependabotBody /* no changedFiles */ }, 1],
 ];
 
 let fails = 0;
