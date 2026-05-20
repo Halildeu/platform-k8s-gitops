@@ -11,7 +11,7 @@
 
 ## Executive Summary
 
-Faz 23.3 M4 prod cutover **bugün başarıyla tamamlandı** (2026-05-20).
+Faz 23.3 M4 prod cutover **bugün LIVE oldu** (2026-05-20) — agent-actionable adımlar A.1+A.2+A.3+A.6 infaz edildi; A.4 (canary smoke) + A.5 (DLR terminal evidence) + 72h observation + R24 + R1 ext-gated kalır.
 PR #911 ilk denemesi DKIM strategy enum öncesi crashloop'a girmişti
 (`notify.dkim.enabled=false — production must enable app-side DKIM (R3
 mitigation)` strict gate fail); reconciliation revert PR #912 + 4-PR

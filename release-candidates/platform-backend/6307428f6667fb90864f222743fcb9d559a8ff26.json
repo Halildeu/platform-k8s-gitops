@@ -53,10 +53,10 @@
           "details": "Pod imageID=sha256:3b103e35e3978192556ea8dab8da60ef40f80514981d31ab1e001a27a005d74d Running 1/1; SmtpAdapter activated dkimEnabled=false (relay strategy); SmsAdapter activated primary=jetsms secondary=(none) registered=[netgsm, jetsms]; ProductionConfigValidator: all production guards PASSED (validateDkimStrategy + validateDkimRelay relay.provider=office365 relay.domain=acik.com); JetSmsDlrPollingWorker activated batchSize=100 pollInterval=PT1M scheduling=true; OutboxPoller + RetryWorker activated; Started in 37.768 seconds"
         },
         "d29_functional": {
-          "status": "PARTIAL",
+          "status": "AMBER",
           "checked_at": "2026-05-20T20:15:33Z",
           "endpoints": ["/actuator/health"],
-          "details": "Boot-only functional smoke GREEN (pod env vars all 14 DKIM + JetSMS keys present + ConfigMap render correct + ProductionConfigValidator PASSED). Real SMS dispatch canary smoke ext-gated (real user M365 SSO UI flow; agent prod-smoke-tester JWT mint gateway-block 403). DLR poll cycle scheduling=true ama henüz pending DLR yok (ACCEPTED delivery_id boş set)."
+          "details": "Boot-only functional smoke GREEN (pod env vars all 14 DKIM + JetSMS keys present + ConfigMap render correct + ProductionConfigValidator PASSED). Real SMS dispatch canary smoke ext-gated (real user M365 SSO UI flow; agent prod-smoke-tester JWT mint gateway-block 403). DLR poll cycle scheduling=true ama henuz pending DLR yok (ACCEPTED delivery_id bos set). AMBER status: boot-up evidence GREEN ama functional-acceptance (canary SMS dispatch + DLR terminal) ext-gated."
         },
         "d29_zanzibar": {
           "status": "GREEN",
