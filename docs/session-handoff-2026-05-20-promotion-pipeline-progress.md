@@ -105,9 +105,11 @@ bash scripts/board-sync.sh list                                       # board cl
 
 ---
 
-## Update 2026-05-20 — PR-8 Merged After This Doc (follow-up handoff delta)
+## Update 2026-05-20 — PR-8 Was Already Merged But Missing From Original Handoff Content (omission correction)
 
-Bu handoff doc'u `da9128a` ile merge edildiğinde Guardrail PR-8 hâlâ açıktı. Aynı session içinde **PR-8 da merge edildi**; doc'un §2 (İddia) tablosunda görünmüyor — bu bölüm onu adresliyor.
+Bu handoff doc'u `da9128a` ile merge edildiğinde PR-8 (`ac5a3b2`) **zaten merge edilmişti** (`git merge-base --is-ancestor ac5a3b2 da9128a` ✓; commit dates: PR-8 `2026-05-20T10:45:24+03:00`, handoff `2026-05-20T10:52:21+03:00` — yani PR-8 doc'tan ~7 dk önce landed). Ancak doc'un §2 İddia tablosu PR-8'i içermiyor ve §5 priority tablosu PR-8'i hâlâ "yapılmadı + #1 önerilen" olarak listeliyor. Bu Update bölümü o **omission**'ı düzeltir.
+
+> **Reader note**: Aşağıdaki §4/§5 PR-8 satırları (PR-8 = pending/öncelik #1) **tarihsel içerik olarak bırakıldı**; geçerli durum bu Update bölümüdür.
 
 ### PR-8 — MERGED
 
@@ -117,10 +119,10 @@ Bu handoff doc'u `da9128a` ile merge edildiğinde Guardrail PR-8 hâlâ açıkt�
 
 Detay:
 
-- **#883** — `scripts/board/require-claim.sh` YENİ (~180 satır, +x): fail-closed live-mutation guard; `BOARD_SESSION_ID` ↔ body `claim_session` + `claim_worktree`/`claim_branch` identity match + `expires_at > now`. Empty identity fields **FAIL** (silently skipped değil). Distinct unblock advice: `LEASE_EXPIRED` flag — expired ise "re-claim" (heartbeat refuses), valid-lease mismatch ise "switch to correct worktree/branch". Exit 0/1/2.
+- **#883** — `scripts/board/require-claim.sh` YENİ (201 satır, +x): fail-closed live-mutation guard; `BOARD_SESSION_ID` ↔ body `claim_session` + `claim_worktree`/`claim_branch` identity match + `expires_at > now`. Empty identity fields **FAIL** (silently skipped değil). Distinct unblock advice: `LEASE_EXPIRED` flag — expired ise "re-claim" (heartbeat refuses), valid-lease mismatch ise "switch to correct worktree/branch". Exit 0/1/2.
 - `scripts/board-sync.sh` L50 fix: `CLAIM_TTL_HOURS="${CLAIM_TTL_HOURS:-2}"` + `^[0-9]+$` numeric guard. Önceki hardcoded `=2` env override'ı yutuyordu; `CLAIM_TTL_HOURS=6 board-sync.sh claim ...` artık honored (uzun P0 işleri için).
 - `docs/board-protocol.md` §8.1 sub-section: trigger (lease silent expire pattern), kullanım örneği, `CLAIM_TTL_HOURS=6` override notu, scope-out (worktree mkdir lock + per-session worktree convention deferred to PR-8 follow-up Opsiyon B/C).
-- Codex `019e44a4` 1 tur REVISE (3 finding: TTL env honor, empty identity fail-closed, expired-vs-mismatch distinct advice) → AGREE.
+- Codex `019e444d` 1 tur REVISE (3 finding: TTL env honor, empty identity fail-closed, expired-vs-mismatch distinct advice) → AGREE.
 - Bu sırada paralel session worktree branch'imi 2 kez switch'ledi; bu pattern PR-8'in adreslediği problemin **canlı kanıtı** (PR-8 öncesi sürtünme).
 
 ### Geçerli Kalan Sıra (effective remaining sequence)
@@ -149,7 +151,8 @@ Bu repo'da aynı gün başka session **multi-initiative closure wave** yaptı (8
 - `019e42c1` (P0-e closure)
 - `019e42c4` (PR-2 #866 implementation)
 - `019e443d` (PR-5 #876 implementation)
-- `019e44a4` (PR-8 #883 implementation)
+- `019e444d` (PR-8 #883 implementation)
+- `019e44ad` (bu Update bölümü Codex peer review — REVISE→AGREE)
 
 ### Yeni session İlk Komutu (güncel)
 
