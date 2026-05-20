@@ -147,7 +147,7 @@ Bu ADR'a göre **bu repodaki** aşağıdaki kontrat noktaları **iç-tutarlı** 
 | `docs/notify/feature-matrix.md` A1/H14 | A1 Email parenthetical cross-ref; H14 §8 Provider Management Graph activation path deferred | ✅ Yansıtıldı |
 | `docs/state/current-state.md` | Entra state snapshot + Vault graph_* empty + ConfigMap flag false + SmtpAdapter expected/effective | ✅ Yansıtıldı |
 | `docs/runbooks/RB-graph-mail-adapter-activation.md` | DEFERRED ACTIVATION RUNBOOK + 5-step reactivation chain | ✅ Yansıtıldı |
-| `kustomize/overlays/{test,prod}/eso/notify/externalsecret-notify.yaml` | Graph 3-key additive ESO entries + comment block: "Azure AD App Registration + admin consent COMPLETE; secret + policy + Vault pending" | ✅ Comment tweak yansıtıldı |
+| `kustomize/overlays/{test,prod}/eso/notify/externalsecret-notify.yaml` | Graph 3 `remoteRef` entries **commented out** (defer-aware refactor 2026-05-20, Codex `019e45f8` AGREE); deferred reactivation snippet stays inline. ESO aggregate `Ready=True` for active channels; Graph re-enable D5 reactivation chain step 4 (PR-gated, Cross-AI peer review) | ✅ Defer-aware refactor (A.1 issue #903 child) |
 | Board issue #892 (P3 Backlog) | Reactivation trigger conditions documented; claim yok future-only | ✅ Mevcut |
 
 ---
@@ -159,6 +159,7 @@ Bu ADR'a göre **bu repodaki** aşağıdaki kontrat noktaları **iç-tutarlı** 
 - `019e44b1`: Bu ADR + 7-file alignment scope verdict (AGREE_WITH_REVISIONS)
 - `019e42d1`: PR #872 staged-only ESO 3-key + DNS runbook (AGREE_B; #510 superseded)
 - `019e4445`: #862 wrapper bridge deprecation + bridge `gh` CLI doc-truth cleanup (REVISE)
+- `019e45db` / `019e45f8`: ESO aggregate Ready=False blocker tespiti + defer-aware refactor (Çözüm 1 prod+test parity AGREE) — Graph 3 remoteRef comment-out; D5 reactivation chain step 4 re-enable PR-gated
 
 ### Cross-references
 

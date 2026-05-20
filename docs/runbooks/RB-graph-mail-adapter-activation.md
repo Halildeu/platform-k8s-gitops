@@ -199,6 +199,39 @@ graph_tenant_id     value_len: 36
 
 Hem test hem prod 3'er key.
 
+### ESO yaml — Graph remoteRef entries re-enable (defer-aware refactor 2026-05-20 sonrası)
+
+**Önemli — Codex `019e45f8` defer-aware refactor (PR #905 sonrası)**: ESO yaml'lerinde Graph 3 `remoteRef` entry **commented out** durumdadır (ESO aggregate `Ready=False` blocker'ı çözmek için). Vault seed sonrası bu entries **re-enable** edilmeden ESO Graph 3 key'i sync etmez.
+
+Aşağıdaki commit zinciri uncomment + Argo sync + verify yapar:
+
+```bash
+# Both test + prod overlay'lerinde Graph 3 remoteRef block'undaki `#` prefix kaldırılır
+# (yaml line: `# - secretKey: NOTIFY_ADAPTERS_GRAPH_TENANT_ID` etc.)
+
+# Editor (örnek prod):
+$EDITOR kustomize/overlays/prod/eso/notify/externalsecret-notify.yaml
+# Remove `# ` prefix from 3 secretKey blocks (12 lines total)
+
+$EDITOR kustomize/overlays/test/eso/notify/externalsecret-notify.yaml
+# Same for test overlay
+
+# Verify yaml syntax + diff
+git diff kustomize/overlays/{test,prod}/eso/notify/externalsecret-notify.yaml
+
+# Commit + push
+git checkout -b roadmap-NNN-graph-activation-step4-re-enable
+git add kustomize/overlays/{test,prod}/eso/notify/externalsecret-notify.yaml
+git commit -m "feat(notify-23.1): re-enable Graph remoteRef entries — D5 reactivation chain step 4"
+git push origin HEAD
+
+# PR open (Cross-AI peer review HARD RULE — Codex review)
+gh pr create --title "feat(notify-23.1): Graph remoteRef re-enable — D5 reactivation step 4" \
+  --body "Codex thread: <new>; ADR-0024 D5 atomic reactivation chain step 4 of 6"
+
+# CI yeşil + Codex AGREE → normal squash merge
+```
+
 ### ESO refresh (Vault → K8s Secret propagation)
 
 ```bash
@@ -224,6 +257,8 @@ done
 ```
 
 Beklenen: ExternalSecret `Ready=True reason=SecretSynced` + Secret'te `NOTIFY_ADAPTERS_GRAPH_TENANT_ID/CLIENT_ID/CLIENT_SECRET` 3 key non-empty.
+
+**Codex `019e45f8` aggregate Ready clarification**: ESO single aggregate Ready condition; defer-aware refactor öncesinde Graph 3 property eksikliği aggregate fail veriyordu (`Ready=False reason=SecretSyncedError`) → JetSMS/SMTP/DKIM/Slack/Teams/Push live key sync target Secret'a propagate edilemiyordu. Re-enable + Vault seed sonrası aggregate Ready=True, tüm key'ler sync.
 
 ---
 

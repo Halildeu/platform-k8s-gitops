@@ -4658,15 +4658,15 @@ Bu dokümanda ve sonraki iletişimde **kullanılmayacak**:
 | `graph_tenant_id` | **property absent** (Vault'ta key yok; ExternalSecret data[] specifies remoteRef.property but ESO reports SecretSyncedError on missing) |
 | `graph_client_id` | **property absent** |
 | `graph_client_secret` | **property absent** |
-| ExternalSecret `notification-orchestrator-secrets` (prod) | `Ready=False reason=SecretSyncedError msg="could not get secret data from provider"` — ExternalSecret object'inin **tek Ready condition**'ı vardır; missing property nedeniyle aggregate Ready=False kalır (Codex `019e44b1` finding 4 absorb: ESO per-property pseudo-state önceki wording yanlıştı). **K8s Secret** target ise mevcut: `notification-orchestrator-secrets` Secret bayağı non-Graph keys'i (SPRING_DATASOURCE_*, SMS NetGSM/JetSMS, Teams/Slack, FCM/APNS/VAPID, SMTP, DKIM, unsubscribe) önceki başarılı sync'lerden tutmaya devam eder. **Pod runtime etkisi yok**: Graph flag `false` default + digest henüz Graph-binary-inclusive sha değil → `GraphMailAdapter` bean instantiate edilmez; `SmtpAdapter` aktif; mail delivery hep SMTP path. |
-| ExternalSecret (test) | `Ready=True` baseline (test overlay manifest henüz Graph 3-key additive yansımamış olabilir; PR #872 source-only kayıtlı, manual apply gerek). Manuel ESO refresh sonrası test ExternalSecret de Ready=False olur (aynı `property absent` mekanizma). |
+| ExternalSecret `notification-orchestrator-secrets` (prod) | **Defer-aware refactor 2026-05-20 (Codex `019e45f8` AGREE)**: Graph 3 `remoteRef` entries **commented out** (deferred reactivation snippet inline). ExternalSecret aggregate `Ready=True` for active channels (SPRING_DATASOURCE_*, SMS NetGSM/JetSMS, Teams/Slack, FCM/APNS/VAPID, SMTP, DKIM, unsubscribe) — JetSMS prod cutover artık ESO aggregate blocker'a takılmaz. Live verify pending (PR merge + Argo sync sonrası). **Pod runtime etkisi yok**: Graph flag `false` default + digest henüz Graph-binary-inclusive sha değil → `GraphMailAdapter` bean instantiate edilmez; `SmtpAdapter` aktif; mail delivery hep SMTP path. |
+| ExternalSecret (test) | **Aynı defer-aware refactor** (test+prod parity, Codex önerisi). Graph 3 remoteRef commented out → aggregate `Ready=True` for active channels. Live verify pending. |
 
 ### 8.4 Gitops desired-state (PR #872 merged 2026-05-19, Codex `019e42d1` AGREE_B staged-only)
 
 | File | Change |
 |---|---|
-| `kustomize/overlays/test/eso/notify/externalsecret-notify.yaml` | +3 Graph keys additive (`NOTIFY_ADAPTERS_GRAPH_TENANT_ID/CLIENT_ID/CLIENT_SECRET` ← `graph_*` remoteRef) |
-| `kustomize/overlays/prod/eso/notify/externalsecret-notify.yaml` | +3 Graph keys additive (prod parity) |
+| `kustomize/overlays/test/eso/notify/externalsecret-notify.yaml` | +3 Graph keys additive (`NOTIFY_ADAPTERS_GRAPH_TENANT_ID/CLIENT_ID/CLIENT_SECRET` ← `graph_*` remoteRef) — **2026-05-20 defer-aware refactor (Codex `019e45f8`)**: 3 remoteRef commented out (deferred reactivation snippet inline); D5 chain step 4 PR-gated re-enable |
+| `kustomize/overlays/prod/eso/notify/externalsecret-notify.yaml` | +3 Graph keys additive (prod parity) — **same defer-aware refactor** |
 | `docs/runbooks/RB-faz-23-dns-records-acik-com.md` | NEW (236-line; SPF/DMARC/DKIM operator runbook; drift-free) |
 | `kustomize/overlays/{test,prod}/kustomization.yaml` | **UNTOUCHED** (Codex iter-2 P0 absorb: NO `NOTIFY_ADAPTERS_GRAPH_ENABLED=true` flag flip — pod boot risk on missing credentials) |
 | notification-orchestrator digest bump (Graph-binary-inclusive sha) | **NO** (defer; current digest stable; prod under A5 PR-B + RAID I6 sequencing) |
