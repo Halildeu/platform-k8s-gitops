@@ -167,21 +167,40 @@ images:
   # Artifact: build sha-b567292, platform-web commit b567292d (PR #611),
   # CI run 26095796755 job "Build + Push prod" — env-baked
   # VITE_KEYCLOAK_URL=https://ai.acik.com, VITE_KEYCLOAK_REALM=serban.
-  # Carries platform-web PR #608 (decode JWT payload as UTF-8 — fixes the
-  # Turkish-name mojibake "Halil KoÃ§oÄlu" in the shell header + user grids).
-  # D29 evidence (ADR-0022 frontend-prod-variant-transient-smoke): the prod
-  # variant artifact was transient-run in k3d-test (platform-test ns) and
-  # smoked 2026-05-19T12:10:00Z — d29_up GREEN (imageID digest +
-  # /build-info.json sha match), d29_functional GREEN (/ 200 + entry asset
-  # 200 + remoteEntry 200 + env-baking: no testai.acik.com / localhost:8080
-  # leak, ai.acik.com + serban present; ai.acik.com read-only probe 200/200),
-  # d29_zanzibar AMBER (static SPA, jwt_validates:false). Ledger:
-  # release-candidates/platform-web/b567292de47d6bced9af518ae1192603abaef070.json
-  # Rollback digest: sha256:6d926376a58bfd47c3d5059e0e0025f8cb38d5c7fbf80767461b2eea136647f4
-  # (prior prod, 2026-05-04 sha-940c4c4 — last digest live on prod).
+  # 2026-05-20 — frontend prod-variant bump for the PR #640 auth fix
+  # (platform-web `3f56f6b2`). Carries the AuthBootstrapper stale-token
+  # recovery from `fix/auth-stale-token-recovery`: when silent-SSO returns
+  # no Keycloak session, the controller now clears the rehydrated
+  # localStorage token + authzSnapshot before dispatching
+  # `phase=unauthenticated`, so ProtectedRoute can `Navigate(/login)` and
+  # /api/v1/notify/* don't 401-storm against an empty HttpOnly cookie.
+  # Live prod symptom this fixes: /settings/notifications stayed on
+  # "Tercihler yüklenemedi" with PermissionProvider AuthNotReadyError
+  # polling indefinitely after Keycloak SSO expiry. Bug pattern + fix
+  # already shipped on testai via PR #640 merge `3f56f6b2`; this overlay
+  # bump is the prod promotion of the same artifact.
+  #
+  # Codex cross-AI peer review thread `019e4702` AGREE (with revisions
+  # absorbed: pin to `3f56f6b2` standalone instead of latest main
+  # `c3f56abe` to minimize blast radius — multi-fix promotion deferred).
+  #
+  # Previous live prod digest:  sha256:7e0999d1865ad560e45374af7d76d7a2427c35d0791c1ee30a73598eb81861ce
+  #   • Source commit: 2026-05-19 platform-web PR #608 (Turkish UTF-8 fix, BUILD_SHA b567292)
+  #   • Rollback target — see "Rollback runbook" below.
+  # New digest (this commit): sha256:1dcc382521ca1f6c51195853d4c2754685cf80c9930beef488253d792d1ea7fa
+  #   • Source commit: 2026-05-20 platform-web `3f56f6b2` (PR #640 stale-token recovery, BUILD_SHA 3f56f6b)
+  #   • Image build run: https://github.com/Halildeu/platform-web/actions/runs/26148836007
+  #   • Push step `Pinnable`: ghcr.io/halildeu/platform-web-frontend@sha256:1dcc382521ca1f6c51195853d4c2754685cf80c9930beef488253d792d1ea7fa
+  #
+  # Rollback runbook (acil):
+  #   gh workflow run "Deploy prod GitOps sync" --repo Halildeu/platform-k8s-gitops --ref main \
+  #     --field revision=<önceki gitops main SHA> \
+  #     --field sync_mode=full --field allow_prune=false \
+  #     --field confirm=SYNC-PROD-ROLLBACK
+  #   Sonra: bu PR'ı revert-forward eden bir PR aç, gitops main yeni digest'te kalmasın.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
-    digest: sha256:7e0999d1865ad560e45374af7d76d7a2427c35d0791c1ee30a73598eb81861ce
+    digest: sha256:1dcc382521ca1f6c51195853d4c2754685cf80c9930beef488253d792d1ea7fa
 
   # Faz 23.9 prod cutover (2026-05-08): notification-orchestrator
   # canonical activation. Pin remains sha-204042d (PR #126 era) until D29
