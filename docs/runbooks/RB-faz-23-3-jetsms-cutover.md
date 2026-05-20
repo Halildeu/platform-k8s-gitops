@@ -217,7 +217,8 @@ ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod rollout status
 | # | Kontrol | Komut | Beklenen |
 |---|---|---|---|
 | 1 | Pod imageID match | `kubectl --context k3d-prod -n platform-prod get pod -l app.kubernetes.io/name=notification-orchestrator -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'` | `sha256:30b0bf658dcd879c531451352c4e37680551fe14ab667a255eea36adbb281a5b` |
-| 2 | Rendered env JetSMS | `kubectl --context k3d-prod -n platform-prod exec deploy/notification-orchestrator -- env \| grep -E '^NOTIFY_ADAPTERS_SMS_(PRIMARY\|JETSMS)' \| sort` | 8 key set + PRIMARY=jetsms + OTP_TOPIC_KEYS="" (BLANK R24) |
+| 2 | Rendered ConfigMap JetSMS (non-secret) | `kubectl --context k3d-prod -n platform-prod get configmap notification-orchestrator-config -o json \| jq '.data \| {NOTIFY_ADAPTERS_SMS_PRIMARY_PROVIDER, NOTIFY_ADAPTERS_SMS_JETSMS_MULTIPART_ENABLED, NOTIFY_ADAPTERS_SMS_JETSMS_ON_LENGTH_PROBLEM, NOTIFY_ADAPTERS_SMS_JETSMS_SOAP_OPERATION, NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL, NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_ALLOWED, NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_TOPIC_KEYS, NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_MAX_LENGTH}'` | 8 non-secret config key set + PRIMARY=jetsms + OTP_TOPIC_KEYS="" (BLANK R24) — **Codex iter-2 P1 absorb**: Secret değerleri (USERNAME/PASSWORD/ORIGINATOR) DUMP edilmez; envFrom render kanıtı ayrı (gate #2b key-only) |
+| 2b | Secret JetSMS keys exist (key-only, no plaintext) | `kubectl --context k3d-prod -n platform-prod get secret notification-orchestrator-secrets -o json \| jq '.data \| keys[] \| select(startswith("NOTIFY_ADAPTERS_SMS_JETSMS_"))'` | 3 key listede: `NOTIFY_ADAPTERS_SMS_JETSMS_USERNAME` + `_PASSWORD` + `_ORIGINATOR` (values base64-encoded; **decode etmeyin**) |
 | 3 | NetworkPolicy egress mevcut | `kubectl --context k3d-prod -n platform-prod get networkpolicy allow-notification-orchestrator-egress-mail-providers -o jsonpath='{.spec.podSelector.matchLabels}'` | triple-label selector |
 | 4 | Pod log SmsAdapter primary | `kubectl --context k3d-prod -n platform-prod logs deploy/notification-orchestrator --tail=200 \| grep "SmsAdapter activated"` | `primary=jetsms` |
 | 5 | Pod log DLR worker | `kubectl --context k3d-prod -n platform-prod logs deploy/notification-orchestrator --tail=200 \| grep "JetSmsDlrPollingWorker activated"` | aktif |
@@ -283,12 +284,20 @@ ssh halil@staging-sw "docker exec platform-pg-prod psql -U platform -d notify_db
 ConfigMap flip + image digest revert + apply:
 
 ```bash
-# Option 1: PR revert (preferred)
+# Option 1: PR revert (PREFERRED — GitOps canonical truth)
 git revert <PR #911 commit>
 git push
 # (CI yeşillenince + Codex AGREE) → merge revert PR → cluster auto-apply
+```
 
-# Option 2: Manual config patch (hızlı emergency)
+> **Codex iter-2 absorb (non-blocking note)**: Option 2 break-glass-only
+> + same-incident reconciliation PR şart. Manual `kubectl patch` / `set
+> image` GitOps canonical truth'u bypass eder → drift; emergency
+> kullanım sonrası **aynı incident içinde** revert/forward PR ile
+> GitOps state'i tekrar canonical hale getirin.
+
+```bash
+# Option 2: Break-glass manual (EMERGENCY ONLY — IMMEDIATE reconciliation PR şart)
 ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod patch configmap notification-orchestrator-config \
   --type=json -p='[{\"op\":\"replace\",\"path\":\"/data/NOTIFY_ADAPTERS_SMS_PRIMARY_PROVIDER\",\"value\":\"netgsm\"}]'"
 
@@ -296,6 +305,10 @@ ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod set image depl
   notification-orchestrator=ghcr.io/halildeu/platform-backend-notification-orchestrator@sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3"
 
 ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod rollout status deploy/notification-orchestrator --timeout=180s"
+
+# IMMEDIATELY after break-glass apply: open reconciliation PR
+# (revert PR #911 OR forward fix PR) so cluster state == GitOps truth.
+# Break-glass without reconciliation = drift = audit gap.
 ```
 
 `primary-provider=netgsm` + sha-70491543 → NetGSM-only restore. R1 NetGSM
@@ -325,7 +338,8 @@ ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod rollout restar
 - [ ] Prod Vault 3 JetSMS key non-empty (length-only proof)
 - [ ] Prod ESO `Ready=True`
 - [ ] Pod imageID = sha256:30b0bf658dcd...
-- [ ] Pod env 8 JETSMS key set (PRIMARY=jetsms, OTP_TOPIC_KEYS="")
+- [ ] Pod ConfigMap 8 non-secret JETSMS key set (PRIMARY=jetsms, OTP_TOPIC_KEYS="") — gate #2 jq filter (Codex iter-2 P1 absorb)
+- [ ] Pod Secret 3 JETSMS key mevcut (USERNAME/PASSWORD/ORIGINATOR — key-only/length-only) — gate #2b
 - [ ] NetworkPolicy `allow-notification-orchestrator-egress-mail-providers` exists
 - [ ] Pod log SmsAdapter primary=jetsms + DlrPollingWorker activated
 - [ ] A.4 prod canary SMS intent: ACCEPTED + provider=jetsms + msg_id

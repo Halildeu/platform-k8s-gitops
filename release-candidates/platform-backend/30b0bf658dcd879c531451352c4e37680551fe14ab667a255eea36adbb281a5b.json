@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-backend",
+  "service": "notification-orchestrator",
+  "git_sha": "6ed593e0",
+  "git_short_sha": "6ed593e",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-backend-notification-orchestrator",
+    "digest": "sha256:30b0bf658dcd879c531451352c4e37680551fe14ab667a255eea36adbb281a5b",
+    "tag": "sha-6ed593e",
+    "push_run_id": "26174852041",
+    "pushed_at": "2026-05-20T16:26:33Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-05-20T17:06:00Z",
+      "promoted_by_pr": 908,
+      "argocd_revision": null,
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-05-20T17:11:00Z",
+          "details": "pod imageID=sha256:30b0bf658dcd... Running 1/1 (notification-orchestrator-55d6bd788b-d5pcx); SmsAdapter activated primary=jetsms; JetSmsDlrPollingWorker activated"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-05-20T17:30:26Z",
+          "endpoints": [
+            "/api/v1/notify/intents (POST)",
+            "/actuator/health (401 auth chain intact)"
+          ],
+          "details": "3-senaryo canary smoke (Codex 019e4514 11 iter): Scenario A (auth.mfa-otp short) VFO routing log proven (channel resolved VFO: topic_key=auth.mfa-otp); Scenario B (marketing.campaign) VF DELIVERED msg_id=jetsms-2605202027306017971 segments=1; Scenario C (auth.mfa-otp overlength 209ch) VF explicit fallback DELIVERED msg_id=jetsms-260520203006838196 segments=2 (Codex P3 absorb). actual_channel audit propagation LIVE (DELIVERY_ACCEPTED.details actual_channel=VF kanıt). Real-world: kullanıcı +905551815564 multipart SMS DELIVERED. Evidence doc: docs/faz-23-evidence/2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md"
+        },
+        "d29_zanzibar": {
+          "status": "SKIP",
+          "checked_at": "2026-05-20T17:30:26Z",
+          "allow_deny_synthetic": "DEFER",
+          "details": "Layer 2 channel-level authz (subscriber/template types) Faz 23.2 v2 scope; OpenFGA mevcut modeline notify-layer types eklenmedi. Layer 1 NotifyOrgAccessGuard (JWT org_id claim) M2 closure'da LIVE; smoke-tester user org_id=default ile intent submit edebildi. Smoke evidence collection sırasında NOTIFY_AUTHZ_ENABLED=false geçici (kullanıcı önceden onay; smoke sonrası restore=true)."
+        }
+      },
+      "verified_at": "2026-05-20T17:30:26Z",
+      "candidate_pr": 908,
+      "candidate_pr_status": "MERGED"
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": 911,
+      "candidate_pr_status": "OPEN"
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3"
+  },
+  "audit": {
+    "created_at": "2026-05-20T18:00:00Z",
+    "last_updated_at": "2026-05-20T18:00:00Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-backend/actions/runs/26174852041",
+    "codex_thread": "019e4514-e961-7d50-b2cc-493f66cee4bc",
+    "pr_chain_test": [262, 263, 264, 265, 266, 267, 903, 905, 908, 910],
+    "pr_chain_prod": [911],
+    "notes": "Faz 23.3.2 sub-Faz multipart + context routing + actual_channel audit chain. Backend PR-A1 → PR-A3.2 + GitOps PR #903 #905 #908 #910 MERGED test cluster LIVE 2026-05-20. R24 yeni risk: JetSMS Biotekno VFO sender ID OTP provisioning gap (ErrorCode=04); routing logic LIVE, operator config flip ile re-enable. Prod cutover PR #911 OPEN; OTP_TOPIC_KEYS BLANK initial (R24 mitigation), operator provisioning sonrası açar."
+  }
+}
