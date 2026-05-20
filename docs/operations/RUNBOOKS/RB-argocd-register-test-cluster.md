@@ -15,9 +15,18 @@ Register the `k3d-test` cluster as a non-default ArgoCD destination on the
 `kustomize/overlays/test` → `k3d-test` `platform-test` namespace via GitOps
 (ADR-0023 D2 — test overlay GitOps-authoritative).
 
-**Live state change**: ArgoCD's `argocd-secret`/secret store gains a new
-cluster credential entry. No workload mutation in either cluster. Reversible
-via `argocd cluster rm`.
+**Live state change** (Codex `019e42c4` REVISE absorb):
+- **Prod cluster (k3d-prod)**: no workload mutation. ArgoCD `argocd-secret`/
+  secret store gains a new cluster credential entry; that's the only delta.
+- **Test cluster (k3d-test)**: RBAC mutation — `argocd cluster add` creates
+  `argocd-manager` ServiceAccount + cluster-admin ClusterRoleBinding in
+  `kube-system` and mints a long-lived token for it.
+- **Test cluster overlay sync**: after registration, the `platform-test`
+  Application's `automated.selfHeal: true` (and apply path) **will sync
+  `kustomize/overlays/test` into `platform-test` namespace**. `prune: false`
+  prevents deletion of out-of-band resources but does NOT prevent apply or
+  selfHeal of new/changed manifests. Verify overlays/test is the intended
+  current state before running this runbook.
 
 ## Pre-conditions
 
@@ -125,22 +134,32 @@ forbidden going forward (HARD RULE — AGENTS.md §3).
 
 ## Rollback
 
-If the `platform-test` Application causes unintended sync behaviour:
+> Codex `019e42c4` REVISE absorb — root.yaml `automated.selfHeal: true` child
+> Application spec'i otomatik düzeltir; spec patch ile sync disable kalıcı
+> DEĞİL.
 
+**Durable rollback — Git revert** (tercih edilen):
+1. Open a revert PR for the Guardrail PR-2 commit (re-adds `platform-test.yaml`
+   to `root.yaml` `exclude`, restores `prune: true`).
+2. Merge revert → prod root reconciles → `platform-test` Application removed
+   from cluster.
+3. Optionally `argocd cluster rm test-cluster` to also remove the credential.
+
+**Emergency stop (durable until next root reconcile)** — credential remove:
 ```bash
-# Option A — disable auto-sync without removing cluster:
-ssh halil@staging-sw '
-  kubectl --context k3d-prod -n argocd patch application platform-test \
-    --type=merge -p "{\"spec\":{\"syncPolicy\":{\"automated\":null}}}"
-'
-
-# Option B — remove cluster credential entirely:
 ssh halil@staging-sw 'argocd cluster rm test-cluster --yes'
 ```
+Test cluster's `argocd-manager` SA + CRB removed; `platform-test` Application
+goes `Unknown` (no target). The cluster's existing workloads continue running
+unchanged (in-cluster k3d-test state independent of ArgoCD registration);
+ArgoCD only stops new syncs, doesn't undo prior ones. Note: if root is left
+in current PR-2 state, root will re-keep the `platform-test` Application CR
+in `argocd` namespace; only its target is broken.
 
-Option B leaves the `platform-test` Application in place but `Unknown` (no
-target). The cluster's existing workloads continue running unchanged
-(in-cluster k3d-test state is independent of ArgoCD registration).
+**Spec patches do NOT durably stop sync** — e.g.,
+`kubectl patch application platform-test ... '{"spec":{"syncPolicy":{"automated":null}}}'`
+gets reverted by root's `selfHeal: true` on next reconcile cycle. Use Git
+revert or `argocd cluster rm` instead.
 
 ## Post-step — Follow-up issues
 
