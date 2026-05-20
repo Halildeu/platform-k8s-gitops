@@ -75,7 +75,8 @@ alertmanager:
     # `webhook_configs` does not wrap payload into GitHub `repository_dispatch`
     # schema `{event_type, client_payload}`, so the direct receiver fails 4xx;
     # ref. PR #648 RED. GitHub Issue trail flows through
-    # `alarm-receiver-bridge` → `alertmanager-bridge` pod (which DOES wrap).
+    # `alarm-receiver-bridge` → `alertmanager-bridge` pod (uses `gh` CLI to
+    # create/comment/close GitHub Issues directly — NOT via repository_dispatch).
     # The mount + token will be re-introduced when a payload wrapper bridge
     # (sidecar/proxy) is built — separate future PR.
     secrets:
