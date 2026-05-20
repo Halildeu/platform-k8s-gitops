@@ -48,15 +48,15 @@
       "argocd_revision": null,
       "smoke_evidence": null,
       "verified_at": null,
-      "candidate_pr": null,
-      "candidate_pr_status": null
+      "candidate_pr": 915,
+      "candidate_pr_status": "ready_for_review"
     }
   },
   "metadata": {
     "required_migrations": [],
     "backward_compatible_until": null,
     "rollback_safe": true,
-    "rollback_to_digest": "sha256:30b0bf658dcd879c531451352c4e37680551fe14ab667a255eea36adbb281a5b"
+    "rollback_to_digest": "sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3"
   },
   "audit": {
     "created_at": "2026-05-20T19:50:00Z",
