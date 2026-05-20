@@ -56,9 +56,9 @@ Aramalar:
 | T1.1.2 Domain entity + repository | `SubscriberPreferenceService.java` | 414 | 🟢 | 🟢 | 🟡 unit test 6/6 | 🔴 | acceptance gate |
 | T1.1.3 REST API `PUT/GET /preferences/me` | `PreferenceController.java` | 290 | 🟢 | 🟢 | 🔴 auth flow | 🔴 | RAID I6 |
 | T1.1.4 Send pipeline preference check | `DeliveryEligibilityService.java` (BLOCKED_BY_PREFERENCE path) | substantial | 🟢 | 🟢 | 🔴 D29-Authorized | 🔴 | RAID I6 |
-| T1.1.5 Critical bypass (severity + classification) | `DeliveryEligibilityService.java` (severity=critical bypass) | partial | 🟢 (severity) | 🟢 | 🔴 | 🔴 | data_classification security bypass test gerek |
-| T1.1.6 Quiet hours bypass | (DeliveryEligibilityService) | partial | 🟢 | 🟢 | 🔴 | 🔴 | acceptance gate |
-| T1.1.7 Frequency limit bypass | (DeliveryEligibilityService) | partial | 🟢 | 🟢 | 🔴 | 🔴 | acceptance gate |
+| T1.1.5 Critical bypass (severity-only; classification bypass removed) | `AbuseGuardService.java` + `IntentSubmissionService.java` (Codex P1 absorb): `data_classification=security` bypass KALDIRILDI — client-controlled DTO authority signal değil; sadece `severity=critical` bypass kaldı. Severity acceptance T1.6.6 `criticalSeverityBypasses` IT (PR #257 MERGED 2026-05-20 01:13:51Z `4897ce9e`) + T1.1.9 `disabledPreferenceWithCriticalBypassAllowsCriticalSeverity` (PR #258) ile kanıtlı. | source-ready | 🟢 | 🟢 | 🟢 (IT) | 🟢 | — (data_classification security bypass obsolete; client-controlled classification authority signal değil) |
+| T1.1.6 Quiet hours bypass | `SubscriberPreferenceService.java:184-194` (quietHours window + severity=critical + bypassForCritical=true → `critical_bypass_quiet_hours`; non-critical inside window → deny `quiet_hours`) | substantial | 🟢 | 🟢 | 🟢 (IT) | 🟢 | — (PR #259 `quietHoursWindowDeniesNonCritical` + `quietHoursWindowBypassesForCritical` — fixed Clock injection + jsonb round-trip + Europe/Istanbul cross-day window; Codex thread `019e4469` PARTIAL→AGREE) |
+| T1.1.7 Frequency limit bypass | `SubscriberPreferenceService.java:202-218` + `FrequencyLimitService` (in-memory rolling window; severity=critical + bypassForCritical=true → `critical_bypass_frequency`; over-limit non-critical → deny `frequency_limit`) | substantial | 🟢 | 🟢 | 🟢 (IT) | 🟢 | — (PR #259 `frequencyLimitDeniesNonCriticalWhenOverLimit` + `frequencyLimitBypassesForCriticalAndDoesNotConsumeWindow` — gerçek `FrequencyLimitService` bean, kritik bypass window'u tüketmiyor strong assertion; Codex thread `019e4469`) |
 | T1.1.8 Unsubscribe link footer | (template engine) | TBD | 🟡 | 🟡 | 🔴 | 🔴 | template review |
 | T1.1.9 Integration test | `IntentSubmissionServiceIntegrationTest.java` (existing) + `SubscriberPreferenceServiceIntegrationTest.java` (PR #258 4c5b1030 MERGED 2026-05-20 07:26:59Z): SubscriberPreferenceService exact + 3 fallback (channel-null, topic-null, both-null) JPA/Postgres IT + critical bypass exact-row IT complete (8 senaryo Testcontainers CI green). Codex thread `019e42d6` plan-time istişaresi + `019e443e` post-impl review iter-1 PARTIAL → iter-2 AGREE. | 🟢 | 🟢 | 🟢 (IT) | 🟢 | — |
 
@@ -173,7 +173,7 @@ Implementation order (Codex iter-2 absorb):
 
 **T1 task status sweep (post PR #132 + #452 MERGE 2026-05-09 14:00Z)**:
 - T1.1.1, T1.1.2, T1.1.3, T1.1.4 → 🔴 → 🟢 source-ready/live (V1 schema + PreferenceController + service + send pipeline LIVE)
-- T1.1.5, T1.1.6, T1.1.7, T1.2.6, T1.5.3 → 🔴 → 🟡 partial (source-ready, acceptance gate)
+- T1.1.5, T1.1.6, T1.1.7, T1.2.6, T1.5.3 → 🔴 → 🟡 partial → **🟢 full acceptance (PR #259 MERGED 2026-05-20 — T1.1.6 + T1.1.7 4 IT senaryo Testcontainers PG; T1.1.5 row rewrite — `data_classification=security` bypass KALDIRILDI Codex P1 absorb, severity bypass T1.6.6 IT ile kapsanıyor)**
 - T1.2.0 admin erasure → 🟢 source-ready/live (R2 legal review wait)
 - **T1.2.1, T1.2.2 subscriber self-service `DELETE/GET /audit/me` → 🟢 source-ready/live (PR #132 MERGED + PR #452 cluster apply CONFIRMED; /audit/me 404→401 transition)**
 - T1.2.3 append-only verify (V8 trigger) → 🟢 done
