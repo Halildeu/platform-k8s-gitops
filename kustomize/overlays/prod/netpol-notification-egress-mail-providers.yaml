@@ -1,0 +1,49 @@
+# Faz 23.3 M4 prod cutover RE-ATTEMPT (PR-B4 2026-05-20, Codex 019e4514) —
+# notification-orchestrator prod egress 587 (Office 365 SMTP STARTTLS) +
+# 443 (JetSMS SOAP api.jetsms.com.tr + Microsoft Graph deferred).
+#
+# Replace earlier PR #911 attempt netpol (revert PR #912 sildi); PR-B4
+# re-application of mail providers egress + JetSMS 443 inclusion (PR #911
+# vs PR-B4 fark: PR-B4 image bump zaten DKIM relay strategy ile prod'da
+# LIVE — PR-B3 #915 MERGED 2026-05-20T20:06Z; bu PR sadece JetSMS aktivasyon).
+#
+# Selector: triple-label (Codex 019e15ee pattern — name + component + part-of).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-notification-orchestrator-egress-mail-providers
+  namespace: platform-prod
+  annotations:
+    platform.acik.com/faz: "23.3-M4-PR-B4"
+    platform.acik.com/codex-thread: "019e4514"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notification-orchestrator
+      app.kubernetes.io/component: backend
+      app.kubernetes.io/part-of: platform
+  policyTypes:
+    - Egress
+  egress:
+    # Office 365 SMTP outbound (port 587 STARTTLS) — DKIM-signed mail (relay)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8       # RFC1918 — cluster-internal
+              - 172.16.0.0/12    # RFC1918 — docker/k3d bridge
+              - 192.168.0.0/16   # RFC1918 — home/office LAN
+      ports:
+        - protocol: TCP
+          port: 587  # SMTP submission STARTTLS (Office 365)
+    # HTTPS outbound for JetSMS SOAP (api.jetsms.com.tr) + Graph (deferred)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443  # api.jetsms.com.tr + graph.microsoft.com + login.microsoftonline.com
