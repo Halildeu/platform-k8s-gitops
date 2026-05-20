@@ -3180,6 +3180,45 @@ patches:
       - op: add
         path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_ON_LENGTH_PROBLEM
         value: "SendAllPackage"
+      # Faz 23.3.2 PR-A3.2 — JetSMS SOAP operation flip + OTP channel allowlist
+      # (Codex thread 019e4514 PR-A3 chain).
+      #
+      # PR-A3.0'da JetSmsProvider'a SendSMSSingle SOAP envelope desteği
+      # eklendi (channel param ile VFO/VF outbound). PR-A3.1.0 + PR-A3.1.1'de
+      # context-aware runtime routing geldi: topic_key / template_id allowlist
+      # match → VFO (OTP kanal, kısa mesaj); no match → VF (BULK, multipart).
+      #
+      # Bu config flip:
+      #   - soap-operation=sendSMSSingle: SendSMS BULK array path'inden
+      #     SendSMSSingle single-recipient + channel param path'ine geçer
+      #   - channel=VF: default bulk channel (multipart bulk OTP harici)
+      #   - channel-allowed=VF,VFO: outbound preflight validation
+      #   - channel-otp-topic-keys: operator-curated allowlist; bu topic'ler
+      #     için VFO outbound (OTP kanal). Biotekno provisioning:
+      #       * auth.mfa-otp — MFA OTP (kısa, kritik, OTP kanal)
+      #       * auth.password-reset-otp — password reset OTP
+      #     Diğer topic'ler default VF'den çıkar.
+      #   - channel-otp-max-length=160: VFO match + text>160 → VF fallback
+      #     (explicit, config drift hardening — Codex P3 absorb).
+      #
+      # Live evidence: kullanıcı +905551815564 numarasına 2026-05-20'de 258-char
+      # multipart SMS başarıyla iletildi (sha-4caa860b SendSMSSingle path).
+      # PR-A3.1.1 (PR #267) merge sonrası context-aware routing image'a iner.
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_SOAP_OPERATION
+        value: "sendSMSSingle"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL
+        value: "VF"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_ALLOWED
+        value: "VF,VFO"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_TOPIC_KEYS
+        value: "auth.mfa-otp,auth.password-reset-otp"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_MAX_LENGTH
+        value: "160"
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "true"
