@@ -60,7 +60,7 @@ Aramalar:
 | T1.1.6 Quiet hours bypass | (DeliveryEligibilityService) | partial | 🟢 | 🟢 | 🔴 | 🔴 | acceptance gate |
 | T1.1.7 Frequency limit bypass | (DeliveryEligibilityService) | partial | 🟢 | 🟢 | 🔴 | 🔴 | acceptance gate |
 | T1.1.8 Unsubscribe link footer | (template engine) | TBD | 🟡 | 🟡 | 🔴 | 🔴 | template review |
-| T1.1.9 Integration test | `IntentSubmissionServiceIntegrationTest.java` | exists | 🟢 | N/A | 🟡 | 🔴 | Testcontainers Docker config |
+| T1.1.9 Integration test | `IntentSubmissionServiceIntegrationTest.java` (existing) + `SubscriberPreferenceServiceIntegrationTest.java` (PR #258 4c5b1030 MERGED 2026-05-20 07:26:59Z): SubscriberPreferenceService exact + 3 fallback (channel-null, topic-null, both-null) JPA/Postgres IT + critical bypass exact-row IT complete (8 senaryo Testcontainers CI green). Codex thread `019e42d6` plan-time istişaresi + `019e443e` post-impl review iter-1 PARTIAL → iter-2 AGREE. | 🟢 | 🟢 | 🟢 (IT) | 🟢 | — |
 
 **T1.1 Verdict**: **Source-ready 9/9**, but **Acceptance complete 0/9** (D29-Authorized BLOCKED on credential).
 
