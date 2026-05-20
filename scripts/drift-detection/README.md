@@ -22,8 +22,8 @@
 ```bash
 # On staging-sw or any host with kubectl context k3d-prod / k3d-test
 cd /home/halil/platform/platform-k8s-gitops
-bash scripts/drift-detection/check_prod_drift.sh prod    # P1 cadence
-bash scripts/drift-detection/check_prod_drift.sh test    # P2 cadence
+bash scripts/drift-detection/check_env_drift.sh prod    # P1 cadence
+bash scripts/drift-detection/check_env_drift.sh test    # P2 cadence
 ```
 
 Exit codes:

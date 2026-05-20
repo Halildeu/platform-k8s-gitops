@@ -118,7 +118,7 @@ git checkout -b fix/reconcile-break-glass-<short-desc>
 vim kustomize/base/apps/schema-service/deployment.yaml  # update image digest
 
 # Verify drift cleared
-bash scripts/drift-detection/check_prod_drift.sh prod
+bash scripts/drift-detection/check_env_drift.sh prod
 
 # Commit + push + PR
 git commit -am "fix: reconcile break-glass schema-service digest update (#<audit-issue>)"
@@ -210,5 +210,5 @@ kubectl apply -k kustomize/base/rbac/
 - `scripts/operations/break-glass-token.sh` — token issuance helper
 - `.github/PULL_REQUEST_TEMPLATE/break-glass-reconciliation.md` — PR template
 - `docs/operations/rbac-break-glass-design.md` — full architecture
-- `scripts/drift-detection/check_prod_drift.sh` — drift verification post-reconciliation
+- `scripts/drift-detection/check_env_drift.sh` — drift verification post-reconciliation
 - `docs/runbooks/RB-argocd-hub-recovery.md` — ArgoCD recovery (often paired)

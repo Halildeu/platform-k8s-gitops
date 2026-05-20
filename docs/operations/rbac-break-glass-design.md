@@ -311,7 +311,7 @@ Her birinde ayrı user-approval-required gate.
 
 - ADR-0011 §2.3 boundary declaration
 - `docs/context-priority-rules.md` — truth hierarchy
-- `scripts/drift-detection/check_prod_drift.sh` — drift detector (PR #334)
+- `scripts/drift-detection/check_env_drift.sh` — drift detector (PR #334)
 - `scripts/drift-detection/check_pr_time.sh` — PR-time gate (PR #335)
 - `docs/authz/openfga-model-contract.md` — OpenFGA contract (PR #336)
 - `scripts/drift-detection/check_quota_headroom.sh` — quota preflight (PR #337)
