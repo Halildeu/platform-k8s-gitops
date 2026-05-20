@@ -20,7 +20,13 @@ spec:
     namespace: platform-test
   syncPolicy:
     automated:
-      prune: true
+      # 2026-05-20 — Guardrail PR-2 (ADR-0023, Codex 019e40e4 Option A):
+      # İlk aktivasyonda prune: false → ArgoCD test cluster'da overlays/test
+      # dışında bulduğu kaynakları SILMEZ; sadece manifest'lerde olanı sync
+      # eder. Stabil çalıştıktan sonra ayrı PR ile prune: true'ya çevrilebilir
+      # (operatör test cluster'da silinmesi istenmeyen out-of-band kaynak
+      # olmadığını teyit edince).
+      prune: false
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
