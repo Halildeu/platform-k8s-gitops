@@ -121,18 +121,32 @@ bbr="$(printf   '%s\n' "$BODY" | state_get claim_branch)"
 bexp="$(printf  '%s\n' "$BODY" | state_get expires_at)"
 
 FAILS=()
+# Codex 019e444d must-fix #2 absorb: identity fields are FAIL-CLOSED — an empty
+# claim_worktree / claim_branch in the issue body means identity is NOT
+# verifiable; the guard MUST fail rather than silently accept. Previously
+# the empty-skip allowed stale/incomplete issue bodies to satisfy the gate
+# with only session+expiry matching.
 if [ "${bsess:-}" != "$BOARD_SESSION_ID" ]; then
   FAILS+=("session mismatch: body='${bsess:-}' expected='$BOARD_SESSION_ID'")
 fi
-if [ -n "$bwt" ] && [ "$bwt" != "$WORKTREE" ]; then
+if [ -z "${bwt:-}" ]; then
+  FAILS+=("claim_worktree missing from issue body — identity not verifiable")
+elif [ "$bwt" != "$WORKTREE" ]; then
   FAILS+=("worktree mismatch: body='$bwt' expected='$WORKTREE'")
 fi
-if [ -n "$bbr" ] && [ "$bbr" != "$BRANCH" ]; then
+if [ -z "${bbr:-}" ]; then
+  FAILS+=("claim_branch missing from issue body — identity not verifiable")
+elif [ "$bbr" != "$BRANCH" ]; then
   FAILS+=("branch mismatch: body='$bbr' expected='$BRANCH'")
 fi
 
-if [ -z "$bexp" ] || [ "$bexp" = "none" ]; then
+# `expired` is a distinct fail-class — board-sync.sh heartbeat refuses to
+# extend an already-expired lease (must re-claim instead). The unblock
+# advice below branches on this flag.
+LEASE_EXPIRED=0
+if [ -z "${bexp:-}" ] || [ "$bexp" = "none" ]; then
   FAILS+=("expires_at not set (no active claim recorded on issue body)")
+  LEASE_EXPIRED=1
 else
   NOW_ISO="$(iso_now)"
   if [ "$GRACE_MIN" -gt 0 ] 2>/dev/null; then
@@ -144,10 +158,12 @@ else
     threshold=$(( bepoch + GRACE_MIN * 60 ))
     if [ "$threshold" -lt "$nepoch" ]; then
       FAILS+=("lease expired: $bexp + ${GRACE_MIN}m grace < now=$NOW_ISO")
+      LEASE_EXPIRED=1
     fi
   else
     if [[ "$bexp" < "$NOW_ISO" ]]; then
       FAILS+=("lease expired: $bexp < now=$NOW_ISO")
+      LEASE_EXPIRED=1
     fi
   fi
 fi
@@ -158,13 +174,22 @@ if [ ${#FAILS[@]} -gt 0 ]; then
     echo "  - $f" >&2
   done
   echo >&2
+  # Codex 019e444d must-fix #3 absorb: heartbeat REFUSES to extend an
+  # already-expired lease (board-sync.sh validates this) → operator must
+  # re-claim. Pre-expiry the heartbeat path keeps the lease alive.
   echo "To proceed:" >&2
-  echo "  1. Confirm BOARD_SESSION_ID matches the session that opened the claim:" >&2
-  echo "       bash scripts/board-sync.sh sync-state $NUM" >&2
-  echo "  2. If your lease expired but you still own the work, refresh:" >&2
-  echo "       bash scripts/board-sync.sh heartbeat $NUM" >&2
-  echo "  3. If a different session legitimately took over, abort and re-claim:" >&2
-  echo "       bash scripts/board-sync.sh claim $NUM" >&2
+  echo "  1. Inspect current state: bash scripts/board-sync.sh sync-state $NUM" >&2
+  echo "  2. Confirm BOARD_SESSION_ID matches the session that opened the claim." >&2
+  if [ "$LEASE_EXPIRED" -eq 1 ]; then
+    echo "  3. Lease expired — board-sync.sh heartbeat will REFUSE to extend." >&2
+    echo "     Re-claim instead (fresh session_id ownership):" >&2
+    echo "       bash scripts/board-sync.sh claim $NUM" >&2
+  else
+    echo "  3. Lease still valid but identity mismatch — heartbeat extends" >&2
+    echo "     it but does NOT correct session/worktree/branch fields." >&2
+    echo "     Re-claim from the correct worktree/branch:" >&2
+    echo "       bash scripts/board-sync.sh claim $NUM" >&2
+  fi
   echo "  4. For long-running P0 work, prefer a longer TTL on next claim:" >&2
   echo "       CLAIM_TTL_HOURS=6 bash scripts/board-sync.sh claim $NUM" >&2
   exit 1
