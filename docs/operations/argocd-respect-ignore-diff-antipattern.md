@@ -7,17 +7,37 @@
 > CI gate: `.github/workflows/gate-argocd-respect-ignore-diff.yml` →
 > `scripts/governance/check_argocd_respect_ignore_diff.py`.
 
-## 1. Bug class — tek satır
+## 1. Bug class — iki ayrı sınıf (Codex `019e4216` post-impl absorb)
 
-ArgoCD `RespectIgnoreDifferences=true` syncOption + `spec.ignoreDifferences` içinde "blanket `/metadata`" (veya `/metadata/managedFields`, ya da `/metadata/annotations`/`/metadata/labels` container'ı) jsonPointer / jqPathExpression → Server-Side-Apply sync'i **her seferinde** `metadata.managedFields must be nil` ile **Failed**'a düşer; uygulama `OutOfSync+Degraded` kilidine girer.
+`RespectIgnoreDifferences=true` syncOption ile birlikte iki **ayrı** bug sınıfı vardır; her ikisi de regression guard ile yasaklanır ama mekanizmaları farklıdır:
+
+### 1.A — API-server hard failure (managedFields class)
+
+`spec.ignoreDifferences` içinde **`/metadata`** (exact) veya **`/metadata/managedFields`** veya managedFields descendant (örn. `/metadata/managedFields/0`, `.metadata.managedFields[].fieldsV1`) → Server-Side-Apply sync'i **her seferinde** `metadata.managedFields must be nil` ile API server tarafından **hard-rejected**. Uygulama `OutOfSync+Degraded` kilidine girer; bu sınıf bypass edilemez — Kubernetes API contract'ı zorlar.
+
+### 1.B — Policy/guard ban (container class)
+
+`/metadata/annotations` (exact, key segmenti yok) veya `/metadata/labels` (exact, key segmenti yok) — bunlar "tüm annotations / tüm labels" container'ını ignore eder. API server bunu hard-reject etmez, ama:
+- Kontrolsüz yüzey: yeni annotations/labels eklenip silindiğinde diff sürekli salınır, GitOps tracking güvenilmez olur (örn. `argocd.argoproj.io/tracking-id` annotation'ı bile bu container'ın içinde — kendini ignore eder)
+- Repo governance kararı: yalnız **specific-key path'leri** (örn. `/metadata/annotations/<escaped-key>`) kabul; container-level ignore policy gate ile reddedilir
 
 ## 2. Mekanizma
 
+### 2.A — Class 1.A mekanizması (API server reject)
+
 1. `ServerSideApply=true` ArgoCD'yi SSA gövdesini API server'a göndermeye yönlendirir.
 2. `RespectIgnoreDifferences=true` `spec.ignoreDifferences` listesini **diff görünümünden** çıkarıp **desired-state SSA gövdesine** dahil eder — yani ignore edilen yollar "canlı değer korunur" olarak SSA payload'ına geri konur.
-3. Blanket `/metadata` jsonPointer veya descendant ifadesi (örn. `/metadata/managedFields`, `.metadata.managedFields`, `/metadata/annotations` container'ı) ArgoCD'ye canlı `/metadata` bloğunu — `managedFields` dahil — SSA gövdesine kopyalamasını söyler.
-4. Kubernetes API server SSA isteklerinde `metadata.managedFields` field'ının `nil` olmasını zorunlu kılar. (Server bu field'ı her zaman kendi yönetir.)
-5. Sonuç: ilk sync denemesi `metadata.managedFields must be nil` hatasıyla reddedilir; ArgoCD app `OutOfSync` + `Degraded` kalır; tüm child resource sync'leri bu app altında bloke olur (sadece bug'lı entry değil — sync **transaction** seviyesinde fail eder).
+3. Blanket `/metadata` veya `/metadata/managedFields` ifadesi ArgoCD'ye canlı `/metadata` bloğunu — **`managedFields` dahil** — SSA gövdesine kopyalamasını söyler.
+4. Kubernetes API server SSA isteklerinde `metadata.managedFields` field'ının `nil` olmasını zorunlu kılar (server bu field'ı her zaman kendi yönetir).
+5. Sonuç: ilk sync denemesi `metadata.managedFields must be nil` hatasıyla **API tarafından** reddedilir; ArgoCD app `OutOfSync` + `Degraded` kalır; tüm child resource sync'leri bu app altında bloke olur (sadece bug'lı entry değil — sync **transaction** seviyesinde fail eder).
+
+### 2.B — Class 1.B mekanizması (policy enforcement)
+
+1. `/metadata/annotations` container'ı ignore edildiğinde ArgoCD ServerSideApply gövdesine canlı annotations bloğunun **tamamını** kopyalar.
+2. API server bunu hard-reject etmez (annotations alan SSA-compatible), ama:
+   - **`argocd.argoproj.io/tracking-id`** annotation'ı bu container'ın içindedir — ArgoCD'nin kendi ownership tracking'ini kendisi ignore etmiş olur (live-state ile desired drift kaybolur, governance bozulur)
+   - Başka actor'lar (CI bot, operatör, başka ArgoCD app) annotations ekleyip sildiğinde ArgoCD sürekli reconcile döner; cosmetic drift sonsuz
+3. Bu yüzden repo regression guard `/metadata/annotations` veya `/metadata/labels` **container** ignore'unu reddeder; sadece spesifik-key path'leri (`/metadata/annotations/<escaped-key>`) kabul eder.
 
 ## 3. Canlı kanıt geçmişi
 
