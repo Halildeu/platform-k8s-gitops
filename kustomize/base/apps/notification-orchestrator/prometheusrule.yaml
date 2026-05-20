@@ -19,7 +19,19 @@ metadata:
     app.kubernetes.io/name: notification-orchestrator
     app.kubernetes.io/component: backend
     app.kubernetes.io/part-of: platform
-    release: prometheus
+    # 2026-05-20 fix: PrometheusOperator ruleSelector matches
+    # `release: kube-prometheus-stack` (the kube-prometheus-stack helm
+    # release name in this cluster's monitoring namespace). The previous
+    # `release: prometheus` label silently failed to match, so this
+    # PrometheusRule was never rendered into the operator's
+    # `prometheus-kube-prometheus-stack-prometheus-rulefiles-0` ConfigMap
+    # and NONE of the notification-orchestrator alerts (NotifyAuthzDisabledRegression,
+    # NotifyDlqSustained, NotifyServiceDown, NotifyAbuseStorm, NotifyOrgAccessDeniedStorm,
+    # NotifyAuditRetentionStale, ...) were ever evaluated by Prometheus.
+    # Live evidence (k3d-test 2026-05-20 04:18 UTC): wget actuator/rules
+    # returned 0 of the 6 notification-orchestrator alert names.
+    # Fix: align label with operator's ruleSelector matchLabels.
+    release: kube-prometheus-stack
 spec:
   groups:
     - name: notification-orchestrator-critical
