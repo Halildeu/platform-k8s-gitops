@@ -8,7 +8,7 @@
 ## Problem
 
 Mevcut iki ayrı alarm pipeline:
-- **Drift detection**: `check_prod_drift.sh` → JSON → `alarm_receiver.sh` → GitHub issue
+- **Drift detection**: `check_env_drift.sh` → JSON → `alarm_receiver.sh` → GitHub issue
 - **AlertManager**: PrometheusRule → AlertManager → ??? (default: silent receiver)
 
 İkinci pipeline **alarm üretiyor ama hiçbir yere gitmiyor**. Operator AlertManager UI'a port-forward etmeli, hiçbir audit trail yok.

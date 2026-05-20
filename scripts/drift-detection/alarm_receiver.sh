@@ -2,13 +2,13 @@
 # scripts/drift-detection/alarm_receiver.sh
 #
 # Codex P0 follow-up — drift detection JSON output → GitHub issue audit trail.
-# Reads /tmp/drift-report-<env>-<ts>.json (produced by check_prod_drift.sh)
+# Reads /tmp/drift-report-<env>-<ts>.json (produced by check_env_drift.sh)
 # and opens a GitHub issue per P1/P2 finding (with deduplication via title
 # match — repeated drift reuses existing issue's comment thread).
 #
 # Designed for staging-sw systemd integration:
 #
-#   ExecStart=/bin/bash check_prod_drift.sh prod
+#   ExecStart=/bin/bash check_env_drift.sh prod
 #   ExecStartPost=/bin/bash alarm_receiver.sh /tmp/drift-report-prod-<ts>.json
 #
 # Or invoked manually for ad-hoc reports.

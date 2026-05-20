@@ -1,0 +1,72 @@
+# ADR-0023 Guardrail PR-4 — Env Live-Runtime Drift Gate
+#
+# Codex plan-time AGREE: thread 019e44b9 iter-2 (env ArgoCD hub split,
+# 5-state machine, exit precedence, self-hosted staging-sw runner).
+#
+# Scope: runtime live drift only. PR-time render-only gating is owned by the
+# existing `gate-drift-pr-time.yml` workflow (Codex Sprint A P0 Item 4). This
+# workflow runs `check_env_drift.sh` for both test+prod against the live
+# clusters on staging-sw, so it must run on the self-hosted runner with
+# kubectl access — GitHub-hosted runners CANNOT reach k3d.
+#
+# Trigger model:
+#   - schedule: daily 06:15 UTC (PR-5 promotion-lag runs 06:00 → 15-min stagger)
+#   - workflow_dispatch: operator override; env=test|prod|both
+#
+# No pull_request trigger here by design (mevcut gate-drift-pr-time.yml zaten
+# PR-time path ownership'i alıyor; bu workflow runtime-only).
+
+name: Drift Detection — Live Runtime Gate (ADR-0023 PR-4)
+
+on:
+  schedule:
+    - cron: "15 6 * * *"
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Target env"
+        type: choice
+        options:
+          - test
+          - prod
+          - both
+        default: both
+
+permissions:
+  contents: read
+
+jobs:
+  env-drift:
+    name: env-drift (${{ matrix.env }})
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    strategy:
+      matrix:
+        env: [test, prod]
+      fail-fast: false
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Codex iter-2 must_fix #1 — job-level `if` cannot reference matrix.env
+      # (matrix expands after job-level if eval). Step-level conditions are
+      # the canonical fix and let the job log clearly show which matrix legs
+      # were skipped vs ran.
+      - name: Run check_env_drift.sh (${{ matrix.env }})
+        if: github.event_name == 'schedule' || inputs.env == 'both' || inputs.env == matrix.env
+        env:
+          PLATFORM_GITOPS_REPO: ${{ github.workspace }}
+        run: |
+          chmod +x scripts/drift-detection/check_env_drift.sh
+          bash scripts/drift-detection/check_env_drift.sh \
+            "${{ matrix.env }}" \
+            --report-path "${{ github.workspace }}/drift-report-${{ matrix.env }}.json"
+
+      - name: Upload drift report (${{ matrix.env }})
+        if: always() && (github.event_name == 'schedule' || inputs.env == 'both' || inputs.env == matrix.env)
+        uses: actions/upload-artifact@v7
+        with:
+          name: drift-report-${{ matrix.env }}
+          path: ${{ github.workspace }}/drift-report-${{ matrix.env }}.json
+          retention-days: 14
