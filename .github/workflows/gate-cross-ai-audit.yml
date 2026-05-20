@@ -43,6 +43,26 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 #     changes no content.
 
 on:
+  # PR-A2 transition: BOTH `pull_request` and `pull_request_target` are kept
+  # while this hardening migration lands. The `pull_request` trigger is needed
+  # because GitHub Actions resolves `pull_request` event workflows from the
+  # PR HEAD — and the PR introducing `pull_request_target` cannot bootstrap
+  # itself (head has no `pull_request` key → no run → required-check missing
+  # → branch protection blocks merge). A follow-up cleanup PR removes the
+  # `pull_request` trigger once `pull_request_target` has had a live run on
+  # main and the required-check context is reporting from the new event.
+  # The hardening is NOT diluted by the dual trigger: the `pull_request_target`
+  # run from base-ref is the authoritative one (script from trusted main);
+  # the parallel `pull_request` run from PR head can be malicious but cannot
+  # weaken the parallel base-ref audit, which must also pass.
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+      - labeled
+      - unlabeled
   pull_request_target:
     types:
       - opened
