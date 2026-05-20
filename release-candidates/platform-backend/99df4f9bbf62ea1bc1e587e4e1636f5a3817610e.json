@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-backend",
+  "service": "notification-orchestrator",
+  "git_sha": "99df4f9bbf62ea1bc1e587e4e1636f5a3817610e",
+  "git_short_sha": "99df4f9b",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-backend-notification-orchestrator",
+    "digest": "sha256:1c8416a3cac649203e3340d80c28b078326fed12685ed4f53a715e0a8a51a86b",
+    "tag": "sha-99df4f9",
+    "push_run_id": 26191456297,
+    "pushed_at": "2026-05-20T21:37:00Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": null,
+      "candidate_pr_status": "ready_for_review"
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": null,
+      "candidate_pr_status": "draft"
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:3b103e35e3978192556ea8dab8da60ef40f80514981d31ab1e001a27a005d74d"
+  },
+  "audit": {
+    "created_at": "2026-05-21T00:00:00Z",
+    "last_updated_at": "2026-05-21T00:00:00Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-backend/actions/runs/26191456297"
+  }
+}
