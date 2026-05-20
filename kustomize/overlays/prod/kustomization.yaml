@@ -207,7 +207,20 @@ images:
   #     dispatch flip (R1 NetGSM contract activation 2026-05-30).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3
+    # 2026-05-20 (A4 DKIM activation prereq, Faz 23.A4): Bump from sha-70491543
+    # (Faz 23.6 strict baseline) to sha-6ed593e. Carries cumulative delta:
+    #   - PR #151 DKIM RFC 6376 full impl + SmtpAdapter DkimSigner wiring
+    #   - PR #249/250/252 SMS multi-provider + JetSmsProvider + DLR polling
+    #   - PR-A1.1 → PR-A3.1.1 (Codex 019e4514 chain) multipart + context routing
+    # Image bump bu PR'da SADECE DKIM activation için (M4 prod cutover JetSMS
+    # config flip ayrı PR — Codex iter chain önerisi: blast radius minimize).
+    # Build evidence: gh run view 26174852041 -R Halildeu/platform-backend
+    # success 2026-05-20T16:26Z; digest sha256:30b0bf658dcd...
+    # Test cluster acceptance: 2026-05-20 LIVE (Codex 019e4514 11 iter).
+    # Previous attempt: PR #911 image bump WITHOUT DKIM activation prereq
+    # → CrashLoopBackOff (ProductionConfigValidator); revert PR #912 MERGED;
+    # this PR fixes the activation prereq order.
+    digest: sha256:30b0bf658dcd879c531451352c4e37680551fe14ab667a255eea36adbb281a5b
 
 # Faz 23.2 PR-D.3 — notification-orchestrator prod IMAGE PIN DEFERRED.
 # D29 evidence gate (Codex P0 Sprint A Item 3) requires:
@@ -789,9 +802,21 @@ patches:
       # alınca activation hazır. NOTIFY_DKIM_ENABLED=false kaldığı sürece
       # backend DkimSigner bean ConditionalOnProperty disabled → SmtpAdapter
       # Optional<DkimSigner> empty → no DKIM-Signature header.
+      # A4 DKIM activation 2026-05-20 (M4 prod cutover unblock, Codex iter chain 019e4514):
+      # - DKIM PKCS#8 RSA 2048 key Vault prod seeded (kv/platform/notification-orchestrator
+      #   property=dkim_private_key_pem; version 8, len=1704)
+      # - ESO `notification-orchestrator-secrets` Ready=True; Secret render
+      #   NOTIFY_DKIM_PRIVATE_KEY_PEM key non-empty
+      # - DNS TXT (operator-published prereq): acik2026._domainkey.acik.com IN TXT
+      #   "v=DKIM1; k=rsa; p=<base64-public-key>" (public key value docs/runbooks/
+      #   RB-faz-A4-dkim-activation.md)
+      # - Image bump sha-70491543 → sha-6ed593e (PR #151 DKIM RFC 6376 binary
+      #   + ProductionConfigValidator strict gate)
+      # - DkimSigner @ConditionalOnProperty notify.dkim.enabled=true → SmtpAdapter
+      #   Optional<DkimSigner> bound → outbound mail DKIM-Signature header active
       - op: add
         path: /data/NOTIFY_DKIM_ENABLED
-        value: "false"
+        value: "true"
       - op: add
         path: /data/NOTIFY_DKIM_SELECTOR
         value: "acik2026"
@@ -865,6 +890,13 @@ patches:
           # AuditPartitionRetentionService bean gets instantiated under
           # the new NOTIFY_AUDIT_RETENTION_ENABLED=true config.
           compliance.acik.com/audit-retention-cycle: "pr-c-2-flip-2026-05-09"
+          # Faz 23.A4 DKIM activation 2026-05-20 (Codex 019e4514 chain): image
+          # bump + NOTIFY_DKIM_ENABLED=true atomic; ConfigMap envFrom değişimi
+          # pod restart tetiklemez → annotation bump forces rolling restart so
+          # DkimSigner bean instantiates + ProductionConfigValidator passes
+          # (validateDkim() enabled=true + selector + domain + private-key
+          # non-empty → no startup error).
+          mail.acik.com/dkim-activation: "a4-prod-2026-05-20-sha-6ed593e"
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:
