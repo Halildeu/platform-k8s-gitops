@@ -301,15 +301,25 @@ Pod restart sonrası backend `GraphMailAdapter` `@ConditionalOnProperty` true �
 
 ```bash
 ssh halil@staging-sw '
-kubectl --context k3d-test -n platform-test logs deploy/notification-orchestrator --since=5m | grep -iE "GraphTokenService|client_credentials|access_token" | head -10
+kubectl --context k3d-test -n platform-test logs deploy/notification-orchestrator --since=5m | grep -iE "GraphTokenService|Graph access_token|AADSTS" | head -10
 '
 ```
 
-Beklenen log lines: `GraphTokenService initialized` + `Acquired access_token from Microsoft identity platform` + `token expires at <ts>`. Hata olursa (`AADSTS70011`, `AADSTS90002`, `AADSTS7000222`): credential mismatch veya scope problem; troubleshoot before continuing.
+Backend gerçek log davranışı (Codex `019e44b1` iter-3 finding 2 absorb):
+- **INFO level (boot)**: `GraphTokenService initialized: tenantId=<first8> clientId-prefix=<first8>***` — tenant_id ve client_id PII safety için first-8 + masked
+- **DEBUG level only** (logging.level.notify.adapters.graph=DEBUG ile): `Graph access_token refreshed: expires_in=<ts>` — default INFO log'da görünmez
+- **Error (acceptance blocker)**: `AADSTS70011` (invalid scope) / `AADSTS90002` (tenant not found) / `AADSTS7000222` (invalid client secret) — credential mismatch veya scope problem; troubleshoot before continuing
+
+**Acceptance gate**: `GraphTokenService initialized` log presence + AADSTS error absence yeterli. `access_token refreshed` INFO log'da görünmez; kanıt §7.2'deki başarılı `status=202` ile gelir (token implicit olarak alındı demektir).
 
 ### 7.2 — Canonical intent API smoke (`POST /api/v1/notify/intents`)
 
-Backend canonical intent endpoint kullanılır (özel `/admin/smoke-send` endpoint backend yüzeyinde **yok** — Codex `019e44b1` finding 1 absorb). JWT-authenticated intent + `channels: ["email"]` ile Graph adapter path tetiklenir.
+Backend canonical intent endpoint kullanılır (özel `/admin/smoke-send` endpoint backend yüzeyinde **yok** — Codex `019e44b1` finding 1 absorb). JWT-authenticated intent + `SubmitIntentRequest` full contract + external recipient + Graph adapter path tetiklenir.
+
+**Backend contract** (Codex iter-3 absorb — D29 evidence pattern):
+- **Zorunlu field'lar**: `intentId`, `idempotencyKey`, `orgId`, `topicKey`, `severity`, `dataClassification`, `template`, `payload`, `channels`, `recipients`
+- **External recipient** (mail smoke için): `{"type": "external", "email": "<addr>", "locale": "tr-TR"}` (subscriberId tek başına geçersiz)
+- **Subject/body**: template render'dan gelir (`payload.subject/body` tek başına garanti etmez); activation öncesi `t1` smoke template'inin var olması prereq
 
 ```bash
 ssh halil@staging-sw '
@@ -321,38 +331,49 @@ sleep 3
 
 # JWT token (admin user veya service principal smoke account; d29-smoke pattern)
 TOKEN="$(get-admin-jwt-test)"   # operator script veya manual mint
+TS=$(date +%s)
 
-# Canonical intent POST
+# Canonical intent POST (SubmitIntentRequest full contract)
 curl --fail-with-body -sX POST http://127.0.0.1:8089/api/v1/notify/intents \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
+  -H "X-Org-Id: default" \
   -d "$(cat <<JSON
 {
-  "topicKey": "smoke.graph.activation",
+  "intentId": "graph-smoke-$TS",
+  "idempotencyKey": "graph-smoke-$TS-key",
+  "correlationId": "graph-activation-$TS",
+  "orgId": "default",
+  "topicKey": "test.d29.email",
+  "severity": "info",
+  "dataClassification": "system",
+  "recipients": [
+    {"type": "external", "email": "halil.kocoglu@serban.com.tr", "locale": "tr-TR"}
+  ],
+  "template": {"templateId": "t1", "version": 1, "locale": "en"},
   "channels": ["email"],
-  "recipients": [{"subscriberId": "halil.kocoglu@serban.com.tr"}],
-  "payload": {
-    "subject": "[Graph smoke test] Session 42 activation",
-    "body": "Microsoft Graph adapter activation test from notification-orchestrator."
-  }
+  "payload": {"name": "Graph Smoke"}
 }
 JSON
 )"
 '
 ```
 
-Expected: HTTP 202 from notification-orchestrator (intent accepted) + pod log `GraphMailAdapter sendMail invocation for ai@acik.com → halil.kocoglu@serban.com.tr` + Microsoft Graph API response 202.
+**Expected**: HTTP 202 from notification-orchestrator (intent accepted) + pod log `graph mail accepted: to=<hash:...> subject=<...> message_id=... status=202` + Microsoft Graph API response 202.
 
-Alternatif (eğer canonical intent API access yoksa): `/api/v1/admin/notify/deliveries` audit + replay path veya backend admin actuator endpoint.
+**Note on subject/body** (Codex iter-3): Mail subject/body, `template.templateId=t1` render output'undan gelir — `payload.subject/body` tek başına garanti etmez. Activation öncesi `t1` smoke template'inin tenant template store'da kayıtlı olduğundan emin olunmalı. §7.3 recipient inbox proof'unu beklenen template output ile karşılaştırın (sabit subject literal değil).
+
+Alternatif (canonical intent API access yoksa): `/api/v1/admin/notify/deliveries` audit + replay path veya backend admin actuator endpoint.
 
 ### 7.3 — Recipient inbox proof
 
 Recipient (`halil.kocoglu@serban.com.tr`) inbox'ı kontrol et — mail geldi mi?
 
-- Subject: `[Graph smoke test] Session 42 activation`
+- Subject: **`t1` template render output'una göre değişir** — sabit literal değil (Codex `019e44b1` iter-3 absorb). Activation öncesi `t1` smoke template subject expected output'unu kayıt altına al, recipient inbox'ta o output'u eşle.
 - From: `ai@acik.com` (App Registration owns this mailbox via ApplicationAccessPolicy)
-- Body: smoke test message
+- Body: `t1` template render output (gene template'e bağlı; literal `Microsoft Graph adapter activation test...` değil)
 - Receive timestamp: smoke send'den sonra dakikalar içinde
+- Header `Message-ID`: §7.2 response'undaki `message_id` ile eşleşmeli
 
 ### 7.4 — Sender Sent Items proof (zorunlu — `saveToSentItems=true` ConfigMap'ten)
 
@@ -373,12 +394,17 @@ kubectl --context k3d-test -n platform-test logs deploy/notification-orchestrato
 '
 ```
 
-Beklenen (Graph aktif boot):
-- `GraphMailAdapter initialized: senderMailbox=ai@acik.com, saveToSentItems=true` ← present
-- `GraphTokenService initialized: tenantId=6f49871e-..., clientId=6e3e5b4b-..., scope=https://graph.microsoft.com/.default` ← present
-- `SmtpAdapter activated: ...` ← **ABSENT** (mutual exclusion; `@ConditionalOnProperty havingValue=false` no-match — bean instantiate edilmez)
+Backend gerçek log strings (Codex iter-3 finding 2 absorb — PII safety masking):
 
-Eğer `SmtpAdapter activated` log'u görünürse → ConfigMap flag `NOTIFY_ADAPTERS_GRAPH_ENABLED` reload edilmemiş veya backend ConditionalOnProperty config mismatch; troubleshoot.
+**Required presence**:
+- `GraphMailAdapter initialized: senderMailbox=ai@acik.com fromName=<...> saveToSentItems=true`
+- `GraphTokenService initialized: tenantId=<first8> clientId-prefix=<first8>***` (PII safety: first-8 + masked; scope alanı INFO log'da yok)
+- `graph mail accepted: to=<hash:...> subject=<...> message_id=... status=202` (post-smoke send)
+
+**Required absence (fresh boot logs)**:
+- `SmtpAdapter activated: dkimEnabled=...` ← **ABSENT** (mutual exclusion; conditional bean registration — bean instantiate edilmez)
+
+Eğer `SmtpAdapter activated` log'u fresh boot'ta görünürse → ConfigMap flag `NOTIFY_ADAPTERS_GRAPH_ENABLED` reload edilmemiş veya backend ConditionalOnProperty config mismatch; troubleshoot.
 
 Alternatif kanıt — Spring Boot Actuator beans endpoint:
 
