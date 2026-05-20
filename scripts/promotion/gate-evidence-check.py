@@ -44,6 +44,7 @@ import json
 import re
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -205,11 +206,205 @@ def check_evidence(entry: dict, jwt_validates_map: dict[str, bool]) -> tuple[boo
     return True, f"verified at {verified_at} (zanzibar policy: {'GREEN-only' if requires_zanzibar else 'GREEN-or-AMBER'})"
 
 
+def _parse_iso_utc(ts: str) -> datetime | None:
+    """Parse an ISO-8601 timestamp (with Z or offset) → aware datetime, or None."""
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _digest_short(digest: str) -> str:
+    """sha256:<64hex> → first 12 hex chars for human display."""
+    if digest.startswith("sha256:") and len(digest) >= 19:
+        return digest[7:19]
+    return digest[:12]
+
+
+def latest_verified_per_service(jwt_validates_map: dict[str, bool]) -> dict[str, dict]:
+    """For each service with a release-candidates/ ledger entry, return the
+    LATEST D29-verified record (max verified_at). 'Verified' = check_evidence()
+    returns True under the current Zanzibar policy.
+
+    Returns {service: {"path": Path, "entry": dict, "verified_at_dt": datetime,
+                       "digest": str}}.
+    """
+    latest: dict[str, dict] = {}
+    if not LEDGER_DIR.exists():
+        return latest
+    for path in LEDGER_DIR.rglob("*.json"):
+        if path.name == "README.md":
+            continue
+        try:
+            entry = json.loads(path.read_text())
+        except json.JSONDecodeError:
+            continue
+        svc = entry.get("service", "")
+        if not svc:
+            continue
+        verified_at = entry.get("promotion", {}).get("test", {}).get("verified_at")
+        v_dt = _parse_iso_utc(verified_at)
+        if not v_dt:
+            continue
+        ok, _ = check_evidence(entry, jwt_validates_map)
+        if not ok:
+            continue
+        digest = entry.get("image", {}).get("digest", "")
+        if not digest:
+            continue
+        current = latest.get(svc)
+        if current is None or v_dt > current["verified_at_dt"]:
+            latest[svc] = {
+                "path": path,
+                "entry": entry,
+                "verified_at_dt": v_dt,
+                "digest": digest,
+            }
+    return latest
+
+
+def check_promotion_lag(lag_days: int) -> int:
+    """ADR-0023 D5 Guardrail PR-5 — fail-closed gate that detects when a
+    test-validated (D29-GREEN) digest has not been promoted to prod for
+    longer than ``lag_days``. Prevents prod from silently lagging a
+    test-validated generation.
+
+    Logic:
+      - Render current prod overlay → set of pipeline digests in prod.
+      - For each service tracked in services.yaml, find LATEST D29-verified
+        ledger entry (by verified_at).
+      - If that digest is NOT in prod overlay AND verified_at older than
+        ``lag_days`` ago, flag as lag.
+
+    Exit codes: 0 OK, 1 lag detected, 2 setup error.
+    """
+    try:
+        render = render_overlay()
+    except subprocess.CalledProcessError as e:
+        print(f"ERR: cannot render prod overlay: {e}", file=sys.stderr)
+        return 2
+
+    prod_digests = extract_digests_from_render(render)
+
+    jwt_validates_map = load_zanzibar_required_services()
+    if not jwt_validates_map:
+        print(
+            "ERR: services.yaml empty or unreadable — lag check cannot identify "
+            "tracked services; aborting setup-error",
+            file=sys.stderr,
+        )
+        return 2
+
+    services = sorted(jwt_validates_map.keys())
+    latest = latest_verified_per_service(jwt_validates_map)
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=lag_days)
+    now = datetime.now(timezone.utc)
+
+    print(
+        f"[INFO] promotion-lag check: lag_days={lag_days}, "
+        f"cutoff={cutoff.isoformat()}"
+    )
+    print(f"[INFO] services tracked in services.yaml: {len(services)}")
+    print(f"[INFO] prod overlay pipeline digests: {len(prod_digests)}")
+
+    lags: list[tuple[str, str, int, Path]] = []
+    no_ledger: list[str] = []
+
+    for svc in services:
+        info = latest.get(svc)
+        if not info:
+            no_ledger.append(svc)
+            continue
+
+        digest = info["digest"]
+        v_dt = info["verified_at_dt"]
+        age = (now - v_dt).days
+        rel = info["path"].relative_to(REPO_ROOT)
+
+        if digest in prod_digests:
+            print(
+                f"[OK]   {svc}: latest verified digest "
+                f"{_digest_short(digest)} already in prod (verified {age}d ago)"
+            )
+            continue
+
+        if v_dt < cutoff:
+            print(
+                f"[LAG]  {svc}: digest {_digest_short(digest)} verified "
+                f"{age}d ago (>{lag_days}d), NOT in prod (ledger {rel})"
+            )
+            lags.append((svc, digest, age, info["path"]))
+        else:
+            print(
+                f"[INFO] {svc}: digest {_digest_short(digest)} verified "
+                f"{age}d ago, not yet in prod (within {lag_days}d window)"
+            )
+
+    if no_ledger:
+        # Services in services.yaml without ANY D29-verified ledger.
+        # Treated as INFO (not failure): new services may not have any
+        # ledger yet; D29 evidence gate covers their first prod promotion.
+        print(
+            f"[INFO] {len(no_ledger)} service(s) without any D29-verified "
+            f"ledger entry (likely never promoted yet): "
+            f"{', '.join(no_ledger[:8])}"
+            f"{' …' if len(no_ledger) > 8 else ''}"
+        )
+
+    print()
+    if lags:
+        print(
+            f"=== {len(lags)} service(s) with promotion lag > {lag_days}d "
+            f"— gate FAIL ==="
+        )
+        for svc, digest, age, rel_path in lags:
+            print(
+                f"  {svc}: digest={digest} verified={age}d ago "
+                f"ledger={rel_path.relative_to(REPO_ROOT)}"
+            )
+        print()
+        print("To unblock:")
+        print(
+            "  - Open prod overlay PR bumping these services to the test-"
+            "validated digest"
+        )
+        print(
+            "  - OR explicitly defer (commit a 'promotion-deferred:' note "
+            "in the ledger entry's promotion.test block)"
+        )
+        return 1
+
+    print(
+        f"=== No promotion lag detected — all D29-verified digests either "
+        f"already promoted to prod or within {lag_days}d window ==="
+    )
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="D29 evidence gate for prod promotions")
     parser.add_argument("--base", default="origin/main", help="Base ref")
     parser.add_argument("--head", default="HEAD", help="Head ref")
+    parser.add_argument(
+        "--check-promotion-lag",
+        action="store_true",
+        help="Run ADR-0023 PR-5 lag check instead of PR digest evidence check "
+        "(see check_promotion_lag for semantics).",
+    )
+    parser.add_argument(
+        "--lag-days",
+        type=int,
+        default=7,
+        help="Threshold (days) — D29-verified digest not promoted to prod for "
+        "longer than this is flagged as lag (default: 7).",
+    )
     args = parser.parse_args()
+
+    if args.check_promotion_lag:
+        return check_promotion_lag(args.lag_days)
 
     # Step 1: Was prod overlay touched in this PR?
     changed = get_changed_files(args.base, args.head)
