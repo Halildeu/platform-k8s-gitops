@@ -84,10 +84,10 @@ Aramalar:
 | Task | File | Source | Acceptance | Blocker |
 |---|---|:---:|:---:|---|
 | T1.3.1 V_history table | (provider_config_history schema) | 🟢 | 🟢 | — |
-| T1.3.2 Versioning service | `ProviderConfigHistoryRepository.java` | 🟢 | 🔴 | acceptance gate |
-| T1.3.3 Atomic switch + cache | TBD | 🟡 | 🔴 | acceptance gate |
+| T1.3.2 Versioning service | `ProviderConfigHistoryRepository.java` + `ProviderConfigService.java` | 🟢 | 🟢 | — |
+| T1.3.3 Atomic switch + cache | `ProviderConfigService.switchActive` (@Transactional SERIALIZABLE + TransactionSynchronization.afterCommit cache invalidate) | 🟢 | 🟢 | — |
 
-**T1.3 Verdict**: Partial source-ready; acceptance gate.
+**T1.3 Verdict (UPDATED 2026-05-10 — platform-backend PR #140 MERGED, R12 Mitigated FULL ACCEPTANCE)**: All T1.3 sub-tasks source-ready/live with Testcontainers integration test acceptance evidence (4 test methods CI GREEN: `atomic_switch` + `concurrent_switch_race` + `cache_invalidate` + `rollback_on_fail`). Atomic switch uses `@Transactional` SERIALIZABLE isolation + `TransactionSynchronization.afterCommit` cache invalidation pattern (prevents stale config served between commit and invalidate). Cross-AI peer review: Codex thread (PR #140 chain) iter-1 RED (initial design issues) → iter-2 AGREE post-impl. R12 (provider config rollback transaction race) 🟢 Mitigated per `risk-register.md`. M3 milestones canonical: `T1.3 23.2.C Provider config rollback merged` ✅.
 
 ### T1.4 — 23.2.D Outage Fallback Bypass (D43, must-have #10)
 
@@ -130,7 +130,7 @@ Implementation order (Codex iter-2 absorb):
 | T1.6.3 Webhook fan-out cap | `AbuseGuardService.java` (HARD safety limit; severity=critical bile bypass etmez) | 🟢 | 🟢 | 🟡 partial (init log; functional smoke I6 dep) | 🔴 | acceptance gate I6 |
 | T1.6.4 429 + audit | `AbuseGuardBlockedException` HTTP 429 + `AuditEventPublisher.publishStandaloneRequiresNew` (`Propagation.REQUIRES_NEW` audit row outer rollback'i atlatır — Codex iter-2 P1 KRITIK) | 🟢 | 🟢 | 🟡 partial (audit row evidence I6 functional smoke gerek) | 🔴 | acceptance gate I6 |
 | T1.6.5 PrometheusRule alert | `NotifyAbuseStorm` alert in `kustomize/base/apps/notification-orchestrator/prometheusrule.yaml` (PR #867 MERGED 2026-05-20 00:36:22Z `1b7786a0`; `sum by(namespace) (rate(notify_abuse_blocked_total[5m])) > 0.5 for 5m`, severity=warning, no `page=true`); dedicated runbook `RB-notify-abuse-guard.md` (5-step triage + Prometheus/audit label namespace distinction + schema-valid `notify.audit_event` SQL + operator shell psql note); Codex thread `019e42c1` REVISE×3 → AGREE iter-4. Cluster apply CONFIRMED 2026-05-20 00:37Z (generation 1→2). Prometheus operator rule reload pending verify. | 🟢 | 🟢 | 🟡 partial (cluster apply confirmed; Prometheus rule load verify pending) | 🟡 partial (alert load OK; firing functional smoke RAID I6 dep) | acceptance gate I6 (firing smoke) |
-| T1.6.6-7 Test + Codex review | `AbuseGuardServiceTest` 8/8 PASS unit; integration test (Service IT/MockMvc) Codex iter-3 P2 deferred follow-up; Codex thread `019e0c28` iter-1 PARTIAL → iter-2 P1 absorb → iter-3 AGREE ready_for_merge=true | 🟢 | 🟢 | 🟢 (unit) | 🟡 | integration test follow-up |
+| T1.6.6-7 Test + Codex review | `AbuseGuardServiceTest` 8/8 PASS unit + `IntentSubmissionAbuseGuardIntegrationTest` 5 senaryo (storm, critical bypass, fanout cap, hard limit, multi-tenant) PR #257 MERGED 2026-05-20 01:13:51Z `4897ce9e`; production code: critical bypass audit publish wiring (Decision.allowedWithAudit + IntentSubmissionService allowed-with-audit branch, Propagation.REQUIRES_NEW); Codex thread `019e42df` iter-1 REVISE → iter-2 AGREE; M3 closure katkısı | 🟢 | 🟢 | 🟢 (unit + IT) | 🟢 | — |
 
 **T1.6 Verdict (UPDATED 2026-05-09 18:40Z — PR #134 + PR #455 MERGE + cluster apply CONFIRMED)**: **Backend abuse guards source-ready/live-deployed** (PR #134: AbuseGuardService 240 satır + AbuseGuardBlockedException + IntentSubmissionService Step 1.5 wiring + AuditEventPublisher.publishStandaloneRequiresNew + PiiRedactor whitelist extend + 8/8 unit tests PASS). Cluster pod imageID `sha256:eef18027f0d54b930e1c54c44215fe2c50e6aa752fe2dcbf93ea0eae2908d0b4` LIVE; `AbuseGuardService initialized: window=60s rateLimit=100/window webhookFanoutCap=10 (multi-pod soft enforcement)` confirmed. **Acceptance gate** functional 429 smoke (101st request expected) RAID I6 Keycloak credential blocker. T1.6 sprint-plan ~15h estimate; gerçek residual ~2-3h (functional smoke acceptance test + PrometheusRule alert + Service IT).
 
