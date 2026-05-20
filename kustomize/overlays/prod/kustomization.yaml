@@ -25,6 +25,10 @@ resources:
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster (network teşhisi sonrası — k3d cluster → 10.9.193.0/24 routing fail)
   - endpoints-workcube-mssql.yaml    # 172.21.0.7 (workcube-mssql-proxy-prod, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.21.0.7/32:11433
+  # Faz 23.3 M4 prod cutover RE-ATTEMPT (PR-B4) — notification-orchestrator
+  # egress 587 (SMTP) + 443 (JetSMS SOAP + Graph deferred). Test overlay
+  # pattern paralel (kustomize/overlays/test/netpol-notification-egress-mail-providers.yaml).
+  - netpol-notification-egress-mail-providers.yaml
   # PERF-INIT-V2 PR-B5b3e prod promote (Codex thread `019e24ea` revised
   # design): cluster-side federation/cache smoke CronJob promoted from
   # test cluster after observed stability — same curl-only script
@@ -840,6 +844,37 @@ patches:
       - op: add
         path: /data/NOTIFY_DKIM_DOMAIN
         value: "acik.com"
+      # Faz 23.3 M4 prod cutover RE-ATTEMPT (PR-B4 2026-05-20, Codex 019e4514
+      # test cluster LIVE 2026-05-20 + PR-B1+PR-B2+PR-B3 DKIM relay activation
+      # MERGED + prod pod boot OK):
+      # - JetSMS primary activation (R6: Biotekno mikrolink2 contract LIVE)
+      # - 4 multipart/SOAP/channel/length keys (test cluster PR-A3.2 LIVE)
+      # - R24 mitigation: OTP_TOPIC_KEYS="" initial; Biotekno OTP sender ID
+      #   provisioning sonrası operator config patch ile enable
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_PRIMARY_PROVIDER
+        value: "jetsms"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_MULTIPART_ENABLED
+        value: "true"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_ON_LENGTH_PROBLEM
+        value: "SendAllPackage"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_SOAP_OPERATION
+        value: "sendSMSSingle"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL
+        value: "VF"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_ALLOWED
+        value: "VF,VFO"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_TOPIC_KEYS
+        value: ""
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_MAX_LENGTH
+        value: "160"
       # NOTIFY_DISPATCH_ENABLED=false BAĞLANTILI: dispatch flip true sadece
       # smtp_username + smtp_password Vault'ta dolu olduğunda yapılmalı.
       # Operator post-merge sequence:
@@ -912,6 +947,11 @@ patches:
           # bump pod rolling restart tetikler so DkimSigner conditional bean
           # (enabled=false) takes effect on new pod boot.
           mail.acik.com/dkim-relay-strategy: "b3-prod-2026-05-20-sha-6307428"
+          # Faz 23.3 M4 prod cutover RE-ATTEMPT (PR-B4 2026-05-20, Codex
+          # iter-1 P1 absorb): ConfigMap envFrom yeni 8 JetSMS key + netpol
+          # additive; rollout annotation pod restart tetikler so SmsAdapter
+          # primary=jetsms reload + JetSmsDlrPollingWorker activate.
+          sms.acik.com/jetsms-m4-cutover: "b4-prod-2026-05-20-sha-6307428"
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:
