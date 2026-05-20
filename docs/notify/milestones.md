@@ -124,17 +124,24 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 **Owner**: ops + dev + legal (NetGSM secondary contract); gitops/ops (prod cutover gates)
 **Dependencies**: M3 (23.2 stable)
 
-### M5 — 23.5 Preference UI (🔴 target 2026-06-29)
+### M5 — 23.5 Preference UI (🟢 source-ready + acceptance candidate — Session 47 audit 2026-05-21)
+
+> **Status revision 2026-05-21 (Session 47, Codex `019e472f` REVISE audit)**: M5 23.5 büyük ölçüde MERGED — daha önce yanlışlıkla 🔴 target olarak takip ediliyordu. Gerçek durum: platform-web PR #285 (Faz 23.5 PR3 preferences UI page + RTK Query client), #286 (PR4 bulk mark-all-read), #288 (PR5 docs operator guide), #291 (PR6 mfe-audit delivery logs tab), #296 (PR-hardening canonical subscriberId selector), #299 (Faz 23.6 PR-B1 richer preference editor with quiet hours), #301 (PR-C2 mute-channel UI two-stage confirm) MERGED. `NotificationPreferencesPage.tsx` + `NotificationPreferenceForm.tsx` + `quiet-hours.ts` canonical model + RTK Query API (`notify-prefs.api.ts`) + unit testler LIVE. **3 gap kaldı** (gap-fill PR'lar): (G2) Backend `PreferenceTopicCatalog` endpoint `GET /api/v1/notify/topics/me` — şu an FE free-text + bilinen topic chips fallback ile çalışır, doğru ürün davranışı için catalog endpoint gerek; (G3) Frontend public unsubscribe landing route `/notifications/unsubscribe` — backend `UnsubscribeController` public endpoint LIVE, FE landing screen yok (success/expired/invalid states); (G4) Playwright cluster smoke (authenticated /settings/notifications load + row toggle/upsert + quiet hours save + restore-defaults two-stage + public unsubscribe success/invalid).
 
 **Definition of Done**:
-- [ ] T3.2 mfe-host preference settings page LIVE
-- [ ] Per-channel + per-topic + quiet hours + frequency limit + unsubscribe one-click UI
-- [ ] D29-NOTIFY UI flow evidence
-- [ ] Charter 23.5 marker ⏳ → 🟢
+- [x] T3.2 mfe-shell preference settings page LIVE — `/settings/notifications` route (Faz 23.5 PR3 platform-web PR #285 MERGED)
+- [x] Per-channel + per-topic + quiet hours + frequency limit UI — `NotificationPreferenceForm.tsx` drawer-based rich editor (Faz 23.6 PR-B1 platform-web PR #299 MERGED)
+- [x] Bulk mute-channel + restore-defaults two-stage confirm — `NotificationPreferencesPage.tsx` (Faz 23.6 PR-C1+C2 platform-web PR #301 MERGED)
+- [x] Operator guide docs LIVE — Faz 23.5 PR5 platform-web PR #288 MERGED
+- [~] D29-NOTIFY UI flow evidence — Vitest unit testler LIVE (`__tests__/notify-prefs.api.test.ts`, `__tests__/NotificationPreferencesPage.test.tsx`); Playwright cluster smoke G4 gap
+- [ ] **G2 Backend PreferenceTopicCatalog endpoint** — agent-actionable (platform-backend PR)
+- [ ] **G3 Frontend public unsubscribe landing** — agent-actionable (platform-web PR)
+- [ ] **G4 Playwright cluster smoke** — agent-actionable (platform-web PR)
+- [~] Charter 23.5 marker → 🟢 source-ready + acceptance candidate (this PR-G1; full closure G2+G3+G4 sonrası)
 
-**Blockers**: T1.1 backend dependency
-**Owner**: dev (frontend)
-**Dependencies**: T1.1 (preference API), M3
+**Blockers**: None (T1.1 backend preference API LIVE; M3 stable)
+**Owner**: dev (frontend + backend gap-fill)
+**Dependencies**: T1.1 (preference API) ✅ LIVE, M3 ✅ source-ready
 
 ### M6 — 23.4 Closure (🟡 split into M6a + M6b — Codex iter-2 absorb)
 
