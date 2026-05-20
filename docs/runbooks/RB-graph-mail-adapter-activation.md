@@ -373,7 +373,7 @@ Recipient (`halil.kocoglu@serban.com.tr`) inbox'ı kontrol et — mail geldi mi?
 - From: `ai@acik.com` (App Registration owns this mailbox via ApplicationAccessPolicy)
 - Body: `t1` template render output (gene template'e bağlı; literal `Microsoft Graph adapter activation test...` değil)
 - Receive timestamp: smoke send'den sonra dakikalar içinde
-- Header `Message-ID`: §7.2 response'undaki `message_id` ile eşleşmeli
+- **Header/correlation** (Codex `019e44b1` iter-4 absorb): `POST /api/v1/notify/intents` response'u sadece `intentId`, `status`, `trackingUrl` döner (`message_id` YOK; acceptance intentId ile başlatılır). Provider correlator (Graph adapter'ın aldığı value) pod log `graph mail accepted ... message_id=...` veya admin delivery row `provider_msg_id` alanından alınır. Email headers içinde standart `Message-ID` değil, custom `X-Notify-Message-ID` internet header'ı aranır (backend Graph adapter payload'a set eder)
 
 ### 7.4 — Sender Sent Items proof (zorunlu — `saveToSentItems=true` ConfigMap'ten)
 
