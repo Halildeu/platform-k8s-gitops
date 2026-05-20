@@ -29,7 +29,7 @@
       "smoke_evidence": null,
       "verified_at": null,
       "candidate_pr": null,
-      "candidate_pr_status": "deferred_72h_m4_observation"
+      "candidate_pr_status": "draft"
     }
   },
   "metadata": {
