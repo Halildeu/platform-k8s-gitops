@@ -2567,7 +2567,20 @@ images:
   # 46 yeni, JetSmsProviderTest 34 HTTP coverage korundu).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:57384b706a4cb7025e0f95e99f5acd99fdc42c3a1d3eb793f1a3aea0725a1c13
+    # 2026-05-20 update (Faz 23.2 M3 T1.6.6 — AbuseGuard critical-bypass audit):
+    # Bump from sha-e9b0ce5 (JetSMS SOAP cutover) to sha-4897ce9.
+    # Source: platform-backend PR #257 (4897ce9) — IntentSubmissionAbuseGuardIntegrationTest
+    # 5 senaryo (storm, critical bypass, fanout cap, hard limit, multi-tenant)
+    # plus production code fix: critical-bypass audit publish wiring
+    # (Decision.allowedWithAudit + IntentSubmissionService allowed-with-audit
+    # branch, Propagation.REQUIRES_NEW). Closes T1.6.6 operational visibility
+    # gap: RATE_LIMIT_BYPASSED_CRITICAL audit row now joinable to (org,
+    # topic, correlation_id) — Prometheus counter alone was anonymous.
+    # Image build: gh run view 26135174136 -R Halildeu/platform-backend
+    # (success); digest sha256:150e68539630c3533cbd25ba6f0ef5ba97ff5f4ee49d155acc3464e7702f982f.
+    # Cross-AI peer review: Codex thread 019e42df-aa9e-74e0-a878-e41817d704e3
+    # iter-1 REVISE -> iter-2 AGREE.
+    digest: sha256:150e68539630c3533cbd25ba6f0ef5ba97ff5f4ee49d155acc3464e7702f982f
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
