@@ -2591,7 +2591,19 @@ images:
     #   - 10 yeni test (42/42 total PASS)
     # Build evidence: gh run view 26185928228 -R Halildeu/platform-backend
     # success 2026-05-20T~19:50Z; digest sha256:3b103e35e3978192556ea8dab8da60ef40f80514981d31ab1e001a27a005d74d.
-    digest: sha256:3b103e35e3978192556ea8dab8da60ef40f80514981d31ab1e001a27a005d74d
+    #
+    # 2026-05-21 update v4 (Faz 23.5 M5 G5 — topic catalog endpoint LIVE):
+    # Bump from sha-6307428 to sha-99df4f9b. Carries PR-G2 (platform-backend
+    # #269 MERGED 2026-05-20T21:37Z):
+    #   - GET /api/v1/notify/topics/me endpoint
+    #   - TopicCatalogEntryResponse + TopicCatalogListResponse DTOs
+    #   - TopicCatalogProperties + TopicCatalogService (config-driven)
+    #   - application.yml notify.topics.catalog (10 initial entries: auth,
+    #     audit, ops, marketing, system categories)
+    #   - 10/10 new tests PASS (Service + Controller + Properties binding)
+    # Build evidence: gh run view 26191456297 -R Halildeu/platform-backend
+    # success 2026-05-20T21:37Z; digest sha256:1c8416a3cac649203e3340d80c28b078326fed12685ed4f53a715e0a8a51a86b.
+    digest: sha256:1c8416a3cac649203e3340d80c28b078326fed12685ed4f53a715e0a8a51a86b
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
