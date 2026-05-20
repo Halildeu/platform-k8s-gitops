@@ -235,6 +235,8 @@ Beklenen: ExternalSecret `Ready=True reason=SecretSynced` + Secret'te `NOTIFY_AD
 # kustomize/overlays/test/kustomization.yaml — ConfigMap notification-orchestrator-config
 # data block içine ekle (veya patch):
 NOTIFY_ADAPTERS_GRAPH_ENABLED: "true"
+NOTIFY_ADAPTERS_GRAPH_SENDER_MAILBOX: "ai@acik.com"           # sender mailbox (ApplicationAccessPolicy scope ile uyumlu)
+NOTIFY_ADAPTERS_GRAPH_SAVE_TO_SENT_ITEMS: "true"              # §7.4 Sent Items proof için zorunlu (default false — Codex 019e44b1 finding 2 absorb)
 ```
 
 Plus (eğer test cluster digest henüz Graph-binary-inclusive sha içermiyorsa):
@@ -305,19 +307,43 @@ kubectl --context k3d-test -n platform-test logs deploy/notification-orchestrato
 
 Beklenen log lines: `GraphTokenService initialized` + `Acquired access_token from Microsoft identity platform` + `token expires at <ts>`. Hata olursa (`AADSTS70011`, `AADSTS90002`, `AADSTS7000222`): credential mismatch veya scope problem; troubleshoot before continuing.
 
-### 7.2 — `POST /users/ai@acik.com/sendMail` Graph REST proof
+### 7.2 — Canonical intent API smoke (`POST /api/v1/notify/intents`)
+
+Backend canonical intent endpoint kullanılır (özel `/admin/smoke-send` endpoint backend yüzeyinde **yok** — Codex `019e44b1` finding 1 absorb). JWT-authenticated intent + `channels: ["email"]` ile Graph adapter path tetiklenir.
 
 ```bash
 ssh halil@staging-sw '
-# Manuel synthetic test via notification-orchestrator API (smoke endpoint veya direct admin trigger)
-kubectl --context k3d-test -n platform-test exec deploy/notification-orchestrator -- \
-  curl -sX POST http://localhost:8089/admin/smoke-send \
-    -H "Content-Type: application/json" \
-    -d "{\"to\":\"halil.kocoglu@serban.com.tr\",\"subject\":\"[Graph smoke test] Session 42 activation\",\"body\":\"Microsoft Graph adapter activation test from notification-orchestrator pod.\"}"
+# Port-forward + JWT mint
+kubectl --context k3d-test -n platform-test port-forward svc/notification-orchestrator 8089:8089 &
+PF=$!
+trap "kill $PF 2>/dev/null || true" EXIT
+sleep 3
+
+# JWT token (admin user veya service principal smoke account; d29-smoke pattern)
+TOKEN="$(get-admin-jwt-test)"   # operator script veya manual mint
+
+# Canonical intent POST
+curl --fail-with-body -sX POST http://127.0.0.1:8089/api/v1/notify/intents \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(cat <<JSON
+{
+  "topicKey": "smoke.graph.activation",
+  "channels": ["email"],
+  "recipients": [{"subscriberId": "halil.kocoglu@serban.com.tr"}],
+  "payload": {
+    "subject": "[Graph smoke test] Session 42 activation",
+    "body": "Microsoft Graph adapter activation test from notification-orchestrator."
+  }
+}
+JSON
+)"
 '
 ```
 
-Expected: HTTP 202 from notification-orchestrator + log entry `GraphMailAdapter sent message to halil.kocoglu@serban.com.tr; Graph response 202 Accepted`.
+Expected: HTTP 202 from notification-orchestrator (intent accepted) + pod log `GraphMailAdapter sendMail invocation for ai@acik.com → halil.kocoglu@serban.com.tr` + Microsoft Graph API response 202.
+
+Alternatif (eğer canonical intent API access yoksa): `/api/v1/admin/notify/deliveries` audit + replay path veya backend admin actuator endpoint.
 
 ### 7.3 — Recipient inbox proof
 
@@ -328,26 +354,43 @@ Recipient (`halil.kocoglu@serban.com.tr`) inbox'ı kontrol et — mail geldi mi?
 - Body: smoke test message
 - Receive timestamp: smoke send'den sonra dakikalar içinde
 
-### 7.4 — Sender Sent Items proof
+### 7.4 — Sender Sent Items proof (zorunlu — `saveToSentItems=true` ConfigMap'ten)
 
 Sender (`ai@acik.com`) mailbox'ın **Sent Items** klasörü:
 
 - Microsoft 365 Outlook web (https://outlook.office.com) → ai@acik.com login → Sent Items
-- Mail görünüyor mu? — Graph API `sendMail` default olarak Sent Items'a kayıt eder (`saveToSentItems: true` default).
+- Mail görünüyor mu? — **§6.1 ConfigMap'te `NOTIFY_ADAPTERS_GRAPH_SAVE_TO_SENT_ITEMS=true` ZORUNLU** çünkü backend `GraphMailAdapter` default value `false` (Codex `019e44b1` finding 2 absorb: payload explicit `saveToSentItems=false` gönderiyor; tenant default override etmez). Eğer §6.1 ConfigMap'te bu flag missing/false → Sent Items proof fail eder ve activation acceptance blocker olur.
 
 ### 7.5 — Pod logs `GraphMailAdapter active`, `SmtpAdapter inactive`
 
+Codex `019e44b1` finding 3 absorb: backend gerçek log string'leri kullanılır (ConditionalOnProperty `matched/skipped` lines debug açılmadan üretilmez):
+
 ```bash
 ssh halil@staging-sw '
+# Fresh boot logs (Graph activation rollout sonrası, son 10 dk)
 kubectl --context k3d-test -n platform-test logs deploy/notification-orchestrator --since=10m \
-  | grep -iE "GraphMailAdapter|SmtpAdapter|MailAdapter" | head -10
+  | grep -iE "GraphMailAdapter|GraphTokenService|SmtpAdapter" | head -10
 '
 ```
 
-Beklenen lines:
-- `GraphMailAdapter @ConditionalOnProperty notify.adapters.graph.enabled=true matched; activated`
-- `SmtpAdapter @ConditionalOnProperty notify.adapters.graph.enabled (havingValue=false) NOT matched; skipped`
-- `MailAdapter implementation: GraphMailAdapter`
+Beklenen (Graph aktif boot):
+- `GraphMailAdapter initialized: senderMailbox=ai@acik.com, saveToSentItems=true` ← present
+- `GraphTokenService initialized: tenantId=6f49871e-..., clientId=6e3e5b4b-..., scope=https://graph.microsoft.com/.default` ← present
+- `SmtpAdapter activated: ...` ← **ABSENT** (mutual exclusion; `@ConditionalOnProperty havingValue=false` no-match — bean instantiate edilmez)
+
+Eğer `SmtpAdapter activated` log'u görünürse → ConfigMap flag `NOTIFY_ADAPTERS_GRAPH_ENABLED` reload edilmemiş veya backend ConditionalOnProperty config mismatch; troubleshoot.
+
+Alternatif kanıt — Spring Boot Actuator beans endpoint:
+
+```bash
+ssh halil@staging-sw '
+kubectl --context k3d-test -n platform-test exec deploy/notification-orchestrator -- \
+  curl -s http://localhost:8089/actuator/beans 2>/dev/null \
+  | jq ".contexts.application.beans | to_entries | map(select(.key | test(\"(?i)(graph|smtp).*Adapter\"))) | map({key, value: .value.type})"
+'
+```
+
+Beklenen: `graphMailAdapter` bean present, `smtpAdapter` bean ABSENT (Spring conditional bean registration).
 
 ### 7.6 — Acceptance gate
 

@@ -4658,8 +4658,8 @@ Bu dokümanda ve sonraki iletişimde **kullanılmayacak**:
 | `graph_tenant_id` | **property absent** (Vault'ta key yok; ExternalSecret data[] specifies remoteRef.property but ESO reports SecretSyncedError on missing) |
 | `graph_client_id` | **property absent** |
 | `graph_client_secret` | **property absent** |
-| ExternalSecret `notification-orchestrator-secrets` (prod) | `Ready=False reason=SecretSyncedError msg="could not get secret data from provider"` (3 graph_* keys missing → honest fail-closed; diğer notify keys Ready=True kalır per ESO per-property behavior) |
-| ExternalSecret (test) | `Ready=True` (test overlay manifest henüz Graph 3-key additive yansımamış olabilir; PR #872 source-only kayıtlı, manual apply gerek) |
+| ExternalSecret `notification-orchestrator-secrets` (prod) | `Ready=False reason=SecretSyncedError msg="could not get secret data from provider"` — ExternalSecret object'inin **tek Ready condition**'ı vardır; missing property nedeniyle aggregate Ready=False kalır (Codex `019e44b1` finding 4 absorb: ESO per-property pseudo-state önceki wording yanlıştı). **K8s Secret** target ise mevcut: `notification-orchestrator-secrets` Secret bayağı non-Graph keys'i (SPRING_DATASOURCE_*, SMS NetGSM/JetSMS, Teams/Slack, FCM/APNS/VAPID, SMTP, DKIM, unsubscribe) önceki başarılı sync'lerden tutmaya devam eder. **Pod runtime etkisi yok**: Graph flag `false` default + digest henüz Graph-binary-inclusive sha değil → `GraphMailAdapter` bean instantiate edilmez; `SmtpAdapter` aktif; mail delivery hep SMTP path. |
+| ExternalSecret (test) | `Ready=True` baseline (test overlay manifest henüz Graph 3-key additive yansımamış olabilir; PR #872 source-only kayıtlı, manual apply gerek). Manuel ESO refresh sonrası test ExternalSecret de Ready=False olur (aynı `property absent` mekanizma). |
 
 ### 8.4 Gitops desired-state (PR #872 merged 2026-05-19, Codex `019e42d1` AGREE_B staged-only)
 
