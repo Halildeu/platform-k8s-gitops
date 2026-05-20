@@ -81,7 +81,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 
 > **Status revision 2026-05-20 (Session 42+, Codex `019e45db` REVISE)**: M4 5-PR sequence MERGED + **test cluster JetSMS LIVE acceptance** (full happy-path: ACCEPTED + DLR DELIVERED terminal state). Initial HTTP 5xx retry **transient** classify; SOAP transport ACCEPTED + DlrPollingWorker DELIVERED. Prod cutover **multi-blocker** (prod ESO Graph aggregate Ready=False + imageID bump + configmap primary=jetsms flip + egress NetworkPolicy gap) → child issue [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903) Codex 9-step acceptance smoke gates.
 
-> **Sub-Faz 23.3.2 closure 2026-05-20 (Session 47, Codex `019e4514` 10 iter)**: Multipart + context routing + actual_channel audit chain MERGED + test cluster LIVE. Backend chain PR #262/#263/#264/#265/#266/#267 + GitOps PR #903/#905/#908 (sha-6ed593e). 3-senaryo canary smoke: VFO routing OTP topic + VF default marketing + VF explicit fallback overlength (Codex P2+P3 absorb). Real-world: kullanıcı +905551815564 multipart SMS DELIVERED (B: 1 seg, C: 2 segments). Evidence: [docs/faz-23-evidence/2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md](../faz-23-evidence/2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md). Yeni risk R24: JetSMS VFO Biotekno OTP sender ID provisioning (ErrorCode=04; routing logic etkisiz; ayrı sprint).
+> **Sub-Faz 23.3.2 routing/multipart closure 2026-05-20 (Session 47, Codex `019e4514` 11 iter)**: Multipart + context routing decision logic + actual_channel audit (VF accepted path) chain MERGED + test cluster LIVE. Backend chain PR #262/#263/#264/#265/#266/#267 + GitOps PR #903/#905/#908 (sha-6ed593e). 3-senaryo canary smoke: VFO routing-log proof (Scenario A) + VF default delivered (Scenario B) + VF explicit fallback overlength delivered (Scenario C) — Codex P2+P3 absorb. Real-world: kullanıcı +905551815564 multipart SMS DELIVERED (B: 1 seg, C: 2 segments). **VFO provider acceptance PENDING R24**: JetSMS Biotekno sender ID OTP allowlist provisioning gap (ErrorCode=04 reject); routing logic LIVE, provider config gap. Evidence: [docs/faz-23-evidence/2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md](../faz-23-evidence/2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md).
 
 **Definition of Done**:
 - [x] PR-1 `SmsProvider` interface + `SmsAdapter` facade + `NetGsmProvider` refactor (behavior-neutral) — platform-backend [#249](https://github.com/Halildeu/platform-backend/pull/249) MERGED
@@ -95,12 +95,16 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
   - `jetsms SOAP ACCEPTED (awaits DLR poll): msg_id=jetsms-260520174749808291`
   - `sms primary=jetsms result status=ACCEPTED class=NONE`
   - `dlr jetsms UPDATED: code=1 delivery_id=116 prior=ACCEPTED new=DELIVERED` (+ delivery_id 117 + ongoing)
-- [x] **Sub-Faz 23.3.2 Multipart + Context Routing LIVE** (2026-05-20 PR-A1 → PR-A3.2 chain, Codex `019e4514`):
+- [~] **Sub-Faz 23.3.2 Multipart + Context Routing LIVE (test-live status revision; VFO provider acceptance pending R24)** (2026-05-20 PR-A1 → PR-A3.2 chain, Codex `019e4514`):
   - Backend PRs #262/#263/#264/#265/#266/#267 MERGED (test coverage 223/223 SMS + 769/769 unit)
   - GitOps PRs #903/#905/#908 MERGED (sha-6ed593e digest atomic)
-  - 3-senaryo canary smoke: VFO routing (Scenario A log proven) + VF default (Scenario B DELIVERED msg_id=jetsms-2605202027306017971) + VF explicit fallback overlength (Scenario C DELIVERED msg_id=jetsms-260520203006838196, 2 segments)
-  - actual_channel audit propagation LIVE (DELIVERY_ACCEPTED.details kanıtı)
+  - 3-senaryo canary smoke yürütüldü:
+    - Scenario A (auth.mfa-otp short, VFO): **routing-log proven**; provider acceptance FAIL (R24 ErrorCode=04)
+    - Scenario B (marketing.campaign, VF): **DELIVERED** msg_id=jetsms-2605202027306017971
+    - Scenario C (auth.mfa-otp overlength 209ch, VF fallback): **DELIVERED** 2 segments msg_id=jetsms-260520203006838196
+  - actual_channel audit propagation (VF accepted path) LIVE (DELIVERY_ACCEPTED.details B + C kanıtı)
   - Codex P2+P3 absorb LIVE (actual_channel audit + explicit CHANNEL_VF config drift hardening)
+  - **PENDING**: VFO provider acceptance (R24) + actual_channel=VFO audit (R24 sonrası)
   - Evidence doc: [2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md](../faz-23-evidence/2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md)
 - [~] D29-NOTIFY 3-katman SMS evidence — TEST cluster ✅; prod cutover gate [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903) pending
 - [ ] T3.1.8 4 workflow live test passed (admin invite, password reset, drift alarm, break-glass) — prod cutover sonrası

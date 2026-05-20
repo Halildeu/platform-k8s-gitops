@@ -1,8 +1,8 @@
-# 23.3.2 JetSMS Multipart + Context Routing LIVE Evidence (2026-05-20)
+# 23.3.2 JetSMS Multipart + VF Delivery + Context Routing LIVE Evidence (2026-05-20)
 
-> **Status**: 🟢 **FULL ACCEPTANCE** — Multipart + Context Routing + actual_channel Audit LIVE
+> **Status**: 🟡 **PARTIAL ACCEPTANCE** — Multipart + VF delivery + context routing logic LIVE; VFO provider acceptance blocked by R24 (Codex iter-3 P1 absorb)
 > **Sub-Faz**: 23.3.2 (SMS multipart + VFO/VF channel routing + audit propagation)
-> **Codex Thread**: `019e4514-e961-7d50-b2cc-493f66cee4bc` (10 iter, PR-A1 → PR-A3.2)
+> **Codex Thread**: `019e4514-e961-7d50-b2cc-493f66cee4bc` (11 iter, PR-A1 → PR-A2.2)
 > **Backend chain**: PR #262 + #263 + #264 + #265 + #266 + #267 (MERGED)
 > **GitOps chain**: PR #903 + #905 + #908 (MERGED 2026-05-20T17:06Z)
 > **Pod imageID**: `sha256:30b0bf658dcd879c531451352c4e37680551fe14ab667a255eea36adbb281a5b` (sha-6ed593e)
@@ -12,22 +12,27 @@
 ## Executive Summary
 
 JetSMS multipart concatenated SMS chain + context-aware VFO/VF channel
-routing + `actual_channel` audit propagation 2026-05-20'de test cluster'da
-end-to-end LIVE oldu. 3-senaryo canary smoke + audit event details +
-delivery PG row + provider DLR ile **PR-A3.2 ready_to_merge=true** Codex
-AGREE iter-2 verdict'i kanıt çağı sağlandı.
+routing decision logic + `actual_channel` audit propagation 2026-05-20'de
+test cluster'da LIVE oldu. 3-senaryo canary smoke yürütüldü:
+**B + C senaryoları DELIVERED** (VF channel + multipart 2 segments),
+**A senaryosu routing-only PASS + provider acceptance FAIL** (VFO channel
+JetSMS Biotekno OTP sender ID provisioning gap R24).
 
 **Real-world delivery**: kullanıcı +905551815564 numarasına multipart SMS
-(258-char) ile (sha-4caa860b) 2026-05-20 öğleden önce + canary 3-senaryo
-SMS (sha-6ed593e) 2026-05-20 öğleden sonra başarıyla iletildi.
+(258-char) ile (sha-4caa860b) 2026-05-20 öğleden önce + canary B+C SMS
+(sha-6ed593e) 2026-05-20 öğleden sonra başarıyla iletildi. Scenario A SMS
+provider tarafında ErrorCode=04 ile reddedildi (routing logic LIVE; sadece
+provider acceptance gap).
 
 | Katman | Status | Kanıt |
 |---|:---:|---|
 | **D29-Up** (pod running) | 🟢 LIVE | `kubectl get pod` Running 1/1 sha256:30b0bf658dcd |
-| **D29-Functional** (SMS dispatch end-to-end) | 🟢 LIVE | 2 senaryo DELIVERED + DLR poll |
+| **D29-Functional** (VF dispatch end-to-end) | 🟢 LIVE | B + C DELIVERED + DLR poll |
 | **D29-Multipart** (segment >1 estimation) | 🟢 LIVE | sms-multipart-test 209ch → 2 segments DELIVERED |
-| **D29-ContextRouting** (VFO/VF allowlist) | 🟢 LIVE | Scenario A (VFO) + B (VF) + C (VF fallback) cluster log proven |
-| **D29-actualChannel** (audit propagation) | 🟢 LIVE | DELIVERY_ACCEPTED.details actual_channel=VF kanıtı |
+| **D29-ContextRouting** (VFO/VF allowlist decision log) | 🟢 LIVE | Scenario A (VFO log) + B (VF log) + C (VF fallback log) cluster log proven |
+| **D29-actualChannel** (audit propagation, VF accepted path) | 🟢 LIVE | DELIVERY_ACCEPTED.details actual_channel=VF kanıtı (B + C) |
+| **VFO Provider Acceptance** (Biotekno OTP delivery) | 🔴 BLOCKED | R24: ErrorCode=04 JetSMS reject; Biotekno sender ID OTP provisioning gap |
+| **VFO actual_channel audit** (ACCEPTED path) | 🟡 PENDING | R24 resolution sonrası VFO ACCEPTED delivery beklenir |
 | **D29-Zanzibar** (Layer 2 channel-level authz) | 🟡 Faz 23.2 v2 scope | OpenFGA subscriber/template types yok |
 
 ---
@@ -245,19 +250,21 @@ collection sırasında `NOTIFY_AUTHZ_ENABLED=false` geçici (kullanıcı
 
 ---
 
-## 7. Closure Path (M3 acceptance DoD)
+## 7. Closure Path (M4/23.3.2 acceptance DoD)
 
-**23.3.2 sub-Faz DoD**:
+**23.3.2 sub-Faz DoD** (Codex iter-3 P2 absorb — VFO routing decision ≠ VFO provider acceptance):
 
 - [x] T-multipart: JetSMS 160-char limit kaldırıldı + segment estimator LIVE
 - [x] T-segment-audit: segment_count audit propagation LIVE (B: 1 seg, C: 2 seg)
 - [x] T-aggregate: DLR multipart aggregate semantic doğru
-- [x] T-channel-routing: context-aware VFO/VF runtime LIVE (Scenario A+B+C log proven)
-- [x] T-actual-channel: audit propagation runtime LIVE (DELIVERY_ACCEPTED.details)
-- [x] T-canary-smoke: VFO + VF + overlength 3-scenario canary DONE
+- [x] T-channel-routing-decision: VFO/VF channel decision logic runtime LIVE (Scenario A+B+C log proven)
+- [x] T-actual-channel-VF: actual_channel propagation VF accepted path LIVE (B + C DELIVERY_ACCEPTED.details)
+- [x] T-canary-smoke-VF: VF default (B) + VF overlength fallback (C) cluster delivered
+- [~] T-canary-smoke-VFO: routing-log proven (Scenario A); **provider acceptance PENDING R24 resolution**
 - [x] T-evidence-doc: D29 evidence final (this document)
-- [ ] T-prod-cutover: prod overlay rotation (ayrı sprint)
-- [ ] T-vfo-biotekno-prov: JetSMS Biotekno VFO sender ID OTP allowlist provisioning (R24 yeni)
+- [ ] T-actual-channel-VFO: actual_channel=VFO audit propagation (R24 resolution sonrası)
+- [ ] T-prod-cutover: prod overlay rotation (ayrı sprint, M4 prod gates)
+- [ ] T-vfo-biotekno-prov: JetSMS Biotekno VFO sender ID OTP allowlist provisioning (R24)
 
 ---
 
