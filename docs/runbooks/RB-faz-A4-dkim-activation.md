@@ -95,6 +95,21 @@ dig +short TXT acik2026._domainkey.acik.com
 # Propagation süresi: TTL'e bağlı (3600s = 1 saat); DNS provider'a göre değişebilir
 ```
 
+> ⚠️ **DNS TXT 255-char chunking** (Codex iter-1 P2 absorb): DKIM `p=`
+> base64 değeri 392 char; DNS TXT RFC 1035 §3.3.14 single character-string
+> limiti 255 char. Bazı DNS provider panelleri otomatik split eder
+> (iki quoted chunk), bazıları etmez. Provider panelinde:
+>
+> 1. Auto-split yapan provider (Cloudflare, Route53, Google Domains): tek
+>    value field'a tam değer gir — provider arka planda chunk eder
+> 2. Manuel chunking gereken provider: iki quoted chunk olarak gir:
+>    ```
+>    "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAiY1HB6lKDB7E+dN90nKCHIhWqXZvfKz/MKKfCdn01oHwiVj1ck2dcJ8EWxoJK9mJOA8YYaSv08mkJoOs4aHmZbCrskZsG+kvXDMPFCzrvC3UVXFHgZJHzMbho7QTPOarR9zWrq68RAQFNCGIo1poaYm4Ycv/Rhu473ZfnhkeNlzGoH0pPH+RdWMOi2oxp+Ydf+Oi1VFbw2uunhYxKl8qvMd4Xym8" "JaPDeqs5EAz6TzGMTMXXE+1ivWZ+HB8aIuoCvOXoEb2c9EEP5qW4vUjFfRvfu5Um7fdY5YjOHSTpL/vh7bldfu2CmWI3MFZL6FCvKEUK+8YPfu//DnBFJ0w4vQIDAQAB"
+>    ```
+>
+> Verification: `dig +short TXT acik2026._domainkey.acik.com` çıktısında
+> concat edilen `p=` değeri birebir 392 char public key ile eşleşmeli.
+
 ## 4. Bu PR (kustomize patches)
 
 ### kustomize/overlays/prod/kustomization.yaml
@@ -105,8 +120,16 @@ dig +short TXT acik2026._domainkey.acik.com
 
 ### kustomize/overlays/prod/eso/notify/externalsecret-notify.yaml
 
-DKIM secretKey reference zaten aktif (line 208-211 NOTIFY_DKIM_PRIVATE_KEY_PEM).
-Sadece comment güncellemesi (Vault seed kanıt notu).
+ESO `NOTIFY_DKIM_PRIVATE_KEY_PEM` secretKey reference **zaten aktif** (line
+208-211); bu PR ESO manifest değiştirmiyor (Codex iter-1 P2 absorb: clarification).
+
+### kustomize/overlays/prod/netpol-notification-egress-smtp.yaml (NEW)
+
+Minimal SMTP 587 egress (DKIM signer enabled outbound mail için). Default-deny
++ base host-bridge (5432/8080/8200) port 587 kapsamıyor → outbound DKIM smoke
+fail. Selector triple-label (Codex 019e15ee pattern).
+
+JetSMS 443 + Graph 443 ayrı M4 RE-ATTEMPT PR scope; bu PR DKIM activation atomic.
 
 ## 5. Acceptance gates
 

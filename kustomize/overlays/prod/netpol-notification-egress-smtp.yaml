@@ -1,0 +1,44 @@
+# Faz 23.A4 DKIM activation — minimal SMTP egress (Codex iter-1 P1 absorb 2026-05-20)
+#
+# DKIM activation atomic PR scope: signer enabled + outbound mail capability.
+# default-deny-egress (kustomize/base/netpol/default-deny.yaml) + base
+# host-bridge allowlist (5432/8080/8200) port 587 outbound KAPSAMIYOR.
+# Bu policy A4 DKIM smoke için SADECE port 587 (Office 365 SMTP STARTTLS)
+# açar. JetSMS HTTPS 443 + Microsoft Graph 443 ayrı M4 prod cutover RE-ATTEMPT
+# PR'da; bu PR atomic scope DKIM-only.
+#
+# Codex iter-1 P1 absorb: "DKIM signer aktive ediyor ve runbook outbound
+# mail smoke istiyor; default-deny + base allowlist 5432/8080/8200 ile
+# sınırlı; render'da notification-orchestrator için public 587 yok →
+# DKIM smoke SMTP egress'te takılır. Minimal prod netpol ekleyin."
+#
+# Selector: triple-label (Codex 019e15ee P1 absorb pattern — name + component
+# + part-of) label collision riski azaltır.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-notification-orchestrator-egress-smtp
+  namespace: platform-prod
+  annotations:
+    platform.acik.com/faz: "23.A4-DKIM-Activation"
+    platform.acik.com/codex-thread: "019e4514"  # PR-A1 → PR-A3.2 + #911/#912/#913 cycle
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notification-orchestrator
+      app.kubernetes.io/component: backend
+      app.kubernetes.io/part-of: platform
+  policyTypes:
+    - Egress
+  egress:
+    # Office 365 SMTP outbound (port 587 STARTTLS) — DKIM signed mail
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8       # RFC1918 — cluster-internal
+              - 172.16.0.0/12    # RFC1918 — docker/k3d bridge
+              - 192.168.0.0/16   # RFC1918 — home/office LAN
+      ports:
+        - protocol: TCP
+          port: 587  # SMTP submission STARTTLS (Office 365)

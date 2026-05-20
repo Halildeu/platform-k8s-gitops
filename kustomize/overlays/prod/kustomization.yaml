@@ -25,6 +25,10 @@ resources:
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster (network teşhisi sonrası — k3d cluster → 10.9.193.0/24 routing fail)
   - endpoints-workcube-mssql.yaml    # 172.21.0.7 (workcube-mssql-proxy-prod, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.21.0.7/32:11433
+  # Faz 23.A4 DKIM activation (Codex iter-1 P1 absorb) — notification-orchestrator
+  # SMTP egress 587 (Office 365 STARTTLS). DKIM signer enabled + outbound
+  # mail smoke için minimal scope; JetSMS 443 ayrı M4 RE-ATTEMPT PR.
+  - netpol-notification-egress-smtp.yaml
   # PERF-INIT-V2 PR-B5b3e prod promote (Codex thread `019e24ea` revised
   # design): cluster-side federation/cache smoke CronJob promoted from
   # test cluster after observed stability — same curl-only script
