@@ -67,11 +67,21 @@ REPORT_PATH_OVERRIDE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --report-path)
-      REPORT_PATH_OVERRIDE="${2:-}"
+      # Codex 019e44c8 nice_to_have #1 — validate value before shift 2 to
+      # prevent infinite loop on bad invocation.
+      if [[ $# -lt 2 || -z "${2:-}" || "${2:0:1}" == "-" ]]; then
+        echo "ERR: --report-path requires a non-empty PATH argument" >&2
+        exit 3
+      fi
+      REPORT_PATH_OVERRIDE="$2"
       shift 2
       ;;
     --report-path=*)
       REPORT_PATH_OVERRIDE="${1#*=}"
+      if [[ -z "$REPORT_PATH_OVERRIDE" ]]; then
+        echo "ERR: --report-path= requires a non-empty PATH" >&2
+        exit 3
+      fi
       shift
       ;;
     prod|test)
@@ -165,7 +175,7 @@ bump_exit() {
 # hub on k3d-prod. We query the hub (ARGOCD_CONTEXT) for the Application named
 # platform-${ENV}.
 #
-# State A — Application missing (env-bazlı severity, Codex iter-2 must_fix #2):
+# State A — Application missing (env-bazlı severity, Codex 019e44b9 iter-2 #2):
 #   ENV=prod → P1 argocd_app_missing (control plane gap)
 #   ENV=test → P2 argocd_app_missing (root reconcile gap after PR-2)
 # State B — Application exists, destination not registered (operator cluster-add
@@ -173,18 +183,56 @@ bump_exit() {
 # State C — Application exists, Synced/Healthy: OK.
 # State D — Application exists, sync ≠ Synced OR health ≠ Healthy (not B): P1.
 # State E — Application exists, unknown/unclassified condition: P2.
+# Query-error — separate exec-error class (Codex 019e44c8 must_fix #1): hub
+# unreachable / RBAC / API timeout is NOT "app missing"; it's exit 3.
+#
+# Shared destination-pending regex (Codex 019e44c8 should_fix #1) — broadened
+# to catch common ArgoCD cluster-resolution wordings while keeping the
+# server/cluster/name qualifier on "destination not found" to avoid matching
+# unrelated namespace/resource destination problems.
+DEST_PENDING_PATTERN='cluster.*not.*(registered|found|configured|present)|cluster.*secret.*missing|unknown.*cluster|unable to (get|find|load).*cluster|no such cluster|destination.*(cluster|server|name).*not.*found'
+
+# Codex 019e44c8 must_fix #1 — capture stdout, stderr, and rc separately so
+# we can distinguish NotFound (legitimate State A) from any other failure
+# (hub unreachable / RBAC / timeout → query-error → exit 3).
+ARGOCD_STDERR_FILE=$(mktemp 2>/dev/null || echo "/tmp/argocd-stderr-$$")
 APP_JSON=$(kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
-  get application "platform-${ENV}" -o json 2>/dev/null || echo "")
+  get application "platform-${ENV}" -o json 2>"$ARGOCD_STDERR_FILE")
+ARGOCD_RC=$?
+ARGOCD_ERR=$(cat "$ARGOCD_STDERR_FILE" 2>/dev/null || echo "")
+rm -f "$ARGOCD_STDERR_FILE"
+
 ARGOCD_STATE="ERR"
 ARGOCD_CONDITION_BLOB="[]"
-if [[ -n "$APP_JSON" ]] && echo "$APP_JSON" | jq -e '.status' >/dev/null 2>&1; then
+ARGOCD_QUERY_FAIL=0
+
+if [[ $ARGOCD_RC -ne 0 ]]; then
+  # Distinguish NotFound (genuine app-missing) from other failure modes.
+  # `kubectl get application X` on NotFound prints something like:
+  #   Error from server (NotFound): applications.argoproj.io "X" not found
+  if echo "$ARGOCD_ERR" | grep -qiE 'NotFound|"[^"]+" not found|the server doesn'\''t have a resource'; then
+    ARGOCD_STATE="ERR"   # → falls into State A below
+  else
+    ARGOCD_QUERY_FAIL=1
+    add_finding P1 argocd_query_error \
+      "ArgoCD query failed (rc=$ARGOCD_RC) — hub unreachable / RBAC denied / API timeout, not 'app missing'" \
+      "$(echo "$ARGOCD_ERR" | head -c 500)"
+    mark_exec_error
+  fi
+elif [[ -n "$APP_JSON" ]] && echo "$APP_JSON" | jq -e '.status' >/dev/null 2>&1; then
   ARGOCD_STATE=$(echo "$APP_JSON" | jq -r \
     '"\(.status.sync.status // "Unknown")/\(.status.health.status // "Unknown")/\(.status.sync.revision // "")"')
   ARGOCD_CONDITION_BLOB=$(echo "$APP_JSON" | jq -c '.status.conditions // []')
+else
+  # Object exists but .status missing — treat as Unknown/Unknown rather than
+  # collapsing to "missing" (Codex 019e44c8 must_fix #1 tail clause).
+  ARGOCD_STATE="Unknown/Unknown/"
 fi
 
-if [[ "$ARGOCD_STATE" == "ERR" ]]; then
-  # State A — Application missing or hub unreachable
+if [[ $ARGOCD_QUERY_FAIL -eq 1 ]]; then
+  : # Already recorded P1 argocd_query_error + mark_exec_error above.
+elif [[ "$ARGOCD_STATE" == "ERR" ]]; then
+  # State A — Application missing (true NotFound)
   if [[ "$ENV" == "prod" ]]; then
     add_finding P1 argocd_app_missing \
       "platform-prod Application missing from ${ARGOCD_CONTEXT}/${ARGOCD_NAMESPACE} hub — control plane gap (root.yaml reconcile or manifest deletion)"
@@ -196,18 +244,19 @@ if [[ "$ARGOCD_STATE" == "ERR" ]]; then
   fi
 else
   # Application exists. Detect State B (destination unregistered) via
-  # status.conditions[].message OR status.operationState.message.
+  # status.conditions[].message OR status.operationState.message, using the
+  # shared DEST_PENDING_PATTERN above.
   IS_DEST_PENDING=0
   if [[ "$ARGOCD_CONDITION_BLOB" != "[]" ]]; then
-    DEST_MATCH=$(echo "$ARGOCD_CONDITION_BLOB" | jq -r '
+    DEST_MATCH=$(echo "$ARGOCD_CONDITION_BLOB" | jq -r --arg p "$DEST_PENDING_PATTERN" '
       [.[].message // ""]
-      | map(select(test("cluster.*not.*registered|cluster.*secret.*missing|unknown.*cluster|destination.*not.*found"; "i")))
+      | map(select(test($p; "i")))
       | length' 2>/dev/null || echo "0")
     [[ "${DEST_MATCH:-0}" -gt 0 ]] && IS_DEST_PENDING=1
   fi
   if [[ "$IS_DEST_PENDING" -eq 0 ]]; then
     OPSTATE_MSG=$(echo "$APP_JSON" | jq -r '.status.operationState.message // ""' 2>/dev/null || echo "")
-    if echo "$OPSTATE_MSG" | grep -qiE "cluster.*not.*registered|cluster.*secret.*missing|unknown.*cluster|destination.*not.*found"; then
+    if echo "$OPSTATE_MSG" | grep -qiE "$DEST_PENDING_PATTERN"; then
       IS_DEST_PENDING=1
     fi
   fi
@@ -221,12 +270,15 @@ else
   elif [[ "$ARGOCD_STATE" == "Synced/Healthy"* ]]; then
     # State C — happy path
     add_finding OK argocd "ArgoCD platform-${ENV} $ARGOCD_STATE"
-  elif echo "$ARGOCD_STATE" | grep -qE "^(Synced|OutOfSync)/(Healthy|Degraded|Progressing|Suspended|Missing)/"; then
-    # State D — known sync/health enum but drifted (not Synced/Healthy)
+  elif echo "$ARGOCD_STATE" | grep -qE "^(Synced|OutOfSync|Unknown)/(Healthy|Degraded|Progressing|Suspended|Missing|Unknown)/"; then
+    # State D — known sync/health enum but drifted, Unknown included
+    # (Codex 019e44c8 must_fix #2). Treats Synced/Unknown, Unknown/Missing,
+    # OutOfSync/Unknown, etc. as proper drift (P1) instead of unclassified.
     add_finding P1 argocd_drift "ArgoCD platform-${ENV} not Synced/Healthy" "$ARGOCD_STATE"
     mark_p1
   else
-    # State E — unknown/unclassified state string
+    # State E — truly unknown/unclassified state string (e.g. ArgoCD CLI
+    # version mismatch produces a phase value outside the known enums).
     add_finding P2 argocd_state_unknown \
       "ArgoCD platform-${ENV} unclassified state '$ARGOCD_STATE' — manual triage" \
       "$ARGOCD_CONDITION_BLOB"
