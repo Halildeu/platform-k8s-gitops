@@ -13,40 +13,80 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 # prefix (auto-test-overlay/ · auto-verified/ · auto-promotion/) is audited in
 # pr-cross-ai-audit.mjs `auditAutomation` mode — a bot-generated PR is exempt
 # from the peer-review claim iff a multi-signal predicate holds (same-repo +
-# actor allowlist + Automation source/exempt-reason/evidence). PR-A keeps the
-# `pull_request` trigger; the `pull_request_target` + base-ref hardening is a
-# separate follow-up (PR-A2 — required-check migration, operator-coordinated).
+# actor allowlist + Automation source/exempt-reason/evidence).
+#
+# #842 PR-A2 (Codex thread `019e42c7-6470-7c71-bccb-e052248dfd99`, PARTIAL→AGREE):
+# This workflow migrates from `pull_request` to `pull_request_target`:
+#   * The audit script now runs from the BASE ref (e.g. `main`) instead of the
+#     PR head. A malicious PR that ships a tampered `pr-cross-ai-audit.mjs` in
+#     its head no longer weakens its own audit — the trusted main copy runs.
+#   * `pull_request_target` is the more privileged event variant; permissions
+#     stay `contents: read` + `pull-requests: read` (no write, no secrets) per
+#     Codex Q5 hardening — minimal grant.
+#   * Job name `cross-ai-audit` is preserved so the branch-protection ruleset
+#     context (PMD §2.10 must-pass list) matches without rename.
+#   * `labeled` / `unlabeled` events added so a future label-aware audit hook
+#     (`automation-exempt` / `cross-ai-override` semantics) re-runs without a
+#     synthetic edit. Today the audit is label-agnostic — re-run is harmless
+#     (idempotent: PR body fields unchanged → same verdict). When the script
+#     gains label-aware logic, this trigger is the wiring already in place.
+#   * `concurrency` block cancels superseded runs on the same PR — guards
+#     against label-spam DoS (an attacker rapid-toggling a label cannot pile
+#     up N parallel audit runs to exhaust CI minutes).
+#   * `ready_for_review` is deliberately omitted — an auto-* automation PR is
+#     opened DRAFT by a bot (auto-promotion/ prod candidates) and an operator
+#     marks it ready. The automation-exemption gate rejects human-triggered
+#     re-runs; re-running on `ready_for_review` would break the legit operator
+#     DRAFT→ready flow, and special-casing it to PASS would launder a prior
+#     malicious human `synchronize`. The audit already ran on `opened` /
+#     `synchronize` (the content-changing events); the draft→ready flip
+#     changes no content.
 
 on:
-  pull_request:
-    # #827: `ready_for_review` is deliberately omitted. An auto-* automation
-    # PR is opened DRAFT by a bot (auto-promotion/ prod candidates) and an
-    # operator marks it ready — a human-sender event. The automation-exemption
-    # gate rejects human-triggered re-runs; re-running on `ready_for_review`
-    # would break the legit operator DRAFT→ready flow, and special-casing it
-    # to PASS would launder a prior malicious human `synchronize`. The audit
-    # already ran on `opened` / `synchronize` (the content-changing events);
-    # the draft→ready flip changes no content.
+  # #842 PR-A2 cleanup (post-PR #868 merge): the transition `pull_request`
+  # trigger is removed now that `pull_request_target` is live on main. The
+  # bootstrap problem (PR head's workflow not matching the event) does not
+  # recur because main now lists `pull_request_target` — `pull_request_target`
+  # reads the workflow from base, so any future PR's audit fires from the
+  # trusted base copy without needing a `pull_request` parallel.
+  pull_request_target:
     types:
       - opened
       - edited
       - synchronize
       - reopened
+      - labeled
+      - unlabeled
 
 permissions:
   contents: read
   pull-requests: read
 
+# #842 Codex 019e42c7 Q8: label-spam DoS guard — cancel superseded runs.
+# Per-PR concurrency group; the `labeled`/`unlabeled` rapid-toggle attack
+# cannot accumulate parallel audit runs.
+concurrency:
+  group: cross-ai-audit-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   cross-ai-audit:
     # Codex `019e2693` HIGH-1: canonical check context PMD §2.10 must-pass list
     # branch protection ruleset bu exact context'i arıyor (`cross-ai-audit`).
+    # #842 PR-A2: job name preserved across the pull_request → pull_request_target
+    # migration so branch protection ruleset does not need an "Expected" sweep.
     name: cross-ai-audit
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout
+      - name: Checkout base ref (trusted main, not PR head)
+        # #842 Codex 019e42c7 Q8: `base.ref` (not `base.sha`) — track the latest
+        # commit on the base branch so a freshly-hardened audit script runs
+        # against PRs opened before the hardening landed. `base.sha` would
+        # pin to the SHA at PR-open time and miss subsequent fixes.
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -54,6 +94,10 @@ jobs:
           node-version: 20
 
       - name: Run cross-AI audit
+        # `GITHUB_EVENT_PATH` carries the PR payload (head ref/sha, base, body,
+        # actor, sender, labels) — the audit reads PR metadata from there, not
+        # from the checked-out tree. So the base-ref checkout above does not
+        # restrict what the audit can inspect about the PR (Codex Q3 onay).
         run: |
           node scripts/ci/pr-cross-ai-audit.mjs \
             --event-path "$GITHUB_EVENT_PATH"
