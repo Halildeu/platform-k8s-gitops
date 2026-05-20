@@ -3165,9 +3165,21 @@ patches:
       - op: add
         path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_MULTIPART_ENABLED
         value: "true"
+      # WSDL verified enum value (2026-05-20 canary post-PR-A2.1):
+      # https://api.jetsms.com.tr/ws/soapSMS.asmx?wsdl
+      # `enmOnLengthProblem` valid values:
+      #   - RejectAllPackage (default, reject long)
+      #   - SendOtherMessages (multi-recipient partial)
+      #   - SendAllPackage    (uzun multipart kabul + carrier'a gönder) ← bu
+      # Önceki "SplitMessage" değeri Codex iter-2 P1 tahmin'iydi; provider
+      # SOAP Fault: "Instance validation error: 'SplitMessage' is not a valid
+      # value for enmOnLengthProblem". Direkt SOAP test (curl ile WSDL'den
+      # endpoint çağrı) + cluster pipeline canary'de SendAllPackage = ✅
+      # ErrorCode=00 (kullanıcının +905551815564 numarasına 2 gerçek
+      # multipart SMS DELIVERED 2026-05-20).
       - op: add
         path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_ON_LENGTH_PROBLEM
-        value: "SplitMessage"
+        value: "SendAllPackage"
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "true"
