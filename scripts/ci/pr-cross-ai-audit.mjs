@@ -98,6 +98,33 @@ function matchedAutomationPrefix(headRef) {
   );
 }
 
+// ── Dependabot bot PR exemption (#898, Codex `019e4517` AGREE 3-iter consensus) ─
+// A Dependabot-opened PR is a non-AI, machine-generated dependency bump that
+// cannot satisfy the cross-AI peer-review claim (the bot is not an AI, and
+// dep-version bumps are ADR-0011 §2.3.1 "none of the above" boundary class).
+// Exemption is fail-closed and bounded by FIVE gates running together:
+//   1. branch prefix `dependabot/` (Dependabot's deterministic head ref)
+//   2. same-repo (fork PR named `dependabot/foo` is blocked)
+//   3. PR author = `dependabot[bot]` (immutable once opened)
+//   4. event sender = `dependabot[bot]` (blocks human `synchronize`/`labeled`)
+//   5. changed-files list present AND every path matches the diff allowlist
+//
+// Diff allowlist is intentionally NARROW — only `.github/workflows/*.{yml,yaml}`.
+// `.github/dependabot.yml` config in this repo only enables the `github-actions`
+// ecosystem; widening to `pom.xml`, `package.json`, `requirements*.txt`, etc.
+// requires a separate consensus iteration. Helm/Kustomize/Dockerfile paths are
+// deliberately excluded — GitOps runtime state / deploy manifests are governed
+// by Renovate-class promotion flows, not Dependabot exemption.
+//
+// If branch prefix is `dependabot/` but ANY gate fails, the exemption is denied
+// with a `dependabot_*` finding — the audit does NOT fall back to normal body
+// audit. A spoofed `dependabot/*` head with a forged PR body must fail closed.
+const DEPENDABOT_BRANCH_PREFIX = 'dependabot/';
+const DEPENDABOT_ACTOR = 'dependabot[bot]';
+const DEPENDABOT_DIFF_ALLOWLIST = [
+  /^\.github\/workflows\/[^/]+\.ya?ml$/,
+];
+
 function parseArgs() {
   const args = {};
   for (let i = 2; i < argv.length; i++) {
@@ -109,6 +136,18 @@ function parseArgs() {
     }
   }
   return args;
+}
+
+// Read PR changed-files list from a workflow-prepared text file (one path per
+// line). Returns `null` if the flag is absent (local-test mode or older
+// workflow). The Dependabot lane treats `null`/empty as fail-closed via the
+// `dependabot_changed_files_present` check.
+function readChangedFiles(args) {
+  if (!args['changed-files-file']) return null;
+  return readFileSync(args['changed-files-file'], 'utf8')
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function loadInput(args) {
@@ -132,6 +171,11 @@ function loadInput(args) {
         // bot-opened auto-PR (pr.user stays the bot; sender is the human).
         actor: pr.user?.login ?? '',
         sender: ev.sender?.login ?? '',
+        // Dependabot exemption needs the diff allowlist gate; the workflow
+        // pre-fetches the file list via `gh api ... --paginate` to avoid both
+        // `pull_request_target` permission expansion and giving the script
+        // direct GitHub API access.
+        changedFiles: readChangedFiles(args),
       },
     };
   }
@@ -492,6 +536,98 @@ function auditAutomation(body, prMeta) {
   return findings;
 }
 
+// ── Dependabot bot PR exemption audit (#898) ──────────────────────────────
+// Runs INSTEAD of audit() / auditAutomation() when the PR head branch matches
+// the `dependabot/` prefix. Returns the same `findings` array shape so report()
+// summarizes uniformly — lane identification is emitted via console.log in the
+// main dispatch, not as a separate output field (Codex `019e4523` AGREE).
+function auditDependabot(prMeta) {
+  const findings = [];
+
+  // 1. Branch prefix (re-asserted for the report — the dispatch already
+  //    matched, but emitting it here makes the failure mode explicit if the
+  //    function is ever called on a non-dependabot PR by mistake).
+  const prefixOk = (prMeta.headRef ?? '').startsWith(DEPENDABOT_BRANCH_PREFIX);
+  findings.push({
+    check: 'dependabot_branch_prefix',
+    pass: prefixOk,
+    detail: prefixOk
+      ? `head.ref "${prMeta.headRef}" matches "${DEPENDABOT_BRANCH_PREFIX}"`
+      : `head.ref "${prMeta.headRef}" does not match "${DEPENDABOT_BRANCH_PREFIX}"`,
+  });
+
+  // 2. Same-repo — a fork PR named `dependabot/foo` is blocked. Mirrors the
+  //    automation lane's hard gate against fork-based spoofing.
+  const sameRepo =
+    !!prMeta.headRepo && !!prMeta.baseRepo && prMeta.headRepo === prMeta.baseRepo;
+  findings.push({
+    check: 'dependabot_same_repo',
+    pass: sameRepo,
+    detail: sameRepo
+      ? `head & base both "${prMeta.baseRepo}"`
+      : `fork PR ("${prMeta.headRepo}" != "${prMeta.baseRepo}") — not exemption-eligible`,
+  });
+
+  // 3. PR author (immutable once opened) MUST be `dependabot[bot]`.
+  const authorOk = prMeta.actor === DEPENDABOT_ACTOR;
+  findings.push({
+    check: 'dependabot_author',
+    pass: authorOk,
+    detail: authorOk
+      ? `pr.user.login = "${prMeta.actor}"`
+      : `pr.user.login = "${prMeta.actor}" — must be "${DEPENDABOT_ACTOR}"`,
+  });
+
+  // 4. Event sender — blocks human `synchronize`/`labeled`/`edited` bypass.
+  //    A human pushing to or labeling a `dependabot/*` branch cannot retain
+  //    the exemption (Codex `019e451f` HIGH).
+  const senderOk = prMeta.sender === DEPENDABOT_ACTOR;
+  findings.push({
+    check: 'dependabot_sender',
+    pass: senderOk,
+    detail: senderOk
+      ? `event.sender.login = "${prMeta.sender}"`
+      : `event.sender.login = "${prMeta.sender}" — must be "${DEPENDABOT_ACTOR}" (human metadata event blocked)`,
+  });
+
+  // 5. Changed-files list must be present (null/empty = fail-closed). The
+  //    workflow injects this via `--changed-files-file` from a
+  //    pre-fetched `gh api ... --paginate` REST call (read-only token).
+  const filesPresent =
+    Array.isArray(prMeta.changedFiles) && prMeta.changedFiles.length > 0;
+  findings.push({
+    check: 'dependabot_changed_files_present',
+    pass: filesPresent,
+    detail: filesPresent
+      ? `${prMeta.changedFiles.length} changed file(s) declared`
+      : 'changedFiles null or empty — fail-closed (workflow must inject `--changed-files-file`)',
+  });
+
+  // 6. Diff allowlist — every changed path must match the github-actions
+  //    workflow ecosystem regex. Anything outside (src/*, kustomize/*,
+  //    helm-values/*, Dockerfile, etc.) denies the exemption.
+  if (filesPresent) {
+    const badPath = prMeta.changedFiles.find(
+      (f) => !DEPENDABOT_DIFF_ALLOWLIST.some((re) => re.test(f)),
+    );
+    findings.push({
+      check: 'dependabot_diff_allowlist',
+      pass: !badPath,
+      detail: !badPath
+        ? `${prMeta.changedFiles.length} file(s) all inside github-actions workflow allowlist`
+        : `path "${badPath}" not in allowlist (only .github/workflows/*.yml|.yaml accepted)`,
+    });
+  } else {
+    findings.push({
+      check: 'dependabot_diff_allowlist',
+      pass: false,
+      detail: 'diff allowlist gate skipped — changed-files list missing (see dependabot_changed_files_present)',
+    });
+  }
+
+  return findings;
+}
+
 function report(findings) {
   const passed = findings.filter((f) => f.pass).length;
   const total = findings.length;
@@ -507,18 +643,27 @@ function report(findings) {
   return allPass;
 }
 
-// Main
+// Main — dispatch order matters. Dependabot first (so a spoofed
+// `dependabot/*` head with forged body cannot fall back to normal body audit
+// when ANY of its 6 gates fails), then automation prefix, then normal audit.
 const args = parseArgs();
 const { body, prMeta } = loadInput(args);
-const automationPrefix = prMeta ? matchedAutomationPrefix(prMeta.headRef) : null;
 let findings;
-if (automationPrefix) {
+if (prMeta?.headRef?.startsWith(DEPENDABOT_BRANCH_PREFIX)) {
   console.log(
-    `[cross-ai-audit] automation-PR exemption mode — head.ref "${prMeta.headRef}" matches "${automationPrefix}"`,
+    `[cross-ai-audit] dependabot exemption mode — head.ref "${prMeta.headRef}"`,
   );
-  findings = auditAutomation(body, prMeta);
+  findings = auditDependabot(prMeta);
 } else {
-  findings = audit(body);
+  const automationPrefix = prMeta ? matchedAutomationPrefix(prMeta.headRef) : null;
+  if (automationPrefix) {
+    console.log(
+      `[cross-ai-audit] automation-PR exemption mode — head.ref "${prMeta.headRef}" matches "${automationPrefix}"`,
+    );
+    findings = auditAutomation(body, prMeta);
+  } else {
+    findings = audit(body);
+  }
 }
 const ok = report(findings);
 exit(ok ? 0 : 1);

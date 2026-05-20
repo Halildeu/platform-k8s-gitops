@@ -93,14 +93,32 @@ jobs:
         with:
           node-version: 20
 
+      # #898 — Dependabot exemption diff-allowlist gate needs the PR file list.
+      # `gh api ... --paginate` over the read-only `pull-requests: read`
+      # permission (already granted above) keeps `pull_request_target`'s
+      # secrets-isolation model intact: no head checkout, no token scope
+      # expansion, deterministic regardless of GitHub UI ordering or PR size.
+      # GH_TOKEN is set explicitly so `gh` does not rely on runner-env auth.
+      - name: Fetch changed files (paginated, read-only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --paginate --jq '.[].filename' > /tmp/changed-files.txt
+          echo "PR files:"
+          cat /tmp/changed-files.txt
+
       - name: Run cross-AI audit
         # `GITHUB_EVENT_PATH` carries the PR payload (head ref/sha, base, body,
         # actor, sender, labels) — the audit reads PR metadata from there, not
         # from the checked-out tree. So the base-ref checkout above does not
         # restrict what the audit can inspect about the PR (Codex Q3 onay).
+        # #898: `--changed-files-file` feeds the Dependabot exemption diff
+        # allowlist gate; ignored for non-Dependabot PRs.
         run: |
           node scripts/ci/pr-cross-ai-audit.mjs \
-            --event-path "$GITHUB_EVENT_PATH"
+            --event-path "$GITHUB_EVENT_PATH" \
+            --changed-files-file /tmp/changed-files.txt
 
       # #827 — regression test for the automation-PR exemption logic
       # (auditAutomation): legit bot auto-PRs pass, human-on-auto-branch is
