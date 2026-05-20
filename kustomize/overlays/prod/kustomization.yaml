@@ -947,6 +947,11 @@ patches:
           # bump pod rolling restart tetikler so DkimSigner conditional bean
           # (enabled=false) takes effect on new pod boot.
           mail.acik.com/dkim-relay-strategy: "b3-prod-2026-05-20-sha-6307428"
+          # Faz 23.3 M4 prod cutover RE-ATTEMPT (PR-B4 2026-05-20, Codex
+          # iter-1 P1 absorb): ConfigMap envFrom yeni 8 JetSMS key + netpol
+          # additive; rollout annotation pod restart tetikler so SmsAdapter
+          # primary=jetsms reload + JetSmsDlrPollingWorker activate.
+          sms.acik.com/jetsms-m4-cutover: "b4-prod-2026-05-20-sha-6307428"
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:
