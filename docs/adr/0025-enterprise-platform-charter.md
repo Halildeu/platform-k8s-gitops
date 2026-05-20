@@ -1,9 +1,11 @@
-# ADR-0025 — Enterprise Platform Charter: Process & Parameter Management Hub
+# ADR-0025 — Enterprise Platform Charter: Process & Parameter Management Hub (Enterprise Process Digital Twin)
 
-> **Status**: Proposed (charter — vendor seçimleri MÜHÜRLENMEZ; bounded spike + guardrail. AGREE/ratify Codex thread `019e4626` iter-3 sonrası → Accepted)
-> **Date**: 2026-05-20
+> **Status**: **Proposed → Acceptance Ready** (vision iter-3 AGREE + architecture iter-3 AGREE + `ready_for_implementation_kickoff: true`. Vendor seçimleri MÜHÜRLENMEZ — bounded spike + 6-7 component PR bundle stratejisi + N0 contract PR önce. CI yeşil + cross-AI peer review sonrası → Accepted.)
+> **Date**: 2026-05-20 (iter-3 absorbed)
 > **Sprint**: Faz 24 (Enterprise Platform Charter)
-> **Codex thread**: `019e4626-1c05-7c60-840a-c6b42a35e946` (REVISE iter-1 + REVISE iter-2 absorb; ready_for_adr_draft=true)
+> **Codex threads**:
+> - **Vision**: `019e4626-1c05-7c60-840a-c6b42a35e946` (iter-1 REVISE → iter-2 REVISE-absorb → iter-3 AGREE; ready_for_adr_draft=true; ready_for_acceptance=true)
+> - **Architecture**: `019e468f-51b5-74b1-8f36-ccf3cada613b` (iter-1 REVISE + competitive landscape + foundation deep-dive → iter-2 PARTIAL + 9→6-7 component revize + visual coverage caveat + bundle PR + OpenAPI ownership + ETL boundary → iter-3 AGREE + ready_for_implementation_kickoff=true)
 > **Predecessors**:
 > - ADR-0002 (single-host dual-cluster, §7.1 PG-primary)
 > - ADR-0013 (notification orchestration — process plane pattern; D38/D39/D43/D44/D46)
@@ -57,6 +59,10 @@ Bu, `autonomous-orchestrator` platformunun **klasik Turkish enterprise stack (Wo
 **Iter-1** (thread `019e4626`): 4-katman (workflow/forms/MDM/AI) proposal'ı kabul edildi yön olarak, fakat top-level decomposition **5-plane**'e revize edildi (Governance/Control plane eksikti). Build vs buy: tüm katmanlar **custom Spring PG-only + React MFE** (Camunda 8 / Temporal / Form.io / Pimcore / Akeneo / Budibase **reddedildi** — ADR-0002 §7.1 single-host 400GB + D39 PG-only disiplini). Sequencing: ADR-0025 charter → MDM-lite + workflow-kernel paralel spike → Forms runtime v0 → vertical slice MVP → AI conductor read-only. MVP: **Purchase Requisition** (PTO değil; MDM/parameter gücü göstermeye uygun).
 
 **Iter-2** (kullanıcı stratejik direktifi absorb): "Foundation first" yanlış frame; doğru frame **"foundation-gated differentiator first"** — AI/Governance erken başlar (Faz 25A+25B) ama actioning yetkisi foundation gate'lerinden sonra açılır. Faz 28A/28B ayrı geç faz değil, Faz 25 differentiator seed olur. Cross-AI review ürün default'u değil — sadece **yüksek riskli advisory** (>500K TRY veya risky vendor). pgvector ile başla, ayrı vector store (Qdrant/Weaviate) yasak/deferred. MVP "AI-assisted Purchase Requisition": 4 capability (Semantic Policy Lookup + Budget Rule Explain + Local Anomaly Flag + Evidence Timeline). Workcube port sırası: PTO → masraf → doküman → müşteri onboarding → fatura.
+
+**Iter-3 vision AGREE** (thread `019e4626`): D55 read-only sınırı "Read-Only + Proposal-Only" diline keskinleştirildi (`AI_PROPOSED → HUMAN_REVIEW → APPROVED_FOR_COMMIT → ACTIVE` lifecycle + `origin_proposal_id`). Knowledge graph engine pure PG (adjacency + recursive CTE + LTREE + pgvector); Apache AGE deferred (ayrı ADR şartı). MVP isim "Enterprise Process Digital Twin v0" — vendor onboarding **ilk port** olarak Faz 30'a (Codex iter-2 önerisi). Cross-AI peer review HARD RULE — sağlayıcı farklılığı (Anthropic + OpenAI).
+
+**Iter-3 architecture deep-dive** (thread `019e468f`, kullanıcı 2026-05-20 mandate sonrası): Platform-web `@mfe/design-system` (186 component A-grade 97.3) + `@mfe/x-charts` (35+ ECharts type + GraphChart) + `@mfe/x-data-grid` (AG Grid Enterprise + Pivot/Tree/Editable/RowGrouping + ServerDataSource) + `@mfe/x-scheduler` (FullCalendar-equivalent) + `@mfe/x-form-builder` (MultiStepForm + zod) + `@mfe/blocks` (Notion-style registry + CrudPage/Dashboard/Settings template) + `@mfe/x-editor` (Tiptap) + 41 enterprise component (SHOWCASE) + Design Lab Python index + 24-gate release standard ile **industrial-grade foundation hazır**. **N1-N9 9 component scope → 6-7'ye revize**: `KGGraphPreset` + `RASCIMatrix` + `Entity360Layout` + `MultiSectionDocumentLayout` (generic + Hilton/SBI preset MFE-first) + `ViewRegistryProvider + SavedViewManager` (headless + UI) + (koşullu) `MultiViewSwitcher` + (koşullu) `PersonaSwitcher`. **PR Bundle stratejisi**: 5 PR (PR-C0 contracts/gate/scaffold → PR-C1 KGGraphPreset+Entity360Layout → PR-C2 RASCIMatrix → PR-C3 View Registry+SavedView+MultiViewSwitcher → PR-C4 MultiSectionDocumentLayout+PersonaSwitcher). **OpenAPI ownership**: platform-backend (Springdoc + golden snapshot); platform-web generated TS client + MSW fixture. **ETL/Idempotency boundary**: Faz 24'te schema/provenance contract lock; Faz 30 implementation. **MFE structure**: `apps/mfe-process-twin/src/{app,routes,features/node-360,features/artifact-authoring,features/root-cause-walk,features/view-library,entities/kg,shared/api,shared/authz,shared/mocks}` — mfe-schema-explorer Cytoscape referansı; MSW/mock API ile başla. **ready_for_implementation_kickoff: true** — foundation hazır; bloker yok.
 
 ## Karar
 
@@ -139,28 +145,37 @@ PLAN.md Faz 0-23 yapısı korunur. Faz 22 (Our Company v25 transition) altına g
 
 **Vendor seçimi mühürlenmemiş**: Faz 24 spike çıktısı vendor decision criteria; production seçimi Faz 25-28 implementation sırasında ayrı ADR.
 
-### D55 — Faz 25A AI Conductor v0 — Read-Only (Sıkı Sınır)
+### D55 — Faz 25A AI Conductor v0 — Read-Only + Proposal-Only (Codex iter-3 keskinleştirme)
 
-**İzin** (read-only assist):
-- Tool registry: sadece **read tools** (schema-service query, MDM entity lookup, policy lookup, report query, audit query)
+> **Iter-3 formulation** (Codex thread `019e4626`): "Read-only" tek başına yetersiz; AI canonical artifact yazamaz; yalnız **non-authoritative proposal/draft** üretebilir. Human review + OpenFGA yetkisi + artifact lifecycle üzerinden approve edilince structured commit olur. Runtime kernel sadece `ACTIVE/APPROVED` artifact version'ları okur; `AI_PROPOSED` draft'ları **asla runtime truth değildir**. Çift kayıt riski: approved artifact row içinde `origin_proposal_id` tutulur (AI proposal immutable evidence olarak kalır; insan onayı yeni duplicate action değil, proposal'dan türeyen tek canonical artifact version'dır).
+
+**İzin** (read-only + proposal-only):
+- Tool registry: **read tools** (schema-service query, MDM entity lookup, policy lookup, report query, audit query)
 - Semantic data dictionary: schema-service snapshot + MDM entity docs + policy docs + report definitions üstünden semantic search (pgvector)
 - Document/process summary: policy, vendor note, approval history özetleme
 - Anomaly suggestion: **flag/suggestion only**, otomatik karar YOK
 - Evidence-cited output: AI her öneride hangi tablo/policy/audit kaydına dayandığını **göstermek zorunda**
 - Cost ledger: model + token + latency + user + tenant + tool-call kaydı (her çağrı)
 - PII/KVKK redaction guard: prompt/context'e giden veri **sınıflandırılır + redacted**
+- **Artifact proposal generation**: status `AI_PROPOSED` ile non-authoritative draft
 
-**YASAK** (actioning):
+**YASAK** (canonical write):
+- Direct `ACTIVE` artifact creation
 - Workflow state değiştirme
 - Approval/reject kararı verme
-- Vendor/blocklist yaratma
-- Policy update etme
-- Notification gönderme (notification-orchestrator çağırmak)
 - OpenFGA tuple yazma
-- Form schema değiştirme
-- MDM entry CRUD
+- Notification send
+- Policy/form/process publish
+- MDM canonical CRUD
 
-Read-only disiplin Faz 29 vertical slice'a kadar **gevşetilmez**. Faz 29'da process kernel üzerinden kullanıcı kabul → kayıtlı action'a dönüşür (AI'nin doğrudan execute hakkı yok; çift kayıt riski).
+**Human approval gate** (lifecycle):
+```
+AI_PROPOSED → HUMAN_REVIEW → APPROVED_FOR_COMMIT → ACTIVE
+                                                    ↓
+                                         (resulting artifact_version
+                                          carries origin_proposal_id)
+```
+Runtime services **MUST IGNORE** `AI_PROPOSED` artifacts. AI proposal immutable evidence olarak audit'te kalır; canonical artifact yeni version olarak yazılır.
 
 ### D56 — Faz 25B Governance/Control Automation v0
 
@@ -248,6 +263,111 @@ Faz 29 MVP'den sonra ilk port sırası (kriter: hızlı browser-visible değer +
 5. **Fatura Workflow** (Faz 34) — En sona yakın. Regülasyon + muhasebe + OCR/e-fatura + mutabakat + entegrasyon riski yüksek.
 
 **Sıra değiştirici faktörler**: Workcube decommission baskısı belirli bir süreçte artarsa sıra değişir (örn. müşteri onboarding'in legacy sistemi 6 ay içinde EOL ise öne alınır). Karar **case-by-case** alt-faz ADR'ı ile.
+
+### D60 — Foundation REUSE Strategy (Iter-3 Architecture)
+
+`platform-web` mevcut UI library industrial-grade — yeni component'ler **aynı paketlere governance-uyumlu eklenir**, MFE app sadece compose eder.
+
+**REUSE (mevcut, build edilmiyor)**:
+- `@mfe/design-system` (186 component A-grade 97.3) — primitives + components + enterprise + AI-aware (ai-action-audit-timeline, ai-guided-authoring, ai-layout-builder, citation-panel, confidence-badge, prompt-composer, approval-checkpoint, approval-review) + intelligence + MCP server + slot pattern + AccessControlledProps invariant
+- `@mfe/x-charts` (35+ ECharts type) — GraphChart (KG-aware preset target) + ChartDashboard + tüm chart tipleri
+- `@mfe/x-data-grid` (AG Grid Enterprise) — MasterDetail + Tree + Pivot + Editable + RowGrouping + ServerDataSource + composition hooks
+- `@mfe/x-scheduler` (FullCalendar-equivalent) — Day/Week/Month/Agenda/Resource views + drag-drop + recurrence
+- `@mfe/x-form-builder` — FormBuilder + MultiStepForm + RepeatableFieldGroup + zod adapter
+- `@mfe/blocks` (Notion-style registry) — CrudPage/Dashboard/Settings templates + PageBuilder
+- `@mfe/x-editor` (Tiptap) — rich text + tables + mentions
+- 41 enterprise component (SHOWCASE) — DataExportDialog, DateRangePicker, ExecutiveKPIStrip, FilterPresets, ProcessFlow, RiskMatrix, OrgChart, GovernanceBoard, FineKinney (OHS risk), ComparisonTable, vb.
+
+**Yeni eklenecek 6-7 component** (iter-3 architecture absorb; 9'dan revize):
+
+| Component | Hedef paket | Quality | Notlar |
+|---|---|---|---|
+| `KGGraphPreset` (eski adı KGNodeRenderer) | `@mfe/x-charts/graph/` (GraphChart extension) | L1 | ECharts graph series preset; entity_type → category + color + symbol + tooltip + a11y table + click payload. Rich interactive node istenirse app-level Cytoscape/React Flow spike (`mfe-schema-explorer` referans pattern) |
+| `RASCIMatrix` | `@mfe/design-system/components/` | L4 | Rol × aktivite grid; assignment semantics + bulk edit + keyboard nav + export |
+| `Entity360Layout` (eski KGNodeDetailLayout) | `@mfe/design-system/patterns/` | L4 | Generic detail shell; tabs + timeline + inbound/outbound + similar + evidence + activity/audit slot'ları |
+| `MultiSectionDocumentLayout` (Process+Role generic) | `@mfe/design-system/blocks/` | L4 | Generic composite; **Hilton 7-section preset + SBI 13-section preset ilk başta `mfe-process-twin` içinde tut**; iki pilot sonrası DS block'a terfi (terfi kriteri: 2+ business context + domain term yok + slot stabil + scorecard ≥B + L-invariant pass + i18n literal yok + AccessControlledProps callback guard + Figma/DesignLab artifact + backend DTO sızma yok) |
+| `ViewRegistryProvider` (headless) + `SavedViewManager` (UI) | `@mfe/design-system/patterns/view-registry/` | L4 | Headless contract + UI iki katman tek capability; `intelligence/` yer YANLIŞ (lifecycle/state governance) |
+| `MultiViewSwitcher` ⚠️ **KOŞULLU** | `@mfe/design-system/patterns/multi-view-switcher/` | L4 | Adapter contract real ise (saved view + default + access + deep link + filter carry-over + lazy adapter lifecycle); sadece tabs ise Tabs+Segmented yeter |
+| `PersonaSwitcher` ⚠️ **KOŞULLU** | App-first; veya `@mfe/design-system/components/` | L3 | En az 2 MFE/persona sinyali oluşmadan DS'ye **ALMA** |
+
+### D61 — OpenAPI Ownership (Iter-3 Architecture)
+
+OpenAPI specification ownership **`platform-backend`** repo'sundadır:
+- `process-twin-api` servisi: Springdoc + golden snapshot test ile versioned
+- `ai-conductor-service` servisi: Springdoc + golden snapshot test ile versioned
+- `notification-orchestrator` (Faz 23) pattern referans
+
+`platform-web` repo'sunda:
+- Pinned spec version'ından otomatik generated **TS client**
+- **MSW fixture** (mock service worker) ile UI development backend yokken devam eder
+- Backend DTO netleşmeden component PR'ları **domain model gömmemeli**
+
+`platform-k8s-gitops` repo'sunda:
+- **API contract kaynağı DEĞİL** — sadece promotion/digest/runtime governance
+- ADR referansları + runtime artifact promotion (ADR-0023)
+
+**Ayrı `platform-contracts` repo gereksiz** — 3+ repo/servis arasında contract versioning ciddi sürtünme yaratırsa açılır.
+
+### D62 — ETL/Idempotency Boundary (Iter-3 Architecture)
+
+Workcube ETL + KG ingestion **implementation Faz 30'a defer**, ama **schema/provenance contract Faz 24'te (ADR-0025) lock'lanır**.
+
+**Faz 24 lock'lanan 12 madde** (boundary statement):
+
+1. **Import source classes** — schema/table/column/policy/form/process/audit-doc/report taksonomisi
+2. **Staging table** — direct insert YASAK; raw → staging → validation → commit pattern
+3. **Idempotency** — `content_hash` natural key; replay safe (aynı kaynak aynı sonuç)
+4. **Provenance** — `source_artifact_id` + `source_revision` + `source_system` her ingested node'da
+5. **Asserted_by** — `IMPORTED` enum value (vs `USER` / `AI` / `INFERRED`)
+6. **Confidence** — 0-1 score (IMPORTED için kaynak güvenilirliği)
+7. **Non-destructive import** — mevcut canonical artifact'leri overwrite ETMEZ; new version + supersede pattern
+8. **Validation / preview before commit** — import dry-run + diff + impact preview
+9. **Rollback / reconciliation** — import revert + data reconciliation pattern
+10. **PII/KVKK redaction** — import sırasında classification + redacted version yan tarafta
+11. **Duplicate merge policy** — aynı entity'nin farklı kaynaklardan gelmesi durumunda merge / source precedence
+12. **Source precedence** — Workcube > custom > AI-inferred; conflict resolution explicit
+
+**UI mock data ile Faz 29'a kadar ilerlenir** — KG schema ve lifecycle contract import provenance'ı **baştan** taşımak zorunda; ETL geldiğinde retrofitting YASAK.
+
+### D63 — PR-C0 Non-Goals (Iter-3 Architecture)
+
+PR-C0 (`process-twin-ui-contracts` mini RFC + scaffold + gate PR) **scope explicit**:
+
+**İçerik (yapılacaklar)**:
+- UI contracts RFC (KG entity display model + lifecycle badge map + access behavior + visual coverage matrix + keyboard expectations)
+- `@mfe/x-charts/graph/` ve `@mfe/design-system/patterns/process-twin/` export map skeleton
+- Visual coverage matrix (design-system N2-N9 için ayrı Playwright matrix `e2e/visual/design-system-process-twin-*.spec.ts`)
+- PR template (size-limit + i18n literal check + AccessControlledProps invariant + Figma/DesignLab/story artifact requirement)
+- MSW fixture shape (node 360 + AI proposal approve + lifecycle transition contracts)
+- AI fallback test smoke (proposal UI disabled state when AI unavailable)
+
+**Yapılmayacaklar (Non-Goals)**:
+- Component implementation YOK (N1/N2/N3/N4/N5/N6 kodu PR-C0'a girmez)
+- Backend Springdoc OpenAPI YOK (platform-backend'in işi)
+- MFE skeleton YOK (Faz 29 başlangıcında ayrı PR)
+- Cross-AI advisory implementation YOK (governance D56'da; PR-C3'te ele alınır)
+
+**PR-C0 1 haftayı aşarsa ikiye böl**: `PR-C0a contracts` + `PR-C0b visual/gate scaffold`.
+
+### D64 — Component PR Bundle Strategy (Iter-3 Architecture)
+
+9 component → **9 ayrı PR DEĞİL**; **5 bundle PR** (Codex iter-2 önerisi):
+
+| PR | İçerik | Cross-AI |
+|---|---|---|
+| **PR-C0** | Contracts + scaffold + visual coverage matrix + acceptance template + MSW fixture + AI fallback test | Cross-AI ZORUNLU |
+| **PR-C1** | `KGGraphPreset` + `Entity360Layout` + design-system visual coverage genişletme | Cross-AI ZORUNLU |
+| **PR-C2** | `RASCIMatrix` (keyboard/access/state yoğun) | Cross-AI ZORUNLU |
+| **PR-C3** | `ViewRegistryProvider` + `SavedViewManager` + (varsa adapter lifecycle real) `MultiViewSwitcher` | Cross-AI ZORUNLU |
+| **PR-C4** | `MultiSectionDocumentLayout` + (varsa 2+ persona/MFE sinyali) `PersonaSwitcher` | Cross-AI ADVISORY veya sampled |
+
+**Cross-AI peer review** = Claude ↔ Codex (HARD RULE sağlayıcı farklılığı). Yüksek-risk konularda (AI Conductor, redaction, OpenFGA, ETL) **cross-provider + human final review**.
+
+**Component sıralaması** (dependency ordered):
+1. **PR-C0** (contracts/scaffold önce)
+2. PR-C1 + PR-C2 + PR-C4 paralel mümkün (bağımsız)
+3. PR-C3 sonra (SavedView + MultiViewSwitcher birbirine bağlı)
+4. PersonaSwitcher en sonda (gerçek persona/MFE sinyali bekler)
 
 ## 5-Plane Capability Map (özet)
 
@@ -363,16 +483,29 @@ Geniş liste:
 9. **External data feed dependencies in MVP** — vendor risk KAP feed, ERP budget actuals → v1
 10. **Multi-step procurement/PO/invoice lifecycle in Faz 29 MVP** — vertical slice dar tutulur
 
-## Open Questions (Faz 24 spike sırasında cevaplanır)
+## Open Questions (iter-3'te kısmen cevaplandı; kalan Faz 24 spike sırasında)
 
-- **OQ-1**: Process kernel v0 PG-only state machine — Spring State Machine library vs custom? Idempotent transition + outbox + timer + saga support için kütüphane skor.
-- **OQ-2**: Forms runtime — JSON-Forms (Eclipse) vs RJSF (Mozilla) vs custom JSON-schema renderer? React MFE + Tailwind + i18n + accessibility için.
-- **OQ-3**: AI conductor LLM provider — Anthropic Claude API + MCP-style tool registry vs OpenAI Assistants vs Bedrock? Cross-AI review için secondary model seçimi (Codex/GPT primary vs Claude vs Gemini)? Cost cap policy.
-- **OQ-4**: pgvector embedding model — `text-embedding-3-small` (1536-dim) vs `voyage-multilingual-2` (Turkish coverage) vs OpenAI `text-embedding-3-large`? Spike: 5 entity sample + Turkish content + recall@10.
-- **OQ-5**: Faz 23 notification ile process kernel outbox entegrasyonu — domain event (`TaskAssigned`/`ApprovalDue`) shape; ADR-0013 D38 outbox pattern reuse mu, ayrı outbox mu?
-- **OQ-6**: Runtime artifact ledger schema — ADR-0023 image artifact ledger schema (`promotion.artifact_ledger`) extend mi, ayrı `governance.artifact_ledger` mi?
-- **OQ-7**: Workcube decommission timeline — bir Workcube süreç EOL deadline'ı varsa Faz 30+ port sırası nasıl ayarlanır?
-- **OQ-8**: Multi-tenant fork pattern — tenant başına process/form/policy template override nasıl modellenir? Faz 26 MDM v0'da scope mu, v1+ mı?
+**Iter-3 architecture (thread `019e468f`) sonrası cevaplananlar**:
+
+- ✅ **OQ-1 (Process kernel)** → **Spring State Machine baseline** (Codex iter-3 önerisi); custom kernel + outbox + timer + saga PG-only
+- ✅ **OQ-2 (Forms runtime)** → **`@mfe/x-form-builder` (mevcut)** + JSON-Forms gerekirse extension; React MFE + zod adapter mevcut
+- ✅ **OQ-3 (AI provider)** → **Provider-agnostic** (kullanıcı 2026-05-20 kararı: Azure + OpenAI + Anthropic + local LLM); default Azure OpenAI; cross-AI Anthropic secondary (>500K TRY)
+- ✅ **OQ-5 (Faz 23 outbox)** → **ADR-0013 D38 outbox pattern reuse** (yeni outbox değil); process kernel `TaskAssigned`/`ApprovalDue`/`Rejected`/`Escalated` domain events → notification-orchestrator provider çağrısı
+- ✅ **OQ-6 (Runtime artifact ledger)** → **ADR-0023 image artifact ledger pattern extend** — yeni artifact tipleri (form schema + process def + AI prompt + approval policy + view definition); aynı promotion contract
+- 🟡 **OQ-7 (Workcube decommission)** → **D62 ETL boundary** ile case-by-case; ETL implementation Faz 30, schema/provenance contract Faz 24 lock
+
+**Faz 24 spike sırasında cevaplanacaklar**:
+
+- **OQ-4**: pgvector embedding model spike (`text-embedding-3-small` vs `voyage-multilingual-2` vs `text-embedding-3-large`) — TR content + recall@10
+- **OQ-8**: Multi-tenant fork pattern — tenant başına process/form/policy template override (Faz 26 MDM v0 scope mu, v1+ mı)
+
+**Iter-3 architecture'da netleştirilen 5 yeni question**:
+
+- **OQ-9**: KGGraphPreset (ECharts graph series) yeterli mi, rich interactive node için app-level Cytoscape/React Flow spike (`mfe-schema-explorer` referans) gerek mi?
+- **OQ-10**: `MultiViewSwitcher` adapter contract real mı (saved view + default + access + deep link + filter carry-over + lazy adapter lifecycle), yoksa Tabs+Segmented yeterli mi?
+- **OQ-11**: `PersonaSwitcher` 2+ MFE/persona sinyali ne zaman oluşur (process-twin + reporting + schema-explorer + access?)
+- **OQ-12**: `MultiSectionDocumentLayout` preset terfi kriteri zincir (8 madde: 2+ business context + domain term yok + slot stabil + scorecard ≥B + L-invariant + i18n literal yok + AccessControlledProps callback guard + Figma/DesignLab artifact + backend DTO sızma yok)
+- **OQ-13**: Federation shared deps map (`@mfe/design-system`, `@mfe/x-charts`, `@mfe/x-data-grid`) `mfe-process-twin` için runtime'da auth/theme/context duplicate riski yaratıyor mu? Erken doğrulama gerek (PR-C0).
 
 ## References
 
@@ -388,8 +521,20 @@ Geniş liste:
 
 ### External Codex iterations
 
-- Thread `019e4626-1c05-7c60-840a-c6b42a35e946` — Vision adversarial review (iter-1 + iter-2 absorb)
+- Thread `019e4626-1c05-7c60-840a-c6b42a35e946` — **Vision** adversarial review (iter-1 REVISE → iter-2 REVISE-absorb → iter-3 AGREE; ready_for_acceptance=true)
+- Thread `019e468f-51b5-74b1-8f36-ccf3cada613b` — **Architecture** deep-dive (iter-1 REVISE + 7-competitor landscape + foundation deep-dive → iter-2 PARTIAL + 9→6-7 component revize + visual coverage caveat + 5-bundle PR + OpenAPI ownership + ETL boundary → iter-3 AGREE + ready_for_implementation_kickoff=true)
 - Thread `019e4629-7c65-7b63-98b3-2d1f9f9e0880` — PR #906 ratify (paralel; AGREE)
+
+### platform-web foundation (iter-3 inventory)
+
+- `@mfe/design-system` (186 component A-grade 97.3; 24-gate release; intelligence/ + mcp/ + enterprise/ + advanced/data-grid)
+- `@mfe/x-charts` (35+ ECharts type + GraphChart KG-aware; ChartDashboard; default a11y + access gate; CONTRACT v2.2)
+- `@mfe/x-data-grid` (AG Grid Enterprise + Pivot + Tree + MasterDetail + Editable + RowGrouping; ServerDataSource; composition hooks)
+- `@mfe/x-scheduler` (FullCalendar-equivalent; 5 views + drag-drop + recurrence + conflict detection)
+- `@mfe/x-form-builder` (FormBuilder + MultiStepForm + RepeatableFieldGroup + zod adapter; 4 hooks)
+- `@mfe/blocks` (Notion-style; createBlockRegistry + 6 category + 3 template + PageBuilder)
+- `@mfe/x-editor` (Tiptap + tables + mentions + extensions)
+- 24-gate release standard + L0-L4 quality + slot pattern + AccessControlledProps invariant + Figma sync + DesignLab Python index + Storybook + Playwright visual regression + ACTIVE CI gates (a11y + scorecard + perf + security + visual + federation)
 
 ### Workcube source
 
@@ -399,4 +544,8 @@ Geniş liste:
 
 ---
 
-**Final ADR-0025 acceptance**: Codex thread `019e4626` iter-3 final AGREE + cross-AI peer review (HARD RULE — sağlayıcı farklılığı). Kabul sonrası Status → **Accepted**, PLAN.md Faz 24-30+ stub'ları eklenir, board issue umbrella'ları açılır.
+**Final ADR-0025 acceptance**: 
+- ✅ Vision Codex thread `019e4626` iter-3 AGREE (ready_for_acceptance=true)
+- ✅ Architecture Codex thread `019e468f` iter-3 AGREE (ready_for_implementation_kickoff=true)
+- ⏳ CI yeşil + cross-AI peer review (HARD RULE sağlayıcı farklılığı — bu commit'in CI'ı)
+- ⏳ Kabul sonrası: Status → **Accepted**, PLAN.md Faz 24-30+ stub'ları, board issue umbrella'ları, PR-C0 contracts/scaffold/gate PR aç (platform-web repo'sunda)
