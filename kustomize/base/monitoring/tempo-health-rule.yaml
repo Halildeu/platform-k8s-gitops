@@ -1,0 +1,94 @@
+# PrometheusRule — Tempo OTLP collector health (R11 PR1, Codex 019e4448)
+#
+# Risk #767 R11 mitigation step 1: before flipping
+# `MANAGEMENT_TRACING_ENABLED=true` on any platform service we need a live
+# signal that the Tempo OTLP path is healthy and an early-warning that it
+# refused or dropped spans. The toggle itself is in a follow-up PR
+# (single-service canary apply); this PR is observability-only so the
+# canary has an alert to ground its smoke checks against.
+#
+# What it observes:
+#   TempoDown — pod-up signal. The `up` series is published per scrape;
+#     a 10m absence/zero means the scrape itself is broken (Tempo CR,
+#     ServiceMonitor, or the pod itself). 10m chosen so transient
+#     restart blips do not page; the only restart history on the live
+#     test cluster Tempo pod is "3 restarts in 9d" which is far below
+#     the threshold.
+#   TempoOTLPIngestErrors — `tempo_receiver_refused_spans_total` counter
+#     incrementing means the OTLP receiver rejected spans. Any nonzero
+#     increase in a 10m window is a real problem (the receiver should
+#     accept or backpressure, not refuse). This is the canonical
+#     "tracing path is broken under load" signal for the canary.
+#
+# Why no `TempoStorageWALStuck` here:
+#   Codex 019e4448 Q5: WAL-stuck metric name varies by Tempo version
+#   (`tempo_ingester_wal_failed_flushes_total` vs other variants) and
+#   shipping an alert against a metric we have not confirmed exists on
+#   our live deployment would page on label miss, not actual WAL
+#   problems. Defer to PR2/PR3 after operators see the live metric set.
+#
+# Codex thread: 019e4448-e90a-7472-9e8c-d287c0fa7970 (R11 PR1 verdict
+#   REVISE → Alt-B safety-baseline: monitoring + runbook + smoke script)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-tempo-health-rules
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    # Required by kube-prometheus-stack's ruleSelector
+    # (`matchLabels: { release: kube-prometheus-stack }`).
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: platform.tempo.health
+      interval: 60s
+      rules:
+        - alert: TempoDown
+          # `up{job="tempo"}` is published by the Tempo ServiceMonitor /
+          # PodMonitor. == 0 OR absent both reduce to "no successful
+          # scrape for 10m". `for: 10m` keeps transient restart blips
+          # off the page queue (live test pod is "3 restarts in 9d").
+          expr: |
+            (up{job=~"tempo|tempo-.+"} == 0)
+            or
+            absent(up{job=~"tempo|tempo-.+"})
+          for: 10m
+          labels:
+            severity: warning
+            component: tempo
+            risk: R11
+          annotations:
+            summary: "Tempo OTLP collector down for 10m"
+            description: |
+              The Tempo `up` series is zero or absent for at least 10m.
+              Tracing pipeline cannot accept spans; any service with
+              `MANAGEMENT_TRACING_ENABLED=true` is silently failing to
+              export. Until this clears, do NOT enable tracing on any
+              additional service.
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/runbooks/RB-tracing-canary-rollout.md#tempo-down"
+
+        - alert: TempoOTLPIngestErrors
+          # The OTLP receiver bumps `tempo_receiver_refused_spans_total`
+          # when it rejects a span (bad format, ratelimit, backpressure
+          # exhaustion). Any increase in a 10m window is interesting —
+          # the receiver should accept or apply backpressure cleanly,
+          # not refuse. PR2 single-service canary will use this as the
+          # primary smoke signal.
+          expr: |
+            increase(tempo_receiver_refused_spans_total[10m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+            component: tempo
+            risk: R11
+          annotations:
+            summary: "Tempo OTLP collector refused spans in last 10m"
+            description: |
+              Tempo refused {{ printf "%.0f" $value }} spans in the last
+              10m (counter `tempo_receiver_refused_spans_total`). The
+              tracing path is degraded — investigate whether the new
+              canary service is the cause before extending to more
+              services.
+            runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/runbooks/RB-tracing-canary-rollout.md#tempo-otlp-ingest-errors"
