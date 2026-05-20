@@ -57,7 +57,7 @@ Prod `kube-prometheus-stack` Helm release (revision 2, last upgrade 2026-05-14) 
 
 **Important — direct receiver KNOWN-BLOCKED**: `perf-alerts-github-issues` Alertmanager receiver (defined in `values-prod.yaml`) sends the raw Alertmanager v4 webhook payload to GitHub `repository_dispatch` API, which requires a `{"event_type":"...","client_payload":{...}}` wrapper that Alertmanager `webhook_configs` does NOT produce. Reference: prior PR #648 was closed RED for exactly this reason (see `docs/session-52-handoff-final-honest-close.md:111`). Therefore:
 - This Secret + mount is staged for future activation when a payload wrapper bridge (sidecar/proxy) is added.
-- Until then, prod perf alert GitHub Issue trail flows through `alarm-receiver-bridge` → `alertmanager-bridge` pod (which DOES wrap into `client_payload`).
+- Until then, prod perf alert GitHub Issue trail flows through `alarm-receiver-bridge` → `alertmanager-bridge` pod (uses `gh` CLI to create/comment/close GitHub Issues directly — NOT via `repository_dispatch` workflow path).
 - `#857` acceptance smoke uses `alarm-receiver-bridge` evidence path for GitHub Issue receipt, NOT direct `perf-alerts-github-issues` receiver.
 
 **Operator step**:
@@ -293,11 +293,11 @@ kubectl --context k3d-prod -n monitoring exec "$POD" -c alertmanager -- ls -la \
 
 ### 5.2 Synthetic perf alert smoke — Alertmanager direct API routing test
 
-> **Proves**: Alertmanager config route matching + receiver dispatch (perf-alerts-slack via api_url_file delivery; alarm-receiver-bridge webhook delivery to alertmanager-bridge pod which wraps into GitHub repository_dispatch).
+> **Proves**: Alertmanager config route matching + receiver dispatch (perf-alerts-slack via api_url_file delivery; alarm-receiver-bridge webhook delivery to alertmanager-bridge pod which then calls `gh` CLI directly to create/comment GitHub Issues — NOT via repository_dispatch workflow).
 >
 > **Does NOT prove**: PrometheusRule fires with `team=perf` labels, real metric path, `for:` clause window. Real production smoke requires either an existing PrometheusRule with `team=perf` OR a controlled rule that fires on a real metric expression (separate acceptance gate).
 >
-> **Does NOT prove**: `perf-alerts-github-issues` **direct** receiver delivery — this receiver is KNOWN-BLOCKED (see §2.2; Alertmanager `webhook_configs` does NOT wrap payload into GitHub `repository_dispatch` schema). GitHub Issue trail is verified via `alarm-receiver-bridge` route (which dispatches to alertmanager-bridge pod that DOES wrap).
+> **Does NOT prove**: `perf-alerts-github-issues` **direct** receiver delivery — this receiver is KNOWN-BLOCKED (see §2.2; Alertmanager `webhook_configs` does NOT wrap payload into GitHub `repository_dispatch` schema). GitHub Issue trail is verified via `alarm-receiver-bridge` route (which dispatches to alertmanager-bridge pod that uses `gh` CLI directly — not `repository_dispatch`).
 
 ```bash
 ssh halil@staging-sw '
