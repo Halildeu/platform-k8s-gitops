@@ -384,7 +384,7 @@ Geniş liste:
 - [ADR-0015](./0015-our-company-v25-transition.md) — Our Company v25 transition
 - [ADR-0021](./0021-m365-sso-broker-keycloak.md) — M365 SSO + authn-data boundary
 - [ADR-0023](./0023-promotion-pipeline-test-overlay-authoritative.md) — Runtime-artifact ledger pattern
-- [CLAUDE.md](../../CLAUDE.md) — Repo-spezifik kurallar (D17 deprecated, scale-to-zero YASAK)
+- [CLAUDE.md](../../CLAUDE.md) — Agent-özel tamamlayıcı notlar; kural/karar çatışmasında AGENTS.md + context-priority-rules.md + ADR/PLAN otoriter (Codex `019e4626` iter-3 non-blocking nit absorb)
 
 ### External Codex iterations
 
