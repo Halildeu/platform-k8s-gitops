@@ -1,0 +1,38 @@
+# R16 PR1 — kill-switch override (Codex 019e4448)
+#
+# Disables the test → prod Prometheus remote_write stream by replacing the
+# remoteWrite list with the empty list. Layered on TOP of `values-test.yaml`
+# via a second `-f` to helm; the override semantics are "list replace, not
+# merge" so the empty list wins.
+#
+# When to use:
+#   Cross-cluster federation/remote_write traffic is suspected to be the
+#   cardinality offender (R16 incident response). Disabling the source
+#   stops fresh series from landing in the prod side without touching
+#   either Prometheus's own retention or the live scrape paths.
+#
+# How to activate (via bootstrap/install-monitoring.sh):
+#   KPS_REMOTE_WRITE_DISABLED=1 bash bootstrap/install-monitoring.sh test
+#
+# How to deactivate:
+#   bash bootstrap/install-monitoring.sh test   # the override file is not loaded
+#
+# How to verify:
+#   kubectl --context k3d-test -n monitoring get prometheus \
+#     -o jsonpath='{.items[0].spec.remoteWrite}'
+#   # expected: [] when the kill-switch is on; the original [{url, ...}]
+#   # block when off.
+#
+# Rollback semantics:
+#   This is a values override only — no CRD migration, no data loss, no
+#   replay buffer drained. Flipping back rehydrates the original stream
+#   (subject to remote_write's own retry/queue behaviour) and the gap
+#   appears as a Prometheus `up` blip on the receiver side. No prod-side
+#   action required for either direction.
+prometheus:
+  prometheusSpec:
+    # The kube-prometheus-stack chart treats `remoteWrite` as a list value
+    # — providing an empty list at the higher-priority values file replaces
+    # the inherited list entirely, removing every remote_write block from
+    # the rendered Prometheus CR.
+    remoteWrite: []
