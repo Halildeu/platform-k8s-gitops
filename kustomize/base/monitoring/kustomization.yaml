@@ -19,6 +19,7 @@ resources:
   - backup-freshness-rule.yaml    # Codex iter-8 day-2 ek — backup_last_success metric + 5 alert
   - dr-drill-rule.yaml            # Session 28 paralel cleanup (c) — dr_drill_last_run_* metric + 4 alert (PLAN.md D23 quarterly)
   - recording-rules.yaml          # Pre-compute expensive PromQL (Grafana + alert hızlandırma)
+  - cardinality-recording-rules.yaml  # R16 PR1 (Codex 019e4448) — cardinality observability; topk by __name__/job + total gauge (no alert, that's PR2 after budget chosen)
   - api-gateway-slo-rule.yaml     # iter-49 B.2 — api-gateway SLO warning rules (4 alert, dev-observable)
   - notify-dlq-slo-rule.yaml      # Step B.4 (Codex 019e0892 + 019e094a iter-1) — notify DLQ SLO + true multi-window burn rate alerts (4 alert, 18 recording rules incl. 5m/30m short windows, 99.5% target, 28d window, slow `unless` fast suppression)
   - rollout-replicaset-crash-rule.yaml  # Codex 019e256f PR-4 — KubeDeploymentRolloutStuck + KubeReplicaSetSplit + KubePodCrashLooping (continuous cluster alerting for drift gate observation layer)
