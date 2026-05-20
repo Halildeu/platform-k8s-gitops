@@ -75,22 +75,38 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 **Owner**: legal (R2 closure)
 **Dependencies**: cluster stability dependency satisfied; M1 browser SSO/cutover closure tracked separately
 
-### M4 — 23.3 SMS JetSMS primary + NetGSM secondary Activation (🔴 target 2026-06-22)
+### M4 — 23.3 SMS JetSMS primary + NetGSM secondary Activation (🟡 TEST LIVE — prod cutover #903)
 
-> **Provider kararı 2026-05-19 (kullanıcı)**: SMS primary JetSMS (canlı sözleşme), secondary NetGSM. Multi-provider 5-PR sequence (PR-0 docs + PR-1 SmsProvider abstraction + PR-2 JetSmsProvider send/failover + PR-3 JetSMS DLR polling + PR-4 gitops) — Codex `019e3f82` AGREE.
+> **Provider kararı 2026-05-19 (kullanıcı)**: SMS primary JetSMS (canlı sözleşme), secondary NetGSM. Multi-provider 5-PR sequence (PR-0 docs + PR-1 SmsProvider abstraction + PR-2 JetSmsProvider send/failover + PR-3 JetSMS DLR polling + PR-4 gitops base configmap + PR-5 test overlay cutover) — Codex `019e3f82` AGREE.
+
+> **Status revision 2026-05-20 (Session 42+, Codex `019e45db` REVISE)**: M4 5-PR sequence MERGED + **test cluster JetSMS LIVE acceptance** (full happy-path: ACCEPTED + DLR DELIVERED terminal state). Initial HTTP 5xx retry **transient** classify; SOAP transport ACCEPTED + DlrPollingWorker DELIVERED. Prod cutover **multi-blocker** (prod ESO Graph aggregate Ready=False + imageID bump + configmap primary=jetsms flip + egress NetworkPolicy gap) → child issue [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903) Codex 9-step acceptance smoke gates.
 
 **Definition of Done**:
-- [ ] PR-1 `SmsProvider` interface + `SmsAdapter` facade + `NetGsmProvider` refactor (behavior-neutral)
-- [ ] PR-2 `JetSmsProvider` HTTP API + failover matrix LIVE
-- [ ] PR-3 JetSMS DLR polling worker + generic DlrIngest core LIVE
-- [ ] PR-4 gitops Vault/ESO/ConfigMap (JetSMS primary)
-- [ ] T3.1.8 4 workflow live test passed (admin invite, password reset, drift alarm, break-glass)
-- [ ] D29-NOTIFY 3-katman SMS evidence (JetSMS send + DLR poll round-trip)
-- [ ] Charter 23.3 marker ⏳ → 🟢
-- [ ] Risk register: R1 — NetGSM secondary failover acceptance closed (JetSMS-primary live ayrı hüküm)
+- [x] PR-1 `SmsProvider` interface + `SmsAdapter` facade + `NetGsmProvider` refactor (behavior-neutral) — platform-backend [#249](https://github.com/Halildeu/platform-backend/pull/249) MERGED
+- [x] PR-2 `JetSmsProvider` HTTP API + failover matrix LIVE — platform-backend [#250](https://github.com/Halildeu/platform-backend/pull/250) MERGED
+- [x] PR-3 JetSMS DLR polling worker + generic DlrIngest core LIVE — platform-backend [#252](https://github.com/Halildeu/platform-backend/pull/252) MERGED
+- [x] PR-4 gitops base ConfigMap (JetSMS endpoint URL'leri) — gitops Codex thread `019e4022` MERGED (`kustomize/base/apps/notification-orchestrator/configmap.yaml` line 62-72)
+- [x] PR-5 test overlay cutover (image digest sha-ab333c5 + `NOTIFY_ADAPTERS_SMS_PRIMARY_PROVIDER=jetsms` ATOMİK flip) — gitops MERGED 2026-05-19 (`kustomize/overlays/test/kustomization.yaml` line 2533+)
+- [x] **Test cluster JetSMS LIVE acceptance** (2026-05-20 live evidence):
+  - `SmsAdapter activated: primary=jetsms secondary=(none) registered=[netgsm, jetsms]`
+  - `JetSmsDlrPollingWorker activated: batchSize=100 pollInterval=PT1M`
+  - `jetsms SOAP ACCEPTED (awaits DLR poll): msg_id=jetsms-260520174749808291`
+  - `sms primary=jetsms result status=ACCEPTED class=NONE`
+  - `dlr jetsms UPDATED: code=1 delivery_id=116 prior=ACCEPTED new=DELIVERED` (+ delivery_id 117 + ongoing)
+- [~] D29-NOTIFY 3-katman SMS evidence — TEST cluster ✅; prod cutover gate [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903) pending
+- [ ] T3.1.8 4 workflow live test passed (admin invite, password reset, drift alarm, break-glass) — prod cutover sonrası
+- [ ] **Prod cutover** (issue [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903)):
+  - A.1 prod ESO aggregate blocker resolution (Graph `graph_*` D49 defer-aware)
+  - A.2 prod overlay imageID + primary=jetsms flip PR (atomic)
+  - A.3 prod egress 443 NetworkPolicy gap close
+  - A.4 canary SMS smoke (provider=jetsms test)
+  - A.5 DLR terminal state evidence
+  - A.6 rollback plan documented
+- [ ] Charter 23.3 marker ⏳ → 🟢 (prod cutover sonrası)
+- [ ] Risk register: R1 — NetGSM secondary failover acceptance closed (JetSMS-primary live ayrı hüküm; R1 ETA 2026-05-30)
 
-**Blockers**: R1 (NetGSM secondary contract delay — failover acceptance blocker; JetSMS primary activation blocker DEĞİL)
-**Owner**: ops + dev + legal (NetGSM secondary contract)
+**Blockers**: R1 (NetGSM secondary contract delay — failover acceptance blocker; JetSMS primary activation blocker DEĞİL); prod cutover multi-step gates [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903)
+**Owner**: ops + dev + legal (NetGSM secondary contract); gitops/ops (prod cutover gates)
 **Dependencies**: M3 (23.2 stable)
 
 ### M5 — 23.5 Preference UI (🔴 target 2026-06-29)
