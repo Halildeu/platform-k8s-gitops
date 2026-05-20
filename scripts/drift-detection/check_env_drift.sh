@@ -207,15 +207,28 @@ ARGOCD_CONDITION_BLOB="[]"
 ARGOCD_QUERY_FAIL=0
 
 if [[ $ARGOCD_RC -ne 0 ]]; then
-  # Distinguish NotFound (genuine app-missing) from other failure modes.
-  # `kubectl get application X` on NotFound prints something like:
-  #   Error from server (NotFound): applications.argoproj.io "X" not found
-  if echo "$ARGOCD_ERR" | grep -qiE 'NotFound|"[^"]+" not found|the server doesn'\''t have a resource'; then
-    ARGOCD_STATE="ERR"   # → falls into State A below
+  # Distinguish a genuine Application-object NotFound from any other failure
+  # mode (Codex 019e44c8 iter-2 must_fix #1 — narrowed regex).
+  #
+  # `kubectl get application platform-${ENV}` on NotFound prints:
+  #   Error from server (NotFound): applications.argoproj.io "platform-${ENV}" not found
+  #
+  # We require the EXPLICIT application object name in quotes so the regex
+  # does NOT collapse the following control-plane / exec-error classes into
+  # "app missing":
+  #   - `namespaces "argocd" not found`           (hub namespace missing)
+  #   - `the server doesn't have a resource ...`  (ArgoCD CRD missing /
+  #                                                API discovery break)
+  #   - generic `"<other>" not found`             (configmap, secret, etc.)
+  # Those all fall through to argocd_query_error + mark_exec_error → exit 3.
+  APP_NAME="platform-${ENV}"
+  # shellcheck disable=SC2076  # We want literal-string-with-vars matching.
+  if echo "$ARGOCD_ERR" | grep -qiE "(applications?(\.argoproj\.io)?[[:space:]]+)?\"${APP_NAME}\"[[:space:]]+not found"; then
+    ARGOCD_STATE="ERR"   # → genuine Application object NotFound → State A below
   else
     ARGOCD_QUERY_FAIL=1
     add_finding P1 argocd_query_error \
-      "ArgoCD query failed (rc=$ARGOCD_RC) — hub unreachable / RBAC denied / API timeout, not 'app missing'" \
+      "ArgoCD query failed (rc=$ARGOCD_RC) — hub unreachable / RBAC denied / API timeout / CRD missing / namespace missing, not 'app missing'" \
       "$(echo "$ARGOCD_ERR" | head -c 500)"
     mark_exec_error
   fi
