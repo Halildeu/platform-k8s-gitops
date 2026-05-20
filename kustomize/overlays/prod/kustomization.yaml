@@ -207,7 +207,20 @@ images:
   #     dispatch flip (R1 NetGSM contract activation 2026-05-30).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    digest: sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3
+    # 2026-05-20 (Faz 23.A4 PR-B3 — DKIM relay strategy prod): Bump from
+    # sha-70491543 (Faz 23.6 strict baseline) to sha-6307428. Carries
+    # cumulative delta since 70491543:
+    #   - Faz 23.3 SMS multi-provider (PR-1 → PR-A3.1.1; JetSMS context routing)
+    #   - PR #151 DKIM RFC 6376 (app-side fallback artifact; relay activated here)
+    #   - Faz 23.X delta (T1.6 abuse, M6a inbox history, etc.)
+    #   - PR-B1 (PR #268 MERGED 2026-05-20T19:46Z): notify.dkim.strategy enum
+    #     + ProductionConfigValidator validateDkimRelay() branch
+    # Test cluster acceptance: PR-B2 #914 MERGED 2026-05-20T19:51Z sha-6307428
+    # smoke OK (SmtpAdapter activated: dkimEnabled=false; ProductionConfigValidator
+    # SKIP non-prod; pod Started in 74s).
+    # Build evidence: gh run view 26185928228 -R Halildeu/platform-backend
+    # success 2026-05-20T19:47Z; digest sha256:3b103e35e3978192556ea8dab8da60ef40f80514981d31ab1e001a27a005d74d.
+    digest: sha256:3b103e35e3978192556ea8dab8da60ef40f80514981d31ab1e001a27a005d74d
 
 # Faz 23.2 PR-D.3 — notification-orchestrator prod IMAGE PIN DEFERRED.
 # D29 evidence gate (Codex P0 Sprint A Item 3) requires:
@@ -789,9 +802,38 @@ patches:
       # alınca activation hazır. NOTIFY_DKIM_ENABLED=false kaldığı sürece
       # backend DkimSigner bean ConditionalOnProperty disabled → SmtpAdapter
       # Optional<DkimSigner> empty → no DKIM-Signature header.
+      # Faz 23.A4 DKIM relay strategy (PR-B3 2026-05-20, Codex 019e4514
+      # plan-time consult — uzun vadeli kalıcı stabil; Office 365 Native DKIM):
+      # - strategy=relay: provider-managed DKIM (Microsoft yönetir key rotation)
+      # - enabled=false: app-side DkimSigner DISABLED (Optional empty)
+      # - relay.provider=office365 + relay.domain=acik.com → validator branch
+      # - SMTP TLS enforce zaten true (line 712); From: ai@acik.com aligned acik.com
+      # **OPERATOR PREREQ (one-time setup)**:
+      #   1. Office 365 admin tenant DKIM enable for acik.com:
+      #      Microsoft 365 Defender > Email & Collaboration > Email auth settings
+      #      > DKIM > acik.com > Rotate DKIM keys (generates tenant selector)
+      #   2. DNS CNAME publish (acik.com DNS provider, **one-time** forever):
+      #      selector1._domainkey.acik.com CNAME selector1-acik-com._domainkey.<tenant>.onmicrosoft.com
+      #      selector2._domainkey.acik.com CNAME selector2-acik-com._domainkey.<tenant>.onmicrosoft.com
+      #      (Microsoft tenant-specific; Office 365 admin UI gösterir)
+      # Pre-setup deploy SAFE: ProductionConfigValidator relay branch geçer
+      # (config-only validation); outbound mail unsigned olarak hâlâ deliver
+      # olur; Office 365 admin DKIM enable + CNAME propagation sonrası signed.
+      - op: add
+        path: /data/NOTIFY_DKIM_STRATEGY
+        value: "relay"
       - op: add
         path: /data/NOTIFY_DKIM_ENABLED
         value: "false"
+      - op: add
+        path: /data/NOTIFY_DKIM_RELAY_PROVIDER
+        value: "office365"
+      - op: add
+        path: /data/NOTIFY_DKIM_RELAY_DOMAIN
+        value: "acik.com"
+      # Selector/domain prep (relay path'inde kullanılmıyor ama config görünür
+      # kalır; app-side fallback için Vault'ta PKCS#8 key dormant — Codex
+      # post-relay 72h stabil sonrası cleanup PR'da silinecek):
       - op: add
         path: /data/NOTIFY_DKIM_SELECTOR
         value: "acik2026"
@@ -865,6 +907,11 @@ patches:
           # AuditPartitionRetentionService bean gets instantiated under
           # the new NOTIFY_AUDIT_RETENTION_ENABLED=true config.
           compliance.acik.com/audit-retention-cycle: "pr-c-2-flip-2026-05-09"
+          # Faz 23.A4 DKIM relay strategy activation (PR-B3 2026-05-20,
+          # Codex 019e4514). Image bump + relay ConfigMap atomic — annotation
+          # bump pod rolling restart tetikler so DkimSigner conditional bean
+          # (enabled=false) takes effect on new pod boot.
+          mail.acik.com/dkim-relay-strategy: "b3-prod-2026-05-20-sha-6307428"
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:
