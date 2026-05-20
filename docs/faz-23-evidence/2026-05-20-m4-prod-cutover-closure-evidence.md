@@ -281,11 +281,19 @@ ETA rollback < 15 dakika (atomic kustomization commit).
 | Charter 23.3 marker | 🟡 → 🟢 **source-ready + acceptance candidate** (this PR) |
 | R1 NetGSM secondary contract closure | 🟡 Active ext (ETA 2026-05-30) |
 
-**Net DoD**: 11/13 done (84.6%); 2 ext-gated (R1 + canary smoke real-user M365 SSO).
+**Net DoD**: 8/12 done (66.7%) + 2 partial + 4 ext-gated.
+
+- Done (8): PR-1, PR-2, PR-3, PR-4, PR-5, Test cluster JetSMS LIVE acceptance, **Prod cutover (agent-actionable A.1+A.2+A.3+A.6)**, **Charter 23.3 marker → 🟢 source-ready + acceptance candidate**
+- Partial (2): Sub-Faz 23.3.2 Multipart + Context Routing (VFO provider acceptance pending R24); D29-NOTIFY 3-katman SMS (test ✅; prod canary smoke ext-gated)
+- Ext-gated (4): R24 Biotekno OTP allowlist provisioning; R1 NetGSM secondary contract (ETA 2026-05-30); T3.1.8 4 workflow live test (canary post-smoke); A.4+A.5 canary SMS smoke + DLR terminal evidence (real user M365 SSO UI flow)
+
+**Qualified green semantik**: 23.3 marker `🟢 source-ready + acceptance candidate` 23.2 PR-time pattern ile analog — prod pod LIVE + source/desired-state zinciri hazır + acceptance external residual bekliyor. **NOT full closure**; tenant DKIM enable + DNS CNAME + canary smoke + R24 + R1 + 72h observation acceptance kapısı.
 
 ---
 
-## 10. Critical Architecture Decisions Sealed (this cutover)
+## 10. DKIM Strategy Architecture Sealed (this cutover) — scope dar
+
+> **Scope note**: "Sealed" yalnızca **DKIM strategy decision** için geçerli (Codex `019e44b1` AGREE B). M4 acceptance'ın tamamı (canary smoke + 72h observation + R24 provider acceptance + R1 NetGSM contract) ext-gated kalır.
 
 1. **DKIM strategy = Office 365 Native (relay)** — Codex `019e44b1` AGREE
    B; app-side key dormant fallback; tenant-managed key rotation

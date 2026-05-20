@@ -81,7 +81,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 
 > **Status revision 2026-05-20 (Session 42+, Codex `019e45db` REVISE)**: M4 5-PR sequence MERGED + **test cluster JetSMS LIVE acceptance** (full happy-path: ACCEPTED + DLR DELIVERED terminal state). Initial HTTP 5xx retry **transient** classify; SOAP transport ACCEPTED + DlrPollingWorker DELIVERED. Prod cutover **multi-blocker** (prod ESO Graph aggregate Ready=False + imageID bump + configmap primary=jetsms flip + egress NetworkPolicy gap) → child issue [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903) Codex 9-step acceptance smoke gates.
 
-> **Status revision 2026-05-20 (Session 47, post PR-B4 cutover RE-ATTEMPT MERGED)**: **M4 prod cutover LIVE** — PR-B1 (platform-backend #268 notify.dkim.strategy enum) + PR-B2/B3 (gitops #914/#915 test+prod overlay DKIM relay) + PR-B4 (gitops #916 prod cutover RE-ATTEMPT JetSMS PRIMARY + netpol 587/443) zinciri MERGED 2026-05-20T20:14Z. Prod pod sha-6307428 Running 1/1 + SmtpAdapter `dkimEnabled=false` (relay strategy) + SmsAdapter `primary=jetsms secondary=(none)` + ProductionConfigValidator `all production guards PASSED` + JetSmsDlrPollingWorker `scheduling=true` + Started in 37.7s (önceki PR #911 crashloop strategy enum öncesi DKIM strict gate fail-closed — same-incident reconciliation revert PR #912 + strategy enum hardening ile resolve). **Long-term stable architecture sealed** (Codex `019e44b1` AGREE B): DKIM = Office 365 Native CNAME pattern (provider-managed key rotation), app-side key Vault'ta dormant fallback. **R3 🟢 mitigated upgraded**; **R24 🟡 active monitored** (`NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_TOPIC_KEYS=` blank workaround prod'da); **R1 🟡 active** (NetGSM secondary contract ETA 2026-05-30). Evidence: [docs/faz-23-evidence/2026-05-20-m4-prod-cutover-closure-evidence.md](../faz-23-evidence/2026-05-20-m4-prod-cutover-closure-evidence.md).
+> **Status revision 2026-05-20 (Session 47, post PR-B4 cutover RE-ATTEMPT MERGED)**: **M4 prod cutover LIVE** — PR-B1 (platform-backend #268 notify.dkim.strategy enum) + PR-B2/B3 (gitops #914/#915 test+prod overlay DKIM relay) + PR-B4 (gitops #916 prod cutover RE-ATTEMPT JetSMS PRIMARY + netpol 587/443) zinciri MERGED 2026-05-20T20:14Z. Prod pod sha-6307428 Running 1/1 + SmtpAdapter `dkimEnabled=false` (relay strategy) + SmsAdapter `primary=jetsms secondary=(none)` + ProductionConfigValidator `all production guards PASSED` + JetSmsDlrPollingWorker `scheduling=true` + Started in 37.7s (önceki PR #911 crashloop strategy enum öncesi DKIM strict gate fail-closed — same-incident reconciliation revert PR #912 + strategy enum hardening ile resolve). **DKIM strategy architecture sealed (scope dar — sadece DKIM signing decision)** (Codex `019e44b1` AGREE B): DKIM = Office 365 Native CNAME pattern (provider-managed key rotation), app-side key Vault'ta dormant fallback. **M4 acceptance'ın tamamı NOT sealed**: canary smoke + 72h observation + R24 provider acceptance + R1 NetGSM contract ext-gated kalır. **R3 🟢 mitigated upgraded**; **R24 🟡 active monitored** (`NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_TOPIC_KEYS=` blank workaround prod'da); **R1 🟡 active** (NetGSM secondary contract ETA 2026-05-30). Evidence: [docs/faz-23-evidence/2026-05-20-m4-prod-cutover-closure-evidence.md](../faz-23-evidence/2026-05-20-m4-prod-cutover-closure-evidence.md).
 
 > **Sub-Faz 23.3.2 routing/multipart closure 2026-05-20 (Session 47, Codex `019e4514` 11 iter)**: Multipart + context routing decision logic + actual_channel audit (VF accepted path) chain MERGED + test cluster LIVE. Backend chain PR #262/#263/#264/#265/#266/#267 + GitOps PR #903/#905/#908 (sha-6ed593e). 3-senaryo canary smoke: VFO routing-log proof (Scenario A) + VF default delivered (Scenario B) + VF explicit fallback overlength delivered (Scenario C) — Codex P2+P3 absorb. Real-world: kullanıcı +905551815564 multipart SMS DELIVERED (B: 1 seg, C: 2 segments). **VFO provider acceptance PENDING R24**: JetSMS Biotekno sender ID OTP allowlist provisioning gap (ErrorCode=04 reject); routing logic LIVE, provider config gap. Evidence: [docs/faz-23-evidence/2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md](../faz-23-evidence/2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md).
 
@@ -108,19 +108,19 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
   - Codex P2+P3 absorb LIVE (actual_channel audit + explicit CHANNEL_VF config drift hardening)
   - **PENDING**: VFO provider acceptance (R24) + actual_channel=VFO audit (R24 sonrası)
   - Evidence doc: [2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md](../faz-23-evidence/2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md)
-- [~] D29-NOTIFY 3-katman SMS evidence — TEST cluster ✅; prod cutover gate [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903) pending
-- [ ] T3.1.8 4 workflow live test passed (admin invite, password reset, drift alarm, break-glass) — prod cutover sonrası
-- [ ] **Prod cutover** (issue [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903)):
-  - A.1 prod ESO aggregate blocker resolution (Graph `graph_*` D49 defer-aware)
-  - A.2 prod overlay imageID + primary=jetsms flip PR (atomic)
-  - A.3 prod egress 443 NetworkPolicy gap close
-  - A.4 canary SMS smoke (provider=jetsms test)
-  - A.5 DLR terminal state evidence
-  - A.6 rollback plan documented
-- [ ] Charter 23.3 marker ⏳ → 🟢 (prod cutover sonrası)
-- [ ] Risk register: R1 — NetGSM secondary failover acceptance closed (JetSMS-primary live ayrı hüküm; R1 ETA 2026-05-30)
+- [~] D29-NOTIFY 3-katman SMS evidence — TEST cluster ✅ (D29-Up + D29-Functional + D29-Multipart + D29-ContextRouting + D29-actualChannel); prod canary smoke ext-gated (real user M365 SSO UI flow)
+- [ ] T3.1.8 4 workflow live test passed (admin invite, password reset, drift alarm, break-glass) — ext canary post-cutover
+- [~] **Prod cutover** (issue [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903)) — **agent-actionable items LIVE 2026-05-20** (PR-B1+B2+B3+B4 zincir):
+  - [x] A.1 prod ESO aggregate blocker resolution (Graph `graph_*` D49 defer-aware, PR #906 MERGED)
+  - [x] A.2 prod overlay imageID + primary=jetsms flip PR (atomic, PR-B4 #916 MERGED)
+  - [x] A.3 prod egress 443 NetworkPolicy gap close (`netpol-notification-egress-mail-providers.yaml`, PR-B4 #916)
+  - [ ] A.4 canary SMS smoke (provider=jetsms test) — **ext-gated** (real user M365 SSO UI flow; agent prod-smoke-tester JWT mint gateway-block)
+  - [ ] A.5 DLR terminal state evidence — **ext-gated** (canary smoke sonrası natural; pipeline LIVE scheduling=true)
+  - [x] A.6 rollback plan documented (evidence doc §7 + release-candidates ledger `rollback_to_digest: sha-70491543`)
+- [x] **Charter 23.3 marker → 🟢 source-ready + acceptance candidate** (this PR-B5 #918) — qualified green: prod pod LIVE + source/desired-state hazır + ext residual acceptance bekliyor (NOT full closure; 23.2 PR-time pattern ile analog)
+- [ ] Risk register: R1 — NetGSM secondary failover acceptance closed (JetSMS-primary live ayrı hüküm; R1 ETA 2026-05-30) — **ext-gated**
 
-**Blockers**: R1 (NetGSM secondary contract delay — failover acceptance blocker; JetSMS primary activation blocker DEĞİL); prod cutover multi-step gates [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903)
+**Blockers**: R1 (NetGSM secondary contract delay — failover acceptance blocker; JetSMS primary activation blocker DEĞİL — JetSMS-only degraded mode acceptable per kullanıcı 2026-05-19); prod canary smoke ext-gated (real user M365 SSO UI flow); R24 ext (Biotekno OTP allowlist provisioning)
 **Owner**: ops + dev + legal (NetGSM secondary contract); gitops/ops (prod cutover gates)
 **Dependencies**: M3 (23.2 stable)
 
