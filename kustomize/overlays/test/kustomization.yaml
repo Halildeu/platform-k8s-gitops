@@ -2567,18 +2567,21 @@ images:
   # 46 yeni, JetSmsProviderTest 34 HTTP coverage korundu).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    # 2026-05-20 update (Faz 23.3.2 PR-A2.1 — JetSMS multipart operational
-    # activation): Bump from sha-4e3e32c (T1.1.8 era) to sha-59b71d6.
-    # Carries cumulative delta on main since 4e3e32c:
-    #   - PR-A1 (#261): JetSmsProvider multipart feature flag scaffold
-    #   - PR-A1.2 (#262): SmsAdapter charset+length capability hardening
-    #   - PR-A1.1 (#263): SMS segment metadata audit propagation
-    #   - PR-A2.0 (#264): JetSMS DLR multipart aggregate hardening
+    # 2026-05-20 update v2 (Faz 23.3.2 PR-A3.2 — JetSMS SOAP single + OTP
+    # channel routing): Bump from sha-4caa860b (PR-A2.1 baseline) to sha-6ed593e.
+    # Carries cumulative delta on main since 4caa860b:
+    #   - PR-A3.0 (#265): JetSmsProvider SendSMSSingle envelope + channel param
+    #   - PR-A3.1.0 (#266): SmsSendContext typed record + OTP allowlist scaffold
+    #   - PR-A3.1.1 (#267): runtime resolveChannel + actual_channel audit
+    #     propagation (Codex P2+P3 absorb iter-2 AGREE)
     # Codex peer review: thread 019e4514 multi-iter REVISE → AGREE,
-    # iter-3 AGREE+ready_for_merge=true; PR-A2.0 hard gate kapatıldı.
-    # Image build: gh run view 26161932978 -R Halildeu/platform-backend
-    # success 2026-05-20T12:17Z; digest sha256:4caa860bb1a1ac776190eff0ab57e6482a84764e7bf5b47519ed7ab5660cde81.
-    digest: sha256:4caa860bb1a1ac776190eff0ab57e6482a84764e7bf5b47519ed7ab5660cde81
+    # PR-A3.1.1 iter-2 AGREE+ready_for_merge=true.
+    # Image build: gh run view 26174852041 -R Halildeu/platform-backend
+    # success 2026-05-20T16:26Z; digest sha256:30b0bf658dcd879c531451352c4e37680551fe14ab667a255eea36adbb281a5b.
+    # ConfigMap patches (this PR aynı commit chain): SOAP_OPERATION=sendSMSSingle
+    # + CHANNEL=VF + CHANNEL_ALLOWED=VF,VFO + CHANNEL_OTP_TOPIC_KEYS +
+    # CHANNEL_OTP_MAX_LENGTH=160.
+    digest: sha256:30b0bf658dcd879c531451352c4e37680551fe14ab667a255eea36adbb281a5b
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
@@ -3180,6 +3183,45 @@ patches:
       - op: add
         path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_ON_LENGTH_PROBLEM
         value: "SendAllPackage"
+      # Faz 23.3.2 PR-A3.2 — JetSMS SOAP operation flip + OTP channel allowlist
+      # (Codex thread 019e4514 PR-A3 chain).
+      #
+      # PR-A3.0'da JetSmsProvider'a SendSMSSingle SOAP envelope desteği
+      # eklendi (channel param ile VFO/VF outbound). PR-A3.1.0 + PR-A3.1.1'de
+      # context-aware runtime routing geldi: topic_key / template_id allowlist
+      # match → VFO (OTP kanal, kısa mesaj); no match → VF (BULK, multipart).
+      #
+      # Bu config flip:
+      #   - soap-operation=sendSMSSingle: SendSMS BULK array path'inden
+      #     SendSMSSingle single-recipient + channel param path'ine geçer
+      #   - channel=VF: default bulk channel (multipart bulk OTP harici)
+      #   - channel-allowed=VF,VFO: outbound preflight validation
+      #   - channel-otp-topic-keys: operator-curated allowlist; bu topic'ler
+      #     için VFO outbound (OTP kanal). Biotekno provisioning:
+      #       * auth.mfa-otp — MFA OTP (kısa, kritik, OTP kanal)
+      #       * auth.password-reset-otp — password reset OTP
+      #     Diğer topic'ler default VF'den çıkar.
+      #   - channel-otp-max-length=160: VFO match + text>160 → VF fallback
+      #     (explicit, config drift hardening — Codex P3 absorb).
+      #
+      # Live evidence: kullanıcı +905551815564 numarasına 2026-05-20'de 258-char
+      # multipart SMS başarıyla iletildi (sha-4caa860b SendSMSSingle path).
+      # PR-A3.1.1 (PR #267) merge sonrası context-aware routing image'a iner.
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_SOAP_OPERATION
+        value: "sendSMSSingle"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL
+        value: "VF"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_ALLOWED
+        value: "VF,VFO"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_TOPIC_KEYS
+        value: "auth.mfa-otp,auth.password-reset-otp"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_MAX_LENGTH
+        value: "160"
       - op: add
         path: /data/SPRING_FLYWAY_ENABLED
         value: "true"
