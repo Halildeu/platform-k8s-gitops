@@ -61,7 +61,7 @@
 | A1 | Email transactional (SMTP canonical; Microsoft Graph API alternate path **deferred** — bkz. §8 H14 + [ADR-0024](../adr/0024-graph-mail-adapter-defer.md)) | **Kernel** | 23.1 | 🟢 |
 | A2 | Slack incoming webhook | **Kernel** | 23.1 | 🟢 |
 | A3 | Webhook egress (HMAC signed) | **Kernel** | 23.1 | 🟢 |
-| A4 | SMS (JetSMS primary, NetGSM secondary) | **MVP-geniş** | 23.3 | 🟡 (provider kararı 2026-05-19: JetSMS primary canlı sözleşme + NetGSM secondary failover; NetGSM Vault path canonical LIVE Session 42 PR #482; backend SmsAdapter LIVE platform-backend #77; **JetSMS HTTP API adapter + failover PR sequence Codex `019e3f82` AGREE**; NetGSM contract R1 ETA 2026-05-30 = secondary failover acceptance blocker, primary activation blocker DEĞİL) |
+| A4 | SMS (JetSMS primary, NetGSM secondary) | **MVP-geniş** | 23.3 | 🟡 (**TEST cluster JetSMS LIVE 2026-05-20** — full happy-path ACCEPTED + DLR DELIVERED terminal evidence; backend PR-1/2/3 + hardening 23.3.2 MERGED platform-backend #249/250/252/256/261/262/263/264; gitops PR-4 base configmap + PR-5 test overlay cutover MERGED; prod cutover [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903) multi-blocker — Codex 9-step acceptance smoke gates pending; provider kararı 2026-05-19 JetSMS primary canlı sözleşme + NetGSM secondary; NetGSM contract R1 ETA 2026-05-30 = secondary failover acceptance blocker, primary activation blocker DEĞİL) |
 | A5 | In-app inbox backend API | **MVP-geniş** | 23.3 | 🟢 (LIVE GET /inbox/me + SSE) |
 | A6 | In-app inbox React UI (custom) | v1 | 23.4 | 🟢 (PR-5.x cycle LIVE) |
 | A7 | Microsoft Teams (Adaptive Cards) | v1 | 23.6 | ☐ |
