@@ -84,7 +84,7 @@ jobs:
         # commit on the base branch so a freshly-hardened audit script runs
         # against PRs opened before the hardening landed. `base.sha` would
         # pin to the SHA at PR-open time and miss subsequent fixes.
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.base.ref }}
 
