@@ -28,7 +28,11 @@ command -v kubectl >/dev/null || err "kubectl yok"
 
 PROD_CTX="${PROD_CTX:-k3d-prod}"
 TEST_CTX="${TEST_CTX:-k3d-test}"
-CLUSTER_NAME="${CLUSTER_NAME:-k3d-test}"
+# 2026-05-20 — ADR-0023 Guardrail PR-2 align: argocd/applications/platform-test.yaml
+# spec.destination.name: test-cluster bekliyor. Default önceden k3d-test'ti
+# (Codex 019e42c4 REVISE absorb — name mismatch riski). Operator override
+# yaparsa string test-cluster ile uyumlu olmalı.
+CLUSTER_NAME="${CLUSTER_NAME:-test-cluster}"
 ARGOCD_SERVER="${ARGOCD_SERVER:-localhost:8080}"
 
 kubectl --context "${PROD_CTX}" cluster-info >/dev/null 2>&1 || err "${PROD_CTX} yok"
