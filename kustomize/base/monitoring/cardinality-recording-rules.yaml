@@ -1,0 +1,83 @@
+# PrometheusRule — Cardinality observability (R16 PR1, Codex 019e4448)
+#
+# Risk #770 R16 mitigation step 1: BEFORE adding label drops or sample_limits
+# you need to see what the time series cardinality looks like — what metrics
+# explode, which labels contribute, where to budget. This rule pre-computes
+# the per-metric series count so operators can scan the topk via Grafana
+# Explore without paying the cost of running `count by (__name__)({...})`
+# interactively (which is itself an expensive cardinality probe).
+#
+# What it computes:
+#   cardinality:series:by_metric — series count grouped by `__name__`.
+#     Use to find: "which metric ships the most distinct label tuples?"
+#   cardinality:series:total — overall active-series gauge.
+#     Use to track: total active-series budget on a Grafana single-stat.
+#   cardinality:series:by_job — series count grouped by scrape `job`.
+#     Use to find: "which scrape target is the loudest neighbour?"
+#
+# Why no alert here:
+#   The thresholds belong in a SEPARATE follow-up PR after operators look at
+#   the live numbers and pick a budget. Alerting on a number you have not
+#   measured produces noisy/wrong thresholds. R16 PR1 is observability-only.
+#
+# Why these aggregations (and not others):
+#   - `__name__` slice is the universal "what blew up" axis — the cheapest
+#     first answer for any cardinality incident.
+#   - `job` slice maps directly to ServiceMonitor / PodMonitor owners — the
+#     fastest "who is shipping this" answer.
+#   - Total gauge gives the budget delta the kill-switch (separate path)
+#     can be evaluated against.
+#
+# Codex thread: 019e4448-e90a-7472-9e8c-d287c0fa7970 (M7a R16 PR1 verdict
+#   REVISE → safety-baseline)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-cardinality-recording-rules
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    # Required by kube-prometheus-stack so the rule is picked up by the
+    # bundled Prometheus instance.
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: platform.cardinality.observability
+      # 60s interval — cheap-enough to keep fresh; the queries themselves
+      # are O(active-series), not O(scrape-rate), so they cost on the order
+      # of seconds at platform scale and run inside Prometheus's own engine.
+      interval: 60s
+      rules:
+        # Per-metric series count. Operators look at this via
+        # `topk(20, cardinality:series:by_metric)` in Grafana Explore.
+        # NOTE on the label_replace: `count by (__name__) (...)` leaves the
+        # original metric name as the `__name__` label on every output
+        # series. The recording rule then overwrites `__name__` with
+        # `cardinality:series:by_metric`, and Prometheus refuses to store
+        # the result with the error `vector contains metrics with the
+        # same labelset after applying rule labels` (every output collapses
+        # to the same label tuple once `__name__` is rewritten). The
+        # `label_replace` copies the original metric name into a fresh
+        # `metric` label first, then we group by `metric` instead — every
+        # output now has a distinct labelset and the rule stores cleanly.
+        - record: cardinality:series:by_metric
+          expr: |
+            count by (metric) (
+              label_replace(
+                {__name__=~".+"},
+                "metric", "$1", "__name__", "(.+)"
+              )
+            )
+
+        # Total active-series gauge. Single number; goes on a dashboard
+        # single-stat panel + the future budget alert builds on this.
+        - record: cardinality:series:total
+          expr: |
+            sum(cardinality:series:by_metric)
+
+        # Per-scrape-job series count. Direct map to ServiceMonitor /
+        # PodMonitor owners so cardinality blame is attributable.
+        - record: cardinality:series:by_job
+          expr: |
+            count by (job) ({__name__=~".+"})

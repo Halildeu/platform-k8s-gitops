@@ -47,7 +47,16 @@ STATUS_NEEDSVERIFY_NAME="Needs Verify"
 KIND_FIELD="PVTSSF_lAHOCx7tY84BIN2dzhTGxFk"
 KIND_ISSUE="22b29779"
 KIND_RISK="e3a49d4e"
-CLAIM_TTL_HOURS="2"
+# 2026-05-20 — Guardrail PR-8 (Codex 019e444d must-fix #1 absorb): env
+# override `CLAIM_TTL_HOURS=N bash scripts/board-sync.sh claim …` previously
+# was overwritten by the hardcoded `="2"`. Default 2 stays for back-compat
+# but the env value, if set, is honored. Numeric guard prevents silent
+# claim_expiry_iso() math failure on bad input.
+CLAIM_TTL_HOURS="${CLAIM_TTL_HOURS:-2}"
+if ! [[ "$CLAIM_TTL_HOURS" =~ ^[0-9]+$ ]]; then
+  echo "ERR: CLAIM_TTL_HOURS='$CLAIM_TTL_HOURS' must be a positive integer" >&2
+  exit 2
+fi
 
 DRY_RUN=0
 FORCE_STALE=0

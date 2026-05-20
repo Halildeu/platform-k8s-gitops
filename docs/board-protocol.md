@@ -215,6 +215,38 @@ Claim kimliği **issue assignee değildir** (tüm oturumlar aynı GitHub kullan�
 kazananı** hesaplar. Stale-reaper mantığı `board-sync.sh` içindedir (her agent
 başlangıçta çalıştırır) — ayrı scheduled job iterasyon-2'ye ertelendi.
 
+### 8.1 Live-mutation guard (ADR-0023 Guardrail PR-8)
+
+**Tetik**: P0-c gibi uzun-koşan live mutation işlerinde claim lease (default
+`CLAIM_TTL_HOURS=2`) sessizce expire edip live mutation devam edebiliyor →
+audit'te "claim unclaimed" gözüküyor. Codex thread `019e444d` Opsiyon A
+absorb (fail-closed guard).
+
+**Kullanım**: live-mutation script/runbook entrypoint'inde:
+
+```bash
+bash scripts/board/require-claim.sh <issue> \
+  || { echo "Claim invalid — aborting mutation"; exit 1; }
+```
+
+`require-claim.sh` `$BOARD_SESSION_ID` ile issue body `<!-- agent-state:v1 -->`
+bloğunu karşılaştırır: `claim_session`, `claim_worktree`, `claim_branch`,
+`expires_at > now` (opsiyonel `--grace-minutes N` toleransı). Tüm kontroller
+geçmezse exit 1 + tek-satır unblock önerisi (heartbeat / reclaim /
+`CLAIM_TTL_HOURS=N` override).
+
+**Uzun P0 için TTL override**: 2 saat genelde yetersiz. Hizmet-bazlı tipik
+süreyi tahmin et + payı ile ayarla:
+```bash
+CLAIM_TTL_HOURS=6 bash scripts/board-sync.sh claim <issue>
+```
+
+**Kapsam dışı** (bilerek, Codex Opsiyon A focal):
+- Worktree-level mkdir lock — aynı worktree'de paralel `git checkout/rebase`
+  engelleme. Ayrı follow-up (operatör ergonomisi + local data-loss).
+- Per-session worktree convention (her session kendi `git worktree add`).
+  Önerilir ama bu PR'a sokulmadı.
+
 ---
 
 ## 9. Eligible-work filtresi
