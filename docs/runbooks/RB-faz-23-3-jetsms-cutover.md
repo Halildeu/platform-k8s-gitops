@@ -178,3 +178,158 @@ warm rollback penceresi geçerli.
 - platform-k8s-gitops PR #831 (PR-0 docs) + bu PR (PR-4 config prep)
 - Codex thread `019e3f82` (plan), `019e3ff7` (PR-3 review), `019e4022` (PR-4 plan)
 - `docs/runbooks/RB-faz-23-4-dlr-smoke-test.md` — NetGSM DLR webhook smoke
+
+---
+
+## Prod Cutover Addendum — M4 A.2 + A.3 (2026-05-20, PR #911)
+
+> Codex `019e4514` iter-3 P1 absorb (2026-05-20): prod cutover'un test
+> overlay'inden farklı operasyonel adımları net olarak ayırın. Test
+> runbook'u yukarıda; aşağıdaki bölüm sadece PROD cutover için.
+
+### Pre-conditions (apply blocker — agent + operator paralel)
+
+| # | Kontrol | Komut | Beklenen |
+|---|---|---|---|
+| 1 | Prod Vault `sms_jetsms_*` 3 key non-empty | `vault kv get -format=json kv/platform/notification-orchestrator \| jq '.data.data \| {u:(.sms_jetsms_username \| length),p:(.sms_jetsms_password \| length),o:(.sms_jetsms_originator \| length)}'` | u/p/o > 0 (length-only, no plaintext) |
+| 2 | Prod ESO `Ready=True` | `kubectl --context k3d-prod -n platform-prod get externalsecret notification-orchestrator-secrets -o json \| jq '.status.conditions[] \| select(.type=="Ready") \| .status'` | `"True"` |
+| 3 | Backend secret render OK | `kubectl --context k3d-prod -n platform-prod get secret notification-orchestrator-secrets -o json \| jq -r '.data \| keys[]' \| grep sms_jetsms` | 3 anahtar listede |
+| 4 | Pod imageID (pre-cutover) | `kubectl --context k3d-prod -n platform-prod get pod -l app.kubernetes.io/name=notification-orchestrator -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'` | sha-70491543 (eski; cutover öncesi) |
+
+### Apply (prod overlay merge sonrası)
+
+```bash
+# 1. Git pull (PR #911 merged sonrası)
+ssh halil@staging-sw "cd /home/halil/platform-k8s-gitops && git pull --ff-only"
+
+# 2. Apply prod overlay
+ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod apply -k /home/halil/platform-k8s-gitops/kustomize/overlays/prod"
+
+# 3. Rollout restart (annotation bump yeterli ama explicit garantili)
+ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod rollout restart deploy/notification-orchestrator"
+
+# 4. Rollout status
+ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod rollout status deploy/notification-orchestrator --timeout=180s"
+```
+
+### Post-apply verify (acceptance gate)
+
+| # | Kontrol | Komut | Beklenen |
+|---|---|---|---|
+| 1 | Pod imageID match | `kubectl --context k3d-prod -n platform-prod get pod -l app.kubernetes.io/name=notification-orchestrator -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'` | `sha256:30b0bf658dcd879c531451352c4e37680551fe14ab667a255eea36adbb281a5b` |
+| 2 | Rendered env JetSMS | `kubectl --context k3d-prod -n platform-prod exec deploy/notification-orchestrator -- env \| grep -E '^NOTIFY_ADAPTERS_SMS_(PRIMARY\|JETSMS)' \| sort` | 8 key set + PRIMARY=jetsms + OTP_TOPIC_KEYS="" (BLANK R24) |
+| 3 | NetworkPolicy egress mevcut | `kubectl --context k3d-prod -n platform-prod get networkpolicy allow-notification-orchestrator-egress-mail-providers -o jsonpath='{.spec.podSelector.matchLabels}'` | triple-label selector |
+| 4 | Pod log SmsAdapter primary | `kubectl --context k3d-prod -n platform-prod logs deploy/notification-orchestrator --tail=200 \| grep "SmsAdapter activated"` | `primary=jetsms` |
+| 5 | Pod log DLR worker | `kubectl --context k3d-prod -n platform-prod logs deploy/notification-orchestrator --tail=200 \| grep "JetSmsDlrPollingWorker activated"` | aktif |
+
+### Smoke (A.4 + A.5 — operator + agent paralel)
+
+**A.4 SMS intent submit (prod canary persona)**:
+
+```bash
+# Persona: prod-smoke-tester user JWT (kullanıcı kararı: prod persona varsa kullan; yoksa create)
+# Phone: kullanıcı test numarası (+905551815564 önceki test-overlay'de proven)
+TOKEN="<prod smoke-tester JWT>"
+INTENT_ID="prod-cutover-canary-$(date +%s)"
+
+curl -sS -X POST https://ai.acik.com/api/v1/notify/intents \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"intentId\": \"$INTENT_ID\",
+    \"idempotencyKey\": \"$INTENT_ID\",
+    \"orgId\": \"default\",
+    \"topicKey\": \"system.canary.smoke\",
+    \"severity\": \"info\",
+    \"dataClassification\": \"system\",
+    \"recipients\": [{\"type\":\"external\",\"phone\":\"+905551815564\"}],
+    \"template\": {\"templateId\":\"sms-multipart-test\",\"version\":1,\"locale\":\"tr-TR\"},
+    \"channels\": [\"sms\"],
+    \"payload\": {}
+  }" | jq .
+
+# Beklenen: HTTP 202, intentId same, status=ACCEPTED
+```
+
+**A.5 DLR terminal state evidence**:
+
+```bash
+# Cluster log:
+kubectl --context k3d-prod -n platform-prod logs deploy/notification-orchestrator --tail=200 \
+  | grep -E "jetsms SOAP ACCEPTED|jetsms channel resolved|dlr jetsms UPDATED"
+
+# Beklenen log lines:
+#   jetsms channel resolved: default channel (no allowlist match; OTP blank) → VF
+#   jetsms SOAP ACCEPTED (awaits DLR poll): msg_id=jetsms-<id> segments=N channel=VF
+#   dlr jetsms UPDATED: code=1 delivery_id=<id> prior=ACCEPTED new=DELIVERED
+
+# PG delivery row:
+ssh halil@staging-sw "docker exec platform-pg-prod psql -U platform -d notify_db -c \"
+  SELECT intent_id, status, channel, provider, provider_msg_id, delivered_at
+  FROM notify.notification_delivery
+  WHERE intent_id LIKE 'prod-cutover-canary-%'
+  ORDER BY created_at DESC LIMIT 5;\""
+
+# audit_event actual_channel:
+ssh halil@staging-sw "docker exec platform-pg-prod psql -U platform -d notify_db -c \"
+  SELECT event_type, details->>'actual_channel' as actual_channel, details->>'provider_msg_id' as msg_id
+  FROM notify.audit_event
+  WHERE intent_id LIKE 'prod-cutover-canary-%' AND event_type='DELIVERY_ACCEPTED'
+  ORDER BY occurred_at DESC LIMIT 3;\""
+```
+
+### A.6 Rollback (D30 72h warm window)
+
+ConfigMap flip + image digest revert + apply:
+
+```bash
+# Option 1: PR revert (preferred)
+git revert <PR #911 commit>
+git push
+# (CI yeşillenince + Codex AGREE) → merge revert PR → cluster auto-apply
+
+# Option 2: Manual config patch (hızlı emergency)
+ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod patch configmap notification-orchestrator-config \
+  --type=json -p='[{\"op\":\"replace\",\"path\":\"/data/NOTIFY_ADAPTERS_SMS_PRIMARY_PROVIDER\",\"value\":\"netgsm\"}]'"
+
+ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod set image deploy/notification-orchestrator \
+  notification-orchestrator=ghcr.io/halildeu/platform-backend-notification-orchestrator@sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3"
+
+ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod rollout status deploy/notification-orchestrator --timeout=180s"
+```
+
+`primary-provider=netgsm` + sha-70491543 → NetGSM-only restore. R1 NetGSM
+contract henüz aktive değilse SmsAdapter "primary netgsm not registered"
+crash; bu durumda rollback geçici NOT mümkün (forward-only).
+
+### R24 mitigation post-merge (provisioning sonrası)
+
+JetSMS Biotekno OTP allowlist provisioning tamamlanınca:
+
+```bash
+# Operator config patch (PR'sız hızlı flip):
+ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod patch configmap notification-orchestrator-config \
+  --type=json -p='[{\"op\":\"replace\",\"path\":\"/data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_TOPIC_KEYS\",\"value\":\"auth.mfa-otp,auth.password-reset-otp\"}]'"
+
+# Annotation bump for rolling restart:
+ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod annotate deploy/notification-orchestrator sms.acik.com/jetsms-otp-allowlist-enable=\"$(date +%s)\""
+
+ssh halil@staging-sw "kubectl --context k3d-prod -n platform-prod rollout restart deploy/notification-orchestrator"
+
+# VFO smoke (kısa OTP topic):
+# (test cluster A senaryo pattern paralel)
+```
+
+### Acceptance (prod M4 A.2 + A.3 closure)
+
+- [ ] Prod Vault 3 JetSMS key non-empty (length-only proof)
+- [ ] Prod ESO `Ready=True`
+- [ ] Pod imageID = sha256:30b0bf658dcd...
+- [ ] Pod env 8 JETSMS key set (PRIMARY=jetsms, OTP_TOPIC_KEYS="")
+- [ ] NetworkPolicy `allow-notification-orchestrator-egress-mail-providers` exists
+- [ ] Pod log SmsAdapter primary=jetsms + DlrPollingWorker activated
+- [ ] A.4 prod canary SMS intent: ACCEPTED + provider=jetsms + msg_id
+- [ ] A.5 DLR terminal state: DELIVERED
+- [ ] A.5 audit_event DELIVERY_ACCEPTED.actual_channel=VF
+- [ ] A.6 rollback plan documented (bu addendum)
+- [ ] R24 follow-up: Biotekno OTP allowlist provisioning (ops + provider coordination)
