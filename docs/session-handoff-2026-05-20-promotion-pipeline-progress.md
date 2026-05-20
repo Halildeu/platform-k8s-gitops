@@ -99,5 +99,64 @@ ssh halil@staging-sw 'kubectl --context k3d-prod -n argocd get application platf
 cd /Users/halilkocoglu/Documents/platform-k8s-gitops
 cat docs/session-handoff-2026-05-20-promotion-pipeline-progress.md   # bu doküman
 bash scripts/board-sync.sh list                                       # board claim durumu
-# Öneri: PR-8 (board-claim hardening) önce → sonra PR-4 → PR-6 → operator cluster-add → PR-3 → PR-7
+# Geçerli sıra (PR-8 sonrası — bkz. aşağıdaki "Update" notu):
+#   PR-4 → PR-6 → operator cluster-add → PR-3 → PR-7
+```
+
+---
+
+## Update 2026-05-20 — PR-8 Merged After This Doc (follow-up handoff delta)
+
+Bu handoff doc'u `da9128a` ile merge edildiğinde Guardrail PR-8 hâlâ açıktı. Aynı session içinde **PR-8 da merge edildi**; doc'un §2 (İddia) tablosunda görünmüyor — bu bölüm onu adresliyor.
+
+### PR-8 — MERGED
+
+| PR | Başlık | Merge commit |
+|---|---|---|
+| #883 | feat(board): Guardrail PR-8 — live-mutation require-claim guard (ADR-0023) | `ac5a3b2` |
+
+Detay:
+
+- **#883** — `scripts/board/require-claim.sh` YENİ (~180 satır, +x): fail-closed live-mutation guard; `BOARD_SESSION_ID` ↔ body `claim_session` + `claim_worktree`/`claim_branch` identity match + `expires_at > now`. Empty identity fields **FAIL** (silently skipped değil). Distinct unblock advice: `LEASE_EXPIRED` flag — expired ise "re-claim" (heartbeat refuses), valid-lease mismatch ise "switch to correct worktree/branch". Exit 0/1/2.
+- `scripts/board-sync.sh` L50 fix: `CLAIM_TTL_HOURS="${CLAIM_TTL_HOURS:-2}"` + `^[0-9]+$` numeric guard. Önceki hardcoded `=2` env override'ı yutuyordu; `CLAIM_TTL_HOURS=6 board-sync.sh claim ...` artık honored (uzun P0 işleri için).
+- `docs/board-protocol.md` §8.1 sub-section: trigger (lease silent expire pattern), kullanım örneği, `CLAIM_TTL_HOURS=6` override notu, scope-out (worktree mkdir lock + per-session worktree convention deferred to PR-8 follow-up Opsiyon B/C).
+- Codex `019e44a4` 1 tur REVISE (3 finding: TTL env honor, empty identity fail-closed, expired-vs-mismatch distinct advice) → AGREE.
+- Bu sırada paralel session worktree branch'imi 2 kez switch'ledi; bu pattern PR-8'in adreslediği problemin **canlı kanıtı** (PR-8 öncesi sürtünme).
+
+### Geçerli Kalan Sıra (effective remaining sequence)
+
+PR-8 completed olduğu için önerilen sıra:
+
+| # | İş | Engelleyen | Effort |
+|---|---|---|---|
+| 1 | **PR-4** `check_env_drift.sh` — test+prod overlay/live drift gate | bağımsız | M |
+| 2 | **PR-6** image-dışı artifact ledger (`runtime-artifacts/openfga-model/<id>.json`) | bağımsız | M-L |
+| 3 | **Operator cluster-add** `argocd cluster add k3d-test --name test-cluster --upsert --yes` (RB-argocd-register-test-cluster.md Step 2) | — | XS |
+| 4 | **PR-3** test deploy workflow'ları → GitOps PR (no `kubectl set image`) | operator cluster-add (#3) | L |
+| 5 | **PR-7** `deploy-prod-gitops.yml` artifact-dependency preflight | PR-6 (#2) | M |
+
+### TaskList sync notu
+
+Bu session başında 23 task'tan 7'si pending'di; bu session +5 completed. **Şu anki pending durum**: #18 (PR-3), #19 (PR-4), #21 (PR-6), #22 (PR-7). PR-8 (#23) ve PR-5 (#20) completed olarak işaretli — TaskList tutarlı.
+
+### Paralel session içeriği (referans)
+
+Bu repo'da aynı gün başka session **multi-initiative closure wave** yaptı (8 PR merge, doc: `docs/session-handoff-2026-05-20-multi-initiative-closure.md`). İçerik bu promotion-pipeline initiative'inden bağımsız (HR Compensation polish + #847 OpenFGA prod migration formal kayıt + #842 PR-A2 cross-ai-audit hardening + M365 v2 verify + M5/M6a acceptance). Cross-reference: P0-c (#847 OpenFGA prod migration) bu session'da `paralel session tarafından tamamlanmış` olarak referans aldığım — kanıtı multi-initiative doc'unda detaylı.
+
+### Codex thread referansları (PR-8 dahil)
+
+- `019e40e4` (handoff doc #846)
+- `019e42c1` (P0-e closure)
+- `019e42c4` (PR-2 #866 implementation)
+- `019e443d` (PR-5 #876 implementation)
+- `019e44a4` (PR-8 #883 implementation)
+
+### Yeni session İlk Komutu (güncel)
+
+```bash
+cd /Users/halilkocoglu/Documents/platform-k8s-gitops
+git pull --rebase origin main
+cat docs/session-handoff-2026-05-20-promotion-pipeline-progress.md   # bu doc + bu Update bölümü
+bash scripts/board-sync.sh list                                       # board claim durumu
+# İlk iş: PR-4 (check_env_drift.sh) — bağımsız + lokalde başlanabilir.
 ```
