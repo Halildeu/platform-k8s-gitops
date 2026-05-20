@@ -27,13 +27,26 @@ spec:
     repoURL: https://github.com/Halildeu/platform-k8s-gitops.git
     targetRevision: main
     path: kustomize/base/metrics-server
+  # 2026-05-19 (Codex thread `019e42c1` Session 42 B2 fix + ADR-0023 Guardrail
+  # PR-2 + Codex `019e40e4` pattern uyum): destination ARTIK `name: test-cluster`
+  # external cluster registration ile. Önceki `server: https://kubernetes.default.svc`
+  # in-cluster (prod hub) destination YANLIŞTI — prod cluster'da metrics-server
+  # resource'larını selfHeal:true ile sürekli reconcile ediyordu ve
+  # `metrics-server-test:...` tracking-id basıyordu; bu da `metrics-server-prod`
+  # app'i için 9-resource OutOfSync (cosmetic) anlamına geliyordu. Tracked by #858.
+  #
+  # Pattern (platform-test.yaml ile aynı):
+  # - `destination.name: test-cluster` external cluster ArgoCD secret ile bağlanır
+  # - `argocd cluster add k3d-test` öncesi Application Unknown/Error kalır (beklenen)
+  # - Operator action: docs/operations/RUNBOOKS/RB-argocd-register-test-cluster.md
+  # - Cluster register sonrası selfHeal:true ile test cluster otomatik reconcile başlar
   destination:
-    server: https://kubernetes.default.svc
+    name: test-cluster
     namespace: kube-system
   syncPolicy:
     automated:
       prune: false       # kube-system add-on silinme risk; manual prune
-      selfHeal: true     # test cluster dev ergonomics
+      selfHeal: true     # test cluster register sonrası dev ergonomics
     syncOptions:
       - CreateNamespace=false   # kube-system zaten var
       - ServerSideApply=true
