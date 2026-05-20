@@ -25,10 +25,6 @@ resources:
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster (network teşhisi sonrası — k3d cluster → 10.9.193.0/24 routing fail)
   - endpoints-workcube-mssql.yaml    # 172.21.0.7 (workcube-mssql-proxy-prod, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.21.0.7/32:11433
-  # Faz 23.3 prod cutover M4 A.3 — notification-orchestrator egress 587/443
-  # SMTP + JetSMS SOAP + Graph (Codex 019e4514 test cluster LIVE 2026-05-20).
-  # Test overlay pattern paralel (kustomize/overlays/test/netpol-notification-egress-mail-providers.yaml).
-  - netpol-notification-egress-mail-providers.yaml
   # PERF-INIT-V2 PR-B5b3e prod promote (Codex thread `019e24ea` revised
   # design): cluster-side federation/cache smoke CronJob promoted from
   # test cluster after observed stability — same curl-only script
@@ -211,22 +207,7 @@ images:
   #     dispatch flip (R1 NetGSM contract activation 2026-05-30).
   - name: ghcr.io/halildeu/platform-backend-notification-orchestrator
     newName: ghcr.io/halildeu/platform-backend-notification-orchestrator
-    # 2026-05-20 update (Faz 23.3 prod cutover — M4 A.2): Bump from
-    # sha-70491543 (Faz 23.6 strict baseline) to sha-6ed593e. Carries
-    # cumulative delta since 70491543:
-    #   - Faz 23.3 SMS multi-provider (PR-1 → PR-5): SmsProvider/SmsAdapter
-    #     + JetSmsProvider/NetGsmProvider + DLR polling + failover matrix
-    #   - PR-A1.1 → PR-A1.2: charset/length capability + segment metadata audit
-    #   - PR-A2.0: DLR multipart aggregate hardening
-    #   - PR-A3.0: SendSMSSingle + channel param
-    #   - PR-A3.1.0 → PR-A3.1.1: SmsSendContext + runtime resolveChannel +
-    #     actual_channel audit (Codex P2+P3 absorb)
-    # Plus Faz 23.X delta: T1.6 abuse guards, M6a inbox history,
-    # M3 T1.3 drift fix, T1.1.9 preference IT, AbuseGuard IT.
-    # Build evidence: gh run view 26174852041 -R Halildeu/platform-backend
-    # success 2026-05-20T16:26Z; digest sha256:30b0bf658dcd...
-    # Test cluster acceptance: 2026-05-20 LIVE (Codex 019e4514 11 iter).
-    digest: sha256:30b0bf658dcd879c531451352c4e37680551fe14ab667a255eea36adbb281a5b
+    digest: sha256:70491543fdc3341fbf7685773efec74a6ca2ca473c90e38f89a5247e3568b1c3
 
 # Faz 23.2 PR-D.3 — notification-orchestrator prod IMAGE PIN DEFERRED.
 # D29 evidence gate (Codex P0 Sprint A Item 3) requires:
@@ -713,49 +694,6 @@ patches:
       - op: add
         path: /data/NOTIFY_AUDIT_RETENTION_DRY_RUN
         value: "false"
-      # Faz 23.3 SMS prod cutover M4 A.2 (Codex 019e4514 PR-A1 → PR-A3.2 chain
-      # test cluster LIVE 2026-05-20). Tüm strict mode env'leri test
-      # cluster'da PR #903/#905/#908/#910 zinciri ile sustained doğrulandı.
-      #
-      # JetSMS primary activation (R6: Biotekno mikrolink2 contract LIVE):
-      - op: add
-        path: /data/NOTIFY_ADAPTERS_SMS_PRIMARY_PROVIDER
-        value: "jetsms"
-      # Faz 23.3.2 multipart operational (test cluster LIVE 2026-05-20
-      # +905551815564 multipart SMS DELIVERED kanıt):
-      - op: add
-        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_MULTIPART_ENABLED
-        value: "true"
-      - op: add
-        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_ON_LENGTH_PROBLEM
-        value: "SendAllPackage"
-      # Faz 23.3.2 PR-A3.2 SOAP single + OTP channel routing (test cluster
-      # LIVE 2026-05-20 sha-6ed593e, Codex P2+P3 absorb):
-      - op: add
-        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_SOAP_OPERATION
-        value: "sendSMSSingle"
-      - op: add
-        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL
-        value: "VF"
-      - op: add
-        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_ALLOWED
-        value: "VF,VFO"
-      # R24 mitigation (Codex iter-3 P1 absorb 2026-05-20): JetSMS Biotekno
-      # VFO sender ID OTP allowlist provisioning gap (ErrorCode=04 reject)
-      # → OTP allowlist BLANK initial prod cutover; provisioning sonrası
-      # operator runtime config patch ile open eder:
-      #   `kubectl patch configmap notification-orchestrator-config \
-      #      --type=json \
-      #      -p='[{"op":"replace","path":"/data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_TOPIC_KEYS","value":"auth.mfa-otp,auth.password-reset-otp"}]' \
-      #      + rollout restart`
-      # Routing code LIVE (test cluster log proven); sadece operator config flip
-      # ile VFO routing automatic devreye girer.
-      - op: add
-        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_TOPIC_KEYS
-        value: ""
-      - op: add
-        path: /data/NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_MAX_LENGTH
-        value: "160"
       # P1.2 M3 next gate (Faz 23.2.A T1.1.8 P0.4 prod activation,
       # Codex 019e1307 iter-1+iter-3 RED absorb 2026-05-10):
       # Unsubscribe email-link base URL prod-host. ProductionConfigValidator
@@ -927,12 +865,6 @@ patches:
           # AuditPartitionRetentionService bean gets instantiated under
           # the new NOTIFY_AUDIT_RETENTION_ENABLED=true config.
           compliance.acik.com/audit-retention-cycle: "pr-c-2-flip-2026-05-09"
-          # Faz 23.3 prod cutover M4 (Codex 019e4514 test cluster LIVE
-          # 2026-05-20). JetSMS primary activation + SOAP single + OTP
-          # routing config bump → annotation bump forces rolling restart
-          # so ConfigMap envFrom changes (PRIMARY_PROVIDER, MULTIPART, etc.)
-          # take effect on the new pod.
-          sms.acik.com/jetsms-cutover: "m4-prod-2026-05-20-sha-6ed593e"
 
   # Ingress host + TLS host: ai.acik.com (D18)
   - target:
