@@ -1,0 +1,190 @@
+# 0024 — Notification Mail Delivery: Defer Microsoft Graph Adapter, Preserve SMTP Path
+
+> **Status**: Accepted
+> **Tarih**: 2026-05-20
+> **Karar otoritesi**: Codex thread `019e44b1` (defer contract alignment review — cross-AI peer review)
+> **Antecedent reviews**: `019e42d1` (PR #872 staged-only ESO 3-key + DNS runbook AGREE_B), `019e4445` (#862 wrapper bridge deprecation + bridge truth-cleanup REVISE)
+> **Öncüller**: [ADR-0013 — Notification orchestration](./0013-notification-orchestration.md) D40 (TR SMS) + D44 (channel coverage tier) + D45 (5 yeni kategori — Deliverability axis), [docs/runbooks/RB-faz-23-dns-records-acik-com.md](../runbooks/RB-faz-23-dns-records-acik-com.md), [docs/runbooks/RB-prod-alertmanager-activation.md](../runbooks/RB-prod-alertmanager-activation.md) §2 owner-artifact pattern
+> **Implementation State**: activation **deferred**; Entra app + admin consent **preserved**; **no** client secret, **no** ApplicationAccessPolicy, **no** Vault secret values, **no** ConfigMap flag flip, **no** digest bump
+> **Yürütür**: Faz 23.x notification platform — mail delivery future-proofing track
+> **Board tracker**: [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892) (P3 Backlog, future-only; reactivation trigger conditions documented)
+
+---
+
+## Context
+
+`notification-orchestrator` servisinin mail delivery'si bugün **SMTP Office 365 path**'i üzerinden çalışır:
+
+- Vault: `kv/platform/notification-orchestrator.smtp_username` (`ai@acik.com`) + `smtp_password` (Microsoft 365 App Password, 16-char generated; mevcut canlı kullanım sırasında 10-char observed — App Password format varyasyonu, Microsoft tenant policy)
+- Backend: Spring Boot `JavaMailSender` autoconfig + `SmtpAdapter` (`@ConditionalOnProperty(notify.adapters.graph.enabled, havingValue=false, matchIfMissing=true)`)
+- Smarthost: `smtp.office365.com:587` (STARTTLS standard)
+- Multi-provider compatibility (env binding aynı kalır; vendor değişiminde sadece `SPRING_MAIL_HOST` + credentials değişir): Office 365 default, SendGrid, AWS SES, Postmark, Mailgun, internal MTA
+- Status: 🟢 LIVE — prod cluster `notification-orchestrator` pod aktif kullanım
+
+Backend `GraphMailAdapter` (Microsoft Graph REST API via port 443) **binary ready**:
+
+- `platform-backend` PR #153 MERGED (sha-585b64f); `GraphTokenService` + `GraphMailAdapter` + `MailAdapter` interface ile alternative path
+- Activation flag: `notify.adapters.graph.enabled=true` mutual exclusion (`SmtpAdapter` `havingValue=false` ConditionalOnProperty ile devre dışı; `GraphMailAdapter` kendi `havingValue=true` ile devreye girer)
+- OAuth2 client credentials flow: tenant_id + client_id + client_secret zorunlu; `GraphTokenService` constructor fail eder eksik credential ile
+
+Gitops staged-only kayıt (Session 42):
+
+- PR #872 (Codex `019e42d1` AGREE_B): `kustomize/overlays/{test,prod}/eso/notify/externalsecret-notify.yaml` — Graph 3-key additive (`NOTIFY_ADAPTERS_GRAPH_TENANT_ID`/`CLIENT_ID`/`CLIENT_SECRET` ← `kv/platform/notification-orchestrator.graph_*`)
+- PR #872: `docs/runbooks/RB-faz-23-dns-records-acik-com.md` (DNS SPF/DMARC/DKIM operator runbook; drift-free, mail authentication baseline)
+- **NO** activation flag in `kustomize/overlays/{test,prod}/kustomization.yaml` (defer)
+- **NO** notification-orchestrator digest bump (`sha-585b64f` Graph-binary-inclusive sha prod'a promote edilmedi)
+- **NO** sender-mailbox / save-to-sent-items Graph config
+
+Entra Microsoft 365 tenant setup (Session 42):
+
+- App Registration `acik-mail-graph-api` yaratıldı 2026-05-20 (`Açık Holding` tenant single-tenant, owner halil.kocoglu@serban.com.tr)
+- `client_id`: `6e3e5b4b-b819-41b0-a237-8774c6418e32`
+- `tenant_id`: `6f49871e-cb5b-4b2f-b986-5b68f16365b9`
+- API permissions: Microsoft Graph **Mail.Send (Application — Send mail as any user)** + User.Read (Delegated — bootstrap default)
+- **Admin consent verildi** (tenant-wide; granted by `ai.enes@acik.com` global admin)
+- Client secret **yaratılmadı** (defer karar; Session 42 kullanıcı kararı: "riski yüksek, sonra yapalım")
+- ApplicationAccessPolicy **yapılmadı** (`ai@acik.com` mailbox daraltma; Microsoft Graph PowerShell SDK adımı)
+
+Aktif risk değerlendirmesi (Session 42, post-defer):
+
+- Mail.Send Application permission tenant-wide grant edildi **AMA** client_secret olmadan OAuth2 client_credentials flow token alamaz → app permission'ı kullanamaz
+- `client_id` + `tenant_id` tek başına credential **değil**; UUID public identifier'lar
+- App reg "yapı kurulu, anahtar üretilmemiş" pasif durumda
+- Aktif credential ground-zero; Vault `graph_*` 3 key boş (test + prod); ConfigMap flag false default; pod runtime SmtpAdapter active
+
+### Tetikleyici trend: Microsoft App Password deprecation horizon
+
+Microsoft 365 SMTP AUTH legacy authentication kademeli olarak kullanımdan kaldırılıyor:
+
+- **2022 başı**: Yeni tenant'lar için SMTP AUTH default disabled (`Set-TransportConfig -SmtpClientAuthenticationDisabled $true`)
+- **2024-2025**: Mevcut tenant'lar için phased disable (Microsoft duyuruları + tenant-level override pencereleri)
+- **App Passwords**: Microsoft 2024 Q3+ Conditional Access / Identity Protection ile kademeli olarak deprecated; Modern Authentication (OAuth2) önerilir
+- **Outbound port 587 ISP blocks**: Bazı ISP'ler (TR'de Türk Telekom, Türksat dahil) outbound 587 SMTP'yi spam-control için block edebilir (operasyonel haberler periyodik)
+
+Bu trendler `SmtpAdapter` path'ini riske eder; **Graph adapter alternative path mutual exclusion ile hazırdır** ama activation **trigger-driven** olarak alınır.
+
+---
+
+## Decision
+
+### D1 — SMTP Office 365 path canonical olarak korunur
+
+`notify.adapters.graph.enabled=false` default (`matchIfMissing=true`). `SmtpAdapter` `JavaMailSender` ile `ai@acik.com` Office 365 SMTP relay üzerinden mail gönderir. Mevcut Vault credentials (`smtp_username` + `smtp_password`) `notification-orchestrator` ESO ExternalSecret üzerinden mount edilir.
+
+### D2 — Graph adapter backend binary capability olarak korunur
+
+`platform-backend` PR #153 (`GraphMailAdapter` + `GraphTokenService`) **deprecate edilmez veya kaldırılmaz**. Backend binary `sha-585b64f` ve sonrası Graph-binary-inclusive (`MailAdapter` interface ile mutual exclusion). Test cluster digest promotion'unda Graph code path build artifact'inin parçası olarak gelir; ConditionalOnProperty `false` default ile inactive.
+
+### D3 — Graph activation TRIGGER-driven, planned değil
+
+Activation chain yalnız aşağıdaki tetik koşullarından **en az biri** geldiğinde çalıştırılır:
+
+1. **Microsoft App Password deprecation tenant'ı etkiler** — `ai@acik.com` mailbox App Password ile SMTP AUTH legacy authentication policy break sonucu mail gönderemez
+2. **SMTP AUTH tenant policy break** — Microsoft 365 admin (tenant veya organization-level) SMTP AUTH'u disable eder (`Set-TransportConfig -SmtpClientAuthenticationDisabled $true`)
+3. **Outbound port 587 ISP/firewall block recurrence** — staging-sw veya cluster outbound 587 block ile karşılaşır + alternative SMTP relay endpoint operasyonel değil
+4. **Ops/security tactical decision** — risk register / audit / compliance gereksinimi OAuth2 modern auth'a geçişi zorunlu kılar
+5. **Provider migration tactical decision** — Office 365 → başka tenant veya başka mail provider geçişi sırasında Graph path daha kolay (App Password rotation overhead azaltma)
+
+### D4 — Entra App Registration + admin consent **asset olarak korunur**
+
+`acik-mail-graph-api` Entra app reg + Mail.Send Application permission + tenant-wide admin consent yaratıldı ve **silinmez**. Sebep:
+
+- En ağır setup (App Reg yaratma + permission + global admin consent) tamamlandı; reactivation chain 5 adıma indirgendi
+- Audit trail temizliği: Entra'da orphan asset değil — bu ADR + RB-runbook + #892 board issue ile auditable kayıtlı
+- Reactivation reaction time kritik durumda (örn. App Password tenant break) saatlere indirilir; aksi halde yeni app reg + global admin consent günleri alabilir
+
+### D5 — Reactivation chain ATOMIC; parçalı aktivasyon **yapılmaz**
+
+Defer state'ten activation'a geçiş yalnız aşağıdaki **5 adım birlikte** owner-approved window'da çalıştırılır. Parçalı aktivasyon (örn. sadece Vault seed + flag flip; ApplicationAccessPolicy skip) **YASAK**:
+
+1. **Entra**: Yeni istemci gizli dizisi (client_secret) yarat — Description `notify-orchestrator-vault-seed`, Expires `730 gün` (24 ay), value `📋 kopyala` (1 kez gösterilir)
+2. **PowerShell ApplicationAccessPolicy** (`Microsoft Graph PowerShell SDK` + `ExchangeOnlineManagement`): mail-enabled security group oluştur (`Mail-Graph-Allowed-Mailboxes`) + `ai@acik.com`'ı gruba ekle + `New-ApplicationAccessPolicy -AppId <client_id> -PolicyScopeGroupId <group> -AccessRight RestrictAccess`. `Test-ApplicationAccessPolicy` ile `Granted` (`ai@acik.com`) + `Denied` (başka mailbox) ikili kanıt
+3. **Vault seed** (test + prod, 3 keys per cluster): `vault kv patch kv/platform/notification-orchestrator graph_tenant_id=... graph_client_id=...` inline + `graph_client_secret` stdin pipe (hidden prompt, bash history + chat transcript safe)
+4. **Activation PR**: `kustomize/overlays/{test,prod}/kustomization.yaml` ConfigMap `NOTIFY_ADAPTERS_GRAPH_ENABLED=true` flip + (gerekirse) notification-orchestrator digest bump Graph-binary-inclusive sha'ya — test cluster önce, prod cluster A5 PR-B + RAID I6 sequencing sonra
+5. **Smoke send acceptance**: token acquisition success + `POST /users/ai@acik.com/sendMail` Graph REST 202 Accepted + recipient inbox proof (`halil.kocoglu@serban.com.tr`) + sender Sent Items proof + notification-orchestrator pod loglarında `GraphMailAdapter active`, `SmtpAdapter inactive`
+
+### D6 — Mailbox scope daraltma reactivation prereq
+
+ApplicationAccessPolicy (D5 adım 2) zorunlu. App `Mail.Send` permission **tenant-wide grant'tan** sonra `ai@acik.com` mailbox'a **daraltılmalı** (`RestrictAccess`). Aksi halde client_secret çalınırsa kötü actor tenant'taki herhangi bir mailbox'tan mail gönderebilir; ApplicationAccessPolicy bu blast-radius'u **sadece** `ai@acik.com`'a indirir.
+
+---
+
+## Consequences
+
+### Pros
+
+- **Aktif risk sıfır**: Mail.Send permission grant edildi ama client_secret olmadan OAuth2 token alınamaz; permission "yapı kurulu, anahtar yok" pasif durumda
+- **Setup overhead minimum**: En ağır step (Global Admin consent + App Registration) tamamlandı; reactivation 5 adıma indirgendi (~30-60 dk hızlı response)
+- **Microsoft App Password deprecation horizon hazırlığı**: Tetik geldiğinde tenant continuity için ground work zaten yapılmış
+- **Audit trail temizliği**: Entra'da orphan asset değil; bu ADR + RB-runbook + #892 board issue ile tüm karar zinciri kayıtlı
+- **Cross-cutting**: SMTP rollback aniden gerektiğinde Graph reactivation chain hazır; SMTP outage (provider degradation veya port block recurrence) sırasında 5-adım failover
+
+### Cons
+
+- **Single mail path (SMTP)**: Eğer SMTP outage olursa fallback Graph hazır değil; 5 adım reactivation çalıştırılmadan mail kesilebilir. Çözüm: D43 outage fallback bypass pattern (`alertmanager-fallback` direct-fallback receiver SMTP+Slack TRIPLE delivery; bkz. [RB-notification-outage-fallback.md](../runbooks/RB-notification-outage-fallback.md))
+- **Entra asset orphan görünebilir**: Audit clarity için bu ADR + RB + #892 zorunlu; doc drift bu asset'i "ne için var" sorusunda muğlak bırakabilir
+- **Future App Password rotation**: `ai@acik.com` App Password 2025 sonrası rotate gerekebilir (Microsoft policy); rotation operasyonel manuel iş — Graph adapter aktive edilirse client_secret rotation 24 aylık otomatize edilebilir (modern auth)
+- **DKIM/DMARC integration drift**: Graph aktive edildiğinde mail delivery path değişir; DNS records (`docs/runbooks/RB-faz-23-dns-records-acik-com.md` SPF/DMARC/DKIM) re-validate gerekir. Bu reactivation runbook'un kapsamında
+
+### Non-decisions (out of scope)
+
+- Backend `GraphMailAdapter` code review değişimi (PR #153 merged + binary stable)
+- DNS records (SPF/DMARC/DKIM) — ayrı operator action [RB-faz-23-dns-records-acik-com.md](../runbooks/RB-faz-23-dns-records-acik-com.md)
+- Notification-orchestrator digest promotion stratejisi (A5 PR-B + RAID I6 sequencing; ayrı board tracker)
+- Provider migration (Office 365 → SendGrid/AWS SES/internal MTA) — bu ADR'in dışı; vendor-agnostic env binding korunur
+
+---
+
+## Compliance / verify
+
+Bu ADR'a göre **bu repodaki** aşağıdaki kontrat noktaları **iç-tutarlı** olmalı:
+
+| Surface | İçerik | Status |
+|---|---|---|
+| `PLAN.md` D49 (decisions catalog + status table) | D49 — Graph mail adapter strategy: defer, preserve | ✅ Yansıtıldı (PR #?? merge sonrası) |
+| `docs/notify/risk-register.md` R23 | Graph deferral risk + reactivation triggers + mitigation | ✅ Yansıtıldı |
+| `docs/notify/milestones.md` M3/M7 | SMTP canonical confirmed; Graph defer not blocker (M3); Graph scope-out v1 (M7) | ✅ Yansıtıldı |
+| `docs/notify/feature-matrix.md` A1/H14 | A1 Email parenthetical cross-ref; H14 §8 Provider Management Graph activation path deferred | ✅ Yansıtıldı |
+| `docs/state/current-state.md` | Entra state snapshot + Vault graph_* empty + ConfigMap flag false + SmtpAdapter expected/effective | ✅ Yansıtıldı |
+| `docs/runbooks/RB-graph-mail-adapter-activation.md` | DEFERRED ACTIVATION RUNBOOK + 5-step reactivation chain | ✅ Yansıtıldı |
+| `kustomize/overlays/{test,prod}/eso/notify/externalsecret-notify.yaml` | Graph 3-key additive ESO entries + comment block: "Azure AD App Registration + admin consent COMPLETE; secret + policy + Vault pending" | ✅ Comment tweak yansıtıldı |
+| Board issue #892 (P3 Backlog) | Reactivation trigger conditions documented; claim yok future-only | ✅ Mevcut |
+
+---
+
+## References
+
+### Codex peer review chain (Session 42)
+
+- `019e44b1`: Bu ADR + 7-file alignment scope verdict (AGREE_WITH_REVISIONS)
+- `019e42d1`: PR #872 staged-only ESO 3-key + DNS runbook (AGREE_B; #510 superseded)
+- `019e4445`: #862 wrapper bridge deprecation + bridge `gh` CLI doc-truth cleanup (REVISE)
+
+### Cross-references
+
+- Backend: [platform-backend PR #153](https://github.com/Halildeu/platform-backend/pull/153) — `GraphMailAdapter` + `GraphTokenService` + `MailAdapter` interface
+- Gitops: PR #872 (`feat(notify-23-A8): gitops Graph adapter ESO 3-key + DNS runbook — staged-only`)
+- Runbook: [docs/runbooks/RB-graph-mail-adapter-activation.md](../runbooks/RB-graph-mail-adapter-activation.md) — 5-step reactivation
+- Runbook (DNS): [docs/runbooks/RB-faz-23-dns-records-acik-com.md](../runbooks/RB-faz-23-dns-records-acik-com.md) — SPF/DMARC/DKIM
+- Runbook (D43 outage fallback): [docs/runbooks/RB-notification-outage-fallback.md](../runbooks/RB-notification-outage-fallback.md) — owner-artifact pattern reference
+- ADR-0013: [Notification orchestration](./0013-notification-orchestration.md) — D40+D44+D45 mail delivery context
+- Board: [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892) — P3 Backlog future-only tracker
+
+### Predecessor / related ADRs
+
+- `0013-notification-orchestration.md`: D40 (SMS provider), D44 (channel coverage tier — Email kernel), D45 (5 yeni kategori — Deliverability axis)
+- `0023-promotion-pipeline-test-overlay-authoritative.md`: test→prod promotion discipline; digest bump strategy
+
+### External references
+
+- Microsoft Graph API Mail.Send documentation: `https://learn.microsoft.com/en-us/graph/api/user-sendmail`
+- Microsoft Entra ID Application Access Policy: `https://learn.microsoft.com/en-us/graph/auth-limit-mailbox-access`
+- Microsoft 365 SMTP AUTH deprecation announcements: Microsoft Tech Community + roadmap.microsoft.com
+
+---
+
+## Last Update
+
+**2026-05-20 (Session 42 — Codex `019e44b1` defer contract alignment)** — ADR-0024 yaratıldı. Graph mail adapter activation defer kararı + Entra app reg + admin consent asset preservation + reactivation chain (5 adım atomic) + Microsoft App Password deprecation horizon hazırlık.
+
+ADR mode `Accepted`. Trigger geldiğinde reactivation board issue [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892) claim'lenir ve RB-graph-mail-adapter-activation.md takip edilir.
