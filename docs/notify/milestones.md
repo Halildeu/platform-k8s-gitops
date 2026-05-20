@@ -58,6 +58,8 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 
 **Status revision 2026-05-19 (Session 42, Codex `019e4234`)**: T1.4 D43 closure dili gözden geçirildi — test drill SMTP-only kanıt + Slack leg sentinel-only (NXDOMAIN `drill-slack-mock.local`) realitesi "first controlled drill mitigation"u overclaim haline getirmişti. T1.4 `[x]` → `[~]` partial; R9 `🟢` → `🟡` partial. Faz 23.2 M3 kabul sayısı **6/8** (T1.2 R2 + T1.4 D43 partial). External blocker'lar: (a) R2 KVKK legal review (legal), (b) Slack `#alerts-d43-drill` real webhook + prod Vault seed (operator).
 
+**Status revision 2026-05-20 (Session 42, Codex `019e44b1` defer contract alignment)**: M3 mail delivery yüzeyi için ek netlik — **SMTP Office 365 path canonical confirmed** (`ai@acik.com` + App Password Vault'ta + `SmtpAdapter` LIVE); Microsoft Graph mail adapter (backend PR #153 + gitops PR #872 staged) **deferred, M3 blocker DEĞİL**. D49 strategy ([ADR-0024](../adr/0024-graph-mail-adapter-defer.md) + [RB-graph-mail-adapter-activation.md](../runbooks/RB-graph-mail-adapter-activation.md) + [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892) P3 Backlog): Entra `acik-mail-graph-api` + Mail.Send + admin consent **asset olarak korunur**; client_secret + ApplicationAccessPolicy + Vault seed + flag flip reactivation chain trigger geldiğinde 5-adım atomic. M3 acceptance unchanged (still 6/8); R23 yeni risk entry (mitigation: Entra asset preserved + reactivation chain documented; aktif risk sıfır).
+
 **Definition of Done** (must-have #6 + #7 + #8 + #9 + #10 fully closed):
 - [x] T1.1 23.2.A Preference API + critical bypass merged + LIVE — Session 41 acceptance evidence
 - [~] T1.2 23.2.B KVKK erasure + right-to-information merged + LIVE — **subscriber self-service LIVE**; admin erasure source-ready, R2 legal review external pending
@@ -67,7 +69,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 - [x] T1.6 23.2.F Abuse prevention guards merged — Session 41 FULL ACCEPTANCE (R13+R19 mitigated)
 - [~] All Faz 23.2 kabul kriteri 🟡 (7/8 done, 1 external blocker)
 - [~] Charter 23.2 marker 🟢 source-ready + acceptance candidate — final legal closure R2 sonrası
-- [~] Risk register: R2 active (KVKK legal review), R9 🟡 partial (Codex `019e4234` Session 42 audit: test SMTP drill LIVE; Slack leg sentinel-only #853; prod activation source-incomplete → PR #855 staged config + #854 owner-gated), R12 🟢 mitigated, R13 🟢 mitigated, R19 🟢 mitigated
+- [~] Risk register: R2 active (KVKK legal review), R9 🟡 partial (Codex `019e4234` Session 42 audit: test SMTP drill LIVE; Slack leg sentinel-only #853; prod activation source-incomplete → PR #855 staged config + #854 owner-gated), R12 🟢 mitigated, R13 🟢 mitigated, R19 🟢 mitigated, **R23 🟡 active monitored** (Graph mail adapter deferred; SMTP canonical; Entra asset preserved; reactivation chain documented in ADR-0024 + RB-graph-mail-adapter-activation.md + #892)
 
 **Remaining blocker**: R2 (KVKK legal review external) — admin erasure compliance attestation. ETA 2026-05-25.
 **Owner**: legal (R2 closure)
@@ -139,6 +141,9 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 - [ ] All v1 sub-faz kabul kriteri 🟢 (23.6, 23.7, 23.8)
 - [ ] Charter markers all updated
 - [ ] Risk register: R11, R16 closed
+
+**Out of scope (v1 — future-proofing track):**
+- Microsoft Graph mail adapter activation — **defer karar D49 / ADR-0024** (Session 42 2026-05-20, Codex `019e44b1`). SMTP Office 365 path canonical kalır; Graph adapter binary backend ready (PR #153) ve gitops staged (PR #872) ama activation trigger-driven future-only ([RB-graph-mail-adapter-activation.md](../runbooks/RB-graph-mail-adapter-activation.md) + [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892) P3 Backlog). R23 active monitored.
 
 **Blockers**: M5 done + M6a/M6b done (split closure) — M3 + M4 zaten önceki kapı
 **Owner**: dev + ops + gitops

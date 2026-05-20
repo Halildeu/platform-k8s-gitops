@@ -4622,3 +4622,69 @@ Bu dokümanda ve sonraki iletişimde **kullanılmayacak**:
 - **Handoff**: `docs/session-handoff-2026-04-20-k8s-migration-faz-b-c.md` (Session 1-10 kronolojik, append-only, karar kaynağı değil)
 - **Review backlog**: `docs/plan-revision-review-2026-04-20.md` (canonical cleanup backlog)
 - **Codex adversarial reviews**: thread `019daa7f` (adversarial), thread `019daad8` (4-faz plan)
+
+---
+
+## 8. Mail Delivery Path State (Session 42 — 2026-05-20, Codex `019e44b1` defer contract alignment)
+
+> Snapshot — `notification-orchestrator` mail delivery path canlı/desired-state ayrımı.
+
+### 8.1 Live runtime (effective desired-state — pod truth from helm release rev 2 minimal config kabuğu; deploy-time SmtpAdapter activation gerçek SmtpAdapter log evidence ile değil)
+
+| Surface | State | Source |
+|---|---|---|
+| `notification-orchestrator` backend mail adapter | **SmtpAdapter expected/effective desired-state** (`@ConditionalOnProperty(notify.adapters.graph.enabled, havingValue=false, matchIfMissing=true)`; ConfigMap flag `false` default; backend GraphTokenService inactive) | Backend code (PR #153 binary + earlier) + ConfigMap default + ESO behavior |
+| `notification-orchestrator` pod | LIVE prod cluster (Session 39 strict cutover 2026-05-08; SmtpAdapter active path) | `kubectl get pod -l app=notification-orchestrator -n platform-prod` (33d uptime baseline; restart count low) |
+| SMTP relay smarthost | `smtp.office365.com:587` STARTTLS | Vault `kv/platform/notification-orchestrator.smtp_username/password` (ai@acik.com + App Password) → ESO ExternalSecret → Spring `SPRING_MAIL_USERNAME`/`SPRING_MAIL_PASSWORD` env |
+| Microsoft Graph adapter | **DEFERRED** (binary capability korunur; runtime inactive) | ADR-0024 D2 + RB-graph-mail-adapter-activation.md DEFERRED ACTIVATION RUNBOOK banner |
+
+### 8.2 Entra tenant state (asset preserved, Session 42 2026-05-20)
+
+| Component | State |
+|---|---|
+| App Registration `acik-mail-graph-api` | ✅ Yaratıldı 2026-05-20 (owner halil.kocoglu@serban.com.tr, single-tenant `Açık Holding`) |
+| `client_id` | `6e3e5b4b-b819-41b0-a237-8774c6418e32` |
+| `tenant_id` | `6f49871e-cb5b-4b2f-b986-5b68f16365b9` |
+| API Permission: Microsoft Graph **Mail.Send (Application)** | ✅ Added |
+| API Permission: Microsoft Graph User.Read (Delegated) | ✅ Added (bootstrap default) |
+| Admin consent (tenant-wide) | ✅ **Verildi** (granted by `ai.enes@acik.com` global admin 2026-05-20) |
+| Client secret | ❌ **Yaratılmadı (defer karar; Session 42 kullanıcı kararı "riski yüksek, sonra yapalım")** |
+| ApplicationAccessPolicy (mailbox restrict to ai@acik.com) | ❌ Yapılmadı (defer; RB-graph-mail-adapter-activation.md §4 PowerShell) |
+
+### 8.3 Vault state — `kv/platform/notification-orchestrator.graph_*` 3 keys
+
+| Vault path | State (length-only) |
+|---|---|
+| `graph_tenant_id` | **property absent** (Vault'ta key yok; ExternalSecret data[] specifies remoteRef.property but ESO reports SecretSyncedError on missing) |
+| `graph_client_id` | **property absent** |
+| `graph_client_secret` | **property absent** |
+| ExternalSecret `notification-orchestrator-secrets` (prod) | `Ready=False reason=SecretSyncedError msg="could not get secret data from provider"` (3 graph_* keys missing → honest fail-closed; diğer notify keys Ready=True kalır per ESO per-property behavior) |
+| ExternalSecret (test) | `Ready=True` (test overlay manifest henüz Graph 3-key additive yansımamış olabilir; PR #872 source-only kayıtlı, manual apply gerek) |
+
+### 8.4 Gitops desired-state (PR #872 merged 2026-05-19, Codex `019e42d1` AGREE_B staged-only)
+
+| File | Change |
+|---|---|
+| `kustomize/overlays/test/eso/notify/externalsecret-notify.yaml` | +3 Graph keys additive (`NOTIFY_ADAPTERS_GRAPH_TENANT_ID/CLIENT_ID/CLIENT_SECRET` ← `graph_*` remoteRef) |
+| `kustomize/overlays/prod/eso/notify/externalsecret-notify.yaml` | +3 Graph keys additive (prod parity) |
+| `docs/runbooks/RB-faz-23-dns-records-acik-com.md` | NEW (236-line; SPF/DMARC/DKIM operator runbook; drift-free) |
+| `kustomize/overlays/{test,prod}/kustomization.yaml` | **UNTOUCHED** (Codex iter-2 P0 absorb: NO `NOTIFY_ADAPTERS_GRAPH_ENABLED=true` flag flip — pod boot risk on missing credentials) |
+| notification-orchestrator digest bump (Graph-binary-inclusive sha) | **NO** (defer; current digest stable; prod under A5 PR-B + RAID I6 sequencing) |
+
+### 8.5 Aktif risk + reactivation triggers
+
+| Topic | State |
+|---|---|
+| **Aktif risk** | **SIFIR** (client_secret yok → OAuth2 token alınamaz → permission tenant-wide ama "yapı kurulu, anahtar üretilmemiş" pasif) |
+| Reactivation trigger 1 | Microsoft App Password deprecation tenant'ı etkiler (`ai@acik.com` App Password SMTP AUTH fail) |
+| Reactivation trigger 2 | SMTP AUTH tenant policy break (`Set-TransportConfig -SmtpClientAuthenticationDisabled $true`) |
+| Reactivation trigger 3 | Outbound port 587 ISP/firewall block recurrence (staging-sw veya cluster outbound 587 timeout) |
+| Reactivation trigger 4 | Ops/security tactical decision (OAuth2 modern auth audit/compliance requirement) |
+| Reactivation trigger 5 | Provider migration (Office 365 → alternative tenant veya mail provider) |
+| Tracker | Board issue [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892) P3 Backlog claim yok future-only; ADR-0024 + RB-graph-mail-adapter-activation.md 5-adım atomic reactivation chain |
+
+### 8.6 D43 outage fallback compatibility
+
+`alertmanager-fallback` direct-fallback receiver (D43 outage chain) **bağımsız path** — Graph activation veya defer state ile etkileşim YOK. D43 SMTP leg `ai@acik.com` SMTP credentials reuse via Session 42 partial seed (#854 progress); Slack leg owner artifact bekliyor. Bkz. [RB-notification-outage-fallback.md](../runbooks/RB-notification-outage-fallback.md).
+
+---
