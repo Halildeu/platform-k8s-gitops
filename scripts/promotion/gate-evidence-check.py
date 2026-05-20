@@ -206,6 +206,65 @@ def check_evidence(entry: dict, jwt_validates_map: dict[str, bool]) -> tuple[boo
     return True, f"verified at {verified_at} (zanzibar policy: {'GREEN-only' if requires_zanzibar else 'GREEN-or-AMBER'})"
 
 
+# Codex `019e443d` REVISE absorb (Fix 2): lag scope must be prod-enabled +
+# pipeline-owned. third_party (openfga) and prod-deferred (endpoint-admin)
+# services are NOT subject to promotion-lag tracking and would otherwise
+# generate false signals on first ledger appearance.
+_LAG_PIPELINE_REPOS = {"platform-backend", "platform-web"}
+
+
+def prod_pipeline_services() -> dict[str, dict]:
+    """Return {service_name: yaml_entry} for services subject to promotion-
+    lag tracking. Filter rules (all must hold):
+      - environments.prod == "enabled"
+      - third_party is not truthy
+      - repo in _LAG_PIPELINE_REPOS (canonical pipeline-owned)
+
+    Empty dict if services.yaml missing/unparseable/yaml lib absent.
+    """
+    catalog_path = REPO_ROOT / "docs" / "operations" / "services.yaml"
+    if not catalog_path.exists():
+        return {}
+    try:
+        import yaml
+    except ImportError:
+        return {}
+    catalog = yaml.safe_load(catalog_path.read_text()) or {}
+    out: dict[str, dict] = {}
+    for svc in catalog.get("services", []) or []:
+        name = svc.get("name")
+        if not name:
+            continue
+        if svc.get("third_party"):
+            continue
+        envs = svc.get("environments") or {}
+        if envs.get("prod") != "enabled":
+            continue
+        if svc.get("repo") not in _LAG_PIPELINE_REPOS:
+            continue
+        out[name] = svc
+    return out
+
+
+# Codex `019e443d` REVISE absorb (Fix 3, non-blocker): map service → digest
+# from prod render so the lag check uses per-service identity, not a global
+# digest set (digest reuse across services is unlikely but the gate's
+# semantics are service-bound; explicit map removes the false-pass surface).
+_SERVICE_IMAGE_PATTERN = re.compile(
+    r"image:\s*ghcr\.io/halildeu/platform-(?:backend|web)-([a-z0-9-]+)@(sha256:[a-f0-9]{64})"
+)
+
+
+def extract_service_digests_from_render(render: str) -> dict[str, str]:
+    """Parse a kustomize render → {service_name: digest}. Service name is
+    derived from the image ref suffix after the `platform-(backend|web)-`
+    prefix. First occurrence wins on duplicates (multi-container case)."""
+    out: dict[str, str] = {}
+    for name, digest in _SERVICE_IMAGE_PATTERN.findall(render):
+        out.setdefault(name, digest)
+    return out
+
+
 def _parse_iso_utc(ts: str) -> datetime | None:
     """Parse an ISO-8601 timestamp (with Z or offset) → aware datetime, or None."""
     if not ts:
@@ -286,7 +345,8 @@ def check_promotion_lag(lag_days: int) -> int:
         print(f"ERR: cannot render prod overlay: {e}", file=sys.stderr)
         return 2
 
-    prod_digests = extract_digests_from_render(render)
+    # Codex `019e443d` Fix 3: per-service digest identity, not global set.
+    prod_service_digests = extract_service_digests_from_render(render)
 
     jwt_validates_map = load_zanzibar_required_services()
     if not jwt_validates_map:
@@ -297,7 +357,20 @@ def check_promotion_lag(lag_days: int) -> int:
         )
         return 2
 
-    services = sorted(jwt_validates_map.keys())
+    # Codex `019e443d` Fix 2: lag scope is prod-enabled, pipeline-owned,
+    # non-third-party. Zanzibar policy map (jwt_validates_map) stays the
+    # full catalog so check_evidence() applies the correct Zanzibar rule
+    # when filtering verified entries below.
+    pipeline_scope = prod_pipeline_services()
+    if not pipeline_scope:
+        print(
+            "ERR: prod_pipeline_services() empty — services.yaml lacks any "
+            "prod-enabled pipeline-owned service; cannot run lag check",
+            file=sys.stderr,
+        )
+        return 2
+
+    services = sorted(pipeline_scope.keys())
     latest = latest_verified_per_service(jwt_validates_map)
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=lag_days)
@@ -307,8 +380,14 @@ def check_promotion_lag(lag_days: int) -> int:
         f"[INFO] promotion-lag check: lag_days={lag_days}, "
         f"cutoff={cutoff.isoformat()}"
     )
-    print(f"[INFO] services tracked in services.yaml: {len(services)}")
-    print(f"[INFO] prod overlay pipeline digests: {len(prod_digests)}")
+    print(
+        f"[INFO] services in lag scope (prod-enabled, pipeline-owned, "
+        f"non-third-party): {len(services)}"
+    )
+    print(
+        f"[INFO] prod overlay pipeline service-digests parsed: "
+        f"{len(prod_service_digests)}"
+    )
 
     lags: list[tuple[str, str, int, Path]] = []
     no_ledger: list[str] = []
@@ -324,7 +403,8 @@ def check_promotion_lag(lag_days: int) -> int:
         age = (now - v_dt).days
         rel = info["path"].relative_to(REPO_ROOT)
 
-        if digest in prod_digests:
+        prod_digest = prod_service_digests.get(svc)
+        if prod_digest == digest:
             print(
                 f"[OK]   {svc}: latest verified digest "
                 f"{_digest_short(digest)} already in prod (verified {age}d ago)"
@@ -334,7 +414,9 @@ def check_promotion_lag(lag_days: int) -> int:
         if v_dt < cutoff:
             print(
                 f"[LAG]  {svc}: digest {_digest_short(digest)} verified "
-                f"{age}d ago (>{lag_days}d), NOT in prod (ledger {rel})"
+                f"{age}d ago (>{lag_days}d), NOT in prod "
+                f"(prod has {_digest_short(prod_digest) if prod_digest else '<none>'}; "
+                f"ledger {rel})"
             )
             lags.append((svc, digest, age, info["path"]))
         else:
@@ -344,12 +426,12 @@ def check_promotion_lag(lag_days: int) -> int:
             )
 
     if no_ledger:
-        # Services in services.yaml without ANY D29-verified ledger.
+        # Pipeline-scoped services without ANY D29-verified ledger.
         # Treated as INFO (not failure): new services may not have any
         # ledger yet; D29 evidence gate covers their first prod promotion.
         print(
-            f"[INFO] {len(no_ledger)} service(s) without any D29-verified "
-            f"ledger entry (likely never promoted yet): "
+            f"[INFO] {len(no_ledger)} pipeline service(s) without any "
+            f"D29-verified ledger entry (likely never promoted yet): "
             f"{', '.join(no_ledger[:8])}"
             f"{' …' if len(no_ledger) > 8 else ''}"
         )
@@ -366,15 +448,15 @@ def check_promotion_lag(lag_days: int) -> int:
                 f"ledger={rel_path.relative_to(REPO_ROOT)}"
             )
         print()
-        print("To unblock:")
         print(
-            "  - Open prod overlay PR bumping these services to the test-"
-            "validated digest"
+            "To unblock: open prod overlay PR bumping these services to the "
+            "test-validated digest."
         )
-        print(
-            "  - OR explicitly defer (commit a 'promotion-deferred:' note "
-            "in the ledger entry's promotion.test block)"
-        )
+        # Codex `019e443d` Fix 1 absorb: deferral escape hatch removed —
+        # there is no implemented parser for "promotion-deferred:" in the
+        # ledger schema yet, so the unblock advice promises only the
+        # behaviour the gate actually supports. Formal deferral mechanism
+        # is a follow-up (Guardrail PR-6 ledger-format work).
         return 1
 
     print(
