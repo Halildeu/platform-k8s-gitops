@@ -58,7 +58,7 @@
 
 | # | Özellik | Tier | Sub-faz | Status |
 |---|---|---|---|:---:|
-| A1 | Email transactional (SMTP) | **Kernel** | 23.1 | 🟢 |
+| A1 | Email transactional (SMTP canonical; Microsoft Graph API alternate path **deferred** — bkz. §8 H14 + [ADR-0024](../adr/0024-graph-mail-adapter-defer.md)) | **Kernel** | 23.1 | 🟢 |
 | A2 | Slack incoming webhook | **Kernel** | 23.1 | 🟢 |
 | A3 | Webhook egress (HMAC signed) | **Kernel** | 23.1 | 🟢 |
 | A4 | SMS (JetSMS primary, NetGSM secondary) | **MVP-geniş** | 23.3 | 🟡 (provider kararı 2026-05-19: JetSMS primary canlı sözleşme + NetGSM secondary failover; NetGSM Vault path canonical LIVE Session 42 PR #482; backend SmsAdapter LIVE platform-backend #77; **JetSMS HTTP API adapter + failover PR sequence Codex `019e3f82` AGREE**; NetGSM contract R1 ETA 2026-05-30 = secondary failover acceptance blocker, primary activation blocker DEĞİL) |
@@ -207,6 +207,7 @@
 | H11 | IP allowlist per provider | v1 | 23.8 | ☐ |
 | H12 | Provider cost tracking | v2 | 23.X | ☐ |
 | H13 | IP rotation (email reputation) | v2 | 23.X | ☐ |
+| H14 | Microsoft Graph mail adapter activation path (Office 365 Graph REST API, port 443; alternate to SMTP 587) | future-proofing | 23.X / v1.x | 🟡 **deferred** (SMTP canonical; Entra `acik-mail-graph-api` app reg + Mail.Send + admin consent **asset preserved**; client_secret + ApplicationAccessPolicy + Vault `graph_*` seed + ConfigMap flag flip + digest bump + smoke send 5-adım atomic reactivation chain documented in [ADR-0024](../adr/0024-graph-mail-adapter-defer.md) + [RB-graph-mail-adapter-activation.md](../runbooks/RB-graph-mail-adapter-activation.md) + board [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892) P3 Backlog future-only; reactivation triggers: Microsoft App Password deprecation / SMTP AUTH tenant policy break / outbound 587 ISP block recurrence / ops-security tactical decision / provider migration; R23 active monitored) |
 
 ## 9. Developer Experience
 
