@@ -55,27 +55,46 @@ def _load_module():
 class MockRunner:
     """Records every subprocess invocation; returns scripted output per matcher.
 
-    Each script entry is a (matcher_fn, stdout, returncode) tuple. The matcher
-    fn takes the full cmd list and returns True if this entry applies. First
-    matching entry wins; unmatched commands return ("", 0).
+    Two script forms:
+      - static  : (matcher_fn, stdout, returncode) tuple → constant stdout
+      - side-eff: (matcher_fn, fn) where fn(cmd) returns (stdout, returncode)
+                  and can perform filesystem writes (used to simulate
+                  `gh run download` extracting an artifact into --dir).
+
+    First matching entry wins; unmatched commands return ("", 0).
     """
 
     def __init__(self) -> None:
         self.calls: list[list[str]] = []
-        self.scripts: list[tuple[Callable[[list[str]], bool], str, int]] = []
+        self.scripts: list = []
 
     def expect(self, matcher: Callable[[list[str]], bool], stdout: str, returncode: int = 0) -> None:
-        self.scripts.append((matcher, stdout, returncode))
+        self.scripts.append(("static", matcher, stdout, returncode))
+
+    def expect_with_side_effect(
+        self,
+        matcher: Callable[[list[str]], bool],
+        side_effect: Callable[[list[str]], tuple[str, int]],
+    ) -> None:
+        """Match the command, then call `side_effect(cmd) → (stdout, rc)`."""
+        self.scripts.append(("side", matcher, side_effect))
 
     def __call__(self, cmd: list[str], check: bool = True, timeout: int = 60):
         self.calls.append(list(cmd))
-        for matcher, stdout, returncode in self.scripts:
-            if matcher(cmd):
-                if check and returncode != 0:
-                    # Raise the same error type the real _run raises.
-                    raise self._make_error(cmd, returncode, stderr="(mock)")
-                return _MockCompletedProcess(stdout=stdout, returncode=returncode)
-        # Default: empty success.
+        for entry in self.scripts:
+            if entry[0] == "static":
+                _, matcher, stdout, returncode = entry
+                if matcher(cmd):
+                    if check and returncode != 0:
+                        raise self._make_error(cmd, returncode, stderr="(mock)")
+                    return _MockCompletedProcess(stdout=stdout, returncode=returncode)
+            else:  # "side"
+                _, matcher, side_effect = entry
+                if matcher(cmd):
+                    stdout, returncode = side_effect(cmd)
+                    if check and returncode != 0:
+                        raise self._make_error(cmd, returncode, stderr="(mock)")
+                    return _MockCompletedProcess(stdout=stdout, returncode=returncode)
         return _MockCompletedProcess(stdout="", returncode=0)
 
     @staticmethod
@@ -130,17 +149,142 @@ def _deploy_run_fixture(
 
 
 class FindSuccessfulDeployTests(unittest.TestCase):
-    """Codex iter-4 P1 absorb: correlation priority is now log-first,
-    headSha fallback only when no revision can be extracted from the log
-    (rollback false-positive guard). Tests are rewritten to mock the
-    log call accordingly."""
+    """FU-Artifact (2026-05-21) — 3-layer correlation:
+      1. prod-sync-result.json artifact (PRIMARY, structured)
+      2. log-grep revision (FALLBACK, Codex iter-4 backward-compat)
+      3. headSha (LAST RESORT)
+    Tests cover layer-by-layer match + cross-layer guard semantics.
+    """
 
     def setUp(self) -> None:
         self.mod = _load_module()
         self.runner = MockRunner()
 
+    # ----- Layer 1 helpers ---------------------------------------------------
+
+    def _mock_artifact_present(
+        self,
+        revision: str,
+        conclusion: str = "success",
+        sync_mode: str = "resources",
+        is_rollback: bool = False,
+    ) -> None:
+        """Script `gh run download --name prod-sync-result --dir <tmp>` to
+        materialize a prod-sync-result.json file into the extraction dir."""
+        payload = json.dumps(
+            {
+                "schema_version": "1.0",
+                "revision": revision,
+                "conclusion": conclusion,
+                "sync_mode": sync_mode,
+                "is_rollback": is_rollback,
+            }
+        )
+
+        def matcher(cmd: list[str]) -> bool:
+            return (
+                cmd[:3] == ["gh", "run", "download"]
+                and "--name" in cmd
+                and cmd[cmd.index("--name") + 1] == "prod-sync-result"
+            )
+
+        def side_effect(cmd: list[str]) -> tuple[str, int]:
+            dir_idx = cmd.index("--dir") + 1
+            target_dir = Path(cmd[dir_idx])
+            target_dir.mkdir(parents=True, exist_ok=True)
+            (target_dir / "prod-sync-result.json").write_text(payload)
+            return ("", 0)
+
+        self.runner.expect_with_side_effect(matcher, side_effect)
+
+    def _mock_artifact_absent(self) -> None:
+        """Script `gh run download` to return nonzero (artifact missing)."""
+        self.runner.expect(
+            lambda cmd: cmd[:3] == ["gh", "run", "download"]
+            and "--name" in cmd
+            and cmd[cmd.index("--name") + 1] == "prod-sync-result",
+            "",
+            returncode=1,
+        )
+
+    # ----- Layer 1: artifact PRIMARY -----------------------------------------
+
+    def test_artifact_match_returns_run(self) -> None:
+        """Artifact present + revision ancestor of merge_sha → match."""
+        merge_sha = "aaaa"
+        revision = "bbbb"
+        run = _deploy_run_fixture(head_sha="cccc", created_hours_ago=1.0)
+
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "run"] and "list" in cmd,
+            json.dumps([run]),
+        )
+        self._mock_artifact_present(revision=revision)
+        self.runner.expect(
+            lambda cmd: cmd[:3] == ["git", "merge-base", "--is-ancestor"]
+            and cmd[3] == merge_sha
+            and cmd[4] == revision,
+            "",
+            returncode=0,
+        )
+
+        merged_at = datetime.now(timezone.utc) - timedelta(hours=2.0)
+        result = self.mod.find_successful_deploy(
+            "owner/repo", merge_sha, merged_at, runner=self.runner
+        )
+        self.assertIsNotNone(result)
+
+    def test_artifact_conclusion_failure_skips_run(self) -> None:
+        """Artifact present + conclusion=failure → skip even if revision
+        would be an ancestor. Defense-in-depth — list filter is --status
+        success but the script still validates conclusion field."""
+        merge_sha = "aaaa"
+        run = _deploy_run_fixture(head_sha=merge_sha, created_hours_ago=1.0)
+
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "run"] and "list" in cmd,
+            json.dumps([run]),
+        )
+        self._mock_artifact_present(revision="bbbb", conclusion="failure")
+
+        merged_at = datetime.now(timezone.utc) - timedelta(hours=2.0)
+        result = self.mod.find_successful_deploy(
+            "owner/repo", merge_sha, merged_at, runner=self.runner
+        )
+        self.assertIsNone(result)
+
+    def test_artifact_revision_not_ancestor_skips_run(self) -> None:
+        """Artifact says deployed revision NOT ancestor of merge_sha → skip;
+        do NOT fall through to log-grep/headSha (artifact is authoritative).
+        This is the structural rollback false-pass guard, layer-1 enforced."""
+        merge_sha = "aaaa"
+        rollback_revision = "0000"
+        run = _deploy_run_fixture(head_sha=merge_sha, created_hours_ago=1.0)
+
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "run"] and "list" in cmd,
+            json.dumps([run]),
+        )
+        self._mock_artifact_present(revision=rollback_revision, conclusion="success", is_rollback=True)
+        self.runner.expect(
+            lambda cmd: cmd[:3] == ["git", "merge-base", "--is-ancestor"]
+            and cmd[3] == merge_sha
+            and cmd[4] == rollback_revision,
+            "",
+            returncode=1,
+        )
+
+        merged_at = datetime.now(timezone.utc) - timedelta(hours=2.0)
+        result = self.mod.find_successful_deploy(
+            "owner/repo", merge_sha, merged_at, runner=self.runner
+        )
+        self.assertIsNone(result)
+
+    # ----- Layer 2: log-grep fallback (existing iter-4) ----------------------
+
     def test_log_revision_match_returns_run(self) -> None:
-        """Primary path: log contains explicit `Revision: <sha>` ancestor."""
+        """Layer-2 path: artifact missing (pre-FU-Artifact run), log contains
+        explicit `Revision: <sha>` ancestor → match."""
         merge_sha = "cccccccc"
         head_sha = "dddddddd"
         revision_from_log = "eeeeeeee"
@@ -150,6 +294,7 @@ class FindSuccessfulDeployTests(unittest.TestCase):
             lambda cmd: cmd[:2] == ["gh", "run"] and "list" in cmd,
             json.dumps([run]),
         )
+        self._mock_artifact_absent()
         self.runner.expect(
             lambda cmd: cmd[:2] == ["gh", "run"] and "view" in cmd and "--log" in cmd,
             f"some output\nRevision: {revision_from_log}\nmore output\n",
@@ -168,7 +313,7 @@ class FindSuccessfulDeployTests(unittest.TestCase):
         self.assertIsNotNone(result)
 
     def test_headsha_fallback_when_log_empty(self) -> None:
-        """Empty log → falls back to headSha; exact match returns the run."""
+        """Layer-3 path: artifact missing + log empty → headSha exact match."""
         merge_sha = "dd20f46be2c72d438dad5a015e324a4bb197f05e"
         run = _deploy_run_fixture(head_sha=merge_sha, created_hours_ago=1.0)
 
@@ -176,6 +321,7 @@ class FindSuccessfulDeployTests(unittest.TestCase):
             lambda cmd: cmd[:2] == ["gh", "run"] and "list" in cmd,
             json.dumps([run]),
         )
+        self._mock_artifact_absent()
         self.runner.expect(
             lambda cmd: cmd[:2] == ["gh", "run"] and "view" in cmd and "--log" in cmd,
             "",
@@ -189,7 +335,7 @@ class FindSuccessfulDeployTests(unittest.TestCase):
         self.assertEqual(result["databaseId"], run["databaseId"])
 
     def test_headsha_ancestor_fallback_when_log_empty(self) -> None:
-        """Empty log → falls back to ancestor check against headSha."""
+        """Layer-3 path: artifact missing + log empty → headSha ancestor."""
         merge_sha = "aaaaaaa"
         head_sha = "bbbbbbb"
         run = _deploy_run_fixture(head_sha=head_sha, created_hours_ago=1.0)
@@ -198,6 +344,7 @@ class FindSuccessfulDeployTests(unittest.TestCase):
             lambda cmd: cmd[:2] == ["gh", "run"] and "list" in cmd,
             json.dumps([run]),
         )
+        self._mock_artifact_absent()
         self.runner.expect(
             lambda cmd: cmd[:2] == ["gh", "run"] and "view" in cmd and "--log" in cmd,
             "",
@@ -217,14 +364,13 @@ class FindSuccessfulDeployTests(unittest.TestCase):
         self.assertIsNotNone(result)
 
     def test_rollback_log_revision_older_does_NOT_match(self) -> None:
-        """Codex iter-4 P1 — `full` rollback mode false-positive guard.
+        """Codex iter-4 P1 — `full` rollback mode false-positive guard at layer 2.
 
-        Workflow runs FROM current main (headSha = merge_sha) but
-        SYNCS an older revision in `full` rollback mode. headSha alone
-        would false-positive match. With log-first priority, the
-        rollback revision is read from the log and the ancestor check
-        correctly returns False.
-        """
+        Pre-FU-Artifact run (artifact missing). Workflow runs FROM current
+        main (headSha = merge_sha) but SYNCS an older revision. headSha alone
+        would false-positive match. With log-grep priority, the rollback
+        revision is read from the log and the ancestor check correctly
+        returns False. Layer 3 (headSha) is NOT consulted."""
         merge_sha = "ffffffffffffffffffffffffffffffffffffffff"
         head_sha = merge_sha  # workflow ran from main HEAD = merge_sha
         rollback_revision = "1111111111111111111111111111111111111111"
@@ -234,6 +380,7 @@ class FindSuccessfulDeployTests(unittest.TestCase):
             lambda cmd: cmd[:2] == ["gh", "run"] and "list" in cmd,
             json.dumps([run]),
         )
+        self._mock_artifact_absent()
         self.runner.expect(
             lambda cmd: cmd[:2] == ["gh", "run"] and "view" in cmd and "--log" in cmd,
             f"argocd app sync platform-prod --revision {rollback_revision} --prune=false\n",
