@@ -18,6 +18,10 @@ Bu runbook AGREE_A locked sequencing (operator karar değil, Codex thread'in 9-a
 Bu runbook'un hiçbir adımında YAPILMAZ:
 
 - Secret değeri (VAULT_TOKEN, GitHub App private key PEM, webhook secret) chat/log/repo/issue/PR'a yazma
+- `VAULT_TOKEN`, PEM, ya da webhook secret değerini `echo`/`printf`/`cat`/`grep` ile terminale veya log'a basma
+- `set -x` / `bash -x` / `bash -v` ile debug mode'da Vault komutlarını çalıştırma (token + value tracing açılır)
+- `.env` dosyasını `cat`/`sed -n`/`grep VAULT_TOKEN` ile basma (her satır çoklu secret içeriyor olabilir)
+- GitHub App private key PEM dosyasını shell argument olarak veya HEREDOC ile inline geçirme (file/stdin pattern zorunlu)
 - Live adapter execution
 - Support widening
 - Production platform claim
@@ -161,8 +165,12 @@ ssh halil@staging-sw "docker logs ao-gate-policy --tail 50 2>&1 | grep -iE 'erro
 - release-gate App webhook URL: `https://testai.acik.com/ao-gate/github/ao-release-gate`
 
 Her App için webhook secret:
-1. Yeni webhook secret üret (operator-side, e.g. `openssl rand -hex 32`)
-2. GitHub App settings → Webhook Secret alanına yapıştır
+1. Yeni webhook secret üret — **operator-side, GitHub UI üretmez**. Tek
+   doğru kaynak `openssl rand -hex 32`; aynı string hem GitHub App
+   Webhook Secret UI alanına yapıştırılacak hem Vault'a seed edilecek.
+   UI'nın "kendi üretmesi" diye bir pattern yok — boş bırakılırsa
+   GitHub HMAC signing yapmaz ve delivery signature verify fail eder.
+2. GitHub App settings → Webhook Secret alanına yapıştır (tek değer)
 3. Aynı değeri Vault'a seed. Secret değerini komut satırı argümanı olarak
    yazma; process list, shell history veya terminal log'una sızmaması için
    stdin/temp-file pattern kullan:
