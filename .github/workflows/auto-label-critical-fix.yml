@@ -23,8 +23,13 @@
 #   - `pull_request_target` runs from base ref with elevated token;
 #     no PR-head checkout performed (label-only mutation, no code exec)
 #
-# Permissions are minimal: contents:read (workflow file resolution),
-# pull-requests:write (label add). No issues:write, actions:read needed.
+# Permissions:
+#   contents:        read   — workflow file resolution
+#   pull-requests:   write  — `gh pr edit --add-label` for the PR mutation
+#   issues:          write  — `gh label create` is repo-level label metadata
+#                              (Codex iter-1 P1 absorb — label CRUD lives
+#                              under Issues API in GitHub's permission model;
+#                              `pull-requests: write` is not sufficient).
 
 name: Auto-label critical-fix trailer
 
@@ -38,6 +43,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  issues: write
 
 # Per-PR concurrency — body-edit spam should not pile up parallel runs.
 concurrency:
@@ -80,12 +86,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Idempotent label create — fails silently if already present.
+          # Codex iter-1 P2 absorb: NO `--force`. `--force` overwrites the
+          # existing label's color and description on every label-apply,
+          # turning this auto-label workflow into an accidental label-style
+          # reconciler. We only want create-if-missing semantics:
+          #   - label exists with whatever curated metadata operator chose
+          #     → `gh label create` exits non-zero, `|| true` swallows
+          #   - label missing → creates with our defaults
+          # Operator can change label color/description manually anytime
+          # without this workflow stomping it.
           gh label create critical-fix \
             --repo "${{ github.repository }}" \
             --color D93F0B \
             --description "Hotfix/incident PR — DiD-1 SLA monitor tracks prod deploy lag" \
-            --force 2>&1 | tail -3 || true
+            2>&1 | tail -3 || true
 
       - name: Add critical-fix label to PR
         if: steps.parse.outputs.should_apply == 'true'
