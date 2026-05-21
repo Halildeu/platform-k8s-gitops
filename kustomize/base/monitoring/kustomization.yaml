@@ -36,6 +36,11 @@ resources:
   # gelmedi (observability gap). 3 alert: BridgeDown / BridgeCrashLooping /
   # BridgeHealthzFail. Prom k8s API state scrape bridge'den bağımsız.
   - prometheusrule-alertmanager-bridge-self-watch.yaml
+  # DiD-2 (2026-05-21) — Defense-in-depth follow-up to PermissionProvider
+  # stale-token incident on ai.acik.com /settings/notifications. HTTP-level
+  # synthetic probe + 2 alerts (Failing / Stale). Browser-based stuck-UI
+  # detection (Playwright headless) is separate follow-up scope.
+  - prometheusrule-frontend-settings-notifications.yaml
   - alertmanager-bridge           # Codex Sprint A follow-up — AlertManager → GitHub Issues bridge
   # Grafana dashboard ConfigMap'ler — kube-prometheus-stack sidecar provisioner
   # otomatik import (label grafana_dashboard=1). Helm values
