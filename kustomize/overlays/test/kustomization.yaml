@@ -2603,7 +2603,26 @@ images:
     #   - 10/10 new tests PASS (Service + Controller + Properties binding)
     # Build evidence: gh run view 26191456297 -R Halildeu/platform-backend
     # success 2026-05-20T21:37Z; digest sha256:1c8416a3cac649203e3340d80c28b078326fed12685ed4f53a715e0a8a51a86b.
-    digest: sha256:1c8416a3cac649203e3340d80c28b078326fed12685ed4f53a715e0a8a51a86b
+    #
+    # 2026-05-21 update v5 — Faz 23.2 + 23.6 + 23.8 cumulative deploy
+    # (PR-K1+PR-K4+PR-K5+PR-K6 KVKK closure 7/7 + T4.1.1 Slack Block Kit
+    # + T4.1.2 Teams Power Automate + T4.3.b email suppression core):
+    # Bump from sha-99df4f9b to sha-f40aa82. Carries cumulative delta:
+    #   - PR-K1 (#274): erasure_request_ledger V18 + 30-gün SLA + watchdog
+    #     (Codex 019e4950 P0 #1 + 019e499c REVISE chain + AGREE)
+    #   - PR-K4 (#273): log leakage redaction — classifyErasureReason 6-enum
+    #     + INFO log HMAC redaction
+    #   - PR-K5 (#276): audit subscriber_id → subscriber_id_hash HMAC
+    #     pseudonymize (PiiRedactor whitelist + 4 caller migrate)
+    #   - PR-K6 (#275): tenant-scoped DPO authz (orgAccessGuard guard)
+    #   - PR-T4.1.1 (#271): SlackWebhookAdapter Block Kit payload mode
+    #   - PR-T4.1.2 (#272): TeamsPowerAutomateAdapter + Adaptive Card v1.4
+    #   - PR-T4.3.b (#270): email_suppression V17 + DeliveryEligibilityService
+    # Build evidence: gh run view 26216985656 -R Halildeu/platform-backend
+    # success 2026-05-21T09:16Z; digest sha256:cfd554cbab6c443751999ab263a06aa137b7761e798fdf6816fdc1406223f4a2.
+    # R2 KVKK closure 7/7 implementation MERGED; DPO/legal sign-off
+    # external SLA 2026-05-25.
+    digest: sha256:cfd554cbab6c443751999ab263a06aa137b7761e798fdf6816fdc1406223f4a2
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
