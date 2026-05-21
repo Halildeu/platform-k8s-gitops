@@ -44,3 +44,5 @@ scripts/governance/__pycache__/
 tests/drift_detection/__pycache__/
 tests/governance/__pycache__/
 tests/__pycache__/
+tests/promotion/__pycache__/
+scripts/promotion/__pycache__/
