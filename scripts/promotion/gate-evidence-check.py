@@ -48,6 +48,17 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
+# FU-Gate-Refactor (2026-05-21) — Closes DiD-3 (PR #922) TODO: the gate's
+# previous inline tier-policy logic now delegates to the shared helper
+# `scripts/promotion/d29_evidence_policy.py` so the gate and ledger-mark-
+# verified.sh apply the exact same policy semantics. The helper lives in
+# the same directory; Python adds the script's directory to sys.path[0]
+# when invoked via path, so `import d29_evidence_policy` resolves cleanly
+# without sys.path manipulation. CI workflow gate-d29-evidence-required.yml
+# invokes this script as `python3 scripts/promotion/gate-evidence-check.py`,
+# matching the path-invocation expectation.
+import d29_evidence_policy  # type: ignore[import-not-found]
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LEDGER_DIR = REPO_ROOT / "release-candidates"
 PROD_OVERLAY = REPO_ROOT / "kustomize" / "overlays" / "prod"
@@ -142,29 +153,32 @@ def find_ledger_entries_by_digest(digest: str) -> list[Path]:
 
 
 def load_zanzibar_required_services() -> dict[str, bool]:
-    """Read services.yaml and return {service_name: jwt_validates}. Used to
-    determine whether AMBER is acceptable for d29_zanzibar status (only for
-    services with jwt_validates=false; backend Zanzibar consumers need GREEN)."""
-    catalog_path = REPO_ROOT / "docs" / "operations" / "services.yaml"
-    if not catalog_path.exists():
-        # Without catalog, default to strict (require GREEN for all)
-        return {}
+    """Read services.yaml and return {service_name: jwt_validates}.
 
-    try:
-        import yaml
-    except ImportError:
-        return {}
+    FU-Gate-Refactor (2026-05-21) — Thin wrapper that delegates to
+    d29_evidence_policy.load_jwt_validates_map(). Kept as a wrapper rather
+    than removed so the existing call sites (and any external callers
+    that may import from this module) keep working without API churn.
 
-    catalog = yaml.safe_load(catalog_path.read_text()) or {}
-    return {
-        svc.get("name"): bool(svc.get("jwt_validates", True))
-        for svc in catalog.get("services", [])
-        if svc.get("name")
-    }
+    Used to determine whether AMBER is acceptable for d29_zanzibar status
+    (only for services with jwt_validates=false; backend Zanzibar consumers
+    need GREEN).
+    """
+    return d29_evidence_policy.load_jwt_validates_map(REPO_ROOT)
 
 
 def check_evidence(entry: dict, jwt_validates_map: dict[str, bool]) -> tuple[bool, str]:
-    """Return (verified, reason). verified=True if D29 GREEN per service policy."""
+    """Return (verified, reason). verified=True if D29 GREEN per service policy.
+
+    FU-Gate-Refactor (2026-05-21) — Tier-policy semantics delegated to
+    `d29_evidence_policy.check_tiers()` (the same helper that ledger-mark-
+    verified.sh invokes via its CLI). The gate adds two entry-level checks
+    on top of the tier policy:
+      1. `promotion.test.smoke_evidence` must be non-null (smoke ran)
+      2. `promotion.test.verified_at` must be set (record is complete)
+    Both are entry-level concerns (not tier-level), so they stay in the
+    gate rather than being pushed into the helper.
+    """
     test_block = entry.get("promotion", {}).get("test", {})
     smoke = test_block.get("smoke_evidence")
     service = entry.get("service", "")
@@ -172,38 +186,25 @@ def check_evidence(entry: dict, jwt_validates_map: dict[str, bool]) -> tuple[boo
     if not smoke:
         return False, "promotion.test.smoke_evidence is null (smoke not run yet)"
 
-    up = smoke.get("d29_up", {}).get("status")
-    fn = smoke.get("d29_functional", {}).get("status")
-    zb = smoke.get("d29_zanzibar", {}).get("status")
-
-    if up != "GREEN":
-        return False, f"d29_up status={up} (need GREEN)"
-    if fn != "GREEN":
-        return False, f"d29_functional status={fn} (need GREEN)"
-
-    # Sprint A B0b — Zanzibar AMBER policy tightening
-    # AMBER acceptable ONLY for services explicitly marked jwt_validates=false in services.yaml
-    # (legacy core-data-service style: gateway-validated, no own JWT decoder, no Zanzibar checks)
-    # All other services (default + jwt_validates=true) MUST be GREEN
-    requires_zanzibar = jwt_validates_map.get(service, True)  # default: requires Zanzibar
-    if requires_zanzibar:
-        if zb != "GREEN":
-            return (
-                False,
-                f"d29_zanzibar status={zb} (service '{service}' is Zanzibar-required per services.yaml, need GREEN)",
-            )
-    else:
-        if zb not in ("GREEN", "AMBER"):
-            return (
-                False,
-                f"d29_zanzibar status={zb} (service '{service}' jwt_validates=false, accept GREEN or AMBER)",
-            )
+    # Delegate tier-policy semantics to the shared helper. The helper applies:
+    #   - d29_up GREEN required, every service
+    #   - d29_functional GREEN required, every service
+    #   - d29_zanzibar: GREEN required for services where jwt_validates=true
+    #     (default); GREEN or AMBER acceptable for services explicitly
+    #     marked jwt_validates=false (frontend SPA, auth-service, openfga).
+    ok, tier_reason = d29_evidence_policy.check_tiers(service, smoke, jwt_validates_map)
+    if not ok:
+        return False, tier_reason
 
     verified_at = test_block.get("verified_at")
     if not verified_at:
         return False, "verified_at not set (incomplete promotion record)"
 
-    return True, f"verified at {verified_at} (zanzibar policy: {'GREEN-only' if requires_zanzibar else 'GREEN-or-AMBER'})"
+    requires_zanzibar = jwt_validates_map.get(service, True)
+    return True, (
+        f"verified at {verified_at} (zanzibar policy: "
+        f"{'GREEN-only' if requires_zanzibar else 'GREEN-or-AMBER'})"
+    )
 
 
 # Codex `019e443d` REVISE absorb (Fix 2): lag scope must be prod-enabled +
