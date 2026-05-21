@@ -25,24 +25,32 @@ DESIGN:
   - If no successful deploy AND merge age > warning-hours
     (default 1h) → comment on the PR.
 
-DEPLOY-RUN CORRELATION (acceptable temporary):
+DEPLOY-RUN CORRELATION (3-layer, structured first):
   `deploy-prod-gitops.yml` runs as `workflow_dispatch` with a
   `revision` input. `gh run view --json` does NOT expose dispatch
-  inputs as machine-readable fields. This script applies (Codex
-  iter-4 P1 absorb — log-first to guard against `full` rollback
-  mode where headSha advances while the deployed revision rolls
-  back to an older SHA):
-    1. **Primary** — `gh run view <id> --log` text grep for
-       `argocd app sync ... --revision <sha>` or `Revision: <sha>`
-       lines. If any extracted SHA satisfies `git merge-base
-       --is-ancestor <merge_sha> <revision>`, the deploy covers
-       the merge.
-    2. **Fallback** — only when the log produced no revisions
-       (best-effort log fetch failed, or no matching lines), fall
-       back to `headSha` exact-match or ancestor check.
-  A separate follow-up PR should add a machine-readable
-  `prod-sync-result.json` workflow artifact so the log-grep
-  primary can be retired in favor of a structured signal.
+  inputs as machine-readable fields, so the deployed revision is
+  read from one of three layers, in order:
+
+    1. **Primary (FU-Artifact, 2026-05-21)** — `prod-sync-result.json`
+       artifact written by the deploy workflow itself. Contains
+       `revision`, `conclusion`, `sync_mode`, `is_rollback` and
+       audit fields. Downloaded via `gh run download --name
+       prod-sync-result`. Authoritative: if the artifact says
+       `conclusion != success` OR `revision` is not an ancestor
+       of `merge_sha`, the run is SKIPPED. The loop does NOT fall
+       through to layer 2/3 — the artifact is structured truth.
+
+    2. **Fallback (Codex iter-4)** — `gh run view <id> --log` text
+       grep for `argocd app sync ... --revision <sha>` or
+       `Revision: <sha>` lines. Used ONLY when the artifact is
+       absent (run pre-dates the FU-Artifact PR — backward-compat).
+
+    3. **Last resort** — `headSha` exact-match or ancestor check.
+       Used ONLY when both the artifact AND the log produced no
+       revision. In the common-case `resources`-mode deploy this
+       still correlates correctly (deployed revision == headSha),
+       but is guarded against the `full` rollback false-pass by
+       layers 1 + 2 (both must be empty before this layer).
 
 IDEMPOTENCY:
   - Issue match: open issue with label `critical-fix-sla-active`
