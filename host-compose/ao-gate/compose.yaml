@@ -50,11 +50,18 @@ services:
       VAULT_ADDR: ${VAULT_ADDR:-http://platform-vault-prod:8200}
       VAULT_TOKEN: ${VAULT_TOKEN:?set VAULT_TOKEN on the operator host (Vault auth required by ao-kernel hashicorp_vault provider)}
       VAULT_SECRET_MOUNT: ${VAULT_SECRET_MOUNT:-secret}
-      # GitHub App identity — fail-fast on empty (operator-public, but required
-      # at /github/* callback time; an empty value would silently 4xx in prod).
+      # Per-service GitHub App identity (Codex `019e4a10` Decision 2
+      # PARTIAL → AGREE_A absorb). Two GitHub Apps is the chosen
+      # routing model: one App per service, one webhook URL per App,
+      # one private-key secret-id per App. Fallback to the legacy
+      # shared `AO_GITHUB_APP_ID` / `AO_GITHUB_APP_PRIVATE_KEY_PEM_ID`
+      # preserves backward compatibility for operators who deployed
+      # against a single App before this split landed; new operators
+      # supply only the per-service env. Sister change in ao-kernel
+      # `deploy/internal-gate-host/compose.yaml`.
       AO_GITHUB_API_URL: ${AO_GITHUB_API_URL:-https://api.github.com}
-      AO_GITHUB_APP_ID: ${AO_GITHUB_APP_ID:?set AO_GITHUB_APP_ID on the operator host (numeric GitHub App ID, required by callback path)}
-      AO_GITHUB_APP_PRIVATE_KEY_PEM_ID: ${AO_GITHUB_APP_PRIVATE_KEY_PEM_ID:-gpp2/github/private-key-pem}
+      AO_GITHUB_APP_ID: ${AO_POLICY_GITHUB_APP_ID:-${AO_GITHUB_APP_ID:?set AO_POLICY_GITHUB_APP_ID (preferred) or AO_GITHUB_APP_ID (legacy) on the operator host (numeric GitHub App ID, required by callback path)}}
+      AO_GITHUB_APP_PRIVATE_KEY_PEM_ID: ${AO_POLICY_GITHUB_APP_PRIVATE_KEY_PEM_ID:-${AO_GITHUB_APP_PRIVATE_KEY_PEM_ID:-gpp2/github/private-key-pem}}
       AO_LIVE_ADAPTER_GATE_WEBHOOK_SECRET_ID: ${AO_LIVE_ADAPTER_GATE_WEBHOOK_SECRET_ID:-gpp2/policy/webhook-secret}
       AO_POLICY_SERVICE_MAX_BODY_BYTES: ${AO_POLICY_SERVICE_MAX_BODY_BYTES:-1048576}
     # UID 10001 = `ao-kernel` user created by deploy/live-adapter-gate-policy-service/Dockerfile.
@@ -114,9 +121,12 @@ services:
       VAULT_ADDR: ${VAULT_ADDR:-http://platform-vault-prod:8200}
       VAULT_TOKEN: ${VAULT_TOKEN:?set VAULT_TOKEN on the operator host (Vault auth required by ao-kernel hashicorp_vault provider)}
       VAULT_SECRET_MOUNT: ${VAULT_SECRET_MOUNT:-secret}
+      # Per-service GitHub App identity (see policy-service block for
+      # full rationale; same fallback pattern applies for the
+      # release-gate App).
       AO_GITHUB_API_URL: ${AO_GITHUB_API_URL:-https://api.github.com}
-      AO_GITHUB_APP_ID: ${AO_GITHUB_APP_ID:?set AO_GITHUB_APP_ID on the operator host (numeric GitHub App ID, required by callback path)}
-      AO_GITHUB_APP_PRIVATE_KEY_PEM_ID: ${AO_GITHUB_APP_PRIVATE_KEY_PEM_ID:-gpp2/github/private-key-pem}
+      AO_GITHUB_APP_ID: ${AO_RELEASE_GATE_GITHUB_APP_ID:-${AO_GITHUB_APP_ID:?set AO_RELEASE_GATE_GITHUB_APP_ID (preferred) or AO_GITHUB_APP_ID (legacy) on the operator host (numeric GitHub App ID, required by callback path)}}
+      AO_GITHUB_APP_PRIVATE_KEY_PEM_ID: ${AO_RELEASE_GATE_GITHUB_APP_PRIVATE_KEY_PEM_ID:-${AO_GITHUB_APP_PRIVATE_KEY_PEM_ID:-gpp2/github/private-key-pem}}
       AO_RELEASE_GATE_WEBHOOK_SECRET_ID: ${AO_RELEASE_GATE_WEBHOOK_SECRET_ID:-gpp2/release-gate/webhook-secret}
       # ao_release_gate_runtime requires a GPP status JSON file; absent →
       # /github/ao-release-gate raises ao_release_gate_runtime_gpp_status_unavailable.
