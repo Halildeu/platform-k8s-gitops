@@ -276,7 +276,26 @@ images:
     # manifest sha256:c54f9f4baec7f34454ff686698463fa0f94c333dceeafb7a5ce8141fda47b70f.
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:6175711ae208da483828390ca9b528fe3fea52bb8305a7853694cf479c17319e
+    #
+    # 2026-05-22 update: bump to sha-161296c — platform-backend PR #291
+    # (Plan C C.2 H2 endpoint-admin gateway integration, mergeCommit
+    # 161296cfb473e5dc18b6cad8b1513921df8c375f). Adds 3 endpoint-admin
+    # routes (agent/admin/status) to baked application-k8s.yml + 1
+    # `/api/v1/endpoint-agent/**` permitAll. RouteRegistrar test refactor
+    # (sustaining fix, Codex 019e4c3f AGREE) prevents numeric-slot
+    # collision regression. 25 GatewaySecurityTest PASS + 84/84 api-gateway
+    # suite. Cross-AI peer review thread `019e4caa` AGREE.
+    #
+    # Image build run: platform-backend run 26257186054 (final main SHA,
+    # D30 immutable artifact). GHCR push verified.
+    #
+    # Companion ConfigMap update (this same PR): env-based
+    # SPRING_CLOUD_GATEWAY_ROUTES_22..24 entries added so the runtime
+    # route table (env override layer) carries the endpoint-admin routes
+    # alongside the baked YAML — Codex 019e4caa 8. bulgu absorb (env
+    # override otherwise tepeden gelir + endpoint-admin route resolution
+    # kaçar).
+    digest: sha256:84500b5ebe162b8014035fe6bcf9a76b407ef81fad0a6b3407d5fa7357cce47c
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     # 2026-05-12 update: bump to sha-5bec7fb (platform-backend#159 — Codex
