@@ -30,6 +30,23 @@
 - [ ] Runbook referans güncellendi (varsa)
 - [ ] PLAN.md D-karar kaydı (mimari değişim ise)
 
+## Operational urgency
+
+> **DiD-1 SLA monitor entegrasyonu**: bir PR prod-overlay'i değiştirecekse ve
+> incident veya time-sensitive hotfix ise `Critical-Fix: yes` koyun. Otomatik
+> olarak `critical-fix` label uygulanır ve `critical-fix-sla-monitor.yml`
+> cron'u prod-deploy lag'ini izler (1h warning, 4h tracking issue). Detay:
+> `docs/runbooks/RB-critical-fix-sla-monitor.md`.
+>
+> Default `no` — yalnız hotfix sınıfı PR'lar için `yes` koyun. Operator
+> manuel label'lama da hâlâ geçerli; bu trailer ek-otomasyon, replacement değil.
+
+```yaml
+Critical-Fix: no
+# Source-Fix: <Halildeu/platform-web#640>          # opsiyonel, follow-up scope
+# Expected-Prod-SLA: 4h                            # opsiyonel, default 4h
+```
+
 ## Kontrol Listesi
 
 - [ ] **D29 3-katman:** Değişim Up / Functional / Zanzibar-ready katmanlarının hangisini etkiler?
