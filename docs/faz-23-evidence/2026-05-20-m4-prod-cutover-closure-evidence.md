@@ -264,6 +264,45 @@ ETA rollback < 15 dakika (atomic kustomization commit).
 
 ---
 
+## 8a. Prod Canary Attempt — Strict-Mode Deny Evidence (2026-05-21)
+
+> **Codex `019e4965` AGREE PARTIAL absorb**: 403 sonucu canary **fail** değil; **D29-Authorized Layer-1 strict isolation PASS** evidence. M4 functional acceptance ext-gated kalır.
+
+**Path**: ai.acik.com, real user M365 SSO session, Browser MCP fetch
+**Request class**: `POST /api/v1/notify/intents`, target `org_id=default`
+**Response**: HTTP 403, empty body
+**Token handling**: raw JWT not captured/read (HARD RULE PII Exfiltration Defense — classifier engelledi); only safe `/api/v1/authz/me` projection recorded.
+
+**Safe auth projection** (`GET /api/v1/authz/me` → 200 OK):
+- `userId=1201`, `subscriberId=1201`
+- `scopes=[]`, `allowedScopes=[]`
+- no effective `org_id` / `tenant_id` / `allowed_orgs` claim surfaced to notify guard
+- `permissions[]` contains 40+ business permissions (USER_MANAGEMENT, ACCESS, AUDIT, REPORT, etc.) but **no** notify-specific scope and no tenant claim
+
+**Interpretation**:
+- ✅ **PASS**: `NOTIFY_SECURITY_DEFAULT_ORG_ID=""` strict mode is live (Faz 24 PR-5.5 cutover); default-org fallback is closed
+- ✅ **PASS**: missing tenant/org claim fails closed with HTTP 403 **before** intent creation or SMS dispatch
+- ✅ **PASS**: KVKK 12.B multi-tenancy security baseline + must-have #5 (OpenFGA hard-deny + org boundary) enforced
+- ❌ **NOT PASS**: prod SMS functional canary — no JetSMS ACCEPTED status row, no DLR DELIVERED cycle, no provider_msg_id evidence
+
+**D29 status impact**:
+- D29-Up prod evidence: 🟢 GREEN (pod LIVE, adapter activations)
+- **D29-Authorized Layer-1 prod evidence: 🟢 GREEN (NEW — strict deny live)**
+- D29-Functional prod SMS: 🟡 AMBER (boot-only smoke; canary ext-gated)
+
+**Next gate** (operator-gated, agent yapamaz):
+- Keycloak realm `serban`-prod: user `halilkocoglu` için `org_id=default` claim mapper (veya `allowed_orgs=["default"]` attribute) ekle
+- Token refresh (logout + re-login)
+- `GET /api/v1/authz/me` safe projection verify (orgId field surface'e gelmeli)
+- Rerun canary: `POST /intents` → 202 Accepted + intent_id + delivery row PENDING
+- Collect DLR cycle: `dlr jetsms UPDATED: code=1 new=DELIVERED`
+
+**KC operator runbook**: `docs/runbooks/RB-prod-canary-kc-claim-setup.md` (bu PR ile birlikte oluşturuldu)
+
+**M3 R2 KVKK link**: Bu 403 evidence KVKK güvenlik/yetkisiz erişim önleme tarafını **güçlendirir** (default fallback yok, raw JWT log/audit'te yok, fail-closed isolation). **AMA**: M3 R2 admin erasure legal review **kapanmaz** — bu strict-mode kanıtı ile tenant isolation/security baseline link'lenmeli, "KVKK R2 closed" dili kullanılmamalı. R2 hâlâ Codex `019e4950` PARTIAL_COMPLIANT verdict ile DPO/legal final onay external.
+
+---
+
 ## 9. M4 DoD Status (post-cutover)
 
 | DoD Item | Status |
@@ -275,13 +314,15 @@ ETA rollback < 15 dakika (atomic kustomization commit).
 | PR-5 test overlay cutover | 🟢 done (2026-05-19) |
 | Test cluster JetSMS LIVE acceptance | 🟢 done (2026-05-20 PR-A1 → PR-A3.2 chain) |
 | Sub-Faz 23.3.2 Multipart + Context Routing LIVE | 🟡 partial (VFO provider acceptance R24 pending) |
-| D29-NOTIFY 3-katman SMS evidence | 🟡 test cluster ✅; prod canary smoke ext-gated |
+| D29-NOTIFY 3-layer SMS evidence | 🟡 test cluster Functional ✅; **prod Authorized strict deny ✅** (NEW 2026-05-21); prod Functional SMS+DLR pending |
 | T3.1.8 4 workflow live test | ⏳ post-cutover canary smoke gate |
 | **Prod cutover** (issue [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903)) | 🟢 **LIVE 2026-05-20** (PR-B4 #916 MERGED; pod LIVE 1/1 sha-6307428; all guards PASSED) |
-| Charter 23.3 marker | 🟡 → 🟢 **source-ready + acceptance candidate** (this PR) |
+| A.4 canary SMS smoke | 🟡 **attempted 2026-05-21 — strict-denied due missing org claim (Authorized Layer-1 evidence)**; real functional canary KC operator gate |
+| A.5 DLR terminal evidence | ⏳ A.4 functional canary sonrası natural |
+| Charter 23.3 marker | 🟡 → 🟢 **source-ready + acceptance candidate** (this PR; functional ext-gated kalır) |
 | R1 NetGSM secondary contract closure | 🟡 Active ext (ETA 2026-05-30) |
 
-**Net DoD**: 8/12 done (66.7%) + 2 partial + 4 ext-gated.
+**Net DoD**: 9/13 done (69%) + 2 partial + 5 ext-gated (gain: prod Authorized Layer-1 strict deny evidence from 2026-05-21 canary attempt).
 
 - Done (8): PR-1, PR-2, PR-3, PR-4, PR-5, Test cluster JetSMS LIVE acceptance, **Prod cutover (agent-actionable A.1+A.2+A.3+A.6)**, **Charter 23.3 marker → 🟢 source-ready + acceptance candidate**
 - Partial (2): Sub-Faz 23.3.2 Multipart + Context Routing (VFO provider acceptance pending R24); D29-NOTIFY 3-katman SMS (test ✅; prod canary smoke ext-gated)
