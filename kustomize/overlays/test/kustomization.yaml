@@ -2622,7 +2622,32 @@ images:
     # success 2026-05-21T09:16Z; digest sha256:cfd554cbab6c443751999ab263a06aa137b7761e798fdf6816fdc1406223f4a2.
     # R2 KVKK closure 7/7 implementation MERGED; DPO/legal sign-off
     # external SLA 2026-05-25.
-    digest: sha256:cfd554cbab6c443751999ab263a06aa137b7761e798fdf6816fdc1406223f4a2
+    #
+    # 2026-05-21 update v6 — Faz 23.7 M7 T4.2 WebPush backend full chain
+    # (PR-W1..W3 + W2.4..W2.6 — 6 sub-PR foundation MERGED): Bump from
+    # sha-f40aa82 to sha-aaf5f09. Carries cumulative delta on main:
+    #   - PR-W1 (#277): WebPush subscriber endpoint registry V19 + entity
+    #     + JPA repo (6 PG IT, BouncyCastle ECDSA P-256)
+    #   - PR-W2.1 (#278): WebPushConfig @ConfigurationProperties + VapidKeyService
+    #     + nl.martijndwars:web-push lib dep (7 unit)
+    #   - PR-W2.2 (#279): WebPushAdapter + status mapping (201/204→DELIVERED,
+    #     410/404→FAILED+endpoint cleanup, 429/5xx→RETRY) + 14 unit
+    #   - PR-W2.3 (#280): DefaultWebPushSender real lib integration (3 unit
+    #     real ECDSA key generation)
+    #   - PR-W2.4 (#281): DefaultWebPushSenderHttpIntegrationTest WireMock 3.x
+    #     end-to-end (Codex 019e4a2e REVISE → AGREE absorb)
+    #   - PR-W2.5+W2.6 (#282): IntentSubmissionService allow-list + push
+    #     fan-out + DeliveryEligibilityService BLOCKED_NO_PUSH_ENDPOINT
+    #     guard + V20 migration (Codex 019e4a3d iter-4 AGREE)
+    #   - PR-W3 (#283): PushSubscriptionController + Service + atomic upsert
+    #     (Codex 019e4a57 iter-3 AGREE)
+    # Build evidence: gh run view 26224787339 -R Halildeu/platform-backend
+    # success 2026-05-21T12:05Z; digest
+    # sha256:f3f8c497df87fd3ee394c224d7209b67714b026152c92ae119b0d8c4c16fbaf6.
+    # ConfigMap WebPush 5 entries eklenir (base default ENABLED=false defer-aware).
+    # ExternalSecret WebPush 3 remoteRef entries comment-out (Vault seed
+    # pending — operator action runbook externalsecret-notify.yaml).
+    digest: sha256:f3f8c497df87fd3ee394c224d7209b67714b026152c92ae119b0d8c4c16fbaf6
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
