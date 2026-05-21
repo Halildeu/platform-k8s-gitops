@@ -240,11 +240,11 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 ## Tier 4: 23.6 + 23.7 + 23.8 v1 (~5-6 weeks, ~99h)
 
-> **Status revision 2026-05-21 (Session 47 — post WebPush 11 sub-PR + T4.1 MERGED + T4.3.a Tempo LIVE + T4.3.b suppression LIVE + T4.3.6 per-tenant dashboard MERGED)**: T4.1 LIVE, T4.2 browser-only 11 sub-PR MERGED (mobile FCM/APNS Faz 22.2 dep DIŞI), T4.3 ~67% (Tempo + suppression + per-tenant dashboard MERGED; per-template analytics + federation pending). Sprint plan re-baseline:
+> **Status revision 2026-05-21 (Session 47 — post WebPush 11 sub-PR + T4.1 MERGED + T4.3.a Tempo LIVE + T4.3.b suppression LIVE + T4.3.6 per-tenant dashboard MERGED)**: T4.1 LIVE, T4.2 browser-only foundation 11 sub-PR MERGED + 1 UI integration follow-up CI pending (mobile FCM/APNS Faz 22.2 dep DIŞI), T4.3 3/9 sub-task LIVE (Tempo + suppression + per-tenant dashboard MERGED; FBL + per-template analytics + federation residual). Sprint plan re-baseline:
 >
 > - T4.1 actual ~14h (estimate 25h, variance -11h — Block Kit + Teams Adaptive Card pattern straight-forward)
-> - T4.2 (browser-only scope) actual ~28h estimate from 11 sub-PR (W1+W2.1+W2.2+W2.3+W2.4+W2.5+W2.6+W3+W4+W5+W6+W7); mobile FCM/APNS ~24h DIŞI Faz 22.2
-> - T4.3 actual ~14h done of ~36h plan; ~22h kalır (federation + per-template analytics)
+> - T4.2 (browser-only scope) actual ~32h from 11 sub-PR MERGED + 1 UI follow-up CI pending (W1+W2.1+W2.2+W2.3+W2.4+W2.5+W2.6+W3+W4+W5+W6+W7 + #649); mobile FCM/APNS ~24h Faz 22.2 dep DIŞI
+> - T4.3 actual ~12.5h done of ~36h plan; ~14h kalır (T4.3.5 FBL + T4.3.7 per-template + T4.3.8 federation)
 
 ### T4.1 — 23.6 Teams + Slack Zenginleştirme
 
@@ -275,7 +275,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | T4.2.11 | Frontend UI integration (PushSubscriptionCard + VAPID env build chain) | frontend | 3 | 2.5 | dev | 🟢 PR #649 (this batch) |
 | T4.2.12 | Codex peer review + merge | docs | 1 | 1 | agent | 🟢 019e49e7 + 5 thread chain |
 
-**Total (browser-only)**: 28h actual; mobile FCM/APNS Faz 22.2 dep (~24h DIŞI)
+**Total (browser-only)**: 32h actual (11 sub-PR MERGED + #649 UI integration CI pending); mobile FCM/APNS Faz 22.2 dep (~24h DIŞI)
 
 ### T4.3 — 23.8 Tempo + Bounce Loop + Per-Tenant Grafana
 
@@ -291,9 +291,9 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | T4.3.8 | Cross-cluster Prometheus federation (R16 mitigation) | gitops | 6 | — | gitops | 🔴 (R16 active monitored) |
 | T4.3.9 | Codex peer review + merge | docs | 2 | 1.5 | agent | 🟢 |
 
-**Total**: 36h estimate / 12.5h actual + 14h residual (T4.3.5 + T4.3.7 + T4.3.8)
+**Total**: 36h estimate / 12.5h actual + 14h residual (T4.3.5 FBL + T4.3.7 per-template + T4.3.8 federation)
 
-**Tier 4 Total**: ~99h estimate / ~54.5h actual + ~14h residual; mobile FCM/APNS ~24h Faz 22.2 dep DIŞI
+**Tier 4 Total**: ~99h estimate / ~58.5h actual + ~14h residual; mobile FCM/APNS ~24h Faz 22.2 dep DIŞI (T4.1 14h + T4.2 32h + T4.3 12.5h = 58.5h actual)
 
 ---
 
@@ -322,9 +322,9 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | **T1** 23.2 closure | preference + erasure + provider rollback + outage fallback + classification + abuse | ~17-22h residual (~100h original; Session 41 re-baseline post T1.6 LIVE + T1.4 4-PR source-ready -77/-82h) | 1-1.5 hafta provisional | R2 (KVKK legal), R9 (D43 drill operator-bound), RAID I6 (Keycloak credential) — R13 + R19 mitigated (T1.6 abuse guards LIVE) |
 | **T2** 23.1+23.4+23.9 closure | D29-Functional + archive UI + 72h observation | ~19h | 1 hafta | R7 (browser verify) |
 | **T3** 23.3+23.5 | SMS JetSMS primary + NetGSM secondary + Preference UI | ~65h | 3 hafta | R1 (NetGSM secondary contract — failover acceptance blocker), R3 (DKIM) |
-| **T4** 23.6+23.7+23.8 v1 | Teams + WebPush (browser-only) + Tempo + bounce + per-tenant dashboard | ~99h estimate / ~54.5h actual + ~14h residual (T4.3.5 + T4.3.7 + T4.3.8); mobile FCM/APNS ~24h Faz 22.2 dep DIŞI — Session 47 re-baseline 2026-05-21 (T4.1 + T4.2 browser-only 11 sub-PR + T4.3.a Tempo + T4.3.b suppression + T4.3.6 per-tenant dashboard MERGED) | ~2 hafta residual | R11 ~mitigated (Tempo LIVE), R16 (federation pending) |
+| **T4** 23.6+23.7+23.8 v1 | Teams + WebPush (browser-only) + Tempo + bounce + per-tenant dashboard | ~99h estimate / ~58.5h actual + ~14h residual (T4.3.5 FBL + T4.3.7 per-template + T4.3.8 federation); mobile FCM/APNS ~24h Faz 22.2 dep DIŞI — Session 47 re-baseline 2026-05-21 (T4.1 + T4.2 browser-only 11 sub-PR + #649 UI integration CI pending + T4.3.a Tempo + T4.3.b suppression + T4.3.6 per-tenant dashboard MERGED) | ~2 hafta residual | R11 ~mitigated (Tempo LIVE), R16 (federation pending) |
 | **T5** 23.X v2 | multi-tenant features | ~144h | 8-12 hafta | R10 (multi-tenant migration) |
-| **Total v1 (T1-T4)** | Faz 23.0 → 23.9 v1 closure | ~130-140h residual (T1 ~17-22h + T2 ~19h + T3 ~65h + T4 ~14h; Session 47 re-baseline 2026-05-21 post T4.1/T4.2-browser/T4.3.a/T4.3.b/T4.3.6 MERGED -55h vs Session 41 baseline; mobile FCM/APNS ~24h Faz 22.2 dep DIŞI) | **~2 ay** (with parallelization) | — |
+| **Total v1 (T1-T4)** | Faz 23.0 → 23.9 v1 closure | **~115-120h residual** (T1 ~17-22h + T2 ~19h + T3 ~65h + T4 ~14h; Session 47 re-baseline 2026-05-21 post T4.1/T4.2-browser/T4.3.a/T4.3.b/T4.3.6 MERGED; mobile FCM/APNS ~24h Faz 22.2 dep **DIŞI** — total dahil ~139-144h olur) | **~2 ay** (with parallelization) | — |
 | **Total + v2** | Faz 23.0 → 23.X | ~424h | **6-8 ay** | — |
 
 **Estimation accuracy**: ±25% based on Codex peer review iter overhead + integration test discovery + cluster apply gates.
