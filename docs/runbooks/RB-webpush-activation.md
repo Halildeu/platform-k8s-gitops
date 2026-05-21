@@ -34,7 +34,7 @@ Beklenen: `sha256:f3f8c497df87fd3ee394c224d7209b67714b026152c92ae119b0d8c4c16fba
 ```bash
 ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
   exec deploy/notification-orchestrator -- \
-  bash -c 'echo \"SELECT version FROM notify.flyway_schema_history WHERE version IN (\\\"19\\\",\\\"20\\\")\" | PGPASSWORD=\$SPRING_DATASOURCE_PASSWORD psql -h postgres -U \$SPRING_DATASOURCE_USERNAME -d notify_db'"
+  bash -c \"echo \\\"SELECT version FROM notify.flyway_schema_history WHERE version IN ('19','20')\\\" | PGPASSWORD=\\\$SPRING_DATASOURCE_PASSWORD psql -h postgres -U \\\$SPRING_DATASOURCE_USERNAME -d notify_db\""
 ```
 
 Beklenen: 19 + 20 satırı listede; subscriber_push_endpoint table + BLOCKED_NO_PUSH_ENDPOINT enum LIVE.
@@ -53,23 +53,30 @@ Beklenen: `True`. Eğer `False`, mevcut ExternalSecret zaten broken; bu runbook'
 
 ### 3.1 VAPID anahtar çifti üret (BouncyCastle ECDSA P-256)
 
+Backend repo'da dedicated `VapidKeygenCli` sınıfı **YOK** (bu runbook iter-1 öneri; CLI ekleme follow-up scope). Operator için **doğrulanmış 2 alternatif**:
+
+**Seçenek A — Online web-push-codelab (önerilen, hızlı)**:
+1. Tarayıcıda https://web-push-codelab.glitch.me/ aç
+2. "Application Server Keys" bölümünde otomatik üretilen pair:
+   - Public Key: 65-byte uncompressed P-256, base64url (88 char ~ no padding)
+   - Private Key: 32-byte scalar, base64url (43 char ~ no padding)
+3. ⚠️ Private key tarayıcıdan kopyalandığı an Vault'a seedlenip clipboard temizle
+
+**Seçenek B — Offline OpenSSL (air-gapped operator)**:
 ```bash
-# Backend Maven worktree'sinde:
-cd ~/Documents/platform-backend/notification-orchestrator
-mvn exec:java -Dexec.mainClass=com.serban.notify.adapter.webpush.VapidKeygenCli \
-  -Dexec.classpathScope=test
+# Generate EC P-256 key pair PEM format
+openssl ecparam -genkey -name prime256v1 -out vapid-key.pem
+# Public key extract + uncompressed 65-byte form
+openssl ec -in vapid-key.pem -pubout -outform DER 2>/dev/null \
+  | tail -c 65 | base64 -w 0 | tr '/+' '_-' | tr -d '='
+# Private key extract + 32-byte scalar form
+openssl ec -in vapid-key.pem -outform DER 2>/dev/null \
+  | head -c 38 | tail -c 32 | base64 -w 0 | tr '/+' '_-' | tr -d '='
+# vapid-key.pem dosyasını seed sonrası SİL (shred)
+shred -u vapid-key.pem
 ```
 
-Beklenen output (örnek):
-```
-VAPID Public Key (base64url, 65-byte uncompressed P-256):
-BPp9...
-
-VAPID Private Key (base64url, 32-byte scalar):
-xJj4...
-```
-
-⚠️ Private key gizli — sadece Vault'a seed et, log/dosyaya yazma.
+⚠️ Private key gizli — sadece Vault'a seed et, log/dosyaya yazma. Clipboard'u temizle. Backend dedicated `VapidKeygenCli` follow-up issue (M8 multi-tenant pre-req'i içinde).
 
 ### 3.2 Vault'a VAPID 3-key seed (test cluster)
 
@@ -81,16 +88,25 @@ docker exec -e VAULT_TOKEN="$TEST_ROOT_TOKEN" platform-vault-test \
     vapid_subject='mailto:admin@testai.acik.com'
 ```
 
-Doğrulama (private key görünmez):
+Doğrulama (PII-safe — secret value'ları terminale basmaz):
 
 ```bash
 docker exec -e VAULT_TOKEN="$TEST_ROOT_TOKEN" platform-vault-test \
-  vault kv get -mount=kv platform/notification-orchestrator | grep -E '^vapid_'
+  sh -c 'vault kv get -mount=kv -format=json platform/notification-orchestrator \
+    | jq -e ".data.data | has(\"vapid_public_key\") and has(\"vapid_private_key\") and has(\"vapid_subject\")"'
 ```
 
-Beklenen: 3 satır `vapid_public_key=<value>`, `vapid_private_key=<masked>`, `vapid_subject=mailto:...`.
+Beklenen output: `true` (3 key mevcut). Key uzunluk doğrulaması (private key value'ı basmadan):
 
-### 3.3 ExternalSecret 3 entry uncomment
+```bash
+docker exec -e VAULT_TOKEN="$TEST_ROOT_TOKEN" platform-vault-test \
+  sh -c 'vault kv get -mount=kv -format=json platform/notification-orchestrator \
+    | jq -r ".data.data | {pub_len: (.vapid_public_key|length), priv_len: (.vapid_private_key|length), subj_present: (.vapid_subject != null)}"'
+```
+
+Beklenen: `pub_len ~88, priv_len ~43, subj_present true` (base64url-encoded P-256 length).
+
+### 3.3 ExternalSecret 3 entry uncomment (SADECE test overlay)
 
 `kustomize/overlays/test/eso/notify/externalsecret-notify.yaml` içinde:
 
@@ -104,14 +120,17 @@ Beklenen: 3 satır `vapid_public_key=<value>`, `vapid_private_key=<masked>`, `va
 #   ...
 ```
 
-3 entry'nin `#` prefix'ini kaldır → uncomment. Aynı işlemi `kustomize/overlays/prod/eso/notify/externalsecret-notify.yaml` için de yap.
+3 entry'nin `#` prefix'ini kaldır → uncomment.
 
-### 3.4 Test overlay ConfigMap patch (ENABLED=true)
+⚠️ **Prod overlay (`kustomize/overlays/prod/eso/notify/externalsecret-notify.yaml`) bu PR'da uncomment EDİLMEZ**. Prod Vault VAPID seed yapılmadan prod ExternalSecret aggregate `Ready=False` riski doğar (mevcut SMS/SMTP/DKIM live key sync bozulur). Prod ESO uncomment + prod ConfigMap enable + prod VAPID seed test 72h soak sonrası §6 Prod cutover slot'unda ayrı PR.
 
-`kustomize/overlays/test/kustomization.yaml` içinde `patches` bölümüne:
+### 3.4 Test overlay ConfigMap patch (ENABLED=true + Deployment annotation bump)
+
+`kustomize/overlays/test/kustomization.yaml` içinde `patches` bölümüne (ADR-0023 overlay-managed discipline — `kubectl rollout restart` YASAK):
 
 ```yaml
 patches:
+  # WebPush activation — ConfigMap flag flip
   - target:
       kind: ConfigMap
       name: notification-orchestrator-config
@@ -119,7 +138,19 @@ patches:
       - op: replace
         path: /data/NOTIFY_ADAPTERS_WEBPUSH_ENABLED
         value: "true"
+  # Pod template annotation bump → kustomize apply otomatik rollout tetikler
+  # (envFrom ConfigMap pickup için manual rollout restart pattern'i ADR-0023
+  # ile uyumsuz; annotation bump declarative + audit trail içinde)
+  - target:
+      kind: Deployment
+      name: notification-orchestrator
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations/notify-webpush-activated-at
+        value: "2026-05-21T20:00Z"
 ```
+
+Mevcut overlay'de zaten benzer annotation bump pattern'leri var (örn. `notify-tempo-otel-restart-at` PR #931 — line 3473+).
 
 ### 3.5 PR aç + Codex review + merge
 
@@ -150,22 +181,23 @@ Yeni frontend image build sonrası:
 gh run view <run-id> -R Halildeu/platform-web --log 2>&1 | grep "manifest sha256:" | head -3
 ```
 
-Yeni digest'i kustomization.yaml'da pin:
+Yeni digest'i kustomization.yaml'da pin (canonical frontend image isim):
 ```yaml
-- name: ghcr.io/halildeu/platform-web-prod-testai
+- name: ghcr.io/halildeu/platform-web-frontend-testai
   digest: sha256:<new-digest>
 ```
 
-PR aç + merge + cluster apply.
+PR aç + Codex review + merge.
 
-### 3.8 Cluster apply + rollout
+### 3.8 Cluster apply (ADR-0023 overlay-managed; rollout restart YASAK)
 
 ```bash
 ssh halil@staging-sw "cd /home/halil/platform-k8s-gitops && git pull origin main --quiet && \
   kubectl --context k3d-test -n platform-test apply -k kustomize/overlays/test 2>&1 | tail -5 && \
-  kubectl --context k3d-test -n platform-test rollout restart deploy/notification-orchestrator && \
   kubectl --context k3d-test -n platform-test rollout status deploy/notification-orchestrator --timeout=180s"
 ```
+
+Step 3.4'teki Deployment annotation bump (`notify-webpush-activated-at`) kustomize apply ile Pod template hash değiştirir → Kubernetes otomatik rolling restart. `kubectl rollout restart` ad-hoc imperative patch YASAK (test overlay discipline — AGENTS.md L37-38).
 
 ### 3.9 Acceptance — Pod startup log doğrula
 
@@ -210,16 +242,17 @@ Beklenen: `notify_intent_terminated_total{terminal=...}` + `notify_dispatch_outc
 
 ## 4. Rollback
 
-ENABLED=false rollback:
+ENABLED=false rollback (ADR-0023 overlay-managed):
 
 ```bash
-# 1. ConfigMap patch revert
+# 1. ConfigMap + annotation patch revert (PR'da yapılan değişikliğin tümü)
 git revert <feat-webpush-activation-test-overlay-merge-commit>
 git push
-# 2. Cluster apply
+# 2. Cluster apply — annotation bump revert Pod template hash değiştirir,
+# otomatik rolling restart (imperative rollout restart YASAK)
 ssh halil@staging-sw "cd /home/halil/platform-k8s-gitops && git pull && \
   kubectl --context k3d-test -n platform-test apply -k kustomize/overlays/test && \
-  kubectl --context k3d-test -n platform-test rollout restart deploy/notification-orchestrator"
+  kubectl --context k3d-test -n platform-test rollout status deploy/notification-orchestrator --timeout=180s"
 ```
 
 WebPushAdapter `@ConditionalOnProperty` ile bean creation block → adapter pasif. Mevcut subscriber endpoint kayıtları silinmez (soft-delete sadece manuel `DELETE /api/v1/notify/push/subscribe/{id}`).
