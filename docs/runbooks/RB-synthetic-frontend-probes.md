@@ -70,23 +70,38 @@ kubectl --context k3d-prod -n ingress-nginx logs -l app.kubernetes.io/name=ingre
 
 ### 2.4 Rollback yolu (deploy regression şüphesi)
 
-Frontend digest son **24 saat** içinde bump edildiyse rollback ilk hipotez:
+Frontend digest son **24 saat** içinde bump edildiyse rollback ilk hipotez. **`main^` KULLANMA** — bu son merge'i geri alır ama unrelated GitOps değişikliklerini de toplar (notify-23.x docs, başka servis bump'ı, vb.). Doğru pattern: SON BİLİNEN İYİ revision'ı `prod-sync-result.json` artifact'ından veya `kustomize/overlays/prod/kustomization.yaml` git history'sinden seç.
 
 ```bash
-# Son 5 deploy-prod-gitops success run
-gh run list --repo Halildeu/platform-k8s-gitops --workflow deploy-prod-gitops.yml --status success --limit 5
+# Yol 1 — PR #929 sonrası: prod-sync-result.json artifact ile son iyi revision'ı bul
+# Son 10 deploy-prod-gitops success run
+gh run list --repo Halildeu/platform-k8s-gitops --workflow deploy-prod-gitops.yml --status success --limit 10 \
+  --json databaseId,createdAt,headSha,conclusion | jq
 
-# Prod overlay'i 1 commit geriye al (revision pin)
-PREV_REV=$(gh api repos/Halildeu/platform-k8s-gitops/commits/main^ --jq '.sha')
+# Bir bilinen-iyi run id seç (örn. probe yeşilken son deploy)
+RUN_ID=<id-from-above>
+TMP=$(mktemp -d)
+gh run download $RUN_ID --repo Halildeu/platform-k8s-gitops --name prod-sync-result --dir $TMP
+cat $TMP/prod-sync-result.json | jq '.revision, .sync_mode, .conclusion'
+LAST_GOOD_REV=$(jq -r '.revision' $TMP/prod-sync-result.json)
+echo "Last-good revision: $LAST_GOOD_REV"
 
+# Yol 2 — PR #929 öncesi run veya artifact yoksa: kustomization.yaml frontend digest tarihçesinden seç
+git log --oneline -10 kustomize/overlays/prod/kustomization.yaml
+# Frontend digest bump'tan önceki commit'i bul (örn. PR #917 öncesi)
+LAST_GOOD_REV=$(git log -2 --oneline --format=%H kustomize/overlays/prod/kustomization.yaml | tail -1)
+
+# Rollback dispatch (revision = last good gitops main commit)
 gh workflow run deploy-prod-gitops.yml --repo Halildeu/platform-k8s-gitops --ref main \
-  --field revision=$PREV_REV \
+  --field revision=$LAST_GOOD_REV \
   --field sync_mode=full \
   --field allow_prune=false \
   --field confirm=SYNC-PROD-ROLLBACK
 ```
 
 Owner GitHub `production` environment gate'ini approve etmeli. Rollback sonrası probe'un yeşilenmesi beklenir (5dk içinde).
+
+**Önemli**: `sync_mode=full` rollback unrelated kaynakları da geri sync eder; eğer yalnız frontend Deployment geri alınmak isteniyorsa `sync_mode=resources --resources=apps:Deployment:frontend` tercih edilir. Trade-off: `resources` mode'da revision MAIN HEAD olmalı (workflow guard), `full` mode'da daha eski revision çalışır. Rollback hedefi gerçekten daha eski revision ise `full + SYNC-PROD-ROLLBACK` doğru seçim.
 
 ### 2.5 Escalation
 
@@ -108,22 +123,32 @@ Alert vector label `$labels.job` taşımaz (per-job `absent_over_time` collapse'
 
 ### 3.2 Anlık triage
 
+> Not: `monitoring.coreos.com/v1` `Probe` CR'ı Prometheus Operator tarafından
+> DOĞRUDAN discovery'ye alınır — `ServiceMonitor` intermediate'i YOKTUR.
+> Triage `kubectl get probe` + Prometheus `/targets` UI + Prometheus
+> Operator log üzerinden gider; `serviceMonitorSelector` bu monitor için
+> alakasız.
+
 ```bash
 # 1. blackbox-exporter Deployment + Pod state
 kubectl --context k3d-prod -n monitoring get deploy,pod -l app.kubernetes.io/name=blackbox-exporter
 
-# 2. Probe CR'lar mevcut mu
+# 2. Probe CR'lar mevcut + spec doğru mu
 kubectl --context k3d-prod -n monitoring get probe frontend-prod-settings-notifications frontend-testai-settings-notifications -o wide
+kubectl --context k3d-prod -n monitoring describe probe frontend-prod-settings-notifications | head -40
 
-# 3. Probe CR ServiceMonitor üretti mi (Prometheus tarafından scrape edilecek)
-kubectl --context k3d-prod -n monitoring get servicemonitor 2>&1 | grep frontend-settings
+# 3. Prometheus Operator log (Probe CR'ı discovery'ye almıyorsa burada görünür)
+kubectl --context k3d-prod -n monitoring logs -l app.kubernetes.io/name=kube-prometheus-stack-operator --tail=80 | grep -iE "frontend-(prod|testai)-settings|probe"
 
-# 4. Prometheus scrape target durumu
+# 4. Prometheus aktif scrape target durumu — Probe → blackbox-* job
 kubectl --context k3d-prod -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090:9090 &
 PF_PID=$!
 sleep 2
 curl -s http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | select(.labels.job | contains("blackbox-")) | {job: .labels.job, health: .health, lastError: .lastError}'
 kill $PF_PID
+
+# 5. Prometheus spec'ın Probe CR'ı discovery'ye nasıl aldığını gör
+kubectl --context k3d-prod -n monitoring get prometheus -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{.spec.probeSelector}{"\n"}{.spec.probeNamespaceSelector}{"\n---\n"}{end}'
 ```
 
 ### 3.3 Olası kök sebepler
@@ -131,9 +156,10 @@ kill $PF_PID
 | Symptom | Olası kök sebep | Remediation |
 |---|---|---|
 | blackbox-exporter pod NotReady | Container restart, OOM, config error | `kubectl describe pod` + `kubectl logs --previous`; ConfigMap revert |
-| Probe CR mevcut değil | Kustomize render drift, ArgoCD sync fail | `kubectl --context k3d-prod -k kustomize/base/monitoring` render kontrol; ArgoCD UI'da `platform-system` app sync |
-| Probe CR var ama ServiceMonitor yok | Prometheus Operator down veya RBAC fail | `kubectl -n monitoring get pod -l app.kubernetes.io/name=prometheus-operator`; operator log |
-| ServiceMonitor var ama Prometheus scrape değil | Prometheus discovery selector drift, label mismatch | Prometheus `/targets` UI'da `blackbox-*` job'larını ara; eğer yoksa `kube-prometheus-stack-prometheus` PrometheusSpec serviceMonitorSelector kontrol |
+| Probe CR mevcut değil | Kustomize render drift, ArgoCD sync fail | `kubectl kustomize kustomize/base/monitoring` ile lokal render kontrol; ArgoCD UI'da `platform-system` app sync |
+| Probe CR var ama Prometheus discovery'ye almıyor | `probeSelector` / `probeNamespaceSelector` mismatch, Operator down | Operator log + `kubectl get prometheus -o yaml` selector ile Probe CR `metadata.labels` karşılaştır |
+| Probe CR + discovery OK ama scrape target görünmüyor | Prometheus Operator generated config drift, prometheus-operator restart gerekebilir | `kubectl rollout restart deploy/<prometheus-operator-deploy>`; bekle 30s; `/targets` UI tekrar bak |
+| Scrape target görünüyor ama probe_success metric yok | blackbox-exporter target endpoint'i çağrılamıyor (NetworkPolicy, DNS, port-forward sorunu) | blackbox-exporter pod log: `kubectl logs deploy/blackbox-exporter --tail=50` — probe URL erişim hatalarını gör |
 
 ### 3.4 Remediation pattern
 
@@ -191,9 +217,15 @@ kill %1
 
 ## 6. Bağlantılı runbook'lar
 
-- `RB-prod-gitops-sync.md` — deploy-prod-gitops.yml manual dispatch (rollback için)
-- `RB-prod-rbac-least-privilege.md` — restricted prod-deploy-smoke kubeconfig setup
-- `RB-alertmanager-bridge-gh-token-seed.md` — alert → GitHub issue dispatch (alert delivery)
+> Repo iki runbook dizini taşıyor — operasyonel/cluster operations runbook'ları
+> `docs/operations/RUNBOOKS/` altında, monitoring/alerting + faz-bazlı
+> runbook'lar `docs/runbooks/` altında. Cross-reference'larda **tam path**
+> ver (relative link bozulabilir).
+
+- [docs/operations/RUNBOOKS/RB-prod-gitops-sync.md](../operations/RUNBOOKS/RB-prod-gitops-sync.md) — deploy-prod-gitops.yml manual dispatch (rollback için)
+- [docs/operations/RUNBOOKS/RB-prod-rbac-least-privilege.md](../operations/RUNBOOKS/RB-prod-rbac-least-privilege.md) — restricted prod-deploy-smoke kubeconfig setup
+- [docs/runbooks/RB-alertmanager-bridge-gh-token-seed.md](RB-alertmanager-bridge-gh-token-seed.md) — alert → GitHub issue dispatch (alert delivery)
+- [docs/runbooks/RB-critical-fix-sla-monitor.md](RB-critical-fix-sla-monitor.md) — DiD-1 SLA tracking issues (process-level lag, complementary to this monitor)
 
 ---
 

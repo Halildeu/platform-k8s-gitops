@@ -90,23 +90,33 @@ gh workflow run deploy-prod-gitops.yml --repo Halildeu/platform-k8s-gitops --ref
   --field confirm=SYNC-PROD
 
 # Owner production environment gate'i approve etmeli (GitHub Actions UI).
-# Deploy success sonrası monitor next iteration (≤15 dk) issue'yi otomatik olarak refresh comment ile günceller (close yapmaz).
 ```
 
-### 2.5 Issue'yi manuel kapatma
+### 2.5 Issue lifecycle — net davranış
 
-Deploy başarılı olduktan ve `prod-sync-result.json` artifact'ında `revision == $ORIGIN_MAIN` veya ancestor doğrulandıktan sonra:
+Önemli: **Monitor deploy bulduğunda mevcut SLA issue'sine DOKUNMAZ.** Refresh comment yalnız hâlâ deploy bulamadığı durumda (`create_or_update_issue()` `find_existing_sla_issue()` match'lerse comment ekler) çalışır.
+
+Deploy başarılı olduktan ve `prod-sync-result.json` artifact'ında `revision == $ORIGIN_MAIN` (veya ancestor) doğrulandıktan sonra **operator manuel kapatır**:
 
 ```bash
-# Issue'yi kapatmak operator işidir (monitor sadece açar/refresh eder, kapanmaz)
-gh issue close <ISSUE_NUM> --repo Halildeu/platform-k8s-gitops --comment "Resolved: deploy-prod-gitops run <RUN_ID> success at <UTC>. merge_sha=$MERGE_SHA is now in prod overlay."
+# Önce artifact'tan deploy revision'ı doğrula
+TMP=$(mktemp -d)
+gh run download <DEPLOY_RUN_ID> --repo Halildeu/platform-k8s-gitops --name prod-sync-result --dir $TMP
+jq '.revision, .conclusion' $TMP/prod-sync-result.json
+
+# revision merge_sha'yı içeriyorsa kapat
+gh issue close <ISSUE_NUM> --repo Halildeu/platform-k8s-gitops --comment "Resolved: deploy-prod-gitops run <RUN_ID> success at <UTC>. revision=<rev> is ancestor of merge_sha=$MERGE_SHA in prod overlay."
 ```
 
-### 2.6 Idempotency
+### 2.6 Idempotency davranışı (script ile uyumlu)
 
-- Monitor aynı PR için **birden fazla issue açmaz** (body marker `pr=N` substring + `critical-fix-sla-active` label boundary regex match)
-- Var olan açık issue'ye **refresh comment** ekler (age update)
-- Manuel kapatılan issue tekrar açılmaz (label kalsa bile open issue ararken state filter `--state open`)
+| Senaryo | Davranış |
+|---|---|
+| Aynı PR için 2 kez 4h breach (örn. monitor 15dk cron) | Var olan **açık** issue'ye refresh comment eklenir (`SLA still active — age now Xh.`), yeni issue YOK |
+| Operator issue'yi manuel kapattı + PR hâlâ deploy edilmedi | Sonraki monitor iter (≤15dk) **yeni** issue açar — script `--state open` filter ile arıyor, kapalı issue'ler match dışı |
+| Operator issue'yi manuel kapattı + PR deploy edildi | Yeni issue yok (artifact/log/headSha layer-1/2/3 deploy'u bulur, `[OK]` log + `continue`) |
+| Body marker `pr=640` ile başka PR'ın `pr=6400` body'sini karıştırma | Boundary regex (`<!--\s*critical-fix-sla\s+pr=640(?:\s\|-->\|$)`) ile false-positive yok (PR #926 iter-4 P2 fix) |
+| `--dry-run` mode | Hiç gh side-effect yok; log'da `[DRY-RUN] would create/update...` |
 
 ---
 
@@ -179,15 +189,19 @@ Threshold'ları manuel çağrıda override edilebilir (örn. `critical_hours=1` 
 - **Correlation accuracy**: Layer 1 (artifact) yalnız FU-Artifact (PR #929) sonrası deploy run'larında yazıldı. PR #929 öncesi run'lar için layer 2 (log-grep) + layer 3 (headSha) fallback. Log retention 90 gün — eski run'larda log boş dönerse headSha ancestor check yapılır (rollback false-pass guard'ı layer-1 olmadığı için zayıf).
 - **PR scope**: Yalnızca `Halildeu/platform-k8s-gitops` repo'sundaki PR'ları izler. Source repo'lardaki (`platform-web`, `platform-backend`) critical-fix label'ları kapsama girmez (cross-repo correlation kompleks; ayrı follow-up).
 - **Label discipline**: `critical-fix` label'ı **manuel** uygulanmalı. PR template trailer otomasyonu (`Critical-Fix: yes` → auto-label) follow-up scope (PR #-tba-).
-- **Closed issue re-open**: Monitor açık issue'yi refresh eder; **kapatılan** issue'yi yeniden açmaz. Eğer kullanıcı kapatır ama PR hâlâ deploy edilmemişse, monitor bir sonraki iter'de yeni issue açar (idempotency yalnız **açık** issue match'inde).
+- **Closed issue re-open**: Monitor yalnız HÂLÂ DEPLOY BULAMADIĞINDA açık issue'ye refresh comment ekler (deploy bulunca issue'ye dokunmaz). **Kapatılan** issue'yi yeniden açmaz; ama eğer kullanıcı kapatır ve PR hâlâ deploy edilmemişse, sonraki iter'de **yeni** issue açar (idempotency yalnız `--state open` issue match'inde, kapalı issue'ler scope dışı).
 
 ---
 
 ## 7. Bağlantılı runbook'lar
 
-- `RB-prod-gitops-sync.md` — deploy-prod-gitops.yml manual dispatch
-- `RB-synthetic-frontend-probes.md` — HTTP-level edge regression detection (DiD-2)
-- `RB-alertmanager-bridge-gh-token-seed.md` — alert delivery → GitHub issue mechanism
+> Repo iki runbook dizini taşıyor — operasyonel/cluster operations runbook'ları
+> `docs/operations/RUNBOOKS/` altında, monitoring/alerting + faz-bazlı
+> runbook'lar `docs/runbooks/` altında. Cross-reference'larda **tam path** ver.
+
+- [docs/operations/RUNBOOKS/RB-prod-gitops-sync.md](../operations/RUNBOOKS/RB-prod-gitops-sync.md) — deploy-prod-gitops.yml manual dispatch
+- [docs/runbooks/RB-synthetic-frontend-probes.md](RB-synthetic-frontend-probes.md) — HTTP-level edge regression detection (DiD-2, complementary monitor)
+- [docs/runbooks/RB-alertmanager-bridge-gh-token-seed.md](RB-alertmanager-bridge-gh-token-seed.md) — alert delivery → GitHub issue mechanism
 
 ---
 
