@@ -163,12 +163,37 @@ ssh halil@staging-sw "docker logs ao-gate-policy --tail 50 2>&1 | grep -iE 'erro
 Her App için webhook secret:
 1. Yeni webhook secret üret (operator-side, e.g. `openssl rand -hex 32`)
 2. GitHub App settings → Webhook Secret alanına yapıştır
-3. Aynı değeri Vault'a seed:
+3. Aynı değeri Vault'a seed. Secret değerini komut satırı argümanı olarak
+   yazma; process list, shell history veya terminal log'una sızmaması için
+   stdin/temp-file pattern kullan:
    ```bash
-   docker exec -e VAULT_TOKEN=$TOKEN platform-vault-prod \
-     vault kv put -mount=secret gpp2/policy/webhook-secret value=<the-secret-value>
-   docker exec -e VAULT_TOKEN=$TOKEN platform-vault-prod \
-     vault kv put -mount=secret gpp2/release-gate/webhook-secret value=<the-secret-value>
+   set +x
+   umask 077
+
+   POLICY_WEBHOOK_SECRET_FILE="$(mktemp)"
+   RELEASE_GATE_WEBHOOK_SECRET_FILE="$(mktemp)"
+   trap 'rm -f "$POLICY_WEBHOOK_SECRET_FILE" "$RELEASE_GATE_WEBHOOK_SECRET_FILE"' EXIT
+
+   openssl rand -hex 32 > "$POLICY_WEBHOOK_SECRET_FILE"
+   openssl rand -hex 32 > "$RELEASE_GATE_WEBHOOK_SECRET_FILE"
+
+   # Paste the policy file content into the policy GitHub App Webhook Secret UI.
+   # Paste the release-gate file content into the release-gate GitHub App Webhook Secret UI.
+   # Do not paste either value into chat, logs, PRs, issues, or repo files.
+
+   docker exec -i -e VAULT_TOKEN="$TOKEN" platform-vault-prod sh -ceu '
+     tmp="$(mktemp)"
+     trap "rm -f \"$tmp\"" EXIT
+     cat > "$tmp"
+     vault kv put -mount=secret gpp2/policy/webhook-secret value=@"$tmp"
+   ' < "$POLICY_WEBHOOK_SECRET_FILE"
+
+   docker exec -i -e VAULT_TOKEN="$TOKEN" platform-vault-prod sh -ceu '
+     tmp="$(mktemp)"
+     trap "rm -f \"$tmp\"" EXIT
+     cat > "$tmp"
+     vault kv put -mount=secret gpp2/release-gate/webhook-secret value=@"$tmp"
+   ' < "$RELEASE_GATE_WEBHOOK_SECRET_FILE"
    ```
 
 **Vault path version artar** (zaten placeholder vardı; bu replace).
