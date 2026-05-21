@@ -47,7 +47,7 @@ PR #640 audit identified **4 separate code paths** where the same race could tri
 3. **`updateToken` throw** — refresh call rejects (network failure, KC down)
 4. **Shell-services refresh-closure failure** — `refreshSession()` closure fails after MFE federation handoff
 
-Codex iter-1 review of PR #640 caught 2 blockers in the initial 2-path design (paths 2 + 3 were missing). Iter-2 added all 4 + ensured `authzSnapshot` is also nulled in the dispatch payload (subtle: clearing token alone left `authzSnapshot` reachable, which PermissionProvider could still gate on).
+The first Codex review pass of PR #640's plan-iter caught 2 blockers in the initial 2-path design (paths 2 + 3 were missing). The next pass absorbed all 4 + ensured `authzSnapshot` is also nulled in the dispatch payload (subtle: clearing token alone left `authzSnapshot` reachable, which PermissionProvider could still gate on).
 
 ## 2. Timeline (UTC)
 
@@ -221,7 +221,7 @@ Two PRs (#926, #936) hit branch confusion where another agent's checkout pollute
 
 This incident reinforced (did NOT create new) these existing HARD RULE'lar:
 
-- **Cross-AI Peer Review (provider-level)** — Codex iter-1 catch rate justified the rule. Even when CI is green and behavior parity is verified, peer review surfaces design-level issues.
+- **Cross-AI Peer Review (provider-level)** — The 6/7 first-pass post-impl finding rate justified the rule. Even when CI is green and behavior parity is verified, peer review surfaces design-level issues.
 - **Admin Merge YASAK** — All 7 PRs used normal squash merge. Two PRs needed rebase-then-merge after parallel main advance; rebased + pushed + waited for CI re-run + merged. No `--admin` flag used.
 - **Pre-Production Full Authority** — User explicitly approved prod deploy ("Evet, PR #640 fix'i prod'a deploy et"). Agent executed without further per-step approval; provided structured updates + monitoring.
 - **No Fake Work** — Each PR shipped with tests passing locally + Codex review verdict + CI green. No "I'll add tests later" or unverified claims.
