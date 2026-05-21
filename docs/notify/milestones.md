@@ -138,9 +138,9 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 - [x] Bulk mute-channel + restore-defaults two-stage confirm — `NotificationPreferencesPage.tsx` (Faz 23.6 PR-C1+C2 platform-web PR #301 MERGED)
 - [x] Operator guide docs LIVE — Faz 23.5 PR5 platform-web PR #288 MERGED
 - [~] D29-NOTIFY UI flow evidence — Vitest unit testler LIVE (`__tests__/notify-prefs.api.test.ts`, `__tests__/NotificationPreferencesPage.test.tsx`); Playwright cluster smoke G4 gap
-- [ ] **G2 Backend PreferenceTopicCatalog endpoint** — agent-actionable (platform-backend PR)
-- [ ] **G3 Frontend public unsubscribe landing** — agent-actionable (platform-web PR)
-- [ ] **G4 Playwright cluster smoke** — agent-actionable (platform-web PR)
+- [x] **G2 Backend PreferenceTopicCatalog endpoint** — platform-backend PR #269 MERGED 2026-05-20T21:37Z (`GET /api/v1/notify/topics/me` + TopicCatalogProperties + TopicCatalogService; 10/10 unit pass; sha-99df4f9b cumulative)
+- [x] **G3 Frontend public unsubscribe landing** — platform-web PR #642 MERGED (`/notifications/unsubscribe` route + success/expired/invalid states)
+- [x] **G4 Playwright cluster smoke** — platform-web PR #646 MERGED (preferences page + unsubscribe e2e smoke)
 - [~] Charter 23.5 marker → 🟢 source-ready + acceptance candidate (this PR-G1; full closure G2+G3+G4 sonrası)
 
 **Blockers**: None (T1.1 backend preference API LIVE; M3 stable)
