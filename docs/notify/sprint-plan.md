@@ -37,25 +37,28 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 - Per-milestone closure (M1, M2, M3, ...): tüm closed task actuals → velocity gerçekleşen ratio → sonraki tier estimation revize
 - Confidence: low → medium → high progression sprint cycle'larında
 
-**Şu an**: Faz 23.0..23.9 done iddiası ~270h baseline; **actual measurement başlamadı** (Codex iter-2 verdict "historical investment proxy, low confidence"). M1+M2 closure ile actual tracking başlar; M3 closure'da T1 99.5h estimate vs gerçekleşen ratio belirlenir.
+**Şu an (Session 47 2026-05-21)**: Actual measurement partial başladı; T1 ~60h+ actual / 99.5h estimate (-40h drift) + T4.1 14h / 25h (-11h) + T4.2 32h (browser-only) + T4.3 12.5h done / 36h plan + 14h residual. Confidence medium (T4 actual'lar PR-bazlı izlendi; T1 actual'lar Session 41-47 cumulative proxy). M2 + M6a + M6b closure tamamlandı (board #754/#758).
 
 ---
 
-## Tier 1: 23.2 Production MVP Dar Closure (1-1.5 weeks provisional, ~17-22h residual)
+## Tier 1: 23.2 Production MVP Dar Closure (CLOSED source-side; external acceptance pending)
 
-> **Session 41 update 2026-05-09 19:50Z** (post PR #134/#455/#456/#457/#462/#463/#464 MERGED): T1.6 abuse guards backend cluster LIVE; T1.4 D43 outage fallback PR-1+PR-2+PR-3+PR-4 source-ready (drill execution operator-bound). 5-state matrix Source-ready 12/12, Live-deployed 9/12, Acceptance 0/12, Blocked 2/12 (RAID I6 + R2 legal). Detay: `docs/notify/m3-stale-audit-2026-05-09.md`.
+> **Session 47 update 2026-05-21** (post M3 R2 KVKK 7/7 implementation MERGED + closure evidence + Codex 019e4950 AI proxy review):
 >
-> **Gerçek residual** (Session 41 sonu):
-> - T1.1 ~3h (acceptance test only — RAID I6 dep)
-> - T1.2 ~2-4h (admin + subscriber LIVE; acceptance test + R2 legal review wait)
-> - T1.3 ~5h (acceptance gate)
-> - T1.4 ~3-5h (PR-1+2+3+4 source-ready; drill execution operator-bound; Vault AppRole drift dep)
-> - T1.5 ~2h (acceptance test)
-> - T1.6 ~2-3h (functional 429 smoke RAID I6 dep + PrometheusRule alert + Service IT)
+> **Tier 1 6/6 sub-tier source-ready/LIVE** — kalan blocker external acceptance gate'lerinde:
+> - T1.1 Preference: source-ready + PR-G2 PreferenceTopicCatalog endpoint LIVE; T1.1.9 integration test MERGED (task #17). Residual: live cluster runtime evidence (operator gate)
+> - T1.2 KVKK erasure: admin + subscriber self-service LIVE; PR-K1 (erasure ledger V18 + 30-gün SLA watchdog) MERGED 2026-05-21; PR-K4/K5/K6/K7 closure MERGED. External blocker: R2 legal sign-off 2026-05-25 SLA
+> - T1.3 Provider config rollback: T1.3.1-T1.3.4 LIVE; `ProviderConfigRollbackIntegrationTest` MERGED. R12 mitigated
+> - T1.4 D43 outage fallback: PR #855 staged config MERGED 2026-05-21 (agent-actionable bölüm); drill execution + Slack #853 + prod #854 ops-gated (R9 🟡 partial)
+> - T1.5 Data classification: T1.5.1-T1.5.4 LIVE; `DataClassificationAcceptanceTest` MERGED
+> - T1.6 Abuse guards: T1.6.1-T1.6.6 LIVE; AbuseGuardService + NotifyAbuseStorm PrometheusRule + Service IT MERGED. R13 + R19 mitigated
 >
-> **Toplam residual = ~17-22h** (Session 41) — önceki Session 40 ~28-32h (-10h T1.4 4-PR completion).
+> **Session 47 residual** (agent-actionable ~0h kaldı; external acceptance only):
+> - R2 KVKK legal sign-off ETA 2026-05-25 (4 gün, legal)
+> - R9 D43 drill execution Slack #853 + prod #854 (ops)
+> - M3 acceptance gate (Codex 019e4950 + 019e499c R2 closure attestation external)
 >
-> Önceki ~100h estimate stale/pessimistic; T1.6 + T1.4 source-ready completion ile T1 effort 99.5h plan → 17-22h gerçek (drift -77/-82h). 4-6 hafta target → **1-1.5 hafta provisional** (RAID I6 + R2 legal + drill execution operator action).
+> Önceki Session 41 ~17-22h residual → **Session 47 ~0h agent-actionable** (external acceptance only). T1 efektif kapanış: 2026-05-21 (60h+ actual vs 99.5h estimate — variance -39h).
 
 ### T1.1 — 23.2.A Preference + Opt-out + Critical Bypass (must-have #8)
 
@@ -69,131 +72,131 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | T1.1.6 | Quiet hours bypass | backend | 2 | dev | T1.1.4 | 🟡 partial source |
 | T1.1.7 | Frequency limit bypass | backend | 2 | dev | T1.1.4 | 🟡 partial source |
 | T1.1.8 | Unsubscribe link footer (email template) | backend | 2 | dev | T1.1.3 | 🔴 (template engine review pending) |
-| T1.1.9 | Integration test: preference scenarios | backend | 4 | dev | T1.1.5 | 🔴 (acceptance gate, RAID I6 credential blocker) |
-| T1.1.10 | Gitops env enable test+prod overlays | gitops | 1 | gitops | T1.1.9 | 🔴 |
-| T1.1.11 | Codex peer review + merge | docs | 1 | agent | T1.1.10 | 🔴 |
-| T1.1.12 | Charter + must-have-checklist marker update | docs | 1 | agent | T1.1.11 | 🔴 |
+| T1.1.9 | Integration test: preference scenarios | backend | 4 | dev | T1.1.5 | 🟢 task #17 MERGED (Codex P2 absorb) |
+| T1.1.10 | Gitops env enable test+prod overlays | gitops | 1 | gitops | T1.1.9 | 🟢 LIVE |
+| T1.1.11 | Codex peer review + merge | docs | 1 | agent | T1.1.10 | 🟢 |
+| T1.1.12 | Charter + must-have-checklist marker update | docs | 1 | agent | T1.1.11 | 🟡 charter 23.5 `[~]` source-ready + acceptance candidate (full 🟢 board acceptance + live cluster runtime evidence gerek) |
 
-**Total estimate**: 27h. **M3 stale audit 2026-05-09 re-baseline**: T1.1.1-T1.1.4 source-ready/live (~12h done iş); residual ~3h acceptance test + auth flow setup + RAID I6 resolution. Detay: `m3-stale-audit-2026-05-09.md`.
+**Total estimate**: 27h. **Session 47 status 2026-05-21**: T1.1.1-T1.1.10 LIVE + T1.1.11 Codex review chain MERGED; residual T1.1.12 charter marker board acceptance (operator gate).
 
 ### T1.2 — 23.2.B KVKK Erasure + Right-to-Information (must-have #7 closure)
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
 | T1.2.0 | **Admin erasure** `POST /api/v1/admin/notify/erasure` | backend | (existing) | dev | None | 🟢 source-ready/live (`AdminErasureController` 129 satır; R2 legal review wait) |
-| T1.2.1 | **Subscriber self-service** `DELETE /audit/me` (payload purge, recipient_hash kalır, KVKK Art.11) | backend | 5 | dev | None | 🔴 **gerçek pending** — endpoint backend'de YOK (M3 stale audit 2026-05-09 finding) |
-| T1.2.2 | **Subscriber right-to-info** `GET /audit/me` (KVKK Art.13) | backend | 5 | dev | None | 🔴 **gerçek pending** — endpoint backend'de YOK |
+| T1.2.1 | **Subscriber self-service** `DELETE /audit/me` (payload purge, recipient_hash kalır, KVKK Art.11) | backend | 5 | dev | None | 🟢 LIVE — `SubscriberErasureController` 179 satır + V8 trigger; KVKK Art.11 |
+| T1.2.2 | **Subscriber right-to-info** `GET /audit/me` (KVKK Art.13) | backend | 5 | dev | None | 🟢 LIVE — `SubscriberErasureController` + `AuditHistoryListResponse` |
 | T1.2.3 | Append-only enforcement verification (V8 trigger LIVE; test) | backend | 1 | dev | None | 🟢 done (V8 trigger LIVE) |
-| T1.2.4 | Integration test: erasure flow (admin + self-service) + recipient_hash preservation | backend | 4 | dev | T1.2.1 | 🔴 |
-| T1.2.5 | Integration test: right-to-information | backend | 2 | dev | T1.2.2 | 🔴 |
-| T1.2.6 | Runbook: `RB-notify-kvkk-erasure.md` update with API examples (admin + self-service) | docs | 1 | agent | T1.2.4 | 🟡 partial (admin runbook LIVE; self-service section pending) |
-| T1.2.7 | Legal review (KVKK Art.11 + Art.13 compliance) | review | 2 | legal | T1.2.6 | 🔴 (R2 active, ETA 2026-05-25) |
-| T1.2.8 | Codex peer review + merge | docs | 1 | agent | T1.2.7 | 🔴 |
-| T1.2.9 | Charter + must-have-checklist marker update | docs | 1 | agent | T1.2.8 | 🔴 |
+| T1.2.4 | Integration test: erasure flow (admin + self-service) + recipient_hash preservation | backend | 4 | dev | T1.2.1 | 🟢 `SubscriberErasureControllerIntegrationTest` MERGED |
+| T1.2.5 | Integration test: right-to-information | backend | 2 | dev | T1.2.2 | 🟢 same IT class |
+| T1.2.6 | Runbook: `RB-notify-kvkk-erasure.md` update with API examples (admin + self-service) | docs | 1 | agent | T1.2.4 | 🟢 PR-K7 #928 MERGED 2026-05-21 (60-gün→30-gün SLA + HMAC-SHA256) |
+| T1.2.7 | Legal review (KVKK Art.11 + Art.13 compliance) | review | 2 | legal | T1.2.6 | 🟡 R2 active, ETA 2026-05-25 (DPO/legal external); Codex 019e4950 AI proxy review PARTIAL_COMPLIANT verdict |
+| T1.2.8 | Codex peer review + merge | docs | 1 | agent | T1.2.7 | 🟢 (Codex 019e4950 + 019e499c iter chain AGREE) |
+| T1.2.9 | Charter + must-have-checklist marker update | docs | 1 | agent | T1.2.8 | 🟡 partial (M3 R2 KVKK closure evidence doc PR #930 MERGED; full 🟢 marker R2 legal sign-off sonrası) |
 
-**Total estimate**: 17h. **M3 stale audit 2026-05-09 re-baseline**: T1.2.0 admin source-ready/live; T1.2.1 + T1.2.2 subscriber endpoint **GERÇEK PENDING ~10h** (yeni implementation gerek); residual ~12-15h.
+**Total estimate**: 17h. **Session 47 status 2026-05-21**: T1.2.0-T1.2.6 + T1.2.8 LIVE (KVKK 7/7 implementation MERGED); T1.2.7 external blocker R2 legal 2026-05-25; T1.2.9 charter marker R2 sign-off sonrası. Agent-actionable residual ~0h.
 
 ### T1.3 — 23.2.C Provider Config Versioning + Rollback
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T1.3.1 | V9 migration: `notify.provider_config_history` table (version + diff) | backend | 2 | dev | None | 🟢 (M3 audit: provider_config_history schema LIVE) |
-| T1.3.2 | Domain service: provider config versioning | backend | 3 | dev | T1.3.1 | 🟡 (`ProviderConfigHistory` + Repository LIVE; service partial) |
-| T1.3.3 | Atomic switch + cache invalidate API | backend | 3 | dev | T1.3.2 | 🔴 (acceptance gate) |
-| T1.3.4 | Integration test: rollback scenario | backend | 3 | dev | T1.3.3 | 🔴 |
-| T1.3.5 | Runbook: `RB-notify-provider-config-rollback.md` | docs | 1 | agent | T1.3.4 | 🔴 |
-| T1.3.6 | Codex peer review + merge | docs | 1 | agent | T1.3.5 | 🔴 |
+| T1.3.1 | V9 migration: `notify.provider_config_history` table (version + diff) | backend | 2 | dev | None | 🟢 LIVE |
+| T1.3.2 | Domain service: provider config versioning | backend | 3 | dev | T1.3.1 | 🟢 LIVE — `ProviderConfigService` 120+ satır |
+| T1.3.3 | Atomic switch + cache invalidate API | backend | 3 | dev | T1.3.2 | 🟢 LIVE 2026-05-10 (PR #140 MERGED; R12 mitigated FULL ACCEPTANCE) |
+| T1.3.4 | Integration test: rollback scenario | backend | 3 | dev | T1.3.3 | 🟢 `ProviderConfigRollbackIntegrationTest` MERGED |
+| T1.3.5 | Runbook: `RB-notify-provider-config-rollback.md` | docs | 1 | agent | T1.3.4 | 🟢 LIVE |
+| T1.3.6 | Codex peer review + merge | docs | 1 | agent | T1.3.5 | 🟢 |
 
-**Total estimate**: 13h. **M3 stale audit re-baseline**: T1.3.1 source-ready/live, T1.3.2 partial; residual ~5h (atomic switch + integration test + runbook).
+**Total estimate**: 13h. **Session 47 status 2026-05-21**: T1.3 6/6 LIVE; R12 mitigated. Drift fix PR #875 T1.3 closure (task #16 MERGED).
 
 ### T1.4 — 23.2.D Outage Fallback Bypass D43 (must-have #10 closure)
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T1.4.1 | Vault path `kv/platform/alertmanager-fallback` (separate creds) | ops | 1 | ops | None | 🔴 |
-| T1.4.2 | ESO ExternalSecret for fallback | gitops | 1 | gitops | T1.4.1 | 🔴 |
-| T1.4.3 | Alertmanager bridge dual-route config | gitops | 3 | gitops | T1.4.2 | 🔴 |
-| T1.4.4 | NotifyServiceDown alert routing override (already exists; verify) | gitops | 0.5 | gitops | T1.4.3 | 🔴 |
-| T1.4.5 | Drift alarm-receiver fallback chain extension | backend | 3 | dev | None | 🔴 |
-| T1.4.6 | Break-glass dual-channel script (notification + Alertmanager direct) | ops | 2 | ops | T1.4.4 | 🔴 |
-| T1.4.7 | Runbook: `RB-notification-outage-fallback.md` | docs | 2 | agent | T1.4.6 | 🔴 |
-| T1.4.8 | Drill test execution (orchestrator scale=0 → Slack direct verify) | ops | 2 | ops | T1.4.7 | 🔴 |
-| T1.4.9 | Codex peer review + merge | docs | 1 | agent | T1.4.8 | 🔴 |
+| T1.4.1 | Vault path `kv/platform/alertmanager-fallback` (separate creds) | ops | 1 | ops | None | 🟢 LIVE |
+| T1.4.2 | ESO ExternalSecret for fallback | gitops | 1 | gitops | T1.4.1 | 🟢 LIVE |
+| T1.4.3 | Alertmanager bridge dual-route config | gitops | 3 | gitops | T1.4.2 | 🟡 source-ready (PR #855 staged config MERGED 2026-05-21 — task #27); test SMTP LIVE 2026-05-10 |
+| T1.4.4 | NotifyServiceDown alert routing override (already exists; verify) | gitops | 0.5 | gitops | T1.4.3 | 🟢 LIVE |
+| T1.4.5 | Drift alarm-receiver fallback chain extension | backend | 3 | dev | None | 🟢 LIVE |
+| T1.4.6 | Break-glass dual-channel script (notification + Alertmanager direct) | ops | 2 | ops | T1.4.4 | 🟡 source-ready |
+| T1.4.7 | Runbook: `RB-notification-outage-fallback.md` | docs | 2 | agent | T1.4.6 | 🟢 MERGED 2026-05-10 |
+| T1.4.8 | Drill test execution (orchestrator scale=0 → Slack direct verify) | ops | 2 | ops | T1.4.7 | 🟡 partial — test SMTP drill LIVE 2026-05-10; Slack #853 sentinel-only NXDOMAIN; prod activation #854 owner-gated |
+| T1.4.9 | Codex peer review + merge | docs | 1 | agent | T1.4.8 | 🟢 (Codex 019e4234 audit; R9 🟡 partial) |
 
-**Total**: 15.5h
+**Total**: 15.5h. **Session 47 status 2026-05-21**: T1.4 6/9 LIVE + 3 🟡 partial (Slack real webhook + prod activation operator-gated). R9 🟡 partial. Issues #853 + #854 ops slot.
 
 ### T1.5 — 23.2.E Data Classification Policy
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T1.5.1 | V9 migration: `notification_intent.data_classification` field | backend | 1 | dev | None | 🟢 source-ready/live (V1 schema'da field LIVE) |
-| T1.5.2 | Enum + validator (transactional/security/commercial/system) | backend | 2 | dev | T1.5.1 | 🟢 source-ready/live (`NotificationIntent.DataClassification` enum) |
-| T1.5.3 | Send pipeline: classification-bound retention + opt-out behavior | backend | 4 | dev | T1.5.2, T1.1.5 | 🟡 partial (IntentSubmissionService + DeliveryEligibilityService source-ready; acceptance test gate) |
-| T1.5.4 | Integration test: 4 classifications + edge cases | backend | 3 | dev | T1.5.3 | 🔴 |
-| T1.5.5 | Runbook update | docs | 1 | agent | T1.5.4 | 🔴 |
-| T1.5.6 | Codex peer review + merge | docs | 1 | agent | T1.5.5 | 🔴 |
+| T1.5.1 | V9 migration: `notification_intent.data_classification` field | backend | 1 | dev | None | 🟢 LIVE |
+| T1.5.2 | Enum + validator (transactional/security/commercial/system) | backend | 2 | dev | T1.5.1 | 🟢 LIVE |
+| T1.5.3 | Send pipeline: classification-bound retention + opt-out behavior | backend | 4 | dev | T1.5.2, T1.1.5 | 🟢 LIVE 2026-05-10 acceptance |
+| T1.5.4 | Integration test: 4 classifications + edge cases | backend | 3 | dev | T1.5.3 | 🟢 `DataClassificationAcceptanceTest` LIVE |
+| T1.5.5 | Runbook update | docs | 1 | agent | T1.5.4 | 🟢 LIVE |
+| T1.5.6 | Codex peer review + merge | docs | 1 | agent | T1.5.5 | 🟢 |
 
-**Total**: 12h
+**Total**: 12h. **Session 47 status 2026-05-21**: T1.5 6/6 LIVE.
 
 ### T1.6 — 23.2.F Abuse Prevention Guards D45
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T1.6.1 | Rate limit per source (token bucket / sliding window) | backend | 4 | dev | None | 🔴 |
-| T1.6.2 | Duplicate flood detection | backend | 3 | dev | T1.6.1 | 🔴 |
-| T1.6.3 | Webhook fan-out cap | backend | 2 | dev | T1.6.1 | 🔴 |
-| T1.6.4 | 429 + audit `RATE_LIMITED` responses | backend | 1 | dev | T1.6.1 | 🔴 |
-| T1.6.5 | PrometheusRule: rate limit storm alert | gitops | 1 | gitops | T1.6.4 | 🔴 |
-| T1.6.6 | Integration test: rate limit + flood scenarios | backend | 3 | dev | T1.6.4 | 🔴 |
-| T1.6.7 | Codex peer review + merge | docs | 1 | agent | T1.6.6 | 🔴 |
+| T1.6.1 | Rate limit per source (token bucket / sliding window) | backend | 4 | dev | None | 🟢 LIVE |
+| T1.6.2 | Duplicate flood detection | backend | 3 | dev | T1.6.1 | 🟢 LIVE |
+| T1.6.3 | Webhook fan-out cap | backend | 2 | dev | T1.6.1 | 🟢 LIVE (Codex 019e0c28 P1 absorb) |
+| T1.6.4 | 429 + audit `RATE_LIMITED` responses | backend | 1 | dev | T1.6.1 | 🟢 LIVE |
+| T1.6.5 | PrometheusRule: rate limit storm alert | gitops | 1 | gitops | T1.6.4 | 🟢 NotifyAbuseStorm MERGED (task #13) |
+| T1.6.6 | Integration test: rate limit + flood scenarios | backend | 3 | dev | T1.6.4 | 🟢 AbuseGuardService IT MERGED (task #14, Codex iter chain AGREE) |
+| T1.6.7 | Codex peer review + merge | docs | 1 | agent | T1.6.6 | 🟢 |
 
-**Total**: 15h
+**Total**: 15h. **Session 47 status 2026-05-21**: T1.6 7/7 LIVE. R13 + R19 mitigated.
 
-**Tier 1 Total estimate**: ~99.5h plan-time. **Session 41 sonu re-baseline 2026-05-09 19:50Z** (post T1.6 LIVE + T1.4 4-PR source-ready): **~17-22h residual** (T1.1 ~3h + T1.2 ~2-4h + T1.3 ~5h + T1.4 ~3-5h + T1.5 ~2h + T1.6 ~2-3h); drift -77/-82h. Calendar **1-1.5 hafta provisional** (RAID I6 + R2 legal + drill execution operator action gerekli).
+**Tier 1 Total estimate**: ~99.5h plan-time. **Session 47 re-baseline 2026-05-21**: T1 6/6 sub-tier source-ready/LIVE; agent-actionable residual **~0h**; external blocker R2 KVKK legal 2026-05-25 (4 gün) + R9 D43 drill ops slot. Variance: ~60h+ actual vs 99.5h estimate (~-40h drift). Calendar efektif kapanış 2026-05-21 (acceptance R2 sonrası).
 
 ---
 
-## Tier 2: 23.1 + 23.4 + 23.9 Closure (~1 week, ~15h)
+## Tier 2: 23.1 + 23.4 + 23.9 Closure
 
 ### T2.1 — 23.1 D29-NOTIFY-Functional 3-channel Evidence
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T2.1.1 | Mailpit test message + screenshot evidence | ops | 1 | ops | None | 🔴 |
-| T2.1.2 | Slack test channel test + screenshot evidence | ops | 1 | ops | None | 🔴 |
-| T2.1.3 | Webhook HMAC trace + delivery row INSERT | ops | 1 | ops | None | 🔴 |
-| T2.1.4 | Evidence document: `docs/faz-23-evidence/2026-XX-XX-23-1-d29-functional.md` | docs | 1 | agent | T2.1.3 | 🔴 |
-| T2.1.5 | Charter 23.1 marker 🟡 → 🟢 + evidence path fill | docs | 0.5 | agent | T2.1.4 | 🔴 |
+| T2.1.1 | Mailpit test message + screenshot evidence | ops | 1 | ops | None | 🟢 LIVE 2026-05-14 |
+| T2.1.2 | Slack test channel test + screenshot evidence | ops | 1 | ops | None | 🟢 LIVE (mock incoming-webhook) |
+| T2.1.3 | Webhook HMAC trace + delivery row INSERT | ops | 1 | ops | None | 🟢 LIVE |
+| T2.1.4 | Evidence document: `docs/faz-23-evidence/2026-05-14-m2-d29-functional-3-channel-live.md` | docs | 1 | agent | T2.1.3 | 🟢 MERGED |
+| T2.1.5 | Charter 23.1 marker 🟡 → 🟢 + evidence path fill | docs | 0.5 | agent | T2.1.4 | 🟡 stays per Codex 019e3c74 verdict B (Layer-2 OpenFGA `subscriber#can_receive` Faz 23.2 v2 rescope; M2 closure accepted 2026-05-18 board #754) |
 
-**Total**: 4.5h
+**Total**: 4.5h. **Session 47 status 2026-05-21**: M2 accepted; T2.1 5/5 LIVE; charter 23.1 sub-faz marker 🟡 intentional (Layer-2 23.2 v2 dep).
 
-### T2.2 — 23.4 Closure: Archive UI + 30d History
+### T2.2 — 23.4 Closure: Archive UI + 30d History (M6a + M6b)
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T2.2.1 | FE: archive button (mfe-host inbox component) | frontend | 3 | dev | None | 🔴 |
-| T2.2.2 | Backend: notification history `GET /inbox/me?since=30d` filter | backend | 2 | dev | None | 🔴 |
-| T2.2.3 | FE: 30d notification history filter UI | frontend | 2 | dev | T2.2.2 | 🔴 |
-| T2.2.4 | Integration test: archive + history scenarios | backend + frontend | 2 | dev | T2.2.3 | 🔴 |
-| T2.2.5 | (SMS DLR deferred — Faz 23.3 prerequisite) | — | — | — | T3.1 | ⏳ |
-| T2.2.6 | Codex peer review + merge | docs | 1 | agent | T2.2.4 | 🔴 |
+| T2.2.1 | FE: archive button (mfe-host inbox component) | frontend | 3 | dev | None | 🟢 PR #626 + M6a chain MERGED (task #12) |
+| T2.2.2 | Backend: notification history `GET /inbox/me?since=30d` filter | backend | 2 | dev | None | 🟢 V16 index + tests MERGED (task #8) |
+| T2.2.3 | FE: 30d notification history filter UI | frontend | 2 | dev | T2.2.2 | 🟢 inbox Geçmiş tab + listHistory RTK MERGED (task #9) |
+| T2.2.4 | Integration test: archive + history scenarios | backend + frontend | 2 | dev | T2.2.3 | 🟢 tasks #8 + #9 IT MERGED |
+| T2.2.5 | M6b: SMS DLR badge UI | frontend | 3 | dev | T3.1 | 🟢 inbox SMS DLR badge MERGED (task #36) |
+| T2.2.6 | Codex peer review + merge | docs | 1 | agent | T2.2.4 | 🟢 |
 
-**Total**: 10h (SMS DLR portion in 23.3)
+**Total**: 13h. **Session 47 status 2026-05-21**: M6a + M6b 6/6 LIVE.
 
 ### T2.3 — 23.9 Closure: 72h Observation + Rollback Prova + Browser SSO Verify
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T2.3.1 | 72h observation completion (T+72h = 2026-05-11 19:42Z natural) | ops | passive | ops | Time | 🟡 |
-| T2.3.2 | Rollback prova execution (drill mode — non-destructive) | ops | 2 | ops | T2.3.1 | 🔴 |
-| T2.3.3 | Browser SSO verify on testai.acik.com | user | 0.5 | user | None | 🔴 |
-| T2.3.4 | Browser SSO verify on ai.acik.com | user | 0.5 | user | None | 🔴 |
-| T2.3.5 | Evidence document: `docs/faz-23-evidence/2026-05-11-23-9-cutover-72h.md` | docs | 1 | agent | T2.3.4 | 🔴 |
-| T2.3.6 | Charter 23.9 marker 🟡 → 🟢 | docs | 0.5 | agent | T2.3.5 | 🔴 |
+| T2.3.1 | 72h observation completion (T+72h = 2026-05-11 19:42Z natural) | ops | passive | ops | Time | 🟡 passive expired (operator evidence doc pending) |
+| T2.3.2 | Rollback prova execution (drill mode — non-destructive) | ops | 2 | ops | T2.3.1 | 🔴 operator slot |
+| T2.3.3 | Browser SSO verify on testai.acik.com | user | 0.5 | user | None | 🔴 user slot |
+| T2.3.4 | Browser SSO verify on ai.acik.com | user | 0.5 | user | None | 🔴 user slot |
+| T2.3.5 | Evidence document: `docs/faz-23-evidence/2026-05-11-23-9-cutover-72h.md` | docs | 1 | agent | T2.3.4 | 🔴 (T2.3.3+T2.3.4 dep) |
+| T2.3.6 | Charter 23.9 marker 🟡 → 🟢 | docs | 0.5 | agent | T2.3.5 | 🔴 (T2.3.5 dep) |
 
-**Total**: 4.5h (T2.3.1 passive)
+**Total**: 4.5h (T2.3.1 passive). **Session 47 status 2026-05-21**: M1 0/5 DoD external (operator + user gates); critical path blocker for v1 charter 23.9 closure. R7 active.
 
-**Tier 2 Total**: ~19h
+**Tier 2 Total**: ~22h estimate. **Session 47 status 2026-05-21**: T2.1 + T2.2 LIVE; T2.3 5/6 external blocker (operator + user slot — R7 active).
 
 ---
 
@@ -205,45 +208,45 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T3.1.1 | JetSMS canlı sözleşme + API erişim (primary) + NetGSM secondary contract (R1) | ops/legal | 8 | ops | None | 🟡 (JetSMS aktif; NetGSM R1 pending) |
-| T3.1.2 | `SmsProvider` interface + `SmsAdapter` facade design (PR-1) | backend | 3 | dev | None | 🟡 (Codex `019e3f82` AGREE; impl PR-1) |
-| T3.1.3 | `JetSmsProvider` HTTP API impl (iso-8859-9 + form-urlencoded + Status/MessageIDs parse) (PR-2) | backend | 10 | dev | T3.1.2 | 🔴 |
-| T3.1.4 | `NetGsmProvider` refactor (mevcut NetGsmSmsAdapter logic → SmsProvider, behavior-neutral) (PR-1) | backend | 4 | dev | T3.1.2 | 🔴 |
-| T3.1.5 | Provider failover matrix (`SmsFailureClass` taxonomy: failover-eligible vs not) (PR-2) | backend | 5 | dev | T3.1.3, T3.1.4 | 🔴 |
-| T3.1.6 | JetSMS DLR polling worker (HttpSmsReport pull + generic DlrIngest core) (PR-3) | backend | 12 | dev | T3.1.3 | 🔴 |
-| T3.1.7 | DLR callback endpoint | backend | 3 | dev | T3.1.3 | **🟢** (Session 44 close: backend PR #85 MERGED 2026-05-07 + api-gateway PR #154 MERGED 2026-05-11 Codex `019e1440` AGREE + gitops PR #514 MERGED + live smoke pipeline VERIFIED 2026-05-11 00:09Z via mock NetGSM provider — 5/5 acceptance gates PASS (gateway forward + token verify + UPDATED + NOOP idempotency + audit emit); evidence `docs/faz-23-evidence/2026-05-11-t3-1-7-dlr-live-smoke-pass.md`; real SMS go-live R1 contract ETA 2026-05-30 — pipeline 100% ready, no code change needed) |
-| T3.1.8 | 4 workflow live test (admin invite, password reset, drift alarm, break-glass) | backend | 4 | dev | T3.1.7 | 🔴 |
-| T3.1.9 | Vault path `kv/platform/notification-orchestrator` SMS provider creds | ops | 1 | ops | T3.1.1 | 🔴 |
-| T3.1.10 | In-app inbox API closure (paged + read + archive + WS endpoint) | backend | 6 | dev | None | 🟡 |
-| T3.1.11 | Codex peer review + merge | docs | 2 | agent | T3.1.10 | 🔴 |
+| T3.1.1 | JetSMS canlı sözleşme + API erişim (primary) + NetGSM secondary contract (R1) | ops/legal | 8 | ops | None | 🟡 JetSMS LIVE + prod cutover MERGED 2026-05-20 PR-B4 (#268+#916); NetGSM R1 ETA 2026-05-30 ext-gated |
+| T3.1.2 | `SmsProvider` interface + `SmsAdapter` facade design (PR-1) | backend | 3 | dev | None | 🟢 PR #249 MERGED (task #2) |
+| T3.1.3 | `JetSmsProvider` HTTP API impl (iso-8859-9 + form-urlencoded + Status/MessageIDs parse) (PR-2) | backend | 10 | dev | T3.1.2 | 🟢 PR #250 MERGED (task #3) + PR-A3 SOAP single + OTP routing (#265/#266/#267) |
+| T3.1.4 | `NetGsmProvider` refactor (mevcut NetGsmSmsAdapter logic → SmsProvider, behavior-neutral) (PR-1) | backend | 4 | dev | T3.1.2 | 🟢 PR #249 (task #2) |
+| T3.1.5 | Provider failover matrix (`SmsFailureClass` taxonomy: failover-eligible vs not) (PR-2) | backend | 5 | dev | T3.1.3, T3.1.4 | 🟢 PR #250 (task #3) |
+| T3.1.6 | JetSMS DLR polling worker (HttpSmsReport pull + generic DlrIngest core) (PR-3) | backend | 12 | dev | T3.1.3 | 🟢 PR #252 MERGED (task #4) |
+| T3.1.7 | DLR callback endpoint | backend | 3 | dev | T3.1.3 | 🟢 LIVE 2026-05-11 — 5/5 acceptance gates PASS; real SMS go-live R1 contract ETA 2026-05-30 — pipeline 100% ready |
+| T3.1.8 | 4 workflow live test (admin invite, password reset, drift alarm, break-glass) | backend | 4 | dev | T3.1.7 | 🟡 ext-gated (canary smoke KC org_id claim setup + R1 + R24 Biotekno OTP allowlist) |
+| T3.1.9 | Vault path `kv/platform/notification-orchestrator` SMS provider creds | ops | 1 | ops | T3.1.1 | 🟢 LIVE (Pre-Production Full Authority 2026-05-10) |
+| T3.1.10 | In-app inbox API closure (paged + read + archive + WS endpoint) | backend | 6 | dev | None | 🟢 LIVE (M6a + M6b — tasks #8-12, #36) |
+| T3.1.11 | Codex peer review + merge | docs | 2 | agent | T3.1.10 | 🟢 (Codex 019e3f82/019e4022/019e4514 multi-iter AGREE chain) |
 
-**Total**: 44h
+**Total**: 44h estimate. **Session 47 status 2026-05-21**: T3.1 11/11 source-ready/LIVE; T3.1.1 + T3.1.8 ext-gated (R1 NetGSM + R24 Biotekno + KC org_id canary).
 
 ### T3.2 — 23.5 Preference UI (FE)
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T3.2.1 | mfe-host preference settings page route + skeleton | frontend | 2 | dev | T1.1.3 | 🔴 |
-| T3.2.2 | Per-channel toggle UI | frontend | 3 | dev | T3.2.1 | 🔴 |
-| T3.2.3 | Per-topic toggle UI | frontend | 3 | dev | T3.2.2 | 🔴 |
-| T3.2.4 | Quiet hours editor | frontend | 4 | dev | T3.2.3 | 🔴 |
-| T3.2.5 | Frequency limit slider | frontend | 2 | dev | T3.2.4 | 🔴 |
-| T3.2.6 | Unsubscribe link landing page (RFC 8058 one-click) | frontend | 3 | dev | None | 🔴 |
-| T3.2.7 | Integration test: end-to-end preference flow | frontend | 3 | dev | T3.2.6 | 🔴 |
-| T3.2.8 | Codex peer review + merge | docs | 1 | agent | T3.2.7 | 🔴 |
+| T3.2.1 | mfe-host preference settings page route + skeleton | frontend | 2 | dev | T1.1.3 | 🟢 PR #285 MERGED (task #28) |
+| T3.2.2 | Per-channel toggle UI | frontend | 3 | dev | T3.2.1 | 🟢 LIVE |
+| T3.2.3 | Per-topic toggle UI | frontend | 3 | dev | T3.2.2 | 🟢 LIVE (PR-G3b platform-web PR #645 task #34) |
+| T3.2.4 | Quiet hours editor | frontend | 4 | dev | T3.2.3 | 🟢 LIVE (PR #299 Faz 23.6 PR-B1) |
+| T3.2.5 | Frequency limit slider | frontend | 2 | dev | T3.2.4 | 🟢 LIVE |
+| T3.2.6 | Unsubscribe link landing page (RFC 8058 one-click) | frontend | 3 | dev | None | 🟢 LIVE (PR-G3 platform-web PR #642 task #32) |
+| T3.2.7 | Integration test: end-to-end preference flow | frontend | 3 | dev | T3.2.6 | 🟢 Playwright e2e + Vitest unit LIVE (PR-G4 platform-web PR #646 task #33) |
+| T3.2.8 | Codex peer review + merge | docs | 1 | agent | T3.2.7 | 🟢 |
 
-**Total**: 21h
+**Total**: 21h estimate. **Session 47 status 2026-05-21**: T3.2 8/8 LIVE; M5 source-ready + acceptance candidate (charter 🟢 final board acceptance + live cluster runtime evidence gerek).
 
-**Tier 3 Total**: ~65h
+**Tier 3 Total**: ~65h estimate. **Session 47 status 2026-05-21**: T3.1 + T3.2 LIVE source-side; ext blocker R1/R24 (M4) + M5 board acceptance.
 
 ---
 
 ## Tier 4: 23.6 + 23.7 + 23.8 v1 (~5-6 weeks, ~99h)
 
-> **Status revision 2026-05-21 (Session 47 — post WebPush 11 sub-PR + T4.1 MERGED + T4.3.a Tempo LIVE + T4.3.b suppression LIVE + T4.3.6 per-tenant dashboard MERGED)**: T4.1 LIVE, T4.2 browser-only foundation 11 sub-PR MERGED + 1 UI integration follow-up CI pending (mobile FCM/APNS Faz 22.2 dep DIŞI), T4.3 3/9 sub-task LIVE (Tempo + suppression + per-tenant dashboard MERGED; FBL + per-template analytics + federation residual). Sprint plan re-baseline:
+> **Status revision 2026-05-21 (Session 47 — post WebPush 11 sub-PR + T4.1 MERGED + T4.3.a Tempo LIVE + T4.3.b suppression LIVE + T4.3.6 per-tenant dashboard MERGED)**: T4.1 LIVE, T4.2 browser-only foundation 11 sub-PR MERGED + 1 UI integration follow-up MERGED 2026-05-21 20:00Z (mobile FCM/APNS Faz 22.2 dep DIŞI), T4.3 3/9 sub-task LIVE (Tempo + suppression + per-tenant dashboard MERGED; FBL + per-template analytics + federation residual). Sprint plan re-baseline:
 >
 > - T4.1 actual ~14h (estimate 25h, variance -11h — Block Kit + Teams Adaptive Card pattern straight-forward)
-> - T4.2 (browser-only scope) actual ~32h from 11 sub-PR MERGED + 1 UI follow-up CI pending (W1+W2.1+W2.2+W2.3+W2.4+W2.5+W2.6+W3+W4+W5+W6+W7 + #649); mobile FCM/APNS ~24h Faz 22.2 dep DIŞI
+> - T4.2 (browser-only scope) actual ~32h from 11 sub-PR MERGED + 1 UI follow-up MERGED 2026-05-21 (W1+W2.1+W2.2+W2.3+W2.4+W2.5+W2.6+W3+W4+W5+W6+W7 + #649); mobile FCM/APNS ~24h Faz 22.2 dep DIŞI
 > - T4.3 actual ~12.5h done of ~36h plan; ~14h kalır (T4.3.5 FBL + T4.3.7 per-template + T4.3.8 federation)
 
 ### T4.1 — 23.6 Teams + Slack Zenginleştirme
@@ -275,7 +278,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | T4.2.11 | Frontend UI integration (PushSubscriptionCard + VAPID env build chain) | frontend | 3 | 2.5 | dev | 🟢 PR #649 (this batch) |
 | T4.2.12 | Codex peer review + merge | docs | 1 | 1 | agent | 🟢 019e49e7 + 5 thread chain |
 
-**Total (browser-only)**: 32h actual (11 sub-PR MERGED + #649 UI integration CI pending); mobile FCM/APNS Faz 22.2 dep (~24h DIŞI)
+**Total (browser-only)**: 32h actual (11 sub-PR MERGED + #649 UI integration MERGED 2026-05-21 20:00Z); mobile FCM/APNS Faz 22.2 dep (~24h DIŞI)
 
 ### T4.3 — 23.8 Tempo + Bounce Loop + Per-Tenant Grafana
 
@@ -319,13 +322,13 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 | Tier | Scope | Total Effort | Calendar Span | Critical Risk |
 |---|---|---:|---|---|
-| **T1** 23.2 closure | preference + erasure + provider rollback + outage fallback + classification + abuse | ~17-22h residual (~100h original; Session 41 re-baseline post T1.6 LIVE + T1.4 4-PR source-ready -77/-82h) | 1-1.5 hafta provisional | R2 (KVKK legal), R9 (D43 drill operator-bound), RAID I6 (Keycloak credential) — R13 + R19 mitigated (T1.6 abuse guards LIVE) |
-| **T2** 23.1+23.4+23.9 closure | D29-Functional + archive UI + 72h observation | ~19h | 1 hafta | R7 (browser verify) |
-| **T3** 23.3+23.5 | SMS JetSMS primary + NetGSM secondary + Preference UI | ~65h | 3 hafta | R1 (NetGSM secondary contract — failover acceptance blocker), R3 (DKIM) |
-| **T4** 23.6+23.7+23.8 v1 | Teams + WebPush (browser-only) + Tempo + bounce + per-tenant dashboard | ~99h estimate / ~58.5h actual + ~14h residual (T4.3.5 FBL + T4.3.7 per-template + T4.3.8 federation); mobile FCM/APNS ~24h Faz 22.2 dep DIŞI — Session 47 re-baseline 2026-05-21 (T4.1 + T4.2 browser-only 11 sub-PR + #649 UI integration CI pending + T4.3.a Tempo + T4.3.b suppression + T4.3.6 per-tenant dashboard MERGED) | ~2 hafta residual | R11 ~mitigated (Tempo LIVE), R16 (federation pending) |
+| **T1** 23.2 closure | preference + erasure + provider rollback + outage fallback + classification + abuse | ~99.5h estimate / ~60h+ actual + ~0h agent-actionable residual; Session 47 2026-05-21 re-baseline post 7/6 sub-tier source-side LIVE + KVKK 7/7 PR-K1..K7 MERGED | source-side LIVE; external acceptance R2 2026-05-25 + R9 ops slot | R2 (KVKK legal 4 gün), R9 (D43 drill ops slot) — R12 + R13 + R19 mitigated; RAID I6 superseded T1.1.9 PR #875 MERGED |
+| **T2** 23.1+23.4+23.9 closure | D29-Functional + archive UI + 72h observation | ~22h estimate / T2.1+T2.2 LIVE (M2 accepted 2026-05-18 #754; M6a+M6b 2026-05-20 #758); T2.3 ~4.5h external (operator + user) | T2.1+T2.2 LIVE; T2.3 ext slot | R7 (browser verify user availability — M1 23.9 closure ext-gated) |
+| **T3** 23.3+23.5 | SMS JetSMS primary + NetGSM secondary + Preference UI | ~65h estimate / source-side LIVE (M4 prod cutover 2026-05-20; M5 source-ready); T3.1.8 + T3.1.1 + M5 charter board acceptance ext-gated | source-side LIVE; canary KC + R1 + R24 ext-gated | R1 (NetGSM secondary contract ETA 2026-05-30), R24 (Biotekno OTP allowlist) — R3 DKIM 🟢 mitigated, R23 Graph adapter active monitored |
+| **T4** 23.6+23.7+23.8 v1 | Teams + WebPush (browser-only) + Tempo + bounce + per-tenant dashboard | ~99h estimate / ~58.5h actual + ~14h residual (T4.3.5 FBL + T4.3.7 per-template + T4.3.8 federation); mobile FCM/APNS ~24h Faz 22.2 dep DIŞI — Session 47 re-baseline 2026-05-21 (T4.1 + T4.2 browser-only 11 sub-PR + #649 UI integration MERGED + T4.3.a Tempo + T4.3.b suppression + T4.3.6 per-tenant dashboard MERGED) | ~2 hafta residual | R11 ~mitigated (Tempo LIVE), R16 (federation pending) |
 | **T5** 23.X v2 | multi-tenant features | ~144h | 8-12 hafta | R10 (multi-tenant migration) |
-| **Total v1 (T1-T4)** | Faz 23.0 → 23.9 v1 closure | **~115-120h residual** (T1 ~17-22h + T2 ~19h + T3 ~65h + T4 ~14h; Session 47 re-baseline 2026-05-21 post T4.1/T4.2-browser/T4.3.a/T4.3.b/T4.3.6 MERGED; mobile FCM/APNS ~24h Faz 22.2 dep **DIŞI** — total dahil ~139-144h olur) | **~2 ay** (with parallelization) | — |
-| **Total + v2** | Faz 23.0 → 23.X | ~424h | **6-8 ay** | — |
+| **Total v1 (T1-T4)** | Faz 23.0 → 23.9 v1 closure | **~14h agent-actionable residual** (T4.3.5 + T4.3.7 + T4.3.8 backend + gitops); T1/T2/T3 source-side LIVE; M1 T2.3 5/6 operator+user external (R7); M3 R2 KVKK legal 2026-05-25; M4 R1/R24 + canary KC org_id ext-gated; mobile FCM/APNS ~24h Faz 22.2 dep **DIŞI**. Session 47 re-baseline 2026-05-21 — önceki Session 41 ~17-22h Tier 1 residual + Tier 2/3/4 dahil 100-130h → ~14h agent + external acceptance gates | **~1-2 hafta agent + 4 gün external** (R2 KVKK 2026-05-25) | — |
+| **Total + v2** | Faz 23.0 → 23.X | ~158-160h (~14h v1 + ~144h v2) | **~3-4 ay** v2 inclusive | — |
 
 **Estimation accuracy**: ±25% based on Codex peer review iter overhead + integration test discovery + cluster apply gates.
 
@@ -339,4 +342,4 @@ Update this doc per-PR:
 3. Codex thread reference per task closure
 4. Risk register cross-reference if new risk uncovered
 
-**Last update**: 2026-05-09 (Session 39 PM bootstrap; all tasks 🔴 except T2.3.1 🟡 passive)
+**Last update**: 2026-05-21 (Session 47 full re-baseline; T1 LIVE + T2 T2.1/T2.2 LIVE + T3 LIVE + T4.1/T4.2-browser/T4.3.a/T4.3.b/T4.3.6 LIVE; agent-actionable residual ~14h T4.3 tail; external acceptance gates R2/R7/R9/R1/R24)
