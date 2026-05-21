@@ -53,11 +53,11 @@ spec:
           annotations:
             summary: "/settings/notifications synthetic probe failing on {{ $labels.edge }}"
             description: |
-              Blackbox HTTP probe to https://{{ $labels.edge }}.acik.com/settings/notifications
+              Blackbox HTTP probe to https://{{ $labels.host }}/settings/notifications
               has returned non-200 for ≥5m sustained. Real edge regression:
               check nginx pod state, ingress controller, TLS cert expiry, DNS,
-              upstream API gateway. Job: {{ $labels.job }}.
-              Live verify: curl -I https://{{ $labels.edge }}.acik.com/settings/notifications
+              upstream API gateway. Job: {{ $labels.job }}, edge: {{ $labels.edge }}.
+              Live verify: curl -I https://{{ $labels.host }}/settings/notifications
               Runbook: docs/runbooks/synthetic-frontend-probes.md (TODO follow-up)
 
         # 2. Probe series missing — blackbox-exporter or Probe CR broken.

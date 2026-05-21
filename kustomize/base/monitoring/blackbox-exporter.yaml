@@ -262,7 +262,13 @@ spec:
         - https://ai.acik.com/settings/notifications
       labels:
         component: prod-settings-notifications-probe
+        # `edge` is the operational dimension (matches existing
+        # zanzibar-prod-edge-* pattern). `host` is the literal DNS name
+        # used by alert annotation URLs — keep them SEPARATE because
+        # `edge=ai-prod` is NOT a valid hostname (Codex 019e4946 iter-3
+        # post-impl REVISE).
         edge: ai-prod
+        host: ai.acik.com
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
@@ -286,3 +292,4 @@ spec:
       labels:
         component: testai-settings-notifications-probe
         edge: testai
+        host: testai.acik.com
