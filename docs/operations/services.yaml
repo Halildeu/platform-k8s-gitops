@@ -180,15 +180,18 @@ services:
       contract gate's subject). Currently dev/test only; prod scope decision
       pending Faz 22.2 BG-EA-1 product review.
 
-      Status note (Codex Sprint A P0 truthful state — 2026-05-04):
-        Test cluster pod RUNNING (compose-era leftover / unmanaged), but NOT
-        in test gitops overlay (kustomize/overlays/test). Mark deferred from
-        gitops perspective — runtime drift detector will P1-alarm the
-        unmanaged cluster pod, surfacing the integration gap.
+      Status note (truth refresh — 2026-05-21, tracked by #924):
+        Test cluster endpoint-admin-service is now GitOps-governed in
+        kustomize/overlays/test with immutable digest pin
+        sha256:5bb0fa2600f0d85073c2d9caa37d05d6a12a6fa6ff5b3569a20e743a73e2eab0.
+        Live check: Deployment 1/1, endpoint addresses present, ExternalSecret
+        SecretSynced=True, actuator health UP, no-JWT admin devices returns 401.
 
-        Faz 22.x onboard task: bring endpoint-admin-service into gitops
-        (kustomize base + test overlay), then flip test→enabled here. Until
-        then catalog reflects gitops-governed state, not cluster-actual state.
+        This proves Up + basic Functional/fail-closed only. Full D29-EA Secured
+        acceptance still needs persona allow/deny + OpenFGA tuple verification +
+        audit insert, and platform-backend canonical main reconciliation remains
+        separate because endpoint-admin-service source is still on the
+        codex/be-001-endpoint-admin-service-platform-backend side branch.
     jwt_validates: true
     route_external: false
     workload_kind: Deployment
@@ -196,7 +199,7 @@ services:
     probe_contract: spring-actuator
     jvm_warmup_extra: true   # Hibernate JPA EntityManagerFactory cold-start 30-50s; observed 16h CrashLoop with 45s liveness grace (2026-05-13)
     environments:
-      test: enabled   # Faz 22.1.1b onboard COMPLETE 2026-05-05: gitops manifest live'a hizalandı (35 ConfigMap key + 4 ExternalSecret key + port 8096) + image digest pin sha-bd1e5c8. ESO ClusterSecretStore vault-platform-gitops zaten Ready, kv/platform/endpoint-admin-service Vault path populated. D29-EA smoke pending (kubectl apply sonrası).
+      test: enabled   # 2026-05-21 truth refresh (#924): GitOps desired + live runtime aligned at digest sha256:5bb0fa2600f0d85073c2d9caa37d05d6a12a6fa6ff5b3569a20e743a73e2eab0; Up + basic Functional/fail-closed proven (health UP, no-JWT 401). Full D29-EA Secured persona allow/deny/audit still pending.
       prod: deferred  # Faz 22.2 product decision (it-pilot tier acik.local + prod realm 'serban' + Azure Trusted Signing); drift gate accepts absence in prod
 
   - name: notification-orchestrator
