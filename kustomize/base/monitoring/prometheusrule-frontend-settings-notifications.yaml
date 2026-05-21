@@ -58,7 +58,7 @@ spec:
               check nginx pod state, ingress controller, TLS cert expiry, DNS,
               upstream API gateway. Job: {{ $labels.job }}, edge: {{ $labels.edge }}.
               Live verify: curl -I https://{{ $labels.host }}/settings/notifications
-              Runbook: docs/runbooks/synthetic-frontend-probes.md (TODO follow-up)
+              Runbook: docs/runbooks/RB-synthetic-frontend-probes.md
 
         # 2. Probe series missing — blackbox-exporter or Probe CR broken.
         # Per-job `absent_over_time` so a partial outage (testai gone, prod

@@ -721,6 +721,13 @@ class BodyRenderingTests(unittest.TestCase):
         self.assertIn("5.0 hours", body)
         self.assertIn("SLA threshold: 4h", body)
 
+    def test_issue_body_references_runbook(self) -> None:
+        """FU-Runbooks (2026-05-21) — issue body must link to the operator
+        runbook so the triage path is one click away from the alert."""
+        pr = _pr_fixture(number=640, merge_sha="abc123")
+        body = self.mod.make_issue_body(pr, age_hours=5.0, repo="owner/repo", threshold_hours=4)
+        self.assertIn("docs/runbooks/RB-critical-fix-sla-monitor.md", body)
+
     def test_warning_body_contains_stable_marker(self) -> None:
         body = self.mod.make_warning_body(
             pr_number=640,
