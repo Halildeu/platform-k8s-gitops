@@ -104,8 +104,8 @@ TMP=$(mktemp -d)
 gh run download <DEPLOY_RUN_ID> --repo Halildeu/platform-k8s-gitops --name prod-sync-result --dir $TMP
 jq '.revision, .conclusion' $TMP/prod-sync-result.json
 
-# revision merge_sha'yı içeriyorsa kapat
-gh issue close <ISSUE_NUM> --repo Halildeu/platform-k8s-gitops --comment "Resolved: deploy-prod-gitops run <RUN_ID> success at <UTC>. revision=<rev> is ancestor of merge_sha=$MERGE_SHA in prod overlay."
+# revision merge_sha'yı içeriyorsa kapat (merge_sha ancestor-of revision direction)
+gh issue close <ISSUE_NUM> --repo Halildeu/platform-k8s-gitops --comment "Resolved: deploy-prod-gitops run <RUN_ID> success at <UTC>. merge_sha=$MERGE_SHA is ancestor of revision=<rev> in prod overlay."
 ```
 
 ### 2.6 Idempotency davranışı (script ile uyumlu)
