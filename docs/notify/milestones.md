@@ -174,12 +174,32 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 **Blockers**: M4 (SMS JetSMS primary + NetGSM secondary + DLR dual-mode)
 **Owner**: dev (frontend)
 
-### M7 — v1 Closure (🔴 target 2026-08-15)
+### M7 — v1 Closure (🟡 target 2026-08-15)
 
 **Definition of Done**:
-- [ ] T4.1 23.6 Teams + Slack threading LIVE
+- [x] T4.1 23.6 Teams + Slack threading LIVE (Slack Block Kit PR #271 + Teams Power Automate PR #272 — sha-f40aa82+)
 - [ ] T4.2 23.7 Push (FCM + APNS + Web Push) LIVE
+  - [x] **Web Push (browser-only) backend scaffold MERGED** (Faz 23.7 — sha-aaf5f09 deploy 2026-05-21 12:46Z; defer-aware ENABLED=false until Vault VAPID seed + UI button integration):
+    - PR-W1 #277: V19 subscriber_push_endpoint + entity + repo
+    - PR-W2.1 #278: WebPushConfig + VapidKeyService + nl.martijndwars:web-push lib
+    - PR-W2.2 #279: WebPushAdapter + status mapping + endpoint cleanup
+    - PR-W2.3 #280: DefaultWebPushSender real lib integration
+    - PR-W2.4 #281: DefaultWebPushSenderHttpIntegrationTest WireMock 3.x end-to-end (Codex 019e4a2e AGREE)
+    - PR-W2.5+W2.6 #282: IntentSubmissionService allow-list + DeliveryPlanService fan-out + DeliveryEligibilityService BLOCKED_NO_PUSH_ENDPOINT + V20 migration (Codex 019e4a3d iter-4 AGREE)
+    - PR-W3 #283: PushSubscriptionController + Service + atomic upsert (Codex 019e4a57 iter-3 AGREE)
+    - PR-W4 platform-k8s-gitops #939: ConfigMap WebPush 5 entries + ExternalSecret defer-aware + overlay digest bump (Codex 019e4a70 iter-2 AGREE)
+    - PR-W5 platform-web #648: mfe-shell service worker + notify-push.api + helpers + usePushSubscription hook (Codex 019e4a87 iter-2 AGREE — bekleyen merge)
+  - [ ] **Web Push activation pending** (operator action + UI integration follow-up):
+    - Vault VAPID 3-key seed (vapid_public_key + vapid_private_key + vapid_subject) — kv/platform/notification-orchestrator
+    - ExternalSecret WEBPUSH 3 remoteRef entries uncomment
+    - Test overlay ConfigMap patch: NOTIFY_ADAPTERS_WEBPUSH_ENABLED=true
+    - UI button integration + VAPID public key Vite env (VITE_NOTIFY_VAPID_PUBLIC_KEY)
+    - Browser end-to-end smoke (Chrome MCP / Playwright)
+  - [ ] **Mobile FCM/APNS** — Faz 22.2 dep, scope DIŞI (gelecek faz)
 - [ ] T4.3 23.8 Tempo + bounce loop + per-tenant Grafana LIVE
+  - [x] T4.3.a Tempo OTLP trace export LIVE (2026-05-21 09:17Z; 5 spans verified)
+  - [x] T4.3.b email suppression core LIVE (PR #270 — sha-f40aa82)
+  - [ ] Per-tenant Grafana dashboard (M7 closure scope)
 - [ ] All v1 sub-faz kabul kriteri 🟢 (23.6, 23.7, 23.8)
 - [ ] Charter markers all updated
 - [ ] Risk register: R11, R16 closed
