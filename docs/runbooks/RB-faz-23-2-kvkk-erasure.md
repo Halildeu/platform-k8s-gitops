@@ -26,7 +26,9 @@ Operator (PRIVACY_OFFICER role) ticket'i kabul ettikten sonra:
 ```bash
 # Talep validitesi:
 # - Subscriber identity verify (email + name match)
-# - Yasal süre kontrolü (60 gün KVKK)
+# - Yasal süre kontrolü: KVKK Madde 13.2 — veri sorumlusu başvuruya
+#   en geç **30 gün** içinde cevap verir. Erasure request ledger
+#   (PR-K1 V18 migration) due_at = received_at + 30d tracking.
 # - Outstanding işlem yok (active billing/legal hold)
 ```
 
