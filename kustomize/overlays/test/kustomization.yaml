@@ -2296,40 +2296,41 @@ images:
     # ile zaten test cluster'da canlı.
     digest: sha256:da605dbd6796264ba104d52473bca0686cd92d91146eb607ebcf45282f5c24c3
 
-  # Faz 22.1.1b endpoint-admin-service test overlay digest pin —
-  # BE-001 authz/test/CI fix promotion (2026-05-07).
+  # Faz 22.1.1 endpoint-admin-service test overlay digest pin —
+  # H1 canonical main reconciliation Hybrid 2-PR promotion (2026-05-22).
   #
-  # Source: platform-backend `codex/be-001-endpoint-admin-service-platform-backend`
-  # @ e9cb8dd09d397fe8d49d182edba020df692f269f (PR #61 squash). PR #61 closes
-  # 6 failing tests on the codex integration branch:
-  #   * @RequireModule coverage on AdminEndpointDevice/Audit/Enrollment/Command
-  #     controllers (annotation reflection regression class).
-  #   * Admin JWT authority (SCOPE_endpoint-admin) test fixture, so the
-  #     SecurityConfig admin filter chain accepts the request and the
-  #     OpenFGA RequireModuleInterceptor is the layer actually under test.
-  #   * New `endpoint-admin-service-test` job in ci-mvn-check.yml — gates
-  #     both regression families on every PR to main + the codex base.
-  # Backend test surface: 68/68 green (was 68/6) — verified PR #61 + push
-  # event run 25406276941.
+  # Source: platform-backend `main` @ 8e2589c1bbeb3eb2721b82494bebee8fc15af499
+  # (Plan C C.1 H1 PR #288 squash 2026-05-21T22:01:59Z). H1 is the source-add
+  # half of the Hybrid 2-PR reconciliation strategy approved by Codex
+  # cross-AI peer review (plan-time thread 019e4c3f, post-impl thread
+  # 019e4c81 REVISE→AGREE after .gitignore restore + ci-image-push 4 guard
+  # fix absorb). 137 file (133 endpoint-admin-service + pom + .gitignore +
+  # 2 workflows). All 13 CI checks PASS (full reactor 11 modules +
+  # endpoint-admin lane + notification orchestrator paralel + permission
+  # IT + report MSSQL IT + auth impersonation IT + openfga + schema +
+  # gitleaks + osv + DD-5 annotation + contract-gate + reporting allowlist).
   #
-  # Image build run that produced this digest:
-  #   gh run view 25493729265 -R Halildeu/platform-backend   (success)
-  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-e9cb8dd
-  #   digest sha256:5bb0fa2600f0d85073c2d9caa37d05d6a12a6fa6ff5b3569a20e743a73e2eab0
+  # Image build run that produced this digest (final main SHA, D30 immutable):
+  #   gh run view 26255732225 -R Halildeu/platform-backend   (success)
+  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-8e2589c
+  #   digest sha256:b2250b7a274ec8684abce7ed1f9a47d301c548982ccbecc705647a0f8081f2eb
   #
-  # Previous digest sha256:047fc16... corresponded to PR #56 sha-bd1e5c8 and
-  # did NOT contain the PR #61 authz/test fix. Rolling restart on k3d-test
-  # after this overlay merge picks up the new digest (D17-safe selective
-  # apply pattern; live pod imageID + rollout status documented in the PR
-  # body post-merge as live evidence per AGENTS.md repo discipline).
+  # Previous digest sha256:5bb0fa26... corresponded to side branch e9cb8dd0
+  # (codex/be-001-...) — pre-canonical-main adoption. The new digest is the
+  # post-merge final main SHA artifact (D30 dual-artifact discipline:
+  # branch image was source-ready proof; final main image is the
+  # immutable pin).
+  #
+  # H2 follow-up (api-gateway integration: SecurityConfig + application-k8s
+  # routes + GatewaySecurityTest route-id refactor) remains a SEPARATE PR
+  # in platform-backend per Codex AGREE; this gitops digest pin does NOT
+  # cover gateway-side route resolution acceptance.
   #
   # Scope discipline (AGENTS.md HARD RULE): test overlay only. No prod
-  # claim. Main promotion of platform-backend codex branch is a separate
-  # decision/PR; this digest pin is downstream of the source PR's CI gate
-  # but does not promote it onward.
+  # claim. Prod activation Faz 22.2+ scope (separate decision/PR).
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:5bb0fa2600f0d85073c2d9caa37d05d6a12a6fa6ff5b3569a20e743a73e2eab0
+    digest: sha256:b2250b7a274ec8684abce7ed1f9a47d301c548982ccbecc705647a0f8081f2eb
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
