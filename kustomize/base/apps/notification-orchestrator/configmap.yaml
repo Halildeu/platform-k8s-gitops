@@ -73,3 +73,16 @@ data:
 
   # Outage fallback bypass receiver names (Alertmanager — D43)
   NOTIFY_OUTAGE_FALLBACK_DOCS: "docs/runbooks/RB-notification-outage-fallback.md"
+
+  # Faz 23.8 M7 T4.3.a — Tempo OTLP trace export aktivasyonu.
+  # Spring Boot 3 Micrometer Tracing + OpenTelemetry exporter chain;
+  # base default %5 sampling (production-safe), test overlay'da %50'ye
+  # patch'lenir kanıt toplama için. Tempo backend monitoring/tempo
+  # ClusterIP 4318 HTTP endpoint (netpol-notification-tempo.yaml egress).
+  MANAGEMENT_TRACING_ENABLED: "true"
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
+  MANAGEMENT_TRACING_PROPAGATION_TYPE: "w3c"
+  MANAGEMENT_OPENTELEMETRY_RESOURCE_ATTRIBUTES: "service.name=notification-orchestrator,service.namespace=platform"
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://tempo.monitoring.svc.cluster.local:4318/v1/traces"
+  OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: "http/protobuf"
+  OTEL_TRACES_EXPORTER: "otlp"

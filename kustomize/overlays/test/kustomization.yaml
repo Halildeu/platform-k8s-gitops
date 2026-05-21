@@ -3392,20 +3392,19 @@ patches:
       # Tempo deploy + OTLP re-activation Faz 23.8 minimal observability
       # cycle'ında geri gelecek (monitoring namespace + Tempo Helm chart).
       #
-      # PR-417 ilk denemesi blank endpoint set etti — Spring Boot
-      # OtlpHttpSpanExporter "Invalid endpoint, must start with
-      # http:// or https://" diye boot fail ettirdi (CrashLoopBackOff
-      # yaşandı). Doğru disable yolu: MANAGEMENT_TRACING_ENABLED=false
-      # ile tüm tracing autoconfig'i kapat. OTLP endpoint geçerli URL
-      # olarak kalır (parser çalışır) ama exporter hiç çağrılmaz çünkü
-      # tracing autoconfig disabled. Sampling 0.0 belt-and-suspenders
-      # — tracing enabled bile olsa hiçbir span üretilmez.
-      - op: add
+      # Faz 23.8 M7 T4.3.a — Tempo OTLP trace export aktivasyonu
+      # (test cluster boost sampling kanıt toplama için).
+      #
+      # Önceki PR-417 disable kaldırıldı: base configmap'te artık
+      # geçerli endpoint var (tempo.monitoring.svc.cluster.local:4318),
+      # CrashLoopBackOff riski geçti. Boost sampling test cluster'da
+      # tüm request'leri trace'ler (kanıt + kapasite test).
+      - op: replace
         path: /data/MANAGEMENT_TRACING_ENABLED
-        value: "false"
-      - op: add
+        value: "true"
+      - op: replace
         path: /data/MANAGEMENT_TRACING_SAMPLING_PROBABILITY
-        value: "0.0"
+        value: "1.0"
       # Faz 23.7 Step C audit retention activation (Codex thread `019e0892`
       # priority 3, KVKK Art.7 compliance — saklama süresi sınırlandırma).
       # AuditPartitionRetentionService is @ConditionalOnProperty
