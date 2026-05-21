@@ -461,6 +461,75 @@ jobs:
             echo "\`docs/operations/RUNBOOKS/RB-prod-gitops-sync.md\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # FU-Artifact (2026-05-21): machine-readable deploy result for the
+      # critical-fix-sla-monitor workflow (DiD-1, PR #926). The SLA monitor
+      # uses this artifact via `gh run download --name prod-sync-result` to
+      # correlate PR merge SHA → deployed revision WITHOUT log-grep. The
+      # iter-4 fallback path (log-grep + headSha ancestor) remains intact
+      # for runs older than this PR — the monitor first attempts the
+      # artifact, then falls back if `gh run download` returns nothing.
+      #
+      # Fields written:
+      #   revision         — the SHA the workflow tried to deploy (input.revision)
+      #   sync_mode        — `resources` or `full` (input.sync_mode)
+      #   is_rollback      — `true` when full-mode + revision != main HEAD
+      #   resources        — comma-separated filter (input.resources, may be empty)
+      #   allow_prune      — input boolean stringified
+      #   confirm_token    — input.confirm (audit trail)
+      #   conclusion       — job.status (success | failure | cancelled)
+      #   actor            — github.actor (audit trail)
+      #   run_id           — github.run_id (cross-ref)
+      #   workflow_started_at + recorded_at  — ISO timestamps
+      #
+      # `if: always()` so we capture failure runs too — the SLA monitor's
+      # contract is "did this deploy run cover the merge?" and a failed run
+      # has the SAME ANSWER (no, it did NOT cover the merge, regardless of
+      # what argocd sync was attempting). conclusion=failure prevents the
+      # monitor from false-positive marking a rollback-attempt as success.
+      - name: Emit machine-readable deploy result
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/prod-sync-result"
+          OUT="${RUNNER_TEMP}/prod-sync-result/prod-sync-result.json"
+          jq -n \
+            --arg revision "${REVISION}" \
+            --arg sync_mode "${SYNC_MODE}" \
+            --arg is_rollback "${IS_ROLLBACK}" \
+            --arg resources "${IN_RESOURCES}" \
+            --arg allow_prune "${IN_ALLOW_PRUNE}" \
+            --arg confirm_token "${{ inputs.confirm }}" \
+            --arg conclusion "${{ job.status }}" \
+            --arg actor "${{ github.actor }}" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg recorded_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg workflow_started_at "${GITHUB_RUN_STARTED_AT:-unknown}" \
+            '{
+              schema_version: "1.0",
+              revision: $revision,
+              sync_mode: $sync_mode,
+              is_rollback: ($is_rollback == "true"),
+              resources: $resources,
+              allow_prune: ($allow_prune == "true"),
+              confirm_token: $confirm_token,
+              conclusion: $conclusion,
+              actor: $actor,
+              run_id: $run_id,
+              recorded_at: $recorded_at,
+              workflow_started_at: $workflow_started_at
+            }' > "${OUT}"
+          echo "Wrote ${OUT}:"
+          cat "${OUT}"
+
+      - name: Upload prod-sync-result artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: prod-sync-result
+          path: ${{ runner.temp }}/prod-sync-result/prod-sync-result.json
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Cleanup — restricted kubeconfig
         if: always()
         run: rm -f "${RUNNER_TEMP}/prod-deploy-smoke.kubeconfig"

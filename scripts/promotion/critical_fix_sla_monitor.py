@@ -25,24 +25,32 @@ DESIGN:
   - If no successful deploy AND merge age > warning-hours
     (default 1h) → comment on the PR.
 
-DEPLOY-RUN CORRELATION (acceptable temporary):
+DEPLOY-RUN CORRELATION (3-layer, structured first):
   `deploy-prod-gitops.yml` runs as `workflow_dispatch` with a
   `revision` input. `gh run view --json` does NOT expose dispatch
-  inputs as machine-readable fields. This script applies (Codex
-  iter-4 P1 absorb — log-first to guard against `full` rollback
-  mode where headSha advances while the deployed revision rolls
-  back to an older SHA):
-    1. **Primary** — `gh run view <id> --log` text grep for
-       `argocd app sync ... --revision <sha>` or `Revision: <sha>`
-       lines. If any extracted SHA satisfies `git merge-base
-       --is-ancestor <merge_sha> <revision>`, the deploy covers
-       the merge.
-    2. **Fallback** — only when the log produced no revisions
-       (best-effort log fetch failed, or no matching lines), fall
-       back to `headSha` exact-match or ancestor check.
-  A separate follow-up PR should add a machine-readable
-  `prod-sync-result.json` workflow artifact so the log-grep
-  primary can be retired in favor of a structured signal.
+  inputs as machine-readable fields, so the deployed revision is
+  read from one of three layers, in order:
+
+    1. **Primary (FU-Artifact, 2026-05-21)** — `prod-sync-result.json`
+       artifact written by the deploy workflow itself. Contains
+       `revision`, `conclusion`, `sync_mode`, `is_rollback` and
+       audit fields. Downloaded via `gh run download --name
+       prod-sync-result`. Authoritative: if the artifact says
+       `conclusion != success` OR `revision` is not an ancestor
+       of `merge_sha`, the run is SKIPPED. The loop does NOT fall
+       through to layer 2/3 — the artifact is structured truth.
+
+    2. **Fallback (Codex iter-4)** — `gh run view <id> --log` text
+       grep for `argocd app sync ... --revision <sha>` or
+       `Revision: <sha>` lines. Used ONLY when the artifact is
+       absent (run pre-dates the FU-Artifact PR — backward-compat).
+
+    3. **Last resort** — `headSha` exact-match or ancestor check.
+       Used ONLY when both the artifact AND the log produced no
+       revision. In the common-case `resources`-mode deploy this
+       still correlates correctly (deployed revision == headSha),
+       but is guarded against the `full` rollback false-pass by
+       layers 1 + 2 (both must be empty before this layer).
 
 IDEMPOTENCY:
   - Issue match: open issue with label `critical-fix-sla-active`
@@ -76,6 +84,7 @@ import shlex
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 
@@ -254,12 +263,72 @@ def list_recent_deploy_success_runs(repo: str, runner=_run) -> list[dict]:
 def fetch_run_log(repo: str, run_id: int, runner=_run) -> str:
     """Best-effort `gh run view --log` text. Empty string on failure.
 
-    Intentionally non-strict — log-grep is an OPTIONAL correlation signal
-    (Codex iter-4 P1 P2 note). If the log call fails (large logs paginated
-    awkwardly, transient API issue, etc.) the correlator falls through to
+    Intentionally non-strict — log-grep is a SECONDARY fallback signal
+    (the PRIMARY signal is the prod-sync-result.json artifact added in
+    FU-Artifact 2026-05-21; see `fetch_run_artifact` below). If the
+    artifact + log calls both fail, the correlator falls through to
     headSha-ancestor as a last resort.
     """
     return gh_text("run", "view", str(run_id), "--repo", repo, "--log", runner=runner)
+
+
+def fetch_run_artifact(
+    repo: str,
+    run_id: int,
+    artifact_name: str = "prod-sync-result",
+    runner=_run,
+) -> Optional[dict]:
+    """FU-Artifact (2026-05-21) — read the machine-readable deploy result.
+
+    Downloads `<artifact_name>` from the given workflow run, parses the
+    JSON, and returns the dict. Returns None if:
+      - the artifact does not exist (run pre-dates this PR — backward-compat)
+      - `gh run download` returns nonzero (transient API / network failure)
+      - the downloaded file is missing / unparseable
+
+    None is the signal to fall back to log-grep / headSha correlation.
+    Strict raising would be wrong here: workflow runs older than this PR
+    legitimately do not have the artifact, and we must still correlate
+    against them via the iter-4 fallback chain.
+
+    Schema fields read by callers:
+      revision      — the SHA the workflow attempted to deploy
+      conclusion    — "success" | "failure" | "cancelled"
+      sync_mode     — "resources" | "full"
+      is_rollback   — bool
+    """
+    import shutil
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="prod-sync-result-") as tmp:
+        res = runner(
+            [
+                "gh",
+                "run",
+                "download",
+                str(run_id),
+                "--repo",
+                repo,
+                "--name",
+                artifact_name,
+                "--dir",
+                tmp,
+            ],
+            check=False,
+            timeout=60,
+        )
+        if res.returncode != 0:
+            return None
+        # gh run download with --name extracts directly into --dir without a
+        # subdir; the file path is therefore <tmp>/<filename>.
+        candidates = list(Path(tmp).glob("*.json"))
+        if not candidates:
+            return None
+        try:
+            payload = json.loads(candidates[0].read_text())
+        except json.JSONDecodeError:
+            return None
+        return payload
 
 
 def find_existing_sla_issue(repo: str, pr_number: int, runner=_run) -> Optional[int]:
@@ -336,24 +405,33 @@ def find_successful_deploy(
     revision contains `merge_sha`, or None if no match within the candidate
     window.
 
-    Match priority for a given run (Codex iter-4 P1 absorb — REVERSED from
-    iter-3 design):
+    Match priority for a given run (3 layers, primary first):
 
-      1. **Log-extracted revision** + ancestor check.
-         `deploy-prod-gitops.yml` runs as `workflow_dispatch` with an explicit
-         `revision` input. In `full` rollback mode the workflow can run
-         FROM current `main` (so `headSha` advances) while it SYNCS an OLDER
-         revision (so the deployed revision is NOT main HEAD). Trusting
-         `headSha` as the deployed-revision proxy would false-positive
-         match a rollback run that pushed a pre-fix revision. Always read
-         the log first and prefer an explicit `--revision <sha>` or
-         `Revision: <sha>` line.
+      1. **prod-sync-result.json artifact** (FU-Artifact, 2026-05-21):
+         `deploy-prod-gitops.yml` writes a machine-readable result file
+         containing `revision`, `conclusion`, `sync_mode`, `is_rollback`.
+         The monitor downloads the artifact and:
+           - if `conclusion != "success"` → this run did NOT deploy the
+             merge regardless of what revision it tried (e.g. failed
+             rollback attempt); skip.
+           - if `revision` is ancestor of `merge_sha` (or equal) → match.
+           - otherwise → skip (this run deployed a different revision).
+         Reasoning: structured signal > log-grep > heuristic. No false-
+         positive risk from headSha because the artifact says exactly
+         what argocd was asked to sync.
 
-      2. **headSha fallback** (`exact` or `ancestor`).
-         Only when the log call returned no text OR no revision could be
-         extracted from it. In the normal `resources`-mode flow (no rollback),
-         the deployed revision == workflow's `headSha`, so the fallback
-         still correlates correctly in the common case.
+      2. **Log-extracted revision** + ancestor check (Codex iter-4 P1
+         fallback for backward-compat with pre-artifact runs). Reads
+         `argocd app sync --revision <sha>` or `Revision: <sha>` from
+         workflow log. Same ancestor semantics as layer 1, but log-grep
+         is brittle (large logs, transient API issues, log retention).
+
+      3. **headSha fallback** (`exact` or `ancestor`). Only when both
+         the artifact AND the log produced no revision. In normal
+         `resources`-mode flow, deployed revision == workflow's `headSha`,
+         so this still correlates in the common case. Guarded against
+         the `full` rollback false-positive by layers 1 + 2 — both must
+         be empty before headSha is consulted.
 
     The match scope is bounded to runs where `createdAt > merged_at`.
     """
@@ -366,8 +444,28 @@ def find_successful_deploy(
         if created_at <= merged_at:
             continue
 
-        # Priority 1: explicit revision extracted from workflow log.
-        log = fetch_run_log(repo, run["databaseId"], runner=runner)
+        run_id = run["databaseId"]
+
+        # Layer 1 (PRIMARY): structured artifact.
+        artifact = fetch_run_artifact(repo, run_id, runner=runner)
+        if artifact is not None:
+            if artifact.get("conclusion") != "success":
+                # This run failed / was cancelled — it did not deploy anything,
+                # regardless of which revision was attempted.
+                continue
+            artifact_revision = artifact.get("revision") or ""
+            if artifact_revision and is_ancestor(
+                merge_sha, artifact_revision, runner=runner
+            ):
+                return run
+            # Artifact present but revision != ancestor — this run deployed a
+            # different revision (e.g. an unrelated PR or rollback). Do NOT
+            # fall through to log/headSha — the artifact is authoritative.
+            continue
+
+        # Layer 2 (FALLBACK): log-extracted revision (backward-compat for
+        # runs older than this PR, i.e. pre-FU-Artifact).
+        log = fetch_run_log(repo, run_id, runner=runner)
         revisions_from_log: list[str] = []
         if log:
             for pattern in _REVISION_PATTERNS:
@@ -376,12 +474,10 @@ def find_successful_deploy(
             for match in revisions_from_log:
                 if is_ancestor(merge_sha, match, runner=runner):
                     return run
-            # Log had explicit revisions but none was an ancestor → this
-            # run did NOT deploy our merge_sha. Continue to next run; DO
-            # NOT fall through to headSha (rollback false-positive guard).
+            # Same rollback guard as layer 1.
             continue
 
-        # Priority 2 fallback: headSha (only when log produced no revisions).
+        # Layer 3 (LAST RESORT): headSha.
         head_sha = run.get("headSha") or ""
         if head_sha and (head_sha == merge_sha or is_ancestor(merge_sha, head_sha, runner=runner)):
             return run
