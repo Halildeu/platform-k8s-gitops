@@ -50,9 +50,14 @@ DESIGN NOTES:
   - Default policy on missing service: jwt_validates=True (strict). Safer
     to fail-closed than silently accept AMBER on an unknown service.
 
-TODO (follow-up PR, NOT this PR):
-  - Refactor gate-evidence-check.py check_evidence() to import and call
-    check_tiers() from this module, eliminating duplicated policy logic.
+HISTORY:
+  - 2026-05-21 PR #922 (DiD-3) — initial extraction; ledger-mark-verified.sh
+    invokes via CLI (`check-tiers` subcommand). gate-evidence-check.py kept
+    its own inline copy to limit blast radius.
+  - 2026-05-21 PR #936 (FU-Gate-Refactor) — gate-evidence-check.py now also
+    imports and delegates to this helper. Single source of truth for D29
+    tier policy semantics; both the PR-blocking gate and the post-smoke
+    marker apply identical rules.
 """
 
 from __future__ import annotations
