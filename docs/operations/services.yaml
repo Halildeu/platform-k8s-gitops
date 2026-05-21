@@ -180,18 +180,24 @@ services:
       contract gate's subject). Currently dev/test only; prod scope decision
       pending Faz 22.2 BG-EA-1 product review.
 
-      Status note (truth refresh — 2026-05-21, tracked by #924):
+      Status note (Plan A/B/C zincir MERGED 2026-05-22, tracked by #953 docs refresh):
         Test cluster endpoint-admin-service is now GitOps-governed in
         kustomize/overlays/test with immutable digest pin
-        sha256:5bb0fa2600f0d85073c2d9caa37d05d6a12a6fa6ff5b3569a20e743a73e2eab0.
-        Live check: Deployment 1/1, endpoint addresses present, ExternalSecret
-        SecretSynced=True, actuator health UP, no-JWT admin devices returns 401.
+        sha256:b2250b7a274ec8684abce7ed1f9a47d301c548982ccbecc705647a0f8081f2eb
+        (post-H1 merge final main SHA `8e2589c1`, gitops PR #956 MERGED).
+        api-gateway companion digest pin
+        sha256:84500b5ebe162b8014035fe6bcf9a76b407ef81fad0a6b3407d5fa7357cce47c
+        (post-H2 merge final main SHA `161296cf`, gitops PR #957 MERGED).
+        Pre-rollout live check (prior digest 2026-05-21): Deployment 1/1,
+        endpoint addresses present, ExternalSecret SecretSynced=True,
+        actuator health UP, no-JWT admin devices returns 401.
 
-        This proves Up + basic Functional/fail-closed only. Full D29-EA Secured
-        acceptance still needs persona allow/deny + OpenFGA tuple verification +
-        audit insert, and platform-backend canonical main reconciliation remains
-        separate because endpoint-admin-service source is still on the
-        codex/be-001-endpoint-admin-service-platform-backend side branch.
+        platform-backend canonical main NOW carries endpoint-admin-service
+        + api-gateway integration (H1 PR #288 + H2 PR #291 MERGED).
+        Live route resolution post-rollout + D29-EA Secured acceptance
+        (persona allow/deny + OpenFGA tuple verification + audit insert)
+        + BE-011 agent live integration smoke remain separate acceptance
+        gates.
     jwt_validates: true
     route_external: false
     workload_kind: Deployment
@@ -199,7 +205,7 @@ services:
     probe_contract: spring-actuator
     jvm_warmup_extra: true   # Hibernate JPA EntityManagerFactory cold-start 30-50s; observed 16h CrashLoop with 45s liveness grace (2026-05-13)
     environments:
-      test: enabled   # 2026-05-21 truth refresh (#924): GitOps desired + live runtime aligned at digest sha256:5bb0fa2600f0d85073c2d9caa37d05d6a12a6fa6ff5b3569a20e743a73e2eab0; Up + basic Functional/fail-closed proven (health UP, no-JWT 401). Full D29-EA Secured persona allow/deny/audit still pending.
+      test: enabled   # 2026-05-22 Plan A/B/C zincir MERGED (#953 docs refresh): GitOps desired bumped to sha256:b2250b7a274ec8684abce7ed1f9a47d301c548982ccbecc705647a0f8081f2eb (H1 PR #288 + gitops PR #956). Pre-rollout evidence (prior digest 2026-05-21 sha256:5bb0fa2600...): Deployment 1/1, health UP, no-JWT 401 (Up + basic Functional/fail-closed proven). Post-rollout pod imageID match + Full D29-EA Secured persona allow/deny/audit + BE-011 agent live integration still pending.
       prod: deferred  # Faz 22.2 product decision (it-pilot tier acik.local + prod realm 'serban' + Azure Trusted Signing); drift gate accepts absence in prod
 
   - name: notification-orchestrator
