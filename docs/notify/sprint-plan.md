@@ -37,7 +37,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 - Per-milestone closure (M1, M2, M3, ...): tüm closed task actuals → velocity gerçekleşen ratio → sonraki tier estimation revize
 - Confidence: low → medium → high progression sprint cycle'larında
 
-**Şu an**: Faz 23.0..23.9 done iddiası ~270h baseline; **actual measurement başlamadı** (Codex iter-2 verdict "historical investment proxy, low confidence"). M1+M2 closure ile actual tracking başlar; M3 closure'da T1 99.5h estimate vs gerçekleşen ratio belirlenir.
+**Şu an (Session 47 2026-05-21)**: Actual measurement partial başladı; T1 ~60h+ actual / 99.5h estimate (-40h drift) + T4.1 14h / 25h (-11h) + T4.2 32h (browser-only) + T4.3 12.5h done / 36h plan + 14h residual. Confidence medium (T4 actual'lar PR-bazlı izlendi; T1 actual'lar Session 41-47 cumulative proxy). M2 + M6a + M6b closure tamamlandı (board #754/#758).
 
 ---
 
@@ -243,10 +243,10 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 ## Tier 4: 23.6 + 23.7 + 23.8 v1 (~5-6 weeks, ~99h)
 
-> **Status revision 2026-05-21 (Session 47 — post WebPush 11 sub-PR + T4.1 MERGED + T4.3.a Tempo LIVE + T4.3.b suppression LIVE + T4.3.6 per-tenant dashboard MERGED)**: T4.1 LIVE, T4.2 browser-only foundation 11 sub-PR MERGED + 1 UI integration follow-up CI pending (mobile FCM/APNS Faz 22.2 dep DIŞI), T4.3 3/9 sub-task LIVE (Tempo + suppression + per-tenant dashboard MERGED; FBL + per-template analytics + federation residual). Sprint plan re-baseline:
+> **Status revision 2026-05-21 (Session 47 — post WebPush 11 sub-PR + T4.1 MERGED + T4.3.a Tempo LIVE + T4.3.b suppression LIVE + T4.3.6 per-tenant dashboard MERGED)**: T4.1 LIVE, T4.2 browser-only foundation 11 sub-PR MERGED + 1 UI integration follow-up MERGED 2026-05-21 20:00Z (mobile FCM/APNS Faz 22.2 dep DIŞI), T4.3 3/9 sub-task LIVE (Tempo + suppression + per-tenant dashboard MERGED; FBL + per-template analytics + federation residual). Sprint plan re-baseline:
 >
 > - T4.1 actual ~14h (estimate 25h, variance -11h — Block Kit + Teams Adaptive Card pattern straight-forward)
-> - T4.2 (browser-only scope) actual ~32h from 11 sub-PR MERGED + 1 UI follow-up CI pending (W1+W2.1+W2.2+W2.3+W2.4+W2.5+W2.6+W3+W4+W5+W6+W7 + #649); mobile FCM/APNS ~24h Faz 22.2 dep DIŞI
+> - T4.2 (browser-only scope) actual ~32h from 11 sub-PR MERGED + 1 UI follow-up MERGED 2026-05-21 (W1+W2.1+W2.2+W2.3+W2.4+W2.5+W2.6+W3+W4+W5+W6+W7 + #649); mobile FCM/APNS ~24h Faz 22.2 dep DIŞI
 > - T4.3 actual ~12.5h done of ~36h plan; ~14h kalır (T4.3.5 FBL + T4.3.7 per-template + T4.3.8 federation)
 
 ### T4.1 — 23.6 Teams + Slack Zenginleştirme
@@ -278,7 +278,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | T4.2.11 | Frontend UI integration (PushSubscriptionCard + VAPID env build chain) | frontend | 3 | 2.5 | dev | 🟢 PR #649 (this batch) |
 | T4.2.12 | Codex peer review + merge | docs | 1 | 1 | agent | 🟢 019e49e7 + 5 thread chain |
 
-**Total (browser-only)**: 32h actual (11 sub-PR MERGED + #649 UI integration CI pending); mobile FCM/APNS Faz 22.2 dep (~24h DIŞI)
+**Total (browser-only)**: 32h actual (11 sub-PR MERGED + #649 UI integration MERGED 2026-05-21 20:00Z); mobile FCM/APNS Faz 22.2 dep (~24h DIŞI)
 
 ### T4.3 — 23.8 Tempo + Bounce Loop + Per-Tenant Grafana
 
@@ -322,9 +322,9 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 | Tier | Scope | Total Effort | Calendar Span | Critical Risk |
 |---|---|---:|---|---|
-| **T1** 23.2 closure | preference + erasure + provider rollback + outage fallback + classification + abuse | ~17-22h residual (~100h original; Session 41 re-baseline post T1.6 LIVE + T1.4 4-PR source-ready -77/-82h) | 1-1.5 hafta provisional | R2 (KVKK legal), R9 (D43 drill operator-bound), RAID I6 (Keycloak credential) — R13 + R19 mitigated (T1.6 abuse guards LIVE) |
-| **T2** 23.1+23.4+23.9 closure | D29-Functional + archive UI + 72h observation | ~19h | 1 hafta | R7 (browser verify) |
-| **T3** 23.3+23.5 | SMS JetSMS primary + NetGSM secondary + Preference UI | ~65h | 3 hafta | R1 (NetGSM secondary contract — failover acceptance blocker), R3 (DKIM) |
+| **T1** 23.2 closure | preference + erasure + provider rollback + outage fallback + classification + abuse | ~99.5h estimate / ~60h+ actual + ~0h agent-actionable residual; Session 47 2026-05-21 re-baseline post 7/6 sub-tier source-side LIVE + KVKK 7/7 PR-K1..K7 MERGED | source-side LIVE; external acceptance R2 2026-05-25 + R9 ops slot | R2 (KVKK legal 4 gün), R9 (D43 drill ops slot) — R12 + R13 + R19 mitigated; RAID I6 superseded T1.1.9 PR #875 MERGED |
+| **T2** 23.1+23.4+23.9 closure | D29-Functional + archive UI + 72h observation | ~22h estimate / T2.1+T2.2 LIVE (M2 accepted 2026-05-18 #754; M6a+M6b 2026-05-20 #758); T2.3 ~4.5h external (operator + user) | T2.1+T2.2 LIVE; T2.3 ext slot | R7 (browser verify user availability — M1 23.9 closure ext-gated) |
+| **T3** 23.3+23.5 | SMS JetSMS primary + NetGSM secondary + Preference UI | ~65h estimate / source-side LIVE (M4 prod cutover 2026-05-20; M5 source-ready); T3.1.8 + T3.1.1 + M5 charter board acceptance ext-gated | source-side LIVE; canary KC + R1 + R24 ext-gated | R1 (NetGSM secondary contract ETA 2026-05-30), R24 (Biotekno OTP allowlist) — R3 DKIM 🟢 mitigated, R23 Graph adapter active monitored |
 | **T4** 23.6+23.7+23.8 v1 | Teams + WebPush (browser-only) + Tempo + bounce + per-tenant dashboard | ~99h estimate / ~58.5h actual + ~14h residual (T4.3.5 FBL + T4.3.7 per-template + T4.3.8 federation); mobile FCM/APNS ~24h Faz 22.2 dep DIŞI — Session 47 re-baseline 2026-05-21 (T4.1 + T4.2 browser-only 11 sub-PR + #649 UI integration MERGED + T4.3.a Tempo + T4.3.b suppression + T4.3.6 per-tenant dashboard MERGED) | ~2 hafta residual | R11 ~mitigated (Tempo LIVE), R16 (federation pending) |
 | **T5** 23.X v2 | multi-tenant features | ~144h | 8-12 hafta | R10 (multi-tenant migration) |
 | **Total v1 (T1-T4)** | Faz 23.0 → 23.9 v1 closure | **~14h agent-actionable residual** (T4.3.5 + T4.3.7 + T4.3.8 backend + gitops); T1/T2/T3 source-side LIVE; M1 T2.3 5/6 operator+user external (R7); M3 R2 KVKK legal 2026-05-25; M4 R1/R24 + canary KC org_id ext-gated; mobile FCM/APNS ~24h Faz 22.2 dep **DIŞI**. Session 47 re-baseline 2026-05-21 — önceki Session 41 ~17-22h Tier 1 residual + Tier 2/3/4 dahil 100-130h → ~14h agent + external acceptance gates | **~1-2 hafta agent + 4 gün external** (R2 KVKK 2026-05-25) | — |
