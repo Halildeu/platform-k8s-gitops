@@ -16,7 +16,7 @@ Frontend AuthBootstrapper rehydrated a stale localStorage token after a silent-S
 6. **Close the operator-action gap** (FU-Runbooks PR #941 — two operator runbooks for the new alerts/issues)
 7. **Close the label discipline gap** (FU-AutoLabel PR #943 — PR template trailer auto-applies `critical-fix` label)
 
-End-to-end the incident produced **7 gitops PRs over ~10 hours** with **14+ Codex post-impl review iterations** absorbing **substantive bugs** caught in iter-1 of nearly every PR (rollback false-pass, gh read failures going silent, workflow path filter gaps, ServiceMonitor mental model error, etc.).
+End-to-end the incident produced **7 gitops PRs over ~10 hours** with **multiple Codex review passes per PR** (plan-iter + post-impl-iter), totaling 14+ review rounds, absorbing **substantive bugs** caught in the FIRST post-impl review pass of nearly every PR (rollback false-pass, gh read failures going silent, workflow path filter gaps, ServiceMonitor mental model error, etc.).
 
 ## Kullanıcı bağlamı
 
@@ -175,19 +175,19 @@ Also: annotation + issue body update to link to actual runbook paths instead of 
 
 ### 6.1 Cross-AI peer review catches real bugs at high rate
 
-Across 7 PRs, Codex iter-1 caught substantive issues in **6 of them**:
+Across 7 PRs, the **first Codex post-impl review pass** (i.e. the FIRST time Codex saw the implementation diff after plan-iter consensus) caught substantive issues in **6 of them**:
 
-| PR | iter-1 finding |
+| PR | First-pass post-impl finding |
 |---|---|
-| #922 DiD-3 | Frontend prod-variant ledger lookup blocker (overlay mode finds wrong digest) |
+| #922 DiD-3 | Frontend prod-variant ledger lookup blocker (overlay mode finds wrong digest) — caught in plan-iter-1 (substantive enough to count) |
 | #923 DiD-2 | `$labels.edge` URL render bug (`ai-prod.acik.com` not `ai.acik.com`) |
-| #926 DiD-1 | 4 P1: rollback false-pass, gh silent-empty, uncreated label, marker prefix collision |
-| #929 FU-Artifact | Docstring sync only — AGREE on iter-1 (rare) |
+| #926 DiD-1 | 4 P1 on first post-impl pass: rollback false-pass, gh silent-empty, uncreated label, marker prefix collision. Plus 1 additional P1 in next pass (`main()` swallowed correlation errors → exit 0). |
+| #929 FU-Artifact | Docstring sync only — AGREE on first post-impl pass (rare) |
 | #936 FU-Gate-Refactor | Workflow path filter gap (helper-only changes bypass gate) |
-| #941 FU-Runbooks | 4 P1/P2: ServiceMonitor mental model, lifecycle contradiction, rollback example, cross-ref paths |
+| #941 FU-Runbooks | 4 P1/P2 on first post-impl: ServiceMonitor mental model, lifecycle contradiction, rollback example with `main^`, cross-ref paths in wrong dir. Plus 1 precision fix on ancestor direction. |
 | #943 FU-AutoLabel | `issues: write` missing + `--force` label overwrite |
 
-That's a **~85% iter-1 catch rate** on substantive (P1/P2) issues. The cross-AI HARD RULE (provider-level separation) consistently catches bugs that single-provider review would miss.
+That's a **6/7 (~85%)** rate of substantive findings on the first post-impl review pass. The cross-AI HARD RULE (provider-level separation) consistently catches bugs that single-provider review would miss. NOTE: "First pass" here means the first Codex review per change-stage, not a global thread iteration count — within a PR, multiple post-impl iters may absorb successive findings.
 
 ### 6.2 Defense-in-depth at every layer
 
@@ -279,4 +279,4 @@ Audit log entries in `~/.claude/logs/git-cleanup.log` for each PR — 7 satır `
 
 | Tarih | Değişiklik | Bağlantı |
 |---|---|---|
-| 2026-05-21 | İlk yazım — 7-PR remediation chain closure | PR #-tba- (this PR) |
+| 2026-05-21 | İlk yazım — 7-PR remediation chain closure | PR #950 |
