@@ -130,18 +130,55 @@ def _deploy_run_fixture(
 
 
 class FindSuccessfulDeployTests(unittest.TestCase):
+    """Codex iter-4 P1 absorb: correlation priority is now log-first,
+    headSha fallback only when no revision can be extracted from the log
+    (rollback false-positive guard). Tests are rewritten to mock the
+    log call accordingly."""
+
     def setUp(self) -> None:
         self.mod = _load_module()
         self.runner = MockRunner()
 
-    def test_headsha_exact_match_returns_run(self) -> None:
-        """Merge SHA == deploy run headSha → first-pass match, no log-grep needed."""
+    def test_log_revision_match_returns_run(self) -> None:
+        """Primary path: log contains explicit `Revision: <sha>` ancestor."""
+        merge_sha = "cccccccc"
+        head_sha = "dddddddd"
+        revision_from_log = "eeeeeeee"
+        run = _deploy_run_fixture(head_sha=head_sha, created_hours_ago=1.0)
+
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "run"] and "list" in cmd,
+            json.dumps([run]),
+        )
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "run"] and "view" in cmd and "--log" in cmd,
+            f"some output\nRevision: {revision_from_log}\nmore output\n",
+        )
+        self.runner.expect(
+            lambda cmd: cmd[:3] == ["git", "merge-base", "--is-ancestor"]
+            and cmd[4] == revision_from_log,
+            "",
+            returncode=0,
+        )
+
+        merged_at = datetime.now(timezone.utc) - timedelta(hours=2.0)
+        result = self.mod.find_successful_deploy(
+            "owner/repo", merge_sha, merged_at, runner=self.runner
+        )
+        self.assertIsNotNone(result)
+
+    def test_headsha_fallback_when_log_empty(self) -> None:
+        """Empty log → falls back to headSha; exact match returns the run."""
         merge_sha = "dd20f46be2c72d438dad5a015e324a4bb197f05e"
         run = _deploy_run_fixture(head_sha=merge_sha, created_hours_ago=1.0)
 
         self.runner.expect(
             lambda cmd: cmd[:2] == ["gh", "run"] and "list" in cmd,
             json.dumps([run]),
+        )
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "run"] and "view" in cmd and "--log" in cmd,
+            "",
         )
 
         merged_at = datetime.now(timezone.utc) - timedelta(hours=2.0)
@@ -151,18 +188,20 @@ class FindSuccessfulDeployTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["databaseId"], run["databaseId"])
 
-    def test_ancestor_match_via_git_merge_base(self) -> None:
-        """Merge SHA is ancestor of headSha → ancestor check returns the run."""
+    def test_headsha_ancestor_fallback_when_log_empty(self) -> None:
+        """Empty log → falls back to ancestor check against headSha."""
         merge_sha = "aaaaaaa"
         head_sha = "bbbbbbb"
         run = _deploy_run_fixture(head_sha=head_sha, created_hours_ago=1.0)
 
-        # gh run list — returns the one run.
         self.runner.expect(
             lambda cmd: cmd[:2] == ["gh", "run"] and "list" in cmd,
             json.dumps([run]),
         )
-        # git merge-base --is-ancestor merge_sha head_sha → exit 0 (ancestor).
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "run"] and "view" in cmd and "--log" in cmd,
+            "",
+        )
         self.runner.expect(
             lambda cmd: cmd[:3] == ["git", "merge-base", "--is-ancestor"]
             and cmd[3] == merge_sha
@@ -177,42 +216,42 @@ class FindSuccessfulDeployTests(unittest.TestCase):
         )
         self.assertIsNotNone(result)
 
-    def test_log_grep_fallback_revision_match(self) -> None:
-        """If headSha doesn't match, log-grep extracts revision then ancestor."""
-        merge_sha = "cccccccc"
-        head_sha = "dddddddd"
-        revision_from_log = "eeeeeeee"
+    def test_rollback_log_revision_older_does_NOT_match(self) -> None:
+        """Codex iter-4 P1 — `full` rollback mode false-positive guard.
+
+        Workflow runs FROM current main (headSha = merge_sha) but
+        SYNCS an older revision in `full` rollback mode. headSha alone
+        would false-positive match. With log-first priority, the
+        rollback revision is read from the log and the ancestor check
+        correctly returns False.
+        """
+        merge_sha = "ffffffffffffffffffffffffffffffffffffffff"
+        head_sha = merge_sha  # workflow ran from main HEAD = merge_sha
+        rollback_revision = "1111111111111111111111111111111111111111"
         run = _deploy_run_fixture(head_sha=head_sha, created_hours_ago=1.0)
 
         self.runner.expect(
             lambda cmd: cmd[:2] == ["gh", "run"] and "list" in cmd,
             json.dumps([run]),
         )
-        # First two ancestor checks (headSha) fail.
-        self.runner.expect(
-            lambda cmd: cmd[:3] == ["git", "merge-base", "--is-ancestor"]
-            and cmd[4] == head_sha,
-            "",
-            returncode=1,
-        )
-        # gh run view --log returns log text with "Revision: <sha>" line.
         self.runner.expect(
             lambda cmd: cmd[:2] == ["gh", "run"] and "view" in cmd and "--log" in cmd,
-            f"some output\nRevision: {revision_from_log}\nmore output\n",
+            f"argocd app sync platform-prod --revision {rollback_revision} --prune=false\n",
         )
-        # Ancestor check on the log-extracted revision → match.
         self.runner.expect(
             lambda cmd: cmd[:3] == ["git", "merge-base", "--is-ancestor"]
-            and cmd[4] == revision_from_log,
+            and cmd[3] == merge_sha
+            and cmd[4] == rollback_revision,
             "",
-            returncode=0,
+            returncode=1,
         )
 
         merged_at = datetime.now(timezone.utc) - timedelta(hours=2.0)
         result = self.mod.find_successful_deploy(
             "owner/repo", merge_sha, merged_at, runner=self.runner
         )
-        self.assertIsNotNone(result)
+        # Critical: must NOT false-positive match via headSha.
+        self.assertIsNone(result)
 
     def test_failed_deploy_ignored(self) -> None:
         """Only `status=success` runs are returned; failed deploys never satisfy SLA."""
@@ -307,6 +346,119 @@ class IssueExistenceTests(unittest.TestCase):
         )
         match = self.mod.find_existing_sla_issue("owner/repo", 640, runner=self.runner)
         self.assertIsNone(match)
+
+    def test_find_existing_sla_issue_no_prefix_collision(self) -> None:
+        """Codex iter-4 P2 — PR `640` must NOT match a body for PR `6400`.
+
+        Previous substring-search behavior would false-positive match
+        `pr=640` against `pr=6400`. Boundary-aware regex now requires
+        a delimiter (space, `-->`, end-of-line) after the PR number.
+        """
+        body = "<!-- critical-fix-sla pr=6400 merge_sha=abc -->\nbody\n"
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "issue"] and "list" in cmd,
+            json.dumps([{"number": 100, "body": body, "title": "..."}]),
+        )
+        match = self.mod.find_existing_sla_issue("owner/repo", 640, runner=self.runner)
+        self.assertIsNone(match)
+
+
+class GhReadFailureStrictTests(unittest.TestCase):
+    """Codex iter-4 P1 — strict `gh_text_required` propagates failures so the
+    monitor cannot silently report `[OK] no critical-fix PRs` on auth /
+    network failures during `pr list` / `run list` / `issue list` / `pr view`.
+    """
+
+    def setUp(self) -> None:
+        self.mod = _load_module()
+        self.runner = MockRunner()
+
+    def test_pr_list_failure_raises_gherror(self) -> None:
+        # All `gh pr list` calls return nonzero — must raise.
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "pr"] and "list" in cmd,
+            "",
+            returncode=1,
+        )
+        with self.assertRaises(self.mod.GhError):
+            self.mod.list_critical_fix_prs("owner/repo", window_hours=48, runner=self.runner)
+
+    def test_run_list_failure_raises_gherror(self) -> None:
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "run"] and "list" in cmd,
+            "",
+            returncode=1,
+        )
+        with self.assertRaises(self.mod.GhError):
+            self.mod.list_recent_deploy_success_runs("owner/repo", runner=self.runner)
+
+    def test_issue_list_failure_raises_gherror(self) -> None:
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "issue"] and "list" in cmd,
+            "",
+            returncode=1,
+        )
+        with self.assertRaises(self.mod.GhError):
+            self.mod.find_existing_sla_issue("owner/repo", 640, runner=self.runner)
+
+    def test_pr_view_failure_raises_gherror(self) -> None:
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "pr"] and "view" in cmd,
+            "",
+            returncode=1,
+        )
+        with self.assertRaises(self.mod.GhError):
+            self.mod.pr_comments("owner/repo", 640, runner=self.runner)
+
+    def test_log_fetch_failure_does_NOT_raise(self) -> None:
+        """`gh run view --log` remains best-effort — log-grep is optional fallback.
+
+        A log fetch failure must not crash the monitor; correlator falls
+        through to headSha-ancestor as the last-resort signal."""
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "run"] and "view" in cmd and "--log" in cmd,
+            "",
+            returncode=1,
+        )
+        # Returns empty string, no exception.
+        result = self.mod.fetch_run_log("owner/repo", 12345, runner=self.runner)
+        self.assertEqual(result, "")
+
+
+class IssueCreateLabelTests(unittest.TestCase):
+    """Codex iter-4 P1 — single-label issue create. Previously used
+    `critical-fix-sla-active,critical-fix-sla` but only the first was
+    ensured by `ensure_label()` on startup, causing first-real-breach failure
+    if the second label did not pre-exist."""
+
+    def setUp(self) -> None:
+        self.mod = _load_module()
+        self.runner = MockRunner()
+
+    def test_issue_create_uses_only_ensured_label(self) -> None:
+        pr = _pr_fixture(number=640, merged_hours_ago=5.0)
+        # No existing SLA issue.
+        self.runner.expect(
+            lambda cmd: cmd[:2] == ["gh", "issue"] and "list" in cmd,
+            "[]",
+        )
+        self.mod.create_or_update_issue(
+            repo="owner/repo",
+            pr=pr,
+            age_hours=5.0,
+            threshold_hours=4,
+            dry_run=False,
+            runner=self.runner,
+        )
+        # Find the gh issue create call recorded.
+        create_calls = [c for c in self.runner.calls if c[:3] == ["gh", "issue", "create"]]
+        self.assertEqual(len(create_calls), 1)
+        create = create_calls[0]
+        # The --label argument must be exactly SLA_ACTIVE_LABEL (no comma list).
+        idx = create.index("--label")
+        self.assertEqual(create[idx + 1], self.mod.SLA_ACTIVE_LABEL)
+        # No comma → no multi-label form. Codex iter-4 fix: single label only.
+        self.assertNotIn(",", create[idx + 1])
 
 
 # --- Dry-run tests -----------------------------------------------------------

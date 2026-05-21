@@ -128,10 +128,37 @@ def gh_json(*args: str, runner=_run) -> object:
 
 
 def gh_text(*args: str, runner=_run) -> str:
-    """Run `gh <args>` and return stdout as text. Empty string on nonzero exit."""
+    """Best-effort `gh <args>` — returns "" on nonzero exit.
+
+    USE WITH CARE: any caller that depends on the result being authoritative
+    must use `gh_text_required` instead (Codex iter-4 P1 absorb: silent-empty
+    semantics caused false `[OK] no critical-fix PRs` reports when auth or
+    network failures occurred during `pr list` / `run list` / `issue list` /
+    `pr view`). Acceptable for genuinely best-effort calls where empty ==
+    "no data to grep" is semantically equivalent (e.g. `gh run view --log`
+    when log-grep is an optional fallback signal).
+    """
     res = runner(["gh", *args], check=False)
     if res.returncode != 0:
         return ""
+    return res.stdout
+
+
+def gh_text_required(*args: str, runner=_run) -> str:
+    """Strict `gh <args>` — raises GhError on nonzero exit.
+
+    Use for every read whose emptiness must NOT be conflated with "no data":
+    `pr list`, `run list`, `issue list`, `pr view`. Caller is expected to
+    propagate the exception so the monitor surfaces a real failure rather
+    than reporting [OK] on a scan that did not happen.
+    """
+    res = runner(["gh", *args], check=False)
+    if res.returncode != 0:
+        raise GhError(
+            args_str=shlex.join(["gh", *args]),
+            returncode=res.returncode,
+            stderr=res.stderr,
+        )
     return res.stdout
 
 
@@ -164,10 +191,15 @@ def is_ancestor(merge_sha: str, revision: str, runner=_run) -> bool:
 
 
 def list_critical_fix_prs(repo: str, window_hours: int, runner=_run) -> list[dict]:
-    """List merged PRs in `repo` with `critical-fix` label in the last `window_hours`."""
+    """List merged PRs in `repo` with `critical-fix` label in the last `window_hours`.
+
+    STRICT: raises GhError on `gh pr list` failure (Codex iter-4 P1) so the
+    monitor cannot silently report [OK] on an auth/network failure that
+    actually skipped the scan.
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
     search = f"label:{CRITICAL_FIX_LABEL} merged:>{cutoff.strftime('%Y-%m-%d')}"
-    out = gh_text(
+    out = gh_text_required(
         "pr",
         "list",
         "--repo",
@@ -188,8 +220,11 @@ def list_critical_fix_prs(repo: str, window_hours: int, runner=_run) -> list[dic
 
 
 def list_recent_deploy_success_runs(repo: str, runner=_run) -> list[dict]:
-    """Most recent successful runs of the prod-deploy workflow (newest first)."""
-    out = gh_text(
+    """Most recent successful runs of the prod-deploy workflow (newest first).
+
+    STRICT: raises GhError on `gh run list` failure (Codex iter-4 P1).
+    """
+    out = gh_text_required(
         "run",
         "list",
         "--repo",
@@ -210,13 +245,28 @@ def list_recent_deploy_success_runs(repo: str, runner=_run) -> list[dict]:
 
 
 def fetch_run_log(repo: str, run_id: int, runner=_run) -> str:
-    """Best-effort `gh run view --log` text. Empty string on failure."""
+    """Best-effort `gh run view --log` text. Empty string on failure.
+
+    Intentionally non-strict — log-grep is an OPTIONAL correlation signal
+    (Codex iter-4 P1 P2 note). If the log call fails (large logs paginated
+    awkwardly, transient API issue, etc.) the correlator falls through to
+    headSha-ancestor as a last resort.
+    """
     return gh_text("run", "view", str(run_id), "--repo", repo, "--log", runner=runner)
 
 
 def find_existing_sla_issue(repo: str, pr_number: int, runner=_run) -> Optional[int]:
-    """Search for an OPEN issue carrying the SLA-active label + the PR marker."""
-    out = gh_text(
+    """Search for an OPEN issue carrying the SLA-active label + the PR marker.
+
+    STRICT: raises GhError on `gh issue list` failure (Codex iter-4 P1) so
+    a read failure cannot cause a duplicate issue to be created.
+
+    Marker match: full prefix with trailing whitespace OR explicit closer
+    (Codex iter-4 P2 — substring `pr=640` previously matched bodies with
+    `pr=6400`). Acceptable terminators are space, newline, end-of-string,
+    or the HTML-comment closer `-->`.
+    """
+    out = gh_text_required(
         "issue",
         "list",
         "--repo",
@@ -233,16 +283,24 @@ def find_existing_sla_issue(repo: str, pr_number: int, runner=_run) -> Optional[
     )
     if not out:
         return None
-    marker = f"critical-fix-sla pr={pr_number}"
+    # Use a boundary regex rather than substring containment. The marker is
+    # written by make_issue_body() as `<!-- critical-fix-sla pr=<N>
+    # merge_sha=<sha> -->`, so the next char after `<N>` is a space.
+    marker_re = re.compile(
+        rf"<!--\s*critical-fix-sla\s+pr={pr_number}(?:\s|-->|$)"
+    )
     for issue in json.loads(out):
-        if marker in (issue.get("body") or ""):
+        if marker_re.search(issue.get("body") or ""):
             return issue["number"]
     return None
 
 
 def pr_comments(repo: str, pr_number: int, runner=_run) -> list[dict]:
-    """Return the list of comments on a PR (newest gh API form)."""
-    out = gh_text(
+    """Return the list of comments on a PR (newest gh API form).
+
+    STRICT: raises GhError on `gh pr view` failure (Codex iter-4 P1).
+    """
+    out = gh_text_required(
         "pr",
         "view",
         str(pr_number),
@@ -267,13 +325,30 @@ def find_successful_deploy(
     merged_at: datetime,
     runner=_run,
 ) -> Optional[dict]:
-    """Return the first deploy-prod-gitops success run whose revision
-    contains `merge_sha`, or None if no match within the candidate window.
+    """Return the first deploy-prod-gitops success run whose deployed
+    revision contains `merge_sha`, or None if no match within the candidate
+    window.
 
-    Match priority for a given run:
-      1. `headSha == merge_sha`
-      2. `merge_sha` is ancestor of `headSha`
-      3. Log-grep revision extracted from workflow log + ancestor check
+    Match priority for a given run (Codex iter-4 P1 absorb — REVERSED from
+    iter-3 design):
+
+      1. **Log-extracted revision** + ancestor check.
+         `deploy-prod-gitops.yml` runs as `workflow_dispatch` with an explicit
+         `revision` input. In `full` rollback mode the workflow can run
+         FROM current `main` (so `headSha` advances) while it SYNCS an OLDER
+         revision (so the deployed revision is NOT main HEAD). Trusting
+         `headSha` as the deployed-revision proxy would false-positive
+         match a rollback run that pushed a pre-fix revision. Always read
+         the log first and prefer an explicit `--revision <sha>` or
+         `Revision: <sha>` line.
+
+      2. **headSha fallback** (`exact` or `ancestor`).
+         Only when the log call returned no text OR no revision could be
+         extracted from it. In the normal `resources`-mode flow (no rollback),
+         the deployed revision == workflow's `headSha`, so the fallback
+         still correlates correctly in the common case.
+
+    The match scope is bounded to runs where `createdAt > merged_at`.
     """
     runs = list_recent_deploy_success_runs(repo, runner=runner)
     for run in runs:
@@ -283,18 +358,27 @@ def find_successful_deploy(
             continue
         if created_at <= merged_at:
             continue
-        head_sha = run.get("headSha") or ""
-        # Fast paths: exact or ancestor of headSha.
-        if head_sha and (head_sha == merge_sha or is_ancestor(merge_sha, head_sha, runner=runner)):
-            return run
-        # Slow path: log-grep the workflow run output for an explicit revision.
+
+        # Priority 1: explicit revision extracted from workflow log.
         log = fetch_run_log(repo, run["databaseId"], runner=runner)
-        if not log:
-            continue
-        for pattern in _REVISION_PATTERNS:
-            for match in pattern.findall(log):
+        revisions_from_log: list[str] = []
+        if log:
+            for pattern in _REVISION_PATTERNS:
+                revisions_from_log.extend(pattern.findall(log))
+        if revisions_from_log:
+            for match in revisions_from_log:
                 if is_ancestor(merge_sha, match, runner=runner):
                     return run
+            # Log had explicit revisions but none was an ancestor → this
+            # run did NOT deploy our merge_sha. Continue to next run; DO
+            # NOT fall through to headSha (rollback false-positive guard).
+            continue
+
+        # Priority 2 fallback: headSha (only when log produced no revisions).
+        head_sha = run.get("headSha") or ""
+        if head_sha and (head_sha == merge_sha or is_ancestor(merge_sha, head_sha, runner=runner)):
+            return run
+
     return None
 
 
@@ -304,7 +388,7 @@ def find_successful_deploy(
 def ensure_label(repo: str, name: str, color: str, description: str, runner=_run) -> None:
     """Create label idempotently; ignore failure when label already exists."""
     try:
-        _run(
+        runner(
             [
                 "gh",
                 "label",
@@ -401,7 +485,7 @@ def warn_on_pr(repo: str, pr: dict, age_hours: float, threshold_hours: int, dry_
     if dry_run:
         print(f"  [DRY-RUN] would post warning comment on PR #{pr_number}")
         return
-    _run(["gh", "pr", "comment", str(pr_number), "--repo", repo, "--body", body], check=True)
+    runner(["gh", "pr", "comment", str(pr_number), "--repo", repo, "--body", body], check=True)
     print(f"  [WARN] posted warning comment on PR #{pr_number}")
 
 
@@ -426,14 +510,18 @@ def create_or_update_issue(
     existing = find_existing_sla_issue(repo, pr_number, runner=runner)
     if existing:
         comment_body = f"SLA still active — age now {age_hours:.1f}h."
-        _run(
+        runner(
             ["gh", "issue", "comment", str(existing), "--repo", repo, "--body", comment_body],
             check=True,
         )
         print(f"  [SLA] refreshed existing issue #{existing} for PR #{pr_number}")
         return
 
-    _run(
+    # Codex iter-4 P1 absorb: only use `critical-fix-sla-active` label —
+    # the previous `critical-fix-sla` second label was never ensured by
+    # `ensure_label()` on workflow startup, so `gh issue create` would fail
+    # on the first real SLA breach if that label did not pre-exist.
+    runner(
         [
             "gh",
             "issue",
@@ -445,7 +533,7 @@ def create_or_update_issue(
             "--body",
             body,
             "--label",
-            f"{SLA_ACTIVE_LABEL},critical-fix-sla",
+            SLA_ACTIVE_LABEL,
         ],
         check=True,
     )
