@@ -1,0 +1,266 @@
+# Grafana Dashboard ConfigMap — notification-orchestrator per-tenant view
+#
+# Faz 23.8 M7 T4.3 closure DoD residual (2026-05-21). Companion to
+# `notification-orchestrator-dashboard.yaml` (system-wide platform-prod
+# namespace view); this dashboard provides per-tenant (`$tenant`) breakdown
+# for multi-tenant observability.
+#
+# **Backend instrumentation gap** (follow-up issue): mevcut Micrometer
+# counter'lar `org_id` label taşımıyor (`AuditEventPublisher` audit row'da
+# var, `Counter.builder` tag'inde yok). Bu dashboard template variable +
+# query skeleton'unu deploy eder; backend adds org_id tag → query'ler
+# otomatik tenant breakdown göstermeye başlar. Şu an template variable
+# **defaults to "(all tenants)"** placeholder (yoksa empty panel) ile
+# çalışır. Backend instrumentation tracking issue: M8 multi-tenant pre-req
+# (R10 mitigation plan parçası).
+#
+# Sidecar provisioner auto-import: label grafana_dashboard=1
+#
+# Panel scope (Step T4.3 per-tenant, 6 panels):
+#   1. Intent submitted rate by status (org_id=$tenant)
+#   2. Dispatch outcome by channel + status (org_id=$tenant)
+#   3. Eligibility blocks by reason (org_id=$tenant) — preference + authz +
+#      suppression + push no-endpoint + idempotency
+#   4. Erasure ledger SLA breach count (org_id=$tenant) — KVKK Madde 13.2
+#      30-gün SLA watchdog
+#   5. WebPush adapter outcome by status (org_id=$tenant) — 201/204
+#      DELIVERED + 410/404 endpoint cleanup + 429/5xx RETRY
+#   6. AbuseGuard decisions (org_id=$tenant) — RATE_LIMIT_BYPASSED_CRITICAL
+#      + WEBHOOK_FANOUT_CAP + within-window allows
+#
+# Template variable: `$tenant` populated from
+# `label_values(notify_dispatch_outcome_total{namespace="platform-prod"},
+# org_id)`. Multi-select + "All" option enabled.
+#
+# Metric provenance: confirmed via /actuator/prometheus. Per-tenant filter
+# query path: backend `NotifyMetrics.counter(..., Tags.of("org_id", orgId))`
+# (instrumentation follow-up).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-orchestrator-per-tenant-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  notification-orchestrator-per-tenant.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": "-- Grafana --",
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "description": "Notification orchestrator per-tenant ($tenant) observability — intent + dispatch + eligibility + erasure + WebPush + abuse breakdown. Multi-tenant pre-req: backend Micrometer counter 'org_id' tag instrumentation follow-up.",
+      "editable": false,
+      "gnetId": null,
+      "graphTooltip": 1,
+      "id": null,
+      "iteration": 1716280800000,
+      "links": [
+        {
+          "icon": "external link",
+          "tags": [],
+          "targetBlank": true,
+          "title": "System-wide dashboard",
+          "tooltip": "Notification orchestrator system-wide view (platform-prod namespace)",
+          "type": "link",
+          "url": "/d/notification-orchestrator/notification-orchestrator"
+        }
+      ],
+      "panels": [
+        {
+          "datasource": "Prometheus",
+          "description": "Intent submitted rate broken down by terminal status. Filter by selected tenant. Empty until backend Counter.builder includes Tags.of(\"org_id\", orgId).",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            }
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+          "id": 1,
+          "options": {
+            "legend": {"displayMode": "list", "placement": "bottom"}
+          },
+          "targets": [
+            {
+              "expr": "sum by (status) (rate(notify_intent_submitted_total{namespace=\"platform-prod\", org_id=~\"$tenant\"}[5m]))",
+              "legendFormat": "{{status}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Intent submitted rate by status (tenant=$tenant)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "description": "Dispatch outcome (DELIVERED / FAILED / RETRY / BLOCKED_*) by channel for selected tenant.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            }
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "id": 2,
+          "options": {
+            "legend": {"displayMode": "table", "placement": "right"}
+          },
+          "targets": [
+            {
+              "expr": "sum by (channel, status) (rate(notify_dispatch_outcome_total{namespace=\"platform-prod\", org_id=~\"$tenant\"}[5m]))",
+              "legendFormat": "{{channel}}/{{status}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Dispatch outcome by channel + status (tenant=$tenant)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "description": "Eligibility guard block breakdown — preference, authz, suppression, no-push-endpoint, idempotency, external-not-allowed. High volumes per reason indicate tenant policy effects.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            }
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "id": 3,
+          "options": {
+            "legend": {"displayMode": "table", "placement": "right"}
+          },
+          "targets": [
+            {
+              "expr": "sum by (reason) (rate(notify_eligibility_blocked_total{namespace=\"platform-prod\", org_id=~\"$tenant\"}[5m]))",
+              "legendFormat": "{{reason}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Eligibility blocks by reason (tenant=$tenant)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "description": "KVKK Madde 13.2 30-gün SLA breach count — ErasureSlaWatchdog @Scheduled cron 6h emits this gauge. Per-tenant view: monitor for tenant-specific compliance failures.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {"mode": "thresholds"},
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 1},
+                  {"color": "red", "value": 5}
+                ]
+              }
+            }
+          },
+          "gridPos": {"h": 4, "w": 12, "x": 12, "y": 8},
+          "id": 4,
+          "options": {
+            "colorMode": "background",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}
+          },
+          "targets": [
+            {
+              "expr": "sum by (org_id) (notify_erasure_sla_breach_count{namespace=\"platform-prod\", org_id=~\"$tenant\"})",
+              "legendFormat": "{{org_id}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Erasure 30-gün SLA breach count (tenant=$tenant)",
+          "type": "stat"
+        },
+        {
+          "datasource": "Prometheus",
+          "description": "WebPush adapter outcome by HTTP status — 201/204 DELIVERED, 410/404 endpoint cleanup, 429/5xx RETRY. Browser-only scope (Faz 23.7 M7 T4.2); mobile FCM/APNS Faz 22.2 dep.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            }
+          },
+          "gridPos": {"h": 4, "w": 12, "x": 12, "y": 12},
+          "id": 5,
+          "options": {
+            "legend": {"displayMode": "list", "placement": "bottom"}
+          },
+          "targets": [
+            {
+              "expr": "sum by (status) (rate(notify_webpush_outcome_total{namespace=\"platform-prod\", org_id=~\"$tenant\"}[5m]))",
+              "legendFormat": "{{status}}",
+              "refId": "A"
+            }
+          ],
+          "title": "WebPush outcome by status (tenant=$tenant)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": "Prometheus",
+          "description": "AbuseGuard decisions — RATE_LIMIT_BYPASSED_CRITICAL (severity=critical bypass), WEBHOOK_FANOUT_CAP, RATE_LIMITED denials. Per-tenant: outlier detection (a tenant exceeding fan-out cap = abnormal pattern).",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            }
+          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+          "id": 6,
+          "options": {
+            "legend": {"displayMode": "table", "placement": "right"}
+          },
+          "targets": [
+            {
+              "expr": "sum by (decision, audit_event_type) (rate(notify_abuse_guard_decisions_total{namespace=\"platform-prod\", org_id=~\"$tenant\"}[5m]))",
+              "legendFormat": "{{decision}}/{{audit_event_type}}",
+              "refId": "A"
+            }
+          ],
+          "title": "AbuseGuard decisions (tenant=$tenant)",
+          "type": "timeseries"
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 36,
+      "style": "dark",
+      "tags": ["notification-orchestrator", "per-tenant", "faz-23.8", "m7"],
+      "templating": {
+        "list": [
+          {
+            "current": {"selected": false, "text": "All", "value": "$__all"},
+            "datasource": "Prometheus",
+            "definition": "label_values(notify_dispatch_outcome_total{namespace=\"platform-prod\"}, org_id)",
+            "description": "Select tenant org_id to scope all panels.",
+            "hide": 0,
+            "includeAll": true,
+            "label": "Tenant (org_id)",
+            "multi": true,
+            "name": "tenant",
+            "options": [],
+            "query": {
+              "query": "label_values(notify_dispatch_outcome_total{namespace=\"platform-prod\"}, org_id)",
+              "refId": "Prometheus-tenant-Variable-Query"
+            },
+            "refresh": 1,
+            "regex": "",
+            "skipUrlSync": false,
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "time": {"from": "now-6h", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Notification Orchestrator — Per-Tenant View (Faz 23.8 M7 T4.3)",
+      "uid": "notification-orchestrator-per-tenant",
+      "version": 1
+    }

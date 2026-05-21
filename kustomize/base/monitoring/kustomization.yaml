@@ -51,6 +51,7 @@ resources:
   - grafana-dashboards/jvm-db-hikari-dashboard.yaml     # Codex iter-7 day-2 4. dashboard
   - grafana-dashboards/api-gateway-slo-dashboard.yaml   # iter-49 B — api-gateway status code matrix + SLO candidate (Codex 019ddf43)
   - grafana-dashboards/notification-orchestrator-dashboard.yaml  # Step B.3 + B.3.2 (Codex 019e0892 + 019e0935 + 019e0bb6) — 7 rows, 15 panels (strict cutover + retention + queue/dispatch + DLQ + alert state + SLO burn rate)
+  - grafana-dashboards/notification-orchestrator-per-tenant-dashboard.yaml  # Faz 23.8 M7 T4.3 closure DoD — per-tenant ($tenant) view (6 panels: intent + dispatch + eligibility + erasure SLA + WebPush + AbuseGuard); backend org_id Counter tag instrumentation follow-up (M8 multi-tenant pre-req)
 
 # Kullanım:
 # Apply sadece S3 session'da (testai soak başlangıcı öncesi):
