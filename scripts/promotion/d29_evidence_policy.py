@@ -44,9 +44,9 @@ DESIGN NOTES:
     The string is a human-readable reason for logging/audit.
   - require_verified_at is INTENTIONALLY NOT a parameter on check_tiers().
     The tiers object does not carry verified_at — that field lives on the
-    ledger entry's promotion.<env> block. A future check_entry() function
-    can layer that check on top of check_tiers() if/when gate-evidence-
-    check.py is refactored to import this module (TODO below).
+    ledger entry's promotion.<env> block. gate-evidence-check.py's
+    check_evidence() applies the verified_at check as an ENTRY-level
+    layer on top of check_tiers() (see PR #936 — FU-Gate-Refactor).
   - Default policy on missing service: jwt_validates=True (strict). Safer
     to fail-closed than silently accept AMBER on an unknown service.
 
