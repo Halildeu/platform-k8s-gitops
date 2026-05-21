@@ -2095,7 +2095,69 @@ Plan-Consensus + No-Closure-Language + Forensic Cleanup + Browser-Verify HARD RU
 
 - 🟡 **#3 Self-hosted runner labels persistence** (düşük öncelik) — `prod-deploy` label runtime add edildi (`gh api repos/.../actions/runners/63/labels` POST `prod-deploy`); service restart sonrası kaybolma testi yapılmadı. Çözüm: runner config.sh `--labels` flag persist + systemd service reload.
 
-### 22.1.1 milestone reframe — A0 contract probe sonucu (Codex 019ded8d AGREE)
+### Endpoint Admin truth refresh — 2026-05-21 (#924)
+
+Bu bölüm, aşağıdaki tarihsel "22.1.1 milestone reframe" notunun operasyonel karar yüzeyi olarak üstündedir. Eski A0/III review notları bağlam olarak kalır; güncel karar için bu snapshot okunur. D29 disiplini: **Up != Functional != Secured**.
+
+#### Live runtime (k3d-test / platform-test)
+
+| Katman | Kanıt | Hüküm |
+|---|---|---|
+| Up | `endpoint-admin-service` Deployment `1/1`; pod `endpoint-admin-service-79748674b9-ff4zw` Running, restart `0`; endpoint adresleri `10.44.3.216:8096,10.44.3.216:8081` dolu | Test runtime ayakta |
+| D30 artifact | Live image `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:5bb0fa2600f0d85073c2d9caa37d05d6a12a6fa6ff5b3569a20e743a73e2eab0`; GitOps test overlay aynı digest'i pinliyor | Desired/live digest hizalı |
+| Secret delivery | `endpoint-admin-service-secrets` ExternalSecret `SecretSynced=True` | ESO yüzeyi çalışıyor |
+| Functional-basic | `/actuator/health` -> `{"status":"UP","groups":["liveness","readiness"]}` | Spring health yüzeyi ayakta |
+| Fail-closed-basic | No-JWT `GET /api/v1/admin/endpoint-devices` -> `401` | JWT yokken admin yüzeyi kapalı |
+| Secured / Zanzibar-ready | Persona allow/deny, OpenFGA tuple verify, audit insert bu turda koşulmadı | Full D29-EA Secured pending |
+
+#### Source / repo truth
+
+| Repo | Güncel durum | Not |
+|---|---|---|
+| `platform-backend` | `origin/main` endpoint-admin tree count `0`; endpoint-admin kodu `origin/codex/be-001-endpoint-admin-service-platform-backend` dalında. Latest observed divergence: `origin/main...origin/codex/... = 255 / 5 @ 2026-05-21T14:38:22Z` — **drift-prone** (origin/main hareket ediyor; reconciliation geciktikçe sol-taraf büyür, side branch dokunulmazsa sağ-taraf sabit). Side branch son commit `e9cb8dd0` (`PR #61`, base side branch). | `PR #61` canonical main adoption kanıtı değildir. Main reconciliation ayrı iş. |
+| `platform-k8s-gitops` | Test overlay endpoint-admin base'i ve digest pin'i taşıyor; `services.yaml` `test: enabled`, `prod: deferred`. | Prod aktivasyon 22.2+ kapsam. |
+| `platform-web` | `origin/main` altında `apps/mfe-endpoint-admin` source dosyaları mevcut (`26` dosya). | Runtime route/flag acceptance backend main + Secured gate sonrası. |
+| `platform-agent` | `origin/main` Go agent scaffold + CI/release hardening foundation taşıyor (`#1..#5`). CI run `26030514275` success; lab-only signing artifact indirildi (`SIGNING-EVIDENCE.md`, `signtool-verify.log`). Fresh temp worktree check: `./scripts/test/local.sh`, `./scripts/build/local.sh`, `./scripts/build/windows-package.sh` PASS. `docs/TRACKING-ROADMAP.md` Windows service, installer, local-user read-only ve tamper protection MVP icin Parallels Windows 11 historical evidence satırları taşıyor. | Bugün Windows canlı smoke tekrar koşulmadı; Parallels `Windows 11` VM stopped. IT pilot için trusted signing, EDR/allowlist, EndpointPilot OU ve backend live integration pending. |
+| Board | Endpoint-admin truth refresh işi `#924` olarak açıldı ve claim edildi. | Öncesinde board eligible list endpoint-admin işi göstermiyordu; Faz 23 işleri aktifti. |
+
+#### Evidence-weighted milestone progress
+
+Bu yüzdeler teslim taahhüdü değil, kanıt-ağırlıklı takip göstergesidir; Up/Functional/Secured kapıları ayrı tutulur.
+
+| Milestone | Yüzde | Kanıt | Açık kapı |
+|---|---:|---|---|
+| 22.0 Governance / repo split | ~80% | ADR-0012-EA aktif, 4-repo yerleşimi yazılı, #924 board item claim edildi | Truth-refresh diff merge + board deliberate status update |
+| 22.1 GitOps test runtime | ~60% | Test Deployment `1/1`, digest desired/live hizalı, health UP, no-JWT 401 | Full D29-EA Secured persona allow/deny + OpenFGA tuple + audit insert |
+| 22.1 Agent lab foundation | ~70% | `platform-agent/origin/main` CI `26030514275` success, lab signing artifact, temp test/build/package PASS, historical Parallels service/installer/tamper evidence | Fresh Windows smoke, backend enrollment/heartbeat, trusted signing |
+| 22.1 Backend canonicalization | ~25% | Endpoint-admin side branch kod/test kanıtı var, son side commit `e9cb8dd0`; `origin/main` tree count `0` | Current `origin/main` reconciliation/cherry-pick PR + CI + image rebuild |
+| 22.1 Web source surface | ~25% | `platform-web/origin/main` altında `apps/mfe-endpoint-admin` 26 source dosyası var | Runtime route/flag acceptance, real backend contract, browser smoke |
+| 22.2 IT pilot readiness | ~10% | İlk kapsam `acik.local`; BOREAS/CESS dışarıda | EndpointPilot OU, 1-3 IT-owned cihaz, EDR allowlist, Azure Trusted Signing |
+| Faz 22 toplam | ~35% | Foundation + test runtime + agent lab kanıtları var | Backend main, Secured smoke, agent live integration ve IT pilot kapıları |
+
+#### Güncel Faz 22 kalan iş sırası
+
+1. `platform-backend` current `origin/main` üzerine endpoint-admin side branch reconciliation/cherry-pick PR.
+2. Backend CI + immutable image rebuild; GitOps test digest bump gerekiyorsa digest update.
+3. Full D29-EA Secured smoke: admin allow, viewer deny, unauth deny, OpenFGA tuple check, audit insert.
+4. BE-013 maintenance token live gate: issue, validate, revoke, expire, audit.
+5. Agent capability correction: Windows capability report `DISABLE_LOCAL_USER` / `ENABLE_LOCAL_USER` destekliyor gibi bildiriyor, ama executor implementation şu an default `UNSUPPORTED` döner. Pilot öncesi ya capability raporundan çıkarılmalı ya da gerçek adapter eklenmeli.
+6. Agent live integration: release artifact ile gerçek backend enrollment/heartbeat/command/result smoke; Parallels Windows smoke yeniden koşulursa historical evidence tazelenir.
+7. IT async: `acik.local` EndpointPilot OU + 1-3 IT-owned Windows cihaz inventory baseline.
+
+**Kabul edilebilir dil**:
+- "Test runtime Up + basic Functional/fail-closed kanıtlandı."
+- "GitOps desired/live digest hizalı."
+- "Backend source canonical main'de değil; reconciliation pending."
+- "Agent Windows MVP foundation kanıtlı; backend live integration, identity inventory ve trusted signing pending."
+- "Full D29-EA Secured/Zanzibar-ready pending."
+
+**Kabul edilmeyen dil**:
+- "Endpoint-admin prod ready."
+- "BE-009/BE-013 tamamen kabul edildi."
+- "Password reset açılabilir."
+- "Web route güvenle açıldı."
+
+### Tarihsel 22.1.1 milestone reframe — A0 contract probe sonucu (Codex 019ded8d AGREE)
 
 **BE-009 acceptance live yapılamıyor** — sub-branch state inconsistency tespit edildi:
 

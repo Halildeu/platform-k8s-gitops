@@ -1,6 +1,6 @@
 # ADR-0012-EA — Endpoint Admin Service Governance Charter
 
-> **Status**: ACTIVE (5 clarify RESOLVED + 22.1 scope clarify 2026-05-02 PR-8c)
+> **Status**: ACTIVE (5 clarify RESOLVED + 22.1 scope clarify 2026-05-02 PR-8c + 2026-05-21 truth refresh #924)
 > **Date**: 2026-05-01 (draft) → 2026-05-02 (PR-8b fill-in + PR-8c clarify)
 > **Sprint**: "Prod post-cutover compliance" PR-8 + PR-8b fill-in + PR-8c clarify
 > **Codex thread**: `019dd895-17c1-79f0-b652-e316f64d4d79` (mutabakat raporu PR #270, iter-3 AGREE) + `019de00f-4b40-75c1-8ead-01b79c5819c1` (sprint review)
@@ -14,10 +14,10 @@ Faz 22 ile yeni domain: **Endpoint Admin** — Windows endpoint'lerin merkezi y�
 
 | Component | Repo | Path / Status |
 |---|---|---|
-| Backend service | `Halildeu/platform-backend` | `endpoint-admin-service/` sub-dir; **sıfırdan değil — BE-009 OpenFGA live gate + BE-013 maintenance token live gate kod-test ve gitops runtime kanıtları MEVCUT** |
-| Agent | `Halildeu/platform-agent` | `/Users/halilkocoglu/Documents/platform-agent` lokal mevcut; GitHub remote oluşturma/push pending. **22.1 sıfırdan skeleton DEĞİL** — local state review + remote bootstrap + build/release pipeline hardening |
-| Web UI MFE | `Halildeu/platform-web` | `apps/mfe-endpoint-admin/` (mevcut MFE convention); 22.2'de aktif iş |
-| GitOps manifest | `Halildeu/platform-k8s-gitops` (bu repo) | `kustomize/base/apps/endpoint-admin-service/` skeleton mevcut (PR #312); 22.1'de manifest reconcile (BE-009/BE-013 live gate referansı) |
+| Backend service | `Halildeu/platform-backend` | `endpoint-admin-service/` sub-dir; **canonical `origin/main`de henuz yok**. Source/test hattı `origin/codex/be-001-endpoint-admin-service-platform-backend` side branch'inde; test cluster image'i bu branch artifact'inden geliyor. |
+| Agent | `Halildeu/platform-agent` | GitHub remote + Go scaffold mevcut; PR #1-#5 ile CI, build/test, lab-only-evidence signing, BG-EA-1, gitleaks, SBOM ve board evidence foundation var. `docs/TRACKING-ROADMAP.md` Parallels Windows 11 service/installer/local-user/tamper MVP evidence satırlarını taşıyor; bugünkü recheck'te Windows VM stopped olduğu için live smoke yeniden koşulmadı. |
+| Web UI MFE | `Halildeu/platform-web` | `apps/mfe-endpoint-admin/` kaynak kodu `origin/main`de mevcut; runtime route/flag acceptance backend main reconciliation + D29-EA Secured kanıtı sonrası. |
+| GitOps manifest | `Halildeu/platform-k8s-gitops` (bu repo) | `kustomize/base/apps/endpoint-admin-service/` + test overlay digest pin mevcut; 2026-05-21 live check: Deployment 1/1, health UP, no-JWT 401. Full persona allow/deny/audit gate ayrı. |
 
 **"Repo bölünmez" yorumu (PR-8c clarify)**:
 > Runtime manifest ve GitOps desired-state tek yerde `platform-k8s-gitops` içinde tutulur. Uygulama kaynak kodu ilgili platform repolarında kalır. **"Repo bölünmez" ifadesi YALNIZ GitOps manifest governance için geçerlidir; kaynak kodun tek repo olması anlamına gelmez.**
@@ -238,6 +238,28 @@ Yani: **probe-based evidence + IT review/sign-off** — tek tarafa bağımlı de
 **Önemli düzeltme** (PR-8c): 22.1 sıfırdan skeleton DEĞİL. Backend ve agent için mevcut state'ler var; 22.1 lab/release **hardening** + integration smoke hazırlığı yapılır.
 
 **Codex revize sertleştirmesi** (PR-8d, thread `019de00f`): Sub-faz milestone numaralama + ephemeral signing pattern + 22.1 invariantları + 22.2 pre-req docs çerçevesi.
+
+### 2026-05-21 Truth Refresh (#924)
+
+Bu bölüm, eski 2026-05-02/05-05 ara notlarını override eden güncel takip notudur. D29 dili korunur: **Up != Functional != Secured**.
+
+| Track | Güncel durum | Kalan gate |
+|---|---|---|
+| **Backend source** | `platform-backend/origin/main` içinde endpoint-admin tree count `0`. Endpoint-admin kodu `origin/codex/be-001-endpoint-admin-service-platform-backend` side branch'inde. Latest observed divergence: `origin/main...origin/codex/... = 255 / 5 @ 2026-05-21T14:38:22Z` — **drift-prone** (sayı sabit değil; main hareket ediyor). | Current `origin/main` üzerine temiz reconciliation/cherry-pick PR; sonra CI + image rebuild. |
+| **Backend live** | Test cluster image digest `sha256:5bb0fa2600f0d85073c2d9caa37d05d6a12a6fa6ff5b3569a20e743a73e2eab0`; Deployment 1/1, endpoints present, health UP, no-JWT admin devices 401. | Full D29-EA Secured: persona allow/deny, OpenFGA tuple verification, audit insert, BE-013 maintenance-token issue/validate/revoke/expiry. |
+| **GitOps** | Test overlay includes endpoint-admin base and digest pin; `services.yaml` test enabled, prod deferred. | Prod overlay/workflow remains 22.2+; no prod activation in 22.1. |
+| **Web** | `platform-web/origin/main` has `apps/mfe-endpoint-admin` source files. | Runtime route/flag acceptance after backend main + Secured evidence; no eager route enablement. |
+| **Agent** | `platform-agent/origin/main` has Go scaffold, CI/release hardening foundation, successful `main` CI run `26030514275`, lab-only signed artifact evidence, and historical Parallels Windows 11 service/installer/local-user/tamper MVP evidence in `docs/TRACKING-ROADMAP.md`. Fresh temp worktree test/build/windows-package PASS. | Backend live enrollment/heartbeat integration, Windows identity inventory, trusted signing, EDR/allowlist, and IT EndpointPilot deployment remain pending. Also fix capability mismatch before pilot: Windows currently reports disable/enable local-user capability while executor would return `UNSUPPORTED`. |
+| **IT** | Scope remains `acik.local`; BOREAS/CESS outside initial phase. | EndpointPilot OU + 1-3 IT-owned Windows devices + inventory baseline. |
+
+Evidence-weighted progress snapshot:
+
+| Milestone | Progress | Acceptance boundary |
+|---|---:|---|
+| 22.0 Governance / repo split | ~80% | ADR + repo placement documented; #924 truth-refresh needs merge/status update |
+| 22.1 Lab foundation | ~55% | GitOps Up/basic Functional + agent lab foundation exist; full Secured + backend main + live agent integration pending |
+| 22.2 IT pilot readiness | ~10% | `acik.local` scope known; EndpointPilot OU/devices/trusted signing/EDR pending |
+| Faz 22 overall | ~35% | Not prod-ready; not password-reset-ready; next gate is backend main reconciliation + D29-EA Secured smoke |
 
 ### Sub-faz milestone'ları (Codex sırası)
 
