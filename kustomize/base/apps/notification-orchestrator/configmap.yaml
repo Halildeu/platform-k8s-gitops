@@ -82,7 +82,12 @@ data:
   MANAGEMENT_TRACING_ENABLED: "true"
   MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
   MANAGEMENT_TRACING_PROPAGATION_TYPE: "w3c"
-  MANAGEMENT_OPENTELEMETRY_RESOURCE_ATTRIBUTES: "service.name=notification-orchestrator,service.namespace=platform"
+  # Spring Boot 3 OpenTelemetryProperties.resourceAttributes Map<String,String>
+  # binding gerektiriyor — comma-separated string YANLIŞ. Her resource
+  # attribute ayrı env variable (Spring relaxed binding map convention):
+  # MANAGEMENT_OPENTELEMETRY_RESOURCE_ATTRIBUTES_KEY=value.
+  MANAGEMENT_OPENTELEMETRY_RESOURCE_ATTRIBUTES_SERVICE_NAME: "notification-orchestrator"
+  MANAGEMENT_OPENTELEMETRY_RESOURCE_ATTRIBUTES_SERVICE_NAMESPACE: "platform"
   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://tempo.monitoring.svc.cluster.local:4318/v1/traces"
   OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: "http/protobuf"
   OTEL_TRACES_EXPORTER: "otlp"
