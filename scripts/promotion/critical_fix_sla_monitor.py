@@ -28,14 +28,21 @@ DESIGN:
 DEPLOY-RUN CORRELATION (acceptable temporary):
   `deploy-prod-gitops.yml` runs as `workflow_dispatch` with a
   `revision` input. `gh run view --json` does NOT expose dispatch
-  inputs as machine-readable fields. This script falls back to:
-    1. Run `headSha` as a first-pass ancestor candidate
-    2. `gh run view <id> --log` text grep for `argocd app sync
-       ... --revision <sha>` or `Revision: <sha>` lines
-  Then `git merge-base --is-ancestor <merge_sha> <revision>` confirms
-  the deploy covers the merge. A separate follow-up PR should add a
-  machine-readable `prod-sync-result.json` workflow artifact so this
-  log-grep can be retired.
+  inputs as machine-readable fields. This script applies (Codex
+  iter-4 P1 absorb — log-first to guard against `full` rollback
+  mode where headSha advances while the deployed revision rolls
+  back to an older SHA):
+    1. **Primary** — `gh run view <id> --log` text grep for
+       `argocd app sync ... --revision <sha>` or `Revision: <sha>`
+       lines. If any extracted SHA satisfies `git merge-base
+       --is-ancestor <merge_sha> <revision>`, the deploy covers
+       the merge.
+    2. **Fallback** — only when the log produced no revisions
+       (best-effort log fetch failed, or no matching lines), fall
+       back to `headSha` exact-match or ancestor check.
+  A separate follow-up PR should add a machine-readable
+  `prod-sync-result.json` workflow artifact so the log-grep
+  primary can be retired in favor of a structured signal.
 
 IDEMPOTENCY:
   - Issue match: open issue with label `critical-fix-sla-active`
@@ -575,6 +582,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     now = datetime.now(timezone.utc)
     warnings = 0
     issues = 0
+    correlation_errors = 0
     for pr in prs:
         merge_commit = (pr.get("mergeCommit") or {}).get("oid") or ""
         if not merge_commit:
@@ -590,7 +598,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         try:
             deployed = find_successful_deploy(args.repo, merge_commit, merged_at)
         except (GhError, json.JSONDecodeError) as e:
+            # Codex iter-5 P1 absorb: correlation read failures (gh run list /
+            # gh issue list / gh pr view) must escalate to a non-zero exit
+            # code at the end of main(), not be silently swallowed. Otherwise
+            # the scheduled workflow's success/failure indicator is decoupled
+            # from whether the monitor actually scanned anything — defeating
+            # the entire purpose of the SLA monitor.
             print(f"  [WARN] correlation check failed for PR #{pr['number']}: {e}", file=sys.stderr)
+            correlation_errors += 1
             continue
 
         if deployed:
@@ -620,8 +635,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                 f"within {args.warning_hours}h window"
             )
 
-    print(f"[SUMMARY] warnings={warnings} sla_issues={issues}")
-    return 0
+    print(f"[SUMMARY] warnings={warnings} sla_issues={issues} correlation_errors={correlation_errors}")
+    # Codex iter-5 P1 — any correlation read failure escalates to exit 1 so
+    # the scheduled GitHub Actions run is marked failed and observable in
+    # Actions UI / via alertmanager-bridge gate-alertmanager-bridge-tests.
+    return 1 if correlation_errors > 0 else 0
 
 
 if __name__ == "__main__":

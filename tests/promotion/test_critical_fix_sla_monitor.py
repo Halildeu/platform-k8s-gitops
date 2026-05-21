@@ -425,6 +425,61 @@ class GhReadFailureStrictTests(unittest.TestCase):
         self.assertEqual(result, "")
 
 
+class MainExitCodeTests(unittest.TestCase):
+    """Codex iter-5 P1 — `main()` must exit 1 if any `find_successful_deploy`
+    call raised GhError. Without this, the scheduled workflow stays green
+    even when correlation reads failed and no PR was actually evaluated.
+
+    Patches at the function-name level since Python binds default arg
+    values (runner=_run) at def-time, not at call-time. We replace
+    `list_critical_fix_prs` / `find_successful_deploy` directly with
+    callables that simulate the desired behavior.
+    """
+
+    def setUp(self) -> None:
+        self.mod = _load_module()
+
+    def test_main_exit_1_on_correlation_failure(self) -> None:
+        pr = _pr_fixture(number=640, merged_hours_ago=5.0)
+        # Stub list_critical_fix_prs to return one PR.
+        orig_list = self.mod.list_critical_fix_prs
+        orig_find = self.mod.find_successful_deploy
+        self.mod.list_critical_fix_prs = lambda repo, window_hours, runner=None: [pr]
+
+        def _fail(*args, **kwargs):
+            raise self.mod.GhError(args_str="gh run list", returncode=1, stderr="auth")
+
+        self.mod.find_successful_deploy = _fail
+        try:
+            rc = self.mod.main(["--repo", "owner/repo", "--dry-run"])
+        finally:
+            self.mod.list_critical_fix_prs = orig_list
+            self.mod.find_successful_deploy = orig_find
+        self.assertEqual(rc, 1, "main() should exit 1 when correlation read fails")
+
+    def test_main_exit_0_when_no_critical_fix_prs(self) -> None:
+        orig_list = self.mod.list_critical_fix_prs
+        self.mod.list_critical_fix_prs = lambda repo, window_hours, runner=None: []
+        try:
+            rc = self.mod.main(["--repo", "owner/repo", "--dry-run"])
+        finally:
+            self.mod.list_critical_fix_prs = orig_list
+        self.assertEqual(rc, 0)
+
+    def test_main_exit_0_when_all_prs_deployed(self) -> None:
+        pr = _pr_fixture(number=640, merged_hours_ago=5.0)
+        orig_list = self.mod.list_critical_fix_prs
+        orig_find = self.mod.find_successful_deploy
+        self.mod.list_critical_fix_prs = lambda repo, window_hours, runner=None: [pr]
+        self.mod.find_successful_deploy = lambda repo, merge_sha, merged_at, runner=None: _deploy_run_fixture()
+        try:
+            rc = self.mod.main(["--repo", "owner/repo", "--dry-run"])
+        finally:
+            self.mod.list_critical_fix_prs = orig_list
+            self.mod.find_successful_deploy = orig_find
+        self.assertEqual(rc, 0)
+
+
 class IssueCreateLabelTests(unittest.TestCase):
     """Codex iter-4 P1 — single-label issue create. Previously used
     `critical-fix-sla-active,critical-fix-sla` but only the first was
