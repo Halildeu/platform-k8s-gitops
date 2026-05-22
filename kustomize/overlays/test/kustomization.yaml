@@ -2316,23 +2316,33 @@ images:
     digest: sha256:da605dbd6796264ba104d52473bca0686cd92d91146eb607ebcf45282f5c24c3
 
   # Faz 22.1.1 endpoint-admin-service test overlay digest pin —
-  # H1 canonical main reconciliation Hybrid 2-PR promotion (2026-05-22).
+  # BE-014A tamper/offline audit (maintenance token deny hooks) promotion (2026-05-22).
   #
-  # Source: platform-backend `main` @ 8e2589c1bbeb3eb2721b82494bebee8fc15af499
-  # (Plan C C.1 H1 PR #288 squash 2026-05-21T22:01:59Z). H1 is the source-add
-  # half of the Hybrid 2-PR reconciliation strategy approved by Codex
-  # cross-AI peer review (plan-time thread 019e4c3f, post-impl thread
-  # 019e4c81 REVISE→AGREE after .gitignore restore + ci-image-push 4 guard
-  # fix absorb). 137 file (133 endpoint-admin-service + pom + .gitignore +
-  # 2 workflows). All 13 CI checks PASS (full reactor 11 modules +
-  # endpoint-admin lane + notification orchestrator paralel + permission
-  # IT + report MSSQL IT + auth impersonation IT + openfga + schema +
-  # gitleaks + osv + DD-5 annotation + contract-gate + reporting allowlist).
+  # Source: platform-backend `main` @ c8f244c4ba381027f6a091840b0198d23d740c1f
+  # (BE-014A PR #293 squash 2026-05-22T09:14:54Z). BE-014A scope (Codex 019e4ed6
+  # dar-scope verdict): audit event taxonomy + publisher extension + 4 misuse
+  # hooks (DEVICE_MISMATCH / REVOKED / ALREADY_CONSUMED / EXPIRED re-attempt) +
+  # noRollbackFor=ResponseStatusException durability invariant + NOT_SUPPORTED
+  # regression guard test. Cross-AI peer review chain: Codex 019e4ed6 plan-time
+  # REVISE → 019e4ee1 iter-1 REVISE (transaction rollback bug) → iter-2
+  # PARTIAL/REVISE (comment + regression guard) → iter-3 AGREE + ready_to_merge.
+  # 71/71 endpoint-admin tests PASS (was 68/68; +3 net tests). Full reactor
+  # 13/13 CI checks PASS.
   #
   # Image build run that produced this digest (final main SHA, D30 immutable):
-  #   gh run view 26255732225 -R Halildeu/platform-backend   (success)
-  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-8e2589c
-  #   digest sha256:b2250b7a274ec8684abce7ed1f9a47d301c548982ccbecc705647a0f8081f2eb
+  #   gh run view 26279257053 -R Halildeu/platform-backend   (success)
+  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-c8f244c
+  #   digest sha256:fd7a9c54f7919bdb71c9b2adf8d18e548d6ac4dc9cb25e0d5857dddd2dc0e3bc
+  #
+  # Previous digest sha256:b2250b7a... was H1 (PR #288 post-merge mergeCommit
+  # 8e2589c1) — pre-BE-014A. New digest contains BE-014A deny audit hooks
+  # so live cluster audit on revoked/expired/already-consumed/device-mismatch
+  # agent consume attempts emits the 4 new audit event types.
+  #
+  # BE-013 admin-side maintenance token lifecycle live VERIFIED LIVE 2026-05-22
+  # (admin POST issue + GET + DELETE revoke + status PENDING→REVOKED + 2 audit
+  # rows MAINTENANCE_TOKEN_CREATED + MAINTENANCE_TOKEN_REVOKED, token plaintext
+  # hash-only DB invariant preserved).
   #
   # Previous digest sha256:5bb0fa26... corresponded to side branch e9cb8dd0
   # (codex/be-001-...) — pre-canonical-main adoption. The new digest is the
@@ -2349,7 +2359,7 @@ images:
   # claim. Prod activation Faz 22.2+ scope (separate decision/PR).
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:b2250b7a274ec8684abce7ed1f9a47d301c548982ccbecc705647a0f8081f2eb
+    digest: sha256:fd7a9c54f7919bdb71c9b2adf8d18e548d6ac4dc9cb25e0d5857dddd2dc0e3bc
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
