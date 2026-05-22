@@ -2324,7 +2324,14 @@ images:
     # 26296500514 already kubectl-set-image'd this digest live (Gate 1a/1b/1c
     # + Playwright smoke pass); this pin reconciles overlay desired-state so a
     # future `apply -k` does not revert the frontend. RB-webpush-activation §3.7.
-    digest: sha256:d32aa011866518456282996a978a02c8698fc1cd99461ffbff7a5d033585f295
+    #
+    # 2026-05-22 update (notify RTK auth-ready gate fix): bump to platform-web
+    # main sha-68560a1 (#650 — notify RTK queries now skip until the bearer
+    # token is in Redux state; cold direct-load /settings/notifications no
+    # longer fires header-less GET /preferences/me + /push/subscribe/me → 401).
+    # Build run 26305747194 SUCCESS; auto testai-deploy run 26305928158 already
+    # kubectl-set-image'd this digest live. Codex 019e50f4 AGREE.
+    digest: sha256:d449218498db52adf0dcd327a9610d39c2d112b2c65aa28118bd222a2390fd0c
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
