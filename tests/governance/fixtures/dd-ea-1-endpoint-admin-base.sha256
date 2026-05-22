@@ -2,8 +2,8 @@
 # Source: kustomize/base/apps/endpoint-admin-service
 # Update: python3 scripts/governance/check_endpoint_admin_manifest_contract.py --update-baseline
 #
-# 2026-05-22 #960 C.5.persona ConfigMap fix bump:
-#   SPRING_PROFILES_ACTIVE: "k8s" + comment block added — application-k8s.yml
-#   activation gerekli (JWT validation fallback fix). Live 6/6 matrix kanıt.
-#   Önceki baseline: 1a254befd41b54ba2d02ca4060a0de302dbd8f258ffd961be2b8442c77efcf5e
-f406793f6fdb48c7cade4c1d6fb12f03705075ceea3cd8cd4a2a1bb52b7abaef
+# 2026-05-22 BE-016 Flyway enablement (PR #972): SPRING_FLYWAY_ENABLED
+#   "false"->"true" + Flyway comment block in the base ConfigMap. Test-cluster
+#   Flyway adoption stage (Codex 019e4fbc). Board #971.
+#   Previous baseline: f406793f6fdb48c7cade4c1d6fb12f03705075ceea3cd8cd4a2a1bb52b7abaef
+7beb6b6a7c202a17d24aba852aa43aeb18c16c121b15b2740d8708a526d21e5e

@@ -2316,64 +2316,50 @@ images:
     digest: sha256:da605dbd6796264ba104d52473bca0686cd92d91146eb607ebcf45282f5c24c3
 
   # Faz 22.1.1 endpoint-admin-service test overlay digest pin —
-  # BE-016 audit integrity hash-chain promotion (2026-05-22).
+  # BE-016 Flyway enablement, PR-1 adoption stage (2026-05-22). Board #971.
   #
-  # Source: platform-backend `main` @ ff7d4843c6d7c06f67c827811724eeac9f99a3a0
-  # (BE-016 PR #295 squash 2026-05-22T12:35:10Z). BE-016 scope (Codex 019e4f8e
-  # plan-time AGREE + scope-lock): tenant-scoped tamper-evident hash-chain over
-  # endpoint_audit_events — V4 Flyway migration (4 hash columns + append-only
-  # UPDATE/DELETE reject trigger + insert-enforce require-hash trigger),
-  # deterministic canonicalizer, pg_advisory_xact_lock tenant serialization,
-  # AuditIntegrityVerifier. Cross-AI peer review: Codex 019e4f8e plan-time
-  # AGREE → post-impl iter-1 PARTIAL (5 bulgu: chain order, tx enforce,
-  # alg/version, insert trigger, concurrent test) → iter-2 AGREE +
-  # ready_to_merge. 91/91 H2/unit tests PASS + 6 PG Testcontainers PASS on CI
-  # (V4 applies, UPDATE/DELETE reject, null-hash insert reject, chain verify,
-  # concurrent 12-writer lock). Full reactor 13/13 CI checks PASS.
+  # Source: platform-backend `main` @ b5e9bcd8 (PR #297 squash — Flyway
+  # baseline-version 0→4). PR #297 is one config line on top of the BE-016
+  # hash-chain image (PR #295 @ ff7d4843, digest sha256:108fea1f..., which
+  # this pin supersedes): only application.yml spring.flyway.baseline-version.
+  # No code change, no new migration — V1-V4 SQL untouched.
   #
-  # **DEPLOY NOTE — V4 Flyway migration**: this digest carries a NEW Flyway
-  # migration (V4__endpoint_admin_audit_hash_chain.sql). On rollout the pod's
-  # Flyway will apply V4 to the test-cluster endpoint_admin DB: ADD 4 columns
-  # + 2 triggers on endpoint_audit_events. Post-rollout verify: pod log
-  # "Migrating schema ... to version 4", actuator health UP, no schema
-  # validation error.
+  # WHY THIS BUMP — the paired ConfigMap change in THIS PR flips
+  # SPRING_FLYWAY_ENABLED false→true (base/apps/endpoint-admin-service/
+  # configmap.yaml). Until now the test cluster ran Flyway OFF + Hibernate
+  # ddl-auto=update, and the V4 audit hash-chain objects were hand-applied
+  # as a stopgap — NOT gitops-managed. This image carries baseline-version=4
+  # so baseline-on-migrate baselines the existing non-empty, no-history
+  # endpoint_admin schema at V4; V5+ migrations become Flyway-owned. V1-V4
+  # are NOT re-run against the populated schema.
   #
-  # Image build run that produced this digest (final main SHA, D30 immutable):
-  #   gh run view 26288082130 -R Halildeu/platform-backend   (success)
-  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-ff7d484
-  #   digest sha256:108fea1f86e9a972a23863c67699a1dfee2aea5ab8cdd90ea5d00e2761101f69
+  # ROLLOUT ACCEPTANCE (PR-1 adoption stage):
+  #   - pod imageID == this digest, Ready 1/1, restartCount 0, health UP
+  #   - endpoint_admin_flyway_history table created with exactly one row:
+  #     installed_rank=1, version=4, type=BASELINE, success=true
+  #   - pod log: NO "Migrating schema ... to version 1..4" line (baseline,
+  #     not migrate), no Flyway error, no Hibernate schema error
+  #   - V4 trigger/index behaviour still live: UPDATE/DELETE reject,
+  #     null-hash INSERT reject, normal audit insert fills hash columns
   #
-  # Previous digest sha256:fd7a9c54... was BE-014A (PR #293 mergeCommit
-  # c8f244c4) — pre-BE-016. New digest CARRIES BE-016 hash-chain code +
-  # V4 migration. BE-016 audit hash-chain emit path runs on every audit
-  # write; the live audit-integrity verification is an internal service
-  # (no admin endpoint — Codex scope-lock).
+  # ddl-auto stays `update` in this PR. Follow-up PR-2 hardens it to
+  # `validate` (Codex 019e4fbc two-stage: adoption first, ownership second).
   #
-  # BE-013 admin-side maintenance token lifecycle smoke run 2026-05-22 in
-  # this session (admin POST issue + GET + DELETE revoke + status
-  # PENDING → REVOKED + 2 audit rows MAINTENANCE_TOKEN_CREATED +
-  # MAINTENANCE_TOKEN_REVOKED, token plaintext hash-only DB invariant
-  # preserved). Treated as admin-side regression smoke; BE-013 live gate
-  # final acceptance (agent-side consume / device match / expired deny /
-  # revoked deny full lifecycle via HMAC device credential) is the natural
-  # next step paired with BE-011 agent live integration.
+  # Image build run (final main SHA, D30 immutable):
+  #   gh run view 26289622455 -R Halildeu/platform-backend   (success)
+  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-b5e9bcd
+  #   digest sha256:532d16a86780093153704c9bb446e06ec4f0dd5eaaf4adc9fa7e932d8f70400a
   #
-  # Previous digest sha256:5bb0fa26... corresponded to side branch e9cb8dd0
-  # (codex/be-001-...) — pre-canonical-main adoption. The new digest is the
-  # post-merge final main SHA artifact (D30 dual-artifact discipline:
-  # branch image was source-ready proof; final main image is the
-  # immutable pin).
+  # Cross-AI peer review: Codex 019e4fbc plan-time consult (Q1=B-prime:
+  # baseline-version=4, not a manual history INSERT, not an init-job) →
+  # backend PR #297 post-impl AGREE.
   #
-  # H2 follow-up (api-gateway integration: SecurityConfig + application-k8s
-  # routes + GatewaySecurityTest route-id refactor) remains a SEPARATE PR
-  # in platform-backend per Codex AGREE; this gitops digest pin does NOT
-  # cover gateway-side route resolution acceptance.
-  #
-  # Scope discipline (AGENTS.md HARD RULE): test overlay only. No prod
-  # claim. Prod activation Faz 22.2+ scope (separate decision/PR).
+  # Scope discipline (AGENTS.md HARD RULE): test overlay only. The base
+  # ConfigMap flip affects test only — prod overlay does NOT reference
+  # endpoint-admin-service. Prod activation Faz 22.2+ (separate decision/PR).
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:108fea1f86e9a972a23863c67699a1dfee2aea5ab8cdd90ea5d00e2761101f69
+    digest: sha256:532d16a86780093153704c9bb446e06ec4f0dd5eaaf4adc9fa7e932d8f70400a
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
