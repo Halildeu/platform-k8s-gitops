@@ -181,7 +181,7 @@ geçmeden sonraki adıma geçilmez.
 | Gate | Komut | Beklenen | Fail aksiyonu |
 |---|---|---|---|
 | **G1 DB role auth** | `psql "host=postgres user=grafana_notify_ro dbname=notify_db" -c 'SELECT 1'` | `1` döner | Role/password yanlış → §3.1 tekrar |
-| **G2 DB role RO-only** | `psql -U grafana_notify_ro -c "INSERT INTO notify.audit_event_v2(intent_id,event_type,org_id,topic_key) VALUES('x','x','x','x')"` | `ERROR: permission denied` | Yazma yetkisi var → GRANT'ları gözden geçir (§3.1 SELECT-only) |
+| **G2 DB role RO-only** | (a) datasource ile **aynı connection target**: `PGPASSWORD="$NOTIFY_PG_RO_PASSWORD" psql "host=postgres.platform-prod.svc.cluster.local port=5432 dbname=notify_db user=grafana_notify_ro sslmode=disable" -v ON_ERROR_STOP=1 -c "INSERT INTO notify.audit_event_v2(intent_id,event_type,org_id,topic_key) VALUES('x','x','x','x')"` (b) admin-side: `psql -U postgres -d notify_db -tAc "SELECT has_table_privilege('grafana_notify_ro','notify.audit_event_v2','INSERT') OR has_table_privilege('grafana_notify_ro','notify.audit_event_v2','UPDATE') OR has_table_privilege('grafana_notify_ro','notify.audit_event_v2','DELETE')"` | (a) `ERROR ... SQLSTATE 42501` (`permission denied for table audit_event_v2`) — **yalnız 42501 PASS**; başka error tipi (auth fail, connection fail) PASS DEĞİL (b) `f` (false) | Yazma yetkisi var (`t`) veya 42501 dışı error → GRANT'ları gözden geçir (§3.1 SELECT-only) |
 | **G3 Vault key present** | `vault kv get -format=json kv/platform/grafana/notify-pg-ro \| jq -e '.data.data.password \| length == 32'` | `true` | Vault seed eksik → §3.2 |
 | **G4 ESO Ready=True** | `kubectl -n monitoring get externalsecret grafana-notify-pg-secret -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'` | `True` | ESO force-sync: `kubectl annotate es grafana-notify-pg-secret force-sync=$(date +%s) --overwrite` |
 | **G5 Secret key non-empty** | `kubectl -n monitoring get secret grafana-notify-pg-secret -o jsonpath='{.data.NOTIFY_PG_RO_PASSWORD}' \| base64 -d \| wc -c` | `32` | Secret boş → ESO data uncomment kontrolü (§3.3) |
@@ -194,50 +194,63 @@ G2 (RO-only negative probe) **zorunlu** — Grafana datasource read-only
 iddiasının DB-level enforce edildiğini kanıtlar (Grafana UI `editable:false`
 tek başına yetmez; mutating query DB role privilege ile bloklanmalı).
 
-## 4. Query Design (panel SQL — Codex 019e4ee2 query_design absorb)
+## 4. Query Design (panel SQL — Codex 019e4ee2 + 019e4f10 iter-2 absorb)
 
-**Source table**: `notify.audit_event_v2` (mevcut Faz 23 schema; `template_id` zaten column olarak var).
+> **Source-of-truth**: aşağıdaki SQL, dashboard ConfigMap panel id=8 `rawSql`
+> ile **birebir hizalıdır** (kustomize/base/monitoring/grafana-dashboards/
+> notification-orchestrator-per-tenant-dashboard.yaml). Drift olursa dashboard
+> rawSql canonical kabul edilir; bu §4 ona göre güncellenir (Codex 019e4f10
+> iter-2 P3 absorb — eski event_type-based success wording düzeltildi).
 
-**Template key resolution** (null-safe fallback):
+**Source table**: `notify.audit_event_v2` (Faz 23 schema; `template_id` column
+mevcut) + `notify.notification_delivery` JOIN (terminal status truth).
+
+**Template key resolution** (null-safe fallback — `WHERE COALESCE(...) IS NOT
+NULL`, `template_id IS NOT NULL` DEĞİL; iter-2 P1 absorb — fallback reachable):
 
 ```sql
-COALESCE(template_id, details->>'template_id', topic_key) as template_key
+COALESCE(ae.template_id, ae.details->>'template_id', ae.topic_key) AS template_key
 ```
 
-**Send volume**: `COUNT(DISTINCT delivery_id)` (retry'leri tek seferden saymaz).
+**Send volume**: `COUNT(DISTINCT ae.delivery_id)` (retry'leri tek seferden saymaz).
 
-**Success rate**: `success_count / NULLIF(total_terminal_count, 0)` where:
-- success: `event_type IN ('DELIVERY_SUCCEEDED', 'DELIVERED')`
-- terminal_non_success: `event_type IN ('FAILED', 'BOUNCED', 'DLQ', 'BLOCKED')`
+**Success rate**: `notification_delivery.status` terminal truth üzerinden
+(audit_event_v2 `event_type` DLR async flow için terminal DEĞİL — iter-2 P1
+absorb). LEFT JOIN `nd.id = ae.delivery_id` (notification_delivery PK = `id`):
+- success: `nd.status = 'DELIVERED'`
+- rate: `success_count / NULLIF(total_count, 0) * 100`
 
-**Grafana SQL pattern** (panel datasource query):
+**Grafana SQL pattern** (panel datasource query — dashboard rawSql ile aynı):
 
 ```sql
 SELECT
-  COALESCE(template_id, details->>'template_id', topic_key) AS template_key,
-  COUNT(DISTINCT delivery_id) AS total_count,
-  COUNT(DISTINCT delivery_id) FILTER (
-    WHERE event_type IN ('DELIVERY_SUCCEEDED', 'DELIVERED')
-  ) AS success_count,
-  (COUNT(DISTINCT delivery_id) FILTER (
-    WHERE event_type IN ('DELIVERY_SUCCEEDED', 'DELIVERED')
-  )::numeric / NULLIF(COUNT(DISTINCT delivery_id), 0) * 100)::numeric(5,2) AS success_rate_pct
-FROM notify.audit_event_v2
+  COALESCE(ae.template_id, ae.details->>'template_id', ae.topic_key) AS template_key,
+  COUNT(DISTINCT ae.delivery_id) AS total_count,
+  COUNT(DISTINCT nd.id) FILTER (WHERE nd.status = 'DELIVERED') AS success_count,
+  (COUNT(DISTINCT nd.id) FILTER (WHERE nd.status = 'DELIVERED')::numeric
+    / NULLIF(COUNT(DISTINCT ae.delivery_id), 0) * 100)::numeric(5,2) AS success_rate_pct
+FROM notify.audit_event_v2 ae
+LEFT JOIN notify.notification_delivery nd ON nd.id = ae.delivery_id
 WHERE
-  org_id = $tenant
-  AND occurred_at BETWEEN $__timeFrom() AND $__timeTo()
-  AND template_id IS NOT NULL
+  ae.org_id = ${tenant:sqlstring}
+  AND ae.occurred_at BETWEEN $__timeFrom() AND $__timeTo()
+  AND COALESCE(ae.template_id, ae.details->>'template_id', ae.topic_key) IS NOT NULL
 GROUP BY template_key
 ORDER BY total_count DESC
 LIMIT 20;
 ```
 
+> Not: `${tenant:sqlstring}` Grafana SQL-safe escape (manual single-quote
+> YASAK — SQL injection); tenant variable `multi=false`/`includeAll=false`
+> single-select (equality predicate uyumu — iter-2 P2 absorb).
+> `$__timeFrom()`/`$__timeTo()` Grafana time range macros.
+
 **Guardrails**:
 - Default time window: 24h
 - Max time window: 7d
-- statement_timeout: 1500-2000ms (Grafana-side query timeout)
+- Datasource jsonData `timeout: 2` (Grafana PostgreSQL plugin connection timeout)
 - LIMIT 20 (top-K)
-- Tenant variable **zorunlu** (`$tenant` selector; all-tenant default YOK)
+- Tenant variable **zorunlu** single-select (`$tenant` selector; all-tenant YOK)
 
 ## 5. Cardinality + Performance Budget
 
