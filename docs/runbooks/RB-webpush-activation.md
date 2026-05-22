@@ -1,6 +1,6 @@
 # RB-webpush-activation — Web Push Protocol Browser Activation
 
-> **Status**: source-ready (2026-05-21) — operator action chain for M7 T4.2 WebPush LIVE
+> **Status**: LIVE + browser-verified (2026-05-22) — M7 T4.2 WebPush activation; subscribe flow end-to-end proven (§3.10)
 >
 > **Owner**: ops + dev (joint)
 > **Scope**: browser-only Web Push (RFC 8030 + RFC 8292 VAPID); mobile FCM/APNS Faz 22.2 dep DIŞI
@@ -236,6 +236,37 @@ DevTools kanıt:
 - Application → Service Workers → `/notification-sw.js` Active
 - Application → Local Storage → `notify.push.browserEndpointId` = UUID
 
+> **VERIFIED — browser end-to-end smoke PASS (2026-05-22)**
+>
+> Steps 1–5 proven on testai.acik.com against the #652 frontend
+> (`platform-web` sha-07805aa; gitops overlay digest `sha256:aef8169e…`,
+> PR #986). Tooling: Playwright **persistent context** (`launchPersistentContext`).
+>
+> Root-cause note for future operators — `browser.newContext()` is
+> incognito-equivalent and Chrome deliberately blocks the Push API in
+> incognito (crbug.com/41124656); `pushManager.subscribe()` there fails
+> with `Registration failed - permission denied`. Use
+> `launchPersistentContext` (a real non-incognito profile) for any
+> automated WebPush smoke.
+>
+> Evidence (`webpush-smoke` persona, Keycloak SSO login):
+> - Cold-load `/settings/notifications` → `GET /preferences/me` +
+>   `/push/subscribe/me` + `/inbox/me` all **200**. The prior cold-load
+>   401 was an RTK Query `Request`-object header-drop bug (frontend nginx
+>   ↔ orchestrator dropped `Authorization` + identity headers on the
+>   `fetch(new Request(...))` form), fixed by #652 `unwrapRequestFetchFn`
+>   wired as the `fetchFn` for all 4 authenticated notify RTK clients.
+> - `PushSubscriptionCard` renders; `Notification.permission=granted`;
+>   service worker `/notification-sw.js` **active**.
+> - "Aboneliği aç" click → `pushManager.subscribe` returns a real FCM
+>   endpoint (`https://jmt17.google.com/fcm/send/…`).
+> - `POST /api/v1/notify/push/subscribe` → **200**; card flips to
+>   "Aboneliği kapat / bu tarayıcıda bildirimler etkin / 1 aktif cihaz".
+> - 0 console errors.
+>
+> Steps 6–7 (real push delivery → OS toast → click-to-navigate) are
+> covered by the §3.11 backend dispatch-metric gate.
+
 ### 3.11 Acceptance — Backend metric verify
 
 ```bash
@@ -274,7 +305,7 @@ Vault VAPID keys silmek YASAK (audit trail). Sadece ConfigMap flag flip yeterli.
 | ConfigMap ENABLED=true | pod env `NOTIFY_ADAPTERS_WEBPUSH_ENABLED=true` (gitops PR #976) | ✅ |
 | Pod startup log VapidKeyService activated | pod log: `VapidKeyService activated` + `DefaultWebPushSender activated` | ✅ |
 | Frontend VAPID env injection | testai.acik.com `window.__env__.VITE_NOTIFY_VAPID_PUBLIC_KEY` 87ch (HTTP + Playwright runtime); `PushSubscriptionCard` config-missing branch tetiklenmedi (gitops PR #977) | ✅ |
-| Browser end-to-end smoke | Headless Playwright: KC login (test persona) → `/settings/notifications` render + VAPID runtime doğrulandı. **Subscribe click-through KAPANMADI** — test persona notify-API provisioning (401) + headless Chromium push-servis sınırı (aktivasyondan bağımsız) | ⚠️ kısmi |
+| Browser end-to-end smoke (subscribe flow) | Persistent-context Playwright, #652 frontend live (overlay digest `aef8169e`, PR #986): `webpush-smoke` KC SSO → `/settings/notifications` cold-load → `GET /preferences/me`+`/push/subscribe/me`+`/inbox/me` **200** (önceki 401 RTK `Request`-object fetchFn bug'ı #652 ile çözüldü) → "Aboneliği aç" → `pushManager.subscribe` gerçek FCM endpoint → `POST /push/subscribe` **200** → kart "Aboneliği kapat / 1 aktif cihaz". 0 console error. §3.10 step 1–5 (root-cause: `browser.newContext()` incognito → Push API blocked; `launchPersistentContext` ile çözüldü) | ✅ |
 | Backend metric notify_dispatch_outcome push channel rate > 0 | Prometheus query — gerçek push dispatch sonrası (subscribe flow kapanınca) | □ bekliyor |
 
 ## 6. Prod cutover (ayrı slot)
@@ -292,8 +323,8 @@ Test cluster 72h soak başarılı sonrası prod overlay aynı 3.3-3.10 adımlar�
 - M7 T4.2 milestones.md
 - Codex thread 019e49e7 master plan + 7 iter chain (019e4a2e, 019e4a3d, 019e4a57, 019e4a70, 019e4a87, 019e4bf5, 019e4c0e)
 - Backend PRs: #277/#278/#279/#280/#281/#282/#283/#284/#285
-- GitOps PRs: #939 (ConfigMap + ExternalSecret defer-aware + overlay digest bump)
-- Frontend PRs: #648 (SW + hook), #649 (UI integration + VAPID env build chain)
+- GitOps PRs: #939 (ConfigMap + ExternalSecret defer-aware + overlay digest bump), #976/#977 (activation + VAPID frontend digest), #986 (#652 fetchfn frontend digest bump)
+- Frontend PRs: #648 (SW + hook), #649 (UI integration + VAPID env build chain), #650/#651 (notify RTK auth-ready hardening), #652 (`unwrapRequestFetchFn` shared module — cold-load 401 root fix; Codex 019e512f AGREE)
 
 ## 8. Risk
 
