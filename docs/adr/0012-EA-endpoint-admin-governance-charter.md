@@ -1,6 +1,6 @@
 # ADR-0012-EA — Endpoint Admin Service Governance Charter
 
-> **Status**: ACTIVE (5 clarify RESOLVED + 22.1 scope clarify 2026-05-02 PR-8c + 2026-05-21 truth refresh #924)
+> **Status**: ACTIVE (5 clarify RESOLVED + 22.1 scope clarify 2026-05-02 PR-8c + 2026-05-21 truth refresh #924 + 2026-05-22 truth refresh #982 — BE-016/BE-017/BE-011 merged)
 > **Date**: 2026-05-01 (draft) → 2026-05-02 (PR-8b fill-in + PR-8c clarify)
 > **Sprint**: "Prod post-cutover compliance" PR-8 + PR-8b fill-in + PR-8c clarify
 > **Codex thread**: `019dd895-17c1-79f0-b652-e316f64d4d79` (mutabakat raporu PR #270, iter-3 AGREE) + `019de00f-4b40-75c1-8ead-01b79c5819c1` (sprint review)
@@ -277,6 +277,21 @@ Cross-AI peer review chain (Plan C + C.5.persona + BE-014A zinciri, 14 thread to
 - `019e4efb` — BE-014A gitops digest PR #965 iter-3 AGREE+ready_to_merge (narrative düzeltme CARRIES bytecode + live HMAC smoke pending → VERIFIED LIVE post-smoke)
 - `019e4f15` — BE-014A Functional live smoke strategic verdict path A' (real enrollment + HMAC canonical; encryption reverse engineering YOK)
 - `019e4f1e` — #967 PM refresh BE-014A Functional VERIFIED iter-N REVISE absorb (production-proven → live-runtime on test deployment; canonical stale-truth sweep)
+
+### 2026-05-22 Truth Refresh (#982)
+
+BE-016 / BE-017 / BE-011 merge sonrası canonical truth. Tracked by [#982](https://github.com/Halildeu/platform-k8s-gitops/issues/982).
+
+| Alan | 2026-05-22 truth |
+|---|---|
+| BE-016 | MERGED — audit hash-chain (`platform-backend#295` `ff7d4843`) + Flyway enablement (`#297`). Gitops #968/#971 Done. V5 Flyway migration test cluster Postgres'te `4→v5` uygulandı. |
+| BE-017 | MERGED — destructive command dual-control gate (`platform-backend#300` `dd6b1eab`). Gitops digest bump #980 (`d702d678`). Cross-AI Codex `019e50e0` RED→absorb→AGREE. Gitops tracking #978 Done. |
+| BE-011 | MERGED — agent↔backend wire-contract reconciliation (`platform-agent#9` `2e49f8b`). Gitops tracking #974 Done. |
+| endpoint-admin-service D30 | ✅ MATCH — live pod imageID `sha256:1a1d0aac…` == GitOps desired (BE-017 image, BE-014A `fd7a9c54`'i supersede eder). |
+| api-gateway D30 | ❌ DRIFT — live `sha256:6137bb2c…` ≠ desired `sha256:84500b5e…`. Route 401 fail-closed çalışıyor; imageID match KAPALI DEĞİL. Ayrı resolution track. |
+| Pending acceptance gate | BE-011 real agent lifecycle smoke · Windows fresh smoke #8 (`platform-agent#8`) · Web runtime acceptance · IT pilot (22.2). |
+
+prod-ready / password-reset-ready İDDİA EDİLMEZ — 22.1 test runtime + source-side merge seviyesi.
 
 ### Sub-faz milestone'ları (Codex sırası)
 
