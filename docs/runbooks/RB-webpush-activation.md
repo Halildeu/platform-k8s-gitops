@@ -58,8 +58,8 @@ Backend repo'da dedicated `VapidKeygenCli` sınıfı **YOK** (bu runbook iter-1 
 **Seçenek A — Online web-push-codelab (önerilen, hızlı)**:
 1. Tarayıcıda https://web-push-codelab.glitch.me/ aç
 2. "Application Server Keys" bölümünde otomatik üretilen pair:
-   - Public Key: 65-byte uncompressed P-256, base64url (88 char ~ no padding)
-   - Private Key: 32-byte scalar, base64url (43 char ~ no padding)
+   - Public Key: 65-byte uncompressed P-256, base64url (87 char unpadded; 88 with padding)
+   - Private Key: 32-byte scalar, base64url (43 char unpadded)
 3. ⚠️ Private key tarayıcıdan kopyalandığı an Vault'a seedlenip clipboard temizle
 
 **Seçenek B — Offline OpenSSL (air-gapped operator)**:
@@ -232,7 +232,7 @@ Chrome MCP veya computer-use:
 7. Click toast → tab focus + navigation to `/notifications` inbox
 
 DevTools kanıt:
-- Network: POST /push/subscribe → 200 Created + endpointId UUID
+- Network: POST /push/subscribe → 200 OK + endpointId UUID (backend `PushSubscriptionController` returns `ResponseEntity.ok`)
 - Application → Service Workers → `/notification-sw.js` Active
 - Application → Local Storage → `notify.push.browserEndpointId` = UUID
 
