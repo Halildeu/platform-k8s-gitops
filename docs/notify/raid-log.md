@@ -26,8 +26,8 @@ Codex iter-2 finding F5 (thread `019e0c28`):
 
 | ID | Assumption | Confidence | Validation | Last Review | Owner |
 |---|---|:---:|---|---|---|
-| A1 | SMS primary JetSMS canlı sözleşme aktif (2026-05-19 kullanıcı kararı); NetGSM secondary contract 2026-05-30'a kadar imzalanır → failover acceptance kapanır | Medium | legal/ops weekly check | 2026-05-19 | ops + legal |
-| A2 | KVKK Art.11 erasure pattern legal review 2026-05-25'te tamamlanır | Medium | PR #130 erasure pattern submitted by 2026-05-20 | 2026-05-09 | legal |
+| A1 | SMS primary JetSMS canlı sözleşme aktif (2026-05-19 kullanıcı kararı); **NetGSM secondary contract kısa vadede yapılmayacak — R1 ⏳ DEFER (kullanıcı kararı 2026-05-23)**; JetSMS-only degraded mode = kabul edilen kalıcı işletim durumu; NetGSM altyapısı asset-preserved (sözleşme olursa reactivation) | Low | — (DEFER; sözleşme imzalanırsa re-aktive) | 2026-05-23 | ops |
+| A2 | KVKK Art.11 erasure pattern legal review — **R2 CLOSED 2026-05-23** (Codex `019e5189` final legal verdict AGREE = kabul edilen hukuk onayı; kullanıcı kararı) | High (validated) | Codex `019e5189` verdict + 6/7 K-PR MERGED | 2026-05-23 | — |
 | A3 | Browser SSO verify user availability 2026-05-12 öncesi | Low | Pre-Production Full Authority — agent headless alternative kullanır | 2026-05-09 | agent |
 | A4 | Faz 22.2 endpoint-admin Lab tier 23.7 (Push) öncesi hazır | Medium | endpoint-admin PR list cross-faz coord | 2026-05-09 | dev |
 | A5 | Velocity baseline ~10-15h/session block tutar | Medium | Sprint cycle başı vs bitişi gerçekleşen saat audit | 2026-05-09 | agent |
@@ -63,9 +63,9 @@ Codex iter-2 finding F5 (thread `019e0c28`):
 | D-N1 | Faz 22.1.1b III review verdict | 23.1 başlangıç | bypassed pre-prod 2026-05-08 user onayı | dev (Faz 22.1.1b) | 🟡 |
 | D-N2 | Faz 22.2 endpoint-admin Lab tier readiness signal | 23.7 (Push) | TBD | dev (Faz 22.2) | ⏳ |
 | D-N3 | JetSMS provider canlı sözleşme + API erişim (SMS primary, 2026-05-19 kullanıcı kararı) | 23.3 (SMS primary) | aktif (sözleşme var) | JetSMS commercial | 🟢 |
-| D-N3b | NetGSM provider sözleşme + sandbox account (SMS secondary failover) | 23.3 (SMS secondary) | 2026-05-30 target | NetGSM commercial | 🟡 |
+| D-N3b | NetGSM provider sözleşme + sandbox account (SMS secondary failover) | 23.3 (SMS secondary) | ⏳ DEFER — kısa vadede yok (kullanıcı kararı 2026-05-23); asset-preserved | NetGSM commercial | ⏳ |
 | D-N4 | İletimerkezi tertiary SMS provider — DEFERRED (JetSMS primary + NetGSM secondary kararı sonrası kapsam dışı; gelecekte 3. provider gerekirse) | future | — | İletimerkezi commercial | ⏳ deferred |
-| D-N5 | Legal KVKK Art.11 erasure pattern review | 23.2.B | 2026-05-25 target | legal (external/in-house) | 🔴 |
+| D-N5 | Legal KVKK Art.11 erasure pattern review | 23.2.B | **CLOSED 2026-05-23** — Codex `019e5189` final legal verdict (kullanıcı kararı: Codex istişare verdict'i = kabul edilen hukuk onayı) | legal / Codex AI proxy | 🟢 |
 | D-N6 | DKIM/SPF/DMARC prod domain config (operator manual setting) | 23.2 closure | TBD ops | ops | 🟡 |
 | D-N7 | Browser SSO user availability (testai.acik.com + ai.acik.com) | 23.9 closure | per-cutover | user | 🟡 |
 | D-N8 | GHCR registry availability (Halildeu org packages) | tüm deploy | continuous | GitHub | 🟢 |

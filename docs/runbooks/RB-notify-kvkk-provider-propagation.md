@@ -11,7 +11,7 @@ Bizim notification orchestrator, recipient verisini (`email`, `phone`, mesaj `bo
 - Office 365 SMTP (mail relay)
 - Microsoft Graph Mail (alternate path — currently deferred)
 - JetSMS SOAP (SMS primary)
-- NetGSM REST (SMS secondary — contract pending R1)
+- NetGSM REST (SMS secondary — R1 ⏳ DEFER; sözleşme kısa vadede yok, NetGSM henüz aktif değil — matrix entry asset-preserved)
 - SendGrid / Mailgun (future email providers)
 - Slack incoming webhook (workspace receiver — channel-addressed; no recipient PII gönderiliyor)
 - Microsoft Teams Power Automate flow webhook (channel-addressed)
@@ -60,12 +60,12 @@ KVKK Madde 11.4 gereği subscriber erasure request geldiğinde **bu provider'lar
 | **Erasure propagation prosedürü** | 1. SubscriberErasureService trigger → 2. notification_delivery rows with `channel='sms'` ve subscriber recipient_id → 3. **Otomatik provider deletion YOK** — DPA gereği 90 gün retention sonunda provider-side otomatik purge → 4. Audit: `SMS_PROVIDER_RETENTION_NOTED` event yaz (immediate delete YERINE retention promise documented) |
 | **Otomatik silme garantisi** | Biotekno DPA: 90 gün hard limit (operator verify gerekli; tek seferlik) |
 
-### SMS — NetGSM REST (secondary, contract pending R1)
+### SMS — NetGSM REST (secondary, R1 ⏳ DEFER — henüz aktif değil)
 
 | Field | Detay |
 |---|---|
 | **Provider** | NetGSM A.Ş. |
-| **Status** | R1 contract pending ETA 2026-05-30; Vault path infrastructure LIVE PR #482 |
+| **Status** | **R1 ⏳ DEFER** — NetGSM secondary sözleşmesi kısa vadede yapılmayacak (kullanıcı kararı 2026-05-23); NetGSM henüz aktif değil → NetGSM-side subscriber datası YOK. Vault path infrastructure LIVE PR #482 (asset-preserved dormant); sözleşme imzalanırsa bu propagation matrix entry devreye girer |
 | **Veri aktarılan** | JetSMS ile aynı (recipient_phone, body, msgheader, channel) |
 | **Veri retention (provider-side)** | NetGSM müşteri portal: 180 gün default; contract'a bağlı |
 | **Deletion API** | NetGSM API'sinde explicit deletion endpoint YOK |
