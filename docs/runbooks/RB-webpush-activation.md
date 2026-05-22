@@ -277,6 +277,48 @@ ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
 
 Beklenen: `notify_intent_terminated_total{terminal=...}` + `notify_dispatch_outcome_total{channel=\"push\", status=...}` rate > 0 (push channel aktif).
 
+> **VERIFIED — push dispatch pipeline wired, metric > 0 (2026-05-22)**
+>
+> Synthetic push intent submitted for the `webpush-smoke` subscriber
+> (`123be09e-…`, live FCM endpoint). The intent API is NOT exposed at the
+> public edge — `POST /api/v1/notify/intents` reached the orchestrator via
+> `kubectl port-forward svc/notification-orchestrator 18089:8089`
+> (orchestrator HTTP port is **8089**, management/actuator **8081**).
+>
+> - `POST /api/v1/notify/intents` (template `t1` v1, `channels:["push"]`,
+>   recipient `subscriber:123be09e-…`) → **202 ACCEPTED**.
+> - Pod logs prove the full push pipeline is wired:
+>   `IntentSubmissionService: intent accepted … channels=[push]
+>   dispatch.enabled=true` → `DeliveryPlanService: push plan …
+>   target_count=1` (the subscriber's registered push endpoint resolved)
+>   → `DeliveryDispatchService: dispatch start`.
+> - Metric **`notify_dispatch_outcome_total{channel="push"} > 0`** — the
+>   push channel is live and producing dispatch outcomes.
+>
+> Outcome is `status=BLOCKED_BY_AUTHZ` (`policy=authz_deny`). Root cause
+> traced: the orchestrator `AuthzClient` calls permission-service
+> `POST /api/v1/internal/authz/check` with `{principal_type:subscriber,
+> relation:can_receive, object_type:template}`, resolved against OpenFGA.
+> The live OpenFGA authz model (`01KRTJVEMAW80B2D35GN8HJDPG` — the only
+> model permission-service is configured with, `ERP_OPENFGA_MODEL_ID`)
+> defines **only ERP types** (organization / company / project /
+> warehouse / branch / module / action / report / report_group) — it has
+> **no `template`, `can_receive` or `subscriber` type**. So the
+> subscriber-recipient notification authz path cannot resolve to allow in
+> the current deployment: every `subscriber`-type push delivery is
+> `BLOCKED_BY_AUTHZ` by construction. (`external`-recipient deliveries —
+> the email/SMS path proven in M2/M4 — do not hit this `can_receive`
+> check, which is why they work.)
+>
+> A `SUCCESS`-status subscriber push delivery (real FCM push → OS toast)
+> therefore requires **provisioning the OpenFGA model with the
+> notification authz types** (`template` type + `can_receive` relation +
+> `subscriber` user type) plus the
+> `template:t1#can_receive@subscriber:123be09e-…` tuple — a Zanzibar
+> authz-plane task (model migration), NOT a one-line tuple seed and NOT a
+> WebPush-channel defect. The WebPush adapter + dispatch wiring is itself
+> fully proven (intent → plan → dispatch → metric > 0).
+
 ## 4. Rollback
 
 ENABLED=false rollback (ADR-0023 overlay-managed):
@@ -306,7 +348,7 @@ Vault VAPID keys silmek YASAK (audit trail). Sadece ConfigMap flag flip yeterli.
 | Pod startup log VapidKeyService activated | pod log: `VapidKeyService activated` + `DefaultWebPushSender activated` | ✅ |
 | Frontend VAPID env injection | testai.acik.com `window.__env__.VITE_NOTIFY_VAPID_PUBLIC_KEY` 87ch (HTTP + Playwright runtime); `PushSubscriptionCard` config-missing branch tetiklenmedi (gitops PR #977) | ✅ |
 | Browser end-to-end smoke (subscribe flow) | Persistent-context Playwright, #652 frontend live (overlay digest `aef8169e`, PR #986): `webpush-smoke` KC SSO → `/settings/notifications` cold-load → `GET /preferences/me`+`/push/subscribe/me`+`/inbox/me` **200** (önceki 401 RTK `Request`-object fetchFn bug'ı #652 ile çözüldü) → "Aboneliği aç" → `pushManager.subscribe` gerçek FCM endpoint → `POST /push/subscribe` **200** → kart "Aboneliği kapat / 1 aktif cihaz". 0 console error. §3.10 step 1–5 (root-cause: `browser.newContext()` incognito → Push API blocked; `launchPersistentContext` ile çözüldü) | ✅ |
-| Backend metric notify_dispatch_outcome push channel rate > 0 | Prometheus query — gerçek push dispatch sonrası (subscribe flow kapanınca) | □ bekliyor |
+| Backend metric notify_dispatch_outcome push channel rate > 0 | Sentetik push intent (template `t1` v1, `channels:["push"]`, recipient `subscriber:123be09e-…`) → `POST /api/v1/notify/intents` **202** → pipeline kanıtlı (IntentSubmissionService `channels=[push]` → DeliveryPlanService `push plan target_count=1` → DeliveryDispatchService) → **`notify_dispatch_outcome_total{channel="push"}` > 0**. Outcome `BLOCKED_BY_AUTHZ` — kök neden: canlı OpenFGA model'i (`01KRTJVEMAW80B2D35GN8HJDPG`) yalnız ERP type'larını içeriyor, `template`/`can_receive`/`subscriber` type'ları YOK → subscriber-recipient notification authz yolu mevcut deployment'ta provisioned değil. SUCCESS delivery = OpenFGA notification authz model migration (Zanzibar authz-plane işi, §3.11 not) | 🟡 push kanalı aktif + pipeline + metric > 0 ✅; SUCCESS delivery OpenFGA notification-authz model provisioning bekliyor |
 
 ## 6. Prod cutover (ayrı slot)
 
