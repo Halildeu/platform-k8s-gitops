@@ -32,11 +32,13 @@ data:
   DB_POOL_MAX: "5"
 
   # JPA / Flyway — BE-016 follow-up (Codex 019e4fbc plan-time consult).
-  # Flyway now ENABLED so V4+ migrations are gitops-managed instead of
-  # hand-bootstrapped. application.yml carries baseline-version=4 so
-  # baseline-on-migrate baselines the existing ddl-auto-built endpoint_admin
-  # schema at V4 (one history row: version=4 type=BASELINE) and only applies
-  # V5+ going forward; V1-V4 are NOT re-run against the populated schema.
+  # Flyway now ENABLED so schema evolution is gitops-managed instead of
+  # hand-bootstrapped: V4 effective-state is baselined into the Flyway
+  # history and V5+ migrations become Flyway-applied. application.yml
+  # carries baseline-version=4 so baseline-on-migrate baselines the existing
+  # ddl-auto-built endpoint_admin schema at V4 (one history row: version=4
+  # type=BASELINE) and only applies V5+ going forward; V1-V4 are NOT re-run
+  # against the populated schema.
   # ddl-auto stays `update` in this adoption rollout — a follow-up PR hardens
   # it to `validate` once Flyway owns the schema (two-stage: adoption first,
   # ownership second).
