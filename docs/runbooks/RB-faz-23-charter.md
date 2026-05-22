@@ -167,12 +167,12 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 
 ## Faz 23.2 — Production MVP Dar
 
-**Tier**: Production MVP dar (Session 44 sonu PR-time: 5/6 sub-faz fully 🟢 + 23.2.E acceptance candidate via PR #149; post-merge state: **6/6 sub-faz fully 🟢 FULL ACCEPTANCE** — 23.2.A T1.1 trilogy 3/3 + P0.1-P0.5 + P1.2 PR-A + 23.2.B + 23.2.C + 23.2.D + 23.2.E (9-test acceptance) + 23.2.F; residual R2 KVKK legal review external coordination only) — **🟢 source-ready + acceptance candidate at PR-time → FULL ACCEPTANCE post-merge of PR #149 + #503 (5-state matrix Evidence 12/12 + Acceptance 11/12 → 12/12)**
+**Tier**: Production MVP dar (Session 44 sonu PR-time: 5/6 sub-faz fully 🟢 + 23.2.E acceptance candidate via PR #149; post-merge state: **6/6 sub-faz fully 🟢 FULL ACCEPTANCE** — 23.2.A T1.1 trilogy 3/3 + P0.1-P0.5 + P1.2 PR-A + 23.2.B + 23.2.C + 23.2.D + 23.2.E (9-test acceptance) + 23.2.F; R2 KVKK legal review **CLOSED 2026-05-23** Codex `019e5189` final legal verdict AGREE) — **🟢 done full acceptance (post-merge PR #149 + #503; R2 closed 2026-05-23 → 23.2 full 🟢)**
 
 **Acceptance breakdown** (Codex iter-1 absorb):
 - **Original MVP-dar 8 kabul kriteri: 6/8 done** (Grafana dashboard, Alertmanager DLQ rule, **provider config rollback** Session 42 PR #140, outage fallback bypass Session 41, data classification, abuse prevention guards Session 41)
 - **Session 39 hardening (charter ek)** 3/3 done: KVKK Art.7 audit retention, Vault/ESO managed Secret, DLQ SLO 99.5% multi-window
-- **Pending**: erasure path (R2 KVKK legal review external) — 1 kriter
+- **Closed 2026-05-23**: erasure path R2 KVKK legal review — Codex `019e5189` final legal verdict AGREE (kullanıcı kararı: Codex istişare verdict'i = kabul edilen hukuk onayı)
 
 **Kapsam**:
 - Preference API (`PUT /preferences/me`, `GET /preferences/me`)
@@ -196,7 +196,7 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
 | Madde | Status | Kanıt |
 |---|:---:|---|
 | Preference API canlı | 🟢 source-ready/live, **T1.1 trilogy 3/3 MERGED** | `PreferenceController` 290 satır LIVE: GET/PUT `/api/v1/notify/preferences/me` + DELETE `/me/{id}` + DELETE `/me`; **T1.1.6 quiet hours PR #142 (7 unit tests) + T1.1.7 frequency_limit_per_user PR #143 (4-iter Codex chain, fixed-window race-safe, ConcurrentHashMap synchronized) + T1.1.8 unsubscribe trilogy PR-A #144 (HMAC-SHA256 token + Clock injection 8 unit tests) + PR-B #145 (UnsubscribeUrlBuilder 4 unit tests) + PR-C #146 (UnsubscribeRevokeService preference revoke + audit publish)** all MERGED Session 43; D29-Authorized acceptance test BLOCKED on RAID I6 Keycloak credential |
-| Admin erasure path | 🟡 source-ready, R2 legal review | `AdminErasureController` 129 satır LIVE: `POST /api/v1/admin/notify/erasure` (admin scope); R2 legal review ETA 2026-05-25 |
+| Admin erasure path | 🟢 done | `AdminErasureController` 129 satır LIVE: `POST /api/v1/admin/notify/erasure` (admin scope); R2 legal review **CLOSED 2026-05-23** (Codex `019e5189` final legal verdict AGREE) |
 | **Subscriber self-service erasure** (`DELETE /audit/me`) | 🟢 done | T1.2 FULL ACCEPTANCE Session 41 (PR #134 + acceptance evidence 2026-05-09) — endpoint LIVE + integration test |
 | **Subscriber right-to-info** (`GET /audit/me`) | 🟢 done | T1.2 FULL ACCEPTANCE Session 41 (PR #134 + acceptance evidence 2026-05-09) — endpoint LIVE + integration test |
 | Provider config rollback | 🟢 done | `ProviderConfigHistory` + Repository LIVE; `ProviderConfigService.switchActive()` @Transactional SERIALIZABLE + TransactionSynchronization.afterCommit cache invalidation; 4 Testcontainers integration tests CI GREEN (atomic_switch + concurrent_switch_race + cache_invalidate + rollback_on_fail); platform-backend PR #140 MERGED 2026-05-10 (Codex iter-1 RED → iter-2 AGREE thread `019e116e`/`019e1173`); R12 🟢 Mitigated |
@@ -224,13 +224,13 @@ Status legend: 🟢 done · 🟡 in-progress · ⏳ pending · 🔴 blocked
   - **T1.1.6** quiet hours enforcement (PR #142, 7 unit tests pass: `SubscriberPreferenceService.evaluate()` quiet hours guard + Clock injection + cross-day window + critical bypass + non-UTC tz + critical no-bypass deny + invalid config fail-open)
   - **T1.1.7** per-user frequency limit (PR #143, 4-iter Codex chain `019e1228`, `FrequencyLimitService` ConcurrentHashMap + AtomicLong + synchronized fixed-window race-safe)
   - **T1.1.8** unsubscribe trilogy (PR #144 PR-A `UnsubscribeTokenService` HMAC-SHA256 + Clock 8 unit tests + PR #145 PR-B `UnsubscribeUrlBuilder` 4 unit tests + PR #146 PR-C `UnsubscribeRevokeService` preference revoke + audit publish + global revoke `muteChannel` pattern + KVKK PiiRedactor recipient hash); residual: ESO 15. key + Vault seed + base-url prod-host guard + integration test e2e (P0.2-P0.5 ~3-4h)
-- 🟢 **23.2.B**: KVKK admin erasure source-ready (`AdminErasureController`), R2 legal review external coordination ETA 2026-05-25; **subscriber self-service `DELETE/GET /audit/me` 🟢 T1.2 FULL ACCEPTANCE Session 41** (PR #134 + acceptance evidence)
+- 🟢 **23.2.B**: KVKK admin erasure LIVE (`AdminErasureController`), R2 legal review **CLOSED 2026-05-23** (Codex `019e5189` final legal verdict AGREE; K6 tenant-scoped DPO authz P1 non-blocking follow-up); **subscriber self-service `DELETE/GET /audit/me` 🟢 T1.2 FULL ACCEPTANCE Session 41** (PR #134 + acceptance evidence)
 - 🟢 **23.2.C**: Provider config rollback FULL ACCEPTANCE 2026-05-10 (platform-backend PR #140 MERGED — `switchActive()` @Transactional SERIALIZABLE + afterCommit cache + 4 Testcontainers tests CI GREEN; R12 🟢 Mitigated)
 - 🟢 **23.2.D**: Outage fallback bypass (D43) — **T1.4 FULL ACCEPTANCE Session 41 2026-05-10 first controlled drill** (PR #457+#462+#463+#464+#467+#468; R9 🟢 Mitigated)
 - 🟢 **23.2.E**: Data classification acceptance candidate Session 44 2026-05-10 (PR #149 platform-backend `DataClassificationAcceptanceTest` 9-test matrix-coverage: enum 4-way persistence + severity x classification matrix + DB round-trip + PiiRedactor whitelist boundary + warning severity edge + audit serialization assert; FULL ACCEPTANCE state achieved post-merge of PR #149 + #503; evidence: `docs/faz-23-evidence/2026-05-10-23-2-e-data-classification-acceptance.md`)
 - 🟢 **23.2.F**: Abuse prevention guards (D45) — **T1.6 FULL ACCEPTANCE Session 41 2026-05-09 23:45Z** (PR #134 + #455 + acceptance evidence; sliding window 100/orgId-topicKey/60s; R13 + R19 🟢 Mitigated)
 
-Estimated remaining work (Session 44 sonu): **R2 KVKK legal review external coordination ETA 2026-05-25 only** (T1.1 trilogy 3/3 MERGED Session 43 + P0.1-P0.5 + P1.2 PR-A MERGED Session 44; T1.3 MERGED Session 42; 23.2.E acceptance candidate Session 44 PR #149 → FULL ACCEPTANCE post-merge of PR #149 + #503).
+Estimated remaining work: **sıfır agent-actionable — R2 KVKK legal review CLOSED 2026-05-23 (Codex `019e5189` final legal verdict AGREE)** (T1.1 trilogy 3/3 MERGED Session 43 + P0.1-P0.5 + P1.2 PR-A MERGED Session 44; T1.3 MERGED Session 42; 23.2.E FULL ACCEPTANCE post-merge PR #149 + #503; R2 6/7 K-PR MERGED + Codex verdict; K6 tenant DPO authz P1 non-blocking 23.2.B follow-up).
 
 **Historical**: önceki ~100h estimate / Session 41 sonrasında ~52-55h drift; Session 42 T1.3 + Session 43 T1.1 trilogy + Session 44 P0.1-P0.5 + 23.2.E ile residual sıfıra indirgendi (R2 external dışında).
 
