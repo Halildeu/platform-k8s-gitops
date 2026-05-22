@@ -23,14 +23,18 @@
 #      datasource ConfigMap)
 #   6. Verify: Grafana /api/datasources includes uid=notify_pg_ro
 #
-# Acceptance (PR-1):
+# Acceptance (PR-1 — Codex 019e4f10 iter-2 P1 #1 + P3 absorb):
 # - kustomize build sanity PASS
 # - sidecar provisioner pattern applied (label grafana_datasource=1)
 # - URL points to prod cluster postgres (cluster-internal Service DNS)
 # - Connection pool conservative (maxOpenConns=5; tek dashboard panel load)
-# - sslmode=require (prod cluster intra-namespace TLS-on PG)
-# - readOnly=true (Grafana panel mutating query yapamaz; ek savunma katmanı)
-# - statement_timeout 2s (panel default 24h window query budget)
+# - sslmode=disable (ADR-0001 intra-cluster plaintext PG; host-compose
+#   postgres + notification-orchestrator jdbc no-sslmode evidence — TLS-on
+#   PG Faz 24+ scope. sslmode=require activation'da SSL handshake fail verir)
+# - DB role grafana_notify_ro SELECT-only (mutating query DB-level blocked;
+#   ek savunma katmanı — operator activation chain RB §3.1)
+# - jsonData.timeout: 2 (Grafana 10+ PostgreSQL plugin connection-level
+#   query timeout, saniye — panel default 24h window query budget)
 
 apiVersion: v1
 kind: ConfigMap

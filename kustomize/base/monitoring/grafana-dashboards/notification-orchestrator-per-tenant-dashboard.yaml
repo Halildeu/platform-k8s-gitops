@@ -319,14 +319,14 @@ data:
       "templating": {
         "list": [
           {
-            "current": {"selected": false, "text": "(all tenants — pre-instrumentation)", "value": ""},
+            "current": {"selected": false, "text": "", "value": ""},
             "datasource": "Prometheus",
             "definition": "label_values(notify_dispatch_outcome_total{namespace=\"platform-prod\"}, org_id)",
-            "description": "Select tenant org_id (informational placeholder until backend Counter.builder includes Tags.of('org_id', orgId) retrofit — M8 multi-tenant pre-req).",
+            "description": "Select tenant org_id. Panel id=8 (Top 20 Templates PG aggregate) uses ${tenant:sqlstring} single-value equality predicate — multi/includeAll DISABLED (Codex 019e4f10 iter-2 P2 absorb: multi/all comma-separated quoted value equality predicate ile uyumsuz). Prometheus panels (id 1-7) $tenant filtrelemiyor — informational, system-wide (backend org_id Counter tag retrofit M8 pre-req).",
             "hide": 0,
-            "includeAll": true,
-            "label": "Tenant (org_id, M8 pre-req)",
-            "multi": true,
+            "includeAll": false,
+            "label": "Tenant (org_id, single-select)",
+            "multi": false,
             "name": "tenant",
             "options": [],
             "query": {
