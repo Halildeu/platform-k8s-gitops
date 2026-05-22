@@ -8,13 +8,20 @@
 # Apply triggers (Faz 24+/M8 scope — bu scaffold M7 iter-1'de apply EDİLMEZ):
 #   - Cluster sayısı > 5
 #   - Dış tenant self-service observability gerek
-#   - Retention local Prometheus limit aşımı (>30 gün)
+#   - Retention local limit aşımı: metric > 30 gün + log > 7 gün + trace > 7 gün
+#     (Codex 019e4ef4 P3 #7 normalized — metric-only değil, log + trace dahil)
 #   - M8 tenant onboarding plan'ı somut hale gelir
 #
-# Cardinality budget M7 iter-1:
-#   - Recording rules (federated): ≤ 5K series
+# Topology authority: ADR-0002 §3.8 (prod = observability hub; test = lightweight
+# scrape agent + remote_write to prod). M7 iter-1'de runtime federation gerek YOK
+# (Codex 019e4ef4 P1 #1 absorb — remote_write zaten centralized).
+#
+# Cardinality budget (Faz 24+ apply sonrası):
+#   - Recording rules (federated): ≤ 5K series (per source cluster)
 #   - up + ALERTS:                 ≤ 1K series
-#   - Total central federation:    ≤ 10K series
+#   - Safety headroom:             ≤ 4K series
+#   - Total central federation:    ≤ 10K series HARD CAP
+#   - Warning threshold:           8K (alert before reaching cap)
 
 - job_name: 'central-federate-test-cluster'
   honor_labels: false   # central labels (cluster, environment, tenant_source) win

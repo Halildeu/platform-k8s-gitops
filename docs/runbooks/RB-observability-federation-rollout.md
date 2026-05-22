@@ -1,8 +1,10 @@
 # RB-observability-federation-rollout — M7 T4.3.8 Federation Operator Runbook
 
-> **Status**: source-ready 2026-05-22 (Codex 019e4ee7 AGREE — Anthropic/OpenAI cross-AI provider-different)
+> **Status**: source-ready 2026-05-22 iter-2 (Codex 019e4ee7 plan-time AGREE + 019e4ef4 post-impl REVISE absorb — Anthropic/OpenAI cross-AI provider-different)
 >
-> **Scope**: M7 iter-1 bounded operator-only Prometheus federation; Faz 24+/M8 Thanos-or-Mimir scale path DOCUMENTED (NOT this runbook'un scope'u)
+> **Scope**: M7 iter-1 **design artifact only** (runtime federation YOK — ADR-0002 §3.8 remote_write topology zaten centralized); Faz 24+/M8 Thanos-or-Mimir scale path DOCUMENTED (NOT this runbook'un runtime scope'u)
+>
+> **Topology authority**: ADR-0002 §3.8 (prod = observability hub; test = lightweight scrape + remote_write to prod)
 >
 > **ADR referansı**: [ADR-0026 Observability Federation Phased Adoption](../adr/0026-observability-federation-phased.md)
 >
@@ -52,11 +54,20 @@ Beklenen: `notify:dispatch:outcome:*`, `notify:intent:terminated:*`, `notify:abu
 
 ### 2.3 Central Prometheus instance gerek mi?
 
-M7 iter-1 için **operator-only** federation. İki seçenek:
+> **Codex 019e4ef4 P1 #1 absorb**: M7 iter-1'de **runtime federation gerek YOK** — ADR-0002 §3.8 mevcut remote_write topology zaten test→prod centralized metric ingest sağlar. Bu §2.3 ve §3 aşağısı **Faz 24+/M8 trigger sonrası referans** (M7 iter-1'de YAPILMAZ).
 
-**Seçenek A (önerilen M7 iter-1)**: Mevcut test cluster Prometheus'u central role'de kullan; production cluster prod-only kalır. Cross-cluster query yalnız test cluster Grafana dashboard üzerinden operator tarafından çekilir.
+**Mevcut M7 topology** (ADR-0002 §3.8 authoritative):
+- Prod cluster kube-prometheus-stack = ana observability hub (tek Grafana + Alertmanager + Loki/Tempo)
+- Test cluster kube-prometheus-stack lightweight = remote_write → prod (`prometheus-prod-remote-write-receiver.platform-prod.svc.cluster.local:9090/api/v1/write` placeholder — values-test.yaml PR-NEXT-5 endpoint configuration pending)
+- Cross-cluster query: Grafana dashboard `cluster=test|prod` label filtering ile yapılır (federation **gerekmez**)
 
-**Seçenek B (Faz 24+ aday)**: Ayrı 3. cluster (central) provision. M7 scope'unda **YAPMA** — bu Thanos/Mimir kararıyla beraber alınması gereken karar.
+**Faz 24+/M8 trigger sonrası federation pattern seçenekleri** (M7 iter-1'de aktif EDİLMEZ):
+
+**Seçenek A (Faz 24+ aday)**: Mevcut prod cluster Prometheus'u central role'de pekiştir; ek tenant cluster'lardan `/federate` ile curated metric scrape. ADR-0026 §2.2 Prometheus federation pattern.
+
+**Seçenek B (Faz 24+ aday)**: Thanos sidecar/receiver veya Grafana Mimir cluster provision. ADR-0026 §2.2 karar matrisi.
+
+M7 closure içinde **hiçbir seçenek apply edilmez** — sadece design artifact (bu runbook + ADR + non-applied scaffold).
 
 ## 3. Bounded Federation Setup (Seçenek A — M7 iter-1)
 
@@ -70,33 +81,95 @@ M7 iter-1 için **operator-only** federation. İki seçenek:
 2. **Mandatory labels** — cluster, environment, tenant_source ekli mi
 3. **honor_labels=false** — central labels app-side label'ları override eder
 
-### 3.2 Cardinality budget verify (apply ÖNCESİ)
+### 3.2 Cardinality budget verify (Faz 24+ apply ÖNCESİ — M7 iter-1'de bilgi amaçlı)
 
-Match[] selector'larıyla mevcut Prometheus üzerinde dry-run sorgu:
+> **Codex 019e4ef4 P2 #4 absorb**: pre-count sorgusu scaffold'un exact match[] selector'larıyla eşleşmeli — scaffold'da 6 selector var (notify:dispatch:outcome:.+, notify:intent:terminated:.+, notify:abuse:blocked:.+, notify:kvkk:erasure:.+, up notification-orchestrator, ALERTS|ALERTS_FOR_STATE), bu sorgu da o setleri ayrı ayrı sayar.
+
+Match[] selector'larıyla mevcut Prometheus üzerinde dry-run sorgu (scaffold ile %100 hizalı):
 
 ```bash
-# Federated olacak serileri pre-count
-curl -s "http://localhost:9090/federate?match[]={__name__=~\"notify:.+\"}&match[]={__name__=~\"ALERTS\"}" \
+# Federated olacak serileri pre-count (scaffold match[] selectors exactly)
+SELECTORS=(
+  '{__name__=~"notify:dispatch:outcome:.+"}'
+  '{__name__=~"notify:intent:terminated:.+"}'
+  '{__name__=~"notify:abuse:blocked:.+"}'
+  '{__name__=~"notify:kvkk:erasure:.+"}'
+  '{__name__="up", job=~"notification-orchestrator.+"}'
+  '{__name__=~"ALERTS|ALERTS_FOR_STATE"}'
+)
+QUERY_PARAMS=""
+for sel in "${SELECTORS[@]}"; do
+  ENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$sel'''))")
+  QUERY_PARAMS+="&match[]=$ENC"
+done
+# Pre-relabel scraped sample count (per source cluster)
+curl -s "http://localhost:9090/federate?$(echo "$QUERY_PARAMS" | sed 's/^&//')" \
   | grep -v '^#' | wc -l
 ```
 
-Beklenen: ≤ 5000 satır (M7 budget). Aşıyorsa allowlist'i daralt.
+**Beklenen budgets** (ADR-0026 §6.1 ile %100 hizalı):
+- Recording rules (notify:.+) ≤ **5K** satır (per source cluster)
+- `up{job=~"notification-orchestrator.+"}` + `ALERTS`/`ALERTS_FOR_STATE` ≤ **1K** satır
+- Safety headroom ≤ **4K** (cluster growth + new recording rules)
+- **Total hard cap ≤ 10K** central series; warning threshold 8K (alert)
 
-### 3.3 Apply (operator karar — M7 iter-1'de YAPILMAZ)
+Aşıyorsa allowlist'i daralt (scaffold match[] selector'ları daha spesifik hale getir).
 
-> ❌ **M7 iter-1 scope'unda apply ETMEYIN**. ADR-0026 acceptance criteria: scaffold non-applied + ADR + R16 update + sprint-plan update merge'i yeterli. Apply Faz 24+/M8 trigger sonrası ayrı runbook.
+Post-ingest central series count (Faz 24+ apply sonrası):
 
-Faz 24+ trigger durumunda apply pattern (referans):
+```promql
+# Central federation series toplamı
+sum(scrape_samples_scraped{job=~"central-federate-.*"})
+```
+
+### 3.3 Apply (Faz 24+/M8 trigger sonrası — M7 iter-1'de YAPILMAZ)
+
+> ❌ **M7 iter-1 scope'unda apply ETMEYIN**. ADR-0026 acceptance criteria: scaffold non-applied + ADR + R16 update + sprint-plan update merge'i yeterli. Apply Faz 24+/M8 trigger sonrası ayrı runbook iter-2 ile yapılır.
+
+Faz 24+ trigger durumunda apply pattern (kube-prometheus-stack source-accurate — Codex 019e4ef4 P1 #2 absorb):
+
+**Authoritative pattern**: helm-values üzerinden `additionalScrapeConfigsSecret` reference (declarative; GitOps audit).
 
 ```bash
-# additionalScrapeConfigs ConfigMap'ini güncelle
-kubectl --context k3d-test -n monitoring create configmap prometheus-additional-scrape-config \
-  --from-file=federation.yaml=docs/scaffolds/prometheus-federation-additionalScrapeConfigs.example.yaml \
-  --dry-run=client -o yaml | kubectl apply -f -
+# 1. Scaffold YAML'i kube-prometheus-stack Secret reference pattern'iyle ekle:
+#    helm-values/kube-prometheus-stack/values-prod.yaml içinde
+#    prometheus.prometheusSpec.additionalScrapeConfigsSecret reference ekle
+#    (kube-prometheus-stack chart Secret-based additionalScrapeConfigs pattern)
 
-# Prometheus CR'a referans ekle (helm-values veya direct patch)
-# kube-prometheus-stack Helm Prometheus.additionalScrapeConfigsSecret pattern
+# 2. Secret manifest oluştur (örnek):
+cat <<'EOF' > /tmp/additional-scrape-config.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: prometheus-additional-scrape-config
+  namespace: monitoring
+type: Opaque
+stringData:
+  federation.yaml: |
+    # Insert content from docs/scaffolds/prometheus-federation-additionalScrapeConfigs.example.yaml
+EOF
+kubectl --context k3d-prod -n monitoring apply -f /tmp/additional-scrape-config.yaml
+
+# 3. helm-values'i güncelle (PR aç + merge):
+# helm-values/kube-prometheus-stack/values-prod.yaml içine:
+#   prometheus:
+#     prometheusSpec:
+#       additionalScrapeConfigs:
+#         name: prometheus-additional-scrape-config
+#         key: federation.yaml
+
+# 4. helm upgrade (manual sync per ADR-0002 §3.7):
+helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  -n monitoring -f helm-values/kube-prometheus-stack/values-prod.yaml
+
+# 5. Prometheus operator otomatik reconcile + Prometheus pod'a /-/reload signal
+# 6. Verify:
+kubectl --context k3d-prod -n monitoring get prometheus kube-prometheus-stack-prometheus \
+  -o jsonpath='{.spec.additionalScrapeConfigs}'
+# Beklenen: {"name":"prometheus-additional-scrape-config","key":"federation.yaml"}
 ```
+
+**NOT**: Imperative `kubectl create configmap` veya `kubectl patch prometheus` pattern'leri **reliable değil** — Helm chart Prometheus CR'ı bir sonraki reconcile'da overwrite eder. Authoritative pattern helm-values declarative state.
 
 ## 4. Validation Queries
 
@@ -120,23 +193,56 @@ count({cluster=~"k3d-(test|prod)"})
 ALERTS{cluster=~"k3d-(test|prod)", alertstate="firing"}
 ```
 
-## 5. Kill-Switch + Rollback
+## 5. Kill-Switch + Rollback (Codex 019e4ef4 P1 #2 absorb)
 
-### 5.1 Acil kill-switch (federation devre dışı)
+### 5.1 Authoritative kill-switch (helm-values rollback — declarative)
+
+> **Helm-values rollback = authoritative kill-switch** (GitOps audit trail; reconcile-safe). Imperative `kubectl patch` Prometheus CR pattern kube-prometheus-stack için reliable değil — Helm chart Prometheus CR'ı bir sonraki reconcile'da overwrite eder.
 
 ```bash
-# additionalScrapeConfigs'ten federation job'unu boş bırak
-kubectl --context k3d-test -n monitoring patch configmap prometheus-additional-scrape-config \
-  --type=json -p='[{"op":"replace","path":"/data/federation.yaml","value":"# disabled"}]'
-
-# Prometheus reload (Prometheus operator otomatik reload eder, manuel tetik gerek değil)
+# 1. helm-values/kube-prometheus-stack/values-prod.yaml içinden
+#    prometheus.prometheusSpec.additionalScrapeConfigs entry'sini sil
+# 2. PR aç + merge
+# 3. helm upgrade (manual sync per ADR-0002 §3.7 prod auto-sync MANUAL):
+helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  -n monitoring -f helm-values/kube-prometheus-stack/values-prod.yaml
+# 4. Prometheus operator detect + reconcile + reload Prometheus pod (~30s)
+# 5. Verify:
+kubectl --context k3d-prod -n monitoring get prometheus kube-prometheus-stack-prometheus \
+  -o jsonpath='{.spec.additionalScrapeConfigs}'
+# Beklenen: empty / not present
 ```
 
-### 5.2 Rollback (M7 iter-1 fail durumunda)
+### 5.2 Imperative emergency fallback (outage-only; Helm reconcile drift olabilir)
+
+```bash
+# Prometheus CR actual name doğrula:
+kubectl --context k3d-prod -n monitoring get prometheus -o name
+# Beklenen: prometheus.monitoring.coreos.com/kube-prometheus-stack-prometheus
+
+# additionalScrapeConfigs reference geçici kaldır:
+kubectl --context k3d-prod -n monitoring patch prometheus kube-prometheus-stack-prometheus \
+  --type=json -p='[{"op":"remove","path":"/spec/additionalScrapeConfigs"}]'
+
+# UYARI: bir sonraki ArgoCD/helm sync bu değişikliği overwrite eder.
+# Acil durumda kullanılır; kalıcı kill-switch §5.1 helm-values yolu.
+```
+
+### 5.3 Verification queries (kill-switch sonrası)
+
+```promql
+# Federation series count (0 olmalı kill-switch sonrası)
+sum(scrape_samples_scraped{job=~"central-federate-.*"})
+
+# additionalScrapeConfigs job'ları up mı?
+up{job=~"central-federate-.*"}
+```
+
+### 5.4 Rollback (M7 iter-1 fail durumunda)
 
 Non-applied scaffold senaryosunda rollback YOK — uygulanmamış değişim için geri dönüş gerekmez. ADR-0026 revert PR yeterli.
 
-Faz 24+ aktif deployment fail'inde: scrape config rollback + dashboard rollback + tenant query downgrade ayrı runbook'ta belirtilir (Faz 24+ scope).
+Faz 24+ aktif deployment fail'inde: helm-values rollback (§5.1) + dashboard rollback + tenant query downgrade ayrı runbook iter-2'te belirtilir (Faz 24+ scope).
 
 ## 6. Cardinality Budget Tracking
 
@@ -167,13 +273,15 @@ Per-cluster federation aktive edilirse budget güncellenir. Faz 24+ Thanos/Mimir
 - Per-tenant Grafana dashboard (PR #951 + B.1 PR #289 org_id retrofit)
 - `docs/scaffolds/prometheus-federation-additionalScrapeConfigs.example.yaml` (non-applied scaffold)
 
-## 9. Faz 24+/M8 Trigger Conditions
+## 9. Faz 24+/M8 Trigger Conditions (normalized — Codex 019e4ef4 P3 #7 absorb)
 
 Aşağıdakilerden biri gerçekleşirse Thanos/Mimir karar ADR aday açılır (ADR-0026 §2.2):
 
 - Cluster sayısı > 5
 - Dış tenant self-service observability gerek
-- Retention local Prometheus/Loki/Tempo limit aşımı (>30 gün metric, >7 gün log)
+- Retention local Prometheus/Loki/Tempo limit aşımı: **metric > 30 gün** + **log > 7 gün** + **trace > 7 gün**
 - M8 tenant onboarding plan'ı operator tarafından somut hale gelir
 
-Trigger yokken bu runbook yeterli. M7 closure non-gated.
+> **Note (Codex 019e4ef4 P3 #7)**: retention trigger metric-only değildir; log + trace yükü de operator için karar tetikleyici. ADR-0026 §2.2 + scaffold yaml comment block aynı retention wording'i kullanır.
+
+Trigger yokken bu runbook yeterli. M7 closure non-gated (ADR-0026 §2.1 acceptance criteria).

@@ -291,7 +291,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | T4.3.5 | Spam complaint feedback (FBL endpoint) | backend | 4 | — | dev | 🔴 sub-task pending |
 | T4.3.6 | Per-tenant Grafana dashboard | gitops | 4 | 3 | gitops | 🟢 PR #951 MERGED (this batch — 7 panel skeleton + backend org_id Tag retrofit M8 pre-req) |
 | T4.3.7 | Per-template analytics | backend | 4 | — | dev | 🔴 sub-task pending |
-| T4.3.8 | Federation plan-time design + safe scaffold (M7 iter-1 bounded operator-only; ADR-0026; production federation Faz 24+/M8 — Codex 019e4ee7 AGREE) | gitops | 6 | 2 | gitops | 🟢 design-LIVE 2026-05-22 (ADR-0026 + RB-observability-federation-rollout + R16 budget/rollback; non-applied scaffold; production federation DEFERRED to Faz 24+/M8) |
+| T4.3.8 | Federation plan-time design + safe scaffold (**design artifact only**; M7 iter-1 runtime federation YOK — ADR-0002 §3.8 remote_write zaten centralized; production federation Faz 24+/M8 trigger sonrası — Codex 019e4ee7 plan-time + 019e4ef4 iter-2 absorb) | gitops | 6 | 2 | gitops | 🟢 design-artifact-MERGED 2026-05-22 (ADR-0026 iter-2 + RB-observability-federation-rollout iter-2 + R16 budget/rollback design-managed; non-applied scaffold docs/scaffolds/; production federation runtime DEFERRED to Faz 24+/M8) |
 | T4.3.9 | Codex peer review + merge | docs | 2 | 1.5 | agent | 🟢 |
 
 **Total**: 36h estimate / 14.5h actual + 8h residual (T4.3.5 FBL + T4.3.7 per-template; T4.3.8 design-LIVE 2026-05-22 ADR-0026)
