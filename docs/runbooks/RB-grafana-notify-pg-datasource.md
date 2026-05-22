@@ -173,6 +173,27 @@ curl -s -u admin:<password> http://localhost:3000/api/search?query=notification-
 
 Veya Grafana UI: Dashboard → Top 20 Templates panel → 24h time range default → ≤ 2s response.
 
+### 3.7 Hard Verification Gates (Codex 019e4f10 P2 #5 absorb)
+
+Activation chain her adımı **gate** ile doğrulanır — adım atlanmaz, gate
+geçmeden sonraki adıma geçilmez.
+
+| Gate | Komut | Beklenen | Fail aksiyonu |
+|---|---|---|---|
+| **G1 DB role auth** | `psql "host=postgres user=grafana_notify_ro dbname=notify_db" -c 'SELECT 1'` | `1` döner | Role/password yanlış → §3.1 tekrar |
+| **G2 DB role RO-only** | `psql -U grafana_notify_ro -c "INSERT INTO notify.audit_event_v2(intent_id,event_type,org_id,topic_key) VALUES('x','x','x','x')"` | `ERROR: permission denied` | Yazma yetkisi var → GRANT'ları gözden geçir (§3.1 SELECT-only) |
+| **G3 Vault key present** | `vault kv get -format=json kv/platform/grafana/notify-pg-ro \| jq -e '.data.data.password \| length == 32'` | `true` | Vault seed eksik → §3.2 |
+| **G4 ESO Ready=True** | `kubectl -n monitoring get externalsecret grafana-notify-pg-secret -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'` | `True` | ESO force-sync: `kubectl annotate es grafana-notify-pg-secret force-sync=$(date +%s) --overwrite` |
+| **G5 Secret key non-empty** | `kubectl -n monitoring get secret grafana-notify-pg-secret -o jsonpath='{.data.NOTIFY_PG_RO_PASSWORD}' \| base64 -d \| wc -c` | `32` | Secret boş → ESO data uncomment kontrolü (§3.3) |
+| **G6 Grafana env injected** | `kubectl -n monitoring exec deploy/kube-prometheus-stack-grafana -- sh -c 'test -n "$NOTIFY_PG_RO_PASSWORD" && echo SET'` | `SET` | helm-values envValueFrom eksik → §3.4 + helm upgrade |
+| **G7 Datasource query smoke** | Grafana `/api/datasources/uid/notify_pg_ro/health` (POST) | `{"status":"OK"}` | Connection fail → sslmode/url/credential gözden geçir |
+| **G8 Panel data render** | Grafana UI Top 20 Templates panel 24h window | Satır döner (veya tenant-data-yoksa boş, hata YOK) | `column does not exist` → dashboard SQL drift; `permission denied` → G2 |
+
+**Gate disiplini**: G1-G8 sıralı; her gate geçmeden sonraki adım YAPILMAZ.
+G2 (RO-only negative probe) **zorunlu** — Grafana datasource read-only
+iddiasının DB-level enforce edildiğini kanıtlar (Grafana UI `editable:false`
+tek başına yetmez; mutating query DB role privilege ile bloklanmalı).
+
 ## 4. Query Design (panel SQL — Codex 019e4ee2 query_design absorb)
 
 **Source table**: `notify.audit_event_v2` (mevcut Faz 23 schema; `template_id` zaten column olarak var).
