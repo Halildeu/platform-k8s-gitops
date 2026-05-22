@@ -262,7 +262,7 @@ Evidence-weighted progress snapshot (2026-05-22 — Plan A/B/C + C.5.persona Liv
 | 22.2 IT pilot readiness | ~10% | `acik.local` scope known; EndpointPilot OU/devices/trusted signing/EDR pending (operator-bound) |
 | Faz 22 overall | **~70-75%** ⬆️⬆️⬆️ | Not prod-ready; not password-reset-ready; **BE-014A Functional acceptance VERIFIED LIVE on test deployment** + **C.5.persona Live JWT 6/6 matrix VERIFIED**; next gates: BE-011 agent full lifecycle, BE-016 hash-chain, WEB runtime acceptance, Windows fresh smoke, IT pilot, prod overlay activation |
 
-Cross-AI peer review chain (Plan C + C.5.persona + BE-014A zinciri, 13 thread):
+Cross-AI peer review chain (Plan C + C.5.persona + BE-014A zinciri, 14 thread total — son 019e4f1e bu PR'ın review thread'i):
 - `019e4c3f` — plan-time consult (Hybrid 2-PR strategy AGREE)
 - `019e4c81` — H1 post-impl (REVISE → AGREE; .gitignore restore + ci-image-push 4 guard fix)
 - `019e4c95` — C.4 endpoint-admin digest bump (REVISE → AGREE; structured body absorb)
