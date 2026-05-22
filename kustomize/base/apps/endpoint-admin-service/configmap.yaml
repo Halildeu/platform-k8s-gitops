@@ -31,19 +31,19 @@ data:
   SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "2"
   DB_POOL_MAX: "5"
 
-  # JPA / Flyway — BE-016 follow-up (Codex 019e4fbc plan-time consult).
-  # Flyway now ENABLED so schema evolution is gitops-managed instead of
-  # hand-bootstrapped: V4 effective-state is baselined into the Flyway
-  # history and V5+ migrations become Flyway-applied. application.yml
-  # carries baseline-version=4 so baseline-on-migrate baselines the existing
-  # ddl-auto-built endpoint_admin schema at V4 (one history row: version=4
-  # type=BASELINE) and only applies V5+ going forward; V1-V4 are NOT re-run
-  # against the populated schema.
-  # ddl-auto stays `update` in this adoption rollout — a follow-up PR hardens
-  # it to `validate` once Flyway owns the schema (two-stage: adoption first,
-  # ownership second).
+  # JPA / Flyway — BE-016 (Codex 019e4fbc plan-time consult). Flyway owns
+  # schema evolution: V4 effective-state is baselined into the Flyway history
+  # (application.yml baseline-version=4) and V5+ migrations are Flyway-applied.
+  # baseline-on-migrate baselines an existing ddl-auto-built endpoint_admin
+  # schema at V4 (one history row: version=4 type=BASELINE); V1-V4 are NOT
+  # re-run against a populated schema.
+  # ddl-auto=validate — Hibernate verifies the live schema matches the entity
+  # mappings on startup but never mutates it; Flyway is the sole schema
+  # authority. This is the ownership-hardening stage (was `update` during the
+  # adoption rollout — Codex 019e4fbc two-stage: adoption first, ownership
+  # second).
   SPRING_FLYWAY_ENABLED: "true"
-  SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "validate"
   ENDPOINT_ADMIN_DB_SCHEMA: "endpoint_admin_service"
 
   # Identity / OIDC — test=platform-test realm; prod overlay 'serban'
