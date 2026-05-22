@@ -1,0 +1,140 @@
+# NON-APPLIED reference scaffold — DO NOT wire into kustomize root.
+# Faz 23.8 M7 T4.3.8 — bounded operator-only Prometheus federation example.
+# ADR referansı: docs/adr/0026-observability-federation-phased.md
+# Runbook: docs/runbooks/RB-observability-federation-rollout.md
+# Codex 019e4ee7 plan-time AGREE (Anthropic Claude implementer + OpenAI Codex
+# reviewer per HARD RULE Cross-AI Peer Review provider-different).
+#
+# Apply triggers (Faz 24+/M8 scope — bu scaffold M7 iter-1'de apply EDİLMEZ):
+#   - Cluster sayısı > 5
+#   - Dış tenant self-service observability gerek
+#   - Retention local limit aşımı: metric > 30 gün + log > 7 gün + trace > 7 gün
+#     (Codex 019e4ef4 P3 #7 normalized — metric-only değil, log + trace dahil)
+#   - M8 tenant onboarding plan'ı somut hale gelir
+#
+# Topology authority: ADR-0002 §3.8 (prod = observability hub; test = lightweight
+# scrape agent + remote_write to prod). M7 iter-1'de runtime federation gerek YOK
+# (Codex 019e4ef4 P1 #1 absorb — remote_write zaten centralized).
+#
+# Cardinality budget (Faz 24+ apply sonrası):
+#   - Recording rules (federated): ≤ 5K series (per source cluster)
+#   - up + ALERTS:                 ≤ 1K series
+#   - Safety headroom:             ≤ 4K series
+#   - Total central federation:    ≤ 10K series HARD CAP
+#   - Warning threshold:           8K (alert before reaching cap)
+
+- job_name: 'central-federate-test-cluster'
+  honor_labels: false   # central labels (cluster, environment, tenant_source) win
+  metrics_path: '/federate'
+  params:
+    match[]:
+      # Recording rule allowlist (low cardinality, derived series only)
+      - '{__name__=~"notify:dispatch:outcome:.+"}'
+      - '{__name__=~"notify:intent:terminated:.+"}'
+      - '{__name__=~"notify:abuse:blocked:.+"}'
+      - '{__name__=~"notify:kvkk:erasure:.+"}'
+      - '{__name__="up", job=~"notification-orchestrator.+"}'
+      - '{__name__=~"ALERTS|ALERTS_FOR_STATE"}'
+  static_configs:
+    - targets: ['test-prometheus.platform-test.svc.cluster.local:9090']
+      labels:
+        cluster: 'k3d-test'
+        environment: 'test'
+        tenant_source: 'internal'
+  relabel_configs:
+    # Drop high-cardinality jobs at central ingest
+    - source_labels: [__name__]
+      regex: '(container_|kube_pod_|node_).+'
+      action: drop
+  metric_relabel_configs:
+    # Strip PII / high-cardinality labels if any leak through
+    - regex: '(recipient_hash|message_id|email|mailbox|domain|user_id|session_id)'
+      action: labeldrop
+
+- job_name: 'central-federate-prod-cluster'
+  honor_labels: false
+  metrics_path: '/federate'
+  params:
+    match[]:
+      # SAME allowlist as test cluster — duplicated rather than templated for
+      # readability; if alllowlists drift, audit each cluster's recording rules
+      # explicitly (no implicit equivalence).
+      - '{__name__=~"notify:dispatch:outcome:.+"}'
+      - '{__name__=~"notify:intent:terminated:.+"}'
+      - '{__name__=~"notify:abuse:blocked:.+"}'
+      - '{__name__=~"notify:kvkk:erasure:.+"}'
+      - '{__name__="up", job=~"notification-orchestrator.+"}'
+      - '{__name__=~"ALERTS|ALERTS_FOR_STATE"}'
+  static_configs:
+    - targets: ['prod-prometheus.platform-prod.svc.cluster.local:9090']
+      labels:
+        cluster: 'k3d-prod'
+        environment: 'prod'
+        tenant_source: 'internal'
+  relabel_configs:
+    - source_labels: [__name__]
+      regex: '(container_|kube_pod_|node_).+'
+      action: drop
+  metric_relabel_configs:
+    - regex: '(recipient_hash|message_id|email|mailbox|domain|user_id|session_id)'
+      action: labeldrop
+
+# ============================================================================
+# How to apply (Faz 24+/M8 — NOT M7 scope; Codex 019e4ef4 iter-3 P2 absorb):
+#
+# M7 iter-1: DO NOT APPLY. ADR-0026 §2.1 acceptance criteria: design artifact
+# only; runtime federation Faz 24+/M8 trigger sonrası.
+#
+# Faz 24+/M8 trigger sonrası authoritative apply pattern (kube-prometheus-stack
+# source-accurate — declarative GitOps audit trail):
+#
+# 1. Save scaffold YAML content as a Secret (kube-prometheus-stack
+#    additionalScrapeConfigsSecret pattern):
+#    kubectl -n monitoring create secret generic prometheus-additional-scrape-config \
+#      --from-file=federation.yaml=this-file.yaml \
+#      --dry-run=client -o yaml | kubectl apply -f -
+#
+# 2. helm-values/kube-prometheus-stack/values-prod.yaml içine ekle
+#    (PR aç + merge + GitOps audit):
+#    prometheus:
+#      prometheusSpec:
+#        additionalScrapeConfigs:
+#          name: prometheus-additional-scrape-config
+#          key: federation.yaml
+#
+# 3. helm upgrade (manual sync per ADR-0002 §3.7 prod auto-sync MANUAL):
+#    helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#      -n monitoring -f helm-values/kube-prometheus-stack/values-prod.yaml
+#
+# 4. Prometheus operator auto-reload Prometheus pod (~30s; no manual restart).
+#
+# 5. Verify (Grafana Explore or PromQL):
+#    count({cluster=~"k3d-(test|prod)"})
+#    notify:dispatch:outcome:5m{cluster="k3d-test"}
+#
+# 6. Cardinality regression check (budget ≤ 10K hard cap; ≤ 8K warning):
+#    sum(scrape_samples_scraped{job=~"central-federate-.*"})
+#
+# Kill-switch (Codex 019e4ef4 P1 #2 + iter-3 P2 absorb): **helm-values rollback
+# authoritative** — declarative; GitOps audit; Helm reconcile-safe.
+#
+#   1. helm-values/kube-prometheus-stack/values-prod.yaml içinden
+#      prometheus.prometheusSpec.additionalScrapeConfigs entry'sini sil
+#   2. PR aç + merge
+#   3. helm upgrade (Prometheus operator otomatik reconcile + reload)
+#   4. Verify: kubectl get prometheus -o jsonpath='{.spec.additionalScrapeConfigs}'
+#      Beklenen: empty / not present
+#
+# Imperative emergency fallback (outage-only; Helm reconcile drift olabilir):
+#   kubectl --context k3d-prod -n monitoring patch \
+#     prometheus kube-prometheus-stack-prometheus \
+#     --type=json -p='[{"op":"remove","path":"/spec/additionalScrapeConfigs"}]'
+#   UYARI: bir sonraki ArgoCD/helm sync bu değişikliği overwrite eder.
+#
+# **DO NOT** use ConfigMap patch as kill-switch — kube-prometheus-stack
+# Secret-based pattern kullanır; ConfigMap patch yanlış object'i hedefler ve
+# Helm reconcile'da overwrite olur. Authoritative kill-switch helm-values
+# rollback (yukarıdaki adımlar).
+#
+# Bkz. docs/runbooks/RB-observability-federation-rollout.md §3.3 + §5.
+# ============================================================================
