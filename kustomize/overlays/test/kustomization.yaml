@@ -302,9 +302,12 @@ images:
     # servisi imperative `kubectl set image` ile roll etti — api-gateway
     # live pod imageID sha256:6137bb2c... = sha-dd6b1ea (platform-backend
     # main dd6b1eab ci-image-push build'i, GHCR imagetools-verified).
-    # Overlay desired stale kaldı. Bu bump desired-state'i live'a hizalar
-    # (#821-pattern); cluster mutasyonu YOK — live zaten 6137bb2c. D30
-    # imageID match kapanır. Route fail-closed 401 değişmeden korunur.
+    # Imperative set-image path ADR-0023 altında drift KAYNAĞIDIR, hedef
+    # steady-state değil; overlay desired stale kaldı. Bu PR desired-state'i
+    # live'a reconcile eder (#821/#827 catch-up pattern); cluster mutasyonu
+    # YOK — live zaten 6137bb2c. D30 imageID parity merge sonrası live pod
+    # imageID == desired check'i ile EVIDENCE'lanır (bare "closed" değil).
+    # Route fail-closed 401 değişmeden korunur.
     digest: sha256:6137bb2cb39994aed3999958ac9b3b009c28565e5a80c467728dd368e5822003
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
