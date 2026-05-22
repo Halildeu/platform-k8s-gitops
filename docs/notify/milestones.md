@@ -91,6 +91,8 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 
 > **Sub-Faz 23.3.2 routing/multipart closure 2026-05-20 (Session 47, Codex `019e4514` 11 iter)**: Multipart + context routing decision logic + actual_channel audit (VF accepted path) chain MERGED + test cluster LIVE. Backend chain PR #262/#263/#264/#265/#266/#267 + GitOps PR #903/#905/#908 (sha-6ed593e). 3-senaryo canary smoke: VFO routing-log proof (Scenario A) + VF default delivered (Scenario B) + VF explicit fallback overlength delivered (Scenario C) — Codex P2+P3 absorb. Real-world: kullanıcı +905551815564 multipart SMS DELIVERED (B: 1 seg, C: 2 segments). **VFO provider acceptance PENDING R24**: JetSMS Biotekno sender ID OTP allowlist provisioning gap (ErrorCode=04 reject); routing logic LIVE, provider config gap. Evidence: [docs/faz-23-evidence/2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md](../faz-23-evidence/2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md).
 
+> **Status revision 2026-05-23 (kullanıcı kararı — R1 NetGSM secondary DEFER)**: NetGSM secondary provider sözleşmesi **kısa vadede yapılmayacak**. R1 🟡 Active → **⏳ DEFER** (risk-register güncel; severity Medium→Low). JetSMS-only degraded mode = M4'ün **kabul edilen kalıcı işletim durumu** (JetSMS canlı sözleşme + HTTP API + DLR LIVE prod sha-6307428). NetGSM secondary failover acceptance kriteri sözleşme imzalanana kadar ertelendi — **M4 closure blocker DEĞİL**. `NetGsmProvider` + `SmsAdapter` failover facade + Vault/ESO NetGSM altyapısı **asset-preserved dormant** (R23/ADR-0024 "deferred but asset-preserved" pattern; kaldırılmaz/revert edilmez). Reactivation: sözleşme imzalanırsa Vault NetGSM keys seed → ConfigMap secondary enable → digest bump → failover acceptance test.
+
 **Definition of Done**:
 - [x] PR-1 `SmsProvider` interface + `SmsAdapter` facade + `NetGsmProvider` refactor (behavior-neutral) — platform-backend [#249](https://github.com/Halildeu/platform-backend/pull/249) MERGED
 - [x] PR-2 `JetSmsProvider` HTTP API + failover matrix LIVE — platform-backend [#250](https://github.com/Halildeu/platform-backend/pull/250) MERGED
@@ -124,10 +126,10 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
   - [ ] A.5 DLR terminal state evidence — **ext-gated** (A.4 functional canary sonrası natural; pipeline LIVE scheduling=true)
   - [x] A.6 rollback plan documented (evidence doc §7 + release-candidates ledger `rollback_to_digest: sha-70491543`)
 - [x] **Charter 23.3 marker → 🟢 source-ready + acceptance candidate** (this PR-B5 #918) — qualified green: prod pod LIVE + source/desired-state hazır + ext residual acceptance bekliyor (NOT full closure; 23.2 PR-time pattern ile analog)
-- [ ] Risk register: R1 — NetGSM secondary failover acceptance closed (JetSMS-primary live ayrı hüküm; R1 ETA 2026-05-30) — **ext-gated**
+- [~] Risk register: R1 — NetGSM secondary failover acceptance **⏳ DEFERRED** (kullanıcı kararı 2026-05-23: sözleşme kısa vadede yapılmayacak; JetSMS-only degraded mode = kabul edilen işletim durumu; NetGsmProvider + Vault/ESO asset-preserved). **M4 closure blocker DEĞİL** — sözleşme imzalanırsa reactivation.
 
-**Blockers**: R1 (NetGSM secondary contract delay — failover acceptance blocker; JetSMS primary activation blocker DEĞİL — JetSMS-only degraded mode acceptable per kullanıcı 2026-05-19); prod canary smoke ext-gated (real user M365 SSO UI flow); R24 ext (Biotekno OTP allowlist provisioning)
-**Owner**: ops + dev + legal (NetGSM secondary contract); gitops/ops (prod cutover gates)
+**Blockers**: R1 ⏳ DEFER (NetGSM secondary contract kısa vadede yapılmayacak — kullanıcı kararı 2026-05-23; **M4 blocker DEĞİL**, JetSMS-only degraded mode kabul edilen kalıcı işletim durumu); prod canary smoke ext-gated (real user M365 SSO UI flow); R24 ext (Biotekno OTP allowlist provisioning)
+**Owner**: gitops/ops (prod cutover gates); R1 NetGSM ⏳ DEFER (sözleşme imzalanırsa reactivation — asset-preserved)
 **Dependencies**: M3 (23.2 stable)
 
 ### M5 — 23.5 Preference UI (🟢 source-ready + acceptance candidate — Session 47 audit 2026-05-21)
