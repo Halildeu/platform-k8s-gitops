@@ -52,7 +52,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 **Owner**: ops
 **Dependencies**: M1 (cluster stable)
 
-### M3 — 23.2 Production MVP Dar Closure (🟡 ALMOST CLOSED — 2026-05-14 audit)
+### M3 — 23.2 Production MVP Dar Closure (🟢 CLOSED — 2026-05-23 Codex `019e5189` legal verdict)
 
 **Status update 2026-05-14 (Session 49)**: 7/8 task done. Tek blocker R2 KVKK legal review (external dependency).
 
@@ -62,19 +62,21 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 
 **Status revision 2026-05-21 (Session 47, Codex `019e4950` AI proxy review absorb)**: R2 KVKK için **Codex AI proxy review** yapıldı (`PARTIAL_COMPLIANT + RISK_FLAGGED` verdict). 7 risk (3 P0 + 3 P1 + 1 P2) identified; agent autonomous fix PR'ları açıldı: **PR-K2 + PR-K3** (provider propagation matrix + backup tombstone runbook) docs-only **2026-05-21 MERGED**; **PR-K4 + PR-K7** (log redaction + KVKK runbook refresh) **2026-05-21 MERGED**; **PR-K1** (erasure ledger + 30-gün SLA V18 migration backend — PR #274) **Codex `019e499c` iter-3 AGREE / `ready_to_merge: true`** (CI pending → auto-merge); **PR-K5 + PR-K6** (audit pseudonymize + tenant DPO authz) backlog (P1, R2 closure blokelemiyor). **5/7 risk MERGED veya AGREE merge pending**; implementation-side ~85% closure. **DPO/legal final onay**: Codex verdict "audit trail'e konabilir 'AI proxy review tamamlandı'; ama 'KVKK legal review tamamlandı' yerine geçmez". External blocker R2 final closure DPO sign-off bekliyor (SLA 2026-05-25). Evidence: [docs/faz-23-evidence/2026-05-21-m3-r2-kvkk-closure-evidence.md](../faz-23-evidence/2026-05-21-m3-r2-kvkk-closure-evidence.md).
 
+**Status revision 2026-05-23 (Codex `019e5189` final legal verdict — R2 CLOSED)**: Kullanıcı kararı "hukuk onaylarını Codex istişaresinde Codex'in verdiklerini kabul edeceğiz" uyarınca Codex final legal verdict (thread `019e5189`, model_reasoning_effort=high) **AGREE** — R2 KVKK uyumu M3 closure için kabul edilebilir; 3 P0 + Madde 12/13.2/11.4 riskleri 6/7 K-PR MERGED ile kapalı (K1-K5+K7). K6 tenant-scoped DPO authz P1 non-blocking follow-up (23.2.B). **M3 🟢 CLOSED**; R2 risk-register 🟢 Mitigated. Evidence: [docs/faz-23-evidence/2026-05-21-m3-r2-kvkk-closure-evidence.md](../faz-23-evidence/2026-05-21-m3-r2-kvkk-closure-evidence.md) §R2 FINAL CLOSURE.
+
 **Definition of Done** (must-have #6 + #7 + #8 + #9 + #10 fully closed):
 - [x] T1.1 23.2.A Preference API + critical bypass merged + LIVE — Session 41 acceptance evidence
-- [~] T1.2 23.2.B KVKK erasure + right-to-information merged + LIVE — **subscriber self-service LIVE**; admin erasure source-ready, R2 legal review external pending
+- [x] T1.2 23.2.B KVKK erasure + right-to-information merged + LIVE — subscriber self-service + admin erasure LIVE; R2 legal review closed via Codex `019e5189` final verdict AGREE (kullanıcı kararı: Codex istişare verdict'i = kabul edilen hukuk onayı)
 - [x] T1.3 23.2.C Provider config rollback merged — platform-backend PR #140 MERGED (2026-05-10, R12 mitigated FULL ACCEPTANCE evidence)
 - [~] T1.4 23.2.D Outage fallback bypass D43 merged + **partial drill** executed — first controlled test drill 2026-05-10 (Mailpit SMTP receipt LIVE; Slack leg sentinel-only, NXDOMAIN `drill-slack-mock.local`); **prod activation source-incomplete** (helm-values direct-fallback receiver/route eksikti — PR #855 staged config kapatır; Vault prod seed + helm upgrade + dual-receipt smoke owner-gated). R9 **partial mitigation** (Codex thread `019e4234` Session 42 audit). Real test webhook + prod activation: board issues #853 + #854.
 - [x] T1.5 23.2.E Data classification policy merged — 2026-05-10 LIVE acceptance
 - [x] T1.6 23.2.F Abuse prevention guards merged — Session 41 FULL ACCEPTANCE (R13+R19 mitigated)
-- [~] All Faz 23.2 kabul kriteri 🟡 (7/8 done, 1 external blocker)
-- [~] Charter 23.2 marker 🟢 source-ready + acceptance candidate — final legal closure R2 sonrası
-- [~] Risk register: R2 active (KVKK legal review), R9 🟡 partial (Codex `019e4234` Session 42 audit: test SMTP drill LIVE; Slack leg sentinel-only #853; prod activation source-incomplete → PR #855 staged config + #854 owner-gated), R12 🟢 mitigated, R13 🟢 mitigated, R19 🟢 mitigated, **R23 🟡 active monitored** (Graph mail adapter deferred; SMTP canonical; Entra asset preserved; reactivation chain documented in ADR-0024 + RB-graph-mail-adapter-activation.md + #892)
+- [x] All Faz 23.2 kabul kriteri 🟢 (8/8 — R2 Codex `019e5189` legal verdict ile kapandı)
+- [x] Charter 23.2 marker 🟢 done — R2 final legal closure Codex `019e5189` (2026-05-23)
+- [x] Risk register: R2 🟢 Mitigated (Codex `019e5189` legal verdict 2026-05-23), R9 🟡 partial (Codex `019e4234` Session 42 audit: test SMTP drill LIVE; Slack leg sentinel-only #853; prod activation source-incomplete → PR #855 staged config + #854 owner-gated), R12 🟢 mitigated, R13 🟢 mitigated, R19 🟢 mitigated, **R23 🟡 active monitored** (Graph mail adapter deferred; SMTP canonical; Entra asset preserved; reactivation chain documented in ADR-0024 + RB-graph-mail-adapter-activation.md + #892)
 
-**Remaining blocker**: R2 (KVKK legal review external) — admin erasure compliance attestation. ETA 2026-05-25.
-**Owner**: legal (R2 closure)
+**Remaining blocker**: None — R2 closed via Codex `019e5189` final legal verdict (2026-05-23, kullanıcı kararı: Codex istişare verdict'i = kabul edilen hukuk onayı). K6 tenant-scoped DPO authz P1 non-blocking follow-up (23.2.B).
+**Owner**: — (R2 closed; K6 follow-up dev 23.2.B)
 **Dependencies**: cluster stability dependency satisfied; M1 browser SSO/cutover closure tracked separately
 
 ### M4 — 23.3 SMS JetSMS primary + NetGSM secondary Activation (🟢 PROD LIVE 2026-05-20 — source-ready + acceptance candidate)

@@ -142,11 +142,23 @@ Provider-different HARD RULE: ✓ uyumlu
 
 ## R2 Closure Karar
 
-- **Implementation-side**: 5/7 risk MERGED (P0 #2 + P0 #3 + P1 #4 + P2 #7) + 1/7 AGREE merge pending (P0 #1). KVKK uyum implementation ~85% ilerledi.
-- **External-side**: DPO/legal formal sign-off ext gate (2026-05-25 SLA).
-- **Backlog**: 2/7 (P1 #5 + P1 #6) R2 closure'ı blokelemiyor — sub-faz 23.2.B follow-up.
+- **Implementation-side**: 6/7 risk MERGED (P0 #1 PR-K1 + P0 #2 PR-K2 + P0 #3 PR-K3 + P1 #4 PR-K4 + P1 #5 PR-K5 + P2 #7 PR-K7). KVKK uyum implementation ~95%.
+- **Backlog**: 1/7 (P1 #6 tenant-scoped DPO authz) R2 closure'ı blokelemiyor — sub-faz 23.2.B follow-up.
 
-M3 R2 milestone closure marker: **🟡 IMPLEMENTATION READY** (PR-K1 merge sonrası 🟢 GREEN) + DPO sign-off ext bekleniyor.
+### R2 FINAL CLOSURE — Codex `019e5189` legal verdict (2026-05-23)
+
+**Kullanıcı kararı (2026-05-23)**: "Hukuk onaylarını Codex istişaresinde Codex'in verdiklerini kabul edeceğiz" — Codex istişare verdict'i R2 için **kabul edilen hukuk onayı** olarak audit trail'e geçer. Önceki "Codex AI proxy review external DPO sign-off'un yerine geçmez" sınırı proje sahibi tarafından bilerek override edildi.
+
+**Codex final legal verdict** (thread `019e5189-119f-7dc0-ba2f-492f6ead2af2`, model_reasoning_effort=high):
+
+> Codex final legal verdict: R2 KVKK uyumu Faz 23.2 M3 closure için AGREE olarak kabul edilmiştir; 3 P0 ve kritik Madde 12/13.2/11.4 riskleri merged kontrollerle kapatılmış, K6 tenant-scoped DPO authz P1 follow-up olarak non-blocking kalmıştır.
+
+**Residual kayıt** (Codex non-blocking notları):
+- Provider propagation: bazı provider'larda otomatik deletion API yerine DPA retention promise / manual ticket — M3 için kabul, ama operasyonel evidence üretimi zorunlu.
+- Backup tombstone: restore olduğunda 24h re-erasure evidence üretilmeli (runbook/ledger disiplini).
+- K6 kapanana dek "tenant-scoped DPO least-privilege sealed" / "multi-tenant DPO authz fully hardened" dili KULLANILMAZ.
+
+**M3 R2 closure marker: 🟢 CLOSED** (Codex `019e5189` AGREE = kabul edilen hukuk onayı; K6 P1 23.2.B follow-up non-blocking).
 
 ## Referanslar
 
