@@ -262,7 +262,7 @@ data:
         },
         {
           "datasource": {"type": "postgres", "uid": "notify_pg_ro"},
-          "description": "Top 20 templates by send volume + success rate — PG aggregate read (notify.audit_event_v2). Tenant-scoped query (org_id=$tenant); default 24h window; LIMIT 20. Datasource activation operator-bound (see RB-grafana-notify-pg-datasource.md §3). Faz 23.8 M7 T4.3.7 (Codex 019e4ee2 PR-1).",
+          "description": "**OPERATOR-ONLY BREAK-GLASS — NOT TENANT-FACING.** Top 20 templates by send volume + success rate. PG aggregate read (notify.audit_event_v2 + notification_delivery JOIN terminal truth). Tenant variable filter `${tenant:sqlstring}` Grafana SQL escape; **NOT a security boundary** (M8 acceptance gates required for tenant-facing — see ADR-0026 §4 + RB-grafana-notify-pg-datasource.md §6). Operator activation chain: DB RO role + Vault seed + ESO + Grafana env (see RB §3). LIMIT 20; default dashboard window 24h. Faz 23.8 M7 T4.3.7 (Codex 019e4ee2 plan-time + 019e4f10 iter-2 P1 absorb).",
           "fieldConfig": {
             "defaults": {
               "color": {"mode": "thresholds"},
@@ -304,7 +304,7 @@ data:
               "editorMode": "code",
               "format": "table",
               "rawQuery": true,
-              "rawSql": "SELECT\n  COALESCE(template_id, details->>'template_id', topic_key) AS template_key,\n  COUNT(DISTINCT delivery_id) AS total_count,\n  COUNT(DISTINCT delivery_id) FILTER (\n    WHERE event_type IN ('DELIVERY_SUCCEEDED', 'DELIVERED')\n  ) AS success_count,\n  (COUNT(DISTINCT delivery_id) FILTER (\n    WHERE event_type IN ('DELIVERY_SUCCEEDED', 'DELIVERED')\n  )::numeric / NULLIF(COUNT(DISTINCT delivery_id), 0) * 100)::numeric(5,2) AS success_rate_pct\nFROM notify.audit_event_v2\nWHERE\n  org_id = '$tenant'\n  AND occurred_at BETWEEN $__timeFrom() AND $__timeTo()\n  AND template_id IS NOT NULL\nGROUP BY template_key\nORDER BY total_count DESC\nLIMIT 20;",
+              "rawSql": "-- Codex 019e4f10 P1 #3 + #4 absorb (iter-2):\n-- (a) WHERE template_id IS NOT NULL kaldırıldı → COALESCE fallback reachable\n-- (b) Success rate JOIN notification_delivery (terminal truth nd.status)\n--     audit_event_v2 event_type DLR async flow için terminal değil\n-- (c) Tenant variable Grafana SQL safe escape ${tenant:sqlstring}\n--     (manual single-quote YASAK; SQL injection risk)\nSELECT\n  COALESCE(ae.template_id, ae.details->>'template_id', ae.topic_key) AS template_key,\n  COUNT(DISTINCT ae.delivery_id) AS total_count,\n  COUNT(DISTINCT nd.delivery_id) FILTER (\n    WHERE nd.status = 'DELIVERED'\n  ) AS success_count,\n  (COUNT(DISTINCT nd.delivery_id) FILTER (\n    WHERE nd.status = 'DELIVERED'\n  )::numeric / NULLIF(COUNT(DISTINCT ae.delivery_id), 0) * 100)::numeric(5,2) AS success_rate_pct\nFROM notify.audit_event_v2 ae\nLEFT JOIN notify.notification_delivery nd\n  ON nd.delivery_id = ae.delivery_id\nWHERE\n  ae.org_id = ${tenant:sqlstring}\n  AND ae.occurred_at BETWEEN $__timeFrom() AND $__timeTo()\n  AND COALESCE(ae.template_id, ae.details->>'template_id', ae.topic_key) IS NOT NULL\nGROUP BY template_key\nORDER BY total_count DESC\nLIMIT 20;",
               "refId": "A"
             }
           ],

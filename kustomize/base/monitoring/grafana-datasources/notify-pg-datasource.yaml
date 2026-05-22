@@ -66,14 +66,19 @@ data:
           # Operator activation chain completion gerek (Vault seed + ESO).
           password: ${NOTIFY_PG_RO_PASSWORD}
         jsonData:
-          # PG connection settings (Grafana datasource backend)
-          sslmode: require
+          # PG connection settings (Grafana datasource backend) — Codex 019e4f10
+          # P1 #1 absorb: platform PG plaintext (host-compose docker-compose.yml
+          # + kustomize/base/apps/etl-worker configmap REPORTS_DB_SSLMODE unset
+          # + notification-orchestrator jdbc URL no sslmode). ADR-0001
+          # intra-cluster service traffic plaintext for MVP. sslmode=disable
+          # mevcut PG topology ile uyumlu; sslmode=require activation sırasında
+          # SSL handshake fail verirdi. TLS-on PG Faz 24+ scope (R8 trigger).
+          sslmode: disable
           maxOpenConns: 5
           maxIdleConns: 2
           connMaxLifetime: 14400
           postgresVersion: 1500
           timescaledb: false
-          # Query hardening — RO datasource ek savunma katmanı
-          # (DB role privilege zaten SELECT-only; bu Grafana-side enforcement)
-          # Grafana 10+ supports query timeout via dashboard variable; bu env
-          # default value pattern Faz 24+ M8 acceptance criteria genişletilecek.
+          # Grafana 10+ datasource jsonData supports timeout field
+          # (PostgreSQL plugin connection-level query timeout, seconds)
+          timeout: 2
