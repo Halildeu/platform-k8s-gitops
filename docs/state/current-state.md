@@ -2108,13 +2108,13 @@ Bu bölüm, aşağıdaki tarihsel "22.1.1 milestone reframe" notunun operasyonel
 | Secret delivery | `endpoint-admin-service-secrets` ExternalSecret `SecretSynced=True` | ESO yüzeyi çalışıyor |
 | Functional-basic | `/actuator/health` -> `{"status":"UP","groups":["liveness","readiness"]}` | Spring health yüzeyi ayakta |
 | Fail-closed-basic | No-JWT `GET /api/v1/admin/endpoint-devices` -> `401` | JWT yokken admin yüzeyi kapalı |
-| Secured / Zanzibar-ready | Persona allow/deny, OpenFGA tuple verify, audit insert bu turda koşulmadı | Full D29-EA Secured pending |
+| Secured / Zanzibar-ready | **VERIFIED LIVE 2026-05-22** post-#961 (ConfigMap fix `a29fd55f`): synthetic OpenFGA 5/5 (#959) + Live JWT persona 6/6 matrix (admin allow GET/POST, viewer can_view allow, viewer can_manage DENY 403, no-token 401, invalid 401) + DB audit row (`endpoint_enrollments` PENDING id=`4e863eaa-...` + `endpoint_audit_events` action=CREATE_ENROLLMENT) + OpenFGA pod authz log deny path observable | D35-EA audit variants smoke; BE-011 agent live integration; BE-014 tamper/offline audit event model |
 
 #### Source / repo truth
 
 | Repo | Güncel durum | Not |
 |---|---|---|
-| `platform-backend` | **Plan C H1+H2 MERGED canonical main 2026-05-22**: `origin/main` artık `endpoint-admin-service/` tree taşıyor + api-gateway integration (routes + permitAll + GatewaySecurityTest RouteRegistrar refactor). H1 PR #288 mergeCommit `8e2589c1` (2026-05-21T22:01:59Z); H2 PR #291 mergeCommit `161296cf` (2026-05-21T22:37:55Z). Final main D30 immutable images: endpoint-admin `sha256:b2250b7a274ec8...` + api-gateway `sha256:84500b5ebe162b...`. | Live route resolution + D29-EA Secured + BE-011 ayrı kapı. |
+| `platform-backend` | **Plan C H1+H2 MERGED canonical main 2026-05-22**: `origin/main` artık `endpoint-admin-service/` tree taşıyor + api-gateway integration (routes + permitAll + GatewaySecurityTest RouteRegistrar refactor). H1 PR #288 mergeCommit `8e2589c1` (2026-05-21T22:01:59Z); H2 PR #291 mergeCommit `161296cf` (2026-05-21T22:37:55Z). Final main D30 immutable images: endpoint-admin `sha256:b2250b7a274ec8...` + api-gateway `sha256:84500b5ebe162b...`. **C.5.persona Live JWT 6/6 matrix VERIFIED LIVE** (#961 ConfigMap fix `a29fd55f`) + DB audit row evidence. | BE-011 agent live integration + D35-EA audit variants smoke + Windows fresh smoke ayrı kapı. |
 | `platform-k8s-gitops` | Test overlay endpoint-admin base'i ve digest pin'i taşıyor; `services.yaml` `test: enabled`, `prod: deferred`. | Prod aktivasyon 22.2+ kapsam. |
 | `platform-web` | `origin/main` altında `apps/mfe-endpoint-admin` source dosyaları mevcut (`26` dosya). | Runtime route/flag acceptance backend main + Secured gate sonrası. |
 | `platform-agent` | `origin/main` Go agent scaffold + CI/release hardening foundation taşıyor (`#1..#5`). CI run `26030514275` success; lab-only signing artifact indirildi (`SIGNING-EVIDENCE.md`, `signtool-verify.log`). Fresh temp worktree check: `./scripts/test/local.sh`, `./scripts/build/local.sh`, `./scripts/build/windows-package.sh` PASS. `docs/TRACKING-ROADMAP.md` Windows service, installer, local-user read-only ve tamper protection MVP icin Parallels Windows 11 historical evidence satırları taşıyor. | Bugün Windows canlı smoke tekrar koşulmadı; Parallels `Windows 11` VM stopped. IT pilot için trusted signing, EDR/allowlist, EndpointPilot OU ve backend live integration pending. |
@@ -2126,30 +2126,31 @@ Bu yüzdeler teslim taahhüdü değil, kanıt-ağırlıklı takip göstergesidir
 
 | Milestone | Yüzde | Kanıt | Açık kapı |
 |---|---:|---|---|
-| 22.0 Governance / repo split | ~95% ⬆️ | ADR-0012-EA aktif, 4-repo yerleşimi yazılı, #924 truth-refresh PR #944 MERGED + closed Done | Plan A/B/C zincir sonrası küçük docs update (devam ediyor — bu PR) |
-| 22.1 GitOps test runtime | ~65% ⬆️ | Test Deployment `1/1`, digest desired/live hizalı, health UP, no-JWT 401. C.4 endpoint-admin digest `sha256:b2250b7a274ec8` LIVE + H2 api-gateway digest `sha256:84500b5ebe162b` LIVE | Full D29-EA Secured persona allow/deny + OpenFGA tuple + audit insert; live route resolution verify |
-| 22.1 Agent lab foundation | ~75% ⬆️ | platform-agent `origin/main` CI success, lab signing artifact, **PR #7 AG-013 capability fix MERGED + #6 Done** (false advertising kapatıldı; verification pending fresh Windows smoke #8), local test/build/windows-package PASS, historical Parallels service/installer/tamper evidence | Fresh Windows smoke (#8 Backlog), backend live enrollment/heartbeat integration, trusted signing |
-| 22.1 Backend canonicalization | ~85% ⬆️ | **H1 source PR #288 MERGED 2026-05-21T22:01:59Z mergeCommit `8e2589c1`** (endpoint-admin-service tree + pom + Dockerfile + workflows). **H2 source PR #291 MERGED 2026-05-21T22:37:55Z mergeCommit `161296cf`** (api-gateway routes + permitAll + GatewaySecurityTest RouteRegistrar sustaining refactor). Final main D30 immutable images produced (endpoint-admin + api-gateway). C.4 + H2 gitops overlay digest bumps MERGED. Cross-AI chain: Codex 019e4c3f → 019e4c81 → 019e4c95 → 019e4caa → 019e4cb6. | Live route resolution verify; D29-EA Secured smoke (C.5); BE-011 agent live integration |
+| 22.0 Governance / repo split | ~95% ⬆️ | ADR-0012-EA aktif, 4-repo yerleşimi yazılı, #924 truth-refresh PR #944 MERGED + closed Done | C.5.persona acceptance docs sweep (bu PR) |
+| 22.1 GitOps test runtime | ~85% ⬆️⬆️ | Test Deployment `1/1`, digest desired/live hizalı, health UP, no-JWT 401. C.4 endpoint-admin digest `sha256:b2250b7a274ec8` LIVE + H2 api-gateway digest `sha256:84500b5ebe162b` LIVE + **#961 ConfigMap fix MERGED mergeCommit `a29fd55f`**: SPRING_PROFILES_ACTIVE=k8s + endpoint-admin gateway routes 22/23/24. **6/6 C.5.persona live JWT matrix VERIFIED LIVE** (admin GET/POST 200 allow + viewer GET 200 inheritance + viewer POST 403 DENY + no-token 401 + invalid 401) + DB audit row + OpenFGA pod authz log evidence. | Live route resolution post-rollout verify (kompozisyon); BE-011 agent live integration |
+| 22.1 Agent lab foundation | ~75% | platform-agent `origin/main` CI success, lab signing artifact, **PR #7 AG-013 capability fix MERGED + #6 Done** (false advertising kapatıldı; verification pending fresh Windows smoke #8), local test/build/windows-package PASS, historical Parallels service/installer/tamper evidence | Fresh Windows smoke (#8 Backlog), backend live enrollment/heartbeat integration, trusted signing |
+| 22.1 Backend canonicalization | ~92% ⬆️⬆️ | **H1 source PR #288 MERGED 2026-05-21T22:01:59Z mergeCommit `8e2589c1`** + **H2 source PR #291 MERGED 2026-05-21T22:37:55Z mergeCommit `161296cf`**. Final main D30 immutable images. C.4 + H2 gitops overlay digest bumps MERGED. **#961 ConfigMap fix MERGED mergeCommit `a29fd55f`**: SPRING_PROFILES_ACTIVE=k8s (JWT JWKS binding fix) + endpoint-admin gateway route table fix (22/23/24). **C.5.persona LIVE JWT 6/6 matrix VERIFIED** + DB audit row (`endpoint_enrollments` id=`4e863eaa-...` PENDING + `endpoint_audit_events` action=`CREATE_ENROLLMENT`). Cross-AI chain: Codex 019e4c3f → 019e4c81 → 019e4c95 → 019e4caa → 019e4cb6 → 019e4cc2 → 019e4e8d (strategic Q1=A) → 019e4eaa (PR #961 AGREE+ready_to_merge). | BE-011 agent live integration; D35-EA Secured tam smoke (audit verify variants) |
 | 22.1 Web source surface | ~35% | `platform-web/origin/main` altında `apps/mfe-endpoint-admin` 26 source dosyası var; H2 gateway routes now live → runtime route enablement açık | Runtime route/flag enable backend canonical main + Secured + browser smoke kapısı |
 | 22.2 IT pilot readiness | ~10% | İlk kapsam `acik.local`; BOREAS/CESS dışarıda | EndpointPilot OU, 1-3 IT-owned cihaz, EDR allowlist, Azure Trusted Signing |
-| **Faz 22 toplam** | **~55-60%** ⬆️ | Plan A/B/C zincir 6 PR MERGED autonomous + cross-AI peer review chain absorbed; backend canonical main reconciliation MERGED; image + GitOps overlay LIVE | D29-EA Secured smoke + live route resolution + BE-011 agent live + WEB runtime acceptance + IT pilot |
+| **Faz 22 toplam** | **~65-70%** ⬆️⬆️ | Plan A/B/C zincir 6 PR MERGED + #961 ConfigMap C.5.persona fix MERGED autonomous + cross-AI peer review chain (8 Codex threads) absorbed; backend canonical main reconciliation MERGED; **C.5.persona Live JWT 6/6 matrix VERIFIED LIVE + DB audit row**; image + GitOps overlay LIVE | BE-011 agent live integration + WEB runtime acceptance + Windows fresh smoke + IT pilot |
 
-#### Güncel Faz 22 kalan iş sırası (2026-05-22 Plan A/B/C zincir MERGED sonrası)
+#### Güncel Faz 22 kalan iş sırası (2026-05-22 C.5.persona Live VERIFIED sonrası)
 
 1. ~~`platform-backend` current `origin/main` üzerine endpoint-admin side branch reconciliation/cherry-pick PR.~~ **DONE 2026-05-22**: H1 PR #288 MERGED + H2 PR #291 MERGED.
 2. ~~Backend CI + immutable image rebuild; GitOps test digest bump gerekiyorsa digest update.~~ **DONE 2026-05-22**: final main images produced + GitOps overlay digest pins MERGED (gitops #956 + #957).
-3. Full D29-EA Secured smoke: admin allow, viewer deny, unauth deny, OpenFGA tuple check, audit insert.
+3. ~~Full D29-EA Secured smoke: admin allow, viewer deny, unauth deny, OpenFGA tuple check, audit insert.~~ **DONE 2026-05-22**: Synthetic 5/5 (#959 Done) + Live JWT 6/6 (#960/#961 MERGED `a29fd55f`) — admin allow GET/POST, viewer can_view allow, viewer can_manage DENY 403, unauth 401, invalid 401 + DB `endpoint_enrollments` PENDING row + `endpoint_audit_events` `CREATE_ENROLLMENT` row + OpenFGA pod authz log deny path observable.
 4. BE-013 maintenance token live gate: issue, validate, revoke, expire, audit.
 5. Agent capability correction: Windows capability report `DISABLE_LOCAL_USER` / `ENABLE_LOCAL_USER` destekliyor gibi bildiriyor, ama executor implementation şu an default `UNSUPPORTED` döner. Pilot öncesi ya capability raporundan çıkarılmalı ya da gerçek adapter eklenmeli.
 6. Agent live integration: release artifact ile gerçek backend enrollment/heartbeat/command/result smoke; Parallels Windows smoke yeniden koşulursa historical evidence tazelenir.
-7. IT async: `acik.local` EndpointPilot OU + 1-3 IT-owned Windows cihaz inventory baseline.
+7. BE-014 Tamper/offline audit: service stop / uninstall attempt / heartbeat loss / revoked agent event model + audit publisher + controller tests (Codex 019e4e8d Q2 autonomous-capable; Windows tamper live evidence ayrı gate).
+8. IT async: `acik.local` EndpointPilot OU + 1-3 IT-owned Windows cihaz inventory baseline.
 
 **Kabul edilebilir dil**:
 - "Test runtime Up + basic Functional/fail-closed kanıtlandı."
 - "GitOps desired/live digest hizalı."
-- "Backend source canonical main'de MERGED (H1+H2 2026-05-22); live route resolution + D29-EA Secured ayrı kapı."
+- "Backend source canonical main'de MERGED (H1+H2 2026-05-22); D29-EA Secured (synthetic+Live JWT 6/6) VERIFIED LIVE; BE-011 agent live integration + D35-EA audit variants smoke ayrı kapı."
 - "Agent Windows MVP foundation kanıtlı; backend live integration, identity inventory ve trusted signing pending."
-- "Full D29-EA Secured/Zanzibar-ready pending."
+- "C.5.persona Live JWT 6/6 matrix VERIFIED + DB audit row LIVE; D35-EA audit variants + BE-014 tamper/offline audit ayrı kapı."
 
 **Kabul edilmeyen dil**:
 - "Endpoint-admin prod ready."

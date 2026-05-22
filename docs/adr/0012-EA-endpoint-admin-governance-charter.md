@@ -14,10 +14,10 @@ Faz 22 ile yeni domain: **Endpoint Admin** — Windows endpoint'lerin merkezi y�
 
 | Component | Repo | Path / Status |
 |---|---|---|
-| Backend service | `Halildeu/platform-backend` | `endpoint-admin-service/` sub-dir; **Plan C H1+H2 MERGED canonical `origin/main` (2026-05-22)**. H1 source PR #288 (mergeCommit `8e2589c1`) + H2 api-gateway integration PR #291 (mergeCommit `161296cf`). Test cluster image artifact post-merge final main SHA (`sha256:b2250b7a274ec8` endpoint-admin + `sha256:84500b5ebe162b` api-gateway). |
+| Backend service | `Halildeu/platform-backend` | `endpoint-admin-service/` sub-dir; **Plan C H1+H2 MERGED canonical `origin/main` (2026-05-22)**. H1 source PR #288 (mergeCommit `8e2589c1`) + H2 api-gateway integration PR #291 (mergeCommit `161296cf`). Test cluster image artifact post-merge final main SHA (`sha256:b2250b7a274ec8` endpoint-admin + `sha256:84500b5ebe162b` api-gateway). **GitOps ConfigMap fix #961 MERGED mergeCommit `a29fd55f`** (SPRING_PROFILES_ACTIVE=k8s + endpoint-admin gateway routes 22/23/24). **C.5.persona D29-EA Live JWT 6/6 matrix VERIFIED LIVE** (admin GET/POST 200 allow, viewer GET 200 inheritance, viewer POST 403 OpenFGA can_manage DENY, no-token 401, invalid 401) + DB audit row (`endpoint_enrollments` PENDING + `endpoint_audit_events` `CREATE_ENROLLMENT`). |
 | Agent | `Halildeu/platform-agent` | GitHub remote + Go scaffold mevcut; PR #1-#5 ile CI, build/test, lab-only-evidence signing, BG-EA-1, gitleaks, SBOM ve board evidence foundation var. `docs/TRACKING-ROADMAP.md` Parallels Windows 11 service/installer/local-user/tamper MVP evidence satırlarını taşıyor; bugünkü recheck'te Windows VM stopped olduğu için live smoke yeniden koşulmadı. |
 | Web UI MFE | `Halildeu/platform-web` | `apps/mfe-endpoint-admin/` kaynak kodu `origin/main`de mevcut; runtime route/flag acceptance backend main reconciliation + D29-EA Secured kanıtı sonrası. |
-| GitOps manifest | `Halildeu/platform-k8s-gitops` (bu repo) | `kustomize/base/apps/endpoint-admin-service/` + test overlay digest pin mevcut; 2026-05-21 live check: Deployment 1/1, health UP, no-JWT 401. Full persona allow/deny/audit gate ayrı. |
+| GitOps manifest | `Halildeu/platform-k8s-gitops` (bu repo) | `kustomize/base/apps/endpoint-admin-service/` + test overlay digest pin mevcut; **#961 ConfigMap fix mergeCommit `a29fd55f` MERGED 2026-05-22** (SPRING_PROFILES_ACTIVE=k8s + endpoint-admin gateway routes 22/23/24). Live check: Deployment 1/1, health UP, **C.5.persona Live JWT 6/6 matrix VERIFIED LIVE + DB audit row** (#960). |
 
 **"Repo bölünmez" yorumu (PR-8c clarify)**:
 > Runtime manifest ve GitOps desired-state tek yerde `platform-k8s-gitops` içinde tutulur. Uygulama kaynak kodu ilgili platform repolarında kalır. **"Repo bölünmez" ifadesi YALNIZ GitOps manifest governance için geçerlidir; kaynak kodun tek repo olması anlamına gelmez.**
@@ -245,29 +245,32 @@ Bu bölüm, eski 2026-05-02/05-05 ara notlarını override eden güncel takip no
 
 | Track | Güncel durum | Kalan gate |
 |---|---|---|
-| **Backend source** | **Plan C H1+H2 MERGED 2026-05-22**: `platform-backend/origin/main` artık endpoint-admin-service tree + api-gateway routes/permitAll/test refactor taşıyor. H1 PR #288 mergeCommit `8e2589c1`; H2 PR #291 mergeCommit `161296cf`. Final main D30 immutable images produced (endpoint-admin + api-gateway). | Live route resolution post-rollout + D29-EA Secured smoke + BE-011 agent live integration. |
-| **Backend live** | Test cluster digest pin bumped to `sha256:b2250b7a274ec8684abce7ed1f9a47d301c548982ccbecc705647a0f8081f2eb` (endpoint-admin, gitops PR #956 MERGED) + api-gateway digest `sha256:84500b5ebe162b8014035fe6bcf9a76b407ef81fad0a6b3407d5fa7357cce47c` (gitops PR #957 MERGED). Pre-rollout 2026-05-21 evidence (prior digest): Deployment 1/1, endpoints present, health UP, no-JWT admin devices 401. | Post-rollout pod imageID match + JWT-authenticated route resolution verify; Full D29-EA Secured: persona allow/deny, OpenFGA tuple verification, audit insert, BE-013 maintenance-token issue/validate/revoke/expiry. |
+| **Backend source** | **Plan C H1+H2 MERGED 2026-05-22**: `platform-backend/origin/main` artık endpoint-admin-service tree + api-gateway routes/permitAll/test refactor taşıyor. H1 PR #288 mergeCommit `8e2589c1`; H2 PR #291 mergeCommit `161296cf`. Final main D30 immutable images produced. **C.5.persona Live JWT 6/6 matrix VERIFIED LIVE** post-#961 ConfigMap fix `a29fd55f`. | BE-011 agent live integration + BE-014 tamper/offline audit event model + D35-EA audit variants smoke. |
+| **Backend live** | Test cluster digest pin `sha256:b2250b7a274ec8...` (endpoint-admin, gitops PR #956) + api-gateway `sha256:84500b5ebe162b...` (gitops PR #957) + **#961 ConfigMap fix mergeCommit `a29fd55f`** (SPRING_PROFILES_ACTIVE=k8s + gateway routes 22/23/24). **D29-EA Secured VERIFIED LIVE**: synthetic OpenFGA 5/5 (#959) + Live JWT 6/6 persona matrix (admin allow GET/POST, viewer can_view allow, viewer can_manage DENY 403, no-token 401, invalid 401) + DB audit row (`endpoint_enrollments` PENDING + `endpoint_audit_events` action=CREATE_ENROLLMENT) + OpenFGA pod authz log deny path observable. | BE-013 maintenance-token full live lifecycle (issue/validate/revoke/expiry); BE-011 agent live integration; D35-EA audit variants smoke (BE-014 tamper/offline). |
 | **GitOps** | Test overlay includes endpoint-admin base and digest pin; `services.yaml` test enabled, prod deferred. | Prod overlay/workflow remains 22.2+; no prod activation in 22.1. |
 | **Web** | `platform-web/origin/main` has `apps/mfe-endpoint-admin` source files. | Runtime route/flag acceptance after backend main + Secured evidence; no eager route enablement. |
 | **Agent** | `platform-agent/origin/main` has Go scaffold, CI/release hardening foundation, successful `main` CI run `26030514275`, lab-only signed artifact evidence, and historical Parallels Windows 11 service/installer/local-user/tamper MVP evidence in `docs/TRACKING-ROADMAP.md`. Fresh temp worktree test/build/windows-package PASS. | Backend live enrollment/heartbeat integration, Windows identity inventory, trusted signing, EDR/allowlist, and IT EndpointPilot deployment remain pending. Also fix capability mismatch before pilot: Windows currently reports disable/enable local-user capability while executor would return `UNSUPPORTED`. |
 | **IT** | Scope remains `acik.local`; BOREAS/CESS outside initial phase. | EndpointPilot OU + 1-3 IT-owned Windows devices + inventory baseline. |
 
-Evidence-weighted progress snapshot (2026-05-22 — Plan A/B/C full chain MERGED):
+Evidence-weighted progress snapshot (2026-05-22 — Plan A/B/C + C.5.persona Live JWT full chain MERGED):
 
 | Milestone | Progress | Acceptance boundary |
 |---|---:|---|
-| 22.0 Governance / repo split | ~95% ⬆️ | PR #944 truth-refresh MERGED, #924 closed Done; Plan A/B/C chain (6 PR) MERGED autonomous + cross-AI peer review chain; final docs % refresh in flight |
-| 22.1 Lab foundation | ~75% ⬆️ | GitOps Up/basic Functional + agent lab foundation + **PR #7 AG-013 capability fix MERGED** (verification fresh Windows smoke #8 pending); full D29-EA Secured + backend live integration pending |
-| 22.1 Backend canonicalization | ~85% ⬆️ | **H1 source PR #288 MERGED mergeCommit `8e2589c1`** (endpoint-admin-service tree + pom + Dockerfile + workflows); **H2 source PR #291 MERGED mergeCommit `161296cf`** (api-gateway routes + permitAll + GatewaySecurityTest RouteRegistrar refactor); final main D30 immutable images (endpoint-admin `sha256:b2250b7a274ec8`, api-gateway `sha256:84500b5ebe162b`) + GitOps overlay digest pins LIVE; live route resolution verify + D29-EA Secured smoke pending |
+| 22.0 Governance / repo split | ~95% ⬆️ | PR #944 truth-refresh MERGED, #924 closed Done; Plan A/B/C chain + C.5.persona ConfigMap fix MERGED autonomous + cross-AI peer review chain (8 thread) |
+| 22.1 Lab foundation | ~80% ⬆️ | GitOps Up/basic Functional + agent lab foundation + **PR #7 AG-013 capability fix MERGED** (verification fresh Windows smoke #8 pending); **C.5.persona D29-EA Live JWT 6/6 matrix VERIFIED LIVE**; backend live integration BE-011 pending |
+| 22.1 Backend canonicalization | ~92% ⬆️⬆️ | **H1 source PR #288 MERGED mergeCommit `8e2589c1`** + **H2 source PR #291 MERGED mergeCommit `161296cf`**; final main D30 immutable images + GitOps overlay digest pins LIVE; **#961 ConfigMap fix `a29fd55f` MERGED + C.5.persona Live JWT 6/6 matrix VERIFIED + DB audit row LIVE**; BE-011 agent live integration + D35-EA audit variants smoke pending |
 | 22.2 IT pilot readiness | ~10% | `acik.local` scope known; EndpointPilot OU/devices/trusted signing/EDR pending (operator-bound) |
-| Faz 22 overall | ~55-60% ⬆️ | Not prod-ready; not password-reset-ready; next gates: live route resolution verify, D29-EA Secured smoke, BE-011 agent live integration, WEB runtime acceptance, IT pilot |
+| Faz 22 overall | ~65-70% ⬆️⬆️ | Not prod-ready; not password-reset-ready; **C.5.persona Live JWT 6/6 matrix VERIFIED + DB audit row** (#960/#961 MERGED `a29fd55f`); next gates: BE-011 agent live integration, WEB runtime acceptance, Windows fresh smoke, IT pilot |
 
-Cross-AI peer review chain (Plan C source/image/overlay merge zinciri):
+Cross-AI peer review chain (Plan C + C.5.persona zinciri):
 - `019e4c3f` — plan-time consult (Hybrid 2-PR strategy AGREE)
 - `019e4c81` — H1 post-impl (REVISE → AGREE; .gitignore restore + ci-image-push 4 guard fix)
 - `019e4c95` — C.4 endpoint-admin digest bump (REVISE → AGREE; structured body absorb)
 - `019e4caa` — H2 source post-impl (AGREE; ConfigMap parity warning for next PR)
-- `019e4cb6` — H2 gitops digest bump (REVISE → AGREE; legacy prefix no-op correction + ConfigMap revert + smoke plan keskinleştirme)
+- `019e4cb6` — H2 gitops digest bump (REVISE → AGREE; "legacy prefix NO-OP in SCG 4.3.3+" — **later overruled by 019e4eaa with dep analysis**)
+- `019e4cc2` — #958 docs refresh (REVISE → AGREE; 5 refresh locations + 4 tutarsızlık absorb)
+- `019e4e8d` — C.5.persona strategic consult Q1=A REVISE (live JWT zorunlu, synthetic yetmez)
+- `019e4eaa` — #961 ConfigMap fix AGREE + ready_to_merge: true (spring-boot-properties-migrator dep analysis ile prior 019e4cb6 overruled; legacy prefix FİİLEN effective in SCG 4.3.3 fat jar)
 
 ### Sub-faz milestone'ları (Codex sırası)
 
