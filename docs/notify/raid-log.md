@@ -107,9 +107,10 @@ Risk boyutu ayrı [`risk-register.md`](risk-register.md) içinde tutulur (22 ris
 - **2026-05-09 (Session 39 iter-2)**: Initial RAID log oluşturuldu (Codex `019e0c28` F5 absorb). 10 assumption + 5 issue + 10 dependency.
 - **2026-05-09 (M2 D29 partial evidence + credential blocker)**: Yeni issue I6 — Keycloak test realm admin credential unavailable; M2 D29 authenticated full pipeline BLOCKED. PR #444 lab-deps MERGED; lab dependency smoke LIVE: Mailpit + webhook receiver + Slack mock transport; authenticated notify-orch intent-submit path still BLOCKED. 23.1 sub-faz marker 🟡 partial kalır. Toplam: 10 A + 6 I + 10 D = 48 active boyut (önceki 47'ye +I6).
 - **2026-05-18 (I6 stale-resolved → board #777 closed)**: RAID I6 Keycloak credential blocker 🔴 Active → 🟢 Resolved. Kanıt: 2026-05-14 `m2-credential-gate-unblocked.md` (`kc-bootstrap-admin-recovery.sh` master admin recovery) + 2026-05-18 live re-verify (`platform-kc-test` healthy, `kcadm` master login OK, D29 personaları mevcut). Codex `019e3c74` AGREE — stale credential blocker; M2 D29 evidence/acceptance reconciliation ayrı item #754, persona credential Vault formalization ayrı hardening backlog'u (normal user, realm-admin değil). Board açık I-serisi issue mapping'i I2/I4'e düştü; I6 satırı tarihsel kayıt olarak 🟢 Resolved.
+- **2026-05-23 (R1 DEFER + R2 closure RAID sync)**: A1 + D-N3b → NetGSM secondary contract **⏳ DEFER** (kullanıcı kararı: sözleşme kısa vadede yapılmayacak; JetSMS-only degraded mode kabul edilen kalıcı işletim durumu; `NetGsmProvider` + Vault/ESO altyapısı asset-preserved — kaldırılmaz, sözleşme olursa reactivation). A2 + D-N5 → R2 KVKK legal review **CLOSED** (Codex `019e5189` final legal verdict AGREE = kabul edilen hukuk onayı; kullanıcı kararı 2026-05-23); D-N5 🔴 → 🟢.
 
 ## Next Review
 
 - **2026-05-12**: M1/M2 closure öncesi RAID review (A3, A8, A10 + I1, I2 + D-N7, D-N9)
 - **2026-05-16**: İlk weekly stakeholder summary
-- **2026-05-25**: D-N5 KVKK legal review ETA gate
+- ~~2026-05-25: D-N5 KVKK legal review ETA gate~~ — **D-N5 CLOSED 2026-05-23** (R2 Codex `019e5189` final legal verdict); review gate gerekmiyor
