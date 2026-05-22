@@ -2108,13 +2108,13 @@ Bu bölüm, aşağıdaki tarihsel "22.1.1 milestone reframe" notunun operasyonel
 | Secret delivery | `endpoint-admin-service-secrets` ExternalSecret `SecretSynced=True` | ESO yüzeyi çalışıyor |
 | Functional-basic | `/actuator/health` -> `{"status":"UP","groups":["liveness","readiness"]}` | Spring health yüzeyi ayakta |
 | Fail-closed-basic | No-JWT `GET /api/v1/admin/endpoint-devices` -> `401` | JWT yokken admin yüzeyi kapalı |
-| Secured / Zanzibar-ready | Persona allow/deny, OpenFGA tuple verify, audit insert bu turda koşulmadı | Full D29-EA Secured pending |
+| Secured / Zanzibar-ready | **VERIFIED LIVE 2026-05-22** post-#961 (ConfigMap fix `a29fd55f`): synthetic OpenFGA 5/5 (#959) + Live JWT persona 6/6 matrix (admin allow GET/POST, viewer can_view allow, viewer can_manage DENY 403, no-token 401, invalid 401) + DB audit row (`endpoint_enrollments` PENDING id=`4e863eaa-...` + `endpoint_audit_events` action=CREATE_ENROLLMENT) + OpenFGA pod authz log deny path observable | D35-EA audit variants smoke; BE-011 agent live integration; BE-014 tamper/offline audit event model |
 
 #### Source / repo truth
 
 | Repo | Güncel durum | Not |
 |---|---|---|
-| `platform-backend` | **Plan C H1+H2 MERGED canonical main 2026-05-22**: `origin/main` artık `endpoint-admin-service/` tree taşıyor + api-gateway integration (routes + permitAll + GatewaySecurityTest RouteRegistrar refactor). H1 PR #288 mergeCommit `8e2589c1` (2026-05-21T22:01:59Z); H2 PR #291 mergeCommit `161296cf` (2026-05-21T22:37:55Z). Final main D30 immutable images: endpoint-admin `sha256:b2250b7a274ec8...` + api-gateway `sha256:84500b5ebe162b...`. | Live route resolution + D29-EA Secured + BE-011 ayrı kapı. |
+| `platform-backend` | **Plan C H1+H2 MERGED canonical main 2026-05-22**: `origin/main` artık `endpoint-admin-service/` tree taşıyor + api-gateway integration (routes + permitAll + GatewaySecurityTest RouteRegistrar refactor). H1 PR #288 mergeCommit `8e2589c1` (2026-05-21T22:01:59Z); H2 PR #291 mergeCommit `161296cf` (2026-05-21T22:37:55Z). Final main D30 immutable images: endpoint-admin `sha256:b2250b7a274ec8...` + api-gateway `sha256:84500b5ebe162b...`. **C.5.persona Live JWT 6/6 matrix VERIFIED LIVE** (#961 ConfigMap fix `a29fd55f`) + DB audit row evidence. | BE-011 agent live integration + D35-EA audit variants smoke + Windows fresh smoke ayrı kapı. |
 | `platform-k8s-gitops` | Test overlay endpoint-admin base'i ve digest pin'i taşıyor; `services.yaml` `test: enabled`, `prod: deferred`. | Prod aktivasyon 22.2+ kapsam. |
 | `platform-web` | `origin/main` altında `apps/mfe-endpoint-admin` source dosyaları mevcut (`26` dosya). | Runtime route/flag acceptance backend main + Secured gate sonrası. |
 | `platform-agent` | `origin/main` Go agent scaffold + CI/release hardening foundation taşıyor (`#1..#5`). CI run `26030514275` success; lab-only signing artifact indirildi (`SIGNING-EVIDENCE.md`, `signtool-verify.log`). Fresh temp worktree check: `./scripts/test/local.sh`, `./scripts/build/local.sh`, `./scripts/build/windows-package.sh` PASS. `docs/TRACKING-ROADMAP.md` Windows service, installer, local-user read-only ve tamper protection MVP icin Parallels Windows 11 historical evidence satırları taşıyor. | Bugün Windows canlı smoke tekrar koşulmadı; Parallels `Windows 11` VM stopped. IT pilot için trusted signing, EDR/allowlist, EndpointPilot OU ve backend live integration pending. |
@@ -2148,9 +2148,9 @@ Bu yüzdeler teslim taahhüdü değil, kanıt-ağırlıklı takip göstergesidir
 **Kabul edilebilir dil**:
 - "Test runtime Up + basic Functional/fail-closed kanıtlandı."
 - "GitOps desired/live digest hizalı."
-- "Backend source canonical main'de MERGED (H1+H2 2026-05-22); live route resolution + D29-EA Secured ayrı kapı."
+- "Backend source canonical main'de MERGED (H1+H2 2026-05-22); D29-EA Secured (synthetic+Live JWT 6/6) VERIFIED LIVE; BE-011 agent live integration + D35-EA audit variants smoke ayrı kapı."
 - "Agent Windows MVP foundation kanıtlı; backend live integration, identity inventory ve trusted signing pending."
-- "Full D29-EA Secured/Zanzibar-ready pending."
+- "C.5.persona Live JWT 6/6 matrix VERIFIED + DB audit row LIVE; D35-EA audit variants + BE-014 tamper/offline audit ayrı kapı."
 
 **Kabul edilmeyen dil**:
 - "Endpoint-admin prod ready."
