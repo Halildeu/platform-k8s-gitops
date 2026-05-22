@@ -139,8 +139,8 @@ enrollment token (`enrollmentId 318db437…`):
 
 ### P1 — blocker-bound
 
-2. **BE-014B heartbeat-loss scheduled detector** — BE-011 done; offline-detection
-   scheduled job + audit event.
+2. **BE-014B heartbeat-loss scheduled detector** — BE-011 prerequisite
+   live-verified; offline-detection scheduled job + audit event.
 3. **BE-015 Endpoint identity compliance API** — identity taxonomy netleşmeli;
    partial autonomous.
 
