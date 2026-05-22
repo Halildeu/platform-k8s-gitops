@@ -207,6 +207,17 @@ services:
         full HMAC lifecycle (BE-014A consume/deny path live yarı-kanıt) +
         BE-016 audit integrity hash-chain remain separate acceptance
         gates; prod overlay activation remains 22.2+.
+
+        2026-05-22 truth-refresh (#982): BE-016 (hash-chain + Flyway,
+        platform-backend#295/#297), BE-017 (dual-control gate, #300
+        dd6b1eab), BE-011 (agent wire-contract, platform-agent#9) all
+        MERGED source-side. endpoint-admin-service live digest is now
+        sha256:1a1d0aac... (BE-017, gitops PR #980) and MATCHES GitOps
+        desired (D30 OK; supersedes BE-014A fd7a9c54). api-gateway D30
+        DRIFT: live sha256:6137bb2c... != desired sha256:84500b5e... —
+        route 401 fail-closed works, imageID match not closed (separate
+        resolution track). Pending: BE-011 real agent lifecycle smoke,
+        Windows fresh smoke #8, Web runtime acceptance, IT pilot.
     jwt_validates: true
     route_external: false
     workload_kind: Deployment
@@ -214,7 +225,7 @@ services:
     probe_contract: spring-actuator
     jvm_warmup_extra: true   # Hibernate JPA EntityManagerFactory cold-start 30-50s; observed 16h CrashLoop with 45s liveness grace (2026-05-13)
     environments:
-      test: enabled   # 2026-05-22 Plan A/B/C + C.5.persona + BE-014A chain MERGED: GitOps desired digest sha256:fd7a9c54f7919bdb71c9b2adf8d18e548d6ac4dc9cb25e0d5857dddd2dc0e3bc (BE-014A PR #293 + gitops PR #965 + post-merge final main SHA c8f244c4). Pod imageID match VERIFIED + C.5.persona D29-EA Live JWT 6/6 + BE-014A Functional 5/5 HMAC smoke + 4 deny audit event types EMITTING + 7 DB audit rows + noRollbackFor durability live-runtime proven (2026-05-22T09:52Z). BE-011 agent full lifecycle + BE-013 full HMAC + BE-016 hash-chain still pending.
+      test: enabled   # 2026-05-22 truth-refresh #982: GitOps desired + live pod imageID both sha256:1a1d0aac5ac1f2a09c124175085b8d19444ceb064bd4f59ec90c12491cf86490 (BE-017 dual-control gate, gitops PR #980; supersedes BE-014A fd7a9c54 + BE-016). D30 match. BE-016/BE-017/BE-011 MERGED source-side; V5 Flyway migration applied live (4→v5). Pending: BE-011 real agent lifecycle smoke + Windows fresh smoke #8 + Web runtime acceptance + IT pilot.
       prod: deferred  # Faz 22.2 product decision (it-pilot tier acik.local + prod realm 'serban' + Azure Trusted Signing); drift gate accepts absence in prod
 
   - name: notification-orchestrator
