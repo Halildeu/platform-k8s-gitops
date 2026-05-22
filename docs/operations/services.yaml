@@ -180,24 +180,33 @@ services:
       contract gate's subject). Currently dev/test only; prod scope decision
       pending Faz 22.2 BG-EA-1 product review.
 
-      Status note (Plan A/B/C zincir MERGED 2026-05-22, tracked by #953 docs refresh):
-        Test cluster endpoint-admin-service is now GitOps-governed in
+      Status note (Plan A/B/C + C.5.persona + BE-014A zinciri MERGED 2026-05-22):
+        Test cluster endpoint-admin-service GitOps-governed in
         kustomize/overlays/test with immutable digest pin
-        sha256:b2250b7a274ec8684abce7ed1f9a47d301c548982ccbecc705647a0f8081f2eb
-        (post-H1 merge final main SHA `8e2589c1`, gitops PR #956 MERGED).
+        sha256:fd7a9c54f7919bdb71c9b2adf8d18e548d6ac4dc9cb25e0d5857dddd2dc0e3bc
+        (BE-014A post-merge final main SHA `c8f244c4`, gitops PR #965 MERGED;
+        previous H1 digest sha256:b2250b7a274ec8... at #956 superseded).
         api-gateway companion digest pin
         sha256:84500b5ebe162b8014035fe6bcf9a76b407ef81fad0a6b3407d5fa7357cce47c
         (post-H2 merge final main SHA `161296cf`, gitops PR #957 MERGED).
-        Pre-rollout live check (prior digest 2026-05-21): Deployment 1/1,
-        endpoint addresses present, ExternalSecret SecretSynced=True,
-        actuator health UP, no-JWT admin devices returns 401.
+        Live check 2026-05-22: Deployment 1/1, pod imageID match
+        (BE-014A bytecode), ExternalSecret SecretSynced=True, actuator
+        health UP.
 
         platform-backend canonical main NOW carries endpoint-admin-service
-        + api-gateway integration (H1 PR #288 + H2 PR #291 MERGED).
-        Live route resolution post-rollout + D29-EA Secured acceptance
-        (persona allow/deny + OpenFGA tuple verification + audit insert)
-        + BE-011 agent live integration smoke remain separate acceptance
-        gates.
+        + api-gateway integration (H1 PR #288 + H2 PR #291 MERGED) + BE-014A
+        tamper/offline audit deny hooks (PR #293 MERGED + #961 ConfigMap fix
+        + #965 gitops digest LIVE).
+
+        Live-runtime acceptance on test deployment (2026-05-22T09:52Z):
+        * C.5.persona D29-EA Live JWT 6/6 matrix VERIFIED
+        * BE-014A Functional 5/5 HMAC smoke VERIFIED (4 deny audit event
+          types EMITTING + 7 DB audit rows + noRollbackFor durability
+          invariant proven)
+        BE-011 agent full lifecycle (heartbeat/command/result) + BE-013
+        full HMAC lifecycle (BE-014A consume/deny path live yarı-kanıt) +
+        BE-016 audit integrity hash-chain remain separate acceptance
+        gates; prod overlay activation remains 22.2+.
     jwt_validates: true
     route_external: false
     workload_kind: Deployment
@@ -205,7 +214,7 @@ services:
     probe_contract: spring-actuator
     jvm_warmup_extra: true   # Hibernate JPA EntityManagerFactory cold-start 30-50s; observed 16h CrashLoop with 45s liveness grace (2026-05-13)
     environments:
-      test: enabled   # 2026-05-22 Plan A/B/C zincir MERGED (#953 docs refresh): GitOps desired bumped to sha256:b2250b7a274ec8684abce7ed1f9a47d301c548982ccbecc705647a0f8081f2eb (H1 PR #288 + gitops PR #956). Pre-rollout evidence (prior digest 2026-05-21 sha256:5bb0fa2600...): Deployment 1/1, health UP, no-JWT 401 (Up + basic Functional/fail-closed proven). Post-rollout pod imageID match + Full D29-EA Secured persona allow/deny/audit + BE-011 agent live integration still pending.
+      test: enabled   # 2026-05-22 Plan A/B/C + C.5.persona + BE-014A chain MERGED: GitOps desired digest sha256:fd7a9c54f7919bdb71c9b2adf8d18e548d6ac4dc9cb25e0d5857dddd2dc0e3bc (BE-014A PR #293 + gitops PR #965 + post-merge final main SHA c8f244c4). Pod imageID match VERIFIED + C.5.persona D29-EA Live JWT 6/6 + BE-014A Functional 5/5 HMAC smoke + 4 deny audit event types EMITTING + 7 DB audit rows + noRollbackFor durability live-runtime proven (2026-05-22T09:52Z). BE-011 agent full lifecycle + BE-013 full HMAC + BE-016 hash-chain still pending.
       prod: deferred  # Faz 22.2 product decision (it-pilot tier acik.local + prod realm 'serban' + Azure Trusted Signing); drift gate accepts absence in prod
 
   - name: notification-orchestrator
