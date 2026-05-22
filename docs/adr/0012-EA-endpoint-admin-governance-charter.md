@@ -256,11 +256,11 @@ Evidence-weighted progress snapshot (2026-05-22 — Plan A/B/C + C.5.persona Liv
 
 | Milestone | Progress | Acceptance boundary |
 |---|---:|---|
-| 22.0 Governance / repo split | ~95% ⬆️ | PR #944 truth-refresh MERGED, #924 closed Done; Plan A/B/C chain + C.5.persona ConfigMap fix MERGED autonomous + cross-AI peer review chain (8 thread) |
-| 22.1 Lab foundation | ~80% ⬆️ | GitOps Up/basic Functional + agent lab foundation + **PR #7 AG-013 capability fix MERGED** (verification fresh Windows smoke #8 pending); **C.5.persona D29-EA Live JWT 6/6 matrix VERIFIED LIVE**; backend live integration BE-011 pending |
-| 22.1 Backend canonicalization | ~92% ⬆️⬆️ | **H1 source PR #288 MERGED mergeCommit `8e2589c1`** + **H2 source PR #291 MERGED mergeCommit `161296cf`**; final main D30 immutable images + GitOps overlay digest pins LIVE; **#961 ConfigMap fix `a29fd55f` MERGED + C.5.persona Live JWT 6/6 matrix VERIFIED + DB audit row LIVE**; BE-011 agent live integration + D35-EA audit variants smoke pending |
+| 22.0 Governance / repo split | ~95% ⬆️ | PR #944 truth-refresh MERGED, #924 closed Done; Plan A/B/C chain + C.5.persona ConfigMap fix + BE-014A chain MERGED autonomous + cross-AI peer review chain (13 thread) |
+| 22.1 Lab foundation | ~80% ⬆️ | GitOps Up/basic Functional + agent lab foundation + **PR #7 AG-013 capability fix MERGED** (verification fresh Windows smoke #8 pending); **C.5.persona D29-EA Live JWT 6/6 matrix VERIFIED LIVE**; BE-011 full lifecycle pending |
+| 22.1 Backend canonicalization | **~95%** ⬆️⬆️ | **H1 source PR #288 MERGED mergeCommit `8e2589c1`** + **H2 source PR #291 MERGED mergeCommit `161296cf`** + **BE-014A backend PR #293 MERGED mergeCommit `c8f244c4`** (4 deny audit + noRollbackFor + NOT_SUPPORTED regression guard); final main D30 immutable images (endpoint-admin `sha256:fd7a9c54...` BE-014A bytecode + api-gateway `sha256:84500b5e...`) + GitOps overlay digest pins LIVE (#961 + #965); **C.5.persona Live JWT 6/6 + BE-014A Functional 5/5 HMAC smoke VERIFIED LIVE 2026-05-22T09:52Z (7 DB audit rows + 4 deny event types EMITTING + durability invariant live-runtime proven on test deployment)**; BE-011 agent full lifecycle (heartbeat/command/result) + BE-013 full HMAC lifecycle (BE-014A consume/deny path live yarı-kanıt) + BE-016 hash-chain pending |
 | 22.2 IT pilot readiness | ~10% | `acik.local` scope known; EndpointPilot OU/devices/trusted signing/EDR pending (operator-bound) |
-| Faz 22 overall | ~65-70% ⬆️⬆️ | Not prod-ready; not password-reset-ready; **C.5.persona Live JWT 6/6 matrix VERIFIED + DB audit row** (#960/#961 MERGED `a29fd55f`); next gates: BE-011 agent live integration, WEB runtime acceptance, Windows fresh smoke, IT pilot |
+| Faz 22 overall | **~70-75%** ⬆️⬆️⬆️ | Not prod-ready; not password-reset-ready; **BE-014A Functional acceptance VERIFIED LIVE on test deployment** + **C.5.persona Live JWT 6/6 matrix VERIFIED**; next gates: BE-011 agent full lifecycle, BE-016 hash-chain, WEB runtime acceptance, Windows fresh smoke, IT pilot, prod overlay activation |
 
 Cross-AI peer review chain (Plan C + C.5.persona zinciri):
 - `019e4c3f` — plan-time consult (Hybrid 2-PR strategy AGREE)
