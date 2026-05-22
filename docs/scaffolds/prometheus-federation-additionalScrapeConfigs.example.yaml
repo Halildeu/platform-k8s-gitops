@@ -80,30 +80,61 @@
       action: labeldrop
 
 # ============================================================================
-# How to apply (Faz 24+/M8 — NOT M7 scope):
+# How to apply (Faz 24+/M8 — NOT M7 scope; Codex 019e4ef4 iter-3 P2 absorb):
 #
-# 1. Save this file as a ConfigMap or Secret:
-#    kubectl -n monitoring create configmap prometheus-additional-scrape-config \
+# M7 iter-1: DO NOT APPLY. ADR-0026 §2.1 acceptance criteria: design artifact
+# only; runtime federation Faz 24+/M8 trigger sonrası.
+#
+# Faz 24+/M8 trigger sonrası authoritative apply pattern (kube-prometheus-stack
+# source-accurate — declarative GitOps audit trail):
+#
+# 1. Save scaffold YAML content as a Secret (kube-prometheus-stack
+#    additionalScrapeConfigsSecret pattern):
+#    kubectl -n monitoring create secret generic prometheus-additional-scrape-config \
 #      --from-file=federation.yaml=this-file.yaml \
 #      --dry-run=client -o yaml | kubectl apply -f -
 #
-# 2. Reference in Prometheus CR (kube-prometheus-stack values):
-#    additionalScrapeConfigs:
-#      name: prometheus-additional-scrape-config
-#      key: federation.yaml
+# 2. helm-values/kube-prometheus-stack/values-prod.yaml içine ekle
+#    (PR aç + merge + GitOps audit):
+#    prometheus:
+#      prometheusSpec:
+#        additionalScrapeConfigs:
+#          name: prometheus-additional-scrape-config
+#          key: federation.yaml
 #
-# 3. Prometheus operator auto-reloads (no manual restart needed).
+# 3. helm upgrade (manual sync per ADR-0002 §3.7 prod auto-sync MANUAL):
+#    helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#      -n monitoring -f helm-values/kube-prometheus-stack/values-prod.yaml
 #
-# 4. Verify (Grafana Explore or PromQL):
+# 4. Prometheus operator auto-reload Prometheus pod (~30s; no manual restart).
+#
+# 5. Verify (Grafana Explore or PromQL):
 #    count({cluster=~"k3d-(test|prod)"})
 #    notify:dispatch:outcome:5m{cluster="k3d-test"}
 #
-# 5. Cardinality regression check:
+# 6. Cardinality regression check (budget ≤ 10K hard cap; ≤ 8K warning):
 #    sum(scrape_samples_scraped{job=~"central-federate-.*"})
-#    Budget: ≤ 10K
 #
-# 6. Kill-switch (if budget exceeded or breakage):
-#    kubectl -n monitoring patch configmap prometheus-additional-scrape-config \
-#      --type=json -p='[{"op":"replace","path":"/data/federation.yaml","value":"# disabled"}]'
+# Kill-switch (Codex 019e4ef4 P1 #2 + iter-3 P2 absorb): **helm-values rollback
+# authoritative** — declarative; GitOps audit; Helm reconcile-safe.
 #
+#   1. helm-values/kube-prometheus-stack/values-prod.yaml içinden
+#      prometheus.prometheusSpec.additionalScrapeConfigs entry'sini sil
+#   2. PR aç + merge
+#   3. helm upgrade (Prometheus operator otomatik reconcile + reload)
+#   4. Verify: kubectl get prometheus -o jsonpath='{.spec.additionalScrapeConfigs}'
+#      Beklenen: empty / not present
+#
+# Imperative emergency fallback (outage-only; Helm reconcile drift olabilir):
+#   kubectl --context k3d-prod -n monitoring patch \
+#     prometheus kube-prometheus-stack-prometheus \
+#     --type=json -p='[{"op":"remove","path":"/spec/additionalScrapeConfigs"}]'
+#   UYARI: bir sonraki ArgoCD/helm sync bu değişikliği overwrite eder.
+#
+# **DO NOT** use ConfigMap patch as kill-switch — kube-prometheus-stack
+# Secret-based pattern kullanır; ConfigMap patch yanlış object'i hedefler ve
+# Helm reconcile'da overwrite olur. Authoritative kill-switch helm-values
+# rollback (yukarıdaki adımlar).
+#
+# Bkz. docs/runbooks/RB-observability-federation-rollout.md §3.3 + §5.
 # ============================================================================
