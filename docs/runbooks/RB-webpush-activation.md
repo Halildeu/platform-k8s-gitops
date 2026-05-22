@@ -206,10 +206,16 @@ ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
   logs deploy/notification-orchestrator --tail=100 | grep -iE 'WebPush|VapidKey|DefaultWebPushSender'"
 ```
 
-Beklenen:
+Beklenen (2 log satırı):
 - `VapidKeyService activated: subject=mailto:admin@testai.acik.com`
 - `DefaultWebPushSender activated: subject=mailto:admin@testai.acik.com ttl=3600s`
-- `WebPushAdapter activated`
+
+> **NOT** (2026-05-22 smoke düzeltmesi): `WebPushAdapter` sınıfı constructor'da
+> bilinçli olarak activation log yazmaz (yalnız runtime delivery olaylarını
+> loglar). "WebPushAdapter activated" satırı **beklenmez** — bean'in oluştuğunun
+> kanıtı VapidKeyService + DefaultWebPushSender log'u + `@ConditionalOnProperty`
+> gate'inin açık olması (aynı `notify.adapters.webpush.enabled` koşulu) +
+> pod'un sağlıklı ayağa kalkmasıdır.
 
 Eğer `VapidKeyService` fail-closed exception varsa → step 3.2 Vault seed'i doğrula.
 
@@ -261,15 +267,15 @@ Vault VAPID keys silmek YASAK (audit trail). Sadece ConfigMap flag flip yeterli.
 
 ## 5. Acceptance Gates Tablosu
 
-| Gate | Kanıt | Status |
+| Gate | Kanıt | Status (2026-05-22) |
 |---|---|---|
-| Vault seed | `vault kv get` 3 key görünür | □ |
-| ESO Ready=True | `kubectl get externalsecret` | □ |
-| ConfigMap ENABLED=true | `kubectl get configmap -o yaml` | □ |
-| Pod startup log VapidKeyService activated | `kubectl logs ...` | □ |
-| Frontend VAPID env injection | DevTools Network POST payload contains valid p256dh | □ |
-| Browser end-to-end smoke | Notification toast + inbox navigation | □ |
-| Backend metric notify_dispatch_outcome push channel rate > 0 | Prometheus query | □ |
+| Vault seed | `vault kv get` 3 key: pub 87ch + priv 43ch + subject | ✅ |
+| ESO Ready=True | `notification-orchestrator-secrets` Ready=True/SecretSynced; Secret'ta 3 `NOTIFY_ADAPTERS_WEBPUSH_*` key | ✅ |
+| ConfigMap ENABLED=true | pod env `NOTIFY_ADAPTERS_WEBPUSH_ENABLED=true` (gitops PR #976) | ✅ |
+| Pod startup log VapidKeyService activated | pod log: `VapidKeyService activated` + `DefaultWebPushSender activated` | ✅ |
+| Frontend VAPID env injection | testai.acik.com `window.__env__.VITE_NOTIFY_VAPID_PUBLIC_KEY` 87ch (HTTP + Playwright runtime); `PushSubscriptionCard` config-missing branch tetiklenmedi (gitops PR #977) | ✅ |
+| Browser end-to-end smoke | Headless Playwright: KC login (test persona) → `/settings/notifications` render + VAPID runtime doğrulandı. **Subscribe click-through KAPANMADI** — test persona notify-API provisioning (401) + headless Chromium push-servis sınırı (aktivasyondan bağımsız) | ⚠️ kısmi |
+| Backend metric notify_dispatch_outcome push channel rate > 0 | Prometheus query — gerçek push dispatch sonrası (subscribe flow kapanınca) | □ bekliyor |
 
 ## 6. Prod cutover (ayrı slot)
 
