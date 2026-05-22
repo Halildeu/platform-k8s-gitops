@@ -198,10 +198,13 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
     - UI button integration + VAPID public key Vite env (VITE_NOTIFY_VAPID_PUBLIC_KEY)
     - Browser end-to-end smoke (Chrome MCP / Playwright)
   - [ ] **Mobile FCM/APNS** — Faz 22.2 dep, scope DIŞI (gelecek faz)
-- [ ] T4.3 23.8 Tempo + bounce loop + per-tenant Grafana LIVE
+- [~] T4.3 23.8 Tempo + bounce loop + per-tenant Grafana + FBL + federation — **9/9 sub-task source-side closed 2026-05-22** (operator activation pending)
   - [x] T4.3.a Tempo OTLP trace export LIVE (2026-05-21 09:17Z; 5 spans verified)
   - [x] T4.3.b email suppression core LIVE (PR #270 — sha-f40aa82)
-  - [ ] Per-tenant Grafana dashboard (M7 closure scope)
+  - [x] T4.3.6 Per-tenant Grafana dashboard MERGED (PR #951 — 8 panel; + B.1 org_id Counter Tag retrofit PR #289)
+  - [x] T4.3.7 Per-template analytics MERGED (PR #966 Grafana PG datasource + Top 20 panel + PR #296 V21 index — Codex 019e4ee2; operator DB RO role activation pending)
+  - [x] T4.3.8 Federation design-artifact MERGED (PR #964 ADR-0026 phased — bounded operator-only; production federation Faz 24+/M8; R16 design-managed — Codex 019e4ee7)
+  - [x] T4.3.5 Spam complaint FBL source-ready (PR #298 core ArfReportParser+FblService+V22 + PR #299 FblMailboxPollingWorker IMAP — Codex 019e4edd/019e4fc6/019e4ffd; 28 unit test; operator activation pending — RB-fbl-mailbox-activation)
 - [ ] All v1 sub-faz kabul kriteri 🟢 (23.6, 23.7, 23.8)
 - [ ] Charter markers all updated
 - [ ] Risk register: R11, R16 closed
