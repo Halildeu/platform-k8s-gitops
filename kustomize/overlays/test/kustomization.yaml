@@ -295,7 +295,17 @@ images:
     # alongside the baked YAML — Codex 019e4caa 8. bulgu absorb (env
     # override otherwise tepeden gelir + endpoint-admin route resolution
     # kaçar).
-    digest: sha256:84500b5ebe162b8014035fe6bcf9a76b407ef81fad0a6b3407d5fa7357cce47c
+    #
+    # 2026-05-22 D30 drift-correction (#984) — desired catch-up to live.
+    # sha-161296c (sha256:84500b5e...) overlay desired idi; deploy-backend-
+    # testai.yml auto-deploy (run 26305307880, post-BE-017 dd6b1eab) 8
+    # servisi imperative `kubectl set image` ile roll etti — api-gateway
+    # live pod imageID sha256:6137bb2c... = sha-dd6b1ea (platform-backend
+    # main dd6b1eab ci-image-push build'i, GHCR imagetools-verified).
+    # Overlay desired stale kaldı. Bu bump desired-state'i live'a hizalar
+    # (#821-pattern); cluster mutasyonu YOK — live zaten 6137bb2c. D30
+    # imageID match kapanır. Route fail-closed 401 değişmeden korunur.
+    digest: sha256:6137bb2cb39994aed3999958ac9b3b009c28565e5a80c467728dd368e5822003
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     # 2026-05-12 update: bump to sha-5bec7fb (platform-backend#159 — Codex
