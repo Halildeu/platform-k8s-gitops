@@ -44,6 +44,14 @@ data:
   SECURITY_AUTH_ALLOWED_CLIENT_IDS: "frontend,admin-cli,serban-web,account"
   SECURITY_JWT_AUDIENCE: "endpoint-admin-service,frontend,account,serban-web"
 
+  # Spring profile — application-k8s.yml'ı aktive eder (Faz 22.1.1 C.5.persona
+  # #960 fix 2026-05-22: profile yokken SecurityConfig fallback
+  # http://localhost:8081/realms/serban/... JWKS URI'sını kullanıp
+  # JWT validation 401 veriyordu; profile aktif olunca KEYCLOAK_JWKS_URI
+  # env binding doğru spring.security.oauth2.resourceserver.jwt.jwk-set-uri'a
+  # mapleniyor).
+  SPRING_PROFILES_ACTIVE: "k8s"
+
   # Eureka / Spring Cloud (D7 — Eureka kaldırıldı)
   EUREKA_CLIENT_ENABLED: "false"
   SPRING_CLOUD_DISCOVERY_ENABLED: "false"
