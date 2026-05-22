@@ -3499,6 +3499,16 @@ patches:
       - op: add
         path: /data/NOTIFY_AUDIT_RETENTION_DRY_RUN
         value: "false"
+      # Faz 23.7 M7 T4.2 — WebPush activation (RB-webpush-activation §3.4).
+      # Base ConfigMap ships NOTIFY_ADAPTERS_WEBPUSH_ENABLED=false (defer-aware,
+      # Codex 019e49e7); flipped true now that the Vault VAPID 3-key seed +
+      # ESO remoteRef uncomment are in place. WebPushAdapter + VapidKeyService
+      # are gated by @ConditionalOnProperty(notify.adapters.webpush.enabled) —
+      # this flag flip is what creates those beans. Prod overlay stays false
+      # (RB-webpush-activation §6 prod cutover slot — separate PR post-72h soak).
+      - op: replace
+        path: /data/NOTIFY_ADAPTERS_WEBPUSH_ENABLED
+        value: "true"
 
   # Faz 23.2 PR-D.2 — pod-template annotation rollout trigger (Codex Q4 absorb).
   # ConfigMap envFrom değişmesi pod restart tetiklemez; annotation bump rolling
@@ -3525,6 +3535,12 @@ patches:
           # AuditPartitionRetentionService bean gets instantiated under
           # NOTIFY_AUDIT_RETENTION_ENABLED=true.
           compliance.acik.com/audit-retention-cycle: "pr-c-2-flip-2026-05-09"
+          # Faz 23.7 M7 T4.2 WebPush activation (RB-webpush-activation §3.4):
+          # annotation bump forces a rolling restart so the ESO-synced VAPID
+          # 3-key Secret + ConfigMap NOTIFY_ADAPTERS_WEBPUSH_ENABLED=true are
+          # picked up via envFrom — instantiates WebPushAdapter +
+          # VapidKeyService + DefaultWebPushSender. Codex 019e49e7 P11.
+          notify.acik.com/webpush-activated-at: "2026-05-22"
 
   # Faz 23.4 PR-E.4 absorb (revert PR-E.3 HPA min=max=1 lock):
   # Backend PR Halildeu/platform-backend#89 lands cross-pod broadcast via PG
