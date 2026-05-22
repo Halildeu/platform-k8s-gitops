@@ -2313,7 +2313,18 @@ images:
     # 3. tab "Geçmiş (30 gün)" + listHistory RTK endpoint. Backend M6a
     # (notification-orchestrator 8c9a22a7, /me/history) gitops PR #848
     # ile zaten test cluster'da canlı.
-    digest: sha256:da605dbd6796264ba104d52473bca0686cd92d91146eb607ebcf45282f5c24c3
+    #
+    # 2026-05-22 update (Faz 23.7 M7 T4.2 — WebPush activation): bump to
+    # platform-web main sha-2f00ee0 (#648 PR-W5 frontend WebPush subscription
+    # stack + #649 UI integration + VAPID env build chain). Build run
+    # 26296305663 SUCCESS — this build baked VITE_NOTIFY_VAPID_PUBLIC_KEY
+    # (GitHub repo var NOTIFY_VAPID_PUBLIC_KEY now seeded with the test VAPID
+    # public key) so PushSubscriptionCard reads a valid applicationServerKey
+    # instead of the configuration-missing warning. Auto testai-deploy run
+    # 26296500514 already kubectl-set-image'd this digest live (Gate 1a/1b/1c
+    # + Playwright smoke pass); this pin reconciles overlay desired-state so a
+    # future `apply -k` does not revert the frontend. RB-webpush-activation §3.7.
+    digest: sha256:d32aa011866518456282996a978a02c8698fc1cd99461ffbff7a5d033585f295
 
   # Faz 22.1.1 endpoint-admin-service test overlay digest pin —
   # BE-016 Flyway enablement, PR-1 adoption stage (2026-05-22). Board #971.
