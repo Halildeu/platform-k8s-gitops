@@ -2335,14 +2335,20 @@ images:
   #   digest sha256:fd7a9c54f7919bdb71c9b2adf8d18e548d6ac4dc9cb25e0d5857dddd2dc0e3bc
   #
   # Previous digest sha256:b2250b7a... was H1 (PR #288 post-merge mergeCommit
-  # 8e2589c1) — pre-BE-014A. New digest contains BE-014A deny audit hooks
-  # so live cluster audit on revoked/expired/already-consumed/device-mismatch
-  # agent consume attempts emits the 4 new audit event types.
+  # 8e2589c1) — pre-BE-014A. New digest CARRIES BE-014A deny-audit code
+  # paths in the bytecode. Live 4-deny HMAC/agent consume smoke is
+  # pending/deferred (requires HMAC device credential setup in a follow-up
+  # session). Pod imageID match + BE-013 admin matrix regression smoke are
+  # deployment/regression evidence, NOT BE-014A Functional acceptance.
   #
-  # BE-013 admin-side maintenance token lifecycle live VERIFIED LIVE 2026-05-22
-  # (admin POST issue + GET + DELETE revoke + status PENDING→REVOKED + 2 audit
-  # rows MAINTENANCE_TOKEN_CREATED + MAINTENANCE_TOKEN_REVOKED, token plaintext
-  # hash-only DB invariant preserved).
+  # BE-013 admin-side maintenance token lifecycle smoke run 2026-05-22 in
+  # this session (admin POST issue + GET + DELETE revoke + status
+  # PENDING → REVOKED + 2 audit rows MAINTENANCE_TOKEN_CREATED +
+  # MAINTENANCE_TOKEN_REVOKED, token plaintext hash-only DB invariant
+  # preserved). Treated as admin-side regression smoke; BE-013 live gate
+  # final acceptance (agent-side consume / device match / expired deny /
+  # revoked deny full lifecycle via HMAC device credential) is the natural
+  # next step paired with BE-011 agent live integration.
   #
   # Previous digest sha256:5bb0fa26... corresponded to side branch e9cb8dd0
   # (codex/be-001-...) — pre-canonical-main adoption. The new digest is the
