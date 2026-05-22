@@ -252,7 +252,7 @@ Bu bölüm, eski 2026-05-02/05-05 ara notlarını override eden güncel takip no
 | **Agent** | `platform-agent/origin/main` has Go scaffold, CI/release hardening foundation, successful `main` CI run `26030514275`, lab-only signed artifact evidence, and historical Parallels Windows 11 service/installer/local-user/tamper MVP evidence in `docs/TRACKING-ROADMAP.md`. Fresh temp worktree test/build/windows-package PASS. | Backend live enrollment/heartbeat integration, Windows identity inventory, trusted signing, EDR/allowlist, and IT EndpointPilot deployment remain pending. Also fix capability mismatch before pilot: Windows currently reports disable/enable local-user capability while executor would return `UNSUPPORTED`. |
 | **IT** | Scope remains `acik.local`; BOREAS/CESS outside initial phase. | EndpointPilot OU + 1-3 IT-owned Windows devices + inventory baseline. |
 
-Evidence-weighted progress snapshot (2026-05-22 — Plan A/B/C + C.5.persona Live JWT full chain MERGED):
+Evidence-weighted progress snapshot (2026-05-22 — Plan A/B/C + C.5.persona Live JWT full chain MERGED) — **[superseded by "2026-05-22 Truth Refresh (#982)" below — BE-016/BE-017/BE-011 merged + api-gateway D30 drift; aşağıdaki tablo BE-016 öncesi historical snapshot]**:
 
 | Milestone | Progress | Acceptance boundary |
 |---|---:|---|
