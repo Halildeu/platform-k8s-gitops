@@ -243,11 +243,11 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 ## Tier 4: 23.6 + 23.7 + 23.8 v1 (~5-6 weeks, ~99h)
 
-> **Status revision 2026-05-21 (Session 47 — post WebPush 11 sub-PR + T4.1 MERGED + T4.3.a Tempo LIVE + T4.3.b suppression LIVE + T4.3.6 per-tenant dashboard MERGED)**: T4.1 LIVE, T4.2 browser-only foundation 11 sub-PR MERGED + 1 UI integration follow-up MERGED 2026-05-21 20:00Z (mobile FCM/APNS Faz 22.2 dep DIŞI), T4.3 3/9 sub-task LIVE (Tempo + suppression + per-tenant dashboard MERGED; FBL + per-template analytics + federation residual). Sprint plan re-baseline:
+> **Status revision 2026-05-22 (Session 48 — T4.3 9/9 sub-task source-side closed)**: T4.1 LIVE, T4.2 browser-only foundation 11 sub-PR + 1 UI follow-up MERGED (mobile FCM/APNS Faz 22.2 dep DIŞI), **T4.3 9/9 sub-task source-side closed** (Tempo + suppression + per-tenant dashboard + per-template analytics + federation design-artifact + FBL core+mailbox-worker MERGED). Sprint plan re-baseline:
 >
 > - T4.1 actual ~14h (estimate 25h, variance -11h — Block Kit + Teams Adaptive Card pattern straight-forward)
 > - T4.2 (browser-only scope) actual ~32h from 11 sub-PR MERGED + 1 UI follow-up MERGED 2026-05-21 (W1+W2.1+W2.2+W2.3+W2.4+W2.5+W2.6+W3+W4+W5+W6+W7 + #649); mobile FCM/APNS ~24h Faz 22.2 dep DIŞI
-> - T4.3 actual ~21.5h done of ~36h plan; ~2h kalır (T4.3.7 PR-2 backend index ext; T4.3.5 FBL source-ready 2026-05-22 PR #298+#299; T4.3.8 federation **design-artifact** 2026-05-22 ADR-0026 iter-2 — production federation runtime Faz 24+/M8)
+> - T4.3 actual ~23.5h of ~36h plan; **0h agent residual — 9/9 sub-task source-side closed 2026-05-22** (T4.3.5 FBL PR #298+#299; T4.3.6 dashboard PR #951; T4.3.7 per-template PR #966+#296 MERGED; T4.3.8 federation design-artifact ADR-0026). Kalan yalnız operator activation gate'leri (FBL mailbox + per-template DB RO role).
 
 ### T4.1 — 23.6 Teams + Slack Zenginleştirme
 
@@ -290,7 +290,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | T4.3.4 | Email bounce loop (provider feedback → suppression list V17) | backend | 8 | 6 | dev | 🟢 PR #270 MERGED (T4.3.b) |
 | T4.3.5 | Spam complaint feedback loop (FBL) — ARF RFC 5965 mailbox-pull; ArfReportParser + FblService idempotent SPAM_COMPLAINT suppression + FblMailboxPollingWorker IMAP (Codex 019e4edd/019e4fc6/019e4ffd) | backend | 4 | 7 | dev | 🟢 source-ready 2026-05-22 (PR #298 core + PR #299 mailbox worker MERGED; V22 migration + 28 unit test; operator activation ext-gated — RB-fbl-mailbox-activation) |
 | T4.3.6 | Per-tenant Grafana dashboard | gitops | 4 | 3 | gitops | 🟢 PR #951 MERGED (this batch — 7 panel skeleton + backend org_id Tag retrofit M8 pre-req) |
-| T4.3.7 | Per-template analytics (Grafana PG datasource + Top 20 Templates panel; **PG aggregate read** — no Prometheus template_id label per Codex 019e4ee2 cardinality safety; PR-1 gitops source-ready; PR-2 backend index Flyway migration ext; operator activation chain DB RO role + Vault seed + ESO uncomment) | gitops + backend | 4 | 2 | gitops | 🟡 PR-1 source-ready 2026-05-22 (Grafana sidecar datasource + per-tenant dashboard panel + RB-grafana-notify-pg-datasource + defer-aware ESO); operator activation + PR-2 backend index ext-gated |
+| T4.3.7 | Per-template analytics (Grafana PG datasource + Top 20 Templates panel; **PG aggregate read** — no Prometheus template_id label per Codex 019e4ee2 cardinality safety; PR-1 gitops + PR-2 backend V21 index MERGED) | gitops + backend | 4 | 4 | gitops | 🟢 source-ready 2026-05-22 (PR #966 Grafana sidecar datasource + per-tenant dashboard panel + RB-grafana-notify-pg-datasource + PR #296 V21 index MERGED; operator activation chain DB RO role + Vault seed + ESO uncomment ext-gated) |
 | T4.3.8 | Federation plan-time design + safe scaffold (**design artifact only**; M7 iter-1 runtime federation YOK — ADR-0002 §3.8 remote_write zaten centralized; production federation Faz 24+/M8 trigger sonrası — Codex 019e4ee7 plan-time + 019e4ef4 iter-2 absorb) | gitops | 6 | 2 | gitops | 🟢 design-artifact-MERGED 2026-05-22 (ADR-0026 iter-2 + RB-observability-federation-rollout iter-2 + R16 budget/rollback design-managed; non-applied scaffold docs/scaffolds/; production federation runtime DEFERRED to Faz 24+/M8) |
 | T4.3.9 | Codex peer review + merge | docs | 2 | 1.5 | agent | 🟢 |
 
@@ -342,4 +342,4 @@ Update this doc per-PR:
 3. Codex thread reference per task closure
 4. Risk register cross-reference if new risk uncovered
 
-**Last update**: 2026-05-21 (Session 47 full re-baseline; T1 LIVE + T2 T2.1/T2.2 LIVE + T3 LIVE + T4.1/T4.2-browser/T4.3.a/T4.3.b/T4.3.6 LIVE; agent-actionable residual ~14h T4.3 tail; external acceptance gates R2/R7/R9/R1/R24)
+**Last update**: 2026-05-22 (Session 48 — T4.3 9/9 sub-task source-side closed: T4.3.5 FBL #298+#299 + T4.3.7 per-template #966+#296 + T4.3.8 federation ADR-0026 #964; T1/T2.1/T2.2/T3/T4 source-side LIVE/closed; **0h agent-actionable residual** — v1 closure yalnız external acceptance + operator activation gate'lerine bağlı: R2 KVKK 2026-05-25, R7/R9/R1/R24, FBL mailbox + per-template DB RO operator activation)

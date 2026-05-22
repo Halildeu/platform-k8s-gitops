@@ -60,7 +60,24 @@ Beklenen: `a OK LOGIN completed`. Eğer `a NO AUTHENTICATE failed` veya `LOGIN f
 - **Basic Auth kapalıysa**: XOAUTH2 gerekir → PR-1 worker desteklemez; XOAUTH2 token akışı ayrı backend PR (notify.fbl.mailbox.auth-mode=xoauth2 future). Bu durumda activation **bu PR ile yapılamaz** — XOAUTH2 PR'ı bekle.
 - **Basic Auth açıksa** (veya app-password destekleniyorsa): devam.
 
+> ⚠️ Bu `openssl` smoke **operator workstation'dan** çalışır — notification-orchestrator **pod'un** IMAPS 993'e çıkabildiğini KANITLAMAZ. Test cluster default-deny-egress NetworkPolicy yalnız 587/443 açar; 993 ayrıca açılmalı (§3.0). Pod-context 993 reachability **G5 hard gate**'inde doğrulanır.
+
 ## 3. Operator Activation Chain (sequential — gate geçmeden sonraki adım YOK)
+
+### 3.0 NetworkPolicy — pod IMAPS 993 egress allowlist (KRİTİK — Codex 019e500c BLOCKER)
+
+Test cluster `kustomize/overlays/test/netpol-notification-egress-mail-providers.yaml` default-deny-egress bağlamında çalışır; mevcut allowlist yalnız **587 (SMTP)** + **443 (HTTPS)** açar. IMAPS **993 KAPALI** — FBL mailbox poll notification-orchestrator pod'undan dışarı çıkamaz (worker `connectStore()` connect timeout ile fail eder).
+
+`netpol-notification-egress-mail-providers.yaml` notification-orchestrator egress kuralının `ports` listesine 993 ekle:
+
+```yaml
+        - protocol: TCP
+          port: 993   # IMAPS — FBL mailbox poll (Office 365 outlook.office365.com)
+```
+
+PR aç + Codex review + merge + cluster apply. Pod-context doğrulama **G5 hard gate**'inde (TCP 993 reachability notification-orchestrator pod'undan).
+
+⚠️ **Prod overlay** (`kustomize/overlays/prod/netpol-notification-egress-mail-providers.yaml`) 993 egress'i bu adımda EKLENMEZ — prod FBL activation test 72h soak sonrası ayrı prod slot.
 
 ### 3.1 IMAP mailbox credentials hazırla
 
@@ -158,8 +175,8 @@ ssh halil@staging-sw "cd /home/halil/platform-k8s-gitops && git pull origin main
 | **G2 Secret keys** | `kubectl -n platform-test get secret notification-orchestrator-secrets -o json \| jq -e '.data \| has("NOTIFY_FBL_MAILBOX_HOST") and has("NOTIFY_FBL_MAILBOX_PASSWORD")'` | `true` |
 | **G3 Worker bean aktif** | `kubectl -n platform-test logs deploy/notification-orchestrator \| grep "FblMailboxPollingWorker activated"` | satır döner (authMode=basic, bounded timeout) |
 | **G4 Pod env** | `kubectl -n platform-test exec deploy/notification-orchestrator -- env \| grep '^NOTIFY_FBL_MAILBOX_ENABLED='` | `=true` |
-| **G5 İlk poll cycle** | `kubectl -n platform-test logs deploy/notification-orchestrator --since=3m \| grep -E "FblMailboxPollingWorker cycle\|FBL mailbox poll"` | poll çalışıyor, hata yok |
-| **G6 IMAP connect** | G5 log'da `cycle error` YOK; auth/connection fail YOK | bağlantı başarılı |
+| **G5 Pod → IMAPS 993 reachability** | `kubectl --context k3d-test -n platform-test exec deploy/notification-orchestrator -- bash -c 'timeout 8 bash -c "cat < /dev/null > /dev/tcp/outlook.office365.com/993" && echo TCP_OK \|\| echo TCP_FAIL'` | `TCP_OK` — pod IMAPS 993 egress açık (§3.0 NetworkPolicy uygulandı). `TCP_FAIL` → §3.0 eksik/yanlış |
+| **G6 End-to-end ARF smoke** | §5 ARF smoke ZORUNLU — boş mailbox pozitif poll kanıtı ÜRETMEZ (worker yalnız `processed>0` iken `cycle: processed=` log'lar; başarılı poll'un boş-mailbox success path'i sessiz). Test ARF seed → `grep "FBL mailbox message processed"` + email_bounce_event + email_suppression + metrics 5 kanıt birlikte | §5 ZORUNLU; G3-G5 arası log'da `cycle error` YOK (negative gate — tek başına acceptance DEĞİL) |
 
 ## 5. Smoke — End-to-End FBL
 
