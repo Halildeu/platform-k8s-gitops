@@ -1,0 +1,7 @@
+# Grafana datasources kustomization (Faz 23.8 M7 T4.3.7 PR-1)
+# Codex 019e4ee2 plan-time AGREE absorb.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - notify-pg-datasource.yaml

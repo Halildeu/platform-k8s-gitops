@@ -26,6 +26,7 @@ resources:
   - externalsecret-ghcr-pull.yaml    # platform-prod ns (W1 Opsiyon B)
   - notify                            # notification-orchestrator-secrets (Faz 23.9 Step D)
   - alertmanager                      # Faz 23.2.D T1.4 D43 outage fallback (Codex 019e0dea iter-2)
+  - grafana                           # Faz 23.8 M7 T4.3.7 — grafana-notify-pg-secret (defer-aware; PR-1 Codex 019e4ee2)
 
 patches:
   - target:

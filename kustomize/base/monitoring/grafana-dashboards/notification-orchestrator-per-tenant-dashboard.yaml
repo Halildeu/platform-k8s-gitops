@@ -259,6 +259,57 @@ data:
           ],
           "title": "Per-tenant filter activation status",
           "type": "stat"
+        },
+        {
+          "datasource": {"type": "postgres", "uid": "notify_pg_ro"},
+          "description": "**OPERATOR-ONLY BREAK-GLASS — NOT TENANT-FACING.** Top 20 templates by send volume + success rate. PG aggregate read (notify.audit_event_v2 + notification_delivery JOIN terminal truth). Tenant variable filter `${tenant:sqlstring}` Grafana SQL escape; **NOT a security boundary** (M8 acceptance gates required for tenant-facing — see ADR-0026 §4 + RB-grafana-notify-pg-datasource.md §6). Operator activation chain: DB RO role + Vault seed + ESO + Grafana env (see RB §3). LIMIT 20; default dashboard window 24h. Faz 23.8 M7 T4.3.7 (Codex 019e4ee2 plan-time + 019e4f10 iter-2 P1 absorb).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "custom": {
+                "align": "auto",
+                "cellOptions": {"type": "auto"},
+                "filterable": false
+              },
+              "noValue": "PG datasource activation pending (operator chain — see RB-grafana-notify-pg-datasource.md)",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "yellow", "value": 50},
+                  {"color": "green", "value": 95}
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "success_rate_pct"},
+                "properties": [
+                  {"id": "unit", "value": "percent"},
+                  {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}}
+                ]
+              }
+            ]
+          },
+          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 24},
+          "id": 8,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false},
+            "showHeader": true
+          },
+          "targets": [
+            {
+              "datasource": {"type": "postgres", "uid": "notify_pg_ro"},
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "-- Codex 019e4f10 P1 #3 + #4 absorb (iter-2) + iter-3 nd.id PK fix:\n-- (a) WHERE template_id IS NOT NULL kaldırıldı → COALESCE fallback reachable\n-- (b) Success rate JOIN notification_delivery (terminal truth nd.status)\n--     audit_event_v2 event_type DLR async flow için terminal değil\n--     notification_delivery PK kolonu = id (NOT delivery_id; Codex 019e4f10 iter-2 P1)\n-- (c) Tenant variable Grafana SQL safe escape ${tenant:sqlstring}\n--     (manual single-quote YASAK; SQL injection risk)\nSELECT\n  COALESCE(ae.template_id, ae.details->>'template_id', ae.topic_key) AS template_key,\n  COUNT(DISTINCT ae.delivery_id) AS total_count,\n  COUNT(DISTINCT nd.id) FILTER (\n    WHERE nd.status = 'DELIVERED'\n  ) AS success_count,\n  (COUNT(DISTINCT nd.id) FILTER (\n    WHERE nd.status = 'DELIVERED'\n  )::numeric / NULLIF(COUNT(DISTINCT ae.delivery_id), 0) * 100)::numeric(5,2) AS success_rate_pct\nFROM notify.audit_event_v2 ae\nLEFT JOIN notify.notification_delivery nd\n  ON nd.id = ae.delivery_id\nWHERE\n  ae.org_id = ${tenant:sqlstring}\n  AND ae.occurred_at BETWEEN $__timeFrom() AND $__timeTo()\n  AND COALESCE(ae.template_id, ae.details->>'template_id', ae.topic_key) IS NOT NULL\nGROUP BY template_key\nORDER BY total_count DESC\nLIMIT 20;",
+              "refId": "A"
+            }
+          ],
+          "title": "Top 20 Templates by Send Volume + Success Rate (PG aggregate)",
+          "type": "table"
         }
       ],
       "refresh": "30s",

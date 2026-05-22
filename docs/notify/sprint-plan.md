@@ -290,13 +290,13 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | T4.3.4 | Email bounce loop (provider feedback → suppression list V17) | backend | 8 | 6 | dev | 🟢 PR #270 MERGED (T4.3.b) |
 | T4.3.5 | Spam complaint feedback (FBL endpoint) | backend | 4 | — | dev | 🔴 sub-task pending |
 | T4.3.6 | Per-tenant Grafana dashboard | gitops | 4 | 3 | gitops | 🟢 PR #951 MERGED (this batch — 7 panel skeleton + backend org_id Tag retrofit M8 pre-req) |
-| T4.3.7 | Per-template analytics | backend | 4 | — | dev | 🔴 sub-task pending |
+| T4.3.7 | Per-template analytics (Grafana PG datasource + Top 20 Templates panel; **PG aggregate read** — no Prometheus template_id label per Codex 019e4ee2 cardinality safety; PR-1 gitops source-ready; PR-2 backend index Flyway migration ext; operator activation chain DB RO role + Vault seed + ESO uncomment) | gitops + backend | 4 | 2 | gitops | 🟡 PR-1 source-ready 2026-05-22 (Grafana sidecar datasource + per-tenant dashboard panel + RB-grafana-notify-pg-datasource + defer-aware ESO); operator activation + PR-2 backend index ext-gated |
 | T4.3.8 | Federation plan-time design + safe scaffold (**design artifact only**; M7 iter-1 runtime federation YOK — ADR-0002 §3.8 remote_write zaten centralized; production federation Faz 24+/M8 trigger sonrası — Codex 019e4ee7 plan-time + 019e4ef4 iter-2 absorb) | gitops | 6 | 2 | gitops | 🟢 design-artifact-MERGED 2026-05-22 (ADR-0026 iter-2 + RB-observability-federation-rollout iter-2 + R16 budget/rollback design-managed; non-applied scaffold docs/scaffolds/; production federation runtime DEFERRED to Faz 24+/M8) |
 | T4.3.9 | Codex peer review + merge | docs | 2 | 1.5 | agent | 🟢 |
 
-**Total**: 36h estimate / 14.5h actual + 8h residual (T4.3.5 FBL + T4.3.7 per-template; T4.3.8 design-artifact 2026-05-22 ADR-0026 iter-2)
+**Total**: 36h estimate / 16.5h actual + 6h residual (T4.3.5 FBL backend 4h + T4.3.7 PR-2 backend index 2h ext; T4.3.7 PR-1 gitops source-ready 2026-05-22; T4.3.8 design-artifact 2026-05-22 ADR-0026 iter-2)
 
-**Tier 4 Total**: ~99h estimate / ~60.5h actual + ~8h residual; mobile FCM/APNS ~24h Faz 22.2 dep DIŞI (T4.1 14h + T4.2 32h + T4.3 14.5h = 60.5h actual)
+**Tier 4 Total**: ~99h estimate / ~62.5h actual + ~6h residual; mobile FCM/APNS ~24h Faz 22.2 dep DIŞI (T4.1 14h + T4.2 32h + T4.3 16.5h = 62.5h actual)
 
 ---
 
