@@ -2331,7 +2331,25 @@ images:
     # longer fires header-less GET /preferences/me + /push/subscribe/me → 401).
     # Build run 26305747194 SUCCESS; auto testai-deploy run 26305928158 already
     # kubectl-set-image'd this digest live. Codex 019e50f4 AGREE.
-    digest: sha256:d449218498db52adf0dcd327a9610d39c2d112b2c65aa28118bd222a2390fd0c
+    #
+    # 2026-05-22 update (notify RTK Request-object header-drop — GENUINE fix):
+    # bump to platform-web main sha-07805aa (#652). Root-cause correction:
+    # #650 (token-gate) + #651 (transportReady-gate) were defensive hardening
+    # but did NOT fix the cold-load 401 — re-smokes proved GET /preferences/me
+    # + /push/subscribe/me still 401'd. Real cause: RTK Query 2.x
+    # fetchBaseQuery defaults to fetch(new Request(url,init)); a wire-layer
+    # drop (frontend nginx <-> orchestrator) loses Authorization + identity
+    # headers on the Request-object form. #652 extracts unwrapRequestFetchFn
+    # to a shared module and wires it as the fetchFn for all 4 authenticated
+    # notify RTK clients (inbox/prefs/push/topic-catalog) so the call
+    # re-issues in string-URL form and headers survive end-to-end.
+    # Build run 26308836399 SUCCESS; auto testai-deploy run 26308986779
+    # kubectl-set-image'd this digest live + Gate 1 verify pass. Playwright
+    # browser re-smoke PASS: cold-load /settings/notifications now fires
+    # GET /preferences/me + /push/subscribe/me + /inbox/me -> 200 (zero 401),
+    # 0 console errors, PushSubscriptionCard renders. Codex 019e512f AGREE.
+    # Closes RB-webpush-activation §3.10 + §5 browser end-to-end gate.
+    digest: sha256:aef8169ef09a3e9f47058b5931bc2ebd6e46b2845d2b954d7af7f3042369fc06
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
