@@ -2362,7 +2362,68 @@ images:
     # GET /preferences/me + /push/subscribe/me + /inbox/me -> 200 (zero 401),
     # 0 console errors, PushSubscriptionCard renders. Codex 019e512f AGREE.
     # Closes RB-webpush-activation §3.10 + §5 browser end-to-end gate.
-    digest: sha256:aef8169ef09a3e9f47058b5931bc2ebd6e46b2845d2b954d7af7f3042369fc06
+    #
+    # 2026-05-23 update (Faz 22 Web endpoint-admin runtime acceptance —
+    # D30 drift-correction; same pattern as PR #985 api-gateway): bump to
+    # platform-web main sha-5455b07 (#657 — `endpointAdminApi.ts`
+    # `prepareHeaders` reads the bearer from the shell-injected
+    # `getShellServices().auth.getToken()` then falls back to
+    # `localStorage.token`; mirrors the mfe-users `mergeHeaders` precedent
+    # because `@mfe/shared-http` MF singleton sharing is not effective for
+    # this remote — each `__FEDERATION__.__INSTANCES__` entry is a separate
+    # instance, so the shell-registered `resolveAuthToken` resolver does
+    # not reach the endpoint-admin MFE). The previous pin
+    # (sha256:aef8169e…, platform-web sha-07805aa) carried the #652
+    # notify `unwrapRequestFetchFn` fix — already live and reconciled by
+    # this build (the rebuilt image baked the same notify fix plus the
+    # new endpoint-admin auth Bearer fix).
+    #
+    # WHAT THIS IMAGE CARRIES (delta vs. previous pin):
+    #   - endpoint-admin MFE: `endpointAdminApi.ts` `prepareHeaders`
+    #     refactored — new `readBearerToken()` helper, shell-injected
+    #     getter primary + `localStorage.token` fallback; pairs with
+    #     #656's `createEndpointAdminApp` race-protection wrapper
+    #     (configureShellServices-before-App) to guarantee the live Redux
+    #     token getter is wired BEFORE the first RTK query fires.
+    #   - All other MFEs unchanged (notify #652 unwrapRequestFetchFn fix
+    #     still present; mfe-users, mfe-reporting, mfe-suite-pm etc.
+    #     identical bundles).
+    #
+    # BUILD PROVENANCE:
+    #   - platform-web `main` @ 5455b076 (PR #657 squash, 2026-05-23
+    #     06:52 UTC).
+    #   - ci-web-image-push run 26326233992 SUCCESS (testai + prod
+    #     variants pushed to GHCR).
+    #   - deploy-testai run 26326299612 SUCCESS — auto kubectl-set-image'd
+    #     this digest live to test cluster frontend deploy.
+    #
+    # D30 PARITY EVIDENCE (post-deploy, 2026-05-23):
+    #   - Live pod imageID:
+    #       ghcr.io/halildeu/platform-web-frontend-testai
+    #         @sha256:c212be872062705c9de26333b1c38ddfbda06096a03ec89a63e13320bdbdf08b
+    #   - Desired (this pin) = live ⇒ a future `apply -k` will be a no-op
+    #     for the frontend image; closes the D30 drift opened by the
+    #     auto-deploy imperative path (ADR-0023 drift-source pattern).
+    #
+    # BROWSER ACCEPTANCE EVIDENCE (post-#657 deploy, claude-in-chrome MCP):
+    #   - `GET /api/v1/endpoint-agents/status` -> 200 (Bearer accepted,
+    #     auth-only endpoint passes).
+    #   - `GET /api/v1/endpoint-admin/endpoint-devices` -> 503 (mid-rollout,
+    #     backend pod transiently unavailable — the request REACHED the
+    #     backend, not 401 anymore ⇒ gateway forwarded the Bearer header).
+    #   - Pre-fix forensics: same endpoints returned 401 with empty
+    #     Authorization (captured at platform-web #655 thread).
+    #
+    # Tracked by platform-web#655 + platform-web#653 (both closed
+    # 2026-05-23 with this build's browser evidence). Codex cross-AI
+    # review chain: 019e516c (#654) + 019e5196 (#656) + 019e538c (#657).
+    #
+    # Drift-correction PR pattern: same as PR #985 (api-gateway
+    # sha-76c517b re-pin after ssot-orphan build) and PR #983 (canonical
+    # doc refresh) — imperative `kubectl set image` is the drift source;
+    # this overlay edit reconciles desired-state without changing the
+    # live cluster.
+    digest: sha256:c212be872062705c9de26333b1c38ddfbda06096a03ec89a63e13320bdbdf08b
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
