@@ -12,7 +12,7 @@
 
 ## Live Delta — Faz 22 Web endpoint-admin runtime acceptance LIVE (2026-05-23)
 
-Web runtime acceptance — 2026-05-22 delta'da ayrı kapı olarak listelenen pending kalemi — bu session source-side MERGED + testai canlı + browser-functional smoke kanıtlı kapatıldı. Faz 22.1 Web runtime acceptance ~95% (issue/IT pilot ≠ runtime).
+Web runtime acceptance — 2026-05-22 delta'da ayrı kapı olarak listelenen pending kalemi — bu session source-side MERGED + testai canlı + browser-functional smoke kanıtlandı ve pending listesinden çıkarıldı. Faz 22.1 Web runtime acceptance ~95% (issue/IT pilot ≠ runtime).
 
 ### Merged (source-side, hepsi cross-AI Codex AGREE + CI yeşil + normal squash + archive-tag)
 
