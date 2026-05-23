@@ -337,6 +337,39 @@ Beklenen: `notify_intent_terminated_total{terminal=...}` + `notify_dispatch_outc
 > the active prerequisite that lets the resolution succeed. Both fixes
 > are required — the 401 is just the gate ordering: trigger fires first.
 
+> **POST-CUTOVER LIVE SUCCESS 2026-05-23 — §3.11 ✅**
+>
+> All three preparation+fix steps merged and applied; live re-smoke
+> proves end-to-end SUCCESS push delivery:
+>
+> - **PR #990** (OpenFGA model extension safe-phase): new model
+>   `01KS8QE8T1EJ2DF5CRS4VV9YX1` written additive to store
+>   `01KPP0CFP4G82K42Y6NYSPT4JF`; ERP types byte-identical; isolated
+>   Check TRUE for `subscriber:123be09e-… can_receive template:t1`.
+> - **PR #995** (model_id cutover): permission-service Deployment env
+>   override `ERP_OPENFGA_MODEL_ID=01KS8QE8…` via test-overlay patch
+>   (operator follow-up = Vault `kv/platform/openfga#model_id` patch +
+>   override revert).
+> - **PR #996** (401 root-cause fix): orchestrator ExternalSecret
+>   `NOTIFY_AUTHZ_INTERNAL_API_KEY` remoteRef re-aligned to
+>   `kv/platform/permission-service#internal_api_key` (operator
+>   follow-up = Vault patch + remoteRef revert).
+>
+> Live evidence (intent `webpush-authz-push-1779519748`):
+> - Intent status: **COMPLETED**.
+> - Metric: **`notify_dispatch_outcome_total{channel="push",status="DELIVERED"} 1.0`**.
+> - Pod logs: `webpush send: status=201 reason=Created` →
+>   `webpush delivered: endpointId=c8753c6c-… code=201 msg_id=webpush-7c3e91fe-…` →
+>   `dispatch end: all_delivered=true`.
+> - ERP regression smoke: permission-service `/actuator/health` UP;
+>   `/api/v1/authz/me`+`/authz/version` 200 success traffic; no errors.
+> - `/api/v1/internal/authz/check` metric: 200 = 1 (new SUCCESS
+>   post-fix) + 401 = 1 (historical pre-cutover).
+>
+> §5 metric gate row: 🟡 → ✅. Browser-only WebPush LIVE end-to-end
+> (subscribe flow + push delivery). Mobile FCM/APNS Faz 22.2 dep stays
+> out-of-scope.
+
 ## 4. Rollback
 
 ENABLED=false rollback (ADR-0023 overlay-managed):
@@ -366,7 +399,7 @@ Vault VAPID keys silmek YASAK (audit trail). Sadece ConfigMap flag flip yeterli.
 | Pod startup log VapidKeyService activated | pod log: `VapidKeyService activated` + `DefaultWebPushSender activated` | ✅ |
 | Frontend VAPID env injection | testai.acik.com `window.__env__.VITE_NOTIFY_VAPID_PUBLIC_KEY` 87ch (HTTP + Playwright runtime); `PushSubscriptionCard` config-missing branch tetiklenmedi (gitops PR #977) | ✅ |
 | Browser end-to-end smoke (subscribe flow) | Persistent-context Playwright, #652 frontend live (overlay digest `aef8169e`, PR #986): `webpush-smoke` KC SSO → `/settings/notifications` cold-load → `GET /preferences/me`+`/push/subscribe/me`+`/inbox/me` **200** (önceki 401 RTK `Request`-object fetchFn bug'ı #652 ile çözüldü) → "Aboneliği aç" → `pushManager.subscribe` gerçek FCM endpoint → `POST /push/subscribe` **200** → kart "Aboneliği kapat / 1 aktif cihaz". 0 console error. §3.10 step 1–5 (root-cause: `browser.newContext()` incognito → Push API blocked; `launchPersistentContext` ile çözüldü) | ✅ |
-| Backend metric notify_dispatch_outcome push channel rate > 0 | Sentetik push intent (template `t1` v1, `channels:["push"]`, recipient `subscriber:123be09e-…`) → `POST /api/v1/notify/intents` **202** → pipeline kanıtlı (IntentSubmissionService `channels=[push]` → DeliveryPlanService `push plan target_count=1` → DeliveryDispatchService) → **`notify_dispatch_outcome_total{channel="push"}` > 0**. Outcome `BLOCKED_BY_AUTHZ` — kök neden: canlı OpenFGA model'i (`01KRTJVEMAW80B2D35GN8HJDPG`) yalnız ERP type'larını içeriyor, `template`/`can_receive`/`subscriber` type'ları YOK → subscriber-recipient notification authz yolu mevcut deployment'ta provisioned değil. SUCCESS delivery = OpenFGA notification authz model migration (Zanzibar authz-plane işi, §3.11 not) | 🟡 push kanalı aktif + pipeline + metric > 0 ✅; SUCCESS delivery OpenFGA notification-authz model provisioning bekliyor |
+| Backend metric notify_dispatch_outcome push channel rate > 0 | Sentetik push intent (template `t1` v1, `channels:["push"]`, recipient `subscriber:123be09e-…`) → `POST /api/v1/notify/intents` **202 ACCEPTED** → intent status **COMPLETED** → metric **`notify_dispatch_outcome_total{channel="push",status="DELIVERED"} 1.0`** + pod logs `webpush send: status=201 reason=Created` → `webpush delivered: endpointId=c8753c6c-… code=201 msg_id=webpush-7c3e91fe-…` → `dispatch end: all_delivered=true`. 2026-05-23 cutover zinciri: PR #990 (OpenFGA model extension safe-phase, model `01KS8QE8…` additive) + PR #995 (`ERP_OPENFGA_MODEL_ID` test overlay env override cutover) + PR #996 (orchestrator ExternalSecret `NOTIFY_AUTHZ_INTERNAL_API_KEY` re-aligned to `kv/platform/permission-service#internal_api_key` — 401 root cause düzeldi; truth correction: 401 primary trigger, model gap secondary prerequisite). ERP regression smoke clean (permission-service health UP, `/api/v1/authz/me`+`/authz/version` 200 trafik, no errors). | ✅ SUCCESS — orchestrator+permission-service auth aligned, OpenFGA model extended + cutover, gerçek FCM 201 delivery + msg_id |
 
 ## 6. Prod cutover (ayrı slot)
 

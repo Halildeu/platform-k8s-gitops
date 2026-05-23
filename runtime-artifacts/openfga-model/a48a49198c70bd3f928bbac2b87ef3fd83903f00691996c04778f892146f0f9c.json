@@ -6,18 +6,14 @@
     "kind": "openfga-server",
     "canonical_source_ref": "openfga://platform-test/authorization-models/01KS8QE8T1EJ2DF5CRS4VV9YX1"
   },
-  "runtime_selector": {
-    "selector_kind": "openfga-store-direct",
-    "store_ref": "platform-test",
-    "model_id_field": "ERP_OPENFGA_MODEL_ID"
-  },
+  "runtime_selector": null,
   "promotion": {
     "test": {
-      "status": "verified",
+      "status": "promoted",
       "method": "pr-promotion",
       "store_ref": "platform-test",
       "verified_at": "2026-05-22T20:55:00Z",
-      "promoted_at": null,
+      "promoted_at": "2026-05-23T07:02:46Z",
       "model_id_env": "01KS8QE8T1EJ2DF5CRS4VV9YX1",
       "evidence": {
         "required_types_present": [
@@ -54,10 +50,13 @@
         }
       },
       "evidence_completeness": "complete",
+      "verified_by_pr": 990,
+      "promoted_by_pr": 995,
       "source_docs": [
         "docs/faz-23-evidence/2026-05-22-openfga-notification-model-extension.md",
         "docs/notify/openfga-notification-model.dsl",
-        "docs/notify/m3-supplement-openfga-model-extension-plan-2026-05-14.md"
+        "docs/notify/m3-supplement-openfga-model-extension-plan-2026-05-14.md",
+        "docs/runbooks/RB-webpush-activation.md"
       ]
     },
     "prod": {
