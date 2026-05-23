@@ -3030,6 +3030,53 @@ patches:
         path: /data/REPORTS_DB_ENABLED
         value: "true"
 
+  # Faz 23.7 OpenFGA notification-authz model_id cutover (2026-05-23)
+  # ==================================================================
+  # KEYSTONE: WebPush §3.11 SUCCESS push delivery'yi açan adım. Bu cutover
+  # permission-service'i yeni OpenFGA authz model'ine (01KS8QE8...) taşır;
+  # eskiye kadar subscriber-recipient notification authz BLOCKED_BY_AUTHZ
+  # idi çünkü canlı model (01KRTJVE...) notification type'larını içermiyor.
+  #
+  # Bağlam: gitops PR #990 (this session) safe-phase'de yeni model
+  # `01KS8QE8T1EJ2DF5CRS4VV9YX1` aynı OpenFGA store'a additive yazıldı
+  # (10 ERP type byte-identical kanıtlı + 5 notification type:
+  # subscriber/service_account/notification_topic/notification_template/
+  # template). İzole Check PASS: topic-inheritance ALLOW + ERP regression
+  # neutral. Runtime-artifact ledger entry test=verified.
+  #
+  # MEKANİZMA — geçici test-only DOCUMENTED DRIFT:
+  # Canonical path: Vault `kv/platform/openfga` property `model_id`'yi
+  # patch + ESO sync + permission-service rollout. Vault root token
+  # operator-managed (interactive shell `$TEST_ROOT_TOKEN`); agent SSH
+  # non-interactive env'inde unset, kaynak şifresi sormak Privacy HARD
+  # RULE ihlali. ESO ExternalSecret `permission-service-secrets` hâlâ
+  # eski model_id'yi serve ediyor — bu explicit `env.value` K8s container
+  # env semantics ile `envFrom secretRef`'i override eder (explicit env
+  # wins, kanıtlı). Sonuç: live pod env yeni model_id, ESO Secret stale
+  # ama unused.
+  #
+  # Cross-AI: Codex `019e5386` REVISE/proceed_now=true verdict (kullanıcı
+  # "Codex consultation = karar" pattern'i). "Geçici test-only override +
+  # documented drift + operator follow-up required" disiplinine bağlı.
+  #
+  # FOLLOW-UP (operator + Vault token erişimi):
+  #   1. `vault kv patch kv/platform/openfga model_id=01KS8QE8...`
+  #   2. ESO force-sync; permission-service rollout
+  #   3. Bu Deployment env override'ı revert (kustomize patch sil)
+  #   4. Runtime-artifact ledger runtime_selector: null → vault path
+  #
+  # ROLLBACK: bu patch revert + apply + rollout restart → eski model
+  # (~30s). OpenFGA store her iki model'i de tutar (immutable versions).
+  - target:
+      kind: Deployment
+      name: permission-service
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: ERP_OPENFGA_MODEL_ID
+          value: "01KS8QE8T1EJ2DF5CRS4VV9YX1"
+
   # Dilim 2: backend services replicas=1 default
   # 2026-05-10: D17 "scale-to-zero default" DEPRECATED.
   # HARD RULE — TEST Cluster Scale-to-Zero YASAK (kullanıcı 2026-05-10 kararı):
