@@ -319,6 +319,24 @@ Beklenen: `notify_intent_terminated_total{terminal=...}` + `notify_dispatch_outc
 > WebPush-channel defect. The WebPush adapter + dispatch wiring is itself
 > fully proven (intent → plan → dispatch → metric > 0).
 
+> **TRUTH CORRECTION 2026-05-23 — post OpenFGA cutover (PR #995)**:
+> The "model gap" framing above is the **secondary / latent** blocker.
+> Primary blocker, surfaced after the cutover apply, is a **401
+> Unauthorized at the `InternalApiKeyAuthFilter`**: orchestrator's
+> `NOTIFY_AUTHZ_INTERNAL_API_KEY` (Vault `kv/platform/notification-
+> orchestrator.authz_internal_api_key`) and permission-service's
+> `PERMISSION_SERVICE_INTERNAL_API_KEY` (Vault `kv/platform/permission-
+> service.internal_api_key`) were never aligned (len 31 vs 44, different
+> sha256 hashes). All pre-cutover `BLOCKED_BY_AUTHZ` outcomes were 401s
+> from the auth filter — the OpenFGA Check call never reached the
+> resolution stage where the model-gap would have mattered. Once the
+> 401 is resolved (this PR re-aligns the orchestrator ExternalSecret to
+> share the permission-service Vault path via ESO; canonical follow-up
+> = operator Vault patch), the Check WILL reach OpenFGA and the model
+> extension (PR #990 — `01KS8QE8…`, model_id cutover PR #995) becomes
+> the active prerequisite that lets the resolution succeed. Both fixes
+> are required — the 401 is just the gate ordering: trigger fires first.
+
 ## 4. Rollback
 
 ENABLED=false rollback (ADR-0023 overlay-managed):
