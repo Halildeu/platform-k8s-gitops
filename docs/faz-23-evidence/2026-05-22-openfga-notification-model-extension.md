@@ -56,11 +56,13 @@ direct grant is intentionally NOT modeled (governance: topic-scoped only).
 
 ```
 NEW model_id:  01KS8QE8T1EJ2DF5CRS4VV9YX1
-live model_id: 01KRTJVEMAW80B2D35GN8HJDPG  (UNCHANGED — permission-service still uses this)
+live model_id: 01KRTJVEMAW80B2D35GN8HJDPG  (safe-phase capture-time 2026-05-22 — permission-service was still on this; superseded 2026-05-23 by PR #995 cutover → permission-service env `ERP_OPENFGA_MODEL_ID=01KS8QE8…`, see §5)
 ```
 
-The new version is additive and unused — `ERP_OPENFGA_MODEL_ID` is untouched, so
-live ERP authz is unaffected.
+At safe-phase capture-time (2026-05-22) the new version was additive and unused
+— `ERP_OPENFGA_MODEL_ID` untouched, so live ERP authz unaffected. Superseded
+2026-05-23 by PR #995 cutover (env override flips permission-service to the new
+model_id; ERP regression smoke verified clean — see §5).
 
 ## 3. ERP regression guard
 
