@@ -6,11 +6,7 @@
     "kind": "openfga-server",
     "canonical_source_ref": "openfga://platform-test/authorization-models/01KS8QE8T1EJ2DF5CRS4VV9YX1"
   },
-  "runtime_selector": {
-    "selector_kind": "vault",
-    "vault_path": "kv/platform/openfga",
-    "field": "model_id"
-  },
+  "runtime_selector": null,
   "promotion": {
     "test": {
       "status": "promoted",
@@ -81,7 +77,7 @@
   "metadata": {
     "previous_artifact_content_digest": null,
     "rollback_safe": true,
-    "rollback_runbook_ref": "docs/runbooks/RB-webpush-activation.md#rollback",
+    "rollback_runbook_ref": "docs/runbooks/RB-webpush-activation.md#4-rollback",
     "backward_compatible_until": null,
     "migration_refs": [
       "docs/notify/m3-supplement-openfga-model-extension-plan-2026-05-14.md"
