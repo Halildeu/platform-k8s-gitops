@@ -30,7 +30,7 @@ Bu pilot **bir kanıt katmanı eklemek** içindir; production rollout veya kulla
 
 - [ ] **RDP** veya **IT eşliğinde local console erişimi** — agent install + smoke için.
 - [ ] **Şifre e-posta ile paylaşılmaz** (HARD RULE — Kullanıcı Aktif Credential'ına Dokunma): operator/IT şahsen veya secrets manager üzerinden paylaşır.
-- [ ] **HTTPS 443 backend reachability**: pilot PC'den `testai.acik.com` (initial test cluster) veya `ai.acik.com` (prod when applicable) HTTPS resolve + TCP/443 ulaşabilmeli (firewall + DNS).
+- [ ] **HTTPS 443 backend reachability**: pilot PC'den `testai.acik.com` (test cluster) HTTPS resolve + TCP/443 ulaşabilmeli (firewall + DNS). **Pilot scope test cluster only**; prod host (`ai.acik.com`) bu runbook kapsamı dışıdır (§4 ve §7).
 - [ ] **EDR/Antivirüs allowlist muhatabı**: operator çalıştığı SOC veya IT güvenlik ekibinden `endpoint-enes-agent.exe` (ve hash'i) için allowlist permission önceden alınır. EDR allowlist olmadan smoke fail eder (quarantine veya block).
 - [ ] **Pilot cihazlarda local admin/install yetkisi**: agent install + Windows service register için gereklidir. Domain user RDP yetersizdir.
 
@@ -38,7 +38,7 @@ Bu pilot **bir kanıt katmanı eklemek** içindir; production rollout veya kulla
 
 - [ ] `endpoint-admin-service` test cluster'da READY 1/1 (digest `sha256:1a1d0aac…` — `current-state.md` truth-sync ile uyumlu).
 - [ ] Test persona JWT mint mekanizması operator elinde (`c5persona-admin-9001` pattern — handoff §5 P1 ALLOW-path browser smoke örneği).
-- [ ] Optional: OpenFGA tuple seed pilot persona için (`module:endpoint-admin` `can_manage` veya `can_view` — `bootstrap/openfga/endpoint-admin-tuples.json` pattern).
+- [ ] **OpenFGA tuple — pilot persona için doğrulanmalı**: smoke akışı §3 admin/manager command queue path'ine dayanıyor; `module:endpoint-admin` üzerinde `can_manage` (admin) veya en az `can_view` (read-only/status smoke) tuple'ı pilot persona için var olmalı. Tuple yoksa backend 403 FGA fail-closed döner — bu pilot fail olarak okunmaz, FGA layer doğru çalışıyor demektir; ama smoke matrix'in komut queue + result adımları yapılamaz. Seed referansı: `bootstrap/openfga/endpoint-admin-tuples.json` + `docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md` §A persona JWT örneği. Eğer pilot scope **sadece read-only/status smoke** ise tuple opsiyonel sayılabilir (status route auth-only, FGA gate'siz).
 
 ## 3. İlk pilotta yapılacaklar
 
@@ -59,7 +59,10 @@ Bu pilot **bir kanıt katmanı eklemek** içindir; production rollout veya kulla
 - ❌ **Password reset** (kullanıcı parolası yazılım/manuel)
 - ❌ **Kullanıcı disable/enable** (`net user`, AD user account management)
 - ❌ **File access / SMB dosya erişimi** (file read/write/list pilot scope dışı)
+- ❌ **Raw shell / arbitrary script execution** — pilot dummy command sadece backend whitelist'inden tanımlı capability tipi olabilir; `cmd.exe`, `powershell.exe`, `wmic`, ya da agent üzerinden serbest shell/script çalıştırılması pilot kapsamı dışıdır (capability-based no-raw-shell boundary)
+- ❌ **IT/admin credential capture, storage veya logging** — agent loglarına, audit row'larına ya da pilot artifact'lerine credential (parola, token, ssh key, vault token) yazılmaz/saklanmaz; agent normal yapılandırması dışında kimlik bilgisi toplamaz
 - ❌ **Domain-wide deployment** (GPO push, Intune broadcast, mass-rollout — pilot sadece 2 PC)
+- ❌ **`acik.local` dışı domain veya tenant ile çalışma** — pilot tek domain (`acik.local`) tek tenant scope'undadır; cross-domain trust, başka tenant erişimi, ya da multi-domain test pilot kapsamı dışı (Faz 21 multi-tenant tier R10 ayrı kapı)
 - ❌ **Gerçek destructive command** (BE-017 dual-control matrix formal smoke'u ayrı kapı; pilot dummy command kullanır)
 - ❌ **Trusted signing / üretim EDR allowlist** (production code-signing cert + EDR vendor catalog update prod cutover scope'unda)
 - ❌ **Production cluster erişimi** (pilot test cluster'a bağlanır — `ai.acik.com` prod cluster pilot kapsamı dışı)
@@ -76,14 +79,18 @@ Her PC için aşağıdaki kayıtlar **tam doldurulmalı**:
 | Domain | `acik.local` |
 | OU | `EndpointPilot` (veya kayıt) |
 | Windows version | `Windows 11 Pro 10.0.22631.4317` |
+| `tenantId` (backend) | `<UUID>` — `endpoint_devices.tenant_id` (multi-tenant ayrım kanıtı) |
 | Agent version + artifact SHA256 | `platform-agent v0.1.0 sha256:<full>` (release artifact hash) |
+| Build run / source provenance | platform-agent ci-image-push run id veya release tag (artifact source traceability) |
 | Service status | `Running (PID <N>); Get-Service endpoint-enes-agent → Status=Running` |
-| Enrollment id | `<UUID>` (backend `endpoint_devices.id` döner) |
+| Enrollment id (`endpoint_devices.id`) | `<UUID>` (backend device row) |
+| Enrollment token / credential proof | non-secret credential id veya provider (`hmac-sha256` fingerprint id; **gerçek credential value LOGLANMAZ** — sadece type + non-secret id) |
 | Heartbeat timestamp | `2026-MM-DDTHH:MM:SSZ` (backend `endpoint_devices.last_heartbeat_at`) |
-| Backend command id | `<UUID>` (queued dummy command'ın `endpoint_commands.id`'si) |
-| Backend result id | `<UUID>` (command result submission'ın `endpoint_command_results.id`'si) |
-| Audit row id | `<UUID>` (`endpoint_audit_events.id`; `event_type` örn. `ENDPOINT_COMMAND_APPROVED`/`COMMAND_RESULT_RECEIVED`) |
+| Backend command id + action | `<UUID>` (queued dummy command'ın `endpoint_commands.id`'si) + command type/action (örn. `inventory_refresh`) |
+| Backend result id + final status | `<UUID>` (`endpoint_command_results.id`) + result status (`COMPLETED` / `FAILED` / `TIMEOUT`) |
+| Audit row id + event type | `<UUID>` (`endpoint_audit_events.id`) + `event_type` (örn. `ENDPOINT_COMMAND_APPROVED`, `COMMAND_RESULT_RECEIVED`) |
 | Agent local log path | `C:\ProgramData\EndpointEnes\Logs\agent-YYYYMMDD.log` (veya benzeri) |
+| EDR / AV result | quarantine? block? clean? — pilot başlamadan ve smoke sonrası IT/SOC ile teyit |
 | Ekran/log kanıtı | screenshot veya log dump arşivlenir (örn. evidence doc `docs/faz-22-evidence/<date>-it-pilot-<pc>.md`) |
 
 ## 6. Rollback
