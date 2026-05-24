@@ -2423,7 +2423,64 @@ images:
     # doc refresh) — imperative `kubectl set image` is the drift source;
     # this overlay edit reconciles desired-state without changing the
     # live cluster.
-    digest: sha256:c212be872062705c9de26333b1c38ddfbda06096a03ec89a63e13320bdbdf08b
+    #
+    # 2026-05-24 update (Faz 22 #658 follow-on — RTK fetchFn unwrap;
+    # D30 drift-correction, same pattern as #998): bump to platform-web
+    # `main` @ sha-4c3df71 (PR #658 squash — `endpointAdminApi.ts`
+    # `fetchBaseQuery` now wires `fetchFn: unwrapRequestFetchFn` to dodge
+    # the wire-layer Request-object header drop that platform-k8s-gitops
+    # #1004 §F surfaced). The new helper at
+    # `apps/mfe-endpoint-admin/src/app/services/unwrap-request-fetch-fn.ts`
+    # is a byte-equivalent local copy of the notify shim
+    # (`apps/mfe-shell/src/features/notifications/api/notify-request-fetch-fn.ts`,
+    # platform-web #652 `07805aa`); local copy because `@mfe/shared-http`
+    # MF singleton sharing is not effective for endpoint-admin (#657
+    # forensics: per-remote `__FEDERATION__.__INSTANCES__` instance).
+    #
+    # WHAT THIS IMAGE CARRIES (delta vs. previous pin `c212be87…`):
+    #   - endpoint-admin MFE: new `unwrap-request-fetch-fn.ts` shim +
+    #     `fetchBaseQuery({ fetchFn: unwrapRequestFetchFn, ... })` wire
+    #     in `endpointAdminApi.ts`. Three RTK queries (status / devices /
+    #     audit-events) now re-issue `fetch(url, { headers: { ... } })`
+    #     instead of `fetch(new Request(url, init))`, so Authorization
+    #     reaches the backend instead of being dropped at the wire layer.
+    #   - All other MFEs unchanged (notify #652 fix still in place; #657
+    #     auth Bearer fallback + #656 race-protection wrapper preserved).
+    #
+    # BUILD PROVENANCE:
+    #   - platform-web `main` @ 4c3df712 (PR #658 squash, 2026-05-24
+    #     10:28 UTC).
+    #   - ci-web-image-push run 26358786500 SUCCESS.
+    #   - deploy-testai run 26358855612 SUCCESS — kubectl-set-image'd
+    #     this digest live to k3d-test frontend.
+    #
+    # D30 PARITY EVIDENCE (post-deploy, 2026-05-24):
+    #   - Live pod imageID:
+    #       ghcr.io/halildeu/platform-web-frontend-testai
+    #         @sha256:583aa8c97694d02811c97b53b1704ae90f538fa5d3c3ff4667d9f28139a8a8c7
+    #   - Desired (this pin) = live ⇒ D30 closed for the new build.
+    #
+    # BROWSER ACCEPTANCE EVIDENCE (post-#658 deploy, claude-in-chrome MCP
+    # against testai.acik.com, single tab, Platform Admin shell session):
+    #   - `/endpoint-admin/devices` → MFE-driven GET → **403** (FGA
+    #     fail-closed for Platform Admin no-tuple — correct deny;
+    #     pre-#658 was 401 inconsistent header drop)
+    #   - `/endpoint-admin/audit` → MFE-driven GET → **403** (same FGA
+    #     fail-closed; pre-#658 was consistent 401)
+    #   - `/endpoint-admin/status` → MFE-driven GET → **200** (auth-only
+    #     endpoint, Platform Admin Bearer accepted; pre-#658 was 401)
+    #   - 401 storm gone end-to-end; all three routes now return the
+    #     intended auth/authz status code instead of being rejected at
+    #     the auth gate due to a dropped Authorization header.
+    #
+    # Tracked by platform-web#658 (the fix), platform-k8s-gitops#1004
+    # §F (the discovery), platform-web#655 + #653 (already-closed
+    # acceptance issues). Codex cross-AI review chain: 019e597d (#658)
+    # + (this PR pending). Same drift-correction PR pattern as #998
+    # (frontend digest re-pin after #657) and #985 (api-gateway after
+    # ssot-orphan); imperative `kubectl set image` is the ADR-0023
+    # drift source.
+    digest: sha256:583aa8c97694d02811c97b53b1704ae90f538fa5d3c3ff4667d9f28139a8a8c7
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
