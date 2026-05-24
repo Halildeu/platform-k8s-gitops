@@ -1,5 +1,8 @@
 # M5 23.5 Preference UI — k3d-test Live Runtime Acceptance Evidence (2026-05-24)
 
+<!-- gitleaks-baseline-redaction-2026-05-24: smoke unsubscribe?token URLs replaced with <SMOKE-TOKEN-REDACTED>; original commit 5467e0f6 fingerprints whitelisted in .gitleaksignore (lines 139/148/232 generic-api-key rule false-positive on deterministic non-cryptographic smoke value evidence-smoke-invalid-2026-05-24, no real HMAC/Vault/ESO secret involved). See CHANGELOG note. -->
+
+
 > **Status**: 🟢 M5 23.5 preference UI runtime-relevant UI/API surfaces observed LIVE on k3d-test at evidence sweep time. Selected read GET RTK Query round-trips (`/topics/me`, `/preferences/me`, `/unsubscribe?token=<redacted>`) returned expected status codes; mutation round-trips + non-observed terminal states were NOT exercised this sweep and remain anchored to PR-level CI green + spec #646.
 > **Scope**: Agent-driven browser end-to-end smoke against **k3d-test cluster** (`testai.acik.com`) via Chrome MCP, plus read-only SSH+kubectl pod state capture (HARD RULE #7). **No state mutation.** This artifact prepares board #757 closure inputs; it does NOT itself declare board closure.
 > **Trigger**: M5 23.5 currently "🟢 source-ready + acceptance candidate" — board #757 final acceptance gate requires live cluster runtime evidence (per HARD RULE 2026-05-11 "Tarayıcıdan Sonuç Doğrulanmadan İş Bitmedi"). Doc-only artifact; canonical status authority remains [milestones.md](../notify/milestones.md).
