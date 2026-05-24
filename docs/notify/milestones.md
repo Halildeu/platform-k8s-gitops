@@ -189,8 +189,8 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 
 **Definition of Done**:
 - [x] T4.1 23.6 Teams + Slack threading LIVE (Slack Block Kit PR #271 + Teams Power Automate PR #272 — sha-f40aa82+)
-- [ ] T4.2 23.7 Push (FCM + APNS + Web Push) LIVE
-  - [x] **Web Push (browser-only) backend scaffold MERGED** (Faz 23.7 — sha-aaf5f09 deploy 2026-05-21 12:46Z; defer-aware ENABLED=false until Vault VAPID seed + UI button integration):
+- [x] T4.2 23.7 Push — **Web Push (browser) LIVE end-to-end 2026-05-23** (subscribe + delivery proven); mobile FCM/APNS deferred to Faz 22.2 (out of v1)
+  - [x] **Web Push (browser) FULLY LIVE 2026-05-23** — RB-webpush-activation.md §3.10 (subscribe end-to-end ✅) + §3.11 (push delivery SUCCESS ✅ `notify_dispatch_outcome_total{channel="push",status="DELIVERED"} 1.0` + FCM 201 msg_id). 12 PR chain MERGED + deployed:
     - PR-W1 #277: V19 subscriber_push_endpoint + entity + repo
     - PR-W2.1 #278: WebPushConfig + VapidKeyService + nl.martijndwars:web-push lib
     - PR-W2.2 #279: WebPushAdapter + status mapping + endpoint cleanup
@@ -199,14 +199,11 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
     - PR-W2.5+W2.6 #282: IntentSubmissionService allow-list + DeliveryPlanService fan-out + DeliveryEligibilityService BLOCKED_NO_PUSH_ENDPOINT + V20 migration (Codex 019e4a3d iter-4 AGREE)
     - PR-W3 #283: PushSubscriptionController + Service + atomic upsert (Codex 019e4a57 iter-3 AGREE)
     - PR-W4 platform-k8s-gitops #939: ConfigMap WebPush 5 entries + ExternalSecret defer-aware + overlay digest bump (Codex 019e4a70 iter-2 AGREE)
-    - PR-W5 platform-web #648: mfe-shell service worker + notify-push.api + helpers + usePushSubscription hook (Codex 019e4a87 iter-2 AGREE — bekleyen merge)
-  - [ ] **Web Push activation pending** (operator action + UI integration follow-up):
-    - Vault VAPID 3-key seed (vapid_public_key + vapid_private_key + vapid_subject) — kv/platform/notification-orchestrator
-    - ExternalSecret WEBPUSH 3 remoteRef entries uncomment
-    - Test overlay ConfigMap patch: NOTIFY_ADAPTERS_WEBPUSH_ENABLED=true
-    - UI button integration + VAPID public key Vite env (VITE_NOTIFY_VAPID_PUBLIC_KEY)
-    - Browser end-to-end smoke (Chrome MCP / Playwright)
-  - [ ] **Mobile FCM/APNS** — Faz 22.2 dep, scope DIŞI (gelecek faz)
+    - PR-W5 platform-web #648: mfe-shell service worker + notify-push.api + helpers + usePushSubscription hook (Codex 019e4a87 iter-2 AGREE)
+    - PR-W6 platform-web #649: PushSubscriptionCard UI + VAPID env build chain
+    - PR-W7 platform-web #652: notify RTK `unwrapRequestFetchFn` shim — Request-object header drop fix (cross-domain pattern; later replicated for endpoint-admin in #658)
+    - Activation chain (operator-completed 2026-05-23): Vault VAPID 3-key seed + ESO uncomment + ConfigMap `NOTIFY_ADAPTERS_WEBPUSH_ENABLED=true` + frontend `VITE_NOTIFY_VAPID_PUBLIC_KEY` rebuild + OpenFGA `model_id` cutover. **Evidence authority**: RB-webpush-activation §3.10 (subscribe) + §3.11 (push delivery SUCCESS). **Supporting ledger**: gitops #976/#977 (ConfigMap WebPush enable + VAPID env wiring) + #986/#987 (frontend digest bump + browser smoke) + #990/#995/#996/#997 (OpenFGA model_id cutover + internal-auth ESO + delivery-success closure chain).
+  - [ ] **Mobile FCM/APNS** — Faz 22.2 dep, scope DIŞI (gelecek faz; canonical wording per ADR-0013 / sprint-plan T4.2.7-10 row "DEFER Faz 22.2 dep")
 - [~] T4.3 23.8 Tempo + bounce loop + per-tenant Grafana + FBL + federation — **9/9 sub-task source-side closed 2026-05-22** (operator activation pending)
   - [x] T4.3.a Tempo OTLP trace export LIVE (2026-05-21 09:17Z; 5 spans verified)
   - [x] T4.3.b email suppression core LIVE (PR #270 — sha-f40aa82)
