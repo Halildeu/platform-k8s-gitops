@@ -1,6 +1,6 @@
 # M5 23.5 Preference UI — k3d-test Live Runtime Acceptance Evidence (2026-05-24)
 
-> **Status**: 🟢 M5 23.5 preference UI runtime-relevant UI/API surfaces observed LIVE on k3d-test at evidence sweep time. Selected read GET RTK Query round-trips (`/topics/me`, `/preferences/me`, `/unsubscribe?token=`) returned expected status codes; mutation round-trips + non-observed terminal states were NOT exercised this sweep and remain anchored to PR-level CI green + spec #646.
+> **Status**: 🟢 M5 23.5 preference UI runtime-relevant UI/API surfaces observed LIVE on k3d-test at evidence sweep time. Selected read GET RTK Query round-trips (`/topics/me`, `/preferences/me`, `/unsubscribe?token=<redacted>`) returned expected status codes; mutation round-trips + non-observed terminal states were NOT exercised this sweep and remain anchored to PR-level CI green + spec #646.
 > **Scope**: Agent-driven browser end-to-end smoke against **k3d-test cluster** (`testai.acik.com`) via Chrome MCP, plus read-only SSH+kubectl pod state capture (HARD RULE #7). **No state mutation.** This artifact prepares board #757 closure inputs; it does NOT itself declare board closure.
 > **Trigger**: M5 23.5 currently "🟢 source-ready + acceptance candidate" — board #757 final acceptance gate requires live cluster runtime evidence (per HARD RULE 2026-05-11 "Tarayıcıdan Sonuç Doğrulanmadan İş Bitmedi"). Doc-only artifact; canonical status authority remains [milestones.md](../notify/milestones.md).
 
@@ -136,7 +136,7 @@ HTTP 200, alert renders:
 **State 2: Invalid token** (smoke token `evidence-smoke-invalid-2026-05-24`):
 
 ```
-URL: https://testai.acik.com/notifications/unsubscribe?token=evidence-smoke-invalid-2026-05-24
+URL: https://testai.acik.com/notifications/unsubscribe?token=<SMOKE-TOKEN-REDACTED>
 HTTP 200 (page), alert renders:
   data-testid="unsubscribe-invalid"
   Heading: "Bağlantı geçersiz veya süresi dolmuş"
@@ -145,7 +145,7 @@ HTTP 200 (page), alert renders:
   Footer link to "/settings/notifications" (data-testid="unsubscribe-settings-link")
 
 Backend RTK Query response (sanitized):
-  GET /api/v1/notify/unsubscribe?token=evidence-smoke-invalid-2026-05-24
+  GET /api/v1/notify/unsubscribe?token=<SMOKE-TOKEN-REDACTED>
   → HTTP 401 (HMAC verify rejects bad token → FE shows invalid alert)
 ```
 
@@ -229,7 +229,7 @@ presence; mutation round-trip evidence remains anchored to CI green for PR
 ### 3.3 Public unsubscribe endpoint (M5 G3 — PR #644)
 
 ```
-GET https://testai.acik.com/api/v1/notify/unsubscribe?token=evidence-smoke-invalid-2026-05-24
+GET https://testai.acik.com/api/v1/notify/unsubscribe?token=<SMOKE-TOKEN-REDACTED>
 → HTTP 401
 Triggered when: /notifications/unsubscribe?token=<invalid> loads (RTK Query
                 kicks off verify call without auth headers; backend HMAC
