@@ -2,19 +2,28 @@
 #
 # Bağlam: Mevcut values-test.yaml `alertmanager.enabled=false` (test cluster
 # resource quota tasarrufu). D43 drill için Alertmanager geçici enable + native
-# Slack/SMTP fallback receiver + dedicated route. Drill bittiğinde bu override
-# dosyası kullanımdan çıkar, helm upgrade override'sız ile values-test.yaml
-# baz tek başına kalır.
+# Teams (Power Automate webhook) + SMTP fallback receiver + dedicated route.
+# Drill bittiğinde bu override dosyası kullanımdan çıkar, helm upgrade
+# override'sız ile values-test.yaml baz tek başına kalır.
+#
+# 2026-05-24 SLACK → TEAMS PIVOT (Codex thread `019e5ba9` REVISE/ready_for_impl):
+#   Organizasyon Slack kullanmıyor, Microsoft Teams kullanıyor (kullanıcı
+#   2026-05-24 kararı). `slack_configs` → `webhook_configs` (Power Automate
+#   workflow URL). Slack-specific `channel`/`title`/`text` template kaldırıldı;
+#   Alertmanager generic v4 webhook JSON payload — Power Automate flow parse
+#   eder ve Teams Adaptive Card olarak post eder. Secret key SLACK_WEBHOOK_URL
+#   → TEAMS_WEBHOOK_URL. Receiver direct-fallback adı aynı kalır (vendor-neutral,
+#   D43 semantiğini taşıyor — Codex Q3 önerisi).
 #
 # Codex thread 019e0dea iter-2 absorb #2: --reset-values YERINE override file
 # pattern. Revert: `helm upgrade ... -f values-test.yaml` (override'sız).
 #
-# Codex iter-2 absorb #3: Tek receiver `direct-fallback` (slack_configs +
+# Codex iter-2 absorb #3: Tek receiver `direct-fallback` (webhook_configs +
 # email_configs birlikte). İki sibling route + continue:true patterni daha
 # karmaşık ve hatalıdır.
 #
 # Codex iter-2 absorb #4: alertmanagerSpec.secrets[] mount + Alertmanager
-# config'te file path (api_url_file / auth_username_file / auth_password_file)
+# config'te file path (url_file / auth_username_file / auth_password_file)
 # secret env injection değil.
 #
 # Codex iter-3 absorb (P1):
@@ -84,25 +93,23 @@ alertmanager:
           repeat_interval: 30m
           continue: false
     receivers:
-      # Codex iter-2 #3: Slack + SMTP birlikte tek receiver (daha sade).
+      # Codex iter-2 #3: Teams + SMTP birlikte tek receiver (daha sade).
       # Codex `019e5aaf` REVISE absorb: null receiver eklenir (root drop için).
+      # Codex `019e5ba9` 2026-05-24 Teams pivot: slack_configs → webhook_configs
+      # (Power Automate workflow URL — generic Alertmanager v4 JSON payload).
       - name: "null"
       - name: direct-fallback
-        slack_configs:
-          - api_url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SLACK_WEBHOOK_URL
-            channel: '#alerts-d43-drill'
+        webhook_configs:
+          - url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/TEAMS_WEBHOOK_URL
             send_resolved: true
-            # Codex iter-3 P1 #3: Alertmanager Go template Sprig `default`
-            # destekleemez; `with ... else ... end` pattern'i kullan.
-            title: '[D43 DRILL] {{ .CommonLabels.alertname }} — {{ .CommonLabels.severity }}'
-            text: |-
-              {{ range .Alerts }}
-              *Alert*: {{ .Labels.alertname }}
-              *Cluster*: {{ with .Labels.cluster }}{{ . }}{{ else }}k3d-test{{ end }}
-              *Severity*: {{ .Labels.severity }}
-              *Outage Fallback*: {{ with .Labels.outage_fallback }}{{ . }}{{ else }}false{{ end }}
-              *Description*: {{ .Annotations.description }}
-              {{ end }}
+            # Codex `019e5ba9` Q1 Opsiyon A: Alertmanager v4 webhook generic JSON;
+            # Power Automate flow parse + Adaptive Card transform; Slack-spesifik
+            # channel/title/text template kaldırıldı.
+            max_alerts: 50
+            # Test drill: TEAMS_WEBHOOK_URL Vault'ta operator tarafından
+            # http://webhook-receiver.platform-test.svc.cluster.local:9000/teams-mock
+            # olarak seed edilir (mock-receipt drill). Gerçek Teams Power Automate
+            # flow URL'i prod activation board issue'da operator-bound.
         email_configs:
           # NOTE 2026-05-24 (Codex `019e5aaf` post-impl absorb): Mailpit
           # accepts unauthenticated SMTP; Operator v0.90.1 doesn't recognize

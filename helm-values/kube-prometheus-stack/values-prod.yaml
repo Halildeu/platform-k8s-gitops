@@ -65,10 +65,11 @@ alertmanager:
             requests:
               storage: 1Gi
 
-    # V2.1 Ops-A — Perf alert receiver secret mount (Codex 019e267a spike absorb)
+    # V2.1 Ops-A — Perf alert receiver secret mount (Codex 019e267a spike absorb +
+    # 2026-05-24 Teams pivot Codex `019e5ba9`)
     # ESO `perf-alertmanager-secrets` K8s Secret pod'a file mount edilir;
-    # Alertmanager config `slack_configs.api_url_file` ile path okur (env injection DEĞİL).
-    # Mount path: /etc/alertmanager/secrets/perf-alertmanager-secrets/SLACK_WEBHOOK_URL
+    # Alertmanager config `webhook_configs.url_file` ile path okur (env injection DEĞİL).
+    # Mount path: /etc/alertmanager/secrets/perf-alertmanager-secrets/TEAMS_WEBHOOK_URL
     #
     # NOT: `github-issues-receiver-token` mount KALDIRILDI (Codex `019e4256`
     # Session 42 REVISE iter-2 P0 absorb — sibling PR #857b). Alertmanager
@@ -92,10 +93,12 @@ alertmanager:
   # Bridge: alertmanager-bridge K8s service (kustomize/base/monitoring/alertmanager-bridge/).
   #
   # V2.1 Ops-A extension (Codex 019e267a spike AGREE_AFTER_REVISIONS +
-  # 019e2772 post-impl review P0/P1/P2 absorb):
-  # `team=perf` matched alert'ler perf-alerts-slack receiver'a (#perf-alerts);
-  # critical perf alarmları DUAL delivery (Slack + bridge P1 yolu korunuyor);
-  # throttle group_interval: 5m, repeat_interval: 6h (alarm fatigue azaltma).
+  # 019e2772 post-impl review P0/P1/P2 absorb + 2026-05-24 Teams pivot Codex
+  # `019e5ba9`):
+  # `team=perf` matched alert'ler perf-alerts-teams receiver'a (Power Automate
+  # workflow target Teams channel); critical perf alarmları DUAL delivery
+  # (Teams + bridge P1 yolu korunuyor); throttle group_interval: 5m,
+  # repeat_interval: 6h (alarm fatigue azaltma).
   config:
     global:
       resolve_timeout: 5m
@@ -112,7 +115,7 @@ alertmanager:
         #
         # NotifyServiceDown / NotifyServiceAbsent fire when the orchestrator is
         # down/absent — these MUST bypass orchestrator-routed delivery and hit
-        # the direct-fallback receiver (Slack + SMTP combined via ESO
+        # the direct-fallback receiver (Microsoft Teams + SMTP combined via ESO
         # `alertmanager-fallback-secrets`). `bypass_orchestrator=true` label is
         # stable (PrometheusRule contract); the matcher uses alertname for
         # readability + the label is the fingerprint anchor.
@@ -124,24 +127,27 @@ alertmanager:
         # alarm-receiver-bridge` route below would be bypassed for D43 alerts;
         # the GitHub Issues P1 evidence trail would silently disappear during
         # the very outages this route is supposed to make MORE visible. With
-        # continue=true, D43 delivers Slack + SMTP first, then the next-matching
+        # continue=true, D43 delivers Teams + SMTP first, then the next-matching
         # `severity=critical` sibling delivers to alarm-receiver-bridge, giving
-        # 3-channel defense-in-depth (Slack + SMTP + GitHub Issue). The bridge
+        # 3-channel defense-in-depth (Teams + SMTP + GitHub Issue). The bridge
         # dedupes on alertname+namespace, so only one Issue is opened.
         #
         # SOURCE-OF-TRUTH ONLY — desired-state lands in values-prod.yaml on
-        # merge of #855 (PR-1 staged/gated). Prod cluster activation requires:
-        #   (a) Operator seeds Vault `kv/platform/alertmanager-fallback` with
-        #       real values (#alerts-d43-drill Slack webhook + prod SMTP relay
-        #       credentials);
-        #   (b) ESO sync → SecretSynced=True;
-        #   (c) `helm upgrade kube-prometheus-stack -n monitoring
+        # merge of #855 (PR-1 staged/gated) + 2026-05-24 Teams pivot. Prod
+        # cluster activation requires:
+        #   (a) Operator creates Microsoft Teams Power Automate workflow
+        #       (incoming HTTP request trigger → Adaptive Card post to channel);
+        #   (b) Operator seeds Vault `kv/platform/alertmanager-fallback` with
+        #       real values (TEAMS_WEBHOOK_URL = Power Automate workflow URL +
+        #       prod SMTP relay credentials);
+        #   (c) ESO sync → SecretSynced=True;
+        #   (d) `helm upgrade kube-prometheus-stack -n monitoring
         #        -f helm-values/kube-prometheus-stack/values-prod.yaml`
         #       (Alertmanager pod restart picks up the new config + Secret mount);
-        #   (d) Synthetic NotifyServiceDown smoke (scale orchestrator=0 in a
-        #       controlled window) → Slack receipt + SMTP receipt + GitHub
-        #       Issue + recovery.
-        # Until (a-c), Secret-driven legs (Slack via api_url_file, SMTP via
+        #   (e) Synthetic NotifyServiceDown smoke (scale orchestrator=0 in a
+        #       controlled window) → Teams Adaptive Card receipt + SMTP receipt
+        #       + GitHub Issue + recovery.
+        # Until (a-d), Secret-driven legs (Teams via url_file, SMTP via
         # auth_*_file) silently no-op when files are missing. continue=true
         # ensures the operator-action gap is observable through the bridge
         # P1 evidence path, not silent.
@@ -156,15 +162,16 @@ alertmanager:
           continue: true
         # V2.1 Ops-A — Critical perf alarms DUAL delivery (Codex `019e4256`
         # REVISE iter-2 P0 absorb — perf-alerts-github-issues direct receiver
-        # KALDIRILDI; payload wrapper bridge gelene kadar). Akış:
-        # 1. perf-alerts-slack (continue:true → 2.) — Vault DR sonrası activate
+        # KALDIRILDI; payload wrapper bridge gelene kadar). 2026-05-24 Teams
+        # pivot (Codex `019e5ba9`): perf-alerts-slack → perf-alerts-teams. Akış:
+        # 1. perf-alerts-teams (continue:true → 2.) — Vault DR sonrası activate
         # 2. critical bridge route (alarm-receiver-bridge → alertmanager-bridge
         #    pod GitHub Issue wrap) — P1 operator action <10min pipeline
-        # Net: Slack + bridge GitHub Issue (2 channel, defense-in-depth).
+        # Net: Teams + bridge GitHub Issue (2 channel, defense-in-depth).
         - matchers:
             - team = "perf"
             - severity = "critical"
-          receiver: 'perf-alerts-slack'
+          receiver: 'perf-alerts-teams'
           group_by: ['alertname', 'namespace']
           group_wait: 30s
           group_interval: 5m
@@ -176,18 +183,19 @@ alertmanager:
           receiver: 'alarm-receiver-bridge'
           group_wait: 0s
           repeat_interval: 1h
-        # V2.1 Ops-A — Non-critical perf alarms DUAL delivery via Slack
-        # (`perf-alerts-slack` here, continue:true) + warning/info bridge
+        # V2.1 Ops-A — Non-critical perf alarms DUAL delivery via Teams
+        # (`perf-alerts-teams` here, continue:true) + warning/info bridge
         # GitHub Issue (catch-all `severity=~"warning|info"` route below also
         # matches → `alarm-receiver-bridge` → alertmanager-bridge pod GitHub
         # Issue wrap). Codex `019e4256` REVISE iter-2 P0 absorb —
         # `perf-alerts-github-issues` direct receiver removed; bridge-wrapped
         # GitHub Issue leg preserved through continue:true → catch-all path.
         # Payload wrapper bridge gelirse direct GitHub Issue leg geri eklenir
-        # → DUAL → TRIPLE.
+        # → DUAL → TRIPLE. 2026-05-24 Teams pivot (Codex `019e5ba9`):
+        # perf-alerts-slack → perf-alerts-teams.
         - matchers:
             - team = "perf"
-          receiver: 'perf-alerts-slack'
+          receiver: 'perf-alerts-teams'
           group_by: ['alertname', 'namespace']
           group_wait: 30s
           group_interval: 5m
@@ -203,25 +211,22 @@ alertmanager:
           - url: 'http://alertmanager-bridge.monitoring.svc.cluster.local:9093/alert'
             send_resolved: true
             max_alerts: 50
-      # V2.1 Ops-A — Perf alerts Slack receiver (Codex 019e267a spike absorb +
-      # 019e2772 P0 #2 template fix: `default` Sprig fonksiyonu Alertmanager Go
-      # template'inde desteklenmez; `with ... else ... end` pattern).
-      # api_url_file: ESO `perf-alertmanager-secrets` Secret → file mount;
-      # owner Vault `kv/platform/perf-alertmanager.SLACK_WEBHOOK_URL` yazımı sonrası
+      # V2.1 Ops-A — Perf alerts Teams receiver (Codex 019e267a spike absorb +
+      # 019e2772 P0 #2 template fix + 2026-05-24 Teams pivot Codex `019e5ba9`).
+      # url_file: ESO `perf-alertmanager-secrets` Secret → file mount; owner
+      # Vault `kv/platform/perf-alertmanager.TEAMS_WEBHOOK_URL` yazımı sonrası
       # ESO 1h refresh-interval içinde Secret oluşturur; Alertmanager pod restart
       # gerekmez (file mount auto-update kube-prometheus-stack 84.x pattern).
-      - name: 'perf-alerts-slack'
-        slack_configs:
-          - api_url_file: /etc/alertmanager/secrets/perf-alertmanager-secrets/SLACK_WEBHOOK_URL
-            channel: '#perf-alerts'
+      #
+      # Alertmanager v4 webhook generic JSON payload — Power Automate flow
+      # (incoming HTTP trigger) parse eder ve Teams channel'a Adaptive Card
+      # olarak post eder. Slack-spesifik channel/title/text template kaldırıldı;
+      # rendering Power Automate flow tarafında (Adaptive Card schema).
+      - name: 'perf-alerts-teams'
+        webhook_configs:
+          - url_file: /etc/alertmanager/secrets/perf-alertmanager-secrets/TEAMS_WEBHOOK_URL
             send_resolved: true
-            title: 'V2.1 Perf Alert | {{ .GroupLabels.alertname }}'
-            text: |-
-              *Status:* {{ .Status | toUpper }}
-              *Severity:* {{ .CommonLabels.severity }}
-              *Namespace:* {{ with .CommonLabels.namespace }}{{ . }}{{ else }}n/a{{ end }}
-              *Description:* {{ range .Alerts }}{{ .Annotations.description }}{{ end }}
-              *Runbook:* {{ range .Alerts }}{{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}{{ end }}
+            max_alerts: 50
       # V2.1 Ops-A — Perf alerts GitHub Issues receiver KALDIRILDI (Codex
       # `019e4256` Session 42 REVISE iter-2 P0 absorb — PR #857b sibling).
       #
@@ -233,46 +238,39 @@ alertmanager:
       #
       # GitHub Issue trail prod perf alerts için şu an `alarm-receiver-bridge`
       # route → `alertmanager-bridge` pod (Python wrapper) üzerinden akıyor;
-      # bridge payload'u doğru wrap eder. perf-alerts-slack receiver ise
-      # `api_url_file` ile çalışıyor (Slack webhook POST).
+      # bridge payload'u doğru wrap eder. perf-alerts-teams receiver ise
+      # `url_file` ile çalışıyor (Teams Power Automate workflow POST).
       #
       # Wrapper bridge (sidecar/proxy) PR'ı geldiğinde bu receiver + ilgili
       # secret mount + 2 perf route geri eklenir. Bkz. board issue #857
       # acceptance + RB-prod-alertmanager-activation.md §2.2.
       # D43 outage fallback direct receiver (Codex 019e4234 + 019e0dea iter-2
-      # absorb #3): Slack + SMTP combined in a single receiver — simpler than
-      # two sibling routes with continue:true (Codex iter-2 verdict). Both
-      # legs read credentials from ESO-mounted `alertmanager-fallback-secrets`
-      # Secret via file paths (NOT env injection; api_url_file + auth_*_file).
+      # absorb #3 + 2026-05-24 Teams pivot Codex `019e5ba9`): Teams + SMTP
+      # combined in a single receiver — simpler than two sibling routes with
+      # continue:true (Codex iter-2 verdict). Both legs read credentials from
+      # ESO-mounted `alertmanager-fallback-secrets` Secret via file paths
+      # (NOT env injection; url_file + auth_*_file).
       #
       # Channel choices (prod-specific vs test drill):
-      #   * Slack channel `#alerts-d43-drill` — same as test drill default
-      #     (Codex 019e4234 verdict: sentinel YASAK; gerçek webhook gerek).
-      #     Operator owns the real workspace webhook URL (Slack admin artifact).
+      #   * Teams Power Automate workflow target channel — operator creates the
+      #     flow (incoming HTTP trigger → Adaptive Card post to channel) and
+      #     seeds `TEAMS_WEBHOOK_URL` in Vault. Owner manages the workflow
+      #     lifecycle, channel target, and rotation (R-NEW: Power Automate
+      #     workflow lifecycle drift risk — see docs/notify/risk-register.md).
       #   * SMTP `notify-ops@acik.com` — placeholder; operator confirms the
       #     prod ops mail group. Smarthost `smtp.office365.com:587` mirrors
       #     notification-orchestrator's Office 365 SMTP relay default.
       #
-      # Templates: Alertmanager Go template — Sprig `default` is unsupported
-      # in Alertmanager (Codex 019e0dea iter-3 P1 #3); use `{{ with X }}{{ . }}
-      # {{ else }}fallback{{ end }}` pattern.
+      # Templates: Alertmanager v4 webhook generic JSON payload — no Slack-
+      # spesifik template; Adaptive Card rendering Power Automate flow'da.
+      # Alertmanager Go template — Sprig `default` is unsupported in
+      # Alertmanager (Codex 019e0dea iter-3 P1 #3); SMTP email_configs template
+      # still uses `{{ with X }}{{ . }}{{ else }}fallback{{ end }}` pattern.
       - name: direct-fallback
-        slack_configs:
-          - api_url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SLACK_WEBHOOK_URL
-            channel: '#alerts-d43-drill'
+        webhook_configs:
+          - url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/TEAMS_WEBHOOK_URL
             send_resolved: true
-            title: '[D43 PROD] {{ .CommonLabels.alertname }} — {{ .CommonLabels.severity }}'
-            text: |-
-              {{ range .Alerts }}
-              *Alert*: {{ .Labels.alertname }}
-              *Cluster*: {{ with .Labels.cluster }}{{ . }}{{ else }}prod{{ end }}
-              *Namespace*: {{ with .Labels.namespace }}{{ . }}{{ else }}n/a{{ end }}
-              *Severity*: {{ .Labels.severity }}
-              *Outage Fallback*: {{ with .Labels.outage_fallback }}{{ . }}{{ else }}false{{ end }}
-              *Bypass*: {{ with .Labels.bypass_orchestrator }}{{ . }}{{ else }}false{{ end }}
-              *Description*: {{ .Annotations.description }}
-              *Runbook*: {{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}
-              {{ end }}
+            max_alerts: 50
         email_configs:
           # BLOCKER for board #854 prod activation (BL-008 2026-05-24 finding):
           # Operator v0.90.1 stricter schema reddediyor `auth_username_file`/
