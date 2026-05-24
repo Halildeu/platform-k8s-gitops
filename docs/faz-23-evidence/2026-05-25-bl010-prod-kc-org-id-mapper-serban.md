@@ -29,7 +29,7 @@ Bu PR drift fix içerir (`docs/runbooks/RB-prod-canary-kc-claim-setup.md` `acik`
 |---|---|
 | Hardcoded claim mapper YASAK | `oidc-usermodel-attribute-mapper` (user.attribute=org_id) — drift kaynağı yok |
 | Persona dedicated, login user'a dokunulmasın | `notify-canary-org-prod-default@acik.com` yeni persona; `halilkocoglu` realm user'ına dokunulmadı |
-| Multi-tenant boundary | Layer-1 OrgAccessGuard endpoint smoke HTTP 400 (payload validation hatası; **auth pass** — 403 değil; mapper LIVE + claim match) |
+| Multi-tenant boundary | Endpoint smoke HTTP 400 = JWT/resource-server auth verified + `@Valid` payload validation katmanına ulaştı; **guard çağrılmadı** (guard-pass behavioral proof BL-011 SMS canary turunda) |
 
 ---
 
@@ -274,7 +274,7 @@ HTTP=400
 - ✅ **Pre-Production Full Authority** (kullanıcı 2026-05-25 explicit (A) onay; KC admin pwd container `/run/secrets/kc_admin_password` auto-okuma)
 - ✅ **Persona pattern — login user'a dokunma YASAK** (yeni `notify-canary-org-prod-default`; `halilkocoglu` user dokunulmadı)
 - ✅ **Hardcoded claim mapper YASAK** (Codex iter-2 absorb — `oidc-usermodel-attribute-mapper` user attribute kaynağı)
-- ✅ **No Fake Work** (REST API HTTP=201/204 + JWT decode 3-way claim + endpoint smoke HTTP 400 = auth PASS)
+- ✅ **No Fake Work** (REST API HTTP=201/204 + JWT decode 3-way claim + endpoint smoke HTTP 400 = resource-server auth verified + `@Valid` validation katmanına ulaştı; guard-pass BL-011 acceptance)
 - ✅ **HARD RULE no-token-log** (PERSONA_PASS Vault'a stdin pipe + unset; length-only verify wc -c; plaintext shell history'ye girmedi)
 - ✅ **Türkçe evidence** + İngilizce kod-paylaşılan teknik
 - ✅ **Cross-AI Peer Review provider-different** (Codex iter-1 AGREE thread 019e5bfb; bu PR Codex iter-2 review için ready)

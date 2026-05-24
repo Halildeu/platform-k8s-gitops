@@ -103,7 +103,6 @@ curl -X PUT -H "Authorization: Bearer $ADMIN_TOKEN" \
 ```
 
 **Legacy reference** (eski yazım): `notify-orchestrator` scope adı + manual UI mapper formu — post-2026-05-25 BL-010 prod execute pattern superseded eder. Bkz. `docs/faz-23-evidence/2026-05-25-bl010-prod-kc-org-id-mapper-serban.md` §2 canonical 4-step.
-- Save
 
 **Alternatif**: `allowed_orgs` mapper (multi-tenant operator için)
 - Mapper type: `User Attribute`
