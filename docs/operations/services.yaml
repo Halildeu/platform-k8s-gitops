@@ -217,9 +217,9 @@ services:
         by 2026-05-24 refresh — api-gateway D30 drift LIVE sha256:6137bb2c…
         != desired sha256:84500b5e… ifadesi 2026-05-22 anlık idi; gitops
         PR #985 (`6a4c488`) ile overlay desired = live = sha256:6137bb2c…
-        olarak hizalandı; api-gateway D30 parity LIVE 2026-05-24, drift
-        kapanmış durumdadır (gitops #1000 No-Fake-Work correction
-        attestation).]
+        olarak hizalandı; api-gateway D30 parity LIVE 2026-05-24,
+        PR #985 sonrası desired/live parity kanıtlıdır (gitops #1000
+        No-Fake-Work correction attestation).]
 
         2026-05-24 truth-refresh (cumulative Faz 22 Web auth-transport
         chain — 4 platform-web PR + 5 gitops PR):
