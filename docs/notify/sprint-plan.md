@@ -122,10 +122,10 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | T1.4.5 | Drift alarm-receiver fallback chain extension | backend | 3 | dev | None | 🟢 LIVE |
 | T1.4.6 | Break-glass dual-channel script (notification + Alertmanager direct) | ops | 2 | ops | T1.4.4 | 🟡 source-ready |
 | T1.4.7 | Runbook: `RB-notification-outage-fallback.md` | docs | 2 | agent | T1.4.6 | 🟢 MERGED 2026-05-10 |
-| T1.4.8 | Drill test execution (orchestrator scale=0 → Slack direct verify) | ops | 2 | ops | T1.4.7 | 🟡 partial — test SMTP drill LIVE 2026-05-10; Slack #853 sentinel-only NXDOMAIN; prod activation #854 owner-gated |
-| T1.4.9 | Codex peer review + merge | docs | 1 | agent | T1.4.8 | 🟢 (Codex 019e4234 audit; R9 🟡 partial) |
+| T1.4.8 | Drill test execution (orchestrator scale=0 → Slack direct verify) | ops | 2 | ops | T1.4.7 | 🟢 **mock-receipt mitigated** — first controlled drill 2026-05-10 (SMTP-only); BL-008 mock-receipt drill 2026-05-24 16:14-16:26Z (Codex `019e5aaf` REVISE absorb) DUAL evidence (webhook-receiver POST 200 + Mailpit SMTP — same dispatch cycle); 10/10 mock-receipt criteria PASS. Real Slack workspace #853 + prod activation #854 ayrı operator-external. |
+| T1.4.9 | Codex peer review + merge | docs | 1 | agent | T1.4.8 | 🟢 (Codex 019e4234 audit + 019e5aaf BL-008 absorb; R9 🟢 mock-receipt mitigated) |
 
-**Total**: 15.5h. **Session 47 status 2026-05-21**: T1.4 6/9 LIVE + 3 🟡 partial (Slack real webhook + prod activation operator-gated). R9 🟡 partial. Issues #853 + #854 ops slot.
+**Total**: 15.5h. **Session 49 status 2026-05-24**: T1.4 7/9 LIVE + 2 🟡 (real Slack workspace #853 + prod activation #854 — operator-external; prod values-prod.yaml `auth_*_file` Operator v0.90.1 schema gap fix #854 kapsamında). R9 🟢 mock-receipt mitigated.
 
 ### T1.5 — 23.2.E Data Classification Policy
 

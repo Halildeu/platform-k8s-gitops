@@ -24,17 +24,21 @@
 
 ## 2. Mimari — Üç Katmanlı Bypass
 
-### 2.1 Katman 1: Alertmanager Direct Receiver (T1.4 PR-1)
+### 2.1 Katman 1: Alertmanager Direct Receiver (T1.4 PR-1 + BL-008 2026-05-24 revize)
 
 `monitoring/alertmanager` config'inde **native receiver** `direct-fallback`:
 - Slack: `slack_configs` + `api_url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SLACK_WEBHOOK_URL`
-- SMTP: `email_configs` + `auth_username_file` + `auth_password_file` (aynı secret mount)
+- SMTP: `email_configs` (test cluster Mailpit no-auth: `require_tls: false`, auth fields YOK; prod cluster ayrı schema — bkz §6.5.8)
 - Single receiver (slack + email birlikte) — Codex iter-2 #3 absorb
 
-`route` matchers:
-- `alertname = "NotifyServiceDown"` → `direct-fallback` (group_wait: 0s; repeat_interval: 30m)
+`route` matchers (Codex `019e5aaf` REVISE absorb 2026-05-24 — BL-008 mock-receipt drill route narrowing):
+- Root route: `receiver: "null"` (drill window'da diğer alerts drop; gereksiz POST/mail noise yok)
+- D43 outage fallback dar regex route: `alertname =~ "NotifyServiceDown|NotifyServiceAbsent"` → `direct-fallback` (group_wait: 0s; repeat_interval: 30m; continue: false)
+- `"null"` receiver baseline + `direct-fallback` receiver
 
 Implementation: `helm-values/kube-prometheus-stack/values-test-d43-drill.yaml` (drill window override).
+
+**Mock-vs-real boundary**: Test cluster `SLACK_WEBHOOK_URL` Codex `019e5aaf` REVISE absorb sonrası **in-cluster webhook-receiver mock URL** `http://webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock` (sentinel revert YOK; webhook-receiver nginx POST logger LIVE 15d + permanent NetworkPolicy commit). Bu mock URL Alertmanager Slack receiver HTTP POST receipt evidence sağlar — **payload semantic Slack contract validation YOK** (nginx response body Slack format değil; "unrecoverable error" Alertmanager log'unda expected/known for mock drill). Real Slack workspace `#alerts-d43-drill` channel receipt board [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) operator-external action.
 
 ### 2.2 Katman 2: ESO Vault Fallback Secret (T1.4 PR-1)
 
@@ -125,27 +129,41 @@ kubectl --context k3d-test get clustersecretstore vault-platform-gitops \
 ```bash
 docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-test \
   vault kv put kv/platform/alertmanager-fallback \
-    SLACK_WEBHOOK_URL=<test webhook URL — drill kanalı, GERÇEK incoming webhook> \
+    SLACK_WEBHOOK_URL=http://webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock \
     SMTP_HOST=mailpit.platform-test.svc.cluster.local \
     SMTP_PORT=587 \
     SMTP_USER=alertmanager-fallback@local \
-    SMTP_PASSWORD=<irrelevant for Mailpit; populate non-empty>
+    SMTP_PASSWORD=drill-only-mailpit-no-auth
 ```
 
-**HARD RULE — sentinel webhook YASAK** (Codex thread `019e4234` Session 42
-verdict): Test Vault `SLACK_WEBHOOK_URL` **gerçek** `#alerts-d43-drill`
-Slack incoming webhook olmalı; `http://drill-slack-mock.local/webhook`
-sentinel kabul edilmez. Drill 10/10 acceptance ancak **dual receipt**
-(Slack + Mailpit) ile sağlanır (test cluster context — bridge ayrı path,
-test ESO Slack+SMTP fallback receiver tek hat); sentinel ile Slack leg sessizce kayıp olur
-ve runbook Step 6 "Slack `#alerts-d43-drill` channel mesajı manuel kanıt"
-maddesi kanıtsız kalır.
+**Test cluster SLACK_WEBHOOK_URL canonical: in-cluster mock receiver**
+(Codex thread `019e5aaf` REVISE absorb 2026-05-24 — BL-008 mock-receipt drill).
 
-Geçici sentinel state 2026-05-10 drill window'unda mevcut idi; o drill
-SMTP-only kanıt ile mitigated kabul edildi (`risk-register.md` R9 + M3
-T1.4) — Codex `019e4234` audit'i bu kabul sınıfını **partial mitigation**
-olarak yeniden etiketledi. Sentinel real webhook ile değiştirilmeli; iş:
-board issue [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853).
+Mock receiver: `webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock`
+(nginx POST logger; permanent NetworkPolicy
+`kustomize/overlays/test/lab-deps/webhook-receiver-netpol-from-monitoring.yaml`
+ile commit). Alertmanager Slack receiver POST sırasında **HTTP 200 receipt**
+(nginx access log: method/uri/length/status capture) sağlar — payload
+semantic Slack contract validation YOK; "unrecoverable error" Alertmanager
+log'unda expected for mock drill. Eski `http://drill-slack-mock.local/webhook`
+sentinel **DEPRECATED** (NXDOMAIN; drill 2026-05-10 Slack leg sessiz kayıp).
+
+**Test mock vs real boundary**:
+
+| Scope | Test cluster (this section) | Real Slack workspace (#853) | Prod cluster (#854) |
+|---|---|---|---|
+| URL | `webhook-receiver.platform-test:8080/slack-mock` | Real `#alerts-d43-drill` Slack incoming webhook URL | Owner-provided `#prod-outage-alerts` webhook |
+| Validation | HTTP POST receipt (nginx 200 log) | Slack channel message manuel görme | Slack channel message manuel görme |
+| Acceptance | BL-008 mock-receipt drill 10/10 (`docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md`) | Operator action (Slack workspace admin) | Operator action (Vault prod seed + helm upgrade + dual-receipt smoke) |
+| Status | 🟢 Mitigated (mock-receipt) 2026-05-24 | 🟡 Pending board [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) | 🟡 Pending board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) |
+
+Test cluster drill execution: bu §3.2 test sub-section pre-conditions + §5 prosedür
+(scale=0 → dual receipt → recovery) — `2026-05-24` mock-receipt drill log
+referans. Geçici sentinel state 2026-05-10 drill window'unda mevcut idi; o
+drill SMTP-only kanıt ile mitigated kabul edildi (`risk-register.md` R9 +
+M3 T1.4) — Codex `019e4234` audit'i bu kabul sınıfını partial mitigation
+olarak yeniden etiketledi; **BL-008 2026-05-24 mock-receipt drill** o partial state'i
+test cluster dual-receipt evidence ile kapatır.
 
 #### Prod cluster (D43 outage fallback aktivasyon — Codex `019e4234` Yol-3)
 
@@ -404,9 +422,25 @@ curl -s http://127.0.0.1:9093/api/v2/alerts | \
 rm -f /tmp/kubeconfig-break-glass-*
 ```
 
-### Step 6: Slack direct receipt (drill webhook test channel)
+### Step 6: Slack receipt evidence (mock-or-real per scope)
 
-Manuel: Slack #alerts-d43-drill kanalı → drill window'da `[D43 DRILL] NotifyServiceDown — critical` mesajı görüldü mü?
+**Test cluster (BL-008 mock-receipt drill — Codex `019e5aaf` REVISE absorb 2026-05-24)**:
+
+```bash
+# webhook-receiver mock POST log capture (nginx access log)
+kubectl --context k3d-test -n platform-test logs deploy/webhook-receiver --since=5m | grep slack-mock
+# Expected: POST /slack-mock length=<bytes> status=200 timestamp matches T+3m FIRING window
+```
+
+Test mock evidence dili: **"Alertmanager Slack receiver mock POST receipt + Alertmanager route correlation"** (NOT "Slack channel receipt"). Payload semantic validation YOK; webhook-receiver nginx 200 dönüyor; "unrecoverable error" Alertmanager log'unda expected (Slack format değil response body) — mock-only davranış.
+
+**Real Slack workspace (board [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) — operator action)**:
+
+Manuel: Slack `#alerts-d43-drill` kanalı → drill window'da `[D43 DRILL] NotifyServiceDown — critical` mesajı görüldü mü? (Gerçek Slack incoming webhook URL Vault `SLACK_WEBHOOK_URL`'a yazılır + ESO sync + drill).
+
+**Prod cluster (board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) — owner-gated)**:
+
+§6.5 prosedürü follow; `#alerts-d43-drill` veya `#prod-outage-alerts` kanalı manuel kontrol.
 
 ### Step 7: Mailpit SMTP receipt evidence
 
@@ -436,19 +470,27 @@ curl -s http://127.0.0.1:9093/api/v2/alerts | \
 
 ### Step 9: Evidence doc
 
-`docs/faz-23-evidence/2026-XX-XX-23-2-d-d43-drill.md` içerik:
+`docs/faz-23-evidence/2026-XX-XX-<scope>-d43-drill.md` içerik:
 - Pre-drill snapshot (pod state, ESO sync, PrometheusRule list)
 - Drill execution timeline (UTC timestamps)
-- Step 5-8 outputs (curl, kubectl, Slack screenshot, Mailpit screenshot)
+- Step 5-8 outputs (curl, kubectl, **mock POST log OR Slack channel screenshot**, Mailpit screenshot)
 - Recovery snapshot
-- 10-criteria checklist (her step ✅)
+- 10-criteria checklist (her step ✅) — scope-aware: mock-receipt OR real-Slack OR prod-activation
+- Scope qualifier: "mock-receipt drill" / "real Slack workspace drill" / "prod activation triple-receipt"
 
-### Step 10: R9 risk register status mitigated
+Referans canlı evidence örnekleri:
+- 2026-05-24 BL-008 mock-receipt drill: `docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md`
+- 2026-05-10 SMTP-only drill: `docs/faz-23-evidence/2026-05-10-r9-d43-drill-mitigated.md`
+
+### Step 10: R9 risk register status update
 
 `docs/notify/risk-register.md`:
-- R9 current 🟡 partial → 🟢 Mitigated (full triple-receipt drill: Slack + Mailpit test cluster + bridge GitHub Issue acceptance, plus prod activation triple-receipt acceptance; partial state from PR #855 closure absorb)
+- Per-scope status:
+  - **Test cluster mock-receipt drill**: 🟡 partial → 🟢 Mitigated (mock-receipt) — DUAL receipt evidence (Mailpit SMTP + webhook-receiver POST 200)
+  - **Real Slack workspace**: pending board #853 ops slot
+  - **Prod activation**: pending board #854 owner-gated
 - Last review tarihi güncellenir
-- Note: "mitigated by first controlled drill" — Codex iter-4 dil disiplini
+- Dil disiplini (Codex `019e5aaf` REVISE absorb): "mitigated by mock-receipt drill — real Slack workspace + prod activation ayrı operator-external". "Mitigated by first controlled drill" overclaim YASAK (mock-only kapsamla sınırlı).
 
 ---
 
@@ -587,7 +629,7 @@ Audit doc: `docs/faz-23-evidence/2026-XX-XX-d43-prod-activation.md` —
 pre/during/post snapshot + Slack screenshot + SMTP screenshot + GitHub
 Issue link + 6.5.6 triple receipt evidence.
 
-### 6.5.8 SMTP endpoint config — Vault değil, helm-values authoritative
+### 6.5.8 SMTP endpoint config — Vault değil, helm-values authoritative + Operator schema gap
 
 > Codex `019e4234` post-impl P3 absorb: Alertmanager `email_configs` Go
 > config'inde `smarthost` field'ı **string olarak doğrudan** beklenir;
@@ -596,8 +638,24 @@ Issue link + 6.5.6 triple receipt evidence.
 > truth). Vault'taki `SMTP_HOST` + `SMTP_PORT` ESO ExternalSecret schema
 > tutarlılığı için seed edilir (test cluster + prod cluster aynı key set'i
 > — manifest portability), ama Alertmanager runtime'ı bu iki key'i
-> okumaz. Vault'tan okunan tek SMTP key'leri `SMTP_USER` + `SMTP_PASSWORD`
-> (`auth_username_file` / `auth_password_file` file mount).
+> okumaz.
+>
+> **Operator schema gap (Codex `019e5aaf` post-impl absorb — BL-008
+> 2026-05-24 finding)**: Prometheus Operator v0.90.1 stricter schema
+> `email_configs.auth_username_file` ve `email_configs.auth_password_file`
+> field'larını reddediyor (`"field not found in type config.plain"`).
+> Bu yüzden:
+> - **Test cluster** (BL-008 mock drill): Mailpit no-auth (`require_tls:
+>   false`); email_configs `auth_*_file` YOK; in-cluster mock receiver
+>   karşılığında auth gerekmedi.
+> - **Prod cluster** (board #854 blocker): `values-prod.yaml` hâlâ
+>   `auth_username_file`/`auth_password_file` taşıyor — Operator
+>   reconcile FAIL eder. Prod activation öncesi fix gerekir:
+>   - **Opsiyon 1 (önerilir)**: inline `auth_username` + `auth_password`
+>     (Vault'tan ESO ile pod env'e enjekte, Helm value template ile
+>     embed). Field-mount değil, value-as-string.
+>   - **Opsiyon 2**: Prometheus Operator upgrade (newer version
+>     `_file` field desteği — release notes check gerek).
 >
 > **Vendor değişimi**: SMTP relay endpoint değişimi (örn. Office 365 →
 > SendGrid → AWS SES) `values-prod.yaml` PR + `helm upgrade` ile yapılır,
@@ -659,6 +717,14 @@ helm upgrade kube-prometheus-stack ... -f values-test.yaml  # override'sız
 ---
 
 ## 11. Last Update
+
+**2026-05-24 (BL-008 mock-receipt drill — Codex thread `019e5aaf`)** — Test cluster controlled simulate dual-receipt drill executed:
+- Vault test SLACK_WEBHOOK_URL `drill-slack-mock.local` (NXDOMAIN sentinel) → `http://webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock` (in-cluster nginx POST logger LIVE 15d). Sentinel revert YOK; webhook-receiver canonical test mock kalır.
+- NetworkPolicy permanent: `kustomize/overlays/test/lab-deps/webhook-receiver-netpol-from-monitoring.yaml` (mailpit netpol pattern; monitoring → 8080 ingress allow).
+- Drill values v3.1: root route receiver `"null"` + regex route `alertname =~ "NotifyServiceDown|NotifyServiceAbsent"` → `direct-fallback` (Codex REVISE absorb #3 route narrowing). email_configs `auth_*_file` removed (Operator v0.90.1 stricter schema; Mailpit no-auth).
+- Drill execution 16:14:25-16:26:35Z (T+0 outage → T+3m dual receipt → T+8m recovery → T+12m baseline restore). Evidence: webhook-receiver POST 200 length=983 16:17:33Z + Mailpit `[D43 DRILL] NotifyServiceAbsent` 16:17:33.868Z.
+- R9 risk-register update: 🟡 Partial → 🟢 Mitigated (mock-receipt). Real Slack workspace (#853) + prod activation (#854) ayrı.
+- Evidence: `docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md`.
 
 **2026-05-19 (PR #855 — Session 42, Codex thread `019e4234`)** — Prod D43 activation staged/gated config + truth alignment:
 - §3.2 sub-divided test vs prod sub-sections; sentinel webhook prohibition added (Slack leg `drill-slack-mock.local` NXDOMAIN audit — board #853).

@@ -297,8 +297,8 @@
 
 | # | Özellik | Tier | Sub-faz | Status |
 |---|---|---|---|:---:|
-| O1 | Outage fallback bypass (Alertmanager direct, orchestrator bypass) | **MVP-dar** | 23.2 | 🟡 (M3 T1.4 23.2.D first controlled test drill 2026-05-10 Mailpit SMTP receipt LIVE; Slack leg sentinel-only NXDOMAIN; prod activation source-incomplete PR #855 staged config kapatır; Vault prod seed + helm upgrade + dual-receipt smoke owner-gated; R9 partial mitigation per Codex 019e4234 Session 42 audit) |
-| O2 | Notification-orchestrator down → Slack #alerts direct | **MVP-dar** | 23.2 | 🟡 (T1.4 partial drill SMTP-only kanıt; Slack leg sentinel-only; real test webhook + prod activation board issues #853 + #854) |
+| O1 | Outage fallback bypass (Alertmanager direct, orchestrator bypass) | **MVP-dar** | 23.2 | 🟢 **mock-receipt mitigated** (M3 T1.4 23.2.D — first controlled drill 2026-05-10 Mailpit SMTP-only; BL-008 mock-receipt drill 2026-05-24 Codex `019e5aaf` REVISE absorb test cluster DUAL receipt evidence (webhook-receiver POST `/slack-mock` 200 + Mailpit SMTP — same Alertmanager dispatch cycle); 10/10 mock-receipt criteria PASS; route narrowing + permanent netpol). Real Slack workspace webhook board #853 + prod activation board #854 (prod values-prod.yaml `auth_*_file` Operator v0.90.1 schema gap fix #854 kapsamında) ayrı operator-external action. |
+| O2 | Notification-orchestrator down → Slack #alerts direct | **MVP-dar** | 23.2 | 🟢 **mock-receipt mitigated** (T1.4 BL-008 mock-receipt drill 2026-05-24 dual-receipt evidence; real test workspace webhook + prod activation board issues #853 + #854 ayrı operator-external) |
 | O3 | Drift alarm ↔ Alertmanager direct redundant chain | **MVP-dar** | 23.2 | 🟡 (Alertmanager rules LIVE; redundant chain partial — T1.4 closure scope) |
 | O4 | Break-glass audit ↔ Alertmanager direct redundant chain | **MVP-dar** | 23.2 | 🟡 (Alertmanager rules LIVE; redundant chain partial — T1.4 closure scope) |
 | O5 | RB-notification-outage-fallback runbook | **MVP-dar** | 23.2 | 🟢 (runbook source-side LIVE — `docs/runbooks/` notification-outage-fallback patterns documented; T1.4 D43 partial drill executed per runbook) |
