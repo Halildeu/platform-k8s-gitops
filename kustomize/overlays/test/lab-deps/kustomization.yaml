@@ -12,6 +12,7 @@ resources:
   - mailpit.yaml
   - webhook-receiver.yaml
   - mailpit-netpol-from-monitoring.yaml    # Faz 23.2.D T1.4 D43 drill (Codex 019e0dea iter-3 P1 #1)
+  - webhook-receiver-netpol-from-monitoring.yaml  # Faz 23 v1 closure BL-008 R9 D43 drill mock receipt (Codex 019e5aaf REVISE absorb)
 
 labels:
   - includeSelectors: false

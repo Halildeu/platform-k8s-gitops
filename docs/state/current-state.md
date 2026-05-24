@@ -4869,6 +4869,8 @@ Bu dokümanda ve sonraki iletişimde **kullanılmayacak**:
 
 ### 8.6 D43 outage fallback compatibility
 
-`alertmanager-fallback` direct-fallback receiver (D43 outage chain) **bağımsız path** — Graph activation veya defer state ile etkileşim YOK. D43 SMTP leg `ai@acik.com` SMTP credentials reuse via Session 42 partial seed (#854 progress); Slack leg owner artifact bekliyor. Bkz. [RB-notification-outage-fallback.md](../runbooks/RB-notification-outage-fallback.md).
+`alertmanager-fallback` direct-fallback receiver (D43 outage chain) **bağımsız path** — Graph activation veya defer state ile etkileşim YOK. D43 SMTP leg `ai@acik.com` SMTP credentials reuse via Session 42 partial seed (#854 progress); Slack leg owner artifact bekliyor.
+
+**Update 2026-05-24 (BL-008 mock-receipt drill — Codex `019e5aaf` REVISE absorb)**: Test cluster mock-receipt drill executed (16:14-16:26Z) — webhook-receiver POST `/slack-mock` 200 length=983 + Mailpit `[D43 DRILL] NotifyServiceAbsent` 16:17:33Z (same Alertmanager dispatch cycle); R9 🟡 Partial → 🟢 **mock-receipt mitigated**. Real Slack workspace receipt (board #853) + prod D43 activation (board #854 — Operator v0.90.1 `auth_*_file` schema gap fix #854 kapsamında) ayrı operator-external residual. Evidence: `docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md`. Bkz. [RB-notification-outage-fallback.md](../runbooks/RB-notification-outage-fallback.md).
 
 ---

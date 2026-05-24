@@ -274,6 +274,19 @@ alertmanager:
               *Runbook*: {{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}
               {{ end }}
         email_configs:
+          # BLOCKER for board #854 prod activation (BL-008 2026-05-24 finding):
+          # Operator v0.90.1 stricter schema reddediyor `auth_username_file`/
+          # `auth_password_file` field'larını ("field not found in type
+          # config.plain"). Test cluster BL-008 mock-receipt drill bu hatayı
+          # email_configs auth_*_file kaldırarak workaround'lamıştı (Mailpit
+          # no-auth). PROD aktivasyonu öncesi schema fix gerekir:
+          #   Opsiyon 1: inline `auth_username` + `auth_password` (Vault'tan
+          #              template injection; ESO ref'i pod env via valueFrom)
+          #   Opsiyon 2: Operator upgrade (newer version `_file` desteği)
+          # Bu blocker board issue #854 prod activation chain'inde
+          # ele alınmalı. Şu an helm upgrade `--kube-context k3d-prod`
+          # FAIL eder (ReconciliationFailed status) — runbook §6.5.8
+          # SMTP endpoint config note revize edilecek.
           - to: notify-ops@acik.com
             from: alertmanager-fallback@acik.com
             smarthost: 'smtp.office365.com:587'
