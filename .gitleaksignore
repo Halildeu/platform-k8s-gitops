@@ -25,3 +25,10 @@
 # 1515cad psödo-örnek prosa stiline çevirdi; ilk commit (37079e2) hâlâ
 # history'de.
 37079e206c865f1cb1fd253da52f50e106dea5c5:docs/faz-22-evidence/2026-05-05-22-1-1b-d29-ea-canli.md:curl-auth-header:85
+
+# PR #1004 (Faz 22 ALLOW path browser smoke evidence) — same `curl-auth-header`
+# false-positive on the literal `not-a-real-jwt` placeholder in the §D
+# auth-gate fail-closed example. Fix commit d1cb75f replaced the curl example
+# with prose ("dummy bearer header" + a textual placeholder name); first
+# commit 2e63aec still has the literal in history.
+2e63aec2d83779fec766835f63e68df1f8ebb511:docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md:curl-auth-header:91
