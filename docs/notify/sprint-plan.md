@@ -187,16 +187,16 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T2.3.1 | 72h observation completion (T+72h = 2026-05-11 19:42Z natural) | ops | passive | ops | Time | 🟡 passive expired (operator evidence doc pending) |
-| T2.3.2 | Rollback prova execution (drill mode — non-destructive) | ops | 2 | ops | T2.3.1 | 🔴 operator slot |
-| T2.3.3 | Browser SSO verify on testai.acik.com | user | 0.5 | user | None | 🔴 user slot |
-| T2.3.4 | Browser SSO verify on ai.acik.com | user | 0.5 | user | None | 🔴 user slot |
-| T2.3.5 | Evidence document: `docs/faz-23-evidence/2026-05-11-23-9-cutover-72h.md` | docs | 1 | agent | T2.3.4 | 🔴 (T2.3.3+T2.3.4 dep) |
-| T2.3.6 | Charter 23.9 marker 🟡 → 🟢 | docs | 0.5 | agent | T2.3.5 | 🔴 (T2.3.5 dep) |
+| T2.3.1 | 72h observation completion (T+72h = 2026-05-11 19:42Z natural) | ops | passive | ops | Time | 🟢 done — window closed 2026-05-11 (0 ERROR, DLQ=0, alerts clean) |
+| T2.3.2 | Rollback prova execution (drill mode — non-destructive) | ops | 2 | ops | T2.3.1 | 🟢 done — ADR-0010 §2.5 + drill 2026-05-10 (R8 mitigated) |
+| T2.3.3 | Browser SSO verify on testai.acik.com | user | 0.5 | user | None | 🟢 done — Session 49 `d29-evidence-tester` JWT + /authz/me 200 (Pre-Prod Full Authority agent headless) |
+| T2.3.4 | Browser SSO verify on ai.acik.com | user | 0.5 | user | None | 🟢 done — Session 49 `d29-prod-sso-tester` JWT + /authz/me 200 (R7 mitigated) |
+| T2.3.5 | Evidence document: `docs/faz-23-evidence/2026-05-14-m1-23-9-cutover-closure-evidence.md` | docs | 1 | agent | T2.3.4 | 🟢 done — Session 49 closure evidence published |
+| T2.3.6 | Charter 23.9 marker 🟡 → 🟢 | docs | 0.5 | agent | T2.3.5 | 🟢 done — charter table line 57 FULL CLOSURE (truth-sync 2026-05-23 via this reconciliation PR for 23.9 section + this T2.3 table) |
 
-**Total**: 4.5h (T2.3.1 passive). **Session 47 status 2026-05-21**: M1 0/5 DoD external (operator + user gates); critical path blocker for v1 charter 23.9 closure. R7 active.
+**Total**: 4.5h passive+active. **Status 2026-05-23 (M1/23.9 reconciliation, Codex `019e53c1` AGREE)**: M1 6/6 DoD ✅ FULL CLOSURE (Session 49 evidence + 2026-05-23 truth-sync this PR). Önceki "Session 47 5/6 external blocker" wording stale; reality M1 fully closed Session 49 ama bu tablo geç senkron.
 
-**Tier 2 Total**: ~22h estimate. **Session 47 status 2026-05-21**: T2.1 + T2.2 LIVE; T2.3 5/6 external blocker (operator + user slot — R7 active).
+**Tier 2 Total**: ~22h estimate. **Status 2026-05-23**: T2.1 + T2.2 + **T2.3 hepsi LIVE/done**; M1 closed (R7 + R8 🟢 mitigated). M2 accepted 2026-05-18 #754; M6a+M6b 2026-05-20 #758.
 
 ---
 
@@ -323,7 +323,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | Tier | Scope | Total Effort | Calendar Span | Critical Risk |
 |---|---|---:|---|---|
 | **T1** 23.2 closure | preference + erasure + provider rollback + outage fallback + classification + abuse | ~99.5h estimate / ~60h+ actual + ~0h agent-actionable residual; Session 47 2026-05-21 re-baseline post 7/6 sub-tier source-side LIVE + KVKK 7/7 PR-K1..K7 MERGED | source-side LIVE; external acceptance R2 2026-05-25 + R9 ops slot | R2 (KVKK legal 4 gün), R9 (D43 drill ops slot) — R12 + R13 + R19 mitigated; RAID I6 superseded T1.1.9 PR #875 MERGED |
-| **T2** 23.1+23.4+23.9 closure | D29-Functional + archive UI + 72h observation | ~22h estimate / T2.1+T2.2 LIVE (M2 accepted 2026-05-18 #754; M6a+M6b 2026-05-20 #758); T2.3 ~4.5h external (operator + user) | T2.1+T2.2 LIVE; T2.3 ext slot | R7 (browser verify user availability — M1 23.9 closure ext-gated) |
+| **T2** 23.1+23.4+23.9 closure | D29-Functional + archive UI + 72h observation | ~22h estimate / **T2.1+T2.2+T2.3 hepsi LIVE/done** (M2 accepted 2026-05-18 #754; M6a+M6b 2026-05-20 #758; **M1 FULL CLOSURE Session 49 evidence 2026-05-14**, truth-sync 2026-05-23) | T2.1+T2.2 LIVE; T2.3 done — M1 closed | R7 🟢 closed (browser SSO Pre-Prod Full Authority agent headless); R8 🟢 mitigated |
 | **T3** 23.3+23.5 | SMS JetSMS primary + NetGSM secondary + Preference UI | ~65h estimate / source-side LIVE (M4 prod cutover 2026-05-20; M5 source-ready); T3.1.8 + T3.1.1 + M5 charter board acceptance ext-gated | source-side LIVE; canary KC + R1 + R24 ext-gated | R1 (NetGSM secondary contract ETA 2026-05-30), R24 (Biotekno OTP allowlist) — R3 DKIM 🟢 mitigated, R23 Graph adapter active monitored |
 | **T4** 23.6+23.7+23.8 v1 | Teams + WebPush (browser-only) + Tempo + bounce + per-tenant dashboard + federation design + FBL | ~99h estimate / ~71.5h actual + **~0h agent residual** — **T4.3 9/9 sub-task source-side closed 2026-05-22** (T4.3.5 FBL PR #298+#299 + T4.3.7 per-template PR #966+#296 + T4.3.8 federation design-artifact ADR-0026); mobile FCM/APNS ~24h Faz 22.2 dep DIŞI — Session 47-48 re-baseline 2026-05-21 + 2026-05-22 (T4.1 + T4.2 browser-only 11 sub-PR + #649 UI integration + T4.3.a Tempo + T4.3.b suppression + T4.3.6 per-tenant dashboard + T4.3.7 PG datasource/index + T4.3.8 federation design-artifact + T4.3.5 FBL core+mailbox-worker MERGED) | operator activation gate | R11 ~mitigated (Tempo LIVE), R16 design-managed (ADR-0026 iter-2; production federation runtime Faz 24+/M8) |
 | **T5** 23.X v2 | multi-tenant features | ~144h | 8-12 hafta | R10 (multi-tenant migration) |

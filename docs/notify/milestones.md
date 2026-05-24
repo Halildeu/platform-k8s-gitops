@@ -20,20 +20,22 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 - PLAN.md Faz 23 entry + D38-D47
 - 2026-05-09 Session 39 truth alignment PR #439
 
-### M1 — 23.9 Cutover Closure (🟡 in progress, target 2026-05-12)
+### M1 — 23.9 Cutover Closure (🟢 FULL CLOSURE — 2026-05-14 Session 49 evidence)
+
+**Status revision 2026-05-23 (M1/23.9 doc reconciliation, Codex `019e53c1` AGREE A1)**: M1 DoD bütün maddeler 2026-05-14 Session 49'da kapatıldı (evidence: [docs/faz-23-evidence/2026-05-14-m1-23-9-cutover-closure-evidence.md](../faz-23-evidence/2026-05-14-m1-23-9-cutover-closure-evidence.md)) ama bu milestones M1 section + charter 23.9 section + sprint-plan T2.3 syncronize edilmemiş; bu reconciliation truth alignment yapıyor. Charter top table (line 57) "FULL CLOSURE Session 49 2026-05-14" zaten doğru; çekisirgan stale yalnız ikincil bölümlerde.
 
 **Definition of Done**:
-- [ ] T2.3.1 72h observation completion (T+72h = 2026-05-11 19:42Z natural)
-- [ ] T2.3.2 Rollback prova execution (drill mode)
-- [ ] T2.3.3 Browser SSO verify testai.acik.com
-- [ ] T2.3.4 Browser SSO verify ai.acik.com
-- [ ] T2.3.5 Evidence document published
-- [ ] Charter 23.9 marker 🟡 → 🟢
-- [ ] Risk register: R7 closed, R8 confirmed mitigated
+- [x] T2.3.1 72h observation completion (T+72h = 2026-05-11 19:42Z natural) — 0 ERROR, DLQ=0, alerts inactive/correctly-pending throughout 72h
+- [x] T2.3.2 Rollback prova execution — ADR-0010 §2.5 + drill 2026-05-10 (R8 mitigated)
+- [x] T2.3.3 Browser SSO verify **testai.acik.com** — Session 49 M2 evidence: `d29-evidence-tester` JWT mint + `/api/v1/authz/me` HTTP 200
+- [x] T2.3.4 Browser SSO verify **ai.acik.com** — Session 49 evidence: `d29-prod-sso-tester` persona + JWT mint + `/api/v1/authz/me` HTTP 200 (Pre-Production Full Authority HARD RULE — agent headless tool, R7 mitigated)
+- [x] T2.3.5 Evidence document published — `docs/faz-23-evidence/2026-05-14-m1-23-9-cutover-closure-evidence.md`
+- [x] Charter 23.9 marker 🟡 → 🟢 — charter table line 57 reflects FULL CLOSURE
+- [x] Risk register: R7 🟢 Closed (2026-05-14), R8 🟢 Mitigated
 
-**Blockers**: R7 (browser verify user availability)
-**Owner**: ops + user
-**Dependencies**: T2.3 task chain
+**Blockers**: None — M1 fully closed.
+**Owner**: — (M1 closed)
+**Dependencies**: T2.3 task chain ✅
 
 ### M2 — 23.1 D29-NOTIFY-Functional Evidence (🟢 accepted 2026-05-14 — board #754)
 
