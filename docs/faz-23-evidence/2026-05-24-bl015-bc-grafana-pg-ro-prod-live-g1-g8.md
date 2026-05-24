@@ -129,7 +129,7 @@ Multi-session safety: monitoring namespace (grafana restart) + Vault path (yeni 
 ## 6. Closure
 
 R9 T4.3.7 BL-015 prod end-to-end **LIVE**:
-- ✅ G1-G8 8/8 PASS (G2 implicit via GRANT semantic)
+- ✅ G1-G8 8/8 PASS (G2 direct via `has_table_privilege` matrix `t|f|f|f` — SELECT-only canonical)
 - ✅ Datasource health "Database Connection OK"
 - ✅ Per-template SQL query 200 OK
 - ✅ Vault path canonical + ESO sync + Grafana env populated
