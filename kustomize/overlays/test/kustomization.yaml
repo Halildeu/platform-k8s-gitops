@@ -2839,7 +2839,21 @@ images:
     # ConfigMap WebPush 5 entries eklenir (base default ENABLED=false defer-aware).
     # ExternalSecret WebPush 3 remoteRef entries comment-out (Vault seed
     # pending — operator action runbook externalsecret-notify.yaml).
-    digest: sha256:f3f8c497df87fd3ee394c224d7209b67714b026152c92ae119b0d8c4c16fbaf6
+    #
+    # 2026-05-24 update v7 (Faz 23.2 v2 — Layer-2 OpenFGA can_receive per-channel
+    # deny metric observability): Bump from sha-aaf5f09 to sha-0379985.
+    # platform-backend PR #301 squash 0379985552da66953c29148f0b2aef76ac53cbdb.
+    # Carries:
+    #   - WorkerMetrics.authzDeny(channel, reasonClass) counter
+    #   - WorkerMetrics.classifyAuthzReason() 6-class whitelist
+    #     (no_tuple / authz_unreachable / authz_http_error / validation_error /
+    #     authz_disabled / other) for cardinality safety
+    #   - DeliveryEligibilityService Guard 3 metric on subscriber/external deny
+    #   - Channel-recipient Layer-2 enforce remains SKIP with 6-item TODO
+    # Cross-AI: 019e59eb plan REVISE absorb + 019e59f3 review REVISE -> AGREE
+    # Tests: 23/23 PASS (16 eligibility + 7 classifier)
+    # Build: gh run view 26361581248 -R Halildeu/platform-backend success 2026-05-24T12:44Z
+    digest: sha256:7a2a547a56ae62ace0f7776a388147ce0862a1d11d77b705133c1ae8bb31f187
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
