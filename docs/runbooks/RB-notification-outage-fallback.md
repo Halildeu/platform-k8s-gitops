@@ -1,10 +1,10 @@
 # RB-notification-outage-fallback — D43 Outage Fallback Bypass Runbook
 
-> **Status**: ACTIVE (Faz 23.2.D T1.4 PR-1+PR-2+PR-3 MERGED 2026-05-09; PR-1.5 prod staged config PR #855 Session 42 — Codex `019e4234`)
+> **Status**: ACTIVE (Faz 23.2.D T1.4 PR-1+PR-2+PR-3 MERGED 2026-05-09; PR-1.5 prod staged config PR #855 Session 42 — Codex `019e4234`; **BL-008 mock-receipt drill 2026-05-24 — Codex `019e5aaf` REVISE absorb**)
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md) D43 + D46 #10
 > **Sub-faz**: 23.2 (MVP-dar — outage fallback bypass T1.4)
-> **Codex thread**: `019df86f` Q4 PARTIAL absorb (initial); `019e0dea` iter-1+2+3+4 (T1.4 PR-1/2/3 cross-AI peer review); `019e4234` Session 42 (prod activation scope split + truth alignment)
-> **Risk**: R9 — **current state 🟡 partial** (test SMTP drill LIVE 2026-05-10; Slack leg sentinel-only — board #853; prod activation source-incomplete → PR #855 staged config + #854 owner-gated). Full triple-receipt prod activation + real test Slack webhook sonrası 🟡 → 🟢 mitigated.
+> **Codex thread**: `019df86f` Q4 PARTIAL absorb (initial); `019e0dea` iter-1+2+3+4 (T1.4 PR-1/2/3 cross-AI peer review); `019e4234` Session 42 (prod activation scope split + truth alignment); **`019e5aaf` BL-008 mock-receipt drill REVISE absorb**
+> **Risk**: R9 — **current state 🟢 mock-receipt mitigated** (BL-008 test cluster dual-receipt drill 2026-05-24: webhook-receiver POST `/slack-mock` 200 length=983 + Mailpit `[D43 DRILL] NotifyServiceAbsent` 16:17:33Z — same Alertmanager dispatch cycle). **Residual operator-external**: real Slack workspace receipt board [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) + prod activation board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) (Operator v0.90.1 `auth_*_file` schema gap fix #854 kapsamında). Production-ready claim DEĞİL.
 
 ---
 

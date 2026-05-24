@@ -16,7 +16,9 @@
 
 ## 📊 Snapshot (2026-05-09 Session 39, Codex `019e0bff` iter-1 absorb — historical; 2026-05-23 literal marker pass Codex `019e5958` AGREE + `019e5963` REVISE absorb)
 
-**Status update 2026-05-23 (literal marker truth-sync, Codex `019e5958` AGREE + cross-AI peer review thread `019e5963-0633-7412-981d-55284b038a8f` REVISE iter-2 absorb)**: Bu snapshot Session 39'dan tarihli historical kayıt; **literal satır marker'larının full pass'i bu reconciliation PR'da yapıldı** — §1 Channels (A4 SMS 🟢, A7 Teams 🟢, A10 WebPush 🟢) + §2 Workflow (B16 outage fallback 🟡 evidence) + §3 Templates (C1+C3+C4+C6 Kernel 🟢, C7 23.2.C 🟢) + §4 Subscribers (D1-D8 Kernel/MVP-dar 🟢, D10+D11+D13 23.5 🟢, D12 🟡 public landing LIVE + List-Unsubscribe-Post header TBD, D15 T4.3.b 🟢) + §5 Tenancy (E1+E3 🟢, E2 🟡) + §6 Audit/KVKK (F1-F8 Kernel/MVP-dar 🟢 — R2 KVKK CLOSED 2026-05-23 via Codex `019e5189` legal verdict; F9+F10 23.5 🟢) + §7 Observability (G1-G5 Kernel/MVP-dar 🟢, G6-G8 T4.3 🟢, G10 23.5 🟢) + §8 Provider Management (H1+H3+H5+H6 🟢, H4 🟡 DKIM relay + DNS operator-gated, H7 🟡 NetGSM DEFER, H9 🟢 bounce handling T4.3.b, H10 🟢 source-ready FBL mailbox operator) + §9 DX (I1+I3+I4+I5+I6 Kernel 🟢, I2+I7 🟡 SDK package gevşek) + §10 UI (J1-J6 + J8 23.4-23.7 🟢) + §11 Security (K1-K3 Kernel 🟢, K5 🟡 OpenFGA Layer-1 LIVE, K7 23.2 🟢, K9 🟢) + §12 Deliverability (L1 🟢 DKIM relay, L4 🟢 T4.3.b, L5 🟢 source-ready) + §13 Abuse/Spam (M1+M2 23.2 🟢, M3 🟡, M5 🟡 email-only suppression LIVE) + §14 Accessibility (N1 🟢 multipart C4 covered, N2-N7 ☐) + §15 Incident (O1-O4 🟡 partial T1.4, O5 🟢 source-ready). Updates only marked 🟢 where evidence is concrete (sprint-plan / milestones / charter / risk-register / PR # / evidence doc). Source-ready items explicitly tagged "source-ready, operator activation pending" where appropriate (T4.3.5 FBL mailbox, T4.3.7 DB RO role, L1 DKIM DNS, L2/L3 SPF/DMARC DNS).
+**Status update 2026-05-24 (BL-008 mock-receipt drill, Codex `019e5aaf` REVISE absorb)**: §15 Incident O1+O2 🟡 → 🟢 **mock-receipt mitigated** (webhook-receiver POST + Mailpit SMTP dual-receipt 2026-05-24; real Slack #853 + prod #854 ext-bound), §2 B16 🟡 → 🟢 mock-receipt mitigated (paralel). O3+O4 hâlâ partial T1.4 closure scope.
+
+**Status update 2026-05-23 (literal marker truth-sync, Codex `019e5958` AGREE + cross-AI peer review thread `019e5963-0633-7412-981d-55284b038a8f` REVISE iter-2 absorb)**: Bu snapshot Session 39'dan tarihli historical kayıt; **literal satır marker'larının full pass'i bu reconciliation PR'da yapıldı** — §1 Channels (A4 SMS 🟢, A7 Teams 🟢, A10 WebPush 🟢) + §2 Workflow (B16 outage fallback 🟡 evidence → 🟢 mock-receipt 2026-05-24) + §3 Templates (C1+C3+C4+C6 Kernel 🟢, C7 23.2.C 🟢) + §4 Subscribers (D1-D8 Kernel/MVP-dar 🟢, D10+D11+D13 23.5 🟢, D12 🟡 public landing LIVE + List-Unsubscribe-Post header TBD, D15 T4.3.b 🟢) + §5 Tenancy (E1+E3 🟢, E2 🟡) + §6 Audit/KVKK (F1-F8 Kernel/MVP-dar 🟢 — R2 KVKK CLOSED 2026-05-23 via Codex `019e5189` legal verdict; F9+F10 23.5 🟢) + §7 Observability (G1-G5 Kernel/MVP-dar 🟢, G6-G8 T4.3 🟢, G10 23.5 🟢) + §8 Provider Management (H1+H3+H5+H6 🟢, H4 🟡 DKIM relay + DNS operator-gated, H7 🟡 NetGSM DEFER, H9 🟢 bounce handling T4.3.b, H10 🟢 source-ready FBL mailbox operator) + §9 DX (I1+I3+I4+I5+I6 Kernel 🟢, I2+I7 🟡 SDK package gevşek) + §10 UI (J1-J6 + J8 23.4-23.7 🟢) + §11 Security (K1-K3 Kernel 🟢, K5 🟡 OpenFGA Layer-1 LIVE, K7 23.2 🟢, K9 🟢) + §12 Deliverability (L1 🟢 DKIM relay, L4 🟢 T4.3.b, L5 🟢 source-ready) + §13 Abuse/Spam (M1+M2 23.2 🟢, M3 🟡, M5 🟡 email-only suppression LIVE) + §14 Accessibility (N1 🟢 multipart C4 covered, N2-N7 ☐) + §15 Incident (O1+O2 🟡 partial → 🟢 mock-receipt 2026-05-24, O3+O4 🟡 partial T1.4, O5 🟢 source-ready). Updates only marked 🟢 where evidence is concrete (sprint-plan / milestones / charter / risk-register / PR # / evidence doc). Source-ready items explicitly tagged "source-ready, operator activation pending" where appropriate (T4.3.5 FBL mailbox, T4.3.7 DB RO role, L1 DKIM DNS, L2/L3 SPF/DMARC DNS).
 
 **Semantic roll-up (historical 2026-05-09)** (NOT literal table marker count — şimdi literal markerlar updated 2026-05-23):
 
@@ -43,7 +45,7 @@
 - §12 Deliverability: ⏳ pending (DKIM/SPF/DMARC config)
 - §13 Abuse/Spam: ⏳ pending
 - §14 Accessibility (WCAG): ⏳ pending
-- §15 Incident/Degraded Mode: 🟡 alerts/SLO/dashboard LIVE; **D43 outage fallback bypass gerçek pending T1.4 ~15h (R9 drill blocker)** — M3 stale audit confirmed
+- §15 Incident/Degraded Mode: 🟢 **mock-receipt mitigated** (alerts/SLO/dashboard LIVE; BL-008 D43 dual-receipt drill 2026-05-24 — Codex `019e5aaf` REVISE absorb; real Slack #853 + prod #854 operator-external residual)
 - §16 Data Classification: 🟢 substantively LIVE (enum 4 değer transactional/security/commercial/system + IntentSubmissionService + DeliveryEligibilityService source-ready/live; acceptance test gate) — M3 stale audit 2026-05-09
 
 **Overall**:
@@ -99,7 +101,7 @@
 | B13 | Recurring (CRON) | v2 | 23.X | ☐ |
 | B14 | A/B testing (variant) | v2 | 23.X | ☐ |
 | B15 | No-code workflow editor UI | v2 | 23.X | ☐ |
-| B16 | Fallback channel canary test (gate) | **MVP-dar** | 23.2 | 🟡 (M3 T1.4 23.2.D outage fallback bypass partial drill 2026-05-10 — Mailpit SMTP receipt LIVE; Slack leg sentinel-only NXDOMAIN; prod activation source-incomplete; R9 partial mitigation per Codex 019e4234 Session 42 audit) |
+| B16 | Fallback channel canary test (gate) | **MVP-dar** | 23.2 | 🟢 **mock-receipt mitigated** (M3 T1.4 23.2.D — BL-008 mock-receipt drill 2026-05-24 dual-receipt evidence (webhook-receiver POST 200 + Mailpit SMTP — same Alertmanager dispatch cycle); Codex `019e5aaf` REVISE absorb; real Slack workspace #853 + prod activation #854 ayrı operator-external) |
 
 ## 3. Template Management
 
@@ -301,7 +303,7 @@
 | O2 | Notification-orchestrator down → Slack #alerts direct | **MVP-dar** | 23.2 | 🟢 **mock-receipt mitigated** (T1.4 BL-008 mock-receipt drill 2026-05-24 dual-receipt evidence; real test workspace webhook + prod activation board issues #853 + #854 ayrı operator-external) |
 | O3 | Drift alarm ↔ Alertmanager direct redundant chain | **MVP-dar** | 23.2 | 🟡 (Alertmanager rules LIVE; redundant chain partial — T1.4 closure scope) |
 | O4 | Break-glass audit ↔ Alertmanager direct redundant chain | **MVP-dar** | 23.2 | 🟡 (Alertmanager rules LIVE; redundant chain partial — T1.4 closure scope) |
-| O5 | RB-notification-outage-fallback runbook | **MVP-dar** | 23.2 | 🟢 (runbook source-side LIVE — `docs/runbooks/` notification-outage-fallback patterns documented; T1.4 D43 partial drill executed per runbook) |
+| O5 | RB-notification-outage-fallback runbook | **MVP-dar** | 23.2 | 🟢 (runbook source-side LIVE — `docs/runbooks/RB-notification-outage-fallback.md`; BL-008 mock-receipt drill 2026-05-24 per runbook + runbook §2.1 + §3.2 + Step 6 + §6.5.8 BL-008 absorb truth-sync update) |
 | O6 | Degraded mode policy (provider down → DLQ + alarm) | v1 | 23.4 | ☐ |
 | O7 | Circuit breaker per provider | v1 | 23.4 | ☐ |
 
