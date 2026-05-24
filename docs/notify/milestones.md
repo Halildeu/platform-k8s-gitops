@@ -75,7 +75,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 - [x] T1.6 23.2.F Abuse prevention guards merged — Session 41 FULL ACCEPTANCE (R13+R19 mitigated)
 - [x] All Faz 23.2 kabul kriteri 🟢 (8/8 — R2 Codex `019e5189` legal verdict ile kapandı)
 - [x] Charter 23.2 marker 🟢 done — R2 final legal closure Codex `019e5189` (2026-05-23)
-- [x] Risk register: R2 🟢 Mitigated (Codex `019e5189` legal verdict 2026-05-23), R9 🟢 **Mitigated (mock-receipt)** (BL-008 2026-05-24 Codex `019e5aaf` mock dual-receipt drill; real Slack workspace #853 + prod activation #854 ayrı operator-external), R12 🟢 mitigated, R13 🟢 mitigated, R19 🟢 mitigated, **R23 🟡 active monitored** (Graph mail adapter deferred; SMTP canonical; Entra asset preserved; reactivation chain documented in ADR-0024 + RB-graph-mail-adapter-activation.md + #892)
+- [x] Risk register: R2 🟢 Mitigated (Codex `019e5189` legal verdict 2026-05-23), R9 🟢 **Mitigated (SMTP-only D43 v1; Slack DEFER per user decision 2026-05-24)** (Codex `019e5b9c` REVISE absorb; historical BL-008 mock-receipt drill + 2026-05-10 first controlled drill = drill audit only, no longer v1 acceptance gate; prod SMTP-only activation board #854 rescope operator-external; #853 + #1012 Slack-dependent → DEFER), R12 🟢 mitigated, R13 🟢 mitigated, R19 🟢 mitigated, **R23 🟡 active monitored** (Graph mail adapter deferred; SMTP canonical; Entra asset preserved; reactivation chain documented in ADR-0024 + RB-graph-mail-adapter-activation.md + #892)
 
 **Remaining blocker**: None — R2 closed via Codex `019e5189` final legal verdict (2026-05-23, kullanıcı kararı: Codex istişare verdict'i = kabul edilen hukuk onayı). K6 tenant-scoped DPO authz P1 non-blocking follow-up (23.2.B).
 **Owner**: — (R2 closed; K6 follow-up dev 23.2.B)

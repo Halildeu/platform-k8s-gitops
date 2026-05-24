@@ -37,13 +37,13 @@
 
 Implementation: `helm-values/kube-prometheus-stack/values-test-d43-drill.yaml` (drill window override).
 
-**Mock-vs-real boundary**: Test cluster `SLACK_WEBHOOK_URL` Codex `019e5aaf` REVISE absorb sonrası **in-cluster webhook-receiver mock URL** `http://webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock` (sentinel revert YOK; webhook-receiver nginx POST logger LIVE 15d + permanent NetworkPolicy commit). Bu mock URL Alertmanager Slack receiver HTTP POST receipt evidence sağlar — **payload semantic Slack contract validation YOK** (nginx response body Slack format değil; "unrecoverable error" Alertmanager log'unda expected/known for mock drill). Real Slack workspace `#alerts-d43-drill` channel receipt board [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) operator-external action.
+**Historical mock-vs-real boundary** (pre-2026-05-24 Slack DEFER — audit-only): Test cluster `SLACK_WEBHOOK_URL` previously routed to in-cluster webhook-receiver mock URL (`http://webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock`) per BL-008 drill 2026-05-24. Per user decision 2026-05-24 ("slack kullanmıyoruz. sonrasınd agelirse yapılacak") Slack section removed from active config — boundary historical only. Future reactivation atomic with helm-values + ExternalSecret data re-add + drill rerun.
 
 ### 2.2 Katman 2: ESO Vault Fallback Secret (T1.4 PR-1)
 
 Vault path **ayrı** (`notification-orchestrator`'ın path'inden bağımsız → tek credential rotation iki kanalı bozmaz):
 
-- **Vault path**: `kv/platform/alertmanager-fallback` (5 keys: `SLACK_WEBHOOK_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`)
+- **Vault path**: `kv/platform/alertmanager-fallback` (4 keys: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` — SMTP-only per user decision 2026-05-24 Slack DEFER; historical 5th key `SLACK_WEBHOOK_URL` removed from ExternalSecret request; Vault key may persist as inactive operator hygiene residue)
 - **ESO ExternalSecret**: `monitoring/alertmanager-fallback-secrets` (test+prod overlays)
 - **Vault policy**: `eso-runtime` extend (PR #457 commit `bootstrap/vault-policies/common/eso-runtime.hcl`)
 
@@ -126,17 +126,17 @@ kubectl --context k3d-test get clustersecretstore vault-platform-gitops \
 #### Test cluster (D43 drill prereq)
 
 ```bash
+# SMTP-only per user decision 2026-05-24 Slack DEFER (Codex 019e5b9c REVISE absorb).
+# SLACK_WEBHOOK_URL parameter removed; ExternalSecret no longer requests it.
 docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-test \
   vault kv put kv/platform/alertmanager-fallback \
-    SLACK_WEBHOOK_URL=http://webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock \
     SMTP_HOST=mailpit.platform-test.svc.cluster.local \
     SMTP_PORT=587 \
     SMTP_USER=alertmanager-fallback@local \
     SMTP_PASSWORD=drill-only-mailpit-no-auth
 ```
 
-**Test cluster SLACK_WEBHOOK_URL canonical: in-cluster mock receiver**
-(Codex thread `019e5aaf` REVISE absorb 2026-05-24 — BL-008 mock-receipt drill).
+**Historical** (pre-2026-05-24 Slack DEFER, audit-only): Test cluster `SLACK_WEBHOOK_URL` canonical was in-cluster mock receiver `http://webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock` (Codex thread `019e5aaf` REVISE absorb 2026-05-24 BL-008 mock-receipt drill). Removed per user decision 2026-05-24.
 
 Mock receiver: `webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock`
 (nginx POST logger; permanent NetworkPolicy
@@ -169,10 +169,8 @@ test cluster dual-receipt evidence ile kapatır.
 > Bu adım PR-1 staged/gated values-prod.yaml merge edildikten **sonra** ve
 > `helm upgrade` ile cluster apply edilmeden **önce** yapılır.
 
-Owner artifact (Slack admin + ops):
+Owner artifact (ops only — SMTP-only per user decision 2026-05-24 Slack DEFER):
 
-- `SLACK_WEBHOOK_URL`: gerçek prod `#alerts-d43-drill` (veya
-  `#prod-outage-alerts` — owner karar) Slack workspace incoming webhook
 - `SMTP_HOST`: prod SMTP relay endpoint (default `smtp.office365.com`,
   vendor değişimi config-only — `notification-orchestrator` ile aynı vendor
   patternı)
@@ -183,6 +181,8 @@ Owner artifact (Slack admin + ops):
 - `SMTP_PASSWORD`: ilgili App Password (operator Vault'a yazar; transcript'e
   yazılmaz — HARD RULE no-token-log)
 
+**Historical** (pre-2026-05-24 Slack DEFER, audit-only): Slack admin owner artifact previously required `SLACK_WEBHOOK_URL` (gerçek prod `#alerts-d43-drill` workspace incoming webhook). Removed per user decision 2026-05-24.
+
 Seed (operator):
 
 ```bash
@@ -190,7 +190,6 @@ ssh halil@staging-sw
 docker exec -e VAULT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json) \
   platform-vault-prod \
   vault kv put kv/platform/alertmanager-fallback \
-    SLACK_WEBHOOK_URL=<...> \
     SMTP_HOST=smtp.office365.com \
     SMTP_PORT=587 \
     SMTP_USER=alertmanager-fallback@acik.com \
@@ -287,7 +286,7 @@ kubectl --context k3d-test -n monitoring exec -it deploy/prometheus-operator-pro
 # Initial state: empty (no firing)
 ```
 
-### Step 4: Alertmanager native Slack+SMTP receiver routing match
+### Step 4: Alertmanager native SMTP receiver routing match (SMTP-only per user decision 2026-05-24 Slack DEFER)
 
 #### 4.0 Service/pod discovery (Codex iter-1 P2 #3 absorb)
 
