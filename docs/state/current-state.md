@@ -51,7 +51,7 @@ milestones.md M7 T4.2 "WebPush activation pending" → "WebPush browser LIVE end
 - **BE-011 real agent lifecycle smoke** — yan-kanıt session içinde captured (`HALILKOOLUB735` Windows device data döndü); resmi smoke ayrı kapı.
 - **platform-agent#8 Windows fresh smoke** — operator-bound (Windows VM).
 - **IT pilot 22.2** — operator-bound (AD ops).
-- **Faz 23 M7 operator-bound**: T4.3.5 FBL mailbox activation, T4.3.7 DB RO role grant, R11 formal Close ≥30d soak baseline.
+- **Faz 23 M7 operator-bound**: T4.3.5 FBL mailbox activation, ~~T4.3.7 DB RO role grant~~ **T4.3.7 BL-015-B/C PROD LIVE 2026-05-24** (G1-G8 PASS evidence `docs/faz-23-evidence/2026-05-24-bl015-bc-grafana-pg-ro-prod-live-g1-g8.md`; Grafana `notify_pg_ro` datasource health "Database Connection OK"; helm chart upgrade 65.8.0 → 75.4.0+ operator follow-up; ArgoCD `platform-eso-prod` auto-sync activation operator scope), R11 formal Close ≥30d soak baseline.
 
 Bu delta prod-ready / password-reset-ready İDDİA ETMEZ.
 
