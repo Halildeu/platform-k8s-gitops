@@ -75,7 +75,7 @@ Gerçek run tamamlandığında: **gitops `docs/faz-22-evidence/YYYY-MM-DD-parall
 ### 2.7 Gate sıralaması (acik.local pilot relative)
 
 ```
-[Parallels W11 CI rehearsal (§2)]  →  [acik.local IT pilot (§3-§9)]
+[Parallels W11 CI rehearsal (§2)]  →  [acik.local IT pilot (§3-§10)]
         AGENT-ACTIONABLE                OPERATOR-BOUND
         repeatable lab                  one-time real pilot
         WORKGROUP                       PartOfDomain=true (acik.local)
@@ -97,7 +97,7 @@ Rehearsal **acik.local pilot yerine geçmez** — pilot öncesi tekrar edilebili
 
 - [ ] **RDP** veya **IT eşliğinde local console erişimi** — agent install + smoke için.
 - [ ] **Şifre e-posta ile paylaşılmaz** (HARD RULE — Kullanıcı Aktif Credential'ına Dokunma): operator/IT şahsen veya secrets manager üzerinden paylaşır.
-- [ ] **HTTPS 443 backend reachability**: pilot PC'den `testai.acik.com` (test cluster) HTTPS resolve + TCP/443 ulaşabilmeli (firewall + DNS). **Pilot scope test cluster only**; prod host (`ai.acik.com`) bu runbook kapsamı dışıdır (§4 ve §7).
+- [ ] **HTTPS 443 backend reachability**: pilot PC'den `testai.acik.com` (test cluster) HTTPS resolve + TCP/443 ulaşabilmeli (firewall + DNS). **Pilot scope test cluster only**; prod host (`ai.acik.com`) bu runbook kapsamı dışıdır (§5 ve §8).
 - [ ] **EDR/Antivirüs allowlist muhatabı**: operator çalıştığı SOC veya IT güvenlik ekibinden `endpoint-enes-agent.exe` (ve hash'i) için allowlist permission önceden alınır. EDR allowlist olmadan smoke fail eder (quarantine veya block).
 - [ ] **Pilot cihazlarda local admin/install yetkisi**: agent install + Windows service register için gereklidir. Domain user RDP yetersizdir.
 
@@ -105,7 +105,7 @@ Rehearsal **acik.local pilot yerine geçmez** — pilot öncesi tekrar edilebili
 
 - [ ] `endpoint-admin-service` test cluster'da READY 1/1 (digest `sha256:1a1d0aac…` — `current-state.md` truth-sync ile uyumlu).
 - [ ] Test persona JWT mint mekanizması operator elinde (`c5persona-admin-9001` pattern — handoff §5 P1 ALLOW-path browser smoke örneği).
-- [ ] **OpenFGA tuple — pilot persona için doğrulanmalı**: smoke akışı §3 admin/manager command queue path'ine dayanıyor; `module:endpoint-admin` üzerinde `can_manage` (admin) veya en az `can_view` (read-only/status smoke) tuple'ı pilot persona için var olmalı. Tuple yoksa backend 403 FGA fail-closed döner — bu pilot fail olarak okunmaz, FGA layer doğru çalışıyor demektir; ama smoke matrix'in komut queue + result adımları yapılamaz. Seed referansı: `bootstrap/openfga/endpoint-admin-tuples.json` + `docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md` §A persona JWT örneği. Eğer pilot scope **sadece read-only/status smoke** ise tuple opsiyonel sayılabilir (status route auth-only, FGA gate'siz).
+- [ ] **OpenFGA tuple — pilot persona için doğrulanmalı**: smoke akışı §4 admin/manager command queue path'ine dayanıyor; `module:endpoint-admin` üzerinde `can_manage` (admin) veya en az `can_view` (read-only/status smoke) tuple'ı pilot persona için var olmalı. Tuple yoksa backend 403 FGA fail-closed döner — bu pilot fail olarak okunmaz, FGA layer doğru çalışıyor demektir; ama smoke matrix'in komut queue + result adımları yapılamaz. Seed referansı: `bootstrap/openfga/endpoint-admin-tuples.json` + `docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md` §A persona JWT örneği. Eğer pilot scope **sadece read-only/status smoke** ise tuple opsiyonel sayılabilir (status route auth-only, FGA gate'siz).
 
 ## 4. İlk pilotta yapılacaklar
 
@@ -181,7 +181,7 @@ Bu runbook **pilot hazırlık dokümanıdır**:
 
 - ✅ İlk pilot sadece **IT-owned test cihazları** içindir (son kullanıcı yok)
 - ✅ Sadece **test cluster** kapsamındadır (`testai.acik.com` backend; prod cluster pilot kapsamı dışı)
-- ✅ Smoke kapsamı yukarıda §3 ile sınırlıdır; §4 yasak listesi koruma
+- ✅ Smoke kapsamı yukarıda §4 ile sınırlıdır; §5 yasak listesi koruma
 - ❌ **Prod-ready / password-reset-ready / domain-wide rollout-ready iddiası taşımaz**
 - ❌ Pilot başarısı IT pilot tier'ı kapatmaz; full Faz 22.2 acceptance (≥30 day soak + EDR catalog update + trusted signing + helpdesk hand-off runbook) ayrı kapı
 
