@@ -31,4 +31,4 @@
 # auth-gate fail-closed example. Fix commit d1cb75f replaced the curl example
 # with prose ("dummy bearer header" + a textual placeholder name); first
 # commit 2e63aec still has the literal in history.
-2e63aec2d83779fec766835f63e68df1f8ebb511:docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md:curl-auth-header:91
+2e63aec2d83779fec766835f63e68df1f8ebb511:docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md:curl-auth-header:90
