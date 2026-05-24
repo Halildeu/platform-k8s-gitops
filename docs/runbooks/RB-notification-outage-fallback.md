@@ -207,8 +207,7 @@ kubectl --context k3d-prod -n monitoring get externalsecret alertmanager-fallbac
 # Beklenen: True
 kubectl --context k3d-prod -n monitoring get secret alertmanager-fallback-secrets \
   -o json | jq '.data | to_entries | map({key, value_len: (.value | @base64d | length)})'
-# Beklenen (current SMTP-only canonical state — ADR-0027 §D1 2026-05-25): 4 key (SMTP_HOST + SMTP_PORT + SMTP_USER + SMTP_PASSWORD). TEAMS_WEBHOOK_URL **not seeded** (asset-preserved dormant; Teams reactivation 5. key olarak RB-d43-teams-reactivation-chain.md §3 atomic chain ile gelir).
-# Beklenen: 5 keys, hepsi non-empty
+# Beklenen (current SMTP-only canonical state — ADR-0027 §D1 2026-05-25): 4 key (SMTP_HOST + SMTP_PORT + SMTP_USER + SMTP_PASSWORD), hepsi non-empty. TEAMS_WEBHOOK_URL **not seeded** (asset-preserved dormant; Teams reactivation 5. key olarak RB-d43-teams-reactivation-chain.md §3 atomic chain ile gelir).
 ```
 
 ### 3.3 ESO sync verify
