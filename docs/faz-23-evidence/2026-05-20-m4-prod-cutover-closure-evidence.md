@@ -366,10 +366,10 @@ ETA rollback < 15 dakika (atomic kustomization commit).
 
 ### External / operator-gated (agent dışı)
 
-- [ ] **Office 365 admin DKIM tenant enable** for `acik.com` (one-time)
+- [ ] **Office 365 admin DKIM tenant enable** for `acik.com` (one-time) — **BL-009 DEFER 2026-05-25 per user decision**; not urgent; activate on trigger (R3 reactivation triggers; risk-register R3 satırı)
 - [ ] **DNS CNAME publish**: `selector1._domainkey.acik.com →
       selector1-acik-com._domainkey.<tenant>.onmicrosoft.com`
-      (similarly selector2)
+      (similarly selector2) — **BL-009 DEFER 2026-05-25 per user decision**; SMTP relay LIVE; `DKIM=none` residual accepted for internal/dev path
 - [ ] **R24 Biotekno OTP allowlist provisioning** (provider
       coordination — sender ID OTP outbound VFO activation)
 - [ ] **R1 NetGSM secondary contract activation** (ETA 2026-05-30 —
