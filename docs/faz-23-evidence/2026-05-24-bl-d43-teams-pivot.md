@@ -199,7 +199,7 @@ kubectl --context k3d-test -n platform-test port-forward svc/mailpit 8025:8025 &
 ### Yeni (açılacak — Codex Q5 Opsiyon b absorb)
 1. **Teams Power Automate workflow setup for Alertmanager fallback/perf receivers**
    - Owner: ops (service-account or team-owned flow)
-   - Acceptance: Flow live + URL captured + exported package backup runbook'ta + R27 mitigation chain (5-step) implemented
+   - Acceptance: Flow live + URL captured + exported package backup runbook'ta + R27 mitigation chain (7-step iter-4 absorb) implemented
 2. **D43 Alertmanager Teams fallback prod activation + smoke**
    - Owner: ops
    - Acceptance: Vault seed (TEAMS_WEBHOOK_URL test + prod) + ESO sync + helm upgrade + synthetic Alertmanager API POST + Teams Adaptive Card receipt + SMTP receipt + GitHub Issue receipt (3-channel defense-in-depth)
