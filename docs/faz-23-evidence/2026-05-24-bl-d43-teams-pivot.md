@@ -30,7 +30,7 @@ Organizasyon Microsoft 365 / Teams kullanıyor; Slack adapter (PR #271) dormant.
 
 ### Risk Register Impact
 - **R9 revize**: Slack dili → Teams Power Automate flow + Teams prod activation; status "🟢 Mitigated (mock-receipt, Teams-pivot reverify pending)"
-- **R27 R-NEW**: Microsoft Teams Power Automate workflow lifecycle / owner / tenant policy drift breaks D43 outage Teams channel (Severity Medium; 5-step mitigation chain — service-account flow + exported backup + monthly synthetic smoke + defense-in-depth)
+- **R27 R-NEW**: Microsoft Teams Power Automate workflow lifecycle / owner / tenant policy drift breaks D43 outage Teams channel (Severity Medium; 7-step mitigation chain (iter-4 absorb) — service-account flow + exported backup + monthly synthetic smoke + defense-in-depth)
 
 ## 3. Repo Değişimi (Source-Side Closure)
 

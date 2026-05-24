@@ -103,7 +103,7 @@ unset GH_PAT
 
 ```bash
 ssh halil@staging-sw '
-read -r -s -p "#perf-alerts incoming webhook URL: " WEBHOOK && echo
+read -r -s -p "Perf Alerts Teams Power Automate workflow URL: " WEBHOOK && echo
 printf "%s" "$WEBHOOK" | docker exec -i \
   -e VAULT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)" \
   platform-vault-prod \
@@ -160,7 +160,7 @@ ssh halil@staging-sw '
 docker exec -e VAULT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)" \
   platform-vault-prod vault kv get -mount=kv -format=json platform/alertmanager-fallback \
   | jq ".data.data | to_entries | map({key, value_len: (.value | length)})"
-# Expected: 5 keys; TEAMS_WEBHOOK_URL ~50-70 byte; SMTP_PASSWORD ~16-32 byte; others fixed
+# Expected: 5 keys; TEAMS_WEBHOOK_URL ~100-300 byte (Power Automate URL longer than Slack); SMTP_PASSWORD ~16-32 byte; others fixed
 '
 ```
 

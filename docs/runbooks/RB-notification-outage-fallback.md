@@ -41,7 +41,7 @@
 
 Implementation: `helm-values/kube-prometheus-stack/values-test-d43-drill.yaml` (drill window override).
 
-**Mock-vs-real boundary**: Test cluster `SLACK_WEBHOOK_URL` Codex `019e5aaf` REVISE absorb sonrası **in-cluster webhook-receiver mock URL** `http://webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock` (sentinel revert YOK; webhook-receiver nginx POST logger LIVE 15d + permanent NetworkPolicy commit). Bu mock URL Alertmanager Slack receiver HTTP POST receipt evidence sağlar — **payload semantic Slack contract validation YOK** (nginx response body Slack format değil; "unrecoverable error" Alertmanager log'unda expected/known for mock drill). Real Slack workspace `#alerts-d43-drill` channel receipt board [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) operator-external action.
+**Mock-vs-real boundary** (BL-D43-TEAMS-PIVOT 2026-05-24 Codex `019e5ba9` iter-4 P1 rewrite): Test cluster `TEAMS_WEBHOOK_URL` Vault seed sonrası **in-cluster webhook-receiver mock URL** `http://webhook-receiver.platform-test.svc.cluster.local:8080/teams-mock` (webhook-receiver nginx POST logger LIVE 15d + permanent NetworkPolicy commit; Service port 8080 — webhook-receiver.yaml). Bu mock URL Alertmanager `webhook_configs` HTTP POST receipt evidence sağlar — **payload semantic Teams Adaptive Card contract validation YOK** (mock-only HTTP layer; Power Automate flow transform YOK). Real Microsoft Teams Power Automate workflow operator-side ayrı (yeni board issue). Historical Slack-pre-pivot evidence: `docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md` (BL-008 mock `/slack-mock`); eski Slack workspace board #853/#854 kapatıldı 2026-05-24.
 
 ### 2.2 Katman 2: ESO Vault Fallback Secret (T1.4 PR-1)
 
@@ -718,6 +718,25 @@ curl -s http://127.0.0.1:9093/api/v2/alerts | \
 - **GitHub Issue (alarm-receiver-bridge P1 evidence)**: Halildeu/platform-k8s-gitops repo'sunda yeni issue (alertmanager-bridge dedupe: alertname+namespace tek issue açar; recovery'de comment + close).
 
 ### 6.5.7 Recovery + audit
+
+> **BL-D43-TEAMS-PIVOT 2026-05-24 (Codex `019e5ba9` iter-4 P1 #2)**: Recovery pattern §6.5.5 trigger seçimine bağlı. Synthetic Alertmanager API POST (default) için `up{}` Prometheus state'inden gelmediği için scale-up resolve etmez — silence/expire gerek. Scale=0 (legacy istisna) sadece controlled outage drill için.
+
+**Recovery 6.5.5 default — synthetic Alertmanager API POST**:
+
+```bash
+# (port-forward §6.5.5'ten beri açık)
+# Synthetic alert silence/expire — scale-up YOK (orchestrator state aynı kalır)
+curl -sS -X POST http://127.0.0.1:9093/api/v2/silences \
+  -H 'Content-Type: application/json' \
+  -d '{"matchers": [{"name": "alertname", "value": "NotifyServiceDown", "isRegex": false}], "startsAt": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "endsAt": "'$(date -u -v+5M +%Y-%m-%dT%H:%M:%SZ)'", "createdBy": "d43-prod-smoke", "comment": "BL-D43-TEAMS-PIVOT prod activation smoke cleanup"}'
+
+# Verify alert resolved/silenced
+curl -s http://127.0.0.1:9093/api/v2/alerts | \
+  jq '.[] | select(.labels.alertname | test("^(NotifyServiceDown|NotifyServiceAbsent)$")) | .status.state'
+# Expected: empty veya silenced
+```
+
+**Recovery 6.5.5 legacy — scale=0 trigger kullanıldıysa (controlled outage drill only)**:
 
 ```bash
 # (port-forward §6.5.5'ten beri açık)
