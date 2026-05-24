@@ -557,9 +557,9 @@ Sonra `/tmp/notify-canary-org-default.pw` host'tan silinmeli (`rm /tmp/notify-ca
 
 ### 7.3 Prod cluster (M4 prod canary) — Sprint B (BL-010 follow-up)
 
-Bu PR sadece test cluster scope. **Prod cluster (`acik` realm, `https://ai.acik.com`)** için aynı pattern operator action gerek — canonical runbook `RB-prod-canary-kc-claim-setup.md` mevcut. Sprint B (BL-010) tamamlanması için:
+Bu PR sadece test cluster scope. **Prod cluster (canonical runbook `RB-prod-canary-kc-claim-setup.md` `acik` realm yazıyor; §8.1 discovery-gated Step-0 ile teyit edilecek `$PROD_REALM`)** için aynı pattern operator action gerek. Sprint B (BL-010) tamamlanması için:
 
-- Aynı persona/scope/mapper KC `platform-prod` realm'inde (host port 8081 `platform-kc-prod`) yarat
+- Aynı persona/scope/mapper KC `$PROD_REALM` (host port 8081 `platform-kc-prod`) yarat
 - Aynı persona prod cluster `notification-orchestrator` audience'ında smoke et
 - M4 prod canary acceptance evidence `2026-05-20-m4-prod-cutover-closure-evidence.md` §8a güncelle
 
@@ -658,13 +658,14 @@ Beklenen: `master` + canlı backend (`acik` veya `platform-prod`). **Realm name 
 
 ## 11. Verdict
 
-🟢 **BL-010 test cluster scope PASS (5/5 kanıt zinciri)**
+🟢 **BL-010 test cluster scope PASS — D29 katmanlar ayrı kanıtlandı**
 
 - Mapper: oidc-usermodel-attribute-mapper (User Attribute, hardcoded YASAK) — LIVE
 - Persona: notify-canary-org-default (kullanıcı login user'ına dokunmadı) — LIVE
-- Claim: `org_id=default` access token + ID token + userinfo (3/3) — LIVE
-- Boundary: ALLOW (guard-level metric `source="org_id"=4.0`) + DENY (HTTP 403 cross-org + metric `source="none"=1.0`) — LIVE
-- D29 disiplin: Up + Functional-mint + Functional-claim + Zanzibar-ready 4/4 ✅
+- Claim: `org_id=default` access token + ID token + userinfo (3/3 endpoint uniform) — LIVE
+- Guard-level allow: `notify_org_access_match_total{source="org_id"}=4.0` metric counter (§5.2) — LIVE
+- Boundary DENY: HTTP 403 cross-org + metric `source="none"=1.0` (§6) — LIVE
+- D29 disiplin (5 satır §0): Up + Functional-mint + Functional-claim + Functional-guard + Zanzibar-ready — her satır ayrı kanıtla ✅
 
 **Codex `019e5ac1` REVISE absorb edildi**:
 - §4.3 + §4.4 + §5 + §6.3 + §9 + §11 dili "guard pass" iddiasından **resource-server auth pass + metric guard-pass kanıtı** ayrımına revize edildi
