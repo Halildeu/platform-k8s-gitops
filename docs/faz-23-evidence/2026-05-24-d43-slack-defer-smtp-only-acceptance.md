@@ -129,7 +129,7 @@ Cleanup PR: Lane B (ayrı branch + Cross-AI review).
 Slack adoption gelirse referans olarak korunan evidence'lar:
 - `docs/faz-23-evidence/2026-05-10-r9-d43-drill-mitigated.md` — first controlled drill SMTP-only receipt + Slack sentinel NXDOMAIN finding
 - `docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md` — BL-008 mock-receipt dual drill (webhook-receiver + Mailpit)
-- `docs/runbooks/RB-d43-drill-execution.md` — drill execution sequence (Step 6 sentinel → BL-008 mock-receiver)
+- `docs/runbooks/RB-notification-outage-fallback.md` — drill execution sequence (§Step 6 SMTP receipt validation; historical Slack receipt section marked DEFERRED per user decision 2026-05-24)
 - `helm-values/kube-prometheus-stack/values-prod.yaml` (pre-cleanup snapshot via git history) — staged Slack receiver template
 
 ## 12. Boundary Statement (HARD)
