@@ -329,7 +329,7 @@ Mapper 3 endpoint için **uniform** projection veriyor (access token + ID token 
 $ ssh halil@staging-sw '
   ACCESS=<persona JWT>
   INTENT_ID="bl010-final-1779638448"
-  kubectl --context k3d-test -n platform-test exec api-gateway-664f4b5655-rqqlm -- \
+  kubectl --context k3d-test -n platform-test exec api-gateway-<POD> -- \
     curl -sS -i -X POST "http://api-gateway:8080/api/v1/notify/intents" \
     -H "Authorization: Bearer $ACCESS" \
     -H "X-Org-Id: default" \
@@ -436,7 +436,7 @@ Strict mode aktif ⇒ default fallback yok ⇒ JWT'de `org_id` claim'i yoksa gua
 Pod restart sonrası counter sıfırlandı. 2 başarılı allow smoke + 2 deny smoke sonrası:
 
 ```bash
-$ kubectl --context k3d-test -n platform-test exec notification-orchestrator-d9979cdbd-r5zjm -- \
+$ kubectl --context k3d-test -n platform-test exec notification-orchestrator-<POD> -- \
     wget -qO- http://localhost:8081/actuator/prometheus | grep -E '^notify_org_access_match'
 
 notify_org_access_match_total{source="none"} 1.0
@@ -490,7 +490,7 @@ Persona JWT `org_id=default` taşıyor. `X-Org-Id: otherorg` + `request.orgId="o
 ### 6.2 Smoke
 
 ```bash
-$ kubectl --context k3d-test -n platform-test exec api-gateway-664f4b5655-rqqlm -- \
+$ kubectl --context k3d-test -n platform-test exec api-gateway-<POD> -- \
     curl -sS -i -X POST "http://api-gateway:8080/api/v1/notify/intents" \
     -H "Authorization: Bearer $ACCESS" \
     -H "X-Org-Id: otherorg" \
