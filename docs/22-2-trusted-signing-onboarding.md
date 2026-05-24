@@ -156,7 +156,7 @@ Faz 22.2.A non-domain Windows pilot ile A2 BYOD + A3 Entra-joined + A4 Workplace
 >
 > Lab exception **time-boxed + SHA-pinned** (RB-faz22-non-domain-windows-pilot.md §7.3 template; max 30 gün; yenileme yeni evidence + ADR review).
 
-**Status (2026-05-24)**: Invariant statement documented; enforcement gate = AG-024 (Signed update manifest verification) MERGED + release promotion gate active. AG-024 backend MERGED öncesi operator manual enforcement.
+**Status (2026-05-24)**: Invariant statement documented (this doc). Enforcement is **conditional** and **NOT active** today; activation requires **both** (a) AG-024 (Signed update manifest verification) merged AND (b) release promotion gate active. Both items are currently TODO per Operator Action Checklist §4 below (Items 6 + 7) and per `Tracked by` §6. Until both conditions hold, operator-side manual enforcement is required (verify Authenticode signature before installer distribution; reject unsigned in A2/A3/A4/22.2.B/22.3 channels).
 
 ## 3. Implementation Sequencing
 

@@ -24,16 +24,16 @@
 
 Endpoint Agent (`endpoint-agent.exe`) kişisel cihazınıza kurulduğunda aşağıdaki **kişisel veri kategorileri** işlenir:
 
-| Veri Kategorisi | Örnek Alanlar | KVKK Madde 6 sınıflandırması |
+| Veri Kategorisi | Örnek Alanlar | KVKK sınıflandırması (genel / özel nitelikli ayrımı) |
 |---|---|---|
-| **Cihaz tanımlayıcı** | hostname, machine_fingerprint, OS version/build, IP adresi | Kişisel veri (cihaz üzerinden tanımlanabilir kişi) |
-| **Kullanıcı kimliği** | UPN (User Principal Name), SID, görünen ad, son login zaman damgası | Kişisel veri (genel nitelik) |
-| **Yerel kullanıcı listesi** (Windows) | username, etkin/devre dışı durumu, son login | Kişisel veri (genel nitelik) |
+| **Cihaz tanımlayıcı** | hostname, machine_fingerprint, OS version/build, IP adresi | Genel nitelikli kişisel veri (cihaz üzerinden tanımlanabilir kişi) |
+| **Kullanıcı kimliği** | UPN (User Principal Name), SID, görünen ad, son login zaman damgası | Genel nitelikli kişisel veri |
+| **Yerel kullanıcı listesi** (Windows) | username, etkin/devre dışı durumu, son login | Genel nitelikli kişisel veri |
 | **Kurulu yazılım envanteri** | uygulama adı, sürüm, yayıncı, kurulum tarihi | Genel veri (cihaz konfigürasyonu) |
 | **Telemetri** | heartbeat zaman damgaları, agent sürümü | Genel veri (operasyonel) |
 | **Audit log** | komut tipi, durum, süre, audit row hash | Genel veri (uyumluluk amaçlı) |
 
-**Özel nitelikli kişisel veri (KVKK Madde 6/1) İŞLENMEZ**: sağlık, etnik köken, dini inanç, biyometrik, mahkumiyet bilgisi vb. agent kapsamı dışındadır.
+**Özel nitelikli kişisel veri (KVKK Madde 6/1) İŞLENMEZ**: sağlık, etnik köken, dini inanç, biyometrik, mahkumiyet bilgisi vb. agent kapsamı dışındadır. Yukarıdaki tablonun tüm satırları **genel nitelikli** kişisel/cihaz verileridir; KVKK Madde 6 özel kategori dışındadır.
 
 ### Madde 3 — Veri İşleme Amacı
 
@@ -255,6 +255,26 @@ i) Claim compensation for damage suffered due to unlawful processing of personal
 **DPO Application**: [DPO Contact — placeholder]
 
 Response time: 30 days (KVKK Article 13/2).
+
+### Article 8B — GDPR Article 15-22 Data Subject Rights (parallel mapping for EEA/EU users)
+
+If you are subject to GDPR (EEA/EU residence), the following data subject rights apply in parallel to KVKK Article 11. These are listed separately because GDPR rights are not a strict subset of KVKK Article 11 and have distinct enforcement timelines and remedies.
+
+| GDPR Article | Right | Notes vs KVKK Article 11 |
+|---|---|---|
+| **Article 15** | Right of access by the data subject | Aligns with KVKK 11(a)(b) |
+| **Article 16** | Right to rectification | Aligns with KVKK 11(e) |
+| **Article 17** | Right to erasure ("right to be forgotten") | Aligns with KVKK 11(f); GDPR adds erasure timing requirements |
+| **Article 18** | Right to restriction of processing | Not explicitly mirrored in KVKK 11 (KVKK rectification + objection cover overlap) |
+| **Article 19** | Notification obligation regarding rectification/erasure/restriction | Aligns with KVKK 11(g) |
+| **Article 20** | Right to data portability | Not explicitly mirrored in KVKK 11 (KVKK currently lacks portability mandate) |
+| **Article 21** | Right to object | Aligns with KVKK 11(h) |
+| **Article 22** | Automated individual decision-making (including profiling) | Aligns with KVKK 11(h); GDPR adds explicit "not subject to" right |
+
+**DPO Application**: [DPO Contact — placeholder]
+Response time: 1 month (GDPR Article 12/3), extendable by 2 months for complex requests.
+
+**Note**: GDPR rights apply only to EEA/EU-resident data subjects. For Turkey-resident users, KVKK Article 11 is the primary regime. Operator legal counsel determines which framework applies based on user residence + processing location.
 
 ### Article 9 — Explicit Consent
 
