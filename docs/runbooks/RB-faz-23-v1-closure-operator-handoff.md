@@ -35,10 +35,10 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
 - [ ] **BL-004** Vault `kv patch kv/platform/openfga model_id=01KS8QE8T1EJ2DF5CRS4VV9YX1` + `kv/platform/notification-orchestrator authz_internal_api_key=<aligned-with-permission-service>`
   - Canonical evidence: `docs/faz-23-evidence/2026-05-22-openfga-notification-model-extension.md` §5 item 7
   - Verify: pod restart sonrası env values canonical Vault'tan inject edildiğini check (sha256 hash-only local compare, persist edilmez)
-- [ ] **BL-005** PR-revert #995 + PR-revert #996 — agent-actionable doc-only docs PRs once Vault canonical applied
-  - Dependency: BL-004 verified
-- [ ] **BL-006** `runtime-artifacts/openfga-model/<digest>.json` ledger `runtime_selector: null` → `vault` + `promoted_via_vault_at` timestamp
-  - Dependency: BL-004 verified
+- [x] **BL-005** CLOSURE 2026-05-24 (Codex strategic verdict thread `019e5a75` REVISE absorb): **No functional revert needed** for PR #995/#996 while live evidence stays aligned. Codex iter-2 quote: "No functional revert reason for PR #995/#996 while live evidence stays aligned. Only revert temporary overlay overrides after BL-004 proves Vault canonical parity; agent can decide from env/hash + smoke evidence." → BL-005 = "no action needed, BL-004 sonrası override revert pattern follow" → resolved as governance closure (PR #995 OpenFGA model_id cutover + PR #996 internal-API-key ESO re-align stays merged + LIVE; no revert).
+  - Dependency: ~~BL-004 verified~~ — strategic closure decision sealed pre-BL-004 (revert YOK; override revert pattern BL-004 sonrası yapılırsa runtime-artifacts ledger update PR ile birlikte yapılır — BL-006 reverse-dependency)
+- [x] **BL-006** PARTIAL CLOSURE 2026-05-24 (PR #1031 MERGED) — `runtime-artifacts/openfga-model/a48a49198c70bd3f928bbac2b87ef3fd83903f00691996c04778f892146f0f9c.json` ledger 2-alan update: `source_docs` +`h-live-evidence-resync.md` + `rollback_runbook_ref` → `#4-rollback` canonical anchor. **runtime_selector hâlâ null** (BL-004 dep — Codex iter-2 canonical drift önleme); BL-004 sonrası ayrı PR ile `null → vault` selector update (selector_kind: vault, vault_path: kv/platform/openfga, field: model_id).
+  - Dependency: BL-004 verified (runtime_selector update için)
 - [ ] **BL-007** `platform-backend/backend/openfga/model.fga` canonical update — agent #5 (a233ba0a6703e6595) paralel çalışıyor; eğer agent merge ettiyse atla
 
 ### Sprint B — Ops Slot Execution (Canonical RB pointers)
