@@ -43,22 +43,24 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 ## Tier 1: 23.2 Production MVP Dar Closure (CLOSED source-side; external acceptance pending)
 
-> **Session 47 update 2026-05-21** (post M3 R2 KVKK 7/7 implementation MERGED + closure evidence + Codex 019e4950 AI proxy review):
+> **Session 47 update 2026-05-21** (post M3 R2 KVKK T1.2 task implementation 7/7 MERGED + closure evidence + Codex 019e4950 AI proxy review interim attestation; final legal closure via 019e5189 — see Session 49+ block below):
 >
 > **Tier 1 6/6 sub-tier source-ready/LIVE** — kalan blocker external acceptance gate'lerinde:
 > - T1.1 Preference: source-ready + PR-G2 PreferenceTopicCatalog endpoint LIVE; T1.1.9 integration test MERGED (task #17). Residual: live cluster runtime evidence (operator gate)
-> - T1.2 KVKK erasure: admin + subscriber self-service LIVE; PR-K1 (erasure ledger V18 + 30-gün SLA watchdog) MERGED 2026-05-21; PR-K4/K5/K6/K7 closure MERGED. External blocker: R2 legal sign-off 2026-05-25 SLA
+> - T1.2 KVKK erasure: admin + subscriber self-service LIVE; PR-K1 (erasure ledger V18 + 30-gün SLA watchdog) MERGED 2026-05-21; **PR-K1-K5 + K7 closure MERGED (6/7 K-PR; K6 tenant-scoped DPO authz P1 non-blocking 23.2.B follow-up)**. **R2 closed 2026-05-23** via Codex `019e5189` final legal verdict — see [risk-register.md R2](risk-register.md) + Session 49+ update below.
 > - T1.3 Provider config rollback: T1.3.1-T1.3.4 LIVE; `ProviderConfigRollbackIntegrationTest` MERGED. R12 mitigated
 > - T1.4 D43 outage fallback: PR #855 staged config MERGED 2026-05-21 (agent-actionable bölüm); drill execution + Slack #853 + prod #854 ops-gated (R9 🟡 partial)
 > - T1.5 Data classification: T1.5.1-T1.5.4 LIVE; `DataClassificationAcceptanceTest` MERGED
 > - T1.6 Abuse guards: T1.6.1-T1.6.6 LIVE; AbuseGuardService + NotifyAbuseStorm PrometheusRule + Service IT MERGED. R13 + R19 mitigated
 >
-> **Session 47 residual** (agent-actionable ~0h kaldı; external acceptance only):
-> - R2 KVKK legal sign-off ETA 2026-05-25 (4 gün, legal)
-> - R9 D43 drill execution Slack #853 + prod #854 (ops)
-> - M3 acceptance gate (Codex 019e4950 + 019e499c R2 closure attestation external)
+> **Session 49+ update 2026-05-23 (M3 R2 KVKK closure truth-sync)**: Kullanıcı kararı 2026-05-23 ("hukuk onaylarını Codex istişaresinde Codex'in verdiklerini kabul edeceğiz") uyarınca **Codex `019e5189` final legal verdict AGREE** — R2 KVKK uyumu M3 closure için kabul edilebilir; 3 P0 + Madde 12/13.2/11.4 riskleri 6/7 K-PR MERGED ile kapalı (K1-K5+K7). K6 tenant-scoped DPO authz P1 non-blocking follow-up. **M3 🟢 CLOSED**, R2 🟢 Mitigated. Evidence: `docs/faz-23-evidence/2026-05-21-m3-r2-kvkk-closure-evidence.md` §R2 FINAL CLOSURE.
 >
-> Önceki Session 41 ~17-22h residual → **Session 47 ~0h agent-actionable** (external acceptance only). T1 efektif kapanış: 2026-05-21 (60h+ actual vs 99.5h estimate — variance -39h).
+> **Session 49+ residual** (R2 closed; remaining = ops/operator):
+> - ~~R2 KVKK legal sign-off ETA 2026-05-25 (4 gün, legal)~~ — **CLOSED 2026-05-23** via Codex `019e5189` legal verdict
+> - R9 D43 drill execution Slack #853 + prod #854 (ops slot)
+> - ~~M3 acceptance gate (Codex 019e4950 + 019e499c R2 closure attestation external)~~ — **M3 🟢 CLOSED 2026-05-23**
+>
+> Önceki Session 41 ~17-22h residual → Session 47 ~0h agent-actionable → **Session 49+ M3 fully closed**, external acceptance R2 satisfied. T1 efektif kapanış: 2026-05-21 source-side + 2026-05-23 acceptance. K6 (P1 23.2.B follow-up) backend dev iş.
 
 ### T1.1 — 23.2.A Preference + Opt-out + Critical Bypass (must-have #8)
 
@@ -83,18 +85,18 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 | ID | Task | Type | Est (h) | Owner | Dep | Status |
 |---|---|---|---:|---|---|:---:|
-| T1.2.0 | **Admin erasure** `POST /api/v1/admin/notify/erasure` | backend | (existing) | dev | None | 🟢 source-ready/live (`AdminErasureController` 129 satır; R2 legal review wait) |
+| T1.2.0 | **Admin erasure** `POST /api/v1/admin/notify/erasure` | backend | (existing) | dev | None | 🟢 source-ready/live (`AdminErasureController` 129 satır; R2 closed 2026-05-23 Codex `019e5189` legal verdict) |
 | T1.2.1 | **Subscriber self-service** `DELETE /audit/me` (payload purge, recipient_hash kalır, KVKK Art.11) | backend | 5 | dev | None | 🟢 LIVE — `SubscriberErasureController` 179 satır + V8 trigger; KVKK Art.11 |
 | T1.2.2 | **Subscriber right-to-info** `GET /audit/me` (KVKK Art.13) | backend | 5 | dev | None | 🟢 LIVE — `SubscriberErasureController` + `AuditHistoryListResponse` |
 | T1.2.3 | Append-only enforcement verification (V8 trigger LIVE; test) | backend | 1 | dev | None | 🟢 done (V8 trigger LIVE) |
 | T1.2.4 | Integration test: erasure flow (admin + self-service) + recipient_hash preservation | backend | 4 | dev | T1.2.1 | 🟢 `SubscriberErasureControllerIntegrationTest` MERGED |
 | T1.2.5 | Integration test: right-to-information | backend | 2 | dev | T1.2.2 | 🟢 same IT class |
 | T1.2.6 | Runbook: `RB-notify-kvkk-erasure.md` update with API examples (admin + self-service) | docs | 1 | agent | T1.2.4 | 🟢 PR-K7 #928 MERGED 2026-05-21 (60-gün→30-gün SLA + HMAC-SHA256) |
-| T1.2.7 | Legal review (KVKK Art.11 + Art.13 compliance) | review | 2 | legal | T1.2.6 | 🟡 R2 active, ETA 2026-05-25 (DPO/legal external); Codex 019e4950 AI proxy review PARTIAL_COMPLIANT verdict |
-| T1.2.8 | Codex peer review + merge | docs | 1 | agent | T1.2.7 | 🟢 (Codex 019e4950 + 019e499c iter chain AGREE) |
-| T1.2.9 | Charter + must-have-checklist marker update | docs | 1 | agent | T1.2.8 | 🟡 partial (M3 R2 KVKK closure evidence doc PR #930 MERGED; full 🟢 marker R2 legal sign-off sonrası) |
+| T1.2.7 | Legal review (KVKK Art.11 + Art.13 compliance) | review | 2 | legal | T1.2.6 | 🟢 R2 CLOSED 2026-05-23 — Codex `019e5189` final legal verdict AGREE (kullanıcı kararı: Codex istişare verdict'i = kabul edilen hukuk onayı); earlier Codex 019e4950 AI proxy review PARTIAL_COMPLIANT was the interim attestation, 019e5189 final legal closure |
+| T1.2.8 | Codex peer review + merge | docs | 1 | agent | T1.2.7 | 🟢 (Codex 019e4950 + 019e499c iter chain AGREE; final closure Codex `019e5189` 2026-05-23) |
+| T1.2.9 | Charter + must-have-checklist marker update | docs | 1 | agent | T1.2.8 | 🟢 (M3 R2 KVKK closure evidence doc PR #930 MERGED; charter 23.2 🟢 done + M3 🟢 CLOSED 2026-05-23 via Codex `019e5189` final legal verdict) |
 
-**Total estimate**: 17h. **Session 47 status 2026-05-21**: T1.2.0-T1.2.6 + T1.2.8 LIVE (KVKK 7/7 implementation MERGED); T1.2.7 external blocker R2 legal 2026-05-25; T1.2.9 charter marker R2 sign-off sonrası. Agent-actionable residual ~0h.
+**Total estimate**: 17h. **Session 49+ status 2026-05-23**: T1.2.0-T1.2.9 ALL LIVE — T1.2 task implementation 7/7 MERGED (R2 K-PR chain: 6/7 K-PR MERGED = K1-K5+K7; K6 tenant-scoped DPO authz P1 non-blocking 23.2.B follow-up); R2 legal closed via Codex `019e5189` final verdict. T1.2 fully closed.
 
 ### T1.3 — 23.2.C Provider Config Versioning + Rollback
 
@@ -152,7 +154,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 **Total**: 15h. **Session 47 status 2026-05-21**: T1.6 7/7 LIVE. R13 + R19 mitigated.
 
-**Tier 1 Total estimate**: ~99.5h plan-time. **Session 47 re-baseline 2026-05-21**: T1 6/6 sub-tier source-ready/LIVE; agent-actionable residual **~0h**; external blocker R2 KVKK legal 2026-05-25 (4 gün) + R9 D43 drill ops slot. Variance: ~60h+ actual vs 99.5h estimate (~-40h drift). Calendar efektif kapanış 2026-05-21 (acceptance R2 sonrası).
+**Tier 1 Total estimate**: ~99.5h plan-time. **Session 49+ re-baseline 2026-05-23**: T1 6/6 sub-tier source-ready/LIVE + **R2 KVKK closed via Codex `019e5189` final legal verdict 2026-05-23**; agent-actionable residual **~0h**; R9 D43 drill ops slot remains. Variance: ~60h+ actual vs 99.5h estimate (~-40h drift). Calendar efektif kapanış 2026-05-23 (M3 🟢 CLOSED).
 
 ---
 
@@ -322,7 +324,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 | Tier | Scope | Total Effort | Calendar Span | Critical Risk |
 |---|---|---:|---|---|
-| **T1** 23.2 closure | preference + erasure + provider rollback + outage fallback + classification + abuse | ~99.5h estimate / ~60h+ actual + ~0h agent-actionable residual; Session 47 2026-05-21 re-baseline post 7/6 sub-tier source-side LIVE + KVKK 7/7 PR-K1..K7 MERGED | source-side LIVE; external acceptance R2 2026-05-25 + R9 ops slot | R2 (KVKK legal 4 gün), R9 (D43 drill ops slot) — R12 + R13 + R19 mitigated; RAID I6 superseded T1.1.9 PR #875 MERGED |
+| **T1** 23.2 closure | preference + erasure + provider rollback + outage fallback + classification + abuse | ~99.5h estimate / ~60h+ actual + ~0h agent-actionable residual; Session 49+ 2026-05-23 re-baseline post 6/6 sub-tier source-side LIVE + T1.2 task implementation 7/7 MERGED + **R2 K-PR chain 6/7 MERGED = K1-K5+K7** (K6 tenant-scoped DPO authz P1 non-blocking 23.2.B follow-up); **R2 closed 2026-05-23 via Codex `019e5189` final legal verdict** | source-side LIVE; **M3 🟢 CLOSED 2026-05-23**; R9 ops slot remains | ~~R2 (KVKK legal)~~ 🟢 closed 2026-05-23, R9 (D43 drill ops slot) 🟡 partial — R12 + R13 + R19 mitigated; K6 P1 follow-up; RAID I6 superseded T1.1.9 PR #875 MERGED |
 | **T2** 23.1+23.4+23.9 closure | D29-Functional + archive UI + 72h observation | ~22h estimate / **T2.1+T2.2+T2.3 hepsi LIVE/done** (M2 accepted 2026-05-18 #754; M6a+M6b 2026-05-20 #758; **M1 FULL CLOSURE Session 49 evidence 2026-05-14**, truth-sync 2026-05-23) | T2.1+T2.2 LIVE; T2.3 done — M1 closed | R7 🟢 closed (browser SSO Pre-Prod Full Authority agent headless); R8 🟢 mitigated |
 | **T3** 23.3+23.5 | SMS JetSMS primary + NetGSM secondary + Preference UI | ~65h estimate / source-side LIVE (M4 prod cutover 2026-05-20; M5 source-ready); T3.1.8 + T3.1.1 + M5 charter board acceptance ext-gated | source-side LIVE; canary KC + R1 + R24 ext-gated | R1 (NetGSM secondary contract ETA 2026-05-30), R24 (Biotekno OTP allowlist) — R3 DKIM 🟢 mitigated, R23 Graph adapter active monitored |
 | **T4** 23.6+23.7+23.8 v1 | Teams + WebPush (browser-only) + Tempo + bounce + per-tenant dashboard + federation design + FBL | ~99h estimate / ~71.5h actual + **~0h agent residual** — **T4.3 9/9 sub-task source-side closed 2026-05-22** (T4.3.5 FBL PR #298+#299 + T4.3.7 per-template PR #966+#296 + T4.3.8 federation design-artifact ADR-0026); mobile FCM/APNS ~24h Faz 22.2 dep DIŞI — Session 47-48 re-baseline 2026-05-21 + 2026-05-22 (T4.1 + T4.2 browser-only 11 sub-PR + #649 UI integration + T4.3.a Tempo + T4.3.b suppression + T4.3.6 per-tenant dashboard + T4.3.7 PG datasource/index + T4.3.8 federation design-artifact + T4.3.5 FBL core+mailbox-worker MERGED) | operator activation gate | R11 ~mitigated (Tempo LIVE), R16 design-managed (ADR-0026 iter-2; production federation runtime Faz 24+/M8) |
