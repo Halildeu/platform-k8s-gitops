@@ -83,15 +83,12 @@ Test cluster store `01KPP0CFP4G82K42Y6NYSPT4JF`, in-cluster `http://openfga:8080
 
 ## D) Gateway auth-gate (3 routes, no/dummy Bearer)
 
-```
-$ for path in /api/v1/endpoint-admin/endpoint-devices \
-              /api/v1/endpoint-admin/audit-events \
-              /api/v1/endpoint-agents/status; do
-    curl -s -o /dev/null -w "%{http_code}" "https://testai.acik.com${path}"
-    curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer not-a-real-jwt" "https://testai.acik.com${path}"
-  done
-# all 6 → 401
-```
+For each route in `endpoint-devices`, `audit-events`, `status` the smoke ran two HTTP probes through the public ingress:
+
+1. **No `Authorization` header** — bare GET against `https://testai.acik.com$path`.
+2. **Dummy bearer header** — same GET but with `Authorization: Bearer <DUMMY_JWT_PLACEHOLDER>` (the placeholder is a literal non-JWT string used only to provoke the gateway auth-gate; no real secret material).
+
+Result for both rounds, all three routes: HTTP `401`. Six probes total → six `401` responses. Spring Security JWT decoder fail-closed; the malformed/missing token is rejected before any FGA evaluation.
 
 Spring Security JWT decoder fail-closed; malformed/missing token rejected before FGA evaluation.
 
