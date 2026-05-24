@@ -4,7 +4,7 @@
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md) D43 + D46 #10
 > **Sub-faz**: 23.2 (MVP-dar — outage fallback bypass T1.4)
 > **Codex thread**: `019df86f` Q4 PARTIAL absorb (initial); `019e0dea` iter-1+2+3+4 (T1.4 PR-1/2/3 cross-AI peer review); `019e4234` Session 42 (prod activation scope split + truth alignment); **`019e5aaf` BL-008 mock-receipt drill REVISE absorb**
-> **Risk**: R9 — **current state 🟢 mock-receipt mitigated** (BL-008 test cluster dual-receipt drill 2026-05-24: webhook-receiver POST `/slack-mock` 200 length=983 + Mailpit `[D43 DRILL] NotifyServiceAbsent` 16:17:33Z — same Alertmanager dispatch cycle). **Residual operator-external**: real Slack workspace receipt board [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) + prod activation board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) (Operator v0.90.1 `auth_*_file` schema gap fix #854 kapsamında). Production-ready claim DEĞİL.
+> **Risk**: R9 — **current state 🟢 SMTP-only D43 v1 accepted** per user decision 2026-05-24 (Codex strategic thread `019e5b9c` REVISE absorb). D43 v1 acceptance = Alertmanager direct-fallback SMTP receiver. Historical drill evidence retained as drill audit only (no longer v1 gate): first controlled drill 2026-05-10 Mailpit SMTP receipt + BL-008 mock-receipt drill 2026-05-24 (webhook-receiver + Mailpit dual). **Slack adoption DEFER future trigger**. **Residual operator-external**: prod activation board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) rescope (SMTP-only direct fallback smoke + Operator v0.90.1 `auth_*_file` schema fix). Original board [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) + [#1012](https://github.com/Halildeu/platform-k8s-gitops/issues/1012) (Slack-dependent) → DEFER. Production-ready claim DEĞİL. Evidence: `docs/faz-23-evidence/2026-05-24-d43-slack-defer-smtp-only-acceptance.md`.
 
 ---
 
@@ -26,10 +26,9 @@
 
 ### 2.1 Katman 1: Alertmanager Direct Receiver (T1.4 PR-1 + BL-008 2026-05-24 revize)
 
-`monitoring/alertmanager` config'inde **native receiver** `direct-fallback`:
-- Slack: `slack_configs` + `api_url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SLACK_WEBHOOK_URL`
+`monitoring/alertmanager` config'inde **native receiver** `direct-fallback` (SMTP-only per user decision 2026-05-24 Slack DEFER; Codex `019e5b9c` REVISE absorb):
 - SMTP: `email_configs` (test cluster Mailpit no-auth: `require_tls: false`, auth fields YOK; prod cluster ayrı schema — bkz §6.5.8)
-- Single receiver (slack + email birlikte) — Codex iter-2 #3 absorb
+- Slack leg removed from active config (historical: previously `slack_configs` + `api_url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SLACK_WEBHOOK_URL`); future reactivation atomic with operator workspace adoption + Vault seed + drill rerun in same PR
 
 `route` matchers (Codex `019e5aaf` REVISE absorb 2026-05-24 — BL-008 mock-receipt drill route narrowing):
 - Root route: `receiver: "null"` (drill window'da diğer alerts drop; gereksiz POST/mail noise yok)
@@ -38,13 +37,13 @@
 
 Implementation: `helm-values/kube-prometheus-stack/values-test-d43-drill.yaml` (drill window override).
 
-**Mock-vs-real boundary**: Test cluster `SLACK_WEBHOOK_URL` Codex `019e5aaf` REVISE absorb sonrası **in-cluster webhook-receiver mock URL** `http://webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock` (sentinel revert YOK; webhook-receiver nginx POST logger LIVE 15d + permanent NetworkPolicy commit). Bu mock URL Alertmanager Slack receiver HTTP POST receipt evidence sağlar — **payload semantic Slack contract validation YOK** (nginx response body Slack format değil; "unrecoverable error" Alertmanager log'unda expected/known for mock drill). Real Slack workspace `#alerts-d43-drill` channel receipt board [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) operator-external action.
+**Historical mock-vs-real boundary** (pre-2026-05-24 Slack DEFER — audit-only): Test cluster `SLACK_WEBHOOK_URL` previously routed to in-cluster webhook-receiver mock URL (`http://webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock`) per BL-008 drill 2026-05-24. Per user decision 2026-05-24 ("slack kullanmıyoruz. sonrasınd agelirse yapılacak") Slack section removed from active config — boundary historical only. Future reactivation atomic with helm-values + ExternalSecret data re-add + drill rerun.
 
 ### 2.2 Katman 2: ESO Vault Fallback Secret (T1.4 PR-1)
 
 Vault path **ayrı** (`notification-orchestrator`'ın path'inden bağımsız → tek credential rotation iki kanalı bozmaz):
 
-- **Vault path**: `kv/platform/alertmanager-fallback` (5 keys: `SLACK_WEBHOOK_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`)
+- **Vault path**: `kv/platform/alertmanager-fallback` (4 keys: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` — SMTP-only per user decision 2026-05-24 Slack DEFER; historical 5th key `SLACK_WEBHOOK_URL` removed from ExternalSecret request; Vault key may persist as inactive operator hygiene residue)
 - **ESO ExternalSecret**: `monitoring/alertmanager-fallback-secrets` (test+prod overlays)
 - **Vault policy**: `eso-runtime` extend (PR #457 commit `bootstrap/vault-policies/common/eso-runtime.hcl`)
 
@@ -127,17 +126,17 @@ kubectl --context k3d-test get clustersecretstore vault-platform-gitops \
 #### Test cluster (D43 drill prereq)
 
 ```bash
+# SMTP-only per user decision 2026-05-24 Slack DEFER (Codex 019e5b9c REVISE absorb).
+# SLACK_WEBHOOK_URL parameter removed; ExternalSecret no longer requests it.
 docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-test \
   vault kv put kv/platform/alertmanager-fallback \
-    SLACK_WEBHOOK_URL=http://webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock \
     SMTP_HOST=mailpit.platform-test.svc.cluster.local \
     SMTP_PORT=587 \
     SMTP_USER=alertmanager-fallback@local \
     SMTP_PASSWORD=drill-only-mailpit-no-auth
 ```
 
-**Test cluster SLACK_WEBHOOK_URL canonical: in-cluster mock receiver**
-(Codex thread `019e5aaf` REVISE absorb 2026-05-24 — BL-008 mock-receipt drill).
+**Historical** (pre-2026-05-24 Slack DEFER, audit-only): Test cluster `SLACK_WEBHOOK_URL` canonical was in-cluster mock receiver `http://webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock` (Codex thread `019e5aaf` REVISE absorb 2026-05-24 BL-008 mock-receipt drill). Removed per user decision 2026-05-24.
 
 Mock receiver: `webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock`
 (nginx POST logger; permanent NetworkPolicy
@@ -170,10 +169,8 @@ test cluster dual-receipt evidence ile kapatır.
 > Bu adım PR-1 staged/gated values-prod.yaml merge edildikten **sonra** ve
 > `helm upgrade` ile cluster apply edilmeden **önce** yapılır.
 
-Owner artifact (Slack admin + ops):
+Owner artifact (ops only — SMTP-only per user decision 2026-05-24 Slack DEFER):
 
-- `SLACK_WEBHOOK_URL`: gerçek prod `#alerts-d43-drill` (veya
-  `#prod-outage-alerts` — owner karar) Slack workspace incoming webhook
 - `SMTP_HOST`: prod SMTP relay endpoint (default `smtp.office365.com`,
   vendor değişimi config-only — `notification-orchestrator` ile aynı vendor
   patternı)
@@ -184,6 +181,8 @@ Owner artifact (Slack admin + ops):
 - `SMTP_PASSWORD`: ilgili App Password (operator Vault'a yazar; transcript'e
   yazılmaz — HARD RULE no-token-log)
 
+**Historical** (pre-2026-05-24 Slack DEFER, audit-only): Slack admin owner artifact previously required `SLACK_WEBHOOK_URL` (gerçek prod `#alerts-d43-drill` workspace incoming webhook). Removed per user decision 2026-05-24.
+
 Seed (operator):
 
 ```bash
@@ -191,7 +190,6 @@ ssh halil@staging-sw
 docker exec -e VAULT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json) \
   platform-vault-prod \
   vault kv put kv/platform/alertmanager-fallback \
-    SLACK_WEBHOOK_URL=<...> \
     SMTP_HOST=smtp.office365.com \
     SMTP_PORT=587 \
     SMTP_USER=alertmanager-fallback@acik.com \
@@ -288,7 +286,7 @@ kubectl --context k3d-test -n monitoring exec -it deploy/prometheus-operator-pro
 # Initial state: empty (no firing)
 ```
 
-### Step 4: Alertmanager native Slack+SMTP receiver routing match
+### Step 4: Alertmanager native SMTP receiver routing match (SMTP-only per user decision 2026-05-24 Slack DEFER)
 
 #### 4.0 Service/pod discovery (Codex iter-1 P2 #3 absorb)
 
@@ -422,25 +420,26 @@ curl -s http://127.0.0.1:9093/api/v2/alerts | \
 rm -f /tmp/kubeconfig-break-glass-*
 ```
 
-### Step 6: Slack receipt evidence (mock-or-real per scope)
+### Step 6: SMTP receipt evidence — DEFERRED (Slack DEFER per user decision 2026-05-24)
 
-**Test cluster (BL-008 mock-receipt drill — Codex `019e5aaf` REVISE absorb 2026-05-24)**:
+**Historical (pre-2026-05-24 user decision Slack DEFER)**:
 
-```bash
-# webhook-receiver mock POST log capture (nginx access log)
-kubectl --context k3d-test -n platform-test logs deploy/webhook-receiver --since=5m | grep slack-mock
-# Expected: POST /slack-mock length=<bytes> status=200 timestamp matches T+3m FIRING window
-```
+Bu adım eski dual-receipt acceptance (SMTP + Slack) içindi. User decision 2026-05-24 ("slack kullanmıyoruz. sonrasınd agelirse yapılacak") sonrası D43 v1 acceptance SMTP-only.
 
-Test mock evidence dili: **"Alertmanager Slack receiver mock POST receipt + Alertmanager route correlation"** (NOT "Slack channel receipt"). Payload semantic validation YOK; webhook-receiver nginx 200 dönüyor; "unrecoverable error" Alertmanager log'unda expected (Slack format değil response body) — mock-only davranış.
+**SMTP receipt validation**: Bkz §6.5.6 acceptance — DUAL receipt (SMTP + bridge). Slack receipt validation v1 acceptance gate DEĞİL.
 
-**Real Slack workspace (board [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) — operator action)**:
+**Historical drill evidence** (audit-only, NOT v1 gate):
+- 2026-05-10 first controlled drill SMTP receipt Mailpit `[FIRING:1] NotifyServiceAbsent` 00:22:33Z
+- BL-008 mock-receipt drill 2026-05-24 webhook-receiver mock POST + Mailpit SMTP receipt (dual-receipt drill audit; superseded by SMTP-only v1 acceptance per user decision 2026-05-24)
 
-Manuel: Slack `#alerts-d43-drill` kanalı → drill window'da `[D43 DRILL] NotifyServiceDown — critical` mesajı görüldü mü? (Gerçek Slack incoming webhook URL Vault `SLACK_WEBHOOK_URL`'a yazılır + ESO sync + drill).
+**Future Slack reactivation** (operator workspace adoption gelirse):
+- Re-add `slack_configs` block to `direct-fallback` receiver atomic with this step's Slack receipt validation
+- See §2.1 active config + ADR-0013 + `docs/faz-23-evidence/2026-05-24-d43-slack-defer-smtp-only-acceptance.md`
+- Cascade: #853 + #1012 DEFER (Slack-dependent); reactivation requires new issue tracker
 
-**Prod cluster (board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) — owner-gated)**:
+**Prod cluster (board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) — owner-gated; SMTP-only per user decision 2026-05-24 Slack DEFER)**:
 
-§6.5 prosedürü follow; `#alerts-d43-drill` veya `#prod-outage-alerts` kanalı manuel kontrol.
+§6.5 prosedürü follow (DEFERRED guard — see §6.5 header + [#1054](https://github.com/Halildeu/platform-k8s-gitops/issues/1054) canonical surface continuation tracker). Slack channel manual check requirement removed; current v1 acceptance = §6.5.6 DUAL receipt (SMTP + GitHub Issue bridge).
 
 ### Step 7: Mailpit SMTP receipt evidence
 
@@ -473,10 +472,10 @@ curl -s http://127.0.0.1:9093/api/v2/alerts | \
 `docs/faz-23-evidence/2026-XX-XX-<scope>-d43-drill.md` içerik:
 - Pre-drill snapshot (pod state, ESO sync, PrometheusRule list)
 - Drill execution timeline (UTC timestamps)
-- Step 5-8 outputs (curl, kubectl, **mock POST log OR Slack channel screenshot**, Mailpit screenshot)
+- Step 5-8 outputs (curl, kubectl, Mailpit screenshot — SMTP-only per user decision 2026-05-24 Slack DEFER; historical Slack mock POST log/screenshot audit-only)
 - Recovery snapshot
-- 10-criteria checklist (her step ✅) — scope-aware: mock-receipt OR real-Slack OR prod-activation
-- Scope qualifier: "mock-receipt drill" / "real Slack workspace drill" / "prod activation triple-receipt"
+- 10-criteria checklist (her step ✅) — scope-aware: SMTP-only D43 v1 acceptance gate or prod-activation
+- Scope qualifier: "SMTP-only D43 v1 drill" / "prod activation DUAL receipt (SMTP + GitHub Issue bridge)" — historical "Slack workspace drill" / "triple-receipt" wording superseded per user decision 2026-05-24
 
 Referans canlı evidence örnekleri:
 - 2026-05-24 BL-008 mock-receipt drill: `docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md`
@@ -485,12 +484,14 @@ Referans canlı evidence örnekleri:
 ### Step 10: R9 risk register status update
 
 `docs/notify/risk-register.md`:
-- Per-scope status:
-  - **Test cluster mock-receipt drill**: 🟡 partial → 🟢 Mitigated (mock-receipt) — DUAL receipt evidence (Mailpit SMTP + webhook-receiver POST 200)
-  - **Real Slack workspace**: pending board #853 ops slot
-  - **Prod activation**: pending board #854 owner-gated
+- Current status (post-2026-05-24 user decision Slack DEFER; Codex `019e5b9c` REVISE absorb):
+  - **R9**: 🟢 Mitigated (SMTP-only D43 v1; Slack DEFER per user decision 2026-05-24)
+  - **Active mitigation**: Alertmanager direct-fallback SMTP receiver (notification-orchestrator-independent credentials)
+  - **Historical drill evidence** (audit-only, no longer v1 acceptance gate): 2026-05-10 first controlled drill SMTP receipt + BL-008 mock-receipt dual drill 2026-05-24
+  - **Prod activation**: board #854 SMTP-only rescope operator-bound
+  - **Slack-dependent boards**: #853 + #1012 DEFER (not-planned for v1)
 - Last review tarihi güncellenir
-- Dil disiplini (Codex `019e5aaf` REVISE absorb): "mitigated by mock-receipt drill — real Slack workspace + prod activation ayrı operator-external". "Mitigated by first controlled drill" overclaim YASAK (mock-only kapsamla sınırlı).
+- Dil disiplini: "SMTP-only D43 v1 accepted; Slack DEFER". "Real Slack workspace receipt" / "triple-receipt" / "mock dual-receipt v1 acceptance" wording YASAK (historical drill audit-only). Future Slack reactivation atomic with active config re-add + drill rerun + R9 update.
 
 ---
 
@@ -507,22 +508,35 @@ helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
 
 ## 6.5 Prod D43 Activation (owner-gated, post PR-1 staged config)
 
-> Codex thread `019e4234` Session 42 verdict — `ready_for_prod_activation=false`
-> until owner artifacts arrive; cluster activation must follow `helm upgrade`
-> sequenced with Vault seed completion.
+> **⚠️ DEFERRED / DO NOT EXECUTE AS WRITTEN** (2026-05-24 Slack DEFER absorb pending continuation PR):
+> §6.5.3-§6.5.7 sub-sections below contain pre-2026-05-24 Slack/triple-receipt wording with known stale expectations (Slack receiver verify, 5-key secret mount expectations, triple delivery acceptance, Slack screenshot evidence requirements). These pre-decision instructions are **NOT** the current v1 acceptance procedure.
+>
+> **Current v1 acceptance** (per user decision 2026-05-24 Slack DEFER + Codex `019e5b9c` REVISE absorb): Alertmanager direct-fallback SMTP receiver only. Acceptance = §6.5.6 DUAL receipt (SMTP + GitHub Issue bridge). 4 Vault keys (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD). No Slack receiver verify, no Slack screenshot evidence, no triple-receipt acceptance.
+>
+> **Operator action**: Board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) (SMTP-only prod activation rescope) MUST be the activation authority. The §6.5.3-§6.5.7 sub-sections below will be rewritten in a follow-up canonical-surface PR before operator activation. Until then, do not execute §6.5.x commands or accept the stale §6.5.6 TRIPLE receipt wording as current acceptance.
+>
+> Follow-up tracker: [#1054](https://github.com/Halildeu/platform-k8s-gitops/issues/1054) "Faz 23 D43 SMTP-only canonical surface continuation" covers RB §6.5.x rewrite + PLAN.md row 38 D43/D46 satırları + ADR-0013 amendment block + feature-matrix.md / RB-faz-23-charter.md supersession notes.
+
+> Codex thread `019e4234` Session 42 verdict (HISTORICAL — superseded 2026-05-24 per user decision Slack DEFER; Codex `019e5b9c` REVISE absorb): `ready_for_prod_activation=false` until owner artifacts arrive; cluster activation must follow `helm upgrade` sequenced with Vault seed completion.
 
 ### 6.5.1 Pre-activation gates
 
 - PR-1 staged config MERGED: `values-prod.yaml` `direct-fallback` receiver +
   `NotifyServiceDown|NotifyServiceAbsent` route + `secrets[]` mount listed
-  (already present from PR #457).
-- Vault prod path seeded (§3.2 prod sub-section): 5 keys non-empty;
-  `ExternalSecret/alertmanager-fallback-secrets` `Ready=True`;
-  `Secret/alertmanager-fallback-secrets` 5 keys non-empty.
+  (already present from PR #457; Slack section subsequently removed in
+  Lane B PR roadmap-faz23-d43-slack-defer-helm-cleanup per user decision
+  2026-05-24).
+- Vault prod path seeded (§3.2 prod sub-section): 4 keys non-empty
+  (SMTP-only per user decision 2026-05-24; `SLACK_WEBHOOK_URL` key removed
+  from active ExternalSecret): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
+  `SMTP_PASSWORD`. `ExternalSecret/alertmanager-fallback-secrets`
+  `Ready=True`; `Secret/alertmanager-fallback-secrets` 4 keys non-empty.
 - `cross-ai-audit` chain for PR-1 and any follow-up activation PR.
 - Board issue [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854)
-  `In Progress` → `Blocked by owner action` (Slack admin + ops Vault seed) →
-  `In Progress` → `Needs Verify` (acceptance) → `Done`.
+  `In Progress` → `Blocked by owner action` (ops Vault seed + Operator
+  v0.90.1 `auth_*_file` schema fix) → `In Progress` → `Needs Verify`
+  (SMTP-only acceptance) → `Done`. Slack admin requirement REMOVED
+  per user decision 2026-05-24 Slack DEFER.
 
 ### 6.5.2 Apply prod helm-values (operator action — kubectl context k3d-prod)
 
@@ -596,14 +610,14 @@ curl -s http://127.0.0.1:9093/api/v2/alerts | \
 # defense-in-depth: Slack + SMTP + GitHub Issue).
 ```
 
-### 6.5.6 Acceptance — TRIPLE receipt (continue:true)
+### 6.5.6 Acceptance — DUAL receipt (continue:true; SMTP-only per user decision 2026-05-24 Slack DEFER)
 
-- **Slack `#alerts-d43-drill` (veya `#prod-outage-alerts`)**: `[D43 PROD]
-  NotifyServiceDown — critical` mesajı + alert labels (Cluster=prod,
-  outage_fallback=true, bypass_orchestrator=true).
 - **SMTP receipt**: ops mail group (`notify-ops@acik.com`) inbox'ında
-  `[D43 PROD] NotifyServiceDown` subject'li email.
+  `[D43 PROD] NotifyServiceDown` subject'li email + alert labels
+  (Cluster=prod, outage_fallback=true, bypass_orchestrator=true).
 - **GitHub Issue (alarm-receiver-bridge P1 evidence)**: Halildeu/platform-k8s-gitops repo'sunda yeni issue (alertmanager-bridge dedupe: alertname+namespace tek issue açar; recovery'de comment + close).
+
+**Historical** (pre-2026-05-24 Slack DEFER): TRIPLE receipt included Slack `#alerts-d43-drill` channel message. Removed per user decision 2026-05-24 ("slack kullanmıyoruz. sonrasınd agelirse yapılacak"). DUAL receipt (SMTP + GitHub Issue bridge) is current v1 acceptance gate. Future Slack reactivation atomic with §2.1 active config re-add + Vault seed + drill rerun in same PR; cascade re-add to TRIPLE receipt acceptance dili.
 
 ### 6.5.7 Recovery + audit
 
