@@ -67,8 +67,8 @@
 | A5 | In-app inbox backend API | **MVP-geniş** | 23.3 | 🟢 (LIVE GET /inbox/me + SSE) |
 | A6 | In-app inbox React UI (custom) | v1 | 23.4 | 🟢 (PR-5.x cycle LIVE) |
 | A7 | Microsoft Teams (Adaptive Cards) | v1 | 23.6 | 🟢 (T4.1.2 LIVE — TeamsWebhookAdapter + Adaptive Card payload builder platform-backend PR #272 MERGED + deployed sha-f40aa82) |
-| A8 | Mobile push FCM (Android) | v1 | 23.7 | ☐ (Faz 22.2 mobile dep — scope DIŞI for M7 v1 closure) |
-| A9 | Mobile push APNS (iOS) | v1 | 23.7 (Faz 22.2 iOS gerekirse) | ☐ (Faz 22.2 mobile dep — scope DIŞI) |
+| A8 | Mobile push FCM (Android) | v1.1 (23.7.b patch) | 23.7.b | 🔵 DEFER v1.1/23.7.b (Faz 22.2 mobile dep — scope DIŞI for M7 v1 closure; planned patch milestone M7.b post-Faz 22.2; Codex strategic verdict `019e5a59` REVISE → Opsiyon C 2026-05-24; R25 tracks DEFER governance) |
+| A9 | Mobile push APNS (iOS) | v1.1 (23.7.b patch) | 23.7.b | 🔵 DEFER v1.1/23.7.b (Faz 22.2 iOS dep — scope DIŞI for M7 v1 closure; planned patch milestone M7.b post-Faz 22.2; same Codex verdict; R25 tracks) |
 | A10 | Web Push (browser, VAPID) | v1 | 23.7 | 🟢 (**WebPush browser-only LIVE end-to-end 2026-05-23** — PR-W1..W7 + #648/#649 frontend + #652 RTK + #986/#987 deploy + #990 OpenFGA model + #995 model_id cutover + #996 internal-api-key ESO; subscribe browser-proven RB-webpush §3.10 ✅; SUCCESS push delivery proven `notify_dispatch_outcome_total{channel="push",status="DELIVERED"} 1.0` + FCM 201 msg_id RB-webpush §3.11 ✅) |
 | A11 | WhatsApp Business | v2 | 23.X | ☐ |
 | A12 | Voice / IVR (TTS) | v2 | 23.X | ☐ |
