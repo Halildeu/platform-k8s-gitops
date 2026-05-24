@@ -262,4 +262,5 @@ Audit row count: **1** (only `ENDPOINT_COMMAND_CREATED` emitted for non-destruct
 - Implementer Claude (Anthropic); Reviewer Codex (OpenAI) — provider-level cross-AI HARD RULE per PR
 - Evidence doc docs-only; no cluster manifest mutation
 - Smoke operation level: state-mutation (test cluster) + credential-write (test persona pw reset + rotate to random unknown post-smoke); not operator login user
+- **Boundary — no browser/UI verification required**: this smoke is a CLI-level agent service lifecycle (PowerShell `Get-Service`, `sc.exe`, agent binary stdout, backend REST API via `curl`, DB-side audit row via test persona JWT against `/api/v1/endpoint-admin/audit-events`). HARD RULE — "Tarayıcıdan Sonuç Doğrulanmadan İş Bitmedi" applies to frontend/UI changes; this PR carries zero frontend/UI delta and the underlying smoke does not exercise a browser flow. Faz 22 frontend RTK fetchFn unwrap browser smoke was captured separately in `docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md` (gitops PR #1004 MERGED).
 - Tracked by platform-agent#8 + gitops handoff §5 P1
