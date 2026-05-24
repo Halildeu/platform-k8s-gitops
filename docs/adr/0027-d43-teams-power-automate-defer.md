@@ -5,7 +5,7 @@
 > **Karar otoritesi**: Codex thread `019e5bdb` (hibrit C strategic verdict — cross-AI peer review)
 > **Antecedent reviews**: `019e5b9c` (SMTP-only D43 v1 acceptance — canonical, MERGED to main), `019e5ba9`/PR #1053 (Teams Power Automate pivot — audit-only superseded)
 > **Öncüller**: [ADR-0013 — Notification orchestration](./0013-notification-orchestration.md) D43 (outage fallback bypass), [ADR-0024 — Graph mail adapter defer](./0024-graph-mail-adapter-defer.md) (parallel "deferred but asset-preserved" pattern reference), [RB-notification-outage-fallback.md](../runbooks/RB-notification-outage-fallback.md), [RB-prod-alertmanager-activation.md](../runbooks/RB-prod-alertmanager-activation.md)
-> **Implementation State**: D43 outage fallback **SMTP canonical, LIVE**; Microsoft Teams Power Automate workflow **deferred**, **no active rendered config**, **no non-empty Vault secret**, **no Helm receiver block**
+> **Implementation State**: D43 outage fallback **SMTP-only source-side/desired-state canonical** (helm-values + ESO 4-key); **prod activation operator-bound** (Vault seed + helm upgrade + dual-receipt smoke — R9 mitigation row + board #854); production-ready claim YOK. Microsoft Teams Power Automate workflow **deferred**, **no active rendered config**, **no non-empty Vault secret**, **no Helm receiver block**
 > **Yürütür**: Faz 23.x notification platform — operator incident channel routing track
 > **Reactivation runbook**: [RB-d43-teams-reactivation-chain.md](../runbooks/RB-d43-teams-reactivation-chain.md) (post-trigger atomic activation chain)
 
@@ -102,7 +102,7 @@ Provider-different cross-AI peer review compliance (HARD RULE 2026-05-05/14): Bu
 
 ### Positive
 
-- **Sıfır operational risk** D43 outage fallback için (SMTP canonical 🟢 LIVE; Teams dormant external dependency olmayan path)
+- **Sıfır source-side desired-state operational risk** D43 outage fallback için (SMTP-only canonical source-side; Teams dormant external dependency olmayan path; prod activation hâlâ operator-bound R9/#854)
 - **Audit consistency**: iki çelişen thread tek karar normalizasyonu ile çözüldü; ADR-0027 + R27 + RB-d43-teams-reactivation-chain.md tam çerçeve
 - **Reactivation speed**: trigger geldiğinde PR #1053 diff template snippet'leri ile saatler içinde aktivasyon (Codex iter-1..iter-5 chain review'i tekrar koşturmaya gerek yok)
 - **Pattern consistency**: ADR-0024 (Graph mail) ile aynı "deferred but asset-preserved" pattern; gelecek deferred-but-asset-preserved kararlar için referans
@@ -116,7 +116,7 @@ Provider-different cross-AI peer review compliance (HARD RULE 2026-05-05/14): Bu
 ### Neutral
 
 - R23 (Graph mail SMTP single active path) + R27 (Teams Power Automate lifecycle drift) yapısal olarak benzer; ikisi de Microsoft 365 tenant external dependency için "deferred but asset-preserved" pattern uygular
-- D43 v1 closure (SMTP-only) Faz 23.2.D scope tam tamamlandı; Teams aktivasyon trigger gelirse v1.x patch milestone
+- D43 v1 closure (SMTP-only) Faz 23.2.D **source-side scope** tam tamamlandı; **prod activation operator-bound** (R9 board #854 — Vault seed + helm upgrade + dual-receipt smoke + Operator v0.90.1 `auth_*_file` schema gap fix); production-ready claim için operator chain bekleniyor. Teams aktivasyon trigger gelirse v1.x patch milestone
 
 ---
 

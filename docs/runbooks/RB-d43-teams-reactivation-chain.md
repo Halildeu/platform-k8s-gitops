@@ -136,14 +136,11 @@ Trigger config:
 - Flow detail view → ... → Export → .zip
 - Backup location: operator notebook + runbook secondary copy
 
-**1.6 Aynı pattern Perf Alerts flow için tekrar**
-- Target channel: "Perf Alerts" veya `#perf-alerts`
-- Adaptive Card body: V2.1 Perf Alert template (severity + namespace + alertname + description + runbook_url)
-- Backup .zip ayrı
-
-**1.7 Flow run-history monitoring setup (R27 mitigation 6)**
+**1.6 Flow run-history monitoring setup (R27 mitigation 6)**
 - Monthly calendar reminder: Flow detail view → Run history → Export JSON → audit log
 - Failed run count >0 ise alarm
+
+> **Scope note**: Bu runbook **D43 outage fallback** (alertmanager-fallback path) için. V2.1 Perf Alerts (`perf-alertmanager` path) Teams migration **ayrı PR/ADR** gerek (Hibrit C scope dışı; mevcut active config `perf-alerts-slack` korunur — separate future Perf Alerts Teams migration PR/ADR required, Codex `019e5bdb` iter-2 P2 absorb).
 
 ### Step 2: Vault seed (HARD RULE no-token-log + stdin pipe)
 
@@ -151,34 +148,23 @@ Trigger config:
 ssh halil@staging-sw '
 ROOT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)"
 
-# alertmanager-fallback (D43 outage flow URL)
+# alertmanager-fallback (D43 outage flow URL) — SMTP 4-key canonical korunur
 read -r -s -p "D43 outage Teams Power Automate workflow URL: " TEAMS_URL && echo
 printf "%s" "$TEAMS_URL" | docker exec -i \
   -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
   vault kv patch kv/platform/alertmanager-fallback TEAMS_WEBHOOK_URL=-
 unset TEAMS_URL
 
-# perf-alertmanager (Perf Alerts flow URL)
-read -r -s -p "Perf Alerts Teams Power Automate workflow URL: " TEAMS_URL && echo
-printf "%s" "$TEAMS_URL" | docker exec -i \
-  -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
-  vault kv patch kv/platform/perf-alertmanager TEAMS_WEBHOOK_URL=-
-unset TEAMS_URL
-
 unset ROOT_TOKEN
 '
 
-# Test cluster (drill için)
+# Test cluster (drill için) — D43 only
 ssh halil@staging-sw '
 ROOT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-test.json)"
 
 # Test mock URL (webhook-receiver mock pattern)
 docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-test \
   vault kv patch kv/platform/alertmanager-fallback \
-    TEAMS_WEBHOOK_URL=http://webhook-receiver.platform-test.svc.cluster.local:8080/teams-mock
-
-docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-test \
-  vault kv patch kv/platform/perf-alertmanager \
     TEAMS_WEBHOOK_URL=http://webhook-receiver.platform-test.svc.cluster.local:8080/teams-mock
 
 unset ROOT_TOKEN
@@ -191,7 +177,7 @@ ssh halil@staging-sw '
 docker exec -e VAULT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)" \
   platform-vault-prod vault kv get -mount=kv -format=json platform/alertmanager-fallback \
   | jq ".data.data | to_entries | map({key, value_len: (.value | length)})"
-# Beklenen: 5 keys (TEAMS_WEBHOOK_URL ~100-300 byte + 4 SMTP keys)
+# Beklenen post-reactivation: 5 keys (TEAMS_WEBHOOK_URL ~100-300 byte + 4 SMTP keys); current dormant 4 keys (SMTP-only ADR-0027 §D1)
 '
 ```
 
@@ -223,22 +209,18 @@ Reactivation ekle (PR #1053 closed diff template snippet — Codex `019e5ba9` it
     ...
 ```
 
-Aynı pattern test cluster + `externalsecret-perf-alertmanager.yaml` her iki cluster.
+Aynı pattern test cluster `externalsecret-alertmanager-fallback.yaml` (D43 scope only). `externalsecret-perf-alertmanager.yaml` **bu PR scope dışı** (V2.1 Perf Alerts ayrı migration; Codex `019e5bdb` iter-2 P2 absorb).
 
-**ESO force-sync + verify**:
+**ESO force-sync + verify** (D43-only scope; perf-alertmanager-secrets ayrı migration):
 ```bash
-for ES in alertmanager-fallback-secrets perf-alertmanager-secrets; do
-  kubectl --context k3d-prod -n monitoring annotate externalsecret "$ES" \
-    force-sync="$(date +%s)" --overwrite
-done
+kubectl --context k3d-prod -n monitoring annotate externalsecret alertmanager-fallback-secrets \
+  force-sync="$(date +%s)" --overwrite
 
 sleep 30
 
-for ES in alertmanager-fallback-secrets perf-alertmanager-secrets; do
-  kubectl --context k3d-prod -n monitoring get externalsecret "$ES" \
-    -o jsonpath="{.status.conditions[0].type}={.status.conditions[0].status}"
-  # Beklenen: Ready=True
-done
+kubectl --context k3d-prod -n monitoring get externalsecret alertmanager-fallback-secrets \
+  -o jsonpath="{.status.conditions[0].type}={.status.conditions[0].status}"
+# Beklenen: Ready=True
 ```
 
 ### Step 4: Helm `values-prod.yaml` `direct-fallback` receiver `webhook_configs` add (template snippet)
@@ -266,18 +248,9 @@ Reactivation ekle (PR #1053 closed diff template snippet — Codex `019e5ba9` it
             ...
 ```
 
-Aynı pattern `perf-alerts-teams` receiver (PR #1053 closed diff snippet):
-```yaml
-      - name: 'perf-alerts-teams'
-        webhook_configs:
-          - url_file: /etc/alertmanager/secrets/perf-alertmanager-secrets/TEAMS_WEBHOOK_URL
-            send_resolved: true
-            max_alerts: 50
-```
-
-Route rename: `perf-alerts-slack` → `perf-alerts-teams` (PR #1053 closed diff snippet — 2 perf route)
-
 Aynı pattern `values-test-d43-drill.yaml` test cluster için.
+
+> **V2.1 Perf Alerts (`perf-alerts-slack` / `perf-alerts-teams`) scope DIŞI** (Codex `019e5bdb` iter-2 P2 absorb): D43 outage fallback `direct-fallback` receiver Teams reactivation bu runbook scope'unda. Perf alerts kendi migration runbook + ADR'a tabidir (separate future PR/ADR). Mevcut active config `perf-alerts-slack` ADR-0027 §D1 D43 canonical kapsamında değil — etkilenmez.
 
 **Helm upgrade**:
 ```bash
@@ -335,7 +308,7 @@ curl -sS -X POST http://localhost:9093/api/v2/alerts \
       "description": "D43 Teams reactivation smoke — ADR-0027 §D5 Step 5"
     },
     "startsAt": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
-    "endsAt": "'$(date -u -v+10M +%Y-%m-%dT%H:%M:%SZ)'"
+    "endsAt": "'$(date -u -d '+10 minutes' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v+10M +%Y-%m-%dT%H:%M:%SZ)'"
   }]'
 
 sleep 10  # Alertmanager dispatch + Power Automate flow trigger
@@ -354,7 +327,7 @@ gh issue list --repo Halildeu/platform-k8s-gitops --search "NotifyServiceDown" -
 # Recovery: synthetic alert silence/expire (NOT scale-up)
 curl -sS -X POST http://localhost:9093/api/v2/silences \
   -H 'Content-Type: application/json' \
-  -d '{"matchers": [{"name": "alertname", "value": "NotifyServiceDown", "isRegex": false}], "startsAt": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "endsAt": "'$(date -u -v+5M +%Y-%m-%dT%H:%M:%SZ)'", "createdBy": "d43-teams-reactivation-smoke", "comment": "ADR-0027 §D5 Step 5 cleanup"}'
+  -d '{"matchers": [{"name": "alertname", "value": "NotifyServiceDown", "isRegex": false}], "startsAt": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "endsAt": "'$(date -u -d '+5 minutes' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v+5M +%Y-%m-%dT%H:%M:%SZ)'", "createdBy": "d43-teams-reactivation-smoke", "comment": "ADR-0027 §D5 Step 5 cleanup"}'
 
 kill $PF_PID
 ```
@@ -379,8 +352,12 @@ kill $PF_PID
 - Reactivation chain abort + ADR-0027 §D3 trigger condition reassess
 
 ### Step 2 fail (Vault seed)
-- Vault key delete: `docker exec -e VAULT_TOKEN=... platform-vault-prod vault kv metadata delete kv/platform/alertmanager-fallback` (Power Automate URL leak'i temizler; SMTP keys de silinir — full path delete)
-- ALTERNATIVE: `vault kv patch kv/platform/alertmanager-fallback -mount=kv TEAMS_WEBHOOK_URL=""` (sadece TEAMS_WEBHOOK_URL boş)
+
+> **HARD RULE — SMTP CANONICAL KORUMA**: Vault `kv/platform/alertmanager-fallback` path'i SMTP 4-key D43 v1 canonical (ADR-0027 §D1). Full path delete YASAK — SMTP keys silinirse D43 fallback komple çöker.
+
+- **Önerilen rollback** (SMTP-safe): `vault kv patch kv/platform/alertmanager-fallback -mount=kv TEAMS_WEBHOOK_URL=""` (sadece TEAMS_WEBHOOK_URL alanını boşaltır; SMTP_HOST/PORT/USER/PASSWORD 4 key intact)
+- **Doğrulama**: `vault kv get -mount=kv -format=json platform/alertmanager-fallback | jq '.data.data | keys'` — SMTP 4 key hâlâ mevcut
+- **Break-glass YASAK** (operational truth korumak için): `vault kv metadata delete kv/platform/alertmanager-fallback` (full path delete) **YALNIZ** path compromise durumunda (token leak vb.) **VE** aynı adımda SMTP 4-key reseed ile (RB-prod-alertmanager-activation.md §3.2 SMTP-only re-init pattern); aksi halde D43 SMTP canonical bozulur
 - Step 3+ skip; reactivation abort
 
 ### Step 3 fail (ESO sync)
