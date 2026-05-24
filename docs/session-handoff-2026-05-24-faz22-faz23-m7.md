@@ -124,7 +124,7 @@ Overlay desired (around line 2427-2483 post-#1007; final digest at `kustomize/ov
 
 ### Faz 22.2 scope amendment (2026-05-24 user decision)
 
-> **User decision**: Endpoint-admin Faz 22.2 primary production scope **non-domain Windows yönetimi** (workgroup/standalone/BYOD) olarak yeniden tanımlandı. Domain-joined `acik.local` IT pilot opsiyonel ikinci scope. Codex strategic thread `019e5afc-2ce2-7811-9d98-73ff6eac1434` AGREE (REVISE iter-1 docs-only scope realignment). Detay: ADR-0012-EA "22.2 scope amendment" section.
+> **User decision**: Endpoint-admin Faz 22.2 primary production scope **non-domain Windows yönetimi** (workgroup/standalone/BYOD) olarak yeniden tanımlandı. Domain-joined `acik.local` IT pilot opsiyonel ikinci scope. Codex strategic thread `019e5afc-2ce2-7811-9d98-73ff6eac1434`: REVISE iter-1 with `ready_for_impl=true` for docs-only scope realignment (full pilot scope still REVISE pending operator action). Detay: ADR-0012-EA "22.2 scope amendment" section.
 
 | Sub | Status | Evidence |
 |---|---|---|
