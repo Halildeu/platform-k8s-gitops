@@ -5,7 +5,7 @@
 > **Canonical decision**: ADR-0012-EA "22.2 scope amendment (2026-05-24)" section (kullanıcı kararı; Codex strategic thread `019e5afc-2ce2-7811-9d98-73ff6eac1434` AGREE iter-4)
 > **Tracked by**: [#1015](https://github.com/Halildeu/platform-k8s-gitops/issues/1015) (Faz 22.2 IT pilot readiness umbrella — 22.2.A primary scope reframe per ADR amendment)
 > **Predecessor evidence (22.2.A substantive)**: gitops PR #1021 BE-011 + AG-013 WORKGROUP smoke HALILKOOLUB735 + gitops PR #1032 BE-017 dual-control test cluster fixture + platform-agent PR #13 CI automation
-> **Codex strategic thread (this runbook)**: `019e5b17-4086-7fc3-b82b-5303be3948fe` REVISE iter-1 with `ready_for_impl=true` for docs-only standalone runbook implementation
+> **Codex strategic thread (this runbook)**: `019e5b17-4086-7fc3-b82b-5303be3948fe` REVISE iter-1 with `ready_for_impl=true` for docs-only standalone runbook implementation (post-impl review iter-2 absorb 3 source-truth fixes; full pilot infazı device + signed + KVKK/consent + soak gate'lerine bağlı)
 
 ---
 
@@ -403,10 +403,28 @@ curl -sk -X GET "https://testai.acik.com/api/v1/endpoint-admin/endpoint-commands
 curl -sk -X GET "https://testai.acik.com/api/v1/endpoint-admin/endpoint-audit-events?commandId=$COMMAND_ID" \
   -H "Authorization: Bearer $JWT" | jq '.[].eventType'
 
-# Expected: ENDPOINT_COMMAND_CREATED, ENDPOINT_COMMAND_DISPATCHED (optional), ENDPOINT_COMMAND_COMPLETED
+# Expected: ENDPOINT_COMMAND_CREATED only (non-destructive command create emits 1 audit row;
+# dispatch/start/complete lifecycle state'leri ENDPOINT_COMMAND_DISPATCHED veya ENDPOINT_COMMAND_COMPLETED
+# audit row emit ETMEZ — bunlar command field'larında tutulur: deliveredAt / startedAt / completedAt).
+# Codex 019e5b17 iter-2 absorb (source-truth verify): backend `EndpointAdminCommandService`
+# non-destructive command create için ENDPOINT_COMMAND_CREATED; lifecycle command/result endpoint
+# veya DB field'ları üzerinden doğrulanır. Dual-control destructive command için ek
+# ENDPOINT_COMMAND_APPROVED veya ENDPOINT_COMMAND_REJECTED emit edilir (BE-017 PR #1032 evidence).
+
+# Command lifecycle field verify (mandatory)
+curl -sk -X GET "https://testai.acik.com/api/v1/endpoint-admin/endpoint-commands/$COMMAND_ID" \
+  -H "Authorization: Bearer $JWT" | jq '{status, deliveredAt, startedAt, completedAt}'
+
+# Expected:
+# {
+#   "status": "SUCCEEDED",
+#   "deliveredAt": "2026-05-24T...Z",
+#   "startedAt": "2026-05-24T...Z",
+#   "completedAt": "2026-05-24T...Z"
+# }
 ```
 
-DB-direct hash-chain verify (BE-016) per ADR-0012-EA — optional, advanced verification (V4 prev_event_hash/event_hash linkage).
+DB-direct hash-chain verify (BE-016) per ADR-0012-EA — optional, advanced verification (V4 prev_event_hash/event_hash linkage; non-destructive command için tek-row audit, chain length=1).
 
 ---
 
@@ -434,17 +452,19 @@ Per device:
 
 ### 11.3 Backend telemetry query (interim — Prometheus + Grafana setup öncesi)
 
+> **Source-truth verified columns** (Codex 019e5b17 iter-2 absorb): `endpoint_heartbeats.received_at` (NOT `reported_at`) + `endpoint_commands.command_type` (NOT `type`). Backend migration kanonik şemaya bağlı.
+
 ```sql
 -- DB-direct query (psql via platform-pg-test):
 -- Heartbeat history per device
-SELECT device_id, MAX(reported_at) AS last_seen,
+SELECT device_id, MAX(received_at) AS last_seen,
        COUNT(*) AS heartbeat_count_24h
 FROM endpoint_admin_service.endpoint_heartbeats
-WHERE reported_at > now() - interval '24 hours'
+WHERE received_at > now() - interval '24 hours'
 GROUP BY device_id;
 
 -- Command lifecycle per device
-SELECT device_id, type, status,
+SELECT device_id, command_type, status,
        (completed_at - issued_at) AS duration
 FROM endpoint_admin_service.endpoint_commands
 WHERE issued_at > now() - interval '24 hours'
