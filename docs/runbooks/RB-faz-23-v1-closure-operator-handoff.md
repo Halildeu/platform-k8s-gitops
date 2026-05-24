@@ -47,8 +47,8 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
 - [ ] **BL-008** R9 D43 outage fallback drill — canonical RB: [`docs/runbooks/RB-notification-outage-fallback.md`](RB-notification-outage-fallback.md) prod activation chain + drill execution sections (port-forward + helm upgrade + dual-receipt verify + cleanup)
   - Dependency: BL-004 Vault prod seed
   - Board issues: [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853), [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854)
-- [ ] **BL-009** DKIM tenant enable + DNS CNAME publish — operator-external (Office 365 admin + DNS registrar)
-  - Reference: feature-matrix H4 + L1; charter line 51; R3 mitigation upgrade
+- [ ] **BL-009** DKIM tenant enable + DNS CNAME publish — operator-external (Office 365 admin + DNS registrar) — **DEFER 2026-05-25 (kullanıcı kararı + Codex `019e5bfb` AGREE)**: no immediate trigger; SMTP relay LIVE; trigger-based reactivation (mail-tester ≥9/10 hedef / DMARC strict upgrade / spam placement observed / tenant + DNS registrar window / security-compliance mandate)
+  - Reference: feature-matrix H4 + L1; charter line 51; R3 mitigation upgrade row + 5 reactivation trigger conditions
 - [ ] **BL-010** Keycloak `org_id=default` claim setup — canonical RB: [`docs/runbooks/RB-prod-canary-kc-claim-setup.md`](RB-prod-canary-kc-claim-setup.md) (canary user attribute + User Attribute mapper pattern, NOT hardcoded claim mapper)
   - **Test cluster scope COMPLETED 2026-05-24** — PR #1036 (`feat/bl010-kc-org-id-mapper-codex-019e5a75`): KC `platform-test` realm `notify-canary` client scope + `oidc-usermodel-attribute-mapper` `org_id` + persona `notify-canary-org-default` LIVE; guard-level metric `source="org_id"=4.0` proven; evidence `docs/faz-23-evidence/2026-05-24-bl010-kc-org-id-mapper.md` (Codex `019e5ac1` cross-AI AGREE iter-2)
   - **Sprint B prod cluster pending**: §8.1 discovery-gated (Step-0 realm-list); persona naming canonical `notify-canary-org-prod-default`
