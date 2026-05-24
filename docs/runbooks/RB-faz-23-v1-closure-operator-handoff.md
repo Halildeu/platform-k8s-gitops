@@ -50,7 +50,9 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
 - [ ] **BL-009** DKIM tenant enable + DNS CNAME publish — operator-external (Office 365 admin + DNS registrar)
   - Reference: feature-matrix H4 + L1; charter line 51; R3 mitigation upgrade
 - [ ] **BL-010** Keycloak `org_id=default` claim setup — canonical RB: [`docs/runbooks/RB-prod-canary-kc-claim-setup.md`](RB-prod-canary-kc-claim-setup.md) (canary user attribute + User Attribute mapper pattern, NOT hardcoded claim mapper)
-  - Dependency: KC `platform-kc-prod` admin pwd
+  - **Test cluster scope COMPLETED 2026-05-24** — PR #1036 (`feat/bl010-kc-org-id-mapper-codex-019e5a75`): KC `platform-test` realm `notify-canary` client scope + `oidc-usermodel-attribute-mapper` `org_id` + persona `notify-canary-org-default` LIVE; guard-level metric `source="org_id"=4.0` proven; evidence `docs/faz-23-evidence/2026-05-24-bl010-kc-org-id-mapper.md` (Codex `019e5ac1` cross-AI AGREE iter-2)
+  - **Sprint B prod cluster pending**: §8.1 discovery-gated (Step-0 realm-list); persona naming canonical `notify-canary-org-prod-default`
+  - Dependency: KC `platform-kc-prod` admin pwd + Vault `$PROD_REALM/keycloak/persona/notify-canary-org-prod-default/password` seed
 - [ ] **BL-011** Prod SMS functional canary smoke — canonical canary example: `RB-prod-canary-kc-claim-setup.md` (canonical payload contract: `topicKey` + `recipients` + `template` + `channels` + `orgId`)
   - Dependency: BL-010 (KC claim setup) + BL-016 R24 OTP allowlist (eğer OTP topic test ediliyorsa)
 - [ ] **BL-014** FBL mailbox activation — canonical RB: [`docs/runbooks/RB-fbl-mailbox-activation.md`](RB-fbl-mailbox-activation.md) (Vault remoteRef triple + overlay patch + ESO uncomment + PR/apply + hard gates)
