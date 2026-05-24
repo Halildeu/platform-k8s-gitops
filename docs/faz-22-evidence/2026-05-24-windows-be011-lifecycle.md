@@ -4,6 +4,8 @@
 > **Tracked by**: platform-agent #8 + platform-k8s-gitops handoff §5 P1 (BE-011 + Windows #8)
 > **Scope sınırı**: Parallels Windows 11 VM (workgroup, NOT acik.local domain-joined). IT pilot 22.2 ayrı kapı (`docs/runbooks/RB-faz22-endpoint-pilot-it-owned.md`).
 > **VM identity**: HALILKOOLUB735 (Windows 11, Parallels Desktop)
+>
+> **Reclassification note (2026-05-24 — user scope decision)**: Bu evidence başlangıçta "lab/CI rehearsal predecessor" olarak etiketlenmişti çünkü Faz 22.2 primary scope `acik.local` domain-joined IT pilot kabul ediliyordu. 2026-05-24 kullanıcı kararı ile Faz 22.2 primary scope **non-domain Windows yönetimi** (workgroup/standalone/BYOD) olarak yeniden tanımlandı (ADR-0012-EA "22.2 scope amendment" + Codex strategic thread `019e5afc-2ce2-7811-9d98-73ff6eac1434`). Bu evidence yeniden sınıflandırıldı: artık **22.2.A non-domain primary-scope substantive evidence**. Tarihsel boundary korunur (single VM / no soak / 1 device); production-ready / domain-wide rollout-ready iddiası DEĞİL. Yeni runtime evidence claim YOK; mevcut evidence retake YOK — sadece sınıf değişimi.
 
 ---
 

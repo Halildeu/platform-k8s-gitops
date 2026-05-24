@@ -113,14 +113,29 @@ Overlay desired (around line 2427-2483 post-#1007; final digest at `kustomize/ov
 ### P1 — operator queue (operator-bound, timer-bound / blocker-bound)
 
 1. **#1012 D43 Slack webhook** — operator creates `#alerts-d43-drill` channel + webhook URL → Vault seed `kv/platform/notify-d43-drill/slack_webhook_url` → helm-values switch → drill rerun. Once Slack leg validates, R9 risk register → `🟢 Mitigated`.
-2. **Faz 22.2 IT pilot** — `acik.local` EndpointPilot OU setup + IT-owned Windows cihaz onboarding. (Runbook ready: `docs/runbooks/RB-faz22-endpoint-pilot-it-owned.md` gitops PR #1016 MERGED.)
+2. **Faz 22.2.B `acik.local` IT pilot (opsiyonel ikinci scope)** — DC corp VPN/intranet routing (Mac VPN connect + Parallels routing decision tree per `docs/runbooks/RB-faz22-acik-local-vpn-routing-setup.md` gitops PR #1039 MERGED) + EndpointPilot OU setup + IT-owned Windows cihaz onboarding + EDR allowlist + trusted signing. **Gate 0 BLOCKER**: gitops #1037 (DC reachability fail). **22.2.A overall blocker DEĞİL** — 22.2 primary scope non-domain Windows yönetimi (workgroup/standalone/BYOD; ADR-0012-EA "22.2 scope amendment" 2026-05-24).
 3. **M7 T4.3.5 FBL mailbox** — `RB-fbl-mailbox-activation.md`'a göre operator IMAP credential + worker enable.
 4. **M7 T4.3.7 DB RO role** — Per-template analytics aktivasyonu için operator DB RO role grant.
 5. **M7 R11 formal Close** — ≥30 day no-regression soak baseline post-prod-cutover.
 
-### P1 — agent-actionable carry-over (new)
+### P1 — agent-actionable carry-over
 
-1. **BE-017 formal dual-control matrix** — destructive command (e.g. `LOCK_USER_LOGIN`) 5-step formal smoke (create → pending → self-approval deny → second-admin approve → audit insert with full chain). Bu PR #1021 smoke'unda `COLLECT_INVENTORY` (non-destructive, `approvalStatus=NOT_REQUIRED`) ile yapıldı; destructive flow yan-kanıt değil ayrı kapı. **Agent-actionable**: backend smoke drivable with two test personas + audit row read; herhangi bir operator credential, domain join veya VM erişimi gerekmiyor.
+1. **BE-017 formal dual-control matrix** ✅ DONE 2026-05-24 — gitops PR #1032 MERGED `507f57c4` (LOCK_USER_LOGIN destructive 5-step smoke test cluster fixture + audit chain V4 hash-linkage + approval table dual-subject verified). Mevcut PR #1021 smoke'unda non-destructive (`COLLECT_INVENTORY` `approvalStatus=NOT_REQUIRED`) yapılmıştı; destructive flow ayrı kapı olarak BE-017 evidence ile kapatıldı.
+
+### Faz 22.2 scope amendment (2026-05-24 user decision)
+
+> **User decision**: Endpoint-admin Faz 22.2 primary production scope **non-domain Windows yönetimi** (workgroup/standalone/BYOD) olarak yeniden tanımlandı. Domain-joined `acik.local` IT pilot opsiyonel ikinci scope. Codex strategic thread `019e5afc-2ce2-7811-9d98-73ff6eac1434` AGREE (REVISE iter-1 docs-only scope realignment). Detay: ADR-0012-EA "22.2 scope amendment" section.
+
+| Sub | Status | Evidence |
+|---|---|---|
+| **22.2.A non-domain primary** | substantive evidence cover (~78%) | gitops PR #1021 (`4ecb71dc`) BE-011 + AG-013 WORKGROUP smoke; platform-agent PR #10 + #11; gitops PR #1032 (`507f57c4`) BE-017 dual-control fixture; platform-agent PR #13 (`ab1eb0ee`) CI automation |
+| **22.2.B `acik.local` optional** | operator-bound (~25%) | gitops PR #1037 Gate 0 VPN BLOCKER + PR #1039 (`61a5136a`) evidence/runbook; platform-agent PR #14 (`ef7ded6f`) precheck helper |
+
+**Composite Faz 22.2 portfolio**: ~67% (iki-katmanlı sayım; tek-numara closure dili yasak). **Production-ready / password-reset-ready / domain-wide rollout-ready iddiası DEĞİL.**
+
+**22.2.A primary scope eksik (follow-up)**: self-hosted CI run + 2+ standalone/BYOD device + 24-72h soak + identity classification (`dsregcmd`/logged-in identity) + signed distribution + KVKK boundary; yeni runbook `RB-faz22-non-domain-windows-pilot.md` (ayrı PR sonraki tur).
+
+**22.2.B optional scope eksik (operator-bound)**: Mac VPN routing + DC reachability + EDR allowlist + trusted signing; gitops #1037 Status=Blocked.
 
 ### P2-P3 sonraki sprint (yeni domain)
 
