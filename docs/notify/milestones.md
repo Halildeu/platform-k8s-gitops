@@ -202,7 +202,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
     - PR-W5 platform-web #648: mfe-shell service worker + notify-push.api + helpers + usePushSubscription hook (Codex 019e4a87 iter-2 AGREE)
     - PR-W6 platform-web #649: PushSubscriptionCard UI + VAPID env build chain
     - PR-W7 platform-web #652: notify RTK `unwrapRequestFetchFn` shim — Request-object header drop fix (cross-domain pattern; later replicated for endpoint-admin in #658)
-    - Activation chain (operator-completed 2026-05-23): Vault VAPID 3-key seed + ESO uncomment + ConfigMap `NOTIFY_ADAPTERS_WEBPUSH_ENABLED=true` + frontend `VITE_NOTIFY_VAPID_PUBLIC_KEY` rebuild + OpenFGA `model_id` cutover (PR #990 + #995 + #996/#997 deploy)
+    - Activation chain (operator-completed 2026-05-23): Vault VAPID 3-key seed + ESO uncomment + ConfigMap `NOTIFY_ADAPTERS_WEBPUSH_ENABLED=true` + frontend `VITE_NOTIFY_VAPID_PUBLIC_KEY` rebuild + OpenFGA `model_id` cutover. **Evidence authority**: RB-webpush-activation §3.10 (subscribe) + §3.11 (push delivery SUCCESS). **Supporting ledger**: gitops #976/#977 (ConfigMap WebPush enable + VAPID env wiring) + #986/#987 (frontend digest bump + browser smoke) + #990/#995/#996/#997 (OpenFGA model_id cutover + internal-auth ESO + delivery-success closure chain).
   - [ ] **Mobile FCM/APNS** — Faz 22.2 dep, scope DIŞI (gelecek faz; canonical wording per ADR-0013 / sprint-plan T4.2.7-10 row "DEFER Faz 22.2 dep")
 - [~] T4.3 23.8 Tempo + bounce loop + per-tenant Grafana + FBL + federation — **9/9 sub-task source-side closed 2026-05-22** (operator activation pending)
   - [x] T4.3.a Tempo OTLP trace export LIVE (2026-05-21 09:17Z; 5 spans verified)
