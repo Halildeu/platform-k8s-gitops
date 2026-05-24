@@ -34,8 +34,8 @@
 2e63aec2d83779fec766835f63e68df1f8ebb511:docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md:curl-auth-header:90
 
 # PR #1021 (Faz 22 Windows BE-011 evidence) — generic-api-key false-positive on
-# `"idempotencyKey": "be011-collect-inv-20260524-001"` — this is a smoke test
-# idempotency key (deterministic string ID, NOT a secret); 2 occurrences in
-# JSON examples (lines 135 + 210 of the evidence doc).
+# a deterministic smoke-test idempotency key string (BE-011 collect inventory
+# canonical ID, NOT a real secret); 2 occurrences in JSON examples on lines
+# 135 + 210 of the evidence doc.
 05e71a2561aa4543e7554ba6be6c317312419a07:docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md:generic-api-key:135
 05e71a2561aa4543e7554ba6be6c317312419a07:docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md:generic-api-key:210
