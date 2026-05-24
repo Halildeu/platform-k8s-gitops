@@ -18,7 +18,74 @@ Faz 22.2 IT pilot tier'a giriş: `acik.local` domain içinde IT-owned 2 test PC 
 
 Bu pilot **bir kanıt katmanı eklemek** içindir; production rollout veya kullanıcı kapsamlı kullanım kararı değildir.
 
-## 2. Pilot ön koşulları
+## 2. Pre-pilot lab gate — Parallels W11 CI rehearsal
+
+> **Status**: AGENT-ACTIONABLE altyapı (platform-agent #12) + OPERATOR-BOUND infaz (self-hosted Mac runner provisioning + workflow_dispatch + evidence doc PR).
+> **Tracked by**: [platform-agent #12](https://github.com/Halildeu/platform-agent/issues/12) — "Faz 22.2 Parallels Windows 11 CI pilot rehearsal".
+> **Predecessor manual smoke**: gitops PR #1021 (`4ecb71dc`) + platform-agent PR #10 (`402bdc1`) MERGED 2026-05-24 — `docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md` (BE-011 + AG-013 fresh smoke).
+
+### 2.1 Amaç
+
+`acik.local` IT pilot acceptance'a girmeden önce **tekrar edilebilir lab rehearsal** kapısı: local Parallels Windows 11 VM `HALILKOOLUB735` (WORKGROUP / PartOfDomain=false) üzerinde endpoint-agent Windows smoke + BE-011 lifecycle akışını **self-hosted Mac runner + `prlctl`** ile workflow_dispatch tetiklenebilir hale getirmek.
+
+### 2.2 Neyi kanıtlar
+
+- Agent build/package + Windows service install/start/diagnose/uninstall lifecycle çalışıyor (Parallels W11 VM üzerinde tekrar edilebilir)
+- `endpoint-admin-service` backend reachability (`testai.acik.com:443` TCP/443)
+- Non-destructive BE-011 lifecycle (`COLLECT_INVENTORY` veya `inventory_refresh` enroll → heartbeat → command → result → audit)
+- D29-EA Up + Functional layer kanıtları (Secured layer için OpenFGA tuple seed test cluster smoke ayrı kapı — gitops PR #1021 §5 + BE-017 PR #1032 referansları)
+
+### 2.3 Neyi KANITLAMAZ (hard scope sınırı)
+
+- **`acik.local` IT-owned pilot acceptance** — Parallels VM `HALILKOOLUB735` WORKGROUP/PartOfDomain=false; domain join + EndpointPilot OU + IT-owned device + EDR/allowlist provisioning **ext-bound**, bu rehearsal kapsamı dışı.
+- **Prod-ready / password-reset-ready / domain-wide rollout-ready** iddiası DEĞİL.
+- **Destructive command flow** (LOCK_USER_LOGIN/DISABLE_LOCAL_USER vb.) — rehearsal sadece non-destructive (`COLLECT_INVENTORY`/`inventory_refresh`); destructive flow için BE-017 PR #1032 evidence ayrı kapı (test cluster fixture target only).
+- **Trusted signing** — Windows Authenticode + timestamp + signed build pipeline AG-018/AG-024 ext-bound.
+
+### 2.4 Self-hosted runner gereksinimi (operator-bound)
+
+GitHub-hosted `windows-latest` runner **local Parallels VM'i göremez** — virtualization layer access yok. CI entegrasyonu için:
+
+- **Self-hosted macOS runner** Parallels Desktop kurulu + Windows 11 VM "Windows 11" (veya alternatif isim) hazır
+- **Runner labels**: `[self-hosted, macOS, parallels, windows11]`
+- **Runner registration**: GitHub repo settings → Actions → Runners → Add new self-hosted runner
+- **Parallels guest user**: local admin (NOT domain admin); credentials out-of-band hazırlanır (workflow asla `--password` ile geçmez)
+
+### 2.5 Artifact'lar (platform-agent)
+
+- `scripts/test/parallels-windows11-ci.sh` — local CI script (prlctl VM discovery/start + PowerShell pre-check + agent build/package + windows-live.ps1 + optional BE-011 hook + sanitized evidence + post-write secret scan + exit code CI uyumlu)
+- `.github/workflows/parallels-windows11-smoke.yml` — `workflow_dispatch` only workflow, self-hosted Mac labels + concurrency + preflight + artifact upload + summary boundary reminder
+- platform-agent #12 issue acceptance criteria
+
+### 2.6 Evidence doc path
+
+Gerçek run tamamlandığında: **gitops `docs/faz-22-evidence/YYYY-MM-DD-parallels-windows11-ci-pilot-rehearsal.md`** ayrı docs-only PR olarak açılır (Codex strategic önerisi: evidence doc PR sadece gerçek run sonrası, "Sample run pending" placeholder PR değil). Evidence doc içeriği zorunlu alanlar:
+
+- VM hostname + domain/workgroup classification + PartOfDomain + Windows version/build
+- Runner labels + `prlctl` VM name
+- Backend reachability (testai.acik.com:443)
+- platform-agent commit + package SHA256
+- Service install/start/status (windows-live.ps1)
+- AG-013 capability list verify
+- BE-011 command id + result id + audit row id (sanitized — no token/JWT/password/secret)
+- Cleanup sonucu (service uninstall + install dir + log dir clean)
+- D29-EA matrix (Up/Functional/Secured) ayrı satır
+- "Bu gerçek `acik.local` IT pilot acceptance DEĞİL" notu
+
+### 2.7 Gate sıralaması (acik.local pilot relative)
+
+```
+[Parallels W11 CI rehearsal (§2)]  →  [acik.local IT pilot (§3-§9)]
+        AGENT-ACTIONABLE                OPERATOR-BOUND
+        repeatable lab                  one-time real pilot
+        WORKGROUP                       PartOfDomain=true (acik.local)
+        non-destructive                 dual-control destructive flows
+        fixture-level evidence          real IT-owned device evidence
+```
+
+Rehearsal **acik.local pilot yerine geçmez** — pilot öncesi tekrar edilebilir lab kapısıdır. Pilot infazı için domain join + EndpointPilot OU + IT-owned device + EDR/allowlist provisioning operator-bound bağımlılıkları gerek (aşağıdaki §3 — Pilot ön koşulları).
+
+## 3. Pilot ön koşulları
 
 ### Donanım + AD
 
@@ -40,7 +107,7 @@ Bu pilot **bir kanıt katmanı eklemek** içindir; production rollout veya kulla
 - [ ] Test persona JWT mint mekanizması operator elinde (`c5persona-admin-9001` pattern — handoff §5 P1 ALLOW-path browser smoke örneği).
 - [ ] **OpenFGA tuple — pilot persona için doğrulanmalı**: smoke akışı §3 admin/manager command queue path'ine dayanıyor; `module:endpoint-admin` üzerinde `can_manage` (admin) veya en az `can_view` (read-only/status smoke) tuple'ı pilot persona için var olmalı. Tuple yoksa backend 403 FGA fail-closed döner — bu pilot fail olarak okunmaz, FGA layer doğru çalışıyor demektir; ama smoke matrix'in komut queue + result adımları yapılamaz. Seed referansı: `bootstrap/openfga/endpoint-admin-tuples.json` + `docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md` §A persona JWT örneği. Eğer pilot scope **sadece read-only/status smoke** ise tuple opsiyonel sayılabilir (status route auth-only, FGA gate'siz).
 
-## 3. İlk pilotta yapılacaklar
+## 4. İlk pilotta yapılacaklar
 
 | # | Adım | Sorumlu | Amaç |
 |---|---|---|---|
@@ -54,7 +121,7 @@ Bu pilot **bir kanıt katmanı eklemek** içindir; production rollout veya kulla
 
 **Smoke süresi tahmini**: 30-60 dk per PC (ilk pilot için).
 
-## 4. İlk pilotta YAPILMAYACAKLAR (kesin)
+## 5. İlk pilotta YAPILMAYACAKLAR (kesin)
 
 - ❌ **Password reset** (kullanıcı parolası yazılım/manuel)
 - ❌ **Kullanıcı disable/enable** (`net user`, AD user account management)
@@ -69,7 +136,7 @@ Bu pilot **bir kanıt katmanı eklemek** içindir; production rollout veya kulla
 
 Bu liste **boundary contract**'ıdır; pilot kapsam genişletmeden önce ayrı issue + Codex strategic consult + operator açık opt-in gerek.
 
-## 5. Evidence checklist (pilot smoke sonrası)
+## 6. Evidence checklist (pilot smoke sonrası)
 
 Her PC için aşağıdaki kayıtlar **tam doldurulmalı**:
 
@@ -93,7 +160,7 @@ Her PC için aşağıdaki kayıtlar **tam doldurulmalı**:
 | EDR / AV result | quarantine? block? clean? — pilot başlamadan ve smoke sonrası IT/SOC ile teyit |
 | Ekran/log kanıtı | screenshot veya log dump arşivlenir (örn. evidence doc `docs/faz-22-evidence/<date>-it-pilot-<pc>.md`) |
 
-## 6. Rollback
+## 7. Rollback
 
 Pilot smoke sırasında sorun olursa veya pilot sonrası temizlik:
 
@@ -108,7 +175,7 @@ Pilot smoke sırasında sorun olursa veya pilot sonrası temizlik:
 5. **EDR allowlist geri alma** — gerekiyorsa IT/SOC ile koordinasyon (allowlist whitelist'ten endpoint-enes-agent çıkarılır)
 6. **Backend cleanup (opsiyonel)** — `endpoint_devices` test pilot row'ları operator karar verirse silinir (audit trail backup alındıktan sonra)
 
-## 7. Acceptance sınırı (formal)
+## 8. Acceptance sınırı (formal)
 
 Bu runbook **pilot hazırlık dokümanıdır**:
 
@@ -122,7 +189,7 @@ Pilot smoke sonrası **operator karar verir** sonraki adımı:
 - Pilot başarılı + EDR/AD koordinasyon temiz → tier-2 (5-10 PC) extended pilot
 - Pilot fail veya friction → root-cause analiz + agent/backend follow-up issue + 2-PC pilot tekrar
 
-## 8. Referanslar
+## 9. Referanslar
 
 - `docs/state/current-state.md` — Faz 22 truth (Pending: IT pilot 22.2 — operator-bound)
 - `docs/session-handoff-2026-05-24-faz22-faz23-m7.md` §4-5 — P1 operator queue
@@ -132,7 +199,7 @@ Pilot smoke sonrası **operator karar verir** sonraki adımı:
 - `docs/adr/0012-EA-endpoint-admin-governance-charter.md` — Endpoint Admin governance charter
 - BE-017 V5 migration + dual-control gate — `endpoint_commands.approval_status` + `endpoint_command_approvals` tabloları
 
-## 9. Audit trail
+## 10. Audit trail
 
 - Implementer Claude (Anthropic); Reviewer Codex (OpenAI) — provider-level cross-AI HARD RULE per PR
 - Runbook docs-only; runtime/credential/cluster mutation yok
