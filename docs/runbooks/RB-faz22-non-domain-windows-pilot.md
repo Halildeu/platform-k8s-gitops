@@ -876,7 +876,7 @@ signtool verify /pa /v /tw "C:\Program Files\EndpointAgent\endpoint-agent.exe"
 |---|---|---|
 | BE-019 PR | <#N> | backend repo |
 | BE-019 status | MERGED / source-ready / backlog | platform-backend tracking-roadmap |
-| Retention policy enforced (live) | yes / no / partial | backend smoke evidence |
+| Retention policy enforced (live) | yes / no | backend smoke evidence (binary — `live` semantic sadece "enforce ediliyor mu / etmiyor mu"; nuanced gap `TTL match` alanı `partial` ile taşınır) |
 | Per-data-category retention TTL match §12.2 | yes / partial / no | backend integration test ref — `partial` durumunda affected categories list + manual gap ref (operator-side documentation) zorunlu |
 
 **Aggregate**: BE-019 MERGED + live enforcement + §12.2 TTL match = A2 rollup eligible. BE-019 pending durumunda A2 rollup verdict en fazla **PARTIAL** + explicit "BE-019 unlock gate not satisfied; BYOD acceptance defer" rationale.
