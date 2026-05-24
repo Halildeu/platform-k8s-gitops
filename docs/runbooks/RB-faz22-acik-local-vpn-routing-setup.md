@@ -63,17 +63,64 @@ Eğer 1-2 fail ise: Mac VPN DNS config eksik; VPN client settings'inde "Use DNS 
 
 ---
 
-## 3. Parallels VM network mode setup
+## 3. Parallels VM network mode karar ağacı
 
-### 3.1 Network mode trade-off
+> **Codex iter-2 MEDIUM 3 absorb** (2026-05-24): Bridged'i default önerilen yapmak yanıltıcı olabilir — çoğu kurumsal VPN istemcisi (Cisco AnyConnect, Pulse Secure, vb.) host'tan tunnel açar ve bridged VM otomatik olarak VPN tunnel'a dahil olmaz; VM fiziksel LAN'da ayrı cihaz gibi kalır. Bu durumda NAT'tan vazgeçilip daha kötü bir yola düşülebilir. Aşağıdaki karar ağacını sırayla uygula.
 
-| Option | Avantaj | Dezavantaj | Önerilen |
-|---|---|---|---|
-| **A. Bridged** | VM physical Ethernet ile aynı subnet IP alır; Mac VPN routing pass-through; en az config | VM dış DHCP'den IP alır (corp ya da home network DHCP); IP değişir; firewall path farklı | ✅ **Önerilen** |
-| **B. NAT + custom routing** | VM Parallels NAT subnet'inde kalır; mevcut IP `10.211.55.3` korunur | Mac VPN gateway'i Parallels NAT'a forward etmesi gerek; complex routing config | Karmaşık |
-| **C. VM içinden VPN client** | VM doğrudan VPN'e bağlanır (Mac VPN'siz) | VM içine VPN credentials geçir gerek; client install Windows-side | Credential exposure riski; ileri tur |
+### 3.1 Karar ağacı (önce daha az invaziv yol)
 
-**Önerilen pattern**: Option A (Bridged) — basit + reproducible.
+**Adım 1 — Mac VPN connected + Parallels Shared (NAT) + VM corp DNS** (önce dene):
+
+1. Mac VPN client aktif (§2.2)
+2. Parallels VM network mode **NAT** kalır (mevcut `Shared Network`)
+3. VM içinde DNS server'ı corp DNS IP'sine çevir (§4 `Set-DnsClientServerAddress`)
+4. Helper script çalıştır (§5) → DNS resolve test
+5. **PASS** → §7 pass criteria + pilot smoke; **FAIL** → Adım 2'ye geç
+
+Bu yol bazı VPN client'larında çalışır (e.g. Tailscale subnet routing + Magic DNS, OpenVPN `--dhcp-option DNS`, native macOS L2TP/IPsec). Mac host VPN DNS resolver'ı yapıyorsa ve Parallels NAT gateway forward ediyorsa Adım 1 yeterli.
+
+**Adım 2 — VPN istemcisinin VM/NAT forwarding politikasını kontrol et**:
+
+- Cisco AnyConnect: "Tunnel All DNS over Tunnel" enable veya per-domain `acik.local` allow
+- OpenVPN: `--dhcp-option DOMAIN acik.local` + `--dhcp-option DNS <corp-dns>` directive
+- Pulse Secure: Split DNS policy → `acik.local` corp DNS
+- WireGuard: `AllowedIPs` + `DNS` directive
+- Tailscale: `MagicDNS` + tag-based ACL
+
+Bu config VPN tarafı (operator/IT admin); agent dokunmaz. Sonra Adım 1'i tekrar dene.
+
+**Adım 3 — Parallels Bridged mode (yalnız VPN/LAN politikası destekliyorsa)**:
+
+> ⚠️ **Bridged sadece VPN istemcisi bridged interface'i tunnel'a dahil ediyorsa anlamlı.** Çoğu kurumsal VPN'de bu **otomatik değil**. Bridged'e geçmeden önce operator/IT'ten "bridged VM VPN tunnel kullanabilir mi?" yanıtı al.
+
+Eğer VPN bridged'i destekliyorsa:
+
+**Parallels Desktop GUI**:
+1. VM → Configure → Hardware → Network → Source
+2. "Shared Network" (NAT) → **"Bridged Network"** → Default Adapter
+3. Apply + VM restart (network mode hot-swap güvenli değil)
+
+veya **CLI** (`prlctl set`):
+```bash
+prlctl set "Windows 11" --device-set net0 --type bridged --iface en0
+prlctl restart "Windows 11"
+```
+
+**Adım 4 — VM içinden VPN client** (son seçenek, credential-riskli):
+
+VM içine VPN credentials geçir + Windows VPN client install. **HARD RULE — Kullanıcı Aktif Credential'ına Dokunma**: VPN credentials kullanıcı manual; agent dokunmaz. Bu seçeneği **sadece** Adım 1-3 hepsi fail ettiğinde + operator açık karar verirse uygula.
+
+### 3.2 Post-config VM IP verify
+
+```powershell
+# VM içinde (yeni network config sonrası):
+Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway } | `
+  Select-Object InterfaceAlias, IPv4Address, IPv4DefaultGateway, DNSServer
+```
+
+- Adım 1 (NAT) sonrası: VM IP hâlâ `10.211.55.X`, DNS corp DNS IP
+- Adım 3 (Bridged) sonrası: VM IP physical Ethernet subnet (corp `10.X.X.X` veya home `192.168.X.X`); default gateway corp/home router
+- Adım 4 (VM-side VPN) sonrası: VM additional virtual adapter (utun/tap) + VPN-assigned IP
 
 ### 3.2 Parallels Bridged mode setup
 
