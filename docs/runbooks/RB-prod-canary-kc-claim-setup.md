@@ -18,9 +18,12 @@ Bu **beklenen davranış**: strict-mode + KVKK 12.B multi-tenancy guard LIVE. Re
 
 ## Adımlar
 
-### 1. Keycloak realm: `acik` (prod)
+### 1. Keycloak realm: `serban` (prod)
 
-Realm console: `https://ai.acik.com/auth/admin/master/console/#/acik`
+> **Drift fix 2026-05-25 (BL-010 prod execute — Codex `019e5bfb` AGREE)**: Eski yazım `acik` realm DRIFT idi (`acik` realm yok; canonical `serban`). External URL `/auth/realms/...` prefix de drift (host nginx config `/home/halil/platform/web/nginx/default.conf` `proxy_pass http://127.0.0.1:8081` direkt `/realms/...` map eder). Detay: `docs/faz-23-evidence/2026-05-25-bl010-prod-kc-org-id-mapper-serban.md`.
+
+Realm console: `https://ai.acik.com/admin/master/console/#/serban` (NOT `/auth/admin/...` — drift fix)
+Realm well-known: `https://ai.acik.com/realms/serban/.well-known/openid-configuration` (HTTP 200; issuer `https://ai.acik.com/realms/serban`)
 
 ### 2. User'a `org_id` attribute ekle
 
