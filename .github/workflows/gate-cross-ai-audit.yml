@@ -25,14 +25,9 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 #     Codex Q5 hardening — minimal grant.
 #   * Job name `cross-ai-audit` is preserved so the branch-protection ruleset
 #     context (PMD §2.10 must-pass list) matches without rename.
-#   * `labeled` / `unlabeled` events added so a future label-aware audit hook
-#     (`automation-exempt` / `cross-ai-override` semantics) re-runs without a
-#     synthetic edit. Today the audit is label-agnostic — re-run is harmless
-#     (idempotent: PR body fields unchanged → same verdict). When the script
-#     gains label-aware logic, this trigger is the wiring already in place.
 #   * `concurrency` block cancels superseded runs on the same PR — guards
-#     against label-spam DoS (an attacker rapid-toggling a label cannot pile
-#     up N parallel audit runs to exhaust CI minutes).
+#     against rapid `synchronize` push churn (an attacker or noisy author
+#     cannot pile up N parallel audit runs to exhaust CI minutes).
 #   * `ready_for_review` is deliberately omitted — an auto-* automation PR is
 #     opened DRAFT by a bot (auto-promotion/ prod candidates) and an operator
 #     marks it ready. The automation-exemption gate rejects human-triggered
@@ -55,16 +50,31 @@ on:
       - edited
       - synchronize
       - reopened
-      - labeled
-      - unlabeled
+      # #842 follow-up cleanup (Codex thread 019e5b85, 2026-05-24):
+      # `labeled` / `unlabeled` triggers REMOVED. The audit script is
+      # currently label-agnostic (pr-cross-ai-audit.mjs reads PR body fields
+      # only, not labels). Under label events the GitHub `sender` flips to
+      # whoever toggled the label — usually a human operator. For
+      # automation PRs (auto-promotion/, auto-test-overlay/, auto-verified/)
+      # the audit script's `auditAutomation` mode requires BOTH the PR
+      # author AND the event sender to be in the prefix-specific bot
+      # allowlist (pr-cross-ai-audit.mjs `auditAutomation` actor check).
+      # A human labeling an automation PR therefore turns a previously-
+      # green `cross-ai-audit` check RED on the very same content — a
+      # false-negative governance failure, not a real audit failure.
+      # The inverse risk (human launders a prior malicious `synchronize`
+      # by toggling a label) is also blocked by removing these triggers.
+      # When the audit script gains genuine label-aware semantics, this
+      # block should be re-added with the matching script logic in the
+      # SAME PR (atomic wiring + behavior), not pre-wired ahead.
 
 permissions:
   contents: read
   pull-requests: read
 
-# #842 Codex 019e42c7 Q8: label-spam DoS guard — cancel superseded runs.
-# Per-PR concurrency group; the `labeled`/`unlabeled` rapid-toggle attack
-# cannot accumulate parallel audit runs.
+# #842 Codex 019e42c7 Q8: concurrency guards parallel runs on the same PR.
+# Per-PR concurrency group; superseded runs are cancelled on `synchronize`
+# so rapid push churn does not exhaust CI minutes.
 concurrency:
   group: cross-ai-audit-${{ github.event.pull_request.number }}
   cancel-in-progress: true
