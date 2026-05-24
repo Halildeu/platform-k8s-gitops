@@ -6,7 +6,11 @@
     "kind": "openfga-server",
     "canonical_source_ref": "openfga://platform-test/authorization-models/01KS8QE8T1EJ2DF5CRS4VV9YX1"
   },
-  "runtime_selector": null,
+  "runtime_selector": {
+    "selector_kind": "vault",
+    "vault_path": "kv/platform/openfga",
+    "field": "model_id"
+  },
   "promotion": {
     "test": {
       "status": "promoted",
