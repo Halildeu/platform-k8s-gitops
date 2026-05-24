@@ -101,17 +101,26 @@ Overlay desired (around line 2427-2483 post-#1007; final digest at `kustomize/ov
 
 1. **`platform-web` #648 follow-up cleanup** (P3, opsiyonel): notify shim'i `apps/mfe-shell/src/features/notifications/api/notify-request-fetch-fn.ts` ile endpoint-admin'in `unwrap-request-fetch-fn.ts` kopyasını birleştirip `packages/shared-http`'a taşımak. Bekleyen blokaj: MF singleton sharing endpoint-admin için çalışmıyor (#657 forensics). Cross-MFE shared package import path tasarımı gerekli. Effort: 4-6h, separate session.
 
-2. **`platform-k8s-gitops` PLAN.md row 37 ufuk** (P3, opsiyonel): 22.1 Web runtime acceptance 98% — kalan 2% IT pilot + Windows fresh smoke + BE-011 lifecycle smoke = operator-bound. PLAN.md ufuk satırı güncellenmeli ama bu Faz 22 overall %'sını değiştirmiyor (overall stays 🟡).
+2. **`platform-k8s-gitops` PLAN.md row 37 ufuk** (P3, opsiyonel): 22.1 Web runtime acceptance 98% — 2026-05-24 post-handoff block (gitops #1021 MERGED) Windows fresh smoke + BE-011 lifecycle smoke kapatıldı; kalan 2% sadece Faz 22.2 IT pilot (operator-bound: `acik.local` domain-joined PC onboarding). BE-017 formal dual-control matrix de agent-actionable kapı olarak ayrıca P1 altında listelendi. PLAN.md ufuk satırı bu deltayı yansıtmalı; Faz 22 overall %'sını değiştirmiyor (overall stays 🟡).
 
-### P1 timer-bound / blocker-bound (operator queue)
+### P1 — 2026-05-24 post-handoff block closed (yan-kanıt → resmi-kanıt)
+
+| Item | Status |
+|---|---|
+| platform-agent#8 Windows fresh smoke | ✅ **DONE 2026-05-24** — fresh Parallels Windows 11 (HALILKOOLUB735) live smoke: install/service/diagnose/uninstall full chain pass; build SHA `53a45b63…` (main HEAD `2e49f8b` post BE-011 wire reconciliation); AG-013 capability coherence verified live (`DISABLE_LOCAL_USER`/`ENABLE_LOCAL_USER` correctly absent post-fix). Evidence: gitops PR #1021 MERGED + platform-agent PR #10 MERGED (TRACKING-ROADMAP.md AG-013 row → "Verified 2026-05-24"). |
+| BE-011 real agent lifecycle smoke | ✅ **DONE 2026-05-24** — resmi rerun + audit row capture: device `d0efb00a-…` enrolled, heartbeat 30s poll, `COLLECT_INVENTORY` command `8181f20a-…` QUEUED→deliveredAt→startedAt→SUCCEEDED (~65s queue-to-complete), result payload populated, audit row `b3cf5210-…` inserted. Evidence: gitops PR #1021 MERGED (`docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md`). |
+
+### P1 — operator queue (operator-bound, timer-bound / blocker-bound)
 
 1. **#1012 D43 Slack webhook** — operator creates `#alerts-d43-drill` channel + webhook URL → Vault seed `kv/platform/notify-d43-drill/slack_webhook_url` → helm-values switch → drill rerun. Once Slack leg validates, R9 risk register → `🟢 Mitigated`.
-2. **platform-agent#8 Windows fresh smoke** — fresh Windows VM + AG-013 capability coherence fix proof.
-3. **BE-011 real agent lifecycle smoke** — yan-kanıt yakalandı; resmi rerun + audit row capture.
-4. **Faz 22.2 IT pilot** — `acik.local` EndpointPilot OU setup + IT-owned Windows cihaz onboarding.
-5. **M7 T4.3.5 FBL mailbox** — `RB-fbl-mailbox-activation.md`'a göre operator IMAP credential + worker enable.
-6. **M7 T4.3.7 DB RO role** — Per-template analytics aktivasyonu için operator DB RO role grant.
-7. **M7 R11 formal Close** — ≥30 day no-regression soak baseline post-prod-cutover.
+2. **Faz 22.2 IT pilot** — `acik.local` EndpointPilot OU setup + IT-owned Windows cihaz onboarding. (Runbook ready: `docs/runbooks/RB-faz22-endpoint-pilot-it-owned.md` gitops PR #1016 MERGED.)
+3. **M7 T4.3.5 FBL mailbox** — `RB-fbl-mailbox-activation.md`'a göre operator IMAP credential + worker enable.
+4. **M7 T4.3.7 DB RO role** — Per-template analytics aktivasyonu için operator DB RO role grant.
+5. **M7 R11 formal Close** — ≥30 day no-regression soak baseline post-prod-cutover.
+
+### P1 — agent-actionable carry-over (new)
+
+1. **BE-017 formal dual-control matrix** — destructive command (e.g. `LOCK_USER_LOGIN`) 5-step formal smoke (create → pending → self-approval deny → second-admin approve → audit insert with full chain). Bu PR #1021 smoke'unda `COLLECT_INVENTORY` (non-destructive, `approvalStatus=NOT_REQUIRED`) ile yapıldı; destructive flow yan-kanıt değil ayrı kapı. **Agent-actionable**: backend smoke drivable with two test personas + audit row read; herhangi bir operator credential, domain join veya VM erişimi gerekmiyor.
 
 ### P2-P3 sonraki sprint (yeni domain)
 
@@ -128,7 +137,7 @@ bash scripts/board-sync.sh list                         # board state (Backlog s
 git log --oneline main -10                              # recent commit chain
 ```
 
-İçerik: Faz 22 + Faz 23 M7 agent scope tamamen tüketildi (kümülatif 11 PR + bu session block 4 PR + önceki block 7 PR). Kalan iş operator queue veya farklı faz domain'i.
+İçerik: Faz 22 + Faz 23 M7 ana scope agent tarafından kümülatif 11 + 4 + 7 = 22 PR ile yürütüldü. 2026-05-24 post-handoff block 4 ek PR (platform-agent #10 + gitops #1016/#1017/#1021): P1 operator queue 2 item (#8 Windows smoke + BE-011 lifecycle) yan-kanıt → resmi-kanıt'a yükseltildi. **Agent-actionable kalan**: BE-017 formal dual-control matrix (P1 agent-actionable carry-over alt-bölümü item 1). Diğer kalan iş operator-bound (yukarıdaki operator queue) veya farklı faz domain'i (P2-P3).
 
 ---
 
