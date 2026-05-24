@@ -748,13 +748,27 @@ Per-device explicit count (§11.2) tamamen agent script ile toplandıktan sonra 
 
 ```
 # Heartbeat success rate (pilot-wide)
-SUM(heartbeat_count_24h_per_device) / (N_devices × expected_heartbeat_per_24h)
-  where expected_heartbeat_per_24h = 86400 / 30 = 2880 (default 30s interval)
-  acceptance: ≥ 99% (allows ~28 missed beats per device per 24h)
+SUM(actual_heartbeat_count_24h_per_device) / SUM(expected_heartbeat_24h_per_device)
+  where expected_heartbeat_24h_per_device = 86400 / heartbeat_interval_seconds_per_device
+                                          = 2880 if interval = 30s (default)
+  rationale: per-device heartbeat interval §14.2 §3'te kayıtlı; default 30s ama
+             küçük lab variasyonları olabilir (örn. 60s ile başlatılan device).
+             Sabit `N × 2880` denominator yanlış olur eğer bir device farklı
+             interval ile çalışıyorsa.
+  acceptance: ≥ 99% (allows ~28 missed beats per device per 24h @ 30s default)
 
-# Command success rate (pilot-wide)
+# Command terminal/accounted rate (pilot-wide)
+SUM(terminated_command_count_per_device) / SUM(total_planned_command_count_per_device)
+  where terminated = SUCCEEDED ∪ FAILED-with-explained-reason
+  acceptance: 100% (no command may be left in CREATED/RUNNING/UNKNOWN after soak window)
+
+# Command success rate (pilot-wide) — strict
 SUM(succeeded_command_count_per_device) / SUM(total_planned_command_count_per_device)
-  acceptance: 100% (each non-destructive command must terminate SUCCEEDED or FAILED-with-explained-reason)
+  acceptance: ≥ 95% (≤ 5% FAILED-with-explained-reason tolerated; absolute SUCCEEDED count
+              critical for repeatability)
+  rationale: FAILED-with-explained-reason terminal'dir (accounted) ama success
+             değildir. Per-device gate'te accounted ama PASS verdict'e success-rate
+             katkı sıfırdır. Pilot-wide aggregate'te ayrı tracked.
 
 # Soak gap incidents (pilot-wide)
 SUM(unexplained_offline_gap_count_per_device WHERE gap > 30m AND not in declared_sleep_window)
@@ -768,8 +782,19 @@ Küçük N pilot için **per-device gate** öncelikli, aggregate threshold ikinc
 | Verdict | Rule |
 |---|---|
 | **PASS** | ALL devices PASS at §14.2 acceptance (per-device explicit count §11.2 + soak §11.1) AND aggregate metrics within §14.5 threshold |
-| **PARTIAL** | ≥ 2/3 (= 66.7%) devices PASS; failed device root cause documented + isolated (not systemic agent bug); aggregate metrics within threshold if failed device excluded |
-| **FAIL** | < 2/3 devices PASS OR systemic agent bug (crash/uninstall/tamper) on any device OR aggregate metrics below threshold even after isolated device exclusion |
+| **PARTIAL** | `pass_devices >= ceil(2 × N_devices / 3)` (örn. 3-device pilot için ≥2 PASS; 4-device için ≥3 PASS; 6-device için ≥4 PASS) AND failed device(s) ALL satisfy §14.5.1 isolation checklist below AND aggregate metrics within threshold when failed device(s) excluded |
+| **FAIL** | `pass_devices < ceil(2 × N_devices / 3)` OR ANY isolation checklist item fails for ANY failed device OR systemic agent bug (crash/uninstall/tamper) on any device OR aggregate metrics below threshold even after isolated device exclusion |
+
+##### 14.5.1 Isolation checklist (PARTIAL verdict objective criteria)
+
+PARTIAL kararı verilebilir ancak failed device(s) için **TÜM** aşağıdaki maddeler kanıtlanırsa. **Eksik bir madde = FAIL** (sübjektif "operator inisiyatifi" yok).
+
+- [ ] **Incident scope**: Failed device per-device evidence doc §5'te exact incident tipi + zaman aralığı + count dokümante (örn. "unexplained offline gap 45m at 2026-05-29T14:23Z—15:08Z")
+- [ ] **Agent build parity**: Failed device ile en az 2 peer PASS device'da **aynı** `endpoint-agent.exe SHA256` (§14.2 §2 build provenance ile cross-check)
+- [ ] **Command set parity**: Failed device ile peer PASS device'larda **aynı** planned command set koşturuldu (§14.2 §4 smoke list ile cross-check)
+- [ ] **No matching error signature**: Peer PASS device'ların audit/heartbeat/agent log'larında failed device'ın error signature'ı (exception class, stack trace head, log message head) **bulunmuyor**
+- [ ] **Host/operator-specific causality**: Failed device'ın incident nedeni host-specific veya operator-specific olarak kanıtlı (örn. host laptop sleep undeclared; operator network outage; VM provisioning artifact)
+- [ ] **Aggregate restoration**: Failed device exclude edildiğinde §14.5 üç metric (heartbeat / command terminal / soak gap) tümü threshold dahilinde
 
 **Rollback signal**: FAIL verdict → §15.2 pilot-wide rollback initiated; root cause analysis cross-AI review (Codex) per §17.
 
