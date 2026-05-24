@@ -63,25 +63,73 @@ Eğer 1-2 fail ise: Mac VPN DNS config eksik; VPN client settings'inde "Use DNS 
 
 ---
 
-## 3. Parallels VM network mode setup
+## 3. Parallels VM network mode karar ağacı
 
-### 3.1 Network mode trade-off
+> **Codex iter-2 MEDIUM 3 absorb** (2026-05-24): Bridged'i default önerilen yapmak yanıltıcı olabilir — çoğu kurumsal VPN istemcisi (Cisco AnyConnect, Pulse Secure, vb.) host'tan tunnel açar ve bridged VM otomatik olarak VPN tunnel'a dahil olmaz; VM fiziksel LAN'da ayrı cihaz gibi kalır. Bu durumda NAT'tan vazgeçilip daha kötü bir yola düşülebilir. Aşağıdaki karar ağacını sırayla uygula.
 
-| Option | Avantaj | Dezavantaj | Önerilen |
-|---|---|---|---|
-| **A. Bridged** | VM physical Ethernet ile aynı subnet IP alır; Mac VPN routing pass-through; en az config | VM dış DHCP'den IP alır (corp ya da home network DHCP); IP değişir; firewall path farklı | ✅ **Önerilen** |
-| **B. NAT + custom routing** | VM Parallels NAT subnet'inde kalır; mevcut IP `10.211.55.3` korunur | Mac VPN gateway'i Parallels NAT'a forward etmesi gerek; complex routing config | Karmaşık |
-| **C. VM içinden VPN client** | VM doğrudan VPN'e bağlanır (Mac VPN'siz) | VM içine VPN credentials geçir gerek; client install Windows-side | Credential exposure riski; ileri tur |
+### 3.1 Karar ağacı (önce daha az invaziv yol)
 
-**Önerilen pattern**: Option A (Bridged) — basit + reproducible.
+**Adım 1 — Mac VPN connected + Parallels Shared (NAT) + VM corp DNS** (önce dene):
 
-### 3.2 Parallels Bridged mode setup
+1. Mac VPN client aktif (§2.2)
+2. Parallels VM network mode **NAT** kalır (mevcut `Shared Network`)
+3. VM içinde DNS server'ı corp DNS IP'sine çevir (§4 `Set-DnsClientServerAddress`)
+4. Helper script çalıştır (§5) → DNS resolve test
+5. **PASS** → §7 pass criteria + pilot smoke; **FAIL** → Adım 2'ye geç
+
+Bu yol bazı VPN client'larında çalışır (e.g. Tailscale subnet routing + Magic DNS, OpenVPN `--dhcp-option DNS`, native macOS L2TP/IPsec). Mac host VPN DNS resolver'ı yapıyorsa ve Parallels NAT gateway forward ediyorsa Adım 1 yeterli.
+
+**Adım 2 — VPN istemcisinin VM/NAT forwarding politikasını kontrol et**:
+
+- Cisco AnyConnect: "Tunnel All DNS over Tunnel" enable veya per-domain `acik.local` allow
+- OpenVPN: `--dhcp-option DOMAIN acik.local` + `--dhcp-option DNS <corp-dns>` directive
+- Pulse Secure: Split DNS policy → `acik.local` corp DNS
+- WireGuard: `AllowedIPs` + `DNS` directive
+- Tailscale: `MagicDNS` + tag-based ACL
+
+Bu config VPN tarafı (operator/IT admin); agent dokunmaz. Sonra Adım 1'i tekrar dene.
+
+**Adım 3 — Parallels Bridged mode (yalnız VPN/LAN politikası destekliyorsa)**:
+
+> ⚠️ **Bridged sadece VPN istemcisi bridged interface'i tunnel'a dahil ediyorsa anlamlı.** Çoğu kurumsal VPN'de bu **otomatik değil**. Bridged'e geçmeden önce operator/IT'ten "bridged VM VPN tunnel kullanabilir mi?" yanıtı al.
+
+Eğer VPN bridged'i destekliyorsa:
 
 **Parallels Desktop GUI**:
-1. VM seçili → **Configure** (gear icon) veya `Cmd+,`
-2. **Hardware** → **Network** → Source
-3. Mevcut "Shared Network" (NAT) → değiştir → **"Bridged Network"** → **Default Adapter** seç (Ethernet/Wi-Fi)
-4. Apply + VM **restart** gerek (network mode değişimi runtime hot-swap güvenli değil)
+1. VM → Configure → Hardware → Network → Source
+2. "Shared Network" (NAT) → **"Bridged Network"** → Default Adapter
+3. Apply + VM restart (network mode hot-swap güvenli değil)
+
+veya **CLI** (`prlctl set`):
+```bash
+prlctl set "Windows 11" --device-set net0 --type bridged --iface en0
+prlctl restart "Windows 11"
+```
+
+**Adım 4 — VM içinden VPN client** (son seçenek, credential-riskli):
+
+VM içine VPN credentials geçir + Windows VPN client install. **HARD RULE — Kullanıcı Aktif Credential'ına Dokunma**: VPN credentials kullanıcı manual; agent dokunmaz. Bu seçeneği **sadece** Adım 1-3 hepsi fail ettiğinde + operator açık karar verirse uygula.
+
+### 3.2 Post-config VM IP verify
+
+```powershell
+# VM içinde (yeni network config sonrası):
+Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway } | `
+  Select-Object InterfaceAlias, IPv4Address, IPv4DefaultGateway, DNSServer
+```
+
+- Adım 1 (NAT) sonrası: VM IP hâlâ `10.211.55.X`, DNS corp DNS IP
+- Adım 3 (Bridged) sonrası: VM IP physical Ethernet subnet (corp `10.X.X.X` veya home `192.168.X.X`); default gateway corp/home router
+- Adım 4 (VM-side VPN) sonrası: VM additional virtual adapter (utun/tap) + VPN-assigned IP
+
+### 3.3 Bridged command reference (yalnız Adım 3 sonrası — VPN/LAN politikası onayladıysa)
+
+> Bu komut bloğu **bağımsız bir yol değildir**; sadece §3.1 karar ağacında Adım 3'e ulaşıldıysa (VPN istemcisi bridged VM'i tunnel'a dahil ediyorsa + operator/IT açık onayı varsa) referans olarak kullan.
+
+**Parallels Desktop GUI**:
+1. VM → Configure → Hardware → Network → Source
+2. "Shared Network" (NAT) → **"Bridged Network"** → Default Adapter
+3. Apply + VM restart (hot-swap güvenli değil)
 
 veya **CLI** (`prlctl set`):
 ```bash
@@ -90,16 +138,6 @@ prlctl set "Windows 11" --device-set net0 --type bridged --iface en0
 
 prlctl restart "Windows 11"
 ```
-
-### 3.3 Post-restart VM IP verify
-
-```powershell
-# VM içinde (Bridged mode sonrası):
-Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway } | `
-  Select-Object InterfaceAlias, IPv4Address, IPv4DefaultGateway, DNSServer
-```
-
-Beklenen: VM artık `10.211.55.X` Parallels NAT subnet'inde değil; physical Ethernet subnet'inde (örn. corp `10.X.X.X` veya home `192.168.X.X`). Default gateway corp ya da home router.
 
 ---
 
@@ -182,7 +220,7 @@ Script `$EVIDENCE_DIR/` altına:
 | Failure | Sebep | Çözüm |
 |---|---|---|
 | `Resolve-DnsName acik.local` EMPTY | VM DNS server corp DNS değil; veya corp DNS reachable değil | §4.1 `Set-DnsClientServerAddress` + Mac VPN connected verify |
-| `nltest /dsgetdc:acik.local` `ERROR_NO_SUCH_DOMAIN` | Domain controller reachable değil; DNS resolve fail veya DC down | §3 Bridged mode + §4 DNS config + Mac VPN active |
+| `nltest /dsgetdc:acik.local` `ERROR_NO_SUCH_DOMAIN` | Domain controller reachable değil; DNS resolve fail veya DC down | §3 karar ağacı (önce Adım 1 NAT + corp DNS; sonra Adım 2 VPN policy; Bridged yalnız VPN/LAN destekliyorsa Adım 3) + §4 DNS config + Mac VPN active |
 | `Test-NetConnection <DC> -Port 88` FAIL | Kerberos port block (firewall) | Corp firewall rule ekle (operator); veya VPN ACL'ında 88 izinli olduğunu verify |
 | `Test-NetConnection <DC> -Port 389` FAIL | LDAP port block | Aynı (firewall ACL) |
 | `w32tm /query /status` clock skew > 5 dk | Time sync fail (Kerberos için kritik) | `w32tm /resync /force`; corp NTP server config |
