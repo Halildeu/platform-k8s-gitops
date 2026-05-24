@@ -472,10 +472,10 @@ curl -s http://127.0.0.1:9093/api/v2/alerts | \
 `docs/faz-23-evidence/2026-XX-XX-<scope>-d43-drill.md` içerik:
 - Pre-drill snapshot (pod state, ESO sync, PrometheusRule list)
 - Drill execution timeline (UTC timestamps)
-- Step 5-8 outputs (curl, kubectl, **mock POST log OR Slack channel screenshot**, Mailpit screenshot)
+- Step 5-8 outputs (curl, kubectl, Mailpit screenshot — SMTP-only per user decision 2026-05-24 Slack DEFER; historical Slack mock POST log/screenshot audit-only)
 - Recovery snapshot
-- 10-criteria checklist (her step ✅) — scope-aware: mock-receipt OR real-Slack OR prod-activation
-- Scope qualifier: "mock-receipt drill" / "real Slack workspace drill" / "prod activation triple-receipt"
+- 10-criteria checklist (her step ✅) — scope-aware: SMTP-only D43 v1 acceptance gate or prod-activation
+- Scope qualifier: "SMTP-only D43 v1 drill" / "prod activation DUAL receipt (SMTP + GitHub Issue bridge)" — historical "Slack workspace drill" / "triple-receipt" wording superseded per user decision 2026-05-24
 
 Referans canlı evidence örnekleri:
 - 2026-05-24 BL-008 mock-receipt drill: `docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md`
@@ -484,12 +484,14 @@ Referans canlı evidence örnekleri:
 ### Step 10: R9 risk register status update
 
 `docs/notify/risk-register.md`:
-- Per-scope status:
-  - **Test cluster mock-receipt drill**: 🟡 partial → 🟢 Mitigated (mock-receipt) — DUAL receipt evidence (Mailpit SMTP + webhook-receiver POST 200)
-  - **Real Slack workspace**: pending board #853 ops slot
-  - **Prod activation**: pending board #854 owner-gated
+- Current status (post-2026-05-24 user decision Slack DEFER; Codex `019e5b9c` REVISE absorb):
+  - **R9**: 🟢 Mitigated (SMTP-only D43 v1; Slack DEFER per user decision 2026-05-24)
+  - **Active mitigation**: Alertmanager direct-fallback SMTP receiver (notification-orchestrator-independent credentials)
+  - **Historical drill evidence** (audit-only, no longer v1 acceptance gate): 2026-05-10 first controlled drill SMTP receipt + BL-008 mock-receipt dual drill 2026-05-24
+  - **Prod activation**: board #854 SMTP-only rescope operator-bound
+  - **Slack-dependent boards**: #853 + #1012 DEFER (not-planned for v1)
 - Last review tarihi güncellenir
-- Dil disiplini (Codex `019e5aaf` REVISE absorb): "mitigated by mock-receipt drill — real Slack workspace + prod activation ayrı operator-external". "Mitigated by first controlled drill" overclaim YASAK (mock-only kapsamla sınırlı).
+- Dil disiplini: "SMTP-only D43 v1 accepted; Slack DEFER". "Real Slack workspace receipt" / "triple-receipt" / "mock dual-receipt v1 acceptance" wording YASAK (historical drill audit-only). Future Slack reactivation atomic with active config re-add + drill rerun + R9 update.
 
 ---
 
@@ -506,9 +508,16 @@ helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
 
 ## 6.5 Prod D43 Activation (owner-gated, post PR-1 staged config)
 
-> Codex thread `019e4234` Session 42 verdict — `ready_for_prod_activation=false`
-> until owner artifacts arrive; cluster activation must follow `helm upgrade`
-> sequenced with Vault seed completion.
+> **⚠️ DEFERRED / DO NOT EXECUTE AS WRITTEN** (2026-05-24 Slack DEFER absorb pending continuation PR):
+> §6.5.3-§6.5.7 sub-sections below contain pre-2026-05-24 Slack/triple-receipt wording with known stale expectations (Slack receiver verify, 5-key secret mount expectations, triple delivery acceptance, Slack screenshot evidence requirements). These pre-decision instructions are **NOT** the current v1 acceptance procedure.
+>
+> **Current v1 acceptance** (per user decision 2026-05-24 Slack DEFER + Codex `019e5b9c` REVISE absorb): Alertmanager direct-fallback SMTP receiver only. Acceptance = §6.5.6 DUAL receipt (SMTP + GitHub Issue bridge). 4 Vault keys (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD). No Slack receiver verify, no Slack screenshot evidence, no triple-receipt acceptance.
+>
+> **Operator action**: Board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) (SMTP-only prod activation rescope) MUST be the activation authority. The §6.5.3-§6.5.7 sub-sections below will be rewritten in a follow-up canonical-surface PR before operator activation. Until then, do not execute §6.5.x commands or accept the stale §6.5.6 TRIPLE receipt wording as current acceptance.
+>
+> Follow-up tracker: After Lane A (PR #1051) merge, new GitHub issue will be opened for "Faz 23 D43 SMTP-only canonical surface continuation" covering RB §6.5.x rewrite + PLAN.md row 38 D43/D46 satırları + ADR-0013 amendment block + feature-matrix.md / RB-faz-23-charter.md supersession notes.
+
+> Codex thread `019e4234` Session 42 verdict (HISTORICAL — superseded 2026-05-24 per user decision Slack DEFER; Codex `019e5b9c` REVISE absorb): `ready_for_prod_activation=false` until owner artifacts arrive; cluster activation must follow `helm upgrade` sequenced with Vault seed completion.
 
 ### 6.5.1 Pre-activation gates
 
