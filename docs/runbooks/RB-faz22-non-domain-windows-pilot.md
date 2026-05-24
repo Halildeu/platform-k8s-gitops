@@ -669,6 +669,136 @@ Verdict: AGREE / PARTIAL / REVISE
 - Test persona JWT only (backend admin actions)
 ```
 
+### 14.3 Pilot-wide rollup evidence doc path
+
+`docs/faz-22-evidence/YYYY-MM-DD-non-domain-pilot-tier<A1/A2/A3/A4>-rollup.md`
+
+Path naming convention:
+- **Tier prefix**: `tierA1` (multi-device A1 repeatability), `tierA2` (multi-device BYOD), etc.
+- **One rollup per pilot scope**: A1 multi-VM rollup ≠ A2 BYOD rollup (ayrı doc; iki tier karışık dahil edilemez)
+- **Tracked by**: rollup ait olduğu pilot board issue (örn. #1044 A1 multi-VM repeatability)
+
+### 14.4 Pilot-wide rollup required fields
+
+Per-device evidence doc'ları (§14.1+§14.2) tamamlandıktan sonra agent rollup doc'ı doldurur. Operator infaz sırasında değil; **post-soak verification phase**.
+
+```markdown
+# Faz 22.2.A non-domain pilot rollup — Tier <A1/A2/A3/A4> multi-device
+
+> **Status**: PASS / PARTIAL / FAIL
+> **Tracked by**: <board issue #> (örn. #1044)
+> **Tier**: A1/A2/A3/A4 (per-device §14.2 §1 sınıflandırması ile tutarlı)
+> **Scope**: <minimum device count target> devices (örn. 3 = HALILKOOLUB735 + 2 fresh Parallels VM)
+> **Soak window**: <iso-start> → <iso-end> (minimum 24h; tercihen 72h)
+> **Codex thread**: <thread-id>
+
+## 1. Device summary table
+
+| # | Hostname (or pseudonym) | Tier (detected) | Per-device evidence doc | Status |
+|---|---|---|---|---|
+| 1 | <hostname-or-pseudonym> | A1/A2/A3/A4 | [link](./YYYY-MM-DD-non-domain-pilot-tierX-deviceY.md) | PASS/PARTIAL/FAIL |
+| 2 | ... | ... | ... | ... |
+| 3 | ... | ... | ... | ... |
+
+## 2. Aggregate metrics (per §14.5 formula)
+
+| Metric | Value | Acceptance threshold | Verdict |
+|---|---|---|---|
+| Heartbeat success rate (pilot-wide) | <%> | ≥99% (24h window per device) | PASS/PARTIAL/FAIL |
+| Command terminal/accounted rate (pilot-wide) | <%> | 100% (no CREATED/RUNNING/UNKNOWN after soak window) | PASS/PARTIAL/FAIL |
+| Command success rate (pilot-wide) | <%> | ≥95% (FAILED-with-explained-reason accounted but not success) | PASS/PARTIAL/FAIL |
+| Soak gap incidents (unexplained > 30m) | <count> | 0 required | PASS/PARTIAL/FAIL |
+| Repeatability gate | PASS / PARTIAL / FAIL | per §14.5 rule | computed |
+
+## 3. Acceptance verdict
+
+**Verdict**: PASS / PARTIAL / FAIL
+
+**Rationale** (1-3 sentences):
+- <why PASS — all devices stable, aggregate metrics within threshold>
+- <why PARTIAL — N/M devices pass, exception devices documented per-device evidence doc>
+- <why FAIL — repeatability gate fail; rollback initiated; root cause linked>
+
+## 4. Cross-device anomaly notes
+
+(opsiyonel — eğer bir device diğerlerinden anlamlı sapma gösterdiyse)
+
+| Device | Anomaly | Root cause (if known) | Action |
+|---|---|---|---|
+| <hostname> | <e.g. unexplained 45m offline gap day 2> | <e.g. host laptop sleep undeclared> | <e.g. annotated in per-device evidence §5, not pilot-wide regression> |
+
+## 5. Cross-AI peer review
+
+Implementer AI: Claude (Anthropic)
+Reviewer AI: Codex (OpenAI)
+Codex thread: <thread-id>
+Verdict: AGREE / PARTIAL / REVISE
+
+## 6. Boundary
+
+- Tier <A1/A2/A3/A4> scope only; other tier rollup ayrı doc
+- **NOT** prod-ready signal — A1 standalone lab repeatability ≠ A1 corporate fleet readiness
+- **NOT** rollout-ready signal — repeatability lab proof; gerçek rollout `BE-019` (KVKK retention) + signed binary (AG-018/AG-024) + EDR allowlist coordination gerek
+- 24-72h soak ≠ 30-day stability proof
+- Test persona JWT only; prod cluster pilot kapsamı dışı (gitops `#1037` ayrı kapı 22.2.B opsiyonel scope)
+```
+
+### 14.5 Aggregate metric formula (multi-VM küçük N için)
+
+Per-device explicit count (§11.2) tamamen agent script ile toplandıktan sonra rollup için aggregate computation:
+
+```
+# Heartbeat success rate (pilot-wide)
+SUM(actual_heartbeat_count_24h_per_device) / SUM(expected_heartbeat_24h_per_device)
+  where expected_heartbeat_24h_per_device = 86400 / heartbeat_interval_seconds_per_device
+                                          = 2880 if interval = 30s (default)
+  rationale: per-device heartbeat interval §14.2 §3'te kayıtlı; default 30s ama
+             küçük lab variasyonları olabilir (örn. 60s ile başlatılan device).
+             Sabit `N × 2880` denominator yanlış olur eğer bir device farklı
+             interval ile çalışıyorsa.
+  acceptance: ≥ 99% (allows ~28 missed beats per device per 24h @ 30s default)
+
+# Command terminal/accounted rate (pilot-wide)
+SUM(terminated_command_count_per_device) / SUM(total_planned_command_count_per_device)
+  where terminated = SUCCEEDED ∪ FAILED-with-explained-reason
+  acceptance: 100% (no command may be left in CREATED/RUNNING/UNKNOWN after soak window)
+
+# Command success rate (pilot-wide) — strict
+SUM(succeeded_command_count_per_device) / SUM(total_planned_command_count_per_device)
+  acceptance: ≥ 95% (≤ 5% FAILED-with-explained-reason tolerated; absolute SUCCEEDED count
+              critical for repeatability)
+  rationale: FAILED-with-explained-reason terminal'dir (accounted) ama success
+             değildir. Per-device gate'te accounted ama PASS verdict'e success-rate
+             katkı sıfırdır. Pilot-wide aggregate'te ayrı tracked.
+
+# Soak gap incidents (pilot-wide)
+SUM(unexplained_offline_gap_count_per_device WHERE gap > 30m AND not in declared_sleep_window)
+  acceptance: 0 incidents
+```
+
+#### Repeatability gate (PASS / PARTIAL / FAIL)
+
+Küçük N pilot için **per-device gate** öncelikli, aggregate threshold ikincil:
+
+| Verdict | Rule |
+|---|---|
+| **PASS** | ALL devices PASS at §14.2 acceptance (per-device explicit count §11.2 + soak §11.1) AND aggregate metrics within §14.5 threshold |
+| **PARTIAL** | `pass_devices >= ceil(2 × N_devices / 3)` (örn. 3-device pilot için ≥2 PASS; 4-device için ≥3 PASS; 6-device için ≥4 PASS) AND failed device(s) ALL satisfy §14.5.1 isolation checklist below AND aggregate metrics within threshold when failed device(s) excluded |
+| **FAIL** | `pass_devices < ceil(2 × N_devices / 3)` OR ANY isolation checklist item fails for ANY failed device OR systemic agent bug (crash/uninstall/tamper) on any device OR aggregate metrics below threshold even after isolated device exclusion |
+
+##### 14.5.1 Isolation checklist (PARTIAL verdict objective criteria)
+
+PARTIAL kararı verilebilir ancak failed device(s) için **TÜM** aşağıdaki maddeler kanıtlanırsa. **Eksik bir madde = FAIL** (sübjektif "operator inisiyatifi" yok).
+
+- [ ] **Incident scope**: Failed device per-device evidence doc §5'te exact incident tipi + zaman aralığı + count dokümante (örn. "unexplained offline gap 45m at 2026-05-29T14:23Z—15:08Z")
+- [ ] **Agent build parity**: Failed device ile en az 2 peer PASS device'da **aynı** `endpoint-agent.exe SHA256` (§14.2 §2 build provenance ile cross-check)
+- [ ] **Command set parity**: Failed device ile peer PASS device'larda **aynı** planned command set koşturuldu (§14.2 §4 smoke list ile cross-check)
+- [ ] **No matching error signature**: Peer PASS device'ların audit/heartbeat/agent log'larında failed device'ın error signature'ı (exception class, stack trace head, log message head) **bulunmuyor**
+- [ ] **Host/operator-specific causality**: Failed device'ın incident nedeni host-specific veya operator-specific olarak kanıtlı (örn. host laptop sleep undeclared; operator network outage; VM provisioning artifact)
+- [ ] **Aggregate restoration**: Failed device exclude edildiğinde §14.5 **dört** aggregate check (heartbeat success rate / command terminal/accounted rate / command success rate / soak gap incidents) **tümü** threshold dahilinde
+
+**Rollback signal**: FAIL verdict → §15.2 pilot-wide rollback initiated; root cause analysis cross-AI review (Codex) per §17.
+
 ---
 
 ## 15. Rollback / cleanup / decommission
