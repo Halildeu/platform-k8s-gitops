@@ -207,7 +207,7 @@ kubectl --context k3d-prod -n monitoring get externalsecret alertmanager-fallbac
 # Beklenen: True
 kubectl --context k3d-prod -n monitoring get secret alertmanager-fallback-secrets \
   -o json | jq '.data | to_entries | map({key, value_len: (.value | @base64d | length)})'
-# Beklenen: 5 keys, hepsi non-empty
+# Beklenen (current SMTP-only canonical state — ADR-0027 §D1 2026-05-25): 4 key (SMTP_HOST + SMTP_PORT + SMTP_USER + SMTP_PASSWORD), hepsi non-empty. TEAMS_WEBHOOK_URL **not seeded** (asset-preserved dormant; Teams reactivation 5. key olarak RB-d43-teams-reactivation-chain.md §3 atomic chain ile gelir).
 ```
 
 ### 3.3 ESO sync verify
@@ -217,7 +217,7 @@ kubectl --context k3d-test -n monitoring get externalsecret alertmanager-fallbac
   -o jsonpath='{.status.conditions[0].status}'  # Expected: True
 
 kubectl --context k3d-test -n monitoring get secret alertmanager-fallback-secrets \
-  -o jsonpath='{.data}' | jq 'keys'  # Expected: 5 keys
+  -o jsonpath='{.data}' | jq 'keys'  # Expected (current SMTP-only canonical — ADR-0027 §D1 2026-05-25): 4 keys (SMTP_HOST + SMTP_PORT + SMTP_USER + SMTP_PASSWORD); Teams reactivation 5. key TEAMS_WEBHOOK_URL ile gelir (RB-d43-teams-reactivation-chain.md §3)
 ```
 
 ### 3.4 alarm-receiver + break-glass script LIVE (PR-2 + PR-3)
@@ -571,7 +571,7 @@ kubectl --context k3d-prod -n monitoring exec \
 kubectl --context k3d-prod -n monitoring exec \
   alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager -- \
   ls -la /etc/alertmanager/secrets/alertmanager-fallback-secrets/
-# Beklenen: 5 file (SLACK_WEBHOOK_URL + SMTP_HOST + SMTP_PORT + SMTP_USER + SMTP_PASSWORD)
+# Beklenen (current SMTP-only canonical — ADR-0027 §D1 2026-05-25): 4 file (SMTP_HOST + SMTP_PORT + SMTP_USER + SMTP_PASSWORD); Teams reactivation 5. file TEAMS_WEBHOOK_URL ile gelir (RB-d43-teams-reactivation-chain.md §3)
 ```
 
 ### 6.5.5 Synthetic NotifyServiceDown smoke (controlled prod outage window)
