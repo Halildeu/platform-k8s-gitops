@@ -2,7 +2,7 @@
 
 > **Status**: PILOT PREP (operasyon runbook — agent docs-only; operator/IT/legal execution gerekli)
 > **Scope**: Non-domain Windows yönetimi primary scope (workgroup / standalone / BYOD / Entra-joined / Workplace-registered) — endpoint-admin platformu için **22.2 primary production scope** kapsamı. Domain-joined (`acik.local`) IT pilot **22.2.B opsiyonel ikinci scope** olarak ayrı runbook'ta (`RB-faz22-endpoint-pilot-it-owned.md`).
-> **Canonical decision**: ADR-0012-EA "22.2 scope amendment (2026-05-24)" section (kullanıcı kararı; Codex strategic thread `019e5afc-2ce2-7811-9d98-73ff6eac1434` AGREE iter-4)
+> **Canonical decision**: ADR-0012-EA "22.2 scope amendment (2026-05-24)" section (kullanıcı kararı; Codex strategic thread `019e5afc-2ce2-7811-9d98-73ff6eac1434` REVISE iter-1 with `ready_for_impl=true` for docs-only scope realignment; full pilot scope still pending operator gates)
 > **Tracked by**: [#1015](https://github.com/Halildeu/platform-k8s-gitops/issues/1015) (Faz 22.2 IT pilot readiness umbrella — 22.2.A primary scope reframe per ADR amendment)
 > **Predecessor evidence (22.2.A substantive)**: gitops PR #1021 BE-011 + AG-013 WORKGROUP smoke HALILKOOLUB735 + gitops PR #1032 BE-017 dual-control test cluster fixture + platform-agent PR #13 CI automation
 > **Codex strategic thread (this runbook)**: `019e5b17-4086-7fc3-b82b-5303be3948fe` REVISE iter-1 with `ready_for_impl=true` for docs-only standalone runbook implementation (post-impl review iter-2 absorb 3 source-truth fixes; full pilot infazı device + signed + KVKK/consent + soak gate'lerine bağlı)
