@@ -207,6 +207,7 @@ kubectl --context k3d-prod -n monitoring get externalsecret alertmanager-fallbac
 # Beklenen: True
 kubectl --context k3d-prod -n monitoring get secret alertmanager-fallback-secrets \
   -o json | jq '.data | to_entries | map({key, value_len: (.value | @base64d | length)})'
+# Beklenen: 4 key (TEAMS_WEBHOOK_URL not seeded — ADR-0027 §D1 SMTP-only canonical 2026-05-25; Teams reactivation 5. key gelirse RB-d43-teams-reactivation-chain.md §3)
 # Beklenen: 5 keys, hepsi non-empty
 ```
 
