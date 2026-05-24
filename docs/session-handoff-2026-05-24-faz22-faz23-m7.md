@@ -85,9 +85,9 @@ Overlay desired (around line 2427-2483 post-#1007; final digest at `kustomize/ov
 
 ## 4. İspatlamaz
 
-- **BE-011 real agent lifecycle smoke** — yan-kanıt session içinde captured (`HALILKOOLUB735` Windows device data döndü post-#658 in-browser fetch + agent enrollment was the source). Resmi smoke ayrı kapı (Windows VM rerun).
-- **platform-agent#8 Windows fresh smoke** — operator-bound (Windows VM execution).
-- **IT pilot 22.2** — operator-bound (`acik.local` EndpointPilot OU + AD ops).
+- ~~**BE-011 real agent lifecycle smoke**~~ ✅ DONE 2026-05-24 (gitops PR #1021 `4ecb71dc` resmi-kanıt; bkz. §5 P1 post-handoff block tablosu)
+- ~~**platform-agent#8 Windows fresh smoke**~~ ✅ DONE 2026-05-24 (gitops PR #1021 + platform-agent PR #10 `402bdc1`; bkz. §5 P1 post-handoff block tablosu)
+- **Faz 22.2.B `acik.local` IT pilot (opsiyonel ikinci scope)** — operator-bound (`acik.local` EndpointPilot OU + AD ops + VPN routing + DC reachability + EDR allowlist + trusted signing). **22.2.A non-domain primary scope için BLOCKER DEĞİL** (2026-05-24 user scope decision; ADR-0012-EA "22.2 scope amendment").
 - **Faz 23 M7 DoD residual items**: "All v1 sub-faz acceptance 🟢" + "R11+R16 closed" still unchecked in milestones.md per #1008 (no premature Close; awaiting operator + ≥30d soak baseline).
 - **Faz 23 M7 operator-bound remaining**: T4.3.5 FBL mailbox activation, T4.3.7 DB RO role grant, R11 Close (≥30d soak baseline post-prod-cutover).
 - **Faz 22 Web ALLOW-path operator browser smoke** — spawn chip created earlier (operator drives real Platform Admin login + manual Slack channel for #alerts-d43-drill); agent's persona-JWT in-browser fetch surrogate captured 3/3 200 in `docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md` §A; full operator-session ALLOW path remains spawn-task-driven.
@@ -101,7 +101,7 @@ Overlay desired (around line 2427-2483 post-#1007; final digest at `kustomize/ov
 
 1. **`platform-web` #648 follow-up cleanup** (P3, opsiyonel): notify shim'i `apps/mfe-shell/src/features/notifications/api/notify-request-fetch-fn.ts` ile endpoint-admin'in `unwrap-request-fetch-fn.ts` kopyasını birleştirip `packages/shared-http`'a taşımak. Bekleyen blokaj: MF singleton sharing endpoint-admin için çalışmıyor (#657 forensics). Cross-MFE shared package import path tasarımı gerekli. Effort: 4-6h, separate session.
 
-2. **`platform-k8s-gitops` PLAN.md row 37 ufuk** (P3, opsiyonel): 22.1 Web runtime acceptance 98% — 2026-05-24 post-handoff block (gitops #1021 MERGED) Windows fresh smoke + BE-011 lifecycle smoke kapatıldı; kalan 2% sadece Faz 22.2 IT pilot (operator-bound: `acik.local` domain-joined PC onboarding). BE-017 formal dual-control matrix de agent-actionable kapı olarak ayrıca P1 altında listelendi. PLAN.md ufuk satırı bu deltayı yansıtmalı; Faz 22 overall %'sını değiştirmiyor (overall stays 🟡).
+2. **`platform-k8s-gitops` PLAN.md row 37 ufuk** ✅ DONE 2026-05-24 (scope amendment PR `roadmap-faz22-scope-realign-non-domain-primary` — 22.2.A non-domain primary + 22.2.B `acik.local` optional split; portfolio % three-layer; ADR-0012-EA "22.2 scope amendment" section).
 
 ### P1 — 2026-05-24 post-handoff block closed (yan-kanıt → resmi-kanıt)
 
@@ -140,7 +140,7 @@ Overlay desired (around line 2427-2483 post-#1007; final digest at `kustomize/ov
 ### P2-P3 sonraki sprint (yeni domain)
 
 1. **Faz 23 M8 Multi-tenant Trigger Gate** (#760) — DoD `M7 v1 stable ≥30 day in production`. Operator gate; agent scope dar (R10 mitigation plan + pre-migration audit + dry-run).
-2. **Faz 22.2** — full IT pilot tier (post-IT pilot ops baseline).
+2. **Faz 22.2.A non-domain primary scope follow-up** — yeni runbook `RB-faz22-non-domain-windows-pilot.md` (2+ standalone/BYOD device + 24-72h soak + identity classification + consent/privacy + signed artifact gates) — ayrı PR sonraki tur. **Faz 22.2.B `acik.local` opsiyonel** — operator-bound (VPN routing + DC + EDR + signing).
 3. **Faz 23 must-have #10 D43/R9** — operator drill (#1012 ile bağlı).
 
 ### Sıradaki agent için açılış komutu
@@ -152,7 +152,7 @@ bash scripts/board-sync.sh list                         # board state (Backlog s
 git log --oneline main -10                              # recent commit chain
 ```
 
-İçerik: Faz 22 + Faz 23 M7 ana scope agent tarafından kümülatif 11 + 4 + 7 = 22 PR ile yürütüldü. 2026-05-24 post-handoff block 4 ek PR (platform-agent #10 + gitops #1016/#1017/#1021): P1 operator queue 2 item (#8 Windows smoke + BE-011 lifecycle) yan-kanıt → resmi-kanıt'a yükseltildi. **Agent-actionable kalan**: BE-017 formal dual-control matrix (P1 agent-actionable carry-over alt-bölümü item 1). Diğer kalan iş operator-bound (yukarıdaki operator queue) veya farklı faz domain'i (P2-P3).
+İçerik: Faz 22 + Faz 23 M7 ana scope agent tarafından kümülatif 11 + 4 + 7 + 8 = 30 PR ile yürütüldü. 2026-05-24 post-handoff block ve scope amendment chain: P1 operator queue 2 item (#8 Windows smoke + BE-011 lifecycle) yan-kanıt → resmi-kanıt'a yükseltildi (PR #1021); BE-017 formal dual-control matrix ✅ DONE (PR #1032); Faz 22.2.B `acik.local` Gate 0 evidence + runbook + helper MERGED (PR #1037 + #1039 + #14); **Faz 22.2 scope amendment** primary non-domain + B optional split (ADR-0012-EA + scope realignment PR). **Agent-actionable kalan agent scope tüketildi**; sıradaki adımlar 22.2.A non-domain primary follow-up runbook (`RB-faz22-non-domain-windows-pilot.md` ayrı PR sonraki tur) + operator queue (22.2.B VPN routing + #1012 D43 Slack + M7 FBL/DB RO/R11 30d soak) + farklı faz domain (P2-P3).
 
 ---
 

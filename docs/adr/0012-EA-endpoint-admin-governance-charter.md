@@ -373,7 +373,7 @@ prod-ready / password-reset-ready İDDİA EDİLMEZ — 22.1 test runtime + sourc
 
 ## 22.2 scope amendment — Non-domain Windows primary scope (2026-05-24)
 
-> **User decision 2026-05-24**: Endpoint-admin Faz 22.2 primary production scope **non-domain Windows yönetimi** (workgroup / standalone / BYOD) olarak yeniden tanımlanır. Domain-joined `acik.local` IT pilot ikincil opsiyonel scope olarak korunur. **Codex strategic thread `019e5afc-2ce2-7811-9d98-73ff6eac1434`** AGREE (REVISE iter-1 docs-only scope realignment).
+> **User decision 2026-05-24**: Endpoint-admin Faz 22.2 primary production scope **non-domain Windows yönetimi** (workgroup / standalone / BYOD) olarak yeniden tanımlanır. Domain-joined `acik.local` IT pilot ikincil opsiyonel scope olarak korunur. **Codex strategic thread `019e5afc-2ce2-7811-9d98-73ff6eac1434`** REVISE iter-1 with `ready_for_impl=true` for docs-only scope realignment (full pilot scope still REVISE pending operator action).
 
 ### Sub-scope split
 
@@ -489,10 +489,10 @@ Codex: 1 hafta agresif, **8-10 iş günü daha gerçekçi**. Hedef "22.1 evidenc
 - 800 cihaz acik.local ölçeği + 1-3 pilot test cihaz scope
 - Naming: `platform-agent` repo + `endpoint-agent` binary
 
-Sub-faz roadmap finalized:
+Sub-faz roadmap finalized **(HISTORICAL — superseded by 2026-05-24 "22.2 scope amendment" section above; 22.2 split into 22.2.A non-domain primary + 22.2.B `acik.local` optional)**:
 - **22.1** (Lab) — agent local state review + GitHub remote bootstrap + Windows artifact packaging + lab-only-evidence imza + backend BE-009/BE-013 paralel + gitops manifest reconcile + EndpointPilot OU hazırlığı
-- **22.2** (IT-owned acik.local pilot) — Authenticode trusted signing + agent enrollment + heartbeat backend integration + web MFE ana iş + 1-3 IT-owned Windows pilot cihaz
-- **22.3** (Restricted) — sınırlı gerçek kullanıcı + EDR allowlist + IT onayı + staged rollout (acik.local 800 cihaz gradual)
+- ~~**22.2** (IT-owned acik.local pilot)~~ → **SUPERSEDED**; see "22.2 scope amendment (2026-05-24)" section for canonical 22.2.A non-domain primary + 22.2.B `acik.local` optional split
+- **22.3** (Restricted) — sınırlı gerçek kullanıcı + EDR allowlist + IT onayı + staged rollout (non-domain primary scope + opsiyonel `acik.local` 800 cihaz gradual)
 
 ## Bağlantılı kararlar
 
