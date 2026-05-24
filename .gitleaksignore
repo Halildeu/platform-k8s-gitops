@@ -47,3 +47,17 @@
 05e71a2561aa4543e7554ba6be6c317312419a07:docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md:generic-api-key:135
 05e71a2561aa4543e7554ba6be6c317312419a07:docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md:generic-api-key:210
 06ee6c1e10d4393369aafc7ae80eedb196dc7fd1:.gitleaksignore:generic-api-key:37
+# PR #1019 (M5 23.5 live runtime evidence) — agent #3 original commit
+# 5467e0f6 used deterministic non-cryptographic smoke value
+# `evidence-smoke-invalid-2026-05-24` as the unsubscribe token query parameter
+# in 3 URL examples (lines 139, 148, 232). The follow-up commit 3d8b4fd
+# replaced these with `<SMOKE-TOKEN-REDACTED>` placeholder. The original
+# commit still trips generic-api-key rule because gitleaks scans every
+# commit in the PR diff individually.
+#
+# The flagged "secret" is a documentation smoke value used to exercise the
+# HMAC-verify-rejects-invalid-token path (HTTP 401 anchor) — no real signed
+# HMAC token, no production credential, no Vault/ESO material involved.
+db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5-live-runtime-acceptance.md:generic-api-key:139
+db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5-live-runtime-acceptance.md:generic-api-key:148
+db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5-live-runtime-acceptance.md:generic-api-key:232
