@@ -119,7 +119,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
   - **PENDING**: VFO provider acceptance (R24) + actual_channel=VFO audit (R24 sonrası)
   - Evidence doc: [2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md](../faz-23-evidence/2026-05-20-23-3-2-jetsms-multipart-context-routing-evidence.md)
 - [~] D29-NOTIFY 3-katman SMS evidence — TEST cluster ✅ (D29-Up + D29-Functional + D29-Multipart + D29-ContextRouting + D29-actualChannel); prod canary smoke ext-gated (real user M365 SSO UI flow)
-- [ ] T3.1.8 4 workflow live test passed (admin invite, password reset, drift alarm, break-glass) — ext canary post-cutover
+- [x] T3.1.8 4 workflow live test **TEST CLUSTER LIVE 2026-05-24** (PR #1030 MERGED — Codex iter-1 AGREE thread `019e5a87`): admin invite + password reset + drift alarm + break-glass 4 senaryo D29 3-layer disiplin proven (Up + Functional Layer 1 `notify_org_access_match_total=11` + Layer 2 OpenFGA enforce 4× DENY `no_tuple` + 2× ALLOW SMTP delivered). WorkerMetrics counter LIVE: `notify_authz_denied_total{reason_class=no_tuple} 4.0` + `notify_dispatch_outcome_total{BLOCKED_BY_AUTHZ=4, DELIVERED=2}`. Evidence: [docs/faz-23-evidence/2026-05-24-bl013-t318-4workflow-smoke.md](../faz-23-evidence/2026-05-24-bl013-t318-4workflow-smoke.md). **Prod canary ext-gated**: BL-010 prod KC realm discovery + persona/scope/mapper setup + Vault seed + BL-011 canary smoke + R24 Biotekno OTP allowlist + R1 NetGSM DEFER asset-preserved
 - [~] **Prod cutover** (issue [#903](https://github.com/Halildeu/platform-k8s-gitops/issues/903)) — **agent-actionable items LIVE 2026-05-20** (PR-B1+B2+B3+B4 zincir):
   - [x] A.1 prod ESO aggregate blocker resolution (Graph `graph_*` D49 defer-aware, PR #906 MERGED)
   - [x] A.2 prod overlay imageID + primary=jetsms flip PR (atomic, PR-B4 #916 MERGED)
@@ -208,7 +208,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
   - [x] T4.3.a Tempo OTLP trace export LIVE (2026-05-21 09:17Z; 5 spans verified)
   - [x] T4.3.b email suppression core LIVE (PR #270 — sha-f40aa82)
   - [x] T4.3.6 Per-tenant Grafana dashboard MERGED (PR #951 — 8 panel; + B.1 org_id Counter Tag retrofit PR #289)
-  - [x] T4.3.7 Per-template analytics MERGED (PR #966 Grafana PG datasource + Top 20 panel + PR #296 V21 index — Codex 019e4ee2; operator DB RO role activation pending)
+  - [x] T4.3.7 Per-template analytics MERGED (PR #966 Grafana PG datasource + Top 20 panel + PR #296 V21 index — Codex 019e4ee2; **BL-015-A prod activation source-ready 2026-05-24 PR #1035 MERGED** — helm-values envValueFrom NOTIFY_PG_RO_PASSWORD optional:true + ESO remoteRef uncomment — Codex `019e5a75` strategic iter-3 + `019e5aad` post-impl iter-3 AGREE; operator B step PG role + Vault seed + helm upgrade BL-004 Vault chain dep)
   - [x] T4.3.8 Federation design-artifact MERGED (PR #964 ADR-0026 phased — bounded operator-only; production federation Faz 24+/M8; R16 design-managed — Codex 019e4ee7)
   - [x] T4.3.5 Spam complaint FBL source-ready (PR #298 core ArfReportParser+FblService+V22 + PR #299 FblMailboxPollingWorker IMAP — Codex 019e4edd/019e4fc6/019e4ffd; 28 unit test; operator activation pending — RB-fbl-mailbox-activation)
 - [ ] All v1 sub-faz kabul kriteri 🟢 (23.6, 23.7, 23.8)
