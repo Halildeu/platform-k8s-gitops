@@ -155,32 +155,35 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 **Owner**: dev (frontend + backend gap-fill)
 **Dependencies**: T1.1 (preference API) ✅ LIVE, M3 ✅ source-ready
 
-### M6 — 23.4 Closure (🟡 split into M6a + M6b — Codex iter-2 absorb)
+### M6 — 23.4 Closure (🟢 LIVE 2026-05-20 board #758 — both M6a + M6b done)
 
 > **Split rationale (2026-05-09)**: 23.4 closure iki bağımsız part'a bölündü; M6a (archive + history filter) M3 ile paralel, M6b (SMS DLR UI) M4 sonrası gate'lidir.
 
-#### M6a — 23.4 Archive + History (🟡 target 2026-06-15, parallel with M3)
+> **Status revision 2026-05-23 (M6 reconciliation truth-sync)**: M6a + M6b 6/6 sprint-plan T2.2.1-T2.2.6 tasks **2026-05-20 board #758 accepted** (sprint-plan satır 184 "M6a + M6b 6/6 LIVE"). Milestones M6 section + charter 23.4 archive/history sub-portion bu kapanışa kadar stale `[ ]` ile takip ediliyordu; bu reconciliation truth-sync yapıyor. Backend evidence: V16 inbox history index + tests MERGED (sprint-plan task #8), FE history filter UI MERGED (task #9), archive UI MERGED (PR #626 + M6a chain task #12), SMS DLR badge UI MERGED (task #36); T3.1.7 DLR callback endpoint **🟢 Session 44 LIVE** (charter satır 52 — backend PR #85 + api-gateway PR #154 + gitops PR #514 MERGED + live smoke pipeline 5/5 gates PASS).
+
+#### M6a — 23.4 Archive + History (🟢 LIVE 2026-05-20 board #758)
 
 **Definition of Done**:
-- [ ] T2.2.1 Archive UI button
-- [ ] T2.2.2-3 30d notification history filter (FE + BE)
-- [ ] T2.2.4 Integration test (archive + history)
-- [ ] Charter 23.4 marker (archive/history portion) 🟡 → 🟢
+- [x] T2.2.1 Archive UI button — platform-web PR #626 + M6a chain MERGED (sprint-plan task #12)
+- [x] T2.2.2-3 30d notification history filter (FE + BE) — Backend V16 inbox history index + tests MERGED (task #8); FE inbox Geçmiş tab + listHistory RTK MERGED (task #9)
+- [x] T2.2.4 Integration test (archive + history) — tasks #8 + #9 IT MERGED
+- [x] Charter 23.4 marker (archive/history portion) 🟡 → 🟢 — board #758 acceptance + sprint-plan T2.2.1-T2.2.4 LIVE
 
-**Blockers**: None (parallel with M3)
-**Owner**: dev (frontend + backend)
-**Dependencies**: M1 stable (cluster + auth)
+**Blockers**: None
+**Owner**: — (M6a closed)
+**Dependencies**: M1 stable ✅ (cluster + auth)
 
-#### M6b — 23.4 SMS DLR UI (🔴 target post-M4, ~2026-06-29)
+#### M6b — 23.4 SMS DLR UI (🟢 LIVE 2026-05-20 board #758)
 
 **Definition of Done**:
-- [ ] FE inbox SMS DLR badge (status: sent/delivered/failed)
-- [ ] T3.1.7 DLR callback endpoint LIVE (M4 dep)
-- [ ] Charter 23.4 marker (SMS DLR portion) ⏳ → 🟢
-- [ ] Charter 23.4 fully 🟢 only when both M6a + M6b done
+- [x] FE inbox SMS DLR badge (status: sent/delivered/failed) — platform-web inbox SMS DLR badge MERGED (sprint-plan task #36, T2.2.5)
+- [x] T3.1.7 DLR callback endpoint live-verified — backend PR #85 + api-gateway PR #154 + gitops PR #514 MERGED + **mock provider** 5/5 acceptance gates PASS Session 44 test cluster (evidence `docs/faz-23-evidence/2026-05-11-t3-1-7-dlr-live-smoke-pass.md`); JetSMS-primary prod path + `JetSmsDlrPollingWorker scheduling=true` LIVE prod sha-6307428 (M4 evidence). NetGSM webhook leg dormant per R1 ⏳ DEFER. Prod SMS functional canary / DLR terminal status evidence ext-gated (KC operator gate `org_id=default` claim setup — `docs/runbooks/RB-prod-canary-kc-claim-setup.md`).
+- [x] Charter 23.4 marker (SMS DLR portion) ⏳ → 🟢 — T3.1.7 callback endpoint test/mock live-verified + JetSMS-primary prod path + DLR polling worker live; NetGSM secondary R1 ⏳ DEFER asset-preserved (kullanıcı kararı 2026-05-23)
+- [x] Charter 23.4 fully 🟢 only when both M6a + M6b done — both LIVE board #758
 
-**Blockers**: M4 (SMS JetSMS primary + NetGSM secondary + DLR dual-mode)
-**Owner**: dev (frontend)
+**Blockers**: None — M4 SMS JetSMS primary LIVE prod (sha-6307428) + DLR worker scheduling=true; NetGSM secondary contract DEFER (R1 ⏳ asset-preserved per kullanıcı kararı 2026-05-23 — M6b closure blocker DEĞİL, JetSMS-only DLR pipeline kabul edilen işletim durumu)
+**Owner**: — (M6b closed)
+**Dependencies**: M4 SMS JetSMS primary LIVE ✅
 
 ### M7 — v1 Closure (🟡 target 2026-08-15)
 
