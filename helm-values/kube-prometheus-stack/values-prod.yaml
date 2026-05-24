@@ -372,6 +372,19 @@ grafana:
     userKey: admin-user
     passwordKey: admin-password
 
+  # M7 T4.3.7 BL-015 — Notify per-template analytics datasource credential
+  # Codex iter-3 verdict thread `019e5a75-ebf3-7860-9832-2776a6d185b6` prod activation chain
+  # Secret-backed env var (optional:true defer-aware)
+  # - ExternalSecret: kustomize/overlays/prod/eso/grafana/externalsecret-grafana-notify-pg.yaml
+  # - Datasource ConfigMap: kustomize/base/monitoring/grafana-datasources/notify-pg-datasource.yaml
+  # - Operator activation chain: docs/runbooks/RB-grafana-notify-pg-datasource.md §3
+  envValueFrom:
+    NOTIFY_PG_RO_PASSWORD:
+      secretKeyRef:
+        name: grafana-notify-pg-secret
+        key: NOTIFY_PG_RO_PASSWORD
+        optional: true
+
 # ─── Prometheus ───
 prometheus:
   enabled: true
