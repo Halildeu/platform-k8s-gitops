@@ -371,6 +371,52 @@ prod-ready / password-reset-ready İDDİA EDİLMEZ — 22.1 test runtime + sourc
 
 **Sonuç**: Persistent private key yok, GitHub Secret'a kalıcı PFX yüklenmez. Artifact'te thumbprint + verify log evidence olarak kalır. 22.2 trusted signing geçişinde **operasyon borcu yok**.
 
+## 22.2 scope amendment — Non-domain Windows primary scope (2026-05-24)
+
+> **User decision 2026-05-24**: Endpoint-admin Faz 22.2 primary production scope **non-domain Windows yönetimi** (workgroup / standalone / BYOD) olarak yeniden tanımlanır. Domain-joined `acik.local` IT pilot ikincil opsiyonel scope olarak korunur. **Codex strategic thread `019e5afc-2ce2-7811-9d98-73ff6eac1434`** REVISE iter-1 with `ready_for_impl=true` for docs-only scope realignment (full pilot scope still REVISE pending operator action).
+
+### Sub-scope split
+
+| Sub | Tanım | Mevcut evidence | Status (2026-05-24) |
+|---|---|---|---|
+| **22.2.A** | **Non-domain Windows primary** (workgroup / standalone / BYOD) | gitops PR #1021 (`4ecb71dc`) BE-011 + AG-013 WORKGROUP smoke HALILKOOLUB735; platform-agent PR #10 (`402bdc1`) + PR #11 (`fa778a67`) tracking; gitops PR #1032 (`507f57c4`) BE-017 dual-control fixture test cluster; platform-agent PR #13 (`ab1eb0ee`) CI automation script + workflow | **PRIMARY — substantive evidence cover** (single VM/no-soak; production-ready DEĞİL) |
+| **22.2.B** | **Domain-joined IT pilot** (`acik.local`) — opsiyonel ikinci scope | gitops PR #1037 Gate 0 VPN routing BLOCKER + PR #1039 (`61a5136a`) evidence/runbook; platform-agent PR #14 (`ef7ded6f`) precheck helper | **OPSIYONEL** — operator-bound (VPN routing + DC reachability + EDR allowlist + trusted signing); 22.2.A overall blocker DEĞİL |
+
+### Non-domain taxonomy (Codex Q8 absorb)
+
+- **A1 Workgroup / standalone Windows** — 22.2.A primary (current `HALILKOOLUB735` evidence)
+- **A2 BYOD unmanaged Windows** — 22.2.A primary (consent + uninstall + privacy/KVKK boundary + local-admin/install)
+- **A3 Entra-joined / Azure AD-joined (AD domain olmayan)** — 22.2.A primary (agent install/enroll/heartbeat/inventory read-only); Entra/Graph/Intune management ikinci gate
+- **A4 Workplace-registered only** — 22.2.A read-only inventory/support; tenant/MDM aksiyonları scope dışı
+- **B1 Hybrid Azure AD-joined** — 22.2.B (AD DS join + DC/Kerberos/GPO/cached credential riskleri)
+- **B2 `acik.local` AD domain-joined** — 22.2.B optional pilot
+- **C Mobile (iOS/Android)** — Faz 22.2 scope dışı; Faz 23.7.b mobile push veya ayrı future device-management fazı
+
+**Detection surface**: `Win32_ComputerSystem.PartOfDomain` + `Domain` + `Workgroup`; `dsregcmd /status` (`DomainJoined`, `AzureAdJoined`, `WorkplaceJoined`, tenant/device id); MDM/Intune enrollment state.
+
+### Faz 22.2 overall % (Codex Q5 absorb — iki katman)
+
+- **22.2.A non-domain primary**: ~78% (strong evidence — PR #1021 BE-011 + AG-013 + #1032 BE-017 fixture + PR #13 CI automation source; **eksik**: self-hosted CI run, 2+ standalone/BYOD device, 24-72h soak, identity classification `dsregcmd`/logged-in identity, signed distribution / support / KVKK boundary)
+- **22.2.B `acik.local` optional**: ~25% (Gate 0 evidence + runbook + helper; VPN/DC/domain join/pilot smoke/EDR/signing operator-bound waiting)
+- **Composite Faz 22.2 portfolio**: ~67% (A primary güçlü, B optional blocker ayrı taşındığı için makul; `85%` veya tek-numara yazılmaz — closure dili yasak)
+
+### Boundary (HARD constraints korunmuş)
+
+- **NOT prod-ready** / **NOT password-reset-ready** / **NOT domain-wide rollout-ready** (22.2.A primary scope için bile single-VM/no-soak baseline)
+- **No new runtime evidence claimed** (mevcut PR #1021 evidence reclassified, retake yok; tarihsel boundary korunur)
+- **Destructive command flow** (LOCK_USER_LOGIN/DISABLE_LOCAL_USER) — Faz 22.2.A non-domain real device'lerde **non-destructive only** (COLLECT_INVENTORY/inventory_refresh); BE-017 dual-control test cluster fixture ile destructive contract kanıtlandı (PR #1032), prod real device'de değil
+- **Trusted signing + EDR allowlist** — 22.2 unlock öncesi 5 evidence sınıfı (Agent + Backend + GitOps + IT) hâlâ geçerli (Codex iter-3 PR-8d/PR-8e); ama 22.2.A scope için "EndpointPilot OU" satırı obsolete (non-domain primary için EndpointPilot OU şart değil; signed distribution + EDR allowlist + privacy/KVKK boundary genel geçer)
+- **22.2.B Gate 0 VPN BLOCKER** (gitops #1037) sadece B scope için; A scope için BLOCKER DEĞİL
+
+### Sıradaki adımlar (post-amendment)
+
+1. handoff §5 P1 + PLAN.md row 37 scope split update (bu PR scope'unda)
+2. RB-faz22-endpoint-pilot-it-owned.md header note "22.2.B optional acik.local domain-joined runbook" reframe (mevcut §1-§10 acik.local-specific olarak kalır; bu PR scope'unda)
+3. PR #1021 evidence doc reclassification note (bu PR scope'unda, küçük üst-not — Codex Q2 (b))
+4. gitops #1037 body+title update — "22.2.B optional scope blocker only" (ayrı gh issue edit, no PR)
+5. platform-agent #12 status reflect — "Needs Verify; non-blocking 22.2.A repeatability label" (ayrı gh issue edit, no PR)
+6. **Follow-up** (ayrı PR, sonraki tur): `RB-faz22-non-domain-windows-pilot.md` (non-domain primary scope için operasyon runbook'u — 2+ device, soak, CI/manual evidence, identity taxonomy, consent/privacy, signed artifact gates)
+
 ## 22.2 pre-req docs (22.1'de hazırlanır)
 
 Codex revize: 22.2 Authenticode trusted signing geçişi öncesi 22.1 boyunca aşağıdaki dokümantasyon **netleşir**:
@@ -443,10 +489,10 @@ Codex: 1 hafta agresif, **8-10 iş günü daha gerçekçi**. Hedef "22.1 evidenc
 - 800 cihaz acik.local ölçeği + 1-3 pilot test cihaz scope
 - Naming: `platform-agent` repo + `endpoint-agent` binary
 
-Sub-faz roadmap finalized:
+Sub-faz roadmap finalized **(HISTORICAL — superseded by 2026-05-24 "22.2 scope amendment" section above; 22.2 split into 22.2.A non-domain primary + 22.2.B `acik.local` optional)**:
 - **22.1** (Lab) — agent local state review + GitHub remote bootstrap + Windows artifact packaging + lab-only-evidence imza + backend BE-009/BE-013 paralel + gitops manifest reconcile + EndpointPilot OU hazırlığı
-- **22.2** (IT-owned acik.local pilot) — Authenticode trusted signing + agent enrollment + heartbeat backend integration + web MFE ana iş + 1-3 IT-owned Windows pilot cihaz
-- **22.3** (Restricted) — sınırlı gerçek kullanıcı + EDR allowlist + IT onayı + staged rollout (acik.local 800 cihaz gradual)
+- ~~**22.2** (IT-owned acik.local pilot)~~ → **SUPERSEDED**; see "22.2 scope amendment (2026-05-24)" section for canonical 22.2.A non-domain primary + 22.2.B `acik.local` optional split
+- **22.3** (Restricted) — sınırlı gerçek kullanıcı + EDR allowlist + IT onayı + staged rollout (non-domain primary scope + opsiyonel `acik.local` 800 cihaz gradual)
 
 ## Bağlantılı kararlar
 

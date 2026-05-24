@@ -1,9 +1,10 @@
-# RB Faz 22.2 — IT-owned Endpoint-Enes pilot readiness
+# RB Faz 22.2.B — `acik.local` IT-owned domain-joined pilot readiness (opsiyonel ikinci scope)
 
-> **Status**: PILOT PREP (readiness runbook — agent docs-only; operator execution gerekli)
-> **Tracked by**: [#1015](https://github.com/Halildeu/platform-k8s-gitops/issues/1015) (Faz 22.2 IT pilot readiness umbrella)
-> **Scope sınırı**: `acik.local` domain içinde 2 IT-owned Windows test PC ile kontrollü pilot. Bu runbook **ilk pilot prep** dokümanıdır; prod-ready / password-reset-ready / domain-wide rollout-ready iddiası taşımaz.
-> **Cumulative Faz 22 chain**: handoff `docs/session-handoff-2026-05-24-faz22-faz23-m7.md` §5 P1.4 ile uyumlu.
+> **Status**: PILOT PREP — Faz 22.2.B **opsiyonel** ikinci scope (operator-bound; agent docs-only)
+> **Scope reframe (2026-05-24)**: Bu runbook **artık Faz 22.2 primary scope DEĞİL**. Endpoint-admin Faz 22.2 primary production scope **non-domain Windows yönetimi** (workgroup/standalone/BYOD) olarak yeniden tanımlandı (kullanıcı kararı; ADR-0012-EA "22.2 scope amendment" section). Bu runbook artık **22.2.B opsiyonel `acik.local` domain-joined pilot** kapsar. Non-domain primary scope için ayrı runbook follow-up: `RB-faz22-non-domain-windows-pilot.md` (ayrı PR sonraki tur).
+> **Tracked by**: [#1015](https://github.com/Halildeu/platform-k8s-gitops/issues/1015) (Faz 22.2 IT pilot readiness umbrella) + [#1037](https://github.com/Halildeu/platform-k8s-gitops/issues/1037) (acik.local Gate 0 VPN routing BLOCKER)
+> **Scope sınırı**: `acik.local` domain içinde 2 IT-owned Windows test PC ile kontrollü pilot. Bu runbook **opsiyonel ikinci scope pilot prep** dokümanıdır; prod-ready / password-reset-ready / domain-wide rollout-ready iddiası taşımaz. **22.2.A non-domain primary scope için bağlayıcı DEĞİL** — Gate 0 BLOCKER (gitops #1037) sadece 22.2.B için geçerli.
+> **Cumulative Faz 22 chain**: handoff `docs/session-handoff-2026-05-24-faz22-faz23-m7.md` §5 P1 + "Faz 22.2 scope amendment" tablosu.
 
 ---
 
