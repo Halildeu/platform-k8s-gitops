@@ -1,15 +1,16 @@
 # RB-prod-alertmanager-activation — Prod Alertmanager release activation packet
 
-> **Status**: **READY-PACKET** (source-of-truth and acceptance plan complete; cluster activation still owner-gated — see `ready_for_helm_upgrade` gate below)
+> **Status**: **READY-PACKET** (source-of-truth and acceptance plan complete; cluster activation still owner-gated — see `ready_for_helm_upgrade` gate below). **BL-D43-TEAMS-PIVOT 2026-05-24 (Codex `019e5ba9`)** sonrası Slack → Microsoft Teams Power Automate workflow pivot.
 > **Tracker**: [#857](https://github.com/Halildeu/platform-k8s-gitops/issues/857) — P0 prod Alertmanager release drift
-> **Codex thread**: `019e4256` (Session 42 audit + scope verdict — post-impl REVISE iter-3 absorb chain)
-> **Sibling PRs**: #860 (this runbook), #861 (`values-prod.yaml` direct receiver removal — Codex iter-2 P0 absorb)
-> **Sibling issues**: [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) test sentinel; [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) D43 prod activation
-> **Risk**: HIGH (3-channel monitoring delivery gap until activation)
+> **Codex thread**: `019e4256` (Session 42 audit + scope verdict — post-impl REVISE iter-3 absorb chain) + **`019e5ba9` BL-D43-TEAMS-PIVOT iter-2 P1 absorb**
+> **Sibling PRs**: #860 (this runbook), #861 (`values-prod.yaml` direct receiver removal — Codex iter-2 P0 absorb), #1053 BL-D43-TEAMS-PIVOT (Slack → Teams)
+> **Sibling issues**: ~~[#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) test sentinel~~ + ~~[#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) D43 prod activation~~ **kapatıldı 2026-05-24** (Slack pivot superseded); yeni Teams-side board issues: (a) Teams Power Automate workflow setup for Alertmanager fallback/perf receivers, (b) D43 Alertmanager Teams fallback prod activation + smoke
+> **Risk**: HIGH (3-channel monitoring delivery gap until activation) + **R27 NEW** Power Automate workflow lifecycle/owner/tenant policy drift (Severity Medium; mitigation: service-account flow + exported package backup + monthly synthetic Teams smoke + flow run-history monitoring + tenant DLP/license/quota preflight + URL rotation rehearsal)
 > **`ready_for_helm_upgrade=false`** until:
 > 1. ~~Sibling PR removes `perf-alerts-github-issues` direct receiver + `github-issues-receiver-token` mount from `values-prod.yaml`~~ — **satisfied by PR #861**
-> 2. §2 owner artifacts complete (Slack webhooks + SMTP credentials; GitHub PAT becomes OPTIONAL / future-only)
-> 3. Codex dry-run review consensus (separate iter on dry-run output)
+> 2. §2 owner artifacts complete (Microsoft Teams Power Automate workflow URLs + SMTP credentials; GitHub PAT becomes OPTIONAL / future-only)
+> 3. **SMTP schema fix**: prod `values-prod.yaml` direct-fallback receiver `email_configs` `auth_username_file`/`auth_password_file` Operator v0.90.1 schema gap — bu PR scope DIŞI ama Step 4 helm upgrade'den ÖNCE çözülmeli (separate PR ya da Operator upgrade)
+> 4. Codex dry-run review consensus (separate iter on dry-run output)
 
 ---
 
@@ -27,19 +28,27 @@ Prod `kube-prometheus-stack` Helm release (revision 2, last upgrade 2026-05-14) 
 
 ## 2. Owner artifact checklist
 
-### 2.1 Slack admin artifact'leri (3 incoming webhook URL)
+### 2.1 Microsoft Teams Power Automate workflow artifact'leri (3 workflow HTTP POST URL) — BL-D43-TEAMS-PIVOT 2026-05-24 Codex `019e5ba9`
 
-> **HARD RULE**: webhook URL'leri PR body'sine veya issue comment'ine plaintext yazılmaz. Operator Vault'a doğrudan seed eder; agent sadece file path veya redacted hash referansı kullanır.
+> **HARD RULE**: workflow URL'leri PR body'sine veya issue comment'ine plaintext yazılmaz. Operator Vault'a doğrudan seed eder; agent sadece file path veya redacted hash referansı kullanır.
 
-| # | Channel | Workspace | Webhook URL field | Kullanım | Status |
+> **2026-05-24 Slack → Teams pivot**: Kullanıcı kararı "slack kullanmıyoruz teams kullanıyoruz" sonrası Slack incoming webhook URL'leri yerine Microsoft Teams Power Automate workflow HTTP POST endpoint'leri kullanılır. Receiver tipi `slack_configs` → `webhook_configs`; secret key `TEAMS_WEBHOOK_URL` → `TEAMS_WEBHOOK_URL`.
+
+| # | Target Teams channel | Tenant | Workflow URL field | Kullanım | Status |
 |---|---|---|---|---|---|
-| 1 | `#perf-alerts` | acik prod workspace | `kv/platform/perf-alertmanager.SLACK_WEBHOOK_URL` | V2.1 Ops-A perf-alerts-slack receiver | ⏳ owner |
-| 2 | `#alerts-d43-drill` (veya `#prod-outage-alerts`) | acik prod workspace | `kv/platform/alertmanager-fallback.SLACK_WEBHOOK_URL` | D43 direct-fallback receiver (NotifyServiceDown bypass) | ⏳ owner |
-| 3 | (sibling) `#alerts-d43-drill` for **test** | acik test workspace (veya aynı workspace) | `kv/platform/alertmanager-fallback.SLACK_WEBHOOK_URL` test Vault | Test drill — board #853 (real webhook replaces sentinel `drill-slack-mock.local`) | ⏳ owner |
+| 1 | "Perf Alerts" Teams channel | Microsoft 365 prod tenant | `kv/platform/perf-alertmanager.TEAMS_WEBHOOK_URL` | V2.1 Ops-A perf-alerts-teams receiver | ⏳ owner |
+| 2 | "D43 Outage" Teams channel | Microsoft 365 prod tenant | `kv/platform/alertmanager-fallback.TEAMS_WEBHOOK_URL` | D43 direct-fallback receiver (NotifyServiceDown bypass) | ⏳ owner |
+| 3 | (sibling) Test target channel | Test tenant (veya aynı) | `kv/platform/alertmanager-fallback.TEAMS_WEBHOOK_URL` test Vault | Test drill — yeni Teams board issue | ⏳ owner |
 
 **Operator step**:
-1. Slack workspace admin → Apps → Incoming Webhooks → Add (per channel, 1 URL each)
-2. URL'leri güvenli operator notebook'a kaydet (Vault seed komutu sırasında stdin pipe)
+1. Microsoft 365 Power Automate'a giriş (service-account veya team-owned hesap; R27 mitigation — bireysel owner YASAK):
+   - **Trigger**: "When an HTTP request is received" (anonymous endpoint; HTTP POST)
+   - **Schema parse** (Alertmanager v4 webhook): `{alerts[], status, groupLabels, commonLabels, commonAnnotations}`
+   - **Action**: "Post adaptive card in a chat or channel" → target Teams channel + Adaptive Card body (alertname + severity + namespace + cluster + description + runbook_url + outage_fallback + bypass_orchestrator)
+   - **Save flow → copy HTTP POST URL** (Power Automate workflow webhook endpoint)
+2. **Exported flow package backup** (R27 mitigation 2): Flow → ... → Export → .zip artifact runbook'ta sakla (lifecycle protection)
+3. **Tenant DLP/license/quota preflight** (R27 mitigation 5): Power Platform admin center → Data Policies + License check + connector availability
+4. URL'leri güvenli operator notebook'a kaydet (Vault seed komutu sırasında stdin pipe)
 
 ### 2.2 GitHub PAT (`github-issues-receiver-token` Secret) — **OPTIONAL / future-only**
 
@@ -98,7 +107,7 @@ read -r -s -p "#perf-alerts incoming webhook URL: " WEBHOOK && echo
 printf "%s" "$WEBHOOK" | docker exec -i \
   -e VAULT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)" \
   platform-vault-prod \
-  vault kv put kv/platform/perf-alertmanager SLACK_WEBHOOK_URL=-
+  vault kv put kv/platform/perf-alertmanager TEAMS_WEBHOOK_URL=-
 unset WEBHOOK
 '
 ```
@@ -107,7 +116,7 @@ Verify (no plaintext output, length-only):
 ```bash
 ssh halil@staging-sw '
 docker exec -e VAULT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)" \
-  platform-vault-prod vault kv get -mount=kv -field=SLACK_WEBHOOK_URL platform/perf-alertmanager | wc -c
+  platform-vault-prod vault kv get -mount=kv -field=TEAMS_WEBHOOK_URL platform/perf-alertmanager | wc -c
 # Expected: ~50-70 chars (Slack webhook URL standard length)
 '
 ```
@@ -131,7 +140,7 @@ docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
 read -r -s -p "#alerts-d43-drill incoming webhook URL: " SLACK_URL && echo
 printf "%s" "$SLACK_URL" | docker exec -i \
   -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
-  vault kv patch kv/platform/alertmanager-fallback SLACK_WEBHOOK_URL=-
+  vault kv patch kv/platform/alertmanager-fallback TEAMS_WEBHOOK_URL=-
 unset SLACK_URL
 
 # Step 3: SMTP App Password — stdin pipe
@@ -151,7 +160,7 @@ ssh halil@staging-sw '
 docker exec -e VAULT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)" \
   platform-vault-prod vault kv get -mount=kv -format=json platform/alertmanager-fallback \
   | jq ".data.data | to_entries | map({key, value_len: (.value | length)})"
-# Expected: 5 keys; SLACK_WEBHOOK_URL ~50-70 byte; SMTP_PASSWORD ~16-32 byte; others fixed
+# Expected: 5 keys; TEAMS_WEBHOOK_URL ~50-70 byte; SMTP_PASSWORD ~16-32 byte; others fixed
 '
 ```
 
@@ -224,9 +233,9 @@ Owner + agent dry-run diff'i okur; özellikle bekleyen değişimler (sibling PR 
 - `Alertmanager` CR `secrets:` field — `[]` → `[perf-alertmanager-secrets, alertmanager-fallback-secrets]` (2 mount; `github-issues-receiver-token` PR #861 ile kaldırıldı)
 - `Alertmanager` CR `config` field (or generated Secret) — 3 aktif receiver:
   - `alarm-receiver-bridge`
-  - `perf-alerts-slack`
+  - `perf-alerts-teams`
   - `direct-fallback`
-- Route tree — 5 child route: D43 NotifyServiceDown/Absent → direct-fallback (continue:true); perf=critical → perf-alerts-slack (continue:true); severity=critical → alarm-receiver-bridge; perf catch-all → perf-alerts-slack (continue:true); warning/info → alarm-receiver-bridge
+- Route tree — 5 child route: D43 NotifyServiceDown/Absent → direct-fallback (continue:true); perf=critical → perf-alerts-teams (continue:true); severity=critical → alarm-receiver-bridge; perf catch-all → perf-alerts-teams (continue:true); warning/info → alarm-receiver-bridge
 - `Secret/alertmanager-kube-prometheus-stack-alertmanager-generated` — content değişir (new config)
 - (Beklenmedik değişim varsa abort — özellikle `perf-alerts-github-issues` receiver veya `github-issues-receiver-token` mount diff'te görünürse PR #861 revert hatasıyla revert et)
 
@@ -273,10 +282,10 @@ POD=$(kubectl --context k3d-prod -n monitoring get pod -l app.kubernetes.io/name
 echo "Pod: $POD"
 
 # Config show — 3 active receivers expected
-kubectl --context k3d-prod -n monitoring exec "$POD" -c alertmanager -- amtool config show | grep -E "^- name:|name: direct-fallback|name: perf-alerts-slack|name: alarm-receiver-bridge"
+kubectl --context k3d-prod -n monitoring exec "$POD" -c alertmanager -- amtool config show | grep -E "^- name:|name: direct-fallback|name: perf-alerts-teams|name: alarm-receiver-bridge"
 # Beklenen: 3 aktif receiver:
 #   - alarm-receiver-bridge
-#   - perf-alerts-slack
+#   - perf-alerts-teams
 #   - direct-fallback
 # (perf-alerts-github-issues direct receiver: sibling PR ile KALDIRILDI — wrapper PR sonrası geri eklenir)
 
@@ -293,7 +302,7 @@ kubectl --context k3d-prod -n monitoring exec "$POD" -c alertmanager -- ls -la \
 
 ### 5.2 Synthetic perf alert smoke — Alertmanager direct API routing test
 
-> **Proves**: Alertmanager config route matching + receiver dispatch (perf-alerts-slack via api_url_file delivery; alarm-receiver-bridge webhook delivery to alertmanager-bridge pod which then calls `gh` CLI directly to create/comment GitHub Issues — NOT via repository_dispatch workflow).
+> **Proves**: Alertmanager config route matching + receiver dispatch (perf-alerts-teams via api_url_file delivery; alarm-receiver-bridge webhook delivery to alertmanager-bridge pod which then calls `gh` CLI directly to create/comment GitHub Issues — NOT via repository_dispatch workflow).
 >
 > **Does NOT prove**: PrometheusRule fires with `team=perf` labels, real metric path, `for:` clause window. Real production smoke requires either an existing PrometheusRule with `team=perf` OR a controlled rule that fires on a real metric expression (separate acceptance gate).
 >
@@ -333,7 +342,7 @@ sleep 10
 # (see §6 rollback trigger #4).
 curl -s http://127.0.0.1:9093/api/v2/alerts | \
   jq ".[] | select(.labels.alertname==\"PerfCanarySmoke857\") | {receivers: [.receivers[].name]}"
-# Expected: receivers contains perf-alerts-slack AND alarm-receiver-bridge
+# Expected: receivers contains perf-alerts-teams AND alarm-receiver-bridge
 # (DUAL delivery path; GitHub Issue receipt flows via alarm-receiver-bridge →
 # alertmanager-bridge pod). Direct `perf-alerts-github-issues` receiver MUST
 # NOT be in the receivers array.
@@ -362,7 +371,7 @@ Bu adım runbook'a havale: `docs/runbooks/RB-notification-outage-fallback.md` §
 ## 6. Rollback procedure
 
 Rollback tetik koşulları (sibling PR #861 post-merge 3-receiver model):
-- §5.1 `amtool config show` beklenen 3 aktif receiver set'ini (`alarm-receiver-bridge`, `perf-alerts-slack`, `direct-fallback`) eksik veya farklı gösterirse
+- §5.1 `amtool config show` beklenen 3 aktif receiver set'ini (`alarm-receiver-bridge`, `perf-alerts-teams`, `direct-fallback`) eksik veya farklı gösterirse
 - Pod CrashLoopBackOff'a girerse
 - Synthetic alert delivery (§5.2) Slack veya bridge GitHub Issue ayağında fail ederse
 - Beklenmedik bir receiver canlıya gelirse (özellikle `perf-alerts-github-issues` — PR #861 ile bilinçli kaldırıldı; geri gelmesi PR #861 revert hatasının işareti)
@@ -398,7 +407,7 @@ Plus audit doc: `docs/faz-23-evidence/2026-XX-XX-857-helm-upgrade-rollback.md`.
 
 ## 7. References
 
-- **Codex threads**: `019e4256` (Session 42 audit + scope), `019e4234` (PR #855 D43 staged config), `019e41d7`+`019e4216` (managedFields bug class + regression guard), `019e267a` (V2.1 Ops-A perf-alerts-slack), `019e2a4f` (GitHub Issues receiver, PR #645)
+- **Codex threads**: `019e4256` (Session 42 audit + scope), `019e4234` (PR #855 D43 staged config), `019e41d7`+`019e4216` (managedFields bug class + regression guard), `019e267a` (V2.1 Ops-A perf-alerts-teams), `019e2a4f` (GitHub Issues receiver, PR #645)
 - **PRs**: #850 + #851 + #852 + #855 (D43 source-ready chain + governance)
 - **Board issues**: #857 (this tracker), #853 (test sentinel), #854 (D43 owner-gated activation)
 - **Source**: `helm-values/kube-prometheus-stack/values-prod.yaml`
@@ -411,13 +420,13 @@ Plus audit doc: `docs/faz-23-evidence/2026-XX-XX-857-helm-upgrade-rollback.md`.
 **2026-05-19 (Session 42 PR #860 — Codex `019e4256` REVISE iter-2 P0 absorb)** — Single new finding: known-blocked `perf-alerts-github-issues` direct receiver still live in `values-prod.yaml` would activate on helm upgrade (404/422 fail log spam every perf alert). Absorb (Codex tercih A):
 - Runbook front-matter Status: READY → **BLOCKED** until sibling PR cleanup.
 - §2.2 GitHub PAT: **OPTIONAL / future-only** (not required for #857 activation; wrapper PR's prereq).
-- §5.1 Config verify: 3 aktif receiver (alarm-receiver-bridge + perf-alerts-slack + direct-fallback); 6 mount file (5 fallback + 1 perf); github-issues-receiver-token mount klasörü YOK (sibling PR removed).
+- §5.1 Config verify: 3 aktif receiver (alarm-receiver-bridge + perf-alerts-teams + direct-fallback); 6 mount file (5 fallback + 1 perf); github-issues-receiver-token mount klasörü YOK (sibling PR removed).
 - §5.2 Synthetic alert acceptance: Slack + bridge-driven GitHub Issue; direct receiver scope-out at both runbook and values-prod.yaml level.
 - Sibling PR scope: `values-prod.yaml` `perf-alerts-github-issues` route (both critical + non-critical) + receiver definition + `github-issues-receiver-token` mount removal. Wrapper PR sonra geri ekler.
 
 **2026-05-19 (Session 42 PR #860 — Codex `019e4256` REVISE iter-3 absorb chain final)** — Codex iter-3 (post sibling PR #861 + #860 review) had 4 findings (2×P1 + 2×P2). Absorb:
 - §4.2 dry-run expected changes — 4-receiver/3-mount stale model replaced with sibling PR #861 post-merge 3-receiver / 2-mount model. Unexpected `perf-alerts-github-issues` / `github-issues-receiver-token` appearance in diff flagged as PR #861 revert error.
-- §6 rollback triggers — "4 receiver göstermezse" replaced with explicit 3-receiver expected set (`alarm-receiver-bridge`, `perf-alerts-slack`, `direct-fallback`). Unexpected direct receiver re-appearance flagged as revert tetik.
+- §6 rollback triggers — "4 receiver göstermezse" replaced with explicit 3-receiver expected set (`alarm-receiver-bridge`, `perf-alerts-teams`, `direct-fallback`). Unexpected direct receiver re-appearance flagged as revert tetik.
 - Front-matter Status: BLOCKED → **READY-PACKET** — sibling cleanup gate satisfied by PR #861 merge; helm upgrade still owner-gated by §2 artifacts + dry-run Codex consensus.
 - (P2 #861 non-critical perf comment — DUAL via Slack + bridge — already fixed in PR #861 commit `7931158`.)
 

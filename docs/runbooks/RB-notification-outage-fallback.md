@@ -1,10 +1,10 @@
 # RB-notification-outage-fallback — D43 Outage Fallback Bypass Runbook
 
-> **Status**: ACTIVE (Faz 23.2.D T1.4 PR-1+PR-2+PR-3 MERGED 2026-05-09; PR-1.5 prod staged config PR #855 Session 42 — Codex `019e4234`; **BL-008 mock-receipt drill 2026-05-24 — Codex `019e5aaf` REVISE absorb**)
+> **Status**: ACTIVE (Faz 23.2.D T1.4 PR-1+PR-2+PR-3 MERGED 2026-05-09; PR-1.5 prod staged config PR #855 Session 42 — Codex `019e4234`; **BL-008 mock-receipt drill 2026-05-24 — Codex `019e5aaf` REVISE absorb**; **BL-D43-TEAMS-PIVOT 2026-05-24 — Codex `019e5ba9` REVISE/iter-2 absorb**)
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md) D43 + D46 #10
 > **Sub-faz**: 23.2 (MVP-dar — outage fallback bypass T1.4)
-> **Codex thread**: `019df86f` Q4 PARTIAL absorb (initial); `019e0dea` iter-1+2+3+4 (T1.4 PR-1/2/3 cross-AI peer review); `019e4234` Session 42 (prod activation scope split + truth alignment); **`019e5aaf` BL-008 mock-receipt drill REVISE absorb**
-> **Risk**: R9 — **current state 🟢 mock-receipt mitigated** (BL-008 test cluster dual-receipt drill 2026-05-24: webhook-receiver POST `/slack-mock` 200 length=983 + Mailpit `[D43 DRILL] NotifyServiceAbsent` 16:17:33Z — same Alertmanager dispatch cycle). **Residual operator-external**: real Slack workspace receipt board [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) + prod activation board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) (Operator v0.90.1 `auth_*_file` schema gap fix #854 kapsamında). Production-ready claim DEĞİL.
+> **Codex thread**: `019df86f` Q4 PARTIAL absorb (initial); `019e0dea` iter-1+2+3+4 (T1.4 PR-1/2/3 cross-AI peer review); `019e4234` Session 42 (prod activation scope split + truth alignment); `019e5aaf` BL-008 mock-receipt drill REVISE absorb; **`019e5ba9` BL-D43-TEAMS-PIVOT REVISE/iter-2 absorb (Slack → Microsoft Teams Power Automate workflow webhook)**
+> **Risk**: R9 — **current state 🟢 mock-receipt mitigated, Teams-pivot reverify pending** (BL-008 test cluster dual-receipt drill 2026-05-24; **BL-D43-TEAMS-PIVOT 2026-05-24** kullanıcı kararı "slack kullanmıyoruz teams kullanıyoruz" — receiver tipi `slack_configs` → `webhook_configs`, secret key `SLACK_WEBHOOK_URL` → `TEAMS_WEBHOOK_URL`, payload v4 generic JSON Power Automate parse). **Residual operator-external**: real Microsoft Teams Power Automate workflow setup + prod activation (yeni board issues; eski Slack #853/#854 kapatıldı). **R27 NEW**: Power Automate workflow lifecycle/owner/tenant policy drift risk. Production-ready claim DEĞİL.
 
 ---
 
@@ -24,12 +24,15 @@
 
 ## 2. Mimari — Üç Katmanlı Bypass
 
-### 2.1 Katman 1: Alertmanager Direct Receiver (T1.4 PR-1 + BL-008 2026-05-24 revize)
+### 2.1 Katman 1: Alertmanager Direct Receiver (T1.4 PR-1 + BL-008 2026-05-24 revize + BL-D43-TEAMS-PIVOT 2026-05-24 Codex `019e5ba9`)
 
 `monitoring/alertmanager` config'inde **native receiver** `direct-fallback`:
-- Slack: `slack_configs` + `api_url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SLACK_WEBHOOK_URL`
-- SMTP: `email_configs` (test cluster Mailpit no-auth: `require_tls: false`, auth fields YOK; prod cluster ayrı schema — bkz §6.5.8)
-- Single receiver (slack + email birlikte) — Codex iter-2 #3 absorb
+- **Teams** (BL-D43-TEAMS-PIVOT 2026-05-24): `webhook_configs` + `url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/TEAMS_WEBHOOK_URL` + `send_resolved: true` + `max_alerts: 50`. Alertmanager generic v4 webhook JSON payload — Microsoft Teams Power Automate workflow (incoming HTTP trigger) parse eder ve target Teams channel'a Adaptive Card post eder.
+- **SMTP**: `email_configs` (test cluster Mailpit no-auth: `require_tls: false`, auth fields YOK; prod cluster ayrı schema — bkz §6.5.8)
+- Single receiver (Teams + email birlikte) — Codex iter-2 #3 absorb; receiver adı `direct-fallback` vendor-neutral korunur (BL-D43-TEAMS-PIVOT Q3 absorb).
+
+**Eski Slack pattern (DEPRECATED 2026-05-24)**:
+- `slack_configs` + `api_url_file: SLACK_WEBHOOK_URL` — kullanıcı kararı "slack kullanmıyoruz teams kullanıyoruz" sonrası terkedildi. Vault key rename `SLACK_WEBHOOK_URL` → `TEAMS_WEBHOOK_URL`; eski Slack key Vault'ta rollback window boyunca tutulabilir, sonra operator silebilir (P2 cleanup).
 
 `route` matchers (Codex `019e5aaf` REVISE absorb 2026-05-24 — BL-008 mock-receipt drill route narrowing):
 - Root route: `receiver: "null"` (drill window'da diğer alerts drop; gereksiz POST/mail noise yok)
@@ -44,7 +47,7 @@ Implementation: `helm-values/kube-prometheus-stack/values-test-d43-drill.yaml` (
 
 Vault path **ayrı** (`notification-orchestrator`'ın path'inden bağımsız → tek credential rotation iki kanalı bozmaz):
 
-- **Vault path**: `kv/platform/alertmanager-fallback` (5 keys: `SLACK_WEBHOOK_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`)
+- **Vault path**: `kv/platform/alertmanager-fallback` (5 keys: **`TEAMS_WEBHOOK_URL`** (BL-D43-TEAMS-PIVOT 2026-05-24 rename), `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`)
 - **ESO ExternalSecret**: `monitoring/alertmanager-fallback-secrets` (test+prod overlays)
 - **Vault policy**: `eso-runtime` extend (PR #457 commit `bootstrap/vault-policies/common/eso-runtime.hcl`)
 
@@ -127,26 +130,29 @@ kubectl --context k3d-test get clustersecretstore vault-platform-gitops \
 #### Test cluster (D43 drill prereq)
 
 ```bash
+# 2026-05-24 BL-D43-TEAMS-PIVOT (Codex 019e5ba9): SLACK_WEBHOOK_URL → TEAMS_WEBHOOK_URL.
+# Mock URL port webhook-receiver Service port 8080 (kustomize/overlays/test/lab-deps/webhook-receiver.yaml line 136).
 docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-test \
   vault kv put kv/platform/alertmanager-fallback \
-    SLACK_WEBHOOK_URL=http://webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock \
+    TEAMS_WEBHOOK_URL=http://webhook-receiver.platform-test.svc.cluster.local:8080/teams-mock \
     SMTP_HOST=mailpit.platform-test.svc.cluster.local \
     SMTP_PORT=587 \
     SMTP_USER=alertmanager-fallback@local \
     SMTP_PASSWORD=drill-only-mailpit-no-auth
 ```
 
-**Test cluster SLACK_WEBHOOK_URL canonical: in-cluster mock receiver**
-(Codex thread `019e5aaf` REVISE absorb 2026-05-24 — BL-008 mock-receipt drill).
+**Test cluster TEAMS_WEBHOOK_URL canonical: in-cluster mock receiver**
+(Codex thread `019e5ba9` BL-D43-TEAMS-PIVOT iter-2 absorb 2026-05-24).
 
-Mock receiver: `webhook-receiver.platform-test.svc.cluster.local:8080/slack-mock`
+Mock receiver: `webhook-receiver.platform-test.svc.cluster.local:8080/teams-mock`
 (nginx POST logger; permanent NetworkPolicy
 `kustomize/overlays/test/lab-deps/webhook-receiver-netpol-from-monitoring.yaml`
-ile commit). Alertmanager Slack receiver POST sırasında **HTTP 200 receipt**
-(nginx access log: method/uri/length/status capture) sağlar — payload
-semantic Slack contract validation YOK; "unrecoverable error" Alertmanager
-log'unda expected for mock drill. Eski `http://drill-slack-mock.local/webhook`
-sentinel **DEPRECATED** (NXDOMAIN; drill 2026-05-10 Slack leg sessiz kayıp).
+ile commit; Service port 8080 — webhook-receiver.yaml). Alertmanager
+webhook receiver POST sırasında **HTTP 200 receipt** (nginx access log:
+method/uri/length/status capture) sağlar — payload semantic Teams
+Adaptive Card contract validation YOK; mock drill için HTTP-layer eşdeğer.
+Eski `:9000/teams-mock` ve `SLACK_WEBHOOK_URL` referansları
+**DEPRECATED** (Codex `019e5ba9` iter-2 P1 fix — yanlış port + Slack-first).
 
 **Test mock vs real boundary**:
 
@@ -170,10 +176,14 @@ test cluster dual-receipt evidence ile kapatır.
 > Bu adım PR-1 staged/gated values-prod.yaml merge edildikten **sonra** ve
 > `helm upgrade` ile cluster apply edilmeden **önce** yapılır.
 
-Owner artifact (Slack admin + ops):
+Owner artifact (Microsoft Teams admin + ops — BL-D43-TEAMS-PIVOT 2026-05-24 Codex `019e5ba9`):
 
-- `SLACK_WEBHOOK_URL`: gerçek prod `#alerts-d43-drill` (veya
-  `#prod-outage-alerts` — owner karar) Slack workspace incoming webhook
+- **`TEAMS_WEBHOOK_URL`**: Microsoft Teams Power Automate workflow HTTP POST endpoint. Operator Power Automate'ta service-account veya team-owned flow oluşturur:
+  - **Trigger**: "When an HTTP request is received" (anonymous HTTP endpoint)
+  - **Action**: "Post adaptive card in a chat or channel" → prod D43 outage target Teams channel
+  - **Payload schema** (Alertmanager v4 webhook): `{alerts[], status, groupLabels, commonLabels, commonAnnotations}` — Power Automate flow JSON parse + Adaptive Card transform
+  - **Flow ownership**: **service-account veya team-owned** (R27 mitigation — bireysel owner YASAK)
+  - **Backup**: Exported flow package (`.zip`) artifact (R27 mitigation 2)
 - `SMTP_HOST`: prod SMTP relay endpoint (default `smtp.office365.com`,
   vendor değişimi config-only — `notification-orchestrator` ile aynı vendor
   patternı)
@@ -184,18 +194,37 @@ Owner artifact (Slack admin + ops):
 - `SMTP_PASSWORD`: ilgili App Password (operator Vault'a yazar; transcript'e
   yazılmaz — HARD RULE no-token-log)
 
-Seed (operator):
+**Eski Slack pattern (DEPRECATED 2026-05-24)**: `SLACK_WEBHOOK_URL` Vault key kullanıcı kararı sonrası terkedildi; eski key Vault'ta rollback window'da tutulabilir, sonra operator silebilir (P2 cleanup).
+
+Seed (operator) — Codex iter-2 R27 absorb: hidden prompt + stdin pipe:
 
 ```bash
-ssh halil@staging-sw
-docker exec -e VAULT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json) \
-  platform-vault-prod \
+ssh halil@staging-sw '
+ROOT_TOKEN="$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)"
+
+# Step 1: Non-secret SMTP host/port/user — inline kv patch
+docker exec -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
   vault kv put kv/platform/alertmanager-fallback \
-    SLACK_WEBHOOK_URL=<...> \
     SMTP_HOST=smtp.office365.com \
     SMTP_PORT=587 \
-    SMTP_USER=alertmanager-fallback@acik.com \
-    SMTP_PASSWORD=<...>
+    SMTP_USER=alertmanager-fallback@acik.com
+
+# Step 2: Teams Power Automate workflow URL — stdin pipe (no plaintext shell)
+read -r -s -p "Teams Power Automate workflow HTTP POST URL (prod D43 outage flow): " TEAMS_URL && echo
+printf "%s" "$TEAMS_URL" | docker exec -i \
+  -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
+  vault kv patch kv/platform/alertmanager-fallback TEAMS_WEBHOOK_URL=-
+unset TEAMS_URL
+
+# Step 3: SMTP App Password — stdin pipe
+read -r -s -p "SMTP App Password (alertmanager-fallback@acik.com): " SMTP_PWD && echo
+printf "%s" "$SMTP_PWD" | docker exec -i \
+  -e VAULT_TOKEN="$ROOT_TOKEN" platform-vault-prod \
+  vault kv patch kv/platform/alertmanager-fallback SMTP_PASSWORD=-
+unset SMTP_PWD
+
+unset ROOT_TOKEN
+'
 ```
 
 Verify ESO sync (1h refresh-interval veya manual force-sync):

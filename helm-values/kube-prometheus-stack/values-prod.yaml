@@ -144,9 +144,17 @@ alertmanager:
         #   (d) `helm upgrade kube-prometheus-stack -n monitoring
         #        -f helm-values/kube-prometheus-stack/values-prod.yaml`
         #       (Alertmanager pod restart picks up the new config + Secret mount);
-        #   (e) Synthetic NotifyServiceDown smoke (scale orchestrator=0 in a
-        #       controlled window) → Teams Adaptive Card receipt + SMTP receipt
-        #       + GitHub Issue + recovery.
+        #   (e) **Synthetic NotifyServiceDown smoke** via Alertmanager API POST
+        #       (`/api/v2/alerts` with alertname=NotifyServiceDown,
+        #       severity=critical, bypass_orchestrator=true,
+        #       outage_fallback=true labels). **NOT** `scale orchestrator=0`
+        #       (HARD RULE Pre-Production TEST Cluster Scale-to-Zero YASAK
+        #       2026-05-10; prod-mode same pattern applies — scale-to-zero
+        #       only acceptable in dedicated controlled outage drill window
+        #       owner-approved, NOT for ongoing prod activation smoke).
+        #       Expected receipts: Teams Adaptive Card + SMTP + GitHub Issue
+        #       (via continue:true sibling route). Recovery: alert
+        #       expires (endsAt) or amtool silence.
         # Until (a-d), Secret-driven legs (Teams via url_file, SMTP via
         # auth_*_file) silently no-op when files are missing. continue=true
         # ensures the operator-action gap is observable through the bridge

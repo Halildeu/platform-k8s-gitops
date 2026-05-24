@@ -132,19 +132,22 @@ kubectl --context k3d-prod -n monitoring annotate externalsecret perf-alertmanag
 ```
 
 ### Operator Step 4 — Helm Upgrade (Test + Prod)
+
+> **PROD PREREQ (Codex iter-2 P1 absorb 2026-05-24)**: `values-prod.yaml` `direct-fallback` receiver `email_configs` `auth_username_file`/`auth_password_file` Operator v0.90.1 schema gap fix gerek. **Prod helm upgrade BU FIX yapılmadan ÇAĞRILMAZ** — aksi halde Alertmanager Operator ReconciliationFailed status'a düşer. Seçenekler: (a) inline `auth_username` + `auth_password` (Vault'tan template injection; ESO ref'i pod env via valueFrom), (b) Operator upgrade (newer version `_file` desteği). **Test cluster helm upgrade bu prereq'ten bağımsız** (Mailpit no-auth; email_configs auth fields yok).
+
 ```bash
-# Test cluster (drill override)
+# Test cluster (drill override) — prereq YOK
 helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   --kube-context k3d-test \
   -n monitoring \
   -f helm-values/kube-prometheus-stack/values-test.yaml \
   -f helm-values/kube-prometheus-stack/values-test-d43-drill.yaml
 
-# Prod cluster
-helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-  --kube-context k3d-prod \
-  -n monitoring \
-  -f helm-values/kube-prometheus-stack/values-prod.yaml
+# Prod cluster — PREREQ: SMTP schema fix önce!
+# helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#   --kube-context k3d-prod \
+#   -n monitoring \
+#   -f helm-values/kube-prometheus-stack/values-prod.yaml
 ```
 
 ### Operator Step 5 — Synthetic NotifyServiceDown Smoke (Test Cluster, scale=0 YASAK)

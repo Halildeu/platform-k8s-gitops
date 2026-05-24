@@ -107,7 +107,7 @@ alertmanager:
             # channel/title/text template kaldırıldı.
             max_alerts: 50
             # Test drill: TEAMS_WEBHOOK_URL Vault'ta operator tarafından
-            # http://webhook-receiver.platform-test.svc.cluster.local:9000/teams-mock
+            # http://webhook-receiver.platform-test.svc.cluster.local:8080/teams-mock
             # olarak seed edilir (mock-receipt drill). Gerçek Teams Power Automate
             # flow URL'i prod activation board issue'da operator-bound.
         email_configs:
