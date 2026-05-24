@@ -156,20 +156,24 @@ Eski `:9000/teams-mock` ve `SLACK_WEBHOOK_URL` referansları
 
 **Test mock vs real boundary**:
 
-| Scope | Test cluster (this section) | Real Slack workspace (#853) | Prod cluster (#854) |
+| Scope | Test cluster (this section) | Real Teams Power Automate workflow (yeni board) | Prod cluster (yeni board) |
 |---|---|---|---|
-| URL | `webhook-receiver.platform-test:8080/slack-mock` | Real `#alerts-d43-drill` Slack incoming webhook URL | Owner-provided `#prod-outage-alerts` webhook |
-| Validation | HTTP POST receipt (nginx 200 log) | Slack channel message manuel görme | Slack channel message manuel görme |
-| Acceptance | BL-008 mock-receipt drill 10/10 (`docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md`) | Operator action (Slack workspace admin) | Operator action (Vault prod seed + helm upgrade + dual-receipt smoke) |
-| Status | 🟢 Mitigated (mock-receipt) 2026-05-24 | 🟡 Pending board [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) | 🟡 Pending board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) |
+| URL | `webhook-receiver.platform-test:8080/teams-mock` (Codex 019e5ba9 iter-2 port fix; eski 9000 yanlış) | Microsoft Teams Power Automate workflow HTTP POST endpoint (operator service-account/team-owned flow + exported package backup) | Operator Power Automate workflow target prod Teams channel |
+| Validation | HTTP POST receipt (nginx 200 log) — payload semantic Teams Adaptive Card contract validation YOK (mock-only HTTP layer) | Teams Adaptive Card görsel + Power Automate flow run-history status=Success + flow run ID kayıt (R27 mitigation 6) | Teams Adaptive Card görsel + flow run-history audit log + SMTP receipt + GitHub Issue (3-channel defense-in-depth) |
+| Acceptance | BL-008 mock-receipt drill 10/10 (`docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md` historical; Slack-pre-pivot kayıt; BL-D43-TEAMS-PIVOT 2026-05-24 sonrası Teams reverify drill yapılacak) | Operator action (Power Automate workflow setup + Vault seed) | Operator action (Vault prod seed + helm upgrade + triple receipt smoke + R27 mitigation 7 rotation rehearsal) |
+| Status | 🟢 Mitigated (mock-receipt) 2026-05-24 — Teams reverify pending | 🟡 Pending yeni board issue (eski #853 kapatıldı 2026-05-24 BL-D43-TEAMS-PIVOT) | 🟡 Pending yeni board issue (eski #854 kapatıldı 2026-05-24 BL-D43-TEAMS-PIVOT) |
 
 Test cluster drill execution: bu §3.2 test sub-section pre-conditions + §5 prosedür
-(scale=0 → dual receipt → recovery) — `2026-05-24` mock-receipt drill log
+(synthetic Alertmanager API POST 5.2.A önerilen / scale=0 5.2.B legacy
+istisna → dual receipt → recovery) — `2026-05-24` mock-receipt drill log
 referans. Geçici sentinel state 2026-05-10 drill window'unda mevcut idi; o
 drill SMTP-only kanıt ile mitigated kabul edildi (`risk-register.md` R9 +
 M3 T1.4) — Codex `019e4234` audit'i bu kabul sınıfını partial mitigation
 olarak yeniden etiketledi; **BL-008 2026-05-24 mock-receipt drill** o partial state'i
-test cluster dual-receipt evidence ile kapatır.
+test cluster dual-receipt evidence ile kapatır. **BL-D43-TEAMS-PIVOT 2026-05-24
+(Codex `019e5ba9`)** sonrası Teams reverify drill (mock URL `:8080/teams-mock`)
+ayrı operator slot — `webhook_configs` receiver pattern + payload v4 generic JSON
+HTTP-layer eşdeğer.
 
 #### Prod cluster (D43 outage fallback aktivasyon — Codex `019e4234` Yol-3)
 
@@ -317,7 +321,7 @@ kubectl --context k3d-test -n monitoring exec -it deploy/prometheus-operator-pro
 # Initial state: empty (no firing)
 ```
 
-### Step 4: Alertmanager native Slack+SMTP receiver routing match
+### Step 4: Alertmanager native Teams+SMTP receiver routing match (BL-D43-TEAMS-PIVOT 2026-05-24)
 
 #### 4.0 Service/pod discovery (Codex iter-1 P2 #3 absorb)
 
@@ -347,11 +351,14 @@ kubectl --context k3d-test -n monitoring exec <alertmanager-pod-from-discovery> 
   amtool config show | grep -A 5 direct-fallback
 ```
 
-### Step 5: Drill scale=0 → fire NotifyServiceDown/NotifyServiceAbsent → fallback
+### Step 5: Drill → fire NotifyServiceDown/NotifyServiceAbsent → fallback
+
+> **BL-D43-TEAMS-PIVOT 2026-05-24 (Codex `019e5ba9` iter-2 P1 #3 absorb)**:
+> HARD RULE TEST Cluster Scale-to-Zero YASAK (2026-05-10 — paralel multi-Claude session safety). Önerilen trigger pattern **Synthetic Alertmanager API POST** (5.2.A); `scale=0` legacy debug istisnası (5.2.B) sadece controlled drill window + owner-approved.
 
 #### 5.1 PrometheusRule prereq
 
-T1.4 PR-4 (this runbook) ile eklenen `NotifyServiceAbsent` test-only rule. Scale-to-zero target disappearance coverage. PR LIVE doğrulama:
+T1.4 PR-4 (this runbook) ile eklenen `NotifyServiceAbsent` test-only rule. Synthetic Alertmanager API POST için: rule mevcudiyeti gerekli DEĞİL (Alertmanager API alert'i direkt kabul eder). Scale=0 alternatifi için PR LIVE doğrulama:
 
 ```bash
 curl -s http://127.0.0.1:9090/api/v1/rules | \
@@ -359,19 +366,56 @@ curl -s http://127.0.0.1:9090/api/v1/rules | \
 # Expected: rule mevcut (test-only, namespace=platform-test selector)
 ```
 
-#### 5.2 Trigger outage + native fallback evidence
+#### 5.2.A Trigger outage — **Synthetic Alertmanager API POST** (önerilen, HARD RULE uyumlu)
+
+```bash
+# Alertmanager port-forward
+kubectl --context k3d-test -n monitoring port-forward svc/kube-prometheus-stack-alertmanager 9093:9093 &
+PF_PID=$!
+sleep 3
+
+# Synthetic NotifyServiceDown alert POST (Alertmanager dispatch chain'i hareket eder)
+curl -sS -X POST http://localhost:9093/api/v2/alerts \
+  -H 'Content-Type: application/json' \
+  -d '[{
+    "labels": {
+      "alertname": "NotifyServiceDown",
+      "severity": "critical",
+      "namespace": "platform-test",
+      "outage_fallback": "true",
+      "bypass_orchestrator": "true"
+    },
+    "annotations": {
+      "description": "Synthetic Teams pivot reverify drill — BL-D43-TEAMS-PIVOT"
+    },
+    "startsAt": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+    "endsAt": "'$(date -u -v+10M +%Y-%m-%dT%H:%M:%SZ)'"
+  }]'
+
+# Verify alert active
+curl -s http://localhost:9093/api/v2/alerts | \
+  jq '.[] | select(.labels.alertname | test("^(NotifyServiceDown|NotifyServiceAbsent)$")) | {alertname: .labels.alertname, status: .status.state, labels: .labels}'
+# Expected: alert active, labels include bypass_orchestrator=true, outage_fallback=true
+
+# (Alertmanager Step 6'da webhook-receiver POST + Step 7 SMTP receipt)
+
+# Cleanup port-forward (drill receipt verify sonrası)
+# kill $PF_PID
+```
+
+#### 5.2.B Trigger outage — Scale=0 (legacy istisna, sadece controlled drill window + owner-approved)
 
 ```bash
 # Pre-drill snapshot (orchestrator UP)
 kubectl --context k3d-test -n platform-test get pod -l app.kubernetes.io/name=notification-orchestrator
 
-# Trigger outage
+# Trigger outage (HARD RULE TEST Cluster Scale-to-Zero YASAK — sadece drill istisna)
 kubectl --context k3d-test -n platform-test scale deploy/notification-orchestrator --replicas=0
 
 # Wait for=2m (NotifyServiceDown VEYA NotifyServiceAbsent alert fire)
 sleep 130
 
-# Verify alert fired (her iki rule yakalar; jq test() regex match — Codex iter-3 P1 #2 fix)
+# Verify alert fired (her iki rule yakalar; jq test() regex match)
 curl -s http://127.0.0.1:9093/api/v2/alerts | \
   jq '.[] | select(.labels.alertname | test("^(NotifyServiceDown|NotifyServiceAbsent)$")) | {alertname: .labels.alertname, status: .status.state, labels: .labels}'
 # Expected: en az 1 alert active
@@ -451,25 +495,27 @@ curl -s http://127.0.0.1:9093/api/v2/alerts | \
 rm -f /tmp/kubeconfig-break-glass-*
 ```
 
-### Step 6: Slack receipt evidence (mock-or-real per scope)
+### Step 6: Teams receipt evidence (mock-or-real per scope) — BL-D43-TEAMS-PIVOT 2026-05-24
 
-**Test cluster (BL-008 mock-receipt drill — Codex `019e5aaf` REVISE absorb 2026-05-24)**:
+**Test cluster mock-receipt drill — Codex `019e5ba9` Teams pivot**:
 
 ```bash
 # webhook-receiver mock POST log capture (nginx access log)
-kubectl --context k3d-test -n platform-test logs deploy/webhook-receiver --since=5m | grep slack-mock
-# Expected: POST /slack-mock length=<bytes> status=200 timestamp matches T+3m FIRING window
+kubectl --context k3d-test -n platform-test logs deploy/webhook-receiver --since=5m | grep teams-mock
+# Expected: POST /teams-mock length=<bytes> status=200 timestamp matches T+3m FIRING window
 ```
 
-Test mock evidence dili: **"Alertmanager Slack receiver mock POST receipt + Alertmanager route correlation"** (NOT "Slack channel receipt"). Payload semantic validation YOK; webhook-receiver nginx 200 dönüyor; "unrecoverable error" Alertmanager log'unda expected (Slack format değil response body) — mock-only davranış.
+Test mock evidence dili: **"Alertmanager webhook receiver mock POST receipt + Alertmanager route correlation"** (NOT "Teams Adaptive Card receipt"). Payload semantic validation YOK; webhook-receiver nginx 200 dönüyor; mock URL Teams flow değil — Adaptive Card transform YOK. Mock-only davranış: Alertmanager dispatch chain hareket etti + receiver tipi (webhook_configs) doğru çalıştı.
 
-**Real Slack workspace (board [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853) — operator action)**:
+> Eski `/slack-mock` log grep pattern + payload contract DEPRECATED (2026-05-24 BL-D43-TEAMS-PIVOT). Historical evidence: `docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md` (Slack-pre-pivot historical kayıt).
 
-Manuel: Slack `#alerts-d43-drill` kanalı → drill window'da `[D43 DRILL] NotifyServiceDown — critical` mesajı görüldü mü? (Gerçek Slack incoming webhook URL Vault `SLACK_WEBHOOK_URL`'a yazılır + ESO sync + drill).
+**Real Microsoft Teams Power Automate workflow (yeni board issue — operator action)**:
 
-**Prod cluster (board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) — owner-gated)**:
+Manuel: Operator Power Automate flow target Teams channel → drill window'da Adaptive Card görüldü mü? Card body: alertname=NotifyServiceDown + severity=critical + outage_fallback=true + bypass_orchestrator=true. Power Automate flow run-history'de status=Success + flow run ID kayıt zorunlu (R27 mitigation 6). Gerçek Teams Power Automate workflow URL Vault `kv/platform/alertmanager-fallback.TEAMS_WEBHOOK_URL`'a yazılır + ESO sync + drill.
 
-§6.5 prosedürü follow; `#alerts-d43-drill` veya `#prod-outage-alerts` kanalı manuel kontrol.
+**Prod cluster (yeni board issue — owner-gated)**:
+
+§6.5 prosedürü follow; Power Automate flow target prod Teams channel manuel kontrol + flow run-history audit log.
 
 ### Step 7: Mailpit SMTP receipt evidence
 
@@ -479,7 +525,25 @@ kubectl --context k3d-test -n platform-test port-forward svc/mailpit 8025:8025
 # Browser: http://localhost:8025 → '[D43 DRILL] NotifyServiceDown' email
 ```
 
-### Step 8: Recovery scale=1 → audit best-effort post-recovery
+### Step 8: Recovery → audit best-effort post-recovery
+
+> **BL-D43-TEAMS-PIVOT 2026-05-24 (Codex `019e5ba9` iter-2 P1 #3)**: Recovery pattern trigger seçimine bağlı.
+
+**Recovery 5.2.A (synthetic API POST)**:
+
+```bash
+# Alert endsAt expire'a kadar bekle VEYA explicit silence
+curl -sS -X POST http://localhost:9093/api/v2/silences \
+  -H 'Content-Type: application/json' \
+  -d '{"matchers": [{"name": "alertname", "value": "NotifyServiceDown", "isRegex": false}], "startsAt": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "endsAt": "'$(date -u -v+5M +%Y-%m-%dT%H:%M:%SZ)'", "createdBy": "d43-drill", "comment": "BL-D43-TEAMS-PIVOT reverify drill cleanup"}'
+
+# Verify alert resolved
+curl -s http://127.0.0.1:9093/api/v2/alerts | \
+  jq '.[] | select(.labels.alertname=="NotifyServiceDown") | .status.state'
+# Expected: empty (no active alerts) — silenced veya expired
+```
+
+**Recovery 5.2.B (scale=0 → scale=1)** — sadece eski drill alternatifi kullanılmışsa:
 
 ```bash
 kubectl --context k3d-test -n platform-test scale deploy/notification-orchestrator --replicas=1
@@ -502,10 +566,11 @@ curl -s http://127.0.0.1:9093/api/v2/alerts | \
 `docs/faz-23-evidence/2026-XX-XX-<scope>-d43-drill.md` içerik:
 - Pre-drill snapshot (pod state, ESO sync, PrometheusRule list)
 - Drill execution timeline (UTC timestamps)
-- Step 5-8 outputs (curl, kubectl, **mock POST log OR Slack channel screenshot**, Mailpit screenshot)
-- Recovery snapshot
-- 10-criteria checklist (her step ✅) — scope-aware: mock-receipt OR real-Slack OR prod-activation
-- Scope qualifier: "mock-receipt drill" / "real Slack workspace drill" / "prod activation triple-receipt"
+- Trigger seçimi (5.2.A synthetic API POST veya 5.2.B scale=0)
+- Step 5-8 outputs (curl, kubectl, **mock POST log OR Teams Adaptive Card screenshot + flow run ID/status**, Mailpit screenshot)
+- Recovery snapshot (silence ID veya scale=1 rollout)
+- 10-criteria checklist (her step ✅) — scope-aware: mock-receipt OR real-Teams OR prod-activation
+- Scope qualifier: "mock-receipt drill" / "real Teams Power Automate drill" / "prod activation triple-receipt"
 
 Referans canlı evidence örnekleri:
 - 2026-05-24 BL-008 mock-receipt drill: `docs/faz-23-evidence/2026-05-24-bl008-r9-d43-drill.md`
@@ -516,10 +581,10 @@ Referans canlı evidence örnekleri:
 `docs/notify/risk-register.md`:
 - Per-scope status:
   - **Test cluster mock-receipt drill**: 🟡 partial → 🟢 Mitigated (mock-receipt) — DUAL receipt evidence (Mailpit SMTP + webhook-receiver POST 200)
-  - **Real Slack workspace**: pending board #853 ops slot
-  - **Prod activation**: pending board #854 owner-gated
+  - **Real Microsoft Teams Power Automate workflow**: pending yeni board issue ops slot (eski #853 kapatıldı 2026-05-24)
+  - **Prod activation**: pending yeni board issue owner-gated (eski #854 kapatıldı 2026-05-24)
 - Last review tarihi güncellenir
-- Dil disiplini (Codex `019e5aaf` REVISE absorb): "mitigated by mock-receipt drill — real Slack workspace + prod activation ayrı operator-external". "Mitigated by first controlled drill" overclaim YASAK (mock-only kapsamla sınırlı).
+- Dil disiplini (Codex `019e5aaf` + `019e5ba9` REVISE absorb): "mitigated by mock-receipt drill — real Teams Power Automate workflow + prod activation ayrı operator-external". "Mitigated by first controlled drill" overclaim YASAK (mock-only kapsamla sınırlı).
 
 ---
 
@@ -542,16 +607,17 @@ helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
 
 ### 6.5.1 Pre-activation gates
 
-- PR-1 staged config MERGED: `values-prod.yaml` `direct-fallback` receiver +
+- PR-1 staged config MERGED + **BL-D43-TEAMS-PIVOT PR #1053** (Teams pivot 2026-05-24 Codex `019e5ba9`): `values-prod.yaml` `direct-fallback` receiver +
   `NotifyServiceDown|NotifyServiceAbsent` route + `secrets[]` mount listed
-  (already present from PR #457).
+  (already present from PR #457 + Teams pivot #1053).
 - Vault prod path seeded (§3.2 prod sub-section): 5 keys non-empty;
   `ExternalSecret/alertmanager-fallback-secrets` `Ready=True`;
-  `Secret/alertmanager-fallback-secrets` 5 keys non-empty.
+  `Secret/alertmanager-fallback-secrets` 5 keys non-empty (TEAMS_WEBHOOK_URL + 4 SMTP).
 - `cross-ai-audit` chain for PR-1 and any follow-up activation PR.
-- Board issue [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854)
-  `In Progress` → `Blocked by owner action` (Slack admin + ops Vault seed) →
-  `In Progress` → `Needs Verify` (acceptance) → `Done`.
+- **Teams Power Automate workflow live**: service-account/team-owned flow created + exported package backup + tenant DLP/license/quota preflight (R27 mitigation 1-2-5).
+- **SMTP schema fix** (Codex `019e5ba9` iter-2 P1 #4): `values-prod.yaml` `email_configs` `auth_username_file`/`auth_password_file` Operator v0.90.1 schema gap fix yapıldı (inline `auth_username` + `auth_password` Vault template injection VEYA Operator upgrade). Aksi halde prod helm upgrade ReconciliationFailed.
+- Yeni board issue `In Progress` → `Blocked by owner action` (Teams Power Automate workflow setup + ops Vault TEAMS_WEBHOOK_URL seed) →
+  `In Progress` → `Needs Verify` (acceptance: Teams Adaptive Card + flow run-history + SMTP + GitHub Issue) → `Done`. Eski #854 kapatıldı 2026-05-24.
 
 ### 6.5.2 Apply prod helm-values (operator action — kubectl context k3d-prod)
 
@@ -572,7 +638,7 @@ kubectl --context k3d-prod -n monitoring rollout status \
 kubectl --context k3d-prod -n monitoring exec \
   alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager -- \
   amtool config show | grep -A 30 direct-fallback
-# Beklenen: receiver block + Slack `#alerts-d43-drill` + SMTP smarthost smtp.office365.com:587
+# Beklenen: receiver block + webhook_configs url_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/TEAMS_WEBHOOK_URL + SMTP smarthost smtp.office365.com:587 (BL-D43-TEAMS-PIVOT 2026-05-24)
 
 kubectl --context k3d-prod -n monitoring exec \
   alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager -- \
@@ -586,15 +652,18 @@ kubectl --context k3d-prod -n monitoring exec \
 kubectl --context k3d-prod -n monitoring exec \
   alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager -- \
   ls -la /etc/alertmanager/secrets/alertmanager-fallback-secrets/
-# Beklenen: 5 file (SLACK_WEBHOOK_URL + SMTP_HOST + SMTP_PORT + SMTP_USER + SMTP_PASSWORD)
+# Beklenen: 5 file (TEAMS_WEBHOOK_URL + SMTP_HOST + SMTP_PORT + SMTP_USER + SMTP_PASSWORD) — BL-D43-TEAMS-PIVOT 2026-05-24
 ```
 
-### 6.5.5 Synthetic NotifyServiceDown smoke (controlled prod outage window)
+### 6.5.5 Synthetic NotifyServiceDown smoke (controlled prod outage window) — BL-D43-TEAMS-PIVOT 2026-05-24
 
 > Bu adım gerçek prod outage simulasyonu — Pre-Production Full Authority +
-> kullanıcı açık beyanı altında. Sıra: port-forward aç (6.5.5-6.5.7 boyunca
-> açık tutulur, sonra cleanup) → scale=0 → 130s bekle → alert fire →
-> direct-fallback + bridge triple delivery → scale=1 → recovery → curl
+> kullanıcı açık beyanı altında. **BL-D43-TEAMS-PIVOT 2026-05-24 (Codex
+> `019e5ba9` iter-2 P1 #3)**: Önerilen trigger pattern **synthetic
+> Alertmanager API POST** (HARD RULE PROD Scale-to-Zero controlled drill
+> only + owner-approved). Sıra: port-forward aç (6.5.5-6.5.7 boyunca
+> açık tutulur, sonra cleanup) → synthetic API POST → alert dispatch →
+> direct-fallback + bridge triple delivery → silence/expire → curl
 > resolve verify → port-forward cleanup.
 
 ```bash
@@ -609,11 +678,25 @@ PF_PID=$!
 trap 'kill $PF_PID 2>/dev/null || true' EXIT
 sleep 3
 
-# Trigger outage (controlled — sadece smoke window)
-kubectl --context k3d-prod -n platform-prod scale \
-  deploy/notification-orchestrator --replicas=0
+# Trigger outage — Synthetic Alertmanager API POST (önerilen, HARD RULE uyumlu)
+curl -sS -X POST http://localhost:9093/api/v2/alerts \
+  -H 'Content-Type: application/json' \
+  -d '[{
+    "labels": {
+      "alertname": "NotifyServiceDown",
+      "severity": "critical",
+      "namespace": "platform-prod",
+      "outage_fallback": "true",
+      "bypass_orchestrator": "true"
+    },
+    "annotations": {
+      "description": "Prod D43 activation smoke — BL-D43-TEAMS-PIVOT controlled smoke"
+    },
+    "startsAt": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+    "endsAt": "'$(date -u -v+10M +%Y-%m-%dT%H:%M:%SZ)'"
+  }]'
 
-sleep 130   # NotifyServiceDown/Absent firing window
+sleep 10   # Alert dispatch + Power Automate flow trigger
 
 # Verify alert + routing — receivers MULTI (continue:true) — direct-fallback
 # + alarm-receiver-bridge birlikte; sıra Alertmanager iç state'e bağlı, bu
@@ -622,12 +705,12 @@ curl -s http://127.0.0.1:9093/api/v2/alerts | \
   jq '.[] | select(.labels.alertname | test("^(NotifyServiceDown|NotifyServiceAbsent)$")) | {alertname: .labels.alertname, status: .status.state, receivers: [.receivers[].name]}'
 # Beklenen: at least 1 active alert; receivers array contains BOTH
 # "direct-fallback" AND "alarm-receiver-bridge" (continue:true 3-channel
-# defense-in-depth: Slack + SMTP + GitHub Issue).
+# defense-in-depth: Teams Adaptive Card + SMTP + GitHub Issue).
 ```
 
 ### 6.5.6 Acceptance — TRIPLE receipt (continue:true)
 
-- **Slack `#alerts-d43-drill` (veya `#prod-outage-alerts`)**: `[D43 PROD]
+- **Teams "D43 Outage" channel (Power Automate workflow target)**: Adaptive Card geldi mi (alertname=NotifyServiceDown + severity=critical + outage_fallback=true + bypass_orchestrator=true) + flow run-history status=Success + run ID kayıt (R27 mitigation 6)? Eski `[D43 PROD]
   NotifyServiceDown — critical` mesajı + alert labels (Cluster=prod,
   outage_fallback=true, bypass_orchestrator=true).
 - **SMTP receipt**: ops mail group (`notify-ops@acik.com`) inbox'ında
@@ -655,7 +738,7 @@ trap - EXIT
 ```
 
 Audit doc: `docs/faz-23-evidence/2026-XX-XX-d43-prod-activation.md` —
-pre/during/post snapshot + Slack screenshot + SMTP screenshot + GitHub
+pre/during/post snapshot + Teams Adaptive Card screenshot + Power Automate flow run-history JSON export + SMTP screenshot + GitHub
 Issue link + 6.5.6 triple receipt evidence.
 
 ### 6.5.8 SMTP endpoint config — Vault değil, helm-values authoritative + Operator schema gap
@@ -699,7 +782,7 @@ Issue link + 6.5.6 triple receipt evidence.
 D43 fallback path'i ayrı tutmak yeterli değil — periyodik drift testi gerek:
 
 - **Aylık (cron)**: `RB-notification-outage-fallback.md` Step 4-8 prosedürü çalıştır
-- **Test cluster'da**: drill window aç + scale=0 + verify + recovery
+- **Test cluster'da**: drill window aç + synthetic Alertmanager API POST (5.2.A önerilen) veya scale=0 (5.2.B legacy istisna) + verify + recovery
 - **Production'da DR drill**: ADR-0011 AC-1 cadence ile uyumlu — yıllık (controlled prod drill)
 - **Periyodik drill follow-up**: ayrı PR (T1.4 PR-5 — Q3 2026)
 
