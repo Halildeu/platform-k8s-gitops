@@ -1,6 +1,6 @@
-# Faz 22 Web endpoint-admin — ALLOW path browser-context smoke (2026-05-24)
+# Faz 22 Web endpoint-admin — ALLOW path browser-context + live OpenFGA synthetic matrix (2026-05-24)
 
-> **Status**: PASS (D29-EA Up + Functional + Secured + Zanzibar-ready full matrix LIVE)
+> **Status**: PASS (D29-EA Up + Functional + Secured + Zanzibar-ready for the persona path; full operator-session parity for audit/status pending per §F)
 > **Trigger**: Post-#998/#999/#1000 follow-on — operator handed back the spawn task, agent drove acceptance with test persona JWT inside the credential boundary
 > **Cluster**: k3d-test platform-test ns (testai.acik.com edge)
 > **Runtime**: 2026-05-24 ~12:30 UTC+3
@@ -63,9 +63,9 @@ All 3 routes load + render the MFE without errors:
 - No blank screen / redirect-loop
 - Sidebar nav intact, header `Platform Admin` user chip rendered
 
-The data-call denials confirm Secured layer:
+The data-call denials confirm fail-closed behavior; only the `devices` 403 is attributed to FGA no-tuple deny in this evidence:
 - `devices` → **403** = JWT auth-gate passed (token valid) + FGA evaluates `user:1` against `can_view module:endpoint-admin` → no tuple → **deny** (intended behavior — `user:1` not in the seeded tuple set; only `user:9001` admin + `user:9002` viewer mapped).
-- `audit` + `status` → **401** = within the same browser session, Platform Admin's token was rejected at the gateway auth-gate (not FGA-deny). This is a **separate observation** worth follow-on investigation (see §F below); does NOT affect the ALLOW path acceptance.
+- `audit` + `status` → **401** = authn/JWT gate fail-closed before any FGA-deny result was observed. Exact rejecting hop/cause (gateway vs. resource server, header-snapshot race, audience/issuer validation, fetchFn variation) is **not proven** by this evidence; tracked as follow-on in §F.
 
 ## C) OpenFGA synthetic /check matrix (5/5 PASS)
 
@@ -111,13 +111,13 @@ MFE-driven audit + status RTK calls returned **401** for Platform Admin token wh
 - Per-endpoint `aud` validation on the gateway side (status/audit require a different `aud` that Platform Admin's token lacks)
 - RTK fetchFn variation (one path uses `unwrapRequestFetchFn` shim from notify #652, others don't)
 
-Diagnostic value: high (could surface a real bug under operator-driven smoke). Acceptance impact: zero (persona ALLOW path proves the full chain works; this finding is a "while we're here" note).
+Diagnostic value: high (could surface a real bug under operator-driven smoke). **Does not block the ALLOW-path acceptance recorded in §A-E. It remains follow-on before claiming full operator-session parity for audit/status MFE calls.**
 
 → Spawn task created (separate session worktree).
 
 ## Audit trail
 
-- **Implementer** Claude (Anthropic); **Reviewer** Codex (OpenAI). Provider-level Cross-AI HARD RULE per PR. This evidence note is documentation-only (no code/manifest delta); cross-AI required only if a follow-up PR opens.
+- **Implementer** Claude (Anthropic); **Reviewer** Codex (OpenAI). Provider-level Cross-AI HARD RULE per PR. This evidence note is documentation-only (no code/manifest/cluster mutation in the PR itself); the underlying smoke operation that produced the evidence DID perform test-cluster credential-read (master admin password file via `docker exec ... cat`) + credential-write (test persona password reset + rotate), classified ADR-0011 `state-mutation (test cluster)` at the operation level; the PR's own boundary class is `none of the above` (docs-only). Cross-AI required only if a follow-up PR opens.
 - Codex thread chain from this session block: `019e516c` (#654) → `019e5196` (#656) → `019e538c` (#657) → `019e53ab` (#998) → `019e53b5` (#999) → `019e53be` (#1000) → `019e593a` (strategic consult B>C>A>D this iteration).
 - Test persona credential: `c5persona-admin-9001` password reset to known agent-controlled value during smoke, rotated to `openssl rand -base64 32` random unknown immediately after. No JWT persisted to disk (classifier-blocked + agent-respected).
 - All operations test cluster (k3d-test) only; production untouched.
