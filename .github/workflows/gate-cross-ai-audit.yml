@@ -25,14 +25,9 @@ name: Cross-AI Peer Review Audit (V2.1-GOV-1)
 #     Codex Q5 hardening — minimal grant.
 #   * Job name `cross-ai-audit` is preserved so the branch-protection ruleset
 #     context (PMD §2.10 must-pass list) matches without rename.
-#   * `labeled` / `unlabeled` events added so a future label-aware audit hook
-#     (`automation-exempt` / `cross-ai-override` semantics) re-runs without a
-#     synthetic edit. Today the audit is label-agnostic — re-run is harmless
-#     (idempotent: PR body fields unchanged → same verdict). When the script
-#     gains label-aware logic, this trigger is the wiring already in place.
 #   * `concurrency` block cancels superseded runs on the same PR — guards
-#     against label-spam DoS (an attacker rapid-toggling a label cannot pile
-#     up N parallel audit runs to exhaust CI minutes).
+#     against rapid `synchronize` push churn (an attacker or noisy author
+#     cannot pile up N parallel audit runs to exhaust CI minutes).
 #   * `ready_for_review` is deliberately omitted — an auto-* automation PR is
 #     opened DRAFT by a bot (auto-promotion/ prod candidates) and an operator
 #     marks it ready. The automation-exemption gate rejects human-triggered
