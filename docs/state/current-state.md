@@ -40,7 +40,7 @@
 
 ### Bug analiz — birikimli kök neden zinciri
 
-#654 RTK gateway path fix → MFE'nin 8. remote'u federation'a girdi + path'ler `/api/v1/endpoint-admin/*` doğru. #656 `createEndpointAdminApp` race-protection → `configureShellServices` MFE'nin ilk RTK query'sinden önce çağrılıyor. #657 `endpointAdminApi.ts` shell-injected `getShellServices().auth.getToken()` + `localStorage.token` fallback → shell-resolver MF singleton'a ulaşmasa bile JWT okunuyor. #658 `fetchFn: unwrapRequestFetchFn` → RTK 2.x `Request`-object header-drop wire-layer bug'ı dodge edildi, Authorization gerçekten backend'e gidiyor. **4 PR ile Web acceptance auth-transport zinciri TAM kapandı.**
+#654 RTK gateway path fix → MFE'nin 8. remote'u federation'a girdi + path'ler `/api/v1/endpoint-admin/*` doğru. #656 `createEndpointAdminApp` race-protection → `configureShellServices` MFE'nin ilk RTK query'sinden önce çağrılıyor. #657 `endpointAdminApi.ts` shell-injected `getShellServices().auth.getToken()` + `localStorage.token` fallback → shell-resolver MF singleton'a ulaşmasa bile JWT okunuyor. #658 `fetchFn: unwrapRequestFetchFn` → RTK 2.x `Request`-object header-drop wire-layer bug'ı dodge edildi, Authorization gerçekten backend'e gidiyor. **4 PR ile Web acceptance auth-transport zinciri LIVE end-to-end (401 storm giderildi, evidence live).**
 
 ### Faz 23 M7 (#1008 truth-sync)
 
