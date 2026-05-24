@@ -437,9 +437,9 @@ Bu adım eski dual-receipt acceptance (SMTP + Slack) içindi. User decision 2026
 - See §2.1 active config + ADR-0013 + `docs/faz-23-evidence/2026-05-24-d43-slack-defer-smtp-only-acceptance.md`
 - Cascade: #853 + #1012 DEFER (Slack-dependent); reactivation requires new issue tracker
 
-**Prod cluster (board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) — owner-gated)**:
+**Prod cluster (board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) — owner-gated; SMTP-only per user decision 2026-05-24 Slack DEFER)**:
 
-§6.5 prosedürü follow; `#alerts-d43-drill` veya `#prod-outage-alerts` kanalı manuel kontrol.
+§6.5 prosedürü follow (DEFERRED guard — see §6.5 header + [#1054](https://github.com/Halildeu/platform-k8s-gitops/issues/1054) canonical surface continuation tracker). Slack channel manual check requirement removed; current v1 acceptance = §6.5.6 DUAL receipt (SMTP + GitHub Issue bridge).
 
 ### Step 7: Mailpit SMTP receipt evidence
 
@@ -515,7 +515,7 @@ helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
 >
 > **Operator action**: Board [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854) (SMTP-only prod activation rescope) MUST be the activation authority. The §6.5.3-§6.5.7 sub-sections below will be rewritten in a follow-up canonical-surface PR before operator activation. Until then, do not execute §6.5.x commands or accept the stale §6.5.6 TRIPLE receipt wording as current acceptance.
 >
-> Follow-up tracker: After Lane A (PR #1051) merge, new GitHub issue will be opened for "Faz 23 D43 SMTP-only canonical surface continuation" covering RB §6.5.x rewrite + PLAN.md row 38 D43/D46 satırları + ADR-0013 amendment block + feature-matrix.md / RB-faz-23-charter.md supersession notes.
+> Follow-up tracker: [#1054](https://github.com/Halildeu/platform-k8s-gitops/issues/1054) "Faz 23 D43 SMTP-only canonical surface continuation" covers RB §6.5.x rewrite + PLAN.md row 38 D43/D46 satırları + ADR-0013 amendment block + feature-matrix.md / RB-faz-23-charter.md supersession notes.
 
 > Codex thread `019e4234` Session 42 verdict (HISTORICAL — superseded 2026-05-24 per user decision Slack DEFER; Codex `019e5b9c` REVISE absorb): `ready_for_prod_activation=false` until owner artifacts arrive; cluster activation must follow `helm upgrade` sequenced with Vault seed completion.
 
