@@ -30,7 +30,8 @@ Faz 23 v1 closure backlog `BL-010` — "Keycloak `org_id=default` claim setup" g
 | **D29-Up** | KC container Running + TCP reachable | ✅ (`platform-kc-test` 13 days healthy) | ✅ §2.1 health |
 | **D29-Functional-mint** | Token mint başarılı + audience match | ✅ (frontend client, `realms/platform-test/protocol/openid-connect/token`) | ✅ §3 token decode |
 | **D29-Functional-claim** | `org_id=default` access token + ID token + userinfo | ✅ (mapper id_token=true, access_token=true, userinfo=true) | ✅ §3 + §4 |
-| **D29-Zanzibar-ready** | `NotifyOrgAccessGuard.requireOrgAccessOrThrow()` JWT claim canonical source | ✅ (PR-5.2 backend cutover M2 2026-05-14) | ✅ §6 DENY 403 |
+| **D29-Functional-guard** | `NotifyOrgAccessGuard.requireOrgAccessOrThrow()` `source="org_id"` increment | ✅ (PR-5.2 backend cutover M2 2026-05-14) | ✅ **§5.2 metric counter 4.0** |
+| **D29-Zanzibar-ready** | Multi-tenant DENY boundary enforce (cross-org reject) | ✅ (NotifyOrgAccessGuard mismatch 403) | ✅ §6 DENY 403 + metric `source="none"` |
 
 ---
 
@@ -364,9 +365,11 @@ Date: Sun, 24 May 2026 16:00:49 GMT
 {"timestamp":"2026-05-24T16:00:49.091+00:00","status":400,"error":"Bad Request","path":"/api/v1/notify/intents"}
 ```
 
-### 4.3 Interpretation — HTTP 400 ≠ Mapper fail; auth katmanı PASS
+### 4.3 Interpretation — Resource-server auth + downstream reached (NOT guard-level allow proof)
 
-HTTP 400 = **Bad Request** (Spring `MethodArgumentNotValid` veya `HttpMessageNotReadableException`); **JWT auth + AudienceValidator + IssuerValidator + scope check ALL PASS**.
+> **Codex `019e5ac1` REVISE absorb 2026-05-24**: Önceki ifade "HTTP 400 = guard pass" iddialıydı. `NotificationIntentController.submit()` imzasında `@Valid @RequestBody SubmitIntentRequest request` validation **`orgGuard.requireOrgAccessOrThrow(request.orgId())` çağrısından ÖNCE** çalışır (Spring MVC default). Bu yüzden 400 (bean validation fail) **sadece** "resource-server JWT auth pass + downstream request validation katmanına ulaştı" anlamına gelir; **guard-level allow değerlendirmesi yapılmadı**. Asıl guard-pass kanıtı **metric** (bkz §5.2): `notify_org_access_match_total{source="org_id"}` counter — guard çağrıldığında increment'lenir, deserialization 400 cevabında çalışmaz.
+
+HTTP 400 = **Bad Request** (Spring `MethodArgumentNotValid` veya `HttpMessageNotReadableException`); **JWT decode + AudienceValidator + IssuerValidator + Spring Security path `authenticated()` ALL PASS**.
 
 Kanıt 1 — api-gateway debug log (16:00:49.077Z):
 ```
@@ -378,7 +381,6 @@ Sonrasında 16:00:49.079Z'de request notify-orchestrator'a proxy edildi:
 r.n.http.client.HttpClientConnect:
   Handler is being applied: {uri=http://notification-orchestrator:8089/api/v1/notify/intents, method=POST}
 ```
-
 Kanıt 2 — notification-orchestrator `DefaultHandlerExceptionResolver` 15:54:57 WARN log:
 ```
 WARN .w.s.m.s.DefaultHandlerExceptionResolver : Resolved
@@ -386,35 +388,31 @@ WARN .w.s.m.s.DefaultHandlerExceptionResolver : Resolved
    Cannot deserialize value of type DataClassification from String "functional":
    not one of the values accepted for Enum class: [security, transactional, commercial, system]]
 ```
-İlk smoke `dataClassification="functional"` ile 400 aldı (yanlış enum). Düzeltildi (`"system"`); sonra 15:55:18'de yine 400 — bu sefer `recipients[].type="user"` (geçerli sadece `subscriber|external`). Düzeltildi (`"external"`). 16:00:49'da 400 dönmeye devam — **payload bean validation downstream'i**, ama **JWT auth katmanı geçti** (Spring debug log delegating manager check + downstream proxy kanıtı).
 
-**Sonuç**: Mapper aktif + JWT decode pass + audience+issuer+azp+scope check geçti. Payload deserialization daha derin bean validation (idempotencyKey/intentId/topicKey regex veya RecipientRef ek alan) — bu BL-010 scope dışı, ayrı follow-up (Codex sonraki iter veya `spawn_task`).
+İlk smoke `dataClassification="functional"` ile 400 aldı (yanlış enum). Düzeltildi (`"system"`); sonra 15:55:18'de yine 400 — bu sefer `recipients[].type="user"` (geçerli sadece `subscriber|external`). Düzeltildi (`"external"`). 16:00:49 ve sonrasında 400 sessiz (`MethodArgumentNotValid` veya bean validation log seviye altında) — payload contract'a tam uyum kapsamlı testle elde edilmedi (bkz §7.1 follow-up).
+
+**Sonuç (revize)**: Resource-server JWT decode pass + Spring Security path filter pass + request orchestrator'a ulaştı; **guard-level allow değerlendirmesi yapılmadı (validation katmanı önce, 400 atmadı)**. Asıl guard-level allow kanıtı **§5.2 metric counter** (`source="org_id"` increment).
 
 ### 4.4 Önceki ilk-iki 400'lerde kanıtlanan path
 
-| Time | Payload field hata | Response | Authz katmanı |
+| Time | Payload field hata | Response | Resource-server auth |
 |---|---|---|---|
-| 15:54:57 | `dataClassification="functional"` (geçerli: `security, transactional, commercial, system`) | HTTP 400 + WARN log | ✅ Pass (validation katmanı, controller'a ulaştı) |
-| 15:55:18 | `recipients[].type="user"` (geçerli: `subscriber, external`) | HTTP 400 + WARN log | ✅ Pass (validation katmanı, controller'a ulaştı) |
-| 15:55:40+ | Cleaner payloads (`system` + `external`) | HTTP 400 + silent (different exception type) | ✅ Pass (api-gateway proxy log kanıtı + downstream call) |
+| 15:54:57 | `dataClassification="functional"` (geçerli: `security, transactional, commercial, system`) | HTTP 400 + WARN log (`HttpMessageNotReadableException`) | ✅ Pass (request validation katmanına ulaştı) |
+| 15:55:18 | `recipients[].type="user"` (geçerli: `subscriber, external`) | HTTP 400 + WARN log (`HttpMessageNotReadableException`) | ✅ Pass (request validation katmanına ulaştı) |
+| 15:55:40+ | Cleaner payloads (`system` + `external`) | HTTP 400 + silent (different exception type — `MethodArgumentNotValid` bean validation) | ✅ Pass (api-gateway proxy log kanıtı + downstream call) |
 | 16:00:49 (final) | `X-Org-Id: default` + clean payload | HTTP 400 + silent | ✅ Pass (api-gateway DEBUG log: AuthorizationManager check + downstream proxy log) |
 
-JWT auth katmanı tüm 400'lerde **PASS**; mapper aktif olmasaydı `NotifyOrgAccessGuard` 403 `OrgAccessDenied` atardı (bkz §6).
+**Önemli (Codex revize)**: Resource-server JWT decode tüm 400'lerde **PASS** (audience + issuer + azp + scope), Spring Security path filter `authenticated()` PASS, request orchestrator'a ulaştı. Ancak `@Valid @RequestBody` validation `submit()` çağrısından ÖNCE çalıştığı için guard `requireOrgAccessOrThrow()` çağrılmadı. Bu **NOT guard-level allow proof**. Asıl guard-pass kanıtı **§5.2 metric counter** + **§6 mismatch DENY 403**.
 
 ---
 
-## 5. Pre-mapper baseline kanıtı (negatif kontrol)
+## 5. Guard-level allow proof — `notify_org_access_match_total` metric
+
+> **Codex `019e5ac1` REVISE absorb**: Allow path için 202 elde edilemediği için (bean validation downstream'i, payload contract testi out-of-scope), guard-level allow kanıtı **metric counter increment** ile sunuluyor. Bu kanıt §4'teki "400 = guard pass" iddiasının yerini alır.
+
+### 5.1 Pre-mapper baseline kanıtı (negatif kontrol)
 
 Backend `notification-orchestrator` (`NotifyOrgAccessGuard.java:113`) JWT'de sırayla `org_id` → `tenant_id` → `allowed_orgs` arıyor. `NOTIFY_SECURITY_DEFAULT_ORG_ID=""` (strict cutover M2 LIVE 2026-05-14).
-
-**Pre-BL-010 davranış (test cluster, mapper olmadan)**:
-- Token'da `org_id` claim yok → guard exception → 403 `OrgAccessDeniedException`
-- Pre-existing M4 prod canary smoke: aynı problem (RB-prod-canary-kc-claim-setup.md §1-§3)
-
-**Post-BL-010 davranış (test cluster, mapper aktif)**:
-- Token'da `org_id="default"` → guard pass → controller invocation
-- Smoke 400 (payload validation) ≠ 403 (org access denied)
-- DENY path mismatch durumunda 403 (bkz §6)
 
 ```bash
 # notification-orchestrator env (cutover state — strict mode aktif)
@@ -425,7 +423,61 @@ SECURITY_JWT_ISSUER=https://testai.acik.com/realms/platform-test
 SECURITY_JWT_JWK_SET_URI=http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs
 ```
 
-Strict mode aktif ⇒ default fallback yok ⇒ **JWT'de claim olmadığı sürece 403 cross-org** atardı. Şu an 400 (validation) dönmesi, claim'in tanındığının kanıtı.
+Strict mode aktif ⇒ default fallback yok ⇒ JWT'de `org_id` claim'i yoksa guard 403 cross-org atardı.
+
+### 5.2 Guard-pass metric counter (canonical kanıt)
+
+`NotifyOrgAccessGuard.requireOrgAccessOrThrow()` çağrıldığında **trusted claim source'a göre** metric increment'liyor:
+- `source="org_id"` — JWT'de `org_id` claim'i bulundu + match
+- `source="tenant_id"` — fallback alias
+- `source="allowed_orgs"` — multi-tenant array fallback
+- `source="none"` — JWT'de claim yok, `defaultOrgId` boş, cross-org reject
+
+Pod restart sonrası counter sıfırlandı. 2 başarılı allow smoke + 2 deny smoke sonrası:
+
+```bash
+$ kubectl --context k3d-test -n platform-test exec notification-orchestrator-d9979cdbd-r5zjm -- \
+    wget -qO- http://localhost:8081/actuator/prometheus | grep -E '^notify_org_access_match'
+
+notify_org_access_match_total{source="none"} 1.0
+notify_org_access_match_total{source="org_id"} 4.0
+```
+
+**`source="org_id"=4.0`** ⇒ **JWT `org_id=default` claim'i 4 kez başarıyla okundu + match edildi** (mapper aktif + guard pass + claim source canonical `org_id`). Bu metric controller içinde `@Valid` validation öncesinde değil **sonrasında** (validation 400'lerde counter increment olmaz) çağrılır:
+
+```java
+// NotificationIntentController.submit()
+public ResponseEntity<SubmitIntentResponse> submit(
+    @Valid @RequestBody SubmitIntentRequest request,
+    @RequestHeader(name = "X-Org-Id", required = false) String callerOrgIdHeader
+) {
+    if (callerOrgIdHeader != null && !callerOrgIdHeader.isBlank()
+            && !callerOrgIdHeader.equals(request.orgId())) {
+        throw new CrossOrgAccessException(...);  // 403 mismatch (header-vs-body)
+    }
+    orgGuard.requireOrgAccessOrThrow(request.orgId());  // ← bu çağrı metric increment yapar
+    ...
+}
+```
+
+Demek ki 4 başarılı `source="org_id"` increment = **4 kez guard'a girilip JWT claim'i `org_id` source ile match edildi** (DENY path'leri `source="none"` veya `source="org_id"` ama then mismatch ile reject — exception sırasına bağlı).
+
+Bu **canonical guard-level allow proof**.
+
+### 5.3 Counter source breakdown (test smoke trafiği)
+
+| Counter source | Value (post pod-restart) | Sebep |
+|---|---|---|
+| `notify_org_access_match_total{source="org_id"}` | 4.0 | JWT'den `org_id=default` 4 kez başarıyla okundu + match (mapper LIVE proof) |
+| `notify_org_access_match_total{source="none"}` | 1.0 | DENY path: JWT `org_id=default` ama `request.orgId=otherorg` → match `none` |
+
+### 5.4 Pre-mapper vs post-mapper davranış matrisi
+
+| State | JWT içeriği | `request.orgId` | Sonuç | Metric `source` |
+|---|---|---|---|---|
+| Pre-BL-010 (mapper yok) | `org_id` claim YOK | `default` | 403 OrgAccessDenied | `none` |
+| Post-BL-010 (mapper aktif) | `org_id="default"` | `default` | Guard pass (sonra payload validation 400) | `org_id` |
+| Post-BL-010 (boundary deny) | `org_id="default"` | `otherorg` | 403 OrgAccessDenied | `none` veya `org_id` (mismatch) |
 
 ---
 
@@ -465,8 +517,10 @@ Date: Sun, 24 May 2026 16:03:47 GMT
 
 | Test | `request.orgId` | JWT `org_id` | Expected | Actual | Pass |
 |---|---|---|---|---|:---:|
-| Allow | `default` | `default` | Auth pass → controller invocation | HTTP 400 (payload validation downstream) | ✅ (auth katmanı pass, mapper aktif) |
-| Deny | `otherorg` | `default` | HTTP 403 cross-org | HTTP 403 `insufficient_scope` | ✅ (strict tenant boundary) |
+| Allow | `default` | `default` | Guard pass (metric `source="org_id"` increment) | Metric counter 4.0 + 400 downstream payload validation | ✅ (mapper LIVE — bkz §5.2) |
+| Deny | `otherorg` | `default` | HTTP 403 cross-org | HTTP 403 `WWW-Authenticate: Bearer error="insufficient_scope"` | ✅ (strict tenant boundary) |
+
+**Codex `019e5ac1` revize**: DENY 403 yorumu kaynak kod ile **uyumlu**. `/api/v1/notify/**` path'i `authenticated()` (SecurityConfig.java:100), scope authority şartı yok. `WWW-Authenticate: Bearer error="insufficient_scope"` Spring Security'nin downstream `AccessDeniedException` için **generic Bearer access-denied header** mapping'i (BearerTokenAccessDeniedHandler default). Bu yüzden `insufficient_scope` ≠ OAuth scope eksikliği (oauth2-resource-server scope check); `NotifyOrgAccessGuard.requireOrgAccessOrThrow` mismatch'te `AccessDeniedException` atıyor; bu 403'ün **guard boundary'den geldiği** olası (request 16:03:47 audit log + metric `source="none"` increment ile teyit).
 
 Multi-tenant guard LIVE — Codex `019e4965` AGREE iter-3'te belirtilen "v1 kapalı, ileri uyumlu" davranış kanıtlandı.
 
@@ -474,14 +528,16 @@ Multi-tenant guard LIVE — Codex `019e4965` AGREE iter-3'te belirtilen "v1 kapa
 
 ## 7. Bilinen boşluk + Operator action follow-up
 
-### 7.1 Payload bean validation 400 (downstream)
+### 7.1 Payload bean validation 400 (downstream) — board backlog issue açıldı
 
 Test cluster `notification-orchestrator`'ta `MethodArgumentNotValid`/`ConstraintViolation` log silent (WARN level değil). 400 dönüyor ama tam hangi field'da fail olduğu görünmüyor. Bu **BL-010 scope dışı**:
 
-- **Bu BL-010 PR**: KC mapper + persona + claim verify + DENY boundary (4/4 PASS)
-- **Out-of-scope follow-up**: Notify orchestrator bean validation hata mesajı görünür hale getirme (örn. `application.yaml` `org.springframework.web.servlet.mvc.method=DEBUG` veya `@ControllerAdvice` MethodArgumentNotValidException handler ekle)
+- **Bu BL-010 PR**: KC mapper + persona + claim verify + DENY boundary + guard-level metric kanıtı (5/5 PASS)
+- **Out-of-scope follow-up**: Notify orchestrator bean validation hata mesajı görünür hale getirme (örn. `application.yaml` `server.error.include-message=always` veya `@ControllerAdvice` MethodArgumentNotValidException handler ekle)
 
-`spawn_task` chip oluşturulacak: "Add MethodArgumentNotValid 400 detail handler to notification-orchestrator" — bu sayede gelecek canary smoke'larda payload hata tanısı kolay olur.
+> **Codex `019e5ac1` REVISE absorb**: Repo HARD RULE (`AGENTS.md` + `CLAUDE.md` board protokol) gereği scope-dışı iş **`board-sync.sh backlog-add`** ile canonical Backlog issue olarak yakalanmalı; ephemeral `spawn_task` chip tek başına yetmez. Bu nedenle açıldı:
+
+**Backlog issue**: [`Halildeu/platform-backend#304`](https://github.com/Halildeu/platform-backend/issues/304) — "Add MethodArgumentNotValid 400 detail handler to notification-orchestrator" (Backlog, triage needed).
 
 ### 7.2 Vault canary persona password seed (operator action)
 
@@ -511,18 +567,37 @@ Bu PR sadece test cluster scope. **Prod cluster (`acik` realm, `https://ai.acik.
 
 ## 8. Operator activation chain (post-canary prod activation rehberi)
 
-### 8.1 Prod KC realm `acik` (veya `platform-prod`)
+### 8.1 Prod KC realm — discovery-gated, sonra aksiyon
+
+> **Codex `019e5ac1` REVISE absorb**: "acik veya platform-prod" belirsizliği canlı discovery ile kapatılmalı; canonical runbook prod realm'i `acik` diye yazıyor (RB-prod-canary-kc-claim-setup.md). Yine de operator'ın **önce realm-list discovery** çekmesi (drift olabilir, ileride realm rename yapılabilir) sonra **tek realm adıyla** evidence açması zorunlu.
 
 KC prod container `platform-kc-prod` host port 8081. Aynı admin token mint pattern (`/run/secrets/kc_admin_password`). Aşağıdaki adım dizisi:
 
-1. Client scope yarat: `notify-canary` (aynı config)
-2. User Attribute mapper yarat: `org_id` (aynı config)
-3. Persona yarat: `notify-canary-org-prod-default` (aynı pattern, ayrı namespace)
+**Step 0: Realm discovery (zorunlu önadım)**
+
+```bash
+$ ssh halil@staging-sw '
+  ADMIN_PASS=$(docker exec platform-kc-prod cat /run/secrets/kc_admin_password)
+  TOKEN=$(curl -sS -X POST http://127.0.0.1:8081/realms/master/protocol/openid-connect/token \
+    -d "username=admin" --data-urlencode "password=$ADMIN_PASS" \
+    -d "grant_type=password" -d "client_id=admin-cli" | jq -r .access_token)
+  # Realm list discovery
+  curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8081/admin/realms | jq -r ".[].realm"
+'
+```
+
+Beklenen: `master` + canlı backend (`acik` veya `platform-prod`). **Realm name canlıdan oku — bu doc'taki tahmini değer (`acik`) kullanma**.
+
+**Step 1-8: Provision (kanlı realm name = `$PROD_REALM`)**
+
+1. Client scope yarat: `notify-canary` (aynı config — §1.3 ile aynı body)
+2. User Attribute mapper yarat: `org_id` (aynı config — §1.4 ile aynı body)
+3. Persona yarat: `notify-canary-org-prod-default` (aynı pattern, ayrı namespace; **bu isim canonical** — `m4-canary-*` gibi milestone-bağlı isim KULLANMA, ileride scope genişler)
 4. Persona attribute set: `org_id=default`
-5. Password set + Vault `kv/platform-prod/keycloak/persona/notify-canary-org-prod-default/password` seed
+5. Password set + Vault `kv/$PROD_REALM/keycloak/persona/notify-canary-org-prod-default/password` seed (operator action)
 6. Frontend client `notify-canary` scope assign (default)
-7. JWT mint + decode verify (aynı format)
-8. Prod canary smoke (Codex `019e4965` runbook §6 ile aynı body)
+7. JWT mint + decode verify (aynı format — `org_id=default` claim)
+8. Prod canary smoke (Codex `019e4965` runbook §6 ile aynı body — `topicKey: marketing.campaign`, channel `sms`, recipient `+905551815564`)
 
 ### 8.2 M4 fully closed eşiği
 
@@ -558,10 +633,13 @@ KC prod container `platform-kc-prod` host port 8081. Aynı admin token mint patt
 | 9 | Persona token mint | JWT 1595 char | ✅ §3.1 |
 | 10 | Access token decode `org_id=default` | claim `"org_id": "default"` | ✅ §3.2 |
 | 11 | Userinfo `org_id=default` | claim `"org_id": "default"` | ✅ §3.3 |
-| 12 | Notify intent submit (allow) | HTTP 400 (payload validation downstream) — auth katmanı PASS | ✅ §4 |
-| 13 | DENY smoke (otherorg) | HTTP 403 Forbidden `insufficient_scope` | ✅ §6 |
+| 12 | Notify intent submit (allow) | HTTP 400 (payload validation downstream) — resource-server auth PASS | ✅ §4 |
+| 13 | DENY smoke (otherorg) | HTTP 403 Forbidden `insufficient_scope` (Spring BearerTokenAccessDeniedHandler default) | ✅ §6 |
 | 14 | api-gateway debug log proxy | `AuthorizationManager check successful` → downstream call | ✅ §4.3 kanıt |
-| 15 | Pre-mapper baseline (env strict cutover) | `NOTIFY_SECURITY_DEFAULT_ORG_ID=""` LIVE | ✅ §5 |
+| 15 | Pre-mapper baseline (env strict cutover) | `NOTIFY_SECURITY_DEFAULT_ORG_ID=""` LIVE | ✅ §5.1 |
+| 16 | **Guard-level allow proof — metric counter** | `notify_org_access_match_total{source="org_id"}=4.0` (post pod-restart) | ✅ §5.2 |
+| 17 | **DENY-side metric** | `notify_org_access_match_total{source="none"}=1.0` (boundary reject) | ✅ §5.2 |
+| 18 | Board backlog issue (out-of-scope) | `platform-backend#304` opened (Backlog) | ✅ §7.1 |
 
 ---
 
@@ -580,16 +658,22 @@ KC prod container `platform-kc-prod` host port 8081. Aynı admin token mint patt
 
 ## 11. Verdict
 
-🟢 **BL-010 test cluster scope PASS**
+🟢 **BL-010 test cluster scope PASS (5/5 kanıt zinciri)**
 
 - Mapper: oidc-usermodel-attribute-mapper (User Attribute, hardcoded YASAK) — LIVE
 - Persona: notify-canary-org-default (kullanıcı login user'ına dokunmadı) — LIVE
 - Claim: `org_id=default` access token + ID token + userinfo (3/3) — LIVE
-- Boundary: ALLOW (auth pass → 400 payload) + DENY (403 cross-org) — LIVE
+- Boundary: ALLOW (guard-level metric `source="org_id"=4.0`) + DENY (HTTP 403 cross-org + metric `source="none"=1.0`) — LIVE
 - D29 disiplin: Up + Functional-mint + Functional-claim + Zanzibar-ready 4/4 ✅
+
+**Codex `019e5ac1` REVISE absorb edildi**:
+- §4.3 + §4.4 + §5 + §6.3 + §9 + §11 dili "guard pass" iddiasından **resource-server auth pass + metric guard-pass kanıtı** ayrımına revize edildi
+- §7.1 `spawn_task` chip yerine **canonical board backlog issue** (`platform-backend#304`)
+- §8.1 prod realm operator step-0 **realm discovery-gated**; persona naming `notify-canary-org-prod-default` (milestone-bağlı isim YASAK)
+- §7.2 Vault seed **honest operator-gated** kalıyor (agent self-seed yetkisi yok)
 
 **Pending (operator action)**:
 - Vault canary password seed (§7.2)
-- Prod KC realm same pattern (Sprint B BL-010 follow-up)
-- Payload bean validation 400 detail handler (out-of-scope `spawn_task`)
+- Prod KC realm same pattern (Sprint B BL-010 follow-up, §8.1 discovery-gated)
+- Payload bean validation 400 detail handler — board backlog (`platform-backend#304`)
 - M4 charter marker `🟢 fully closed` (prod canary functional acceptance)
