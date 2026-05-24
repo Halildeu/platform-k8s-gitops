@@ -819,7 +819,7 @@ A2 BYOD per §13.2 tier summary "A1 + consent flow + signed binary + KVKK + EDR 
 | 1 | <hash> | <consent-id> | <iso> | yes/no (signature ref) | TR/EN |
 | 2 | ... | ... | ... | ... | ... |
 
-**Aggregate**: `consent_coverage = signed_consent_devices / total_devices` — acceptance: **N/N (100%)**. Eksik bir device varsa A2 rollup FAIL (consent prerequisite §12.1).
+**Aggregate**: `consent_coverage = signed_consent_devices / installed_enrolled_A2_pilot_devices` — acceptance: **N/N (100%)**. **Denominator clarification**: opt-out adaylar rollup denominator'a dahil DEĞİL (operator opt-out log'una ayrı kayıt); rollup denominator yalnız installed + enrolled A2 pilot device set. Eksik bir installed/enrolled device varsa A2 rollup FAIL (consent prerequisite §12.1).
 
 ## §A2-B. KVKK / privacy compliance
 
@@ -828,7 +828,7 @@ A2 BYOD per §13.2 tier summary "A1 + consent flow + signed binary + KVKK + EDR 
 | Data inventory referenced (§12.2 mapping) | <link> | ✅ / ❌ |
 | Retention policy enforced live (BE-019) | <link or "pending"> | ✅ active / 🟡 pending / ❌ missing |
 | Erasure/anonymization runtime check | <link> | ✅ / ❌ |
-| KVKK Madde 11 user rights addressable | <link> | ✅ / ❌ |
+| KVKK Madde 11 user rights addressable (DPO request-channel smoke + sample DSAR workflow + DPO sign-off ref) | <link> | ✅ / ❌ |
 | Consent withdraw self-service tested | <link> | ✅ / ❌ |
 
 **Aggregate**: TÜM 5 gate ✅ olmalı; **BE-019 🟡 pending durumunda A2 rollup verdict en fazla PARTIAL**. ❌ veya missing varsa FAIL.
@@ -848,7 +848,15 @@ A2 BYOD per §13.2 tier summary "A1 + consent flow + signed binary + KVKK + EDR 
 |---|---|---|---|---|---|
 | 1 | <hash> | <sha256> | yes (mandatory A2) | yes (RFC 3161) | <CN/O extracted from cert> |
 
-**Aggregate**: TÜM device'lar signed + valid timestamp + signer subject Trusted Signing tenant ile match olmalı. Tek unsigned device varsa A2 rollup **FAIL** (signed distribution prerequisite §13.1 + AG-024).
+**Verification command** (operator script — visual review yetersiz):
+```powershell
+# Authenticode + RFC 3161 verify + thumbprint/subject allowlist match
+signtool verify /pa /v /tw "C:\Program Files\EndpointAgent\endpoint-agent.exe"
+# Capture: SHA256 + Authenticode result + Timestamp result + Signer Subject (CN/O)
+# Match: Subject regex against Trusted Signing tenant allowlist (operator runbook §13.1)
+```
+
+**Aggregate**: TÜM device'lar signed + valid timestamp + signer subject Trusted Signing tenant ile match olmalı (`signtool verify /pa` output + thumbprint/subject allowlist check). Tek unsigned device varsa A2 rollup **FAIL** (signed distribution prerequisite §13.1 + AG-024).
 
 ## §A2-E. EDR allowlist coverage (SOC coordination)
 
@@ -858,7 +866,7 @@ A2 BYOD per §13.2 tier summary "A1 + consent flow + signed binary + KVKK + EDR 
 | Agent SHA256 allowlisted at EDR vendor | <sha256> + allowlist-id | ✅ / ❌ |
 | Service display name `EndpointAgent` allowlisted | <allowlist-id> | ✅ / ❌ |
 | Install path `C:\Program Files\EndpointAgent` allowlisted | <allowlist-id> | ✅ / ❌ |
-| Network destination (`testai.acik.com:443` veya prod equivalent) allowlisted | <allowlist-id> | ✅ / ❌ |
+| Network destination (actual pilot environment destination(s) — örn. `testai.acik.com:443` A2 lab pilot; prod evaluation ayrı PR + ayrı `ai.acik.com:443` allowlist gate) | <allowlist-id> | ✅ / ❌ |
 
 **Aggregate**: TÜM 5 gate ✅ olmalı; eksik bir gate varsa A2 rollup FAIL (EDR coordination prerequisite §13.1).
 
@@ -887,10 +895,36 @@ A2 BYOD per §13.2 tier summary "A1 + consent flow + signed binary + KVKK + EDR 
 | §A2-E EDR allowlist | 5/5 ✅ (SOC ticket closed; eksik = FAIL) |
 | §A2-F BE-019 enforcement | MERGED + live (pending → en fazla PARTIAL) |
 
-**A2 final verdict rule**:
-- **PASS**: §14.5 PASS + §14.6 TÜM appendix sections PASS
-- **PARTIAL**: §14.5 PASS/PARTIAL + §14.6 BE-019-pending OR KVKK-partial; diğer appendix sections TÜMÜ PASS; explicit "deferred unlock gate" rationale
-- **FAIL**: §14.5 FAIL OR §14.6 herhangi bir hard-gate (§A2-A consent / §A2-C uninstall / §A2-D signed / §A2-E EDR) eksik
+**A2 final verdict rule** (explicit hard-gate vs deferred-unlock semantics):
+
+- **PASS**:
+  - §14.5 PASS AND
+  - §14.6 §A2-A consent N/N AND §A2-C uninstall N/N AND §A2-D signed all PASS AND §A2-E EDR 5/5 AND
+  - §14.6 §A2-B KVKK 5/5 ✅ (no ❌, no missing) AND
+  - §14.6 §A2-F BE-019 status=MERGED **AND** live=yes **AND** §12.2 TTL match=yes
+
+- **PARTIAL** (deferred-unlock semantic — sınırlı kapsam):
+  - §14.5 PASS/PARTIAL AND
+  - §14.6 §A2-A consent N/N AND §A2-C uninstall N/N AND §A2-D signed all PASS AND §A2-E EDR 5/5 AND
+  - **EXACTLY ONE** of:
+    - §A2-F BE-019 status=source-ready or backlog (pending deferred); §A2-B retention row 🟡 olabilir
+    - §A2-F BE-019 MERGED + live=yes ama §12.2 TTL match partial (operator-side manual gap dokümante)
+  - explicit "deferred unlock gate" rationale + planned MERGE/live date
+
+- **FAIL** (any of):
+  - §14.5 FAIL
+  - §A2-A consent eksik (rollup denominator için)
+  - §A2-C uninstall N/N değil
+  - §A2-D signed: tek unsigned device VEYA timestamp invalid VEYA signer subject mismatch
+  - §A2-E EDR: herhangi 5-gate eksik VEYA SOC ticket open/missing
+  - §A2-B KVKK: consent withdrawal ❌ VEYA Madde 11 rights channel ❌ VEYA erasure/anonymization smoke ❌ VEYA data inventory missing (BE-019 pending dışı non-retention KVKK gap)
+  - §A2-F BE-019 live=no (status MERGED ama live enforcement YAPIL**MA**MIŞ) — pending statünden farklı: live=no = active mismatch = FAIL
+  - §A2-F BE-019 §12.2 TTL match=no (retention live ama TTL canonical inventory ile çakışmıyor) = FAIL
+
+**Anahtar ayrım**:
+- BE-019 `pending/source-ready` (henüz MERGE değil) → PARTIAL eligible
+- BE-019 `MERGED` ama `live=no` (deployed ama enforce edilmiyor) → **FAIL** (active drift)
+- §A2-B KVKK non-retention gates (consent withdrawal / Madde 11 / erasure) ❌ → **FAIL** (BE-019 partial argument geçmez; retention dışı KVKK kapsamı zaten implementasyon gerektirir)
 
 #### 14.6.4 A2 boundary signals
 
@@ -898,7 +932,8 @@ A2 BYOD rollup PASS bile **prod-ready signal değil**:
 - A2 pilot scope = lab + sınırlı BYOD opt-in user pool (≤10 device tercih)
 - Domain-wide BYOD rollout = ayrı kapı (A3/A4 tier + organizational policy + IT/SOC + legal)
 - Trusted Signing **mandatory** A2 (§7.3 SHA-pinned lab exception YASAK)
-- KVKK Madde 11 user rights addressable; data subject access request 7gün içinde response zorunlu (BE-019 enforce)
+- KVKK Madde 11 user rights addressable; **legal SLA = 30 gün** (canonical [docs/22-2-kvkk-data-inventory.md](../22-2-kvkk-data-inventory.md) Madde 11/13 response süresi ile hizalı + [docs/22-2-byod-consent-template.md](../22-2-byod-consent-template.md)); **pilot internal target = 7 gün** (operasyonel hedef, DPO sign-off ile dokümante; 7-30 gün arasında response = pilot target miss ama legal compliant); 30 gün geçerse legal non-compliance + immediate escalation (BE-019 enforce + DPO incident response)
+- Production BYOD rollout requires **separate prod evidence PR** + DPO/legal/SOC sign-off + live prod enforcement; **bu appendix pilot evidence ONLY** — A2 PASS verdict prod-readiness sinyal etmez
 
 ---
 
