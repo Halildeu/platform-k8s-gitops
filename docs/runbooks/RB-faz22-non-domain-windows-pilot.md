@@ -705,7 +705,8 @@ Per-device evidence doc'ları (§14.1+§14.2) tamamlandıktan sonra agent rollup
 | Metric | Value | Acceptance threshold | Verdict |
 |---|---|---|---|
 | Heartbeat success rate (pilot-wide) | <%> | ≥99% (24h window per device) | PASS/PARTIAL/FAIL |
-| Command success rate (pilot-wide) | <%> | 100% (no unhandled timeout) | PASS/PARTIAL/FAIL |
+| Command terminal/accounted rate (pilot-wide) | <%> | 100% (no CREATED/RUNNING/UNKNOWN after soak window) | PASS/PARTIAL/FAIL |
+| Command success rate (pilot-wide) | <%> | ≥95% (FAILED-with-explained-reason accounted but not success) | PASS/PARTIAL/FAIL |
 | Soak gap incidents (unexplained > 30m) | <count> | 0 required | PASS/PARTIAL/FAIL |
 | Repeatability gate | PASS / PARTIAL / FAIL | per §14.5 rule | computed |
 
@@ -794,7 +795,7 @@ PARTIAL kararı verilebilir ancak failed device(s) için **TÜM** aşağıdaki m
 - [ ] **Command set parity**: Failed device ile peer PASS device'larda **aynı** planned command set koşturuldu (§14.2 §4 smoke list ile cross-check)
 - [ ] **No matching error signature**: Peer PASS device'ların audit/heartbeat/agent log'larında failed device'ın error signature'ı (exception class, stack trace head, log message head) **bulunmuyor**
 - [ ] **Host/operator-specific causality**: Failed device'ın incident nedeni host-specific veya operator-specific olarak kanıtlı (örn. host laptop sleep undeclared; operator network outage; VM provisioning artifact)
-- [ ] **Aggregate restoration**: Failed device exclude edildiğinde §14.5 üç metric (heartbeat / command terminal / soak gap) tümü threshold dahilinde
+- [ ] **Aggregate restoration**: Failed device exclude edildiğinde §14.5 **dört** aggregate check (heartbeat success rate / command terminal/accounted rate / command success rate / soak gap incidents) **tümü** threshold dahilinde
 
 **Rollback signal**: FAIL verdict → §15.2 pilot-wide rollback initiated; root cause analysis cross-AI review (Codex) per §17.
 
