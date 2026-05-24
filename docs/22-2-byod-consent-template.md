@@ -155,7 +155,7 @@ Aşağıdaki açıklamayı okuduğumu, anladığımı ve serbest iradem ile **a�
 
 When Endpoint Agent (`endpoint-agent.exe`) is installed on your personal device, the following **personal data categories** are processed:
 
-| Data Category | Example Fields | KVKK Article 6 Classification |
+| Data Category | Example Fields | KVKK Classification (general / special category distinction) |
 |---|---|---|
 | **Device identifier** | hostname, machine_fingerprint, OS version/build, IP address | Personal data (device-identifiable) |
 | **User identity** | UPN (User Principal Name), SID, display name, last login timestamp | Personal data (general) |
