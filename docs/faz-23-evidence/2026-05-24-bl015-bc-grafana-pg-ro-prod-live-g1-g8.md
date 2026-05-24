@@ -34,14 +34,27 @@ $ docker exec -i -e PGPASSWORD=$PG_PWD platform-pg-prod psql -U grafana_notify_r
 grafana_notify_ro|notify_db|1
 ```
 
-### G2 PASS (implicit) — RO-only privilege
-GRANT verify çıktısı:
+### G2 PASS — RO-only privilege (direct PG meta-query probe)
+
+**Canonical PG sertifikası — `has_table_privilege` 4-permission matrix**:
+```
+$ docker exec -u postgres platform-pg-prod psql -d notify_db -tAc "
+SELECT 
+  has_table_privilege('grafana_notify_ro', 'notify.audit_event_v2', 'SELECT'),
+  has_table_privilege('grafana_notify_ro', 'notify.audit_event_v2', 'INSERT'),
+  has_table_privilege('grafana_notify_ro', 'notify.audit_event_v2', 'UPDATE'),
+  has_table_privilege('grafana_notify_ro', 'notify.audit_event_v2', 'DELETE')"
+t|f|f|f
+```
+
+Result: SELECT=true, INSERT=false, UPDATE=false, DELETE=false. **Mutating privileges YOK** — RO-only canonical confirmation. PG kendi authorization layer'ı tarafından doğrulandı.
+
+**Supporting evidence (GRANT verify çıktısı)**:
 ```
 grafana_notify_ro|audit_event_v2|SELECT
 grafana_notify_ro|notification_delivery|SELECT
 grafana_notify_ro|notification_intent|SELECT
 ```
-INSERT/UPDATE/DELETE privilege YOK; SELECT-only role; mutlaka 42501 permission denied.
 
 ### G3 PASS — Vault key present + length
 ```
@@ -75,7 +88,10 @@ $ curl -u admin:$PWD http://localhost:3000/api/datasources/3/health
 
 Datasource UID: `notify_pg_ro`, type: `grafana-postgresql-datasource`, id: 3.
 
-### G8 PASS — Per-template panel SQL query
+### G8 PASS (datasource-level) — Per-template SQL query routing LIVE
+
+**Scope**: Datasource-level rawSql via Grafana `/api/ds/query` endpoint. **UI panel-render verify BL-011 ext-gated** (audit_event_v2 son 24h empty data; BL-011 prod canary smoke sonrası data populated panel render UI testi).
+
 ```sql
 SELECT template_id, COUNT(*) AS send_count
 FROM notify.audit_event_v2
@@ -85,7 +101,9 @@ ORDER BY send_count DESC
 LIMIT 20
 ```
 
-Response: `{"results":{"G8":{"status":200,"frames":[{...,"data":{"values":[]}}]}}}` — Status 200, frames=1, data empty (son 24 saatte audit_event_v2 verisi yok, normal). **Query executed + datasource routing live + SELECT privilege working.**
+Response: `{"results":{"G8":{"status":200,"frames":[{...,"data":{"values":[]}}]}}}` — Status 200, frames=1, data empty (son 24 saatte audit_event_v2 verisi yok — normal pre-canary state). **Query executed + datasource routing live + SELECT privilege working.**
+
+**Sertifikat**: G8 (a) datasource query API çalışıyor + (b) SELECT privilege ile notify schema reachable + (c) HTTP 200 + JSON response valid. Real dashboard UI panel-render (frame data populated görünür) için BL-011 prod SMS canary smoke sonrası audit_event_v2 row populated olunca yapılır.
 
 ## 4. Configuration Drift Notes
 
