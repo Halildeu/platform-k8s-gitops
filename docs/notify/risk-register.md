@@ -1,9 +1,9 @@
 # Notification Platform — Risk Register
 
-> **Status**: ACTIVE (Session 42 update 2026-05-10)
+> **Status**: ACTIVE (Session 49+ update 2026-05-24 — R11 Tempo LIVE mitigated; R2 closed via Codex `019e5189` legal verdict 2026-05-23; R1 NetGSM DEFER asset-preserved 2026-05-23 per kullanıcı kararı)
 > **ADR**: [ADR-0013-notification-orchestration](../adr/0013-notification-orchestration.md)
 > **Charter**: [RB-faz-23-charter](../runbooks/RB-faz-23-charter.md)
-> **Last review**: 2026-05-10
+> **Last review**: 2026-05-24
 
 Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için: ID, açıklama, probability, impact, mitigation, owner, status, last review tarihi.
 
@@ -36,7 +36,6 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 | R4 | Audit retention DETACH/DROP destructive bug (data loss) | Low | Critical | **Medium** | Backend test PR #130 + dry-run observation + ownership check | dev | 🟢 Mitigated | 23.2 (retention) | 2026-05-09 |
 | R5 | Multi-pod cron lock contention causing missed retention cycles | Low | Medium | **Low** | LockSkippedSustained alert (PR #435 multi-pod aware) | dev | 🟢 Mitigated | — | 2026-05-09 |
 | R6 | Codex API limit / cross-AI peer review HARD RULE blocker | Low | Medium | **Low** | Multi-thread strategy + queue-based review + offline absorb pattern | agent | 🟡 Active | — | 2026-05-09 |
-| R7 | Browser SSO verify user availability blocking 23.9 closure | Medium | Low | **Low** | Pre-Production Full Authority HARD RULE agent headless tool — Session 49 closure 2026-05-14: testai + ai.acik.com SSO LIVE evidence (d29-evidence-tester + d29-prod-sso-tester JWT mint + /api/v1/authz/me HTTP 200, evidence doc `docs/faz-23-evidence/2026-05-14-m1-23-9-cutover-closure-evidence.md`) | agent | 🟢 Closed | 23.9 | 2026-05-14 |
 | R8 | 72h observation undetected incident → silent breakage | Low | High | **Low** | 25 PrometheusRule + 4 SLO alerts + dashboard 15-panel | ops | 🟢 Mitigated | 23.9 | 2026-05-09 |
 | R9 | D43 outage fallback test fail under real outage | Medium | High | **Medium** | T1.4 D43 partial: PR #457+#462+#463+#464+#467+#468 source-ready; first controlled drill 2026-05-10 00:18-00:24Z **SMTP-only receipt** (Mailpit `[FIRING:1] NotifyServiceAbsent` 00:22:33Z); Slack leg sentinel-only (`drill-slack-mock.local` NXDOMAIN — runbook Step 6 unkanıt) — board #853; prod helm-values direct-fallback receiver/route eksikti → PR #855 staged config kapatır; prod activation owner-gated (Vault seed + helm upgrade + dual-receipt smoke) — board #854. Codex thread `019e4234` Session 42 audit: **partial mitigation** olarak yeniden etiketlendi (eski "mitigated by first controlled drill" overclaim). | ops | 🟡 Partial | 23.2.D | 2026-05-19 |
 | R10 | Multi-tenant migration data drift / cross-tenant leak | High | Critical | **Critical** | Faz 21 öncesi pre-migration audit + dry-run + per-tenant isolation test | dev | 🔴 DEFER | Faz 21 | — |
@@ -79,7 +78,7 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 
 | ID | Risk | Closure Reason | Closed Date |
 |---|---|---|---|
-| (None yet — will be populated as risks are closed during Faz 23 cycle) |
+| R7 | Browser SSO verify user availability blocking 23.9 closure | Session 49 closure 2026-05-14 — Pre-Production Full Authority HARD RULE agent headless tool: testai + ai.acik.com SSO LIVE evidence (`d29-evidence-tester` + `d29-prod-sso-tester` JWT mint + `/api/v1/authz/me` HTTP 200, evidence doc `docs/faz-23-evidence/2026-05-14-m1-23-9-cutover-closure-evidence.md`) | 2026-05-14 |
 
 ---
 
@@ -91,6 +90,7 @@ Bu register **takip edilebilir + güncellenir** risk tablosudur. Her risk için:
 - 2026-05-19 (SMS provider kararı — kullanıcı): SMS primary **NetGSM → JetSMS** (canlı sözleşme + HTTP API), secondary **İletimerkezi → NetGSM**. R1 severity **High → Medium** + semantik daraltıldı: artık SMS primary activation blocker değil, yalnızca NetGSM secondary failover acceptance blocker (JetSMS-only degraded mode SMS gönderir). Probability/Impact High/High → Medium/Medium. Multi-provider PR sequence Codex `019e3f82` AGREE.
 - 2026-05-20 (M4 prod cutover LIVE — Session 47): R3 🟢 Mitigated upgraded — DKIM strategy = Office 365 Native CNAME (Codex `019e44b1` AGREE B long-term stable). Backend `notify.dkim.strategy` enum + ProductionConfigValidator switch branch hardening (PR-B1 platform-backend #268, 42/42 unit tests PASS). Same-incident reconciliation pattern (PR #911 crashloop revert PR #912 + 4-PR re-attempt chain PR-B1/B2/B3/B4) sealed long-term stable architecture. Prod pod LIVE 2026-05-20T20:15Z sha-6307428 + all production guards PASSED + JetSmsDlrPollingWorker scheduling=true + Started in 37.7s. R24 active monitored (`NOTIFY_ADAPTERS_SMS_JETSMS_CHANNEL_OTP_TOPIC_KEYS=` blank workaround prod'da — Biotekno provisioning ext-gated). Evidence doc `docs/faz-23-evidence/2026-05-20-m4-prod-cutover-closure-evidence.md`.
 - 2026-05-23 (kullanıcı kararı — R1 NetGSM DEFER): NetGSM secondary provider sözleşmesi kısa vadede yapılmayacak. R1 🟡 Active → **⏳ DEFER**; severity Medium → Low; owner `ops + legal` → `ops`. JetSMS-only degraded mode kabul edilen kalıcı işletim durumu. `NetGsmProvider` + `SmsAdapter` failover facade + Vault/ESO NetGSM altyapısı asset-preserved dormant (kaldırılmaz) — sözleşme imzalanırsa reactivation chain devreye girer (R23/ADR-0024 "deferred but asset-preserved" pattern). Aktif risk sayısı 12 → 11.
+- 2026-05-24 (Session 49+ truth-sync — Codex `019e599c` D+E+G hygiene paket review chain `019e59bf`): R7 fully migrated from Active table to Closed Risks archive (2026-05-14 closure record canonical placement). R11 confirmed 🟢 Mitigated (Tempo OTLP LIVE 2026-05-21 5-spans verified; sprint-plan §T4.3 attestation cross-aligned). Active table row count after R7 archive migration: 23 rows (R7 ID retired from Active; archive table includes R7). Header "Last review" 2026-05-10 → 2026-05-24.
 
 ## Next Review
 
