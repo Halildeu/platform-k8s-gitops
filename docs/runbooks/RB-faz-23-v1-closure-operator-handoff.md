@@ -37,8 +37,9 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
   - Verify: pod restart sonrası env values canonical Vault'tan inject edildiğini check (sha256 hash-only local compare, persist edilmez)
 - [x] **BL-005** CLOSURE 2026-05-24 (Codex strategic verdict thread `019e5a75` REVISE absorb): **No functional revert needed** for PR #995/#996 while live evidence stays aligned. Codex iter-2 quote: "No functional revert reason for PR #995/#996 while live evidence stays aligned. Only revert temporary overlay overrides after BL-004 proves Vault canonical parity; agent can decide from env/hash + smoke evidence." → BL-005 = "no action needed, BL-004 sonrası override revert pattern follow" → resolved as governance closure (PR #995 OpenFGA model_id cutover + PR #996 internal-API-key ESO re-align stays merged + LIVE; no revert).
   - Dependency: ~~BL-004 verified~~ — strategic closure decision sealed pre-BL-004 (revert YOK; override revert pattern BL-004 sonrası yapılırsa runtime-artifacts ledger update PR ile birlikte yapılır — BL-006 reverse-dependency)
-- [x] **BL-006** PARTIAL CLOSURE 2026-05-24 (PR #1031 MERGED) — `runtime-artifacts/openfga-model/a48a49198c70bd3f928bbac2b87ef3fd83903f00691996c04778f892146f0f9c.json` ledger 2-alan update: `source_docs` +`h-live-evidence-resync.md` + `rollback_runbook_ref` → `#4-rollback` canonical anchor. **runtime_selector hâlâ null** (BL-004 dep — Codex iter-2 canonical drift önleme); BL-004 sonrası ayrı PR ile `null → vault` selector update (selector_kind: vault, vault_path: kv/platform/openfga, field: model_id).
-  - Dependency: BL-004 verified (runtime_selector update için)
+- [x] **BL-006a** LEDGER METADATA UPDATE 2026-05-24 (PR #1031 MERGED) — `runtime-artifacts/openfga-model/a48a49198c70bd3f928bbac2b87ef3fd83903f00691996c04778f892146f0f9c.json` 2-alan update: `source_docs` +`h-live-evidence-resync.md` + `rollback_runbook_ref` → `#4-rollback` canonical anchor. Codex post-impl thread `019e5a7e` AGREE / canonical_drift: false.
+- [ ] **BL-006b** RUNTIME_SELECTOR `null → vault` POST-BL-004 — agent-actionable ayrı PR (BL-004 Vault canonical patch verified sonrası). Selector_kind: vault, vault_path: kv/platform/openfga, field: model_id. Codex iter-2 canonical drift önleme: ledger ground truth ↔ actual deployment env override revert tamamlanana kadar runtime_selector null kalmalı.
+  - Dependency: BL-004 verified + test overlay env override revert (inline → ESO secretKeyRef)
 - [ ] **BL-007** `platform-backend/backend/openfga/model.fga` canonical update — agent #5 (a233ba0a6703e6595) paralel çalışıyor; eğer agent merge ettiyse atla
 
 ### Sprint B — Ops Slot Execution (Canonical RB pointers)
@@ -134,7 +135,7 @@ Tüm 5 agent cross-AI peer review (provider-different, Codex reviewer) HARD RULE
 
 - Bu doc **bir handoff index'i** — operator action + agent parallel track'in dependency map'i. **Status authority değil.**
 - Canonical status authority: [milestones.md](../notify/milestones.md) + [sprint-plan.md](../notify/sprint-plan.md) + [risk-register.md](../notify/risk-register.md) + [feature-matrix.md](../notify/feature-matrix.md) + [RB-faz-23-charter.md](RB-faz-23-charter.md)
-- **Bu PR'ın closure claim'i yok**: bu doc PR'ı merge olduğunda, listelenen backlog item'ları operator/external/board/strategic'e bağlı kalır. Agent #1-#5 PR'ları kendi review/merge gate'lerinde — bu doc onları "MERGED" iddia etmez (pending review).
+- **Bu PR'ın closure claim'i kısmi scope-bounded**: bu doc PR'ı merge olduğunda, **çoğu backlog item'ı** operator/external/board/strategic'e bağlı kalır. **Scope exception (governance-trace closure)**: (a) BL-005 governance/no-revert closure (Codex 019e5a75 verdict — no functional revert needed; PR #995/#996 stays merged), (b) BL-006a ledger metadata update (PR #1031 MERGED — source_docs + rollback_runbook_ref); BL-006b runtime_selector update hâlâ pending BL-004 dep. Diğer Agent #1-#5 PR'ları kendi review/merge gate'lerinde — bu doc onları "MERGED" iddia etmez (pending review).
 - Operator canonical RB'yi follow eder; bu index sadece sequence + dependency + agent parallel track görünürlüğü.
 
 ---
