@@ -37,5 +37,13 @@
 # a deterministic smoke-test idempotency key string (BE-011 collect inventory
 # canonical ID, NOT a real secret); 2 occurrences in JSON examples on lines
 # 135 + 210 of the evidence doc.
+#
+# Same PR — the original gitleaksignore explanatory comment in commit 06ee6c1
+# embedded the literal idempotency key inline, which itself tripped the rule
+# on `.gitleaksignore` line 37. The follow-up commit (2033177) rewrote the
+# comment to no longer embed the literal, but gitleaks scans every commit on
+# the PR branch individually, so the 06ee6c1 fingerprint is still emitted on
+# its own line 37.
 05e71a2561aa4543e7554ba6be6c317312419a07:docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md:generic-api-key:135
 05e71a2561aa4543e7554ba6be6c317312419a07:docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md:generic-api-key:210
+06ee6c1e10d4393369aafc7ae80eedb196dc7fd1:.gitleaksignore:generic-api-key:37
