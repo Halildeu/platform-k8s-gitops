@@ -203,7 +203,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
     - PR-W6 platform-web #649: PushSubscriptionCard UI + VAPID env build chain
     - PR-W7 platform-web #652: notify RTK `unwrapRequestFetchFn` shim — Request-object header drop fix (cross-domain pattern; later replicated for endpoint-admin in #658)
     - Activation chain (operator-completed 2026-05-23): Vault VAPID 3-key seed + ESO uncomment + ConfigMap `NOTIFY_ADAPTERS_WEBPUSH_ENABLED=true` + frontend `VITE_NOTIFY_VAPID_PUBLIC_KEY` rebuild + OpenFGA `model_id` cutover. **Evidence authority**: RB-webpush-activation §3.10 (subscribe) + §3.11 (push delivery SUCCESS). **Supporting ledger**: gitops #976/#977 (ConfigMap WebPush enable + VAPID env wiring) + #986/#987 (frontend digest bump + browser smoke) + #990/#995/#996/#997 (OpenFGA model_id cutover + internal-auth ESO + delivery-success closure chain).
-  - [ ] **Mobile FCM/APNS** — Faz 22.2 dep, scope DIŞI (gelecek faz; canonical wording per ADR-0013 / sprint-plan T4.2.7-10 row "DEFER Faz 22.2 dep")
+  - [ ] **Mobile FCM/APNS** — Faz 22.2 dep, scope DIŞI (planned v1.1 / 23.7.b patch milestone post-Faz 22.2; M7.b subsection below; canonical wording per ADR-0013 / sprint-plan T4.2.7-10 row "DEFER Faz 22.2 dep"; Codex strategic verdict thread `019e5a59` REVISE → Opsiyon C 2026-05-24 absorb; R25 tracks DEFER governance)
 - [~] T4.3 23.8 Tempo + bounce loop + per-tenant Grafana + FBL + federation — **9/9 sub-task source-side closed 2026-05-22** (operator activation pending)
   - [x] T4.3.a Tempo OTLP trace export LIVE (2026-05-21 09:17Z; 5 spans verified)
   - [x] T4.3.b email suppression core LIVE (PR #270 — sha-f40aa82)
@@ -220,6 +220,27 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 
 **Blockers**: M5 done + M6a/M6b done (split closure) — M3 + M4 zaten önceki kapı
 **Owner**: dev + ops + gitops
+
+### M7.b — 23.7.b Mobile Push Patch (🔵 DEFER post-Faz 22.2)
+
+**Status**: DEFER planned patch milestone — Faz 22.2 (Mobile shell) production-ready olmadan implementasyona başlanamaz. v1 closure semantik açısından **WebPush browser-only v1'i kapatır** (M7 DoD); Mobile FCM/APNS ayrı patch milestone olarak v1.1 release-line altında izlenir.
+
+**Definition of Done** (post-Faz 22.2 trigger):
+- [ ] Faz 22.2 Mobile shell production LIVE (FCM project + APNS bundle id provisioning ops/mobile tarafı)
+- [ ] Backend FCM adapter (Android) — channel `mobile-push`, status mapping, retry policy
+- [ ] Backend APNS adapter (iOS) — bundle id, key id, p8 key Vault seed
+- [ ] DeliveryEligibilityService BLOCKED_NO_PUSH_TOKEN guard parity (web push pattern)
+- [ ] IntentSubmissionService fan-out mobile-push channel + WorkerMetrics counter Tag
+- [ ] PR-W4 pattern uyarınca GitOps ConfigMap + ExternalSecret defer-aware Vault seed
+- [ ] Frontend mobile shell push token registration (Faz 22.2 dep)
+- [ ] Audit + WorkerMetrics `notify_dispatch_outcome_total{channel="mobile-push",status="DELIVERED"}` 1.0 proof
+- [ ] Charter 23.7 marker 🟢 done (partial → full)
+- [ ] R25 status → 🟢 Mitigated (DEFER → activated)
+
+**Blockers**: Faz 22.2 production-ready (Android + iOS shell deployment)
+**Owner**: dev (backend) + mobile (Faz 22.2 shell) + ops (FCM/APNS provisioning)
+**Trigger**: Faz 22.2 cutover LIVE — agent re-activation chain (Codex consult + plan-time iter + impl + cross-AI review + cluster apply)
+**Strategic context**: Codex strategic verdict thread `019e5a59` REVISE → Opsiyon C absorb 2026-05-24 — browser-only v1 closure + Mobile separate v1.1/23.7.b patch (BL-021 strategic decision sealed).
 
 ### M8 — Multi-tenant Trigger Gate (🔴 target 2026-09-01)
 
