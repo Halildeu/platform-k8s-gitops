@@ -49,7 +49,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 > - T1.1 Preference: source-ready + PR-G2 PreferenceTopicCatalog endpoint LIVE; T1.1.9 integration test MERGED (task #17). Residual: live cluster runtime evidence (operator gate)
 > - T1.2 KVKK erasure: admin + subscriber self-service LIVE; PR-K1 (erasure ledger V18 + 30-gün SLA watchdog) MERGED 2026-05-21; **PR-K1-K5 + K7 closure MERGED (6/7 K-PR; K6 tenant-scoped DPO authz P1 non-blocking 23.2.B follow-up)**. **R2 closed 2026-05-23** via Codex `019e5189` final legal verdict — see [risk-register.md R2](risk-register.md) + Session 49+ update below.
 > - T1.3 Provider config rollback: T1.3.1-T1.3.4 LIVE; `ProviderConfigRollbackIntegrationTest` MERGED. R12 mitigated
-> - T1.4 D43 outage fallback: PR #855 staged config MERGED 2026-05-21 (agent-actionable bölüm); drill execution + Slack #853 + prod #854 ops-gated (R9 🟡 partial)
+> - T1.4 D43 outage fallback: PR #855 staged config MERGED 2026-05-21; **BL-008 mock-receipt drill 2026-05-24 LIVE** (test cluster dual-receipt — webhook-receiver POST + Mailpit SMTP; Codex `019e5aaf` REVISE absorb); **R9 🟢 mock-receipt mitigated**. Real Slack workspace #853 + prod activation #854 (Operator v0.90.1 `auth_*_file` schema gap fix) ayrı operator-external.
 > - T1.5 Data classification: T1.5.1-T1.5.4 LIVE; `DataClassificationAcceptanceTest` MERGED
 > - T1.6 Abuse guards: T1.6.1-T1.6.6 LIVE; AbuseGuardService + NotifyAbuseStorm PrometheusRule + Service IT MERGED. R13 + R19 mitigated
 >
@@ -154,7 +154,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 
 **Total**: 15h. **Session 47 status 2026-05-21**: T1.6 7/7 LIVE. R13 + R19 mitigated.
 
-**Tier 1 Total estimate**: ~99.5h plan-time. **Session 49+ re-baseline 2026-05-23**: T1 6/6 sub-tier source-ready/LIVE + **R2 KVKK closed via Codex `019e5189` final legal verdict 2026-05-23**; agent-actionable residual **~0h**; R9 D43 drill ops slot remains. Variance: ~60h+ actual vs 99.5h estimate (~-40h drift). Calendar efektif kapanış 2026-05-23 (M3 🟢 CLOSED).
+**Tier 1 Total estimate**: ~99.5h plan-time. **Session 49+ re-baseline 2026-05-24**: T1 6/6 sub-tier source-ready/LIVE + **R2 KVKK closed via Codex `019e5189` final legal verdict 2026-05-23** + **R9 mock-receipt mitigated via Codex `019e5aaf` BL-008 drill 2026-05-24**; agent-actionable residual **~0h**; real Slack workspace #853 + prod activation #854 ext-bound operator-external. Variance: ~60h+ actual vs 99.5h estimate (~-40h drift). Calendar efektif kapanış 2026-05-23 (M3 🟢 CLOSED) + 2026-05-24 (R9 🟢 mock-receipt mitigated).
 
 ---
 
@@ -344,4 +344,4 @@ Update this doc per-PR:
 3. Codex thread reference per task closure
 4. Risk register cross-reference if new risk uncovered
 
-**Last update**: 2026-05-23 (Session 49+ — M1 23.9 reconciliation truth-sync ✅; M3 R2 KVKK closed (Codex `019e5189` final legal verdict); R1 NetGSM ⏳ DEFER asset-preserved; WebPush §3.10+§3.11 fully closed (12 PR zinciri #652/#986-997: subscribe browser-proven + push delivery SUCCESS proven `notify_dispatch_outcome_total{channel="push",status="DELIVERED"} 1.0`); T1/T2.1/T2.2/T2.3/T3/T4 source-side LIVE/closed; **0h agent-actionable residual** — v1 closure kalan = operator Vault align (PR #995+#996 overlay overrides revert) + R24 Biotekno ext + FBL mailbox/per-template DB RO operator activation + R9 D43 drill ops slot)
+**Last update**: 2026-05-24 (Session 49+ — M1 23.9 reconciliation truth-sync ✅; M3 R2 KVKK closed (Codex `019e5189` final legal verdict); **R9 mock-receipt mitigated 2026-05-24 (Codex `019e5aaf` BL-008 drill)**; R1 NetGSM ⏳ DEFER asset-preserved; WebPush §3.10+§3.11 fully closed (12 PR zinciri #652/#986-997: subscribe browser-proven + push delivery SUCCESS proven `notify_dispatch_outcome_total{channel="push",status="DELIVERED"} 1.0`); T1/T2.1/T2.2/T2.3/T3/T4 source-side LIVE/closed; **0h agent-actionable residual** — v1 closure kalan = operator Vault align (PR #995+#996 overlay overrides revert) + R24 Biotekno ext + FBL mailbox/per-template DB RO operator activation + real Slack workspace #853 + prod D43 activation #854 (R9 mock-receipt sonrası operator-external residual))
