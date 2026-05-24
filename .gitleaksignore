@@ -61,3 +61,17 @@
 db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5-live-runtime-acceptance.md:generic-api-key:139
 db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5-live-runtime-acceptance.md:generic-api-key:148
 db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5-live-runtime-acceptance.md:generic-api-key:232
+
+# PR #1036 (BL-010 KC org_id User Attribute mapper canary persona) —
+# gitleaks generic-api-key entropy heuristic flagged Kubernetes pod name
+# suffixes (e.g. `api-gateway-664f4b5655-rqqlm`,
+# `notification-orchestrator-d9979cdbd-r5zjm`) on the initial commit. These
+# are deterministic ReplicaSet+pod hashes (k8s internal naming convention),
+# not credentials. The fix commit (9ba2a06) redacted them to `<POD>`
+# placeholder, but the original commit (77f307d) still contains the
+# high-entropy strings on lines 332 and 442 and re-trips the rule on its
+# own line each scan. No real credential ever existed; KC admin password
+# only flows through `/run/secrets/kc_admin_password` docker mount + Vault
+# operator-action seed (§7.2 of evidence doc).
+77f307dab9a564e2d2382f54a9a99c50db678653:docs/faz-23-evidence/2026-05-24-bl010-kc-org-id-mapper.md:generic-api-key:332
+77f307dab9a564e2d2382f54a9a99c50db678653:docs/faz-23-evidence/2026-05-24-bl010-kc-org-id-mapper.md:generic-api-key:442
