@@ -213,11 +213,65 @@ services:
         dd6b1eab), BE-011 (agent wire-contract, platform-agent#9) all
         MERGED source-side. endpoint-admin-service live digest is now
         sha256:1a1d0aac... (BE-017, gitops PR #980) and MATCHES GitOps
-        desired (D30 OK; supersedes BE-014A fd7a9c54). api-gateway D30
-        DRIFT: live sha256:6137bb2c... != desired sha256:84500b5e... —
-        route 401 fail-closed works, imageID match not closed (separate
-        resolution track). Pending: BE-011 real agent lifecycle smoke,
-        Windows fresh smoke #8, Web runtime acceptance, IT pilot.
+        desired (D30 OK; supersedes BE-014A fd7a9c54). [HISTORICAL/SUPERSEDED
+        by 2026-05-24 refresh — api-gateway D30 drift LIVE sha256:6137bb2c…
+        != desired sha256:84500b5e… ifadesi 2026-05-22 anlık idi; gitops
+        PR #985 (`6a4c488`) ile overlay desired = live = sha256:6137bb2c…
+        olarak hizalandı; api-gateway D30 parity LIVE 2026-05-24,
+        PR #985 sonrası desired/live parity kanıtlıdır (gitops #1000
+        No-Fake-Work correction attestation).]
+
+        2026-05-24 truth-refresh (cumulative Faz 22 Web auth-transport
+        chain — 4 platform-web PR + 5 gitops PR):
+        * Web runtime acceptance LIVE: platform-web #654 (RTK gateway
+          path fix + testai build enable, `c5d96916`) + #656
+          (`createEndpointAdminApp` race protection, `45fa1db7`) + #657
+          (`endpointAdminApi.ts` auth Bearer + localStorage fallback,
+          `5455b076`) + #658 (RTK `fetchFn: unwrapRequestFetchFn`
+          Request-object header drop workaround mirrors notify #652,
+          `4c3df712`) all MERGED + deployed.
+        * Frontend live pod imageID sha256:583aa8c9... (gitops #1007
+          D30 drift-correction `9202ce28`; overlay desired = live, D30
+          OK); intermediate sha256:c212be87... (gitops #998 #657 era,
+          `5ba3b5e2`) historical.
+        * Browser-context post-#658 verify (claude-in-chrome MCP, single
+          tab Platform Admin shell session): /endpoint-agents/status →
+          200 (auth-only, Bearer accepted); /endpoint-admin/endpoint-
+          devices → 403 (FGA fail-closed for Platform Admin no-tuple,
+          expected deny); /endpoint-admin/endpoint-audit-events → 403
+          (same FGA fail-closed). 401 storm giderildi end-to-end.
+        * Authorized persona ALLOW path: c5persona-admin-9001 JWT
+          (userId="9001", FGA can_manage module:endpoint-admin tuple
+          seeded) in-browser fetch 3/3 → 200; real data döndü
+          (HALILKOOLUB735 Windows device record + ENDPOINT_COMMAND_
+          APPROVED audit row — yan-kanıt BE-011 lifecycle + BE-017
+          dual-control source-side LIVE).
+        * platform-web #655 + #653 CLOSED 2026-05-23 with evidence
+          comments; gitops #1004 ALLOW path browser-context evidence
+          note MERGED `49aaf9c`; gitops #1010 + #1014 truth-refresh +
+          handoff MERGED.
+        * D29-EA matrix (persona path): Up ✅ + Functional ✅ + Secured
+          ✅ + Zanzibar-ready ✅; full operator-session parity for
+          audit/status pending follow-on.
+
+        Pending kapılar (ayrı kapı — bu truth-refresh KAPATMAZ):
+        * platform-agent#8 fresh Windows smoke — AG-013 capability
+          coherence fix sonrası operator-bound Windows VM rerun
+        * BE-011 real agent lifecycle smoke — yan-kanıt yakalandı
+          (HALILKOOLUB735 device record); formal 5-step (enroll →
+          heartbeat → command poll → result submit → audit verify)
+          rerun ayrı kapı
+        * BE-017 formal dual-control matrix — V5 migration + manager
+          gate source-side LIVE + 1 audit row yan-kanıt; formal
+          5-step matrix (create → pending → self-approval deny →
+          second-admin approve → audit insert) test fixture rerun
+          ayrı kapı
+        * IT pilot 22.2 — acik.local domain + 2 IT-owned Windows test
+          PC + EndpointPilot OU readiness; docs/runbooks/RB-faz22-
+          endpoint-pilot-it-owned.md hazır (gitops #1016 MERGED);
+          operator execution gerekli
+        * Trusted signing + EDR allowlist — production code-signing
+          cert + EDR vendor catalog update prod cutover scope'unda
     jwt_validates: true
     route_external: false
     workload_kind: Deployment
@@ -225,7 +279,7 @@ services:
     probe_contract: spring-actuator
     jvm_warmup_extra: true   # Hibernate JPA EntityManagerFactory cold-start 30-50s; observed 16h CrashLoop with 45s liveness grace (2026-05-13)
     environments:
-      test: enabled   # 2026-05-22 truth-refresh #982: GitOps desired + live pod imageID both sha256:1a1d0aac5ac1f2a09c124175085b8d19444ceb064bd4f59ec90c12491cf86490 (BE-017 dual-control gate, gitops PR #980; supersedes BE-014A fd7a9c54 + BE-016). D30 match. BE-016/BE-017/BE-011 MERGED source-side; V5 Flyway migration applied live (4→v5). Pending: BE-011 real agent lifecycle smoke + Windows fresh smoke #8 + Web runtime acceptance + IT pilot.
+      test: enabled   # 2026-05-24 truth-refresh: GitOps desired + live pod imageID match for both endpoint-admin-service (sha256:1a1d0aac..., BE-017 gitops PR #980) AND api-gateway (sha256:6137bb2c..., gitops PR #985 closed earlier 2026-05-22 D30 drift) AND frontend (sha256:583aa8c9..., gitops PR #1007 #658 era D30 re-pin). D30 parity LIVE across the 3 services. Web runtime acceptance LIVE end-to-end (4 platform-web PR #654/#656/#657/#658 + 2 gitops drift-correction #998/#1007; browser-context Platform Admin 403/403 FGA fail-closed + status 200 auth-only; 401 storm giderildi). BE-016/BE-017/BE-011 MERGED source-side; V5 Flyway migration applied live (4→v5). Pending: platform-agent#8 Windows fresh smoke + BE-011 real agent lifecycle smoke + BE-017 formal dual-control matrix + IT pilot + Trusted signing / EDR allowlist (full Pending list in description block above).
       prod: deferred  # Faz 22.2 product decision (it-pilot tier acik.local + prod realm 'serban' + Azure Trusted Signing); drift gate accepts absence in prod
 
   - name: notification-orchestrator
