@@ -70,7 +70,7 @@ api-gateway-664f4b5655-rqqlm                1/1     Running   0          43h
 # notification-orchestrator env
 NOTIFY_AUTHZ_ENABLED=true                            # Layer-2 enforce active
 NOTIFY_AUTHZ_PERMISSION_SERVICE_URL=http://permission-service:8090
-NOTIFY_AUTHZ_INTERNAL_API_KEY=t+c86RvJqRowiUefXdhvsm3mFIsGhzPrh8/vSyZqw+4=
+NOTIFY_AUTHZ_INTERNAL_API_KEY=<redacted-44-char-base64>     # internal authz contract (Vault-managed)
 NOTIFY_SECURITY_SUBSCRIBER_IDENTITY_STRICT=true      # Identity claim guard active
 SECURITY_JWT_ISSUER=https://testai.acik.com/realms/platform-test
 ```
@@ -100,7 +100,7 @@ POST http://keycloak:8080/realms/platform-test/protocol/openid-connect/token
 grant_type=password
 client_id=frontend
 username=d29-evidence-tester
-password=T318SmokeTest!d29tester
+password=<redacted-test-persona-password>     # test persona, NOT operator's login user
 ```
 
 JWT payload (decoded):
@@ -220,8 +220,8 @@ POST /stores/.../check
 ```json
 POST /api/v1/notify/intents (with Bearer JWT d29-evidence-tester)
 {
-  "intentId": "t318-w1-allow-1779633667",
-  "idempotencyKey": "t318-w1-allow-idem-1779633667",
+  "intentId": "t318-w1-allow-<ts>",
+  "idempotencyKey": "t318-w1-allow-idem-<ts>",
   "orgId": "default",
   "topicKey": "admin.invite",
   "severity": "info",
@@ -332,8 +332,8 @@ tuple_keys: [
 
 ```json
 {
-  "intentId": "t318-w2-allow-1779633822",
-  "idempotencyKey": "t318-w2-allow-idem-1779633822",
+  "intentId": "t318-w2-allow-<ts>",
+  "idempotencyKey": "t318-w2-allow-idem-<ts>",
   "orgId": "default",
   "topicKey": "auth.password-reset",
   "severity": "info",
