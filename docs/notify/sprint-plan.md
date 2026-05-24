@@ -217,12 +217,12 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | T3.1.5 | Provider failover matrix (`SmsFailureClass` taxonomy: failover-eligible vs not) (PR-2) | backend | 5 | dev | T3.1.3, T3.1.4 | 🟢 PR #250 (task #3) |
 | T3.1.6 | JetSMS DLR polling worker (HttpSmsReport pull + generic DlrIngest core) (PR-3) | backend | 12 | dev | T3.1.3 | 🟢 PR #252 MERGED (task #4) |
 | T3.1.7 | DLR callback endpoint | backend | 3 | dev | T3.1.3 | 🟢 LIVE 2026-05-11 — 5/5 acceptance gates PASS; real SMS go-live R1 contract ETA 2026-05-30 — pipeline 100% ready |
-| T3.1.8 | 4 workflow live test (admin invite, password reset, drift alarm, break-glass) | backend | 4 | dev | T3.1.7 | 🟡 ext-gated (canary smoke KC org_id claim setup + R1 + R24 Biotekno OTP allowlist) |
+| T3.1.8 | 4 workflow live test (admin invite, password reset, drift alarm, break-glass) | backend | 4 | dev | T3.1.7 | 🟢 **TEST CLUSTER LIVE 2026-05-24** (PR #1030 MERGED — 4 senaryo D29 3-layer disiplin proven: Up + Layer 1 `notify_org_access_match_total=11` + Layer 2 OpenFGA enforce 4× DENY + 2× ALLOW SMTP delivered; Codex iter-1 AGREE `019e5a87`); prod canary ext-gated BL-011 (BL-010 Vault seed sonrası) + R24 |
 | T3.1.9 | Vault path `kv/platform/notification-orchestrator` SMS provider creds | ops | 1 | ops | T3.1.1 | 🟢 LIVE (Pre-Production Full Authority 2026-05-10) |
 | T3.1.10 | In-app inbox API closure (paged + read + archive + WS endpoint) | backend | 6 | dev | None | 🟢 LIVE (M6a + M6b — tasks #8-12, #36) |
 | T3.1.11 | Codex peer review + merge | docs | 2 | agent | T3.1.10 | 🟢 (Codex 019e3f82/019e4022/019e4514 multi-iter AGREE chain) |
 
-**Total**: 44h estimate. **Session 47 status 2026-05-21**: T3.1 11/11 source-ready/LIVE; T3.1.1 + T3.1.8 ext-gated (R1 NetGSM + R24 Biotekno + KC org_id canary).
+**Total**: 44h estimate. **Session 47 status 2026-05-21**: T3.1 11/11 source-ready/LIVE; T3.1.1 + T3.1.8 ext-gated (R1 NetGSM + R24 Biotekno + KC org_id canary). **Session 53 status 2026-05-24**: T3.1.8 test cluster LIVE (PR #1030 MERGED — 4 senaryo D29 3-layer evidence); KC org_id canary test cluster LIVE (PR #1036 BL-010); prod canary ext-gated yalnız Vault seed + R24 + R1.
 
 ### T3.2 — 23.5 Preference UI (FE)
 
