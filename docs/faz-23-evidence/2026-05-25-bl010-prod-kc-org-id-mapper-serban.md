@@ -221,7 +221,7 @@ $ curl -H "Authorization: Bearer $ACCESS_TOKEN" \
 
 ---
 
-## 4. Notification endpoint smoke (Layer-1 OrgAccessGuard)
+## 4. Notification endpoint smoke — resource-server auth + validation reached
 
 ```bash
 $ curl -X POST -H "Authorization: Bearer $ACCESS_TOKEN" \
@@ -235,20 +235,24 @@ HTTP=400
 {"timestamp":"2026-05-24T23:03:55.434+00:00","status":400,"error":"Bad Request","path":"/api/v1/notify/intents"}
 ```
 
-### Acceptance interpretation
+### Acceptance interpretation (Codex iter-2 absorb 2026-05-25)
+
+> **Önemli düzeltme (Codex iter-2 thread `019e5bfb`)**: HTTP 400 backend controller'da Spring `@Valid @RequestBody SubmitIntentRequest` validation katmanından geliyor — **bu validation guard çağrısından ÖNCE** çözülür (`NotificationIntentController.java` line 80 vs line 112 guard call). Smoke payload `SubmitIntentRequest` DTO zorunlu alanlarını (intentId, idempotencyKey, severity, dataClassification, template, vb.) taşımıyor → `@Valid` fail → 400. **Guard hiç çağrılmadı** — 400 guard-pass kanıtı DEĞİL.
 
 | HTTP | Anlamı | BL-010 status |
 |---|---|---|
-| 401 Unauthorized | JWT eksik/geçersiz/mapper YOK | BL-010 FAIL |
-| **403 Forbidden** | JWT OK ama OrgAccessGuard cross-org reject (claim mismatch veya yok) | BL-010 FAIL |
-| **400 Bad Request** | **JWT OK + OrgAccessGuard PASS + payload validation hatası** | **BL-010 PASS** ✅ |
-| 202 Accepted | Tam end-to-end (BL-010 + valid payload) | full E2E PASS |
+| 401 Unauthorized | JWT eksik/geçersiz/resource-server reject | BL-010 FAIL |
+| **400 Bad Request** | **JWT resource-server auth PASS + `@Valid` payload validation katmanına ulaştı; guard çağrılmadı** | BL-010 partial — JWT resource-server auth verified; guard-pass kanıtı **BL-011'e defer** |
+| 403 Forbidden (post-validation) | Valid payload + guard cross-org reject | guard-deny path (mismatch case) |
+| 202 Accepted (post-guard) | Valid payload + guard pass | full E2E PASS |
 
-**400 Bad Request = Layer-1 OrgAccessGuard PASS** (yetki kontrolünden geçti; payload validation ayrı domain, BL-010 mapper scope dışı).
+**BL-010 closure scope (Codex iter-2 daraltma)**:
+- ✅ JWT mint OK (mapper LIVE)
+- ✅ access_token + id_token + userinfo 3-way `org_id="default"` claim verified
+- ✅ Resource-server auth PASS (Bearer JWT reach controller; 401 değil)
+- ⏳ **Guard-pass metric/log capture — BL-011 SMS canary turunda zorunlu acceptance**
 
-Backend `Layer-1 OrgAccessGuard.requireOrgAccessOrThrow()` JWT'den `org_id` claim'i okur, `orgId` payload field'ı ile match eder. 400 dönmesi guard'ın success branch'i (auth pass) sonrası payload validation `@Valid` annotation failure'a gittiğini gösterir. Payload schema (`subscriberId` format, `recipients` array shape, vb.) ayrı backend concern.
-
-**Pod log + metric**: staging-sw kubectl k3d-prod context'inden `kubectl logs` empty result döndü (cluster auth path veya log retention konfigürasyon). Bu BL-010 mapper kanıtı için kritik değil — JWT 3-way claim verified + endpoint auth PASS (HTTP 400 değil 403) yeterli. Pod log + metric kanıt capture sonraki turda (BL-011 SMS canary) yapılabilir.
+**Pod log + metric** (`notify_org_access_match_total{source="org_id"}`): staging-sw kubectl k3d-prod context'inden capture empty result (cluster auth path veya log retention konfigürasyon). **BL-011 SMS canary turunda zorunlu** — valid `SubmitIntentRequest` payload + guard çağrısı + metric increment + pod log capture; HTTP 202 (full E2E PASS) ya da 403 (cross-org mismatch deny path; mapper claim DENY DENY scenario için ayrı persona ile).
 
 ---
 
@@ -291,10 +295,10 @@ Backend `Layer-1 OrgAccessGuard.requireOrgAccessOrThrow()` JWT'den `org_id` clai
 | id_token `org_id="default"` claim | ✅ |
 | userinfo endpoint `org_id="default"` claim | ✅ |
 | 3-way claim verified (mapper 3 target true) | ✅ |
-| Notification endpoint auth PASS (Layer-1 OrgAccessGuard not blocking; HTTP 400 payload validation, NOT 403) | ✅ |
-| Pod log + metric (notify_org_access_match_total{source="org_id"}) | ⚠️ staging-sw kubectl empty — BL-011 SMS canary turda capture |
+| Notification endpoint resource-server auth verified (Bearer JWT reach controller; HTTP 400 `@Valid` payload validation hits BEFORE guard) | ✅ |
+| Guard-pass metric (`notify_org_access_match_total{source="org_id"}`) increment + pod log capture | ⏳ **BL-011 SMS canary turunda zorunlu** (valid `SubmitIntentRequest` payload + guard call path + metric/log) |
 
-**BL-010 prod source-side LIVE + Layer-1 auth path verified.** Pod-level metric capture BL-011 turunda yapılır (operator chain birlikte).
+**BL-010 prod KC mapper/persona/Vault/JWT claim setup LIVE.** Guard-pass behavioral proof BL-011 SMS canary acceptance scope'unda (Codex iter-2 absorb 2026-05-25).
 
 ---
 

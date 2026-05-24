@@ -25,28 +25,84 @@ Bu **beklenen davranış**: strict-mode + KVKK 12.B multi-tenancy guard LIVE. Re
 Realm console: `https://ai.acik.com/admin/master/console/#/serban` (NOT `/auth/admin/...` — drift fix)
 Realm well-known: `https://ai.acik.com/realms/serban/.well-known/openid-configuration` (HTTP 200; issuer `https://ai.acik.com/realms/serban`)
 
-### 2. User'a `org_id` attribute ekle
+### 2. Persona pattern (post-2026-05-25 canonical — BL-010 prod execute)
 
-**User**: `halilkocoglu` (veya canary smoke yapacak user)
+> **HARD RULE Kullanıcı Aktif Credential Dokunma YASAK 2026-04-29**: `halilkocoglu` realm user'ına attribute eklemek **YASAK**. Yeni dedicated persona yaratılır.
+>
+> **Post-2026-05-25 canonical persona** (BL-010 prod execute live):
+> - Username: `notify-canary-org-prod-default`
+> - Email: `notify-canary-org-prod-default@acik.com`
+> - firstName: `Notify`, lastName: `Canary Prod Default` (KC 26+ profile completeness mandatory; eksikse "Account is not fully set up" token mint error)
+> - emailVerified: `true`, enabled: `true`, requiredActions: `[]`
+> - Attribute: `org_id=default`
+> - Password: Vault seed `kv/platform/keycloak/persona/notify-canary-org-prod-default/password` (stdin pipe + length-only verify)
 
-- Realm → Users → search `halilkocoglu` → Attributes tab
-- **Add attribute**:
-  - Key: `org_id`
-  - Value: `default`
-- Save
+**Canonical REST API pattern** (UI yerine, idempotent + scriptable):
 
-### 3. Client scope mapper: `org_id` claim'i JWT'ye taşı
+```bash
+# Persona create
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "username":"notify-canary-org-prod-default",
+    "email":"notify-canary-org-prod-default@acik.com",
+    "firstName":"Notify","lastName":"Canary Prod Default",
+    "enabled":true,"emailVerified":true,"requiredActions":[],
+    "attributes":{"org_id":["default"]}
+  }' \
+  https://ai.acik.com/admin/realms/serban/users
+# Expect HTTP 201
 
-- Realm → Client Scopes → `notify-orchestrator` (veya kullanılan API scope) → Mappers tab
-- **Eğer yoksa, Create mapper**:
-  - Mapper type: `User Attribute`
-  - Name: `org_id`
-  - User Attribute: `org_id`
-  - Token Claim Name: `org_id`
-  - Claim JSON Type: `String`
-  - Add to ID token: ON
-  - Add to access token: ON
-  - Add to userinfo: ON
+# Password (Vault'tan stdin pipe — HARD RULE no-token-log)
+curl -X PUT -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"type\":\"password\",\"value\":\"$PERSONA_PASS\",\"temporary\":false}" \
+  https://ai.acik.com/admin/realms/serban/users/$USER_ID/reset-password
+# Expect HTTP 204
+```
+
+**Legacy/historical pattern** (NOT canonical post-2026-05-25): UI üzerinde `halilkocoglu` user'a `org_id=default` attribute ekleme yolu mevcut RB versiyonunda yazılı idi; HARD RULE 2026-04-29 ile YASAK. **Bu yol BL-010 için kullanılmaz** — dedicated persona pattern canonical.
+
+### 3. Client scope mapper: `org_id` claim'i JWT'ye taşı (post-2026-05-25 canonical)
+
+> **Post-2026-05-25 canonical**: Client scope **`notify-canary`** (NOT eski `notify-orchestrator`); frontend client'a **default-client-scope** olarak assign edilir.
+
+**Canonical REST API pattern**:
+
+```bash
+# Client scope yarat
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "name":"notify-canary",
+    "description":"Faz 23 v1 prod canary org_id claim mapper",
+    "protocol":"openid-connect",
+    "attributes":{"include.in.token.scope":"true","display.on.consent.screen":"false"}
+  }' \
+  https://ai.acik.com/admin/realms/serban/client-scopes
+# Expect HTTP 201; capture SCOPE_ID from GET /client-scopes
+
+# Mapper attach (oidc-usermodel-attribute-mapper — hardcoded YASAK Codex iter-2 absorb)
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "name":"org_id",
+    "protocol":"openid-connect",
+    "protocolMapper":"oidc-usermodel-attribute-mapper",
+    "config":{
+      "user.attribute":"org_id",
+      "claim.name":"org_id",
+      "jsonType.label":"String",
+      "id.token.claim":"true","access.token.claim":"true","userinfo.token.claim":"true",
+      "multivalued":"false","aggregate.attrs":"false"
+    }
+  }' \
+  https://ai.acik.com/admin/realms/serban/client-scopes/$SCOPE_ID/protocol-mappers/models
+# Expect HTTP 201
+
+# Default-client-scope assign to frontend
+curl -X PUT -H "Authorization: Bearer $ADMIN_TOKEN" \
+  https://ai.acik.com/admin/realms/serban/clients/$FRONTEND_ID/default-client-scopes/$SCOPE_ID
+# Expect HTTP 204
+```
+
+**Legacy reference** (eski yazım): `notify-orchestrator` scope adı + manual UI mapper formu — post-2026-05-25 BL-010 prod execute pattern superseded eder. Bkz. `docs/faz-23-evidence/2026-05-25-bl010-prod-kc-org-id-mapper-serban.md` §2 canonical 4-step.
 - Save
 
 **Alternatif**: `allowed_orgs` mapper (multi-tenant operator için)
