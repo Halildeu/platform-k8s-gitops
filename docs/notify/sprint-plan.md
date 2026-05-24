@@ -222,7 +222,7 @@ Bu doküman **task-level breakdown + estimation + ownership + dependency** sağl
 | T3.1.10 | In-app inbox API closure (paged + read + archive + WS endpoint) | backend | 6 | dev | None | 🟢 LIVE (M6a + M6b — tasks #8-12, #36) |
 | T3.1.11 | Codex peer review + merge | docs | 2 | agent | T3.1.10 | 🟢 (Codex 019e3f82/019e4022/019e4514 multi-iter AGREE chain) |
 
-**Total**: 44h estimate. **Session 47 status 2026-05-21**: T3.1 11/11 source-ready/LIVE; T3.1.1 + T3.1.8 ext-gated (R1 NetGSM + R24 Biotekno + KC org_id canary). **Session 53 status 2026-05-24**: T3.1.8 test cluster LIVE (PR #1030 MERGED — 4 senaryo D29 3-layer evidence); KC org_id canary test cluster LIVE (PR #1036 BL-010); prod canary ext-gated yalnız Vault seed + R24 + R1.
+**Total**: 44h estimate. **Session 47 status 2026-05-21**: T3.1 11/11 source-ready/LIVE; T3.1.1 + T3.1.8 ext-gated (R1 NetGSM + R24 Biotekno + KC org_id canary). **Session 53 status 2026-05-24**: T3.1.8 test cluster LIVE (PR #1030 MERGED — 4 senaryo D29 3-layer evidence); KC org_id canary **test cluster** LIVE (PR #1036 BL-010 — `platform-test` realm); **prod canary ext-gated**: (a) BL-010 prod KC realm discovery + persona/scope/mapper setup + Vault seed (b) BL-011 canary smoke (c) R24 Biotekno OTP allowlist (d) R1 NetGSM DEFER asset-preserved.
 
 ### T3.2 — 23.5 Preference UI (FE)
 
