@@ -1,14 +1,14 @@
-# Session Handoff — 2026-05-24 — Faz 22 Web acceptance kapanışı + Faz 23 M7 truth-sync + board triage
+# Session Handoff — 2026-05-24 — Faz 22 Web auth-transport snapshot + Faz 23 M7 truth-sync + board triage residual map
 
 > Format: D28 5-alan + sıradaki agent action list
-> Spans: Faz 22 Web endpoint-admin runtime auth-transport chain (5 PR) + Faz 23 M7 v1 closure truth-sync (1 PR) + cross-cutting truth-refresh (1 PR) + board hygiene (1 issue + 3 draft cleanup)
-> Cross-AI Codex thread chain: 13 thread (`019e597d → 598f → 599b → 59a0 → 59ac → 59be`) extending the prior session block
+> Spans: Faz 22 Web endpoint-admin runtime auth-transport chain (this session final chunk: 4 PR + 1 issue) + Faz 23 M7 v1 closure truth-sync (1 PR + 1 sitemap comment) + cross-cutting truth-refresh (1 PR) + board hygiene (3 draft cleanup → 1 tracked issue). Cumulative Faz 22 chain: #654/#656/#657/#658 + gitops #998/#999/#1000/#1004/#1007/#1010.
+> Cross-AI Codex thread chain — this chunk: 7 threads (strategic `019e593a` + post-impl `019e597d → 598f → 599b → 59a0 → 59ac → 59be`); cumulative Faz 22 + M7 chain: 13 threads (full enumeration in §2).
 
 ---
 
 ## 1. Bağlam (bu oturumda ne yapıldı)
 
-Önceki session #999/#1000/#1004 kapanışta Faz 22 Web endpoint-admin runtime acceptance ALLOW-path browser-context evidence kanıtlandı + §F follow-on açıldı (audit/status 401 vs devices 403 discrepancy, MFE-driven RTK varyasyonu olabilir). Bu session:
+Önceki session #999/#1000/#1004 chunk'ında Faz 22 Web endpoint-admin runtime acceptance ALLOW-path browser-context evidence kanıtlandı + §F follow-on açıldı (audit/status 401 vs devices 403 discrepancy, MFE-driven RTK varyasyonu olabilir). Bu session:
 
 1. **§F follow-on root-cause investigation** — kök neden bulundu: RTK Query 2.x `fetchBaseQuery` default'u `fetch(new Request(url, init))` form'u kullanıyor, bu form Authorization header'ını frontend nginx ↔ orchestrator wire-layer'ında düşürüyor. notify #652'nin tıpkısı.
 2. **Fix delivered**: `endpointAdminApi.ts` `fetchBaseQuery({ fetchFn: unwrapRequestFetchFn, ... })` — notify shim'in byte-equivalent local kopyası (MF singleton sharing endpoint-admin için fiilen çalışmıyor — #657 forensics).
@@ -61,7 +61,7 @@ $ ssh staging-sw "kubectl --context k3d-test -n platform-test \
 ghcr.io/halildeu/platform-web-frontend-testai@sha256:583aa8c97694d02811c97b53b1704ae90f538fa5d3c3ff4667d9f28139a8a8c7
 ```
 
-Overlay desired (line 2426 post-#1007) = `sha256:583aa8c9…` ⇒ D30 match.
+Overlay desired (around line 2427-2483 post-#1007; final digest at `kustomize/overlays/test/kustomization.yaml:2483`) = `sha256:583aa8c9…` ⇒ D30 match.
 
 ### C) M7 truth-sync evidence cross-reference (#1008)
 
@@ -88,7 +88,7 @@ Overlay desired (line 2426 post-#1007) = `sha256:583aa8c9…` ⇒ D30 match.
 - **BE-011 real agent lifecycle smoke** — yan-kanıt session içinde captured (`HALILKOOLUB735` Windows device data döndü post-#658 in-browser fetch + agent enrollment was the source). Resmi smoke ayrı kapı (Windows VM rerun).
 - **platform-agent#8 Windows fresh smoke** — operator-bound (Windows VM execution).
 - **IT pilot 22.2** — operator-bound (`acik.local` EndpointPilot OU + AD ops).
-- **Faz 23 M7 closure DoD checked items**: "All v1 sub-faz acceptance 🟢" + "R11+R16 closed" still unchecked in milestones.md per #1008 (no premature Close).
+- **Faz 23 M7 DoD residual items**: "All v1 sub-faz acceptance 🟢" + "R11+R16 closed" still unchecked in milestones.md per #1008 (no premature Close; awaiting operator + ≥30d soak baseline).
 - **Faz 23 M7 operator-bound remaining**: T4.3.5 FBL mailbox activation, T4.3.7 DB RO role grant, R11 Close (≥30d soak baseline post-prod-cutover).
 - **Faz 22 Web ALLOW-path operator browser smoke** — spawn chip created earlier (operator drives real Platform Admin login + manual Slack channel for #alerts-d43-drill); agent's persona-JWT in-browser fetch surrogate captured 3/3 200 in `docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md` §A; full operator-session ALLOW path remains spawn-task-driven.
 - **#1012 D43 Slack webhook activation** — operator-bound (Slack incoming webhook URL operator-managed; Vault seed + helm-values switch + Slack leg dual-receipt smoke).
