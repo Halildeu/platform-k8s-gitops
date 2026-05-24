@@ -67,7 +67,7 @@ Bu runbook **Faz 22.2.A non-domain Windows primary production scope** için oper
 - **HARD RULE — Kullanıcı Aktif Credential'ına Dokunma** — agent kullanıcısı login session'ında olan user'ın creds touched DEĞİL; test persona only (BYOD context'te kullanıcı kendisi)
 - **No new runtime evidence claim without ADR amendment** — mevcut evidence boundary'leri korunur (single VM / no soak / 1 device); yeni evidence yeni PR + Codex review zorunlu
 - **Cross-AI provider-level review** — Implementer Claude (Anthropic) ≠ Reviewer Codex (OpenAI) her PR; provider-level HARD RULE (2026-05-05 + 2026-05-14)
-- **No closure language** — "kapandı / bitti / gün sonu" YASAK; status hep "in progress / needs verify / pending" şeklinde
+- **No closure language** (HARD RULE 2026-04-19) — closure-anlamlı ifadeler YASAK; status hep "in progress / needs verify / pending" şeklinde kullanılır. Detay: `~/.claude/CLAUDE.md` "HARD RULE — No Closure Language" + `feedback_no_closure_language.md`.
 - **Trusted signing for real BYOD** — A2 BYOD class signed binary mandatory (AG-024 + Authenticode + timestamp); unsigned lab exception yalnız A1 workgroup lab cihazları için time-boxed + SHA-pinned
 
 ---
