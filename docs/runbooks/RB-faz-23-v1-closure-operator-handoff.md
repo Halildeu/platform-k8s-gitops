@@ -10,19 +10,19 @@
 
 ## §1 — Agent Probe Boundary Summary (Honest Gap)
 
-Agent Pre-Production Full Authority HARD RULE kapsamında credential probe yaptı; bulgular:
+> **Status update 2026-05-25**: Bu boundary summary 2026-05-22 historical context. Bu session'da Agent Pre-Production Full Authority HARD RULE 2026-04-29 + kullanıcı explicit AskUserQuestion onay zinciri ile **çoğu boundary aşıldı**. Güncel durum:
 
-| Credential | Standart Path | Probe Sonucu | Operator Action |
+| Credential | Path | Status | Notlar |
 |---|---|---|---|
-| Vault root token | `/home/halil/platform/state/vault/vault-root-token` | format looked plausible, but **token invalid against current `platform-vault-prod`** (rotated/re-initialized) | Operator current token konumunu biliyor; canonical RB'ler bu token'ı bekler |
-| Keycloak admin pwd | `/opt/keycloak/admin-password.txt`, `~/.kc-admin` | Standart path'lerde **bulunamadı** | Operator current pwd konumunu biliyor |
-| PG primary deploy | `platform-test` namespace | **Yok** (cluster-içi PG yok veya farklı NS/host) | Operator PG instance konumunu biliyor |
-| Slack workspace + webhook | — | External (workspace admin access required) | Operator-external |
-| Office 365 admin | — | External | Operator-external |
-| DNS registrar admin | — | External | Operator-external |
-| Biotekno provider | — | External | Operator-external |
+| Vault root token (prod) | `/home/halil/bootstrap-drill/vault-init-prod.json` | ✅ Agent canonical erişim | BL-004 + BL-006b + BL-028b prod Vault patch agent execute (PR #1048 + #1069) |
+| Keycloak admin pwd (prod) | KC container env (`KEYCLOAK_ADMIN_PASSWORD`) | ✅ Agent canonical erişim | BL-010 prod KC `serban` realm 4-step LIVE (PR #1062) |
+| PG primary (prod) | `platform-pg-prod` docker container | ✅ Agent canonical erişim | BL-028a Lane A prod DB seed LIVE (PR #1067) |
+| Slack workspace + webhook | — | ⏳ External | Operator-external (R9 D43 SMTP-only D43 v1 accepted; Slack DEFER future trigger) |
+| Office 365 admin | — | ⏳ External | DKIM DNS BL-009 trigger-based DEFER (kullanıcı kararı 2026-05-25) |
+| DNS registrar admin | — | ⏳ External | BL-009 prerequisite (trigger-based) |
+| Biotekno provider | — | ⏳ External | R24 OTP allowlist (~1-2 hafta external lead) |
 
-**Sonuç**: Vault canonical chain (BL-004-007), KC org_id setup (BL-010), DB RO role (BL-015), DKIM DNS (BL-009), R9 D43 drill (BL-008), FBL mailbox (BL-014) execute edilemez (agent context). Bu doc operator-execute için **action checklist + canonical RB pointer**.
+**Sonuç güncel 2026-05-25**: Agent-doable scope büyük ölçüde **tüketildi**. BL-004 (PR #1051 + BL-028b internal API key hash align), BL-006a/BL-006b (PR #1031 + #1048), BL-010 (PR #1062 KC org_id mapper), BL-015 (PR #1035 + B/C live ops), BL-028 (B-with-lanes complete PR #1066 + #1067 + #1068 + #1069), BL-011 (LIVE DELIVERED PR #1071) tamamlandı. Bu doc kalan **gerçek operator-external scope** için action checklist + canonical RB pointer.
 
 ---
 
@@ -32,21 +32,26 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
 
 ### Sprint A — Vault Canonical Align (Pre-condition for downstream PR reverts)
 
-- [ ] **BL-004** Vault `kv patch kv/platform/openfga model_id=01KS8QE8T1EJ2DF5CRS4VV9YX1` + `kv/platform/notification-orchestrator authz_internal_api_key=<aligned-with-permission-service>`
-  - Canonical evidence: `docs/faz-23-evidence/2026-05-22-openfga-notification-model-extension.md` §5 item 7
-  - Verify: pod restart sonrası env values canonical Vault'tan inject edildiğini check (sha256 hash-only local compare, persist edilmez)
+- [x] **BL-004** Vault canonical patch ✅ LIVE 2026-05-25 (env-specific):
+  - **Test**: `kv/platform/openfga model_id=01KS8QE8T1EJ2DF5CRS4VV9YX1` — BL-006b PR #1048 MERGED 2026-05-24
+  - **Prod**: `kv/platform/openfga model_id=01KSFFK9K3V43DD211Z79K3FYA` — BL-028b 2026-05-25 PR #1069 MERGED (version 4 patch)
+  - **Internal API key align**: `kv/platform/notification-orchestrator authz_internal_api_key` ↔ permission-service `PERMISSION_SERVICE_INTERNAL_API_KEY` sha256 hash-match verified (PR #1051 + BL-028b preflight kanıtı; raw secret loglanmaz)
+  - Evidence: `docs/faz-23-evidence/2026-05-24-bl004-prod-authz-internal-api-key-align.md` + `docs/faz-23-evidence/2026-05-25-bl028b-lane-b-prod-openfga-cutover-evidence.md` §10
 - [x] **BL-005** CLOSURE 2026-05-24 (Codex strategic verdict thread `019e5a75` REVISE absorb): **No functional revert needed** for PR #995/#996 while live evidence stays aligned. Codex iter-2 quote: "No functional revert reason for PR #995/#996 while live evidence stays aligned. Only revert temporary overlay overrides after BL-004 proves Vault canonical parity; agent can decide from env/hash + smoke evidence." → BL-005 = "no action needed, BL-004 sonrası override revert pattern follow" → resolved as governance closure (PR #995 OpenFGA model_id cutover + PR #996 internal-API-key ESO re-align stays merged + LIVE; no revert).
   - Dependency: ~~BL-004 verified~~ — strategic closure decision sealed pre-BL-004 (revert YOK; override revert pattern BL-004 sonrası yapılırsa runtime-artifacts ledger update PR ile birlikte yapılır — BL-006 reverse-dependency)
 - [x] **BL-006a** LEDGER METADATA UPDATE 2026-05-24 (PR #1031 MERGED) — `runtime-artifacts/openfga-model/a48a49198c70bd3f928bbac2b87ef3fd83903f00691996c04778f892146f0f9c.json` 2-alan update: `source_docs` +`h-live-evidence-resync.md` + `rollback_runbook_ref` → `#4-rollback` canonical anchor. Codex post-impl thread `019e5a7e` AGREE / canonical_drift: false.
-- [ ] **BL-006b** RUNTIME_SELECTOR `null → vault` POST-BL-004 — agent-actionable ayrı PR (BL-004 Vault canonical patch verified sonrası). Selector_kind: vault, vault_path: kv/platform/openfga, field: model_id. Codex iter-2 canonical drift önleme: ledger ground truth ↔ actual deployment env override revert tamamlanana kadar runtime_selector null kalmalı.
-  - Dependency: BL-004 verified + test overlay env override revert (inline → ESO secretKeyRef)
-- [ ] **BL-007** `platform-backend/backend/openfga/model.fga` canonical update — agent #5 (a233ba0a6703e6595) paralel çalışıyor; eğer agent merge ettiyse atla
+- [x] **BL-006b** RUNTIME_SELECTOR `null → vault` ✅ LIVE 2026-05-24 — PR #1048 MERGED (Codex `019e5b3d` Option A AGREE). Selector_kind: vault, vault_path: kv/platform/openfga, field: model_id. R26 multi-cluster Vault topology drift 🟢 RESOLVED (test/prod ayrı container kanıtlandı). Plus prod ledger block `pending → promoted` (BL-028b PR #1069 sonrası; model_id_env=01KSFFK9..., evidence complete).
+- [ ] **BL-007** HOLD / VERIFY-HOLD — canonical `platform-backend/backend/openfga/model.fga` source verification gate açık; local checkout notification types içermiyor. Runtime/prod OpenFGA promotion ayrı kanıtlandı, source canonical closure henüz claim edilmez.
+  - [x] Runtime/prod OpenFGA notification model promoted via BL-028b evidence (PR #1069 — new prod model_id `01KSFFK9K3V43DD211Z79K3FYA` 15 types: 10 ERP + 5 notification)
+  - [ ] Canonical `platform-backend/backend/openfga/model.fga` source notification types verification / PR link
 
 ### Sprint B — Ops Slot Execution (Canonical RB pointers)
 
-- [ ] **BL-008** R9 D43 outage fallback drill — canonical RB: [`docs/runbooks/RB-notification-outage-fallback.md`](RB-notification-outage-fallback.md) prod activation chain + drill execution sections (port-forward + helm upgrade + dual-receipt verify + cleanup)
-  - Dependency: BL-004 Vault prod seed
-  - Board issues: [#853](https://github.com/Halildeu/platform-k8s-gitops/issues/853), [#854](https://github.com/Halildeu/platform-k8s-gitops/issues/854)
+- [ ] **BL-008** PARTIAL — R9 SMTP-only/mock-receipt mitigation accepted; prod SMTP-only activation #854 remains operator/timer-bound.
+  - [x] R9 mock-receipt mitigated / SMTP-only D43 v1 accepted 2026-05-24 (BL-008 controlled simulate Codex `019e5aaf` AGREE)
+  - [ ] Prod SMTP-only direct fallback activation + 30-day observation, board #854 (operator-external; Operator v0.90.1 `auth_*_file` schema fix)
+  - [x] Slack workspace pivot resolved via D43-TEAMS Hibrit C (PR #1059 MERGED) — original board #853 closed superseded
+  - Canonical RB: [`docs/runbooks/RB-notification-outage-fallback.md`](RB-notification-outage-fallback.md)
 - [ ] **BL-009** DKIM tenant enable + DNS CNAME publish — operator-external (Office 365 admin + DNS registrar) — **DEFER 2026-05-25 (kullanıcı kararı + Codex `019e5bfb` AGREE)**: no immediate trigger; SMTP relay LIVE; trigger-based reactivation (mail-tester ≥9/10 hedef / DMARC strict upgrade / spam placement observed / tenant + DNS registrar window / security-compliance mandate)
   - Reference: feature-matrix H4 + L1; charter line 51; R3 mitigation upgrade row + 5 reactivation trigger conditions
 - [x] **BL-010** Keycloak `org_id=default` claim setup — canonical RB: [`docs/runbooks/RB-prod-canary-kc-claim-setup.md`](RB-prod-canary-kc-claim-setup.md) (canary user attribute + User Attribute mapper pattern, NOT hardcoded claim mapper)
@@ -62,7 +67,7 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
   - (f) cost cap ≤3 SMS confirm
   - Dependency: BL-010 (KC claim setup ✅ PR #1062 MERGED) + **BL-028a (DB seed)** + **BL-028b (OpenFGA cutover)** + BL-016 R24 OTP allowlist (eğer OTP topic test ediliyorsa)
   - Runbook: `docs/runbooks/RB-bl011-prod-sms-canary-execute.md` (Status: 🔴 DEFER/BLOCKED — Lane A + Lane B ikisi PASS olmadan SMS POST YASAK)
-- [ ] **BL-028** Prod `notify_db` functional data + authz preflight — R28 mitigation **B-with-lanes** (Codex thread `019e5ebe` iter-1..iter-3 chain — REVISE → PARTIAL → AGREE 2026-05-25)
+- [x] **BL-028** Prod `notify_db` functional data + authz preflight — R28 mitigation **B-with-lanes complete** ✅ LIVE 2026-05-25 (Codex thread `019e5ebe` iter-1..iter-3 chain — REVISE → PARTIAL → AGREE 2026-05-25)
   - **Lane A — BL-028a** ✅ **LIVE EXECUTED 2026-05-25** (immediate, agent-doable, M4.5 / 23.3.3a):
     - Scope: (a) active SMS-capable template `canary-prod-marketing-v1` v1 tr-TR active=true body_text doldurulmuş, (b) canary subscriber `bl028-prod-canary-001` org=default phone=+905551815564 phone_verified=true source=canary
     - Acceptance LIVE PASS: pre/post DB row exact-match SELECT + permission-service `:8090` reachable via POST /api/v1/internal/authz/check → 401 (auth filter; /actuator/* prod hardening kapalı) + backend env canonical + no-SMS guard (intent/delivery/audit 0/0/0)
@@ -75,7 +80,7 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
     - Trigger for activation: M4.6 milestone start (Lane A complete + operator+architecture gate açık)
     - Runbook: [`docs/runbooks/RB-bl028b-prod-openfga-notification-model-cutover.md`](RB-bl028b-prod-openfga-notification-model-cutover.md) — ✅ **LIVE EXECUTED 2026-05-25** (M4.6 trigger; 10/10 acceptance gate PASS; new prod model `01KSFFK9K3V43DD211Z79K3FYA`; evidence `docs/faz-23-evidence/2026-05-25-bl028b-lane-b-prod-openfga-cutover-evidence.md`)
 - [ ] **BL-014** FBL mailbox activation — canonical RB: [`docs/runbooks/RB-fbl-mailbox-activation.md`](RB-fbl-mailbox-activation.md) (Vault remoteRef triple + overlay patch + ESO uncomment + PR/apply + hard gates)
-- [ ] **BL-015** Grafana per-template notify PG RO datasource — canonical RB: [`docs/runbooks/RB-grafana-notify-pg-datasource.md`](RB-grafana-notify-pg-datasource.md) (canonical user `grafana_notify_ro`, DB `notify_db`, Vault path `kv/platform/grafana/notify-pg-ro`, ESO uncomment + helm upgrade + G1-G8 gates)
+- [x] **BL-015** Grafana per-template notify PG RO datasource ✅ LIVE 2026-05-24 — PR #1035 (helm-values envValueFrom + ESO remoteRef uncomment Codex `019e5a75` strategic iter-3 + `019e5aad` post-impl iter-3 AGREE) + BL-015-B live ops (PG role + Vault seed + ESO + helm upgrade) + BL-015-C evidence + G1-G8 gates PASS. Canonical user `grafana_notify_ro`, DB `notify_db`, Vault path `kv/platform/grafana/notify-pg-ro`. Evidence: `docs/faz-23-evidence/2026-05-24-bl015-grafana-pg-ro-prod-live.md`.
 
 ### Sprint C — External Provider Lead
 
@@ -90,12 +95,14 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
 
 Each pending operator/board acceptance — agent prep evidence ready:
 
-- [ ] **BL-017** M3 23.2 board item #755 ([Project #2](https://github.com/users/Halildeu/projects/2)): R2 KVKK closed via Codex `019e5189` (2026-05-23); K6 P1 follow-up agent #1 in flight
+> **Post-PR board action target** (PR #1 governance truth-sync MERGED sonrası deliberate close + Status update):
+
+- [ ] **BL-017** M3 23.2 board item #755 → **Done** target: R2 KVKK closed via Codex `019e5189` final legal verdict AGREE 2026-05-23; 6/6 sub-faz fully 🟢; K6 P1 non-blocking 23.2.B follow-up
   - Evidence: `docs/faz-23-evidence/2026-05-21-m3-r2-kvkk-closure-evidence.md`
-- [ ] **BL-018** M4 23.3 board item #756 ([Project #2](https://github.com/users/Halildeu/projects/2)): M4 prod cutover infrastructure LIVE (2026-05-20); awaiting **BL-028 prod data seed** + BL-011 canary (+ BL-016 only if OTP path) for full DLR terminal evidence — 2026-05-25 BL-028 dependency Codex `019e5e76` iter-3 absorb
-  - Evidence: `docs/faz-23-evidence/2026-05-20-m4-prod-cutover-closure-evidence.md`
-- [ ] **BL-019** M5 23.5 board item #757 ([Project #2](https://github.com/users/Halildeu/projects/2)): source-side LIVE; awaiting agent #3 (aa3d862bed5a8b408) live runtime evidence PR
-- [ ] **BL-020** M6 23.4 board item #758 ([Project #2](https://github.com/users/Halildeu/projects/2)): M6a + M6b 6/6 LIVE 2026-05-20; awaiting board confirmation (zaten LIVE)
+- [ ] **BL-018** M4 23.3 board item #756 → **Done** target + title rescope ("23.3 SMS lane JetSMS primary accepted — BL-011 LIVE 2026-05-25"): M4 prod cutover infra LIVE 2026-05-20 sha-6307428 + BL-028a Lane A LIVE + BL-028b Lane B LIVE + BL-011 prod SMS canary LIVE DELIVERED 2026-05-25 (provider_msg_id `jetsms-2605251959362908914`). R1 NetGSM secondary ⏳ DEFER asset-preserved (kullanıcı kararı 2026-05-23).
+  - Evidence: `docs/faz-23-evidence/2026-05-20-m4-prod-cutover-closure-evidence.md` + `docs/faz-23-evidence/2026-05-25-bl028a-lane-a-prod-data-seed-execute.md` + `docs/faz-23-evidence/2026-05-25-bl028b-lane-b-prod-openfga-cutover-evidence.md` + `docs/faz-23-evidence/2026-05-25-bl011-prod-sms-canary-live.md`
+- [x] **BL-019** M5 23.5 board item #757 → **Done** (already correct ✅): M5 source-ready + acceptance candidate; 23.5 preference UI LIVE
+- [ ] **BL-020** M6 23.4 board item #758 → **Done** target: M6a + M6b 6/6 LIVE 2026-05-20 (archive UI 30-day history + SMS DLR LIVE prod sha-f40aa82)
 
 ---
 
