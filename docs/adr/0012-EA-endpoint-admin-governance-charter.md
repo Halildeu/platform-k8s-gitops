@@ -527,22 +527,24 @@ Mac (developer host)
 5. IT'den image backup veya System Restore Point varsa (operator karar; default uninstaller yeterli)
 
 **Risk register impact** (RB §16'ya cross-reference + Strategy D-specific):
-- **WinRM blast radius** — PowerShell Remoting credential compromise = domain-wide attack surface; Severity Medium; mitigation: Domain Admin credential rotation post-pilot + WinRM session audit log
-- **EDR allowlist coverage gap** — agent SHA + service name + install path + network destination per-target; eksik allowlist = EDR alarm flood; Severity Medium; mitigation: SOC pre-coordination + ticket per-target
-- **Multi-PC consent/awareness** — corp-managed device olduğu için BYOD scope DIŞI; ama hedef PC kullanıcılarına bilgilendirme iyi pratik (notification dağıt); Severity Low; mitigation: IT/manager pre-notification
-- **Agent installer transfer security** — Mac → DC → hedef PC chain; transit'te binary tamper riski (Severity Low); mitigation: SHA256 verify her hop'ta
+- **WinRM blast radius / Domain Admin credential compromise** — PowerShell Remoting credential exposure = domain-wide attack surface; Severity **High** (Codex iter-1 HIGH absorb); mitigation: **JIT/scoped installer admin** (separate account, time-bound, EndpointPilot OU scope) + **EndpointPilot OU scoped WinRM/GPO** (no domain-wide WinRM enable) + **PowerShell transcription + script block logging** + **target allowlist** (per-pilot session) + **post-pilot disable/revert** (rollback installer admin + revoke WinRM GPO)
+- **EDR allowlist coverage gap** — eksik allowlist = EDR alarm flood + missed real threat; Severity Medium; mitigation: SOC pre-coordination + per-target ticket; **10-item allowlist** (agent SHA + signer/thumbprint + service name + install path + process tree + parent context + service creation + install script hash + network destination + proxy/TLS inspection — detection outcome explicit)
+- **Multi-PC consent/awareness** — corp-managed device A2 BYOD scope DIŞI; ama hedef PC kullanıcılarına bilgilendirme iyi pratik (notification dağıt); Severity Low; mitigation: IT/manager pre-notification
+- **Agent installer transfer security** — Mac → DC → hedef PC chain; transit'te binary tamper riski (Severity Low); mitigation: **Mac-side authenticated fetch** (private release artifact) + **SHA256 + Authenticode verify** her hop'ta + **DC'ye credential taşınmaz** (Mac-side download, RDP/SMB transfer)
 
 **Cross-AI peer review chain (Strategy D karar)**:
 - Implementer: Claude (Anthropic) — Session 51 2026-05-25
 - Reviewer: Codex (OpenAI) — yeni thread submission
 - Verdict: pending (post-impl review için)
 
-**Boundary statement** (Strategy D post-action):
+**Boundary statement** (Strategy D post-action, Codex iter-1 HIGH #1 absorb):
+
 - **NOT production-ready** — pilot scope 1-3 lab Windows PC; ~800 device domain rollout Faz 22.3+
 - **NOT password-reset-ready** — Faz 22.2.B scope dışı (BE-017 destructive command fixture-only proven)
 - **NOT GPO-mandatory** — pilot install ad-hoc per-target; GPO Software Installation Faz 22.3 production tier
-- **NOT trusted-signing-mandatory pilot** — corp-managed device (A2 BYOD'dan farklı); A1 SHA-pinned lab-only-evidence kabul edilebilir (operator + IT karar; A2 trusted-signing zorunlu farklı kapı)
-- 22.2.B IT pilot smoke kanıt → Faz 22.3 restricted tier önkoşul DEĞİL ama path açar; 22.2.B acceptance multi-PC + 24-72h soak ile substantive
+- **Trusted Signing MANDATORY pilot install** — Codex iter-1 HIGH #1 düzeltme: 22.2 IT-owned `acik.local` pilot için trusted signing kontratı ADR §138'de zaten **şart**; Strategy D bu kontratı düşürmez. Gerçek install öncesi **signed artifact + Authenticode signature verify hard gate** zorunlu. "A1 SHA-pinned lab-only-evidence" istisnası **Strategy D kapsamında uygulanMAZ** (A1 lab-only-evidence istisnası workgroup Mac Parallels lab smoke için; Strategy D corp PC pilot A1 kapsamı değil).
+- **Real install pre-condition** (yeni hard gate): `signtool verify /pa /v /tw <agent.exe>` PASS + Trusted Signing tenant subject match + RFC 3161 timestamp valid + thumbprint allowlist match (operator runbook §2.4 + EDR ticket evidence)
+- 22.2.B IT pilot smoke kanıt → Faz 22.3 restricted tier önkoşul DEĞİL ama path açar; 22.2.B acceptance multi-PC + 24-72h soak + **signed artifact verify** ile substantive
 
 **Strategy D detailed runbook**: bkz `docs/runbooks/RB-faz22-strategy-d-dc-orchestrated-install.md` (this PR scope).
 
