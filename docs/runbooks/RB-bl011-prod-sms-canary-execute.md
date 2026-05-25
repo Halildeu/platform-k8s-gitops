@@ -51,7 +51,7 @@ BL-010 prod scope COMPLETED 2026-05-25 (PR #1062 MERGED):
 >   - `template:canary-prod-marketing-v1#topic@notification_topic:marketing.campaign`
 > - ✅ Permission check ALLOW kanıtı: `POST permission-service:8090/api/v1/internal/authz/check` → `{"allowed": true}`
 > - ✅ ERP regression smoke (mevcut 10 type aynı kalmalı)
-> - ✅ Detay RB: `docs/runbooks/RB-bl028b-prod-openfga-notification-model-cutover.md` (NOT YET CREATED — M4.6 milestone başında)
+> - ✅ Detay RB: [`docs/runbooks/RB-bl028b-prod-openfga-notification-model-cutover.md`](RB-bl028b-prod-openfga-notification-model-cutover.md) — **READY-FOR-EXECUTION post M4.6 operator window** (Codex 019e5ee5 iter-2 AGREE; 12 section + 10 hard acceptance gate)
 >
 > **Lane A acceptance** BL-011'i unblock ETMEZ — Layer-2 fail-closed (backend `AuthzClient`: non-200/exception → `deny("authz_<code>")`; prod model notification types desteklemiyorsa permission-service `allowed=false` → `BLOCKED_BY_AUTHZ`). Sadece **Lane A + Lane B birlikte PASS** ile BL-011 execute olabilir.
 
