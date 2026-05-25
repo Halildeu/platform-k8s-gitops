@@ -300,6 +300,17 @@ HTTP=400
 
 **BL-010 prod KC mapper/persona/Vault/JWT claim setup LIVE.** Guard-pass behavioral proof BL-011 SMS canary acceptance scope'unda (Codex iter-2 absorb 2026-05-25).
 
+### Follow-up 2026-05-25 (BL-011 preflight discovery)
+
+BL-011 preflight no-SMS query (Codex thread `019e5e76` iter-2 REVISE) sonucu prod `notify_db` boş data state:
+- `notify.notification_template` `active=true` rows: **0**
+- `notify.subscriber_contact` total rows: **0** (any phone, any org_id)
+- Backend pod log SMS dispatch history: empty (prod'da hiç SMS gönderilmemiş)
+
+Bu **BL-010 scope'unu etkilemiyor**: KC/JWT/resource-server auth scope tam LIVE (mapper + persona + Vault + 3-way claim verified). Ancak BL-011 SMS canary execute prod data seed (template + subscriber_contact + OpenFGA tuple) gerektirir → **BL-011 DEFER** + **R28 NEW** (Prod data seed eksikliği) + **BL-028 yeni backlog** (Prod notify_db functional data seed milestone). Detay: `docs/notify/risk-register.md` R28 + `docs/runbooks/RB-bl011-prod-sms-canary-execute.md` DEFER/BLOCKED status.
+
+**BL-010 status unchanged**: scope-limited PASS — KC mapper/persona/JWT setup LIVE; guard-pass behavioral proof BL-011 post-data-seed acceptance scope.
+
 ---
 
 ## 8. References

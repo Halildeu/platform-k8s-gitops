@@ -81,7 +81,9 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 **Owner**: — (R2 closed; K6 follow-up dev 23.2.B)
 **Dependencies**: cluster stability dependency satisfied; M1 browser SSO/cutover closure tracked separately
 
-### M4 — 23.3 SMS JetSMS primary + NetGSM secondary Activation (🟢 PROD LIVE 2026-05-20 — source-ready + acceptance candidate)
+### M4 — 23.3 SMS JetSMS primary + NetGSM secondary Activation (🟢 infrastructure LIVE 2026-05-20; 🟡 functional data seed pending 2026-05-25)
+
+> **Marker daraltma 2026-05-25 (Codex `019e5e76` iter-2 absorb)**: M4 prod cutover **infrastructure-only LIVE** (backend pod sha-6307428 + SmsAdapter active + JetSmsDlrPollingWorker scheduling=true + ProductionConfigValidator all PASSED). BL-011 SMS canary execute preflight no-SMS query (2026-05-25) prod `notify_db` boş data state ortaya çıkardı (`notification_template active=true` 0 rows + `subscriber_contact` 0 rows). **Functional canary BLOCKED** by prod data seed milestone (BL-028 / R28 NEW; ayrı M4.5 / 23.3.3 sub-milestone). BL-011 DEFER until BL-028 complete. BL-010 prod LIVE (PR #1062 KC/JWT scope) bu daraltmadan etkilenmez — auth scope tam LIVE.
 
 > **Provider kararı 2026-05-19 (kullanıcı)**: SMS primary JetSMS (canlı sözleşme), secondary NetGSM. Multi-provider 5-PR sequence (PR-0 docs + PR-1 SmsProvider abstraction + PR-2 JetSmsProvider send/failover + PR-3 JetSMS DLR polling + PR-4 gitops base configmap + PR-5 test overlay cutover) — Codex `019e3f82` AGREE.
 
@@ -127,7 +129,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
   - [~] A.4 canary SMS smoke (provider=jetsms test) — **attempted 2026-05-21 via browser MCP + M365 SSO**; HTTP 403 strict-mode deny (Codex `019e4965` AGREE: D29-Authorized Layer-1 PASS evidence, functional canary ext-gated KC operator `org_id` claim setup gerek — RB-prod-canary-kc-claim-setup.md)
   - [ ] A.5 DLR terminal state evidence — **ext-gated** (A.4 functional canary sonrası natural; pipeline LIVE scheduling=true)
   - [x] A.6 rollback plan documented (evidence doc §7 + release-candidates ledger `rollback_to_digest: sha-70491543`)
-- [x] **Charter 23.3 marker → 🟢 source-ready + acceptance candidate** (this PR-B5 #918) — qualified green: prod pod LIVE + source/desired-state hazır + ext residual acceptance bekliyor (NOT full closure; 23.2 PR-time pattern ile analog)
+- [x] **Charter 23.3 marker → 🟢 infrastructure LIVE; 🟡 functional data seed pending** (marker daraltma 2026-05-25 Codex `019e5e76` iter-2 absorb; eski "source-ready + acceptance candidate" wording 2026-05-20 historical) — prod pod LIVE + source/desired-state hazır + functional canary BL-028/R28 prereq; BL-011 DEFER
 - [~] Risk register: R1 — NetGSM secondary failover acceptance **⏳ DEFERRED** (kullanıcı kararı 2026-05-23: sözleşme kısa vadede yapılmayacak; JetSMS-only degraded mode = kabul edilen işletim durumu; NetGsmProvider + Vault/ESO asset-preserved). **M4 closure blocker DEĞİL** — sözleşme imzalanırsa reactivation.
 
 **Blockers**: R1 ⏳ DEFER (NetGSM secondary contract kısa vadede yapılmayacak — kullanıcı kararı 2026-05-23; **M4 blocker DEĞİL**, JetSMS-only degraded mode kabul edilen kalıcı işletim durumu); prod canary smoke ext-gated (real user M365 SSO UI flow); R24 ext (Biotekno OTP allowlist provisioning)
