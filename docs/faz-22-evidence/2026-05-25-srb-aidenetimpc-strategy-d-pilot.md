@@ -1,8 +1,8 @@
-# Faz 22.2.A Strategy D pilot — SRB-AIDENETIMPC live install + lifecycle smoke
+# Faz 22.2.A SRB-AIDENETIMPC — real-hardware A1 manual direct install + lifecycle spot-smoke (Strategy D PARTIAL — signed/DC-orchestrated gates open)
 
 > **Tarih**: 2026-05-25
-> **Scope**: Faz 22.2.A non-domain Windows pilot — Strategy D primary path (DC üzerinden domain inventory + AnyDesk üzerinden target PC install) **first real-hardware execution**.
-> **Status**: **VERIFIED with known agent v0.1.0-dev limitations** — install + enroll + command lifecycle SUCCEEDED; process Running + TCP established + Event Log "service running" kanıtlı. Heartbeat last-poll backend-side null + command result payload null = **agent v0.1.0-dev backend feature gap** (BE-011 baseline PR #1021 ile **tutarlı** — sadece SRB-AIDENETIMPC özel değil; HALILKOOLUB735'te de aynı pattern). Future agent iteration scope.
+> **Scope**: Faz 22.2.A non-domain Windows pilot — **real corp hardware A1 manual direct install** via AnyDesk drag-drop file transfer + local admin PowerShell. **Strategy D primary path DEĞİL** (Codex iter-1 HIGH absorb): Strategy D runbook DC-orchestrated WinRM/JIT installer admin pattern tanımlı; bu evidence AnyDesk + local admin direct path. Strategy D **DC-orchestrated signed install gate açık kalmaya devam eder** (signed artifact + Authenticode verify + WinRM/JIT pattern future iteration).
+> **Status**: **PARTIAL-VERIFIED with known v0.1.0-dev gaps + Strategy D signing/DC-orchestration gates open** — install + enroll + command lifecycle SUCCEEDED; process Running + TCP established + Event Log "service running" kanıtlı. Heartbeat last-poll backend-side null + command result payload null = **agent v0.1.0-dev backend feature gap** (BE-011 baseline PR #1021 ile **tutarlı** — sadece SRB-AIDENETIMPC özel değil; HALILKOOLUB735'te de aynı pattern). Future agent iteration scope.
 > **A1 multi-VM (#1044) disk constraint çözüldü**: real corp hardware ile N=2 evidence point achievable; fresh Parallels VM provisioning gerek YOK.
 
 ## 1. Bağlam (Why)
@@ -210,7 +210,7 @@ Events (most recent):
 | Tier | Status | Evidence |
 |---|---|---|
 | **Up** | ✅ | Service Running + StartType=Automatic + tamper SDDL + delayed-start + failure restart policy + process PID 29216 alive + TCP established 10.9.161.105:60590→10.9.10.53:443 + Application Event Log "service running" |
-| **Functional** | ✅ | Enroll SUCCEEDED (ENDPOINT_ENROLLMENT_CONSUMED audit by `agent:SRB-AIDENETIMPC`) + Command lifecycle full path (QUEUED → delivered +27sn → executing +49sn → SUCCEEDED) + TCP backend connection sürekli + agent v0.1.0-dev backend feature gaps (lastHeartbeatAt + resultSizeBytes null) BE-011 baseline PR #1021 ile **tutarlı parity** (HALILKOOLUB735 baseline'da da aynı pattern — agent capability scope) |
+| **Functional** | 🟡 **PARTIAL** | **Command lifecycle ✅** (ENDPOINT_ENROLLMENT_CONSUMED audit by `agent:SRB-AIDENETIMPC` + QUEUED → delivered +27sn → executing +49sn → SUCCEEDED + TCP backend connection sürekli) + **Inventory result completeness 🟡** (`resultSizeBytes: null` — Strategy D runbook acceptance gate `> 0`; BE-011 baseline PR #1021 HALILKOOLUB735'te result payload populated yazıyor — bu evidence'da parity argümanı **repo evidence ile çelişti** (Codex iter-1 HIGH absorb). Inventory submit follow-up agent iteration scope. **lastHeartbeatAt null** ayrı pattern — agent v0.1.0-dev dedicated heartbeat endpoint yok; command poll implicit liveness yeterli kanıt, ama dedicated heartbeat feature gap future agent iter |
 | **Secured** | ✅ | C5 persona JWT enforced (admin endpoint 401 anonymous; 200 with Bearer) + agent device credential auth (`agent:SRB-AIDENETIMPC` audit subject = device HMAC cred enforced, not generic agent token) + enrollment token TTL 24h + singleUse consumed + tamper protection SDDL |
 | **Zanzibar-ready** | ✅ | Backend @RequireModule(endpoint-admin) enforce; c5persona FGA `user:9001 can_manage module:endpoint-admin` tuple ALLOW yolu; allow-path-browser-smoke evidence chain (PR #1004) ile kanıtlandı |
 
@@ -250,21 +250,26 @@ Yorumlama: Agent v0.1.0-dev **structured logging Windows Event Log'a redirect** 
 
 ## 8. Boundary statement
 
-- **NOT production-ready** — single device pilot smoke; long-soak (24-72h heartbeat continuity) yapılmadı
+- **NOT production-ready** — single device pilot spot-smoke; long-soak (24-72h heartbeat continuity) yapılmadı
 - **NOT password-reset-ready** — BE-017 destructive command flow scope dışı (fixture-only test cluster, PR #1032)
 - **NOT domain-wide rollout-ready** — 799 PC corp domain'de; bu pilot SRB-AIDENETIMPC single device
-- **A1 baseline integrity** — HALILKOOLUB735 (PR #1021) DOKUNULMADI ✅
-- **Trusted Signing** — Strategy D ADR-0012-EA "MANDATORY pilot install" kuralı bu evidence'da **uygulanmadı** (lab-only-evidence SHA-pinned exception; A2 BYOD'dan farklı corp-managed device); production rollout için Trusted Signing prereq (AG-024)
+- **A1 baseline integrity** — HALILKOOLUB735 (PR #1021) **historical baseline, not retested in this evidence** (Codex iter-1 LOW absorb; sadece backend read-only device list query yapıldı, fresh smoke evidence değil)
+- **Trusted Signing HARD GATE İHLALİ** (Codex iter-1 HIGH #1 absorb): Strategy D ADR-0012-EA + RB §1.3 + §2.4 "Trusted Signing MANDATORY pilot install" net kuralı bu evidence'da **uygulanmadı** — unsigned `endpoint-agent.exe` (SHA256 53A45B... lab artifact) install edildi. A1 lab-only-evidence SHA-pinned exception sadece **Mac Parallels VM workgroup smoke** için (HALILKOOLUB735 baseline); corp real hardware için exception kapsamı YOK. Bu evidence "**operator-authorized unsigned real-hardware A1 exploratory smoke / policy deviation captured for follow-up**" framing'i ile kabul edilir; "Strategy D compliant first execution" iddiası **YANLIŞ**. Trusted Signing onboarding (`docs/22-2-trusted-signing-onboarding.md` + AG-018/AG-024) ayrı kapı — gerçek Strategy D execution için **signed artifact + `signtool verify /pa` PASS + thumbprint allowlist match** zorunlu
 
-## 9. A1 multi-VM (#1044) impact
+## 9. A1 multi-VM (#1044) impact (Codex iter-1 MEDIUM #3 absorb — "PASS" erken)
 
-| Önce | Sonra |
+| Önce | Bu evidence ile |
 |---|---|
-| BLOCKED — disk constraint (3 fresh Parallels VM gerek; Mac disk free <10GB) | **N=2 alternative path PASS** (HALILKOOLUB735 + SRB-AIDENETIMPC) |
-| Acceptance formula `ceil(2×N/3)` için fresh VM provisioning şart | Real corp hardware kullanıldı — disk constraint irrelevant |
-| Path 1 (Mac disk cleanup) veya Path 2 (N=2 alternative) operator karar | **Path 2 implicitly chosen** (Strategy D ile second device achieved) |
+| BLOCKED — disk constraint (3 fresh Parallels VM gerek; Mac disk free <10GB) | **Disk blocker mitigated by alternative real-hardware evidence point** (HALILKOOLUB735 historical baseline + SRB-AIDENETIMPC fresh spot-smoke) |
+| Acceptance formula `ceil(2×N/3)` için fresh VM provisioning şart | Real corp hardware kullanıldı; ama RB §14.5 aggregate metric formula PASS için **24h+ soak + per-device gates + rollup template (§14.4) doldurma** şart |
+| Path 1 (Mac disk cleanup) veya Path 2 (N=2 alternative) operator karar | **Path 2 partial implicit** — second evidence point achieved ama gates eksik |
 
-**#1044 status önerisi**: BLOCKED → **N=2 PASS** (low-N partial repeatability evidence; production-ready iddiası DEĞİL ama A1 multi-device acceptance baseline kapatıldı).
+**#1044 doğru status framing** (Codex absorb): "BLOCKED → PASS" YANLIŞ. Doğru: **Disk blocker mitigated; N=2 spot-smoke PARTIAL; rollup template (§14.4) doldurulması + 24-72h per-device soak + Strategy D signed install policy decision + AG-018/AG-024 signed distribution sonrası PASS değerlendirilecek**. Per-device pending gates:
+- Self-hosted CI run (RB §7.1)
+- 24-72h soak observation (RB §11)
+- Signed distribution (RB §7.3 + AG-024)
+- Identity classification AG-021/022 (RB §13.2 A1 detection)
+- Rollup template §14.4 fill
 
 ## 10. Cross-AI peer review chain
 
@@ -272,30 +277,60 @@ Yorumlama: Agent v0.1.0-dev **structured logging Windows Event Log'a redirect** 
 - Reviewer: Codex (OpenAI) — thread `019e5ea4` (Strategy D RB) sequel veya yeni thread bu evidence için
 - Verdict: pending (post-impl review)
 
-## 11. Cross-references
+## 11. Cross-references (Codex iter-1 expansion — eksik linkler eklendi)
 
-- **ADR-0012-EA Strategy D decision** (PR #1065)
-- **RB-faz22-strategy-d-dc-orchestrated-install.md** (PR #1065)
-- **RB-faz22-non-domain-windows-pilot.md** (PR #1043) §6 + §10 A1 workgroup pattern (Strategy D corp PC için aynı)
-- **PR #1021** HALILKOOLUB735 A1 baseline (DOKUNULMADI)
-- **PR #1058** RB §14.3-§14.5 rollup template (this evidence §14.2 per-device + bekleyen rollup)
-- **PR #1060** RB §14.6 A2 BYOD appendix (A2 scope DIŞI — bu pilot corp-managed)
+- **ADR-0012-EA Strategy D decision** (PR #1065) — Trusted Signing MANDATORY hard gate
+- **RB-faz22-strategy-d-dc-orchestrated-install.md** (PR #1065) — §1.3 + §2.4 signed install + §6.1 acceptance gate `resultSizeBytes > 0`
+- **RB-faz22-non-domain-windows-pilot.md** (PR #1043) — §6 + §7.3 unsigned exception scope (Parallels lab only) + §10 A1 workgroup pattern + §11 24-72h soak + §14.5 rollup aggregate formula
+- **docs/22-2-trusted-signing-onboarding.md** — Trusted Signing prereq Faz 22 onboarding
+- **AG-018 + AG-024** (platform-agent backlog) — signed release promotion gate (Strategy D real execution prereq)
+- **AG-021 + AG-022** (platform-agent backlog) — identity classification (A1/A2/A3/A4 dsregcmd detection)
+- **PR #1021** HALILKOOLUB735 A1 baseline — historical baseline, not retested in this evidence
+- **PR #1043** RB-faz22-non-domain-windows-pilot canonical
+- **PR #1058** RB §14.3-§14.5 rollup template (this evidence §14.2 per-device; rollup §14.4 fill bekleniyor)
+- **PR #1060** RB §14.6 A2 BYOD appendix (A2 scope DIŞI — bu pilot corp-managed A1 standalone)
 - **PR #1063** Strategy B historical (HALILKOOLUB735 domain join — uygulanmadı)
-- **#1037** Faz 22.2 IT pilot acik.local — Strategy D primary path validated
+- **PR #1065** Strategy D dedicated runbook + ADR amendment
+- **platform-agent PR #9** wire-contract baseline
+- **platform-agent PR #10** AG-013 capability fix
+- **platform-agent PR #13** CI automation source
+- **#1037** Faz 22.2 IT pilot acik.local — **Strategy D DC-orchestrated signed install gate açık** (bu evidence manual direct A1 path, Strategy D first execution DEĞİL)
 - **#1015** IT pilot readiness umbrella
-- **#1044** A1 multi-VM repeatability — N=2 alternative path PASS (disk constraint çözüm)
-- **BE-011 evidence** `docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md` HALILKOOLUB735 lifecycle baseline (Strategy D paralel pattern)
-- **Allow-path browser smoke** `docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md` c5persona JWT mint + FGA enforcement evidence chain
+- **#1044** A1 multi-VM — Disk blocker mitigated; N=2 spot-smoke PARTIAL; rollup/soak/signing pending PASS değil
+- **BE-011 evidence** `docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md` HALILKOOLUB735 lifecycle baseline (result payload **populated** — bu evidence parity argümanı yanlıştı)
+- **Allow-path browser smoke** `docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md` c5persona JWT mint + FGA enforcement
+- **Codex post-impl review thread** `019e5f1b-7d5e-7e61-ac5d-fb8c67fe8e3a` (this PR REVISE → AGREE iter chain)
 
 ## 12. HARD RULE compliance
 
 - ✅ Pre-Production Full Authority (test cluster + test persona credentials Vault read)
-- ✅ Plan Consensus Autonomy (Codex 019e5ea4 Strategy D AGREE, plan onayı sorulmadı)
-- ✅ Cross-AI Peer Review provider-different (Anthropic ↔ OpenAI sequel)
+- ✅ Plan Consensus Autonomy (Codex 019e5f1b iter-2 AGREE expected, plan onayı sorulmadı)
+- ✅ Cross-AI Peer Review provider-different (Anthropic ↔ OpenAI thread `019e5f1b` this PR + sequel `019e5ea4` Strategy D RB)
 - ✅ Admin Merge YASAK (CI yeşil bekle, normal squash)
-- 🟡 No Closure Language (PARTIAL-VERIFIED — heartbeat + result null follow-up)
-- ✅ No Fake Work (concrete lifecycle + audit chain evidence; eksikler açıkça PARTIAL)
+- ✅ No Closure Language (PARTIAL-VERIFIED — Strategy D signing/DC-orchestration gates open + agent v0.1.0-dev gaps future iter)
+- ✅ No Fake Work (concrete lifecycle + audit chain evidence; eksikler açıkça PARTIAL + framing düzeltildi — "Strategy D primary path validated" yanlış iddiasından "real-hardware A1 manual direct install spot-smoke" doğru framing'e geçildi)
 - ✅ Türkçe açıklama + İngilizce code-shared technical
 - ✅ Kullanıcı Aktif Credential'a Dokunma YASAK (`halilkocoglu`/`ai.enes` user'a dokunulmadı; `denetimpc` SRB-AIDENETIMPC local user)
 - N/A TEST Cluster Scale-to-Zero YASAK (cluster değil corp PC)
 - ✅ Tarayıcıdan Sonuç Doğrulanmadan İş Bitmedi — UI değil agent install + backend REST verify (HTTP-level evidence yetmez; ama bu agent-side smoke, browser UI scope dışı)
+- ⚠️ **Trusted Signing HARD GATE İHLALİ** — bu evidence policy deviation; signed install requirement açık + follow-up (AG-018/AG-024 + onboarding doc) ayrı kapı
+
+## 13. Strategy D vs this evidence — net farklılık
+
+| Boyut | Strategy D RB tanımı | Bu evidence (gerçek pattern) |
+|---|---|---|
+| Source | DC üzerinden orchestration | Mac AnyDesk drag-drop |
+| Auth | JIT installer admin (NOT Domain Admin), EndpointPilot OU scoped WinRM | Local admin (workgroup PC `denetimpc` user) PowerShell admin |
+| Transfer | Mac-side authenticated fetch → RDP file drop / SMB share | AnyDesk drag-drop |
+| Install trigger | `Invoke-Command -Credential $jitCred` | Doğrudan PowerShell admin oturumunda `& install.ps1 ...` |
+| Target | Domain-joined corp PC (acik.local member) | Workgroup PC (corp Wi-Fi + corp DNS, AD-joined değil) |
+| Signing | MANDATORY `signtool verify /pa` PASS hard gate | Unsigned binary (lab-only-evidence SHA-pinned, **A1 exception scope dışı**) |
+| Acceptance | `resultSizeBytes > 0` per-target + per-device gates 24-72h soak | `resultSizeBytes: null` + no soak |
+
+Bu evidence Strategy D **first execution değil**; "Strategy D framework geliştirme döneminde yapılan exploratory A1 manual direct install spot-smoke" framing'i ile kabul edilir. Strategy D first execution için: signed artifact + DC orchestration + 24-72h soak + result payload populated + rollup template doldurma şart.
+
+**Follow-up board issues**:
+- AG-018 + AG-024 platform-agent signed release promotion
+- 22-2-trusted-signing-onboarding.md operator action chain
+- Strategy D RB §1.3 + §2.4 + §6.1 acceptance gate revisit (signed install hard gate enforce)
+- #1044 rollup template fill + 24-72h soak (this evidence ile başlama bekleniyor)
