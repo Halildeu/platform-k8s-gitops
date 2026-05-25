@@ -53,14 +53,26 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
   - **Test cluster scope COMPLETED 2026-05-24** — PR #1036 evidence `docs/faz-23-evidence/2026-05-24-bl010-kc-org-id-mapper.md` (Codex `019e5ac1` cross-AI AGREE iter-2)
   - **Prod cluster scope COMPLETED 2026-05-25** — `serban` realm (drift fix `acik`→`serban`) `notify-canary` client scope + `org_id` mapper + persona `notify-canary-org-prod-default` LIVE; JWT mint OK; access_token + id_token + userinfo 3-way `org_id="default"` claim verified; resource-server auth PASS (controller reach; HTTP 400 = `@Valid` payload validation hits BEFORE guard call); Vault seed length-only verify 41 char; evidence `docs/faz-23-evidence/2026-05-25-bl010-prod-kc-org-id-mapper-serban.md` (Codex `019e5bfb` strategic AGREE + iter-2 acceptance daraltma absorb)
   - **Guard-pass behavioral proof** (notify_org_access_match_total{source="org_id"} + pod log + valid `SubmitIntentRequest` payload + 202/403 post-guard observation) — **BL-011 SMS canary turunda zorunlu acceptance** (Codex iter-2 absorb 2026-05-25)
-- [ ] **BL-011** Prod SMS functional canary smoke — canonical canary example: `RB-prod-canary-kc-claim-setup.md` (canonical payload contract: `topicKey` + `recipients` + `template` + `channels` + `orgId`) — **DEFER 2026-05-25 (preflight discovery + Codex `019e5e76` iter-2..iter-5 AGREE)**: prod `notify_db` data seed eksik (BL-028 / R28 prereq). 5 trigger condition: (a) BL-028 prod data seed COMPLETED (template + subscriber_contact + OpenFGA tuple), (b) BL-028 acceptance preflight: DB row counts + template render/resolve + permission ALLOW (SMS POST yok; gerçek SMS POST BL-011 window'unda), (c) operator window scheduled, (d) recipient `+905551815564` re-confirm, (e) cost cap ≤3 SMS confirm.
-  - Dependency: BL-010 (KC claim setup ✅ PR #1062 MERGED 2026-05-25) + **BL-028 (prod data seed)** + BL-016 R24 OTP allowlist (eğer OTP topic test ediliyorsa)
-  - Runbook: `docs/runbooks/RB-bl011-prod-sms-canary-execute.md` (Status: 🔴 DEFER/BLOCKED — BL-028 prereq)
-- [ ] **BL-028** Prod `notify_db` functional data seed — R28 mitigation (Codex thread `019e5e76` iter-2 NEW 2026-05-25)
-  - Scope: (a) active SMS-capable template (`notify.notification_template active=true`, locale=tr-TR, body_text), (b) canary subscriber (`notify.subscriber_contact`: org_id=default, subscriber_id=bl011-prod-canary-001, phone=+905551815564, phone_verified=true), (c) OpenFGA tuple subscriber#can_receive@template ALLOW
-  - Acceptance: before/after DB count + template render preflight + permission ALLOW + no-SMS BL-011 preflight PASS
-  - Pattern: M3 R2 KVKK seed disiplini paralel (idempotent + canary-only rollback)
-  - Roadmap: M4.5 / 23.3.3 sub-milestone
+- [ ] **BL-011** Prod SMS functional canary smoke — canonical canary example: `RB-prod-canary-kc-claim-setup.md` (canonical payload contract: `topicKey` + `recipients` + `template` + `channels` + `orgId`) — **DEFER 2026-05-25 (iki gate prereq — Codex thread `019e5ebe` iter-3 AGREE B-with-lanes)**: prod `notify_db` data seed eksik (BL-028a / R28 prereq) **VE** prod OpenFGA notification model cutover eksik (BL-028b prereq — Layer-2 fail-closed). 6 trigger condition:
+  - (a) **BL-028a (Lane A)** prod data seed COMPLETED (template + subscriber_contact, agent-doable)
+  - (b) **BL-028b (Lane B)** prod OpenFGA notification model cutover COMPLETED (subscriber + notification_topic + template types + topic-inheritance tuple + permission ALLOW, operator+architecture gate, DEFERRED M4.6)
+  - (c) BL-028 acceptance preflight: DB row counts + permission check `{"allowed": true}` via permission-service `:8090` internal (SMS POST yok; gerçek SMS POST BL-011 window'unda)
+  - (d) operator window scheduled
+  - (e) recipient `+905551815564` re-confirm
+  - (f) cost cap ≤3 SMS confirm
+  - Dependency: BL-010 (KC claim setup ✅ PR #1062 MERGED) + **BL-028a (DB seed)** + **BL-028b (OpenFGA cutover)** + BL-016 R24 OTP allowlist (eğer OTP topic test ediliyorsa)
+  - Runbook: `docs/runbooks/RB-bl011-prod-sms-canary-execute.md` (Status: 🔴 DEFER/BLOCKED — Lane A + Lane B ikisi PASS olmadan SMS POST YASAK)
+- [ ] **BL-028** Prod `notify_db` functional data + authz preflight — R28 mitigation **B-with-lanes** (Codex thread `019e5ebe` iter-1..iter-3 chain — REVISE → PARTIAL → AGREE 2026-05-25)
+  - **Lane A — BL-028a** (immediate, agent-doable, M4.5 / 23.3.3a):
+    - Scope: (a) active SMS-capable template `canary-prod-marketing-v1` v1 tr-TR active=true body_text doldurulmuş, (b) canary subscriber `bl028-prod-canary-001` org=default phone=+905551815564 phone_verified=true source=canary
+    - Acceptance: pre/post DB row exact-match SELECT + permission-service `:8090/actuator/health` 200 + no-SMS guard (intent/delivery/audit 0 row)
+    - Pattern: M3 R2 KVKK seed disiplini paralel (idempotent ON CONFLICT DO NOTHING + zero-referral guard rollback)
+    - Runbook: `docs/runbooks/RB-bl028-prod-data-seed-execute.md` Lane A (READY-FOR-EXECUTION post-merge)
+  - **Lane B — BL-028b** (DEFERRED, operator+architecture gate, M4.6 / 23.3.4):
+    - Scope: prod OpenFGA notification model cutover (DSL `docs/notify/openfga-notification-model.dsl` → prod store) + permission-service `ERP_OPENFGA_MODEL_ID` runtime update + topic-inheritance tuple seed (`notification_topic:marketing.campaign#can_receive@subscriber:bl028-prod-canary-001` + `template:canary-prod-marketing-v1#topic@notification_topic:marketing.campaign`) + permission check ALLOW kanıt + ERP regression smoke
+    - Acceptance: prod OpenFGA model type'ları contains notification types + permission-service internal check `{"allowed": true}` + ERP 10 type regression PASS
+    - Trigger for activation: M4.6 milestone start (Lane A complete + operator+architecture gate açık)
+    - Runbook: `docs/runbooks/RB-bl028b-prod-openfga-notification-model-cutover.md` (NOT YET CREATED — M4.6 başında)
 - [ ] **BL-014** FBL mailbox activation — canonical RB: [`docs/runbooks/RB-fbl-mailbox-activation.md`](RB-fbl-mailbox-activation.md) (Vault remoteRef triple + overlay patch + ESO uncomment + PR/apply + hard gates)
 - [ ] **BL-015** Grafana per-template notify PG RO datasource — canonical RB: [`docs/runbooks/RB-grafana-notify-pg-datasource.md`](RB-grafana-notify-pg-datasource.md) (canonical user `grafana_notify_ro`, DB `notify_db`, Vault path `kv/platform/grafana/notify-pg-ro`, ESO uncomment + helm upgrade + G1-G8 gates)
 
