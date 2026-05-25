@@ -53,8 +53,14 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
   - **Test cluster scope COMPLETED 2026-05-24** — PR #1036 evidence `docs/faz-23-evidence/2026-05-24-bl010-kc-org-id-mapper.md` (Codex `019e5ac1` cross-AI AGREE iter-2)
   - **Prod cluster scope COMPLETED 2026-05-25** — `serban` realm (drift fix `acik`→`serban`) `notify-canary` client scope + `org_id` mapper + persona `notify-canary-org-prod-default` LIVE; JWT mint OK; access_token + id_token + userinfo 3-way `org_id="default"` claim verified; resource-server auth PASS (controller reach; HTTP 400 = `@Valid` payload validation hits BEFORE guard call); Vault seed length-only verify 41 char; evidence `docs/faz-23-evidence/2026-05-25-bl010-prod-kc-org-id-mapper-serban.md` (Codex `019e5bfb` strategic AGREE + iter-2 acceptance daraltma absorb)
   - **Guard-pass behavioral proof** (notify_org_access_match_total{source="org_id"} + pod log + valid `SubmitIntentRequest` payload + 202/403 post-guard observation) — **BL-011 SMS canary turunda zorunlu acceptance** (Codex iter-2 absorb 2026-05-25)
-- [ ] **BL-011** Prod SMS functional canary smoke — canonical canary example: `RB-prod-canary-kc-claim-setup.md` (canonical payload contract: `topicKey` + `recipients` + `template` + `channels` + `orgId`)
-  - Dependency: BL-010 (KC claim setup) + BL-016 R24 OTP allowlist (eğer OTP topic test ediliyorsa)
+- [ ] **BL-011** Prod SMS functional canary smoke — canonical canary example: `RB-prod-canary-kc-claim-setup.md` (canonical payload contract: `topicKey` + `recipients` + `template` + `channels` + `orgId`) — **DEFER 2026-05-25 (preflight discovery + Codex `019e5e76` iter-2..iter-5 AGREE)**: prod `notify_db` data seed eksik (BL-028 / R28 prereq). 5 trigger condition: (a) BL-028 prod data seed COMPLETED (template + subscriber_contact + OpenFGA tuple), (b) BL-028 acceptance preflight: DB row counts + template render/resolve + permission ALLOW (SMS POST yok; gerçek SMS POST BL-011 window'unda), (c) operator window scheduled, (d) recipient `+905551815564` re-confirm, (e) cost cap ≤3 SMS confirm.
+  - Dependency: BL-010 (KC claim setup ✅ PR #1062 MERGED 2026-05-25) + **BL-028 (prod data seed)** + BL-016 R24 OTP allowlist (eğer OTP topic test ediliyorsa)
+  - Runbook: `docs/runbooks/RB-bl011-prod-sms-canary-execute.md` (Status: 🔴 DEFER/BLOCKED — BL-028 prereq)
+- [ ] **BL-028** Prod `notify_db` functional data seed — R28 mitigation (Codex thread `019e5e76` iter-2 NEW 2026-05-25)
+  - Scope: (a) active SMS-capable template (`notify.notification_template active=true`, locale=tr-TR, body_text), (b) canary subscriber (`notify.subscriber_contact`: org_id=default, subscriber_id=bl011-prod-canary-001, phone=+905551815564, phone_verified=true), (c) OpenFGA tuple subscriber#can_receive@template ALLOW
+  - Acceptance: before/after DB count + template render preflight + permission ALLOW + no-SMS BL-011 preflight PASS
+  - Pattern: M3 R2 KVKK seed disiplini paralel (idempotent + canary-only rollback)
+  - Roadmap: M4.5 / 23.3.3 sub-milestone
 - [ ] **BL-014** FBL mailbox activation — canonical RB: [`docs/runbooks/RB-fbl-mailbox-activation.md`](RB-fbl-mailbox-activation.md) (Vault remoteRef triple + overlay patch + ESO uncomment + PR/apply + hard gates)
 - [ ] **BL-015** Grafana per-template notify PG RO datasource — canonical RB: [`docs/runbooks/RB-grafana-notify-pg-datasource.md`](RB-grafana-notify-pg-datasource.md) (canonical user `grafana_notify_ro`, DB `notify_db`, Vault path `kv/platform/grafana/notify-pg-ro`, ESO uncomment + helm upgrade + G1-G8 gates)
 
@@ -73,7 +79,7 @@ Each pending operator/board acceptance — agent prep evidence ready:
 
 - [ ] **BL-017** M3 23.2 board item #755 ([Project #2](https://github.com/users/Halildeu/projects/2)): R2 KVKK closed via Codex `019e5189` (2026-05-23); K6 P1 follow-up agent #1 in flight
   - Evidence: `docs/faz-23-evidence/2026-05-21-m3-r2-kvkk-closure-evidence.md`
-- [ ] **BL-018** M4 23.3 board item #756 ([Project #2](https://github.com/users/Halildeu/projects/2)): M4 prod cutover LIVE (2026-05-20); awaiting BL-011 canary + BL-016 OTP for full DLR terminal evidence
+- [ ] **BL-018** M4 23.3 board item #756 ([Project #2](https://github.com/users/Halildeu/projects/2)): M4 prod cutover infrastructure LIVE (2026-05-20); awaiting **BL-028 prod data seed** + BL-011 canary (+ BL-016 only if OTP path) for full DLR terminal evidence — 2026-05-25 BL-028 dependency Codex `019e5e76` iter-3 absorb
   - Evidence: `docs/faz-23-evidence/2026-05-20-m4-prod-cutover-closure-evidence.md`
 - [ ] **BL-019** M5 23.5 board item #757 ([Project #2](https://github.com/users/Halildeu/projects/2)): source-side LIVE; awaiting agent #3 (aa3d862bed5a8b408) live runtime evidence PR
 - [ ] **BL-020** M6 23.4 board item #758 ([Project #2](https://github.com/users/Halildeu/projects/2)): M6a + M6b 6/6 LIVE 2026-05-20; awaiting board confirmation (zaten LIVE)
