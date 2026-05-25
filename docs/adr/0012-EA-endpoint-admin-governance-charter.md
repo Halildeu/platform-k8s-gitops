@@ -417,6 +417,50 @@ prod-ready / password-reset-ready İDDİA EDİLMEZ — 22.1 test runtime + sourc
 5. platform-agent #12 status reflect — "Needs Verify; non-blocking 22.2.A repeatability label" (ayrı gh issue edit, no PR)
 6. **Follow-up** (ayrı PR, sonraki tur): `RB-faz22-non-domain-windows-pilot.md` (non-domain primary scope için operasyon runbook'u — 2+ device, soak, CI/manual evidence, identity taxonomy, consent/privacy, signed artifact gates)
 
+### Strategy B decision (2026-05-25) — HALILKOOLUB735 domain join + A1 baseline historical
+
+**Trigger**: User 2026-05-25 — "aktif directory diyelim" (HALILKOOLUB735 mevcut VM `acik.local` domain'e join et) + ön koşul "hardiskde yer yok" (fresh VM provision şu an mümkün değil).
+
+**Karar**:
+- HALILKOOLUB735 mevcut VM `acik.local` domain'e join edilir (Strateji B)
+- Strateji A (fresh ayrı VM domain join) **disk constraint** sebebiyle DEFER (operator action: Mac host cleanup / disk procure / VM disk compress unblock)
+- Disk constraint çözülünce Strateji A revisit edilebilir (ek 2 fresh workgroup VM A1 multi-VM #1044 için + 1 fresh domain VM A2.B saf evidence için)
+
+**Pre-condition** (Strateji B operator action chain):
+1. **Parallels snapshot** `pre-domain-join-A1-baseline-2026-05-25` (rollback hattı zorunlu — disk +1-3GB delta)
+2. **Mac corp VPN connect** (Gate 0 unblock; user 2026-05-25 "VPN bağlı şu an" ✅)
+3. **Mac terminal `dig acik.local SRV`** — DC SRV record verify
+4. **VM içi PowerShell admin** `Set-DnsClientServerAddress -InterfaceAlias Ethernet -ServerAddresses <corp-dns-ip>`
+5. **Gate 0 precheck** reproducer (`nltest /dsgetdc:acik.local` + LDAP/Kerberos port test) → 5/5 PASS şart
+6. **`Add-Computer`** — interactive credential (`Get-Credential`)
+7. **Post-restart verify** + sanitized smoke + screenshot capture
+
+**Post-action consequences** (truth-sync):
+- **A1 baseline (PR #1021) historical mark** — workgroup smoke evidence pre-2026-05-25; yeni evidence doc'ta açık historical note
+- **A1 multi-VM (#1044) BLOCKED** — disk constraint sebebiyle 3 fresh workgroup VM şimdi yok; Path 1 (disk cleanup) veya Path 2 (N=2 alternative) operator kararı bekleniyor
+- **22.2.B `acik.local` opsiyonel scope unblock** — Gate 0 VPN ✅ + domain join sonrası IT pilot smoke açılır (D29-EA Secured persona + `COLLECT_INVENTORY` domain user context + Kerberos/LDAP/SMB evidence)
+
+**Rollback paths** (sıralı tercih):
+1. **Parallels snapshot restore** — atomic + AD object cleanup unutma riski yok + 1dk (recommended)
+2. `Remove-Computer -UnjoinDomainCredential (Get-Credential) -PassThru -Verbose -Restart` + AD object manual cleanup (operator interactive; 5-10dk)
+3. VM rebuild from clean install (worst case; disk constraint sebebiyle uygulanamaz)
+
+**Risk register impact**:
+- R-NEW BYOD-specific risk (consent / KVKK / uninstall self-service) — Strateji B HALILKOOLUB735 domain-joined corporate device olduğu için A2 BYOD scope DİŞI; bu risk sınıfı bu pilot tarafından artırılmaz (mevcut R9-A2 BYOD-class korunur, etkilenmez)
+- R-NEW Strateji B-specific risk (A1 evidence kaybı) — PR #1021 historical mark + rollback snapshot ile mitigated; yeni evidence doc'ta "A1 baseline historical (PR #1021); post-domain-join evidence yeni context" açık not zorunlu
+- R-NEW Disk constraint risk (A1 multi-VM #1044 BLOCKED) — operator action bağımlı; production-ready iddiası bu defer ile **DAHA UZAĞA**
+
+**Cross-AI peer review chain (Strateji B karar)**:
+- Implementer: Claude (Anthropic) — Session 51 2026-05-25
+- Reviewer: Codex (OpenAI) — thread `019e5be4-c665-7422-bb38-7f094522a197` (sequel — A2 BYOD appendix iter chain devamı, Strateji B karar log için yeniden danışma)
+- Verdict: pending (post-impl review için yeni Codex turn submission)
+
+**Boundary statement** (Strateji B post-action):
+- **NOT production-ready** — single VM domain join, single device evidence, no soak, no rollback rehearsal beyond snapshot test
+- **NOT password-reset-ready** — Faz 22.2 scope dışı (BE-017 destructive command fixture-only proven)
+- **NOT domain-wide rollout-ready** — pilot scope 1 IT-owned VM; ~800 device domain rollout Faz 22.3+
+- 22.2.B opsiyonel scope smoke evidence → IT pilot smoke kanıt; bu evidence Faz 22.3 restricted tier veya prod readiness için ön-koşul değil ama path açar
+
 ## 22.2 pre-req docs (22.1'de hazırlanır)
 
 Codex revize: 22.2 Authenticode trusted signing geçişi öncesi 22.1 boyunca aşağıdaki dokümantasyon **netleşir**:

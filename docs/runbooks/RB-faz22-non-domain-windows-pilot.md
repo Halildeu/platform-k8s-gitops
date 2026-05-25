@@ -964,6 +964,72 @@ Agent service crash / tamper / unexplained behavior tespiti:
 - Affected device(s) full cleanup + forensic snapshot
 - Cross-AI review (Codex) per incident root cause analysis
 
+### 15.4 Parallels snapshot-based atomic rollback (Strateji B — domain join HALILKOOLUB735)
+
+ADR-0012-EA "Strategy B decision (2026-05-25)" kapsamında HALILKOOLUB735 mevcut VM `acik.local` domain'e join edilirken **Parallels snapshot-based atomic rollback** §15.1+§15.2 zincirine alternatif **recommended path**. Disk +1-3GB delta (snapshot copy-on-write); fresh VM gerektirmez.
+
+#### 15.4.1 Pre-domain-join snapshot (zorunlu)
+
+```
+Parallels Desktop GUI:
+  → HALILKOOLUB735 → Actions menüsü → Take Snapshot...
+  → Name: pre-domain-join-A1-baseline-2026-05-25
+  → Description: A1 baseline pre-domain-join (PR #1021 evidence context); rollback hattı.
+  → Save
+```
+
+CLI alternatifi (`prlctl`):
+```bash
+prlctl snapshot HALILKOOLUB735 --name "pre-domain-join-A1-baseline-2026-05-25" --description "A1 baseline pre-domain-join rollback"
+```
+
+**Verification**: `prlctl snapshot-list HALILKOOLUB735` → snapshot mevcut + timestamp doğru.
+
+#### 15.4.2 Rollback senaryosu
+
+Domain join sonrası beklenmedik durum (DC discovery fail, Kerberos auth break, AD cached credential issue, agent service crash domain context'te, identity discovery scope drift, vb.):
+
+1. **VM shutdown** (CLI veya GUI):
+   ```bash
+   prlctl stop HALILKOOLUB735
+   ```
+2. **Snapshot restore** (atomic — AD object cleanup unutma riski yok):
+   ```
+   Parallels GUI: HALILKOOLUB735 → Snapshots → pre-domain-join-A1-baseline-2026-05-25 → Switch To
+   ```
+   veya CLI:
+   ```bash
+   prlctl snapshot-switch HALILKOOLUB735 --id <snapshot-uuid-from-list>
+   ```
+3. **VM start** — pre-domain-join state geri yüklenir (workgroup + PartOfDomain=false + agent original WORKGROUP enrollment)
+4. **Post-rollback verify**:
+   ```powershell
+   (Get-WmiObject Win32_ComputerSystem).PartOfDomain   # False bekleniyor
+   Get-WmiObject Win32_ComputerSystem | Select-Object Workgroup, Domain   # Workgroup adı geri
+   Get-Service EndpointAgent                              # Running state korunmuş
+   ```
+
+#### 15.4.3 vs `Remove-Computer` (legacy §15.1 path)
+
+| Property | Snapshot restore (§15.4) | `Remove-Computer` (§15.1) |
+|---|---|---|
+| Atomic | ✅ tek operasyon | ❌ unjoin + AD object cleanup ayrı |
+| AD object cleanup | ✅ snapshot zaten join-öncesi state → AD'de hiç object yok | ❌ operator manual ya da AD admin cleanup; unutma riski (orphan object) |
+| Süre | ~1dk (VM stop + switch + start) | ~5-10dk (unjoin + restart + AD cleanup koordinasyonu) |
+| Credential | ❌ gerek yok | ✅ domain admin credential (interactive `Get-Credential`) |
+| Disk delta | +1-3GB snapshot (silinene kadar) | 0 (sadece state değişimi) |
+| Rollback reversibility | ✅ snapshot silinene kadar her zaman geri dönülebilir | ❌ unjoin tek yön; tekrar join interactive credential gerek |
+| Audit trail | Snapshot timestamp + name | OS event log + AD log (dağınık) |
+
+**Recommendation**: Strateji B kapsamında **snapshot rollback default**; `Remove-Computer` yedek path (disaster — örn. snapshot corrupt veya disk failure).
+
+#### 15.4.4 Snapshot lifecycle policy
+
+- Pre-domain-join snapshot tutulma süresi: **acceptance smoke + 72h soak + evidence PR merge sonrası** silinir (disk geri kazanılır)
+- Eğer rollback gerekirse: snapshot restore, evidence "Strateji B rollback" note + rationale + closure timestamp + snapshot SHA/UUID kanıt
+- Snapshot silinmeden önce minimum 1 hafta tutulması önerilir (gecikmiş rollback ihtiyacı için buffer)
+- Snapshot silme komutu: `prlctl snapshot-delete HALILKOOLUB735 --id <snapshot-uuid>`
+
 ---
 
 ## 16. Risk register
