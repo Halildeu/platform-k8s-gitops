@@ -347,13 +347,6 @@ done
 
 **Semantic**: Install başarılı + device JWT aktif olan hedefin enrollment token'ı `singleUse=true` ile zaten consumed; backend taraf 2. kullanım reddeder. Sadece `unused`/`retry`/`failed install` tokenları DELETE edilir (orphan token sprawl önle).
 
-# Token TTL policy (Codex iter-2 MEDIUM #3):
-# - Default TTL 24h (install + smoke window)
-# - Multi-day soak için: enrollment tek seferlik (post-enroll heartbeat/command JWT ayrı)
-# - Expired before install → new per-target mint + old token DELETE; TTL extend YOK
-# - Unused token revoke post-pilot zorunlu (orphan token sprawl önle)
-```
-
 **Plus evidence retention policy** (Codex MEDIUM #4):
 - Raw enrollment token **NEVER logged in evidence docs** — sadece SHA truncate + mintedAt + targetHash
 - Unused token revoke (post-pilot) — admin REST `DELETE /endpoint-enrollments/<id>`
