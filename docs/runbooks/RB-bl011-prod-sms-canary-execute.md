@@ -1,11 +1,13 @@
 # RB-bl011-prod-sms-canary-execute — Prod SMS Canary Smoke (BL-011)
 
-> **Status**: 🔴 **DEFER/BLOCKED** — Prod `notify_db` functional data seed eksik (BL-028 / R28); BL-011 execute prereq tamam değil
-> **Discovery 2026-05-25**: Preflight no-SMS query sonucu prod notify_db boş data state — `notification_template active=true` rows: 0, `subscriber_contact` total rows: 0. M4 cutover (2026-05-20) sadece infrastructure layer LIVE; functional data layer ayrı milestone.
-> **Codex strategic verdict**: thread `019e5e76-de62-7292-88c9-953f8392d9fd` iter-2 (REVISE/ready_for_impl=true — runbook DEFER/BLOCKED + R28 NEW + BL-028 yeni backlog)
-> **Risk**: HARD CAP 3 SMS (Codex iter-1 önceki verdict 019e5b8a); recommended **max_count=1** — DATA SEED SONRASI
-> **Recipient**: `+905551815564` (kullanıcı 2026-05-25 explicit onay — data seed sonrası execute için saklanır)
-> **Cost**: ~5-15 kuruş JetSMS (1-3 SMS aralığı) — execute prereq tamam olduğunda
+> **Status**: 🔴 **DEFER/BLOCKED** — **iki gate** prereq eksik: BL-028a (DB seed) + BL-028b (OpenFGA notification model cutover). Lane A tek başına yetmez; Layer-2 fail-closed nedeniyle BL-028b PASS olmadan SMS POST YASAK.
+> **Discovery 2026-05-25**: Preflight sonucu prod notify_db boş data state (0 templates, 0 subscribers, 0 intents) + prod OpenFGA model `01KS15PF...` notification types DESTEKLEMİYOR (sadece D35 ERP types: action/branch/company/module/organization/project/report/report_group/user/warehouse). M4 cutover sadece infrastructure layer LIVE; functional+authz katmanları ayrı milestone'larda.
+> **Codex strategic verdict chain**: 
+> - iter-1 thread `019e5e76`: R28 keşif (DB seed eksik)
+> - iter-2/3 thread `019e5ebe-2ec3-70e3-b408-37792c04f208`: B-with-lanes (BL-028a + BL-028b ayrı), Layer-2 fail-closed kanıt
+> **Risk**: HARD CAP 3 SMS (önceki verdict 019e5b8a); recommended **max_count=1** — BL-028a VE BL-028b SONRASI
+> **Recipient**: `+905551815564` (kullanıcı 2026-05-25 explicit onay — iki gate sonrası execute için saklanır)
+> **Cost**: ~5-15 kuruş JetSMS (1-3 SMS aralığı) — iki gate tamam olduğunda
 
 ---
 
@@ -32,13 +34,26 @@ BL-010 prod scope COMPLETED 2026-05-25 (PR #1062 MERGED):
 
 ## 3. No-SMS Preflight (6 madde — execute öncesi tamam olmalı)
 
-> **PREREQ #0 (BL-028/R28 — 2026-05-25 NEW)**: **Prod `notify_db` functional data seed COMPLETED** — Aşağıdaki tüm preflight maddeleri kontrolden geçmeden BL-011 SMS canary execute YAPILMAZ:
-> - ✅ At least 1 active SMS-capable template (`notify.notification_template` `active=true`, `locale=tr-TR`, body_text render path net)
-> - ✅ Canary subscriber row (`notify.subscriber_contact`: `org_id=default`, `subscriber_id=bl011-prod-canary-001`, `phone=+905551815564`, `phone_verified=true`)
-> - ✅ OpenFGA tuple `subscriber:<id>` `can_receive` `template:<template_id>` ALLOW (permission-service check 200)
-> - ✅ Backend functional canary preflight: DB row counts (template active=true + subscriber_contact present) + template render/resolve no-error + permission ALLOW response. **Bu BL-028 acceptance bir SMS POST DEĞİL** — prod env'de `NOTIFY_DISPATCH_ENABLED=true` + channel `sms` ile HTTP 202 path provider'a gider; "no real SMS" garantisi sağlanamaz. Gerçek SMS POST + 202/403 path BL-011 window'unda.
+> **PREREQ #0 (BL-028/R28 — 2026-05-25 iter-3 absorb)**: **İKİ GATE** PASS olmadan BL-011 SMS canary execute YASAK:
 >
-> Detay: BL-028 backlog item — Prod notify_db functional data seed (R28 mitigation).
+> **Lane A — BL-028a (DB functional seed, agent-doable)**:
+> - ✅ At least 1 active SMS-capable template (`notify.notification_template` `active=true`, `locale=tr-TR`, body_text doldurulmuş, `external_allowed=false`) — canonical `canary-prod-marketing-v1` v1 tr-TR
+> - ✅ Canary subscriber row (`notify.subscriber_contact`: `org_id=default`, `subscriber_id=bl028-prod-canary-001`, `phone=+905551815564`, `phone_verified=true`)
+> - ✅ Permission-service `:8090/actuator/health` reachable (port :8090 — :8094 drift fixed)
+> - ✅ Backend env state canonical (`NOTIFY_AUTHZ_ENABLED=true`, `NOTIFY_AUTHZ_PERMISSION_SERVICE_URL=http://permission-service:8090`, `NOTIFY_DISPATCH_ENABLED=true`, `NOTIFY_PREFERENCES_ENABLED=true`)
+> - ✅ Detay RB: `docs/runbooks/RB-bl028-prod-data-seed-execute.md` Lane A
+>
+> **Lane B — BL-028b (OpenFGA notification model cutover, operator+architecture gate, DEFERRED M4.6)**:
+> - ✅ Prod OpenFGA store'a notification model revision yazıldı (subscriber + notification_topic + template types + relations); yeni prod model_id ULID
+> - ✅ Permission-service runtime `ERP_OPENFGA_MODEL_ID` yeni model id'ye geçirildi (ESO sync + rollout restart + pod env verify)
+> - ✅ Topic-inheritance tuple seed:
+>   - `notification_topic:marketing.campaign#can_receive@subscriber:bl028-prod-canary-001`
+>   - `template:canary-prod-marketing-v1#topic@notification_topic:marketing.campaign`
+> - ✅ Permission check ALLOW kanıtı: `POST permission-service:8090/api/v1/internal/authz/check` → `{"allowed": true}`
+> - ✅ ERP regression smoke (mevcut 10 type aynı kalmalı)
+> - ✅ Detay RB: `docs/runbooks/RB-bl028b-prod-openfga-notification-model-cutover.md` (NOT YET CREATED — M4.6 milestone başında)
+>
+> **Lane A acceptance** BL-011'i unblock ETMEZ — Layer-2 fail-closed (backend `AuthzClient`: non-200/exception → `deny("authz_<code>")`; prod model notification types desteklemiyorsa permission-service `allowed=false` → `BLOCKED_BY_AUTHZ`). Sadece **Lane A + Lane B birlikte PASS** ile BL-011 execute olabilir.
 
 ### 3.1 Backend prod env confirmation
 
@@ -84,12 +99,15 @@ LIMIT 1;
 
 > **Schema note (Codex iter-3 P1 fix)**: Canonical table `notify.subscriber_contact` (NOT `notify.subscriber`); columns `phone` (NOT `contact_phone`), `phone_verified` (NOT `deleted_at`). Composite UNIQUE `(org_id, subscriber_id)`.
 
-**Pattern B**: Canary subscriber yarat (PRE-execute, idempotent)
-- subscriber_id: `bl011-prod-canary-001` (string identifier; subscriber master tablosu YOK — sadece subscriber_contact)
+**Pattern B**: Canary subscriber yarat (PRE-execute, idempotent — BL-028a Lane A scope)
+- subscriber_id: `bl028-prod-canary-001` (string identifier; subscriber master tablosu YOK — sadece subscriber_contact)
 - org_id=`default`
 - phone=`+905551815564`
 - phone_verified=`true`
-- OpenFGA tuple: `subscriber:bl011-prod-canary-001#can_receive@template:<active-sms-template-id>`
+- OpenFGA tuple (topic-inheritance, BL-028b Lane B scope — Codex iter-2 P0 fix):
+  - `notification_topic:marketing.campaign#can_receive@subscriber:bl028-prod-canary-001`
+  - `template:canary-prod-marketing-v1#topic@notification_topic:marketing.campaign`
+- Direct `subscriber#can_receive@template` tuple shape **YANLIŞ** — topic inheritance modeli kullan
 
 **Pattern C** (Codex iter-1 risk warning): External recipient `{"type":"external","phone":"+905551815564"}`
 - Template `external_allowed=true` gerek
@@ -102,6 +120,8 @@ LIMIT 1;
 
 ```bash
 # Layer-2 OpenFGA check via permission-service internal API
+# NOT: Bu check ancak BL-028b (prod OpenFGA notification model cutover) sonrası ALLOW dönebilir.
+# Şu an prod model `01KS15PF...` notification types DESTEKLEMİYOR → `allowed=false` veya `error` beklenir.
 INTERNAL_API_KEY=$(kubectl --context k3d-prod -n $NS exec $POD -- printenv NOTIFY_AUTHZ_INTERNAL_API_KEY 2>/dev/null)
 
 kubectl --context k3d-prod -n $NS exec $POD -- curl -sS \
@@ -110,15 +130,17 @@ kubectl --context k3d-prod -n $NS exec $POD -- curl -sS \
   -H "Content-Type: application/json" \
   -d '{
     "principal_type": "subscriber",
-    "principal_id": "bl011-prod-canary-001",
+    "principal_id": "bl028-prod-canary-001",
     "relation": "can_receive",
     "object_type": "template",
-    "object_id": "<active-sms-template-id>"
+    "object_id": "canary-prod-marketing-v1"
   }' \
-  http://permission-service.platform-prod.svc.cluster.local:8094/api/v1/internal/authz/check
+  http://permission-service.platform-prod.svc.cluster.local:8090/api/v1/internal/authz/check
 ```
 
-**Beklenen**: `{"allowed": true}` — yoksa execute öncesi tuple yarat (OpenFGA write via permission-service admin endpoint).
+**Beklenen** (BL-028b sonrası): `{"allowed": true}` — yoksa BL-028b runbook çalıştır (prod OpenFGA notification model cutover + topic-inheritance tuple seed).
+
+**Şu an** (BL-028b öncesi): `{"allowed": false}` veya `error` — Layer-2 fail-closed davranır, `BLOCKED_BY_AUTHZ` döner, SMS gitmez. Bu BEKLENEN bloked state.
 
 ### 3.5 Pre-metric snapshot
 
