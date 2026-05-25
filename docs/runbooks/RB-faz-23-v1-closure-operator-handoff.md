@@ -73,7 +73,7 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
     - Scope: prod OpenFGA notification model cutover (DSL `docs/notify/openfga-notification-model.dsl` → prod store) + permission-service `ERP_OPENFGA_MODEL_ID` runtime update + topic-inheritance tuple seed (`notification_topic:marketing.campaign#can_receive@subscriber:bl028-prod-canary-001` + `template:canary-prod-marketing-v1#topic@notification_topic:marketing.campaign`) + permission check ALLOW kanıt + ERP regression smoke
     - Acceptance: prod OpenFGA model type'ları contains notification types + permission-service internal check `{"allowed": true}` + ERP 10 type regression PASS
     - Trigger for activation: M4.6 milestone start (Lane A complete + operator+architecture gate açık)
-    - Runbook: `docs/runbooks/RB-bl028b-prod-openfga-notification-model-cutover.md` (NOT YET CREATED — M4.6 başında)
+    - Runbook: [`docs/runbooks/RB-bl028b-prod-openfga-notification-model-cutover.md`](RB-bl028b-prod-openfga-notification-model-cutover.md) — **READY-FOR-EXECUTION post M4.6 operator window** (Codex 019e5ee5 iter-2 AGREE; 12 section + 10 hard acceptance gate)
 - [ ] **BL-014** FBL mailbox activation — canonical RB: [`docs/runbooks/RB-fbl-mailbox-activation.md`](RB-fbl-mailbox-activation.md) (Vault remoteRef triple + overlay patch + ESO uncomment + PR/apply + hard gates)
 - [ ] **BL-015** Grafana per-template notify PG RO datasource — canonical RB: [`docs/runbooks/RB-grafana-notify-pg-datasource.md`](RB-grafana-notify-pg-datasource.md) (canonical user `grafana_notify_ro`, DB `notify_db`, Vault path `kv/platform/grafana/notify-pg-ro`, ESO uncomment + helm upgrade + G1-G8 gates)
 

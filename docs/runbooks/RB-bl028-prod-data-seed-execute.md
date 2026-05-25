@@ -242,7 +242,7 @@ WHERE org_id='default' AND subscriber_id='bl028-prod-canary-001';
 - Operator + architecture gate açıldı (Vault topology kararı, prod cutover yetkisi)
 - ERP regression smoke seti hazır
 
-**NOT executable here** — ayrı runbook `RB-bl028b-prod-openfga-notification-model-cutover.md` gerek.
+**NOT executable here** — ayrı runbook **READY** (Codex 019e5ee5 iter-2 AGREE): [`docs/runbooks/RB-bl028b-prod-openfga-notification-model-cutover.md`](RB-bl028b-prod-openfga-notification-model-cutover.md) (READY-FOR-EXECUTION post M4.6 operator window). 12 section + 5 ExternalSecret consumer inventory + canonical JSON ERP semantic diff + 10 hard acceptance gate.
 
 ---
 
