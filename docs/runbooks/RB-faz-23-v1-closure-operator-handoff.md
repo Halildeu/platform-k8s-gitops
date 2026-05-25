@@ -63,11 +63,12 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
   - Dependency: BL-010 (KC claim setup ✅ PR #1062 MERGED) + **BL-028a (DB seed)** + **BL-028b (OpenFGA cutover)** + BL-016 R24 OTP allowlist (eğer OTP topic test ediliyorsa)
   - Runbook: `docs/runbooks/RB-bl011-prod-sms-canary-execute.md` (Status: 🔴 DEFER/BLOCKED — Lane A + Lane B ikisi PASS olmadan SMS POST YASAK)
 - [ ] **BL-028** Prod `notify_db` functional data + authz preflight — R28 mitigation **B-with-lanes** (Codex thread `019e5ebe` iter-1..iter-3 chain — REVISE → PARTIAL → AGREE 2026-05-25)
-  - **Lane A — BL-028a** (immediate, agent-doable, M4.5 / 23.3.3a):
+  - **Lane A — BL-028a** ✅ **LIVE EXECUTED 2026-05-25** (immediate, agent-doable, M4.5 / 23.3.3a):
     - Scope: (a) active SMS-capable template `canary-prod-marketing-v1` v1 tr-TR active=true body_text doldurulmuş, (b) canary subscriber `bl028-prod-canary-001` org=default phone=+905551815564 phone_verified=true source=canary
-    - Acceptance: pre/post DB row exact-match SELECT + permission-service `:8090/actuator/health` 200 + no-SMS guard (intent/delivery/audit 0 row)
-    - Pattern: M3 R2 KVKK seed disiplini paralel (idempotent ON CONFLICT DO NOTHING + zero-referral guard rollback)
-    - Runbook: `docs/runbooks/RB-bl028-prod-data-seed-execute.md` Lane A (READY-FOR-EXECUTION post-merge)
+    - Acceptance LIVE PASS: pre/post DB row exact-match SELECT + permission-service `:8090` reachable via POST /api/v1/internal/authz/check → 401 (auth filter; /actuator/* prod hardening kapalı) + backend env canonical + no-SMS guard (intent/delivery/audit 0/0/0)
+    - Pattern (live drift fix): `template_no_update` rule ON CONFLICT incompatibility → direct INSERT (idempotency uq_template_version_locale UNIQUE constraint ile)
+    - Runbook: `docs/runbooks/RB-bl028-prod-data-seed-execute.md` Lane A
+    - Evidence: `docs/faz-23-evidence/2026-05-25-bl028a-lane-a-prod-data-seed-execute.md`
   - **Lane B — BL-028b** (DEFERRED, operator+architecture gate, M4.6 / 23.3.4):
     - Scope: prod OpenFGA notification model cutover (DSL `docs/notify/openfga-notification-model.dsl` → prod store) + permission-service `ERP_OPENFGA_MODEL_ID` runtime update + topic-inheritance tuple seed (`notification_topic:marketing.campaign#can_receive@subscriber:bl028-prod-canary-001` + `template:canary-prod-marketing-v1#topic@notification_topic:marketing.campaign`) + permission check ALLOW kanıt + ERP regression smoke
     - Acceptance: prod OpenFGA model type'ları contains notification types + permission-service internal check `{"allowed": true}` + ERP 10 type regression PASS

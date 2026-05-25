@@ -1,6 +1,6 @@
 # RB-bl028-prod-data-seed-execute — Prod notify_db Functional Data Seed (B-with-lanes pattern)
 
-> **Status**: 🟡 **READY-FOR-EXECUTION after merge** (no live execute in this PR — execute Lane A merge sonrası ayrı turda)
+> **Status**: ✅ **Lane A LIVE EXECUTED 2026-05-25** (evidence `docs/faz-23-evidence/2026-05-25-bl028a-lane-a-prod-data-seed-execute.md`); Lane B DEFERRED M4.6
 > **Parent**: BL-028 (M4.5 / 23.3.3 — Prod notify functional data + authz preflight)
 > **Pattern**: B-with-lanes (Codex 019e5ebe iter-2 PARTIAL + iter-3 AGREE)
 > **Codex peer review chain**: thread `019e5ebe-2ec3-70e3-b408-37792c04f208` iter-1 REVISE → iter-2 PARTIAL → iter-3 AGREE
@@ -76,8 +76,10 @@ Eğer drift varsa: execute YASAK, önce env senkronu.
 
 ### 3.1 INSERT notify.notification_template
 
+> **Drift fix 2026-05-25 Lane A live execute**: `template_no_update` rule (V1__init_notify_schema.sql:103) `INSERT ... ON CONFLICT` ile incompatible — PostgreSQL hata: `INSERT with ON CONFLICT clause cannot be used with table that has INSERT or UPDATE rules`. Doğru pattern: **direct INSERT** (idempotency `uq_template_version_locale` UNIQUE constraint ile sağlanır — duplicate denemesi 23505 unique violation fail; bu davranış idempotent guard rolü).
+
 ```sql
--- Idempotent via ON CONFLICT DO NOTHING (uq_template_version_locale: template_id+version+locale)
+-- Direct INSERT (ON CONFLICT YOK — template_no_update rule incompatibility)
 INSERT INTO notify.notification_template
   (template_id, version, locale, subject, body_html, body_text, external_allowed, active, created_by)
 VALUES
@@ -90,10 +92,10 @@ VALUES
    false,                                                                            -- external_allowed=false (subscriber path)
    true,                                                                             -- active=true
    'bl028-runbook')
-ON CONFLICT (template_id, version, locale) DO NOTHING;
+RETURNING id, template_id, version, locale, active, external_allowed, length(body_text) AS body_len, created_by;
 ```
 
-> **Immutability note**: `template_no_update` rule var (V1__init_notify_schema.sql:103). DO UPDATE yapılamaz. Rollback için: ya DELETE (zero referral guard sonrası) ya yeni version (v2 oluştur).
+> **Immutability note**: `template_no_update` rule var (V1__init_notify_schema.sql:103). DO UPDATE yapılamaz. Rollback için: ya DELETE (zero referral guard sonrası) ya yeni version (v2 oluştur). Re-run YASAK (unique violation alır); idempotency için önce SELECT exact-match check, sonra INSERT pattern (Lane A re-execute durumunda).
 
 ### 3.2 INSERT notify.subscriber_contact
 
@@ -137,13 +139,20 @@ Eğer assertion fail ederse: rollback (§5) + execute repeat.
 
 ### 3.4 Permission-service URL reachable check (no notification check)
 
+> **Drift fix 2026-05-25 Lane A live execute**: Prod permission-service `/actuator/*` endpoint'leri **prod hardening sırasında kapalı** (Spring `NoResourceFoundException` → GlobalExceptionHandler 500). Bu **bilinçli production hardening**, sağlıksızlık değil. Reachability kanıtı asıl endpoint üzerinden (auth filter response).
+
 ```bash
-# Pod-level reachability (Layer-2 URL endpoint healthy)
-ssh halil@staging-sw "kubectl --context k3d-prod -n $NS exec $POD -- curl -sS -o /dev/null -w '%{http_code}\n' http://permission-service:8090/actuator/health"
-# Beklenen: 200
+# Permission-service service-level reachable kanıtı (actuator/health prod'da kapalı)
+ssh halil@staging-sw "kubectl --context k3d-prod -n $NS exec deploy/notification-orchestrator -- \
+  curl -sS -o /dev/null -w 'HTTP=%{http_code}\n' \
+  -X POST http://permission-service:8090/api/v1/internal/authz/check \
+  -H 'Content-Type: application/json' -d '{}'"
+# Beklenen: HTTP=401 (InternalApiKeyAuthFilter active, endpoint exists, service running)
 ```
 
-> **Notification check YAPILMAZ**: Prod OpenFGA model notification types desteklemiyor (BL-028b deferred). Eğer şimdi `POST /api/v1/internal/authz/check` denenirse `allowed=false` veya `error` döner — bu BEKLENEN durumdur, Lane A acceptance'ı etkilemez.
+**HTTP 401 = reachable + auth filter active + endpoint exists + service running**. Bu canonical reachability eşiği. `/actuator/health` kullanma — prod'da kapalı.
+
+> **Notification check YAPILMAZ**: Prod OpenFGA model notification types desteklemiyor (BL-028b deferred). Eğer şimdi `POST /api/v1/internal/authz/check` valid auth + payload ile denenirse `allowed=false` veya `error` döner — bu BEKLENEN durumdur, Lane A acceptance'ı etkilemez. Bu sadece **reachability proof** (auth filter çalışıyor mu) için kullanılır.
 
 ---
 
