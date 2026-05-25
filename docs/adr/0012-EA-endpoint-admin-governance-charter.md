@@ -417,6 +417,59 @@ prod-ready / password-reset-ready İDDİA EDİLMEZ — 22.1 test runtime + sourc
 5. platform-agent #12 status reflect — "Needs Verify; non-blocking 22.2.A repeatability label" (ayrı gh issue edit, no PR)
 6. **Follow-up** (ayrı PR, sonraki tur): `RB-faz22-non-domain-windows-pilot.md` (non-domain primary scope için operasyon runbook'u — 2+ device, soak, CI/manual evidence, identity taxonomy, consent/privacy, signed artifact gates)
 
+### Strategy B decision (2026-05-25) — HALILKOOLUB735 domain join + A1 baseline historical
+
+**Trigger**: User 2026-05-25 — "aktif directory diyelim" (HALILKOOLUB735 mevcut VM `acik.local` domain'e join et) + ön koşul "hardiskde yer yok" (fresh VM provision şu an mümkün değil).
+
+**Karar**:
+- HALILKOOLUB735 mevcut VM `acik.local` domain'e join edilir (Strateji B)
+- Strateji A (fresh ayrı VM domain join) **disk constraint** sebebiyle DEFER (operator action: Mac host cleanup / disk procure / VM disk compress unblock)
+- Disk constraint çözülünce Strateji A revisit edilebilir (ek 2 fresh workgroup VM A1 multi-VM #1044 için + 1 fresh domain VM A2.B saf evidence için)
+
+**Pre-condition** (Strateji B operator action chain):
+1. **Parallels snapshot** `pre-domain-join-A1-baseline-2026-05-25` (rollback hattı zorunlu — disk +1-3GB delta)
+2. **Mac corp VPN connect** (Gate 0 unblock; user 2026-05-25 "VPN bağlı şu an" ✅)
+3. **Mac terminal `dig acik.local SRV`** — DC SRV record verify
+4. **VM içi PowerShell admin** `Set-DnsClientServerAddress -InterfaceAlias Ethernet -ServerAddresses <corp-dns-ip>`
+5. **Gate 0 precheck** reproducer (canonical `RB-faz22-acik-local-vpn-routing-setup.md` §5.3 — DNS/SRV + ports `53` DNS + `88` Kerberos + `135` RPC EPM + `389` LDAP + `445` SMB + `464` Kerberos password + `636` LDAPS + `9389` ADWS + `testai.acik.com:443` backend + `w32tm /stripchart` time sync ≤5min skew) → minimum `53/88/389/445` + time sync PASS şart (dynamic RPC `49152-65535` failure mode görünür dokümante)
+6. **`Add-Computer`** — interactive credential (`Get-Credential`)
+7. **Post-restart verify** + sanitized smoke + screenshot capture
+
+**Post-action consequences** (truth-sync):
+- **A1 baseline (PR #1021) historical mark** — workgroup smoke evidence pre-2026-05-25; yeni evidence doc'ta açık historical note
+- **A1 multi-VM (#1044) BLOCKED** — disk constraint sebebiyle 3 fresh workgroup VM şimdi yok; Path 1 (disk cleanup) veya Path 2 (N=2 alternative) operator kararı bekleniyor
+- **22.2.B `acik.local` opsiyonel scope unblock** — Gate 0 VPN ✅ + domain join sonrası IT pilot smoke açılır (D29-EA Secured persona + `COLLECT_INVENTORY` domain user context + Kerberos/LDAP/SMB evidence)
+
+**Rollback paths** (sıralı tercih; AD cleanup AYRI GATE — bkz §15.4 önemli düzeltme):
+1. **Parallels snapshot restore — VM-local atomic rollback** (recommended). VM state pre-join'e döner ama **AD'deki computer object orphan kalır**; ayrı post-rollback gate ile (a) AD object DN/SAM capture + (b) OU path identify + (c) delete/disable/reset owner kararı + (d) post-cleanup `nltest /dsgetdc:acik.local` + ADUC/PowerShell `Get-ADComputer HALILKOOLUB735` verify gerek. 1dk VM + 5dk AD coordination = ~6dk toplam.
+2. `Remove-Computer -UnjoinDomainCredential (Get-Credential) -PassThru -Verbose -Restart` + AD object manual cleanup (operator interactive; AD cleanup yine zorunlu; 5-10dk)
+3. VM rebuild from clean install (worst case; disk constraint sebebiyle uygulanamaz)
+
+**Safety gates (rollback öncesi)** — accidental rollback engellemek için:
+- Snapshot UUID confirm (`prlctl snapshot-list HALILKOOLUB735`)
+- VM powered-off confirm (state=stopped)
+- Post-join evidence freeze (rollback yapılırsa kanıt kaybı; operator deliberate decision)
+- AD computer object cleanup owner pre-identify (IT/AD admin contact + plan present)
+- Backend `endpoint_devices` table stale device decision (decommission via admin REST vs keep for forensic)
+- Post-restore checklist: `(Get-WmiObject Win32_ComputerSystem).PartOfDomain = $false` + agent service running + backend stale-device action complete
+
+**Risk register impact** (RB §16 risk register'a explicit row eklenmiştir; bu sub-section impact summary):
+- BYOD-specific risk (consent / KVKK / uninstall self-service) — Strateji B HALILKOOLUB735 domain-joined corporate device olduğu için A2 BYOD scope DİŞI; bu risk sınıfı bu pilot tarafından artırılmaz (mevcut R9-A2 BYOD-class korunur, etkilenmez) — **impact note**, ayrı row gerekmez
+- **§16 R-NEW row: A1 baseline state loss / historical-only evidence** — PR #1021 workgroup baseline domain join sonrası historical-only; snapshot rollback ile recovery, ama snapshot silindikten sonra reproduce için fresh VM gerek (disk constraint), Severity Low
+- **§16 R-NEW row: AD computer object orphan after snapshot restore** — snapshot rollback VM state restore eder ama AD'deki computer object orphan kalır; AD admin coordination + cleanup gate zorunlu, Severity Medium
+- **§16 R-NEW row: Disk pressure vs snapshot retention trade-off** — snapshot delta +1-3GB (Windows update / domain join sonrası büyür); uzun retention disk dolma riski, kısa retention rollback window kısalır, Severity Low
+
+**Cross-AI peer review chain (Strateji B karar)**:
+- Implementer: Claude (Anthropic) — Session 51 2026-05-25
+- Reviewer: Codex (OpenAI) — thread `019e5be4-c665-7422-bb38-7f094522a197` (sequel — A2 BYOD appendix iter chain devamı, Strateji B karar log için yeniden danışma)
+- Verdict: pending (post-impl review için yeni Codex turn submission)
+
+**Boundary statement** (Strateji B post-action):
+- **NOT production-ready** — single VM domain join, single device evidence, no soak, no rollback rehearsal beyond snapshot test
+- **NOT password-reset-ready** — Faz 22.2 scope dışı (BE-017 destructive command fixture-only proven)
+- **NOT domain-wide rollout-ready** — pilot scope 1 IT-owned VM; ~800 device domain rollout Faz 22.3+
+- 22.2.B opsiyonel scope smoke evidence → IT pilot smoke kanıt; bu evidence Faz 22.3 restricted tier veya prod readiness için ön-koşul değil ama path açar
+
 ## 22.2 pre-req docs (22.1'de hazırlanır)
 
 Codex revize: 22.2 Authenticode trusted signing geçişi öncesi 22.1 boyunca aşağıdaki dokümantasyon **netleşir**:

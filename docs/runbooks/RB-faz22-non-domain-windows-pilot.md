@@ -964,6 +964,130 @@ Agent service crash / tamper / unexplained behavior tespiti:
 - Affected device(s) full cleanup + forensic snapshot
 - Cross-AI review (Codex) per incident root cause analysis
 
+### 15.4 Parallels snapshot-based atomic rollback (Strateji B — domain join HALILKOOLUB735)
+
+ADR-0012-EA "Strategy B decision (2026-05-25)" kapsamında HALILKOOLUB735 mevcut VM `acik.local` domain'e join edilirken **Parallels snapshot-based atomic rollback** §15.1+§15.2 zincirine alternatif **recommended path**. Disk +1-3GB delta (snapshot copy-on-write); fresh VM gerektirmez.
+
+#### 15.4.1 Pre-domain-join snapshot (zorunlu)
+
+```
+Parallels Desktop GUI:
+  → HALILKOOLUB735 → Actions menüsü → Take Snapshot...
+  → Name: pre-domain-join-A1-baseline-2026-05-25
+  → Description: A1 baseline pre-domain-join (PR #1021 evidence context); rollback hattı.
+  → Save
+```
+
+CLI alternatifi (`prlctl`):
+```bash
+prlctl snapshot HALILKOOLUB735 --name "pre-domain-join-A1-baseline-2026-05-25" --description "A1 baseline pre-domain-join rollback"
+```
+
+**Verification**: `prlctl snapshot-list HALILKOOLUB735` → snapshot mevcut + timestamp doğru.
+
+#### 15.4.2 Rollback senaryosu
+
+Domain join sonrası beklenmedik durum (DC discovery fail, Kerberos auth break, AD cached credential issue, agent service crash domain context'te, identity discovery scope drift, vb.):
+
+> **⚠️ ÖNEMLİ — Codex iter-1 BLOCKER düzeltmesi (2026-05-25)**: Parallels snapshot restore **sadece VM-local state**'i geri alır. **AD'deki computer object orphan kalır** (Add-Computer başarılı olduysa AD'de oluşmuştur). AD cleanup AYRI GATE — snapshot restore otomatik çözmez. Aşağıdaki 5-step zincir VM rollback **+ AD post-rollback gate** birlikte verilmiştir.
+
+**VM-local atomic rollback (Adım 1-4)**:
+
+1. **VM shutdown** (CLI veya GUI):
+   ```bash
+   prlctl stop HALILKOOLUB735
+   ```
+2. **Snapshot restore** (VM-local atomic; AD object backend'de orphan kalır, bkz Adım 5):
+   ```
+   Parallels GUI: HALILKOOLUB735 → Snapshots → pre-domain-join-A1-baseline-2026-05-25 → Switch To
+   ```
+   veya CLI:
+   ```bash
+   prlctl snapshot-switch HALILKOOLUB735 --id <snapshot-uuid-from-list>
+   ```
+3. **VM start** — pre-domain-join state geri yüklenir (workgroup + PartOfDomain=false + agent original WORKGROUP enrollment)
+4. **Post-restore VM verify**:
+   ```powershell
+   (Get-WmiObject Win32_ComputerSystem).PartOfDomain   # False bekleniyor
+   Get-WmiObject Win32_ComputerSystem | Select-Object Workgroup, Domain   # Workgroup adı geri
+   Get-Service EndpointAgent                              # Running state korunmuş
+   ```
+
+**AD post-rollback gate (Adım 5 — zorunlu)**:
+
+5. **AD computer object cleanup** (snapshot otomatik çözmez — operator + AD admin coordination):
+   - **a)** AD object DN/SAM capture (rollback öncesi pre-join state'i kaydedildiyse atla; aksi halde AD admin'den `Get-ADComputer HALILKOOLUB735 -Properties *` ile DN + SAM + LastLogon + OU path al)
+   - **b)** OU path identify (`OU=EndpointPilot,DC=acik,DC=local` veya operator domain join sırasında verdiği OU)
+   - **c)** Owner kararı + execute (AD admin tarafından sıralı tercih):
+     - **delete** (default — orphan temizlik): `Remove-ADComputer HALILKOOLUB735 -Confirm:$false`
+     - **disable** (forensic retain — AD audit için stale object): `Disable-ADAccount -Identity HALILKOOLUB735$`
+     - **reset** (re-join için preserve): `Reset-ComputerMachinePassword -Server <DC>` (rare; sadece tekrar join planı varsa)
+   - **d)** Post-cleanup verify:
+     ```powershell
+     # AD admin Mac/Windows admin workstation üzerinde (VM içinde değil — VM workgroup'ta)
+     # Ana kanıt: computer object durumu
+     Get-ADComputer HALILKOOLUB735 -ErrorAction SilentlyContinue   # delete sonrası NULL; disable sonrası Enabled=False
+     # Yan kanıt: DC reachability sanity (DC listesini verir; computer object yokluğunu KANITLAMAZ)
+     nltest /dclist:acik.local                                       # DC inventory — domain hâlâ erişilebilir
+     ```
+   - **e)** Backend `endpoint_devices` stale device decision:
+     - **decommission** (default — clean state): admin REST `DELETE /api/v1/endpoint-admin/devices/<device-id>`
+     - **keep for forensic** (rare — audit retention için): backend `is_active=false` flag (bkz BE-019 retention policy)
+
+**Süre toplam**: 1dk VM operations + 5dk AD coordination = **~6dk** (snapshot restore atomic kısmı 1dk ama AD cleanup operator+admin koordinasyon süresi sebebiyle ana iş 5dk).
+
+#### 15.4.3 vs `Remove-Computer` (legacy §15.1 path) — 11-property karşılaştırma
+
+| Property | Snapshot restore (§15.4) | `Remove-Computer` (§15.1) |
+|---|---|---|
+| VM-local atomic | ✅ tek operasyon | ❌ unjoin + restart + AD cleanup ayrı |
+| **AD object cleanup** | ❌ **VM state restored, AD object cleanup still required** (bkz §15.4.2 Adım 5) | ❌ operator manual ya da AD admin cleanup; unutma riski (orphan object) |
+| Süre | ~6dk (1dk VM + 5dk AD coordination) | ~5-10dk (unjoin + restart + AD cleanup) |
+| Credential (VM kısmı) | ❌ gerek yok | ✅ domain admin credential interactive (`Get-Credential`) |
+| Credential (AD kısmı) | ✅ AD admin (cleanup için) | ✅ AD admin (orphan cleanup için) |
+| Disk delta | +1-3GB snapshot (silinene kadar; Windows update + domain join sonrası büyür) | 0 (sadece state değişimi) |
+| Rollback reversibility | ✅ snapshot silinene kadar her zaman geri dönülebilir | ❌ unjoin tek yön; tekrar join interactive credential gerek |
+| **AD/GPO/cached credential drift** | ✅ snapshot rollback (cached cred clean) | ⚠️ `Remove-Computer` AD cred remove eder ama cached GPO/policy residue VM'de kalabilir; `gpupdate /force` + cached profile cleanup ayrı |
+| **Dynamic RPC / SMB / DC firewall failure mode** | ⚠️ snapshot pre-join state — dynamic RPC port range (49152-65535) ve SMB 445 firewall config rollback öncesi state kaybolur | ⚠️ aynı drift; VM içi firewall rules domain context'te değişmiş olabilir |
+| **Backend `endpoint_devices` enrollment drift** | ⚠️ device ID korunur ama post-rollback host re-context (workgroup) — backend admin REST stale device decommission gate gerek (bkz §15.4.2 Adım 5e) | ⚠️ aynı drift; backend device record `Remove-Computer` ile otomatik silinmez |
+| **Operator auditability** | ✅ snapshot UUID + timestamp + name (Parallels metadata) | ⚠️ OS event log + AD security log + backend audit log (3 kaynak dağınık) |
+
+**Recommendation**: Strateji B kapsamında **snapshot rollback default** (VM-local atomic + cached cred clean + operator auditable), **AD cleanup ayrı zorunlu gate** (§15.4.2 Adım 5). `Remove-Computer` yedek path (disaster — örn. snapshot corrupt, disk failure, VM tamir gereği).
+
+**Anahtar mit düzeltmesi (Codex iter-1 BLOCKER)**: "Snapshot restore = AD cleanup'sız çözüm" YANLIŞ; snapshot restore VM kısmını atomically döndürür ama AD'deki computer object'i temizlemez. Her iki path da AD admin coordination gerektirir; snapshot'ın gerçek avantajı **VM-local cached state cleanliness + atomic timing** üzerine.
+
+#### 15.4.4 Snapshot lifecycle policy (disk pressure vs retention trade-off)
+
+**Default lifecycle**:
+- Pre-domain-join snapshot tutulma süresi: **acceptance smoke + 72h soak + evidence PR merge** bitene kadar zorunlu (rollback window açık)
+- Bitince **operator opt-in** silme (default): snapshot delete + disk reclaim
+- Maksimum cap: **7 gün** (acceptance smoke + soak + evidence + buffer); ötesi operator explicit extension kararı + rationale
+
+**Disk pressure izleme**:
+- Snapshot delta `+1-3GB` Windows update / domain join / agent reinstall sonrası büyür (öncesinde küçük, sonrasında büyük); `prlctl snapshot-list HALILKOOLUB735` ile delta size monitor
+- Mac host disk free threshold: snapshot delta + Windows update headroom + Mac dev work için minimum **10GB free** önerilir
+- Disk pressure varsa **operator explicit opt-in ile erken silme** (default 7 gün yerine acceptance smoke+72h soak bitince hemen)
+- Alternatif: snapshot export + Mac host external storage (USB SSD / NAS) → snapshot Mac'ten silinir ama backup external'da → disk-sparse + recovery slow path
+
+**Snapshot rollback kullanılırsa evidence chain**:
+- "Strateji B rollback" note: rationale + closure timestamp + snapshot UUID kanıt
+- Post-rollback VM state + AD cleanup gate evidence (snapshot restore tek başına rollback evidence değil; AD cleanup + backend stale device action complete kanıt gerek)
+- `docs/faz-22-evidence/YYYY-MM-DD-strategy-b-rollback-<reason>.md` (6-bölüm format §14.2)
+
+**Snapshot silme komutu**:
+```bash
+# UUID list
+prlctl snapshot-list HALILKOOLUB735
+# Silme
+prlctl snapshot-delete HALILKOOLUB735 --id <snapshot-uuid>
+# Verify
+prlctl snapshot-list HALILKOOLUB735   # UUID listede olmamalı
+```
+
+**Snapshot vs disk full failure mode**:
+- Snapshot delta disk dolduğunda Parallels otomatik snapshot create reddedebilir veya VM I/O degraded olur
+- Mitigation: snapshot lifecycle policy disciplined uygula; disk free threshold automated monitor (gelecek `docs/operations/parallels-host-monitor.md` runbook kapsamı)
+
 ---
 
 ## 16. Risk register
@@ -982,6 +1106,9 @@ Agent service crash / tamper / unexplained behavior tespiti:
 | EDR allowlist gap (A2-A4) | Medium | SOC pre-coordination + SHA pin + service/path allowlist + ticket reference in evidence | SOC + Operator |
 | Backend device decommission incomplete | Low | admin REST `DELETE` workflow + audit row insert + KVKK purge per BE-019 | Backend |
 | Mobile (iOS/Android) scope creep | Low | runbook §1.2 explicit out-of-scope + ADR amendment scope cap | Agent docs |
+| **AD computer object orphan after snapshot restore (Strategy B)** | **Medium** | §15.4.2 Adım 5 AD post-rollback gate zorunlu: DN/SAM capture + OU identify + delete/disable/reset owner kararı + post-cleanup `Get-ADComputer` verify; backend `endpoint_devices` stale device decommission gate | Operator + AD admin + Backend |
+| **Disk pressure vs snapshot retention trade-off (Strategy B)** | Low | §15.4.4 lifecycle policy: default 7 gün cap + operator opt-in extension; snapshot delta size monitor (`prlctl snapshot-list`); Mac host 10GB free threshold; alternatif snapshot export + external storage | Operator |
+| **A1 baseline state loss / historical-only evidence (Strategy B)** | Low | PR #1021 historical mark + new evidence doc'ta açık note; rollback recovery snapshot ile mümkün ama snapshot silindikten sonra fresh workgroup VM gerek (disk constraint dep) | Agent docs + Operator |
 
 ---
 
