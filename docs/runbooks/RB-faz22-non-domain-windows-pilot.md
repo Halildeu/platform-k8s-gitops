@@ -1025,8 +1025,10 @@ Domain join sonrası beklenmedik durum (DC discovery fail, Kerberos auth break, 
    - **d)** Post-cleanup verify:
      ```powershell
      # AD admin Mac/Windows admin workstation üzerinde (VM içinde değil — VM workgroup'ta)
-     Get-ADComputer HALILKOOLUB735 -ErrorAction SilentlyContinue   # NULL veya disabled bekleniyor
-     nltest /dclist:acik.local                                       # DC inventory; HALILKOOLUB735 olmamalı
+     # Ana kanıt: computer object durumu
+     Get-ADComputer HALILKOOLUB735 -ErrorAction SilentlyContinue   # delete sonrası NULL; disable sonrası Enabled=False
+     # Yan kanıt: DC reachability sanity (DC listesini verir; computer object yokluğunu KANITLAMAZ)
+     nltest /dclist:acik.local                                       # DC inventory — domain hâlâ erişilebilir
      ```
    - **e)** Backend `endpoint_devices` stale device decision:
      - **decommission** (default — clean state): admin REST `DELETE /api/v1/endpoint-admin/devices/<device-id>`
