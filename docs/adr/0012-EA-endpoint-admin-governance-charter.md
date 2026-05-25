@@ -470,6 +470,82 @@ prod-ready / password-reset-ready İDDİA EDİLMEZ — 22.1 test runtime + sourc
 - **NOT domain-wide rollout-ready** — pilot scope 1 IT-owned VM; ~800 device domain rollout Faz 22.3+
 - 22.2.B opsiyonel scope smoke evidence → IT pilot smoke kanıt; bu evidence Faz 22.3 restricted tier veya prod readiness için ön-koşul değil ama path açar
 
+### Strategy D decision (2026-05-25) — DC-orchestrated domain-joined PC install (Strategy B revize)
+
+**Trigger** — User clarification 2026-05-25 (Strategy B sonrası):
+1. "rdp ile bağlıyız vpn üzerinden" — RDP+VPN topology
+2. "doğrudan windows kurlu active domain bilgisayaraına bağlaıyım" — RDP target = **acik.local Domain Controller**
+3. "domainin hepsi burda" — DC = domain authoritative source
+4. "diğer bilgisayarlara kurulum yapabilir miyiz" — domain-joined corp PC'lere DC'den agent install
+
+**Karar**:
+- **Strategy B (Mac Parallels VM HALILKOOLUB735 domain join) GEREKSİZ** — HALILKOOLUB735 A1 baseline (PR #1021) dokunulmaz korunur
+- **Strategy D primary**: DC-orchestrated PowerShell Remoting (`Invoke-Command`) ile domain-joined corp Windows PC'lere agent install + smoke
+- DC kendisinde agent install YASAK (critical infrastructure scope dışı)
+
+**Topology**:
+```
+Mac (developer host)
+  ├─ Mac Parallels VM HALILKOOLUB735 (workgroup, A1 baseline — Strategy A scope, dokunulmaz)
+  └─ Mac corp VPN → RDP → acik.local DC server
+                            ├─ Read-only AD inventory (Get-ADComputer/User/OU)
+                            └─ PowerShell Remoting (Invoke-Command) → domain-joined corp PC'ler (Strategy D pilot targets)
+                                                                          ├─ Agent install (signed binary)
+                                                                          ├─ Enroll + heartbeat + COLLECT_INVENTORY smoke
+                                                                          └─ Audit verify
+```
+
+**Strategy D'nin avantajları (Strategy A/B/C yerine)**:
+- **A1 baseline (HALILKOOLUB735) korunur** — historical mark gerek yok
+- **Disk constraint sorun değil** — Mac VM provisioning gerek değil
+- **Domain join komutu YOK** — corp PC'ler zaten domain-joined
+- **Multi-PC paralel install** (1-3 hedef) → multi-device evidence A1 multi-VM (#1044) için workgroup alternatifi (domain-joined N-PC variant)
+- **A1 multi-VM (#1044) için A1 baseline temiz kalır** — gerek olduğunda 2 fresh workgroup VM ayrı kapı (disk açılınca)
+- **22.2.B IT pilot scope substantive evidence** — #1037 BLOCKED → Active
+
+**Pre-condition** (operator + IT/SOC coordination):
+1. ✅ Mac VPN bağlı + RDP DC erişim (user 2026-05-25 confirmed)
+2. ✅ DC üzerinde AD PowerShell module + Get-AD* read access (Domain Admin)
+3. ⏳ Hedef PC'ler seçim (1-3 candidate; EndpointPilot OU varsa oradan)
+4. ⏳ WinRM enabled hedef PC'lerde (`Test-WSMan` per-target)
+5. ⏳ Hedef PC backend reachable (`Test-NetConnection testai.acik.com:443` per-target)
+6. ⏳ IT/SOC onayı (EDR allowlist + corp device agent install consent)
+7. ⏳ Agent installer transfer yolu (Mac → DC → hedef PC; SMB share / RDP file drop)
+8. ⏳ Backup/restore yolu IT teyit (image backup veya System Restore Point — uninstaller fallback default)
+
+**Post-action consequences** (truth-sync):
+- A1 baseline (PR #1021) **DOKUNULMAZ** — historical mark gerek yok; Strategy B historical (PR #1063) alternatif kalır
+- A1 multi-VM (#1044) **BLOCKED disk constraint** + **Alternative path açık** (Strategy D N-PC variant)
+- 22.2.B IT pilot scope (#1037) **BLOCKED Gate 0 VPN → Active** (DC erişim ✅)
+- #1015 IT pilot readiness umbrella → Eligible (DC + domain PC erişim)
+
+**Rollback paths** (per-target):
+1. **Agent uninstall** via `installer.ps1 -Uninstall` (PowerShell Remoting Invoke-Command)
+2. Service stop + remove + install dir + log dir cleanup
+3. Backend `endpoint_devices` decommission (admin REST `DELETE`)
+4. **AD computer object UNCHANGED** — domain join kalır (Strategy B'den farklı; Strategy D agent install/uninstall scope sadece)
+5. IT'den image backup veya System Restore Point varsa (operator karar; default uninstaller yeterli)
+
+**Risk register impact** (RB §16'ya cross-reference + Strategy D-specific):
+- **WinRM blast radius** — PowerShell Remoting credential compromise = domain-wide attack surface; Severity Medium; mitigation: Domain Admin credential rotation post-pilot + WinRM session audit log
+- **EDR allowlist coverage gap** — agent SHA + service name + install path + network destination per-target; eksik allowlist = EDR alarm flood; Severity Medium; mitigation: SOC pre-coordination + ticket per-target
+- **Multi-PC consent/awareness** — corp-managed device olduğu için BYOD scope DIŞI; ama hedef PC kullanıcılarına bilgilendirme iyi pratik (notification dağıt); Severity Low; mitigation: IT/manager pre-notification
+- **Agent installer transfer security** — Mac → DC → hedef PC chain; transit'te binary tamper riski (Severity Low); mitigation: SHA256 verify her hop'ta
+
+**Cross-AI peer review chain (Strategy D karar)**:
+- Implementer: Claude (Anthropic) — Session 51 2026-05-25
+- Reviewer: Codex (OpenAI) — yeni thread submission
+- Verdict: pending (post-impl review için)
+
+**Boundary statement** (Strategy D post-action):
+- **NOT production-ready** — pilot scope 1-3 lab Windows PC; ~800 device domain rollout Faz 22.3+
+- **NOT password-reset-ready** — Faz 22.2.B scope dışı (BE-017 destructive command fixture-only proven)
+- **NOT GPO-mandatory** — pilot install ad-hoc per-target; GPO Software Installation Faz 22.3 production tier
+- **NOT trusted-signing-mandatory pilot** — corp-managed device (A2 BYOD'dan farklı); A1 SHA-pinned lab-only-evidence kabul edilebilir (operator + IT karar; A2 trusted-signing zorunlu farklı kapı)
+- 22.2.B IT pilot smoke kanıt → Faz 22.3 restricted tier önkoşul DEĞİL ama path açar; 22.2.B acceptance multi-PC + 24-72h soak ile substantive
+
+**Strategy D detailed runbook**: bkz `docs/runbooks/RB-faz22-strategy-d-dc-orchestrated-install.md` (this PR scope).
+
 ## 22.2 pre-req docs (22.1'de hazırlanır)
 
 Codex revize: 22.2 Authenticode trusted signing geçişi öncesi 22.1 boyunca aşağıdaki dokümantasyon **netleşir**:
