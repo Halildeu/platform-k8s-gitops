@@ -121,7 +121,8 @@ LIMIT 1;
 ```bash
 # Layer-2 OpenFGA check via permission-service internal API
 # NOT: Bu check ancak BL-028b (prod OpenFGA notification model cutover) sonrası ALLOW dönebilir.
-# Şu an prod model `01KS15PF...` notification types DESTEKLEMİYOR → `allowed=false` veya `error` beklenir.
+# Historical (pre-2026-05-25 12:01 UTC): prod model 01KS15PF... notification types DESTEKLEMİYOR idi → allowed=false beklenirdi.
+# Güncel (post BL-028b LIVE 2026-05-25): prod model 01KSFFK9K3V43DD211Z79K3FYA notification types LIVE → allowed=true (tuple_match) döner.
 INTERNAL_API_KEY=$(kubectl --context k3d-prod -n $NS exec $POD -- printenv NOTIFY_AUTHZ_INTERNAL_API_KEY 2>/dev/null)
 
 kubectl --context k3d-prod -n $NS exec $POD -- curl -sS \

@@ -1,6 +1,6 @@
 # RB-bl028b-prod-openfga-notification-model-cutover — Prod OpenFGA Notification Model Cutover (Lane B)
 
-> **Status**: 🟡 **READY-FOR-EXECUTION post M4.6 operator window** (no live execute in this PR — Lane B execute = M4.6 milestone başlangıcında operator authorize ile)
+> **Status**: ✅ **LIVE EXECUTED 2026-05-25 12:01 UTC** (M4.6 trigger; 10/10 acceptance gate PASS; new prod model `01KSFFK9K3V43DD211Z79K3FYA`; 5 ExternalSecret consumer aligned; permission-service internal allow=true reason=tuple_match; ERP regression preserved). Evidence: `docs/faz-23-evidence/2026-05-25-bl028b-lane-b-prod-openfga-cutover-evidence.md`. Bu RB historical execute reference olarak kalır.
 > **Parent**: BL-028 (M4.5/23.3.3 Lane A LIVE + M4.6/23.3.4 Lane B)
 > **Pattern**: B-with-lanes (Codex 019e5ebe iter-3 AGREE B-with-lanes; bu RB Lane B detayı)
 > **Codex peer review chain (Lane B specific)**: thread `019e5ee5-4da5-7713-9dbe-8567d83e1ef2` iter-1 PARTIAL → iter-2 AGREE/ready_for_impl=true

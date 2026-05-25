@@ -1,6 +1,6 @@
 # RB-bl028-prod-data-seed-execute — Prod notify_db Functional Data Seed (B-with-lanes pattern)
 
-> **Status**: ✅ **Lane A LIVE EXECUTED 2026-05-25** (evidence `docs/faz-23-evidence/2026-05-25-bl028a-lane-a-prod-data-seed-execute.md`); Lane B DEFERRED M4.6
+> **Status**: ✅ **Lane A + Lane B LIVE EXECUTED 2026-05-25 — B-with-lanes complete + BL-011 LIVE DELIVERED**. Lane A evidence `docs/faz-23-evidence/2026-05-25-bl028a-lane-a-prod-data-seed-execute.md`; Lane B evidence `docs/faz-23-evidence/2026-05-25-bl028b-lane-b-prod-openfga-cutover-evidence.md`; BL-011 evidence `docs/faz-23-evidence/2026-05-25-bl011-prod-sms-canary-live.md` (new prod model `01KSFFK9K3V43DD211Z79K3FYA` 15 type; provider_msg_id `jetsms-2605251959362908914` DELIVERED 71s DLR).
 > **Parent**: BL-028 (M4.5 / 23.3.3 — Prod notify functional data + authz preflight)
 > **Pattern**: B-with-lanes (Codex 019e5ebe iter-2 PARTIAL + iter-3 AGREE)
 > **Codex peer review chain**: thread `019e5ebe-2ec3-70e3-b408-37792c04f208` iter-1 REVISE → iter-2 PARTIAL → iter-3 AGREE
