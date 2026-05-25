@@ -312,15 +312,40 @@ for TARGET in "${TARGETS[@]}"; do
   echo "Target=$TARGET_HASH TokenID=$TOKEN_ID TokenSHA=$TOKEN_SHA mintedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 done
 
-# Post-pilot unused revoke loop (Codex iter-2 MEDIUM #3 + iter-3 polish — zorunlu execution)
-# Operator executes when token unused (install başarılı + post-enroll device JWT aktif)
-for TARGET in "${!TARGET_TOKEN_IDS[@]}"; do
-  TOKEN_ID="${TARGET_TOKEN_IDS[$TARGET]}"
-  # Operator executes (uncomment) when token unused — install başarılı + device JWT aktif sonrası
-  curl -fsX DELETE -H "Authorization: Bearer $ADMIN_TOKEN" \
+# Token TTL policy (Codex iter-2 MEDIUM #3 + iter-4 separate snippet):
+# - Default TTL 24h (install + smoke window)
+# - Install başarılıysa: token consumed (single-use) — DELETE gerek değil
+# - Install failed veya skipped target için: unused revoke (ayrı snippet §5.1.x sonu)
+# - Multi-day soak için: enrollment tek seferlik (post-enroll heartbeat/command JWT ayrı)
+# - Expired before install → new per-target mint + old token DELETE; TTL extend YOK
+```
+
+### 5.1.x Post-pilot unused token revoke (separate snippet — Codex iter-4 REVISE absorb)
+
+> **ÖNEMLİ**: Bu snippet §5.1 mint bloğunun parçası DEĞİL. Mint sırasında otomatik çalışmaz. Pilot install bittikten **sonra**, install fail/skip olan target'lar için operator manuel çalıştırır. `singleUse=true` token install başarılı olduğunda consumed; sadece **unused** (failed install / retry / skipped) tokenlar için DELETE gerek.
+
+```bash
+# Post-pilot / failed-install only — operator çalıştırır install bittikten sonra
+# UNUSED_TOKEN_IDS array'i: install fail/skip olan target'ların token id'leri
+UNUSED_TOKEN_IDS=()   # operator dolduracak (örn. "${TARGET_TOKEN_IDS[LAB-W10-FAIL-01]}")
+
+for TOKEN_ID in "${UNUSED_TOKEN_IDS[@]}"; do
+  curl -fsX DELETE \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
     "https://testai.acik.com/api/v1/endpoint-admin/endpoint-enrollments/$TOKEN_ID"
-  echo "Token revoked: $TOKEN_ID for $TARGET"
+  echo "Unused token revoked: $TOKEN_ID"
 done
+
+# Alternative: TARGET_TOKEN_IDS map kullan + UNUSED_TARGETS over loop
+# UNUSED_TARGETS=("LAB-W10-FAIL-01")
+# for TARGET in "${UNUSED_TARGETS[@]}"; do
+#   TOKEN_ID="${TARGET_TOKEN_IDS[$TARGET]}"
+#   curl -fsX DELETE -H "Authorization: Bearer $ADMIN_TOKEN" \
+#     "https://testai.acik.com/api/v1/endpoint-admin/endpoint-enrollments/$TOKEN_ID"
+# done
+```
+
+**Semantic**: Install başarılı + device JWT aktif olan hedefin enrollment token'ı `singleUse=true` ile zaten consumed; backend taraf 2. kullanım reddeder. Sadece `unused`/`retry`/`failed install` tokenları DELETE edilir (orphan token sprawl önle).
 
 # Token TTL policy (Codex iter-2 MEDIUM #3):
 # - Default TTL 24h (install + smoke window)
