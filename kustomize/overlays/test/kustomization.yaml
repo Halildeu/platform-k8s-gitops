@@ -2480,7 +2480,59 @@ images:
     # (frontend digest re-pin after #657) and #985 (api-gateway after
     # ssot-orphan); imperative `kubectl set image` is the ADR-0023
     # drift source.
-    digest: sha256:583aa8c97694d02811c97b53b1704ae90f538fa5d3c3ff4667d9f28139a8a8c7
+    #
+    # 2026-05-25 update — Faz 22.2.A header nav link (platform-web PR #659):
+    # `Yönetim` mega-menu altına `Uç Birimler` (Endpoint Admin) navigation
+    # link eklendi. Codex iter chain (019e6016) 3 turda absorb:
+    #   - iter-1 REVISE → MEDIUM #2 remoteFlag endpointAdmin (build/deploy
+    #     gate; suggestions/ethic pattern) + MEDIUM #5 breadcrumb mutual peer
+    #   - iter-2 REVISE → useHeaderNavigation.test.ts vi.mock missing
+    #     `isEndpointAdminRemoteEnabled` named export + 5 admin-group gate
+    #     matrix testi (module×remote × super-admin override)
+    #   - iter-3 AGREE → ready_to_merge: true → normal squash (admin bypass
+    #     YASAK), merge SHA c52347e8 @ 2026-05-25T17:28:49Z
+    #
+    # BUILD PROVENANCE:
+    #   - platform-web `main` @ c52347e8 (PR #659 squash, 2026-05-25
+    #     17:28 UTC).
+    #   - ci-web-image-push run 26412376496 SUCCESS.
+    #   - Image: ghcr.io/halildeu/platform-web-frontend-testai:sha-c52347e
+    #   - Manifest digest (Docker-Content-Digest): captured via
+    #     `docker buildx imagetools inspect`:
+    #       Digest: sha256:e2c4c36d7c62b05a144140a8e90a470b319c3ba8a49382e74e3b09bba22499d7
+    #
+    # WHAT THIS IMAGE CARRIES (delta from prior pin sha256:583aa8c...):
+    #   - apps/mfe-shell/src/app/layout/header/header-navigation.config.ts:
+    #     `Monitor` icon import + `endpointAdmin` entry under `admin` group
+    #     (path=/endpoint-admin/devices, module=ENDPOINT_ADMIN,
+    #     remoteFlag=endpointAdmin) + breadcrumb route + sibling mutual peer
+    #   - apps/mfe-shell/src/app/layout/header/useHeaderNavigation.ts:
+    #     isEndpointAdminRemoteEnabled import + filter check + useMemo dep
+    #   - apps/mfe-shell/src/app/layout/header/__tests__/useHeaderNavigation
+    #     .test.ts: mock + 5 yeni gate matrix testi (10/10 PASS local vitest)
+    #   - packages/i18n-dicts/src/locales/{tr,en,de,es}/common.ts:
+    #     shell.mega.admin.endpointAdmin + .desc + shell.breadcrumb.endpointAdmin
+    #     (TR: "Uç Birimler" / EN: "Endpoints" / DE: "Endpunkte" / ES: "Endpoints")
+    #
+    # Compound gate semantics (suggestions/ethic ile aynı pattern):
+    #   - Build/deploy gate (isEndpointAdminRemoteEnabled): AppRouter
+    #     createEndpointAdminApp.tsx tarafından kontrol ediliyor; remote
+    #     kapalı ortamda link gizleniyor → dead-link yok
+    #   - Per-user gate (MODULE_KEYS.ENDPOINT_ADMIN): OpenFGA tuple gate;
+    #     module granted olmadan link gizleniyor → unauthorized redirect yok
+    #   - HER İKİSİ pass olmalı header'da görünmesi için
+    #
+    # ACCEPTANCE GATES (post-rollout, ayrı kapı):
+    #   - Live pod imageID parity (D30 cutover): kubectl get pod ile
+    #     desired digest = imageID verify
+    #   - Browser smoke (HARD RULE — Deploy Sonrası Console Verifikasyonu):
+    #     1. testai.acik.com login (Platform Admin persona)
+    #     2. Header > Yönetim mega-menu açılır → "Uç Birimler" görünür
+    #     3. Click → /endpoint-admin/devices route navigasyon
+    #     4. Breadcrumb "Ana Sayfa > Uç Birimler" render
+    #     5. Sibling quick-switch (users/access/audit/services) çalışıyor
+    #     6. Console temiz (yeni JS hatası yok), network 2xx
+    digest: sha256:e2c4c36d7c62b05a144140a8e90a470b319c3ba8a49382e74e3b09bba22499d7
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
