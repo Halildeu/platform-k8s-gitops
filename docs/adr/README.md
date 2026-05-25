@@ -38,10 +38,11 @@ Reddedilen alternatifler + red nedenleri.
 | 0005 | [Dual DataSource Reporting](./0005-dual-datasource-reporting.md) | **Accepted** |
 | 0008 | [Multi-Org Explicit-Scope Zanzibar Contract](./0008-multi-org-explicit-scope-zanzibar.md) | **Accepted** (2026-04-26) |
 | 0025 | [Enterprise Platform Charter — Process & Parameter Management Hub](./0025-enterprise-platform-charter.md) | **Proposed** (2026-05-20) |
+| 0028 | [BL-009 (DKIM CNAME) + BL-022 (NetGSM Contract) Plan-Out / Demand-Reactivated](./0028-bl009-bl022-demand-reactivated-plan-out.md) | **Accepted** (2026-05-25) |
 
 Her yeni büyük karar için yeni ADR dosyası + PLAN.md D-karar satırı referansı.
 
-> Not: README index 0008'den sonra eksik (ADR 0009-0024 dosyaları var ama listede yok). Pre-existing tech debt; ayrı PR'a bırakılabilir.
+> Not: README index 0008'den sonra eksik (ADR 0009-0024 + 0026/0027 dosyaları var ama listede yok). Pre-existing tech debt; ayrı PR'a bırakılabilir.
 
 ## Superseded Kararlar
 

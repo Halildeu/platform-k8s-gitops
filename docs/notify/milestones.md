@@ -141,7 +141,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 - [x] **Charter 23.3 marker → 🟢 4-state FULLY DELIVERED 2026-05-25** (B-with-lanes complete + BL-011 LIVE): 🟢 infrastructure LIVE + 🟢 functional data seed (Lane A) + 🟢 Layer-2 authz cutover (Lane B) + 🟢 prod SMS canary DELIVERED (BL-011). Codex chain `019e5e76` + `019e5ebe` + `019e5ee5` AGREE; 5 PR series MERGED (#1066+#1067+#1068+#1069+#1071).
 - [~] Risk register: R1 — NetGSM secondary failover acceptance **⏳ DEFERRED** (kullanıcı kararı 2026-05-23: sözleşme kısa vadede yapılmayacak; JetSMS-only degraded mode = kabul edilen işletim durumu; NetGsmProvider + Vault/ESO asset-preserved). **M4 closure blocker DEĞİL** — sözleşme imzalanırsa reactivation.
 
-**Blockers**: R1 ⏳ DEFER (NetGSM secondary contract kısa vadede yapılmayacak — kullanıcı kararı 2026-05-23; **M4 blocker DEĞİL**, JetSMS-only degraded mode kabul edilen kalıcı işletim durumu); prod canary smoke ext-gated (real user M365 SSO UI flow); R24 ext (Biotekno OTP allowlist provisioning)
+**Blockers**: None (M4 23.3 fully delivered 2026-05-25). NetGSM secondary 📦 Out of plan / demand-reactivated (ADR-0028 2026-05-25; asset-preserved; aktif blocker değil). DKIM CNAME 📦 Out of plan / demand-reactivated (ADR-0028; SMTP relay LIVE without DKIM CNAME). R24 Biotekno OTP allowlist external (~1-2 hafta; OTP path için optional)
 **Owner**: gitops/ops (prod cutover gates); R1 NetGSM ⏳ DEFER (sözleşme imzalanırsa reactivation — asset-preserved)
 **Dependencies**: M3 (23.2 stable)
 
@@ -192,7 +192,7 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 - [x] Charter 23.4 marker (SMS DLR portion) ⏳ → 🟢 — T3.1.7 callback endpoint test/mock live-verified + JetSMS-primary prod path + DLR polling worker live; NetGSM secondary R1 ⏳ DEFER asset-preserved (kullanıcı kararı 2026-05-23)
 - [x] Charter 23.4 fully 🟢 only when both M6a + M6b done — both LIVE board #758
 
-**Blockers**: None — M4 SMS JetSMS primary LIVE prod (sha-6307428) + DLR worker scheduling=true; NetGSM secondary contract DEFER (R1 ⏳ asset-preserved per kullanıcı kararı 2026-05-23 — M6b closure blocker DEĞİL, JetSMS-only DLR pipeline kabul edilen işletim durumu)
+**Blockers**: None — M4 SMS JetSMS primary LIVE prod (sha-6307428) + DLR worker scheduling=true. NetGSM secondary 📦 Out of plan / demand-reactivated (ADR-0028 2026-05-25; asset-preserved; M6b closure blocker DEĞİL; JetSMS-only DLR pipeline kabul edilen işletim durumu).
 **Owner**: — (M6b closed)
 **Dependencies**: M4 SMS JetSMS primary LIVE ✅
 

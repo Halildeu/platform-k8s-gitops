@@ -18,8 +18,8 @@
 | Keycloak admin pwd (prod) | KC container env (`KEYCLOAK_ADMIN_PASSWORD`) | ✅ Agent canonical erişim | BL-010 prod KC `serban` realm 4-step LIVE (PR #1062) |
 | PG primary (prod) | `platform-pg-prod` docker container | ✅ Agent canonical erişim | BL-028a Lane A prod DB seed LIVE (PR #1067) |
 | Slack workspace + webhook | — | ⏳ External | Operator-external (R9 D43 SMTP-only D43 v1 accepted; Slack DEFER future trigger) |
-| Office 365 admin | — | ⏳ External | DKIM DNS BL-009 trigger-based DEFER (kullanıcı kararı 2026-05-25) |
-| DNS registrar admin | — | ⏳ External | BL-009 prerequisite (trigger-based) |
+| Office 365 admin | — | 📦 Out of plan | DKIM CNAME publish demand-reactivated (ADR-0028 2026-05-25; SMTP relay LIVE without DKIM CNAME) |
+| DNS registrar admin | — | 📦 Out of plan | DNS CNAME demand-reactivated (ADR-0028) |
 | Biotekno provider | — | ⏳ External | R24 OTP allowlist (~1-2 hafta external lead) |
 
 **Sonuç güncel 2026-05-25**: Agent-doable scope büyük ölçüde **tüketildi**. BL-004 (PR #1051 + BL-028b internal API key hash align), BL-006a/BL-006b (PR #1031 + #1048), BL-010 (PR #1062 KC org_id mapper), BL-015 (PR #1035 + B/C live ops), BL-028 (B-with-lanes complete PR #1066 + #1067 + #1068 + #1069), BL-011 (LIVE DELIVERED PR #1071) tamamlandı. Bu doc kalan **gerçek operator-external scope** için action checklist + canonical RB pointer.
@@ -52,8 +52,6 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
   - [ ] Prod SMTP-only direct fallback activation + 30-day observation, board #854 (operator-external; Operator v0.90.1 `auth_*_file` schema fix)
   - [x] Slack workspace pivot resolved via D43-TEAMS Hibrit C (PR #1059 MERGED) — original board #853 closed superseded
   - Canonical RB: [`docs/runbooks/RB-notification-outage-fallback.md`](RB-notification-outage-fallback.md)
-- [ ] **BL-009** DKIM tenant enable + DNS CNAME publish — operator-external (Office 365 admin + DNS registrar) — **DEFER 2026-05-25 (kullanıcı kararı + Codex `019e5bfb` AGREE)**: no immediate trigger; SMTP relay LIVE; trigger-based reactivation (mail-tester ≥9/10 hedef / DMARC strict upgrade / spam placement observed / tenant + DNS registrar window / security-compliance mandate)
-  - Reference: feature-matrix H4 + L1; charter line 51; R3 mitigation upgrade row + 5 reactivation trigger conditions
 - [x] **BL-010** Keycloak `org_id=default` claim setup — canonical RB: [`docs/runbooks/RB-prod-canary-kc-claim-setup.md`](RB-prod-canary-kc-claim-setup.md) (canary user attribute + User Attribute mapper pattern, NOT hardcoded claim mapper)
   - **Test cluster scope COMPLETED 2026-05-24** — PR #1036 evidence `docs/faz-23-evidence/2026-05-24-bl010-kc-org-id-mapper.md` (Codex `019e5ac1` cross-AI AGREE iter-2)
   - **Prod cluster scope COMPLETED 2026-05-25** — `serban` realm (drift fix `acik`→`serban`) `notify-canary` client scope + `org_id` mapper + persona `notify-canary-org-prod-default` LIVE; JWT mint OK; access_token + id_token + userinfo 3-way `org_id="default"` claim verified; resource-server auth PASS (controller reach; HTTP 400 = `@Valid` payload validation hits BEFORE guard call); Vault seed length-only verify 41 char; evidence `docs/faz-23-evidence/2026-05-25-bl010-prod-kc-org-id-mapper-serban.md` (Codex `019e5bfb` strategic AGREE + iter-2 acceptance daraltma absorb)
@@ -112,9 +110,6 @@ Each pending operator/board acceptance — agent prep evidence ready:
   - **Seçenek A**: Mobile FCM/APNS dahil → BL-023 Mobile impl gerek (Faz 22.2 dep, ~8-16h) → 23.7 🟡 → 🟢
   - **Seçenek B**: "Browser-only WebPush = 23.7 v1 closure" → 23.7 🟢 scope-narrowed + mobile Faz 22.2/Faz 24'e taşınır
   - Reference: milestones.md M7 T4.2 line 206; sprint-plan T4.2
-- [ ] **BL-022** NetGSM secondary contract:
-  - **Mevcut karar**: 2026-05-23 kullanıcı kararı R1 ⏳ DEFER asset-preserved; JetSMS-only kabul edilen kalıcı işletim durumu
-  - **Pending**: Yeni karar var mı? Sözleşme imzalanırsa R1 reactivation chain devreye girer.
 
 ---
 
@@ -191,6 +186,7 @@ Tüm 5 agent cross-AI peer review (provider-different, Codex reviewer) HARD RULE
 - KC prod canary (BL-010, BL-011): `docs/runbooks/RB-prod-canary-kc-claim-setup.md`
 - FBL mailbox (BL-014): `docs/runbooks/RB-fbl-mailbox-activation.md`
 - Grafana notify PG datasource (BL-015): `docs/runbooks/RB-grafana-notify-pg-datasource.md`
-- Graph mail adapter (deferred — BL-009 ile dolaylı): `docs/adr/0024-graph-mail-adapter-defer.md`
+- Graph mail adapter (deferred — asset-preserved precedent): `docs/adr/0024-graph-mail-adapter-defer.md`
+- **BL-009 (DKIM CNAME) + BL-022 (NetGSM contract) demand-reactivated plan-out**: `docs/adr/0028-bl009-bl022-demand-reactivated-plan-out.md` (ADR-0028 2026-05-25; asset-preserved + demand-driven reactivation)
 - Session 49+ truth-sync chain: PR #1002 + #1003 + #935 + #1005 + #1006 + #1009 + #1011 + #1013
 - H read-only live evidence: `docs/faz-23-evidence/2026-05-24-h-live-evidence-resync.md`
