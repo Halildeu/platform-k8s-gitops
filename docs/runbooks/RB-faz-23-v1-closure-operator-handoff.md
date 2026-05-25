@@ -79,7 +79,7 @@ Each pending operator/board acceptance — agent prep evidence ready:
 
 - [ ] **BL-017** M3 23.2 board item #755 ([Project #2](https://github.com/users/Halildeu/projects/2)): R2 KVKK closed via Codex `019e5189` (2026-05-23); K6 P1 follow-up agent #1 in flight
   - Evidence: `docs/faz-23-evidence/2026-05-21-m3-r2-kvkk-closure-evidence.md`
-- [ ] **BL-018** M4 23.3 board item #756 ([Project #2](https://github.com/users/Halildeu/projects/2)): M4 prod cutover LIVE (2026-05-20); awaiting BL-011 canary + BL-016 OTP for full DLR terminal evidence
+- [ ] **BL-018** M4 23.3 board item #756 ([Project #2](https://github.com/users/Halildeu/projects/2)): M4 prod cutover infrastructure LIVE (2026-05-20); awaiting **BL-028 prod data seed** + BL-011 canary (+ BL-016 only if OTP path) for full DLR terminal evidence — 2026-05-25 BL-028 dependency Codex `019e5e76` iter-3 absorb
   - Evidence: `docs/faz-23-evidence/2026-05-20-m4-prod-cutover-closure-evidence.md`
 - [ ] **BL-019** M5 23.5 board item #757 ([Project #2](https://github.com/users/Halildeu/projects/2)): source-side LIVE; awaiting agent #3 (aa3d862bed5a8b408) live runtime evidence PR
 - [ ] **BL-020** M6 23.4 board item #758 ([Project #2](https://github.com/users/Halildeu/projects/2)): M6a + M6b 6/6 LIVE 2026-05-20; awaiting board confirmation (zaten LIVE)

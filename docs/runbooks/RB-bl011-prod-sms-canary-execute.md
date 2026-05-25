@@ -76,15 +76,19 @@ kubectl --context k3d-prod -n $NS exec $POD -- curl -sS \
 
 **Pattern A**: Mevcut subscriber'ı kullan
 ```sql
-SELECT s.id, s.full_name, s.contact_phone, s.org_id
-FROM notify.subscriber s
-WHERE s.contact_phone = '+905551815564' AND s.org_id = 'default' AND s.deleted_at IS NULL
+SELECT id, subscriber_id, org_id, phone, phone_verified, source
+FROM notify.subscriber_contact
+WHERE phone = '+905551815564' AND org_id = 'default' AND phone_verified = true
 LIMIT 1;
 ```
 
+> **Schema note (Codex iter-3 P1 fix)**: Canonical table `notify.subscriber_contact` (NOT `notify.subscriber`); columns `phone` (NOT `contact_phone`), `phone_verified` (NOT `deleted_at`). Composite UNIQUE `(org_id, subscriber_id)`.
+
 **Pattern B**: Canary subscriber yarat (PRE-execute, idempotent)
-- Username/contact: `bl011-prod-canary-001` + `+905551815564`
-- org_id=default
+- subscriber_id: `bl011-prod-canary-001` (string identifier; subscriber master tablosu YOK — sadece subscriber_contact)
+- org_id=`default`
+- phone=`+905551815564`
+- phone_verified=`true`
 - OpenFGA tuple: `subscriber:bl011-prod-canary-001#can_receive@template:<active-sms-template-id>`
 
 **Pattern C** (Codex iter-1 risk warning): External recipient `{"type":"external","phone":"+905551815564"}`
@@ -92,18 +96,29 @@ LIMIT 1;
 - OpenFGA/permission path external için ALLOW gerek
 - **Daha riskli** — önce A veya B tercih
 
-### 3.4 OpenFGA permission ALLOW
+### 3.4 OpenFGA permission ALLOW (internal contract)
+
+> **Endpoint + contract (Codex iter-3 P2 fix)**: permission-service internal API endpoint `POST /api/v1/internal/authz/check`, auth `X-Internal-Api-Key` (NOT Bearer JWT), snake_case payload.
 
 ```bash
-# Layer-2 OpenFGA check (eğer Layer-2 enforce aktifse)
+# Layer-2 OpenFGA check via permission-service internal API
+INTERNAL_API_KEY=$(kubectl --context k3d-prod -n $NS exec $POD -- printenv NOTIFY_AUTHZ_INTERNAL_API_KEY 2>/dev/null)
+
 kubectl --context k3d-prod -n $NS exec $POD -- curl -sS \
-  -X POST -H "Authorization: Bearer \$ADMIN_TOKEN" \
+  -X POST \
+  -H "X-Internal-Api-Key: $INTERNAL_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"user":"subscriber:bl011-prod-canary-001","relation":"can_receive","object":"template:<id>"}' \
-  http://permission-service.platform-prod.svc.cluster.local:8094/api/v1/check
+  -d '{
+    "principal_type": "subscriber",
+    "principal_id": "bl011-prod-canary-001",
+    "relation": "can_receive",
+    "object_type": "template",
+    "object_id": "<active-sms-template-id>"
+  }' \
+  http://permission-service.platform-prod.svc.cluster.local:8094/api/v1/internal/authz/check
 ```
 
-**Beklenen**: `{"allowed": true}` — yoksa execute öncesi tuple yarat.
+**Beklenen**: `{"allowed": true}` — yoksa execute öncesi tuple yarat (OpenFGA write via permission-service admin endpoint).
 
 ### 3.5 Pre-metric snapshot
 
