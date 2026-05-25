@@ -52,7 +52,10 @@ Test-WSMan -ComputerName <target-hostname>
 ```
 
 **Beklenen**: WSMan response (ProductVendor + ProductVersion).
-**Fail**: per-target `Enable-PSRemoting -Force` (Group Policy ile domain-wide enable tercih).
+**Fail** (Codex iter-2 MEDIUM #2 düzeltme): **Domain-wide WinRM enable YASAK** (HIGH risk — §10.1). Alternatifler:
+- **EndpointPilot OU scoped GPO** (sadece pilot OU'da WinRM enable; TTL süreli)
+- **Per-target enable with TTL** (`Enable-PSRemoting -Force` per-target; pilot bitince `Disable-PSRemoting -Force`)
+- **WinRM HTTPS 5986 with cert** (HTTP 5985 yerine; corp PKI cert deploy)
 
 ### 2.2 JIT/Scoped installer admin (Codex iter-1 HIGH #2 düzeltme — Domain Admin YASAK pilot install)
 
@@ -94,9 +97,10 @@ Start-Transcript -Path "C:\Temp\strategy-d-install-$(Get-Date -Format yyyyMMdd-H
 
 ### 2.3 Hedef PC backend reachable
 
-**Test**:
+**Test** (JIT credential zorunlu — Codex iter-2 HIGH absorb):
 ```powershell
-Invoke-Command -ComputerName <target> -ScriptBlock {
+$jitCred = Get-Credential -Message "JIT installer admin for Strategy D pilot"
+Invoke-Command -ComputerName <target> -Credential $jitCred -ScriptBlock {
   Test-NetConnection -ComputerName testai.acik.com -Port 443 -InformationLevel Quiet
 }
 ```
@@ -122,12 +126,15 @@ Invoke-Command -ComputerName <target> -ScriptBlock {
 **Trusted Signing pre-install hard gate (Codex HIGH #1)**:
 
 ```powershell
-# Mac-side (pre-transfer): private release artifact fetch + Authenticode verify
+# Mac-side (pre-transfer): private release artifact fetch + Authenticode verify (precheck)
 shasum -a 256 endpoint-agent.exe
-# Trusted Signing tenant cert subject capture (signtool ya da osslsigncode)
+# Mac-side precheck (operator workstation tooling); authoritative gate Windows signtool
+osslsigncode verify endpoint-agent.exe   # CN/O capture
 
-# DC veya hedef PC üzerinde (post-transfer; install öncesi)
-signtool verify /pa /v /tw "C:\Program Files\EndpointAgent\endpoint-agent.exe"
+# Hedef PC üzerinde install ÖNCESİ (path C:\Temp\endpoint-agent.exe — pre-install transfer location; install sonrası C:\Program Files\EndpointAgent\)
+Invoke-Command -ComputerName <target> -Credential $jitCred -ScriptBlock {
+  signtool verify /pa /v /tw "C:\Temp\endpoint-agent.exe"
+}
 # Expected output:
 #   "Successfully verified" (Authenticode)
 #   "The signature is timestamped" (RFC 3161)
@@ -135,6 +142,7 @@ signtool verify /pa /v /tw "C:\Program Files\EndpointAgent\endpoint-agent.exe"
 #   Thumbprint: <thumbprint> (must match operator allowlist)
 
 # Operator runbook check: subject + thumbprint Trusted Signing tenant allowlist match
+# Authoritative gate Windows signtool (Mac-side osslsigncode sadece precheck)
 ```
 
 **Fail = install YASAK** — signed artifact yoksa pilot install başlamaz. A1 SHA-pinned lab-only-evidence istisnası Strategy D scope DIŞI.
@@ -249,18 +257,28 @@ $targets | ForEach-Object {
   }
 }
 
-# Installer + script copy (PowerShell Remoting üzerinden file transfer)
+# JIT credential (Codex iter-2 HIGH — tüm remoting JIT credential)
+$jitCred = Get-Credential -Message "JIT installer admin for Strategy D pilot"
+
+# Hedef PC'de C:\Temp dir oluştur (yoksa) — JIT credential
 $targets | ForEach-Object {
-  $session = New-PSSession -ComputerName $_
+  Invoke-Command -ComputerName $_ -Credential $jitCred -ScriptBlock {
+    New-Item -Path "C:\Temp" -ItemType Directory -Force | Out-Null
+  }
+}
+
+# Installer + script copy (PowerShell Remoting + JIT credential)
+$targets | ForEach-Object {
+  $session = New-PSSession -ComputerName $_ -Credential $jitCred
   Copy-Item -Path $installerSource -Destination $installerDest -ToSession $session
   Copy-Item -Path $installScript -Destination "C:\Temp\install.ps1" -ToSession $session
   Remove-PSSession $session
 }
 
-# SHA256 verify hedef PC'de
+# SHA256 verify hedef PC'de (JIT credential)
 $targets | ForEach-Object {
   Write-Host "=== $_ ==="
-  Invoke-Command -ComputerName $_ -ScriptBlock {
+  Invoke-Command -ComputerName $_ -Credential $jitCred -ScriptBlock {
     Get-FileHash -Algorithm SHA256 C:\Temp\endpoint-agent.exe
   }
 }
@@ -284,6 +302,7 @@ ADMIN_TOKEN=$(./scripts/get-admin-jwt.sh c5persona-admin-9001)
 TARGETS=("LAB-W10-01" "LAB-W11-02")
 
 declare -A TARGET_TOKENS
+declare -A TARGET_TOKEN_IDS   # Codex iter-2 MEDIUM #3 — id capture for revoke
 for TARGET in "${TARGETS[@]}"; do
   TARGET_HASH=$(printf '%s' "$TARGET" | shasum -a 256 | cut -c1-12)
   TOKEN_RESPONSE=$(curl -fsX POST \
@@ -292,15 +311,29 @@ for TARGET in "${TARGETS[@]}"; do
     "https://testai.acik.com/api/v1/endpoint-admin/endpoint-enrollments" \
     -d "{\"description\":\"Strategy D pilot 2026-05-25 target=$TARGET_HASH\",\"singleUse\":true}")
   TOKEN=$(printf '%s' "$TOKEN_RESPONSE" | jq -er '.token')
+  TOKEN_ID=$(printf '%s' "$TOKEN_RESPONSE" | jq -er '.id')
   TARGET_TOKENS["$TARGET"]="$TOKEN"
+  TARGET_TOKEN_IDS["$TARGET"]="$TOKEN_ID"
   # Token SHA truncate (evidence için; raw token logged DEĞİL)
   TOKEN_SHA=$(printf '%s' "$TOKEN" | shasum -a 256 | cut -c1-16)
-  echo "Target=$TARGET_HASH TokenSHA=$TOKEN_SHA mintedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "Target=$TARGET_HASH TokenID=$TOKEN_ID TokenSHA=$TOKEN_SHA mintedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 done
 
-# Token TTL default 24h (install + smoke window)
-# Multi-day soak için: enrollment tek seferlik (post-enroll heartbeat/command JWT ayrı)
-# Unused token revoke (post-pilot): DELETE /api/v1/endpoint-admin/endpoint-enrollments/<id>
+# Post-pilot unused revoke loop (Codex iter-2 MEDIUM #3)
+# Pilot install başarısız olduysa veya unused token kaldıysa
+for TARGET in "${!TARGET_TOKEN_IDS[@]}"; do
+  TOKEN_ID="${TARGET_TOKEN_IDS[$TARGET]}"
+  # Only delete unused tokens (operator karar; install başarılıysa skip)
+  # curl -fsX DELETE -H "Authorization: Bearer $ADMIN_TOKEN" \
+  #   "https://testai.acik.com/api/v1/endpoint-admin/endpoint-enrollments/$TOKEN_ID"
+  echo "Unused token revoke: $TOKEN_ID for $TARGET"
+done
+
+# Token TTL policy (Codex iter-2 MEDIUM #3):
+# - Default TTL 24h (install + smoke window)
+# - Multi-day soak için: enrollment tek seferlik (post-enroll heartbeat/command JWT ayrı)
+# - Expired before install → new per-target mint + old token DELETE; TTL extend YOK
+# - Unused token revoke post-pilot zorunlu (orphan token sprawl önle)
 ```
 
 **Plus evidence retention policy** (Codex MEDIUM #4):
@@ -483,11 +516,12 @@ docs/faz-22-evidence/YYYY-MM-DD-strategy-d-pilot-<device-hash>.md
 ### 9.1 Per-target uninstall via PowerShell Remoting
 
 ```powershell
+$jitCred = Get-Credential -Message "JIT installer admin for uninstall (Codex HIGH absorb)"
 $targets = @("LAB-W10-01", "LAB-W11-02")
 
 $targets | ForEach-Object {
   Write-Host "==================== Uninstalling on $_ ===================="
-  Invoke-Command -ComputerName $_ -ScriptBlock {
+  Invoke-Command -ComputerName $_ -Credential $jitCred -ScriptBlock {
     # Agent service stop (maintenance token gerek olabilir; BE-013)
     Stop-Service EndpointAgent -Force -ErrorAction SilentlyContinue
     # Uninstall via installer
@@ -501,6 +535,18 @@ $targets | ForEach-Object {
     Remove-Item "C:\Temp\install.ps1" -Force -ErrorAction SilentlyContinue
   }
 }
+
+# Post-pilot JIT admin disable + revoke (Codex iter-2 HIGH absorb)
+# - JIT installer admin disable + delete (AD admin görevi)
+# - WinRM GPO EndpointPilot OU scope kaldır (eğer scoped enable)
+# - Per-target Disable-PSRemoting (eğer per-target enable yapıldıysa)
+$targets | ForEach-Object {
+  Invoke-Command -ComputerName $_ -Credential $jitCred -ScriptBlock {
+    # Sadece per-target WinRM enable yapıldıysa
+    # Disable-PSRemoting -Force
+  }
+}
+# Transcript share ACL + log retention owner (audit retention SOC ile koordine)
 ```
 
 ### 9.2 Backend device decommission (Mac terminal — canonical API path)
