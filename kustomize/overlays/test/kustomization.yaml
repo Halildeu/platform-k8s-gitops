@@ -2532,7 +2532,95 @@ images:
     #     4. Breadcrumb "Ana Sayfa > Uç Birimler" render
     #     5. Sibling quick-switch (users/access/audit/services) çalışıyor
     #     6. Console temiz (yeni JS hatası yok), network 2xx
-    digest: sha256:e2c4c36d7c62b05a144140a8e90a470b319c3ba8a49382e74e3b09bba22499d7
+    #
+    # 2026-05-25 update — AuthBootstrapper cold-mount triple-init race fix
+    # (platform-web PR #661 squash @ 642e5b4f):
+    #
+    # Live testai forensics (claude-in-chrome MCP, cold deep-link to
+    # /endpoint-admin/devices) showed `[AuthBootstrapper] init starting`
+    # log firing 3 times within one second of fresh page load. Same call
+    # site, same useEffect deps. Sibling design-system `[ag-grid-license]`
+    # fired the same N times → Module Federation eager-remote init pass
+    # (5 eager remotes: mfe_endpoint_admin/users/audit/access/reporting)
+    # churns a re-render path the MF runtime threads back into the shell's
+    # React tree.
+    #
+    # Symptom chain pre-fix:
+    #   - bootstrap #1: keycloak.init() → dispatches user/token + transportReady
+    #   - bootstrap #2: kc-js hasn't re-emitted token via live getter →
+    #     controller sees getToken()==null → dispatchSessionClear → wipes #1
+    #   - bootstrap #3: may recover, but RTK subscriptions from the brief
+    #     transportReady window stay stuck
+    #   - Net: state.auth.user=null despite kcInit=true, auth.ready() never
+    #     settles to transportReady, no /api/v1/endpoint-admin/* request
+    #     fires, grid stuck "Cihazlar yükleniyor…", permission-gated nav
+    #     items hidden, F5 reload masks the bug.
+    #
+    # Two-part fix in apps/mfe-shell/src/app/providers/AuthBootstrapper.tsx:
+    #   1. Module-level `pageBootstrapOutcomeDeferred` singleton. Only the
+    #      first useEffect mount per page lifecycle invokes bootstrap();
+    #      subsequent mounts re-attach the keycloak event handlers but
+    #      share the deferred so the unauthenticated-then-recover catch-up
+    #      closure (PR-2 / Codex 019e362e) still works.
+    #   2. `componentMountedRef` (useRef tied to []-deps cleanup useEffect
+    #      with setup-side `true` re-assertion per Codex iter-1 P2 absorb)
+    #      decouples bootstrap's isMounted liveness from useEffect re-run
+    #      cleanup — so the local `let mounted` from the first run no
+    #      longer flips false at the second run's cleanup-of-previous and
+    #      aborts bootstrap mid-flight.
+    #
+    # Cross-AI peer review: Codex thread 019e6061 → REVISE iter-1
+    # (componentMountedRef setup-side write missing + tests not exercising
+    # real multi-fire) → iter-2 absorb (StrictMode + pending kc.init
+    # regression spec asserting final {phase: transportReady, token: truthy})
+    # → AGREE + ready_to_merge: true.
+    #
+    # Tests: full providers/ suite 34/34 pass (5 files, +1 net for new
+    # StrictMode spec). ESLint clean. CI 30 pass / 0 fail / 2 skipping.
+    #
+    # BUILD PROVENANCE:
+    #   - platform-web `main` @ 642e5b4f (PR #661 squash, 2026-05-25
+    #     18:44 UTC).
+    #   - ci-web-image-push run 26415009827 SUCCESS.
+    #   - Image: ghcr.io/halildeu/platform-web-frontend-testai:sha-642e5b4
+    #   - Manifest digest (Docker-Content-Digest), via
+    #     `docker buildx imagetools inspect`:
+    #       Digest: sha256:042741fc2c5a52052c59039ae462b54cbc0a61de057d341ede0ebe0028fbd95f
+    #
+    # WHAT THIS IMAGE CARRIES (delta from prior pin sha256:e2c4c36...):
+    #   - apps/mfe-shell/src/app/providers/AuthBootstrapper.tsx:
+    #     - module-level `pageBootstrapOutcomeDeferred` singleton +
+    #       `__resetAuthBootstrapperPageStateForTests` (test-only)
+    #     - new `componentMountedRef` (useRef + []-deps cleanup with
+    #       setup-side `true` re-assertion)
+    #     - removed local `let mounted` from [dispatch, shouldUseKeycloak]
+    #       useEffect; cleanup is now no-op; 4 call sites
+    #       (controller.isMounted, onAuthSuccess.getMounted, bootstrap
+    #       catch-block guard, finally-block guard) read componentMountedRef
+    #   - apps/mfe-shell/src/app/providers/AuthBootstrapper.coldMount.test.tsx:
+    #     NEW file, 3 specs — forced re-render single-fire, StrictMode +
+    #     pending kc.init regression, two AuthBootstrappers under same
+    #     Provider/store.
+    #
+    # ACCEPTANCE EVIDENCE (post-rollout, browser smoke pending):
+    #   - `[AuthBootstrapper] init starting` log fires EXACTLY ONCE per
+    #     cold deep-link (vs. 3× pre-fix).
+    #   - state.auth: { phase: 'transportReady', initialized: true, token: truthy }
+    #     after bootstrap completes (vs. user=null pre-fix).
+    #   - `GET /api/v1/endpoint-admin/endpoint-devices` fires + returns 200
+    #     (vs. no request firing pre-fix). NOTE: separate cross-bundle
+    #     ReduxProvider issue (platform-web PR #662, parallel session) may
+    #     keep the grid in loading state even with this fix; full grid
+    #     render acceptance requires #662 image too.
+    #
+    # KNOWN RESIDUAL (scope-out per Codex P3):
+    #   - In-flight bootstrap vs peer-tab logout/login generation race
+    #     (pre-existing, not introduced by this PR).
+    #   - SPA-internal logout-then-relogin would need an explicit
+    #     `__resetAuthBootstrapperPageStateForTests`-equivalent production
+    #     hook; current production path uses Keycloak redirect which
+    #     resets the page lifecycle.
+    digest: sha256:042741fc2c5a52052c59039ae462b54cbc0a61de057d341ede0ebe0028fbd95f
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
