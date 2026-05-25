@@ -2,14 +2,14 @@
 
 > **Tarih**: 2026-05-25
 > **Scope**: Faz 22.2.A non-domain Windows pilot — **real corp hardware A1 manual direct install** via AnyDesk drag-drop file transfer + local admin PowerShell. **Strategy D primary path DEĞİL** (Codex iter-1 HIGH absorb): Strategy D runbook DC-orchestrated WinRM/JIT installer admin pattern tanımlı; bu evidence AnyDesk + local admin direct path. Strategy D **DC-orchestrated signed install gate açık kalmaya devam eder** (signed artifact + Authenticode verify + WinRM/JIT pattern future iteration).
-> **Status**: **PARTIAL-VERIFIED with known v0.1.0-dev gaps + Strategy D signing/DC-orchestration gates open** — install + enroll + command lifecycle SUCCEEDED; process Running + TCP established + Event Log "service running" kanıtlı. Heartbeat last-poll backend-side null + command result payload null = **agent v0.1.0-dev backend feature gap** (BE-011 baseline PR #1021 ile **tutarlı** — sadece SRB-AIDENETIMPC özel değil; HALILKOOLUB735'te de aynı pattern). Future agent iteration scope.
-> **A1 multi-VM (#1044) disk constraint çözüldü**: real corp hardware ile N=2 evidence point achievable; fresh Parallels VM provisioning gerek YOK.
+> **Status**: **PARTIAL-VERIFIED with known v0.1.0-dev gaps + Strategy D signing/DC-orchestration gates open** — install + enroll + command lifecycle SUCCEEDED; process Running + TCP established + Event Log "service running" kanıtlı. **lastHeartbeatAt null** agent v0.1.0-dev dedicated heartbeat endpoint yok pattern (HALILKOOLUB735 baseline parity OK). **resultSizeBytes null** Strategy D RB §6.1 acceptance gate `> 0` ihlali + BE-011 baseline PR #1021'den **divergence** (HALILKOOLUB735 result payload populated yazıyor; parity argümanı bu evidence için **geçerli değil**). Future agent iteration scope (Codex iter-2 HIGH absorb).
+> **A1 multi-VM (#1044) disk blocker mitigated** — alternative real-hardware evidence point captured; **N=2 PASS değil** (per-device pending gates: self-hosted CI + 24-72h soak + signed distribution + rollup template fill); fresh Parallels VM provisioning bu evidence ile irrelevant ama PASS değerlendirilmesi pending gates sonrası.
 
 ## 1. Bağlam (Why)
 
-Faz 22.2.A non-domain primary scope için A1 evidence sadece HALILKOOLUB735 (Mac Parallels VM, baseline PR #1021) tek device idi. Strategy D karar (PR #1065 + ADR-0012-EA) sonrası primary pilot path: DC'den domain inventory + corp PC'lere agent install. Bu evidence **Strategy D'nin first real execution** — corp network içindeki real workgroup PC.
+Faz 22.2.A non-domain primary scope için A1 evidence sadece HALILKOOLUB735 (Mac Parallels VM, baseline PR #1021) tek device idi. Strategy D karar (PR #1065 + ADR-0012-EA) DC-orchestrated signed install primary pilot path olarak tanımlı; ama bu evidence **Strategy D first execution DEĞİL** (Codex iter-1/2 HIGH absorb) — AnyDesk drag-drop + local admin PowerShell direct A1 manual install pattern. **Strategy D adjacent exploratory smoke** — corp real hardware A1 spot-smoke; Strategy D DC-orchestrated signed install gate açık kalmaya devam eder.
 
-Plus #1044 (A1 multi-VM repeatability) disk constraint ile blocked olarak işaretlenmişti (fresh Parallels VM gerek + Mac disk free <10GB). Strategy D ile real corp PC kullanım → fresh VM provisioning gerek YOK + N=2 acceptance gate çözülür.
+Plus #1044 (A1 multi-VM repeatability) disk constraint ile blocked olarak işaretlenmişti (fresh Parallels VM gerek + Mac disk free <10GB). Real corp PC kullanım → fresh VM provisioning gerek YOK; ama **N=2 acceptance gate PASS değil** — alternative evidence point captured + per-device pending gates (CI/soak/signing/rollup) bekliyor (Codex iter-2 MEDIUM absorb).
 
 ## 2. Topology
 
@@ -38,15 +38,15 @@ Mac (developer host)
 | DNS | 10.9.10.10 (corp internal), 96.45.45.45 (upstream) |
 | Disk C | 1906 GB / **1599 GB free** (bol bol) |
 | Backend reachability | testai.acik.com:443 TcpTest **True** (corp DNS internal route 10.9.10.53) |
-| WinRM | Stopped/Manual (Strategy D doğrudan install — WinRM Remoting gerek değil) |
+| WinRM | Stopped/Manual (bu evidence direct manual install — WinRM Remoting kullanılMADI; Strategy D RB DC-orchestrated WinRM/JIT pattern bu evidence'da uygulanmadı) |
 | User | `denetimpc` (local workgroup user, IsAdmin: True) |
 | PowerShell | 5.1.26100.8457 |
 
-## 4. Install chain (Strategy D pattern)
+## 4. Install chain (manual direct A1 pattern — Strategy D adjacent)
 
 ### 4.1 Mac-side enrollment token mint
 
-Pattern: ADR-0012-EA Strategy D §5.1 + `RB-faz22-non-domain-windows-pilot.md` §6 token mint.
+Pattern: ADR-0012-EA Strategy D §5.1 token mint mekanizması reuse (bu kısım Strategy D ile compliant) + `RB-faz22-non-domain-windows-pilot.md` §6 token mint baseline. Strategy D DC-orchestrated install vs bu evidence direct AnyDesk install farklı (bkz §13).
 
 ```
 1. SSH halil@staging-sw
@@ -234,11 +234,18 @@ Yorumlama: Agent v0.1.0-dev **dedicated heartbeat endpoint call yapmıyor** — 
 
 **Future iteration scope** — agent heartbeat endpoint impl + backend lastHeartbeatAt field update (platform-agent + platform-backend ayrı PR).
 
-### 7.2 resultSizeBytes null — known v0.1.0-dev feature gap
+### 7.2 resultSizeBytes null — Strategy D §6.1 acceptance ihlali + PR #1021 divergence
 
-Command COLLECT_INVENTORY status=SUCCEEDED ama `resultSizeBytes=null`. Pattern HALILKOOLUB735 baseline (PR #1021 BE-011 evidence) ile **tutarlı** — agent v0.1.0-dev inventory submit endpoint partial (result body field tracked değil veya backend size column null default).
+Command COLLECT_INVENTORY status=SUCCEEDED ama `resultSizeBytes=null`. **PR #1021 baseline HALILKOOLUB735 için result payload POPULATED yazıyor** — bu evidence parity argümanı **çelişti** (Codex iter-1/2 HIGH absorb). Pattern divergence:
+- PR #1021 BE-011 evidence: result payload populated
+- Bu evidence (SRB-AIDENETIMPC): resultSizeBytes null
 
-**SUCCEEDED status yeterli liveness kanıtı** — agent command execute + status update endpoint çağırdı (aksi halde QUEUED'da kalırdı). Result payload size kayıt eksik **future iteration scope** (platform-agent submit body schema + backend persistence).
+Olası sebepler:
+- Agent v0.1.0-dev real-hardware path'inde inventory submit eksik (BE-011 baseline'dan regresyon)
+- Backend result store edemedi (size column null default)
+- Agent SRB-specific issue (Wi-Fi corp network HTTPS POST timeout?)
+
+**SUCCEEDED status command poll + execute + status update başarısını gösterir** ama result body submit eksik. Strategy D RB §6.1 acceptance gate `resultSizeBytes > 0` **karşılanmadı**. Follow-up: agent log + backend endpoint-admin-service log forensic (result submit POST HTTP code analysis).
 
 ### 7.3 Local log file 0 byte — Event Log redirect
 
@@ -299,12 +306,12 @@ Yorumlama: Agent v0.1.0-dev **structured logging Windows Event Log'a redirect** 
 - **#1044** A1 multi-VM — Disk blocker mitigated; N=2 spot-smoke PARTIAL; rollup/soak/signing pending PASS değil
 - **BE-011 evidence** `docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md` HALILKOOLUB735 lifecycle baseline (result payload **populated** — bu evidence parity argümanı yanlıştı)
 - **Allow-path browser smoke** `docs/faz-22-evidence/2026-05-24-allow-path-browser-smoke.md` c5persona JWT mint + FGA enforcement
-- **Codex post-impl review thread** `019e5f1b-7d5e-7e61-ac5d-fb8c67fe8e3a` (this PR REVISE → AGREE iter chain)
+- **Codex post-impl review thread** `019e5f1b-7d5e-7e61-ac5d-fb8c67fe8e3a` (this PR current post-impl review pending; verdict iter chain)
 
 ## 12. HARD RULE compliance
 
 - ✅ Pre-Production Full Authority (test cluster + test persona credentials Vault read)
-- ✅ Plan Consensus Autonomy (Codex 019e5f1b iter-2 AGREE expected, plan onayı sorulmadı)
+- ✅ Plan Consensus Autonomy (Codex 019e5f1b current post-impl review pending, plan onayı sorulmadı)
 - ✅ Cross-AI Peer Review provider-different (Anthropic ↔ OpenAI thread `019e5f1b` this PR + sequel `019e5ea4` Strategy D RB)
 - ✅ Admin Merge YASAK (CI yeşil bekle, normal squash)
 - ✅ No Closure Language (PARTIAL-VERIFIED — Strategy D signing/DC-orchestration gates open + agent v0.1.0-dev gaps future iter)
