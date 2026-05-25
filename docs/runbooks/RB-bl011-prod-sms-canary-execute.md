@@ -1,6 +1,6 @@
 # RB-bl011-prod-sms-canary-execute — Prod SMS Canary Smoke (BL-011)
 
-> **Status**: 🟢 **ELIGIBILITY OPEN 2026-05-25** — Lane A ✅ LIVE (BL-028a PR #1067) + Lane B ✅ LIVE (BL-028b M4.6 trigger 2026-05-25 12:01 UTC; new prod model `01KSFFK9K3V43DD211Z79K3FYA`). Layer-2 fail-closed kalktı. SMS POST için ayrı operator authorization gate (recipient/cost/max_count re-confirm).
+> **Status**: ✅ **LIVE DELIVERED 2026-05-25 16:58:45 UTC** — gerçek SMS gönderildi `+905551815564` numarasına. JetSMS provider_msg_id `jetsms-2605251959362908914`. DELIVERED 71s DLR cycle. 7/7 acceptance gate PASS. Evidence: `docs/faz-23-evidence/2026-05-25-bl011-prod-sms-canary-live.md`.
 > **Discovery 2026-05-25**: Preflight sonucu prod notify_db boş data state (0 templates, 0 subscribers, 0 intents) + prod OpenFGA model `01KS15PF...` notification types DESTEKLEMİYOR (sadece D35 ERP types: action/branch/company/module/organization/project/report/report_group/user/warehouse). M4 cutover sadece infrastructure layer LIVE; functional+authz katmanları ayrı milestone'larda.
 > **Codex strategic verdict chain**: 
 > - iter-1 thread `019e5e76`: R28 keşif (DB seed eksik)
