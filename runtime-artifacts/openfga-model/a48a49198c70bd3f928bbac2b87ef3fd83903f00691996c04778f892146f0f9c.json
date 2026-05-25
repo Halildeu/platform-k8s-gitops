@@ -65,16 +65,75 @@
       ]
     },
     "prod": {
-      "status": "pending",
+      "status": "promoted",
       "method": "manual-prod-migration",
       "store_ref": "platform-prod",
-      "verified_at": null,
-      "promoted_at": null,
-      "model_id_env": null,
-      "evidence": null,
-      "evidence_completeness": "unverified",
+      "verified_at": "2026-05-25T11:51:51Z",
+      "promoted_at": "2026-05-25T11:57:05Z",
+      "model_id_env": "01KSFFK9K3V43DD211Z79K3FYA",
+      "evidence": {
+        "required_types_present": [
+          "user",
+          "organization",
+          "company",
+          "project",
+          "warehouse",
+          "branch",
+          "module",
+          "action",
+          "report",
+          "report_group",
+          "subscriber",
+          "service_account",
+          "notification_topic",
+          "notification_template",
+          "template"
+        ],
+        "type_count": 15,
+        "tuple_backfill_count": 2,
+        "allow_proof": {
+          "user": "subscriber:bl028-prod-canary-001",
+          "relation": "can_receive",
+          "object": "template:canary-prod-marketing-v1",
+          "expected": "allow",
+          "result": "allow",
+          "permission_service_reason": "tuple_match"
+        },
+        "deny_proof_1": {
+          "user": "subscriber:nobody-control-bl028b",
+          "relation": "can_receive",
+          "object": "template:canary-prod-marketing-v1",
+          "expected": "deny",
+          "result": "deny",
+          "permission_service_reason": "no_tuple"
+        },
+        "deny_proof_2": {
+          "user": "subscriber:bl028-prod-canary-001",
+          "relation": "can_receive",
+          "object": "template:canary-prod-other-v1",
+          "expected": "deny",
+          "result": "deny",
+          "reason": "unlinked_template"
+        },
+        "consumer_alignment_count": 5,
+        "consumers_aligned": [
+          "permission-service",
+          "user-service",
+          "variant-service",
+          "core-data-service",
+          "report-service"
+        ],
+        "erp_subset_canonical_equality": "PRESERVED (10 ERP types byte/semantic identical with old prod model 01KS15PF531R1P99BMMM7SFMV1)",
+        "erp_regression_smoke": "PASS (0 error/fatal in 5 min post-cutover logs)",
+        "internal_api_key_alignment": "PASS (sha256 hash match between NOTIFY_AUTHZ_INTERNAL_API_KEY and PERMISSION_SERVICE_INTERNAL_API_KEY)"
+      },
+      "evidence_completeness": "complete",
+      "verified_by_pr": 1068,
+      "promoted_by_pr": null,
       "source_docs": [
-        "docs/notify/m3-supplement-openfga-model-extension-plan-2026-05-14.md"
+        "docs/notify/m3-supplement-openfga-model-extension-plan-2026-05-14.md",
+        "docs/runbooks/RB-bl028b-prod-openfga-notification-model-cutover.md",
+        "docs/faz-23-evidence/2026-05-25-bl028b-lane-b-prod-openfga-cutover-evidence.md"
       ]
     }
   },
