@@ -36,7 +36,7 @@ BL-010 prod scope COMPLETED 2026-05-25 (PR #1062 MERGED):
 > - ✅ At least 1 active SMS-capable template (`notify.notification_template` `active=true`, `locale=tr-TR`, body_text render path net)
 > - ✅ Canary subscriber row (`notify.subscriber_contact`: `org_id=default`, `subscriber_id=bl011-prod-canary-001`, `phone=+905551815564`, `phone_verified=true`)
 > - ✅ OpenFGA tuple `subscriber:<id>` `can_receive` `template:<template_id>` ALLOW (permission-service check 200)
-> - ✅ Backend pod restart/reload sonrası functional canary smoke (no real SMS, 202 + audit row presence)
+> - ✅ Backend functional canary preflight: DB row counts (template active=true + subscriber_contact present) + template render/resolve no-error + permission ALLOW response. **Bu BL-028 acceptance bir SMS POST DEĞİL** — prod env'de `NOTIFY_DISPATCH_ENABLED=true` + channel `sms` ile HTTP 202 path provider'a gider; "no real SMS" garantisi sağlanamaz. Gerçek SMS POST + 202/403 path BL-011 window'unda.
 >
 > Detay: BL-028 backlog item — Prod notify_db functional data seed (R28 mitigation).
 
