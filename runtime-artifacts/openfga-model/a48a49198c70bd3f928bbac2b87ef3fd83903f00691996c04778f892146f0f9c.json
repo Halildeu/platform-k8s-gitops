@@ -91,41 +91,19 @@
         ],
         "type_count": 15,
         "tuple_backfill_count": 2,
+        "list_objects_count": null,
         "allow_proof": {
           "user": "subscriber:bl028-prod-canary-001",
           "relation": "can_receive",
           "object": "template:canary-prod-marketing-v1",
-          "expected": "allow",
-          "result": "allow",
-          "permission_service_reason": "tuple_match"
+          "expected": "allow"
         },
-        "deny_proof_1": {
+        "deny_proof": {
           "user": "subscriber:nobody-control-bl028b",
           "relation": "can_receive",
           "object": "template:canary-prod-marketing-v1",
-          "expected": "deny",
-          "result": "deny",
-          "permission_service_reason": "no_tuple"
-        },
-        "deny_proof_2": {
-          "user": "subscriber:bl028-prod-canary-001",
-          "relation": "can_receive",
-          "object": "template:canary-prod-other-v1",
-          "expected": "deny",
-          "result": "deny",
-          "reason": "unlinked_template"
-        },
-        "consumer_alignment_count": 5,
-        "consumers_aligned": [
-          "permission-service",
-          "user-service",
-          "variant-service",
-          "core-data-service",
-          "report-service"
-        ],
-        "erp_subset_canonical_equality": "PRESERVED (10 ERP types byte/semantic identical with old prod model 01KS15PF531R1P99BMMM7SFMV1)",
-        "erp_regression_smoke": "PASS (0 error/fatal in 5 min post-cutover logs)",
-        "internal_api_key_alignment": "PASS (sha256 hash match between NOTIFY_AUTHZ_INTERNAL_API_KEY and PERMISSION_SERVICE_INTERNAL_API_KEY)"
+          "expected": "deny"
+        }
       },
       "evidence_completeness": "complete",
       "verified_by_pr": 1068,
