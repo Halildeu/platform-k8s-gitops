@@ -250,14 +250,7 @@ $installerSource = "C:\Temp\endpoint-agent.exe"   # DC'de
 $installScript = "C:\Temp\install.ps1"
 $installerDest = "C:\Temp\endpoint-agent.exe"     # hedef PC'de (aynı path tercih)
 
-# Hedef PC'de C:\Temp dir oluştur (yoksa)
-$targets | ForEach-Object {
-  Invoke-Command -ComputerName $_ -ScriptBlock {
-    New-Item -Path "C:\Temp" -ItemType Directory -Force | Out-Null
-  }
-}
-
-# JIT credential (Codex iter-2 HIGH — tüm remoting JIT credential)
+# JIT credential (Codex iter-2 HIGH — tüm remoting JIT credential; Codex iter-3 duplicate removal)
 $jitCred = Get-Credential -Message "JIT installer admin for Strategy D pilot"
 
 # Hedef PC'de C:\Temp dir oluştur (yoksa) — JIT credential
@@ -319,14 +312,14 @@ for TARGET in "${TARGETS[@]}"; do
   echo "Target=$TARGET_HASH TokenID=$TOKEN_ID TokenSHA=$TOKEN_SHA mintedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 done
 
-# Post-pilot unused revoke loop (Codex iter-2 MEDIUM #3)
-# Pilot install başarısız olduysa veya unused token kaldıysa
+# Post-pilot unused revoke loop (Codex iter-2 MEDIUM #3 + iter-3 polish — zorunlu execution)
+# Operator executes when token unused (install başarılı + post-enroll device JWT aktif)
 for TARGET in "${!TARGET_TOKEN_IDS[@]}"; do
   TOKEN_ID="${TARGET_TOKEN_IDS[$TARGET]}"
-  # Only delete unused tokens (operator karar; install başarılıysa skip)
-  # curl -fsX DELETE -H "Authorization: Bearer $ADMIN_TOKEN" \
-  #   "https://testai.acik.com/api/v1/endpoint-admin/endpoint-enrollments/$TOKEN_ID"
-  echo "Unused token revoke: $TOKEN_ID for $TARGET"
+  # Operator executes (uncomment) when token unused — install başarılı + device JWT aktif sonrası
+  curl -fsX DELETE -H "Authorization: Bearer $ADMIN_TOKEN" \
+    "https://testai.acik.com/api/v1/endpoint-admin/endpoint-enrollments/$TOKEN_ID"
+  echo "Token revoked: $TOKEN_ID for $TARGET"
 done
 
 # Token TTL policy (Codex iter-2 MEDIUM #3):
