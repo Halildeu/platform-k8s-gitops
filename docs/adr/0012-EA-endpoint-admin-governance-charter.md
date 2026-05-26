@@ -396,7 +396,7 @@ prod-ready / password-reset-ready İDDİA EDİLMEZ — 22.1 test runtime + sourc
 
 ### Faz 22.2 overall % (Codex Q5 absorb — iki katman)
 
-- **22.2.A non-domain primary**: ~78% (strong evidence — PR #1021 BE-011 + AG-013 + #1032 BE-017 fixture + PR #13 CI automation source; **eksik**: self-hosted CI run, 2+ standalone/BYOD device, 24-72h soak, identity classification `dsregcmd`/logged-in identity, signed distribution / support / KVKK boundary)
+- **22.2.A non-domain primary**: ~80% (strong evidence — PR #1021 BE-011 + AG-013 + #1032 BE-017 fixture + PR #13 CI automation source + platform-agent #17 AG-021/AG-022 identity source/live-read-only evidence; **eksik**: self-hosted CI run, 2+ standalone/BYOD device, 24-72h soak, BE-015 backend compliance surface, signed distribution / support / KVKK boundary)
 - **22.2.B `acik.local` optional**: ~25% (Gate 0 evidence + runbook + helper; VPN/DC/domain join/pilot smoke/EDR/signing operator-bound waiting)
 - **Composite Faz 22.2 portfolio**: ~67% (A primary güçlü, B optional blocker ayrı taşındığı için makul; `85%` veya tek-numara yazılmaz — closure dili yasak)
 

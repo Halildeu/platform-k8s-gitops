@@ -237,28 +237,56 @@ Unsigned lab exception (A1 only):
 
 ## 8. Identity classification precheck
 
-### 8.1 Agent capability gap
+### 8.1 Agent capability state
 
-Şu an non-domain classification için tam capability **mevcut değil**:
+2026-05-26 itibarıyla agent tarafında AG-021/AG-022 source foundation
+gelmiştir; backend admin-visible compliance API ve pilot rollup kapıları ayrı
+bekler:
 
 | Capability | Agent state | Backend state | TRACKING-ROADMAP |
 |---|---|---|---|
 | Hostname + Domain + PartOfDomain | ✅ inventory.go via `Win32_ComputerSystem` (mevcut) | ✅ heartbeat payload (mevcut) | AG-009 DONE |
-| `dsregcmd /status` parse (AzureAd / Workplace join) | ❌ agent capability yok | ❌ identity compliance API yok | **AG-021** TODO |
-| Logged-in identity classification (LOCAL/DOMAIN/ENTRA) | ❌ agent capability yok | ❌ | **AG-022** TODO |
+| `dsregcmd /status` parse (AzureAd / Workplace join) | ✅ `COLLECT_INVENTORY.identity` + `diagnose identity` (platform-agent #17) | ❌ identity compliance API yok | **AG-021** source/live-read-only |
+| Logged-in identity classification (LOCAL/DOMAIN/ENTRA/WORKPLACE/UNKNOWN) | ✅ sanitized hash/mask output (platform-agent #17) | ❌ | **AG-022** source/live-read-only |
 | Endpoint identity compliance API | N/A | ❌ admin API yok | **BE-015** TODO |
 | KVKK retention enforcement | ❌ | ❌ retention policy enforce yok | **BE-019** TODO |
 | Trusted signing pipeline | ❌ | N/A | **AG-018 / AG-024** TODO |
 
-Bu gate'ler unlock olmadan A3/A4 acceptance verilmez; A2 BYOD için BE-019 + AG-024 şart; A1 için mevcut substantive evidence sufficient.
+Bu gate'ler unlock olmadan A3/A4 acceptance verilmez; AG-021/AG-022 agent
+source artık hazır olsa da BE-015, signed distribution ve operator evidence
+olmadan A3/A4 pilot acceptance verilmez. A2 BYOD için BE-019 + AG-024 şart;
+A1 için mevcut substantive evidence sufficient.
 
-### 8.2 Pre-check script (interim — full AG-021/022 öncesi)
+### 8.2 Pre-check script / diagnose path
 
-Mevcut `scripts/test/parallels-windows11-ci.sh` (platform-agent PR #13 MERGED) precheck adımı baseline; non-domain classification extension için:
+Mevcut `scripts/test/parallels-windows11-ci.sh` (platform-agent PR #13 MERGED)
+precheck adımı baseline; platform-agent #17 sonrası read-only agent path:
+
+```bash
+endpoint-agent.exe diagnose identity
+```
+
+HALILKOOLUB735 live-read-only örneği:
+
+```json
+{
+  "domain": "WORKGROUP",
+  "workgroup": "WORKGROUP",
+  "partOfDomain": false,
+  "azureAdJoined": "NO",
+  "domainJoined": "NO",
+  "workplaceJoined": "NO",
+  "domainProbe": "SKIPPED_NOT_DOMAIN_JOINED",
+  "classification": "LOCAL"
+}
+```
+
+Interim script-side probe hâlâ operatör precheck veya karşılaştırma için
+kullanılabilir:
 
 ```bash
 # Step 1 (existing): VM baseline — hostname/domain/PartOfDomain/UserName
-# Step 2 (NEW for non-domain classification):
+# Step 2 (script-side non-domain classification):
 prlctl exec "Windows 11" powershell -NoProfile -Command "
 dsregcmd /status | Select-String -Pattern 'AzureAdJoined|EnterpriseJoined|DomainJoined|DeviceName|TenantName|WorkplaceJoined'
 " 2>&1 | redact | tee -a precheck.txt
@@ -267,7 +295,8 @@ dsregcmd /status | Select-String -Pattern 'AzureAdJoined|EnterpriseJoined|Domain
 # (see §4.3 decision tree)
 ```
 
-Bu extension `scripts/test/parallels-windows11-ci.sh`'a follow-up PR ile eklenir (ayrı tur).
+`endpoint-agent.exe diagnose identity` canonical agent-side read-only evidence
+path'idir; script-side probe yardımcı/karşılaştırma amaçlıdır.
 
 ### 8.3 Backend identity compliance API (BE-015 unlock öncesi)
 
@@ -548,7 +577,7 @@ Post-uninstall:
 | Self-hosted CI run (Parallels W11 lab gate) | Karma | agent 0.5-1g + operator 0.5g | self-hosted Mac runner + Parallels VM + labels + artifact upload + secret scan | Script + workflow ✅ MERGED (PR #13); CI gerçek run ⏳ operator |
 | 2+ standalone device evidence (A1 multi-VM) | Karma | docs/evidence 0.5g + operator 0.5-1g/device | cihaz temini (gerçek veya Parallels VM) + local admin + backend reachability | ⏳ pending (mevcut 1 VM HALILKOOLUB735) |
 | 24-72h soak observation | Karma | metric/query 1-2g + wall-clock 1-3g | heartbeat visibility + offline threshold + command/result query | ⏳ pending (Prometheus/Grafana setup öncesi DB-direct query) |
-| Identity classification (A1-A4 detection) | Agent-actionable ama capability eksik | agent 2-4g + backend 1-2g | `AG-021` + `AG-022` + `BE-015` + privacy schema | ⏳ pending (TRACKING-ROADMAP backlog) |
+| Identity classification (A1-A4 detection) | Karma | backend 1-2g + pilot evidence | `BE-015` + privacy schema + signed/pilot gates; AG-021/AG-022 source ready | 🟡 partial (agent source/live-read-only evidence MERGED platform-agent #17; backend compliance API + pilot rollup pending) |
 | Signed distribution | Karma / operator-heavy | agent CI 2-4g + Azure/owner 0.5-2g | `SEC-001` + `SEC-002` + Authenticode cert + timestamp + release channel | ⏳ pending (AG-018/AG-024 backlog; ADR pre-req docs) |
 | KVKK boundary (A2 BYOD prerequisite) | Karma / operator / legal | docs 0.5-1g + `BE-019` 2-5g | data inventory + retention + erasure/anonymization + DPO/legal approval | ⏳ pending (BE-019 backlog) |
 | A2 BYOD consent flow + uninstall self-service | Operator + agent | operator 1-2g + agent docs 0.5g | consent metni + uninstall test | ⏳ pending (BYOD pilot başlamadan önce) |
@@ -1162,9 +1191,9 @@ Per pilot evidence PR:
 
 ## 18. Sıradaki adımlar (post-runbook merge)
 
-1. **CI script extension**: `scripts/test/parallels-windows11-ci.sh` non-domain classification precheck genişletmesi (Codex Q8 + §8.2 önerisi) — ayrı PR
+1. **CI script real run**: self-hosted Mac runner ile `parallels-windows11-smoke.yml` gerçek run + artifact/evidence doc (platform-agent #12 hâlâ Needs Verify)
 2. **Yeni board issue**: "Faz 22.2.A non-domain pilot — A1 multi-VM repeatability" (mevcut HALILKOOLUB735 + 2 yeni Parallels VM evidence; 24h soak)
-3. **TRACKING-ROADMAP backlog unlock**: AG-021 (identity inventory) + AG-022 (logged-in identity) + AG-024 (signed manifest) + BE-015 (identity compliance API) + BE-019 (KVKK retention) priority bump
+3. **TRACKING-ROADMAP kalan unlock**: AG-024 (signed manifest) + BE-015 (identity compliance API) + BE-019 (KVKK retention) priority bump; AG-021/AG-022 source/live-read-only platform-agent #17 ile geldi
 4. **A2 BYOD prerequisite docs**: `docs/22-2-byod-consent-template.md` (Turkish + English) + `docs/22-2-kvkk-data-inventory.md` (DPO sign-off için)
 5. **Signed distribution pre-req docs**: ADR-0012-EA "22.2 pre-req docs" listesi (7 item) `docs/22-2-trusted-signing-onboarding.md` follow-up
 6. **22.2.A pilot kabul evidence chain**: gate matrix §13 her item için ayrı evidence PR

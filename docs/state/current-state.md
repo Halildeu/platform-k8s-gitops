@@ -2269,7 +2269,7 @@ Bu yüzdeler teslim taahhüdü değil, kanıt-ağırlıklı takip göstergesidir
 - "Test runtime Up + basic Functional/fail-closed kanıtlandı."
 - "GitOps desired/live digest hizalı."
 - "Backend source canonical main'de MERGED (H1+H2 2026-05-22); D29-EA Secured (synthetic+Live JWT 6/6) VERIFIED LIVE; BE-011 agent live integration + D35-EA audit variants smoke ayrı kapı."
-- "Agent Windows MVP foundation kanıtlı; backend live integration, identity inventory ve trusted signing pending."
+- "Agent Windows MVP foundation kanıtlı; AG-021/AG-022 identity inventory/classification source + HALILKOOLUB735 read-only evidence MERGED in platform-agent #17; BE-015 backend compliance surface, trusted signing ve pilot soak pending."
 - "C.5.persona Live JWT 6/6 matrix VERIFIED + DB audit row LIVE."
 - "BE-014A Functional 5/5 HMAC smoke VERIFIED LIVE on test deployment 2026-05-22T09:52Z; 4 deny audit event types EMITTING + 7 DB audit rows + durability invariant live-runtime proven; BE-011 full lifecycle + BE-016 hash-chain ayrı kapı."
 
