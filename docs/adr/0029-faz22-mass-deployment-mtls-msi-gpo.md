@@ -1,9 +1,9 @@
 # ADR-0029 — Faz 22 Endpoint Agent Mass Deployment: mTLS self-enroll + AD CS code signing + MSI + GPO
 
-**Status:** Proposed (Plan A, owner-approved 2026-05-26, iter-4 Codex REVISE absorbed F1-F5; iter-5 review pending)
+**Status:** Proposed (Plan A, owner-approved 2026-05-26, iter-5 Codex REVISE 4 finding absorbed; iter-6 review pending)
 **Decision date:** 2026-05-26
 **Authors:** Halil Koçoğlu, AI agent (Claude)
-**Cross-AI review:** Codex (OpenAI) review chain — thread `019e665f` (iter-1 REVISE 10 finding + iter-2 REVISE 6 high/medium + 6 yeni risk → iter-3 absorbed); thread `019e667f` (iter-4 REVISE 5 finding F1-F5 → iter-5 absorb this commit, review pending)
+**Cross-AI review:** Codex (OpenAI) review chain — thread `019e665f` (iter-1 REVISE 10 finding + iter-2 REVISE 6 high/medium + 6 yeni risk → iter-3 absorbed); thread `019e667f-98a5-7980-8f80-613fc1a1ed82` (iter-4 REVISE 5 finding F1-F5 → iter-5 absorb commit f45b7a2; iter-5 REVISE 4 finding F1-F4 → iter-6 absorb this commit; iter-6 review pending)
 **Scope addition statement:** Bu ADR **ADR-0012 §22.2'yi AMEND ETMEZ ve §22.3 Restricted (historical, ex-22.3 renamed 2026-05-26 → §22.4 Restricted) tier'ını SUPERSEDE ETMEZ** — mevcut 22.2.A non-domain primary + 22.2.B `acik.local` opsiyonel scope kararı **KORUNUR**; eski "22.3 Restricted" tier (advanced production pilot) ADR-0012'de §22.4 Restricted olarak yeniden numaralandırıldı (semantik aynı, Faz numbering note bkz ADR-0012 §22.3 scope addition öncesi). Bu ADR Faz 22 portföyüne **22.3 olarak YENİ scope (mass deployment)** ekler: domain-joined Windows fleet'i için **mass deployment via mTLS + AD CS + MSI + GPO Software Installation** kanalı. 22.2.A workgroup pattern (SRB-AIDENETIMPC + benzer) **AYRI PATH** olarak korunur (AnyDesk + manual install via PR #1070 evidence). PLAN.md + ADR-0012 + RB headers truth-sync **bu iter-4 absorb içinde aynı PR'da** yapılır.
 **Related:**
 - ADR-0012-EA Endpoint Admin Governance Charter (§22.2 scope amendment 2026-05-24 + §22.3 scope ADDITION 2026-05-26 — bu ADR scope addition; eski §22.3 Restricted tier §22.4'e renamed)
@@ -116,7 +116,7 @@ Faz 22 endpoint agent 800 PC mass deployment için aşağıdaki **6-katman** mim
 | **P0-20** | **Proxy/TLS inspection** | Corp proxy/TLS inspection AD CS root cert intercept etmez (mTLS handshake passthrough) | mitmproxy/Wireshark veya proxy config inspect |
 | **P0-21** | **Egress firewall (mTLS host)** | Corp PC subnet → `endpoint-agent-mtls.testai.acik.com` (port 443 standart SNI) egress allow | Test PC TCP probe |
 | **P0-22** | **Fleet TPM readiness sample** | 10 PC sample → `Get-Tpm` Enabled + Ready ratio (≥95% expected); ratio düşükse mass deploy scope reduce | PowerShell sample |
-| **P0-23** | **Cert SAN URI:adcomputer:{objectGUID} verify (iter-4 F2)** | Test PC machine cert mint edildikten sonra `certutil -store -enterprise -user MY <thumbprint>` → output SAN section'da `URL=adcomputer:<guid>` extension'ı mevcut; **plus** doğrulama: `(Get-ADComputer $env:COMPUTERNAME -Properties objectGUID).objectGUID` ile cert SAN URI içindeki GUID match etmeli (renewal-safe binding garanti) | certutil + Get-ADComputer cross-check |
+| **P0-23** | **Cert SAN URI:adcomputer:{objectGUID} verify (iter-4 F2 + iter-6 F1 absorb)** | Test PC machine cert mint edildikten sonra `certutil -store -enterprise My <thumbprint>` (LocalMachine\My store, `-user` flag YOK — machine cert) → output SAN section'da `URL=adcomputer:<guid>` extension'ı mevcut; **plus** doğrulama: DirectorySearcher (RSAT-free) ile `objectGUID` LDAP query + cert SAN URI içindeki GUID match etmeli (renewal-safe binding garanti) | certutil LocalMachine\My + DirectorySearcher cross-check |
 
 **P0 fail** → **mass deploy fire YASAK**. Önce P0 fail noktası fix.
 
@@ -144,22 +144,32 @@ Install-AdcsCertificationAuthority -CAType EnterpriseRootCA `
 #  - Cryptography tab: Provider "Microsoft Platform Crypto Provider" (TPM-only)
 #  - Issuance Requirements: TPM attestation required
 #
-# 4. Custom URI:adcomputer:{objectGUID} SAN extension — GPO startup script mekanizması (iter-4 F2)
+# 4. Custom URI:adcomputer:{objectGUID} SAN extension — GPO startup script mekanizması
+#    (iter-4 F2 absorb + iter-6 F1 absorb: RSAT-free DirectorySearcher + 3-step certreq -new/-submit/-accept)
 # Standart AD CS template Auto-Enrollment URI extension'ı dinamik objectGUID ile basamaz.
 # Çözüm: GPO Computer Configuration > Startup Scripts > PowerShell:
 #   Enroll-EndpointAgentCert.ps1 (deploy via GPO scope same as MSI):
 #
-#   $machine = Get-ADComputer $env:COMPUTERNAME -Properties objectGUID -ErrorAction Stop
-#   $guid = $machine.objectGUID.ToString().ToLower()
+#   # RSAT-free: DirectorySearcher (built-in .NET, no PSModule dependency)
+#   $searcher = [System.DirectoryServices.DirectorySearcher]::new()
+#   $searcher.Filter = "(&(objectClass=computer)(name=$env:COMPUTERNAME))"
+#   $searcher.PropertiesToLoad.Add("objectGUID") | Out-Null
+#   $result = $searcher.FindOne()
+#   if (-not $result) { Write-Error "Computer object not found in AD"; exit 1 }
+#   $guidBytes = $result.Properties["objectguid"][0]
+#   $guid = ([System.Guid]::new($guidBytes)).ToString().ToLower()
+#
 #   $domain = (Get-WmiObject Win32_ComputerSystem).Domain
 #   $dnsName = "$($env:COMPUTERNAME).$domain"
+#
+#   # Idempotent: skip if existing machine cert with matching SAN URI exists
 #   $existingCert = Get-ChildItem Cert:\LocalMachine\My | Where-Object {
 #       $_.Subject -like "CN=$dnsName*" -and
-#       $_.Extensions | Where-Object { $_.Oid.Value -eq "2.5.29.17" -and ($_.Format($false) -match "URI=adcomputer:$guid") }
+#       $_.Extensions | Where-Object { $_.Oid.Value -eq "2.5.29.17" -and ($_.Format($false) -match "URL=adcomputer:$guid") }
 #   }
-#   if ($existingCert) { exit 0 }  # idempotent
+#   if ($existingCert) { exit 0 }
 #
-#   # certreq.exe -enroll -inf with dynamic SAN URI:adcomputer:<guid>
+#   # certreq 3-step flow (valid syntax: -new → -submit → -accept)
 #   $inf = @"
 #   [NewRequest]
 #   Subject = "CN=$dnsName"
@@ -179,9 +189,23 @@ Install-AdcsCertificationAuthority -CAType EnterpriseRootCA `
 #   _continue_ = "URL=adcomputer:$guid"
 #   "@
 #   $infFile = "$env:TEMP\endpoint-agent-cert.inf"
+#   $reqFile = "$env:TEMP\endpoint-agent-cert.req"
+#   $cerFile = "$env:TEMP\endpoint-agent-cert.cer"
 #   $inf | Out-File -FilePath $infFile -Encoding ASCII -Force
-#   certreq.exe -enroll -machine -q -f -config "ACIKDC01\ACIK Endpoint CA" -inf $infFile
-#   Remove-Item $infFile -Force
+#
+#   # Step 1: -new (create request from INF)
+#   certreq.exe -new -q -f $infFile $reqFile
+#   if ($LASTEXITCODE -ne 0) { Write-Error "certreq -new failed"; exit 1 }
+#
+#   # Step 2: -submit (submit to CA, get cert)
+#   certreq.exe -submit -q -f -config "ACIKDC01\ACIK Endpoint CA" $reqFile $cerFile
+#   if ($LASTEXITCODE -ne 0) { Write-Error "certreq -submit failed"; exit 1 }
+#
+#   # Step 3: -accept (install cert to LocalMachine\My with private key binding)
+#   certreq.exe -accept -q -f -machine $cerFile
+#   if ($LASTEXITCODE -ne 0) { Write-Error "certreq -accept failed"; exit 1 }
+#
+#   Remove-Item $infFile, $reqFile, $cerFile -Force -ErrorAction SilentlyContinue
 #
 # 5. Auto-renewal — GPO Computer Schedule Task (deploy via same GPO):
 #   Trigger: At 03:00, daily; Action: PowerShell -File Enroll-EndpointAgentCert.ps1
@@ -326,6 +350,16 @@ Response (200):
 // Right: --api-url=https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin
 endpoint-agent --auto-enroll [--api-url=https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin]
 
+// iter-6 F4 absorb: jitter config from registry (MSI persisted to HKLM)
+// MSI writes EnrollmentJitterSeconds to HKLM\SOFTWARE\EndpointAgent at install time
+// Agent service startup reads + applies random delay BEFORE auto-enroll call
+jitterSec := readRegistryInt("HKLM:\\SOFTWARE\\EndpointAgent", "EnrollmentJitterSeconds", 0) // 0 = no jitter
+if jitterSec > 0 && !configExists() {
+    delay := time.Duration(rand.Intn(jitterSec)) * time.Second
+    log.Printf("auto-enroll jitter: sleeping %v (R26 mass enrollment storm mitigation)", delay)
+    time.Sleep(delay)
+}
+
 // First-run logic (mTLS-continuous, NOT token-only)
 if !configExists() {
     cert := loadMachineCertFromWindowsStore() // Personal store, EndpointAgent-MachineCert template OID
@@ -434,6 +468,8 @@ if certExpiresIn(7 * 24 * time.Hour) {
             <RegistryKey Root="HKLM" Key="SOFTWARE\EndpointAgent" Action="createAndRemoveOnUninstall">
               <RegistryValue Name="ApiUrl" Type="string" Value="[APIURL]" />
               <RegistryValue Name="Version" Type="string" Value="0.2.0" />
+              <!-- iter-6 F4 absorb: jitter property persist HKLM so agent service can read -->
+              <RegistryValue Name="EnrollmentJitterSeconds" Type="integer" Value="[ENROLLMENTJITTERSECONDS]" />
             </RegistryKey>
           </Component>
         </Directory>
@@ -631,7 +667,7 @@ New-GPLink -Name "EndpointAgent Mass Deployment" `
 | **R21** | **Scope truth drift** — ADR-0029 ↔ PLAN.md/ADR-0012/RB-faz22 supersedence dili belirsizliği | Bilinen | High | ADR üst kısmı scope amendment statement explicit; iter-3 absorb PR'a PLAN.md + ADR-0012 + RB header truth-sync ekle |
 | **R22** | **mTLS route split** — admin/browser API JWT-only, device API mTLS-mandatory; route mismatch admin'i kırabilir | Yüksek | High | Ayrı Ingress + SNI host (`endpoint-agent-mtls.testai.acik.com`) + Service; admin traffic mevcut nginx ingress; Phase 0 P0-13 canlı smoke gate |
 | **R23** | **CN-to-AD identity binding** — Cert subject CN unique değil (CN reuse, rejoin, stale obj), SID/GUID extraction zinciri zayıf | Yüksek | High | Cert SAN extension `URI:adcomputer:{objectGUID}` template ile mint; fallback CN→LDAPS lookup + reuse guard (SID mismatch → AUTO_ENROLL_DENIED + alert); P0-16 backend LDAPS gate |
-| **R24** | **Token refresh outage cascade** — 24h short-lived + ingress fault + CRL outage simultaneous → 800 cihaz offline cascade | Orta | High | **İki davranış AYRI uygulanır (iter-4 F3 absorb)**: **(a) Enrollment-time** (yeni cert validation): CRL fail → **fail-closed default** (yeni cihaz enroll reddedilir, P0-14 expected behavior); **(b) Already-enrolled** (token refresh / heartbeat): CRL fail → backend `grace_until = cert_expiry + 24h`; agent heartbeat response'unda `grace_window: true` + `grace_until` field iletilir; agent service continues; **fail-closed sadece grace_until aşıldıktan sonra** (cihaz offline state). Plus: Phase 1 acceptance fault injection tests (3 senaryo: forced token expiry, ingress mTLS fault, CRL outage); agent exponential backoff (1-2-4-8-16dk caps 60dk); CRL outage anında **batch alert** (>%10 device grace state)。 Token TTL 24h cert-expiry'den daha kısa olduğu için cert hâlâ valid + CRL inaccessible durumunda already-enrolled hosts grace window ile sağ kalır |
+| **R24** | **Token refresh outage cascade** — 24h short-lived + ingress fault + CRL outage simultaneous → 800 cihaz offline cascade | Orta | High | **İki davranış AYRI uygulanır (iter-4 F3 absorb + iter-6 F2 absorb)**: **(a) Enrollment-time** (yeni cert validation): CRL fail → **fail-closed default** (yeni cihaz enroll reddedilir, P0-14 expected behavior); **(b) Already-enrolled** (token refresh / heartbeat): CRL fail → backend `grace_until = min(cert_not_after, last_good_revocation_check + 24h)` — 24h grace yalnız last good CRL check'inden itibaren; cert_not_after hard cap (cert zaten expired ise grace_window OFF, fail-closed enforced). Long-lived certs (2 yıl) için CRL outage 24h'den uzun sürerse fail-closed enforced; grace yıllarca uzayamaz. Agent heartbeat response'unda `grace_window: true` + `grace_until` field iletilir; agent service continues; **fail-closed sadece grace_until aşıldıktan sonra** (cihaz offline state). Plus: Phase 1 acceptance fault injection tests (3 senaryo: forced token expiry, ingress mTLS fault, CRL outage); agent exponential backoff (1-2-4-8-16dk caps 60dk); CRL outage anında **batch alert** (>%10 device grace state)。 Token TTL 24h cert-expiry'den daha kısa olduğu için cert hâlâ valid + CRL inaccessible durumunda already-enrolled hosts grace window ile sağ kalır |
 | **R25** | **Fleet TPM/CA trust/EDR readiness** — TPM disable/EDR block/Trusted Publisher missing %5'i geçerse mass deploy fail explode | Orta | High | P0-22 fleet TPM sample (≥95%); P0-18 EDR allowlist + WDAC; P0-19 Trusted Publisher store; ratio düşükse scope reduce |
 | **R26** | **Aggregate enrollment storm** — 800 PC simultaneous boot (Monday morning) backend overload | Orta | Medium | Wave 200/gün; backend horizontal autoscale; rate limit per SID + aggregate throttle (rolling window 1dk); **agent startup jitter** (iter-4 F5 absorb): MSI sadece `ENROLLMENTJITTERSECONDS` property write (registry/config dosyasına); agent service startup'ta config'den okur, `time.Sleep(rand.Intn(jitterSec) * time.Second)` uygular auto-enroll call'undan önce. **WiX CustomAction Type 51 yaklaşımı yanlıştır** (Type 51 property set pattern, command execution değil; ayrıca After="StartServices" Sleep service startup'tan sonra çalışırdı → agent çoktan koşmaya başlamış olur). Tek doğru pattern: jitter agent process içinde, MSI sadece config taşır. |
 
@@ -723,7 +759,7 @@ Plus P0-5 vs P0-15 ayrımı net:
 - [ ] Cert renewal scenario tested (1 PC manuel renewal trigger, SID stable dedupe verify, no duplicate device)
 - [ ] **Forced token-expiry test** (R24): 1 PC token TTL'i 5dk'a düşür, agent refresh PASS
 - [ ] **Ingress mTLS fault injection** (R24): nginx ingress restart sırasında agent backoff + recovery PASS
-- [ ] **CRL outage scenario** (R24, R16, F3 absorb — 2 sub-scenario AYRI verify): (a) **Enrollment-time**: CRL endpoint disable 30sn, yeni PC enroll attempt → backend reddetmeli (fail-closed default); (b) **Already-enrolled**: CRL endpoint disable 30sn sırasında mevcut 5 PC heartbeat continue + `grace_window: true` + `grace_until` field iletilir; grace_until aşılana kadar fail-closed YOK; sonra fail-closed PASS. Batch alert >%10 device grace state'de tetiklenir verify.
+- [ ] **CRL outage scenario** (R24, R16, F3 absorb + F2 iter-6 absorb — 2 sub-scenario AYRI verify): (a) **Enrollment-time**: CRL endpoint disable 30sn, yeni PC enroll attempt → backend reddetmeli (fail-closed default); (b) **Already-enrolled**: CRL endpoint disable 30sn sırasında mevcut 5 PC heartbeat continue + `grace_window: true` + `grace_until` field iletilir; **grace_until formula `min(cert_not_after, last_good_revocation_check + 24h)`** — 24h hard cap (cert_expiry değil), long-lived cert + uzun CRL outage senaryosunda fail-closed enforced. Batch alert >%10 device grace state'de tetiklenir verify. **Test scenario**: 2 PC cert near-expiry simülasyon — grace window cert_expiry'den önce kapanmalı.
 - [ ] **Workgroup PC (SRB-AIDENETIMPC) Phase 1 dışı** — ayrı AnyDesk path korunur
 - [ ] **REMOVED: Codex AGREE acceptance gate** (governance precondition only, not runtime)
 - [ ] **Phase 1 backend-only** — UI grid render bug task #175 paralel, Phase 1 fail nedeni değil
@@ -789,7 +825,7 @@ Plus P0-5 vs P0-15 ayrımı net:
 
 - ✅ **Pre-Production Full Authority**: agent end-to-end koşar
 - ✅ **No Closure Language**: "kapandı/bitti" yok
-- ✅ **Cross-AI Peer Review**: Codex (OpenAI) cross-provider review chain (thread 019e665f iter-1/2/3 absorbed + thread 019e667f iter-4 REVISE F1-F5 absorbed in this commit; iter-5 review pending)
+- ✅ **Cross-AI Peer Review**: Codex (OpenAI) cross-provider review chain (thread 019e665f iter-1/2/3 absorbed + thread 019e667f-98a5-7980-8f80-613fc1a1ed82 iter-4 + iter-5 REVISE all 9 finding F1-F5 + F1-F4 absorbed; iter-6 review pending)
 - ✅ **No Fake Work**: 9 saatlik AGENTPC2 deneyimi transparent ifade, Phase 0 P0-1..22 evidence gate + denominator T0 freeze ile sahte yeşil önle
 - ✅ **CI Kırmızıyken Merge YASAK**: ADR PR governance check'leri yeşil bekleniyor
 - ✅ **Admin Merge YASAK**: normal squash merge, CI yeşil sonrası
@@ -798,3 +834,4 @@ Plus P0-5 vs P0-15 ayrımı net:
 - ✅ **Iter-2 REVISE absorbed (Codex 6 high/medium + 6 yeni risk)**: scope amendment statement + mTLS route split (DEVICE_API_BASE_URL, ayrı SNI) + identity SAN extension + token rotation soak/fault tests + P0 expansion (15-22) + denominator T0 freeze + UI Phase 1 backend-only karar + R21-R26 risk register
 - ✅ **Iter-3 REVISE absorbed (Codex 5 finding)**: truth-sync MERGE BLOCKER (PLAN.md + ADR-0012 + 2 RB header) + mTLS URL canonical (endpoint-agent-mtls.testai.acik.com) + backend processing step 9 SAN-primary identity + AD CS template SAN extension instructions + Phase 0 P0-1..P0-22 + Phase 2 UI HARD GATE + denominator T0 freeze + R24 24h grace + R26 WiX jitter (initial) + scope addition statement
 - ✅ **Iter-4 REVISE absorbed (Codex 5 finding F1-F5, this commit)**: F1 mTLS canonical URL Option A (APIURL full base path with /api/v1/endpoint-admin canonical in agent flag + Go pseudo-code + MSI WiX Property + manual install command + P0-12) + F2 AD CS SAN URI:adcomputer:{objectGUID} executable mekanizma (GPO startup script + certreq.exe -enroll -inf + dynamic Get-ADComputer objectGUID lookup + AutoEnrollment GPO; P0-23 verify gate eklendi) + F3 R24 2-davranış ayrımı (enrollment-time fail-closed default + already-enrolled grace_until=expiry+24h) + F4 scope addition truth-sync homojen (ADR-0029:9 Related "scope ADDITION" + ADR-0012 eski 22.3 Restricted→22.4 Restricted rename via subagent + RB-non-domain SAN URI invariant 22.3 path-only kısıtlandı + ADR-0029:7 scope addition statement broadened) + F5 R26 WiX CustomAction yanlış (Type 51 property set, command değil; jitter agent service startup'a taşındı; MSI sadece ENROLLMENTJITTERSECONDS property pass-through)
+- ✅ **Iter-5 REVISE absorbed (Codex 4 finding F1-F4, this commit)**: F1 GPO + certreq executable mekanizma (RSAT-free DirectorySearcher LDAP query + certreq 3-step -new/-submit/-accept valid flow + P0-23 LocalMachine\My store) + F2 R24 grace_until bounded formula (`min(cert_not_after, last_good_revocation_check + 24h)` — long-lived cert + uzun CRL outage senaryosunda fail-closed enforced, grace yıllarca uzayamaz) + F3 ADR-0012 identity model PARTIAL invariant (22.2.A non-domain AD computer object yok → SAN URI geçersiz; 22.2.B small-scale manual cert; 22.3 SAN URI primary; backend/audit ortak invariant) + F4 WiX RegistryEntries EnrollmentJitterSeconds persist (HKLM\SOFTWARE\EndpointAgent registry value) + agent service startup config read (rand jitter sleep)

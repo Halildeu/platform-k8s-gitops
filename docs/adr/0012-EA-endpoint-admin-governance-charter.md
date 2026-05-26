@@ -416,7 +416,11 @@ Faz 22 sub-track numbering reassignment:
 
 - **Tek backend** (`endpoint-admin-service`) — 22.2.A/22.2.B/22.3 hepsi aynı `https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin` canonical Device API base'i kullanır
 - **Tek agent codebase** (`platform-agent`) — `--auto-enroll` flag 22.3 için MSI ile yüklenir, 22.2.A/B manual install'da CLI invocation
-- **Tek identity model** — SAN URI primary, GUID renewal-safe; manual install bearer-then-mTLS-cert pattern, 22.3 mTLS-cert-only auto-enroll
+- **Identity model: PARTIAL invariant — backend/audit ortak, enrollment binding farklı**:
+  - **22.2.A non-domain primary** (workgroup/BYOD): AD computer object YOK → SAN URI:adcomputer:{guid} mekanizması GEÇERSİZ; manual single-use bearer token enrollment + future cert-based identity (TPM machine cert ile self-signed veya AD CS bypass — şu an açık)
+  - **22.2.B `acik.local` opsiyonel IT pilot**: domain-joined manual installer ile bearer-then-mTLS-cert pattern (22.3 öncesi pattern; small-scale, AD CS template kullanılabilir ama small-scale için manual cert mint OK)
+  - **22.3 domain-wide mass deployment**: AD CS SAN URI:adcomputer:{objectGUID} primary (GPO startup script + certreq 3-step flow + DirectorySearcher RSAT-free); mTLS-cert-only auto-enroll
+  - **Common**: backend processing step 9 stable identity (22.3 SAN URI; 22.2.A/B bearer-derived device_id); audit chain BE-016 + BE-017 ortak
 - **Tek audit chain** — BE-016 hash-chain + BE-017 dual-control 22.3 destructive command'lerde de uygulanır (no scope-specific bypass)
 - **Test persona ayrı** — HARD RULE — Kullanıcı Aktif Credential'ına Dokunma YASAK: 22.3 pilot smoke için Halil'in kendi domain user'ı (`halilkocoglu@acik.local`) kullanılmaz; test persona (örn. `endpoint-agent-test-1` machine account + smoke service account) ile sınırlı
 
