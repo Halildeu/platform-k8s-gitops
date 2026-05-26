@@ -101,7 +101,7 @@ D35-EA ladder:
 |---|---|---|
 | Faz 22.1 Lab | Self-signed kabul (`lab-only-evidence` flag ile) | Lab self-signed cert (Parallels lab içinde geçerli) |
 | Faz 22.2 IT-owned pilot | **Authenticode trusted signing ŞART** | **Azure Trusted Signing** (default tercih) |
-| Faz 22.3 Restricted | Authenticode + EDR allowlist + audit | Azure Trusted Signing veya alt. (DigiCert KeyLocker, Azure Key Vault HSM, on-prem HSM — IT/regülasyon ihtiyacına göre) |
+| Faz 22.4 Restricted (historical, ex-22.3 — renamed 2026-05-26) | Authenticode + EDR allowlist + audit | Azure Trusted Signing veya alt. (DigiCert KeyLocker, Azure Key Vault HSM, on-prem HSM — IT/regülasyon ihtiyacına göre) |
 
 **Önemli (user 2026-05-02 düzeltme)**: Code signing key Vault/ESO **runtime secret olarak taşınmıyor**. Bu supply-chain root-of-trust; **build-time CI pipeline** tarafında imza yapılır:
 - Image manifest sign: cosign + Azure KMS (CI workflow build artifact)
@@ -136,11 +136,11 @@ ADR-0011 analog:
 |---|---|---|---|---|---|
 | **22.1 Lab** | Parallels lab + lab-only AD veya none | Kontrolllü Windows test ortamı, gerçek kullanıcı yok | Lab içi tam destructive test | Self-signed (`lab-only-evidence`) | Local audit yeterli |
 | **22.2 IT-owned pilot** | **`acik.local` domain only** (BOREAS/CESS kapsam dışı) | 1-3 IT-owned domain-joined Windows 10/11 + ayrı `EndpointPilot` OU + test domain user | Agent enrollment + heartbeat + inventory + identity discovery + maintenance token akışı (read + benign + scoped destructive) | **Authenticode trusted signing ŞART** (Azure Trusted Signing) | Audit immutable storage |
-| **22.3 Restricted** | acik.local + (sonra) BOREAS/CESS | Sınırlı gerçek kullanıcı/canlı cihaz | Code signing + EDR allowlist + audit + rollback + IT onayı şart | Authenticode + supply-chain pipeline | Full audit + dual-control |
+| **22.4 Restricted (historical, ex-22.3 — renamed 2026-05-26)** | acik.local + (sonra) BOREAS/CESS | Sınırlı gerçek kullanıcı/canlı cihaz | Code signing + EDR allowlist + audit + rollback + IT onayı şart | Authenticode + supply-chain pipeline | Full audit + dual-control |
 
 **Şu an scope**: Sadece `acik.local`. **`BOREAS` ve `CESS` Faz 22.1/22.2 dışı** (3-domain inventory ID-001 altında future expansion).
 
-**Faz 22.2 password reset**: scope-locked — `acik.local` only. Faz 22.3'e kadar:
+**Faz 22.2 password reset**: scope-locked — `acik.local` only. Faz 22.4'e kadar (historical numbering — eski 22.3 Restricted artık 22.4 Restricted, §22.3 scope addition mass deployment kanalı ile ayrı):
 - `local Windows` (NTLM, agent local) ✓
 - `AD acik.local` (LDAP scoped query) ✓
 - Entra → out of scope (BOREAS/CESS hibrit gerek)
@@ -151,8 +151,8 @@ ADR-0011 analog:
 (D35-EA-5 destructive sınıfı, **Faz 22.2'den itibaren**):
 - **Lokal Windows** (NTLM, agent-side) — Faz 22.1 lab + Faz 22.2 pilot
 - **AD `acik.local`** (LDAP scoped query) — Faz 22.2 pilot
-- **Entra (Azure AD Graph API)** — Faz 22.3+ (BOREAS/CESS hibrit gerektirir)
-- **M365 (Microsoft Graph API)** — Faz 22.3+ (aynı)
+- **Entra (Azure AD Graph API)** — Faz 22.4+ (historical, ex-22.3+) (BOREAS/CESS hibrit gerektirir)
+- **M365 (Microsoft Graph API)** — Faz 22.4+ (historical, ex-22.3+) (aynı)
 
 ### Identity discovery (parallel read-only, acik.local first)
 
@@ -161,7 +161,7 @@ ADR-0011 analog:
 - AD `acik.local`: LDAP query (sn, givenName, mail, member) — **scoped query**, full forest crawl YOK
 - Probe-based commands: `Get-ADDomain`, `Get-ADForest`, `Get-ADTrust`, `nltest`, `dsregcmd` (agent-side)
 
-**Future expansion (Faz 22.3+)**:
+**Future expansion (Faz 22.4+, historical numbering)**:
 - Entra: Graph API users.list (paginated)
 - M365: Graph API mailboxes.list
 - BOREAS, CESS: 3-domain inventory genişletme
@@ -200,7 +200,7 @@ ADR-0011 analog:
 |---|---|
 | 22.1 Lab | Parallels / kontrollü Windows test ortamı; self-signed `lab-only-evidence` kabul; gerçek kullanıcı yok; password reset YOK |
 | 22.2 IT-owned pilot | `acik.local` domain-joined Windows 10/11 + ayrı `EndpointPilot` OU + 1-3 test cihaz + test domain user; agent enrollment, heartbeat, inventory, identity discovery, maintenance token akışı |
-| 22.3 Restricted pilot | Sınırlı gerçek kullanıcı/canlı cihaz; code signing + EDR allowlist + audit + rollback + IT onayı şart |
+| 22.4 Restricted pilot (historical, ex-22.3) | Sınırlı gerçek kullanıcı/canlı cihaz; code signing + EDR allowlist + audit + rollback + IT onayı şart |
 
 **Şu an scope**: Sadece `acik.local`. **BOREAS ve CESS Faz 22 dışı**.
 
@@ -212,7 +212,7 @@ ADR-0011 analog:
 |---|---|---|
 | 22.1 Lab | Self-signed kabul (`lab-only-evidence` flag ile açıkça işaretli) | Lab self-signed cert |
 | 22.2 IT-owned pilot | **Authenticode trusted signing ŞART** | Azure Trusted Signing (default) |
-| 22.3 Restricted | Authenticode + EDR allowlist + audit + rollback | Azure Trusted Signing veya alt: DigiCert KeyLocker, Azure Key Vault HSM, on-prem HSM (IT/regülasyon ihtiyacına göre) |
+| 22.4 Restricted (historical, ex-22.3) | Authenticode + EDR allowlist + audit + rollback | Azure Trusted Signing veya alt: DigiCert KeyLocker, Azure Key Vault HSM, on-prem HSM (IT/regülasyon ihtiyacına göre) |
 
 **Önemli düzeltme (user 2026-05-02)**: Signing key Vault/ESO **runtime secret olarak taşınmıyor**. Bu supply-chain root-of-trust; ayrı build-time pipeline konusu. ConfigMap `COSIGN_KEY_REF` yalnızca **public key reference** (Azure KMS URI), runtime cosign verify için.
 
@@ -316,7 +316,7 @@ prod-ready / password-reset-ready İDDİA EDİLMEZ — 22.1 test runtime + sourc
 **Acik.local ölçeği**:
 - Toplam ~800 cihaz domain'inde
 - Pilot OU `EndpointPilot`: 1-3 test cihaz (22.2 başlangıç) — minimum 1 cihaz 22.2 unlock için yeter
-- Domain-wide deployment **22.3+ scope** (gradual rollout, EDR allowlist + IT onayı şart)
+- Domain-wide deployment **22.4+ scope (historical, ex-22.3+)** (gradual rollout, EDR allowlist + IT onayı şart)
 
 ## 22.1 invariantları — yapılMAYACAK (Codex revize)
 
@@ -325,7 +325,7 @@ prod-ready / password-reset-ready İDDİA EDİLMEZ — 22.1 test runtime + sourc
 - ❌ **Password reset** (lokal SAM, AD, Entra, M365 — hepsi Faz 22.2+ scope; AG-016 BLOCKED)
 - ❌ **Arbitrary file access** (Desktop/Documents/Downloads whitelist 22.2+; AG-017 RISK gate)
 - ❌ **Destructive command execution** (D35-EA-3/-4/-5 dual-control gate 22.2+)
-- ❌ **BOREAS / CESS** domain işlemleri (initial scope acik.local only; 22.3+)
+- ❌ **BOREAS / CESS** domain işlemleri (initial scope acik.local only; 22.4+ historical, ex-22.3+)
 - ❌ **Trusted signing olmadan EndpointPilot dışı dağıtım** (lab-only-evidence imza Parallels lab cihazlarına yetkilidir, IT-owned cihazlara değil)
 - ❌ **Web MFE** (22.2'de WEB-001 ile başlar)
 - ❌ **Prod overlay endpoint-admin-service aktivasyon** (22.1'de test overlay scope; prod 22.2+)
@@ -392,9 +392,17 @@ prod-ready / password-reset-ready İDDİA EDİLMEZ — 22.1 test runtime + sourc
 - **B2 `acik.local` AD domain-joined** — 22.2.B optional pilot
 - **C Mobile (iOS/Android)** — Faz 22.2 scope dışı; Faz 23.7.b mobile push veya ayrı future device-management fazı
 
+### Faz numbering note (2026-05-26)
+
+Faz 22 sub-track numbering reassignment:
+- **Eski "Faz 22.3 Restricted" tier** (advanced production pilot, code signing + EDR + audit + rollback + IT onay) artık **"Faz 22.4 Restricted"** olarak adlandırılır (semantik aynı, sadece numara değişti).
+- **Yeni "Faz 22.3 scope addition"** (aşağıda) domain-wide mass deployment kanalı için kullanılır (ADR-0029, MSI + AD CS + GPO Software Installation).
+- Tarihsel referanslarda hâlâ "22.3 Restricted" görülebilir; semantik olarak 22.4 Restricted ile eş.
+- Çakışma kuralı: §22.3 = scope addition (mass deployment); 22.4 = restricted tier (historical, ex-22.3).
+
 ## 22.3 scope addition — Domain-wide mass deployment (2026-05-26)
 
-> **User decision 2026-05-26**: 9-saatlik AGENTPC2 (10.9.2.98) GPO Scheduled Task pilot attempt fail oldu (cross-subnet firewall block DC 10.9.10.x → corp PCs 10.9.2.x + GPO Scheduled Task pattern unreliable). Discovery value: corp domain (~800 PC) için **manuel self-install çalışmaz, centralized mass deployment gerekir**. Kullanıcı pivot HYBRID (ManageEngine intermediate) reddetti, **Plan A** seçti (mevcut Faz 22 yapısı korunur + 22.3 domain-wide mass deployment scope ADD). **Bu amendment DEĞİL, ADDITION** — Faz 22.2 scope sub-track'leri (22.2.A non-domain primary + 22.2.B `acik.local` opsiyonel) **olduğu gibi korunur**; 22.3 paralel **üçüncü sub-track** olarak eklenir. Canonical ADR: [`docs/adr/0029-faz22-mass-deployment-mtls-msi-gpo.md`](./0029-faz22-mass-deployment-mtls-msi-gpo.md). Codex strategic thread `019e6667-...` REVISE iter-3 absorb in PR #1078 (gitops, cross-AI peer review chain — provider OpenAI xhigh reasoning effort).
+> **User decision 2026-05-26**: 9-saatlik AGENTPC2 (10.9.2.98) GPO Scheduled Task pilot attempt fail oldu (cross-subnet firewall block DC 10.9.10.x → corp PCs 10.9.2.x + GPO Scheduled Task pattern unreliable). Discovery value: corp domain (~800 PC) için **manuel self-install çalışmaz, centralized mass deployment gerekir**. Kullanıcı pivot HYBRID (ManageEngine intermediate) reddetti, **Plan A** seçti (mevcut Faz 22 yapısı korunur + 22.3 domain-wide mass deployment scope ADD). **Bu amendment DEĞİL, ADDITION** — Faz 22.2 scope sub-track'leri (22.2.A non-domain primary + 22.2.B `acik.local` opsiyonel) **olduğu gibi korunur**; 22.3 paralel **üçüncü sub-track** olarak eklenir. Canonical ADR: [`docs/adr/0029-faz22-mass-deployment-mtls-msi-gpo.md`](./0029-faz22-mass-deployment-mtls-msi-gpo.md). Codex strategic thread `019e665f` (iter-1/2/3 absorbed) + iter-4 review thread `019e667f` REVISE iter-3 absorb in PR #1078 (gitops, cross-AI peer review chain — provider OpenAI xhigh reasoning effort).
 
 ### Sub-scope position (22.2 / 22.3 relationship)
 
@@ -501,8 +509,8 @@ prod-ready / password-reset-ready İDDİA EDİLMEZ — 22.1 test runtime + sourc
 **Boundary statement** (Strateji B post-action):
 - **NOT production-ready** — single VM domain join, single device evidence, no soak, no rollback rehearsal beyond snapshot test
 - **NOT password-reset-ready** — Faz 22.2 scope dışı (BE-017 destructive command fixture-only proven)
-- **NOT domain-wide rollout-ready** — pilot scope 1 IT-owned VM; ~800 device domain rollout Faz 22.3+
-- 22.2.B opsiyonel scope smoke evidence → IT pilot smoke kanıt; bu evidence Faz 22.3 restricted tier veya prod readiness için ön-koşul değil ama path açar
+- **NOT domain-wide rollout-ready** — pilot scope 1 IT-owned VM; ~800 device domain rollout Faz 22.4+ (historical, ex-22.3+)
+- 22.2.B opsiyonel scope smoke evidence → IT pilot smoke kanıt; bu evidence Faz 22.4 restricted tier (historical, ex-22.3) veya prod readiness için ön-koşul değil ama path açar
 
 ### Strategy D decision (2026-05-25) — DC-orchestrated domain-joined PC install (Strategy B revize)
 
@@ -573,12 +581,12 @@ Mac (developer host)
 
 **Boundary statement** (Strategy D post-action, Codex iter-1 HIGH #1 absorb):
 
-- **NOT production-ready** — pilot scope 1-3 lab Windows PC; ~800 device domain rollout Faz 22.3+
+- **NOT production-ready** — pilot scope 1-3 lab Windows PC; ~800 device domain rollout Faz 22.4+ (historical, ex-22.3+)
 - **NOT password-reset-ready** — Faz 22.2.B scope dışı (BE-017 destructive command fixture-only proven)
-- **NOT GPO-mandatory** — pilot install ad-hoc per-target; GPO Software Installation Faz 22.3 production tier
+- **NOT GPO-mandatory** — pilot install ad-hoc per-target; GPO Software Installation Faz 22.4 production tier (historical, ex-22.3)
 - **Trusted Signing MANDATORY pilot install** — Codex iter-1 HIGH #1 düzeltme: 22.2 IT-owned `acik.local` pilot için trusted signing kontratı ADR §138'de zaten **şart**; Strategy D bu kontratı düşürmez. Gerçek install öncesi **signed artifact + Authenticode signature verify hard gate** zorunlu. "A1 SHA-pinned lab-only-evidence" istisnası **Strategy D kapsamında uygulanMAZ** (A1 lab-only-evidence istisnası workgroup Mac Parallels lab smoke için; Strategy D corp PC pilot A1 kapsamı değil).
 - **Real install pre-condition** (yeni hard gate): `signtool verify /pa /v /tw <agent.exe>` PASS + Trusted Signing tenant subject match + RFC 3161 timestamp valid + thumbprint allowlist match (operator runbook §2.4 + EDR ticket evidence)
-- 22.2.B IT pilot smoke kanıt → Faz 22.3 restricted tier önkoşul DEĞİL ama path açar; 22.2.B acceptance multi-PC + 24-72h soak + **signed artifact verify** ile substantive
+- 22.2.B IT pilot smoke kanıt → Faz 22.4 restricted tier (historical, ex-22.3) önkoşul DEĞİL ama path açar; 22.2.B acceptance multi-PC + 24-72h soak + **signed artifact verify** ile substantive
 
 **Strategy D detailed runbook**: bkz `docs/runbooks/RB-faz22-strategy-d-dc-orchestrated-install.md` (this PR scope).
 
@@ -637,7 +645,7 @@ Codex: 1 hafta agresif, **8-10 iş günü daha gerçekçi**. Hedef "22.1 evidenc
 |---|---|---|
 | **22.1 Lab** | `endpoint-agent.exe` + `install.ps1` + `uninstall.ps1` + `endpoint-agent-windows-amd64.zip` + `SHA256SUMS` + `lab-only-evidence` flag | GitHub Releases (private asset) veya repo artifact çıktısı; manuel install lab cihazlarda |
 | **22.2 IT pilot** | Authenticode signed `.exe` + signed zip veya MSI + `release manifest signature` + EDR allowlist info | GitHub Releases (private asset, signed) + RDP/manuel veya `EndpointPilot` OU üzerinden GPO/Intune (IT kontrolü) |
-| **22.3 Restricted** | Signed MSI + signed update manifest + SBOM + SHA256/SHA512 | Intune / GPO / SCCM (kurumsal dağıtım) + signed update manifest + staged rollout |
+| **22.4 Restricted (historical, ex-22.3 — renamed 2026-05-26)** | Signed MSI + signed update manifest + SBOM + SHA256/SHA512 | Intune / GPO / SCCM (kurumsal dağıtım) + signed update manifest + staged rollout |
 
 **GHCR kullanımı**: Container image değil, agent binary için **ana kanal değil** (GitHub Releases öncelikli). Backend container image GHCR'da kalır (deploy workflow değişmez).
 
