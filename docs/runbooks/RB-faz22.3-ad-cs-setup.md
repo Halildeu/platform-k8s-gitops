@@ -1,0 +1,330 @@
+# RB Faz 22.3 — AD CS Infrastructure Setup (DC operator runbook)
+
+> **Status**: PREP (operator runbook — agent scripts ready; IT operator execution required)
+> **Scope**: Faz 22.3 domain-wide mass deployment Katman 1 (AD CS) preflight + GPO infrastructure
+> **Canonical decision**: ADR-0029 (PR #1078 MERGED 2026-05-26) §"Katman 1 — AD CS (Active Directory Certificate Services)"
+> **Tracked by**: [#1079](https://github.com/Halildeu/platform-k8s-gitops/issues/1079) (Task #177 AD CS preflight)
+> **Cross-AI peer review**: Codex (OpenAI) thread `019e667f-98a5-7980-8f80-613fc1a1ed82` iter-7 AGREE (ADR-0029 12 finding F1-F5 + F1-F4 + F1-F3 absorbed)
+
+---
+
+## 1. Amaç
+
+Faz 22.3 domain-wide mass deployment kanalı için DC üzerinde Active Directory Certificate Services (AD CS) infrastructure'ını initialize etmek. Bu runbook:
+
+- AD CS rolünü install + Enterprise Root CA initialize
+- 2 cert template create + publish (machine cert + code signing cert)
+- AutoEnrollment GPO + custom URI SAN extension için GPO startup script deploy
+- Phase 0 P0-1..P0-23 acceptance gate'lerinin bir kısmını kanıtlamaya hazır hale getirme
+- 5 pilot PC için cert mint-ready durum (Phase 1'in source-side ön-koşulu)
+
+**Kapsam dışı (ayrı PR/runbook)**:
+- Backend mTLS endpoint impl (Task #178 — `POST /endpoint-enrollments/auto`, ayrı session/spawn)
+- Agent `--auto-enroll` feature (Task #179 — Go agent, ayrı session/spawn)
+- MSI WiX build + AD CS code signing (Task #180 — operator-bound)
+- GPO Software Installation + 5 PC pilot deploy (Task #181 — operator-bound)
+- 50/800 PC ramp (Task #182 — operator-bound)
+
+---
+
+## 2. Operator Prerequisites
+
+### 2.1 Environment
+
+- Windows Server 2019+ DC (Enterprise Root CA gerek; Standalone yetmiyor)
+- Domain: `acik.local` (canonical; production scope, BOREAS/CESS scope dışı)
+- TPM 2.0 chip (DC'de TPM-backed CA key için; yoksa software key fallback ama R10 risk artar)
+- DC disk free > 5 GB (CRL + cert DB + audit log)
+- IIS Web-Server feature (opsiyonel ama HTTP CRL distribution için önerilir)
+- Backup taken (system state + AD; rollback için)
+
+### 2.2 Operator Permissions
+
+- Domain Admin (GPO create/link + AD object create)
+- Enterprise Admin (cert template create + publish)
+- Schema Admin (cert template schema değişimi gerekirse — duplicate template yeterli, schema mod yok)
+- Local Administrator (DC üzerinde script run)
+
+### 2.3 Pre-Step Verifications (P0-1..P0-22 baseline)
+
+| Gate | Komut | Beklenen |
+|---|---|---|
+| P0-1 | `(Get-WmiObject Win32_ComputerSystem).PartOfDomain` | True (DC'de True; pilot PC'lerde de True olmalı) |
+| P0-11 | `Get-Tpm` | Enabled + Ready (DC'de + pilot PC'lerde) |
+| P0-17 | `w32tm /query /status` | clock skew ≤ 5 dk (Kerberos için kritik) |
+| P0-18 | `gpresult /scope:computer` | AppLocker/WDAC policy snapshot, EDR exclusion list inventory |
+
+Tam P0-1..P0-23 listesi: ADR-0029 §"Phase 0 — Operator Manual Preflight Checklist".
+
+---
+
+## 3. Execution Sequence
+
+### 3.1 Preflight script run (DC üzerinde, Administrator)
+
+```powershell
+# Clone gitops repo veya sadece scripts/faz22-mass-deployment/ dizinini DC'ye kopyala
+cd C:\faz22-mass-deployment\scripts\
+.\ad-cs-preflight.ps1                          # interactive default
+# veya
+.\ad-cs-preflight.ps1 -WhatIf                  # dry-run, görme amaçlı
+.\ad-cs-preflight.ps1 -Step Feature -Force     # tek adım force
+```
+
+Script 10 adımı interactive sırayla yürütür:
+
+1. **Install ADCS-Cert-Authority** Windows feature (PowerShell automated)
+2. **Initialize Enterprise Root CA** `ACIK Endpoint CA` (TPM-backed key, PowerShell automated)
+3. **Create EndpointAgent-MachineCert template** (MMC manual — operator certtmpl.msc)
+4. **Create EndpointAgent-CodeSigning template** (MMC manual)
+5. **Publish templates** to enterprise CA (`certutil -setcatemplates`)
+6. **Configure CRL Distribution Points** (HTTP via IIS — operator manual config)
+7. **Configure AutoEnrollment GPO** (`New-GPO` automated + MMC manual policy enable)
+8. **Deploy enroll-endpoint-agent-cert.ps1** to SYSVOL (script copy automated + GPO startup script link manual)
+9. **Deploy Schedule Task GPO** (daily 03:00 renewal trigger — operator GPMC manual)
+10. **Verify all artifacts** (P0-23 baseline summary)
+
+### 3.2 Template properties (MMC manual — Step 3 detay)
+
+`certtmpl.msc` → `Computer` template Duplicate → `EndpointAgent-MachineCert` properties:
+
+| Tab | Setting | Value |
+|---|---|---|
+| General | Display name | `EndpointAgent-MachineCert` |
+| Compatibility | CA + recipient | Windows Server 2016 + Windows 10 |
+| Cryptography | Provider category | `Key Storage Provider` |
+| Cryptography | Provider | `Microsoft Platform Crypto Provider` (TPM-only) |
+| Cryptography | Key size | 2048 (4096 mümkün ama TPM perf düşer) |
+| Request Handling | Purpose | Signature and encryption |
+| Subject Name | Source | `Build from this Active Directory information` |
+| Subject Name | Format | Common name |
+| Subject Name | Alt name | DNS name (UPN opsiyonel) |
+| Extensions | Application Policies | Client Authentication (1.3.6.1.5.5.7.3.2) |
+| Extensions | Key Usage | Digital Signature + Key Encipherment |
+| Issuance Requirements | TPM attestation | Required (Windows Server 2016+ özelliği) |
+| Security | Domain Computers | Read + Autoenroll (sadece Enroll yetmiyor) |
+
+`EndpointAgent-CodeSigning` template (Step 4):
+
+| Tab | Setting | Value |
+|---|---|---|
+| General | Display name | `EndpointAgent-CodeSigning` |
+| Compatibility | CA + recipient | Windows Server 2016 + Windows 10 |
+| Cryptography | Provider | TPM OK; Hash = SHA256 |
+| Subject Name | Source | `Supply in the request` (manuel certreq) |
+| Extensions | Application Policies | Code Signing (1.3.6.1.5.5.7.3.3) |
+| Issuance Requirements | Signatures required | 1 (CA Manager approval — operator sign-off pipeline) |
+| Security | agent-team-restricted group | Read + Enroll (NOT Autoenroll) |
+
+> **R17 HARD RULE compliance**: code signing private key TPM/HSM-backed Windows signing runner'da kalır. GitHub Actions PFX yok; CA Manager approval ile manuel sign pipeline.
+
+### 3.3 Custom URI:adcomputer:{objectGUID} SAN extension mekanizması
+
+Standart AD CS template auto-enrollment URI extension'ı dinamik objectGUID ile basamaz (iter-4 F2 + iter-5 F1 + iter-6 F1 absorb). Çözüm: GPO startup script + certreq 3-step flow.
+
+**Script**: `scripts/faz22-mass-deployment/enroll-endpoint-agent-cert.ps1`
+
+Davranış (her pilot PC üzerinde boot sırasında ve günlük 03:00):
+
+1. **DirectorySearcher LDAP query** (RSAT-free, built-in .NET): `objectGUID` AD'den oku
+2. **Idempotent check**: existing cert SAN URI:adcomputer:{guid} + NotAfter > 30 gün → skip (exit 0)
+3. **certreq 3-step**:
+   - `certreq -new -q -f $inf $req` — INF'den request oluştur
+   - `certreq -submit -q -f -config "ACIKDC01\ACIK Endpoint CA" $req $cer` — CA'ya gönder
+   - `certreq -accept -q -f -machine $cer` — LocalMachine\My'ye install (TPM-bound private key)
+
+INF içeriği:
+```ini
+[NewRequest]
+Subject = "CN=$dnsName"
+KeySpec = 1
+KeyLength = 2048
+Exportable = FALSE
+MachineKeySet = TRUE
+ProviderName = "Microsoft Platform Crypto Provider"
+RequestType = PKCS10
+
+[RequestAttributes]
+CertificateTemplate = "EndpointAgent-MachineCert"
+
+[Extensions]
+2.5.29.17 = "{text}"
+_continue_ = "dns=$dnsName&"
+_continue_ = "URL=adcomputer:$guid"
+```
+
+**GPO startup script deploy**: SYSVOL `\\acik.local\sysvol\acik.local\scripts\faz22-mass-deployment\enroll-endpoint-agent-cert.ps1`
+
+**GPO link**: Computer Configuration > Policies > Windows Settings > Scripts (Startup/Shutdown) > Startup > PowerShell Scripts tab
+
+**Schedule Task GPO** (renewal): Computer Configuration > Preferences > Control Panel Settings > Scheduled Tasks > New Scheduled Task (Windows 7+)
+- Trigger: Daily 03:00
+- Action: `powershell.exe -ExecutionPolicy Bypass -NoProfile -File \\acik.local\sysvol\acik.local\scripts\faz22-mass-deployment\enroll-endpoint-agent-cert.ps1`
+- Run as: NT AUTHORITY\SYSTEM with highest privileges
+
+---
+
+## 4. Pilot PC verification (P0-23 acceptance)
+
+### 4.1 OU + GPO link
+
+**Pilot OU**: `OU=EndpointPilot,DC=acik,DC=local`
+
+```powershell
+# OU yoksa create
+New-ADOrganizationalUnit -Name "EndpointPilot" -Path "DC=acik,DC=local"
+
+# GPO link
+$gpo = Get-GPO -Name "Faz22.3-EndpointAgent-MachineCertEnroll"
+New-GPLink -Guid $gpo.Id -Target "OU=EndpointPilot,DC=acik,DC=local"
+
+# 5 pilot PC'yi OU'ya taşı (operator IT karar)
+Get-ADComputer -Identity "PILOT-PC-01" | Move-ADObject -TargetPath "OU=EndpointPilot,DC=acik,DC=local"
+# ... PILOT-PC-02..05
+```
+
+### 4.2 GPO refresh + cert mint trigger
+
+```powershell
+# Pilot PC'lerde
+gpupdate /force /target:computer
+# veya boot bekle (90-120 dk gpresult cycle)
+```
+
+### 4.3 P0-23 verify (her pilot PC'de)
+
+```powershell
+# scripts/faz22-mass-deployment/verify-machine-cert.ps1 deploy edip pilot PC'de run
+.\verify-machine-cert.ps1                  # human readable
+.\verify-machine-cert.ps1 -Json            # JSON automation output
+.\verify-machine-cert.ps1 -ExitCodeOnFail  # CI gate
+```
+
+**Beklenen output (PASS)**:
+```
+  Computer:       PILOT-PC-01
+  Domain:         acik.local
+  Domain-joined:  True
+  AD objectGUID:  abc12345-...
+  Cert found:     True
+  SAN URI match:  True
+  Thumbprint:     A1B2C3D4...
+  Days to expiry: 365
+  Template:       EndpointAgent-MachineCert
+  ✓ P0-23 PASS
+```
+
+**FAIL durumları**:
+
+| Symptom | Olasılık | Fix |
+|---|---|---|
+| `Cert found: False` | GPO startup script henüz çalışmadı | `gpupdate /force /target:computer` + reboot + 5dk bekle |
+| `SAN URI match: False` | Cert mint edildi ama URI extension yok | Template `EndpointAgent-MachineCert` published mi? certreq inf doğru mu? |
+| `Days to expiry: <= 0` | Cert expired (template validity period bug) | Template properties → Issuance Requirements → Validity period 1 year+ |
+| `error: PC not domain-joined` | 22.3 scope dışı PC | OU'dan çıkar veya 22.2.A non-domain scope kullan |
+
+### 4.4 Phase 0 acceptance gate
+
+5/5 pilot PC `verify-machine-cert.ps1 -ExitCodeOnFail` exit 0 → P0-23 PASS.
+
+**Plus**: Phase 0 P0-1..P0-22 diğer gate'leri (ADR-0029 §"Phase 0 — Operator Manual Preflight Checklist") tamamlanmalı:
+
+- P0-12 mTLS reachability (corp PC → endpoint-agent-mtls.testai.acik.com:443) — Task #178 backend deploy bekleyebilir
+- P0-13 nginx ingress mTLS passthrough config — gitops PR ayrı
+- P0-14 CRL/OCSP reachability (R24 bounded grace) — IIS CRL distribution (§3.6 manual)
+- P0-15 SYSTEM context UNC share read (PsExec /s) — operator pilot PC test
+- P0-16 backend-to-AD LDAPS reachability — Task #178 dep
+- P0-18 EDR/WDAC/AppLocker baseline (Trusted Publisher AD CS root cert) — operator IT manual
+- P0-19 Trusted Publisher store (LocalMachine\TrustedPublisher) — code signing cert manual deploy
+- P0-21 Egress firewall (corp subnet → endpoint-agent-mtls.testai.acik.com:443) — operator IT manual
+- P0-22 Fleet TPM readiness sample (10 PC ≥95% TPM Enabled+Ready)
+
+Phase 0 fail noktası fix edilmeden Phase 1 5-PC pilot başlatılmaz.
+
+---
+
+## 5. Failure modes + rollback
+
+### 5.1 Common errors
+
+| Error | Cause | Recovery |
+|---|---|---|
+| `Install-AdcsCertificationAuthority: The CA Already Installed` | CA initialize daha önce yapılmış | `certutil -getconfig` ile var olan CA'yı kontrol et; idempotent skip |
+| `Install-AdcsCertificationAuthority: A required privilege is not held` | Enterprise Admin yetkisi yok | Domain Admin + Enterprise Admin login |
+| `certutil -setcatemplates: 0x80094800` | Template AD'de yok | certtmpl.msc'de template create edildi mi? |
+| `enroll-endpoint-agent-cert.ps1: AD lookup failed` | PC domain-joined değil | 22.3 scope dışı; 22.2.A non-domain runbook'a yönlendir |
+| `certreq -submit: CertEnroll::CX509Enrollment::CreateRequest: 0x80094012` | Template permission Domain Computers'da yok | Template Security tab → Domain Computers Autoenroll grant |
+| `certreq -accept: 0x80092004` | Private key binding fail | TPM provider mı? `Microsoft Platform Crypto Provider` template'de seçili mi? |
+| `Get-GPO: A specified directory service object could not be found` | GPO yoktu, runtime yarattık ama scope yanlış | `New-GPO + New-GPLink` order correct |
+
+### 5.2 Full rollback (5 dk içinde)
+
+```powershell
+# 1. GPO unlink + delete
+Remove-GPLink -Name "Faz22.3-EndpointAgent-MachineCertEnroll" -Target "OU=EndpointPilot,DC=acik,DC=local"
+Remove-GPO -Name "Faz22.3-EndpointAgent-MachineCertEnroll" -Confirm:$false
+
+# 2. CRL distribution rollback (IIS site disable)
+# (manual via IIS Manager — Stop Site "crl.acik.local")
+
+# 3. Cert templates unpublish (NOT delete — başka kullanım olabilir)
+certutil -setcatemplates -EndpointAgent-MachineCert,EndpointAgent-CodeSigning
+
+# 4. (DESTRUCTIVE — only if absolute necessity) CA rollback
+# Stop-Service CertSvc
+# Uninstall-AdcsCertificationAuthority -Force
+# Uninstall-WindowsFeature ADCS-Cert-Authority -IncludeManagementTools -Restart
+# Note: CA uninstall AD'deki tüm cert template'leri AFFECT eder
+#       (başka servis kullanıyor olabilir) — DİKKAT
+
+# 5. Pilot PC'lerden cert temizle (operator IT)
+# Foreach pilot PC:
+# Get-ChildItem Cert:\LocalMachine\My | Where { $_.Issuer -like "*ACIK Endpoint CA*" } | Remove-Item
+```
+
+### 5.3 Pilot PC'de cert mint fail
+
+Per-PC investigation:
+```powershell
+# Log dosyası
+Get-Content "C:\ProgramData\faz22.3-enroll-cert.log" -Tail 50
+
+# AD CS event log (DC üzerinde)
+Get-WinEvent -LogName "Application" -ProviderName "Microsoft-Windows-CertificateServicesClient-AutoEnrollment" -MaxEvents 20
+
+# certreq retry manual
+\\acik.local\sysvol\acik.local\scripts\faz22-mass-deployment\enroll-endpoint-agent-cert.ps1 -Verbose
+```
+
+---
+
+## 6. Handoff to Faz 22.3 Phase 1 (5 PC pilot)
+
+AD CS preflight + GPO + 5 pilot PC cert mint OK olduğunda:
+
+1. **Backend mTLS endpoint LIVE** (Task #178 — `POST /api/v1/endpoint-admin/endpoint-enrollments/auto`)
+2. **Agent --auto-enroll feature** built + signed (Task #179 + Task #180)
+3. **MSI WiX package** AD CS code signing imzalı (Task #180)
+4. **GPO Software Installation** policy create + link `OU=EndpointPilot` (Task #181)
+5. **5 pilot PC reboot** → MSI install fire → agent service start → mTLS auto-enroll → backend `ENDPOINT_AUTO_ENROLLED` audit
+6. **Phase 1 acceptance gate** ADR-0029 §"Phase 1 (5 domain-joined PC pilot)" — 5/5 cert mint + install + heartbeat + command lifecycle + denominator T0 freeze + R24 CRL outage 2 sub-scenario verify
+
+Phase 1 PASS → Phase 2 (50 PC IT dept) → Phase 3 (800 PC full).
+
+---
+
+## 7. Cross-AI peer review provenance
+
+| Iter | Verdict | Findings | Absorb commit |
+|---|---|---|---|
+| 1 | REVISE | 10 | `7fe41f2` |
+| 2 | REVISE | 6 + 6 risk | `5a60e6c` |
+| 3 | REVISE | 5 | `98d2527` |
+| 4 | REVISE | 5 (F1-F5) | `f45b7a2` |
+| 5 | REVISE | 4 (F1-F4) | `3e5570f` |
+| 6 | REVISE | 3 (F1-F3) | `4a5531b` |
+| **7** | **AGREE** | — | `731d5b3` (nit) |
+
+Reviewer provider: OpenAI Codex (cross-AI per HARD RULE — implementer Claude Anthropic). Thread: `019e667f-98a5-7980-8f80-613fc1a1ed82`.
+
+ADR-0029 Plan A owner-approved 2026-05-26 ("tam otonom devam et"). MERGED PR #1078 commit `d677511e` (gitops main).
