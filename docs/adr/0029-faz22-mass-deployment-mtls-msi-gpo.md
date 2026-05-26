@@ -1,15 +1,17 @@
 # ADR-0029 — Faz 22 Endpoint Agent Mass Deployment: mTLS self-enroll + AD CS code signing + MSI + GPO
 
-**Status:** Proposed (Plan A, owner-approved 2026-05-26, iter-2 Codex REVISE absorbed)
+**Status:** Proposed (Plan A, owner-approved 2026-05-26, iter-3 Codex REVISE absorbed)
 **Decision date:** 2026-05-26
 **Authors:** Halil Koçoğlu, AI agent (Claude)
-**Cross-AI review:** Codex (OpenAI) thread `019e665f`, iter-1 VERDICT=REVISE (10 spec finding) → iter-2 absorbed
+**Cross-AI review:** Codex (OpenAI) thread `019e665f`, iter-1 REVISE (10 finding) + iter-2 REVISE (6 high/medium + 6 yeni risk) → iter-3 absorbed
+**Scope amendment statement:** Bu ADR **ADR-0012 §22.2 + RB-faz22-non-domain-windows-pilot.md "non-domain primary" kararını AMEND eder** — Faz 22.3 olarak **domain-wide mass deployment** scope eklenir; mevcut 22.2.A non-domain workgroup pattern (SRB-AIDENETIMPC + benzer) **AYRI PATH** olarak korunur (AnyDesk + manual install via PR #1070 evidence pattern). PLAN.md + ADR-0012 + RB headers truth-sync **iter-3 absorb içinde** aynı PR'da yapılır.
 **Related:**
-- ADR-0012-EA Endpoint Admin Governance Charter
-- RB-faz22-non-domain-windows-pilot.md
-- RB-faz22-strategy-d-dc-orchestrated-install.md
-- PR #1070 (SRB-AIDENETIMPC A1 evidence)
+- ADR-0012-EA Endpoint Admin Governance Charter (§22.2 scope amended by this ADR)
+- RB-faz22-non-domain-windows-pilot.md (non-domain path korunur, scope sınırlandırıldı: workgroup-only)
+- RB-faz22-strategy-d-dc-orchestrated-install.md (Strategy D superseded by GPO Software Installation in domain-joined path)
+- PR #1070 (SRB-AIDENETIMPC A1 workgroup pattern, korunur)
 - Codex strategic consult thread `019e634a` (2026-05-26 HYBRID önerisi, owner-rejected)
+- Codex ADR review thread `019e665f` (iter-1 REVISE + iter-2 REVISE + iter-3 absorb)
 
 ---
 
@@ -102,9 +104,17 @@ Faz 22 endpoint agent 800 PC mass deployment için aşağıdaki **6-katman** mim
 | P0-9 | **MSI install Event Log baseline** | Test MSI (1KB no-op) install + Event Log entry verify | Test MSI deploy |
 | P0-10 | **AD CS cert auto-enrollment Event Log** | Test PC `Get-WinEvent -ProviderName "Microsoft-Windows-CertificateServicesClient-AutoEnrollment"` PASS | Event Log |
 | P0-11 | **TPM availability** | `Get-Tpm` test PC'de Enabled + Ready | PowerShell |
-| P0-12 | **mTLS reachability test** | testai.acik.com mTLS port (8443 veya ingress separate) test PC'den TCP açık | Test-NetConnection |
-| P0-13 | **Ingress mTLS termination kanıtı** | nginx ingress mTLS passthrough config kanıt (TLS sonlanma yeri belirsiz olmasın) | Cluster config inspect |
-| P0-14 | **CRL/OCSP reachability** | AD CS CRL URL test PC'den reachable + cache invalidation < 7 gün | curl + certutil |
+| P0-12 | **mTLS reachability test** | DEVICE_API_BASE_URL (örn. `https://endpoint-agent-mtls.testai.acik.com` veya `https://testai.acik.com:8443`) mTLS handshake + no-cert negative test (handshake reject expected) | openssl s_client veya PowerShell mTLS test |
+| P0-13 | **Ingress mTLS termination kanıtı** | nginx ingress mTLS passthrough config + canlı route smoke (request endpoint pod'a kadar mTLS context taşır mı kanıt) | Cluster config inspect + tcpdump/Wireshark veya backend audit cert ext log |
+| P0-14 | **CRL/OCSP reachability** | AD CS CRL URL test PC'den reachable + cache invalidation < 7 gün; **plus CRL outage davranış testi**: CRL endpoint disable + backend response (fail-closed default expected) | curl + certutil + simulated CRL outage |
+| **P0-15** | **SYSTEM context UNC share read** | Test PC `psexec -s cmd /c "dir \\\\ACIKDC01\\endpoint-agent-deploy"` SYSTEM context PASS (admin PSSession değil) | PsExec SYSTEM context |
+| **P0-16** | **Backend-to-AD LDAPS reachability** | Backend pod from cluster network → DC LDAPS (port 636) reachable; service account read computer object SID/GUID | kubectl exec backend pod + ldapsearch |
+| **P0-17** | **Time sync (Kerberos clock skew)** | DC + corp PC ≤ 5 dk clock skew (`w32tm /query /status` veya `Get-Date` cross-check) | w32tm |
+| **P0-18** | **EDR/WDAC/AppLocker baseline check** | Trusted Publisher AD CS root cert AppLocker policy + Defender exclusion install dir + WDAC signer rule (varsa) | gpresult AppLocker + Defender PowerShell |
+| **P0-19** | **Trusted Publisher store** | Test PC `Cert:\LocalMachine\TrustedPublisher` AD CS code signing cert thumbprint mevcut (manuel test install öncesi) | Certificates MMC |
+| **P0-20** | **Proxy/TLS inspection** | Corp proxy/TLS inspection AD CS root cert intercept etmez (mTLS handshake passthrough) | mitmproxy/Wireshark veya proxy config inspect |
+| **P0-21** | **Egress firewall (mTLS port)** | Corp PC subnet → testai.acik.com mTLS port (8443 veya separate SNI) egress allow | Test PC TCP probe |
+| **P0-22** | **Fleet TPM readiness sample** | 10 PC sample → `Get-Tpm` Enabled + Ready ratio (≥95% expected); ratio düşükse mass deploy scope reduce | PowerShell sample |
 
 **P0 fail** → **mass deploy fire YASAK**. Önce P0 fail noktası fix.
 
@@ -160,7 +170,25 @@ Install-AdcsCertificationAuthority -CAType EnterpriseRootCA `
 
 ### Katman 2 — Backend mTLS self-enrollment endpoint (revize)
 
-**Critical Codex finding**: machine_fingerprint backend'in **client cert'ten** türetmesi gerekir, request body'den değil (spoofing prevention).
+**Critical Codex iter-1 finding**: machine_fingerprint backend'in **client cert'ten** türetmesi gerekir, request body'den değil (spoofing prevention).
+
+**Critical Codex iter-2 finding (route/identity)**:
+- **DEVICE_API_BASE_URL** explicit, separate SNI/port (TLS passthrough path-based routing yapamaz)
+- Identity binding: SID/GUID **cert SAN/extension** içinde (otherwise CN reuse/rejoin/stale risk)
+
+**API surface split**:
+
+| Surface | Base URL | mTLS required? | Routing |
+|---|---|---|---|
+| **Device API** (auto-enroll + heartbeat + command poll/result) | `https://endpoint-agent-mtls.testai.acik.com` (veya `https://testai.acik.com:8443`) | ✅ MANDATORY | Separate Ingress + Service, mTLS passthrough |
+| **Admin API** (UI Yönetim > Uç Birimler, command queue, audit query) | `https://testai.acik.com` | ❌ JWT-only | Mevcut nginx ingress, no breaking change |
+
+**Karar**: SNI ayrı host (`endpoint-agent-mtls.testai.acik.com`) — TLS passthrough basit + audit chain net. Ayrı Service + Ingress + Cluster IP, mevcut admin/UI traffic ile çakışmaz.
+
+**Identity binding strategy (revize)**:
+- **Primary**: Cert SAN extension `URI:adcomputer:{objectGUID}` (AD CS template ile mint; certreq policy.inf'de SAN extension)
+- **Fallback**: Subject CN → backend AD LDAPS lookup → SID/GUID (CN reuse guard: rejoin durumunda eski SID match olmazsa **AUTO_ENROLL_DENIED** + alert)
+- **Audit**: thumbprint sadece audit field, identity değil
 
 **Yeni endpoint** (Spring Boot, `endpoint-admin-service`):
 
@@ -529,6 +557,12 @@ New-GPLink -Name "EndpointAgent Mass Deployment" `
 | **R18** | **MSI ProductCode/UpgradeCode/upgrade-on-fallout** | Orta | Medium | WiX MajorUpgrade auto-handle; UpgradeCode FIXED GUID; "Uninstall when out of scope" enabled |
 | **R19** | **APIURL property GPO** — `msiexec APIURL=...` GPO direct pass etmez | Yüksek | Medium | MST transform file (`endpoint-agent-mst-transform.mst`) GPO Modifications tab; Phase 0 P0-9 evidence |
 | **R20** | **Rate limiting NAT/proxy** — `10 req/min per IP` 800 PC yanlış throttle | Orta | Medium | Rate limit **per SID** (cert-derived), IP'den bağımsız |
+| **R21** | **Scope truth drift** — ADR-0029 ↔ PLAN.md/ADR-0012/RB-faz22 supersedence dili belirsizliği | Bilinen | High | ADR üst kısmı scope amendment statement explicit; iter-3 absorb PR'a PLAN.md + ADR-0012 + RB header truth-sync ekle |
+| **R22** | **mTLS route split** — admin/browser API JWT-only, device API mTLS-mandatory; route mismatch admin'i kırabilir | Yüksek | High | Ayrı Ingress + SNI host (`endpoint-agent-mtls.testai.acik.com`) + Service; admin traffic mevcut nginx ingress; Phase 0 P0-13 canlı smoke gate |
+| **R23** | **CN-to-AD identity binding** — Cert subject CN unique değil (CN reuse, rejoin, stale obj), SID/GUID extraction zinciri zayıf | Yüksek | High | Cert SAN extension `URI:adcomputer:{objectGUID}` template ile mint; fallback CN→LDAPS lookup + reuse guard (SID mismatch → AUTO_ENROLL_DENIED + alert); P0-16 backend LDAPS gate |
+| **R24** | **Token refresh outage cascade** — 24h short-lived + ingress fault + CRL outage simultaneous → 800 cihaz offline cascade | Orta | High | Phase 1 acceptance: forced token-expiry test + ingress mTLS fault injection + CRL outage scenario; agent jitter+backoff on refresh fail; backend fail-closed CRL default + grace period |
+| **R25** | **Fleet TPM/CA trust/EDR readiness** — TPM disable/EDR block/Trusted Publisher missing %5'i geçerse mass deploy fail explode | Orta | High | P0-22 fleet TPM sample (≥95%); P0-18 EDR allowlist + WDAC; P0-19 Trusted Publisher store; ratio düşükse scope reduce |
+| **R26** | **Aggregate enrollment storm** — 800 PC simultaneous boot (Monday morning) backend overload | Orta | Medium | Wave 200/gün; backend horizontal autoscale; rate limit per SID + aggregate throttle (rolling window) + MSI install jitter (random 0-10 dk post-boot) |
 
 ---
 
@@ -589,6 +623,20 @@ Phase 1 pilot fail (>50% PC install fail rate) durumunda:
 - [ ] Phase 0 fail noktası fix edilmeden Phase 1'e geçilmez
 
 ### Phase 1 (5 domain-joined PC pilot)
+
+**Denominator T0 freeze procedure** (iter-3 absorb): Phase 1 başlangıcı T0'da snapshot al:
+- Wave Security Group member listesi (AD object SID + GUID + DisplayName)
+- AD Enabled=True filter
+- AD LastLogonDate ≥ T0-30 days filter (offline/decommissioned exclude pre-defined)
+- IT-confirmed exclusion liste (DNS conflict, hardware fault, BYOD, vb.)
+- Snapshot dosya: `docs/faz-22-evidence/phase1-denominator-freeze-{date}.json`
+- Post-pilot delta: yeni offline → audit field `excluded_post_t0` (success rate inflation önle)
+
+**UI conditional karar (iter-3 absorb netleştirme)**:
+- **Karar: Phase 1 BACKEND-ONLY acceptance** — UI grid render bug ayrı task #175 paralel; Phase 1 success backend API kanıtı yeterli (devices list + audit + command).
+- Phase 2 acceptance gate'inde UI grid render PASS ek conditional (50 PC UI'da görünür olmalı, kritik UX).
+- Rationale: backend mass deploy fonksiyonel kanıt UI bug fix'ten bağımsız ilerleyebilir.
+
 - [ ] 5/5 AD CS TPM-attested cert mint (Certificates MMC kanıt)
 - [ ] 5/5 MSI install fire (MsiInstaller Event Log 1033 kanıt)
 - [ ] 5/5 Service Running (Get-Service kanıt)
@@ -596,11 +644,14 @@ Phase 1 pilot fail (>50% PC install fail rate) durumunda:
 - [ ] 5/5 heartbeat aktif (endpoint-devices API lastSeenAt < 5 dk)
 - [ ] 5/5 command lifecycle SUCCEEDED (endpoint-commands API 1+ COLLECT_INVENTORY per device)
 - [ ] 0 per-device manuel müdahale (process audit)
-- [ ] Denominator clarity (pre-pilot freeze list documented)
-- [ ] Cert renewal scenario tested (1 PC manuel renewal trigger, dedupe verify)
-- [ ] **Workgroup PC (SRB-AIDENETIMPC) Phase 1 dışı** — ayrı AnyDesk path
+- [ ] **Denominator T0 freeze documented** (5/5 wave SG snapshot + LastLogonDate filter)
+- [ ] Cert renewal scenario tested (1 PC manuel renewal trigger, SID stable dedupe verify, no duplicate device)
+- [ ] **Forced token-expiry test** (R24): 1 PC token TTL'i 5dk'a düşür, agent refresh PASS
+- [ ] **Ingress mTLS fault injection** (R24): nginx ingress restart sırasında agent backoff + recovery PASS
+- [ ] **CRL outage scenario** (R24): AD CS CRL endpoint disable 30sn, backend fail-closed default behavior verify
+- [ ] **Workgroup PC (SRB-AIDENETIMPC) Phase 1 dışı** — ayrı AnyDesk path korunur
 - [ ] **REMOVED: Codex AGREE acceptance gate** (governance precondition only, not runtime)
-- [ ] **CONDITIONAL: Frontend UI grid render** — bug fix Phase 1 öncesi blocker veya Phase 1 backend-only acceptance net definition
+- [ ] **Phase 1 backend-only** — UI grid render bug task #175 paralel, Phase 1 fail nedeni değil
 
 ### Phase 2 (50 PC IT dept)
 - [ ] 95%+ install success rate (post offline exclude)
@@ -654,9 +705,10 @@ Phase 1 pilot fail (>50% PC install fail rate) durumunda:
 
 - ✅ **Pre-Production Full Authority**: agent end-to-end koşar
 - ✅ **No Closure Language**: "kapandı/bitti" yok
-- ✅ **Cross-AI Peer Review**: Codex (OpenAI) cross-provider review, iter-1 REVISE absorbed; iter-2 review pending
-- ✅ **No Fake Work**: 9 saatlik AGENTPC2 deneyimi transparent ifade, Phase 0 P0-1..14 evidence gate ile sahte yeşil önle
+- ✅ **Cross-AI Peer Review**: Codex (OpenAI) cross-provider review, iter-1 + iter-2 REVISE absorbed; iter-3 review pending
+- ✅ **No Fake Work**: 9 saatlik AGENTPC2 deneyimi transparent ifade, Phase 0 P0-1..22 evidence gate + denominator T0 freeze ile sahte yeşil önle
 - ✅ **CI Kırmızıyken Merge YASAK**: ADR PR governance check'leri yeşil bekleniyor
 - ✅ **Admin Merge YASAK**: normal squash merge, CI yeşil sonrası
 - ✅ **Continuous Autonomous Mode**: owner approval (Plan A) ile otonom devam
 - ✅ **Iter-1 REVISE absorbed (Codex 10 finding)**: Phase 0 + workgroup path + mTLS ingress + cert renewal stable identity + cert-bound token + MSI Upgrade/MST + signing key custody + R11 nuance + Wazuh rollback realism + acceptance gates objektif source-of-truth
+- ✅ **Iter-2 REVISE absorbed (Codex 6 high/medium + 6 yeni risk)**: scope amendment statement + mTLS route split (DEVICE_API_BASE_URL, ayrı SNI) + identity SAN extension + token rotation soak/fault tests + P0 expansion (15-22) + denominator T0 freeze + UI Phase 1 backend-only karar + R21-R26 risk register
