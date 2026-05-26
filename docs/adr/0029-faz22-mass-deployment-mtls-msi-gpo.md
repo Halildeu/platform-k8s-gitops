@@ -1,0 +1,662 @@
+# ADR-0029 — Faz 22 Endpoint Agent Mass Deployment: mTLS self-enroll + AD CS code signing + MSI + GPO
+
+**Status:** Proposed (Plan A, owner-approved 2026-05-26, iter-2 Codex REVISE absorbed)
+**Decision date:** 2026-05-26
+**Authors:** Halil Koçoğlu, AI agent (Claude)
+**Cross-AI review:** Codex (OpenAI) thread `019e665f`, iter-1 VERDICT=REVISE (10 spec finding) → iter-2 absorbed
+**Related:**
+- ADR-0012-EA Endpoint Admin Governance Charter
+- RB-faz22-non-domain-windows-pilot.md
+- RB-faz22-strategy-d-dc-orchestrated-install.md
+- PR #1070 (SRB-AIDENETIMPC A1 evidence)
+- Codex strategic consult thread `019e634a` (2026-05-26 HYBRID önerisi, owner-rejected)
+
+---
+
+## Context
+
+### Faz 22 mevcut durum
+
+Faz 22 endpoint agent (Go, Windows) backend control-plane (`endpoint-admin-service`) ile birlikte BE-011/BE-013/BE-014/BE-016/BE-017 kabiliyetlerini production-grade olarak sağlıyor. Single-device pilot kanıt mevcut: **SRB-AIDENETIMPC** (workgroup PC) AnyDesk pattern ile manuel install + enroll (PR #1070); command lifecycle SUCCEEDED 2026-05-26 12:30 TR (COLLECT_INVENTORY).
+
+### Sorun: 800 PC mass deployment yokluğu
+
+Hedef corp ortamı: ~800 Windows PC, acik.local AD domain, 10.9.2.x + 10.9.161.x + diğer corp subnet'ler. DC subnet 10.9.10.x cross-subnet firewall block (inbound RDP/SMB/WinRM/WMI/RPC).
+
+**9 saatlik AGENTPC2 install denemesi** (2026-05-26 gece-sabah) net durumu ortaya çıkardı:
+- ✅ DC'de GPO Computer Preferences > Scheduled Tasks deploy edildi
+- ✅ AGENTPC2 GPO download yaptı (Event 5145 kanıt)
+- ❌ **install fire ETMEDI** — periodic refresh + StartWhenAvailable=true + BootTrigger + LogonTrigger redundant pattern fail
+- ❌ Backend enrollment yok (token consumed=null)
+
+**Corp ortam keşfi** (DC management plane discovery):
+- ❌ SCCM/Intune/PDQ/ManageEngine/WSUS YOK
+- ❌ Centralized endpoint deployment kanalı YOK
+- ✅ Zabbix Agent corp standard (read-only monitoring)
+- ✅ AD CS rolü kurulabilir (Windows Server built-in, ücretsiz)
+- ✅ IT muhtemelen "elden manuel + AnyDesk client-side" pattern kullanıyor
+
+### Faz 22 agent'ın critical eksik
+
+Mevcut agent **self-enrollment desteklemiyor** — her PC için manuel `POST /endpoint-enrollments` çağrısı ile single-use token mint gerekiyor. 800 PC = 800 manuel mint = imkansız.
+
+### Strategic decision context: Codex HYBRID önerisi vs Plan A
+
+Codex stratejik consult (thread `019e634a`, 2026-05-26 sabah) HYBRID önerisi verdi: Wazuh/native commodity telemetry + Faz 22 control-plane (OpenFGA + BE-017 + BE-016 + UI). Custom Windows agent rollout çekilsin.
+
+**Owner kararı 2026-05-26 (Halil)**: Plan A — Faz 22 custom agent production rollout DEVAM. Eşsiz değer önerileri (OpenFGA fine-grained authz, BE-017 dual control, BE-016 hash-chain audit, custom backend UI) corp ihtiyacı için yatırıma değer; Wazuh pivot reddedildi.
+
+Bu ADR Plan A'nın detaylı uygulama mimarisini canonical olarak işler.
+
+---
+
+## Decision
+
+Faz 22 endpoint agent 800 PC mass deployment için aşağıdaki **6-katman** mimari benimsenir (Codex iter-1 önerisiyle **Phase 0 preflight** eklendi):
+
+0. **Phase 0 — Preflight evidence checklist** (gate, herhangi bir deploy adımı öncesi zorunlu)
+1. **AD CS (Active Directory Certificate Services)** — corp internal CA, ücretsiz, Windows Server rolü; machine certificate auto-enrollment GPO ile her **domain-joined** PC'ye TPM-attested cert mint
+2. **Backend mTLS self-enrollment endpoint** — `POST /api/v1/endpoint-admin/endpoint-enrollments/auto` (yeni); **client cert'ten backend-derived identity** (body'den değil), AD computer SID/GUID stable identity + cert thumbprint chain
+3. **Agent auto-enroll feature** — `--auto-enroll` flag; TPM cert ile mTLS-continuous (token sadece cert sahibi tarafından kullanılabilir)
+4. **MSI package (WiX Toolset)** — `endpoint-agent.exe` → `endpoint-agent.msi`; ProductCode/UpgradeCode versioned, MST transform ile APIURL property, **internal Windows signing runner** ile imzalı (GitHub Actions PFX YASAK)
+5. **GPO Software Installation** — Computer Configuration > Software Settings > Software Installation; package `\\ACIKDC01\endpoint-agent-deploy\endpoint-agent.msi`; deployment **Assigned to Computer** (boot anında OS-level install); wave-based security group control
+
+### Pilot ramp-up (revize)
+
+| Phase | PC | Süre | Acceptance |
+|---|---|---|---|
+| **Phase 0** | DC + 1 test domain PC | 2-3 gün | Tüm preflight evidence kanıt PASS |
+| Phase 1 | **5 PC, sadece domain-joined** (AGENTPC2 + AGENTPC1/MKR-A1 + HALILKOCOGLU + 2 IT volunteer; SRB-AIDENETIMPC workgroup için **AYRI install path**) | 1 hafta | Objektif kanıt source-of-truth ile (aşağıda) |
+| Phase 2 | 50 PC (IT department, domain-joined) | 1 hafta | 95%+ install + 90%+ heartbeat 24h |
+| Phase 3 | 800 PC (full Domain Computers) | 1-2 hafta | Wave 200/gün, <5% fail rate per wave |
+
+### Code signing strategy (revize)
+
+**Karar**: **Internal/private CA-issued code signing cert** (AD CS Enterprise CA template), Windows Server built-in, ücretsiz. Wazuh/OSQuery pattern ile uyumlu. Private key custody: **internal Windows signing runner** (HSM-backed veya non-exportable TPM key); GitHub Actions PFX **YASAK** (Codex security finding).
+
+**Reddedilen alternatifler**:
+- ❌ EV Code Signing cert (~$300-500/yıl) — corp internal scope için overkill
+- ❌ GitHub Actions PFX + password — Codex iter-1 RED flag (key custody zayıflık)
+- ❌ Unsigned — Defender/AppLocker conflict riski
+
+---
+
+## Detailed design
+
+### Phase 0 — Preflight evidence checklist (yeni, Codex önerisi)
+
+**Hedef**: Hiçbir mass deployment adımı bu Phase 0 gate'i geçmeden başlamaz. Gerçek operasyonel risk profili sahada doğrulanır.
+
+**Phase 0 checklist** (DC + 1 test domain PC üzerinde):
+
+| # | Check | Acceptance | Source |
+|---|---|---|---|
+| P0-1 | **Domain join membership** | Test PC `(Get-WmiObject Win32_ComputerSystem).PartOfDomain` = True | PowerShell |
+| P0-2 | **Secure channel health** | `Test-ComputerSecureChannel -Verbose` PASS | PowerShell |
+| P0-3 | **gpresult /scope:computer** test PC'de | Bizim GPO link görünür + Apply'lanmış (filtered değil) | Test PC PowerShell |
+| P0-4 | **OU/scope kanıt** | Hedef PC'lerin DN'i + Computers OU veya custom OU bilgisi + GPO link target | `Get-ADComputer` + `Get-GPInheritance` |
+| P0-5 | **Machine account UNC read** | DC share `\\ACIKDC01\endpoint-agent-deploy` test PC'den `dir` ile listable (machine account context) | Test PC admin PSSession |
+| P0-6 | **"Always wait for the network at computer startup and logon"** GPO | Computer Config > Administrative Templates > System > Logon = Enabled | GPO check |
+| P0-7 | **Slow-link policy** detection | `Get-ItemProperty 'HKLM:\Software\Policies\Microsoft\Windows\Group Policy'` slow link threshold > corp WAN reality | Registry |
+| P0-8 | **GPO Software Installation CSE health** | Application Event Log Source `Application Management` veya `MsiInstaller` errors yok | Event Log |
+| P0-9 | **MSI install Event Log baseline** | Test MSI (1KB no-op) install + Event Log entry verify | Test MSI deploy |
+| P0-10 | **AD CS cert auto-enrollment Event Log** | Test PC `Get-WinEvent -ProviderName "Microsoft-Windows-CertificateServicesClient-AutoEnrollment"` PASS | Event Log |
+| P0-11 | **TPM availability** | `Get-Tpm` test PC'de Enabled + Ready | PowerShell |
+| P0-12 | **mTLS reachability test** | testai.acik.com mTLS port (8443 veya ingress separate) test PC'den TCP açık | Test-NetConnection |
+| P0-13 | **Ingress mTLS termination kanıtı** | nginx ingress mTLS passthrough config kanıt (TLS sonlanma yeri belirsiz olmasın) | Cluster config inspect |
+| P0-14 | **CRL/OCSP reachability** | AD CS CRL URL test PC'den reachable + cache invalidation < 7 gün | curl + certutil |
+
+**P0 fail** → **mass deploy fire YASAK**. Önce P0 fail noktası fix.
+
+### Katman 1 — AD CS (Active Directory Certificate Services)
+
+**Setup adımları** (Windows Server 2022 DC):
+
+```powershell
+# 1. Role install
+Install-WindowsFeature ADCS-Cert-Authority -IncludeManagementTools
+
+# 2. CA initialize (Enterprise Root CA, key TPM-protected ise tercih)
+Install-AdcsCertificationAuthority -CAType EnterpriseRootCA `
+  -CACommonName "ACIK Endpoint CA" `
+  -KeyLength 4096 -HashAlgorithm SHA256 `
+  -CryptoProviderName "Microsoft Platform Crypto Provider"  # TPM-backed
+
+# 3. Machine cert template (duplicate Computer)
+# certtmpl.msc → "Computer" → Duplicate → "EndpointAgent-MachineCert"
+#  - Subject Name: Build from AD info: CN = $Computer.DNSHostName
+#  - Key Usage: Digital Signature + Key Encipherment
+#  - EKU: Client Authentication (1.3.6.1.5.5.7.3.2)
+#  - Compatibility tab: Windows Server 2016+ / Windows 10+
+#  - Cryptography tab: Provider "Microsoft Platform Crypto Provider" (TPM-only)
+#  - Issuance Requirements: TPM attestation required
+#  - Validity: 2 yıl, auto-renew at 80%
+
+# 4. Code Signing template (duplicate Code Signing)
+# certtmpl.msc → "Code Signing" → Duplicate → "EndpointAgent-CodeSign"
+#  - Subject: CN=EndpointAgent CodeSign, OU=ACIK Build
+#  - Key Usage: Digital Signature
+#  - EKU: Code Signing (1.3.6.1.5.5.7.3.3)
+#  - Validity: 1 yıl
+#  - Issuance: manuel certreq (dev/build runner only)
+
+# 5. AutoEnrollment GPO
+# Computer Config > Policies > Windows Settings > Security Settings >
+#   Public Key Policies > Certificate Services Client - Auto-Enrollment
+#   → Enabled (renew expired + update pending + update from template)
+# Scope: Domain Computers
+
+# 6. CRL publish (HTTP, AIA + CDP)
+# AD CS Properties > Extensions → CRL Distribution Point
+#   http://crl.acik.local/CertEnroll/<CAName><CRLNameSuffix>.crl
+# IIS site or simple HTTP serve from share
+```
+
+**Acceptance**:
+- ✅ Test PC reboot/gpupdate sonrası TPM-attested cert mint (Certificates MMC = Personal store)
+- ✅ Code Signing cert development workstation'da issued
+- ✅ Root CA cert tüm Domain Computers Trust store'unda (gpresult kanıt)
+- ✅ CRL URL HTTP reachable + cert chain validation PASS
+
+### Katman 2 — Backend mTLS self-enrollment endpoint (revize)
+
+**Critical Codex finding**: machine_fingerprint backend'in **client cert'ten** türetmesi gerekir, request body'den değil (spoofing prevention).
+
+**Yeni endpoint** (Spring Boot, `endpoint-admin-service`):
+
+```
+POST /api/v1/endpoint-admin/endpoint-enrollments/auto
+Content-Type: application/json
+[MANDATORY: Client mTLS cert; backend validates chain to AD CS Root CA]
+
+Request body (minimal, identity NOT carried in body):
+{
+  "os_info": {
+    "os_type": "WINDOWS",
+    "os_version": "10.0.26100",
+    "architecture": "amd64"
+  },
+  "agent_version": "0.2.0"
+}
+
+Backend processing:
+1. Extract client cert from TLS handshake
+2. Validate cert chain to AD CS Root CA
+3. Check EKU = Client Authentication (1.3.6.1.5.5.7.3.2)
+4. Check template OID = "EndpointAgent-MachineCert"
+5. Check issuer = "CN=ACIK Endpoint CA"
+6. Check SAN/CN domain suffix = ".acik.local"
+7. Check key usage = Digital Signature + Key Encipherment
+8. CRL/OCSP revocation check (cached 24h)
+9. Extract STABLE IDENTITY (renewal-safe):
+   - Primary: AD computer object SID + GUID (queried via Subject CN → AD lookup)
+   - Secondary: cert thumbprint (logged for audit, NOT identity)
+10. Idempotency: SID match → existing device_id return (re-enroll = no duplicate, cert renewal-safe)
+11. Service token: short-lived (24h) bound to cert thumbprint; subsequent heartbeat/command calls require mTLS-continuous (cert-bound bearer)
+12. Audit event: ENDPOINT_AUTO_ENROLLED with {cert_subject_cn, ad_sid, thumbprint, source_ip}
+
+Response (200):
+{
+  "device_id": "<uuid>",
+  "service_token": "<jwt 24h cert-bound>",
+  "token_expires_at": "<iso8601>",
+  "is_existing_device": true|false
+}
+```
+
+**Critical security model** (Codex iter-1 findings absorbed):
+- Identity = AD SID/GUID (renewal-safe), thumbprint sadece audit log
+- Service token cert-bound — kullanılması için aynı mTLS cert şart (DPAPI machine scope + strict ACL)
+- mTLS-continuous: heartbeat/command APIs de mTLS required (token tek başına bypass etmez)
+- Rate limiting: 10 enrollment/min **per SID** (NAT/proxy IP yanlış throttling önle)
+- Token rotation: 24h short-lived, refresh continuous mTLS ile
+
+**TLS termination strategy** (Codex iter-1 ek finding):
+- nginx ingress mTLS **passthrough** (TLS sonlanma backend pod'da)
+- Veya: ingress mTLS terminate + `X-Client-Cert` header forward (güvenli proxy chain)
+- Karar: **passthrough** (basit + audit chain net) — ingress config Phase 0'da kanıtlanır
+
+**Backend implementation**:
+- Spring Boot mTLS: `server.ssl.client-auth=need` + Pod-direct TLS (passthrough ingress)
+- Trust store: AD CS Root CA bundle (cert chain validation)
+- Audit: ENDPOINT_AUTO_ENROLLED + ENDPOINT_AUTO_ENROLL_DENIED (CRL fail, template mismatch, etc.)
+
+**Mevcut endpoint coexistence**:
+- Manuel single-use enrollment (`POST /endpoint-enrollments`) korunur (test fixture pattern için)
+- Auto-enrollment ek katman, mevcut breaking change yok
+
+**Dev efforu**: ~5-6 gün (mTLS passthrough ingress + endpoint impl + cert-bound token + audit + test)
+
+### Katman 3 — Agent auto-enroll feature (revize)
+
+**Agent enhancements** (`platform-agent` Go repo):
+
+```go
+// New CLI flag
+endpoint-agent --auto-enroll [--api-url=https://testai.acik.com:8443]
+
+// First-run logic (mTLS-continuous, NOT token-only)
+if !configExists() {
+    cert := loadMachineCertFromWindowsStore() // Personal store, EndpointAgent-MachineCert template OID
+    if cert == nil {
+        log.Fatal("Machine cert not found — AD CS auto-enrollment may not have completed yet, retry in 5 min")
+    }
+
+    // mTLS client config (cert-bound tüm istekler için)
+    httpClient := createMtlsClient(cert)
+
+    resp := httpClient.Post(apiUrl + "/endpoint-enrollments/auto", {
+        os_info: collectOsInfo(),
+        agent_version: VERSION,
+    })
+
+    persistConfig({
+        device_id: resp.device_id,
+        service_token: resp.service_token,  // cert-bound, 24h
+        token_expires_at: resp.token_expires_at,
+    })
+}
+
+// All subsequent calls (heartbeat, command poll, result post)
+//   MUST use mTLS-continuous + cert-bound token
+heartbeatLoop(httpClient, serviceToken) // cert-bound, mTLS required
+commandPollLoop(httpClient, serviceToken)
+
+// Token rotation (24h, auto)
+if tokenExpiresIn(2 * time.Hour) {
+    rotateToken(httpClient) // refresh via mTLS, new cert-bound token
+}
+
+// Cert renewal handling
+if certExpiresIn(7 * 24 * time.Hour) {
+    // AD CS auto-renewal triggers; new cert mint, agent reload
+    // SID stable → backend dedupe, device_id korunur
+    reloadCertFromStore()
+}
+```
+
+**Service token storage**: DPAPI machine scope + strict ACL (LocalSystem + Administrators only, write deny WorldEveryone).
+
+**Tests**:
+- Unit: cert load + mTLS client config + cert-bound token validation
+- Integration: 3 backend test fixture device auto-enroll + token rotation + cert renewal scenario
+- E2E: SRB-AIDENETIMPC migrate test (mevcut device auto-enroll trigger, dedupe verify)
+
+**Dev efforu**: ~3-4 gün (cert load + mTLS-continuous client + token DPAPI + tests)
+
+### Katman 4 — MSI package (WiX Toolset, revize)
+
+**WiX project** (`platform-agent/installer/`):
+
+```xml
+<Wix>
+  <Product Id="*"
+           Name="ACIK EndpointAgent"
+           Version="0.2.0"
+           Manufacturer="ACIK Platform"
+           UpgradeCode="{FIXED-GUID-UPGRADE-CODE-NEVER-CHANGE}">
+
+    <Package InstallScope="perMachine" InstallerVersion="500" Compressed="yes" />
+
+    <!-- Upgrade behavior (critical for GPO Software Installation) -->
+    <MajorUpgrade
+      Schedule="afterInstallInitialize"
+      DowngradeErrorMessage="A newer version is already installed."
+      AllowSameVersionUpgrades="no" />
+
+    <!-- Properties (overridable via MST transform) -->
+    <Property Id="APIURL" Value="https://testai.acik.com:8443" Secure="yes" />
+    <Property Id="ARPHELPLINK" Value="https://testai.acik.com/endpoint-admin" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <Feature Id="ProductFeature" Title="EndpointAgent" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="ServiceInstall" />
+      <ComponentRef Id="RegistryEntries" />
+    </Feature>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="EndpointAgent">
+          <Component Id="MainExecutable" Guid="{...}">
+            <File Id="EndpointAgentExe" Source="endpoint-agent.exe" KeyPath="yes" />
+          </Component>
+          <Component Id="ServiceInstall" Guid="{...}">
+            <ServiceInstall Name="EndpointAgent"
+                           DisplayName="ACIK EndpointAgent"
+                           Type="ownProcess" Start="auto"
+                           Account="LocalSystem" ErrorControl="normal"
+                           Vital="yes" />
+            <ServiceControl Id="StartService" Name="EndpointAgent"
+                           Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+            <util:EventManifest MessageFile="[INSTALLDIR]endpoint-agent.exe" />
+          </Component>
+          <Component Id="RegistryEntries" Guid="{...}">
+            <RegistryKey Root="HKLM" Key="SOFTWARE\EndpointAgent" Action="createAndRemoveOnUninstall">
+              <RegistryValue Name="ApiUrl" Type="string" Value="[APIURL]" />
+              <RegistryValue Name="Version" Type="string" Value="0.2.0" />
+            </RegistryKey>
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <!-- Service SDDL tamper protection (post-install custom action) -->
+    <CustomAction Id="ApplyServiceSDDL"
+                  ExeCommand='sc sdset EndpointAgent "D:(A;;CCLCSWLOCRRC;;;AU)(A;;CCLCSWRPWPDTLOCRSDRCWDWO;;;BA)S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)"'
+                  Directory="INSTALLDIR" Execute="deferred" Impersonate="no" Return="check" />
+
+    <InstallExecuteSequence>
+      <Custom Action="ApplyServiceSDDL" After="StartServices">NOT REMOVE</Custom>
+    </InstallExecuteSequence>
+  </Product>
+</Wix>
+```
+
+**Critical fields** (Codex iter-1 findings absorbed):
+- **UpgradeCode**: FIXED GUID, **NEVER CHANGE** (her version'da aynı) — GPO Software Installation upgrade detection için şart
+- **ProductCode**: `Id="*"` (her build farklı) — versioning
+- **MajorUpgrade**: auto-handle eski version uninstall + yeni install (cached MSI stuck önle)
+- **APIURL as Property + MST transform**: GPO Software Installation property pass etmez; ya MSI default (testai.acik.com) ya **MST transform file** (`.mst`) GPO assignment'a eklenmeli
+
+**Build + sign pipeline** (revize — Codex iter-1 finding: GitHub Actions PFX YASAK):
+
+```yaml
+# .github/workflows/build-msi.yml (build only, NO sign)
+- name: Build MSI
+  run: |
+    candle.exe installer.wxs
+    light.exe installer.wixobj -ext WixUtilExtension -out endpoint-agent.msi
+- name: Upload unsigned artifact
+  uses: actions/upload-artifact@v4
+  with:
+    name: endpoint-agent-unsigned-msi
+    path: endpoint-agent.msi
+
+# Internal Windows signing runner (separate, HSM/TPM key)
+# - Runner: corp Windows VM, AD-joined, AD CS code signing cert installed
+# - Trigger: manual approval after GitHub Actions build artifact ready
+# - Signtool with timestamp:
+signtool sign /sm /n "EndpointAgent CodeSign" `
+  /t http://timestamp.digicert.com `
+  /fd SHA256 `
+  endpoint-agent.msi
+
+# Upload signed MSI to internal artifact server or DC share
+Copy-Item endpoint-agent.msi -Destination \\ACIKDC01\endpoint-agent-deploy\
+```
+
+**Install/upgrade/uninstall commands** (manuel test):
+```
+# Fresh install
+msiexec /i endpoint-agent.msi /qn APIURL=https://testai.acik.com:8443
+
+# Upgrade (MajorUpgrade auto-handles)
+msiexec /i endpoint-agent-v0.2.1.msi /qn  # eski uninstall + yeni install
+
+# Uninstall
+msiexec /x endpoint-agent.msi /qn  # veya /x {ProductCode-GUID}
+
+# Repair (if service crashed)
+msiexec /fa endpoint-agent.msi /qn
+```
+
+**Verification**:
+- ProductCode + UpgradeCode kayıt: `Get-WmiObject Win32_Product | Where {$_.Name -match "EndpointAgent"}`
+- Service: `Get-Service EndpointAgent` (Status=Running, StartType=Automatic)
+- Tamper SDDL: `sc sdshow EndpointAgent`
+- Code signature: `Get-AuthenticodeSignature endpoint-agent.exe` (Status=Valid)
+- Application Event Log: MsiInstaller event 1033 (install success)
+
+**Dev efforu**: ~3-4 gün (WiX project + MST transform + internal signing runner setup + test)
+
+### Katman 5 — GPO Software Installation + Pilot ramp (revize)
+
+**Critical Codex finding**: SRB-AIDENETIMPC **workgroup** PC, GPO Software Installation hedefi olamaz. Domain-joined pilot ayrı, workgroup pilot ayrı path.
+
+**GPO setup** (DC PowerShell admin):
+
+```powershell
+# 1. Share preparation (NTFS + SMB ACL)
+$share = "C:\EndpointAgentDeploy"
+New-Item -Path $share -ItemType Directory -Force
+Copy-Item endpoint-agent-signed.msi -Destination $share
+Copy-Item endpoint-agent-mst-transform.mst -Destination $share  # APIURL override
+
+# NTFS ACL: Domain Computers Read+Execute, Domain Admins Full
+$acl = Get-Acl $share
+$acl.SetAccessRuleProtection($true, $false)
+$dcRule = New-Object System.Security.AccessControl.FileSystemAccessRule("ACIK\Domain Computers","ReadAndExecute","ContainerInherit,ObjectInherit","None","Allow")
+$adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule("ACIK\Domain Admins","FullControl","ContainerInherit,ObjectInherit","None","Allow")
+$acl.SetAccessRule($dcRule)
+$acl.SetAccessRule($adminRule)
+Set-Acl $share $acl
+
+# SMB share
+New-SmbShare -Name "endpoint-agent-deploy" -Path $share `
+  -ReadAccess "ACIK\Domain Computers" `
+  -FullAccess "ACIK\Domain Admins"
+
+# 2. GPO create
+$gpo = New-GPO -Name "EndpointAgent Mass Deployment" `
+  -Comment "Faz 22 mass deploy — see ADR-0029"
+
+# 3. Wave Security Group setup (Phase 1 + 2 + 3 scope control)
+New-ADGroup -Name "EndpointAgent-Wave1-Pilot" -GroupScope DomainLocal -GroupCategory Security
+Add-ADGroupMember -Identity "EndpointAgent-Wave1-Pilot" -Members "AGENTPC2$","HALILKOCOGLU$",...
+
+# 4. Security Filter (Wave 1)
+Set-GPPermission -Name "EndpointAgent Mass Deployment" `
+  -TargetName "Authenticated Users" -TargetType Group -PermissionLevel None -Replace
+Set-GPPermission -Name "EndpointAgent Mass Deployment" `
+  -TargetName "EndpointAgent-Wave1-Pilot" -TargetType Group -PermissionLevel GpoApply
+Set-GPPermission -Name "EndpointAgent Mass Deployment" `
+  -TargetName "Domain Computers" -TargetType Group -PermissionLevel GpoRead  # KB3163622
+
+# 5. Computer Configuration > Software Settings > Software Installation
+# (GPMC GUI manuel:)
+#   Right-click Software Installation > New > Package
+#   Path: \\ACIKDC01\endpoint-agent-deploy\endpoint-agent.msi
+#   Deployment: Assigned
+#   Modifications tab: Add → endpoint-agent-mst-transform.mst (APIURL override)
+#   Advanced > "Make this 32-bit X86 application available to Win64 machines": disabled
+#   Advanced > "Uninstall this application when it falls out of the scope of management": ENABLED
+#   Advanced > "Install this application at logon": disabled (Assigned to Computer = boot install)
+
+# 6. Link
+New-GPLink -Name "EndpointAgent Mass Deployment" `
+  -Target "DC=acik,DC=local" -LinkEnabled Yes
+```
+
+**Pilot Phase 1 — 5 domain-joined PC**:
+
+| # | PC | Domain join | Pilot strategy |
+|---|---|---|---|
+| 1 | **AGENTPC2** (10.9.2.98) | ✅ acik.local | GPO Software Installation hedefi |
+| 2 | **AGENTPC1 / MKR-A1** (10.9.2.97) | IT onayı bekleniyor | GPO hedefi (onay sonra) |
+| 3 | **HALILKOCOGLU** (10.9.2.151) | ✅ acik.local | GPO hedefi |
+| 4 | **1 IT volunteer PC** | ✅ acik.local | GPO hedefi |
+| 5 | **1 IT department PC** | ✅ acik.local | GPO hedefi |
+| (ayrı path) | **SRB-AIDENETIMPC** (10.9.161.105) | ❌ WORKGROUP | **Mevcut AnyDesk + manual install path korunur** (PR #1070 evidence pattern); GPO Software Installation **DEĞİL** |
+
+**Phase 1 acceptance gates** (Codex iter-1 revise: objektif source-of-truth):
+
+| # | Gate | Source-of-truth | Acceptance |
+|---|---|---|---|
+| 1 | AD CS cert mint | Test PC Certificates MMC (Personal store) `Get-ChildItem Cert:\LocalMachine\My` + template OID match | 5/5 PC TPM-attested cert mevcut |
+| 2 | MSI install fire | Test PC Application Event Log `Get-WinEvent -ProviderName MsiInstaller -FilterHashtable @{Id=1033}` | 5/5 PC event entry, ProductCode match |
+| 3 | Service Running | Test PC `Get-Service EndpointAgent` Status=Running, StartType=Automatic | 5/5 PC PASS |
+| 4 | Backend auto-enroll audit | Backend audit log `ENDPOINT_AUTO_ENROLLED` event count 5+ unique device_id | 5/5 device_id mint |
+| 5 | Heartbeat aktif | Backend `endpoint-devices` API `lastSeenAt` < 5 dk per device | 5/5 device PASS |
+| 6 | Command lifecycle | Backend `endpoint-commands` API: 1+ SUCCEEDED COLLECT_INVENTORY per device | 5/5 device 1+ command |
+| 7 | "No per-device manuel" | Process tanım: per-device manual install/enroll yok; sadece merkezi GPO link + reboot/gpupdate allowed | Process audit OK |
+| 8 | Denominator clarity | Offline/decommissioned/broken-trust PC sayımdan exclude; explicit list documented | Pre-pilot list freeze + post-pilot delta |
+
+**Phase 2 acceptance** (50 PC, IT dept):
+- 95%+ install success rate (denominator: pre-pilot freeze list, post offline exclude)
+- 90%+ heartbeat success 24h window
+- Helpdesk runbook fail-recovery TEST: 1 PC manuel fail simüle + recovery PASS
+- Backend monitoring dashboard live (enroll rate, heartbeat success, command rate)
+
+**Phase 3 acceptance** (800 PC, wave 200/gün):
+- <5% fail rate per wave (4 wave × 200 PC)
+- Rollback plan TESTLI: 1 wave reverse + recovery PASS
+- Codex final review AGREE (governance precondition)
+
+---
+
+## Risk register (revize, R13-R20 yeni eklendi)
+
+| ID | Risk | Olasılık | Severity | Mitigation |
+|---|---|---|---|---|
+| R1 | AD CS auto-enrollment fail (PC GPO refresh yok / TPM disabled / policy conflict) | Orta | High | Phase 0 P0-2/P0-10/P0-11 gate; TPM enable corp policy; AD CS test cert manuel + GPO scope dar başla |
+| R2 | mTLS endpoint security exploit | Düşük | Critical | Backend cert-derived identity (body değil); EKU/template/SAN/issuer/CRL check; rate limit per SID |
+| R3 | MSI install fail (Defender / AppLocker conflict) | Orta | Medium | Code signing cert thumbprint AppLocker allowlist; Defender exclusion install dir; pilot test 5 PC |
+| R4 | GPO scope error | Düşük | Medium | Wave Security Group strict; hostname guard agent self-check; multi-layer safety |
+| R5 | Network bandwidth (800 PC simultaneous boot) | Orta | Medium | Wave rollout 200/gün; MSI BITS cache; off-hours boot policy |
+| R6 | Token rotation chaos | Orta | High | Auto-rotate at 80% lifetime; cert-bound token (mTLS required); monitoring alert on expiry |
+| R7 | Tamper protection conflict (Defender RTP / AppLocker / GPO) | Orta | High | Internal CA Trusted Publisher AppLocker; Defender exclusion; signed manifest |
+| R8 | User uninstall | Düşük | Low | Service SDDL strict; AppLocker policy block uninstall by non-Admin |
+| R9 | Backend pod overload (800 simultaneous auto-enroll) | Düşük | Medium | Rate limiting per SID; horizontal autoscale endpoint-admin-service; wave timing |
+| R10 | AD CS root CA compromise | Çok düşük | Critical | TPM-protected root key; offline issuing CA option; CRL ready; HSM upgrade roadmap |
+| R11 | 9-saatlik AGENTPC2 pattern fail tekrarı | **Risk reduced, not eliminated** | High | GPO Software Installation farklı CSE; Phase 0 + Phase 1 evidence ile gerçek pattern reliability kanıtlanır; aynı sınıf failure (GPO scope/SYSVOL/share ACL/slow-link) MSI'da da olabilir |
+| R12 | Frontend grid render bug ("Cihazlar yükleniyor…") | Mevcut | Medium | Ayrı task chip #175; MSI deploy bağımsız ilerler |
+| **R13** | **Domain/workgroup mismatch — GPO Software Installation workgroup PC'ye gitmez** | Bilinen | High | Pilot path ayrı: workgroup PC (SRB-AIDENETIMPC) **AnyDesk + manual install** pattern korunur; GPO hedefi sadece domain-joined |
+| **R14** | **TLS termination/ingress mTLS** Spring Boot tek başına yetmez (Kubernetes ingress arkasında) | Yüksek | High | nginx ingress mTLS **passthrough** config (TLS pod'da sonlanır); Phase 0 P0-13 evidence gate |
+| **R15** | **Cert renewal duplicate** — cert thumbprint renewal'da değişir, duplicate device riski | Yüksek | High | Identity = AD SID/GUID (renewal-safe); thumbprint sadece audit; Phase 1 gate evidence (renewal scenario test) |
+| **R16** | **Revocation (CRL/OCSP) reachability** | Orta | High | CRL HTTP serve + cache 24h; backend fail-closed default; Phase 0 P0-14 gate |
+| **R17** | **Code signing private key custody** — GitHub Actions PFX zayıflık | Yüksek | Critical | **Internal Windows signing runner** (HSM/TPM-backed key); GitHub Actions sadece unsigned build; manual approval signing |
+| **R18** | **MSI ProductCode/UpgradeCode/upgrade-on-fallout** | Orta | Medium | WiX MajorUpgrade auto-handle; UpgradeCode FIXED GUID; "Uninstall when out of scope" enabled |
+| **R19** | **APIURL property GPO** — `msiexec APIURL=...` GPO direct pass etmez | Yüksek | Medium | MST transform file (`endpoint-agent-mst-transform.mst`) GPO Modifications tab; Phase 0 P0-9 evidence |
+| **R20** | **Rate limiting NAT/proxy** — `10 req/min per IP` 800 PC yanlış throttle | Orta | Medium | Rate limit **per SID** (cert-derived), IP'den bağımsız |
+
+---
+
+## Consequences
+
+### Positive
+
+- 800 PC mass deployment gerçek production-grade çözüm
+- AD CS infrastructure corp için reusable (diğer corp services signing cert kullanabilir)
+- Faz 22 backend control-plane (OpenFGA, BE-017, BE-016, UI) değer korunur
+- 9 saatlik AGENTPC2 uğraşı discovery value (Phase 0 preflight gate'in oluşmasına neden oldu)
+- Cross-platform roadmap kapısı açık (mTLS pattern OS-agnostic)
+- Sektör standardı code signing (internal CA, Wazuh/OSQuery pattern, ücretsiz)
+
+### Negative
+
+- 4 hafta dev iş yatırımı (Phase 0 + BE + agent + MSI + GPO + pilot)
+- AD CS infrastructure ek IT operasyonel sorumluluk (CRL, cert renewal, HSM roadmap)
+- Internal Windows signing runner setup (corp VM, AD-joined)
+- mTLS passthrough nginx ingress config karmaşıklığı
+- IT bağımlılığı (AD CS role install, GPO scope karar, Phase 0 PC test koordinasyon)
+
+### Neutral
+
+- Faz 22 endpoint agent custom kalır — vendor lock yok
+- Code signing AD CS dış müşteri için yeterli değil — ileride EV cert opsiyonu açık
+- Codex'in HYBRID önerisi reddedildi ama Wazuh pivot **evidence-gated fallback** olarak saklı
+
+---
+
+## Rollback strategy (revize)
+
+Phase 1 pilot fail (>50% PC install fail rate) durumunda:
+
+1. **GPO unlink** — Software Installation GPO link disable (mass deploy stop)
+2. **MSI uninstall** — pilot PC'lerde `msiexec /x endpoint-agent.msi /qn` veya "Uninstall when out of scope" auto-fire
+3. **Service tamper SDDL cleanup** — service remove
+4. **NTFS+SMB share cleanup** — `\\ACIKDC01\endpoint-agent-deploy` kalır (asset preserved)
+5. **Backend device rows retire** — pilot device_id `status=DECOMMISSIONED` mark
+6. **Backend service token revoke** — cert-bound token blacklist + audit
+7. **Cert revoke (gerekirse)** — AD CS CRL update
+8. **AD CS cert + GPO link kalır** — başka corp service için reusable
+9. **Backend auto-enroll endpoint dormant** — manuel single-use enrollment endpoint korunur
+10. **Audit/postmortem** — fail root cause + Faz 22 strategic review trigger
+
+**Wazuh pivot reactivation (evidence-gated, NOT 1-week claim)**:
+- Codex iter-1 finding: "Wazuh agent da MSI/GPO/installer kanalı ister — install-channel fallback değil, ürün/telemetry fallback"
+- Realistic Wazuh deploy timeline: 2-3 hafta (manager VM + agent MSI/GPO + corp test + tuning)
+- Pre-condition: install channel (MSI/GPO/AnyDesk) ayrıca kanıtlanmalı
+- Plus: Phase 1 freeze + mevcut manual-installed cihazlarla sınırlı devam + Zabbix read-only korunur
+
+---
+
+## Acceptance gates (revize, Codex iter-1 absorb)
+
+### Phase 0 (preflight, MANDATORY)
+- [ ] P0-1...P0-14 tüm checklist PASS (objektif source-of-truth ile)
+- [ ] Phase 0 fail noktası fix edilmeden Phase 1'e geçilmez
+
+### Phase 1 (5 domain-joined PC pilot)
+- [ ] 5/5 AD CS TPM-attested cert mint (Certificates MMC kanıt)
+- [ ] 5/5 MSI install fire (MsiInstaller Event Log 1033 kanıt)
+- [ ] 5/5 Service Running (Get-Service kanıt)
+- [ ] 5/5 backend ENDPOINT_AUTO_ENROLLED audit (backend log)
+- [ ] 5/5 heartbeat aktif (endpoint-devices API lastSeenAt < 5 dk)
+- [ ] 5/5 command lifecycle SUCCEEDED (endpoint-commands API 1+ COLLECT_INVENTORY per device)
+- [ ] 0 per-device manuel müdahale (process audit)
+- [ ] Denominator clarity (pre-pilot freeze list documented)
+- [ ] Cert renewal scenario tested (1 PC manuel renewal trigger, dedupe verify)
+- [ ] **Workgroup PC (SRB-AIDENETIMPC) Phase 1 dışı** — ayrı AnyDesk path
+- [ ] **REMOVED: Codex AGREE acceptance gate** (governance precondition only, not runtime)
+- [ ] **CONDITIONAL: Frontend UI grid render** — bug fix Phase 1 öncesi blocker veya Phase 1 backend-only acceptance net definition
+
+### Phase 2 (50 PC IT dept)
+- [ ] 95%+ install success rate (post offline exclude)
+- [ ] 90%+ heartbeat success 24h window
+- [ ] Helpdesk runbook fail-recovery test PASS
+- [ ] Backend monitoring dashboard live (4 metric: enroll, heartbeat, command, fail)
+
+### Phase 3 (800 PC full)
+- [ ] 95%+ install success per wave
+- [ ] 90%+ heartbeat 24h aggregate
+- [ ] Wave 200/gün <5% fail rate
+- [ ] Rollback plan TESTLI (1 wave reverse + recovery PASS)
+- [ ] 800 PC roll-out karar (governance, Codex final review precondition)
+
+---
+
+## Reactivation/exit triggers
+
+### Wazuh pivot reactivation (Codex HYBRID önerisi geri al, EVIDENCE-GATED)
+- Phase 1 pilot >50% fail rate **+ root cause Wazuh ile çözülebilir kanıt**
+- Phase 2 ramp 4 hafta üzeri gecikme
+- AD CS infrastructure unsustainable
+- Cross-platform (Linux/macOS) acil ihtiyaç
+
+### EV Code Signing cert (ücretli) trigger
+- Dış müşteri/dış corp deployment talebi
+- Defender SmartScreen warning end-user adoption blocker
+- Compliance audit (SOC2 / ISO27001) EV cert mandatory tespiti
+
+### Faz 22 scope reduction (Codex önerisi geri kabul)
+- 12 ay sonrası ROI re-evaluation
+- Corp organizational pivot
+
+---
+
+## References
+
+- ADR-0012-EA Endpoint Admin Governance Charter (parent governance)
+- RB-faz22-non-domain-windows-pilot.md (manuel pilot pattern, A1 baseline)
+- RB-faz22-strategy-d-dc-orchestrated-install.md (Strategy D runbook, deprecated by GPO Software Installation)
+- PR #1070 (SRB-AIDENETIMPC A1 direct install evidence, workgroup pattern)
+- Codex thread `019e634a` (2026-05-26 HYBRID stratejik önerisi, owner-rejected)
+- Codex thread `019e665f` (2026-05-26 ADR iter-1 REVISE review, 10 finding absorbed)
+- Microsoft AD CS: https://learn.microsoft.com/en-us/windows-server/identity/ad-cs/
+- WiX Toolset: https://wixtoolset.org/
+- Faz 22 Phase 2 (Mass Deployment) sprint board: GitHub Project #2
+
+---
+
+## HARD RULE compliance
+
+- ✅ **Pre-Production Full Authority**: agent end-to-end koşar
+- ✅ **No Closure Language**: "kapandı/bitti" yok
+- ✅ **Cross-AI Peer Review**: Codex (OpenAI) cross-provider review, iter-1 REVISE absorbed; iter-2 review pending
+- ✅ **No Fake Work**: 9 saatlik AGENTPC2 deneyimi transparent ifade, Phase 0 P0-1..14 evidence gate ile sahte yeşil önle
+- ✅ **CI Kırmızıyken Merge YASAK**: ADR PR governance check'leri yeşil bekleniyor
+- ✅ **Admin Merge YASAK**: normal squash merge, CI yeşil sonrası
+- ✅ **Continuous Autonomous Mode**: owner approval (Plan A) ile otonom devam
+- ✅ **Iter-1 REVISE absorbed (Codex 10 finding)**: Phase 0 + workgroup path + mTLS ingress + cert renewal stable identity + cert-bound token + MSI Upgrade/MST + signing key custody + R11 nuance + Wazuh rollback realism + acceptance gates objektif source-of-truth
