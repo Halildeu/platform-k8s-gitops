@@ -4,7 +4,7 @@
 **Decision date:** 2026-05-26
 **Authors:** Halil Koçoğlu, AI agent (Claude)
 **Cross-AI review:** Codex (OpenAI) thread `019e665f`, iter-1 REVISE (10 finding) + iter-2 REVISE (6 high/medium + 6 yeni risk) → iter-3 absorbed
-**Scope amendment statement:** Bu ADR **ADR-0012 §22.2 + RB-faz22-non-domain-windows-pilot.md "non-domain primary" kararını AMEND eder** — Faz 22.3 olarak **domain-wide mass deployment** scope eklenir; mevcut 22.2.A non-domain workgroup pattern (SRB-AIDENETIMPC + benzer) **AYRI PATH** olarak korunur (AnyDesk + manual install via PR #1070 evidence pattern). PLAN.md + ADR-0012 + RB headers truth-sync **iter-3 absorb içinde** aynı PR'da yapılır.
+**Scope addition statement:** Bu ADR **ADR-0012 §22.2'yi AMEND ETMEZ** — mevcut 22.2.A non-domain primary + 22.2.B `acik.local` opsiyonel scope kararı **KORUNUR**. Bu ADR Faz 22 portföyüne **22.3 olarak YENİ scope** ekler: domain-joined Windows fleet'i için **mass deployment via mTLS + AD CS + MSI + GPO Software Installation** kanalı. 22.2.A workgroup pattern (SRB-AIDENETIMPC + benzer) **AYRI PATH** olarak korunur (AnyDesk + manual install via PR #1070 evidence). PLAN.md + ADR-0012 + RB headers truth-sync **bu iter-4 absorb içinde aynı PR'da** yapılır.
 **Related:**
 - ADR-0012-EA Endpoint Admin Governance Charter (§22.2 scope amended by this ADR)
 - RB-faz22-non-domain-windows-pilot.md (non-domain path korunur, scope sınırlandırıldı: workgroup-only)
@@ -104,7 +104,7 @@ Faz 22 endpoint agent 800 PC mass deployment için aşağıdaki **6-katman** mim
 | P0-9 | **MSI install Event Log baseline** | Test MSI (1KB no-op) install + Event Log entry verify | Test MSI deploy |
 | P0-10 | **AD CS cert auto-enrollment Event Log** | Test PC `Get-WinEvent -ProviderName "Microsoft-Windows-CertificateServicesClient-AutoEnrollment"` PASS | Event Log |
 | P0-11 | **TPM availability** | `Get-Tpm` test PC'de Enabled + Ready | PowerShell |
-| P0-12 | **mTLS reachability test** | DEVICE_API_BASE_URL (örn. `https://endpoint-agent-mtls.testai.acik.com` veya `https://testai.acik.com:8443`) mTLS handshake + no-cert negative test (handshake reject expected) | openssl s_client veya PowerShell mTLS test |
+| P0-12 | **mTLS reachability test** | DEVICE_API_BASE_URL `https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin` mTLS handshake + no-cert negative test (handshake reject expected) | openssl s_client veya PowerShell mTLS test |
 | P0-13 | **Ingress mTLS termination kanıtı** | nginx ingress mTLS passthrough config + canlı route smoke (request endpoint pod'a kadar mTLS context taşır mı kanıt) | Cluster config inspect + tcpdump/Wireshark veya backend audit cert ext log |
 | P0-14 | **CRL/OCSP reachability** | AD CS CRL URL test PC'den reachable + cache invalidation < 7 gün; **plus CRL outage davranış testi**: CRL endpoint disable + backend response (fail-closed default expected) | curl + certutil + simulated CRL outage |
 | **P0-15** | **SYSTEM context UNC share read** | Test PC `psexec -s cmd /c "dir \\\\ACIKDC01\\endpoint-agent-deploy"` SYSTEM context PASS (admin PSSession değil) | PsExec SYSTEM context |
@@ -113,7 +113,7 @@ Faz 22 endpoint agent 800 PC mass deployment için aşağıdaki **6-katman** mim
 | **P0-18** | **EDR/WDAC/AppLocker baseline check** | Trusted Publisher AD CS root cert AppLocker policy + Defender exclusion install dir + WDAC signer rule (varsa) | gpresult AppLocker + Defender PowerShell |
 | **P0-19** | **Trusted Publisher store** | Test PC `Cert:\LocalMachine\TrustedPublisher` AD CS code signing cert thumbprint mevcut (manuel test install öncesi) | Certificates MMC |
 | **P0-20** | **Proxy/TLS inspection** | Corp proxy/TLS inspection AD CS root cert intercept etmez (mTLS handshake passthrough) | mitmproxy/Wireshark veya proxy config inspect |
-| **P0-21** | **Egress firewall (mTLS port)** | Corp PC subnet → testai.acik.com mTLS port (8443 veya separate SNI) egress allow | Test PC TCP probe |
+| **P0-21** | **Egress firewall (mTLS host)** | Corp PC subnet → `endpoint-agent-mtls.testai.acik.com` (port 443 standart SNI) egress allow | Test PC TCP probe |
 | **P0-22** | **Fleet TPM readiness sample** | 10 PC sample → `Get-Tpm` Enabled + Ready ratio (≥95% expected); ratio düşükse mass deploy scope reduce | PowerShell sample |
 
 **P0 fail** → **mass deploy fire YASAK**. Önce P0 fail noktası fix.
@@ -135,12 +135,16 @@ Install-AdcsCertificationAuthority -CAType EnterpriseRootCA `
 # 3. Machine cert template (duplicate Computer)
 # certtmpl.msc → "Computer" → Duplicate → "EndpointAgent-MachineCert"
 #  - Subject Name: Build from AD info: CN = $Computer.DNSHostName
+#  - **SAN: User Principal Name (UPN) + DNS name + URI:adcomputer:{objectGUID}**
+#    (Subject Alt Name tab → Build from AD; Include this information in alt subject name:
+#     DNS name + objectGUID; plus custom URI extension via policy.inf if certreq used)
 #  - Key Usage: Digital Signature + Key Encipherment
 #  - EKU: Client Authentication (1.3.6.1.5.5.7.3.2)
 #  - Compatibility tab: Windows Server 2016+ / Windows 10+
 #  - Cryptography tab: Provider "Microsoft Platform Crypto Provider" (TPM-only)
 #  - Issuance Requirements: TPM attestation required
 #  - Validity: 2 yıl, auto-renew at 80%
+# NOT: SAN URI:adcomputer:{objectGUID} backend identity binding primary kaynak (Codex iter-3 finding)
 
 # 4. Code Signing template (duplicate Code Signing)
 # certtmpl.msc → "Code Signing" → Duplicate → "EndpointAgent-CodeSign"
@@ -180,7 +184,7 @@ Install-AdcsCertificationAuthority -CAType EnterpriseRootCA `
 
 | Surface | Base URL | mTLS required? | Routing |
 |---|---|---|---|
-| **Device API** (auto-enroll + heartbeat + command poll/result) | `https://endpoint-agent-mtls.testai.acik.com` (veya `https://testai.acik.com:8443`) | ✅ MANDATORY | Separate Ingress + Service, mTLS passthrough |
+| **Device API** (auto-enroll + heartbeat + command poll/result) | `https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin` (canonical; `:8443` lab fallback non-canonical) | ✅ MANDATORY | Separate Ingress + Service, mTLS passthrough, standart port 443 SNI |
 | **Admin API** (UI Yönetim > Uç Birimler, command queue, audit query) | `https://testai.acik.com` | ❌ JWT-only | Mevcut nginx ingress, no breaking change |
 
 **Karar**: SNI ayrı host (`endpoint-agent-mtls.testai.acik.com`) — TLS passthrough basit + audit chain net. Ayrı Service + Ingress + Cluster IP, mevcut admin/UI traffic ile çakışmaz.
@@ -216,9 +220,11 @@ Backend processing:
 6. Check SAN/CN domain suffix = ".acik.local"
 7. Check key usage = Digital Signature + Key Encipherment
 8. CRL/OCSP revocation check (cached 24h)
-9. Extract STABLE IDENTITY (renewal-safe):
-   - Primary: AD computer object SID + GUID (queried via Subject CN → AD lookup)
-   - Secondary: cert thumbprint (logged for audit, NOT identity)
+9. Extract STABLE IDENTITY (renewal-safe, **SAN primary**):
+   - **Primary**: cert SAN extension `URI:adcomputer:{objectGUID}` (template mint sırasında dahil edildi — bkz Katman 1)
+   - **Fallback**: SAN absent ise Subject CN → backend LDAPS lookup → SID/GUID
+   - **Reuse guard**: AD lookup'ta computer object'in mevcut SID'i ile son ENDPOINT_AUTO_ENROLLED audit'taki SID match olmazsa (CN reuse / rejoin / stale obj) → **AUTO_ENROLL_DENIED** + alert
+   - Thumbprint: sadece audit field, identity DEĞİL
 10. Idempotency: SID match → existing device_id return (re-enroll = no duplicate, cert renewal-safe)
 11. Service token: short-lived (24h) bound to cert thumbprint; subsequent heartbeat/command calls require mTLS-continuous (cert-bound bearer)
 12. Audit event: ENDPOINT_AUTO_ENROLLED with {cert_subject_cn, ad_sid, thumbprint, source_ip}
@@ -261,7 +267,7 @@ Response (200):
 
 ```go
 // New CLI flag
-endpoint-agent --auto-enroll [--api-url=https://testai.acik.com:8443]
+endpoint-agent --auto-enroll [--api-url=https://endpoint-agent-mtls.testai.acik.com]
 
 // First-run logic (mTLS-continuous, NOT token-only)
 if !configExists() {
@@ -333,7 +339,7 @@ if certExpiresIn(7 * 24 * time.Hour) {
       AllowSameVersionUpgrades="no" />
 
     <!-- Properties (overridable via MST transform) -->
-    <Property Id="APIURL" Value="https://testai.acik.com:8443" Secure="yes" />
+    <Property Id="APIURL" Value="https://endpoint-agent-mtls.testai.acik.com" Secure="yes" />
     <Property Id="ARPHELPLINK" Value="https://testai.acik.com/endpoint-admin" />
     <Property Id="ARPNOREPAIR" Value="1" />
 
@@ -417,7 +423,7 @@ Copy-Item endpoint-agent.msi -Destination \\ACIKDC01\endpoint-agent-deploy\
 **Install/upgrade/uninstall commands** (manuel test):
 ```
 # Fresh install
-msiexec /i endpoint-agent.msi /qn APIURL=https://testai.acik.com:8443
+msiexec /i endpoint-agent.msi /qn APIURL=https://endpoint-agent-mtls.testai.acik.com
 
 # Upgrade (MajorUpgrade auto-handles)
 msiexec /i endpoint-agent-v0.2.1.msi /qn  # eski uninstall + yeni install
@@ -560,9 +566,9 @@ New-GPLink -Name "EndpointAgent Mass Deployment" `
 | **R21** | **Scope truth drift** — ADR-0029 ↔ PLAN.md/ADR-0012/RB-faz22 supersedence dili belirsizliği | Bilinen | High | ADR üst kısmı scope amendment statement explicit; iter-3 absorb PR'a PLAN.md + ADR-0012 + RB header truth-sync ekle |
 | **R22** | **mTLS route split** — admin/browser API JWT-only, device API mTLS-mandatory; route mismatch admin'i kırabilir | Yüksek | High | Ayrı Ingress + SNI host (`endpoint-agent-mtls.testai.acik.com`) + Service; admin traffic mevcut nginx ingress; Phase 0 P0-13 canlı smoke gate |
 | **R23** | **CN-to-AD identity binding** — Cert subject CN unique değil (CN reuse, rejoin, stale obj), SID/GUID extraction zinciri zayıf | Yüksek | High | Cert SAN extension `URI:adcomputer:{objectGUID}` template ile mint; fallback CN→LDAPS lookup + reuse guard (SID mismatch → AUTO_ENROLL_DENIED + alert); P0-16 backend LDAPS gate |
-| **R24** | **Token refresh outage cascade** — 24h short-lived + ingress fault + CRL outage simultaneous → 800 cihaz offline cascade | Orta | High | Phase 1 acceptance: forced token-expiry test + ingress mTLS fault injection + CRL outage scenario; agent jitter+backoff on refresh fail; backend fail-closed CRL default + grace period |
+| **R24** | **Token refresh outage cascade** — 24h short-lived + ingress fault + CRL outage simultaneous → 800 cihaz offline cascade | Orta | High | Phase 1 acceptance fault injection tests; **grace period 24h** (CRL fail → backend grace_until=expiry+24h; agent grace_window heartbeat ile bilgilendirilir); **fail-closed default** sadece grace_until aşıldıktan sonra; agent exponential backoff (1-2-4-8-16dk caps 60dk); CRL outage anında **batch alert** (>%10 device grace state) |
 | **R25** | **Fleet TPM/CA trust/EDR readiness** — TPM disable/EDR block/Trusted Publisher missing %5'i geçerse mass deploy fail explode | Orta | High | P0-22 fleet TPM sample (≥95%); P0-18 EDR allowlist + WDAC; P0-19 Trusted Publisher store; ratio düşükse scope reduce |
-| **R26** | **Aggregate enrollment storm** — 800 PC simultaneous boot (Monday morning) backend overload | Orta | Medium | Wave 200/gün; backend horizontal autoscale; rate limit per SID + aggregate throttle (rolling window) + MSI install jitter (random 0-10 dk post-boot) |
+| **R26** | **Aggregate enrollment storm** — 800 PC simultaneous boot (Monday morning) backend overload | Orta | Medium | Wave 200/gün; backend horizontal autoscale; rate limit per SID + aggregate throttle (rolling window 1dk); **MSI install jitter**: WiX CustomAction `Type="51"` Action="DelayedAutoEnroll" Value=`powershell.exe -Command Start-Sleep -Seconds (Get-Random -Minimum 0 -Maximum 600)` After=`StartServices` Execute="deferred" — service start + 0-10dk random delay agent auto-enroll çağrısından önce |
 
 ---
 
@@ -619,8 +625,12 @@ Phase 1 pilot fail (>50% PC install fail rate) durumunda:
 ## Acceptance gates (revize, Codex iter-1 absorb)
 
 ### Phase 0 (preflight, MANDATORY)
-- [ ] P0-1...P0-14 tüm checklist PASS (objektif source-of-truth ile)
+- [ ] P0-1...P0-22 tüm checklist PASS (objektif source-of-truth ile, **P0-22 dahil**)
 - [ ] Phase 0 fail noktası fix edilmeden Phase 1'e geçilmez
+
+Plus P0-5 vs P0-15 ayrımı net:
+- **P0-5** "Machine account UNC read (admin PSSession quick check)" — human-context smoke
+- **P0-15** "SYSTEM context UNC read (PsExec /s)" — **authoritative gate** (SYSTEM context şart, install-time context emülasyonu)
 
 ### Phase 1 (5 domain-joined PC pilot)
 
@@ -654,10 +664,19 @@ Phase 1 pilot fail (>50% PC install fail rate) durumunda:
 - [ ] **Phase 1 backend-only** — UI grid render bug task #175 paralel, Phase 1 fail nedeni değil
 
 ### Phase 2 (50 PC IT dept)
-- [ ] 95%+ install success rate (post offline exclude)
+
+**Denominator T0 freeze procedure (Phase 2)** (Codex iter-3 absorb):
+- Phase 2 başlangıcı T0'da snapshot: wave SG SID/GUID + Enabled + LastLogonDate ≥ T0-30d
+- IT-confirmed exclusion liste (Phase 2 başlangıcı pre-defined, post-pilot "ek offline" excluded_post_t0 audit field)
+- Snapshot dosya: `docs/faz-22-evidence/phase2-denominator-freeze-{date}.json`
+
+- [ ] **Denominator T0 freeze documented** (50 PC wave SG snapshot)
+- [ ] 95%+ install success rate (denominator T0 freeze + IT-confirmed pre-defined exclusion only)
 - [ ] 90%+ heartbeat success 24h window
-- [ ] Helpdesk runbook fail-recovery test PASS
-- [ ] Backend monitoring dashboard live (4 metric: enroll, heartbeat, command, fail)
+- [ ] Helpdesk runbook fail-recovery test PASS (en az 1 PC manuel fail simüle + recovery)
+- [ ] Backend monitoring dashboard live (4 metric: enroll, heartbeat, command, fail rate)
+- [ ] **UI grid render** HARD GATE — frontend devices grid 50/50 device görünür ve renderable (Codex iter-3 absorb: prose değil checkbox)
+- [ ] Forced cert renewal test (1 PC) — SID stable, dedupe verify, no duplicate device
 
 ### Phase 3 (800 PC full)
 - [ ] 95%+ install success per wave

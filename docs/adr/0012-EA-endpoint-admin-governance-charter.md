@@ -392,6 +392,40 @@ prod-ready / password-reset-ready İDDİA EDİLMEZ — 22.1 test runtime + sourc
 - **B2 `acik.local` AD domain-joined** — 22.2.B optional pilot
 - **C Mobile (iOS/Android)** — Faz 22.2 scope dışı; Faz 23.7.b mobile push veya ayrı future device-management fazı
 
+## 22.3 scope addition — Domain-wide mass deployment (2026-05-26)
+
+> **User decision 2026-05-26**: 9-saatlik AGENTPC2 (10.9.2.98) GPO Scheduled Task pilot attempt fail oldu (cross-subnet firewall block DC 10.9.10.x → corp PCs 10.9.2.x + GPO Scheduled Task pattern unreliable). Discovery value: corp domain (~800 PC) için **manuel self-install çalışmaz, centralized mass deployment gerekir**. Kullanıcı pivot HYBRID (ManageEngine intermediate) reddetti, **Plan A** seçti (mevcut Faz 22 yapısı korunur + 22.3 domain-wide mass deployment scope ADD). **Bu amendment DEĞİL, ADDITION** — Faz 22.2 scope sub-track'leri (22.2.A non-domain primary + 22.2.B `acik.local` opsiyonel) **olduğu gibi korunur**; 22.3 paralel **üçüncü sub-track** olarak eklenir. Canonical ADR: [`docs/adr/0029-faz22-mass-deployment-mtls-msi-gpo.md`](./0029-faz22-mass-deployment-mtls-msi-gpo.md). Codex strategic thread `019e6667-...` REVISE iter-3 absorb in PR #1078 (gitops, cross-AI peer review chain — provider OpenAI xhigh reasoning effort).
+
+### Sub-scope position (22.2 / 22.3 relationship)
+
+| Sub | Tanım | Channel | Status (2026-05-26) |
+|---|---|---|---|
+| **22.2.A** | **Non-domain Windows primary** (workgroup / standalone / BYOD) | **Manual install** (operator/user-initiated) — agent installer + token/cert self-enrollment | **PRIMARY KORUNUR** — 22.3 amendment etmez |
+| **22.2.B** | **Domain-joined IT pilot** (`acik.local` test PC subset) | **Manual install** (operator/IT-initiated) — 22.2.A ile aynı installer | **OPSIYONEL KORUNUR** — operator-bound (VPN/DC/EDR/signing) |
+| **22.3** | **Domain-wide mass deployment** (`acik.local` ~800 PC) | **Automated channel** — MSI fixed UpgradeCode + GPO Software Installation Computer-assigned + AD CS code-signed + mTLS self-enroll (SAN URI:adcomputer:{objectGUID} primary identity) | **NEW** — paralel üçüncü channel, ramp 5→50→800 |
+
+### Cross-scope invariants
+
+- **Tek backend** (`endpoint-admin-service`) — 22.2.A/22.2.B/22.3 hepsi aynı `https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin` canonical Device API base'i kullanır
+- **Tek agent codebase** (`platform-agent`) — `--auto-enroll` flag 22.3 için MSI ile yüklenir, 22.2.A/B manual install'da CLI invocation
+- **Tek identity model** — SAN URI primary, GUID renewal-safe; manual install bearer-then-mTLS-cert pattern, 22.3 mTLS-cert-only auto-enroll
+- **Tek audit chain** — BE-016 hash-chain + BE-017 dual-control 22.3 destructive command'lerde de uygulanır (no scope-specific bypass)
+- **Test persona ayrı** — HARD RULE — Kullanıcı Aktif Credential'ına Dokunma YASAK: 22.3 pilot smoke için Halil'in kendi domain user'ı (`halilkocoglu@acik.local`) kullanılmaz; test persona (örn. `endpoint-agent-test-1` machine account + smoke service account) ile sınırlı
+
+### Operator/IT-bound prerequisites (22.3 specific)
+
+22.3 kanal için **operator/IT-bound** preflight artifact'ler (agent docs-only; operator execution gerekli):
+
+- AD CS role install + machine-cert template (TPM-attested) + AutoEnrollment GPO
+- AD CS code-signing template + agent-team-restricted issuance + revocation pipeline
+- MSI UpgradeCode GUID assignment (immutable, governance-tracked)
+- GPO Software Installation Computer-assigned package + WMI filter (test OU scope)
+- Cross-subnet firewall rule (`endpoint-agent-mtls.testai.acik.com:443` reachability from corp PC subnets — 9-saatlik AGENTPC2 fail'in root cause'u; bu olmadan 22.3 pilot kuru çalışır)
+- EDR allowlist (CrowdStrike/Defender — agent binary + persistence + scheduled task pattern false-positive yok)
+- 5-PC pilot OU + 50-PC ramp OU + 800-PC production OU (separate scope, isolated rollback)
+
+22.3 source-side iş (agent --auto-enroll feature, MSI WiX, backend mTLS endpoint, AD CS preflight script) **agent-actionable**; AD CS deployment + GPO konfigürasyonu + corp firewall rule + EDR allowlist + pilot OU **operator/IT-bound** (HARD RULE — Pre-Production Full Authority: agent end-to-end koşar ama irreversible/operator-only adımlar IT execution).
+
 **Detection surface**: `Win32_ComputerSystem.PartOfDomain` + `Domain` + `Workgroup`; `dsregcmd /status` (`DomainJoined`, `AzureAdJoined`, `WorkplaceJoined`, tenant/device id); MDM/Intune enrollment state.
 
 ### Faz 22.2 overall % (Codex Q5 absorb — iki katman)
