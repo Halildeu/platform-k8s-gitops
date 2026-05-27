@@ -453,7 +453,7 @@ Faz 22 sub-track numbering reassignment:
 | **22.5.1** | `AG-025` installed software inventory + `AG-026` WinGet readiness | SOURCE-PARTIAL (`platform-agent` PR #20 / `0eff2db`) |
 | **22.5.1A** | `AG-025H` lightweight/full software inventory guard | TODO |
 | **22.5.1B** | `WEB-011` read-only software + WinGet readiness visibility | TODO |
-| **22.5.2** | `AG-030` pending reboot + `AG-031` Defender/Firewall/BitLocker + `AG-032` local admin group + `AG-033` disk/RAM/uptime health | TODO |
+| **22.5.2** | `AG-030` pending reboot + `AG-031` Defender/Firewall/BitLocker + `AG-032` local admin group + `AG-033` disk/RAM/uptime health + `AG-035` hardware/device inventory + `BE-022` ingest/query + `WEB-013` view | TODO |
 | **22.5.3** | `BE-020` Approved Software Catalog API + provenance/hash/version policy | TODO |
 | **22.5.3A** | `BE-020I` software inventory ingest/query path | TODO |
 | **22.5.4** | `AG-027` approved install command + `BE-021` result/detection/audit | BLOCKED until 22.5.1/22.5.3 gates |
@@ -476,7 +476,10 @@ Faz 22 sub-track numbering reassignment:
 - Install/uninstall audit zorunludur.
 - Geniş kapsamlı deployment ve uninstall dual-control + pilot kanıtı sonrası açılır.
 - Pending reboot, Defender/Firewall/BitLocker, local admin ve device health işleri read-only inventory olarak başlar.
+- Hardware/device inventory de read-only başlar: CPU, RAM, disk, manufacturer/model, BIOS version, TPM status, OS/build ve network summary.
 - BitLocker recovery key, credential, product key, bearer token veya tam kullanıcı profili path'i toplanmaz.
+- Serial number, MAC ve IP gibi alanlar policy-gated olur; default çıktı hash/masked/summary seviyesindedir.
+- Product key, TPM key material, BitLocker recovery key, token veya credential hiçbir Faz 22.5 inventory payload'ında yer almaz.
 - SMB/file actions bu scope'ta runtime değildir; yalnız discovery/guardrail çalışmasıdır.
 
 ### Related gates
