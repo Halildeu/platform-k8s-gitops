@@ -63,42 +63,64 @@ Reactivation başlamadan önce ADR-0029 D5 multi-tenant disiplin gereksinimleri 
 
 **1.2 Service-account audit log entry**: Slack admin audit log'da hangi service-account/bot ile üretildi kayıt edilir (R29 lifecycle drift trace için)
 
-### Step 2: Vault seed (Slack webhook URL)
+### Step 2: Vault seed (Slack webhook URL) — D43 stdin-pipe pattern (HARD RULE no-token-log)
+
+> **HARD RULE — no-token-log (D43 mirror)**: Webhook URL veya Vault root token LOCAL ENV'A export edilmez, SSH komut satırı argümanına geçmez, history'e/log'a yazılmaz. Vault root token sadece staging-sw container içinde init dosyasından stdin-pipe ile okunur; webhook URL stdin pipe ile container'a aktarılır; tüm değişkenler komut sonu `unset` edilir.
 
 ```bash
-# Webhook URL'i gizli giriş
+# 1. Webhook URL'i agent terminale gizli oku (history KAYIT DEĞİL — read -s)
 read -r -s SLACK_PERF_WEBHOOK
-# yapıştır + Enter
+# Webhook URL'i yapıştır + Enter
 
-# Shape sanity check
-[[ "$SLACK_PERF_WEBHOOK" =~ ^https://hooks\.slack\.com/services/ ]] && echo "URL prefix OK" || echo "FAIL"
+# 2. Shape sanity check (URL prefix only — full URL ECHO DEĞİL)
+[[ "$SLACK_PERF_WEBHOOK" =~ ^https://hooks\.slack\.com/services/ ]] && echo "URL prefix OK" || { echo "FAIL"; unset SLACK_PERF_WEBHOOK; exit 1; }
 
-export VAULT_ROOT_TOKEN=$(ssh halil@staging-sw 'jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json')
-
+# 3. Vault root token staging-sw container'da; agent local'a almaz (D43 RB §3 mirror)
+# Stdin-pipe pattern: webhook URL'i ssh'a stdin'den ver, container içinde `vault kv put` ile parse et
 # Single-tenant pattern (acik scope dahil):
-ssh halil@staging-sw "docker exec -e VAULT_TOKEN='$VAULT_ROOT_TOKEN' -e WEBHOOK='$SLACK_PERF_WEBHOOK' platform-vault-prod \
-  vault kv patch kv/platform/perf-alertmanager SLACK_WEBHOOK_URL=\"\$WEBHOOK\""
+printf '%s' "$SLACK_PERF_WEBHOOK" | ssh halil@staging-sw '
+  VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)
+  WEBHOOK=$(cat)  # stdin'den oku
+  docker exec -i -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
+    sh -c "vault kv patch kv/platform/perf-alertmanager SLACK_WEBHOOK_URL=\"\$WEBHOOK\"" <<< "$WEBHOOK"
+  unset VAULT_ROOT_TOKEN WEBHOOK
+'
 
-# Veya multi-tenant pattern (separate tenant path):
-# vault kv put kv/platform/tenants/<tenant>/perf-alertmanager SLACK_WEBHOOK_URL=\"\$WEBHOOK\"
+# 4. Multi-tenant alternative (tenant-scoped path):
+# printf '%s' "$SLACK_PERF_WEBHOOK" | ssh halil@staging-sw '
+#   VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)
+#   WEBHOOK=$(cat)
+#   docker exec -i -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
+#     sh -c "vault kv put kv/platform/tenants/<tenant>/perf-alertmanager SLACK_WEBHOOK_URL=\"\$WEBHOOK\"" <<< "$WEBHOOK"
+#   unset VAULT_ROOT_TOKEN WEBHOOK
+# '
+
+# 5. Local cleanup
+unset SLACK_PERF_WEBHOOK
 ```
 
-**Beklenen**: Vault `kv/platform/perf-alertmanager` (veya tenant-scoped) `SLACK_WEBHOOK_URL` key non-empty.
+**Beklenen**: Vault `kv/platform/perf-alertmanager` (veya tenant-scoped) `SLACK_WEBHOOK_URL` key non-empty. Webhook URL agent local env'da kalmaz; Vault token agent local env'da hiç bulunmaz.
 
 ### Step 3: Vault policy update (ESO runtime AppRole read capability)
 
 ```bash
 # Policy zaten kv/data/platform/perf-alertmanager için read capability içeriyor (ADR-0029 PR-2 helm/ESO setup'tan)
-# Multi-tenant pattern için ek policy snippet:
-ssh halil@staging-sw 'docker exec -i -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
-  sh -c "cat > /tmp/eso-runtime-slack.hcl" <<EOF
-path \"kv/data/platform/perf-alertmanager\" { capabilities = [\"read\"] }
-# Multi-tenant alternatif:
-# path \"kv/data/platform/tenants/+/perf-alertmanager\" { capabilities = [\"read\"] }
-EOF
-docker exec -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
-  vault policy write eso-runtime /tmp/eso-runtime.hcl
-docker exec platform-vault-prod rm /tmp/eso-runtime-slack.hcl'
+# Multi-tenant pattern için bootstrap/vault-policies/common/eso-runtime.hcl genişletilir, sonra re-apply:
+ssh halil@staging-sw '
+  VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)
+  # HCL stdin'den container'a stream et (D43 RB pattern; mount yok)
+  docker exec -i -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
+    sh -c "cat > /tmp/eso-runtime.hcl" < ~/platform-k8s-gitops/bootstrap/vault-policies/common/eso-runtime.hcl
+  docker exec -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
+    vault policy write eso-runtime /tmp/eso-runtime.hcl
+  docker exec platform-vault-prod rm /tmp/eso-runtime.hcl
+  unset VAULT_ROOT_TOKEN
+'
+
+# Multi-tenant policy snippet — bootstrap/vault-policies/common/eso-runtime.hcl içine ek satır olarak commit edilir
+# (ayrı PR; bu runbook policy update sadece path mevcut path kapsamını re-apply eder)
+# Eklenecek satır (multi-tenant aktivasyon halinde):
+#   path "kv/data/platform/tenants/+/perf-alertmanager" { capabilities = ["read"] }
 ```
 
 ### Step 4: ExternalSecret + K8s Secret render (`perf-alertmanager-slack-secrets`)
@@ -126,12 +148,12 @@ ssh halil@staging-sw 'kubectl --context k3d-prod -n monitoring get externalsecre
 
 ### Step 5: Alertmanager helm values + receiver/route activate
 
-Helm values dormant snippet'i activate olarak ekle (ADR-0029 PR-2 emsali; Hibrit D):
+Helm values dormant snippet'i activate olarak ekle. **Route matcher iki pattern**:
+
+**Pattern A — Single-tenant Slack-only** (acik tenant yerine başka tenant Slack workspace'i kullanıyorsa; perf rules `team=perf` label mevcut PrometheusRule):
 
 ```yaml
-# helm-values/kube-prometheus-stack/values-prod.yaml additions:
-# (multi-tenant matcher pattern; Slack tenant-scoped route)
-
+# helm-values/kube-prometheus-stack/values-prod.yaml additions (Slack-only single-tenant):
 alertmanager.config.receivers:
   - name: perf-alerts-slack
     slack_configs:
@@ -142,17 +164,41 @@ alertmanager.config.receivers:
 
 alertmanager.config.route.routes:
   - matchers:
-      - 'team = perf'
-      - 'tenant_channel = slack'   # multi-tenant matcher
+      - 'team = perf'        # mevcut PrometheusRule label (canonical)
     receiver: perf-alerts-slack
-    continue: true   # bridge trail için
+    continue: true            # bridge trail için
 
 alertmanager.config.alertmanagerSpec.secrets:
-  - perf-alertmanager-slack-secrets   # mount path /etc/alertmanager/secrets/...
+  - perf-alertmanager-slack-secrets
 ```
 
+**Pattern B — Multi-tenant (acik=Teams + başka tenant=Slack)**: route matcher `tenant_channel="slack"` gibi tenant-scoped label gerekir; ANCAK mevcut `PerfFederationSmoke*` PrometheusRule sadece `severity/team/alert_class` label koyuyor — bu pattern aktivasyonu için ek prereq:
+
+```yaml
+# Prerequisite: PrometheusRule'a tenant label ekleme PR (PR-2 helm/ESO ile birlikte veya ayrı):
+# kustomize/base/monitoring/prometheusrule-frontend-federation-smoke-common.yaml
+# rules:
+#   - alert: PerfFederationSmokeFailing
+#     labels:
+#       team: perf
+#       severity: warning
+#       alert_class: synthetic-smoke
+#       tenant_id: "acik"           # ← NEW (multi-tenant pattern)
+#       tenant_channel: "teams"     # ← NEW (multi-tenant pattern)
+
+# Multi-tenant Slack route — başka tenant alert'i Slack'e yönlendir:
+alertmanager.config.route.routes:
+  - matchers:
+      - 'team = perf'
+      - 'tenant_channel = "slack"'   # tenant-aware
+    receiver: perf-alerts-slack
+    continue: true
+```
+
+**Yaklaşım kararı**: Single-tenant pattern A önerilir (operational simplicity); multi-tenant pattern B aktivasyon trigger'ı geldiğinde PrometheusRule label genişletme PR ile birlikte yapılır.
+
 ```bash
-# Helm upgrade
+# Helm upgrade (Pattern A example)
 ssh halil@staging-sw 'helm upgrade --reuse-values --set-file ... kube-prometheus-stack ...'
 
 # Veya kustomize-only path:
@@ -161,6 +207,10 @@ ssh halil@staging-sw 'kubectl --context k3d-prod -n monitoring apply -k kustomiz
 
 ### Step 6: Synthetic alert E2E (Slack delivery proof)
 
+**Iki pattern, Step 5 seçimine bağlı**:
+
+**Pattern A (Single-tenant)** — ConfigMap patch failures=1 yeterli (`team=perf` label mevcut rule'da):
+
 ```bash
 # Failures=1 patch (5dk sustain)
 ssh halil@staging-sw 'kubectl --context k3d-prod -n platform-prod patch cm frontend-federation-smoke-status \
@@ -168,7 +218,7 @@ ssh halil@staging-sw 'kubectl --context k3d-prod -n platform-prod patch cm front
 
 # 5-6 dk bekle (for: 5m clause + Alertmanager group_wait 30s)
 
-# Alertmanager active alerts firing kanıtı
+# Alertmanager active alerts firing kanıtı (route Slack'e düşmeli — team=perf matcher)
 ssh halil@staging-sw 'kubectl --context k3d-prod -n monitoring exec alertmanager-kube-prometheus-stack-alertmanager-0 \
   -- wget -qO- http://localhost:9093/api/v2/alerts' | jq '.[] | select(.labels.alertname=="PerfFederationSmokeFailing")'
 
@@ -181,6 +231,34 @@ ssh halil@staging-sw 'kubectl --context k3d-prod -n platform-prod patch cm front
 
 # 5dk sonra Slack'te [RESOLVED] mesajı (send_resolved: true)
 ```
+
+**Pattern B (Multi-tenant)** — ConfigMap patch işe yaramaz (tenant_channel label yok); Alertmanager API direct POST gerek:
+
+```bash
+# Synthetic alert direct POST (tenant_channel=slack label manual injection)
+ssh halil@staging-sw 'kubectl --context k3d-prod -n monitoring exec alertmanager-kube-prometheus-stack-alertmanager-0 \
+  -- wget -qO- --post-data="[{
+    \"labels\": {
+      \"alertname\": \"PerfFederationSmokeFailing\",
+      \"team\": \"perf\",
+      \"severity\": \"warning\",
+      \"tenant_id\": \"<tenant>\",
+      \"tenant_channel\": \"slack\"
+    },
+    \"annotations\": {
+      \"summary\": \"Synthetic Slack smoke test\"
+    }
+  }]" --header="Content-Type: application/json" http://localhost:9093/api/v2/alerts'
+
+# 30s bekle (group_wait)
+
+# Tenant Slack workspace #perf-alerts kanalını manuel kontrol:
+# Beklenen: Synthetic mesaj görünür (tenant_channel=slack matcher Slack route'a düşürdü)
+
+# Alert auto-resolves (no endsAt = default 5min after createdAt)
+```
+
+**Pattern seçimi audit**: Step 5'te seçilen route matcher pattern Step 6'da E2E smoke test'i belirler. Pattern uyumsuzluğu = E2E fail → reactivation acceptance kapanmaz.
 
 ---
 

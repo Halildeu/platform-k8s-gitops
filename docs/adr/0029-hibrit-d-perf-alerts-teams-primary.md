@@ -5,7 +5,8 @@
 > **Karar otoritesi**: Codex thread `019e6b24` (Hibrit D strategic verdict — cross-AI peer review REVISE→AGREE iter-1)
 > **Antecedent reviews**: `019e6abe` (Session 50 strategic A plan + B+C+D batch), `019e6ad9` (Session 50 closure batch absorb)
 > **Öncüller**: [ADR-0013 — Notification orchestration](./0013-notification-orchestration.md), [ADR-0027 — D43 SMTP Primary + Teams Deferred](./0027-d43-teams-power-automate-defer.md) (mirror pattern reference — D43 incident channel ile bu perf-regression channel paralel pattern), [V2.1-perf-alert-receiver.md](../runbooks/V2.1-perf-alert-receiver.md) (refactor scope)
-> **Implementation State**: perf-alertmanager **Teams Power Automate workflow source-side/desired-state canonical** (helm-values `webhook_configs` + ESO `perf-alertmanager-teams-secrets` 1-key); **Slack workspace path dormant, no active rendered config, no non-empty Vault secret, no Helm receiver block** (asset-preserved tenant demand-reactivated)
+> **Implementation State (2026-05-27)**: **Decision/target canonical (this ADR, PR-1)**: Teams Power Automate workflow primary canlı path (helm-values `webhook_configs` + ESO `perf-alertmanager-teams-secrets` 1-key); Slack workspace path dormant (no active rendered config, no non-empty Vault secret, no Helm receiver block) asset-preserved tenant demand-reactivated.
+> **Current rendered state**: helm-values + ESO **HÂLÂ Slack-canonical** (`slack_configs` receiver + `SLACK_WEBHOOK_URL` bekliyor). PR-1 sadece **decision/target state mühürler**; rendered state migration **PR-2 helm/ESO atomic** + **PR-3 operator activation** ile yapılır. PR-2 merge sonrası current rendered = target = Teams; Slack dormant.
 > **Yürütür**: Faz 23.x notification platform — perf regression alert channel routing track (V2.1 Exit #4 closure dependency)
 > **Reactivation runbook**: [RB-perf-alerts-slack-reactivation-chain.md](../runbooks/RB-perf-alerts-slack-reactivation-chain.md) (post-trigger atomic activation chain, tenant Slack workspace demand-driven)
 
@@ -71,12 +72,19 @@ Mevcut Slack pattern (`slack_configs` referansları, V2.1 runbook Slack-canonica
 | **Reactivation runbook** | RB-d43-teams-reactivation-chain.md | RB-perf-alerts-slack-reactivation-chain.md |
 | **Reactivation atomicity** | helm-values + ESO + Vault seed + receipt smoke aynı window | helm-values + ESO + Vault seed + receipt smoke aynı window |
 | **Owner-action scope** | ops + Microsoft Teams workspace admin | ops + Slack workspace admin (tenant-specific) |
+| **Current rendered dependency** | helm-values + ESO active SMTP-only LIVE; Teams not rendered | helm-values + ESO active Slack-only (PR-2 öncesi); Teams will be rendered PR-2; Slack will become dormant PR-2 |
+| **Activation evidence class** | SMTP receipt Mailpit + drill evidence (2026-05-24 BL-008) | Synthetic alert E2E → Teams Adaptive Card receipt + bridge trail evidence (PR-3 closure) |
 
 ### D4 — Risk register: R29 NEW (Teams Power Automate workflow lifecycle drift for perf-alertmanager)
 
 ADR-0027 D43 use case'i için R27 NEW eklenmişti (Microsoft Teams Power Automate workflow lifecycle drift if D43 Teams fallback is activated). Bu ADR-0029 perf-alertmanager için yeni risk açar:
 
-- **R29**: Teams Power Automate workflow perf-alertmanager primary path aktif olduğu için **active lifecycle drift risk** (R27'den farkı: dormant değil, ACTIVE). Mitigation chain (RB-perf-alerts-slack-reactivation-chain.md §5 + R27 7-step mitigation chain reuse): service-account/team-owned flow + exported package backup + monthly synthetic Teams smoke + defense-in-depth (Teams+SMTP+GitHub Issue) + DLP/license/quota preflight + flow run-history failed-run monitoring + URL rotation rehearsal.
+- **R29 — PR-1'de risk-register'a `pending activation` statüsüyle eklenmiştir** (PR-1 docs scope; risk becomes `active` PR-3 sonrası Teams receiver + Vault TEAMS_WEBHOOK_URL + synthetic Teams smoke receipt evidence kanıtlandığında).
+- **R29 detayı**: Teams Power Automate workflow perf-alertmanager primary path **aktif olacağı için** (PR-3 sonrası) **active lifecycle drift risk** (R27'den farkı: R27 dormant idi, R29 PR-3 sonrası ACTIVE). Mitigation chain (RB-perf-alerts-slack-reactivation-chain.md §5 + R27 7-step mitigation chain reuse): service-account/team-owned flow + exported package backup + monthly synthetic Teams smoke + defense-in-depth (Teams+SMTP+GitHub Issue) + DLP/license/quota preflight + flow run-history failed-run monitoring + URL rotation rehearsal.
+- **Status timeline**:
+  - PR-1 (bu): R29 row `🔵 PENDING ACTIVATION` (Teams not yet rendered/active)
+  - PR-2 helm/ESO atomic: status unchanged (rendered config aktif ama operator activation evidence yok)
+  - PR-3 operator activation evidence sonrası: R29 row `🟡 Active` (live monitoring required)
 
 ### D5 — Per-tenant pattern: Hibrit D semantic for multi-tenant flexibility
 
@@ -160,18 +168,15 @@ Kullanıcı explicit "Teams ile devam" — defer değil, immediate Hibrit D patt
 
 ## Implementation Plan (PR-1 scope — bu ADR)
 
-PR-1 (docs-only):
+PR-1 (docs-only — bu PR scope minimal-touch):
 
 1. ✅ `docs/adr/0029-hibrit-d-perf-alerts-teams-primary.md` NEW (bu doc)
-2. `docs/adr/README.md` index update — ADR-0029 row eklenir
-3. `docs/runbooks/V2.1-perf-alert-receiver.md` refactor:
-   - §1 Bağlam — Teams-canonical primary; Slack reactivation pointer
-   - §2 Tetik (Owner action) — Teams Power Automate workflow setup + Vault `TEAMS_WEBHOOK_URL` seed (Slack version §"Reactivation chain" sub-section'a taşınır)
-   - §3 Verify chain — Teams receipt + Adaptive Card delivery proof
-   - §"Slack reactivation chain (tenant demand-driven)" NEW subsection — RB-perf-alerts-slack-reactivation-chain.md pointer
-4. `docs/runbooks/RB-perf-alerts-slack-reactivation-chain.md` NEW (RB-d43-teams-reactivation-chain.md mirror — atomic 6-step reactivation: Slack workspace admin webhook üret + Vault seed + ESO refresh + helm route activate + receiver definition add + synthetic Slack alert receipt)
+2. ✅ `docs/adr/README.md` index update — ADR-0029 row eklenir
+3. ✅ `docs/runbooks/V2.1-perf-alert-receiver.md` **NOTICE-ONLY** edit — header'a "🔄 2026-05-27 Hibrit D Pivot Notice (ADR-0029)" subsection eklenir; Slack-canonical orig sections KORUNUR (historical reference + reactivation template) — **full Teams-canonical sweep PR-2 helm/ESO + PR-3 operator activation ile birlikte yapılır** (current-state drift önleme: helm/ESO rendered config Teams'e geçmeden runbook gövdesini Teams-canonical yapmak overclaim olur)
+4. ✅ `docs/runbooks/RB-perf-alerts-slack-reactivation-chain.md` NEW (RB-d43-teams-reactivation-chain.md mirror — atomic 6-step reactivation: Slack workspace admin webhook üret + Vault seed + ESO refresh + helm route activate + receiver definition add + synthetic Slack alert receipt)
+5. ✅ `docs/notify/risk-register.md` — R29 row `🔵 PENDING ACTIVATION` eklenir (PR-3 sonrası `🟡 Active`'e döner)
 
-PR-2 + PR-3 ayrı (helm/ESO atomic + operator activation evidence).
+PR-2 + PR-3 ayrı (helm/ESO atomic + operator activation evidence + V2.1 runbook full sweep PR-2/PR-3'te).
 
 ---
 
