@@ -1,6 +1,6 @@
 # ADR-0029 — Faz 22 Endpoint Agent Mass Deployment: mTLS self-enroll + AD CS code signing + MSI + GPO
 
-**Status:** Proposed (Plan A, owner-approved 2026-05-26, iter-6 Codex REVISE 3 finding absorbed; iter-7 review pending)
+**Status:** ACTIVE (Plan A, owner-approved 2026-05-26; 7-iter Codex cross-AI chain absorbed 12 finding F1-F5 + F1-F4 + F1-F3; MERGED PR #1078 `d677511e` 2026-05-26; AD CS preflight scripts + 7-section operator runbook MERGED PR #1080 `a9fab725` 2026-05-26). Remaining source-side: backend mTLS `POST /endpoint-enrollments/auto` endpoint (canonical platform-backend PR), agent `--auto-enroll` feature (canonical platform-agent PR), MSI WiX (#180 operator-bound), GPO Software Installation pilot (#181), 50/800 ramp (#182)
 **Decision date:** 2026-05-26
 **Authors:** Halil Koçoğlu, AI agent (Claude)
 **Cross-AI review:** Codex (OpenAI) review chain — thread `019e665f` (iter-1 REVISE 10 finding + iter-2 REVISE 6 high/medium + 6 yeni risk → iter-3 absorbed); thread `019e667f-98a5-7980-8f80-613fc1a1ed82` (iter-4 REVISE 5 finding F1-F5 → iter-5 absorb f45b7a2; iter-5 REVISE 4 finding F1-F4 → iter-6 absorb 3e5570f; iter-6 REVISE 3 finding F1-F3 → iter-7 absorb this commit; iter-7 review pending)
