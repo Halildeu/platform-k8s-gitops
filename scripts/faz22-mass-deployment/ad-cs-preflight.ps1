@@ -8,6 +8,20 @@
 #   - PR #1080 iter-1 absorb: F1 (template short name) + F2 (EditFlag SAN2 + CA Manager) +
 #     F3 (TPM fail-closed + -AllowSoftwareKey) + F4 (cert prune) + F5 (-Force non-interactive)
 #     — Codex 019e6a4a thread
+#   - PR #1080 iter-2 absorb (REVISE — 5 finding):
+#     * F2-A (HIGH) Template Issuance Requirements: "authorized signatures: 1" YANLIŞTI
+#       (Enrollment Agent flow semantiği) → doğru config = "Authorized signatures: 0" +
+#       "CA certificate manager approval: ENABLED" (ayrı checkbox; manual sign-off pipeline)
+#     * F2-B (HIGH) Pending approval ile enrollment uyumsuz → enroll-endpoint-agent-cert.ps1
+#       2-fazlı: Faz 1 (-submit RequestId parse + JSON state persist) + Faz 2 (-retrieve
+#       daily; duplicate guard; 7+ gün stale → operator alert)
+#     * F2-C (MEDIUM) Enable-EditFlagSan2 restart fail-closed: registry SET + net stop/start
+#       exit code + Get-Service Running double-check; Verify-Artifacts ayrı audit field
+#     * F3-A (MEDIUM) Initialize-EndpointCA existing CA path: Test-CACryptoProvider ile
+#       gerçek CSP/KSP audit; software-keyed CA tespitinde -AllowSoftwareKey yoksa throw
+#       (host TPM ready olsa bile CA software CSP olabilir); Verify-Artifacts ayrı row
+#     * F1-A (LOW) Runbook §5.1 HRESULT mapping canonical: 0x80094012/0x80094800/0x80092004/
+#       0x80094003/0x80094004 her biri tek anlam (önceki versiyon çakışıyordu)
 #
 # Purpose: DC üzerinde AD CS infrastructure'ı initialize edip Faz 22.3 mass
 # deployment için hazır hale getirmek. Operator (IT) çalıştırır; interactive
@@ -192,6 +206,51 @@ function Install-AdcsFeature {
 }
 
 # ============================================================================
+# F3-A absorb (iter-2 MEDIUM): existing CA path CSP/KSP provider audit
+# ============================================================================
+#
+# Initialize-EndpointCA existing CA varsa idempotent skip yapıyor (OK) ama
+# Verify-Artifacts sadece host TPM readiness'e bakıyordu; CA'nın gerçekten
+# TPM-backed CSP/KSP kullandığını doğrulamıyordu. Existing CA software key
+# kullanıyor olabilir (TPM degradation, eski init, vb.).
+#
+# Test-CACryptoProvider certutil -getreg ca\CSP\Provider ile gerçek provider'ı
+# okur; software KSP/CSP ise -AllowSoftwareKey ile owner approval check, yoksa
+# throw (fail-closed). Sonuç hashtable: Provider, TpmBound.
+
+function Test-CACryptoProvider {
+    try {
+        $caCspRaw = & certutil -getreg "ca\CSP\Provider" 2>&1 | Out-String
+        $caCspKsp = & certutil -getreg "ca\CSP\ProviderType" 2>&1 | Out-String
+        Write-StepLog "INFO" "F3-A: certutil -getreg ca\CSP\Provider output:`n$caCspRaw"
+    } catch {
+        Write-StepLog "WARN" "F3-A: certutil -getreg ca\CSP\Provider failed (CA not initialized?): $($_.Exception.Message)"
+        return @{ Provider = "Unknown"; TpmBound = $false; Raw = "$($_.Exception.Message)" }
+    }
+
+    if ($caCspRaw -match "Microsoft Platform Crypto Provider") {
+        Write-StepLog "INFO" "F3-A: CA key TPM-bound (Microsoft Platform Crypto Provider detected)"
+        return @{ Provider = "Microsoft Platform Crypto Provider"; TpmBound = $true; Raw = $caCspRaw }
+    }
+
+    if ($caCspRaw -match "Microsoft Software Key Storage Provider" -or
+        $caCspRaw -match "Microsoft Strong Cryptographic Provider" -or
+        $caCspRaw -match "Microsoft Enhanced") {
+        Write-StepLog "WARN" "F3-A: CA key SOFTWARE-stored (provider=$caCspRaw); TPM-bound DEĞİL"
+        if (-not $AllowSoftwareKey) {
+            throw "F3-A fail-closed: Existing CA key not TPM-bound + -AllowSoftwareKey not specified. " +
+                  "CA software-keyed (provider=$caCspRaw) — security degraded (R10 risk). " +
+                  "Çözüm: ya `-AllowSoftwareKey` ile yeniden çalıştır (owner approval kaydı), ya CA'yı Platform CSP ile re-init et (CA destructive — backup gerek)."
+        }
+        Write-StepLog "WARN" "F3-A: SOFTWARE KSP/CSP ACCEPTED via -AllowSoftwareKey (owner approval logged); R10 risk artar"
+        return @{ Provider = "Software (KSP/CSP)"; TpmBound = $false; Raw = $caCspRaw }
+    }
+
+    Write-StepLog "WARN" "F3-A: CA provider UNKNOWN (could not classify): $caCspRaw"
+    return @{ Provider = "Unknown"; TpmBound = $false; Raw = $caCspRaw }
+}
+
+# ============================================================================
 # Step 2: Initialize Enterprise Root CA "ACIK Endpoint CA"
 # ============================================================================
 
@@ -211,6 +270,10 @@ function Initialize-EndpointCA {
 
     if ($caExists) {
         Write-StepLog "INFO" "Step 2: CA '$CAName' already initialized (skip)"
+        # F3-A absorb (iter-2 MEDIUM): existing CA path — provider audit zorunlu.
+        # Software-keyed CA tespitinde -AllowSoftwareKey yoksa throw (fail-closed).
+        $providerInfo = Test-CACryptoProvider
+        Write-StepLog "INFO" "F3-A existing CA audit: Provider='$($providerInfo.Provider)', TpmBound=$($providerInfo.TpmBound)"
         return
     }
 
@@ -295,13 +358,33 @@ function Enable-EditFlagSan2 {
 
     if ($PSCmdlet.ShouldProcess("CA policy", "Enable EDITF_ATTRIBUTESUBJECTALTNAME2 + restart CertSvc")) {
         try {
+            # F2-C absorb (iter-2 MEDIUM): registry SET + restart exit code + CertSvc Running double-check.
+            # Önceki versiyon `net stop/start` exit code'unu kontrol etmiyordu; restart fail olsa bile
+            # Verify-Artifacts sadece registry flag'i görüp "LIVE" diyordu. Şimdi fail-closed:
+            # 1) certutil -setreg exit 0 değilse throw
+            # 2) net stop exit 0 değilse throw
+            # 3) net start exit 0 değilse throw
+            # 4) CertSvc Status != Running ise throw (post-restart bekleme + service check)
+
             & certutil -setreg "policy\EditFlags" "+EDITF_ATTRIBUTESUBJECTALTNAME2" 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "certutil -setreg failed exit=$LASTEXITCODE" }
-            Write-StepLog "INFO" "Step 2.5: EDITF_ATTRIBUTESUBJECTALTNAME2 flag SET"
+            if ($LASTEXITCODE -ne 0) { throw "certutil -setreg failed (exit=$LASTEXITCODE)" }
+            Write-StepLog "INFO" "Step 2.5: EDITF_ATTRIBUTESUBJECTALTNAME2 flag SET (registry write OK)"
 
             & net stop certsvc 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "net stop certsvc failed (exit=$LASTEXITCODE)" }
+            Write-StepLog "INFO" "Step 2.5: CertSvc stopped (exit=0)"
+
             & net start certsvc 2>&1 | Out-Null
-            Write-StepLog "INFO" "Step 2.5: CertSvc restarted; SAN URI custom extension acceptance LIVE (CA Manager approval mandatory)"
+            if ($LASTEXITCODE -ne 0) { throw "net start certsvc failed (exit=$LASTEXITCODE)" }
+            Write-StepLog "INFO" "Step 2.5: CertSvc start command issued (exit=0)"
+
+            # Wait + verify Running state (post-restart service may need a moment)
+            Start-Sleep -Seconds 3
+            $svc = Get-Service -Name CertSvc -ErrorAction Stop
+            if ($svc.Status -ne "Running") {
+                throw "CertSvc not Running after restart (Status=$($svc.Status)) — F2-C fail-closed: registry flag set ama service down → LIVE değil"
+            }
+            Write-StepLog "INFO" "Step 2.5: CertSvc Running verified (F2-C fail-closed pass); SAN URI custom extension acceptance LIVE (CA Manager approval mandatory)"
         } catch {
             Write-StepLog "ERROR" "Step 2.5: EditFlag SAN2 enable failed: $($_.Exception.Message)"
             throw
@@ -360,9 +443,12 @@ function Create-MachineCertTemplate {
      - Subject Name: 'Supply in the request' (F2 absorb iter-1 HIGH — custom SAN URI
                     için Build-from-AD yerine Supply-in-request; ayrıntı §3.2.5)
      - Extensions: Application Policies = 'Client Authentication' (1.3.6.1.5.5.7.3.2)
-     - Issuance Requirements: 'This number of authorized signatures: 1' (F2 absorb —
-                    CA Manager manuel approval pipeline; 5 PC pilot için sürdürülebilir;
-                    50/800 ramp için custom AD CS policy module gerek)
+     - Issuance Requirements (F2-A absorb iter-2 HIGH MERGE BLOCKER — önceki "authorized signatures: 1" YANLIŞTI;
+                              o setting Enrollment Agent signed-request flow'unu etkinleştirir,
+                              biz o flow'u kullanmıyoruz; CA Manager approval AYRI checkbox):
+         * `Authorized signatures: 0` (Enrollment Agent flow YOK — bizim INF/certreq akışı agent signed-request üretmiyor)
+         * **`CA certificate manager approval: ENABLED`** (manual sign-off checkbox — request pending state'e geçer; CA Manager Certification Authority MMC'den approve eder)
+         * 5 PC pilot scope için sürdürülebilir; 50/800 ramp için custom AD CS policy module gerek
      - Security: Domain Computers = 'Read' + 'Autoenroll' (not just 'Enroll'); add 'Authenticated Users' for read
   4. OK to save
 
@@ -407,7 +493,9 @@ function Create-CodeSigningCertTemplate {
      - Cryptography: TPM provider OK; Hash SHA256
      - Subject Name: 'Supply in the request' (manuel certreq)
      - Extensions: Application Policies = 'Code Signing' (1.3.6.1.5.5.7.3.3)
-     - Issuance Requirements: 'This number of authorized signatures: 1' (CA Manager approval — operator manual sign-off pipeline)
+     - Issuance Requirements (F2-A absorb iter-2 HIGH MERGE BLOCKER — önceki "authorized signatures: 1" YANLIŞTI):
+         * `Authorized signatures: 0` (Enrollment Agent flow YOK)
+         * **`CA certificate manager approval: ENABLED`** (operator manuel sign-off pipeline; pending state → CA Manager approve)
      - Security: agent-team-restricted group 'Read' + 'Enroll' (NOT 'Autoenroll')
   3. OK to save
 
@@ -681,7 +769,7 @@ function Verify-Artifacts {
     try {
         $editFlags = & certutil -getreg "policy\EditFlags" 2>&1 | Out-String
         $results["F2 EditFlag SAN2"] = if ($editFlags -match "EDITF_ATTRIBUTESUBJECTALTNAME2") {
-            "OK (custom SAN URI accept LIVE; CA Manager approval mandatory)"
+            "OK (registry flag SET)"
         } else {
             "FAIL (run Step EditFlag; custom URI:adcomputer SAN reject olur)"
         }
@@ -689,19 +777,55 @@ function Verify-Artifacts {
         $results["F2 EditFlag SAN2"] = "FAIL: $($_.Exception.Message)"
     }
 
-    # F3 absorb verify: TPM/KSP state
+    # F2-C absorb verify (iter-2 MEDIUM): CertSvc Running double-check ayrı audit field.
+    # Registry flag SET olsa bile service down ise EditFlag etkin değil (restart fail-closed).
+    try {
+        $svc = Get-Service -Name CertSvc -ErrorAction Stop
+        $results["F2-C CertSvc Running"] = if ($svc.Status -eq "Running") {
+            "OK (Status=Running; SAN URI accept + CA Manager approval pipeline LIVE)"
+        } else {
+            "FAIL (Status=$($svc.Status); EditFlag etkin DEĞİL — restart fail-closed pattern)"
+        }
+    } catch {
+        $results["F2-C CertSvc Running"] = "FAIL: Get-Service CertSvc failed: $($_.Exception.Message)"
+    }
+
+    # F3 absorb verify (iter-1): host TPM/KSP capability state
     try {
         $tpm = Get-Tpm -ErrorAction Stop
         $tpmReady = ($tpm.TpmPresent -and $tpm.TpmReady -and $tpm.TpmEnabled)
-        $results["F3 TPM Capability"] = if ($tpmReady) {
-            "OK (TPM 2.0 ready; CA key TPM-bound)"
+        $results["F3 TPM Capability (host)"] = if ($tpmReady) {
+            "OK (TPM 2.0 ready on host)"
         } elseif ($AllowSoftwareKey) {
             "WARN (TPM degraded; software KSP fallback authorized via -AllowSoftwareKey; R10 risk)"
         } else {
             "FAIL (TPM not ready; rerun with -AllowSoftwareKey or fix TPM hardware)"
         }
     } catch {
-        $results["F3 TPM Capability"] = if ($AllowSoftwareKey) { "WARN (Get-Tpm unavailable; software fallback authorized)" } else { "FAIL: Get-Tpm unavailable" }
+        $results["F3 TPM Capability (host)"] = if ($AllowSoftwareKey) { "WARN (Get-Tpm unavailable; software fallback authorized)" } else { "FAIL: Get-Tpm unavailable" }
+    }
+
+    # F3-A absorb verify (iter-2 MEDIUM): CA Key Binding — gerçek CSP/KSP provider
+    # host TPM ready olsa bile CA initialize edildiğinde software CSP seçildiyse
+    # (eski init, yanlış config, vb.) CA key TPM-bound DEĞİL. certutil -getreg ile
+    # gerçek provider okunur; mismatch tespit edilir.
+    try {
+        $caCspRaw = & certutil -getreg "ca\CSP\Provider" 2>&1 | Out-String
+        if ($caCspRaw -match "Microsoft Platform Crypto Provider") {
+            $results["F3-A CA Key Binding"] = "OK (CA key TPM-bound; Platform CSP)"
+        } elseif ($caCspRaw -match "Microsoft Software Key Storage Provider" -or
+                  $caCspRaw -match "Microsoft Strong Cryptographic Provider" -or
+                  $caCspRaw -match "Microsoft Enhanced") {
+            $results["F3-A CA Key Binding"] = if ($AllowSoftwareKey) {
+                "WARN (CA key SOFTWARE-stored; -AllowSoftwareKey owner approval; R10 risk artar)"
+            } else {
+                "FAIL (CA key SOFTWARE-stored; CA re-init Platform CSP veya -AllowSoftwareKey gerek)"
+            }
+        } else {
+            $results["F3-A CA Key Binding"] = "WARN (CA provider classify edilemedi: $($caCspRaw.Trim()))"
+        }
+    } catch {
+        $results["F3-A CA Key Binding"] = "FAIL: certutil -getreg ca\CSP\Provider failed: $($_.Exception.Message)"
     }
 
     # Print results

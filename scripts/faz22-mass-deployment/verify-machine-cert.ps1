@@ -4,6 +4,11 @@
 # P0-23 acceptance: certutil -store -enterprise My + DirectorySearcher cross-check
 # Iter-6 F1 absorb: LocalMachine\My (not CurrentUser); RSAT-free DirectorySearcher
 #
+# PR #1080 iter-2 not: F2-B 2-fazlı enrollment ile cert pending durumunda bu script
+# "Cert found: False" döner (henüz install edilmemiş). Operator check için pending state:
+#   Get-Content "$env:ProgramData\faz22.3-pending-requests.json"
+# Pending entry varsa cert henüz CA Manager approval bekliyor; runbook §3.2.5 + §5.1.
+#
 # Usage:
 #   .\verify-machine-cert.ps1                  # interactive output
 #   .\verify-machine-cert.ps1 -Json            # JSON output (for automation)

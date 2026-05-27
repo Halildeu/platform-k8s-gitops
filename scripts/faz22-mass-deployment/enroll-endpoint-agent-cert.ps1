@@ -14,13 +14,25 @@
 #   - F4: Post-install old cert prune (same SAN URI, different thumbprint) →
 #         LocalMachine\My deterministic single-cert state; agent ambiguity engellenir
 #
+# PR #1080 iter-2 F2-B absorb (Codex iter-2 HIGH MERGE BLOCKER):
+#   - CA Manager approval ENABLED (F2-A absorb iter-2) → certreq -submit "request taken
+#     under submission, RequestId=N" döner; cert hemen hazır değil.
+#   - 2-fazlı enrollment: Faz 1 (initial submit → RequestId parse → JSON state persist)
+#     + Faz 2 (daily retry: certreq -retrieve → cert hazır ise -accept + state remove;
+#     pending ise warn + skip; denied ise alert).
+#   - Pending state file: $env:ProgramData\faz22.3-pending-requests.json
+#   - Duplicate guard: aynı PC için pending request varsa yeni submit YASAK
+#   - Stale guard: pending > 7 gün → operator alert (manuel inspection gerek)
+#
 # Deployment: SYSVOL via GPO startup script + GPO schedule task (daily renewal)
 # Trigger:    Computer boot + daily 03:00 schedule task
 # Context:    SYSTEM account (GPO startup runs as NT AUTHORITY\SYSTEM)
 # Idempotent: existing valid cert (SAN URI match + not expired + not near-expiry) → skip
+#             pending request varsa yeniden submit ETME (CA approval bekleniyor)
 #
 # Cross-AI peer review: Codex 019e667f-98a5-7980-8f80-613fc1a1ed82 iter-7 AGREE (ADR-0029)
 #                       Codex 019e6a4a-... iter-1 5 finding absorb (PR #1080)
+#                       Codex iter-2 — F2-A/F2-B/F2-C/F3-A/F1-A absorb (this commit)
 # Board issue: #1079
 
 [CmdletBinding(SupportsShouldProcess = $true)]
@@ -33,7 +45,14 @@ param(
     # short name'i kullanır. Override gerekirse yine HYPHENLESS short name verin.
     [Parameter()][string]$Template = "EndpointAgentMachineCert",
     [Parameter()][string]$LogPath = "$env:ProgramData\faz22.3-enroll-cert.log",
-    [Parameter()][int]$NearExpiryDays = 30
+    [Parameter()][int]$NearExpiryDays = 30,
+    # F2-B absorb (iter-2 HIGH MERGE BLOCKER): CA Manager approval ENABLED ile
+    # certreq -submit hemen cert döndürmez; "request taken under submission, RequestId=N"
+    # döner. Bu RequestId persistence + daily retry için JSON state file.
+    [Parameter()][string]$PendingRequestsPath = "$env:ProgramData\faz22.3-pending-requests.json",
+    # Pending request > $StalePendingDays gün ise operator alert (manuel inspection gerek);
+    # default 7 gün.
+    [Parameter()][int]$StalePendingDays = 7
 )
 
 Set-StrictMode -Version Latest
@@ -123,13 +142,247 @@ function Test-ExistingValidCert {
 }
 
 # ============================================================================
-# Step 3: certreq 3-step flow (iter-5 F1 absorb — valid syntax)
+# F2-B absorb (iter-2 HIGH MERGE BLOCKER) — Pending request state management
 # ============================================================================
+#
+# CA Manager approval ENABLED (F2-A) → certreq -submit hemen cert döndürmez;
+# "request taken under submission, RequestId=N" döner. RequestId persistence +
+# daily retry için JSON state file.
+#
+# Schema (faz22.3-pending-requests.json):
+# {
+#   "ACIKDC01": {                              # machine name (case-insensitive key)
+#     "request_id": 12345,
+#     "submitted_at": "2026-05-27T03:00:12Z",
+#     "dns_name": "ACIKDC01.acik.local",
+#     "guid": "abc12345-...",
+#     "template": "EndpointAgentMachineCert"
+#   }
+# }
+#
+# Operations:
+# - Get-PendingRequest: bu PC için pending var mı?
+# - Save-PendingRequest: yeni submit sonrası RequestId persist
+# - Remove-PendingRequest: success/denied sonrası temizle
+# - Test-PendingStale: pending > $StalePendingDays gün mü?
+
+function Read-PendingRequestsJson {
+    if (-not (Test-Path $PendingRequestsPath)) {
+        return @{}
+    }
+    try {
+        $raw = Get-Content $PendingRequestsPath -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($raw)) { return @{} }
+        $obj = $raw | ConvertFrom-Json -ErrorAction Stop
+        # Convert PSCustomObject to hashtable for in-place edit
+        $ht = @{}
+        $obj.PSObject.Properties | ForEach-Object { $ht[$_.Name] = $_.Value }
+        return $ht
+    } catch {
+        Write-EnrollLog "WARN" "F2-B: pending-requests.json read failed (corrupt?): $($_.Exception.Message); treating as empty"
+        return @{}
+    }
+}
+
+function Write-PendingRequestsJson {
+    param([hashtable]$Data)
+    try {
+        $json = $Data | ConvertTo-Json -Depth 5
+        $json | Out-File -FilePath $PendingRequestsPath -Encoding UTF8 -Force
+    } catch {
+        Write-EnrollLog "ERROR" "F2-B: pending-requests.json write failed: $($_.Exception.Message)"
+        throw
+    }
+}
+
+function Get-PendingRequest {
+    $all = Read-PendingRequestsJson
+    if ($all.ContainsKey($env:COMPUTERNAME)) {
+        return $all[$env:COMPUTERNAME]
+    }
+    return $null
+}
+
+function Save-PendingRequest {
+    param(
+        [int]$RequestId,
+        [string]$DnsName,
+        [string]$Guid
+    )
+    $all = Read-PendingRequestsJson
+    $all[$env:COMPUTERNAME] = [PSCustomObject]@{
+        request_id    = $RequestId
+        submitted_at  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        dns_name      = $DnsName
+        guid          = $Guid
+        template      = $Template
+    }
+    Write-PendingRequestsJson -Data $all
+    Write-EnrollLog "INFO" "F2-B: Pending request saved (RequestId=$RequestId, machine=$env:COMPUTERNAME)"
+}
+
+function Remove-PendingRequest {
+    $all = Read-PendingRequestsJson
+    if ($all.ContainsKey($env:COMPUTERNAME)) {
+        $all.Remove($env:COMPUTERNAME)
+        Write-PendingRequestsJson -Data $all
+        Write-EnrollLog "INFO" "F2-B: Pending request removed for $env:COMPUTERNAME"
+    }
+}
+
+function Test-PendingStale {
+    param([PSCustomObject]$Pending)
+    try {
+        $submitted = [DateTime]::Parse($Pending.submitted_at)
+        $age = ((Get-Date).ToUniversalTime() - $submitted).TotalDays
+        return ($age -gt $StalePendingDays)
+    } catch {
+        Write-EnrollLog "WARN" "F2-B: Test-PendingStale parse failed; treating as stale: $($_.Exception.Message)"
+        return $true
+    }
+}
+
+# ============================================================================
+# Step 3: certreq 2-fazlı flow (iter-5 F1 + iter-2 F2-B absorb)
+# ============================================================================
+#
+# Faz 1 (initial submit): no pending → certreq -new + -submit → RequestId parse
+#   if RequestId döndü (pending) → state persist + exit (cert henüz yok)
+#   if cert hemen geldiyse (CA approval bypass durumu) → -accept + state-free
+#
+# Faz 2 (pending retrieve): pending exists →
+#   certreq -retrieve $RequestId → if cert hazır: -accept + remove pending
+#                                   if hâlâ pending: warn + skip (next daily retry)
+#                                   if denied: error + alert (operator inspection)
+#                                   if stale (>7 gün): operator alert
+
+function Install-Cert {
+    param(
+        [string]$CerFile,
+        [string]$DnsName,
+        [string]$Guid
+    )
+
+    Write-EnrollLog "INFO" "Install-Cert: certreq -accept -machine $CerFile"
+    if ($PSCmdlet.ShouldProcess("certreq -accept", "Install cert to LocalMachine\My")) {
+        $acceptOutput = & certreq.exe -accept -q -f -machine $CerFile 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            Write-EnrollLog "ERROR" "Install-Cert: certreq -accept failed (exit=$LASTEXITCODE): $acceptOutput"
+            throw "certreq -accept failed — private key binding issue"
+        }
+        Write-EnrollLog "INFO" "Install-Cert: Cert installed to LocalMachine\My (private key TPM-bound)"
+    }
+
+    # Verify cert exists in store post-install
+    $installedCert = Get-ChildItem Cert:\LocalMachine\My | Where-Object {
+        $_.Subject -eq "CN=$DnsName" -and
+        ($_.Extensions | Where-Object { $_.Oid.Value -eq "2.5.29.17" -and ($_.Format($false) -match "URL=adcomputer:$Guid") })
+    } | Sort-Object NotBefore -Descending | Select-Object -First 1
+
+    if (-not $installedCert) {
+        Write-EnrollLog "ERROR" "Install-Cert: Post-install verify failed — cert not found in LocalMachine\My with matching SAN URI"
+        throw "Cert install verify failed"
+    }
+    Write-EnrollLog "INFO" "Install-Cert: Verified — Thumbprint=$($installedCert.Thumbprint), NotAfter=$($installedCert.NotAfter)"
+
+    # F4 absorb (iter-1 MEDIUM): Prune old/superseded certs (same SAN URI, different thumbprint).
+    try {
+        $oldCerts = Get-ChildItem Cert:\LocalMachine\My | Where-Object {
+            $_.Subject -like "CN=$DnsName*" -and
+            $_.Thumbprint -ne $installedCert.Thumbprint -and
+            ($_.Extensions | Where-Object { $_.Oid.Value -eq "2.5.29.17" -and ($_.Format($false) -match "URL=adcomputer:$Guid") })
+        }
+        foreach ($old in $oldCerts) {
+            Write-EnrollLog "INFO" "F4 prune: Removing superseded cert thumbprint=$($old.Thumbprint) NotAfter=$($old.NotAfter) (superseded by $($installedCert.Thumbprint))"
+            Remove-Item "Cert:\LocalMachine\My\$($old.Thumbprint)" -Force -ErrorAction SilentlyContinue
+        }
+        if ($oldCerts.Count -gt 0) {
+            Write-EnrollLog "INFO" "F4 prune: $($oldCerts.Count) old cert(s) removed; LocalMachine\My now contains single valid cert for SAN URI adcomputer:$Guid"
+        } else {
+            Write-EnrollLog "INFO" "F4 prune: No old certs to prune (clean state)"
+        }
+    } catch {
+        Write-EnrollLog "WARN" "F4 prune failed (non-fatal): $($_.Exception.Message)"
+    }
+}
+
+function Invoke-PendingRetrieve {
+    param(
+        [PSCustomObject]$Pending,
+        [string]$DnsName,
+        [string]$Guid
+    )
+
+    Write-EnrollLog "INFO" "F2-B Faz 2: pending request retrieve (RequestId=$($Pending.request_id), submitted_at=$($Pending.submitted_at))"
+
+    # Stale guard
+    if (Test-PendingStale -Pending $Pending) {
+        Write-EnrollLog "ERROR" "F2-B STALE: Pending request RequestId=$($Pending.request_id) is older than $StalePendingDays days — operator action required (CA Manager approval missing / denied silently)"
+        Write-EnrollLog "ERROR" "F2-B STALE: Manual inspection: certutil -view -restrict 'RequestId=$($Pending.request_id)' on CA"
+        # State'i tutuyoruz — operator manuel temizleyene kadar yeniden submit etmiyoruz
+        return $false
+    }
+
+    $cerFile = "$env:TEMP\endpoint-agent-retrieve-$(Get-Random).cer"
+    try {
+        Write-EnrollLog "INFO" "F2-B: certreq -retrieve -config '$CAConfig' $($Pending.request_id) $cerFile"
+        if ($PSCmdlet.ShouldProcess("certreq -retrieve", "Retrieve pending request $($Pending.request_id)")) {
+            $retrieveOutput = & certreq.exe -retrieve -q -f -config $CAConfig $Pending.request_id $cerFile 2>&1 | Out-String
+
+            # certreq -retrieve exit codes:
+            # 0 = cert hazır (issued); -accept'e geç
+            # 0x80094004 (-2146877436) = denied
+            # 0x80094003 = taken under submission (hâlâ pending)
+            # other = transient error
+            if ($LASTEXITCODE -eq 0 -and (Test-Path $cerFile) -and ((Get-Item $cerFile).Length -gt 0)) {
+                Write-EnrollLog "INFO" "F2-B: Cert retrieved — proceeding to -accept"
+                Install-Cert -CerFile $cerFile -DnsName $DnsName -Guid $Guid
+                Remove-PendingRequest
+                return $true
+            }
+
+            # Parse output for state classification
+            if ($retrieveOutput -match "denied|0x80094004") {
+                Write-EnrollLog "ERROR" "F2-B DENIED: RequestId=$($Pending.request_id) was denied by CA Manager — operator inspection required"
+                Write-EnrollLog "ERROR" "F2-B DENIED output: $retrieveOutput"
+                # State'i temizle ki next run yeni submit yapabilsin (CA Manager intentional reject ise admin manuel)
+                Remove-PendingRequest
+                return $false
+            }
+
+            if ($retrieveOutput -match "taken under submission|0x80094003|pending") {
+                Write-EnrollLog "WARN" "F2-B: RequestId=$($Pending.request_id) hâlâ pending; CA Manager approval bekleniyor (next daily run retry)"
+                return $false
+            }
+
+            Write-EnrollLog "WARN" "F2-B: certreq -retrieve unexpected output (exit=$LASTEXITCODE): $retrieveOutput"
+            return $false
+        }
+    } finally {
+        Remove-Item $cerFile -Force -ErrorAction SilentlyContinue
+    }
+    return $false
+}
 
 function Invoke-CertReqEnrollment {
     param([string]$Guid, [string]$DnsName)
 
-    Write-EnrollLog "INFO" "Step 3: certreq 3-step flow start (template short name='$Template', CA=$CAConfig)"
+    # F2-B Faz 2: pending request varsa önce onu retrieve etmeyi dene
+    $pending = Get-PendingRequest
+    if ($pending) {
+        Write-EnrollLog "INFO" "F2-B: Existing pending request detected (RequestId=$($pending.request_id)); attempting retrieve before new submit"
+        $retrieved = Invoke-PendingRetrieve -Pending $pending -DnsName $DnsName -Guid $Guid
+        if ($retrieved) {
+            Write-EnrollLog "INFO" "F2-B: Pending retrieve succeeded; cert installed"
+            return
+        }
+        # Hâlâ pending veya stale → yeni submit YASAK (duplicate request engelle)
+        Write-EnrollLog "INFO" "F2-B: Pending unresolved; skip new submit (duplicate guard)"
+        return
+    }
+
+    # F2-B Faz 1: no pending → yeni submit
+    Write-EnrollLog "INFO" "Step 3: certreq submit flow start (template short name='$Template', CA=$CAConfig)"
 
     $infFile = "$env:TEMP\endpoint-agent-cert-$(Get-Random).inf"
     $reqFile = "$env:TEMP\endpoint-agent-cert-$(Get-Random).req"
@@ -138,7 +391,8 @@ function Invoke-CertReqEnrollment {
     # F1 absorb: CertificateTemplate request attribute SHORT NAME alır (display değil).
     # `$Template` = HYPHENLESS canonical (default "EndpointAgentMachineCert").
     # F2 absorb: Template Subject Name = "Supply in the request" → INF subject + custom SAN URI
-    # mandatory. CA Manager approval pipeline (Issuance Requirements signatures=1) mandatory.
+    # mandatory. CA Manager approval pipeline (F2-A: "CA certificate manager approval: ENABLED")
+    # → -submit RequestId döndürür; F2-B 2-fazlı retry mekanizması ile cert hazır olduğunda alınır.
     $inf = @"
 [NewRequest]
 Subject = "CN=$DnsName"
@@ -173,68 +427,38 @@ _continue_ = "URL=adcomputer:$Guid"
             Write-EnrollLog "INFO" "Step 3a: REQ file created: $reqFile"
         }
 
-        # Step 3b: -submit (submit to CA, get cert)
+        # Step 3b: -submit (submit to CA; with CA Manager approval ENABLED, returns RequestId not cert)
         Write-EnrollLog "INFO" "Step 3b: certreq -submit -config '$CAConfig' $reqFile $cerFile"
         if ($PSCmdlet.ShouldProcess("certreq -submit", "Submit request to CA")) {
             $submitOutput = & certreq.exe -submit -q -f -config $CAConfig $reqFile $cerFile 2>&1 | Out-String
-            if ($LASTEXITCODE -ne 0) {
-                Write-EnrollLog "ERROR" "Step 3b: certreq -submit failed (exit=$LASTEXITCODE): $submitOutput"
-                throw "certreq -submit failed — CA reachability + template permission check"
+            Write-EnrollLog "INFO" "Step 3b output (exit=$LASTEXITCODE): $submitOutput"
+
+            # F2-B: RequestId parse — output formatı "RequestId: <int>" veya "Request Id: <int>"
+            $requestIdMatch = [regex]::Match($submitOutput, "Request\s?(?:ID|Id):\s*(\d+)", "IgnoreCase")
+
+            # Check: cert hemen geldi mi (cer file size > 0 + exit 0)?
+            $cerImmediate = (Test-Path $cerFile) -and ((Get-Item $cerFile).Length -gt 0)
+
+            if ($cerImmediate -and $LASTEXITCODE -eq 0) {
+                # CA Manager approval bypass durumu (örn. template'de approval disable) — direkt -accept
+                Write-EnrollLog "INFO" "Step 3b: Cert returned immediately (CA Manager approval bypass detected); proceeding to -accept"
+                Install-Cert -CerFile $cerFile -DnsName $DnsName -Guid $Guid
+                return
             }
-            Write-EnrollLog "INFO" "Step 3b: CER file received: $cerFile"
+
+            if ($requestIdMatch.Success) {
+                # F2-B Faz 1: pending — RequestId persist + exit (next daily run retrieve)
+                $requestId = [int]$requestIdMatch.Groups[1].Value
+                Write-EnrollLog "INFO" "F2-B: Request submitted, taken under submission (RequestId=$requestId); CA Manager approval pending"
+                Save-PendingRequest -RequestId $requestId -DnsName $DnsName -Guid $Guid
+                Write-EnrollLog "INFO" "F2-B: Cert not yet available; daily schedule task will retrieve when CA Manager approves"
+                return
+            }
+
+            # Neither immediate cert nor parseable RequestId → genuine failure
+            Write-EnrollLog "ERROR" "Step 3b: certreq -submit failed (no RequestId parsed, no cer file): $submitOutput"
+            throw "certreq -submit failed — no RequestId parsed and no cert returned; check CA reachability + template permission"
         }
-
-        # Step 3c: -accept (install cert to LocalMachine\My with private key binding)
-        Write-EnrollLog "INFO" "Step 3c: certreq -accept -machine $cerFile"
-        if ($PSCmdlet.ShouldProcess("certreq -accept", "Install cert to LocalMachine\My")) {
-            $acceptOutput = & certreq.exe -accept -q -f -machine $cerFile 2>&1 | Out-String
-            if ($LASTEXITCODE -ne 0) {
-                Write-EnrollLog "ERROR" "Step 3c: certreq -accept failed (exit=$LASTEXITCODE): $acceptOutput"
-                throw "certreq -accept failed — private key binding issue"
-            }
-            Write-EnrollLog "INFO" "Step 3c: Cert installed to LocalMachine\My (private key TPM-bound)"
-        }
-
-        # Verify cert exists in store post-install
-        $installedCert = Get-ChildItem Cert:\LocalMachine\My | Where-Object {
-            $_.Subject -eq "CN=$DnsName" -and
-            ($_.Extensions | Where-Object { $_.Oid.Value -eq "2.5.29.17" -and ($_.Format($false) -match "URL=adcomputer:$Guid") })
-        } | Sort-Object NotBefore -Descending | Select-Object -First 1
-
-        if ($installedCert) {
-            Write-EnrollLog "INFO" "Step 3: Cert installed and verified — Thumbprint=$($installedCert.Thumbprint), NotAfter=$($installedCert.NotAfter)"
-        } else {
-            Write-EnrollLog "ERROR" "Step 3: Post-install verify failed — cert not found in LocalMachine\My with matching SAN URI"
-            throw "Cert install verify failed"
-        }
-
-        # F4 absorb (iter-1 MEDIUM): Prune old/superseded certs (same SAN URI, different thumbprint).
-        # Near-expiry rollover veya expired cert pile-up önlemek için: yeni cert install
-        # OK'den sonra, aynı SAN URI:adcomputer:{guid}'a sahip diğer (eski) cert'leri sil.
-        # Bu sayede LocalMachine\My'da agent için tek deterministic cert kalır;
-        # `Get-ChildItem | Where-Object SAN match` query her zaman exactly-one döner,
-        # agent hangi cert'i seçeceği konusunda belirsiz kalmaz.
-        try {
-            $oldCerts = Get-ChildItem Cert:\LocalMachine\My | Where-Object {
-                $_.Subject -like "CN=$DnsName*" -and
-                $_.Thumbprint -ne $installedCert.Thumbprint -and
-                ($_.Extensions | Where-Object { $_.Oid.Value -eq "2.5.29.17" -and ($_.Format($false) -match "URL=adcomputer:$Guid") })
-            }
-            foreach ($old in $oldCerts) {
-                Write-EnrollLog "INFO" "F4 prune: Removing superseded cert thumbprint=$($old.Thumbprint) NotAfter=$($old.NotAfter) (superseded by $($installedCert.Thumbprint))"
-                Remove-Item "Cert:\LocalMachine\My\$($old.Thumbprint)" -Force -ErrorAction SilentlyContinue
-            }
-            if ($oldCerts.Count -gt 0) {
-                Write-EnrollLog "INFO" "F4 prune: $($oldCerts.Count) old cert(s) removed; LocalMachine\My now contains single valid cert for SAN URI adcomputer:$Guid"
-            } else {
-                Write-EnrollLog "INFO" "F4 prune: No old certs to prune (clean state)"
-            }
-        } catch {
-            # F4 prune failure non-fatal — yeni cert OK, eski cert'ler kalmış olsa bile agent
-            # Sort-Object NotBefore -Descending | Select-Object -First 1 fallback ile en yeniyi alır.
-            Write-EnrollLog "WARN" "F4 prune failed (non-fatal): $($_.Exception.Message)"
-        }
-
     } finally {
         Remove-Item $infFile, $reqFile, $cerFile -Force -ErrorAction SilentlyContinue
     }
@@ -250,6 +474,7 @@ try {
     Write-EnrollLog "INFO" "Computer: $env:COMPUTERNAME"
     Write-EnrollLog "INFO" "Domain: $((Get-WmiObject Win32_ComputerSystem).Domain)"
     Write-EnrollLog "INFO" "Template: $Template | CA: $CAConfig | NearExpiryDays: $NearExpiryDays"
+    Write-EnrollLog "INFO" "F2-B PendingRequestsPath: $PendingRequestsPath | StalePendingDays: $StalePendingDays"
     Write-EnrollLog "INFO" "WhatIf: $($PSCmdlet.MyInvocation.BoundParameters['WhatIf'].IsPresent)"
 
     # Pre-check: domain-joined?
@@ -265,17 +490,24 @@ try {
     # Step 1: AD computer object lookup
     $guid = Get-MachineObjectGuid
 
-    # Step 2: Idempotent check
+    # Step 2: Idempotent check (valid cert varsa erken çıkış; F2-B: pending leftover varsa temizle)
     if (Test-ExistingValidCert -Guid $guid -DnsName $dnsName) {
+        # Valid cert var → eğer pending state file'da bu PC için entry varsa (eski stale),
+        # cert zaten mint edildiği için pending entry artık ihtiyaç yok → temizle.
+        $pending = Get-PendingRequest
+        if ($pending) {
+            Write-EnrollLog "INFO" "F2-B: Valid cert exists + stale pending entry detected (RequestId=$($pending.request_id)); removing"
+            Remove-PendingRequest
+        }
         Write-EnrollLog "INFO" "Idempotent skip — valid existing cert"
         Write-EnrollLog "INFO" "============================================================================"
         exit 0
     }
 
-    # Step 3: certreq 3-step enrollment
+    # Step 3: certreq enrollment (F2-B 2-fazlı: pending varsa retrieve dener, yoksa yeni submit)
     Invoke-CertReqEnrollment -Guid $guid -DnsName $dnsName
 
-    Write-EnrollLog "INFO" "Enrollment COMPLETE — cert ready for agent --auto-enroll mTLS"
+    Write-EnrollLog "INFO" "Enrollment flow COMPLETE — (cert installed | pending CA Manager approval | skipped)"
     Write-EnrollLog "INFO" "============================================================================"
     exit 0
 
