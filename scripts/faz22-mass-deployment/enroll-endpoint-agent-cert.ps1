@@ -463,16 +463,19 @@ function Invoke-PendingRetrieve {
 
             # certreq -retrieve disposition classification (F1-A iter-5/6 absorb):
             # AD CS canonical disposition'a göre output text bazlı (HRESULT semantik güvenilmez).
-            # ÖNEMLİ — Disposition iki ayrı katmanda farklı code'lar (F1-A iter-6 absorb):
-            #   * API ICertRequest::Submit return value (certreq output): CR_DISP_*
+            # ÖNEMLİ — Disposition iki ayrı katmanda farklı code'lar (F1-A iter-6/7 absorb):
+            #   * API ICertRequest::Submit return value (certreq output): CR_DISP_* (canonical, dökümante)
             #     - CR_DISP_DENIED = 2, CR_DISP_ISSUED = 3, CR_DISP_UNDER_SUBMISSION = 5
-            #   * CA database "Disposition" column (certutil -view -restrict 'Disposition=N'):
-            #     - 8 = denied, 9 = pending/submission, 20 = issued
-            # certreq output API disposition kullanır; certutil -view CA DB column kullanır.
-            # Aşağıdaki regex'ler certreq output'unu parse ettiği için API CR_DISP_* değerleri:
+            #   * CA database "Disposition" column (certutil -view): farklı integer set
+            #     - Pending: column=9 (evidence-derived, pattern-confirmed)
+            #     - Issued: column=20 (evidence-derived, pattern-confirmed)
+            #     - Denied: column değeri AD CS docs ile cross-verify edilmedi (iter-7 hardcoded
+            #       kaldırıldı). Operator live lookup: `certutil -view -restrict "RequestId=<id>"`
+            # certreq output API disposition kullanır (script bunu parse eder, güvenilir).
+            # Aşağıdaki regex'ler certreq output'unu parse ettiği için API CR_DISP_* değerleri canonical:
             # - LASTEXITCODE=0 + cer file non-empty → CR_DISP_ISSUED=3 (cert hazır)
-            # - output "denied" text → CR_DISP_DENIED=2 (CA Manager reject; CA DB Disposition=8)
-            # - output "taken under submission" → CR_DISP_UNDER_SUBMISSION=5 (CA DB Disposition=9)
+            # - output "denied" text → CR_DISP_DENIED=2 (CA Manager reject)
+            # - output "taken under submission" → CR_DISP_UNDER_SUBMISSION=5
             # - diğer → transient error (transient network/CA outage; next run retry)
             if ($LASTEXITCODE -eq 0 -and (Test-Path $cerFile) -and ((Get-Item $cerFile).Length -gt 0)) {
                 Write-EnrollLog "INFO" "F2-B: Cert retrieved (Disposition=3 issued) — proceeding to -accept"
@@ -484,7 +487,7 @@ function Invoke-PendingRetrieve {
             # Output text-based classification (F1-A iter-5/6 absorb: HRESULT semantik güvenilmez;
             # API CR_DISP_* certreq output'ta görünür ama unambiguous text match daha sağlam)
             if ($retrieveOutput -match "denied|Disposition: 2") {
-                Write-EnrollLog "ERROR" "F2-B DENIED (API CR_DISP_DENIED=2; CA DB Disposition column=8): RequestId=$($Pending.request_id) was denied by CA Manager — operator inspection required (`certutil -view -restrict 'Disposition=8'`)"
+                Write-EnrollLog "ERROR" "F2-B DENIED (API CR_DISP_DENIED=2): RequestId=$($Pending.request_id) was denied by CA Manager — operator inspection required (live lookup: `certutil -view -restrict 'RequestId=$($Pending.request_id)' -out 'RequestId,Disposition,DispositionMessage,RequesterName'`)"
                 Write-EnrollLog "ERROR" "F2-B DENIED output: $retrieveOutput"
                 # State'i temizle ki next run yeni submit yapabilsin (CA Manager intentional reject ise admin manuel)
                 Remove-PendingRequest
