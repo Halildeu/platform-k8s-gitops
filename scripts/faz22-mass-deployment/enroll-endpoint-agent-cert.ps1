@@ -461,14 +461,18 @@ function Invoke-PendingRetrieve {
         if ($PSCmdlet.ShouldProcess("certreq -retrieve", "Retrieve pending request $($Pending.request_id)")) {
             $retrieveOutput = & certreq.exe -retrieve -q -f -config $CAConfig $Pending.request_id $cerFile 2>&1 | Out-String
 
-            # certreq -retrieve disposition classification (F1-A iter-5 absorb):
-            # AD CS canonical disposition'a göre output text + CA DB disposition code bazlı.
-            # HRESULT 0x80094003/0x80094004 farklı semantiğe sahip (CERTSRV_E_PROPERTY_EMPTY +
-            # CERTSRV_E_BAD_RENEWAL_CERT_ATTRIBUTE — pending/denied semantik DEĞİL).
-            # Doğru classification:
-            # - LASTEXITCODE=0 + cer file non-empty → cert issued (Disposition=3)
-            # - output contains "denied" text → CA Manager intentional reject (Disposition=2)
-            # - output contains "taken under submission" → pending (Disposition=5)
+            # certreq -retrieve disposition classification (F1-A iter-5/6 absorb):
+            # AD CS canonical disposition'a göre output text bazlı (HRESULT semantik güvenilmez).
+            # ÖNEMLİ — Disposition iki ayrı katmanda farklı code'lar (F1-A iter-6 absorb):
+            #   * API ICertRequest::Submit return value (certreq output): CR_DISP_*
+            #     - CR_DISP_DENIED = 2, CR_DISP_ISSUED = 3, CR_DISP_UNDER_SUBMISSION = 5
+            #   * CA database "Disposition" column (certutil -view -restrict 'Disposition=N'):
+            #     - 8 = denied, 9 = pending/submission, 20 = issued
+            # certreq output API disposition kullanır; certutil -view CA DB column kullanır.
+            # Aşağıdaki regex'ler certreq output'unu parse ettiği için API CR_DISP_* değerleri:
+            # - LASTEXITCODE=0 + cer file non-empty → CR_DISP_ISSUED=3 (cert hazır)
+            # - output "denied" text → CR_DISP_DENIED=2 (CA Manager reject; CA DB Disposition=8)
+            # - output "taken under submission" → CR_DISP_UNDER_SUBMISSION=5 (CA DB Disposition=9)
             # - diğer → transient error (transient network/CA outage; next run retry)
             if ($LASTEXITCODE -eq 0 -and (Test-Path $cerFile) -and ((Get-Item $cerFile).Length -gt 0)) {
                 Write-EnrollLog "INFO" "F2-B: Cert retrieved (Disposition=3 issued) — proceeding to -accept"
@@ -477,9 +481,10 @@ function Invoke-PendingRetrieve {
                 return $true
             }
 
-            # Output text-based classification (F1-A iter-5 absorb: HRESULT semantik artık güvenilmez)
+            # Output text-based classification (F1-A iter-5/6 absorb: HRESULT semantik güvenilmez;
+            # API CR_DISP_* certreq output'ta görünür ama unambiguous text match daha sağlam)
             if ($retrieveOutput -match "denied|Disposition: 2") {
-                Write-EnrollLog "ERROR" "F2-B DENIED (Disposition=2): RequestId=$($Pending.request_id) was denied by CA Manager — operator inspection required"
+                Write-EnrollLog "ERROR" "F2-B DENIED (API CR_DISP_DENIED=2; CA DB Disposition column=8): RequestId=$($Pending.request_id) was denied by CA Manager — operator inspection required (`certutil -view -restrict 'Disposition=8'`)"
                 Write-EnrollLog "ERROR" "F2-B DENIED output: $retrieveOutput"
                 # State'i temizle ki next run yeni submit yapabilsin (CA Manager intentional reject ise admin manuel)
                 Remove-PendingRequest
@@ -487,7 +492,7 @@ function Invoke-PendingRetrieve {
             }
 
             if ($retrieveOutput -match "taken under submission|Disposition: 5|pending") {
-                Write-EnrollLog "WARN" "F2-B PENDING (Disposition=5): RequestId=$($Pending.request_id) hâlâ pending; CA Manager approval bekleniyor (next daily run retry)"
+                Write-EnrollLog "WARN" "F2-B PENDING (API CR_DISP_UNDER_SUBMISSION=5; CA DB Disposition column=9): RequestId=$($Pending.request_id) hâlâ pending; CA Manager approval bekleniyor (next daily run retry; `certutil -view -restrict 'Disposition=9'`)"
                 return $false
             }
 
