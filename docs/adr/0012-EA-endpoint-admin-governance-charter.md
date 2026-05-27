@@ -442,6 +442,7 @@ Faz 22 sub-track numbering reassignment:
 ## 22.5 scope addition — Software Deployment Quick Wins (2026-05-27)
 
 > **User decision 2026-05-27**: Endpoint-Enes agent üzerinden ücretsiz ve sektör standardına yakın program yönetimi isteniyor. Varsayılan yol **Microsoft WinGet + Approved Software Catalog**. Intune/SCCM/PDQ gibi ürünler referans/entegrasyon adayıdır; ilk yol değildir.
+> **3-AI review absorb 2026-05-27**: Claude Code, Codex ve MiniMax/Mavis verdict'i **REVISE**. Yön doğru; install açılmadan önce backend catalog, command contract, detection/audit ve web visibility kapıları kapanmalı. Agent read-only AG-025/AG-026 source foundation başlamış durumdadır.
 
 ### Position
 
@@ -449,11 +450,14 @@ Faz 22 sub-track numbering reassignment:
 
 | Sub | Tanım | Status |
 |---|---|---|
-| **22.5.1** | `AG-025` installed software inventory + `AG-026` WinGet readiness | TODO |
+| **22.5.1** | `AG-025` installed software inventory + `AG-026` WinGet readiness | SOURCE-PARTIAL (`platform-agent` PR #20 / `0eff2db`) |
+| **22.5.1A** | `AG-025H` lightweight/full software inventory guard | TODO |
+| **22.5.1B** | `WEB-011` read-only software + WinGet readiness visibility | TODO |
 | **22.5.2** | `AG-030` pending reboot + `AG-031` Defender/Firewall/BitLocker + `AG-032` local admin group + `AG-033` disk/RAM/uptime health | TODO |
-| **22.5.3** | `BE-020` Approved Software Catalog API | TODO |
-| **22.5.4** | `AG-027` approved install command + `BE-021` result/detection/audit | TODO |
-| **22.5.5** | `WEB-011` inventory/posture view + `WEB-012` approved install UI | TODO |
+| **22.5.3** | `BE-020` Approved Software Catalog API + provenance/hash/version policy | TODO |
+| **22.5.3A** | `BE-020I` software inventory ingest/query path | TODO |
+| **22.5.4** | `AG-027` approved install command + `BE-021` result/detection/audit | BLOCKED until 22.5.1/22.5.3 gates |
+| **22.5.5** | `WEB-012` approved install UI | TODO |
 | **22.5.6** | `AG-028` uninstall/detection + `AG-029` signed self-update | TODO |
 | **22.5.X** | `AG-034` SMB/file actions discovery only; runtime deferred until whitelist + RBAC + audit + dual-control design | DEFERRED |
 
@@ -463,6 +467,10 @@ Faz 22 sub-track numbering reassignment:
 - Rastgele URL/EXE/MSI install yok.
 - Kullanıcıdan serbest package id alınmaz.
 - Agent yalnız backend Approved Software Catalog item id'si ile install adapter'ını çalıştırır.
+- Catalog item provenance/hash/version-policy taşır; WinGet community dahil her provider supply-chain kararından geçer.
+- HKCU software inventory default dışıdır. LocalSystem altında HKCU gerçek kullanıcıyı temsil etmez; HKCU ancak explicit opt-in + privacy review ile eklenir.
+- Heartbeat/auto-enroll/lightweight inventory full software scan veya WinGet probe maliyetine yanlışlıkla girmemelidir.
+- `includeSoftware=true` full app list'i bilinçli açar; default inventory sadece summary seviyesinde kalır.
 - İlk pilot paket 7-Zip (`7zip.7zip`) ile sınırlıdır.
 - Detection olmadan success kabul edilmez.
 - Install/uninstall audit zorunludur.
