@@ -547,7 +547,7 @@ Post-uninstall:
 
 ### 13.1 Per-gate breakdown (Codex Q2 absorb)
 
-| Gate | Sınıf | Effort | Bağımlılık | Status (2026-05-24) |
+| Gate | Sınıf | Effort | Bağımlılık | Status (2026-05-26 — AG-021/022 source MERGED update) |
 |---|---|---:|---|---|
 | Self-hosted CI run (Parallels W11 lab gate) | Karma | agent 0.5-1g + operator 0.5g | self-hosted Mac runner + Parallels VM + labels + artifact upload + secret scan | Script + workflow ✅ MERGED (PR #13); CI gerçek run ⏳ operator |
 | 2+ standalone device evidence (A1 multi-VM) | Karma | docs/evidence 0.5g + operator 0.5-1g/device | cihaz temini (gerçek veya Parallels VM) + local admin + backend reachability | ⏳ pending (mevcut 1 VM HALILKOOLUB735) |
@@ -1168,7 +1168,7 @@ Per pilot evidence PR:
 
 1. **CI script extension**: `scripts/test/parallels-windows11-ci.sh` non-domain classification precheck genişletmesi (Codex Q8 + §8.2 önerisi) — ayrı PR
 2. **Yeni board issue**: "Faz 22.2.A non-domain pilot — A1 multi-VM repeatability" (mevcut HALILKOOLUB735 + 2 yeni Parallels VM evidence; 24h soak)
-3. **TRACKING-ROADMAP backlog unlock**: AG-021 (identity inventory) + AG-022 (logged-in identity) + AG-024 (signed manifest) + BE-015 (identity compliance API) + BE-019 (KVKK retention) priority bump
+3. **TRACKING-ROADMAP backlog unlock**: ~~AG-021 (identity inventory) + AG-022 (logged-in identity)~~ ✅ source-foundation MERGED 2026-05-26 (platform-agent #17 `91ef533d`); kalan field-acceptance pendingler — AG-021/022 multi-device classification evidence + CI script alignment (`scripts/test/parallels-windows11-ci.sh` agent-native `diagnose identity` çağrısı) + **BE-015** (admin identity compliance API) + **AG-024** (signed manifest / Authenticode) + **BE-019** (KVKK retention enforce) priority bump
 4. **A2 BYOD prerequisite docs**: `docs/22-2-byod-consent-template.md` (Turkish + English) + `docs/22-2-kvkk-data-inventory.md` (DPO sign-off için)
 5. **Signed distribution pre-req docs**: ADR-0012-EA "22.2 pre-req docs" listesi (7 item) `docs/22-2-trusted-signing-onboarding.md` follow-up
 6. **22.2.A pilot kabul evidence chain**: gate matrix §13 her item için ayrı evidence PR
