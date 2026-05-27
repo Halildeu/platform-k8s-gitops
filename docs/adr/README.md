@@ -39,6 +39,7 @@ Reddedilen alternatifler + red nedenleri.
 | 0008 | [Multi-Org Explicit-Scope Zanzibar Contract](./0008-multi-org-explicit-scope-zanzibar.md) | **Accepted** (2026-04-26) |
 | 0025 | [Enterprise Platform Charter — Process & Parameter Management Hub](./0025-enterprise-platform-charter.md) | **Proposed** (2026-05-20) |
 | 0028 | [BL-009 (DKIM CNAME) + BL-022 (NetGSM Contract) Plan-Out / Demand-Reactivated](./0028-bl009-bl022-demand-reactivated-plan-out.md) | **Accepted** (2026-05-25) |
+| 0029 | [Hibrit D — perf-alertmanager Teams Primary + Slack Dormant Asset-Preserved](./0029-hibrit-d-perf-alerts-teams-primary.md) | **Accepted** (2026-05-27) |
 
 Her yeni büyük karar için yeni ADR dosyası + PLAN.md D-karar satırı referansı.
 
