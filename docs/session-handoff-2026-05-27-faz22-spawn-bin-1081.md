@@ -12,7 +12,7 @@
 Bu session başlangıcında: kullanıcı `önerdiğin şekilde devam edelim Önerim: B → A (Codex consult bu session, sonra spawn)` (B then A) + sıralı `sıra ile tam otonom yapalım` + son `sıradaki adımları tam otonom uygula` direktifi. Auto mode + Pre-Production Full Authority + Continuous Autonomous Mode + Plan Consensus Autonomy + HARD RULE — Yarın YASAK.
 
 Bu handoff doc:
-- Faz 22.3 source-side close (ADR-0029 + AD CS preflight + GPO scripts MERGED)
+- Faz 22.3 ADR + AD CS preflight slice merged (ADR-0029 + AD CS preflight + GPO scripts MERGED; backend mTLS POST endpoint + agent --auto-enroll source PR'ları pending)
 - AG-021/AG-022 docs truth-sync (PR #1081 MERGED bu session)
 - 2 spawn chip aktif (BE-020 backend + AG-025/026 agent — kullanıcı tıklarsa fresh worktree)
 - #175 browser smoke PASS (SRB-AIDENETIMPC inventory UI render verify)
@@ -25,8 +25,8 @@ Bu handoff doc:
 | **#1078** | platform-k8s-gitops | ADR-0029 Faz 22.3 mass deployment strategy (Plan A) | `d677511e` | 7 iter (12 finding absorbed) `019e667f` | `archive/2026/05/docs-adr-0029-faz22-mass-deployment-mtls-msi-gpo-pr1078` |
 | **#1080** | platform-k8s-gitops | Faz 22.3 AD CS preflight + GPO startup + verify gate + 7-section runbook | `a9fab725` | 7 iter (18 finding absorbed) `019e6a4a`+`019e66c5` | `archive/2026/05/faz-22.3-ad-cs-preflight-pr1080` |
 | **#1081** | platform-k8s-gitops | Faz 22 AG-021/AG-022 docs truth-sync after platform-agent #17 | `67368777` | 2 iter (3 finding absorbed) `019e6896-298c-7773-bb6e-1e876dfb744b` | `archive/2026/05/codex-faz22-ag021-ag022-truth-sync-1076-pr1081` |
-| Closure | board #1076 | STALE CLAIM reclaimed → MERGED + closed (acceptance comment) | — | — | — |
-| Closure | TaskCreate #175 | SRB-AIDENETIMPC inventory UI render check PASS (browser smoke) | — | — | — |
+| State update | board #1076 | STALE CLAIM reclaimed → MERGED + closed (acceptance comment) | — | — | — |
+| Evidence record | TaskCreate #175 | SRB-AIDENETIMPC inventory UI render check PASS (browser smoke) | — | — | — |
 
 **Spawn chip'ler** (kullanıcı tıklaması ile fresh worktree session):
 - `BE-020 Approved Software Catalog (endpoint-admin-service extension)` — `cwd: /Users/halilkocoglu/Documents/platform-backend`
@@ -34,7 +34,7 @@ Bu handoff doc:
 
 ## 3. İspatlar (live + build sanity + browser smoke)
 
-### 3.1 Faz 22.3 source-side close (PR #1078 + #1080 post-merge)
+### 3.1 Faz 22.3 ADR + AD CS preflight slice merged (PR #1078 + #1080 post-merge)
 
 - ADR-0029 7-iter Codex chain → AGREE → MERGED `d677511e`
 - AD CS preflight script (`scripts/faz22-mass-deployment/ad-cs-preflight.ps1` ~821 satır), GPO startup script (`enroll-endpoint-agent-cert.ps1` ~595 satır), verify gate (`verify-machine-cert.ps1` ~145 satır), 7-section operator runbook (`docs/runbooks/RB-faz22.3-ad-cs-setup.md` ~745 satır) — hepsi `a9fab725` SHA
@@ -145,7 +145,7 @@ Pod `1/1 Running 2d17h`; image sha-1a1d0aac; Flyway baseline v4 enabled; OpenFGA
 
 ### Feature delivery (son 24-48h)
 
-3 PR MERGED (#1078 + #1080 + #1081) + 1 evidence doc (`2026-05-27-srb-aidenetimpc-inventory-ui-verify.md`) + 2 spawn chip aktif + 1 internal task closure (#175).
+3 PR MERGED (#1078 + #1080 + #1081) + 1 evidence doc (`2026-05-27-srb-aidenetimpc-inventory-ui-verify.md`) + 2 spawn chip aktif + 1 internal task evidence-recorded (#175).
 
 ### Milestone progress
 
