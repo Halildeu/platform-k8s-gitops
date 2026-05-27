@@ -241,35 +241,37 @@ Unsigned lab exception (A1 only):
 
 ### 8.1 Agent capability gap
 
-Şu an non-domain classification için tam capability **mevcut değil**:
+Source-foundation status (post-platform-agent PR #17 `91ef533d` MERGED 2026-05-26 + HALILKOOLUB735 `WORKGROUP`/`LOCAL` read-only evidence):
 
 | Capability | Agent state | Backend state | TRACKING-ROADMAP |
 |---|---|---|---|
 | Hostname + Domain + PartOfDomain | ✅ inventory.go via `Win32_ComputerSystem` (mevcut) | ✅ heartbeat payload (mevcut) | AG-009 DONE |
-| `dsregcmd /status` parse (AzureAd / Workplace join) | ❌ agent capability yok | ❌ identity compliance API yok | **AG-021** TODO |
-| Logged-in identity classification (LOCAL/DOMAIN/ENTRA) | ❌ agent capability yok | ❌ | **AG-022** TODO |
-| Endpoint identity compliance API | N/A | ❌ admin API yok | **BE-015** TODO |
+| `dsregcmd /status` parse (AzureAd / Workplace join) | ✅ `internal/identity` package (platform-agent #17 MERGED `91ef533d`) | 🟡 source-ready via `COLLECT_INVENTORY.identity` block; admin identity compliance API ayrı kapı | **AG-021** source MERGED (field/multi-device acceptance ayrı gate) |
+| Logged-in identity classification (LOCAL/DOMAIN/ENTRA/WORKPLACE/UNKNOWN) | ✅ `internal/identity` classification (platform-agent #17 MERGED `91ef533d`); UPN/SID hash/mask, raw UPN/full SID yok | 🟡 source-ready via `COLLECT_INVENTORY.identity` block | **AG-022** source MERGED (field/multi-device acceptance ayrı gate) |
+| Endpoint identity compliance API (admin surface) | N/A | ❌ admin API yok | **BE-015** TODO |
 | KVKK retention enforcement | ❌ | ❌ retention policy enforce yok | **BE-019** TODO |
 | Trusted signing pipeline | ❌ | N/A | **AG-018 / AG-024** TODO |
 
-Bu gate'ler unlock olmadan A3/A4 acceptance verilmez; A2 BYOD için BE-019 + AG-024 şart; A1 için mevcut substantive evidence sufficient.
+AG-021/022 source-foundation A1 workgroup (HALILKOOLUB735 `WORKGROUP`/`LOCAL` evidence) sınıfında **read-only classification** ile kanıtlanmış; A3 Entra-joined / A4 Workplace-registered acceptance hâlâ **field evidence + BE-015 admin API + signed binary + EDR allowlist + KVKK gate** bağımlı (gitops #1044 PASS DEĞİL; gitops #1037 unblocked DEĞİL).
 
-### 8.2 Pre-check script (interim — full AG-021/022 öncesi)
+### 8.2 Pre-check script — agent-native + raw probe parity
 
-Mevcut `scripts/test/parallels-windows11-ci.sh` (platform-agent PR #13 MERGED) precheck adımı baseline; non-domain classification extension için:
+Post-AG-021/022 source-foundation (platform-agent #17 MERGED), agent CLI native komut **kanonik yol**:
 
 ```bash
-# Step 1 (existing): VM baseline — hostname/domain/PartOfDomain/UserName
-# Step 2 (NEW for non-domain classification):
+# Agent-native (preferred — sanitized JSON output)
+endpoint-agent diagnose identity > identity.json
+
+# Raw probe parity (audit/operator visibility — agent dışında PowerShell)
 prlctl exec "Windows 11" powershell -NoProfile -Command "
 dsregcmd /status | Select-String -Pattern 'AzureAdJoined|EnterpriseJoined|DomainJoined|DeviceName|TenantName|WorkplaceJoined'
 " 2>&1 | redact | tee -a precheck.txt
 
-# Step 3 (NEW): Classification logic (script-side)
-# (see §4.3 decision tree)
+# Classification logic — agent-side (LOCAL/DOMAIN/ENTRA/WORKPLACE/UNKNOWN)
+# Decision tree §4.3 ile uyumlu; raw output redact + UPN/SID hash/mask kanıt
 ```
 
-Bu extension `scripts/test/parallels-windows11-ci.sh`'a follow-up PR ile eklenir (ayrı tur).
+`scripts/test/parallels-windows11-ci.sh` agent-native `diagnose identity` ile genişletilmesi follow-up PR (ayrı tur — CI script alignment).
 
 ### 8.3 Backend identity compliance API (BE-015 unlock öncesi)
 
@@ -550,7 +552,7 @@ Post-uninstall:
 | Self-hosted CI run (Parallels W11 lab gate) | Karma | agent 0.5-1g + operator 0.5g | self-hosted Mac runner + Parallels VM + labels + artifact upload + secret scan | Script + workflow ✅ MERGED (PR #13); CI gerçek run ⏳ operator |
 | 2+ standalone device evidence (A1 multi-VM) | Karma | docs/evidence 0.5g + operator 0.5-1g/device | cihaz temini (gerçek veya Parallels VM) + local admin + backend reachability | ⏳ pending (mevcut 1 VM HALILKOOLUB735) |
 | 24-72h soak observation | Karma | metric/query 1-2g + wall-clock 1-3g | heartbeat visibility + offline threshold + command/result query | ⏳ pending (Prometheus/Grafana setup öncesi DB-direct query) |
-| Identity classification (A1-A4 detection) | Agent-actionable ama capability eksik | agent 2-4g + backend 1-2g | `AG-021` + `AG-022` + `BE-015` + privacy schema | ⏳ pending (TRACKING-ROADMAP backlog) |
+| Identity classification (A1-A4 detection) | Agent source MERGED; field acceptance pending | agent ✅ source DONE + backend 1-2g (BE-015) + privacy schema | `AG-021` + `AG-022` source MERGED (platform-agent #17 `91ef533d`); `BE-015` + privacy schema pending | 🟡 source DONE (A1 HALILKOOLUB735 `WORKGROUP`/`LOCAL` read-only evidence); field acceptance (multi-device classification + soak) ⏳ pending |
 | Signed distribution | Karma / operator-heavy | agent CI 2-4g + Azure/owner 0.5-2g | `SEC-001` + `SEC-002` + Authenticode cert + timestamp + release channel | ⏳ pending (AG-018/AG-024 backlog; ADR pre-req docs) |
 | KVKK boundary (A2 BYOD prerequisite) | Karma / operator / legal | docs 0.5-1g + `BE-019` 2-5g | data inventory + retention + erasure/anonymization + DPO/legal approval | ⏳ pending (BE-019 backlog) |
 | A2 BYOD consent flow + uninstall self-service | Operator + agent | operator 1-2g + agent docs 0.5g | consent metni + uninstall test | ⏳ pending (BYOD pilot başlamadan önce) |
