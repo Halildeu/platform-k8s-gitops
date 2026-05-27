@@ -453,12 +453,17 @@ Faz 22 sub-track numbering reassignment:
 | **22.5.1** | `AG-025` installed software inventory + `AG-026` WinGet readiness | SOURCE-PARTIAL (`platform-agent` PR #20 / `0eff2db`) |
 | **22.5.1A** | `AG-025H` lightweight/full software inventory guard | TODO |
 | **22.5.1B** | `WEB-011` read-only software + WinGet readiness visibility | TODO |
+| **22.5.1C** | `AG-026A` WinGet source / egress readiness (source list, package query, proxy/TLS summary; install/upgrade yok) | TODO |
 | **22.5.2** | `AG-030` pending reboot + `AG-031` Defender/Firewall/BitLocker + `AG-032` local admin group + `AG-033` disk/RAM/uptime health + `AG-035` hardware/device inventory + `BE-022` ingest/query + `WEB-013` view | TODO |
+| **22.5.2A** | `AG-037` Windows Update/hotfix posture + `AG-038` agent self-health/connectivity + `AG-039` critical services + `AG-040` startup/RDP/event summary | TODO |
 | **22.5.3** | `BE-020` Approved Software Catalog API + provenance/hash/version policy | TODO |
 | **22.5.3A** | `BE-020I` software inventory ingest/query path | TODO |
-| **22.5.4** | `AG-027` approved install command + `BE-021` result/detection/audit | BLOCKED until 22.5.1/22.5.3 gates |
-| **22.5.5** | `WEB-012` approved install UI | TODO |
+| **22.5.3B** | `BE-023` catalog compliance evaluator + `AG-036` outdated software inventory + `WEB-014` compliance/outdated view | TODO |
+| **22.5.3C** | `BE-024` inventory diff/history + `BE-025` prohibited software detection | TODO |
+| **22.5.4** | `BE-021A` install dry-run/preflight + `AG-027` approved install command + `AG-027L` installer exit-code/redacted log + `BE-021` result/detection/audit | BLOCKED until 22.5.1/22.5.3 gates |
+| **22.5.5** | `WEB-012` approved install UI + `WEB-015` report/CSV export | TODO |
 | **22.5.6** | `AG-028` uninstall/detection + `AG-029` signed self-update | TODO |
+| **22.5.8** | `BE-026` deployment rings/tags + `BE-027` maintenance window + `BE-028` rollout throttle/concurrency + `BE-029` approved package bundles | TODO |
 | **22.5.X** | `AG-034` SMB/file actions discovery only; runtime deferred until whitelist + RBAC + audit + dual-control design | DEFERRED |
 
 ### Guardrails
@@ -468,6 +473,13 @@ Faz 22 sub-track numbering reassignment:
 - Kullanıcıdan serbest package id alınmaz.
 - Agent yalnız backend Approved Software Catalog item id'si ile install adapter'ını çalıştırır.
 - Catalog item provenance/hash/version-policy taşır; WinGet community dahil her provider supply-chain kararından geçer.
+- Install öncesi source/egress readiness + dry-run/preflight + compliance state
+  kanıtlanmadan `AG-027` açılmaz.
+- Outdated, prohibited, inventory diff, Windows Update posture ve diagnostics
+  ilk aşamada read-only görünürlük sağlar; auto-upgrade, auto-uninstall,
+  patch install, service restart, process kill veya registry edit yoktur.
+- Rollout ring/window/throttle/bundle kontrolleri tek cihaz pilotundan sonra
+  açılır; Faz 22.3 domain-wide MSI/GPO deployment yerine geçmez.
 - HKCU software inventory default dışıdır. LocalSystem altında HKCU gerçek kullanıcıyı temsil etmez; HKCU ancak explicit opt-in + privacy review ile eklenir.
 - Heartbeat/auto-enroll/lightweight inventory full software scan veya WinGet probe maliyetine yanlışlıkla girmemelidir.
 - `includeSoftware=true` full app list'i bilinçli açar; default inventory sadece summary seviyesinde kalır.

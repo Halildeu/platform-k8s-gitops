@@ -13,26 +13,35 @@ detection/audit + web visibility gelmeden iddia edilmez.
 | Plan | `docs/faz-22-software-deployment-plan.md` üç-AI mutabakatı ile source-partial / blocked gates ayrımına güncellendi |
 | Runbook | `docs/runbooks/RB-faz22-software-deployment-winget.md` install gate + catalog provenance/hash/version şartlarıyla güncellendi |
 | Governance | ADR-0012-EA 22.5 scope: AG-025/AG-026 source-partial, install gate blocked |
-| Board | platform-k8s-gitops#1083 initial plan; platform-k8s-gitops#1086 consensus refresh |
+| Board | platform-k8s-gitops#1083 initial plan; platform-k8s-gitops#1086 consensus refresh; platform-k8s-gitops#1088 hardware inventory plan; platform-k8s-gitops#1090 phased quick-win roadmap |
 | Agent source | `platform-agent` PR #20 / commit `0eff2db` read-only `AG-025` software inventory + `AG-026` WinGet readiness foundation |
 | Hardware/device inventory | `AG-035` hardware/device inventory, `BE-022` device inventory ingest/query ve `WEB-013` hardware/device view plana eklendi; source yok |
-| Backend source | `BE-020` approved catalog, `BE-020I` software inventory ingest/query, `BE-021` detection/audit ve `BE-022` device inventory ingest/query yok |
-| Web source | `WEB-011` software/WinGet readiness view ve `WEB-013` hardware/device view yok; mevcut `InventoryTab` software/hardware payload parse etmiyor |
+| Quick-win additions | `AG-026A`, `BE-021A`, `BE-023`, `AG-027L`, `AG-036`, `BE-024`, `BE-025`, `AG-037`, `AG-038`, `AG-039`, `AG-040`, `WEB-014`, `WEB-015`, `BE-026`, `BE-027`, `BE-028`, `BE-029` fazlara ayrıldı; source yok |
+| Backend source | `BE-020` approved catalog, `BE-020I` software inventory ingest/query, `BE-021A` preflight, `BE-021` detection/audit, `BE-022` device inventory ingest/query ve `BE-023..BE-029` compliance/rollout işleri yok |
+| Web source | `WEB-011` software/WinGet readiness view, `WEB-013` hardware/device view, `WEB-014` compliance/outdated view ve `WEB-015` report/export yok; mevcut `InventoryTab` software/hardware/compliance payload parse etmiyor |
 | Runtime | Install/uninstall kabiliyeti yok; 7-Zip pilot henüz claimed değildir |
 
-Faz 22.5 kaynak işleri: `AG-025` installed software inventory, `AG-026`
-WinGet readiness, `AG-030` pending reboot detection, `AG-031`
-Defender/Firewall/BitLocker posture, `AG-032` local admin group inventory,
-`AG-033` disk/RAM/uptime health snapshot, `AG-035` hardware/device inventory,
-`BE-020` Approved Software Catalog API, `BE-020I` software inventory ingest,
-`BE-022` device inventory ingest/query, `AG-027` approved install command,
-`BE-021` result/detection/audit, `WEB-011` software inventory/posture view,
-`WEB-013` hardware/device view, `WEB-012` approved install UI, `AG-028`
-uninstall/detection, `AG-029` signed self-update ve `AG-034` SMB/file action
-discovery guardrail.
+Faz 22.5 kaynak işleri fazlara ayrıldı:
+
+1. Read-only foundation: `AG-025`, `AG-026`, `AG-025H`, `WEB-011`.
+2. Source/egress readiness: `AG-026A`.
+3. Device posture/hardware: `AG-030`, `AG-031`, `AG-032`, `AG-033`, `AG-035`,
+   `BE-022`, `WEB-013`.
+4. Diagnostics/update visibility: `AG-037`, `AG-038`, `AG-039`, `AG-040`.
+5. Catalog/compliance: `BE-020`, `BE-020I`, `BE-023`, `AG-036`, `WEB-014`.
+6. Drift/denylist: `BE-024`, `BE-025`.
+7. Install preflight + pilot: `BE-021A`, `AG-027`, `AG-027L`, `BE-021`,
+   `WEB-012`.
+8. Reporting: `WEB-015`.
+9. Later rollout controls: `BE-026`, `BE-027`, `BE-028`, `BE-029`.
+10. Managed uninstall/update/deferred file actions: `AG-028`, `AG-029`,
+    `AG-034`.
 
 Guardrail: raw shell, rastgele URL/EXE/MSI ve katalog dışı package id kabul
 edilmeyecek; ilk pilot 7-Zip (`7zip.7zip`) ile sınırlı tutulacak.
+Outdated/compliance/Windows Update/posture/diagnostics ilk aşamada read-only
+görünürlük sağlar; auto-upgrade, auto-uninstall, Windows patch install, remote
+reboot, service restart, process kill, registry edit ve arbitrary script yok.
 SMB/file action runtime'ı whitelist + RBAC + audit + dual-control tasarımı
 olmadan açılmayacak. Domain pilot flow 22.2.B/22.3, dual-control destructive
 command BE-017/D35-EA, policy-based deployment 22.3 MSI/GPO, EDR/code-signing
