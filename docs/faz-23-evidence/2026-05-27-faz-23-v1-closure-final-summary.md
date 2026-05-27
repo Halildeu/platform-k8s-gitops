@@ -41,7 +41,7 @@ Per `docs/notify/must-have-checklist.md` Session 49+ truth-sync attestation 2026
 | 9 | Template Versioning + Safe Interpolation | 🟢 LIVE |
 | 10 | Observability + Outage Fallback | 🟢 SMTP-only D43 v1 accepted (user decision 2026-05-24; Slack DEFER) |
 
-**Production-ready claim**: 10/10 must-have 🟢 source-ready. Production-ready acceptance gate operator-external residual remains (#854 SMTP-only prod activation + BL-014 FBL mailbox + 30-day soak).
+**No production-ready claim**: Current claim daraltılmış = **10/10 source-ready**. Production-ready acceptance gate operator-external residual gerekiyor (#854 SMTP-only prod activation + BL-014 FBL mailbox + 30-day soak); bu residuals tamamlanmadan "production-ready" iddiası YAPILMAZ (HARD RULE No Fake Work 2026-04-25 uyumu).
 
 ---
 
