@@ -1,7 +1,7 @@
 # RB — Faz 22.5 Software Deployment WinGet Pilot
 
 > **Status**: SOURCE-PARTIAL / execution blocked until BE-020 + BE-021 + AG-027
-> **Tracked by**: platform-k8s-gitops#1083, platform-k8s-gitops#1086, platform-k8s-gitops#1088
+> **Tracked by**: platform-k8s-gitops#1083, platform-k8s-gitops#1086, platform-k8s-gitops#1088, platform-k8s-gitops#1090
 
 Bu runbook, Endpoint-Enes agent hattında ücretsiz WinGet tabanlı yazılım
 yönetimi için ilk pilot akışını tarif eder.
@@ -10,6 +10,9 @@ Bu dosya bugün install operasyon komutu vermez. `AG-025`/`AG-026` read-only
 source foundation başlamış olsa da 7-Zip install pilotu `BE-020` approved
 catalog, `BE-021` result/detection/audit ve `AG-027` adapter gelmeden
 çalıştırılmaz.
+Ek quick-win fazları da aynı kuralı izler: WinGet source/egress readiness,
+install dry-run, compliance, outdated visibility ve diagnostics read-only
+kanıt üretir; install ancak catalog + preflight + audit kapılarıyla açılır.
 
 ## 1. Amaç
 
@@ -32,20 +35,36 @@ Approved catalog item
 |---|---|
 | Agent | `AG-025` installed software inventory source-partial + field smoke |
 | Agent | `AG-026` WinGet readiness source-partial + field smoke |
+| Agent | `AG-026A` WinGet source / egress readiness; source list + package query + proxy/TLS summary |
 | Agent | `AG-025H` lightweight/full inventory ayrımı; heartbeat/auto-enroll full scan'e girmemeli |
 | Backend | `BE-020I` software inventory ingest/query path |
+| Backend | `BE-023` software compliance evaluator (approved/missing/outdated/prohibited) |
+| Agent | `AG-036` outdated software inventory read-only |
+| Backend | `BE-024` inventory diff/history + `BE-025` prohibited software detection |
 | Agent | `AG-030` pending reboot detection |
 | Agent | `AG-031` Defender/Firewall/BitLocker posture |
 | Agent | `AG-032` local admin group inventory |
 | Agent | `AG-033` disk/RAM/uptime health snapshot |
 | Agent | `AG-035` hardware/device inventory |
+| Agent | `AG-037` Windows Update / hotfix posture |
+| Agent | `AG-038` agent self-health / connectivity diagnostics |
+| Agent | `AG-039` critical services inventory |
+| Agent | `AG-040` startup apps / RDP / event-log health summary |
 | Backend | `BE-022` device inventory ingest/query path |
 | Backend | `BE-020` approved software catalog |
+| Backend | `BE-021A` install dry-run / preflight contract |
 | Agent | `AG-027` approved install command |
+| Agent | `AG-027L` installer exit-code / redacted log capture |
 | Backend | `BE-021` result/detection/audit |
 | Web | `WEB-011` inventory view (opsiyonel ilk pilotta) |
+| Web | `WEB-014` compliance / outdated software view |
 | Web | `WEB-013` hardware/device inventory view (opsiyonel ilk pilotta) |
 | Web | `WEB-012` install UI (opsiyonel ilk pilotta) |
+| Web | `WEB-015` report / CSV export |
+| Backend | `BE-026` deployment rings / device tags |
+| Backend | `BE-027` maintenance window / scheduled command |
+| Backend | `BE-028` rollout throttle / max concurrency |
+| Backend | `BE-029` approved package bundles |
 
 ## 3. Güvenlik Kuralları
 
@@ -56,6 +75,9 @@ Approved catalog item
 - Install request RBAC ile korunur.
 - Install/uninstall audit zorunludur.
 - Detection olmadan success kabul edilmez.
+- Install öncesi dry-run / preflight sonucu zorunludur.
+- Installer log'u yalnız redacted ve sınırlı tail olarak tutulur.
+- Auto-upgrade, auto-uninstall ve Windows patch install bu runbook kapsamında değildir.
 
 ## 4. İlk Katalog Kaydı
 
@@ -92,10 +114,16 @@ Agent tarafında beklenen read-only komutlar:
 ```powershell
 endpoint-agent.exe diagnose software
 endpoint-agent.exe diagnose winget
+endpoint-agent.exe diagnose winget-source
+endpoint-agent.exe diagnose outdated-software
 endpoint-agent.exe diagnose posture
 endpoint-agent.exe diagnose health
 endpoint-agent.exe diagnose hardware
 endpoint-agent.exe diagnose local-admins
+endpoint-agent.exe diagnose update-posture
+endpoint-agent.exe diagnose agent-health
+endpoint-agent.exe diagnose critical-services
+endpoint-agent.exe diagnose exposure-summary
 ```
 
 Beklenen kanıtlar:
@@ -106,6 +134,9 @@ Beklenen kanıtlar:
 - `winget` versiyonu döner veya structured `notInstalled` sonucu döner.
 - `winget` source list okunur.
 - `7zip.7zip` query sonucu structured döner.
+- WinGet source / egress readiness source list, package query, proxy/TLS ve
+  timeout reason ile döner.
+- Outdated software read-only sonucu döner; upgrade/install çalıştırılmaz.
 - Pending reboot structured döner; hangi source tetiklediği listelenir.
 - Defender/Firewall/BitLocker durumları döner; BitLocker recovery key veya
   secret toplanmaz.
@@ -119,6 +150,14 @@ Beklenen kanıtlar:
   masked veya summary seviyesinde kalır.
 - Product key, BitLocker recovery key, TPM key material, token veya credential
   hiçbir koşulda toplanmaz.
+- Windows Update / hotfix posture read-only döner; patch install veya reboot
+  tetiklenmez.
+- Agent self-health backend connectivity, DNS/TLS, last poll/result latency ve
+  last error summary döner; enrollment/HMAC secret yoktur.
+- Critical service inventory WinDefend, wuauserv, BITS, EventLog ve
+  endpoint-agent service state döner; service restart yoktur.
+- Startup/RDP/event summary yalnız count/state döner; full event message,
+  browser history, command line dump veya credential yoktur.
 
 Inventory command preflight:
 
@@ -155,11 +194,16 @@ Install pilotu ancak aşağıdaki durum birlikte kanıtlanırsa koşulur:
 
 1. `AG-025`/`AG-026` read-only preflight PASS.
 2. Lightweight/heartbeat akışları full software scan'e girmiyor.
-3. `BE-020` catalog item enabled + approved.
-4. `BE-020I` inventory ingest/query path software payload'ı saklıyor.
-5. `BE-021` result/detection/audit state hazır.
-6. Yetkisiz kullanıcı 403, no-token 401, katalog dışı package id reject.
-7. Agent yalnız kendi template'inden WinGet komutu üretir; raw shell, raw URL,
+3. `AG-026A` WinGet source / egress readiness PASS.
+4. `BE-020` catalog item enabled + approved.
+5. `BE-020I` inventory ingest/query path software payload'ı saklıyor.
+6. `BE-023` catalog compliance state `COMPLIANT` veya kabul edilen `WARN`
+   döndürüyor.
+7. `BE-021A` install dry-run / preflight sonucu `PASS`.
+8. `BE-021` result/detection/audit state hazır.
+9. `AG-027L` exit-code ve redacted log capture hazır.
+10. Yetkisiz kullanıcı 403, no-token 401, katalog dışı package id reject.
+11. Agent yalnız kendi template'inden WinGet komutu üretir; raw shell, raw URL,
    raw installer args kabul edilmez.
 
 ## 7. D29 Pilot Acceptance
@@ -171,6 +215,9 @@ Install pilotu ancak aşağıdaki durum birlikte kanıtlanırsa koşulur:
 | Detection | Registry / WinGet query 7-Zip kurulumunu doğrular |
 | Posture | Pending reboot, security posture, local admins ve device health read-only döner |
 | Hardware | CPU/RAM/disk/model/BIOS/TPM/network summary read-only döner; serial/MAC/IP policy-gated |
+| WinGet egress | Source/package query/proxy/TLS readiness PASS; install/upgrade yok |
+| Compliance | Approved catalog status + outdated/prohibited state görünür; auto-remediation yok |
+| Diagnostics | Agent health + critical services + Windows Update posture read-only döner |
 | Secured | Yetkisiz kullanıcı 403; no-token 401; katalog dışı id reject |
 | Audit | Created, delivered, started, completed/result event'leri görünür |
 
