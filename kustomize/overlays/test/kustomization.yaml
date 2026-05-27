@@ -2620,7 +2620,47 @@ images:
     #     `__resetAuthBootstrapperPageStateForTests`-equivalent production
     #     hook; current production path uses Keycloak redirect which
     #     resets the page lifecycle.
-    digest: sha256:042741fc2c5a52052c59039ae462b54cbc0a61de057d341ede0ebe0028fbd95f
+    #
+    # 2026-05-27 update: sha-70a038a — platform-web PR #674 (WEB-011
+    # Faz 22.5.1B). Carries the new InventoryTab inside the device-detail
+    # drawer in mfe-endpoint-admin: read-only software inventory view
+    # backed by BE-020I admin endpoint
+    #   GET /api/v1/endpoint-admin/endpoint-devices/{deviceId}/software-inventory
+    # plus the `EndpointSoftwareInventory` RTK Query tag, the
+    # `endpoint-software-inventory` entity module (BE-020I DTO mirror with
+    # HKLM / HKLM_WOW6432 install-source variants and the Spring Page
+    # subset actually consumed by the UI), and a drift-fix to
+    # `CommandResultStatus` so it mirrors the backend exactly
+    # (SUCCEEDED | FAILED | PARTIAL | UNSUPPORTED). The prior
+    # TIMEOUT | CANCELLED literals were never produced by the backend.
+    #
+    # Cross-AI peer review chain:
+    #   - Plan-time: Codex 019e6b16 iter-3 AGREE
+    #   - Post-impl: Codex 019e6b2b iter-1 REVISE -> absorb in ac54f793
+    #     (inline filter+page reset for the race-on-first-request bug,
+    #     render-time deviceId ref-compare reset, early-return for
+    #     isUninitialized so the skip branch cannot leak into empty-state,
+    #     empty-state narrowed to status===404 only)
+    #   - iter-2 AGREE / ready_to_merge: true
+    #
+    # Build evidence:
+    #   gh run view 26538627564 -R Halildeu/platform-web   (success)
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-70a038a
+    #   digest sha256:8603693a5ccbedc6ac1f24927ae875ba2c5284fac76150767db736af04b4cef5
+    #
+    # Verify after rollout: open the device detail drawer in
+    # mfe-endpoint-admin, click the Inventory tab, expect either
+    #   (a) the empty-state ("No software inventory collected yet")
+    #       when the backend returns 404 (no BE-020I snapshot ingested
+    #       for that device), OR
+    #   (b) the summary panel + appsAvailable banner when the agent has
+    #       only shipped the lightweight summary (AG-025H default), OR
+    #   (c) the summary panel + filters + paged items table when the
+    #       agent has shipped a full snapshot (opts.IncludeSoftwareApps).
+    # The previous pin (sha256:042741fc2c5a52052c59039ae462b54cbc0a61de057d341ede0ebe0028fbd95f)
+    # rendered the legacy COLLECT_INVENTORY raw-payload view that BE-020I
+    # superseded.
+    digest: sha256:8603693a5ccbedc6ac1f24927ae875ba2c5284fac76150767db736af04b4cef5
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
