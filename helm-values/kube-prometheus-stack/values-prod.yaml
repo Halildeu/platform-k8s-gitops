@@ -284,44 +284,57 @@ alertmanager:
       # Removed in PR Lane B (roadmap-faz23-d43-slack-defer-helm-cleanup).
       # Reference: docs/faz-23-evidence/2026-05-24-d43-slack-defer-smtp-only-acceptance.md
       - name: direct-fallback
-        email_configs:
-          # BLOCKER for board #854 prod activation (BL-008 2026-05-24 finding):
-          # Operator v0.90.1 stricter schema reddediyor `auth_username_file`/
-          # `auth_password_file` field'larını ("field not found in type
-          # config.plain"). Test cluster BL-008 mock-receipt drill bu hatayı
-          # email_configs auth_*_file kaldırarak workaround'lamıştı (Mailpit
-          # no-auth). PROD aktivasyonu öncesi schema fix gerekir:
-          #   Opsiyon 1: inline `auth_username` + `auth_password` (Vault'tan
-          #              template injection; ESO ref'i pod env via valueFrom)
-          #   Opsiyon 2: Operator upgrade (newer version `_file` desteği)
-          # Bu blocker board issue #854 prod activation chain'inde
-          # ele alınmalı. Şu an helm upgrade `--kube-context k3d-prod`
-          # FAIL eder (ReconciliationFailed status) — runbook §6.5.8
-          # SMTP endpoint config note revize edilecek.
-          - to: notify-ops@acik.com
-            from: alertmanager-fallback@acik.com
-            smarthost: 'smtp.office365.com:587'
-            auth_username_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SMTP_USER
-            auth_password_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SMTP_PASSWORD
-            require_tls: true
-            send_resolved: true
-            headers:
-              subject: '[D43 PROD] {{ .CommonLabels.alertname }}'
-            html: |-
-              <h3>D43 Outage Fallback — Prod</h3>
-              <ul>
-              {{ range .Alerts }}
-              <li>
-                <strong>{{ .Labels.alertname }}</strong> ({{ .Labels.severity }})<br/>
-                Cluster: {{ with .Labels.cluster }}{{ . }}{{ else }}prod{{ end }}<br/>
-                Namespace: {{ with .Labels.namespace }}{{ . }}{{ else }}n/a{{ end }}<br/>
-                Outage Fallback: {{ with .Labels.outage_fallback }}{{ . }}{{ else }}false{{ end }}<br/>
-                Bypass Orchestrator: {{ with .Labels.bypass_orchestrator }}{{ . }}{{ else }}false{{ end }}<br/>
-                Description: {{ .Annotations.description }}<br/>
-                Runbook: {{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}
-              </li>
-              {{ end }}
-              </ul>
+        # ─── BL-008 DORMANT (board #854 pre-existing; Codex 019e6bd1 AGREE) ───
+        # Prometheus Operator v0.90.1 schema `auth_*_file` field reddediyor:
+        # `provision alertmanager configuration: failed to initialize from
+        # secret: yaml: unmarshal errors: line 24: field auth_username_file
+        # not found in type config.plain`. D43 SMTP email_configs prod'da
+        # reconcile edilemiyor. Mevcut state'i explicit dormant olarak işaretle
+        # (anti-fake-work pattern: yıllardır broken state görünür kıl).
+        #
+        # Receiver `direct-fallback` name-only intentional empty.
+        # D43 alert pipeline: route `continue: true` ile alarm-receiver-bridge
+        # GitHub Issue path active kalır (defense-in-depth preserved).
+        #
+        # BL-008 follow-up PR ile fix + restore:
+        #   - Native `auth_username`/`auth_password` + Vault preprocess pattern
+        #     (env-var $(VAR) interpolation YASAK — Alertmanager config env
+        #     expand etmiyor)
+        #   - Veya AlertmanagerConfig CRD `SecretKeySelector` spike
+        #   - Test acceptance: mock SMTP receipt + ReconciliationFailed temiz +
+        #     amtool config show direct-fallback email receiver + D43 synthetic
+        #     SMTP receipt + GitHub Issue bridge receipt
+        #
+        # V2.1 Teams pivot unblock: bu comment-out olmadan Operator config
+        # sync FAIL eder + Alertmanager pod yeni alertmanagerSpec.secrets[]
+        # mount almaz (perf-alerts-teams receiver inactive kalır). Bu PR
+        # explicit dormant ile V2.1 Exit #4 unblock.
+        #
+        # email_configs:
+        #   - to: notify-ops@acik.com
+        #     from: alertmanager-fallback@acik.com
+        #     smarthost: 'smtp.office365.com:587'
+        #     auth_username_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SMTP_USER
+        #     auth_password_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SMTP_PASSWORD
+        #     require_tls: true
+        #     send_resolved: true
+        #     headers:
+        #       subject: '[D43 PROD] {{ .CommonLabels.alertname }}'
+        #     html: |-
+        #       <h3>D43 Outage Fallback — Prod</h3>
+        #       <ul>
+        #       {{ range .Alerts }}
+        #       <li>
+        #         <strong>{{ .Labels.alertname }}</strong> ({{ .Labels.severity }})<br/>
+        #         Cluster: {{ with .Labels.cluster }}{{ . }}{{ else }}prod{{ end }}<br/>
+        #         Namespace: {{ with .Labels.namespace }}{{ . }}{{ else }}n/a{{ end }}<br/>
+        #         Outage Fallback: {{ with .Labels.outage_fallback }}{{ . }}{{ else }}false{{ end }}<br/>
+        #         Bypass Orchestrator: {{ with .Labels.bypass_orchestrator }}{{ . }}{{ else }}false{{ end }}<br/>
+        #         Description: {{ .Annotations.description }}<br/>
+        #         Runbook: {{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}
+        #       </li>
+        #       {{ end }}
+        #       </ul>
     inhibit_rules:
       # Critical inhibits warning of same alertname
       - source_matchers:
