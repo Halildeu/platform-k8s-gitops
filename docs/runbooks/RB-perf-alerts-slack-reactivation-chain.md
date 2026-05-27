@@ -75,24 +75,22 @@ read -r -s SLACK_PERF_WEBHOOK
 # 2. Shape sanity check (URL prefix only — full URL ECHO DEĞİL)
 [[ "$SLACK_PERF_WEBHOOK" =~ ^https://hooks\.slack\.com/services/ ]] && echo "URL prefix OK" || { echo "FAIL"; unset SLACK_PERF_WEBHOOK; exit 1; }
 
-# 3. Vault root token staging-sw container'da; agent local'a almaz (D43 RB §3 mirror)
-# Stdin-pipe pattern: webhook URL'i ssh'a stdin'den ver, container içinde `vault kv put` ile parse et
+# 3. D43 stdin-pipe pattern (RB-d43-teams §3 emsali): webhook URL stdin'den ssh'a → ssh stdin'i
+#    docker exec'a forward → docker exec stdin'i vault CLI'ya → "SLACK_WEBHOOK_URL=-" "-" stdin'den oku
 # Single-tenant pattern (acik scope dahil):
 printf '%s' "$SLACK_PERF_WEBHOOK" | ssh halil@staging-sw '
   VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)
-  WEBHOOK=$(cat)  # stdin'den oku
   docker exec -i -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
-    sh -c "vault kv patch kv/platform/perf-alertmanager SLACK_WEBHOOK_URL=\"\$WEBHOOK\"" <<< "$WEBHOOK"
-  unset VAULT_ROOT_TOKEN WEBHOOK
+    vault kv patch kv/platform/perf-alertmanager SLACK_WEBHOOK_URL=-
+  unset VAULT_ROOT_TOKEN
 '
 
 # 4. Multi-tenant alternative (tenant-scoped path):
 # printf '%s' "$SLACK_PERF_WEBHOOK" | ssh halil@staging-sw '
 #   VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)
-#   WEBHOOK=$(cat)
 #   docker exec -i -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
-#     sh -c "vault kv put kv/platform/tenants/<tenant>/perf-alertmanager SLACK_WEBHOOK_URL=\"\$WEBHOOK\"" <<< "$WEBHOOK"
-#   unset VAULT_ROOT_TOKEN WEBHOOK
+#     vault kv put kv/platform/tenants/<tenant>/perf-alertmanager SLACK_WEBHOOK_URL=-
+#   unset VAULT_ROOT_TOKEN
 # '
 
 # 5. Local cleanup
