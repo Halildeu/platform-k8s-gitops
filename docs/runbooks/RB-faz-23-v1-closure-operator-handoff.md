@@ -93,7 +93,7 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
   - [x] **Diagnosis evidence iter-2**: `docs/faz-23-evidence/2026-05-27-kc-drift-diagnosis-3-service.md` — live introspection iter-1 + Codex `019e6ac8` REVISE catch absorb iter-2
   - [x] **No-op (user-service)**: phantom drift kapatıldı (Vault `keycloak_client_secret` ↔ K8s `KEYCLOAK_CLIENT_SECRET` ↔ KC serban `user-service` client id `9ec438ac` aligned LIVE; ERP_OPENFGA_* multi-source via `kv/platform/openfga` per ExternalSecret manifest)
   - [x] **No-op (auth-service)**: phantom drift kapatıldı iter-2 (Codex catch: KC client adı `auth-service` değil **`impersonation-broker`** id `3ebfd270` LIVE; `AUTH_IMPERSONATION_BROKER_CLIENT_ID="impersonation-broker"` configmap canonical; `KEYCLOAK_CLIENT_SECRET` ayrı Spring resource-server JWT validation path)
-  - [ ] **Owner-action (perf-alertmanager)**: V2.1 Ops-A A2 — owner Vault seed `vault kv put kv/platform/perf-alertmanager SLACK_WEBHOOK_URL=<URL>`. Canonical desired-state LIVE (`monitoring` ns ExternalSecret + Helm values mount + `api_url_file` config). ESO `SecretSyncedError=False 7d20h` until seed. Runbook: `docs/runbooks/V2.1-perf-alert-receiver.md` §A2.
+  - [ ] **Owner-action (perf-alertmanager)**: V2.1 Ops-A A2 — owner Vault seed `vault kv put kv/platform/perf-alertmanager SLACK_WEBHOOK_URL=<URL>`. Canonical desired-state LIVE (`monitoring` ns ExternalSecret + Helm values mount + `api_url_file` config). ESO `Ready=False (reason=SecretSyncedError)` 7d20h until seed. Runbook: `docs/runbooks/V2.1-perf-alert-receiver.md` §A2.
 
 ---
 

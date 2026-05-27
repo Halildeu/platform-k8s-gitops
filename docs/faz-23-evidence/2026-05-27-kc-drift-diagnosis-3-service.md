@@ -34,7 +34,7 @@
 |---|---|---|---|---|---|---|---|
 | 1 | **user-service** | ✅ `kv/platform/user-service` | 4: `db_password`, `db_username`, `internal_api_key`, `keycloak_client_secret` | ✅ `user-service-secrets` in `platform-prod` (6 keys; ERP_OPENFGA_* multi-source from `kv/platform/openfga` per `kustomize/base/apps/user-service/ops/externalsecret.yaml:38`) | ✅ id=`9ec438ac-ce25-49f2-8b3a-dede2c111c3a` (enabled=true, protocol=openid-connect, serviceAccountsEnabled=true) | 🟢 **NO drift (phantom)** | None |
 | 2 | **auth-service** | ✅ `kv/platform/auth-service` | 7: `db_password`, `db_username`, `impersonation_broker_client_secret`, `internal_api_key`, `jwt_private_key`, `jwt_public_key`, `keycloak_client_secret` | ✅ `auth-service-secrets` in `platform-prod` (7 keys: incl. `AUTH_IMPERSONATION_BROKER_CLIENT_SECRET` + `KEYCLOAK_CLIENT_SECRET`) | ✅ **`impersonation-broker` LIVE** in serban: id=`3ebfd270-51ff-4489-a395-a10ea869136b` (enabled=true, serviceAccountsEnabled=true). `AUTH_IMPERSONATION_BROKER_CLIENT_ID="impersonation-broker"` canonical (`kustomize/base/apps/auth-service/configmap.yaml:70`). `KEYCLOAK_CLIENT_SECRET` separately consumed by Spring resource-server JWT validation (oauth2 resource-server pattern, not client_credentials) | 🟢 **NO drift (phantom iter-1 misclassification — Codex `019e6ac8` catch)** | None |
-| 3 | **perf-alertmanager** | ✅ `kv/platform/perf-alertmanager` (path listed; data.data=null — payload missing) | 🟡 ESO `perf-alertmanager-secrets` in **`monitoring` ns** with **`SecretSyncedError=False 7d20h`** (NOT `platform-prod` — iter-1 misclassification); Helm values mount `/etc/alertmanager/secrets/perf-alertmanager-secrets/SLACK_WEBHOOK_URL` LIVE via `api_url_file` (`helm-values/kube-prometheus-stack/values-prod.yaml:209`) | N/A (alertmanager Slack receiver, not KC client) | 🟡 **Owner-action pending activation — Vault `SLACK_WEBHOOK_URL` seed gap** | **Low** (no current Slack delivery; but desired-state LIVE; V2.1 Ops-A A2 runbook owner step) |
+| 3 | **perf-alertmanager** | ✅ `kv/platform/perf-alertmanager` (path listed; data.data=null — payload missing) | 🟡 ESO `perf-alertmanager-secrets` in **`monitoring` ns** with **`Ready=False (reason=SecretSyncedError)` 7d20h** (NOT `platform-prod` — iter-1 misclassification); Helm values mount `/etc/alertmanager/secrets/perf-alertmanager-secrets/SLACK_WEBHOOK_URL` LIVE via `api_url_file` (`helm-values/kube-prometheus-stack/values-prod.yaml:209`) | N/A (alertmanager Slack receiver, not KC client) | 🟡 **Owner-action pending activation — Vault `SLACK_WEBHOOK_URL` seed gap** | **Low** (no current Slack delivery; but desired-state LIVE; V2.1 Ops-A A2 runbook owner step) |
 
 ---
 
@@ -174,7 +174,7 @@ jq: error (at <stdin>:17): null (null) has no keys
 
 **Drift analysis (iter-2)**:
 - **Desired-state LIVE**: ExternalSecret + Helm values + Alertmanager `api_url_file` mount path canonical configured
-- **ESO sync state**: `SecretSyncedError = False` 7d20h (sync failing because Vault `SLACK_WEBHOOK_URL` field missing)
+- **ESO sync state**: `Ready=False (reason=SecretSyncedError)` 7d20h (sync failing because Vault `SLACK_WEBHOOK_URL` field missing)
 - **Owner-action gap**: V2.1 Ops-A A2 runbook (`docs/runbooks/V2.1-perf-alert-receiver.md`) owner step — `vault kv put kv/platform/perf-alertmanager SLACK_WEBHOOK_URL=<https://hooks.slack.com/...>`
 - **NOT KC drift**: alertmanager Slack receiver pattern; KC client gerekli değil (api_url_file file-mount pattern)
 - **NOT stale orphan**: V2.1 Ops-A A2 isolation pattern desired-state aktif (Codex `019e267a` AGREE_AFTER_REVISIONS)
@@ -214,13 +214,15 @@ ExternalSecret CRD `remoteRef` → `secretKey` remap respects this pattern. **No
 
 `serban` realm is **prod canonical** (BL-010 PR #1062 evidence). `master` realm reserved for KC admin only. No other realms in prod `platform-kc-prod`.
 
-### KC client → service deployment alignment
+### KC client / Consumer → service deployment alignment (iter-2 corrected)
 
-| KC client | K8s deployment | Status |
+> **Iter-2 update**: iter-1 tablo §2/§3/§6 verdict'leriyle çelişiyordu (Codex `019e6ac8` iter-2 catch). Düzeltilmiş tablo aşağıda.
+
+| Service | Active Consumer Pattern | Aligned? |
 |---|---|---|
-| `user-service` (serban) | `user-service` deploy (platform-prod) | ✅ aligned |
-| `auth-service` | (deploy exists but no KC client) | 🟡 drift |
-| `perf-alertmanager` | (no deploy + no KC client + no K8s secret) | 🟡 orphan |
+| **user-service** | KC serban client `user-service` (id `9ec438ac`) ↔ `user-service` deploy in `platform-prod` | ✅ Aligned |
+| **auth-service** | KC serban client `impersonation-broker` (id `3ebfd270`) ↔ `auth-service` impersonation flow in `platform-prod`; resource-server JWT validation via `KEYCLOAK_CLIENT_SECRET` separate path | ✅ Aligned |
+| **perf-alertmanager** | Alertmanager Slack receiver (kube-prometheus-stack) ↔ `monitoring` ns ExternalSecret `perf-alertmanager-secrets` + Helm `api_url_file` mount; **KC client not expected** (Slack webhook file-mount pattern) | 🟡 Owner-action pending Vault `SLACK_WEBHOOK_URL` seed (V2.1 Ops-A A2 runbook); desired-state LIVE, payload missing |
 
 ---
 
@@ -268,4 +270,4 @@ Per iter-2 Codex catch absorb: gerçek aktivasyon pattern'lerinin **fix scope'la
 
 ## §8 Closing Summary (1-Sentence; iter-2 final)
 
-**3 service drift claim → live diagnosis iter-2 (Codex `019e6ac8` REVISE absorb)**: **2 phantom** (user-service ✅ + auth-service ✅ phantom corrected via `impersonation-broker` canonical client + resource-server JWT separation) + **1 owner-action pending** (perf-alertmanager 🟡 monitoring ns ESO `SecretSyncedError=False 7d20h` → V2.1 Ops-A A2 Vault `SLACK_WEBHOOK_URL` seed owner step); no mutation; fix scope tek owner-action'a indirgendi.
+**3 service drift claim → live diagnosis iter-2 (Codex `019e6ac8` REVISE absorb)**: **2 phantom** (user-service ✅ + auth-service ✅ phantom corrected via `impersonation-broker` canonical client + resource-server JWT separation) + **1 owner-action pending** (perf-alertmanager 🟡 monitoring ns ESO `Ready=False (reason=SecretSyncedError)` 7d20h → V2.1 Ops-A A2 Vault `SLACK_WEBHOOK_URL` seed owner step); no mutation; fix scope tek owner-action'a indirgendi.
