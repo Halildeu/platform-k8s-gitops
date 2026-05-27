@@ -26,13 +26,15 @@
 
 ---
 
-## §2 Drift Matrix (Live Evidence 2026-05-27)
+## §2 Drift Matrix (Live Evidence 2026-05-27 — iter-2 Codex `019e6ac8` REVISE absorb)
 
-| # | Service | Vault Path | Vault Keys (count + names) | K8s Secret (prod) | KC `serban` Client | KC `master` Client | Drift Verdict | Severity |
-|---|---|---|---|---|---|---|---|---|
-| 1 | **user-service** | ✅ `kv/platform/user-service` | 4: `db_password`, `db_username`, `internal_api_key`, `keycloak_client_secret` | ✅ `user-service-secrets` (6 keys: `SPRING_DATASOURCE_USERNAME/PASSWORD`, `KEYCLOAK_CLIENT_SECRET`, `PERMISSION_SERVICE_INTERNAL_API_KEY`, `ERP_OPENFGA_MODEL_ID`, `ERP_OPENFGA_STORE_ID`) | ✅ id=`9ec438ac-ce25-49f2-8b3a-dede2c111c3a` (enabled=true, protocol=openid-connect, publicClient=false, serviceAccountsEnabled=true) | absent | 🟢 **NO drift (phantom)** | None |
-| 2 | **auth-service** | ✅ `kv/platform/auth-service` | 7: `db_password`, `db_username`, `impersonation_broker_client_secret`, `internal_api_key`, `jwt_private_key`, `jwt_public_key`, `keycloak_client_secret` | ✅ `auth-service-secrets` (7 keys: `SPRING_DATASOURCE_USERNAME/PASSWORD`, `KEYCLOAK_CLIENT_SECRET`, `AUTH_IMPERSONATION_BROKER_CLIENT_SECRET`, `PERMISSION_SERVICE_INTERNAL_API_KEY`, `SECURITY_SERVICE_JWT_PRIVATE_KEY/PUBLIC_KEY`) | ❌ **EMPTY** | absent | 🟡 **KC client absent in serban despite Vault+K8s expecting `KEYCLOAK_CLIENT_SECRET`** | **Medium** (auth flow risk if KC client expected) |
-| 3 | **perf-alertmanager** | ✅ `kv/platform/perf-alertmanager` (path listed) | **null** (kv get returns `data.data = null` — path metadata exists but no payload data) | absent | absent | absent | 🟡 **Stale Vault path; no consumer (K8s + KC both absent)** | **Low** (no production impact; hygiene only) |
+> **Iter-2 update**: Codex review thread `019e6ac8-7dc0-7f71-bd6b-1205b5c8a9db` REVISE absorb 2026-05-27 — auth-service KC client adı `auth-service` DEĞİL `impersonation-broker` (configmap canonical); perf-alertmanager `platform-prod` ns değil `monitoring` ns ESO desired-state (owner-action pending Vault seed, NOT stale orphan). Iter-1 misclassification'lar düzeltildi.
+
+| # | Service | Vault Path | Vault Keys (count + names) | K8s Secret + Namespace | KC `serban` Active Client | Drift Verdict | Severity |
+|---|---|---|---|---|---|---|---|
+| 1 | **user-service** | ✅ `kv/platform/user-service` | 4: `db_password`, `db_username`, `internal_api_key`, `keycloak_client_secret` | ✅ `user-service-secrets` in `platform-prod` (6 keys; ERP_OPENFGA_* multi-source from `kv/platform/openfga` per `kustomize/base/apps/user-service/ops/externalsecret.yaml:38`) | ✅ id=`9ec438ac-ce25-49f2-8b3a-dede2c111c3a` (enabled=true, protocol=openid-connect, serviceAccountsEnabled=true) | 🟢 **NO drift (phantom)** | None |
+| 2 | **auth-service** | ✅ `kv/platform/auth-service` | 7: `db_password`, `db_username`, `impersonation_broker_client_secret`, `internal_api_key`, `jwt_private_key`, `jwt_public_key`, `keycloak_client_secret` | ✅ `auth-service-secrets` in `platform-prod` (7 keys: incl. `AUTH_IMPERSONATION_BROKER_CLIENT_SECRET` + `KEYCLOAK_CLIENT_SECRET`) | ✅ **`impersonation-broker` LIVE** in serban: id=`3ebfd270-51ff-4489-a395-a10ea869136b` (enabled=true, serviceAccountsEnabled=true). `AUTH_IMPERSONATION_BROKER_CLIENT_ID="impersonation-broker"` canonical (`kustomize/base/apps/auth-service/configmap.yaml:70`). `KEYCLOAK_CLIENT_SECRET` separately consumed by Spring resource-server JWT validation (oauth2 resource-server pattern, not client_credentials) | 🟢 **NO drift (phantom iter-1 misclassification — Codex `019e6ac8` catch)** | None |
+| 3 | **perf-alertmanager** | ✅ `kv/platform/perf-alertmanager` (path listed; data.data=null — payload missing) | 🟡 ESO `perf-alertmanager-secrets` in **`monitoring` ns** with **`SecretSyncedError=False 7d20h`** (NOT `platform-prod` — iter-1 misclassification); Helm values mount `/etc/alertmanager/secrets/perf-alertmanager-secrets/SLACK_WEBHOOK_URL` LIVE via `api_url_file` (`helm-values/kube-prometheus-stack/values-prod.yaml:209`) | N/A (alertmanager Slack receiver, not KC client) | 🟡 **Owner-action pending activation — Vault `SLACK_WEBHOOK_URL` seed gap** | **Low** (no current Slack delivery; but desired-state LIVE; V2.1 Ops-A A2 runbook owner step) |
 
 ---
 
@@ -82,105 +84,113 @@ $ kcadm.sh get clients -r serban -q clientId=user-service --fields id,clientId,e
 
 ---
 
-### #2 auth-service — 🟡 KC CLIENT ABSENT (medium severity)
+### #2 auth-service — 🟢 NO DRIFT (phantom; iter-2 Codex catch corrected)
 
-**Live evidence**:
+> **Iter-2 update (Codex `019e6ac8` REVISE absorb)**: Iter-1 yanlış KC client adı arıyordu (`clientId=auth-service`). Canonical KC client adı `impersonation-broker` (configmap.yaml:70). Iter-2 doğru introspection ile **phantom drift kanıtlandı**.
+
+**Live evidence (iter-2)**:
 ```bash
-# Vault path + key list
-$ vault kv get -format=json kv/platform/auth-service | jq -r '.data.data | keys[]'
-db_password
-db_username
-impersonation_broker_client_secret
-internal_api_key
-jwt_private_key
-jwt_public_key
-keycloak_client_secret
+# 1. auth-service canonical KC client ID — from manifest:
+$ grep AUTH_IMPERSONATION_BROKER_CLIENT_ID kustomize/base/apps/auth-service/configmap.yaml
+AUTH_IMPERSONATION_BROKER_CLIENT_ID: "impersonation-broker"
 
-# K8s secret presence
-$ kubectl --context k3d-prod -n platform-prod get secret auth-service-secrets
-NAME                    TYPE     DATA   AGE
-auth-service-secrets    Opaque   7      34d
+# 2. KC serban realm — impersonation-broker client LIVE:
+$ kcadm.sh get clients -r serban -q clientId=impersonation-broker --fields id,clientId,enabled,protocol,publicClient,serviceAccountsEnabled
+[ {
+  "id" : "3ebfd270-51ff-4489-a395-a10ea869136b",
+  "clientId" : "impersonation-broker",
+  "enabled" : true,
+  "serviceAccountsEnabled" : true,
+  "publicClient" : false,
+  "protocol" : "openid-connect"
+} ]
 
-# KC serban realm client — EMPTY
-$ kcadm.sh get clients -r serban -q clientId=auth-service --fields id,clientId
-[ ]
-
-# KC master realm — also EMPTY
-$ kcadm.sh get clients -r master -q clientId=auth-service --fields id,clientId
-[ ]
+# 3. Vault path: kv/platform/auth-service (7 keys — confirms keycloak_client_secret + impersonation_broker_client_secret)
+# 4. K8s auth-service-secrets in platform-prod (7 keys — AUTH_IMPERSONATION_BROKER_CLIENT_SECRET + KEYCLOAK_CLIENT_SECRET aligned)
 ```
 
-**Drift analysis**:
-- Vault `kv/platform/auth-service` actively maintained (7 keys, includes `keycloak_client_secret`, `impersonation_broker_client_secret`)
-- K8s `auth-service-secrets` actively rendered (7 keys, ExternalSecret consumer); pod consumes via envFrom
-- KC `serban` realm has **NO `auth-service` client** despite secret rendering
-- KC `master` realm also empty (excluded confused-realm explanation)
+**Cross-AI catch (Codex `019e6ac8` iter-1)**: "`clientId=auth-service` yokluğu tek başına broken-flow kanıtı değil; manifestte aktif impersonation path broker client id olarak `impersonation-broker` kullanıyor, secret de `AUTH_IMPERSONATION_BROKER_CLIENT_SECRET` üzerinden geliyor."
 
-**Hypothesis A**: auth-service Spring boot pod consumes `KEYCLOAK_CLIENT_SECRET` env var but only uses it for **client_credentials grant** that's never triggered (dead branch). Lazy fail: app starts OK, KC OAuth call fails at runtime if hit.
+**Two consumption paths**:
+1. **Impersonation flow** (impersonation-broker client_credentials):
+   - KC client `impersonation-broker` (serban id `3ebfd270`) → service account JWT mint
+   - Backend: `auth-service` REST endpoint `/api/v1/impersonation/sessions` calls KC token-exchange
+   - Env: `AUTH_IMPERSONATION_BROKER_CLIENT_ID="impersonation-broker"` + `AUTH_IMPERSONATION_BROKER_CLIENT_SECRET=<vault.impersonation_broker_client_secret>`
+   - Status: ✅ LIVE
+2. **Resource server JWT validation** (Spring Security `oauth2-resource-server`):
+   - Backend validates incoming JWTs minted by other services
+   - Env: `KEYCLOAK_CLIENT_SECRET=<vault.keycloak_client_secret>` (Spring resource-server pattern; client_credentials için DEĞİL, JWT introspect/validate için optional config)
+   - Status: ✅ LIVE (Spring resource-server validates without active client_credentials grant)
 
-**Hypothesis B**: auth-service KC client previously existed in `acik` realm (pre-BL-010 drift); `acik` → `serban` realm rename (BL-010 PR #1062) lost the client.
+**No drift conclusion**: Both consumption paths have proper KC backing. Phantom drift was caused by iter-1 search using wrong clientId.
 
-**Hypothesis C**: auth-service KC client exists in a realm we haven't inspected (e.g., `notify-canary` scope realm, or a tenant-specific realm).
+**Action**: None needed; phantom kapatıldı.
 
-**Fix-PR scope** (separate PR — NOT this diagnosis PR):
-- Verify auth-service pod logs for KC OAuth call errors (no-error → unused secret; error → real broken flow)
-- If unused → remove `KEYCLOAK_CLIENT_SECRET` + `impersonation_broker_client_secret` from `auth-service-secrets` ExternalSecret (clean dead config)
-- If broken flow → recreate KC client in `serban` realm OR migrate auth-service to use a different client
-
-**Action**: Spawn separate fix PR after live consumption verification (no mutation in this diagnosis PR).
-
-**Owner**: ops + dev
-
-**Risk**: **Medium** — auth flow could be silently broken; user-facing impact depends on whether OAuth client_credentials is actually invoked in current code path.
+**Risk**: **None** — auth flow LIVE; impersonation broker client + resource-server JWT validation both aligned.
 
 ---
 
-### #3 perf-alertmanager — 🟡 STALE VAULT PATH (low severity)
+### #3 perf-alertmanager — 🟡 OWNER-ACTION PENDING ACTIVATION (V2.1 Ops-A A2; iter-2 Codex catch corrected)
 
-**Live evidence**:
+> **Iter-2 update (Codex `019e6ac8` REVISE BLOCKER absorb)**: Iter-1 sadece `platform-prod` namespace'i taradı (yanlış scope). Canonical desired-state `monitoring` namespace'inde V2.1 Ops-A pattern ile ESO render var. Iter-1 verdict "stale orphan/no consumer" YANLIŞTI; gerçek verdict "owner-action pending Vault `SLACK_WEBHOOK_URL` seed".
+
+**Live evidence (iter-2 — monitoring namespace canonical)**:
 ```bash
-# Vault path listed
-$ vault kv list kv/platform | grep perf
-perf-alertmanager
+# 1. ExternalSecret canonical: monitoring namespace
+$ kubectl --context k3d-prod -n monitoring get externalsecret | grep perf-alert
+perf-alertmanager-secrets   ClusterSecretStore   vault-platform-gitops   1h   SecretSyncedError   False   7d20h
 
-# Vault key list — EMPTY
+# 2. Source-of-truth ExternalSecret manifest:
+$ cat kustomize/overlays/prod/eso/alertmanager/externalsecret-perf-alertmanager.yaml | tail -25
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: vault-platform-gitops
+  target:
+    name: perf-alertmanager-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: SLACK_WEBHOOK_URL
+      remoteRef:
+        key: kv/platform/perf-alertmanager
+        property: SLACK_WEBHOOK_URL
+
+# 3. Helm values consumer (Alertmanager pod mount):
+$ grep -E "perf-alertmanager-secrets|api_url_file" helm-values/kube-prometheus-stack/values-prod.yaml | head -6
+    # ESO `perf-alertmanager-secrets` K8s Secret pod'a file mount edilir;
+    # Alertmanager config `slack_configs.api_url_file` ile path okur (env injection DEĞİL).
+    # Mount path: /etc/alertmanager/secrets/perf-alertmanager-secrets/SLACK_WEBHOOK_URL
+      - perf-alertmanager-secrets
+          - api_url_file: /etc/alertmanager/secrets/perf-alertmanager-secrets/SLACK_WEBHOOK_URL
+
+# 4. Vault payload missing:
 $ vault kv get -format=json kv/platform/perf-alertmanager | jq -r '.data.data | keys[]'
 jq: error (at <stdin>:17): null (null) has no keys
-# (Vault returns data.data = null — path metadata exists but no payload data)
-
-# K8s prod secret — absent
-$ kubectl --context k3d-prod -n platform-prod get secret | grep perf-alert
-# (no output)
-
-# KC serban + master realm clients — both absent
-$ kcadm.sh get clients -r serban -q clientId=perf-alertmanager
-[ ]
-$ kcadm.sh get clients -r master -q clientId=perf-alertmanager
-[ ]
+# Path metadata exists (kv list shows entry) but data.data = null
 ```
 
-**Drift analysis**:
-- Vault path `kv/platform/perf-alertmanager` exists in path listing but has **no data payload**
-- No K8s secret in `platform-prod` consuming this path
-- No KC client in either realm
-- Likely **stale metadata** from past Vault entry (created, then `vault kv destroy` ran but `vault kv metadata delete` did not — keeps path listing as marker)
+**Cross-AI catch (Codex `019e6ac8` iter-1 BLOCKER)**: "PR doc platform-prod namespace'te secret arıyor, ama source desired-state `perf-alertmanager-secrets` ExternalSecret'i monitoring namespace'inde render ediyor ve `kv/platform/perf-alertmanager` `SLACK_WEBHOOK_URL` bekliyor. `kustomize build kustomize/overlays/prod/eso` bunu bağımsız doğruladı."
 
-**Hypothesis A**: Pre-Faz 23 alertmanager experiment that was discarded; cleanup incomplete.
+**Drift analysis (iter-2)**:
+- **Desired-state LIVE**: ExternalSecret + Helm values + Alertmanager `api_url_file` mount path canonical configured
+- **ESO sync state**: `SecretSyncedError = False` 7d20h (sync failing because Vault `SLACK_WEBHOOK_URL` field missing)
+- **Owner-action gap**: V2.1 Ops-A A2 runbook (`docs/runbooks/V2.1-perf-alert-receiver.md`) owner step — `vault kv put kv/platform/perf-alertmanager SLACK_WEBHOOK_URL=<https://hooks.slack.com/...>`
+- **NOT KC drift**: alertmanager Slack receiver pattern; KC client gerekli değil (api_url_file file-mount pattern)
+- **NOT stale orphan**: V2.1 Ops-A A2 isolation pattern desired-state aktif (Codex `019e267a` AGREE_AFTER_REVISIONS)
 
-**Hypothesis B**: Future-planned entry seeded as placeholder; never populated.
+**Fix-PR scope** (separate PR — owner-action):
+- **Owner-side**: Slack workspace `team=perf` channel webhook URL üret → `vault kv put kv/platform/perf-alertmanager SLACK_WEBHOOK_URL=<URL>` execute
+- **Agent-side post-owner-action**: ESO force-sync verify → `kubectl get secret perf-alertmanager-secrets -n monitoring -o json | jq '.data | keys[]'` should show `SLACK_WEBHOOK_URL` → Alertmanager pod log check for `Notify success` after first SLACK alert
+- **NOT applicable**: `vault kv metadata delete` — pattern aktif desired-state, retirement değil
 
-**Hypothesis C**: Different cluster's perf-alertmanager (test cluster ≠ prod cluster) uses this path; prod orphan.
+**Action**: Owner Vault seed action; agent post-seed verification.
 
-**Fix-PR scope** (separate PR — NOT this diagnosis PR):
-- Either: `vault kv metadata delete kv/platform/perf-alertmanager` (hard delete metadata, removes from path listing) if confirmed orphan
-- Or: document as future-trigger placeholder with reactivation chain (R23/ADR-0024 pattern — "asset-preserved demand-reactivated")
-- Or: identify originating cluster + workflow and adopt as canonical
+**Owner**: ops (Vault seed) + agent (post-seed sync verify)
 
-**Action**: Spawn separate fix PR after origin verification (no mutation in this diagnosis PR).
+**Risk**: **Low** (no current Slack delivery for perf-alerts; but R8/R13 alerts via Email leg LIVE via `alertmanager-fallback-secrets`). Activation triggers perf-alert Slack channel routing per V2.1 Ops-A A2 design.
 
-**Owner**: ops
-
-**Risk**: **Low** — no consumer; pure hygiene; no production impact.
+**Reference**: `docs/runbooks/V2.1-perf-alert-receiver.md` §A2 + Codex `019e267a` iter-2 AGREE_AFTER_REVISIONS.
 
 ---
 
@@ -227,28 +237,21 @@ ExternalSecret CRD `remoteRef` → `secretKey` remap respects this pattern. **No
 
 ---
 
-## §6 Next Steps (Fix PR Pipeline — Separate PRs)
+## §6 Next Steps (iter-2 — Revised Pipeline post-Codex `019e6ac8` REVISE)
 
-Per Codex `019e6abe` verdict: "Fix PR'lar daha sonra user authority gate per service ile açılır; tek PR'da prod KC/Vault mutation karışmaz."
+Per iter-2 Codex catch absorb: gerçek aktivasyon pattern'lerinin **fix scope'ları daraldı**.
 
-**Pipeline** (each fix is independent — sequential or parallel; each per-service authority gate):
+**Revised pipeline**:
 
-1. **Fix-PR-1 (auth-service KC client)**:
-   - Verify auth-service pod logs for KC OAuth call patterns
-   - Decision: dead-config-remove OR create-missing-KC-client OR migrate-to-different-realm
-   - Cross-AI peer review + user authority approval
-   - Live execute (Vault clean / KC create)
+1. **No-op (user-service)**: Phantom drift kapatıldı; her şey LIVE ve aligned. Fix gerekmez. ✅
+2. **No-op (auth-service)**: Phantom drift kapatıldı; KC `impersonation-broker` client + resource-server JWT validation aligned LIVE. Fix gerekmez. ✅
+3. **Owner-action (perf-alertmanager)**: V2.1 Ops-A A2 owner step pending — Vault `kv/platform/perf-alertmanager` `SLACK_WEBHOOK_URL` seed:
+   - **Owner-side runbook**: `docs/runbooks/V2.1-perf-alert-receiver.md` §A2 — owner generates Slack webhook URL + `vault kv put` command
+   - **Agent post-seed**: ESO force-sync verify; `kubectl get secret perf-alertmanager-secrets -n monitoring` → `SLACK_WEBHOOK_URL` key present + length>0
+   - **Cross-AI**: agent diagnosis evidence iter-2 (this doc); owner Vault write authority gate; post-seed verify can be separate PR or in-line evidence
+   - **Reference**: PR #1093 (this PR) provides diagnosis-only attestation; owner action is operational step (Vault root token + Slack webhook generation)
 
-2. **Fix-PR-2 (perf-alertmanager Vault hygiene)**:
-   - Verify path origin (test cluster vs prod cluster vs experiment)
-   - Decision: hard-delete-metadata OR asset-preserve-document
-   - Cross-AI peer review + user authority approval
-   - Live execute (`vault kv metadata delete` if delete chosen)
-
-3. **No-op (user-service)**:
-   - No fix needed; phantom drift kapatıldı
-
-**Important**: Each fix PR opens its own user authority gate. No batch mutation.
+**Important**: Iter-2 revision **eliminated 2 of 3 originally-suspected drift fix PRs** (user-service + auth-service phantoms). Only **1 actionable item remains**: perf-alertmanager owner Vault seed. This is consistent with HARD RULE — Uzun Vadeli Kalıcı Çözüm: phantom-fix anti-pattern avoided.
 
 ---
 
@@ -263,6 +266,6 @@ Per Codex `019e6abe` verdict: "Fix PR'lar daha sonra user authority gate per ser
 
 ---
 
-## §8 Closing Summary (1-Sentence)
+## §8 Closing Summary (1-Sentence; iter-2 final)
 
-**3 service drift claim → live diagnosis**: 1 phantom (user-service ✅), 1 medium (auth-service 🟡 KC client absent despite Vault+K8s present), 1 low (perf-alertmanager 🟡 stale orphan Vault path); no mutation; fix PRs separate per-service authority gate.
+**3 service drift claim → live diagnosis iter-2 (Codex `019e6ac8` REVISE absorb)**: **2 phantom** (user-service ✅ + auth-service ✅ phantom corrected via `impersonation-broker` canonical client + resource-server JWT separation) + **1 owner-action pending** (perf-alertmanager 🟡 monitoring ns ESO `SecretSyncedError=False 7d20h` → V2.1 Ops-A A2 Vault `SLACK_WEBHOOK_URL` seed owner step); no mutation; fix scope tek owner-action'a indirgendi.
