@@ -8,6 +8,7 @@
 > - Codex (OpenAI) thread `019e667f-98a5-7980-8f80-613fc1a1ed82` iter-7 AGREE (ADR-0029 12 finding F1-F5 + F1-F4 + F1-F3 absorbed)
 > - Codex (OpenAI) PR #1080 iter-1 5 finding (F1 short name + F2 EditFlag SAN2 + F3 TPM fail-closed + F4 cert prune + F5 -Force) absorbed
 > - Codex (OpenAI) PR #1080 iter-2 REVISE 5 finding absorbed: F2-A (authorized signatures vs CA Manager approval), F2-B (pending approval 2-fazlı enrollment), F2-C (CertSvc restart fail-closed), F3-A (existing CA path provider audit), F1-A (HRESULT mapping canonical)
+> - Codex (OpenAI) PR #1080 iter-3 REVISE remaining 3 finding absorbed: F2-B iter-4 (pending JSON fail-CLOSED + atomic write + cross-process mutex), F2-C iter-4 (idempotent path Get-Service Running check), F1-A iter-4 (HRESULT canonical disposition semantik tablosu yeniden yazıldı)
 
 ---
 
@@ -354,22 +355,32 @@ Phase 0 fail noktası fix edilmeden Phase 1 5-PC pilot başlatılmaz.
 
 ### 5.1 Common errors
 
-> **F1-A absorb (iter-2 LOW)** — HRESULT mapping önceki versiyonda çelişkiliydi (`0x80094012` aynı kodu hem "template not found" hem "permission" gibi taşıyordu). Aşağıdaki tablo tek canonical mapping; her HRESULT bir anlama bağlı.
+> **F1-A absorb (iter-4)** — HRESULT mapping önceki versiyonlarda canonical disposition
+> semantik ile uyumsuzdu: `0x80094012` hem `CERTSRV_E_TEMPLATE_DENIED` hem "template not
+> found" gibi yorumlanıyordu; `0x80094800` permission denied + unsupported birlikte;
+> `0x80094004` `CERTSRV_E_PROPERTY_EMPTY` ile "Request denied by CA Manager" karışmıştı.
+> Aşağıdaki tablo Microsoft AD CS canonical disposition semantik (Win Error sembolik
+> isimler) ile uyumlu yeniden yazıldı. Her HRESULT tek anlam taşır + doğru olası fix
+> önerilir.
 
-| Error Code / Symptom | Canonical Meaning | Fix |
-|---|---|---|
-| `0x80094012` (`CERTSRV_E_TEMPLATE_DENIED` / "template not found") | Template short name yanlış / display vs short name conflated | F1 absorb — MMC certtmpl.msc → Properties → General → Template short name HYPHENLESS (`EndpointAgentMachineCert`); display name farklı olabilir. INF/certreq HYPHENLESS canonical kullanır. |
-| `0x80094800` | Template permission denied (Domain Computers Autoenroll yetkisi yok) veya template AD'de publish edilmemiş | Template Security tab → Domain Computers grant **Read + Autoenroll**. Plus `certutil -setcatemplates +EndpointAgentMachineCert,EndpointAgentCodeSigning` ile publish. |
-| `0x80092004` | Private key binding fail (Cryptography Provider mismatch — INF `ProviderName` vs template Provider eşleşmiyor) | Template Cryptography tab → Provider = `Microsoft Platform Crypto Provider` (TPM) seçili olmalı; INF `ProviderName` ile birebir match. F3 fallback durumunda `Microsoft Software Key Storage Provider`. |
-| `0x80094003` ("taken under submission") | F2-A: `CA certificate manager approval: ENABLED` — request pending CA Manager onay bekliyor | Normal davranış. Operator MMC certsrv.msc → Pending Requests'ten inceleme + approve (`certutil -resubmit <RequestId>`). F2-B 2-fazlı enrollment: daily schedule task `certreq -retrieve` ile cert hazır olduğunda alır. |
-| `0x80094004` (`CERTSRV_E_PROPERTY_EMPTY`) | Request denied by CA Manager (operator deny) veya policy module reject | Operator action — CA Manager Pending Requests'ten neden inceleme. F2-B: enroll-endpoint-agent-cert.ps1 pending state cleanup yapar, sonraki run yeni submit eder. Tekrar deny ise audit log + manuel root cause analysis. |
-| `Install-AdcsCertificationAuthority: The CA Already Installed` | CA initialize daha önce yapılmış (idempotent skip path) | `certutil -getconfig` ile var olan CA'yı kontrol et + F3-A `Test-CACryptoProvider` ile provider audit (software KSP varsa `-AllowSoftwareKey` veya re-init). |
-| `Install-AdcsCertificationAuthority: A required privilege is not held` | Enterprise Admin yetkisi yok | Domain Admin + Enterprise Admin login |
-| `F3 fail-closed: TPM not ready and -AllowSoftwareKey NOT given` | Test-TpmCapability fail (TPM disable/absent veya Platform CSP yok) | Hardware: BIOS'tan TPM 2.0 enable + `Initialize-Tpm`. Software fallback (degraded): script'i `-AllowSoftwareKey` flag ile yeniden çalıştır (R10 risk owner approval log'a yazılır). |
-| `F3-A fail-closed: Existing CA key not TPM-bound + -AllowSoftwareKey not specified` | Existing CA software CSP/KSP ile init edilmiş (eski install veya TPM degraded init) | İki seçenek: (a) `-AllowSoftwareKey` flag ile owner approval (R10 risk artar), (b) CA destructive re-init Platform CSP ile (`Uninstall-AdcsCertificationAuthority` + backup + re-init — etki: tüm cert template'leri reissue gerek). |
-| `F2-C: CertSvc not Running after restart` | Step 2.5 restart fail (net start exit non-zero veya service degraded post-restart) | `Get-Service CertSvc` + Event Viewer "Application" log → root cause (port conflict, AD CS DB corruption, missing dep). Manual fix sonrası `Start-Service CertSvc` + script re-run. |
+| HRESULT | Win Error | AD CS Disposition Semantik | Olası Fix |
+|---|---|---|---|
+| `0x80094012` | `CERTSRV_E_TEMPLATE_DENIED` | Template request denied — template policy/permission fail. Olası nedenler: (a) requesting principal Template ACL'de yok (Domain Computers Read+Autoenroll grant eksik), (b) EKU constraint mismatch, (c) template AD'de var ama short name'i INF/certreq verilenle eşleşmiyor (MMC display name vs canonical hyphenless short name). | F1 absorb: HYPHENLESS short name canonical (`EndpointAgentMachineCert`) — MMC Properties → General → Template name HYPHENLESS; INF `CertificateTemplate = "..."` aynı string. Plus: Template Security → Domain Computers grant **Read + Autoenroll**. Plus: Extensions → Application Policies → Client Authentication (1.3.6.1.5.5.7.3.2) EKU. |
+| `0x80094800` | `CERTSRV_E_UNSUPPORTED_CERT_TYPE` | Template cert type unsupported by CA. Olası nedenler: (a) CA template publish missing (`certutil -setcatemplates +EndpointAgentMachineCert,EndpointAgentCodeSigning` çalıştırılmadı), (b) Template Compatibility setting CA'nın desteklediğinin dışında (Windows Server 2008 vs 2016+ vb.). | Publish: `certutil -setcatemplates +EndpointAgentMachineCert,EndpointAgentCodeSigning` (DC üzerinde Enterprise Admin). Plus Template Compatibility tab: CA = Windows Server 2016 + Recipient = Windows 10 (script default). Plus `certutil -catemplates` ile published list verify. |
+| `0x80094003` | `CERTSRV_E_PROPERTY_EMPTY` | Request property missing — INF'de zorunlu attribute eksik (örn. Subject CN empty, KeyLength 0, SAN missing). NOT: AD CS "Request taken under submission" disposition message DE bu kodla return etmez; o CA Manager pending state için `0x80094003` ile karıştırılan bir Windows error message string'tir (gerçek disposition kodu = `5` pending). Bu satır kod-level property fail içindir. | Template Subject Name = "Supply in the request" (F2 absorb) + INF `Subject = "CN=$dnsName"` non-empty + `KeyLength = 2048` + `[Extensions] 2.5.29.17 = "{text}" _continue_ = "URL=adcomputer:$Guid"` (SAN non-empty). |
+| `0x80094004` | `CERTSRV_E_BAD_RENEWAL_CERT_ATTRIBUTE` | Renewal cert attribute bad — cert renewal context'inde mevcut cert ile bad/missing attribute mismatch (örn. renewal request'inde existing cert SAN URI yok). Bu kod operator manual deny DEĞİL; "Request denied by CA Manager" pending request reject case'i Disposition=`2` (CERT_DENIED) field'ı ile döner ve genelde HRESULT `0x80094800` veya event log via raporlanır. | Renewal flow için: existing cert SAN URI:adcomputer:{guid} match olmalı (idempotent check zaten yapıyor). Template Issuance Requirements "Require the following for re-enrollment: Valid existing certificate" check. Initial enrollment için bu kod beklenmez; tetiklerse Template re-enrollment policy review gerek. |
+| `0x80092004` | `CRYPT_E_NOT_FOUND` | Private key binding fail — CSP/KSP mismatch. INF `ProviderName` ile template Cryptography Provider eşleşmiyor (örn. INF Platform Crypto Provider isterken template Software KSP), veya machine cert store empty + machine key set parameter missing. | INF `ProviderName = "Microsoft Platform Crypto Provider"` + Template Cryptography Provider = Platform Crypto Provider (TPM) eşleşmeli. Plus INF `MachineKeySet = TRUE` + `certreq -accept -machine` flag. F3 software fallback durumunda her ikisini de `Microsoft Software Key Storage Provider`a güncelle. |
+| `Pending state, no HRESULT, "Request taken under submission"` (Disposition=5) | — | CA Manager approval **ENABLED** (F2-A) → cert pending operator manual sign-off. Disposition code field (CA DB) = `5` (CERT_REQUEST_PENDING). certreq output: "Request was added to the database with Request Id: <int>. The request is taken under submission." | Normal davranış — F2-B 2-fazlı flow: certreq -submit RequestId parse → JSON state persist → daily `certreq -retrieve` ile cert hazır olduğunda alır. Operator MMC certsrv.msc → Pending Requests'ten approve (`certutil -resubmit <RequestId>`). |
+| `Denied state, Disposition=2 (CERT_DENIED)` | — | Operator CA Manager queue'da request'i deny etti (manuel inspection sonrası — örn. requested adcomputer GUID match check fail). | F2-B: pending state cleanup yapar (script log'da "F2-B DENIED" görünür) → sonraki run yeni submit eder. Eğer aynı PC sürekli deny ediliyorsa root cause analysis gerek (PC OU dışında mı, machine objectGUID rotated mı, custom policy module reject mi). |
+| `Install-AdcsCertificationAuthority: The CA Already Installed` | — | CA initialize daha önce yapılmış (idempotent skip path) | `certutil -getconfig` ile var olan CA'yı kontrol et + F3-A `Test-CACryptoProvider` ile provider audit (software KSP varsa `-AllowSoftwareKey` veya re-init). |
+| `Install-AdcsCertificationAuthority: A required privilege is not held` | — | Enterprise Admin yetkisi yok | Domain Admin + Enterprise Admin login |
+| `F3 fail-closed: TPM not ready and -AllowSoftwareKey NOT given` | — | Test-TpmCapability fail (TPM disable/absent veya Platform CSP yok) | Hardware: BIOS'tan TPM 2.0 enable + `Initialize-Tpm`. Software fallback (degraded): script'i `-AllowSoftwareKey` flag ile yeniden çalıştır (R10 risk owner approval log'a yazılır). |
+| `F3-A fail-closed: Existing CA key not TPM-bound + -AllowSoftwareKey not specified` | — | Existing CA software CSP/KSP ile init edilmiş (eski install veya TPM degraded init) | İki seçenek: (a) `-AllowSoftwareKey` flag ile owner approval (R10 risk artar), (b) CA destructive re-init Platform CSP ile (`Uninstall-AdcsCertificationAuthority` + backup + re-init — etki: tüm cert template'leri reissue gerek). |
+| `F2-C: CertSvc not Running after restart` veya idempotent path Running check fail | — | Step 2.5 restart fail (net start exit non-zero veya service degraded post-restart), VEYA idempotent skip path'inde flag set olduğu halde servis down. iter-4 F2-C: idempotent path'te de Running check zorunlu. | `Get-Service CertSvc` + Event Viewer "Application" log → root cause (port conflict, AD CS DB corruption, missing dep). Manual fix sonrası `Start-Service CertSvc` + script `-Step EditFlag` re-run (idempotent skip yine Running double-check yapar). |
 | `enroll-endpoint-agent-cert.ps1: AD lookup failed` | PC domain-joined değil | 22.3 scope dışı; 22.2.A non-domain runbook'a yönlendir |
 | `F2-B STALE: Pending request older than X days` | CA Manager pending queue'da unattended request | Operator MMC certsrv.msc → Pending Requests inceleme + approve veya deny. Approve sonrası enroll script next run -retrieve ile cert alır. Deny sonrası state cleanup + yeni submit. |
+| `F2-B iter-4 fail-closed: pending-requests.json corrupt` | JSON parse fail veya schema eksik field (kısmi yazım / disk dolu / process kill race) | Operator manuel reset gerek — §5.4 "Corrupt pending JSON recovery" |
+| `F2-B iter-4: Mutex timeout (30s)` | GPO startup + Schedule Task aynı anda tetiklendi; ikinci instance 30s waitOne sonra skip etti | Normal davranış (idempotent — next daily run cert mint eder); 24h içinde tekrar tekrarlanırsa GPO/scheduler tetik zamanı stagger |
 | `Get-GPO: A specified directory service object could not be found` | GPO yoktu, runtime yarattık ama scope yanlış | `New-GPO + New-GPLink` order correct |
 
 ### 5.2 Full rollback (5 dk içinde)
@@ -409,6 +420,87 @@ Get-WinEvent -LogName "Application" -ProviderName "Microsoft-Windows-Certificate
 
 # certreq retry manual
 \\acik.local\sysvol\acik.local\scripts\faz22-mass-deployment\enroll-endpoint-agent-cert.ps1 -Verbose
+```
+
+### 5.4 F2-B iter-4 — Corrupt pending JSON recovery + CA Manager approval backlog
+
+> **F2-B iter-4 absorb (Codex REVISE remaining 3 finding)** — `Read-PendingRequestsJson`
+> önceki versiyonda corrupt JSON durumunda fail-OPEN davranıyordu (`@{}` return + log warn);
+> bu, `Get-PendingRequest` `$null` döndürdüğünde script "no pending" branch'ine girip
+> YENİ submit yapıyordu → CA Manager queue'da duplicate request. iter-4 fail-CLOSED:
+> parse hatası veya schema eksik field tespit edildiğinde script throw eder + operator
+> manuel inspect/reset gerek. Atomic write (`temp + Move-Item`) + cross-process mutex
+> (`Global\Faz22.3.PendingRequests`) ile race condition önlenir.
+
+**Senaryo 1 — Corrupt pending JSON recovery (pilot PC üzerinde):**
+
+```powershell
+# 1. Corrupt JSON inspect (operator visual check)
+Get-Content "$env:ProgramData\faz22.3-pending-requests.json" -Raw
+
+# 2. Backup (forensic — sebep analizi için saklanır)
+$ts = Get-Date -Format yyyyMMdd-HHmmss
+Copy-Item "$env:ProgramData\faz22.3-pending-requests.json" "$env:ProgramData\faz22.3-pending-requests.json.corrupt-$ts"
+
+# 3. CA queue'da bu PC için pending var mı kontrol (DC üzerinde)
+# certutil -view -restrict komutu DC'de çalışır; operator IT inspect eder.
+# Eğer pending request varsa: machine objectGUID match check + CA Manager approve veya deny
+# (örnek: certutil -view -out "RequestId,RequesterName,NotBefore,NotAfter,Disposition" -restrict "Disposition=9,RequesterName=$env:USERDNSDOMAIN\$env:COMPUTERNAME$")
+
+# 4. Reset: corrupt JSON sil → script next run yeni submit yapar
+Remove-Item "$env:ProgramData\faz22.3-pending-requests.json" -Force
+
+# 5. Script manuel tetik (next 24h scheduled run beklenmez)
+\\acik.local\sysvol\acik.local\scripts\faz22-mass-deployment\enroll-endpoint-agent-cert.ps1 -Verbose
+
+# 6. Audit log capture (corrupt sebebi analizi)
+Get-Content "$env:ProgramData\faz22.3-enroll-cert.log" -Tail 100 |
+  Select-String -Pattern "F2-B iter-4|corrupt|atomic write|Mutex"
+```
+
+**Senaryo 2 — CA Manager pending approval backlog (DC operator):**
+
+5 PC pilot için CA Manager manual approval workload **tolerable** (5 cert / hafta + renewal cycle).
+50/800 ramp öncesi custom AD CS policy module schedule edilmeli; o noktaya kadar:
+
+| Phase | PC count | Approval workload | Mitigation |
+|---|---|---|---|
+| Phase 1 (pilot) | 5 | ~5/hafta + renewal (yıl başına 5 renewal) | Manual MMC certsrv.msc → Pending Requests; haftalık operator IT 5dk |
+| Phase 2 (IT dept) | 50 | ~50/hafta + 50 renewal/yıl | **Custom AD CS policy module gerek** — Phase 2 ön-koşulu (ayrı board issue) |
+| Phase 3 (full) | 800 | ~800/hafta — imkansız manuel | **Custom policy module mandatory** (auto-approve based on machine objectGUID match) |
+
+```powershell
+# CA Manager pending queue inspect (DC üzerinde, Enterprise Admin)
+certutil -view -out "RequestId,RequesterName,NotBefore,Disposition" -restrict "Disposition=9"
+
+# Approve single request
+certutil -resubmit <RequestId>
+
+# Deny + audit log
+certutil -deny <RequestId>
+# Log: Event Viewer → Applications and Services → AD CS
+
+# Bulk approve (script — pilot PC scope match check ile)
+$pending = certutil -view -out "RequestId,RequesterName" -restrict "Disposition=9" 2>&1 |
+  Select-String -Pattern "^\s*Request ID:" -Context 0,1
+foreach ($entry in $pending) {
+    # MANUAL: requester == OU=EndpointPilot kontrol; otomatik bulk approve YASAK (security)
+    Write-Host "RequestId: $entry — operator manuel inceleme gerek"
+}
+```
+
+**Atomic write / mutex doğrulama (post-recovery verify):**
+
+```powershell
+# Atomic write: temp file orphan kalmamalı
+Test-Path "$env:ProgramData\faz22.3-pending-requests.json.tmp"
+# Beklenen: False — temp dosya sadece write esnasında var olur, başarılı Move-Item sonrası kaybolur
+
+# Mutex doğrulama: concurrent run simulasyonu (2 paralel ps -File ile)
+Start-Job { .\enroll-endpoint-agent-cert.ps1 -Verbose }
+Start-Job { .\enroll-endpoint-agent-cert.ps1 -Verbose }
+# Beklenen: log'da "Mutex acquired" 1 instance + "Mutex timeout" 1 instance
+# Plus: post-run pending-requests.json tek bir entry (race olmadığı kanıtı)
 ```
 
 ---
@@ -451,6 +543,7 @@ ADR-0029 Plan A owner-approved 2026-05-26 ("tam otonom devam et"). MERGED PR #10
 | Iter | Verdict | Findings | Absorb commit |
 |---|---|---|---|
 | 1 | REVISE | 5 (F1 short name + F2 EditFlag SAN2 + F3 TPM fail-closed + F4 cert prune + F5 -Force) | `d9db1e2` |
-| 2 | REVISE | 5 (F2-A authorized-signatures vs CA-Manager-approval + F2-B pending-aware enrollment + F2-C CertSvc restart fail-closed + F3-A existing CA provider audit + F1-A HRESULT canonical mapping) | this commit |
+| 2 | REVISE | 5 (F2-A authorized-signatures vs CA-Manager-approval + F2-B pending-aware enrollment + F2-C CertSvc restart fail-closed + F3-A existing CA provider audit + F1-A HRESULT canonical mapping) | `806a513` |
+| 3 | REVISE | 3 remaining (F2-B iter-4 pending JSON fail-CLOSED + atomic write + mutex; F2-C iter-4 idempotent Running check; F1-A iter-4 HRESULT canonical disposition semantik tablosu yeniden yazıldı) | this commit |
 
 Reviewer provider: OpenAI Codex. PR #1080 board issue: #1079.

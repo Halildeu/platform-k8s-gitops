@@ -22,6 +22,19 @@
 #       (host TPM ready olsa bile CA software CSP olabilir); Verify-Artifacts ayrı row
 #     * F1-A (LOW) Runbook §5.1 HRESULT mapping canonical: 0x80094012/0x80094800/0x80092004/
 #       0x80094003/0x80094004 her biri tek anlam (önceki versiyon çakışıyordu)
+#   - PR #1080 iter-4 absorb (Codex iter-3 REVISE remaining 3 finding — this commit):
+#     * F2-B (MEDIUM) iter-4 — Read-PendingRequestsJson fail-CLOSED (corrupt JSON →
+#       throw; eski versiyon fail-OPEN olduğu için duplicate submit riski vardı);
+#       Write-PendingRequestsJson atomic (temp + Move-Item NTFS rename); cross-process
+#       mutex (Global\Faz22.3.PendingRequests) GPO startup + Schedule Task race önler.
+#       Recovery runbook: RB-faz22.3-ad-cs-setup.md §5.4.
+#       (enroll-endpoint-agent-cert.ps1 değişimi; ad-cs-preflight.ps1 etkilenmez)
+#     * F2-C (MEDIUM) Enable-EditFlagSan2 idempotent skip branch: registry flag SET olsa
+#       bile servis down olabilir; idempotent path'te de Get-Service CertSvc Running
+#       double-check (fail-closed). Önceki versiyon false-pass üretiyordu.
+#     * F1-A (MEDIUM) RB-faz22.3-ad-cs-setup.md §5.1 HRESULT tablosu yeniden yazıldı:
+#       Win Error sembolik isimler ile AD CS canonical disposition semantik mapping
+#       (önceki iter-2 versiyonu birkaç kodun semantiğini hâlâ karıştırıyordu).
 #
 # Purpose: DC üzerinde AD CS infrastructure'ı initialize edip Faz 22.3 mass
 # deployment için hazır hale getirmek. Operator (IT) çalıştırır; interactive
@@ -314,8 +327,10 @@ function Initialize-EndpointCA {
 # Template Subject Name "Supply in the request" + custom URI:adcomputer SAN için
 # CA'da EDITF_ATTRIBUTESUBJECTALTNAME2 flag enable edilmeli. Bu flag ENABLE OLDUKTAN
 # SONRA herhangi bir machine `adcomputer:{guid}` talep edebilir → impersonation riski.
-# Mitigation: Template Issuance Requirements = "CA Manager signatures=1" → manuel
-# sign-off pipeline mandatory.
+# Mitigation: Template Issuance Requirements = "Authorized signatures: 0" +
+# "CA certificate manager approval: ENABLED" checkbox → manuel sign-off pipeline
+# mandatory (F2-A iter-2 absorb: "authorized signatures: 1" YANLIŞTI, Enrollment Agent
+# flow semantiği; doğru config = Manager approval checkbox).
 #
 # Pilot scope (5 PC) için sürdürülebilir; 50/800 ramp için custom AD CS policy
 # module gerek (machine objectGUID extraction + requested adcomputer GUID match enforce).
@@ -333,7 +348,23 @@ function Enable-EditFlagSan2 {
     }
 
     if ($currentFlags -match "EDITF_ATTRIBUTESUBJECTALTNAME2") {
-        Write-StepLog "INFO" "Step 2.5: EDITF_ATTRIBUTESUBJECTALTNAME2 already enabled (skip)"
+        Write-StepLog "INFO" "Step 2.5: EDITF_ATTRIBUTESUBJECTALTNAME2 already enabled (idempotent skip)"
+
+        # F2-C iter-4 absorb (Codex iter-3 REVISE MEDIUM):
+        # Önceki versiyon idempotent skip branch'inde Get-Service CertSvc Running check
+        # ATLIYORDU. Flag set olsa bile servis down ise EditFlag etkin değil (sadece
+        # registry değeri); ama Verify-Artifacts "F2 EditFlag SAN2 OK" diyordu → false-pass.
+        # Şimdi idempotent path'te de Running check zorunlu (fail-closed).
+        $svc = $null
+        try {
+            $svc = Get-Service -Name CertSvc -ErrorAction Stop
+        } catch {
+            throw "Step 2.5 idempotent path [F2-C iter-4]: Get-Service CertSvc query failed: $($_.Exception.Message)"
+        }
+        if ($svc.Status -ne "Running") {
+            throw "Step 2.5 idempotent path [F2-C iter-4]: CertSvc not Running (Status=$($svc.Status)) — flag set ama servis down. Operator action: Start-Service CertSvc + re-run -Step EditFlag (post-restart Running double-check)."
+        }
+        Write-StepLog "INFO" "Step 2.5: CertSvc Running double-check OK (idempotent path; F2-C iter-4 fail-closed pass)"
         return
     }
 
@@ -345,8 +376,9 @@ function Enable-EditFlagSan2 {
 
   Mitigation (mandatory):
   1. Template Subject Name = 'Supply in the request' (Step 3'te zaten OK)
-  2. Template Issuance Requirements = 'CA Manager signatures=1' (Step 3'te zaten OK)
-     → her cert request manuel CA Manager onayı bekler
+  2. Template Issuance Requirements = "Authorized signatures: 0" +
+     "CA certificate manager approval: ENABLED" checkbox (Step 3'te zaten OK)
+     → her cert request manuel CA Manager onayı bekler (pending state)
   3. Pilot (5 PC) için sürdürülebilir; 50/800 ramp için custom AD CS policy
      module gerek (machine objectGUID extraction + requested adcomputer GUID match enforce)
 "@ -ForegroundColor Yellow
@@ -404,10 +436,11 @@ function Enable-EditFlagSan2 {
 # (display name DEĞİL). Display name = "EndpointAgent Machine Cert" (visual);
 # short name = "EndpointAgentMachineCert" (HYPHENLESS — AD'de stored ve certreq/certutil bunu kullanır).
 #
-# F2 absorb (iter-1 HIGH): Custom URI:adcomputer:{guid} SAN için template
-# Subject Name = "Supply in the request" + Issuance Requirements signatures=1
-# (CA Manager manuel onay pipeline; 5 PC pilot için sürdürülebilir, 50/800 ramp
-# için custom AD CS policy module gerek — bkz. RB-faz22.3-ad-cs-setup.md §3.2.5).
+# F2 absorb (iter-1 HIGH + iter-2 F2-A correction): Custom URI:adcomputer:{guid} SAN
+# için template Subject Name = "Supply in the request" + Issuance Requirements:
+# Authorized signatures = 0 + CA certificate manager approval = ENABLED checkbox
+# (CA Manager manuel onay pipeline; 5 PC pilot için sürdürülebilir, 50/800 ramp için
+# custom AD CS policy module gerek — bkz. RB-faz22.3-ad-cs-setup.md §3.2.5).
 #
 # Pattern: Duplicate "Computer" template + modify properties:
 # - Subject Name: "Supply in the request" (F2 absorb; Build-from-AD değil)
@@ -415,7 +448,7 @@ function Enable-EditFlagSan2 {
 # - Key Usage: Digital Signature + Key Encipherment
 # - EKU: Client Authentication (1.3.6.1.5.5.7.3.2)
 # - Cryptography: "Microsoft Platform Crypto Provider" (TPM-only)
-# - Issuance: TPM attestation required + CA Manager signatures=1
+# - Issuance: TPM attestation required + CA certificate manager approval ENABLED (F2-A iter-2 correct semantik)
 
 function Create-MachineCertTemplate {
     Write-StepLog "INFO" "Step 3: Machine cert template setup (display='$MachineCertDisplayName' / short='$MachineCertTemplate')"

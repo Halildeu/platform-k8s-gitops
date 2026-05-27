@@ -24,6 +24,17 @@
 #   - Duplicate guard: aynı PC için pending request varsa yeni submit YASAK
 #   - Stale guard: pending > 7 gün → operator alert (manuel inspection gerek)
 #
+# PR #1080 iter-4 absorb (Codex iter-3 REVISE remaining 3 finding):
+#   - F2-B (MEDIUM) iter-4 hardening: Read-PendingRequestsJson fail-CLOSED (corrupt
+#     JSON → throw; eski versiyon fail-OPEN olduğu için duplicate submit riski vardı);
+#     Write-PendingRequestsJson atomic (temp + Move-Item NTFS rename); cross-process
+#     mutex (Global\Faz22.3.PendingRequests) GPO startup + Schedule Task race önler.
+#     Recovery runbook: RB-faz22.3-ad-cs-setup.md §5.4.
+#   - F2-C (MEDIUM) Enable-EditFlagSan2 idempotent path: registry flag SET ama servis
+#     down olabilir; idempotent skip branch'inde Get-Service CertSvc Running check.
+#   - F1-A (MEDIUM) HRESULT mapping canonical disposition semantik düzeltildi
+#     (RB §5.1 tablosu).
+#
 # Deployment: SYSVOL via GPO startup script + GPO schedule task (daily renewal)
 # Trigger:    Computer boot + daily 03:00 schedule task
 # Context:    SYSTEM account (GPO startup runs as NT AUTHORITY\SYSTEM)
@@ -32,7 +43,9 @@
 #
 # Cross-AI peer review: Codex 019e667f-98a5-7980-8f80-613fc1a1ed82 iter-7 AGREE (ADR-0029)
 #                       Codex 019e6a4a-... iter-1 5 finding absorb (PR #1080)
-#                       Codex iter-2 — F2-A/F2-B/F2-C/F3-A/F1-A absorb (this commit)
+#                       Codex iter-2 — F2-A/F2-B/F2-C/F3-A/F1-A absorb (PR #1080 commit 806a513)
+#                       Codex iter-3 REVISE — F2-B (atomic+fail-closed+mutex) + F2-C (idempotent
+#                         Running check) + F1-A (HRESULT canonical) absorb (this commit)
 # Board issue: #1079
 
 [CmdletBinding(SupportsShouldProcess = $true)]
@@ -166,32 +179,136 @@ function Test-ExistingValidCert {
 # - Remove-PendingRequest: success/denied sonrası temizle
 # - Test-PendingStale: pending > $StalePendingDays gün mü?
 
+# ============================================================================
+# F2-B iter-4 absorb (Codex REVISE remaining 3 finding)
+# ============================================================================
+#
+# Önceki versiyon (iter-3) `Read-PendingRequestsJson` corrupt JSON durumunda
+# fail-OPEN davranıyordu: try/catch ile parse hatası yutuluyor + `@{}` return
+# ediliyordu. Bu, `Get-PendingRequest` `$null` döndürmesine yol açıyordu →
+# `Invoke-CertReqEnrollment` "no pending" branch'ine girip YENİ submit
+# yapıyordu. Senaryo: state corrupt + cert hâlâ CA queue'da pending → duplicate
+# request → CA Manager queue'da iki entry → karışıklık.
+#
+# Plus: `Write-PendingRequestsJson` `Out-File -Force` ile direkt yazıyordu;
+# yazım sırasında process kill / disk dolu / NTFS metadata flush race olursa
+# JSON kısmi yazılmış olabilir → corrupt state bir sonraki run'da fail-open
+# kuyruğunu tetikler.
+#
+# Fix:
+# 1. `Read-PendingRequestsJson` fail-CLOSED: parse hatası, eksik schema field,
+#    veya beklenen veri tipinde değişiklik → throw. Operator manuel inspect/reset
+#    gerek. Sadece "dosya yok" durumu empty {} sayılır (initial state).
+# 2. `Save-PendingRequest` / `Remove-PendingRequest` atomic write: temp file
+#    + Move-Item -Force (NTFS rename atomic semantic). Move-Item fail durumunda
+#    temp file cleanup.
+# 3. Cross-process mutex (`Global\Faz22.3.PendingRequests`) ile aynı PC üzerinde
+#    GPO startup + Schedule Task tetiklerinin race condition'ını engelle. Mutex
+#    finally block'unda release.
+
 function Read-PendingRequestsJson {
     if (-not (Test-Path $PendingRequestsPath)) {
         return @{}
     }
     try {
         $raw = Get-Content $PendingRequestsPath -Raw -ErrorAction Stop
-        if ([string]::IsNullOrWhiteSpace($raw)) { return @{} }
-        $obj = $raw | ConvertFrom-Json -ErrorAction Stop
-        # Convert PSCustomObject to hashtable for in-place edit
-        $ht = @{}
-        $obj.PSObject.Properties | ForEach-Object { $ht[$_.Name] = $_.Value }
-        return $ht
     } catch {
-        Write-EnrollLog "WARN" "F2-B: pending-requests.json read failed (corrupt?): $($_.Exception.Message); treating as empty"
-        return @{}
+        Write-EnrollLog "ERROR" "F2-B iter-4: pending-requests.json read I/O failure: $($_.Exception.Message)"
+        throw "F2-B fail-closed: pending-requests.json okuma I/O hatası — operator inspect: $PendingRequestsPath"
     }
+
+    if ([string]::IsNullOrWhiteSpace($raw)) { return @{} }
+
+    try {
+        $obj = $raw | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        Write-EnrollLog "ERROR" "F2-B iter-4 fail-closed: pending-requests.json corrupt JSON: $($_.Exception.Message)"
+        Write-EnrollLog "ERROR" "F2-B iter-4: Operator action required — backup + reset:"
+        Write-EnrollLog "ERROR" "  Copy-Item '$PendingRequestsPath' '$PendingRequestsPath.corrupt-$(Get-Date -Format yyyyMMdd-HHmmss)'"
+        Write-EnrollLog "ERROR" "  Remove-Item '$PendingRequestsPath'"
+        Write-EnrollLog "ERROR" "  Sonraki run yeni submit yapacak; CA queue'da duplicate pending varsa operator manuel deny edebilir (certutil -view -restrict 'Disposition=9')"
+        throw "F2-B fail-closed: pending-requests.json corrupt; duplicate guard bypass YOK — operator manuel reset gerek"
+    }
+
+    # Convert PSCustomObject to hashtable for in-place edit + schema validate
+    $ht = @{}
+    foreach ($prop in $obj.PSObject.Properties) {
+        $value = $prop.Value
+        # Schema validation: her entry zorunlu field'lara sahip olmalı
+        if (-not $value) {
+            Write-EnrollLog "ERROR" "F2-B iter-4 fail-closed: pending entry null for key='$($prop.Name)'"
+            throw "F2-B fail-closed: pending entry corrupt (null value, key='$($prop.Name)')"
+        }
+        $requiredFields = @('request_id', 'submitted_at', 'dns_name', 'guid', 'template')
+        foreach ($field in $requiredFields) {
+            $hasField = $false
+            try {
+                $hasField = $null -ne ($value.PSObject.Properties[$field])
+            } catch { $hasField = $false }
+            if (-not $hasField) {
+                Write-EnrollLog "ERROR" "F2-B iter-4 fail-closed: pending entry missing field='$field' for key='$($prop.Name)'"
+                throw "F2-B fail-closed: pending entry schema incomplete (missing '$field', key='$($prop.Name)')"
+            }
+        }
+        $ht[$prop.Name] = $value
+    }
+    return $ht
 }
 
 function Write-PendingRequestsJson {
     param([hashtable]$Data)
+
+    # F2-B iter-4 absorb: atomic write — temp file + Move-Item (NTFS atomic rename)
+    $tempFile = "$PendingRequestsPath.tmp"
     try {
         $json = $Data | ConvertTo-Json -Depth 5
-        $json | Out-File -FilePath $PendingRequestsPath -Encoding UTF8 -Force
+        # Out-File -Force temp'e yaz (partial-write riski temp'te kalır; main file korunur)
+        $json | Out-File -FilePath $tempFile -Encoding UTF8 -Force -ErrorAction Stop
+
+        # Atomic rename: NTFS rename single inode swap (no half-state visible to next reader)
+        Move-Item -Path $tempFile -Destination $PendingRequestsPath -Force -ErrorAction Stop
     } catch {
-        Write-EnrollLog "ERROR" "F2-B: pending-requests.json write failed: $($_.Exception.Message)"
+        Write-EnrollLog "ERROR" "F2-B iter-4: pending-requests.json atomic write failed: $($_.Exception.Message)"
+        # Temp file cleanup (move failed → temp orphan kalmasın)
+        if (Test-Path $tempFile) {
+            Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+        }
         throw
+    }
+}
+
+# F2-B iter-4 absorb: cross-process mutex helper (file lock pattern).
+# GPO startup script + Schedule Task aynı anda tetiklenebilir (boot + 03:00 race);
+# mutex aynı PC üzerinde tek bir enroll script instance'ı garanti eder.
+function Enter-PendingMutex {
+    $mutexName = "Global\Faz22.3.PendingRequests"
+    try {
+        $mutex = [System.Threading.Mutex]::new($false, $mutexName)
+        # WaitOne timeout: 30 saniye — diğer instance kısa süre içinde bitirir;
+        # sürmüyorsa enroll script idempotent olduğu için skip OK.
+        $acquired = $mutex.WaitOne([TimeSpan]::FromSeconds(30))
+        if (-not $acquired) {
+            Write-EnrollLog "WARN" "F2-B iter-4: Mutex timeout (30s) — concurrent enroll script detected; skipping this run (next daily retry)"
+            $mutex.Dispose()
+            return $null
+        }
+        Write-EnrollLog "INFO" "F2-B iter-4: Mutex '$mutexName' acquired"
+        return $mutex
+    } catch {
+        Write-EnrollLog "WARN" "F2-B iter-4: Mutex acquire failed (non-fatal; degraded concurrency safety): $($_.Exception.Message)"
+        return $null
+    }
+}
+
+function Exit-PendingMutex {
+    param($Mutex)
+    if (-not $Mutex) { return }
+    try {
+        $Mutex.ReleaseMutex()
+        $Mutex.Dispose()
+        Write-EnrollLog "INFO" "F2-B iter-4: Mutex released"
+    } catch {
+        Write-EnrollLog "WARN" "F2-B iter-4: Mutex release failed (non-fatal): $($_.Exception.Message)"
     }
 }
 
@@ -490,26 +607,40 @@ try {
     # Step 1: AD computer object lookup
     $guid = Get-MachineObjectGuid
 
-    # Step 2: Idempotent check (valid cert varsa erken çıkış; F2-B: pending leftover varsa temizle)
-    if (Test-ExistingValidCert -Guid $guid -DnsName $dnsName) {
-        # Valid cert var → eğer pending state file'da bu PC için entry varsa (eski stale),
-        # cert zaten mint edildiği için pending entry artık ihtiyaç yok → temizle.
-        $pending = Get-PendingRequest
-        if ($pending) {
-            Write-EnrollLog "INFO" "F2-B: Valid cert exists + stale pending entry detected (RequestId=$($pending.request_id)); removing"
-            Remove-PendingRequest
-        }
-        Write-EnrollLog "INFO" "Idempotent skip — valid existing cert"
+    # F2-B iter-4 absorb: cross-process mutex — GPO startup + Schedule Task aynı anda
+    # tetiklenmesi durumunda tek instance garanti. Idempotent check + JSON state operations
+    # mutex altında çalışır; release finally block'unda garanti edilir.
+    $mutex = Enter-PendingMutex
+    if (-not $mutex) {
+        Write-EnrollLog "WARN" "F2-B iter-4: Mutex acquire failed — concurrent run; skipping this invocation (idempotent — next daily retry)"
         Write-EnrollLog "INFO" "============================================================================"
         exit 0
     }
 
-    # Step 3: certreq enrollment (F2-B 2-fazlı: pending varsa retrieve dener, yoksa yeni submit)
-    Invoke-CertReqEnrollment -Guid $guid -DnsName $dnsName
+    try {
+        # Step 2: Idempotent check (valid cert varsa erken çıkış; F2-B: pending leftover varsa temizle)
+        if (Test-ExistingValidCert -Guid $guid -DnsName $dnsName) {
+            # Valid cert var → eğer pending state file'da bu PC için entry varsa (eski stale),
+            # cert zaten mint edildiği için pending entry artık ihtiyaç yok → temizle.
+            $pending = Get-PendingRequest
+            if ($pending) {
+                Write-EnrollLog "INFO" "F2-B: Valid cert exists + stale pending entry detected (RequestId=$($pending.request_id)); removing"
+                Remove-PendingRequest
+            }
+            Write-EnrollLog "INFO" "Idempotent skip — valid existing cert"
+            Write-EnrollLog "INFO" "============================================================================"
+            exit 0
+        }
 
-    Write-EnrollLog "INFO" "Enrollment flow COMPLETE — (cert installed | pending CA Manager approval | skipped)"
-    Write-EnrollLog "INFO" "============================================================================"
-    exit 0
+        # Step 3: certreq enrollment (F2-B 2-fazlı: pending varsa retrieve dener, yoksa yeni submit)
+        Invoke-CertReqEnrollment -Guid $guid -DnsName $dnsName
+
+        Write-EnrollLog "INFO" "Enrollment flow COMPLETE — (cert installed | pending CA Manager approval | skipped)"
+        Write-EnrollLog "INFO" "============================================================================"
+        exit 0
+    } finally {
+        Exit-PendingMutex -Mutex $mutex
+    }
 
 } catch {
     Write-EnrollLog "ERROR" "FATAL: $($_.Exception.Message)"
