@@ -8,18 +8,30 @@
 #   - Idempotent: existing cert SAN URI match → exit 0
 #   - URI:adcomputer:{objectGUID} custom extension via certreq inf
 #
+# PR #1080 iter-1 F1 + F4 absorb (Codex 019e6a4a):
+#   - F1: Template short name (HYPHENLESS canonical) = `EndpointAgentMachineCert`
+#         (display name "EndpointAgent Machine Cert" MMC visual only)
+#   - F4: Post-install old cert prune (same SAN URI, different thumbprint) →
+#         LocalMachine\My deterministic single-cert state; agent ambiguity engellenir
+#
 # Deployment: SYSVOL via GPO startup script + GPO schedule task (daily renewal)
 # Trigger:    Computer boot + daily 03:00 schedule task
 # Context:    SYSTEM account (GPO startup runs as NT AUTHORITY\SYSTEM)
 # Idempotent: existing valid cert (SAN URI match + not expired + not near-expiry) → skip
 #
-# Cross-AI peer review: Codex 019e667f-98a5-7980-8f80-613fc1a1ed82 iter-7 AGREE
+# Cross-AI peer review: Codex 019e667f-98a5-7980-8f80-613fc1a1ed82 iter-7 AGREE (ADR-0029)
+#                       Codex 019e6a4a-... iter-1 5 finding absorb (PR #1080)
 # Board issue: #1079
 
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [Parameter()][string]$CAConfig = "ACIKDC01\ACIK Endpoint CA",
-    [Parameter()][string]$Template = "EndpointAgent-MachineCert",
+    # F1 absorb (iter-1 HIGH MERGE BLOCKER): AD CS request attribute
+    # `CertificateTemplate` SHORT NAME ister (display name değil). AD'de
+    # stored short name hyphenless: 'EndpointAgentMachineCert'. Display name
+    # ('EndpointAgent Machine Cert') sadece MMC visual; certreq inf bu kanonik
+    # short name'i kullanır. Override gerekirse yine HYPHENLESS short name verin.
+    [Parameter()][string]$Template = "EndpointAgentMachineCert",
     [Parameter()][string]$LogPath = "$env:ProgramData\faz22.3-enroll-cert.log",
     [Parameter()][int]$NearExpiryDays = 30
 )
@@ -117,12 +129,16 @@ function Test-ExistingValidCert {
 function Invoke-CertReqEnrollment {
     param([string]$Guid, [string]$DnsName)
 
-    Write-EnrollLog "INFO" "Step 3: certreq 3-step flow start (template=$Template, CA=$CAConfig)"
+    Write-EnrollLog "INFO" "Step 3: certreq 3-step flow start (template short name='$Template', CA=$CAConfig)"
 
     $infFile = "$env:TEMP\endpoint-agent-cert-$(Get-Random).inf"
     $reqFile = "$env:TEMP\endpoint-agent-cert-$(Get-Random).req"
     $cerFile = "$env:TEMP\endpoint-agent-cert-$(Get-Random).cer"
 
+    # F1 absorb: CertificateTemplate request attribute SHORT NAME alır (display değil).
+    # `$Template` = HYPHENLESS canonical (default "EndpointAgentMachineCert").
+    # F2 absorb: Template Subject Name = "Supply in the request" → INF subject + custom SAN URI
+    # mandatory. CA Manager approval pipeline (Issuance Requirements signatures=1) mandatory.
     $inf = @"
 [NewRequest]
 Subject = "CN=$DnsName"
@@ -190,6 +206,33 @@ _continue_ = "URL=adcomputer:$Guid"
         } else {
             Write-EnrollLog "ERROR" "Step 3: Post-install verify failed — cert not found in LocalMachine\My with matching SAN URI"
             throw "Cert install verify failed"
+        }
+
+        # F4 absorb (iter-1 MEDIUM): Prune old/superseded certs (same SAN URI, different thumbprint).
+        # Near-expiry rollover veya expired cert pile-up önlemek için: yeni cert install
+        # OK'den sonra, aynı SAN URI:adcomputer:{guid}'a sahip diğer (eski) cert'leri sil.
+        # Bu sayede LocalMachine\My'da agent için tek deterministic cert kalır;
+        # `Get-ChildItem | Where-Object SAN match` query her zaman exactly-one döner,
+        # agent hangi cert'i seçeceği konusunda belirsiz kalmaz.
+        try {
+            $oldCerts = Get-ChildItem Cert:\LocalMachine\My | Where-Object {
+                $_.Subject -like "CN=$DnsName*" -and
+                $_.Thumbprint -ne $installedCert.Thumbprint -and
+                ($_.Extensions | Where-Object { $_.Oid.Value -eq "2.5.29.17" -and ($_.Format($false) -match "URL=adcomputer:$Guid") })
+            }
+            foreach ($old in $oldCerts) {
+                Write-EnrollLog "INFO" "F4 prune: Removing superseded cert thumbprint=$($old.Thumbprint) NotAfter=$($old.NotAfter) (superseded by $($installedCert.Thumbprint))"
+                Remove-Item "Cert:\LocalMachine\My\$($old.Thumbprint)" -Force -ErrorAction SilentlyContinue
+            }
+            if ($oldCerts.Count -gt 0) {
+                Write-EnrollLog "INFO" "F4 prune: $($oldCerts.Count) old cert(s) removed; LocalMachine\My now contains single valid cert for SAN URI adcomputer:$Guid"
+            } else {
+                Write-EnrollLog "INFO" "F4 prune: No old certs to prune (clean state)"
+            }
+        } catch {
+            # F4 prune failure non-fatal — yeni cert OK, eski cert'ler kalmış olsa bile agent
+            # Sort-Object NotBefore -Descending | Select-Object -First 1 fallback ile en yeniyi alır.
+            Write-EnrollLog "WARN" "F4 prune failed (non-fatal): $($_.Exception.Message)"
         }
 
     } finally {

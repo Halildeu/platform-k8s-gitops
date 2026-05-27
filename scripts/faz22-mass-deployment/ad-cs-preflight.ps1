@@ -3,7 +3,11 @@
 # Source-of-truth: docs/adr/0029-faz22-mass-deployment-mtls-msi-gpo.md (merged 2026-05-26 PR #1078)
 # Runbook: docs/runbooks/RB-faz22.3-ad-cs-setup.md
 # Board issue: #1079
-# Cross-AI peer review chain: 12 finding F1-F5 + F1-F4 + F1-F3 absorbed (Codex 019e667f)
+# Cross-AI peer review chain:
+#   - ADR-0029: 12 finding F1-F5 + F1-F4 + F1-F3 absorbed (Codex 019e667f)
+#   - PR #1080 iter-1 absorb: F1 (template short name) + F2 (EditFlag SAN2 + CA Manager) +
+#     F3 (TPM fail-closed + -AllowSoftwareKey) + F4 (cert prune) + F5 (-Force non-interactive)
+#     — Codex 019e6a4a thread
 #
 # Purpose: DC üzerinde AD CS infrastructure'ı initialize edip Faz 22.3 mass
 # deployment için hazır hale getirmek. Operator (IT) çalıştırır; interactive
@@ -19,14 +23,23 @@
 # Usage:
 #   .\ad-cs-preflight.ps1                       # interactive (default)
 #   .\ad-cs-preflight.ps1 -WhatIf               # dry-run, show mutations
-#   .\ad-cs-preflight.ps1 -Force                # skip confirmations
+#   .\ad-cs-preflight.ps1 -Force                # skip ALL confirmations + manual MMC/IIS
+#                                               # checkpoints (operator post-run audit gerek).
+#                                               # F5 absorb: -Force gerçekten non-interactive;
+#                                               # template/CRL Read-Host'ları da skip edilir,
+#                                               # WARN log basılır, operator Verify-Artifacts
+#                                               # (Step 10) ile post-run sonuçları check etmeli.
+#   .\ad-cs-preflight.ps1 -AllowSoftwareKey     # F3 absorb: TPM ready değilse software KSP
+#                                               # fallback'e izin (degraded security; R10 risk)
 #   .\ad-cs-preflight.ps1 -Step <StepName>      # run only specific step
 #
 # Steps:
 #   1. Install ADCS-Cert-Authority Windows feature
-#   2. Initialize Enterprise Root CA "ACIK Endpoint CA" (TPM-protected key)
-#   3. Create "EndpointAgent-MachineCert" cert template
-#   4. Create "EndpointAgent-CodeSigning" cert template
+#   2. Initialize Enterprise Root CA "ACIK Endpoint CA" (TPM-protected key — F3 absorb -AllowSoftwareKey fallback)
+#   2.5 (F2 absorb) Enable EDITF_ATTRIBUTESUBJECTALTNAME2 + restart CertSvc
+#       (custom URI:adcomputer SAN için; CA Manager approval pipeline mandatory)
+#   3. Create "EndpointAgentMachineCert" cert template (short name; display "EndpointAgent Machine Cert" — F1 absorb)
+#   4. Create "EndpointAgentCodeSigning" cert template (short name; display "EndpointAgent Code Signing")
 #   5. Publish templates to enterprise CA
 #   6. Configure CRL Distribution Points (HTTP + LDAP)
 #   7. Configure AutoEnrollment GPO (Computer Configuration)
@@ -39,14 +52,26 @@ param(
     [Parameter()][string]$CAName = "ACIK Endpoint CA",
     [Parameter()][string]$Domain = "acik.local",
     [Parameter()][string]$TemplateBase = "Computer",
-    [Parameter()][string]$MachineCertTemplate = "EndpointAgent-MachineCert",
-    [Parameter()][string]$CodeSigningTemplate = "EndpointAgent-CodeSigning",
+    # F1 absorb (iter-1 HIGH MERGE BLOCKER): AD CS `CertificateTemplate` request
+    # attribute SHORT NAME ister (display name değil). AD'de stored short name
+    # hyphenless: MMC duplicate sırasında "EndpointAgent Machine Cert" display
+    # name verilse de short name `EndpointAgentMachineCert` olur. Aşağıdaki
+    # parametreler canonical SHORT NAME (certreq + certutil için kullanılır);
+    # display name (MMC visual) ayrı parametre.
+    [Parameter()][string]$MachineCertTemplate = "EndpointAgentMachineCert",
+    [Parameter()][string]$CodeSigningTemplate = "EndpointAgentCodeSigning",
+    [Parameter()][string]$MachineCertDisplayName = "EndpointAgent Machine Cert",
+    [Parameter()][string]$CodeSigningDisplayName = "EndpointAgent Code Signing",
     [Parameter()][string]$GpoNameMachineCert = "Faz22.3-EndpointAgent-MachineCertEnroll",
     [Parameter()][string]$GpoNameSoftwareInstall = "Faz22.3-EndpointAgent-MsiInstall",
     [Parameter()][string]$SysvolShare = "\\$(([System.Net.Dns]::GetHostName()))\sysvol\$Domain\scripts\faz22-mass-deployment",
     [Parameter()][string[]]$CrlHttpUrls = @("http://crl.acik.local/CertEnroll/<CaName><CRLNameSuffix><DeltaCRLAllowed>.crl"),
-    [Parameter()][ValidateSet("All", "Feature", "CaInit", "TemplateMachine", "TemplateCodeSign", "Publish", "Crl", "AutoEnroll", "GpoStartup", "GpoSchedule", "Verify")][string]$Step = "All",
+    [Parameter()][ValidateSet("All", "Feature", "CaInit", "EditFlag", "TemplateMachine", "TemplateCodeSign", "Publish", "Crl", "AutoEnroll", "GpoStartup", "GpoSchedule", "Verify")][string]$Step = "All",
     [Parameter()][switch]$Force,
+    # F3 absorb (iter-1 MEDIUM): TPM yoksa CA software key fallback'i explicit gerektir.
+    # -AllowSoftwareKey verilmediyse + TPM not ready ise script hata atar
+    # (fail-closed pattern). Bu flag verildiyse owner approval log'a yazılır.
+    [Parameter()][switch]$AllowSoftwareKey,
     [Parameter()][string]$LogPath = "$env:ProgramData\faz22.3-ad-cs-preflight.log"
 )
 
@@ -84,6 +109,62 @@ function Test-Operator-Privilege {
         throw "Bu script Administrator yetkisi ile çalıştırılmalı. PowerShell as Administrator açın."
     }
     Write-StepLog "INFO" "Administrator privilege: OK ($($current.Name))"
+}
+
+# ============================================================================
+# F3 absorb (iter-1 MEDIUM): TPM/KSP capability check (fail-closed pattern)
+# ============================================================================
+# Runbook §2.1 TPM 2.0 mandatory diyor ama script CA init aşamasında her durumda
+# "Microsoft Platform Crypto Provider" zorluyordu — inconsistent. Bu function CA init
+# öncesi TPM Ready check yapar; TPM yoksa -AllowSoftwareKey verilmediyse hata atar
+# (fail-closed). Verildiyse owner approval log'a yazılır + software KSP fallback aktif.
+# Return: $true = TPM ready, $false = software fallback authorized.
+
+function Test-TpmCapability {
+    Write-StepLog "INFO" "F3 absorb: TPM/KSP capability check"
+
+    $tpmReady = $false
+    try {
+        $tpm = Get-Tpm -ErrorAction Stop
+        if ($tpm.TpmPresent -and $tpm.TpmReady -and $tpm.TpmEnabled) {
+            Write-StepLog "INFO" "F3: TPM 2.0 present + ready + enabled"
+            $tpmReady = $true
+        } else {
+            Write-StepLog "WARN" ("F3: TPM degraded — TpmPresent={0} TpmReady={1} TpmEnabled={2}" -f $tpm.TpmPresent, $tpm.TpmReady, $tpm.TpmEnabled)
+        }
+    } catch {
+        Write-StepLog "WARN" "F3: Get-Tpm failed (TPM cmdlet yok veya hardware yok): $($_.Exception.Message)"
+    }
+
+    # Plus: certutil -csplist içinde Microsoft Platform Crypto Provider görünüyor mu?
+    try {
+        $cspList = & certutil -csplist 2>&1 | Out-String
+        $platformCspAvailable = ($cspList -match "Microsoft Platform Crypto Provider")
+        Write-StepLog "INFO" "F3: 'Microsoft Platform Crypto Provider' in csplist: $platformCspAvailable"
+        if (-not $platformCspAvailable) {
+            Write-StepLog "WARN" "F3: Platform Crypto Provider yok — TPM-backed key impossible"
+            $tpmReady = $false
+        }
+    } catch {
+        Write-StepLog "WARN" "F3: certutil -csplist failed: $($_.Exception.Message)"
+    }
+
+    if ($tpmReady) {
+        return $true
+    }
+
+    # TPM not ready — fail-closed unless -AllowSoftwareKey
+    if (-not $AllowSoftwareKey) {
+        $errMsg = "F3 fail-closed: TPM not ready and -AllowSoftwareKey NOT given. " +
+                  "TPM 2.0 chip enable et veya `-AllowSoftwareKey` flag ile owner approval kaydı " +
+                  "ile software KSP fallback'e izin ver (degraded security; R10 risk artar)."
+        Write-StepLog "ERROR" $errMsg
+        throw $errMsg
+    }
+
+    Write-StepLog "WARN" "F3 SOFTWARE KSP FALLBACK AUTHORIZED — owner approval recorded via -AllowSoftwareKey flag. R10 risk artar (CA private key software-stored, TPM-bound DEĞİL)."
+    Write-StepLog "WARN" "F3: Recommended action: TPM hardware upgrade öncelik; software fallback geçici."
+    return $false
 }
 
 # ============================================================================
@@ -133,43 +214,128 @@ function Initialize-EndpointCA {
         return
     }
 
-    if (-not (Confirm-Step "Initialize Enterprise Root CA" "Install-AdcsCertificationAuthority -CAType EnterpriseRootCA -CACommonName '$CAName' -KeyLength 4096 -HashAlgorithm SHA256 -CryptoProviderName 'Microsoft Platform Crypto Provider' (TPM-backed)")) {
+    # F3 absorb: TPM capability check — fail-closed unless -AllowSoftwareKey
+    $tpmReady = Test-TpmCapability
+    $cryptoProvider = if ($tpmReady) { "Microsoft Platform Crypto Provider" } else { "Microsoft Software Key Storage Provider" }
+    $keyLength = if ($tpmReady) { 2048 } else { 4096 }  # TPM 2.0 typical max 2048 RSA; software KSP 4096 mümkün
+    Write-StepLog "INFO" "Step 2: CryptoProvider selected = '$cryptoProvider' (tpmReady=$tpmReady, keyLength=$keyLength)"
+
+    $confirmDesc = "Install-AdcsCertificationAuthority -CAType EnterpriseRootCA -CACommonName '$CAName' -KeyLength $keyLength -HashAlgorithm SHA256 -CryptoProviderName '$cryptoProvider' (tpmReady=$tpmReady)"
+    if (-not (Confirm-Step "Initialize Enterprise Root CA" $confirmDesc)) {
         Write-StepLog "WARN" "Step 2: User declined; skipping"
         return
     }
 
-    if ($PSCmdlet.ShouldProcess("$CAName", "Initialize Enterprise Root CA")) {
+    if ($PSCmdlet.ShouldProcess("$CAName", "Initialize Enterprise Root CA ($cryptoProvider)")) {
         Install-AdcsCertificationAuthority `
             -CAType EnterpriseRootCA `
             -CACommonName $CAName `
-            -KeyLength 4096 `
+            -KeyLength $keyLength `
             -HashAlgorithm SHA256 `
-            -CryptoProviderName "Microsoft Platform Crypto Provider" `
+            -CryptoProviderName $cryptoProvider `
             -ValidityPeriod Years `
             -ValidityPeriodUnits 10 `
             -Force | Out-Null
-        Write-StepLog "INFO" "Step 2: CA '$CAName' initialized; TPM-backed key created"
+        if ($tpmReady) {
+            Write-StepLog "INFO" "Step 2: CA '$CAName' initialized; TPM-backed key created"
+        } else {
+            Write-StepLog "WARN" "Step 2: CA '$CAName' initialized with SOFTWARE KSP (TPM degraded, owner approval via -AllowSoftwareKey)"
+        }
     }
 }
 
 # ============================================================================
-# Step 3: Create "EndpointAgent-MachineCert" cert template
+# Step 2.5: F2 absorb — Enable EDITF_ATTRIBUTESUBJECTALTNAME2 + CA Manager pipeline
+# ============================================================================
+#
+# Template Subject Name "Supply in the request" + custom URI:adcomputer SAN için
+# CA'da EDITF_ATTRIBUTESUBJECTALTNAME2 flag enable edilmeli. Bu flag ENABLE OLDUKTAN
+# SONRA herhangi bir machine `adcomputer:{guid}` talep edebilir → impersonation riski.
+# Mitigation: Template Issuance Requirements = "CA Manager signatures=1" → manuel
+# sign-off pipeline mandatory.
+#
+# Pilot scope (5 PC) için sürdürülebilir; 50/800 ramp için custom AD CS policy
+# module gerek (machine objectGUID extraction + requested adcomputer GUID match enforce).
+
+function Enable-EditFlagSan2 {
+    Write-StepLog "INFO" "Step 2.5: F2 absorb — EDITF_ATTRIBUTESUBJECTALTNAME2 + CA Manager pipeline"
+
+    # Check current EditFlags
+    $currentFlags = ""
+    try {
+        $currentFlags = & certutil -getreg "policy\EditFlags" 2>&1 | Out-String
+    } catch {
+        Write-StepLog "WARN" "Step 2.5: certutil -getreg failed (CA not yet ready): $($_.Exception.Message)"
+        return
+    }
+
+    if ($currentFlags -match "EDITF_ATTRIBUTESUBJECTALTNAME2") {
+        Write-StepLog "INFO" "Step 2.5: EDITF_ATTRIBUTESUBJECTALTNAME2 already enabled (skip)"
+        return
+    }
+
+    Write-Host @"
+
+  SECURITY WARNING (F2 absorb):
+  EDITF_ATTRIBUTESUBJECTALTNAME2 flag ENABLE edildiğinde CA herhangi bir requester'ın
+  istediği SAN'ı kabul eder. Bu MITIGATION OLMADAN impersonation riski yaratır.
+
+  Mitigation (mandatory):
+  1. Template Subject Name = 'Supply in the request' (Step 3'te zaten OK)
+  2. Template Issuance Requirements = 'CA Manager signatures=1' (Step 3'te zaten OK)
+     → her cert request manuel CA Manager onayı bekler
+  3. Pilot (5 PC) için sürdürülebilir; 50/800 ramp için custom AD CS policy
+     module gerek (machine objectGUID extraction + requested adcomputer GUID match enforce)
+"@ -ForegroundColor Yellow
+
+    if (-not (Confirm-Step "Enable EDITF_ATTRIBUTESUBJECTALTNAME2" "certutil -setreg policy\EditFlags +EDITF_ATTRIBUTESUBJECTALTNAME2 + restart CertSvc (CA Manager approval pipeline ile birlikte mandatory)")) {
+        Write-StepLog "WARN" "Step 2.5: User declined; SAN URI mekanizması calışmaz!"
+        return
+    }
+
+    if ($PSCmdlet.ShouldProcess("CA policy", "Enable EDITF_ATTRIBUTESUBJECTALTNAME2 + restart CertSvc")) {
+        try {
+            & certutil -setreg "policy\EditFlags" "+EDITF_ATTRIBUTESUBJECTALTNAME2" 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "certutil -setreg failed exit=$LASTEXITCODE" }
+            Write-StepLog "INFO" "Step 2.5: EDITF_ATTRIBUTESUBJECTALTNAME2 flag SET"
+
+            & net stop certsvc 2>&1 | Out-Null
+            & net start certsvc 2>&1 | Out-Null
+            Write-StepLog "INFO" "Step 2.5: CertSvc restarted; SAN URI custom extension acceptance LIVE (CA Manager approval mandatory)"
+        } catch {
+            Write-StepLog "ERROR" "Step 2.5: EditFlag SAN2 enable failed: $($_.Exception.Message)"
+            throw
+        }
+    }
+}
+
+# ============================================================================
+# Step 3: Create "EndpointAgentMachineCert" cert template (canonical short name; display "EndpointAgent Machine Cert")
 # ============================================================================
 #
 # NOTE: AD CS cert templates are stored in AD as objects under
 # CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,DC=...
 # Templates are created via certtmpl.msc MMC; programmatic create is complex.
 #
+# F1 absorb (iter-1 HIGH): `CertificateTemplate` request attribute SHORT NAME ister
+# (display name DEĞİL). Display name = "EndpointAgent Machine Cert" (visual);
+# short name = "EndpointAgentMachineCert" (HYPHENLESS — AD'de stored ve certreq/certutil bunu kullanır).
+#
+# F2 absorb (iter-1 HIGH): Custom URI:adcomputer:{guid} SAN için template
+# Subject Name = "Supply in the request" + Issuance Requirements signatures=1
+# (CA Manager manuel onay pipeline; 5 PC pilot için sürdürülebilir, 50/800 ramp
+# için custom AD CS policy module gerek — bkz. RB-faz22.3-ad-cs-setup.md §3.2.5).
+#
 # Pattern: Duplicate "Computer" template + modify properties:
-# - Subject Name: Build from AD (CN = DNSHostName)
-# - Subject Alt Name: Build from AD (DNS name) — custom URI:adcomputer added via GPO startup script (iter-5 F1)
+# - Subject Name: "Supply in the request" (F2 absorb; Build-from-AD değil)
+# - Subject Alt Name: custom URI:adcomputer:{guid} certreq INF içinden 2.5.29.17 ile sağlanır
 # - Key Usage: Digital Signature + Key Encipherment
 # - EKU: Client Authentication (1.3.6.1.5.5.7.3.2)
 # - Cryptography: "Microsoft Platform Crypto Provider" (TPM-only)
-# - Issuance: TPM attestation required
+# - Issuance: TPM attestation required + CA Manager signatures=1
 
 function Create-MachineCertTemplate {
-    Write-StepLog "INFO" "Step 3: Machine cert template '$MachineCertTemplate' setup"
+    Write-StepLog "INFO" "Step 3: Machine cert template setup (display='$MachineCertDisplayName' / short='$MachineCertTemplate')"
 
     Write-StepLog "WARN" "Step 3: Cert template creation requires certtmpl.msc MMC (programmatic AD object creation complex)"
     Write-StepLog "INFO" "Step 3: Operator manual action required:"
@@ -179,15 +345,24 @@ function Create-MachineCertTemplate {
   1. mmc.exe -> File -> Add/Remove Snap-in -> 'Certificate Templates' -> Add
   2. Right-click 'Computer' template -> Duplicate Template
   3. Properties tab:
-     - General: Display name = '$MachineCertTemplate' (template name auto = EndpointAgentMachineCert)
+     - General:
+         * Display name (visual) = '$MachineCertDisplayName'
+         * Template short name (auto-generated, HYPHENLESS) MUST equal = '$MachineCertTemplate'
+         * ÖNEMLI (F1 absorb iter-1 HIGH): AD CS request attribute `CertificateTemplate`
+           short name kullanır (display name değil). MMC duplicate display name'i
+           ALT-altı-çizgi/hyphen-strip ederek short name üretir. Yani display name
+           '$MachineCertDisplayName' verilince short name OTOMATIK '$MachineCertTemplate' olur.
+           Eğer farklı bir short name görülüyorsa Properties → General → Template name
+           manual override (ARGV -MachineCertTemplate ile uyumlu olmalı).
      - Compatibility: Windows Server 2016 + Windows 10
      - Cryptography: Provider Category = 'Key Storage Provider'; Provider = 'Microsoft Platform Crypto Provider' (TPM-only)
      - Request Handling: Purpose = Signature and encryption; Key size minimum = 2048
-     - Subject Name: 'Build from this Active Directory information':
-                    Subject name format = 'Common name'
-                    Include this information in alternate subject name: DNS name (UPN optional)
+     - Subject Name: 'Supply in the request' (F2 absorb iter-1 HIGH — custom SAN URI
+                    için Build-from-AD yerine Supply-in-request; ayrıntı §3.2.5)
      - Extensions: Application Policies = 'Client Authentication' (1.3.6.1.5.5.7.3.2)
-     - Issuance Requirements: 'This number of authorized signatures: 0'; ensure TPM attestation can be required (Windows Server 2016+)
+     - Issuance Requirements: 'This number of authorized signatures: 1' (F2 absorb —
+                    CA Manager manuel approval pipeline; 5 PC pilot için sürdürülebilir;
+                    50/800 ramp için custom AD CS policy module gerek)
      - Security: Domain Computers = 'Read' + 'Autoenroll' (not just 'Enroll'); add 'Authenticated Users' for read
   4. OK to save
 
@@ -197,27 +372,37 @@ function Create-MachineCertTemplate {
   See ADR-0029 Katman 1 (lines 121-160) for detailed template properties.
 "@ -ForegroundColor Yellow
 
-    $resp = Read-Host "Did you create the template '$MachineCertTemplate' via MMC? [y/N]"
+    if ($Force) {
+        # F5 absorb (iter-1 LOW): -Force gerçek non-interactive — manual MMC checkpoint skip + WARN log.
+        Write-StepLog "WARN" "Step 3 [F5 absorb]: Force mode — manual MMC step skipped; operator MUST ensure template '$MachineCertTemplate' (HYPHENLESS short name) exists post-run; verify via Step 10."
+        return
+    }
+
+    $resp = Read-Host "Did you create the template short name '$MachineCertTemplate' via MMC? [y/N]"
     if ($resp -notmatch "^[yY]") {
         Write-StepLog "WARN" "Step 3: Template not confirmed; mass deploy NOT ready until template exists"
         return
     }
-    Write-StepLog "INFO" "Step 3: Operator confirmed template '$MachineCertTemplate' created"
+    Write-StepLog "INFO" "Step 3: Operator confirmed template short name '$MachineCertTemplate' created"
 }
 
 # ============================================================================
-# Step 4: Create "EndpointAgent-CodeSigning" cert template
+# Step 4: Create "EndpointAgentCodeSigning" cert template (canonical short name; display "EndpointAgent Code Signing")
 # ============================================================================
 
 function Create-CodeSigningCertTemplate {
-    Write-StepLog "INFO" "Step 4: Code signing cert template '$CodeSigningTemplate' setup"
+    Write-StepLog "INFO" "Step 4: Code signing cert template setup (display='$CodeSigningDisplayName' / short='$CodeSigningTemplate')"
 
     Write-Host @"
 
   MANUAL STEP (operator):
   1. mmc.exe certtmpl.msc -> Duplicate 'Code Signing' template (or 'User' if Code Signing not in default list)
   2. Properties:
-     - General: Display name = '$CodeSigningTemplate'
+     - General:
+         * Display name (visual) = '$CodeSigningDisplayName'
+         * Template short name (auto-generated, HYPHENLESS) MUST equal = '$CodeSigningTemplate'
+         * F1 absorb iter-1: certutil/certreq aşamasında '$CodeSigningTemplate' (hyphenless)
+           kullanılır; display name ayrıdır.
      - Compatibility: Windows Server 2016 + Windows 10
      - Cryptography: TPM provider OK; Hash SHA256
      - Subject Name: 'Supply in the request' (manuel certreq)
@@ -230,12 +415,18 @@ function Create-CodeSigningCertTemplate {
   signing runner'da kalır; GitHub Actions PFX YOK.
 "@ -ForegroundColor Yellow
 
-    $resp = Read-Host "Did you create the template '$CodeSigningTemplate' via MMC? [y/N]"
+    if ($Force) {
+        # F5 absorb (iter-1 LOW): -Force gerçek non-interactive — manual MMC checkpoint skip + WARN log.
+        Write-StepLog "WARN" "Step 4 [F5 absorb]: Force mode — manual MMC step skipped; operator MUST ensure code-signing template '$CodeSigningTemplate' (HYPHENLESS short name) exists post-run."
+        return
+    }
+
+    $resp = Read-Host "Did you create the template short name '$CodeSigningTemplate' via MMC? [y/N]"
     if ($resp -notmatch "^[yY]") {
         Write-StepLog "WARN" "Step 4: Code signing template not confirmed"
         return
     }
-    Write-StepLog "INFO" "Step 4: Operator confirmed code signing template created"
+    Write-StepLog "INFO" "Step 4: Operator confirmed code signing template short name '$CodeSigningTemplate' created"
 }
 
 # ============================================================================
@@ -304,6 +495,12 @@ function Configure-CrlDistribution {
 
   Eski IIS CRL endpoint hâlâ varsa skip; R16 P0-14 reachability check için gerekli.
 "@ -ForegroundColor Yellow
+
+        if ($Force) {
+            # F5 absorb (iter-1 LOW): -Force gerçek non-interactive — manual IIS checkpoint skip + WARN log.
+            Write-StepLog "WARN" "Step 6 [F5 absorb]: Force mode — IIS CRL manual checkpoint skipped; operator MUST post-run verify IIS site 'crl.acik.local' + curl reachability (R16 P0-14)."
+            return
+        }
 
         $resp = Read-Host "CRL HTTP IIS site ready? [y/N/skip]"
         if ($resp -match "^[yY]") {
@@ -480,6 +677,33 @@ function Verify-Artifacts {
     $sysvolScript = Join-Path $SysvolShare "enroll-endpoint-agent-cert.ps1"
     $results["SYSVOL Script"] = if (Test-Path $sysvolScript) { "OK ($sysvolScript)" } else { "FAIL (deploy via Step 8)" }
 
+    # F2 absorb verify: EDITF_ATTRIBUTESUBJECTALTNAME2 enabled?
+    try {
+        $editFlags = & certutil -getreg "policy\EditFlags" 2>&1 | Out-String
+        $results["F2 EditFlag SAN2"] = if ($editFlags -match "EDITF_ATTRIBUTESUBJECTALTNAME2") {
+            "OK (custom SAN URI accept LIVE; CA Manager approval mandatory)"
+        } else {
+            "FAIL (run Step EditFlag; custom URI:adcomputer SAN reject olur)"
+        }
+    } catch {
+        $results["F2 EditFlag SAN2"] = "FAIL: $($_.Exception.Message)"
+    }
+
+    # F3 absorb verify: TPM/KSP state
+    try {
+        $tpm = Get-Tpm -ErrorAction Stop
+        $tpmReady = ($tpm.TpmPresent -and $tpm.TpmReady -and $tpm.TpmEnabled)
+        $results["F3 TPM Capability"] = if ($tpmReady) {
+            "OK (TPM 2.0 ready; CA key TPM-bound)"
+        } elseif ($AllowSoftwareKey) {
+            "WARN (TPM degraded; software KSP fallback authorized via -AllowSoftwareKey; R10 risk)"
+        } else {
+            "FAIL (TPM not ready; rerun with -AllowSoftwareKey or fix TPM hardware)"
+        }
+    } catch {
+        $results["F3 TPM Capability"] = if ($AllowSoftwareKey) { "WARN (Get-Tpm unavailable; software fallback authorized)" } else { "FAIL: Get-Tpm unavailable" }
+    }
+
     # Print results
     Write-Host ""
     Write-Host "════════════════════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
@@ -522,12 +746,13 @@ try {
     Write-StepLog "INFO" "============================================================================"
     Write-StepLog "INFO" "Faz 22.3 AD CS Preflight — Mass Deployment Infrastructure Setup"
     Write-StepLog "INFO" "ADR-0029 (PR #1078 MERGED 2026-05-26) Plan A owner-approved"
-    Write-StepLog "INFO" "Step: $Step | WhatIf: $($PSCmdlet.MyInvocation.BoundParameters['WhatIf'].IsPresent) | Force: $Force"
+    Write-StepLog "INFO" "Step: $Step | WhatIf: $($PSCmdlet.MyInvocation.BoundParameters['WhatIf'].IsPresent) | Force: $Force | AllowSoftwareKey: $AllowSoftwareKey"
     Write-StepLog "INFO" "Log: $LogPath"
     Write-StepLog "INFO" "============================================================================"
 
     if ($Step -eq "All" -or $Step -eq "Feature") { Install-AdcsFeature }
     if ($Step -eq "All" -or $Step -eq "CaInit") { Initialize-EndpointCA }
+    if ($Step -eq "All" -or $Step -eq "EditFlag") { Enable-EditFlagSan2 }  # F2 absorb (custom SAN URI mandatory)
     if ($Step -eq "All" -or $Step -eq "TemplateMachine") { Create-MachineCertTemplate }
     if ($Step -eq "All" -or $Step -eq "TemplateCodeSign") { Create-CodeSigningCertTemplate }
     if ($Step -eq "All" -or $Step -eq "Publish") { Publish-CertTemplates }

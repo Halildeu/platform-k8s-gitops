@@ -33,7 +33,10 @@ Faz 22.3 domain-wide mass deployment kanalı için DC üzerinde Active Directory
 
 - Windows Server 2019+ DC (Enterprise Root CA gerek; Standalone yetmiyor)
 - Domain: `acik.local` (canonical; production scope, BOREAS/CESS scope dışı)
-- TPM 2.0 chip (DC'de TPM-backed CA key için; yoksa software key fallback ama R10 risk artar)
+- **TPM 2.0 chip (mandatory)** — DC'de TPM-backed CA key için + pilot PC'lerde TPM-backed machine cert key için (F3 absorb iter-1).
+  - DC'de TPM yoksa `ad-cs-preflight.ps1 -AllowSoftwareKey` flag explicit gerek; aksi halde script fail-closed (TPM ready bekler).
+  - Pilot PC'lerde TPM yoksa machine cert mint fail; PC TPM upgrade veya pilot scope dışında.
+  - `-AllowSoftwareKey` ile software KSP fallback: R10 risk **artar** (CA private key software-stored; TPM-bound DEĞİL); owner approval log'a yazılır.
 - DC disk free > 5 GB (CRL + cert DB + audit log)
 - IIS Web-Server feature (opsiyonel ama HTTP CRL distribution için önerilir)
 - Backup taken (system state + AD; rollback için)
@@ -65,20 +68,23 @@ Tam P0-1..P0-23 listesi: ADR-0029 §"Phase 0 — Operator Manual Preflight Check
 ```powershell
 # Clone gitops repo veya sadece scripts/faz22-mass-deployment/ dizinini DC'ye kopyala
 cd C:\faz22-mass-deployment\scripts\
-.\ad-cs-preflight.ps1                          # interactive default
+.\ad-cs-preflight.ps1                          # interactive default (TPM ready required)
 # veya
 .\ad-cs-preflight.ps1 -WhatIf                  # dry-run, görme amaçlı
-.\ad-cs-preflight.ps1 -Step Feature -Force     # tek adım force
+.\ad-cs-preflight.ps1 -Step Feature -Force     # tek adım force (F5: manual MMC/IIS checkpoint'leri de skip)
+.\ad-cs-preflight.ps1 -AllowSoftwareKey        # F3: TPM degraded ise software KSP fallback (R10 risk)
+.\ad-cs-preflight.ps1 -Step EditFlag           # F2: sadece EDITF_ATTRIBUTESUBJECTALTNAME2 enable
 ```
 
-Script 10 adımı interactive sırayla yürütür:
+Script 11 adımı interactive sırayla yürütür (F2 absorb iter-1 ile Step 2.5 eklendi):
 
 1. **Install ADCS-Cert-Authority** Windows feature (PowerShell automated)
-2. **Initialize Enterprise Root CA** `ACIK Endpoint CA` (TPM-backed key, PowerShell automated)
-3. **Create EndpointAgent-MachineCert template** (MMC manual — operator certtmpl.msc)
-4. **Create EndpointAgent-CodeSigning template** (MMC manual)
-5. **Publish templates** to enterprise CA (`certutil -setcatemplates`)
-6. **Configure CRL Distribution Points** (HTTP via IIS — operator manual config)
+2. **Initialize Enterprise Root CA** `ACIK Endpoint CA` (TPM-backed key default; F3 absorb: TPM ready fail-closed unless `-AllowSoftwareKey`)
+2.5. **F2 absorb — Enable EDITF_ATTRIBUTESUBJECTALTNAME2** + restart CertSvc (custom URI SAN için mandatory; CA Manager approval pipeline ile birlikte — §3.2.5)
+3. **Create EndpointAgentMachineCert template** (MMC manual — operator certtmpl.msc; HYPHENLESS short name canonical, display "EndpointAgent Machine Cert" — F1 absorb; F5: `-Force` mode'da skip + WARN log)
+4. **Create EndpointAgentCodeSigning template** (MMC manual; HYPHENLESS short name canonical; F5: `-Force` mode'da skip)
+5. **Publish templates** to enterprise CA (`certutil -setcatemplates +EndpointAgentMachineCert,EndpointAgentCodeSigning`)
+6. **Configure CRL Distribution Points** (HTTP via IIS — operator manual config; F5: `-Force` mode'da skip + WARN log)
 7. **Configure AutoEnrollment GPO** (`New-GPO` automated + MMC manual policy enable)
 8. **Deploy enroll-endpoint-agent-cert.ps1** to SYSVOL (script copy automated + GPO startup script link manual)
 9. **Deploy Schedule Task GPO** (daily 03:00 renewal trigger — operator GPMC manual)
@@ -86,29 +92,46 @@ Script 10 adımı interactive sırayla yürütür:
 
 ### 3.2 Template properties (MMC manual — Step 3 detay)
 
-`certtmpl.msc` → `Computer` template Duplicate → `EndpointAgent-MachineCert` properties:
+> **F1 absorb (iter-1 HIGH MERGE BLOCKER) — Display name vs template short name**:
+> AD CS request attribute `CertificateTemplate` **SHORT NAME** ister (display name DEĞİL).
+> MMC duplicate dialog'unda verilen "Display name" alanı **otomatik hyphen-strip** edilerek
+> AD'de stored short name üretir. Yani:
+>
+> | UI Display Name (visual) | AD Stored Short Name (canonical — certreq/certutil için) |
+> |---|---|
+> | `EndpointAgent Machine Cert` | `EndpointAgentMachineCert` (HYPHENLESS) |
+> | `EndpointAgent Code Signing` | `EndpointAgentCodeSigning` (HYPHENLESS) |
+>
+> Script defaults (`ad-cs-preflight.ps1` + `enroll-endpoint-agent-cert.ps1`) canonical
+> short name'i (hyphenless) kullanır. MMC'de Properties → General → Template name alanı
+> mutlaka HYPHENLESS short name ile eşleşmeli; aksi halde `certreq -submit` 0x80094012
+> "template not found" hatası verir.
+
+`certtmpl.msc` → `Computer` template Duplicate → `EndpointAgent Machine Cert` (display) /
+`EndpointAgentMachineCert` (short) properties:
 
 | Tab | Setting | Value |
 |---|---|---|
-| General | Display name | `EndpointAgent-MachineCert` |
+| General | Display name (visual) | `EndpointAgent Machine Cert` |
+| General | Template short name (canonical) | `EndpointAgentMachineCert` (HYPHENLESS — certreq/certutil bunu kullanır) |
 | Compatibility | CA + recipient | Windows Server 2016 + Windows 10 |
 | Cryptography | Provider category | `Key Storage Provider` |
 | Cryptography | Provider | `Microsoft Platform Crypto Provider` (TPM-only) |
 | Cryptography | Key size | 2048 (4096 mümkün ama TPM perf düşer) |
 | Request Handling | Purpose | Signature and encryption |
-| Subject Name | Source | `Build from this Active Directory information` |
-| Subject Name | Format | Common name |
-| Subject Name | Alt name | DNS name (UPN opsiyonel) |
+| Subject Name | Source | **`Supply in the request`** (F2 absorb iter-1 HIGH — custom SAN URI için Build-from-AD yerine Supply-in-request; ayrıntı §3.2.5) |
 | Extensions | Application Policies | Client Authentication (1.3.6.1.5.5.7.3.2) |
 | Extensions | Key Usage | Digital Signature + Key Encipherment |
+| Issuance Requirements | **This number of authorized signatures: 1** | **CA Manager manuel onay** (F2 absorb iter-1 — 5 PC pilot scope için sürdürülebilir; 50/800 ramp için custom AD CS policy module gerek — §3.2.5) |
 | Issuance Requirements | TPM attestation | Required (Windows Server 2016+ özelliği) |
 | Security | Domain Computers | Read + Autoenroll (sadece Enroll yetmiyor) |
 
-`EndpointAgent-CodeSigning` template (Step 4):
+`EndpointAgent Code Signing` (display) / `EndpointAgentCodeSigning` (short) template (Step 4):
 
 | Tab | Setting | Value |
 |---|---|---|
-| General | Display name | `EndpointAgent-CodeSigning` |
+| General | Display name (visual) | `EndpointAgent Code Signing` |
+| General | Template short name (canonical) | `EndpointAgentCodeSigning` (HYPHENLESS — certreq/certutil bunu kullanır) |
 | Compatibility | CA + recipient | Windows Server 2016 + Windows 10 |
 | Cryptography | Provider | TPM OK; Hash = SHA256 |
 | Subject Name | Source | `Supply in the request` (manuel certreq) |
@@ -117,6 +140,56 @@ Script 10 adımı interactive sırayla yürütür:
 | Security | agent-team-restricted group | Read + Enroll (NOT Autoenroll) |
 
 > **R17 HARD RULE compliance**: code signing private key TPM/HSM-backed Windows signing runner'da kalır. GitHub Actions PFX yok; CA Manager approval ile manuel sign pipeline.
+
+### 3.2.5 F2 absorb — EDITF_ATTRIBUTESUBJECTALTNAME2 + CA Manager approval pipeline
+
+> **F2 absorb (iter-1 HIGH MERGE BLOCKER) — Custom URI SAN issuance policy**
+>
+> AD CS standart template "Build from AD" davranışı dinamik custom URI SAN extension
+> (`URL=adcomputer:{objectGUID}`) basamaz. enroll-endpoint-agent-cert.ps1 INF üzerinden
+> custom `2.5.29.17` SAN extension gönderiyor; bu extension'ın CA tarafından **kabul
+> edilmesi** için iki policy ayarı birlikte gerek:
+>
+> **1. Template Subject Name = "Supply in the request"** (Build-from-AD değil — §3.2 tablo)
+>
+> **2. CA EditFlags: EDITF_ATTRIBUTESUBJECTALTNAME2** (DC'de CA setting; preflight Step 2.5):
+>
+> ```powershell
+> certutil -setreg policy\EditFlags +EDITF_ATTRIBUTESUBJECTALTNAME2
+> net stop certsvc
+> net start certsvc
+> ```
+>
+> > **SECURITY**: Bu flag ENABLE edildiğinde CA herhangi bir requester'ın istediği SAN'ı
+> > kabul eder. Mitigation OLMADAN **impersonation riski**: herhangi bir machine başka
+> > `adcomputer:{guid}` talep edebilir.
+>
+> **3. Mitigation: Template Issuance Requirements = "CA Manager signatures=1"** (§3.2 tablo):
+> Her cert request **manuel CA Manager onayı** bekler. Operator MMC'de "Pending Requests"
+> kuyrugundan inceler:
+>
+> - PowerShell: `certutil -view -restrict "Disposition=Active Status Equal 9"`
+> - Manuel: machine objectGUID == requested adcomputer GUID match doğrulanır
+> - Issue: `certutil -resubmit <RequestId>`
+> - Deny: `certutil -deny <RequestId>` + audit log
+>
+> **Scope sürdürülebilirliği**:
+>
+> | PC count | Manuel CA Manager pipeline? | Mitigation |
+> |---|---|---|
+> | 5 PC (Phase 1 pilot) | OK (5 manuel review/hafta — sürdürülebilir) | Manuel review yeterli |
+> | 50 PC (Phase 2 IT dept) | Marjinal (50 review/hafta zorlaşır) | **Custom AD CS policy module gerek** (Phase 2 ön-koşulu) |
+> | 800 PC (Phase 3 full) | İmkansız | **Custom AD CS policy module mandatory** |
+>
+> **Custom AD CS policy module** (Phase 2 ön-koşulu, ayrı board issue):
+> - .NET assembly DC üzerinde `ICertPolicy2` interface implement eder
+> - Her request submit edildiğinde: requester machine objectGUID extract → requested
+>   `adcomputer:{guid}` parse → match check → auto-approve veya auto-deny
+> - Manuel CA Manager queue tamamen bypass edilir; impersonation bypass YAPILAMAZ
+> - Reference impl: https://learn.microsoft.com/en-us/windows/win32/seccertenroll/cert-policy-module
+>
+> **Bu runbook (pilot 5 PC scope)** manuel pipeline ile sınırlı; custom policy module Phase 2
+> öncesi ayrı board issue ile ele alınacak.
 
 ### 3.3 Custom URI:adcomputer:{objectGUID} SAN extension mekanizması
 
@@ -145,7 +218,7 @@ ProviderName = "Microsoft Platform Crypto Provider"
 RequestType = PKCS10
 
 [RequestAttributes]
-CertificateTemplate = "EndpointAgent-MachineCert"
+CertificateTemplate = "EndpointAgentMachineCert"  # F1 absorb: SHORT NAME (hyphenless), NOT display name
 
 [Extensions]
 2.5.29.17 = "{text}"
@@ -210,7 +283,7 @@ gpupdate /force /target:computer
   SAN URI match:  True
   Thumbprint:     A1B2C3D4...
   Days to expiry: 365
-  Template:       EndpointAgent-MachineCert
+  Template:       EndpointAgentMachineCert
   ✓ P0-23 PASS
 ```
 
@@ -219,7 +292,7 @@ gpupdate /force /target:computer
 | Symptom | Olasılık | Fix |
 |---|---|---|
 | `Cert found: False` | GPO startup script henüz çalışmadı | `gpupdate /force /target:computer` + reboot + 5dk bekle |
-| `SAN URI match: False` | Cert mint edildi ama URI extension yok | Template `EndpointAgent-MachineCert` published mi? certreq inf doğru mu? |
+| `SAN URI match: False` | Cert mint edildi ama URI extension yok | Template `EndpointAgentMachineCert` (HYPHENLESS short name — F1 absorb) published mi? certreq inf doğru mu? |
 | `Days to expiry: <= 0` | Cert expired (template validity period bug) | Template properties → Issuance Requirements → Validity period 1 year+ |
 | `error: PC not domain-joined` | 22.3 scope dışı PC | OU'dan çıkar veya 22.2.A non-domain scope kullan |
 
@@ -251,10 +324,13 @@ Phase 0 fail noktası fix edilmeden Phase 1 5-PC pilot başlatılmaz.
 |---|---|---|
 | `Install-AdcsCertificationAuthority: The CA Already Installed` | CA initialize daha önce yapılmış | `certutil -getconfig` ile var olan CA'yı kontrol et; idempotent skip |
 | `Install-AdcsCertificationAuthority: A required privilege is not held` | Enterprise Admin yetkisi yok | Domain Admin + Enterprise Admin login |
-| `certutil -setcatemplates: 0x80094800` | Template AD'de yok | certtmpl.msc'de template create edildi mi? |
+| `F3 fail-closed: TPM not ready and -AllowSoftwareKey NOT given` | Test-TpmCapability fail (TPM disable/absent veya Platform CSP yok) | Hardware: BIOS'tan TPM 2.0 enable + `Initialize-Tpm`. Software fallback (degraded): script'i `-AllowSoftwareKey` flag ile yeniden çalıştır (R10 risk owner approval log'a yazılır). |
+| `certreq -submit: ... 0x80094801` veya "template not found" | Template short name HYPHENLESS değil (F1 absorb) | MMC certtmpl.msc → Properties → General → Template name HYPHENLESS olmalı (`EndpointAgentMachineCert`). Display name farklı (visual) olabilir. |
+| `certreq -submit: ... taken under submission` | EDITF_ATTRIBUTESUBJECTALTNAME2 enabled + signatures=1 (F2 absorb) — CA Manager pending queue | Normal davranış. Operator MMC certsrv.msc → Pending Requests'den manuel inceleme + approve (`certutil -resubmit <RequestId>`). |
+| `certutil -setcatemplates: 0x80094800` | Template AD'de yok | certtmpl.msc'de template create edildi mi? Short name HYPHENLESS mi (F1)? |
 | `enroll-endpoint-agent-cert.ps1: AD lookup failed` | PC domain-joined değil | 22.3 scope dışı; 22.2.A non-domain runbook'a yönlendir |
 | `certreq -submit: CertEnroll::CX509Enrollment::CreateRequest: 0x80094012` | Template permission Domain Computers'da yok | Template Security tab → Domain Computers Autoenroll grant |
-| `certreq -accept: 0x80092004` | Private key binding fail | TPM provider mı? `Microsoft Platform Crypto Provider` template'de seçili mi? |
+| `certreq -accept: 0x80092004` | Private key binding fail | TPM provider mı? `Microsoft Platform Crypto Provider` template'de seçili mi? (F3: software KSP fallback durumunda `Microsoft Software Key Storage Provider`) |
 | `Get-GPO: A specified directory service object could not be found` | GPO yoktu, runtime yarattık ama scope yanlış | `New-GPO + New-GPLink` order correct |
 
 ### 5.2 Full rollback (5 dk içinde)
@@ -268,7 +344,7 @@ Remove-GPO -Name "Faz22.3-EndpointAgent-MachineCertEnroll" -Confirm:$false
 # (manual via IIS Manager — Stop Site "crl.acik.local")
 
 # 3. Cert templates unpublish (NOT delete — başka kullanım olabilir)
-certutil -setcatemplates -EndpointAgent-MachineCert,EndpointAgent-CodeSigning
+certutil -setcatemplates -EndpointAgentMachineCert,EndpointAgentCodeSigning  # F1 absorb: short name (hyphenless)
 
 # 4. (DESTRUCTIVE — only if absolute necessity) CA rollback
 # Stop-Service CertSvc
