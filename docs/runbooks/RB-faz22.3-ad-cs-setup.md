@@ -127,7 +127,7 @@ Script 11 adımı interactive sırayla yürütür (F2 absorb iter-1 ile Step 2.5
 | Extensions | Application Policies | Client Authentication (1.3.6.1.5.5.7.3.2) |
 | Extensions | Key Usage | Digital Signature + Key Encipherment |
 | Issuance Requirements | **Authorized signatures: 0** | **F2-A absorb iter-2 HIGH** — Enrollment Agent flow YOK (bizim INF/certreq akışı agent signed-request üretmiyor); önceki "authorized signatures: 1" YANLIŞTI (o ayar farklı semantik) |
-| Issuance Requirements | **CA certificate manager approval: ENABLED** (ayrı checkbox) | **F2-A absorb iter-2 HIGH** — manual sign-off checkbox; request pending state'e geçer (HRESULT `0x80094003`); CA Manager Certification Authority MMC'den approve eder; 5 PC pilot sürdürülebilir, 50/800 ramp için custom policy module gerek (§3.2.5) |
+| Issuance Requirements | **CA certificate manager approval: ENABLED** (ayrı checkbox) | **F2-A absorb iter-2 HIGH** — manual sign-off checkbox; request **pending state'e geçer (CA DB Disposition=5; HRESULT YOK — certreq output "taken under submission" text); CA Manager Certification Authority MMC > Pending Requests'tan approve eder**; 5 PC pilot sürdürülebilir, 50/800 ramp için custom policy module gerek (§3.2.5). [F1-A absorb iter-5: önceki "HRESULT 0x80094003" referansı yanlıştı — pending state'in dedicated HRESULT yok, disposition code'a bağlı] |
 | Issuance Requirements | TPM attestation | Required (Windows Server 2016+ özelliği) |
 | Security | Domain Computers | Read + Autoenroll (sadece Enroll yetmiyor) |
 
@@ -177,7 +177,7 @@ Script 11 adımı interactive sırayla yürütür (F2 absorb iter-1 ile Step 2.5
 > | Setting | Value | Anlam |
 > |---|---|---|
 > | Authorized signatures | **`0`** | Enrollment Agent flow YOK — bizim INF/certreq akışı agent signed-request üretmiyor |
-> | CA certificate manager approval | **`ENABLED`** (checkbox) | Manual sign-off pipeline; request pending state'e geçer (HRESULT `0x80094003`); CA Manager Certification Authority MMC'den approve eder |
+> | CA certificate manager approval | **`ENABLED`** (checkbox) | Manual sign-off pipeline; request **pending state'e geçer (CA DB Disposition=5; HRESULT YOK — certreq output "taken under submission" text)**; CA Manager Certification Authority MMC > Pending Requests'tan approve eder. [F1-A absorb iter-5: pending state'in dedicated HRESULT yok; disposition code'a bağlı] |
 >
 > **DİKKAT**: `Authorized signatures: 1` setting'i farklı semantiktir — Enrollment Agent
 > tarafından N tane CA-approved enrollment agent'in request'i co-sign etmesini gerektirir.
@@ -239,7 +239,7 @@ Davranış (her pilot PC üzerinde boot sırasında ve günlük 03:00):
      - `certreq -retrieve -config $CAConfig $RequestId $cer` — CA'dan cert hazır mı çek
        - Cert hazır (exit 0 + cer file > 0) → `certreq -accept -q -f -machine $cer` install + pending state remove
        - Hâlâ pending (`taken under submission`) → warn log + skip (next daily run retry)
-       - Denied (HRESULT `0x80094004`) → error log + pending state remove (next run yeni submit eder)
+       - Denied (CA DB Disposition=2; certreq -retrieve exit non-zero + output contains "denied" text — F1-A absorb iter-5: HRESULT 0x80094004 != denied semantik; denied state disposition code'a bağlı) → error log + pending state remove (next run yeni submit eder)
 
 INF içeriği:
 ```ini

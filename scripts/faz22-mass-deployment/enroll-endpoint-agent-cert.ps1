@@ -282,21 +282,36 @@ function Write-PendingRequestsJson {
 # mutex aynı PC üzerinde tek bir enroll script instance'ı garanti eder.
 function Enter-PendingMutex {
     $mutexName = "Global\Faz22.3.PendingRequests"
+    # F2-B iter-5 absorb: Mutex acquisition exception vs timeout ayrımı.
+    # - Timeout (WaitOne false) = concurrent run detected → idempotent skip OK
+    # - Acquisition exception (Mutex.new fail; UnauthorizedAccess, environment policy)
+    #   → throw (operator-visible failure; sessizce skip etmek policy/permission
+    #   sorununu maskeler ve enrollment her run'da kaybolur)
     try {
         $mutex = [System.Threading.Mutex]::new($false, $mutexName)
+    } catch {
+        # F2-B iter-5: acquisition exception fail-closed (önceki versiyon
+        # sessizce null return ediyordu → enrollment sürekli skip + sessiz fail)
+        Write-EnrollLog "ERROR" "F2-B iter-5: Mutex CREATE failed (acquisition exception; operator-visible failure): $($_.Exception.Message)"
+        throw "Mutex acquisition failed (Global\Faz22.3.PendingRequests) — operator action: check WindowsIdentity privileges + Global namespace ACL + Mandatory Integrity Level. Skipping silently would hide enrollment failure."
+    }
+
+    try {
         # WaitOne timeout: 30 saniye — diğer instance kısa süre içinde bitirir;
-        # sürmüyorsa enroll script idempotent olduğu için skip OK.
+        # sürmüyorsa (contention timeout) enroll script idempotent olduğu için skip OK.
         $acquired = $mutex.WaitOne([TimeSpan]::FromSeconds(30))
         if (-not $acquired) {
-            Write-EnrollLog "WARN" "F2-B iter-4: Mutex timeout (30s) — concurrent enroll script detected; skipping this run (next daily retry)"
+            Write-EnrollLog "WARN" "F2-B iter-4: Mutex contention timeout (30s) — concurrent enroll script detected; skipping this run (next daily retry)"
             $mutex.Dispose()
             return $null
         }
         Write-EnrollLog "INFO" "F2-B iter-4: Mutex '$mutexName' acquired"
         return $mutex
     } catch {
-        Write-EnrollLog "WARN" "F2-B iter-4: Mutex acquire failed (non-fatal; degraded concurrency safety): $($_.Exception.Message)"
-        return $null
+        # WaitOne exception (AbandonedMutexException, etc.) — log + dispose + throw
+        Write-EnrollLog "ERROR" "F2-B iter-5: Mutex WAIT failed: $($_.Exception.Message)"
+        try { $mutex.Dispose() } catch { }
+        throw "Mutex WaitOne failed — operator action: check OS state + Mutex provider health"
     }
 }
 
@@ -446,29 +461,33 @@ function Invoke-PendingRetrieve {
         if ($PSCmdlet.ShouldProcess("certreq -retrieve", "Retrieve pending request $($Pending.request_id)")) {
             $retrieveOutput = & certreq.exe -retrieve -q -f -config $CAConfig $Pending.request_id $cerFile 2>&1 | Out-String
 
-            # certreq -retrieve exit codes:
-            # 0 = cert hazır (issued); -accept'e geç
-            # 0x80094004 (-2146877436) = denied
-            # 0x80094003 = taken under submission (hâlâ pending)
-            # other = transient error
+            # certreq -retrieve disposition classification (F1-A iter-5 absorb):
+            # AD CS canonical disposition'a göre output text + CA DB disposition code bazlı.
+            # HRESULT 0x80094003/0x80094004 farklı semantiğe sahip (CERTSRV_E_PROPERTY_EMPTY +
+            # CERTSRV_E_BAD_RENEWAL_CERT_ATTRIBUTE — pending/denied semantik DEĞİL).
+            # Doğru classification:
+            # - LASTEXITCODE=0 + cer file non-empty → cert issued (Disposition=3)
+            # - output contains "denied" text → CA Manager intentional reject (Disposition=2)
+            # - output contains "taken under submission" → pending (Disposition=5)
+            # - diğer → transient error (transient network/CA outage; next run retry)
             if ($LASTEXITCODE -eq 0 -and (Test-Path $cerFile) -and ((Get-Item $cerFile).Length -gt 0)) {
-                Write-EnrollLog "INFO" "F2-B: Cert retrieved — proceeding to -accept"
+                Write-EnrollLog "INFO" "F2-B: Cert retrieved (Disposition=3 issued) — proceeding to -accept"
                 Install-Cert -CerFile $cerFile -DnsName $DnsName -Guid $Guid
                 Remove-PendingRequest
                 return $true
             }
 
-            # Parse output for state classification
-            if ($retrieveOutput -match "denied|0x80094004") {
-                Write-EnrollLog "ERROR" "F2-B DENIED: RequestId=$($Pending.request_id) was denied by CA Manager — operator inspection required"
+            # Output text-based classification (F1-A iter-5 absorb: HRESULT semantik artık güvenilmez)
+            if ($retrieveOutput -match "denied|Disposition: 2") {
+                Write-EnrollLog "ERROR" "F2-B DENIED (Disposition=2): RequestId=$($Pending.request_id) was denied by CA Manager — operator inspection required"
                 Write-EnrollLog "ERROR" "F2-B DENIED output: $retrieveOutput"
                 # State'i temizle ki next run yeni submit yapabilsin (CA Manager intentional reject ise admin manuel)
                 Remove-PendingRequest
                 return $false
             }
 
-            if ($retrieveOutput -match "taken under submission|0x80094003|pending") {
-                Write-EnrollLog "WARN" "F2-B: RequestId=$($Pending.request_id) hâlâ pending; CA Manager approval bekleniyor (next daily run retry)"
+            if ($retrieveOutput -match "taken under submission|Disposition: 5|pending") {
+                Write-EnrollLog "WARN" "F2-B PENDING (Disposition=5): RequestId=$($Pending.request_id) hâlâ pending; CA Manager approval bekleniyor (next daily run retry)"
                 return $false
             }
 
