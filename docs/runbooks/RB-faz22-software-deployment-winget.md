@@ -1,7 +1,7 @@
 # RB — Faz 22.5 Software Deployment WinGet Pilot
 
 > **Status**: SOURCE-PARTIAL / execution blocked until BE-020 + BE-021 + AG-027
-> **Tracked by**: platform-k8s-gitops#1083, platform-k8s-gitops#1086
+> **Tracked by**: platform-k8s-gitops#1083, platform-k8s-gitops#1086, platform-k8s-gitops#1088
 
 Bu runbook, Endpoint-Enes agent hattında ücretsiz WinGet tabanlı yazılım
 yönetimi için ilk pilot akışını tarif eder.
@@ -38,10 +38,13 @@ Approved catalog item
 | Agent | `AG-031` Defender/Firewall/BitLocker posture |
 | Agent | `AG-032` local admin group inventory |
 | Agent | `AG-033` disk/RAM/uptime health snapshot |
+| Agent | `AG-035` hardware/device inventory |
+| Backend | `BE-022` device inventory ingest/query path |
 | Backend | `BE-020` approved software catalog |
 | Agent | `AG-027` approved install command |
 | Backend | `BE-021` result/detection/audit |
 | Web | `WEB-011` inventory view (opsiyonel ilk pilotta) |
+| Web | `WEB-013` hardware/device inventory view (opsiyonel ilk pilotta) |
 | Web | `WEB-012` install UI (opsiyonel ilk pilotta) |
 
 ## 3. Güvenlik Kuralları
@@ -91,6 +94,7 @@ endpoint-agent.exe diagnose software
 endpoint-agent.exe diagnose winget
 endpoint-agent.exe diagnose posture
 endpoint-agent.exe diagnose health
+endpoint-agent.exe diagnose hardware
 endpoint-agent.exe diagnose local-admins
 ```
 
@@ -109,6 +113,12 @@ Beklenen kanıtlar:
   full token dump yoktur.
 - Disk/RAM/uptime özeti döner; process/user dump veya gereksiz yüksek
   kardinaliteli performans verisi yoktur.
+- Hardware/device inventory CPU, RAM, disk, manufacturer/model, BIOS version,
+  TPM status, network adapter summary ve OS/build bilgilerini read-only döner.
+- Serial number, MAC/IP gibi alanlar policy-gated olur; varsayılan çıktı hash,
+  masked veya summary seviyesinde kalır.
+- Product key, BitLocker recovery key, TPM key material, token veya credential
+  hiçbir koşulda toplanmaz.
 
 Inventory command preflight:
 
@@ -160,6 +170,7 @@ Install pilotu ancak aşağıdaki durum birlikte kanıtlanırsa koşulur:
 | Functional | `INSTALL_APPROVED_SOFTWARE` 7-Zip için `SUCCEEDED` döner |
 | Detection | Registry / WinGet query 7-Zip kurulumunu doğrular |
 | Posture | Pending reboot, security posture, local admins ve device health read-only döner |
+| Hardware | CPU/RAM/disk/model/BIOS/TPM/network summary read-only döner; serial/MAC/IP policy-gated |
 | Secured | Yetkisiz kullanıcı 403; no-token 401; katalog dışı id reject |
 | Audit | Created, delivered, started, completed/result event'leri görünür |
 

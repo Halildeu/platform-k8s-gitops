@@ -1,7 +1,7 @@
 # Faz 22.5 — Software Deployment Quick Wins
 
 > **Status**: SOURCE-PARTIAL / install blocked until catalog + contract + audit gates
-> **Tracked by**: platform-k8s-gitops#1083, platform-k8s-gitops#1086
+> **Tracked by**: platform-k8s-gitops#1083, platform-k8s-gitops#1086, platform-k8s-gitops#1088
 > **Scope date**: 2026-05-27
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
@@ -21,9 +21,10 @@ gelmeden açılmayacak.
 | Installed software inventory | `platform-agent` | `0eff2db` / PR #20 ile `internal/software` var; HKLM + HKLM `WOW6432Node` uninstall registry okunuyor, HKCU default dışı | SOURCE-PARTIAL |
 | WinGet readiness | `platform-agent` | `internal/winget` yalnız `winget --version` probe eder; install/search/source/upgrade yok | SOURCE-PARTIAL |
 | Inventory command | `platform-agent` | `COLLECT_INVENTORY` payload `includeSoftware` okuyabiliyor; full app list yalnız `includeSoftware=true` ile dönmeli | SOURCE-PARTIAL |
+| Hardware/device inventory | `platform-agent` + `platform-backend` + `platform-web` | CPU/RAM/disk/BIOS/model/TPM/network gibi donanım envanteri ayrı read-only scope olarak eklendi; source yok | MISSING |
 | Approved catalog | `platform-backend` | catalog entity/API/migration yok | MISSING |
 | Install command contract | `platform-backend` + `platform-agent` | `INSTALL_APPROVED_SOFTWARE` / `INSTALL_SOFTWARE` command type ve executor yok | MISSING |
-| Software UI | `platform-web` | `InventoryTab` software/apps/winget readiness parse etmiyor | MISSING |
+| Software / device UI | `platform-web` | `InventoryTab` software/apps/winget readiness ve hardware/device payload parse etmiyor | MISSING |
 | GitOps governance | `platform-k8s-gitops` | plan/runbook var; bu revizyon üç-AI mutabakatını işler | SOURCE-PARTIAL |
 
 ### 0.2 3-AI Mutabakatı
@@ -44,12 +45,14 @@ Hedef, agent üzerinden Windows cihazlarda kontrollü yazılım yönetimi sağla
 
 1. Kurulu program envanteri okunur.
 2. Cihazda WinGet hazır mı kontrol edilir.
-3. Backend'de onaylı yazılım kataloğu tutulur.
-4. Agent yalnız katalogda onaylı paketleri sessiz kurar.
-5. Kurulum sonucu detection + audit ile kanıtlanır.
-6. Pending reboot, Defender/Firewall/BitLocker, local admin ve temel cihaz sağlık
+3. Cihaz donanım/envanter bilgileri read-only toplanır: CPU, RAM, disk, model,
+   BIOS, TPM, ağ ve OS/build.
+4. Backend'de onaylı yazılım kataloğu tutulur.
+5. Agent yalnız katalogda onaylı paketleri sessiz kurar.
+6. Kurulum sonucu detection + audit ile kanıtlanır.
+7. Pending reboot, Defender/Firewall/BitLocker, local admin ve temel cihaz sağlık
    sinyalleri aynı ekrandan okunur.
-7. Kaldırma, rollback ve agent self-update daha sonraki kapılarda açılır.
+8. Kaldırma, rollback ve agent self-update daha sonraki kapılarda açılır.
 
 ## 2. Varsayılan Yaklaşım
 
@@ -89,6 +92,9 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **AG-031** | `platform-agent` | Endpoint security posture inventory | TODO | Defender, Firewall ve BitLocker durumu read-only JSON döner; recovery key veya secret sızmaz |
 | **AG-032** | `platform-agent` | Local admin group inventory | TODO | Local Administrators üyeleri SID/name/type ile döner; domain SID/full token/credential sızmaz |
 | **AG-033** | `platform-agent` | Device health snapshot | TODO | Disk/RAM/uptime/boot time temel sağlık özeti döner; performans counter spam'i yok |
+| **AG-035** | `platform-agent` | Hardware / device inventory | TODO | CPU, RAM, disk, manufacturer/model, BIOS version, serial policy, TPM status, network adapter summary ve OS/build read-only döner; raw product key/recovery key/token yok |
+| **BE-022** | `platform-backend` | Device inventory ingest/query surface | TODO | Agent hardware/device payload'ı normalize edilir, sensitive alan policy uygulanır ve web'e okunabilir hale gelir |
+| **WEB-013** | `platform-web` | Hardware / device inventory view | TODO | Cihaz detayında hardware, OS, disk, TPM ve network özetleri ayrı read-only panelde görünür |
 | **AG-034** | `platform-agent` | SMB/file actions discovery guardrail | DEFERRED | Dosya aksiyonları sadece discovery/tehdit modeli; whitelist + RBAC + audit + dual-control olmadan runtime yok |
 
 ## 4. Milestone Sırası
@@ -138,9 +144,9 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 - Backend status enum drift'i giderilir: backend `PARTIAL` / `UNSUPPORTED`
   dönerse UI yanlış `TIMEOUT` / `CANCELLED` varsayımı yapmaz.
 
-### 22.5.2 Device Posture Quick Wins
+### 22.5.2 Device Posture + Hardware Quick Wins
 
-- `AG-030`, `AG-031`, `AG-032` ve `AG-033`.
+- `AG-030`, `AG-031`, `AG-032`, `AG-033`, `AG-035`, `BE-022` ve `WEB-013`.
 - Sadece read-only inventory sinyalleri toplanır.
 - Panelde program kurulumu için karar vermeyi kolaylaştırır:
   - restart bekliyor mu,
@@ -148,9 +154,26 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
   - Firewall profilleri açık mı,
   - BitLocker koruması açık mı,
   - local admin grubunda kimler var,
-  - disk/RAM/uptime sağlığı nedir.
+  - disk/RAM/uptime sağlığı nedir,
+  - cihaz modeli, CPU/RAM/disk kapasitesi, BIOS/TPM ve ağ özeti nedir.
 - BitLocker recovery key, credential, bearer token, password, product key ve
   tam kullanıcı profili path'i toplanmaz.
+
+Hardware/device inventory varsayılan alanları:
+
+| Grup | Alanlar | Privacy / güvenlik sınırı |
+|---|---|---|
+| OS | edition, version, build, architecture | lisans/product key yok |
+| Hardware | manufacturer, model, CPU model, logical core count, RAM total | yüksek kardinaliteli raw sensor/process dump yok |
+| Disk | volume count, total/free, drive type, boot volume flag | kullanıcı dosya path'i veya dosya listesi yok |
+| BIOS/Firmware | BIOS version/date, serial policy | serial raw gösterimi policy-gated; varsayılan hash veya masked |
+| TPM | present, enabled, ready, version | key material veya attestation secret yok |
+| Network | adapter count, primary adapter type, IP family, DNS suffix | MAC/IP raw gösterimi policy-gated; default summary/masked |
+| Agent | agent version, service status, capabilities | token, HMAC secret veya enrollment secret yok |
+
+Bu bilgiler `software inventory` değildir; genel `device inventory` başlığı
+altında ayrı tutulur. Yazılım envanteri kurulu programları; hardware inventory
+cihazın donanım ve platform kimliğini ifade eder.
 
 ### 22.5.3 Approved Catalog Control Plane
 
@@ -268,6 +291,7 @@ Read-only posture sinyalleri için ek kabul:
 | Security posture | Defender/Firewall/BitLocker status; secret/recovery key yok |
 | Local admins | Administrators grubu sanitized üyelik listesi |
 | Device health | Disk/RAM/uptime özet metrikleri; raw process/user dump yok |
+| Hardware/device | CPU/RAM/disk/model/BIOS/TPM/network summary; serial/MAC/IP policy-gated |
 
 ## 7. İlk Pilot Paketleri
 
@@ -284,9 +308,9 @@ sonra açılır.
 
 | Repo | Sahip olduğu iş |
 |---|---|
-| `platform-agent` | Registry inventory, WinGet adapter, install/uninstall executor, posture/health inventory, self-update |
-| `platform-backend` | Catalog API, command validation, result/detection/audit |
-| `platform-web` | Inventory view, approved install UI, command status |
+| `platform-agent` | Registry inventory, WinGet adapter, install/uninstall executor, posture/health/hardware inventory, self-update |
+| `platform-backend` | Catalog API, command validation, software/hardware inventory ingest/query, result/detection/audit |
+| `platform-web` | Software inventory view, hardware/device inventory view, approved install UI, command status |
 | `platform-k8s-gitops` | Plan, runbook, runtime governance, test/prod digest movement |
 
 ## 9. İlk Source PR Sırası
@@ -299,10 +323,12 @@ sonra açılır.
 6. `platform-backend`: `INSTALL_APPROVED_SOFTWARE` command contract + `BE-021` audit/detection state.
 7. `platform-agent`: `AG-027` 7-Zip install adapter.
 8. `platform-web`: `WEB-012` approved install UI.
-9. `platform-agent`: `AG-030` + `AG-031` + `AG-032` + `AG-033` posture/health quick wins.
-10. `platform-agent`: `AG-028` uninstall.
-11. `platform-agent`: `AG-029` signed update.
-12. `platform-agent`: `AG-034` SMB/file action discovery, runtime yok.
+9. `platform-agent`: `AG-030` + `AG-031` + `AG-032` + `AG-033` + `AG-035` posture/health/hardware quick wins.
+10. `platform-backend`: `BE-022` device inventory ingest/query.
+11. `platform-web`: `WEB-013` hardware/device inventory view.
+12. `platform-agent`: `AG-028` uninstall.
+13. `platform-agent`: `AG-029` signed update.
+14. `platform-agent`: `AG-034` SMB/file action discovery, runtime yok.
 
 ## 10. Açık Notlar
 
@@ -313,7 +339,7 @@ sonra açılır.
 - 22.3 domain-wide mass deployment bu planı tamamlayıcıdır: agent'ın dağıtım
   kanalıdır. 22.5 ise agent yüklendikten sonra yazılım yönetimi kabiliyetidir.
 - Domain pilot flow, Faz 22.2.B / 22.3 altında ilerler; 22.5 yalnız agent
-  kurulu cihazda software/posture yönetimi sağlar.
+  kurulu cihazda software/posture/hardware yönetimi sağlar.
 - Dual-control destructive command, BE-017 / D35-EA hattıdır; 22.5 install
   pilotu katalog + RBAC + audit ile başlar.
 - Policy-based deployment, 22.3 MSI/GPO mass deployment hattıdır; 22.5 ilk
