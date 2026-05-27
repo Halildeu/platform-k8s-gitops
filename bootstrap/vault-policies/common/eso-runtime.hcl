@@ -83,22 +83,31 @@ path "kv/data/platform/alertmanager-fallback" {
   capabilities = ["read"]
 }
 
-# --- V2.1 Ops-A — Perf alert receiver (A2 isolation path) ---
-# Codex `019e2772` post-impl peer review iter-3 P0 blocker absorb:
-# ESO `perf-alertmanager-secrets` ExternalSecret bu path'i okuyor;
+# --- V2.1 Ops-A — Perf alert receiver (A2 isolation path; ADR-0029 Hibrit D Teams primary) ---
+# ADR-0029 Hibrit D 2026-05-27 — Microsoft Teams Power Automate workflow primary
+# canlı path (kullanıcı kararı "Slack altyapısını bozma + Teams kullan"; Codex
+# `019e6b24` REVISE→AGREE strategic chain absorb). Slack pattern dormant
+# asset-preserved (multi-tenant başka tenants için reactivation chain).
+#
+# Original: Codex `019e2772` post-impl peer review iter-3 P0 blocker absorb:
+# ESO `perf-alertmanager-teams-secrets` ExternalSecret bu path'i okuyor;
 # policy genişletilmeden owner Vault write tek başına yeterli olmaz (403).
 #
 # Vault path: kv/platform/perf-alertmanager
-#   SLACK_WEBHOOK_URL — #perf-alerts Slack channel incoming webhook
+#   TEAMS_WEBHOOK_URL — Microsoft Teams Power Automate workflow webhook (active; ADR-0029 D1)
+#   SLACK_WEBHOOK_URL — multi-tenant başka tenants için dormant (ADR-0029 D2; RB-perf-alerts-slack-reactivation-chain.md)
 #
 # ESO ExternalSecret: kustomize/overlays/{test,prod}/eso/alertmanager/
-#   externalsecret-perf-alertmanager.yaml
+#   externalsecret-perf-alertmanager-teams.yaml (active Teams)
+#   externalsecret-perf-alertmanager.yaml.disabled.template (dormant Slack)
 # Mount: alertmanagerSpec.secrets[] → /etc/alertmanager/secrets/perf-
-#   alertmanager-secrets/SLACK_WEBHOOK_URL
+#   alertmanager-teams-secrets/TEAMS_WEBHOOK_URL
 #
-# D43 fallback ile AYRI Slack kanalı (#perf-alerts vs #alerts-d43-drill).
+# D43 fallback (ADR-0027 Hibrit C — SMTP-only primary + Teams dormant) ile AYRI
+# infrastructure (kv/platform/alertmanager-fallback vs kv/platform/perf-alertmanager).
 # Spike Codex `019e267a` A2 isolation tercih + V2.1 Ops-A impl prep PR
-# Codex `019e2772` post-impl P0 fix absorb.
+# Codex `019e2772` post-impl P0 fix absorb + ADR-0029 Hibrit D pivot Codex
+# `019e6b24` REVISE→AGREE chain (4-iter peer review).
 path "kv/data/platform/perf-alertmanager" {
   capabilities = ["read"]
 }

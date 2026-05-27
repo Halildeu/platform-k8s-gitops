@@ -5,5 +5,8 @@ kind: Kustomization
 
 resources:
   - externalsecret-alertmanager-fallback.yaml
-  # V2.1 Ops-A — Perf alert receiver (Codex 019e267a spike AGREE_AFTER_REVISIONS)
-  - externalsecret-perf-alertmanager.yaml
+  # V2.1 Ops-A — Perf alert receiver Teams (ADR-0029 Hibrit D 2026-05-27 — Microsoft
+  # Teams Power Automate workflow primary; Codex `019e6b24` REVISE→AGREE chain absorb)
+  - externalsecret-perf-alertmanager-teams.yaml
+  # NOT: externalsecret-perf-alertmanager.yaml.disabled.template SLACK DORMANT
+  # asset-preserved; kustomization'a dahil DEĞİL (ADR-0029 D2).
