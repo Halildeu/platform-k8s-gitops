@@ -87,6 +87,14 @@ Her satır: backlog ID + canonical RB pointer + dependency. Operator canonical R
   - ETA: ~1-2 hafta external lead time
   - Reference: risk-register R24; sprint-plan M4
 
+### Sprint D — KC Drift Diagnosis-First Chain (Codex `019e6abe` strategic verdict 2026-05-27)
+
+- [~] **3 KC drift (user-svc / auth-svc / perf-alertmanager)** — DIAGNOSIS-ONLY PASS 2026-05-27; fix PR'lar per-service authority gate ile ayrı (no batch mutation)
+  - [x] **Diagnosis evidence**: `docs/faz-23-evidence/2026-05-27-kc-drift-diagnosis-3-service.md` — live Vault/KC/K8s introspection drift matrix; user-service 🟢 (phantom), auth-service 🟡 (KC client absent in `serban`), perf-alertmanager 🟡 (stale Vault path; no consumer)
+  - [ ] **Fix-PR-1 (auth-service)**: Verify pod logs → KC OAuth call pattern; dead-config-remove OR create-missing-KC-client OR migrate-realm. Owner: ops + dev. Cross-AI peer review required.
+  - [ ] **Fix-PR-2 (perf-alertmanager)**: Verify path origin → hard-delete metadata OR asset-preserve-document. Owner: ops. Cross-AI peer review required.
+  - [x] **No-op (user-service)**: phantom drift kapatıldı (Vault `keycloak_client_secret` ↔ K8s `KEYCLOAK_CLIENT_SECRET` ↔ KC serban `user-service` client id `9ec438ac` aligned LIVE)
+
 ---
 
 ## §3 — Board Acceptance Decisions (User/Board Role)
