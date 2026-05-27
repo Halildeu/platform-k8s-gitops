@@ -1,13 +1,15 @@
 # RB — Faz 22.5 Software Deployment WinGet Pilot
 
-> **Status**: PLAN-ONLY / execution blocked until AG-025, AG-026, BE-020, AG-027, BE-021
-> **Tracked by**: platform-k8s-gitops#1083
+> **Status**: SOURCE-PARTIAL / execution blocked until BE-020 + BE-021 + AG-027
+> **Tracked by**: platform-k8s-gitops#1083, platform-k8s-gitops#1086
 
 Bu runbook, Endpoint-Enes agent hattında ücretsiz WinGet tabanlı yazılım
 yönetimi için ilk pilot akışını tarif eder.
 
-Bu dosya bugün çalıştırılacak operasyon komutu vermez. İlgili agent/backend
-capability'leri source repolarda gelene kadar sadece takip planıdır.
+Bu dosya bugün install operasyon komutu vermez. `AG-025`/`AG-026` read-only
+source foundation başlamış olsa da 7-Zip install pilotu `BE-020` approved
+catalog, `BE-021` result/detection/audit ve `AG-027` adapter gelmeden
+çalıştırılmaz.
 
 ## 1. Amaç
 
@@ -28,8 +30,10 @@ Approved catalog item
 
 | Gate | Gereken |
 |---|---|
-| Agent | `AG-025` installed software inventory |
-| Agent | `AG-026` WinGet readiness |
+| Agent | `AG-025` installed software inventory source-partial + field smoke |
+| Agent | `AG-026` WinGet readiness source-partial + field smoke |
+| Agent | `AG-025H` lightweight/full inventory ayrımı; heartbeat/auto-enroll full scan'e girmemeli |
+| Backend | `BE-020I` software inventory ingest/query path |
 | Agent | `AG-030` pending reboot detection |
 | Agent | `AG-031` Defender/Firewall/BitLocker posture |
 | Agent | `AG-032` local admin group inventory |
@@ -57,16 +61,24 @@ Approved catalog item
   "catalogItemId": "7zip",
   "displayName": "7-Zip",
   "provider": "winget",
+  "sourceType": "winget",
+  "sourceName": "winget-community",
+  "sourceTrust": "approved",
   "packageId": "7zip.7zip",
   "publisher": "Igor Pavlov",
-  "versionPolicy": "latest",
+  "approvedVersionRange": "latest",
+  "installerType": "winget",
+  "silentArgsPolicy": "provider-template-only",
+  "sha256": null,
+  "provenance": "winget-community-catalog-reviewed",
   "silent": true,
   "enabled": true,
-  "riskLevel": "low",
+  "riskTier": "low",
   "detectionRule": {
     "type": "registryDisplayName",
     "displayNameContains": "7-Zip"
-  }
+  },
+  "approvedBy": "endpoint-admin-manager"
 }
 ```
 
@@ -98,6 +110,21 @@ Beklenen kanıtlar:
 - Disk/RAM/uptime özeti döner; process/user dump veya gereksiz yüksek
   kardinaliteli performans verisi yoktur.
 
+Inventory command preflight:
+
+```json
+{
+  "type": "COLLECT_INVENTORY",
+  "payload": {
+    "includeSoftware": true
+  }
+}
+```
+
+Install gate için bu komutun backend result/query yüzeyinde software summary ve
+gerekiyorsa `apps[]` listesini kaybetmeden görünmesi gerekir. Bu yol
+kanıtlanmadan `INSTALL_APPROVED_SOFTWARE` açılmaz.
+
 ## 6. Install Command Shape
 
 Backend komutu raw provider parametresi taşımaz:
@@ -112,6 +139,19 @@ Backend komutu raw provider parametresi taşımaz:
 
 Agent kendi tarafında catalog metadata ile provider komutunu üretir.
 
+### 6.1 Install Açma Kapısı
+
+Install pilotu ancak aşağıdaki durum birlikte kanıtlanırsa koşulur:
+
+1. `AG-025`/`AG-026` read-only preflight PASS.
+2. Lightweight/heartbeat akışları full software scan'e girmiyor.
+3. `BE-020` catalog item enabled + approved.
+4. `BE-020I` inventory ingest/query path software payload'ı saklıyor.
+5. `BE-021` result/detection/audit state hazır.
+6. Yetkisiz kullanıcı 403, no-token 401, katalog dışı package id reject.
+7. Agent yalnız kendi template'inden WinGet komutu üretir; raw shell, raw URL,
+   raw installer args kabul edilmez.
+
 ## 7. D29 Pilot Acceptance
 
 | Katman | Kanıt |
@@ -122,6 +162,9 @@ Agent kendi tarafında catalog metadata ile provider komutunu üretir.
 | Posture | Pending reboot, security posture, local admins ve device health read-only döner |
 | Secured | Yetkisiz kullanıcı 403; no-token 401; katalog dışı id reject |
 | Audit | Created, delivered, started, completed/result event'leri görünür |
+
+Bu tablodaki `Functional` ve sonrası bugün claimed değildir. Read-only
+preflight kanıtı install acceptance yerine geçmez.
 
 ## 8. Rollback / Uninstall Gate
 

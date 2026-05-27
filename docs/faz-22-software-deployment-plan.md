@@ -1,16 +1,42 @@
 # Faz 22.5 — Software Deployment Quick Wins
 
-> **Status**: PLAN-ONLY / source work not started
-> **Tracked by**: platform-k8s-gitops#1083
+> **Status**: SOURCE-PARTIAL / install blocked until catalog + contract + audit gates
+> **Tracked by**: platform-k8s-gitops#1083, platform-k8s-gitops#1086
 > **Scope date**: 2026-05-27
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
 planı tanımlar.
 
-Bu plan bir runtime kabiliyeti iddia etmez. `AG-025` ve sonraki işler ilgili
-source repolarda ayrıca uygulanıp test edilmeden agent'ın yazılım kurabildiği
-söylenmez.
+Bu plan install/uninstall runtime kabiliyeti iddia etmez. 2026-05-27 üç-AI
+değerlendirmesi (Claude Code + Codex + MiniMax/Mavis) ortak hükmü **REVISE**:
+read-only agent temeli doğru yönde başlamış, fakat program kurma kabiliyeti
+`BE-020` catalog, command contract, detection/result/audit ve web yüzeyi
+gelmeden açılmayacak.
+
+### 0.1 Current Implementation Truth (2026-05-27)
+
+| Alan | Repo | Güncel truth | Hüküm |
+|---|---|---|---|
+| Installed software inventory | `platform-agent` | `0eff2db` / PR #20 ile `internal/software` var; HKLM + HKLM `WOW6432Node` uninstall registry okunuyor, HKCU default dışı | SOURCE-PARTIAL |
+| WinGet readiness | `platform-agent` | `internal/winget` yalnız `winget --version` probe eder; install/search/source/upgrade yok | SOURCE-PARTIAL |
+| Inventory command | `platform-agent` | `COLLECT_INVENTORY` payload `includeSoftware` okuyabiliyor; full app list yalnız `includeSoftware=true` ile dönmeli | SOURCE-PARTIAL |
+| Approved catalog | `platform-backend` | catalog entity/API/migration yok | MISSING |
+| Install command contract | `platform-backend` + `platform-agent` | `INSTALL_APPROVED_SOFTWARE` / `INSTALL_SOFTWARE` command type ve executor yok | MISSING |
+| Software UI | `platform-web` | `InventoryTab` software/apps/winget readiness parse etmiyor | MISSING |
+| GitOps governance | `platform-k8s-gitops` | plan/runbook var; bu revizyon üç-AI mutabakatını işler | SOURCE-PARTIAL |
+
+### 0.2 3-AI Mutabakatı
+
+| AI | Verdict | Absorb edilen karar |
+|---|---|---|
+| Claude Code | REVISE | Agent AG-025/AG-026 temeli doğru; backend catalog ve web yüzeyi install öncesi blokaj |
+| Codex | REVISE | Agent probe yükü ayrıştırılmalı; backend/web command-payload drift'i kapanmalı |
+| MiniMax/Mavis | REVISE | Backend approved catalog + install command + web software view olmadan install açılmamalı |
+
+Mutabakat sonucu: yön doğru, ama install PR sırası read-only foundation → web
+visibility → approved catalog → command contract → adapter → detection/audit
+şeklinde yürür. Katalog dışı paket, raw shell ve rastgele URL/EXE yolu yoktur.
 
 ## 1. Ürün Hedefi
 
@@ -48,10 +74,12 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 
 | ID | Repo | İş | Status | Kabul kriteri |
 |---|---|---|---|---|
-| **AG-025** | `platform-agent` | Installed software inventory | TODO | HKLM/HKCU uninstall registry kaynaklarından sanitized JSON döner; lisans key, product key, user path sızmaz |
-| **AG-026** | `platform-agent` | WinGet readiness check | TODO | `winget --version`, source list ve approved package query sonucu structured döner |
-| **BE-020** | `platform-backend` | Approved software catalog API | TODO | Package id, provider, version policy, publisher, detection rule ve risk metadata tutulur |
-| **AG-027** | `platform-agent` | Approved software install command | TODO | Yalnız backend catalog item id ile silent install çalışır; raw package id kabul edilmez |
+| **AG-025** | `platform-agent` | Installed software inventory | SOURCE-PARTIAL | HKLM + HKLM `WOW6432Node` uninstall registry kaynaklarından sanitized JSON döner; HKCU default dışı/opt-in later; lisans key, product key, full user path sızmaz |
+| **AG-026** | `platform-agent` | WinGet readiness check | SOURCE-PARTIAL | `winget --version` readiness structured döner; install/search/source/upgrade komutu çalıştırılmaz |
+| **AG-025H** | `platform-agent` | Software probe decoupling / lightweight inventory guard | TODO | Heartbeat/auto-enroll gibi hafif akışlar full software/WinGet probe yüküne girmeden çalışır; `includeSoftware=true` full app list'i bilinçli açar |
+| **BE-020** | `platform-backend` | Approved software catalog API | TODO | Package id, provider/source, provenance/hash, version policy, publisher, detection rule, risk metadata ve approval actor tutulur |
+| **BE-020I** | `platform-backend` | Software inventory ingest/query surface | TODO | Agent `COLLECT_INVENTORY` software payload'ı backend result/query yüzeyinde kaybolmadan saklanır ve web'e okunabilir hale gelir |
+| **AG-027** | `platform-agent` | Approved software install command | BLOCKED | Yalnız backend catalog item id ile silent install çalışır; raw package id kabul edilmez; `BE-020` + preflight PASS olmadan açılmaz |
 | **BE-021** | `platform-backend` | Install result / detection / audit | TODO | Install request, result, detection state, actor ve device audit zincirine düşer |
 | **WEB-011** | `platform-web` | Software inventory view | TODO | Cihaz detayında kurulu program listesi filtrelenebilir görünür |
 | **WEB-012** | `platform-web` | Approved install UI | TODO | Yetkili kullanıcı katalogdan kurulum isteği oluşturabilir; durum/audit görünür |
@@ -75,11 +103,40 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 
 - `AG-025` ve `AG-026`.
 - Sadece okuma yapılır.
+- `platform-agent` source-side foundation PR #20 (`0eff2db`) ile başlamıştır;
+  field acceptance ve backend/web görünürlük hâlâ ayrı kapıdır.
 - `COLLECT_INVENTORY` payload'ına geniş özet eklenebilir:
   - `installedSoftwareCount`
   - `wingetInstalled`
   - `wingetVersion`
   - `wingetSourceAvailable`
+- Full app list yalnız `includeSoftware=true` ile döner.
+- Default registry scope HKLM + HKLM `WOW6432Node`; HKCU, LocalSystem altında
+  gerçek kullanıcıyı temsil etmediği için ilk fazda default dışıdır.
+
+### 22.5.1A Agent Probe Decoupling / Lightweight Guard
+
+- `AG-025H`.
+- Heartbeat, auto-enroll ve lightweight inventory yolları full software scan
+  veya WinGet probe maliyetine yanlışlıkla girmez.
+- Kabul:
+  - `includeSoftware=false` veya lightweight mode full `apps[]` listesi üretmez,
+  - `includeSoftware=true` full list'i explicit üretir,
+  - WinGet readiness timeout/redaction testleri korunur,
+  - no shell / no PowerShell / no `winget install` sınırı testle kilitlenir.
+
+### 22.5.1B Web Read-only Visibility
+
+- `WEB-011`.
+- Mevcut agent payload'unu görünür yapar:
+  - app count,
+  - WinGet readiness,
+  - WinGet version,
+  - full app list varsa filtrelenebilir tablo.
+- Backend result shape'i `details.inventory.software` gibi nested olabilir;
+  web normalize layer bu şekli açıkça destekler.
+- Backend status enum drift'i giderilir: backend `PARTIAL` / `UNSUPPORTED`
+  dönerse UI yanlış `TIMEOUT` / `CANCELLED` varsayımı yapmaz.
 
 ### 22.5.2 Device Posture Quick Wins
 
@@ -101,19 +158,36 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 - İlk katalog satırı: `7zip.7zip`.
 - Katalog alanları:
   - `catalogItemId`
-  - `provider`
+  - `provider` / `sourceType`
+  - `sourceName`
+  - `sourceTrust`
   - `packageId`
   - `displayName`
   - `publisher`
-  - `versionPolicy`
-  - `silentArgs`
+  - `approvedVersion` veya `approvedVersionRange`
+  - `installerType`
+  - `silentArgsPolicy`
+  - `sha256` / `provenance`
   - `detectionRule`
-  - `riskLevel`
+  - `riskTier`
   - `enabled`
+  - `createdBy`
+  - `approvedBy`
+  - `createdAt`
+  - `approvedAt`
+
+Katalog, WinGet Community kaynağı dahil her provider için supply-chain karar
+yeridir. Agent hiçbir zaman kullanıcıdan gelen raw package id, raw URL veya raw
+installer argument'i execute etmez.
 
 ### 22.5.4 First Install Pilot
 
 - `AG-027` + `BE-021`.
+- Install adapter şu kapılar olmadan başlamaz:
+  - read-only preflight PASS (`AG-025`/`AG-026`),
+  - backend inventory ingest/query path (`BE-020I`),
+  - approved catalog (`BE-020`),
+  - command contract ve audit (`BE-021`).
 - İlk canlı paket: 7-Zip.
 - Komut shape raw shell içermez:
 
@@ -217,16 +291,18 @@ sonra açılır.
 
 ## 9. İlk Source PR Sırası
 
-1. `platform-agent`: `AG-025` + `AG-026`.
-2. `platform-agent`: `AG-030` + `AG-031` + `AG-032` + `AG-033`.
-3. `platform-backend`: `BE-020` catalog skeleton.
-4. `platform-agent`: `AG-027` 7-Zip install adapter.
-5. `platform-backend`: `BE-021` result/detection/audit.
-6. `platform-web`: `WEB-011` inventory/posture view.
-7. `platform-web`: `WEB-012` approved install UI.
-8. `platform-agent`: `AG-028` uninstall.
-9. `platform-agent`: `AG-029` signed update.
-10. `platform-agent`: `AG-034` SMB/file action discovery, runtime yok.
+1. `platform-k8s-gitops`: üç-AI mutabakat patch'i bu plan/runbook/ADR/current-state yüzeylerine işlenir.
+2. `platform-agent`: `AG-025H` probe decoupling + explicit lightweight/full inventory tests.
+3. `platform-web`: `WEB-011` read-only software + WinGet readiness görünümü.
+4. `platform-backend`: `BE-020` approved catalog skeleton.
+5. `platform-backend`: `BE-020I` software inventory ingest/query surface.
+6. `platform-backend`: `INSTALL_APPROVED_SOFTWARE` command contract + `BE-021` audit/detection state.
+7. `platform-agent`: `AG-027` 7-Zip install adapter.
+8. `platform-web`: `WEB-012` approved install UI.
+9. `platform-agent`: `AG-030` + `AG-031` + `AG-032` + `AG-033` posture/health quick wins.
+10. `platform-agent`: `AG-028` uninstall.
+11. `platform-agent`: `AG-029` signed update.
+12. `platform-agent`: `AG-034` SMB/file action discovery, runtime yok.
 
 ## 10. Açık Notlar
 
