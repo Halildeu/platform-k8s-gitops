@@ -397,8 +397,9 @@ prod-ready / password-reset-ready İDDİA EDİLMEZ — 22.1 test runtime + sourc
 Faz 22 sub-track numbering reassignment:
 - **Eski "Faz 22.3 Restricted" tier** (advanced production pilot, code signing + EDR + audit + rollback + IT onay) artık **"Faz 22.4 Restricted"** olarak adlandırılır (semantik aynı, sadece numara değişti).
 - **Yeni "Faz 22.3 scope addition"** (aşağıda) domain-wide mass deployment kanalı için kullanılır (ADR-0029, MSI + AD CS + GPO Software Installation).
+- **Yeni "Faz 22.5 Software Deployment Quick Wins"** agent yüklendikten sonra ücretsiz WinGet + Approved Software Catalog ile yazılım inventory/install yüzeyini açar; 22.3 dağıtım kanalı yerine geçmez.
 - Tarihsel referanslarda hâlâ "22.3 Restricted" görülebilir; semantik olarak 22.4 Restricted ile eş.
-- Çakışma kuralı: §22.3 = scope addition (mass deployment); 22.4 = restricted tier (historical, ex-22.3).
+- Çakışma kuralı: §22.3 = scope addition (mass deployment); 22.4 = restricted tier (historical, ex-22.3); 22.5 = software deployment quick wins.
 
 ## 22.3 scope addition — Domain-wide mass deployment (2026-05-26)
 
@@ -437,6 +438,50 @@ Faz 22 sub-track numbering reassignment:
 - 5-PC pilot OU + 50-PC ramp OU + 800-PC production OU (separate scope, isolated rollback)
 
 22.3 source-side iş (agent --auto-enroll feature, MSI WiX, backend mTLS endpoint, AD CS preflight script) **agent-actionable**; AD CS deployment + GPO konfigürasyonu + corp firewall rule + EDR allowlist + pilot OU **operator/IT-bound** (HARD RULE — Pre-Production Full Authority: agent end-to-end koşar ama irreversible/operator-only adımlar IT execution).
+
+## 22.5 scope addition — Software Deployment Quick Wins (2026-05-27)
+
+> **User decision 2026-05-27**: Endpoint-Enes agent üzerinden ücretsiz ve sektör standardına yakın program yönetimi isteniyor. Varsayılan yol **Microsoft WinGet + Approved Software Catalog**. Intune/SCCM/PDQ gibi ürünler referans/entegrasyon adayıdır; ilk yol değildir.
+
+### Position
+
+22.5, agent dağıtım kanalı değildir. 22.2.A/22.2.B/22.3 ile agent cihaza geldikten sonra çalışan yazılım yönetimi kabiliyetidir.
+
+| Sub | Tanım | Status |
+|---|---|---|
+| **22.5.1** | `AG-025` installed software inventory + `AG-026` WinGet readiness | TODO |
+| **22.5.2** | `AG-030` pending reboot + `AG-031` Defender/Firewall/BitLocker + `AG-032` local admin group + `AG-033` disk/RAM/uptime health | TODO |
+| **22.5.3** | `BE-020` Approved Software Catalog API | TODO |
+| **22.5.4** | `AG-027` approved install command + `BE-021` result/detection/audit | TODO |
+| **22.5.5** | `WEB-011` inventory/posture view + `WEB-012` approved install UI | TODO |
+| **22.5.6** | `AG-028` uninstall/detection + `AG-029` signed self-update | TODO |
+| **22.5.X** | `AG-034` SMB/file actions discovery only; runtime deferred until whitelist + RBAC + audit + dual-control design | DEFERRED |
+
+### Guardrails
+
+- Raw shell yok.
+- Rastgele URL/EXE/MSI install yok.
+- Kullanıcıdan serbest package id alınmaz.
+- Agent yalnız backend Approved Software Catalog item id'si ile install adapter'ını çalıştırır.
+- İlk pilot paket 7-Zip (`7zip.7zip`) ile sınırlıdır.
+- Detection olmadan success kabul edilmez.
+- Install/uninstall audit zorunludur.
+- Geniş kapsamlı deployment ve uninstall dual-control + pilot kanıtı sonrası açılır.
+- Pending reboot, Defender/Firewall/BitLocker, local admin ve device health işleri read-only inventory olarak başlar.
+- BitLocker recovery key, credential, product key, bearer token veya tam kullanıcı profili path'i toplanmaz.
+- SMB/file actions bu scope'ta runtime değildir; yalnız discovery/guardrail çalışmasıdır.
+
+### Related gates
+
+- Domain pilot flow: 22.2.B / 22.3.
+- Dual-control destructive command: BE-017 / D35-EA.
+- Policy-based deployment: 22.3 MSI/GPO mass deployment.
+- EDR allowlist + code signing: 22.2 / 22.3 / 22.4.
+
+### Canonical docs
+
+- Plan: [`docs/faz-22-software-deployment-plan.md`](../faz-22-software-deployment-plan.md)
+- Runbook: [`docs/runbooks/RB-faz22-software-deployment-winget.md`](../runbooks/RB-faz22-software-deployment-winget.md)
 
 **Detection surface**: `Win32_ComputerSystem.PartOfDomain` + `Domain` + `Workgroup`; `dsregcmd /status` (`DomainJoined`, `AzureAdJoined`, `WorkplaceJoined`, tenant/device id); MDM/Intune enrollment state.
 
