@@ -1,4 +1,4 @@
-# Session Handoff — 2026-05-27 — Faz 22.3 source close + AG-025/AG-026 + BE-020 spawn + #1081 truth-sync + SRB browser smoke
+# Session Handoff — 2026-05-27 — Faz 22.3 ADR + AD CS preflight slice merged + AG-025/AG-026 + BE-020 spawn + #1081 truth-sync + SRB browser smoke
 
 > **Format**: D28 5-alan + 7-window progress refresh + sıradaki agent action list
 > **Önceki handoff**: `docs/session-handoff-2026-05-24-faz22-faz23-m7.md`
@@ -80,6 +80,8 @@ Pod `1/1 Running 2d17h`; image sha-1a1d0aac; Flyway baseline v4 enabled; OpenFGA
 
 | Item | Sahip | Bağımlılık | Status |
 |---|---|---|---|
+| Faz 22.3 backend mTLS `POST /endpoint-enrollments/auto` endpoint | agent (backend) | platform-backend canonical PR (Task #178 internal planning completed; gerçek source PR henüz açılmadı) | pending source PR |
+| Faz 22.3 agent `--auto-enroll` feature | agent | platform-agent canonical PR (Task #179 internal planning completed; gerçek source PR henüz açılmadı) | pending source PR |
 | Spawn chip BE-020 backend | user/agent | user chip click → fresh worktree session | aktif chip; bekliyor |
 | Spawn chip AG-025/026 agent | user/agent | user chip click → fresh worktree session | aktif chip; bekliyor |
 | Task #180 MSI WiX build + AD CS sign + local test | operator/agent | Windows build env + AD CS code signing cert | pending |
@@ -123,7 +125,7 @@ Pod `1/1 Running 2d17h`; image sha-1a1d0aac; Flyway baseline v4 enabled; OpenFGA
 | 22.1 Web runtime acceptance | ~98% | — |
 | **22.2.A non-domain primary** | **80%** ⬆️ (78→80) | **PR #1081 truth-sync (bu session)** |
 | 22.2.B `acik.local` optional | ~25% | — |
-| **22.3 mass deployment** | **source-side complete** ⬆️ | **PR #1078 ADR + PR #1080 scripts** |
+| **22.3 mass deployment** | **ADR + AD CS preflight slice merged** ⬆️ | **PR #1078 ADR + PR #1080 scripts** |
 
 ### Tier composite
 
@@ -149,7 +151,7 @@ Pod `1/1 Running 2d17h`; image sha-1a1d0aac; Flyway baseline v4 enabled; OpenFGA
 
 - T1.6 endpoint-admin-service LIVE (2d17h pod, sha-1a1d0aac, Flyway+OpenFGA)
 - T1.4 4-PR source-ready (D43 son)
-- 22.3 source-side complete (ADR + scripts + runbook)
+- 22.3 ADR + AD CS preflight slice merged (ADR + scripts + runbook)
 - 22.3 operator-bound (MSI/GPO/ramp pending #180/#181/#182)
 
 ### Composite metric
@@ -167,6 +169,28 @@ Pod `1/1 Running 2d17h`; image sha-1a1d0aac; Flyway baseline v4 enabled; OpenFGA
 | gitops #1044 24h soak + multi-device rollup | MED | operator | Field acceptance gate (HALILKOOLUB735 + SRB-AIDENETIMPC baseline; per-device gates open) |
 | Faz 22.3 operator-bound stack (#180/#181/#182) | MED | operator/IT | MSI WiX + GPO pilot + 50/800 ramp |
 | AG-025/026 + BE-020 spawn chip click | LOW | user | Kullanıcı chip'e tıklarsa yeni session başlar |
+
+## 6.1 Boundary / Non-claims (verbatim — handoff bütünü için)
+
+- **NOT prod-ready** / **NOT password-reset-ready** / **NOT domain-wide rollout-ready**
+- **NOT #1044 PASS** — multi-device + 24-72h soak + per-device pending gates open (HALILKOOLUB735 + SRB-AIDENETIMPC baseline gözlem; field acceptance gate ayrı kapı)
+- **NOT #1037 unblocked** — Gate 0 VPN BLOCKER 22.2.B operator-bound
+- **NOT acik.local pilot acceptance** — SRB-AIDENETIMPC workgroup PC, AD-joined değil
+- **NOT signed binary** — AG-024 Authenticode + timestamp pending
+- **NOT 24h soak** — formal soak observation/rollup ayrı kapı
+- **NOT Faz 22.3 source-side complete** — sadece ADR + AD CS preflight slice merged; backend mTLS endpoint + agent `--auto-enroll` source PR'ları pending
+- No runtime change in this PR (docs + evidence only); no manifest change; no cluster apply; no secret touch
+
+## 6.2 Cross-AI Peer Review trail (bu session)
+
+| Thread UUID | Scope | Verdict |
+|---|---|---|
+| `019e685b-924a-75b2-b60a-7d921c6269cb` | AG-025/AG-026 plan-time consult | REVISE (3 HIGH absorbed in spawn brief) |
+| `019e6887-00b6-7763-bd76-e2900767314b` | BE-020 plan-time consult (3 iter REVISE → PARTIAL → AGREE) | AGREE (absorbed in spawn brief) |
+| `019e6896-298c-7773-bb6e-1e876dfb744b` | PR #1081 post-impl review (2 iter REVISE → AGREE) | AGREE (3 finding absorbed in commit `ccacbe3`) |
+| `019e6914-eb20-7c30-9e08-7855bf68851c` | PR #1082 post-impl review (this handoff) | REVISE (6 finding absorbed in this commit) |
+
+Cross-AI provider-level: Implementer = Anthropic Claude (Opus 4.7); Reviewer = OpenAI Codex (xhigh reasoning effort); aynı sağlayıcı YASAK (HARD RULE 2026-05-05 + 2026-05-14).
 
 ## 7. HARD RULE compliance bu session
 

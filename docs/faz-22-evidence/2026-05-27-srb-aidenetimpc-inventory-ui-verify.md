@@ -91,19 +91,21 @@ Sekmeler: `Detay` (aktif) | `İşlemler` | `Denetim Geçmişi` | `Envanter`
 
 5 mesaj — hepsi `[DEBUG] [ag-grid-license] resolved key: found` (3rd-party UI lib license check; benign). Yeni `error|fail|401|403|500` mesajı YOK.
 
-**Network**: `read_network_requests` tab navigation öncesi tracker boş; sayfa yüklemesi browser cache hit ile geldiği için yeni HTTP request listede görünmedi. UI render olduğu için backend `/api/v1/endpoint-admin/devices/{id}/inventory/latest` 200 dönmüş demektir (envanter JSON DOM'da render).
+**Network**: `read_network_requests` tab navigation öncesi tracker boş; sayfa yüklemesi browser cache hit ile geldiği için yeni HTTP request listede görünmedi. **Fresh backend 200 kanıtı captured değil** — UI DOM'da inventory JSON render olduğu iz canıtı ama fresh HTTP status code bu smoke için ayrı kapı (network log live ya da `curl` API hit ile doğrulanmalı; bu evidence DOM render scope).
 
-## 4. PASS kanıtları
+## 4. PASS scope (browser render only)
 
 - ✅ Devices listesi `Toplam: 6` + SRB-AIDENETIMPC satırı render (Çevrim içi, v0.1.0-dev, son görülme 27.05.2026)
 - ✅ Detay modal: device ID + tenant ID + machine fingerprint render
 - ✅ Envanter sekmesi: inventory JSON payload tam render (claimId, osName=windows, hostname=SRB-AIDENETIMPC, agentVersion=0.1.0-dev, architecture=amd64, summary "Inventory collected")
 - ✅ Console temiz (ag-grid-license DEBUG dışında trafik yok)
-- ✅ UI render = backend `/api/v1/endpoint-admin/devices/...` 200 dönüyor
+- ⚠️ Browser render PASS; **fresh backend 200 ayrı kapı** (network tracker boş; cache hit pattern; HTTP status fresh kanıt için ayrı network log + `curl` smoke gerek)
 
-## 5. Boundary (non-claims)
+## 5. Boundary (non-claims — verbatim)
 
 - ❌ **NOT prod-ready** — bu evidence mevcut state render verify; deploy/lifecycle değişikliği yok
+- ❌ **NOT password-reset-ready** — destructive command real device YASAK
+- ❌ **NOT domain-wide rollout-ready** — bu evidence non-domain workgroup PC; domain mass deployment 22.3 ayrı kapı
 - ❌ **NOT #1044 PASS** — A1 multi-VM repeatability hâlâ pending (HALILKOOLUB735 + SRB-AIDENETIMPC = 2 device gözleniyor ama 24-72h soak + per-device pending gates listesi açık)
 - ❌ **NOT #1037 unblocked** — Gate 0 VPN BLOCKER 22.2.B operator-bound; bu evidence 22.2.A non-domain workgroup scope
 - ❌ **NOT acik.local pilot acceptance** — SRB-AIDENETIMPC workgroup PC, AD-joined değil
@@ -111,7 +113,8 @@ Sekmeler: `Detay` (aktif) | `İşlemler` | `Denetim Geçmişi` | `Envanter`
 - ❌ **NOT 24h soak** — sadece son 2 gün heartbeat aktif gözlemleniyor; formal soak observation/rollup ayrı kapı
 - ❌ **NOT field acceptance gate full PASS** — install evidence + UI render verify ≠ full acceptance (multi-device rollup + soak + signing + KVKK)
 
-## 6. Closure
+## 6. Current outcome / Next gate
 
-`TaskCreate #175` (internal Claude session task) — **completed**.
-22.2.A non-domain primary scope için **UI render + backend inventory pipeline E2E yaşıyor** sinyali captured; field acceptance gate'leri başka kapı.
+`TaskCreate #175` (internal Claude session task tracking) — status updated to evidence-recorded.
+
+22.2.A non-domain primary scope için **UI render + backend inventory pipeline yaşıyor sinyali** captured (DOM render kanıtı; fresh backend HTTP 200 ayrı kapı). Field acceptance gate'leri açık kalmaya devam ediyor (multi-device + 24-72h soak + signed binary + KVKK + per-device gates).
