@@ -59,7 +59,7 @@ grep -E 'unmet peer|deprecated subdependency' /tmp/upgrade-layer2.log
 
 **Beklenen**: 0 `unmet peer`. Deprecated subdeps bilgi amaçlı (toplu sweep ayrı sprint).
 
-> **Pattern**: 4+ `unmet peer` aynı paket ailesinde (örn. `@tiptap/core` 3.21 vs 3.23) → P2 issue (#697 pattern).
+> **Pattern**: 4+ `unmet peer` aynı paket ailesinde (örn. `@tiptap/core` 3.21 vs 3.23) → P2 issue (Halildeu/platform-web#697 pattern).
 
 ### Layer 4 — TypeScript strict (paket-paket)
 
@@ -67,16 +67,26 @@ grep -E 'unmet peer|deprecated subdependency' /tmp/upgrade-layer2.log
 pnpm -r typecheck 2>&1 | tee /tmp/upgrade-layer4.log
 ```
 
-**Beklenen**: 0 error veya tüm error'lar `pre-existing` umbrella'da kayıtlı (örn. #691).
+**Beklenen**: 0 error veya tüm error'lar `pre-existing` umbrella'da kayıtlı (örn. Halildeu/platform-web#691).
 
-> **Pre-existing vs upgrade-induced ayrımı**: 
+> **Pre-existing vs upgrade-induced ayrımı — güvenli baseline (Codex `019e7098` P1 absorb)**:
+>
+> `git stash` ile pre/post karşılaştırma **çalışmaz**: temiz worktree'de no-op olur; committed upgrade değişikliklerini geri almaz; aynı commit üzerinde iki typecheck koşulur ve hatalar yanlış olarak "pre-existing" sınıflandırılır. Güvenli pattern ayrı worktree ile detached baseline:
+>
 > ```bash
-> git stash
-> pnpm -r typecheck 2>&1 | tee /tmp/upgrade-pre.log
-> git stash pop
-> diff /tmp/upgrade-pre.log /tmp/upgrade-layer4.log
+> # Upgrade chain başlamadan önce SHA kaydedilmiş olmalı (örn. PR open SHA veya merge-base)
+> BASE_SHA=<first-upgrade-before-sha>
+> TMP_PRE=$(mktemp -d /tmp/platform-web-pre.XXXXXX)
+> git worktree add --detach "$TMP_PRE" "$BASE_SHA"
+> (cd "$TMP_PRE" && pnpm install --frozen-lockfile && pnpm -r typecheck 2>&1 | tee /tmp/upgrade-pre.log)
+> pnpm -r typecheck 2>&1 | tee /tmp/upgrade-layer4.log
+> diff -u /tmp/upgrade-pre.log /tmp/upgrade-layer4.log || true
+> git worktree remove "$TMP_PRE"
 > ```
+>
 > Aynı error'lar pre-existing; yeni error'lar upgrade-induced (PR scope'u içinde fix gerek).
+>
+> **`BASE_SHA` yoksa**: pre-existing kanıtlanamaz; umbrella'ya otomatik fold **YASAK**; manuel review gerek.
 
 ### Layer 5 — ESLint + Stylelint
 
@@ -91,7 +101,21 @@ pnpm run lint:style 2>&1 | tee /tmp/upgrade-layer5-style.log
 NODE_OPTIONS=--max-old-space-size=8192 pnpm run lint:semantic
 ```
 
-> **Required check kontrolü**: `gh api repos/<owner>/platform-web/branches/main/protection` HTTP 200 ve `lint:semantic` listede ise → P1 (merge blocker); HTTP 404 (branch not protected) veya listede yok ise → P2 audit visibility blocker (#698 pattern).
+> **Required check kontrolü (Codex `019e7098` P2 absorb — combined gate)**:
+>
+> Required check iki yerden gelebilir: classic branch protection **VEYA** repo/org ruleset. İkisini birlikte kontrol et:
+>
+> ```bash
+> PROTECTION=$(gh api repos/<owner>/platform-web/branches/main/protection 2>&1 | jq -r '.required_status_checks.checks[]?.context' 2>/dev/null)
+> RULESETS=$(gh api repos/<owner>/platform-web/rules/branches/main 2>&1 | jq -r '.[] | select(.type=="required_status_checks") | .parameters.required_status_checks[]?.context' 2>/dev/null)
+>
+> # Karar:
+> # - lint:semantic her iki listede de YOK → P2 audit visibility blocker (Halildeu/platform-web#698 pattern)
+> # - lint:semantic listede VAR → P1 (merge blocker; required check)
+> # - İkisi de okunamıyor (auth/404 kombinasyonu kafa karıştırıcı) → unknown → P-downgrade YASAK, manuel verify
+> ```
+>
+> Sadece `branches/main/protection` 404'üne bakmak yeterli değil — ruleset'ten gelen required check'i kaçırır.
 
 ### Layer 6 — Test suite (Vitest workspace)
 
@@ -117,10 +141,10 @@ pnpm -r build 2>&1 | tee /tmp/upgrade-layer7.log
 pnpm dlx osv-scanner@latest --recursive --lockfile=pnpm-lock.yaml 2>&1 | tee /tmp/upgrade-layer8.log
 ```
 
-**Beklenen**: 0 high, low/moderate tolerable. 
+**Beklenen**: 0 high, low/moderate tolerable.
 
 > **Severity sweep matrisi**:
-> - 1+ high → P1 sweep issue (#695 pattern), audit gate kırmızı sayılır
+> - 1+ high → P1 sweep issue (Halildeu/platform-web#695 pattern), audit gate kırmızı sayılır
 > - 5+ moderate → P2 sweep (ayrı sprint)
 > - low → bilgi amaçlı, action gerekmez
 
@@ -193,13 +217,13 @@ PARTIAL → küçük commit + tekrar review
 REVISE → iter
 ```
 
-### Authority hiyerarşisi (Codex 019e7098 notu)
+### Authority hiyerarşisi (Codex provenance: thread `019e7098`)
 
 > **AI çıktısı = evidence; local gate / CI / command output = authority.**
 
 Yani:
 - Codex AGREE alındı ama `pnpm test` fail ediyorsa → merge YASAK (CI doğrudur, AI bias)
-- Codex REVISE dedi ama lokal audit pass ediyorsa → fix gerek (REVISE noktasını lokal kanıtla absorb et)
+- Codex REVISE dedi ama lokal audit pass ediyorsa → **fix gerek demek değil**; REVISE gerekçesi evidence-backed absorb edilir, gerekirse "no-change rationale" (neden REVISE'ın geçersiz olduğu kanıtla) bırakılır ve PR body'de açıklanır
 
 ---
 
@@ -209,21 +233,27 @@ Her PR post-merge `~/.claude/scripts/ai-post-merge-cleanup.sh` çağrılır (HAR
 
 ```bash
 gh pr merge $PR --repo $REPO --squash --delete-branch && \
-  bash ~/.claude/scripts/ai-post-merge-cleanup.sh $PR
+  bash ~/.claude/scripts/ai-post-merge-cleanup.sh "$PR" "$BRANCH"
 ```
 
-### 5-layer hardening (script içinde)
+> Script'e branch adı 2. argüman olarak geçirmek tag namespace + branch delete adımlarının dış kaynaktan ayrıştırılmasını sağlar (Codex `019e7098` P3 absorb).
+
+### 5-layer hardening (script içinde — şu an mevcut davranış)
 
 1. **Per-worktree lock** (atomic `mkdir`) — aynı worktree race engelle
 2. **Working tree safety** — uncommitted check → abort (önemli: **unrelated user changes untouched**, başka session aktif olabilir)
 3. **Remote tag push HARD GATE** — push fail = no delete
 4. **Existing tag SHA collision check** — aynı SHA idempotent OK; farklı SHA abort (forensic corruption alarm)
 5. **Local-only branch delete only with merged PR proof** — `gh pr view --json mergedAt` doğrulaması
+6. **Dry-run env** — `AI_CLEANUP_DRY_RUN=1` ile tüm script preview moda geçer (mevcut)
+7. **Default protected branch list** — script `main`, `master`, `develop`, `trunk` adlarını delete etmez
 
-### Önerilen geliştirmeler
+### Script-side follow-up (önerilen, runbook scope dışı)
 
-- **`--dry-run` flag**: archive tag + branch delete preview (henüz değişiklik yapmadan plan göster)
-- **Protected branch guard**: `main`, `master`, `release/*` asla delete edilmez (script default'ta korur ama explicit assertion ekle)
+> Bu davranışlar runbook'ta beklenti olarak yazılır; gerçek implementasyon `~/.claude/scripts/ai-post-merge-cleanup.sh` tarafında ayrı issue ile takip edilir:
+
+- **CLI `--dry-run` flag**: env var (`AI_CLEANUP_DRY_RUN=1`) mevcut; ek olarak `--dry-run` CLI flag introspection için daha keşfedilebilir (script-side issue)
+- **Explicit `release/*` protected guard**: şu an `release/*` pattern script default'unda yok — `main/master/develop/trunk` literal listesi açık; pattern bazlı guard eklemek script-side iş
 
 ### Audit log
 
@@ -246,7 +276,7 @@ Audit bulguları **upgrade sebep değilse** (pre-existing state'te aynı error m
 ### Karar adımları
 
 1. **Umbrella issue** mevcut mu (`gh issue list --search "in:title ..."`)
-2. **Yoksa**: umbrella aç (örn. #691 "Pre-existing TS strict errors umbrella")
+2. **Yoksa**: umbrella aç (örn. Halildeu/platform-web#691 "Pre-existing TS strict errors umbrella")
 3. **Varsa**: yeni leaf issue + umbrella body/comment scope update
 4. **Leaf issue body**'sinde `Tracked by #<umbrella>` veya `Parent: #<umbrella>`
 5. **Acceptance kriteri**: umbrella ancak **tüm leaf'ler** kapanınca kapanır
@@ -256,13 +286,13 @@ Audit bulguları **upgrade sebep değilse** (pre-existing state'te aynı error m
 
 | Bulgu | P | Parent | Leaf issue |
 |---|---|---|---|
-| @types/react drift (mixed 18/19) | P1 | #687 epic (React 19 migration) | #694 |
-| osv high vuln (5x — @lhci/cli zinciri) | P1 | — (stand-alone sweep) | #695 |
-| x-charts removed API (anomalySummary, BarChart, inert) | P2 | #691 umbrella (TS strict) | #696 |
-| tiptap peer drift (@tiptap/core 3.21 vs 3.23) | P2 | — | #697 |
-| ESLint OOM (required değil) | P2 | — | #698 |
+| @types/react drift (mixed 18/19) | P1 | Halildeu/platform-web#687 epic (React 19 migration) | Halildeu/platform-web#694 |
+| osv high vuln (5x — @lhci/cli zinciri) | P1 | — (stand-alone sweep) | Halildeu/platform-web#695 |
+| x-charts removed API (anomalySummary, BarChart, inert) | P2 | Halildeu/platform-web#691 umbrella (TS strict) | Halildeu/platform-web#696 |
+| tiptap peer drift (@tiptap/core 3.21 vs 3.23) | P2 | — | Halildeu/platform-web#697 |
+| ESLint OOM (required değil) | P2 | — | Halildeu/platform-web#698 |
 
-> Codex absorb: "A3 için yeni bağımsız umbrella açma. #691 zaten umbrella; doğru hareket #691 body/comment güncellemesi + gerekiyorsa `x-charts removed API cleanup` leaf issue açmak."
+> Codex absorb: "A3 için yeni bağımsız umbrella açma. Halildeu/platform-web#691 zaten umbrella; doğru hareket Halildeu/platform-web#691 body/comment güncellemesi + gerekiyorsa `x-charts removed API cleanup` leaf issue açmak."
 
 ---
 
@@ -318,5 +348,5 @@ git checkout -b recovery/x archive/2026/05/<branch>-pr<N>
 - Audit log: `~/.claude/logs/git-cleanup.log`
 - Sample plan-time istişare thread: Codex `019e7098` (PARTIAL absorb)
 - Sample audit task id: `bjiebsl2x` (örnek evidence shape)
-- Umbrella örnekleri: platform-web #687 (React 19 epic), #691 (TS strict umbrella)
-- Leaf örnekleri: platform-web #694, #695, #696, #697, #698 (Codex `019e7098` absorb sonucu)
+- Umbrella örnekleri: platform-web Halildeu/platform-web#687 (React 19 epic), Halildeu/platform-web#691 (TS strict umbrella)
+- Leaf örnekleri: platform-web Halildeu/platform-web#694, Halildeu/platform-web#695, Halildeu/platform-web#696, Halildeu/platform-web#697, Halildeu/platform-web#698 (Codex `019e7098` absorb sonucu)
