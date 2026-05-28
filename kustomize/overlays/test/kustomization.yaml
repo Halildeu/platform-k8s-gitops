@@ -3076,9 +3076,75 @@ images:
   # Scope discipline (AGENTS.md HARD RULE): test overlay only. Prod
   # overlay does NOT reference endpoint-admin-service. Prod activation
   # Faz 22.2+ (separate decision/PR).
+  #
+  # 2026-05-29 update: sha-ff3927b — platform-backend PR #322 (BE-022
+  # Faz 22.5 — endpoint hardware inventory ingest path). Carries the
+  # V13 migration + 3 entities + sanitizer + service + agent SUBMIT-
+  # result hook integration on top of the BE-021 V12 install-audit
+  # baseline (sha-79a5ae8 / sha256:48844f4c...):
+  #   - V13 migration: endpoint_hardware_inventory_snapshots (append-
+  #     only history with composite-FK device tenant integrity,
+  #     partial UNIQUE on source_command_result_id for idempotent
+  #     SUBMIT-result hook), endpoint_hardware_inventory_disks +
+  #     _network_interfaces (composite FK ON DELETE CASCADE),
+  #     ON DELETE SET NULL on source_command_result_id, DB CHECK
+  #     constraints (sha256 regex / jsonb_typeof / MAC regex /
+  #     non-negative ranges / schema_version >= 1)
+  #   - HardwareInventoryPayloadPolicy — STRIP keys (bios serial /
+  #     disk serial / user paths / SID / machine GUID) + REJECT keys
+  #     (token / password / JWT / bearer / secret) + value-level
+  #     secret reject (Bearer / compact JWT / password= / api_key=
+  #     patterns); MAC normalization to lowercase canonical;
+  #     collectedAt 90-day past / 1-hour future sanity bounds
+  #   - EndpointHardwareInventoryService — idempotent ingest via
+  #     findBySourceCommandResultId probe + saveAndFlush +
+  #     DataIntegrityViolationException race catch returning
+  #     existing snapshot; probeErrors bounded {code, summary<=256}
+  #     substitution in redacted_payload
+  #   - EndpointAgentCommandService hook — sanitize-before-validate
+  #     ordering: hardwareInventoryPayloadPolicy.sanitize() runs
+  #     BEFORE inventoryPayloadPolicy.validate(); the same
+  #     effectiveDetails is shared by command result persist +
+  #     software ingest + hardware ingest; raw request.details()
+  #     never reaches result_payload nor any snapshot
+  #   - HardwareInventorySnapshotPersistedEvent — bounded audit
+  #     metadata (tenant/device/snapshot/command IDs + schema /
+  #     supported / hash / counts / timestamp only; no MAC / IP /
+  #     domain / serial)
+  #
+  # CROSS-AI PEER REVIEW
+  #
+  # Implementer AI: Claude (Anthropic)
+  # Reviewer AI:    Codex (OpenAI) — provider-level cross-AI review
+  # Codex thread:   019e7007-4423-73c1-81fe-9431319a8985
+  # Plan-time iter: REVISE → PARTIAL → PARTIAL → AGREE / ready_for_impl
+  # Post-impl iter: REVISE → PARTIAL → PARTIAL → PARTIAL →
+  #                 AGREE iter-5 / ready_for_merge_now: true /
+  #                 source_quality_score 9.2/10
+  #
+  # 61 new tests for BE-022 (49 H2+Mockito layers PASS local + 12 PG
+  # Testcontainers on CI). Maven full reactor PASS post-merge.
+  #
+  # Build evidence:
+  #   gh run view 26602747900 -R Halildeu/platform-backend (success)
+  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-ff3927b
+  #   digest sha256:693416244fb34b820cd410e7e4b2fcdddd0a04e4efe5ed5a46a358bff44884da
+  #
+  # ROLLOUT ACCEPTANCE (HARD RULE — Tarayıcıdan sonuç doğrulanmadan
+  # iş bitmedi + Deploy Sonrası Tarayıcı Console Verifikasyonu):
+  #   - pod imageID == this digest, Ready 1/1, restartCount 0, health UP
+  #   - endpoint_admin_flyway_history version=13 success=true
+  #   - 3 new tables present (snapshots/disks/network_interfaces) with
+  #     composite FKs + named CHECK constraints + latest-query index
+  #   - Hibernate ddl-auto=validate boots clean (V13 ↔ entities match)
+  #   - 7-Zip end-to-end lifecycle smoke per RB-faz22-software-
+  #     deployment-winget.md §4..§7 (catalog kayit -> COLLECT_INVENTORY
+  #     trigger -> snapshot persist -> re-preflight PASS -> POST install
+  #     -> agent WinGet execute -> result submit -> audit row -> web
+  #     görünüm)
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:48844f4cd9d8dcfb70ecdfb6bff78638501afe58db882fcb2a88faf47ad4eccb
+    digest: sha256:693416244fb34b820cd410e7e4b2fcdddd0a04e4efe5ed5a46a358bff44884da
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
