@@ -2785,12 +2785,51 @@ images:
   #   - Permanent source fix tracked in spawn_task chip (refactor
   #     EndpointComplianceService constructor to drop @Lazy Clock)
   #
+  # 2026-05-28 update: sha-4aa29dd — platform-backend PR #315 (BE-023
+  # permanent source fix). Replaces @Lazy Clock constructor injection
+  # with ObjectProvider<Clock> in EndpointComplianceService's
+  # constructor:
+  #
+  #   EndpointComplianceService(
+  #       ...,
+  #       ObjectProvider<Clock> clockProvider) {
+  #     ...
+  #     this.clock = clockProvider.getIfAvailable(Clock::systemUTC);
+  #   }
+  #
+  # Spring no longer needs to CGLIB-enhance java.time.Clock to build a
+  # lazy proxy, so the JPMS --add-opens flags in
+  # endpoint-admin-service/Dockerfile become belt-and-suspenders. The
+  # Dockerfile revert (removing the --add-opens lines) is a separate
+  # follow-up PR with its own image-only diff; this gitops bump
+  # deploys the source-fix image so the 24h soak window can begin —
+  # the soak proves the source-fix image regressions-clean while the
+  # JPMS flags remain in place. Runtime "source change alone resolves
+  # the crash" proof is captured later by the flagless revert image's
+  # pod log (Codex 019e6dd0 P2 acceptance). After both steps, the
+  # final image will carry neither @Lazy Clock nor --add-opens.
+  #
+  # Image build run (PR #315 main SHA, D30 immutable):
+  #   gh run view 26565403787 -R Halildeu/platform-backend   (success)
+  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-4aa29dd
+  #   digest sha256:0d85e0fc743c2461b4e2d0cd7c10f57c5ffc87801477e61a5c6e1379a1c9f661
+  #
+  # BE-023 permanent source fix (PR #315):
+  #   - Codex 019e6dd0 AGREE / ready_to_merge: true (CI green)
+  #   - Replaces @Lazy Clock injection with ObjectProvider<Clock> +
+  #     getIfAvailable(Clock::systemUTC) — eliminates the CGLIB JDK-class
+  #     enhancement path entirely.
+  #   - Acceptance for the still-pending Dockerfile revert PR is
+  #     flagless-boot evidence on testai (pod log proving the service
+  #     starts WITHOUT --add-opens flags + Hibernate clean + no
+  #     CGLIB-related stack trace) — explicit Codex 019e6dd0 P2.
+  #
   # Scope discipline (AGENTS.md HARD RULE): test overlay only. Prod
   # overlay does NOT reference endpoint-admin-service. Prod activation
   # Faz 22.2+ (separate decision/PR).
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:ea2b3181eb9d2dd4d1d61825b9c6267c2163732ddbaddfac2b76957b71b904c9
+    digest: sha256:0d85e0fc743c2461b4e2d0cd7c10f57c5ffc87801477e61a5c6e1379a1c9f661
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
