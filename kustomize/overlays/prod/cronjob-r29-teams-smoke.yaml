@@ -31,7 +31,13 @@
 # defense-in-depth (bridge dual delivery to GH Issue when Teams down). Bridge
 # synthetic_skipped_total metric prevents Issue spam.
 #
-# Schedule: "0 6 1 * *" UTC = 1st of month 06:00 UTC ~ 09:00 Istanbul.
+# Schedule (Codex `019e6e03` REVISE iter-2 absorb — timezone fix + cadence):
+# `0 9 * * 1` Europe/Istanbul = Monday 09:00 Istanbul weekly.
+# Weekly during R29 active surveillance (Power Automate trial expire ~2026-08-25
+# = 3 months ~12 fires); Codex preferred weekly > monthly because PA run-history
+# 28-day window risks aylık operator review delay = silent expire window.
+# Post-trial-permanent settle (e.g. service-account + permanent licence): can
+# downgrade to monthly via separate PR.
 # Single cluster (prod-only) — test cluster Teams path inactive (out of scope).
 ---
 apiVersion: v1
@@ -210,7 +216,10 @@ metadata:
     app.kubernetes.io/component: synthetic-smoke
     app.kubernetes.io/part-of: platform
 spec:
-  schedule: "0 6 1 * *"
+  # Weekly Monday 09:00 Istanbul during R29 active surveillance (Codex `019e6e03`
+  # REVISE iter-2 absorb — Power Automate run-history 28-day window vs aylık
+  # cadence delay risk).
+  schedule: "0 9 * * 1"
   timeZone: Europe/Istanbul
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 6

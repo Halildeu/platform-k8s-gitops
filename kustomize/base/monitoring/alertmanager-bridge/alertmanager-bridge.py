@@ -439,11 +439,23 @@ def process_alert(alert: dict[str, Any], group_labels: dict[str, str]) -> bool:
     - resolved + existing open issue → comment resolved + CLOSE issue
     - resolved + no open issue → no-op (already closed earlier)
 
-    BL-008-bridge — synthetic alert filter (Codex `019e6de3` AGREE B path):
-    - `is_synthetic=true` label → skip GH Issue creation (R29 monthly Teams
-      smoke ve benzeri diagnostic alarmlar). Synthetic alert perf-alerts-teams
-      route üzerinden Teams Adaptive Card receipt validation amaçlı; bridge
-      sibling route hit eder ama Issue spam'i önlemek için skip.
+    BL-008-bridge — synthetic alert filter (Codex `019e6de3` AGREE B path +
+    `019e6e03` REVISE iter-2 contract clarification):
+
+    **Bridge GH Issue suppression contract** (governance-explicit):
+    - Filter triggers ONLY on exact match `labels.is_synthetic == "true"`.
+    - Loose aliases ("synthetic", "test", "smoke") NOT honored — risks accidentally
+      swallowing a real alert that happens to mention "synthetic" in another label.
+    - All synthetic-firing CronJobs (R29 monthly Teams smoke + future diagnostic
+      injectors) MUST set this exact label or accept GH Issue spam.
+
+    Behavior:
+    - `is_synthetic=true` → skip GH Issue creation (no create/comment/close).
+    - Synthetic alert still routes through Alertmanager to Teams (perf-alerts-teams
+      receiver) for Adaptive Card receipt validation — bridge sibling route hit
+      via `continue:true` but suppressed here.
+    - `synthetic_skipped_total` metric increments (operator: zero-rate expected
+      outside scheduled synthetic windows; spike = unexpected injection).
     """
     labels = alert.get("labels", {})
     if labels.get("is_synthetic") == "true":
