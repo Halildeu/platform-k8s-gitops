@@ -144,22 +144,18 @@ alertmanager:
         # BL-008 RESTORED A-prime (Codex 019e6dc4 — auth_username_file field
         # doesn't exist upstream Alertmanager v0.27.0; fix = literal username).
         #
-        # SOURCE-OF-TRUTH ONLY — desired-state lands in values-prod.yaml on
-        # merge of #855 (PR-1 staged/gated). Prod cluster activation requires:
-        #   (a) Operator seeds Vault `kv/platform/alertmanager-fallback` with
-        #       real values (#alerts-d43-drill Slack webhook + prod SMTP relay
-        #       credentials);
-        #   (b) ESO sync → SecretSynced=True;
-        #   (c) `helm upgrade kube-prometheus-stack -n monitoring
+        # ACTIVATION STATE (truth-sync 2026-05-28 post-PR #1104 BL-008 RESTORE):
+        #   (a) ESO `alertmanager-fallback-secrets` Vault'da synced (SecretSynced=True);
+        #       SMTP_PASSWORD mount path active; Slack key historical (asset-preserved
+        #       başka tenants için — ADR-0027 Hibrit C);
+        #   (b) `helm upgrade kube-prometheus-stack -n monitoring
         #        -f helm-values/kube-prometheus-stack/values-prod.yaml`
-        #       (Alertmanager pod restart picks up the new config + Secret mount);
-        #   (d) Synthetic NotifyServiceDown smoke (scale orchestrator=0 in a
-        #       controlled window) → Slack receipt + SMTP receipt + GitHub
-        #       Issue + recovery.
-        # Until (a-c), Secret-driven legs (Slack via api_url_file, SMTP via
-        # auth_*_file) silently no-op when files are missing. continue=true
-        # ensures the operator-action gap is observable through the bridge
-        # P1 evidence path, not silent.
+        #       Alertmanager pod restart picks up new config + Secret mount;
+        #   (c) Synthetic NotifyServiceDown smoke (scale orchestrator=0 in a
+        #       controlled window) → **SMTP receipt notify-ops@acik.com**
+        #       + GitHub Issue bridge + recovery.
+        # 2-channel D43 defense-in-depth aktif (SMTP + bridge). `continue: true`
+        # bridge GitHub Issue path'i de garanti eder (defense-in-depth).
         # Runbook: docs/runbooks/RB-notification-outage-fallback.md §3.2 prod
         # sub-section + §6.5 activation procedure.
         - matchers:
@@ -269,31 +265,35 @@ alertmanager:
       # acceptance + RB-prod-alertmanager-activation.md §2.2.
       # D43 outage fallback direct receiver (Codex 019e4234 + 019e0dea iter-2
       # absorb #3 + 2026-05-24 user decision Slack DEFER absorb via Codex
-      # 019e5b9c REVISE plan + 2026-05-27 Codex 019e6bd1 BL-008 dormant absorb).
+      # 019e5b9c REVISE plan + 2026-05-27 Codex 019e6bd1 BL-008 dormant absorb +
+      # **2026-05-28 Codex 019e6dc4 BL-008 RESTORED A-prime root-cause fix**).
       #
-      # CURRENT STATE: receiver `direct-fallback` **name-only/no-op** (BL-008
-      # board #854 dormant). Effective D43 coverage = bridge GitHub Issue path
-      # only (1-channel via route continue:true → severity=critical sibling).
-      # ESO `alertmanager-fallback-secrets` Vault'da synced ve
-      # alertmanagerSpec.secrets[] içinde mount-listed kalır; current rendered
-      # config bu file path'leri tüketmiyor (email_configs comment-out).
-      # Restore: BL-008 follow-up PR with Vault preprocess + native
-      # auth_username/auth_password pattern.
+      # CURRENT STATE: receiver `direct-fallback` **SMTP-active via Office 365
+      # relay** (BL-008 RESTORED A-prime — Codex 019e6dc4 plan-time AGREE).
+      # Effective D43 coverage: **2-channel defense-in-depth (SMTP + bridge
+      # GitHub Issue)** via route `continue: true` → severity=critical sibling.
+      # ESO `alertmanager-fallback-secrets` Vault'da synced + mount-listed +
+      # SMTP_PASSWORD file path generated config'te kullanılır.
       #
-      # HISTORICAL CHANNELS (commented out below):
-      #   * SMTP `notify-ops@acik.com` — placeholder; operator confirms prod
-      #     ops mail group. Smarthost `smtp.office365.com:587` mirrors
-      #     notification-orchestrator's Office 365 SMTP relay default.
-      #   * Slack — removed 2026-05-24 user decision ("slack kullanmıyoruz");
-      #     future reactivation = operator Slack workspace + Vault seed + PR
-      #     atomic with drill rerun.
+      # A-PRIME PATTERN (Codex 019e6dc4 root-cause fix):
+      #   - `auth_username`: literal string (Alertmanager v0.27.0 schema —
+      #     `auth_username_file` field upstream'de YOK)
+      #   - `auth_password_file`: ESO mount path (no plain secret in generated
+      #     config; only path reference)
+      # Username sensitive değil (service mailbox identifier, same as `from`).
       #
-      # CREDENTIALS (when restored via BL-008): ESO mount `/etc/alertmanager/
-      # secrets/alertmanager-fallback-secrets/SMTP_USER` + `SMTP_PASSWORD`.
-      # Current: file paths intentionally inactive (Operator v0.90.1 auth_*_file
-      # schema gap pre-existing — board #854). BL-008 PR will introduce Vault
-      # preprocess + native `auth_username`/`auth_password` inline (env-var
-      # `$(VAR)` interpolation YASAK — Alertmanager config env expand etmiyor).
+      # HISTORICAL CHANNELS (slack_configs block silindi 2026-05-24 user
+      # decision):
+      #   * SMTP `notify-ops@acik.com` via `smtp.office365.com:587` — ACTIVE
+      #     (BL-008 RESTORED 2026-05-28)
+      #   * Slack — removed 2026-05-24 ("slack kullanmıyoruz"); future
+      #     reactivation = operator Slack workspace + Vault seed + PR atomic
+      #     with drill rerun (asset-preserved başka tenants için ADR-0027 D2).
+      #
+      # CREDENTIALS: ESO mount `/etc/alertmanager/secrets/
+      # alertmanager-fallback-secrets/SMTP_PASSWORD`. Username `auth_username`
+      # literal — Vault'tan değil, values'tan (service mailbox identifier same
+      # as `from`; not sensitive — log/audit'te zaten görünür).
       #
       # Templates: Alertmanager Go template — Sprig `default` is unsupported
       # in Alertmanager (Codex 019e0dea iter-3 P1 #3); use `{{ with X }}{{ . }}
