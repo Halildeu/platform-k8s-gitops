@@ -121,10 +121,11 @@ alertmanager:
         #
         # NotifyServiceDown / NotifyServiceAbsent fire when the orchestrator is
         # down/absent — these MUST bypass orchestrator-routed delivery and hit
-        # the direct-fallback receiver (currently **name-only/no-op** — BL-008
-        # board #854 dormant). `bypass_orchestrator=true` label is stable
-        # (PrometheusRule contract); matcher uses alertname for readability +
-        # label is the fingerprint anchor.
+        # the direct-fallback receiver (SMTP via Office 365 relay; BL-008
+        # RESTORED 2026-05-28 Codex 019e6dc4 A-prime pattern — auth_username
+        # literal + auth_password_file mount). `bypass_orchestrator=true`
+        # label is stable (PrometheusRule contract); matcher uses alertname
+        # for readability + label is the fingerprint anchor.
         #
         # `continue: true` is INTENTIONAL: Alertmanager route semantics say a
         # matched child route delivers to its receiver and (if continue=false)
@@ -133,15 +134,15 @@ alertmanager:
         # alarm-receiver-bridge` route below would be bypassed for D43 alerts;
         # the GitHub Issues P1 evidence trail would silently disappear during
         # the very outages this route is supposed to make MORE visible. With
-        # continue=true, D43 alert traverses direct-fallback (no-op until BL-008
-        # restore), then matches the `severity=critical` sibling and reaches
+        # continue=true, D43 alert traverses direct-fallback (SMTP receipt),
+        # then matches the `severity=critical` sibling and reaches
         # alarm-receiver-bridge GitHub Issue path. Current effective coverage:
-        # **bridge GitHub Issue only** (1-channel until BL-008 SMTP restore).
+        # **2-channel D43 defense-in-depth (SMTP + bridge GitHub Issue)**.
         # Bridge dedupes on alertname+namespace → only one Issue opened.
-        # Historical (pre-BL-008-dormant + pre-Hibrit-D): D43 delivered Slack +
-        # SMTP first, sibling delivered bridge → 3-channel defense-in-depth.
-        # Slack removed 2026-05-24 user decision; SMTP dormant 2026-05-27
-        # Codex 019e6bd1 AGREE (operator schema gap pre-existing BL-008).
+        # Historical: 2026-05-24 Slack removed (user decision); 2026-05-27
+        # BL-008 dormant (Codex 019e6bd1 misnamed-field root-cause); 2026-05-28
+        # BL-008 RESTORED A-prime (Codex 019e6dc4 — auth_username_file field
+        # doesn't exist upstream Alertmanager v0.27.0; fix = literal username).
         #
         # SOURCE-OF-TRUTH ONLY — desired-state lands in values-prod.yaml on
         # merge of #855 (PR-1 staged/gated). Prod cluster activation requires:
@@ -304,57 +305,51 @@ alertmanager:
       # Removed in PR Lane B (roadmap-faz23-d43-slack-defer-helm-cleanup).
       # Reference: docs/faz-23-evidence/2026-05-24-d43-slack-defer-smtp-only-acceptance.md
       - name: direct-fallback
-        # ─── BL-008 DORMANT (board #854 pre-existing; Codex 019e6bd1 AGREE) ───
-        # Prometheus Operator v0.90.1 schema `auth_*_file` field reddediyor:
-        # `provision alertmanager configuration: failed to initialize from
-        # secret: yaml: unmarshal errors: line 24: field auth_username_file
-        # not found in type config.plain`. D43 SMTP email_configs prod'da
-        # reconcile edilemiyor. Mevcut state'i explicit dormant olarak işaretle
-        # (anti-fake-work pattern: yıllardır broken state görünür kıl).
+        # ─── BL-008 RESTORED (Codex 019e6dc4 plan-time AGREE; A-prime pattern) ───
+        # Root cause of BL-008 historic failure: misnamed field.
+        # Alertmanager v0.27.0 email_config schema:
+        #   - `auth_username`: literal string (NO `auth_username_file` field exists)
+        #   - `auth_password_file`: mount path (preferred over inline)
+        # Previous `auth_username_file` was Operator v0.90.1 schema reject —
+        # not because of secret-handling pattern but because the field simply
+        # doesn't exist upstream. Fix: literal `auth_username` + keep
+        # `auth_password_file` mount.
         #
-        # Receiver `direct-fallback` name-only intentional empty.
-        # D43 alert pipeline: route `continue: true` ile alarm-receiver-bridge
-        # GitHub Issue path active kalır (defense-in-depth preserved).
+        # Secret residency: SMTP_USER literal in values (not sensitive — same
+        # value as `from` field; service mailbox identifier); SMTP_PASSWORD via
+        # ESO-mounted file path (no plain secret in generated Alertmanager
+        # config, only path).
         #
-        # BL-008 follow-up PR ile fix + restore:
-        #   - Native `auth_username`/`auth_password` + Vault preprocess pattern
-        #     (env-var $(VAR) interpolation YASAK — Alertmanager config env
-        #     expand etmiyor)
-        #   - Veya AlertmanagerConfig CRD `SecretKeySelector` spike
-        #   - Test acceptance: mock SMTP receipt + ReconciliationFailed temiz +
-        #     amtool config show direct-fallback email receiver + D43 synthetic
-        #     SMTP receipt + GitHub Issue bridge receipt
-        #
-        # V2.1 Teams pivot unblock: bu comment-out olmadan Operator config
-        # sync FAIL eder + Alertmanager pod yeni alertmanagerSpec.secrets[]
-        # mount almaz (perf-alerts-teams receiver inactive kalır). Bu PR
-        # explicit dormant ile V2.1 Exit #4 unblock.
-        #
-        # email_configs:
-        #   - to: notify-ops@acik.com
-        #     from: alertmanager-fallback@acik.com
-        #     smarthost: 'smtp.office365.com:587'
-        #     auth_username_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SMTP_USER
-        #     auth_password_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SMTP_PASSWORD
-        #     require_tls: true
-        #     send_resolved: true
-        #     headers:
-        #       subject: '[D43 PROD] {{ .CommonLabels.alertname }}'
-        #     html: |-
-        #       <h3>D43 Outage Fallback — Prod</h3>
-        #       <ul>
-        #       {{ range .Alerts }}
-        #       <li>
-        #         <strong>{{ .Labels.alertname }}</strong> ({{ .Labels.severity }})<br/>
-        #         Cluster: {{ with .Labels.cluster }}{{ . }}{{ else }}prod{{ end }}<br/>
-        #         Namespace: {{ with .Labels.namespace }}{{ . }}{{ else }}n/a{{ end }}<br/>
-        #         Outage Fallback: {{ with .Labels.outage_fallback }}{{ . }}{{ else }}false{{ end }}<br/>
-        #         Bypass Orchestrator: {{ with .Labels.bypass_orchestrator }}{{ . }}{{ else }}false{{ end }}<br/>
-        #         Description: {{ .Annotations.description }}<br/>
-        #         Runbook: {{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}
-        #       </li>
-        #       {{ end }}
-        #       </ul>
+        # D43 alert pipeline restored: 2-channel defense-in-depth
+        #   (1) direct-fallback receiver: SMTP via Office 365 relay
+        #   (2) alarm-receiver-bridge sibling via route continue:true: GitHub Issue
+        # R29 mitigation (4) "defense-in-depth Teams + SMTP fallback bridge +
+        # GitHub Issue" 3-channel kanıtı (perf alert ayrı route — Teams).
+        email_configs:
+          - to: notify-ops@acik.com
+            from: alertmanager-fallback@acik.com
+            smarthost: 'smtp.office365.com:587'
+            auth_username: alertmanager-fallback@acik.com
+            auth_password_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SMTP_PASSWORD
+            require_tls: true
+            send_resolved: true
+            headers:
+              subject: '[D43 PROD] {{ .CommonLabels.alertname }}'
+            html: |-
+              <h3>D43 Outage Fallback — Prod</h3>
+              <ul>
+              {{ range .Alerts }}
+              <li>
+                <strong>{{ .Labels.alertname }}</strong> ({{ .Labels.severity }})<br/>
+                Cluster: {{ with .Labels.cluster }}{{ . }}{{ else }}prod{{ end }}<br/>
+                Namespace: {{ with .Labels.namespace }}{{ . }}{{ else }}n/a{{ end }}<br/>
+                Outage Fallback: {{ with .Labels.outage_fallback }}{{ . }}{{ else }}false{{ end }}<br/>
+                Bypass Orchestrator: {{ with .Labels.bypass_orchestrator }}{{ . }}{{ else }}false{{ end }}<br/>
+                Description: {{ .Annotations.description }}<br/>
+                Runbook: {{ with .Annotations.runbook_url }}{{ . }}{{ else }}—{{ end }}
+              </li>
+              {{ end }}
+              </ul>
     inhibit_rules:
       # Critical inhibits warning of same alertname
       - source_matchers:
