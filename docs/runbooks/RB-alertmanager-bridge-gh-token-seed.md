@@ -258,7 +258,7 @@ only the property names + bridge script auth flow change.
 - [x] ExternalSecret manifest `externalsecret-alertmanager-bridge-gh-token.yaml` PR'da hazır
 - [x] kustomization.yaml entry eklendi
 - [x] Bridge `synthetic_skipped_total` metric + `is_synthetic=true` filter
-- [x] R29 monthly synthetic Teams smoke CronJob manifest hazır
+- [x] R29 weekly synthetic Teams smoke CronJob manifest hazır (Mon 09:00 Istanbul; Codex `019e6e03` REVISE iter-2 absorb)
 - [x] `kubectl kustomize` render OK (build sanity)
 - [x] Python AST parse OK
 - [x] PR open + Codex cross-AI peer review absorbed

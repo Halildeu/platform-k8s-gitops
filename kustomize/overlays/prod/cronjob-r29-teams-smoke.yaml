@@ -1,13 +1,16 @@
-# R29 Mitigation #3 — Monthly Synthetic Teams Smoke CronJob (PROD).
+# R29 Mitigation #3 — Weekly Synthetic Teams Smoke CronJob (PROD).
 #
 # Bağlam: R29 active risk (Teams Power Automate workflow lifecycle drift) 7-step
-# mitigation chain (R27 mirror). Mitigation #3 = "monthly synthetic Teams smoke
-# (cluster alert tetikle + Teams Adaptive Card render kanıt; cron veya scheduled
-# task)". V2.1 Exit #4 LIVE doc'unda 5 TODO arasında.
+# mitigation chain (R27 mirror). Mitigation #3 = "weekly synthetic Teams smoke
+# during active surveillance (cluster alert tetikle + Teams Adaptive Card render
+# kanıt; cron veya scheduled task)". V2.1 Exit #4 LIVE doc'unda 5 TODO arasında;
+# Codex `019e6e03` REVISE iter-2 absorb: weekly cadence (was monthly per V2.1
+# Exit #4 doc — Power Automate run-history 28-day window risks aylık operator
+# review delay = silent expire window).
 #
-# Why monthly cluster CronJob (vs GHA / browser MCP):
+# Why weekly cluster CronJob (vs GHA / browser MCP):
 # - In-cluster: Alertmanager v2 API local sub-second latency (no network egress)
-# - Schedule deterministic: monthly cron survives infra changes
+# - Schedule deterministic: weekly cron survives infra changes
 # - Failure mode observable: CronJob status fail → AlertmanagerBridgeDown analog
 # - Operator verify: Power Automate UI run history (R29 mitigation #6 weekly review)
 #
@@ -21,7 +24,7 @@
 #   label filter (BL-008-bridge composite scope same PR)
 #
 # Verification flow:
-# 1. CronJob runs monthly → POST returns HTTP 200
+# 1. CronJob runs weekly → POST returns HTTP 200
 # 2. Power Automate run-history UI: 1 new run within ~7s avg
 # 3. Teams #perf-alerts channel: Adaptive Card with synthetic tag
 # 4. Status ConfigMap patched with last-fire timestamp + result
@@ -52,7 +55,7 @@ metadata:
 data:
   smoke.sh: |
     #!/bin/sh
-    # R29 Mitigation #3 — Monthly synthetic Teams smoke.
+    # R29 Mitigation #3 — Weekly synthetic Teams smoke.
     # Cluster-internal POST to Alertmanager v2 API; resolves after 90s.
     set -eu
 
@@ -78,7 +81,7 @@ data:
           "service": "perf-alertmanager"
         },
         "annotations": {
-          "summary": "R29 monthly synthetic Teams smoke (mitigation #3 — V2.1 Exit #4)",
+          "summary": "R29 weekly synthetic Teams smoke (mitigation #3 — V2.1 Exit #4)",
           "description": "Cluster CronJob fired this synthetic alert to validate Microsoft Teams Power Automate workflow + Adaptive Card receipt + Vault TEAMS_WEBHOOK_URL ESO sync. Auto-resolves in 90s. Operator verify: Power Automate UI run-history + Teams #perf-alerts channel Adaptive Card receipt. If absent: R29 mitigation drift — check workflow expire / DLP / quota.",
           "runbook_url": "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/runbooks/V2.1-perf-alert-receiver.md"
         },
