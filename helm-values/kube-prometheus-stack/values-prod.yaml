@@ -273,9 +273,11 @@ alertmanager:
       # CURRENT STATE: receiver `direct-fallback` **name-only/no-op** (BL-008
       # board #854 dormant). Effective D43 coverage = bridge GitHub Issue path
       # only (1-channel via route continue:true → severity=critical sibling).
-      # ESO `alertmanager-fallback-secrets` Vault'da synced ama mount edilmiyor
-      # (email_configs comment-out). Restore: BL-008 follow-up PR with Vault
-      # preprocess + native auth_username/auth_password pattern.
+      # ESO `alertmanager-fallback-secrets` Vault'da synced ve
+      # alertmanagerSpec.secrets[] içinde mount-listed kalır; current rendered
+      # config bu file path'leri tüketmiyor (email_configs comment-out).
+      # Restore: BL-008 follow-up PR with Vault preprocess + native
+      # auth_username/auth_password pattern.
       #
       # HISTORICAL CHANNELS (commented out below):
       #   * SMTP `notify-ops@acik.com` — placeholder; operator confirms prod
