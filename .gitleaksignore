@@ -75,3 +75,4 @@ db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5
 # operator-action seed (§7.2 of evidence doc).
 77f307dab9a564e2d2382f54a9a99c50db678653:docs/faz-23-evidence/2026-05-24-bl010-kc-org-id-mapper.md:generic-api-key:332
 77f307dab9a564e2d2382f54a9a99c50db678653:docs/faz-23-evidence/2026-05-24-bl010-kc-org-id-mapper.md:generic-api-key:442
+6186943c2409692ea94b8f984d6f6de768f72702:endpoint-admin-service/src/test/java/com/example/endpointadmin/security/HardwareInventoryPayloadPolicyTest.java:generic-api-key:262
