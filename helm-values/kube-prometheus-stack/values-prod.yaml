@@ -86,7 +86,10 @@ alertmanager:
     # (sidecar/proxy) is built — separate future PR.
     secrets:
       - perf-alertmanager-teams-secrets
-      # D43 fallback secret (mevcut, audit only — alarm-receiver-bridge baseline path)
+      # D43 fallback SMTP secret — ACTIVE for `auth_password_file` mount
+      # (direct-fallback email_configs SMTP via Office 365 relay; BL-008
+      # RESTORED 2026-05-28 Codex 019e6dc4 A-prime). Bridge GitHub Issue
+      # path separately preserved via route continue:true (no Secret dep).
       - alertmanager-fallback-secrets
 
   ingress:
