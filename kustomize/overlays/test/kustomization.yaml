@@ -2686,7 +2686,96 @@ images:
     # The previous pin (sha256:8603693a5ccbedc6ac1f24927ae875ba2c5284fac76150767db736af04b4cef5)
     # carried the WEB-011 InventoryTab but did not yet include the
     # ComplianceTab — drawer rendered only Status/Inventory/Audit tabs.
-    digest: sha256:bb28f32e7c8961a9a917d7ecf083aa3b7422160a963e0c94bed246ead43bfda0
+    #
+    # 2026-05-28 update: sha-b6b1598 — platform-web PR #676 (WEB-014B
+    # Faz 22.5). Carries the cross-device compliance list page +
+    # per-device evaluation history accordion on top of WEB-014A's
+    # drawer Compliance tab. Single frontend PR — both BE-023 list
+    # endpoints (GET /endpoint-admin/compliance/devices + GET
+    # /endpoint-admin/endpoint-devices/{id}/compliance/evaluations) were
+    # already shipped with BE-023 PR #313.
+    #
+    # WHAT THIS IMAGE CARRIES (delta over sha-0c4f33a)
+    #
+    # - New route /endpoint-admin/compliance (EndpointCompliancePage):
+    #   * Cross-device compliance overview table (one row per device
+    #     with a recorded compliance state).
+    #   * Columns: hostname / decision / evaluatedAt / worstStaleness /
+    #     policyDrift.
+    #   * Server-side decision filter only — worstStaleness +
+    #     policyDrift are column-only (Codex 019e6db0 iter-1 P2:
+    #     filtering them client-side would break pagination totals).
+    #   * Server-side pagination (page=0, size=20) consuming the BE-023
+    #     custom envelope {items, page, size, totalElements, totalPages}.
+    #   * Row click opens DeviceDetailDrawer with initialTab="compliance"
+    #     so operator lands on the Compliance tab.
+    # - ComplianceTab history accordion (per-device evaluation log):
+    #   * Lazy <details> — query stays skipped until the operator
+    #     expands the accordion (no fetch on tab open).
+    #   * Render-synchronous device-change guard (Codex 019e6dd9 iter-3
+    #     P1 absorb): history state is keyed by deviceId so the next
+    #     render after a device swap has skip=true + details.open=false
+    #     immediately — no useEffect race.
+    # - RTK Query expansions:
+    #   * getComplianceDeviceList +
+    #     getDeviceComplianceEvaluations queries
+    #     (both return ComplianceEvaluationListResponse<
+    #     ComplianceStateResponse>; mirrors BE-023 actual response shape
+    #     after Codex 019e6dd9 RED contract-mismatch absorb).
+    #   * forceEvaluateDeviceCompliance now invalidates THREE tags
+    #     (latest, history-${deviceId}, LIST) so a successful
+    #     evaluation refreshes every surface that observes the state.
+    # - DeviceDetailDrawer accepts optional initialTab prop +
+    #   useEffect that re-applies it on every open / deviceId /
+    #   initialTab change so consecutive cross-device-list row clicks
+    #   keep the Compliance tab selected (Codex 019e6db0 iter-2 imp
+    #   guard #1).
+    # - i18n: TR + EN parity ~25 new keys (history accordion + list
+    #   page).
+    # - 29 vitest specs (17 ComplianceTab + 12 EndpointCompliancePage),
+    #   all PASS.
+    #
+    # CROSS-AI PEER REVIEW CHAIN (platform-web PR #676)
+    #
+    # - Plan-time: Codex 019e6db0 iter-1 PARTIAL -> absorb (corrected
+    #   backend-endpoint-exists premise, filter scope, history path,
+    #   invalidation triplet, drawer initialTab prop) -> iter-2 AGREE /
+    #   ready_for_impl: true
+    # - Post-impl: Codex 019e6dd9 iter-1 RED (2 P0 contract mismatch
+    #   on invented sibling DTOs + P1 uncontrolled <details>) ->
+    #   absorb (deleted invented DTOs, switched to
+    #   ComplianceStateResponse contract, controlled <details>) ->
+    #   iter-2 PARTIAL (P1 useEffect race) -> absorb (render-
+    #   synchronous device-keyed history state derive + rerender test)
+    #   -> iter-4 AGREE / ready_to_merge: true
+    #
+    # Build evidence:
+    #   gh run view 26566899942 -R Halildeu/platform-web   (success)
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-b6b1598
+    #   digest sha256:83c8e6c9e067f99c5b0252a3c3814ca724345e5624d0ae36a9e3bd73542e1651
+    #
+    # Verify after rollout (HARD RULE — Deploy Sonrası Tarayıcı Console
+    # Verifikasyonu):
+    #   1. Navigate to /endpoint-admin/compliance.
+    #   2. Expect the cross-device compliance table, OR 404 empty
+    #      state when no device has yet been evaluated.
+    #   3. Decision filter dropdown changes the visible rows + resets
+    #      page to 0.
+    #   4. Row click opens DeviceDetailDrawer with the Compliance tab
+    #      (NOT Detay) pre-selected.
+    #   5. Inside the Compliance tab, expand the "Değerlendirme
+    #      geçmişi" / "Evaluation history" accordion; expect the
+    #      lazy history list to load. Re-collapsing + expanding does
+    #      NOT refetch (RTK Query cache).
+    #   6. Switch to another device row while the drawer is open;
+    #      expect the accordion to collapse immediately (controlled
+    #      open + render-sync derive).
+    #   7. Network: GET /api/v1/endpoint-admin/compliance/devices and
+    #      GET .../endpoint-devices/{id}/compliance/evaluations both
+    #      return 200 (or 403 if the caller's JWT lacks the read
+    #      scope).
+    #   8. Console: no new errors vs the previous pin.
+    digest: sha256:83c8e6c9e067f99c5b0252a3c3814ca724345e5624d0ae36a9e3bd73542e1651
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
