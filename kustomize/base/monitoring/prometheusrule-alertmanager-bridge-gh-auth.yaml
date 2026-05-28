@@ -1,0 +1,171 @@
+# Alertmanager Bridge GitHub Auth PrometheusRule (BL-008-bridge follow-up — Codex `019e6fb5` AGREE Yol C-prime)
+#
+# Tetik: PR #1110 ESO migration MERGED 2026-05-28; ExternalSecret manifest LIVE
+# ama operator init (fine-grained PAT create + Vault stdin-pipe seed) eksik
+# kaldığı için Vault path `kv/platform/alertmanager-bridge-gh` mevcut değil.
+# Sonuç: ExternalSecret `Ready=False` (SecretSyncedError "Secret does not exist"),
+# K8s Secret yok, bridge pod env `GITHUB_TOKEN` unset (optional:true), bridge
+# `gh issue create` her firing alert için auth-fail. R9/R29 defense-in-depth
+# tertiary leg dead.
+#
+# Codex `019e6fb5` Yol C-prime — 3-layer verify gate Layer 3 (runtime surveillance).
+# Layer 1 (static CI manifest inventory) + Layer 2 (live preflight) `scripts/verify-vault-paths.sh`
+# tarafından kapsanır; bu PrometheusRule deploy-sonrası drift'i yakalar.
+#
+# Kritik tasarım kararı: bu üç alert'in routing'i `direct-fallback` SMTP receiver
+# (R9 mitigated path) üzerinden gitmeli — bridge'in kendisine bağımlı olmamalı.
+# Aksi halde "bridge bozuk ama bridge'den uyarı bekliyoruz" chicken-and-egg.
+# `team: ops` + `severity: critical` etiketleri zaten Alertmanager route tree'de
+# direct-fallback'e gidiyor (helm-values/kube-prometheus-stack/values.yaml).
+#
+# 3 alert:
+#   1. AlertmanagerBridgeGHTokenExternalSecretNotReady — ESO Ready != True 10m
+#   2. AlertmanagerBridgeGHSecretAbsent — bridge startup auth-drift sentinel 5m
+#   3. AlertmanagerBridgeGitHubDeliveryFailing — actual delivery fail counter 10m
+#
+# Discovery contract: release=kube-prometheus-stack (PR #620 pattern uyumlu;
+# prometheusrule-alertmanager-bridge-self-watch.yaml ile aynı).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: alertmanager-bridge-gh-auth
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager-bridge
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: platform
+    release: kube-prometheus-stack
+    team: ops
+spec:
+  groups:
+    - name: alertmanager-bridge-gh-auth
+      interval: 1m
+      rules:
+        # 1. ExternalSecret not Ready — ESO sync error sustained.
+        # Codex `019e6fb5` iter-2 must_fix #3 + iter-3 P1 absorb:
+        #   iter-2: original `absent(...) and on(namespace, name) (...
+        #   namespace_status_phase ...)` clause label-set mismatch (absent ⊇
+        #   name/namespace, namespace_phase ⊇ namespace/phase) → vector match
+        #   boş → ESO scrape kaybı sessizdi.
+        #   iter-3: pure `absent(... status="True")` `external-secrets`
+        #   condition metric semantiği bazı sürümlerde Ready=False'ı
+        #   `status="True"` etiketli seri value=0 olarak tutar (kube-state
+        #   tarzı condition gauge'lar gibi). Pure absent o senaryoda susabilir.
+        #   Robust form: value≠1 (Ready=True seri var ama 0) OR absent (seri
+        #   tamamen yok — scrape gap, ES silindi, Ready=False label-stripping
+        #   davranışı). `max by (namespace,name)` çift-scrape dedupe sağlar.
+        - alert: AlertmanagerBridgeGHTokenExternalSecretNotReady
+          expr: |
+            (
+              max by (namespace, name) (
+                externalsecret_status_condition{
+                  namespace="monitoring",
+                  name="alertmanager-bridge-gh-token",
+                  condition="Ready",
+                  status="True"
+                }
+              ) != 1
+            )
+            or
+            absent(externalsecret_status_condition{
+              namespace="monitoring",
+              name="alertmanager-bridge-gh-token",
+              condition="Ready",
+              status="True"
+            })
+          for: 10m
+          labels:
+            severity: critical
+            team: ops
+            alert_class: observability-gap
+            component: alertmanager-bridge
+            channel: github-issues
+          annotations:
+            summary: "ExternalSecret alertmanager-bridge-gh-token not Ready — Vault sync drift, GitHub Issue audit trail dead"
+            description: |
+              ExternalSecret `monitoring/alertmanager-bridge-gh-token` Ready
+              condition is False (or metric absent) for >10m. Most likely
+              cause: Vault path `kv/platform/alertmanager-bridge-gh` missing
+              the `GITHUB_TOKEN` property (operator init skipped or PAT
+              rotation overdue >90d).
+
+              Impact (R9 / R29 defense-in-depth tertiary leg):
+                - bridge pod env GITHUB_TOKEN unset (optional:true)
+                - `gh issue create` auth-fails for every firing alert
+                - critical alert audit trail to GitHub Issues silent
+
+              Diagnostic:
+                kubectl --context k3d-prod -n monitoring describe externalsecret alertmanager-bridge-gh-token | tail -20
+                ssh halil@staging-sw 'VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json); docker exec -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod vault kv get kv/platform/alertmanager-bridge-gh'
+                # If "No value found" → operator init pending (RB §4.1)
+
+              Runbook: docs/runbooks/RB-alertmanager-bridge-gh-token-seed.md §4.1
+              Verify gate: scripts/verify-vault-paths.sh live --context k3d-prod --namespace monitoring --externalsecret alertmanager-bridge-gh-token
+
+        # 2. Bridge startup auth-drift sentinel — github_token_configured gauge
+        # Bridge process samples GITHUB_TOKEN env presence once at startup and
+        # exposes as gauge (1=non-empty, 0=missing). Pod restart required to
+        # refresh after PAT rotation; alert 5m for-clause tolerates restart
+        # noise.
+        #
+        # Diverges from alert 1 vantage point: alert 1 watches ESO controller
+        # state, alert 2 watches the actual bridge pod runtime. Both firing
+        # together = silent drift caught early; only alert 2 firing = bridge
+        # restart pending after Vault seed (RB §4.1 step 8).
+        - alert: AlertmanagerBridgeGHSecretAbsent
+          expr: |
+            alertmanager_bridge_github_token_configured == 0
+          for: 5m
+          labels:
+            severity: critical
+            team: ops
+            alert_class: observability-gap
+            component: alertmanager-bridge
+            channel: github-issues
+          annotations:
+            summary: "Alertmanager bridge pod missing GITHUB_TOKEN env — auth-drift sentinel firing"
+            description: |
+              Bridge pod startup detected `GITHUB_TOKEN` env empty/unset for
+              >5m. ExternalSecret may be Ready but the bridge pod predates
+              the secret rotation (rollout restart pending), OR the secret
+              never reached the pod (ESO ownerRef mismatch, mount path
+              regression).
+
+              Diagnostic:
+                kubectl --context k3d-prod -n monitoring get secret alertmanager-bridge-gh-token -o jsonpath='{.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}'; echo
+                kubectl --context k3d-prod -n monitoring exec deploy/alertmanager-bridge -- sh -c 'echo length=${#GITHUB_TOKEN}'
+                kubectl --context k3d-prod -n monitoring rollout restart deploy/alertmanager-bridge
+
+              Runbook: docs/runbooks/RB-alertmanager-bridge-gh-token-seed.md §4.1 step 8 (rollout restart)
+
+        # 3. GitHub delivery actually failing — undelivered_by_reason counter
+        # Counter resets on pod restart; rate over 10m catches genuine fail
+        # bursts. Distinct from alerts 1+2 which are auth-presence checks; this
+        # one catches the symptom (GH issue not created/commented/closed).
+        - alert: AlertmanagerBridgeGitHubDeliveryFailing
+          expr: |
+            increase(alertmanager_bridge_undelivered_by_reason_total{
+              reason=~"gh_issue_create_failed|firing_recurrence_comment_failed|resolved_comment_failed|resolved_close_failed"
+            }[10m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+            team: ops
+            alert_class: observability-gap
+            component: alertmanager-bridge
+            channel: github-issues
+          annotations:
+            summary: "Alertmanager bridge GitHub delivery failing — undelivered audit log growing"
+            description: |
+              Bridge attempted GitHub Issue create/comment/close in last 10m
+              but failed. Likely causes: PAT expired (90d rotation overdue),
+              rate-limit (5000/h fine-grained PAT), network egress block, or
+              GitHub API outage.
+
+              Diagnostic:
+                kubectl --context k3d-prod -n monitoring logs deploy/alertmanager-bridge --tail=50 | grep -E 'gh issue|ERROR'
+                kubectl --context k3d-prod -n monitoring exec deploy/alertmanager-bridge -- wget -qO- http://localhost:9093/metrics | grep -E 'github_api_fail_total|undelivered_by_reason_total'
+                # If gh_auth_failed: rotate PAT (RB §4.2)
+                # If rate-limit: pause synthetic injectors + escalate
+
+              Runbook: docs/runbooks/RB-alertmanager-bridge-gh-token-seed.md §4.2 (90-day PAT rotation)

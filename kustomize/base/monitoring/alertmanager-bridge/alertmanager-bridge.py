@@ -78,6 +78,11 @@ _METRICS = {
     "last_delivery_failure_timestamp": 0,
     "webhook_received_total": 0,
     "synthetic_skipped_total": 0,
+    # Codex `019e6fb5` AGREE Yol C-prime — startup auth drift sentinel.
+    # 1 if GITHUB_TOKEN env non-empty at process start; 0 otherwise. Pairs with
+    # PrometheusRule AlertmanagerBridgeGHSecretAbsent — silent ESO sync errors
+    # become visible without bridge depending on itself for paging.
+    "github_token_configured": 1 if os.environ.get("GITHUB_TOKEN", "") else 0,
 }
 
 
@@ -145,6 +150,13 @@ def render_metrics() -> bytes:
     lines.append("# HELP alertmanager_bridge_synthetic_skipped_total Synthetic alerts skipped (is_synthetic=true filter; BL-008-bridge Codex 019e6de3)")
     lines.append("# TYPE alertmanager_bridge_synthetic_skipped_total counter")
     lines.append(f"alertmanager_bridge_synthetic_skipped_total {_METRICS['synthetic_skipped_total']}")
+    # Gauge: github_token_configured — startup auth presence sentinel
+    # (Codex `019e6fb5` AGREE Yol C-prime). 1 = GITHUB_TOKEN env non-empty at
+    # process start; 0 = missing (ESO sync drift, secret absent, deploy misconfig).
+    # Sampled once at startup; restart required to refresh after PAT rotation.
+    lines.append("# HELP alertmanager_bridge_github_token_configured GH token env presence at startup (1=set non-empty, 0=missing — silent auth-drift sentinel)")
+    lines.append("# TYPE alertmanager_bridge_github_token_configured gauge")
+    lines.append(f"alertmanager_bridge_github_token_configured {_METRICS['github_token_configured']}")
     return ("\n".join(lines) + "\n").encode()
 
 
