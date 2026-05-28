@@ -2918,6 +2918,17 @@ images:
   #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-305561d
   #   digest sha256:f00cc6b8b22853fd498ae5fc84e634e961a14aa52a119fcc55b6fa8e7f4d5ea2
   #
+  # BE-021 V12 dynamic constraint discovery fix (PR #318, 2026-05-28):
+  #   sha-305561d initial deploy failed with `constraint
+  #   ck_endpoint_commands_type does not exist` — live PG had the
+  #   auto-generated name `endpoint_commands_command_type_check`.
+  #   V12 rewritten with pg_constraint dynamic discovery + DO $$ block;
+  #   no-op when constraint already canonical. Cross-AI peer review
+  #   thread 019e6e53 AGREE ready_to_merge=true. CI 12/12 SUCCESS.
+  #   gh run view 26571948324 -R Halildeu/platform-backend   (success)
+  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-79a5ae8
+  #   digest sha256:48844f4cd9d8dcfb70ecdfb6bff78638501afe58db882fcb2a88faf47ad4eccb
+  #
   # BE-023 permanent source fix (PR #315):
   #   - Codex 019e6dd0 AGREE / ready_to_merge: true (CI green)
   #   - Replaces @Lazy Clock injection with ObjectProvider<Clock> +
@@ -2933,7 +2944,7 @@ images:
   # Faz 22.2+ (separate decision/PR).
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:f00cc6b8b22853fd498ae5fc84e634e961a14aa52a119fcc55b6fa8e7f4d5ea2
+    digest: sha256:48844f4cd9d8dcfb70ecdfb6bff78638501afe58db882fcb2a88faf47ad4eccb
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
