@@ -3077,7 +3077,24 @@ images:
   # overlay does NOT reference endpoint-admin-service. Prod activation
   # Faz 22.2+ (separate decision/PR).
   #
-  # 2026-05-29 update: sha-ff3927b — platform-backend PR #322 (BE-022
+  # 2026-05-29 update (V14 fix): sha-931b607 — platform-backend PR #324
+  # (BE-022 V14 follow-up — payload_hash_sha256 CHAR → VARCHAR
+  # Hibernate ddl-auto=validate alignment). The previous BE-022 pin
+  # (sha-ff3927b) deployed V13 but the pod crashed at boot with
+  # "Schema-validation: wrong column type [payload_hash_sha256] ...
+  # found [bpchar (Types#CHAR)], but expecting [char(64)
+  # (Types#VARCHAR)]". V14 ALTER TABLE switches the column to
+  # VARCHAR(64) and the entity drops columnDefinition="char(64)";
+  # CHECK constraint on `payload_hash_sha256 ~ '^[a-f0-9]{64}$'`
+  # unchanged. Squash merge `931b6079` at 2026-05-28T21:38:14Z.
+  #
+  # Build evidence (V14):
+  #   gh run view 26603795853 -R Halildeu/platform-backend (success)
+  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-931b607
+  #   digest sha256:089f86d8a451770561f98ebc1b22a78cacb6624fb0ac93810d0136213df53d9d
+  #
+  # 2026-05-29 update (initial BE-022 — superseded by sha-931b607 below):
+  # sha-ff3927b — platform-backend PR #322 (BE-022
   # Faz 22.5 — endpoint hardware inventory ingest path). Carries the
   # V13 migration + 3 entities + sanitizer + service + agent SUBMIT-
   # result hook integration on top of the BE-021 V12 install-audit
@@ -3128,7 +3145,7 @@ images:
   # Build evidence:
   #   gh run view 26602747900 -R Halildeu/platform-backend (success)
   #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-ff3927b
-  #   digest sha256:693416244fb34b820cd410e7e4b2fcdddd0a04e4efe5ed5a46a358bff44884da
+  #   digest sha256:089f86d8a451770561f98ebc1b22a78cacb6624fb0ac93810d0136213df53d9d
   #
   # ROLLOUT ACCEPTANCE (HARD RULE — Tarayıcıdan sonuç doğrulanmadan
   # iş bitmedi + Deploy Sonrası Tarayıcı Console Verifikasyonu):
@@ -3144,7 +3161,7 @@ images:
   #     görünüm)
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:693416244fb34b820cd410e7e4b2fcdddd0a04e4efe5ed5a46a358bff44884da
+    digest: sha256:089f86d8a451770561f98ebc1b22a78cacb6624fb0ac93810d0136213df53d9d
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
