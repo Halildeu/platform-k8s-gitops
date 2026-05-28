@@ -2775,7 +2775,116 @@ images:
     #      return 200 (or 403 if the caller's JWT lacks the read
     #      scope).
     #   8. Console: no new errors vs the previous pin.
-    digest: sha256:83c8e6c9e067f99c5b0252a3c3814ca724345e5624d0ae36a9e3bd73542e1651
+    #
+    # 2026-05-28 update: sha-884d660 — platform-web PR #678 (WEB-014C
+    # Faz 22.5). Carries the compliance policy CRUD UI on top of
+    # WEB-014B's cross-device list + history accordion. Single frontend
+    # PR — all 5 BE-023 admin policy endpoints (POST/PUT/GET/DELETE
+    # /api/v1/admin/compliance/policy-items) already shipped with
+    # BE-023 PR #313.
+    #
+    # WHAT THIS IMAGE CARRIES (delta over sha-b6b1598)
+    #
+    # - New route /endpoint-admin/compliance/policies
+    #   (EndpointCompliancePoliciesPage):
+    #   * Table: catalogItemKey / catalogDisplayName / enforcementMode
+    #     badge (REQUIRED=primary, FORBIDDEN=danger, ALLOWED=neutral —
+    #     Codex 019e6dff iter-2 §2 green-banned in policy listing to
+    #     avoid "compliant" false signal) / enabled / lastUpdated /
+    #     actions.
+    #   * "Yeni Politika Ekle" header button (MANAGE-gated).
+    #   * Per-row Edit + Delete actions (MANAGE-gated).
+    #   * Server-side pagination consuming custom envelope
+    #     ComplianceEvaluationListResponse<CompliancePolicyItem>
+    #     (NOT Spring Page<T>; Codex 019e6dff iter-1 §1).
+    #   * 403 / loading / empty / error states.
+    # - CreatePolicyDialog:
+    #   * Catalog dropdown from BE-020 list endpoint
+    #     (status=APPROVED&enabled=true&size=200; Spring Page<T>,
+    #     distinct envelope from BE-023). Value = AdminCatalogItemSummary.id
+    #     UUID; display = "displayName (catalogItemId)".
+    #   * Enforcement mode select REQUIRED / ALLOWED / FORBIDDEN.
+    #   * Enabled checkbox (default true).
+    #   * 409 → duplicate toast; 403 → forbidden toast.
+    # - EditPolicyDialog:
+    #   * Catalog field RENDERED READ-ONLY (immutable per backend
+    #     EndpointCompliancePolicyService.update; Codex 019e6dff iter-1 §3).
+    #   * PUT body INTENTIONALLY OMITS `version` (backend does not honor
+    #     optimistic concurrency on request DTO; Codex 019e6dff iter-1 §4).
+    # - DeletePolicyConfirm modal:
+    #   * Hard delete with explicit confirmation copy.
+    #   * Soft-disable hint: "to temporarily disable, uncheck Active in
+    #     Edit instead".
+    # - RTK Query: 5 policy endpoints + 1 catalog list endpoint, plus 2
+    #   new tagTypes (CompliancePolicyItem, EndpointSoftwareCatalog).
+    #   Mutations invalidate CompliancePolicyItem(itemId/LIST) +
+    #   EndpointDeviceCompliance(LIST) so cross-device compliance overview
+    #   reflects policy intent changes (Codex 019e6dff iter-1 §6).
+    # - useManageGate hook (Codex 019e6e10 iter-1 RED absorb — permissive
+    #   default): returns true UNLESS the shell explicitly emits 'VIEW'
+    #   via the future SharedShellServices.auth.getModuleLevel(module)
+    #   getter (NOT yet exposed). Frontend gate is ergonomics layer;
+    #   backend can_manage remains authoritative; 403 still surfaces as
+    #   dialog toasts (defense in depth).
+    # - All 3 dialogs use the canonical BottomSheetDrawer overlay-engine
+    #   pattern (Codex 019e6e10 iter-2 RED absorb): useId-based layerId
+    #   + useFocusTrap({active, autoFocus, restoreFocus, layerId}) +
+    #   useSiblingIsolation({active, layerId, panelRef}) +
+    #   registerLayer(id, 'modal') +
+    #   useEscapeKey(open, fn, {layerId}). Honors nested-modal LIFO
+    #   close + restore-target chain.
+    # - 18 vitest files / 125 specs (full mfe-endpoint-admin suite) PASS,
+    #   including a new overlay-engine-contract.test.tsx regression guard
+    #   (4 cases) that asserts the canonical primitive shapes.
+    #
+    # CROSS-AI PEER REVIEW CHAIN (platform-web PR #678)
+    #
+    # - Plan-time: Codex 019e6dff iter-1 REVISE (Spring Page premise,
+    #   catalog field invented, version not honored, RBAC layer missing,
+    #   mutation invalidation too narrow, palette semantics) → absorb →
+    #   iter-2 AGREE-with-minor-revisions / ready_for_impl: true.
+    # - Post-impl: Codex 019e6e10
+    #   * iter-1 RED — BEM CSS classes had no backing file (dialogs
+    #     unstyled), MANAGE gate strict default blocked legitimate
+    #     operators, CatalogItemStatus missing DRAFT enum, mutation
+    #     invalidation cache key drift. Absorbed in commit 7b552f4c.
+    #   * iter-2 RED — overlay-engine API mis-shape (legacy 2-arg form
+    #     instead of canonical BottomSheetDrawer pattern). Absorbed in
+    #     commit c461a1fc with regression test guard.
+    # - iter-3 (Codex 019e6fc1): AGREE / ready_to_merge: true.
+    #
+    # Build evidence:
+    #   gh run view 26593399179 -R Halildeu/platform-web   (success)
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-884d660
+    #   digest sha256:7b66942a625ee60ebe0fff9e56201ed29cfa158b0d8034dca1863c22def594c7
+    #   merge commit: 884d66042048d8c2635c3e98d7dbae604e458e4a (PR #678 squash)
+    #
+    # Cluster live state (auto-deploy via deploy-testai.yml dispatch,
+    # 2026-05-28 18:18 UTC, run 26593616860):
+    #   - kubectl set image SUCCESS
+    #   - pod rollout status SUCCESS
+    #   - Gate 1a (pod digest match): SUCCESS
+    #   - Gate 1b (public surface 200 + asset reachable): SUCCESS
+    #   - Gate 1c (build-info.json sha match): SUCCESS
+    #   - Gate 2 (Playwright behavior smoke, opt-in): SUCCESS
+    # This overlay PR is the D30 audit catch-up — desired-state == live.
+    #
+    # Verify after rollout (HARD RULE — Deploy Sonrası Tarayıcı Console
+    # Verifikasyonu):
+    #   1. Navigate to /endpoint-admin/compliance/policies.
+    #   2. Expect the table (or empty state if no policies seeded yet).
+    #   3. "Yeni Politika Ekle" button visible to MANAGE operator;
+    #      clicking opens CreatePolicyDialog with backdrop, focus trap,
+    #      Escape close.
+    #   4. Catalog dropdown populated from BE-020 list (APPROVED items).
+    #   5. Select catalog + enforcement; submit; expect new row in table.
+    #   6. Edit a row — catalog field disabled (read-only), PUT body
+    #      omits version.
+    #   7. Delete a row — confirmation modal with soft-disable hint;
+    #      confirm; row removed from table.
+    #   8. Network: GET .../policy-items 200, mutations 200/204.
+    #   9. Console: no new errors vs the WEB-014B baseline.
+    digest: sha256:7b66942a625ee60ebe0fff9e56201ed29cfa158b0d8034dca1863c22def594c7
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
