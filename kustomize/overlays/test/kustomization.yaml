@@ -2660,9 +2660,10 @@ images:
     #
     # CROSS-AI PEER REVIEW CHAIN (platform-web PR #675)
     #
-    # - Plan-time: Codex iter-1 AGREE (with split into WEB-014A + WEB-014B
-    #   for cross-device list)
-    # - Post-impl: Codex AGREE / ready_to_merge: true
+    # - Plan-time: Codex 019e6d68 PARTIAL / ready_for_impl=true after
+    #   WEB-014A / WEB-014B / WEB-014C split (cross-device list +
+    #   evaluation history + policy CRUD deferred to siblings)
+    # - Post-impl: Codex 019e6d73 AGREE / ready_to_merge: true
     #
     # Build evidence:
     #   gh run view 26561140414 -R Halildeu/platform-web   (success)
@@ -2739,13 +2740,14 @@ images:
   #   digest sha256:e4083f0937031ee7ece97bd9e4fc68fa982224d70a634684406c7d76f87de494
   #
   # CROSS-AI PEER REVIEW CHAIN (platform-backend PR #313)
-  #   - Plan-time: Codex iter-3 AGREE (after iter-1 absorb adding
-  #     catalogPolicyHashCurrent + policyDrift visibility fields, and
-  #     iter-2 absorb fail-closed advisory-lock fallback)
-  #   - Post-impl: Codex iter-1 AGREE / ready_to_merge: true (after
-  #     2x PG integration-test fixes: Timestamp.from(Instant.now())
-  #     JDBC type binding + split into two @Test methods to dodge
-  #     PG 25P02 transaction-abort on the composite-FK reject path)
+  #   - Plan-time: Codex 019e6bbf iter-3 AGREE (after iter-1 absorb
+  #     adding catalogPolicyHashCurrent + policyDrift visibility fields,
+  #     and iter-2 absorb fail-closed advisory-lock fallback)
+  #   - Post-impl: Codex 019e6bdf PARTIAL -> absorb -> AGREE /
+  #     ready_to_merge: true (after 2x PG integration-test fixes:
+  #     Timestamp.from(Instant.now()) JDBC type binding + split into
+  #     two @Test methods to dodge PG 25P02 transaction-abort on the
+  #     composite-FK reject path)
   #
   # Scope discipline (AGENTS.md HARD RULE): test overlay only. Prod
   # overlay does NOT reference endpoint-admin-service. Prod activation
