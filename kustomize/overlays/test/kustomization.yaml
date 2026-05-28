@@ -2844,7 +2844,72 @@ images:
     #      returns the `{items, page, size, totalElements, totalPages}`
     #      envelope; mutations 201/200/204 with 3-tag invalidation.
     #   7. Console: no new errors vs the previous pin.
-    digest: sha256:7b66942a625ee60ebe0fff9e56201ed29cfa158b0d8034dca1863c22def594c7
+    #
+    # 2026-05-28 update (later): sha-b3c2859 — platform-web PR #683
+    # (WEB-014D install preflight + install command UI) + PR #684
+    # (Codex 019e6ff0 post-impl REVISE absorb: in-flight POST race
+    # guard + tryReadBlockRecompute strict shape guard). Faz 22.5 web
+    # ailesi WEB-014D close-out.
+    #
+    # DELTA (over sha-884d660)
+    #
+    # - New "Yazılım Kataloğu" tab in DeviceDetailDrawer + APPROVED
+    #   enabled catalog dropdown (BE-020 list endpoint) + "Son Kurulumlar"
+    #   panel (BE-021 install-audit GET, page 0 size 10).
+    # - InstallPreflightModal (canonical overlay-engine pattern) renders
+    #   PASS / WARN / BLOCK with reasons + warnings + blockingReasons +
+    #   requirements + evidence + 20 BE-021A reason code i18n.
+    # - Pre-persist 409 BLOCK recompute via `tryReadBlockRecompute`
+    #   strict shape guard (rejects malformed bodies — Codex 019e6ff0).
+    # - In-flight POST race guard: ESC + overlay + cancel absorbed
+    #   during `createState.isLoading`; `intentRef` + `mountedRef`
+    #   drop late resolve/reject when intent changed or unmounted.
+    # - RTK Query: getInstallPreflight (keepUnusedDataFor:0) +
+    #   createInstall + listInstallAudits + getInstallAudit. New tag
+    #   `EndpointInstallAudit:device-{id}` invalidation triplet.
+    # - CommandType union extended with `INSTALL_SOFTWARE`.
+    # - i18n: TR primary + EN mirror ~224 new keys (tab, modal,
+    #   decision badges, installed state, reason vocabulary, evidence
+    #   labels, toasts, install-audit result statuses).
+    # - 199/199 vitest pass (174 existing + 25 new in
+    #   InstallPreflightModal.test.tsx: 9 strict shape + 6 race guard
+    #   + 10 reorganized existing).
+    #
+    # CROSS-AI PEER REVIEW CHAIN (platform-web PR #683 + #684)
+    #
+    # - Plan-time (PR #683): Codex 019e6fd1 PARTIAL (9 must-fix) ->
+    #   iter-2 absorb commit `15259e99` -> AGREE -> MERGED `b54ffaed`.
+    # - Post-impl (PR #683 → follow-up PR #684): Codex 019e6ff0
+    #   REVISE (3 must-fix: in-flight race, shape guard, audit trail
+    #   format) -> iter-2 absorb commit `cdfa0057` -> AGREE
+    #   ready_for_merge:true -> MERGED `b3c2859a`.
+    #
+    # Build evidence:
+    #   gh run view 26597033312 -R Halildeu/platform-web   (success)
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-b3c2859
+    #   digest sha256:71ab378aa7232668e708cc99df44daee7084f5947558e028255926336b454f71
+    #
+    # Verify after rollout (HARD RULE — Tarayıcıdan sonuç doğrulanmadan
+    # iş bitmedi + Deploy Sonrası Tarayıcı Console Verifikasyonu):
+    #   1. Navigate to /endpoint-admin/devices/{deviceId} drawer; open
+    #      "Yazılım Kataloğu" tab — APPROVED+enabled catalog list +
+    #      "Son Kurulumlar" panel (initially empty).
+    #   2. Click "Yükle" on a catalog row — InstallPreflightModal
+    #      opens; PASS/WARN renders Confirm enabled; BLOCK renders
+    #      blockingReasons + Confirm disabled.
+    #   3. Network: GET /endpoint-admin/endpoint-devices/{id}/install-
+    #      preflight?catalogItemId={slug} returns 200 with decision
+    #      (PASS/WARN/BLOCK) + evidence + reasons.
+    #   4. Submit PASS confirm — POST /endpoint-admin/endpoint-devices/
+    #      {id}/installs returns 201 + EndpointCommandDto. "Son
+    #      Kurulumlar" panel auto-refetches via tag invalidation.
+    #   5. During in-flight POST: ESC / overlay click absorbed (modal
+    #      stays open). Cancel button disabled.
+    #   6. Close + reopen modal for SAME catalog — fresh idempotency
+    #      key generated (regression test sentinel).
+    #   7. Console: no new errors vs the previous pin (pre-existing
+    #      PermissionProvider 503 is unrelated to WEB-014D).
+    digest: sha256:71ab378aa7232668e708cc99df44daee7084f5947558e028255926336b454f71
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
