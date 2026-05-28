@@ -2775,7 +2775,76 @@ images:
     #      return 200 (or 403 if the caller's JWT lacks the read
     #      scope).
     #   8. Console: no new errors vs the previous pin.
-    digest: sha256:83c8e6c9e067f99c5b0252a3c3814ca724345e5624d0ae36a9e3bd73542e1651
+    #
+    # 2026-05-28 update: sha-884d660 — platform-web PR #678 (WEB-014C
+    # Faz 22.5). Carries the compliance policy CRUD UI on top of
+    # WEB-014A/B: new route `/endpoint-admin/compliance/policies`,
+    # table + Create/Edit/Delete dialogs (Tailwind + canonical overlay-
+    # engine pattern matching BottomSheetDrawer), catalog dropdown
+    # backed by the BE-020 list endpoint, MANAGE gate (permissive
+    # default until shell-side `getModuleLevel` API lands).
+    #
+    # DELTA (over sha-b6b1598)
+    #
+    # - New /endpoint-admin/compliance/policies route +
+    #   EndpointCompliancePoliciesPage table.
+    # - 3 modal dialogs (Create / Edit / Delete) using
+    #   `@mfe/design-system/internal/overlay-engine` canonical pattern
+    #   (Codex 019e6e10 iter-3 absorb): useId-derived layerId, object-
+    #   param useFocusTrap / useSiblingIsolation, registerLayer(id,
+    #   'modal'), useEscapeKey gated by layerId.
+    # - RTK Query: list/get/create/update/delete policy item +
+    #   listCatalogItems (BE-020 dropdown source); 3 invalidation
+    #   targets (item + LIST + EndpointDeviceCompliance LIST) so
+    #   downstream compliance overview surfaces re-evaluate after
+    #   policy intent changes.
+    # - Backend contract alignment (Codex 019e6dd9 dersine sadık):
+    #   CompliancePolicyItem mirrors BE-023 response 1:1; PUT body
+    #   omits `version` (backend doesn't honor optimistic concurrency);
+    #   catalog field immutable on edit.
+    # - i18n: TR + EN parity ~50 new keys (table, 3 dialog flows,
+    #   enforcement label triple, RBAC tooltip).
+    # - 31 vitest specs (page + 3 dialog suites).
+    #
+    # CROSS-AI PEER REVIEW CHAIN (platform-web PR #678)
+    #
+    # - Plan-time: Codex 019e6dff iter-1 REVISE -> iter-2
+    #   AGREE-with-minor-revisions / ready_for_impl: true
+    # - Post-impl: Codex 019e6e10 iter-1 RED (CSS drift + MANAGE gate
+    #   shell mismatch + status enum drift + create invalidation
+    #   triplet) -> iter-2 RED (overlay-engine API mis-usage with
+    #   `DestructiveCommandModal` legacy form) -> iter-3 absorb
+    #   (canonical BottomSheetDrawer pattern + tests + push) -> AGREE
+    #   / ready_to_merge: true -> MERGED commit 884d6604.
+    #
+    # Build evidence:
+    #   gh run view 26593399179 -R Halildeu/platform-web   (success)
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-884d660
+    #   digest sha256:7b66942a625ee60ebe0fff9e56201ed29cfa158b0d8034dca1863c22def594c7
+    #
+    # Verify after rollout (HARD RULE — Deploy Sonrası Tarayıcı
+    # Console Verifikasyonu):
+    #   1. Navigate to /endpoint-admin/compliance/policies — expect
+    #      empty state ("No policies defined yet.") with a "+ New
+    #      Policy" CTA (permissive MANAGE default until shell-side
+    #      getModuleLevel API).
+    #   2. Click "+ New Policy" — modal opens; catalog dropdown loads
+    #      APPROVED enabled items; submit posts {catalogItemId,
+    #      enforcementMode, enabled} and closes on 201.
+    #   3. Newly created row appears in the table with the chosen
+    #      enforcement badge (REQUIRED primary, FORBIDDEN danger,
+    #      ALLOWED neutral — Codex iter-2 §2).
+    #   4. Edit a row — catalog field renders as read-only metadata
+    #      (backend immutability guard), enforcement + enabled
+    #      editable; PUT body omits version.
+    #   5. Delete a row — confirmation modal explains hard delete vs
+    #      soft-disable; confirm fires DELETE; row disappears from
+    #      table.
+    #   6. Network: GET /api/v1/endpoint-admin/compliance/policy-items
+    #      returns the `{items, page, size, totalElements, totalPages}`
+    #      envelope; mutations 201/200/204 with 3-tag invalidation.
+    #   7. Console: no new errors vs the previous pin.
+    digest: sha256:7b66942a625ee60ebe0fff9e56201ed29cfa158b0d8034dca1863c22def594c7
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
