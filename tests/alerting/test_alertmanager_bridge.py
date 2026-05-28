@@ -338,6 +338,47 @@ class TestMetricsExposition(unittest.TestCase):
             bridge._METRICS["last_delivery_success_timestamp"], int(_t.time()), delta=2
         )
 
+    def _reexec_bridge_module(self):
+        """Re-execute the bridge module so module-level _METRICS dict
+        re-initializes from the current env state. Module loaded via
+        spec_from_file_location (hyphenated filename) — importlib.reload
+        cannot find a parent package, so we re-run the loader directly.
+        """
+        spec.loader.exec_module(bridge)
+
+    def test_github_token_configured_gauge_when_token_set(self):
+        """Codex `019e6fb5` iter-2 nice_to_have absorb — startup gauge metric.
+
+        github_token_configured == 1 when GITHUB_TOKEN env non-empty at the
+        point process samples it.
+        """
+        os.environ["GITHUB_TOKEN"] = "ghp_fake_token_for_test_only_xxx"
+        try:
+            self._reexec_bridge_module()
+            self.assertEqual(bridge._METRICS["github_token_configured"], 1)
+            payload = bridge.render_metrics().decode("utf-8")
+            self.assertIn("alertmanager_bridge_github_token_configured 1", payload)
+            self.assertIn(
+                "# TYPE alertmanager_bridge_github_token_configured gauge",
+                payload,
+            )
+        finally:
+            os.environ.pop("GITHUB_TOKEN", None)
+            self._reexec_bridge_module()  # restore env-free baseline
+
+    def test_github_token_configured_gauge_when_token_missing(self):
+        """Auth-drift sentinel: gauge == 0 when GITHUB_TOKEN unset/empty.
+
+        This is the case PrometheusRule AlertmanagerBridgeGHSecretAbsent fires
+        on. Test guarantees the sentinel actually goes to 0 (not silently
+        defaulting to 1 because of a missed init path).
+        """
+        os.environ.pop("GITHUB_TOKEN", None)
+        self._reexec_bridge_module()
+        self.assertEqual(bridge._METRICS["github_token_configured"], 0)
+        payload = bridge.render_metrics().decode("utf-8")
+        self.assertIn("alertmanager_bridge_github_token_configured 0", payload)
+
     def test_render_metrics_exposition_format(self):
         """Prometheus text format v0.0.4 expected lines."""
         bridge.metric_inc("delivered_total", 42)

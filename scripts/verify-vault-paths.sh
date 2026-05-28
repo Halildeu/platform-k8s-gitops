@@ -138,6 +138,11 @@ try:
         for doc in yaml.safe_load_all(f):
             if not doc:
                 continue
+            # Codex `019e6fb5` iter-2 must_fix #4 absorb: kapsam genişledi
+            # → JSON patch list (clustersecretstore-patch.yaml) gibi dict
+            # olmayan docs skip.
+            if not isinstance(doc, dict):
+                continue
             if doc.get("kind") != "ExternalSecret":
                 continue
             name = doc.get("metadata", {}).get("name", "?")
@@ -190,6 +195,10 @@ mode_static() {
       warn_count=$((warn_count + 1))
       continue
     fi
+    # Codex `019e6fb5` iter-2 must_fix #4 — kapsam: legacy bare-name files
+    # (e.g. `endpoint-admin/externalsecret.yaml`) `externalsecret-*` glob'unun
+    # dışında kalıyordu; `*.yaml` taraması + dormant exclude + kind-based
+    # filter (Python extractor zaten kind!=ExternalSecret skip ediyor).
     while IFS= read -r -d '' manifest; do
       local entries
       if ! entries="$(extract_eso_refs "$manifest" 2>&1)"; then
@@ -198,9 +207,18 @@ mode_static() {
         exit_code=3
         continue
       fi
+      # Skip files with no ExternalSecret docs (Python returned `[]`)
+      if [[ "$(jq 'length' <<<"$entries" 2>/dev/null || echo 0)" == "0" ]]; then
+        continue
+      fi
       # Merge into aggregate
       all_entries="$(printf '%s\n%s' "$all_entries" "$entries" | jq -s 'add // []')"
-    done < <(find "$dir" -name 'externalsecret-*.yaml' -type f -print0)
+    done < <(find "$dir" \
+      -type f -name '*.yaml' \
+      -not -name '*.disabled.*' \
+      -not -name '*.template.*' \
+      -not -name '*.example.*' \
+      -print0)
   done
 
   ok_count=$(jq '[.[] | select(.status == "OK")] | length' <<<"$all_entries")
@@ -304,7 +322,13 @@ unset VAULT_ROOT_TOKEN
 EOSSH
 )"
       local vault_out
-      vault_out="$(ssh -o BatchMode=yes "$SSH_HOST" "$remote_script" 2>&1 || echo "SSH_FAIL")"
+      # Codex `019e6fb5` iter-2 must_fix #2 — fail-closed: stderr suppressed so
+      # `vault_out` only carries either the wc -c byte count, the literal
+      # remote-emitted sentinel (TOKEN_LOAD_FAIL), or the local-emitted
+      # sentinel (SSH_FAIL). Mixed stderr-noise output landing in default
+      # branch and silently becoming `unknown` is what made probe-fail
+      # acceptance-clean before this fix.
+      vault_out="$(ssh -o BatchMode=yes "$SSH_HOST" "$remote_script" 2>/dev/null || echo "SSH_FAIL")"
       case "$vault_out" in
         SSH_FAIL|TOKEN_LOAD_FAIL)
           vault_present="error" ;;
@@ -321,13 +345,20 @@ EOSSH
       esac
     fi
 
-    # Verdict per Codex `019e6fb5` acceptance:
+    # Verdict per Codex `019e6fb5` acceptance + iter-2 absorb:
+    #   - ownerRef enforcement (must_fix #1): stale/manual secret with valid
+    #     length still FAILs unless ESO-owned (creationPolicy=Owner contract).
+    #   - probe fail-closed (must_fix #2): unknown→FAIL; error→WARN with exit 2.
     local verdict="OK"
     local reason=""
     if [[ "$ready" != "True" ]]; then verdict="FAIL"; reason="eso_not_ready"; fi
     if [[ "$vault_present" == "missing" ]]; then verdict="FAIL"; reason="vault_property_missing"; fi
     if [[ "$vault_present" == "error" ]]; then verdict="WARN"; reason="vault_probe_unreachable"; fi
+    if [[ "$vault_present" == "unknown" ]]; then verdict="FAIL"; reason="vault_probe_unknown"; fi
     if [[ "$k8s_secret_status" == "absent" ]]; then verdict="FAIL"; reason="${reason:-k8s_secret_absent}"; fi
+    if [[ "$k8s_secret_status" == "present" && "$owner_ref" != "ExternalSecret/$es" ]]; then
+      verdict="FAIL"; reason="${reason:-secret_not_eso_owned}"
+    fi
     if [[ "$verdict" == "OK" && "$token_len" -lt "$MIN_TOKEN_LEN" ]]; then verdict="FAIL"; reason="token_length_below_min"; fi
 
     case "$verdict" in
@@ -371,8 +402,15 @@ EOSSH
       }]' <<<"$checks_json")"
   done
 
+  # Codex `019e6fb5` iter-2 must_fix #2 — exit code precedence:
+  #   FAIL → 1 (machine-enforced fail-closed)
+  #   WARN → 2 (operational; not bridge acceptance pass)
   local exit_code=0
-  if (( fail_count > 0 )); then exit_code=1; fi
+  if (( fail_count > 0 )); then
+    exit_code=1
+  elif (( warn_count > 0 )); then
+    exit_code=2
+  fi
 
   local report
   report="$(jq -n \

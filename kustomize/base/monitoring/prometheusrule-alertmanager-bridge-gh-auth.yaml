@@ -41,30 +41,38 @@ spec:
     - name: alertmanager-bridge-gh-auth
       interval: 1m
       rules:
-        # 1. ExternalSecret not Ready — ESO sync error sustained
-        # external-secrets controller `externalsecret_status_condition` gauge
-        # (label condition=Ready, status=True|False); when Ready=False (sync
-        # error, Vault path missing, store unreachable) alert fires.
-        # Fallback path: if external-secrets metrics not scraped (controller
-        # ServiceMonitor missing), K8s Secret absence picks up via alert 2.
+        # 1. ExternalSecret not Ready — ESO sync error sustained.
+        # Codex `019e6fb5` iter-2 must_fix #3 + iter-3 P1 absorb:
+        #   iter-2: original `absent(...) and on(namespace, name) (...
+        #   namespace_status_phase ...)` clause label-set mismatch (absent ⊇
+        #   name/namespace, namespace_phase ⊇ namespace/phase) → vector match
+        #   boş → ESO scrape kaybı sessizdi.
+        #   iter-3: pure `absent(... status="True")` `external-secrets`
+        #   condition metric semantiği bazı sürümlerde Ready=False'ı
+        #   `status="True"` etiketli seri value=0 olarak tutar (kube-state
+        #   tarzı condition gauge'lar gibi). Pure absent o senaryoda susabilir.
+        #   Robust form: value≠1 (Ready=True seri var ama 0) OR absent (seri
+        #   tamamen yok — scrape gap, ES silindi, Ready=False label-stripping
+        #   davranışı). `max by (namespace,name)` çift-scrape dedupe sağlar.
         - alert: AlertmanagerBridgeGHTokenExternalSecretNotReady
           expr: |
             (
-              externalsecret_status_condition{
-                namespace="monitoring",
-                name="alertmanager-bridge-gh-token",
-                condition="Ready",
-                status="True"
-              } == 0
+              max by (namespace, name) (
+                externalsecret_status_condition{
+                  namespace="monitoring",
+                  name="alertmanager-bridge-gh-token",
+                  condition="Ready",
+                  status="True"
+                }
+              ) != 1
             )
-            or on (namespace, name) (
-              absent(externalsecret_status_condition{
-                namespace="monitoring",
-                name="alertmanager-bridge-gh-token"
-              })
-              and
-              kube_namespace_status_phase{namespace="monitoring", phase="Active"} == 1
-            )
+            or
+            absent(externalsecret_status_condition{
+              namespace="monitoring",
+              name="alertmanager-bridge-gh-token",
+              condition="Ready",
+              status="True"
+            })
           for: 10m
           labels:
             severity: critical

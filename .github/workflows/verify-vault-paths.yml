@@ -17,14 +17,17 @@ name: Verify Vault Paths — Static (Layer 1)
 
 on:
   pull_request:
+    # Codex `019e6fb5` iter-2 must_fix #4 — yaml-wildcard kapsam: legacy
+    # bare-name files (örn. eso/endpoint-admin/externalsecret.yaml) eski
+    # `externalsecret-*` glob dışına düşüyordu.
     paths:
-      - "kustomize/overlays/**/eso/**/externalsecret-*.yaml"
+      - "kustomize/overlays/**/eso/**/*.yaml"
       - "scripts/verify-vault-paths.sh"
       - ".github/workflows/verify-vault-paths.yml"
   push:
     branches: [main]
     paths:
-      - "kustomize/overlays/**/eso/**/externalsecret-*.yaml"
+      - "kustomize/overlays/**/eso/**/*.yaml"
       - "scripts/verify-vault-paths.sh"
   workflow_dispatch:
     inputs:
