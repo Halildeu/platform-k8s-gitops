@@ -2696,8 +2696,8 @@ images:
   # endpoint_command_approvals decision-record table) and the
   # approveCommand endpoint.
   #
-  # 2026-05-28 update: sha-7ea090c — platform-backend PR #313 (BE-023
-  # Faz 22.5). Carries the compliance state evaluator chain on top of
+  # 2026-05-28 baseline: sha-7ea090c — platform-backend PR #313 (BE-023
+  # Faz 22.5). Carried the compliance state evaluator chain on top of
   # the BE-017 baseline:
   #   - V10 migration (V10__endpoint_compliance_state.sql) with the
   #     composite-FK enabler UNIQUE (id, tenant_id) on
@@ -2734,12 +2734,40 @@ images:
   #   - endpoint_device_compliance_states table present (latest pointer)
   #   - Hibernate ddl-auto=validate boots clean (entity ↔ V10 schema match)
   #
-  # Image build run (final main SHA, D30 immutable):
+  # Image build run (BE-023 baseline, retained for audit; pod failed to
+  # boot on this digest due to a Java 21 + Spring Boot 3.5.6 JPMS gap):
   #   gh run view 26546881383 -R Halildeu/platform-backend   (success)
   #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-7ea090c
   #   digest sha256:e4083f0937031ee7ece97bd9e4fc68fa982224d70a634684406c7d76f87de494
   #
-  # CROSS-AI PEER REVIEW CHAIN (platform-backend PR #313)
+  # 2026-05-28 update: sha-6144eb9 — platform-backend PR #314 (BE-023
+  # JPMS hotfix, Faz 22.5). Carries the same BE-023 application code
+  # plus the endpoint-admin-service/Dockerfile ENTRYPOINT change:
+  #
+  #   java \
+  #     --add-opens=java.base/java.lang=ALL-UNNAMED \
+  #     --add-opens=java.base/java.time=ALL-UNNAMED \
+  #     -jar app.jar
+  #
+  # WHY THE PREVIOUS PIN (sha-7ea090c / sha256:e4083f09...) FAILED LIVE
+  # EndpointComplianceService injects java.time.Clock via
+  # @Autowired(required=false) @Lazy. Spring 6 CGLIB needs to enhance
+  # java.time.Clock to build the lazy proxy, but Java 21 +
+  # Spring Boot 3.5.6 LaunchedClassLoader cannot defineClass into
+  # java.base without --add-opens. Pod boot crashed with
+  #   IllegalAccessException: module java.base does not open java.time
+  #   to unnamed module @...
+  # CrashLoopBackoff, Exit 137, restartCount=3+. testai held at the
+  # BE-017 V5 baseline via `kubectl rollout undo` until this digest.
+  #
+  # Image build run (final main SHA, D30 immutable):
+  #   gh run view 26563749559 -R Halildeu/platform-backend   (success)
+  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-6144eb9
+  #   digest sha256:ea2b3181eb9d2dd4d1d61825b9c6267c2163732ddbaddfac2b76957b71b904c9
+  #
+  # CROSS-AI PEER REVIEW CHAIN
+  #
+  # BE-023 (PR #313):
   #   - Plan-time: Codex 019e6bbf iter-3 AGREE (after iter-1 absorb
   #     adding catalogPolicyHashCurrent + policyDrift visibility fields,
   #     and iter-2 absorb fail-closed advisory-lock fallback)
@@ -2749,12 +2777,20 @@ images:
   #     two @Test methods to dodge PG 25P02 transaction-abort on the
   #     composite-FK reject path)
   #
+  # BE-023 JPMS hotfix (PR #314):
+  #   - Codex 019e6da5 iter-1 PARTIAL -> absorb (comment narrowed to
+  #     source truth; PR repositioned as operational unblock;
+  #     follow-up @Lazy Clock -> ObjectProvider<Clock> refactor spawned)
+  #     -> iter-2 AGREE / ready_to_merge: true (CI green)
+  #   - Permanent source fix tracked in spawn_task chip (refactor
+  #     EndpointComplianceService constructor to drop @Lazy Clock)
+  #
   # Scope discipline (AGENTS.md HARD RULE): test overlay only. Prod
   # overlay does NOT reference endpoint-admin-service. Prod activation
   # Faz 22.2+ (separate decision/PR).
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:e4083f0937031ee7ece97bd9e4fc68fa982224d70a634684406c7d76f87de494
+    digest: sha256:ea2b3181eb9d2dd4d1d61825b9c6267c2163732ddbaddfac2b76957b71b904c9
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
