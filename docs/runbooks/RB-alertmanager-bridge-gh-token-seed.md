@@ -122,12 +122,16 @@ gh issue list --repo Halildeu/platform-k8s-gitops \
 
 ---
 
-## 4. ESO Migration Path (Opsiyonel, V3 Scope)
+## 4. ESO Migration — DELIVERED 2026-05-28 (BL-008-bridge)
 
-Vault DR çözüldüğünde Secret manual create yerine ESO ExternalSecret pattern:
+> **Status update (2026-05-28)**: V3 scope advanced earlier. ESO + Vault pattern
+> activated via BL-008-bridge composite PR (Codex `019e6de3` AGREE B path) —
+> Vault is operational and ClusterSecretStore `vault-platform-gitops` Ready=True
+> 34d; the "Vault DR pending" gate is no longer blocking ESO migration.
+
+Manifest LIVE: [externalsecret-alertmanager-bridge-gh-token.yaml](../../kustomize/overlays/prod/eso/alertmanager/externalsecret-alertmanager-bridge-gh-token.yaml)
 
 ```yaml
-# kustomize/overlays/{test,prod}/eso/alertmanager-bridge-gh-token-externalsecret.yaml
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -148,7 +152,78 @@ spec:
         property: GITHUB_TOKEN
 ```
 
-Vault path: `kv/platform/alertmanager-bridge-gh.GITHUB_TOKEN`. V3 PERF-ARCH-V3 §3.5 cross-cluster federation + Vault DR scope.
+Vault path: `kv/platform/alertmanager-bridge-gh.GITHUB_TOKEN`. Convention parallel
+with `kv/platform/perf-alertmanager.TEAMS_WEBHOOK_URL` (per-receiver path; uppercase
+env-style property names; separate from `alertmanager-fallback` which is multi-key
+SMTP credentials).
+
+### 4.1 New Operator Action (post-2026-05-28 — replaces §2.1-2.4 manual K8s secret pattern)
+
+```bash
+# 1. GitHub Settings → Developer Settings → Personal Access Tokens (fine-grained):
+#    - Repository: Halildeu/platform-k8s-gitops
+#    - Permissions: Issues: Read and write (only — scope minimal per Codex AGREE)
+#    - Expiration: 90 days
+#    - Note: "alertmanager-bridge prod D43 paging (BL-008-bridge)"
+#    - Copy token
+
+# 2. Vault seed (D43 stdin-pipe pattern, no-token-log HARD RULE):
+read -r -s BRIDGE_PAT
+[[ "$BRIDGE_PAT" =~ ^(ghp_|github_pat_) ]] && echo "PAT prefix OK"
+printf '%s' "$BRIDGE_PAT" | ssh halil@staging-sw '
+  VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)
+  docker exec -i -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
+    vault kv put kv/platform/alertmanager-bridge-gh GITHUB_TOKEN=-
+  unset VAULT_ROOT_TOKEN
+'
+unset BRIDGE_PAT
+
+# 3. Delete existing manual K8s secret so ESO can create owned (creationPolicy: Owner
+#    refuses to take over non-ESO-owned existing secret to avoid accidental overwrite):
+ssh halil@staging-sw 'kubectl --context k3d-prod -n monitoring delete secret alertmanager-bridge-gh-token'
+
+# 4. Apply ExternalSecret + force-sync:
+ssh halil@staging-sw 'kubectl --context k3d-prod apply -k /path/to/repo/kustomize/overlays/prod/eso/alertmanager/'
+ssh halil@staging-sw 'kubectl --context k3d-prod -n monitoring annotate externalsecret alertmanager-bridge-gh-token force-sync=$(date +%s) --overwrite'
+
+# 5. Wait Ready=True (within ~30s typical):
+ssh halil@staging-sw 'kubectl --context k3d-prod -n monitoring wait externalsecret/alertmanager-bridge-gh-token --for=condition=Ready --timeout=120s'
+
+# 6. Verify K8s secret token length > 40:
+ssh halil@staging-sw 'kubectl --context k3d-prod -n monitoring get secret alertmanager-bridge-gh-token -o json | jq -r ".data.token" | base64 -d | wc -c'
+
+# 7. Rollout restart bridge (env var pickup):
+ssh halil@staging-sw 'kubectl --context k3d-prod -n monitoring rollout restart deploy/alertmanager-bridge'
+ssh halil@staging-sw 'kubectl --context k3d-prod -n monitoring rollout status deploy/alertmanager-bridge --timeout=120s'
+
+# 8. Pod env verify (length > 40):
+ssh halil@staging-sw 'kubectl --context k3d-prod -n monitoring exec deploy/alertmanager-bridge -- sh -c "echo length=\${#GITHUB_TOKEN}"'
+```
+
+### 4.2 90-Day PAT Rotation (cron-driven; Codex `019e6de3` A path long-term)
+
+PAT expiration: 90 days (operator-set). Rotation procedure:
+
+1. **T-7d alert** (R29-mitigation analog): PrometheusRule on Vault TTL would be ideal but
+   Vault doesn't expose KV TTL natively. Operator calendar reminder OR GitHub Issue auto-create
+   bridge metric `alertmanager_bridge_undelivered_by_reason_total{reason="gh_auth_failed"}` spike.
+2. Operator generates new PAT (steps §4.1 step 1).
+3. Re-run §4.1 step 2 (Vault `vault kv put` overwrites — atomic).
+4. ESO syncs within 1h (or force annotation).
+5. Bridge restart picks up new env (configMapGenerator hash change OR manual restart).
+6. Synthetic alert acceptance verify (§5).
+
+### 4.3 GitHub App Migration (90 günde — Codex `019e6de3` A path)
+
+PAT → GitHub App eliminates 90-day rotation:
+- Org-level installation (no individual user expiry)
+- Installation token auto-refresh per request
+- Vault property rename: `GITHUB_APP_PRIVATE_KEY` + `GITHUB_APP_INSTALLATION_ID`
+- Bridge script update: `gh` CLI auth via JWT exchange (`gh auth login --with-token` → install token)
+- Migration window: 60-90 days from BL-008-bridge merge
+
+Separate sprint scope. ESO ExternalSecret is the migration target's data plane —
+only the property names + bridge script auth flow change.
 
 ---
 

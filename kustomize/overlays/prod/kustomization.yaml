@@ -48,6 +48,13 @@ resources:
   - frontend-federation-smoke-rbac.yaml
   - frontend-federation-smoke-status.yaml
   - frontend-federation-smoke-netpol.yaml
+  # R29 Mitigation #3 — Monthly synthetic Teams smoke CronJob (V2.1 Exit #4
+  # mitigation chain — Codex `019e6de3` BL-008-bridge composite scope).
+  # Schedule: 1st of month 06:00 UTC (~09:00 Istanbul). Fires synthetic alert
+  # to Alertmanager v2 API → perf-alerts-teams Adaptive Card receipt validates
+  # Power Automate workflow lifecycle. Operator verify: Power Automate UI run
+  # history (R29 mitigation #6) + Teams #perf-alerts channel.
+  - cronjob-r29-teams-smoke.yaml
 
 images:
   # Gerçek GHCR path: halildeu/platform-ssot-<service> (tire ile)

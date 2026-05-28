@@ -77,6 +77,7 @@ _METRICS = {
     "last_delivery_success_timestamp": 0,
     "last_delivery_failure_timestamp": 0,
     "webhook_received_total": 0,
+    "synthetic_skipped_total": 0,
 }
 
 
@@ -141,6 +142,9 @@ def render_metrics() -> bytes:
     lines.append("# HELP alertmanager_bridge_webhook_received_total Total Alertmanager webhook POSTs received")
     lines.append("# TYPE alertmanager_bridge_webhook_received_total counter")
     lines.append(f"alertmanager_bridge_webhook_received_total {_METRICS['webhook_received_total']}")
+    lines.append("# HELP alertmanager_bridge_synthetic_skipped_total Synthetic alerts skipped (is_synthetic=true filter; BL-008-bridge Codex 019e6de3)")
+    lines.append("# TYPE alertmanager_bridge_synthetic_skipped_total counter")
+    lines.append(f"alertmanager_bridge_synthetic_skipped_total {_METRICS['synthetic_skipped_total']}")
     return ("\n".join(lines) + "\n").encode()
 
 
@@ -434,7 +438,23 @@ def process_alert(alert: dict[str, Any], group_labels: dict[str, str]) -> bool:
     - firing + existing open issue → comment recurrence
     - resolved + existing open issue → comment resolved + CLOSE issue
     - resolved + no open issue → no-op (already closed earlier)
+
+    BL-008-bridge — synthetic alert filter (Codex `019e6de3` AGREE B path):
+    - `is_synthetic=true` label → skip GH Issue creation (R29 monthly Teams
+      smoke ve benzeri diagnostic alarmlar). Synthetic alert perf-alerts-teams
+      route üzerinden Teams Adaptive Card receipt validation amaçlı; bridge
+      sibling route hit eder ama Issue spam'i önlemek için skip.
     """
+    labels = alert.get("labels", {})
+    if labels.get("is_synthetic") == "true":
+        metric_inc("synthetic_skipped_total")
+        log.info(
+            f"synthetic alert skipped (is_synthetic=true): "
+            f"alertname={labels.get('alertname', 'unknown')} "
+            f"status={alert.get('status', 'unknown')}"
+        )
+        return True
+
     status = alert.get("status", "firing")
     title = make_issue_title(alert)
 
