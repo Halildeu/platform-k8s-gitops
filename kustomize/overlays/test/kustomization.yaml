@@ -2786,23 +2786,27 @@ images:
   #     EndpointComplianceService constructor to drop @Lazy Clock)
   #
   # 2026-05-28 update: sha-4aa29dd — platform-backend PR #315 (BE-023
-  # permanent source fix). Replaces @Lazy Clock with
-  # ObjectProvider<Clock> in EndpointComplianceService:
+  # permanent source fix). Replaces @Lazy Clock constructor injection
+  # with ObjectProvider<Clock> in EndpointComplianceService's
+  # constructor:
   #
-  #   @Autowired(required = false)
-  #   private ObjectProvider<Clock> clockProvider;
-  #   ...
-  #   Clock clock = clockProvider.getIfAvailable(Clock::systemUTC);
+  #   EndpointComplianceService(
+  #       ...,
+  #       ObjectProvider<Clock> clockProvider) {
+  #     ...
+  #     this.clock = clockProvider.getIfAvailable(Clock::systemUTC);
+  #   }
   #
   # Spring no longer needs to CGLIB-enhance java.time.Clock to build a
   # lazy proxy, so the JPMS --add-opens flags in
-  # endpoint-admin-service/Dockerfile are no longer required at
-  # runtime. The Dockerfile revert (removing the --add-opens lines)
-  # is a separate follow-up PR with its own image-only diff; this
-  # gitops bump deploys the source-fix image so the 24h soak window
-  # can begin against the still-flagged Dockerfile (proof that the
-  # source change alone resolves the CGLIB JDK-class enhancement
-  # crash). After 24h flagless-boot soak via the revert image, the
+  # endpoint-admin-service/Dockerfile become belt-and-suspenders. The
+  # Dockerfile revert (removing the --add-opens lines) is a separate
+  # follow-up PR with its own image-only diff; this gitops bump
+  # deploys the source-fix image so the 24h soak window can begin —
+  # the soak proves the source-fix image regressions-clean while the
+  # JPMS flags remain in place. Runtime "source change alone resolves
+  # the crash" proof is captured later by the flagless revert image's
+  # pod log (Codex 019e6dd0 P2 acceptance). After both steps, the
   # final image will carry neither @Lazy Clock nor --add-opens.
   #
   # Image build run (PR #315 main SHA, D30 immutable):
