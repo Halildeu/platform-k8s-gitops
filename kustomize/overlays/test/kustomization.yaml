@@ -2622,86 +2622,137 @@ images:
     #     resets the page lifecycle.
     #
     # 2026-05-27 update: sha-70a038a — platform-web PR #674 (WEB-011
-    # Faz 22.5.1B). Carries the new InventoryTab inside the device-detail
-    # drawer in mfe-endpoint-admin: read-only software inventory view
-    # backed by BE-020I admin endpoint
-    #   GET /api/v1/endpoint-admin/endpoint-devices/{deviceId}/software-inventory
-    # plus the `EndpointSoftwareInventory` RTK Query tag, the
-    # `endpoint-software-inventory` entity module (BE-020I DTO mirror with
-    # HKLM / HKLM_WOW6432 install-source variants and the Spring Page
-    # subset actually consumed by the UI), and a drift-fix to
-    # `CommandResultStatus` so it mirrors the backend exactly
-    # (SUCCEEDED | FAILED | PARTIAL | UNSUPPORTED). The prior
-    # TIMEOUT | CANCELLED literals were never produced by the backend.
+    # Faz 22.5.1B). Carried the new InventoryTab inside the device-detail
+    # drawer (BE-020I admin endpoint mirror).
     #
-    # Cross-AI peer review chain:
-    #   - Plan-time: Codex 019e6b16 iter-3 AGREE
-    #   - Post-impl: Codex 019e6b2b iter-1 REVISE -> absorb in ac54f793
-    #     (inline filter+page reset for the race-on-first-request bug,
-    #     render-time deviceId ref-compare reset, early-return for
-    #     isUninitialized so the skip branch cannot leak into empty-state,
-    #     empty-state narrowed to status===404 only)
-    #   - iter-2 AGREE / ready_to_merge: true
+    # 2026-05-28 update: sha-0c4f33a — platform-web PR #675 (WEB-014A
+    # Faz 22.5). Carries the new ComplianceTab inside the device-detail
+    # drawer in mfe-endpoint-admin: live device compliance state +
+    # force-evaluate CTA, backed by the BE-023 admin endpoints
+    #   GET  /endpoint-admin/endpoint-devices/{deviceId}/compliance
+    #   POST /endpoint-admin/endpoint-devices/{deviceId}/compliance/evaluate
+    # plus the `EndpointDeviceCompliance` RTK Query tag and the
+    # `endpoint-device-compliance` entity module (BE-023 DTO mirror:
+    # ComplianceStateResponse + ComplianceStalenessReport +
+    # ComplianceEvidence with the catalogPolicyHashCurrent / policyDrift
+    # post-impl iter-1 absorb fields).
+    #
+    # WHAT THIS IMAGE CARRIES (delta over sha-70a038a)
+    #
+    # - New ComplianceTab in mfe-endpoint-admin device-detail-drawer with:
+    #   * Decision badge (COMPLIANT / NON_COMPLIANT / UNAUTHORIZED /
+    #     UNKNOWN) — role=status, localized aria-label
+    #   * Per-stream staleness banner (FRESH / SOFT / HARD / UNAVAILABLE);
+    #     HARD uses role=alert + aria-live=assertive
+    #   * policyDrift banner when catalogPolicyHash differs from
+    #     catalogPolicyHashCurrent (BE-023 evaluator emits both)
+    #   * Reasons + blockingReasons + warnings rendered as chips
+    #   * StalenessDetails (<details>) for per-stream collectedAt timestamps
+    #   * Force-evaluate CTA wired to POST endpoint with 5s cooldown on
+    #     409 (Retry-After honoring), distinct toasts for 200/403/404/409
+    # - GET state 404 → "never evaluated" empty state + Evaluate CTA
+    # - GET state 403 → forbidden state (RBAC denial surface)
+    # - Locale parity: ~60 new keys TR + EN (decision labels, staleness
+    #   states, reason taxonomy, toast bodies)
+    # - 11 vitest specs covering loading/empty/forbidden/COMPLIANT/
+    #   UNAUTHORIZED/HARD-staleness/policyDrift/200-toast/409-cooldown/
+    #   403-toast paths
+    #
+    # CROSS-AI PEER REVIEW CHAIN (platform-web PR #675)
+    #
+    # - Plan-time: Codex iter-1 AGREE (with split into WEB-014A + WEB-014B
+    #   for cross-device list)
+    # - Post-impl: Codex AGREE / ready_to_merge: true
     #
     # Build evidence:
-    #   gh run view 26538627564 -R Halildeu/platform-web   (success)
-    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-70a038a
-    #   digest sha256:8603693a5ccbedc6ac1f24927ae875ba2c5284fac76150767db736af04b4cef5
+    #   gh run view 26561140414 -R Halildeu/platform-web   (success)
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-0c4f33a
+    #   digest sha256:bb28f32e7c8961a9a917d7ecf083aa3b7422160a963e0c94bed246ead43bfda0
     #
-    # Verify after rollout: open the device detail drawer in
-    # mfe-endpoint-admin, click the Inventory tab, expect either
-    #   (a) the empty-state ("No software inventory collected yet")
-    #       when the backend returns 404 (no BE-020I snapshot ingested
-    #       for that device), OR
-    #   (b) the summary panel + appsAvailable banner when the agent has
-    #       only shipped the lightweight summary (AG-025H default), OR
-    #   (c) the summary panel + filters + paged items table when the
-    #       agent has shipped a full snapshot (opts.IncludeSoftwareApps).
-    # The previous pin (sha256:042741fc2c5a52052c59039ae462b54cbc0a61de057d341ede0ebe0028fbd95f)
-    # rendered the legacy COLLECT_INVENTORY raw-payload view that BE-020I
-    # superseded.
-    digest: sha256:8603693a5ccbedc6ac1f24927ae875ba2c5284fac76150767db736af04b4cef5
+    # Verify after rollout (HARD RULE — Deploy Sonrası Tarayıcı Console
+    # Verifikasyonu): open the device detail drawer in mfe-endpoint-admin,
+    # click the new "Uyum" / Compliance tab, expect either
+    #   (a) the 404 "never evaluated" empty state when no compliance
+    #       evaluation has been recorded yet (BE-023 returns 404 from the
+    #       latest-state pointer), OR
+    #   (b) the decision badge (COMPLIANT / NON_COMPLIANT / UNAUTHORIZED /
+    #       UNKNOWN) + staleness banner + (optional) policyDrift banner +
+    #       reasons + StalenessDetails when an evaluation exists, OR
+    #   (c) the 403 forbidden state if the caller's JWT lacks the read
+    #       scope.
+    # Smoke the Force-Evaluate CTA: POST returns 200 (success toast) or
+    # 409 (cooldown toast + button disabled 5s) or 403 (permission toast).
+    # The previous pin (sha256:8603693a5ccbedc6ac1f24927ae875ba2c5284fac76150767db736af04b4cef5)
+    # carried the WEB-011 InventoryTab but did not yet include the
+    # ComplianceTab — drawer rendered only Status/Inventory/Audit tabs.
+    digest: sha256:bb28f32e7c8961a9a917d7ecf083aa3b7422160a963e0c94bed246ead43bfda0
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
   #
-  # Source: platform-backend `main` @ dd6b1eab (PR #300 squash — BE-017
-  # dual-control gate). Supersedes the BE-016 Flyway-enablement pin
-  # (sha-b5e9bcd, digest sha256:532d16a8...).
+  # 2026-05-22 baseline: sha-dd6b1ea / digest sha256:1a1d0aac... carried
+  # the V5 migration (endpoint_commands.approval_status +
+  # endpoint_command_approvals decision-record table) and the
+  # approveCommand endpoint.
   #
-  # WHAT THIS IMAGE CARRIES — the V5 migration
-  # (V5__endpoint_command_dual_control.sql): the endpoint_commands
-  # .approval_status column (+ CHECK + per-device deliverable partial
-  # index) and the endpoint_command_approvals decision-record table. This
-  # is the FIRST Flyway-applied migration on the test cluster — BE-016
-  # baselined Flyway at V4 (superseded pin above), so V5 is migration #1.
-  # Plus the approveCommand endpoint (POST /api/v1/admin/endpoint-commands/
-  # {id}/approval, manager-gated) and the claim-query approval filter.
+  # 2026-05-28 update: sha-7ea090c — platform-backend PR #313 (BE-023
+  # Faz 22.5). Carries the compliance state evaluator chain on top of
+  # the BE-017 baseline:
+  #   - V10 migration (V10__endpoint_compliance_state.sql) with the
+  #     composite-FK enabler UNIQUE (id, tenant_id) on
+  #     endpoint_software_catalog_items, the
+  #     endpoint_software_compliance_policy_items table (DB-level
+  #     cross-tenant catalog-reference rejection), the append-only
+  #     endpoint_compliance_evaluations history table with JSONB
+  #     reasons / blocking_reasons / warnings / evidence +
+  #     catalog_policy_hash, and the endpoint_device_compliance_states
+  #     latest-pointer table keyed by (tenant_id, device_id)
+  #   - EndpointComplianceService.evaluateForAdmin /
+  #     evaluateForEvent (REQUIRES_NEW) with the
+  #     UNAUTHORIZED > UNKNOWN > NON_COMPLIANT > COMPLIANT decision
+  #     ladder, per-stream staleness classifier (FRESH/<24h /
+  #     SOFT/<72h / HARD/>=72h / UNAVAILABLE), deterministic
+  #     SHA-256 catalogPolicyHash (canonical-sorted JSON projection),
+  #     dialect-aware pg_try_advisory_xact_lock fail-closed and the
+  #     AFTER_COMMIT TransactionalEventListener that re-evaluates on
+  #     inventory ingest
+  #   - GET /endpoint-admin/endpoint-devices/{deviceId}/compliance and
+  #     POST .../evaluate admin endpoints emitting
+  #     ComplianceStateResponse (with catalogPolicyHashCurrent +
+  #     policyDrift visibility fields from iter-1 absorb)
+  #   - Apache Maven artifact ComparableVersion dependency for EXACT /
+  #     MINIMUM / RANGE policy predicates
   #
   # ROLLOUT ACCEPTANCE:
   #   - pod imageID == this digest, Ready 1/1, restartCount 0, health UP
-  #   - endpoint_admin_flyway_history gains one row: version=5, success=true
-  #   - endpoint_commands.approval_status column present (DEFAULT
-  #     NOT_REQUIRED); endpoint_command_approvals table present
-  #   - Hibernate ddl-auto=validate boots clean (entity ↔ V5 schema match)
+  #   - endpoint_admin_flyway_history gains one row: version=10, success=true
+  #   - endpoint_software_catalog_items has UNIQUE (id, tenant_id)
+  #   - endpoint_software_compliance_policy_items table present with
+  #     composite FK to endpoint_software_catalog_items (id, tenant_id)
+  #   - endpoint_compliance_evaluations table present (append-only)
+  #   - endpoint_device_compliance_states table present (latest pointer)
+  #   - Hibernate ddl-auto=validate boots clean (entity ↔ V10 schema match)
   #
   # Image build run (final main SHA, D30 immutable):
-  #   gh run view 26305237771 -R Halildeu/platform-backend   (success)
-  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-dd6b1ea
-  #   digest sha256:1a1d0aac5ac1f2a09c124175085b8d19444ceb064bd4f59ec90c12491cf86490
+  #   gh run view 26546881383 -R Halildeu/platform-backend   (success)
+  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-7ea090c
+  #   digest sha256:e4083f0937031ee7ece97bd9e4fc68fa982224d70a634684406c7d76f87de494
   #
-  # Cross-AI peer review: Codex 019e50e0 post-impl review — verdict RED
-  # (V5 index-name collision with V2 + reason payload-canonicalization
-  # hole) → absorbed (backend commit ed320588) → re-review AGREE. PR #300
-  # CI green incl. EndpointCommandDualControlMigrationIntegrationTest
-  # (Flyway V1-V5 on real Postgres).
+  # CROSS-AI PEER REVIEW CHAIN (platform-backend PR #313)
+  #   - Plan-time: Codex iter-3 AGREE (after iter-1 absorb adding
+  #     catalogPolicyHashCurrent + policyDrift visibility fields, and
+  #     iter-2 absorb fail-closed advisory-lock fallback)
+  #   - Post-impl: Codex iter-1 AGREE / ready_to_merge: true (after
+  #     2x PG integration-test fixes: Timestamp.from(Instant.now())
+  #     JDBC type binding + split into two @Test methods to dodge
+  #     PG 25P02 transaction-abort on the composite-FK reject path)
   #
   # Scope discipline (AGENTS.md HARD RULE): test overlay only. Prod
   # overlay does NOT reference endpoint-admin-service. Prod activation
   # Faz 22.2+ (separate decision/PR).
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:1a1d0aac5ac1f2a09c124175085b8d19444ceb064bd4f59ec90c12491cf86490
+    digest: sha256:e4083f0937031ee7ece97bd9e4fc68fa982224d70a634684406c7d76f87de494
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
