@@ -2875,7 +2875,7 @@ images:
     #   InstallPreflightModal.test.tsx: 9 strict shape + 6 race guard
     #   + 10 reorganized existing).
     #
-    # CROSS-AI PEER REVIEW CHAIN (platform-web PR #683 + #684)
+    # CROSS-AI PEER REVIEW CHAIN (platform-web PR #683 + #684 + #700)
     #
     # - Plan-time (PR #683): Codex 019e6fd1 PARTIAL (9 must-fix) ->
     #   iter-2 absorb commit `15259e99` -> AGREE -> MERGED `b54ffaed`.
@@ -2883,8 +2883,36 @@ images:
     #   REVISE (3 must-fix: in-flight race, shape guard, audit trail
     #   format) -> iter-2 absorb commit `cdfa0057` -> AGREE
     #   ready_for_merge:true -> MERGED `b3c2859a`.
+    # - WEB-013 (PR #700, 2026-05-28): Codex 019e70ce plan-time PARTIAL
+    #   AGREE (7 must-fix list) -> post-impl REVISE (P1 stale snapshot
+    #   guard + P2 history pagination + tri-state domain) -> iter-2
+    #   AGREE -> MERGED `26e68658`. New 7th lazy "Donanım" tab in
+    #   DeviceDetailDrawer + HardwareInventoryView (RTK Query slice
+    #   extension with EndpointHardwareInventory tag type + 2 endpoints
+    #   on gateway external /endpoint-admin/... path; latest snapshot
+    #   panel + disks/NICs tables + history accordion + probe errors
+    #   list; 404 empty / 403 forbidden / generic error precedence
+    #   strict; currentData + deviceId guard stops stale snapshot
+    #   bleed-across; tri-state domain (null = unknown, false =
+    #   workgroup, true = domain); history page indicator bound to
+    #   response page.number not local state).
     #
-    # Build evidence:
+    # 2026-05-28 update: sha-26e6865 — platform-web PR #700 (WEB-013).
+    # Frontend Donanım tab consumes BE-022Q hardware inventory query
+    # API which LIVE on testai in the same session (gitops bump PR
+    # #1124 `f29d7b17` -> apply rolled out 2026-05-28T23:27Z; pod
+    # imageID match `sha256:c895cfd60d64...`). 8 RTL tests (6 original
+    # + 2 regression for iter-1 absorb) all green.
+    #
+    # Build evidence (WEB-013):
+    #   gh run view 26608521488 -R Halildeu/platform-web   (success)
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-26e6865
+    #   digest sha256:4f0409215f27c7fa2ec574f8a56b18b3929b98bf6bde58c70effb9cb5eac63bf
+    #
+    # 2026-05-26 prior pin (superseded by sha-26e6865 above): sha-b3c2859
+    # — platform-web PR #684 WEB-014D follow-up.
+    #
+    # Prior pin build evidence:
     #   gh run view 26597033312 -R Halildeu/platform-web   (success)
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-b3c2859
     #   digest sha256:71ab378aa7232668e708cc99df44daee7084f5947558e028255926336b454f71
@@ -2909,7 +2937,7 @@ images:
     #      key generated (regression test sentinel).
     #   7. Console: no new errors vs the previous pin (pre-existing
     #      PermissionProvider 503 is unrelated to WEB-014D).
-    digest: sha256:71ab378aa7232668e708cc99df44daee7084f5947558e028255926336b454f71
+    digest: sha256:4f0409215f27c7fa2ec574f8a56b18b3929b98bf6bde58c70effb9cb5eac63bf
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
