@@ -1,5 +1,63 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5.2 Hardware Quick Wins source slice CLOSED (2026-05-28)
+
+**Session 2026-05-28 milestone**: Hardware inventory full source slice
+(agent + backend ingest + backend query + frontend view) source-shipped.
+Backend BE-022 V14 + BE-022Q LIVE on testai. WEB-013 frontend source MERGED;
+frontend image build + gitops digest bump + cluster apply pending. Hardware
+lifecycle end-to-end source path closed for the first time in Faz 22.5.2.
+
+### MERGED today
+
+| Slice | Repo | PR | Commit | D29 layer |
+|---|---|---|---|---|
+| AG-035 Windows agent hardware probe | platform-agent | [#24](https://github.com/Halildeu/platform-agent/pull/24) | `ef83531c` | Source-merged (binary distribution operator-bound) |
+| BE-022 V14 payload_hash_sha256 VARCHAR fix | platform-backend | [#324](https://github.com/Halildeu/platform-backend/pull/324) | `931b6079` | Live (testai, superseded by BE-022Q image) |
+| BE-022Q hardware inventory query API | platform-backend | [#325](https://github.com/Halildeu/platform-backend/pull/325) | `4ff2ceb4` | LIVE on testai |
+| Gitops bump BE-022Q sha-4ff2ceb | platform-k8s-gitops | [#1124](https://github.com/Halildeu/platform-k8s-gitops/pull/1124) | `f29d7b17` | LIVE (rollout 2026-05-28T23:27Z) |
+| WEB-013 frontend hardware view (Donanım tab) | platform-web | [#700](https://github.com/Halildeu/platform-web/pull/700) | `26e68658` | Source-merged; image build + gitops bump + cluster apply pending |
+
+### LIVE evidence (BE-022Q on testai)
+
+- Pod `endpoint-admin-service-579fbb5db4-bk5wd` Running 1/1, restartCount 0
+- ImageID `sha256:c895cfd60d64840ddd85da91e23d4a982049e2e1d84c6cc1ca4fb24db58c07af` ✓
+- Actuator HTTP 200
+- `GET /api/v1/admin/endpoint-devices/{id}/hardware-inventory/latest` → 401 (auth-gated, doğru)
+- `GET .../hardware-inventory/history` → 401 (auth-gated, doğru)
+- Hibernate ddl-auto=validate clean (V14 from earlier this session; BE-022Q is code-only)
+
+### Cross-AI peer review chain (this session)
+
+- Codex thread `019e7007-4423-73c1-81fe-9431319a8985` — BE-022 V14 (5-iter post-impl AGREE)
+- Codex thread `019e709c-6994-7591-84eb-683506268737` — AG-035 (PARTIAL → REVISE → AGREE iter-1)
+- Codex thread `019e70c1-0959-7e52-b848-56c92264922a` — BE-022Q (AGREE 7 must-fix + post-impl AGREE iter-1)
+- Codex thread `019e70ce-dbee-74c0-9ea2-56c342c33e6f` — WEB-013 (PARTIAL → REVISE → AGREE iter-2)
+
+### Pending closure gates
+
+- Frontend image build (run 26608521488 in_progress) → digest pin
+- platform-k8s-gitops frontend digest bump → testai cluster apply
+- Browser smoke: Donanım tab empty state (no SRB snapshot yet) → after AG-035 binary distribution + COLLECT_INVENTORY includeHardware=true → `/latest 200` render
+- AG-035 binary distribution to SRB-AIDENETIMPC (operator-bound)
+
+### D29 truth matrix (Faz 22.5.2 hardware quick wins)
+
+| Layer | Status |
+|---|---|
+| Source-merged (4 slices) | 4/4 ✓ (AG-035 / BE-022 V14 / BE-022Q / WEB-013) |
+| GitOps deployed | 2/3 ✓ (BE-022 V14 + BE-022Q); frontend pending |
+| Runtime Up (testai) | Backend LIVE; agent binary distribution operator-bound; frontend pending |
+| Functional acceptance | Backend routes auth-gated; UI render pending apply; agent real probe pending binary |
+| End-to-end (preflight PASS chain) | Pending real SRB hardware result + WEB-013 view live |
+
+Estimated composite (D29-disciplined): 22.5.2 hardware quick wins
+source ~95% / Up ~60% / Functional ~30%. The remaining gap to closure
+is the operator-bound AG-035 binary distribution + UI live render
+after frontend image build + cluster apply.
+
+---
+
 ## Live Delta — Faz 22.5 Software Deployment 3-AI plan refresh (2026-05-27)
 
 Faz 22 Endpoint-Enes hattına **software deployment quick-win** planı eklendi.
