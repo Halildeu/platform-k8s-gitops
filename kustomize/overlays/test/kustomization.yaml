@@ -2903,6 +2903,21 @@ images:
   #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-4aa29dd
   #   digest sha256:0d85e0fc743c2461b4e2d0cd7c10f57c5ffc87801477e61a5c6e1379a1c9f661
   #
+  # BE-021 install audit + detection state (PR #317, 2026-05-28):
+  #   Adds CommandType.INSTALL_SOFTWARE + V12 migration
+  #   (endpoint_install_audit table, composite-FK enablers on
+  #   commands+devices, extended ck_endpoint_commands_type CHECK).
+  #   Dedicated POST /endpoint-devices/{deviceId}/installs path with
+  #   preflight recompute (cached PASS reuse forbidden) + DOUBLE-REDACT
+  #   payload policy before result row construction. BE-023 compliance
+  #   evaluator gains conservative install-audit fallback (REQUIRED
+  #   satisfy only when inventory present + apps_available + package not
+  #   observed; PT15M grace window). Cross-AI peer review thread
+  #   019e6dfb iter-6 AGREE ready_to_merge=true. CI 13/13 SUCCESS.
+  #   gh run view 26570821244 -R Halildeu/platform-backend   (success)
+  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-305561d
+  #   digest sha256:f00cc6b8b22853fd498ae5fc84e634e961a14aa52a119fcc55b6fa8e7f4d5ea2
+  #
   # BE-023 permanent source fix (PR #315):
   #   - Codex 019e6dd0 AGREE / ready_to_merge: true (CI green)
   #   - Replaces @Lazy Clock injection with ObjectProvider<Clock> +
@@ -2918,7 +2933,7 @@ images:
   # Faz 22.2+ (separate decision/PR).
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:0d85e0fc743c2461b4e2d0cd7c10f57c5ffc87801477e61a5c6e1379a1c9f661
+    digest: sha256:f00cc6b8b22853fd498ae5fc84e634e961a14aa52a119fcc55b6fa8e7f4d5ea2
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
