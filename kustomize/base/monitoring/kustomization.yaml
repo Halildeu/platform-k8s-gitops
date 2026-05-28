@@ -36,6 +36,12 @@ resources:
   # gelmedi (observability gap). 3 alert: BridgeDown / BridgeCrashLooping /
   # BridgeHealthzFail. Prom k8s API state scrape bridge'den bağımsız.
   - prometheusrule-alertmanager-bridge-self-watch.yaml
+  # Bridge GitHub Auth surveillance (BL-008-bridge follow-up — Codex 019e6fb5
+  # AGREE Yol C-prime). 3-layer verify gate Layer 3 (runtime). 3 alert:
+  # GHTokenExternalSecretNotReady / GHSecretAbsent / GitHubDeliveryFailing.
+  # Routing via direct-fallback SMTP (R9 path) — bridge'in kendisine bağımlı
+  # değil. Companion: scripts/verify-vault-paths.sh (Layer 1 + 2).
+  - prometheusrule-alertmanager-bridge-gh-auth.yaml
   # DiD-2 (2026-05-21) — Defense-in-depth follow-up to PermissionProvider
   # stale-token incident on ai.acik.com /settings/notifications. HTTP-level
   # synthetic probe + 2 alerts (Failing / Stale). Browser-based stuck-UI

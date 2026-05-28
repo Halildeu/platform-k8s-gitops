@@ -164,18 +164,34 @@ SMTP credentials).
 
 ### 4.1 New Operator Action (post-2026-05-28 — replaces §2.1-2.4 manual K8s secret pattern)
 
+> **HARD RULE — no token leak**: PAT chat'e, log dosyasına, env'e, history'e
+> **YAZILMAZ**. Terminalde sadece `read -rs` (silent, no echo) ile alınır.
+> Tüm zincir tek-shot stdin-pipe; `BRIDGE_PAT` shell var hot-path; `unset`
+> ile temizlenir. SSH komutu single-quote içinde quote-escape edilir; remote
+> tarafta `vault kv put ... = -` ile stdin'den okunur (CLI history'ye bile
+> düşmez). Codex `019e6fb5` AGREE Yol C-prime — bu disiplin verify gate
+> Layer 2 (scripts/verify-vault-paths.sh live) ile machine-enforced.
+
 ```bash
 # 1. GitHub Settings → Developer Settings → Personal Access Tokens (fine-grained):
 #    - Repository: Halildeu/platform-k8s-gitops
 #    - Permissions: Issues: Read and write (only — scope minimal per Codex AGREE)
 #    - Expiration: 90 days
 #    - Note: "alertmanager-bridge prod D43 paging (BL-008-bridge)"
-#    - Copy token
+#    - Copy token (ekrana 1 kez gösterilir; clipboard 30sn timeout tercih edilir)
 
-# 2. Vault seed (D43 stdin-pipe pattern, no-token-log HARD RULE):
+# 2. Vault seed (D43 stdin-pipe pattern; HARD RULE — no token leak):
+#    Read terminal silent mode; prefix verify via `=~`; stdin-pipe SSH;
+#    remote vault kv put consumes stdin via `=-`; unset cleanup zorunlu.
 read -r -s BRIDGE_PAT
-[[ "$BRIDGE_PAT" =~ ^(ghp_|github_pat_) ]] && echo "PAT prefix OK"
+echo  # newline after silent read
+if [[ ! "$BRIDGE_PAT" =~ ^(ghp_|github_pat_) ]]; then
+  echo "ERR: PAT prefix unexpected (got: ${BRIDGE_PAT:0:8}...); abort" >&2
+  unset BRIDGE_PAT
+  return 1 2>/dev/null || exit 1
+fi
 printf '%s' "$BRIDGE_PAT" | ssh halil@staging-sw '
+  set -euo pipefail
   VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json)
   docker exec -i -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
     vault kv put kv/platform/alertmanager-bridge-gh GITHUB_TOKEN=-
@@ -274,6 +290,9 @@ only the property names + bridge script auth flow change.
 - [ ] Bridge pod rollout restart success
 - [ ] Pod env `GITHUB_TOKEN` length > 40 verified
 - [ ] Bridge log no `gh auth login` errors
+- [ ] **Verify gate Layer 2 machine-enforced** (Codex `019e6fb5` AGREE Yol C-prime): `scripts/verify-vault-paths.sh live --context k3d-prod --namespace monitoring --externalsecret alertmanager-bridge-gh-token --min-token-len 40` exit 0
+- [ ] Bridge `/metrics` exposes `alertmanager_bridge_github_token_configured 1` (startup auth-drift sentinel ON)
+- [ ] PrometheusRule `alertmanager-bridge-gh-auth` 3 alerts NOT firing 10m sustained (Layer 3 runtime surveillance clear)
 
 ### 5.3 R29 CronJob first-fire (acceptance gate — not merge gate per Codex `019e6e03` absorb)
 - [ ] Manual job trigger: `kubectl create job --from=cronjob/r29-teams-smoke r29-smoke-manual-<ts>`
@@ -292,10 +311,11 @@ only the property names + bridge script auth flow change.
 - [ ] Bridge metric `alertmanager_bridge_undelivered_by_reason_total{reason="gh_issue_create_failed"}` = 0 (no auth fail)
 
 ### 5.5 Post-acceptance follow-up
-- [ ] R9 risk register update (🟢 Mitigated SMTP-only → 🟢 Mitigated full defense-in-depth SMTP + bridge GH Issue)
-- [ ] R29 mitigation #3 status update (⏳ TODO → ✅ DELIVERED + first-fire evidence ts)
+- [ ] R9 risk register update (🟢 Mitigated SMTP-only → 🟢 Mitigated full defense-in-depth SMTP + bridge GH Issue) — note: BL-008-bridge follow-up PR (this PR — Codex `019e6fb5` Yol C-prime) source-side LIVE; runtime restore brings R9 to full mitigation
+- [ ] R29 mitigation #3 status update (⏳ TODO → ✅ DELIVERED + first-fire evidence ts) — note: R29 madde (4) defense-in-depth `bridge route GitHub Issue blocked by GH_TOKEN` cleared after RB §5.2-5.4 chain
 - [ ] V2.1 Exit #4 closure evidence doc update (mitigation #3 ACTIVE + bridge tertiary leg ACTIVE)
 - [ ] Truth-sync PR §4 / §5 source-vs-runtime: PR READY → DELIVERED LIVE
+- [ ] GitHub App migration follow-up issue/PR (Codex `019e6fb5` follow-up scope) — 90d PAT rotation eliminate: App ID + private key Vault seed + bridge script JWT exchange + PAT decom
 
 ---
 
