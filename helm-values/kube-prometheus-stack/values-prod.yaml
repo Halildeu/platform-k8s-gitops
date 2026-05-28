@@ -308,31 +308,36 @@ alertmanager:
       # Removed in PR Lane B (roadmap-faz23-d43-slack-defer-helm-cleanup).
       # Reference: docs/faz-23-evidence/2026-05-24-d43-slack-defer-smtp-only-acceptance.md
       - name: direct-fallback
-        # ─── BL-008 RESTORED (Codex 019e6dc4 plan-time AGREE; A-prime pattern) ───
-        # Root cause of BL-008 historic failure: misnamed field.
-        # Alertmanager v0.27.0 email_config schema:
+        # ─── BL-008-smtp SHARED IDENTITY INTERIM (Codex 019e6df9 AGREE_AFTER_REVISIONS) ───
+        # 2026-05-28 post PR #1104 (A-prime root-cause fix) live smoke discovered:
+        # cluster auth as `alertmanager-fallback@acik.com` reject 535 5.7.3
+        # (mailbox not provisioned in tenant / SMTP AUTH disabled); same Vault
+        # password (sha256[16]=785f11a6e9589e6f) DOES validate for `ai@acik.com`
+        # (Python smtplib AUTH probe code=235 SUCCESS). Yol B unblock = swap
+        # both `from` and `auth_username` to `ai@acik.com` (orchestrator's
+        # shared service identity); Vault state + ESO mount unchanged.
+        #
+        # A-prime schema requirement KEPT (Alertmanager v0.27.0 email_config):
         #   - `auth_username`: literal string (NO `auth_username_file` field exists)
         #   - `auth_password_file`: mount path (preferred over inline)
-        # Previous `auth_username_file` was Operator v0.90.1 schema reject —
-        # not because of secret-handling pattern but because the field simply
-        # doesn't exist upstream. Fix: literal `auth_username` + keep
-        # `auth_password_file` mount.
         #
-        # Secret residency: SMTP_USER literal in values (not sensitive — same
-        # value as `from` field; service mailbox identifier); SMTP_PASSWORD via
-        # ESO-mounted file path (no plain secret in generated Alertmanager
-        # config, only path).
+        # Identity note: `ai@acik.com` is the SHARED orchestrator service
+        # mailbox identifier; not sensitive (also surfaces as `from`/`auth`
+        # in O365 audit logs). Defense-in-depth distinct-identity restore =
+        # ADR-0030 / Yol A follow-up (`alertmanager-fallback@acik.com`
+        # mailbox provisioning + Vault re-seed + this `auth_username` literal
+        # restore — atomic cycle, separate PR).
         #
-        # D43 alert pipeline restored: 2-channel defense-in-depth
-        #   (1) direct-fallback receiver: SMTP via Office 365 relay
+        # D43 alert pipeline (post-fix): 2-channel defense-in-depth
+        #   (1) direct-fallback receiver: SMTP via Office 365 relay (shared `ai@acik.com`)
         #   (2) alarm-receiver-bridge sibling via route continue:true: GitHub Issue
-        # R29 mitigation (4) "defense-in-depth Teams + SMTP fallback bridge +
-        # GitHub Issue" 3-channel kanıtı (perf alert ayrı route — Teams).
+        # R29 (perf-alertmanager) channels unrelated to this receiver — D43
+        # SMTP only matches NotifyServiceDown|NotifyServiceAbsent route.
         email_configs:
           - to: notify-ops@acik.com
-            from: alertmanager-fallback@acik.com
+            from: ai@acik.com
             smarthost: 'smtp.office365.com:587'
-            auth_username: alertmanager-fallback@acik.com
+            auth_username: ai@acik.com
             auth_password_file: /etc/alertmanager/secrets/alertmanager-fallback-secrets/SMTP_PASSWORD
             require_tls: true
             send_resolved: true
