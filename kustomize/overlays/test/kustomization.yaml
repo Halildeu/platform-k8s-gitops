@@ -3105,18 +3105,52 @@ images:
   # overlay does NOT reference endpoint-admin-service. Prod activation
   # Faz 22.2+ (separate decision/PR).
   #
-  # 2026-05-29 update (V14 fix): sha-931b607 — platform-backend PR #324
-  # (BE-022 V14 follow-up — payload_hash_sha256 CHAR → VARCHAR
-  # Hibernate ddl-auto=validate alignment). The previous BE-022 pin
-  # (sha-ff3927b) deployed V13 but the pod crashed at boot with
-  # "Schema-validation: wrong column type [payload_hash_sha256] ...
-  # found [bpchar (Types#CHAR)], but expecting [char(64)
+  # 2026-05-29 update (BE-022Q hardware query API): sha-4ff2ceb —
+  # platform-backend PR #325 (BE-022Q — hardware inventory query API,
+  # WEB-013 prerequisite). Ships AdminEndpointHardwareInventoryController
+  # with two read-only routes:
+  #   GET /api/v1/admin/endpoint-devices/{deviceId}/hardware-inventory/latest
+  #       → 200 full snapshot (disks + network interfaces folded) /
+  #         404 when no snapshot exists or cross-tenant request.
+  #   GET /api/v1/admin/endpoint-devices/{deviceId}/hardware-inventory/history
+  #       → 200 Page<SummaryResponse> (no children; count surface).
+  # Both routes require module:endpoint-admin can_view via @RequireModule;
+  # no new OpenFGA scope. @Transactional(readOnly=true) keeps the
+  # Hibernate session open so the LAZY children fold without
+  # LazyInitializationException (open-in-view=false on this service).
+  # Page cap DEFAULT=20 MAX=50 (narrower than BE-020I 50/200 because
+  # hardware history is a per-device accordion, not a fleet search).
+  # 4 whitelist DTOs (Snapshot / SnapshotSummary / Disk /
+  # NetworkInterface / ProbeError) — no raw redactedPayload exposure.
+  # Squash merge `4ff2ceb4` at 2026-05-28T23:01:47Z.
+  #
+  # CROSS-AI PEER REVIEW
+  # Implementer AI: Claude (Anthropic)
+  # Reviewer AI:    Codex (OpenAI) — provider-level cross-AI review
+  # Codex thread:   019e70c1-0959-7e52-b848-56c92264922a
+  # Plan-time iter: AGREE (7 must-fix list, all addressed in source PR)
+  # Post-impl iter: AGREE iter-1 (must-fix listesi boş)
+  #
+  # 13 new tests (6 MockMvc slice + 7 authz reflection coverage); both
+  # green locally + on CI (endpoint-admin-service unit + slice gate).
+  #
+  # Build evidence (BE-022Q):
+  #   gh run view 26607368282 -R Halildeu/platform-backend (success)
+  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-4ff2ceb
+  #   digest sha256:c895cfd60d64840ddd85da91e23d4a982049e2e1d84c6cc1ca4fb24db58c07af
+  #
+  # 2026-05-29 prior pin (superseded by sha-4ff2ceb above): sha-931b607
+  # — platform-backend PR #324 (BE-022 V14 fix — payload_hash_sha256
+  # CHAR → VARCHAR Hibernate ddl-auto=validate alignment). The previous
+  # BE-022 pin (sha-ff3927b) deployed V13 but the pod crashed at boot
+  # with "Schema-validation: wrong column type [payload_hash_sha256]
+  # ... found [bpchar (Types#CHAR)], but expecting [char(64)
   # (Types#VARCHAR)]". V14 ALTER TABLE switches the column to
   # VARCHAR(64) and the entity drops columnDefinition="char(64)";
   # CHECK constraint on `payload_hash_sha256 ~ '^[a-f0-9]{64}$'`
   # unchanged. Squash merge `931b6079` at 2026-05-28T21:38:14Z.
   #
-  # Build evidence (V14):
+  # Prior pin build evidence (V14):
   #   gh run view 26603795853 -R Halildeu/platform-backend (success)
   #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-931b607
   #   digest sha256:089f86d8a451770561f98ebc1b22a78cacb6624fb0ac93810d0136213df53d9d
@@ -3189,7 +3223,7 @@ images:
   #     görünüm)
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:089f86d8a451770561f98ebc1b22a78cacb6624fb0ac93810d0136213df53d9d
+    digest: sha256:c895cfd60d64840ddd85da91e23d4a982049e2e1d84c6cc1ca4fb24db58c07af
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
