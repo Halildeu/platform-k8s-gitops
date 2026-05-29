@@ -61,118 +61,185 @@ Cluster digest 2026-05-29: `sha256:76bacc004f...` (sha-e3a0369).
 
 ### 2.3 Admin JWT prerequisite
 
-INSTALL_SOFTWARE dispatch endpoint RBAC: `module:endpoint-admin can_manage`.
+Endpoints + RBAC (verified against backend source code 2026-05-29):
+
+| Endpoint | Method | RBAC |
+|---|---|---|
+| `/api/v1/admin/endpoint-software-catalog` | POST (create) | `module:endpoint-admin can_manage` |
+| `/api/v1/admin/endpoint-software-catalog/{slug}` | GET (read) / PUT (update) | `can_view` / `can_manage` |
+| `/api/v1/admin/endpoint-software-catalog/{slug}/approve` | POST (approve) | `can_manage` (maker-checker: approver subject ≠ creator subject) |
+| `/api/v1/admin/endpoint-software-catalog/{slug}/revoke` | POST (revoke) | `can_manage` |
+| `/api/v1/admin/endpoint-devices/{deviceId}/install-preflight?catalogItemId={slug}` | GET | `can_view` |
+| `/api/v1/admin/endpoint-devices/{deviceId}/installs` | POST (dispatch) | `can_manage` |
+| `/api/v1/admin/endpoint-devices/{deviceId}/installs` | GET (audit list) | `can_view` |
 
 JWT acquisition iki path:
 
-**Path A (operator-assisted)**: Operator testai.acik.com Software Center UI'da login → DevTools Network tab'den Authorization header'i copy → curl REST chain.
+**Path A (operator-paste-only — default testai)**: Operator testai.acik.com Software Center UI'da login → DevTools Network tab'den Authorization header'i copy → operator agent'a iletir (scratch buffer). Token PR/issue/chat/log/disk'e **yazılmaz**. Companion `RB-faz22-software-deployment-winget.md` §6.2 Path #1.
 
-**Path B (test persona seed, future automation)**: Keycloak admin REST üzerinden `test-pilot-admin-7zip` persona create → token endpoint password grant. Bu path için ayrı bir prereq runbook + Vault'ta persona credential seed gerek; operator-bound önce.
+**Path B (fresh Playwright persona — lab cluster)**: Test persona `endpoint-admin-test-smoke@<realm>` ayrı session/cookie isolation. Operator-driven Playwright fixture; JWT Playwright konteksti dışına çıkmaz.
 
-Aktif öneri: **Path A** ilk lifecycle smoke için (operator 5dk içinde execute eder); Path B follow-up automation prereq olarak board issue.
+**Path C (Vault test persona JWT mint — pre-prod)**: Operator-authorized Vault secret lane'den test persona credentials → Keycloak password grant → JWT mint. Auditable secret lane; "tam autonomous credential access" değil.
+
+**Maker-checker invariant**: Path A operator subject = catalog creator. Catalog approve adımı (4.2c) ayrı bir manager subject gerektirir; aynı operator hem create hem approve YAPAMAZ (BE-020 enforcement). Bu pilot smoke için **ikinci operator/persona** ya da Path B/C zorunlu approve aşamasında.
 
 ## 3. Güvenlik Sınırları
 
-- Path A'da kopyalanan JWT yalnız bu lifecycle smoke için kullanılır;
-  artifact'lara yazılmaz. JWT operator'ın aktif user session'ına
-  bağlı; kullanım sonrası invalidate gerek değil (browser session
-  expire ile kendiliğinden geçersizleşir).
-- HALILKOOLUB735 W11 lab cihaz; pre-production scope. 7-Zip kurulumu
-  reversible (uninstall AG-028 sonra).
-- SRB-AIDENETIMPC veya prod cihazlarda smoke YASAK — yalnız
-  HALILKOOLUB735 (D17 Pre-Production Full Authority scope dışı
-  cihazlar).
-- 7-Zip dışı paket smoke YASAK — Approved Catalog'da yalnız 7-Zip
-  satırı seed edilir.
+- **JWT no-history/no-log**: Path A'da kopyalanan JWT **shell history/PR/issue/chat/log/disk'e yazılmaz**.
+  ```bash
+  # Doğru:
+  set +o history     # bash; veya zsh: setopt HIST_IGNORE_SPACE + space prefix
+  read -r -s ADMIN_JWT
+  # JWT prompt'a paste; Enter; echo gizli
+  set -o history     # geri aç (yeni komutlar tekrar geçer)
+  
+  # YASAK:
+  # export ADMIN_JWT="eyJ..."   # ← history'ye yazar
+  # echo "$ADMIN_JWT"            # ← terminal scrollback'e yazar
+  ```
+- **Curl argv leak guard**: `curl -H "Authorization: Bearer $ADMIN_JWT"` ps'de görünebilir; preprod cluster için OK, ama log scraping varsa `curl -K <(cat <<EOF\nheader="Authorization: Bearer $ADMIN_JWT"\nEOF\n)` config pipe kullan.
+- **Smoke evidence dosyalarında JWT yok** — gitleaks .gitleaksignore'a eklenmesi gereken durum yaratma; tüm curl response paste'leri JWT redacte edilir.
+- HALILKOOLUB735 W11 lab cihaz; pre-production scope. 7-Zip kurulumu reversible (uninstall §7).
+- SRB-AIDENETIMPC veya prod cihazlarda smoke YASAK — yalnız HALILKOOLUB735.
+- 7-Zip dışı paket smoke YASAK — Approved Catalog'da yalnız 7-Zip satırı seed edilir.
 
 ## 4. Smoke Chain Adımları
 
-### 4.1 Path A — Admin JWT acquisition
+### 4.1 Path A — Admin JWT acquisition (no-history mode)
 
 ```bash
 # Operator (browser):
-# 1. testai.acik.com'a login (varsa)
+# 1. testai.acik.com'a login
 # 2. DevTools → Network → Filter "endpoint-admin" → any request
 # 3. Request Headers → Authorization: Bearer eyJ... → copy
-# 4. Export to local shell env:
-export ADMIN_JWT="eyJ..."
+# 4. Terminal (history-disabled):
+set +o history
+read -r -s ADMIN_JWT   # JWT prompt'a paste, Enter
+set -o history
+# 5. Quick verify (JWT format, no content leak):
+echo "JWT length=$(echo -n "$ADMIN_JWT" | wc -c)"   # ~1000-2000 char beklenir
 ```
 
-### 4.2 Catalog seed for 7-Zip
+### 4.2 Catalog seed for 7-Zip — 3 adım (create → APPROVE → verify enabled)
+
+**4.2a — Create (DRAFT, enabled=false)**:
 
 ```bash
-curl -X POST "https://testai.acik.com/api/v1/admin/catalog/software" \
+curl -X POST "https://testai.acik.com/api/v1/admin/endpoint-software-catalog" \
   -H "Authorization: Bearer $ADMIN_JWT" \
   -H "Content-Type: application/json" \
   -d '{
     "catalogItemId": "7zip",
     "provider": "WINGET",
-    "sourceType": "WINGET_COMMUNITY",
+    "sourceType": "WINGET",
     "sourceName": "winget",
-    "sourceTrust": "COMMUNITY_VERIFIED",
+    "sourceTrust": "WINGET_COMMUNITY_REVIEWED",
     "packageId": "7zip.7zip",
     "displayName": "7-Zip",
     "publisher": "Igor Pavlov",
-    "approvedVersion": "26.01",
-    "installerType": "WINGET",
-    "argsPolicyPreset": "DEFAULT",
+    "versionPolicyType": "LATEST",
+    "installerType": "WINGET_SILENT",
+    "silentArgsPolicy": "DEFAULT",
     "detectionRule": {
       "type": "WINGET_PACKAGE",
-      "packageId": "7zip.7zip"
+      "wingetPackageId": "7zip.7zip"
     },
-    "riskTier": "LOW",
-    "enabled": true
+    "riskTier": "LOW"
   }' | jq .
 ```
 
-Expected: HTTP 201 + catalog item DTO döner.
+Expected: HTTP 201 + catalog item DTO. **Approval status: DRAFT, enabled: false**. Cannot install yet.
 
-Verify catalog item:
+**4.2b — Approve (maker-checker invariant)**:
 
 ```bash
-curl -s "https://testai.acik.com/api/v1/admin/catalog/software/7zip" \
-  -H "Authorization: Bearer $ADMIN_JWT" | jq .
+# ÖNEMLİ: Bu adımı 4.2a yapan subject DEĞİL, ikinci bir manager subject ile koş.
+# Aksi halde BE-020 service layer "same subject cannot maker+checker" error döner.
+# Path A operator için: ikinci operator/persona ile login + paste yapılır.
+# Path B/C için: test-pilot-approver persona ile auth.
+
+curl -X POST "https://testai.acik.com/api/v1/admin/endpoint-software-catalog/7zip/approve" \
+  -H "Authorization: Bearer $APPROVER_JWT" \
+  -H "Content-Type: application/json" | jq .
 ```
 
-### 4.3 Install dry-run preflight
+Expected: HTTP 200 + catalog item DTO. **Approval status: APPROVED, enabled: true**.
+
+**4.2c — Verify enabled before preflight**:
+
+```bash
+curl -s "https://testai.acik.com/api/v1/admin/endpoint-software-catalog/7zip" \
+  -H "Authorization: Bearer $ADMIN_JWT" \
+  | jq '{catalogItemId, approvalStatus, enabled}'
+```
+
+Expected: `{"catalogItemId":"7zip","approvalStatus":"APPROVED","enabled":true}`.
+
+Eğer `enabled=false` ise 4.3 preflight BLOCK döner (reason: `catalog_item_draft`).
+
+### 4.3 Install dry-run preflight (GET + query param)
 
 ```bash
 DEVICE_ID="d0efb00a-681a-4e32-b7de-a27ef94f2977"  # HALILKOOLUB735
 
-curl -X POST "https://testai.acik.com/api/v1/admin/endpoint-devices/$DEVICE_ID/install-preflight" \
+curl -s "https://testai.acik.com/api/v1/admin/endpoint-devices/$DEVICE_ID/install-preflight?catalogItemId=7zip" \
   -H "Authorization: Bearer $ADMIN_JWT" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "catalogItemId": "7zip"
-  }' | jq .
+  | jq '{decision, blockingReasons, warnings, requirements, installedState, evidence}'
 ```
 
-Expected: HTTP 200 + `{ "result": "PASS" | "WARN", "checks": [...] }` döner.
+Expected: HTTP 200 + `InstallPreflightResponse`:
+```json
+{
+  "decision": "PASS" | "WARN" | "BLOCK",
+  "blockingReasons": [],
+  "warnings": [],
+  "requirements": [],
+  "installedState": "NOT_INSTALLED" | "INSTALLED" | "UNKNOWN",
+  "evidence": { ... }
+}
+```
 
-PASS olmadan dispatch yasak (BE-021 gate). WARN durumunda operator
-açıkça kabul ederek devam edebilir.
+`decision != PASS` ve `decision != WARN` durumda dispatch YAPMA (BE-021 recompute gate aynı sebepten BLOCK döner). WARN durumunda operator açıkça kabul ederek devam edebilir (warnings non-blocking).
 
-### 4.4 INSTALL_SOFTWARE command dispatch
+### 4.4 INSTALL_SOFTWARE command dispatch (idempotencyKey body field)
 
 ```bash
+# Idempotency key max 40 char (BE-021 prefix `admin-install:{deviceId}:{catalogUuid}:` 88 char + key + 128 char column).
+IDEMPOTENCY_KEY="7zip-pilot-$(date -u +%Y%m%d-%H%M%S)"
+
 curl -X POST "https://testai.acik.com/api/v1/admin/endpoint-devices/$DEVICE_ID/installs" \
   -H "Authorization: Bearer $ADMIN_JWT" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: 7zip-pilot-$(date -u +%Y%m%d-%H%M%S)" \
-  -d '{
-    "catalogItemId": "7zip",
-    "requestedVersion": "latest"
-  }' | jq .
+  -d "{
+    \"catalogItemId\": \"7zip\",
+    \"idempotencyKey\": \"$IDEMPOTENCY_KEY\",
+    \"reason\": \"Faz 22.5.4 First Install Pilot lifecycle smoke\"
+  }" | jq '{id, status, type, approvalStatus, idempotencyKey}'
 ```
 
-Expected: HTTP 201 + EndpointCommandDto döner (command id, status pending).
+Expected: HTTP 201 + `EndpointCommandDto`:
+```json
+{
+  "id": "<uuid>",
+  "status": "QUEUED",
+  "type": "INSTALL_SOFTWARE",
+  "approvalStatus": "APPROVED",
+  "idempotencyKey": "7zip-pilot-..."
+}
+```
 
-### 4.5 Agent poll cycle pickup
+`id` (= command UUID) ve `status=QUEUED` notla. Status `pending` değildir.
+
+`HTTP 409 Conflict` döner ise:
+- Body `InstallPreflightResponse` ile gelir (BLOCK recompute); preflight değişmiş.
+- Veya idempotency key reuse + device/catalog mismatch.
+
+### 4.5 Agent poll cycle pickup (30s heartbeat)
 
 ```bash
 # Mac local, prlctl exec
 prlctl exec "Windows 11" cmd.exe /c \
-  "powershell -NoProfile -Command \"Get-Content C:\ProgramData\EndpointAgent\logs\endpoint-agent.log -Tail 30 | Select-String 'INSTALL_SOFTWARE|install|7zip'\""
+  "powershell -NoProfile -Command \"Get-Content C:\ProgramData\EndpointAgent\logs\endpoint-agent.log -Tail 50 | Select-String 'INSTALL_SOFTWARE|install_winget|7zip'\""
 ```
 
 Expected: Agent log içinde "command received: INSTALL_SOFTWARE" benzeri satır (30s sonra heartbeat'te pickup).
@@ -180,9 +247,9 @@ Expected: Agent log içinde "command received: INSTALL_SOFTWARE" benzeri satır 
 ### 4.6 Agent winget install execution
 
 Agent AG-027 install adapter:
-1. Pre-detect: `winget list 7zip.7zip --exact` — yoksa fresh install path
-2. `winget install --id 7zip.7zip --exact --silent --accept-package-agreements --accept-source-agreements`
-3. Post-verify: `winget list 7zip.7zip --exact` — installed version match
+1. Pre-detect: `winget list --id 7zip.7zip --exact --source winget` — yoksa fresh install path
+2. `winget install --id 7zip.7zip --exact --silent --accept-package-agreements --accept-source-agreements` (DEFAULT silentArgsPolicy preset)
+3. Post-verify: `winget list --id 7zip.7zip --exact --source winget` — installed version match
 
 Süre: ~30-60sn (paket boyutu küçük).
 
@@ -194,24 +261,29 @@ Test-Path "C:\Program Files\7-Zip\7z.exe"  # True beklenir
 & "C:\Program Files\7-Zip\7z.exe" --help   # 7-Zip version banner
 ```
 
-### 4.7 Result + detection submit (BE-021 audit)
+### 4.7 Result + detection submit readback (BE-021 audit Page.content)
 
 ```bash
-curl -s "https://testai.acik.com/api/v1/admin/endpoint-devices/$DEVICE_ID/installs" \
+curl -s "https://testai.acik.com/api/v1/admin/endpoint-devices/$DEVICE_ID/installs?size=20&sort=reportedAt,desc" \
   -H "Authorization: Bearer $ADMIN_JWT" \
-  | jq '.[] | select(.catalogItemId == "7zip") | {commandId, status, result, exitCode, completedAt}'
+  | jq '.content[] | select(.catalogItemId == "7zip") | {auditId, commandId, resultStatus, exitCode, detectedVersion, reportedAt, startedAt, finishedAt}'
 ```
 
-Expected:
+Expected: `Page<EndpointInstallAuditDto>` (Spring Data pagination) content[]:
 ```json
 {
-  "commandId": "...",
-  "status": "COMPLETED",
-  "result": "SUCCEEDED",
+  "auditId": "<uuid>",
+  "commandId": "<uuid>",
+  "resultStatus": "SUCCEEDED",
   "exitCode": 0,
-  "completedAt": "2026-05-29T..."
+  "detectedVersion": "26.01",
+  "reportedAt": "2026-05-29T...",
+  "startedAt": "2026-05-29T...",
+  "finishedAt": "2026-05-29T..."
 }
 ```
+
+`resultStatus` values: `SUCCEEDED` | `FAILED` | `FAILED_PREEXISTING_VERSION_CONFLICT` | `FAILED_UNSUPPORTED_DETECTION_RULE` | `FAILED_VERIFICATION` | `SUCCEEDED_REBOOT_REQUIRED` | `SUCCEEDED_NOOP` | timeout/cancel variants.
 
 ### 4.8 UI render verify
 
@@ -228,38 +300,46 @@ Browser smoke kanıtı:
 - Console temiz (yeni JS error yok)
 - Network 2xx (no 401/403/500)
 
-## 5. D29 Pilot Acceptance Gate
+## 5. Acceptance Gate — Band 1 Smoke PASS
 
-| Katman | Kanıt |
-|---|---|
-| **Up** | Backend endpoint-admin-service Running; agent HALILKOOLUB735 Running |
-| **Functional** | 4.5-4.7 zinciri 8 adım sırayla SUCCEED; UI render 4.8 |
-| **Secured** | RBAC enforced (4.4 manager-only); preflight gate (4.3 BLOCK reject); raw shell yok |
-| **Audit** | BE-021 install_audit table row + endpoint_audit_events row |
-| **D30 artifact** | Agent binary commit `5f0a806` (AG-026B); backend digest `sha256:76bacc004f...` (sha-e3a0369); web frontend digest (current testai) |
+> **Önemli**: Bu zincir tamamlandığında "22.5.4 **Band 1** lifecycle smoke PASS" eşiği geçilir. **Full 22.5.4 telemetry close-out**, AG-027L exit-code + redacted log capture (P0 board platform-agent#30) + pilot dispatch UI (P0 board platform-web#703) tamamlanana kadar **claim edilemez**. Companion runbook §6.2 aynı disiplini koyuyor.
 
-5 katmanın 5'i pass olunca **22.5.4 First Install Pilot LIVE** claim
-edilebilir.
+| Katman | Kanıt | Band 1 |
+|---|---|---|
+| **Up** | Backend endpoint-admin-service Running; agent HALILKOOLUB735 Running | ✓ |
+| **Functional** | 4.2c APPROVED + enabled=true → 4.3 PASS → 4.4 QUEUED → 4.5 pickup → 4.6 winget SUCCEEDED → 4.7 audit SUCCEEDED+exit=0 → 4.8 UI render | ✓ |
+| **Secured** | RBAC enforced (4.2b maker-checker; 4.4 can_manage); preflight gate (4.3 BLOCK reject); raw shell yok; JWT no-history | ✓ |
+| **Audit** | BE-021 install_audit row + endpoint_audit_events row + catalog approval audit | ✓ |
+| **D30 artifact (full digest match)** | Agent binary commit `5f0a806b1...` (AG-026B PR #28) — full sha; backend image `sha256:76bacc004fa25dcbd1c71c8cdcd3c0e90b741158d195352ac66c49177531670d` (sha-e3a0369); web frontend digest (current testai — placeholder dolacak smoke pass'te full sha ile) | Verify required |
+| **Telemetry close-out** | AG-027L exit-code/redacted log capture; pilot dispatch UI button + audit/result render | ✗ (deferred — P0 board) |
 
-## 6. Evidence Patch (smoke pass sonrası)
+**Band 1 PASS** = 5 katmanın 5'i ✓; "First Install Pilot **lifecycle smoke** PASS" claim edilebilir. **Full 22.5.4 LIVE close-out** ≠ Band 1; AG-027L + dispatch UI gelene kadar partial.
 
-`docs/state/current-state.md` "Critical residual P0" block'u
-supersede edecek yeni delta:
+## 6. Evidence Patch (Band 1 PASS sonrası)
+
+`docs/state/current-state.md` "Critical residual P0" block'una eklenecek (supersede DEĞİL; sadece Band 1 PASS deltası ekle, AG-027L + dispatch UI residual'larını koru):
 
 ```markdown
-## Live Delta — Faz 22.5.4 First Install Pilot LIVE (YYYY-MM-DD)
+## Live Delta — Faz 22.5.4 Band 1 Smoke PASS (YYYY-MM-DD)
 
-7-Zip lifecycle smoke chain end-to-end LIVE on HALILKOOLUB735.
+7-Zip lifecycle smoke chain Band 1 end-to-end PASS on HALILKOOLUB735.
+Full 22.5.4 telemetry close-out HÂLÂ pending (AG-027L + pilot dispatch UI).
 
-### Evidence
-- Catalog seed: catalog item `7zip` exists in BE-020 (POST 201)
-- Preflight: result=PASS (POST 200)
-- Dispatch: command id `<uuid>` (POST 201)
+### Band 1 Evidence
+- Catalog seed: `endpoint-software-catalog` POST 201 → DRAFT
+- Approve (maker-checker): `/{catalogItemId}/approve` POST 200 → APPROVED+enabled=true
+- Preflight: GET 200 + decision=PASS (evidence refs in response)
+- Dispatch: POST 201 + EndpointCommandDto id=<uuid> status=QUEUED
 - Agent log: "INSTALL_SOFTWARE command received" + "winget install completed exit=0"
 - Detection verify: `winget list 7zip.7zip` → version 26.01
-- Install audit: BE-021 row status=COMPLETED result=SUCCEEDED exitCode=0
+- Install audit (BE-021 Page.content): resultStatus=SUCCEEDED exitCode=0 detectedVersion=26.01
 - UI: Compliance tab "7-Zip: COMPLIANT"; Audit drawer "7zip SUCCEEDED"
-- D29 truth matrix: Up ✓ Functional ✓ Secured ✓ Audit ✓ D30 artifact ✓
+- D29 truth matrix: Up ✓ Functional ✓ Secured ✓ Audit ✓ D30 artifact ✓ (full digest match)
+
+### Residual (Band 1 ≠ full close-out)
+- 🟡 AG-027L exit-code + redacted log capture (P0 board platform-agent#30)
+- 🟡 Pilot dispatch UI button + audit/result render (P0 board platform-web#703)
+- 🟡 Full 22.5.4 telemetry acceptance only after both residual items LIVE
 ```
 
 ## 7. Rollback / Uninstall
@@ -274,14 +354,15 @@ pilot için operator manuel uninstall:
 
 veya Programlar ve Özellikler → 7-Zip → Kaldır.
 
-Uninstall sonrası catalog item enable=false set:
+Uninstall sonrası catalog item disable (BE-020 revoke endpoint):
 
 ```bash
-curl -X PATCH "https://testai.acik.com/api/v1/admin/catalog/software/7zip" \
+curl -X POST "https://testai.acik.com/api/v1/admin/endpoint-software-catalog/7zip/revoke" \
   -H "Authorization: Bearer $ADMIN_JWT" \
-  -H "Content-Type: application/json" \
-  -d '{"enabled": false}'
+  -H "Content-Type: application/json"
 ```
+
+Revoke maker-checker invariant'a tabi (4.2b ile aynı disiplin); approver subject ≠ creator subject.
 
 ## 8. Operator Notu
 
