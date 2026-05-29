@@ -81,7 +81,7 @@ longer partial) but the operational claim "install pilot LIVE" is
 - 22.5 source-side: **~92%** (Sprint A 3-PR close-out 2026-05-29 PM merged: BE-020I `lower(bytea)` SQL fix #328 + AG-027L installer redaction #32 + WEB-014D truth correction #1139; remaining source: uninstall + posture + diff/prohibited follow-ups)
 - 22.5 testai deployed: **~82-85%** (BE-020/BE-020I/BE-021/BE-021A/BE-022/BE-022Q/BE-023 all LIVE; agent binaries operator-bound)
 - 22.5 functional acceptance: **~75-80%** (hardware ingest LIVE proven; install lifecycle LIVE smoke not yet executed)
-- 22.5.4 First Install Pilot: source-weighted **~80-85%** (AG-027L now SOURCE-MERGED today PR #32); live acceptance **~70-75%** (7-Zip lifecycle smoke + AG-027L binary verification both still pending)
+- 22.5.4 First Install Pilot: source-weighted **~80-85%** (AG-027L now SOURCE-MERGED today PR #32); live acceptance **~70-75%** (7-Zip lifecycle smoke + AG-027L INSTALL_SOFTWARE command-path live verification still pending; binary distributed + service health PASS)
 - v1 toplam: **~65-70%** weighted
 
 Adversarial cross-AI peer review 2026-05-29 confirmed the prior
