@@ -248,7 +248,7 @@ Operator hangi cluster üzerinde smoke koştuğuna göre path seçer:
 - **Operator JWT'yi kendi local shell'inde `ADMIN_JWT` env var olarak set eder** ve curl komutlarını **kendisi çalıştırır** (agent JWT'ye erişmez)
 - Agent yalnız **placeholder'lı komut template'i üretir** (örn. `curl -H "Authorization: Bearer $ADMIN_JWT" ...`); JWT değeri agent'a iletilmez
 - Token PR/issue/chat/log'a **asla yazılmaz** (redaction guard §6.2.D)
-- Operator bittikten sonra: `unset ADMIN_JWT` + browser logout/revoke + shell history kontrolü (`history -d <num>` veya `set +H`)
+- Operator bittikten sonra: `unset ADMIN_JWT` + browser logout/revoke + shell history kontrolü (`history -d <num>` / bash `set +o history` oturumu / zsh `HIST_IGNORE_SPACE` discipline; `set +H` history-expansion'ı kapatır kayıt engellemez — kullanılmaz)
 - **JWT TTL varsayma**: token expire passive değil; aktif revoke etmek tercih
 
 **2. fresh Playwright persona** (lab cluster, HALILKOOLUB735):
