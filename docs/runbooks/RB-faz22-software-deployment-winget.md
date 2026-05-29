@@ -248,7 +248,7 @@ Operator hangi cluster üzerinde smoke koştuğuna göre path seçer:
 - **Operator JWT'yi kendi local shell'inde `ADMIN_JWT` env var olarak set eder** ve curl komutlarını **kendisi çalıştırır** (agent JWT'ye erişmez)
 - Agent yalnız **placeholder'lı komut template'i üretir** (örn. `curl -H "Authorization: Bearer $ADMIN_JWT" ...`); JWT değeri agent'a iletilmez
 - Token PR/issue/chat/log'a **asla yazılmaz** (redaction guard §6.2.D)
-- Operator bittikten sonra: `unset ADMIN_JWT` + browser logout/revoke + shell history kontrolü (`history -d <num>` veya `set +H`)
+- Operator bittikten sonra: `unset ADMIN_JWT` + browser logout/revoke + shell history kontrolü (`history -d <num>` / bash `set +o history` oturumu / zsh `HIST_IGNORE_SPACE` discipline; `set +H` history-expansion'ı kapatır kayıt engellemez — kullanılmaz)
 - **JWT TTL varsayma**: token expire passive değil; aktif revoke etmek tercih
 
 **2. fresh Playwright persona** (lab cluster, HALILKOOLUB735):
@@ -315,7 +315,10 @@ Codex `019e73aa` PARTIAL absorb: AG-027L yokken acceptance ikiye ayrılır; **si
 **Operator workflow guard** (Codex iter-2 P1 absorb):
 
 - Operator JWT yalnız **kendi local shell env var**'ı olarak yaşar (`ADMIN_JWT`); agent/chat/AI'ya **iletilmez**
-- Shell history: `set +H` veya `history -d <num>` ile temizle (bash/zsh)
+- Shell history disable (Codex `019e73aa` iter-5 P2 absorb — `set +H` history-expansion'ı kapatır, kayıt engellemez):
+  - **bash**: `set +o history` → JWT read → `set -o history` (yeni komutlar tekrar history'ye geçer)
+  - **zsh**: `setopt HIST_IGNORE_SPACE` + komut başına space, veya `unsetopt INC_APPEND_HISTORY` session-scope
+  - Smoke sonu: `unset ADMIN_JWT` + history scrub (`history -d <num>`)
 - Browser DevTools HAR / screenshot / network export: capture sırasında Authorization header redacted (Burp / Fiddler / DevTools "Hide" flag veya manuel kırpma)
 - Smoke sonrası: `unset ADMIN_JWT` + browser logout/revoke + Vault audit entry capture (pre-prod path)
 - **JWT TTL varsayma**: token expire passive değil; aktif revoke tercih
