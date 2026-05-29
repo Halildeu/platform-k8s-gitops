@@ -9,7 +9,7 @@
 > backend + frontend) MERGED across 4 repos; testai deployed for backend
 > + frontend slices. End-to-end LIVE smoke (7-Zip catalog seed →
 > preflight PASS → dispatch → agent install → result submit → UI render)
-> still pending; AG-027L exit-code/redacted log capture + AG-028 uninstall
+> still pending; AG-027L installer log redaction SOURCE-MERGED (PR #32 `4f5e152`) — binary distributed to HALILKOOLUB735 + service health PASS, INSTALL_SOFTWARE command-path redaction/wire-path live verification still pending (coupled with 7-Zip lifecycle smoke). AG-028 uninstall
 > + AG-029 self-update + AG-030/031/032/033 posture + AG-036/037/038/039/040
 > diagnostics still TODO. See `docs/state/current-state.md`
 > "2026-05-29 PM" delta for honest acceptance gate map and live evidence.
@@ -532,8 +532,8 @@ sonra açılır.
 
 P0 (kritik path, acceptance):
 1. **7-Zip lifecycle live smoke chain** — catalog seed + preflight + dispatch + agent install + result + UI render; sees `current-state.md` "Critical residual P0" block
-2. **AG-027L binary/live verification on HALILKOOLUB735** — PR #32 (2026-05-29 PM) SOURCE-MERGED; agent binary build + lab deploy + installer log redaction + exit-code/duration wire path live kanıt
-3. ~~AG-029 Signed agent self-update~~ — **deprecated from P0 list 2026-05-29 PM** per adversarial review (not blocker for 22.5.4 First Install Pilot); moved to P2 managed lifecycle
+2. **AG-027L INSTALL_SOFTWARE command-path live verification on HALILKOOLUB735** — PR #32 (2026-05-29 PM) SOURCE-MERGED; **binary distributed to HALILKOOLUB735 + service health PASS 2026-05-29 PM** (post-merge build `4f5e152` swap; logger init + DPAPI hydrate + heartbeat accept sentinel verified). Remaining: actual INSTALL_SOFTWARE command produces stdout/stderr through `sanitizeForWire` → `RedactInstallerString` → backend receives properly-scrubbed Stdout/StderrTail + ExitCode + DurationMs (live verify coupled with 7-Zip lifecycle smoke #1)
+3. ~~AG-029 Signed agent self-update~~ — **moved from P0 to P2 managed lifecycle item #12 (2026-05-29 PM)** per adversarial review (not blocker for 22.5.4 First Install Pilot; lives in §22.5.7 managed lifecycle scope)
 4. ~~**WEB pilot dispatch button + audit/result render** on per-device drawer (platform-web)~~ — **2026-05-29 truth correction**: this item was already LIVE in WEB-014D (PR #683 + perf follow-up #693). `SoftwareCatalogTab.tsx` ships per-row "Kur" button; `InstallPreflightModal.tsx` handles PASS/WARN/BLOCK + dispatch via `useCreateInstallMutation()`; "Son Kurulumlar" panel renders audit via `useListInstallAuditsQuery` with auto-refetch tag. Original truth-refresh PR (2026-05-29 AM) mis-flagged this as pending; board issue platform-web#703 closed as already-shipped.
 
 P1 (görünürlük genişletme):
@@ -544,12 +544,13 @@ P1 (görünürlük genişletme):
 9. **BE-025** Prohibited software detection
 10. **WEB-015** CSV/report export
 
-P2 (rollout controls + uninstall):
+P2 (rollout controls + uninstall + signed self-update — managed lifecycle):
 11. **AG-028** Software uninstall (catalog-managed only)
-12. **BE-026 / BE-027 / BE-028 / BE-029** rollout ring/window/throttle/bundle (4 PR)
+12. **AG-029** Signed agent self-update (Authenticode + manifest + SHA256/SHA512 + rollback guard; moved from P0 2026-05-29 PM per adversarial review — not 22.5.4 First Install Pilot blocker; lives in §22.5.7 managed lifecycle scope)
+13. **BE-026 / BE-027 / BE-028 / BE-029** rollout ring/window/throttle/bundle (4 PR)
 
 Deferred:
-13. **AG-034** SMB/file action discovery (runtime yok)
+14. **AG-034** SMB/file action discovery (runtime yok)
 
 Bu sıra 2026-05-29 truth refresh sonrası geçerlidir.
 

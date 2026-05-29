@@ -88,7 +88,7 @@ Adversarial cross-AI peer review 2026-05-29 confirmed the prior
 "100% First Install Pilot" / "Must-have 9/10" / "Critical blocker 0"
 claims were overclaim; honest numbers per this delta. The
 critical-path next work is (a) 7-Zip live smoke chain execution +
-evidence patch, (b) AG-027L exit-code/redacted log impl + acceptance,
+evidence patch, (b) AG-027L INSTALL_SOFTWARE redaction/sentinel scrub + exit-code/duration wire-path live acceptance (binary distributed to HALILKOOLUB735 + service health PASS; command-path verify still pending),
 (c) plan doc SOURCE-PARTIAL → SOURCE-MERGED truth refresh (this PR).
 
 ---
