@@ -19,7 +19,7 @@ MERGED + LIVE on HALILKOOLUB735 Parallels W11 lab. SCM env-block caching
 | 22.5.3B Catalog compliance evaluator | ✅ LIVE (BE-023 deployed testai) |
 | Enrollment friction (AG-026B/C/D) | ✅ LIVE (HALILKOOLUB735 DPAPI hydrate proof) |
 | 22.5.4 **First Install Pilot** — INSTALL_SOFTWARE flow | 🟡 **SOURCE-MERGED, LIVE smoke pending** |
-| 22.5.4 AG-027L exit-code / redacted log | 🟡 TODO — not yet implemented |
+| 22.5.4 AG-027L exit-code / redacted log | 🟢 **SOURCE-MERGED 2026-05-29 PM (platform-agent PR #32 `4f5e152`)**; binary distributed + service health PASS; command-path live verification pending |
 | 22.5.5 Web Surface (full software view) | ✅ Source-LIVE testai (WEB-011/14A-D/13/17/18 routes live). 2026-05-29 PM truth correction: install dispatch button + audit/result render UI ALSO LIVE in WEB-014D — `SoftwareCatalogTab.tsx` "Kur" button + `InstallPreflightModal.tsx` + `useCreateInstallMutation()` dispatch + "Son Kurulumlar" panel via `useListInstallAuditsQuery`. Initial truth-refresh mis-flagged this as pending |
 
 ### Operator enrollment-friction MERGED today (PM)
@@ -78,17 +78,17 @@ longer partial) but the operational claim "install pilot LIVE" is
 
 ### Composite (D29-disciplined, honest)
 
-- 22.5 source-side: **~90%** (MERGED PRs across 4 repos; AG-027L + uninstall + posture follow-ups deferred)
+- 22.5 source-side: **~92%** (Sprint A 3-PR close-out 2026-05-29 PM merged: BE-020I `lower(bytea)` SQL fix #328 + AG-027L installer redaction #32 + WEB-014D truth correction #1139; remaining source: uninstall + posture + diff/prohibited follow-ups)
 - 22.5 testai deployed: **~82-85%** (BE-020/BE-020I/BE-021/BE-021A/BE-022/BE-022Q/BE-023 all LIVE; agent binaries operator-bound)
 - 22.5 functional acceptance: **~75-80%** (hardware ingest LIVE proven; install lifecycle LIVE smoke not yet executed)
-- 22.5.4 First Install Pilot: **~75-80%** (source ready; live smoke + AG-027L pending)
+- 22.5.4 First Install Pilot: source-weighted **~80-85%** (AG-027L now SOURCE-MERGED today PR #32); live acceptance **~70-75%** (7-Zip lifecycle smoke + AG-027L INSTALL_SOFTWARE command-path live verification still pending; binary distributed + service health PASS)
 - v1 toplam: **~65-70%** weighted
 
 Adversarial cross-AI peer review 2026-05-29 confirmed the prior
 "100% First Install Pilot" / "Must-have 9/10" / "Critical blocker 0"
 claims were overclaim; honest numbers per this delta. The
 critical-path next work is (a) 7-Zip live smoke chain execution +
-evidence patch, (b) AG-027L exit-code/redacted log impl + acceptance,
+evidence patch, (b) AG-027L INSTALL_SOFTWARE redaction/sentinel scrub + exit-code/duration wire-path live acceptance (binary distributed to HALILKOOLUB735 + service health PASS; command-path verify still pending),
 (c) plan doc SOURCE-PARTIAL → SOURCE-MERGED truth refresh (this PR).
 
 ---
