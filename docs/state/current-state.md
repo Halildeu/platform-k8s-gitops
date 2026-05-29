@@ -1,5 +1,63 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5.2 Hardware ingest end-to-end LIVE (2026-05-29)
+
+**Session 2026-05-29 milestone**: HALILKOOLUB735 Parallels W11 lab agent
+binary upgrade to sha-1e915a2 (PR #25 absorb) + re-enrollment + full
+hardware ingest pipeline LIVE on testai. AG-026A defensive wire shape
+fix (drop omitempty + emptyEgressSummary helper) unblocked the
+WinGetEgressPayloadPolicy gate; backend BE-022 V14 sanitizer now
+accepts payloads from real agent unchanged.
+
+### MERGED today
+
+| Slice | Repo | PR | Commit | Codex thread | D29 layer |
+|---|---|---|---|---|---|
+| AG-026A EgressSummary defensive wire shape | platform-agent | [#25](https://github.com/Halildeu/platform-agent/pull/25) | `1e915a2d` | `019e7164` PARTIAL→iter-1, `019e716c` AGREE | LIVE (binary deployed to HALILKOOLUB735) |
+
+### LIVE evidence (HALILKOOLUB735 W11 lab via Parallels Desktop)
+
+- Binary swap: 7491072→7195456 bytes via SYSTEM-context PowerShell
+  (UAC consent) → EndpointAgent service Running, PID 2832
+- `diagnose winget-egress` wire shape (post-fix): `"egress":{"dns":[...],"tcp":[...],"https":[...]}`
+  with populated probes (cdn.winget.microsoft.com, storeedgefd.dsx.mp.microsoft.com)
+- Re-enrollment: token `0cFdPw...` CONSUMED (enrollment id 25acdb43-...)
+  → device d0efb00a-681a-4e32-b7de-a27ef94f2977 rebound
+- Backend log: `Hardware inventory snapshot persisted device_id=d0efb00a... snapshot_id=a4d68420...`
+  (BE-022 V14 sanitize accepted payload, no 400 reject)
+- UI Donanım tab: Toplama Zamanı 29.05.2026 10:22:09, Apple Silicon
+  1 cores 3072 MHz, 20 GiB RAM, Windows 11 Pro for Workstations
+  10.0.26200 ARM64, Parallels VirtIO Ethernet 00:1c:42:a2:97:19,
+  C: 254.5 GiB/18.7 GiB free
+- WEB-018 "Envanteri Şimdi Topla" → COLLECT_INVENTORY 611bec67-...
+  Başarılı + fresh snapshot persisted (Bellek free changed 14.2→14.3 GiB)
+
+### Cross-AI peer review chain (this session)
+
+- Codex thread `019e7164` — AG-026A iter-1 PARTIAL ("runEgressWith
+  dışındaki erken dönüş yolları nil-slice + omitempty kombinasyonuyla
+  `"dns":null` üretir") → iter-1 absorb (emptyEgressSummary helper +
+  uniform constructor/runEgressWith/non-Windows stub init)
+- Codex thread `019e716c` — AG-026A iter-2 AGREE / `ready_to_merge: true`
+  (review of commit `9966ed0`; must_fix #1 closed)
+
+### D29 truth matrix (Faz 22.5.2 hardware end-to-end)
+
+| Layer | Status |
+|---|---|
+| Source-merged | 5/5 ✓ (AG-035 / BE-022 V14 / BE-022Q / WEB-013 / AG-026A) |
+| GitOps deployed | 3/3 ✓ (BE-022 V14 + BE-022Q + frontend WEB-013) |
+| Runtime Up (testai) | Backend LIVE; agent binary LIVE on HALILKOOLUB735 |
+| Functional acceptance | UI Donanım tab renders fresh data; COLLECT_INVENTORY Başarılı; WinGetEgress payload accepted |
+| End-to-end | ✓ LIVE — diagnose → heartbeat → ingest → store → query → UI render |
+
+Composite (D29-disciplined): 22.5.2 hardware quick wins
+source ~100% / Up ~100% / Functional ~95%. Remaining gap = SRB-AIDENETIMPC
+lab (production-like cihaz) binary distribution still operator-bound;
+HALILKOOLUB735 proves the chain works end-to-end.
+
+---
+
 ## Live Delta — Faz 22.5.2 Hardware Quick Wins source slice CLOSED (2026-05-28)
 
 **Session 2026-05-28 milestone**: Hardware inventory full source slice
