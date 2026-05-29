@@ -97,8 +97,18 @@ JWT acquisition iki path:
   # export ADMIN_JWT="eyJ..."   # ← history'ye yazar
   # echo "$ADMIN_JWT"            # ← terminal scrollback'e yazar
   ```
-- **Curl argv leak guard**: `curl -H "Authorization: Bearer $ADMIN_JWT"` ps'de görünebilir; preprod cluster için OK, ama log scraping varsa `curl -K <(cat <<EOF\nheader="Authorization: Bearer $ADMIN_JWT"\nEOF\n)` config pipe kullan.
-- **Smoke evidence dosyalarında JWT yok** — gitleaks .gitleaksignore'a eklenmesi gereken durum yaratma; tüm curl response paste'leri JWT redacte edilir.
+- **Curl argv leak guard**: `curl -H "Authorization: Bearer $ADMIN_JWT"` ps'de argv'de görünür. Preprod testai için kabul edilebilir risk; sıkı operasyonel mod için `curl -K config pipe` kullan:
+  ```bash
+  curl -K <(printf 'header = "Authorization: Bearer %s"\n' "$ADMIN_JWT") \
+       -X POST "https://testai.acik.com/..." ...
+  ```
+- **Smoke sonrası cleanup zorunlu**:
+  ```bash
+  unset ADMIN_JWT APPROVER_JWT
+  # Browser session: operator portal logout-revoke (Keycloak End Session)
+  # Veya: testai.acik.com/auth/realms/<realm>/protocol/openid-connect/logout
+  ```
+- **Smoke evidence dosyalarında JWT yok** — tüm curl response paste'leri JWT'yi redacte eder; gitleaks .gitleaksignore'a yeni fingerprint eklemeye gerek bırakma. Evidence patch öncesi `grep -E "eyJ[A-Za-z0-9_-]{20,}\."` ile pre-flight scan.
 - HALILKOOLUB735 W11 lab cihaz; pre-production scope. 7-Zip kurulumu reversible (uninstall §7).
 - SRB-AIDENETIMPC veya prod cihazlarda smoke YASAK — yalnız HALILKOOLUB735.
 - 7-Zip dışı paket smoke YASAK — Approved Catalog'da yalnız 7-Zip satırı seed edilir.
@@ -148,7 +158,7 @@ curl -X POST "https://testai.acik.com/api/v1/admin/endpoint-software-catalog" \
   }' | jq .
 ```
 
-Expected: HTTP 201 + catalog item DTO. **Approval status: DRAFT, enabled: false**. Cannot install yet.
+Expected: **HTTP 200** + `AdminCatalogItemResponse`. **Catalog status: DRAFT, enabled: false**. Cannot install yet.
 
 **4.2b — Approve (maker-checker invariant)**:
 
@@ -163,17 +173,17 @@ curl -X POST "https://testai.acik.com/api/v1/admin/endpoint-software-catalog/7zi
   -H "Content-Type: application/json" | jq .
 ```
 
-Expected: HTTP 200 + catalog item DTO. **Approval status: APPROVED, enabled: true**.
+Expected: HTTP 200 + `AdminCatalogItemResponse`. **Catalog status: APPROVED, enabled: true**.
 
 **4.2c — Verify enabled before preflight**:
 
 ```bash
 curl -s "https://testai.acik.com/api/v1/admin/endpoint-software-catalog/7zip" \
   -H "Authorization: Bearer $ADMIN_JWT" \
-  | jq '{catalogItemId, approvalStatus, enabled}'
+  | jq '{catalogItemId, status, enabled}'
 ```
 
-Expected: `{"catalogItemId":"7zip","approvalStatus":"APPROVED","enabled":true}`.
+Expected: `{"catalogItemId":"7zip","status":"APPROVED","enabled":true}`.
 
 Eğer `enabled=false` ise 4.3 preflight BLOCK döner (reason: `catalog_item_draft`).
 
@@ -223,12 +233,12 @@ Expected: HTTP 201 + `EndpointCommandDto`:
   "id": "<uuid>",
   "status": "QUEUED",
   "type": "INSTALL_SOFTWARE",
-  "approvalStatus": "APPROVED",
+  "approvalStatus": "NOT_REQUIRED",
   "idempotencyKey": "7zip-pilot-..."
 }
 ```
 
-`id` (= command UUID) ve `status=QUEUED` notla. Status `pending` değildir.
+`id` (= command UUID) ve `status=QUEUED` notla. `approvalStatus=NOT_REQUIRED` çünkü INSTALL_SOFTWARE dual-control gerektirmez (BE-021 EndpointAdminCommandService.java); BE-017 destructive command dual-control INSTALL_SOFTWARE'i kapsamaz.
 
 `HTTP 409 Conflict` döner ise:
 - Body `InstallPreflightResponse` ile gelir (BLOCK recompute); preflight değişmiş.
@@ -283,7 +293,7 @@ Expected: `Page<EndpointInstallAuditDto>` (Spring Data pagination) content[]:
 }
 ```
 
-`resultStatus` values: `SUCCEEDED` | `FAILED` | `FAILED_PREEXISTING_VERSION_CONFLICT` | `FAILED_UNSUPPORTED_DETECTION_RULE` | `FAILED_VERIFICATION` | `SUCCEEDED_REBOOT_REQUIRED` | `SUCCEEDED_NOOP` | timeout/cancel variants.
+`resultStatus` top-level values (CommandResultStatus enum): `SUCCEEDED` | `FAILED` | `PARTIAL` | `UNSUPPORTED`. Agent fine-grained values (`SUCCEEDED_NOOP`, `SUCCEEDED_REBOOT_REQUIRED`, `FAILED_PREEXISTING_VERSION_CONFLICT`, `FAILED_UNSUPPORTED_DETECTION_RULE`, `FAILED_VERIFICATION`, timeout/cancel) sadece `details.install.finalStatus` (redactedPayload içinden okunur) tarafında; top-level `resultStatus` bu enum'lardan birine map edilir.
 
 ### 4.8 UI render verify
 
@@ -310,7 +320,7 @@ Browser smoke kanıtı:
 | **Functional** | 4.2c APPROVED + enabled=true → 4.3 PASS → 4.4 QUEUED → 4.5 pickup → 4.6 winget SUCCEEDED → 4.7 audit SUCCEEDED+exit=0 → 4.8 UI render | ✓ |
 | **Secured** | RBAC enforced (4.2b maker-checker; 4.4 can_manage); preflight gate (4.3 BLOCK reject); raw shell yok; JWT no-history | ✓ |
 | **Audit** | BE-021 install_audit row + endpoint_audit_events row + catalog approval audit | ✓ |
-| **D30 artifact (full digest match)** | Agent binary commit `5f0a806b1...` (AG-026B PR #28) — full sha; backend image `sha256:76bacc004fa25dcbd1c71c8cdcd3c0e90b741158d195352ac66c49177531670d` (sha-e3a0369); web frontend digest (current testai — placeholder dolacak smoke pass'te full sha ile) | Verify required |
+| **D30 artifact (full digest match)** | Agent binary `platform-agent` PR #28 squash commit `5f0a806` (operator: `git -C platform-agent log --oneline | head -10` ile full sha doğrula); backend image `sha256:76bacc004fa25dcbd1c71c8cdcd3c0e90b741158d195352ac66c49177531670d` (sha-e3a0369); web frontend digest **smoke-zamanı yakalanacak** (`ssh halil@staging-sw "kubectl --context k3d-test -n platform-test get pod -l app.kubernetes.io/name=endpoint-admin-web -o jsonpath='{.items[*].status.containerStatuses[*].imageID}'"`). Truncated/placeholder digest ile Band 1 PASS sayılmaz | Full sha required |
 | **Telemetry close-out** | AG-027L exit-code/redacted log capture; pilot dispatch UI button + audit/result render | ✗ (deferred — P0 board) |
 
 **Band 1 PASS** = 5 katmanın 5'i ✓; "First Install Pilot **lifecycle smoke** PASS" claim edilebilir. **Full 22.5.4 LIVE close-out** ≠ Band 1; AG-027L + dispatch UI gelene kadar partial.
@@ -359,10 +369,11 @@ Uninstall sonrası catalog item disable (BE-020 revoke endpoint):
 ```bash
 curl -X POST "https://testai.acik.com/api/v1/admin/endpoint-software-catalog/7zip/revoke" \
   -H "Authorization: Bearer $ADMIN_JWT" \
-  -H "Content-Type: application/json"
+  -H "Content-Type: application/json" \
+  -d '{"revocationReason":"7-Zip pilot rollback / smoke cleanup"}'
 ```
 
-Revoke maker-checker invariant'a tabi (4.2b ile aynı disiplin); approver subject ≠ creator subject.
+`revocationReason` body field required (AdminCatalogRevokeRequest.java). Backend revoke service catalog status APPROVED kontrolü yapar; **maker-checker invariant SADECE approve endpoint'inde enforced**, revoke'da yok. Operasyonel disiplin olarak ikinci manager tercih edilebilir ama backend enforcement değil.
 
 ## 8. Operator Notu
 
