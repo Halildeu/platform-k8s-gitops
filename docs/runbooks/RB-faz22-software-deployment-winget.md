@@ -1,18 +1,34 @@
 # RB — Faz 22.5 Software Deployment WinGet Pilot
 
-> **Status**: SOURCE-PARTIAL / execution blocked until BE-020 + BE-021 + AG-027
+> **Status (2026-05-29 truth refresh)**: SOURCE-MERGED + testai LIVE for
+> catalog (BE-020) + preflight contract (BE-021A) + install command +
+> audit (BE-021) + compliance evaluator (BE-023) + ingest/query
+> (BE-020I/BE-022/BE-022Q) + adapter (AG-027) + agent foundation
+> (AG-025/AG-025H/AG-026/AG-026A/AG-026B/AG-026C/AG-026D) + frontend
+> (WEB-011/WEB-013/WEB-014A-D/WEB-017/WEB-018); **7-Zip lifecycle live
+> smoke chain end-to-end NOT yet executed** + **AG-027L exit-code /
+> redacted log capture TODO**. See `docs/state/current-state.md`
+> 2026-05-29 PM delta + `faz-22-software-deployment-plan.md` §0.1bis +
+> §9.bis for honest acceptance gates.
+>
+> Bu runbook'un 2026-05-23 öncesi "execution blocked" iddiası
+> superseded; aşağıdaki adımlar source-merged yolu temsil eder.
+> 7-Zip pilot live smoke evidence patch'i ayrı PR'da gelecek.
 > **Tracked by**: platform-k8s-gitops#1083, platform-k8s-gitops#1086, platform-k8s-gitops#1088, platform-k8s-gitops#1090
 
 Bu runbook, Endpoint-Enes agent hattında ücretsiz WinGet tabanlı yazılım
 yönetimi için ilk pilot akışını tarif eder.
 
 Bu dosya bugün install operasyon komutu vermez. `AG-025`/`AG-026` read-only
-source foundation başlamış olsa da 7-Zip install pilotu `BE-020` approved
-catalog, `BE-021` result/detection/audit ve `AG-027` adapter gelmeden
-çalıştırılmaz.
-Ek quick-win fazları da aynı kuralı izler: WinGet source/egress readiness,
-install dry-run, compliance, outdated visibility ve diagnostics read-only
-kanıt üretir; install ancak catalog + preflight + audit kapılarıyla açılır.
+source foundation merged (`PR #20 0eff2db`, `PR #21 f3b5c68`); 7-Zip install
+pilotu için `BE-020` approved catalog (`PR #306/#308`), `BE-021`
+result/detection/audit (`PR #317/#318/#321`) ve `AG-027` adapter (`PR #23
+7cf6f14`) **kaynak olarak MERGED**, ama **end-to-end live smoke chain
+henüz koşturulmadı**. AG-027L exit-code/redacted log capture hâlâ TODO.
+Ek quick-win fazları da aynı kuralı izler: WinGet source/egress readiness
+(`AG-026A PR #22, PR #25`), install dry-run (`BE-021A PR #312`), compliance
+evaluator (`BE-023 PR #313/#314/#315`), outdated visibility (`AG-036 TODO`)
+ve diagnostics quick wins (`AG-037/AG-038/AG-039/AG-040 TODO`).
 
 ## 1. Amaç
 

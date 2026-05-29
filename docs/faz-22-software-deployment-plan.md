@@ -39,7 +39,7 @@ gelmeden açılmayacak.
 | Inventory command | `platform-agent` | `COLLECT_INVENTORY` payload `includeSoftware` okuyabiliyor; full app list yalnız `includeSoftware=true` ile dönmeli | SOURCE-PARTIAL |
 | Hardware/device inventory (agent probe) | `platform-agent` | AG-035 MERGED 2026-05-28 (PR #24 `ef83531c`) — `internal/inventory/hardware.go` + Windows PowerShell + Get-CimInstance probe + cross-platform stub; `COLLECT_INVENTORY` includeHardware payload bit + schemaVersion=1 + all-null CIM_NO_DATA guard + macAddress wire fix; SRB binary distribution pending | SOURCE-MERGED (binary distribution operator-bound) |
 | Hardware/device inventory (backend ingest) | `platform-backend` | BE-022 V14 MERGED + LIVE 2026-05-28: V13 migration (snapshot + disks + network_interfaces composite-FK + DB CHECK) + entities + HardwareInventoryPayloadPolicy + EndpointHardwareInventoryService idempotent ingest + agent SUBMIT hook; V14 ALTER TABLE payload_hash_sha256 VARCHAR(64) fix | LIVE (testai) |
-| Hardware/device inventory (backend query) | `platform-backend` | BE-022Q MERGED + LIVE 2026-05-28 (PR #325 `4ff2ceb4`, gitops #1124 `f29d7b17`) — AdminEndpointHardwareInventoryController GET /latest (200/404) + GET /history (Page<SummaryResponse>) + 4 whitelist DTOs + @Transactional(readOnly=true) lazy guard + Page cap 20/50 + module:endpoint-admin can_view RBAC; cluster pod imageID match (digest `sha256:c895cfd60d64...`) | LIVE (testai) |
+| Hardware/device inventory (backend query) | `platform-backend` | BE-022Q MERGED + LIVE 2026-05-28 (PR #325 `4ff2ceb4`, gitops #1124 `f29d7b17`) — AdminEndpointHardwareInventoryController GET /latest (200/404) + GET /history (Page<SummaryResponse>) + 4 whitelist DTOs + @Transactional(readOnly=true) lazy guard + Page cap 20/50 + module:endpoint-admin can_view RBAC; cluster pod imageID match initial digest `sha256:c895cfd60d64...` (sha-4ff2ceb); **superseded 2026-05-29** by sha-e3a0369 / `sha256:76bacc004f...` after backend #326 + gitops #1130 | LIVE (testai) |
 | Hardware/device inventory (frontend view) | `platform-web` | WEB-013 source-ready 2026-05-28 (PR #700) — DTO types + RTK Query endpoints on gateway path + DeviceDetailDrawer 7th lazy "Donanım" tab + HardwareInventoryView (latest summary + disks + NICs + history accordion + 404 empty + 403 forbidden + currentData stale guard + tri-state domain) + i18n TR+EN + 8 RTL tests; Codex iter-2 AGREE; merge + frontend digest bump + browser smoke pending | SOURCE-READY (CI/merge pending) |
 | WinGet source / egress readiness | `platform-agent` | `AG-026` yalnız version probe eder; source list, App Installer, Store source, proxy/TLS ve package query readiness yok | MISSING |
 | Install dry-run / preflight | `platform-backend` + `platform-agent` | Approved catalog item için install öncesi dry-run / preflight contract yok | MISSING |
@@ -54,13 +54,13 @@ gelmeden açılmayacak.
 
 | Alan | Repo | 2026-05-29 truth | Hüküm |
 |---|---|---|---|
-| Installed software inventory | `platform-agent` | `0eff2db` PR #20 + `4f3ce19` PR #21 (AG-025H lightweight guard); HKLM + HKLM `WOW6432Node` registry; HKCU default-off | LIVE (deployed binaries on HALILKOOLUB735) |
+| Installed software inventory | `platform-agent` | `0eff2db` PR #20 + `f3b5c68` PR #21 (AG-025H lightweight guard); HKLM + HKLM `WOW6432Node` registry; HKCU default-off | LIVE (deployed binaries on HALILKOOLUB735) |
 | WinGet readiness + source/egress | `platform-agent` | PR #22 AG-026A source/egress preflight + PR #25 `1e915a2` defensive wire shape; `winget --version` + source list + Store/App Installer state + DNS/TCP/HTTPS egress probes; full PowerShell + Get-CimInstance probe; `winget install` yok | LIVE (HALILKOOLUB735 verified 2026-05-29) |
 | Inventory command (includeSoftware/Hardware) | `platform-agent` | PR #20/21/24 — `COLLECT_INVENTORY` includeSoftware + includeHardware payload bits + schemaVersion=1 + redaction policy + macAddress wire fix | LIVE |
 | Hardware/device inventory (agent probe) | `platform-agent` | PR #24 AG-035 (`ef83531c`) hardware probe + cross-platform stub; SRB binary distribution operator-bound; HALILKOOLUB735 LIVE | LIVE (HALILKOOLUB735) / pending SRB distribution |
-| Hardware/device inventory (backend ingest + query) | `platform-backend` | BE-022 V13/V14 PR #322/#324 + BE-022Q PR #325 (`4ff2ceb4`) — sanitizer + ingest + query API + history + cluster live (digest `sha256:c895cfd60d64...`) | LIVE (testai) |
+| Hardware/device inventory (backend ingest + query) | `platform-backend` | BE-022 V13/V14 PR #322/#324 + BE-022Q PR #325 (`4ff2ceb4`) — sanitizer + ingest + query API + history; cluster live digest 2026-05-29 = `sha256:76bacc004f...` (sha-e3a0369 after backend #326 + gitops #1130; sha-4ff2ceb / `sha256:c895cfd60d64...` superseded). NOTE: backend #326 review surfaced a `lower(bytea)` SQL grammar issue on payload_hash query path; BE-022Q LIVE = ingest + /history routes verified; deep equality query path partial pending fix follow-up | LIVE (testai, partial query bug pending) |
 | Hardware/device inventory (frontend view) | `platform-web` | PR #700 WEB-013 + LIVE on testai; DeviceDetailDrawer Donanım tab + history accordion; UI smoke 2026-05-29 PASS | LIVE |
-| Operator enrollment friction | `platform-agent` | PR #26 AG-026D (DPAPI HMAC persistence) + PR #27 AG-026C (install.ps1 service env regkey) + PR #28 AG-026B (`--enrollment-token` CLI); HALILKOOLUB735 hydrate proof + sentinel gate | LIVE (HALILKOOLUB735) |
+| Operator enrollment friction | `platform-agent` | PR #26 AG-026D (DPAPI HMAC persistence) + PR #27 AG-026C (install.ps1 service env regkey) + PR #28 AG-026B (`--enrollment-token` CLI) + PR #29 AG-026C `-Force` splat fix (`97edf17`); HALILKOOLUB735 hydrate proof + sentinel gate | LIVE (HALILKOOLUB735) |
 | Approved software catalog | `platform-backend` | BE-020 PR #306 PR-A + PR #308 PR-B (`5033f1c6`) — V7 sequence guard + entity + repo + service + audit + validator + REST + RBAC + MockMvc | LIVE (testai) |
 | Software inventory ingest/query | `platform-backend` | BE-020I PR #310 (`54d5dcf8`) + #311 (`79dba92d`) shape fix — agent `details.inventory.software` ingest path + query surface | LIVE (testai) |
 | Install dry-run / preflight | `platform-backend` | BE-021A PR #312 (`dd5df4c0`) — `POST /endpoint-devices/{id}/install-preflight` PASS/WARN/BLOCK contract; recompute-at-create gate | LIVE (testai) |
@@ -72,7 +72,7 @@ gelmeden açılmayacak.
 | Software compliance view (UI) | `platform-web` | WEB-014A/B/C/D MERGED + LIVE (Compliance Tab + cross-device list + per-device history + Policy CRUD UI + WEB-014D follow-up PR Codex absorb) | LIVE |
 | Endpoint Enrollment Management UI | `platform-web` | WEB-017 MERGED + LIVE | LIVE |
 | Inventory trigger UI | `platform-web` | WEB-018 MERGED + LIVE (Envanteri Şimdi Topla payload + Donanım dedicated trigger) | LIVE |
-| Approved install dispatch UI | `platform-web` | WEB-012 ≡ WEB-014D (PR #683) recognized; explicit "install dispatch" admin UI surface still pending | SOURCE-MERGED (dispatch UI separate item) |
+| Approved install dispatch UI | `platform-web` | WEB-012 ≡ WEB-014D (PR #683 + perf #693 follow-up Codex absorb) foundation merged; **explicit pilot dispatch button + post-install audit/result render on per-device drawer still pending** | SOURCE-MERGED (dispatch button UI separate item) |
 | Outdated software / inventory diff / prohibited | `platform-backend` + `platform-agent` | AG-036 / BE-024 / BE-025 NOT YET IMPLEMENTED | TODO |
 | Posture / health / hotfix / diagnostics / services / exposure | `platform-agent` | AG-030 / AG-031 / AG-032 / AG-033 / AG-037 / AG-038 / AG-039 / AG-040 NOT YET IMPLEMENTED | TODO |
 | Uninstall + signed self-update + rollout controls | `platform-agent` + `platform-backend` | AG-028 / AG-029 / BE-026 / BE-027 / BE-028 / BE-029 NOT YET IMPLEMENTED | TODO |
@@ -157,7 +157,7 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **AG-026** | `platform-agent` | WinGet readiness check | **MERGED (PR #20)** | `winget --version` readiness structured; install/search/source/upgrade çalıştırılmaz |
 | **AG-026A** | `platform-agent` | WinGet source / egress readiness | **MERGED + LIVE (PR #22, PR #25 wire shape fix)** | `winget source list`, App Installer/Store source state, DNS/TCP/HTTPS egress probes, package query reachability; verified HALILKOOLUB735 2026-05-29 |
 | **AG-026B** | `platform-agent` | `--enrollment-token` CLI flag escape hatch | **MERGED + LIVE (PR #28, 2026-05-29 PM)** | CLI flag (trimmed) > env > regkey precedence; HMAC-only enforcement; HALILKOOLUB735 verified |
-| **AG-026C** | `platform-agent` | install.ps1 service env regkey + post-install enroll gate | **MERGED + LIVE (PR #27, 2026-05-29 PM)** | HKLM Services\\<name>\\Environment REG_MULTI_SZ override SCM env cache; sentinel gate; baseline-aware false-positive guard |
+| **AG-026C** | `platform-agent` | install.ps1 service env regkey + post-install enroll gate | **MERGED + LIVE (PR #27 + PR #29 `-Force` splat fix, 2026-05-29 PM)** | HKLM Services\\<name>\\Environment REG_MULTI_SZ override SCM env cache; sentinel gate; baseline-aware false-positive guard; PR #29 `97edf17` install.ps1 -Force uninstall splat array→hashtable live evidence absorb |
 | **AG-026D** | `platform-agent` | HMAC credential DPAPI persistence + typed 401 routing | **MERGED + LIVE (PR #26, 2026-05-29 PM)** | machine-scope DPAPI; atomic temp+fsync+rename; SetHardenedACL; hydrate-on-cold-start; HALILKOOLUB735 hydrate proof |
 | **AG-025H** | `platform-agent` | Software probe decoupling / lightweight inventory guard | **MERGED (PR #21)** | Heartbeat/auto-enroll lightweight path; `includeSoftware=true` explicit full-list opt-in; no-shell/no-PowerShell test guard |
 | **BE-020** | `platform-backend` | Approved software catalog API | **MERGED + LIVE (PR #306 PR-A + PR #308 PR-B)** | V7 sequence + entity + repo + service + audit + validator + REST + RBAC + MockMvc; testai deployed |
@@ -170,11 +170,11 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **AG-036** | `platform-agent` | Outdated software inventory | **TODO** | WinGet `upgrade` / catalog compare read-only; otomatik upgrade yok |
 | **BE-024** | `platform-backend` | Software inventory diff/history | **TODO** | Added/removed/version-changed; user path/log yok |
 | **BE-025** | `platform-backend` | Prohibited software detection | **TODO** | Denylist/policy alert/compliance state; otomatik uninstall yok |
-| **WEB-011** | `platform-web` | Software inventory view | **MERGED + LIVE** | InventoryTab software + WinGet readiness; gateway path; testai deployed |
-| **WEB-014A** | `platform-web` | Compliance Tab + GET state + POST evaluate | **MERGED + LIVE** | Read-only compliance tab + evaluate trigger |
-| **WEB-014B** | `platform-web` | Cross-device compliance list + per-device history | **MERGED + LIVE** | Org-level compliance list + per-device evaluation history |
-| **WEB-014C** | `platform-web` | Policy CRUD UI (REQUIRED/ALLOWED/FORBIDDEN) | **MERGED + LIVE** | Per catalog item policy CRUD; bulk import deferred |
-| **WEB-014D / WEB-012** | `platform-web` | Approved install UI surface | **MERGED + LIVE (PR #683 + follow-up Codex absorb)** | install dispatch frontend; explicit pilot dispatch UI on per-device drawer pending |
+| **WEB-011** | `platform-web` | Software inventory view | **MERGED + LIVE (PR #674 `70a038ac`)** | InventoryTab software + WinGet readiness; gateway path; testai deployed |
+| **WEB-014A** | `platform-web` | Compliance Tab + GET state + POST evaluate | **MERGED + LIVE (PR #675 `0c4f33a8`)** | Read-only compliance tab + evaluate trigger |
+| **WEB-014B** | `platform-web` | Cross-device compliance list + per-device history | **MERGED + LIVE (PR #676 `b6b15983`)** | Org-level compliance list + per-device evaluation history |
+| **WEB-014C** | `platform-web` | Policy CRUD UI (REQUIRED/ALLOWED/FORBIDDEN) | **MERGED + LIVE (PR #678 + PR #682)** | Per catalog item policy CRUD; bulk import deferred |
+| **WEB-014D / WEB-012** | `platform-web` | Approved install UI surface | **MERGED + LIVE (PR #683 + perf/follow-up PR #693, Codex absorb)** | install dispatch frontend foundation merged; **explicit pilot dispatch button + post-install audit/result render on per-device drawer still pending** |
 | **WEB-015** | `platform-web` | Endpoint report / CSV export | **TODO** | RBAC-controlled export |
 | **AG-028** | `platform-agent` | Software uninstall / detection | **TODO** | Catalog-managed package only; detection verified |
 | **AG-029** | `platform-agent` | Signed agent self-update | **TODO** | Signed manifest + hash + version policy + rollback guard |
@@ -188,10 +188,10 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **AG-039** | `platform-agent` | Critical services inventory | **TODO** | WinDefend/wuauserv/BITS/EventLog/endpoint-agent state read-only |
 | **AG-040** | `platform-agent` | Startup apps / exposure summary | **TODO** | Startup registry/folder summary + RDP/NLA status + event-log health count |
 | **BE-022** | `platform-backend` | Device inventory ingest surface | **MERGED + LIVE (PR #322 V13 + PR #324 V14)** | Hardware payload normalize + sanitizer + EndpointHardwareInventoryService idempotent ingest; ALTER payload_hash_sha256 VARCHAR(64) fix |
-| **BE-022Q** | `platform-backend` | Device inventory query surface | **MERGED + LIVE (PR #325)** | AdminEndpointHardwareInventoryController GET /latest + /history; module:endpoint-admin can_view RBAC; cluster digest `sha256:c895cfd60d64...` |
-| **WEB-013** | `platform-web` | Hardware / device inventory view | **MERGED + LIVE (PR #700)** | DeviceDetailDrawer Donanım tab + HardwareInventoryView + history accordion + i18n TR+EN + 8 RTL tests |
-| **WEB-017** | `platform-web` | Endpoint Enrollment Management UI | **MERGED + LIVE** | Enrollment workflow surface |
-| **WEB-018** | `platform-web` | Envanteri Şimdi Topla + Donanım dedicated trigger | **MERGED + LIVE** | COLLECT_INVENTORY payload UI + Donanım trigger |
+| **BE-022Q** | `platform-backend` | Device inventory query surface | **MERGED + LIVE (PR #325 / current sha-e3a0369)** | AdminEndpointHardwareInventoryController GET /latest + /history; module:endpoint-admin can_view RBAC; cluster live 2026-05-29 = `sha256:76bacc004f...` (sha-e3a0369, post backend #326 + gitops #1130); BE-022Q deep payload-hash equality SQL surface partial bug (`lower(bytea)`) tracked separately |
+| **WEB-013** | `platform-web` | Hardware / device inventory view | **MERGED + LIVE (PR #700 `26e68658`)** | DeviceDetailDrawer Donanım tab + HardwareInventoryView + history accordion + i18n TR+EN + 8 RTL tests |
+| **WEB-017** | `platform-web` | Endpoint Enrollment Management UI | **MERGED + LIVE (PR #701 `c0201c08`)** | Enrollment workflow surface |
+| **WEB-018** | `platform-web` | Envanteri Şimdi Topla + Donanım dedicated trigger | **MERGED + LIVE (PR #702 `e096837b`)** | COLLECT_INVENTORY payload UI + Donanım trigger |
 | **BE-026** | `platform-backend` | Deployment rings / device tags | **TODO** | Pilot/IT/department/all rollout ring; policy motorundan önce kontrollü yayılım |
 | **BE-027** | `platform-backend` | Maintenance window / scheduled command | **TODO** | `notBefore`/`expiresAt`/allowed window/timezone |
 | **BE-028** | `platform-backend` | Rollout throttle / max concurrency | **TODO** | Concurrent install limit + retry/backoff |
@@ -494,30 +494,64 @@ sonra açılır.
 | `platform-web` | Software inventory view, hardware/device inventory view, approved install UI, command status |
 | `platform-k8s-gitops` | Plan, runbook, runtime governance, test/prod digest movement |
 
-## 9. İlk Source PR Sırası
+## 9. Source PR Sırası
+
+> **SUPERSEDED 2026-05-29** — orijinal §9 (1-13) sıralaması source-side
+> tamamlandı (BE-020/BE-020I/BE-021A/BE-021/BE-022/BE-022Q/BE-023 + AG-025/
+> AG-025H/AG-026/AG-026A/AG-026B/AG-026C/AG-026D/AG-027/AG-035 + WEB-011/
+> WEB-013/WEB-014A-D/WEB-017/WEB-018 hepsi MERGED). Aşağıdaki tablo
+> 2026-05-27 mutabakat-zamanı sırası olarak kalır; **aktif sıralama
+> §9.bis** altındadır.
+
+### 9.a Original 2026-05-27 sırası (historical)
 
 1. `platform-k8s-gitops`: üç-AI mutabakat patch'i bu plan/runbook/ADR/current-state yüzeylerine işlenir.
-2. `platform-agent`: `AG-025H` probe decoupling + explicit lightweight/full inventory tests.
-3. `platform-agent`: `AG-026A` WinGet source / egress readiness.
-4. `platform-web`: `WEB-011` read-only software + WinGet readiness görünümü.
-5. `platform-backend`: `BE-020` approved catalog skeleton.
-6. `platform-backend`: `BE-020I` software inventory ingest/query surface.
-7. `platform-backend`: `BE-023` software compliance evaluator.
-8. `platform-agent`: `AG-036` outdated software inventory.
-9. `platform-web`: `WEB-014` compliance / outdated view.
-10. `platform-backend`: `BE-024` inventory diff/history + `BE-025` prohibited software detection.
-11. `platform-backend`: `BE-021A` install dry-run / preflight contract.
-12. `platform-backend`: `INSTALL_APPROVED_SOFTWARE` command contract + `BE-021` audit/detection state.
-13. `platform-agent`: `AG-027` 7-Zip install adapter + `AG-027L` exit-code/redacted log capture.
-14. `platform-web`: `WEB-012` approved install UI + `WEB-015` report/export.
-15. `platform-agent`: `AG-030` + `AG-031` + `AG-032` + `AG-033` + `AG-035` posture/health/hardware quick wins.
-16. `platform-agent`: `AG-037` + `AG-038` + `AG-039` + `AG-040` update/diagnostic/service/exposure quick wins.
-17. `platform-backend`: `BE-022` device inventory ingest/query.
-18. `platform-web`: `WEB-013` hardware/device inventory view.
-19. `platform-agent`: `AG-028` uninstall.
-20. `platform-agent`: `AG-029` signed update.
-21. `platform-backend`: `BE-026` + `BE-027` + `BE-028` + `BE-029` rollout ring/window/throttle/bundle controls.
-22. `platform-agent`: `AG-034` SMB/file action discovery, runtime yok.
+2. `platform-agent`: `AG-025H` probe decoupling + explicit lightweight/full inventory tests. **DONE**
+3. `platform-agent`: `AG-026A` WinGet source / egress readiness. **DONE + LIVE**
+4. `platform-web`: `WEB-011` read-only software + WinGet readiness görünümü. **DONE + LIVE**
+5. `platform-backend`: `BE-020` approved catalog skeleton. **DONE + LIVE**
+6. `platform-backend`: `BE-020I` software inventory ingest/query surface. **DONE + LIVE**
+7. `platform-backend`: `BE-023` software compliance evaluator. **DONE + LIVE**
+8. `platform-agent`: `AG-036` outdated software inventory. **TODO**
+9. `platform-web`: `WEB-014` compliance / outdated view. **DONE + LIVE (WEB-014A/B/C/D)**
+10. `platform-backend`: `BE-024` inventory diff/history + `BE-025` prohibited software detection. **TODO**
+11. `platform-backend`: `BE-021A` install dry-run / preflight contract. **DONE + LIVE**
+12. `platform-backend`: `INSTALL_APPROVED_SOFTWARE` command contract + `BE-021` audit/detection state. **DONE + LIVE**
+13. `platform-agent`: `AG-027` 7-Zip install adapter + `AG-027L` exit-code/redacted log capture. **AG-027 DONE (SOURCE-MERGED, live smoke pending); AG-027L TODO**
+14. `platform-web`: `WEB-012` approved install UI + `WEB-015` report/export. **WEB-012 ≡ WEB-014D DONE foundation; WEB-015 TODO**
+15. `platform-agent`: `AG-030` + `AG-031` + `AG-032` + `AG-033` + `AG-035` posture/health/hardware quick wins. **AG-035 DONE + LIVE; AG-030/031/032/033 TODO**
+16. `platform-agent`: `AG-037` + `AG-038` + `AG-039` + `AG-040` update/diagnostic/service/exposure quick wins. **TODO**
+17. `platform-backend`: `BE-022` device inventory ingest/query. **DONE + LIVE (BE-022 + BE-022Q)**
+18. `platform-web`: `WEB-013` hardware/device inventory view. **DONE + LIVE**
+19. `platform-agent`: `AG-028` uninstall. **TODO**
+20. `platform-agent`: `AG-029` signed update. **TODO**
+21. `platform-backend`: `BE-026` + `BE-027` + `BE-028` + `BE-029` rollout ring/window/throttle/bundle controls. **TODO**
+22. `platform-agent`: `AG-034` SMB/file action discovery, runtime yok. **DEFERRED**
+
+### 9.bis Active 2026-05-29 sıralaması — sıradaki iş paketleri
+
+P0 (kritik path, acceptance):
+1. **7-Zip lifecycle live smoke chain** — catalog seed + preflight + dispatch + agent install + result + UI render; sees `current-state.md` "Critical residual P0" block
+2. **AG-027L** Installer exit-code / redacted log capture (platform-agent)
+3. **AG-029** Signed agent self-update (BG-EA boundary; öncesinde manifest + Authenticode)
+4. **WEB pilot dispatch button + audit/result render** on per-device drawer (platform-web)
+
+P1 (görünürlük genişletme):
+5. **AG-036** Outdated software inventory (read-only winget upgrade compare)
+6. **AG-030 / AG-031 / AG-032 / AG-033** posture/health quick wins (4 PR)
+7. **AG-037 / AG-038 / AG-039 / AG-040** diagnostic/service/exposure (4 PR)
+8. **BE-024** Software inventory diff/history
+9. **BE-025** Prohibited software detection
+10. **WEB-015** CSV/report export
+
+P2 (rollout controls + uninstall):
+11. **AG-028** Software uninstall (catalog-managed only)
+12. **BE-026 / BE-027 / BE-028 / BE-029** rollout ring/window/throttle/bundle (4 PR)
+
+Deferred:
+13. **AG-034** SMB/file action discovery (runtime yok)
+
+Bu sıra 2026-05-29 truth refresh sonrası geçerlidir.
 
 ## 10. Açık Notlar
 

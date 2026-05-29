@@ -20,7 +20,7 @@ MERGED + LIVE on HALILKOOLUB735 Parallels W11 lab. SCM env-block caching
 | Enrollment friction (AG-026B/C/D) | ✅ LIVE (HALILKOOLUB735 DPAPI hydrate proof) |
 | 22.5.4 **First Install Pilot** — INSTALL_SOFTWARE flow | 🟡 **SOURCE-MERGED, LIVE smoke pending** |
 | 22.5.4 AG-027L exit-code / redacted log | 🟡 TODO — not yet implemented |
-| 22.5.5 Web Surface (full software view) | ✅ Source-LIVE testai; install dispatch UI still missing |
+| 22.5.5 Web Surface (full software view) | ✅ Source-LIVE testai (WEB-011/14A-D/13/17/18 routes live); dedicated **install dispatch button + audit/result render UI on per-device drawer** still pending |
 
 ### Operator enrollment-friction MERGED today (PM)
 
@@ -28,6 +28,7 @@ MERGED + LIVE on HALILKOOLUB735 Parallels W11 lab. SCM env-block caching
 |---|---|---|---|---|
 | AG-026B `--enrollment-token` CLI flag | platform-agent | [#28](https://github.com/Halildeu/platform-agent/pull/28) | `5f0a806` | `019e7314` AGREE |
 | AG-026C install.ps1 service env regkey + post-install enroll gate | platform-agent | [#27](https://github.com/Halildeu/platform-agent/pull/27) | `2b9ab20` | `019e7314` iter-1/2 PARTIAL→AGREE |
+| AG-026C install.ps1 `-Force` splat array→hashtable live fix | platform-agent | [#29](https://github.com/Halildeu/platform-agent/pull/29) | `97edf17` | live evidence absorb (post-impl) |
 | AG-026D HMAC credential DPAPI persistence + typed 401 routing | platform-agent | [#26](https://github.com/Halildeu/platform-agent/pull/26) | `7ade964` | `019e72c5` PARTIAL→AGREE |
 
 ### LIVE evidence — HALILKOOLUB735 install lifecycle pieces (PM, 2026-05-29)
@@ -169,8 +170,11 @@ lifecycle end-to-end source path closed for the first time in Faz 22.5.2.
 
 ### LIVE evidence (BE-022Q on testai)
 
-- Pod `endpoint-admin-service-579fbb5db4-bk5wd` Running 1/1, restartCount 0
-- ImageID `sha256:c895cfd60d64840ddd85da91e23d4a982049e2e1d84c6cc1ca4fb24db58c07af` ✓
+- Pod `endpoint-admin-service-579fbb5db4-bk5wd` Running 1/1, restartCount 0 (2026-05-28 state)
+- ImageID `sha256:c895cfd60d64840ddd85da91e23d4a982049e2e1d84c6cc1ca4fb24db58c07af`
+  (sha-4ff2ceb / BE-022Q at-the-time) — **superseded 2026-05-29** by sha-e3a0369
+  (`sha256:76bacc004fa25dcbd1c71c8cdcd3c0e90b741158d195352ac66c49177531670d`)
+  after platform-backend #326 BE-023 Dockerfile `--add-opens` revert (source ObjectProvider fix in PR #315 is permanent) + gitops digest bump #1130
 - Actuator HTTP 200
 - `GET /api/v1/admin/endpoint-devices/{id}/hardware-inventory/latest` → 401 (auth-gated, doğru)
 - `GET .../hardware-inventory/history` → 401 (auth-gated, doğru)
