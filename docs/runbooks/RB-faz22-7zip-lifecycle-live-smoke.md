@@ -336,7 +336,7 @@ Browser smoke kanıtı:
 Full 22.5.4 telemetry close-out HÂLÂ pending (AG-027L + pilot dispatch UI).
 
 ### Band 1 Evidence
-- Catalog seed: `endpoint-software-catalog` POST 201 → DRAFT
+- Catalog seed: `endpoint-software-catalog` POST 200 → status=DRAFT, enabled=false
 - Approve (maker-checker): `/{catalogItemId}/approve` POST 200 → APPROVED+enabled=true
 - Preflight: GET 200 + decision=PASS (evidence refs in response)
 - Dispatch: POST 201 + EndpointCommandDto id=<uuid> status=QUEUED
