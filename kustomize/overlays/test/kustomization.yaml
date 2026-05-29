@@ -3277,9 +3277,35 @@ images:
   #    is an unrelated DockerHub buildx-stable-1 manifest fetch flake)
   #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-e3a0369
   #   digest sha256:76bacc004fa25dcbd1c71c8cdcd3c0e90b741158d195352ac66c49177531670d
+  #
+  # 2026-05-30 update — sha-837bfb5 — BE-021 install-dispatch 500 fix
+  # (platform-backend PR #333). Root cause: EndpointAuditEvent rows are
+  # append-only (BE-016 PG trigger trg_endpoint_audit_events_append_only
+  # rejects UPDATE), but Hibernate spurious-dirty-checked the
+  # @JdbcTypeCode(SqlTypes.JSON) Map column on the 2nd auto-flush within
+  # the createInstall transaction, emitting an UPDATE the trigger blocked
+  # → install dispatch returned 500. The append-only contract was masked
+  # in tests by H2 (no trigger) + NoOpAuditChainLock. Fix: annotate the
+  # entity @org.hibernate.annotations.Immutable so Hibernate INSERTs once
+  # and never re-flushes a dirty UPDATE. Regression coverage added:
+  # EndpointInstallCommandAuditPostgresIntegrationTest (PG16 Testcontainers
+  # + Flyway V4 trigger + real PgAdvisoryAuditChainLock) — FAIL pre-fix,
+  # PASS post-fix. Cross-AI: Codex thread 019e7a1f AGREE (provider-level
+  # isolation: implementer Anthropic, reviewer OpenAI).
+  #
+  # LIVE VERIFY (testai, 2026-05-29 21:38Z):
+  #   - pod endpoint-admin-service-5fdb547d97-kwl6w
+  #   - imageID == sha256:1fd69a46cd...7ab2, Ready 1/1, restartCount 0
+  #   - Flyway 17 migrations validated, V17 applied clean (no dialect err)
+  #   - Tomcat 8096+8081 listening, readiness probe 200
+  #
+  # Build evidence:
+  #   gh run view 26663201951 -R Halildeu/platform-backend (SUCCESS)
+  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-837bfb5
+  #   digest sha256:1fd69a46cdfbca1a92128d8efe26d3a451b596c6214ecb776dd786a2977f7ab2
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:76bacc004fa25dcbd1c71c8cdcd3c0e90b741158d195352ac66c49177531670d
+    digest: sha256:1fd69a46cdfbca1a92128d8efe26d3a451b596c6214ecb776dd786a2977f7ab2
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
