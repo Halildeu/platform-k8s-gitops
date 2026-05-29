@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/schema/endpoint-device-health-payload-v1.schema.json",
+  "title": "Endpoint Device Health Payload (AG-033) v1",
+  "description": "Wire contract for the AG-033 device-health probe block carried under the COLLECT_INVENTORY result at details.inventory.deviceHealth. Source of truth = platform-agent internal/inventory/device_health.go DeviceHealthResult (PR #36, schemaVersion=1). Backend ingest (device-health persist) and web view (health tab) MUST conform to this shape. Redaction boundary (machine-enforced here, agent-enforced at source): driveLetter only — NO volume label / serial / filesystem / mount path / GUID; lastBootEpochSec is unix seconds, never a local-time string (no tz/locale leak); probeError.summary is bounded operator text (<=200 chars, control-char normalized, static phrasing), never a raw errno or filesystem path. Thresholds (LowDisk, HighPressure, LongUptime) are agent-side const and are NOT carried on the wire / NOT payload-configurable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "supported",
+    "probeComplete",
+    "fixedDisks",
+    "fixedDiskCount",
+    "fixedDisksTruncated",
+    "maxFixedDisks",
+    "memory",
+    "uptime",
+    "anyLowDisk",
+    "sourceUsed",
+    "probeDurationMs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Payload schema version. const 1 pins AG-033 v1. A new shape requires a new version + a new schema $id (see forward-compat rule in docs/faz-22-device-health-contract-v1.md)."
+    },
+    "supported": {
+      "type": "boolean",
+      "description": "false on non-Windows runtimes (the agent still emits canonical OS metadata so the backend persists 'probe not supported here' instead of treating absence as a failed ingest)."
+    },
+    "probeComplete": {
+      "type": "boolean",
+      "description": "false when any probeError is present (fail-closed: degenerate disk/memory/uptime values become a typed probeError + probeComplete=false, never emitted as zeros-as-healthy)."
+    },
+    "fixedDisks": {
+      "type": "array",
+      "maxItems": 64,
+      "description": "Post-truncation fixed (DRIVE_FIXED) volume entries. ALWAYS serializes as [] (never null). Capped at maxFixedDisks (64).",
+      "items": { "$ref": "#/$defs/fixedDiskHealth" }
+    },
+    "fixedDiskCount": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Pre-truncation observed fixed-disk count."
+    },
+    "fixedDisksTruncated": { "type": "boolean" },
+    "maxFixedDisks": { "type": "integer", "const": 64, "description": "Agent-side fixed-disk cap (DeviceHealthResult.MaxFixedDisks = 64)." },
+    "memory": { "$ref": "#/$defs/memoryHealth" },
+    "uptime": { "$ref": "#/$defs/uptimeHealth" },
+    "anyLowDisk": {
+      "type": "boolean",
+      "description": "OR'd over the FULL pre-truncation disk enumeration (not just the post-truncation fixedDisks array)."
+    },
+    "sourceUsed": {
+      "type": "string",
+      "enum": ["win32", "none"],
+      "description": "win32 = direct Win32 syscalls (GetLogicalDrives/GetDriveType/GetDiskFreeSpaceEx, GlobalMemoryStatusEx, GetTickCount64). none = no probe ran (unsupported)."
+    },
+    "probeErrors": {
+      "type": "array",
+      "description": "Optional (omitempty at source). Any entry flips probeComplete=false.",
+      "items": { "$ref": "#/$defs/probeError" }
+    },
+    "probeDurationMs": { "type": "integer", "minimum": 0 }
+  },
+  "$defs": {
+    "fixedDiskHealth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["driveLetter", "totalBytes", "freeBytes", "freePercent", "lowDiskWarning"],
+      "properties": {
+        "driveLetter": {
+          "type": "string",
+          "pattern": "^[A-Z]:$",
+          "description": "Uppercase drive letter only. NO label / serial / filesystem / mount path / GUID."
+        },
+        "totalBytes": { "type": "integer", "minimum": 0 },
+        "freeBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "freeBytesAvailableToCaller (LocalSystem-writable) — the correct denominator for a 'can this install succeed?' gate, not raw physical free."
+        },
+        "freePercent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "lowDiskWarning": { "type": "boolean" }
+      }
+    },
+    "memoryHealth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totalPhysicalBytes", "availableBytes", "usedPercent", "highPressureWarning", "commitLimitBytes", "commitUsedBytes"],
+      "properties": {
+        "totalPhysicalBytes": { "type": "integer", "minimum": 0 },
+        "availableBytes": { "type": "integer", "minimum": 0 },
+        "usedPercent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "highPressureWarning": { "type": "boolean" },
+        "commitLimitBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Approximation from MEMORYSTATUSEX page-file fields, NOT exact per-pagefile/per-process accounting."
+        },
+        "commitUsedBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "uptimeHealth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lastBootEpochSec", "uptimeSeconds", "uptimeDays", "longUptimeWarning"],
+      "properties": {
+        "lastBootEpochSec": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix seconds, NOT a local-time string (no tz/locale leak)."
+        },
+        "uptimeSeconds": { "type": "integer", "minimum": 0 },
+        "uptimeDays": { "type": "integer", "minimum": 0 },
+        "longUptimeWarning": { "type": "boolean" }
+      }
+    },
+    "probeError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "source": { "type": "string", "enum": ["win32", "none"] },
+        "code": {
+          "type": "string",
+          "enum": ["UNSUPPORTED_PLATFORM", "DISK_ENUM_FAILED", "MEMORY_QUERY_FAILED", "UPTIME_QUERY_FAILED", "BOOT_TIME_FAILED", "NO_EVIDENCE"]
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Bounded operator-facing text; static phrasing, control-char normalized; NEVER a raw errno dump or filesystem path."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": 1,
+      "supported": true,
+      "probeComplete": true,
+      "fixedDisks": [
+        { "driveLetter": "C:", "totalBytes": 536870912000, "freeBytes": 268435456000, "freePercent": 50, "lowDiskWarning": false }
+      ],
+      "fixedDiskCount": 1,
+      "fixedDisksTruncated": false,
+      "maxFixedDisks": 64,
+      "memory": { "totalPhysicalBytes": 17179869184, "availableBytes": 9663676416, "usedPercent": 42, "highPressureWarning": false, "commitLimitBytes": 25769803776, "commitUsedBytes": 10307921920 },
+      "uptime": { "lastBootEpochSec": 1748275200, "uptimeSeconds": 259200, "uptimeDays": 3, "longUptimeWarning": false },
+      "anyLowDisk": false,
+      "sourceUsed": "win32",
+      "probeDurationMs": 12
+    },
+    {
+      "schemaVersion": 1,
+      "supported": true,
+      "probeComplete": true,
+      "fixedDisks": [
+        { "driveLetter": "C:", "totalBytes": 536870912000, "freeBytes": 5368709120, "freePercent": 1, "lowDiskWarning": true }
+      ],
+      "fixedDiskCount": 1,
+      "fixedDisksTruncated": false,
+      "maxFixedDisks": 64,
+      "memory": { "totalPhysicalBytes": 17179869184, "availableBytes": 1073741824, "usedPercent": 95, "highPressureWarning": true, "commitLimitBytes": 34359738368, "commitUsedBytes": 25769803776 },
+      "uptime": { "lastBootEpochSec": 1745683200, "uptimeSeconds": 2851200, "uptimeDays": 33, "longUptimeWarning": true },
+      "anyLowDisk": true,
+      "sourceUsed": "win32",
+      "probeDurationMs": 18
+    },
+    {
+      "schemaVersion": 1,
+      "supported": false,
+      "probeComplete": false,
+      "fixedDisks": [],
+      "fixedDiskCount": 0,
+      "fixedDisksTruncated": false,
+      "maxFixedDisks": 64,
+      "memory": { "totalPhysicalBytes": 0, "availableBytes": 0, "usedPercent": 0, "highPressureWarning": false, "commitLimitBytes": 0, "commitUsedBytes": 0 },
+      "uptime": { "lastBootEpochSec": 0, "uptimeSeconds": 0, "uptimeDays": 0, "longUptimeWarning": false },
+      "anyLowDisk": false,
+      "sourceUsed": "none",
+      "probeErrors": [
+        { "source": "none", "code": "UNSUPPORTED_PLATFORM", "summary": "device-health probe not supported on this runtime" }
+      ],
+      "probeDurationMs": 0
+    }
+  ]
+}
