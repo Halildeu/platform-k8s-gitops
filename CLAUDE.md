@@ -64,9 +64,15 @@ mavis communication peers
 
 **Ne zaman**: multi-session paralel iş, async tamamlanma bildirimi, agent handoff, long-running trigger.
 
-**Yasak**: `--content` içinde secret/JWT/token (redaction guard).
+**Yasak (redaction guard genişletilmiş)**: `--content` içine **secret/JWT/refresh token/raw bearer/webhook URL/cookie/OAuth client secret/private key/signing key/HMAC secret/admin credential/PII YASAK** (shell history, process list, Mavis log/queue, karşı peer transcript'ine düşebilir). Gerekirse sadece **redacted özet + evidence path/issue/PR linki** gönderilir.
 
-**Tam detay**: global `~/.claude/CLAUDE.md` — "HARD RULE — Lokal Agent İletişimi: Mavis CLI" bölümü (tüm HARD RULE bağlantıları + akış detayları + örnek senaryolar).
+**Acceptance gate bypass değil**: Mavis bildirimi **board claim'i, live evidence (D29 Up/Functional/Secured), browser smoke (HARD RULE Tarayıcıdan Sonuç Doğrulanmadan), PR/CI truth (HARD RULE CI Kırmızıyken Merge YASAK)** yerine geçmez — yalnız koordinasyon kanıtıdır (HARD RULE No Fake Work uyumlu). "X session'a haber verdim" ≠ "iş bitti".
+
+**Canonical referans**:
+
+- [AGENTS.md §3 HARD RULE](./AGENTS.md) (kısa canonical bullet)
+- [docs/context-priority-rules.md §10 Agent İletişimi](./docs/context-priority-rules.md) (proje canonical detay)
+- Global `~/.claude/CLAUDE.md` — "HARD RULE — Lokal Agent İletişimi: Mavis CLI" (tüm projeler için kapsamlı + örnek senaryolar)
 
 ### 1. No Closure Language
 
