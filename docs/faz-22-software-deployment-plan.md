@@ -178,10 +178,10 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **WEB-015** | `platform-web` | Endpoint report / CSV export | **TODO** | RBAC-controlled export |
 | **AG-028** | `platform-agent` | Software uninstall / detection | **TODO** | Catalog-managed package only; detection verified |
 | **AG-029** | `platform-agent` | Signed agent self-update | **TODO** | Signed manifest + hash + version policy + rollback guard |
-| **AG-030** | `platform-agent` | Pending reboot detection | **TODO** | CBS/Windows Update/PendingFileRenameOperations sinyalleri |
-| **AG-031** | `platform-agent` | Endpoint security posture inventory | **TODO** | Defender/Firewall/BitLocker read-only; recovery key sızmaz |
-| **AG-032** | `platform-agent` | Local admin group inventory | **TODO** | Local Administrators SID/name/type; domain SID/credential sızmaz |
-| **AG-033** | `platform-agent` | Device health snapshot | **TODO** | Disk/RAM/uptime/boot time özet; performans counter spam yok |
+| **AG-030** | `platform-agent` | Pending reboot detection | **SOURCE-MERGED (PR #33)** | CBS/Windows Update/PendingFileRenameOperations sinyalleri; binary distribution + HALILKOOLUB735 lab smoke operator-bound |
+| **AG-031** | `platform-agent` | Endpoint security posture inventory | **SOURCE-MERGED (PR #34, Codex 019e74b5 4-iter AGREE)** | Defender/Firewall/BitLocker read-only; recovery key/drive-id/vendor-name sızmaz; tri-state nullable; binary distribution operator-bound |
+| **AG-032** | `platform-agent` | Local admin group inventory | **SOURCE-MERGED (PR #35, Codex 019e74d7 5-plan+2-impl AGREE)** | Built-in Administrators (S-1-5-32-544) direct membership; ZERO raw SID/RID/name on wire; NetAPI primary + PowerShell fallback; binary distribution operator-bound |
+| **AG-033** | `platform-agent` | Device health snapshot | **SOURCE-MERGED (PR #36, Codex 019e7500 plan+impl AGREE)** | Disk/RAM/uptime/boot time özet; direct Win32 syscall; no performans counter spam; only drive letter on wire; binary distribution operator-bound |
 | **AG-035** | `platform-agent` | Hardware / device inventory | **MERGED + LIVE (PR #24, HALILKOOLUB735 verified 2026-05-29)** | CPU/RAM/disk/model/BIOS/TPM/network read-only; SRB-AIDENETIMPC binary distribution operator-bound |
 | **AG-037** | `platform-agent` | Windows Update / hotfix posture | **TODO** | Hotfix history + pending update + health summary; patch install/reboot tetiklemez |
 | **AG-038** | `platform-agent` | Agent self-health / connectivity diagnostics | **TODO** | Agent version/config + last poll latency + backend DNS/TLS reachability + last error |
@@ -519,7 +519,7 @@ sonra açılır.
 12. `platform-backend`: `INSTALL_APPROVED_SOFTWARE` command contract + `BE-021` audit/detection state. **DONE + LIVE**
 13. `platform-agent`: `AG-027` 7-Zip install adapter + `AG-027L` exit-code/redacted log capture. **AG-027 DONE (SOURCE-MERGED, live smoke pending); AG-027L DONE (SOURCE-MERGED 2026-05-29 PM PR #32, binary distributed + service health PASS; command-path live verification pending)**
 14. `platform-web`: `WEB-012` approved install UI + `WEB-015` report/export. **WEB-012 ≡ WEB-014D DONE foundation; WEB-015 TODO**
-15. `platform-agent`: `AG-030` + `AG-031` + `AG-032` + `AG-033` + `AG-035` posture/health/hardware quick wins. **AG-035 DONE + LIVE; AG-030/031/032/033 TODO**
+15. `platform-agent`: `AG-030` + `AG-031` + `AG-032` + `AG-033` + `AG-035` posture/health/hardware quick wins. **AG-035 DONE + LIVE; AG-030/031/032/033 SOURCE-MERGED 2026-05-29 (PR #33/#34/#35/#36, all Codex cross-AI AGREE; binary distribution + HALILKOOLUB735 lab smoke operator-bound)**
 16. `platform-agent`: `AG-037` + `AG-038` + `AG-039` + `AG-040` update/diagnostic/service/exposure quick wins. **TODO**
 17. `platform-backend`: `BE-022` device inventory ingest/query. **DONE + LIVE (BE-022 + BE-022Q)**
 18. `platform-web`: `WEB-013` hardware/device inventory view. **DONE + LIVE**
@@ -538,7 +538,7 @@ P0 (kritik path, acceptance):
 
 P1 (görünürlük genişletme):
 5. **AG-036** Outdated software inventory (read-only winget upgrade compare)
-6. **AG-030 / AG-031 / AG-032 / AG-033** posture/health quick wins (4 PR)
+6. ~~**AG-030 / AG-031 / AG-032 / AG-033** posture/health quick wins (4 PR)~~ — **DONE (SOURCE-MERGED 2026-05-29)**: AG-030 PR #33, AG-031 PR #34 (Codex 019e74b5 4-iter), AG-032 PR #35 (Codex 019e74d7 5-plan+2-impl), AG-033 PR #36 (Codex 019e7500 plan+impl). All opt-in, identifier-leak-free, AG-025H lightweight contract intact. Remaining: binary distribution + HALILKOOLUB735 lab smoke (operator-bound) + backend ingest (BE) + WEB visualization
 7. **AG-037 / AG-038 / AG-039 / AG-040** diagnostic/service/exposure (4 PR)
 8. **BE-024** Software inventory diff/history
 9. **BE-025** Prohibited software detection
