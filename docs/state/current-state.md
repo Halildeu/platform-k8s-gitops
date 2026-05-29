@@ -19,7 +19,7 @@ MERGED + LIVE on HALILKOOLUB735 Parallels W11 lab. SCM env-block caching
 | 22.5.3B Catalog compliance evaluator | ✅ LIVE (BE-023 deployed testai) |
 | Enrollment friction (AG-026B/C/D) | ✅ LIVE (HALILKOOLUB735 DPAPI hydrate proof) |
 | 22.5.4 **First Install Pilot** — INSTALL_SOFTWARE flow | 🟡 **SOURCE-MERGED, LIVE smoke pending** |
-| 22.5.4 AG-027L exit-code / redacted log | 🟢 **SOURCE-MERGED 2026-05-29 PM (platform-agent PR #32 `4f5e152`)**; live binary verification on HALILKOOLUB735 pending |
+| 22.5.4 AG-027L exit-code / redacted log | 🟢 **SOURCE-MERGED 2026-05-29 PM (platform-agent PR #32 `4f5e152`)**; binary distributed + service health PASS; command-path live verification pending |
 | 22.5.5 Web Surface (full software view) | ✅ Source-LIVE testai (WEB-011/14A-D/13/17/18 routes live). 2026-05-29 PM truth correction: install dispatch button + audit/result render UI ALSO LIVE in WEB-014D — `SoftwareCatalogTab.tsx` "Kur" button + `InstallPreflightModal.tsx` + `useCreateInstallMutation()` dispatch + "Son Kurulumlar" panel via `useListInstallAuditsQuery`. Initial truth-refresh mis-flagged this as pending |
 
 ### Operator enrollment-friction MERGED today (PM)
