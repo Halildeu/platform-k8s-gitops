@@ -439,29 +439,35 @@ Faz 22 sub-track numbering reassignment:
 
 22.3 source-side iş (agent --auto-enroll feature, MSI WiX, backend mTLS endpoint, AD CS preflight script) **agent-actionable**; AD CS deployment + GPO konfigürasyonu + corp firewall rule + EDR allowlist + pilot OU **operator/IT-bound** (HARD RULE — Pre-Production Full Authority: agent end-to-end koşar ama irreversible/operator-only adımlar IT execution).
 
-## 22.5 scope addition — Software Deployment Quick Wins (2026-05-27)
+## 22.5 scope addition — Software Deployment Quick Wins (2026-05-27 → truth refresh 2026-05-29)
 
 > **User decision 2026-05-27**: Endpoint-Enes agent üzerinden ücretsiz ve sektör standardına yakın program yönetimi isteniyor. Varsayılan yol **Microsoft WinGet + Approved Software Catalog**. Intune/SCCM/PDQ gibi ürünler referans/entegrasyon adayıdır; ilk yol değildir.
 > **3-AI review absorb 2026-05-27**: Claude Code, Codex ve MiniMax/Mavis verdict'i **REVISE**. Yön doğru; install açılmadan önce backend catalog, command contract, detection/audit ve web visibility kapıları kapanmalı. Agent read-only AG-025/AG-026 source foundation başlamış durumdadır.
+> **Truth refresh 2026-05-29 (this section)**: §22.5.1 / §22.5.1A / §22.5.1B / §22.5.1C / §22.5.2 (hardware quick wins only — AG-035 + BE-022 + BE-022Q + WEB-013; posture AG-030-033 still TODO) / §22.5.3 / §22.5.3A / §22.5.3B (BE-023 + WEB-014 only — AG-036 still TODO) source-MERGED across 4 repos; **backend/frontend/GitOps slices testai LIVE; agent slices HALILKOOLUB735 LIVE / operator-bound where SRB-AIDENETIMPC binary distribution still pending**. §22.5.4 source-MERGED (BE-021A + BE-021 + AG-027 LIVE source code); **end-to-end live install pilot smoke chain not yet executed + AG-027L TODO**. §22.5.5 partial (WEB-011/14A-D/13/17/18 live; explicit pilot dispatch button + audit/result render UI on per-device drawer still pending). §22.5.6 / §22.5.8 / §22.5.X unchanged. See `docs/state/current-state.md` 2026-05-29 PM delta + `docs/faz-22-software-deployment-plan.md` §0.1bis + §9.bis for honest acceptance gates and PR references.
 
 ### Position
 
 22.5, agent dağıtım kanalı değildir. 22.2.A/22.2.B/22.3 ile agent cihaza geldikten sonra çalışan yazılım yönetimi kabiliyetidir.
 
-| Sub | Tanım | Status |
+| Sub | Tanım | Status (2026-05-29 refresh) |
 |---|---|---|
-| **22.5.1** | `AG-025` installed software inventory + `AG-026` WinGet readiness | SOURCE-PARTIAL (`platform-agent` PR #20 / `0eff2db`) |
-| **22.5.1A** | `AG-025H` lightweight/full software inventory guard | TODO |
-| **22.5.1B** | `WEB-011` read-only software + WinGet readiness visibility | TODO |
-| **22.5.1C** | `AG-026A` WinGet source / egress readiness (source list, package query, proxy/TLS summary; install/upgrade yok) | TODO |
-| **22.5.2** | `AG-030` pending reboot + `AG-031` Defender/Firewall/BitLocker + `AG-032` local admin group + `AG-033` disk/RAM/uptime health + `AG-035` hardware/device inventory + `BE-022` ingest/query + `WEB-013` view | TODO |
+| **22.5.1** | `AG-025` installed software inventory + `AG-026` WinGet readiness | **MERGED + LIVE** (`platform-agent` PR #20 `0eff2db`) |
+| **22.5.1A** | `AG-025H` lightweight/full software inventory guard | **MERGED + LIVE** (`platform-agent` PR #21 `f3b5c68`) |
+| **22.5.1B** | `WEB-011` read-only software + WinGet readiness visibility | **MERGED + LIVE** (`platform-web` PR #674 `70a038ac`) |
+| **22.5.1C** | `AG-026A` WinGet source / egress readiness (source list, package query, proxy/TLS summary; install/upgrade yok) | **MERGED + LIVE** (`platform-agent` PR #22 + PR #25 `1e915a2` defensive wire shape; HALILKOOLUB735 LIVE verify 2026-05-29) |
+| **22.5.1D** | `AG-026B` `--enrollment-token` CLI flag + `AG-026C` install.ps1 service env regkey + post-install enroll gate + `AG-026D` HMAC DPAPI persistence (operator enrollment friction) | **MERGED + LIVE** (`platform-agent` PR #26/#27/#28 + PR #29 `-Force` splat fix `97edf17`; HALILKOOLUB735 hydrate proof 2026-05-29) |
+| **22.5.2** | `AG-035` hardware/device inventory + `BE-022` ingest/query + `BE-022Q` query API + `WEB-013` view (hardware quick wins) | **MERGED + LIVE** (`platform-agent` PR #24 `ef83531c`; `platform-backend` PR #322 V13 + PR #324 V14 + PR #325 BE-022Q `4ff2ceb4`; `platform-web` PR #700 `26e68658`; cluster digest 2026-05-29 = `sha256:76bacc004f...` sha-e3a0369 post backend #326 + gitops #1130). **BE-022Q LIVE scope = ingest + /latest + /history + web view**; `payload_hash` deep equality SQL `lower(bytea)` grammar bug tracked separately as backend source follow-up |
+| **22.5.2 posture residual** | `AG-030` pending reboot + `AG-031` Defender/Firewall/BitLocker + `AG-032` local admin group + `AG-033` disk/RAM/uptime health | TODO |
 | **22.5.2A** | `AG-037` Windows Update/hotfix posture + `AG-038` agent self-health/connectivity + `AG-039` critical services + `AG-040` startup/RDP/event summary | TODO |
-| **22.5.3** | `BE-020` Approved Software Catalog API + provenance/hash/version policy | TODO |
-| **22.5.3A** | `BE-020I` software inventory ingest/query path | TODO |
-| **22.5.3B** | `BE-023` catalog compliance evaluator + `AG-036` outdated software inventory + `WEB-014` compliance/outdated view | TODO |
+| **22.5.3** | `BE-020` Approved Software Catalog API + provenance/hash/version policy | **MERGED + LIVE** (`platform-backend` PR #306 PR-A + PR #308 PR-B `5033f1c6`) |
+| **22.5.3A** | `BE-020I` software inventory ingest/query path | **MERGED + LIVE** (`platform-backend` PR #310 + #311 shape fix) |
+| **22.5.3B** | `BE-023` catalog compliance evaluator + `WEB-014` compliance/outdated view | **MERGED + LIVE** (`platform-backend` PR #313 + #314 + #315 `4aa29dd0`; `platform-web` WEB-014A/B/C/D PR #675/#676/#678/#682/#683/#693) |
+| **22.5.3B residual** | `AG-036` outdated software inventory | TODO |
 | **22.5.3C** | `BE-024` inventory diff/history + `BE-025` prohibited software detection | TODO |
-| **22.5.4** | `BE-021A` install dry-run/preflight + `AG-027` approved install command + `AG-027L` installer exit-code/redacted log + `BE-021` result/detection/audit | BLOCKED until 22.5.1/22.5.3 gates |
-| **22.5.5** | `WEB-012` approved install UI + `WEB-015` report/CSV export | TODO |
+| **22.5.4** | `BE-021A` install dry-run/preflight + `AG-027` approved install command + `BE-021` result/detection/audit | **SOURCE-MERGED, LIVE smoke pending** (`platform-backend` BE-021A PR #312 + BE-021 PR #317/#318/#321; `platform-agent` AG-027 PR #23 `7cf6f14`; 7-Zip end-to-end live dispatch smoke chain not yet executed) |
+| **22.5.4 residual** | `AG-027L` installer exit-code/redacted log capture | TODO |
+| **22.5.5** | `WEB-012` approved install UI + `WEB-015` report/CSV export | **PARTIAL** (WEB-012 ≡ WEB-014D foundation merged PR #683 + #693; explicit pilot dispatch button + audit/result render UI on per-device drawer + WEB-015 CSV export TODO) |
+| **22.5.5 ek** | `WEB-017` Endpoint Enrollment Management UI + `WEB-018` Envanteri Şimdi Topla + Donanım dedicated trigger | **MERGED + LIVE** (`platform-web` PR #701 `c0201c08` + PR #702 `e096837b`) |
 | **22.5.6** | `AG-028` uninstall/detection + `AG-029` signed self-update | TODO |
 | **22.5.8** | `BE-026` deployment rings/tags + `BE-027` maintenance window + `BE-028` rollout throttle/concurrency + `BE-029` approved package bundles | TODO |
 | **22.5.X** | `AG-034` SMB/file actions discovery only; runtime deferred until whitelist + RBAC + audit + dual-control design | DEFERRED |
