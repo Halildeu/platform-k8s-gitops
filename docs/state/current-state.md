@@ -1,5 +1,96 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 install lifecycle source-MERGED + AG-026B/C/D persist + HALILKOOLUB735 live verify (2026-05-29 PM)
+
+**Session 2026-05-29 PM milestone**: Faz 22.5 install lifecycle source
+chain (BE-020/BE-020I/BE-021A/BE-021/BE-023/AG-026A/AG-027/BE-022/BE-022Q/
+WEB-011/WEB-013/WEB-014A-D/WEB-017/WEB-018) source MERGED on `main`.
+Operator enrollment-friction trio (AG-026B `--enrollment-token` flag,
+AG-026C install.ps1 service env regkey, AG-026D HMAC DPAPI persistence)
+MERGED + LIVE on HALILKOOLUB735 Parallels W11 lab. SCM env-block caching
++ first-install token-rotation regression closed end-to-end.
+
+**Honest acceptance gate map** (cross-AI peer review 2026-05-29):
+
+| Gate | Status |
+|---|---|
+| 22.5.2 Hardware ingest end-to-end | ✅ LIVE on testai (HALILKOOLUB735) — see prior delta |
+| 22.5.3A Software inventory ingest/query | ✅ LIVE (BE-020I deployed, agent payload accepted) |
+| 22.5.3B Catalog compliance evaluator | ✅ LIVE (BE-023 deployed testai) |
+| Enrollment friction (AG-026B/C/D) | ✅ LIVE (HALILKOOLUB735 DPAPI hydrate proof) |
+| 22.5.4 **First Install Pilot** — INSTALL_SOFTWARE flow | 🟡 **SOURCE-MERGED, LIVE smoke pending** |
+| 22.5.4 AG-027L exit-code / redacted log | 🟡 TODO — not yet implemented |
+| 22.5.5 Web Surface (full software view) | ✅ Source-LIVE testai; install dispatch UI still missing |
+
+### Operator enrollment-friction MERGED today (PM)
+
+| Slice | Repo | PR | Commit | Codex thread |
+|---|---|---|---|---|
+| AG-026B `--enrollment-token` CLI flag | platform-agent | [#28](https://github.com/Halildeu/platform-agent/pull/28) | `5f0a806` | `019e7314` AGREE |
+| AG-026C install.ps1 service env regkey + post-install enroll gate | platform-agent | [#27](https://github.com/Halildeu/platform-agent/pull/27) | `2b9ab20` | `019e7314` iter-1/2 PARTIAL→AGREE |
+| AG-026D HMAC credential DPAPI persistence + typed 401 routing | platform-agent | [#26](https://github.com/Halildeu/platform-agent/pull/26) | `7ade964` | `019e72c5` PARTIAL→AGREE |
+
+### LIVE evidence — HALILKOOLUB735 install lifecycle pieces (PM, 2026-05-29)
+
+- DPAPI blob persisted: `C:\ProgramData\EndpointAgent\config\hmac-credential.dpapi`
+  exists (Test-Path True); machine-scope CRYPTPROTECT_LOCAL_MACHINE
+- Hydrate proof: post-restart agent log
+  `hmac credential confirmed device=d0efb00a-681a-4e32-b7de-a27ef94f2977`
+  (11:06:45) → subsequent heartbeats `accepted (not persisted in this process)`
+  (= hydrated from store, expected sentinel for restart path)
+- Service-specific Environment regkey applied (HKLM\\SYSTEM\\
+  CurrentControlSet\\Services\\EndpointAgent\\Environment REG_MULTI_SZ);
+  SCM env-block now picks up regkey deltas without machine restart
+- WinGet binary discovered: `Microsoft.DesktopAppInstaller` 1.28.239.0
+  arm64; `winget search 7zip.7zip` from full path → "7-Zip 7zip.7zip 26.01"
+  reachable via winget source
+- Install dispatch endpoint live source: `POST /api/v1/admin/endpoint-devices/{deviceId}/installs`
+  with `module:endpoint-admin can_manage` RBAC, preflight recompute gate
+  (AdminEndpointInstallController.java MERGED)
+
+### Critical residual P0 — install lifecycle LIVE smoke chain
+
+The dispatch endpoint, install adapter, preflight contract, audit
+persistence and detection state path are **all source-MERGED** but the
+**end-to-end LIVE smoke has NOT executed on HALILKOOLUB735** in this
+session. Outstanding chain pieces to claim "22.5.4 First Install Pilot
+LIVE":
+
+1. Catalog seed: `7zip.7zip` row created via `POST /api/v1/admin/
+   catalog/software` with WINGET_PACKAGE detection rule + DEFAULT
+   argsPolicyPreset (BE-020 schema; not yet seeded on testai)
+2. Preflight dry-run: `POST /api/v1/admin/endpoint-devices/{id}/install-preflight`
+   returns PASS/WARN/BLOCK (BE-021A live)
+3. Install dispatch: `POST /api/v1/admin/endpoint-devices/{id}/installs`
+   with `catalogItemId=7zip` (admin manager JWT)
+4. Agent poll cycle (30s heartbeat) → INSTALL_SOFTWARE command pickup
+5. Agent winget install execution (full path winget under SYSTEM context)
+6. Result + detection submit to backend (BE-021 install audit row)
+7. UI render of install audit + detection state (WEB-014A compliance tab)
+
+This residual gap means the 2026-05-23 plan doc claim
+"22.5 SOURCE-PARTIAL / install blocked" is **outdated** (source no
+longer partial) but the operational claim "install pilot LIVE" is
+**not yet truthful**. Plan doc + this state file updated 2026-05-29
+(this delta + plan refresh PR).
+
+### Composite (D29-disciplined, honest)
+
+- 22.5 source-side: **~90%** (MERGED PRs across 4 repos; AG-027L + uninstall + posture follow-ups deferred)
+- 22.5 testai deployed: **~82-85%** (BE-020/BE-020I/BE-021/BE-021A/BE-022/BE-022Q/BE-023 all LIVE; agent binaries operator-bound)
+- 22.5 functional acceptance: **~75-80%** (hardware ingest LIVE proven; install lifecycle LIVE smoke not yet executed)
+- 22.5.4 First Install Pilot: **~75-80%** (source ready; live smoke + AG-027L pending)
+- v1 toplam: **~65-70%** weighted
+
+Adversarial cross-AI peer review 2026-05-29 confirmed the prior
+"100% First Install Pilot" / "Must-have 9/10" / "Critical blocker 0"
+claims were overclaim; honest numbers per this delta. The
+critical-path next work is (a) 7-Zip live smoke chain execution +
+evidence patch, (b) AG-027L exit-code/redacted log impl + acceptance,
+(c) plan doc SOURCE-PARTIAL → SOURCE-MERGED truth refresh (this PR).
+
+---
+
 ## Live Delta — Faz 22.5.2 Hardware ingest end-to-end LIVE (2026-05-29)
 
 **Session 2026-05-29 milestone**: HALILKOOLUB735 Parallels W11 lab agent
