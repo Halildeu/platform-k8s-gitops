@@ -35,10 +35,11 @@ MERGED + LIVE on HALILKOOLUB735 Parallels W11 lab. SCM env-block caching
 
 - DPAPI blob persisted: `C:\ProgramData\EndpointAgent\config\hmac-credential.dpapi`
   exists (Test-Path True); machine-scope CRYPTPROTECT_LOCAL_MACHINE
-- Hydrate proof: post-restart agent log
-  `hmac credential confirmed device=d0efb00a-681a-4e32-b7de-a27ef94f2977`
-  (11:06:45) → subsequent heartbeats `accepted (not persisted in this process)`
-  (= hydrated from store, expected sentinel for restart path)
+- Hydrate proof: post-restart agent log sentinel
+  `hmac credential confirmed device=<deviceUuid>` (11:06:45) →
+  subsequent heartbeats `accepted (not persisted in this process)`
+  (= hydrated from store, expected sentinel for restart path);
+  device UUID matches HALILKOOLUB735 enrolled identity
 - Service-specific Environment regkey applied (HKLM\\SYSTEM\\
   CurrentControlSet\\Services\\EndpointAgent\\Environment REG_MULTI_SZ);
   SCM env-block now picks up regkey deltas without machine restart
