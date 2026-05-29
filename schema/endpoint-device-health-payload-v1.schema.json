@@ -35,7 +35,8 @@
     },
     "fixedDisks": {
       "type": "array",
-      "description": "Post-truncation fixed (DRIVE_FIXED) volume entries. ALWAYS serializes as [] (never null).",
+      "maxItems": 64,
+      "description": "Post-truncation fixed (DRIVE_FIXED) volume entries. ALWAYS serializes as [] (never null). Capped at maxFixedDisks (64).",
       "items": { "$ref": "#/$defs/fixedDiskHealth" }
     },
     "fixedDiskCount": {
@@ -44,7 +45,7 @@
       "description": "Pre-truncation observed fixed-disk count."
     },
     "fixedDisksTruncated": { "type": "boolean" },
-    "maxFixedDisks": { "type": "integer", "minimum": 0 },
+    "maxFixedDisks": { "type": "integer", "const": 64, "description": "Agent-side fixed-disk cap (DeviceHealthResult.MaxFixedDisks = 64)." },
     "memory": { "$ref": "#/$defs/memoryHealth" },
     "uptime": { "$ref": "#/$defs/uptimeHealth" },
     "anyLowDisk": {
@@ -144,7 +145,7 @@
       ],
       "fixedDiskCount": 1,
       "fixedDisksTruncated": false,
-      "maxFixedDisks": 26,
+      "maxFixedDisks": 64,
       "memory": { "totalPhysicalBytes": 17179869184, "availableBytes": 9663676416, "usedPercent": 42, "highPressureWarning": false, "commitLimitBytes": 25769803776, "commitUsedBytes": 10307921920 },
       "uptime": { "lastBootEpochSec": 1748275200, "uptimeSeconds": 259200, "uptimeDays": 3, "longUptimeWarning": false },
       "anyLowDisk": false,
@@ -160,8 +161,8 @@
       ],
       "fixedDiskCount": 1,
       "fixedDisksTruncated": false,
-      "maxFixedDisks": 26,
-      "memory": { "totalPhysicalBytes": 17179869184, "availableBytes": 1717986918, "usedPercent": 90, "highPressureWarning": true, "commitLimitBytes": 25769803776, "commitUsedBytes": 24492998656 },
+      "maxFixedDisks": 64,
+      "memory": { "totalPhysicalBytes": 17179869184, "availableBytes": 1073741824, "usedPercent": 95, "highPressureWarning": true, "commitLimitBytes": 34359738368, "commitUsedBytes": 25769803776 },
       "uptime": { "lastBootEpochSec": 1745683200, "uptimeSeconds": 2851200, "uptimeDays": 33, "longUptimeWarning": true },
       "anyLowDisk": true,
       "sourceUsed": "win32",
@@ -174,7 +175,7 @@
       "fixedDisks": [],
       "fixedDiskCount": 0,
       "fixedDisksTruncated": false,
-      "maxFixedDisks": 26,
+      "maxFixedDisks": 64,
       "memory": { "totalPhysicalBytes": 0, "availableBytes": 0, "usedPercent": 0, "highPressureWarning": false, "commitLimitBytes": 0, "commitUsedBytes": 0 },
       "uptime": { "lastBootEpochSec": 0, "uptimeSeconds": 0, "uptimeDays": 0, "longUptimeWarning": false },
       "anyLowDisk": false,

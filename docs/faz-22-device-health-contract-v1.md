@@ -56,8 +56,9 @@ endpoint_device_health_snapshots
   source_used VARCHAR(8) CHECK (source_used IN ('win32','none'))
   probe_duration_ms INT
   collected_at TIMESTAMPTZ
+  payload_hash_sha256 VARCHAR(64)     (deep-equality dedupe; lowercase hex; cast-as-string compare, never lower(bytea))
   redacted_payload JSONB              (full validated block, redaction-bounded)
-  source_command_result_id           (dedupe probe, hardware-inventory precedent)
+  source_command_result_id           (idempotency probe, hardware-inventory precedent)
 -- child: endpoint_device_health_disks (snapshot_id FK, drive_letter, total_bytes, free_bytes, free_percent, low_disk_warning)
 ```
 
