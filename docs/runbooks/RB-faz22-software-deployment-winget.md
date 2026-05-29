@@ -217,10 +217,125 @@ Install pilotu ancak aşağıdaki durum birlikte kanıtlanırsa koşulur:
    döndürüyor.
 7. `BE-021A` install dry-run / preflight sonucu `PASS`.
 8. `BE-021` result/detection/audit state hazır.
-9. `AG-027L` exit-code ve redacted log capture hazır.
+9. `AG-027L` exit-code ve redacted log capture hazır — **Band 2 full telemetry acceptance için gerek** (§6.2.C). **Band 1 Smoke PASS** §6.2.C caveat ile AG-027L olmadan da koşulabilir (sadece `result=SUCCEEDED` + detection PASS + audit row evidence; exit-code structured capture Band 2'ye deferred).
 10. Yetkisiz kullanıcı 403, no-token 401, katalog dışı package id reject.
 11. Agent yalnız kendi template'inden WinGet komutu üretir; raw shell, raw URL,
    raw installer args kabul edilmez.
+
+## 6.2 7-Zip Live Smoke — Operator-Bound Dispatch Path
+
+> **Status (2026-05-29 close-out)**: Codex `019e73aa` PARTIAL absorb — autonomous JWT path **kapalı** (auto-mode classifier denied agent-driven authenticated browser flow + HARD RULE Kullanıcı Aktif Credential'ına Dokunma YASAK). Bu §6.2 operator-bound 3-path matrix tanımlar. AG-027L (exit-code/redacted log capture) **deferred**; bu §6.2 install lifecycle live smoke evidence sağlar, **full 22.5.4 telemetry acceptance değildir**.
+>
+> **Tracked by**: platform-k8s-gitops#1133 (P0 7-Zip live smoke board, açık)
+> **Parent/context**: platform-k8s-gitops#1090 (Faz 22.5 phased quick-win roadmap, CLOSED — kapanmış roadmap context, aktif tracking değil)
+
+### 6.2.A Path matrix
+
+Operator hangi cluster üzerinde smoke koştuğuna göre path seçer:
+
+| Cluster | Default path | Sebep |
+|---|---|---|
+| **testai** | **operator-paste-only** | Auto-mode classifier agent-driven browser flow denied; aktif kullanıcı session reuse YASAK |
+| **lab cluster / HALILKOOLUB735** | **fresh Playwright persona** | Test persona ayrı session/cookie; kullanıcı session reuse YOK |
+| **pre-prod** | **Vault test persona JWT mint** | Operator-authorized + auditable secret lane; "tam autonomous credential access" değil |
+
+**Path detayları**:
+
+**1. operator-paste-only** (default testai) — Codex `019e73aa` iter-2 P1 absorb:
+
+- Operator browser'da Endpoint Admin portal'a kendi credentials ile giriş yapar
+- DevTools Network → Authorization header'dan kısa-ömürlü JWT'yi kopyalar
+- **Operator JWT'yi kendi local shell'inde `ADMIN_JWT` env var olarak set eder** ve curl komutlarını **kendisi çalıştırır** (agent JWT'ye erişmez)
+- Agent yalnız **placeholder'lı komut template'i üretir** (örn. `curl -H "Authorization: Bearer $ADMIN_JWT" ...`); JWT değeri agent'a iletilmez
+- Token PR/issue/chat/log'a **asla yazılmaz** (redaction guard §6.2.D)
+- Operator bittikten sonra: `unset ADMIN_JWT` + browser logout/revoke + shell history kontrolü (`history -d <num>` veya `set +H`)
+- **JWT TTL varsayma**: token expire passive değil; aktif revoke etmek tercih
+
+**2. fresh Playwright persona** (lab cluster, HALILKOOLUB735):
+
+- Test persona `endpoint-admin-test-smoke@<realm>` ayrı kullanıcı (kullanıcı session ≠ test session)
+- Playwright fixture session yeni; cookie/storage isolation
+- JWT Playwright konteksti dışına çıkmaz (lokal evidence capture)
+- Persona shell setup ayrı sprint (lab-only seed): KC realm `serban` (test cluster `platform-test`) `endpoint-admin-test-smoke` user + `endpoint:install:dispatch` scope claim mapping
+- Persona password Vault `kv/platform/endpoint-admin-test/smoke-persona`
+
+**3. Vault test persona JWT mint** (pre-prod):
+
+- Vault `kv/platform/endpoint-admin-test/<persona>/jwt` operator-authorized read
+- Mint scope: `endpoint:install` + `device:<single-id>` (least-privilege)
+- TTL: 15-30 min; Vault audit log entry zorunlu
+- Smoke bittiğinde JWT revoke + Vault audit entry capture
+- KC `serban` realm `endpoint-admin-test` client + service account JWT mint
+
+### 6.2.B Evidence checklist
+
+Her path için aynı kanıt zinciri toplanır:
+
+```text
+- catalog_row_id:        7zip (BE-020 PR #306/#308 truth)
+- device_id:             <HALILKOOLUB735 veya testai-fixture-id>
+- preflight_result:      BE-021A response (PASS / WARN / BLOCK)
+- install_request_id:    <request UUID>
+- command_id:            BE-021 audit row INSTALL_APPROVED_SOFTWARE id
+- agent_poll_timestamp:  agent heartbeat pickup time
+- install_result:        WinGet exit code + structured result (success / failure mode)
+- detection_state:       registry / WinGet query 7-Zip kurulu mu doğrulama
+- audit_row_ids:         BE-021 audit DB row id'leri (insert/update sequence)
+- ui_screenshot:         optional (mfe-endpoint-admin software list render)
+```
+
+Evidence dosyası template: `docs/faz-22-evidence/2026-05-XX-7zip-live-smoke.md`; **bu runbook PR scope dışı** (operator çalıştırdığında ayrı PR ile evidence commit eder).
+
+### 6.2.C Acceptance bandları
+
+Codex `019e73aa` PARTIAL absorb: AG-027L yokken acceptance ikiye ayrılır; **silent skip yapılmaz**.
+
+**Band 1: Smoke PASS** (bu runbook scope):
+
+- Catalog seed → preflight → operator-bound dispatch → agent poll → WinGet install → detection PASS → audit row → UI render
+- Chain'in herhangi bir adımı fail → Band 1 fail; PR/issue'ta net rapor (silent skip YASAK)
+
+**Band 2: Telemetry deferred** (AG-027L gerek):
+
+- Exit-code structured capture (Win32 `PROCESS_INFORMATION` + redacted log tail)
+- Failure mode breakdown (timeout / network / signature mismatch / permission deny)
+- Full installation timeline (start → end timestamps + percentage)
+- **AG-027L kapanmadan full 22.5.4 close-out iddiası YASAK** (HARD RULE No Fake Work + No Closure Language)
+
+### 6.2.D Redaction guard (Codex `019e73aa` iter-2 absorb — genişletilmiş tehdit modeli)
+
+**Artifact redaction** (PR/issue/log/evidence dosyası):
+
+- JWT, bearer token, refresh token: **YASAK**
+- Password, OAuth code, client secret: **YASAK**
+- Full file path (sistem PII çıkartabilir): masked (sadece dosya adı)
+- Log tail: sadece structured redacted çıktı (raw stderr/stdout YOK)
+- HMAC secret, signing key, Vault token: **YASAK**
+
+**Operator workflow guard** (Codex iter-2 P1 absorb):
+
+- Operator JWT yalnız **kendi local shell env var**'ı olarak yaşar (`ADMIN_JWT`); agent/chat/AI'ya **iletilmez**
+- Shell history: `set +H` veya `history -d <num>` ile temizle (bash/zsh)
+- Browser DevTools HAR / screenshot / network export: capture sırasında Authorization header redacted (Burp / Fiddler / DevTools "Hide" flag veya manuel kırpma)
+- Smoke sonrası: `unset ADMIN_JWT` + browser logout/revoke + Vault audit entry capture (pre-prod path)
+- **JWT TTL varsayma**: token expire passive değil; aktif revoke tercih
+- Lab Playwright persona: session/cookie isolation Playwright fixture; persistent storage YOK
+
+**Pre-commit gate** (evidence dosyası):
+
+```bash
+# Operator commit etmeden önce lokalde
+gitleaks detect --source docs/faz-22-evidence/2026-05-XX-7zip-live-smoke.md --no-git --redact --verbose
+```
+
+`gitleaks` tek başına **yeterli değil**; operator workflow guard yukarıdaki disiplini de gerek (token agent'a ileti, shell history, HAR export redaction).
+
+### 6.2.E Sıradaki adım
+
+- Live smoke evidence operator dispatch ile capture (path matrix §6.2.A'ya göre)
+- AG-027L feature work (ayrı sprint, agent-actionable — runbook scope dışı)
+- Tam 22.5.4 telemetry acceptance: Band 1 + Band 2 PASS sonrası
+- Board issue: platform-k8s-gitops#1133 (P0 7-Zip live smoke, açık aktif tracking); #1090 parent/context (CLOSED roadmap)
 
 ## 7. D29 Pilot Acceptance
 
