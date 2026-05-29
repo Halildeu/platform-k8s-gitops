@@ -1,6 +1,6 @@
 # Faz 22.5 — Software Deployment Quick Wins
 
-> **Status**: SOURCE-MERGED + testai LIVE for catalog/inventory/compliance/preflight/audit; **First Install Pilot LIVE smoke pending** (7-Zip dispatch chain + AG-027L)
+> **Status**: SOURCE-MERGED + testai LIVE for catalog/inventory/compliance/preflight/audit; AG-027L installer log redaction SOURCE-MERGED 2026-05-29 PM (platform-agent PR #32 `4f5e152`); **First Install Pilot LIVE smoke pending** (7-Zip dispatch chain — runbook ready, operator-bound + AG-027L binary verification on HALILKOOLUB735 pending)
 > **Tracked by**: platform-k8s-gitops#1083, platform-k8s-gitops#1086, platform-k8s-gitops#1088, platform-k8s-gitops#1090
 > **Scope date**: 2026-05-27 (initial 3-AI mutabakatı); **truth refresh 2026-05-29**
 
@@ -66,7 +66,7 @@ gelmeden açılmayacak.
 | Install dry-run / preflight | `platform-backend` | BE-021A PR #312 (`dd5df4c0`) — `POST /endpoint-devices/{id}/install-preflight` PASS/WARN/BLOCK contract; recompute-at-create gate | LIVE (testai) |
 | Install command contract + audit + detection | `platform-backend` | BE-021 PR #317 (`305561df`) + V12 dynamic CHECK drop #318 + Mockito guard #321 + AdminEndpointInstallController dedicated `POST /endpoint-devices/{id}/installs` endpoint with manager RBAC + preflight recompute gate | LIVE (testai) |
 | Install execution adapter (agent) | `platform-agent` | PR #23 AG-027 (`7cf6f14`) — `install_winget` core decision pipeline + Windows runner with Job Object + taskkill fallback + non-Windows stub + executor wiring; HARD BOUNDARIES (fail-closed on unsupported detection rule, enum args policy, pre-detect, post-verify, 30-min cap) | SOURCE-MERGED (live smoke pending) |
-| Installer exit-code / redacted log capture | `platform-agent` | AG-027L NOT YET IMPLEMENTED | TODO |
+| Installer exit-code / redacted log capture | `platform-agent` | AG-027L SOURCE-MERGED 2026-05-29 PM (PR #32 `4f5e152`): `RedactInstallerString` 3 pattern classes (URL userinfo / MSI property assignments / token-bearing query params) layered on AG-025/AG-026 baseline + `sanitizeForWire` switched to layered redaction + COMMAND-CONTRACT.md §11.3a documents policy. Live binary verification on HALILKOOLUB735 still pending | SOURCE-MERGED, live binary verification pending |
 | Software compliance evaluator | `platform-backend` | BE-023 PR #313 (`7ea090c5`) + PR #314 (`6144eb91`) JPMS --add-opens + PR #315 (`4aa29dd0`) ObjectProvider — COMPLIANT/NON_COMPLIANT/UNAUTHORIZED/UNKNOWN evaluator + AFTER_COMMIT listener + V10 migration + DTOs/controllers | LIVE (testai) |
 | Software inventory view (UI) | `platform-web` | WEB-011 LIVE + cluster apply | LIVE |
 | Software compliance view (UI) | `platform-web` | WEB-014A/B/C/D MERGED + LIVE (Compliance Tab + cross-device list + per-device history + Policy CRUD UI + WEB-014D follow-up PR Codex absorb) | LIVE |
@@ -164,7 +164,7 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **BE-020I** | `platform-backend` | Software inventory ingest/query surface | **MERGED + LIVE (PR #310 + #311 shape fix)** | Agent `details.inventory.software` ingest path canonical; query surface live |
 | **BE-021A** | `platform-backend` | Install dry-run / preflight result contract | **MERGED + LIVE (PR #312)** | `POST /endpoint-devices/{id}/install-preflight` PASS/WARN/BLOCK contract; recompute-at-create gate enforced |
 | **AG-027** | `platform-agent` | Approved software install command | **MERGED (PR #23) — LIVE smoke pending** | install_winget core pipeline + Windows runner with Job Object + taskkill fallback + non-Windows stub + executor wiring; HARD BOUNDARIES locked; end-to-end 7-Zip dispatch smoke not yet executed |
-| **AG-027L** | `platform-agent` | Installer exit-code / redacted log capture | **TODO** | Install/uninstall exit code, duration, sanitized reason, redacted log tail; credential/token/path sızmaz |
+| **AG-027L** | `platform-agent` | Installer exit-code / redacted log capture | **SOURCE-MERGED (PR #32 `4f5e152`, 2026-05-29 PM); live binary verification on HALILKOOLUB735 pending** | RedactInstallerString 3 pattern classes (URL userinfo / MSI property assignments / token query params) + sanitizeForWire layered with baseline; ExitCode + DurationMs + FailedReasonCode + StdoutTail/StderrTail wire-safe with 4KB cap already exist in AG-027 InstallResult struct |
 | **BE-021** | `platform-backend` | Install result / detection / audit | **MERGED + LIVE (PR #317 + V12 PR #318 + Mockito guard PR #321)** | install_audit table + EndpointInstallAuditService + AdminEndpointInstallController dedicated `POST /endpoint-devices/{id}/installs` + manager RBAC + preflight recompute gate |
 | **BE-023** | `platform-backend` | Software compliance evaluator | **MERGED + LIVE (PR #313, #314, #315)** | COMPLIANT/NON_COMPLIANT/UNAUTHORIZED/UNKNOWN evaluator + AFTER_COMMIT listener + V10 migration + DTOs/controllers; JPMS + ObjectProvider permanent fix |
 | **AG-036** | `platform-agent` | Outdated software inventory | **TODO** | WinGet `upgrade` / catalog compare read-only; otomatik upgrade yok |
@@ -517,7 +517,7 @@ sonra açılır.
 10. `platform-backend`: `BE-024` inventory diff/history + `BE-025` prohibited software detection. **TODO**
 11. `platform-backend`: `BE-021A` install dry-run / preflight contract. **DONE + LIVE**
 12. `platform-backend`: `INSTALL_APPROVED_SOFTWARE` command contract + `BE-021` audit/detection state. **DONE + LIVE**
-13. `platform-agent`: `AG-027` 7-Zip install adapter + `AG-027L` exit-code/redacted log capture. **AG-027 DONE (SOURCE-MERGED, live smoke pending); AG-027L TODO**
+13. `platform-agent`: `AG-027` 7-Zip install adapter + `AG-027L` exit-code/redacted log capture. **AG-027 DONE (SOURCE-MERGED, live smoke pending); AG-027L DONE (SOURCE-MERGED 2026-05-29 PM PR #32, live binary verification on HALILKOOLUB735 pending)**
 14. `platform-web`: `WEB-012` approved install UI + `WEB-015` report/export. **WEB-012 ≡ WEB-014D DONE foundation; WEB-015 TODO**
 15. `platform-agent`: `AG-030` + `AG-031` + `AG-032` + `AG-033` + `AG-035` posture/health/hardware quick wins. **AG-035 DONE + LIVE; AG-030/031/032/033 TODO**
 16. `platform-agent`: `AG-037` + `AG-038` + `AG-039` + `AG-040` update/diagnostic/service/exposure quick wins. **TODO**
@@ -532,8 +532,8 @@ sonra açılır.
 
 P0 (kritik path, acceptance):
 1. **7-Zip lifecycle live smoke chain** — catalog seed + preflight + dispatch + agent install + result + UI render; sees `current-state.md` "Critical residual P0" block
-2. **AG-027L** Installer exit-code / redacted log capture (platform-agent)
-3. **AG-029** Signed agent self-update (BG-EA boundary; öncesinde manifest + Authenticode)
+2. **AG-027L binary/live verification on HALILKOOLUB735** — PR #32 (2026-05-29 PM) SOURCE-MERGED; agent binary build + lab deploy + installer log redaction + exit-code/duration wire path live kanıt
+3. ~~AG-029 Signed agent self-update~~ — **deprecated from P0 list 2026-05-29 PM** per adversarial review (not blocker for 22.5.4 First Install Pilot); moved to P2 managed lifecycle
 4. ~~**WEB pilot dispatch button + audit/result render** on per-device drawer (platform-web)~~ — **2026-05-29 truth correction**: this item was already LIVE in WEB-014D (PR #683 + perf follow-up #693). `SoftwareCatalogTab.tsx` ships per-row "Kur" button; `InstallPreflightModal.tsx` handles PASS/WARN/BLOCK + dispatch via `useCreateInstallMutation()`; "Son Kurulumlar" panel renders audit via `useListInstallAuditsQuery` with auto-refetch tag. Original truth-refresh PR (2026-05-29 AM) mis-flagged this as pending; board issue platform-web#703 closed as already-shipped.
 
 P1 (görünürlük genişletme):
