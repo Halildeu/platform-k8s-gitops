@@ -2897,14 +2897,44 @@ images:
     #   workgroup, true = domain); history page indicator bound to
     #   response page.number not local state).
     #
-    # 2026-05-28 update: sha-26e6865 — platform-web PR #700 (WEB-013).
-    # Frontend Donanım tab consumes BE-022Q hardware inventory query
-    # API which LIVE on testai in the same session (gitops bump PR
-    # #1124 `f29d7b17` -> apply rolled out 2026-05-28T23:27Z; pod
-    # imageID match `sha256:c895cfd60d64...`). 8 RTL tests (6 original
-    # + 2 regression for iter-1 absorb) all green.
+    # 2026-05-29 update: sha-c0201c0 — platform-web double-slice bump.
+    # Squash commit `c0201c08` carries BOTH WEB-017 + WEB-018:
     #
-    # Build evidence (WEB-013):
+    # - WEB-017 (PR #701) — Endpoint Enrollment Management UI.
+    #   Codex `019e711f` plan-time PARTIAL -> AGREE (8 must_fix) +
+    #   Codex `019e713c` post-impl PARTIAL -> PARTIAL -> AGREE
+    #   iter-3 (3 + 1 + 1 must_fix absorbed).
+    #     /endpoint-admin/enrollments page + CreateEnrollmentDialog
+    #     + EnrollmentTokenModal (reveal-once UX, PowerShell
+    #     single-quote escape) + 11 RTL tests (no skips).
+    #     resolveApiUrl() always derives
+    #     `window.location.origin + /api/v1/endpoint-agent` (env
+    #     override removed; admin-scoped knob can no longer leak the
+    #     canonical-path P0).
+    #
+    # - WEB-018 (PR #702) — COLLECT_INVENTORY full payload trigger.
+    #   Codex `019e713c` plan-time AGREE on the small change.
+    #     IslemlerTab "Envanteri Şimdi Topla" now sends payload
+    #     { includeSoftware: true, includeWinGetEgress: true,
+    #     includeHardware: true } so AG-035 hardware probe runs on
+    #     one tap and BE-022 V14 ingest fills the Donanım tab.
+    #     IslemlerTab.test.tsx updated; vitest 10 pass.
+    #
+    # Both PRs merged from main HEAD; the WEB-017 squash commit
+    # (`c0201c08`) chronologically follows the WEB-018 merge
+    # (`e096837b`), so the image built from `c0201c08` carries both
+    # source slices. One frontend digest bump rolls them together.
+    #
+    # Build evidence (WEB-017 + WEB-018 together):
+    #   gh run view 26612286249 -R Halildeu/platform-web   (success)
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-c0201c0
+    #   digest sha256:243527f16ec17702c3239684e42cc1d48ae76b57c73335d56ccb81cfa1f2aabb
+    #
+    # 2026-05-28 prior pin (superseded): sha-26e6865 — platform-web
+    # PR #700 (WEB-013). Donanım tab landed on this digest; WEB-018
+    # adds the trigger that fills it.
+    #
+    # Prior pin build evidence (WEB-013):
     #   gh run view 26608521488 -R Halildeu/platform-web   (success)
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-26e6865
     #   digest sha256:4f0409215f27c7fa2ec574f8a56b18b3929b98bf6bde58c70effb9cb5eac63bf
@@ -2937,7 +2967,7 @@ images:
     #      key generated (regression test sentinel).
     #   7. Console: no new errors vs the previous pin (pre-existing
     #      PermissionProvider 503 is unrelated to WEB-014D).
-    digest: sha256:4f0409215f27c7fa2ec574f8a56b18b3929b98bf6bde58c70effb9cb5eac63bf
+    digest: sha256:243527f16ec17702c3239684e42cc1d48ae76b57c73335d56ccb81cfa1f2aabb
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
