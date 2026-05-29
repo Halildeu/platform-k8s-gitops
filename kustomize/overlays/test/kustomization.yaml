@@ -3251,9 +3251,35 @@ images:
   #     trigger -> snapshot persist -> re-preflight PASS -> POST install
   #     -> agent WinGet execute -> result submit -> audit row -> web
   #     görünüm)
+  #
+  # 2026-05-29 update — sha-e3a0369 — BE-023 Dockerfile revert
+  # (platform-backend PR #326). Removes --add-opens=java.base/java.lang
+  # and --add-opens=java.base/java.time from ENTRYPOINT. After 24h+
+  # source-fix soak: PR #315 (sha-4aa29dd) replaced @Lazy Clock with
+  # ObjectProvider<Clock>+getIfAvailable(Clock::systemUTC), eliminating
+  # the CGLIB enhancement of java.time.Clock. PR #315 fix has shipped
+  # in every endpoint-admin image since (PR #317/322/324/325) and the
+  # current testai pod (sha-4ff2ceb) ran clean — zero CGLIB/IllegalAccess
+  # traces. This bump pins the image that carries neither @Lazy Clock
+  # nor --add-opens.
+  #
+  # FLAGLESS BOOT ACCEPTANCE (Codex 019e6dd0 P2 + 019e731e revert peer
+  # review AGREE):
+  #   - pod imageID == sha256:76bacc00...670d, Ready 1/1, restartCount 0
+  #   - /proc/1/cmdline shows: `java -jar app.jar` (no --add-opens)
+  #   - Pod log: Hibernate clean init, Tomcat 8096+8081 listening,
+  #     no CGLIB / IllegalAccessException / LaunchedClassLoader stack trace
+  #   - Browser smoke: ComplianceTab Force-Evaluate flow OK
+  #
+  # Build evidence:
+  #   gh run view 26630401671 -R Halildeu/platform-backend
+  #   (endpoint-admin-service job SUCCESS; discovery-server failure
+  #    is an unrelated DockerHub buildx-stable-1 manifest fetch flake)
+  #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-e3a0369
+  #   digest sha256:76bacc004fa25dcbd1c71c8cdcd3c0e90b741158d195352ac66c49177531670d
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:c895cfd60d64840ddd85da91e23d4a982049e2e1d84c6cc1ca4fb24db58c07af
+    digest: sha256:76bacc004fa25dcbd1c71c8cdcd3c0e90b741158d195352ac66c49177531670d
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
