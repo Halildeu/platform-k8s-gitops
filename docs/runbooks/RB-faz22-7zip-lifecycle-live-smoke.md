@@ -75,7 +75,7 @@ Endpoints + RBAC (verified against backend source code 2026-05-29):
 
 JWT acquisition iki path:
 
-**Path A (operator-paste-only — default testai)**: Operator testai.acik.com Software Center UI'da login → DevTools Network tab'den Authorization header'i copy → operator agent'a iletir (scratch buffer). Token PR/issue/chat/log/disk'e **yazılmaz**. Companion `RB-faz22-software-deployment-winget.md` §6.2 Path #1.
+**Path A (operator-paste-only — default testai)**: Operator testai.acik.com Software Center UI'da login → DevTools Network tab'den Authorization header'i copy → **operator kendi local shell'inde `$ADMIN_JWT` env var olarak set eder; curl komutlarını operator çalıştırır** (agent JWT'ye erişmez — Codex `019e73aa` iter-3 P1.1 absorb). Agent yalnız placeholder'lı komut template'i üretir. Token PR/issue/chat/log/disk'e **yazılmaz**. Companion `RB-faz22-software-deployment-winget.md` §6.2 Path #1 ile birebir uyumlu.
 
 **Path B (fresh Playwright persona — lab cluster)**: Test persona `endpoint-admin-test-smoke@<realm>` ayrı session/cookie isolation. Operator-driven Playwright fixture; JWT Playwright konteksti dışına çıkmaz.
 
@@ -92,7 +92,7 @@ JWT acquisition iki path:
   read -r -s ADMIN_JWT
   # JWT prompt'a paste; Enter; echo gizli
   set -o history     # geri aç (yeni komutlar tekrar geçer)
-  
+
   # YASAK:
   # export ADMIN_JWT="eyJ..."   # ← history'ye yazar
   # echo "$ADMIN_JWT"            # ← terminal scrollback'e yazar
@@ -358,8 +358,9 @@ Full 22.5.4 telemetry close-out HÂLÂ pending (AG-027L + pilot dispatch UI).
 pilot için operator manuel uninstall:
 
 ```powershell
-& "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*\winget.exe" \
-  uninstall --id 7zip.7zip --exact --silent
+# Get-Command ile path resolution (wildcard quoted path expand olmaz; Codex 019e73aa iter-3 P1.2 absorb)
+$winget = (Get-Command winget.exe -ErrorAction Stop).Source
+& $winget uninstall --id 7zip.7zip --exact --silent --accept-source-agreements
 ```
 
 veya Programlar ve Özellikler → 7-Zip → Kaldır.
