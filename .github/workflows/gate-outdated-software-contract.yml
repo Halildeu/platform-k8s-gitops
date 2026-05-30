@@ -1,0 +1,42 @@
+# Faz 22.5 — AG-036 outdated-software payload contract self-validation.
+#
+# Makes the contract repo machine-enforce its own wire invariants (the
+# `upgradeCount` capped-count decision, the maxUpgrade=512 bound, the
+# truthful truncated golden, the post-#40 authoritative `upgradeTruncated`
+# wording) instead of relying solely on the downstream consumer test suites.
+#
+# Decision: board #1147; Codex thread 019e77df (option a).
+
+name: Gate — Outdated Software Contract (AG-036)
+
+on:
+  pull_request:
+    paths:
+      - 'schema/endpoint-outdated-software-payload-v1.schema.json'
+      - 'docs/faz-22-outdated-software-contract-v1.md'
+      - 'tests/contracts/**'
+      - '.github/workflows/gate-outdated-software-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'schema/endpoint-outdated-software-payload-v1.schema.json'
+      - 'docs/faz-22-outdated-software-contract-v1.md'
+      - 'tests/contracts/**'
+      - '.github/workflows/gate-outdated-software-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-contract:
+    name: Validate AG-036 outdated-software contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet jsonschema
+      - name: Contract self-validation (schema + goldens + truncated fixture + cap bound)
+        run: python3 -m unittest tests.contracts.test_outdated_software_payload_contract_v1 -v
