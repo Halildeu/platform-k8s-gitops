@@ -3303,9 +3303,19 @@ images:
   #   gh run view 26663201951 -R Halildeu/platform-backend (SUCCESS)
   #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-837bfb5
   #   digest sha256:1fd69a46cdfbca1a92128d8efe26d3a451b596c6214ecb776dd786a2977f7ab2
+  #
+  # 2026-05-31 Faz 22.5 endpoint-visibility chain LIVE — bump to sha-b679762.
+  # Reconciles the committed pin to the live testai deployment (another session
+  # rolled it during the Faz 3 merge wave; committed overlay had drifted to the
+  # pre-Faz-3 sha-837bfb5). sha-b679762 = platform-backend main b679762a,
+  # carrying #330 BE-022Q + #332 device-health ingest + #334 BE-024 +
+  # #335 BE-025 + #336 AG-036 outdated-software ingest + #337 non-Map redaction
+  # security + #338 AG-027 install fields. Live-verified: Flyway schema V20,
+  # clean startup (0 ERROR), browser render-smoke PASS (Sağlık + Güncel Olmayan
+  # Yazılım tabs render, console clean). Digest = running pod imageID.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:1fd69a46cdfbca1a92128d8efe26d3a451b596c6214ecb776dd786a2977f7ab2
+    digest: sha256:e7a9ebeffec72925f2ae42c21bd6a5241f959e0a4c820615d042ec0e23ae3043
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
