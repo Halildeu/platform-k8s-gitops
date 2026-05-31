@@ -3344,14 +3344,28 @@ images:
     # endpoint returns 200 with real flat data (memoryUsedPercent 30, uptimeDays 5,
     # anyLowDisk true; outdated probeComplete=false → fail-closed); browser CSV smoke
     # PASS. Includes #340 BE-026 detection-rule (schema V21).
+    #
+    # 2026-05-31 BE-028 #347 (platform-backend 6a21180f, sha-6a21180): install-audit
+    # reads the details.install evidence path. The agent ships the AG-027 InstallResult
+    # under details.install (COMMAND-CONTRACT §11.2); the audit previously read the old
+    # flat details.detection/postVerification → always recorded post_verification=UNKNOWN
+    # with an empty {} redacted_payload. BE-028: verdict derived from
+    # install.{finalStatus, postVerification.satisfied} (satisfied=false zero-value on
+    # early-failure → UNKNOWN, UNSATISFIED only under FAILED_VERIFICATION); nested scalar
+    # projection (postVerification/preDetect, drops raw tails/egress/authority/arbitrary
+    # nested); redacted-payload HARD size cap. Cross-AI Codex 019e7f93 (1×RED+3×REVISE→
+    # AGREE). 52 tests green. LIVE-verified on HALILKOOLUB735 (d0efb00a) 2026-05-31.
+    #
     # 2026-06-01 #1154 PR-2a (#345) + PR-2b (#346) + PR-4 fix #348 (f5b8f744):
     # server-mode device grid backend — POST /endpoint-devices/query (SSRM,
     # schema-qualified LATERAL builder) + POST /export (raw/view × csv/xlsx via
     # shared common-export; cap 422; audit). #348 pins commons-compress 1.25.0
-    # (poi-ooxml xlsx export was 500'ing on the transitive 1.24.0). sha-f5b8f744.
-    # PR-4 ATOMIC with frontend sha-4dbe289 above. Browser-smoke VERIFIED on
-    # testai: grid + İndir raw/view × Excel/CSV all 200, real AG-033 data,
-    # fail-closed, console clean.
+    # (poi-ooxml xlsx export was 500'ing on the transitive 1.24.0). sha-f5b8f744
+    # is built from main AFTER #347, so it INCLUDES BE-028 install-audit above
+    # (6a21180 is an ancestor of f5b8f744) — this pin supersedes sha-6a21180
+    # without regressing it. PR-4 ATOMIC with frontend sha-4dbe289 above.
+    # Browser-smoke VERIFIED on testai: grid + İndir raw/view × Excel/CSV all
+    # 200, real AG-033 data, fail-closed, console clean.
     digest: sha256:fd27236541bb048216a30867d4cd7608fee0a3f107835932a20d1d97d3fd866c
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
