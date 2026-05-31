@@ -2976,7 +2976,16 @@ images:
     # columns — HALILKOOLUB735 renders real AG-033 (Bellek %30, Çalışma 5gün,
     # Düşük Disk Evet) + outdated fail-closed "Eksik"; devices with no snapshot
     # export EMPTY v2 cells (authoritative no-absence). Browser smoke PASS.
-    digest: sha256:5cc2449419f0707627244b47762e28f8e2682d7aeb9c7cdc9b6fd9d401e09554
+    # 2026-05-31 #1154 PR-3 (platform-web #710 squash 58820f79): endpoint
+    # devices grid → SERVER-mode AG Grid (SSRM /query) + report-style İndir ▾
+    # export (Ham veri/raw + Mevcut görünüm/view × Excel/CSV → POST /export);
+    # v2 device-health/outdated toggleable columns; custom CSV button retired.
+    # PR-3 #710 sha-58820f7 → #712 fast-follow sha-4dbe289: view export sent
+    # AG Grid internal column ids (ag-Grid-SelectionColumn) → server 400; fix
+    # filters them (exportViewColumns). Browser-smoke verified: server-mode
+    # grid + İndir raw/view CSV LIVE on testai. PR-4 ATOMIC with endpoint-admin
+    # sha-f5b8f744 below.
+    digest: sha256:5772ebfbcf5f82b4405d3ce3f35abd807c3a720c020385b346057424394e3ea4
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
@@ -3345,12 +3354,19 @@ images:
     # early-failure → UNKNOWN, UNSATISFIED only under FAILED_VERIFICATION); nested scalar
     # projection (postVerification/preDetect, drops raw tails/egress/authority/arbitrary
     # nested); redacted-payload HARD size cap. Cross-AI Codex 019e7f93 (1×RED+3×REVISE→
-    # AGREE). 52 tests green. LIVE-verified on HALILKOOLUB735 (d0efb00a) 2026-05-31:
-    # 7-Zip REGISTRY re-dispatch → post_verification=SATISFIED, detected_version 26.01.00.0,
-    # redacted_payload.install.postVerification.{status:SATISFIED, ruleType:REGISTRY_UNINSTALL,
-    # satisfied:true}, leak-check CLEAN. Supersedes any older endpoint-admin pin (the live
-    # cluster runs this digest via kubectl set-image; pin reconciled to match).
-    digest: sha256:8fd28bbd3736516cdbd3666b5250b5ae62d9d4b89c197c17ac6d4c4842059c9a
+    # AGREE). 52 tests green. LIVE-verified on HALILKOOLUB735 (d0efb00a) 2026-05-31.
+    #
+    # 2026-06-01 #1154 PR-2a (#345) + PR-2b (#346) + PR-4 fix #348 (f5b8f744):
+    # server-mode device grid backend — POST /endpoint-devices/query (SSRM,
+    # schema-qualified LATERAL builder) + POST /export (raw/view × csv/xlsx via
+    # shared common-export; cap 422; audit). #348 pins commons-compress 1.25.0
+    # (poi-ooxml xlsx export was 500'ing on the transitive 1.24.0). sha-f5b8f744
+    # is built from main AFTER #347, so it INCLUDES BE-028 install-audit above
+    # (6a21180 is an ancestor of f5b8f744) — this pin supersedes sha-6a21180
+    # without regressing it. PR-4 ATOMIC with frontend sha-4dbe289 above.
+    # Browser-smoke VERIFIED on testai: grid + İndir raw/view × Excel/CSV all
+    # 200, real AG-033 data, fail-closed, console clean.
+    digest: sha256:fd27236541bb048216a30867d4cd7608fee0a3f107835932a20d1d97d3fd866c
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
