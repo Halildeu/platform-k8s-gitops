@@ -1,5 +1,59 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5.3C Outdated / Diff / Prohibited SOURCE-MERGED — truth refresh (2026-06-01)
+
+**Session milestone**: A cross-AI plan-time consultation discovered that
+the AG-036 (outdated software inventory), BE-024 (software inventory
+diff/history) and BE-025 (prohibited software detection) packets — all
+listed as "TODO" in `docs/faz-22-software-deployment-plan.md` and the
+prior current-state delta — are in fact **already SOURCE-MERGED** on
+`origin/main` of platform-agent and platform-backend, and their
+backend migrations (V18/V19/V20) are included in the cluster image
+`fd272365` (#348) that is currently running on testai. This delta
+records the source truth and pins the LIVE acceptance gap as the
+remaining work, without claiming live acceptance prematurely.
+
+**Truth ledger map (delta only)**:
+
+| Gate | Status |
+|---|---|
+| 22.5.3C AG-036 outdated software inventory (agent + backend ingest+query) | ✅ SOURCE-MERGED — agent PR [#38](https://github.com/Halildeu/platform-agent/pull/38) `a29eef4` (initial probe) + PR [#40](https://github.com/Halildeu/platform-agent/pull/40) `e64c131` (`UpgradeTruncated` semantics for results exceeding cap) + backend PR [#336](https://github.com/Halildeu/platform-backend/pull/336) `7f8c1a90` (V20 `endpoint_outdated_software` ingest + query + ON CONFLICT atomicity); contract: [`docs/faz-22-outdated-software-contract-v1.md`](../faz-22-outdated-software-contract-v1.md); opt-in `COLLECT_INVENTORY{includeOutdatedSoftware:true}` + `daa072e1` (#339) `collect-now` opt-in. 🟡 **LIVE acceptance pending**: V20 migration file is included in the deployed image (cluster pod `endpoint-admin-service-…-mbvj2` imageID `fd272365…` ⊃ `f5b8f744` #348 ⊃ `7f8c1a90` #336), direct Flyway apply evidence (boot log / `flyway_schema_history` ledger) pending; live API smoke (`/outdated-software/*` 200 + payload shape) + WEB surface render + HALILKOOLUB735 endpoint outdated probe end-to-end NOT YET DOCUMENTED in this ledger. |
+| 22.5.3C BE-024 software inventory diff/history | ✅ SOURCE-MERGED — platform-backend PR [#334](https://github.com/Halildeu/platform-backend/pull/334) `d154ac7a` (V18 `endpoint_software_inventory_state_history` append-only; full apps[] snapshots, summary/egress-only ingests skipped; synthetic `appKey` because BE-020I has no `packageId`; atomic ON CONFLICT append; `GET /software-inventory/diff` latest-vs-previous + `GET /software-inventory/history`). 🟡 **LIVE acceptance pending**: V18 migration file is included in the deployed image (`f5b8f744` ⊃ `d154ac7a`), direct Flyway apply evidence pending; live API smoke + WEB surface render NOT YET DOCUMENTED. |
+| 22.5.3C BE-025 prohibited software detection | ✅ SOURCE-MERGED — platform-backend PR [#335](https://github.com/Halildeu/platform-backend/pull/335) `7bb0340e` (V19 `endpoint_prohibited_software_rules` non-catalog-bound denylist + `ProhibitedSoftwareRuleService` + `EndpointComplianceService` integration; `ComplianceState = UNAUTHORIZED` reason `prohibited_app_installed` — NO new `PROHIBITED` enum, V19 comment explicitly says catalog-bound `FORBIDDEN` is contradictory for banned software). 🟡 **LIVE acceptance pending**: V19 migration file is included in the deployed image (`f5b8f744` ⊃ `7bb0340e`), direct Flyway apply evidence pending; live API smoke + alert/audit row check (Codex must-fix #5 — confirm whether dedicated alert-row + hash-chain audit event is a hard acceptance item, or whether the existing compliance evaluation row carries the audit handle). |
+
+**Source-truth ancestry verified** (backend `origin/main`, newest → oldest):
+
+- `f5b8f744` #348 — pin commons-compress 1.25.0 (BE-028 superset, this session's #1156 convergence)
+- `6a21180f` #347 — BE-028 install-audit reader (REGISTRY authoritative + WINGET confirm-only tri-state)
+- `7f60c74f` #343 — BE-027 winget package-query not-found is INCONCLUSIVE (WARN), not BLOCK
+- `19a77d7d` #342, `a6fc8f0a` #341, `3d76a53a` #340 — #1146 bulk + JPQL latest-per-device + BE-026 detection_rule reconcile
+- `daa072e1` #339 — `collect-now` opt-in device-health + outdated-software
+- `b679762a` #338 — INSTALL_SOFTWARE AG-027 agent-contract fields
+- `2347ff85` #337 — 22.5 security fail-closed non-Map device-health + hardware payload blocks
+- **`7f8c1a90` #336 — AG-036-be outdated-software ingest + query (V20)** ←
+- **`7bb0340e` #335 — BE-025 prohibited-software denylist + compliance integration (V19)** ←
+- **`d154ac7a` #334 — BE-024 software-inventory state diff/history (V18)** ←
+
+Agent `origin/main` (newest → oldest, scoped):
+
+- `d291364` #42/#43 — AG-detect-registry REGISTRY_UNINSTALL Session-0 authoritative
+- `f08470c` #41 — AG-027 winget install exit is install-state authority
+- **`e64c131` #40 — AG-036 `UpgradeTruncated` reported when winget upgrades exceed cap** ←
+- `67bd4ba` #39 — AG-038 agent self-diagnostics probe (read-only)
+- **`a29eef4` #38 — AG-036 outdated software inventory probe (read-only winget)** ←
+
+**LIVE acceptance gap (not blocking source-truth claim, but pending evidence ledger)**:
+
+- Pod restart Flyway log replay: confirm V18/V19/V20 lines appear in `kubectl logs deploy/endpoint-admin-service` (since last cold start); current log window did not retain Flyway boot lines, but ancestry is conclusive.
+- API smoke (admin JWT or in-cluster ServiceAccount, NOT writing secrets here): `GET /api/v1/admin/endpoint-devices/{id}/software-inventory/diff`, `/software-inventory/history`, `/outdated-software/*`, `/prohibited-software/*` → expected 200 + shape.
+- WEB surface: `WEB-014E` future scope (outdated/diff list view + prohibited alert view) — recorded as a separate gap in this delta (not in scope for this truth refresh PR).
+- HALILKOOLUB735 endpoint: AG-036 agent probe e2e with `COLLECT_INVENTORY{includeOutdatedSoftware:true}` → backend ingest path → DB row in `endpoint_outdated_software` → `/outdated-software/*` 200 read. Operator-bound binary distribution (post-PR40 build) pending.
+- Branch hygiene: local platform-agent worktree branch `feat/agent/AG-038-agent-self-diagnostics-probe` was opened BEFORE PR #40 `e64c131` landed on main and is upstream-gone. Any new AG-038+ follow-up work must branch from `origin/main` (which contains `e64c131`), not from this stale local branch.
+
+**Cross-AI review of this truth refresh**: Codex MCP thread `019e801e-8e10-70d1-826e-5da09c329c7c` (plan-time iter) returned **REVISE** with the verdict "the stated TODO baseline is incorrect; source truth has moved" — and recommended exactly this narrowed-scope truth-refresh-first sequence. This PR is the absorb-act: no new code, no new migration, just a ledger refresh + acceptance gap pin.
+
+---
+
 ## Live Delta — BE-028 install-audit chain LIVE + #348 gitops convergence (2026-05-31 → 2026-06-01)
 
 **Session milestone**: BE-028 (REGISTRY_UNINSTALL authoritative install-audit
