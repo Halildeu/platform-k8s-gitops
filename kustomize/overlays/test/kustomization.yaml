@@ -2985,7 +2985,21 @@ images:
     # filters them (exportViewColumns). Browser-smoke verified: server-mode
     # grid + İndir raw/view CSV LIVE on testai. PR-4 ATOMIC with endpoint-admin
     # sha-f5b8f744 below.
-    digest: sha256:5772ebfbcf5f82b4405d3ce3f35abd807c3a720c020385b346057424394e3ea4
+    #
+    # 2026-06-01 #1148 PR #717 (sha-bf8b062 / bf8b0625cc): OutdatedSoftwareView
+    # truncation hint aligned to the authoritative upgradeTruncated flag —
+    # isPossiblyTruncated now uses the same 3-leg rule as the backend helper
+    # (upgradeTruncated===true OR possiblyTruncated===true OR upgradeCount>=
+    # maxUpgrade). Type-level javadoc + file-header contract comments re-pointed
+    # to the helper rule. Also: workspace-level CI gate back-fill —
+    # `apps/mfe-endpoint-admin/vitest.config.ts` was missing from the root
+    # vitest projects allowlist, so every mfe-endpoint-admin unit test
+    # (incl. this PR's regression cases) ran via package script only,
+    # invisible to the required web-test-gate. Now allowlisted, future
+    # mfe-endpoint-admin changes are gate-protected. 285/285 vitest pass,
+    # CI 24/24 PASS, Codex 019e8038 (REVISE→RED→AGREE 3-iter). ATOMIC with
+    # endpoint-admin sha-601f830 below.
+    digest: sha256:5213e55f2f8402e3b4e01d240ea95267d60c703ec50b034042a6e080ad0aa554
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
@@ -3366,7 +3380,18 @@ images:
     # without regressing it. PR-4 ATOMIC with frontend sha-4dbe289 above.
     # Browser-smoke VERIFIED on testai: grid + İndir raw/view × Excel/CSV all
     # 200, real AG-033 data, fail-closed, console clean.
-    digest: sha256:fd27236541bb048216a30867d4cd7608fee0a3f107835932a20d1d97d3fd866c
+    #
+    # 2026-06-01 #1148 PR #351 (ba299f08) → main HEAD sha-601f830: outdated-software
+    # possiblyTruncated rule aligned to the authoritative upgradeTruncated flag —
+    # new OutdatedSnapshotTruncation helper (single source of truth: upgradeTruncated
+    # ==TRUE OR upgradeCount>=maxUpgrade fallback), wired into the full snapshot DTO,
+    # the per-device summary, the bulk LatestEntry, and the audit event. Replaces
+    # the pre-#40 strict `upgradeCount.equals(maxUpgrade)` heuristic that was a
+    # false-positive at exactly maxUpgrade and silently disagreed with the bulk
+    # path. 8 unit + 28 service/controller regression tests green; Codex 019e802d
+    # PARTIAL→AGREE (2-iter). f5b8f744 is an ancestor of 601f8303, so this pin
+    # carries forward #1154 + BE-028 + Faz 22.5 chain (cumulative).
+    digest: sha256:1ae1d927424d4b5f56d9c7570da1f3e2ed9b719e643a2ad83a586a40777339c6
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
