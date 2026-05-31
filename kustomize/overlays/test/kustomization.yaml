@@ -2967,7 +2967,11 @@ images:
     #      key generated (regression test sentinel).
     #   7. Console: no new errors vs the previous pin (pre-existing
     #      PermissionProvider 503 is unrelated to WEB-014D).
-    digest: sha256:243527f16ec17702c3239684e42cc1d48ae76b57c73335d56ccb81cfa1f2aabb
+    # 2026-05-31 Faz 22.5 live reconcile → sha-a24382b (platform-web b8e114ae→a24382b3:
+    # device-health view real-data render fix #708 + AG-036 view #706 + WEB-015 v2 #707).
+    # Reconciles committed pin to live testai frontend (multiple manual rolls drifted it);
+    # browser re-smoke PASS (device-health renders real disk/memory/uptime, no crash).
+    digest: sha256:5cfba37c5fd57123f58dcbadfb7cef754bdec18e602e3371d29d2afe73bc3fd5
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
@@ -3315,7 +3319,10 @@ images:
   # Yazılım tabs render, console clean). Digest = running pod imageID.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:e7a9ebeffec72925f2ae42c21bd6a5241f959e0a4c820615d042ec0e23ae3043
+    # 2026-05-31 Faz 22.5 keystone fix → sha-daa072e (b679762a→daa072e1: #339
+    # collect-now opts in to device-health + outdated-software probes). Live-verified:
+    # schema V20, real AG-033/AG-036 probe data ingested + rendered (browser re-smoke PASS).
+    digest: sha256:09dc94f8e6f428365df3866f866197d1d7f462d282c4e08e6c32248c71565fc8
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
