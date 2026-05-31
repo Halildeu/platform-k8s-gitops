@@ -3319,10 +3319,13 @@ images:
   # Yazılım tabs render, console clean). Digest = running pod imageID.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    # 2026-05-31 Faz 22.5 keystone fix → sha-daa072e (b679762a→daa072e1: #339
-    # collect-now opts in to device-health + outdated-software probes). Live-verified:
-    # schema V20, real AG-033/AG-036 probe data ingested + rendered (browser re-smoke PASS).
-    digest: sha256:09dc94f8e6f428365df3866f866197d1d7f462d282c4e08e6c32248c71565fc8
+    # 2026-05-31 Faz 22.5.4 BE-026 → sha-3d76a53 (daa072e1→3d76a53: platform-backend
+    # PR #340 — reconcile detection_rule to AG-027 agent canonical schema
+    # (REGISTRY_UNINSTALL productCode|displayName+publisher) + V21 catalog sweep +
+    # buildAgentDetectionRule REGISTRY forward / FILE_*→422 + parsePostVerification
+    # NOT_SATISFIED→UNSATISFIED. Cross-AI Codex 019e7dce AGREE, CI 13/13.
+    # V21 runs at pod startup (sweeps any old-shape catalog rows; safe on empty).
+    digest: sha256:3d0703dcd51d91a4b3831dbada257bfdd772408ff5ed54b3dafe71210dd1bd82
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
