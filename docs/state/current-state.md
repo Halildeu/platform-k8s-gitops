@@ -1,5 +1,61 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — BE-028 install-audit chain LIVE + #348 gitops convergence (2026-05-31 → 2026-06-01)
+
+**Session milestone**: BE-028 (REGISTRY_UNINSTALL authoritative install-audit
+reader; tri-state SATISFIED/UNSATISFIED/UNKNOWN; nested-scalar redaction +
+size cap) deployed and LIVE-verified on testai endpoint-admin. Same evening,
+the parallel-session #1154 PR-4 (server-mode device grid + İndir export)
+deployed atomically. Both ride platform-backend image `f5b8f744` (#348) —
+which is a STRICT DESCENDANT of `6a21180f` (#347, the BE-028 commit) — so
+BE-028 install-audit semantics are preserved end-to-end without regression
+in the #348-pinned cluster. Gitops main ⇔ cluster pod imageID ⇔ GHCR
+manifest digest triple-match confirmed.
+
+**Honest gate map (delta only — earlier rows still valid in 2026-05-29 PM block below)**:
+
+| Gate | Status |
+|---|---|
+| 22.5.4 BE-028 install-audit reader (REGISTRY authoritative + WINGET confirm-only tri-state) | ✅ SOURCE-MERGED (platform-backend PR [#347](https://github.com/Halildeu/platform-backend/pull/347) `6a21180f`) + LIVE (testai cluster on `fd272365`/#348 superset; 7-Zip command `f8444a9c` DB row `post_verification.status = "SATISFIED"` `detected_version = "26.01.00.0"`; payload 409 B post-redaction INTACT; browser drawer rendered "Başarılı/SATISFIED" badge 2026-05-31 20:39) |
+| 22.5.4 #1154 PR-4 server-mode device grid + İndir export | ✅ LIVE (gitops PR [#1156](https://github.com/Halildeu/platform-k8s-gitops/pull/1156) `d1f9ff3`; commons-compress 1.25.0 pin in #348 fixes poi-ooxml xlsx export 500 caught by browser smoke) |
+| Gitops main ⇔ cluster triple-match | ✅ `kustomize/overlays/test/kustomization.yaml` endpoint-admin digest `sha256:fd27236541bb048216a30867d4cd7608fee0a3f107835932a20d1d97d3fd866c` ⇔ pod `endpoint-admin-service-…-mbvj2` imageID `fd272365…` (verified 2026-06-01) |
+
+**Image chain (platform-backend `main`, newest → oldest)**:
+
+- `f5b8f744` #348 — pin commons-compress 1.25.0 for poi xlsx export 500 fix (pom.xml-only diff vs #347; Codex-verified)
+- `6a21180f` #347 — **BE-028 install-audit reader**: `EndpointInstallAuditService.parseVerdict` tri-state + `InstallEvidencePayloadPolicy` nested-scalar projection (drops tails/egress) + hard size cap + V21 Flyway sweep of old-shape catalog `detection_rule`
+- `f8e2cb7a` #346 — #1154 PR-2b report-style device-grid export
+- `d2bc1e51` #345 — #1154 PR-2a SSRM `/query` with schema-qualified LATERAL builder
+- `66f8c829` #344 — #1154 PR-1 common-export extraction
+
+**Gitops convergence forensics (parallel-session reconcile race, no live regression incurred)**:
+
+- 2026-05-31 evening (this session): BE-028 deploy reconcile gitops PR [#1155](https://github.com/Halildeu/platform-k8s-gitops/pull/1155) `276799f` pinned `endpoint-admin` to `sha-6a21180` (#347, BE-028 commit). This commit IS on `origin/main` (reflog: `e161501 → 276799f → d1f9ff3`).
+- The parallel-session #1154 PR-4 work in progress carried an intermediate branch commit (`acd27c0` on `feat/1154-pr4-deploy-server-grid`) that, **if merged as-is** at that moment, would have rolled the endpoint-admin digest line back to `sha-2b936bbc` (#346, BE-028-less) — a would-be lost-update across parallel sessions via shared `kustomization.yaml`. `acd27c0` is NOT an ancestor of `origin/main` (verified: `git merge-base --is-ancestor acd27c0 origin/main` → exit 1; `git branch --contains acd27c0 --all` → only `origin/feat/1154-pr4-deploy-server-grid`), so the lost-update never materialized on `main`; the #1154 session rebased on top of `276799f` before opening PR #1156.
+- **Final-state live evidence shows the deployed image is `fd272365` (#348)**; no verified `sha-2b936bbc` live deployment is recorded in this ledger. The cluster's transition path went directly from the #347 image (`sha-6a21180`) to the #348 image (`sha-f5b8f744`), which is a strict descendant of #347.
+- 2026-06-01: gitops PR [#1156](https://github.com/Halildeu/platform-k8s-gitops/pull/1156) (`d1f9ff3`) made the convergence canonical by promoting `fd272365`/#348 as the pin **with an explicit BE-028-supersession comment block** (`kustomize/overlays/test/kustomization.yaml` lines 3364–3366):
+  > `# sha-f5b8f744 is built from main AFTER #347, so it INCLUDES BE-028 install-audit above`
+  > `# (6a21180 is an ancestor of f5b8f744) — this pin supersedes sha-6a21180`
+  > `# without regressing it. PR-4 ATOMIC with frontend sha-4dbe289 above.`
+- Backend ancestry verified: `git merge-base --is-ancestor 6a21180f f5b8f744` → exit 0 (in `platform-backend`); #347→#348 working-tree diff is limited to `common-export/pom.xml` and `endpoint-admin-service/pom.xml` only.
+- Codex MCP thread `019e7f93-65ce-7b23-a9ab-28643e341afc` AGREE on resolution-A (converge to #348 superset; do not regress to #347 in a competing PR).
+
+**LIVE evidence ledger**:
+
+- **DB**: `endpoint_admin_service.install_audit` row for command `f8444a9c` — `post_verification.status = "SATISFIED"`, `detected_version = "26.01.00.0"`, `finalStatus = SUCCESS`, payload 409 B (post-redaction). INTACT after #348 deploy.
+- **API**: `GET /api/v1/admin/endpoint-devices/{deviceId}/installs?source=AUDIT` → HTTP 200 with the SATISFIED row.
+- **Pod**: `endpoint-admin-service-…-mbvj2` 1/1 Running on image digest `fd272365…` (= GHCR manifest digest = gitops kustomize pin = final-state triple-match; no `sha-2b936bbc` deployment is recorded in this ledger).
+- **Browser console** (testai `/endpoint-admin/devices`, 2026-06-01 post-#1156 deploy): clean; no 500; `installs`/`query`/`preflight`/`commands` all 200.
+- **Browser drawer render** (HALILKOOLUB735 → İşlemler / Denetim Geçmişi, 2026-05-31 20:39): "Başarılı/SATISFIED" badge + `detected_version` visible. #347→#348 diff is pom.xml-only (Codex-verified), so render semantics unchanged on the #348 image.
+- **AG-detect-registry compatibility** (platform-agent PR #42/#43 `d291364`): `PostVerifyStatusSatisfied/Inconclusive/NotSatisfied` constants + §11.3c `REGISTRY_UNINSTALL` authoritative on Windows + `postVerification.status`/`authority` fields confirmed merged on main — wire-shape contract honored.
+
+**Residuals (autonomous chip / not blocking)**:
+
+- **WEB post_verification surfacing chip** — running as a spawned session in `platform-web`: render badge SATISFIED/UNSATISFIED/UNKNOWN in install-history drawer + add i18n key `endpointAdmin.drawer.install.reasonCode.winget_package_query_inconclusive`. Do NOT duplicate here.
+- `be021-smoke-7zip` row that remains `UNKNOWN` is **correct behavior** under Session-0 WINGET-confirm-only path: BE-028's tri-state model defines `UNKNOWN` as the well-defined "no authoritative post-verify possible" state. Not a regression.
+
+---
+
 ## Live Delta — Faz 22.5 install lifecycle source-MERGED + AG-026B/C/D persist + HALILKOOLUB735 live verify (2026-05-29 PM)
 
 **Session 2026-05-29 PM milestone**: Faz 22.5 install lifecycle source
