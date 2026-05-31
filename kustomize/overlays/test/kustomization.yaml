@@ -2997,7 +2997,20 @@ images:
     # (incl. this PR's regression cases) ran via package script only,
     # invisible to the required web-test-gate. Now allowlisted, future
     # mfe-endpoint-admin changes are gate-protected. 285/285 vitest pass,
-    # CI 24/24 PASS, Codex 019e8038 (REVISE→RED→AGREE 3-iter). ATOMIC with
+    # CI 24/24 PASS, Codex 019e8038 (REVISE→RED→AGREE 3-iter).
+    #
+    # Cumulative scope disclosure (Codex 019e8053 must_fix #2) — the
+    # 4dbe289..bf8b062 first-parent chain carries FOUR PRs into this pin:
+    #   * #713 — grid-contract vitest hard gate for unified-grid invariant
+    #     (PR-B); test infrastructure only
+    #   * #714 — grid-contract docs: canonical grid-rendering contract +
+    #     retire stale docs (PR-C); docs-only
+    #   * #716 — docs: dynamic-report migration parity matrix + schema gap
+    #     (PR-D0); docs-only
+    #   * #717 — #1148 OutdatedSoftwareView 3-leg + workspace gate (above)
+    # Therefore the endpoint-admin runtime change between 4dbe289 and bf8b062
+    # is exactly #717; the others are test/docs-only and ship cumulatively
+    # without affecting the device drawer's runtime surface. ATOMIC with
     # endpoint-admin sha-601f830 below.
     digest: sha256:5213e55f2f8402e3b4e01d240ea95267d60c703ec50b034042a6e080ad0aa554
 
@@ -3389,8 +3402,19 @@ images:
     # the pre-#40 strict `upgradeCount.equals(maxUpgrade)` heuristic that was a
     # false-positive at exactly maxUpgrade and silently disagreed with the bulk
     # path. 8 unit + 28 service/controller regression tests green; Codex 019e802d
-    # PARTIAL→AGREE (2-iter). f5b8f744 is an ancestor of 601f8303, so this pin
-    # carries forward #1154 + BE-028 + Faz 22.5 chain (cumulative).
+    # PARTIAL→AGREE (2-iter).
+    #
+    # Cumulative scope disclosure (Codex 019e8053 must_fix #1) — the
+    # f5b8f744..601f8303 first-parent chain carries THREE PRs into this pin:
+    #   * #349 (11bfe66e) — BE-020I CI lint guard (RepositoryQueryGrammarGuard-
+    #     Test); affects endpoint-admin tests only
+    #   * #351 (ba299f08) — #1148 OutdatedSnapshotTruncation helper above
+    #   * #350 (601f8303) — feat(reports): D1a backend contract extension;
+    #     touches report-service/** only (16 files +1124 -115), NO endpoint-
+    #     admin runtime delta
+    # Therefore the endpoint-admin runtime change between f5b8f744 and 601f8303
+    # is exactly #351 + #349; #350 is carried along but does not alter this
+    # service.
     digest: sha256:1ae1d927424d4b5f56d9c7570da1f3e2ed9b719e643a2ad83a586a40777339c6
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
