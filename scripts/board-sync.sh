@@ -178,6 +178,18 @@ set_board_status() {
     log "[dry-run] board Status -> $3"
     return 0
   fi
+  # #1085: graceful skip when CI runs without ADD_TO_PROJECT_PAT. The
+  # workflow seeds BOARD_PAT_PRESENT="" when the PAT secret is unset;
+  # in that case we cannot mutate the org-level project field
+  # (GITHUB_TOKEN has no `project` scope), so log a clear notice and
+  # return 0 instead of dying. Interactive use leaves BOARD_PAT_PRESENT
+  # unset entirely, in which case the default "yes" still attempts the
+  # mutation (the operator's gh auth is expected to carry project
+  # scope).
+  if [ "${BOARD_PAT_PRESENT-yes}" = "" ]; then
+    log "board Status skip — ADD_TO_PROJECT_PAT missing in CI (project mutation requires PAT; issue-comment EVIDENCE half still ran)"
+    return 0
+  fi
   gh project item-edit --id "$1" --project-id "$PROJECT_ID" \
     --field-id "$STATUS_FIELD" --single-select-option-id "$2" >/dev/null \
     || die "failed to set board Status"
