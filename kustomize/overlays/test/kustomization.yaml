@@ -2976,7 +2976,13 @@ images:
     # columns — HALILKOOLUB735 renders real AG-033 (Bellek %30, Çalışma 5gün,
     # Düşük Disk Evet) + outdated fail-closed "Eksik"; devices with no snapshot
     # export EMPTY v2 cells (authoritative no-absence). Browser smoke PASS.
-    digest: sha256:5cc2449419f0707627244b47762e28f8e2682d7aeb9c7cdc9b6fd9d401e09554
+    # 2026-05-31 #1154 PR-3 (platform-web #710 squash 58820f79): endpoint
+    # devices grid → SERVER-mode AG Grid (SSRM /query) + report-style İndir ▾
+    # export (Ham veri/raw + Mevcut görünüm/view × Excel/CSV → POST /export);
+    # v2 device-health/outdated toggleable columns; custom CSV button retired.
+    # sha-58820f7. PR-4 deploy ATOMIC with endpoint-admin sha-f8e2cb7 below
+    # (backend /query + /export from PR-2a #345 + PR-2b #346).
+    digest: sha256:2ed5e97b756d63cbb2d5157ad3c46c874cfe64f2061b16b44021ff840433c46f
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
@@ -3335,7 +3341,12 @@ images:
     # endpoint returns 200 with real flat data (memoryUsedPercent 30, uptimeDays 5,
     # anyLowDisk true; outdated probeComplete=false → fail-closed); browser CSV smoke
     # PASS. Includes #340 BE-026 detection-rule (schema V21).
-    digest: sha256:d77a7368b17f133c9d3141320ddcf673528e5c7bdde2c3bcb06feefd0aff45dc
+    # 2026-05-31 #1154 PR-2a (#345 d2bc1e51) + PR-2b (#346 f8e2cb7a): server-
+    # mode device grid backend — POST /endpoint-devices/query (SSRM, schema-
+    # qualified LATERAL builder) + POST /export (raw/view × csv/xlsx via shared
+    # common-export; cap 422 preflight; audit). sha-f8e2cb7. PR-4 deploy ATOMIC
+    # with frontend sha-58820f7 above.
+    digest: sha256:2b936bbc55e7f770357c82fc77cce95e16d0888aa2fd9fcf367ef0d821a3f960
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
