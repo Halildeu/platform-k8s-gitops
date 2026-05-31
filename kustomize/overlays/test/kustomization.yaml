@@ -3335,7 +3335,22 @@ images:
     # endpoint returns 200 with real flat data (memoryUsedPercent 30, uptimeDays 5,
     # anyLowDisk true; outdated probeComplete=false → fail-closed); browser CSV smoke
     # PASS. Includes #340 BE-026 detection-rule (schema V21).
-    digest: sha256:d77a7368b17f133c9d3141320ddcf673528e5c7bdde2c3bcb06feefd0aff45dc
+    #
+    # 2026-05-31 BE-028 #347 (platform-backend 6a21180f, sha-6a21180): install-audit
+    # reads the details.install evidence path. The agent ships the AG-027 InstallResult
+    # under details.install (COMMAND-CONTRACT §11.2); the audit previously read the old
+    # flat details.detection/postVerification → always recorded post_verification=UNKNOWN
+    # with an empty {} redacted_payload. BE-028: verdict derived from
+    # install.{finalStatus, postVerification.satisfied} (satisfied=false zero-value on
+    # early-failure → UNKNOWN, UNSATISFIED only under FAILED_VERIFICATION); nested scalar
+    # projection (postVerification/preDetect, drops raw tails/egress/authority/arbitrary
+    # nested); redacted-payload HARD size cap. Cross-AI Codex 019e7f93 (1×RED+3×REVISE→
+    # AGREE). 52 tests green. LIVE-verified on HALILKOOLUB735 (d0efb00a) 2026-05-31:
+    # 7-Zip REGISTRY re-dispatch → post_verification=SATISFIED, detected_version 26.01.00.0,
+    # redacted_payload.install.postVerification.{status:SATISFIED, ruleType:REGISTRY_UNINSTALL,
+    # satisfied:true}, leak-check CLEAN. Supersedes any older endpoint-admin pin (the live
+    # cluster runs this digest via kubectl set-image; pin reconciled to match).
+    digest: sha256:8fd28bbd3736516cdbd3666b5250b5ae62d9d4b89c197c17ac6d4c4842059c9a
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
