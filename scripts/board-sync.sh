@@ -581,15 +581,26 @@ cmd_verify() {
       ;;
   esac
 
-  # idempotency key is pr_repo + pr (PR numbers are repo-local)
-  local seen
+  # #1085 Codex 019e8079 iter-2 P1 — separate "comment duplicate
+  # prevention" from "state mutation skip". If the canonical EVIDENCE
+  # marker already exists (e.g. a prior PAT-missing run posted it), do
+  # NOT re-post the comment, but still proceed with body rewrite + board
+  # Status mutation under the now-present PAT. This makes the doc
+  # guarantee real: PAT seed after a PAT-missing run *repairs* the
+  # body+board half without doubling up the comment.
+  #
+  # The status guard above (Todo/In Progress) already short-circuits
+  # rerunning against a Done/Blocked/Needs-Verify item, so falling
+  # through on seen>0 only re-runs body/board for items that still need
+  # the move.
+  local seen comment_needed=1
   seen="$(gh issue view "$NUM" --repo "$REPO" --json comments 2>/dev/null \
     | jq --arg pr "$OPT_PR" --arg pr_repo "$OPT_PR_REPO" '[.comments[]
         | select(.body | contains("pr_repo=" + $pr_repo + " pr=" + $pr + " "))] | length' \
     2>/dev/null || echo 0)"
   if [ "${seen:-0}" -gt 0 ]; then
-    log "verify skip — #$NUM already has EVIDENCE for $OPT_PR_REPO#$OPT_PR (idempotent)"
-    return 0
+    comment_needed=0
+    log "verify note — #$NUM already has EVIDENCE for $OPT_PR_REPO#$OPT_PR (repairing body/board only)"
   fi
 
   local now ev body
@@ -598,7 +609,9 @@ cmd_verify() {
 Source-ready: $OPT_PR_REPO PR #$OPT_PR merged.
 Runtime/acceptance evidence pending — board Status -> Needs Verify."
   log "verify #$NUM ($REPO) — $OPT_PR_REPO PR #$OPT_PR merged -> Needs Verify"
-  post_comment "$REPO" "$NUM" "$ev"
+  if [ "$comment_needed" -eq 1 ]; then
+    post_comment "$REPO" "$NUM" "$ev"
+  fi
   body="$(issue_body "$REPO" "$NUM")"
   if printf '%s\n' "$body" | grep -q 'agent-state:v1'; then
     printf '%s\n' "$body" \

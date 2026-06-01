@@ -87,6 +87,38 @@ ITEMS_EOF
     if [ "${1:-}" = "project" ] && [ "${2:-}" = "item-edit" ]; then exit 0; fi
     ;;
 
+  pat-present-repair)
+    # Codex 019e8079 iter-2 P1: pre-existing EVIDENCE comment, PAT now
+    # present, board still In Progress. The fixed cmd_verify must skip
+    # the comment but still move the board.
+    if [ "${1:-}" = "project" ] && [ "${2:-}" = "view" ]; then
+      printf '{"id":"PVT_kwHOCx7tY84BIN2d","number":2}\n'; exit 0
+    fi
+    if [ "${1:-}" = "project" ] && [ "${2:-}" = "item-list" ]; then
+      cat <<'ITEMS_EOF'
+{"items":[{"id":"PVTI_test_42","content":{"type":"Issue","number":42,"url":"https://github.com/Halildeu/platform-k8s-gitops/issues/42"},"status":"In Progress","kind":"","title":"test issue 42"}]}
+ITEMS_EOF
+      exit 0
+    fi
+    if [ "${1:-}" = "issue" ] && [ "${2:-}" = "view" ]; then
+      for arg in "$@"; do
+        if [ "$arg" = "comments" ]; then
+          # canonical idempotency marker (matches the EVIDENCE shape
+          # that the PAT-missing run would have posted)
+          printf '{"comments":[{"body":"EVIDENCE type=pr-merged pr_repo=Halildeu/platform-k8s-gitops pr=99 issue_repo=Halildeu/platform-k8s-gitops at=2026-06-01T00:00:00Z"}]}\n'
+          exit 0
+        fi
+      done
+      printf '{"body":"no agent state here"}\n'; exit 0
+    fi
+    if [ "${1:-}" = "issue" ] && [ "${2:-}" = "comment" ]; then
+      echo "fake gh: repair path must NOT post a comment (EVIDENCE already present)" >&2
+      exit 99
+    fi
+    if [ "${1:-}" = "issue" ] && [ "${2:-}" = "edit" ]; then exit 0; fi
+    if [ "${1:-}" = "project" ] && [ "${2:-}" = "item-edit" ]; then exit 0; fi
+    ;;
+
   pat-missing-same-repo)
     # Comment-only path: issue view (no comments), issue view (number
     # exists), issue comment. NO project/* calls allowed.
@@ -217,6 +249,9 @@ run_case "pat-present" "pat-present" 0 \
 assert_log_contains "project view"
 assert_log_contains "project item-list"
 assert_log_contains "issue comment"
+# Codex 019e8079 iter-2 nit: also assert the full path actually moves
+# the board (project item-edit) — earlier this was implicit.
+assert_log_contains "project item-edit"
 
 # Scenario 2: PAT missing, same-repo ref
 printf '\n[2] PAT missing, same-repo — comment-only, NO Project API\n'
@@ -253,9 +288,21 @@ run_case "pat-missing-idem" "pat-missing-idempotent" 0 \
 assert_log_lacks "issue comment"
 assert_log_contains "issue view"
 
-# Scenario 5: Workflow guard — assert both-token-empty trips the workflow
+# Scenario 5: PAT-present REPAIR — comment already exists, board still moves.
+# Codex 019e8079 iter-2 P1: idempotency must skip the comment but still let
+# body rewrite + board Status mutation run. Without this case the earlier
+# implementation silently no-op'd the board move on every repair run.
+printf '\n[5] PAT present REPAIR — comment exists → no new comment, board STILL moves\n'
+export BOARD_PAT_PRESENT=1
+run_case "pat-present-repair" "pat-present-repair" 0 \
+  verify "https://github.com/Halildeu/platform-k8s-gitops/issues/42" \
+  --pr 99 --pr-repo "Halildeu/platform-k8s-gitops"
+assert_log_lacks "issue comment"
+assert_log_contains "project item-edit"
+
+# Scenario 6: Workflow guard — assert both-token-empty trips the workflow
 # (file-level grep; the actual run is gated by GitHub Actions).
-printf '\n[5] Workflow guard — empty-token branch fails loudly\n'
+printf '\n[6] Workflow guard — empty-token branch fails loudly\n'
 if grep -q "GH_TOKEN is empty" "$WORKFLOW"; then
   pass=$((pass + 1))
   printf '  ✓ workflow has empty-GH_TOKEN ::error:: guard\n'
