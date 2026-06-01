@@ -6,8 +6,19 @@
 > Bu runbook **single-operator + isolated lab device** scope'unda fail-closed.
 
 Endpoint Agent Windows binary upgrade (in-place service stop + replace +
-start). Codex `019e83ef-bc8e-71c3-ac6d-fb92e5d4235f` REVISE 9 must-fix
+start). Codex `019e83ef-bc8e-71c3-ac6d-fb92e5d4235f` REVISE iter-1
+(9 must-fix + 3 nice-to-have) + iter-2 (4 must-fix + 3 nice-to-have)
 absorb edildi (2026-06-01).
+
+**PowerShell preamble (zorunlu — R2-MF-01)**:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+```
+
+Tüm mutation cmdlet'leri explicit `-ErrorAction Stop` ile çağrılır; native
+`.exe` çağrıları sonrası `$LASTEXITCODE` kontrol edilir.
 
 **Tetik**: Yeni binary release (örn. PR #25 absorb sha-1e915a2) cihaza
 deploy edilmeli + agent yeni davranışla heartbeat etmeli.
@@ -16,7 +27,17 @@ deploy edilmeli + agent yeni davranışla heartbeat etmeli.
 - Hedef cihaz Endpoint Agent zaten kurulu (eski sürüm çalışıyor)
 - Çalışan tek bir `EndpointAgent` Windows servisi var
 - **Cihaz domain'e bağlı DEĞİL** (lab-isolated)
-- **Hostname allowlist**: `HALILKOOLUB735` veya açık lab listesi (`SRB-AIDENETIMPC`)
+- **Lab allowlist** (R2-NH-02 — scope metadata table):
+
+| Hostname | Owner | Device class | PartOfDomain | Lab auth date |
+|---|---|---|---|---|
+| `HALILKOOLUB735` | Halil | Parallels W11 lab VM (Mac host) | False | 2026-04-22 |
+| `SRB-AIDENETIMPC` | Halil | Lab desktop pilot (HARD RULE — Pre-Production Full Authority) | False | 2026-04-29 |
+
+> SRB-AIDENETIMPC pre-production lab pilot. Production cihaz değildir;
+> Faz 22.2 production runbook'a IT-owned pilot başlayınca bu liste
+> revize edilir.
+
 - Operator elevated PowerShell + lokal admin yetkisine sahip
 
 **Geri alma**: Pre-upgrade snapshot (Adım 0) zorunlu. Backup binary + hash
@@ -27,8 +48,11 @@ deploy edilmeli + agent yeni davranışla heartbeat etmeli.
 ## ⛔ Preflight gate (mutation ÖNCESİ — abort senaryoları)
 
 ```powershell
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
 # PF-1: Domain-join guard (MF-09)
-$cs = Get-CimInstance Win32_ComputerSystem
+$cs = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
 if ($cs.PartOfDomain) {
     throw "ABORT: PartOfDomain=True. Bu runbook lab-only; domain-joined cihazlar Faz 22.2 production runbook için."
 }
@@ -39,22 +63,44 @@ if ($env:COMPUTERNAME -notin $LabHostAllowlist) {
     throw "ABORT: $($env:COMPUTERNAME) lab allowlist'te değil. Allowlist'i runbook'ta açık güncelle ve cross-AI review tekrar al."
 }
 
-# PF-3: Concurrency lock (MF-06)
+# PF-3: Concurrency lock — atomic acquisition (R2-MF-03)
 $LockDir = 'C:\ProgramData\EndpointAgent'
 $LockFile = Join-Path $LockDir 'upgrade.lock'
-New-Item -ItemType Directory -Force -Path $LockDir | Out-Null
-if (Test-Path $LockFile) {
-    $existing = Get-Content $LockFile
-    throw "ABORT: Upgrade lock var: $existing. Başka operator çalıştırıyor olabilir. Lock manuel temizleme: Remove-Item $LockFile (yalnız orphan ise)."
+New-Item -ItemType Directory -Force -Path $LockDir -ErrorAction Stop | Out-Null
+
+$LockBody = ConvertTo-Json -Compress @{
+    operator     = $env:USERNAME
+    computerName = $env:COMPUTERNAME
+    pid          = $PID
+    runbook      = 'RB-endpoint-agent-binary-upgrade.md v2 (Codex 019e83ef iter-2 absorb)'
+    timestamp    = (Get-Date -Format o)
 }
-"$($env:USERNAME)@$($env:COMPUTERNAME) $(Get-Date -Format o)" | Out-File -LiteralPath $LockFile -Encoding UTF8
+
+# Atomic create — fails terminating-error if file already exists.
+# Check-then-write race YASAK; existing lock = başka operator var.
+try {
+    New-Item -Path $LockFile -ItemType File -Value $LockBody -ErrorAction Stop | Out-Null
+} catch [System.IO.IOException] {
+    # File already exists; surface owner for triage
+    $existing = (Get-Content -LiteralPath $LockFile -ErrorAction SilentlyContinue) -join ' '
+    throw "ABORT: Upgrade lock zaten var: $existing. Başka operator çalıştırıyor olabilir. Orphan ise: Remove-Item $LockFile -Force"
+}
 
 try {
-    # PF-4: ACL preflight (MF-07) — install path + exe DACL transcript
+    # PF-4: ACL preflight (MF-07) — observational + non-destructive WRITE PROBE (R2-MF-04)
     icacls 'C:\Program Files\EndpointAgent' | Out-Default
     icacls 'C:\Program Files\EndpointAgent\endpoint-agent.exe' | Out-Default
-    # Beklenen: BUILTIN\Administrators (M) veya (F). Yoksa break-glass adımları
-    # ayrı blokta (aşağıda); normal path'te abort.
+
+    # Non-destructive write probe: create + delete unique temp file in install dir.
+    # If write fails here (DACL deny), abort BEFORE service stop — no down-time risk.
+    $InstallDir = 'C:\Program Files\EndpointAgent'
+    $WriteProbe = Join-Path $InstallDir ".upgrade-write-probe-$([guid]::NewGuid().Guid).tmp"
+    try {
+        New-Item -Path $WriteProbe -ItemType File -ErrorAction Stop | Out-Null
+        Remove-Item -LiteralPath $WriteProbe -Force -ErrorAction Stop
+    } catch {
+        throw "ABORT: Install dir write probe FAIL — DACL deny veya disk full. Service stop YAPILMADI. icacls çıktısını incele; gerekirse break-glass (aşağıda)."
+    }
 
     # PF-5: Service single-instance check
     $svc = Get-Service EndpointAgent -ErrorAction Stop
@@ -89,16 +135,19 @@ try {
 # Snapshot dizini (timestamped)
 $Ts = (Get-Date -Format 'yyyyMMdd-HHmmss')
 $SnapDir = "C:\ProgramData\EndpointAgent\upgrade-snapshots\$Ts"
-New-Item -ItemType Directory -Force -Path $SnapDir | Out-Null
+New-Item -ItemType Directory -Force -Path $SnapDir -ErrorAction Stop | Out-Null
 
-$InstalledExe = 'C:\Program Files\EndpointAgent\endpoint-agent.exe'
+$InstallDir   = 'C:\Program Files\EndpointAgent'
+$InstalledExe = Join-Path $InstallDir 'endpoint-agent.exe'
+$BackupExe    = Join-Path $InstallDir "endpoint-agent.exe.bak-$Ts"  # R2-MF-02: double-quote expansion
 
 # Old binary backup + hash
-Copy-Item -LiteralPath $InstalledExe -Destination (Join-Path $SnapDir 'endpoint-agent.exe.bak') -Force
+Copy-Item -LiteralPath $InstalledExe -Destination (Join-Path $SnapDir 'endpoint-agent.exe.bak') -Force -ErrorAction Stop
 $OldHash = (Get-FileHash -LiteralPath $InstalledExe -Algorithm SHA256).Hash
-$OldVer  = (Get-Item $InstalledExe).VersionInfo.FileVersion
-$OldPid  = (Get-CimInstance Win32_Service -Filter "Name='EndpointAgent'").ProcessId
-$OldPath = (Get-CimInstance Win32_Service -Filter "Name='EndpointAgent'").PathName
+$OldVer  = (Get-Item -LiteralPath $InstalledExe).VersionInfo.FileVersion
+$OldSvc  = Get-CimInstance Win32_Service -Filter "Name='EndpointAgent'" -ErrorAction Stop
+$OldPid  = $OldSvc.ProcessId
+$OldPath = $OldSvc.PathName
 
 @{
     timestamp     = $Ts
@@ -109,13 +158,15 @@ $OldPath = (Get-CimInstance Win32_Service -Filter "Name='EndpointAgent'").PathNa
     oldPath       = $OldPath
     operator      = $env:USERNAME
     computerName  = $env:COMPUTERNAME
-} | ConvertTo-Json | Out-File -LiteralPath (Join-Path $SnapDir 'pre-upgrade.json') -Encoding UTF8
+    backupPath    = $BackupExe
+} | ConvertTo-Json | Out-File -LiteralPath (Join-Path $SnapDir 'pre-upgrade.json') -Encoding UTF8 -ErrorAction Stop
 
 icacls $InstalledExe > (Join-Path $SnapDir 'old-acl.txt')
 
-Write-Host "Snapshot: $SnapDir"
-Write-Host "OldHash: $OldHash"
-Write-Host "OldPid:  $OldPid"
+Write-Host "Snapshot:  $SnapDir"
+Write-Host "OldHash:   $OldHash"
+Write-Host "OldPid:    $OldPid"
+Write-Host "BackupExe: $BackupExe"
 ```
 
 ### 1. Fresh enrollment token üret
@@ -156,14 +207,22 @@ https://github.com/Halildeu/platform-agent/actions/runs/<RUN_ID>
 $StagedExe   = 'C:\Path\To\downloaded\endpoint-agent.exe'   # zip aç dizini
 $ExpectedSha = '<SHA256SUMS dosyasından oku>'               # 64-hex char
 
+# R2-NH-01: 22.1 LAB — SHA256 = HARD GATE; signtool = WARN-only capture.
 $StagedHash = (Get-FileHash -LiteralPath $StagedExe -Algorithm SHA256).Hash
 if ($StagedHash -ne $ExpectedSha) {
     throw "ABORT: Staged binary hash mismatch. Expected=$ExpectedSha Got=$StagedHash"
 }
 
-# Bonus: signtool verify (lab cert için /pa /v opsiyonel)
-& 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe' verify /pa /v $StagedExe
-# Faz 22.1 lab: unsigned-SHA-pinned exception; Faz 22.2 Azure Trusted Signing zorunlu olacak.
+# Optional signtool capture (lab cert için /pa /v WARN-only — exit code logged, not gated).
+$Signtool = 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe'
+if (Test-Path $Signtool) {
+    & $Signtool verify /pa /v $StagedExe 2>&1 | Tee-Object -FilePath (Join-Path $SnapDir 'signtool.log')
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "signtool verify non-zero (exit=$LASTEXITCODE). 22.1 lab unsigned-SHA-pinned exception — devam (WARN-only). 22.2 production runbook hard gate."
+    }
+} else {
+    Write-Warning "signtool.exe yok — SHA256 pinning yeterli (22.1 lab); 22.2 production'da hard gate gerekecek."
+}
 ```
 
 **Yol B — Operator portal download** (gelecekte, BL-016 binary
@@ -172,23 +231,23 @@ distribution UI): henüz aktif değil. Şu an Yol A.
 ### 3. Service stop — fail-closed (MF-03)
 
 ```powershell
-Stop-Service EndpointAgent -Force
+Stop-Service EndpointAgent -Force -ErrorAction Stop
 
 # Polling (toplam ~30s)
 $tries = 0
-while ((Get-Service EndpointAgent).Status -ne 'Stopped' -and $tries -lt 15) {
+while ((Get-Service EndpointAgent -ErrorAction Stop).Status -ne 'Stopped' -and $tries -lt 15) {
     Start-Sleep -Seconds 2
     $tries++
 }
 
-$finalStatus = (Get-Service EndpointAgent).Status
+$finalStatus = (Get-Service EndpointAgent -ErrorAction Stop).Status
 if ($finalStatus -ne 'Stopped') {
     # FAIL-CLOSED: mutation yapma; eski binary yerinde
     sc.exe queryex EndpointAgent | Out-Default
     Write-Host "Service didn't stop. Status=$finalStatus. Snapshot=$SnapDir"
     # Recovery: yeniden Start (eski binary)
-    Start-Service EndpointAgent
-    if (Test-Path $LockFile) { Remove-Item $LockFile -Force }
+    Start-Service EndpointAgent -ErrorAction SilentlyContinue
+    if (Test-Path $LockFile) { Remove-Item $LockFile -Force -ErrorAction SilentlyContinue }
     throw "ABORT: Service stop timeout. Original binary intact. Bkz $SnapDir."
 }
 ```
@@ -201,14 +260,13 @@ if ($finalStatus -ne 'Stopped') {
 ### 4. Atomic binary replace — staged + try/catch/finally (MF-05)
 
 ```powershell
-$InstallDir   = 'C:\Program Files\EndpointAgent'
-$InstalledExe = Join-Path $InstallDir 'endpoint-agent.exe'
-$TempExe      = Join-Path $InstallDir 'endpoint-agent.exe.new'
-$BackupExe    = Join-Path $InstallDir "endpoint-agent.exe.bak-$Ts"
+# Not: $InstallDir + $InstalledExe + $BackupExe Adım 0'da set edildi.
+$TempExe = Join-Path $InstallDir 'endpoint-agent.exe.new'
+$BadExe  = Join-Path $InstallDir 'endpoint-agent.exe.bad'
 
 try {
-    # 4a. Yeni binary'yi temp path'e kopyala
-    Copy-Item -LiteralPath $StagedExe -Destination $TempExe -Force
+    # 4a. Yeni binary'yi temp path'e kopyala (aynı volume; atomic rename için)
+    Copy-Item -LiteralPath $StagedExe -Destination $TempExe -Force -ErrorAction Stop
 
     # 4b. Temp hash re-verify
     $TempHash = (Get-FileHash -LiteralPath $TempExe -Algorithm SHA256).Hash
@@ -217,34 +275,34 @@ try {
         throw "ABORT: Temp binary hash mismatch after copy. Expected=$ExpectedSha Got=$TempHash"
     }
 
-    # 4c. Mevcut exe backup'a rename (aynı volume → atomic)
-    Rename-Item -LiteralPath $InstalledExe -NewName ([IO.Path]::GetFileName($BackupExe)) -Force
+    # 4c. Mevcut exe backup'a Move (R2-MF-02: full-path $BackupExe, expansion safe)
+    Move-Item -LiteralPath $InstalledExe -Destination $BackupExe -ErrorAction Stop
 
-    # 4d. Temp → final path (aynı directory)
-    Rename-Item -LiteralPath $TempExe -NewName 'endpoint-agent.exe' -Force
+    # 4d. Temp → final path (aynı directory atomic)
+    Move-Item -LiteralPath $TempExe -Destination $InstalledExe -ErrorAction Stop
 
     Unblock-File -LiteralPath $InstalledExe -ErrorAction SilentlyContinue
 
     # 4e. Installed hash re-verify
     $InstalledHash = (Get-FileHash -LiteralPath $InstalledExe -Algorithm SHA256).Hash
     if ($InstalledHash -ne $ExpectedSha) {
-        # Rollback inline
-        Rename-Item -LiteralPath $InstalledExe -NewName 'endpoint-agent.exe.bad' -Force
-        Rename-Item -LiteralPath $BackupExe -NewName 'endpoint-agent.exe' -Force
-        throw "ABORT: Installed hash mismatch after rename. Restored old binary. Bkz $SnapDir."
+        # Rollback inline (R2-MF-02: full-path Move with $BackupExe)
+        Move-Item -LiteralPath $InstalledExe -Destination $BadExe -Force -ErrorAction Stop
+        Move-Item -LiteralPath $BackupExe -Destination $InstalledExe -Force -ErrorAction Stop
+        throw "ABORT: Installed hash mismatch after move. Restored old binary. Bkz $SnapDir."
     }
 
     Write-Host "Replace OK. New hash: $InstalledHash"
 }
 catch {
-    # Rollback fail-safe
+    # Rollback fail-safe (R2-MF-01: explicit -ErrorAction SilentlyContinue OK after primary throw)
     if (Test-Path $TempExe) { Remove-Item -LiteralPath $TempExe -Force -ErrorAction SilentlyContinue }
     if (-not (Test-Path $InstalledExe) -and (Test-Path $BackupExe)) {
-        Rename-Item -LiteralPath $BackupExe -NewName 'endpoint-agent.exe' -Force
+        Move-Item -LiteralPath $BackupExe -Destination $InstalledExe -Force -ErrorAction SilentlyContinue
     }
     # Servisi yeniden başlat (eski binary)
     Start-Service EndpointAgent -ErrorAction SilentlyContinue
-    if (Test-Path $LockFile) { Remove-Item $LockFile -Force }
+    if (Test-Path $LockFile) { Remove-Item $LockFile -Force -ErrorAction SilentlyContinue }
     throw
 }
 ```
@@ -256,10 +314,10 @@ catch {
 [Environment]::SetEnvironmentVariable('ENDPOINT_AGENT_ENROLLMENT_TOKEN', $EnrollmentToken, 'Machine')
 
 # Servisi başlat
-Start-Service EndpointAgent
+Start-Service EndpointAgent -ErrorAction Stop
 Start-Sleep -Seconds 5
 
-$post = Get-Service EndpointAgent
+$post = Get-Service EndpointAgent -ErrorAction Stop
 if ($post.Status -ne 'Running') {
     throw "ABORT: Post-replace service not Running. Status=$($post.Status). Snapshot=$SnapDir."
 }
@@ -269,7 +327,7 @@ if ($post.Status -ne 'Running') {
 
 ```powershell
 # 6a. Service + PID verify
-$newSvc = Get-CimInstance Win32_Service -Filter "Name='EndpointAgent'"
+$newSvc = Get-CimInstance Win32_Service -Filter "Name='EndpointAgent'" -ErrorAction Stop
 $newPid = $newSvc.ProcessId
 Write-Host "OldPid=$OldPid NewPid=$newPid"
 if ($newPid -eq $OldPid) {
@@ -278,27 +336,47 @@ if ($newPid -eq $OldPid) {
 
 # 6b. Installed binary hash + version
 $liveHash = (Get-FileHash -LiteralPath $InstalledExe -Algorithm SHA256).Hash
-$liveVer  = (Get-Item $InstalledExe).VersionInfo.FileVersion
+$liveVer  = (Get-Item -LiteralPath $InstalledExe).VersionInfo.FileVersion
 Write-Host "InstalledHash=$liveHash (expected $ExpectedSha)"
 
 # 6c. Diagnose winget-egress (wire shape) — exact JSON predicate
 $diagJson = & $InstalledExe diagnose winget-egress | Out-String
+if ($LASTEXITCODE -ne 0) {
+    throw "FAIL: diagnose exit=$LASTEXITCODE. Output: $diagJson"
+}
 $diag = $diagJson | ConvertFrom-Json
 if (-not $diag.supported)         { throw "FAIL: diagnose supported=false" }
 if ($diag.schemaVersion -ne 1)    { throw "FAIL: schemaVersion != 1" }
-if (-not $diag.egress.dns)        { throw "FAIL: dns null/empty (eski binary AG-026A bug)" }
-if (-not $diag.egress.tcp)        { throw "FAIL: tcp null/empty" }
-if (-not $diag.egress.https)      { throw "FAIL: https null/empty" }
+if (-not $diag.egress.dns -or $diag.egress.dns.Count -lt 1)     { throw "FAIL: dns null/empty (eski binary AG-026A bug)" }
+if (-not $diag.egress.tcp -or $diag.egress.tcp.Count -lt 1)     { throw "FAIL: tcp null/empty" }
+if (-not $diag.egress.https -or $diag.egress.https.Count -lt 1) { throw "FAIL: https null/empty" }
 Write-Host "Wire shape OK: dns=$($diag.egress.dns.Count) tcp=$($diag.egress.tcp.Count) https=$($diag.egress.https.Count)"
 ```
 
 ### 7. Token cleanup (MF-01 zorunlu)
 
-UI tarafında token CONSUMED + cihaz HMAC credentials persist olduğunu
-doğruladıktan **SONRA** Machine env'den token'ı temizle:
+**HMAC persistence acceptance predicate** (R2-NH-03):
+
+Token cleanup'tan ÖNCE üç kanıttan **en az birinin** sağlanması zorunlu
+(UI `CONSUMED` tek başına yeterli DEĞİL):
+
+1. **DPAPI credential dosyası** (Codex AG-026D pattern):
+   ```powershell
+   $CredFile = 'C:\ProgramData\EndpointAgent\creds\hmac.bin'
+   if (-not (Test-Path $CredFile) -or (Get-Item $CredFile).Length -eq 0) {
+       throw "FAIL: HMAC credential file yok veya boş. Token cleanup YAPILAMAZ."
+   }
+   ```
+
+2. **Backend audit log** — agent subject `agent:<deviceUuid>` ile token-dışı auth kanıtı (operator manuel ssh log grep)
+
+3. **Token-less restart sonrası heartbeat** — `diagnose` başarılı + backend log fresh entry
+
+Tüm üçü birden olursa kanıt en güçlü; bu durumda da operator manuel onay
+verir, ondan sonra Adım 7b çalıştırılır.
 
 ```powershell
-# 7a. Backend tarafı CONSUMED + heartbeat onayı bekle (operator manuel kontrol)
+# 7a. UI tarafı CONSUMED + cihaz HMAC persist doğrulandı (yukarıdaki 3 kanıt)
 #     Web UI: enrollments → açıklama satırı → Durum=CONSUMED + Cihaz dolu
 
 # 7b. Token clear
@@ -315,13 +393,21 @@ Remove-Item Env:ENDPOINT_AGENT_ENROLLMENT_TOKEN -ErrorAction SilentlyContinue
 $EnrollmentToken = $null
 
 # 7e. Token-less service restart ile credential persistence kanıt
-Restart-Service EndpointAgent
+Restart-Service EndpointAgent -ErrorAction Stop
 Start-Sleep -Seconds 10
-$post = Get-Service EndpointAgent
+$post = Get-Service EndpointAgent -ErrorAction Stop
 if ($post.Status -ne 'Running') {
     throw "FAIL: Token-less restart sonrası service NOT Running. Credential persistence kanıtsız."
 }
-& $InstalledExe diagnose winget-egress | ConvertFrom-Json | Select-Object supported, schemaVersion
+$postDiagJson = & $InstalledExe diagnose winget-egress | Out-String
+if ($LASTEXITCODE -ne 0) {
+    throw "FAIL: Token-less restart sonrası diagnose exit=$LASTEXITCODE. Credential persistence kanıtsız."
+}
+$postDiag = $postDiagJson | ConvertFrom-Json
+if (-not $postDiag.supported) {
+    throw "FAIL: Token-less restart sonrası supported=false."
+}
+Write-Host "Token-less restart OK: supported=true, schemaVersion=$($postDiag.schemaVersion)"
 # Heartbeat backend'e 1-2 dakika içinde tekrar gelmeli (backend log + UI verify)
 ```
 
@@ -329,7 +415,7 @@ if ($post.Status -ne 'Running') {
 
 ```powershell
 # Lock dosyasını sil
-if (Test-Path $LockFile) { Remove-Item $LockFile -Force }
+if (Test-Path $LockFile) { Remove-Item $LockFile -Force -ErrorAction SilentlyContinue }
 
 # Snapshot dizini operator referansı için kalır.
 Write-Host "Upgrade DONE. Snapshot: $SnapDir"
@@ -360,14 +446,17 @@ ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
 ## Rollback (mutation sonrası fail tetiklenirse)
 
 ```powershell
-# Adım 0 snapshot dosyasından oku
-$Snap = Get-Content (Join-Path $SnapDir 'pre-upgrade.json') | ConvertFrom-Json
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
 
-Stop-Service EndpointAgent -Force
+# Adım 0 snapshot dosyasından oku
+$Snap = Get-Content -LiteralPath (Join-Path $SnapDir 'pre-upgrade.json') -ErrorAction Stop | ConvertFrom-Json
+
+Stop-Service EndpointAgent -Force -ErrorAction Stop
 Start-Sleep -Seconds 5
 
-# Backup'tan restore
-Copy-Item -LiteralPath (Join-Path $SnapDir 'endpoint-agent.exe.bak') -Destination $InstalledExe -Force
+# Backup'tan restore (Copy-Item — backup dosyasını snapshot dizininde koruyalım)
+Copy-Item -LiteralPath (Join-Path $SnapDir 'endpoint-agent.exe.bak') -Destination $InstalledExe -Force -ErrorAction Stop
 
 # Hash verify (eski hash ile match)
 $restoredHash = (Get-FileHash -LiteralPath $InstalledExe -Algorithm SHA256).Hash
@@ -383,7 +472,7 @@ if ($restoredHash -ne $Snap.oldHash) {
 # icacls 'C:\Program Files\EndpointAgent\endpoint-agent.exe' /grant 'NT AUTHORITY\SYSTEM:F'
 # Note: original ACL snapshot dosyasında ($SnapDir\old-acl.txt) — manuel set.
 
-Start-Service EndpointAgent
+Start-Service EndpointAgent -ErrorAction Stop
 # PID/service verify (Adım 6 ile aynı predicate'ler)
 ```
 
@@ -464,6 +553,20 @@ Multi-operator pattern Faz 22.2 production runbook scope'unda.
 - **Codex iter-1**: `019e83ef-bc8e-71c3-ac6d-fb92e5d4235f` REVISE 9 must-fix
   + 3 nice-to-have (2026-06-01) — **absorb edildi** (MF-01..MF-09 +
   NH-01..NH-03)
+- **Codex iter-2**: aynı thread REVISE 4 must-fix + 3 nice-to-have —
+  **absorb edildi** (R2-MF-01..R2-MF-04 + R2-NH-01..R2-NH-03):
+  - R2-MF-01 PowerShell error semantics: `$ErrorActionPreference='Stop'`
+    + `Set-StrictMode -Version Latest` + explicit `-ErrorAction Stop`
+  - R2-MF-02 Backup rename variable expansion: `$BackupExe` full path +
+    `Move-Item -Destination`
+  - R2-MF-03 Lock acquisition atomic: `New-Item -Path $LockFile -ItemType File`
+    + IOException catch (check-then-write race kaldırıldı)
+  - R2-MF-04 ACL preflight write probe: install dir'de unique temp file
+    create/delete (service stop ÖNCESİ fail edersek down-time yok)
+  - R2-NH-01 signtool 22.1 lab WARN-only (SHA256 hard gate)
+  - R2-NH-02 Lab allowlist scope metadata table (owner/class/PartOfDomain/auth-date)
+  - R2-NH-03 HMAC persistence acceptance predicate (DPAPI file OR backend
+    audit subject OR token-less restart heartbeat)
 - **Faz 22.2 production runbook** ayrı PR'da: Azure Trusted Signing +
   remote PowerShell session + maintenance-token replacement + multi-
   operator coordination + signed manifest
