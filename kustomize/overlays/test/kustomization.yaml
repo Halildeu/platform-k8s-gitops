@@ -636,7 +636,30 @@ images:
     # in-memory cache.
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:5ae0c4d6ee32ce5aa2667748d8310fe9815ba5646347cf08f4a8fc9bdcba6f2b
+    #
+    # 2026-06-01: sha-a87c645 — platform-backend PR-D3a hr-compensation-detay
+    # backend metadata-prep merged (build run 26747577138).
+    #   - hr-compensation-detay.json: 7 currency columns (decimals=0, TRY),
+    #     COLLAR_TYPE + GENDER badges (variantMap + labelMap), EDUCATION
+    #     ASCII enum-select matching SQL CASE output, full access block
+    #     preserved (permission + columnRestrictions for salary-view).
+    #   - hr-demografik-yapi.json: filterDefinitions + routeSegment +
+    #     sharedReportId set (PR-D2a, already in previous digest).
+    #   - 6 filterDefinitions (search/department/company/collarType/
+    #     gender/education) + routeSegment="hr-compensation" + sharedReportId
+    #     matching frontend module + capabilities.
+    #   - ReportDefinitionContractTest: hrDemografikYapi_liveWorkcubeContract +
+    #     hrCompensationDetay_PRD3aContract — 42/42 contract tests PASS.
+    #   - Cross-AI Codex thread 019e82a4 plan-time + post-impl AGREE
+    #     (Implementer Claude, Reviewer Codex). Plan Consensus Autonomy
+    #     observed — no plan-approval ask, direct impl.
+    #
+    # This pin unblocks the D-chain karma migration end-to-end LIVE evidence
+    # for /admin/reports/hr-compensation: dynamic-by-route module + hybrid
+    # wrapper preserved dashboard + 6-widget filter drawer + currency
+    # formatting + sensitive columns access-gating (PR-D2b platform-web
+    # already LIVE since sha-38d0572 = WEB-014G + PR-D2b commit).
+    digest: sha256:b9909e2ab7e8223a513bfa1d1318ebc00eab0cc5e53d910f352e7f46eeab280e
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
