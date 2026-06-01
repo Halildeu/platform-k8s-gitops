@@ -27,8 +27,29 @@ Bu session "P0 tam otonom tamamlayalım" + "Sıradaki (P2, ayrı sprint) otonom 
 | #358 | platform-backend | hr-compensation GENDER bit→int cast | 2026-06-01 12:19 | 019e8318 iter-1 AGREE |
 | #359 | platform-backend | ADR-0015 report execution adapter docs | 2026-06-01 12:31 | 019e8306 iter-1 AGREE D |
 | #360 | platform-backend | ReportDefinition.execution + ExecutionConfig | 2026-06-01 12:41 | 019e8306 iter-3 AGREE |
+| **#361** | **platform-backend** | **PR-D2.1c1 RemoteReportExecutor + Allowlist + Normalizers** | **2026-06-01 13:45** | **019e8306 iter-5 AGREE final (5 iter chain)** |
 
-**Toplam 9 PR merged bu run** (4 P0 + 5 P2).
+**Toplam 10 PR merged bu run** (4 P0 + 6 P2).
+
+### PR #361 PR-D2.1c1 detay (5 Codex iter consensus)
+
+13 dosya (9 main + 4 test) + application.yml; 63 yeni test (115/115 PASS).
+
+Codex iter chain:
+- **iter-1** AGREE D (mimari plan)
+- **iter-2** REVISE (timeout 5s, JWT-only, allowlist scope, request-shape)
+- **iter-3** PARTIAL→AGREE (4 finding absorb: HIGH advancedFilter JSON-string + 2 Medium enabled gate + baseUrl URI parse + Low non-object row)
+- **iter-4** PARTIAL→AGREE (contract clarification: c1 transport-only + caller-shaped payload)
+- **iter-5** PARTIAL→AGREE final (`operator` → `op` naming per UserControllerV1 parser; class-level javadoc nit)
+
+Security boundaries:
+- Allowlist exact (service, path) tuple match
+- baseUrl URI parse: host+port only, no path/query/fragment/userinfo
+- Path guard: startsWith("/"), no `//`, no `..`, no `?`, no `#`
+- Feature gate fail-closed at RemoteAllowlist.resolve (enabled=false → empty)
+- JWT-only auth propagation (S2S token explicitly rejected)
+- 5s timeout default, 30s hard cap
+- Non-object row → RemoteExecutionException
 
 ## 3. İspatlar
 
@@ -88,8 +109,8 @@ archive/2026/06/feat-deploy-backend-overlay-auto-extract-pr1175
 
 | PR | Scope | Durum |
 |---|---|---|
-| **PR-D2.1c1** | RemoteReportExecutor + RemoteAllowlist + RemoteRequest/ResponseNormalizer + Exceptions + MockWebServer tests | **NOT STARTED** |
-| **PR-D2.1c2** | ReportController /data remote dispatch + ReportExportController fail-closed + /filter-values handling + MockMvc IT | NOT STARTED |
+| ~~**PR-D2.1c1**~~ | ~~RemoteReportExecutor + RemoteAllowlist + RemoteRequest/ResponseNormalizer + Exceptions + MockWebServer tests~~ | ✅ **DONE** (PR #361 MERGED 2026-06-01 13:45) |
+| **PR-D2.1c2** | ReportController /data remote dispatch + AG-Grid → {logic, conditions:[{field,op,value}]} translator + ReportExportController fail-closed + /filter-values handling + MockMvc IT | **NOT STARTED** |
 | **PR-D2.1d** | users-overview.json + frontend smoke (catalog dedupe + grid state continuity) | NOT STARTED |
 | **PR-D2.2** | access-report (permission-service /api/v1/roles remote executor) | NOT STARTED |
 | **PR-D2.3** | audit-report (notification-orchestrator audit endpoint remote executor) | NOT STARTED |
@@ -112,9 +133,11 @@ archive/2026/06/feat-deploy-backend-overlay-auto-extract-pr1175
 
 ### P0 (sonraki session ilk işleri)
 
-1. **PR-D2.1c1 başla** — RemoteReportExecutor + RemoteAllowlist + Normalizers + Exceptions + MockWebServer tests. Codex 019e8306 iter-2 detaylı plan + REVISE notları (timeout 5s, JWT propagation only, base-url env config, request-shape mapping). Estimate: 1 PR slice, MockWebServer tests + 8+ unit/IT.
+1. ~~**PR-D2.1c1 başla**~~ ✅ DONE (PR #361 MERGED). Codex iter-1..5 chain AGREE final. RemoteReportExecutor + Allowlist + Normalizers source-ready + tested (115/115).
 
-2. **Cross-AI Codex iter** — PR-D2.1c1 post-impl thread'de continue: AGREE post-impl bekle, eksiklikleri absorb.
+2. **PR-D2.1c2 başla** — ReportController dispatcher (`isRemoteHttp` → executor; SQL → QueryEngine) + AG-Grid filter model → `{logic, conditions: [{field, op, value}]}` translator + ReportExportController fail-closed + /filter-values remote handling + MockMvc IT. Codex 019e8306 iter-2 detaylı plan + iter-5 AGREE final boundary (translator c2 scope'unda).
+
+3. **Cross-AI Codex iter** — PR-D2.1c2 thread 019e8306'da continue (5-iter chain devamı).
 
 ### P1 (yakın sırada)
 
