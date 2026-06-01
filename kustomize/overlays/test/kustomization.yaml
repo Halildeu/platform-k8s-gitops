@@ -715,8 +715,24 @@ images:
     #
     # 951/951 backend tests PASS. Cross-AI consensus (Implementer=Claude,
     # Reviewer=Codex thread 019e83bd).
-    newTag: sha-2bfcbf6
-    digest: sha256:65440bc763ff5af7f437f3eeeb96a68c1be65274e8fcf90794e361c58ebcbf06
+    #
+    # 2026-06-01 PR-D2.2 bump sha-384ea8f (platform-backend PR #366 MERGED):
+    # access-report ReportDefinition (second LIVE remote-http report,
+    # execution.kind=remote-http, service=permission-service, path=
+    # /api/v1/roles, responseShape=paged-items-total) + PermissionCodeToTupleMapper
+    # access-view alias + application-k8s.yml allowlist seed (permission-service:8090).
+    #
+    # Build run 26767392800. Image push:
+    # ghcr.io/halildeu/platform-backend-report-service:sha-384ea8f@
+    # sha256:f59789c025e191da321e2f2c382052eab1b073167e9968c448c9d95ac50b87c3
+    #
+    # Codex thread 019e83f0: iter-1 PARTIAL AGREE (list-only LIVE, audit
+    # widening c2.5 ayrı PR).
+    #
+    # 953/953 backend tests PASS. Cross-AI consensus (Codex 019e83f0).
+    # D-chain progress: 2/5 LIVE pure-grid modules.
+    newTag: sha-384ea8f
+    digest: sha256:f59789c025e191da321e2f2c382052eab1b073167e9968c448c9d95ac50b87c3
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
