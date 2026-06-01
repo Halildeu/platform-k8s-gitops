@@ -1,5 +1,101 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 AG-038-be Agent Self-Diagnostics SOURCE-MERGED + Backend LIVE (2026-06-01)
+
+**Session milestone**: AG-038-be (agent self-diagnostics backend ingest path)
+**MERGED + DEPLOYED + LIVE on testai cluster** through a 5-iter Codex cross-AI
+absorb chain. Agent-side AG-038 probe source already SOURCE-MERGED on
+platform-agent `origin/main` PR [#39](https://github.com/Halildeu/platform-agent/pull/39)
+`67bd4ba` 2026-05-30 (WUA self-diagnostics + DNS/TLS probe + bounded last-
+error). Backend ingest path now SOURCE-MERGED + LIVE: platform-backend PR
+[#357](https://github.com/Halildeu/platform-backend/pull/357) `6122d0e4`
+merged 2026-06-01 + gitops PR [#1177](https://github.com/Halildeu/platform-k8s-gitops/pull/1177)
+`sha-6122d0e` digest pin merged 2026-06-01 + testai cluster apply verified
+(pod imageID `sha256:cd24359086…26ebfbdd` ⊃ V23 migration applied:
+`endpoint_diagnostics_snapshots` + `endpoint_diagnostics_probe_errors`
+tables created + Spring schema-validation pass).
+
+**Truth ledger map (delta only)**:
+
+| Gate | Status |
+|---|---|
+| 22.5 AG-038 agent self-diagnostics probe (DNS/TLS + lastPollLatency + agentVersion + configHash) | ✅ SOURCE-MERGED — platform-agent PR [#39](https://github.com/Halildeu/platform-agent/pull/39) `67bd4ba` (Codex 019e76c5 3-iter AGREE; binary distribution operator-bound for HALILKOOLUB735 LIVE smoke). |
+| 22.5 AG-038-be backend diagnostics ingest + query (V23 2-table schema + dual idempotency + canonical-form hash + sanitize hook + summary value-level denylist + dual-winner invariant) | ✅ MERGED + LIVE — platform-backend PR [#357](https://github.com/Halildeu/platform-backend/pull/357) `6122d0e4` + gitops PR [#1177](https://github.com/Halildeu/platform-k8s-gitops/pull/1177) `sha-6122d0e` digest pin merged 2026-06-01; cluster pod imageID `sha256:cd24359086…26ebfbdd` verified; V23 Flyway migration applied (tables `endpoint_diagnostics_snapshots` + `endpoint_diagnostics_probe_errors` created on testai PG); Spring boot started successfully (Hibernate schema-validation pass after CHAR→VARCHAR fix); REST endpoint `GET /api/v1/admin/endpoint-devices/{deviceId}/diagnostics/latest` mevcut (module:endpoint-admin can_view RBAC); 117/117 specific tests pass (70 policy + 17 service + 4 controller + 19 agent hook + 7 install branch); CI 13/13 green at sha-6122d0e. |
+
+**Live-evidence vault (testai cluster, 2026-06-01)**:
+
+- **Pod imageID match**: `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:cd24359086895288a24c4a126b20dcf9e2855e551754c294d825e7e126ebfbdd` verified via `kubectl --context k3d-test -n platform-test get pod -l app.kubernetes.io/name=endpoint-admin-service -o jsonpath='{.items[0].status.containerStatuses[0].imageID}'`.
+- **V23 tables created**: `endpoint_diagnostics_snapshots` + `endpoint_diagnostics_probe_errors` returned by `information_schema.tables` query on testai PG (`docker exec platform-pg-test psql ...`).
+- **Spring boot successful**: Tomcat 8096 listening + EndpointAdminServiceApplication started in 88.9s (Hibernate would NOT start if schema-validation fail; V23 entity↔DDL match verified).
+- **Rollout complete**: `deployment "endpoint-admin-service" successfully rolled out`.
+
+**Cross-AI peer review chain (Anthropic Claude implementer + OpenAI Codex reviewer)**:
+
+- Codex MCP thread `019e82d7-49cd-7b20-8277-0c9dcb933bcf` — AG-038-be 5-iter chain:
+  - iter-1 plan-time PARTIAL → 6-bulgu absorb (composite-FK tenant + triad CHECK + lastPollLatencyMs scope + collectedAt server-controlled + agentVersion semver + history defer)
+  - iter-2 plan-time AGREE → impl green path
+  - iter-3 post-impl RED → 5 P1+P2 absorb (sanitize() hook into pre-persist chain closes type-confusion bypass + summary value-level denylist URL/Bearer/IP/token reject + V23 device FK + ON DELETE CASCADE + ON DELETE SET NULL + latest semantics revise — every field INCLUDED in hash + dual-winner invariant fail-loud)
+  - iter-4 post-impl PARTIAL → device FK CASCADE + doc-drift fix (4 dosya)
+  - iter-5 post-impl **AGREE** ("no remaining P1/P2 blocker found")
+- Audit-trail (squash commit body): `Implementer: Anthropic Claude (session 6122d0e4) + Reviewer: OpenAI Codex (thread 019e82d7)`.
+
+**Source-truth ancestry (newest → oldest, scoped to this delta)**:
+
+Backend `origin/main`:
+
+- `35a4cc78` #358 — hr-compensation SEX cast fix (downstream, AG-038-be unrelated)
+- **`6122d0e4` #357 — AG-038-be agent diagnostics ingest + query (V23, 2 tables)** ←
+
+Agent `origin/main`:
+
+- `1578d84` #46 — Faz 22.1.0 GitHub Releases tag-driven release foundation
+- **`67bd4ba` #39 — AG-038 agent self-diagnostics probe (read-only)** ← (already merged 2026-05-30)
+
+Gitops `origin/main` (this repo):
+
+- `f8d2553` #1177 — endpoint-admin digest pin `sha-6122d0e` (AG-038-be LIVE)
+- `942a7e2` #1176 — frontend-testai digest bump `f9e16de7→b28e799a` (WEB-014D-followup, AG-038-be unrelated)
+
+**AG-038-be implementation scope**:
+
+V23 migration:
+- `endpoint_diagnostics_snapshots` flat scalars (schema_version, supported, probe_complete, agent_version, config_hash, last_poll_latency_ms, backend_dns_reachable, backend_tls_valid, last_error_occurred_at, last_error_code, last_error_summary, probe_duration_ms, payload_hash_sha256, collected_at) + lastError triad CHECK (all-or-none)
+- `endpoint_diagnostics_probe_errors` child (single-column @JoinColumn snapshot_id + scalar tenant_id mirrored via @PrePersist; DB-layer composite FK)
+- Device FK `ON DELETE CASCADE` + source_command_result_id FK `ON DELETE SET NULL` (V20/V22 parity)
+- Targetless `ON CONFLICT DO NOTHING` dual idempotency: partial UNIQUE source_command_result_id (NULL allowed) + full UNIQUE (tenant_id, device_id, payload_hash_sha256)
+- CHECK constraints: agentVersion semver+prerelease regex / "unknown"; configHash `^[0-9a-f]{64}$|^unknown$` (lowercase only); code regex `^[A-Z][A-Z0-9_]{2,64}$`; summary length 1..200 + CR/LF reject
+
+Service layer:
+- `EndpointDiagnosticsService.ingest()` canonical-form payload hash includes every persistable field (per Codex iter-3 P1 #4 revise; fresh observation appends new snapshot, `/latest` reflects most recent measurement)
+- Dual-winner double-lookup invariant: source + hash lookups BOTH run; different rows → `IllegalStateException("diagnostics dual-winner invariant breach")`
+- Retry-idempotent dedupe: identical canonical bytes → same row return (HARD UNIQUE + pre-probe)
+
+Policy layer:
+- `DiagnosticsPayloadPolicy.sanitize()` pre-persist sanitize hook wired into `EndpointAgentCommandService.submitResult` AFTER hotfixPosturePayloadPolicy.sanitize (Codex iter-3 P1 #1 critical: closes type-confusion bypass where non-Map diagnostics would skip AG-038 policy and let generic software policy miss the forbidden keys)
+- 9 required top-level keys + omitempty lastError + probeErrors[] normalize
+- FORBIDDEN top-level keys: apiURL/host/credentialId/token/apiKey/bearer/authorization/cookie/session/secret/password (defense-in-depth)
+- Summary value-level denylist regex (URL/Bearer/IP/api_key/cookie/session/password/secret/token/private-key/client-secret/IP-pattern) on top of CRLF/control-char REJECT
+- Empty summary REJECT (omitempty means absent, not empty)
+- Uppercase configHash REJECT (no silent normalize)
+- collectedAt payload field REJECT (strict-allowlist; server-controlled from `EndpointCommandResult.reportedAt`)
+
+REST surface:
+- `GET /api/v1/admin/endpoint-devices/{deviceId}/diagnostics/latest`
+- module:endpoint-admin can_view RBAC
+- `@Transactional(readOnly=true)` LAZY probeErrors child fold guard
+- History route deferred per Codex iter-2 #10 (follow-up PR scope)
+
+**LIVE acceptance gap (Up + Functional VERIFIED; Acceptance pending)**:
+
+- ☑️ Up: pod imageID match cluster ⇔ GHCR ⇔ gitops kustomization.yaml triple-match
+- ☑️ Functional: V23 tables created + Spring boot success (schema-validation implicit pass) + Tomcat 8096 listening + REST endpoint registered (auth-gate via JWT verified by lazy fail-closed; in-cluster curl probe pod creation has PodSecurity restricted policy issue — not AG-038-be specific)
+- 🟡 Acceptance: HALILKOOLUB735 agent binary upgrade pending (current binary contains AG-037 source merged 2026-06-01 LIVE chain; AG-038 source PR #39 merged 2026-05-30 — same `main` HEAD `1578d84` after the LIVE binary upgrade in AG-037 #122 task, so HALILKOOLUB735 likely already has AG-038 probe code). Manuel browser smoke via testai.acik.com Device Detail Drawer (no WEB-014H frontend yet — `/diagnostics/latest` API verify via JS fetch or new web slice for follow-up).
+
+**Sıradaki natural chain** (continuous autonomous mode per HARD RULE):
+AG-038-be LIVE delta absorbed → HALILKOOLUB735 acceptance gate (browser/JS API smoke veya WEB-014H Diagnostics view slice) → AG-039 critical services probe (Codex thread `019e8302` iter-2 AGREE plan ready: hard-coded 6-service allowlist + AUTO_DELAYED enum + Present bool + 3-table V24 + SCM/registry direct read) → AG-040 startup apps / exposure summary plan.
+
+---
+
 ## Live Delta — Faz 22.5 AG-037 Hotfix Posture LIVE END-TO-END VERIFIED (2026-06-01)
 
 **Session milestone**: AG-037 (Windows Update / hotfix posture probe) full
