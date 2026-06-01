@@ -416,11 +416,34 @@ bir akışa girer:
 
 Drift garantisi: PAT-missing path body'yi yazmaz **ve** board'u taşımaz —
 ikisi de tek bir authority altında. PAT seedlenince mevcut comment'ler
-idempotency anahtarıyla atlanır ve sadece body + board mutation çalışır.
+idempotency anahtarıyla atlanır, ama body rewrite + board Status mutation
+**çalışır** (iter-2 P1 absorb): `seen>0` artık duplicate comment'i bloklar,
+state mutation'ı değil. Aynı item için PAT-missing → PAT-seeded geçiş
+güvenli onarılır (comment tekrarlamaz, board hâlâ taşınır).
+
+**Required `ADD_TO_PROJECT_PAT` scope (Codex 019e809d iter-3 must_fix)**:
+Same token board mutation + issue R/W için kullanılıyor — sadece Projects
+yetkisi yetersiz, repair run `gh issue view/comment/edit` aşamasında patlar.
+
+| Yetki | Kapsam |
+|---|---|
+| Organization Projects (Halildeu) | Read & Write |
+| Roadmap-tracked repo'larda Issues (her biri için) | Read & Write |
+| Metadata (her repo) | Read |
+| Cross-repo `Tracked by` refs için sibling repo erişimi | Aynı PAT'a o repo Issues R/W ekle (yoksa cross-repo refs skip kalır) |
+| Classic PAT alternatifi | `repo` + `project` (veya `read:project` + `write:project`) |
 
 Offline harness: `scripts/test/board-sync-verify-pat-missing.sh` — fake
-`gh` shim ile 5 senaryoyu deterministic koşturur (PAT present /
-PAT-missing same-repo / cross-repo skip / idempotent / workflow guard).
+`gh` shim ile **7 senaryoyu** deterministic koşturur:
+
+1. PAT present — full path: Project API + EVIDENCE comment + body rewrite + board Status
+2. PAT present REPAIR (iter-2 P1 + iter-3 P1 #2) — pre-existing EVIDENCE; comment ATLANIR ama body rewrite (`gh issue edit`) + board (`project item-edit`) STILL fire'lar
+3. PAT missing, same-repo — comment-only, Project API'ye DOKUNMAZ
+4. PAT missing, cross-repo — soft-skip + `::warning::` annotation + step summary, network'e DOKUNMAZ
+5. PAT missing, idempotent — pre-existing EVIDENCE → comment ATLANIR
+6. PAT missing, lowercase same-repo (iter-3 P1 #3) — case-insensitive compare, false cross-repo skip YOK
+7. Workflow guard — boş GH_TOKEN durumunda `::error::` + exit 1 (file-level grep assertion)
+
 Yeni regression bu harness'la lokal yakalanır, gerçek merge beklemeden.
 
 **`.github/workflows/board-pr-evidence.yml`** — `pull_request: closed` (merged).

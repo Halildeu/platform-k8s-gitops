@@ -628,13 +628,22 @@ Runtime/acceptance evidence pending — board Status -> Needs Verify."
 # we never write a needs-verify body without also moving the board, and
 # we never claim cross-repo coverage with a repo-scoped GITHUB_TOKEN.
 _verify_pat_missing() {
-  local vnum="$1" vrepo="$2" issue_repo
+  local vnum="$1" vrepo="$2" issue_repo vrepo_norm pr_repo_norm
+  # Codex 019e809d iter-3 P1 #3: case-insensitive repo compare so
+  # mixed-case Tracked-by refs (e.g. `halildeu/platform-k8s-gitops#42`
+  # vs canonical `Halildeu/...`) do not get false cross-repo skipped.
+  # GitHub treats owner/repo identity case-insensitively; we do too.
+  vrepo_norm="$(printf '%s' "$vrepo" | tr '[:upper:]' '[:lower:]')"
+  pr_repo_norm="$(printf '%s' "$OPT_PR_REPO" | tr '[:upper:]' '[:lower:]')"
   # Cross-repo guard: a ref like owner/other-repo#42 or an issue URL
   # outside PR_REPO. GITHUB_TOKEN cannot comment on the sibling repo;
-  # log + step-summary the skip and move on so the workflow loop does
-  # not die on a multi-repo Tracked-by line.
-  if [ -n "$vrepo" ] && [ "$vrepo" != "$OPT_PR_REPO" ]; then
+  # log + step-summary + ::warning:: annotation (P1 #4 — surface in the
+  # Actions UI summary panel, not only the run log) and move on so the
+  # workflow loop does not die on a multi-repo Tracked-by line.
+  if [ -n "$vrepo_norm" ] && [ "$vrepo_norm" != "$pr_repo_norm" ]; then
     log "verify skip — #$vnum lives in $vrepo (cross-repo); GITHUB_TOKEN cannot comment there. Seed ADD_TO_PROJECT_PAT to enable cross-repo evidence."
+    printf '::warning::cross-repo verify skipped: %s#%s (PAT-missing fallback — seed ADD_TO_PROJECT_PAT with Issues R+W on %s)\n' \
+      "$vrepo" "$vnum" "$vrepo" >&2
     if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
       printf '⚠️ cross-repo verify skipped: %s#%s (PAT-missing fallback)\n' \
         "$vrepo" "$vnum" >>"$GITHUB_STEP_SUMMARY" || true
