@@ -1,5 +1,127 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 AG-037 Hotfix Posture LIVE END-TO-END VERIFIED (2026-06-01)
+
+**Session milestone**: AG-037 (Windows Update / hotfix posture probe) full
+end-to-end chain LIVE on testai cluster — agent source PR
+[platform-agent#45](https://github.com/Halildeu/platform-agent/pull/45)
+`2b0f3b5` (WUA COM probe + PowerShell `Get-HotFix` fallback + service +
+registry + agent-health) → backend ingest PR
+[platform-backend#354](https://github.com/Halildeu/platform-backend/pull/354)
+`2ac67f11` (V22 5-table schema + targetless `ON CONFLICT DO NOTHING`
+dual idempotency + canonical-form payload hash + 3-leg OR truncation)
++ PR [platform-backend#355](https://github.com/Halildeu/platform-backend/pull/355)
+`fb80db67` (omitempty wire-compat — TOP_REQUIRED_KEYS reduced to 9 to
+match agent's JSON `omitempty` tags; missing arrays → empty, missing
+truncation bools → false) → web PR
+[platform-web#723](https://github.com/Halildeu/platform-web/pull/723)
+`577a89f2` (`HotfixPostureView` Device Detail Drawer tab — render-time
+`previousDeviceIdRef` guard + `currentData` stale-guard + state precedence
+panel: loading → error class → unsupported → incomplete → render; design-
+system tone tokens `bg-state-{success|warning|danger}-subtle`; `AUOptions`
+exact-string matcher; KB IDs monospace comma-joined; lazy history
+accordion; 42/42 vi.mock-based tests cover all state branches) → gitops
+PR [#1167](https://github.com/Halildeu/platform-k8s-gitops/pull/1167)
+endpoint-admin digest pin `sha256:15278bdb…64535` + PR
+[#1168](https://github.com/Halildeu/platform-k8s-gitops/pull/1168)
+frontend-testai digest pin `sha256:f9e16de7…68fc`. Cluster apply +
+HALILKOOLUB735 Parallels W11 agent binary upgrade (SHA256
+`F86CA310…` verified via `prlctl exec`) + manual
+`COLLECT_INVENTORY{includeHotfixPosture:true}` (command ID
+`b264f7fd…`) + browser smoke (testai.acik.com Device Detail Drawer →
+"Hotfix Duruşu" tab) returned **86 real WUA installed hotfix entries**
+(KB2267602 Defender Antivirus + KB5089549 May Dynamic CU + KB5087051
+.NET May + KB5083769 April Dynamic + KB5007651 Windows Security
+platform + KB5082417 .NET April + KB4052623 Defender platform + more)
+**+ 1 pending update** (KB2267602 / DEFINITION / UNSPECIFIED) — full
+panel rendered with `pendingByCategory` distribution (3 distinct
+categories), agent health (WUA RUNNING green tone + BITS STOPPED
+danger tone — real lab state, NOT anomaly), AU policy null fallback
+("Bilinmiyor" tri-state), `lastDetectAt`/`lastInstallAt` null fallback
+("—"), notificationLevel "Bilinmiyor" (registry unreachable fallback
+test). NO console errors. Browser network: `GET
+/api/v1/endpoint-admin/devices/{uuid}/hotfix-posture/latest` →
+HTTP 200 + 86 children. This is THE FIRST full AG-037 LIVE acceptance
+gate cleared since PR #45 was opened — agent probe → backend ingest →
+schema persist → query render fully exercised end-to-end with real
+Windows VM telemetry.
+
+**Truth ledger map (delta only)**:
+
+| Gate | Status |
+|---|---|
+| 22.5 AG-037 agent hotfix-posture probe (WUA COM + PowerShell fallback + service + registry + agent-health) | ✅ MERGED — platform-agent PR [#45](https://github.com/Halildeu/platform-agent/pull/45) `2b0f3b5`; contract: `docs/COMMAND-CONTRACT.md` §16 (AG-037 v1, `schemaVersion=1`); opt-in `COLLECT_INVENTORY{includeHotfixPosture:true}`; LIVE binary upgrade on HALILKOOLUB735 confirmed via `prlctl exec` SHA256 `F86CA310…`. |
+| 22.5 AG-037-be backend ingest + query (5-table V22 schema + dual idempotency + canonical-form hash + 3-leg OR truncation) | ✅ MERGED + LIVE — platform-backend PR [#354](https://github.com/Halildeu/platform-backend/pull/354) `2ac67f11` (initial) + PR [#355](https://github.com/Halildeu/platform-backend/pull/355) `fb80db67` (omitempty wire-compat critical follow-up; PR #354 merged with initial commit only because Codex P1 fix never landed on the head of that PR — root cause: branch HEAD did not advance to include `1e84b196` + `9668dc12` before squash merge; follow-up #355 cherry-picked both into a clean branch from origin/main); cluster image digest `sha256:15278bdb…64535` (gitops PR #1167) pinned on testai endpoint-admin pod; V22 Flyway migration applied (snapshots + installed + pending + pending_kbs + pending_categories tables created with all CHECK + UNIQUE constraints); ingest path exercised with real HALILKOOLUB735 agent payload → snapshot `758aa528…` persisted with 86 installed children + 1 pending parent + 1 pending KB row + 3 pending_categories rollup rows. |
+| 22.5 WEB-014G hotfix posture view (Device Detail Drawer tab + state precedence + tone tokens + 42 tests) | ✅ MERGED + LIVE — platform-web PR [#723](https://github.com/Halildeu/platform-web/pull/723) `577a89f2`; cluster image digest `sha256:f9e16de7…68fc` (gitops PR #1168) pinned on testai frontend-testai pod; tab rendered "Hotfix Duruşu" between "Outdated Software" and "Software Catalog" in DeviceDetailDrawer; browser smoke verified full panel (installed table + pending table + meta row + agent-health card + history accordion) with real 86-hotfix data point. |
+| Gitops main ⇔ cluster triple-match | ✅ `kustomize/overlays/test/kustomization.yaml` endpoint-admin digest `sha256:15278bdb4458da155fb10b2ec7b8e5ed521f1bcbba1dc0ed29ea2d3224b64535` (PR #1167) + frontend-testai digest `sha256:f9e16de7cc654d1466f071448fc078cab2a409201fc84f657138791c0f0268fc` (PR #1168) ⇔ pod imageID match verified 2026-06-01. |
+
+**Live-evidence vault (testai cluster, 2026-06-01 browser smoke)**:
+
+- **Backend snapshot row**: `endpoint_hotfix_posture_snapshots` row `758aa528…` for tenant `tenant-1` device HALILKOOLUB735, `schemaVersion=1`, `supported=true`, `probeComplete=true`, `installedCount=86`, `pendingTotalCount=1`, `installedSourceUsed='wua'`, `pendingSourceUsed='wua'`, `healthSourceUsed='service'`, `probeDurationMs=18942`, `collectedAt='2026-06-01T09:45:56.132312Z'`.
+- **Browser eval** (testai.acik.com Hotfix Duruşu tab, manual JS probe):
+  - `installedCount`: "(86)" badge
+  - `pendingCount`: "(1)" badge
+  - `meta`: "Kurulu kaynak: wua · Bekleyen kaynak: wua · Sağlık kaynağı: service · Toplama zamanı: 2026-06-01T09:45:56.132312Z · 18942 ms"
+  - `agentHealthWua`: "RUNNING" (green tone `bg-state-success-subtle text-state-success-text`)
+  - `agentHealthBits`: "STOPPED" (red tone `bg-state-danger-subtle text-state-danger-text` — distinct from DISABLED; real lab state)
+  - `notificationLevel`: "Bilinmiyor" (registry unreachable, null fallback)
+  - `pendingKbIds`: "KB2267602" (monospace comma-joined)
+  - `pendingCategory`: "DEFINITION"
+  - `pendingSeverity`: "UNSPECIFIED"
+  - `pendingByCategoryLen`: 3 (full pre-truncation rollup invariant: `sum(count) == pendingTotalCount`)
+  - `healthLastDetect`: "—" (null fallback)
+  - `healthLastInstall`: "—" (null fallback)
+  - `healthPolicyEnabled`: "Bilinmiyor" (tri-state null)
+  - `healthEffective`: "Bilinmiyor" (tri-state null, independent of policyEnabled)
+  - `historyAccordion`: present (lazy-mounted)
+- **Real KB samples rendered in installed table**: KB2267602 (Microsoft Defender Antivirus definition updates ×N), KB5089549 (May 2026 Dynamic CU), KB5087051 (.NET Framework Security Update May 2026), KB5083769 (April 2026 Dynamic CU), KB5007651 (Windows Security platform), KB5082417 (.NET Framework Security Update April 2026), KB4052623 (Microsoft Defender Antivirus malware platform).
+- **Console**: NO errors during smoke.
+- **Network**: `GET /api/v1/endpoint-admin/devices/{uuid}/hotfix-posture/latest` → HTTP 200 + 86 installed children + 1 pending child + 3 category rollups + 7 agentHealth fields flat on root (NOT 1:1 child — `@OneToOne` hazard avoided in entity design).
+
+**Cross-AI peer review chain (Anthropic Claude implementer + OpenAI Codex reviewer)**:
+
+- Plan-time + post-impl Codex MCP threads (4 threads, 12+ iters across plan + post-impl):
+  - `019e81fe-…` — AG-037-be plan-time + post-impl (V22 schema + ingest service + repository + DTO + controller + test suite; 3 iter; AGREE on iter-3 after P1 absorb of canonical-form hash + targetless ON CONFLICT + dual idempotency winner re-lookup)
+  - `019e822b-…` — AG-037-be omitempty critical follow-up (PR #355; TOP_REQUIRED_KEYS reduced 9; missing arrays → empty / truncation bools → false; AGREE on iter-1)
+  - `019e8245-…` — WEB-014G plan-time + post-impl + tests (3 iter; AGREE on iter-3 after P1 absorb of vi.mock pattern for RTK Query hooks + design-system tone tokens + 3-leg OR truncation helper + 42 tests covering state precedence/stale-guard/AUOptions/severity/kbIds/pendingByCategory branches)
+  - `019e801e-…` — Truth refresh delta plan-time (prior session, AGREE on narrowed-scope ledger-only refresh)
+- **Audit-trail (per PR squash mesajı + body)**:
+  - `Implementer: Anthropic Claude (session …)`
+  - `Reviewer: OpenAI Codex (thread 019e81fe / 019e822b / 019e8245 / 019e801e)`
+
+**Source-truth ancestry (newest → oldest, scoped to this delta)**:
+
+Backend `origin/main`:
+
+- **`fb80db67` #355 — AG-037-be omitempty wire-compat critical follow-up (TOP_REQUIRED_KEYS reduced to 9)** ←
+- **`2ac67f11` #354 — AG-037-be hotfix-posture ingest + query (V22, 5 tables)** ←
+
+Agent `origin/main`:
+
+- **`2b0f3b5` #45 — AG-037 hotfix-posture probe (WUA COM + PowerShell fallback + service + registry + agent-health)** ←
+
+Web `origin/main`:
+
+- **`577a89f2` #723 — WEB-014G HotfixPostureView Device Detail Drawer tab** ←
+
+Gitops `origin/main` (this repo):
+
+- **`858c224` #1168 — frontend-testai digest pin `sha-38d0572` (WEB-014G LIVE)** ←
+- **`d4545c5` #1167 — endpoint-admin digest pin `sha-fb80db6` (AG-037-be LIVE)** ←
+
+**LIVE acceptance gap CLOSED** (no further AG-037 acceptance work remains
+in scope; truncation/AU-policy/registry-unreachable/service-DISABLED
+fault-injection variants are non-blocking edge-case smokes recorded as
+P3 backlog items, not gates):
+
+- ☑️ Pod restart Flyway log replay — V22 migration `success=true` row confirmed live in `endpoint_admin_service.endpoint_admin_flyway_history`.
+- ☑️ API smoke (admin JWT path) — `GET .../hotfix-posture/latest` returned HTTP 200 with 86 installed children + 1 pending child + 3 category rollups + 7 agentHealth fields.
+- ☑️ WEB surface — `HotfixPostureView` rendered full panel for HALILKOOLUB735 device.
+- ☑️ HALILKOOLUB735 endpoint — binary upgrade verified via `prlctl exec` (SHA256 match) + manual `COLLECT_INVENTORY{includeHotfixPosture:true}` triggered + ingest path persisted real WUA telemetry.
+- ☑️ Forensic git cleanup — 4 archive tags created (1+ year recovery via `ai-post-merge-cleanup.sh`) for PR #45, #354, #355, #723, #1167, #1168.
+
+---
+
 ## Live Delta — Faz 22.5.3C Outdated / Diff / Prohibited SOURCE-MERGED — truth refresh (2026-06-01)
 
 **Session milestone**: A cross-AI plan-time consultation discovered that
