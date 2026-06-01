@@ -1,5 +1,157 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 AG-040 Startup Apps + Exposure Summary SOURCE-MERGED + Backend LIVE (2026-06-01)
+
+**Session milestone**: AG-040 (Windows startup-apps + exposure-summary
+inventory probe — "which device has an unexpected autorun anchor /
+RDP listener enabled?" P1 ops visibility) full source-merged chain +
+backend ingest path **MERGED + DEPLOYED + LIVE on testai cluster**.
+Agent-side AG-040 probe source MERGED on `platform-agent` PR
+[#48](https://github.com/Halildeu/platform-agent/pull/48) `0f9acc55`
+2026-06-01 (registry Run/RunOnce + WOW6432 + HKCU enum + filesystem
+Startup folder enum + PowerShell `Get-ScheduledTask` filtered to
+MSFT_TaskBootTrigger/MSFT_TaskLogonTrigger + 2 scalar registry reads
+fDenyTSConnections + LogDroppedPackets + worker-goroutine bounded
+8s timeout + select boundary + cap=50 + 10-anchor Location enum
+allowlist + NAME_VALUE_REDACTED per-source-aggregated probe error +
+bucketTaskPath exact-boundary check). Backend ingest path now
+SOURCE-MERGED + LIVE: platform-backend PR
+[#364](https://github.com/Halildeu/platform-backend/pull/364) `8a388454`
+merged 2026-06-01 + gitops PR
+[#1187](https://github.com/Halildeu/platform-k8s-gitops/pull/1187)
+`sha-8a38845` digest pin merged 2026-06-01 + testai cluster
+`kubectl set image` rollout verified (pod imageID
+`sha256:ff312c83b54cc013edd763ad4529d910414456d1af5084cf4ed57c5f5e2d6a2c`
+⊃ V25 migration applied: `endpoint_startup_exposure_snapshots` +
+`endpoint_startup_exposure_apps` + `endpoint_startup_exposure_probe_errors`
+tables created + Spring boot startup clean + actuator UP).
+
+**Truth ledger map (delta only)**:
+
+- Agent contract `StartupExposureResult` v1 (schemaVersion=1 pinned):
+  `{schemaVersion, supported, probeComplete, startupApps[]
+  {name, location, enabled, probeOrigin}, rdpEnabled,
+  windowsFirewallEventLogEnabled, probeErrors[]
+  {code, source?, summary?}, probeDurationMs}`. Location enum
+  10-anchor bounded: HKLM_RUN, HKLM_RUNONCE, HKLM_WOW6432_RUN,
+  HKCU_RUN, HKCU_RUNONCE, STARTUP_FOLDER_COMMON, STARTUP_FOLDER_USER,
+  TASK_SCHEDULER:ROOT, TASK_SCHEDULER:MICROSOFT_WINDOWS,
+  TASK_SCHEDULER:CUSTOM. ProbeOrigin enum {REGISTRY, SCHEDULED_TASK}.
+  Code enum 10 entries incl. NAME_VALUE_REDACTED. Wire shape never
+  carries full executable path / command line / RunAs / working dir /
+  active RDP session count.
+
+- Backend V25 schema (`endpoint_admin_service`):
+  - `endpoint_startup_exposure_snapshots` root with composite-PK
+    (id, tenant_id) UNIQUE + 2 flat exposure boolean scalars
+    (rdp_enabled, windows_firewall_event_log_enabled) + dual UNIQUE
+    (source_command_result_id partial + tenant/device/payload_hash full)
+    + composite-FK device + source command result
+  - `endpoint_startup_exposure_apps` child entries with composite-FK
+    ON DELETE CASCADE + 10-anchor Location enum CHECK +
+    REGISTRY/SCHEDULED_TASK probe_origin CHECK + `[[:cntrl:]]`
+    name control-char reject (POSIX named class, PG-portable)
+  - `endpoint_startup_exposure_probe_errors` child errors with
+    composite-FK ON DELETE CASCADE + 10-code enum CHECK + source
+    allowlist (Location enum reuse) + summary CRLF reject + 200-char cap
+  - Index `(tenant_id, location)` for fleet "which devices have X
+    autorun in HKLM_RUN" queries
+
+- Backend `StartupExposurePayloadPolicy` strict-allowlist:
+  - 7 REQUIRED top keys + 1 OPTIONAL (probeErrors with absent ACCEPT,
+    explicit-null REJECT via containsKey() disambiguation,
+    non-List REJECT)
+  - FORBIDDEN_TOP_KEYS extended 14 entries incl
+    `executable/exe/fullPath/path/command/commandLine/args/arguments/runAs/account/workingDirectory/activeSessions/rdpActiveSessions/sessionCount`
+  - Cap 50 startupApps + 16 probeErrors
+  - `NAME_FULLPATH_DENYLIST_RE` (drive letter / UNC / unix path / exe ext)
+  - `SUMMARY_VALUE_DENYLIST_RE` reuse from AG-038-be
+  - sanitize() pre-persist hook closes type-confusion + explicit-null bypass
+  - Derived invariants enforced at trust boundary:
+    `probeComplete == (supported && probeErrors.isEmpty())`;
+    `supported=false` implies empty `startupApps`
+  - Number coercion: Double REJECTED; Long overflow caught as
+    IllegalArgumentException (not unchecked ArithmeticException leak)
+  - Canonical-form payload hash INCLUDES every persistable field
+    (schemaVersion, supported, probeComplete, rdpEnabled,
+    windowsFirewallEventLogEnabled, full ordered startupApps,
+    ordered probeErrors, probeDurationMs); deterministic key
+    insertion ensures hash stable across reorder + flips on every
+    persistable bool/scalar change
+
+- `EndpointStartupExposureService` ingest semantics:
+  - Dual-winner double-lookup invariant (source AND hash lookup BOTH
+    run + mismatch → `IllegalStateException`) — AG-039-be parity
+  - Source command tenant/device cross-check on BOTH the initial
+    findBySourceCommandResultId short-circuit AND the
+    ON CONFLICT fallback branch
+  - Targetless `ON CONFLICT DO NOTHING` for atomic retry-idempotent
+    dedupe — PG-authoritative native INSERT + H2 entity-manager
+    persist fallback
+  - Server-controlled collectedAt from
+    `EndpointCommandResult.reportedAt`
+
+- REST surface:
+  `GET /api/v1/admin/endpoint-devices/{deviceId}/startup-exposure/latest`
+  (`@RequireModule(EndpointAdminAuthz.MODULE, VIEWER)`,
+  `@Transactional(readOnly=true)`)
+
+- Cross-AI Codex review (HARD RULE — different provider:
+  Anthropic Claude implementer, OpenAI Codex reviewer):
+  - Plan-time thread `019e8387-9de9-7310-b297-a762e3a6f899`
+    PARTIAL→AGREE with 4 revize'leri absorbed (location anchor-only /
+    RDP active-sessions NO / rdpEnabled=fDenyTSConnections /
+    3-table backend, eventLog scalar flat)
+  - Post-impl thread `019e83a8-f6c1-7450-bad8-e9a9319e9a7e`
+    3-iter REVISE→REVISE→**AGREE / ready_for_merge=true**:
+    - iter-1 absorbed: scheduled task scope filter to
+      MSFT_TaskBootTrigger/MSFT_TaskLogonTrigger; agent-side
+      `shouldRedactName()` mirrors backend NAME_FULLPATH_DENYLIST_RE;
+      sanitize() containsKey() explicit-null REJECT; trust-boundary
+      derived invariants; readInt() Double REJECT + Long overflow
+      IAE; source command tenant/device cross-check early lookup;
+      V25 `[[:cntrl:]]` POSIX named class; NAME_VALUE_REDACTED
+      enum extension
+    - iter-2 absorbed: per-source NAME_VALUE_REDACTED aggregation
+      (max 10 total, defends backend PROBE_ERRORS_MAX=16 from
+      visibility DoS); bucketTaskPath exact-or-trailing-separator
+      boundary (`\Microsoft\WindowsEvil` stays CUSTOM); contract
+      narrowing to "PATH/EXECUTABLE/control redaction" (not
+      "command fragment")
+    - iter-3 nits: removed unused const; fixed stale docstring
+
+- Up/Functional/Acceptance gates:
+  - **Up** (Pod Running + TCP reachable + actuator UP):
+    pod imageID `sha256:ff312c83…07b23a2` matches GHCR digest;
+    actuator `/actuator/health` returns
+    `{"status":"UP","groups":["liveness","readiness"]}`;
+    deployment rollout success.
+  - **Functional** (V25 migration applied + REST surface live):
+    Flyway log `"Successfully applied 1 migration to schema
+    endpoint_admin_service, now at version v25 (execution time
+    00:00.190s)"`; 3 tables created (snapshots + apps + probe_errors);
+    Spring boot schema validation pass; sanitize chain order
+    `hotfixPosture → diagnostics → services → **startupExposure** →
+    inventoryPayloadPolicy.validate` in effect.
+  - **Acceptance** (binary upgrade + browser smoke verifying
+    end-to-end agent → backend → admin REST chain): pending
+    HALILKOOLUB735 binary upgrade + COLLECT_INVENTORY
+    `includeStartupExposure=true` trigger + admin
+    `/startup-exposure/latest` browser-verify (operator-bound
+    multi-step; deferred to next session).
+
+- Test surface:
+  - Agent: 35+ tests Linux + Windows cross-build (orchestrator +
+    JSON-shape + redaction aggregation + bucket boundary +
+    `shouldRedactName` value-level denylist + 16-case `BucketTaskPath`
+    + 5-case `BuildRedactionProbeErrors` + 17-case
+    `BoundaryEvasion`)
+  - Backend: 48/48 `StartupExposurePayloadPolicyTest` PASS + 19/19
+    `EndpointAgentCommandServiceTest` PASS + 7/7
+    `EndpointAgentCommandServiceInstallBranchTest` PASS
+
+---
+
 ## Live Delta — Faz 22.5 AG-039 Critical Services SOURCE-MERGED + Backend LIVE (2026-06-01)
 
 **Session milestone**: AG-039 (Windows critical services inventory probe)
