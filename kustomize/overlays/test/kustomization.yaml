@@ -3685,7 +3685,33 @@ images:
     # /services/latest (module:endpoint-admin can_view, @Transactional
     # readOnly LAZY fold). 129 AG-039-be specific tests (33 services policy
     # + 70 diagnostics regression + 7 install branch + 19 agent command).
-    digest: sha256:642c79b8101a1eb22de93f5300df8694a2b6ff11d17651d0e420b1adc07b23a2
+    #
+    # 2026-06-01 Faz 22.5 AG-040-be startup-exposure ingest → sha-8a38845
+    # (platform-backend 65d9fbd5→8a3884545: PR #364 cross-AI Codex 019e83a8
+    # 3-iter REVISE→REVISE→AGREE absorb chain). V25__endpoint_startup_exposure
+    # migration: 3-table (endpoint_startup_exposure_snapshots root with 2
+    # flat exposure scalars rdp_enabled + windows_firewall_event_log_enabled
+    # + composite-PK (id, tenant_id) UNIQUE + dual UNIQUE
+    # (source_command_result_id partial + tenant/device/payload_hash full);
+    # endpoint_startup_exposure_apps children with 10-anchor Location enum
+    # CHECK + REGISTRY/SCHEDULED_TASK probe_origin CHECK + [[:cntrl:]] name
+    # control-char reject; endpoint_startup_exposure_probe_errors children
+    # with 10-code enum CHECK incl NAME_VALUE_REDACTED). StartupExposurePayloadPolicy
+    # strict-allowlist 7 required + 1 optional + 14 forbidden top keys (incl
+    # activeSessions/rdpActiveSessions/sessionCount + executable/path/
+    # command/runAs/workingDirectory). NAME_FULLPATH_DENYLIST_RE drive
+    # letter/UNC/unix path/exe ext + SUMMARY_VALUE_DENYLIST_RE AG-038-be
+    # reuse + sanitize() pre-persist hook (explicit-null bypass closed via
+    # containsKey()) + derived invariants (probeComplete == supported &&
+    # probeErrors.isEmpty(); supported=false→empty apps) + Long-overflow
+    # IllegalArgumentException + Double REJECT. EndpointStartupExposureService
+    # dual-winner double-lookup invariant + source command-result
+    # tenant/device cross-check on BOTH early short-circuit AND ON CONFLICT.
+    # AdminEndpointStartupExposureController GET /startup-exposure/latest
+    # (module:endpoint-admin VIEWER, @Transactional readOnly). 48 AG-040-be
+    # specific tests (StartupExposurePayloadPolicyTest) + 19 agent command +
+    # 7 install branch.
+    digest: sha256:ff312c83b54cc013edd763ad4529d910414456d1af5084cf4ed57c5f5e2d6a2c
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
