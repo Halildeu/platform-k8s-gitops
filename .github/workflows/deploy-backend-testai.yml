@@ -29,10 +29,18 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: 'Commit sha (40-char) — manuel override için'
+        description: 'Commit sha (40-char) — gitops commit (sadece summary için, image kimliği değil)'
         required: true
       short_sha:
-        description: 'Short sha (7-char)'
+        description: 'Short sha (7-char) — gitops commit (sadece summary için)'
+        required: true
+      digests:
+        description: |
+          ZORUNLU per-service digest map JSON (workflow_dispatch için):
+          {"auth-service":"sha256:<64hex>","permission-service":"sha256:<64hex>",...}
+          Tüm 8 backend servis ZORUNLU. Tag-based fallback YASAK (PR #1170/#1171
+          incident — gitops commit SHA'sı yanlışlıkla image tag gibi yorumlandı).
+          Overlay-render'dan üretmek için runbook snippet'i job summary'sinde.
         required: true
 
 permissions:
@@ -117,11 +125,19 @@ jobs:
       - name: Checkout (for verify-pod-digest helper)
         uses: actions/checkout@v6
 
-      - name: Sequential kubectl set image (digest-pin or tag-based)
+      - name: Sequential kubectl set image (digest-pin only — tag-fallback REMOVED)
         id: rollout
         env:
           SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
-          DIGESTS_JSON: ${{ toJSON(github.event.client_payload.digests) }}
+          # 2026-06-01 PR-FOLLOW-UP-2 (Codex 019e82db AGREE D): tag-based
+          # fallback fail-closed kaldırıldı. workflow_dispatch'te
+          # inputs.digests ZORUNLU; repository_dispatch'te
+          # client_payload.digests ZORUNLU. Birleşik source ile
+          # DIGESTS_JSON oluşturulur.
+          DIGESTS_JSON: >-
+            ${{ github.event_name == 'workflow_dispatch'
+              && inputs.digests
+              || toJSON(github.event.client_payload.digests) }}
         run: |
           set -euo pipefail
           # Codex S3: api-gateway en sonda
@@ -153,48 +169,46 @@ jobs:
           # düşme). Field yoksa (legacy dispatcher) tag fallback OK.
           # Bu, prod cutover öncesi strict mode için temel: payload
           # niyetle digest gönderdi ise, parse hatası → fail-closed.
-          DIGEST_FIELD_PRESENT="false"
-          if [ -n "${DIGESTS_JSON:-}" ] && [ "${DIGESTS_JSON}" != "null" ]; then
-            DIGEST_FIELD_PRESENT="true"
+          # 2026-06-01 PR-FOLLOW-UP-2: tag-based fallback fail-closed
+          # kaldırıldı. Digests payload yoksa veya geçersizse hard fail.
+          # PR #1170/#1171 incident sebebiyle (gitops commit SHA'sı
+          # workflow_dispatch'te image tag gibi yorumlanıp auth-service'i
+          # ImagePullBackOff'a düşürmüştü).
+          if [ -z "${DIGESTS_JSON:-}" ] || [ "${DIGESTS_JSON}" = "null" ]; then
+            echo "::error::digests payload absent. workflow_dispatch'te 'digests' input zorunlu (per-service sha256 map JSON); repository_dispatch'te client_payload.digests dispatcher tarafından gönderilmeli."
+            echo "  raw DIGESTS_JSON: '${DIGESTS_JSON:-}'"
+            exit 1
           fi
-          DIGEST_MODE="false"
+
           DIGESTS_PARSED=""
-          if [ "${DIGEST_FIELD_PRESENT}" = "true" ]; then
-            # Step 1: try direct object parse
-            if echo "${DIGESTS_JSON}" | jq -e 'type == "object"' >/dev/null 2>&1; then
-              DIGESTS_PARSED="${DIGESTS_JSON}"
-            # Step 2: try string→fromjson normalize
-            elif echo "${DIGESTS_JSON}" | jq -e 'type == "string"' >/dev/null 2>&1; then
-              CANDIDATE=$(echo "${DIGESTS_JSON}" | jq -r 'fromjson? // empty')
-              if [ -n "${CANDIDATE}" ] && echo "${CANDIDATE}" | jq -e 'type == "object"' >/dev/null 2>&1; then
-                DIGESTS_PARSED="${CANDIDATE}"
-              fi
+          # Step 1: try direct object parse
+          if echo "${DIGESTS_JSON}" | jq -e 'type == "object"' >/dev/null 2>&1; then
+            DIGESTS_PARSED="${DIGESTS_JSON}"
+          # Step 2: try string→fromjson normalize (workflow_dispatch input ve
+          # gh api -F syntax'i her ikisi de stringified JSON üretir).
+          elif echo "${DIGESTS_JSON}" | jq -e 'type == "string"' >/dev/null 2>&1; then
+            CANDIDATE=$(echo "${DIGESTS_JSON}" | jq -r 'fromjson? // empty')
+            if [ -n "${CANDIDATE}" ] && echo "${CANDIDATE}" | jq -e 'type == "object"' >/dev/null 2>&1; then
+              DIGESTS_PARSED="${CANDIDATE}"
             fi
-            # Strict: field present but parse failed → hard fail
-            if [ -z "${DIGESTS_PARSED}" ]; then
-              echo "::error::client_payload.digests present but unparseable (not object, not stringified-object). Refusing silent tag fallback."
-              echo "  raw: ${DIGESTS_JSON}"
-              exit 1
-            fi
-            # Strict: field present but empty object → hard fail
-            if [ "$(echo "${DIGESTS_PARSED}" | jq 'length')" -eq 0 ]; then
-              echo "::error::client_payload.digests is empty object — dispatcher meant to send digests but produced none."
-              exit 1
-            fi
-            DIGEST_MODE="true"
-            echo "✓ Digest-pin mode active ($(echo "${DIGESTS_PARSED}" | jq 'length') services in payload)"
-          else
-            echo "⊘ Tag-based fallback mode (dispatch payload digests field absent — legacy dispatcher; backward-compat)"
           fi
+          if [ -z "${DIGESTS_PARSED}" ]; then
+            echo "::error::digests present but unparseable (not object, not stringified-object). Refusing silent tag fallback."
+            echo "  raw: ${DIGESTS_JSON}"
+            exit 1
+          fi
+          if [ "$(echo "${DIGESTS_PARSED}" | jq 'length')" -eq 0 ]; then
+            echo "::error::digests is empty object — dispatcher/operator meant to send digests but produced none."
+            exit 1
+          fi
+          DIGEST_MODE="true"
+          echo "✓ Digest-pin mode active ($(echo "${DIGESTS_PARSED}" | jq 'length') services in payload)"
+
           # Override DIGESTS_JSON with normalized (object-form) for downstream jq
-          DIGESTS_JSON="${DIGESTS_PARSED:-null}"
+          DIGESTS_JSON="${DIGESTS_PARSED}"
 
           {
-            if [ "${DIGEST_MODE}" = "true" ]; then
-              echo "## Sequential rollout (digest-pin)"
-            else
-              echo "## Sequential rollout (tag-based fallback)"
-            fi
+            echo "## Sequential rollout (digest-pin)"
             echo ""
             echo "| Service | Pod imageID (containerd-resolved digest) |"
             echo "|---|---|"
@@ -205,24 +219,19 @@ jobs:
           DIGEST_MAP_JSON="{}"
 
           for svc in "${SERVICES[@]}"; do
-            if [ "${DIGEST_MODE}" = "true" ]; then
-              # Direct digest pin (B.3 hardening)
-              # Codex 019de00f PARTIAL #2: regex-strict format
-              # ^sha256:[a-f0-9]{64}$ — sadece prefix değil tam doğrulama.
-              DIGEST=$(echo "${DIGESTS_JSON}" | jq -r --arg s "${svc}" '.[$s] // empty')
-              if [ -z "${DIGEST}" ]; then
-                echo "::error::${svc} digest missing from payload"
-                exit 1
-              fi
-              if ! [[ "${DIGEST}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
-                echo "::error::${svc} digest format invalid (expected ^sha256:[a-f0-9]{64}$): ${DIGEST}"
-                exit 1
-              fi
-              IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${svc}@${DIGEST}"
-            else
-              # Tag-based fallback (mevcut davranış, runtime'da pod imageID = digest)
-              IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${svc}:sha-${SHORT_SHA}"
+            # Direct digest pin only (tag-based fallback REMOVED 2026-06-01
+            # PR-FOLLOW-UP-2). Codex 019de00f PARTIAL #2: regex-strict format
+            # ^sha256:[a-f0-9]{64}$ — sadece prefix değil tam doğrulama.
+            DIGEST=$(echo "${DIGESTS_JSON}" | jq -r --arg s "${svc}" '.[$s] // empty')
+            if [ -z "${DIGEST}" ]; then
+              echo "::error::${svc} digest missing from payload"
+              exit 1
             fi
+            if ! [[ "${DIGEST}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::${svc} digest format invalid (expected ^sha256:[a-f0-9]{64}$): ${DIGEST}"
+              exit 1
+            fi
+            IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${svc}@${DIGEST}"
 
             echo ""
             echo "==============================================="
@@ -240,47 +249,16 @@ jobs:
               -n "${K8S_NAMESPACE}" \
               --timeout=180s
 
-            if [ "${DIGEST_MODE}" = "true" ]; then
-              # Digest-pin mode: shared helper (multi-replica strict mode).
-              # Tüm non-terminating Running pod'lar expected digest ile
-              # eşleşmeli. Tek pod (testai replicas=1) için trivially geçer;
-              # prod replicas=2 için her iki pod doğrulanır.
-              ./scripts/deploy/verify-pod-digest.sh \
-                --context "${K8S_CONTEXT}" \
-                --namespace "${K8S_NAMESPACE}" \
-                --selector "app.kubernetes.io/name=${svc}" \
-                --expected-digest "${DIGEST}"
-              # Helper success → record digest in summary
-              NORMALIZED="${DIGEST}"
-            else
-              # Tag-based fallback: pod imageID extract + record (no
-              # expected digest to verify against). Inline pattern korunur;
-              # newest non-terminating Running pod seçilir.
-              POD=$(kubectl --context="${K8S_CONTEXT}" get pod \
-                -n "${K8S_NAMESPACE}" \
-                -l "app.kubernetes.io/name=${svc}" \
-                --field-selector=status.phase=Running \
-                -o json \
-                | jq -r '.items
-                    | map(select(.metadata.deletionTimestamp == null))
-                    | sort_by(.metadata.creationTimestamp)
-                    | last
-                    | .metadata.name // empty')
-              if [ -z "${POD}" ]; then
-                echo "::error::${svc} no live (Running + non-terminating) pod found"
-                exit 1
-              fi
-              RAW_ID=$(kubectl --context="${K8S_CONTEXT}" get pod "${POD}" \
-                -n "${K8S_NAMESPACE}" \
-                -o jsonpath='{.status.containerStatuses[0].imageID}')
-              NORMALIZED=$(echo "${RAW_ID}" | sed -E 's|^.*@(sha256:[a-f0-9]{64})$|\1|')
-
-              if [ -z "${NORMALIZED}" ] || [[ "${NORMALIZED}" != sha256:* ]]; then
-                echo "::error::${svc} pod imageID format unexpected: ${RAW_ID}"
-                exit 1
-              fi
-              echo "✓ ${svc} pod imageID resolved: ${NORMALIZED}"
-            fi
+            # Digest-pin verify: shared helper (multi-replica strict mode).
+            # Tüm non-terminating Running pod'lar expected digest ile
+            # eşleşmeli. Tek pod (testai replicas=1) için trivially geçer;
+            # prod replicas=2 için her iki pod doğrulanır.
+            ./scripts/deploy/verify-pod-digest.sh \
+              --context "${K8S_CONTEXT}" \
+              --namespace "${K8S_NAMESPACE}" \
+              --selector "app.kubernetes.io/name=${svc}" \
+              --expected-digest "${DIGEST}"
+            NORMALIZED="${DIGEST}"
 
             echo "| ${svc} | \`${NORMALIZED}\` |" >> "$GITHUB_STEP_SUMMARY"
 
@@ -466,10 +444,25 @@ jobs:
             echo ""
             echo "## Manual workflow_dispatch retry"
             echo ""
+            echo "ZORUNLU: digests JSON map (operator olarak per-service sha256)."
+            echo "Tag-based fallback YASAK (PR-FOLLOW-UP-2 2026-06-01)."
+            echo ""
+            echo 'Overlay-render ile digests JSON üretmek için (gitops repo root):'
+            echo ""
             echo '```bash'
+            echo "DIGESTS_JSON=\$(kubectl kustomize kustomize/overlays/test \\"
+            echo "  | grep -oE 'platform-backend-[a-z-]+@sha256:[a-f0-9]{64}' \\"
+            echo "  | sort -u \\"
+            echo "  | jq -Rn '[inputs | capture(\"platform-backend-(?<svc>[a-z-]+)@(?<dg>sha256:[a-f0-9]{64})\") | {key:.svc, value:.dg}] | from_entries')"
+            echo ""
+            echo "# (Tek satırlık alternatif: awk + paste -sd ',' - + sed wrap)"
+            echo "# DIGESTS_JSON=\$(... | awk -F'platform-backend-|@' '{printf \"\\\"%s\\\":\\\"%s\\\",\", \$2, \$3}' \\"
+            echo "#   | sed 's/,\$//' | sed 's/^/{/;s/\$/}/')"
+            echo ""
             echo "gh workflow run deploy-backend-testai.yml -R Halildeu/platform-k8s-gitops \\"
             echo "  -f sha=${SHA} \\"
-            echo "  -f short_sha=${SHORT_SHA}"
+            echo "  -f short_sha=${SHORT_SHA} \\"
+            echo "  -f digests=\"\$DIGESTS_JSON\""
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
