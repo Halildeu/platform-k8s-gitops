@@ -659,7 +659,26 @@ images:
     # wrapper preserved dashboard + 6-widget filter drawer + currency
     # formatting + sensitive columns access-gating (PR-D2b platform-web
     # already LIVE since sha-38d0572 = WEB-014G + PR-D2b commit).
-    digest: sha256:b9909e2ab7e8223a513bfa1d1318ebc00eab0cc5e53d910f352e7f46eeab280e
+    #
+    # 2026-06-01 DIGEST CORRECTION (PR #1170 was wrong):
+    # PR #1170 pinned sha256:b9909e2ab7e8223a513bfa1d1318ebc00eab0cc5e53d910f352e7f46eeab280e
+    # but this digest is NOT in GHCR — workflow Dispatch metadata bug
+    # surfaced the wrong sha256 ("Expected Digest" line had stale artifact
+    # metadata). Pod ImagePullBackOff on apply.
+    #
+    # ACTUAL pushed digest from build run 26747577138 (verified from raw
+    # build log line: "pushing manifest for ghcr.io/halildeu/platform-
+    # backend-report-service:sha-a87c645@sha256:fd6a92b2...") =
+    # sha256:fd6a92b299033cd3ec933fa780387ac811afff76b15d6c1a82d8ac52df036a72
+    #
+    # Live pod imageID was already this digest (PR-D3a code LIVE since
+    # build run completion 2026-06-01 09:51); cluster end-to-end smoke
+    # PASS (browser-verified hr-compensation 6-widget filter drawer +
+    # currency + COLLAR_TYPE/GENDER badges + access enforcement on the
+    # FD6A92B2 pod). Overlay-live mismatch was the only outstanding
+    # invariant violation (D30 immutable artifact: overlay digest MUST
+    # equal pod imageID).
+    digest: sha256:fd6a92b299033cd3ec933fa780387ac811afff76b15d6c1a82d8ac52df036a72
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
