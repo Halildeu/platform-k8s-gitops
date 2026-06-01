@@ -3121,7 +3121,57 @@ images:
     #
     # Prior pin (2026-05-31, superseded): sha-7e0999d /
     #   sha256:f9e16de7cc654d1466f071448fc078cab2a409201fc84f657138791c0f0268fc
-    digest: sha256:b28e799a9be94402cbac0b36c525d4653bd38e9859262b06a08a1ce3ae66eab5
+    #
+    # 2026-06-01 update: sha-3e9f9fe — platform-web PR #727 MERGED
+    # (AG-038 agent self-diagnostics drawer view). Final missing link
+    # of the Faz 22.5 AG-038 zinciri:
+    #   - Agent AG-038 probe: MERGED (platform-agent PR #39)
+    #   - Backend AG-038-be ingest+query: MERGED (platform-backend PR
+    #     #357 V23 migration + #355 omitempty wire-compat); pod imageID
+    #     cd243590 LIVE on testai 12:42 UTC
+    #   - WEB AG-038 view: THIS deploy
+    #
+    # DiagnosticsView read-only "Agent Tanılaması" tab on the device
+    # drawer between Hotfix Duruşu and Yazılım Kataloğu. Codex 019e833d
+    # 3-iter REVISE→REVISE→AGREE absorb (8 + 4 + 2 must_fix):
+    #   1. Flat lastError triad {occurredAt, code, summary}; null→hide
+    #   2. probeErrors {rowOrdinal, code, summary?} (no source; nullable
+    #      summary; render fallback "—")
+    #   3. Empty-state hint uses `includeDiagnostics:true` payload bit
+    #   4. No keepUnusedDataFor:0 mirror; tag ${deviceId}::latest
+    #   5. Strict value == null (not falsy); supported===true &&
+    #      probeComplete===true happy-path gate; currentData-anchored
+    #      effectivePreflight + deviceId mismatch guard
+    #   6. Tab key "diagnostics", label "Agent Tanılaması" (TR) /
+    #      "Agent Diagnostics" (EN; full DICT_EN parity + dedicated
+    #      i18n unit test asserting includeDiagnostics:true literal)
+    #   7. Drawer lazy-imports view directly (no thin Tab wrapper)
+    #   8. Tri-state DNS/TLS badges, 0ms latency rendered, XSS guards
+    #      on lastError.summary + probeErrors[].summary (plain-text)
+    # Generic error precedence: `if (error) return error-testid`
+    # cuts BEFORE snapshot fall-through (5xx + currentData would
+    # otherwise render stale snapshot). 365/365 vitest pass, eslint
+    # clean, vite build OK.
+    #
+    # Image build run: gh run view 26758087935 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-3e9f9fe
+    #   digest sha256:d077fd5222cd3f0ec4cd0b281f2dc66c148887acf21987d3f172deac033b5228
+    #
+    # Verify after rollout (HARD RULE — Tarayıcıdan sonuç doğrulanmadan
+    # iş bitmedi + Deploy Sonrası Tarayıcı Console Verifikasyonu):
+    #   1. Navigate to HALILKOOLUB735 (UUID d0efb00a-...) device drawer
+    #   2. Click "Agent Tanılaması" tab → renders 404 empty state with
+    #      `includeDiagnostics:true` hint visible (no snapshot yet —
+    #      backend snapshot table empty until first agent ingest)
+    #   3. DOM inspect: data-testid="diagnostics-empty" present
+    #   4. Console clean (0 error / 0 warn)
+    #   5. After agent COLLECT_INVENTORY with includeDiagnostics:true →
+    #      tab renders agent meta + connectivity badges (DNS/TLS tri-
+    #      state) + lastError facet (if present) + probeErrors table
+    #
+    # Prior pin (2026-06-01 earlier, superseded by AG-038 chain land):
+    #   sha-4cedd44 / sha256:b28e799a9be94402cbac0b36c525d4653bd38e9859262b06a08a1ce3ae66eab5
+    digest: sha256:d077fd5222cd3f0ec4cd0b281f2dc66c148887acf21987d3f172deac033b5228
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
