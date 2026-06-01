@@ -108,6 +108,17 @@ preflight() {
   command -v gh >/dev/null 2>&1 || die "gh CLI not found in PATH"
   command -v jq >/dev/null 2>&1 || die "jq not found in PATH"
   gh auth status >/dev/null 2>&1 || die "gh not authenticated (gh auth status failed)"
+  # #1085 Codex 019e8079 must_fix #1: skip the Project API probe when
+  # BOARD_PAT_PRESENT="" (CI fell back to GITHUB_TOKEN, which has no
+  # project scope). The verify subcommand routes to its own PAT-missing
+  # comment-only path; other Project-mutating subcommands (claim,
+  # release, reap, backlog-add, list, sync-state) will fail later at
+  # the actual mutation site, which is the correct loud-fail behaviour
+  # for those — they need a PAT to be meaningful at all.
+  if [ "${BOARD_PAT_PRESENT-yes}" = "" ]; then
+    log "preflight: PAT missing — Project API probe skipped (verify will take comment-only path)"
+    return 0
+  fi
   local pid
   pid="$(gh project view "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --format json 2>/dev/null \
     | jq -r '.id // empty')"
@@ -499,9 +510,10 @@ cmd_verify() {
     ref="https://github.com/$OPT_REPO/issues/$ref"
   fi
 
-  # graceful skip if the ref is not a single board issue (curated board —
-  # not every issue is roadmap-tracked; ambiguity is not a hard error here)
-  local vnum vrepo cnt
+  # parse the ref into (vnum, vrepo) BEFORE touching Project API so the
+  # PAT-missing fallback below can route on the same parse (Codex
+  # 019e8079 must_fix #1: PAT-missing path must not call Project API).
+  local vnum vrepo
   if printf '%s' "$ref" | grep -q '^https://github.com/'; then
     local rp
     rp="${ref#https://github.com/}"
@@ -511,6 +523,29 @@ cmd_verify() {
     vnum="$ref"
     vrepo=""
   fi
+
+  # #1085 Codex 019e8079 must_fix #1+#2+#3 — PAT-missing fallback:
+  # when ADD_TO_PROJECT_PAT is absent (CI signals it via BOARD_PAT_PRESENT="")
+  # we cannot reach the Project API at all (preflight / board_matches /
+  # resolve_issue all fail under GITHUB_TOKEN). Take a comment-only path
+  # that needs only REST issue-comment perms:
+  #   - same-repo refs (issue lives in PR_REPO): post EVIDENCE comment,
+  #     skip body rewrite + board Status (drift-prevention: writing the
+  #     body to "needs-verify" while board Status stays "Todo" produces
+  #     exactly the contradictory state the protocol is supposed to
+  #     prevent — Codex must_fix #3).
+  #   - cross-repo refs: GITHUB_TOKEN is repo-scoped and cannot comment
+  #     on a sibling repo's issue, so skip with a clear warning instead
+  #     of dying mid-loop (Codex must_fix #2).
+  # The full Project-API path resumes when the PAT is seeded.
+  if [ "${BOARD_PAT_PRESENT-yes}" = "" ]; then
+    _verify_pat_missing "$vnum" "$vrepo"
+    return $?
+  fi
+
+  # graceful skip if the ref is not a single board issue (curated board —
+  # not every issue is roadmap-tracked; ambiguity is not a hard error here)
+  local cnt
   cnt="$(board_matches "$vnum" "$vrepo" | grep -c . || true)"
   if [ "$cnt" -eq 0 ]; then
     log "verify skip — #$vnum not on the board (curated — not a roadmap issue)"
@@ -560,6 +595,58 @@ Runtime/acceptance evidence pending — board Status -> Needs Verify."
     log "issue body agent-state -> needs-verify (claim cleared)"
   fi
   set_board_status "$ITEM_ID" "$STATUS_NEEDSVERIFY" "$STATUS_NEEDSVERIFY_NAME"
+}
+
+# PAT-missing fallback for cmd_verify (Codex 019e8079 must_fix #1+#2+#3).
+# Comment-only path that uses ONLY REST issue-comment permissions — no
+# Project API, no body rewrite, no Status mutation. Drift-safe by design:
+# we never write a needs-verify body without also moving the board, and
+# we never claim cross-repo coverage with a repo-scoped GITHUB_TOKEN.
+_verify_pat_missing() {
+  local vnum="$1" vrepo="$2" issue_repo
+  # Cross-repo guard: a ref like owner/other-repo#42 or an issue URL
+  # outside PR_REPO. GITHUB_TOKEN cannot comment on the sibling repo;
+  # log + step-summary the skip and move on so the workflow loop does
+  # not die on a multi-repo Tracked-by line.
+  if [ -n "$vrepo" ] && [ "$vrepo" != "$OPT_PR_REPO" ]; then
+    log "verify skip — #$vnum lives in $vrepo (cross-repo); GITHUB_TOKEN cannot comment there. Seed ADD_TO_PROJECT_PAT to enable cross-repo evidence."
+    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+      printf '⚠️ cross-repo verify skipped: %s#%s (PAT-missing fallback)\n' \
+        "$vrepo" "$vnum" >>"$GITHUB_STEP_SUMMARY" || true
+    fi
+    return 0
+  fi
+  issue_repo="${vrepo:-$OPT_PR_REPO}"
+
+  # Existence check via REST (no Project API). 404 means the ref points
+  # at something that is not an issue in this repo — log + skip.
+  if ! gh issue view "$vnum" --repo "$issue_repo" --json number >/dev/null 2>&1; then
+    log "verify skip — #$vnum not found in $issue_repo (REST 404)"
+    return 0
+  fi
+
+  # Idempotency: same EVIDENCE marker the full path uses.
+  local seen
+  seen="$(gh issue view "$vnum" --repo "$issue_repo" --json comments 2>/dev/null \
+    | jq --arg pr "$OPT_PR" --arg pr_repo "$OPT_PR_REPO" '[.comments[]
+        | select(.body | contains("pr_repo=" + $pr_repo + " pr=" + $pr + " "))] | length' \
+    2>/dev/null || echo 0)"
+  if [ "${seen:-0}" -gt 0 ]; then
+    log "verify skip — #$vnum already has EVIDENCE for $OPT_PR_REPO#$OPT_PR (idempotent)"
+    return 0
+  fi
+
+  local now ev
+  now="$(iso_now)"
+  ev="EVIDENCE type=pr-merged pr_repo=$OPT_PR_REPO pr=$OPT_PR issue_repo=$issue_repo at=$now
+Source-ready: $OPT_PR_REPO PR #$OPT_PR merged.
+Runtime/acceptance evidence pending — board Status mutation SKIPPED (PAT missing)."
+  log "verify #$vnum ($issue_repo) — PAT-missing path: comment only (board Status untouched)"
+  post_comment "$issue_repo" "$vnum" "$ev"
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    printf '✓ EVIDENCE comment posted on %s#%s (board Status still requires PAT)\n' \
+      "$issue_repo" "$vnum" >>"$GITHUB_STEP_SUMMARY" || true
+  fi
 }
 
 # --- subcommand: reap ---------------------------------------------------------
