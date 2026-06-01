@@ -109,16 +109,24 @@ Gitops `origin/main` (this repo):
 - **`858c224` #1168 — frontend-testai digest pin `sha-38d0572` (WEB-014G LIVE)** ←
 - **`d4545c5` #1167 — endpoint-admin digest pin `sha-fb80db6` (AG-037-be LIVE)** ←
 
-**LIVE acceptance gap CLOSED** (no further AG-037 acceptance work remains
-in scope; truncation/AU-policy/registry-unreachable/service-DISABLED
-fault-injection variants are non-blocking edge-case smokes recorded as
-P3 backlog items, not gates):
+**AG-037 current-scope LIVE evidence inventory** (D29 Up/Functional/
+Acceptance three-layer evidence present for this scope; non-gating P3
+edge-case variants — truncation / AU-policy mixed / registry-unreachable
+fault-injection / service-DISABLED fault-injection — recorded as backlog
+items, not blockers for this delta):
 
 - ☑️ Pod restart Flyway log replay — V22 migration `success=true` row confirmed live in `endpoint_admin_service.endpoint_admin_flyway_history`.
 - ☑️ API smoke (admin JWT path) — `GET .../hotfix-posture/latest` returned HTTP 200 with 86 installed children + 1 pending child + 3 category rollups + 7 agentHealth fields.
 - ☑️ WEB surface — `HotfixPostureView` rendered full panel for HALILKOOLUB735 device.
 - ☑️ HALILKOOLUB735 endpoint — binary upgrade verified via `prlctl exec` (SHA256 match) + manual `COLLECT_INVENTORY{includeHotfixPosture:true}` triggered + ingest path persisted real WUA telemetry.
 - ☑️ Forensic git cleanup — 4 archive tags created (1+ year recovery via `ai-post-merge-cleanup.sh`) for PR #45, #354, #355, #723, #1167, #1168.
+
+**Sıradaki natural chain** (continuous autonomous mode per HARD RULE):
+AG-037 LIVE delta absorbed → AG-038 agent self-health/connectivity
+diagnostics backend ingest path (agent PR #39 `67bd4ba` already merged,
+backend ingest TODO) → AG-039 critical services inventory + AG-040
+startup apps / exposure summary plan-time iters → BE-024 hotfix
+compliance rule (gelen 86 hotfix verisini compliance evaluator'a bağla).
 
 ---
 
