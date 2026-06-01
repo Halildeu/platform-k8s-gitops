@@ -1,5 +1,89 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 AG-039 Critical Services SOURCE-MERGED + Backend LIVE (2026-06-01)
+
+**Session milestone**: AG-039 (Windows critical services inventory probe)
+full source-merged chain + backend ingest path **MERGED + DEPLOYED + LIVE
+on testai cluster**. Agent-side AG-039 probe source MERGED on
+`platform-agent` PR [#47](https://github.com/Halildeu/platform-agent/pull/47)
+`563455b` 2026-06-01 (SCM enumeration + DelayedAutoStart registry +
+worker-goroutine bounded timeout + 5-iter Codex AGREE chain). Backend
+ingest path now SOURCE-MERGED + LIVE: platform-backend PR
+[#362](https://github.com/Halildeu/platform-backend/pull/362) `f1708aeb`
+merged 2026-06-01 + gitops PR [#1182](https://github.com/Halildeu/platform-k8s-gitops/pull/1182)
+`sha-65d9fbd` digest pin merged 2026-06-01 + testai cluster apply
+verified (pod imageID `sha256:642c79b8…07b23a2` ⊃ V24 migration
+applied: `endpoint_services_snapshots` + `endpoint_services_entries`
++ `endpoint_services_probe_errors` tables created + Spring schema-
+validation pass).
+
+**Truth ledger map (delta only)**:
+
+| Gate | Status |
+|---|---|
+| 22.5 AG-039 agent critical services probe (6-service canonical allowlist + AUTO_DELAYED disambiguation + worker-goroutine bounded timeout) | ✅ SOURCE-MERGED — platform-agent PR [#47](https://github.com/Halildeu/platform-agent/pull/47) `563455b` 2026-06-01 (Codex 019e8302 5-iter chain absorb: iter-1 REVISE 6-bulgu + iter-2 AGREE plan + iter-3 REVISE 3 P0/P1 (includeServices hook + fail-closed Config/Query + ProbeTimeout) + iter-4 REVISE P1 (worker goroutine bounded timeout + DelayedAutoStart direct) + iter-5 AGREE "mergeable"); binary distribution operator-bound. |
+| 22.5 AG-039-be backend services ingest + query (V24 3-table schema + composite-FK + exact-six invariant + value-level denylist + sanitize hook) | ✅ MERGED + LIVE — platform-backend PR [#362](https://github.com/Halildeu/platform-backend/pull/362) `f1708aeb` + gitops PR [#1182](https://github.com/Halildeu/platform-k8s-gitops/pull/1182) `sha-65d9fbd` digest pin merged 2026-06-01; cluster pod imageID `sha256:642c79b8…07b23a2` verified; V24 Flyway migration applied (tables `endpoint_services_snapshots` + `endpoint_services_entries` + `endpoint_services_probe_errors` created on testai PG); Spring boot started successfully; REST endpoint `GET /api/v1/admin/endpoint-devices/{deviceId}/services/latest` mevcut (module:endpoint-admin can_view RBAC); 129/129 specific tests pass (33 services policy + 70 diagnostics regression + 7 install branch + 19 agent command); CI 13/13 green at sha-65d9fbd. Codex 019e836c 3-iter plan-time AGREE chain. |
+
+**Live-evidence vault (testai cluster, 2026-06-01)**:
+
+- **Pod imageID match**: `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:642c79b8101a1eb22de93f5300df8694a2b6ff11d17651d0e420b1adc07b23a2`
+- **V24 tables created**: `endpoint_services_snapshots` + `endpoint_services_entries` + `endpoint_services_probe_errors` confirmed via `information_schema.tables` query on testai PG
+- **V23 tables intact**: `endpoint_diagnostics_snapshots` + `endpoint_diagnostics_probe_errors` preserved (AG-038-be no-regression)
+- **Spring boot successful**: Tomcat 8096 listening; Hibernate schema-validation pass
+
+**Cross-AI peer review chain (Anthropic Claude implementer + OpenAI Codex reviewer)**:
+
+- platform-agent AG-039: Codex MCP thread `019e8302-2abb-7992-9cde-3ba3435958a6` — 5-iter chain absorb (iter-1 REVISE 6-bulgu plan → iter-2 AGREE plan → iter-3 REVISE 3 P0/P1 + 1 nit → iter-4 REVISE P1 worker goroutine + DelayedAutoStart direct → iter-5 AGREE "mergeable")
+- platform-backend AG-039-be: Codex MCP thread `019e836c-4053-7760-8268-be5720eaaf26` — 3-iter plan-time absorb (iter-1 PARTIAL 6-bulgu + iter-2 PARTIAL probeErrors-null-vs-absent + iter-3 AGREE "Implement'e geçilebilir")
+- AG-040 plan-time iter (next slot, deferred): Codex MCP thread `019e8387-9de9-7310-b297-a762e3a6f899` — PARTIAL→AGREE with 4 revize'ler (location autorun-anchor only + RDP active-sessions NO + RdpEnabled = fDenyTSConnections registry check + 3-table backend pattern)
+
+**v1 canonical service allowlist** (hard-coded; Codex 019e8302 iter-2 #1):
+- WinDefend, wuauserv, BITS, EventLog, EndpointAgent, MpsSvc (TermService deferred to AG-040 RDP/exposure scope)
+
+**Source-truth ancestry (newest → oldest, scoped to this delta)**:
+
+Backend `origin/main`:
+- **`65d9fbd5` (squash) #362 — AG-039-be services ingest + query (V24, 3 tables)** ←
+  - Source commit `f1708aeb` feat branch
+
+Agent `origin/main`:
+- **`563455b` #47 — AG-039 critical services inventory probe (SCM + registry + worker-goroutine bounded timeout)** ←
+
+Gitops `origin/main` (this repo):
+- **`d2d9351` #1182 — endpoint-admin digest pin `sha-65d9fbd` (AG-039-be LIVE)** ←
+
+**AG-039 + AG-039-be implementation highlights**:
+
+Agent (Codex iter-5 final):
+- Hard-coded v1 allowlist (TermService AG-040'a defer)
+- ServiceState shared with AG-037 hotfix-posture (RUNNING/STOPPED/DISABLED/UNKNOWN)
+- StartupMode 5-state distinct enum (AUTO/AUTO_DELAYED/MANUAL/DISABLED/UNKNOWN)
+- Present bool field (absent-from-SCM vs query-failure disambiguation)
+- mgr.Config.DelayedAutoStart authoritative (registry secondary fallback removed)
+- worker-goroutine + select boundary actual bounded timeout (Win32 SCM calls don't accept context)
+- includeServices payload hook in commands/executor.go
+
+Backend (V24 + ServicesPayloadPolicy + Service + Controller):
+- 3-table composite-FK (snapshot + entries + probe_errors)
+- Targetless ON CONFLICT DO NOTHING dual idempotency (partial UNIQUE source_command_result_id + full UNIQUE (tenant, device, hash))
+- Device FK ON DELETE CASCADE + source_cmd FK ON DELETE SET NULL (V23 parity)
+- Allowlist enforced at SQL CHECK + Policy
+- Exact-six invariant when supported=true (canonical order REJECT duplicate/missing/extra/reorder)
+- Empty services list when supported=false (legitimate non-Windows stub)
+- State + StartupMode strict enum REJECT
+- probeErrors absent ACCEPT + explicit null REJECT (Codex iter-3 #2)
+- probeErrors.code bounded enum + serviceName allowlist-only + summary value-level denylist (URL/Bearer/IP/token REJECT)
+- probeDurationMs 0..120000 range + integer guard
+- sanitize() pre-persist hook closes type-confusion bypass
+- Canonical hash INCLUDES every persistable field
+- Dual-winner double-lookup invariant + source command-result tenant/device cross-check
+- REST `GET /services/latest` + module:endpoint-admin can_view RBAC
+
+**Sıradaki natural chain** (continuous autonomous mode):
+AG-039 + AG-039-be LIVE delta absorbed → AG-040 startup apps/exposure summary plan-time AGREE absorbed (Codex 019e8387; ready for implementation) → HALILKOOLUB735 acceptance gate (AG-038+AG-039 binary upgrade + browser smoke; operator-bound multi-step) → WEB-014H Diagnostics + Services view UI.
+
+---
+
 ## Live Delta — Faz 22.5 AG-038-be Agent Self-Diagnostics SOURCE-MERGED + Backend LIVE (2026-06-01)
 
 **Session milestone**: AG-038-be (agent self-diagnostics backend ingest path)
