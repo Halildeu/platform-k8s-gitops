@@ -3415,7 +3415,28 @@ images:
     # Therefore the endpoint-admin runtime change between f5b8f744 and 601f8303
     # is exactly #351 + #349; #350 is carried along but does not alter this
     # service.
-    digest: sha256:1ae1d927424d4b5f56d9c7570da1f3e2ed9b719e643a2ad83a586a40777339c6
+    #
+    # 2026-06-01 AG-037-be #354 + #355 → main HEAD sha-fb80db6: AG-037 Windows
+    # Update / hotfix posture backend ingest path. V22 migration (5 tables:
+    # snapshots + installed + pending + pending_kbs + pending_categories,
+    # composite-FK tenant integrity, partial+full UNIQUE for dual idempotency,
+    # flat agentHealth scalars at root). EndpointHotfixPostureService with
+    # canonical-form payload hash (excludes wire collectedAt+probeDurationMs,
+    # includes lastDetectAt+lastInstallAt — posture evidence), targetless
+    # ON CONFLICT DO NOTHING + sequential winner re-lookup (source-then-hash),
+    # AFTER_COMMIT bounded event (no severityRollup — wire can't carry full
+    # distribution when capped). HotfixPosturePayloadPolicy contract-freeze
+    # allowlist (reduced TOP_REQUIRED_KEYS for agent omitempty wire compat —
+    # critical: PR #355 absorbed PR #354's missed P1; without it clean Windows
+    # / non-Windows agent payloads would 400 reject). AdminEndpointHotfixPosture-
+    # Controller GET /latest+/history (module:endpoint-admin can_view, page
+    # clamp 20/50). HotfixPosturePayloadPolicy 38 tests + Service 13 tests
+    # (incl. 2 canonical-hash PINs: probeDuration+collectedAt-dedupes +
+    # lastDetectAt-appends-with-different-hash) + Controller 8 tests + 19
+    # AgentCommandService hook tests = 78 AG-037-be specific. Full endpoint-
+    # admin-service suite 1015/1015 green. Cross-AI Codex 019e81fe (4 iter plan-
+    # time AGREE) + 019e822b (2 iter post-impl AGREE).
+    digest: sha256:15278bdb4458da155fb10b2ec7b8e5ed521f1bcbba1dc0ed29ea2d3224b64535
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
