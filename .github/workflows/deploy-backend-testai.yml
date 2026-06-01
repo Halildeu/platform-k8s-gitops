@@ -40,11 +40,7 @@ on:
           {"auth-service":"sha256:<64hex>","permission-service":"sha256:<64hex>",...}
           Tüm 8 backend servis ZORUNLU. Tag-based fallback YASAK (PR #1170/#1171
           incident — gitops commit SHA'sı yanlışlıkla image tag gibi yorumlandı).
-          Workflow_dispatch'ten önce overlay-render'dan digest'leri çıkarın:
-            kubectl kustomize kustomize/overlays/test |
-              grep -oE 'platform-backend-[a-z-]+@sha256:[a-f0-9]{64}' |
-              awk -F'platform-backend-|@' '{printf "\"%s\":\"%s\"\n", $2, $3}' |
-              jq -s 'from_entries' -R '. | split(":") | {(.[0]):.[1]}'
+          Overlay-render'dan üretmek için runbook snippet'i job summary'sinde.
         required: true
 
 permissions:
@@ -451,14 +447,17 @@ jobs:
             echo "ZORUNLU: digests JSON map (operator olarak per-service sha256)."
             echo "Tag-based fallback YASAK (PR-FOLLOW-UP-2 2026-06-01)."
             echo ""
-            echo 'Overlay-render ile digests JSON üretmek için:'
+            echo 'Overlay-render ile digests JSON üretmek için (gitops repo root):'
             echo ""
             echo '```bash'
-            echo "DIGESTS_JSON=\$(kubectl kustomize kustomize/overlays/test | \\"
-            echo "  grep -oE 'platform-backend-[a-z-]+@sha256:[a-f0-9]{64}' | \\"
-            echo "  sort -u | \\"
-            echo "  awk -F'platform-backend-|@' '{printf \"\\\"%s\\\":\\\"%s\\\"\\n\", \$2, \$3}' | \\"
-            echo "  paste -sd, | sed 's/^/{/;s/\$/}/')"
+            echo "DIGESTS_JSON=\$(kubectl kustomize kustomize/overlays/test \\"
+            echo "  | grep -oE 'platform-backend-[a-z-]+@sha256:[a-f0-9]{64}' \\"
+            echo "  | sort -u \\"
+            echo "  | jq -Rn '[inputs | capture(\"platform-backend-(?<svc>[a-z-]+)@(?<dg>sha256:[a-f0-9]{64})\") | {key:.svc, value:.dg}] | from_entries')"
+            echo ""
+            echo "# (Tek satırlık alternatif: awk + paste -sd ',' - + sed wrap)"
+            echo "# DIGESTS_JSON=\$(... | awk -F'platform-backend-|@' '{printf \"\\\"%s\\\":\\\"%s\\\",\", \$2, \$3}' \\"
+            echo "#   | sed 's/,\$//' | sed 's/^/{/;s/\$/}/')"
             echo ""
             echo "gh workflow run deploy-backend-testai.yml -R Halildeu/platform-k8s-gitops \\"
             echo "  -f sha=${SHA} \\"
