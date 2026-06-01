@@ -13,6 +13,16 @@
 > + AG-029 self-update + AG-030/031/032/033 posture + AG-036/037/038/039/040
 > diagnostics still TODO. See `docs/state/current-state.md`
 > "2026-05-29 PM" delta for honest acceptance gate map and live evidence.
+>
+> **2026-06-01 supersession**: AG-030/031/032/033 SOURCE-MERGED (PRs #33/#34/
+> #35/#36, Codex cross-AI AGREE; binary distribution operator-bound); AG-036
+> SOURCE-MERGED + Flyway V20 applied on testai; **AG-037 MERGED + LIVE
+> end-to-end** (agent #45 + backend #354/#355 + web #723 + gitops #1167/
+> #1168 + HALILKOOLUB735 86 installed + 1 pending WUA telemetry browser-
+> smoked). The 2026-05-29 PM "TODO" assertions above are STALE for
+> AG-030/031/032/033/036/037; AG-038/039/040 remain TODO. See
+> `docs/state/current-state.md` "AG-037 Hotfix Posture LIVE END-TO-END
+> VERIFIED (2026-06-01)" delta for canonical truth.
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
@@ -74,7 +84,7 @@ gelmeden açılmayacak.
 | Inventory trigger UI | `platform-web` | WEB-018 MERGED + LIVE (Envanteri Şimdi Topla payload + Donanım dedicated trigger) | LIVE |
 | Approved install dispatch UI | `platform-web` | WEB-012 ≡ WEB-014D (PR #683 + perf #693 follow-up Codex absorb) — `SoftwareCatalogTab.tsx` "Kur" button per catalog row + `InstallPreflightModal.tsx` PASS/WARN/BLOCK → `useCreateInstallMutation()` dispatch POST + "Son Kurulumlar" audit panel via `useListInstallAuditsQuery` Page.content render | **MERGED + LIVE** |
 | Outdated software / inventory diff / prohibited | `platform-backend` + `platform-agent` | AG-036 SOURCE-MERGED (agent PR #38 `a29eef4` + #40 `e64c131` `UpgradeTruncated` fix; backend PR #336 `7f8c1a90` V20 ingest+query); BE-024 SOURCE-MERGED (PR #334 `d154ac7a` V18 software-inventory state diff/history, atomic ON CONFLICT append); BE-025 SOURCE-MERGED (PR #335 `7bb0340e` V19 prohibited-software denylist + EndpointComplianceService integration); cluster image `fd272365` (#348) ⊃ #336 ⊃ #335 ⊃ #334 → all 3 included end-to-end | SOURCE-MERGED + LIVE acceptance pending (testai cluster image fd272365; V18/V19/V20 migration files included in deployed image, Flyway apply verified 2026-05-30 (V18/V19/V20 `success=true` rows live in `endpoint_admin_service.endpoint_admin_flyway_history`); API service reachability + Spring Security admin auth-gate verified 2026-06-01 (no-JWT cluster-internal GET returned HTTP 401 for 4/4 admin URLs: `/software-inventory/diff` + `/software-inventory/history` + `/outdated-software/latest` + `/prohibited-software`; no 500 / no connection-refused — this is NOT route-level controller-mapping acceptance; SecurityConfig admin chain enforces 401 before handler mapping); authenticated 200 + JSON shape smoke (admin JWT path) + WEB surface verify pending) |
-| Posture / health / hotfix / diagnostics / services / exposure | `platform-agent` | AG-030 / AG-031 / AG-032 / AG-033 / AG-037 / AG-038 / AG-039 / AG-040 NOT YET IMPLEMENTED | TODO |
+| Posture / health / hotfix / diagnostics / services / exposure | `platform-agent` | AG-030 / AG-031 / AG-032 / AG-033 SOURCE-MERGED (PRs #33/#34/#35/#36, Codex cross-AI AGREE; binary distribution operator-bound); **AG-037 MERGED + LIVE 2026-06-01** (end-to-end chain agent #45 + backend #354/#355 + web #723 + gitops #1167/#1168 + HALILKOOLUB735 86 installed + 1 pending real WUA telemetry + browser smoke); AG-038 / AG-039 / AG-040 NOT YET IMPLEMENTED | AG-037 LIVE; AG-030–033 SOURCE-MERGED (live smoke operator-bound); AG-038/039/040 TODO |
 | Uninstall + signed self-update + rollout controls | `platform-agent` + `platform-backend` | AG-028 / AG-029 / BE-026 / BE-027 / BE-028 / BE-029 NOT YET IMPLEMENTED | TODO |
 | GitOps governance | `platform-k8s-gitops` | plan + runbook + ADR mature; current-state delta 2026-05-29 PM | LIVE |
 
@@ -183,7 +193,7 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **AG-032** | `platform-agent` | Local admin group inventory | **SOURCE-MERGED (PR #35, Codex 019e74d7 5-plan+2-impl AGREE)** | Built-in Administrators (S-1-5-32-544) direct membership; ZERO raw SID/RID/name on wire; NetAPI primary + PowerShell fallback; binary distribution operator-bound |
 | **AG-033** | `platform-agent` | Device health snapshot | **SOURCE-MERGED (PR #36, Codex 019e7500 plan+impl AGREE)** | Disk/RAM/uptime/boot time özet; direct Win32 syscall; no performans counter spam; only drive letter on wire; binary distribution operator-bound |
 | **AG-035** | `platform-agent` | Hardware / device inventory | **MERGED + LIVE (PR #24, HALILKOOLUB735 verified 2026-05-29)** | CPU/RAM/disk/model/BIOS/TPM/network read-only; SRB-AIDENETIMPC binary distribution operator-bound |
-| **AG-037** | `platform-agent` | Windows Update / hotfix posture | **TODO** | Hotfix history + pending update + health summary; patch install/reboot tetiklemez |
+| **AG-037** | `platform-agent` | Windows Update / hotfix posture | ✅ **MERGED + LIVE (2026-06-01)** | Hotfix history + pending update + health summary; patch install/reboot tetiklemez. End-to-end LIVE: agent PR [#45](https://github.com/Halildeu/platform-agent/pull/45) `2b0f3b5` (WUA COM + PS fallback + service + registry + agent-health) + backend PR [#354](https://github.com/Halildeu/platform-backend/pull/354) `2ac67f11` (V22 5-table) + PR [#355](https://github.com/Halildeu/platform-backend/pull/355) `fb80db67` (omitempty critical follow-up) + web PR [#723](https://github.com/Halildeu/platform-web/pull/723) `577a89f2` (HotfixPostureView tab) + gitops PR [#1167](https://github.com/Halildeu/platform-k8s-gitops/pull/1167) + [#1168](https://github.com/Halildeu/platform-k8s-gitops/pull/1168) (digest pins). HALILKOOLUB735 binary upgrade + manual `COLLECT_INVENTORY{includeHotfixPosture:true}` → backend ingest **86 installed + 1 pending** (KB2267602 DEFINITION UNSPECIFIED) → browser smoke testai.acik.com Hotfix Duruşu tab full panel render (NO errors). Cross-AI Codex threads `019e81fe` + `019e822b` + `019e8245`. |
 | **AG-038** | `platform-agent` | Agent self-health / connectivity diagnostics | **TODO** | Agent version/config + last poll latency + backend DNS/TLS reachability + last error |
 | **AG-039** | `platform-agent` | Critical services inventory | **TODO** | WinDefend/wuauserv/BITS/EventLog/endpoint-agent state read-only |
 | **AG-040** | `platform-agent` | Startup apps / exposure summary | **TODO** | Startup registry/folder summary + RDP/NLA status + event-log health count |
@@ -520,7 +530,7 @@ sonra açılır.
 13. `platform-agent`: `AG-027` 7-Zip install adapter + `AG-027L` exit-code/redacted log capture. **AG-027 DONE (SOURCE-MERGED, live smoke pending); AG-027L DONE (SOURCE-MERGED 2026-05-29 PM PR #32, binary distributed + service health PASS; command-path live verification pending)**
 14. `platform-web`: `WEB-012` approved install UI + `WEB-015` report/export. **WEB-012 ≡ WEB-014D DONE foundation; WEB-015 TODO**
 15. `platform-agent`: `AG-030` + `AG-031` + `AG-032` + `AG-033` + `AG-035` posture/health/hardware quick wins. **AG-035 DONE + LIVE; AG-030/031/032/033 SOURCE-MERGED 2026-05-29 (PR #33/#34/#35/#36, all Codex cross-AI AGREE; binary distribution + HALILKOOLUB735 lab smoke operator-bound)**
-16. `platform-agent`: `AG-037` + `AG-038` + `AG-039` + `AG-040` update/diagnostic/service/exposure quick wins. **TODO**
+16. `platform-agent`: `AG-037` + `AG-038` + `AG-039` + `AG-040` update/diagnostic/service/exposure quick wins. **AG-037 MERGED + LIVE 2026-06-01** (agent PR [#45](https://github.com/Halildeu/platform-agent/pull/45) + backend PR [#354](https://github.com/Halildeu/platform-backend/pull/354) + [#355](https://github.com/Halildeu/platform-backend/pull/355) + web PR [#723](https://github.com/Halildeu/platform-web/pull/723) + gitops PR [#1167](https://github.com/Halildeu/platform-k8s-gitops/pull/1167) + [#1168](https://github.com/Halildeu/platform-k8s-gitops/pull/1168); HALILKOOLUB735 86 installed + 1 pending real WUA telemetry browser-smoked); **AG-038 / AG-039 / AG-040 TODO**
 17. `platform-backend`: `BE-022` device inventory ingest/query. **DONE + LIVE (BE-022 + BE-022Q)**
 18. `platform-web`: `WEB-013` hardware/device inventory view. **DONE + LIVE**
 19. `platform-agent`: `AG-028` uninstall. **TODO**
@@ -539,7 +549,7 @@ P0 (kritik path, acceptance):
 P1 (görünürlük genişletme):
 5. **AG-036** Outdated software inventory (read-only winget upgrade compare)
 6. ~~**AG-030 / AG-031 / AG-032 / AG-033** posture/health quick wins (4 PR)~~ — **DONE (SOURCE-MERGED 2026-05-29)**: AG-030 PR #33, AG-031 PR #34 (Codex 019e74b5 4-iter), AG-032 PR #35 (Codex 019e74d7 5-plan+2-impl), AG-033 PR #36 (Codex 019e7500 plan+impl). All opt-in, identifier-leak-free, AG-025H lightweight contract intact. Remaining: binary distribution + HALILKOOLUB735 lab smoke (operator-bound) + backend ingest (BE) + WEB visualization
-7. **AG-037 / AG-038 / AG-039 / AG-040** diagnostic/service/exposure (4 PR)
+7. ~~**AG-037**~~ **MERGED + LIVE 2026-06-01** (agent PR [#45](https://github.com/Halildeu/platform-agent/pull/45) + backend PR [#354](https://github.com/Halildeu/platform-backend/pull/354) + [#355](https://github.com/Halildeu/platform-backend/pull/355) + web PR [#723](https://github.com/Halildeu/platform-web/pull/723) + gitops PR [#1167](https://github.com/Halildeu/platform-k8s-gitops/pull/1167) + [#1168](https://github.com/Halildeu/platform-k8s-gitops/pull/1168); HALILKOOLUB735 86 installed + 1 pending real WUA telemetry browser-smoked; Codex threads `019e81fe` + `019e822b` + `019e8245`); **AG-038 / AG-039 / AG-040** diagnostic/service/exposure remain P1 (3 PR pending)
 8. **BE-024** Software inventory diff/history
 9. **BE-025** Prohibited software detection
 10. **WEB-015** CSV/report export
