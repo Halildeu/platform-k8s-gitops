@@ -36,12 +36,20 @@ on:
         required: true
       digests:
         description: |
-          ZORUNLU per-service digest map JSON (workflow_dispatch için):
+          OPSIYONEL per-service digest map JSON (workflow_dispatch için):
           {"auth-service":"sha256:<64hex>","permission-service":"sha256:<64hex>",...}
-          Tüm 8 backend servis ZORUNLU. Tag-based fallback YASAK (PR #1170/#1171
-          incident — gitops commit SHA'sı yanlışlıkla image tag gibi yorumlandı).
-          Overlay-render'dan üretmek için runbook snippet'i job summary'sinde.
-        required: true
+
+          Boş bırakırsanız (default): workflow `kustomize/overlays/test/`
+          render edip per-service `@sha256:` digest'leri otomatik çıkarır
+          (PR-FOLLOW-UP-3 2026-06-01: overlay-render auto-extract).
+
+          Operator override istiyorsanız tam JSON map verin (tüm 8 backend
+          servis: auth/permission/user/variant/core-data/report/schema/api-gateway).
+
+          Tag-based fallback YASAK (PR #1170/#1171 incident — gitops commit
+          SHA'sı yanlışlıkla image tag gibi yorumlandı).
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -122,21 +130,61 @@ jobs:
       # Sprint "Prod post-cutover compliance" PR-1: digest-pin mode
       # assertion artık scripts/deploy/verify-pod-digest.sh helper'ını
       # kullanır (multi-replica strict mode ortak helper).
-      - name: Checkout (for verify-pod-digest helper)
+      - name: Checkout (for verify-pod-digest helper + overlay auto-extract)
         uses: actions/checkout@v6
+
+      # 2026-06-01 PR-FOLLOW-UP-3 (Codex 019e82db AGREE D — tam B kısmı):
+      # workflow_dispatch'te operator'a JSON map yazdırmak yerine workflow
+      # gitops repo'yu (already checked out) kustomize render edip
+      # per-service digest'leri otomatik çıkarır. Bu adım sadece
+      # workflow_dispatch + inputs.digests boş olduğunda çalışır.
+      - name: Auto-extract digests from test overlay (workflow_dispatch fallback)
+        id: auto-extract
+        if: github.event_name == 'workflow_dispatch' && inputs.digests == ''
+        run: |
+          set -euo pipefail
+          DIGESTS_JSON=$(kubectl kustomize kustomize/overlays/test \
+            | grep -oE 'platform-backend-[a-z-]+@sha256:[a-f0-9]{64}' \
+            | sort -u \
+            | jq -Rn '[inputs | capture("platform-backend-(?<svc>[a-z-]+)@(?<dg>sha256:[a-f0-9]{64})") | {key:.svc, value:.dg}] | from_entries')
+
+          # Validation: digests JSON must be a non-empty object
+          if ! echo "${DIGESTS_JSON}" | jq -e 'type == "object" and length > 0' >/dev/null 2>&1; then
+            echo "::error::auto-extract produced empty/invalid digest map. Overlay render output:"
+            kubectl kustomize kustomize/overlays/test | grep -oE 'platform-backend-[a-z-]+@sha256:[a-f0-9]{64}' | head -20
+            exit 1
+          fi
+
+          # Required services check (Codex D fail-closed semantic)
+          REQUIRED_SVCS="auth-service permission-service user-service variant-service core-data-service report-service schema-service api-gateway"
+          for svc in $REQUIRED_SVCS; do
+            if [ -z "$(echo "${DIGESTS_JSON}" | jq -r --arg s "$svc" '.[$s] // empty')" ]; then
+              echo "::error::auto-extract missing digest for ${svc} (overlay'de pin yok)"
+              exit 1
+            fi
+          done
+
+          {
+            echo "auto_extracted_digests<<EOF"
+            echo "${DIGESTS_JSON}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "✓ Auto-extracted $(echo "${DIGESTS_JSON}" | jq 'length') digests from kustomize/overlays/test"
+          echo "${DIGESTS_JSON}" | jq
 
       - name: Sequential kubectl set image (digest-pin only — tag-fallback REMOVED)
         id: rollout
         env:
           SHORT_SHA: ${{ steps.payload.outputs.short_sha }}
-          # 2026-06-01 PR-FOLLOW-UP-2 (Codex 019e82db AGREE D): tag-based
-          # fallback fail-closed kaldırıldı. workflow_dispatch'te
-          # inputs.digests ZORUNLU; repository_dispatch'te
-          # client_payload.digests ZORUNLU. Birleşik source ile
-          # DIGESTS_JSON oluşturulur.
+          # 2026-06-01 PR-FOLLOW-UP-2 + PR-FOLLOW-UP-3 (Codex 019e82db AGREE D):
+          # Source priority:
+          #   1. repository_dispatch → client_payload.digests (backend CI dispatch)
+          #   2. workflow_dispatch + inputs.digests verilirse → operator override
+          #   3. workflow_dispatch + inputs.digests boş → auto-extract step'inden
+          # Tag-based fallback fail-closed YASAK.
           DIGESTS_JSON: >-
             ${{ github.event_name == 'workflow_dispatch'
-              && inputs.digests
+              && (inputs.digests != '' && inputs.digests || steps.auto-extract.outputs.auto_extracted_digests)
               || toJSON(github.event.client_payload.digests) }}
         run: |
           set -euo pipefail
