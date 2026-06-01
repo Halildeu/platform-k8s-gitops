@@ -3618,7 +3618,29 @@ images:
     # 5-iter chain absorbed (plan-time iter-1 PARTIAL → iter-2 AGREE → post-
     # impl iter-3 RED 5-bulgu absorb → iter-4 PARTIAL CASCADE+doc → iter-5
     # AGREE).
-    digest: sha256:cd24359086895288a24c4a126b20dcf9e2855e551754c294d825e7e126ebfbdd
+    #
+    # 2026-06-01 AG-039-be PR #362 → main HEAD sha-65d9fbd: AG-039 critical
+    # services inventory ingest path. V24 migration (3 tables: snapshots +
+    # entries (composite-FK + name allowlist SQL CHECK + state/startupMode
+    # enum CHECK + index (tenant_id, name, state) for fleet "where state=
+    # STOPPED" queries) + probe_errors (composite-FK + code SQL enum CHECK +
+    # service_name allowlist SQL CHECK + summary length/CRLF reject)). Codex
+    # 019e836c 3-iter plan-time AGREE chain absorb (iter-1 PARTIAL 6-bulgu +
+    # iter-2 PARTIAL validate-then-sort + iter-3 AGREE "Implement'e
+    # geçilebilir"). ServicesPayloadPolicy strict-allowlist (6 required +
+    # probeErrors omitempty; explicit null REJECT) + exact-six invariant
+    # (canonical allowlist order match REJECT duplicate/missing/extra/
+    # reorder) + state/startupMode strict enum REJECT + probeErrors.code
+    # bounded enum + serviceName allowlist-only when present + summary
+    # AG-038-be SUMMARY_VALUE_DENYLIST_RE reuse + probeDurationMs 0..120000
+    # range + sanitize() hook closes type-confusion bypass + canonical hash
+    # INCLUDES every persistable field. EndpointServicesService dual-winner
+    # double-lookup invariant + source command-result tenant/device cross-
+    # check (Codex iter-1 #6). AdminEndpointServicesController GET
+    # /services/latest (module:endpoint-admin can_view, @Transactional
+    # readOnly LAZY fold). 129 AG-039-be specific tests (33 services policy
+    # + 70 diagnostics regression + 7 install branch + 19 agent command).
+    digest: sha256:642c79b8101a1eb22de93f5300df8694a2b6ff11d17651d0e420b1adc07b23a2
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
