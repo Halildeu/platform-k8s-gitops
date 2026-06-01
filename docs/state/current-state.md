@@ -1,5 +1,61 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — PR-D2.1d users-overview ilk LIVE remote-http pure-grid module + AG-Grid filter contains operator LIVE (2026-06-01)
+
+**Session milestone**: PR-D2.1d (users-overview) **first ever LIVE
+remote-http pure-grid module** on testai cluster. AG-Grid `contains`
+filter operator round-trip verified via PR-D2.1c2 `AgGridFilterTranslator`
+7-op map source-of-truth.
+
+### Browser smoke acceptance (HARD RULE — Tarayıcıdan Sonuç Doğrulanmadan)
+
+**URL**: `https://testai.acik.com/admin/reports/users-overview`
+**Title**: Kullanıcılar Genel Bakış
+
+Initial load:
+- 5/5 user rows rendered (MCP Tester, D35 Admin/Granted Persona, Test User, Admin User)
+- `/api/v1/reports/users-overview/data?page=1&pageSize=100` → **200** (remote-http path executed)
+- `/api/v1/reports/users-overview/metadata` → 200
+- Description renders: "PR-D2.1d ilk LIVE remote-http pure-grid module — user-service /api/v1/users üzerinden çalışır"
+- Console clean (only ag-grid license debug)
+
+Filter test (AG-Grid `contains` operator → PR-D2.1c2 translator → user-service `decodeAdvancedFilter`):
+- AG-Grid name column filter input: "Admin"
+- `Filtre 1` badge active (1 filter)
+- 2/5 rows visible (D35 Admin Persona + Admin User)
+- Network: `data?...advancedFilter={"name":{"filterType":"text","type":"contains","filter":"Admin"}}` → **200**
+- Remote-http executor → user-service paged response with server-side filter
+
+### Truth ledger map
+
+| Component | Repo | Status |
+|---|---|---|
+| `ReportController` `/data` + `/query` + `/filter-values` dispatcher (`isRemoteHttp()` branch) | platform-backend | ✅ PR #363 MERGED (Codex `019e838e` REVISE→PARTIAL→AGREE 3-iter) |
+| `ReportExportController` `/export` GET+POST guard (authz-ordered) | platform-backend | ✅ same PR |
+| `AgGridFilterTranslator` 7-op flat map | platform-backend | ✅ source-of-truth = `UserControllerV1.decodeAdvancedFilter` line 626-714 |
+| `users-overview.json` `ReportDefinition` (`execution.kind=remote-http`) | platform-backend | ✅ source-merged + loaded at startup (registry log) |
+| `application-k8s.yml` `report.remote-executor.allowlist` seed | platform-backend | ✅ user-service `/api/v1/users` baseUrl `http://user-service:8089` |
+| `mfe-reporting` dynamic factory remote-http route | platform-web | ✅ shipped |
+| Cluster digest pin | platform-k8s-gitops PR #1191 | ✅ MERGED report-service `f59789c025` |
+| LIVE on testai | k3d-test cluster | ✅ pod imageID = overlay digest (D29 invariant) |
+
+### D29 truth matrix
+
+| Layer | Status |
+|---|---|
+| Source-merged | 5/5 ✓ (dispatcher + translator + definition + allowlist seed + frontend) |
+| GitOps deployed | ✓ digest `f59789c025...` pinned in test overlay |
+| Runtime Up | ✓ pod Running 18m, actuator UP, registry loaded users-overview |
+| Functional acceptance | ✓ browser smoke initial load + filter contains operator (LIVE proven via network 200 + DOM row count) |
+| End-to-end | ✓ LIVE — browser → ReportController → dispatcher → RemoteAllowlist → RemoteHttpClient → user-service `/api/v1/users` → AG-Grid render |
+
+Faz 22.5 5-modül PR-D2 chain'in **ilk LIVE pure-grid modülü**. PR-D2.2
+(`audit-report` → permission-service) + PR-D2.3 (`monthly-login` →
+auth-service) + PR-D2.4 (`access-report`) + PR-D2.5
+(`weekly-audit-digest`) ardışık olarak aynı pattern üzerinden gelecek.
+
+---
+
 ## Live Delta — Faz 22.5 AG-040 Startup Apps + Exposure Summary SOURCE-MERGED + Backend LIVE (2026-06-01)
 
 **Session milestone**: AG-040 (Windows startup-apps + exposure-summary
