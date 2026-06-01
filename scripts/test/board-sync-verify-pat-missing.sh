@@ -2,20 +2,28 @@
 # scripts/test/board-sync-verify-pat-missing.sh
 #
 # Offline harness for `scripts/board-sync.sh verify` PAT-missing fallback
-# (#1085, Codex 019e8079 must_fix #4). Drives the verify subcommand under
-# a synthetic `gh` shim that records every call and produces deterministic
-# responses for the five PAT-state scenarios:
+# (#1085, Codex 019e8079 must_fix #4; iter-2 P1 + iter-3 P1 follow-ups
+# absorbed in 019e809d). Drives the verify subcommand under a synthetic
+# `gh` shim that records every call and produces deterministic responses
+# for the seven PAT-state scenarios:
 #
 #   1. PAT present (canonical):           Project API touched, board moves.
 #   2. PAT missing, same-repo ref:        comment-only, no Project API.
-#   3. PAT missing, cross-repo ref:       skipped with warning.
+#   3. PAT missing, cross-repo ref:       skipped with ::warning::.
 #   4. PAT missing, repeated EVIDENCE:    idempotent (no duplicate comment).
-#   5. Both tokens empty (workflow bug):  workflow-level guard, asserted
+#   5. PAT present REPAIR (iter-2 P1):    pre-existing EVIDENCE, body
+#                                         rewrite + board STILL fire
+#                                         (iter-3 P1 #2: body half
+#                                         assertion).
+#   6. PAT missing, lowercase same-repo   case-insensitive owner/repo
+#      (iter-3 P1 #3):                    compare — NOT cross-repo-skipped.
+#   7. Both tokens empty (workflow bug):  workflow-level guard, asserted
 #                                         by inspecting the workflow file.
 #
-# All five scenarios run hermetically — no GitHub network access — so a
+# All seven scenarios run hermetically — no GitHub network access — so a
 # regression that re-introduces a Project API call on the PAT-missing
-# branch is caught locally instead of waiting for a real merge.
+# branch (or drops the body rewrite half of the repair guarantee) is
+# caught locally instead of waiting for a real merge.
 #
 # Usage:
 #   bash scripts/test/board-sync-verify-pat-missing.sh
@@ -88,9 +96,18 @@ ITEMS_EOF
     ;;
 
   pat-present-repair)
-    # Codex 019e8079 iter-2 P1: pre-existing EVIDENCE comment, PAT now
-    # present, board still In Progress. The fixed cmd_verify must skip
-    # the comment but still move the board.
+    # Codex 019e8079 iter-2 P1 + 019e809d iter-3 P1 #2: pre-existing
+    # EVIDENCE comment, PAT now present, board still In Progress, body
+    # carries agent-state:v1 from the original claim. The fixed
+    # cmd_verify must:
+    #   - SKIP the comment (already there — idempotent),
+    #   - REWRITE the body (agent-state → needs-verify),
+    #   - MOVE the board (project item-edit).
+    # The shim returns a body that contains agent-state:v1 so the body
+    # rewrite branch fires and `gh issue edit` gets called — that's the
+    # iter-3 P1 #2 hardening (earlier the body shim said "no agent
+    # state here" and the body rewrite quietly never ran, so the
+    # repair guarantee was only half-tested).
     if [ "${1:-}" = "project" ] && [ "${2:-}" = "view" ]; then
       printf '{"id":"PVT_kwHOCx7tY84BIN2d","number":2}\n'; exit 0
     fi
@@ -109,7 +126,17 @@ ITEMS_EOF
           exit 0
         fi
       done
-      printf '{"body":"no agent state here"}\n'; exit 0
+      # body lookup: needs to carry `agent-state:v1` so the rewrite
+      # branch in cmd_verify fires.  Real gh emits the raw body when
+      # called with --jq .body; we mimic that by printing the literal
+      # body when --jq is in argv, and the JSON form otherwise.
+      for arg in "$@"; do
+        if [ "$arg" = "--jq" ]; then
+          printf 'agent-state:v1 owner=ci action=in-progress\n'
+          exit 0
+        fi
+      done
+      printf '{"body":"agent-state:v1 owner=ci action=in-progress"}\n'; exit 0
     fi
     if [ "${1:-}" = "issue" ] && [ "${2:-}" = "comment" ]; then
       echo "fake gh: repair path must NOT post a comment (EVIDENCE already present)" >&2
@@ -288,21 +315,43 @@ run_case "pat-missing-idem" "pat-missing-idempotent" 0 \
 assert_log_lacks "issue comment"
 assert_log_contains "issue view"
 
-# Scenario 5: PAT-present REPAIR — comment already exists, board still moves.
-# Codex 019e8079 iter-2 P1: idempotency must skip the comment but still let
-# body rewrite + board Status mutation run. Without this case the earlier
-# implementation silently no-op'd the board move on every repair run.
-printf '\n[5] PAT present REPAIR — comment exists → no new comment, board STILL moves\n'
+# Scenario 5: PAT-present REPAIR — comment already exists, body STILL
+# gets rewritten, board STILL moves.
+# Codex 019e8079 iter-2 P1: idempotency must skip the comment but still
+# let body rewrite + board Status mutation run. Without this case the
+# earlier implementation silently no-op'd the board move on every
+# repair run.
+# Codex 019e809d iter-3 P1 #2: the earlier shim returned a body that
+# did NOT contain agent-state:v1, so the body rewrite branch was
+# implicitly never exercised. Shim now returns a body WITH
+# agent-state:v1; assertion below confirms `gh issue edit` fires.
+printf '\n[5] PAT present REPAIR — comment exists → no new comment, body rewrite + board STILL fire\n'
 export BOARD_PAT_PRESENT=1
 run_case "pat-present-repair" "pat-present-repair" 0 \
   verify "https://github.com/Halildeu/platform-k8s-gitops/issues/42" \
   --pr 99 --pr-repo "Halildeu/platform-k8s-gitops"
 assert_log_lacks "issue comment"
-assert_log_contains "project item-edit"
+assert_log_contains "issue edit"      # body rewrite half (iter-3 P1 #2)
+assert_log_contains "project item-edit"  # board Status half
 
-# Scenario 6: Workflow guard — assert both-token-empty trips the workflow
+# Scenario 6: PAT missing, lowercase same-repo ref — case-insensitive
+# compare must NOT trigger the cross-repo skip.
+# Codex 019e809d iter-3 P1 #3: GitHub treats owner/repo identity
+# case-insensitively; manual lowercase refs like
+# `halildeu/platform-k8s-gitops#42` should still be recognised as
+# same-repo and take the comment-only path. Pre-fix this would have
+# false-cross-repo-skipped.
+printf '\n[6] PAT missing, lowercase same-repo — case-insensitive compare, NOT skipped\n'
+export BOARD_PAT_PRESENT=""
+run_case "pat-missing-lowercase" "pat-missing-same-repo" 0 \
+  verify "https://github.com/halildeu/platform-k8s-gitops/issues/42" \
+  --pr 99 --pr-repo "Halildeu/platform-k8s-gitops"
+assert_log_contains "issue comment"   # took the same-repo path, not the cross-repo skip
+assert_log_lacks "project view"
+
+# Scenario 7: Workflow guard — assert both-token-empty trips the workflow
 # (file-level grep; the actual run is gated by GitHub Actions).
-printf '\n[6] Workflow guard — empty-token branch fails loudly\n'
+printf '\n[7] Workflow guard — empty-token branch fails loudly\n'
 if grep -q "GH_TOKEN is empty" "$WORKFLOW"; then
   pass=$((pass + 1))
   printf '  ✓ workflow has empty-GH_TOKEN ::error:: guard\n'

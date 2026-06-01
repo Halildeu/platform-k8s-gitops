@@ -67,7 +67,15 @@ jobs:
               echo "| Board Status \`Needs Verify\` (project field mutation) | ⏭ skipped |"
               echo "| Cross-repo refs (e.g. owner/other-repo#42) | ⏭ skipped |"
               echo
-              echo "To close the gap, seed \`ADD_TO_PROJECT_PAT\` with a fine-grained PAT (Org: Halildeu, Projects: Read+Write)."
+              echo "### Required PAT scope (Codex 019e809d iter-3 must_fix)"
+              echo
+              echo "Once \`ADD_TO_PROJECT_PAT\` is seeded the SAME token handles both halves of every verify run — Project field mutation **and** issue comment/body read+write. A PAT scoped only to Projects will repair the board half but die on the next \`gh issue view/comment/edit\` call. Required scope:"
+              echo
+              echo "- **Organization** (Halildeu): **Projects → Read & Write**"
+              echo "- **Repository** access — every roadmap-tracked repo (e.g. \`platform-k8s-gitops\`, \`platform-backend\`, \`platform-web\`): **Issues → Read & Write**, **Metadata → Read**"
+              echo "- If you expect cross-repo \`Tracked by\` refs (sibling roadmap issues), include those sibling repos in the same PAT — otherwise cross-repo refs keep skipping."
+              echo "- Classic PAT alternative: \`repo\` + \`project\` (or \`read:project\` + \`write:project\`)."
+              echo
               echo "Settings → Secrets and variables → Actions → \`ADD_TO_PROJECT_PAT\`."
             } | tee -a "$GITHUB_STEP_SUMMARY"
           fi
