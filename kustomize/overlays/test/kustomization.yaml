@@ -759,8 +759,31 @@ images:
     #
     # ReportContractGate reports=36 violations=0 (35→36 monthly-login).
     # D-chain progress: 4/5 LIVE pure-grid modules (post-deploy).
-    newTag: sha-ff75b68
-    digest: sha256:fcea1fdb5a973b709d359abecb4374faafa0665bc1f791bcb61fbff900ca410f
+    #
+    # 2026-06-01 PR-D2.5 bump sha-ad0f229 (platform-backend PR #370 MERGED):
+    # weekly-audit-digest ReportDefinition — fifth + FINAL LIVE remote-http
+    # closing the D-chain 5/5 pure-grid migration target. Same endpoint
+    # /api/audit/events as audit-report + monthly-login; digest-context column
+    # ordering (level second). Codex 019e84da AGREE WITH AMENDMENTS absorb:
+    # routeSegment/sharedReportId='weekly-audit-digest' IS the EXISTING
+    # platform-web static module identity (NOT new path) → dynamic catalog
+    # replaces static via useCatalog dynamic-replaces-static; favorites/saved-
+    # filters preserved under same SharedReportId. Non-blocking parity hole
+    # flagged (static toolbar `level` filter not yet filterDefinitions; column
+    # filter path available) — separate follow-up.
+    #
+    # Option (a) filter-only second time (Codex aggregation warning kabul for
+    # digest semantik); real haftalık aggregation deferred to mart layer.
+    # 969/969 backend tests PASS (+1 perReport drift guard).
+    #
+    # Build run 26780513474. Image push:
+    # ghcr.io/halildeu/platform-backend-report-service:sha-ad0f229@
+    # sha256:e3c4ba5795c3ca314899608dda12dce61a51c8b5a6fa92c86965c169ae7eb57f
+    #
+    # ReportContractGate reports=37 violations=0 (36→37 weekly-audit-digest).
+    # D-chain progress: 5/5 LIVE pure-grid modules (post-deploy) — TARGET CLOSED.
+    newTag: sha-ad0f229
+    digest: sha256:e3c4ba5795c3ca314899608dda12dce61a51c8b5a6fa92c86965c169ae7eb57f
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
