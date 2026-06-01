@@ -2,20 +2,28 @@
 # scripts/test/board-sync-verify-pat-missing.sh
 #
 # Offline harness for `scripts/board-sync.sh verify` PAT-missing fallback
-# (#1085, Codex 019e8079 must_fix #4). Drives the verify subcommand under
-# a synthetic `gh` shim that records every call and produces deterministic
-# responses for the five PAT-state scenarios:
+# (#1085, Codex 019e8079 must_fix #4; iter-2 P1 + iter-3 P1 follow-ups
+# absorbed in 019e809d). Drives the verify subcommand under a synthetic
+# `gh` shim that records every call and produces deterministic responses
+# for the seven PAT-state scenarios:
 #
 #   1. PAT present (canonical):           Project API touched, board moves.
 #   2. PAT missing, same-repo ref:        comment-only, no Project API.
-#   3. PAT missing, cross-repo ref:       skipped with warning.
+#   3. PAT missing, cross-repo ref:       skipped with ::warning::.
 #   4. PAT missing, repeated EVIDENCE:    idempotent (no duplicate comment).
-#   5. Both tokens empty (workflow bug):  workflow-level guard, asserted
+#   5. PAT present REPAIR (iter-2 P1):    pre-existing EVIDENCE, body
+#                                         rewrite + board STILL fire
+#                                         (iter-3 P1 #2: body half
+#                                         assertion).
+#   6. PAT missing, lowercase same-repo   case-insensitive owner/repo
+#      (iter-3 P1 #3):                    compare — NOT cross-repo-skipped.
+#   7. Both tokens empty (workflow bug):  workflow-level guard, asserted
 #                                         by inspecting the workflow file.
 #
-# All five scenarios run hermetically — no GitHub network access — so a
+# All seven scenarios run hermetically — no GitHub network access — so a
 # regression that re-introduces a Project API call on the PAT-missing
-# branch is caught locally instead of waiting for a real merge.
+# branch (or drops the body rewrite half of the repair guarantee) is
+# caught locally instead of waiting for a real merge.
 #
 # Usage:
 #   bash scripts/test/board-sync-verify-pat-missing.sh
