@@ -3208,15 +3208,37 @@ images:
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-dd730f2
     #   digest sha256:214673cc376a3365b5d91276a7ea8eb5b862b179529a8f88f0fba226c6035d8a
     #
+    # 2026-06-01 update: sha-e9212de — platform-web PR #729 MERGED
+    # (AG-040 startup-exposure drawer view, e9212de4). Mirrors AG-038/
+    # AG-039 drawer precedents verbatim:
+    # - `currentData`-anchored snapshot + `isForDevice` stale guard
+    # - `if (error) ...` cuts BEFORE the `!snapshot` fall-through
+    # - Fail-closed branches keep `meta` + `probeErrors` visible inside
+    #   the `startup-exposure-view` container; only the startup-apps
+    #   TABLE is hidden when not fully-evaluable
+    # - Plain-text XSS guards (React text-escape) on every operator-
+    #   visible string field (`name`, `summary`, `source`)
+    # - Production-visible `data-*` attrs for operator DOM-inspection
+    # Read-only "Başlangıç + Maruziyet" tab. Backend endpoint:
+    # /api/v1/endpoint-admin/endpoint-devices/{deviceId}/startup-exposure/latest
+    # 10-slot autorun-anchor enum (HKLM/HKCU Run/RunOnce/Wow6432, common/
+    # user StartMenu Startup folder, TaskScheduler root/MS-Windows/custom).
+    # Tri-state RDP + Firewall event-log badges. probeErrors table for
+    # fail-closed evidence visibility.
+    #
+    # Image build run: gh run view 26765267931 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-e9212de
+    #   digest sha256:48de554c8112e14c4151880ec1562ba371597a7ff4a88ab72e71e9f07ca50472
+    #
     # Verify after rollout (HARD RULE):
-    #   1. Navigate to HALILKOOLUB735 device drawer → "Hizmetler" tab
-    #   2. 404 empty state with `includeServices:true` hint visible
-    #   3. data-testid="services-empty" present + console clean
-    #   4. After agent COLLECT_INVENTORY with includeServices:true:
-    #      6-row table with state badges (RUNNING/STOPPED/DISABLED/
-    #      UNKNOWN) + startup chips (AUTO/AUTO_DELAYED/MANUAL/DISABLED
-    #      = danger / UNKNOWN) + probeErrors if present
-    digest: sha256:214673cc376a3365b5d91276a7ea8eb5b862b179529a8f88f0fba226c6035d8a
+    #   1. Navigate to HALILKOOLUB735 device drawer → "Başlangıç + Maruziyet" tab
+    #   2. 404 empty state with `includeStartupExposure:true` hint visible
+    #   3. data-testid="startup-exposure-empty" present + console clean
+    #   4. After agent COLLECT_INVENTORY with includeStartupExposure:true:
+    #      startup-apps table (location enum chips + enabled/disabled +
+    #      REGISTRY/SCHEDULED_TASK origin chips) + exposure-summary panel
+    #      (RDP + Firewall event-log tri-state badges) + probeErrors if present
+    digest: sha256:48de554c8112e14c4151880ec1562ba371597a7ff4a88ab72e71e9f07ca50472
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
