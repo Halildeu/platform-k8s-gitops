@@ -3171,7 +3171,52 @@ images:
     #
     # Prior pin (2026-06-01 earlier, superseded by AG-038 chain land):
     #   sha-4cedd44 / sha256:b28e799a9be94402cbac0b36c525d4653bd38e9859262b06a08a1ce3ae66eab5
-    digest: sha256:d077fd5222cd3f0ec4cd0b281f2dc66c148887acf21987d3f172deac033b5228
+    #
+    # 2026-06-01 update: sha-dd730f2 — platform-web PR #728 MERGED
+    # (AG-039 critical services inventory drawer view).
+    # Final missing link of the Faz 22.5 AG-039 zinciri:
+    #   - Agent AG-039 probe: MERGED (platform-agent PR #47)
+    #   - Backend AG-039-be V24 ingest+query: MERGED (PR #362); V24
+    #     migration LIVE on testai pod cd243590 (12:42 UTC)
+    #   - WEB AG-039 view: THIS deploy
+    #
+    # ServicesView read-only "Hizmetler" tab between "Agent Tanılaması"
+    # and "Yazılım Kataloğu". Surfaces the 6-service canonical allowlist
+    # (WinDefend / wuauserv / BITS / EventLog / EndpointAgent / MpsSvc)
+    # with per-service {present, state, startupMode} from the SCM +
+    # registry probe.
+    #
+    # Codex 019e8389 2-iter REVISE→PARTIAL→AGREE absorb (6 must_fix +
+    # iter-2 P1):
+    #   1. IslemlerTab default COLLECT_INVENTORY now ships 8 opt-in bits
+    #      (was 3: software + winget-egress + hardware; now adds
+    #      device-health + outdated + hotfix + diagnostics + services)
+    #   2. Fail-closed branches (supported=false / probeComplete=false)
+    #      share the services-view container with data-fully-evaluable=
+    #      false; meta + probeErrors visible inside; only services
+    #      TABLE hidden (iter-2 P1)
+    #   3. startupMode=DISABLED chip carries danger class (policy-
+    #      disabled is the operationally critical signal)
+    #   4. Dedicated services-i18n.test.ts asserts includeServices:true
+    #      literal copy + DICT_EN parity loop
+    #   5. probeErrors[].serviceName + summary nullable (?: string |
+    #      null); render fallback "—"
+    #   6. probeErrors[].source enum + plain-text XSS guards
+    # 389/389 vitest pass.
+    #
+    # Image build run: gh run view 26762579210 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-dd730f2
+    #   digest sha256:214673cc376a3365b5d91276a7ea8eb5b862b179529a8f88f0fba226c6035d8a
+    #
+    # Verify after rollout (HARD RULE):
+    #   1. Navigate to HALILKOOLUB735 device drawer → "Hizmetler" tab
+    #   2. 404 empty state with `includeServices:true` hint visible
+    #   3. data-testid="services-empty" present + console clean
+    #   4. After agent COLLECT_INVENTORY with includeServices:true:
+    #      6-row table with state badges (RUNNING/STOPPED/DISABLED/
+    #      UNKNOWN) + startup chips (AUTO/AUTO_DELAYED/MANUAL/DISABLED
+    #      = danger / UNKNOWN) + probeErrors if present
+    digest: sha256:214673cc376a3365b5d91276a7ea8eb5b862b179529a8f88f0fba226c6035d8a
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
