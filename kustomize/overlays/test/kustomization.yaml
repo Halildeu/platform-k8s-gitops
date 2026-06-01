@@ -3356,21 +3356,37 @@ images:
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-6b67269
     #   digest sha256:fc0fd5cfb3552591dc06a90a5a227ff95bf42a08759405fc8ba2bb280f4684a7
     #
-    # Verify after rollout (HARD RULE — AG-041 AppControlView):
+    # 2026-06-01 update: BE-024 SoftwareDiffView web view (PR #731).
+    # Faz 22.5 P2-A. Adds "Yazılım Değişimleri" drawer tab between
+    # "Uygulama Kontrolü" and "Yazılım Kataloğu" rendering the
+    # software-inventory-diff 4-status enum (OK / NO_CHANGE /
+    # INSUFFICIENT_HISTORY / NO_HISTORY) as DISTINCT states (operator
+    # can tell "no baseline yet" apart from "two captures identical"),
+    # capture-window header (fromCapturedAt → toCapturedAt + app
+    # counts), counts row, and 3 hidden-when-empty tables (added /
+    # removed / versionChanged). Wire contract mirrors backend
+    # AdminSoftwareInventoryDiffResponse verbatim. appKey is SYNTHETIC
+    # SHA-256 identity (NOT winget catalog packageId); UI doesn't
+    # advertise it. Codex 019e84ca iter-2 AGREE (TR i18n + contract
+    # tests absorbed at iter-1). 59 vitest pass (13 SoftwareDiffView +
+    # 46 i18n contract).
+    #
+    # Image build run: gh run view 26780376969 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-8a2d091
+    #   digest sha256:6d0ada3eed1ccd5da4113c1bd152493031fa1e4e6e65bc1024aa5026ace09c80
+    #
+    # Verify after rollout (HARD RULE — BE-024 SoftwareDiffView):
     #   1. Navigate to HALILKOOLUB735 → device drawer (MouseEvent
-    #      sequence: mousedown+mouseup+click on AG Grid cell, NOT
-    #      bare .click() — pattern learned from AG-039/040 smoke)
-    #   2. "Uygulama Kontrolü" tab (Başlangıç + Maruziyet ↔ Yazılım Kat.)
-    #   3. 404 empty state with `includeAppControl:true` operator hint
-    #   4. data-testid="app-control-view-empty" + console clean
-    #   5. After agent COLLECT_INVENTORY with includeAppControl:true:
-    #      meta + WDAC panel (mode badge + 4 evidence rows) +
-    #      AppLocker panel (5 chips + AppIDSvc state/startup/present
-    #      tri-state) + probeErrors table (rowOrdinal + code + source
-    #      fallback "—" + summary fallback "—"). Non-Windows agent →
-    #      fail-closed with data-fully-evaluable="false" + NO_EVIDENCE
-    #      row visible AS evidence.
-    digest: sha256:fc0fd5cfb3552591dc06a90a5a227ff95bf42a08759405fc8ba2bb280f4684a7
+    #      sequence: mousedown+mouseup+click on AG Grid cell)
+    #   2. "Yazılım Değişimleri" tab (Uygulama Kontrolü ↔ Yazılım Kat.)
+    #   3. Backend returns 200 with status enum (NEVER 404 even for
+    #      unknown/cross-tenant device — no-existence-leak contract)
+    #   4. data-status attr reflects backend status; data-total-entries
+    #      reflects sum of added/removed/versionChanged lists
+    #   5. Real-evidence chain: pre-snapshot includeSoftware=true →
+    #      operator install/uninstall → post-snapshot → diff observable
+    #      in this view AND via API (real BE-024 chain acceptance).
+    digest: sha256:6d0ada3eed1ccd5da4113c1bd152493031fa1e4e6e65bc1024aa5026ace09c80
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
