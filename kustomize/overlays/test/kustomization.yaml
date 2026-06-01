@@ -3545,7 +3545,30 @@ images:
     # AgentCommandService hook tests = 78 AG-037-be specific. Full endpoint-
     # admin-service suite 1015/1015 green. Cross-AI Codex 019e81fe (4 iter plan-
     # time AGREE) + 019e822b (2 iter post-impl AGREE).
-    digest: sha256:15278bdb4458da155fb10b2ec7b8e5ed521f1bcbba1dc0ed29ea2d3224b64535
+    #
+    # 2026-06-01 AG-038-be PR #357 → main HEAD sha-6122d0e: AG-038 agent self-
+    # diagnostics ingest path. V23 migration (2 tables: snapshots + probe_errors,
+    # composite-FK tenant integrity, partial+full UNIQUE for dual idempotency,
+    # flat lastError triad at root with all-or-none CHECK, ON DELETE CASCADE
+    # device FK + ON DELETE SET NULL command-result FK). EndpointDiagnostics-
+    # Service with canonical-form payload hash (INCLUDES every persistable field
+    # per Codex iter-3 P1 #4 revise so fresh observation appends new snapshot
+    # and /latest reflects most recent measured latency/duration), targetless
+    # ON CONFLICT DO NOTHING + dual-winner double-lookup invariant fail-loud
+    # (Codex iter-3 P2 #5). DiagnosticsPayloadPolicy contract-freeze strict-
+    # allowlist (9 required scalars + omitempty lastError/probeErrors normalize)
+    # + summary value-level denylist (URL/Bearer/IP/token reject; defense-in-
+    # depth over CRLF/control-char) + type-confusion REJECT via sanitize()
+    # hook wired into pre-persist chain (Codex iter-3 P1 #1 critical: closes
+    # bypass class where non-Map diagnostics would skip AG-038 policy). Admin-
+    # EndpointDiagnosticsController GET /latest (module:endpoint-admin can_view,
+    # @Transactional(readOnly=true) lazy guard, cross-tenant existence-leak
+    # guard). 117 AG-038-be specific tests (70 policy + 17 service + 4
+    # controller + 19 agent hook + 7 install branch). Cross-AI Codex 019e82d7
+    # 5-iter chain absorbed (plan-time iter-1 PARTIAL → iter-2 AGREE → post-
+    # impl iter-3 RED 5-bulgu absorb → iter-4 PARTIAL CASCADE+doc → iter-5
+    # AGREE).
+    digest: sha256:cd24359086895288a24c4a126b20dcf9e2855e551754c294d825e7e126ebfbdd
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
