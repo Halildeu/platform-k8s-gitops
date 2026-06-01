@@ -309,9 +309,61 @@ catch {
 
 ### 5. Token & service start
 
+> **Failure routing (R3-NH-01)**: Adım 5 sonrasında herhangi bir throw =
+> mutation sonrası fail. Lock dosyasını **elle silme**; önce **Rollback
+> section** uygula, rollback verify (eski hash + Service Running) sonrası
+> lock release. Orphan-lock triage ile gerçek in-flight/failed-upgrade
+> ayrılmalı.
+
+**Service env regkey canonical (R3-MF-01)**: agent canonical olarak
+`HKLM:\SYSTEM\CurrentControlSet\Services\EndpointAgent\Environment`
+REG_MULTI_SZ kullanır (`platform-agent/installers/windows/install.ps1`
+satır 247 `Set-ServiceEnvironmentRegkey`, satır 278
+`Remove-ServiceEnvironmentEntry`, satır 556 "Set-ServiceEnvironmentRegkey
+write is the SOLE source of"). Machine env yalnız defensive cleanup
+amaçlı; source-of-truth değildir.
+
 ```powershell
-# Fresh enrollment token'ı machine env'e yaz
-[Environment]::SetEnvironmentVariable('ENDPOINT_AGENT_ENROLLMENT_TOKEN', $EnrollmentToken, 'Machine')
+# Helper: service env regkey upsert (REG_MULTI_SZ, mevcut entries preserve, key upsert)
+function Set-ServiceEnvironmentEntry {
+    param([string]$Name, [string]$Key, [string]$Value)
+    $servicePath = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name"
+    $existing = (Get-ItemProperty -Path $servicePath -Name 'Environment' -ErrorAction SilentlyContinue).Environment
+    if ($null -eq $existing) { $existing = @() }
+    $filtered = @($existing | Where-Object { $_ -notmatch "^$Key=" })
+    $filtered += "$Key=$Value"
+    Set-ItemProperty -Path $servicePath -Name 'Environment' -Value ([string[]]$filtered) -Type MultiString -ErrorAction Stop
+}
+
+# Helper: service env regkey single-key remove
+function Remove-ServiceEnvironmentEntry {
+    param([string]$Name, [string]$Key)
+    $servicePath = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name"
+    $existing = (Get-ItemProperty -Path $servicePath -Name 'Environment' -ErrorAction SilentlyContinue).Environment
+    if ($null -eq $existing) { return }
+    $filtered = @($existing | Where-Object { $_ -notmatch "^$Key=" })
+    if ($filtered.Count -eq 0) {
+        Remove-ItemProperty -Path $servicePath -Name 'Environment' -ErrorAction SilentlyContinue
+    } else {
+        Set-ItemProperty -Path $servicePath -Name 'Environment' -Value ([string[]]$filtered) -Type MultiString -ErrorAction Stop
+    }
+}
+
+# Fresh enrollment token'ı service env regkey'e yaz (canonical source)
+Set-ServiceEnvironmentEntry -Name 'EndpointAgent' -Key 'ENDPOINT_AGENT_ENROLLMENT_TOKEN' -Value $EnrollmentToken
+
+# Defensive: Machine env'de stale token varsa temizle (Adım 7'de tekrar verify)
+$residualMachine = [Environment]::GetEnvironmentVariable('ENDPOINT_AGENT_ENROLLMENT_TOKEN', 'Machine')
+if ($residualMachine) {
+    Write-Warning "Machine env'de stale token bulundu (length=$($residualMachine.Length)); siliniyor — service regkey artık source-of-truth."
+    [Environment]::SetEnvironmentVariable('ENDPOINT_AGENT_ENROLLMENT_TOKEN', $null, 'Machine')
+}
+
+# Service env regkey'de fresh token doğrulandı mı?
+$svcEnv = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\EndpointAgent' -Name 'Environment' -ErrorAction Stop).Environment
+if (-not ($svcEnv | Where-Object { $_ -match '^ENDPOINT_AGENT_ENROLLMENT_TOKEN=.+$' })) {
+    throw "ABORT: Service env regkey'de ENDPOINT_AGENT_ENROLLMENT_TOKEN yok. Set-ServiceEnvironmentEntry fail oldu."
+}
 
 # Servisi başlat
 Start-Service EndpointAgent -ErrorAction Stop
@@ -355,53 +407,69 @@ Write-Host "Wire shape OK: dns=$($diag.egress.dns.Count) tcp=$($diag.egress.tcp.
 
 ### 7. Token cleanup (MF-01 zorunlu)
 
-**HMAC persistence acceptance predicate** (R2-NH-03):
+**Acceptance gate ayrımı (R3-MF-03)**:
 
-Token cleanup'tan ÖNCE üç kanıttan **en az birinin** sağlanması zorunlu
-(UI `CONSUMED` tek başına yeterli DEĞİL):
-
-1. **DPAPI credential dosyası** (Codex AG-026D pattern):
-   ```powershell
-   $CredFile = 'C:\ProgramData\EndpointAgent\creds\hmac.bin'
-   if (-not (Test-Path $CredFile) -or (Get-Item $CredFile).Length -eq 0) {
-       throw "FAIL: HMAC credential file yok veya boş. Token cleanup YAPILAMAZ."
-   }
-   ```
-
-2. **Backend audit log** — agent subject `agent:<deviceUuid>` ile token-dışı auth kanıtı (operator manuel ssh log grep)
-
-3. **Token-less restart sonrası heartbeat** — `diagnose` başarılı + backend log fresh entry
-
-Tüm üçü birden olursa kanıt en güçlü; bu durumda da operator manuel onay
-verir, ondan sonra Adım 7b çalıştırılır.
+> Token cleanup'tan ÖNCE: **DPAPI persistence proof = HARD GATE**
+> (canonical DPAPI credential file exists + nonzero).
+>
+> Token-less restart cleanup'tan SONRA: **future-start acceptance gate**
+> (cleanup'ın gelecekteki start'ları kırmadığını ispatlar — `agent_id`
+> subject ile auth devam).
+>
+> UI `CONSUMED` + backend `agent:<deviceUuid>` audit subject: destekleyici
+> evidence; tek başına HARD GATE değil.
 
 ```powershell
-# 7a. UI tarafı CONSUMED + cihaz HMAC persist doğrulandı (yukarıdaki 3 kanıt)
-#     Web UI: enrollments → açıklama satırı → Durum=CONSUMED + Cihaz dolu
+# 7a. HARD GATE: DPAPI credential file (canonical path — R3-MF-02)
+# Source: platform-agent/internal/hmacstore/hmacstore.go:142-151 +
+#         platform-agent/installers/windows/uninstall.ps1:182-189
+$CredFile = Join-Path $env:ProgramData 'EndpointAgent\config\hmac-credential.dpapi'
+if (-not (Test-Path -LiteralPath $CredFile)) {
+    throw "FAIL: HMAC credential dosyası yok: $CredFile. Agent henüz enroll-confirm yapmadı; token clear YAPMA."
+}
+$credSize = (Get-Item -LiteralPath $CredFile -ErrorAction Stop).Length
+if ($credSize -le 0) {
+    throw "FAIL: HMAC credential dosyası boş ($credSize bytes). Token clear YAPMA."
+}
+Write-Host "HMAC persistence OK: $CredFile ($credSize bytes)"
 
-# 7b. Token clear
+# 7b. Destekleyici evidence (operator manuel kontrol — non-gating):
+#     - Web UI enrollments → açıklama satırı → Durum=CONSUMED + Cihaz dolu
+#     - Backend audit subject (opsiyonel):
+#       ssh halil@staging-sw "kubectl --context k3d-test -n platform-test \
+#         logs deploy/endpoint-admin-service --since=2m 2>&1 | \
+#         grep 'agent:<deviceUuid>' | head -5"
+
+# 7c. Token clear — service env regkey (canonical source) + Machine env (defensive)
+Remove-ServiceEnvironmentEntry -Name 'EndpointAgent' -Key 'ENDPOINT_AGENT_ENROLLMENT_TOKEN'
 [Environment]::SetEnvironmentVariable('ENDPOINT_AGENT_ENROLLMENT_TOKEN', $null, 'Machine')
 
-# 7c. Doğrula (Machine env hâlâ token barındırıyor mu)
-$residual = [Environment]::GetEnvironmentVariable('ENDPOINT_AGENT_ENROLLMENT_TOKEN', 'Machine')
-if ($residual) {
-    throw "FAIL: Machine env'de hâlâ token var (length=$($residual.Length)). Manuel temizle."
+# 7d. Verify — service env regkey'de token kalmadı
+$svcEnvPost = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\EndpointAgent' -Name 'Environment' -ErrorAction SilentlyContinue).Environment
+if ($svcEnvPost -and ($svcEnvPost | Where-Object { $_ -match '^ENDPOINT_AGENT_ENROLLMENT_TOKEN=' })) {
+    throw "FAIL: Service env regkey'de hâlâ token kaldı. Remove-ServiceEnvironmentEntry fail."
 }
 
-# 7d. PowerShell session'da da temizle
+# 7e. Verify — Machine env'de token kalmadı (defensive)
+$residualMachine = [Environment]::GetEnvironmentVariable('ENDPOINT_AGENT_ENROLLMENT_TOKEN', 'Machine')
+if ($residualMachine) {
+    throw "FAIL: Machine env'de hâlâ token var (length=$($residualMachine.Length))."
+}
+
+# 7f. PowerShell session'da da temizle
 Remove-Item Env:ENDPOINT_AGENT_ENROLLMENT_TOKEN -ErrorAction SilentlyContinue
 $EnrollmentToken = $null
 
-# 7e. Token-less service restart ile credential persistence kanıt
+# 7g. POST-CLEANUP acceptance gate — token-less restart future-start kanıt
 Restart-Service EndpointAgent -ErrorAction Stop
 Start-Sleep -Seconds 10
 $post = Get-Service EndpointAgent -ErrorAction Stop
 if ($post.Status -ne 'Running') {
-    throw "FAIL: Token-less restart sonrası service NOT Running. Credential persistence kanıtsız."
+    throw "FAIL: Token-less restart sonrası service NOT Running. Cleanup gelecekteki start'ları kırdı."
 }
 $postDiagJson = & $InstalledExe diagnose winget-egress | Out-String
 if ($LASTEXITCODE -ne 0) {
-    throw "FAIL: Token-less restart sonrası diagnose exit=$LASTEXITCODE. Credential persistence kanıtsız."
+    throw "FAIL: Token-less restart sonrası diagnose exit=$LASTEXITCODE."
 }
 $postDiag = $postDiagJson | ConvertFrom-Json
 if (-not $postDiag.supported) {
@@ -464,7 +532,8 @@ if ($restoredHash -ne $Snap.oldHash) {
     throw "FAIL: Restored hash mismatch. Expected=$($Snap.oldHash) Got=$restoredHash"
 }
 
-# Machine env token clear (eski state'e dönüş)
+# Token clear — service env regkey (canonical) + Machine env (defensive)
+Remove-ServiceEnvironmentEntry -Name 'EndpointAgent' -Key 'ENDPOINT_AGENT_ENROLLMENT_TOKEN'
 [Environment]::SetEnvironmentVariable('ENDPOINT_AGENT_ENROLLMENT_TOKEN', $null, 'Machine')
 
 # ACL restore (eğer break-glass yapıldıysa)
@@ -553,6 +622,19 @@ Multi-operator pattern Faz 22.2 production runbook scope'unda.
 - **Codex iter-1**: `019e83ef-bc8e-71c3-ac6d-fb92e5d4235f` REVISE 9 must-fix
   + 3 nice-to-have (2026-06-01) — **absorb edildi** (MF-01..MF-09 +
   NH-01..NH-03)
+- **Codex iter-3**: aynı thread REVISE 3 must-fix + 1 nice-to-have —
+  **absorb edildi** (R3-MF-01..R3-MF-03 + R3-NH-01):
+  - R3-MF-01 Token transport service env regkey (HKLM\...\Services\EndpointAgent\Environment
+    REG_MULTI_SZ canonical; `Set-ServiceEnvironmentEntry` / `Remove-ServiceEnvironmentEntry`
+    helpers; Machine env defensive cleanup only). Source: install.ps1:247/278/556.
+  - R3-MF-02 DPAPI credential canonical path:
+    `%ProgramData%\EndpointAgent\config\hmac-credential.dpapi`
+    (Source: internal/hmacstore/hmacstore.go:142-151 + uninstall.ps1:182-189)
+  - R3-MF-03 HMAC predicate wording: DPAPI = HARD GATE pre-clear;
+    token-less restart = POST-cleanup acceptance gate; UI CONSUMED +
+    backend audit = supporting evidence (gate değil)
+  - R3-NH-01 Failure routing: Adım 5 öncesi açık not — Step 5+ throw =
+    mutation sonrası fail; Rollback section önce, lock release sonra
 - **Codex iter-2**: aynı thread REVISE 4 must-fix + 3 nice-to-have —
   **absorb edildi** (R2-MF-01..R2-MF-04 + R2-NH-01..R2-NH-03):
   - R2-MF-01 PowerShell error semantics: `$ErrorActionPreference='Stop'`
