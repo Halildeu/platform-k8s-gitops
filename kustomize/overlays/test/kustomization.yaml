@@ -3927,7 +3927,25 @@ images:
     # (module:endpoint-admin VIEWER, @Transactional readOnly). 48 AG-040-be
     # specific tests (StartupExposurePayloadPolicyTest) + 19 agent command +
     # 7 install branch.
-    digest: sha256:ff312c83b54cc013edd763ad4529d910414456d1af5084cf4ed57c5f5e2d6a2c
+    #
+    # 2026-06-02 update: BE-024b outdated-software diff endpoint (PR #372).
+    # Faz 22.5 P2-A slice-3 A-lite. NO new migration. New endpoint
+    # GET /endpoint-devices/{deviceId}/outdated-software/diff mirrors
+    # BE-024 4-status enum (OK/NO_CHANGE/INSUFFICIENT_HISTORY/NO_HISTORY)
+    # but with AG-036-specific identity (canonical packageId.toLowerCase)
+    # and 4 change types (ADDED/REMOVED/VERSION_CHANGED/AVAILABLE_
+    # VERSION_BUMPED). Wire fields strict subset: packageId,
+    # installedVersion, availableVersion. NO_CHANGE = package-map delta
+    # empty (NOT hash fast-path). Duplicate canonical key fails loud.
+    # OutdatedSnapshotTruncation.isPossiblyTruncated() consistent
+    # truncation hint (Codex 019e8542 iter-3 P1 absorb). Codex iter-4
+    # AGREE ready_to_merge (0 must_fix). 18 endpoint-admin tests pass
+    # (10 service + 8 controller incl new diff route smoke).
+    #
+    # Image build run: gh run view 26786574935 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-4057a79
+    #   digest sha256:b9b647032b2d22fff9da4154d0c82bcb6c67a5c57ee4ead21b45c2de8f8eea62
+    digest: sha256:b9b647032b2d22fff9da4154d0c82bcb6c67a5c57ee4ead21b45c2de8f8eea62
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
