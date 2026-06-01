@@ -1,0 +1,316 @@
+#!/usr/bin/env bash
+# scripts/test/board-sync-verify-pat-missing.sh
+#
+# Offline harness for `scripts/board-sync.sh verify` PAT-missing fallback
+# (#1085, Codex 019e8079 must_fix #4). Drives the verify subcommand under
+# a synthetic `gh` shim that records every call and produces deterministic
+# responses for the five PAT-state scenarios:
+#
+#   1. PAT present (canonical):           Project API touched, board moves.
+#   2. PAT missing, same-repo ref:        comment-only, no Project API.
+#   3. PAT missing, cross-repo ref:       skipped with warning.
+#   4. PAT missing, repeated EVIDENCE:    idempotent (no duplicate comment).
+#   5. Both tokens empty (workflow bug):  workflow-level guard, asserted
+#                                         by inspecting the workflow file.
+#
+# All five scenarios run hermetically — no GitHub network access — so a
+# regression that re-introduces a Project API call on the PAT-missing
+# branch is caught locally instead of waiting for a real merge.
+#
+# Usage:
+#   bash scripts/test/board-sync-verify-pat-missing.sh
+#
+# Exit 0 on success, 1 on any failure.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+BOARD_SYNC="$REPO_ROOT/scripts/board-sync.sh"
+WORKFLOW="$REPO_ROOT/.github/workflows/board-pr-evidence.yml"
+
+# Each test gets its own work dir + its own GH_LOG so calls don't bleed.
+WORK="$(mktemp -d -t board-sync-test.XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT
+
+# ---------------------------------------------------------------------------
+# fake gh shim — logs every invocation; the dispatch table below decides what
+# to print for each invocation. The script writes to:
+#   $GH_LOG  — full argv per call (newline-separated)
+#   stdout   — whatever the scenario's table says
+# Project API calls must NOT happen on PAT-missing paths; the test asserts
+# that by grepping the log.
+# ---------------------------------------------------------------------------
+FAKE_GH="$WORK/bin/gh"
+mkdir -p "$WORK/bin"
+cat >"$FAKE_GH" <<'FAKE_GH_EOF'
+#!/usr/bin/env bash
+# fake gh — driven by $GH_FAKE_MODE
+set -euo pipefail
+
+# Record the invocation (argv joined with spaces, one per line).
+{
+  printf '%s' "$*"
+  printf '\n'
+} >>"${GH_LOG:-/dev/null}"
+
+# auth status: always pass (we treat token presence as "valid").
+if [ "${1:-}" = "auth" ] && [ "${2:-}" = "status" ]; then
+  exit 0
+fi
+
+case "${GH_FAKE_MODE:-}" in
+  pat-present)
+    # Full path: project view, item-list, issue view (no comments),
+    # issue comment (new), issue view (body), issue edit, item-edit.
+    if [ "${1:-}" = "project" ] && [ "${2:-}" = "view" ]; then
+      printf '{"id":"PVT_kwHOCx7tY84BIN2d","number":2}\n'
+      exit 0
+    fi
+    if [ "${1:-}" = "project" ] && [ "${2:-}" = "item-list" ]; then
+      cat <<'ITEMS_EOF'
+{"items":[{"id":"PVTI_test_42","content":{"type":"Issue","number":42,"url":"https://github.com/Halildeu/platform-k8s-gitops/issues/42"},"status":"In Progress","kind":"","title":"test issue 42"}]}
+ITEMS_EOF
+      exit 0
+    fi
+    if [ "${1:-}" = "issue" ] && [ "${2:-}" = "view" ]; then
+      # comments lookup → empty; body lookup → no agent-state
+      for arg in "$@"; do
+        if [ "$arg" = "comments" ]; then
+          printf '{"comments":[]}\n'
+          exit 0
+        fi
+      done
+      printf '{"body":"no agent state here"}\n'
+      exit 0
+    fi
+    if [ "${1:-}" = "issue" ] && [ "${2:-}" = "comment" ]; then exit 0; fi
+    if [ "${1:-}" = "issue" ] && [ "${2:-}" = "edit" ]; then exit 0; fi
+    if [ "${1:-}" = "project" ] && [ "${2:-}" = "item-edit" ]; then exit 0; fi
+    ;;
+
+  pat-present-repair)
+    # Codex 019e8079 iter-2 P1: pre-existing EVIDENCE comment, PAT now
+    # present, board still In Progress. The fixed cmd_verify must skip
+    # the comment but still move the board.
+    if [ "${1:-}" = "project" ] && [ "${2:-}" = "view" ]; then
+      printf '{"id":"PVT_kwHOCx7tY84BIN2d","number":2}\n'; exit 0
+    fi
+    if [ "${1:-}" = "project" ] && [ "${2:-}" = "item-list" ]; then
+      cat <<'ITEMS_EOF'
+{"items":[{"id":"PVTI_test_42","content":{"type":"Issue","number":42,"url":"https://github.com/Halildeu/platform-k8s-gitops/issues/42"},"status":"In Progress","kind":"","title":"test issue 42"}]}
+ITEMS_EOF
+      exit 0
+    fi
+    if [ "${1:-}" = "issue" ] && [ "${2:-}" = "view" ]; then
+      for arg in "$@"; do
+        if [ "$arg" = "comments" ]; then
+          # canonical idempotency marker (matches the EVIDENCE shape
+          # that the PAT-missing run would have posted)
+          printf '{"comments":[{"body":"EVIDENCE type=pr-merged pr_repo=Halildeu/platform-k8s-gitops pr=99 issue_repo=Halildeu/platform-k8s-gitops at=2026-06-01T00:00:00Z"}]}\n'
+          exit 0
+        fi
+      done
+      printf '{"body":"no agent state here"}\n'; exit 0
+    fi
+    if [ "${1:-}" = "issue" ] && [ "${2:-}" = "comment" ]; then
+      echo "fake gh: repair path must NOT post a comment (EVIDENCE already present)" >&2
+      exit 99
+    fi
+    if [ "${1:-}" = "issue" ] && [ "${2:-}" = "edit" ]; then exit 0; fi
+    if [ "${1:-}" = "project" ] && [ "${2:-}" = "item-edit" ]; then exit 0; fi
+    ;;
+
+  pat-missing-same-repo)
+    # Comment-only path: issue view (no comments), issue view (number
+    # exists), issue comment. NO project/* calls allowed.
+    if [ "${1:-}" = "project" ]; then
+      echo "fake gh: project API forbidden on PAT-missing path" >&2
+      exit 99
+    fi
+    if [ "${1:-}" = "issue" ] && [ "${2:-}" = "view" ]; then
+      for arg in "$@"; do
+        case "$arg" in
+          comments) printf '{"comments":[]}\n'; exit 0 ;;
+          number)   printf '{"number":42}\n';    exit 0 ;;
+        esac
+      done
+      printf '{}\n'; exit 0
+    fi
+    if [ "${1:-}" = "issue" ] && [ "${2:-}" = "comment" ]; then exit 0; fi
+    ;;
+
+  pat-missing-cross-repo)
+    # Even tighter: cross-repo ref is detected pre-call. We should never
+    # touch the network for a cross-repo skip. Any gh call besides
+    # `auth status` is a test failure.
+    if [ "${1:-}" = "issue" ] || [ "${1:-}" = "project" ]; then
+      echo "fake gh: cross-repo skip must not call any gh subcommand" >&2
+      exit 99
+    fi
+    ;;
+
+  pat-missing-idempotent)
+    # Same-repo path with a pre-existing EVIDENCE comment carrying the
+    # canonical idempotency key. Should short-circuit before any comment
+    # post.
+    if [ "${1:-}" = "project" ]; then
+      echo "fake gh: project API forbidden on PAT-missing path" >&2
+      exit 99
+    fi
+    if [ "${1:-}" = "issue" ] && [ "${2:-}" = "view" ]; then
+      for arg in "$@"; do
+        case "$arg" in
+          comments)
+            printf '{"comments":[{"body":"EVIDENCE type=pr-merged pr_repo=Halildeu/platform-k8s-gitops pr=99 issue_repo=Halildeu/platform-k8s-gitops at=2026-06-01T00:00:00Z"}]}\n'
+            exit 0
+            ;;
+          number) printf '{"number":42}\n'; exit 0 ;;
+        esac
+      done
+      printf '{}\n'; exit 0
+    fi
+    if [ "${1:-}" = "issue" ] && [ "${2:-}" = "comment" ]; then
+      echo "fake gh: idempotent path must NOT post a comment" >&2
+      exit 99
+    fi
+    ;;
+
+  *)
+    echo "fake gh: GH_FAKE_MODE='${GH_FAKE_MODE:-}' unknown" >&2
+    exit 98
+    ;;
+esac
+FAKE_GH_EOF
+chmod +x "$FAKE_GH"
+
+# Stub jq too? Real jq is fine and present on every CI runner; keep it.
+PATH="$WORK/bin:$PATH"
+export PATH
+
+# ---------------------------------------------------------------------------
+# Test runner — each scenario sets up its env, runs board-sync.sh verify,
+# asserts on the gh call log + the exit status.
+# ---------------------------------------------------------------------------
+pass=0
+fail=0
+run_case() {
+  local name="$1" mode="$2" expected_rc="$3"
+  shift 3
+  local log
+  log="$WORK/$name.log"
+
+  GH_LOG="$log" \
+  GH_FAKE_MODE="$mode" \
+  bash "$BOARD_SYNC" "$@" 2>"$WORK/$name.stderr"
+  local rc=$?
+
+  if [ "$rc" -eq "$expected_rc" ]; then
+    pass=$((pass + 1))
+    printf '  ✓ %s\n' "$name"
+  else
+    fail=$((fail + 1))
+    printf '  ✗ %s — expected rc=%d got rc=%d\n' "$name" "$expected_rc" "$rc"
+    printf '    stderr: %s\n' "$(head -5 "$WORK/$name.stderr" | tr '\n' ' ')"
+  fi
+
+  # Each test owns post-conditions — record them in $LAST_LOG for the
+  # caller to inspect with grep.
+  LAST_LOG="$log"
+}
+
+assert_log_contains() {
+  if grep -q "$1" "$LAST_LOG"; then
+    printf '    ✓ log contains: %s\n' "$1"
+  else
+    fail=$((fail + 1))
+    printf '    ✗ log MISSING: %s\n' "$1"
+    printf '      log was: %s\n' "$(tr '\n' '|' <"$LAST_LOG" | head -c 200)"
+  fi
+}
+
+assert_log_lacks() {
+  if grep -q "$1" "$LAST_LOG"; then
+    fail=$((fail + 1))
+    printf '    ✗ log SHOULD NOT contain: %s\n' "$1"
+  else
+    printf '    ✓ log clean of: %s\n' "$1"
+  fi
+}
+
+printf 'board-sync.sh verify — PAT-missing harness (Codex 019e8079 must_fix #4)\n'
+printf -- '----------------------------------------------------------------------\n'
+
+# Scenario 1: PAT present (happy path)
+printf '\n[1] PAT present — full path uses Project API\n'
+unset BOARD_PAT_PRESENT
+export BOARD_PAT_PRESENT=1
+run_case "pat-present" "pat-present" 0 \
+  verify "https://github.com/Halildeu/platform-k8s-gitops/issues/42" \
+  --pr 99 --pr-repo "Halildeu/platform-k8s-gitops"
+assert_log_contains "project view"
+assert_log_contains "project item-list"
+assert_log_contains "issue comment"
+# Codex 019e8079 iter-2 nit: also assert the full path actually moves
+# the board (project item-edit) — earlier this was implicit.
+assert_log_contains "project item-edit"
+
+# Scenario 2: PAT missing, same-repo ref
+printf '\n[2] PAT missing, same-repo — comment-only, NO Project API\n'
+export BOARD_PAT_PRESENT=""
+run_case "pat-missing-same" "pat-missing-same-repo" 0 \
+  verify "https://github.com/Halildeu/platform-k8s-gitops/issues/42" \
+  --pr 99 --pr-repo "Halildeu/platform-k8s-gitops"
+assert_log_contains "issue comment"
+assert_log_lacks "project view"
+assert_log_lacks "project item-list"
+assert_log_lacks "project item-edit"
+assert_log_lacks "issue edit"   # body rewrite must be skipped (drift guard)
+
+# Scenario 3: PAT missing, cross-repo ref
+printf '\n[3] PAT missing, cross-repo — skip with warning, no network\n'
+export BOARD_PAT_PRESENT=""
+run_case "pat-missing-cross" "pat-missing-cross-repo" 0 \
+  verify "https://github.com/Halildeu/platform-backend/issues/99" \
+  --pr 99 --pr-repo "Halildeu/platform-k8s-gitops"
+# Allow `gh auth status` (single call) but NO issue/project calls.
+if grep -E "^(issue|project) " "$LAST_LOG" >/dev/null 2>&1; then
+  fail=$((fail + 1))
+  printf '    ✗ cross-repo skip should have made no issue/project gh calls\n'
+else
+  printf '    ✓ no issue/project gh calls (cross-repo skip clean)\n'
+fi
+
+# Scenario 4: PAT missing, repeated EVIDENCE (idempotent)
+printf '\n[4] PAT missing, idempotent — pre-existing EVIDENCE → no new comment\n'
+export BOARD_PAT_PRESENT=""
+run_case "pat-missing-idem" "pat-missing-idempotent" 0 \
+  verify "https://github.com/Halildeu/platform-k8s-gitops/issues/42" \
+  --pr 99 --pr-repo "Halildeu/platform-k8s-gitops"
+assert_log_lacks "issue comment"
+assert_log_contains "issue view"
+
+# Scenario 5: PAT-present REPAIR — comment already exists, board still moves.
+# Codex 019e8079 iter-2 P1: idempotency must skip the comment but still let
+# body rewrite + board Status mutation run. Without this case the earlier
+# implementation silently no-op'd the board move on every repair run.
+printf '\n[5] PAT present REPAIR — comment exists → no new comment, board STILL moves\n'
+export BOARD_PAT_PRESENT=1
+run_case "pat-present-repair" "pat-present-repair" 0 \
+  verify "https://github.com/Halildeu/platform-k8s-gitops/issues/42" \
+  --pr 99 --pr-repo "Halildeu/platform-k8s-gitops"
+assert_log_lacks "issue comment"
+assert_log_contains "project item-edit"
+
+# Scenario 6: Workflow guard — assert both-token-empty trips the workflow
+# (file-level grep; the actual run is gated by GitHub Actions).
+printf '\n[6] Workflow guard — empty-token branch fails loudly\n'
+if grep -q "GH_TOKEN is empty" "$WORKFLOW"; then
+  pass=$((pass + 1))
+  printf '  ✓ workflow has empty-GH_TOKEN ::error:: guard\n'
+else
+  fail=$((fail + 1))
+  printf '  ✗ workflow MISSING empty-GH_TOKEN ::error:: guard\n'
+fi
+
+printf '\n----------------------------------------------------------------------\n'
+printf 'pass=%d fail=%d\n' "$pass" "$fail"
+exit "$fail"

@@ -393,8 +393,35 @@ eligible değildir, triage bekler.
 
 İter-1 disiplin + script üzerine, iter-2 iki GitHub Action ekler (Codex
 `019e3a0d` AGREE). Her ikisi de **thin wrapper** — tüm board-mutation mantığı
-`board-sync.sh`'de kalır. Auth: `ADD_TO_PROJECT_PAT` secret; workflow
-`permissions: contents: read` (yalnız checkout), mutasyonlar PAT ile.
+`board-sync.sh`'de kalır. Auth: `ADD_TO_PROJECT_PAT` secret canonical;
+`board-pr-evidence` workflow PAT-missing durumunda **GITHUB_TOKEN fallback**
+ile comment-only path'e düşer (#1085, Codex `019e8079`). Permissions:
+`contents: read` (checkout) + `issues: write` (GITHUB_TOKEN fallback
+EVIDENCE comment için); project mutasyonları yalnız PAT ile.
+
+### PAT-missing fallback davranışı (#1085)
+
+`ADD_TO_PROJECT_PAT` secret unset olduğunda workflow boş `GH_TOKEN`'la
+fail etmek yerine `secrets.GITHUB_TOKEN`'a düşer ve `BOARD_PAT_PRESENT=""`
+sinyalini script'e iletir. `board-sync.sh verify` bu sinyalle alternatif
+bir akışa girer:
+
+| Half | PAT seeded | PAT missing (CI fallback) |
+|---|---|---|
+| Same-repo `Tracked by` EVIDENCE comment | ✓ | ✓ (GITHUB_TOKEN repo-scope) |
+| Cross-repo `Tracked by` EVIDENCE comment | ✓ | ⏭ skip + warning (token cross-repo değil) |
+| Body `agent-state` → `needs-verify` | ✓ | ⏭ skip (board mutate edilmiyorken body drift'i önler) |
+| Board Status → `Needs Verify` | ✓ | ⏭ skip + step summary "Action required" |
+| Project API preflight / item-list | ✓ | ⏭ skip (Project API PAT-only) |
+
+Drift garantisi: PAT-missing path body'yi yazmaz **ve** board'u taşımaz —
+ikisi de tek bir authority altında. PAT seedlenince mevcut comment'ler
+idempotency anahtarıyla atlanır ve sadece body + board mutation çalışır.
+
+Offline harness: `scripts/test/board-sync-verify-pat-missing.sh` — fake
+`gh` shim ile 5 senaryoyu deterministic koşturur (PAT present /
+PAT-missing same-repo / cross-repo skip / idempotent / workflow guard).
+Yeni regression bu harness'la lokal yakalanır, gerçek merge beklemeden.
 
 **`.github/workflows/board-pr-evidence.yml`** — `pull_request: closed` (merged).
 PR body'sindeki `Tracked by <ref>` satırlarını parse eder, her ref için
