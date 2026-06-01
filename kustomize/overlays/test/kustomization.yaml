@@ -3398,18 +3398,41 @@ images:
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-8a2d091
     #   digest sha256:6d0ada3eed1ccd5da4113c1bd152493031fa1e4e6e65bc1024aa5026ace09c80
     #
-    # Verify after rollout (HARD RULE — BE-024 SoftwareDiffView):
-    #   1. Navigate to HALILKOOLUB735 → device drawer (MouseEvent
-    #      sequence: mousedown+mouseup+click on AG Grid cell)
-    #   2. "Yazılım Değişimleri" tab (Uygulama Kontrolü ↔ Yazılım Kat.)
-    #   3. Backend returns 200 with status enum (NEVER 404 even for
-    #      unknown/cross-tenant device — no-existence-leak contract)
-    #   4. data-status attr reflects backend status; data-total-entries
-    #      reflects sum of added/removed/versionChanged lists
-    #   5. Real-evidence chain: pre-snapshot includeSoftware=true →
-    #      operator install/uninstall → post-snapshot → diff observable
-    #      in this view AND via API (real BE-024 chain acceptance).
-    digest: sha256:6d0ada3eed1ccd5da4113c1bd152493031fa1e4e6e65bc1024aa5026ace09c80
+    # 2026-06-02 update: BE-025 ProhibitedSoftwareView web view
+    # (PR #732). Faz 22.5 P2-A slice-2. Adds "Yasaklı Yazılım" drawer
+    # tab between "Yazılım Değişimleri" and "Yazılım Kataloğu"
+    # rendering the device denylist findings as 2-status enum (OK /
+    # NO_EVALUATION) with distinct copy for "OK with empty findings"
+    # (3rd UI state on a 2-status backend wire — operator can tell
+    # "evaluator ran, no matches" apart from "no evaluation yet").
+    # Decision badge (UNAUTHORIZED warn-tone) + evaluatedAt +
+    # truncated inventorySnapshotId in header. Findings table:
+    # ruleId truncated + matchType + matchMode + matchedName +
+    # matchedPublisher (null → —) + matchedVersion (null → —).
+    # ADVERSARIAL GUARDRAILS: NO automatic-uninstall/remediation/
+    # block CTA; fully read-only (0 buttons); copy stays at "tespit
+    # edildi / detected" level. Codex 019e84ca slice-2 AGREE
+    # ready_to_merge (0 must_fix). 53 vitest pass (11
+    # ProhibitedSoftwareView + 42 i18n contract drift detectors).
+    #
+    # Image build run: gh run view 26782106142 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-4830391
+    #   digest sha256:42ed217862e3670e425f49de252911995528bbb4b63399fa33ae6ee966723680
+    #
+    # Verify after rollout (HARD RULE — BE-025 ProhibitedSoftwareView):
+    #   1. Navigate to HALILKOOLUB735 → device drawer (MouseEvent seq)
+    #   2. "Yasaklı Yazılım" tab visible between "Yazılım Değişimleri"
+    #      and "Yazılım Kataloğu"
+    #   3. Backend returns 200 with status enum (NEVER 404 — BE-025
+    #      no-existence-leak; NO_EVALUATION for unknown/cross-tenant)
+    #   4. data-status attr reflects backend status; data-findings-
+    #      count reflects findings.length; data-unauthorized reflects
+    #      decision==UNAUTHORIZED
+    #   5. NO button elements rendered (adversarial guardrail check)
+    #   6. Real-evidence chain: seed benign lab denylist rule →
+    #      compliance evaluation triggered → finding visible in
+    #      view AND via API
+    digest: sha256:42ed217862e3670e425f49de252911995528bbb4b63399fa33ae6ee966723680
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
