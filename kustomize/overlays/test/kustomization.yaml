@@ -3230,14 +3230,64 @@ images:
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-e9212de
     #   digest sha256:48de554c8112e14c4151880ec1562ba371597a7ff4a88ab72e71e9f07ca50472
     #
-    # Verify after rollout (HARD RULE):
-    #   1. Navigate to HALILKOOLUB735 device drawer → "Başlangıç + Maruziyet" tab
-    #   2. 404 empty state with `includeStartupExposure:true` hint visible
-    #   3. data-testid="startup-exposure-empty" present + console clean
-    #   4. After agent COLLECT_INVENTORY with includeStartupExposure:true:
-    #      startup-apps table (location enum chips + enabled/disabled +
-    #      REGISTRY/SCHEDULED_TASK origin chips) + exposure-summary panel
-    #      (RDP + Firewall event-log tri-state badges) + probeErrors if present
+    # Verify after rollout (HARD RULE — AG-039 ServicesView):
+    #   1. Navigate to HALILKOOLUB735 device drawer → "Hizmetler" tab
+    #   2. 404 empty state with `includeServices:true` hint visible
+    #   3. data-testid="services-empty" present + console clean
+    #   4. After agent COLLECT_INVENTORY with includeServices:true:
+    #      6-row table with state badges (RUNNING/STOPPED/DISABLED/
+    #      UNKNOWN) + startup chips (AUTO/AUTO_DELAYED/MANUAL/DISABLED
+    #      = danger / UNKNOWN) + probeErrors if present
+    #
+    # 2026-06-01 update: sha-e9212de — platform-web PR #729 MERGED
+    # (AG-040 startup-apps + exposure summary drawer view).
+    # Final missing link of the Faz 22.5 AG-040 zinciri:
+    #   - Agent AG-040 probe: MERGED (commit 92320cd)
+    #   - Backend AG-040-be V25 ingest+query: MERGED (commit b6daaee2)
+    #   - WEB AG-040 view: THIS deploy
+    # NOTE: AG-040 = startup-apps + exposure summary (NOT Application
+    # Control — that's renumbered to AG-041 per Codex 019e83a6 plan-time
+    # P0 absorb: V25 + AG-040 lane already taken by startup-exposure).
+    #
+    # StartupExposureView read-only "Başlangıç + Maruziyet" / "Startup
+    # + Exposure" tab positioned between "Hizmetler" and "Yazılım
+    # Kataloğu". 10-slot canonical autorun-anchor allowlist (HKLM/HKCU
+    # Run/RunOnce/Wow6432 + common/user Startup folder + TaskScheduler
+    # root/MS-Windows/custom) + RDP + firewall event-log exposure
+    # scalars.
+    #
+    # Codex 019e83a6 3-iter REVISE→REVISE→AGREE absorb (9 + 3 must_fix):
+    #   1. AG-040/AG-041 numbering disambiguation
+    #   2-5. Mirror AG-038/AG-039 precedents (currentData anchor + fail-
+    #      closed inside view container + plain-text XSS + DICT_EN
+    #      parity + tab key + lazy import without thin wrapper)
+    #   6. probeErrors.source = StartupAppLocation enum
+    #   7-9. iter-2 P1: fail-closed exposure-scalar evidence helpers
+    #      (getEffectiveRdpEnabled + getEffectiveFirewallEventLogEnabled
+    #      flip badge to unknown on RDP_PROBE_FAILED / FIREWALL_PROBE_
+    #      FAILED / NO_EVIDENCE / supported=false); per-scalar polarity
+    #      split (RDP enabled=warning + disabled=success; firewall log
+    #      enabled=success + disabled=warning); source type
+    #      StartupAppLocation enum + i18n location label render
+    # 423/423 vitest pass.
+    #
+    # Image build run: gh run view 26765267931 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-e9212de
+    #   digest sha256:48de554c8112e14c4151880ec1562ba371597a7ff4a88ab72e71e9f07ca50472
+    #
+    # Verify after rollout (HARD RULE — AG-040 StartupExposureView):
+    #   1. Navigate to HALILKOOLUB735 → device drawer (MouseEvent
+    #      sequence: mousedown+mouseup+click on AG Grid cell, NOT
+    #      bare .click() — pattern learned from AG-039 smoke)
+    #   2. "Başlangıç + Maruziyet" tab (Hizmetler ↔ Yazılım Kataloğu)
+    #   3. 404 empty state with `includeStartupExposure:true` hint
+    #   4. data-testid="startup-exposure-empty" + console clean
+    #   5. After agent COLLECT_INVENTORY with includeStartupExposure:
+    #      true: meta + exposure-summary panel (RDP + firewall-event-
+    #      log tri-state badges with polarity-aware tones) + 10-slot
+    #      apps table (location enum chip + enabled tri-state +
+    #      probeOrigin REGISTRY/SCHEDULED_TASK chip) + probeErrors
+    #      (source via location i18n label)
     digest: sha256:48de554c8112e14c4151880ec1562ba371597a7ff4a88ab72e71e9f07ca50472
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
