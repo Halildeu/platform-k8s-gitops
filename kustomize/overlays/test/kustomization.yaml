@@ -3084,7 +3084,44 @@ images:
     # alınmadı; COLLECT_INVENTORY includeHotfixPosture:true ile İşlemler
     # tab'ından tetikleyin) gating the read path until an agent payload
     # ingest produces the first snapshot.
-    digest: sha256:f9e16de7cc654d1466f071448fc078cab2a409201fc84f657138791c0f0268fc
+    #
+    # 2026-06-01 update: sha-4cedd44 — platform-web PR #726 MERGED
+    # (WEB-014D-followup "Kurulumu Onayla" silik regression fix).
+    # 3-layer Codex 019e830b REVISE → AGREE absorb:
+    #   1. idempotencyKey first-paint race fixed via useLayoutEffect
+    #      (was useState('') + post-paint useEffect → empty key visible
+    #      on first paint when lazy React.Suspense delayed the effect)
+    #   2. preflightFetching removed from confirmDisabled + body keeps
+    #      last-known PASS during refetch (anti-stale relies on
+    #      currentData-anchored effectivePreflight + backend 409 BLOCK
+    #      recompute path that flips modal to localBlock via
+    #      tryReadBlockRecompute(error.data))
+    #   3. confirmDisabledReason single source-of-truth + production-
+    #      visible data-confirm-disabled-reason DOM attribute
+    #      (ok|loading|no-data|block|in-flight|no-key) + orthogonal
+    #      data-preflight-fetching for refetch state observability
+    # 333/333 vitest pass, eslint clean, vite build OK, Codex AGREE
+    # ready_to_merge: true; Cross-AI provider-distinct.
+    #
+    # Image build run: gh run view 26754797939 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-4cedd44
+    #   digest sha256:b28e799a9be94402cbac0b36c525d4653bd38e9859262b06a08a1ce3ae66eab5
+    #
+    # Verify after rollout (HARD RULE — Tarayıcıdan sonuç doğrulanmadan
+    # iş bitmedi + Deploy Sonrası Tarayıcı Console Verifikasyonu):
+    #   1. Navigate to HALILKOOLUB735 (UUID d0efb00a-...) device drawer
+    #      → Yazılım Kataloğu tab
+    #   2. Click "Kur" on a not-installed catalog row → modal opens
+    #      with PASS badge + "Kurulumu Onayla" CONFIRM BUTTON ENABLED
+    #      (was disabled / "silik" in pre-#726 build)
+    #   3. DOM inspect (F12): confirm button carries
+    #      data-confirm-disabled-reason="ok"
+    #   4. POST /endpoint-admin/.../installs returns 201 CREATED;
+    #      modal closes + "Son Kurulumlar" panel refreshes (30s poll)
+    #
+    # Prior pin (2026-05-31, superseded): sha-7e0999d /
+    #   sha256:f9e16de7cc654d1466f071448fc078cab2a409201fc84f657138791c0f0268fc
+    digest: sha256:b28e799a9be94402cbac0b36c525d4653bd38e9859262b06a08a1ce3ae66eab5
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
