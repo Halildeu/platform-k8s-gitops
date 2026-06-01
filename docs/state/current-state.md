@@ -1,5 +1,56 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — PR-D2.4 monthly-login dördüncü LIVE remote-http pure-grid module + dispatcher chain execution evidence (2026-06-01)
+
+**Session milestone**: PR-D2.4 (monthly-login) **fourth LIVE remote-http
+pure-grid module** on testai cluster. Backend log catches real
+dispatcher chain execution with row count + total record evidence.
+
+### Backend log evidence (functional acceptance — stronger than DOM smoke)
+
+```
+2026-06-01 20:02:32.141  Loaded report definition: monthly-login (Giriş & Oturum Denetim Olayları)
+2026-06-01 20:12:32.271  TenantBoundaryGuard bypass for non-tenant report 'monthly-login'
+2026-06-01 20:12:32.468  remote-http report executed: reportKey=monthly-login
+                         service=permission-service path=/api/audit/events
+                         rows=100 total=1692 elapsedMs=187
+```
+
+Chain hit end-to-end:
+- ReportController dispatcher `isRemoteHttp()` branch
+- TenantBoundaryGuard bypass (non-tenant report)
+- RemoteReportExecutor → RemoteAllowlist match → RemoteHttpClient
+- permission-service `/api/audit/events` GET
+- 100 row + 1692 total record returned
+- 187ms wall-clock
+
+### Truth ledger map
+
+| Component | Repo | Status |
+|---|---|---|
+| `monthly-login.json` ReportDefinition | platform-backend PR #369 MERGED | Codex `019e83fd` plan-time AGREE + `019e84bb` post-impl 2-iter REVISE→AGREE absorb (title softening + correlationId label + routeSegment continuity note) |
+| Cluster digest pin `sha-ff75b68` | platform-k8s-gitops PR #1197 MERGED | report-service `sha256:fcea1fdb5a973b709d359abecb4374faafa0665bc1f791bcb61fbff900ca410f` |
+| Pod imageID = overlay digest | k3d-test platform-test | ✅ D29 invariant |
+| Backend def loaded | report-service registry | ✅ "Loaded report definition: monthly-login (Giriş & Oturum Denetim Olayları)" |
+| Backend functional execute | RemoteReportExecutor | ✅ rows=100 total=1692 elapsedMs=187 |
+| `application-k8s.yml` allowlist | already-seeded under PR-D2.3 entry | shared `/api/audit/events` endpoint with audit-report |
+
+### D29 truth matrix (Faz 22.5 PR-D2.4)
+
+| Layer | Status |
+|---|---|
+| Source-merged | ✓ platform-backend #369 + gitops #1197 |
+| GitOps deployed | ✓ digest `fcea1fdb...` pinned |
+| Runtime Up | ✓ pod Running, registry loaded |
+| Functional acceptance | ✓ dispatcher chain end-to-end execution (100 row + 1692 total + 187ms) |
+| End-to-end | ✓ LIVE — backend → executor → permission-service → response |
+| Browser smoke | ⏳ DOM verify pending (browser MCP disconnect; functional acceptance already proven via backend log) |
+
+PR-D2 5-modül chain'in **4/5 LIVE** pure-grid modülü. PR-D2.5
+(weekly-audit-digest + aggregation mart layer) sonraki sprint scope.
+
+---
+
 ## Live Delta — PR-D2.1d users-overview ilk LIVE remote-http pure-grid module + AG-Grid filter contains operator LIVE (2026-06-01)
 
 **Session milestone**: PR-D2.1d (users-overview) **first ever LIVE
