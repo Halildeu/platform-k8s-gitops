@@ -3326,20 +3326,37 @@ images:
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-e9212de
     #   digest sha256:48de554c8112e14c4151880ec1562ba371597a7ff4a88ab72e71e9f07ca50472
     #
-    # Verify after rollout (HARD RULE — AG-040 StartupExposureView):
+    # 2026-06-01 update: AG-041 Application Control web view (PR #730).
+    # Adds "Uygulama Kontrolü" drawer tab after "Başlangıç + Maruziyet"
+    # rendering WDAC mode badge + 4 WDAC evidence tri-state rows +
+    # 5 AppLocker per-collection chips + AppIDSvc state/startup/present
+    # + probeErrors. IslemlerTab COLLECT_INVENTORY default extended
+    # with includeAppControl:true (10 bits). Wire contract: 20-key
+    # stable surface, nullable evidence preserved, redaction boundary
+    # (no policyName/ruleId/exePath/signerThumbprint/publisher). Codex
+    # 019e8430 iter-2 AGREE (i18n namespace bug absorbed at iter-1).
+    # 25/25 vitest pass (15 AppControlView + 10 IslemlerTab). CI 24
+    # checks pass + 2 skip on commit 6b67269a.
+    #
+    # Image build run: gh run view 26777819616 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-6b67269
+    #   digest sha256:fc0fd5cfb3552591dc06a90a5a227ff95bf42a08759405fc8ba2bb280f4684a7
+    #
+    # Verify after rollout (HARD RULE — AG-041 AppControlView):
     #   1. Navigate to HALILKOOLUB735 → device drawer (MouseEvent
     #      sequence: mousedown+mouseup+click on AG Grid cell, NOT
-    #      bare .click() — pattern learned from AG-039 smoke)
-    #   2. "Başlangıç + Maruziyet" tab (Hizmetler ↔ Yazılım Kataloğu)
-    #   3. 404 empty state with `includeStartupExposure:true` hint
-    #   4. data-testid="startup-exposure-empty" + console clean
-    #   5. After agent COLLECT_INVENTORY with includeStartupExposure:
-    #      true: meta + exposure-summary panel (RDP + firewall-event-
-    #      log tri-state badges with polarity-aware tones) + 10-slot
-    #      apps table (location enum chip + enabled tri-state +
-    #      probeOrigin REGISTRY/SCHEDULED_TASK chip) + probeErrors
-    #      (source via location i18n label)
-    digest: sha256:48de554c8112e14c4151880ec1562ba371597a7ff4a88ab72e71e9f07ca50472
+    #      bare .click() — pattern learned from AG-039/040 smoke)
+    #   2. "Uygulama Kontrolü" tab (Başlangıç + Maruziyet ↔ Yazılım Kat.)
+    #   3. 404 empty state with `includeAppControl:true` operator hint
+    #   4. data-testid="app-control-view-empty" + console clean
+    #   5. After agent COLLECT_INVENTORY with includeAppControl:true:
+    #      meta + WDAC panel (mode badge + 4 evidence rows) +
+    #      AppLocker panel (5 chips + AppIDSvc state/startup/present
+    #      tri-state) + probeErrors table (rowOrdinal + code + source
+    #      fallback "—" + summary fallback "—"). Non-Windows agent →
+    #      fail-closed with data-fully-evaluable="false" + NO_EVIDENCE
+    #      row visible AS evidence.
+    digest: sha256:fc0fd5cfb3552591dc06a90a5a227ff95bf42a08759405fc8ba2bb280f4684a7
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
