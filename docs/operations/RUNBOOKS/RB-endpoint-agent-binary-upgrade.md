@@ -328,9 +328,10 @@ amaçlı; source-of-truth değildir.
 function Set-ServiceEnvironmentEntry {
     param([string]$Name, [string]$Key, [string]$Value)
     $servicePath = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name"
+    $escapedKey = [regex]::Escape($Key)  # FINAL-NH-02 hardening
     $existing = (Get-ItemProperty -Path $servicePath -Name 'Environment' -ErrorAction SilentlyContinue).Environment
     if ($null -eq $existing) { $existing = @() }
-    $filtered = @($existing | Where-Object { $_ -notmatch "^$Key=" })
+    $filtered = @($existing | Where-Object { $_ -notmatch "^$escapedKey=" })
     $filtered += "$Key=$Value"
     Set-ItemProperty -Path $servicePath -Name 'Environment' -Value ([string[]]$filtered) -Type MultiString -ErrorAction Stop
 }
@@ -339,9 +340,10 @@ function Set-ServiceEnvironmentEntry {
 function Remove-ServiceEnvironmentEntry {
     param([string]$Name, [string]$Key)
     $servicePath = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name"
+    $escapedKey = [regex]::Escape($Key)  # FINAL-NH-02 hardening
     $existing = (Get-ItemProperty -Path $servicePath -Name 'Environment' -ErrorAction SilentlyContinue).Environment
     if ($null -eq $existing) { return }
-    $filtered = @($existing | Where-Object { $_ -notmatch "^$Key=" })
+    $filtered = @($existing | Where-Object { $_ -notmatch "^$escapedKey=" })
     if ($filtered.Count -eq 0) {
         Remove-ItemProperty -Path $servicePath -Name 'Environment' -ErrorAction SilentlyContinue
     } else {
@@ -575,7 +577,7 @@ Start-Service EndpointAgent -ErrorAction Stop
 | Service PID delta | `OldPid=<X> NewPid=<Y> (Y ≠ X assertion)` |
 | Wire shape | `supported=true, schemaVersion=1, dns ≥ 1, tcp ≥ 1, https ≥ 1` |
 | Token CONSUMED | `Web UI enrollments → CONSUMED + device bound` |
-| Machine env clear | `residual=null doğrulandı (Adım 7c)` |
+| Service env token clear + defensive Machine env clear | `HKLM:\SYSTEM\CurrentControlSet\Services\EndpointAgent\Environment içinde ENDPOINT_AGENT_ENROLLMENT_TOKEN yok (Adım 7d) + Machine residual=null (Adım 7e)` |
 | Token-less restart | `service Running + diagnose dolu (Adım 7e)` |
 | Backend snapshot | `device_id=<X> + log line + UI Toplama Zamanı ≤ 5min` |
 
@@ -622,6 +624,9 @@ Multi-operator pattern Faz 22.2 production runbook scope'unda.
 - **Codex iter-1**: `019e83ef-bc8e-71c3-ac6d-fb92e5d4235f` REVISE 9 must-fix
   + 3 nice-to-have (2026-06-01) — **absorb edildi** (MF-01..MF-09 +
   NH-01..NH-03)
+- **Codex iter-4 (FINAL)**: aynı thread **AGREE** verdict + 2 non-blocking
+  polish (FINAL-NH-01 acceptance table label + FINAL-NH-02 helper regex
+  hardening) — **absorb edildi** in iter-4 commit
 - **Codex iter-3**: aynı thread REVISE 3 must-fix + 1 nice-to-have —
   **absorb edildi** (R3-MF-01..R3-MF-03 + R3-NH-01):
   - R3-MF-01 Token transport service env regkey (HKLM\...\Services\EndpointAgent\Environment
