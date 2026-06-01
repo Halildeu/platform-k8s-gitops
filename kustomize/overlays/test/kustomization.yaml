@@ -308,7 +308,24 @@ images:
     # YOK — live zaten 6137bb2c. D30 imageID parity merge sonrası live pod
     # imageID == desired check'i ile EVIDENCE'lanır (bare "closed" değil).
     # Route fail-closed 401 değişmeden korunur.
-    digest: sha256:6137bb2cb39994aed3999958ac9b3b009c28565e5a80c467728dd368e5822003
+    #
+    # 2026-06-01 D30 drift-correction #2 (P2-FOLLOW-UP-5) — desired catch-
+    # up to live (Faz-21 PR-D3a side-effect). Build run 26747577138 (commit
+    # a87c645 = platform-backend PR-D3a hr-compensation-detay metadata-prep)
+    # 9-servis multi-build içinde api-gateway de yeniden derlendi:
+    #   pushing manifest for ghcr.io/halildeu/platform-backend-api-gateway:
+    #     sha-a87c645@sha256:ddf98382cd21f8113663b59d366cbd50c7a9ca2c4ab3ffa
+    #     6d088f16b79e8a905
+    # auto-deploy `deploy-backend-testai.yml` repository_dispatch (run
+    # 26747728617) imperative kubectl set image ile api-gateway'i sha-
+    # a87c645 tag'ine geçirdi (D30 immutable cutover-ready davranış: pod
+    # imageID containerd-resolved digest sha256:ddf98382). Overlay desired
+    # sha256:6137bb2c stale kaldı; bu PR'da reconcile. Cluster mutasyonu
+    # YOK — live zaten ddf98382. Tag-based fallback dead-code PR #1172 ile
+    # kaldırıldı, sonraki dispatch'lerde drift kaynağı sadece imperative
+    # `kubectl set image` repository_dispatch executor'ı kalır (ADR-0023
+    # planlı kalıcı çözüm gitops-level ArgoCD sync ayrı sprint).
+    digest: sha256:ddf98382cd21f8113663b59d366cbd50c7a9ca2c4ab3ffa6d088f16b79e8a905
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     # 2026-05-12 update: bump to sha-5bec7fb (platform-backend#159 — Codex
