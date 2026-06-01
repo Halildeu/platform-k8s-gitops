@@ -695,7 +695,28 @@ images:
     # FD6A92B2 pod). Overlay-live mismatch was the only outstanding
     # invariant violation (D30 immutable artifact: overlay digest MUST
     # equal pod imageID).
-    digest: sha256:fd6a92b299033cd3ec933fa780387ac811afff76b15d6c1a82d8ac52df036a72
+    #
+    # 2026-06-01 PR-D2.1d bump sha-2bfcbf6 (platform-backend PR #365
+    # MERGED): users-overview.json ReportDefinition (first remote-http
+    # report, execution.kind=remote-http, service=user-service, path=
+    # /api/v1/users, responseShape=paged-items-total) + schema execution
+    # exemption + application-k8s.yml allowlist seed (user-service:8089)
+    # + ReportController.getData search query param forwarding +
+    # ReportDefinitionContractTest drift guard 32→33.
+    #
+    # Build run 26765637159 success after rerun (first attempt: Checkout
+    # transient failure 4s). Image push pushing manifest for
+    # ghcr.io/halildeu/platform-backend-report-service:sha-2bfcbf6@
+    # sha256:65440bc763ff5af7f437f3eeeb96a68c1be65274e8fcf90794e361c58ebcbf06
+    #
+    # Codex thread 019e83bd: iter-1 REVISE (5 plan errors absorb) →
+    # iter-2 PARTIAL (port 8089 + drift guard + search forwarding +
+    # schema if/required) → iter post-impl AGREE final.
+    #
+    # 951/951 backend tests PASS. Cross-AI consensus (Implementer=Claude,
+    # Reviewer=Codex thread 019e83bd).
+    newTag: sha-2bfcbf6
+    digest: sha256:65440bc763ff5af7f437f3eeeb96a68c1be65274e8fcf90794e361c58ebcbf06
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
