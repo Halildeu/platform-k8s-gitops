@@ -731,8 +731,22 @@ images:
     #
     # 953/953 backend tests PASS. Cross-AI consensus (Codex 019e83f0).
     # D-chain progress: 2/5 LIVE pure-grid modules.
-    newTag: sha-384ea8f
-    digest: sha256:f59789c025e191da321e2f2c382052eab1b073167e9968c448c9d95ac50b87c3
+    #
+    # 2026-06-01 PR-D2.1c5 + PR-D2.3 combined bump sha-f3bb369
+    # (platform-backend PR #367 MERGED): paged-events-total + audit-events-v1
+    # widening (Codex 019e83fd AGREE WITH AMENDMENTS) + audit-report.json
+    # ReportDefinition (third LIVE remote-http, permission-service /api/audit/
+    # events) + audit-view alias + RemoteRequestNormalizationException typed
+    # 400 mapping.
+    #
+    # Build run 26769084363. Image push:
+    # ghcr.io/halildeu/platform-backend-report-service:sha-f3bb369@
+    # sha256:ad360a02bc3aff2b2f6dbe93c79f171abf0ca1303e42ef2c8f693cd7cb2daf2b
+    #
+    # 967/967 backend tests PASS (+14 c5/audit tests vs 953).
+    # D-chain progress: 3/5 LIVE pure-grid modules (post-deploy).
+    newTag: sha-f3bb369
+    digest: sha256:ad360a02bc3aff2b2f6dbe93c79f171abf0ca1303e42ef2c8f693cd7cb2daf2b
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
