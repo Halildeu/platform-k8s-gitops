@@ -1072,7 +1072,17 @@ images:
     # Öneriler/Etik shell header + sidebar Schema Explorer module gating.
     # main-forward: #236→#242 ara commit'leri (#237-#241) de taşınıyor.
     # Image build: merge commit bb66e1b7 (K6 DPO authz PR #303 + Layer-2 deny metric PR #301 + OpenFGA model PR #302, sha-bb66e1b).
-    digest: sha256:b8e0b2f73616f7d6add6da7e6925950cb697da7e20e24d3c43bc53c8a957ea04
+    #
+    # 2026-06-02 update: sha-58cf6f3 — platform-backend PR #373 (PR-D2.5a
+    # weekly-audit-digest source-owned aggregation endpoint
+    # GET /api/audit/events/digest; Codex `019e8708` AGREE option A
+    # constrained + iter-1 absorb `019e8721`: scope leak fix + identity
+    # fallback + timezone clamp + user param + Duration helpers).
+    # PR-D2.5 chain 5/5 source-owned aggregation foundation; consumer-side
+    # (report-service allowlist + normalizer) sıradaki PR-D2.5b.
+    # Image build run: 26805132068 (commit 58cf6f36, push 2026-06-02 07:29Z).
+    # GHCR manifest: ghcr.io/halildeu/platform-backend-permission-service:sha-58cf6f3
+    digest: sha256:822c636299785697ad337ef10f2d91dfa66d0e3c852b3cd9eb1145139d6287d8
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
