@@ -4163,7 +4163,59 @@ images:
     # Image build run: gh run view 26826248765 -R Halildeu/platform-backend
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-6fa713b
     #   digest sha256:307e8d4292a9b2d8cd7022239686a161e242cd8cdc60907fc1fc40b97e51a86f
-    digest: sha256:307e8d4292a9b2d8cd7022239686a161e242cd8cdc60907fc1fc40b97e51a86f
+    #
+    # 2026-06-02 update: BE-024c v2-c-pre diff summary cache foundation
+    # (PR #381 sha-fef46d9 / Codex 019e88b5 iter-7 AGREE ready_to_merge).
+    # Faz 22.5 P2-A v2-c-pre — V27 migration creates 2 cache tables for
+    # BE-024 software diff + BE-024b outdated-software diff summary cache.
+    # Tables stay EMPTY after deploy (write path arrives v2-c-pre-2 ayrı PR);
+    # grid LEFT JOIN cache miss = NULL projection per Codex iter-1 #7.
+    #
+    # V27 migration:
+    #   * ALTER endpoint_software_inventory_state_history ADD UNIQUE (id, tenant_id)
+    #     for software cache composite FK (V18 only indexed tenant+device).
+    #   * endpoint_software_diff_cache: PK id, UNIQUE (tenant, device),
+    #     device + source pair composite FKs ON DELETE CASCADE,
+    #     status enum (OK/NO_CHANGE/INSUFFICIENT_HISTORY/NO_HISTORY) +
+    #     added/removed/versionChanged counts CHECK >= 0,
+    #     status shape invariant (status pair matches source-id presence),
+    #     non-OK counts zero invariant.
+    #   * endpoint_outdated_software_diff_cache: same shape +
+    #     availableVersionBumpedCount (BE-024b 4th count).
+    #
+    # SoftwareDiffSummary + OutdatedDiffSummary records (ayrı; NO polymorphic
+    # Codex iter-3 guardrail). summarize(tenantId, deviceId) count-only walk
+    # on both diff services — drawer parity preserved (Codex iter-6 must_fix #1:
+    # digest mismatch + 0/0/0 walk returns OK with zero counts, NOT NO_CHANGE,
+    # to match canonical computeDiff() semantics).
+    #
+    # 71 endpoint-admin grid + diff cache tests pass: 52 grid baseline (no
+    # regression) + 9 DiffCacheConstraintsPostgresIntegrationTest (status
+    # shape + non-OK counts zero + composite FK CASCADE + UNIQUE) + 10
+    # SummarizePostgresIntegrationTest (NO_HISTORY/INSUFFICIENT_HISTORY/
+    # NO_CHANGE/OK/drawer parity edge/tenant isolation × software +
+    # NO_HISTORY/INSUFFICIENT_HISTORY/NO_CHANGE/tenant isolation × outdated).
+    # Cross-AI Codex 019e88b5 7-iter chain (REVISE → PARTIAL × 4 → AGREE
+    # → PARTIAL → AGREE 0 must_fix). All 13 CI checks green.
+    #
+    # Write path deferred ayrı PR (v2-c-pre-2): DiffCacheService.upsert*
+    # (native UPSERT ON CONFLICT), ingest hooks in
+    # EndpointSoftwareInventoryService.ingest() + EndpointOutdatedSoftwareService.ingest()
+    # (insert + identical-payload no-op paths), DiffCacheBackfillWorker
+    # (public @Transactional per-device), DiffCacheBackfillService (chunked
+    # tenant sweep), admin endpoint POST /api/v1/admin/diff-cache/backfill
+    # (@RequireModule(value, relation), JWT-resolved tenant context, NOT
+    # cross-tenant), PG IT (UPSERT idempotency + cache vs on-demand
+    # consistency + full sweep).
+    #
+    # Grid exposure deferred (v2-d): DeviceGridColumns SCHEMA_VERSION 4→5,
+    # 9 cache-fed colIds (software_diff_status + 3 counts + outdated_diff_status
+    # + 4 counts), LEFT JOIN cache tables.
+    #
+    # Image build run: gh run view 26828427755 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-fef46d9
+    #   digest sha256:cf08e400b962006d797d06067e6bcc4c093b3e99c866db7bcf7a8a19e9fd7532
+    digest: sha256:cf08e400b962006d797d06067e6bcc4c093b3e99c866db7bcf7a8a19e9fd7532
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
