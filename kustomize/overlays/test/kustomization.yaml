@@ -4242,7 +4242,28 @@ images:
     # Image build run: gh run view 26828427755 -R Halildeu/platform-backend
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-fef46d9
     #   digest sha256:cf08e400b962006d797d06067e6bcc4c093b3e99c866db7bcf7a8a19e9fd7532
-    digest: sha256:cf08e400b962006d797d06067e6bcc4c093b3e99c866db7bcf7a8a19e9fd7532
+    #
+    # 2026-06-02 Faz 22.7 D2.1 hotfix: bump to sha-f1795fa (platform-backend
+    # fef46d91→f1795fa6: PR #382 JDBC timestamp cast LIVE bug fix). Browser
+    # smoke 2026-06-02 caught ClassCastException on testai:
+    #   java.lang.ClassCastException: class java.time.Instant cannot be cast
+    #     to class java.sql.Timestamp
+    #     at EndpointComplianceGapService.findGaps(...:113)
+    # Root cause: Hibernate 6 + PG JDBC return TIMESTAMPTZ as OffsetDateTime
+    # (default) or Instant (alternate driver), NOT Timestamp; D2 impl blind
+    # cast → 500. D2.1 fix: static toInstant(Object) helper handles all 4
+    # documented variants (Timestamp, OffsetDateTime, Instant, LocalDateTime)
+    # + fail-loud on unknown. 14/14 unit tests PASS (10 original + 4 new
+    # regression guards). Cross-AI Codex 019e890f PARTIAL ready_to_merge=true
+    # (P1 follow-ups: post-merge LIVE smoke + D2.5 Testcontainers PG
+    # integration test deferred to separate slice). All 13 CI checks green.
+    # HARD RULE Tarayıcıdan Sonuç Doğrulanmadan: bug surfaced exactly via
+    # browser smoke on testai post-D3-deploy.
+    #
+    # Image build run: gh run view 26832476612 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-f1795fa
+    #   digest sha256:145c2270f180f5d1a90ecfa44c8f14019877cfd77317c8963a532676801f8487
+    digest: sha256:145c2270f180f5d1a90ecfa44c8f14019877cfd77317c8963a532676801f8487
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
