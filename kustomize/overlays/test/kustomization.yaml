@@ -4375,7 +4375,27 @@ images:
     #    service build itself SUCCESS — see job conclusion in workflow JSON)
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-04afee0
     #   digest sha256:1e8dcc4b92062f04d867bd8571df93896c20c24738a93980fdd566ec1fa8ad52
-    digest: sha256:1e8dcc4b92062f04d867bd8571df93896c20c24738a93980fdd566ec1fa8ad52
+    #
+    # 2026-06-03 WEB-015 v2-d grid SCHEMA v5 LANDED (PR #389 → sha-e0a2731):
+    # DeviceGridQueryBuilder LEFT JOIN endpoint_software_diff_cache + endpoint_outdated_software_diff_cache
+    # via qualified() helper (Codex 019e8a39 iter-1 must-fix #1 absorb) +
+    # DeviceGridColumns SCHEMA_VERSION 4→5 + 9 cache-fed colIds (4 software_diff_*
+    # + 5 outdated_diff_*) + DESC NULLS LAST on cache columns (Codex iter-1
+    # must-fix #2 absorb — PG DESC default is NULLS FIRST, cache-absent
+    # devices would pollute "top N" sort) + isCacheColumn() switch guard.
+    # Cross-AI Codex 019e8a39 iter-1 plan AGREE (2 must-fix) → iter-2 P1 absorb
+    # (stale v4 test pins in DeviceGridColumnsTest + DeviceGridExportAuditServiceTest
+    # + v5 registry coverage) → AGREE conditional on CI green. CI 13/13 PASS.
+    # Test surface 63/63 PASS local (DeviceGridQueryBuilderTest 36 + cache
+    # PG IT 7 + DeviceGridColumnsTest 17 + DeviceGridExportAuditServiceTest 3).
+    # Web mfe sibling PR follows in same rollout window (platform-web PR #740
+    # GRID_SCHEMA_VERSION 4→5 + 9 colDefs hidden-by-default + TR/EN i18n +
+    # null renderer "—" for cache-absent).
+    #
+    # Image build run: gh run view 26848316706 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-e0a2731
+    #   digest sha256:f9c1e3aa1d5adea353422030c0a91dd170c5c162ec373c31adde0b618976e602
+    digest: sha256:f9c1e3aa1d5adea353422030c0a91dd170c5c162ec373c31adde0b618976e602
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
