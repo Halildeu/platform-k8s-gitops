@@ -3587,7 +3587,32 @@ images:
     #   6. CSV "Ham veri" export → 6 new columns present in row 33 with
     #      audit metadata schemaVersion=4 + columnIdsHash (SHA-256
     #      lowercase hex over comma-joined column ids)
-    digest: sha256:3299c1310e2c1e1c0f69c6ada6ad933fe52aa1add999c001240cf5b6c0e13b34
+    #
+    # 2026-06-02 Faz 22.7 Path C3: bump to sha-ed72fcf (platform-web
+    # 228d2d97→ed72fcf9: PR #739 catalog detection-rule authoring UI).
+    # New surface: /endpoint-admin/catalog/items list + unified
+    # CatalogItemDrawer (new/edit modes) + DetectionRuleEditor with 5
+    # discriminated subforms (WINGET_PACKAGE / REGISTRY_UNINSTALL /
+    # FILE_EXISTS / FILE_SHA256 / FILE_VERSION) + VersionPredicate
+    # {EXACT, MIN, RANGE} with inclusivity flags. Path safety preview
+    # (table-driven, 14 reason codes mirroring backend +
+    # WindowsPathSafetyValidator + agent validateFilePathSafety).
+    # normalizeDetectionRule fail-closed on unknown shapes (Save
+    # disabled). New endpointAdminApi endpoints: getCatalogItem /
+    # createCatalogItem / updateCatalogItem with proper RTK tag
+    # invalidation. DICT_TR + DICT_EN parity (74 new keys). 974/974
+    # mfe-endpoint-admin tests PASS (190 net new C3-specific).
+    # Cross-AI Codex thread 019e8982 iter-3 AGREE ready_to_merge=true
+    # (P1 absorbs: 8.3 regex anywhere-in-segment, RANGE inclusivity
+    # fail-closed, env var anywhere-in-path, API invalidation test).
+    # Backend Path C2 (sha-75fc507) live; this completes the C-chain
+    # source-ready state (Path C4 LIVE acceptance browser smoke pending
+    # post-rollout).
+    #
+    # Image build run: gh run view 26841757847 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-ed72fcf
+    #   digest sha256:193d56c6719abb6771f57ec561b4d80124ac4d74e34b1801c1adc7ec83a207f1
+    digest: sha256:193d56c6719abb6771f57ec561b4d80124ac4d74e34b1801c1adc7ec83a207f1
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
