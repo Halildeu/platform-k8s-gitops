@@ -5,17 +5,19 @@
 **Session milestone**: Faz 22.5 P2-A "Inventory Change Evidence" sprint —
 DeviceGrid SCHEMA_VERSION 2 → 3 → 4 bumps for WEB-015 v2-a + v2-b grid
 exposure, plus BE-024c v2-c-pre diff summary cache foundation (V27
-migration). 13 PR MERGED across platform-backend, platform-web,
-platform-k8s-gitops; 5 deploy chain LIVE testai; HTTP E2E acceptance
+migration). 12 PR MERGED across platform-backend (#374/#377/#381),
+platform-web (#734/#736/#737), platform-k8s-gitops (#1209/#1210/#1214/
+#1215/#1216/#1218); 5 deploy chain LIVE testai; HTTP E2E acceptance
 sealed (33-key v4 row + CSV 33-col Turkish headers + V27 migration
-applied).
+applied) + browser smoke PASS sealed (Chrome MCP recovery sonrası
+2026-06-02 ~19:55Z).
 
 ### v2-a + v2-b + v2-c-pre deploy chain LIVE
 
 | Slice | Backend | Web | Gitops digest | testai LIVE |
 |---|---|---|---|---|
 | **v2-a** prohibited + app-control SCHEMA v3 | #374 `sha-00be5e2` | #734 `sha-44c5574` | #1209 + #1210 | pod imageID match ✓ |
-| **v2-a decision domain widening** | — | #736 `sha-481f0f4` | #1213 | ✓ |
+| **v2-a decision domain widening** | — | #736 `sha-481f0f4` | #1214 | ✓ |
 | **v2-b** diagnostics + startup + services SCHEMA v4 | #377 `sha-625fc38` | #737 `sha-443e0cf` | #1215 + #1216 | pod imageID match ✓ |
 | **v2-c-pre** BE-024c diff cache foundation V27 | #381 `sha-fef46d9` | — (deferred) | #1218 | pod `sha256:cf08e400…d7532` ✓; V27 applied "Successfully applied 1 migration to schema endpoint_admin_service, now at version v27 (100ms)" |
 
@@ -123,11 +125,23 @@ drift from drawer).
   order inline.
 * **v2-d** grid SCHEMA v5: 9 cache-fed colIds (`software_diff_status` +
   3 counts + `outdated_diff_status` + 4 counts) LEFT JOIN cache tables.
-* **Browser smoke acceptance** (HARD RULE — Tarayıcıdan Sonuç
-  Doğrulanmadan): Chrome MCP extension offline through this session;
-  HTTP-level acceptance kanıt seti yerine geçti. UI smoke acceptance
-  Chrome MCP recovery sonrası: column toggle 11 v2-a + v2-b kolon
-  görünür + CSV indirme görsel kanıt.
+* ~~**Browser smoke acceptance**~~ ✅ **LIVE PASS 2026-06-02 ~19:55Z**
+  (Chrome MCP recovery sonrası): testai `/endpoint-admin/devices` grid
+  render OK (6 device, 19-col view export); 11 v2-a + v2-b kolon
+  başlıkları visible — 5 v2-a (`Yasaklı Yazılım Durumu` / `Uygunluk
+  Kararı` / `Yasaklı Yazılım Bulgu Sayısı` / `WDAC Modu` / `AppIDSvc
+  Durumu`) + 6 v2-b (`Bellek %` / `Düşük Disk` / `Güncellenebilir
+  Yazılım` / `Ajan Son Poll Gecikmesi (ms)` / `Ajan Son Hata Kodu` /
+  `Ajan Son Hata Zamanı` / `Başlangıç RDP Etkin` / `Başlangıç Firewall
+  Olay Günlüğü` / `Kritik Durdurulmuş Servis Sayısı`); HALILKOOLUB735
+  row real values render (`33` Bellek + `true` Düşük Disk + `OK` /
+  `UNKNOWN` / `0` v2-a); sentinel `—` empty cells for non-instrumented
+  fixture devices (beklenen); CSV `İndir > MEVCUT GÖRÜNÜM > CSV` export
+  downloaded 7-row file (`endpoint-devices-view.csv` 929 bytes) with
+  all 19 Turkish headers + HALIL row values consistent with HTTP /query
+  evidence; network `/api/v1/endpoint-admin/endpoint-devices/query`
+  POST 200 + `/export` POST 200; console clean (only ag-grid license
+  debug). HARD RULE Tarayıcıdan Sonuç Doğrulanmadan: satisfied.
 
 ---
 
