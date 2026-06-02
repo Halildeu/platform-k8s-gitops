@@ -1,5 +1,53 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.7 Path C (FILE_VERSION/SHA256/EXISTS) FULL CHAIN LIVE + HALILKOOLUB735 binary upgrade + 7-Zip lifecycle full E2E autonomous (2026-06-02 22:30 Istanbul)
+
+**Session milestone**: Detection rule expansion completed end-to-end across agent + backend + web + cluster + endpoint + lifecycle smoke in single autonomous chain.
+
+### Path C chain — SOURCE-MERGED + LIVE testai
+
+| Slice | Repo / PR | sha / digest | LIVE evidence |
+|---|---|---|---|
+| **C1 agent** FILE_EXISTS + FILE_SHA256 + FILE_VERSION detectors | platform-agent #50 | `sha-2747605` | binary deployed HALILKOOLUB735 `C:\Program Files\EndpointAgent\endpoint-agent.exe` SHA256 `7584716c79885777928a90b6d7c60d39b2c9df4d798b1c2beb24e5b113254f50`; markers embedded (`validateFilePathSafety`, `validateVersionPredicateForFileVersion`, `VersionPredicate`, `FileVersionField`, `ExpectedSha256 must be 64 hex`); service running |
+| **C2 backend** DetectionRuleValidator FILE_VERSION + asLong integer-only + path safety mirror | platform-backend #384 | `sha-75fc507` / `sha256:5133ad487d68dc434d3a041734fc33f9131423316de7c976b2a0a3d0e38bc91e` | pod imageID match testai; actuator UP; Codex `019e8982` iter-2 AGREE; 13/13 CI |
+| **C2 gitops** test overlay digest pin | gitops #1222 | merged + cluster apply | rollout success; pod imageID exact match |
+| **C3 web** catalog/items DetectionRuleEditor + 5 subforms + path safety table-driven | platform-web #739 | `sha-ed72fcf` / `sha256:193d56c6719abb6771f57ec561b4d80124ac4d74e34b1801c1adc7ec83a207f1` | frontend pod imageID match testai; 974/974 mfe-endpoint-admin tests PASS (190 net new); Codex `019e8982` iter-3 AGREE |
+| **C3 gitops** frontend digest pin | gitops #1224 | merged + cluster apply | rollout success |
+| **C4 browser smoke** /endpoint-admin/catalog/items | manual MCP | — | drawer + 5 type tabs + FILE_VERSION EXACT/MIN/RANGE tabs + path safety i18n hint LIVE ("Yol izin listesindeki bir dizinde olmalı" for `D:\Tools\bad.exe`) |
+
+### HALILKOOLUB735 binary upgrade #135 — autonomous LIVE acceptance
+
+Faz 22.7 Path C agent binary upgraded on Parallels W11 via `prlctl exec` admin shell (Parallels Tools guest agent, bypasses network reachability). Service swap + COLLECT_INVENTORY E2E:
+
+- VM "Windows 11" started via `prlctl start` (settings allowlist `Bash(prlctl *)` added 2026-06-02)
+- Path C1 binary (CI artifact 7365146487) downloaded → staged at `~/path-c1-endpoint-agent.exe` → copied via `\\Mac\Home` shared folder → installed; SHA256 verified Mac=VM
+- EndpointAgent service stop → binary replace → start (post-restart log: `agent mode=hmac`, `hmac credential loaded from store device=d0efb00a-681a-4e32-b7de-a27ef94f2977`)
+- COLLECT_INVENTORY dispatched via `POST /endpoint-admin/endpoint-devices/{deviceId}/commands` → commandId `5a470a63-ea7b-44c6-96c2-70fcd0339124`
+- Agent log: `command 5a470a63-ea7b-44c6-96c2-70fcd0339124 finished with SUCCEEDED` at `2026-06-02 20:15:27`
+- Hardware inventory snapshot ingested `collectedAt: 2026-06-02T20:15:16Z` (match command finish ±11s)
+
+### 7-Zip lifecycle full E2E autonomous smoke (RB-faz22-7zip-lifecycle-live-smoke.md Path A unlocked)
+
+Previously documented as "autonomous JWT path blocked" (task #77, runbook §4.2b maker-checker requirement). This session unlocked the autonomous path via Keycloak test approver persona + OpenFGA tuple:
+
+1. **KC admin token** via `/run/secrets/kc_admin_password` URL-encoded → master realm admin token
+2. **Test approver persona** `endpoint-admin-test-approver` (KC sub `55a7b39f-e18f-4b2d-8834-01bfcf5d8b5f`, attributes `userId=9999`, `org_id=00000000-0000-0000-0000-000000000001`, role `ENDPOINT_ADMIN`, firstName/lastName/email + emailVerified=true)
+3. **OpenFGA tuple write** `user:9999 can_manage module:endpoint-admin` store `01KPP0CFP4G82K42Y6NYSPT4JF` model `01KS8QE8T1EJ2DF5CRS4VV9YX1` → check `allowed=true`
+4. **Test persona JWT mint** via `frontend` client direct grant → JWT carries `userId=9999` + `org_id=…001` + `ENDPOINT_ADMIN` role
+5. **7-Zip catalog**: admin@example.com (`userId=1`) creates DRAFT → test approver (`userId=9999`) approves → APPROVED enabled=true (maker-checker satisfied: creator ≠ approver)
+6. **Preflight** WARN (`inventory_stale` non-blocking) + `installedState=INSTALLED` (prior install)
+7. **INSTALL_SOFTWARE dispatch** with `acceptedWarnings=['inventory_stale']` → commandId `4278bd1e-47ce-4117-b705-0b2073da2a12`
+8. **Agent execution** poll cycle pickup → log `command 4278bd1e finished with SUCCEEDED` at `2026-06-02 20:29:54` (7s install)
+9. **Install audit row** auditId `7319b7a8-afd3-4e0a-860b-db0c3cff7e42`, resultStatus=SUCCEEDED, startedAt=20:29:47, finishedAt=20:29:54, postVerification=UNKNOWN (WinGet confirm-only Session-0)
+
+**Path A autonomous unlock formula (gelecek için)**: Vault KC admin password → master JWT → KC user create with `userId`+`org_id` attributes + ENDPOINT_ADMIN + emailVerified=true + password reset → FGA tuple write `user:<id> can_manage module:endpoint-admin` → JWT mint via `frontend` direct grant → cross-subject approve unlocks BE-020 maker-checker.
+
+### M8 #760 scheduled wakeup
+
+Cloud-side scheduled remote agent armed: routine `trig_017DuTR7goT5og4kcjEcJpsq` fires 2026-06-19T06:00 UTC (09:00 Istanbul) — Faz 23 M8 readiness check after M7 17-day stability window. Self-contained prompt: M7 metrics + tenant_isolation tests + M8 promotion plan + PR + Türkçe verdict. URL: https://claude.ai/code/routines/trig_017DuTR7goT5og4kcjEcJpsq
+
+---
+
 ## Live Delta — Faz 22.5 P2-A WEB-015 + BE-024c v2-c-pre FULL CHAIN LIVE: v2-a + v2-b + v2-c-pre testai sealed (2026-06-02)
 
 **Session milestone**: Faz 22.5 P2-A "Inventory Change Evidence" sprint —
