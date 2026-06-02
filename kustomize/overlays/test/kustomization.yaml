@@ -3966,10 +3966,35 @@ images:
     # AGREE ready_to_merge (0 must_fix). 18 endpoint-admin tests pass
     # (10 service + 8 controller incl new diff route smoke).
     #
-    # Image build run: gh run view 26786574935 -R Halildeu/platform-backend
-    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-4057a79
-    #   digest sha256:b9b647032b2d22fff9da4154d0c82bcb6c67a5c57ee4ead21b45c2de8f8eea62
-    digest: sha256:b9b647032b2d22fff9da4154d0c82bcb6c67a5c57ee4ead21b45c2de8f8eea62
+    # 2026-06-02 update: WEB-015 v2-a DeviceGrid prohibited + app-control
+    # (PR #374, sha-00be5e2 / Codex 019e8785 iter-4 AGREE ready_to_merge).
+    # Faz 22.5 P2-A coupling for the WEB grid v3 schema bump. NO new
+    # migration. DeviceGridColumns SCHEMA_VERSION 2→3 + 5 new colIds:
+    # prohibited_status (CASE: pe.id IS NULL THEN NO_EVALUATION ELSE OK),
+    # prohibited_decision (pe.decision pass-through), prohibited_findings_count
+    # (JSONB defensive jsonb_typeof(...)='array' guard over
+    # matchedItems.prohibitedInstalled), app_control_wdac_mode
+    # (ac.wdac_mode), app_control_app_id_svc_state
+    # (ac.app_locker_app_id_svc_state). 2 LEFT JOIN LATERAL
+    # added to DeviceGridQueryBuilder: pe (latest endpoint_compliance_evaluations
+    # per device+tenant ORDER BY evaluated_at DESC, id DESC) + ac (latest
+    # endpoint_app_control_snapshots per device+tenant ORDER BY collected_at
+    # DESC, created_at DESC, id DESC). DeviceGridExportAuditService metadata
+    # extended with schemaVersion + columnIdsHash (SHA-256 lowercase hex
+    # over the comma-joined column ids) so a stale/tampered registry on a
+    # different pod is detectable from the audit row alone — bumping
+    # SCHEMA_VERSION cleanly invalidates client state. 41 endpoint-admin
+    # grid tests pass (8 DeviceGridColumnsTest registry/version invariants
+    # + 28 DeviceGridQueryBuilderTest + 3 DeviceGridExportPostgresIntegrationTest
+    # incl new v2-a non-public-schema PG IT with JSONB seed + 2 DeviceGridExportAuditServiceTest
+    # ArgumentCaptor pins). Cross-AI Codex 019e8785 (iter-2 plan-time PARTIAL
+    # → iter-3 post-impl PARTIAL P1+P2 absorb → iter-4 AGREE 0 must_fix).
+    # All 13 CI checks green.
+    #
+    # Image build run: gh run view 26811681377 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-00be5e2
+    #   digest sha256:2d5d6267589214e95e198dd32d356108b096575d3d6e6b0e9230375e25d0e1fd
+    digest: sha256:2d5d6267589214e95e198dd32d356108b096575d3d6e6b0e9230375e25d0e1fd
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
