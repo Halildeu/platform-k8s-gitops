@@ -1,5 +1,161 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 P2-A WEB-015 + BE-024c v2-c-pre FULL CHAIN LIVE: v2-a + v2-b + v2-c-pre testai sealed (2026-06-02)
+
+**Session milestone**: Faz 22.5 P2-A "Inventory Change Evidence" sprint —
+DeviceGrid SCHEMA_VERSION 2 → 3 → 4 bumps for WEB-015 v2-a + v2-b grid
+exposure, plus BE-024c v2-c-pre diff summary cache foundation (V27
+migration). 12 PR MERGED across platform-backend (#374/#377/#381),
+platform-web (#734/#736/#737), platform-k8s-gitops (#1209/#1210/#1214/
+#1215/#1216/#1218); 5 deploy chain LIVE testai; HTTP E2E acceptance
+sealed (33-key v4 row + CSV 33-col Turkish headers + V27 migration
+applied) + browser smoke PASS sealed (Chrome MCP recovery sonrası
+2026-06-02 ~19:55Z).
+
+### v2-a + v2-b + v2-c-pre deploy chain LIVE
+
+| Slice | Backend | Web | Gitops digest | testai LIVE |
+|---|---|---|---|---|
+| **v2-a** prohibited + app-control SCHEMA v3 | #374 `sha-00be5e2` | #734 `sha-44c5574` | #1209 + #1210 | pod imageID match ✓ |
+| **v2-a decision domain widening** | — | #736 `sha-481f0f4` | #1214 | ✓ |
+| **v2-b** diagnostics + startup + services SCHEMA v4 | #377 `sha-625fc38` | #737 `sha-443e0cf` | #1215 + #1216 | pod imageID match ✓ |
+| **v2-c-pre** BE-024c diff cache foundation V27 | #381 `sha-fef46d9` | — (deferred) | #1218 | pod `sha256:cf08e400…d7532` ✓; V27 applied "Successfully applied 1 migration to schema endpoint_admin_service, now at version v27 (100ms)" |
+
+### v2-a v3 schema (5 new colIds)
+
+`prohibited_status` (CASE pe.id IS NULL THEN NO_EVALUATION ELSE OK) +
+`prohibited_decision` (pe.decision pass-through) +
+`prohibited_findings_count` (JSONB defensive jsonb_typeof guard over
+matchedItems.prohibitedInstalled) + `app_control_wdac_mode` + 
+`app_control_app_id_svc_state` — 2 new LEFT JOIN LATERAL (`pe` latest
+endpoint_compliance_evaluations, `ac` latest endpoint_app_control_snapshots,
+both schema-qualified + canonical `collected_at DESC, created_at DESC,
+id DESC` tiebreaker).
+
+Web v2-a fast-follow widened `prohibited_decision` domain to backend
+canonical 4-value enum (COMPLIANT / NON_COMPLIANT / UNAUTHORIZED /
+UNKNOWN) after testai LIVE smoke surfaced `decision=UNKNOWN` real-data
+finding; v0 draft `INSUFFICIENT_DATA` was a guess the backend never
+emits. PR #736 absorbs the real domain.
+
+### v2-b v4 schema (6 new colIds)
+
+`diagnostics_last_poll_latency_ms` + `diagnostics_last_error_code` (TEXT
+not closed enum — backend `DiagnosticsPayloadPolicy.CODE_RE` regex) +
+`diagnostics_last_error_at` (canonical `last_error_occurred_at`) +
+`startup_rdp_enabled` + `startup_windows_firewall_event_log_enabled`
+(CASE-guarded NULL when no snapshot / unsupported / probe-incomplete) +
+`services_critical_stopped_count` (6-allowlist WinDefend / wuauserv /
+BITS / EventLog / EndpointAgent / MpsSvc; precomputed in `se` LATERAL
+row). 3 new schema-qualified LEFT JOIN LATERAL with canonical tiebreaker.
+
+### v2-c-pre BE-024c V27 migration
+
+2 cache tables created (empty after deploy; write path deferred ayrı
+PR v2-c-pre-2):
+
+* `endpoint_software_diff_cache` — BE-024 software diff source pair
+  from `endpoint_software_inventory_state_history` (V27 ALTER adds
+  UNIQUE (id, tenant_id) on parent for composite FK). 3 counts
+  (added/removed/versionChanged).
+* `endpoint_outdated_software_diff_cache` — BE-024b outdated source pair
+  from `endpoint_outdated_software_snapshots` (V20 already UNIQUE).
+  4 counts (+ `availableVersionBumpedCount`).
+
+Both: 4-status enum (OK/NO_CHANGE/INSUFFICIENT_HISTORY/NO_HISTORY) +
+PG-enforced status shape invariant + non-OK counts-zero invariant +
+composite FK ON DELETE CASCADE + `(tenant_id, device_id)` UNIQUE.
+
+Pure summary cores (`SoftwareDiffSummary` + `OutdatedDiffSummary`
+records ayrı, NO polymorphic) + tenant-scoped `summarize(tenantId,
+deviceId)` count-only methods on both diff services. Drawer parity
+preserved (digest mismatch + 0/0/0 walk returns OK with zero counts,
+NOT NO_CHANGE — matches `computeDiff()` semantics so v2-d grid cannot
+drift from drawer).
+
+### Test counts
+
+| Layer | Tests |
+|---|---|
+| Backend grid + diff cache (this sprint cumulative) | **71** (14 DeviceGridColumnsTest + 30 DeviceGridQueryBuilderTest + 3 audit + 5 grid PG IT + 9 diff cache constraint PG IT + 10 summarize PG IT) |
+| Web | **255** vitest |
+
+### Cross-AI Codex consensus chain
+
+| Thread | Konu | Verdict chain |
+|---|---|---|
+| `019e87aa` | v2-a web impl | iter-1 AGREE + 7 guardrails → iter-2 REVISE P1+P2 → iter-3 AGREE |
+| `019e8785` | v2-a backend impl | iter-2 plan PARTIAL → iter-3 PARTIAL P1+P2 → iter-4 AGREE ready_to_merge |
+| `019e87bc` | v2-b backend + web impl | iter-1 AGREE plan + 7 guardrails → iter-2 PARTIAL P1 created_at tiebreaker → iter-3 AGREE backend → iter-4 AGREE web |
+| `019e8823` | v2-a decision domain widening | iter-1 AGREE 0 must_fix |
+| `019e88b5` | v2-c-pre BE-024c (DDL + summary + tests) | iter-1 REVISE → iter-2 PARTIAL × 4 (DDL semantics + tenant boundary + Spring proxy + execution order) → iter-5 AGREE plan → iter-6 PARTIAL (drawer parity + summarize tests) → iter-7 AGREE ready_to_merge |
+
+5 thread, 30+ iter total.
+
+### HTTP E2E acceptance evidence (testai)
+
+* impersonation-broker token-exchange → admin@example.com JWT.
+* POST /api/v1/endpoint-admin/endpoint-devices/query → 33-key row
+  (27 baseline + 6 v2-b colId); all 6 v2-b keys present post-v2-c-pre
+  deploy (no regression).
+* POST /api/v1/endpoint-admin/endpoint-devices/export raw CSV → 33-col
+  header with 11 new Turkish labels (5 v2-a + 6 v2-b): `Yasaklı Yazılım
+  Durumu;Uygunluk Kararı;Yasaklı Yazılım Bulgu Sayısı;WDAC Modu;AppIDSvc
+  Durumu;Ajan Son Poll Gecikmesi (ms);Ajan Son Hata Kodu;Ajan Son Hata
+  Zamanı;Başlangıç RDP Etkin;Başlangıç Firewall Olay Günlüğü;Kritik
+  Durdurulmuş Servis Sayısı`.
+* HALILKOOLUB735 row real data: `OK;UNKNOWN;0` (prohibited status,
+  decision, findings count) + v2-b cells empty (no diagnostics/startup/
+  services snapshot yet — agent not yet instrumented for v2-b telemetry).
+* V27 migration Flyway log: "Migrating schema endpoint_admin_service to
+  version 27 - endpoint diff cache" → "Successfully applied 1 migration".
+
+### Deferred residual (agent-actionable, ayrı sprint)
+
+* **v2-c-pre-2** write path: `DiffCacheService.upsertSoftwareDiffCache`
+  + `upsertOutdatedDiffCache` (native ON CONFLICT UPSERT) + ingest hooks
+  in `EndpointSoftwareInventoryService.ingest()` +
+  `EndpointOutdatedSoftwareService.ingest()` (insert AND identical-payload
+  no-op return paths) + `DiffCacheBackfillWorker` (public @Transactional
+  per-device) + `DiffCacheBackfillService` (chunked tenant sweep) + admin
+  endpoint `POST /api/v1/admin/diff-cache/backfill`
+  (`@RequireModule(value, relation)`, JWT-resolved tenant context, NOT
+  cross-tenant) + PG IT (UPSERT idempotency + cache vs on-demand
+  consistency + full sweep). Codex 019e88b5 iter-5 7-step execution
+  order inline.
+* **v2-d** grid SCHEMA v5: 9 cache-fed colIds (`software_diff_status` +
+  3 counts + `outdated_diff_status` + 4 counts) LEFT JOIN cache tables.
+* ~~**Browser smoke acceptance**~~ ✅ **LIVE PASS 2026-06-02 ~19:55Z**
+  (Chrome MCP recovery sonrası): testai `/endpoint-admin/devices` grid
+  render OK (6 device, 19-col view export).
+
+  **Visible existing context headers (pre-P2-A baseline, not part of
+  this sprint's claim)**: `Bellek %`, `Düşük Disk`, `Güncellenebilir
+  Yazılım` (memory_used_pct + low_disk + update_pending_count — already
+  LIVE from earlier hardware/health slices).
+
+  **P2-A 11 new headers verified rendered (this sprint's scope)**:
+  - 5 v2-a: `Yasaklı Yazılım Durumu` / `Uygunluk Kararı` / `Yasaklı
+    Yazılım Bulgu Sayısı` / `WDAC Modu` / `AppIDSvc Durumu`.
+  - 6 v2-b: `Ajan Son Poll Gecikmesi (ms)` / `Ajan Son Hata Kodu` /
+    `Ajan Son Hata Zamanı` / `Başlangıç RDP Etkin` / `Başlangıç
+    Firewall Olay Günlüğü` / `Kritik Durdurulmuş Servis Sayısı`.
+
+  HALILKOOLUB735 row real values render: `33` (Bellek %, baseline) +
+  `true` (Düşük Disk, baseline) + `OK` / `UNKNOWN` / `0` (P2-A v2-a
+  prohibited status / decision / findings count). v2-b cells empty
+  for HALILKOOLUB735 (agent not yet instrumented for v2-b telemetry
+  — beklenen, no fake render). Sentinel `—` for non-instrumented
+  fixture devices across all 11 P2-A columns (expected fail-closed
+  behavior). CSV `İndir > MEVCUT GÖRÜNÜM > CSV` export downloaded
+  7-row file (`endpoint-devices-view.csv` 929 bytes) with all 19
+  Turkish headers + HALIL row values consistent with HTTP /query
+  evidence. Network `/api/v1/endpoint-admin/endpoint-devices/query`
+  POST 200 + `/export` POST 200; console clean (only ag-grid license
+  debug). HARD RULE Tarayıcıdan Sonuç Doğrulanmadan: satisfied.
+
+---
+
 ## Live Delta — Faz 22.5 D-chain SPRINT KAPALI: 5/5 LIVE + PR-D2.5a digest endpoint bonus + Issue #42 CLOSED (2026-06-02)
 
 **Session milestone**: Faz 22.5 reporting D-chain (PR-D2.1 through PR-D2.5)
