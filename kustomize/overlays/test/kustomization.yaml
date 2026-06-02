@@ -3446,17 +3446,55 @@ images:
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-bd4da86
     #   digest sha256:f03ff8a44e58aac0b11343a4db0cb48b20a81a9355e72f0304a241892dcfbcae
     #
-    # Verify after rollout (HARD RULE — BE-024b OutdatedSoftwareDiffView):
-    #   1. Navigate to HALILKOOLUB735 → device drawer (MouseEvent seq)
-    #   2. "Güncel Olmayan Değişimler" tab visible between "Yazılım
-    #      Değişimleri" and "Yasaklı Yazılım"
-    #   3. Backend returns 200 with status enum (NEVER 404 — BE-024b
-    #      no-existence-leak; NO_HISTORY for unknown/cross-tenant)
-    #   4. data-status reflects backend status; data-total-entries
-    #      reflects sum of 4 lists
-    #   5. Real-evidence chain: HALILKOOLUB735 outdated_snapshot_count
-    #      ≥ 2 required for OK status; <2 yields INSUFFICIENT_HISTORY
-    digest: sha256:f03ff8a44e58aac0b11343a4db0cb48b20a81a9355e72f0304a241892dcfbcae
+    # 2026-06-02 update: WEB-015 v2-a DeviceGrid surface 5 new v3 columns
+    # (PR #734). Faz 22.5 P2-A coupling for the backend DeviceGridColumns
+    # SCHEMA_VERSION 2→3 bump (platform-backend PR #374). Adds:
+    #   - GRID_SCHEMA_VERSION 2 → 3 (invalidates persisted v2 column
+    #     state on EntityGridTemplate)
+    #   - 5 colId entries in EndpointDevicesPage columnDefs (raw export
+    #     sequence parity with backend registry):
+    #       prohibited_status, prohibited_decision, prohibited_findings_count,
+    #       app_control_wdac_mode, app_control_app_id_svc_state
+    #   - 5 default hide:true (Codex 019e87aa guardrail #1 — toggleable
+    #     surfacing via the column tool panel)
+    #   - prohibited_status badge cellRenderer (neutral colors for both
+    #     OK + NO_EVALUATION — Codex 019e87aa iter-2 P1 absorb: OK =
+    #     "an evaluation row exists", NOT compliance success; verdict
+    #     stays on prohibited_decision.COMPLIANT)
+    #   - 4 const enum tuples (PROHIBITED_STATUS_VALUES, PROHIBITED_DECISION_VALUES,
+    #     WDAC_MODE_VALUES, APP_ID_SVC_STATE_VALUES) for AG Grid Set Filter
+    #     raw enum domain (backend-canonical codes; UI labels via i18n)
+    #   - DICT_TR + DICT_EN parity: 5 column header keys + 18 cell/filter
+    #     value labels; NO_EVALUATION explicit "Değerlendirilmedi" /
+    #     "Not Evaluated" (Codex 019e87aa guardrail #3 — NOT collapsed to "—")
+    # 64 vitest pass (8 existing grid/page + 4 v3 shape pins incl
+    # expectTypeOf row property type pins + 31 i18n drift detector
+    # incl Set Filter label parity + 6 EndpointDevicesPage v2-a
+    # source registry pins + 15 mixed). TypeScript scope clean.
+    # Cross-AI Codex 019e87aa chain: iter-1 AGREE plan + 7 guardrails →
+    # iter-2 REVISE P1 (OK label semantic separation) + P2 (expectTypeOf
+    # type pin) absorbed → iter-3 AGREE ready_to_merge.
+    # All 24 web CI checks green. Backend PR #374 + endpoint-admin-service
+    # digest sha-00be5e2 pinned earlier in this overlay (live on testai).
+    #
+    # Image build run: gh run view 26813984075 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-44c5574
+    #   digest sha256:b3e125ae7d3147f2de1216b0d4057a159f186e8a79f9a4c4031efd482aef8cd9
+    #
+    # Verify after rollout (HARD RULE — WEB-015 v2-a):
+    #   1. Open endpoint-admin module
+    #   2. Devices grid loads; quick-filter + status filter work
+    #   3. Column tool panel → toggle 5 v2-a columns visible
+    #   4. Header text Turkish: "Yasaklı Yazılım Durumu" /
+    #      "Uygunluk Kararı" / "Yasaklı Yazılım Bulgu Sayısı" /
+    #      "WDAC Modu" / "AppIDSvc Durumu"
+    #   5. Cell render: NO_EVALUATION → "Değerlendirilmedi" (neutral);
+    #      OK → "Değerlendirildi" (neutral, NOT success-green);
+    #      null → "—"
+    #   6. CSV "Ham veri" export → 5 new columns present with
+    #      audit metadata schemaVersion=3 + columnIdsHash (SHA-256
+    #      lowercase hex over comma-joined column ids)
+    digest: sha256:b3e125ae7d3147f2de1216b0d4057a159f186e8a79f9a4c4031efd482aef8cd9
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
