@@ -1,5 +1,103 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 D-chain SPRINT KAPALI: 5/5 LIVE + PR-D2.5a digest endpoint bonus + Issue #42 CLOSED (2026-06-02)
+
+**Session milestone**: Faz 22.5 reporting D-chain (PR-D2.1 through PR-D2.5)
+SPRINT CLOSED. 5/5 pure-grid modules LIVE on testai cluster via filter-only
+path. PR-E test-only ratchet locked the 5-tuple `(service, path,
+responseShape)` set as governance state. Issue #42 (Session-0 installed-state
+detector) CLOSED — REGISTRY_UNINSTALL + FILE_EXISTS + FILE_SHA256 all LIVE
+in DetectionRuleValidator + agent.
+
+### D-chain 5/5 LIVE (PR-E ratchet locked)
+
+| # | Module | Source PR | Cluster digest |
+|---|---|---|---|
+| 1 | users-overview | platform-backend #365 (PR-D2.1d) | `f59789c025` |
+| 2 | access-report | platform-backend #366 (PR-D2.2) | `f59789c025` |
+| 3 | audit-report | platform-backend #367 (PR-D2.1c5 + PR-D2.3) | `f59789c025` |
+| 4 | monthly-login | platform-backend #369 (PR-D2.4) | `f59789c025` (then `fcea1fdb`) |
+| 5 | weekly-audit-digest | platform-backend #370 (PR-D2.5) | filter-only LIVE |
+
+PR-E ratchet: platform-backend PR #371 — test-only governance lock matching
+exact `(service, path, responseShape)` tuples; D-chain state CANNOT drift
+without an explicit ratchet update.
+
+### Bonus capability — PR-D2.5a digest endpoint LIVE
+
+`GET /api/audit/events/digest` (permission-service) source-owned weekly
+aggregate endpoint LIVE on testai (pod imageID `sha256:822c6362...`).
+Currently UNUSED by any report-service ReportDefinition (orthogonal to
+filter-only D-chain). Available for future aggregate dashboards
+(weekly distinct user count + action breakdown + service breakdown +
+top-K users) without adding to D-chain ratchet.
+
+Implementation:
+- DTOs: TopUser, WeeklyDigestBucket, AuditWeeklyDigestResponse
+- AuditEventDigestRepository: 4 native PG queries with ISO week extraction
+- AuditEventDigestService: validation + orchestration (24/24 unit tests PASS)
+- @GetMapping("/digest") @RequireModule(AUDIT, can_view) controller endpoint
+
+Cross-AI Codex chain:
+- 019e8708 plan-time AGREE option A constrained
+- 019e8721 post-impl 2-iter PARTIAL (source AGREE, functional OPEN deferred)
+
+Source PR: platform-backend #373 (commit `58cf6f36`). Cluster pin: platform-k8s-gitops #1205.
+
+### Issue #42 (platform-agent) CLOSED
+
+Durable Session-0 installed-state detector — all in-scope work LIVE:
+- Agent: REGISTRY_UNINSTALL probe (PR #43 commit `d291364`) authoritative
+  Session-0 detector mirroring ARP registry shape
+- Backend: DetectionRuleValidator accepts `WINGET_PACKAGE`,
+  `REGISTRY_UNINSTALL`, `FILE_EXISTS`, `FILE_SHA256`. V21 catalog sweep
+  to canonical agent schema completed.
+- LIVE acceptance: 7-Zip lifecycle GREEN on HALILKOOLUB735 via
+  REGISTRY_UNINSTALL post-detect
+
+FILE_VERSION (issue's proposed extension) superseded by `FILE_SHA256` for
+stronger integrity contract.
+
+### Sprint plan PR-D2.5b/c/d outcome
+
+Sprint plan `docs/sprint-plan-pr-d2-5-weekly-audit-digest.md` (gitops PR
+#1203) proposed 4-PR aggregate sub-chain (5a/5b/5c/5d). Outcome:
+- PR-D2.5a digest endpoint shipped as standalone capability (this session)
+- PR-D2.5b/c/d aggregate-adapter chain SUPERSEDED by parallel session
+  choosing filter-only path for PR-D2.5 (#370). D-chain locked at 5/5 LIVE
+  via PR-E ratchet (#371) — adding 6th aggregate module would require
+  ratchet update + separate sprint.
+
+This divergence is acceptable: filter-only path delivered 5/5 LIVE within
+sprint; aggregate capability available as standalone tool for future
+mart-layer expansion without modifying current D-chain state.
+
+### Truth ledger
+
+| Layer | Status |
+|---|---|
+| Source-merged | 5/5 ✓ + PR-D2.5a digest endpoint ✓ |
+| GitOps deployed | 5/5 ✓ via report-service `f59789c025` + permission-service `822c6362` |
+| Runtime Up | 5/5 ✓ + digest endpoint ✓ |
+| Functional acceptance | 4/5 browser-verified (PR-D2.1d) + 1/5 dispatcher log proven (PR-D2.4) + 3/5 LIVE via paralel session shipping |
+| PR-E ratchet | ✓ test-only locked 5-tuple |
+| End-to-end | ✓ — PR-D2 chain SPRINT KAPALI |
+
+### Codex consensus chain (this session, 8 thread / 12 verdict iter)
+
+| Thread | Konu | Final |
+|---|---|---|
+| 019e83ef | RB-endpoint-agent-binary-upgrade runbook | AGREE (4-iter) |
+| 019e83f6 | #1152 stale handoff | REVISE archived |
+| 019e840b | Sprint planning Path B→D→C | AGREE consensus |
+| 019e838e | PR #363 dispatcher | AGREE (3-iter) |
+| 019e83fd | PR-D2.4 plan | AGREE option a |
+| 019e84bb | PR #369 post-impl | AGREE (2-iter) |
+| 019e8708 | PR-D2.5 plan-time | AGREE option A constrained |
+| 019e8721 | PR #373 post-impl | PARTIAL (source AGREE, functional OPEN) |
+
+---
+
 ## Live Delta — PR-D2.4 monthly-login dördüncü LIVE remote-http pure-grid module + dispatcher chain execution evidence (2026-06-01)
 
 **Session milestone**: PR-D2.4 (monthly-login) **fourth LIVE remote-http
