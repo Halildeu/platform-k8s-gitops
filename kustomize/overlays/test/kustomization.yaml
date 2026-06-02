@@ -3546,6 +3546,33 @@ images:
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-443e0cf
     #   digest sha256:7d4ab8999b289b9dbfa959ec771485de9f458f49dfbe2f02c767bd4289d9d220
     #
+    # 2026-06-02 Faz 22.7 D3 update: bump to sha-228d2d9 (platform-web
+    # 443e0cfc → 228d2d97: PR #738 Compliance Gap Mart explorer).
+    # New lazy route /endpoint-admin/compliance/gaps surfacing devices with
+    # at least one active compliance gap (rdp_enabled, pending_security_updates)
+    # from the Faz 22.7 D2 backend endpoint LIVE on testai
+    # (endpoint-admin-service sha-6fa713b → sha256:307e8d42…1a86f).
+    # UI: gap-type checkboxes + freshness window select (7d/30d/90d/1y);
+    # table with hostname + gap count + gap badges + strength label + last
+    # seen; 1-based pagination matching backend semantics; filterEcho banner
+    # showing sample boundary + computedAt; row click → DeviceDetailDrawer
+    # initialTab=compliance. Empty/forbidden/error states distinct.
+    # Cross-AI Codex 019e88db iter-1 REVISE → iter-2 AGREE (P1+P2 absorb):
+    # - P1 refuse to unselect last gap-type checkbox (size<=1 returns prev)
+    # - P1 `!isFetching` gates all render branches (no stale items/echo)
+    # - P1 DICT_EN parity for 30+ keys + compliance-gap-i18n contract test
+    # - P2 entity types.ts contract doc runtime path corrected
+    # - P2 totalPages derived from data.filterEcho.pageSize (server SoT)
+    # 71/71 tests PASS (11 page contract + 60 i18n parity).
+    # HARD RULE No Fake Work: all aggregation server-side; client renders 1:1.
+    # HARD RULE Uzun Vadeli Kalıcı Çözüm: 1-based paging matches contract
+    # + sorted gapTypes wire matches filterEcho deterministic JSON
+    # + last-checkbox guard preserves operator-visible filter semantics.
+    #
+    # Image build run: gh run view 26830687131 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-228d2d9
+    #   digest sha256:3299c1310e2c1e1c0f69c6ada6ad933fe52aa1add999c001240cf5b6c0e13b34
+    #
     # Verify after rollout (HARD RULE — WEB-015 v2-b):
     #   1. Open endpoint-admin module
     #   2. Devices grid loads; quick-filter + status filter work
@@ -3560,7 +3587,7 @@ images:
     #   6. CSV "Ham veri" export → 6 new columns present in row 33 with
     #      audit metadata schemaVersion=4 + columnIdsHash (SHA-256
     #      lowercase hex over comma-joined column ids)
-    digest: sha256:7d4ab8999b289b9dbfa959ec771485de9f458f49dfbe2f02c767bd4289d9d220
+    digest: sha256:3299c1310e2c1e1c0f69c6ada6ad933fe52aa1add999c001240cf5b6c0e13b34
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
