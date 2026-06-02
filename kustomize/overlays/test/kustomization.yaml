@@ -4328,7 +4328,30 @@ images:
     # Image build run: gh run view 26840426680 -R Halildeu/platform-backend
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-3c0ee35
     #   digest sha256:3f4fb668db062834c369a130e9284d8dc11ed109122c66d5597b732efa10a284
-    digest: sha256:3f4fb668db062834c369a130e9284d8dc11ed109122c66d5597b732efa10a284
+    #
+    # 2026-06-02 BE-024c v2-c-pre-2-C-A LANDED (PR #386 → sha-f088731): V28
+    # source-pair ordering tuple migration (3 NOT NULL columns + JOIN-backfill
+    # + epoch/zero sentinel for NO_HISTORY + fail-loud RAISE on missing
+    # source_* post-backfill + NOT NULL promote) + DiffCacheService writer
+    # source-pair tuple guard (UPSERT WHERE 3-component lex compare) +
+    # summary records tuple-aware factories + appendStateHistory boolean
+    # refactor gating AFTER_COMMIT event publish on insertedId != null +
+    # ingest hook event publish for both software (state_history) and
+    # outdated (snapshot) paths. Cross-AI Codex 019e89a3 iter-3 plan AGREE
+    # → iter-4 REVISE absorbed (HIGH-1 mandatory PG IT + MEDIUM-2 source
+    # cols in any-diff predicate + MEDIUM-3 tuple-aware tests) → iter-5
+    # (019e89e8) narrow REVISE absorbed (third-tuple-component row_id
+    # tiebreaker PG IT + DiffCacheConstraintsPostgresIntegrationTest V28
+    # NOT NULL sentinel) → AGREE conditional on CI green. CI 13/13 PASS.
+    # Source-ordering PG IT 9/9 PASS (Cat A direct stale + Cat B
+    # progression + Cat B+ created_at + Cat B+ row_id). Cat B++/C/D PG IT
+    # deferred to v2-c-pre-2-C-B PR alongside DiffCacheBackfillWorker +
+    # admin endpoint.
+    #
+    # Image build run: gh run view 26844740049 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-f088731
+    #   digest sha256:2ebd092d97cab5591fc5249294a20c8f7bceb7d2d64646bb508346d2093c9c56
+    digest: sha256:2ebd092d97cab5591fc5249294a20c8f7bceb7d2d64646bb508346d2093c9c56
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
