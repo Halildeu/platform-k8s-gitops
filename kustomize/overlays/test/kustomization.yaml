@@ -3477,11 +3477,27 @@ images:
     # All 24 web CI checks green. Backend PR #374 + endpoint-admin-service
     # digest sha-00be5e2 pinned earlier in this overlay (live on testai).
     #
-    # Image build run: gh run view 26813984075 -R Halildeu/platform-web
-    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-44c5574
-    #   digest sha256:b3e125ae7d3147f2de1216b0d4057a159f186e8a79f9a4c4031efd482aef8cd9
+    # 2026-06-02 fast-follow — PR #736 (sha-481f0f4) — WEB-015 v2-a LIVE
+    # smoke real-data finding on testai: backend `decision=UNKNOWN`
+    # surfaced (CSV `OK;UNKNOWN;0`) but the v0 Set Filter tuple only
+    # listed COMPLIANT/UNAUTHORIZED/INSUFFICIENT_DATA — UNKNOWN was
+    # hidden from the UI dropdown and INSUFFICIENT_DATA is a draft-time
+    # guess the backend never emits. Tuple normalized to the backend
+    # `ComplianceDecision` enum (COMPLIANT, NON_COMPLIANT, UNAUTHORIZED,
+    # UNKNOWN — ladder UNAUTHORIZED > UNKNOWN > NON_COMPLIANT >
+    # COMPLIANT, `EndpointComplianceService.decide`); DICT_TR + DICT_EN
+    # parity; SCHEMA_VERSION stays at 3 (Set Filter widening is
+    # backward-compatible). 61 vitest pass; 24/24 CI green; cross-AI
+    # Codex 019e8820 AGREE ready_for_merge.
     #
-    # Verify after rollout (HARD RULE — WEB-015 v2-a):
+    # Image build run: gh run view 26820681355 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-481f0f4
+    #   digest sha256:4e94b0966aadb8d04a5af1230b8c13973f08f42e910ef7995231211591424b70
+    #
+    # Previous pin (PR #734 v0 baseline, replaced by this fast-follow):
+    #   tag    sha-44c5574 / digest b3e125ae7d3147f2de1216b0d4057a159f186e8a79f9a4c4031efd482aef8cd9
+    #
+    # Verify after rollout (HARD RULE — WEB-015 v2-a + fast-follow):
     #   1. Open endpoint-admin module
     #   2. Devices grid loads; quick-filter + status filter work
     #   3. Column tool panel → toggle 5 v2-a columns visible
@@ -3494,7 +3510,7 @@ images:
     #   6. CSV "Ham veri" export → 5 new columns present with
     #      audit metadata schemaVersion=3 + columnIdsHash (SHA-256
     #      lowercase hex over comma-joined column ids)
-    digest: sha256:b3e125ae7d3147f2de1216b0d4057a159f186e8a79f9a4c4031efd482aef8cd9
+    digest: sha256:4e94b0966aadb8d04a5af1230b8c13973f08f42e910ef7995231211591424b70
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
