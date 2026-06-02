@@ -127,19 +127,30 @@ drift from drawer).
   3 counts + `outdated_diff_status` + 4 counts) LEFT JOIN cache tables.
 * ~~**Browser smoke acceptance**~~ ✅ **LIVE PASS 2026-06-02 ~19:55Z**
   (Chrome MCP recovery sonrası): testai `/endpoint-admin/devices` grid
-  render OK (6 device, 19-col view export); 11 v2-a + v2-b kolon
-  başlıkları visible — 5 v2-a (`Yasaklı Yazılım Durumu` / `Uygunluk
-  Kararı` / `Yasaklı Yazılım Bulgu Sayısı` / `WDAC Modu` / `AppIDSvc
-  Durumu`) + 6 v2-b (`Bellek %` / `Düşük Disk` / `Güncellenebilir
-  Yazılım` / `Ajan Son Poll Gecikmesi (ms)` / `Ajan Son Hata Kodu` /
-  `Ajan Son Hata Zamanı` / `Başlangıç RDP Etkin` / `Başlangıç Firewall
-  Olay Günlüğü` / `Kritik Durdurulmuş Servis Sayısı`); HALILKOOLUB735
-  row real values render (`33` Bellek + `true` Düşük Disk + `OK` /
-  `UNKNOWN` / `0` v2-a); sentinel `—` empty cells for non-instrumented
-  fixture devices (beklenen); CSV `İndir > MEVCUT GÖRÜNÜM > CSV` export
-  downloaded 7-row file (`endpoint-devices-view.csv` 929 bytes) with
-  all 19 Turkish headers + HALIL row values consistent with HTTP /query
-  evidence; network `/api/v1/endpoint-admin/endpoint-devices/query`
+  render OK (6 device, 19-col view export).
+
+  **Visible existing context headers (pre-P2-A baseline, not part of
+  this sprint's claim)**: `Bellek %`, `Düşük Disk`, `Güncellenebilir
+  Yazılım` (memory_used_pct + low_disk + update_pending_count — already
+  LIVE from earlier hardware/health slices).
+
+  **P2-A 11 new headers verified rendered (this sprint's scope)**:
+  - 5 v2-a: `Yasaklı Yazılım Durumu` / `Uygunluk Kararı` / `Yasaklı
+    Yazılım Bulgu Sayısı` / `WDAC Modu` / `AppIDSvc Durumu`.
+  - 6 v2-b: `Ajan Son Poll Gecikmesi (ms)` / `Ajan Son Hata Kodu` /
+    `Ajan Son Hata Zamanı` / `Başlangıç RDP Etkin` / `Başlangıç
+    Firewall Olay Günlüğü` / `Kritik Durdurulmuş Servis Sayısı`.
+
+  HALILKOOLUB735 row real values render: `33` (Bellek %, baseline) +
+  `true` (Düşük Disk, baseline) + `OK` / `UNKNOWN` / `0` (P2-A v2-a
+  prohibited status / decision / findings count). v2-b cells empty
+  for HALILKOOLUB735 (agent not yet instrumented for v2-b telemetry
+  — beklenen, no fake render). Sentinel `—` for non-instrumented
+  fixture devices across all 11 P2-A columns (expected fail-closed
+  behavior). CSV `İndir > MEVCUT GÖRÜNÜM > CSV` export downloaded
+  7-row file (`endpoint-devices-view.csv` 929 bytes) with all 19
+  Turkish headers + HALIL row values consistent with HTTP /query
+  evidence. Network `/api/v1/endpoint-admin/endpoint-devices/query`
   POST 200 + `/export` POST 200; console clean (only ag-grid license
   debug). HARD RULE Tarayıcıdan Sonuç Doğrulanmadan: satisfied.
 
