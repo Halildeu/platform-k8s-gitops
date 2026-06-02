@@ -4293,7 +4293,7 @@ images:
     # cache refresh pipeline — DiffType enum + DiffCacheRefreshRequested record
     # event + DiffCacheRefreshService @Transactional(REQUIRES_NEW) + listener
     # @TransactionalEventListener(phase=AFTER_COMMIT) with redacted boundary
-    // catch). NO production caller publishes DiffCacheRefreshRequested in this
+    # catch). NO production caller publishes DiffCacheRefreshRequested in this
     # bump; the four classes are autowired but dormant. Source-pair ordering
     # guard, ingest hook publish, listener PG IT, concurrency smoke, and backfill
     # all ship together in v2-c-pre-2-C (next PR) alongside the V28 migration
