@@ -4284,7 +4284,26 @@ images:
     # Image build run: gh run view 26839140380 -R Halildeu/platform-backend
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-75fc507
     #   digest sha256:5133ad487d68dc434d3a041734fc33f9131423316de7c976b2a0a3d0e38bc91e
-    digest: sha256:5133ad487d68dc434d3a041734fc33f9131423316de7c976b2a0a3d0e38bc91e
+    #
+    # 2026-06-02 Faz 22.5 P2-A BE-024c v2-c-pre-2-A + v2-c-pre-2-B → sha-3c0ee35
+    # (platform-backend 75fc5076→3c0ee356: PR #383 v2-c-pre-2-A DiffCacheService
+    # race-safe ON CONFLICT UPSERT write API + identical-payload no-op + 12 PG IT
+    # idempotency + schema-qualified SQL + Codex 019e8964 3-iter consensus AGREE;
+    # PR #385 v2-c-pre-2-B dormant infrastructure scaffolding for the AFTER_COMMIT
+    # cache refresh pipeline — DiffType enum + DiffCacheRefreshRequested record
+    # event + DiffCacheRefreshService @Transactional(REQUIRES_NEW) + listener
+    # @TransactionalEventListener(phase=AFTER_COMMIT) with redacted boundary
+    // catch). NO production caller publishes DiffCacheRefreshRequested in this
+    # bump; the four classes are autowired but dormant. Source-pair ordering
+    # guard, ingest hook publish, listener PG IT, concurrency smoke, and backfill
+    # all ship together in v2-c-pre-2-C (next PR) alongside the V28 migration
+    # that adds the source order tuple (captured_at/created_at/id) columns the
+    # writer guard needs.
+    #
+    # Image build run: gh run view 26840426680 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-3c0ee35
+    #   digest sha256:3f4fb668db062834c369a130e9284d8dc11ed109122c66d5597b732efa10a284
+    digest: sha256:3f4fb668db062834c369a130e9284d8dc11ed109122c66d5597b732efa10a284
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
