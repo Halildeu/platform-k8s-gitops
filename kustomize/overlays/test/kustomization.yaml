@@ -4138,7 +4138,32 @@ images:
     # Image build run: gh run view 26820710202 -R Halildeu/platform-backend
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-625fc38
     #   digest sha256:9bc59eebbc3f54b044c735d9b5a4e38562e1177e895c1bb5862c9baeb35ae8ef
-    digest: sha256:9bc59eebbc3f54b044c735d9b5a4e38562e1177e895c1bb5862c9baeb35ae8ef
+    #
+    # 2026-06-02 Faz 22.7 D2 update: bump to sha-6fa713b (platform-backend
+    # 625fc38b→6fa713b5: PR #378 Compliance Gap Mart query API). Adds endpoint
+    # `GET /api/endpoint-admin/compliance-gap?gapTypes=...&freshnessWindow=...
+    # &page=&pageSize=`. DB-side cross-snapshot aggregation via DISTINCT ON CTE
+    # over endpoint_startup_exposure_snapshots + endpoint_hotfix_posture_snapshots
+    # joined LEFT on endpoint_devices. D2 MVP gap types: RDP_ENABLED +
+    # PENDING_SECURITY_UPDATES. Bounded by MAX_PAGE_SIZE=200 +
+    # MAX_FRESHNESS_WINDOW=P366D (Codex risk mitigations against unbounded
+    # full-table aggregation + sample/fleet confusion). gapStrength="strong"
+    # MVP (all rows DB-filtered by freshness window). Codex 019e88b0 must_fix
+    # absorb: (P1) schema-qualified table names via @Value
+    # spring.jpa.properties.hibernate.default_schema (cluster search_path does
+    # NOT include endpoint_admin_service → unqualified native SQL would 500
+    # under non-public schema); (P2) deterministic DISTINCT ON tiebreaker
+    # collected_at DESC, created_at DESC, id DESC (matches canonical
+    # latest-per-device semantics across endpoint-admin); (P2-low) filterEcho
+    # gapTypes as sorted List for deterministic JSON ordering. 10/10 unit tests
+    # PASS (validation + happy path + display-name fallback). HARD RULE No Fake
+    # Work: all aggregation pushed to DB, no client-side reduce. Sprint plan
+    # docs/sprint-plan-faz-22-7-compliance-gap-mart.md (#1211 MERGED).
+    #
+    # Image build run: gh run view 26826248765 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-6fa713b
+    #   digest sha256:307e8d4292a9b2d8cd7022239686a161e242cd8cdc60907fc1fc40b97e51a86f
+    digest: sha256:307e8d4292a9b2d8cd7022239686a161e242cd8cdc60907fc1fc40b97e51a86f
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
