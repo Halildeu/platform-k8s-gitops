@@ -4263,7 +4263,28 @@ images:
     # Image build run: gh run view 26832476612 -R Halildeu/platform-backend
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-f1795fa
     #   digest sha256:145c2270f180f5d1a90ecfa44c8f14019877cfd77317c8963a532676801f8487
-    digest: sha256:145c2270f180f5d1a90ecfa44c8f14019877cfd77317c8963a532676801f8487
+    #
+    # 2026-06-02 Faz 22.7 Path C2 (Compliance Gap follow-on): bump to sha-75fc507
+    # (platform-backend f1795fa6→75fc5076: PR #384 FILE_EXISTS + FILE_SHA256 +
+    # FILE_VERSION agent forward + path-safety mirror). DetectionRuleValidator
+    # extends FILE_VERSION normalization (versionPredicate EXACT|MIN|RANGE +
+    # fileVersionField FILE_VERSION|PRODUCT_VERSION); EndpointAdminCommandService
+    # .buildFileWireRule renames absolutePath→path for the agent wire format and
+    # forwards expectedSha256/maxHashBytes (capped 512 MiB) + versionPredicate +
+    # fileVersionField. WindowsPathSafetyValidator mirrors agent C1 guards: ADS
+    # (drive-colon-only after index 1) reject, current-dir `.` segment reject,
+    # control char (U+0000–U+001F, U+007F) reject. asLong replaced silently-
+    # truncating Number.longValue() with integer-only enforcement (BigDecimal
+    # longValueExact, Float/Double fractional reject, string regex ^-?\d+$).
+    # BG-EA-1 boundary declared (PII none, secret none, controller annotated).
+    # All 13 CI checks green; cross-AI Codex thread 019e8982 iter-2 AGREE
+    # ready_to_merge=true. Branch: feat/path-c2-file-detectors-be-claude
+    # (archive tag pushed: archive/2026/06/feat-path-c2-file-detectors-be-claude-pr384).
+    #
+    # Image build run: gh run view 26839140380 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-75fc507
+    #   digest sha256:5133ad487d68dc434d3a041734fc33f9131423316de7c976b2a0a3d0e38bc91e
+    digest: sha256:5133ad487d68dc434d3a041734fc33f9131423316de7c976b2a0a3d0e38bc91e
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
