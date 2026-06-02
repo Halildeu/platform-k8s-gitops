@@ -22,11 +22,12 @@ Workcube ERP'ye entegre toplantı zekâsı platformu. Telefon / masaüstü / Tea
 
 | Repo | Rol | Durum |
 |---|---|---|
-| `platform-ai` | Python STT/diarization/meeting-ai (FastAPI + faster-whisper + pyannote + LLM) | 🟢 live-stt-service PoC iskelet LIVE (PR #1 MERGED `4088d9a`) |
-| `platform-backend` | Spring Boot — `audio-gateway-service` (WebFlux) + `meeting-service` + `transcript-service` | ⏳ planning (PR-gw-01 sırada) |
-| `platform-web` | React + Single-SPA — `mfe-meeting` MFE | ⏳ planning (Faz 24.6) |
-| `platform-mobile` | React Native + Expo — audio capture client | ⏳ repo henüz açılmadı (Faz 24.5) |
-| `platform-k8s-gitops` | Kustomize + ArgoCD GitOps + ADR-0030 + observability skeleton | 🟡 charter (bu doküman + ADR placeholder + observability skeleton) |
+| `platform-ai` | Python STT/diarization/meeting-ai (FastAPI + faster-whisper + pyannote + LLM) | 🟢 live-stt-service PoC iskelet LIVE (PR #1 MERGED `4088d9a`) + correlation_id + Prometheus metrics LIVE |
+| `platform-backend` | Spring Boot — `audio-gateway-service` (WebFlux) + `meeting-service` + `transcript-service` | 🟢 audio-gateway-service LIVE main'de (commit `6fa713b5`); meeting/transcript planlı (M6) |
+| `platform-web` | React + Single-SPA — `mfe-meeting` MFE | ⏳ planning (M6) |
+| `platform-mobile` | **React Native + Expo** + TypeScript — iOS + Android mobile client | 🟢 **YENI scaffold LIVE 2026-06-02** (commits `a774412` + `3a609a8`) — Expo SDK 52 + RN 0.76 + expo-audio + expo-auth-session + EAS Build + 10 slice issue (#85-94) |
+| `platform-desktop` | **Electron + React** + TypeScript — macOS + Windows + Linux desktop client | 🟢 **YENI scaffold LIVE 2026-06-02** (commit `a245578`) — Electron 33 + React 19 + Vite 6 + electron-builder cross-platform + 10 slice issue (#75-84) |
+| `platform-k8s-gitops` | Kustomize + ArgoCD GitOps + ADR-0030 + observability skeleton | 🟢 charter LIVE (PR #1207 MERGED) + bu doküman güncelle |
 
 ## 3. 3-AI Mutabakat Noktaları (her biri 3 AI tarafından onaylı)
 
@@ -143,9 +144,12 @@ PR-gpu-01  GPU Dockerfile variant (donanım + ölçüm sonrası)
 | platform-ai | PR-wer-01 WER raporu | PR-stt-03 MERGED + pilot meeting kaydı |
 | platform-ai | PR-final-stt-01 | WER raporu çıktısına göre |
 | platform-ai | PR-gpu-01 | donanım + ölçüm sonrası |
-| platform-mobile | repo açma + RN MVP | PR-gw-01 + PR-queue-01 LIVE testai |
-| platform-web | mfe-meeting MFE | PR-gw-01 + PR-queue-01 LIVE testai |
-| platform-backend | meeting-service + transcript-service | PR-gw-01 ile paralel veya hemen sonra |
+| **platform-mobile** | **scaffold LIVE + 10 slice (#85-94)** | PR-gw-01 + PR-queue-01 LIVE testai | 🟢 **scaffold LIVE 2026-06-02** (`a774412`+`3a609a8`) |
+| **platform-desktop** | **scaffold LIVE + 10 slice (#75-84)** | PR-gw-01 + PR-queue-01 LIVE testai | 🟢 **scaffold LIVE 2026-06-02** (`a245578`) |
+| platform-web | mfe-meeting MFE | PR-gw-01 + PR-queue-01 LIVE testai | ⏳ M6 |
+| platform-backend | meeting-service + transcript-service | PR-gw-01 paralel | ⏳ M6 |
+| platform-backend | Faz 23 notification entegre (meeting events) | M6 ortası | ⏳ M6 |
+| platform-backend | report-service weekly-meeting-summary | M6 sonu | ⏳ M6 |
 
 ## 7. Donanım & Resource Stratejisi
 
