@@ -86,12 +86,24 @@
       "properties": {
         "repo": { "$ref": "#/$defs/repo_full_name" },
         "path": { "$ref": "#/$defs/relative_path" },
-        "kind": { "$ref": "#/$defs/kind" },
+        "kind": {
+          "$ref": "#/$defs/kind",
+          "description": "Mirror MUST NOT use java_grid_column_case_literals — that strategy is a backend-canonical-only narrow extractor; mirror sides use ts_const_tuple / ts_union_type."
+        },
         "symbol": {
           "type": "string",
           "minLength": 1
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "java_grid_column_case_literals" } } },
+          "then": {
+            "description": "Codex post-impl iter-1 axis 6 must-fix: forbid grid kind on the mirror side at the schema level (was previously only enforced at parse time).",
+            "not": {}
+          }
+        }
+      ]
     },
     "mapping": {
       "type": "object",

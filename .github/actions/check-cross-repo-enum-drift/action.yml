@@ -46,6 +46,13 @@ inputs:
     description: "Path to a file containing the running PR body (empty on push/schedule)"
     required: false
     default: ""
+  own_changed_paths_file:
+    description: |
+      Path to a newline-separated list of files modified by the running PR.
+      Required for §I6 same-mapping enforcement when own_role is canonical
+      or mirror. Empty on spec-host runs or push/schedule events.
+    required: false
+    default: ""
   action_commit_sha:
     description: "SHA of this action's checked-out commit (for report header line)"
     required: false
@@ -109,5 +116,15 @@ runs:
         if [[ -n "${{ inputs.own_pr_body_file }}" ]]; then
           ARGS+=(--own-pr-body-file "${{ inputs.own_pr_body_file }}")
         fi
+        if [[ -n "${{ inputs.own_changed_paths_file }}" ]]; then
+          ARGS+=(--own-changed-paths-file "${{ inputs.own_changed_paths_file }}")
+        fi
+        # Codex post-impl iter-1 axis 8 must-fix: write `report-path` output
+        # even on red gate so callers can upload the diagnostic artifact.
+        # Capture rc, write output, then re-exit with the same code.
+        set +e
         python3 "$SCRIPT" "${ARGS[@]}"
+        rc=$?
+        set -e
         echo "report-path=$REPORT_PATH" >> "$GITHUB_OUTPUT"
+        exit $rc

@@ -25,9 +25,20 @@ SCRIPT_DIR = REPO_ROOT / "scripts" / "drift_detection"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from lib.cross_repo_enum import parsers  # noqa: E402
+from lib.cross_repo_enum.fetcher import (  # noqa: E402
+    ContentsKey,
+    ContentsResult,
+    FetchError,
+    PullKey,
+    PullResult,
+)
 from lib.cross_repo_enum.paired_pr import (  # noqa: E402
+    MergeOrderViolation,
     PairingError,
+    PairingResult,
+    check_canonical_first,
     extract_paired_pr_url,
+    guarded_paths_from_spec,
     parse_pr_url,
 )
 from lib.cross_repo_enum.spec_validator import (  # noqa: E402
@@ -35,6 +46,51 @@ from lib.cross_repo_enum.spec_validator import (  # noqa: E402
     load_spec_schema,
     validate_spec,
 )
+
+# Import main script via importlib so private `_run_mapping` is reachable.
+import importlib.util  # noqa: E402
+
+MAIN_SCRIPT_PATH = SCRIPT_DIR / "check_drift_cross_repo_enums.py"
+_spec = importlib.util.spec_from_file_location("check_drift_cross_repo_enums", MAIN_SCRIPT_PATH)
+main_script = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(main_script)
+
+
+# ----------------------------------------------------------------------
+# FakeFetcher — pre-canned responses for _run_mapping tests
+# ----------------------------------------------------------------------
+
+
+class FakeFetcher:
+    """In-memory fetcher: pre-canned contents + pulls keyed by their key tuples."""
+
+    def __init__(
+        self,
+        *,
+        contents: dict[tuple[str, str, str], ContentsResult] | None = None,
+        pulls: dict[tuple[str, int], PullResult] | None = None,
+    ) -> None:
+        self._contents = contents or {}
+        self._pulls = pulls or {}
+        self.token_set = True
+
+    def get_contents(self, key: ContentsKey) -> ContentsResult:
+        k = (key.repo, key.path, key.ref)
+        if k not in self._contents:
+            raise FetchError(
+                f"FakeFetcher missing contents: {k!r}",
+                exit_code=2,
+            )
+        return self._contents[k]
+
+    def get_pull(self, key: PullKey) -> PullResult:
+        k = (key.repo, key.number)
+        if k not in self._pulls:
+            raise FetchError(
+                f"FakeFetcher missing pull: {k!r}",
+                exit_code=2,
+            )
+        return self._pulls[k]
 
 
 SPEC_SCHEMA_PATH = REPO_ROOT / "config" / "cross_repo_enum_drift_spec.schema.json"
@@ -692,6 +748,458 @@ class TestRealSourceParserSanity(unittest.TestCase):
             set(out),
             {"AUTO", "AUTO_DELAYED", "MANUAL", "DISABLED", "UNKNOWN"},
         )
+
+
+# ----------------------------------------------------------------------
+# _run_mapping per-mirror equality (the iter-3 union-bug regression)
+# ----------------------------------------------------------------------
+
+
+class TestRunMappingPerMirrorEquality(unittest.TestCase):
+    """Regression for the iter-3 mathematical bug: union-of-mirrors equality
+    would silently pass `canonical={A,B,C,D}, mirror_1={A,B,C,D}, mirror_2={A,B,C}`.
+    Per-mirror AND must FAIL it.
+    """
+
+    CANONICAL_JAVA = """
+public enum Foo { A, B, C, D }
+"""
+    MIRROR_FULL_TUPLE = """
+const FOO_VALUES = ['A', 'B', 'C', 'D'] as const;
+"""
+    MIRROR_STALE_TUPLE = """
+const FOO_TUPLE_STALE = ['A', 'B', 'C'] as const;
+"""
+
+    def _spec(self) -> dict:
+        return {
+            "id": "foo",
+            "canonical": {
+                "repo": "x/back",
+                "path": "Foo.java",
+                "kind": "java_enum",
+                "symbol": "Foo",
+            },
+            "mirrors": [
+                {
+                    "repo": "x/web",
+                    "path": "values.ts",
+                    "kind": "ts_const_tuple",
+                    "symbol": "FOO_VALUES",
+                },
+                {
+                    "repo": "x/web",
+                    "path": "stale.ts",
+                    "kind": "ts_const_tuple",
+                    "symbol": "FOO_TUPLE_STALE",
+                },
+            ],
+        }
+
+    def test_per_mirror_and_catches_stale_mirror(self) -> None:
+        """One full mirror + one stale mirror: union would FALSELY pass; AND must FAIL."""
+        fetcher = FakeFetcher(
+            contents={
+                ("x/back", "Foo.java", "main"): ContentsResult(self.CANONICAL_JAVA, "shaA"),
+                ("x/web", "values.ts", "main"): ContentsResult(self.MIRROR_FULL_TUPLE, "shaB"),
+                ("x/web", "stale.ts", "main"): ContentsResult(self.MIRROR_STALE_TUPLE, "shaC"),
+            }
+        )
+        report = main_script._run_mapping(
+            mapping_spec=self._spec(),
+            fetcher=fetcher,
+            canonical_ref="main",
+            mirror_ref="main",
+            own_role="spec-host",
+        )
+        self.assertEqual(report.verdict, "FAIL")
+        # The full mirror has no diff; the stale mirror is missing 'D'.
+        full_mirror = next(m for m in report.mirrors if m.symbol == "FOO_VALUES")
+        stale_mirror = next(m for m in report.mirrors if m.symbol == "FOO_TUPLE_STALE")
+        self.assertEqual(full_mirror.missing_in_mirror, [])
+        self.assertEqual(stale_mirror.missing_in_mirror, ["D"])
+        self.assertEqual(stale_mirror.missing_in_canonical, [])
+
+    def test_both_mirrors_full_passes(self) -> None:
+        fetcher = FakeFetcher(
+            contents={
+                ("x/back", "Foo.java", "main"): ContentsResult(self.CANONICAL_JAVA, "shaA"),
+                ("x/web", "values.ts", "main"): ContentsResult(self.MIRROR_FULL_TUPLE, "shaB"),
+                ("x/web", "stale.ts", "main"): ContentsResult(
+                    "const FOO_TUPLE_STALE = ['A', 'B', 'C', 'D'] as const;",
+                    "shaC",
+                ),
+            }
+        )
+        report = main_script._run_mapping(
+            mapping_spec=self._spec(),
+            fetcher=fetcher,
+            canonical_ref="main",
+            mirror_ref="main",
+            own_role="spec-host",
+        )
+        self.assertEqual(report.verdict, "PASS")
+
+
+class TestRunMappingDuplicates(unittest.TestCase):
+    """canonical or mirror with a duplicate value → FAIL (value/extraction-level)."""
+
+    def test_canonical_duplicate_fails(self) -> None:
+        spec = {
+            "id": "foo",
+            "canonical": {
+                "repo": "x/back",
+                "path": "Foo.java",
+                "kind": "java_enum",
+                "symbol": "Foo",
+            },
+            "mirrors": [
+                {
+                    "repo": "x/web",
+                    "path": "values.ts",
+                    "kind": "ts_const_tuple",
+                    "symbol": "FOO_VALUES",
+                }
+            ],
+        }
+        # The java_enum parser actually rejects duplicates structurally; to
+        # simulate a duplicate at the verdict level, use a parser that allows
+        # them (ts_const_tuple). Build a synthetic mapping with a duplicate
+        # in the canonical (TS-canonical for the test only).
+        spec = {
+            "id": "foo",
+            "canonical": {
+                "repo": "x/back",
+                "path": "values.ts",
+                "kind": "ts_const_tuple",
+                "symbol": "CANONICAL_TUPLE",
+            },
+            "mirrors": [
+                {
+                    "repo": "x/web",
+                    "path": "values.ts",
+                    "kind": "ts_const_tuple",
+                    "symbol": "MIRROR_TUPLE",
+                }
+            ],
+        }
+        fetcher = FakeFetcher(
+            contents={
+                ("x/back", "values.ts", "main"): ContentsResult(
+                    "const CANONICAL_TUPLE = ['A', 'B', 'A'] as const;",
+                    "shaA",
+                ),
+                ("x/web", "values.ts", "main"): ContentsResult(
+                    "const MIRROR_TUPLE = ['A', 'B'] as const;",
+                    "shaB",
+                ),
+            }
+        )
+        report = main_script._run_mapping(
+            mapping_spec=spec,
+            fetcher=fetcher,
+            canonical_ref="main",
+            mirror_ref="main",
+            own_role="spec-host",
+        )
+        self.assertEqual(report.verdict, "FAIL")
+        self.assertEqual(report.canonical.duplicates, ["A"])
+
+    def test_mirror_duplicate_fails(self) -> None:
+        spec = {
+            "id": "foo",
+            "canonical": {
+                "repo": "x/back",
+                "path": "Foo.java",
+                "kind": "java_enum",
+                "symbol": "Foo",
+            },
+            "mirrors": [
+                {
+                    "repo": "x/web",
+                    "path": "values.ts",
+                    "kind": "ts_const_tuple",
+                    "symbol": "FOO_TUPLE",
+                }
+            ],
+        }
+        fetcher = FakeFetcher(
+            contents={
+                ("x/back", "Foo.java", "main"): ContentsResult(
+                    "public enum Foo { A, B, C }",
+                    "shaA",
+                ),
+                ("x/web", "values.ts", "main"): ContentsResult(
+                    "const FOO_TUPLE = ['A', 'B', 'C', 'A'] as const;",
+                    "shaB",
+                ),
+            }
+        )
+        report = main_script._run_mapping(
+            mapping_spec=spec,
+            fetcher=fetcher,
+            canonical_ref="main",
+            mirror_ref="main",
+            own_role="spec-host",
+        )
+        self.assertEqual(report.verdict, "FAIL")
+        mirror = report.mirrors[0]
+        self.assertEqual(mirror.duplicates, ["A"])
+
+
+# ----------------------------------------------------------------------
+# Paired-PR state machine — check_canonical_first
+# ----------------------------------------------------------------------
+
+
+def _make_pull(state: str, merged_at: str | None) -> PullResult:
+    return PullResult(
+        state=state,
+        merged_at=merged_at,
+        body="",
+        head_sha="abc123",
+        head_ref="feat/x",
+        head_repo_full_name="x/web",
+        base_ref="main",
+        base_repo_full_name="x/web",
+    )
+
+
+class TestCheckCanonicalFirst(unittest.TestCase):
+    def _result(self, pull: PullResult) -> PairingResult:
+        return PairingResult(
+            mode="paired",
+            paired_pr_url="https://github.com/x/web/pull/1",
+            paired_pull=pull,
+            reciprocal_pairing=False,
+        )
+
+    # --- canonical-side ---
+
+    def test_canonical_side_open_mirror_passes(self) -> None:
+        check_canonical_first(
+            own_role="canonical",
+            paired=self._result(_make_pull("open", None)),
+        )
+
+    def test_canonical_side_closed_unmerged_mirror_blocks(self) -> None:
+        with self.assertRaises(MergeOrderViolation):
+            check_canonical_first(
+                own_role="canonical",
+                paired=self._result(_make_pull("closed", None)),
+            )
+
+    def test_canonical_side_merged_mirror_blocks_reverse_order(self) -> None:
+        # Mirror already merged but canonical still open → caught after-the-fact.
+        with self.assertRaises(MergeOrderViolation):
+            check_canonical_first(
+                own_role="canonical",
+                paired=self._result(_make_pull("closed", "2026-06-02T10:00:00Z")),
+            )
+
+    # --- mirror-side ---
+
+    def test_mirror_side_open_canonical_blocks(self) -> None:
+        with self.assertRaises(MergeOrderViolation) as cm:
+            check_canonical_first(
+                own_role="mirror",
+                paired=self._result(_make_pull("open", None)),
+            )
+        self.assertIn("must merge first", str(cm.exception))
+
+    def test_mirror_side_closed_unmerged_canonical_blocks(self) -> None:
+        with self.assertRaises(MergeOrderViolation):
+            check_canonical_first(
+                own_role="mirror",
+                paired=self._result(_make_pull("closed", None)),
+            )
+
+    def test_mirror_side_merged_canonical_passes(self) -> None:
+        check_canonical_first(
+            own_role="mirror",
+            paired=self._result(_make_pull("closed", "2026-06-02T10:00:00Z")),
+        )
+
+
+class TestPairedPRMultipleBlocks(unittest.TestCase):
+    """Codex post-impl iter-1 axis 3 must-fix: multiple fenced blocks must not
+    silently accept the first URL (iter-2 bug).
+    """
+
+    def test_two_blocks_two_urls_rejected(self) -> None:
+        body = (
+            "<!-- cross-repo-enum-drift:paired-pr -->\n"
+            "paired_pr_url: https://github.com/x/web/pull/1\n"
+            "<!-- something else -->\n"
+            "<!-- cross-repo-enum-drift:paired-pr -->\n"
+            "paired_pr_url: https://github.com/x/web/pull/2\n"
+        )
+        with self.assertRaises(PairingError) as cm:
+            extract_paired_pr_url(body)
+        msg = str(cm.exception).lower()
+        self.assertIn("multiple", msg)
+        # The error message should reference both block count and URL count
+        # for actionable diagnostics.
+        self.assertIn("2", str(cm.exception))
+
+
+# ----------------------------------------------------------------------
+# guarded_paths_from_spec
+# ----------------------------------------------------------------------
+
+
+class TestGuardedPathsFromSpec(unittest.TestCase):
+    def test_indexes_canonical_and_mirrors(self) -> None:
+        mappings = [
+            {
+                "id": "a",
+                "canonical": {
+                    "repo": "x/back",
+                    "path": "src/A.java",
+                    "kind": "java_enum",
+                    "symbol": "A",
+                },
+                "mirrors": [
+                    {
+                        "repo": "x/web",
+                        "path": "src/a.ts",
+                        "kind": "ts_union_type",
+                        "symbol": "A",
+                    }
+                ],
+            },
+            {
+                "id": "b",
+                "canonical": {
+                    "repo": "x/back",
+                    "path": "src/B.java",
+                    "kind": "java_enum",
+                    "symbol": "B",
+                },
+                "mirrors": [
+                    {
+                        "repo": "x/web",
+                        "path": "src/a.ts",  # same mirror file as 'a'
+                        "kind": "ts_const_tuple",
+                        "symbol": "B_VALUES",
+                    }
+                ],
+            },
+        ]
+        out = guarded_paths_from_spec(mappings)
+        self.assertEqual(out["x/back"], {"src/A.java", "src/B.java"})
+        self.assertEqual(out["x/web"], {"src/a.ts"})
+
+
+# ----------------------------------------------------------------------
+# Schema — mirror with grid kind is rejected
+# ----------------------------------------------------------------------
+
+
+class TestSchemaMirrorGridKind(unittest.TestCase):
+    """Codex post-impl iter-1 axis 6 must-fix: mirror MUST NOT use
+    java_grid_column_case_literals at the schema level (was previously only
+    rejected at parse time, AFTER any fetch).
+    """
+
+    def setUp(self) -> None:
+        self.schema = load_spec_schema(SPEC_SCHEMA_PATH)
+
+    def test_mirror_grid_kind_rejected(self) -> None:
+        spec = {
+            "schema_version": 1,
+            "mappings": [
+                {
+                    "id": "x",
+                    "canonical": {
+                        "repo": "x/back",
+                        "path": "a.java",
+                        "kind": "java_enum",
+                        "symbol": "Foo",
+                    },
+                    "mirrors": [
+                        {
+                            "repo": "x/web",
+                            "path": "b.java",
+                            "kind": "java_grid_column_case_literals",
+                            "symbol": "bar",
+                        }
+                    ],
+                }
+            ],
+        }
+        with self.assertRaises(SpecValidationError):
+            validate_spec(spec, self.schema)
+
+
+# ----------------------------------------------------------------------
+# Parser edge fixtures Codex called out
+# ----------------------------------------------------------------------
+
+
+class TestParserEdgeFixtures(unittest.TestCase):
+    def test_java_enum_with_suppress_warnings(self) -> None:
+        src = """
+public enum Foo {
+    @SuppressWarnings("foo")
+    A,
+    B,
+    C
+}
+"""
+        out = parsers.parse_java_enum(src, "Foo")
+        self.assertEqual(out, ["A", "B", "C"])
+
+    def test_java_set_of_trailing_comma_rejected(self) -> None:
+        """Java compiles `Set.of("A", "B",)` — the residual comma after the
+        last literal is acceptable per I2 (just a trailing separator). The
+        parser must keep the value list correct.
+        """
+        src = 'public static final Set<String> X = Set.of("A", "B",);'
+        out = parsers.parse_java_set_of(src, "X")
+        self.assertEqual(out, ["A", "B"])
+
+    def test_ts_const_tuple_as_const_as_cast(self) -> None:
+        src = "export const FOO = ['A', 'B'] as const as readonly ('A' | 'B')[];"
+        out = parsers.parse_ts_const_tuple(src, "FOO")
+        self.assertEqual(out, ["A", "B"])
+
+    def test_ts_union_type_multi_line_last_line_semicolon(self) -> None:
+        src = """
+export type Foo =
+  | 'A'
+  | 'B'
+  | 'C'
+;
+"""
+        out = parsers.parse_ts_union_type(src, "Foo")
+        self.assertEqual(out, ["A", "B", "C"])
+
+    def test_grid_column_case_extra_whitespace(self) -> None:
+        src = '''
+new GridColumn("prohibited_status",
+    "CASE WHEN  pe.id  IS  NULL  THEN  'NO_EVALUATION'  ELSE  'OK'  END",
+    ColumnType.ENUM, false, "h")
+'''
+        out = parsers.parse_java_grid_column_case_literals(
+            src, "prohibited_status", anchor='new GridColumn("prohibited_status",'
+        )
+        self.assertEqual(out, ["NO_EVALUATION", "OK"])
+
+    def test_grid_column_case_double_quote_in_then_literal_rejected(self) -> None:
+        """SQL identifiers (double-quoted) are not the literal payload — our
+        flat-CASE regex expects single-quoted literals. A double-quoted THEN
+        target must fail the parser, NOT be silently extracted.
+        """
+        src = '''
+new GridColumn("prohibited_status",
+    "CASE WHEN pe.id IS NULL THEN \\"NO_EVALUATION\\" ELSE \\"OK\\" END",
+    ColumnType.ENUM, false, "h")
+'''
+        with self.assertRaises(parsers.ParseError):
+            parsers.parse_java_grid_column_case_literals(
+                src, "prohibited_status", anchor='new GridColumn("prohibited_status",'
+            )
 
 
 if __name__ == "__main__":

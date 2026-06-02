@@ -63,6 +63,7 @@ from lib.cross_repo_enum.paired_pr import (  # noqa: E402
     PairingResult,
     check_canonical_first,
     extract_paired_pr_url,
+    guarded_paths_from_spec,
     parse_pr_url,
     validate_paired_pr,
 )
@@ -118,6 +119,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "When omitted, paired-PR protocol is not invoked.",
     )
     p.add_argument(
+        "--own-changed-paths-file",
+        type=Path,
+        default=None,
+        help="Path to a newline-separated list of file paths modified by the "
+        "running PR. Used by §I6 same-mapping enforcement on canonical/mirror "
+        "side runs. When omitted, the own-side same-mapping check is skipped.",
+    )
+    p.add_argument(
         "--report-out",
         type=Path,
         default=Path("/tmp/cross-repo-enum-drift-report.json"),
@@ -162,6 +171,14 @@ def main(argv: list[str] | None = None) -> int:
     pr_body = ""
     if args.own_pr_body_file and args.own_pr_body_file.exists():
         pr_body = args.own_pr_body_file.read_text(encoding="utf-8")
+    own_changed_paths: set[str] | None = None
+    if args.own_changed_paths_file and args.own_changed_paths_file.exists():
+        own_changed_paths = {
+            line.strip()
+            for line in args.own_changed_paths_file.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        }
+    guarded_paths_by_repo = guarded_paths_from_spec(mappings_spec)
     pairing = _resolve_pairing(
         pr_body=pr_body,
         own_repo=args.own_repo,
@@ -169,6 +186,8 @@ def main(argv: list[str] | None = None) -> int:
         own_pr_url=args.own_pr_url,
         canonical_default=args.canonical_ref,
         mirror_default=args.mirror_ref,
+        own_changed_paths=own_changed_paths,
+        guarded_paths_by_repo=guarded_paths_by_repo,
         fetcher=fetcher,
     )
     if isinstance(pairing, _PairingFailure):
@@ -390,6 +409,8 @@ def _resolve_pairing(
     own_pr_url: str,
     canonical_default: str,
     mirror_default: str,
+    own_changed_paths: set[str] | None,
+    guarded_paths_by_repo: dict[str, set[str]],
     fetcher: Fetcher,
 ) -> _PairingResolved | _PairingFailure:
     """Determine pairing mode + canonical/mirror refs to use."""
@@ -424,6 +445,8 @@ def _resolve_pairing(
             own_repo=own_repo,
             expected_other_repo=expected_other,
             own_pr_url=own_pr_url,
+            own_changed_paths=own_changed_paths if own_role != "spec-host" else None,
+            guarded_paths_by_repo=guarded_paths_by_repo,
             fetcher=fetcher,
         )
     except (PairingError, FetchError) as exc:

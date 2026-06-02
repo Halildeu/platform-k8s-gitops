@@ -59,7 +59,11 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          GH_TOKEN: ${{ secrets.CROSS_REPO_CONTRACT_READ_TOKEN || github.token }}
+          # Codex post-impl iter-1 axis 4: ADR-0031 §I3 forbids a token cascade
+          # (no `secrets.X || github.token`). Spec-host repo's own gate uses the
+          # explicit secret. Empty value → `gh api` cross-repo fetch returns 403
+          # and the gate fails closed with the I3 disambiguation message.
+          GH_TOKEN: ${{ secrets.CROSS_REPO_CONTRACT_READ_TOKEN }}
         run: |
           set -euo pipefail
           OWN_PR_URL="https://github.com/${{ github.repository }}/pull/${PR_NUMBER}"
@@ -71,7 +75,11 @@ jobs:
       - name: Run drift guard (PR)
         if: ${{ github.event_name == 'pull_request' }}
         env:
-          GH_TOKEN: ${{ secrets.CROSS_REPO_CONTRACT_READ_TOKEN || github.token }}
+          # Codex post-impl iter-1 axis 4: ADR-0031 §I3 forbids a token cascade
+          # (no `secrets.X || github.token`). Spec-host repo's own gate uses the
+          # explicit secret. Empty value → `gh api` cross-repo fetch returns 403
+          # and the gate fails closed with the I3 disambiguation message.
+          GH_TOKEN: ${{ secrets.CROSS_REPO_CONTRACT_READ_TOKEN }}
           ACTION_COMMIT_SHA: ${{ github.sha }}
         run: |
           python3 scripts/drift_detection/check_drift_cross_repo_enums.py \
@@ -88,7 +96,11 @@ jobs:
       - name: Run drift guard (push/schedule/dispatch)
         if: ${{ github.event_name != 'pull_request' }}
         env:
-          GH_TOKEN: ${{ secrets.CROSS_REPO_CONTRACT_READ_TOKEN || github.token }}
+          # Codex post-impl iter-1 axis 4: ADR-0031 §I3 forbids a token cascade
+          # (no `secrets.X || github.token`). Spec-host repo's own gate uses the
+          # explicit secret. Empty value → `gh api` cross-repo fetch returns 403
+          # and the gate fails closed with the I3 disambiguation message.
+          GH_TOKEN: ${{ secrets.CROSS_REPO_CONTRACT_READ_TOKEN }}
           ACTION_COMMIT_SHA: ${{ github.sha }}
         run: |
           python3 scripts/drift_detection/check_drift_cross_repo_enums.py \

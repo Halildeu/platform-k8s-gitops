@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from .fetcher import FetchError, Fetcher, PullKey, PullResult
+from .fetcher import ContentsKey, FetchError, Fetcher, PullKey, PullResult
 
 
 PAIRED_PR_BLOCK_RE = re.compile(
@@ -63,23 +63,29 @@ class PairingResult:
 
 def extract_paired_pr_url(body: str) -> str | None:
     """Return the single paired_pr_url from the PR body, or None if no block.
+
+    Aggregates paired_pr_url lines across ALL fenced blocks (Codex post-impl
+    iter-1 axis 3 must-fix: a second block was bypassed in iter-2 by reading
+    only block_matches[0]).
+
     Raises PairingError on:
       - block present but with zero paired_pr_url lines
-      - block present but with multiple paired_pr_url lines
+      - any number of blocks containing a total of != 1 paired_pr_url lines
     """
     block_matches = PAIRED_PR_BLOCK_RE.findall(body or "")
     if not block_matches:
         return None
-    block_text = block_matches[0]
-    urls = PAIRED_PR_URL_RE.findall(block_text)
+    urls: list[str] = []
+    for block_text in block_matches:
+        urls.extend(PAIRED_PR_URL_RE.findall(block_text))
     if not urls:
         raise PairingError(
             "cross-repo-enum-drift:paired-pr block present but no paired_pr_url line"
         )
     if len(urls) > 1:
         raise PairingError(
-            f"multiple paired_pr_url entries — paired-PR protocol expects exactly one per PR; "
-            f"found {len(urls)}"
+            f"multiple paired_pr_url entries (across {len(block_matches)} fenced block(s)) — "
+            f"paired-PR protocol expects exactly one per PR; found {len(urls)}"
         )
     return urls[0]
 
@@ -100,12 +106,20 @@ def validate_paired_pr(
     own_repo: str,
     expected_other_repo: str,
     own_pr_url: str,
+    own_changed_paths: set[str] | None,
+    guarded_paths_by_repo: dict[str, set[str]],
     fetcher: Fetcher,
 ) -> PairingResult:
-    """Fetch the paired PR and validate:
+    """Fetch the paired PR and validate ADR-0031 §I6:
       - paired PR repo matches `expected_other_repo` (NOT same as `own_repo`)
       - paired PR base ref is `main`
       - paired PR body's reciprocal `paired_pr_url` (if present) matches `own_pr_url`
+      - **same guarded mapping touched** invariant (Codex post-impl iter-1 axis
+        3 must-fix): the paired PR's changed-file list intersects the spec's
+        guarded paths for the opposite repo, AND when `own_changed_paths` is
+        provided, this PR's changes also intersect the spec's guarded paths
+        for `own_repo`. Otherwise PairingError — the paired URL points at an
+        unrelated PR.
 
     Returns PairingResult with mode='paired' on success.
     """
@@ -125,18 +139,84 @@ def validate_paired_pr(
         raise PairingError(
             f"paired PR base must be main; got {paired.base_ref!r} for {paired_url}"
         )
+    # ADR §I6 same-guarded-mapping check — fetch the paired PR's changed
+    # files and assert it touches at least one guarded path for its repo.
+    paired_changed = _fetch_changed_paths(ref.repo, ref.number)
+    paired_guarded = guarded_paths_by_repo.get(ref.repo, set())
+    if not (paired_changed & paired_guarded):
+        raise PairingError(
+            f"paired PR {paired_url} does not touch any guarded path for {ref.repo!r}; "
+            f"paired-PR protocol requires both sides to mutate a guarded mapping"
+        )
+    # And our side — when we know our changed paths — must also touch a
+    # guarded path for own_repo. (Allow None for spec-host runs.)
+    if own_changed_paths is not None:
+        own_guarded = guarded_paths_by_repo.get(own_repo, set())
+        if not (own_changed_paths & own_guarded):
+            raise PairingError(
+                f"current PR does not touch any guarded path for {own_repo!r}; "
+                f"remove paired_pr_url or open the actual paired mutation"
+            )
     # reciprocal check — paired PR body should reference our PR url
     try:
         reciprocal_url = extract_paired_pr_url(paired.body or "")
     except PairingError:
         reciprocal_url = None
-    reciprocal = bool(reciprocal_url and reciprocal_url.strip().rstrip("/") == own_pr_url.strip().rstrip("/"))
+    reciprocal = bool(
+        reciprocal_url
+        and reciprocal_url.strip().rstrip("/") == own_pr_url.strip().rstrip("/")
+    )
     return PairingResult(
         mode="paired",
         paired_pr_url=paired_url,
         paired_pull=paired,
         reciprocal_pairing=reciprocal,
     )
+
+
+def _fetch_changed_paths(repo: str, number: int) -> set[str]:
+    """Return the set of paths modified by the PR (added / modified / deleted).
+
+    Uses `gh api repos/<repo>/pulls/<num>/files` directly via subprocess so
+    the fetcher cache is not poisoned (this is a one-shot lookup per paired
+    PR resolution).
+    """
+    import json as _json
+    import subprocess as _sp
+
+    proc = _sp.run(
+        ["gh", "api", f"repos/{repo}/pulls/{number}/files", "--paginate"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        err_low = proc.stderr.lower()
+        if "404" in err_low or "not found" in err_low:
+            raise PairingError(
+                f"paired PR file list not found at {repo}#{number}"
+            )
+        if "403" in err_low or "forbidden" in err_low:
+            raise PairingError(
+                f"auth insufficient for paired PR file list at {repo}#{number}: "
+                "required Pull requests:Read"
+            )
+        raise PairingError(
+            f"gh api files failed for {repo}#{number}: {proc.stderr.strip()[:200]}"
+        )
+    payload = _json.loads(proc.stdout) if proc.stdout.strip() else []
+    return {entry.get("filename", "") for entry in payload if entry.get("filename")}
+
+
+def guarded_paths_from_spec(spec_mappings: list[dict]) -> dict[str, set[str]]:
+    """Build a {repo: {paths}} index from the spec for the same-mapping check."""
+    out: dict[str, set[str]] = {}
+    for m in spec_mappings:
+        c = m["canonical"]
+        out.setdefault(c["repo"], set()).add(c["path"])
+        for mr in m["mirrors"]:
+            out.setdefault(mr["repo"], set()).add(mr["path"])
+    return out
 
 
 def check_canonical_first(
