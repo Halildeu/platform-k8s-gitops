@@ -3419,20 +3419,34 @@ images:
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-4830391
     #   digest sha256:42ed217862e3670e425f49de252911995528bbb4b63399fa33ae6ee966723680
     #
-    # Verify after rollout (HARD RULE — BE-025 ProhibitedSoftwareView):
+    # 2026-06-02 update: BE-024b OutdatedSoftwareDiffView web view
+    # (PR #733). Faz 22.5 P2-A slice-3b. Adds "Güncel Olmayan
+    # Değişimler" drawer tab between "Yazılım Değişimleri" and
+    # "Yasaklı Yazılım" rendering outdated-software diff 4-status
+    # enum (OK/NO_CHANGE/INSUFFICIENT_HISTORY/NO_HISTORY) as DISTINCT
+    # states + capture-window header with possiblyTruncated indicator
+    # + 4 hidden-when-empty tables (added/removed/versionChanged/
+    # availableVersionBumped). VERSION_CHANGED carries BOTH installed
+    # AND available deltas on a single row (NOT duplicated to
+    # availableVersionBumped). packageId is canonical winget identity
+    # (NOT synthetic appKey). Codex 019e870f AGREE (0 must_fix). 70
+    # vitest pass (15 view + 55 i18n contract drift detectors).
+    #
+    # Image build run: gh run view 26803854400 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-bd4da86
+    #   digest sha256:f03ff8a44e58aac0b11343a4db0cb48b20a81a9355e72f0304a241892dcfbcae
+    #
+    # Verify after rollout (HARD RULE — BE-024b OutdatedSoftwareDiffView):
     #   1. Navigate to HALILKOOLUB735 → device drawer (MouseEvent seq)
-    #   2. "Yasaklı Yazılım" tab visible between "Yazılım Değişimleri"
-    #      and "Yazılım Kataloğu"
-    #   3. Backend returns 200 with status enum (NEVER 404 — BE-025
-    #      no-existence-leak; NO_EVALUATION for unknown/cross-tenant)
-    #   4. data-status attr reflects backend status; data-findings-
-    #      count reflects findings.length; data-unauthorized reflects
-    #      decision==UNAUTHORIZED
-    #   5. NO button elements rendered (adversarial guardrail check)
-    #   6. Real-evidence chain: seed benign lab denylist rule →
-    #      compliance evaluation triggered → finding visible in
-    #      view AND via API
-    digest: sha256:42ed217862e3670e425f49de252911995528bbb4b63399fa33ae6ee966723680
+    #   2. "Güncel Olmayan Değişimler" tab visible between "Yazılım
+    #      Değişimleri" and "Yasaklı Yazılım"
+    #   3. Backend returns 200 with status enum (NEVER 404 — BE-024b
+    #      no-existence-leak; NO_HISTORY for unknown/cross-tenant)
+    #   4. data-status reflects backend status; data-total-entries
+    #      reflects sum of 4 lists
+    #   5. Real-evidence chain: HALILKOOLUB735 outdated_snapshot_count
+    #      ≥ 2 required for OK status; <2 yields INSUFFICIENT_HISTORY
+    digest: sha256:f03ff8a44e58aac0b11343a4db0cb48b20a81a9355e72f0304a241892dcfbcae
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
