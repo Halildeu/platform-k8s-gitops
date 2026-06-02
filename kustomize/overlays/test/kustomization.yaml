@@ -4351,7 +4351,31 @@ images:
     # Image build run: gh run view 26844740049 -R Halildeu/platform-backend
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-f088731
     #   digest sha256:2ebd092d97cab5591fc5249294a20c8f7bceb7d2d64646bb508346d2093c9c56
-    digest: sha256:2ebd092d97cab5591fc5249294a20c8f7bceb7d2d64646bb508346d2093c9c56
+    #
+    # 2026-06-02 BE-024c v2-c-pre-2-C-B LANDED (PR #387 → sha-04afee0):
+    # DiffCacheBackfillWorker + DiffCacheBackfillService + DiffCacheBackfillDeviceRefresher
+    # (REQUIRES_NEW per-device boundary, proxy-extracted from BackfillService to
+    # fix self-invocation bypass — Codex 019e8a09 iter-1 must-fix #1) +
+    # AdminDiffCacheController POST /api/v1/admin/diff-cache/backfill (MANAGER
+    # authz) + AdminDiffCacheBackfillRequest/Response DTOs + JPA entity
+    # source_* fields. @ConditionalOnProperty endpoint-admin.diff-cache.backfill-
+    # enabled (default true) lets test/local profile disable explicitly.
+    # Cross-AI Codex 019e8a09 3-iter consensus: iter-1 plan-time REVISE (5
+    # must-fix + 2 should-fix) absorbed → iter-2 narrow REVISE (authz
+    # reflection guard for AdminDiffCacheController POST routes + 3 docstring
+    # cleanups) absorbed → iter-3 small follow-up (per-device exception
+    # isolation test) absorbed → AGREE conditional on CI green. CI 13/13 PASS.
+    # Test surface 57/57 PASS local (AdminDiffCacheControllerTest 7 + Backfill
+    # Service PG IT 8 + Concurrency PG IT 2 + AuthzAnnotation 10 + regression
+    # 30). Cat C AFTER_COMMIT listener consistency PG IT + Cat B++ V28 backfill
+    # PG IT deferred to v2-c-pre-2-C-C pre-rollout gate.
+    #
+    # Image build run: gh run view 26847465745 -R Halildeu/platform-backend
+    #   (discovery-server build hit transient docker.io timeout; endpoint-admin-
+    #    service build itself SUCCESS — see job conclusion in workflow JSON)
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-04afee0
+    #   digest sha256:1e8dcc4b92062f04d867bd8571df93896c20c24738a93980fdd566ec1fa8ad52
+    digest: sha256:1e8dcc4b92062f04d867bd8571df93896c20c24738a93980fdd566ec1fa8ad52
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
