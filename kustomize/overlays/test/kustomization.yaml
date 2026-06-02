@@ -3510,7 +3510,57 @@ images:
     #   6. CSV "Ham veri" export → 5 new columns present with
     #      audit metadata schemaVersion=3 + columnIdsHash (SHA-256
     #      lowercase hex over comma-joined column ids)
-    digest: sha256:4e94b0966aadb8d04a5af1230b8c13973f08f42e910ef7995231211591424b70
+    #
+    # 2026-06-02 update: WEB-015 v2-b DeviceGrid surface 6 new v4 columns
+    # (platform-web PR #737 sha-443e0cf, Codex 019e87bc iter-4 AGREE
+    # ready_to_merge). Faz 22.5 P2-A coupling for the backend
+    # DeviceGridColumns SCHEMA_VERSION 3 → 4 bump
+    # (platform-backend PR #377 sha-625fc38 already pinned earlier in
+    # this overlay). Adds:
+    #   - GRID_SCHEMA_VERSION 3 → 4 (invalidates persisted v3 column
+    #     state on EntityGridTemplate)
+    #   - 6 colId entries in EndpointDevicesPage columnDefs in raw export
+    #     sequence parity with backend registry:
+    #       diagnostics_last_poll_latency_ms (NUMBER)
+    #       diagnostics_last_error_code (TEXT filter, NOT closed enum —
+    #         backend CODE_RE allows codes like NEXT_COMMAND_TIMEOUT,
+    #         DNS_TIMEOUT, UNSUPPORTED_PLATFORM)
+    #       diagnostics_last_error_at (TIMESTAMP, formatTimestamp)
+    #       startup_rdp_enabled (BOOLEAN, formatBool — null ⇒ "—")
+    #       startup_windows_firewall_event_log_enabled (BOOLEAN)
+    #       services_critical_stopped_count (NUMBER, null vs 0 distinct)
+    #   - 6 default hide:true (toggleable surfacing — Codex
+    #     019e87bc guardrail mirrors v2-a discipline)
+    #   - DICT_TR + DICT_EN parity: 6 column header keys with canonical
+    #     Turkish labels that match the backend DeviceGridColumns
+    #     registry verbatim
+    # 255 vitest pass (4 existing grid/page + existing v2-a tests +
+    # deviceGridRowV3Shape v4 expectTypeOf pin + 14 i18n v2-b drift
+    # detector + 5 EndpointDevicesPage v2-b source registry pins —
+    # incl GRID_SCHEMA_VERSION=4 negative drift v3, agTextColumnFilter
+    # pin on last_error_code, agNumberColumnFilter on numeric sentinels).
+    # TypeScript scope clean. Cross-AI Codex 019e87bc iter-4 (web
+    # companion) AGREE ready_to_merge 0 must_fix. All 24 web CI green.
+    #
+    # Image build run: gh run view 26824046555 -R Halildeu/platform-web
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-443e0cf
+    #   digest sha256:7d4ab8999b289b9dbfa959ec771485de9f458f49dfbe2f02c767bd4289d9d220
+    #
+    # Verify after rollout (HARD RULE — WEB-015 v2-b):
+    #   1. Open endpoint-admin module
+    #   2. Devices grid loads; quick-filter + status filter work
+    #   3. Column tool panel → toggle 6 v2-b columns visible
+    #   4. Header text Turkish: "Ajan Son Poll Gecikmesi (ms)" /
+    #      "Ajan Son Hata Kodu" / "Ajan Son Hata Zamanı" /
+    #      "Başlangıç RDP Etkin" / "Başlangıç Firewall Olay Günlüğü" /
+    #      "Kritik Durdurulmuş Servis Sayısı"
+    #   5. Cell render: null ⇒ "—" for not-measurable-yet (no
+    #      diagnostics/startup/services snapshot for the device);
+    #      true ⇒ "Evet"; false ⇒ "Hayır"; integer count preserved
+    #   6. CSV "Ham veri" export → 6 new columns present in row 33 with
+    #      audit metadata schemaVersion=4 + columnIdsHash (SHA-256
+    #      lowercase hex over comma-joined column ids)
+    digest: sha256:7d4ab8999b289b9dbfa959ec771485de9f458f49dfbe2f02c767bd4289d9d220
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
