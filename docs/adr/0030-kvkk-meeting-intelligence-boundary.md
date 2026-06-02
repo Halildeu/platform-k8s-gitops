@@ -67,6 +67,24 @@ Mavis MiniMax kritik notu (2026-06-02): **"Ses kaydı kadar transcript koruma kr
 - Faz 24.1 MVP tek müşteri (Workcube içi) OK
 - Multi-tenant onboarding'de retroactive eklemek YASAK — placeholder şimdi
 
+### Mobile + Desktop Client Boundary (Codex `019e89fb` placeholder)
+
+Mobile (`platform-mobile`) ve Desktop (`platform-desktop`) client'ları M6 Integration scope'unda — production deployment öncesi M7 ACCEPTED gate'de detay clause:
+
+| Konu | Sorumluluk | Mobile Detay | Desktop Detay |
+|---|---|---|---|
+| **Audio capture consent UI** | Client | Just-in-time `Audio.requestPermissionsAsync` + Türkçe KVKK rationale + Settings deep link | Pre-meeting consent modal + macOS TCC + Windows Microphone permission |
+| **Local cache/recording retention** | Client | `expo-sqlite` encrypted chunk buffer + TTL auto-purge (default 24h) + opt-in lokal kayıt | Lokal disk cache **YASAK default** (memory-only) + opt-in encrypted storage |
+| **OS permission boundary** | Client | iOS `UIBackgroundModes=audio` only when capturing + Android FOREGROUND_SERVICE_MICROPHONE + user-visible indicator | macOS hardened runtime entitlements + Windows manifest declarations + tray icon visibility |
+| **Offline transcript/artifact handling** | Client | WebSocket drop → SQLite buffer + reconnect flush + idempotency key (sessionId+chunkSeq) | Memory buffer + reconnect flush; opt-in disk persistence |
+| **Background capture user-visible** | Client + Server audit | Persistent notification (Android foreground service) + system tray icon | macOS menu bar indicator + Windows system tray + "Recording" pill |
+| **Transcript copy/share** | Client | Clipboard copy + share sheet → audit event emit | Native menu Copy/Share + audit event emit |
+| **Crash report PII filter** | Client (Sentry-style) | Stack trace only; no transcript text + no audio path | Same; plus auto-redact local file paths from crash dumps |
+| **OTA update integrity** | Client | EAS Update + signed manifest (Expo CodeSigning) + version policy | electron-updater + SHA + signature verify + staged rollout |
+| **Biometric auth (opsiyonel)** | Client | `expo-local-authentication` Face ID + Touch ID + Android biometric | Touch ID (macOS) + Windows Hello |
+
+**Production gate (M7)**: Bu tablo hukuk review ile detaylanır + ADR ACCEPTED durumuna gelir. Pilot kullanıcı kaydı **bu detaylanma öncesi YASAK**.
+
 ## Status & Open Questions (pilot öncesi cevap)
 
 - [ ] Hukuk danışmanı review (Türk KVKK uzmanı)
