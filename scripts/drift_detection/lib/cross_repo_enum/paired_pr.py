@@ -24,7 +24,11 @@ from .fetcher import ContentsKey, FetchError, Fetcher, PullKey, PullResult
 
 
 PAIRED_PR_BLOCK_RE = re.compile(
-    r"<!--\s*cross-repo-enum-drift:paired-pr\s*-->(?P<body>.*?)(?:<!--|$)",
+    # Codex post-impl iter-2 axis 3 must-fix: the terminator must be a
+    # NON-CONSUMING lookahead. The iter-2 version used `(?:<!--|$)` which
+    # consumed the opening `<!--` of the following block — two adjacent
+    # paired blocks would leave only the first URL visible to findall.
+    r"<!--\s*cross-repo-enum-drift:paired-pr\s*-->(?P<body>.*?)(?=<!--|\Z)",
     flags=re.DOTALL,
 )
 PAIRED_PR_URL_RE = re.compile(

@@ -1042,6 +1042,24 @@ class TestPairedPRMultipleBlocks(unittest.TestCase):
         # for actionable diagnostics.
         self.assertIn("2", str(cm.exception))
 
+    def test_two_adjacent_paired_blocks_two_urls_rejected(self) -> None:
+        """Codex post-impl iter-2 axis 3 must-fix: the previous regex
+        terminator `<!--|$` was consuming, so two ADJACENT paired blocks
+        (no intervening comment) silently kept only the first URL. The
+        non-consuming lookahead `(?=<!--|\\Z)` must see both blocks.
+        """
+        body = (
+            "<!-- cross-repo-enum-drift:paired-pr -->\n"
+            "paired_pr_url: https://github.com/x/web/pull/1\n"
+            "<!-- cross-repo-enum-drift:paired-pr -->\n"
+            "paired_pr_url: https://github.com/x/web/pull/2\n"
+        )
+        with self.assertRaises(PairingError) as cm:
+            extract_paired_pr_url(body)
+        msg = str(cm.exception).lower()
+        self.assertIn("multiple", msg)
+        self.assertIn("2", str(cm.exception))
+
 
 # ----------------------------------------------------------------------
 # guarded_paths_from_spec
