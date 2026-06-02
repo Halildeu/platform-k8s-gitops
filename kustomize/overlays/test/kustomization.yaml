@@ -4032,7 +4032,47 @@ images:
     # Image build run: gh run view 26811681377 -R Halildeu/platform-backend
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-00be5e2
     #   digest sha256:2d5d6267589214e95e198dd32d356108b096575d3d6e6b0e9230375e25d0e1fd
-    digest: sha256:2d5d6267589214e95e198dd32d356108b096575d3d6e6b0e9230375e25d0e1fd
+    #
+    # 2026-06-02 update: WEB-015 v2-b DeviceGrid diagnostics + startup +
+    # services sentinels (PR #377, sha-625fc38 / Codex 019e87bc iter-3 AGREE
+    # ready_to_merge). Faz 22.5 P2-A v2-b. DeviceGridColumns SCHEMA_VERSION
+    # 3→4 + 6 new colIds appended to raw export order:
+    #   - diagnostics_last_poll_latency_ms (dx.last_poll_latency_ms)
+    #   - diagnostics_last_error_code TEXT (NOT closed enum: backend
+    #     CODE_RE `^[A-Z][A-Z0-9_]{2,64}$`; agent emits codes like
+    #     NEXT_COMMAND_TIMEOUT / DNS_TIMEOUT / UNSUPPORTED_PLATFORM)
+    #   - diagnostics_last_error_at (dx.last_error_occurred_at — UI surface
+    #     name "last_error_at" but SQL source is the V23 canonical column)
+    #   - startup_rdp_enabled (CASE WHEN sx.id IS NULL OR sx.supported=false
+    #     OR sx.probe_complete=false THEN NULL ELSE sx.rdp_enabled END)
+    #   - startup_windows_firewall_event_log_enabled (same CASE guard)
+    #   - services_critical_stopped_count (se.critical_stopped_count
+    #     precomputed in LATERAL row over 6-allowlist WinDefend/wuauserv/
+    #     BITS/EventLog/EndpointAgent/MpsSvc WHERE present=true AND
+    #     state='STOPPED'; CASE guard NULL when not measurable yet)
+    # 3 new LEFT JOIN LATERAL added to DeviceGridQueryBuilder (all
+    # schema-qualified): dx (endpoint_diagnostics_snapshots) + sx
+    # (endpoint_startup_exposure_snapshots) + se (endpoint_services_snapshots
+    # with precomputed critical_stopped_count subquery against
+    # endpoint_services_entries). Canonical latest tiebreaker:
+    # collected_at DESC, created_at DESC, id DESC (V23/V24/V25 indexes +
+    # repository contract). Codex 019e87bc iter-2 must_fix: missing
+    # created_at tiebreaker would let drawer /latest and grid render
+    # different snapshots when two share collected_at.
+    # 52 endpoint-admin grid tests pass (14 DeviceGridColumnsTest with
+    # 8 v2-a/v2-b SQL invariants + 30 DeviceGridQueryBuilderTest with
+    # 2 v2-b tiebreaker + schema-qualified pins + 3
+    # DeviceGridExportAuditServiceTest with schemaVersion=4 drift + 5
+    # DeviceGridExportPostgresIntegrationTest with new v2-b LATERAL
+    # multi-snapshot tiebreaker verify under non-public schema).
+    # Cross-AI Codex 019e87bc plan→post-impl chain (iter-1 AGREE+7
+    # guardrails → iter-2 PARTIAL P1 created_at tiebreaker absorbed →
+    # iter-3 AGREE 0 must_fix). All 13 CI checks green.
+    #
+    # Image build run: gh run view 26820710202 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-625fc38
+    #   digest sha256:9bc59eebbc3f54b044c735d9b5a4e38562e1177e895c1bb5862c9baeb35ae8ef
+    digest: sha256:9bc59eebbc3f54b044c735d9b5a4e38562e1177e895c1bb5862c9baeb35ae8ef
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
