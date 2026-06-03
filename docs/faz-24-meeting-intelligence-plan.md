@@ -18,16 +18,18 @@ Workcube ERP'ye entegre toplantı zekâsı platformu. Telefon / masaüstü / Tea
 
 üretir. **STT compute worker yapısı** (`platform-ai`) Spring Boot orchestration arkasında konumlanır — mobile/web hiçbir zaman doğrudan Python servisine bağlanmaz.
 
-## 2. Repo Topology
+## 2. Repo + Host Topology
 
-| Repo | Rol | Durum |
-|---|---|---|
-| `platform-ai` | Python STT/diarization/meeting-ai (FastAPI + faster-whisper + pyannote + LLM) | 🟢 live-stt-service PoC iskelet LIVE (PR #1 MERGED `4088d9a`) |
-| `platform-backend` | Spring Boot — `audio-gateway-service` (WebFlux) + `meeting-service` + `transcript-service` | ⏳ planning (PR-gw-01 sırada) |
-| `platform-web` | React + Single-SPA — `mfe-meeting` MFE | ⏳ planning (Faz 24.6) |
-| `platform-mobile` | **React Native + Expo** + TypeScript — iOS + Android mobile client | 🟢 **scaffold LIVE 2026-06-02** (commits `a774412`+`3a609a8`) — Expo SDK 52 + RN 0.76 + expo-audio + expo-auth-session + EAS Build + 10 slice issue (#85-94) |
-| `platform-desktop` | **Electron + React** + TypeScript — macOS + Windows + Linux desktop client | 🟢 **scaffold LIVE 2026-06-02** (commit `a245578`) — Electron 33 + React 19 + Vite 6 + electron-builder cross-platform + 10 slice issue (#75-84) |
-| `platform-k8s-gitops` | Kustomize + ArgoCD GitOps + ADR-0030 + observability skeleton | 🟢 charter LIVE (PR #1207 MERGED) |
+> **Karar**: Faz 24 **iki-sunucu (two-server) topolojisi** — ADR-0031 (2026-06-03). `platform-ai` ayrı dedicated host'ta; diğer tüm `platform-*` servisleri staging-sw'da; mobile/desktop client kullanıcı cihazlarında.
+
+| Repo | Rol | Host | Durum |
+|---|---|---|---|
+| `platform-ai` | Python STT/diarization/meeting-ai (FastAPI + faster-whisper + pyannote + LLM) | **Dedicated host (yeni)** — k3s ai-test → ai-prod; ArgoCD remote register | 🟢 live-stt-service PoC iskelet LIVE (PR #1 MERGED `4088d9a`) — host provision blocker (ADR-0031) |
+| `platform-backend` | Spring Boot — `audio-gateway-service` (WebFlux) + `meeting-service` + `transcript-service` | **staging-sw** k3d-test/k3d-prod | ⏳ planning (PR-gw-01 sırada) |
+| `platform-web` | React + Single-SPA — `mfe-meeting` MFE | **staging-sw** (frontend serve) | ⏳ planning (Faz 24.6) |
+| `platform-mobile` | **React Native + Expo** + TypeScript — iOS + Android mobile client | **Kullanıcı cihazı** (App Store / Google Play distribution) | 🟢 **scaffold LIVE 2026-06-02** (commits `a774412`+`3a609a8`) |
+| `platform-desktop` | **Electron + React** + TypeScript — macOS + Windows + Linux desktop client | **Kullanıcı cihazı** (electron-updater + signed installer) | 🟢 **scaffold LIVE 2026-06-02** (commit `a245578`) |
+| `platform-k8s-gitops` | Kustomize + ArgoCD GitOps + ADR-0030 + ADR-0031 + observability skeleton | **staging-sw** ArgoCD hub + platform-ai k3s remote cluster | 🟢 charter LIVE (PR #1207 MERGED) + ADR-0031 DRAFT (bu PR) |
 
 ## 3. 3-AI Mutabakat Noktaları (her biri 3 AI tarafından onaylı)
 
@@ -102,13 +104,16 @@ Faz 24.1 MVP tek müşteri OK, ama ADR-0030'da "future multi-tenant readiness" p
 
 ---
 
-## 5. Faz 24 Akış (3-AI sabit)
+## 5. Faz 24 Akış (3-AI sabit + ADR-0031 two-server topology)
 
 ```
 Adım 0  (BU PR)
-   ├─ ADR-0030 KVKK Meeting Intelligence boundary (placeholder)
+   ├─ ADR-0030 KVKK Meeting Intelligence boundary (placeholder + §"Cross-Server STT Transit Boundary" 2026-06-03)
+   ├─ ADR-0031 Two-Server Topology — platform-ai compute plane + staging-sw orchestration plane (DRAFT 2026-06-03)
    ├─ Observability/Audit GOP skeleton (correlation id + log + metric + audit event contract)
    └─ PLAN.md Faz 24 satırı + canonical plan (bu doküman)
+        ↓
+ADR-0031 ACCEPTED + platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole ai-runtime-test + WireGuard tunnel + mTLS PKI (blocker — PR-gw-01 öncesi)
         ↓
 PR-gw-01  Audio Gateway Contract 1.0 freeze (platform-backend)
    fields: language (ISO 639-1) + correlation_id + meeting_id + session_id + tenant_id + user_id + auth + audio chunk metadata + admission contract
@@ -133,8 +138,10 @@ PR-gpu-01  GPU Dockerfile variant (donanım + ölçüm sonrası)
 
 | Repo | İş | Bağımlı |
 |---|---|---|
-| platform-k8s-gitops (Adım 0) | ADR-0030 + obs skeleton + PLAN.md | yok (BU PR) |
-| platform-backend | PR-gw-01 Gateway Contract 1.0 | Adım 0 MERGED |
+| platform-k8s-gitops (Adım 0) | ADR-0030 + ADR-0031 + obs skeleton + PLAN.md | yok (BU PR) |
+| **platform-k8s-gitops + ops** | **platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole `ai-runtime-test` + WireGuard tunnel + mTLS PKI cert auth** | ADR-0031 ACCEPTED |
+| **platform-k8s-gitops** | **Redis bounded queue manifest (staging-sw, persistence OFF, TTL kısa, max memory bounded)** | ADR-0031 ACCEPTED |
+| platform-backend | PR-gw-01 Gateway Contract 1.0 | Adım 0 MERGED + platform-ai k3s ai-test LIVE |
 | platform-ai | PR-stt-02 real audio + container e2e | PR-gw-01 MERGED |
 | platform-ai | PR-stt-03 subprocess isolation | PR-stt-02 MERGED |
 | platform-k8s-gitops | Kustomize base/apps/{audio-gateway,live-stt} + overlay | PR-gw-01 + PR-stt-03 source-merged |
@@ -151,28 +158,50 @@ PR-gpu-01  GPU Dockerfile variant (donanım + ölçüm sonrası)
 | platform-backend | Faz 23 notification entegre (meeting events) | M6 ortası |
 | platform-backend | report-service weekly-meeting-summary | M6 sonu |
 
-## 7. Donanım & Resource Stratejisi
+## 7. Donanım & Resource Stratejisi (2026-06-03 — ADR-0031 two-server topology)
 
-### Mevcut
+> **Mimari karar**: Faz 24 **iki-sunucu topolojisi** ile çalışır (ADR-0031 — Codex `019e8c09` iter-1 REVISE absorb). `platform-ai` ayrı dedicated host'ta; diğer tüm `platform-*` servisleri staging-sw'da.
 
-- **staging-sw**: 23 GiB RAM, 6.2 GiB available, GPU **YOK**
-- Faz 22-23 paralel workload (Faz 22.5 PR-D2.5 + Faz 23 notify) aynı host
+### İki-sunucu boundary
+
+| Plane | Host | Workload | Sahip |
+|---|---|---|---|
+| **Orchestration plane** | staging-sw (23 GiB RAM, GPU YOK) | `audio-gateway-service`, `meeting-service`, `transcript-service`, `notification`, `report-service`, Faz 22-23 workloads, Redis bounded queue, Vault, ArgoCD hub, host nginx edge | Spring Boot + Java ekosistem |
+| **Compute plane** | **platform-ai** (yeni dedicated server — MVP'de GPU upgrade) | `live-stt-service`, `diarization-service` (ileri faz), `meeting-ai-service` (LLM özet/karar/aksiyon), worker subprocess pool | Python + faster-whisper + pyannote + LLM client |
+| **Client plane** | Kullanıcı cihazları | platform-mobile (iOS/Android) + platform-desktop (macOS/Win/Linux) + platform-web (browser) | RN/Expo + Electron + React |
+
+Mobile/desktop/web client'lar **hiçbir zaman** doğrudan `platform-ai`'a bağlanmaz (3-AI mutabakat noktası #1 korunur). Bağlantı her zaman `audio-gateway-service` üzerinden (staging-sw → cross-server hop → platform-ai).
+
+### Network topology (Gateway ↔ STT cross-server)
+
+- **Redis bounded queue**: **staging-sw** (admission/rate-limit/tenant fairness Gateway boundary ownership). Transient, bounded memory, persistence **OFF**, kısa TTL, backlog threshold aşınca 429/503 fail-fast.
+- **Cross-server kanal**: **WireGuard host-to-host + TLS service auth** (MVP); **mTLS / Vault PKI / SPIFFE workload identity** (production). Private LAN **yetmez** (KVKK transit hassasiyet — Codex iter-1 net).
+- **STT pull model**: live-stt-service Redis'ten chunk consume eder; Gateway push (admission control sahibi).
+- **Failure mode**: platform-ai unreachable → Gateway 503 fail-fast + Redis backlog kısa süre tolerate; threshold sonra admission reject.
+
+### Resource pressure ayrımı (acceptance gate §9 ile uyumlu)
+
+- **Gate A — staging-sw orchestration plane**: `free -m available > 2 GiB`, `kubectl top` (audio-gateway + meeting + transcript + Faz 22-23 paralel), Redis queue depth bounded, OOM/restart count 0.
+- **Gate B — platform-ai compute plane**: Model warm-load sonrası RAM < %70, worker count config-aligned, GPU VRAM headroom > 2 GiB (varsa), inference p95 < 5s (PoC) / < 2s (MVP), queue consume lag < 5s.
 
 ### PoC Aşaması (Faz 24.0-24.6)
 
-- CPU-only Whisper `medium int8` (~1.5 GB model)
+- CPU-only Whisper `medium int8` (~1.5 GB model) — **platform-ai server kendi CPU/RAM** (staging-sw Faz 22-23 ile yarışmaz)
 - Tek worker, çoklu request threadpool serial (b+d isolation)
-- Staging resource pressure gate her e2e öncesi: `free -m` available > 2 GiB minimum
+- Gate A + Gate B her e2e öncesi ölçüm dokümante
 
 ### MVP Aşaması (Faz 24.7-24.9)
 
-- Cloud GPU bridge (Lambda Labs / Vast.ai saatlik) ile WER PoC
-- Maliyet ölçüm + production karar (self-host vs SaaS)
+- **platform-ai server kendi GPU upgrade** (örn. RTX 4070 12 GB VRAM) — vendor lock-in yok, KVKK sınır içi
+- (Mevcut "Cloud GPU bridge Lambda Labs / Vast.ai" tahmini **stale** — ADR-0031 ile kayma)
+- WER PoC + maliyet ölçüm platform-ai dedicated host'ta
+- Production karar (GPU upgrade vs SaaS) data-driven (WER + latency + cost)
 
 ### Production Aşaması
 
-- Karar: staging-sw donanım upgrade (RTX 4070 12 GB VRAM) **veya** k3d-prod node-pool ile dedicated GPU node **veya** cloud GPU node-pool
-- WER + latency + cost data-driven karar
+- platform-ai dedicated host + k3s ai-prod cluster + ArgoCD remote register
+- staging-sw GPU upgrade **gereksiz** (Spring Boot orchestration → CPU yeterli)
+- Karar: platform-ai donanım upgrade tier (consumer-grade RTX 4070 vs server-grade A10/A100) WER + latency + cost data-driven
 
 ## 8. Risk Matrix (3-AI mutabakat sonrası)
 
@@ -181,7 +210,11 @@ PR-gpu-01  GPU Dockerfile variant (donanım + ölçüm sonrası)
 | Gateway contract drift (STT iki yere bağlı) | Contract 1.0 freeze ÖNCE; ayrıca contract test (consumer-driven) | PR-gw-01 |
 | Worker thread leak (asyncio.wait_for) | Subprocess + hard kill semantic (PR-stt-03) | platform-ai |
 | KVKK compliance (ses+transcript hassas) | ADR-0030 placeholder + hukuk review pilot öncesi | Adım 0 + ek tur |
-| Staging resource exhaustion (Faz 22-23 paralel) | Acceptance gate `free -m`/`kubectl top` baseline | her PR-stt-* |
+| **Cross-server transit ses/transcript açık** (KVKK Madde 6/9 hassas) | WireGuard + mTLS PKI ZORUNLU; private LAN yetmez; ADR-0030 §"Cross-Server STT Transit Boundary" | ADR-0031 + PR-gw-01 |
+| **platform-ai host failure** (network/crash) | Gateway 503 fail-fast + Redis transient TTL drain + circuit breaker + alert | ADR-0031 + PR-queue-01 |
+| **Vault cross-server unreachable** (platform-ai → staging-sw Vault) | AppRole secret TTL cache + WireGuard tunnel health monitor + alert | ADR-0031 + ADR-0010 reuse |
+| Staging resource exhaustion (Faz 22-23 paralel) | **Gate A** acceptance: `free -m`/`kubectl top` baseline staging-sw (orchestration plane) | her PR-stt-* |
+| **platform-ai compute exhaustion** (model load + worker pool RAM) | **Gate B** acceptance: model warm-load + worker count + GPU VRAM (varsa) + inference p95 + queue consume lag | her PR-stt-* (Gate B yeni) |
 | Türkçe doğruluk düşük kalır | Common Voice TR + pilot meeting WER triangulate (sentetik yok) | PR-wer-01 |
 | Model kararı erken kilitlenir | `large-v3-turbo` varsayım yok; WER sonrası karar | PR-final-stt-01 |
 | GPU yatırım atıl kalır | PoC CPU önce → ölç → GPU karar (Adım 24.7+) | PR-gpu-01 |
@@ -189,14 +222,16 @@ PR-gpu-01  GPU Dockerfile variant (donanım + ölçüm sonrası)
 | LLM API yurt dışı veri akışı | Option A (transcript only, no audio) → Option B (self-host) karar | pilot öncesi |
 | Mobile RN/Expo test harness yetersiz | Detox e2e + Expo dev preview (browser MCP mobile için yetmez) | Faz 24.5 |
 
-## 9. Acceptance Gates (D29 paralel)
+## 9. Acceptance Gates (D29 paralel — ADR-0031 two-server uyumlu)
 
 | Layer | Gate |
 |---|---|
-| **Up** | Pod Running + TCP reachable + `/health` 200 |
-| **Functional** | `POST /transcribe` real audio fixture ile 200 + non-empty text + meta complete |
-| **KVKK-safe** | Audit event emit + log redaction verify + access RBAC enforce + retention policy applied |
-| **Resource-pressure-safe** | `free -m` available > 2 GiB + `kubectl top` Faz 22-23 paralel uyumlu |
+| **Up** | Pod Running + TCP reachable + `/health` 200 (Gateway staging-sw + STT platform-ai ayrı kanıt) |
+| **Functional** | `POST /transcribe` real audio fixture ile 200 + non-empty text + meta complete; cross-server WS/HTTP smoke pass |
+| **KVKK-safe** | Audit event emit + log redaction verify + access RBAC enforce + retention policy applied; `audio_chunk_forwarded_to_platform_ai` audit event (ADR-0030 §"Cross-Server STT Transit Boundary") |
+| **Resource-pressure-safe — Gate A (staging-sw)** | `free -m` available > 2 GiB + `kubectl top` (gateway+meeting+transcript+Faz 22-23) + Redis queue depth bounded + OOM/restart=0 |
+| **Resource-pressure-safe — Gate B (platform-ai)** | Model warm-load sonrası RAM < %70 + worker count config-aligned + GPU VRAM headroom > 2 GiB (varsa) + inference p95 < 5s (PoC) + queue consume lag < 5s |
+| **Cross-server transit-safe** | WireGuard tunnel UP + mTLS cert valid + Vault PKI auto-rotate alert healthy + failure drill (platform-ai down → Gateway 503 + Redis fail-fast) geçti |
 | **Cross-AI peer review** | Implementer ≠ Reviewer (provider seviyesinde); thread referansı PR squash |
 | **Browser smoke** | Mobile/Web kullanıcı end-to-end senaryo (Faz 24.5+ için; PoC için skip) |
 
@@ -214,13 +249,17 @@ PR-gpu-01  GPU Dockerfile variant (donanım + ölçüm sonrası)
 | WER triangulate (Common Voice + pilot) | iter-1 H matrisi | msg `74` AGREE | AGREE |
 | Staging resource pressure gate | iter-3 AGREE | msg `74` B eksik risk | AGREE |
 | Multi-tenant placeholder | (örtük) | msg `78` B tek eksik | AGREE |
+| **Two-server topology** (ADR-0031) | `019e8c09` iter-1 REVISE → absorb → iter-2 AGREE bekleniyor | (iter-2 paralel davet) | AGREE (kullanıcı 2026-06-03 mimari notu) |
 
 ## References
 
-- Codex thread: `019e879c-c51e-7691-8f16-69c781fb787e` (plan-time + iter-3 AGREE final)
+- Codex thread: `019e879c-c51e-7691-8f16-69c781fb787e` (plan-time + iter-3 AGREE final — single-host varsayımıyla)
 - Codex thread: `019e877b-bd31-72f3-b86a-229f933e51cb` (live-stt PR #1 review AGREE)
-- Mavis msgs: `74` (PARTIAL), `76` (absorb wait), `78` (AGREE final)
-- ADR-0030 KVKK Meeting Intelligence Boundary (placeholder)
+- Codex thread: `019e8c09-2cc7-7d23-a414-2c1d2950232c` (ADR-0031 two-server topology iter-1 REVISE absorb)
+- Mavis msgs: `74` (PARTIAL), `76` (absorb wait), `78` (AGREE final); ADR-0031 iter-2 paralel davet bekliyor
+- ADR-0030 KVKK Meeting Intelligence Boundary (placeholder + §"Cross-Server STT Transit Boundary" eklendi 2026-06-03)
+- **ADR-0031 Two-Server Meeting Intelligence Topology** (bu PR DRAFT — Codex iter-2 AGREE sonrası ACCEPTED)
 - Observability skeleton: `docs/observability-skeleton-meeting-intelligence.md`
 - platform-ai PR #1 MERGED `4088d9a` — live-stt-service PoC iskelet
-- Global HARD RULE: Cross-AI Peer Review provider seviyesinde + Plan Consensus Autonomy + No Fake Work + Türkçe cevap
+- platform-ai Issue #19 re-scope (Faz 24 two-host resource baseline — ADR-0031 ile uyumlu)
+- Global HARD RULE: Cross-AI Peer Review provider seviyesinde + Plan Consensus Autonomy + No Fake Work + Türkçe cevap + Uzun Vadeli Kalıcı Çözüm

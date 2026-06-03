@@ -85,6 +85,25 @@ Mobile (`platform-mobile`) ve Desktop (`platform-desktop`) client'ları M6 Integ
 
 **Production gate (M7)**: Bu tablo hukuk review ile detaylanır + ADR ACCEPTED durumuna gelir. Pilot kullanıcı kaydı **bu detaylanma öncesi YASAK**.
 
+### Cross-Server STT Transit Boundary (ADR-0031 `019e8c09` absorb — 2026-06-03)
+
+> **Bağlam**: ADR-0031 Two-Server Topology kararı (`platform-ai` ayrı dedicated host + diğer `platform-*` staging-sw'da) ile audio chunk + transcript Gateway (staging-sw) → STT (platform-ai) **cross-server hop** yapar. KVKK Madde 6/9 hassas veri sınır içi transit; private LAN **yetmez** (Codex iter-1 net). Bu clause ADR-0031'le canonical referans alır.
+
+| Konu | Kural | Mekanizma |
+|---|---|---|
+| **Cross-server kanal** | mTLS / WireGuard / Vault PKI / SPIFFE workload identity ZORUNLU | MVP: WireGuard host-to-host + TLS service auth (TLS-pinned); Production: mTLS Vault PKI cert auth / SPIFFE workload identity. Private LAN sadece synthetic/public fixture PoC için geçici (gerçek meeting audio YASAK). |
+| **Tenant / correlation propagation** | Gateway-derived headers cross-server'da korunur | `X-Correlation-Id`, `X-Meeting-Id`, `X-Session-Id`, `X-Device-Id`, `X-Tenant-Id` (JWT-derived), `X-User-Id` (JWT-derived), `language`, `audio_metadata`. Client-trusted ID YASAK. |
+| **Audit event** | Cross-server hop'unda audit emit | `audio_chunk_forwarded_to_platform_ai` event per chunk veya batch (Gateway emit) + `audio_chunk_received_from_gateway` event (STT emit). Correlation ID ile join. |
+| **Redis transient/bounded policy** | Bounded queue, persistence OFF, kısa TTL | Redis staging-sw'da; persistence (RDB/AOF) **kapalı**; max memory bounded; backlog threshold aşınca 429/503 fail-fast (admission reject); raw audio "durable storage" gibi davranmaz. |
+| **platform-ai host access boundary** | SSH + Vault credentials + audit trail zorunlu | SSH key Vault rotation (ADR-0010 pattern); host root access break-glass operator-only; her erişim audit log (immutable 7yr); platform-ai host'a doğrudan client connection YASAK. |
+| **Log redaction cross-server** | Transcript text + audio path payload'a düşmez | Structured log redaction filter (correlation ID + metadata OK; text + filename + speaker ID **redacted** veya hash); `kvkk_pii_redaction_total` metric. |
+| **Failure / backlog behavior** | Silent drop YASAK; fail-fast + alert | platform-ai unreachable → Gateway 503 fail-fast; Redis TTL drain (kısa süre tolerate); admission control reject + Prometheus alert + audit event `cross_server_transit_failure`. |
+| **No direct client-to-STT rule** | Mobile/desktop/web Gateway zorunlu | Network policy: platform-ai ingress sadece staging-sw Gateway source IP'sinden allow; başka source drop + audit. |
+| **Backup / cache retention cross-server** | HF model cache + transcript cache + audio cache TTL | HF model cache platform-ai disk'inde (24h+ kabul; model warm-load avantajı); transcript cache memory-only (no persistence); audio cache **YOK** (transient stream-through). |
+| **Legal controller-processor boundary** | Workcube = controller; platform-ai host operator = processor | KVKK Madde 11 sözleşme: DPA (Data Processing Agreement) imzalı; subprocessor list (Vault PKI provider, GPU cloud) dokümante; cross-border transit (LLM API) ADR-0030 §LLM API option A/B karar dahil. |
+
+**Production gate (M7) ek madde**: Bu cross-server transit clause hukuk review ile detaylanır + ADR ACCEPTED durumuna gelir. Pilot kullanıcı kaydı **bu detaylanma öncesi YASAK**.
+
 ## Status & Open Questions (pilot öncesi cevap)
 
 - [ ] Hukuk danışmanı review (Türk KVKK uzmanı)
