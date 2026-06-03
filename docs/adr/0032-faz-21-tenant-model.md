@@ -69,6 +69,8 @@ Ayrı store/model **yalnız reversal trigger** (§5) sonrası — örn. tenant-X
 - Migration backfill orphan/mixed row YASAK (R10 invariant Inv-2)
 - Service-layer DTO mapper: `entity.setOrgId(securityContext.getOrgId())` zorunlu
 
+> **Live state (2026-06-03 test cluster dry-run)**: `notify` schema persists `org_id` canonically (4 discovered tables on test cluster). `endpoint_admin_service` schema currently persists **`tenant_id`** (7 discovered tables on test cluster). Faz 21.1 sub-faz binding rename: endpoint backend `tenant_id → org_id` column + service-layer DTO mapper update + Flyway V<N> migration. Pre-migration audit script accommodates the drift via tenant_id fallback chain so Faz 21.0 audit completes; rename is the binding lock-in deliverable. Evidence: [`docs/faz-23-evidence/2026-06-03-faz-21-dryrun-on-test-cluster.md`](../faz-23-evidence/2026-06-03-faz-21-dryrun-on-test-cluster.md) §3.
+
 **Deferred (Faz 21.2 ADR-0033)**: physical isolation — single schema vs schema-per-tenant vs DB-per-tenant. Pre-migration audit + dry-run evidence consumed sonrası karar.
 
 ### 3.3 Vault — tenant secret namespace

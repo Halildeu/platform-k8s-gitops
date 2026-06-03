@@ -24,6 +24,8 @@ This charter is the canonical scope/sub-faz/repo-ownership/invariant document. T
 - [ADR-0013 — Notification Charter](../adr/0013-notification-orchestration.md): Faz 23 charter, M2 D29-Authorized Layer-1 `org_id` boundary canonical.
 - Faz 23 M2 D29-Authorized Layer-1 `org_id` org-boundary kararı (PR — board #754): JWT `org_id` claim canonical org authority; Faz 21 v1 tenant model bunu **devam ettirir**.
 
+> **Live state drift (2026-06-03 test cluster dry-run)**: Notify backend persistence uses `org_id` ✓ (charter §1 lock holds). Endpoint-admin backend **currently uses `tenant_id`** column on 7/7 discovered tables (`endpoint_devices`, `endpoint_software_inventory_state_history`, `endpoint_outdated_software_snapshots/packages`, `endpoint_install_audit`, `endpoint_compliance_evaluations`, `endpoint_app_control_snapshots`). Faz 21.1 sub-faz **MUST** rename endpoint backend `tenant_id → org_id` to honor §1 / ADR-0032 §3.2 lock. Evidence: [`docs/faz-23-evidence/2026-06-03-faz-21-dryrun-on-test-cluster.md`](../faz-23-evidence/2026-06-03-faz-21-dryrun-on-test-cluster.md) §3. Pre-migration audit script (PR-3 A) accommodates the drift via `tenant_id` fallback chain so audit still completes; charter §1 / ADR-0032 §3.2 contract remains canonical and the rename is the binding requirement.
+
 ### 1.2 What this charter NOT do
 
 - Faz 21 charter execution roadmap'tir; **migration trigger izni değil**. Bu izin M8 (Multi-tenant Trigger Gate) DoD ile gelir.
