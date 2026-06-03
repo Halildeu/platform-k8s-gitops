@@ -183,17 +183,26 @@ if [[ -n "$PG_DATABASE_LIST" ]]; then
   #   INVARIANT_VIOLATION > ADVISORY_INVESTIGATION > UNKNOWN > MANUAL_PENDING >
   #   OBSERVATION_INSUFFICIENT > MOSTLY_CLEAN_INV4_VERIFIED > CLEAN
 
+  # Codex iter-2 REVISE absorb: pick first matching rank as overall_verdict
+  # then break. Previous form re-evaluated all labels with an `if` guard
+  # that allowed lower-rank labels to overwrite higher-rank earlier picks
+  # (e.g. OBSERVATION_INSUFFICIENT → CLEAN downgrade).
   OVERALL_VERDICT="CLEAN"
-  BLOCKING_CATS=""
   for rank_label in INVARIANT_VIOLATION ADVISORY_INVESTIGATION UNKNOWN MANUAL_PENDING OBSERVATION_INSUFFICIENT MOSTLY_CLEAN_INV4_VERIFIED CLEAN; do
     if echo "$PER_DB_ENTRIES" | grep -q "\"$rank_label\""; then
-      if [[ "$OVERALL_VERDICT" == "CLEAN" || "$OVERALL_VERDICT" == "MOSTLY_CLEAN_INV4_VERIFIED" || "$OVERALL_VERDICT" == "OBSERVATION_INSUFFICIENT" ]]; then
-        OVERALL_VERDICT="$rank_label"
-      fi
-      if [[ "$rank_label" == "INVARIANT_VIOLATION" || "$rank_label" == "ADVISORY_INVESTIGATION" ]]; then
-        [[ -n "$BLOCKING_CATS" ]] && BLOCKING_CATS+=","
-        BLOCKING_CATS+="\"$rank_label\""
-      fi
+      OVERALL_VERDICT="$rank_label"
+      break
+    fi
+  done
+
+  # blocking_categories captures ALL high-priority labels independently of
+  # which one became overall_verdict (operator may want to see every
+  # category that triggered triage).
+  BLOCKING_CATS=""
+  for blocker_label in INVARIANT_VIOLATION ADVISORY_INVESTIGATION; do
+    if echo "$PER_DB_ENTRIES" | grep -q "\"$blocker_label\""; then
+      [[ -n "$BLOCKING_CATS" ]] && BLOCKING_CATS+=","
+      BLOCKING_CATS+="\"$blocker_label\""
     fi
   done
 
