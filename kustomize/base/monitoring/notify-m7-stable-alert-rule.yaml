@@ -72,23 +72,27 @@ spec:
 
         - alert: NotifyM7StableObservationWindowReady
           # Stable observation has been continuously green AND coverage
-          # has been at least 95% across the 30d window. M8 DoD blocker
-          # #1 condition met — trigger evidence collection + downstream
-          # M8 readiness sprint.
+          # has been at least 99% across the 30d window AND the natural
+          # 30-day mark from M7 LIVE (2026-06-22T00:00:00Z) has arrived.
+          # M8 DoD blocker #1 condition met — trigger evidence collection
+          # + downstream M8 readiness sprint.
           #
-          # Codex iter-1 P0/coverage absorb: this alert no longer uses
-          # `min_over_time(stable_30d[30d])` (which had a hidden 60d
-          # semantic + partial-coverage false-positive bug). It now reads
-          # the composite recording rule directly: stable_30d=1 today AND
-          # coverage_30d ≥ 0.95. The coverage guard ensures we're not
-          # firing on a partially-scraped window.
+          # Codex iter-1 P0/coverage absorb: replaced
+          # `min_over_time(stable_30d[30d])` (hidden 60d semantic +
+          # partial-coverage false-positive bug) with direct composite
+          # readout.
+          # Codex iter-2 P0/timeGate absorb: stable_30d composite already
+          # enforces `elapsed_seconds_since_m7_live ≥ 2592000`, so this
+          # alert reads the composite directly with no separate time
+          # condition needed; the underlying recording rule guarantees the
+          # natural 30-day mark.
           #
-          # `for: 24h` adds a final hold-down so we don't fire on a single
-          # transient sample that crossed the coverage threshold.
+          # `for: 24h` final hold-down filters single transient samples
+          # crossing the composite gate.
           expr: |
             notify:m7_v1:stable_30d == 1
             and on(namespace)
-            notify:m7_v1:observation_coverage:30d >= 0.95
+            notify:m7_v1:observation_coverage:30d >= 0.99
           for: 24h
           labels:
             severity: info
@@ -100,11 +104,12 @@ spec:
             summary: "Notify M7 v1 stable_30d window READY — M8 DoD evidence collection trigger"
             description: |
               The M7 v1 30-day stable observation has held green for 24h+
-              with observation coverage ≥ 0.95 across the 30d window in
-              namespace {{ $labels.namespace }}. M8 (Multi-tenant Trigger
-              Gate) DoD blocker #1 condition met. Operator action: run
-              docs/scripts/m7-stable-evidence.sh to emit the canonical
-              evidence document
+              with observation coverage ≥ 0.99 across the 30d window in
+              namespace {{ $labels.namespace }}, and the natural 30-day
+              mark from M7 LIVE (2026-06-22T00:00:00Z) has arrived. M8
+              (Multi-tenant Trigger Gate) DoD blocker #1 condition met.
+              Operator action: run docs/scripts/m7-stable-evidence.sh to
+              emit the canonical evidence document
               (docs/faz-23-evidence/YYYY-MM-DD-m7-v1-30day-stable-evidence.md);
               start M8 PR-2 (Faz 21 charter draft) when evidence accepted.
             runbook_url: "https://github.com/Halildeu/platform-k8s-gitops/blob/main/docs/operations/RUNBOOKS/RB-faz-23-m7-30day-stable-observation.md"

@@ -8,14 +8,17 @@
 # in-cluster Prometheus and emits a canonical JSON evidence dump that the
 # operator stamps with a date and commits to docs/faz-23-evidence/.
 #
-# Predicates surfaced (mirrors notify-m7-stable-recording-rule.yaml):
-#   - dispatch_success_rate_30d ≥ 0.995
-#   - dlq_burn_max_30d ≤ 1.0
-#   - dlq_burn_72h_max_30d ≤ 1.0 (supplementary)
-#   - critical_alert_minutes_30d == 0
-#   - observation_present_30d == 1 (anti-silence guard)
-#   - stable_30d == 1
-#   - min_over_time(stable_30d[30d]) == 1 (continuous-30d ready signal)
+# Predicates surfaced (mirrors notify-m7-stable-recording-rule.yaml v3):
+#   composite:
+#     - dispatch_success_rate_30d ≥ 0.995
+#     - dlq_burn_max_30d ≤ 1.0
+#     - critical_alert_minutes_30d == 0
+#     - observation_coverage_30d ≥ 0.99 (anti-silence guard)
+#     - elapsed_seconds_since_m7_live ≥ 2592000 (natural 30-day Prom-time gate)
+#   supplementary:
+#     - dlq_burn_72h_max_30d ≤ 1.0
+#   boolean truth surface:
+#     - stable_30d == 1 (AND of composite predicates)
 #
 # Usage:
 #   ./docs/scripts/m7-stable-evidence.sh [--out PATH] [--context CTX]
@@ -28,22 +31,29 @@
 #   --port     9090 (Prometheus svc port)
 #
 # Exit codes:
-#   0 — stable_30d=1 AND observation_coverage_30d ≥ 0.95: M8 DoD blocker #1 met
-#   2 — stable_30d=0: observation NOT stable; M8 blocker not met
-#   3 — Prometheus unreachable / metric absent / coverage < 0.95
+#   0 — stable_30d=1 AND coverage ≥ 0.99 AND elapsed_s ≥ 2592000: M8 DoD blocker #1 met
+#   1 — coverage ≥ 0.99 but natural 30-day mark (2026-06-22) not yet arrived
+#   2 — stable_30d=0: predicate fail; observation NOT stable
+#   3 — Prometheus unreachable / metric absent / coverage < 0.99
 #   4 — Usage error
 #
-# Codex iter-1 P0 absorb: collapsed exit-1 (window-in-progress) into
-# exit-3 (OBSERVATION_ABSENT) because the new coverage_30d guard makes
-# "coverage too low" the canonical "not yet enough data" signal — instead
-# of a separate STABLE_BUT_WINDOW_IN_PROGRESS path that was sensitive to
-# the (removed) min_over_time semantic.
+# Codex iter-1 P0 absorb: removed STABLE_BUT_WINDOW_IN_PROGRESS that
+# depended on the (dropped) min_over_time semantic.
+# Codex iter-2 P0/timeGate absorb: re-introduced exit-1 as
+# WINDOW_PRE_NATURAL30D for the legitimate "coverage OK + natural 30d
+# clock not yet expired" state. This is the canonical "wait until
+# 2026-06-22" signal — distinct from OBSERVATION_ABSENT (lacking data)
+# and UNSTABLE (predicate fail).
 #
 # Anti-pattern guards (Codex `019e8c24`):
 #   - DOES NOT mutate any cluster state
 #   - DOES NOT shorten the 30-day window or backdate evidence
-#   - DOES NOT call M7 "green" before continuous_30d_ready=true
+#   - DOES NOT call M7 "green" until (stable_30d=1 AND coverage≥0.99 AND
+#     natural 30-day Prom-time gate has passed)
 #   - Treats absent metric as code 3 (cannot conclude), not code 0
+#   - WINDOW_PRE_NATURAL30D (exit 1) is the canonical "wait until 2026-06-22"
+#     verdict — distinct from OBSERVATION_ABSENT (lacking data) + UNSTABLE
+#     (predicate fail)
 
 set -euo pipefail
 
@@ -147,22 +157,40 @@ BURN_24H_MAX=$(query 'notify:m7_v1:dlq_burn_max:30d{namespace="platform-prod"}')
 BURN_72H_MAX=$(query 'notify:m7_v1:dlq_burn_72h_max:30d{namespace="platform-prod"}')
 ALERT_MINUTES=$(query 'notify:m7_v1:critical_alert_minutes:30d{namespace="platform-prod"}')
 OBS_COVERAGE=$(query 'notify:m7_v1:observation_coverage:30d{namespace="platform-prod"}')
+# Codex iter-2 P0/timeGate absorb: natural 30-day Prom-time gate. The
+# composite stable_30d already enforces ≥ 2592000s; we surface elapsed
+# seconds + natural ready flag in evidence so the operator can see the
+# clock state directly.
+ELAPSED_SEC=$(query 'notify:m7_v1:elapsed_seconds_since_m7_live{namespace="platform-prod"}')
 STABLE_NOW=$(query 'notify:m7_v1:stable_30d{namespace="platform-prod"}')
 # Also fetch Prometheus server time so evidence carries scrape-clock skew
 # context — Codex iter-1 P1 follow-up.
 PROM_TIME=$(query 'time()')
 
 # Verdict logic — match the boolean composition in the recording rule.
-# Coverage threshold matches the recording-rule composite gate (0.95).
+# Coverage + time-gate must both pass before stable_30d=1 can be trusted.
 verdict() {
   if [[ "$OBS_COVERAGE" == "null" ]]; then
     echo "OBSERVATION_ABSENT"
     return
   fi
-  # numeric coverage compare via awk (portable)
-  cov_ready="$(awk -v c="$OBS_COVERAGE" 'BEGIN { print (c+0 >= 0.95) ? "yes" : "no" }')"
+  # Coverage threshold matches recording-rule composite gate (0.99).
+  cov_ready="$(awk -v c="$OBS_COVERAGE" 'BEGIN { print (c+0 >= 0.99) ? "yes" : "no" }')"
   if [[ "$cov_ready" == "no" ]]; then
     echo "OBSERVATION_ABSENT"
+    return
+  fi
+  # Codex iter-2 P0/timeGate: natural 30-day mark (2592000s) must arrive
+  # before any verdict beyond OBSERVATION_ABSENT can be M8_DOD_BLOCKER_MET.
+  if [[ "$ELAPSED_SEC" == "null" ]]; then
+    echo "OBSERVATION_ABSENT"
+    return
+  fi
+  natural_30d="$(awk -v e="$ELAPSED_SEC" 'BEGIN { print (e+0 >= 2592000) ? "yes" : "no" }')"
+  if [[ "$natural_30d" == "no" ]]; then
+    # Coverage OK but natural 30d mark not yet arrived. UNSTABLE is wrong
+    # (no predicate failed); use a distinct WINDOW_PRE_NATURAL30D verdict.
+    echo "WINDOW_PRE_NATURAL30D"
     return
   fi
   if [[ "$STABLE_NOW" == "1" ]]; then
@@ -183,16 +211,19 @@ GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 cat >"$OUT" <<EOF
 {
-  "schema_version": "m7-v1-30day-stable-evidence/v2",
+  "schema_version": "m7-v1-30day-stable-evidence/v3",
   "generated_at": "${GENERATED_AT}",
   "prometheus_time_unix": ${PROM_TIME},
   "context": "${CONTEXT}",
   "namespace": "platform-prod",
+  "m7_live_unix": 1779494400,
+  "natural_30day_mark_unix": 1782086400,
   "composite_predicates": {
     "dispatch_success_rate_30d": ${SUCCESS_RATE},
     "dlq_burn_24h_max_30d": ${BURN_24H_MAX},
     "critical_alert_minutes_30d": ${ALERT_MINUTES},
-    "observation_coverage_30d": ${OBS_COVERAGE}
+    "observation_coverage_30d": ${OBS_COVERAGE},
+    "elapsed_seconds_since_m7_live": ${ELAPSED_SEC}
   },
   "supplementary_predicates": {
     "dlq_burn_72h_max_30d": ${BURN_72H_MAX}
@@ -201,7 +232,8 @@ cat >"$OUT" <<EOF
     "dispatch_success_rate_30d_min": 0.995,
     "dlq_burn_24h_max_30d_max": 1.0,
     "critical_alert_minutes_30d_max": 0,
-    "observation_coverage_30d_min": 0.95,
+    "observation_coverage_30d_min": 0.99,
+    "elapsed_seconds_since_m7_live_min": 2592000,
     "dlq_burn_72h_max_30d_max_supplementary": 1.0
   },
   "stable_30d_now": ${STABLE_NOW},
@@ -211,7 +243,8 @@ cat >"$OUT" <<EOF
     "convert_m7_green_prematurely": false,
     "backdate_evidence": false,
     "mutate_cluster_state": false,
-    "coverage_required_before_green": true
+    "coverage_required_before_green": true,
+    "natural_30day_mark_required_before_green": true
   }
 }
 EOF
@@ -221,6 +254,7 @@ echo "verdict:  $VERDICT"
 
 case "$VERDICT" in
   M8_DOD_BLOCKER_MET) exit 0 ;;
+  WINDOW_PRE_NATURAL30D) exit 1 ;;
   UNSTABLE) exit 2 ;;
   OBSERVATION_ABSENT) exit 3 ;;
   *) exit 3 ;;

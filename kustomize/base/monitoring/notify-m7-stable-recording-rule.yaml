@@ -1,8 +1,8 @@
 # PrometheusRule — Faz 23 M7 v1 30-day stable observation recording rules
 #
 # Faz 23 M8 PR-1 D (Codex `019e8c24` strategic verdict — AGREE order
-# D→B→A→C, multi-PR sequenced). Post-impl Codex iter-1 PARTIAL absorbed:
-# coverage guard + namespace-preserving fallback + composite contract.
+# D→B→A→C, multi-PR sequenced). Post-impl iter-1 PARTIAL + iter-2 PARTIAL
+# absorbed (M7 LIVE time gate enforced, status vocabulary widened).
 #
 # Context: Faz 23 M7 v1 closure 2026-05-23 (Web Push browser-only
 # DELIVERED end-to-end). M8 (Multi-tenant Trigger Gate) DoD #1 requires
@@ -15,34 +15,51 @@
 # rules (notify:dlq:burn_rate:24h, notify:dlq:burn_rate:72h) instead of
 # re-deriving the burn-rate math. Single source-of-truth.
 #
-# Acceptance semantics for stable_30d=1 (4 composite predicates):
+# Acceptance semantics for stable_30d=1 (5 composite predicates):
 #   1) dispatch_success_rate_30d ≥ 0.995
 #   2) dlq_burn_max_30d (24h window) ≤ 1.0
 #   3) critical_alert_minutes_30d == 0
-#   4) observation_coverage_30d ≥ 0.95 (anti-silence guard, NEW iter-2)
+#   4) observation_coverage_30d ≥ 0.99 (anti-silence guard; iter-2 tightened)
+#   5) elapsed_seconds_since_m7_live ≥ 2592000 (30 day Prom-time gate — iter-2 P0)
 #
-# 72h burn is SUPPLEMENTARY observability — NOT part of composite stable_30d
-# (runbook contract aligned).
+# 72h burn is SUPPLEMENTARY observability — NOT part of composite stable_30d.
 #
-# IMPORTANT — Codex 019e8c24 anti-pattern guards:
+# Codex 019e8c24 anti-pattern guards:
 #   - DO NOT retroactively shorten the 30-day window
 #   - DO NOT convert M7 to green before 2026-06-22+ with clean evidence
-#   - This rule is OBSERVATION-ONLY; it does not mutate any system
+#   - OBSERVATION-ONLY; does not mutate any system
 #
-# Codex iter-1 absorbed fixes (P0×3 + P1×2 — thread 019e8c24):
-#   - P0/coverage  : `min_over_time(stable_30d[30d])` semantik 60d bug fix
-#                    → `observation_coverage_30d` recording rule + ready
-#                      alert uses `stable_30d == 1 AND coverage >= 0.95`
-#   - P0/alertNS   : `count by(namespace)(ALERTS)` no-fire case label
-#                    namespace-less; namespace-preserving fallback with
-#                    `sum by(namespace)(count_over_time(...))` + label join
-#   - P0/silence   : `1 - absent_over_time(...) or vector(0)` always 0;
-#                    replaced with coverage-based threshold
-#   - P1/supplement: 72h burn moved to supplementary (not composite)
-#   - P1/statusVoc : `status="SUCCESS|FAILED"` retained — mirrors existing
-#                    notify-dlq-slo-rule.yaml denominator semantics; if
-#                    canonical label drifts to DELIVERED, both rules
-#                    update together (single source-of-truth principle).
+# Iter-2 absorbed fixes (P0 + P1×2 + minor — thread 019e8c24):
+#   - P0/timeGate  : `notify:m7_v1:elapsed_seconds_since_m7_live`
+#                    recording rule + composite + ready alert all enforce
+#                    `time() >= m7_live_unix + 30d` so the alert cannot
+#                    false-fire before 2026-06-22 even if the underlying
+#                    24h burn series existed pre-M7-LIVE
+#   - P1/statusVoc : numerator widened to `status=~"DELIVERED|SUCCESS"`,
+#                    denominator widened to `status=~"DELIVERED|SUCCESS|FAILED"`
+#                    so the M7 stable claim does not silently break if the
+#                    canonical Notify terminal label drifts (M7 RB evidence
+#                    canonically uses "DELIVERED"; the older DLQ rule used
+#                    "SUCCESS"). Runbook §3.5 carries the canonical label
+#                    preflight step
+#   - P1/docDrift  : evidence schema v2 + runbook fully realigned (separate
+#                    commit for the doc surface in this absorb)
+#   - minor/fallback: critical_alert_minutes fallback rebased onto coverage
+#                    source `notify:dlq:burn_rate:24h` so namespace
+#                    preservation tracks the same scrape availability the
+#                    coverage guard reads
+#   - minor/coverage: tightened 0.95 → 0.99 per Codex iter-2 minor suggestion
+#                    ("36h blindness too loose for M8 trigger gate"). Up to
+#                    7.2h of missed scrapes allowed across 30d window.
+#
+# Cross-rule sample-rate contract:
+#   - 86400 expected samples / 30d at notify-dlq-slo-rule.yaml interval=30s
+#   - If notify-dlq-slo-rule.yaml interval changes, update 86400 denominator
+#   - Documented in RB-faz-23-m7-30day-stable-observation.md §3.4
+#
+# M7 LIVE timestamp (canonical):
+#   2026-05-23T00:00:00Z = Unix 1779494400
+#   30-day mark = 1779494400 + 2592000 = 1782086400 (2026-06-22T00:00:00Z)
 
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -59,21 +76,26 @@ spec:
     - name: notification-orchestrator-m7-stable-recording
       interval: 1m
       rules:
-        # 30-day rolling dispatch success rate (terminal outcomes only;
-        # mirrors notify-dlq-slo-rule.yaml denominator so the success
-        # ratio and DLQ burn rate share the same base).
+        # 30-day rolling dispatch success rate (terminal outcomes only).
+        # Codex iter-2 P1/statusVoc absorb: numerator + denominator
+        # widened to cover both "DELIVERED" (M7 v1 RB canonical) and
+        # "SUCCESS" (existing DLQ rule terminology) — protects the M7
+        # claim from silent label-drift. RETRY transient outcomes
+        # excluded (mirrors DLQ rule).
         #
-        # Formula: success / (success + FAILED). RETRY transient outcomes
-        # excluded — already the convention in notify-dlq-slo-rule.yaml.
+        # Runbook §3.5 carries the canonical-label preflight step that
+        # the operator should run before trusting the gate.
+        #
+        # The denominator `clamp_min(..., 0.0001)` mirrors notify-dlq-slo-rule.yaml.
         - record: notify:m7_v1:dispatch_success_rate:30d
           expr: |
             sum by (namespace) (
-              rate(notify_dispatch_outcome_total{namespace="platform-prod", status="SUCCESS"}[30d])
+              rate(notify_dispatch_outcome_total{namespace="platform-prod", status=~"DELIVERED|SUCCESS"}[30d])
             )
             /
             clamp_min(
               sum by (namespace) (
-                rate(notify_dispatch_outcome_total{namespace="platform-prod", status=~"SUCCESS|FAILED"}[30d])
+                rate(notify_dispatch_outcome_total{namespace="platform-prod", status=~"DELIVERED|SUCCESS|FAILED"}[30d])
               ),
               0.0001
             )
@@ -86,22 +108,18 @@ spec:
             max_over_time(notify:dlq:burn_rate:24h[30d])
 
         # 72h burn observation — SUPPLEMENTARY signal at the budget-recovery
-        # horizon. NOT part of composite stable_30d (runbook contract).
+        # horizon. NOT part of composite stable_30d (runbook contract §3.2).
         - record: notify:m7_v1:dlq_burn_72h_max:30d
           expr: |
             max_over_time(notify:dlq:burn_rate:72h[30d])
 
         # Count of SLO burn-rate critical alerts that fired in the past 30d.
-        # Codex iter-1 P0/alertNS fix: when zero alerts fired, the previous
-        # `count by(namespace)(ALERTS{...}) or vector(0)` returned a
-        # namespace-less {} label set with value 0 — which then failed to
-        # join with namespace-scoped operands in the composite, silently
-        # flipping stable_30d to absent.
-        #
-        # New shape preserves the platform-prod namespace label by selecting
-        # an explicit fallback series with that label. We use a steady
-        # base-series (notify:dlq:terminated_total:rate30m) ANDed to 0 only
-        # when the ALERTS source returns empty — labels preserved either way.
+        # Codex iter-1 P0/alertNS + iter-2 minor/fallback absorb: namespace-
+        # preserving fallback rebased onto the SAME coverage source
+        # (`notify:dlq:burn_rate:24h`) the coverage guard reads — so both
+        # predicates flip to absent together when scrape is silent, instead
+        # of one going to namespace-less 0 while the other still has the
+        # label set.
         - record: notify:m7_v1:critical_alert_minutes:30d
           expr: |
             (
@@ -117,22 +135,18 @@ spec:
             )
             or
             (
-              0 * notify:dlq:terminated_total:rate30m{namespace="platform-prod"}
+              0 * notify:dlq:burn_rate:24h{namespace="platform-prod"}
             )
 
         # Observation-coverage guard (Codex iter-1 P0/coverage + P0/silence
-        # combined fix). Anti-silence: how much of the 30-day window
-        # actually has the source 24h-burn series scraped?
+        # combined fix; iter-2 minor tightened threshold). Anti-silence:
+        # how much of the 30-day window actually has the source 24h-burn
+        # series scraped?
         #
-        # Expected sample count over 30d at 30s scrape interval of the DLQ
-        # SLO recording group = 30 * 24 * 60 * 2 = 86400.
-        # We use `count_over_time / 86400` to express coverage as a [0,1]
-        # fraction. ≥ 0.95 means at least 95% of expected scrapes present —
-        # this is the anti-silence guard that gates stable_30d=1.
-        #
-        # NOTE: if notify-dlq-slo-rule.yaml interval changes, update the
-        # 86400 denominator accordingly. Cross-rule sample-rate contract
-        # documented in RB-faz-23-m7-30day-stable-observation.md §3.
+        # Expected sample count = 30d * 24h * 60min * 2 sample/min = 86400
+        # at notify-dlq-slo-rule.yaml interval=30s. Coverage as fraction
+        # [0,1]. Composite gate requires ≥ 0.99 (up to ~7.2h missed scrapes
+        # allowed across 30d).
         - record: notify:m7_v1:observation_coverage:30d
           expr: |
             (
@@ -141,14 +155,32 @@ spec:
               )
             ) / 86400
 
-        # Boolean stable_30d truth surface — composite of 4 predicates.
-        # ALL four must hold concurrently for stable_30d == 1. Any single
-        # predicate failure flips stable_30d to 0 and effectively restarts
-        # the 30-day stability clock.
+        # M7 LIVE Prom-time gate (Codex iter-2 P0/timeGate absorb).
+        # Web Push browser-only DELIVERED end-to-end 2026-05-23T00:00:00Z
+        # (RB-webpush-activation §3.11). Unix 1779494400. We emit elapsed
+        # seconds; composite + ready alert + evidence script all gate on
+        # ≥ 2592000 (30 day = 30*24*3600).
         #
-        # Codex iter-1 P0/coverage absorb: composite carries explicit
-        # coverage guard so a partially-scraped 30d window cannot silently
-        # yield stable_30d=1.
+        # IMPORTANT: this is the **natural 30-day mark enforcer**. Even if
+        # the underlying 24h-burn series existed before M7 LIVE and the
+        # last 30d aggregate happens to be clean, this gate prevents a
+        # false-positive `stable_30d=1` before 2026-06-22T00:00:00Z.
+        #
+        # We multiply by a namespace-bearing series to keep the label set
+        # consistent with the rest of the composite operands.
+        - record: notify:m7_v1:elapsed_seconds_since_m7_live
+          expr: |
+            (time() - 1779494400)
+            * on() group_left()
+            (
+              0 * notify:dlq:burn_rate:24h{namespace="platform-prod"} + 1
+            )
+
+        # Boolean stable_30d truth surface — composite of 5 predicates.
+        # ALL five must hold concurrently for stable_30d == 1. Any single
+        # predicate failure flips stable_30d to 0 and effectively restarts
+        # the 30-day stability clock (or, for the time gate, simply means
+        # the natural 30-day mark hasn't arrived yet).
         - record: notify:m7_v1:stable_30d
           expr: |
             (
@@ -158,5 +190,7 @@ spec:
               *
               (notify:m7_v1:critical_alert_minutes:30d == bool 0)
               *
-              (notify:m7_v1:observation_coverage:30d >= bool 0.95)
+              (notify:m7_v1:observation_coverage:30d >= bool 0.99)
+              *
+              (notify:m7_v1:elapsed_seconds_since_m7_live >= bool 2592000)
             )
