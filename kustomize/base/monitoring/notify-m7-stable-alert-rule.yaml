@@ -11,7 +11,7 @@
 #      knows the 30-day clock has effectively restarted.
 #
 #   2) NotifyM7StableObservationWindowReady (info, evidence trigger) —
-#      fires when stable_30d=1 AND observation coverage ≥ 0.95 (anti-silence
+#      fires when stable_30d=1 AND observation coverage ≥ 0.99 (anti-silence
 #      guard from Codex iter-1 P0/coverage fix). Triggers the M8 DoD
 #      evidence collection step.
 #
@@ -61,7 +61,7 @@ spec:
               to red in namespace {{ $labels.namespace }}. Composite
               predicates: dispatch_success_rate_30d ≥ 0.995 AND
               dlq_burn_max_30d ≤ 1.0 AND critical_alert_minutes_30d == 0
-              AND observation_coverage_30d ≥ 0.95 — one or more no longer
+              AND observation_coverage_30d ≥ 0.99 — one or more no longer
               holds. The M8 (Multi-tenant Trigger Gate) DoD blocker has
               reset; the next 30-day stability window starts now. Operator
               action: run docs/scripts/m7-stable-evidence.sh to identify

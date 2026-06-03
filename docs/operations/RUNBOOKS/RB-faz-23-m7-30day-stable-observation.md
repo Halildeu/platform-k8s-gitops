@@ -105,12 +105,17 @@ Sabit `86400` = `30 day * 24 h * 60 min * 2 sample/min` (notify-dlq-slo-rule.yam
 recording group `interval: 30s`). Eğer notify-dlq-slo-rule.yaml `interval`
 değişirse, **bu denominator da güncellenmelidir**. Cross-rule contract.
 
-### 3.5 Canonical Notify status label preflight (operatör)
+### 3.5 Canonical Notify status label preflight + coexist guard (operatör)
 
 Recording rule `dispatch_success_rate_30d` numerator + denominator hem
 `DELIVERED` hem `SUCCESS` status'leri kapsar (status-vocabulary drift
-guard). Operatör M8 evidence collect etmeden önce canlı metric inventory
-çek + status enum'u canonical'a sabitle:
+guard). **Coexist guard (Codex iter-3 P1 absorb)**: hem `DELIVERED`
+hem `SUCCESS` aynı anda non-zero görünüyorsa numerator çift-sayım
+nedeniyle inflate olur → M8 evidence kabul edilmez; canonical label
+PR'ı tetiklenir.
+
+Operatör M8 evidence collect etmeden önce canlı metric inventory çek +
+status enum'u canonical'a sabitle:
 
 ```
 kubectl --context k3d-prod -n platform-prod exec deploy/notification-orchestrator -- \
@@ -118,8 +123,20 @@ kubectl --context k3d-prod -n platform-prod exec deploy/notification-orchestrato
 ```
 
 Beklenen: `status="DELIVERED"`, `status="FAILED"`, opsiyonel `status="RETRY"` (transient, exclude).
-Eğer **yalnız** `status="SUCCESS"` görünüyorsa: M7 v1 RB evidence ile uyuşmaz, ayrı PR ile
-backend Counter Tag canonical düzeltilmeli + DLQ SLO rule + bu rule eşzamanlı güncellenir.
+
+Kabul kriteri (3 vaka):
+
+| Gözlemlenen labels | Karar |
+|---|---|
+| Yalnız `status="DELIVERED"` (+ FAILED + RETRY) | ✓ Canonical M7 v1; evidence güvenilir |
+| Yalnız `status="SUCCESS"` (+ FAILED + RETRY) | ⚠ Legacy DLQ rule wording; ayrı PR ile backend Counter Tag canonical düzeltilmeli + DLQ SLO rule + bu rule eşzamanlı güncellenir; M8 evidence GEÇİCİ kabul, label drift PR'ı tetiklenir |
+| Hem `DELIVERED` hem `SUCCESS` non-zero aynı anda | ✗ M8 evidence kabul EDİLMEZ; canonical label PR (legacy SUCCESS code path retire) merge olana kadar bekle |
+
+Evidence script bu preflight'ı manuel/script-tarafı uygular —
+`docs/scripts/m7-stable-evidence.sh` aktif coexist sorgu var (Codex
+iter-3 P1 absorb): hem `DELIVERED` hem `SUCCESS` `rate(...{...,status=<v>}[5m]) > 0`
+ise evidence script JSON'a `status_coexist=true` ekler + verdict
+`OBSERVATION_ABSENT` zorlar.
 
 ## 4. Operatör akışı
 

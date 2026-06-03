@@ -157,6 +157,12 @@ BURN_24H_MAX=$(query 'notify:m7_v1:dlq_burn_max:30d{namespace="platform-prod"}')
 BURN_72H_MAX=$(query 'notify:m7_v1:dlq_burn_72h_max:30d{namespace="platform-prod"}')
 ALERT_MINUTES=$(query 'notify:m7_v1:critical_alert_minutes:30d{namespace="platform-prod"}')
 OBS_COVERAGE=$(query 'notify:m7_v1:observation_coverage:30d{namespace="platform-prod"}')
+# Codex iter-3 P1/statusCoexist absorb: DELIVERED ve SUCCESS aynı anda
+# non-zero görünüyorsa numerator çift-sayım nedeniyle inflate; M8
+# evidence kabul edilmez. We probe the live 5m rate for each terminal
+# label; non-null means non-zero (returns absent when rate==0).
+DELIVERED_RATE=$(query 'sum(rate(notify_dispatch_outcome_total{namespace="platform-prod", status="DELIVERED"}[5m])) > 0')
+SUCCESS_LABEL_RATE=$(query 'sum(rate(notify_dispatch_outcome_total{namespace="platform-prod", status="SUCCESS"}[5m])) > 0')
 # Codex iter-2 P0/timeGate absorb: natural 30-day Prom-time gate. The
 # composite stable_30d already enforces ≥ 2592000s; we surface elapsed
 # seconds + natural ready flag in evidence so the operator can see the
@@ -167,8 +173,22 @@ STABLE_NOW=$(query 'notify:m7_v1:stable_30d{namespace="platform-prod"}')
 # context — Codex iter-1 P1 follow-up.
 PROM_TIME=$(query 'time()')
 
+# Status coexist guard (Codex iter-3 P1 absorb). Both DELIVERED and SUCCESS
+# active in the same 5m window → numerator double-counts → evidence
+# rejected. Each query above uses `> 0` filter so a null result means
+# rate==0 (label inactive); non-null means active.
+status_coexist_active() {
+  if [[ "$DELIVERED_RATE" != "null" && "$SUCCESS_LABEL_RATE" != "null" ]]; then
+    echo "yes"
+  else
+    echo "no"
+  fi
+}
+COEXIST_ACTIVE="$(status_coexist_active)"
+
 # Verdict logic — match the boolean composition in the recording rule.
-# Coverage + time-gate must both pass before stable_30d=1 can be trusted.
+# Coverage + time-gate + non-coexist must all pass before stable_30d=1
+# can be trusted.
 verdict() {
   if [[ "$OBS_COVERAGE" == "null" ]]; then
     echo "OBSERVATION_ABSENT"
@@ -177,6 +197,13 @@ verdict() {
   # Coverage threshold matches recording-rule composite gate (0.99).
   cov_ready="$(awk -v c="$OBS_COVERAGE" 'BEGIN { print (c+0 >= 0.99) ? "yes" : "no" }')"
   if [[ "$cov_ready" == "no" ]]; then
+    echo "OBSERVATION_ABSENT"
+    return
+  fi
+  # Codex iter-3 P1/statusCoexist: terminal label coexist invalidates the
+  # success_rate numerator (double-count). Reject as OBSERVATION_ABSENT
+  # (canonical label PR required before evidence acceptance — RB §3.5).
+  if [[ "$COEXIST_ACTIVE" == "yes" ]]; then
     echo "OBSERVATION_ABSENT"
     return
   fi
@@ -237,6 +264,7 @@ cat >"$OUT" <<EOF
     "dlq_burn_72h_max_30d_max_supplementary": 1.0
   },
   "stable_30d_now": ${STABLE_NOW},
+  "status_label_coexist_active": "${COEXIST_ACTIVE}",
   "verdict": "${VERDICT}",
   "anti_pattern_guards": {
     "shorten_30day_clock": false,

@@ -155,26 +155,33 @@ spec:
               )
             ) / 86400
 
-        # M7 LIVE Prom-time gate (Codex iter-2 P0/timeGate absorb).
-        # Web Push browser-only DELIVERED end-to-end 2026-05-23T00:00:00Z
-        # (RB-webpush-activation §3.11). Unix 1779494400. We emit elapsed
-        # seconds; composite + ready alert + evidence script all gate on
-        # ≥ 2592000 (30 day = 30*24*3600).
+        # M7 LIVE Prom-time gate (Codex iter-2 P0/timeGate + iter-3 P0/promQL
+        # absorb). Web Push browser-only DELIVERED end-to-end
+        # 2026-05-23T00:00:00Z (RB-webpush-activation §3.11). Unix
+        # 1779494400. We emit elapsed seconds; composite + ready alert +
+        # evidence script all gate on ≥ 2592000 (30 day = 30*24*3600).
         #
         # IMPORTANT: this is the **natural 30-day mark enforcer**. Even if
         # the underlying 24h-burn series existed before M7 LIVE and the
         # last 30d aggregate happens to be clean, this gate prevents a
         # false-positive `stable_30d=1` before 2026-06-22T00:00:00Z.
         #
-        # We multiply by a namespace-bearing series to keep the label set
-        # consistent with the rest of the composite operands.
+        # PromQL form (Codex iter-3 P0/promQL absorb): the previous form
+        # `(time() - 1779494400) * on() group_left() (...)` applied a
+        # vector-matching modifier to a scalar-vector binary op, which
+        # Prometheus type-checks as an error ("vector matching only
+        # allowed between instant vectors"; rule-load failure not caught
+        # by `kustomize build`). The corrected form uses the namespace-
+        # bearing vector as the LHS multiplier and the scalar on the RHS;
+        # if the underlying burn series is absent, the elapsed series
+        # stays absent and evidence script correctly returns
+        # OBSERVATION_ABSENT.
         - record: notify:m7_v1:elapsed_seconds_since_m7_live
           expr: |
-            (time() - 1779494400)
-            * on() group_left()
             (
               0 * notify:dlq:burn_rate:24h{namespace="platform-prod"} + 1
             )
+            * (time() - 1779494400)
 
         # Boolean stable_30d truth surface — composite of 5 predicates.
         # ALL five must hold concurrently for stable_30d == 1. Any single
