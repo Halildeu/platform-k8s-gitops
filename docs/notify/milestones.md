@@ -255,11 +255,13 @@ Bu doküman **target dates + critical path + go/no-go gates** sağlar. Milestone
 
 ### M8 — Multi-tenant Trigger Gate (🔴 target 2026-09-01)
 
+> **Authority pointer (2026-06-03)**: M8 = "Faz 21 production migration başlatma izni gate". Faz 21 v1 tenant model + scope canonical authority [docs/faz-21/charter.md](../faz-21/charter.md) + [ADR-0032 — Faz 21 tenant model v1](../adr/0032-faz-21-tenant-model.md). Bu satır pointer; semantik canonical orada.
+
 **Definition of Done** (Faz 21 multi-tenant öncesi):
-- [ ] M7 v1 stable (≥30 day in production)
-- [ ] R10 (multi-tenant migration risk) mitigation plan ready
-- [ ] Pre-migration audit + dry-run + per-tenant isolation test
-- [ ] Faz 21 charter draft
+- [ ] M7 v1 stable (≥30 day in production) — observation harness PR #1234 (Faz 23 M8 PR-1 D Codex `019e8c24`)
+- [ ] R10 (multi-tenant migration risk) mitigation plan ready — board #766 [Done]; execution PR-3 A (sprint plan)
+- [ ] Pre-migration audit + dry-run + per-tenant isolation test — Faz 21.0 sub-faz scope
+- [ ] Faz 21 charter draft — MERGED in PR-2 B (this PR)
 
 **Blockers**: M7 v1 stable + R10 mitigation
 **Owner**: dev + arch (Codex strategic consultation)
