@@ -36,7 +36,7 @@ This charter is the canonical scope/sub-faz/repo-ownership/invariant document. T
 ### 2.1 Vocabulary
 
 - **Tenant** — bir organizational instance; v1 itibarıyla `tenant == org` (mevcut Faz 23 M2 Layer-1 `org_id` claim'i ile aynı).
-- **Tenant context** — bir request/job/event'in hangi tenant'a ait olduğunu taşıyan canonical pointer. JWT `org_id` (request flow), persistence row `org_id` column (write/read), OpenFGA tuple `tenant:<org_id>` namespace (authz), Vault path `kv/platform/tenants/<tenant>/...` (secrets), metric/log label `tenant=<org_id>` (telemetry).
+- **Tenant context** — bir request/job/event'in hangi tenant'a ait olduğunu taşıyan canonical pointer. JWT `org_id` (request flow), persistence row `org_id` column (write/read), OpenFGA tuple `tenant:<org_id>` namespace (authz), Vault path `kv/platform/tenants/<tenant>/...` (secrets), metric/log label `tenant=<org_id>` (telemetry), service-to-service header `X-Org-Id: <org_id>` canonical (ADR-0032 §3.4).
 - **Cross-tenant** — birden çok tenant context'i kapsayan operasyon. Platform-level cron, multi-tenant analytics, operator-driven migration scripts. **Always tenant-aware**, **never tenant-blind**.
 - **Tenant-isolated** — bir operation'ın sadece tek tenant context'i içinde kalması ve diğer tenant data'sına erişim üretememesi (read or write).
 - **Tenant-blind** — anti-pattern; tenant context taşımayan operasyon. **YASAK**.
@@ -82,7 +82,7 @@ Her user-facing read/write **exactly-one** tenant context taşır.
 
 - Request akışı: JWT `org_id` claim mevcut + valid; missing veya invalid → AuthN fail-closed (403 / 401)
 - OpenFGA tuple check: subject `user:<id>` vs object `tenant:<org_id>/<resource>` — tenant namespace **deny-default**
-- Service-to-service header: `X-Tenant-Id: <org_id>` veya equivalent; missing → service-layer fail-closed
+- Service-to-service header: `X-Org-Id: <org_id>` **canonical** (ADR-0032 §3.4); `X-Tenant-Id` deprecated alias yalnız (JWT `org_id` ile mismatch ise fail-closed); missing canonical → service-layer fail-closed
 
 #### Inv-2: Persistence invariant
 
@@ -100,9 +100,10 @@ Cache key, dedupe key, cron batch, provider credential, OpenFGA tuple, metric/au
 - Cache key pattern: `cache:<service>:<tenant>:<resource-id>` (tenant prefix ZORUNLU)
 - Dedupe key: `dedupe:<tenant>:<event-hash>` (tenant prefix ZORUNLU)
 - Cron batch: tenant başına ayrı transaction/loop; tek transaction tüm tenant'lar YASAK
-- Provider credential: per-tenant Vault path `kv/platform/tenants/<tenant>/<provider>/...`; shared global credential fallback YASAK
+- Provider credential: per-tenant Vault path `kv/platform/tenants/<tenant>/<provider>/...`; shared global credential implicit fallback **YASAK** (explicit platform-shared provider class gerekirse ayrı ADR/gate ile açılır)
 - OpenFGA tuple: `tenant:<org_id>/<resource>` namespace
 - Metric/log label: `tenant=<org_id>` label injection (Prometheus relabel + log MDC)
+- **External callback correlation** (Codex iter-1 P1 absorb): provider DLR/webhook/inbound callback updates **exactly-one tenant** resolve etmeli; persistence update WHERE clause **org_id + external_id** çiftini birlikte taşır. Tenant predicate olmadan `WHERE provider_message_id = ?` YASAK.
 
 #### Inv-4: AI boundary invariant
 
@@ -123,16 +124,19 @@ Cache key, dedupe key, cron batch, provider credential, OpenFGA tuple, metric/au
 | Missing tenant'ta fail-open | AuthN fail-closed kuralı ihlali; tenant context invariant ihlali |
 | Cron tüm tenant'ları tek transaction'da işle | Side-effect isolation ihlali; bir tenant'ın hatası diğerlerini etkiler |
 | OpenFGA object id'de tenant namespace YOK | Authz boundary erodes; allowed `user:x` herkesi denetler |
-| Per-tenant provider secret shared global credential'a düş | Multi-tenant provider quota + audit boundary ihlali |
+| Per-tenant provider secret shared global credential'a implicit fallback | Multi-tenant provider quota + audit boundary ihlali |
 | AI shared embedding/prompt context tenant-blind | AI boundary invariant ihlali; prompt injection cross-tenant |
+| **Provider callback/message id tenant predicate olmadan update** (Codex iter-1 P1) | External callback correlation cross-tenant leak; `WHERE provider_message_id = ?` tek başına YASAK |
+| **Tenant-blind export/search/list endpoint** (Codex iter-1 minor) | Multi-tenant data scope erodes; admin report tenant predicate ZORUNLU |
+| **Callback update by external id only** (Codex iter-1 minor) | Yukarıdaki callback predicate kuralının tek satırlık özeti — UPDATE statement WHERE clause tenant + external pair |
 
 ### 4.3 Acceptance evidence (R10 mitigation execution PR-3 A scope)
 
 R10 mitigation execution PR'ı (Codex `019e8c24` order A) bu invariant'ların **her birini** test ederek:
 
-- Inv-1 test: AuthN filter unit test + integration test (missing org_id 403, valid 200)
+- Inv-1 test: AuthN filter unit test + integration test (missing org_id 403, valid 200); `X-Org-Id` canonical header + `X-Tenant-Id` mismatch fail-closed test
 - Inv-2 test: DB schema CHECK constraint test + service layer mapper test + migration backfill dry-run on snapshot
-- Inv-3 test: cache key pattern unit test + cron tenant isolation integration test + Vault path discovery test
+- Inv-3 test: cache key pattern unit test + cron tenant isolation integration test + Vault path discovery test + **DLR/webhook/inbound callback isolation test** (provider_message_id reused across tenants → update isolated by org_id + external_id pair; tenant-blind UPDATE rejected — Codex iter-1 P1)
 - Inv-4 test: vector partition query test + prompt context tenant-filter test (platform-ai scope)
 
 Acceptance evidence document: `docs/faz-23-evidence/<YYYY-MM-DD>-r10-invariant-test-evidence.md`.

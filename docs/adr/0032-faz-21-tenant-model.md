@@ -77,7 +77,8 @@ Ayrı store/model **yalnız reversal trigger** (§5) sonrası — örn. tenant-X
 
 - Tenant-scoped secret: `kv/platform/tenants/<org_id>/<service>/<key>` (örn. `kv/platform/tenants/org_a/notify/smtp_password`)
 - Legacy service secrets: `kv/platform/<service>/...` kalabilir (org-flat secrets, infra-shared)
-- Per-tenant provider credential (örn. notification provider): `kv/platform/tenants/<org_id>/<provider>/...` ZORUNLU; shared global credential fallback YASAK (R10 Inv-3 anti-pattern)
+- Per-tenant provider credential (örn. notification provider): `kv/platform/tenants/<org_id>/<provider>/...` ZORUNLU; shared global credential **implicit** fallback YASAK (R10 Inv-3 anti-pattern); explicit platform-shared provider class gerekirse ayrı ADR/gate ile açılır.
+- **Reserved segment** (Codex iter-1 minor absorb): `tenants` Vault path'inde reserved segment'tir; service adı `tenants` YASAK (path discovery collision guard).
 
 ExternalSecret + ESO config: per-tenant `ExternalSecret` resource veya tenant-aware templating; runtime'da secret discovery `org_id` ile namespace'lenir.
 
@@ -88,7 +89,7 @@ ExternalSecret + ESO config: per-tenant `ExternalSecret` resource veya tenant-aw
 - Alias/compat claim olur (`tenant_id == org_id`)
 - Request body/query üzerinden `tenant_id` ile JWT `org_id` override **YASAK** (R10 Inv-1 + forbidden patterns)
 - AuthN filter `tenant_id` claim ignore eder if `org_id` mevcut (org_id authoritative)
-- Service-to-service header: `X-Org-Id: <org_id>` (canonical); `X-Tenant-Id` deprecated alias
+- Service-to-service header: `X-Org-Id: <org_id>` (canonical); `X-Tenant-Id` deprecated alias **yalnız** kabul edilir ve JWT `org_id` ile mismatch ise **fail-closed** (Codex iter-1 P1 absorb — charter §2.1 align)
 
 ---
 
@@ -143,7 +144,9 @@ This ADR's v1 tenant authority model = `tenant == org` MUST be re-charterized if
 - Cross-tenant inheritance/parent-child tenant model required (e.g., MSP managing multi-tenant client orgs)
 - Per-tenant OpenFGA model isolation explicitly demanded (e.g., tenant-X regulated workload + custom authz model)
 - Per-tenant cluster physical isolation requirement (e.g., compliance: tenant data MUST live in tenant-controlled cluster)
-- Faz 23 M2 Layer-1 `org_id` semantik split (e.g., Layer-2 channel-level authz Faz 23.2 v2'de tenant boundary'sini ayıklar)
+- Faz 23 M2 Layer-1 `org_id` semantik **truly tenant'tan ayrılırsa** (yalnız Layer-2 channel-level authz Faz 23.2 v2 → bu reversal **DEĞİL**, Layer-2 tenant namespace'i `notification_topic:<org_id>/<topic>` gibi aynı plane içinde genişler; reversal ancak Layer-2 tenant semantiğini gerçekten ayrı bir dimension haline getirirse — Codex iter-1 minor absorb)
+- **`org_id` global immutable/unique olamazsa** veya tenant-specific IdP/realm/issuer dış tenant ID zorunlu olursa (Codex iter-1 minor absorb)
+- **Tenant-controlled KMS/Vault namespace/data residency** şartı gelirse (Codex iter-1 minor absorb)
 
 Reversal trigger fires → new ADR (ADR-00XX) re-charterizes Faz 21 v2 tenant model + migration plan.
 
