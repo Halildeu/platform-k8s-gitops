@@ -4464,7 +4464,40 @@ images:
     # Image build run: gh run view 26876345440 -R Halildeu/platform-backend
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-909acce
     #   digest sha256:2cadcdcb449e23b23dc1f5f567a55642076d20cd0e3e8364cbba249598eaaae3
-    digest: sha256:2cadcdcb449e23b23dc1f5f567a55642076d20cd0e3e8364cbba249598eaaae3
+    #
+    # 2026-06-03 Faz 21.1 PR2b-iii #395 (BE-024c repository COALESCE —
+    # DeviceGridQueryBuilder 3 methods + DiffCacheBackfillService +
+    # DiffCacheBackfillWorker) MERGED. Codex 019e8cd4 plan-time AGREE +
+    # 019e8cf8 post-impl 5/5 lens AGREE (must-fix yok). Reads now use
+    # parenthesized canonical effective-org OR predicate accepting both
+    # canonical rows (org_id populated post-PR2b-ii) and legacy rows
+    # (org_id NULL with tenant_id only, V29 trigger silent-fill defensive).
+    # COALESCE used only on Worker pure-enumeration (DISTINCT discovery).
+    #
+    # Tests 93/93 endpoint-admin PG IT PASS local Maven (V29 9 + V30 7 +
+    # EntityFoundation 4 + JpaFlush 3 + CanonicalWrite 2 + PR2b-iii
+    # dedicated 5 + DeviceGridQueryBuilder 36 + DeviceGridExportBuilder 8
+    # + Schema Qualification 3 + Schema5Cache 7 + DiffCacheConstraints 9).
+    #
+    # New dedicated PG IT — DeviceGridCanonicalOrgIdFilterPostgresIntegration
+    # Test (5 methods × 6 assertions): canonical row read, legacy NULL
+    # fixture (V29 trigger bypassed via DISABLE TRIGGER USER) + null-org
+    # pre-assert, cross-tenant negative, LEFT JOIN cache miss, LEFT JOIN
+    # cache wrong-attach negative.
+    #
+    # Anti-pattern guards (PR2b-iii enforced):
+    # - bare `OR tenant_id = ?` YASAK — always parenthesized OR
+    # - repository derived `findByOrgIdOrTenantId(...)` YASAK
+    # - DTO/API contract `orgId` surfacing YASAK (PR2b-iv scope)
+    # - cache tables canonicalize YASAK (PR2c scope: ADD COLUMN org_id
+    #   on endpoint_software_diff_cache + endpoint_outdated_software_diff_cache)
+    # - LATERAL JOIN ON-clause inner predicates stay `tenant_id`
+    # - DROP COLUMN tenant_id YASAK (cleanup PR scope)
+    #
+    # Image build run: gh run view 26878847742 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-688c0b9
+    #   digest sha256:25ef5a33ab0f62589ad8ddf5d4c47cfbe43016ce7142e0b14586536fd61d64a2
+    digest: sha256:25ef5a33ab0f62589ad8ddf5d4c47cfbe43016ce7142e0b14586536fd61d64a2
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
