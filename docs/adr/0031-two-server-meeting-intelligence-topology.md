@@ -1,10 +1,10 @@
 # ADR-0031 — Two-Server Meeting Intelligence Topology (platform-ai Compute Plane + staging-sw Orchestration Plane)
 
-> **Status**: DRAFT (2026-06-03) — Codex `019e8c09` iter-1+iter-2+iter-3 REVISE absorb sonrası canonical taslak; iter-4 AGREE bekleniyor (Plan Consensus Autonomy).
+> **Status**: ACCEPTED (2026-06-03) — Codex `019e8c09` iter-1+iter-2+iter-3 REVISE absorb + iter-4 **AGREE final** (Plan Consensus Autonomy + HARD RULE Cross-AI Peer Review provider seviyesinde Anthropic + OpenAI).
 >
 > **Scope**: Faz 24 Meeting Intelligence için fiziksel host topolojisi, network/secret cross-server boundary, deployment çatısı. ADR-0002 (single-host dual-cluster, Faz 1-23 core platform) **supersede edilmez**; bu karar Faz 24 `platform-ai` compute plane için **scoped forward-extension**'dur.
 >
-> **Cross-AI trail**: Claude (Anthropic) + Codex `019e8c09` (OpenAI) iter-1 REVISE → iter-2 REVISE → iter-3 AGREE bekleniyor. Mavis (MiniMax) post-availability absorb/comment **non-blocking** (HARD RULE Cross-AI Peer Review provider seviyesinde Anthropic + OpenAI yeterli; Mavis kanıt/koordinasyon trail değeri var ama bu karar için hard gate değil — kullanıcı explicit 3-provider gate'e escalate ederse blocker olur).
+> **Cross-AI trail**: Claude (Anthropic) + Codex `019e8c09` (OpenAI) iter-1 REVISE → iter-2 REVISE → iter-3 REVISE → iter-4 **AGREE final** ("Iter-4 source-side review'da merge blocker bulmadım"). Mavis (MiniMax) post-availability absorb/comment **non-blocking** (HARD RULE Cross-AI Peer Review provider seviyesinde Anthropic + OpenAI yeterli; Mavis kanıt/koordinasyon trail değeri var ama bu karar için hard gate değil — kullanıcı explicit 3-provider gate'e escalate ederse blocker olur).
 
 ---
 
@@ -263,9 +263,9 @@ Bu ADR'nin production'a katkı verdiği maddeler, **Faz 24 servisleri production
 
 ## Next
 
-1. Codex iter-4 review (bu ADR taslağı + plan §7/§9 update + ADR-0030 §"Cross-Server STT Transit Boundary" + Issue #19 re-scope + PLAN.md dependency order düzeltmesi) → AGREE bekleniyor
+1. Codex iter-4 review **AGREE final** (bu ADR + plan §7/§9 + ADR-0030 §"Cross-Server STT Transit Boundary" + Issue #19 re-scope + PLAN.md dependency order)
 2. Mavis msg paralel davet (iter-2 cevabı paralel)
 3. Plan §7/§9 + ADR-0030 update + Issue #19 update bu PR scope
 4. PR aç → cross-AI AGREE → merge
-5. ADR-0031 → DRAFT → ACCEPTED (Codex AGREE-merged sonra)
+5. ADR-0031 → ACCEPTED (Codex iter-4 AGREE-merged sonrası — bu PR squash merge ile aktif olur)
 6. Sonraki PR-stt-02 e2e bu topology baseline üzerine inşa edilir
