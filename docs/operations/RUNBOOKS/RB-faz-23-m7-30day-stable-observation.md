@@ -53,20 +53,41 @@ docs/faz-23-evidence/YYYY-MM-DD-m7-v1-30day-stable-evidence.md
 
 ## 3. Stable_30d=1 koşulları (canonical)
 
+### 3.1 Composite predicate (4 — hepsi aynı anda sağlanmalı)
+
 | Predicate | Threshold | Rule |
 |---|---|---|
 | `dispatch_success_rate_30d` | ≥ 0.995 | `notify:m7_v1:dispatch_success_rate:30d` |
 | `dlq_burn_24h_max_30d` | ≤ 1.0 | `notify:m7_v1:dlq_burn_max:30d` |
-| `dlq_burn_72h_max_30d` | ≤ 1.0 | `notify:m7_v1:dlq_burn_72h_max:30d` |
 | `critical_alert_minutes_30d` | == 0 | `notify:m7_v1:critical_alert_minutes:30d` |
-| `observation_present_30d` | == 1 | `notify:m7_v1:observation_present:30d` |
+| `observation_coverage_30d` | ≥ 0.95 | `notify:m7_v1:observation_coverage:30d` |
 
-Tüm 5 predicate aynı anda sağlanmalı → `stable_30d=1`. Tek bir predicate
-fail → `stable_30d=0` ve **30 gün saati efektif resetlenir**.
+Tüm 4 composite predicate aynı anda sağlanmalı → `stable_30d=1`. Tek bir
+predicate fail → `stable_30d=0` ve **30 gün saati efektif resetlenir**.
 
-M8 DoD blocker #1 yalnızca `min_over_time(stable_30d[30d]) == 1` olduğunda
-karşılanır — yani 30 gün boyunca her bir scrape adımında stable_30d=1
-sabit kalmıştır.
+### 3.2 Supplementary observability (composite'e dahil değil)
+
+| Predicate | Threshold | Rule | Niye supplementary |
+|---|---|---|---|
+| `dlq_burn_72h_max_30d` | ≤ 1.0 | `notify:m7_v1:dlq_burn_72h_max:30d` | 24h burn yeterli composite kapı; 72h gradual drift için trend gözlemi (runbook investigation context) |
+
+### 3.3 30-day window ready koşulu
+
+M8 DoD blocker #1 = `stable_30d == 1` AND `observation_coverage_30d ≥ 0.95`,
+24 saat boyunca hold-down (`for: 24h` alert clause).
+
+> **Codex iter-1 P0/coverage absorb (thread 019e8c24)**: önceki `min_over_time(stable_30d[30d]) == 1` formu
+> (a) `stable_30d` zaten 30d-aggregate olduğu için teorik olarak 60d-window semantiği üretiyordu;
+> (b) Prometheus retention reset veya yeni rule deploy sonrası az sample varsa false-positive '1' verebiliyordu.
+> Yerine **coverage guard** + **stable_30d şu an=1 + 24h hold** üçlüsü canonical kapı.
+
+### 3.4 Cross-rule sample-rate contract
+
+`observation_coverage_30d` formula = `count_over_time(notify:dlq:burn_rate:24h[30d]) / 86400`.
+
+Sabit `86400` = `30 day * 24 h * 60 min * 2 sample/min` (notify-dlq-slo-rule.yaml
+recording group `interval: 30s`). Eğer notify-dlq-slo-rule.yaml `interval`
+değişirse, **bu denominator da güncellenmelidir**. Cross-rule contract.
 
 ## 4. Operatör akışı
 
@@ -88,18 +109,22 @@ sabit kalmıştır.
 ```
 
 Çıktı:
-- `evidence: /tmp/m7-evidence.json` (JSON dump)
-- `verdict: <M8_DOD_BLOCKER_MET|STABLE_BUT_WINDOW_IN_PROGRESS|UNSTABLE|OBSERVATION_ABSENT>`
-- Exit code: 0 / 1 / 2 / 3
+- `evidence: /tmp/m7-evidence.json` (JSON dump, schema_version `m7-v1-30day-stable-evidence/v2`)
+- `verdict: <M8_DOD_BLOCKER_MET|UNSTABLE|OBSERVATION_ABSENT>`
+- Exit code: 0 / 2 / 3
 
 Verdict yorumu:
 
 | Verdict | Exit | Anlam | Sonraki adım |
 |---|---|---|---|
-| `M8_DOD_BLOCKER_MET` | 0 | stable_30d=1 AND continuous_30d_ready=1 | Evidence commit + M8 PR-2 (Faz 21 charter draft) tetikle |
-| `STABLE_BUT_WINDOW_IN_PROGRESS` | 1 | stable_30d=1 ama daha 30 gün dolmadı | Bekle; bir sonraki gözlem turunda tekrar koş |
-| `UNSTABLE` | 2 | predicate fail var | Evidence JSON'dan hangi predicate fail oldu tespit + investigate |
-| `OBSERVATION_ABSENT` | 3 | Prometheus reachable değil / metric absent | Önce observability stack check; veri olmadan karar VERMEYIN |
+| `M8_DOD_BLOCKER_MET` | 0 | stable_30d=1 AND coverage_30d ≥ 0.95 | Evidence commit + M8 PR-2 (Faz 21 charter draft) tetikle |
+| `UNSTABLE` | 2 | predicate fail var (composite başarısız) | Evidence JSON'dan hangi predicate fail oldu tespit + investigate |
+| `OBSERVATION_ABSENT` | 3 | Prometheus reachable değil / metric absent / coverage < 0.95 | Observability stack check + coverage düşüklüğünün kaynağını tespit |
+
+> **Codex iter-1 P0/coverage absorb**: önceki `STABLE_BUT_WINDOW_IN_PROGRESS` (exit 1)
+> ayrımı kaldırıldı. Coverage guard zaten "yeterli sample yok"u OBSERVATION_ABSENT
+> olarak yakaladığı için ayrık bir window-progress state'i gereksiz; aynı zamanda
+> önceki `min_over_time(stable_30d[30d])` semantik bug'ı dolaylı eradike edildi.
 
 ### 4.3 Evidence artifact commit
 

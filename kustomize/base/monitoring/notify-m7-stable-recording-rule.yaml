@@ -1,31 +1,48 @@
 # PrometheusRule — Faz 23 M7 v1 30-day stable observation recording rules
 #
-# Faz 23 M8 PR-1 (Codex `019e8c24` AGREE order D→B→A→C, multi-PR sequenced).
+# Faz 23 M8 PR-1 D (Codex `019e8c24` strategic verdict — AGREE order
+# D→B→A→C, multi-PR sequenced). Post-impl Codex iter-1 PARTIAL absorbed:
+# coverage guard + namespace-preserving fallback + composite contract.
 #
-# Context: Faz 23 M7 v1 closure 2026-05-23 (Web Push browser-only DELIVERED
-# end-to-end). M8 (Multi-tenant Trigger Gate) DoD requires M7 v1 stable
-# ≥30 days in production (canonical: docs/notify/milestones.md §M8). This
-# rule emits the **observation truth surface** the evidence script + Grafana
-# panel consume — it does NOT shorten the 30-day clock or convert M7 to green
-# before 2026-06-22+ (the natural 30-day mark from 2026-05-23 LIVE).
+# Context: Faz 23 M7 v1 closure 2026-05-23 (Web Push browser-only
+# DELIVERED end-to-end). M8 (Multi-tenant Trigger Gate) DoD #1 requires
+# M7 v1 stable ≥30 days in production (canonical: `docs/notify/milestones.md`
+# §M8). This rule emits the **observation truth surface** the evidence
+# script + Grafana panel consume — it does NOT shorten the 30-day clock
+# or convert M7 to green before 2026-06-22+.
 #
 # Reuse contract: leverages existing `notify-dlq-slo-rule.yaml` recording
 # rules (notify:dlq:burn_rate:24h, notify:dlq:burn_rate:72h) instead of
 # re-deriving the burn-rate math. Single source-of-truth.
 #
-# Acceptance semantics for M7 v1 stable_30d=1:
-#   1) DLQ burn rate ≤ 1.0× over the past 30 days (24h + 72h windows clean)
-#   2) Dispatch success rate ≥ 0.995 (the SLO target) over the 30-day window
-#   3) No critical SLO burn alert has fired in the past 30 days
+# Acceptance semantics for stable_30d=1 (4 composite predicates):
+#   1) dispatch_success_rate_30d ≥ 0.995
+#   2) dlq_burn_max_30d (24h window) ≤ 1.0
+#   3) critical_alert_minutes_30d == 0
+#   4) observation_coverage_30d ≥ 0.95 (anti-silence guard, NEW iter-2)
 #
-# All three predicates must hold concurrently for stable_30d == 1. The
-# absent_over_time guard ensures absence-of-metric (e.g. recently scraped
-# Prometheus or Notify silent) does NOT silently flip stable_30d to 1.
+# 72h burn is SUPPLEMENTARY observability — NOT part of composite stable_30d
+# (runbook contract aligned).
 #
 # IMPORTANT — Codex 019e8c24 anti-pattern guards:
 #   - DO NOT retroactively shorten the 30-day window
 #   - DO NOT convert M7 to green before 2026-06-22+ with clean evidence
 #   - This rule is OBSERVATION-ONLY; it does not mutate any system
+#
+# Codex iter-1 absorbed fixes (P0×3 + P1×2 — thread 019e8c24):
+#   - P0/coverage  : `min_over_time(stable_30d[30d])` semantik 60d bug fix
+#                    → `observation_coverage_30d` recording rule + ready
+#                      alert uses `stable_30d == 1 AND coverage >= 0.95`
+#   - P0/alertNS   : `count by(namespace)(ALERTS)` no-fire case label
+#                    namespace-less; namespace-preserving fallback with
+#                    `sum by(namespace)(count_over_time(...))` + label join
+#   - P0/silence   : `1 - absent_over_time(...) or vector(0)` always 0;
+#                    replaced with coverage-based threshold
+#   - P1/supplement: 72h burn moved to supplementary (not composite)
+#   - P1/statusVoc : `status="SUCCESS|FAILED"` retained — mirrors existing
+#                    notify-dlq-slo-rule.yaml denominator semantics; if
+#                    canonical label drifts to DELIVERED, both rules
+#                    update together (single source-of-truth principle).
 
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -43,8 +60,8 @@ spec:
       interval: 1m
       rules:
         # 30-day rolling dispatch success rate (terminal outcomes only;
-        # mirrors notify-dlq-slo-rule.yaml denominator semantics so the
-        # success ratio and DLQ burn rate are computed on the same base).
+        # mirrors notify-dlq-slo-rule.yaml denominator so the success
+        # ratio and DLQ burn rate share the same base).
         #
         # Formula: success / (success + FAILED). RETRY transient outcomes
         # excluded — already the convention in notify-dlq-slo-rule.yaml.
@@ -64,57 +81,74 @@ spec:
         # Maximum DLQ burn rate observed across the 30-day window (sliding
         # max over the 24h burn series). A clean 30-day window means this
         # max never exceeded 1.0 — the at-budget steady-state threshold.
-        # We use the 24h burn rate as the observation series (smooths
-        # transient spikes; matches the M7 v1 stability claim semantics).
         - record: notify:m7_v1:dlq_burn_max:30d
           expr: |
             max_over_time(notify:dlq:burn_rate:24h[30d])
 
-        # 72h burn observation — supplementary signal for sustained drift
-        # at the budget-recovery horizon. Same window aggregation.
+        # 72h burn observation — SUPPLEMENTARY signal at the budget-recovery
+        # horizon. NOT part of composite stable_30d (runbook contract).
         - record: notify:m7_v1:dlq_burn_72h_max:30d
           expr: |
             max_over_time(notify:dlq:burn_rate:72h[30d])
 
         # Count of SLO burn-rate critical alerts that fired in the past 30d.
-        # Uses ALERTS{alertstate="firing"} from kube-prometheus-stack. Any
-        # firing minute counts; clean window means 0. (Counted as gauges of
-        # alert presence ⇒ count_over_time on absent==1 inverse.)
+        # Codex iter-1 P0/alertNS fix: when zero alerts fired, the previous
+        # `count by(namespace)(ALERTS{...}) or vector(0)` returned a
+        # namespace-less {} label set with value 0 — which then failed to
+        # join with namespace-scoped operands in the composite, silently
+        # flipping stable_30d to absent.
         #
-        # NOTE: kube-prometheus-stack exposes ALERTS as a vector with label
-        # alertname; we sum across our two paging alerts (Fast + Slow).
+        # New shape preserves the platform-prod namespace label by selecting
+        # an explicit fallback series with that label. We use a steady
+        # base-series (notify:dlq:terminated_total:rate30m) ANDed to 0 only
+        # when the ALERTS source returns empty — labels preserved either way.
         - record: notify:m7_v1:critical_alert_minutes:30d
           expr: |
-            sum_over_time(
-              (
-                count by (namespace) (
+            (
+              sum by (namespace) (
+                count_over_time(
                   ALERTS{
                     alertname=~"NotifyDlqSloBurnRateFast|NotifyDlqSloBurnRateSlow",
                     alertstate="firing",
                     namespace="platform-prod"
-                  }
-                ) or vector(0)
-              )[30d:1m]
+                  }[30d]
+                )
+              )
+            )
+            or
+            (
+              0 * notify:dlq:terminated_total:rate30m{namespace="platform-prod"}
             )
 
-        # Observation-availability guard: the 24h burn series must have
-        # been observed in the past 30d (defense against silent absence of
-        # metric flipping stable_30d to 1 by absent-by-default). The expr
-        # returns 1 when the metric is present sometime in the window, 0
-        # otherwise. `absent_over_time` returns 1 when absent — invert.
-        - record: notify:m7_v1:observation_present:30d
-          expr: |
-            (1 - absent_over_time(notify:dlq:burn_rate:24h[30d]))
-            or vector(0)
-
-        # Boolean stable_30d truth surface. All three predicates must hold:
-        #   1) success_rate ≥ 0.995
-        #   2) max DLQ burn (24h) over 30d ≤ 1.0
-        #   3) zero critical alert minutes over 30d
-        #   4) observation present (anti-silence guard)
+        # Observation-coverage guard (Codex iter-1 P0/coverage + P0/silence
+        # combined fix). Anti-silence: how much of the 30-day window
+        # actually has the source 24h-burn series scraped?
         #
-        # Evidence script + Grafana panel read this single recording rule.
-        # `bool` modifier coerces comparisons to 0/1.
+        # Expected sample count over 30d at 30s scrape interval of the DLQ
+        # SLO recording group = 30 * 24 * 60 * 2 = 86400.
+        # We use `count_over_time / 86400` to express coverage as a [0,1]
+        # fraction. ≥ 0.95 means at least 95% of expected scrapes present —
+        # this is the anti-silence guard that gates stable_30d=1.
+        #
+        # NOTE: if notify-dlq-slo-rule.yaml interval changes, update the
+        # 86400 denominator accordingly. Cross-rule sample-rate contract
+        # documented in RB-faz-23-m7-30day-stable-observation.md §3.
+        - record: notify:m7_v1:observation_coverage:30d
+          expr: |
+            (
+              sum by (namespace) (
+                count_over_time(notify:dlq:burn_rate:24h{namespace="platform-prod"}[30d])
+              )
+            ) / 86400
+
+        # Boolean stable_30d truth surface — composite of 4 predicates.
+        # ALL four must hold concurrently for stable_30d == 1. Any single
+        # predicate failure flips stable_30d to 0 and effectively restarts
+        # the 30-day stability clock.
+        #
+        # Codex iter-1 P0/coverage absorb: composite carries explicit
+        # coverage guard so a partially-scraped 30d window cannot silently
+        # yield stable_30d=1.
         - record: notify:m7_v1:stable_30d
           expr: |
             (
@@ -124,5 +158,5 @@ spec:
               *
               (notify:m7_v1:critical_alert_minutes:30d == bool 0)
               *
-              (notify:m7_v1:observation_present:30d == bool 1)
+              (notify:m7_v1:observation_coverage:30d >= bool 0.95)
             )
