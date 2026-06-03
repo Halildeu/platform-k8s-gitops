@@ -134,9 +134,12 @@ Kabul kriteri (3 vaka):
 
 Evidence script bu preflight'ı manuel/script-tarafı uygular —
 `docs/scripts/m7-stable-evidence.sh` aktif coexist sorgu var (Codex
-iter-3 P1 absorb): hem `DELIVERED` hem `SUCCESS` `rate(...{...,status=<v>}[5m]) > 0`
-ise evidence script JSON'a `status_coexist=true` ekler + verdict
-`OBSERVATION_ABSENT` zorlar.
+iter-3 P1 + iter-4 P1/coexistWindow absorb): hem `DELIVERED` hem
+`SUCCESS` için `sum(increase(notify_dispatch_outcome_total{status=<v>}[30d])) > 0`
+ise evidence script JSON'a `status_label_coexist_active="yes"` ekler +
+verdict `OBSERVATION_ABSENT` zorlar. Probe window'u success_rate
+window'una bağlı (30d), 5m kısa pencere coexist false-negative riski
+kaldırıldı.
 
 ## 4. Operatör akışı
 

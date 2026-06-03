@@ -151,18 +151,23 @@ query() {
 #   - added `observation_coverage_30d` (anti-silence guard, fraction [0,1])
 #   - dropped `min_over_time(stable_30d[30d])` (hidden 60d semantic +
 #     partial-coverage false positive); evidence script now checks
-#     stable_30d=1 AND coverage_30d ≥ 0.95 directly.
+#     stable_30d=1 AND coverage_30d ≥ 0.99 AND elapsed_seconds_since_m7_live
+#     ≥ 2592000 directly (coverage tightened to 0.99 in iter-2, time-gate
+#     added in iter-2 P0/timeGate).
 SUCCESS_RATE=$(query 'notify:m7_v1:dispatch_success_rate:30d{namespace="platform-prod"}')
 BURN_24H_MAX=$(query 'notify:m7_v1:dlq_burn_max:30d{namespace="platform-prod"}')
 BURN_72H_MAX=$(query 'notify:m7_v1:dlq_burn_72h_max:30d{namespace="platform-prod"}')
 ALERT_MINUTES=$(query 'notify:m7_v1:critical_alert_minutes:30d{namespace="platform-prod"}')
 OBS_COVERAGE=$(query 'notify:m7_v1:observation_coverage:30d{namespace="platform-prod"}')
-# Codex iter-3 P1/statusCoexist absorb: DELIVERED ve SUCCESS aynı anda
-# non-zero görünüyorsa numerator çift-sayım nedeniyle inflate; M8
-# evidence kabul edilmez. We probe the live 5m rate for each terminal
-# label; non-null means non-zero (returns absent when rate==0).
-DELIVERED_RATE=$(query 'sum(rate(notify_dispatch_outcome_total{namespace="platform-prod", status="DELIVERED"}[5m])) > 0')
-SUCCESS_LABEL_RATE=$(query 'sum(rate(notify_dispatch_outcome_total{namespace="platform-prod", status="SUCCESS"}[5m])) > 0')
+# Codex iter-3 P1/statusCoexist + iter-4 P1/coexistWindow absorb:
+# DELIVERED ve SUCCESS aynı 30d penceresinde non-zero görünüyorsa
+# success_rate numerator çift-sayım nedeniyle inflate olur. Probe window
+# success_rate window ile aynı 30d (5m probe coexist'i 30d numerator
+# için kaçırabiliyordu — örn. DELIVERED 10 gün önce, SUCCESS bugün).
+# `increase` 30d window'da gözlenen toplam delta; > 0 filter null vs
+# active ayrımını korur.
+DELIVERED_RATE=$(query 'sum(increase(notify_dispatch_outcome_total{namespace="platform-prod", status="DELIVERED"}[30d])) > 0')
+SUCCESS_LABEL_RATE=$(query 'sum(increase(notify_dispatch_outcome_total{namespace="platform-prod", status="SUCCESS"}[30d])) > 0')
 # Codex iter-2 P0/timeGate absorb: natural 30-day Prom-time gate. The
 # composite stable_30d already enforces ≥ 2592000s; we surface elapsed
 # seconds + natural ready flag in evidence so the operator can see the
