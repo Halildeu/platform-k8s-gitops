@@ -974,14 +974,23 @@ patches:
         value: "true"
 
   # Faz 22.5 P2-A A1 first prod deploy — endpoint-admin-service ConfigMap
-  # prod realm override (base = test realm platform-test; prod = serban).
-  # Other env values (audience set, datasource URL, JPA/Flyway, agent-auth
-  # nonce TTLs, etc.) are realm-portable + identical between test/prod —
-  # no override needed. JWT decoder bean uses KEYCLOAK_JWKS_URI for the
-  # actual JWK fetch (per Faz 22.1.1 C.5.persona #960 fix: profile=k8s active
-  # → KEYCLOAK_JWKS_URI binds to spring.security.oauth2.resourceserver.jwt.jwk-set-uri).
-  # SECURITY_JWT_AUDIENCE base value already realm-neutral ('endpoint-admin-service,
-  # frontend,account,serban-web') — no audience override needed.
+  # prod realm override + OpenFGA authz wiring (Codex 019e8cca post-impl
+  # REVISE absorb: MUST-FIX OpenFGA fail-open gap — without ERP_OPENFGA_ENABLED=true
+  # + valid STORE_ID + MODEL_ID, @RequireModule interceptor's authzService.isEnabled()
+  # returns false → fail-open → D29 'Secured' claim cannot be made).
+  #
+  # KC realm: base = test realm platform-test; prod = serban.
+  # JWT decoder bean uses KEYCLOAK_JWKS_URI (Faz 22.1.1 C.5.persona #960 fix:
+  # profile=k8s active → KEYCLOAK_JWKS_URI binds to
+  # spring.security.oauth2.resourceserver.jwt.jwk-set-uri).
+  # SECURITY_JWT_AUDIENCE base ('endpoint-admin-service,frontend,account,
+  # serban-web') already realm-neutral — no audience override needed.
+  #
+  # OpenFGA store/model: prod tenant (separate from test). Values sourced from
+  # report-service-config prod live state (same OpenFGA tenant shared across
+  # backend services on prod cluster). Tuples for module:endpoint-admin
+  # can_view/can_manage authoritative seed via permission-service (out-of-band,
+  # not in this PR).
   - target:
       kind: ConfigMap
       name: endpoint-admin-service-config
@@ -996,6 +1005,25 @@ patches:
       - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: "INFO"
+      # ERP_OPENFGA_* — Codex 019e8cca MUST-FIX. NOT in base ConfigMap (drift on
+      # test cluster: live test CM has these 4 from a prior kubectl patch outside
+      # gitops, separate fix needed for test gitops alignment). Prod overlay sets
+      # them explicitly via op:add to ensure @RequireModule interceptor sees
+      # authzService.isEnabled()=true and runs real OpenFGA checks instead of
+      # fail-open. Values sourced from prod cluster report-service-config (shared
+      # OpenFGA tenant: store=01KPXCVBHCY2TQ6YHVK009NS1C, model=01KPXCVBMDKXXRPGKFGPDRVBQX).
+      - op: add
+        path: /data/ERP_OPENFGA_ENABLED
+        value: "true"
+      - op: add
+        path: /data/ERP_OPENFGA_API_URL
+        value: "http://openfga:8080"
+      - op: add
+        path: /data/ERP_OPENFGA_STORE_ID
+        value: "01KPXCVBHCY2TQ6YHVK009NS1C"
+      - op: add
+        path: /data/ERP_OPENFGA_MODEL_ID
+        value: "01KPXCVBMDKXXRPGKFGPDRVBQX"
 
   # Faz 23.9 prod cutover — notification-orchestrator pod-template
   # annotation rollout trigger + replicas override. ConfigMap envFrom
