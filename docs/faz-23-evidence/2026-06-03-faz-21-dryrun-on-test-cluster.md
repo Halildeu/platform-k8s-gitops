@@ -126,12 +126,12 @@ Inv-3 probe targets `notify.notification_delivery` which lives in `notify_db`, N
 
 ## 4. Design assumption drifts (PR-5 follow-up scope)
 
-| Drift | Evidence | PR-5 fix |
+| Drift | Evidence | PR-5 status |
 |---|---|---|
-| **Multi-DB** — script tek-DB varsayar; prod multi-DB | `\l` shows 6 application DBs | `--pg-database-list` parametre (comma-sep) + iter each + merged JSON output |
-| **tenant_id vs org_id** — endpoint backend `tenant_id` column kullanıyor; charter §1 lock `tenant == org` semantic | endpoint_admin 7/7 `tenant_id`; notify 3/3 `org_id` (+ 1 derived) | (a) charter §1.2/§5.3 update — endpoint backend code rename `tenant_id → org_id` Faz 21.1'de; (b) script tenant_id discovery fallback dokümante ZORUNLU; (c) Inv-1 test scope `tenant_id` headers de kontrol etmeli |
-| **Cross-DB Inv-3 callback isolation** — Inv-3 probe Notify schema'da; endpoint_admin DB invocation null path | `tenant_path: ""` ve `status: OBSERVATION_INSUFFICIENT` | PR-5 audit-and-check.sh çoklu DB iterasyon + tek summary üretim; Inv-3 Notify-only |
-| **Singular fallback tables not deployed** — 6 tablo `missing_table` (endpoint_device, install_audit, etc.) | endpoint_admin 6 missing | Audit script "verification candidate set v3" — singular fallback aliasları kaldır veya `expected_missing` config |
+| **Multi-DB** — script tek-DB varsayar; prod multi-DB | `\l` shows 6 application DBs | RESOLVED (`--pg-database-list` parametre comma-sep + iter each + merged summary) |
+| **tenant_id vs org_id** — endpoint backend `tenant_id` column kullanıyor; charter §1 lock `tenant == org` semantic | endpoint_admin 7/7 `tenant_id`; notify 3/3 `org_id` (+ 1 derived) | DOCUMENTED (charter §1.1 + ADR §3.2 live state); Faz 21.1 sub-faz binding rename + script `tenant_id` fallback chain hazır + Inv-1 test scope `tenant_id` header de kontrol etmeli |
+| **Cross-DB Inv-3 callback isolation** — Inv-3 probe Notify schema'da; endpoint_admin DB invocation null path | `tenant_path: ""` ve `status: OBSERVATION_INSUFFICIENT` | **PARTIALLY_RESOLVED** (Codex 019e8c8d Finding 2): wrapper coverage çözüldü — multi-DB iterasyon Notify probe'unu kendi DB'sinde garantiler. **Inv-3 invariant acceptance test'i hâlâ backend integration test gerektirir** (charter §4.3 callback isolation: provider_msg_id reused across tenants → concurrent UPDATE isolated by org_id + external_id pair). Sibling backend repo'da ayrı PR scope'unda kalır. |
+| **Singular fallback tables not deployed** — 6 tablo `missing_table` (endpoint_device, install_audit, etc.) | endpoint_admin 6 missing | OBSERVED (audit script `missing_table` status ile graceful; future PR singular fallback alias prune veya `expected_missing` config) |
 
 ---
 

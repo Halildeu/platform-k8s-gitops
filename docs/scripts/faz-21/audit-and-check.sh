@@ -169,6 +169,34 @@ if [[ -n "$PG_DATABASE_LIST" ]]; then
   done
 
   SUMMARY_JSON="$OUT_DIR/summary.json"
+
+  # Codex 019e8c8d Finding 1 absorb: exit-numeric rank shadowing problem.
+  # Strictest verdict label is NOT the same as max(exit). INVARIANT_VIOLATION
+  # exit=1 but is the strictest acceptance-blocking verdict; MANUAL_PENDING /
+  # OBSERVATION_INSUFFICIENT exit=2 but are non-blocking for "real violations
+  # found" classification. We emit both:
+  #   overall_exit: max(per-DB exits) — preserves shell-level fail semantics
+  #   overall_verdict: strictest label rank — preserves classification semantics
+  #   blocking_categories: list of verdict labels triggering operator triage
+  #
+  # Rank order (most → least blocking):
+  #   INVARIANT_VIOLATION > ADVISORY_INVESTIGATION > UNKNOWN > MANUAL_PENDING >
+  #   OBSERVATION_INSUFFICIENT > MOSTLY_CLEAN_INV4_VERIFIED > CLEAN
+
+  OVERALL_VERDICT="CLEAN"
+  BLOCKING_CATS=""
+  for rank_label in INVARIANT_VIOLATION ADVISORY_INVESTIGATION UNKNOWN MANUAL_PENDING OBSERVATION_INSUFFICIENT MOSTLY_CLEAN_INV4_VERIFIED CLEAN; do
+    if echo "$PER_DB_ENTRIES" | grep -q "\"$rank_label\""; then
+      if [[ "$OVERALL_VERDICT" == "CLEAN" || "$OVERALL_VERDICT" == "MOSTLY_CLEAN_INV4_VERIFIED" || "$OVERALL_VERDICT" == "OBSERVATION_INSUFFICIENT" ]]; then
+        OVERALL_VERDICT="$rank_label"
+      fi
+      if [[ "$rank_label" == "INVARIANT_VIOLATION" || "$rank_label" == "ADVISORY_INVESTIGATION" ]]; then
+        [[ -n "$BLOCKING_CATS" ]] && BLOCKING_CATS+=","
+        BLOCKING_CATS+="\"$rank_label\""
+      fi
+    fi
+  done
+
   cat >"$SUMMARY_JSON" <<EOF
 {
   "schema_version": "faz-21-audit-and-check/v2",
@@ -177,18 +205,22 @@ if [[ -n "$PG_DATABASE_LIST" ]]; then
   "database_list": "$PG_DATABASE_LIST",
   "per_database": [${PER_DB_ENTRIES}],
   "overall_exit": $OVERALL_EXIT,
+  "overall_verdict": "$OVERALL_VERDICT",
+  "blocking_categories": [${BLOCKING_CATS}],
   "anti_pattern_guards": {
     "delegates_to_pr3_a_scripts": true,
     "inv4_verified_explicit_flag": $([ "$INV4_VERIFIED" = "1" ] && echo true || echo false),
     "no_backdated_evidence": true,
-    "multi_db_per_db_isolation": true
+    "multi_db_per_db_isolation": true,
+    "exit_rank_and_verdict_rank_decoupled": true
   }
 }
 EOF
 
   echo ""
   echo "=== Multi-DB summary ==="
-  echo "overall exit: $OVERALL_EXIT"
+  echo "overall verdict: $OVERALL_VERDICT (blocking: [${BLOCKING_CATS}])"
+  echo "overall exit:    $OVERALL_EXIT"
   echo "per-DB:"
   jq -r '.per_database[] | "  \(.database): audit=\(.audit_verdict) (exit \(.audit_exit)) / checks=\(.checks_verdict) (exit \(.checks_exit))"' "$SUMMARY_JSON" 2>/dev/null || echo "$PER_DB_ENTRIES"
   echo "summary: $SUMMARY_JSON"
