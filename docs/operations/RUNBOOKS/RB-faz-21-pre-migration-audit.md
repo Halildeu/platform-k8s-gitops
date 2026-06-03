@@ -13,7 +13,7 @@
 Faz 21 (multi-tenant migration) sub-faz 21.0 = "Pre-Migration Audit". DoD (charter §5.1):
 
 - Audit script produces evidence on prod-shaped snapshot
-- 4 R10 invariants tested green (CLEAN verdict or MOSTLY_CLEAN_INV4_MANUAL)
+- 4 R10 invariants tested green (`r10-invariant-checks.sh` verdict `MOSTLY_CLEAN_INV4_VERIFIED` only — requires `--inv4-verified` flag after operator manual cross-check)
 - Orphan/mixed row count == 0 on snapshot
 
 This runbook is the operator entry point. Two scripts (canonical verdicts:

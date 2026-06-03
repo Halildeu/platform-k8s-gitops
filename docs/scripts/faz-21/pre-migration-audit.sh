@@ -159,12 +159,25 @@ INV2_CANDIDATES=(
   "notify.notification_outbox"
   "notify.audit_event_v2"
   "notify.idempotency_key"
+  # Endpoint candidates — Codex iter-4 P1/endpointCoverage absorb. Repo
+  # evidence uses pluralized + state-history + snapshots/packages names;
+  # we list both singular and plural/canonical variants so table_exists
+  # can pick the right one. Missing variants flow as `missing_table`
+  # (counted) and the schema-prefix guard guarantees at least one endpoint
+  # table is discovered (OBSERVATION_INSUFFICIENT otherwise).
   "endpoint_admin_service.endpoint_device"
+  "endpoint_admin_service.endpoint_devices"
   "endpoint_admin_service.endpoint_software_inventory"
+  "endpoint_admin_service.endpoint_software_inventory_state_history"
   "endpoint_admin_service.endpoint_outdated_software"
+  "endpoint_admin_service.endpoint_outdated_software_snapshots"
+  "endpoint_admin_service.endpoint_outdated_software_packages"
   "endpoint_admin_service.endpoint_install_audit"
+  "endpoint_admin_service.install_audit"
   "endpoint_admin_service.endpoint_compliance_policy_evaluation"
+  "endpoint_admin_service.endpoint_compliance_evaluations"
   "endpoint_admin_service.endpoint_app_control"
+  "endpoint_admin_service.endpoint_app_control_snapshots"
 )
 
 # Codex iter-2 P1/derivedTenantKey absorb: some tables don't carry org_id
@@ -177,11 +190,20 @@ declare -A DERIVED_PARENT_FK=(
   ["notify.notification_dispatch"]="intent_id|notify.notification_intent|intent_id"
   ["notify.notification_outbox"]="intent_id|notify.notification_intent|intent_id"
   ["notify.audit_event_v2"]="intent_id|notify.notification_intent|intent_id"
+  # Endpoint child tables — both singular (endpoint_device) and plural
+  # (endpoint_devices) variants point to the same parent join spec; the
+  # parent table for derived join is selected by table_exists guard.
   ["endpoint_admin_service.endpoint_software_inventory"]="device_id|endpoint_admin_service.endpoint_device|id"
+  ["endpoint_admin_service.endpoint_software_inventory_state_history"]="device_id|endpoint_admin_service.endpoint_devices|id"
   ["endpoint_admin_service.endpoint_outdated_software"]="device_id|endpoint_admin_service.endpoint_device|id"
+  ["endpoint_admin_service.endpoint_outdated_software_snapshots"]="device_id|endpoint_admin_service.endpoint_devices|id"
+  ["endpoint_admin_service.endpoint_outdated_software_packages"]="device_id|endpoint_admin_service.endpoint_devices|id"
   ["endpoint_admin_service.endpoint_install_audit"]="device_id|endpoint_admin_service.endpoint_device|id"
+  ["endpoint_admin_service.install_audit"]="device_id|endpoint_admin_service.endpoint_devices|id"
   ["endpoint_admin_service.endpoint_compliance_policy_evaluation"]="device_id|endpoint_admin_service.endpoint_device|id"
+  ["endpoint_admin_service.endpoint_compliance_evaluations"]="device_id|endpoint_admin_service.endpoint_devices|id"
   ["endpoint_admin_service.endpoint_app_control"]="device_id|endpoint_admin_service.endpoint_device|id"
+  ["endpoint_admin_service.endpoint_app_control_snapshots"]="device_id|endpoint_admin_service.endpoint_devices|id"
 )
 # Codex iter-3 P0/notifyParentPK absorb: Notify parent PK is `intent_id`,
 # not `id` — the notification_intent table's primary key is intent_id
@@ -283,6 +305,21 @@ for st in "${INV2_CANDIDATES[@]}"; do
 done
 INV2_JSON+="]"
 
+# Codex iter-4 P1/endpointCoverage absorb: if endpoint_admin_service schema
+# is included in --schema-prefix, at least ONE endpoint table must be
+# discovered, otherwise we flag OBSERVATION_INSUFFICIENT downstream. Counts
+# discovered endpoint_admin_service.* tables specifically.
+INV2_ENDPOINT_DISCOVERED=0
+if filter_by_schema_prefix "endpoint_admin_service"; then
+  for st in "${INV2_CANDIDATES[@]}"; do
+    schema="${st%%.*}"
+    tbl="${st##*.}"
+    if [[ "$schema" == "endpoint_admin_service" ]] && table_exists "$schema" "$tbl"; then
+      INV2_ENDPOINT_DISCOVERED=$((INV2_ENDPOINT_DISCOVERED + 1))
+    fi
+  done
+fi
+
 # ----------------------------------------------------------------------
 # Inv-3 read-only snapshot analog (Codex iter-1 P0/inv3Scope absorb).
 # This probe is a READ-ONLY analog only; charter §4.3 callback isolation
@@ -368,6 +405,12 @@ if [[ "$INV3_CALLBACK_ORPHAN" != "null" && "$INV3_CALLBACK_ORPHAN" != "0" ]]; th
 if [[ "$INV2_DISCOVERED_COUNT" -lt 2 ]]; then
   VERDICT="OBSERVATION_INSUFFICIENT"
 fi
+# Codex iter-4 P1/endpointCoverage absorb: if endpoint_admin_service schema
+# was requested but zero endpoint tables discovered, flag insufficient.
+# Notify-only audit cannot reach CLEAN if endpoint coverage demanded.
+if filter_by_schema_prefix "endpoint_admin_service" && [[ "$INV2_ENDPOINT_DISCOVERED" -lt 1 ]]; then
+  VERDICT="OBSERVATION_INSUFFICIENT"
+fi
 
 cat >"$OUT" <<EOF
 {
@@ -385,7 +428,8 @@ cat >"$OUT" <<EOF
       "missing_count": ${INV2_MISSING_COUNT},
       "no_tenant_key_count": ${INV2_NO_KEY_COUNT},
       "violation_count": ${INV2_FAIL_COUNT},
-      "skipped_by_schema_prefix": ${INV2_SKIPPED_BY_SCHEMA_PREFIX}
+      "skipped_by_schema_prefix": ${INV2_SKIPPED_BY_SCHEMA_PREFIX},
+      "endpoint_discovered_count": ${INV2_ENDPOINT_DISCOVERED}
     },
     "inv3_callback_correlation_orphan": {
       "status": "${INV3_STATUS}",
