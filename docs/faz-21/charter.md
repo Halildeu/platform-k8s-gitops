@@ -20,8 +20,8 @@ This charter is the canonical scope/sub-faz/repo-ownership/invariant document. T
 - [HARD RULE — No Fake Work / No Cosmetic Operations](../../CLAUDE.md): tenant migration adımları doğrulanmadan accepted sayılmaz.
 - [HARD RULE — TEST Cluster Scale-to-Zero YASAK](../../CLAUDE.md): test cluster paralel-multi-session model bozulmaz.
 - [HARD RULE — Mavis CLI (2026-05-29)](../../CLAUDE.md): tenant-aware multi-session koordinasyon Mavis kanalında; secret-redaction.
-- [ADR-0011 §2.3](../adr/0011-boundary-declaration.md): PR boundary declaration; tenant-touching PR boundary ZORUNLU.
-- [ADR-0013 — Notification Charter](../adr/0013-notify-charter.md): Faz 23 charter, M2 D29-Authorized Layer-1 `org_id` boundary canonical.
+- [ADR-0011 §2.3](../adr/0011-drift-detection-audit-cadence-boundary-governance.md): PR boundary declaration; tenant-touching PR boundary ZORUNLU.
+- [ADR-0013 — Notification Charter](../adr/0013-notification-orchestration.md): Faz 23 charter, M2 D29-Authorized Layer-1 `org_id` boundary canonical.
 - Faz 23 M2 D29-Authorized Layer-1 `org_id` org-boundary kararı (PR — board #754): JWT `org_id` claim canonical org authority; Faz 21 v1 tenant model bunu **devam ettirir**.
 
 ### 1.2 What this charter NOT do
@@ -184,7 +184,7 @@ Acceptance evidence document: `docs/faz-23-evidence/<YYYY-MM-DD>-r10-invariant-t
 - [Faz 23 M2 D29-Authorized Layer-1 (board #754)](https://github.com/Halildeu/platform-k8s-gitops/issues/754)
 - [R10 Multi-tenant migration risk (board #766)](https://github.com/Halildeu/platform-k8s-gitops/issues/766)
 - [M8 Multi-tenant Trigger Gate (board #760)](https://github.com/Halildeu/platform-k8s-gitops/issues/760)
-- [ADR-0011 §2.3 boundary declaration](../adr/0011-boundary-declaration.md)
-- [ADR-0013 — Notification Charter](../adr/0013-notify-charter.md)
+- [ADR-0011 §2.3 boundary declaration](../adr/0011-drift-detection-audit-cadence-boundary-governance.md)
+- [ADR-0013 — Notification Charter](../adr/0013-notification-orchestration.md)
 - Codex strategic consult: `019e8c3e-93c0-7793-a552-1643df88191d` (plan-time AGREE 2026-06-03)
 - Sprint plan: Faz 23 M8 readiness — Codex order D→B→A→C (thread `019e8c24`)
