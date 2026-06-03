@@ -4415,7 +4415,29 @@ images:
     # Image build run: gh run view 26848316706 -R Halildeu/platform-backend
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-e0a2731
     #   digest sha256:f9c1e3aa1d5adea353422030c0a91dd170c5c162ec373c31adde0b618976e602
-    digest: sha256:f9c1e3aa1d5adea353422030c0a91dd170c5c162ec373c31adde0b618976e602
+    #
+    # 2026-06-03 Faz 21.1 PR1 #391 (V29 org_id compat layer) + PR2a #392
+    # (V30 org_id CHECK constraint NOT VALID+VALIDATE) MERGED. Codex
+    # 019e8c95 / 019e8ca1 plan-time AGREE Option B compat-safe split
+    # (PR1 nullable column + backfill + trigger; PR2a CHECK constraint
+    # rejecting mismatch dual-write SQLSTATE 23514). Tests V29 9/9 +
+    # V30 7/7 = 16/16 PASS. Anti-pattern guards enforced: tenant_id
+    # NOT NULL retained, trigger purely additive, NO DROP COLUMN
+    # tenant_id (cleanup PR scope). Rollback-safe: legacy code path
+    # continues to write tenant_id only; V29 trigger fills org_id.
+    #
+    # Faz 21.1 binding deliverable surfaced by Faz 23 M8 PR-5 #1238
+    # 2026-06-03 test cluster dry-run evidence
+    # (docs/faz-23-evidence/2026-06-03-faz-21-dryrun-on-test-cluster.md):
+    # endpoint_admin 7/7 tables used tenant_id (not org_id) before PR1.
+    # PR2b-i (entity foundation, platform-backend PR #393) in flight;
+    # PR2b-ii (canonical write path) + PR2b-iii (repository COALESCE
+    # starting with BE-024c) follow per Codex 019e8cac strict order.
+    #
+    # Image build run: gh run view 26874264709 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-3bcb8ec
+    #   digest sha256:270c506c2baaa462cbddc74a9e920ef0188fa4febf8ea97792afe416a0a817e6
+    digest: sha256:270c506c2baaa462cbddc74a9e920ef0188fa4febf8ea97792afe416a0a817e6
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
