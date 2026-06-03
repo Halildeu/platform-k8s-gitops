@@ -1,6 +1,6 @@
 # ADR-0031 — Two-Server Meeting Intelligence Topology (platform-ai Compute Plane + staging-sw Orchestration Plane)
 
-> **Status**: DRAFT (2026-06-03) — Codex `019e8c09` iter-1 REVISE absorb sonrası canonical taslak; iter-2 AGREE bekleniyor (Plan Consensus Autonomy).
+> **Status**: DRAFT (2026-06-03) — Codex `019e8c09` iter-1+iter-2+iter-3 REVISE absorb sonrası canonical taslak; iter-4 AGREE bekleniyor (Plan Consensus Autonomy).
 >
 > **Scope**: Faz 24 Meeting Intelligence için fiziksel host topolojisi, network/secret cross-server boundary, deployment çatısı. ADR-0002 (single-host dual-cluster, Faz 1-23 core platform) **supersede edilmez**; bu karar Faz 24 `platform-ai` compute plane için **scoped forward-extension**'dur.
 >
@@ -263,7 +263,7 @@ Bu ADR'nin production'a katkı verdiği maddeler, **Faz 24 servisleri production
 
 ## Next
 
-1. Codex iter-2 review (bu ADR taslağı + plan §7/§9 update + ADR-0030 §"Cross-Server STT Transit Boundary" + Issue #19 re-scope) → AGREE bekleniyor
+1. Codex iter-4 review (bu ADR taslağı + plan §7/§9 update + ADR-0030 §"Cross-Server STT Transit Boundary" + Issue #19 re-scope + PLAN.md dependency order düzeltmesi) → AGREE bekleniyor
 2. Mavis msg paralel davet (iter-2 cevabı paralel)
 3. Plan §7/§9 + ADR-0030 update + Issue #19 update bu PR scope
 4. PR aç → cross-AI AGREE → merge

@@ -254,7 +254,7 @@ Mobile/desktop/web client'lar **hiçbir zaman** doğrudan `platform-ai`'a bağla
 | WER triangulate (Common Voice + pilot) | iter-1 H matrisi | msg `74` AGREE | AGREE |
 | Staging resource pressure gate | iter-3 AGREE | msg `74` B eksik risk | AGREE |
 | Multi-tenant placeholder | (örtük) | msg `78` B tek eksik | AGREE |
-| **Two-server topology** (ADR-0031) | `019e8c09` iter-1 REVISE → absorb → iter-2 AGREE bekleniyor | (iter-2 paralel davet) | AGREE (kullanıcı 2026-06-03 mimari notu) |
+| **Two-server topology** (ADR-0031) | `019e8c09` iter-1+iter-2+iter-3 REVISE → absorb → iter-4 AGREE bekleniyor | (post-availability paralel davet, non-blocking — HARD RULE provider seviyesinde Anthropic + OpenAI yeterli) | AGREE (kullanıcı 2026-06-03 mimari notu) |
 
 ## References
 
