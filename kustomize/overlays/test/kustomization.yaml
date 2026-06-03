@@ -4497,7 +4497,27 @@ images:
     # Image build run: gh run view 26878847742 -R Halildeu/platform-backend
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-688c0b9
     #   digest sha256:25ef5a33ab0f62589ad8ddf5d4c47cfbe43016ce7142e0b14586536fd61d64a2
-    digest: sha256:25ef5a33ab0f62589ad8ddf5d4c47cfbe43016ce7142e0b14586536fd61d64a2
+    #
+    # 2026-06-03 AG-028 Phase 2B + Faz 21.1 PR2c → sha-25042f6 (platform-backend
+    # 688c0b9→25042f6a). Brings 3 new Flyway migrations live on testai:
+    #   V31 endpoint_catalog_uninstall_flags (AG-028 Phase 0 — uninstall_supported /
+    #       uninstall_protected / uninstall_args + change-request maker-checker table),
+    #   V32 endpoint_uninstall_surface (AG-028 Phase 1a — endpoint_uninstall_requests +
+    #       endpoint_uninstall_audit tables, closed result_status/verification CHECK
+    #       enums, append-only audit trigger, partial-unique in-flight + idempotency),
+    #   V33 endpoint_diff_cache_org_id_compat (Faz 21.1 PR2c — diff-cache org_id).
+    # Source PRs since the prior pin: #438 (findLatestSucceededSatisfiedByOrg compliance
+    # selector + existsSucceededSatisfiedByOrg uninstall provenance), #439 (V31+V33 diff
+    # cache org_id canonicalize), #440 (AppControl native org_id write), #441 (AG-028
+    # Phase 2B UNINSTALL_SOFTWARE terminal-result ingest: EndpointUninstallAuditService
+    # append-only audit + BE-016 hash-chain event + request-state→TERMINAL in the
+    # submitResult tx; validate-then-redact UNINSTALL branch; cross-field consistency
+    # matrix forces verification from resultStatus, fail-closed under drift). CI 13/13
+    # green; full endpoint-admin-service module 1599 tests green. Cross-AI Codex 019e8f9c
+    # REVISE→AGREE. Image build run 26917933959.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-25042f6
+    #   digest sha256:278aea19f65e95a16c6cc1a28f8f52ab30770175128252c22e8d4c4d130dcde2
+    digest: sha256:278aea19f65e95a16c6cc1a28f8f52ab30770175128252c22e8d4c4d130dcde2
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
