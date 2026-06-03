@@ -4437,7 +4437,34 @@ images:
     # Image build run: gh run view 26874264709 -R Halildeu/platform-backend
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-3bcb8ec
     #   digest sha256:270c506c2baaa462cbddc74a9e920ef0188fa4febf8ea97792afe416a0a817e6
-    digest: sha256:270c506c2baaa462cbddc74a9e920ef0188fa4febf8ea97792afe416a0a817e6
+    #
+    # 2026-06-03 Faz 21.1 PR2b-i #393 (entity foundation — 7 entities ×
+    # orgId field + getter/setter + getEffectiveOrgId helper, Option A
+    # Codex 019e8cac strict order) + PR2b-ii #394 (canonical write at 6
+    # service insert sites — both setOrgId + setTenantId with the same
+    # UUID so V30 CHECK passes without relying on V29 trigger silent
+    # compensation; 7th — EOSPackage — covered by PR2b-i onPersist
+    # mirror) both MERGED. Codex 019e8cc2 plan-time AGREE Option A
+    # (single PR, inline pattern, no helper extraction).
+    #
+    # Tests V29 9/9 + V30 7/7 + EntityFoundation 4/4 + JpaFlush 3/3 +
+    # CanonicalWrite 2/2 = 25/25 PG IT PASS. Anti-pattern guards:
+    # inline pattern (no reflection/marker interface), single
+    # SecurityContext read per write site, DTO/API contract unchanged
+    # (orgId NOT yet surfaced in JSON), no bulk tenantId → orgId
+    # search-replace across 1095 surface points, NO repository COALESCE
+    # migration here (PR2b-iii scope follows after this digest deploys
+    # + testai live evidence).
+    #
+    # PR2b-iii (BE-024c repository COALESCE — DeviceGridQueryBuilder
+    # 3 methods + DiffCacheBackfillService + DiffCacheBackfillWorker)
+    # planned per Codex 019e8cd4 AGREE; opens AFTER this digest is live
+    # on testai so reads don't silent-compensate via V29 trigger.
+    #
+    # Image build run: gh run view 26876345440 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-909acce
+    #   digest sha256:2cadcdcb449e23b23dc1f5f567a55642076d20cd0e3e8364cbba249598eaaae3
+    digest: sha256:2cadcdcb449e23b23dc1f5f567a55642076d20cd0e3e8364cbba249598eaaae3
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
