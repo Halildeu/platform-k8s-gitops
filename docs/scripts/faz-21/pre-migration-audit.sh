@@ -173,16 +173,19 @@ INV2_CANDIDATES=(
 # endpoint child tables → endpoint_device.org_id). Derived check pattern
 # uses LEFT JOIN to parent; orphans (FK NULL or parent NULL) count.
 declare -A DERIVED_PARENT_FK=(
-  ["notify.notification_delivery"]="intent_id|notify.notification_intent|id"
-  ["notify.notification_dispatch"]="intent_id|notify.notification_intent|id"
-  ["notify.notification_outbox"]="intent_id|notify.notification_intent|id"
-  ["notify.audit_event_v2"]="intent_id|notify.notification_intent|id"
+  ["notify.notification_delivery"]="intent_id|notify.notification_intent|intent_id"
+  ["notify.notification_dispatch"]="intent_id|notify.notification_intent|intent_id"
+  ["notify.notification_outbox"]="intent_id|notify.notification_intent|intent_id"
+  ["notify.audit_event_v2"]="intent_id|notify.notification_intent|intent_id"
   ["endpoint_admin_service.endpoint_software_inventory"]="device_id|endpoint_admin_service.endpoint_device|id"
   ["endpoint_admin_service.endpoint_outdated_software"]="device_id|endpoint_admin_service.endpoint_device|id"
   ["endpoint_admin_service.endpoint_install_audit"]="device_id|endpoint_admin_service.endpoint_device|id"
   ["endpoint_admin_service.endpoint_compliance_policy_evaluation"]="device_id|endpoint_admin_service.endpoint_device|id"
   ["endpoint_admin_service.endpoint_app_control"]="device_id|endpoint_admin_service.endpoint_device|id"
 )
+# Codex iter-3 P0/notifyParentPK absorb: Notify parent PK is `intent_id`,
+# not `id` — the notification_intent table's primary key is intent_id
+# (event-contract surface). Endpoint family keeps `id` as primary key.
 
 # Codex iter-2 P1/schemaPrefixUnused absorb: --schema-prefix actually
 # filters candidate expansion now. Comma-separated allow-list of schemas.
@@ -241,8 +244,10 @@ for st in "${INV2_CANDIDATES[@]}"; do
       tenant_key="\"tenant_id\""
       null_count=$(qry_int "SELECT count(*) FROM \"$schema\".\"$tbl\" WHERE tenant_id IS NULL")
     elif [[ -n "${DERIVED_PARENT_FK[$st]:-}" ]]; then
-      # Codex iter-2 P1/derivedTenantKey absorb: parent join check.
-      # Format: <fk_col>|<parent_schema>.<parent_tbl>|<parent_pk>
+      # Codex iter-2 P1/derivedTenantKey + iter-3 P1/parentTenantFallback absorb:
+      # parent join check. Format: <fk_col>|<parent_schema>.<parent_tbl>|<parent_pk>
+      # Parent tenant key fallback chain: org_id → tenant_id (matches child
+      # table fallback chain above).
       derived_spec="${DERIVED_PARENT_FK[$st]}"
       fk_col="${derived_spec%%|*}"
       rest="${derived_spec#*|}"
@@ -250,11 +255,17 @@ for st in "${INV2_CANDIDATES[@]}"; do
       parent_pk="${rest##*|}"
       parent_schema="${parent_st%%.*}"
       parent_tbl="${parent_st##*.}"
-      if column_exists "$schema" "$tbl" "$fk_col" \
-         && table_exists "$parent_schema" "$parent_tbl" \
-         && column_exists "$parent_schema" "$parent_tbl" "org_id"; then
-        tenant_key="\"derived:$fk_col -> $parent_st.org_id\""
-        null_count=$(qry_int "SELECT count(*) FROM \"$schema\".\"$tbl\" c LEFT JOIN \"$parent_schema\".\"$parent_tbl\" p ON c.$fk_col = p.$parent_pk WHERE p.org_id IS NULL")
+      parent_tenant_col=""
+      if column_exists "$schema" "$tbl" "$fk_col" && table_exists "$parent_schema" "$parent_tbl"; then
+        if column_exists "$parent_schema" "$parent_tbl" "org_id"; then
+          parent_tenant_col="org_id"
+        elif column_exists "$parent_schema" "$parent_tbl" "tenant_id"; then
+          parent_tenant_col="tenant_id"
+        fi
+      fi
+      if [[ -n "$parent_tenant_col" ]]; then
+        tenant_key="\"derived:$fk_col -> $parent_st.$parent_tenant_col\""
+        null_count=$(qry_int "SELECT count(*) FROM \"$schema\".\"$tbl\" c LEFT JOIN \"$parent_schema\".\"$parent_tbl\" p ON c.$fk_col = p.$parent_pk WHERE p.$parent_tenant_col IS NULL")
       else
         status="no_tenant_key_column"
         INV2_NO_KEY_COUNT=$((INV2_NO_KEY_COUNT + 1))
@@ -285,6 +296,8 @@ INV2_JSON+="]"
 # per Codex iter-1 P0 finding).
 INV3_NOTIFY_DELIVERY_SCHEMA="notify"
 INV3_NOTIFY_DELIVERY_TABLE="notification_delivery"
+INV3_NOTIFY_INTENT_SCHEMA="notify"
+INV3_NOTIFY_INTENT_TABLE="notification_intent"
 INV3_CALLBACK_ORPHAN="null"
 INV3_PROVIDER_DISTINCT="null"
 INV3_STATUS="OBSERVATION_INSUFFICIENT"
@@ -295,14 +308,26 @@ if table_exists "$INV3_NOTIFY_DELIVERY_SCHEMA" "$INV3_NOTIFY_DELIVERY_TABLE"; th
   elif column_exists "$INV3_NOTIFY_DELIVERY_SCHEMA" "$INV3_NOTIFY_DELIVERY_TABLE" "provider_message_id"; then
     PROV_COL="provider_message_id"
   fi
-  TENANT_COL=""
-  if column_exists "$INV3_NOTIFY_DELIVERY_SCHEMA" "$INV3_NOTIFY_DELIVERY_TABLE" "org_id"; then
-    TENANT_COL="org_id"
+  # Codex iter-3 P0/inv3DerivedJoin absorb: delivery tenant column is on
+  # parent (notify.notification_intent.org_id), reached via intent_id FK.
+  # Fall back to direct delivery.org_id only if the parent path is unusable.
+  TENANT_PATH=""
+  TENANT_PROBE_SQL=""
+  if column_exists "$INV3_NOTIFY_DELIVERY_SCHEMA" "$INV3_NOTIFY_DELIVERY_TABLE" "intent_id" \
+     && table_exists "$INV3_NOTIFY_INTENT_SCHEMA" "$INV3_NOTIFY_INTENT_TABLE" \
+     && column_exists "$INV3_NOTIFY_INTENT_SCHEMA" "$INV3_NOTIFY_INTENT_TABLE" "org_id" \
+     && column_exists "$INV3_NOTIFY_INTENT_SCHEMA" "$INV3_NOTIFY_INTENT_TABLE" "intent_id"; then
+    TENANT_PATH="derived: delivery.intent_id -> notification_intent.org_id"
+    TENANT_PROBE_SQL="LEFT JOIN \"$INV3_NOTIFY_INTENT_SCHEMA\".\"$INV3_NOTIFY_INTENT_TABLE\" i ON d.intent_id = i.intent_id WHERE d.$PROV_COL IS NOT NULL AND i.org_id IS NULL"
+  elif column_exists "$INV3_NOTIFY_DELIVERY_SCHEMA" "$INV3_NOTIFY_DELIVERY_TABLE" "org_id"; then
+    TENANT_PATH="direct: delivery.org_id"
+    TENANT_PROBE_SQL="WHERE d.$PROV_COL IS NOT NULL AND d.org_id IS NULL"
   elif column_exists "$INV3_NOTIFY_DELIVERY_SCHEMA" "$INV3_NOTIFY_DELIVERY_TABLE" "tenant_id"; then
-    TENANT_COL="tenant_id"
+    TENANT_PATH="direct: delivery.tenant_id"
+    TENANT_PROBE_SQL="WHERE d.$PROV_COL IS NOT NULL AND d.tenant_id IS NULL"
   fi
-  if [[ -n "$PROV_COL" && -n "$TENANT_COL" ]]; then
-    INV3_CALLBACK_ORPHAN=$(qry_int "SELECT count(*) FROM \"$INV3_NOTIFY_DELIVERY_SCHEMA\".\"$INV3_NOTIFY_DELIVERY_TABLE\" WHERE $PROV_COL IS NOT NULL AND $TENANT_COL IS NULL")
+  if [[ -n "$PROV_COL" && -n "$TENANT_PROBE_SQL" ]]; then
+    INV3_CALLBACK_ORPHAN=$(qry_int "SELECT count(*) FROM \"$INV3_NOTIFY_DELIVERY_SCHEMA\".\"$INV3_NOTIFY_DELIVERY_TABLE\" d $TENANT_PROBE_SQL")
     if column_exists "$INV3_NOTIFY_DELIVERY_SCHEMA" "$INV3_NOTIFY_DELIVERY_TABLE" "provider"; then
       INV3_PROVIDER_DISTINCT=$(qry_int "SELECT count(DISTINCT provider) FROM \"$INV3_NOTIFY_DELIVERY_SCHEMA\".\"$INV3_NOTIFY_DELIVERY_TABLE\" WHERE provider IS NOT NULL")
     fi
@@ -364,6 +389,7 @@ cat >"$OUT" <<EOF
     },
     "inv3_callback_correlation_orphan": {
       "status": "${INV3_STATUS}",
+      "tenant_path": "${TENANT_PATH:-}",
       "orphan_count": ${INV3_CALLBACK_ORPHAN},
       "provider_distinct_count": ${INV3_PROVIDER_DISTINCT}
     },

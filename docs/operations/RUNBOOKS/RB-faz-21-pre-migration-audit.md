@@ -16,10 +16,12 @@ Faz 21 (multi-tenant migration) sub-faz 21.0 = "Pre-Migration Audit". DoD (chart
 - 4 R10 invariants tested green (CLEAN verdict or MOSTLY_CLEAN_INV4_MANUAL)
 - Orphan/mixed row count == 0 on snapshot
 
-This runbook is the operator entry point. Two scripts:
+This runbook is the operator entry point. Two scripts (canonical verdicts:
+`MOSTLY_CLEAN_INV4_VERIFIED` / `MANUAL_PENDING` / `INVARIANT_VIOLATION` /
+`ADVISORY_INVESTIGATION` / `OBSERVATION_INSUFFICIENT`):
 
 - `docs/scripts/faz-21/pre-migration-audit.sh` — READ-ONLY PG snapshot audit; emits canonical JSON predicate file
-- `docs/scripts/faz-21/r10-invariant-checks.sh` — wraps the audit JSON + rolls per-invariant verdict + composite
+- `docs/scripts/faz-21/r10-invariant-checks.sh` — wraps the audit JSON + rolls per-invariant verdict + composite (`--inv4-verified` flag required for `MOSTLY_CLEAN_INV4_VERIFIED` exit 0)
 
 Plus three anti-pattern guards (Codex `019e8c24` + `019e8c3e` enforced):
 
