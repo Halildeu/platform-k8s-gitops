@@ -46,9 +46,51 @@ Plus three anti-pattern guards (Codex `019e8c24` + `019e8c3e` enforced):
 
 ## 3. Run
 
-```
-chmod 0400 ~/.faz21-audit.pw  # MANDATORY — script rejects other modes
+### 3.1 Single-command wrapper (Codex order C — PR-4 C entry point)
 
+The recommended operator entry point is `audit-and-check.sh`, which
+runs both PR-3 A scripts in sequence and emits a summary JSON:
+
+```
+chmod 0400 ~/.faz21-audit.pw  # MANDATORY — pre-migration-audit.sh rejects other modes
+
+# Step 1 — initial audit + checks (Inv-4 NOT verified yet)
+./docs/scripts/faz-21/audit-and-check.sh \
+  --pg-host 127.0.0.1 \
+  --pg-port 15432 \
+  --pg-user audit_ro \
+  --pg-database platform \
+  --pg-password-file ~/.faz21-audit.pw \
+  --schema-prefix notify,endpoint_admin_service \
+  --out-dir /tmp/faz-21
+
+# Operator performs Inv-4 manual cross-check against platform-ai repo (§4.4)
+# ...
+
+# Step 2 — re-run with --inv4-verified flag
+./docs/scripts/faz-21/audit-and-check.sh \
+  --pg-host 127.0.0.1 \
+  --pg-port 15432 \
+  --pg-user audit_ro \
+  --pg-database platform \
+  --pg-password-file ~/.faz21-audit.pw \
+  --schema-prefix notify,endpoint_admin_service \
+  --out-dir /tmp/faz-21 \
+  --inv4-verified \
+  --inv4-evidence ~/inv4-checklist.md
+```
+
+The wrapper produces three artifacts under `--out-dir`:
+- `pre-migration-audit.json` — predicate evidence (schema v2)
+- `r10-invariant-checks.json` — composite invariant verdict (schema v2)
+- `summary.json` — combined snapshot with both verdicts + composite
+
+### 3.2 Step-by-step (direct invocation, advanced)
+
+If finer control is needed, the two underlying scripts can be invoked
+directly:
+
+```
 ./docs/scripts/faz-21/pre-migration-audit.sh \
   --pg-host 127.0.0.1 \
   --pg-port 15432 \
