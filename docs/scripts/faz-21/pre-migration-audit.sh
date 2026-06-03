@@ -158,6 +158,7 @@ INV2_CANDIDATES=(
   "notify.notification_delivery"
   "notify.notification_outbox"
   "notify.audit_event_v2"
+  "notify.idempotency_key"
   "endpoint_admin_service.endpoint_device"
   "endpoint_admin_service.endpoint_software_inventory"
   "endpoint_admin_service.endpoint_outdated_software"
@@ -165,6 +166,34 @@ INV2_CANDIDATES=(
   "endpoint_admin_service.endpoint_compliance_policy_evaluation"
   "endpoint_admin_service.endpoint_app_control"
 )
+
+# Codex iter-2 P1/derivedTenantKey absorb: some tables don't carry org_id
+# or tenant_id directly; they carry a parent FK (e.g.
+# notify.notification_delivery → notification_intent.org_id;
+# endpoint child tables → endpoint_device.org_id). Derived check pattern
+# uses LEFT JOIN to parent; orphans (FK NULL or parent NULL) count.
+declare -A DERIVED_PARENT_FK=(
+  ["notify.notification_delivery"]="intent_id|notify.notification_intent|id"
+  ["notify.notification_dispatch"]="intent_id|notify.notification_intent|id"
+  ["notify.notification_outbox"]="intent_id|notify.notification_intent|id"
+  ["notify.audit_event_v2"]="intent_id|notify.notification_intent|id"
+  ["endpoint_admin_service.endpoint_software_inventory"]="device_id|endpoint_admin_service.endpoint_device|id"
+  ["endpoint_admin_service.endpoint_outdated_software"]="device_id|endpoint_admin_service.endpoint_device|id"
+  ["endpoint_admin_service.endpoint_install_audit"]="device_id|endpoint_admin_service.endpoint_device|id"
+  ["endpoint_admin_service.endpoint_compliance_policy_evaluation"]="device_id|endpoint_admin_service.endpoint_device|id"
+  ["endpoint_admin_service.endpoint_app_control"]="device_id|endpoint_admin_service.endpoint_device|id"
+)
+
+# Codex iter-2 P1/schemaPrefixUnused absorb: --schema-prefix actually
+# filters candidate expansion now. Comma-separated allow-list of schemas.
+filter_by_schema_prefix() {
+  local schema="$1"
+  local IFS=,
+  for allowed in $SCHEMA_PREFIX; do
+    if [[ "$schema" == "$allowed" ]]; then return 0; fi
+  done
+  return 1
+}
 
 table_exists() {
   local schema="$1" tbl="$2"
@@ -186,9 +215,17 @@ INV2_FAIL_COUNT=0
 INV2_DISCOVERED_COUNT=0
 INV2_MISSING_COUNT=0
 INV2_NO_KEY_COUNT=0
+INV2_SKIPPED_BY_SCHEMA_PREFIX=0
 for st in "${INV2_CANDIDATES[@]}"; do
   schema="${st%%.*}"
   tbl="${st##*.}"
+
+  # Codex iter-2 P1/schemaPrefixUnused absorb: filter candidates.
+  if ! filter_by_schema_prefix "$schema"; then
+    INV2_SKIPPED_BY_SCHEMA_PREFIX=$((INV2_SKIPPED_BY_SCHEMA_PREFIX + 1))
+    continue
+  fi
+
   status="discovered"
   tenant_key="null"
   null_count="null"
@@ -203,6 +240,25 @@ for st in "${INV2_CANDIDATES[@]}"; do
     elif column_exists "$schema" "$tbl" "tenant_id"; then
       tenant_key="\"tenant_id\""
       null_count=$(qry_int "SELECT count(*) FROM \"$schema\".\"$tbl\" WHERE tenant_id IS NULL")
+    elif [[ -n "${DERIVED_PARENT_FK[$st]:-}" ]]; then
+      # Codex iter-2 P1/derivedTenantKey absorb: parent join check.
+      # Format: <fk_col>|<parent_schema>.<parent_tbl>|<parent_pk>
+      derived_spec="${DERIVED_PARENT_FK[$st]}"
+      fk_col="${derived_spec%%|*}"
+      rest="${derived_spec#*|}"
+      parent_st="${rest%%|*}"
+      parent_pk="${rest##*|}"
+      parent_schema="${parent_st%%.*}"
+      parent_tbl="${parent_st##*.}"
+      if column_exists "$schema" "$tbl" "$fk_col" \
+         && table_exists "$parent_schema" "$parent_tbl" \
+         && column_exists "$parent_schema" "$parent_tbl" "org_id"; then
+        tenant_key="\"derived:$fk_col -> $parent_st.org_id\""
+        null_count=$(qry_int "SELECT count(*) FROM \"$schema\".\"$tbl\" c LEFT JOIN \"$parent_schema\".\"$parent_tbl\" p ON c.$fk_col = p.$parent_pk WHERE p.org_id IS NULL")
+      else
+        status="no_tenant_key_column"
+        INV2_NO_KEY_COUNT=$((INV2_NO_KEY_COUNT + 1))
+      fi
     else
       status="no_tenant_key_column"
       INV2_NO_KEY_COUNT=$((INV2_NO_KEY_COUNT + 1))
@@ -303,7 +359,8 @@ cat >"$OUT" <<EOF
       "discovered_count": ${INV2_DISCOVERED_COUNT},
       "missing_count": ${INV2_MISSING_COUNT},
       "no_tenant_key_count": ${INV2_NO_KEY_COUNT},
-      "violation_count": ${INV2_FAIL_COUNT}
+      "violation_count": ${INV2_FAIL_COUNT},
+      "skipped_by_schema_prefix": ${INV2_SKIPPED_BY_SCHEMA_PREFIX}
     },
     "inv3_callback_correlation_orphan": {
       "status": "${INV3_STATUS}",

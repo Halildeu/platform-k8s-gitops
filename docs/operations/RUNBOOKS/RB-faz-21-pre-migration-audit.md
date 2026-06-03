@@ -81,11 +81,17 @@ Exit codes:
 
 ## 4. Verdict interpretation
 
-### 4.1 `MOSTLY_CLEAN_INV4_MANUAL` (exit 0)
+### 4.1 `MOSTLY_CLEAN_INV4_VERIFIED` (exit 0) — ONLY with `--inv4-verified`
 
-Inv-1 (request context), Inv-2 (persistence), Inv-3 (side-effect isolation) green. Inv-4 (AI boundary) requires manual cross-check against `platform-ai` repo — vector index keys, prompt context selector, embedding cache, inference audit label.
+Inv-1 (request context), Inv-2 (persistence), Inv-3 (side-effect isolation) green AND operator explicitly passed `--inv4-verified` flag to `r10-invariant-checks.sh`. The flag attests the operator has performed the Inv-4 manual cross-check against `platform-ai` repo (vector index keys, prompt context selector, embedding cache, inference audit label).
 
-Next: manually verify Inv-4 checklist (script JSON output `invariants.inv4_ai_boundary.checklist`) + commit evidence + advance to Faz 21.1.
+Optional: pass `--inv4-evidence <path-to-checklist.md>` to embed the manual cross-check evidence reference in the output JSON.
+
+Next: commit evidence + advance to Faz 21.1.
+
+### 4.1b `MANUAL_PENDING` (exit 2)
+
+Inv-1/2/3 may be CLEAN but `--inv4-verified` flag NOT passed. Operator must perform the Inv-4 manual cross-check and re-run with `--inv4-verified`. Anti-pattern guard (Codex iter-1 P0): operator/automation MUST NOT claim DoD met without explicit Inv-4 attestation.
 
 ### 4.2 `INVARIANT_VIOLATION` (exit 1)
 

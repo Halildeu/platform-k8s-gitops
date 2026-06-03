@@ -83,13 +83,19 @@ if [[ "$INV1_STATUS" == "DISCOVERED" ]]; then
 fi
 
 # Inv-2 summary (null-safe).
+# Codex iter-2 P0/inv2StatusSuffix absorb: previous form added
+# `_WITH_NO_KEY_TABLES` suffix to INV2_SMOKE which broke the exact-match
+# composite verdict ladder downstream (== "VIOLATION" missed
+# `VIOLATION_WITH_NO_KEY_TABLES`). Now no_key tracked as separate boolean
+# (INV2_HAS_NO_KEY); core status remains exact-match-safe.
 INV2_VIOLATION=$(jq -r '.predicates.inv2_summary.violation_count // 0' "$AUDIT_JSON")
 INV2_DISCOVERED=$(jq -r '.predicates.inv2_summary.discovered_count // 0' "$AUDIT_JSON")
 INV2_NO_KEY=$(jq -r '.predicates.inv2_summary.no_tenant_key_count // 0' "$AUDIT_JSON")
 INV2_SMOKE="CLEAN"
 if [[ "$INV2_VIOLATION" != "0" ]]; then INV2_SMOKE="VIOLATION"; fi
 if [[ "$INV2_DISCOVERED" -lt 2 ]]; then INV2_SMOKE="OBSERVATION_INSUFFICIENT"; fi
-if [[ "$INV2_NO_KEY" -gt 0 ]]; then INV2_SMOKE="${INV2_SMOKE}_WITH_NO_KEY_TABLES"; fi
+INV2_HAS_NO_KEY="false"
+if [[ "$INV2_NO_KEY" -gt 0 ]]; then INV2_HAS_NO_KEY="true"; fi
 
 # Inv-3 (null-safe).
 INV3_STATUS=$(jq -r '.predicates.inv3_callback_correlation_orphan.status' "$AUDIT_JSON")
@@ -151,6 +157,7 @@ cat >"$OUT" <<EOF
     },
     "inv2_persistence": {
       "status": "${INV2_SMOKE}",
+      "has_no_key_tables": ${INV2_HAS_NO_KEY},
       "discovered_count": ${INV2_DISCOVERED},
       "violation_count": ${INV2_VIOLATION},
       "no_tenant_key_count": ${INV2_NO_KEY}

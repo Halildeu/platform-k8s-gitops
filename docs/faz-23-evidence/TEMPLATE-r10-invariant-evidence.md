@@ -18,41 +18,51 @@
 
 | Script | Verdict | Exit |
 |---|---|---|
-| `pre-migration-audit.sh` | `CLEAN / INVARIANT_VIOLATION / OBSERVATION_INSUFFICIENT` | `0/1/2` |
-| `r10-invariant-checks.sh` | `MOSTLY_CLEAN_INV4_MANUAL / INVARIANT_VIOLATION / ADVISORY_INVESTIGATION / MIXED` | `0/1/2` |
+| `pre-migration-audit.sh` (schema v2) | `CLEAN / INVARIANT_VIOLATION / OBSERVATION_INSUFFICIENT` | `0/1/2` |
+| `r10-invariant-checks.sh` (schema v2) | `MOSTLY_CLEAN_INV4_VERIFIED / MANUAL_PENDING / INVARIANT_VIOLATION / ADVISORY_INVESTIGATION / OBSERVATION_INSUFFICIENT` | `0/2/1/1/2` |
+
+> **Codex iter-1/2 absorbs**: `MOSTLY_CLEAN_INV4_VERIFIED` exit 0 requires `--inv4-verified` flag explicitly. Without it, even with Inv-1/2/3 CLEAN, verdict is `MANUAL_PENDING` (exit 2).
 
 ## Inv-1 (tenant context)
 
-- Request missing `org_id` over 24h: `<value>`
+- Request missing tenant key (`org_id` or `tenant_id`) over 24h: `<value>`
 - Advisory threshold: `<value>`
 - Status: `CLEAN / ADVISORY_OVER_THRESHOLD / ADVISORY_ABSENT`
 - Notes: `<operator investigation if status != CLEAN>`
 
 ## Inv-2 (persistence)
 
-Per-table NULL `org_id` count:
+Per-table NULL tenant key count (schema-qualified; tenant key column varies per table):
 
-| Table | NULL count |
-|---|---|
-| notify_intent | `<value>` |
-| notify_dispatch | `<value>` |
-| notify_delivery | `<value>` |
-| notify_outbox | `<value>` |
-| notify_audit | `<value>` |
-| endpoint_device | `<value>` |
-| endpoint_software_inventory | `<value>` |
-| endpoint_outdated_software | `<value>` |
+| Schema.Table | Tenant key | NULL count | Status |
+|---|---|---|---|
+| notify.notification_intent | `<org_id / tenant_id / derived>` | `<value>` | `<discovered / missing_table / no_tenant_key_column>` |
+| notify.notification_dispatch | `<value>` | `<value>` | `<value>` |
+| notify.notification_delivery | `<value>` | `<value>` | `<value>` |
+| notify.notification_outbox | `<value>` | `<value>` | `<value>` |
+| notify.audit_event_v2 | `<value>` | `<value>` | `<value>` |
+| notify.idempotency_key | `<value>` | `<value>` | `<value>` |
+| endpoint_admin_service.endpoint_device | `<value>` | `<value>` | `<value>` |
+| endpoint_admin_service.endpoint_software_inventory | `<value>` | `<value>` | `<value>` |
+| endpoint_admin_service.endpoint_outdated_software | `<value>` | `<value>` | `<value>` |
+| endpoint_admin_service.endpoint_install_audit | `<value>` | `<value>` | `<value>` |
+| endpoint_admin_service.endpoint_compliance_policy_evaluation | `<value>` | `<value>` | `<value>` |
+| endpoint_admin_service.endpoint_app_control | `<value>` | `<value>` | `<value>` |
 
 - Total NULL rows: `<value>`
-- Status: `CLEAN / VIOLATION`
+- Discovered count: `<value>` / `<total candidates>`
+- Status: `CLEAN / VIOLATION / OBSERVATION_INSUFFICIENT`
+- `has_no_key_tables`: `<true/false>`
 - Notes: `<per-table backfill plan if VIOLATION>`
 
 ## Inv-3 (side-effect isolation)
 
-- Callback correlation orphan count (`provider_message_id NOT NULL AND org_id IS NULL` in notify_delivery): `<value>`
+- Callback correlation orphan count (`provider_msg_id` / `provider_message_id` NOT NULL + tenant key NULL): `<value>`
 - Provider distinct count: `<value>`
-- Status: `CLEAN / VIOLATION / ADVISORY_ABSENT`
+- Status: `CLEAN / VIOLATION / OBSERVATION_INSUFFICIENT / COLUMNS_MISSING`
 - Notes: `<callback handler review notes; cross-check Vault path canonical>`
+
+> **Scope note (Codex iter-1 absorb)**: this orphan count is a READ-ONLY snapshot analog. Charter §4.3 callback isolation test (provider_msg_id reused across tenants → concurrent UPDATE isolated by `org_id + external_id` pair) REQUIRES a backend integration test, tracked separately.
 
 ## Inv-4 (AI boundary) — manual cross-check
 
