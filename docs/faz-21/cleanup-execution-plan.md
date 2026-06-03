@@ -45,27 +45,69 @@ This Cleanup Execution Plan document.
 - Board issue claim template + acceptance checklist.
 - **No DB change. No code change in endpoint-admin.**
 
-### Phase C1 — Cache Org-Key Flip (one PR)
+### Phase C1 — Source Org-Key Foundation (parent-before-child) (one PR)
 
-Cache UNIQUE + FK + UPSERT conflict target + repository + grid join all migrated atomically (single deploy boundary). 2 tables (V27 lineage), ~4 service callsites:
+**CRITICAL ORDERING CORRECTION (Codex 019e8f95 iter-2):** the original
+draft put Cache Org-Key Flip first, but cache FKs reference parent
+tables via composite `(child_col, tenant_id) → parent (id, tenant_id)`.
+A composite FK `(child_col, org_id) → parent (id, org_id)` **requires a
+UNIQUE/PK constraint on `parent (id, org_id)`** which does not exist
+yet. Therefore the **parent (source) org-key foundation MUST land
+before** the cache FK flip. Dependency graph: **parent UNIQUE → source
+FK/read → cache FK/read/write → observation → drop.**
 
-- V34 migration: UNIQUE `(org_id, device_id)` on both cache tables; cache FK migrated to `(id, org_id)` (composite FK shape mirrors V27 source FK pattern).
-- `DiffCacheService.upsertSoftwareDiffCache` + `upsertOutdatedDiffCache` UPSERT `ON CONFLICT (tenant_id, device_id)` → `ON CONFLICT (org_id, device_id)`.
-- `EndpointSoftwareDiffCacheRepository.findByTenantIdAndDeviceId` → `findByOrgIdAndDeviceId` (rename).
-- `EndpointOutdatedSoftwareDiffCacheRepository.findByTenantIdAndDeviceId` → `findByOrgIdAndDeviceId`.
-- `DeviceGridQueryBuilder` cache JOIN `c.tenant_id = d.tenant_id` → `c.org_id = d.org_id`.
-- PG IT: V34 regression guard (mirror V33 pattern + duplicate `(org_id, device_id)` preflight test).
+Phase C1 establishes the source-side org-key foundation:
 
-### Phase C2 — Source Org-FK + Direct Read (one PR or 2 PRs split 4+3)
+- **Non-null evidence gate (PRE-requisite):** V30 CHECK
+  `(org_id IS NULL OR org_id = tenant_id)` does NOT prove `org_id IS NOT
+  NULL` — `org_id IS NULL` still passes. Before any direct-read fallback
+  removal, prove for all cleanup-scope source rows:
+  - `org_id IS NOT NULL`
+  - `tenant_id != org_id` count = 0
+  - FK anti-join orphan count = 0 for proposed `(…, org_id)` joins
+  Use DB `CHECK (org_id IS NOT NULL) NOT VALID` + `VALIDATE CONSTRAINT`
+  pattern; final `SET NOT NULL` deferred to C4.
+- V34 migration: `ADD CONSTRAINT ... UNIQUE (id, org_id)` on every
+  source table that will be referenced by an org-key FK. Minimum for
+  cache dependency: `endpoint_devices`,
+  `endpoint_software_inventory_state_history`,
+  `endpoint_outdated_software_snapshots`. (Other source tables that are
+  not cache parents may defer their UNIQUE to C-source-FK if they have
+  no org-key FK consumer.)
+- Migrate source child FKs from `tenant_id` composite to `org_id`
+  composite where parent UNIQUE now exists.
+- Switch source repository/query paths from effective-org OR-fallback
+  to direct `org_id` (only after validated non-null evidence).
+- **No cache FK flip yet. No DROP tenant_id.**
 
-7 source tables: composite FK `(id, tenant_id)` → `(id, org_id)`. Effective-org read paths drop the OR-fallback (since post-C2 no row can have `org_id IS NULL` and pass V30 CHECK).
+### Phase C2 — Cache Org-Key Flip (one PR)
 
-- V35 migration: drop composite FK and recreate with `(id, org_id)` on the 7 source tables.
-- Repository @Query: drop OR-fallback, keep only `WHERE org_id = :orgId AND ...`.
-- ~12 callsite simplifications + JavaDoc updates.
-- PG IT: legacy NULL fixture tests removed (assumption no longer valid post-C2).
+**Requires C1 parent `UNIQUE (id, org_id)` on the 3 cache parents.**
+Cache UNIQUE + FK + UPSERT conflict target + repository + grid join all
+migrated atomically (single deploy boundary). 2 tables (V27 lineage),
+~4 service callsites:
 
-**Split decision**: Codex 019e8f95 acceptable as 1 PR (matches V29/V30 precedent). Alternative split `devices+inventory+outdated` + `install+compliance+appcontrol` if review surface too large.
+- V35 migration: recreate cache FKs using `(device_id, org_id) →
+  endpoint_devices (id, org_id)`, `(from_history_id, org_id)`,
+  `(to_history_id, org_id)` (software) / snapshot equivalents (outdated)
+  — now that parent `(id, org_id)` UNIQUE exists.
+- `ADD CONSTRAINT ... UNIQUE (org_id, device_id)` on both cache tables.
+- `DiffCacheService.upsertSoftwareDiffCache` + `upsertOutdatedDiffCache`
+  UPSERT `ON CONFLICT (tenant_id, device_id)` → `ON CONFLICT (org_id,
+  device_id)`.
+- `EndpointSoftwareDiffCacheRepository.findByTenantIdAndDeviceId` →
+  `findByOrgIdAndDeviceId` (rename).
+- `EndpointOutdatedSoftwareDiffCacheRepository.findByTenantIdAndDeviceId`
+  → `findByOrgIdAndDeviceId`.
+- `DeviceGridQueryBuilder` cache JOIN `c.tenant_id = d.tenant_id` →
+  `c.org_id = d.org_id`.
+- PG IT: V35 regression guard (mirror V33 pattern + duplicate
+  `(org_id, device_id)` preflight test + FK anti-join orphan fail-loud).
+- **No DROP tenant_id.**
+
+**Split decision**: Codex 019e8f95 acceptable C1 as 1 PR (matches
+V29/V30 precedent). Alternative C1 split `devices+inventory+outdated` +
+`install+compliance+appcontrol` if review surface too large.
 
 ### Phase C3 — 30-day reverify (operator-bound, evidence-only, no PR)
 
@@ -74,16 +116,26 @@ Endpoint-specific mismatch=0 invariant evidence on testai + prod-shaped staging:
 - `endpoint_org_id_mismatch_rows{table=...}` = 0 for 30 days
 - `endpoint_org_id_duplicate_org_device_rows{table=...}` = 0 for 30 days
 - `endpoint_org_id_fk_mismatch_rows{table=...}` = 0 for 30 days
-- Manual evidence: no `tenant_id` callsite remaining in `grep -rn` of endpoint-admin-service.
-- Operator-bound prerequisites: R10 prod-shaped staging + Inv-4 explicit column list audit.
+- Manual evidence (Codex 019e8f95 scope-narrowing): **no `tenant_id`
+  callsite remains for cleanup-scope tables / diff-cache / device-grid
+  source paths**. Do NOT target zero `tenant_id` across all of
+  endpoint-admin-service — command/catalog/uninstall surfaces are
+  out-of-scope tenant_id consumers and would inflate scope beyond the
+  9 endpoint tables.
+- Operator-bound prerequisites: R10 prod-shaped staging +
+  Inv-explicit-column-list-guard audit (renamed from "Inv-4" to avoid
+  charter concept drift — Inv-4 is the AI boundary invariant, NOT the
+  `SELECT *` guard).
 
 ### Phase C4 — Final Drop Sweep (one PR, single Flyway migration)
 
-V36 migration: precondition DO block (verify mismatch=0 + no duplicates + FK parents clean) + drop `tenant_id` from 9 tables + drop V29 trigger + V30 CHECK + V33 trigger + V33 CHECK + old indexes + V29 function `endpoint_org_id_compat_fill()`.
+V36 migration: precondition DO block (verify mismatch=0 + no duplicates + FK parents clean) + `org_id SET NOT NULL` on all 9 tables (deferred from C1) + drop `tenant_id` from 9 tables + drop V29 trigger + V30 CHECK + V33 trigger + V33 CHECK + old tenant_id indexes + V29 function `endpoint_org_id_compat_fill()` + old tenant_id UNIQUE/FK constraints.
 
+- Migration version is the next free slot at C4 implementation time (V36 placeholder; reconcile against parallel AG-028 migration track which has claimed V31/V32 — check `ls db/migration` before authoring).
 - Single Flyway migration covering all 9 tables (per-table split adds blast-radius rather than reduces).
+- Precondition DO block: `RAISE EXCEPTION 'cleanup precondition failed'` on mismatch > 0 OR duplicate `(org_id, device_id)` > 0 OR FK orphans > 0 across the 9 tables.
 - Entity field removal (`tenantId` getter/setter from 9 entity classes).
-- **Adversarial review zorunlu** — Codex separate thread before this PR opens.
+- **Adversarial review zorunlu** — Codex separate thread before this PR opens (live digest/pod proof, 30-day evidence, explicit column guard, no old tenant_id callsite, snapshot rehearsal, rollback wording).
 
 ## Risk register additions
 
@@ -107,13 +159,32 @@ Adding to charter §1.1 and ADR-0032 §3.x:
 - Snapshot rehearsal: V36 dry-run on prod-shaped staging snapshot before testai deploy.
 - Rollback boundary: V36 cannot be reverted in-place; rollback target is V35-or-prior digest.
 
-### F21-R31 — Cache table sequence (Active)
+### F21-R31 — Parent-before-child org FK dependency (Active)
 
-**Description**: Cache UNIQUE + UPSERT conflict target must flip atomically (same C1 PR); independent flips leave the cache in non-functional state.
+**Description** (Codex 019e8f95 iter-2 reframe): cache FKs reference
+parent tables via composite `(child_col, tenant_id) → parent (id,
+tenant_id)`. Migrating cache FKs to `(child_col, org_id)` REQUIRES
+parent `(id, org_id)` UNIQUE to exist first. The original "cache first"
+plan would fail at cache FK DDL creation. Beyond ordering, cache UNIQUE
++ UPSERT conflict target must also flip atomically (same C2 PR);
+independent flips leave the cache in a non-functional state.
 
 **Mitigation**:
-- C1 is the atomic boundary: V34 migration + DiffCacheService UPSERT update + repository method rename + grid JOIN update all in single PR.
-- Duplicate `(org_id, device_id)` preflight test: PG IT seeds duplicate canonical rows pre-V34 and asserts V34 either rejects (constraint violation) or de-dups via UPSERT (canonical winner).
+- **Phase ordering is the primary mitigation**: C1 (source org-key
+  foundation: parent UNIQUE + source FK + direct read) lands BEFORE
+  C2 (cache org-key flip). C2 cannot start unless C1 evidence proves
+  `UNIQUE (id, org_id)` exists on the 3 cache parents (devices,
+  sw_inv_state_history, outdated_snapshots).
+- C2 is the cache atomic boundary: V35 migration + DiffCacheService
+  UPSERT update + repository method rename + grid JOIN update all in
+  single PR.
+- C2 migration must fail-loud if any cache row cannot anti-join to
+  parent by `(id, org_id)`.
+- Duplicate `(org_id, device_id)` preflight test: PG IT seeds duplicate
+  canonical rows pre-V35 and asserts V35 either rejects (constraint
+  violation) or de-dups via UPSERT (canonical winner).
+- C4 cannot start unless no old tenant-FK / tenant-UPSERT / tenant-grid
+  join remains in cleanup-scope.
 
 ### Link to global R10
 
@@ -190,10 +261,10 @@ Per Codex 019e8f95 Option A + C hybrid:
 | Phase | DB state | Code state | App write | App read |
 |---|---|---|---|---|
 | Pre-C1 | `tenant_id NOT NULL`, `org_id` nullable | dual-read COALESCE | both columns | effective-org (P1) |
-| Post-C1 | cache: UNIQUE `(org_id, device_id)`, FK `(id, org_id)` | cache: org-key direct | both columns | cache org-key direct, source effective-org |
-| Post-C2 | source: FK `(id, org_id)` | source: org-key direct | both columns | all org-key direct |
+| Post-C1 (source foundation) | source: `UNIQUE (id, org_id)` + FK `(id, org_id)`; `org_id NOT NULL` VALIDATE | source: org-key direct | both columns | source org-key direct, cache effective-org |
+| Post-C2 (cache flip) | cache: UNIQUE `(org_id, device_id)` + FK `(id, org_id)` | cache: org-key direct | both columns | all org-key direct |
 | C3 evidence | (no DB change) | (no code change) | both columns | all org-key direct |
-| Post-C4 | `tenant_id` dropped from 9 tables; trigger + CHECK + indexes cleaned | tenant_id removed from entities | org_id only | org_id only |
+| Post-C4 | `org_id SET NOT NULL`; `tenant_id` dropped from 9 tables; trigger + CHECK + indexes cleaned | tenant_id removed from entities | org_id only | org_id only |
 
 No outage window required. Rollback boundary moves with each phase: rollback target must always be ≥ same-phase digest.
 
