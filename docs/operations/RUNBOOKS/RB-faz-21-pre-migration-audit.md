@@ -45,16 +45,22 @@ Plus three anti-pattern guards (Codex `019e8c24` + `019e8c3e` enforced):
 ## 3. Run
 
 ```
+chmod 0400 ~/.faz21-audit.pw  # MANDATORY — script rejects other modes
+
 ./docs/scripts/faz-21/pre-migration-audit.sh \
   --pg-host 127.0.0.1 \
   --pg-port 15432 \
   --pg-user audit_ro \
   --pg-password-file ~/.faz21-audit.pw \
   --pg-database platform \
+  --schema-prefix notify,endpoint_admin_service,public \
   --out /tmp/faz-21-audit.json
 
+# After completing Inv-4 manual cross-check (see §4.4):
 ./docs/scripts/faz-21/r10-invariant-checks.sh \
   --audit-json /tmp/faz-21-audit.json \
+  --inv4-evidence "<path-to-platform-ai-checklist-evidence.md>" \
+  --inv4-verified \
   --out /tmp/faz-21-r10-checks.json
 ```
 
@@ -62,12 +68,14 @@ Exit codes:
 
 | Script | Exit | Meaning |
 |---|---|---|
-| pre-migration-audit.sh | 0 | All audited invariants CLEAN |
-| pre-migration-audit.sh | 1 | INVARIANT_VIOLATION found |
-| pre-migration-audit.sh | 2 | OBSERVATION_INSUFFICIENT (PG unreachable, missing schema) |
-| r10-invariant-checks.sh | 0 | MOSTLY_CLEAN_INV4_MANUAL (Inv-1/2/3 green, Inv-4 manual TODO) |
+| pre-migration-audit.sh | 0 | All discoverable invariants CLEAN |
+| pre-migration-audit.sh | 1 | INVARIANT_VIOLATION |
+| pre-migration-audit.sh | 2 | OBSERVATION_INSUFFICIENT (PG unreachable, schemas missing, password file mode invalid, jq/psql/awk missing) |
+| r10-invariant-checks.sh | 0 | MOSTLY_CLEAN_INV4_VERIFIED (Inv-1/2/3 CLEAN + Inv-4 `--inv4-verified` flag present) |
 | r10-invariant-checks.sh | 1 | INVARIANT_VIOLATION or ADVISORY_INVESTIGATION |
-| r10-invariant-checks.sh | 2 | MIXED / OBSERVATION_INSUFFICIENT |
+| r10-invariant-checks.sh | 2 | MANUAL_PENDING (Inv-4 not verified) or OBSERVATION_INSUFFICIENT |
+
+> **Codex iter-1 P0/inv4Gate absorb**: `r10-invariant-checks.sh` exit 0 ONLY when `--inv4-verified` is explicitly passed. Without it, verdict is `MANUAL_PENDING` (exit 2) even if Inv-1/2/3 are CLEAN. Prevents operator/automation from claiming DoD met while Inv-4 AI boundary checklist remains open.
 
 ---
 
