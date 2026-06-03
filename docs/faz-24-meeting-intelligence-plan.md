@@ -82,11 +82,14 @@ Sentetik TTS yalnızca pipeline smoke/CI (WER claim için kullanılmaz).
 
 **Neden**: Sentetik "okuma" sesi meeting domain'i (overlap, duraksama, aksan, arka plan) yansıtmaz.
 
-### 9. Staging resource pressure acceptance gate
+### 9. Two-host resource pressure acceptance gate (ADR-0031 update 2026-06-03)
 
-PR-stt-02 e2e öncesi `free -m` + `kubectl top` baseline + Faz 22-23 paralel çakışma notu.
+PR-stt-02 e2e öncesi **iki host için ayrı baseline** (Codex `019e8c09` iter-2 absorb):
 
-**Neden**: staging-sw 23 GiB RAM / 6.2 GiB available + GPU yok. Faz 22.5 PR-D2.5 + Faz 23 notify + STT PoC aynı host. Sessiz capacity exhaustion = belirsiz fail.
+- **Gate A — staging-sw orchestration plane**: `free -m` + `kubectl top` baseline + Faz 22-23 paralel çakışma notu (audio-gateway-service + meeting-service + transcript-service + Faz 22.5 PR-D2.5 + Faz 23 notify aynı host)
+- **Gate B — platform-ai compute plane**: Model warm-load sonrası RAM/CPU/GPU baseline + worker count + inference p95 + queue consume lag (live-stt-service dedicated host'ta — Faz 22-23 ile yarışmaz)
+
+**Neden**: staging-sw 23 GiB RAM / 6.2 GiB available + Faz 22-23 paralel = Gate A sıkı. platform-ai dedicated host kendi resource bütçesi var (Gate B); sessiz capacity exhaustion riski iki host için ayrı doğrulanır.
 
 ### 10. Multi-tenant readiness placeholder
 
@@ -113,13 +116,15 @@ Adım 0  (BU PR)
    ├─ Observability/Audit GOP skeleton (correlation id + log + metric + audit event contract)
    └─ PLAN.md Faz 24 satırı + canonical plan (bu doküman)
         ↓
-ADR-0031 ACCEPTED + platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole ai-runtime-test + WireGuard tunnel + mTLS PKI (blocker — PR-gw-01 öncesi)
+ADR-0031 ACCEPTED + cross-server contract field/admission semantics canonical (blocker — PR-gw-01 öncesi; Codex `019e8c09` iter-2 absorb)
         ↓
-PR-gw-01  Audio Gateway Contract 1.0 freeze (platform-backend)
-   fields: language (ISO 639-1) + correlation_id + meeting_id + session_id + tenant_id + user_id + auth + audio chunk metadata + admission contract
+PR-gw-01  Audio Gateway Contract 1.0 freeze (platform-backend) — source-level contract; physical host gerek YOK
+   fields: language (ISO 639-1) + correlation_id + meeting_id + session_id + tenant_id + user_id + auth + audio chunk metadata + admission contract + cross-server contract field/admission semantics (ADR-0031 §D2)
         ↓
-PR-stt-02  real audio + Docker e2e + resource pressure baseline (platform-ai)
-   Gateway contract uyumlu language/correlation metadata; staging top + free -m baseline; Türkçe wav fixture (Common Voice TR sample veya privacy-safe TTS)
+platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole `ai-runtime-test` + WireGuard tunnel + mTLS PKI + Redis bounded queue manifest (blocker — gerçek meeting audio cross-server e2e için PR-stt-02 live veya PR-queue-01 öncesi; synthetic/local Docker e2e için PoC fixture istisnası açık)
+        ↓
+PR-stt-02  real audio + Docker e2e + Gate A/B baseline (platform-ai)
+   Gateway contract uyumlu language/correlation metadata; Gate A staging-sw + Gate B platform-ai baseline; Türkçe wav fixture (Common Voice TR sample veya privacy-safe TTS); synthetic/local Docker e2e için cross-server security gate istisnası açık (private LAN fixture); gerçek meeting audio için cross-server mTLS/WireGuard ZORUNLU
         ↓
 PR-stt-03  supervised subprocess worker + hard timeout kill (platform-ai)
         ↓
@@ -139,9 +144,9 @@ PR-gpu-01  GPU Dockerfile variant (donanım + ölçüm sonrası)
 | Repo | İş | Bağımlı |
 |---|---|---|
 | platform-k8s-gitops (Adım 0) | ADR-0030 + ADR-0031 + obs skeleton + PLAN.md | yok (BU PR) |
-| **platform-k8s-gitops + ops** | **platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole `ai-runtime-test` + WireGuard tunnel + mTLS PKI cert auth** | ADR-0031 ACCEPTED |
-| **platform-k8s-gitops** | **Redis bounded queue manifest (staging-sw, persistence OFF, TTL kısa, max memory bounded)** | ADR-0031 ACCEPTED |
-| platform-backend | PR-gw-01 Gateway Contract 1.0 | Adım 0 MERGED + platform-ai k3s ai-test LIVE |
+| platform-backend | PR-gw-01 Gateway Contract 1.0 freeze (source-level contract, physical host gerek YOK) | Adım 0 MERGED + ADR-0031 ACCEPTED + cross-server contract field/admission semantics canonical |
+| **platform-k8s-gitops + ops** | **platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole `ai-runtime-test` + WireGuard tunnel + mTLS PKI cert auth** | ADR-0031 ACCEPTED; gerçek meeting audio cross-server e2e (PR-stt-02 live veya PR-queue-01) öncesi blocker; synthetic/local Docker e2e için istisna |
+| **platform-k8s-gitops** | **Redis bounded queue manifest (staging-sw, persistence OFF, TTL kısa, max memory bounded; primitive List vs Streams PR-queue-01'de kilitlenir — Codex `019e8c09` iter-2 tavsiye: Streams + consumer group)** | ADR-0031 ACCEPTED |
 | platform-ai | PR-stt-02 real audio + container e2e | PR-gw-01 MERGED |
 | platform-ai | PR-stt-03 subprocess isolation | PR-stt-02 MERGED |
 | platform-k8s-gitops | Kustomize base/apps/{audio-gateway,live-stt} + overlay | PR-gw-01 + PR-stt-03 source-merged |

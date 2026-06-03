@@ -4,7 +4,7 @@
 >
 > **Scope**: Faz 24 Meeting Intelligence için fiziksel host topolojisi, network/secret cross-server boundary, deployment çatısı. ADR-0002 (single-host dual-cluster, Faz 1-23 core platform) **supersede edilmez**; bu karar Faz 24 `platform-ai` compute plane için **scoped forward-extension**'dur.
 >
-> **Cross-AI trail**: Claude (Anthropic) + Codex `019e8c09` (OpenAI) iter-1 REVISE. Mavis (MiniMax) iter-2 turunda paralel davet edilecek (provider transient unavailability — HARD RULE Mavis CLI). HARD RULE Cross-AI Peer Review: implementer ≠ reviewer (provider seviyesinde Anthropic + OpenAI yeterli; Mavis iter-2 paralel).
+> **Cross-AI trail**: Claude (Anthropic) + Codex `019e8c09` (OpenAI) iter-1 REVISE → iter-2 REVISE → iter-3 AGREE bekleniyor. Mavis (MiniMax) post-availability absorb/comment **non-blocking** (HARD RULE Cross-AI Peer Review provider seviyesinde Anthropic + OpenAI yeterli; Mavis kanıt/koordinasyon trail değeri var ama bu karar için hard gate değil — kullanıcı explicit 3-provider gate'e escalate ederse blocker olur).
 
 ---
 
@@ -101,7 +101,7 @@ Mevcut tek gate `free -m available > 2 GiB` (staging-sw için) yetmez. **Codex i
 | Pod RAM headroom (audio-gateway, meeting-service, transcript-service) | < 70% requests | `kubectl top pod -l app=<svc>` |
 | Pod CPU p95 (5dk pencere) | < 80% limit | `kubectl top pod` |
 | Ingress p95 latency | < 200 ms | Prometheus `nginx_ingress_request_duration_seconds` |
-| Redis queue depth | < threshold (bounded) | `redis-cli LLEN <key>` |
+| Redis queue depth | < threshold (bounded) | `redis-cli XLEN <stream>` veya `LLEN <key>` — **primitive TBD** (PR-queue-01'de kilitlenir; Codex `019e8c09` iter-2 tavsiye: **Streams + consumer group** çünkü chunk ordering / consumer lag / idempotency daha temiz kanıtlanır) |
 | OOM/restart count (24h) | 0 | `kubectl get pod -l app=<svc> -o jsonpath` |
 | Faz 22-23 paralel CPU pressure | normal (load average < CPU count) | `uptime` |
 
@@ -242,7 +242,7 @@ Bu ADR'nin production'a katkı verdiği maddeler, **Faz 24 servisleri production
 - [ ] Failure drill: platform-ai-down + Redis backlog + Vault unreachable senaryoları
 - [ ] ADR-0030 §"Cross-Server STT Transit Boundary" eklendi (bu PR)
 - [ ] Issue #19 re-scope edildi + Gate A/B acceptance verify
-- [ ] Cross-AI peer review (Codex iter-2 AGREE + Mavis msg AGREE)
+- [ ] Cross-AI peer review (Codex iter-2 AGREE → iter-3 AGREE; Mavis post-availability absorb/comment **non-blocking** unless user explicitly escalates to 3-provider gate — HARD RULE provider seviyesinde Anthropic + OpenAI yeterli)
 
 ## References
 

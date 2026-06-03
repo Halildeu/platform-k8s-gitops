@@ -141,6 +141,7 @@ Faz 24 servisleri **production'a çıkmaz** şu maddeler tamamlanana kadar:
 - [ ] Consent flow LIVE testai'de browser smoke ile kanıtlanmış
 - [ ] LLM API yurt dışı aktarma için aydınlatma metni eklenmiş (Option A/B karar dokümante)
 - [ ] Multi-tenant readiness placeholder live veya `multi_tenant_ready: false` explicit işaretli
+- [ ] **Cross-Server STT Transit Boundary** hukuk review ile detaylandı + WireGuard/mTLS UP + tenant propagation (X-* headers) propagating + audit event `audio_chunk_forwarded_to_platform_ai` emit verify + Redis transient/bounded policy live (persistence OFF, TTL kısa, max memory bounded, backlog fail-fast) + platform-ai host access boundary (SSH + Vault credentials + audit trail) live evidence ile doğrulandı (ADR-0031 + ADR-0030 §"Cross-Server STT Transit Boundary" — Codex `019e8c09` iter-2 absorb 2026-06-03)
 
 ## Cross-AI Mutabakat Detayı (kritik kararlar)
 
