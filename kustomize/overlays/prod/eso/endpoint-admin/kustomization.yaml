@@ -1,0 +1,9 @@
+# Prod overlay ESO endpoint-admin-service (Faz 22.5 P2-A A1 — first prod deploy)
+# Mirror of overlays/test/eso/endpoint-admin/ with namespace platform-prod.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-prod
+
+resources:
+  - externalsecret.yaml
