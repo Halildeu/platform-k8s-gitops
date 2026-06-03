@@ -20,18 +20,25 @@
 #   - Inv-4 manual cross-check gated by `--inv4-verified` flag
 #   - No backdated evidence
 #
-# Usage:
-#   # Step 1 — initial audit + checks (Inv-4 NOT verified yet)
+# Usage (single-DB):
 #   ./docs/scripts/faz-21/audit-and-check.sh \
 #     --pg-host 127.0.0.1 --pg-port 15432 --pg-user audit_ro \
 #     --pg-database platform --pg-password-file ~/.faz21-audit.pw \
 #     --schema-prefix notify,endpoint_admin_service \
 #     --out-dir /tmp/faz-21
 #
-#   # Operator performs Inv-4 cross-check (RB §4.4)
-#   # ...
+# Usage (multi-DB — PR-5 absorb of 2026-06-03 test-cluster dry-run findings):
+#   ./docs/scripts/faz-21/audit-and-check.sh \
+#     --pg-host 127.0.0.1 --pg-port 15432 --pg-user audit_ro \
+#     --pg-database-list notify_db,endpoint_admin,auth_db,core_db \
+#     --pg-password-file ~/.faz21-audit.pw \
+#     --schema-prefix notify,endpoint_admin_service,public \
+#     --out-dir /tmp/faz-21
 #
-#   # Step 2 — re-run with --inv4-verified flag
+# When --pg-database-list is provided, the script iterates each DB
+# independently and emits a multi-DB summary.json under --out-dir.
+#
+#   # Step 2 — operator performs Inv-4 cross-check, then re-run with flag
 #   ./docs/scripts/faz-21/audit-and-check.sh \
 #     ...same args... \
 #     --inv4-verified \
@@ -49,6 +56,7 @@ PG_HOST=""
 PG_PORT="5432"
 PG_USER=""
 PG_DATABASE="platform"
+PG_DATABASE_LIST=""
 PG_PASSWORD_FILE=""
 SCHEMA_PREFIX="notify,endpoint_admin_service,public"
 OUT_DIR=""
@@ -61,6 +69,7 @@ while [[ $# -gt 0 ]]; do
     --pg-port)          PG_PORT="$2"; shift 2 ;;
     --pg-user)          PG_USER="$2"; shift 2 ;;
     --pg-database)      PG_DATABASE="$2"; shift 2 ;;
+    --pg-database-list) PG_DATABASE_LIST="$2"; shift 2 ;;
     --pg-password-file) PG_PASSWORD_FILE="$2"; shift 2 ;;
     --schema-prefix)    SCHEMA_PREFIX="$2"; shift 2 ;;
     --out-dir)          OUT_DIR="$2"; shift 2 ;;
@@ -80,6 +89,110 @@ done
 if [[ -z "$PG_HOST" || -z "$PG_USER" ]]; then
   echo "ERROR: --pg-host and --pg-user required" >&2
   exit 3
+fi
+
+# Codex iter PR-5 absorb: multi-DB support. If --pg-database-list given,
+# iterate each comma-separated DB; merged summary documents all per-DB
+# verdicts. Single --pg-database remains the default single-DB path.
+if [[ -n "$PG_DATABASE_LIST" ]]; then
+  if [[ -z "$OUT_DIR" ]]; then
+    OUT_DIR="/tmp/faz-21-multidb-$(date -u +%Y%m%d-%H%MZ)"
+  fi
+  mkdir -p "$OUT_DIR"
+
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  AUDIT_SH="$SCRIPT_DIR/pre-migration-audit.sh"
+  CHECKS_SH="$SCRIPT_DIR/r10-invariant-checks.sh"
+
+  for s in "$AUDIT_SH" "$CHECKS_SH"; do
+    if [[ ! -x "$s" ]]; then
+      echo "ERROR: required script not executable: $s" >&2
+      exit 3
+    fi
+  done
+
+  OVERALL_EXIT=0
+  PER_DB_ENTRIES=""
+  IFS=',' read -r -a DB_ARRAY <<< "$PG_DATABASE_LIST"
+  for db in "${DB_ARRAY[@]}"; do
+    db="$(echo "$db" | tr -d '[:space:]')"
+    [[ -z "$db" ]] && continue
+    sub_out_dir="$OUT_DIR/$db"
+    mkdir -p "$sub_out_dir"
+
+    echo "=== Processing DB: $db ==="
+    AUDIT_JSON="$sub_out_dir/pre-migration-audit.json"
+    CHECKS_JSON="$sub_out_dir/r10-invariant-checks.json"
+    AUDIT_ARGS=(
+      --pg-host "$PG_HOST"
+      --pg-port "$PG_PORT"
+      --pg-user "$PG_USER"
+      --pg-database "$db"
+      --schema-prefix "$SCHEMA_PREFIX"
+      --out "$AUDIT_JSON"
+    )
+    if [[ -n "$PG_PASSWORD_FILE" ]]; then
+      AUDIT_ARGS+=(--pg-password-file "$PG_PASSWORD_FILE")
+    fi
+    set +e
+    "$AUDIT_SH" "${AUDIT_ARGS[@]}"
+    a_exit=$?
+    set -e
+
+    a_verdict="$(jq -r '.verdict // "UNKNOWN"' "$AUDIT_JSON" 2>/dev/null || echo "UNKNOWN")"
+    c_verdict="null"
+    c_exit="null"
+
+    if [[ "$a_exit" == "0" || "$a_exit" == "1" ]]; then
+      CHECKS_ARGS=(
+        --audit-json "$AUDIT_JSON"
+        --out "$CHECKS_JSON"
+      )
+      if [[ "$INV4_VERIFIED" == "1" ]]; then
+        CHECKS_ARGS+=(--inv4-verified)
+      fi
+      if [[ -n "$INV4_EVIDENCE" ]]; then
+        CHECKS_ARGS+=(--inv4-evidence "$INV4_EVIDENCE")
+      fi
+      set +e
+      "$CHECKS_SH" "${CHECKS_ARGS[@]}"
+      c_exit=$?
+      set -e
+      c_verdict="\"$(jq -r '.verdict' "$CHECKS_JSON")\""
+    fi
+
+    if [[ "$a_exit" -gt "$OVERALL_EXIT" ]]; then OVERALL_EXIT="$a_exit"; fi
+    if [[ "$c_exit" != "null" && "$c_exit" -gt "$OVERALL_EXIT" ]]; then OVERALL_EXIT="$c_exit"; fi
+
+    [[ -n "$PER_DB_ENTRIES" ]] && PER_DB_ENTRIES+=","
+    PER_DB_ENTRIES+="{\"database\":\"$db\",\"audit_exit\":$a_exit,\"audit_verdict\":\"$a_verdict\",\"checks_exit\":$c_exit,\"checks_verdict\":$c_verdict,\"sub_out_dir\":\"$sub_out_dir\"}"
+  done
+
+  SUMMARY_JSON="$OUT_DIR/summary.json"
+  cat >"$SUMMARY_JSON" <<EOF
+{
+  "schema_version": "faz-21-audit-and-check/v2",
+  "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "mode": "multi-database",
+  "database_list": "$PG_DATABASE_LIST",
+  "per_database": [${PER_DB_ENTRIES}],
+  "overall_exit": $OVERALL_EXIT,
+  "anti_pattern_guards": {
+    "delegates_to_pr3_a_scripts": true,
+    "inv4_verified_explicit_flag": $([ "$INV4_VERIFIED" = "1" ] && echo true || echo false),
+    "no_backdated_evidence": true,
+    "multi_db_per_db_isolation": true
+  }
+}
+EOF
+
+  echo ""
+  echo "=== Multi-DB summary ==="
+  echo "overall exit: $OVERALL_EXIT"
+  echo "per-DB:"
+  jq -r '.per_database[] | "  \(.database): audit=\(.audit_verdict) (exit \(.audit_exit)) / checks=\(.checks_verdict) (exit \(.checks_exit))"' "$SUMMARY_JSON" 2>/dev/null || echo "$PER_DB_ENTRIES"
+  echo "summary: $SUMMARY_JSON"
+  exit "$OVERALL_EXIT"
 fi
 
 if [[ -z "$OUT_DIR" ]]; then

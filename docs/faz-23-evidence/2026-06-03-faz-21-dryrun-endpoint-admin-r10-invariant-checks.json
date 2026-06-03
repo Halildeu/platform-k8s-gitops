@@ -1,0 +1,40 @@
+{
+  "schema_version": "faz-21-r10-invariant-checks/v2",
+  "generated_at": "2026-06-03T08:09:38Z",
+  "audit_json_ref": "/tmp/faz-21-dryrun-endpoint/pre-migration-audit.json",
+  "invariants": {
+    "inv1_tenant_context": {
+      "status": "ADVISORY_ABSENT",
+      "audit_status": "ADVISORY_ABSENT",
+      "request_missing_24h": null,
+      "advisory_threshold": 100
+    },
+    "inv2_persistence": {
+      "status": "CLEAN",
+      "has_no_key_tables": false,
+      "discovered_count": 7,
+      "violation_count": 0,
+      "no_tenant_key_count": 0
+    },
+    "inv3_side_effect_isolation": {
+      "status": "OBSERVATION_INSUFFICIENT",
+      "audit_status": "OBSERVATION_INSUFFICIENT",
+      "callback_correlation_orphan_count": null
+    },
+    "inv4_ai_boundary": {
+      "status": "MANUAL_PENDING",
+      "checklist": "- platform-ai vector index keys carry tenant partition prefix\n- prompt context selector applies tenant filter before retrieval\n- embedding cache key includes org_id\n- inference audit emits tenant=<org_id> label",
+      "evidence_ref": null
+    }
+  },
+  "verdict": "OBSERVATION_INSUFFICIENT",
+  "scope_notes": {
+    "inv3_full_test_requires_backend_integration": "Snapshot orphan count is a READ-ONLY analog; charter §4.3 callback isolation test (concurrent update + provider_message_id reuse) requires backend integration test, tracked separately."
+  },
+  "anti_pattern_guards": {
+    "depends_on_audit_json": true,
+    "no_raw_tenant_pii_in_evidence": true,
+    "inv4_requires_manual_cross_check": true,
+    "inv4_verified_flag_required_for_exit_0": true
+  }
+}
