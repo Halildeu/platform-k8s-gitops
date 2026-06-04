@@ -4632,7 +4632,20 @@ images:
     # Image build run 26976992300.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-96c02eb
     #   digest sha256:31306b858d3e7b2bb716e9a9ad0f9901f0ca38f5809d51d780d16184ddd29e9f
-    digest: sha256:31306b858d3e7b2bb716e9a9ad0f9901f0ca38f5809d51d780d16184ddd29e9f
+    # 2026-06-05 Faz 21.1 Cleanup C4 A2-6 → sha-e4e17fb (platform-backend PR #463,
+    # main e4e17fb9): V43 hotfix_posture org expansion (leaf family 6/6, LAST —
+    # GRANDCHILD variant). 5 tables (snapshots + installed + pending + pending_kbs
+    # + pending_categories), 5 FK org-flip, 2 UNIQUE(id,org_id) parents (snapshots
+    # AND pending — pending is both child-of-snapshots and parent-of-pending_kbs).
+    # 2-level CASCADE device→snap→pending→pending_kbs preserved. Mirrors the V38
+    # pilot extended one level. Cross-AI Codex 019e945e ready_to_merge (plan +
+    # post-impl). CI green; local Testcontainers V43 IT 10/10 (5 FK validated + 5
+    # dropped, 10 CHECK + 2 UNIQUE, 5 cross-org 23503 incl grandchild, trigger
+    # fill, 2-level cascade, match-CHECK 23514). A2 LEAF-FAMILY SWEEP COMPLETE.
+    # tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26979170279.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-e4e17fb
+    #   digest sha256:05afad507cd172dafe2cb3889062f090e7937cab9f1abbc6337edc5146a251e0
+    digest: sha256:05afad507cd172dafe2cb3889062f090e7937cab9f1abbc6337edc5146a251e0
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
