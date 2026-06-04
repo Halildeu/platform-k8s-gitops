@@ -4656,7 +4656,19 @@ images:
     # tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26980410308.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-2f881d3
     #   digest sha256:7092e24ebc085dae1b1bf1a4c2db07c64ba5df002295624deb6713d31c8755f0
-    digest: sha256:7092e24ebc085dae1b1bf1a4c2db07c64ba5df002295624deb6713d31c8755f0
+    # 2026-06-05 Faz 21.1 Cleanup C4 step-5 → sha-43f54d3 (platform-backend PR #467,
+    # main 43f54d3): V45 outdated_software + software_inventory FK flip — PURE-FLIP
+    # (3 tenant-composite FKs → org-composite across 2 hub-free device-rooted families).
+    # All enablers pre-existed (children ORG-DONE org_id non-null; parents already
+    # UNIQUE(id,org_id) via C1+V34) → no org machinery, only P4 preflight + P5 flips.
+    # FKs: osw_pkg_snapshot_org_fk + osw_snap_device_org_fk + sw_inv_device_org_fk;
+    # CASCADE preserved. Cross-AI Codex 019e9493 ready_to_merge (post-impl). CI green;
+    # local Testcontainers 30/30 (V45 IT 1/1 + OutdatedSoftware 17/17 + SoftwareInventory
+    # 12/12 rolled-over). 11/15 C4 FKs now org (only the 12 hub-dependent FKs remain).
+    # tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26981525311.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-43f54d3
+    #   digest sha256:4050d5bf7c816478822ebab5b4906c484c5ef6483b0ca5199fb539a1f12f5b99
+    digest: sha256:4050d5bf7c816478822ebab5b4906c484c5ef6483b0ca5199fb539a1f12f5b99
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
