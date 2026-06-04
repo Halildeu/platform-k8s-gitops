@@ -4908,6 +4908,36 @@ patches:
         path: /data/ENDPOINT_ADMIN_COMMANDS_ADMIN_CREATABLE_TYPES
         value: "COLLECT_INVENTORY,LOCK_USER_LOGIN"
 
+  # OpenFGA authz gate store/model — live-aligned pin (gitops #1265, 2026-06-04).
+  # Surfaced by the AG-028 managed-uninstall E2E: the gate is ON at runtime
+  # (ERP_OPENFGA_ENABLED=true) but the store/model IDs were UNTRACKED drift in the
+  # live ConfigMap. Base now carries enabled + api-url + empty store/model stubs;
+  # this overlay pins the live TEST store/model so a future `apply -k`/ArgoCD sync
+  # can no longer drop them (which would flip the gate fail-OPEN). `replace`
+  # (not `add`) is deliberate: it fails fast if the base stubs are ever removed.
+  #   - Store 01KPP0CFP4G82K42Y6NYSPT4JF is shared with permission-service.
+  #   - Model 01KRTJVEMAW80B2D35GN8HJDPG is endpoint-admin's PINNED model. The
+  #     shared kv/platform/openfga model is now 01KS8QE8T1EJ2DF5CRS4VV9YX1
+  #     (post notification-cutover SUPERSET: +5 notification types; the 10 ERP
+  #     types incl. `module` w/ can_manage/can_view are byte-identical between the
+  #     two). endpoint-admin is intentionally NOT wired to the shared openfga ESO
+  #     so its model cannot shift under it; module:endpoint-admin#can_manage
+  #     resolves identically under both models (tuples are store-level).
+  # Migrating endpoint-admin onto the shared openfga ESO/model (01KS8QE8...) is a
+  # SEPARATE EVALUATED MIGRATION (allow+deny check + env proof + store/model
+  # source proof + ledger decision) — tracked as a gitops backlog issue, NOT an
+  # automatic cleanup.
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    patch: |-
+      - op: replace
+        path: /data/ERP_OPENFGA_STORE_ID
+        value: "01KPP0CFP4G82K42Y6NYSPT4JF"
+      - op: replace
+        path: /data/ERP_OPENFGA_MODEL_ID
+        value: "01KRTJVEMAW80B2D35GN8HJDPG"
+
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz SPRING_DATASOURCE_URL
   # + KEYCLOAK_URL replace patch'leri KALDIRILDI (base zaten shortname).
   # Overlay test-specific add patches (DDL_AUTO + FLYWAY_ENABLED + LOGGING DEBUG) kalır.
