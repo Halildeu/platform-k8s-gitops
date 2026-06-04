@@ -4645,7 +4645,18 @@ images:
     # tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26979170279.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-e4e17fb
     #   digest sha256:05afad507cd172dafe2cb3889062f090e7937cab9f1abbc6337edc5146a251e0
-    digest: sha256:05afad507cd172dafe2cb3889062f090e7937cab9f1abbc6337edc5146a251e0
+    # 2026-06-05 Faz 21.1 Cleanup C4 step-4 → sha-2f881d3 (platform-backend PR #465,
+    # main 2f881d3): V44 app_control org expansion — ORG-DONE-PARENT variant. Parent
+    # endpoint_app_control_snapshots already org-foundation-done (V29/V30/V36), so it
+    # only gets UNIQUE(id,org_id) + device-FK flip; detail endpoint_app_control_probe_errors
+    # gets full org machinery + FK flip. 2 FK org-flip (ac_pe_snapshot_org_fk +
+    # ac_snap_device_org_fk); CASCADE preserved. P4 preflight incl. parent-invariant
+    # drift guard. Cross-AI Codex 019e9477 ready_to_merge (plan + post-impl). CI green;
+    # local Testcontainers V44 IT 7/7. First post-A2-sweep slice (manifest §3 step 4).
+    # tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26980410308.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-2f881d3
+    #   digest sha256:7092e24ebc085dae1b1bf1a4c2db07c64ba5df002295624deb6713d31c8755f0
+    digest: sha256:7092e24ebc085dae1b1bf1a4c2db07c64ba5df002295624deb6713d31c8755f0
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
