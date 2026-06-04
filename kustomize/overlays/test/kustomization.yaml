@@ -4678,7 +4678,18 @@ images:
     #   tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26984141349.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-ca3d842
     #   digest sha256:4476d4dd3b264d93d0e010d0da756e08a9245d7a5f80b7b936456f244800e02e
-    digest: sha256:4476d4dd3b264d93d0e010d0da756e08a9245d7a5f80b7b936456f244800e02e
+    # 2026-06-05 Faz 21.1 Cleanup C4 step-7 → sha-cb8b525 (platform-backend PR #472,
+    #   V47 endpoint_software_catalog_items HUB org foundation: org_id machinery +
+    #   match/non-null CHECK + UNIQUE(id,org_id) + business unique single-arbiter
+    #   swap (tenant_id,catalog_item_id)→(org_id,catalog_item_id)). EndpointSoftware
+    #   CatalogItem Option A org_id map + @PrePersist canonicalize. Second of the 2
+    #   hub foundations → both hubs now carry UNIQUE(id,org_id), unblocking the
+    #   consumer FK flips (V48 install_audit, V49 uninstall). Cross-AI Codex 019e94bc
+    #   AGREE. Source CI green; local V47 IT 5/5 + Catalog 67/67 + Install/Uninstall
+    #   220/220. tenant_id stays (A6); reads tenant-keyed (A5). Image build 26985285173.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-cb8b525
+    #   digest sha256:0179c732a5953609d747d10c45b2c4da2bf3c463220b6399a5e8af539fc4df85
+    digest: sha256:0179c732a5953609d747d10c45b2c4da2bf3c463220b6399a5e8af539fc4df85
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
