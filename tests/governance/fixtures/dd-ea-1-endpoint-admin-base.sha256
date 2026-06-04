@@ -1,4 +1,11 @@
 # DD-EA-1 baseline (kustomize render bytes sha256)
 # Source: kustomize/base/apps/endpoint-admin-service
 # Update: python3 scripts/governance/check_endpoint_admin_manifest_contract.py --update-baseline
+#
+# 2026-06-04 OpenFGA provenance fix (gitops #1265 / PR #1266): base ConfigMap now
+#   tracks ERP_OPENFGA_ENABLED + ERP_OPENFGA_API_URL + empty ERP_OPENFGA_STORE_ID
+#   / ERP_OPENFGA_MODEL_ID stubs (were live-only ConfigMap drift; the @RequireModule
+#   gate was ON at runtime but invisible in gitops → silent-flip risk). Codex
+#   019e92cb AGREE. Previous baseline:
+#   81978377ba94e0ce65b3f43133e099de93c5f012f1c69f4e44aa8345329c529d
 1d73da23ee251a2864b4a83b895c2877877565b183b572e0b2670937571c1da5
