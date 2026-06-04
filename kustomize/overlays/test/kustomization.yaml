@@ -4526,9 +4526,19 @@ images:
     # discovery reframed C4 (gitops cleanup-execution-plan.md v2 + risk F21-R32).
     # PG IT 4/4 + 27/27 EffectiveOrg regression green. Cross-AI Codex 019e919e AGREE.
     # Image build run 26940129959.
-    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-1d229d0
-    #   digest sha256:81f6c077cedf0ca9d11930e91aaeb74066fa5ef5d28078dae14a3bf40175e141
-    digest: sha256:81f6c077cedf0ca9d11930e91aaeb74066fa5ef5d28078dae14a3bf40175e141
+    #
+    # 2026-06-04 Faz 21.1 Cleanup C2a #446 (24c609c1 → sha-24c609c): V35 diff-cache
+    # org-key IDENTITY — atomic UNIQUE swap (ADD UNIQUE(org_id,device_id) + DROP
+    # UNIQUE(tenant_id,device_id)) + cache CHECK(org_id NOT NULL) + UPSERT ON
+    # CONFLICT(org_id,device_id) + grid join org_id=COALESCE(d.org_id,d.tenant_id).
+    # Single ON CONFLICT arbiter (two redundant uniques broke concurrent upsert —
+    # deterministic test catch). 6 tenant-composite cache FKs + tenant_id KEPT (FK
+    # flip=C2b, drop=C4). Rollback boundary >= V35 (no old-writer-pod overlap).
+    # 100 tests green incl. Concurrency 2/2. Cross-AI Codex 019e919e (3 REVISE→AGREE).
+    # Image build run 26942645821.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-24c609c
+    #   digest sha256:2d9f46782f51e63e59ad172efe373d97cd59827664050de5415a680a60f82cbc
+    digest: sha256:2d9f46782f51e63e59ad172efe373d97cd59827664050de5415a680a60f82cbc
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
