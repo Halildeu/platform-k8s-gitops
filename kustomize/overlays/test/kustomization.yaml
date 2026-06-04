@@ -4551,7 +4551,18 @@ images:
     # EndpointUninstallAuditServiceTest 21 PASS. Image build run 26959495913.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-7723bd9
     #   digest sha256:ed24afd298345a067f94b73e64b761960a5158c8a1a21ea78cf2153c7a58b14a
-    digest: sha256:ed24afd298345a067f94b73e64b761960a5158c8a1a21ea78cf2153c7a58b14a
+    # 2026-06-04 Faz 21.1 Cleanup C1.5 → sha-e623642 (platform-backend PR #449,
+    # main e6236420): V36 source org_id NOT NULL invariant flip — DO fail-fast audit
+    # + CHECK (org_id IS NOT NULL) NOT VALID + VALIDATE on the 7 source tables (the 2
+    # cache tables already got it in V35). Combined with V30 → org_id=tenant_id
+    # universal on the source side; unblocks C2b cache FK org-composite flip. Cross-AI
+    # Codex 019e9332 ready_to_merge (plan 019e92a7 narrow + Option A + tx-hygiene). CI
+    # all green; local Testcontainers 80 green; testai precondition 7 tables 0/0/0.
+    # OR-fallback removal + composite org_id mirror indexes deferred to C4/A5.
+    # Image build run 26961259714.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-e623642
+    #   digest sha256:04fdd8447d74a407e5ad05d6b56011441a42e990f1d69b523250fae04dfded5a
+    digest: sha256:04fdd8447d74a407e5ad05d6b56011441a42e990f1d69b523250fae04dfded5a
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
