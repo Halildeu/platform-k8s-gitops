@@ -4538,7 +4538,20 @@ images:
     # Image build run 26942645821.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-24c609c
     #   digest sha256:2d9f46782f51e63e59ad172efe373d97cd59827664050de5415a680a60f82cbc
-    digest: sha256:2d9f46782f51e63e59ad172efe373d97cd59827664050de5415a680a60f82cbc
+    #
+    # 2026-06-04 AG-028 uninstall-evidence contract fix #448 (7723bd9c → sha-7723bd9):
+    # UninstallEvidencePayloadPolicy.walkValidate() now DROPS raw stdoutTail/stderrTail
+    # from uninstall evidence (key-only log) instead of HTTP 400-rejecting the whole
+    # result; all other FORBIDDEN_KEYS_LOWER members (stdoutRaw/token/password/
+    # processEnvironment/path/PII) still fail closed. Live AG-028 E2E caught this: a
+    # successful real 7-Zip uninstall (VM registry ABSENT) could not be recorded because
+    # the agent shipped raw stdoutTail. Paired with platform-agent #53 (agent now sends
+    # bounded redacted stdoutSummary/stderrSummary, never raw tails). Cross-AI Codex
+    # 019e92e7 (design C + post-impl AGREE). UninstallEvidencePayloadPolicyTest 30 PASS +
+    # EndpointUninstallAuditServiceTest 21 PASS. Image build run 26959495913.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-7723bd9
+    #   digest sha256:ed24afd298345a067f94b73e64b761960a5158c8a1a21ea78cf2153c7a58b14a
+    digest: sha256:ed24afd298345a067f94b73e64b761960a5158c8a1a21ea78cf2153c7a58b14a
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
