@@ -4562,7 +4562,18 @@ images:
     # Image build run 26961259714.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-e623642
     #   digest sha256:04fdd8447d74a407e5ad05d6b56011441a42e990f1d69b523250fae04dfded5a
-    digest: sha256:04fdd8447d74a407e5ad05d6b56011441a42e990f1d69b523250fae04dfded5a
+    # 2026-06-04 Faz 21.1 Cleanup C2b → sha-6712218 (platform-backend PR #450,
+    # main 6712218a): V37 diff-cache FK org-composite flip — 6 cache FKs
+    # (child_col, tenant_id) -> (child_col, org_id) atomic swap (ADD NOT VALID +
+    # VALIDATE + DROP), ON DELETE CASCADE preserved; Phase 0 preflight org-match
+    # + device-consistency audit. Sound via V34 parent UNIQUE(id,org_id) + V35
+    # child org_id NOT NULL + V36 parent org_id NOT NULL -> MATCH SIMPLE enforces
+    # org isolation (cross-org 23503). Cross-AI Codex 019e9352 ready_to_merge
+    # (plan 019e9346). CI green; local Testcontainers 65 green. tenant_id stays
+    # (C4); repo/query/index unchanged (C4/A5). Image build run 26963289687.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-6712218
+    #   digest sha256:3271ffbb4a5b65be34517ea645257bc93cbde7401fe591c2b837adcfa79d42fc
+    digest: sha256:3271ffbb4a5b65be34517ea645257bc93cbde7401fe591c2b837adcfa79d42fc
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
