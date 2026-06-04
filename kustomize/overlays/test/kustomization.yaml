@@ -4698,7 +4698,18 @@ images:
     #   tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26985824727.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-2c6da5a
     #   digest sha256:45b994215c57ea85b0260a13e97f016b2c1d0cdc031da28539793601204327ca
-    digest: sha256:45b994215c57ea85b0260a13e97f016b2c1d0cdc031da28539793601204327ca
+    # 2026-06-05 Faz 21.1 Cleanup C4 step-9 → sha-ee633fe (platform-backend PR #474,
+    #   V49 uninstall family: org foundation on uninstall_requests + uninstall_audit
+    #   [append-only DISABLE/ENABLE backfill bracket] + UNIQUE(id,org_id) + 2 partial-
+    #   unique single-arbiter swaps [idempotency + one_inflight → org-keyed] + 7 FK
+    #   flips [requests device/catalog/command-DEFERRABLE + audit request/device/
+    #   catalog/command]). EndpointUninstall{Request,Audit} Option A. Last hub-dependent
+    #   consumer slice; with V48, 10/12 board #469 FKs org-flipped. Cross-AI Codex
+    #   019e94bc plan+post-impl AGREE. Source CI green; local V49 IT 11/11 + 112/112.
+    #   tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26986777702.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-ee633fe
+    #   digest sha256:0af8e2bc67f285dce0c0389078a09b31a7d5e3a79df34e0c98b150aceecbde38
+    digest: sha256:0af8e2bc67f285dce0c0389078a09b31a7d5e3a79df34e0c98b150aceecbde38
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
