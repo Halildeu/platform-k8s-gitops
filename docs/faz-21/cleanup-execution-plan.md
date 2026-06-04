@@ -1,8 +1,10 @@
 # Faz 21.1 — Endpoint Cleanup Execution Plan
 
-> **Status**: Draft v1 — 2026-06-04 — Codex 019e8f95 plan-time AGREE
+> **Status**: v2 — 2026-06-04 — Codex 019e8f95 plan-time AGREE (C0) + Codex 019e919e PARTIAL (C1 bounded + FK-web reframe)
 > **Authority**: this document for Faz 21.1 cleanup sub-slice sequencing, risk register, observation harness, drop gate.
 > **Predecessor**: [Faz 21 Charter](./charter.md) + [ADR-0032 Faz 21 tenant model](../adr/0032-faz-21-tenant-model.md).
+>
+> **v2 change (2026-06-04 live FK-web discovery)**: C1 implementation gathered live test-cluster schema evidence the C0 plan lacked. The discovery **invalidates the C4 "drop tenant_id from 9 tables" scope** and **reduces C1 to a bounded foundation**. See [§ FK-web discovery](#fk-web-discovery-2026-06-04--reframes-c4) below. C1 landed as platform-backend **PR #443 / V34** (Codex 019e919e AGREE post-impl).
 
 ## Context
 
@@ -33,9 +35,29 @@ Source-side read migration arc (10 sub-slices: a, b1-b4, c, d-A, d-B, e-A, e-B, 
 - Code paths: canonical `org_id = tenant_id` write at INSERT; dual-read `effective-org filter` via P1 parenthesized OR.
 - 10 PG IT regression guards covering effective-org + legacy NULL + cross-org + canonical write + V30 CHECK behavior.
 
+## FK-web discovery (2026-06-04) — reframes C4
+
+During C1 implementation, live test-cluster (testai) read-only schema introspection surfaced facts the C0 plan did not have:
+
+1. **Only the 9 org-bearing tables in the ENTIRE `endpoint_admin_service` schema have an `org_id` column.** Every other endpoint table (the device-rooted snapshot tree) is `tenant_id`-only.
+2. **`endpoint_devices` has PRIMARY KEY (id)** (id alone unique) + `UNIQUE (id, tenant_id)` + `UNIQUE (tenant_id, hostname)` + `UNIQUE (tenant_id, machine_fingerprint)`. The other 2 cache parents: PK (id) + `UNIQUE (id, tenant_id)`.
+3. **`endpoint_devices` is referenced by 14 inbound composite FKs** `(child_col, tenant_id) → endpoint_devices(id, tenant_id)`. ~10 of those children have **no `org_id`**: `endpoint_device_health_snapshots`, `endpoint_diagnostics_snapshots`, `endpoint_hardware_inventory_snapshots`, `endpoint_hotfix_posture_snapshots`, `endpoint_services_snapshots`, `endpoint_startup_exposure_snapshots`, `endpoint_app_control_probe_errors`, etc.
+4. **Even inside the 9-table scope, `endpoint_install_audit` FKs to non-org parents**: `(command_id, tenant_id) → endpoint_commands(id, tenant_id)` and `(catalog_item_id, tenant_id) → endpoint_software_catalog_items(id, tenant_id)`. `endpoint_commands` + `endpoint_software_catalog_items` have no `org_id`.
+
+**Consequence — C4 "DROP tenant_id from 9 tables" is infeasible as scoped.** To drop `endpoint_devices.tenant_id` you must drop `UNIQUE (id, tenant_id)` (+ the 2 other tenant_id-based uniques), which requires migrating/dropping all 14 inbound FKs — but ~10 inbound children have no `org_id` and so cannot take a `(child, org_id)` composite FK. The real dependency closure of "drop tenant_id from `endpoint_devices`" is the **entire device-rooted FK tree (~20+ tables, ~30 FK constraints, 3 tenant_id-based unique constraints)**, NOT 9 tables.
+
+**Codex 019e919e on the resolution** (REVISE on the naive fix): blind single-column FK simplification `(child, tenant_id) → parent(id, tenant_id)` ⇒ `(child) → parent(id)` is **not durable** — the composite FK today machine-enforces `child.tenant_id == parent.tenant_id` (a real invariant with deliberate tests, e.g. `EndpointHardwareInventoryPostgresIntegrationTest` cross-tenant rejection). Reducing it to "app-layer org_id" is self-attestation, not machine enforcement. Durable preference order:
+
+1. **Hybrid invariant model**: pure detail child (no own tenant/org discriminator, accessed only via parent join) → single-column FK is acceptable *only if* the child's `tenant_id` non-use is machine-proven; tenant/org-addressable child (own discriminator / unique / audit surface) → scope-expand `org_id` + `(child, org_id) → parent(id, org_id)` composite FK.
+2. **Full `org_id` scope expansion** of the device-rooted tree (cleanest, most machine-enforced, larger surface).
+3. **Keep `tenant_id` co-resident on hub tables** = honest long-tail compatibility debt; described as "org_id canonical reads/writes live, tenant_id retained for referential compatibility", NOT "cleanup complete".
+4. Blind single-column simplification without an added invariant = **RED**.
+
+→ The final FK-web / C4 drop strategy is **REOPENED** (tracked as **F21-R32** below). A dedicated Codex strategy thread must pick (1)/(2)/(3) before C4 is authored. **C1 (V34) commits to none of it.**
+
 ## Cleanup work remaining
 
-Per Codex 019e8e29 Q6 + 019e8f95 plan-time consult, cleanup is **NOT** "DROP COLUMN tenant_id" alone. It is a **5-phase sub-slice sequence**:
+Per Codex 019e8e29 Q6 + 019e8f95 plan-time consult, cleanup is **NOT** "DROP COLUMN tenant_id" alone. It is a **5-phase sub-slice sequence**. **v2 (2026-06-04)**: C1 reduced to a bounded foundation per Codex 019e919e PARTIAL; C4 scope reopened per the FK-web discovery above.
 
 ### Phase C0 — Gate PR (THIS PR, doc + harness + risk, no DB change)
 
@@ -56,7 +78,44 @@ yet. Therefore the **parent (source) org-key foundation MUST land
 before** the cache FK flip. Dependency graph: **parent UNIQUE → source
 FK/read → cache FK/read/write → observation → drop.**
 
-Phase C1 establishes the source-side org-key foundation:
+**v2 REDUCED SCOPE — B-only (Codex 019e919e AGREE — LANDED as PR #443 / V34):**
+C1 was reduced to a **single purely-additive** change that unblocks C2 and
+commits **nothing** about the (now-reopened) FK-web/C4 strategy. C1 = ONLY:
+
+- **FK-target enabler** — `ADD CONSTRAINT UNIQUE (id, org_id)` on the 3
+  cache parents (`endpoint_devices`,
+  `endpoint_software_inventory_state_history`,
+  `endpoint_outdated_software_snapshots`). Additive; coexists with PK(id) +
+  UNIQUE(id,tenant_id) + all existing FKs. Enables C2's composite cache FK
+  `(child, org_id) → parent(id, org_id)`.
+
+**WHY NOT a non-null CHECK in C1 (CI-driven correction, 2026-06-04):** the
+first V34 draft also added `CHECK (org_id IS NOT NULL) VALIDATE` as an
+"evidence gate". CI proved that is a **schema contract flip, not an additive
+gate** — it makes the legacy `org_id`-NULL row unconstructable and breaks
+the entire PR2b-iv `*EffectiveOrgPostgresIntegrationTest` suite (~13 classes
+disable the V29 trigger, insert `org_id = NULL`, and assert the effective-org
+OR-fallback read still returns the row). The non-null CHECK and the
+OR-fallback read removal are **two faces of one invariant flip** and ship
+together in a future coupled PR (see below). The testai non-null evidence
+(`org_id NULL = 0`, `mismatch = 0` on all 9) is preserved as a **precondition
+proof**, NOT a deployed invariant. V34 leaves `org_id` nullable + the
+OR-fallback intact. PG IT: 4/4 (`V34OrgIdSourceFoundationPostgresIntegrationTest`,
+incl. a guard that a trigger-disabled `org_id = NULL` insert still **succeeds**
+— machine-proof V34 did not flip the invariant).
+
+**DEFERRED — the future coupled invariant-flip PR** (one atomic PR, prod-shaped
+evidence gated): preflight `org_id NULL = 0` + `tenant_id<>org_id = 0` on 9
+tables → `CHECK (org_id IS NOT NULL) NOT VALID + VALIDATE` → repository
+effective-org OR-fallback removal → direct `org_id` → legacy-NULL fixtures
+retired/replaced with "NULL rejected" tests → rollback/read-contract note.
+Also still deferred: source child FK migration to org composite; `tenant_id`
+drop / unique swap (C4).
+
+The v1 description below is retained for sequencing context; items (c)/(d)
+are deferred per the reduction above.
+
+Phase C1 (v1 description) establishes the source-side org-key foundation:
 
 - **Non-null evidence gate (PRE-requisite):** V30 CHECK
   `(org_id IS NULL OR org_id = tenant_id)` does NOT prove `org_id IS NOT
@@ -129,6 +188,15 @@ Endpoint-specific mismatch=0 invariant evidence on testai + prod-shaped staging:
 
 ### Phase C4 — Final Drop Sweep (one PR, single Flyway migration)
 
+> **⚠️ v2 REOPENED (2026-06-04 FK-web discovery):** the scope below ("drop
+> tenant_id from 9 tables") is **infeasible as written** — the dependency
+> closure of dropping `endpoint_devices.tenant_id` is the whole device-rooted
+> FK tree, not 9 tables (see [§ FK-web discovery](#fk-web-discovery-2026-06-04--reframes-c4)
+> + **F21-R32**). C4 MUST NOT be authored until a dedicated Codex strategy
+> thread selects the FK-web resolution (hybrid-invariant / full-org-expansion /
+> co-resident-debt). The text below is the v1 intent, preserved for context;
+> the table list and migration body will be reshaped by that decision.
+
 V36 migration: precondition DO block (verify mismatch=0 + no duplicates + FK parents clean) + `org_id SET NOT NULL` on all 9 tables (deferred from C1) + drop `tenant_id` from 9 tables + drop V29 trigger + V30 CHECK + V33 trigger + V33 CHECK + old tenant_id indexes + V29 function `endpoint_org_id_compat_fill()` + old tenant_id UNIQUE/FK constraints.
 
 - Migration version is the next free slot at C4 implementation time (V36 placeholder; reconcile against parallel AG-028 migration track which has claimed V31/V32 — check `ls db/migration` before authoring).
@@ -186,9 +254,19 @@ independent flips leave the cache in a non-functional state.
 - C4 cannot start unless no old tenant-FK / tenant-UPSERT / tenant-grid
   join remains in cleanup-scope.
 
+### F21-R32 — FK-web closure scope (Active, 2026-06-04)
+
+**Description**: The C0 plan's C4 "drop tenant_id from the 9 org-bearing tables" assumed a bounded FK set. Live testai introspection shows `endpoint_devices` is an FK hub with 14 inbound composite `(child, tenant_id) → (id, tenant_id)` FKs, ~10 from children that have **no `org_id`** (device-rooted snapshot tree), plus in-scope `endpoint_install_audit` FKs to non-org parents (`endpoint_commands`, `endpoint_software_catalog_items`). Dropping `endpoint_devices.tenant_id` therefore requires resolving the whole device-rooted FK tree, not 9 tables. Blind single-column FK simplification would silently drop the machine-enforced `child.tenant_id == parent.tenant_id` invariant (Codex 019e919e REVISE).
+
+**Mitigation**:
+- C1 (V34) is bounded to additive non-null evidence + 3 parent `UNIQUE (id, org_id)`; it commits to none of the FK-web strategy.
+- C4 is gated (banner above): a dedicated Codex strategy thread MUST select one of {hybrid-invariant model; full `org_id` scope expansion of the device-rooted tree; keep `tenant_id` co-resident as honest compatibility debt} before C4 is authored.
+- Any chosen path that retains a tenant↔org match guarantee at the DB layer must keep it **machine-enforced** (composite FK or constraint trigger), not app-layer-only.
+- Inventory artifacts to attach to the C4 strategy thread: `pg_constraint` inbound-FK dump for `endpoint_devices`; `pg_attribute` org_id-bearing table list; explicit evidence that `endpoint_commands`/`endpoint_software_catalog_items` lack `org_id`.
+
 ### Link to global R10
 
-R10 (multi-tenant migration data drift / cross-tenant leak) covers the Faz 21 broader scope. F21-R29/R30/R31 are sub-risks under R10 mitigation; cross-reference in `docs/notify/risk-register.md` once Faz 21 risk register entries land.
+R10 (multi-tenant migration data drift / cross-tenant leak) covers the Faz 21 broader scope. F21-R29/R30/R31/R32 are sub-risks under R10 mitigation; cross-reference in `docs/notify/risk-register.md` once Faz 21 risk register entries land.
 
 ## Observation harness
 
