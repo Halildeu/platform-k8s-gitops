@@ -4606,7 +4606,16 @@ images:
     # build run 26970540723.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-120f245
     #   digest sha256:403d39effa60f792e99f09080e89a09323cc9ae2357c2136c26cd578c499c616
-    digest: sha256:403d39effa60f792e99f09080e89a09323cc9ae2357c2136c26cd578c499c616
+    # 2026-06-04 Faz 21.1 Cleanup C4 A2-2 → sha-414ff5a (platform-backend PR #455,
+    # main 414ff5a0): V39 diagnostics org expansion (leaf family 2/6) — snapshots
+    # + probe_errors org_id + 2 FK org-flip (probe_error→snapshot, snapshot→devices;
+    # CASCADE preserved). Mirrors the V38 device_health pilot. Cross-AI Codex
+    # 019e93fb ready_to_merge (plan 019e93a1). CI green; local Testcontainers V39 IT
+    # 7/7 + diagnostics suite 103 green. tenant_id stays (A6); reads tenant-keyed (A5).
+    # Image build run 26973058195.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-414ff5a
+    #   digest sha256:8eb860d5e492da88232469c0c99a4f3709a0d4db1940a3768caeac12a70bdf93
+    digest: sha256:8eb860d5e492da88232469c0c99a4f3709a0d4db1940a3768caeac12a70bdf93
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
