@@ -4515,9 +4515,20 @@ images:
     # matrix forces verification from resultStatus, fail-closed under drift). CI 13/13
     # green; full endpoint-admin-service module 1599 tests green. Cross-AI Codex 019e8f9c
     # REVISE→AGREE. Image build run 26917933959.
-    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-25042f6
-    #   digest sha256:278aea19f65e95a16c6cc1a28f8f52ab30770175128252c22e8d4c4d130dcde2
-    digest: sha256:278aea19f65e95a16c6cc1a28f8f52ab30770175128252c22e8d4c4d130dcde2
+    #
+    # 2026-06-04 Faz 21.1 Cleanup C1 (B-only) #443 (1d229d0c → sha-1d229d0): V34
+    # endpoint_org_id_source_foundation — ADD CONSTRAINT UNIQUE (id, org_id) on the
+    # 3 cache parents (endpoint_devices, endpoint_software_inventory_state_history,
+    # endpoint_outdated_software_snapshots) as the C2 cache-FK target enabler.
+    # Purely additive (coexists with PK(id) + UNIQUE(id,tenant_id) + all FKs); NO
+    # non-null CHECK (CI proved it couples to OR-fallback removal → deferred to the
+    # C1.5 invariant-flip PR #444), no FK rewrite, no tenant_id drop. Live FK-web
+    # discovery reframed C4 (gitops cleanup-execution-plan.md v2 + risk F21-R32).
+    # PG IT 4/4 + 27/27 EffectiveOrg regression green. Cross-AI Codex 019e919e AGREE.
+    # Image build run 26940129959.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-1d229d0
+    #   digest sha256:81f6c077cedf0ca9d11930e91aaeb74066fa5ef5d28078dae14a3bf40175e141
+    digest: sha256:81f6c077cedf0ca9d11930e91aaeb74066fa5ef5d28078dae14a3bf40175e141
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
