@@ -4615,7 +4615,24 @@ images:
     # Image build run 26973058195.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-414ff5a
     #   digest sha256:8eb860d5e492da88232469c0c99a4f3709a0d4db1940a3768caeac12a70bdf93
-    digest: sha256:8eb860d5e492da88232469c0c99a4f3709a0d4db1940a3768caeac12a70bdf93
+    # 2026-06-04 Faz 21.1 Cleanup C4 A2-3/4/5 BATCHED → sha-96c02eb (platform-backend
+    # main 96c02ebb): three leaf-family org expansions deployed in one image —
+    #   V40 hardware_inventory (PR #457): snapshots + disks + network_interfaces;
+    #        FKs hw_inv_disk_snapshot_org_fk + hw_inv_ni_snapshot_org_fk + hw_inv_snap_device_org_fk.
+    #   V41 services        (PR #458): snapshots + entries + probe_errors;
+    #        FKs svcs_entry_snapshot_org_fk + svcs_pe_snapshot_org_fk + svcs_snap_device_org_fk.
+    #   V42 startup_exposure(PR #459): snapshots + apps + probe_errors;
+    #        FKs se_app_snapshot_org_fk + se_pe_snapshot_org_fk + se_snap_device_org_fk.
+    # Each mirrors the V38 device_health pilot (org_id add+backfill+trigger+index →
+    # match CHECK + non-null CHECK → root UNIQUE(id,org_id) → DO preflight → atomic
+    # add-before-drop composite FK flip; ON DELETE CASCADE preserved). 9 org-composite
+    # FKs total convalidated. Cross-AI Codex ready_to_merge per PR (V42 thread 019e9441).
+    # CI green all three; local Testcontainers V40 IT 17/17 + V41 IT 8/8 + V42 IT 8/8.
+    # tenant_id stays (A6 component-wise drop deferred); reads tenant-keyed (A5 deferred).
+    # Image build run 26976992300.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-96c02eb
+    #   digest sha256:31306b858d3e7b2bb716e9a9ad0f9901f0ca38f5809d51d780d16184ddd29e9f
+    digest: sha256:31306b858d3e7b2bb716e9a9ad0f9901f0ca38f5809d51d780d16184ddd29e9f
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
