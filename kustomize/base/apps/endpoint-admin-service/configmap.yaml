@@ -67,6 +67,30 @@ data:
   SPRING_CLOUD_DISCOVERY_ENABLED: "false"
   SPRING_CLOUD_SERVICE_REGISTRY_AUTO_REGISTRATION_ENABLED: "false"
 
+  # OpenFGA authz gate (Faz 22.1.1 BE-009; common-auth `erp.openfga.*` contract).
+  # Provenance fix — gitops #1265 (2026-06-04). These four keys were live-only
+  # drift: the live ConfigMap carried them (gate ON at runtime) but the gitops
+  # base did NOT, so a full `apply -k` / ArgoCD sync would have dropped
+  # ERP_OPENFGA_ENABLED → backend default `false`
+  # (application-k8s.yml `${ERP_OPENFGA_ENABLED:false}`) → the @RequireModule
+  # interceptor becomes a fail-OPEN no-op (EndpointAdminRequireModuleInterceptor:
+  # `!authzService.isEnabled() → return true`) → a SILENT authz-gate downgrade
+  # with the pod still green. enabled=true here is the secure, non-silent,
+  # env-agnostic default (blank store/model fails loud at runtime → deny, never
+  # silently open). Mirrors the permission-service base pattern (empty
+  # store/model stubs overridden per environment).
+  ERP_OPENFGA_ENABLED: "true"
+  ERP_OPENFGA_API_URL: "http://openfga:8080"
+  # Store/Model ID are env-specific empty stubs; EVERY overlay that includes
+  # endpoint-admin MUST pin real values (the test overlay JSON6902-patches them
+  # to the live test store/model). OpenFgaConfig applies store/model only when
+  # non-blank; enabled=true with blank IDs → OpenFgaStartupGuard logs a SECURITY
+  # WARNING and `check()` fails at call time — it WARNS, it does NOT block
+  # startup. Leaving the stubs empty in base is therefore intentional
+  # fail-loud-not-silent for any overlay that forgets to pin its IDs.
+  ERP_OPENFGA_STORE_ID: ""
+  ERP_OPENFGA_MODEL_ID: ""
+
   # Agent auth (HMAC nonce + timestamp window)
   ENDPOINT_ADMIN_AGENT_AUTH_NONCE_TTL_SECONDS: "600"
   ENDPOINT_ADMIN_AGENT_AUTH_NONCE_CLEANUP_INITIAL_DELAY_MS: "600000"
