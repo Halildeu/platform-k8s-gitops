@@ -78,25 +78,39 @@ yet. Therefore the **parent (source) org-key foundation MUST land
 before** the cache FK flip. Dependency graph: **parent UNIQUE → source
 FK/read → cache FK/read/write → observation → drop.**
 
-**v2 REDUCED SCOPE (Codex 019e919e PARTIAL — LANDED as PR #443 / V34):** C1
-was reduced to a bounded, commitment-free foundation that unblocks C2 and
+**v2 REDUCED SCOPE — B-only (Codex 019e919e AGREE — LANDED as PR #443 / V34):**
+C1 was reduced to a **single purely-additive** change that unblocks C2 and
 commits **nothing** about the (now-reopened) FK-web/C4 strategy. C1 = ONLY:
 
-- **(A) Non-null evidence gate** — `CHECK (org_id IS NOT NULL) NOT VALID` +
-  `VALIDATE CONSTRAINT` on all 9 org-bearing tables. Live testai evidence:
-  `org_id NULL = 0` + `tenant_id<>org_id = 0` on all 9 → VALIDATE passes;
-  it is the fail-loud (SQLSTATE 23514) machine check at each deploy target.
-- **(B) FK-target enabler** — `ADD CONSTRAINT UNIQUE (id, org_id)` on the 3
+- **FK-target enabler** — `ADD CONSTRAINT UNIQUE (id, org_id)` on the 3
   cache parents (`endpoint_devices`,
   `endpoint_software_inventory_state_history`,
   `endpoint_outdated_software_snapshots`). Additive; coexists with PK(id) +
-  UNIQUE(id,tenant_id) + all existing FKs.
+  UNIQUE(id,tenant_id) + all existing FKs. Enables C2's composite cache FK
+  `(child, org_id) → parent(id, org_id)`.
 
-**DEFERRED out of C1** (were in the v1 C1 bullet list below, now explicitly
-NOT in V34): source child FK migration to org composite; repository
-effective-org OR-fallback removal → direct org_id (separate code PR, gated
-on prod-shaped non-null evidence); `tenant_id` drop / unique swap (C4).
-PG IT: 7/7 (`V34OrgIdSourceFoundationPostgresIntegrationTest`).
+**WHY NOT a non-null CHECK in C1 (CI-driven correction, 2026-06-04):** the
+first V34 draft also added `CHECK (org_id IS NOT NULL) VALIDATE` as an
+"evidence gate". CI proved that is a **schema contract flip, not an additive
+gate** — it makes the legacy `org_id`-NULL row unconstructable and breaks
+the entire PR2b-iv `*EffectiveOrgPostgresIntegrationTest` suite (~13 classes
+disable the V29 trigger, insert `org_id = NULL`, and assert the effective-org
+OR-fallback read still returns the row). The non-null CHECK and the
+OR-fallback read removal are **two faces of one invariant flip** and ship
+together in a future coupled PR (see below). The testai non-null evidence
+(`org_id NULL = 0`, `mismatch = 0` on all 9) is preserved as a **precondition
+proof**, NOT a deployed invariant. V34 leaves `org_id` nullable + the
+OR-fallback intact. PG IT: 4/4 (`V34OrgIdSourceFoundationPostgresIntegrationTest`,
+incl. a guard that a trigger-disabled `org_id = NULL` insert still **succeeds**
+— machine-proof V34 did not flip the invariant).
+
+**DEFERRED — the future coupled invariant-flip PR** (one atomic PR, prod-shaped
+evidence gated): preflight `org_id NULL = 0` + `tenant_id<>org_id = 0` on 9
+tables → `CHECK (org_id IS NOT NULL) NOT VALID + VALIDATE` → repository
+effective-org OR-fallback removal → direct `org_id` → legacy-NULL fixtures
+retired/replaced with "NULL rejected" tests → rollback/read-contract note.
+Also still deferred: source child FK migration to org composite; `tenant_id`
+drop / unique swap (C4).
 
 The v1 description below is retained for sequencing context; items (c)/(d)
 are deferred per the reduction above.
