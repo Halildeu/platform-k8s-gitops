@@ -4689,7 +4689,16 @@ images:
     #   220/220. tenant_id stays (A6); reads tenant-keyed (A5). Image build 26985285173.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-cb8b525
     #   digest sha256:0179c732a5953609d747d10c45b2c4da2bf3c463220b6399a5e8af539fc4df85
-    digest: sha256:0179c732a5953609d747d10c45b2c4da2bf3c463220b6399a5e8af539fc4df85
+    # 2026-06-05 Faz 21.1 Cleanup C4 step-8 → sha-2c6da5a (platform-backend PR #473,
+    #   V48 install_audit 3 FK flips PURE-FLIP: device/command CASCADE + catalog
+    #   RESTRICT preserved; first hub-dependent consumer flip — install_audit was
+    #   ORG-DONE, all 3 parents now carry UNIQUE(id,org_id) [devices V34, commands
+    #   V46, catalog V47]). Cross-AI Codex 019e94bc AGREE. Source CI green; local
+    #   V48 IT 5/5 + install_audit migration IT 21/21 (rolled over) + 220/220 sweep.
+    #   tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26985824727.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-2c6da5a
+    #   digest sha256:45b994215c57ea85b0260a13e97f016b2c1d0cdc031da28539793601204327ca
+    digest: sha256:45b994215c57ea85b0260a13e97f016b2c1d0cdc031da28539793601204327ca
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
