@@ -91,6 +91,19 @@ data:
   ERP_OPENFGA_STORE_ID: ""
   ERP_OPENFGA_MODEL_ID: ""
 
+  # AG-028 Managed Uninstall feature flag (endpoint-admin.uninstall.enabled).
+  # DARK-LAUNCH default: false → the uninstall REST surface (propose / approve /
+  # list / history) returns 503 "Service Unavailable" in dark mode (app default,
+  # EndpointUninstallService throws ResponseStatusException(SERVICE_UNAVAILABLE)).
+  # Ships dark so the destructive managed-uninstall capability is exposed only by
+  # a deliberate, env-specific overlay flip. Base stays false (prod inherits
+  # dark); the TEST overlay `replace`s this to "true" (AG-028 go-live on test —
+  # gitops #1239: full build + deploy + destructive E2E SUCCEEDED_VERIFIED +
+  # headless-browser acceptance). The overlay `replace` (not `add`) fails fast if
+  # this base default is ever removed — same fail-loud discipline as the OpenFGA
+  # store/model stubs above.
+  ENDPOINT_ADMIN_UNINSTALL_ENABLED: "false"
+
   # Agent auth (HMAC nonce + timestamp window)
   ENDPOINT_ADMIN_AGENT_AUTH_NONCE_TTL_SECONDS: "600"
   ENDPOINT_ADMIN_AGENT_AUTH_NONCE_CLEANUP_INITIAL_DELAY_MS: "600000"

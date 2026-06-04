@@ -5032,6 +5032,31 @@ patches:
         path: /data/ERP_OPENFGA_MODEL_ID
         value: "01KRTJVEMAW80B2D35GN8HJDPG"
 
+  # AG-028 Managed Uninstall GO-LIVE (TEST only) — gitops #1239. Flips the
+  # endpoint-admin.uninstall.enabled dark-launch flag ON for the test cluster.
+  # Justification (No Fake Work — all live-verified on testai.acik.com):
+  #   - Backend (V32 schema + REST + maker-checker), agent adapter, web UI: LIVE.
+  #   - Destructive E2E PASSED: real 7-Zip uninstall on HALILKOOLUB735 →
+  #     endpoint_uninstall_audit result_status=SUCCEEDED_VERIFIED,
+  #     verification=ABSENT_VERIFIED (maker-checker proposer≠approver enforced).
+  #   - Headless-browser acceptance PASSED (test persona c5persona-admin-9001,
+  #     ENDPOINT_ADMIN role + OpenFGA can_manage): Kaldır button + "Son
+  #     Kaldırmalar" table rendering the real SUCCEEDED_VERIFIED/ABSENT_VERIFIED
+  #     audit row + maker-checker confirm modal + device-scoped approval route;
+  #     all uninstall endpoints returned 200, no console errors.
+  #   - Cross-AI: Codex thread 019e9448 (posture) — go-live must be this governed
+  #     overlay flip, NOT an ephemeral kubectl patch.
+  # PROD stays DARK (inherits base default "false") — a separate, deliberately
+  # evaluated go-live decision. `replace` (not `add`) is deliberate: it fails fast
+  # if the base "false" default is ever removed (mirrors the OpenFGA pin above).
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    patch: |-
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_UNINSTALL_ENABLED
+        value: "true"
+
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz SPRING_DATASOURCE_URL
   # + KEYCLOAK_URL replace patch'leri KALDIRILDI (base zaten shortname).
   # Overlay test-specific add patches (DDL_AUTO + FLYWAY_ENABLED + LOGGING DEBUG) kalır.
