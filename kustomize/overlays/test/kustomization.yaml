@@ -4573,7 +4573,18 @@ images:
     # (C4); repo/query/index unchanged (C4/A5). Image build run 26963289687.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-6712218
     #   digest sha256:3271ffbb4a5b65be34517ea645257bc93cbde7401fe591c2b837adcfa79d42fc
-    digest: sha256:3271ffbb4a5b65be34517ea645257bc93cbde7401fe591c2b837adcfa79d42fc
+    # 2026-06-04 Faz 21.1 Cleanup C4 A2-1 → sha-120f245 (platform-backend PR #452,
+    # main 120f2450): V38 device_health org expansion (PILOT leaf family) — snapshots
+    # + disks org_id add+backfill+trigger+match/non-null CHECK+snapshots UNIQUE(id,
+    # org_id) + 2 FK org-flip (disk→snapshot, snapshot→devices; ON DELETE CASCADE
+    # preserved). The C4 A2 pilot pattern for the 5 remaining leaf families. Cross-AI
+    # Codex 019e93cd ready_to_merge (plan 019e93a1). CI green; local Testcontainers
+    # V38 IT 6/6 + all device_health tests green. tenant_id stays (A6); reads
+    # tenant-keyed = org_id (A5 read-switch + org mirror indexes deferred). Image
+    # build run 26970540723.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-120f245
+    #   digest sha256:403d39effa60f792e99f09080e89a09323cc9ae2357c2136c26cd578c499c616
+    digest: sha256:403d39effa60f792e99f09080e89a09323cc9ae2357c2136c26cd578c499c616
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
