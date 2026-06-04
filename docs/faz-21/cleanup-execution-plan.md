@@ -139,7 +139,56 @@ Phase C1 (v1 description) establishes the source-side org-key foundation:
   to direct `org_id` (only after validated non-null evidence).
 - **No cache FK flip yet. No DROP tenant_id.**
 
-### Phase C2 — Cache Org-Key Flip (one PR)
+### Phase C2 — Cache Org-Key Flip — SPLIT into C2a + C2b (Codex 019e919e)
+
+> **⚠️ v2 (2026-06-04): C2 was split during implementation.** Two live
+> findings forced it:
+> 1. The cache FK flip `(child, org_id) → parent(id, org_id)` **depends on
+>    the parent source tables having `org_id NOT NULL`**, which C1 (B-only)
+>    deliberately deferred. Flipping the 6 cache FKs now would silently
+>    re-trigger the parent invariant flip — the FK form of the C1 non-null
+>    coupling. → FK flip deferred to **C2b**.
+> 2. The v1 plan said "keep both uniques + flip ON CONFLICT". A
+>    **deterministic concurrency test failure** proved that breaks: two
+>    redundant uniques on the same logical key + a single ON CONFLICT
+>    arbiter ⇒ a racing speculative insert trips the non-arbiter unique
+>    (unhandled). → C2a does an **atomic unique swap** (drop old, add new).
+> Also: the v1 join `c.org_id = d.org_id` is **wrong** for legacy-NULL
+> devices (d.org_id NULL via the device OR-fallback) → the correct
+> transitional join is `c.org_id = COALESCE(d.org_id, d.tenant_id)`.
+
+#### Phase C2a — cache org-key IDENTITY (LANDED: platform-backend PR #446 / V35)
+
+Cache identity (UNIQUE + UPSERT + read) flips to org-keyed; FKs stay tenant-keyed.
+
+- V35: preflight DO (org_id NULL=0, tenant<>org=0, dup(org,device)=0) →
+  cache `CHECK (org_id IS NOT NULL)` NOT VALID + VALIDATE (swdc, osdc) →
+  **atomic swap**: `ADD UNIQUE (org_id, device_id)` then `DROP UNIQUE
+  (tenant_id, device_id)` (single ON CONFLICT arbiter; add-before-drop).
+- `DiffCacheService` UPSERT `ON CONFLICT (tenant_id,device_id)` →
+  `(org_id, device_id)` (both).
+- cache repos `findByTenantIdAndDeviceId` → `findByOrgIdAndDeviceId`.
+- `DeviceGridQueryBuilder` cache JOIN → `c.org_id = COALESCE(d.org_id,
+  d.tenant_id) AND c.device_id = d.id` (legacy-NULL devices still attach;
+  cross-org isolation preserved).
+- PG IT: V35 (CHECK validated, new UNIQUE present, **old UNIQUE absent**,
+  6 tenant FKs present, dup(org,device) rejected, trigger-disabled NULL
+  rejected) + Concurrency 2/2 + 100 tests green across 10 cache/grid classes.
+- **Rollback boundary ≥ V35** (no old-writer-pod overlap — old code's
+  ON CONFLICT(tenant_id,device_id) has no matching unique post-swap; F21-R29).
+- Keeps tenant_id + the 6 tenant-composite cache FKs.
+
+#### Phase C2b — cache FK org-composite flip (deferred — with the source non-null family)
+
+Recreate the 6 cache FKs as `(child, org_id) → parent(id, org_id)` + drop
+old tenant FKs. **Gated on the source parent `org_id NOT NULL` invariant**
+(the C1.5 invariant-flip family, #444). Until then the cache FKs stay
+`(child, tenant_id) → parent(id, tenant_id)`.
+
+---
+
+**v1 description (superseded — retained for context; the FK recreate +
+`c.org_id = d.org_id` join below are NOT what shipped):**
 
 **Requires C1 parent `UNIQUE (id, org_id)` on the 3 cache parents.**
 Cache UNIQUE + FK + UPSERT conflict target + repository + grid join all
