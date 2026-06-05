@@ -23,8 +23,8 @@ resources:
   # min=max=1 lock'u kaldırdı; replicas=2 base ile prod'a giriyor.
   - ../../base/apps/notification-orchestrator
   # Faz 22.5 P2-A A1 first prod deploy (BE-024c v2-d DiffCacheBackfill admin endpoint;
-  # platform-backend PR #387 + #389 cumulative, image sha-e0a2731 / sha256:f9c1e3aa...).
-  # Test cluster 8h+ LIVE + 4/4 acceptance smoke PASS (board #1134 + PR #1230 evidence comments).
+  # platform-backend PR #475 cumulative, image sha-5af5f8d / sha256:7fa5975c...; current testai digest has D29 GREEN ledger evidence.
+  # Test cluster LIVE + fresh D29 smoke PASS (Up/Functional/Zanzibar GREEN, allow_deny_synthetic=PASS; PR #1242 evidence comment + release-candidates ledger).
   # Apply gate: prereq PR (#1241) ESO ExternalSecret in platform-eso-prod must reach
   # Ready=True before this workload entry's apply (otherwise pod CrashLoop pending secret).
   # Codex 019e8c3a iter-1 plan AGREE; A2 (D30 atomic cutover DNS L4 switch) separate user decision.
@@ -272,7 +272,7 @@ images:
   # Codex review chain follows.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:f9c1e3aa1d5adea353422030c0a91dd170c5c162ec373c31adde0b618976e602
+    digest: sha256:7fa5975c1d0c54e3611db5d89d7b8f8919c1952f6b74f94e562ffd1d90a0f9d2
 
 # Faz 23.2 PR-D.3 — notification-orchestrator prod IMAGE PIN DEFERRED.
 # D29 evidence gate (Codex P0 Sprint A Item 3) requires:

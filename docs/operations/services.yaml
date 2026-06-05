@@ -280,7 +280,7 @@ services:
     jvm_warmup_extra: true   # Hibernate JPA EntityManagerFactory cold-start 30-50s; observed 16h CrashLoop with 45s liveness grace (2026-05-13)
     environments:
       test: enabled   # 2026-05-24 truth-refresh: GitOps desired + live pod imageID match for both endpoint-admin-service (sha256:1a1d0aac..., BE-017 gitops PR #980) AND api-gateway (sha256:6137bb2c..., gitops PR #985 closed earlier 2026-05-22 D30 drift) AND frontend (sha256:583aa8c9..., gitops PR #1007 #658 era D30 re-pin). D30 parity LIVE across the 3 services. Web runtime acceptance LIVE end-to-end (4 platform-web PR #654/#656/#657/#658 + 2 gitops drift-correction #998/#1007; browser-context Platform Admin 403/403 FGA fail-closed + status 200 auth-only; 401 storm giderildi). BE-016/BE-017/BE-011 MERGED source-side; V5 Flyway migration applied live (4→v5). Pending: platform-agent#8 Windows fresh smoke + BE-011 real agent lifecycle smoke + BE-017 formal dual-control matrix + IT pilot + Trusted signing / EDR allowlist (full Pending list in description block above).
-      prod: deferred  # Faz 22.2 product decision (it-pilot tier acik.local + prod realm 'serban' + Azure Trusted Signing); drift gate accepts absence in prod
+      prod: enabled   # Faz 22.5 P2-A A1 first prod deploy candidate (PR #1242): catalog aligned with prod render; merge/apply still gated by #1241 ESO, D29 ledger, owner D30 decision, and prod smoke.
 
   - name: notification-orchestrator
     repo: platform-backend
