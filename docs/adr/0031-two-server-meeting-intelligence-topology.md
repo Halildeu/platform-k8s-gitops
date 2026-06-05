@@ -181,7 +181,7 @@ Karar (MVP): **AppRole `ai-runtime-test`/`ai-runtime-prod` role** + ESO sidecar 
 
 ### D7 — KVKK ADR-0030 bağlantısı (yeni section talep)
 
-ADR-0030 KVKK Meeting Intelligence Boundary'de cross-server hop **eksik**. Bu ADR sayesinde aşağıdaki section ADR-0030'a eklenecek (bu PR scope'unda):
+ADR-0030 KVKK Meeting Intelligence Boundary'de cross-server hop eksikti. Bu ADR ile ADR-0030'a aşağıdaki section **eklendi** (gitops PR #1207 + #1233 MERGED 2026-06-03):
 
 **"Cross-Server STT Transit Boundary"** — içerik:
 
@@ -248,8 +248,8 @@ Bu ADR'nin production'a katkı verdiği maddeler, **Faz 24 servisleri production
 
 - ADR-0002 (single-host dual-cluster — core platform Faz 1-23 baseline)
 - ADR-0010 (Vault credential lifecycle — `eso-runtime` AppRole pattern reuse)
-- ADR-0030 (KVKK Meeting Intelligence Boundary — bu PR'da §"Cross-Server STT Transit Boundary" eklenecek)
-- `docs/faz-24-meeting-intelligence-plan.md` §7 Donanım + §9 Acceptance Gates (bu PR'da update)
+- ADR-0030 (KVKK Meeting Intelligence Boundary — §"Cross-Server STT Transit Boundary" eklendi gitops PR #1207 2026-06-03)
+- `docs/faz-24-meeting-intelligence-plan.md` §7 Donanım + §9 Acceptance Gates (gitops PR #1233 2026-06-03 ACCEPTED)
 - Codex threads:
   - `019e879c` (Faz 24 plan iter-3 AGREE — single-host varsayımıyla)
   - `019e8c09` (bu ADR iter-1 REVISE absorb)
@@ -261,11 +261,19 @@ Bu ADR'nin production'a katkı verdiği maddeler, **Faz 24 servisleri production
   - No Fake Work (doğrulanmamış adım sayılmaz)
   - Uzun Vadeli Kalıcı Çözüm Tercih Edilir (cross-server boundary kalıcı tasarım)
 
-## Next
+## Historical acceptance path (2026-06-03 closed)
 
-1. Codex iter-4 review **AGREE final** (bu ADR + plan §7/§9 + ADR-0030 §"Cross-Server STT Transit Boundary" + Issue #19 re-scope + PLAN.md dependency order)
-2. Mavis msg paralel davet (iter-2 cevabı paralel)
-3. Plan §7/§9 + ADR-0030 update + Issue #19 update bu PR scope
-4. PR aç → cross-AI AGREE → merge
-5. ADR-0031 → ACCEPTED (Codex iter-4 AGREE-merged sonrası — bu PR squash merge ile aktif olur)
-6. Sonraki PR-stt-02 e2e bu topology baseline üzerine inşa edilir
+1. ✓ Codex iter-3 AGREE final (thread `019e8c09`) — bu ADR + plan §7/§9 + ADR-0030 §"Cross-Server STT Transit Boundary" + Issue #19 re-scope
+2. ✓ Mavis msg paralel mutabakat (msg `78` AGREE)
+3. ✓ Plan §7/§9 + ADR-0030 update + Issue #19 update (gitops PR #1207 + #1233)
+4. ✓ PR açıldı → cross-AI AGREE → merge (gitops PR #1233 MERGED 2026-06-03)
+5. ✓ ADR-0031 ACCEPTED (gitops PR #1233 squash merge ile aktif — Status: ACCEPTED line 3)
+6. ✓ PR-gw-01A/B-core/B3 MERGED 2026-06-03 (platform-backend #390+#403+#421); plan canonical sync 2026-06-05 (gitops PR #1289 Codex thread `019e97c3` REVISE-AGAIN absorb)
+
+## Sonraki adımlar (downstream)
+
+- PR-gw-01C platform-backend impl (Redis Streams cross-server dispatcher producer; contract canonical D2 + D3 + D8)
+- staging-sw Redis Streams runtime setup runbook (`docs/runbooks/redis-streams-staging-sw.md`)
+- PR-stt-03 platform-ai impl (subprocess worker + Redis Streams consumer scope genişledi)
+- Issue #19 Gate A + Gate B baseline ölçüm verify
+- platform-ai dedicated host provision + k3s ai-test cluster + WireGuard + mTLS + Vault AppRole (operator action)
