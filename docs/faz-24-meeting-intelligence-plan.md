@@ -109,6 +109,8 @@ Faz 24.1 MVP tek müşteri OK, ama ADR-0030'da "future multi-tenant readiness" p
 
 ## 5. Faz 24 Akış (3-AI sabit + ADR-0031 two-server topology)
 
+> **Not (2026-06-05 Codex `019e97bb` REVISE absorb)**: §5 akış diyagramı **backend/STT critical path** sırasını gösterir (Adım 0 → PR-gw-01 → PR-stt-02 → PR-stt-03 → PR-gw-01C → PR-obs-01 → PR-wer-01 → PR-final-stt-01 → PR-gpu-01). Client plane işleri (Mobile = Faz 24.11, MFE = Faz 24.12, Desktop = Faz 24.13) PR-gw-01C LIVE testai sonrası **paralel cross-repo lane** olarak §6 cross-repo bağımlılık tablosunda izlenir; STT worker sırasının parçası değildir.
+
 ```
 Adım 0  (BU PR)
    ├─ ADR-0030 KVKK Meeting Intelligence boundary (placeholder + §"Cross-Server STT Transit Boundary" 2026-06-03)
@@ -121,14 +123,14 @@ ADR-0031 ACCEPTED + cross-server contract field/admission semantics canonical (b
 PR-gw-01  Audio Gateway Contract 1.0 freeze (platform-backend) — source-level contract; physical host gerek YOK
    fields: language (ISO 639-1) + correlation_id + meeting_id + session_id + tenant_id + user_id + auth + audio chunk metadata + admission contract + cross-server contract field/admission semantics (ADR-0031 §D2)
         ↓
-platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole `ai-runtime-test` + WireGuard tunnel + mTLS PKI + Redis bounded queue manifest (blocker — gerçek meeting audio cross-server e2e için PR-stt-02 live veya PR-queue-01 öncesi; synthetic/local Docker e2e için PoC fixture istisnası açık)
+platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole `ai-runtime-test` + WireGuard tunnel + mTLS PKI + Redis Streams bounded setup (blocker — gerçek meeting audio cross-server e2e için PR-stt-02 live veya PR-gw-01C öncesi; synthetic/local Docker e2e için PoC fixture istisnası açık)
         ↓
 PR-stt-02  real audio + Docker e2e + Gate A/B baseline (platform-ai)
    Gateway contract uyumlu language/correlation metadata; Gate A staging-sw + Gate B platform-ai baseline; Türkçe wav fixture (Common Voice TR sample veya privacy-safe TTS); synthetic/local Docker e2e için cross-server security gate istisnası açık (private LAN fixture); gerçek meeting audio için cross-server mTLS/WireGuard ZORUNLU
         ↓
 PR-stt-03  supervised subprocess worker + hard timeout kill (platform-ai)
         ↓
-PR-gw-01C  audio-gateway-service Redis Streams cross-server dispatcher producer (ADR-0031 §3.7) — eski PR-queue-01 scope absorbe edildi: in-memory admission PR-gw-01A'da (`application.yml admission-queue-capacity` + LRU `idempotency.replay-cache-size`), backpressure 429/503 PR-gw-01B3'te, cross-server Redis Streams producer/consumer PR-gw-01C (gateway) + PR-stt-03 (live-stt) içinde
+PR-gw-01C  audio-gateway-service Redis Streams cross-server dispatcher producer (ADR-0031 D2 cross-server network topology + D8 failure modes + plan §3 mutabakat #9) — eski PR-queue-01 scope dağıtıldı: session lifecycle + bounded in-memory registry/idempotency replay PR-gw-01A'da (`bounds.max-active-sessions: 1000` + `idempotency.replay-cache-size: 4096`; `admission-queue-capacity` property tanımlı ama şu an unused — future use için reserve), REST chunk admission PR-gw-01B-core'da, dispatcher backpressure 429/503 + Retry-After PR-gw-01B3'te (DispatchOutcome.QueueFull/Unavailable; registry mutation sadece Accepted'da), Redis Streams producer PR-gw-01C'de (`audio:chunks:p00..p31` stream keys, consumer group `live-stt-v1`, XADD per chunk, idempotency `(sessionId, chunkSeq)`), live-stt consumer ownership PR-stt-03'te (subprocess worker + Redis Streams reader — bu PR scope genişledi; ayrıca PR-stt-04 ayrı issue gerekirse ileride karar)
         ↓
 PR-obs-01  Grafana/Prometheus dashboard genişletme (skeleton zaten Adım 0'da)
         ↓
@@ -145,14 +147,14 @@ PR-gpu-01  GPU Dockerfile variant (donanım + ölçüm sonrası)
 |---|---|---|
 | platform-k8s-gitops (Adım 0) | ADR-0030 + ADR-0031 + obs skeleton + PLAN.md | yok (BU PR) |
 | platform-backend | PR-gw-01 Gateway Contract 1.0 freeze (source-level contract, physical host gerek YOK) | Adım 0 MERGED + ADR-0031 ACCEPTED + cross-server contract field/admission semantics canonical |
-| **platform-k8s-gitops + ops** | **platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole `ai-runtime-test` + WireGuard tunnel + mTLS PKI cert auth** | ADR-0031 ACCEPTED; gerçek meeting audio cross-server e2e (PR-stt-02 live veya PR-queue-01) öncesi blocker; synthetic/local Docker e2e için istisna |
-| **platform-k8s-gitops** | **Redis bounded queue manifest (staging-sw, persistence OFF, TTL kısa, max memory bounded; primitive List vs Streams PR-queue-01'de kilitlenir — Codex `019e8c09` iter-2 tavsiye: Streams + consumer group)** | ADR-0031 ACCEPTED |
+| **platform-k8s-gitops + ops** | **platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole `ai-runtime-test` + WireGuard tunnel + mTLS PKI cert auth** | ADR-0031 ACCEPTED; gerçek meeting audio cross-server e2e (PR-stt-02 live veya PR-gw-01C) öncesi blocker; synthetic/local Docker e2e için istisna |
+| **platform-k8s-gitops + ops** | **staging-sw Redis Streams runtime setup/runbook**: streams `audio:chunks:p00..p31` (32 partition), consumer group `live-stt-v1`, persistence OFF (`appendonly no` + `save ""`); MAXLEN per stream + XADD `~` trim semantic; maxmemory + `maxmemory-policy: noeviction` (backlog fail-fast); TTL kısa; ACL/TLS/WireGuard reachability cross-server; Vault `kv/platform-ai/redis/*` secret delivery (ESO); XLEN/lag metrics Prometheus; init + reconcile runbook (TODO `docs/runbooks/redis-streams-staging-sw.md`) | ADR-0031 D2 + D3 + D8 ACCEPTED + PR-gw-01C contract MERGED |
 | platform-ai | PR-stt-02 real audio + container e2e | PR-gw-01 MERGED |
 | platform-ai | PR-stt-03 subprocess isolation | PR-stt-02 MERGED |
 | platform-k8s-gitops | Kustomize base/apps/{audio-gateway,live-stt} + overlay | PR-gw-01 + PR-stt-03 source-merged |
 | platform-backend | PR-gw-01C Redis Streams cross-server producer (eski PR-queue-01 absorbe) | PR-stt-03 MERGED |
 | platform-k8s-gitops + ops | staging-sw Redis Streams setup (ADR-0031 §3.7 — dış altyapı, helm-values içinde değil) | ADR-0031 ACCEPTED |
-| platform-k8s-gitops | PR-obs-01 dashboard + alertmanager rules | PR-queue-01 MERGED |
+| platform-k8s-gitops | PR-obs-01 dashboard + alertmanager rules (audio-gateway Prometheus + Redis Streams XLEN/lag + consumer group offsets) | PR-gw-01C MERGED + staging-sw Redis Streams setup LIVE |
 | platform-ai | PR-wer-01 WER raporu | PR-stt-03 MERGED + pilot meeting kaydı |
 | platform-ai | PR-final-stt-01 | WER raporu çıktısına göre |
 | platform-ai | PR-gpu-01 | donanım + ölçüm sonrası |
@@ -216,7 +218,7 @@ Mobile/desktop/web client'lar **hiçbir zaman** doğrudan `platform-ai`'a bağla
 | Worker thread leak (asyncio.wait_for) | Subprocess + hard kill semantic (PR-stt-03) | platform-ai |
 | KVKK compliance (ses+transcript hassas) | ADR-0030 placeholder + hukuk review pilot öncesi | Adım 0 + ek tur |
 | **Cross-server transit ses/transcript açık** (KVKK Madde 6/9 hassas) | WireGuard + mTLS PKI ZORUNLU; private LAN yetmez; ADR-0030 §"Cross-Server STT Transit Boundary" | ADR-0031 + PR-gw-01 |
-| **platform-ai host failure** (network/crash) | Gateway 503 fail-fast + Redis transient TTL drain + circuit breaker + alert | ADR-0031 + PR-queue-01 |
+| **platform-ai host failure** (network/crash) | Gateway 503 fail-fast (`DispatchOutcome.Unavailable` + Retry-After=30) + Redis Streams MAXLEN trim drain + circuit breaker + alert | ADR-0031 D8 + PR-gw-01C contract + PR-gw-01B3 dispatcher |
 | **Vault cross-server unreachable** (platform-ai → staging-sw Vault) | AppRole secret TTL cache + WireGuard tunnel health monitor + alert | ADR-0031 + ADR-0010 reuse |
 | Staging resource exhaustion (Faz 22-23 paralel) | **Gate A** acceptance: `free -m`/`kubectl top` baseline staging-sw (orchestration plane) | her PR-stt-* |
 | **platform-ai compute exhaustion** (model load + worker pool RAM) | **Gate B** acceptance: model warm-load + worker count + GPU VRAM (varsa) + inference p95 + queue consume lag | her PR-stt-* (Gate B yeni) |
