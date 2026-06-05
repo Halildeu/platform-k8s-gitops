@@ -4709,7 +4709,17 @@ images:
     #   tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26986777702.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-ee633fe
     #   digest sha256:0af8e2bc67f285dce0c0389078a09b31a7d5e3a79df34e0c98b150aceecbde38
-    digest: sha256:0af8e2bc67f285dce0c0389078a09b31a7d5e3a79df34e0c98b150aceecbde38
+    # 2026-06-05 Faz 21.1 Cleanup C4 step-10 → sha-5af5f8d (platform-backend PR #475,
+    #   V50 remaining 2 catalog-consumer FK flips: endpoint_software_compliance_policy
+    #   _items (CASCADE) + catalog_uninstall_settings_change_requests (NO ACTION) +
+    #   their business arbiter swaps (compliance UNIQUE + cuscr one_open partial index
+    #   → org-keyed)). CLOSES the board #469 12-FK arc (12/12 FKs org-composite).
+    #   Cross-AI Codex 019e94bc REVISE→AGREE (caught the cuscr one_open partial index).
+    #   Source CI green; local V50 IT 8/8 + 206/206 sweep.
+    #   tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26988425047.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-5af5f8d
+    #   digest sha256:7fa5975c1d0c54e3611db5d89d7b8f8919c1952f6b74f94e562ffd1d90a0f9d2
+    digest: sha256:7fa5975c1d0c54e3611db5d89d7b8f8919c1952f6b74f94e562ffd1d90a0f9d2
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
