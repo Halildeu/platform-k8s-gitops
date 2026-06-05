@@ -101,7 +101,7 @@ Mevcut tek gate `free -m available > 2 GiB` (staging-sw için) yetmez. **Codex i
 | Pod RAM headroom (audio-gateway, meeting-service, transcript-service) | < 70% requests | `kubectl top pod -l app=<svc>` |
 | Pod CPU p95 (5dk pencere) | < 80% limit | `kubectl top pod` |
 | Ingress p95 latency | < 200 ms | Prometheus `nginx_ingress_request_duration_seconds` |
-| Redis queue depth | < threshold (bounded) | `redis-cli XLEN <stream>` veya `LLEN <key>` — **primitive TBD** (PR-queue-01'de kilitlenir; Codex `019e8c09` iter-2 tavsiye: **Streams + consumer group** çünkü chunk ordering / consumer lag / idempotency daha temiz kanıtlanır) |
+| Redis Streams depth (per partition) | < MAXLEN threshold (bounded) | `redis-cli XLEN audio:chunks:p<NN>` (32 partition `p00..p31`) — **primitive Streams + consumer group `live-stt-v1`** (Codex `019e8c09` iter-2 + `019e97bb` iter-1 confirm: chunk ordering + consumer lag + idempotency (sessionId, chunkSeq) Streams ile temiz; List primitive YASAK); contract canonical: PR-gw-01C platform-backend producer + PR-stt-03 platform-ai consumer (scope genişledi — bkz Faz 24 plan §5 + PR-gw-01C #106 issue) |
 | OOM/restart count (24h) | 0 | `kubectl get pod -l app=<svc> -o jsonpath` |
 | Faz 22-23 paralel CPU pressure | normal (load average < CPU count) | `uptime` |
 
@@ -129,7 +129,7 @@ Acceptance maddeleri:
 - [ ] Gate B baseline ölçüm (platform-ai)
 - [ ] platform-ai-down failure drill (Gateway 503 + Redis backlog davranışı)
 - [ ] Redis backlog threshold / admission behavior verify
-- [ ] Plan §7/§9 truth update (bu PR)
+- [x] Plan §7/§9 truth update (✓ gitops PR #1233 MERGED 2026-06-03; canonical sync iter gitops PR #1289 2026-06-05)
 - [ ] Evidence path linkleri (Prometheus snapshot + free/top output)
 
 ### D4 — GPU stratejisi netleşme
@@ -181,7 +181,7 @@ Karar (MVP): **AppRole `ai-runtime-test`/`ai-runtime-prod` role** + ESO sidecar 
 
 ### D7 — KVKK ADR-0030 bağlantısı (yeni section talep)
 
-ADR-0030 KVKK Meeting Intelligence Boundary'de cross-server hop **eksik**. Bu ADR sayesinde aşağıdaki section ADR-0030'a eklenecek (bu PR scope'unda):
+ADR-0030 KVKK Meeting Intelligence Boundary'de cross-server hop eksikti. Bu ADR ile ADR-0030'a aşağıdaki section **eklendi** (gitops PR #1207 + #1233 MERGED 2026-06-03):
 
 **"Cross-Server STT Transit Boundary"** — içerik:
 
@@ -211,15 +211,15 @@ ADR-0030 KVKK Meeting Intelligence Boundary'de cross-server hop **eksik**. Bu AD
 
 ## Cross-AI Mutabakat Trail
 
-| Soru | Codex `019e8c09` iter-1 | Claude | Mavis (iter-2 paralel) |
+| Soru | Codex `019e8c09` iter-1→iter-4 AGREE final | Claude | Mavis msg `78` AGREE final 2026-06-03 |
 |---|---|---|---|
-| Redis konumu | staging-sw ✅ | AGREE | (iter-2) |
-| Cross-server kanal | WireGuard + mTLS/PKI ✅ | AGREE | (iter-2) |
-| Resource gate ayrımı (A + B) | AGREE ✅ | AGREE | (iter-2) |
-| Deployment topology | (b) ayrı k3s ✅ | AGREE | (iter-2) |
-| KVKK ADR-0030 section | yeni "Cross-Server STT Transit Boundary" ✅ | AGREE | (iter-2) |
-| Vault auth method | AppRole birinci tercih ✅, JWT ikinci | AGREE | (iter-2) |
-| ADR-0031 yeni mi | yeni ADR-0031 ✅ | AGREE | (iter-2) |
+| Redis konumu | staging-sw ✅ | AGREE | AGREE ✅ |
+| Cross-server kanal | WireGuard + mTLS/PKI ✅ | AGREE | AGREE ✅ |
+| Resource gate ayrımı (A + B) | AGREE ✅ | AGREE | AGREE ✅ |
+| Deployment topology | (b) ayrı k3s ✅ | AGREE | AGREE ✅ |
+| KVKK ADR-0030 section | yeni "Cross-Server STT Transit Boundary" ✅ | AGREE | AGREE ✅ |
+| Vault auth method | AppRole birinci tercih ✅, JWT ikinci | AGREE | AGREE ✅ |
+| ADR-0031 yeni mi | yeni ADR-0031 ✅ | AGREE | AGREE ✅ |
 
 ## ADR-0002 İlişkisi
 
@@ -237,19 +237,19 @@ Bu ADR'nin production'a katkı verdiği maddeler, **Faz 24 servisleri production
 - [ ] ArgoCD remote cluster register edildi (platform-ai k3s)
 - [ ] WireGuard tunnel + mTLS PKI cert auth LIVE + cert rotation drill geçti
 - [ ] Vault AppRole `ai-runtime-test` role + ESO/Vault Agent injection LIVE
-- [ ] Redis bounded queue staging-sw'da, TTL + persistence-off + backlog threshold doğrulandı
+- [ ] staging-sw Redis Streams `audio:chunks:p00..p31` 32 partition + consumer group `live-stt-v1` + persistence-off + MAXLEN + maxmemory-policy noeviction backlog threshold doğrulandı (D3 + PR-gw-01C contract dependency)
 - [ ] Gate A (staging-sw) baseline + Gate B (platform-ai) baseline ölçüm dokümante
-- [ ] Failure drill: platform-ai-down + Redis backlog + Vault unreachable senaryoları
-- [ ] ADR-0030 §"Cross-Server STT Transit Boundary" eklendi (bu PR)
+- [ ] Failure drill: platform-ai-down + Redis backlog + Vault unreachable senaryoları (D8 + plan §3 mutabakat #9)
+- [x] ADR-0030 §"Cross-Server STT Transit Boundary" eklendi (✓ gitops PR #1207 MERGED 2026-06-03)
 - [ ] Issue #19 re-scope edildi + Gate A/B acceptance verify
-- [ ] Cross-AI peer review (Codex iter-2 AGREE → iter-3 AGREE; Mavis post-availability absorb/comment **non-blocking** unless user explicitly escalates to 3-provider gate — HARD RULE provider seviyesinde Anthropic + OpenAI yeterli)
+- [x] Cross-AI peer review canonical (✓ Codex `019e8c09` iter-1+iter-2+iter-3 REVISE absorb + iter-4 AGREE final 2026-06-03 ADR baseline; ✓ Codex `019e97bb`+`019e97c3`+`019e97cc`+`019e97d2` iter-1/2/3/4 REVISE absorb → iter-5 AGREE final plan canonical sync 2026-06-05; ✓ Mavis msg `78` AGREE; HARD RULE Anthropic + OpenAI provider isolation satisfied)
 
 ## References
 
 - ADR-0002 (single-host dual-cluster — core platform Faz 1-23 baseline)
 - ADR-0010 (Vault credential lifecycle — `eso-runtime` AppRole pattern reuse)
-- ADR-0030 (KVKK Meeting Intelligence Boundary — bu PR'da §"Cross-Server STT Transit Boundary" eklenecek)
-- `docs/faz-24-meeting-intelligence-plan.md` §7 Donanım + §9 Acceptance Gates (bu PR'da update)
+- ADR-0030 (KVKK Meeting Intelligence Boundary — §"Cross-Server STT Transit Boundary" eklendi gitops PR #1207 2026-06-03)
+- `docs/faz-24-meeting-intelligence-plan.md` §7 Donanım + §9 Acceptance Gates (gitops PR #1233 2026-06-03 ACCEPTED)
 - Codex threads:
   - `019e879c` (Faz 24 plan iter-3 AGREE — single-host varsayımıyla)
   - `019e8c09` (bu ADR iter-1 REVISE absorb)
@@ -261,11 +261,19 @@ Bu ADR'nin production'a katkı verdiği maddeler, **Faz 24 servisleri production
   - No Fake Work (doğrulanmamış adım sayılmaz)
   - Uzun Vadeli Kalıcı Çözüm Tercih Edilir (cross-server boundary kalıcı tasarım)
 
-## Next
+## Historical acceptance path (2026-06-03 closed)
 
-1. Codex iter-4 review **AGREE final** (bu ADR + plan §7/§9 + ADR-0030 §"Cross-Server STT Transit Boundary" + Issue #19 re-scope + PLAN.md dependency order)
-2. Mavis msg paralel davet (iter-2 cevabı paralel)
-3. Plan §7/§9 + ADR-0030 update + Issue #19 update bu PR scope
-4. PR aç → cross-AI AGREE → merge
-5. ADR-0031 → ACCEPTED (Codex iter-4 AGREE-merged sonrası — bu PR squash merge ile aktif olur)
-6. Sonraki PR-stt-02 e2e bu topology baseline üzerine inşa edilir
+1. ✓ Codex `019e8c09` iter-1/2/3 REVISE absorb + iter-4 AGREE final — bu ADR + plan §7/§9 + ADR-0030 §"Cross-Server STT Transit Boundary" + Issue #19 re-scope
+2. ✓ Mavis msg paralel mutabakat (msg `78` AGREE)
+3. ✓ Plan §7/§9 + ADR-0030 update + Issue #19 update (gitops PR #1207 + #1233)
+4. ✓ PR açıldı → cross-AI AGREE → merge (gitops PR #1233 MERGED 2026-06-03)
+5. ✓ ADR-0031 ACCEPTED (gitops PR #1233 squash merge ile aktif — Status: ACCEPTED line 3)
+6. ✓ PR-gw-01A/B-core/B3 MERGED 2026-06-03 (platform-backend #390+#403+#421); plan canonical sync 2026-06-05 (gitops PR #1289 Codex thread chain `019e97bb`→`019e97c3`→`019e97cc`→`019e97d2` iter-1/2/3/4 REVISE absorb → iter-5 AGREE final)
+
+## Sonraki adımlar (downstream)
+
+- PR-gw-01C platform-backend impl (Redis Streams cross-server dispatcher producer; contract canonical D2 + D3 + D8)
+- staging-sw Redis Streams runtime setup runbook (`docs/runbooks/redis-streams-staging-sw.md`)
+- PR-stt-03 platform-ai impl (subprocess worker + Redis Streams consumer scope genişledi)
+- Issue #19 Gate A + Gate B baseline ölçüm verify
+- platform-ai dedicated host provision + k3s ai-test cluster + WireGuard + mTLS + Vault AppRole (operator action)

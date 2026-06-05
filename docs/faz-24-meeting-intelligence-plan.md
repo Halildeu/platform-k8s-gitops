@@ -29,7 +29,7 @@ Workcube ERP'ye entegre toplantı zekâsı platformu. Telefon / masaüstü / Tea
 | `platform-web` | React + Single-SPA — `mfe-meeting` MFE | **staging-sw** (frontend serve) | ⏳ planning (Faz 24.6) |
 | `platform-mobile` | **React Native + Expo** + TypeScript — iOS + Android mobile client | **Kullanıcı cihazı** (App Store / Google Play distribution) | 🟢 **scaffold LIVE 2026-06-02** (commits `a774412`+`3a609a8`) |
 | `platform-desktop` | **Electron + React** + TypeScript — macOS + Windows + Linux desktop client | **Kullanıcı cihazı** (electron-updater + signed installer) | 🟢 **scaffold LIVE 2026-06-02** (commit `a245578`) |
-| `platform-k8s-gitops` | Kustomize + ArgoCD GitOps + ADR-0030 + ADR-0031 + observability skeleton | **staging-sw** ArgoCD hub + platform-ai k3s remote cluster | 🟢 charter LIVE (PR #1207 MERGED) + ADR-0031 DRAFT (bu PR) |
+| `platform-k8s-gitops` | Kustomize + ArgoCD GitOps + ADR-0030 + ADR-0031 + observability skeleton | **staging-sw** ArgoCD hub + platform-ai k3s remote cluster | 🟢 charter LIVE (PR #1207 MERGED) + ADR-0031 ACCEPTED (PR #1233 MERGED 2026-06-03) |
 
 ## 3. 3-AI Mutabakat Noktaları (her biri 3 AI tarafından onaylı)
 
@@ -109,10 +109,12 @@ Faz 24.1 MVP tek müşteri OK, ama ADR-0030'da "future multi-tenant readiness" p
 
 ## 5. Faz 24 Akış (3-AI sabit + ADR-0031 two-server topology)
 
+> **Not (2026-06-05 Codex `019e97bb` REVISE absorb)**: §5 akış diyagramı **backend/STT critical path** sırasını gösterir (Adım 0 → PR-gw-01 → PR-stt-02 → PR-stt-03 → PR-gw-01C → PR-obs-01 → PR-wer-01 → PR-final-stt-01 → PR-gpu-01). Client plane işleri (Mobile = Faz 24.11, MFE = Faz 24.12, Desktop = Faz 24.13) PR-gw-01C LIVE testai sonrası **paralel cross-repo lane** olarak §6 cross-repo bağımlılık tablosunda izlenir; STT worker sırasının parçası değildir.
+
 ```
-Adım 0  (BU PR)
+Adım 0  (gitops PR #1207 + #1233 MERGED 2026-06-03)
    ├─ ADR-0030 KVKK Meeting Intelligence boundary (placeholder + §"Cross-Server STT Transit Boundary" 2026-06-03)
-   ├─ ADR-0031 Two-Server Topology — platform-ai compute plane + staging-sw orchestration plane (DRAFT 2026-06-03)
+   ├─ ADR-0031 Two-Server Topology — platform-ai compute plane + staging-sw orchestration plane (ACCEPTED 2026-06-03; gitops PR #1233 MERGED)
    ├─ Observability/Audit GOP skeleton (correlation id + log + metric + audit event contract)
    └─ PLAN.md Faz 24 satırı + canonical plan (bu doküman)
         ↓
@@ -121,14 +123,14 @@ ADR-0031 ACCEPTED + cross-server contract field/admission semantics canonical (b
 PR-gw-01  Audio Gateway Contract 1.0 freeze (platform-backend) — source-level contract; physical host gerek YOK
    fields: language (ISO 639-1) + correlation_id + meeting_id + session_id + tenant_id + user_id + auth + audio chunk metadata + admission contract + cross-server contract field/admission semantics (ADR-0031 §D2)
         ↓
-platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole `ai-runtime-test` + WireGuard tunnel + mTLS PKI + Redis bounded queue manifest (blocker — gerçek meeting audio cross-server e2e için PR-stt-02 live veya PR-queue-01 öncesi; synthetic/local Docker e2e için PoC fixture istisnası açık)
+platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole `ai-runtime-test` + WireGuard tunnel + mTLS PKI + Redis Streams bounded setup (blocker — gerçek meeting audio cross-server e2e için PR-stt-02 live veya PR-gw-01C öncesi; synthetic/local Docker e2e için PoC fixture istisnası açık)
         ↓
 PR-stt-02  real audio + Docker e2e + Gate A/B baseline (platform-ai)
    Gateway contract uyumlu language/correlation metadata; Gate A staging-sw + Gate B platform-ai baseline; Türkçe wav fixture (Common Voice TR sample veya privacy-safe TTS); synthetic/local Docker e2e için cross-server security gate istisnası açık (private LAN fixture); gerçek meeting audio için cross-server mTLS/WireGuard ZORUNLU
         ↓
 PR-stt-03  supervised subprocess worker + hard timeout kill (platform-ai)
         ↓
-PR-queue-01  bounded Redis admission + Gateway → STT producer/consumer
+PR-gw-01C  audio-gateway-service Redis Streams cross-server dispatcher producer (ADR-0031 D2 cross-server network topology + D8 failure modes + plan §3 mutabakat #9) — eski PR-queue-01 scope dağıtıldı: session lifecycle + bounded in-memory registry/idempotency replay PR-gw-01A'da (`bounds.max-active-sessions: 1000` + `idempotency.replay-cache-size: 4096`; `admission-queue-capacity` property tanımlı ama şu an unused — future use için reserve), REST chunk admission PR-gw-01B-core'da, dispatcher backpressure 429/503 + Retry-After PR-gw-01B3'te (DispatchOutcome.QueueFull/Unavailable; registry mutation sadece Accepted'da), Redis Streams producer PR-gw-01C'de (`audio:chunks:p00..p31` stream keys, consumer group `live-stt-v1`, XADD per chunk, idempotency `(sessionId, chunkSeq)`), live-stt consumer ownership PR-stt-03'te (subprocess worker + Redis Streams reader — PR-stt-03 scope genişledi; ayrıca PR-stt-04 ayrı issue gerekirse ileride karar)
         ↓
 PR-obs-01  Grafana/Prometheus dashboard genişletme (skeleton zaten Adım 0'da)
         ↓
@@ -143,22 +145,21 @@ PR-gpu-01  GPU Dockerfile variant (donanım + ölçüm sonrası)
 
 | Repo | İş | Bağımlı |
 |---|---|---|
-| platform-k8s-gitops (Adım 0) | ADR-0030 + ADR-0031 + obs skeleton + PLAN.md | yok (BU PR) |
+| platform-k8s-gitops (Adım 0) | ADR-0030 + ADR-0031 + obs skeleton + PLAN.md | yok (gitops PR #1207 + #1233 MERGED 2026-06-03) |
 | platform-backend | PR-gw-01 Gateway Contract 1.0 freeze (source-level contract, physical host gerek YOK) | Adım 0 MERGED + ADR-0031 ACCEPTED + cross-server contract field/admission semantics canonical |
-| **platform-k8s-gitops + ops** | **platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole `ai-runtime-test` + WireGuard tunnel + mTLS PKI cert auth** | ADR-0031 ACCEPTED; gerçek meeting audio cross-server e2e (PR-stt-02 live veya PR-queue-01) öncesi blocker; synthetic/local Docker e2e için istisna |
-| **platform-k8s-gitops** | **Redis bounded queue manifest (staging-sw, persistence OFF, TTL kısa, max memory bounded; primitive List vs Streams PR-queue-01'de kilitlenir — Codex `019e8c09` iter-2 tavsiye: Streams + consumer group)** | ADR-0031 ACCEPTED |
+| **platform-k8s-gitops + ops** | **platform-ai dedicated host provision + k3s ai-test cluster + ArgoCD remote register + Vault AppRole `ai-runtime-test` + WireGuard tunnel + mTLS PKI cert auth** | ADR-0031 ACCEPTED; gerçek meeting audio cross-server e2e (PR-stt-02 live veya PR-gw-01C) öncesi blocker; synthetic/local Docker e2e için istisna |
+| **platform-k8s-gitops + ops** | **staging-sw Redis Streams runtime setup/runbook**: streams `audio:chunks:p00..p31` (32 partition), consumer group `live-stt-v1`, persistence OFF (`appendonly no` + `save ""`); MAXLEN per stream + XADD `~` trim semantic; maxmemory + `maxmemory-policy: noeviction` (backlog fail-fast); TTL kısa; ACL/TLS/WireGuard reachability cross-server; Vault `kv/platform-ai/redis/*` secret delivery (ESO); XLEN/lag metrics Prometheus; init + reconcile runbook (TODO `docs/runbooks/redis-streams-staging-sw.md`) | ADR-0031 D2 + D3 + D8 ACCEPTED + PR-gw-01C contract MERGED |
 | platform-ai | PR-stt-02 real audio + container e2e | PR-gw-01 MERGED |
 | platform-ai | PR-stt-03 subprocess isolation | PR-stt-02 MERGED |
 | platform-k8s-gitops | Kustomize base/apps/{audio-gateway,live-stt} + overlay | PR-gw-01 + PR-stt-03 source-merged |
-| platform-backend | PR-queue-01 Redis producer/consumer | PR-stt-03 MERGED |
-| platform-k8s-gitops | helm-values/redis + ESO | paralel PR-queue-01 |
-| platform-k8s-gitops | PR-obs-01 dashboard + alertmanager rules | PR-queue-01 MERGED |
+| platform-backend | PR-gw-01C Redis Streams cross-server producer (eski PR-queue-01 absorbe) | PR-stt-03 MERGED |
+| platform-k8s-gitops | PR-obs-01 dashboard + alertmanager rules (audio-gateway Prometheus + Redis Streams XLEN/lag + consumer group offsets) | PR-gw-01C MERGED + staging-sw Redis Streams setup LIVE |
 | platform-ai | PR-wer-01 WER raporu | PR-stt-03 MERGED + pilot meeting kaydı |
 | platform-ai | PR-final-stt-01 | WER raporu çıktısına göre |
 | platform-ai | PR-gpu-01 | donanım + ölçüm sonrası |
-| **platform-mobile** | **scaffold LIVE + 10 slice (#85-94)** | PR-gw-01 + PR-queue-01 LIVE testai |
-| **platform-desktop** | **scaffold LIVE + 10 slice (#75-84)** | PR-gw-01 + PR-queue-01 LIVE testai |
-| platform-web | mfe-meeting MFE | PR-gw-01 + PR-queue-01 LIVE testai |
+| **platform-mobile** | **PR-mobile-01..10** (Faz 24.11 — board canonical) | PR-gw-01 MERGED + PR-gw-01C LIVE testai |
+| **platform-desktop** | **PR-desktop-01..10** (Faz 24.13 — board canonical 2026-06-05; client plane simetri Mobile/MFE ile) | PR-gw-01 MERGED + PR-gw-01C LIVE testai |
+| platform-web | mfe-meeting MFE (Faz 24.12) | PR-gw-01 MERGED + PR-gw-01C LIVE testai |
 | platform-backend | meeting-service + transcript-service | PR-gw-01 ile paralel veya hemen sonra |
 | platform-backend | Faz 23 notification entegre (meeting events) | M6 ortası |
 | platform-backend | report-service weekly-meeting-summary | M6 sonu |
@@ -216,7 +217,7 @@ Mobile/desktop/web client'lar **hiçbir zaman** doğrudan `platform-ai`'a bağla
 | Worker thread leak (asyncio.wait_for) | Subprocess + hard kill semantic (PR-stt-03) | platform-ai |
 | KVKK compliance (ses+transcript hassas) | ADR-0030 placeholder + hukuk review pilot öncesi | Adım 0 + ek tur |
 | **Cross-server transit ses/transcript açık** (KVKK Madde 6/9 hassas) | WireGuard + mTLS PKI ZORUNLU; private LAN yetmez; ADR-0030 §"Cross-Server STT Transit Boundary" | ADR-0031 + PR-gw-01 |
-| **platform-ai host failure** (network/crash) | Gateway 503 fail-fast + Redis transient TTL drain + circuit breaker + alert | ADR-0031 + PR-queue-01 |
+| **platform-ai host failure** (network/crash) | Gateway 503 fail-fast (`DispatchOutcome.Unavailable` + Retry-After=30) + Redis Streams MAXLEN trim drain + circuit breaker + alert | ADR-0031 D8 + PR-gw-01C contract + PR-gw-01B3 dispatcher |
 | **Vault cross-server unreachable** (platform-ai → staging-sw Vault) | AppRole secret TTL cache + WireGuard tunnel health monitor + alert | ADR-0031 + ADR-0010 reuse |
 | Staging resource exhaustion (Faz 22-23 paralel) | **Gate A** acceptance: `free -m`/`kubectl top` baseline staging-sw (orchestration plane) | her PR-stt-* |
 | **platform-ai compute exhaustion** (model load + worker pool RAM) | **Gate B** acceptance: model warm-load + worker count + GPU VRAM (varsa) + inference p95 + queue consume lag | her PR-stt-* (Gate B yeni) |
@@ -254,16 +255,16 @@ Mobile/desktop/web client'lar **hiçbir zaman** doğrudan `platform-ai`'a bağla
 | WER triangulate (Common Voice + pilot) | iter-1 H matrisi | msg `74` AGREE | AGREE |
 | Staging resource pressure gate | iter-3 AGREE | msg `74` B eksik risk | AGREE |
 | Multi-tenant placeholder | (örtük) | msg `78` B tek eksik | AGREE |
-| **Two-server topology** (ADR-0031) | `019e8c09` iter-1+iter-2+iter-3 REVISE → absorb → **iter-4 AGREE final** ("merge blocker bulmadım") | (post-availability paralel davet, non-blocking — HARD RULE provider seviyesinde Anthropic + OpenAI yeterli) | AGREE (kullanıcı 2026-06-03 mimari notu) |
+| **Two-server topology** (ADR-0031) | `019e8c09` iter-1+iter-2+iter-3 REVISE absorb → **iter-4 AGREE final** ("merge blocker bulmadım") | msg `78` AGREE final 2026-06-03 (ADR-0031 mutabakat closed) | AGREE (kullanıcı 2026-06-03 mimari notu) |
 
 ## References
 
 - Codex thread: `019e879c-c51e-7691-8f16-69c781fb787e` (plan-time + iter-3 AGREE final — single-host varsayımıyla)
 - Codex thread: `019e877b-bd31-72f3-b86a-229f933e51cb` (live-stt PR #1 review AGREE)
 - Codex thread: `019e8c09-2cc7-7d23-a414-2c1d2950232c` (ADR-0031 two-server topology iter-1 REVISE absorb)
-- Mavis msgs: `74` (PARTIAL), `76` (absorb wait), `78` (AGREE final); ADR-0031 iter-2 paralel davet bekliyor
+- Mavis msgs: `74` (PARTIAL historical) → `76` (absorb wait historical) → `78` (AGREE final 2026-06-03 — ADR-0031 cross-AI mutabakat closed); HARD RULE Cross-AI Peer Review provider seviyesinde Anthropic + OpenAI yeterli, MiniMax non-blocking
 - ADR-0030 KVKK Meeting Intelligence Boundary (placeholder + §"Cross-Server STT Transit Boundary" eklendi 2026-06-03)
-- **ADR-0031 Two-Server Meeting Intelligence Topology** (bu PR DRAFT — Codex iter-2 AGREE sonrası ACCEPTED)
+- **ADR-0031 Two-Server Meeting Intelligence Topology** ACCEPTED 2026-06-03 (gitops PR #1233 MERGED — D1-D8 host boundary + network topology + resource pressure + GPU + deployment + Vault + KVKK + failure modes)
 - Observability skeleton: `docs/observability-skeleton-meeting-intelligence.md`
 - platform-ai PR #1 MERGED `4088d9a` — live-stt-service PoC iskelet
 - platform-ai Issue #19 re-scope (Faz 24 two-host resource baseline — ADR-0031 ile uyumlu)
