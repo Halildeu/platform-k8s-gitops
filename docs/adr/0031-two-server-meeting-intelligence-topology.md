@@ -101,7 +101,7 @@ Mevcut tek gate `free -m available > 2 GiB` (staging-sw için) yetmez. **Codex i
 | Pod RAM headroom (audio-gateway, meeting-service, transcript-service) | < 70% requests | `kubectl top pod -l app=<svc>` |
 | Pod CPU p95 (5dk pencere) | < 80% limit | `kubectl top pod` |
 | Ingress p95 latency | < 200 ms | Prometheus `nginx_ingress_request_duration_seconds` |
-| Redis queue depth | < threshold (bounded) | `redis-cli XLEN <stream>` veya `LLEN <key>` — **primitive TBD** (PR-queue-01'de kilitlenir; Codex `019e8c09` iter-2 tavsiye: **Streams + consumer group** çünkü chunk ordering / consumer lag / idempotency daha temiz kanıtlanır) |
+| Redis Streams depth (per partition) | < MAXLEN threshold (bounded) | `redis-cli XLEN audio:chunks:p<NN>` (32 partition `p00..p31`) — **primitive Streams + consumer group `live-stt-v1`** (Codex `019e8c09` iter-2 + `019e97bb` iter-1 confirm: chunk ordering + consumer lag + idempotency (sessionId, chunkSeq) Streams ile temiz; List primitive YASAK); contract canonical: PR-gw-01C platform-backend producer + PR-stt-03 platform-ai consumer (scope genişledi — bkz Faz 24 plan §5 + PR-gw-01C #106 issue) |
 | OOM/restart count (24h) | 0 | `kubectl get pod -l app=<svc> -o jsonpath` |
 | Faz 22-23 paralel CPU pressure | normal (load average < CPU count) | `uptime` |
 

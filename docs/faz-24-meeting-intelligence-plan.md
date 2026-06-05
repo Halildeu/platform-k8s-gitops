@@ -29,7 +29,7 @@ Workcube ERP'ye entegre toplantı zekâsı platformu. Telefon / masaüstü / Tea
 | `platform-web` | React + Single-SPA — `mfe-meeting` MFE | **staging-sw** (frontend serve) | ⏳ planning (Faz 24.6) |
 | `platform-mobile` | **React Native + Expo** + TypeScript — iOS + Android mobile client | **Kullanıcı cihazı** (App Store / Google Play distribution) | 🟢 **scaffold LIVE 2026-06-02** (commits `a774412`+`3a609a8`) |
 | `platform-desktop` | **Electron + React** + TypeScript — macOS + Windows + Linux desktop client | **Kullanıcı cihazı** (electron-updater + signed installer) | 🟢 **scaffold LIVE 2026-06-02** (commit `a245578`) |
-| `platform-k8s-gitops` | Kustomize + ArgoCD GitOps + ADR-0030 + ADR-0031 + observability skeleton | **staging-sw** ArgoCD hub + platform-ai k3s remote cluster | 🟢 charter LIVE (PR #1207 MERGED) + ADR-0031 DRAFT (bu PR) |
+| `platform-k8s-gitops` | Kustomize + ArgoCD GitOps + ADR-0030 + ADR-0031 + observability skeleton | **staging-sw** ArgoCD hub + platform-ai k3s remote cluster | 🟢 charter LIVE (PR #1207 MERGED) + ADR-0031 ACCEPTED (PR #1233 MERGED 2026-06-03) |
 
 ## 3. 3-AI Mutabakat Noktaları (her biri 3 AI tarafından onaylı)
 
@@ -114,7 +114,7 @@ Faz 24.1 MVP tek müşteri OK, ama ADR-0030'da "future multi-tenant readiness" p
 ```
 Adım 0  (BU PR)
    ├─ ADR-0030 KVKK Meeting Intelligence boundary (placeholder + §"Cross-Server STT Transit Boundary" 2026-06-03)
-   ├─ ADR-0031 Two-Server Topology — platform-ai compute plane + staging-sw orchestration plane (DRAFT 2026-06-03)
+   ├─ ADR-0031 Two-Server Topology — platform-ai compute plane + staging-sw orchestration plane (ACCEPTED 2026-06-03; gitops PR #1233 MERGED)
    ├─ Observability/Audit GOP skeleton (correlation id + log + metric + audit event contract)
    └─ PLAN.md Faz 24 satırı + canonical plan (bu doküman)
         ↓
@@ -153,7 +153,6 @@ PR-gpu-01  GPU Dockerfile variant (donanım + ölçüm sonrası)
 | platform-ai | PR-stt-03 subprocess isolation | PR-stt-02 MERGED |
 | platform-k8s-gitops | Kustomize base/apps/{audio-gateway,live-stt} + overlay | PR-gw-01 + PR-stt-03 source-merged |
 | platform-backend | PR-gw-01C Redis Streams cross-server producer (eski PR-queue-01 absorbe) | PR-stt-03 MERGED |
-| platform-k8s-gitops + ops | staging-sw Redis Streams setup (ADR-0031 §3.7 — dış altyapı, helm-values içinde değil) | ADR-0031 ACCEPTED |
 | platform-k8s-gitops | PR-obs-01 dashboard + alertmanager rules (audio-gateway Prometheus + Redis Streams XLEN/lag + consumer group offsets) | PR-gw-01C MERGED + staging-sw Redis Streams setup LIVE |
 | platform-ai | PR-wer-01 WER raporu | PR-stt-03 MERGED + pilot meeting kaydı |
 | platform-ai | PR-final-stt-01 | WER raporu çıktısına göre |
@@ -265,7 +264,7 @@ Mobile/desktop/web client'lar **hiçbir zaman** doğrudan `platform-ai`'a bağla
 - Codex thread: `019e8c09-2cc7-7d23-a414-2c1d2950232c` (ADR-0031 two-server topology iter-1 REVISE absorb)
 - Mavis msgs: `74` (PARTIAL), `76` (absorb wait), `78` (AGREE final); ADR-0031 iter-2 paralel davet bekliyor
 - ADR-0030 KVKK Meeting Intelligence Boundary (placeholder + §"Cross-Server STT Transit Boundary" eklendi 2026-06-03)
-- **ADR-0031 Two-Server Meeting Intelligence Topology** (bu PR DRAFT — Codex iter-2 AGREE sonrası ACCEPTED)
+- **ADR-0031 Two-Server Meeting Intelligence Topology** ACCEPTED 2026-06-03 (gitops PR #1233 MERGED — D1-D8 host boundary + network topology + resource pressure + GPU + deployment + Vault + KVKK + failure modes)
 - Observability skeleton: `docs/observability-skeleton-meeting-intelligence.md`
 - platform-ai PR #1 MERGED `4088d9a` — live-stt-service PoC iskelet
 - platform-ai Issue #19 re-scope (Faz 24 two-host resource baseline — ADR-0031 ile uyumlu)
