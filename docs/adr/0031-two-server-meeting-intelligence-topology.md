@@ -129,7 +129,7 @@ Acceptance maddeleri:
 - [ ] Gate B baseline ölçüm (platform-ai)
 - [ ] platform-ai-down failure drill (Gateway 503 + Redis backlog davranışı)
 - [ ] Redis backlog threshold / admission behavior verify
-- [ ] Plan §7/§9 truth update (bu PR)
+- [x] Plan §7/§9 truth update (✓ gitops PR #1233 MERGED 2026-06-03; canonical sync iter gitops PR #1289 2026-06-05)
 - [ ] Evidence path linkleri (Prometheus snapshot + free/top output)
 
 ### D4 — GPU stratejisi netleşme
@@ -237,12 +237,12 @@ Bu ADR'nin production'a katkı verdiği maddeler, **Faz 24 servisleri production
 - [ ] ArgoCD remote cluster register edildi (platform-ai k3s)
 - [ ] WireGuard tunnel + mTLS PKI cert auth LIVE + cert rotation drill geçti
 - [ ] Vault AppRole `ai-runtime-test` role + ESO/Vault Agent injection LIVE
-- [ ] Redis bounded queue staging-sw'da, TTL + persistence-off + backlog threshold doğrulandı
+- [ ] staging-sw Redis Streams `audio:chunks:p00..p31` 32 partition + consumer group `live-stt-v1` + persistence-off + MAXLEN + maxmemory-policy noeviction backlog threshold doğrulandı (D3 + PR-gw-01C contract dependency)
 - [ ] Gate A (staging-sw) baseline + Gate B (platform-ai) baseline ölçüm dokümante
-- [ ] Failure drill: platform-ai-down + Redis backlog + Vault unreachable senaryoları
-- [ ] ADR-0030 §"Cross-Server STT Transit Boundary" eklendi (bu PR)
+- [ ] Failure drill: platform-ai-down + Redis backlog + Vault unreachable senaryoları (D8 + plan §3 mutabakat #9)
+- [x] ADR-0030 §"Cross-Server STT Transit Boundary" eklendi (✓ gitops PR #1207 MERGED 2026-06-03)
 - [ ] Issue #19 re-scope edildi + Gate A/B acceptance verify
-- [ ] Cross-AI peer review (Codex iter-2 AGREE → iter-3 AGREE; Mavis post-availability absorb/comment **non-blocking** unless user explicitly escalates to 3-provider gate — HARD RULE provider seviyesinde Anthropic + OpenAI yeterli)
+- [x] Cross-AI peer review canonical (✓ Codex `019e8c09` iter-1+iter-2+iter-3 REVISE absorb + iter-4 AGREE final 2026-06-03 ADR baseline; ✓ Codex `019e97bb`+`019e97c3`+`019e97cc` iter-1/2/3 REVISE absorb plan canonical sync 2026-06-05; ✓ Mavis msg `78` AGREE; HARD RULE Anthropic + OpenAI provider isolation satisfied)
 
 ## References
 
@@ -263,7 +263,7 @@ Bu ADR'nin production'a katkı verdiği maddeler, **Faz 24 servisleri production
 
 ## Historical acceptance path (2026-06-03 closed)
 
-1. ✓ Codex iter-3 AGREE final (thread `019e8c09`) — bu ADR + plan §7/§9 + ADR-0030 §"Cross-Server STT Transit Boundary" + Issue #19 re-scope
+1. ✓ Codex `019e8c09` iter-1/2/3 REVISE absorb + iter-4 AGREE final — bu ADR + plan §7/§9 + ADR-0030 §"Cross-Server STT Transit Boundary" + Issue #19 re-scope
 2. ✓ Mavis msg paralel mutabakat (msg `78` AGREE)
 3. ✓ Plan §7/§9 + ADR-0030 update + Issue #19 update (gitops PR #1207 + #1233)
 4. ✓ PR açıldı → cross-AI AGREE → merge (gitops PR #1233 MERGED 2026-06-03)
