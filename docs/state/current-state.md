@@ -1,5 +1,41 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 21.1 C4 org-canonicalization sweep + AG-028 managed uninstall test go-live + prod endpoint-admin blocker (2026-06-05, snapshot ~01:00 Istanbul / 2026-06-04 22:30Z UTC audit)
+
+**Session milestone**: endpoint-admin `org_id` FK-flip sweep simple-arc LIVE; AG-028 managed uninstall test go-live with live-verified destructive E2E; prod endpoint-admin overlay PRs open (gated).
+
+### Faz 21.1 C4 — `org_id` canonicalization FK-flip sweep
+
+Source-foundation arc (C1/V29-V36 org_id column + compat trigger + match/non-null CHECK) was already LIVE. C4 = flipping each tenant-composite FK `(child_col, tenant_id)→parent(id, tenant_id)` to org-composite `(child_col, org_id)→parent(id, org_id)` (MATCH SIMPLE, CASCADE preserved). `tenant_id` STAYS (A6 deferred); reads stay tenant-keyed (A5 deferred).
+
+| Slice | Migration | Backend PR | FKs | Status |
+|---|---|---|---|---|
+| A2 leaf 6/6 (device_health, diagnostics, hardware_inventory, services, startup_exposure, **hotfix_posture grandchild**) | V38-V43 | #452/#455/#457/#458/#459/#463 | 19 | 🟢 LIVE testai |
+| step-4 app_control (ORG-DONE-parent variant) | V44 | #465 | 2 | 🟢 LIVE testai |
+| step-5 outdated_software + software_inventory (pure-flip) | V45 | #467 | 3 | 🟢 LIVE testai |
+| **HUB** commands + catalog foundation + install_audit + uninstall consumers | V46-V49 | #471/#472/#473/… | 12 | 🟡 in-progress (parallel session `claude-v46-49`, board platform-backend #469; V46/V47/V48 merged+deployed, pod digest `sha256:0179c732…`) |
+
+**Live audit 2026-06-04 22:30Z** (`docker exec platform-pg-test`): **29 org-composite FKs** total, **12 tenant-composite FKs remaining** (all hub-dependent) at simple-arc completion; HUB session actively reducing this. Each LIVE slice: pod imageID==committed digest (D30), FK `convalidated=true`, old tenant FK dropped, Flyway `ok=true`, Codex cross-AI (plan+post-impl, provider-distinct). 3 reusable variants discovered: full leaf-family / ORG-DONE-parent / pure-flip / grandchild (2 UNIQUE parents). Memory: `project_faz_21_1_c4_simple_flip_arc.md`.
+
+### AG-028 managed uninstall — test go-live (live-verified)
+
+| Slice | Repo / PR | Evidence |
+|---|---|---|
+| Web Phase-3 managed uninstall UI | platform-web #752 MERGED (2026-06-04 18:37Z) | "Kaldır" button + "Son Kaldırmalar" table |
+| Test dark-launch flag | gitops #1279 MERGED (2026-06-04 21:14Z) | **LIVE-verified**: `ENDPOINT_ADMIN_UNINSTALL_ENABLED=true` on testai endpoint-admin pod env |
+| Evidence redaction fix | platform-agent #53 MERGED | — |
+| **Destructive E2E** real 7-Zip uninstall on HALILKOOLUB735, maker-checker (proposer ≠ approver) | — | **LIVE-verified**: `endpoint_uninstall_audit` (2 rows) latest `result_status=SUCCEEDED_VERIFIED` + `verification` column present (idempotent re-run row `SKIP_ALREADY_ABSENT`) |
+
+**Prod**: uninstall stays **dark in prod** (separate enablement decision). Authz long-term follow-up open: `#1274` (assignRole grant-side granule tuple not written on later member-add), `#1275` (legacy `syncTuplesToOpenFga` fail-loud/fold) — not E2E-blocking, P1 correctness.
+
+### Prod endpoint-admin presence — OPEN, gated
+
+`endpoint-admin-service` has **no prod deployment yet** (D30 cutover + operator pre-chain Vault+PG+ESO+overlay+NetPol). Prod overlay PRs open:
+- gitops **#1241** (prod ESO) — OPEN, mergeState=BEHIND
+- gitops **#1242** (prod workload/config) — OPEN, BEHIND, **2 governance gates RED (correct-behavior, not bugs)**: `D29 evidence required for prod digest changes` + `Drift PR-time render gate (Codex P0) (prod)`. These are prod-safety gates requiring D29 evidence before any prod digest change; passing them = a prod-deploy decision (owner/D30).
+
+---
+
 ## Live Delta — Faz 22.7 Path C (FILE_VERSION/SHA256/EXISTS) FULL CHAIN LIVE + HALILKOOLUB735 binary upgrade + 7-Zip lifecycle full E2E autonomous (2026-06-02 22:30 Istanbul)
 
 **Session milestone**: Detection rule expansion completed end-to-end across agent + backend + web + cluster + endpoint + lifecycle smoke in single autonomous chain.

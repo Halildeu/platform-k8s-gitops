@@ -1081,8 +1081,18 @@ images:
     # PR-D2.5 chain 5/5 source-owned aggregation foundation; consumer-side
     # (report-service allowlist + normalizer) sıradaki PR-D2.5b.
     # Image build run: 26805132068 (commit 58cf6f36, push 2026-06-02 07:29Z).
-    # GHCR manifest: ghcr.io/halildeu/platform-backend-permission-service:sha-58cf6f3
-    digest: sha256:822c636299785697ad337ef10f2d91dfa66d0e3c852b3cd9eb1145139d6287d8
+    #
+    # 2026-06-04 update: sha-ed569c7 — platform-backend PR #454 (AG-028
+    # revoke-orphan fix). Revoking a permission-service grant now DELETES the
+    # OpenFGA tuple (was orphaned → revoked/disabled user kept can_manage/
+    # can_view access). Codex Option B ground-truth reconcile (readUserTuples
+    # Read API + delete stored − (granuleDesired ∪ legacyDesired), legacy-safe,
+    # fail-loud) wired into revokeRole / updateAssignment / assignments-replace /
+    # deleteRole / bulkUpdateModuleLevel. Codex thread 019e93bc RED→REVISE→AGREE.
+    # CI 13/13 green (incl. permission-service real-FGA Testcontainer IT).
+    # Image build run: 26971846892 (merge commit ed569c7).
+    # GHCR manifest: ghcr.io/halildeu/platform-backend-permission-service:sha-ed569c7
+    digest: sha256:5bbe1465981adb5c9c51e1ee4a20cbde4092dfdd45caf664f1b888691c64d9da
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
@@ -3632,7 +3642,19 @@ images:
     # Image build run: gh run view 26850787694 -R Halildeu/platform-web
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-991b5c7
     #   digest sha256:80565d9475ba8d7f01ba472c087525799be1aa607b84497a718d886512b336a3
-    digest: sha256:80565d9475ba8d7f01ba472c087525799be1aa607b84497a718d886512b336a3
+    #
+    # 2026-06-04 AG-028 Phase 3 #752 (f394452b → sha-f394452): managed-uninstall
+    # frontend surface — SoftwareCatalogTab "Kaldır" → confirm modal (reason
+    # required, stable idempotency key) → POST /uninstalls; "Son Kaldırmalar"
+    # history with exhaustive resultStatus/verification badges; approve-only
+    # UninstallApprovalPage (real-subject self-approve fail-safe guard); no
+    # reject UI. Frontend-only — backend + agent + LIVE full-lifecycle uninstall
+    # already SUCCEEDED_VERIFIED (board #1239). Codex 019e93a4 plan + 019e93d2
+    # post-impl AGREE (2 must-fix absorbed). 992 vitest green. Image build run
+    # 26971935996.
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-f394452
+    #   digest sha256:7a5cefa7418b9df83d0b3a6716d46ea903737493e6ca2f57be3f0e6c45735660
+    digest: sha256:7a5cefa7418b9df83d0b3a6716d46ea903737493e6ca2f57be3f0e6c45735660
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
@@ -4437,7 +4459,267 @@ images:
     # Image build run: gh run view 26874264709 -R Halildeu/platform-backend
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-3bcb8ec
     #   digest sha256:270c506c2baaa462cbddc74a9e920ef0188fa4febf8ea97792afe416a0a817e6
-    digest: sha256:270c506c2baaa462cbddc74a9e920ef0188fa4febf8ea97792afe416a0a817e6
+    #
+    # 2026-06-03 Faz 21.1 PR2b-i #393 (entity foundation — 7 entities ×
+    # orgId field + getter/setter + getEffectiveOrgId helper, Option A
+    # Codex 019e8cac strict order) + PR2b-ii #394 (canonical write at 6
+    # service insert sites — both setOrgId + setTenantId with the same
+    # UUID so V30 CHECK passes without relying on V29 trigger silent
+    # compensation; 7th — EOSPackage — covered by PR2b-i onPersist
+    # mirror) both MERGED. Codex 019e8cc2 plan-time AGREE Option A
+    # (single PR, inline pattern, no helper extraction).
+    #
+    # Tests V29 9/9 + V30 7/7 + EntityFoundation 4/4 + JpaFlush 3/3 +
+    # CanonicalWrite 2/2 = 25/25 PG IT PASS. Anti-pattern guards:
+    # inline pattern (no reflection/marker interface), single
+    # SecurityContext read per write site, DTO/API contract unchanged
+    # (orgId NOT yet surfaced in JSON), no bulk tenantId → orgId
+    # search-replace across 1095 surface points, NO repository COALESCE
+    # migration here (PR2b-iii scope follows after this digest deploys
+    # + testai live evidence).
+    #
+    # PR2b-iii (BE-024c repository COALESCE — DeviceGridQueryBuilder
+    # 3 methods + DiffCacheBackfillService + DiffCacheBackfillWorker)
+    # planned per Codex 019e8cd4 AGREE; opens AFTER this digest is live
+    # on testai so reads don't silent-compensate via V29 trigger.
+    #
+    # Image build run: gh run view 26876345440 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-909acce
+    #   digest sha256:2cadcdcb449e23b23dc1f5f567a55642076d20cd0e3e8364cbba249598eaaae3
+    #
+    # 2026-06-03 Faz 21.1 PR2b-iii #395 (BE-024c repository COALESCE —
+    # DeviceGridQueryBuilder 3 methods + DiffCacheBackfillService +
+    # DiffCacheBackfillWorker) MERGED. Codex 019e8cd4 plan-time AGREE +
+    # 019e8cf8 post-impl 5/5 lens AGREE (must-fix yok). Reads now use
+    # parenthesized canonical effective-org OR predicate accepting both
+    # canonical rows (org_id populated post-PR2b-ii) and legacy rows
+    # (org_id NULL with tenant_id only, V29 trigger silent-fill defensive).
+    # COALESCE used only on Worker pure-enumeration (DISTINCT discovery).
+    #
+    # Tests 93/93 endpoint-admin PG IT PASS local Maven (V29 9 + V30 7 +
+    # EntityFoundation 4 + JpaFlush 3 + CanonicalWrite 2 + PR2b-iii
+    # dedicated 5 + DeviceGridQueryBuilder 36 + DeviceGridExportBuilder 8
+    # + Schema Qualification 3 + Schema5Cache 7 + DiffCacheConstraints 9).
+    #
+    # New dedicated PG IT — DeviceGridCanonicalOrgIdFilterPostgresIntegration
+    # Test (5 methods × 6 assertions): canonical row read, legacy NULL
+    # fixture (V29 trigger bypassed via DISABLE TRIGGER USER) + null-org
+    # pre-assert, cross-tenant negative, LEFT JOIN cache miss, LEFT JOIN
+    # cache wrong-attach negative.
+    #
+    # Anti-pattern guards (PR2b-iii enforced):
+    # - bare `OR tenant_id = ?` YASAK — always parenthesized OR
+    # - repository derived `findByOrgIdOrTenantId(...)` YASAK
+    # - DTO/API contract `orgId` surfacing YASAK (PR2b-iv scope)
+    # - cache tables canonicalize YASAK (PR2c scope: ADD COLUMN org_id
+    #   on endpoint_software_diff_cache + endpoint_outdated_software_diff_cache)
+    # - LATERAL JOIN ON-clause inner predicates stay `tenant_id`
+    # - DROP COLUMN tenant_id YASAK (cleanup PR scope)
+    #
+    # Image build run: gh run view 26878847742 -R Halildeu/platform-backend
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-688c0b9
+    #   digest sha256:25ef5a33ab0f62589ad8ddf5d4c47cfbe43016ce7142e0b14586536fd61d64a2
+    #
+    # 2026-06-03 AG-028 Phase 2B + Faz 21.1 PR2c → sha-25042f6 (platform-backend
+    # 688c0b9→25042f6a). Brings 3 new Flyway migrations live on testai:
+    #   V31 endpoint_catalog_uninstall_flags (AG-028 Phase 0 — uninstall_supported /
+    #       uninstall_protected / uninstall_args + change-request maker-checker table),
+    #   V32 endpoint_uninstall_surface (AG-028 Phase 1a — endpoint_uninstall_requests +
+    #       endpoint_uninstall_audit tables, closed result_status/verification CHECK
+    #       enums, append-only audit trigger, partial-unique in-flight + idempotency),
+    #   V33 endpoint_diff_cache_org_id_compat (Faz 21.1 PR2c — diff-cache org_id).
+    # Source PRs since the prior pin: #438 (findLatestSucceededSatisfiedByOrg compliance
+    # selector + existsSucceededSatisfiedByOrg uninstall provenance), #439 (V31+V33 diff
+    # cache org_id canonicalize), #440 (AppControl native org_id write), #441 (AG-028
+    # Phase 2B UNINSTALL_SOFTWARE terminal-result ingest: EndpointUninstallAuditService
+    # append-only audit + BE-016 hash-chain event + request-state→TERMINAL in the
+    # submitResult tx; validate-then-redact UNINSTALL branch; cross-field consistency
+    # matrix forces verification from resultStatus, fail-closed under drift). CI 13/13
+    # green; full endpoint-admin-service module 1599 tests green. Cross-AI Codex 019e8f9c
+    # REVISE→AGREE. Image build run 26917933959.
+    #
+    # 2026-06-04 Faz 21.1 Cleanup C1 (B-only) #443 (1d229d0c → sha-1d229d0): V34
+    # endpoint_org_id_source_foundation — ADD CONSTRAINT UNIQUE (id, org_id) on the
+    # 3 cache parents (endpoint_devices, endpoint_software_inventory_state_history,
+    # endpoint_outdated_software_snapshots) as the C2 cache-FK target enabler.
+    # Purely additive (coexists with PK(id) + UNIQUE(id,tenant_id) + all FKs); NO
+    # non-null CHECK (CI proved it couples to OR-fallback removal → deferred to the
+    # C1.5 invariant-flip PR #444), no FK rewrite, no tenant_id drop. Live FK-web
+    # discovery reframed C4 (gitops cleanup-execution-plan.md v2 + risk F21-R32).
+    # PG IT 4/4 + 27/27 EffectiveOrg regression green. Cross-AI Codex 019e919e AGREE.
+    # Image build run 26940129959.
+    #
+    # 2026-06-04 Faz 21.1 Cleanup C2a #446 (24c609c1 → sha-24c609c): V35 diff-cache
+    # org-key IDENTITY — atomic UNIQUE swap (ADD UNIQUE(org_id,device_id) + DROP
+    # UNIQUE(tenant_id,device_id)) + cache CHECK(org_id NOT NULL) + UPSERT ON
+    # CONFLICT(org_id,device_id) + grid join org_id=COALESCE(d.org_id,d.tenant_id).
+    # Single ON CONFLICT arbiter (two redundant uniques broke concurrent upsert —
+    # deterministic test catch). 6 tenant-composite cache FKs + tenant_id KEPT (FK
+    # flip=C2b, drop=C4). Rollback boundary >= V35 (no old-writer-pod overlap).
+    # 100 tests green incl. Concurrency 2/2. Cross-AI Codex 019e919e (3 REVISE→AGREE).
+    # Image build run 26942645821.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-24c609c
+    #   digest sha256:2d9f46782f51e63e59ad172efe373d97cd59827664050de5415a680a60f82cbc
+    #
+    # 2026-06-04 AG-028 uninstall-evidence contract fix #448 (7723bd9c → sha-7723bd9):
+    # UninstallEvidencePayloadPolicy.walkValidate() now DROPS raw stdoutTail/stderrTail
+    # from uninstall evidence (key-only log) instead of HTTP 400-rejecting the whole
+    # result; all other FORBIDDEN_KEYS_LOWER members (stdoutRaw/token/password/
+    # processEnvironment/path/PII) still fail closed. Live AG-028 E2E caught this: a
+    # successful real 7-Zip uninstall (VM registry ABSENT) could not be recorded because
+    # the agent shipped raw stdoutTail. Paired with platform-agent #53 (agent now sends
+    # bounded redacted stdoutSummary/stderrSummary, never raw tails). Cross-AI Codex
+    # 019e92e7 (design C + post-impl AGREE). UninstallEvidencePayloadPolicyTest 30 PASS +
+    # EndpointUninstallAuditServiceTest 21 PASS. Image build run 26959495913.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-7723bd9
+    #   digest sha256:ed24afd298345a067f94b73e64b761960a5158c8a1a21ea78cf2153c7a58b14a
+    # 2026-06-04 Faz 21.1 Cleanup C1.5 → sha-e623642 (platform-backend PR #449,
+    # main e6236420): V36 source org_id NOT NULL invariant flip — DO fail-fast audit
+    # + CHECK (org_id IS NOT NULL) NOT VALID + VALIDATE on the 7 source tables (the 2
+    # cache tables already got it in V35). Combined with V30 → org_id=tenant_id
+    # universal on the source side; unblocks C2b cache FK org-composite flip. Cross-AI
+    # Codex 019e9332 ready_to_merge (plan 019e92a7 narrow + Option A + tx-hygiene). CI
+    # all green; local Testcontainers 80 green; testai precondition 7 tables 0/0/0.
+    # OR-fallback removal + composite org_id mirror indexes deferred to C4/A5.
+    # Image build run 26961259714.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-e623642
+    #   digest sha256:04fdd8447d74a407e5ad05d6b56011441a42e990f1d69b523250fae04dfded5a
+    # 2026-06-04 Faz 21.1 Cleanup C2b → sha-6712218 (platform-backend PR #450,
+    # main 6712218a): V37 diff-cache FK org-composite flip — 6 cache FKs
+    # (child_col, tenant_id) -> (child_col, org_id) atomic swap (ADD NOT VALID +
+    # VALIDATE + DROP), ON DELETE CASCADE preserved; Phase 0 preflight org-match
+    # + device-consistency audit. Sound via V34 parent UNIQUE(id,org_id) + V35
+    # child org_id NOT NULL + V36 parent org_id NOT NULL -> MATCH SIMPLE enforces
+    # org isolation (cross-org 23503). Cross-AI Codex 019e9352 ready_to_merge
+    # (plan 019e9346). CI green; local Testcontainers 65 green. tenant_id stays
+    # (C4); repo/query/index unchanged (C4/A5). Image build run 26963289687.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-6712218
+    #   digest sha256:3271ffbb4a5b65be34517ea645257bc93cbde7401fe591c2b837adcfa79d42fc
+    # 2026-06-04 Faz 21.1 Cleanup C4 A2-1 → sha-120f245 (platform-backend PR #452,
+    # main 120f2450): V38 device_health org expansion (PILOT leaf family) — snapshots
+    # + disks org_id add+backfill+trigger+match/non-null CHECK+snapshots UNIQUE(id,
+    # org_id) + 2 FK org-flip (disk→snapshot, snapshot→devices; ON DELETE CASCADE
+    # preserved). The C4 A2 pilot pattern for the 5 remaining leaf families. Cross-AI
+    # Codex 019e93cd ready_to_merge (plan 019e93a1). CI green; local Testcontainers
+    # V38 IT 6/6 + all device_health tests green. tenant_id stays (A6); reads
+    # tenant-keyed = org_id (A5 read-switch + org mirror indexes deferred). Image
+    # build run 26970540723.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-120f245
+    #   digest sha256:403d39effa60f792e99f09080e89a09323cc9ae2357c2136c26cd578c499c616
+    # 2026-06-04 Faz 21.1 Cleanup C4 A2-2 → sha-414ff5a (platform-backend PR #455,
+    # main 414ff5a0): V39 diagnostics org expansion (leaf family 2/6) — snapshots
+    # + probe_errors org_id + 2 FK org-flip (probe_error→snapshot, snapshot→devices;
+    # CASCADE preserved). Mirrors the V38 device_health pilot. Cross-AI Codex
+    # 019e93fb ready_to_merge (plan 019e93a1). CI green; local Testcontainers V39 IT
+    # 7/7 + diagnostics suite 103 green. tenant_id stays (A6); reads tenant-keyed (A5).
+    # Image build run 26973058195.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-414ff5a
+    #   digest sha256:8eb860d5e492da88232469c0c99a4f3709a0d4db1940a3768caeac12a70bdf93
+    # 2026-06-04 Faz 21.1 Cleanup C4 A2-3/4/5 BATCHED → sha-96c02eb (platform-backend
+    # main 96c02ebb): three leaf-family org expansions deployed in one image —
+    #   V40 hardware_inventory (PR #457): snapshots + disks + network_interfaces;
+    #        FKs hw_inv_disk_snapshot_org_fk + hw_inv_ni_snapshot_org_fk + hw_inv_snap_device_org_fk.
+    #   V41 services        (PR #458): snapshots + entries + probe_errors;
+    #        FKs svcs_entry_snapshot_org_fk + svcs_pe_snapshot_org_fk + svcs_snap_device_org_fk.
+    #   V42 startup_exposure(PR #459): snapshots + apps + probe_errors;
+    #        FKs se_app_snapshot_org_fk + se_pe_snapshot_org_fk + se_snap_device_org_fk.
+    # Each mirrors the V38 device_health pilot (org_id add+backfill+trigger+index →
+    # match CHECK + non-null CHECK → root UNIQUE(id,org_id) → DO preflight → atomic
+    # add-before-drop composite FK flip; ON DELETE CASCADE preserved). 9 org-composite
+    # FKs total convalidated. Cross-AI Codex ready_to_merge per PR (V42 thread 019e9441).
+    # CI green all three; local Testcontainers V40 IT 17/17 + V41 IT 8/8 + V42 IT 8/8.
+    # tenant_id stays (A6 component-wise drop deferred); reads tenant-keyed (A5 deferred).
+    # Image build run 26976992300.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-96c02eb
+    #   digest sha256:31306b858d3e7b2bb716e9a9ad0f9901f0ca38f5809d51d780d16184ddd29e9f
+    # 2026-06-05 Faz 21.1 Cleanup C4 A2-6 → sha-e4e17fb (platform-backend PR #463,
+    # main e4e17fb9): V43 hotfix_posture org expansion (leaf family 6/6, LAST —
+    # GRANDCHILD variant). 5 tables (snapshots + installed + pending + pending_kbs
+    # + pending_categories), 5 FK org-flip, 2 UNIQUE(id,org_id) parents (snapshots
+    # AND pending — pending is both child-of-snapshots and parent-of-pending_kbs).
+    # 2-level CASCADE device→snap→pending→pending_kbs preserved. Mirrors the V38
+    # pilot extended one level. Cross-AI Codex 019e945e ready_to_merge (plan +
+    # post-impl). CI green; local Testcontainers V43 IT 10/10 (5 FK validated + 5
+    # dropped, 10 CHECK + 2 UNIQUE, 5 cross-org 23503 incl grandchild, trigger
+    # fill, 2-level cascade, match-CHECK 23514). A2 LEAF-FAMILY SWEEP COMPLETE.
+    # tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26979170279.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-e4e17fb
+    #   digest sha256:05afad507cd172dafe2cb3889062f090e7937cab9f1abbc6337edc5146a251e0
+    # 2026-06-05 Faz 21.1 Cleanup C4 step-4 → sha-2f881d3 (platform-backend PR #465,
+    # main 2f881d3): V44 app_control org expansion — ORG-DONE-PARENT variant. Parent
+    # endpoint_app_control_snapshots already org-foundation-done (V29/V30/V36), so it
+    # only gets UNIQUE(id,org_id) + device-FK flip; detail endpoint_app_control_probe_errors
+    # gets full org machinery + FK flip. 2 FK org-flip (ac_pe_snapshot_org_fk +
+    # ac_snap_device_org_fk); CASCADE preserved. P4 preflight incl. parent-invariant
+    # drift guard. Cross-AI Codex 019e9477 ready_to_merge (plan + post-impl). CI green;
+    # local Testcontainers V44 IT 7/7. First post-A2-sweep slice (manifest §3 step 4).
+    # tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26980410308.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-2f881d3
+    #   digest sha256:7092e24ebc085dae1b1bf1a4c2db07c64ba5df002295624deb6713d31c8755f0
+    # 2026-06-05 Faz 21.1 Cleanup C4 step-5 → sha-43f54d3 (platform-backend PR #467,
+    # main 43f54d3): V45 outdated_software + software_inventory FK flip — PURE-FLIP
+    # (3 tenant-composite FKs → org-composite across 2 hub-free device-rooted families).
+    # All enablers pre-existed (children ORG-DONE org_id non-null; parents already
+    # UNIQUE(id,org_id) via C1+V34) → no org machinery, only P4 preflight + P5 flips.
+    # FKs: osw_pkg_snapshot_org_fk + osw_snap_device_org_fk + sw_inv_device_org_fk;
+    # CASCADE preserved. Cross-AI Codex 019e9493 ready_to_merge (post-impl). CI green;
+    # local Testcontainers 30/30 (V45 IT 1/1 + OutdatedSoftware 17/17 + SoftwareInventory
+    # 12/12 rolled-over). 11/15 C4 FKs now org (only the 12 hub-dependent FKs remain).
+    # tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26981525311.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-43f54d3
+    #   digest sha256:4050d5bf7c816478822ebab5b4906c484c5ef6483b0ca5199fb539a1f12f5b99
+    # 2026-06-05 Faz 21.1 Cleanup C4 step-6 → sha-ca3d842 (platform-backend PR #471,
+    #   V46 endpoint_commands HUB org foundation: org_id machinery + match/non-null
+    #   CHECK + UNIQUE(id,org_id) + idempotency single-arbiter swap
+    #   (tenant_id,idempotency_key)→(org_id,idempotency_key)). EndpointCommand
+    #   Option A org_id map + @PrePersist canonicalize. First of the 2 hub
+    #   foundations that unblock the 12 hub-dependent consumer FKs. Cross-AI Codex
+    #   019e94bc REVISE→AGREE. Source CI green; local V46 IT 5/5 + *Command* 79/79.
+    #   tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26984141349.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-ca3d842
+    #   digest sha256:4476d4dd3b264d93d0e010d0da756e08a9245d7a5f80b7b936456f244800e02e
+    # 2026-06-05 Faz 21.1 Cleanup C4 step-7 → sha-cb8b525 (platform-backend PR #472,
+    #   V47 endpoint_software_catalog_items HUB org foundation: org_id machinery +
+    #   match/non-null CHECK + UNIQUE(id,org_id) + business unique single-arbiter
+    #   swap (tenant_id,catalog_item_id)→(org_id,catalog_item_id)). EndpointSoftware
+    #   CatalogItem Option A org_id map + @PrePersist canonicalize. Second of the 2
+    #   hub foundations → both hubs now carry UNIQUE(id,org_id), unblocking the
+    #   consumer FK flips (V48 install_audit, V49 uninstall). Cross-AI Codex 019e94bc
+    #   AGREE. Source CI green; local V47 IT 5/5 + Catalog 67/67 + Install/Uninstall
+    #   220/220. tenant_id stays (A6); reads tenant-keyed (A5). Image build 26985285173.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-cb8b525
+    #   digest sha256:0179c732a5953609d747d10c45b2c4da2bf3c463220b6399a5e8af539fc4df85
+    # 2026-06-05 Faz 21.1 Cleanup C4 step-8 → sha-2c6da5a (platform-backend PR #473,
+    #   V48 install_audit 3 FK flips PURE-FLIP: device/command CASCADE + catalog
+    #   RESTRICT preserved; first hub-dependent consumer flip — install_audit was
+    #   ORG-DONE, all 3 parents now carry UNIQUE(id,org_id) [devices V34, commands
+    #   V46, catalog V47]). Cross-AI Codex 019e94bc AGREE. Source CI green; local
+    #   V48 IT 5/5 + install_audit migration IT 21/21 (rolled over) + 220/220 sweep.
+    #   tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26985824727.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-2c6da5a
+    #   digest sha256:45b994215c57ea85b0260a13e97f016b2c1d0cdc031da28539793601204327ca
+    # 2026-06-05 Faz 21.1 Cleanup C4 step-9 → sha-ee633fe (platform-backend PR #474,
+    #   V49 uninstall family: org foundation on uninstall_requests + uninstall_audit
+    #   [append-only DISABLE/ENABLE backfill bracket] + UNIQUE(id,org_id) + 2 partial-
+    #   unique single-arbiter swaps [idempotency + one_inflight → org-keyed] + 7 FK
+    #   flips [requests device/catalog/command-DEFERRABLE + audit request/device/
+    #   catalog/command]). EndpointUninstall{Request,Audit} Option A. Last hub-dependent
+    #   consumer slice; with V48, 10/12 board #469 FKs org-flipped. Cross-AI Codex
+    #   019e94bc plan+post-impl AGREE. Source CI green; local V49 IT 11/11 + 112/112.
+    #   tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26986777702.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-ee633fe
+    #   digest sha256:0af8e2bc67f285dce0c0389078a09b31a7d5e3a79df34e0c98b150aceecbde38
+    # 2026-06-05 Faz 21.1 Cleanup C4 step-10 → sha-5af5f8d (platform-backend PR #475,
+    #   V50 remaining 2 catalog-consumer FK flips: endpoint_software_compliance_policy
+    #   _items (CASCADE) + catalog_uninstall_settings_change_requests (NO ACTION) +
+    #   their business arbiter swaps (compliance UNIQUE + cuscr one_open partial index
+    #   → org-keyed)). CLOSES the board #469 12-FK arc (12/12 FKs org-composite).
+    #   Cross-AI Codex 019e94bc REVISE→AGREE (caught the cuscr one_open partial index).
+    #   Source CI green; local V50 IT 8/8 + 206/206 sweep.
+    #   tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26988425047.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-5af5f8d
+    #   digest sha256:7fa5975c1d0c54e3611db5d89d7b8f8919c1952f6b74f94e562ffd1d90a0f9d2
+    digest: sha256:7fa5975c1d0c54e3611db5d89d7b8f8919c1952f6b74f94e562ffd1d90a0f9d2
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
@@ -4806,6 +5088,61 @@ patches:
       - op: add
         path: /data/ENDPOINT_ADMIN_COMMANDS_ADMIN_CREATABLE_TYPES
         value: "COLLECT_INVENTORY,LOCK_USER_LOGIN"
+
+  # OpenFGA authz gate store/model — live-aligned pin (gitops #1265, 2026-06-04).
+  # Surfaced by the AG-028 managed-uninstall E2E: the gate is ON at runtime
+  # (ERP_OPENFGA_ENABLED=true) but the store/model IDs were UNTRACKED drift in the
+  # live ConfigMap. Base now carries enabled + api-url + empty store/model stubs;
+  # this overlay pins the live TEST store/model so a future `apply -k`/ArgoCD sync
+  # can no longer drop them (which would flip the gate fail-OPEN). `replace`
+  # (not `add`) is deliberate: it fails fast if the base stubs are ever removed.
+  #   - Store 01KPP0CFP4G82K42Y6NYSPT4JF is shared with permission-service.
+  #   - Model 01KRTJVEMAW80B2D35GN8HJDPG is endpoint-admin's PINNED model. The
+  #     shared kv/platform/openfga model is now 01KS8QE8T1EJ2DF5CRS4VV9YX1
+  #     (post notification-cutover SUPERSET: +5 notification types; the 10 ERP
+  #     types incl. `module` w/ can_manage/can_view are byte-identical between the
+  #     two). endpoint-admin is intentionally NOT wired to the shared openfga ESO
+  #     so its model cannot shift under it; module:endpoint-admin#can_manage
+  #     resolves identically under both models (tuples are store-level).
+  # Migrating endpoint-admin onto the shared openfga ESO/model (01KS8QE8...) is a
+  # SEPARATE EVALUATED MIGRATION (allow+deny check + env proof + store/model
+  # source proof + ledger decision) — tracked as a gitops backlog issue, NOT an
+  # automatic cleanup.
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    patch: |-
+      - op: replace
+        path: /data/ERP_OPENFGA_STORE_ID
+        value: "01KPP0CFP4G82K42Y6NYSPT4JF"
+      - op: replace
+        path: /data/ERP_OPENFGA_MODEL_ID
+        value: "01KRTJVEMAW80B2D35GN8HJDPG"
+
+  # AG-028 Managed Uninstall GO-LIVE (TEST only) — gitops #1239. Flips the
+  # endpoint-admin.uninstall.enabled dark-launch flag ON for the test cluster.
+  # Justification (No Fake Work — all live-verified on testai.acik.com):
+  #   - Backend (V32 schema + REST + maker-checker), agent adapter, web UI: LIVE.
+  #   - Destructive E2E PASSED: real 7-Zip uninstall on HALILKOOLUB735 →
+  #     endpoint_uninstall_audit result_status=SUCCEEDED_VERIFIED,
+  #     verification=ABSENT_VERIFIED (maker-checker proposer≠approver enforced).
+  #   - Headless-browser acceptance PASSED (test persona c5persona-admin-9001,
+  #     ENDPOINT_ADMIN role + OpenFGA can_manage): Kaldır button + "Son
+  #     Kaldırmalar" table rendering the real SUCCEEDED_VERIFIED/ABSENT_VERIFIED
+  #     audit row + maker-checker confirm modal + device-scoped approval route;
+  #     all uninstall endpoints returned 200, no console errors.
+  #   - Cross-AI: Codex thread 019e9448 (posture) — go-live must be this governed
+  #     overlay flip, NOT an ephemeral kubectl patch.
+  # PROD stays DARK (inherits base default "false") — a separate, deliberately
+  # evaluated go-live decision. `replace` (not `add`) is deliberate: it fails fast
+  # if the base "false" default is ever removed (mirrors the OpenFGA pin above).
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    patch: |-
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_UNINSTALL_ENABLED
+        value: "true"
 
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz SPRING_DATASOURCE_URL
   # + KEYCLOAK_URL replace patch'leri KALDIRILDI (base zaten shortname).
