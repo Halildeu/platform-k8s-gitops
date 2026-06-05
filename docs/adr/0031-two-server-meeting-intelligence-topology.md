@@ -211,15 +211,15 @@ ADR-0030 KVKK Meeting Intelligence Boundary'de cross-server hop eksikti. Bu ADR 
 
 ## Cross-AI Mutabakat Trail
 
-| Soru | Codex `019e8c09` iter-1 | Claude | Mavis (iter-2 paralel) |
+| Soru | Codex `019e8c09` iter-1→iter-4 AGREE final | Claude | Mavis msg `78` AGREE final 2026-06-03 |
 |---|---|---|---|
-| Redis konumu | staging-sw ✅ | AGREE | (iter-2) |
-| Cross-server kanal | WireGuard + mTLS/PKI ✅ | AGREE | (iter-2) |
-| Resource gate ayrımı (A + B) | AGREE ✅ | AGREE | (iter-2) |
-| Deployment topology | (b) ayrı k3s ✅ | AGREE | (iter-2) |
-| KVKK ADR-0030 section | yeni "Cross-Server STT Transit Boundary" ✅ | AGREE | (iter-2) |
-| Vault auth method | AppRole birinci tercih ✅, JWT ikinci | AGREE | (iter-2) |
-| ADR-0031 yeni mi | yeni ADR-0031 ✅ | AGREE | (iter-2) |
+| Redis konumu | staging-sw ✅ | AGREE | AGREE ✅ |
+| Cross-server kanal | WireGuard + mTLS/PKI ✅ | AGREE | AGREE ✅ |
+| Resource gate ayrımı (A + B) | AGREE ✅ | AGREE | AGREE ✅ |
+| Deployment topology | (b) ayrı k3s ✅ | AGREE | AGREE ✅ |
+| KVKK ADR-0030 section | yeni "Cross-Server STT Transit Boundary" ✅ | AGREE | AGREE ✅ |
+| Vault auth method | AppRole birinci tercih ✅, JWT ikinci | AGREE | AGREE ✅ |
+| ADR-0031 yeni mi | yeni ADR-0031 ✅ | AGREE | AGREE ✅ |
 
 ## ADR-0002 İlişkisi
 
@@ -242,7 +242,7 @@ Bu ADR'nin production'a katkı verdiği maddeler, **Faz 24 servisleri production
 - [ ] Failure drill: platform-ai-down + Redis backlog + Vault unreachable senaryoları (D8 + plan §3 mutabakat #9)
 - [x] ADR-0030 §"Cross-Server STT Transit Boundary" eklendi (✓ gitops PR #1207 MERGED 2026-06-03)
 - [ ] Issue #19 re-scope edildi + Gate A/B acceptance verify
-- [x] Cross-AI peer review canonical (✓ Codex `019e8c09` iter-1+iter-2+iter-3 REVISE absorb + iter-4 AGREE final 2026-06-03 ADR baseline; ✓ Codex `019e97bb`+`019e97c3`+`019e97cc` iter-1/2/3 REVISE absorb plan canonical sync 2026-06-05; ✓ Mavis msg `78` AGREE; HARD RULE Anthropic + OpenAI provider isolation satisfied)
+- [x] Cross-AI peer review canonical (✓ Codex `019e8c09` iter-1+iter-2+iter-3 REVISE absorb + iter-4 AGREE final 2026-06-03 ADR baseline; ✓ Codex `019e97bb`+`019e97c3`+`019e97cc`+`019e97d2` iter-1/2/3/4 REVISE absorb → iter-5 AGREE final plan canonical sync 2026-06-05; ✓ Mavis msg `78` AGREE; HARD RULE Anthropic + OpenAI provider isolation satisfied)
 
 ## References
 
@@ -268,7 +268,7 @@ Bu ADR'nin production'a katkı verdiği maddeler, **Faz 24 servisleri production
 3. ✓ Plan §7/§9 + ADR-0030 update + Issue #19 update (gitops PR #1207 + #1233)
 4. ✓ PR açıldı → cross-AI AGREE → merge (gitops PR #1233 MERGED 2026-06-03)
 5. ✓ ADR-0031 ACCEPTED (gitops PR #1233 squash merge ile aktif — Status: ACCEPTED line 3)
-6. ✓ PR-gw-01A/B-core/B3 MERGED 2026-06-03 (platform-backend #390+#403+#421); plan canonical sync 2026-06-05 (gitops PR #1289 Codex thread `019e97c3` REVISE-AGAIN absorb)
+6. ✓ PR-gw-01A/B-core/B3 MERGED 2026-06-03 (platform-backend #390+#403+#421); plan canonical sync 2026-06-05 (gitops PR #1289 Codex thread chain `019e97bb`→`019e97c3`→`019e97cc`→`019e97d2` iter-1/2/3/4 REVISE absorb → iter-5 AGREE final)
 
 ## Sonraki adımlar (downstream)
 
