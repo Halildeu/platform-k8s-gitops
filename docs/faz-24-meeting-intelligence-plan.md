@@ -128,7 +128,7 @@ PR-stt-02  real audio + Docker e2e + Gate A/B baseline (platform-ai)
         ↓
 PR-stt-03  supervised subprocess worker + hard timeout kill (platform-ai)
         ↓
-PR-queue-01  bounded Redis admission + Gateway → STT producer/consumer
+PR-gw-01C  audio-gateway-service Redis Streams cross-server dispatcher producer (ADR-0031 §3.7) — eski PR-queue-01 scope absorbe edildi: in-memory admission PR-gw-01A'da (`application.yml admission-queue-capacity` + LRU `idempotency.replay-cache-size`), backpressure 429/503 PR-gw-01B3'te, cross-server Redis Streams producer/consumer PR-gw-01C (gateway) + PR-stt-03 (live-stt) içinde
         ↓
 PR-obs-01  Grafana/Prometheus dashboard genişletme (skeleton zaten Adım 0'da)
         ↓
@@ -150,15 +150,15 @@ PR-gpu-01  GPU Dockerfile variant (donanım + ölçüm sonrası)
 | platform-ai | PR-stt-02 real audio + container e2e | PR-gw-01 MERGED |
 | platform-ai | PR-stt-03 subprocess isolation | PR-stt-02 MERGED |
 | platform-k8s-gitops | Kustomize base/apps/{audio-gateway,live-stt} + overlay | PR-gw-01 + PR-stt-03 source-merged |
-| platform-backend | PR-queue-01 Redis producer/consumer | PR-stt-03 MERGED |
-| platform-k8s-gitops | helm-values/redis + ESO | paralel PR-queue-01 |
+| platform-backend | PR-gw-01C Redis Streams cross-server producer (eski PR-queue-01 absorbe) | PR-stt-03 MERGED |
+| platform-k8s-gitops + ops | staging-sw Redis Streams setup (ADR-0031 §3.7 — dış altyapı, helm-values içinde değil) | ADR-0031 ACCEPTED |
 | platform-k8s-gitops | PR-obs-01 dashboard + alertmanager rules | PR-queue-01 MERGED |
 | platform-ai | PR-wer-01 WER raporu | PR-stt-03 MERGED + pilot meeting kaydı |
 | platform-ai | PR-final-stt-01 | WER raporu çıktısına göre |
 | platform-ai | PR-gpu-01 | donanım + ölçüm sonrası |
-| **platform-mobile** | **scaffold LIVE + 10 slice (#85-94)** | PR-gw-01 + PR-queue-01 LIVE testai |
-| **platform-desktop** | **scaffold LIVE + 10 slice (#75-84)** | PR-gw-01 + PR-queue-01 LIVE testai |
-| platform-web | mfe-meeting MFE | PR-gw-01 + PR-queue-01 LIVE testai |
+| **platform-mobile** | **PR-mobile-01..10** (Faz 24.11 — board canonical) | PR-gw-01 MERGED + PR-gw-01C LIVE testai |
+| **platform-desktop** | **PR-desktop-01..10** (Faz 24.13 — board canonical 2026-06-05; client plane simetri Mobile/MFE ile) | PR-gw-01 MERGED + PR-gw-01C LIVE testai |
+| platform-web | mfe-meeting MFE (Faz 24.12) | PR-gw-01 MERGED + PR-gw-01C LIVE testai |
 | platform-backend | meeting-service + transcript-service | PR-gw-01 ile paralel veya hemen sonra |
 | platform-backend | Faz 23 notification entegre (meeting events) | M6 ortası |
 | platform-backend | report-service weekly-meeting-summary | M6 sonu |
