@@ -1,5 +1,25 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22 prod endpoint-admin first workload presence + D29 prod GREEN (2026-06-05 22:50 Istanbul / 19:50Z UTC)
+
+**Session milestone**: prod endpoint-admin-service desired-state path progressed from ESO-gated candidate to live prod workload presence. This is **not** D30 atomic cutover/decommission; it is prod workload presence + D29 smoke evidence.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Prod ESO | gitops #1241 MERGED, mergeCommit `e268854c63ed29b91818d378041f812a814d26d6`; `ExternalSecret/endpoint-admin-service-secrets` selective ArgoCD sync; `Ready=True:SecretSynced`; generated Kubernetes Secret has 4 keys | Secret delivery live; values not logged |
+| Prod Vault/PG prereq | `kv/platform/endpoint-admin-service` seeded with `db_username`, `db_password`, `enrollment_token_pepper`, `device_secret_encryption_key`; evidence recorded only as key list + lengths + password hash prefix. Prod PG `endpoint_admin` role/database existed; role password rotated to Vault value; restricted temp pod with `app.kubernetes.io/part-of=platform` connected from pod-network and returned `endpoint_admin@endpoint_admin` | DB auth proven from pod-network |
+| Prod workload | gitops #1242 MERGED, mergeCommit `4202e17c1d0d3f7d72ec7943601fd453bba0bde3`; selective ArgoCD sync of endpoint-admin ConfigMap, Service, ServiceAccount, Deployment | Endpoint-admin resources Synced/Healthy |
+| D30 artifact | Pod `endpoint-admin-service-777c66f5c9-wl5kr`, `ready=true`, Deployment `ready=1/1`; imageID `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:7fa5975c1d0c54e3611db5d89d7b8f8919c1952f6b74f94e562ffd1d90a0f9d2` | Immutable digest match |
+| DB/Flyway boot | Hikari added connection; Flyway successfully applied 49 migrations to schema `endpoint_admin_service`, now at version `v50`; app started on 8096/8081 | Prod schema bootstrap succeeded |
+| OpenFGA | Log: `OpenFGA client created: url=http://openfga:8080, storeId=01KPXCVBHCY2TQ6YHVK009NS1C` | Authz plane wired |
+| D29 prod smoke | `/tmp/smoke-report-prod-20260605T195032Z.json`, exit 0: Up GREEN, Functional GREEN, Secured GREEN, Zanzibar GREEN, synthetic allow/deny PASS (`user:1204` allow, `user:9999999` deny) | D29 four-tier prod evidence captured |
+
+**ArgoCD note**: `platform-prod` application remains overall `OutOfSync` due pre-existing `r29-teams-smoke` resources. Endpoint-admin-specific resources are `Synced`/`Healthy`.
+
+**Open gates**: D30 atomic cutover / broad exposure remains a separate gate; AG-029 signed self-update, controlled rollout policies, IT/domain-wide rollout, and sensitive/SMB/file-action charter remain separate roadmap items.
+
+---
+
 ## Live Delta — Faz 21.1 C4 org-canonicalization sweep + AG-028 managed uninstall test go-live + prod endpoint-admin blocker (2026-06-05, snapshot ~01:00 Istanbul / 2026-06-04 22:30Z UTC audit)
 
 **Session milestone**: endpoint-admin `org_id` FK-flip sweep simple-arc LIVE; AG-028 managed uninstall test go-live with live-verified destructive E2E; prod endpoint-admin overlay PRs open (gated).
