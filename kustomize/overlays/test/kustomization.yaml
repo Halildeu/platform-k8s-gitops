@@ -4719,7 +4719,15 @@ images:
     #   tenant_id stays (A6); reads tenant-keyed (A5). Image build run 26988425047.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-5af5f8d
     #   digest sha256:7fa5975c1d0c54e3611db5d89d7b8f8919c1952f6b74f94e562ffd1d90a0f9d2
-    digest: sha256:7fa5975c1d0c54e3611db5d89d7b8f8919c1952f6b74f94e562ffd1d90a0f9d2
+    # 2026-06-06 Faz 22.5 AG-029 backend update-agent stack -> sha-82071da
+    # (platform-backend PR #493/#494/#495: UPDATE_AGENT command type DB gate,
+    # release catalog, dedicated dispatch from catalog; backend CI + GHCR push
+    # green, image build run 27068305073). Test overlay carries this source
+    # stack to endpoint-admin-service before local Parallels Windows self-update
+    # smoke. D30 digest evidence:
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-82071da
+    #   digest sha256:6ef9c95f8562ec1459067eefb5fed71054d7c876ab69ec670ac7d6e83269cb82
+    digest: sha256:6ef9c95f8562ec1459067eefb5fed71054d7c876ab69ec670ac7d6e83269cb82
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
