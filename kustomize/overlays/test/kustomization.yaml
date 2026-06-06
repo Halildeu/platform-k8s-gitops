@@ -4727,7 +4727,19 @@ images:
     # smoke. D30 digest evidence:
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-82071da
     #   digest sha256:6ef9c95f8562ec1459067eefb5fed71054d7c876ab69ec670ac7d6e83269cb82
-    digest: sha256:6ef9c95f8562ec1459067eefb5fed71054d7c876ab69ec670ac7d6e83269cb82
+    # 2026-06-06 BE-033 stale-device heartbeat semantics -> sha-671b451
+    # (platform-backend PR #497: missing endpoint_devices row now returns
+    # DEVICE_RE_ENROLL_REQUIRED instead of stale 404 for HMAC heartbeat).
+    # Backend image build run 27075708839 produced endpoint-admin-service
+    # digest sha256:ae7342b989b433c62f62e6953f363ec8f74a3de8964695519261a53bc719ac8c.
+    # backend-testai-deploy run 27075747222 succeeded but explicitly skips
+    # endpoint-admin-service, and its auto-PR sync is operator-disabled because
+    # AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY are absent; this explicit
+    # overlay bump reconciles desired-state before the Parallels Windows AG-029
+    # self-update E2E gate continues.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-671b451
+    #   digest sha256:ae7342b989b433c62f62e6953f363ec8f74a3de8964695519261a53bc719ac8c
+    digest: sha256:ae7342b989b433c62f62e6953f363ec8f74a3de8964695519261a53bc719ac8c
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
