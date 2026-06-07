@@ -81,7 +81,7 @@
 > installed-service distribution and multi-device acceptance remain separate
 > gates.
 
-> **2026-06-07 AG-042 local password truth refresh**: local Parallels Windows
+> **2026-06-07 AG-042 local account truth refresh**: local Parallels Windows
 > 11 (`HALILKOOLUB735`) now has both local adapter proof and backend-to-agent
 > dual-control dispatch proof for local Windows SAM operations. Agent-side
 > proof: `TestMutateLocalWindowsIntegration` exercised `LOCK_USER_LOGIN`,
@@ -91,10 +91,17 @@
 > reached the agent and failed safely on the reserved built-in `Administrator`
 > guard with VM state unchanged; AG-042 command
 > `c06cd030-c62e-40da-814d-90956e960eaa` changed disposable local user
-> `ea-recovery-smoke`, then cleanup verified the user was `ABSENT`. Evidence:
-> `docs/faz-22-evidence/2026-06-07-ag92-ag42-backend-dispatch-smoke.md`.
-> This proves local SAM only; domain/M365 password reset, #1044 multi-device
-> batch and `acik.local` IT pilot remain separate gates.
+> `ea-recovery-smoke`, then cleanup verified the user was `ABSENT`. Follow-up
+> #1343 then proved the success path for disposable local lock/unlock:
+> `LOCK_USER_LOGIN` command `a8dfaac1-1c3b-4f4f-84cd-77b62c2bd553`
+> `SUCCEEDED` and changed `Enabled=true -> false`; `UNLOCK_USER_LOGIN`
+> command `fd62b31e-c84a-4ee7-b1d0-e433c35768e1` `SUCCEEDED` and changed
+> `Enabled=false -> true`; cleanup removed `ea-lockunlock-smoke`. Evidence:
+> `docs/faz-22-evidence/2026-06-07-ag92-ag42-backend-dispatch-smoke.md` and
+> `docs/faz-22-evidence/2026-06-07-ag92-disposable-lockunlock-dispatch-smoke.md`.
+> This proves local SAM only; domain/M365 password reset, cached-domain
+> credential update, pre-logon VPN, #1044 multi-device batch and `acik.local`
+> IT pilot remain separate gates.
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
@@ -263,7 +270,7 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **WEB-015** | `platform-web` | Endpoint report / CSV export | **MERGED + TESTAI LIVE 2026-06-07 (#1134)** | RBAC-controlled export; public gateway `POST /api/v1/endpoint-admin/endpoint-devices/export` with `{format:csv, exportMode:raw}` returned 200 `text/csv;charset=UTF-8`, filename `endpoint-devices-raw.csv`, 7 lines, and headers including `Bilgisayar Adı`, `Yasaklı Yazılım`, `Ajan Son Poll` |
 | **AG-028** | `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops` | Software uninstall / detection | **SOURCE-MERGED + TESTAI LIVE (2026-06-04)** | Catalog-managed package only; real 7-Zip uninstall on HALILKOOLUB735 verified `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; maker-checker proposer != approver enforced; prod remains dark |
 | **AG-029** | `platform-agent` | Signed agent self-update | **MERGED + LOCAL PARALLELS BASELINE (2026-06-07)** | PR #74 `656cd1a` fixed Windows verifier sharing violation; PR #75 `5f32181` added multi-device checklist; local Parallels smoke `HALILKOOLUB735` updated `0.1.2-lab.2` -> `0.1.3-lab.1` via BE-031/BE-032 release/dispatch path. Remaining: multi-device batch, trusted production signing and rollout policy acceptance |
-| **AG-042** | `platform-agent` + `platform-backend` | Local SAM lock / unlock / password change | **AGENT-SIDE + BACKEND DISPATCH PROVEN (2026-06-07)** | Agent-side: `TestMutateLocalWindowsIntegration` created disposable `ea-pwd-0607a`, exercised `LOCK_USER_LOGIN` + `UNLOCK_USER_LOGIN` + `CHANGE_LOCAL_PASSWORD`, removed the user, and reported `secretEchoed=false`. Backend/JWT dispatch: AG-092 `LOCK_USER_LOGIN` command `2825b275-4f31-4324-9ad6-a96e08d8b27e` reached the agent and failed safely on reserved `Administrator` with VM unchanged; AG-042 `CHANGE_LOCAL_PASSWORD` command `c06cd030-c62e-40da-814d-90956e960eaa` succeeded on disposable local user `ea-recovery-smoke`, then cleanup verified `ABSENT`. Domain/M365 reset remains out of scope |
+| **AG-042** | `platform-agent` + `platform-backend` | Local SAM lock / unlock / password change | **AGENT-SIDE + BACKEND DISPATCH PROVEN (2026-06-07)** | Agent-side: `TestMutateLocalWindowsIntegration` created disposable `ea-pwd-0607a`, exercised `LOCK_USER_LOGIN` + `UNLOCK_USER_LOGIN` + `CHANGE_LOCAL_PASSWORD`, removed the user, and reported `secretEchoed=false`. Backend/JWT dispatch: AG-092 `LOCK_USER_LOGIN` command `2825b275-4f31-4324-9ad6-a96e08d8b27e` reached the agent and failed safely on reserved `Administrator` with VM unchanged; AG-042 `CHANGE_LOCAL_PASSWORD` command `c06cd030-c62e-40da-814d-90956e960eaa` succeeded on disposable local user `ea-recovery-smoke`, then cleanup verified `ABSENT`; #1343 disposable success-path smoke then proved `LOCK_USER_LOGIN` command `a8dfaac1-1c3b-4f4f-84cd-77b62c2bd553` `SUCCEEDED` (`Enabled=true -> false`) and `UNLOCK_USER_LOGIN` command `fd62b31e-c84a-4ee7-b1d0-e433c35768e1` `SUCCEEDED` (`Enabled=false -> true`) on `ea-lockunlock-smoke`, followed by cleanup. Domain/M365/cached-domain/pre-logon VPN behavior remains out of scope |
 | **AG-030P** | `platform-agent` | Auto-enroll dry-run certstore preflight hardening | **MERGED + LOCAL PARALLELS NO-CRASH PROOF (PR #77, 2026-06-07)** | `-auto-enroll -dry-run` no longer broad-scans arbitrary LocalMachine certs without an operator filter; requires `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SUBJECT_SUFFIX` or `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SAN_URI_PREFIX`; local temp binary proved no-filter fail-closed and filtered no-cert paths without native crash. Installed-service distribution and AD CS cert provisioning remain separate gates |
 | **AG-030** | `platform-agent` | Pending reboot detection | **SOURCE-MERGED (PR #33)** | CBS/Windows Update/PendingFileRenameOperations sinyalleri; binary distribution + HALILKOOLUB735 lab smoke operator-bound |
 | **AG-031** | `platform-agent` | Endpoint security posture inventory | **SOURCE-MERGED (PR #34, Codex 019e74b5 4-iter AGREE)** | Defender/Firewall/BitLocker read-only; recovery key/drive-id/vendor-name sızmaz; tri-state nullable; binary distribution operator-bound |
