@@ -1,5 +1,34 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 AG-029 post-merge local Parallels self-update baseline (2026-06-07 05:15 Istanbul / 02:15Z UTC)
+
+**Session milestone**: AG-029 moved from "draft/source pending" to a
+post-merge local Parallels baseline on `platform-agent origin/main`. This is
+local lab evidence only; it does **not** prove multi-device acceptance,
+domain-wide rollout, trusted production signing or prod enablement.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Source fix | `platform-agent` #74 MERGED, mergeCommit `656cd1a384ced3b79c4996acc5d9031e0c11dc77` | Windows Authenticode sharing-violation root cause fixed by closing the staged temp download before verifier access |
+| Acceptance checklist | `platform-agent` #75 MERGED, mergeCommit `5f3218165f58244f29eb4c5220e839eb795a9bed` | Multi-device checklist exists; only local Parallels baseline is filled, other devices remain `PENDING_BATCH` |
+| Target artifact | built from merged `origin/main` as `endpoint-agent 0.1.3-lab.1`; signed target SHA256 `CFFD73CC86C27B727952E45083CF95047B9E2AAAC9C1ACC393CACD20122048FE`; lab signer thumbprint `FC0E7FCCDD1AD1A60B3D0CD4FE91CD1556FFE02ABA3CAE3FCEF3978E61E624FE` | Lab-only signed artifact ready for local smoke |
+| Backend release + dispatch | release `ag029-main-20260607020152`; auth probe creator/approver `200/200`; negative trust-field preflight returned HTTP `400`; release DRAFT -> APPROVED; dispatch command `5c6fe05c-4ce6-4452-9abc-8dda07b6cdb6` | BE-031/BE-032 catalog-bound path used; caller-supplied trust fields rejected |
+| Command result | command `SUCCEEDED`; stageStatus `STAGED_ACTIVATION_READY`; oldVersion `0.1.2-lab.2`; targetVersion `0.1.3-lab.1`; actualSha256/signing thumbprint match target | Update staged, verified and activation-ready |
+| Windows activation | local Parallels device `HALILKOOLUB735` (`d0efb00a-681a-4e32-b7de-a27ef94f2977`); service `EndpointAgent` Running; PID `13016`; installed version `0.1.3-lab.1`; installed SHA256 matches signed target; `max-activated-version=0.1.3-lab.1` | Post-result activation completed on the local Windows baseline |
+| Backend heartbeat + audit | heartbeat row: `HALILKOOLUB735 | 0.1.3-lab.1 | ONLINE | 2026-06-07 02:02:13Z`; audit row `581d5710-a5bc-485d-a6d8-e8c1e2c1cb28` = `ENDPOINT_AGENT_UPDATE_COMMAND_CREATED` for release `ag029-main-20260607020152` | Server-side acceptance saw the new agent version and audit metadata |
+| Evidence link | `platform-agent` #55 evidence comment: https://github.com/Halildeu/platform-agent/issues/55#issuecomment-4641111205 | AG-029 issue remains `Needs Verify` until broader acceptance is reconciled |
+
+**Boundary / remaining gates**:
+
+- Local Parallels baseline is now proven for AG-029 after merged main.
+- Multi-device acceptance is still pending batch evidence; the checklist added
+  in PR #75 must be filled for the other devices before a broad claim.
+- Trusted production signing is not proven here (`LAB_ONLY_EVIDENCE`).
+- Domain-wide rollout / MSI-GPO / ring-window-throttle policies remain separate
+  Faz 22.3 / 22.5.8 gates.
+
+---
+
 ## Live Delta — Faz 22 prod endpoint-admin first workload presence + D29 prod GREEN (2026-06-05 22:50 Istanbul / 19:50Z UTC)
 
 **Session milestone**: prod endpoint-admin-service desired-state path progressed from ESO-gated candidate to live prod workload presence. This is **not** D30 atomic cutover/decommission; it is prod workload presence + D29 smoke evidence.
