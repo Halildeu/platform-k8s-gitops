@@ -1,5 +1,41 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.2.A Parallels W11 CI rehearsal workflow_dispatch PASS (2026-06-07 06:35 Istanbul / 03:35Z UTC)
+
+**Session milestone**: `platform-agent` #12 local Parallels Windows 11
+rehearsal moved from terminal-only evidence to a real GitHub Actions
+`workflow_dispatch` run on an ephemeral self-hosted macOS runner. This is a
+repeatable local-lab rehearsal proof; it is not `acik.local` domain pilot,
+multi-device soak, trusted production signing, password-reset readiness or
+domain-wide rollout acceptance.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Harness hardening | `platform-agent` PR #78 MERGED, mergeCommit `ea3abc7c035f8aa03d2a590fa3f756892970c4ca`; CI checks PASS; Claude CLI cross-AI verdict `AGREE`, no must-fix | Parallels 26 `--without-shell` / stdin PowerShell / empty-output false-green risks closed before workflow run |
+| Ephemeral runner | Repo initially had `total_count=0` self-hosted runners; ephemeral runner `codex-parallels-w11-Halil-MacBook-Pro.local-20260607033348` registered with labels `self-hosted, macOS, ARM64, parallels, windows11`; after job `.credentials` and `.runner` removed; repo runner list returned to `total_count=0` | No persistent self-hosted runner left behind |
+| Workflow run | `Parallels Windows 11 CI pilot rehearsal` run [27081667910](https://github.com/Halildeu/platform-agent/actions/runs/27081667910), job [79928639993](https://github.com/Halildeu/platform-agent/actions/runs/27081667910/job/79928639993), event `workflow_dispatch`, head `main@ea3abc7c...`, conclusion `success` | GitHub Actions path exercised against local Parallels VM |
+| Artifact | Uploaded artifact `parallels-w11-ci-evidence-27081667910`, `8837` bytes, not expired; downloaded evidence includes `precheck.txt`, `classify/classification.json`, `SHA256SUMS`, `windows-live.txt`, `run.log` | Evidence is retrievable from Actions |
+| VM classification | `HALILKOOLUB735`, Windows 11 Pro for Workstations, `OSVersion=10.0.26200`, `Domain=WORKGROUP`, `PartOfDomain=false`, `AzureAdJoined=NO`, `WorkplaceJoined=NO`, `DomainJoined=NO`, detected tier `A1` | Local non-domain baseline confirmed |
+| Backend reachability | Precheck `testai.acik.com:443` returned `Reachable=true` | Local VM can reach backend edge over TCP/443 |
+| Windows service smoke | `windows-live.ps1` produced 86 evidence lines; temporary service `EndpointAgentCodexTest` installed, started, event source verified, tamper checks executed, maintenance-token stop succeeded, uninstall/cleanup completed | Repeatable local Windows service lifecycle smoke through workflow_dispatch |
+| Package SHA | `endpoint-agent.exe` SHA256 `9491b41f7be4d172d4b6e00f13f1050abb4e657ff2593361a075ce5001f2463e`; install/uninstall/README SHA values captured in artifact | Build/package path exercised in workflow |
+| Secret scan | Classifier and main harness post-write secret scans clean | Evidence upload did not leave JWT/Bearer/password/token/raw-GUID/email/raw-SID findings |
+| BE-011 boundary | Optional `scripts/test/be011-lifecycle-helper.sh` absent; workflow logged skip and referenced predecessor manual BE-011 evidence | No fresh backend command/result/audit row was created by this workflow |
+| Evidence | `docs/faz-22-evidence/2026-06-07-parallels-windows11-ci-pilot-rehearsal.md`; platform-agent #12; platform-agent PR #78; gitops #1044 comment pending update | Traceable evidence chain |
+
+**Boundary / remaining gates**:
+
+- This proves the self-hosted Mac + Parallels W11 workflow_dispatch rehearsal
+  path only.
+- It does not satisfy gitops #1044 multi-device + 24h soak by itself.
+- It does not satisfy `acik.local` 22.2.B: domain join, EndpointPilot OU,
+  IT-owned devices, EDR allowlist and trusted signing remain separate gates.
+- A BE-011 helper can be added later if the workflow itself must emit fresh
+  backend command/result/audit ids; this run deliberately records that the
+  helper was absent rather than overclaiming it.
+
+---
+
 ## Live Delta — Faz 22.3 / AG-030P auto-enroll dry-run crash hardening (2026-06-07 05:57 Istanbul / 02:57Z UTC)
 
 **Session milestone**: local Parallels Windows 11 exposed a real
