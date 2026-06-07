@@ -556,6 +556,36 @@ WHERE issued_at > now() - interval '24 hours'
 ORDER BY device_id, issued_at;
 ```
 
+#### 11.3A Read-only rollup helper (#1044)
+
+24h soak penceresi tamamlandıktan sonra DB-direct SQL'i elle tekrar yazmak
+yerine read-only helper ile aynı source-truth kolonları üzerinden rollup fact
+set'i çıkarılır:
+
+```bash
+# Dry-run: SQL + threshold bilgisini basar, DB'ye bağlanmaz.
+bash scripts/faz22-non-domain/a1-soak-rollup.sh
+
+# Test host üzerinden read-only psql; credential argümanı almaz/yazmaz.
+bash scripts/faz22-non-domain/a1-soak-rollup.sh \
+  --execute \
+  --ssh-target halil@staging-sw \
+  --device-id <HALILKOOLUB735-device-uuid> \
+  --device-id <NONDOMAIN-W11-LAB-01-device-uuid> \
+  --device-id <NONDOMAIN-W11-LAB-02-device-uuid>
+```
+
+Helper sözleşmesi:
+- `SELECT`-only; endpoint/admin/runtime state mutate etmez.
+- Varsayılan mod dry-run'dır.
+- `endpoint_heartbeats.received_at` ve `endpoint_commands.command_type`
+  source-truth kolonlarını kullanır.
+- `ROLLUP_FACTS_OK`, tek başına acceptance PASS değildir; per-device evidence
+  (§14.1+§14.2) ve pilot-wide rollup (§14.3+§14.4) içine taşınacak fact set'idir.
+- `NO_HEARTBEAT_DATA`, `GAP_REVIEW`, `COMMAND_REVIEW` veya
+  `LOW_HEARTBEAT_RATIO` verdict'i, operator açıklaması ve/veya yeniden soak
+  gerektirir.
+
 ### 11.4 Operator dashboard (future)
 
 `BE-XXX` future task: Prometheus exporter `endpoint_agent_last_seen_seconds` + Grafana dashboard "Endpoint Pilot — Device Status" + Alertmanager rule "DeviceOfflineGap > 30m". Pilot evidence'da placeholder olarak referans, gerçek implementasyon ayrı tur.
