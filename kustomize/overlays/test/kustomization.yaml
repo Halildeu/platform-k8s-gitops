@@ -4811,7 +4811,17 @@ images:
     # AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-18cd689
     #   digest sha256:389565a9d5411247be6735f6816a77e3906ad2ecf8552ea5216d64584618be97
-    digest: sha256:1bf2514d3a9cb94cdf7486101f65787d082b65695396b3eed33a700ed111a27a
+    # 2026-06-07 BE-376 compliance-gap plural filter param -> sha-a0a6330
+    # (platform-backend PR #506: endpoint-admin compliance gaps accepts both
+    # gapType and frontend gapTypes filter params; endpoint-admin-service
+    # slice + full module tests green; backend image build run 27105378542
+    # produced the digest below). backend-testai-deploy run 27105414648
+    # succeeded but its service list still skips endpoint-admin-service, and
+    # auto overlay sync remains operator-disabled due absent automation app
+    # credentials; this explicit overlay bump restores GitOps desired-state.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-a0a6330
+    #   digest sha256:e7d3428bf164372723ecc74381eae4ca4338741f06b6f053a3bd93a614689a2a
+    digest: sha256:e7d3428bf164372723ecc74381eae4ca4338741f06b6f053a3bd93a614689a2a
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
