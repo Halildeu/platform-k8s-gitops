@@ -1092,7 +1092,30 @@ images:
     # CI 13/13 green (incl. permission-service real-FGA Testcontainer IT).
     # Image build run: 26971846892 (merge commit ed569c7).
     # GHCR manifest: ghcr.io/halildeu/platform-backend-permission-service:sha-ed569c7
-    digest: sha256:5bbe1465981adb5c9c51e1ee4a20cbde4092dfdd45caf664f1b888691c64d9da
+    #
+    # 2026-06-07 update: sha-815308a — platform-backend PR #503 (#1275 Option A
+    # fold) on top of PR #502 (#1274 grant-add) + PR #454 (#1272 revoke-orphan).
+    # The last fail-SILENT OpenFGA path PermissionService.syncTuplesToOpenFga is
+    # REMOVED: it swallowed genuine writeTuple/deleteTuple failures (log.warn only)
+    # so the DB tx committed with no tuple (split state), and its per-role revoke
+    # delete had no spare-set (latent multi-role over-delete). All legacy module:*
+    # sync now flows through fail-loud aggregate TupleSyncService paths:
+    #   - assignRole / updateAssignment → refreshFeatureAndLegacyTuplesForUser
+    #     (GAIN reconcile: granule refresh + aggregate legacy write + single bump,
+    #      mirrors AccessRoleService ordering). assignRole folds in #1274 grant-add
+    #      correctness (a member added after the role's granules exist gets the
+    #      feature tuples immediately, not at the next RoleChangeEvent).
+    #   - revokeRole → refreshFeatureTuples spare-set (deletes the revoked role's
+    #     stale legacy+granule tuples, preserves any still justified by another
+    #     active role — fixes the latent over-delete the old per-role delete had).
+    # PermissionService no longer depends on OpenFgaAuthzService (compile-time
+    # guard). 383/383 permission-service unit tests + real-FGA Testcontainer IT
+    # green. Codex thread 019ea233 plan PARTIAL→AGREE + post-impl AGREE.
+    # Image build run: 27094209115 (merge commit 815308a; permission-service job
+    # success — core-data-service co-job hit a transient Docker Hub buildkit pull
+    # timeout, unrelated, rerun).
+    # GHCR manifest: ghcr.io/halildeu/platform-backend-permission-service:sha-815308a
+    digest: sha256:f3177b4a9966d7a32c534a67ee2bf22ef388543412d9ee6a06b4efe6b4fe4eea
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
