@@ -1,5 +1,33 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 local Parallels read-only diagnostics refresh (2026-06-07 05:35 Istanbul / 02:35Z UTC)
+
+**Session milestone**: after AG-029 activation baseline, the same local
+Parallels endpoint (`HALILKOOLUB735`) was re-checked with installed-agent
+read-only diagnostics only. No command dispatch, install, uninstall, restart,
+account mutation, password change, domain join, SMB/file action or production
+claim was made.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Agent service | `EndpointAgent` RUNNING; startup mode `AUTO_DELAYED`; binary version `endpoint-agent 0.1.3-lab.1`; SHA256 `CFFD73CC86C27B727952E45083CF95047B9E2AAAC9C1ACC393CACD20122048FE` | Local post-AG-029 binary still active |
+| Backend poll | Log tail showed device `d0efb00a-681a-4e32-b7de-a27ef94f2977` HMAC credential accepted with value redacted and `no command available` responses at 30s cadence through `2026-06-07 02:28Z` | Agent can poll backend without a new dispatched command |
+| Identity | `domain=WORKGROUP`, `partOfDomain=false`, `domainJoined=NO`, `azureAdJoined=NO`, `workplaceJoined=NO`, classification `LOCAL`; raw logged-in account fields emitted as hashes/masks | Local non-domain baseline confirmed |
+| Local users | `diagnose local-users` returned 5 local accounts; built-in disabled accounts observed; active local user observed; locked-out users observed as 0 | Read-only local user surface callable; no mutation |
+| Software / WinGet | `diagnose software` `supported=true`, `appCount=17`; 7-Zip not present in current inventory; `diagnose winget` resolved WinGet `1.28.240`; `diagnose winget-egress` DNS/TCP/HTTPS OK for Microsoft CDN/Store endpoints | Software inventory and WinGet readiness surfaces callable |
+| Hardware / services | Windows 11 Pro for Workstations ARM64 Parallels VM; C: free ~53.8GB; `EndpointAgent`, `EventLog`, `MpsSvc`, `WinDefend` RUNNING; `BITS`, `wuauserv` STOPPED/MANUAL | Local posture evidence captured |
+| Evidence | `docs/faz-22-evidence/2026-06-07-halilkoolub735-local-readonly-diagnostics.md`; platform-agent #55 comments `4641184773` and `4641192809`; gitops #1044 batch checklist comment `4641193725` | Local-only evidence and other-device checklist traceable |
+
+**Boundary / remaining gates**:
+
+- Multi-device acceptance is still pending: gitops #1044 remains open for at
+  least two additional devices plus soak/rollup.
+- Trusted production signing, domain-wide rollout, password reset, SMB/file
+  actions and sensitive operations remain separate gates.
+- This delta supports local development/testing confidence only.
+
+---
+
 ## Live Delta — Faz 22.5 AG-029 post-merge local Parallels self-update baseline (2026-06-07 05:15 Istanbul / 02:15Z UTC)
 
 **Session milestone**: AG-029 moved from "draft/source pending" to a
