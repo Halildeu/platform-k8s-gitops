@@ -3715,7 +3715,18 @@ images:
     #   auto-dispatched the testai deploy — this realigns the gitops source pin.
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-3e3af5b
     #   digest sha256:5db215c1cc73a7248f98dc675e1d299d5f70b6c021108fcb42e241be36c3614b
-    digest: sha256:5db215c1cc73a7248f98dc675e1d299d5f70b6c021108fcb42e241be36c3614b
+    # 2026-06-08: bump sha-3e3af5b -> sha-cc55d92 (platform-web PR #771 / WEB #770 —
+    #   UserActions İşlemler menu shell-singleton authz gate. reset/toggle/grant/
+    #   revoke were hidden for a super-admin because the gate read the local
+    #   @mfe/auth usePermissions() no-op default; now reads the shell auth singleton
+    #   via new getModuleLevel(module) contract (destructive actions require MANAGE,
+    #   not any VIEW). impersonate.menu i18n added across 5 locales (raw-key fix).
+    #   Codex 019ea409 plan REVISE->Option 2b + post-impl REVISE 3-point absorb ->
+    #   AGREE/ready_to_merge. mfe-shell 163 files/1423 pass + mfe-users 14/94 pass +
+    #   eslint clean. Image build run from merge cc55d92c (GHCR push success).
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-cc55d92
+    #   digest sha256:ea8aa7003144402becb5d916f3cc488bb0d310644545cb0c0f82d5b20e97409a
+    digest: sha256:ea8aa7003144402becb5d916f3cc488bb0d310644545cb0c0f82d5b20e97409a
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
