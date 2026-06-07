@@ -1,5 +1,31 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22 AG-092 disposable local lock/unlock dispatch smoke (2026-06-07 20:21 Istanbul / 17:21Z UTC)
+
+**Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has
+backend-to-agent dual-control success-path evidence for both `LOCK_USER_LOGIN`
+and `UNLOCK_USER_LOGIN` on a disposable local Windows SAM account. The smoke
+created `ea-lockunlock-smoke`, locked it through endpoint-admin command
+dispatch, verified `Enabled=false` on the VM, unlocked it through a second
+command, verified `Enabled=true`, then removed the synthetic account. This is
+local Windows SAM evidence only; it is not domain password reset, cached domain
+credential proof, M365/Entra reset, SMB/file action, #1044 two-device batch,
+`acik.local` IT pilot, or 24h observation evidence.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| LOCK_USER_LOGIN success path | Command `a8dfaac1-1c3b-4f4f-84cd-77b62c2bd553`; `approvalStatus=APPROVED`; terminal `SUCCEEDED`; result `LOCK_USER_LOGIN applied`; VM state `Enabled=true` -> `Enabled=false` | Backend-to-agent dispatch and local SAM lock adapter success path exercised |
+| UNLOCK_USER_LOGIN success path | Command `fd62b31e-c84a-4ee7-b1d0-e433c35768e1`; `approvalStatus=APPROVED`; terminal `SUCCEEDED`; result `UNLOCK_USER_LOGIN applied`; VM state `Enabled=false` -> `Enabled=true` | Backend-to-agent dispatch and local SAM unlock adapter success path exercised |
+| Cleanup / secret hygiene | `net user ea-lockunlock-smoke` returned `The user name could not be found.` after cleanup; evidence scan found no raw Bearer/JWT/Authorization/password/token/secret material | No synthetic account or raw credential material left behind |
+| Evidence | `docs/faz-22-evidence/2026-06-07-ag92-disposable-lockunlock-dispatch-smoke.md`; local evidence dir `/tmp/faz22-live-smoke/ag92-lockunlock-disposable-20260607T172110Z` | Traceable evidence chain |
+
+**Boundary / remaining gates**:
+
+- #1044 remains user-owned for two additional devices plus observation roll-up.
+- Domain / `acik.local` / IT pilot gates remain separate.
+- Domain password / cached credential / pre-logon VPN behavior remains a
+  separate identity connector and IT-pilot design lane.
+
 ## Live Delta — Faz 22 AG-092 / AG-042 backend-to-agent dispatch smoke (2026-06-07 19:43 Istanbul / 16:43Z UTC)
 
 **Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has
