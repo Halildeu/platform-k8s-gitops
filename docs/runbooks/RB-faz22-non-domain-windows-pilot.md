@@ -1410,6 +1410,54 @@ Per pilot evidence PR:
 
 ## 18. Sıradaki adımlar (post-runbook merge)
 
+### 18.1 #1044 operator evidence pack
+
+`scripts/faz22-non-domain/a1-operator-evidence-pack.py` #1044 A1
+multi-device acceptance zinciri için manifest tabanlı üst wrapper'dır. Default
+modu dry-run'dır: secret/JWT/token kabul etmez, backend command dispatch etmez,
+hesap veya cluster state mutate etmez. Çıktı olarak:
+
+- `operator-checklist.md`
+- `run-evidence-pack.sh`
+- `manifest.normalized.json`
+
+üretir. Script, iki ek cihaz hazır olduğunda aynı manifest üzerinden
+diagnostics → per-device evidence doc → SELECT-only soak rollup → pilot-wide
+rollup doc sıralamasını tek plana bağlar.
+
+Starter manifest:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/faz22-non-domain/a1-operator-evidence-pack.py \
+  --write-example-manifest /tmp/faz22-a1-devices.json
+```
+
+Review-only pack:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/faz22-non-domain/a1-operator-evidence-pack.py \
+  --manifest /tmp/faz22-a1-devices.json \
+  --output-dir /tmp/faz22-a1-operator-pack \
+  --include-winget-egress
+```
+
+Observation window sonrası gerçek soak output ile rollup draft üretimi:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/faz22-non-domain/a1-operator-evidence-pack.py \
+  --manifest /tmp/faz22-a1-devices.json \
+  --output-dir /tmp/faz22-a1-operator-pack-final \
+  --soak-output /tmp/faz22-a1-soak-rollup.txt \
+  --generate-rollup-doc
+```
+
+Boundary: Bu wrapper #1044'ü PASS yapmaz; yalnız kanıt üretim sırasını
+standardize eder. `PENDING` deviceId bulunan manifest ile final rollup kabulü
+yapılamaz; iki ek cihaz backend device UUID aldıktan sonra manifest tekrar
+çalıştırılır.
+
+### 18.2 Carry-over list
+
 1. **CI script extension**: `scripts/test/parallels-windows11-ci.sh` non-domain classification precheck genişletmesi (Codex Q8 + §8.2 önerisi) — ayrı PR
 2. **Yeni board issue**: "Faz 22.2.A non-domain pilot — A1 multi-VM repeatability" (mevcut HALILKOOLUB735 + 2 yeni Parallels VM evidence; 24h soak)
 3. **TRACKING-ROADMAP backlog unlock**: ~~AG-021 (identity inventory) + AG-022 (logged-in identity)~~ ✅ source-foundation MERGED 2026-05-26 (platform-agent #17 `91ef533d`); kalan field-acceptance pendingler — AG-021/022 multi-device classification evidence + CI script alignment (`scripts/test/parallels-windows11-ci.sh` agent-native `diagnose identity` çağrısı) + **BE-015** (admin identity compliance API) + **AG-024** (signed manifest / Authenticode) + **BE-019** (KVKK retention enforce) priority bump
