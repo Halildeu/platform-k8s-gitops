@@ -4765,7 +4765,18 @@ images:
     # self-update E2E gate continues.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-671b451
     #   digest sha256:ae7342b989b433c62f62e6953f363ec8f74a3de8964695519261a53bc719ac8c
-    digest: sha256:ae7342b989b433c62f62e6953f363ec8f74a3de8964695519261a53bc719ac8c
+    # 2026-06-07 AG-042 local password secret-delivery backend -> sha-18cd689
+    # (platform-backend PR #501: dedicated
+    # /endpoint-devices/{deviceId}/local-password-changes endpoint, encrypted
+    # endpoint_command_secrets table, one-time agent claim secret injection,
+    # terminal-result secret cleanup, generic /commands CHANGE_LOCAL_PASSWORD
+    # remains blocked). Backend image build run 27088006700 produced endpoint-
+    # admin-service digest below; backend-testai-deploy run 27088041405
+    # succeeded, while auto overlay sync stayed operator-disabled due absent
+    # AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-18cd689
+    #   digest sha256:389565a9d5411247be6735f6816a77e3906ad2ecf8552ea5216d64584618be97
+    digest: sha256:389565a9d5411247be6735f6816a77e3906ad2ecf8552ea5216d64584618be97
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
