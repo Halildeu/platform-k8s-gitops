@@ -24,6 +24,16 @@
 > evidence only**; multi-device acceptance, trusted production signing and
 > domain-wide rollout remain separate gates.
 
+> **2026-06-07 BE-026..BE-029 rollout truth refresh**: the controlled rollout
+> policy source sprint is no longer draft-only. `platform-backend` PR #478
+> (BE-026 rings/device tags, `665ac312`), PR #490 (BE-027 install schedule
+> `notBefore`/`expiresAt`, `b23d1e0`), PR #491 (BE-028 install throttle,
+> `c1cd9e5`) and PR #492 (BE-029 approved bundles, `3614837`) are MERGED with
+> checks passing, and platform-backend #477/#479/#481/#483 are reconciled.
+> This is **backend source-side rollout control** evidence; image/digest
+> rollout, live testai policy acceptance, AG-029 multi-device acceptance,
+> trusted signing and domain-wide rollout remain separate gates.
+
 > **Status**: SOURCE-MERGED + testai LIVE for catalog/inventory/compliance/preflight/audit; AG-027L installer log redaction SOURCE-MERGED 2026-05-29 PM (platform-agent PR #32 `4f5e152`); **First Install Pilot LIVE 2026-05-31** ([#1133 GREEN](https://github.com/Halildeu/platform-k8s-gitops/issues/1133) — `be021-smoke-7zip` SUCCEEDED end-to-end on HALILKOOLUB735 SYSTEM Session-0 ARM64 Win11; UI "Başarılı" 12:37:27; true root cause 3-layer fix: backend PR #338 contract gap + agent PR #41 `winget list` Session-0 unreliable → INSTALL exit code authoritative + `0x8A150061` → SUCCEEDED_NOOP); **WEB-014D-followup fixed in source** — platform-web PR #726 removed the disabled-confirm first-paint/refetch regression and current web main also carries AG-029 self-update dispatch UI PR #755. Runtime/browser acceptance remains evidence-gated by the active overlay digest, but no stale draft PR remains for this UI fix.
 > **Tracked by**: platform-k8s-gitops#1083, platform-k8s-gitops#1086, platform-k8s-gitops#1088, platform-k8s-gitops#1090
 > **Scope date**: 2026-05-27 (initial 3-AI mutabakatı); **truth refresh 2026-05-29**
@@ -72,14 +82,19 @@
 > gates.
 
 > **2026-06-07 AG-042 local password truth refresh**: local Parallels Windows
-> 11 (`HALILKOOLUB735`) now has agent-side Windows SAM mutation proof for
-> `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`, and `CHANGE_LOCAL_PASSWORD` on a
-> disposable `ea-*` local account. Test binary SHA256
-> `8da4c6d2a225a8234314a2f43711b5678ad9ced5f5e821685c6d49ff4b95ecd8`;
-> `TestMutateLocalWindowsIntegration` PASS; cleanup removed the account and
-> `secretEchoed=false`. This is local adapter proof only; backend/JWT
-> dual-control dispatch, domain/M365 password reset, #1044 multi-device batch
-> and `acik.local` IT pilot remain separate gates.
+> 11 (`HALILKOOLUB735`) now has both local adapter proof and backend-to-agent
+> dual-control dispatch proof for local Windows SAM operations. Agent-side
+> proof: `TestMutateLocalWindowsIntegration` exercised `LOCK_USER_LOGIN`,
+> `UNLOCK_USER_LOGIN`, and `CHANGE_LOCAL_PASSWORD` on a disposable `ea-*`
+> local account, then removed it with `secretEchoed=false`. Backend/JWT
+> dispatch proof: AG-092 command `2825b275-4f31-4324-9ad6-a96e08d8b27e`
+> reached the agent and failed safely on the reserved built-in `Administrator`
+> guard with VM state unchanged; AG-042 command
+> `c06cd030-c62e-40da-814d-90956e960eaa` changed disposable local user
+> `ea-recovery-smoke`, then cleanup verified the user was `ABSENT`. Evidence:
+> `docs/faz-22-evidence/2026-06-07-ag92-ag42-backend-dispatch-smoke.md`.
+> This proves local SAM only; domain/M365 password reset, #1044 multi-device
+> batch and `acik.local` IT pilot remain separate gates.
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
@@ -248,7 +263,7 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **WEB-015** | `platform-web` | Endpoint report / CSV export | **MERGED + TESTAI LIVE 2026-06-07 (#1134)** | RBAC-controlled export; public gateway `POST /api/v1/endpoint-admin/endpoint-devices/export` with `{format:csv, exportMode:raw}` returned 200 `text/csv;charset=UTF-8`, filename `endpoint-devices-raw.csv`, 7 lines, and headers including `Bilgisayar Adı`, `Yasaklı Yazılım`, `Ajan Son Poll` |
 | **AG-028** | `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops` | Software uninstall / detection | **SOURCE-MERGED + TESTAI LIVE (2026-06-04)** | Catalog-managed package only; real 7-Zip uninstall on HALILKOOLUB735 verified `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; maker-checker proposer != approver enforced; prod remains dark |
 | **AG-029** | `platform-agent` | Signed agent self-update | **MERGED + LOCAL PARALLELS BASELINE (2026-06-07)** | PR #74 `656cd1a` fixed Windows verifier sharing violation; PR #75 `5f32181` added multi-device checklist; local Parallels smoke `HALILKOOLUB735` updated `0.1.2-lab.2` -> `0.1.3-lab.1` via BE-031/BE-032 release/dispatch path. Remaining: multi-device batch, trusted production signing and rollout policy acceptance |
-| **AG-042** | `platform-agent` + `platform-backend` | Local SAM lock / unlock / password change | **AGENT-SIDE LOCAL PARALLELS PROVEN (2026-06-07)** | `platform-agent origin/main` test binary SHA256 `8da4c6d2...`; `TestMutateLocalWindowsIntegration` created disposable `ea-pwd-0607a`, exercised `LOCK_USER_LOGIN` + `UNLOCK_USER_LOGIN` + `CHANGE_LOCAL_PASSWORD`, removed the user, and reported `secretEchoed=false`. Backend already has dedicated `CHANGE_LOCAL_PASSWORD` secret-delivery source path, but backend/JWT dual-control dispatch is not claimed by this local adapter smoke; domain/M365 reset remains out of scope |
+| **AG-042** | `platform-agent` + `platform-backend` | Local SAM lock / unlock / password change | **AGENT-SIDE + BACKEND DISPATCH PROVEN (2026-06-07)** | Agent-side: `TestMutateLocalWindowsIntegration` created disposable `ea-pwd-0607a`, exercised `LOCK_USER_LOGIN` + `UNLOCK_USER_LOGIN` + `CHANGE_LOCAL_PASSWORD`, removed the user, and reported `secretEchoed=false`. Backend/JWT dispatch: AG-092 `LOCK_USER_LOGIN` command `2825b275-4f31-4324-9ad6-a96e08d8b27e` reached the agent and failed safely on reserved `Administrator` with VM unchanged; AG-042 `CHANGE_LOCAL_PASSWORD` command `c06cd030-c62e-40da-814d-90956e960eaa` succeeded on disposable local user `ea-recovery-smoke`, then cleanup verified `ABSENT`. Domain/M365 reset remains out of scope |
 | **AG-030P** | `platform-agent` | Auto-enroll dry-run certstore preflight hardening | **MERGED + LOCAL PARALLELS NO-CRASH PROOF (PR #77, 2026-06-07)** | `-auto-enroll -dry-run` no longer broad-scans arbitrary LocalMachine certs without an operator filter; requires `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SUBJECT_SUFFIX` or `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SAN_URI_PREFIX`; local temp binary proved no-filter fail-closed and filtered no-cert paths without native crash. Installed-service distribution and AD CS cert provisioning remain separate gates |
 | **AG-030** | `platform-agent` | Pending reboot detection | **SOURCE-MERGED (PR #33)** | CBS/Windows Update/PendingFileRenameOperations sinyalleri; binary distribution + HALILKOOLUB735 lab smoke operator-bound |
 | **AG-031** | `platform-agent` | Endpoint security posture inventory | **SOURCE-MERGED (PR #34, Codex 019e74b5 4-iter AGREE)** | Defender/Firewall/BitLocker read-only; recovery key/drive-id/vendor-name sızmaz; tri-state nullable; binary distribution operator-bound |
@@ -265,7 +280,7 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **WEB-017** | `platform-web` | Endpoint Enrollment Management UI | **MERGED + LIVE (PR #701 `c0201c08`)** | Enrollment workflow surface |
 | **WEB-018** | `platform-web` | Envanteri Şimdi Topla + Donanım dedicated trigger | **MERGED + LIVE (PR #702 `e096837b`)** | COLLECT_INVENTORY payload UI + Donanım trigger |
 | **BE-026** | `platform-backend` | Deployment rings / device tags | **SOURCE-MERGED (PR #478)** | V51 rollout ring/device tag foundation + admin rollout metadata surface. Policy fan-out and operator acceptance remain separate gates. |
-| **BE-027** | `platform-backend` | Maintenance window / scheduled command | **SOURCE-PARTIAL** | Install/update command contract carries `notBefore` + `expiresAt` with service validation and tests; full named maintenance-window policy model remains future work. |
+| **BE-027** | `platform-backend` | Maintenance window / scheduled command | **SOURCE-MERGED (PR #490)** | Install command contract carries `notBefore` + `expiresAt`, maps to `EndpointCommand.visibleAfterAt` / `expiresAt`, fails closed for past/not-after windows, and includes schedule fields in idempotency replay + payload/audit metadata. Full recurring/named maintenance-window policy engine is outside this accepted source slice. |
 | **BE-028** | `platform-backend` | Rollout throttle / max concurrency | **SOURCE-MERGED (PR #491)** | Tenant-wide install throttle foundation via `endpoint-admin.commands.install-max-concurrent`; live/operator rollout acceptance remains separate. |
 | **BE-029** | `platform-backend` | Approved package bundles | **SOURCE-MERGED (PR #492)** | Approved bundle control-plane primitive + maker-checker/audit; automatic bundle rollout fan-out remains future work. |
 | **AG-034** | `platform-agent` | SMB/file actions discovery guardrail | **DEFERRED** | Discovery/tehdit modeli; whitelist + RBAC + audit + dual-control olmadan runtime yok |
@@ -615,7 +630,7 @@ sonra açılır.
 18. `platform-web`: `WEB-013` hardware/device inventory view. **DONE + LIVE**
 19. `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops`: `AG-028` uninstall. **SOURCE-MERGED + TESTAI LIVE (2026-06-04)** — real 7-Zip uninstall on HALILKOOLUB735 yielded `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; prod remains dark.
 20. `platform-agent`: `AG-029` signed update. **MERGED + LOCAL PARALLELS BASELINE 2026-06-07** — PR #74 verifier sharing fix + PR #75 multi-device checklist; local `HALILKOOLUB735` post-merge self-update `0.1.2-lab.2` -> `0.1.3-lab.1` succeeded through BE-031/BE-032 catalog-bound dispatch with audit/heartbeat evidence. Multi-device/trusted-signing/domain rollout gates pending.
-21. `platform-backend`: `BE-026` + `BE-027` + `BE-028` + `BE-029` rollout ring/window/throttle/bundle controls. **SOURCE-PARTIAL** — BE-026 PR #478, BE-028 PR #491 and BE-029 PR #492 are merged; BE-027 has command `notBefore`/`expiresAt` scheduling fields and tests but not a full named maintenance-window policy model.
+21. `platform-backend`: `BE-026` + `BE-027` + `BE-028` + `BE-029` rollout ring/window/throttle/bundle controls. **SOURCE-MERGED (accepted source sprint)** — BE-026 PR #478, BE-027 PR #490, BE-028 PR #491 and BE-029 PR #492 are merged. Boundary: backend source/control-plane only; image/digest rollout, live testai policy acceptance, AG-029 multi-device acceptance, trusted signing and domain rollout remain separate gates.
 22. `platform-agent`: `AG-034` SMB/file action discovery, runtime yok. **DEFERRED**
 
 ### 9.bis Active 2026-05-29 sıralaması — sıradaki iş paketleri
@@ -648,7 +663,7 @@ P1 (görünürlük genişletme):
 P2 (rollout controls + uninstall + signed self-update — managed lifecycle):
 11. **AG-028** Software uninstall (catalog-managed only) — **testai LIVE 2026-06-04**; prod remains dark.
 12. **AG-029** Signed agent self-update (Authenticode + manifest + SHA256/SHA512 + rollback guard; moved from P0 2026-05-29 PM per adversarial review — not 22.5.4 First Install Pilot blocker; lives in §22.5.7 managed lifecycle scope) — **local Parallels baseline proven 2026-06-07** (`HALILKOOLUB735`, command `5c6fe05c-4ce6-4452-9abc-8dda07b6cdb6`, `0.1.2-lab.2` -> `0.1.3-lab.1`, backend heartbeat/audit matched); **remaining** multi-device batch + trusted signing + rollout acceptance.
-13. **BE-026 / BE-027 / BE-028 / BE-029** rollout ring/window/throttle/bundle — SOURCE-PARTIAL: BE-026 rings, BE-028 tenant-wide throttle and BE-029 bundles merged; BE-027 scheduling fields exist for command timing but full named maintenance-window policy remains future work.
+13. **BE-026 / BE-027 / BE-028 / BE-029** rollout ring/window/throttle/bundle — SOURCE-MERGED accepted source sprint: BE-026 rings/device tags (#478), BE-027 schedule fields (#490), BE-028 tenant-wide throttle (#491) and BE-029 bundles (#492) merged. Remaining gates are runtime/operator acceptance: image/digest rollout, testai controlled-rollout smoke, AG-029 multi-device batch, trusted signing and domain rollout.
 
 Deferred:
 14. **AG-034** SMB/file action discovery (runtime yok)
