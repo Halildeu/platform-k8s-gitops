@@ -131,13 +131,13 @@ echo "app=$APP argocd_context=$ARGOCD_CONTEXT namespace=$ARGOCD_NAMESPACE revisi
 
 ensure_argocd_application
 
-ARGOCD=(argocd --core --kube-context "$ARGOCD_CONTEXT" --namespace "$ARGOCD_NAMESPACE")
+ARGOCD=(argocd --core --kube-context "$ARGOCD_CONTEXT")
 
 echo "-- before sync --"
-"${ARGOCD[@]}" app get "$APP"
+"${ARGOCD[@]}" app get "$APP" -N "$ARGOCD_NAMESPACE"
 
-"${ARGOCD[@]}" app sync "$APP" --revision "$REVISION" --timeout "$TIMEOUT"
-"${ARGOCD[@]}" app wait "$APP" --sync --health --timeout "$TIMEOUT"
+"${ARGOCD[@]}" app sync "$APP" -N "$ARGOCD_NAMESPACE" --revision "$REVISION" --timeout "$TIMEOUT"
+"${ARGOCD[@]}" app wait "$APP" -N "$ARGOCD_NAMESPACE" --sync --health --timeout "$TIMEOUT"
 
 sync_status="$(kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
   get application "$APP" -o jsonpath='{.status.sync.status}')"
