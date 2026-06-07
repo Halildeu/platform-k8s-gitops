@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Halildeu/platform-k8s-gitops/config/cross_repo_enum_drift_spec.schema.json",
+  "title": "Cross-repo enum drift spec — ADR-0031",
+  "description": "Schema for config/cross_repo_enum_drift_spec.yaml. Validated by scripts/drift_detection/check_drift_cross_repo_enums.py before any gh api fetch. Violations exit 2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mappings"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Spec contract version. Bumped by a separate PR when an incompatible spec shape change lands."
+    },
+    "mappings": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/mapping" }
+    }
+  },
+  "$defs": {
+    "repo_full_name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "description": "GitHub <owner>/<repo>. No URLs, no refs."
+    },
+    "relative_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/].*[^/]$|^[^/]$",
+      "description": "Repo-relative path. No leading or trailing slash."
+    },
+    "java_identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+      "description": "Java identifier (enum or constant name)."
+    },
+    "ts_identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$",
+      "description": "TypeScript identifier (type or const name)."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "java_enum",
+        "java_set_of",
+        "ts_const_tuple",
+        "ts_union_type",
+        "java_grid_column_case_literals"
+      ]
+    },
+    "canonical": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "path", "kind", "symbol"],
+      "properties": {
+        "repo": { "$ref": "#/$defs/repo_full_name" },
+        "path": { "$ref": "#/$defs/relative_path" },
+        "kind": { "$ref": "#/$defs/kind" },
+        "symbol": {
+          "type": "string",
+          "minLength": 1
+        },
+        "anchor": {
+          "type": "string",
+          "minLength": 1,
+          "description": "REQUIRED when kind == java_grid_column_case_literals: substring locating the GridColumn constructor invocation. Forbidden otherwise."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "java_grid_column_case_literals" } } },
+          "then": { "required": ["anchor"] }
+        },
+        {
+          "if": { "properties": { "kind": { "not": { "const": "java_grid_column_case_literals" } } } },
+          "then": { "not": { "required": ["anchor"] } }
+        }
+      ]
+    },
+    "mirror": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "path", "kind", "symbol"],
+      "properties": {
+        "repo": { "$ref": "#/$defs/repo_full_name" },
+        "path": { "$ref": "#/$defs/relative_path" },
+        "kind": {
+          "$ref": "#/$defs/kind",
+          "description": "Mirror MUST NOT use java_grid_column_case_literals — that strategy is a backend-canonical-only narrow extractor; mirror sides use ts_const_tuple / ts_union_type."
+        },
+        "symbol": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "java_grid_column_case_literals" } } },
+          "then": {
+            "description": "Codex post-impl iter-1 axis 6 must-fix: forbid grid kind on the mirror side at the schema level (was previously only enforced at parse time).",
+            "not": {}
+          }
+        }
+      ]
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "canonical", "mirrors"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$",
+          "minLength": 2,
+          "maxLength": 64,
+          "description": "Stable kebab-case identifier. Used in report JSON, $GITHUB_STEP_SUMMARY, audit logs. Must be unique across mappings."
+        },
+        "canonical": { "$ref": "#/$defs/canonical" },
+        "mirrors": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/mirror" }
+        },
+        "notes": {
+          "type": "string",
+          "description": "Free-form notes — Codex thread, originating incident, ladder ordering, ADR section ref."
+        }
+      }
+    }
+  }
+}
