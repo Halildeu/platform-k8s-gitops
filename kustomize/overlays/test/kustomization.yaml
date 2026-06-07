@@ -3680,7 +3680,19 @@ images:
     #   testai deploy — this realigns the gitops source pin to live.
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-8d22245
     #   digest sha256:10dbc9db0ed2a245c14d14c6205a4a15fca7ae306c8f39d408cbb6d9fbba780f
-    digest: sha256:10dbc9db0ed2a245c14d14c6205a4a15fca7ae306c8f39d408cbb6d9fbba780f
+    #
+    # 2026-06-07: bump sha-8d22245 -> sha-3e3af5b (platform-web PR #763 —
+    #   AG-040 startup-exposure redaction-only partial-render: when probeComplete
+    #   is false SOLELY because some autorun NAMES were redacted (every probeError
+    #   is NAME_VALUE_REDACTED), render the surviving rows + a banner instead of
+    #   hiding the whole table. Frontend-only; data-fully-evaluable stays false;
+    #   genuine failures still fail-closed. Codex 019ea174 AGREE. vitest 30/30.
+    #   Browser-verified LIVE on HALILKOOLUB735 (37 surviving startup entries +
+    #   banner now visible). Image build run from merge 3e3af5b; web pipeline
+    #   auto-dispatched the testai deploy — this realigns the gitops source pin.
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-3e3af5b
+    #   digest sha256:5db215c1cc73a7248f98dc675e1d299d5f70b6c021108fcb42e241be36c3614b
+    digest: sha256:5db215c1cc73a7248f98dc675e1d299d5f70b6c021108fcb42e241be36c3614b
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
