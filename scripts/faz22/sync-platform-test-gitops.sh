@@ -17,6 +17,7 @@ ARGOCD_VERSION="${ARGOCD_VERSION:-v2.13.1}"
 TEST_CONTEXT="${TEST_CONTEXT:-k3d-test}"
 TEST_NAMESPACE="${TEST_NAMESPACE:-platform-test}"
 OVERLAY_PATH="${OVERLAY_PATH:-kustomize/overlays/test}"
+ESO_OVERLAY_PATH="${ESO_OVERLAY_PATH:-kustomize/overlays/test/eso}"
 SYNC_MODE="argocd"
 
 fail() {
@@ -169,9 +170,10 @@ sync_with_kubectl_overlay_fallback() {
   SYNC_MODE="kubectl-overlay-selected-resources"
   command -v python3 >/dev/null 2>&1 || fail "python3 not found"
 
-  local render_file tmp_dir external_secret_file configmap_file deployment_file
+  local render_file eso_render_file tmp_dir external_secret_file configmap_file deployment_file
   tmp_dir="$(mktemp -d)"
   render_file="${tmp_dir}/test-render.yaml"
+  eso_render_file="${tmp_dir}/test-eso-render.yaml"
   external_secret_file="${tmp_dir}/endpoint-admin-externalsecret.yaml"
   configmap_file="${tmp_dir}/endpoint-admin-configmap.yaml"
   deployment_file="${tmp_dir}/endpoint-admin-deployment.yaml"
@@ -179,7 +181,11 @@ sync_with_kubectl_overlay_fallback() {
   echo "ArgoCD core unavailable; falling back to selected resources from ${OVERLAY_PATH}"
   kubectl kustomize "$OVERLAY_PATH" > "$render_file"
 
-  render_resource "$render_file" "ExternalSecret" "endpoint-admin-service-secrets" "$external_secret_file"
+  if ! render_resource "$render_file" "ExternalSecret" "endpoint-admin-service-secrets" "$external_secret_file"; then
+    echo "ExternalSecret not found in ${OVERLAY_PATH}; rendering ${ESO_OVERLAY_PATH}"
+    kubectl kustomize "$ESO_OVERLAY_PATH" > "$eso_render_file"
+    render_resource "$eso_render_file" "ExternalSecret" "endpoint-admin-service-secrets" "$external_secret_file"
+  fi
   render_resource "$render_file" "ConfigMap" "endpoint-admin-service-config" "$configmap_file"
   render_resource "$render_file" "Deployment" "endpoint-admin-service" "$deployment_file"
 
