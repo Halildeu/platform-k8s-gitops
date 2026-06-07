@@ -325,6 +325,27 @@ Helper sözleşmesi:
 - Helper output'u per-device evidence doc'a taşınır; tek başına #1044 PASS
   değildir.
 
+**Per-device evidence draft generator**:
+
+Local diagnostics helper çıktısı alındıktan sonra §14.1/§14.2 formatındaki
+evidence taslağı otomatik üretilebilir. Bu generator local dosya okur/yazar;
+backend'e bağlanmaz, command dispatch yapmaz ve PASS iddiası üretmez.
+
+```bash
+DIAG=/tmp/faz22-a1-local-vm-diagnostics-<timestamp>/Windows_11/read-only-diagnostics.txt
+
+python3 scripts/faz22-non-domain/a1-evidence-doc-from-diagnostics.py \
+  --diagnostics-file "$DIAG" \
+  --output-dir docs/faz-22-evidence \
+  --device-id <backend-device-uuid> \
+  --operator "<operator-role>" \
+  --install-method "A1 lab install"
+```
+
+Generator taslağı `PARTIAL` statüsüyle üretir; planned non-destructive command
+facts, 24h soak facts ve pilot-wide rollup ayrı doldurulur. Bu nedenle generator
+çıktısı tek başına #1044 acceptance PASS değildir.
+
 **Post-batch acceptance checklist**:
 - [ ] Her cihaz için §14.1/§14.2 evidence doc dolduruldu.
 - [ ] §11.3A soak helper read-only çalıştırıldı; heartbeat/command fact set'i evidence'a taşındı.
