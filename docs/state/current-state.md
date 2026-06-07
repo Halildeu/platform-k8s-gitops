@@ -1,5 +1,34 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22 AG-042 local password / lock / unlock Parallels smoke (2026-06-07 16:48 Istanbul / 13:48Z UTC)
+
+**Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has
+agent-side Windows SAM mutation proof for `LOCK_USER_LOGIN`,
+`UNLOCK_USER_LOGIN`, and `CHANGE_LOCAL_PASSWORD` on a disposable local account.
+This is local adapter evidence only; it is not backend/JWT dual-control
+dispatch, domain password reset, M365/Entra reset, SMB/file action, #1044
+multi-device acceptance, or `acik.local` IT pilot evidence.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Source baseline | `platform-agent origin/main` at `690d39943404b6d458b44e9582a0e8589af2eb32` (#91 merged); Windows arm64 test binary SHA256 `8da4c6d2a225a8234314a2f43711b5678ad9ced5f5e821685c6d49ff4b95ecd8` | Test built from current main, not the stale local dirty agent worktree |
+| Local Go tests | `go test ./internal/users ./internal/commands ./internal/inventory` returned PASS for all three packages | Unit-level local-user protocol/executor/inventory guards green |
+| Parallels smoke | PowerShell harness created temporary local user `ea-pwd-0607a`, ran `TestMutateLocalWindowsIntegration`, then removed the user | Disposable local SAM account only |
+| Mutation proof | Test output: `--- PASS: TestMutateLocalWindowsIntegration (0.04s)`; harness `exitCode=0`, `removedAfterCleanup=true`, `secretEchoed=false` | `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`, `CHANGE_LOCAL_PASSWORD` adapter path proven on local Windows |
+| Evidence | `docs/faz-22-evidence/2026-06-07-local-password-parallels-smoke.md` | Traceable evidence file added |
+
+**Boundary / remaining gates**:
+
+- `platform-agent#92` remains open for operator-gated backend-to-agent
+  `LOCK_USER_LOGIN` dispatch with two distinct admin JWTs.
+- `platform-k8s-gitops#1044` remains open for the user-owned 2-device batch
+  plus observation roll-up.
+- Domain password / cached credential / pre-logon VPN behavior remains a
+  separate identity connector and IT-pilot design gate; this smoke proves local
+  SAM only.
+
+---
+
 ## Live Delta — Faz 22.5 P1 visibility roll-up acceptance reconcile (#1134/#1164) (2026-06-07 15:25 Istanbul / 12:25Z UTC)
 
 **Session milestone**: the prior admin-JWT / WEB-015 evidence gap is
