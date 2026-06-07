@@ -23,7 +23,7 @@ Bu pilot **bir kanıt katmanı eklemek** içindir; production rollout veya kulla
 
 ## 2. Pre-pilot lab gate — Parallels W11 CI rehearsal
 
-> **Status**: AGENT-ACTIONABLE altyapı (platform-agent #12) + OPERATOR-BOUND infaz (self-hosted Mac runner provisioning + workflow_dispatch + evidence doc PR).
+> **Status**: AGENT-ACTIONABLE altyapı + local workflow_dispatch evidence captured (platform-agent #12 / run `27081667910`). Remaining: this does not replace `acik.local` pilot, multi-device soak, trusted signing or BE-011 helper-based fresh backend command evidence.
 > **Tracked by**: [platform-agent #12](https://github.com/Halildeu/platform-agent/issues/12) — "Faz 22.2 Parallels Windows 11 CI pilot rehearsal".
 > **Predecessor manual smoke**: gitops PR #1021 (`4ecb71dc`) + platform-agent PR #10 (`402bdc1`) MERGED 2026-05-24 — `docs/faz-22-evidence/2026-05-24-windows-be011-lifecycle.md` (BE-011 + AG-013 fresh smoke).
 
@@ -62,7 +62,13 @@ GitHub-hosted `windows-latest` runner **local Parallels VM'i göremez** — virt
 
 ### 2.6 Evidence doc path
 
-Gerçek run tamamlandığında: **gitops `docs/faz-22-evidence/YYYY-MM-DD-parallels-windows11-ci-pilot-rehearsal.md`** ayrı docs-only PR olarak açılır (Codex strategic önerisi: evidence doc PR sadece gerçek run sonrası, "Sample run pending" placeholder PR değil). Evidence doc içeriği zorunlu alanlar:
+Gerçek workflow run kanıtı:
+
+- `docs/faz-22-evidence/2026-06-07-parallels-windows11-ci-pilot-rehearsal.md`
+- platform-agent run [`27081667910`](https://github.com/Halildeu/platform-agent/actions/runs/27081667910)
+- uploaded artifact `parallels-w11-ci-evidence-27081667910`
+
+Gelecek run'lar için evidence doc içeriği zorunlu alanlar:
 
 - VM hostname + domain/workgroup classification + PartOfDomain + Windows version/build
 - Runner labels + `prlctl` VM name
@@ -70,7 +76,10 @@ Gerçek run tamamlandığında: **gitops `docs/faz-22-evidence/YYYY-MM-DD-parall
 - platform-agent commit + package SHA256
 - Service install/start/status (windows-live.ps1)
 - AG-013 capability list verify
-- BE-011 command id + result id + audit row id (sanitized — no token/JWT/password/secret)
+- BE-011 command id + result id + audit row id when the optional
+  `scripts/test/be011-lifecycle-helper.sh` exists and is enabled. If absent,
+  the evidence doc must say it was skipped and cite the predecessor manual
+  evidence instead of implying a fresh backend command.
 - Cleanup sonucu (service uninstall + install dir + log dir clean)
 - D29-EA matrix (Up/Functional/Secured) ayrı satır
 - "Bu gerçek `acik.local` IT pilot acceptance DEĞİL" notu

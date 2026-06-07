@@ -57,6 +57,15 @@ certstore scan crashes with fail-closed diagnostics. This is mTLS preflight
 hardening only; AD CS provisioning, installed-service distribution,
 multi-device batch acceptance and domain-wide rollout remain separate gates.
 
+**Faz 22.2.A #12 delta (2026-06-07)**: the Parallels Windows 11 CI rehearsal
+is no longer terminal-only evidence. `platform-agent` #78 is merged and
+workflow_dispatch run `27081667910` passed on an ephemeral self-hosted macOS
+runner against `HALILKOOLUB735` (`PartOfDomain=false`, A1 workgroup). Evidence
+artifact `parallels-w11-ci-evidence-27081667910` proves build/package +
+temporary Windows service smoke + secret scans. This does not claim
+`acik.local` pilot, BE-011 fresh command ids, multi-device soak, trusted
+production signing, password-reset readiness or domain-wide rollout.
+
 **Gerçekçi ufuk:**
 - `testai.acik.com` full K8s: **1.5-2 hafta** (7-10 iş günü)
 - `ai.acik.com` prod cutover: **3-4 hafta**
