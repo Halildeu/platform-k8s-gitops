@@ -48,6 +48,15 @@ audit matched). This does not claim multi-device acceptance, trusted
 production signing, domain-wide rollout or prod enablement; those remain
 separate Faz 22.3 / 22.5.8 gates.
 
+**Faz 22.3 AG-030P delta (2026-06-07)**: `platform-agent` #77 is merged after
+local Parallels no-crash proof for `endpoint-agent.exe -auto-enroll -dry-run`.
+The auto-enroll preflight now requires an explicit cert filter
+(`ENDPOINT_AGENT_AUTO_ENROLL_CERT_SUBJECT_SUFFIX` or
+`ENDPOINT_AGENT_AUTO_ENROLL_CERT_SAN_URI_PREFIX`) and replaces broad
+certstore scan crashes with fail-closed diagnostics. This is mTLS preflight
+hardening only; AD CS provisioning, installed-service distribution,
+multi-device batch acceptance and domain-wide rollout remain separate gates.
+
 **Gerçekçi ufuk:**
 - `testai.acik.com` full K8s: **1.5-2 hafta** (7-10 iş günü)
 - `ai.acik.com` prod cutover: **3-4 hafta**

@@ -1,5 +1,38 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.3 / AG-030P auto-enroll dry-run crash hardening (2026-06-07 05:57 Istanbul / 02:57Z UTC)
+
+**Session milestone**: local Parallels Windows 11 exposed a real
+auto-enroll dry-run crash in the Windows certstore preflight path. The fix was
+implemented in `platform-agent` and verified against the same local Windows VM
+with a temp binary. This is a **source + local-lab preflight hardening**
+evidence item; it is not domain join, AD CS certificate provisioning, trusted
+production signing, or domain-wide rollout acceptance.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Root symptom | Installed `endpoint-agent 0.1.3-lab.1` crashed on `endpoint-agent.exe -auto-enroll -dry-run` with Windows access violation `0xc0000005`; stack entered `github.com/google/certtostore.(*WinCertStore).CertKey` via `certstore.acquireSigner` | Broad default cert-store scan was unsafe on the local workgroup VM |
+| Source fix | `platform-agent` PR #77 MERGED, mergeCommit `1ec4a5a98665eb06f4940cb3e9cd7624ac46316c` | Auto-enroll startup/dry-run now fail closed unless `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SUBJECT_SUFFIX` or `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SAN_URI_PREFIX` is configured; certstore adds private-key binding precheck before native key acquisition |
+| CI / review | PR #77 checks passed: BG-EA-1, gitleaks, SBOM, Test/lint/cross-build, lab-only ephemeral signing, Windows Go test; real Claude CLI review verdict `AGREE — merge-ready, zero must-fix` | Provider-distinct review + CI gate satisfied |
+| Local Parallels no-filter proof | Patched temp binary `C:\Temp\endpoint-agent-ag030p.exe`, SHA256 `0AC89B8B02F20F5C6550D10EC74076E29D7F79D9320E569E2D390B917A750154`; no-filter dry-run returns explicit filter requirement and `EXIT=1` | Crash replaced by actionable fail-closed diagnostic |
+| Local Parallels filtered proof | `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SAN_URI_PREFIX=adcomputer:` and `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SUBJECT_SUFFIX=.acik.local` both return clean `cert load: no eligible machine certificate found`, `EXIT=1`, no native crash | Disambiguated filter paths no longer acquire arbitrary certs on the local baseline |
+| Installed service boundary | Installed service was not replaced during AG-030P proof; `EndpointAgent: RUNNING`, version `endpoint-agent 0.1.3-lab.1`, SHA256 `CFFD73CC86C27B727952E45083CF95047B9E2AAAC9C1ACC393CACD20122048FE` | Temp-binary proof did not mutate the local service baseline |
+| Board / checklist | `platform-agent` #76 CLOSED + Project #2 Done; gitops #1044 received AG-030P batch addendum for other-device no-crash checks | Local fix accepted; multi-device checklist remains open |
+| Evidence | `docs/faz-22-evidence/2026-06-07-ag030p-auto-enroll-dryrun-no-crash.md`; platform-agent #76; platform-agent PR #77; gitops #1044 comment `4641247708` | Traceable evidence chain |
+
+**Boundary / remaining gates**:
+
+- This proves local-lab AG-030P crash hardening only.
+- The installed service still runs the pre-#77 `0.1.3-lab.1` binary until a
+  later self-update or installer path distributes the merged fix.
+- Domain mTLS enrollment still requires AD CS machine certificate provisioning
+  plus a configured subject suffix or SAN URI prefix (for example
+  `adcomputer:`) on the endpoint.
+- Other-device acceptance remains pending in #1044 and must include the same
+  no-crash dry-run checks on each batched Windows device.
+
+---
+
 ## Live Delta — Faz 22.5 local Parallels read-only diagnostics refresh (2026-06-07 05:35 Istanbul / 02:35Z UTC)
 
 **Session milestone**: after AG-029 activation baseline, the same local
