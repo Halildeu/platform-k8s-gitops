@@ -254,6 +254,45 @@ Failed to clone the VM: Unable to perform the action because the virtual machine
 The virtual machine is currently running. Please try again later.
 ```
 
+### 6.1B Other-computer batch checklist (deferred until local completion)
+
+Bu checklist, mevcut local Parallels `Windows 11 / HALILKOOLUB735` zinciri
+tam kanıtlanmadan diğer bilgisayarlarda tekil/ad-hoc işlem yapılmaması için
+kanonik toplu iş listesidir. Amaç: localde agent/backend/web/runbook davranışı
+kanıtlandıktan sonra diğer cihazlarda aynı sırayı tekrar edilebilir şekilde
+uygulamak.
+
+**Batch trigger**:
+- [ ] Local Parallels HALILKOOLUB735 health/smoke evidence güncel.
+- [ ] #1044 için iki ek Parallels cihaz veya eşdeğer lab cihazı hazır.
+- [ ] 24h soak penceresi ve rollup helper (§11.3A) çalıştırma zamanı planlandı.
+- [ ] Operator maintenance window var; parent VM gerekiyorsa stop/suspend edilecek.
+- [ ] Hiçbir gerçek kullanıcı cihazında destructive command kullanılmayacağı tekrar teyit edildi.
+
+**Per-device pre-batch intake**:
+- [ ] Hostname / asset tag / cihaz sahibi sınıfı yazıldı.
+- [ ] Device class seçildi: A1 standalone lab, A2 BYOD, A3 Entra, A4 Workplace.
+- [ ] Local admin erişimi operator tarafından doğrulandı; parola/JWT/token mail veya chat ile paylaşılmadı.
+- [ ] `testai.acik.com:443` erişimi doğrulandı.
+- [ ] EDR/antivirus allowlist gerekiyorsa ticket/ref kaydedildi.
+- [ ] Signed artifact gereksinimi belirlendi: A1 lab exception veya A2-A4 signed mandatory.
+
+**Per-device execution checklist**:
+- [ ] Agent install/enroll fresh token ile yapıldı.
+- [ ] Backend device id benzersiz; parent/clone stale enrollment yok.
+- [ ] Identity classification alındı: `PartOfDomain`, `AzureAdJoined`, `WorkplaceJoined`.
+- [ ] `EndpointAgent` service Running + Automatic.
+- [ ] `COLLECT_INVENTORY` veya `inventory_refresh` non-destructive command terminal state'e ulaştı.
+- [ ] Audit/lifecycle fact set alındı; raw credential/JWT/token/UPN/full SID evidence'a yazılmadı.
+
+**Post-batch acceptance checklist**:
+- [ ] Her cihaz için §14.1/§14.2 evidence doc dolduruldu.
+- [ ] §11.3A soak helper read-only çalıştırıldı; heartbeat/command fact set'i evidence'a taşındı.
+- [ ] Offline gap >30 dk varsa planned/unplanned ayrımı yazıldı.
+- [ ] Pilot-wide rollup (§14.3/§14.4) oluşturuldu.
+- [ ] Cross-AI peer review alındı.
+- [ ] #1044 yalnız rollup evidence sonrası Needs Verify'dan çıkarılır; helper/runbook/source PR'ı tek başına acceptance değildir.
+
 ### 6.2 Onboarding flow (A1 standalone)
 
 ```
