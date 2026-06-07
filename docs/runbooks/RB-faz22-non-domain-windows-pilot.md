@@ -285,6 +285,46 @@ uygulamak.
 - [ ] `COLLECT_INVENTORY` veya `inventory_refresh` non-destructive command terminal state'e ulaştı.
 - [ ] Audit/lifecycle fact set alındı; raw credential/JWT/token/UPN/full SID evidence'a yazılmadı.
 
+**Local Parallels per-device diagnostics helper**:
+
+Clone'lar hazırlandıktan ve her VM benzersiz hostname + fresh enrollment aldıktan
+sonra, per-device local evidence aynı komutla toplanır:
+
+```bash
+# Dry-run: VM'ler running mı kontrol eder; guest komut çalıştırmaz.
+bash scripts/faz22-non-domain/a1-local-vm-diagnostics.sh \
+  --dry-run \
+  --vm "Windows 11" \
+  --vm "NONDOMAIN-W11-LAB-01" \
+  --vm "NONDOMAIN-W11-LAB-02"
+
+# Read-only execution: prlctl exec ile identity/winget/software/hardware/
+# services/local-users diagnose çıktılarını klasöre yazar. WinGet egress
+# probe'u default skip edilir; uzun ağ/source probe'u için aşağıdaki opsiyon
+# ayrıca eklenir.
+bash scripts/faz22-non-domain/a1-local-vm-diagnostics.sh \
+  --vm "Windows 11" \
+  --vm "NONDOMAIN-W11-LAB-01" \
+  --vm "NONDOMAIN-W11-LAB-02"
+
+# Optional: WinGet source/egress probe dahil.
+bash scripts/faz22-non-domain/a1-local-vm-diagnostics.sh \
+  --include-winget-egress \
+  --section-timeout-seconds 180 \
+  --vm "Windows 11"
+```
+
+Helper sözleşmesi:
+- VM stop/suspend/clone yapmaz.
+- Backend command dispatch yapmaz.
+- Install/uninstall, restart, account mutation, password change, domain join,
+  SMB/file action yapmaz.
+- Agent `diagnose` yüzeylerini ve temel Windows read-only state'ini toplar.
+- Host-side timeout ile takılan guest diagnostics prosesini fail-closed keser.
+- Output içinde JWT/Bearer/credential-like pattern yakalarsa fail-closed olur.
+- Helper output'u per-device evidence doc'a taşınır; tek başına #1044 PASS
+  değildir.
+
 **Post-batch acceptance checklist**:
 - [ ] Her cihaz için §14.1/§14.2 evidence doc dolduruldu.
 - [ ] §11.3A soak helper read-only çalıştırıldı; heartbeat/command fact set'i evidence'a taşındı.
