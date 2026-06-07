@@ -92,6 +92,27 @@ ensure_argocd_cli() {
   command -v argocd >/dev/null 2>&1 || fail "argocd CLI download did not produce executable"
 }
 
+ensure_argocd_application() {
+  if kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
+    get application "$APP" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local app_manifest="argocd/applications/${APP}.yaml"
+  if [[ ! -f "$app_manifest" ]]; then
+    fail "ArgoCD Application $APP missing and manifest not found at $app_manifest"
+  fi
+
+  echo "ArgoCD Application $APP missing; applying desired Application manifest $app_manifest"
+  # This bootstraps the ArgoCD control-plane object only. Workloads are still
+  # reconciled by ArgoCD from kustomize/overlays/test; the script does not
+  # patch/edit/set-image any platform-test workload directly.
+  kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" apply -f "$app_manifest"
+
+  kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
+    get application "$APP" >/dev/null || fail "ArgoCD Application $APP still missing after bootstrap apply"
+}
+
 if [[ -z "$REVISION" ]]; then
   fail "REVISION or GITHUB_SHA is required"
 fi
@@ -108,8 +129,7 @@ ensure_argocd_cli
 echo "== platform-test GitOps sync =="
 echo "app=$APP argocd_context=$ARGOCD_CONTEXT namespace=$ARGOCD_NAMESPACE revision=$REVISION"
 
-kubectl --context "$ARGOCD_CONTEXT" -n "$ARGOCD_NAMESPACE" \
-  get application "$APP" >/dev/null
+ensure_argocd_application
 
 ARGOCD=(argocd --core --kube-context "$ARGOCD_CONTEXT" --namespace "$ARGOCD_NAMESPACE")
 
