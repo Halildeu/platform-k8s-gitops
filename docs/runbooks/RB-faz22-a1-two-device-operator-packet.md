@@ -53,7 +53,58 @@ Fill this per device before running diagnostics:
 | `EndpointAgent` service running |  |  |
 | Local admin availability confirmed out-of-band |  |  |
 
-## 4. Parallels linked-clone path
+## 4. Manifest-driven evidence pack (recommended)
+
+Use the wrapper when you want one reviewed packet that contains the exact
+operator checklist and shell script for the two-device batch. The manifest is
+explicitly no secrets: do not put JWTs, enrollment tokens, passwords, private
+keys, webhook URLs, or raw credentials in it.
+
+Create the example manifest:
+
+```bash
+python3 scripts/faz22-non-domain/a1-operator-evidence-pack.py \
+  --write-example-manifest /tmp/faz22-a1-operator-manifest.json
+```
+
+Edit `/tmp/faz22-a1-operator-manifest.json` with the actual VM names,
+hostnames, backend device IDs, expected evidence doc names, and operator label.
+Keep `deviceId` as `PENDING` until the backend ID is known.
+
+Generate the review packet:
+
+```bash
+python3 scripts/faz22-non-domain/a1-operator-evidence-pack.py \
+  --manifest /tmp/faz22-a1-operator-manifest.json \
+  --output-dir /tmp/faz22-a1-operator-pack \
+  --include-winget-egress
+```
+
+Review both generated files before executing anything:
+
+```text
+/tmp/faz22-a1-operator-pack/operator-checklist.md
+/tmp/faz22-a1-operator-pack/run-evidence-pack.sh
+```
+
+After the observation data is collected, the same wrapper can generate the
+pilot-wide rollup draft. Replace `<timestamp>` with the timestamp from the soak
+output filename:
+
+```bash
+python3 scripts/faz22-non-domain/a1-operator-evidence-pack.py \
+  --manifest /tmp/faz22-a1-operator-manifest.json \
+  --output-dir /tmp/faz22-a1-operator-pack \
+  --soak-output /tmp/faz22-a1-soak-rollup-<timestamp>.txt \
+  --generate-rollup-doc
+```
+
+Boundary: the wrapper does not accept secrets, does not dispatch backend
+commands by default, and does not complete #1044. It only turns the device
+manifest into a repeatable operator checklist, command script, per-device
+evidence drafts, and optional rollup draft.
+
+## 5. Parallels linked-clone path
 
 Use this only if the two devices are local Parallels clones. The helper is
 dry-run by default and refuses to clone a running parent VM in execute mode.
@@ -75,7 +126,7 @@ After clone creation, personalize each VM:
   a fresh one-time token.
 - Verify the backend device IDs are not the parent `HALILKOOLUB735` ID.
 
-## 5. Read-only diagnostics
+## 6. Read-only diagnostics
 
 Run diagnostics only after both VMs are running and enrolled. This helper does
 not dispatch backend commands and does not mutate the guest.
@@ -108,7 +159,7 @@ Expected output location:
 /tmp/faz22-a1-local-vm-diagnostics-<timestamp>/<safe-vm-name>/read-only-diagnostics.txt
 ```
 
-## 6. Per-device evidence draft
+## 7. Per-device evidence draft
 
 Generate a `PARTIAL` draft for each device. Fill the backend command and soak
 facts after the non-destructive command smoke and observation window.
@@ -132,7 +183,7 @@ python3 scripts/faz22-non-domain/a1-evidence-doc-from-diagnostics.py \
 The generated draft is not a PASS verdict. It is the per-device evidence shell
 that later receives command lifecycle and soak facts.
 
-## 7. Non-destructive command smoke
+## 8. Non-destructive command smoke
 
 For each additional device, queue only `COLLECT_INVENTORY` or the equivalent
 inventory refresh path through endpoint-admin.
@@ -154,7 +205,7 @@ No unexplained terminal failures
 No destructive command issued on the two additional devices
 ```
 
-## 8. Observation roll-up
+## 9. Observation roll-up
 
 The helper is SELECT-only. It does not dispatch commands or mutate the DB.
 
@@ -189,7 +240,7 @@ Do not mark #1044 out of Needs Verify based on helper output alone. Operator
 notes must explain planned reboot/sleep windows and any offline gap over 30
 minutes.
 
-## 9. Final PR packet
+## 10. Final PR packet
 
 When the two-device batch is ready, the PR should include:
 
