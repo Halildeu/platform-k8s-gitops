@@ -689,6 +689,36 @@ Helper sözleşmesi:
   `LOW_HEARTBEAT_RATIO` verdict'i, operator açıklaması ve/veya yeniden soak
   gerektirir.
 
+#### 11.3B Pilot-wide rollup draft generator (#1044)
+
+`a1-soak-rollup.sh --execute` çıktısı dosyaya alındıktan sonra §14.3/§14.4
+formatındaki pilot-wide rollup taslağı local generator ile üretilebilir:
+
+```bash
+bash scripts/faz22-non-domain/a1-soak-rollup.sh \
+  --execute \
+  --ssh-target halil@staging-sw \
+  --ssh-identity-file ~/.ssh/id_ed25519 \
+  --device-id <HALILKOOLUB735-device-uuid> \
+  --device-id <NONDOMAIN-W11-LAB-01-device-uuid> \
+  --device-id <NONDOMAIN-W11-LAB-02-device-uuid> \
+  > /tmp/faz22-a1-soak-rollup.txt
+
+python3 scripts/faz22-non-domain/a1-rollup-doc-from-soak.py \
+  --soak-output /tmp/faz22-a1-soak-rollup.txt \
+  --output-dir docs/faz-22-evidence \
+  --soak-window "<iso-start> -> <iso-end>" \
+  --device "<HALILKOOLUB735-device-uuid>=HALILKOOLUB735,A1,./YYYY-MM-DD-non-domain-pilot-tierA1-HALILKOOLUB735.md,PENDING" \
+  --device "<NONDOMAIN-W11-LAB-01-device-uuid>=NONDOMAIN-W11-LAB-01,A1,./YYYY-MM-DD-non-domain-pilot-tierA1-NONDOMAIN-W11-LAB-01.md,PENDING" \
+  --device "<NONDOMAIN-W11-LAB-02-device-uuid>=NONDOMAIN-W11-LAB-02,A1,./YYYY-MM-DD-non-domain-pilot-tierA1-NONDOMAIN-W11-LAB-02.md,PENDING"
+```
+
+Generator local dosya okur/yazar; SQL çalıştırmaz, backend'e bağlanmaz,
+command dispatch yapmaz ve runtime state mutate etmez. Default `PARTIAL`
+taslak üretir; final PASS/PARTIAL/FAIL kararı per-device evidence doc'ları,
+planned command facts ve operator-reviewed soak notları tamamlandıktan sonra
+verilir.
+
 ### 11.4 Operator dashboard (future)
 
 `BE-XXX` future task: Prometheus exporter `endpoint_agent_last_seen_seconds` + Grafana dashboard "Endpoint Pilot — Device Status" + Alertmanager rule "DeviceOfflineGap > 30m". Pilot evidence'da placeholder olarak referans, gerçek implementasyon ayrı tur.
