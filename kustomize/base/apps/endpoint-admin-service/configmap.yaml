@@ -16,6 +16,12 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: endpoint-admin-service-config
+  annotations:
+    # #1267 runtime reconcile: ArgoCD ServerSideApply can leave previously
+    # manager-owned ConfigMap data keys behind after a desired-state key
+    # removal. Replace sync makes this ConfigMap exact and removes stale
+    # ERP_OPENFGA_STORE_ID / ERP_OPENFGA_MODEL_ID pins from live runtime.
+    argocd.argoproj.io/sync-options: Replace=true
   labels:
     app.kubernetes.io/name: endpoint-admin-service
 data:

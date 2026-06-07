@@ -29,6 +29,12 @@ spec:
       app.kubernetes.io/name: endpoint-admin-service
   template:
     metadata:
+      annotations:
+        # #1267 runtime reconcile: ConfigMap store/model pins moved to the
+        # ESO-managed endpoint-admin-service-secrets Secret. Keep this stable
+        # marker in the pod template so the first GitOps sync after migration
+        # rolls pods and re-reads envFrom from the Secret.
+        endpoint-admin.acik.io/openfga-selector-source: "eso-secret"
       labels:
         app.kubernetes.io/name: endpoint-admin-service
         app.kubernetes.io/component: backend
