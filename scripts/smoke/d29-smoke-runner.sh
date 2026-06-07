@@ -52,10 +52,10 @@ REPORT="/tmp/smoke-report-${ENV}-${TS_FILE}.json"
 D29_SERVICES=(api-gateway user-service variant-service permission-service schema-service report-service auth-service core-data-service notification-orchestrator)
 
 discover_optional_d29_services() {
-  # endpoint-admin-service is test-enabled but still prod-deferred until the
-  # explicit prod activation gates pass. Include it when the Deployment exists
-  # in the target cluster instead of hardcoding it into every env and breaking
-  # prod smoke while the service remains intentionally dark.
+  # endpoint-admin-service is an optional workload across environments and
+  # rollout moments. Include it when the Deployment exists in the target
+  # cluster instead of hardcoding it into every env and breaking smoke while
+  # the service is intentionally dark.
   if kubectl --context "$CONTEXT" -n "$NAMESPACE" get deploy endpoint-admin-service >/dev/null 2>&1; then
     D29_SERVICES+=(endpoint-admin-service)
   fi
