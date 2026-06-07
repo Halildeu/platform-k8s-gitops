@@ -21,6 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ACCEPTANCE = REPO_ROOT / "scripts/faz22-non-domain/a1-acceptance-verifier.py"
 OPERATOR_PACK = REPO_ROOT / "scripts/faz22-non-domain/a1-operator-evidence-pack.py"
+OPERATOR_PACKET = REPO_ROOT / "docs/runbooks/RB-faz22-a1-two-device-operator-packet.md"
 LINKED_CLONE = REPO_ROOT / "scripts/faz22-non-domain/a1-linked-clone-batch.sh"
 LOCAL_DIAGNOSTICS = REPO_ROOT / "scripts/faz22-non-domain/a1-local-vm-diagnostics.sh"
 CURRENT_ROLLUP = REPO_ROOT / "docs/faz-22-evidence/2026-06-07-non-domain-pilot-tierA1-rollup-current.md"
@@ -301,6 +302,18 @@ class A1OperatorEvidencePackTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("potential secret-like value", result.stderr)
+
+
+class A1OperatorPacketDocTest(unittest.TestCase):
+    def test_packet_links_manifest_driven_wrapper(self) -> None:
+        text = OPERATOR_PACKET.read_text(encoding="utf-8")
+
+        self.assertIn("a1-operator-evidence-pack.py", text)
+        self.assertIn("--write-example-manifest", text)
+        self.assertIn("--manifest", text)
+        self.assertIn("no secrets", text.lower())
+        self.assertIn("operator-checklist.md", text)
+        self.assertIn("run-evidence-pack.sh", text)
 
 
 class A1LinkedCloneBatchTest(unittest.TestCase):
