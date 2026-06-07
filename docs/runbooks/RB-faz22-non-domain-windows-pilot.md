@@ -609,6 +609,7 @@ bash scripts/faz22-non-domain/a1-soak-rollup.sh
 bash scripts/faz22-non-domain/a1-soak-rollup.sh \
   --execute \
   --ssh-target halil@staging-sw \
+  --ssh-identity-file ~/.ssh/id_ed25519 \
   --device-id <HALILKOOLUB735-device-uuid> \
   --device-id <NONDOMAIN-W11-LAB-01-device-uuid> \
   --device-id <NONDOMAIN-W11-LAB-02-device-uuid>
@@ -617,6 +618,8 @@ bash scripts/faz22-non-domain/a1-soak-rollup.sh \
 Helper sözleşmesi:
 - `SELECT`-only; endpoint/admin/runtime state mutate etmez.
 - Varsayılan mod dry-run'dır.
+- SSH execution path `BatchMode=yes` + `IdentitiesOnly=yes` kullanır; parola
+  prompt'u açmaz ve çok fazla ssh-agent identity nedeniyle false-fail riskini azaltır.
 - `endpoint_heartbeats.received_at` ve `endpoint_commands.command_type`
   source-truth kolonlarını kullanır.
 - `ROLLUP_FACTS_OK`, tek başına acceptance PASS değildir; per-device evidence
