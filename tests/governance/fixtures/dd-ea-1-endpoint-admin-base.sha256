@@ -21,4 +21,11 @@
 #   endpoint-admin-service-secrets Secret via kv/platform/openfga, matching the
 #   shared runtime-artifact selector. Previous baseline:
 #   9477c3e41fd04de81d16e589c94ce7d0b9e24a05ad65dc8748d9b623a8182f32
-b95f55ca030c67d0105ddcc9b938bbc78dcc380a0e5580d13309f51554795600
+#
+# 2026-06-07 OpenFGA runtime reconcile (gitops #1267/#1331): endpoint-admin
+#   ConfigMap now carries ArgoCD Replace=true so stale SSA-managed
+#   ERP_OPENFGA_STORE_ID/MODEL_ID data keys are removed from live ConfigMap, and
+#   Deployment pod template carries the stable ESO selector marker to roll pods
+#   and re-read envFrom after the selector migration. Previous baseline:
+#   b95f55ca030c67d0105ddcc9b938bbc78dcc380a0e5580d13309f51554795600
+0f52701ae952f1dd5805f3e90dca7bf5a4cd8ad50ce7142026f49be3b026241d
