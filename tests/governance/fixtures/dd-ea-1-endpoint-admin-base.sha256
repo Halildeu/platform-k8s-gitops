@@ -5,7 +5,7 @@
 # 2026-06-04 OpenFGA provenance fix (gitops #1265 / PR #1266): base ConfigMap now
 #   tracks ERP_OPENFGA_ENABLED + ERP_OPENFGA_API_URL + empty ERP_OPENFGA_STORE_ID
 #   / ERP_OPENFGA_MODEL_ID stubs (were live-only ConfigMap drift; the @RequireModule
-#   gate was ON at runtime but invisible in gitops → silent-flip risk). Codex
+#   gate was ON at runtime but invisible in gitops -> silent-flip risk). Codex
 #   019e92cb AGREE. Previous baseline:
 #   81978377ba94e0ce65b3f43133e099de93c5f012f1c69f4e44aa8345329c529d
 #
@@ -14,4 +14,11 @@
 #   test overlay JSON6902-replaces it to "true"). Codex 019e946d AGREE. Previous
 #   baseline:
 #   1d73da23ee251a2864b4a83b895c2877877565b183b572e0b2670937571c1da5
-9477c3e41fd04de81d16e589c94ce7d0b9e24a05ad65dc8748d9b623a8182f32
+#
+# 2026-06-07 OpenFGA ESO migration (gitops #1267): base ConfigMap keeps
+#   ERP_OPENFGA_ENABLED/API_URL but no longer carries STORE_ID/MODEL_ID stubs.
+#   endpoint-admin store/model now come from the ESO-managed
+#   endpoint-admin-service-secrets Secret via kv/platform/openfga, matching the
+#   shared runtime-artifact selector. Previous baseline:
+#   9477c3e41fd04de81d16e589c94ce7d0b9e24a05ad65dc8748d9b623a8182f32
+b95f55ca030c67d0105ddcc9b938bbc78dcc380a0e5580d13309f51554795600
