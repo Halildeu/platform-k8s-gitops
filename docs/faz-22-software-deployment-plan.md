@@ -1,5 +1,16 @@
 # Faz 22.5 — Software Deployment Quick Wins
 
+> **2026-06-07 endpoint-admin OpenFGA selector truth refresh**:
+> platform-k8s-gitops #1267 and #1331 are CLOSED + Project Done after workflow
+> run `27096356021` passed on `main@513e238b`. Runtime report verdict `PASS`:
+> endpoint-admin expected/observed/pod OpenFGA model
+> `01KS8QE8T1EJ2DF5CRS4VV9YX1` and store
+> `01KPP0CFP4G82K42Y6NYSPT4JF` resolve through the ESO-managed shared
+> `kv/platform/openfga` Secret rather than stale ConfigMap pins. The workflow
+> used selected GitOps-rendered resources because ArgoCD core was unavailable
+> on the self-hosted runner; this is runtime selector proof, not a new
+> persona allow/deny or multi-device soak claim.
+
 > **2026-06-07 prod truth refresh**: #1241 prod ESO and #1242 prod workload/config are MERGED and live-verified; release-candidate ledger PR #1315 recorded the prod promotion evidence. `endpoint-admin-service` is present in prod with immutable imageID `sha256:7fa5975c1d0c54e3611db5d89d7b8f8919c1952f6b74f94e562ffd1d90a0f9d2`; ESO `Ready=True:SecretSynced`; prod D29 runner `/tmp/smoke-report-prod-20260606T020443Z.json` returned Up/Functional/Secured/Zanzibar GREEN. This does **not** claim D30 atomic cutover, domain-wide rollout, signed self-update production rollout, or sensitive/file actions.
 
 > **2026-06-07 AG-029 truth refresh**: `platform-agent` #74 and #75 are

@@ -1,5 +1,30 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22 #1267 endpoint-admin OpenFGA ESO selector runtime PASS (2026-06-07 18:13 Istanbul / 15:13Z UTC)
+
+**Session milestone**: endpoint-admin OpenFGA store/model selector migration now has
+runtime proof on `platform-test`. The pod environment resolves through the
+ESO-managed shared `kv/platform/openfga` Secret instead of stale ConfigMap pins.
+This closes the #1267 selector-migration acceptance; it does not claim a new
+persona allow/deny smoke, #1044 multi-device batch, domain-wide rollout or
+24h soak.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Source migration | PR #1330 moved endpoint-admin OpenFGA model/store IDs out of the ConfigMap path and into the ESO-managed secret selector; follow-up PRs #1332-#1339 added the runtime verifier and hardened the platform-test sync path | Source + verifier chain merged |
+| Runtime workflow | `Faz 22 — platform-test GitOps sync + endpoint-admin OpenFGA verify` run [27096356021](https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27096356021), head `513e238bc5498f20e2c9a6e875122b393cae4a98`, conclusion `success` | Runtime gate PASS |
+| Sync mode | ArgoCD core was unavailable on the self-hosted runner, so the workflow reconciled selected GitOps-rendered endpoint-admin resources from `kustomize/overlays/test` plus the ESO overlay (`kubectl-overlay-selected-resources`) | Overlay-rendered selected-resource fallback; no direct workload image mutation, `kubectl set image`, workload edit or unmanaged patch |
+| Selector proof | Runtime report verdict `PASS`: expected/observed/pod model `01KS8QE8T1EJ2DF5CRS4VV9YX1`; expected/observed/pod store `01KPP0CFP4G82K42Y6NYSPT4JF` | Pod env matches shared ESO-managed OpenFGA values |
+| Board truth | #1267 CLOSED + Project Done + body `status=done`; #1331 CLOSED + Project Done + body `status=done` | Selector migration and verifier workflow accepted |
+| Evidence | `docs/faz-22-evidence/2026-06-07-endpoint-admin-openfga-runtime-selector.md`; workflow artifact `endpoint-admin-openfga-sync-verify-report` | Traceable evidence chain |
+
+**Boundary / remaining gates**:
+
+- #1044 remains user-owned for two additional devices plus observation roll-up.
+- Domain / `acik.local` / IT pilot gates remain separate.
+- Further persona allow/deny smoke is a D29 Functional/Secured evidence lane,
+  not a blocker for this selector-migration acceptance.
+
 ## Live Delta — Faz 22 AG-042 local password / lock / unlock Parallels smoke (2026-06-07 16:48 Istanbul / 13:48Z UTC)
 
 **Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has
@@ -34,8 +59,9 @@ multi-device acceptance, or `acik.local` IT pilot evidence.
 **Session milestone**: the prior admin-JWT / WEB-015 evidence gap is
 superseded. `testai` live evidence now proves the P1 visibility roll-up at
 source + test runtime level. This does not satisfy #1044 multi-device + 24h
-soak, #1037 `acik.local` IT pilot, #1015 IT pilot readiness or #1267 OpenFGA
-model migration.
+soak, #1037 `acik.local` IT pilot or #1015 IT pilot readiness. The prior
+#1267 OpenFGA selector migration gap was accepted later the same day; see the
+2026-06-07 18:13 Istanbul delta above.
 
 | Slice | Evidence | Hukum |
 |---|---|---|
@@ -47,7 +73,8 @@ model migration.
 
 - User-owned #1044 two additional devices + 24h soak remains open by design.
 - `acik.local` #1037 / #1015 remains operator-bound.
-- #1267 OpenFGA model migration evaluation remains a separate Backlog item.
+- #1267 OpenFGA model migration evaluation is no longer open; runtime selector
+  proof was accepted in workflow 27096356021.
 
 ---
 
