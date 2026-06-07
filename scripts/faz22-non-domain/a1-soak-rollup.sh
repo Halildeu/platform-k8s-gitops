@@ -17,6 +17,7 @@
 #   bash scripts/faz22-non-domain/a1-soak-rollup.sh
 #   bash scripts/faz22-non-domain/a1-soak-rollup.sh --device-id <uuid>
 #   bash scripts/faz22-non-domain/a1-soak-rollup.sh --execute --ssh-target halil@staging-sw
+#   bash scripts/faz22-non-domain/a1-soak-rollup.sh --execute --ssh-target halil@staging-sw --ssh-identity-file ~/.ssh/id_ed25519
 #   bash scripts/faz22-non-domain/a1-soak-rollup.sh --execute --docker-container platform-pg-test
 
 set -euo pipefail
@@ -28,11 +29,12 @@ DOCKER_CONTAINER="platform-pg-test"
 PG_USER="platform"
 PG_DATABASE="endpoint_admin"
 SSH_TARGET=""
+SSH_IDENTITY_FILE=""
 EXECUTE=0
 DEVICE_IDS=()
 
 usage() {
-  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -116,6 +118,18 @@ while [ $# -gt 0 ]; do
     --ssh-target)
       SSH_TARGET="${2:-}"
       safe_ssh_target "$SSH_TARGET" || die "--ssh-target contains unsafe characters"
+      shift 2
+      ;;
+    --ssh-identity-file)
+      SSH_IDENTITY_FILE="${2:-}"
+      [ -n "$SSH_IDENTITY_FILE" ] || die "--ssh-identity-file requires a path"
+      case "$SSH_IDENTITY_FILE" in
+        *$'\n'*|*$'\t'*)
+          die "--ssh-identity-file contains unsafe whitespace"
+          ;;
+      esac
+      [ -f "$SSH_IDENTITY_FILE" ] || die "--ssh-identity-file not found: $SSH_IDENTITY_FILE"
+      [ -r "$SSH_IDENTITY_FILE" ] || die "--ssh-identity-file not readable: $SSH_IDENTITY_FILE"
       shift 2
       ;;
     --)
@@ -358,8 +372,12 @@ run_sql() {
   if [ -n "$SSH_TARGET" ]; then
     require_cmd ssh
     log "execute via ssh target=$SSH_TARGET docker_container=$DOCKER_CONTAINER db=$PG_DATABASE user=$PG_USER"
+    local ssh_args=(-o BatchMode=yes -o IdentitiesOnly=yes)
+    if [ -n "$SSH_IDENTITY_FILE" ]; then
+      ssh_args+=(-i "$SSH_IDENTITY_FILE")
+    fi
     # shellcheck disable=SC2029 # validated local args intentionally select the remote docker/psql target.
-    build_sql | ssh "$SSH_TARGET" "docker exec -i '$DOCKER_CONTAINER' psql -U '$PG_USER' -d '$PG_DATABASE' -v ON_ERROR_STOP=1"
+    build_sql | ssh "${ssh_args[@]}" "$SSH_TARGET" "docker exec -i '$DOCKER_CONTAINER' psql -U '$PG_USER' -d '$PG_DATABASE' -v ON_ERROR_STOP=1"
     return
   fi
 
