@@ -262,6 +262,10 @@ kanonik toplu iş listesidir. Amaç: localde agent/backend/web/runbook davranı�
 kanıtlandıktan sonra diğer cihazlarda aynı sırayı tekrar edilebilir şekilde
 uygulamak.
 
+Kısa operator yürütme paketi: `docs/runbooks/RB-faz22-a1-two-device-operator-packet.md`.
+Bu paket aşağıdaki kontratı değiştirmez; yalnız #1044 iki-cihaz batch için
+copy/paste odaklı özet sağlar.
+
 **Batch trigger**:
 - [ ] Local Parallels HALILKOOLUB735 health/smoke evidence güncel.
 - [ ] #1044 için iki ek Parallels cihaz veya eşdeğer lab cihazı hazır.

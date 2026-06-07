@@ -33,7 +33,7 @@ EXECUTE=0
 MIN_FREE_GIB=10
 
 usage() {
-  sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
