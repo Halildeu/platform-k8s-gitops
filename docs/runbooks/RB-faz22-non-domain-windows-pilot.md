@@ -173,6 +173,74 @@ Bu redaction policy `BE-019` KVKK retention enforcement gate ile uyumlu (TRACKIN
 | Entra-joined corporate Windows | A3 — read-only | operator coordination (Entra admin); agent read-only mode |
 | Workplace-registered personal device | A4 — read-only support | operator coordination; agent inventory-only |
 
+### 6.1A Local Parallels A1 linked-clone batch (#1044)
+
+2026-06-07 local preflight:
+
+```text
+Current parent VM: Windows 11 / HALILKOOLUB735
+Parent PVM size: 75G
+Host free space: 47GiB on /System/Volumes/Data
+Parallels snapshot count: 0
+Parent VM state: running
+```
+
+Implication:
+
+- Full/deep clone is not safe at the current disk pressure level.
+- Linked clone is the preferred local path for #1044 A1 repeatability.
+- Parallels refuses clone creation while the parent VM is running; a planned
+  maintenance window is required.
+- Linked clone evidence is acceptable only after the clone is personalized and
+  re-enrolled as a distinct endpoint. A raw clone of HALILKOOLUB735 is not a new
+  device evidence by itself.
+
+Operator maintenance window procedure:
+
+```bash
+# 0. Record current parent VM state.
+prlctl list -a
+prlctl snapshot-list "Windows 11"
+df -h /System/Volumes/Data
+
+# 1. Stop or suspend the parent VM from Parallels GUI.
+#    Do not force-stop unless the operator accepts guest OS risk.
+prlctl status "Windows 11"
+
+# 2. Create linked clones. These commands must be run only while the parent VM
+#    is not busy/running.
+prlctl clone "Windows 11" --linked --name "NONDOMAIN-W11-LAB-01"
+prlctl clone "Windows 11" --linked --name "NONDOMAIN-W11-LAB-02"
+
+# 3. Start one clone at a time to avoid host RAM pressure.
+prlctl start "NONDOMAIN-W11-LAB-01"
+
+# Verify first clone boot + host RAM/disk pressure before starting the second.
+prlctl list -a
+df -h /System/Volumes/Data
+
+prlctl start "NONDOMAIN-W11-LAB-02"
+```
+
+Per-clone personalization before evidence:
+
+```text
+[ ] Unique hostname set (NONDOMAIN-W11-LAB-01/02 or equivalent).
+[ ] Parent agent install/state removed or re-enrolled with a fresh one-time token.
+[ ] `PartOfDomain=false`, AzureAdJoined=NO, WorkplaceJoined=NO confirmed.
+[ ] Backend endpoint identity is distinct from HALILKOOLUB735.
+[ ] No destructive command dispatched; only COLLECT_INVENTORY / read-only probes.
+[ ] Evidence doc includes "linked clone" boundary and parent VM reference.
+```
+
+Known preflight failure mode:
+
+```text
+prlctl clone "Windows 11" --name "NONDOMAIN-W11-LAB-DRYRUN-CHECK" --linked --dst /tmp
+Failed to clone the VM: Unable to perform the action because the virtual machine is busy.
+The virtual machine is currently running. Please try again later.
+```
+
 ### 6.2 Onboarding flow (A1 standalone)
 
 ```
@@ -547,10 +615,10 @@ Post-uninstall:
 
 ### 13.1 Per-gate breakdown (Codex Q2 absorb)
 
-| Gate | Sınıf | Effort | Bağımlılık | Status (2026-05-26 — AG-021/022 source MERGED update) |
+| Gate | Sınıf | Effort | Bağımlılık | Status (2026-06-07 — #12 workflow PASS + #1044 linked-clone preflight update) |
 |---|---|---:|---|---|
-| Self-hosted CI run (Parallels W11 lab gate) | Karma | agent 0.5-1g + operator 0.5g | self-hosted Mac runner + Parallels VM + labels + artifact upload + secret scan | Script + workflow ✅ MERGED (PR #13); CI gerçek run ⏳ operator |
-| 2+ standalone device evidence (A1 multi-VM) | Karma | docs/evidence 0.5g + operator 0.5-1g/device | cihaz temini (gerçek veya Parallels VM) + local admin + backend reachability | ⏳ pending (mevcut 1 VM HALILKOOLUB735) |
+| Self-hosted CI run (Parallels W11 lab gate) | Karma | agent 0.5-1g + operator 0.5g | self-hosted Mac runner + Parallels VM + labels + artifact upload + secret scan | ✅ DONE 2026-06-07: platform-agent PR #78 + workflow run `27081667910` + gitops PR #1300 evidence; artifact secret scan clean |
+| 2+ standalone device evidence (A1 multi-VM) | Karma | docs/evidence 0.5g + operator 0.5-1g/device | cihaz temini (gerçek veya Parallels VM) + local admin + backend reachability | ⏳ pending (mevcut 1 VM HALILKOOLUB735). 2026-06-07 linked-clone preflight: full clone disk-unsafe; parent VM must be stopped/suspended before `prlctl clone --linked` |
 | 24-72h soak observation | Karma | metric/query 1-2g + wall-clock 1-3g | heartbeat visibility + offline threshold + command/result query | ⏳ pending (Prometheus/Grafana setup öncesi DB-direct query) |
 | Identity classification (A1-A4 detection) | Agent source MERGED; field acceptance pending | agent ✅ source DONE + backend 1-2g (BE-015) + privacy schema | `AG-021` + `AG-022` source MERGED (platform-agent #17 `91ef533d`); `BE-015` + privacy schema pending | 🟡 source DONE (A1 HALILKOOLUB735 `WORKGROUP`/`LOCAL` read-only evidence); field acceptance (multi-device classification + soak) ⏳ pending |
 | Signed distribution | Karma / operator-heavy | agent CI 2-4g + Azure/owner 0.5-2g | `SEC-001` + `SEC-002` + Authenticode cert + timestamp + release channel | ⏳ pending (AG-018/AG-024 backlog; ADR pre-req docs) |
