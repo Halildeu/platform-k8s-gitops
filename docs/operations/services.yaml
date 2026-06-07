@@ -177,8 +177,9 @@ services:
     repo: platform-backend
     description: |
       Endpoint admin / governance API (Faz 22.1.3 lab tier — DD-EA-1 manifest
-      contract gate's subject). Currently dev/test only; prod scope decision
-      pending Faz 22.2 BG-EA-1 product review.
+      contract gate's subject). GitOps-enabled in test and prod; prod endpoint-
+      admin service presence passed D29 smoke after #1241 ESO + #1242 workload/
+      config merged.
 
       Status note (Plan A/B/C + C.5.persona + BE-014A zinciri MERGED 2026-05-22):
         Test cluster endpoint-admin-service GitOps-governed in
@@ -254,24 +255,36 @@ services:
           ✅ + Zanzibar-ready ✅; full operator-session parity for
           audit/status pending follow-on.
 
-        Pending kapılar (ayrı kapı — bu truth-refresh KAPATMAZ):
-        * platform-agent#8 fresh Windows smoke — AG-013 capability
-          coherence fix sonrası operator-bound Windows VM rerun
-        * BE-011 real agent lifecycle smoke — yan-kanıt yakalandı
-          (HALILKOOLUB735 device record); formal 5-step (enroll →
-          heartbeat → command poll → result submit → audit verify)
-          rerun ayrı kapı
-        * BE-017 formal dual-control matrix — V5 migration + manager
-          gate source-side LIVE + 1 audit row yan-kanıt; formal
-          5-step matrix (create → pending → self-approval deny →
-          second-admin approve → audit insert) test fixture rerun
-          ayrı kapı
-        * IT pilot 22.2 — acik.local domain + 2 IT-owned Windows test
-          PC + EndpointPilot OU readiness; docs/runbooks/RB-faz22-
-          endpoint-pilot-it-owned.md hazır (gitops #1016 MERGED);
-          operator execution gerekli
-        * Trusted signing + EDR allowlist — production code-signing
-          cert + EDR vendor catalog update prod cutover scope'unda
+        2026-06-07 truth-refresh (Faz 22.5 software deployment + prod
+        endpoint-admin gate):
+        * BE-011 real agent lifecycle is formally evidenced in gitops #1021 /
+          platform-agent #10 and current-state: HALILKOOLUB735 enroll →
+          heartbeat → command/result → audit chain is no longer only
+          yan-kanit.
+        * First install pilot is testai-proven (#1133 GREEN): 7-Zip install
+          end-to-end on HALILKOOLUB735 with backend command/audit and UI
+          evidence.
+        * AG-028 managed uninstall is testai-proven (#1239 CLOSED + gitops
+          #1279): real 7-Zip uninstall on HALILKOOLUB735 produced
+          `SUCCEEDED_VERIFIED` and `ABSENT_VERIFIED`; maker-checker proposer
+          != approver held.
+        * Prod endpoint-admin gate passed: #1241 ESO MERGED, #1242 workload/
+          config MERGED, prod Deployment `endpoint-admin-service` 1/1 Running,
+          pod restart 0, imageID digest `sha256:7fa5975c...`, and D29 smoke
+          runner GREEN for Up + Functional + Zanzibar-ready
+          (`/tmp/smoke-report-prod-20260606T020443Z` on staging-sw).
+
+        Kalan kapılar (ayrı kapı — testai/prod service-presence kanıtı
+        domain-wide readiness yerine geçmez):
+        * #1044 two additional user-owned devices + 24h soak roll-up.
+        * #376 authenticated compliance-gap browser D5 acceptance.
+        * AG-029 signed agent self-update — multi-device/trusted-signing/
+          rollout-policy acceptance.
+        * BE-026..BE-029 rollout controls — source sprint accepted, runtime
+          policy acceptance separate.
+        * 22.2.B / 22.3 IT rollout — acik.local domain, MSI/GPO/AD CS, EDR
+          allowlist, Trusted Signing, 5-PC pilot and later 50/800 ramp remain
+          operator/IT-bound.
     jwt_validates: true
     route_external: false
     workload_kind: Deployment
@@ -279,8 +292,8 @@ services:
     probe_contract: spring-actuator
     jvm_warmup_extra: true   # Hibernate JPA EntityManagerFactory cold-start 30-50s; observed 16h CrashLoop with 45s liveness grace (2026-05-13)
     environments:
-      test: enabled   # 2026-05-24 truth-refresh: GitOps desired + live pod imageID match for both endpoint-admin-service (sha256:1a1d0aac..., BE-017 gitops PR #980) AND api-gateway (sha256:6137bb2c..., gitops PR #985 closed earlier 2026-05-22 D30 drift) AND frontend (sha256:583aa8c9..., gitops PR #1007 #658 era D30 re-pin). D30 parity LIVE across the 3 services. Web runtime acceptance LIVE end-to-end (4 platform-web PR #654/#656/#657/#658 + 2 gitops drift-correction #998/#1007; browser-context Platform Admin 403/403 FGA fail-closed + status 200 auth-only; 401 storm giderildi). BE-016/BE-017/BE-011 MERGED source-side; V5 Flyway migration applied live (4→v5). Pending: platform-agent#8 Windows fresh smoke + BE-011 real agent lifecycle smoke + BE-017 formal dual-control matrix + IT pilot + Trusted signing / EDR allowlist (full Pending list in description block above).
-      prod: enabled   # 2026-06-05: #1241 ESO + #1242 workload merged and live-verified. endpoint-admin-service prod Deployment ready=1/1, imageID sha256:7fa5975c..., ESO Ready=True/SecretSynced, prod D29 smoke GREEN. D30 atomic cutover / broad exposure remains a separate gate.
+      test: enabled   # 2026-06-07 truth-refresh: endpoint-admin-service testai is GitOps-enabled with D29/D30 evidence across backend/web/agent paths; BE-011 lifecycle, 7-Zip install (#1133) and AG-028 uninstall (#1239/#1279) are test-proven. Kalan kapılar: #1044 two-device soak, #376 compliance-gap D5, AG-029 multi-device/trusted signing, rollout controls and IT/domain rollout.
+      prod: enabled   # 2026-06-06: #1241/#1242 merged + prod D29 smoke GREEN for endpoint-admin-service digest sha256:7fa5975c... (report /tmp/smoke-report-prod-20260606T020443Z on staging-sw). Future prod digest changes still need fresh immutable digest + D29 ledger evidence.
 
   - name: notification-orchestrator
     repo: platform-backend
