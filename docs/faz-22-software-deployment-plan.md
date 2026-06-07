@@ -46,6 +46,17 @@
 > release/dispatch path was used in a local Parallels live smoke, and #55 now
 > carries the post-merge evidence comment. The acceptance level is
 > **local-lab baseline**, not multi-device/domain/prod readiness.
+>
+> **2026-06-07 AG-030P addendum**: `platform-agent` PR #77 is MERGED
+> (`1ec4a5a9`) after local Parallels Windows 11 no-crash proof. The
+> auto-enroll startup/dry-run path now fails closed unless a disambiguating
+> cert filter is configured (`ENDPOINT_AGENT_AUTO_ENROLL_CERT_SUBJECT_SUFFIX`
+> or `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SAN_URI_PREFIX`); the local
+> `HALILKOOLUB735` temp-binary smoke replaced the native certstore access
+> violation with actionable `EXIT=1` diagnostics. This is 22.3/mTLS preflight
+> hardening only; AD CS cert provisioning, domain enrollment, trusted signing,
+> installed-service distribution and multi-device acceptance remain separate
+> gates.
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
@@ -214,6 +225,7 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **WEB-015** | `platform-web` | Endpoint report / CSV export | **TODO** | RBAC-controlled export |
 | **AG-028** | `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops` | Software uninstall / detection | **SOURCE-MERGED + TESTAI LIVE (2026-06-04)** | Catalog-managed package only; real 7-Zip uninstall on HALILKOOLUB735 verified `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; maker-checker proposer != approver enforced; prod remains dark |
 | **AG-029** | `platform-agent` | Signed agent self-update | **MERGED + LOCAL PARALLELS BASELINE (2026-06-07)** | PR #74 `656cd1a` fixed Windows verifier sharing violation; PR #75 `5f32181` added multi-device checklist; local Parallels smoke `HALILKOOLUB735` updated `0.1.2-lab.2` -> `0.1.3-lab.1` via BE-031/BE-032 release/dispatch path. Remaining: multi-device batch, trusted production signing and rollout policy acceptance |
+| **AG-030P** | `platform-agent` | Auto-enroll dry-run certstore preflight hardening | **MERGED + LOCAL PARALLELS NO-CRASH PROOF (PR #77, 2026-06-07)** | `-auto-enroll -dry-run` no longer broad-scans arbitrary LocalMachine certs without an operator filter; requires `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SUBJECT_SUFFIX` or `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SAN_URI_PREFIX`; local temp binary proved no-filter fail-closed and filtered no-cert paths without native crash. Installed-service distribution and AD CS cert provisioning remain separate gates |
 | **AG-030** | `platform-agent` | Pending reboot detection | **SOURCE-MERGED (PR #33)** | CBS/Windows Update/PendingFileRenameOperations sinyalleri; binary distribution + HALILKOOLUB735 lab smoke operator-bound |
 | **AG-031** | `platform-agent` | Endpoint security posture inventory | **SOURCE-MERGED (PR #34, Codex 019e74b5 4-iter AGREE)** | Defender/Firewall/BitLocker read-only; recovery key/drive-id/vendor-name sızmaz; tri-state nullable; binary distribution operator-bound |
 | **AG-032** | `platform-agent` | Local admin group inventory | **SOURCE-MERGED (PR #35, Codex 019e74d7 5-plan+2-impl AGREE)** | Built-in Administrators (S-1-5-32-544) direct membership; ZERO raw SID/RID/name on wire; NetAPI primary + PowerShell fallback; binary distribution operator-bound |
@@ -462,6 +474,11 @@ paketler için açılır.
 - This is local lab acceptance only. The checklist added by PR #75 keeps
   additional machines as `PENDING_BATCH`; trusted signing and domain-wide
   rollout remain separate gates.
+- Adjacent mTLS preflight hardening: AG-030P / `platform-agent` PR #77 fixed a
+  local Parallels `-auto-enroll -dry-run` certstore crash by requiring an
+  explicit cert filter before auto-enroll startup/dry-run and by adding a
+  private-key binding precheck. This does not distribute the fix to the
+  installed service by itself and does not provision AD CS certificates.
 
 ### 22.5.8 Controlled Rollout Policies
 
