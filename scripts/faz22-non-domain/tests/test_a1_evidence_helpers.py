@@ -21,6 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ACCEPTANCE = REPO_ROOT / "scripts/faz22-non-domain/a1-acceptance-verifier.py"
 OPERATOR_PACK = REPO_ROOT / "scripts/faz22-non-domain/a1-operator-evidence-pack.py"
+LINKED_CLONE = REPO_ROOT / "scripts/faz22-non-domain/a1-linked-clone-batch.sh"
 CURRENT_ROLLUP = REPO_ROOT / "docs/faz-22-evidence/2026-06-07-non-domain-pilot-tierA1-rollup-current.md"
 
 
@@ -36,6 +37,117 @@ def run_cmd(*args: str, cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[st
         stderr=subprocess.PIPE,
         check=False,
     )
+
+
+def run_shell(*args: str, env: dict[str, str], cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:
+    merged_env = os.environ.copy()
+    merged_env.update(env)
+    return subprocess.run(
+        ["bash", *args],
+        cwd=cwd,
+        env=merged_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+
+def write_fake_a1_linked_clone_tools(root: Path, *, parent_status: str = "running", free_gib: int = 47) -> dict[str, str]:
+    bin_dir = root / "bin"
+    parent_home = root / "Windows 11.pvm"
+    parent_home.mkdir()
+    clone_log = root / "clone.log"
+    bin_dir.mkdir()
+
+    (bin_dir / "prlctl").write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env bash
+            set -euo pipefail
+
+            cmd="${1:-}"
+            shift || true
+
+            case "$cmd" in
+              status)
+                vm="${1:-}"
+                if [ "$vm" = "${FAKE_PARENT_VM}" ]; then
+                  printf 'The VM is %s\\n' "${FAKE_PARENT_STATUS}"
+                  exit 0
+                fi
+                exit 1
+                ;;
+              list)
+                if [ "${1:-}" = "-i" ]; then
+                  printf 'Home: %s\\n' "${FAKE_PARENT_HOME}"
+                else
+                  printf 'UUID STATUS IP_ADDR NAME\\n'
+                  printf 'fake stopped - %s\\n' "${FAKE_PARENT_VM}"
+                fi
+                ;;
+              snapshot-list)
+                printf 'ID NAME DATE\\n'
+                ;;
+              clone)
+                parent="${1:-}"
+                shift || true
+                clone=""
+                while [ $# -gt 0 ]; do
+                  case "$1" in
+                    --name)
+                      clone="${2:-}"
+                      shift 2
+                      ;;
+                    *)
+                      shift
+                      ;;
+                  esac
+                done
+                printf 'clone|%s|%s\\n' "$parent" "$clone" >> "${FAKE_CLONE_LOG}"
+                ;;
+              *)
+                printf 'unexpected prlctl command: %s\\n' "$cmd" >&2
+                exit 2
+                ;;
+            esac
+            """
+        ),
+        encoding="utf-8",
+    )
+    (bin_dir / "df").write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env bash
+            set -euo pipefail
+            free_kib=$((FAKE_FREE_GIB * 1024 * 1024))
+            printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n'
+            printf '/dev/fake 999999999 1 %s 1%% /System/Volumes/Data\\n' "$free_kib"
+            """
+        ),
+        encoding="utf-8",
+    )
+    (bin_dir / "du").write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env bash
+            set -euo pipefail
+            printf '75G\\t%s\\n' "${*: -1}"
+            """
+        ),
+        encoding="utf-8",
+    )
+    for helper in ("prlctl", "df", "du"):
+        (bin_dir / helper).chmod(0o755)
+
+    return {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "FAKE_PARENT_VM": "Windows 11",
+        "FAKE_PARENT_STATUS": parent_status,
+        "FAKE_PARENT_HOME": str(parent_home),
+        "FAKE_FREE_GIB": str(free_gib),
+        "FAKE_CLONE_LOG": str(clone_log),
+    }
 
 
 class A1AcceptanceVerifierTest(unittest.TestCase):
@@ -188,6 +300,68 @@ class A1OperatorEvidencePackTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("potential secret-like value", result.stderr)
+
+
+class A1LinkedCloneBatchTest(unittest.TestCase):
+    def test_dry_run_reports_running_parent_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = write_fake_a1_linked_clone_tools(root, parent_status="running")
+
+            result = run_shell(str(LINKED_CLONE), env=env)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("parent VM is running", result.stdout)
+        self.assertIn("dry-run complete", result.stdout)
+        self.assertNotIn("creating linked clone", result.stdout)
+
+    def test_execute_refuses_running_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = write_fake_a1_linked_clone_tools(root, parent_status="running")
+            clone_log = Path(env["FAKE_CLONE_LOG"])
+
+            result = run_shell(str(LINKED_CLONE), "--execute", env=env)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("refusing to clone while parent VM is running", result.stderr)
+            self.assertFalse(clone_log.exists())
+
+    def test_execute_stopped_parent_creates_requested_linked_clones(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = write_fake_a1_linked_clone_tools(root, parent_status="stopped")
+            clone_log = Path(env["FAKE_CLONE_LOG"])
+
+            result = run_shell(
+                str(LINKED_CLONE),
+                "--clone",
+                "NONDOMAIN-W11-LAB-ALPHA",
+                "--clone",
+                "NONDOMAIN-W11-LAB-BETA",
+                "--execute",
+                env=env,
+            )
+            log_text = clone_log.read_text(encoding="utf-8") if clone_log.exists() else ""
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("linked-clone batch created", result.stdout)
+        self.assertIn("clone|Windows 11|NONDOMAIN-W11-LAB-ALPHA", log_text)
+        self.assertIn("clone|Windows 11|NONDOMAIN-W11-LAB-BETA", log_text)
+        self.assertNotIn("NONDOMAIN-W11-LAB-01", log_text)
+        self.assertNotIn("NONDOMAIN-W11-LAB-02", log_text)
+
+    def test_low_disk_fails_before_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = write_fake_a1_linked_clone_tools(root, parent_status="stopped", free_gib=5)
+            clone_log = Path(env["FAKE_CLONE_LOG"])
+
+            result = run_shell(str(LINKED_CLONE), "--execute", "--min-free-gib", "10", env=env)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("host free space 5GiB is below minimum 10GiB", result.stderr)
+        self.assertFalse(clone_log.exists())
 
 
 if __name__ == "__main__":
