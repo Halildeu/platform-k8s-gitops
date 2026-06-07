@@ -1,5 +1,33 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22 AG-092 / AG-042 backend-to-agent dispatch smoke (2026-06-07 19:43 Istanbul / 16:43Z UTC)
+
+**Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has
+backend-to-agent dual-control dispatch evidence for command-specific local
+Windows account operations. `LOCK_USER_LOGIN` reached the agent and enforced
+the reserved built-in Administrator guard without mutating the VM. `CHANGE_LOCAL_PASSWORD`
+reached the agent and changed a disposable local SAM account password, then the
+helper removed the synthetic account. This is local Windows SAM evidence only;
+it is not domain password reset, cached domain credential proof, M365/Entra
+reset, SMB/file action, #1044 two-device batch, `acik.local` IT pilot, or 24h
+observation evidence.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Source/helper chain | `platform-agent` PRs #95, #96, #97, #98, #99 MERGED; final mergeCommit #99 `160b1fcc612e95cd39d463da5d30bb3683e4036b`; CI checks PASS including Windows Go test | Smoke helpers and redaction/reporting fixes source-ready on `platform-agent` main |
+| AG-092 lock dispatch | Command `2825b275-4f31-4324-9ad6-a96e08d8b27e`; type `LOCK_USER_LOGIN`; target `Administrator`; `approvalStatus=APPROVED`; terminal `FAILED`; reason: reserved built-in account cannot be targeted by remote command; VM before/after unchanged | Backend-to-agent dispatch path exercised; reserved account guard enforced |
+| AG-042 local password dispatch | Command `c06cd030-c62e-40da-814d-90956e960eaa`; type `CHANGE_LOCAL_PASSWORD`; target synthetic local user `ea-recovery-smoke`; `approvalStatus=APPROVED`; terminal `SUCCEEDED`; result `CHANGE_LOCAL_PASSWORD applied`; VM before/after changed | Backend-to-agent dispatch path exercised; local SAM password adapter applied on disposable account |
+| Cleanup / secret hygiene | `Get-LocalUser ea-recovery-smoke` returned `ABSENT`; `/tmp/ag42-auth.bixUyo` removed; evidence scan found no raw Bearer/JWT/Authorization/local-password material | No synthetic account or raw credential material left behind |
+| Issue truth | `platform-agent#92` acceptance comment added and state `CLOSED`; `platform-agent#94` post-close live evidence comment added | AG-092/AG-042 helper/live evidence recorded |
+| Evidence | `docs/faz-22-evidence/2026-06-07-ag92-ag42-backend-dispatch-smoke.md`; local evidence dirs `/tmp/faz22-live-smoke/ag92-lock-final-20260607T162200Z` and `/tmp/faz22-live-smoke/ag42-local-password-final-20260607T163900Z` | Traceable evidence chain |
+
+**Boundary / remaining gates**:
+
+- #1044 remains user-owned for two additional devices plus observation roll-up.
+- Domain / `acik.local` / IT pilot gates remain separate.
+- Domain password / cached credential / pre-logon VPN behavior remains a
+  separate identity connector and IT-pilot design lane.
+
 ## Live Delta — Faz 22 #1267 endpoint-admin OpenFGA ESO selector runtime PASS (2026-06-07 18:13 Istanbul / 15:13Z UTC)
 
 **Session milestone**: endpoint-admin OpenFGA store/model selector migration now has
