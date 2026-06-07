@@ -121,7 +121,8 @@
     "rollback_runbook_ref": "docs/runbooks/RB-webpush-activation.md#4-rollback",
     "backward_compatible_until": null,
     "migration_refs": [
-      "docs/notify/m3-supplement-openfga-model-extension-plan-2026-05-14.md"
+      "docs/notify/m3-supplement-openfga-model-extension-plan-2026-05-14.md",
+      "docs/faz-22-evidence/2026-06-07-endpoint-admin-openfga-eso-migration.md"
     ]
   },
   "audit": {

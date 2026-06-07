@@ -1005,25 +1005,10 @@ patches:
       - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: "INFO"
-      # ERP_OPENFGA_* — Codex 019e8cca MUST-FIX. NOT in base ConfigMap (drift on
-      # test cluster: live test CM has these 4 from a prior kubectl patch outside
-      # gitops, separate fix needed for test gitops alignment). Prod overlay sets
-      # them explicitly via op:add to ensure @RequireModule interceptor sees
-      # authzService.isEnabled()=true and runs real OpenFGA checks instead of
-      # fail-open. Values sourced from prod cluster report-service-config (shared
-      # OpenFGA tenant: store=01KPXCVBHCY2TQ6YHVK009NS1C, model=01KPXCVBMDKXXRPGKFGPDRVBQX).
-      - op: add
-        path: /data/ERP_OPENFGA_ENABLED
-        value: "true"
-      - op: add
-        path: /data/ERP_OPENFGA_API_URL
-        value: "http://openfga:8080"
-      - op: add
-        path: /data/ERP_OPENFGA_STORE_ID
-        value: "01KPXCVBHCY2TQ6YHVK009NS1C"
-      - op: add
-        path: /data/ERP_OPENFGA_MODEL_ID
-        value: "01KPXCVBMDKXXRPGKFGPDRVBQX"
+      # ERP_OPENFGA_ENABLED/API_URL inherit from base. Store/model IDs are no
+      # longer hard-coded in the prod ConfigMap; endpoint-admin reads the prod-
+      # specific `kv/platform/openfga` values through its ESO-managed Secret,
+      # matching the permission-service/report-service discipline.
 
   # Faz 23.9 prod cutover — notification-orchestrator pod-template
   # annotation rollout trigger + replicas override. ConfigMap envFrom
