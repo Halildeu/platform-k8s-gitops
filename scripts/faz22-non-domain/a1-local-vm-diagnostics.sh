@@ -30,7 +30,7 @@ INCLUDE_WINGET_EGRESS=0
 SECTION_TIMEOUT_SECONDS=45
 
 usage() {
-  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 

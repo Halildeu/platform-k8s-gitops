@@ -22,6 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 ACCEPTANCE = REPO_ROOT / "scripts/faz22-non-domain/a1-acceptance-verifier.py"
 OPERATOR_PACK = REPO_ROOT / "scripts/faz22-non-domain/a1-operator-evidence-pack.py"
 LINKED_CLONE = REPO_ROOT / "scripts/faz22-non-domain/a1-linked-clone-batch.sh"
+LOCAL_DIAGNOSTICS = REPO_ROOT / "scripts/faz22-non-domain/a1-local-vm-diagnostics.sh"
 CURRENT_ROLLUP = REPO_ROOT / "docs/faz-22-evidence/2026-06-07-non-domain-pilot-tierA1-rollup-current.md"
 
 
@@ -303,6 +304,15 @@ class A1OperatorEvidencePackTest(unittest.TestCase):
 
 
 class A1LinkedCloneBatchTest(unittest.TestCase):
+    def test_linked_clone_help_is_comment_only(self) -> None:
+        result = run_shell(str(LINKED_CLONE), "--help", env={})
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("local Parallels A1 linked-clone batch helper", result.stdout)
+        self.assertIn("--execute", result.stdout)
+        self.assertNotIn("set -euo pipefail", result.stdout)
+        self.assertNotIn("CLONES=(", result.stdout)
+
     def test_dry_run_reports_running_parent_without_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -362,6 +372,18 @@ class A1LinkedCloneBatchTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("host free space 5GiB is below minimum 10GiB", result.stderr)
         self.assertFalse(clone_log.exists())
+
+
+class A1LocalVmDiagnosticsTest(unittest.TestCase):
+    def test_local_diagnostics_help_is_comment_only_and_complete(self) -> None:
+        result = run_shell(str(LOCAL_DIAGNOSTICS), "--help", env={})
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("local Parallels A1 read-only diagnostics helper", result.stdout)
+        self.assertIn("--include-winget-egress", result.stdout)
+        self.assertIn('--vm "Windows 11"', result.stdout)
+        self.assertNotIn("shellcheck disable", result.stdout)
+        self.assertNotIn("set -euo pipefail", result.stdout)
 
 
 if __name__ == "__main__":
