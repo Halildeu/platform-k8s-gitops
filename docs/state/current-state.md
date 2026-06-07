@@ -1,5 +1,32 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22 AG-029 local Parallels self-update E2E evidence (2026-06-07)
+
+**Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has
+accepted one-device AG-029 signed self-update evidence through the
+BE-031/BE-032 release-catalog and catalog-bound `UPDATE_AGENT` dispatch path.
+This supersedes earlier draft-only and `0.1.3-lab.1` snapshot wording. It is
+local lab evidence only; #1044 two-device repeatability, trusted production
+signing, rollout policy acceptance, `acik.local` IT pilot, domain password
+behavior and domain-wide rollout remain separate gates.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Source chain | `platform-agent` PR #74 `656cd1a384ced3b79c4996acc5d9031e0c11dc77` MERGED; PR #75 `5f3218165f58244f29eb4c5220e839eb795a9bed` MERGED; `platform-backend` PR #494 `5184831c419ba52df081c49b6c04f5f8eb054ecb` and PR #495 `82071da050bc196459bf214962759020284797fa` MERGED | Agent source/checklist + backend release catalog/dispatch source are on main |
+| Trust preflight | Dedicated BE-032 dispatch body with caller-supplied trust fields (`binaryUrl` / hash / signer) returned HTTP `400` | Backend trust material resolved from release catalog, not caller payload |
+| Release path | Release `ag029-localhost-014-20260607143458`; proposer `userId=9997`; separate approver `userId=9998`; status `APPROVED`; signing tier `LAB_ONLY_EVIDENCE` | Maker-checker release path exercised in lab |
+| Command lifecycle | Command `0640e361-ccb7-4a7b-8967-27ea992ba7ad`; result row `c0bdeb9e-054f-41b6-a12e-3787ec45e244`; terminal `SUCCEEDED`; `stageStatus=STAGED_ACTIVATION_READY`; `oldVersion=0.1.0-dev`; `targetVersion=0.1.4-lab.1` | Catalog-bound `UPDATE_AGENT` command reached the local Windows agent and staged successfully |
+| Activation / heartbeat | `endpoint-agent --version` -> `endpoint-agent 0.1.4-lab.1`; service `Running`; activation outcome `ACTIVATED`; `serviceRunningVerified=true`; `evidencePersisted=true`; backend heartbeat reports `agent_version=0.1.4-lab.1` | Local Windows service swap and post-activation evidence observed |
+| Cleanup / safety | Local HTTPS artifact server stopped; temp local smoke user absent; synthetic KC users disabled; temp token/password dirs removed | Lab artifacts cleaned without carrying raw secret values into docs |
+| Evidence | `platform-agent` #55 raw evidence comment: https://github.com/Halildeu/platform-agent/issues/55#issuecomment-4642413343; accepted sign-off comment: https://github.com/Halildeu/platform-agent/issues/55#issuecomment-4642421851 | Traceable issue-level evidence and acceptance |
+
+**Boundary / remaining gates**:
+
+- #1044 remains user-owned for two additional devices plus observation roll-up.
+- Lab-only signing is not production Trusted Signing.
+- This does not claim domain-wide deployment, domain password reset, cached
+  domain credential update, SMB/file actions, or pre-logon VPN behavior.
+
 ## Live Delta — Faz 22 AG-092 disposable local lock/unlock dispatch smoke (2026-06-07 20:21 Istanbul / 17:21Z UTC)
 
 **Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has

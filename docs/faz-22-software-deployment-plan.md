@@ -15,12 +15,13 @@
 
 > **2026-06-07 AG-029 truth refresh**: `platform-agent` #74 and #75 are
 > MERGED and local Parallels Windows 11 post-merge self-update smoke is
-> proven on `HALILKOOLUB735`: `0.1.2-lab.2` -> `0.1.3-lab.1`, command
-> `5c6fe05c-4ce6-4452-9abc-8dda07b6cdb6` `SUCCEEDED`, stageStatus
-> `STAGED_ACTIVATION_READY`, installed SHA256
-> `CFFD73CC86C27B727952E45083CF95047B9E2AAAC9C1ACC393CACD20122048FE`,
-> backend heartbeat `0.1.3-lab.1` and audit row
-> `ENDPOINT_AGENT_UPDATE_COMMAND_CREATED`. This is **local lab baseline
+> proven on `HALILKOOLUB735`. Latest accepted #55 evidence is
+> `0.1.0-dev` -> `0.1.4-lab.1`, command
+> `0640e361-ccb7-4a7b-8967-27ea992ba7ad` `SUCCEEDED`, stageStatus
+> `STAGED_ACTIVATION_READY`, activation outcome `ACTIVATED`, service
+> `Running`, backend heartbeat `0.1.4-lab.1`, and audit row
+> `ENDPOINT_AGENT_UPDATE_COMMAND_CREATED`. Earlier `0.1.2-lab.2` ->
+> `0.1.3-lab.1` smoke remains superseded evidence. This is **local lab baseline
 > evidence only**; multi-device acceptance, trusted production signing and
 > domain-wide rollout remain separate gates.
 
@@ -66,9 +67,10 @@
 >
 > **2026-06-07 supersession**: AG-029 is no longer "TODO / draft PR only".
 > The source fix (#74) and checklist (#75) are merged, BE-031/BE-032-backed
-> release/dispatch path was used in a local Parallels live smoke, and #55 now
-> carries the post-merge evidence comment. The acceptance level is
-> **local-lab baseline**, not multi-device/domain/prod readiness.
+> release/dispatch path was used in local Parallels live smokes, and #55 now
+> carries accepted one-device evidence through target `0.1.4-lab.1`. The
+> acceptance level is **local-lab baseline**, not multi-device/domain/prod
+> readiness.
 >
 > **2026-06-07 AG-030P addendum**: `platform-agent` PR #77 is MERGED
 > (`1ec4a5a9`) after local Parallels Windows 11 no-crash proof. The
@@ -269,7 +271,7 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **WEB-014D / WEB-012** | `platform-web` | Approved install UI surface | **MERGED + LIVE (PR #683 + perf/follow-up PR #693, Codex absorb)** | Full chain LIVE: `SoftwareCatalogTab.tsx` "Kur" button per catalog row → `InstallPreflightModal.tsx` PASS/WARN/BLOCK + `useCreateInstallMutation()` dispatch POST + "Son Kurulumlar" audit panel via `useListInstallAuditsQuery` with auto-refetch on `EndpointInstallAudit:device-{id}` tag invalidation. Codex 019e6ff0 post-impl absorb already applied (in-flight POST race guard) |
 | **WEB-015** | `platform-web` | Endpoint report / CSV export | **MERGED + TESTAI LIVE 2026-06-07 (#1134)** | RBAC-controlled export; public gateway `POST /api/v1/endpoint-admin/endpoint-devices/export` with `{format:csv, exportMode:raw}` returned 200 `text/csv;charset=UTF-8`, filename `endpoint-devices-raw.csv`, 7 lines, and headers including `Bilgisayar Adı`, `Yasaklı Yazılım`, `Ajan Son Poll` |
 | **AG-028** | `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops` | Software uninstall / detection | **SOURCE-MERGED + TESTAI LIVE (2026-06-04)** | Catalog-managed package only; real 7-Zip uninstall on HALILKOOLUB735 verified `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; maker-checker proposer != approver enforced; prod remains dark |
-| **AG-029** | `platform-agent` | Signed agent self-update | **MERGED + LOCAL PARALLELS BASELINE (2026-06-07)** | PR #74 `656cd1a` fixed Windows verifier sharing violation; PR #75 `5f32181` added multi-device checklist; local Parallels smoke `HALILKOOLUB735` updated `0.1.2-lab.2` -> `0.1.3-lab.1` via BE-031/BE-032 release/dispatch path. Remaining: multi-device batch, trusted production signing and rollout policy acceptance |
+| **AG-029** | `platform-agent` | Signed agent self-update | **MERGED + LOCAL PARALLELS BASELINE (2026-06-07)** | PR #74 `656cd1a` fixed Windows verifier sharing violation; PR #75 `5f32181` added multi-device checklist; accepted #55 evidence updated `HALILKOOLUB735` from `0.1.0-dev` to `0.1.4-lab.1` through BE-031/BE-032 release/dispatch path with negative trust-field preflight, `SUCCEEDED` command, `ACTIVATED` outcome, service `Running`, and backend heartbeat match. Remaining: multi-device batch, trusted production signing and rollout policy acceptance |
 | **AG-042** | `platform-agent` + `platform-backend` | Local SAM lock / unlock / password change | **AGENT-SIDE + BACKEND DISPATCH PROVEN (2026-06-07)** | Agent-side: `TestMutateLocalWindowsIntegration` created disposable `ea-pwd-0607a`, exercised `LOCK_USER_LOGIN` + `UNLOCK_USER_LOGIN` + `CHANGE_LOCAL_PASSWORD`, removed the user, and reported `secretEchoed=false`. Backend/JWT dispatch: AG-092 `LOCK_USER_LOGIN` command `2825b275-4f31-4324-9ad6-a96e08d8b27e` reached the agent and failed safely on reserved `Administrator` with VM unchanged; AG-042 `CHANGE_LOCAL_PASSWORD` command `c06cd030-c62e-40da-814d-90956e960eaa` succeeded on disposable local user `ea-recovery-smoke`, then cleanup verified `ABSENT`; #1343 disposable success-path smoke then proved `LOCK_USER_LOGIN` command `a8dfaac1-1c3b-4f4f-84cd-77b62c2bd553` `SUCCEEDED` (`Enabled=true -> false`) and `UNLOCK_USER_LOGIN` command `fd62b31e-c84a-4ee7-b1d0-e433c35768e1` `SUCCEEDED` (`Enabled=false -> true`) on `ea-lockunlock-smoke`, followed by cleanup. Domain/M365/cached-domain/pre-logon VPN behavior remains out of scope |
 | **AG-030P** | `platform-agent` | Auto-enroll dry-run certstore preflight hardening | **MERGED + LOCAL PARALLELS NO-CRASH PROOF (PR #77, 2026-06-07)** | `-auto-enroll -dry-run` no longer broad-scans arbitrary LocalMachine certs without an operator filter; requires `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SUBJECT_SUFFIX` or `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SAN_URI_PREFIX`; local temp binary proved no-filter fail-closed and filtered no-cert paths without native crash. Installed-service distribution and AD CS cert provisioning remain separate gates |
 | **AG-030** | `platform-agent` | Pending reboot detection | **SOURCE-MERGED (PR #33)** | CBS/Windows Update/PendingFileRenameOperations sinyalleri; binary distribution + HALILKOOLUB735 lab smoke operator-bound |
@@ -508,15 +510,18 @@ paketler için açılır.
 - Signed update manifest olmadan agent self-update açılmaz.
 - Authenticode + manifest signature + SHA256/SHA512 kanıtı gerekir.
 - 2026-06-07 local Parallels baseline: `platform-agent` #74 + #75 merged,
-  target `endpoint-agent 0.1.3-lab.1` built from merged `origin/main`,
+  target `endpoint-agent 0.1.4-lab.1` built from merged `origin/main`,
   BE-031/BE-032 release catalog + catalog-bound dispatch path exercised,
   negative trust-field preflight returned HTTP `400`, command
-  `5c6fe05c-4ce6-4452-9abc-8dda07b6cdb6` finished `SUCCEEDED`, Windows
-  service activated to `0.1.3-lab.1`, installed SHA256 matched
-  `CFFD73CC86C27B727952E45083CF95047B9E2AAAC9C1ACC393CACD20122048FE`, and
-  backend heartbeat/audit saw the new version. Evidence:
-  `platform-agent` #55 comment
-  `https://github.com/Halildeu/platform-agent/issues/55#issuecomment-4641111205`.
+  `0640e361-ccb7-4a7b-8967-27ea992ba7ad` finished `SUCCEEDED`, Windows
+  service activated to `0.1.4-lab.1`, activation outcome was `ACTIVATED`,
+  serviceRunningVerified/evidencePersisted were true, signed lab binary SHA256
+  matched `9CEBCC2022DEE8AC8A466CF22F347B17F9AA26EF4624414EECC3C68A429EE244`,
+  and backend heartbeat/audit saw the new version. Evidence:
+  `platform-agent` #55 raw evidence comment
+  `https://github.com/Halildeu/platform-agent/issues/55#issuecomment-4642413343`;
+  #55 accepted sign-off comment
+  `https://github.com/Halildeu/platform-agent/issues/55#issuecomment-4642421851`.
 - This is local lab acceptance only. The checklist added by PR #75 keeps
   additional machines as `PENDING_BATCH`; trusted signing and domain-wide
   rollout remain separate gates.
@@ -636,7 +641,7 @@ sonra açılır.
 17. `platform-backend`: `BE-022` device inventory ingest/query. **DONE + LIVE (BE-022 + BE-022Q)**
 18. `platform-web`: `WEB-013` hardware/device inventory view. **DONE + LIVE**
 19. `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops`: `AG-028` uninstall. **SOURCE-MERGED + TESTAI LIVE (2026-06-04)** — real 7-Zip uninstall on HALILKOOLUB735 yielded `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; prod remains dark.
-20. `platform-agent`: `AG-029` signed update. **MERGED + LOCAL PARALLELS BASELINE 2026-06-07** — PR #74 verifier sharing fix + PR #75 multi-device checklist; local `HALILKOOLUB735` post-merge self-update `0.1.2-lab.2` -> `0.1.3-lab.1` succeeded through BE-031/BE-032 catalog-bound dispatch with audit/heartbeat evidence. Multi-device/trusted-signing/domain rollout gates pending.
+20. `platform-agent`: `AG-029` signed update. **MERGED + LOCAL PARALLELS BASELINE 2026-06-07** — PR #74 verifier sharing fix + PR #75 multi-device checklist; accepted #55 local `HALILKOOLUB735` self-update evidence reached `0.1.4-lab.1` through BE-031/BE-032 catalog-bound dispatch with activation, audit and heartbeat evidence. Multi-device/trusted-signing/domain rollout gates pending.
 21. `platform-backend`: `BE-026` + `BE-027` + `BE-028` + `BE-029` rollout ring/window/throttle/bundle controls. **SOURCE-MERGED (accepted source sprint)** — BE-026 PR #478, BE-027 PR #490, BE-028 PR #491 and BE-029 PR #492 are merged. Boundary: backend source/control-plane only; image/digest rollout, live testai policy acceptance, AG-029 multi-device acceptance, trusted signing and domain rollout remain separate gates.
 22. `platform-agent`: `AG-034` SMB/file action discovery, runtime yok. **DEFERRED**
 
@@ -669,7 +674,7 @@ P1 (görünürlük genişletme):
 
 P2 (rollout controls + uninstall + signed self-update — managed lifecycle):
 11. **AG-028** Software uninstall (catalog-managed only) — **testai LIVE 2026-06-04**; prod remains dark.
-12. **AG-029** Signed agent self-update (Authenticode + manifest + SHA256/SHA512 + rollback guard; moved from P0 2026-05-29 PM per adversarial review — not 22.5.4 First Install Pilot blocker; lives in §22.5.7 managed lifecycle scope) — **local Parallels baseline proven 2026-06-07** (`HALILKOOLUB735`, command `5c6fe05c-4ce6-4452-9abc-8dda07b6cdb6`, `0.1.2-lab.2` -> `0.1.3-lab.1`, backend heartbeat/audit matched); **remaining** multi-device batch + trusted signing + rollout acceptance.
+12. **AG-029** Signed agent self-update (Authenticode + manifest + SHA256/SHA512 + rollback guard; moved from P0 2026-05-29 PM per adversarial review — not 22.5.4 First Install Pilot blocker; lives in §22.5.7 managed lifecycle scope) — **local Parallels baseline proven 2026-06-07** (`HALILKOOLUB735`, command `0640e361-ccb7-4a7b-8967-27ea992ba7ad`, `0.1.0-dev` -> `0.1.4-lab.1`, activation outcome `ACTIVATED`, backend heartbeat/audit matched); **remaining** multi-device batch + trusted signing + rollout acceptance.
 13. **BE-026 / BE-027 / BE-028 / BE-029** rollout ring/window/throttle/bundle — SOURCE-MERGED accepted source sprint: BE-026 rings/device tags (#478), BE-027 schedule fields (#490), BE-028 tenant-wide throttle (#491) and BE-029 bundles (#492) merged. Remaining gates are runtime/operator acceptance: image/digest rollout, testai controlled-rollout smoke, AG-029 multi-device batch, trusted signing and domain rollout.
 
 Deferred:
