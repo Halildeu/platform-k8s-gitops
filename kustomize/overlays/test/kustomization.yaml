@@ -5103,25 +5103,27 @@ patches:
         path: /spec/replicas
         value: 1
 
-  # BE-017 formal dual-control matrix live evidence (gitops #1023; Codex
-  # strategic `019e5a61` REVISE absorb): test-only enable `LOCK_USER_LOGIN`
-  # destructive command admin-creatable types listesinde. Base default
+  # BE-017/AG-042 formal dual-control + local SAM adapter evidence (gitops
+  # #1023 + #1320; Codex strategic `019e5a61` REVISE absorb): test-only enable
+  # backend canonical local-user destructive command set in admin-creatable
+  # types. Base default
   # `endpoint-admin.commands.admin-creatable-types` (kaynak: EndpointAdmin
   # CommandService.java:75) `COLLECT_INVENTORY` only — destructive command
   # admin create için 409 "Command type is not enabled for admin creation"
-  # döner. Test overlay'de `LOCK_USER_LOGIN` enable edilir; **prod overlay'e
-  # eklenmedi** — production deferred (Faz 22.1 backend; gitops PR #1021 §7
-  # Pending + handoff §5 P1 operator queue Faz 22.2 IT pilot). Test-only
-  # enable: smoke fixture target üzerinde test cluster Keycloak/OpenFGA
-  # ile dual-control approval flow live evidence için zorunlu. No
-  # destructive real PC action — fixture device + test persona only.
+  # döner. Test overlay'de `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN` ve
+  # `CHANGE_LOCAL_PASSWORD` enable edilir; **prod overlay'e eklenmedi** —
+  # production deferred (Faz 22.1 backend; gitops PR #1021 §7 Pending +
+  # handoff §5 P1 operator queue Faz 22.2 IT pilot). Test-only enable:
+  # smoke fixture/disposable Parallels local account üzerinde test cluster
+  # Keycloak/OpenFGA ile dual-control approval flow evidence için zorunlu.
+  # No production destructive real PC action.
   - target:
       kind: ConfigMap
       name: endpoint-admin-service-config
     patch: |-
       - op: add
         path: /data/ENDPOINT_ADMIN_COMMANDS_ADMIN_CREATABLE_TYPES
-        value: "COLLECT_INVENTORY,LOCK_USER_LOGIN"
+        value: "COLLECT_INVENTORY,LOCK_USER_LOGIN,UNLOCK_USER_LOGIN,CHANGE_LOCAL_PASSWORD"
 
   # OpenFGA authz gate store/model — live-aligned pin (gitops #1265, 2026-06-04).
   # Surfaced by the AG-028 managed-uninstall E2E: the gate is ON at runtime
