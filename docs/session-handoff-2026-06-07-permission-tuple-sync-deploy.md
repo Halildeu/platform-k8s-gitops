@@ -52,7 +52,7 @@ Issue durumu: **#1275 CLOSED** (completed), **#1274 CLOSED** (önceki oturum + b
 
 ## 4. İspatlamaz (pending acceptance / residual)
 
-- **Live new-persona granule-grant smoke**: assignRole → tuple-appears uçtan uca canlı senaryo **koşulmadı** (Keycloak admin-JWT orchestration + testai state mutation + cleanup gerektirir). Davranış **deployed image'da real-FGA Testcontainer IT ile kanıtlı** (mock değil — gerçek OpenFGA + gerçek PG); risk **düşük** (değişiklik zaten-canlı fail-loud path'lere yönlendiren refactor).
+- **Live new-persona granule-grant smoke**: assignRole → tuple-appears uçtan uca canlı senaryo **koşulmadı** (Keycloak admin-JWT orchestration + testai state mutation + cleanup gerektirir). Davranış **deployed image'ın kaynak commit'inde (815308a) real-FGA Testcontainer IT ile kanıtlı** (mock değil — gerçek OpenFGA + gerçek PG; digest parity ile aynı image); risk **düşük** (değişiklik zaten-canlı fail-loud path'lere yönlendiren refactor).
 - **#84 agent**: paralel session'da source-landed; bu oturum doğruladı, kendi PR'ını açmadı.
 
 ---
