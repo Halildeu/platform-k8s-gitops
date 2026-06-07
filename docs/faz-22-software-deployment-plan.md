@@ -2,6 +2,17 @@
 
 > **2026-06-05 prod truth refresh**: #1241 prod ESO and #1242 prod workload/config are MERGED and live-verified. `endpoint-admin-service` is present in prod with immutable imageID `sha256:7fa5975c1d0c54e3611db5d89d7b8f8919c1952f6b74f94e562ffd1d90a0f9d2`; ESO `Ready=True:SecretSynced`; prod D29 runner `/tmp/smoke-report-prod-20260605T195032Z.json` returned Up/Functional/Secured/Zanzibar GREEN. This does **not** claim D30 atomic cutover, domain-wide rollout, signed self-update, or sensitive/file actions.
 
+> **2026-06-07 AG-029 truth refresh**: `platform-agent` #74 and #75 are
+> MERGED and local Parallels Windows 11 post-merge self-update smoke is
+> proven on `HALILKOOLUB735`: `0.1.2-lab.2` -> `0.1.3-lab.1`, command
+> `5c6fe05c-4ce6-4452-9abc-8dda07b6cdb6` `SUCCEEDED`, stageStatus
+> `STAGED_ACTIVATION_READY`, installed SHA256
+> `CFFD73CC86C27B727952E45083CF95047B9E2AAAC9C1ACC393CACD20122048FE`,
+> backend heartbeat `0.1.3-lab.1` and audit row
+> `ENDPOINT_AGENT_UPDATE_COMMAND_CREATED`. This is **local lab baseline
+> evidence only**; multi-device acceptance, trusted production signing and
+> domain-wide rollout remain separate gates.
+
 > **Status**: SOURCE-MERGED + testai LIVE for catalog/inventory/compliance/preflight/audit; AG-027L installer log redaction SOURCE-MERGED 2026-05-29 PM (platform-agent PR #32 `4f5e152`); **First Install Pilot LIVE 2026-05-31** ([#1133 GREEN](https://github.com/Halildeu/platform-k8s-gitops/issues/1133) — `be021-smoke-7zip` SUCCEEDED end-to-end on HALILKOOLUB735 SYSTEM Session-0 ARM64 Win11; UI "Başarılı" 12:37:27; true root cause 3-layer fix: backend PR #338 contract gap + agent PR #41 `winget list` Session-0 unreliable → INSTALL exit code authoritative + `0x8A150061` → SUCCEEDED_NOOP); **WEB-014D-followup discovered 2026-06-01** — `InstallPreflightModal.tsx` "Kurulumu Onayla" footer button disabled regression on catalog rows with PASS preflight (operator-confirmed across multiple catalog items); REST workaround verified backend POST contract still healthy (commandId `4d3c097f-7842-4ec2-8c7f-a60465a1b01c` 201 CREATED) — bug is frontend-only; agent re-pickup pending operator service restart
 > **Tracked by**: platform-k8s-gitops#1083, platform-k8s-gitops#1086, platform-k8s-gitops#1088, platform-k8s-gitops#1090
 > **Scope date**: 2026-05-27 (initial 3-AI mutabakatı); **truth refresh 2026-05-29**
@@ -29,16 +40,25 @@
 > AG-030/031/032/033/036/037; AG-038/039/040 remain TODO. See
 > `docs/state/current-state.md` "AG-037 Hotfix Posture LIVE END-TO-END
 > VERIFIED (2026-06-01)" delta for canonical truth.
+>
+> **2026-06-07 supersession**: AG-029 is no longer "TODO / draft PR only".
+> The source fix (#74) and checklist (#75) are merged, BE-031/BE-032-backed
+> release/dispatch path was used in a local Parallels live smoke, and #55 now
+> carries the post-merge evidence comment. The acceptance level is
+> **local-lab baseline**, not multi-device/domain/prod readiness.
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
 planı tanımlar.
 
-Bu plan install/uninstall runtime kabiliyeti iddia etmez. 2026-05-27 üç-AI
-değerlendirmesi (Claude Code + Codex + MiniMax/Mavis) ortak hükmü **REVISE**:
-read-only agent temeli doğru yönde başlamış, fakat program kurma kabiliyeti
-`BE-020` catalog, command contract, detection/result/audit ve web yüzeyi
-gelmeden açılmayacak.
+Bu plan artık testai üzerinde install/uninstall runtime kabiliyeti ve local
+Parallels üzerinde AG-029 self-update baseline kabiliyeti iddia eder; bu iddia
+yalnız kanıtlanan test kapsamı içindir. 2026-05-27 üç-AI değerlendirmesi
+(Claude Code + Codex + MiniMax/Mavis) ortak hükmü **REVISE** idi: read-only
+agent temeli doğru yönde başlamış, fakat program kurma kabiliyeti `BE-020`
+catalog, command contract, detection/result/audit ve web yüzeyi gelmeden
+açılmayacaktı. Sonraki kanıtlar bu kapıların test kapsamında geçtiğini
+gösterir; prod/domain-wide deployment-ready iddiası üretmez.
 
 ### 0.1 Current Implementation Truth (2026-05-27 — superseded by §0.1bis 2026-05-29)
 
@@ -91,7 +111,7 @@ gelmeden açılmayacak.
 | Approved install dispatch UI | `platform-web` | WEB-012 ≡ WEB-014D (PR #683 + perf #693 follow-up Codex absorb) — `SoftwareCatalogTab.tsx` "Kur" button per catalog row + `InstallPreflightModal.tsx` PASS/WARN/BLOCK → `useCreateInstallMutation()` dispatch POST + "Son Kurulumlar" audit panel via `useListInstallAuditsQuery` Page.content render | **MERGED + LIVE** |
 | Outdated software / inventory diff / prohibited | `platform-backend` + `platform-agent` | AG-036 SOURCE-MERGED (agent PR #38 `a29eef4` + #40 `e64c131` `UpgradeTruncated` fix; backend PR #336 `7f8c1a90` V20 ingest+query); BE-024 SOURCE-MERGED (PR #334 `d154ac7a` V18 software-inventory state diff/history, atomic ON CONFLICT append); BE-025 SOURCE-MERGED (PR #335 `7bb0340e` V19 prohibited-software denylist + EndpointComplianceService integration); cluster image `fd272365` (#348) ⊃ #336 ⊃ #335 ⊃ #334 → all 3 included end-to-end | SOURCE-MERGED + LIVE acceptance pending (testai cluster image fd272365; V18/V19/V20 migration files included in deployed image, Flyway apply verified 2026-05-30 (V18/V19/V20 `success=true` rows live in `endpoint_admin_service.endpoint_admin_flyway_history`); API service reachability + Spring Security admin auth-gate verified 2026-06-01 (no-JWT cluster-internal GET returned HTTP 401 for 4/4 admin URLs: `/software-inventory/diff` + `/software-inventory/history` + `/outdated-software/latest` + `/prohibited-software`; no 500 / no connection-refused — this is NOT route-level controller-mapping acceptance; SecurityConfig admin chain enforces 401 before handler mapping); authenticated 200 + JSON shape smoke (admin JWT path) + WEB surface verify pending) |
 | Posture / health / hotfix / diagnostics / services / exposure | `platform-agent` | AG-030 / AG-031 / AG-032 / AG-033 SOURCE-MERGED (PRs #33/#34/#35/#36, Codex cross-AI AGREE; binary distribution operator-bound); **AG-037 MERGED + LIVE 2026-06-01** (end-to-end chain agent #45 + backend #354/#355 + web #723 + gitops #1167/#1168 + HALILKOOLUB735 86 installed + 1 pending real WUA telemetry + browser smoke); **AG-038 MERGED + LIVE 2026-06-01** end-to-end chain (agent #39 + backend #357/#355 V23 LIVE + web #727 + gitops #1181 digest bump APPLIED + browser-verified Agent Tanılaması tab 404 empty + `includeDiagnostics:true` literal hint); **AG-039 SOURCE-MERGED + backend LIVE 2026-06-01** end-to-end 3-repo chain: agent PR [#47](https://github.com/Halildeu/platform-agent/pull/47) `0d8e7b4` (critical services probe — 6-service canonical allowlist WinDefend/wuauserv/BITS/EventLog/EndpointAgent/MpsSvc; per-service {present, state, startupMode} from SCM + registry) + backend PR [#362](https://github.com/Halildeu/platform-backend/pull/362) `65d9fbd5` (V24 migration + ingest + GET /services/latest query) + web PR [#728](https://github.com/Halildeu/platform-web/pull/728) ServicesView drawer tab (Codex 019e8389 2-iter REVISE→PARTIAL→AGREE absorb 6+1 must_fix incl. IslemlerTab default 8-bit payload + fail-closed container parity + startupMode=DISABLED danger chip + DICT_EN parity + nullable summary/serviceName); browser smoke + testai frontend digest bump pending (gitops PR #1185); **AG-040 SOURCE-MERGED 2026-06-01** end-to-end chain (agent 92320cd + backend b6daaee2 V25 startup-exposure ingest+query + web PR [#729](https://github.com/Halildeu/platform-web/pull/729) StartupExposureView drawer tab; Codex 019e83a6 3-iter REVISE→REVISE→AGREE absorb incl. AG-040/AG-041 numbering disambiguation + fail-closed exposure-scalar evidence helpers + per-scalar polarity split + StartupAppLocation enum source type); AG-041 (Application Control / WDAC / AppLocker) reserved for new zincir | AG-037/AG-038 LIVE; AG-039 SOURCE-MERGED + backend LIVE (digest bump + browser smoke pending); AG-040 SOURCE-MERGED (browser smoke + digest bump pending); AG-030–033 SOURCE-MERGED (live smoke operator-bound); AG-041 TODO |
-| Uninstall + signed self-update + rollout controls | `platform-agent` + `platform-backend` | AG-028 / AG-029 / BE-026 / BE-027 / BE-028 / BE-029 NOT YET IMPLEMENTED | TODO |
+| Uninstall + signed self-update + rollout controls | `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops` | AG-028 testai go-live proven 2026-06-04; AG-029 source fix/checklist MERGED + local Parallels post-merge baseline proven 2026-06-07; BE-026..BE-033 source/digest path progressed separately | PARTIAL |
 | GitOps governance | `platform-k8s-gitops` | plan + runbook + ADR mature; current-state delta 2026-05-29 PM | LIVE |
 
 ### 0.2 3-AI Mutabakatı
@@ -192,8 +212,8 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **WEB-014C** | `platform-web` | Policy CRUD UI (REQUIRED/ALLOWED/FORBIDDEN) | **MERGED + LIVE (PR #678 + PR #682)** | Per catalog item policy CRUD; bulk import deferred |
 | **WEB-014D / WEB-012** | `platform-web` | Approved install UI surface | **MERGED + LIVE (PR #683 + perf/follow-up PR #693, Codex absorb)** | Full chain LIVE: `SoftwareCatalogTab.tsx` "Kur" button per catalog row → `InstallPreflightModal.tsx` PASS/WARN/BLOCK + `useCreateInstallMutation()` dispatch POST + "Son Kurulumlar" audit panel via `useListInstallAuditsQuery` with auto-refetch on `EndpointInstallAudit:device-{id}` tag invalidation. Codex 019e6ff0 post-impl absorb already applied (in-flight POST race guard) |
 | **WEB-015** | `platform-web` | Endpoint report / CSV export | **TODO** | RBAC-controlled export |
-| **AG-028** | `platform-agent` | Software uninstall / detection | **TODO** | Catalog-managed package only; detection verified |
-| **AG-029** | `platform-agent` | Signed agent self-update | **TODO** | Signed manifest + hash + version policy + rollback guard |
+| **AG-028** | `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops` | Software uninstall / detection | **SOURCE-MERGED + TESTAI LIVE (2026-06-04)** | Catalog-managed package only; real 7-Zip uninstall on HALILKOOLUB735 verified `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; maker-checker proposer != approver enforced; prod remains dark |
+| **AG-029** | `platform-agent` | Signed agent self-update | **MERGED + LOCAL PARALLELS BASELINE (2026-06-07)** | PR #74 `656cd1a` fixed Windows verifier sharing violation; PR #75 `5f32181` added multi-device checklist; local Parallels smoke `HALILKOOLUB735` updated `0.1.2-lab.2` -> `0.1.3-lab.1` via BE-031/BE-032 release/dispatch path. Remaining: multi-device batch, trusted production signing and rollout policy acceptance |
 | **AG-030** | `platform-agent` | Pending reboot detection | **SOURCE-MERGED (PR #33)** | CBS/Windows Update/PendingFileRenameOperations sinyalleri; binary distribution + HALILKOOLUB735 lab smoke operator-bound |
 | **AG-031** | `platform-agent` | Endpoint security posture inventory | **SOURCE-MERGED (PR #34, Codex 019e74b5 4-iter AGREE)** | Defender/Firewall/BitLocker read-only; recovery key/drive-id/vendor-name sızmaz; tri-state nullable; binary distribution operator-bound |
 | **AG-032** | `platform-agent` | Local admin group inventory | **SOURCE-MERGED (PR #35, Codex 019e74d7 5-plan+2-impl AGREE)** | Built-in Administrators (S-1-5-32-544) direct membership; ZERO raw SID/RID/name on wire; NetAPI primary + PowerShell fallback; binary distribution operator-bound |
@@ -429,6 +449,19 @@ paketler için açılır.
 - `AG-029`.
 - Signed update manifest olmadan agent self-update açılmaz.
 - Authenticode + manifest signature + SHA256/SHA512 kanıtı gerekir.
+- 2026-06-07 local Parallels baseline: `platform-agent` #74 + #75 merged,
+  target `endpoint-agent 0.1.3-lab.1` built from merged `origin/main`,
+  BE-031/BE-032 release catalog + catalog-bound dispatch path exercised,
+  negative trust-field preflight returned HTTP `400`, command
+  `5c6fe05c-4ce6-4452-9abc-8dda07b6cdb6` finished `SUCCEEDED`, Windows
+  service activated to `0.1.3-lab.1`, installed SHA256 matched
+  `CFFD73CC86C27B727952E45083CF95047B9E2AAAC9C1ACC393CACD20122048FE`, and
+  backend heartbeat/audit saw the new version. Evidence:
+  `platform-agent` #55 comment
+  `https://github.com/Halildeu/platform-agent/issues/55#issuecomment-4641111205`.
+- This is local lab acceptance only. The checklist added by PR #75 keeps
+  additional machines as `PENDING_BATCH`; trusted signing and domain-wide
+  rollout remain separate gates.
 
 ### 22.5.8 Controlled Rollout Policies
 
@@ -539,8 +572,8 @@ sonra açılır.
 16. `platform-agent`: `AG-037` + `AG-038` + `AG-039` + `AG-040` update/diagnostic/service/exposure quick wins. **AG-037 MERGED + LIVE 2026-06-01** (agent PR [#45](https://github.com/Halildeu/platform-agent/pull/45) + backend PR [#354](https://github.com/Halildeu/platform-backend/pull/354) + [#355](https://github.com/Halildeu/platform-backend/pull/355) + web PR [#723](https://github.com/Halildeu/platform-web/pull/723) + gitops PR [#1167](https://github.com/Halildeu/platform-k8s-gitops/pull/1167) + [#1168](https://github.com/Halildeu/platform-k8s-gitops/pull/1168); HALILKOOLUB735 86 installed + 1 pending real WUA telemetry browser-smoked); **AG-038 SOURCE-MERGED + backend LIVE 2026-06-01** (agent PR [#39](https://github.com/Halildeu/platform-agent/pull/39) + backend PR [#357](https://github.com/Halildeu/platform-backend/pull/357)/[#355](https://github.com/Halildeu/platform-backend/pull/355) V23 migration LIVE + web PR [#727](https://github.com/Halildeu/platform-web/pull/727) DiagnosticsView tab; Codex thread `019e833d` 3-iter REVISE→REVISE→AGREE; browser smoke + frontend digest bump pending); **AG-039 / AG-040 TODO**
 17. `platform-backend`: `BE-022` device inventory ingest/query. **DONE + LIVE (BE-022 + BE-022Q)**
 18. `platform-web`: `WEB-013` hardware/device inventory view. **DONE + LIVE**
-19. `platform-agent`: `AG-028` uninstall. **TODO**
-20. `platform-agent`: `AG-029` signed update. **TODO**
+19. `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops`: `AG-028` uninstall. **SOURCE-MERGED + TESTAI LIVE (2026-06-04)** — real 7-Zip uninstall on HALILKOOLUB735 yielded `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; prod remains dark.
+20. `platform-agent`: `AG-029` signed update. **MERGED + LOCAL PARALLELS BASELINE 2026-06-07** — PR #74 verifier sharing fix + PR #75 multi-device checklist; local `HALILKOOLUB735` post-merge self-update `0.1.2-lab.2` -> `0.1.3-lab.1` succeeded through BE-031/BE-032 catalog-bound dispatch with audit/heartbeat evidence. Multi-device/trusted-signing/domain rollout gates pending.
 21. `platform-backend`: `BE-026` + `BE-027` + `BE-028` + `BE-029` rollout ring/window/throttle/bundle controls. **TODO**
 22. `platform-agent`: `AG-034` SMB/file action discovery, runtime yok. **DEFERRED**
 
@@ -572,8 +605,8 @@ P1 (görünürlük genişletme):
 10. **WEB-015** CSV/report export
 
 P2 (rollout controls + uninstall + signed self-update — managed lifecycle):
-11. **AG-028** Software uninstall (catalog-managed only)
-12. **AG-029** Signed agent self-update (Authenticode + manifest + SHA256/SHA512 + rollback guard; moved from P0 2026-05-29 PM per adversarial review — not 22.5.4 First Install Pilot blocker; lives in §22.5.7 managed lifecycle scope)
+11. **AG-028** Software uninstall (catalog-managed only) — **testai LIVE 2026-06-04**; prod remains dark.
+12. **AG-029** Signed agent self-update (Authenticode + manifest + SHA256/SHA512 + rollback guard; moved from P0 2026-05-29 PM per adversarial review — not 22.5.4 First Install Pilot blocker; lives in §22.5.7 managed lifecycle scope) — **local Parallels baseline proven 2026-06-07** (`HALILKOOLUB735`, command `5c6fe05c-4ce6-4452-9abc-8dda07b6cdb6`, `0.1.2-lab.2` -> `0.1.3-lab.1`, backend heartbeat/audit matched); **remaining** multi-device batch + trusted signing + rollout acceptance.
 13. **BE-026 / BE-027 / BE-028 / BE-029** rollout ring/window/throttle/bundle (4 PR)
 
 Deferred:
