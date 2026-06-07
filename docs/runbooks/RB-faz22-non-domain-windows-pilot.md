@@ -222,6 +222,19 @@ df -h /System/Volumes/Data
 prlctl start "NONDOMAIN-W11-LAB-02"
 ```
 
+Fail-closed helper alternative:
+
+```bash
+# Dry-run: prints parent VM state, disk pressure, snapshot count, clone target
+# availability, and the required operator maintenance-window action. No
+# mutation.
+bash scripts/faz22-non-domain/a1-linked-clone-batch.sh
+
+# Execute: only after the operator has gracefully stopped/suspended the parent
+# VM. The script refuses to clone while the parent VM is running.
+bash scripts/faz22-non-domain/a1-linked-clone-batch.sh --execute
+```
+
 Per-clone personalization before evidence:
 
 ```text
