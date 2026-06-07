@@ -103,7 +103,7 @@ images:
     #   - Pairs with platform-web#411 (FE UX overhaul)
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:6820e91e57dacef71a965f49435b3503465e227542edb4dd6969ecb55dc002c2
+    digest: sha256:82cb10d42f1049ec38983de92b9ec11339769a882775d2927ad3e0aacd120841
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -325,7 +325,7 @@ images:
     # kaldırıldı, sonraki dispatch'lerde drift kaynağı sadece imperative
     # `kubectl set image` repository_dispatch executor'ı kalır (ADR-0023
     # planlı kalıcı çözüm gitops-level ArgoCD sync ayrı sprint).
-    digest: sha256:ddf98382cd21f8113663b59d366cbd50c7a9ca2c4ab3ffa6d088f16b79e8a905
+    digest: sha256:bf605d73a39d18fc2a6a5614579d0cbc18b41ccbd5a9a1e7d051049986918af5
   - name: user-service
     newName: ghcr.io/halildeu/platform-backend-user-service
     # 2026-05-12 update: bump to sha-5bec7fb (platform-backend#159 — Codex
@@ -343,7 +343,7 @@ images:
     #   - Pairs with platform-web#411 (FE UX overhaul)
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:fce3096eb994cdd8c3911c3c9e64369b082ca066d5a24ce430146a22a8585541
+    digest: sha256:e47124b89245d0bbaf785b9f514d3d90c2aca8d2689b5165dbd179386c38d6d4
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -360,12 +360,12 @@ images:
     # 22/22 variant tests PASS (5 authz + 17 other).
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:00bcbc24f8fa386e9f540293a6ec7b39feb64bd1c87698856bd1a05ea5728592
+    digest: sha256:f5fbeef70b340020f2cff79b6c095d8ee199ea5d870af82de57d7f3e6110cbf0
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-backend-core-data-service
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:040ddddf21630bedb4ee33dfa4356ecdafd75b67b4e1edf0d0e20f731d6ca20f
+    digest: sha256:4cba8ac3925e14c440eb5807d101e6c1a4084df94174be4b2091154e82a103b7
   - name: report-service
     newName: ghcr.io/halildeu/platform-backend-report-service
     # 2026-05-07: canonical bump sha-9beed5f (platform-backend HEAD,
@@ -782,8 +782,8 @@ images:
     #
     # ReportContractGate reports=37 violations=0 (36→37 weekly-audit-digest).
     # D-chain progress: 5/5 LIVE pure-grid modules (post-deploy) — TARGET CLOSED.
-    newTag: sha-ad0f229
-    digest: sha256:e3c4ba5795c3ca314899608dda12dce61a51c8b5a6fa92c86965c169ae7eb57f
+    newTag: sha-14322ac
+    digest: sha256:730fef6bbc9261ea2791e1dc398f3c0f6e8abd5de5be85d9adb3d31aa75801ff
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
@@ -864,7 +864,7 @@ images:
     # Digest job-section + CD deploy spec iki-kaynak teyitli. Image build run
     # 25985721556 (merge commit 58bc2c9).
     # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:894e492f029c93277ee7d84c993bad2535d970995b0d2df08a48ebb23340ae26
-    digest: sha256:2f80e2a98c1259c2aa1c2da4c841f7ef7d055bfe6ae54fb6b65d9f92387f449f
+    digest: sha256:2c06ec70de4e8a3382ee00f1c7388f56af1d438990d362d41051c1f025e3026e
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
@@ -4811,7 +4811,7 @@ images:
     # AUTOMATION_APP_ID / AUTOMATION_APP_PRIVATE_KEY.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-18cd689
     #   digest sha256:389565a9d5411247be6735f6816a77e3906ad2ecf8552ea5216d64584618be97
-    digest: sha256:389565a9d5411247be6735f6816a77e3906ad2ecf8552ea5216d64584618be97
+    digest: sha256:1bf2514d3a9cb94cdf7486101f65787d082b65695396b3eed33a700ed111a27a
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
@@ -5129,7 +5129,7 @@ images:
     # ConfigMap WebPush 5 entries eklenir (base default ENABLED=false defer-aware).
     # ExternalSecret WebPush 3 remoteRef entries comment-out (Vault seed
     # pending — operator action runbook externalsecret-notify.yaml).
-    digest: sha256:175b3daea37601fbfd500f616ad19664d26dffec8b1db11556a3bff14ce6250e
+    digest: sha256:2e0165270d484908a9f2a5aeef8761431ff71b2992c038450ae9c8b182cd31c5
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
