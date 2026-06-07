@@ -60,6 +60,16 @@
 > installed-service distribution and multi-device acceptance remain separate
 > gates.
 
+> **2026-06-07 AG-042 local password truth refresh**: local Parallels Windows
+> 11 (`HALILKOOLUB735`) now has agent-side Windows SAM mutation proof for
+> `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`, and `CHANGE_LOCAL_PASSWORD` on a
+> disposable `ea-*` local account. Test binary SHA256
+> `8da4c6d2a225a8234314a2f43711b5678ad9ced5f5e821685c6d49ff4b95ecd8`;
+> `TestMutateLocalWindowsIntegration` PASS; cleanup removed the account and
+> `secretEchoed=false`. This is local adapter proof only; backend/JWT
+> dual-control dispatch, domain/M365 password reset, #1044 multi-device batch
+> and `acik.local` IT pilot remain separate gates.
+
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
 planı tanımlar.
@@ -227,6 +237,7 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **WEB-015** | `platform-web` | Endpoint report / CSV export | **MERGED + TESTAI LIVE 2026-06-07 (#1134)** | RBAC-controlled export; public gateway `POST /api/v1/endpoint-admin/endpoint-devices/export` with `{format:csv, exportMode:raw}` returned 200 `text/csv;charset=UTF-8`, filename `endpoint-devices-raw.csv`, 7 lines, and headers including `Bilgisayar Adı`, `Yasaklı Yazılım`, `Ajan Son Poll` |
 | **AG-028** | `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops` | Software uninstall / detection | **SOURCE-MERGED + TESTAI LIVE (2026-06-04)** | Catalog-managed package only; real 7-Zip uninstall on HALILKOOLUB735 verified `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; maker-checker proposer != approver enforced; prod remains dark |
 | **AG-029** | `platform-agent` | Signed agent self-update | **MERGED + LOCAL PARALLELS BASELINE (2026-06-07)** | PR #74 `656cd1a` fixed Windows verifier sharing violation; PR #75 `5f32181` added multi-device checklist; local Parallels smoke `HALILKOOLUB735` updated `0.1.2-lab.2` -> `0.1.3-lab.1` via BE-031/BE-032 release/dispatch path. Remaining: multi-device batch, trusted production signing and rollout policy acceptance |
+| **AG-042** | `platform-agent` + `platform-backend` | Local SAM lock / unlock / password change | **AGENT-SIDE LOCAL PARALLELS PROVEN (2026-06-07)** | `platform-agent origin/main` test binary SHA256 `8da4c6d2...`; `TestMutateLocalWindowsIntegration` created disposable `ea-pwd-0607a`, exercised `LOCK_USER_LOGIN` + `UNLOCK_USER_LOGIN` + `CHANGE_LOCAL_PASSWORD`, removed the user, and reported `secretEchoed=false`. Backend already has dedicated `CHANGE_LOCAL_PASSWORD` secret-delivery source path, but backend/JWT dual-control dispatch is not claimed by this local adapter smoke; domain/M365 reset remains out of scope |
 | **AG-030P** | `platform-agent` | Auto-enroll dry-run certstore preflight hardening | **MERGED + LOCAL PARALLELS NO-CRASH PROOF (PR #77, 2026-06-07)** | `-auto-enroll -dry-run` no longer broad-scans arbitrary LocalMachine certs without an operator filter; requires `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SUBJECT_SUFFIX` or `ENDPOINT_AGENT_AUTO_ENROLL_CERT_SAN_URI_PREFIX`; local temp binary proved no-filter fail-closed and filtered no-cert paths without native crash. Installed-service distribution and AD CS cert provisioning remain separate gates |
 | **AG-030** | `platform-agent` | Pending reboot detection | **SOURCE-MERGED (PR #33)** | CBS/Windows Update/PendingFileRenameOperations sinyalleri; binary distribution + HALILKOOLUB735 lab smoke operator-bound |
 | **AG-031** | `platform-agent` | Endpoint security posture inventory | **SOURCE-MERGED (PR #34, Codex 019e74b5 4-iter AGREE)** | Defender/Firewall/BitLocker read-only; recovery key/drive-id/vendor-name sızmaz; tri-state nullable; binary distribution operator-bound |
