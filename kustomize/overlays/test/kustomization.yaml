@@ -3668,7 +3668,19 @@ images:
     # @sha256:4d92c0069599...b8d81.
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-25fd2c2
     #   digest sha256:4d92c0069599ccc9cb37a8eba3f31eb72789433bccb11102724e6b52777b8d81
-    digest: sha256:4d92c0069599ccc9cb37a8eba3f31eb72789433bccb11102724e6b52777b8d81
+    #
+    # 2026-06-07: bump sha-25fd2c2 -> sha-8d22245 (platform-web PR #758 —
+    #   mfe-endpoint-admin device-detail drawer table cell padding: 13 bare
+    #   <table> tags aligned to the styled-table `px-3 py-2` pattern via Tailwind
+    #   descendant variants, so touching columns (Sağlık disk row, Güncel Olmayan
+    #   header, Donanım disk/NIC) render with proper gaps. CSS-only, no
+    #   behavior/schema change. 8d22245 ⊇ 25fd2c2 (#755 AG-029 UI carried
+    #   forward, verified merge-base ancestry). vitest 139/139; Codex 019ea146
+    #   AGREE. Image build run 27088172215; web pipeline auto-dispatched the
+    #   testai deploy — this realigns the gitops source pin to live.
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-8d22245
+    #   digest sha256:10dbc9db0ed2a245c14d14c6205a4a15fca7ae306c8f39d408cbb6d9fbba780f
+    digest: sha256:10dbc9db0ed2a245c14d14c6205a4a15fca7ae306c8f39d408cbb6d9fbba780f
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
