@@ -1456,7 +1456,38 @@ standardize eder. `PENDING` deviceId bulunan manifest ile final rollup kabulü
 yapılamaz; iki ek cihaz backend device UUID aldıktan sonra manifest tekrar
 çalıştırılır.
 
-### 18.2 Carry-over list
+### 18.2 #1044 final acceptance verifier
+
+`scripts/faz22-non-domain/a1-acceptance-verifier.py` final A1 rollup
+dokümanını §14.4/§14.5 kurallarına göre fail-closed denetler. Bu verifier:
+
+- `Status: PASS`, `Tracked by: #1044`, `Tier: A1` metadata'sını arar
+- minimum 3 cihaz ve her cihaz `PASS` ister
+- soak window süresinin en az 24h olduğunu doğrular
+- heartbeat ≥99%, terminal/accounted 100%, command success ≥95%, gap 0 ve
+  repeatability PASS ister
+- rollup içinde `PENDING`, `REVIEW`, `PARTIAL`, `FAIL` marker'ı kalırsa fail
+  verir
+- per-device evidence doc linklerinin dosyada varlığını kontrol eder
+
+Mevcut partial rollup'ın fail vermesi beklenen davranıştır:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/faz22-non-domain/a1-acceptance-verifier.py \
+  --rollup-doc docs/faz-22-evidence/2026-06-07-non-domain-pilot-tierA1-rollup-current.md
+```
+
+Final #1044 evidence PR öncesi beklenen pass komutu:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/faz22-non-domain/a1-acceptance-verifier.py \
+  --rollup-doc docs/faz-22-evidence/YYYY-MM-DD-non-domain-pilot-tierA1-rollup.md
+```
+
+Boundary: Verifier backend'e bağlanmaz, SQL çalıştırmaz, command dispatch etmez
+ve issue status mutate etmez. Sadece mevcut Markdown evidence dosyasını okur.
+
+### 18.3 Carry-over list
 
 1. **CI script extension**: `scripts/test/parallels-windows11-ci.sh` non-domain classification precheck genişletmesi (Codex Q8 + §8.2 önerisi) — ayrı PR
 2. **Yeni board issue**: "Faz 22.2.A non-domain pilot — A1 multi-VM repeatability" (mevcut HALILKOOLUB735 + 2 yeni Parallels VM evidence; 24h soak)
