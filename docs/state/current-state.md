@@ -1,5 +1,37 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 P1 visibility local Parallels probe smoke (2026-06-07 21:28 Istanbul / 18:28Z UTC)
+
+**Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has
+read-only P1 visibility probe evidence from current `platform-agent` main
+(`origin/main@eebd198`) through a temporary Windows ARM64 probe binary. The
+probe executed as `nt authority\system` via `prlctl exec`, produced a 39,594
+byte JSON output, and exercised the same internal inventory collectors with
+explicit opt-in flags. This is local lab evidence only; it is not #1044
+two-device repeatability, not 24h observation, not `acik.local` IT pilot, not
+production rollout and not backend/browser ingest acceptance.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Artifact integrity | Binary SHA256 `03f5a3fc38f3f59c2d410cffb00f4b6bb4ffab914574b068f10bfaa07e71d53c`; output SHA256 `e3713fb0f332f11fb9d7cab1268d23b88bd0bfa70a8e220ca3dfa03e1c54f178`; output path `/Users/halilkocoglu/tmp/faz22-p1-probe-smoke-20260607/p1-probe-output.json` | Evidence is traceable to a local temp binary and captured output |
+| `AG-030` pending reboot | `supported=true`, `probeComplete=true`, `pendingReboot=true`; sources `CBS_REBOOT_PENDING` and `PENDING_FILE_RENAME_OPERATIONS` | Local read-only probe PASS; VM has reboot indicators |
+| `AG-031` security posture | Defender present; Domain/Private/Public firewall enabled; BitLocker system drive present, encrypted/protected/active flags false; no recovery-key material emitted | Local read-only probe PASS |
+| `AG-032` local admin group | `sourceUsed=netapi`; local member count `2`; domain member count `0`; no raw SID/name list recorded in docs | Summary-only local admin inventory path exercised |
+| `AG-033` device health | One fixed disk; memory total `21468217344`, available `16614338560`, used percent `22`; uptime `232993` seconds / `2` days | Local read-only probe PASS |
+| `AG-039` services | Six canonical services observed: `BITS`, `EndpointAgent`, `EventLog`, `MpsSvc`, `WinDefend`, `wuauserv`; `EndpointAgent`, `EventLog`, `MpsSvc`, `WinDefend`, `wuauserv` running; `BITS` stopped/manual | Critical services read-only probe PASS |
+| `AG-038` diagnostics | `supported=true`, `probeComplete=false`; config hash emitted; `BACKEND_HOST_UNRESOLVED` because temp binary had no backend API URL / service environment | Collector fail-closed observed; not backend connectivity acceptance |
+| `AG-040` startup exposure | `supported=true`, `probeComplete=false`; `startupAppCount=38`, RDP disabled; redaction guard entries for task scheduler names | Collector redaction/fail-closed observed; not full startup-exposure acceptance |
+| Secret hygiene | Grep scan for Bearer/JWT/Authorization/password/token/secret/user-profile path patterns returned empty | No raw secret material recorded |
+| Evidence | `docs/faz-22-evidence/2026-06-07-p1-visibility-parallels-probe-smoke.md` | Traceable evidence file added |
+
+**Boundary / remaining gates**:
+
+- #1044 remains user-owned for two additional devices plus observation roll-up.
+- Service-configured backend ingest / browser proof is still the higher
+  evidence class for `AG-038` and `AG-040`.
+- Domain / `acik.local` / IT pilot, trusted signing and domain-wide rollout
+  remain separate gates.
+
 ## Live Delta — Faz 22 AG-029 local Parallels self-update E2E evidence (2026-06-07)
 
 **Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has
