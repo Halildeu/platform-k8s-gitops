@@ -53,6 +53,36 @@ trusted mTLS terminator and must enforce the stripping/injection discipline.
 This is a template. Replace tenant UUID and client CA path during activation.
 Do not commit private keys.
 
+### 4.1 Current `staging-sw` Edge Topology
+
+Live read-only inspection on 2026-06-08 showed the current test/public edge is
+not a separate `platform-edge-nginx` container. The active host edge for
+`testai.acik.com` is:
+
+| Item | Current value |
+|---|---|
+| Public edge container | `platform-web-nginx` |
+| Config file on host | `/home/halil/platform/web/nginx/default.conf` |
+| Config file in container | `/etc/nginx/conf.d/default.conf` |
+| Test TLS cert mount | `/home/halil/platform/tls/ai.acik.com/fullchain.pem -> /etc/nginx/tls/tls.crt` |
+| Test TLS key mount | `/home/halil/platform/tls/ai.acik.com/privkey.pem -> /etc/nginx/tls/tls.key` |
+| Current `testai.acik.com` `/api/` upstream | `http://127.0.0.1:31080` |
+| Stage artifact helper container | `platform-web-nginx-stage` on `https://127.0.0.1:5545` |
+
+Therefore, for the current topology the activation patch is applied to the
+host file above and the test ingress upstream in the template should be
+`http://127.0.0.1:31080`. The syntax/reload commands are:
+
+```bash
+docker exec platform-web-nginx nginx -t
+docker exec platform-web-nginx nginx -s reload
+```
+
+`endpoint-agent-mtls.testai.acik.com` currently returns NXDOMAIN from the
+observed resolver, so the DNS record must be created before public acceptance.
+Before DNS propagates, an operator may use `curl --resolve` only for local edge
+diagnostics; that does not satisfy the public DNS gate.
+
 ```nginx
 server {
   listen 443 ssl;
@@ -78,7 +108,7 @@ server {
   }
 
   location = /api/v1/endpoint-agent/endpoint-enrollments/auto {
-    proxy_pass http://test_k3d_ingress;
+    proxy_pass http://127.0.0.1:31080;
     proxy_http_version 1.1;
 
     proxy_set_header Host              $host;
@@ -105,17 +135,19 @@ server {
 1. Create DNS record for `endpoint-agent-mtls.testai.acik.com`.
 2. Place the client CA public certificate on the edge host.
 3. Mount the CA path read-only into the host-edge NGINX container.
-4. Add the dedicated server block.
+4. Add the dedicated server block to the current host edge config
+   (`/home/halil/platform/web/nginx/default.conf` on `staging-sw`) unless the
+   edge topology has deliberately changed.
 5. Run syntax check:
 
 ```bash
-docker exec platform-edge-nginx nginx -t
+docker exec platform-web-nginx nginx -t
 ```
 
 6. Reload edge NGINX:
 
 ```bash
-docker exec platform-edge-nginx nginx -s reload
+docker exec platform-web-nginx nginx -s reload
 ```
 
 7. Confirm DNS and TLS listener:
