@@ -4878,7 +4878,21 @@ images:
     # secrets are not configured.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-7c0ec4a
     #   digest sha256:0c1e384b414b35ddd9540fa6fcacb9fcc6a856a19ca25d92277166f76041ae45
-    digest: sha256:0c1e384b414b35ddd9540fa6fcacb9fcc6a856a19ca25d92277166f76041ae45
+    # 2026-06-08 device DECOMMISSION/REACTIVATE lifecycle -> sha-b87e75d
+    # (platform-backend PR #513: KVKK reversible deactivate — V56 lifecycle audit
+    # + cascade (cancel commands/secrets, revoke tokens, finalize uninstalls) +
+    # concurrency lock-discipline (shared PESSIMISTIC_WRITE write guard on every
+    # device-work create path; uninstall approve device->request lock order;
+    # createLocalPasswordChange guard before secret mint). Cross-AI Codex 019ea789
+    # AGREE; full endpoint-admin-service module suite 1808/0/0. Backend image build
+    # run 27151002849 attempt 2 succeeded after a transient Docker Hub
+    # auth.docker.io 504. The 7c0ec4a..b87e75d first-parent chain carries #511
+    # (prior pin) + #512 (user-service soft-delete, NO endpoint-admin runtime
+    # delta) + #513; the endpoint-admin runtime change vs sha-7c0ec4a is exactly
+    # #513 (verified: git merge-base --is-ancestor 7c0ec4a b87e75d2).
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-b87e75d
+    #   digest sha256:79706b8df868e02a64dd8b3aff3c23f8ccd3ae9c936d6b223af46a4434447c08
+    digest: sha256:79706b8df868e02a64dd8b3aff3c23f8ccd3ae9c936d6b223af46a4434447c08
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
