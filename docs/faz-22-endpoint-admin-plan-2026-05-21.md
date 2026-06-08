@@ -1,5 +1,18 @@
 # Faz 22 — Endpoint Admin / Endpoint Agent Plan (2026-05-21)
 
+> ⚠️ **HISTORICAL DOCUMENT** (marked stale 2026-05-28 — Codex thread `019ea916` plan-time AGREE)
+>
+> **Current Faz 22 canonical truth sources** (do NOT use this doc for live state):
+> - **`docs/state/current-state.md`** — live delta + status snapshot
+> - **`docs/faz-22-software-deployment-plan.md`** — §0.1bis Truth Refresh 2026-05-29 (Faz 22.5 quick-wins canonical scope)
+> - **`docs/faz-22.5-consensus-gate-tracker-m2-m7.md`** — M2-M7 + #1359 gate boundary matrix (source vs operator)
+> - **`docs/adr/0029-faz22-mass-deployment-mtls-msi-gpo.md`** — Plan A mass deployment ADR (ACTIVE 2026-05-26)
+> - **`docs/adr/0012-EA-endpoint-admin-governance-charter.md`** — §22.2 + §22.3 (renamed → §22.4) governance
+>
+> Bu doc 2026-05-21'deki Endpoint Admin truth-refresh sprint'inde (board #924) hazırlandı; o tarihten sonra Faz 22 hattı genişledi: 22.2.A non-domain pilot live evidence + 22.3 mass deployment Plan A ADR-0029 + 22.5 software deployment quick-wins serisi. Aşağıdaki content **historical kayıt** olarak korunur; current iş kalemleri için yukarıdaki canonical truth source'larına bakın.
+
+---
+
 > **Status**: Draft v2 — controller (peer reviewer) şartlı GO; accepted defaults uygulandı; Plan A PR hazırlığına geçilebilir.
 > **Issue**: [#924](https://github.com/Halildeu/platform-k8s-gitops/issues/924) (Endpoint Admin truth-refresh dokuman hizalama)
 > **Working branch (bu oturum)**: `codex/endpoint-admin-truth-refresh-924` (origin/main'in behind 12 @ 2026-05-21T14:38Z; behind count **drift-prone** — main hareket ediyor; PR öncesi `git fetch` + son ölçüm zorunlu)
