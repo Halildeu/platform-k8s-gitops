@@ -145,12 +145,13 @@ ADR-0010 §2.5 boundary matrix. **Anti-coercion:** approver insan + role-distinc
 
 Code signing private key bu listenin DIŞINDA — supply-chain pipeline kapsamı.
 
-### Governance guard (DD-EA + BG-EA) — 8 canonical + 1 proposed (DD-EA-8)
+### Governance guard (DD-EA + BG-EA) — 8 canonical + 2 proposed (DD-EA-8, DD-EA-9)
 
 > **Numbering reconciliation (2026-06-09):** Canonical DD-EA-1..7 numaralandırması
 > **korunur** (mutabakat raporundaki farklı 4/6/7 etiketleri drift idi; canonical
-> bu charter'dır). **DD-EA-8 PROPOSED**'tur; toplam "9 guard" yalnız #1388
-> migration sonrası geçerli olur.
+> bu charter'dır). **DD-EA-8 (Faz 22.6) ve DD-EA-9 (Faz 22.8) PROPOSED**'tur —
+> **henüz CI gate olarak canlı DEĞİL**; toplam "10 guard" (DD-EA-1..9 + BG-EA-1)
+> yalnız #1388 migration + CI implementasyonu sonrası geçerli olur.
 
 ADR-0011 analog:
 - **DD-EA-1**: Manifest contract drift (kustomize render bytes)
@@ -160,8 +161,26 @@ ADR-0011 analog:
 - **DD-EA-5**: Vault secret path (kv/platform/endpoint-admin/* allowlist; broker için ayrı `kv/platform/remote-access-broker/*`)
 - **DD-EA-6**: Destructive command audit log (immutable storage)
 - **DD-EA-7**: Identity discovery PII boundary (no PII in logs)
-- **DD-EA-8** *(PROPOSED, Faz 22.6)*: **Remote Session Governance Guard** — CI gate: capability → approved D35-EA tier map; 4-F için recording-required enforce; unattended yalnız break-glass policy objesiyle; **disabled feature advertise edilemez** (AG-013 precedent). Detay: [ADR-0033](0033-faz226-remote-access-broker.md). *(İleride bağımsız update-channel guard istenirse DD-EA-9 olarak ayrılır; şimdilik update-channel semantics DD-EA-3/DD-EA-4 altında.)*
+- **DD-EA-8** *(PROPOSED, Faz 22.6 — henüz CI gate canlı değil)*: **Remote Session Governance Guard** — CI gate (specified): capability → approved D35-EA tier map; 4-F için recording-required enforce; unattended yalnız break-glass policy objesiyle; **disabled feature advertise edilemez** (AG-013 precedent). Detay: [ADR-0033](0033-faz226-remote-access-broker.md). *(Update-channel semantics DD-EA-3/DD-EA-4 altında korunur; ayrı guard'a çıkmaz.)*
+- **DD-EA-9** *(PROPOSED, Faz 22.8 — henüz CI gate canlı değil)*: **Data Collection Governance Guard** — CI gate (specified): **bounded allowlist + agent-hardcoded denylist (class-based, policy ile gevşetilemez) + path canonicalization-before-decision (symlink/junction/UNC/ADS/long-path/container) + backend server-side mirror + dry-run-before-content + manifest-before-upload + post-upload quarantine DLP + disabled-not-advertised**. Ayrı **DC-EA data-collection severity axis** ile birlikte (aşağıda). Detay: [22.8 plan](../faz-22-endpoint-data-protection-plan.md) + [ADR-0034 evidence-storage-contract](0034-evidence-storage-contract.md).
 - **BG-EA-1**: Per-PR boundary declaration (ADR-0011 BG-1 analog)
+
+### DC-EA — Data-Collection Severity Axis (Faz 22.8, PROPOSED, D35-EA'dan AYRI)
+
+> D35-EA "hangi agent action sınıfı çalışıyor?"; **DC-EA "data riski nedir?"**
+> sorusuna cevap verir. İkisini karıştırmak ("read-only" kelimesi exfil riskini
+> gizler) yasak. PROPOSED — runtime copy #1388 + §0 migration + DPO/legal olmadan yok.
+
+- **DC-EA-0**: data collection disabled / capability absent (default)
+- **DC-EA-1**: metadata-only dry-run — **içerik OKUNMAZ, hash YOK**
+- **DC-EA-2**: bounded scheduled backup — company-managed allowlist + dual-control/policy
+- **DC-EA-3**: offboarding company-data recovery — HR/IT/DPO gated + manifest review
+- **DC-EA-4**: forensic collection — legal `case_id` + M-of-N + chain-of-custody
+- **DC-EA-RED**: credential / browser profile / token / private-key / mailbox cache / DPAPI / registry hive / password-manager → **HER ZAMAN DENY**
+
+> **DC-EA-RED "always deny" = routine / backup / offboarding için MUTLAK.** Forensic'te
+> mahkeme kararı RED sınıfa erişim gerektiriyorsa bu 22.8C normal akış değildir:
+> ayrı **legal/judicial exception + explicit case order + break-glass/legal-hold gate**.
 
 ### Pilot tier matrisi (user 2026-05-02 fill-in)
 
