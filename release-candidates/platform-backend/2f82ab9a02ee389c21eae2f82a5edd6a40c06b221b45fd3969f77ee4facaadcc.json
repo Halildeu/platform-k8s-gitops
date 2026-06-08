@@ -62,7 +62,9 @@
     }
   },
   "metadata": {
-    "required_migrations": [],
+    "required_migrations": [
+      "user-service V17__add_deleted_at_to_users \u2014 ADD COLUMN deleted_at TIMESTAMP nullable (no backfill) + partial index WHERE deleted_at IS NULL; email/kc_subject UNIQUE preserved \u2014 additive, rollback-safe (Codex 019ea573 soft-delete design)"
+    ],
     "backward_compatible_until": null,
     "rollback_safe": true,
     "rollback_to_digest": null
