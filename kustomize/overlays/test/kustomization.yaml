@@ -364,12 +364,12 @@ images:
     # 22/22 variant tests PASS (5 authz + 17 other).
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:f5fbeef70b340020f2cff79b6c095d8ee199ea5d870af82de57d7f3e6110cbf0
+    digest: sha256:8c5ae280ee244fc096d346c341a96808acd0d8611f92eb8f751d7d8c9e9191a7
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-backend-core-data-service
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:4cba8ac3925e14c440eb5807d101e6c1a4084df94174be4b2091154e82a103b7
+    digest: sha256:e5ea02a847c904f10aefc4fe21de7cbdea507d28e672a76e9e8a6aba9e7dbb22
   - name: report-service
     newName: ghcr.io/halildeu/platform-backend-report-service
     # 2026-05-07: canonical bump sha-9beed5f (platform-backend HEAD,
@@ -787,7 +787,7 @@ images:
     # ReportContractGate reports=37 violations=0 (36→37 weekly-audit-digest).
     # D-chain progress: 5/5 LIVE pure-grid modules (post-deploy) — TARGET CLOSED.
     newTag: sha-14322ac
-    digest: sha256:730fef6bbc9261ea2791e1dc398f3c0f6e8abd5de5be85d9adb3d31aa75801ff
+    digest: sha256:2b1619301b6a1745ff76cfbb88bd736fefc38d01ef7f3ade2eb75efff0617560
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
@@ -868,7 +868,7 @@ images:
     # Digest job-section + CD deploy spec iki-kaynak teyitli. Image build run
     # 25985721556 (merge commit 58bc2c9).
     # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:894e492f029c93277ee7d84c993bad2535d970995b0d2df08a48ebb23340ae26
-    digest: sha256:2c06ec70de4e8a3382ee00f1c7388f56af1d438990d362d41051c1f025e3026e
+    digest: sha256:b5cc08c2bc8b6dc434fea403a97a529545f0c056551790e08c88db417243fd69
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
@@ -1119,7 +1119,7 @@ images:
     # success — core-data-service co-job hit a transient Docker Hub buildkit pull
     # timeout, unrelated, rerun).
     # GHCR manifest: ghcr.io/halildeu/platform-backend-permission-service:sha-815308a
-    digest: sha256:f3177b4a9966d7a32c534a67ee2bf22ef388543412d9ee6a06b4efe6b4fe4eea
+    digest: sha256:7cfaf090deea7f44d6c1cbd1bf95ceb7bf7298b1db3362079d0b9e2321ad8528
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
@@ -5238,7 +5238,7 @@ images:
     # ConfigMap WebPush 5 entries eklenir (base default ENABLED=false defer-aware).
     # ExternalSecret WebPush 3 remoteRef entries comment-out (Vault seed
     # pending — operator action runbook externalsecret-notify.yaml).
-    digest: sha256:2e0165270d484908a9f2a5aeef8761431ff71b2992c038450ae9c8b182cd31c5
+    digest: sha256:175b3daea37601fbfd500f616ad19664d26dffec8b1db11556a3bff14ce6250e
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
