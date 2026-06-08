@@ -199,13 +199,21 @@ images:
   # absorbed: pin to `3f56f6b2` standalone instead of latest main
   # `c3f56abe` to minimize blast radius — multi-fix promotion deferred).
   #
-  # Previous live prod digest:  sha256:7e0999d1865ad560e45374af7d76d7a2427c35d0791c1ee30a73598eb81861ce
-  #   • Source commit: 2026-05-19 platform-web PR #608 (Turkish UTF-8 fix, BUILD_SHA b567292)
-  #   • Rollback target — see "Rollback runbook" below.
-  # New digest (this commit): sha256:1dcc382521ca1f6c51195853d4c2754685cf80c9930beef488253d792d1ea7fa
+  # Previous live prod digest:  sha256:1dcc382521ca1f6c51195853d4c2754685cf80c9930beef488253d792d1ea7fa
   #   • Source commit: 2026-05-20 platform-web `3f56f6b2` (PR #640 stale-token recovery, BUILD_SHA 3f56f6b)
-  #   • Image build run: https://github.com/Halildeu/platform-web/actions/runs/26148836007
-  #   • Push step `Pinnable`: ghcr.io/halildeu/platform-web-frontend@sha256:1dcc382521ca1f6c51195853d4c2754685cf80c9930beef488253d792d1ea7fa
+  #   • Rollback target — see "Rollback runbook" below.
+  # New digest (this commit): sha256:b85ca3898552deca5505090826ec82741dc6e3572774bf1a375b4ece69b47cda
+  #   • Source commit: 2026-06-08 platform-web sha-12553d5 (PR #774 AG-Grid + AG-Charts
+  #     Enterprise PERPETUAL license rebuild; built from cd9099e so PR #773 devices
+  #     bulk-actions + ~3wk frontend #640→#773 included — prod un-freeze, USER-APPROVED
+  #     full promote 2026-06-08).
+  #   • Why: AG Grid Enterprise TRIAL key (AG-127779) expired 2026-06-02 → watermark on
+  #     all Enterprise grids. Perpetual key set in AG_GRID_LICENSE_KEY repo secret.
+  #   • Skew note: prod endpoint-admin-service recent (~2026-06-05) → devices features
+  #     have backend support; other backends 14-19d. Gate = prod browser smoke post-sync.
+  #   • Image build run: https://github.com/Halildeu/platform-web/actions/runs/27142561876
+  #   • Cross-AI: Codex thread 019ea776 (rebuild + deploy-chain AGREE)
+  #   • Push step `Pinnable`: ghcr.io/halildeu/platform-web-frontend@sha256:b85ca3898552deca5505090826ec82741dc6e3572774bf1a375b4ece69b47cda
   #
   # Rollback runbook (acil):
   #   gh workflow run "Deploy prod GitOps sync" --repo Halildeu/platform-k8s-gitops --ref main \
@@ -215,7 +223,7 @@ images:
   #   Sonra: bu PR'ı revert-forward eden bir PR aç, gitops main yeni digest'te kalmasın.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
-    digest: sha256:1dcc382521ca1f6c51195853d4c2754685cf80c9930beef488253d792d1ea7fa
+    digest: sha256:b85ca3898552deca5505090826ec82741dc6e3572774bf1a375b4ece69b47cda
 
   # Faz 23.9 prod cutover (2026-05-08): notification-orchestrator
   # canonical activation. Pin remains sha-204042d (PR #126 era) until D29
