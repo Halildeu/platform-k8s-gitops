@@ -21,6 +21,61 @@
 
 ---
 
+## Status Truth Refresh — 2026-06-09 (Codex `019ea95d` PARTIAL absorbed)
+
+> This section supersedes the per-D "Status" lines below where they conflict.
+> It was written after a code-level verification pass + a provider-distinct
+> cross-AI review (Codex thread `019ea95d-c50b-70d0-a150-09179743d298`,
+> VERDICT **PARTIAL/REVISE**, `ready_for_impl: true`). The earlier draft and two
+> background research passes reported 22.7 as "~5% TODO" by reading the stale
+> D0-only status below — that was wrong. Verified reality is recorded here.
+
+### Verified state (read from merged code, not from claims — HARD RULE No Fake Work)
+
+| Sub-PR | Verified status | Evidence |
+|---|---|---|
+| **D0** board claim + contract | ✅ DONE | board `platform-backend #376` |
+| **D1** gap mart contract | ✅ DONE | contract = this doc (field allowlist + freshness semantics) |
+| **D2** backend aggregate API | 🟢 **MVP MERGED** | `EndpointComplianceGapService` + `AdminEndpointComplianceGapController` + DTOs + `ComplianceGapRepository` + `ComplianceGapType` + unit/controller tests present in `platform-backend/endpoint-admin-service/src`. Commits `6fa713b5` (#378, Codex `019e881c` AGREE D, 2026-06-02), `f1795fa6` (#382 D2.1 JDBC timestamp→Instant), `a0a6330c` (#376 plural filter-param). |
+| **D3** frontend gap explorer | 🟢 **MERGED** | `EndpointComplianceGapPage.tsx` + route in `EndpointAdminRouter.tsx` + `entities/endpoint-compliance-gap/types.ts` + RTK in `endpointAdminApi.ts` + i18n + page tests in `platform-web/apps/mfe-endpoint-admin/src`. |
+| **D4** ReportDefinition bridge | ⏭️ **SKIPPED-by-default** | would push closed D-chain 5/5 PR-E ratchet → 6/6. Keep mart accessible only via Endpoint Admin MFE. Re-open only via separate ratchet-update sprint + privacy/export review. |
+| **D5** live acceptance | 🟡 **UNDOCUMENTED** | code IS in the live testai endpoint-admin digest `sha-5af5f8d` (backend commit `5af5f8d`, post-dates D2) — so the endpoint is Up + Functional in the running binary. BUT there is **no `current-state.md` Live Delta** with cluster API 200 + browser grid render/filter + drill-down + `pod imageID == digest` + console-clean. Per HARD RULE "Tarayıcıdan Sonuç Doğrulanmadan İş Bitmedi", D5 is **not** documented-accepted. |
+| **D6** A-gate revisit | ⏳ DEFERRED | after D5 acceptance |
+
+**Issue `platform-backend #376` is CLOSED (2026-06-07T22:10:21Z).**
+
+### Honest status (NOT a bare "COMPLETED")
+
+> **Faz 22.7 = 🟢 SOURCE-MERGED (D1 contract + D2 MVP + D3 explorer), code-in-live-digest; 🟡 D5 live/browser acceptance UNDOCUMENTED.**
+> `COMPLETED` promotion is gated (see below). The `PLAN.md` 22.7 row in
+> PR [#1395](https://github.com/Halildeu/platform-k8s-gitops/pull/1395) must use this
+> wording, not a bare `🟢 COMPLETED`.
+
+### D2 scope honesty (Codex missed-gap finding)
+
+The D2 narrative below promises more than the merged MVP. Real merged code:
+
+- **Gap types implemented**: `rdp_enabled`, `pending_security_updates` (2 of the planned enum).
+- **Filters implemented**: `gapType(s)`, `freshnessWindow`, `page`, `pageSize`.
+- **Deferred (not in MVP)**: `gapStrength` (strong/weak/any), `device[]`, `sort`, multi-gap-type enum expansion, explicit stale labeling (query currently excludes out-of-window rows so `stale` is effectively always false), Testcontainers PG integration test.
+- Tenant scope: query is **`tenant_id`-scoped** (controller `TenantContextResolver` → service rejects null tenant → repository `WHERE tenant_id = :tenantId`). Acceptable under the current model because org-expansion migrations (`V42` startup_exposure, `V43` hotfix_posture) set `org_id = tenant_id` (non-null, `(id, org_id)` FK). Org-keyed re-scope tracked with Faz 21.1 A5/A6.
+
+### COMPLETED-promotion gate (must all hold before 22.7 → 🟢 COMPLETED)
+
+1. **D5 live acceptance documented**: testai cluster `GET /api/v1/admin/endpoint-devices/compliance-gap` → 200 + JSON shape match; browser grid render + filter exercise + drill-down; `pod imageID == overlay digest`; `current-state.md` Live Delta written.
+2. **Redaction allowlist contract test** (Codex finding 3): `GapDetail.details` is a free `Map<String,Object>` → future PII leak (ip/user_upn/SID/raw payload/full path/probeErrors/commandLine/token/bearer/password) is **not** caught at compile time. Add a machine-enforced test asserting (a) response top-level keys = `{items,total,page,pageSize,filterEcho,computedAt}`, (b) device-item keys = `{deviceId,deviceName,lastSeen,gapCount,gapStrength,gaps,staleComponents}`, (c) per-gap-type `details` exact allowlist, (d) explicit deny-list for the sensitive fields above. `deviceName`/hostname documented as existing Endpoint-Admin surface reuse.
+3. **Endpoint-specific authz tests** (Codex finding 6): `AdminEndpointAuthorizationSecurityTest` does not cover the compliance-gap controller (only device + maintenance-token). Add (a) unauthorized/denied-viewer → `403` fail-closed, (b) tenant A/B cross-leak = none (PG fixture).
+
+These three are **backend (`platform-backend`) work**, not gitops doc work — tracked as a follow-up (board) and referenced from the `PLAN.md` 22.7 status.
+
+### System-fit consensus (Codex `019ea95d`)
+
+- **Phase boundary placement (22.5/22.6/22.7/22.8)**: AGREE. 22.7 = Compliance Gap Mart Layer (read-only aggregate). "Path C" (FILE_VERSION/SHA256/EXISTS detection) belongs to **22.5**, not 22.7 — PR #1395 reattributes it; remaining `Faz 22.7 Path C` body phrases in `current-state.md` must be cleaned or marked historical.
+- **Governance gate #1388**: AGREE — 22.7 sits OUTSIDE the sensitive-endpoint-ops gate that blocks 22.6/22.8 (no tunnel, no file copy, no destructive command), with a *lighter* guard (`can_view` RBAC + tenant scope + no report/export bridge by default + bounded pagination + the allowlist contract test).
+- **22.7 number reuse-guard**: the `22.7` number must not be re-used for backup/SMB/file-action (that is 22.8).
+
+---
+
 ## 7-PR sub-chain (D0..D6)
 
 ### D0 — Board claim + sprint contract
@@ -237,34 +292,42 @@
 | E-targeted | R22 GHCR outage runbook veya R14 bundle size gate refresh | D1-D5 |
 | F-as-hygiene | Board hygiene + current-state truth closure | D0/D5 sprint sub-steps |
 
-## Next session — first action
+## Next action — COMPLETED-promotion gate (D1/D2-MVP/D3 already merged, #376 CLOSED)
+
+D0/D1/D2-MVP/D3 are merged (see Status Truth Refresh). The next work is the
+3-item gate that promotes 22.7 from 🟢 SOURCE-MERGED → 🟢 COMPLETED:
 
 ```bash
-# Already done in PR-D0:
-# - Board issue: platform-backend #376
-# - Sprint plan: this doc
+# 1) D5 live acceptance (gitops + browser, agent-actionable now)
+#    - testai: GET /api/v1/admin/endpoint-devices/compliance-gap → 200 + shape match
+#    - browser smoke: /endpoint-admin compliance-gap grid render + filter + drill-down
+#    - assert pod imageID == overlay digest; write current-state.md Live Delta
 
-# D2 (backend aggregate query API):
+# 2) Redaction allowlist contract test (backend, platform-backend)
 cd /Users/halilkocoglu/Documents/platform-backend
-git checkout -b feat/faz-22-7-d2-compliance-gap-api origin/main
+#    endpoint-admin-service: assert ComplianceGapResponse/DeviceComplianceGap/GapDetail
+#    serialize ONLY the allowlisted keys; deny-list ip/user_upn/SID/payload/
+#    probeErrors/fullPath/commandLine/token/bearer/password (GapDetail.details guard).
 
-# 1. Read this plan: docs/sprint-plan-faz-22-7-compliance-gap-mart.md
-# 2. Codex thread: 019e881c-e077-7c92-bfdd-339710b58a1c (plan-time AGREE)
-# 3. Implement D2:
-#    - EndpointComplianceGapService (orchestration)
-#    - Per-snapshot repository methods (gap-type predicates)
-#    - Native SQL with explicit JOINs + freshness window
-#    - @RequireModule(ENDPOINT_ADMIN, can_view) controller endpoint
-#    - Unit + integration (Testcontainers PG) tests
-# 4. Cross-AI Codex post-impl review (provider isolation)
+# 3) Endpoint-specific authz tests (backend, platform-backend)
+#    AdminEndpointAuthorizationSecurityTest: add compliance-gap controller →
+#    denied-viewer 403 fail-closed + tenant A/B cross-leak = none (PG fixture).
+
+# Then: PLAN.md 22.7 row 🟢 COMPLETED + current-state.md Live Delta.
+# Cross-AI: provider-distinct post-impl review (Codex) for the test PRs.
 ```
+
+> Cross-AI plan-time consensus for this refresh: Codex thread
+> `019ea95d-c50b-70d0-a150-09179743d298` (PARTIAL/REVISE, `ready_for_impl: true`).
 
 ---
 
 ## References
 
 - Codex plan-time thread: `019e881c-e077-7c92-bfdd-339710b58a1c`
-- Board issue: [platform-backend #376](https://github.com/Halildeu/platform-backend/issues/376)
+- Codex system-fit/status review thread (2026-06-09): `019ea95d-c50b-70d0-a150-09179743d298` (PARTIAL/REVISE absorbed)
+- Board issue: [platform-backend #376](https://github.com/Halildeu/platform-backend/issues/376) — **CLOSED 2026-06-07**
+- Phase-boundary sync board issue: [platform-k8s-gitops #1389](https://github.com/Halildeu/platform-k8s-gitops/issues/1389) (P0) + PR [#1395](https://github.com/Halildeu/platform-k8s-gitops/pull/1395)
 - D-chain SPRINT KAPALI truth: `docs/state/current-state.md` head delta + gitops PR #1206
 - ADR-0012-EA: Endpoint Admin Governance Charter
 - ADR-0015: Report execution adapter (D-chain governance)
