@@ -1,5 +1,40 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 #108 agent-level mode rescue LIVE-verified + merged; frontend pin reconciled; CI billing blocker (2026-06-08 22:15 Istanbul / 19:15Z UTC)
+
+**Session milestone**: the residual half of platform-agent #108 (an *agent-level*
+defense so a stale `HKLM\SOFTWARE\EndpointAgent\Mode=auto-enroll` cannot strand a
+fully HMAC-provisioned host even if the installer fails to clear it) is now
+implemented, cross-AI reviewed, **LIVE-verified on a real Windows device**, and
+merged. This does **not** by itself close #108: full closure still needs the fix
+shipped via the official release pipeline + the installer-clears-regkey path
+(#111) and #109 confirmed end-to-end on a standard PC.
+
+| Slice | Evidence | Hüküm |
+|---|---|---|
+| Source + review | platform-agent PR **#114** `ccc27ef` — source-aware `resolveMode`/`decideMode` + `modeSignals` (HMAC signal = explicit `ENDPOINT_AGENT_API_URL` env **+** env token *or* a valid DPAPI-persisted credential `hmacCredentialPersisted()`, fail-closed) + auto-enroll-URL guard. Codex (OpenAI) thread `019ea886` **AGREE** (2 P1 absorbed: config-DEFAULT masquerade + token-cleared-by-installer). `go build/vet/test` host + `GOOS=windows` green | Cross-provider review + local gates passed |
+| LIVE A/B (real device) | HALILKOOLUB735 (device `d0efb00a`), same stale `Mode=auto-enroll` + DPAPI cred + per-service `ENDPOINT_AGENT_API_URL`: **CONTROL** (origin/main binary `7033af92`) → `agent mode=auto-enroll` → service **Stopped** (bug reproduced); **TREATMENT** (#114 binary `f3fb2598`) → `agent mode=hmac` + `hmac credential loaded from store` → service **Running** + heartbeat. Device restored to baseline (orig binary `ec7875d2`, no Mode key, HMAC) | Agent-level rescue proven at runtime on the exact #108 failure condition |
+| Frontend pin reconciled | platform-k8s-gitops PR **#1374** `26519aae` — test-overlay `frontend` digest `sha-4b9859c` → **`sha-9b4b5f2`** (`sha256:7b3ba897…`, web #777 decommission/reactivate toolbar + DeviceLifecycleModal). Forward-only (`9b4b5f24` strict descendant of `4b9859c`; domain column + lifecycle, no regression). testai pod `frontend-6c6dd6c9cf-vv927` Running on `@sha256:7b3ba897`; gitops canonical now matches live | Frontend drift eliminated; canonical = cluster |
+| Merge path | Both PRs merged via **REST squash, no `--admin`** (private repo has no branch-protection required checks; `mergeable=true`). Cross-AI audit trail in each squash commit | No admin bypass; cross-AI gate honoured |
+
+**Blocker — GitHub Actions account billing (operator-only, money boundary)**:
+between 2026-06-08 17:40Z (last green runs) and 18:48Z the **Actions spending
+limit was exhausted account-wide** — every new CI run fails to *start* the runner
+("spending limit needs to be increased"). Per repo HARD RULES neither PR was
+merged on green CI; instead the owner directed **REST-API merge** and merges were
+backed by independent evidence in lieu of CI (local build/vet/test + Codex AGREE +
+live device A/B for #114; ancestry + GHCR + live-cluster + local BG-1 boundary
+PASS for #1374). **Restore billing → re-run CI on both merge commits to backfill
+the standard signal.** This blocker also gates any further merge/deploy until lifted.
+
+**P0 / MKR-A1 truth (corrected)**:
+
+- **P0-0 result-submit visibility** — DONE (platform-backend **#509** CLOSED; invalid payload → `FAILED + last_error`).
+- **P0-2 installer productization + PS5.1 gate** — DONE (platform-agent **#101** CLOSED + **#112**/PR **#113** CLOSED/MERGED).
+- **#108 stale-regkey strand** — agent-level rescue **LIVE-verified + merged (PR #114)**; full closure still gated on official-release binary + installer (#111) path on a standard PC.
+- **#109 reinstall/fresh-enroll guard** — MERGED (PR #110); standalone live verify still pending (Needs Verify).
+- **#1359 tokenless/domain AutoEnroll** — **BLOCKED** (DNS + edge mTLS for `endpoint-agent-mtls.testai.acik.com` not yet active).
+
 ## Live Delta — Faz 22.5 platform-agent #101 Parallels standard-PC bootstrap smoke (2026-06-08 18:05 Istanbul / 15:05Z UTC)
 
 **Session milestone**: the refreshed `platform-agent` #107 public artifact now
