@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-backend",
+  "service": "core-data-service",
+  "git_sha": "e5ea02a847c904f10aefc4fe21de7cbdea507d28e672a76e9e8a6aba9e7dbb22",
+  "git_short_sha": "e5ea02a8",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-backend-core-data-service",
+    "digest": "sha256:e5ea02a847c904f10aefc4fe21de7cbdea507d28e672a76e9e8a6aba9e7dbb22",
+    "tag": "sha-e5ea02a",
+    "push_run_id": null,
+    "pushed_at": "2026-06-08T21:55:46Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-06-08T21:21:55Z",
+          "details": "up=all 10 services Running+Ready | secured=all 10 services have correct KC issuer for test"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-06-08T21:21:55Z",
+          "endpoints": [
+            "/actuator/health",
+            "/api/v1/users",
+            "/api/v1/variants",
+            "/api/v1/permissions",
+            "/api/v1/schema/schemas",
+            "/api/v1/reports",
+            "/api/v1/impersonation/sessions",
+            "/api/v1/companies",
+            "/api/v1/notify/inbox/me",
+            "/api/v1/admin/endpoint-devices"
+          ],
+          "details": "all 10 endpoints returned 200/401/403 (auth chain intact)"
+        },
+        "d29_zanzibar": {
+          "status": "GREEN",
+          "checked_at": "2026-06-08T21:21:55Z",
+          "allow_deny_synthetic": "PASS",
+          "details": "store_id_source=secret/permission-service-secrets:ERP_OPENFGA_STORE_ID; user:1204 admin=allow OK, user:9999999 admin=deny OK"
+        }
+      },
+      "verified_at": "2026-06-08T21:21:55Z",
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": null
+  },
+  "audit": {
+    "created_at": "2026-06-08T21:55:46Z",
+    "last_updated_at": "2026-06-08T21:21:55Z",
+    "ci_run_url": null
+  }
+}
