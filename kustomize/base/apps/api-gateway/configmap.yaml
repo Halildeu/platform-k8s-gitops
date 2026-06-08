@@ -231,17 +231,30 @@ data:
   # endpoint-admin route 22/23/24 eklendi. Path rewrite filter image yaml'daki
   # `endpoint-admin-admin-route` ile birebir aynı (RewritePath segment regex).
   # Live 6/6 C.5.persona matrix PASS (#960 body).
-  SPRING_CLOUD_GATEWAY_ROUTES_22_ID: "endpoint-admin-agent-route"
+  #
+  # Faz 22.3 mTLS auto-enroll route parity (#1357, 2026-06-08):
+  # backend source defines POST /api/v1/endpoint-agent/endpoint-enrollments/auto
+  # as a native endpoint, not under the legacy /api/v1/agent/** contract.
+  # Keep this exact route before the generic endpoint-agent rewrite, otherwise
+  # Spring Cloud Gateway rewrites auto-enroll to /api/v1/agent/endpoint-
+  # enrollments/auto and tokenless bootstrap cannot reach the backend
+  # controller. This route does not prove DNS/edge mTLS; endpoint-agent-mtls
+  # host + client-cert forwarding remains a separate live gate.
+  SPRING_CLOUD_GATEWAY_ROUTES_22_ID: "endpoint-admin-mtls-auto-enroll-route"
   SPRING_CLOUD_GATEWAY_ROUTES_22_URI: "http://endpoint-admin-service:8096"
-  SPRING_CLOUD_GATEWAY_ROUTES_22_PREDICATES_0: "Path=/api/v1/endpoint-agent/**"
-  SPRING_CLOUD_GATEWAY_ROUTES_22_FILTERS_0: "RewritePath=/api/v1/endpoint-agent/(?<segment>.*), /api/v1/agent/${segment}"
-  SPRING_CLOUD_GATEWAY_ROUTES_23_ID: "endpoint-admin-admin-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_22_PREDICATES_0: "Path=/api/v1/endpoint-agent/endpoint-enrollments/auto"
+  SPRING_CLOUD_GATEWAY_ROUTES_22_PREDICATES_1: "Method=POST"
+  SPRING_CLOUD_GATEWAY_ROUTES_23_ID: "endpoint-admin-agent-route"
   SPRING_CLOUD_GATEWAY_ROUTES_23_URI: "http://endpoint-admin-service:8096"
-  SPRING_CLOUD_GATEWAY_ROUTES_23_PREDICATES_0: "Path=/api/v1/endpoint-admin/**"
-  SPRING_CLOUD_GATEWAY_ROUTES_23_FILTERS_0: "RewritePath=/api/v1/endpoint-admin/(?<segment>.*), /api/v1/admin/${segment}"
-  SPRING_CLOUD_GATEWAY_ROUTES_24_ID: "endpoint-admin-status-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_23_PREDICATES_0: "Path=/api/v1/endpoint-agent/**"
+  SPRING_CLOUD_GATEWAY_ROUTES_23_FILTERS_0: "RewritePath=/api/v1/endpoint-agent/(?<segment>.*), /api/v1/agent/${segment}"
+  SPRING_CLOUD_GATEWAY_ROUTES_24_ID: "endpoint-admin-admin-route"
   SPRING_CLOUD_GATEWAY_ROUTES_24_URI: "http://endpoint-admin-service:8096"
-  SPRING_CLOUD_GATEWAY_ROUTES_24_PREDICATES_0: "Path=/api/v1/endpoint-agents/**"
+  SPRING_CLOUD_GATEWAY_ROUTES_24_PREDICATES_0: "Path=/api/v1/endpoint-admin/**"
+  SPRING_CLOUD_GATEWAY_ROUTES_24_FILTERS_0: "RewritePath=/api/v1/endpoint-admin/(?<segment>.*), /api/v1/admin/${segment}"
+  SPRING_CLOUD_GATEWAY_ROUTES_25_ID: "endpoint-admin-status-route"
+  SPRING_CLOUD_GATEWAY_ROUTES_25_URI: "http://endpoint-admin-service:8096"
+  SPRING_CLOUD_GATEWAY_ROUTES_25_PREDICATES_0: "Path=/api/v1/endpoint-agents/**"
   # StripPrefix yok — endpoint-agents (plural) read-only status path
 
   # D7: Eureka yok → K8s svc DNS
