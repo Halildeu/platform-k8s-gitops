@@ -1,5 +1,39 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 platform-agent #101 Parallels standard-PC bootstrap smoke (2026-06-08 18:05 Istanbul / 15:05Z UTC)
+
+**Session milestone**: the refreshed `platform-agent` #107 public artifact now
+has a local Parallels Windows 11 (`HALILKOOLUB735`) standard-PC rerun evidence
+chain for the HMAC fallback bootstrap path tracked by platform-agent #101. The
+accepted run downloaded the canonical ZIP from `testai.acik.com`, verified the
+ZIP SHA256, installed the agent, enrolled, confirmed HMAC credential persistence,
+removed enrollment-token material from the service environment, and completed a
+non-destructive `COLLECT_INVENTORY` command through backend -> agent -> result
+-> audit. This does not prove tokenless domain AutoEnroll, DNS/edge mTLS, MSI/GPO
+rollout, two-device/24h soak, or production Trusted Signing.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Artifact | `EndpointAgent.zip` SHA256 `9dcf6c2cab5a7dd1fef16a230f065540e1f2d639e0031038e3fbd8d0a9d26029`; standalone `bootstrap-package.ps1` SHA256 `7ac13aad5c910a74c59862dfc7faafc3c88187c541b9b5f7af64172427335859`; installed binary SHA256 `EC7875D2C39ABCD0C08364C78767DB86AF91857A71817A11AF5045E9255BD60C` | Canonical #107 package was used; no manual ZIP transfer on the accepted path |
+| Fresh-store HMAC bootstrap | Old DPAPI HMAC store was backed up/removed before the accepted rerun; service `EndpointAgent` is Running/Automatic as LocalSystem; process PID `1120`; logs show `agent enrolled` and `hmac credential confirmed` for device `d0efb00a-681a-4e32-b7de-a27ef94f2977` at `2026/06/08 14:50:27-28Z`; service env keys contain `ENDPOINT_AGENT_API_URL` and `ENDPOINT_AGENT_LOG_DIR` but no `ENDPOINT_AGENT_ENROLLMENT_TOKEN` | #101 fresh standard-PC HMAC fallback rerun evidence exists for local Parallels |
+| Backend device | Admin API device list reports `HALILKOOLUB735` `ONLINE`, `agentVersion=0.1.0-dev`, `updatedAt=2026-06-08T14:53:22.885723Z` | Agent is visible to endpoint-admin backend after install |
+| Command lifecycle | `COLLECT_INVENTORY` command `5482af96-b480-463f-a5a1-2d8b3bcd6aa4` issued `14:54:00Z`, delivered `14:54:22Z`, started `14:55:29Z`, completed `14:55:49Z`, terminal `SUCCEEDED`; result row `a5bd419c-f5b2-45c6-8679-0dea6638e0db` | Backend -> agent -> execute -> result chain is functional for non-destructive inventory |
+| Inventory payload | `software.appCount=17`, `wingetReady=true`, `wingetVersion=1.28.240`, `wingetEgress.packageQuery.found=true` for `7zip.7zip`, `hardware.supported=true`, `domainJoined=false`, diagnostics `configHash` is 64 chars, backend DNS/TLS checks true | 22.5 read-only / readiness payload reaches backend through the command result |
+| Audit | `ENDPOINT_COMMAND_CREATED` audit `9711ee57-9d47-4945-8a74-b0adbf415dd5`; `ENDPOINT_SOFTWARE_INVENTORY_REPLACED` audit `f221ad3a-b428-4d17-a9cd-cd64ea97dc1d` with appCount/storedCount `17` and `wingetEgressIngested=true` | Command and inventory replacement audit path observed |
+| Follow-up found | A rerun with `-Force` + new enrollment token on an already-enrolled machine loaded the existing DPAPI HMAC store instead of treating the token as a fresh-enroll intent; tracked as platform-agent #109 | Upgrade preservation is useful, but fresh-reenroll/reset semantics need an explicit guard before 800-PC operations |
+
+**Boundary / remaining gates**:
+
+- platform-agent #101 can use this evidence for HMAC fallback standard-PC
+  verification, subject to board acceptance.
+- platform-agent #109 tracks the explicit reinstall/fresh-enroll guard found
+  during the rerun.
+- platform-k8s-gitops #1359 remains blocked on DNS/edge mTLS for tokenless
+  domain AutoEnroll.
+- #1044 two-device/24h soak and domain/IT pilot evidence remain separate.
+- Evidence file:
+  `docs/faz-22-evidence/2026-06-08-agent-101-parallels-bootstrap-smoke.md`.
+
 ## Live Delta — Faz 22.5 standard PC install productization chain (2026-06-08 17:35 Istanbul / 14:35Z UTC)
 
 **Session milestone**: the standard Windows PC friction observed on MKR-A1 is
