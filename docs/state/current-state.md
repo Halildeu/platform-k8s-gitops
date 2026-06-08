@@ -1,5 +1,42 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 consensus gate tracker + M5/M6/M7/#1359 source slice drafts MERGED (2026-05-28 / Session 51 closure batch — Codex 019ea916 + 019ea922 AGREE)
+
+**Session milestone**: Faz 22.5 M2-M7 + #1359 gate'leri için **canonical source-vs-operator boundary tracker** ve **4 source slice runbook draft** (M5 + M6 + M7 + #1359 acceptance evidence template) main'e landed. HARD RULE Tam Otonom (2026-05-28) uygulaması: her gate için **agent organize path** + bounded operator dependency explicit; "operator action gerek" tek satır YASAK pattern engellendi.
+
+| Slice | PR | Evidence | Hüküm |
+|---|---|---|---|
+| Consensus gate tracker M2-M7 + #1359 | **#1385** `ad204d16` MERGED 2026-05-28 | `docs/faz-22.5-consensus-gate-tracker-m2-m7.md` 7-section canonical tracker + `docs/faz-22-endpoint-admin-plan-2026-05-21.md` historical banner; Codex thread `019ea916` plan-time AGREE; CI 10/10 PASS | Source-side LIVE — agent-doable scope + operator-gate boundary per gate |
+| M5/M6/M7/#1359 source slice runbook drafts | **#1386** `b1841b65` MERGED 2026-05-28 | 4 new files: `RB-faz22.5-1359-acceptance-evidence-template.md` + `RB-faz22-gpo-pilot-5pc.md` + `RB-faz22.5-m6-capacity-baseline.md` + `RB-faz22.5-m7-rollback-drill.md`; Codex thread `019ea922` plan-time AGREE (M7 destructive boundary explicit); CI 10/10 PASS; +1167 insertions | Source-side draft scope LIVE — runtime mutation NONE; operator gate REQUIRED per gate; closure claim NO |
+
+**Tracker coverage** (PR #1385 §2 Gate Boundary Matrix):
+- **M2** (#1376) — AD CS / edge mTLS finalization: Source LIVE (RB + scripts + ADR MERGED PR #1078/#1080); operator gate = DNS + AD CS + CA + cert
+- **M5** (#1377) — 5-PC GPO pilot: Source DRAFT LIVE (PR #1386 RB-faz22-gpo-pilot-5pc.md); operator gate = 5 PC IT + EDR + WDAC + soak
+- **M6** (#1378) — 50-PC capacity baseline: Source DRAFT LIVE (PR #1386 RB-faz22.5-m6-capacity-baseline.md); operator gate = 50 PC IT + on-call rotation
+- **M7** (#1379) — Rollback drill: Source DRAFT LIVE (PR #1386 RB-faz22.5-m7-rollback-drill.md); operator gate = Lab env + domain admin; execution FORBIDDEN until lab-clone + Codex plan-time AGREE per scope
+- **#1359** Tokenless AutoEnroll: Source LIVE (edge mTLS RB + smoke templates) + Acceptance evidence template DRAFT LIVE (PR #1386); operator gate = DNS + cert + CA + agent --auto-enroll source (DNS still BLOCKED — see live delta above)
+
+**Operator Dependency Roll-up** (Tracker §4 — HARD RULE Tam Otonom organize path):
+- D1 DNS records → agent organize path = script + DNS monitor + board issue (corp DNS admin operator action)
+- D2 AD CS Enterprise CA → preflight script + Codex consult (Windows Server admin role install)
+- D3 Client CA bundle → export script + ESO ExternalSecret config (DC remote PowerShell + Vault stdin-pipe seed)
+- D4 IT pilot PC → diversity matrix + Mavis ops + evidence pack (IT admin 5+50 PC allocation)
+- D5 Mavis ops sign-off → CLI peer message pattern + on-call rotation (per-gate APPROVED comment)
+
+**HARD RULE Tam Otonom anti-pattern engeli** (2026-05-28): Her gate için "kullanıcı yapsın" / "operator action gerek" tek satır YASAK pattern eliminated. Agent organize path + bounded operator condition + Mavis coordination format zorunlu. Source PR merge ≠ acceptance kapanışı (Codex No Fake Work HARD RULE).
+
+**Cross-AI peer review chain**:
+- Implementer: Claude (Anthropic) — Session 51 Faz 22 otonom chain
+- Reviewer (plan-time): Codex (OpenAI GPT-5.2) `019ea916` (tracker scope AGREE) + `019ea922` (4 runbook draft single-PR AGREE; M7 destructive boundary explicit)
+- Verdict: AGREE source-side scope + operator-gate boundary explicit per gate
+
+**Follow-up scope** (Tracker §3 closure status — operator-bound):
+- M2 closure: DNS yayını + AD CS Web Enrollment + cert chain + cert end-to-end + edge mTLS LIVE + spoof negative + no-cert negative + ≥1 test PC autoenrollment proof
+- M5 closure: 5/5 PC enrollment + GPO install LIVE + 5/5 7d soak no-regress + Mavis sign-off
+- M6 closure: 50/50 PC + capacity baseline measured + 1+ controlled abort drill PASS + throttling LIVE + Mavis sign-off
+- M7 closure: lab-clone drill 3-layer PASS (uninstall + revoke + GPO rollback) + audit ledger proof + Mavis sign-off
+- #1359 closure: DNS LIVE + cert mount + cert end-to-end + agent --auto-enroll source PR + edge mTLS + spoof/no-cert negative PASS (currently BLOCKED on DNS)
+
 ## Live Delta — Faz 22.5 #108 agent-level mode rescue LIVE-verified + merged; frontend pin reconciled; CI billing blocker (2026-06-08 22:15 Istanbul / 19:15Z UTC)
 
 **Session milestone**: the residual half of platform-agent #108 (an *agent-level*
