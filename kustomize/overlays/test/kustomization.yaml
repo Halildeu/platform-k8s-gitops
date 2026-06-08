@@ -4832,7 +4832,17 @@ images:
     # credentials; this explicit overlay bump restores GitOps desired-state.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-a0a6330
     #   digest sha256:e7d3428bf164372723ecc74381eae4ca4338741f06b6f053a3bd93a614689a2a
-    digest: sha256:e7d3428bf164372723ecc74381eae4ca4338741f06b6f053a3bd93a614689a2a
+    # 2026-06-08 P0 standard-PC install productization -> sha-7c0ec4a
+    # (platform-backend PR #511: rejected result submissions are surfaced as
+    # FAILED + bounded/redacted lastError instead of leaving commands silently
+    # DELIVERED). Backend image workflow run 27134435257 attempt 2 succeeded
+    # after retrying a transient Docker Hub TLS timeout in an unrelated matrix
+    # job; backend-testai-deploy run 27134951712 applied this digest and passed
+    # readiness + stability. Gate 2 JWT smoke skipped because SMOKE_AUTH_*
+    # secrets are not configured.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-7c0ec4a
+    #   digest sha256:0c1e384b414b35ddd9540fa6fcacb9fcc6a856a19ca25d92277166f76041ae45
+    digest: sha256:0c1e384b414b35ddd9540fa6fcacb9fcc6a856a19ca25d92277166f76041ae45
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
