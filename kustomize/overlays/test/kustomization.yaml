@@ -4920,7 +4920,7 @@ images:
     #   019ea83c AGREE (plan + post-impl). Image build run 27156369884.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-b83f3d4
     #   digest sha256:79da9fe1dd73aeb893b1bfe6024a5e0bcf2531c5037d02f0de3608307b92dd00
-    digest: sha256:79da9fe1dd73aeb893b1bfe6024a5e0bcf2531c5037d02f0de3608307b92dd00
+    digest: sha256:3e1e5852838d1ae519bffbe604787c56052d7a0d9965f8c19f590ed3fae1f3bc
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
