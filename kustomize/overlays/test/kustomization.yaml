@@ -3740,7 +3740,19 @@ images:
     #   31 web tests pass; CI 32 checks green. Image build run 27141308332.
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-cd9099e
     #   digest sha256:ba03270a34b93cf83fc10bd9f560dd3b02389bf58e59511045932288551ced05
-    digest: sha256:ba03270a34b93cf83fc10bd9f560dd3b02389bf58e59511045932288551ced05
+    # 2026-06-08: bump sha-cd9099e -> sha-12553d5 (platform-web PR #774 — AG Grid +
+    #   AG Charts Enterprise TRIAL key (AG-127779) expired 2026-06-02 → watermark +
+    #   "Trial Period Expired" console error on every Enterprise grid. Perpetual
+    #   Enterprise Bundle key set in AG_GRID_LICENSE_KEY repo secret; rebuild forced
+    #   via a docs-only commit (build-time key needs a fresh sha- tag, not a re-tag).
+    #   Built from cd9099e (so #773 bulk-actions included) + license + renewal doc.
+    #   testai browser smoke (2026-06-08): watermark GONE, console "[ag-grid-license]
+    #   resolved key: found (538 chars)" + NO "Trial Period Expired", 8 device rows
+    #   render, zero console errors. Cross-AI Codex 019ea776 AGREE. Build run
+    #   27142561876; auto-deployed via deploy-testai run 27142820963. Tracked-by web#772.
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-12553d5
+    #   digest sha256:0e85fab38e07e0387bc417de468ef30d9ca8e4b97414d8875e2ffee0c58d2ad4
+    digest: sha256:0e85fab38e07e0387bc417de468ef30d9ca8e4b97414d8875e2ffee0c58d2ad4
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
