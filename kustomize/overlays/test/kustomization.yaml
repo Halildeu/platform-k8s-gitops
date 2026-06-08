@@ -3780,7 +3780,28 @@ images:
     #   frontend-6c6dd6c9cf-vv927); this pin reconciles gitops canonical to it.
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-9b4b5f2
     #   digest sha256:7b3ba897e3a967a25a083ee18b35b29f6c06e9afb8a4b03fe7c9e5f2bf9f288c
-    digest: sha256:7b3ba897e3a967a25a083ee18b35b29f6c06e9afb8a4b03fe7c9e5f2bf9f288c
+    # 2026-06-08 — İşlemler/Aktif-Pasif UX quartet (endpoint devices grid):
+    #   PR #781 — İşlemler toolbar menu opens on CLICK, not hover (matches İndir).
+    #   PR #782 — devices grid defaults to the ACTIVE view: DECOMMISSIONED ("işi
+    #     biten") devices hidden via the existing Durum status set-filter (no
+    #     separate toggle).
+    #   PR #783 — bulk "Toplu Pasif Al" / "Yeniden Etkinleştir" in the İşlemler
+    #     menu (V56 lifecycle) with fail-closed eligibility, frozen selection
+    #     snapshot, side-effect warning + dedicated {ok}/{fail}/{skipped} result.
+    #   PR #794 — #782 follow-up: enforce the default-active status floor at the
+    #     SSRM datasource layer (the EntityGridTemplate variant system owns the
+    #     live filterModel and an empty `{}` variant clobbered the onGridReady
+    #     default — browser smoke caught DECOMMISSIONED still showing). Robust at
+    #     every query build + VIEW export; Durum filter reveals passive on demand.
+    #   The transient sha-4b14cf6 (#781-783, digest 28f27af9) had the #782 bug;
+    #   this pin is the FIXED build sha-3627195 = main 36271955 (#794 merged),
+    #   strict superset carrying #781+#782+#783+#794. LIVE-verified on testai:
+    #   default 7 active (be017 DECOMMISSIONED hidden) ↔ Durum=Hizmet dışı reveals
+    #   be017 ↔ console clean; pod frontend-c7b6b45f-6tj8r imageID == this digest.
+    #   Image build run: 27172365605 (success).
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-3627195
+    #   digest sha256:d65a92ced4e33882429e3150dd749fd801d0dfec0bc9b07c5c30674cdc0b79b4
+    digest: sha256:d65a92ced4e33882429e3150dd749fd801d0dfec0bc9b07c5c30674cdc0b79b4
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
