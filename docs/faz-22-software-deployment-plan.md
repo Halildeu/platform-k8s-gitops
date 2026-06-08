@@ -345,6 +345,24 @@ revizyonlar: (1) bootstrap claim-code -> mTLS geçişi netleşti, (2) signing M4
 bırakılmayıp M0/M1'de başlatıldı, (3) result-submit silent failure P0-0 olarak
 öne alındı.
 
+### 0.5 Sensitive Endpoint Ops Boundary - 2026-06-09
+
+Kullanıcı talebiyle tartışılan gRPC-streaming benzeri sürekli kanal, SSH/remote
+support, SMB/file actions, endpoint backup, offboarding copy ve forensic
+collection işleri Faz 22.5 software deployment kapsamına eklenmez. Bunlar ayrı
+güvenlik modeli gerektirir.
+
+| Alan | Canonical yer | Board authority | 22.5 ile ilişki |
+|---|---|---|---|
+| Remote support / reverse tunnel / session broker | [Faz 22.6 Remote Access Bridge](./faz-22-remote-access-bridge-plan.md) | gitops #1388/#1389, backend #510/#524, agent #116 | 22.5 command polling yerine geçmez |
+| Compliance Gap Mart aggregate reporting | [Faz 22.7 Compliance Gap Mart Layer](./sprint-plan-faz-22-7-compliance-gap-mart.md) | backend #376 | 22.5 visibility verisini aggregate eder |
+| Endpoint backup / offboarding / forensic collection | [Faz 22.8 Endpoint Data Protection](./faz-22-endpoint-data-protection-plan.md) | gitops #1388/#1390, agent #117 | AG-034 discovery'den türeyen runtime file-copy işi 22.8'e taşınır |
+| Sensitive endpoint ops governance | Gate issue, phase değil | gitops #1388 | 22.6 ve 22.8 runtime ön koşulu |
+
+Bu ayrımın pratik sonucu: AG-034 22.5 içinde yalnız threat-model/discovery
+olarak kalır. Runtime SMB/file copy, backup veya forensic collection iddiası
+ancak #1388 governance gate ve 22.8 charter kabulünden sonra kurulabilir.
+
 ## 1. Ürün Hedefi
 
 Hedef, agent üzerinden Windows cihazlarda kontrollü yazılım yönetimi sağlamaktır:
@@ -434,7 +452,7 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **BE-027** | `platform-backend` | Maintenance window / scheduled command | **SOURCE-MERGED (PR #490)** | Install command contract carries `notBefore` + `expiresAt`, maps to `EndpointCommand.visibleAfterAt` / `expiresAt`, fails closed for past/not-after windows, and includes schedule fields in idempotency replay + payload/audit metadata. Full recurring/named maintenance-window policy engine is outside this accepted source slice. |
 | **BE-028** | `platform-backend` | Rollout throttle / max concurrency | **SOURCE-MERGED (PR #491)** | Tenant-wide install throttle foundation via `endpoint-admin.commands.install-max-concurrent`; live/operator rollout acceptance remains separate. |
 | **BE-029** | `platform-backend` | Approved package bundles | **SOURCE-MERGED (PR #492)** | Approved bundle control-plane primitive + maker-checker/audit; automatic bundle rollout fan-out remains future work. |
-| **AG-034** | `platform-agent` | SMB/file actions discovery guardrail | **DEFERRED** | Discovery/tehdit modeli; whitelist + RBAC + audit + dual-control olmadan runtime yok |
+| **AG-034** | `platform-agent` | SMB/file actions discovery guardrail | **DEFERRED / 22.8-boundary** | Discovery/tehdit modeli; whitelist + RBAC + audit + dual-control olmadan runtime yok. Runtime file copy / backup / forensic collection 22.8 charter + #1388 governance gate kapsamıdır |
 
 ## 4. Milestone Sırası
 
@@ -690,6 +708,8 @@ paketler için açılır.
 
 - `AG-034`.
 - SMB/file actions bu quick-win planının runtime hedefi değildir.
+- Runtime file copy, backup, offboarding copy veya forensic collection işleri
+  Faz 22.8'e taşınır; #1388 governance gate kabul edilmeden açılmaz.
 - İlk iş yalnız discovery olur:
   - hangi path sınıfları riskli,
   - hangi whitelist modeli gerekir,
@@ -785,7 +805,7 @@ sonra açılır.
 19. `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops`: `AG-028` uninstall. **SOURCE-MERGED + TESTAI LIVE (2026-06-04)** — real 7-Zip uninstall on HALILKOOLUB735 yielded `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; prod remains dark.
 20. `platform-agent`: `AG-029` signed update. **MERGED + LOCAL PARALLELS BASELINE 2026-06-07** — PR #74 verifier sharing fix + PR #75 multi-device checklist; accepted #55 local `HALILKOOLUB735` self-update evidence reached `0.1.4-lab.1` through BE-031/BE-032 catalog-bound dispatch with activation, audit and heartbeat evidence. Multi-device/trusted-signing/domain rollout gates pending.
 21. `platform-backend`: `BE-026` + `BE-027` + `BE-028` + `BE-029` rollout ring/window/throttle/bundle controls. **SOURCE-MERGED (accepted source sprint)** — BE-026 PR #478, BE-027 PR #490, BE-028 PR #491 and BE-029 PR #492 are merged. Boundary: backend source/control-plane only; image/digest rollout, live testai policy acceptance, AG-029 multi-device acceptance, trusted signing and domain rollout remain separate gates.
-22. `platform-agent`: `AG-034` SMB/file action discovery, runtime yok. **DEFERRED**
+22. `platform-agent`: `AG-034` SMB/file action discovery, runtime yok; runtime file-copy/backup/forensic scope 22.8 + #1388 gate'e bağlı. **DEFERRED**
 
 ### 9.bis Active 2026-05-29 sıralaması — sıradaki iş paketleri
 
@@ -820,7 +840,7 @@ P2 (rollout controls + uninstall + signed self-update — managed lifecycle):
 13. **BE-026 / BE-027 / BE-028 / BE-029** rollout ring/window/throttle/bundle — SOURCE-MERGED accepted source sprint: BE-026 rings/device tags (#478), BE-027 schedule fields (#490), BE-028 tenant-wide throttle (#491) and BE-029 bundles (#492) merged. Remaining gates are runtime/operator acceptance: image/digest rollout, testai controlled-rollout smoke, AG-029 multi-device batch, trusted signing and domain rollout.
 
 Deferred:
-14. **AG-034** SMB/file action discovery (runtime yok)
+14. **AG-034** SMB/file action discovery (runtime yok; runtime 22.8'e bağlı)
 
 Bu sıra 2026-05-29 truth refresh sonrası geçerlidir.
 
