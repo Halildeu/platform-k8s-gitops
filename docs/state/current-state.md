@@ -1,5 +1,36 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 standard PC install productization chain (2026-06-08 16:05 Istanbul / 13:05Z UTC)
+
+**Session milestone**: the standard Windows PC friction observed on MKR-A1 is
+now tracked in the canonical 22.5 plan and has source/desired-state progress
+across agent, backend and GitOps. This does not yet prove tokenless domain
+AutoEnroll or 800-PC rollout readiness: `endpoint-agent-mtls.testai.acik.com`
+DNS/edge mTLS activation remains a separate gate tracked by
+platform-k8s-gitops #1359.
+
+| Slice | Evidence | Hukum |
+|---|---|---|
+| Written plan | PR #1354 merged `6160ae35`; `docs/faz-22-software-deployment-plan.md` now has `0.4 Standard PC Install Productization Lane` with M0-M7 milestones, duration baseline and non-negotiable target | Plan is canonical; current lane is no longer ad-hoc |
+| Agent installer/package | `platform-agent` PR #102 merged `cba5ecee`; PR #103 merged `87fa38b9`; main workflow run `27137185247` succeeded | PS5.1-safe installer package, UTF-8 BOM packaged scripts, `EndpointAgent.zip`, `bootstrap-package.ps1`, static encoding guard and `-AutoEnroll` installer/bootstrap path are source-ready |
+| Canonical artifact | `https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/EndpointAgent.zip` returned HTTP 200 with ZIP SHA256 `c4f6f82a68f4eaa258df9406d12e2e9eb908d68f1cc0b9ea2c3ebe5bbfd3d109`; internal `SHA256SUMS` matched; packaged `bootstrap-package.ps1`, `install.ps1`, `uninstall.ps1` carry BOM | Manual ZIP transfer is no longer required for HMAC pilot bootstrap; hidden token prompt still remains on the HMAC fallback path |
+| Backend result-submit visibility | `platform-backend` PR #511 merged `7c0ec4a`; endpoint-admin image digest `sha256:0c1e384b414b35ddd9540fa6fcacb9fcc6a856a19ca25d92277166f76041ae45` pinned by GitOps PR #1355 `d0c26292`; live pod imageID matches digest and `/actuator/health` is UP | Source + test overlay deployed for P0-0; runtime invalid-result verification is still needed before platform-backend #509 can move past Needs Verify |
+| Gateway route parity | GitOps PR #1358 merged `4ddc8dd8`; live `api-gateway` env carries `endpoint-admin-mtls-auto-enroll-route` at route index 22 and public POST to `/api/v1/endpoint-agent/endpoint-enrollments/auto` returns `401 MTLS_CERT_MISSING` without a client cert | Route reaches backend auto-enroll controller and fail-closes without cert; this is route parity, not tokenless enrollment success |
+| DNS / edge mTLS gate | `dig +short endpoint-agent-mtls.testai.acik.com` returned empty; current `testai.acik.com:443` TLS endpoint did not request client certificate CA names | Tokenless AutoEnroll remains blocked on DNS + edge mTLS termination/passthrough + safe client-cert forwarding; tracked by #1359 |
+
+**Boundary / remaining gates**:
+
+- platform-agent #101 remains `Needs Verify` until a fresh standard PC rerun
+  proves install + enrollment + service start from the newly published package.
+- platform-backend #509 remains `Needs Verify` until invalid result-submit
+  visibility is observed in runtime or a fresh standard PC smoke proves the
+  corrected path.
+- platform-k8s-gitops #1359 is the P0 ops gate for tokenless domain AutoEnroll:
+  DNS host, TLS client-cert request/verification, spoof-safe certificate
+  forwarding and positive/negative mTLS evidence.
+- HMAC bootstrap is usable today for the 2-PC pilot, but it still needs a
+  hidden enrollment token; it is not the final 800-PC domain rollout channel.
+
 ## Live Delta — Faz 22.5 P1 visibility local Parallels probe smoke (2026-06-07 21:28 Istanbul / 18:28Z UTC)
 
 **Session milestone**: local Parallels Windows 11 (`HALILKOOLUB735`) now has

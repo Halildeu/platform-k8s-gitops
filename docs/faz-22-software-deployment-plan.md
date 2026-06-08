@@ -116,6 +116,19 @@
 > credential update, pre-logon VPN, #1044 multi-device batch and `acik.local`
 > IT pilot remain separate gates.
 
+> **2026-06-08 standard PC install productization addendum**:
+> PR #1354 added the Standard PC Install Productization lane below. The first
+> source/desired-state slices are now landed: `platform-agent` #102/#103
+> provide the PS5.1-safe package, canonical ZIP bootstrap and `-AutoEnroll`
+> installer/bootstrap path; `platform-backend` #511 provides result-submit
+> failure visibility; GitOps #1355 pinned the endpoint-admin digest; GitOps
+> #1358 added the exact auto-enroll gateway route and live no-cert POST now
+> fails closed with `MTLS_CERT_MISSING`. Remaining gate: tokenless domain
+> AutoEnroll is still blocked on `endpoint-agent-mtls.testai.acik.com` DNS plus
+> edge mTLS activation (#1359). The HMAC bootstrap is usable for short pilot
+> reruns, but it still prompts for a hidden enrollment token and is not the
+> final 800-PC rollout channel.
+
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
 planı tanımlar.
@@ -266,13 +279,26 @@ bu süreye **3-10+ iş günü** operator beklemesi eklenir.
   packaged scripts, ZIP bootstrap, internal SHA256 verification and encoding
   regression gate. Main workflow run `27134177634` produced unsigned and
   lab-evidence artifacts successfully.
+- `platform-agent` PR #103 MERGED: the same bootstrap/install lane now supports
+  `-AutoEnroll` with machine-certificate filter requirements and HMAC fallback
+  separation. Main workflow run `27137185247` succeeded, and the canonical
+  artifact endpoint serves `EndpointAgent.zip` SHA256
+  `c4f6f82a68f4eaa258df9406d12e2e9eb908d68f1cc0b9ea2c3ebe5bbfd3d109`.
 - `platform-backend` PR #511 MERGED: rejected result submissions no longer
   leave commands silently locked; backend marks command `FAILED`, clears claim
   lock and stores bounded/redacted `RESULT_REJECTED` last-error without
   persisting rejected raw payload rows.
+- `platform-k8s-gitops` PR #1355 MERGED: endpoint-admin test overlay pin for
+  the #511 backend image digest; live pod imageID matches
+  `sha256:0c1e384b414b35ddd9540fa6fcacb9fcc6a856a19ca25d92277166f76041ae45`.
+- `platform-k8s-gitops` PR #1358 MERGED: api-gateway route parity for
+  `/api/v1/endpoint-agent/endpoint-enrollments/auto`; live no-cert POST reaches
+  backend and returns `MTLS_CERT_MISSING`.
 - Board state: `platform-agent` #101 and `platform-backend` #509 are
-  `Needs Verify`. The remaining gate is a fresh standard-PC rerun with the
-  newly published package plus backend image/digest rollout where required.
+  `Needs Verify`. `platform-k8s-gitops` #1359 tracks the DNS/edge mTLS host
+  activation gate for tokenless AutoEnroll. The remaining verification gate is
+  a fresh standard-PC rerun with the newly published package plus runtime
+  invalid-result visibility proof where required.
 
 **Claude CLI advisory 2026-06-08:** verdict `AGREE — conditional`. Absorbed
 revizyonlar: (1) bootstrap claim-code -> mTLS geçişi netleşti, (2) signing M4'e
