@@ -120,7 +120,9 @@
 > PR #1354 added the Standard PC Install Productization lane below. The first
 > source/desired-state slices are now landed: `platform-agent` #102/#103
 > provide the PS5.1-safe package, canonical ZIP bootstrap and `-AutoEnroll`
-> installer/bootstrap path; `platform-backend` #511 provides result-submit
+> installer/bootstrap path; #105/#106/#107 align the agent client, packaged
+> bootstrap and direct `install.ps1` AutoEnroll defaults to the deployed
+> `/api/v1/endpoint-agent` route; `platform-backend` #511 provides result-submit
 > failure visibility; GitOps #1355 pinned the endpoint-admin digest; GitOps
 > #1358 added the exact auto-enroll gateway route and live no-cert POST now
 > fails closed with `MTLS_CERT_MISSING`. Remaining gate: tokenless domain
@@ -290,14 +292,21 @@ bu süreye **3-10+ iş günü** operator beklemesi eklenir.
   default and installer README were also aligned to
   `/api/v1/endpoint-agent`; `scripts/test/windows-installer-encoding.sh` now
   guards this canonical URL. Main workflow run `27142499833` succeeded.
-- Canonical test artifact endpoint refreshed from PR #106 output:
+- `platform-agent` PR #107 MERGED: the direct `install.ps1` `-AutoEnroll`
+  default was aligned to `/api/v1/endpoint-agent`; the static encoding guard
+  now requires this URL and rejects stale `/api/v1/endpoint-admin` in both
+  install and bootstrap scripts. Main workflow run `27144437218` succeeded
+  across Linux build/package, lab signing and Windows Go test.
+- Canonical test artifact endpoint refreshed from PR #107 output:
   `https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/EndpointAgent.zip`
-  SHA256 `88af3d2539c1c0a8a0fcf9525e38238d7816d02eb2f1c3789725b771fe088cf0`;
+  SHA256 `9dcf6c2cab5a7dd1fef16a230f065540e1f2d639e0031038e3fbd8d0a9d26029`;
   standalone `bootstrap-package.ps1` SHA256
   `7ac13aad5c910a74c59862dfc7faafc3c88187c541b9b5f7af64172427335859`.
-  Public HTTPS verification confirmed both standalone and ZIP-contained
-  bootstrap scripts carry UTF-8 BOM, contain `/api/v1/endpoint-agent` and do
-  not contain the stale `/api/v1/endpoint-admin` AutoEnroll base.
+  Public HTTPS verification confirmed standalone `bootstrap-package.ps1` and
+  ZIP-contained `install.ps1` / `bootstrap-package.ps1` carry UTF-8 BOM,
+  contain `/api/v1/endpoint-agent` and do not contain the stale
+  `/api/v1/endpoint-admin` AutoEnroll base. ZIP-internal `SHA256SUMS` verified
+  all package files.
 - `platform-backend` PR #511 MERGED: rejected result submissions no longer
   leave commands silently locked; backend marks command `FAILED`, clears claim
   lock and stores bounded/redacted `RESULT_REJECTED` last-error without
