@@ -3770,7 +3770,17 @@ images:
     #   build run 27156968874.
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-4b9859c
     #   digest sha256:b57523666cbd812af504ed9ed5f10b2fec501b5d1cb0aba96606439eb0413b3b
-    digest: sha256:b57523666cbd812af504ed9ed5f10b2fec501b5d1cb0aba96606439eb0413b3b
+    #
+    # 2026-06-08 update: sha-9b4b5f2 — device "Pasif Al / Yeniden Etkinleştir"
+    #   (decommission/reactivate) toolbar + DeviceLifecycleModal (web #777,
+    #   commit 9b4b5f24 = platform-web main tip). Strict superset of sha-4b9859c
+    #   (#778 domain column): compare 9b4b5f24...4b9859c = ahead_by=0 behind_by=1,
+    #   so it carries the domain_name column PLUS the lifecycle toolbar (no
+    #   regression). testai cluster already live on this digest (pod
+    #   frontend-6c6dd6c9cf-vv927); this pin reconciles gitops canonical to it.
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-9b4b5f2
+    #   digest sha256:7b3ba897e3a967a25a083ee18b35b29f6c06e9afb8a4b03fe7c9e5f2bf9f288c
+    digest: sha256:7b3ba897e3a967a25a083ee18b35b29f6c06e9afb8a4b03fe7c9e5f2bf9f288c
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
