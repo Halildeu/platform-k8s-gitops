@@ -214,6 +214,71 @@ seviyesinde raw execution açmaz:
 | P1 | Agent health / connectivity diagnostics | `AG-038`; backend/DNS/TLS/last error summary |
 | P1/P2 | Rollout controls | `BE-026..BE-029`; ring/window/throttle/bundle |
 
+### 0.4 Standard PC Install Productization Lane — 2026-06-08
+
+MKR-A1 standard `acik.local` Windows 11 cihaz testi, agent runtime'ın
+çalışabildiğini ama kurulum deneyiminin 800-PC rollout için
+ürünleştirilmesi gerektiğini gösterdi. Bu lane, Faz 22.5 yazılım yönetimi
+kabiliyetini Faz 22.3 domain-wide dağıtım kanalıyla bağlar; mevcut 22.5
+install/uninstall kanıtlarını supersede etmez.
+
+**Observed standard-PC friction (MKR-A1):**
+
+- App Installer yüklüydü ama `winget.exe` user alias/PATH başlangıçta yoktu.
+- `install.ps1` Windows PowerShell 5.1 altında encoding/parse hatası verdi.
+- Enrollment token clipboard/paste akışı kırıldı; tek tek token girmek
+  800-PC rollout için kabul edilemez.
+- Geçici artifact route ve elle ZIP/SHA/binary swap kullanıldı.
+- AG-038 `configHash` kısa gönderildi, backend 64-char bekledi; result submit
+  400 oldu ve command lifecycle görünürlüğü yetersiz kaldı.
+- ESET/EDR agent service + HTTPS trafiğini engellemedi, fakat signing/allowlist
+  kurumsal dağıtım kapısı olarak kalır.
+
+**Non-negotiable target:**
+
+- Domain cihazları için per-PC one-time token ve elle ZIP taşıma yok.
+- 800-PC yolunda signed MSI + GPO Software Installation + machine
+  cert/mTLS auto-enroll ana kanal olur.
+- Domain dışı/hızlı pilot için tek satır signed/hash-verified bootstrap +
+  kısa ömürlü claim-code kullanılabilir.
+- Command/result submit hataları `DELIVERED` gibi sessiz kalmaz; agent/backend
+  tarafında retry/fail/last-error görünürlüğü üretilir.
+
+| Milestone | Scope | Sahip repo / kanal | Tahmini süre | Acceptance |
+|---|---|---|---:|---|
+| **M0 Official Hotfix Release** | AG-038 full `configHash`, PS5.1 installer encoding/BOM regression, canonical artifact URL, initial Authenticode/dev-signing path, result-submit 4xx/5xx visibility | `platform-agent` + `platform-backend` + release/artifact ops | **1-2 iş günü** | MKR-A1 clean reinstall: service running + enrollment OK + HMAC OK + `COLLECT_INVENTORY` result submit 200 + audit row |
+| **M1 One-command Pilot Bootstrap** | Signed/hash-verified PowerShell bootstrap, short-lived claim-code, AppInstaller/WinGet readiness check/repair, post-install smoke | `platform-agent` + backend enrollment surface | **1-2 iş günü** | 2-5 pilot cihazda tek komutla install + enroll + inventory smoke; raw token paste yok |
+| **M2 Backend mTLS Auto-enroll** | Machine cert doğrulayan `POST /endpoint-enrollments/auto`, AD computer identity binding, audit/revoke semantics | `platform-backend` | **2-3 iş günü** | Lab/domain test machine cert ile token'sız enrollment; failed cert/path audit visible |
+| **M3 Agent `--auto-enroll`** | Agent machine cert/domain identity ile backend auto-enroll, fallback claim-code ayrımı | `platform-agent` | **2-3 iş günü** | Domain cihazda kullanıcı token'ı olmadan service start -> enrolled -> heartbeat |
+| **M4 Signed WiX MSI** | Authenticode signed MSI, fixed UpgradeCode, service install/upgrade/uninstall, EDR allowlist doc | `platform-agent` CI + operator signing | **2-4 iş günü** + cert gate | Local install/repair/upgrade/uninstall smoke; signature trust verified |
+| **M5 GPO 5-PC Pilot** | Pilot OU'ya GPO Software Installation, 5 cihaz rollout, monitoring | Operator + IT + gitops evidence | **1-2 iş günü** + gözlem | 5/5 cihaz enrolled, heartbeat, inventory; no manual token/ZIP |
+| **M6 50-PC Wave** | Ring/tag rollout, concurrency/maintenance window discipline, alerting | Operator + backend rollout controls | **2-3 iş günü** + gözlem | 50 cihazda P95 enrollment/heartbeat/command SLA raporu |
+| **M7 800-PC Rollout** | OU/ring bazlı staged rollout, rollback/uninstall path, stale-device alerting | Operator + IT | **1-2 hafta** staged | 800-PC rollout raporu; failed devices explicit queue; rollback path ready |
+
+**Duration baseline:** signing/AD CS/GPO erişimleri hazırsa 5-PC pilot kapısına
+yaklaşık **1 hafta**, 50/800 staged rollout kapısına yaklaşık **2-3 hafta**
+gerçekçi görünür. AD CS/code-signing/EDR allowlist procurement hazır değilse
+bu süreye **3-10+ iş günü** operator beklemesi eklenir.
+
+**2026-06-08 implementation delta:**
+
+- `platform-agent` PR #102 MERGED: PS5.1-safe installer packaging, UTF-8 BOM
+  packaged scripts, ZIP bootstrap, internal SHA256 verification and encoding
+  regression gate. Main workflow run `27134177634` produced unsigned and
+  lab-evidence artifacts successfully.
+- `platform-backend` PR #511 MERGED: rejected result submissions no longer
+  leave commands silently locked; backend marks command `FAILED`, clears claim
+  lock and stores bounded/redacted `RESULT_REJECTED` last-error without
+  persisting rejected raw payload rows.
+- Board state: `platform-agent` #101 and `platform-backend` #509 are
+  `Needs Verify`. The remaining gate is a fresh standard-PC rerun with the
+  newly published package plus backend image/digest rollout where required.
+
+**Claude CLI advisory 2026-06-08:** verdict `AGREE — conditional`. Absorbed
+revizyonlar: (1) bootstrap claim-code -> mTLS geçişi netleşti, (2) signing M4'e
+bırakılmayıp M0/M1'de başlatıldı, (3) result-submit silent failure P0-0 olarak
+öne alındı.
+
 ## 1. Ürün Hedefi
 
 Hedef, agent üzerinden Windows cihazlarda kontrollü yazılım yönetimi sağlamaktır:
