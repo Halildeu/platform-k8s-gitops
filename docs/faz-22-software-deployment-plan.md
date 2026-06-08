@@ -1,6 +1,6 @@
 # Faz 22.5 — Software Deployment Quick Wins
 
-> **Status**: SOURCE-MERGED + testai LIVE for catalog/inventory/compliance/preflight/audit; AG-027L installer log redaction SOURCE-MERGED 2026-05-29 PM (platform-agent PR #32 `4f5e152`); **First Install Pilot LIVE 2026-05-31** ([#1133 GREEN](https://github.com/Halildeu/platform-k8s-gitops/issues/1133) — `be021-smoke-7zip` SUCCEEDED end-to-end on HALILKOOLUB735 SYSTEM Session-0 ARM64 Win11; UI "Başarılı" 12:37:27; true root cause 3-layer fix: backend PR #338 contract gap + agent PR #41 `winget list` Session-0 unreliable → INSTALL exit code authoritative + `0x8A150061` → SUCCEEDED_NOOP); **WEB-014D-followup discovered 2026-06-01** — `InstallPreflightModal.tsx` "Kurulumu Onayla" footer button disabled regression on catalog rows with PASS preflight (operator-confirmed across multiple catalog items); REST workaround verified backend POST contract still healthy (commandId `4d3c097f-7842-4ec2-8c7f-a60465a1b01c` 201 CREATED) — bug is frontend-only; agent re-pickup pending operator service restart
+> **Status**: SOURCE-MERGED + testai LIVE for catalog/inventory/compliance/preflight/audit/install/uninstall. AG-027L installer log redaction SOURCE-MERGED 2026-05-29 PM (platform-agent PR #32 `4f5e152`); **First Install Pilot LIVE 2026-05-31** ([#1133 GREEN](https://github.com/Halildeu/platform-k8s-gitops/issues/1133) — `be021-smoke-7zip` SUCCEEDED end-to-end on HALILKOOLUB735 SYSTEM Session-0 ARM64 Win11; UI "Başarılı" 12:37:27; true root cause 3-layer fix: backend PR #338 contract gap + agent PR #41 `winget list` Session-0 unreliable → INSTALL exit code authoritative + `0x8A150061` → SUCCEEDED_NOOP). **Managed Uninstall test go-live LIVE 2026-06-04** ([#1239 CLOSED](https://github.com/Halildeu/platform-k8s-gitops/issues/1239), gitops PR #1279): AG-028 backend + agent + web surface + test overlay flag enabled; real 7-Zip uninstall on HALILKOOLUB735 produced `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; prod remains dark. **WEB-014D-followup discovered 2026-06-01 and fixed by platform-web PR #726** — `InstallPreflightModal.tsx` confirm-disabled regression was frontend-only; REST workaround verified backend POST contract healthy (commandId `4d3c097f-7842-4ec2-8c7f-a60465a1b01c` 201 CREATED).
 > **Tracked by**: platform-k8s-gitops#1083, platform-k8s-gitops#1086, platform-k8s-gitops#1088, platform-k8s-gitops#1090
 > **Scope date**: 2026-05-27 (initial 3-AI mutabakatı); **truth refresh 2026-05-29**
 
@@ -24,19 +24,39 @@
 > end-to-end** (agent #45 + backend #354/#355 + web #723 + gitops #1167/
 > #1168 + HALILKOOLUB735 86 installed + 1 pending WUA telemetry browser-
 > smoked). The 2026-05-29 PM "TODO" assertions above are STALE for
-> AG-030/031/032/033/036/037; AG-038/039/040 remain TODO. See
-> `docs/state/current-state.md` "AG-037 Hotfix Posture LIVE END-TO-END
-> VERIFIED (2026-06-01)" delta for canonical truth.
+> AG-030/031/032/033/036/037. Later 2026-06-01/02 deltas progressed
+> AG-038/039/040 and related web/backend surfaces beyond this historical
+> note; see `docs/state/current-state.md` for canonical truth before using
+> any AG-038/039/040 row below as an execution source.
+>
+> **2026-06-04 supersession**: AG-028 managed uninstall is no longer TODO on
+> testai. Backend Phase 0/1/2B, agent Phase 2A, web Phase 3 and GitOps Phase 4
+> dark-launch flag are merged; real uninstall E2E on HALILKOOLUB735 is proven
+> with `endpoint_uninstall_audit.result_status=SUCCEEDED_VERIFIED` and
+> `verification=ABSENT_VERIFIED`. This is **test-only go-live**; prod endpoint
+> admin remains a separate gated surface (#1241/#1242).
+>
+> **2026-06-06 supersession**: prod endpoint-admin presence gate passed.
+> `platform-k8s-gitops` #1241 (ESO) and #1242 (prod workload/config) are
+> MERGED; prod `endpoint-admin-service` is Running/Ready 1/1 on digest
+> `sha256:7fa5975c1d0c54e3611db5d89d7b8f8919c1952f6b74f94e562ffd1d90a0f9d2`;
+> D29 smoke runner on `staging-sw`/`k3d-prod` returned exit_code=0 with Up,
+> Functional and Zanzibar-ready GREEN (`/tmp/smoke-report-prod-20260606T020443Z`).
+> AG-028 uninstall remains test-only/dark for prod feature use; prod service
+> presence itself is now proven.
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
 planı tanımlar.
 
-Bu plan install/uninstall runtime kabiliyeti iddia etmez. 2026-05-27 üç-AI
-değerlendirmesi (Claude Code + Codex + MiniMax/Mavis) ortak hükmü **REVISE**:
-read-only agent temeli doğru yönde başlamış, fakat program kurma kabiliyeti
-`BE-020` catalog, command contract, detection/result/audit ve web yüzeyi
-gelmeden açılmayacak.
+Bu plan artık testai üzerinde install ve managed-uninstall runtime kabiliyeti
+iddia eder; bu iddia yalnız kanıtlanan test kapsamı içindir. 2026-05-27 üç-AI
+değerlendirmesi (Claude Code + Codex + MiniMax/Mavis) ortak hükmü **REVISE**
+idi: read-only agent temeli doğru yönde başlamış, fakat program kurma
+kabiliyeti `BE-020` catalog, command contract, detection/result/audit ve web
+yüzeyi gelmeden açılmayacaktı. 2026-05-31 install ve 2026-06-04 uninstall
+kanıtları bu kapıların test ortamı için geçtiğini gösterir; prod/domain-wide
+deployment-ready iddiası üretmez.
 
 ### 0.1 Current Implementation Truth (2026-05-27 — superseded by §0.1bis 2026-05-29)
 
@@ -89,7 +109,7 @@ gelmeden açılmayacak.
 | Approved install dispatch UI | `platform-web` | WEB-012 ≡ WEB-014D (PR #683 + perf #693 follow-up Codex absorb) — `SoftwareCatalogTab.tsx` "Kur" button per catalog row + `InstallPreflightModal.tsx` PASS/WARN/BLOCK → `useCreateInstallMutation()` dispatch POST + "Son Kurulumlar" audit panel via `useListInstallAuditsQuery` Page.content render | **MERGED + LIVE** |
 | Outdated software / inventory diff / prohibited | `platform-backend` + `platform-agent` | AG-036 SOURCE-MERGED (agent PR #38 `a29eef4` + #40 `e64c131` `UpgradeTruncated` fix; backend PR #336 `7f8c1a90` V20 ingest+query); BE-024 SOURCE-MERGED (PR #334 `d154ac7a` V18 software-inventory state diff/history, atomic ON CONFLICT append); BE-025 SOURCE-MERGED (PR #335 `7bb0340e` V19 prohibited-software denylist + EndpointComplianceService integration); cluster image `fd272365` (#348) ⊃ #336 ⊃ #335 ⊃ #334 → all 3 included end-to-end | SOURCE-MERGED + LIVE acceptance pending (testai cluster image fd272365; V18/V19/V20 migration files included in deployed image, Flyway apply verified 2026-05-30 (V18/V19/V20 `success=true` rows live in `endpoint_admin_service.endpoint_admin_flyway_history`); API service reachability + Spring Security admin auth-gate verified 2026-06-01 (no-JWT cluster-internal GET returned HTTP 401 for 4/4 admin URLs: `/software-inventory/diff` + `/software-inventory/history` + `/outdated-software/latest` + `/prohibited-software`; no 500 / no connection-refused — this is NOT route-level controller-mapping acceptance; SecurityConfig admin chain enforces 401 before handler mapping); authenticated 200 + JSON shape smoke (admin JWT path) + WEB surface verify pending) |
 | Posture / health / hotfix / diagnostics / services / exposure | `platform-agent` | AG-030 / AG-031 / AG-032 / AG-033 SOURCE-MERGED (PRs #33/#34/#35/#36, Codex cross-AI AGREE; binary distribution operator-bound); **AG-037 MERGED + LIVE 2026-06-01** (end-to-end chain agent #45 + backend #354/#355 + web #723 + gitops #1167/#1168 + HALILKOOLUB735 86 installed + 1 pending real WUA telemetry + browser smoke); **AG-038 MERGED + LIVE 2026-06-01** end-to-end chain (agent #39 + backend #357/#355 V23 LIVE + web #727 + gitops #1181 digest bump APPLIED + browser-verified Agent Tanılaması tab 404 empty + `includeDiagnostics:true` literal hint); **AG-039 SOURCE-MERGED + backend LIVE 2026-06-01** end-to-end 3-repo chain: agent PR [#47](https://github.com/Halildeu/platform-agent/pull/47) `0d8e7b4` (critical services probe — 6-service canonical allowlist WinDefend/wuauserv/BITS/EventLog/EndpointAgent/MpsSvc; per-service {present, state, startupMode} from SCM + registry) + backend PR [#362](https://github.com/Halildeu/platform-backend/pull/362) `65d9fbd5` (V24 migration + ingest + GET /services/latest query) + web PR [#728](https://github.com/Halildeu/platform-web/pull/728) ServicesView drawer tab (Codex 019e8389 2-iter REVISE→PARTIAL→AGREE absorb 6+1 must_fix incl. IslemlerTab default 8-bit payload + fail-closed container parity + startupMode=DISABLED danger chip + DICT_EN parity + nullable summary/serviceName); browser smoke + testai frontend digest bump pending (gitops PR #1185); **AG-040 SOURCE-MERGED 2026-06-01** end-to-end chain (agent 92320cd + backend b6daaee2 V25 startup-exposure ingest+query + web PR [#729](https://github.com/Halildeu/platform-web/pull/729) StartupExposureView drawer tab; Codex 019e83a6 3-iter REVISE→REVISE→AGREE absorb incl. AG-040/AG-041 numbering disambiguation + fail-closed exposure-scalar evidence helpers + per-scalar polarity split + StartupAppLocation enum source type); AG-041 (Application Control / WDAC / AppLocker) reserved for new zincir | AG-037/AG-038 LIVE; AG-039 SOURCE-MERGED + backend LIVE (digest bump + browser smoke pending); AG-040 SOURCE-MERGED (browser smoke + digest bump pending); AG-030–033 SOURCE-MERGED (live smoke operator-bound); AG-041 TODO |
-| Uninstall + signed self-update + rollout controls | `platform-agent` + `platform-backend` | AG-028 / AG-029 / BE-026 / BE-027 / BE-028 / BE-029 NOT YET IMPLEMENTED | TODO |
+| Uninstall + signed self-update + rollout controls | `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops` | AG-028 testai go-live proven 2026-06-04; AG-029 + BE-026/BE-027/BE-028/BE-029 remain open | PARTIAL |
 | GitOps governance | `platform-k8s-gitops` | plan + runbook + ADR mature; current-state delta 2026-05-29 PM | LIVE |
 
 ### 0.2 3-AI Mutabakatı
@@ -122,6 +142,285 @@ seviyesinde raw execution açmaz:
 | P1 | Prohibited software detection | `BE-025`; alert/compliance, auto-uninstall yok |
 | P1 | Agent health / connectivity diagnostics | `AG-038`; backend/DNS/TLS/last error summary |
 | P1/P2 | Rollout controls | `BE-026..BE-029`; ring/window/throttle/bundle |
+
+### 0.4 Sektör Standardı Completion Gates — 2026-06-05 Snapshot
+
+Bu tablo Faz 22.5 quick-win hattını "çalışıyor" seviyesinden işletilebilir
+endpoint-management seviyesine taşımak için kanıt kapılarını ayırır. Testai
+kanıtı prod/domain-wide readiness yerine geçmez.
+
+| Gate | Durum | Kanıt / kalan iş |
+|---|---|---|
+| Read-only inventory + hardware | PROVEN on testai/HALILKOOLUB735 | AG-025/026/035 + BE-020I/BE-022 + WEB-011/013; hardware/software inventory render kanıtlı |
+| Approved catalog + allowlist | PROVEN on testai | BE-020 + WEB catalog surface; katalog dışı package/raw shell yok |
+| Install lifecycle | PROVEN on testai | #1133 GREEN: 7-Zip install E2E, AG-027/AG-027L + BE-021 audit path |
+| Managed uninstall lifecycle | PROVEN on testai, prod dark | #1239 + PR #1279: real 7-Zip uninstall `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; prod flag ayrı gate |
+| Dual-control / audit discipline | PROVEN for destructive test path | maker-checker proposer != approver + uninstall audit row; broader sensitive ops still separate ADR/dual-control scope |
+| D29/D30 runtime discipline | PROVEN for current test+prod service presence | Test digest/runtime evidence strong; prod endpoint-admin #1241/#1242 MERGED and D29 smoke GREEN 2026-06-06 for digest `sha256:7fa5975c...` with 10 services Running+Ready, endpoint-admin `/api/v1/admin/endpoint-devices` included in Functional endpoint set, and OpenFGA synthetic allow/deny PASS. |
+| Signed agent distribution / self-update | OPEN / draft source | AG-029 draft PR #59 head `c3c1869` CI GREEN (6/6) adds staging primitives, capability false-advertising guard, installer opt-in wiring and a BE-031/BE-032-pinned live-smoke runbook; the runbook now requires a BE-032 negative trust-field preflight before positive self-update dispatch; BE-031 #488 release catalog + BE-032 #489 catalog-bound UPDATE_AGENT dispatch are draft/CI-green; BE-032 head `7ab33ef` rejects caller-supplied trust fields before service dispatch; real Windows self-update smoke, merge/deploy, rollback/watchdog acceptance and provider-distinct review remain pending |
+| Rollout controls | OPEN / draft source stack | BE-026 PR #478, BE-027 PR #480, BE-028 PR #482, BE-029 PR #484, BE-030 PR #486/#487, BE-031 PR #488 and BE-032 PR #489 are draft/CI-green; BE-032 head `7ab33ef` includes release-catalog trust-field fail-closed guard; merge, image/digest rollout, testai acceptance and provider-distinct review remain pending |
+| Domain-wide IT rollout | OPEN / operator-bound | 22.3 MSI/GPO/AD CS/5-PC -> 50/800 ramp; 22.2.B VPN/DC/EDR/signing gates remain external |
+| Prod endpoint-admin presence | PROVEN | #1241 ESO MERGED (`e268854c`), #1242 workload/config MERGED (`4202e17c`); prod pod `endpoint-admin-service-777c66f5c9-wl5kr` Running ready=true restarts=0 imageID digest `sha256:7fa5975c...`; D29 report `/tmp/smoke-report-prod-20260606T020443Z` exit_code=0. |
+
+### 0.5 Standard PC Install Productization Lane — 2026-06-08
+
+MKR-A1 standard `acik.local` Windows 11 cihaz testi, agent runtime'ın
+çalışabildiğini ama kurulum deneyiminin 800-PC rollout için ürünleştirilmesi
+gerektiğini gösterdi. Bu lane, Faz 22.5 yazılım yönetimi kabiliyetini Faz
+22.3 domain-wide dağıtım kanalıyla bağlar; mevcut 22.5 install/uninstall
+kanıtlarını supersede etmez.
+
+**Observed standard-PC friction (MKR-A1):**
+
+- App Installer yüklüydü ama `winget.exe` user alias/PATH başlangıçta yoktu.
+- `install.ps1` Windows PowerShell 5.1 altında encoding/parse hatası verdi.
+- Enrollment token clipboard/paste akışı kırıldı; tek tek token girmek
+  800-PC rollout için kabul edilemez.
+- Geçici artifact route ve elle ZIP/SHA/binary swap kullanıldı.
+- AG-038 `configHash` 16-char gönderdi, backend 64-char bekledi; result submit
+  400 oldu ve command lifecycle görünürlüğü yetersiz kaldı.
+- ESET/EDR agent service + HTTPS trafiğini engellemedi, fakat signing/allowlist
+  kurumsal dağıtım kapısı olarak kalır.
+
+**Non-negotiable target:**
+
+- Domain cihazları için per-PC one-time token ve elle ZIP taşıma yok.
+- 800-PC yolunda signed MSI + GPO Software Installation + machine
+  cert/mTLS auto-enroll ana kanal olur.
+- Domain dışı/hızlı pilot için tek satır signed/hash-verified bootstrap +
+  kısa ömürlü claim-code kullanılabilir.
+- Command/result submit hataları `DELIVERED` gibi sessiz kalmaz; agent/backend
+  tarafında retry/fail/last-error görünürlüğü üretilir.
+
+| Milestone | Scope | Sahip repo / kanal | Tahmini süre | Acceptance |
+|---|---|---|---:|---|
+| **M0 Official Hotfix Release** | AG-038 full `configHash`, PS5.1 installer encoding/BOM regression, canonical artifact URL, initial Authenticode/dev-signing path, result-submit 4xx/5xx visibility | `platform-agent` + `platform-backend` + release/artifact ops | **1-2 iş günü** | MKR-A1 clean reinstall: service running + enrollment OK + HMAC OK + `COLLECT_INVENTORY` result submit 200 + audit row |
+| **M1 One-command Pilot Bootstrap** | Signed/hash-verified PowerShell bootstrap, short-lived claim-code, AppInstaller/WinGet readiness check/repair, post-install smoke | `platform-agent` + backend enrollment surface | **1-2 iş günü** | 2-5 pilot cihazda tek komutla install + enroll + inventory smoke; raw token paste yok |
+| **M2 Backend mTLS Auto-enroll** | Machine cert doğrulayan `POST /endpoint-enrollments/auto`, AD computer identity binding, audit/revoke semantics | `platform-backend` | **2-3 iş günü** | Lab/domain test machine cert ile token'sız enrollment; failed cert/path audit visible |
+| **M3 Agent `--auto-enroll`** | Agent machine cert/domain identity ile backend auto-enroll, fallback claim-code ayrımı | `platform-agent` | **2-3 iş günü** | Domain cihazda kullanıcı token'ı olmadan service start -> enrolled -> heartbeat |
+| **M4 Signed WiX MSI** | Authenticode signed MSI, fixed UpgradeCode, service install/upgrade/uninstall, EDR allowlist doc | `platform-agent` CI + operator signing | **2-4 iş günü** + cert gate | Local install/repair/upgrade/uninstall smoke; signature trust verified |
+| **M5 GPO 5-PC Pilot** | Pilot OU'ya GPO Software Installation, 5 cihaz rollout, monitoring | Operator + IT + gitops evidence | **1-2 iş günü** + gözlem | 5/5 cihaz enrolled, heartbeat, inventory; no manual token/ZIP |
+| **M6 50-PC Wave** | Ring/tag rollout, concurrency/maintenance window discipline, alerting | Operator + backend rollout controls | **2-3 iş günü** + gözlem | 50 cihazda P95 enrollment/heartbeat/command SLA raporu |
+| **M7 800-PC Rollout** | OU/ring bazlı staged rollout, rollback/uninstall path, stale-device alerting | Operator + IT | **1-2 hafta** staged | 800-PC rollout raporu; failed devices explicit queue; rollback path ready |
+
+**Duration baseline:** signing/AD CS/GPO erişimleri hazırsa 5-PC pilot kapısına
+yaklaşık **1 hafta**, 50/800 staged rollout kapısına yaklaşık **2-3 hafta**
+gerçekçi görünür. AD CS/code-signing/EDR allowlist procurement hazır değilse
+bu süreye **3-10+ iş günü** operator beklemesi eklenir.
+
+**Claude CLI advisory 2026-06-08:** verdict `AGREE — conditional`. Absorbed
+revizyonlar: (1) bootstrap claim-code -> mTLS geçişi netleşti, (2) signing M4'e
+bırakılmayıp M0/M1'de başlatıldı, (3) result-submit silent failure P0-0 olarak
+öne alındı.
+
+**Provider ping-pong absorb 2026-06-08:** Claude CLI ikinci tur verdict'i
+`plan skeleton OK, M5-M7 rollout derinliği eksik`; Mavis/MiniMax final-only
+session `mvs_b7e49107dafa41eb8d4593fc6045a7ac` verdict'i `rollout'a hazir
+degil; acceptance/risk gate'leri yazilmadan 5/50/800 cikilmaz`. Ortak
+mutabakat: M0/M1 foundation yeterince somut, fakat M2-M7 icin AD CS/mTLS,
+MSI/GPO, wave gate, rollback, capacity, telemetry ve failed-device queue
+kontratlari bu plana baglanmadan 800-PC readiness iddia edilemez.
+
+#### 0.5.1 Rollout Readiness Gate Matrix
+
+Bu gate matrisi M0-M7 milestone tablosunun "hangi kapi kapanmadan sonraki
+dalga acilmaz" yorumudur. Board/live evidence bu tabloyu yener; tablo PM
+okunabilirligi icin ozet guard'dir.
+
+| Gate | Current state | Bir sonraki kapıya geçiş şartı |
+|---|---|---|
+| **M0 Hotfix / visibility** | **PROVEN for P0-0** — result-submit invalid payload path `FAILED + last_error` uretir; source fix ve live smoke platform-backend #509 ile kanitli | #108/#109 installer reinstall edge-case verify kaydi ayrica kapanmali; yeni package ile MKR-A1 fresh reinstall smoke tekrarlanir |
+| **M1 one-command HMAC fallback** | **PROVEN for short pilot** — canonical ZIP/bootstrap + PS5.1 package + HMAC fallback Parallels smoke kanitli | HMAC fallback yalniz 2-5 cihaz hizli pilot icindir; domain-wide/tokenless readiness yerine yazilamaz |
+| **M2 tokenless backend/edge mTLS** | **BLOCKED** — route parity var, no-cert POST fail-closed; `endpoint-agent-mtls.testai.acik.com` DNS/edge mTLS #1359 bekliyor | DNS resolves + edge client-cert verify + spoof-header strip + valid machine-cert positive AutoEnroll smoke |
+| **M3 agent `--auto-enroll`** | **PARTIAL source/runtime prep** — agent AutoEnroll base URL ve bootstrap defaults duzeltildi | M2 gecmeden acceptance yok; stale HKLM Mode/fresh-enroll guard #108/#109 live verify ile kapanir |
+| **M4 signed WiX MSI** | **OPEN** | Authenticode signed MSI, timestamp, fixed UpgradeCode, install/repair/upgrade/uninstall smoke ve EDR allowlist evidence |
+| **M5 5-PC GPO pilot** | **NOT OPEN** | M2+M3+M4 gate'leri gecmis; pilot OU, GPO link, rollback drill, telemetry dashboard ve failed-device queue hazir |
+| **M6 50-PC wave** | **NOT OPEN** | 5-PC pilot 24h minimum gozlem + abort threshold gecilmemis + capacity baseline + maintenance-window policy |
+| **M7 800-PC rollout** | **NOT OPEN** | 50-PC wave SLA raporu, staged ring plan, rollback warm path, stale-device alerting ve help-desk kapasite onayi |
+
+#### 0.5.2 AD CS / Machine Certificate / Edge mTLS Prerequisites
+
+M2 ve M3, yalniz backend endpoint yazilimi degildir; domain kimligi ve edge
+guven zinciri hazir olmadan tokenless enrollment kabul edilmez.
+
+| Alan | Zorunlu karar / kabul kriteri |
+|---|---|
+| Certificate template | EKU `Client Authentication`; private key export policy kapali; auto-enroll ACL yalniz pilot OU/computer group; subject/SAN icinde AD computer identity baglanabilir alan (`DNS`, `GUID`, veya `URI:adcomputer:{guid}`) |
+| Validity / renewal | Kisa olmayan validity + belirli renewal window; renewal failure heartbeat/diagnostics yuzeyinde gorunur |
+| Revocation | CRL veya OCSP erisilebilirligi; revoked machine cert ile AutoEnroll fail-closed; failure audit reason redacted |
+| Edge trust | Dedicated host `endpoint-agent-mtls.testai.acik.com`; genel browser host'una optional client-cert prompt bindirilmez |
+| Header discipline | Edge caller-supplied `X-Client-Cert` / `X-Tenant-Id` header'larini overwrite/strip eder; backend yalniz trusted edge'den gelen header'i kabul eder |
+| Negative smokes | No-cert ve spoofed-header request fail-closed; raw cert/key/JWT/token issue veya docs'a yazilmaz |
+| Positive smoke | Valid pilot machine certificate ile one-time token kullanmadan enrollment + credential creation + heartbeat |
+| Rotation drill | Client CA / edge cert rotasyonu test ortaminda prove edilir; 50-PC wave oncesi zero-downtime veya planned-downtime karari yazilir |
+
+AD CS/GPO hazir degilse M2/M3 sure tahmini `2-3 is gunu` olarak kalamaz; bu
+durum operator-bound dependency olarak board'a `Blocked` yazilir.
+
+#### 0.5.3 MSI / GPO Deployment Specification
+
+M4-M5 baslamadan once MSI ve GPO semantigi netlesir. "GPO ile kurulur" ifadesi
+tek basina acceptance degildir.
+
+| Konu | Plan karari / gate |
+|---|---|
+| Deployment method | Pilot icin secilen yol yazilir: per-machine assigned MSI veya startup script `msiexec`. Ikisi ayni anda denenmez; fallback yolu runbook'ta ayrilir |
+| MSI identity | Stable `UpgradeCode`; versioned `ProductCode`; repair/upgrade/uninstall davranisi test edilir |
+| Silent install args | No reboot by default; MSI log path `C:\ProgramData\EndpointAgent\logs\install-msi-*.log`; service account `LocalSystem`; API base ve AutoEnroll mode parametreleri deterministic |
+| Signing | Authenticode signature + timestamp authority; signing cert source ve renewal owner'i yazilir; unsigned/lab-only artifact domain pilotta kullanilmaz |
+| EDR allowlist | ESET/EDR icin agent exe, service path, MSI publisher/thumbprint ve WinGet child process davranisi explicit allow/observe evidence alir |
+| GPO targeting | Pilot OU + security filtering + WMI/build filter karari; 5-PC pilot disina accidental link guard |
+| Propagation | GPO natural refresh penceresi ve `gpupdate /force` kullanimi ayrilir; acceptance raporunda hangi yol kullanildigi belirtilir |
+| Rollback | GPO unlink + MSI uninstall + orphan service/log/env/HKLM cleanup + enrollment revoke proseduru prove edilir |
+
+#### 0.5.4 Wave Gate Matrix and Abort Rules
+
+Dalga buyutme "hepsi iyi gorunuyor" ile degil, sayisal gate ile olur.
+
+| Wave | Minimum acceptance | Abort / pause threshold |
+|---|---|---|
+| **5-PC pilot** | 5/5 enrolled + heartbeat + inventory; en az 1 stale/reinstall senaryosu; 1 PC rollback+reinstall drill; EDR log kontrolu | 1 cihaz tokenless enrollment fail ederse M2/M3 debug; MSI rollback calismazsa M4 stop |
+| **50-PC wave** | >=48/50 basarili enrollment; P95 first heartbeat <= 10 dk; P95 command result-submit <= 5 dk; failed devices queue'da root-cause class var | >10% install/enroll fail in 1 saat, result-submit 4xx/5xx spike, edge mTLS handshake error >5%, veya help-desk load owner kapasitesini asarsa pause |
+| **800-PC rollout** | Ring bazli staged rollout; online eligible cihazlarda >=99% enrollment; her failed device icin queue item + evidence bundle; 72h warm rollback path | Iki ardışık ring SLA kacirirsa, stale-device >2% 24h boyunca surerse, veya rollback drill calismazsa rollout durur |
+
+Wave'ler arasi minimum gozlem:
+
+- 5-PC pilot -> 50-PC: en az 24 saat heartbeat/command stability.
+- 50-PC -> 800-PC: en az 48 saat, tercihen bir is gunu + bir gece penceresi.
+- Kapali/uyuyan cihazlar icin denominator "rollout hedefi" ve "son 7 gunde
+  online olmus eligible cihaz" olarak ayrica raporlanir.
+
+#### 0.5.5 Failed-Device Queue and Telemetry Contract
+
+800 cihazda basari kadar hata siniflandirmasi da urundur. Basarisiz cihaz
+"bakilacak" seklinde kalmaz; queue item olur.
+
+| Failure class | Queue evidence | First action |
+|---|---|---|
+| DNS / edge mTLS | resolver output, TLS handshake class, no raw cert/key | DNS/edge owner'a route; #1359 runbook smokes tekrar |
+| Cert identity | cert subject/SAN class, template name, expiry/revocation state | AD CS/template/OU ACL kontrolu |
+| Installer / MSI | MSI exit code, redacted install log tail, service status | MSI repair/uninstall/reinstall drill |
+| Service / HMAC / mode | EndpointAgent service state, redacted env presence, HKLM Mode class | #108/#109 guard path; stale state cleanup veya fail-fast |
+| Backend result-submit | command id prefix, HTTP status, redacted `last_error`, no rejected raw payload | backend/agent contract bug triage |
+| EDR / network | EDR event id/class, blocked process/path class, proxy/TLS error class | EDR allowlist veya network rule update |
+
+Telemetry minimum seti:
+
+- bootstrap start/end time, package SHA, MSI version, signer thumbprint class;
+- enrollment mode (`hmac-fallback` / `auto-enroll`), no raw token;
+- first heartbeat latency, command poll latency, result-submit latency;
+- stale-device threshold: >24h heartbeat yoksa stale; >2% stale alert;
+- dashboard/report export path: 5/50/800 wave sonunda CSV veya issue evidence.
+
+#### 0.5.6 Pilot Fleet Diversity and Capacity Baseline
+
+Tek HALILKOOLUB735 veya tek MKR-A1 kaniti domain fleet'i temsil etmez. 5-PC
+pilot minimum karisimi:
+
+- en az 1 x64 ve mevcutsa 1 ARM64;
+- en az iki Windows build ailesi;
+- en az 1 ESET/EDR aktif cihaz ve 1 yalniz Defender cihaz;
+- en az 1 daha once enroll olmus/reinstall senaryosu;
+- en az 1 kullanici oturumu acikken SYSTEM service install/command smoke;
+- en az 1 offline/reconnect senaryosu: enrollment sonrasi 4 saat ag disi veya
+  VPN/edge erisimsiz kalip reconnect sonrasi heartbeat + queue drain.
+
+50-PC wave oncesi kapasite baseline:
+
+- 50 concurrent inventory command ve en az 10 concurrent install/preflight
+  backend'i saturate etmiyor;
+- endpoint-admin DB connection pool, command queue ve result-submit latency
+  olculur;
+- WinGet/CDN/proxy/Delivery Optimization karari yazilir; 800 cihazda paket
+  download burst etkisi tahmin edilir;
+- BE-027 maintenance-window merge/accept yoksa business-hours install riski
+  explicit owner decision olarak board'a yazilir.
+
+#### 0.5.7 Rollback and Communications Gate
+
+M5'ten itibaren rollback prove edilmeden wave buyutulmaz.
+
+| Rollback alanı | Kabul kriteri |
+|---|---|
+| MSI rollback | 1 pilot cihazda uninstall + reinstall drill; service, scheduled task, HKLM mode/env ve log cleanup beklenen halde |
+| Enrollment revoke | HMAC credential veya cert-bound enrollment revoke edilir; revoked cihaz yeniden tokenless enroll olmadan komut alamaz |
+| GPO rollback | GPO unlink/security-filter rollback etkisi ve propagation suresi raporlanir |
+| Backend dark/pause | Rollout policy veya command dispatch paused hale getirilebilir; yeni install command uretimi durur |
+| Evidence retention | Failed-device bundles ve audit row'lari retention/audit politikasina uygun saklanir |
+| IT/help-desk comms | 5/50/800 wave icin baslamadan once IT owner, help-desk triage class'lari, kullanici etkisi ve escalation SLA yazilir |
+
+#### 0.5.8 Ping-pong Outcome and Next Plan Work
+
+Claude ve Mavis ortak sonucunu bu plana ekleme karari:
+
+1. P0 source/runtime foundation kabul: #509 ve #101 kanitlari short pilot icin
+   yeterli.
+2. #108/#109 live verify tamamlanmadan fresh reinstall davranisi temiz kabul
+   edilmez.
+3. #1359 DNS/edge mTLS kapanmadan tokenless/domain AutoEnroll veya 800-PC
+   readiness iddiasi yok.
+4. M2-M7 icin her gate board issue'sunda acceptance + evidence + rollback
+   alanlariyla takip edilir; PR merge tek basina gate kapatmaz.
+5. Siradaki plan/dokuman isi: bu bolumden tureyen executable issue'lar:
+   AD CS/mTLS activation, MSI/GPO spec, 5-PC pilot matrix, 50-PC capacity
+   baseline, failed-device queue, rollback drill.
+
+#### 0.5.9 Full-Consensus Protocol for Domain Rollout Claims
+
+2026-06-08 ikinci ping-pong turu:
+
+- Claude CLI: round-1 `REVISE`; round-2 `AGREE` after combined protocol
+  absorbed M2 enrollment path, M4 update/MSI model and M5 pilot diversity
+  blockers.
+- Mavis/MiniMax: round-1 `REVISE`; round-2 session
+  `mvs_a5c3deb9e7bb48dab9bbb20faf8a1093` verdict `AGREE` after mandatory
+  gate + stop-line rules were made explicit.
+- Codex local evaluator: `AGREE` with the combined protocol below. This is a
+  protocol agreement, not rollout acceptance.
+
+**Full-consensus required topics** — these require Claude + Mavis + Codex
+`AGREE` or an explicit owner exception recorded before a domain-wide claim:
+
+| Gate | Full consensus is mandatory because | Stops |
+|---|---|---|
+| **M2 AD CS / edge mTLS / enrollment path** | This is the first trust boundary for tokenless enrollment. A wrong CA chain, edge header model or fallback enrollment path can create orphaned or falsely trusted devices at fleet scale. | Tokenless AutoEnroll claim, M3 acceptance, M4/M5 domain path |
+| **M4 MSI signing / WiX trust chain / update model** | Signed MSI becomes the domain distribution root. Wrong signing, timestamp, UpgradeCode/ProductCode or push/pull/hybrid update model can make uninstall or upgrade unreliable across hundreds of PCs. | GPO pilot, self-update claim, 50/800 rollout |
+| **M5 5-PC pilot diversity + soak criteria** | A homogeneous 5-PC pilot gives false confidence. OS/build, hardware, network, EDR and reinstall/offline cases must be represented before increasing blast radius. | 50-PC wave |
+| **M6 abort rules + failed-device queue** | Once a wave is running, thresholds cannot be invented mid-incident. Failure classes, retry limits, escalation and quarantine rules must be locked before expansion. | 800-PC wave |
+| **M7 rollback/comms + every wave transition** | Rollback, user/IT communications and post-wave review are part of the safety mechanism, not paperwork. Without them, a bad baseline has no controlled exit. | Next wave and 800-PC rollout claim |
+
+**Owner-decision topics** — consensus is not required when the decision is
+bounded, reversible and does not widen blast radius:
+
+- exact pilot OU and security group, as long as the diversity matrix is met;
+- exact 5 pilot PCs, as long as matrix coverage is documented;
+- wave calendar/time of day, as long as gate thresholds and maintenance-window
+  rules are unchanged;
+- communication wording and ticketing tool choice;
+- dashboard layout and cosmetic labels;
+- reversible implementation refactors that do not alter gate semantics.
+
+**Stop-the-line rules**:
+
+1. Any provider `REVISE` or `RED` on a mandatory gate keeps that gate closed.
+   `PARTIAL` is not enough for M2/M4/M5/M6/M7 expansion.
+2. Live evidence missing beats provider optimism: no D29-style evidence, no
+   gate movement.
+3. mTLS/AD CS handshake failure, `signtool verify` failure, rollback drill
+   failure, or pilot success below the locked threshold stops the next wave.
+4. Wave thresholds cannot be relaxed while a wave is running. Changing an abort
+   threshold requires stopping the wave and running a new consensus pass.
+5. Failed-device queue overflow stops expansion. Initial threshold:
+   >5% of the active wave or >2% fleet stale for 24h, whichever is hit first.
+6. Each wave requires a short post-wave artifact: scope, denominator, success
+   rate, failed-device classes, rollback readiness, and explicit next-wave
+   recommendation.
+
+**Current consensus state:** protocol `AGREE`; rollout readiness still gated.
+M0/M1 short-pilot foundation may continue. M2 tokenless/domain AutoEnroll is
+blocked by #1359 until DNS/edge mTLS + positive machine-cert smoke passes.
+M4/M5/M6/M7 remain not open for domain-wide rollout until their consensus gates
+above have concrete issue evidence.
 
 ## 1. Ürün Hedefi
 
@@ -190,8 +489,8 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **WEB-014C** | `platform-web` | Policy CRUD UI (REQUIRED/ALLOWED/FORBIDDEN) | **MERGED + LIVE (PR #678 + PR #682)** | Per catalog item policy CRUD; bulk import deferred |
 | **WEB-014D / WEB-012** | `platform-web` | Approved install UI surface | **MERGED + LIVE (PR #683 + perf/follow-up PR #693, Codex absorb)** | Full chain LIVE: `SoftwareCatalogTab.tsx` "Kur" button per catalog row → `InstallPreflightModal.tsx` PASS/WARN/BLOCK + `useCreateInstallMutation()` dispatch POST + "Son Kurulumlar" audit panel via `useListInstallAuditsQuery` with auto-refetch on `EndpointInstallAudit:device-{id}` tag invalidation. Codex 019e6ff0 post-impl absorb already applied (in-flight POST race guard) |
 | **WEB-015** | `platform-web` | Endpoint report / CSV export | **TODO** | RBAC-controlled export |
-| **AG-028** | `platform-agent` | Software uninstall / detection | **TODO** | Catalog-managed package only; detection verified |
-| **AG-029** | `platform-agent` | Signed agent self-update | **TODO** | Signed manifest + hash + version policy + rollback guard |
+| **AG-028** | `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops` | Software uninstall / detection | **MERGED + testai LIVE (2026-06-04, #1239 + PR #1279)** | Catalog-managed package only; real 7-Zip uninstall on HALILKOOLUB735 verified `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; maker-checker proposer≠approver enforced; prod stays dark |
+| **AG-029** | `platform-agent` | Signed agent self-update | **DRAFT PR + CI GREEN (PR #59, head `c3c1869`)** | Staging primitives + parseable-version capability gate + installer self-update opt-in wiring + BE-031/BE-032-pinned live-smoke runbook source-ready; runbook requires BE-032 negative trust-field preflight (`binaryUrl`/hash/signer/tier in dispatch body -> HTTP 400) before positive dispatch; ordinary installs remain disabled; allowed hosts/signer thumbprints required when enabled; real Windows self-update smoke, trusted signing evidence, backend merge/deploy and provider-distinct review pending |
 | **AG-030** | `platform-agent` | Pending reboot detection | **SOURCE-MERGED (PR #33)** | CBS/Windows Update/PendingFileRenameOperations sinyalleri; binary distribution + HALILKOOLUB735 lab smoke operator-bound |
 | **AG-031** | `platform-agent` | Endpoint security posture inventory | **SOURCE-MERGED (PR #34, Codex 019e74b5 4-iter AGREE)** | Defender/Firewall/BitLocker read-only; recovery key/drive-id/vendor-name sızmaz; tri-state nullable; binary distribution operator-bound |
 | **AG-032** | `platform-agent` | Local admin group inventory | **SOURCE-MERGED (PR #35, Codex 019e74d7 5-plan+2-impl AGREE)** | Built-in Administrators (S-1-5-32-544) direct membership; ZERO raw SID/RID/name on wire; NetAPI primary + PowerShell fallback; binary distribution operator-bound |
@@ -206,10 +505,13 @@ Community ancak ayrı supply-chain değerlendirmesi sonrası opt-in olur.
 | **WEB-013** | `platform-web` | Hardware / device inventory view | **MERGED + LIVE (PR #700 `26e68658`)** | DeviceDetailDrawer Donanım tab + HardwareInventoryView + history accordion + i18n TR+EN + 8 RTL tests |
 | **WEB-017** | `platform-web` | Endpoint Enrollment Management UI | **MERGED + LIVE (PR #701 `c0201c08`)** | Enrollment workflow surface |
 | **WEB-018** | `platform-web` | Envanteri Şimdi Topla + Donanım dedicated trigger | **MERGED + LIVE (PR #702 `e096837b`)** | COLLECT_INVENTORY payload UI + Donanım trigger |
-| **BE-026** | `platform-backend` | Deployment rings / device tags | **TODO** | Pilot/IT/department/all rollout ring; policy motorundan önce kontrollü yayılım |
-| **BE-027** | `platform-backend` | Maintenance window / scheduled command | **TODO** | `notBefore`/`expiresAt`/allowed window/timezone |
-| **BE-028** | `platform-backend` | Rollout throttle / max concurrency | **TODO** | Concurrent install limit + retry/backoff |
-| **BE-029** | `platform-backend` | Approved package bundles | **TODO** | Standart bundle (office/finance) tanımı; tekil katalog kanıtından sonra |
+| **BE-026** | `platform-backend` | Deployment rings / device tags | **DRAFT PR + CI GREEN (PR #478, head `e453d476`)** | Pilot/IT/department/all rollout ring; policy motorundan önce kontrollü yayılım. 13/13 CI PASS; `EndpointDeviceServiceTest` regression guard added; provider-distinct review / acceptance pending. |
+| **BE-027** | `platform-backend` | Maintenance window / scheduled command | **DRAFT PR + CI GREEN (PR #480, head `ef5973fa`)** | `notBefore`/`expiresAt`/allowed window/timezone; dependent on BE-026 merge/testai acceptance |
+| **BE-028** | `platform-backend` | Rollout throttle / max concurrency | **DRAFT PR + CI GREEN (PR #482, head `ea30dfdf`)** | Concurrent install limit + retry/backoff; dependent on BE-027 merge/testai acceptance |
+| **BE-029** | `platform-backend` | Approved package bundles | **DRAFT PR + CI GREEN (PR #484, head `a81a4f5`)** | Standard bundle definitions; dependent on BE-028 merge/testai acceptance |
+| **BE-030** | `platform-backend` | UPDATE_AGENT command guard / DB migration guard | **DRAFT PR + CI GREEN (PR #486/#487)** | Generic UPDATE_AGENT creation stays fail-closed; dependent DB CHECK guard keeps the command type canonical before release-catalog dispatch |
+| **BE-031** | `platform-backend` | Endpoint-agent update release catalog | **DRAFT PR + CI GREEN (PR #488, head `6afa8601`)** | `endpoint_agent_update_releases` control-plane, admin REST, maker-checker approve/revoke, hash/signing/URL validation and audit; UPDATE_AGENT dispatch/live smoke out of scope |
+| **BE-032** | `platform-backend` | Catalog-bound UPDATE_AGENT dispatch | **DRAFT PR + CI GREEN (PR #489, head `7ab33ef`)** | Dedicated endpoint resolves approved+enabled release catalog server-side, checks fresh heartbeat + advertised UPDATE_AGENT capability, builds backend-controlled payload and enforces idempotency replay; caller-supplied trust fields (`binaryUrl`, hash, signer, signing tier) are rejected with `400` before service dispatch; live self-update smoke pending |
 | **AG-034** | `platform-agent` | SMB/file actions discovery guardrail | **DEFERRED** | Discovery/tehdit modeli; whitelist + RBAC + audit + dual-control olmadan runtime yok |
 
 ## 4. Milestone Sırası
@@ -421,16 +723,44 @@ sonra provider komutunu kendi adapter'ında üretir.
 - `AG-028`.
 - Sadece bizim katalog üzerinden kurulan veya katalogda yönetilebilir işaretli
 paketler için açılır.
+- Testai kanıtı 2026-06-04 itibarıyla vardır: AG-028 multi-PR chain issue
+  #1239 CLOSED, web UI PR #752 merged, GitOps dark-launch PR #1279 merged,
+  gerçek HALILKOOLUB735 7-Zip uninstall sonucu `SUCCEEDED_VERIFIED` +
+  `ABSENT_VERIFIED`.
+- AG-028 uninstall action remains prod-dark unless separately enabled; prod
+  endpoint-admin service presence itself passed #1241/#1242 + D29/D30 on
+  2026-06-06.
 
 ### 22.5.7 Agent Self-update
 
 - `AG-029`.
 - Signed update manifest olmadan agent self-update açılmaz.
 - Authenticode + manifest signature + SHA256/SHA512 kanıtı gerekir.
+- 2026-06-06: platform-agent PR #59 is draft/CI-green (6/6) at `c3c1869`.
+  It closes a source-side false-advertising gap by advertising UPDATE_AGENT
+  only when the local agent version is parseable and adds installer opt-in
+  wiring for self-update env/trust policy (`-SelfUpdateEnabled`, allowed
+  hosts, signer thumbprints and auto-activation guard). The live smoke runbook
+  now pins Mode A to BE-031/BE-032 exact backend surfaces and rejects generic
+  `/endpoint-commands` UPDATE_AGENT smoke. It also requires a BE-032 negative
+  trust-field preflight (`binaryUrl`/hash/signer/tier in the dispatch body
+  -> HTTP 400) before the positive self-update dispatch. Ordinary installs
+  keep self-update disabled. BE-031 #488 and BE-032 #489 provide the backend release-catalog +
+  catalog-bound UPDATE_AGENT dispatch source path, but both are still
+  draft/CI-green. BE-032 head `7ab33ef` additionally rejects caller-supplied
+  binary URL / hash / signer / signing-tier fields with `400` before
+  `EndpointAdminCommandService.createAgentUpdate(...)` is invoked. Acceptance
+  still requires merge/deploy, signed manifest evidence, Windows live self-
+  update smoke and provider-distinct review or explicit owner exception.
 
 ### 22.5.8 Controlled Rollout Policies
 
 - `BE-026`, `BE-027`, `BE-028` ve `BE-029`.
+- 2026-06-06: BE-026 PR #478, BE-027 PR #480, BE-028 PR #482, BE-029 PR
+  #484, BE-030 PR #486/#487, BE-031 PR #488 and BE-032 PR #489 are
+  draft/CI-green. Review/merge, image/digest rollout, testai acceptance and
+  AG-029 Windows live self-update smoke remain pending before this stack can be
+  treated as accepted.
 - Tek cihaz pilotu kanıtlanmadan geniş deployment açılmaz.
 - Kontrollü yayılım modeli:
   - deployment rings / device tags,
@@ -534,12 +864,12 @@ sonra açılır.
 13. `platform-agent`: `AG-027` 7-Zip install adapter + `AG-027L` exit-code/redacted log capture. **AG-027 DONE (MERGED + LIVE 2026-05-31 #1133 GREEN — winget-list-Session-0 fix landed in PR #41); AG-027L DONE (SOURCE-MERGED 2026-05-29 PM PR #32, binary distributed + service health PASS; LIVE smoke proven 2026-05-31 through the redacted wire path; explicit deep-trace evidence followup pending)**
 14. `platform-web`: `WEB-012` approved install UI + `WEB-015` report/export. **WEB-012 ≡ WEB-014D DONE foundation; WEB-015 TODO**
 15. `platform-agent`: `AG-030` + `AG-031` + `AG-032` + `AG-033` + `AG-035` posture/health/hardware quick wins. **AG-035 DONE + LIVE; AG-030/031/032/033 SOURCE-MERGED 2026-05-29 (PR #33/#34/#35/#36, all Codex cross-AI AGREE; binary distribution + HALILKOOLUB735 lab smoke operator-bound)**
-16. `platform-agent`: `AG-037` + `AG-038` + `AG-039` + `AG-040` update/diagnostic/service/exposure quick wins. **AG-037 MERGED + LIVE 2026-06-01** (agent PR [#45](https://github.com/Halildeu/platform-agent/pull/45) + backend PR [#354](https://github.com/Halildeu/platform-backend/pull/354) + [#355](https://github.com/Halildeu/platform-backend/pull/355) + web PR [#723](https://github.com/Halildeu/platform-web/pull/723) + gitops PR [#1167](https://github.com/Halildeu/platform-k8s-gitops/pull/1167) + [#1168](https://github.com/Halildeu/platform-k8s-gitops/pull/1168); HALILKOOLUB735 86 installed + 1 pending real WUA telemetry browser-smoked); **AG-038 SOURCE-MERGED + backend LIVE 2026-06-01** (agent PR [#39](https://github.com/Halildeu/platform-agent/pull/39) + backend PR [#357](https://github.com/Halildeu/platform-backend/pull/357)/[#355](https://github.com/Halildeu/platform-backend/pull/355) V23 migration LIVE + web PR [#727](https://github.com/Halildeu/platform-web/pull/727) DiagnosticsView tab; Codex thread `019e833d` 3-iter REVISE→REVISE→AGREE; browser smoke + frontend digest bump pending); **AG-039 / AG-040 TODO**
+16. `platform-agent`: `AG-037` + `AG-038` + `AG-039` + `AG-040` update/diagnostic/service/exposure quick wins. **AG-037 MERGED + LIVE 2026-06-01** (agent PR [#45](https://github.com/Halildeu/platform-agent/pull/45) + backend PR [#354](https://github.com/Halildeu/platform-backend/pull/354) + [#355](https://github.com/Halildeu/platform-backend/pull/355) + web PR [#723](https://github.com/Halildeu/platform-web/pull/723) + gitops PR [#1167](https://github.com/Halildeu/platform-k8s-gitops/pull/1167) + [#1168](https://github.com/Halildeu/platform-k8s-gitops/pull/1168); HALILKOOLUB735 86 installed + 1 pending real WUA telemetry browser-smoked); **AG-038 SOURCE-MERGED + backend LIVE 2026-06-01** (agent PR [#39](https://github.com/Halildeu/platform-agent/pull/39) + backend PR [#357](https://github.com/Halildeu/platform-backend/pull/357)/[#355](https://github.com/Halildeu/platform-backend/pull/355) V23 migration LIVE + web PR [#727](https://github.com/Halildeu/platform-web/pull/727) DiagnosticsView tab; Codex thread `019e833d` 3-iter REVISE→REVISE→AGREE); **AG-039 SOURCE-MERGED + backend LIVE** (web/digest/browser evidence pending); **AG-040 SOURCE-MERGED** (browser/digest evidence pending).
 17. `platform-backend`: `BE-022` device inventory ingest/query. **DONE + LIVE (BE-022 + BE-022Q)**
 18. `platform-web`: `WEB-013` hardware/device inventory view. **DONE + LIVE**
-19. `platform-agent`: `AG-028` uninstall. **TODO**
-20. `platform-agent`: `AG-029` signed update. **TODO**
-21. `platform-backend`: `BE-026` + `BE-027` + `BE-028` + `BE-029` rollout ring/window/throttle/bundle controls. **TODO**
+19. `platform-agent` + `platform-backend` + `platform-web` + `platform-k8s-gitops`: `AG-028` uninstall. **DONE for testai go-live** — #1239 CLOSED + PR #1279 merged; real 7-Zip uninstall on HALILKOOLUB735 yielded `SUCCEEDED_VERIFIED` + `ABSENT_VERIFIED`; prod remains dark and separate.
+20. `platform-agent`: `AG-029` signed update. **DRAFT PR + CI GREEN** — PR #59 head `c3c1869`; staging/source guard + installer opt-in wiring + BE-031/BE-032-pinned runbook source-ready + required BE-032 negative trust-field preflight, live Windows self-update smoke + provider-review/owner-exception pending.
+21. `platform-backend`: `BE-026` + `BE-027` + `BE-028` + `BE-029` rollout ring/window/throttle/bundle controls plus `BE-030`/`BE-031`/`BE-032` update-agent release/dispatch path. **DRAFT PR STACK + CI GREEN** — #478/#480/#482/#484/#486/#487/#488/#489; merge/testai/provider-review pending.
 22. `platform-agent`: `AG-034` SMB/file action discovery, runtime yok. **DEFERRED**
 
 ### 9.bis Active 2026-05-29 sıralaması — sıradaki iş paketleri
@@ -564,13 +894,13 @@ P0 (kritik path, acceptance):
 P1 (görünürlük genişletme):
 5. **AG-036** Outdated software inventory (read-only winget upgrade compare)
 6. ~~**AG-030 / AG-031 / AG-032 / AG-033** posture/health quick wins (4 PR)~~ — **DONE (SOURCE-MERGED 2026-05-29)**: AG-030 PR #33, AG-031 PR #34 (Codex 019e74b5 4-iter), AG-032 PR #35 (Codex 019e74d7 5-plan+2-impl), AG-033 PR #36 (Codex 019e7500 plan+impl). All opt-in, identifier-leak-free, AG-025H lightweight contract intact. Remaining: binary distribution + HALILKOOLUB735 lab smoke (operator-bound) + backend ingest (BE) + WEB visualization
-7. ~~**AG-037**~~ **MERGED + LIVE 2026-06-01** (agent PR [#45](https://github.com/Halildeu/platform-agent/pull/45) + backend PR [#354](https://github.com/Halildeu/platform-backend/pull/354) + [#355](https://github.com/Halildeu/platform-backend/pull/355) + web PR [#723](https://github.com/Halildeu/platform-web/pull/723) + gitops PR [#1167](https://github.com/Halildeu/platform-k8s-gitops/pull/1167) + [#1168](https://github.com/Halildeu/platform-k8s-gitops/pull/1168); HALILKOOLUB735 86 installed + 1 pending real WUA telemetry browser-smoked; Codex threads `019e81fe` + `019e822b` + `019e8245`); ~~**AG-038**~~ **SOURCE-MERGED + backend LIVE 2026-06-01** (agent PR [#39](https://github.com/Halildeu/platform-agent/pull/39) + backend PR [#357](https://github.com/Halildeu/platform-backend/pull/357)/[#355](https://github.com/Halildeu/platform-backend/pull/355) — V23 migration applied 12:42 UTC, GET /diagnostics/latest LIVE + 404 "no snapshot" until first ingest + web PR [#727](https://github.com/Halildeu/platform-web/pull/727) DiagnosticsView drawer tab with currentData-anchored fail-closed render; Codex thread `019e833d` 3-iter REVISE→REVISE→AGREE absorbing 8 + 4 + 2 must_fix). **AG-039 / AG-040** EDR posture + WDAC/AppLocker remain P1 (2 PR pending; AG-041 Credential Guard Sprint D)
+7. ~~**AG-037**~~ **MERGED + LIVE 2026-06-01** (agent PR [#45](https://github.com/Halildeu/platform-agent/pull/45) + backend PR [#354](https://github.com/Halildeu/platform-backend/pull/354) + [#355](https://github.com/Halildeu/platform-backend/pull/355) + web PR [#723](https://github.com/Halildeu/platform-web/pull/723) + gitops PR [#1167](https://github.com/Halildeu/platform-k8s-gitops/pull/1167) + [#1168](https://github.com/Halildeu/platform-k8s-gitops/pull/1168); HALILKOOLUB735 86 installed + 1 pending real WUA telemetry browser-smoked; Codex threads `019e81fe` + `019e822b` + `019e8245`); ~~**AG-038**~~ **SOURCE-MERGED + backend LIVE 2026-06-01** (agent PR [#39](https://github.com/Halildeu/platform-agent/pull/39) + backend PR [#357](https://github.com/Halildeu/platform-backend/pull/357)/[#355](https://github.com/Halildeu/platform-backend/pull/355) — V23 migration applied 12:42 UTC, GET /diagnostics/latest LIVE + 404 "no snapshot" until first ingest + web PR [#727](https://github.com/Halildeu/platform-web/pull/727) DiagnosticsView drawer tab with currentData-anchored fail-closed render; Codex thread `019e833d` 3-iter REVISE→REVISE→AGREE absorbing 8 + 4 + 2 must_fix); **AG-039 SOURCE-MERGED + backend LIVE** (web/digest/browser evidence pending); **AG-040 SOURCE-MERGED** (browser/digest evidence pending). AG-041 / broader application-control hardening is a later diagnostic lane.
 8. **BE-024** Software inventory diff/history
 9. **BE-025** Prohibited software detection
 10. **WEB-015** CSV/report export
 
 P2 (rollout controls + uninstall + signed self-update — managed lifecycle):
-11. **AG-028** Software uninstall (catalog-managed only)
+11. ~~**AG-028** Software uninstall (catalog-managed only)~~ — **DONE for testai go-live 2026-06-04** (#1239 CLOSED, PR #1279). Residual scope is prod dark-launch decision + future hardening, not the initial test E2E gate.
 12. **AG-029** Signed agent self-update (Authenticode + manifest + SHA256/SHA512 + rollback guard; moved from P0 2026-05-29 PM per adversarial review — not 22.5.4 First Install Pilot blocker; lives in §22.5.7 managed lifecycle scope)
 13. **BE-026 / BE-027 / BE-028 / BE-029** rollout ring/window/throttle/bundle (4 PR)
 

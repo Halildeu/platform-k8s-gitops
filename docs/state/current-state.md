@@ -1,5 +1,56 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22 prod endpoint-admin D29 GREEN + self-update/rollout draft stack CI green (2026-06-06)
+
+**Session milestone**: prod endpoint-admin service presence is now D29-proven; BE-026 rollout rings moved from TODO to draft PR with 13/13 CI pass; AG-029 / BE-031 / BE-032 self-update source path progressed to draft CI-green PRs.
+
+### Prod endpoint-admin presence — D29 GREEN
+
+Prod endpoint-admin is no longer "open/gated" as a service-presence item:
+
+- `platform-k8s-gitops` #1241 ESO MERGED (`e268854c`, 2026-06-05T19:30:35Z).
+- `platform-k8s-gitops` #1242 workload/config MERGED (`4202e17c`, 2026-06-05T19:48:11Z).
+- `k3d-prod` / `platform-prod` Deployment `endpoint-admin-service` is `1/1` Running.
+- Live pod: `endpoint-admin-service-777c66f5c9-wl5kr`, Ready=true, restarts=0.
+- Live imageID: `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:7fa5975c1d0c54e3611db5d89d7b8f8919c1952f6b74f94e562ffd1d90a0f9d2`.
+- D29 smoke runner report on `staging-sw`: `/tmp/smoke-report-prod-20260606T020443Z.json`, `exit_code=0`.
+
+D29 tier result:
+
+| Tier | Result | Evidence |
+|---|---|---|
+| Up | GREEN | all 10 services Running+Ready |
+| Functional | GREEN | all 10 endpoints returned 200/401/403; endpoint-admin `/api/v1/admin/endpoint-devices` included |
+| Zanzibar-ready | GREEN | OpenFGA synthetic allow/deny: `user:1204` admin allow OK, `user:9999999` admin deny OK |
+
+This proves prod service presence for the current immutable digest only. It does **not** mean AG-028 uninstall action is enabled in prod, domain-wide rollout is done, or future prod digest changes can skip D29 evidence.
+
+### AG-029 signed self-update — draft CI green
+
+- `platform-agent` #59 is OPEN/DRAFT/CLEAN, head `c3c1869bdfe1e890e29d3aa67bc613c8f65261c6`.
+- CI: 6/6 SUCCESS.
+- New source delta: installer opt-in wiring for AG-029 self-update (`-SelfUpdateEnabled`, trust-policy inputs, signer/host requirements, `-SelfUpdateAutoActivate`, service-specific Environment regkey entries).
+- Runbook hardening delta: `docs/AG-029-self-update-live-smoke.md` now pins Mode A to BE-031/BE-032 exact backend surfaces (`/endpoint-agent-update-releases`, `/endpoint-agent-update-releases/{releaseId}/approve`, `/endpoint-devices/{deviceId}/agent-updates`) and rejects generic `/endpoint-commands` self-update smoke.
+- Runbook negative preflight delta: before positive dispatch, the live smoke must send caller-supplied `binaryUrl` / hash / signer / signing-tier fields to the dedicated BE-032 endpoint and prove `HTTP 400`; accepting that request invalidates the smoke.
+- Guardrails: ordinary installs keep self-update disabled; allowed hosts and signer thumbprints are required when enabled; auto-activation requires self-update enabled; no secrets are added.
+- Pending: provider-distinct review or explicit owner exception, signed/trusted production evidence, backend release/dispatch merge+deploy, and real Windows live self-update smoke.
+
+### Backend rollout + update-agent control-plane — draft CI green
+
+- `platform-backend` #478 BE-026 is OPEN/DRAFT/MERGEABLE, head `e453d476ff468d28990d8970868cb8e8c1f6ecfa`.
+- CI: 13/13 SUCCESS; endpoint-admin-service unit + slice job PASS (`7m27s`).
+- Regression guard added: `EndpointDeviceServiceTest` covers rollout assignment tag normalization, duplicate collapse, invalid tag rejection and >32 tag rejection.
+- `platform-backend` #480 BE-027, #482 BE-028, #484 BE-029, #486 BE-030, #487 BE-030 dependent DB guard, #488 BE-031 release catalog and #489 BE-032 catalog-bound UPDATE_AGENT dispatch are all OPEN/DRAFT/CLEAN with CI SUCCESS.
+- BE-031 source scope: `endpoint_agent_update_releases` table, release catalog JPA/repository/service, admin REST surface, maker-checker approve/revoke, hash/signing/URL validation and audit.
+- BE-032 source scope: dedicated release-catalog-bound `UPDATE_AGENT` command endpoint, approved+enabled release resolution, fresh heartbeat + advertised `UPDATE_AGENT` capability gate, backend-controlled payload and idempotency replay. Head `7ab33ef` adds an explicit request allowlist so caller-supplied trust fields (`binaryUrl`, hash, signer, signing tier) return `400` before `EndpointAdminCommandService.createAgentUpdate(...)` is invoked.
+- Pending: provider-distinct review / acceptance, merge sequencing, image build/digest bump, testai rollout, AG-029 Windows live self-update smoke, then prod enablement decision.
+
+### Remaining Faz 22 gates
+
+- AG-029 signed agent self-update — draft PR #59 head `c3c1869` CI green; Windows live self-update smoke and acceptance remain pending.
+- BE-026..BE-032 rollout/update-agent backend stack — draft CI green; merge/testai/provider-review remain pending.
+- 22.2.B / 22.3 IT-domain rollout — operator-bound (`#1037`, `#1044`, `#1015` and rollout runbooks).
+
 ## Live Delta — Faz 21.1 C4 org-canonicalization sweep + AG-028 managed uninstall test go-live + prod endpoint-admin blocker (2026-06-05, snapshot ~01:00 Istanbul / 2026-06-04 22:30Z UTC audit)
 
 **Session milestone**: endpoint-admin `org_id` FK-flip sweep simple-arc LIVE; AG-028 managed uninstall test go-live with live-verified destructive E2E; prod endpoint-admin overlay PRs open (gated).
@@ -28,7 +79,9 @@ Source-foundation arc (C1/V29-V36 org_id column + compat trigger + match/non-nul
 
 **Prod**: uninstall stays **dark in prod** (separate enablement decision). Authz long-term follow-up open: `#1274` (assignRole grant-side granule tuple not written on later member-add), `#1275` (legacy `syncTuplesToOpenFga` fail-loud/fold) — not E2E-blocking, P1 correctness.
 
-### Prod endpoint-admin presence — OPEN, gated
+### Prod endpoint-admin presence — OPEN, gated (historical, superseded 2026-06-06)
+
+**Superseded by the 2026-06-06 live delta above**: #1241/#1242 are now merged and prod endpoint-admin service presence is D29 GREEN for digest `sha256:7fa5975c...`. The text below is retained as the 2026-06-05 pre-merge blocker snapshot.
 
 `endpoint-admin-service` has **no prod deployment yet** (D30 cutover + operator pre-chain Vault+PG+ESO+overlay+NetPol). Prod overlay PRs open:
 - gitops **#1241** (prod ESO) — OPEN, mergeState=BEHIND

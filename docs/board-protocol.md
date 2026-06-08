@@ -61,6 +61,24 @@ hedef repo olarak kullanılmaz — DEPRECATED.)
 **Feature-matrix satırları tek tek issue yapılmaz** — board firehose'a döner;
 yalnız aktif çalışmaya alınan satır issue olur.
 
+### 3.1 Zorunlu GitHub metadata
+
+Roadmap-visible gerçek issue yalnız açılmış sayılmaz; GitHub yüzeyleri dolu
+olmalıdır:
+
+- issue'da `project-roadmap` label'i bulunur;
+- ilgili faz label'i (`faz-22`, `faz-22.5`, `faz-23` vb.) ve gerekirse
+  `gate`, `risk`, `security`, `quality`, `needs-verification` label'ları
+  kullanılır;
+- Project #2 custom alanları **boş kalmaz**: `Status`, `Faz`, `Track`,
+  `Priority`, `Kind`;
+- issue body'de `agent-state:v1`, acceptance, evidence, remaining, next action
+  ve related PR alanları bulunur;
+- güvenlik/kalite/risk etkisi varsa GitHub issue label'ı ve Project `Kind`
+  semantiği birlikte kullanılır; yalnız doküman paragrafı yeterli değildir;
+- açık iş Project #2'de yoksa veya alanları boşsa bu bir tracking bug'dır:
+  çalışmaya başlamadan önce issue Project'e alınır ve alanları set edilir.
+
 ---
 
 ## 4. `Status` alanı semantiği
