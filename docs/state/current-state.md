@@ -541,7 +541,16 @@ Source-foundation arc (C1/V29-V36 org_id column + compat trigger + match/non-nul
 
 ---
 
-## Live Delta — Faz 22.7 Path C (FILE_VERSION/SHA256/EXISTS) FULL CHAIN LIVE + HALILKOOLUB735 binary upgrade + 7-Zip lifecycle full E2E autonomous (2026-06-02 22:30 Istanbul)
+## Live Delta — Historical "Faz 22.7 Path C" wording, phase-boundary superseded (FILE_VERSION/SHA256/EXISTS) FULL CHAIN LIVE + HALILKOOLUB735 binary upgrade + 7-Zip lifecycle full E2E autonomous (2026-06-02 22:30 Istanbul)
+
+> **Phase-boundary correction 2026-06-09**: this historical live-evidence
+> section used "Faz 22.7 Path C" wording. Canonical phase ownership now treats
+> Faz 22.7 as the Compliance Gap Mart Layer tracked by platform-backend #376
+> and `docs/sprint-plan-faz-22-7-compliance-gap-mart.md`. The Path C evidence
+> below remains valid runtime evidence, but the 22.7 number must not be reused
+> for backup, SMB/file actions, data-protection scope, or security telemetry
+> expansion. Remote access is 22.6; endpoint backup/offboarding/forensic
+> collection is 22.8; endpoint security telemetry/detection extension is 22.9.
 
 **Session milestone**: Detection rule expansion completed end-to-end across agent + backend + web + cluster + endpoint + lifecycle smoke in single autonomous chain.
 
