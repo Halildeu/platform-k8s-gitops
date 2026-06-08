@@ -343,7 +343,11 @@ images:
     #   - Pairs with platform-web#411 (FE UX overhaul)
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:e47124b89245d0bbaf785b9f514d3d90c2aca8d2689b5165dbd179386c38d6d4
+    # 2026-06-08 #512 bump: sha-a7c0b48 — user soft-delete (V17 deleted_at + DELETE
+    # /api/v1/users/{id} + POST /{id}/restore + tombstone-aware identity, 403
+    # USER_DELETED choke point). Codex 019ea6f6 AGREE (3-iter, 6+1 cross-service
+    # holes closed). V17 Flyway runs on pod start (deleted_at column + partial index).
+    digest: sha256:2f82ab9a02ee389c21eae2f82a5edd6a40c06b221b45fd3969f77ee4facaadcc
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
