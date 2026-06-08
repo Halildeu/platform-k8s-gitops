@@ -284,6 +284,10 @@ bu süreye **3-10+ iş günü** operator beklemesi eklenir.
   separation. Main workflow run `27137185247` succeeded, and the canonical
   artifact endpoint serves `EndpointAgent.zip` SHA256
   `c4f6f82a68f4eaa258df9406d12e2e9eb908d68f1cc0b9ea2c3ebe5bbfd3d109`.
+- `platform-agent` PR #105 MERGED: AutoEnroll default/base examples were
+  aligned with the deployed gateway/backend route. The agent AutoEnroll client
+  appends `/endpoint-enrollments/auto`, so the canonical external base is
+  `https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-agent`.
 - `platform-backend` PR #511 MERGED: rejected result submissions no longer
   leave commands silently locked; backend marks command `FAILED`, clears claim
   lock and stores bounded/redacted `RESULT_REJECTED` last-error without
@@ -294,6 +298,11 @@ bu süreye **3-10+ iş günü** operator beklemesi eklenir.
 - `platform-k8s-gitops` PR #1358 MERGED: api-gateway route parity for
   `/api/v1/endpoint-agent/endpoint-enrollments/auto`; live no-cert POST reaches
   backend and returns `MTLS_CERT_MISSING`.
+- `platform-k8s-gitops` edge runbook added:
+  `docs/runbooks/RB-faz22.3-edge-mtls-autoenroll.md`. It defines the dedicated
+  `endpoint-agent-mtls.testai.acik.com` host, backend header contract
+  (`X-Client-Cert` + `X-Tenant-Id`), spoof-header stripping, no-cert negative
+  smoke, header-injection negative smoke and valid machine-cert positive smoke.
 - Board state: `platform-agent` #101 and `platform-backend` #509 are
   `Needs Verify`. `platform-k8s-gitops` #1359 tracks the DNS/edge mTLS host
   activation gate for tokenless AutoEnroll. The remaining verification gate is
