@@ -195,9 +195,57 @@ The agent AutoEnroll client appends `/endpoint-enrollments/auto` to the base
 URL, so `-AutoEnrollApiUrl` must use the external gateway base
 `/api/v1/endpoint-agent`.
 
+The current canonical pilot package is the `platform-agent` #106 artifact
+published through the test artifact host:
+
+- `EndpointAgent.zip` SHA256:
+  `88af3d2539c1c0a8a0fcf9525e38238d7816d02eb2f1c3789725b771fe088cf0`
+- standalone `bootstrap-package.ps1` SHA256:
+  `7ac13aad5c910a74c59862dfc7faafc3c88187c541b9b5f7af64172427335859`
+
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/bootstrap-package.ps1 -OutFile $env:TEMP\endpoint-agent-bootstrap.ps1; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\endpoint-agent-bootstrap.ps1 -PackageUrl 'https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/EndpointAgent.zip' -ExpectedZipSha256 'c4f6f82a68f4eaa258df9406d12e2e9eb908d68f1cc0b9ea2c3ebe5bbfd3d109' -AutoEnroll -AutoEnrollApiUrl 'https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-agent' -AutoEnrollCertSANURIPrefix 'adcomputer:' -WorkDir 'C:\Temp\EndpointEnes' -ZipPath 'C:\Temp\EndpointAgent.zip' -Start -Force"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/bootstrap-package.ps1 -OutFile $env:TEMP\endpoint-agent-bootstrap.ps1; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\endpoint-agent-bootstrap.ps1 -PackageUrl 'https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/EndpointAgent.zip' -ExpectedZipSha256 '88af3d2539c1c0a8a0fcf9525e38238d7816d02eb2f1c3789725b771fe088cf0' -AutoEnroll -AutoEnrollApiUrl 'https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-agent' -AutoEnrollCertSANURIPrefix 'adcomputer:' -WorkDir 'C:\Temp\EndpointEnes' -ZipPath 'C:\Temp\EndpointAgent.zip' -Start -Force"
 ```
 
+## 8. HMAC Fallback Bootstrap Before Edge Gate
+
 Before the edge gate passes, use only the HMAC fallback bootstrap for the
-two-device pilot and keep platform-agent #101 in `Needs Verify`.
+two-device pilot and keep platform-agent #101 in `Needs Verify`. This path
+still requires a short-lived one-time enrollment token, but the token is not
+placed on the command line; the bootstrap prompts with hidden input.
+
+```powershell
+$ErrorActionPreference = "Stop"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$BootstrapUrl = "https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/bootstrap-package.ps1"
+$PackageUrl = "https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/EndpointAgent.zip"
+$ExpectedZipSha256 = "88af3d2539c1c0a8a0fcf9525e38238d7816d02eb2f1c3789725b771fe088cf0"
+$BootstrapPath = "$env:TEMP\endpoint-agent-bootstrap.ps1"
+
+Invoke-WebRequest -UseBasicParsing -Uri $BootstrapUrl -OutFile $BootstrapPath
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $BootstrapPath `
+  -PackageUrl $PackageUrl `
+  -ExpectedZipSha256 $ExpectedZipSha256 `
+  -ApiUrl "https://testai.acik.com/api/v1/endpoint-agent" `
+  -WorkDir "C:\Temp\EndpointEnes" `
+  -ZipPath "C:\Temp\EndpointAgent.zip" `
+  -Start `
+  -Force
+```
+
+Post-install minimum evidence:
+
+```powershell
+Get-CimInstance Win32_Service |
+  Where-Object { $_.Name -eq "EndpointAgent" } |
+  Select-Object Name, DisplayName, State, StartMode, StartName, PathName |
+  Format-List
+
+Get-Process endpoint-agent -ErrorAction SilentlyContinue |
+  Select-Object ProcessName, Id, StartTime, WorkingSet64, Path |
+  Format-List
+
+Get-Content "C:\ProgramData\EndpointAgent\logs\*.log" -Tail 200 -ErrorAction SilentlyContinue
+```
