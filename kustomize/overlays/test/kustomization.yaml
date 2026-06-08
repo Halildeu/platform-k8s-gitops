@@ -3752,7 +3752,17 @@ images:
     #   27142561876; auto-deployed via deploy-testai run 27142820963. Tracked-by web#772.
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-12553d5
     #   digest sha256:0e85fab38e07e0387bc417de468ef30d9ca8e4b97414d8875e2ffee0c58d2ad4
-    digest: sha256:0e85fab38e07e0387bc417de468ef30d9ca8e4b97414d8875e2ffee0c58d2ad4
+    #
+    # 2026-06-08 update: sha-0d8fb47 — endpoint-admin device Detay tab redundant
+    #   empty "Domain" row removed (platform-web #776). Domain single-sourced to the
+    #   Donanım (Hardware) tab "Etki Alanı" (Win32_ComputerSystem.Domain, tri-state);
+    #   the always-empty device-summary domainName row + its unused i18n keys (TR/EN)
+    #   dropped. Built directly on top of sha-12553d5 (AG-Grid perpetual license —
+    #   merge-base ANCESTOR-verified, no watermark regression). Cross-AI Codex
+    #   019ea7d2 AGREE. Image build run 27148592137. Closes web#775.
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-0d8fb47
+    #   digest sha256:23ec18d5fcfa16d2d2513eecf91f04880761dc12143f270cadec0e06036b35d3
+    digest: sha256:23ec18d5fcfa16d2d2513eecf91f04880761dc12143f270cadec0e06036b35d3
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
