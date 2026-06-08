@@ -357,11 +357,20 @@ güvenlik modeli gerektirir.
 | Remote support / reverse tunnel / session broker | [Faz 22.6 Remote Access Bridge](./faz-22-remote-access-bridge-plan.md) | gitops #1388/#1389, backend #510/#524, agent #116 | 22.5 command polling yerine geçmez |
 | Compliance Gap Mart aggregate reporting | [Faz 22.7 Compliance Gap Mart Layer](./sprint-plan-faz-22-7-compliance-gap-mart.md) | backend #376 | 22.5 visibility verisini aggregate eder |
 | Endpoint backup / offboarding / forensic collection | [Faz 22.8 Endpoint Data Protection](./faz-22-endpoint-data-protection-plan.md) | gitops #1388/#1390, agent #117 | AG-034 discovery'den türeyen runtime file-copy işi 22.8'e taşınır |
+| Endpoint security telemetry / detection extension | [Faz 22.9 Endpoint Security Telemetry](./faz-22-security-telemetry-plan.md) | gitops #1400/#1404, #1388 runtime gate | osquery/YARA/Sigma/Wazuh değerlendirmesi 22.5 software quick-win kapsamı değildir |
 | Sensitive endpoint ops governance | Gate issue, phase değil | gitops #1388 | 22.6 ve 22.8 runtime ön koşulu |
 
 Bu ayrımın pratik sonucu: AG-034 22.5 içinde yalnız threat-model/discovery
 olarak kalır. Runtime SMB/file copy, backup veya forensic collection iddiası
 ancak #1388 governance gate ve 22.8 charter kabulünden sonra kurulabilir.
+
+OSS-only build-vs-buy kararları #1400 altında tutulur. Güncel karar özeti:
+22.6 için endpoint-admin broker/policy/audit core bizde, MeshCentral yalnız
+transport POC primary aday, RustDesk secondary/defer; 22.8A için Kopia primary
+backup engine adayı, restic fallback, BorgBackup watchlist; 22.8C için
+Velociraptor reference/serverless ops-adapter only; 22.9 için osquery/YARA
+bounded candidate, Sigma license-gated reference, Wazuh core adoption
+reject/defer. Bu kararların hiçbiri 22.5 runtime scope'unu genişletmez.
 
 ## 1. Ürün Hedefi
 

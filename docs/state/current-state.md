@@ -548,8 +548,9 @@ Source-foundation arc (C1/V29-V36 org_id column + compat trigger + match/non-nul
 > Faz 22.7 as the Compliance Gap Mart Layer tracked by platform-backend #376
 > and `docs/sprint-plan-faz-22-7-compliance-gap-mart.md`. The Path C evidence
 > below remains valid runtime evidence, but the 22.7 number must not be reused
-> for backup, SMB/file actions, or data-protection scope. Remote access is
-> 22.6; endpoint backup/offboarding/forensic collection is 22.8.
+> for backup, SMB/file actions, data-protection scope, or security telemetry
+> expansion. Remote access is 22.6; endpoint backup/offboarding/forensic
+> collection is 22.8; endpoint security telemetry/detection extension is 22.9.
 
 **Session milestone**: Detection rule expansion completed end-to-end across agent + backend + web + cluster + endpoint + lifecycle smoke in single autonomous chain.
 

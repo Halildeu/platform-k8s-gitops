@@ -6,6 +6,9 @@
 > - platform-k8s-gitops [#1388](https://github.com/Halildeu/platform-k8s-gitops/issues/1388) - sensitive endpoint ops governance gate
 > - platform-k8s-gitops [#1389](https://github.com/Halildeu/platform-k8s-gitops/issues/1389) - phase boundary sync
 > - platform-k8s-gitops [#1390](https://github.com/Halildeu/platform-k8s-gitops/issues/1390) - 22.8 charter
+> - platform-k8s-gitops [#1400](https://github.com/Halildeu/platform-k8s-gitops/issues/1400) - OSS-only build-vs-buy decision matrix
+> - platform-k8s-gitops [#1399](https://github.com/Halildeu/platform-k8s-gitops/issues/1399) - 22.8A backup engine matrix
+> - platform-k8s-gitops [#1403](https://github.com/Halildeu/platform-k8s-gitops/issues/1403) - Velociraptor clean-room/legal ADR
 > - platform-agent [#117](https://github.com/Halildeu/platform-agent/issues/117) - backup dry-run manifest
 
 Bu doküman, endpoint verisi için planlı yedekleme, işten çıkışta kontrollü veri
@@ -38,6 +41,42 @@ file copy veya kullanıcı dosyası toplama **22.5 içinde açılmaz**.
 | **22.8A Scheduled endpoint backup** | Kullanıcı/kurum verisi için policy kontrollü scheduled backup | Agent dry-run manifest: dosya kopyalamadan path, size, count, denylist/allowlist raporu |
 | **22.8B Offboarding copy** | İşten çıkışta şirket verisini kaybetmeden toplama | HR/IT request + dual approval + bounded collection policy |
 | **22.8C Forensic collection** | Denetim/soruşturma amaçlı evidence collection | Legal case id + chain-of-custody + immutable manifest |
+
+### 3.1 OSS-only Engine / Tool Kararları
+
+Faz 22.8 için karar, "dosya kopyalayan bir aracı alıp çalıştırmak" değildir.
+Endpoint-admin policy, approval, audit, retention ve chain-of-custody
+katmanlarını kendi üretir; açık kaynak araçlar yalnız bounded engine,
+storage transport, scanner veya forensic reference rolü alabilir.
+
+#### 22.8A Scheduled endpoint backup
+
+| Araç / yaklaşım | Karar | Gerekçe | Takip |
+|---|---|---|---|
+| Kopia | **PRIMARY ENGINE CANDIDATE** | Cross-platform snapshot/dedup/encryption modeli 22.8A policy wrapper'a uygun; Apache-2.0 lisans sinyali temiz | #1399, agent #117 |
+| restic | **FALLBACK / cold archive candidate** | Olgun, basit, encrypted CLI; Kopia unattended/service sürtünmesi çıkarırsa fallback | #1399 |
+| BorgBackup | **WATCHLIST / likely non-primary** | Güçlü dedup archiver; Windows unattended/service ergonomics kanıtlanmadan primary değil | #1399 |
+| Duplicati | **CONDITIONAL / likely reject** | License text içinde `proprietary/` boundary görüldü; required path OSS-only değilse kabul edilmez | #1399 |
+| rclone | **STORAGE TRANSPORT ONLY** | Object/cloud/SMB transport helper olabilir; backup snapshot/policy engine değildir | #1399 |
+| Own dedup/encryption engine | **REJECT** | Data-loss/security riski yüksek; platform wrapper/policy/audit yazar, backup internals yazmaz | #1400 |
+
+#### 22.8B Offboarding copy
+
+Offboarding default'u serbest SMB copy değildir. Tercih edilen model, 22.8A'da
+seçilen engine'i bounded collection + handoff package workflow'u içinde
+yeniden kullanmaktır. SMB hedef ancak dedicated ACL, encryption, audit,
+retention ve chain-of-custody gate'leri kabul edilirse storage target olarak
+değerlendirilebilir.
+
+#### 22.8C Forensic collection
+
+| Araç / yaklaşım | Karar | Gerekçe | Takip |
+|---|---|---|---|
+| Velociraptor | **REFERENCE / serverless ops-adapter only** | AGPL ve ikinci control-plane riski nedeniyle standing server/core embed yok; VQL/artifact pattern'leri clean-room/legal gate sonrası referans olabilir | #1403 |
+| YARA | **INTEGRATE SCANNER CANDIDATE** | Küçük, bounded, job/audit modeline uyarlanabilir scanner | #1404 / future agent spike |
+| osquery | **ADAPT light telemetry/reference** | Endpoint state query modeli faydalı; ayrı fleet manager adoption yok | #1404 |
+| Sigma rules | **LICENSE-GATED REFERENCE** | DRL 1.1 normal permissive OSS değil; attribution/legal gate olmadan rule reuse yok | #1404 |
+| Wazuh | **DEFER / reject as core** | Full SIEM/HIDS stack ikinci control plane ve ağır ops footprint getirir | #1404 |
 
 ## 4. Non-goals
 
@@ -121,5 +160,8 @@ kurulabilir.
 |---|---|---|
 | gitops #1388 | Sensitive Endpoint Ops Governance Gate | BLOCKED/P0; runtime copy ön koşulu |
 | gitops #1390 | 22.8 charter | BLOCKED by #1388 |
+| gitops #1400 | OSS-only build-vs-buy decision matrix | Cross-phase karar otoritesi; runtime yetkisi vermez |
+| gitops #1399 | 22.8A backup engine matrix | Todo/P0; Kopia primary, restic fallback decision-candidate |
+| gitops #1403 | Velociraptor clean-room/legal ADR | Todo/P1; 22.8C forensic boundary |
 | agent #117 | 22.8A dry-run manifest | BLOCKED by #1388/#1390; no runtime copy |
 | gitops #1389 | Phase boundary sync | 22.5/22.6/22.7/22.8 ayrımını canonical tutar |
