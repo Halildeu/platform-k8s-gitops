@@ -39,17 +39,21 @@
 | **D2** backend aggregate API | 🟢 **MVP MERGED** | `EndpointComplianceGapService` + `AdminEndpointComplianceGapController` + DTOs + `ComplianceGapRepository` + `ComplianceGapType` + unit/controller tests present in `platform-backend/endpoint-admin-service/src`. Commits `6fa713b5` (#378, Codex `019e881c` AGREE D, 2026-06-02), `f1795fa6` (#382 D2.1 JDBC timestamp→Instant), `a0a6330c` (#376 plural filter-param). |
 | **D3** frontend gap explorer | 🟢 **MERGED** | `EndpointComplianceGapPage.tsx` + route in `EndpointAdminRouter.tsx` + `entities/endpoint-compliance-gap/types.ts` + RTK in `endpointAdminApi.ts` + i18n + page tests in `platform-web/apps/mfe-endpoint-admin/src`. |
 | **D4** ReportDefinition bridge | ⏭️ **SKIPPED-by-default** | would push closed D-chain 5/5 PR-E ratchet → 6/6. Keep mart accessible only via Endpoint Admin MFE. Re-open only via separate ratchet-update sprint + privacy/export review. |
-| **D5** live acceptance | 🟡 **UNDOCUMENTED** | code IS in the live testai endpoint-admin digest `sha-5af5f8d` (backend commit `5af5f8d`, post-dates D2) — i.e. the compliance-gap code is **present in the running binary (code-in-live-digest)**. That proves code-presence/Up only, **NOT** live Functional: there is **no `current-state.md` Live Delta** with cluster API 200 + JSON-shape match + browser grid render/filter + drill-down + `pod imageID == digest` + console-clean. Live Functional + browser acceptance are **undocumented**. Per HARD RULE "Tarayıcıdan Sonuç Doğrulanmadan İş Bitmedi", D5 is **not** documented-accepted. |
-| **D6** A-gate revisit | ⏳ DEFERRED | after D5 acceptance |
+| **D5** live acceptance | 🟢 **ACCEPTED (browser-verified 2026-06-09)** | testai `GET /api/v1/endpoint-admin/endpoint-devices/compliance-gap?…gapTypes=pending_security_updates,rdp_enabled&freshnessWindow=P7D` → **200**; grid rendered 2 devices (HALILKOOLUB735 1 gap + MKR-A1 2 gaps) with gapStrength "Güçlü"; filter exercise (uncheck RDP → server-side re-query, MKR-A1 2→1); drill-down → device Detay drawer; console clean; live pod imageID `sha256:3e1e5852…` (sha-3e1e585) == overlay desired digest. `current-state.md` Live Delta written. |
+| **D6** A-gate revisit | ⏳ DEFERRED | post-COMPLETED enhancement (extra gap types / signal richness) |
 
 **Issue `platform-backend #376` is CLOSED (2026-06-07T22:10:21Z).**
 
-### Honest status (NOT a bare "COMPLETED")
+### Status — 🟢 COMPLETED (2026-06-09)
 
-> **Faz 22.7 = 🟢 SOURCE-MERGED (D1 contract + D2 MVP + D3 explorer), code-in-live-digest; 🟡 D5 live/browser acceptance UNDOCUMENTED.**
-> `COMPLETED` promotion is gated (see below). The `PLAN.md` 22.7 row in
-> PR [#1395](https://github.com/Halildeu/platform-k8s-gitops/pull/1395) must use this
-> wording, not a bare `🟢 COMPLETED`.
+> **Faz 22.7 = 🟢 COMPLETED.** D1 contract + D2-MVP API + D3 explorer merged
+> (#376 CLOSED 2026-06-07), D5 live/browser acceptance verified + documented
+> (`current-state.md` 2026-06-09 Live Delta), and all three COMPLETED-promotion
+> gate items landed (see below). Scope remains MVP-honest: 2 gap types
+> (`rdp_enabled` + `pending_security_updates`); `gapStrength`/`device[]`/`sort`/
+> explicit-stale/extra-types deferred (D6 / future). The `PLAN.md` 22.7 row in
+> PR [#1395](https://github.com/Halildeu/platform-k8s-gitops/pull/1395) may now
+> use `🟢 COMPLETED` with this MVP-scope qualifier.
 
 ### D2 scope honesty (Codex missed-gap finding)
 
@@ -60,13 +64,13 @@ The D2 narrative below promises more than the merged MVP. Real merged code:
 - **Deferred (not in MVP)**: `gapStrength` (strong/weak/any), `device[]`, `sort`, multi-gap-type enum expansion, explicit stale labeling (query currently excludes out-of-window rows so `stale` is effectively always false), Testcontainers PG integration test.
 - Tenant scope: query is **`tenant_id`-scoped** (controller `TenantContextResolver` → service rejects null tenant → repository `WHERE tenant_id = :tenantId`). Acceptable under the current model because org-expansion migrations (`V42` startup_exposure, `V43` hotfix_posture) set `org_id = tenant_id` (non-null, `(id, org_id)` FK). Org-keyed re-scope tracked with Faz 21.1 A5/A6.
 
-### COMPLETED-promotion gate (must all hold before 22.7 → 🟢 COMPLETED)
+### COMPLETED-promotion gate — ALL ✅ (closed 2026-06-09)
 
-1. **D5 live acceptance documented**: testai cluster `GET /api/v1/admin/endpoint-devices/compliance-gap` → 200 + JSON shape match; browser grid render + filter exercise + drill-down; `pod imageID == overlay digest`; `current-state.md` Live Delta written.
-2. **Redaction allowlist contract test** (Codex finding 3): `GapDetail.details` is a free `Map<String,Object>` → future PII leak (ip/user_upn/SID/raw payload/full path/probeErrors/commandLine/token/bearer/password) is **not** caught at compile time. Add a machine-enforced test asserting (a) response top-level keys = `{items,total,page,pageSize,filterEcho,computedAt}`, (b) device-item keys = `{deviceId,deviceName,lastSeen,gapCount,gapStrength,gaps,staleComponents}`, (c) per-gap-type `details` exact allowlist, (d) explicit deny-list for the sensitive fields above. `deviceName`/hostname documented as existing Endpoint-Admin surface reuse.
-3. **Endpoint-specific authz tests** (Codex finding 6): `AdminEndpointAuthorizationSecurityTest` does not cover the compliance-gap controller (only device + maintenance-token). Add (a) unauthorized/denied-viewer → `403` fail-closed, (b) tenant A/B cross-leak = none (PG fixture).
+1. ✅ **D5 live acceptance documented**: testai `GET …/compliance-gap` → 200 + browser grid render + filter exercise + drill-down + `pod imageID == overlay digest` (`sha256:3e1e5852…`) + console clean; `current-state.md` 2026-06-09 Live Delta written.
+2. ✅ **Redaction allowlist contract test** (Codex finding 3): `ComplianceGapRedactionContractTest` (platform-backend #525) drives the **real** `EndpointComplianceGapService` (mocked repo, both gap types) and asserts exact per-level key allowlists + a whole-tree sensitive-field deny-list scan — guards `GapDetail.details`/`filterEcho` `Map<String,Object>` against future PII leak.
+3. ✅ **Endpoint-specific authz tests** (Codex finding 6): `AdminEndpointComplianceGapSecurityTest` (denied-viewer → `403` fail-closed; viewer-with-`can_view` → `200`) + `ComplianceGapRepositoryTenantIsolationPostgresIntegrationTest` (real PG; tenant A/B cross-leak = none for BOTH the RDP/startup and pending/hotfix paths). platform-backend #525.
 
-These three are **backend (`platform-backend`) work**, not gitops doc work — tracked as a follow-up (board) and referenced from the `PLAN.md` 22.7 status.
+All three landed in **platform-backend #525** (`Tests run: 5, Failures: 0`; Codex `019ea95d` AGREE, `ready_to_merge: true`).
 
 ### System-fit consensus (Codex `019ea95d`)
 
@@ -292,33 +296,23 @@ These three are **backend (`platform-backend`) work**, not gitops doc work — t
 | E-targeted | R22 GHCR outage runbook veya R14 bundle size gate refresh | D1-D5 |
 | F-as-hygiene | Board hygiene + current-state truth closure | D0/D5 sprint sub-steps |
 
-## Next action — COMPLETED-promotion gate (D1/D2-MVP/D3 already merged, #376 CLOSED)
+## Closure — 🟢 COMPLETED (2026-06-09)
 
-D0/D1/D2-MVP/D3 are merged (see Status Truth Refresh). The next work is the
-3-item gate that promotes 22.7 from 🟢 SOURCE-MERGED → 🟢 COMPLETED:
+All COMPLETED-promotion gate items are closed (see "Status" + "COMPLETED-promotion
+gate — ALL ✅"). No further action for 22.7 MVP scope:
 
-```bash
-# 1) D5 live acceptance (gitops + browser, agent-actionable now)
-#    - testai: GET /api/v1/admin/endpoint-devices/compliance-gap → 200 + shape match
-#    - browser smoke: /endpoint-admin compliance-gap grid render + filter + drill-down
-#    - assert pod imageID == overlay digest; write current-state.md Live Delta
+- D1 contract + D2-MVP API + D3 explorer merged; `platform-backend #376` CLOSED 2026-06-07.
+- D5 live/browser acceptance verified + documented (`current-state.md` 2026-06-09 Live Delta).
+- Backend hardening (redaction allowlist + 403 fail-closed + tenant cross-leak, both gap paths) merged in **platform-backend #525** (`Tests run: 5, Failures: 0`).
+- `PLAN.md` 22.7 row → `🟢 COMPLETED` (MVP-scope qualifier) coordinated on PR #1395.
 
-# 2) Redaction allowlist contract test (backend, platform-backend)
-cd /Users/halilkocoglu/Documents/platform-backend
-#    endpoint-admin-service: assert ComplianceGapResponse/DeviceComplianceGap/GapDetail
-#    serialize ONLY the allowlisted keys; deny-list ip/user_upn/SID/payload/
-#    probeErrors/fullPath/commandLine/token/bearer/password (GapDetail.details guard).
+**Future (separate sprint, not a 22.7 blocker)**: D6 / D2.1 — additional gap types
+(critical_service_down, appLocker_disabled, wdac_audit_only, local_admin_present,
+outdated_software, prohibited_software, winget_unreachable), `gapStrength`/`device[]`/
+`sort`/explicit-stale, optional reporting bridge (separate PR-E ratchet update).
 
-# 3) Endpoint-specific authz tests (backend, platform-backend)
-#    AdminEndpointAuthorizationSecurityTest: add compliance-gap controller →
-#    denied-viewer 403 fail-closed + tenant A/B cross-leak = none (PG fixture).
-
-# Then: PLAN.md 22.7 row 🟢 COMPLETED + current-state.md Live Delta.
-# Cross-AI: provider-distinct post-impl review (Codex) for the test PRs.
-```
-
-> Cross-AI plan-time consensus for this refresh: Codex thread
-> `019ea95d-c50b-70d0-a150-09179743d298` (PARTIAL/REVISE, `ready_for_impl: true`).
+> Cross-AI consensus: Codex thread `019ea95d-c50b-70d0-a150-09179743d298`
+> (plan-time PARTIAL/REVISE → post-impl REVISE×2 → **AGREE**, `ready_to_merge: true`).
 
 ---
 
