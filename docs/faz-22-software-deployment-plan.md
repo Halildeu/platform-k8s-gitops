@@ -281,13 +281,23 @@ bu süreye **3-10+ iş günü** operator beklemesi eklenir.
   lab-evidence artifacts successfully.
 - `platform-agent` PR #103 MERGED: the same bootstrap/install lane now supports
   `-AutoEnroll` with machine-certificate filter requirements and HMAC fallback
-  separation. Main workflow run `27137185247` succeeded, and the canonical
-  artifact endpoint serves `EndpointAgent.zip` SHA256
-  `c4f6f82a68f4eaa258df9406d12e2e9eb908d68f1cc0b9ea2c3ebe5bbfd3d109`.
+  separation. Main workflow run `27137185247` succeeded.
 - `platform-agent` PR #105 MERGED: AutoEnroll default/base examples were
   aligned with the deployed gateway/backend route. The agent AutoEnroll client
   appends `/endpoint-enrollments/auto`, so the canonical external base is
   `https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-agent`.
+- `platform-agent` PR #106 MERGED: the packaged `bootstrap-package.ps1`
+  default and installer README were also aligned to
+  `/api/v1/endpoint-agent`; `scripts/test/windows-installer-encoding.sh` now
+  guards this canonical URL. Main workflow run `27142499833` succeeded.
+- Canonical test artifact endpoint refreshed from PR #106 output:
+  `https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/EndpointAgent.zip`
+  SHA256 `88af3d2539c1c0a8a0fcf9525e38238d7816d02eb2f1c3789725b771fe088cf0`;
+  standalone `bootstrap-package.ps1` SHA256
+  `7ac13aad5c910a74c59862dfc7faafc3c88187c541b9b5f7af64172427335859`.
+  Public HTTPS verification confirmed both standalone and ZIP-contained
+  bootstrap scripts carry UTF-8 BOM, contain `/api/v1/endpoint-agent` and do
+  not contain the stale `/api/v1/endpoint-admin` AutoEnroll base.
 - `platform-backend` PR #511 MERGED: rejected result submissions no longer
   leave commands silently locked; backend marks command `FAILED`, clears claim
   lock and stores bounded/redacted `RESULT_REJECTED` last-error without
@@ -303,8 +313,9 @@ bu süreye **3-10+ iş günü** operator beklemesi eklenir.
   `endpoint-agent-mtls.testai.acik.com` host, backend header contract
   (`X-Client-Cert` + `X-Tenant-Id`), spoof-header stripping, no-cert negative
   smoke, header-injection negative smoke and valid machine-cert positive smoke.
-- Board state: `platform-agent` #101 and `platform-backend` #509 are
-  `Needs Verify`. `platform-k8s-gitops` #1359 tracks the DNS/edge mTLS host
+- Board state: `platform-agent` #101 remains `Needs Verify`;
+  `platform-backend` #509 has runtime invalid-result visibility evidence.
+  `platform-k8s-gitops` #1359 tracks the DNS/edge mTLS host
   activation gate for tokenless AutoEnroll. The remaining verification gate is
   a fresh standard-PC rerun with the newly published package plus runtime
   invalid-result visibility proof where required.
