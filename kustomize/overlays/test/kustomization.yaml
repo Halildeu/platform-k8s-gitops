@@ -3730,7 +3730,17 @@ images:
     #   eslint clean. Image build run from merge cc55d92c (GHCR push success).
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-cc55d92
     #   digest sha256:ea8aa7003144402becb5d916f3cc488bb0d310644545cb0c0f82d5b20e97409a
-    digest: sha256:ea8aa7003144402becb5d916f3cc488bb0d310644545cb0c0f82d5b20e97409a
+    # 2026-06-08: bump sha-cc55d92 -> sha-cd9099e (platform-web PR #773 — devices
+    #   grid toolbar bulk-actions menu left of İndir: hover-open İşlemler menu →
+    #   bulk Envanteri Şimdi Topla (canonical full-snapshot COLLECT_INVENTORY,
+    #   ONLINE-only) + Uyumluluk Değerlendir on grid-selected devices. design-system
+    #   additive exportLeadingExtras slot (GridToolbar + EntityGridTemplate).
+    #   Cross-AI Codex 019ea756 AGREE (iter-1 REVISE 4-finding absorb: canonical
+    #   payload shared helper + ONLINE guard + fullscreen slot gate + getRowId).
+    #   31 web tests pass; CI 32 checks green. Image build run 27141308332.
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-cd9099e
+    #   digest sha256:ba03270a34b93cf83fc10bd9f560dd3b02389bf58e59511045932288551ced05
+    digest: sha256:ba03270a34b93cf83fc10bd9f560dd3b02389bf58e59511045932288551ced05
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
