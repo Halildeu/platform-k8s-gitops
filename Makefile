@@ -8,7 +8,7 @@
         smoke-test smoke-prod \
         install-eso-test install-eso-prod install-kyverno install-cert-manager \
         es-switch-test es-switch-prod \
-        clean-dryrun
+        clean-dryrun context-packet
 
 help:
 	@echo "platform-k8s-gitops Makefile"
@@ -24,7 +24,10 @@ help:
 	@echo "Lint:"
 	@echo "  make lint                    — yaml + shell + kustomize"
 	@echo "  make yamllint                — yamllint tüm dizinler"
-	@echo "  make shelllint               — shellcheck bootstrap/"
+	@echo "  make shelllint               — shellcheck bootstrap/ + scripts/ao-context-packet.sh"
+	@echo ""
+	@echo "AI context (ao-kernel governed context bridge):"
+	@echo "  make context-packet          — render governed context packet (read-only)"
 	@echo ""
 	@echo "Canlı apply (dikkat: canlı cluster):"
 	@echo "  make apply-test              — overlays/test → k3d-test"
@@ -75,7 +78,19 @@ yamllint:
 	  kustomize/ argocd/ docs/ helm-values/ 2>&1 | grep -v "^$$" || echo "✓ yamllint PASS"
 
 shelllint:
-	@shellcheck -S warning bootstrap/*.sh || echo "✓ shellcheck PASS"
+	@shellcheck -S warning bootstrap/*.sh scripts/ao-context-packet.sh || echo "✓ shellcheck PASS"
+
+# =========== AI context (ao-kernel governed context bridge) ===========
+# Whitelisted knobs only, read as ENV vars inside the recipe shell (never
+# Make-expanded into the command line) so a knob value cannot inject shell:
+#   MAX_ITEMS=12 MIN_CONF=0.7 INCLUDE_DOC_CLAIMS=1 make context-packet
+# For any other argument, call scripts/ao-context-packet.sh directly.
+context-packet:
+	@bash -c 'args=(); \
+		if [ -n "$${MAX_ITEMS:-}" ]; then args+=(--max-items "$$MAX_ITEMS"); fi; \
+		if [ -n "$${MIN_CONF:-}" ]; then args+=(--min-conf "$$MIN_CONF"); fi; \
+		if [ -n "$${INCLUDE_DOC_CLAIMS:-}" ]; then args+=(--include-doc-claims); fi; \
+		exec bash scripts/ao-context-packet.sh "$${args[@]}"'
 
 # =========== Canlı apply ===========
 
