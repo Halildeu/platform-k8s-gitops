@@ -322,12 +322,23 @@ bu süreye **3-10+ iş günü** operator beklemesi eklenir.
   `endpoint-agent-mtls.testai.acik.com` host, backend header contract
   (`X-Client-Cert` + `X-Tenant-Id`), spoof-header stripping, no-cert negative
   smoke, header-injection negative smoke and valid machine-cert positive smoke.
-- Board state: `platform-agent` #101 remains `Needs Verify`;
-  `platform-backend` #509 has runtime invalid-result visibility evidence.
-  `platform-k8s-gitops` #1359 tracks the DNS/edge mTLS host
-  activation gate for tokenless AutoEnroll. The remaining verification gate is
-  a fresh standard-PC rerun with the newly published package plus runtime
-  invalid-result visibility proof where required.
+- 2026-06-08 local Parallels rerun: `HALILKOOLUB735` downloaded the canonical
+  #107 `EndpointAgent.zip` from `testai.acik.com`, verified SHA256, installed
+  the current binary, enrolled through the HMAC fallback path, confirmed HMAC
+  credential persistence, removed enrollment-token material from the service
+  environment and completed backend -> agent -> result -> audit
+  `COLLECT_INVENTORY` command `5482af96-b480-463f-a5a1-2d8b3bcd6aa4`
+  `SUCCEEDED`. Evidence:
+  `docs/faz-22-evidence/2026-06-08-agent-101-parallels-bootstrap-smoke.md`.
+- Fresh-reinstall product gap: the first rerun on an already-enrolled machine
+  loaded the existing DPAPI HMAC store while a new enrollment token was
+  supplied. That is acceptable for upgrade continuity but ambiguous for fresh
+  re-enrollment. platform-agent #109 now tracks an explicit
+  fail-fast/reset-credential-store guard.
+- Board state: `platform-agent` #101 has HMAC fallback standard-PC runtime
+  evidence for board acceptance; `platform-backend` #509 has runtime
+  invalid-result visibility evidence. `platform-k8s-gitops` #1359 tracks the
+  DNS/edge mTLS host activation gate for tokenless AutoEnroll.
 
 **Claude CLI advisory 2026-06-08:** verdict `AGREE — conditional`. Absorbed
 revizyonlar: (1) bootstrap claim-code -> mTLS geçişi netleşti, (2) signing M4'e

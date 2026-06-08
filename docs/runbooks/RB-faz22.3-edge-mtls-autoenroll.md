@@ -242,9 +242,18 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing
 ## 8. HMAC Fallback Bootstrap Before Edge Gate
 
 Before the edge gate passes, use only the HMAC fallback bootstrap for the
-two-device pilot and keep platform-agent #101 in `Needs Verify`. This path
-still requires a short-lived one-time enrollment token, but the token is not
-placed on the command line; the bootstrap prompts with hidden input.
+two-device pilot. This path still requires a short-lived one-time enrollment
+token, but the token is not placed on the command line; the bootstrap prompts
+with hidden input.
+
+> **Existing enrollment guard (2026-06-08)**: if the target already has an
+> EndpointAgent DPAPI HMAC credential store, a normal `-Force` reinstall can
+> preserve and reuse that existing credential. That is the right upgrade
+> default, but it is not the same thing as a fresh re-enrollment. Until
+> platform-agent #109 adds an explicit fresh-enroll/reset guard, do not count a
+> rerun with a supplied enrollment token as fresh enrollment unless the old
+> credential store was intentionally backed up/removed and the post-install
+> evidence shows HMAC confirmation plus token cleanup.
 
 ```powershell
 $ErrorActionPreference = "Stop"
