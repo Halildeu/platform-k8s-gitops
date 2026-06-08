@@ -84,6 +84,21 @@ Faz 22.2.A non-domain Windows pilot için Endpoint Agent (`endpoint-agent.exe`) 
 | `audit_row_hash` | `endpoint_audit_events.event_hash` (V4 hash-chain) | None | No (integrity hash) |
 | `audit_row_prev_hash` | `endpoint_audit_events.prev_event_hash` | None | No |
 
+### 3.7 Uzaktan Erişim Oturum Verileri (Faz 22.6 — YENİ, DPO-confirm)
+
+> **Faz 22.6 Remote Access Bridge** kapsamında eklenmiştir ([ADR-0033](adr/0033-faz226-remote-access-broker.md), [#1388 acceptance package](faz-22-6-1388-acceptance-package.md)). **Yüksek hassasiyet**: oturum kaydı destek alan kullanıcının ekranını/terminalini içerebilir → **olası üçüncü-taraf PII**. **DPIA + VERBİS gözden geçirmesi gerekir.** Bu kategoriler **runtime'da #1388 acceptance + DPO onayı olmadan toplanmaz.**
+
+| Field | Source | Sensitivity | Personal? |
+|---|---|---|---|
+| `session_id` / `device_id` / `tenant_id` | `remote_sessions` | Low | Indirect |
+| `actor` / `approver` | session grant (operator tarafı) | Low | Indirect (operator kimliği) |
+| `capability_tier` / `reason` / `scope` | `remote_session_audit` | Low | No (enum/metadata) |
+| **Session transcript** (4-E / 4-F-PTY terminal I/O) | broker recording (immutable transcript) | **High** | **Yes** (komut/çıktı kullanıcı verisi içerebilir) |
+| **Session video recording** (4-F-REMOTE-CONTROL / RDP) | broker recording (encrypted blob) | **Critical** | **Yes** (ekran içeriği = olası 3rd-party PII) |
+| `audit_row_hash` / `prev_hash` | `remote_session_audit` (BE-016 chain) | None | No |
+
+**Erişim:** least-priv viewer + per-view audit; ilgili kişi kendi kaydına erişim **DPO/redaction-mediated** (raw self-service değil); 3rd-party PII için redaction-on-playback (ISO A.5.34).
+
 ## 4. Retention Politikası
 
 ### 4.1 Policy Target (Documented)
@@ -100,6 +115,8 @@ Faz 22.2.A non-domain Windows pilot için Endpoint Agent (`endpoint-agent.exe`) 
 | Installed software | 30 gün | full retained (machine config) | 30 gün, sonra silinir |
 | Audit log (yapı bütünlüğü) | 365 gün | hash-chain preserved (BE-016) | 365 gün, KVKK Madde 7 silme talebi öncelikli |
 | Audit log (kişi-tanımlayıcı içerik) | aynı 365 gün | UPN/SID hashed; target_user hashed | aynı |
+| **Session transcript** (4-E/4-F-PTY) *(Faz 22.6, DPO-confirm)* | 90 gün | access-audited | 90 gün, sonra silinir |
+| **Session video recording** (4-F-RDP) *(Faz 22.6, DPO-confirm)* | 90 gün raw | **crypto-erase** (key destruction) | 90 gün, sonra crypto-erase; DPIA-bound |
 
 ### 4.2 Enforcement Gate (BE-019 Backend)
 

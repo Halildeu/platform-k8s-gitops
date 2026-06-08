@@ -74,24 +74,51 @@ OpenFGA tuple shape: `(user:<id>, can_<action>, scope:<scope-id>)`. Tuple writer
 - **Test**: `platform-test`
 - **Client**: mevcut `frontend` veya `platform-shell` client reuse opsiyonel; ayrı client gerekirse `endpoint-admin-portal`
 
-### Destructive command sınıfları (5 + dual-control)
+### Destructive command sınıfları — D35-EA Ladder (Extended, 2026-06-09 reconciliation)
 
-D35-EA ladder:
+> **§0 Governance Drift Reconciliation (Faz 22.6, Codex `019ea961` REVISE→AGREE):**
+> Bu charter'ın eski **düz 0..5** ladder'ı ile 2026-04-29 mutabakat raporundaki
+> **4-A..E** modeli çelişiyordu (mutabakat'ta interactive/arbitrary-exec tier'ı
+> vardı, burada yoktu). Aşağıdaki **extended ladder** artık canonical'dır;
+> traceability için OLD→NEW mapping verilmiştir. **Runtime (özellikle 22.6 remote
+> access) bu reconciliation MERGE + [#1388](https://github.com/Halildeu/platform-k8s-gitops/issues/1388) acceptance olmadan açılmaz.**
+
+**Top-level ladder:**
 - **D35-EA-0**: Read-only inventory (probe, list)
 - **D35-EA-1**: Identity discovery (read user/device metadata)
 - **D35-EA-2**: Benign command (non-destructive: notification, metadata fetch)
-- **D35-EA-3**: Configuration push (group policy, registry edit) — **dual-control gate**
-- **D35-EA-4**: Service control (start/stop/restart) — **dual-control gate**
-- **D35-EA-5**: Destructive (uninstall, format, password reset) — **dual-control gate + audit immutable**
+- **D35-EA-3**: Configuration push — **yalnız non-destructive, reversible,
+  policy-bounded config** (örn. reversible policy/registry tweak) — **dual-control
+  gate**. *Sınırlayıcı kural: güvenlik kapatma, service-disable, network-isolate,
+  registry ile tamper/credential-exposure → 4-A/4-C/4-E/4-F'ye yükselir (tier
+  escalation bypass kapalı).*
+- **D35-EA-4**: **Privileged / Destructive family** (sub-class'lı) — **dual-control + audit immutable**:
+  - **4-A** bounded-remediation (service start/stop/disable, network-isolate, restart) — maker≠checker
+  - **4-B** uninstall / decommission / **wipe** — dual-control + short-TTL + device-bound + single-use
+    - **4-B-WIPE** (`system_format` / disk-wipe): irreversible data-destruction, **DEFAULT RED**, non-pilot, stricter gate (uninstall'dan ayrı risk profili)
+  - **4-C** tamper-bypass — M-of-N (2/3) + time-box + auto-reenable + post-action audit
+  - **4-D** password-reset (local/AD/Entra/M365) — test persona / IT-live M-of-N + ticket consent
+  - **4-E** arbitrary / constrained-command-exec — **DEFAULT RED**; per-command allowlist + cooldown + command transcript + stdout/stderr redaction + hash-chain (**no video/screen recording**; transcript evidence **zorunlu**)
+  - **4-F** interactive-remote-session (Faz 22.6, **YENİ**) — **DEFAULT RED**:
+    - **4-F-PTY** full PTY/PowerShell: attended + M-of-N + cooldown + max-duration + **terminal-I/O recording MANDATORY** (tty/asciicast-style immutable transcript, video değil)
+    - **4-F-REMOTE-CONTROL** screen/RDP relay: en sıkı, last/RED + **video recording MANDATORY** + input-event metadata; clipboard/drive/printer/file-transfer ayrı RED capability
+    - **4-F-break-glass** unattended: pilotta KAPALI; explicit break-glass policy objesi + M-of-N
+- **D35-EA-5**: **Pilot Endpoint Functional** — tier-restricted (IT-owned domain-joined VM)
 
-5 destructive command sınıfı:
-1. `system_format` — disk/partition/volume format
-2. `password_reset` — local + AD + Entra + M365
-3. `software_uninstall` — package remove (msi/exe/winget)
-4. `service_disable` — service set startup=disabled
-5. `network_isolate` — firewall isolate device
+**OLD (flat) → NEW (extended) mapping:**
+| OLD | NEW |
+|---|---|
+| D35-EA-4 Service control | 4-A bounded-remediation |
+| D35-EA-5 `software_uninstall` | 4-B uninstall |
+| D35-EA-5 `system_format` | 4-B-WIPE |
+| D35-EA-5 `password_reset` | 4-D password-reset |
+| D35-EA-5 `service_disable` / `network_isolate` | 4-A bounded-remediation |
+| (yok) | 4-E arbitrary-exec, 4-F interactive-session (mutabakat 4-A..E + yeni 4-F) |
+| D35-EA-5 "pilot" semantiği | D35-EA-5 (pilot, korunur) |
 
-**Dual-control**: 2 farklı user'ın (her biri `endpoint:admin` rol)+approval gate. ADR-0010 §2.5 boundary matrix pattern.
+**Dual-control**: 2 farklı user (her biri `endpoint:admin` rol) + approval gate;
+ADR-0010 §2.5 boundary matrix. **Anti-coercion:** approver insan + role-distinct
++ asla requester (break-glass dahil). Detay broker tasarımı: [ADR-0033](0033-faz226-remote-access-broker.md).
 
 ### Code signing supply-chain RoT
 
@@ -118,16 +145,22 @@ D35-EA ladder:
 
 Code signing private key bu listenin DIŞINDA — supply-chain pipeline kapsamı.
 
-### 8 governance guard (DD-EA + BG-EA)
+### Governance guard (DD-EA + BG-EA) — 8 canonical + 1 proposed (DD-EA-8)
+
+> **Numbering reconciliation (2026-06-09):** Canonical DD-EA-1..7 numaralandırması
+> **korunur** (mutabakat raporundaki farklı 4/6/7 etiketleri drift idi; canonical
+> bu charter'dır). **DD-EA-8 PROPOSED**'tur; toplam "9 guard" yalnız #1388
+> migration sonrası geçerli olur.
 
 ADR-0011 analog:
 - **DD-EA-1**: Manifest contract drift (kustomize render bytes)
 - **DD-EA-2**: OpenFGA tuple writer (only permission-service)
-- **DD-EA-3**: Image digest pin (deploy workflow strict mode, ADR-0011 D30 ile uyumlu)
-- **DD-EA-4**: Code signing verify (cosign verify on deploy)
-- **DD-EA-5**: Vault secret path (kv/platform/endpoint-admin/* allowlist)
+- **DD-EA-3**: Image digest pin (deploy workflow strict mode, ADR-0011 D30 ile uyumlu). **Update/release-channel sub-requirements (2026-06-09 extension):** agent update için **release-manifest digest pin** + **downgrade/rollback prevention** (version monotonicity) + **staged rollout + kill-switch**.
+- **DD-EA-4**: Code signing verify — **container image: `cosign verify` on deploy**; **Windows agent / session artifacts: Authenticode + release-manifest signature** (tek "cosign" Windows imzasını temsil etmez). **Sub-requirements:** M-of-N release approval + **no signing material in image** (supply-chain RoT, build-time CI).
+- **DD-EA-5**: Vault secret path (kv/platform/endpoint-admin/* allowlist; broker için ayrı `kv/platform/remote-access-broker/*`)
 - **DD-EA-6**: Destructive command audit log (immutable storage)
 - **DD-EA-7**: Identity discovery PII boundary (no PII in logs)
+- **DD-EA-8** *(PROPOSED, Faz 22.6)*: **Remote Session Governance Guard** — CI gate: capability → approved D35-EA tier map; 4-F için recording-required enforce; unattended yalnız break-glass policy objesiyle; **disabled feature advertise edilemez** (AG-013 precedent). Detay: [ADR-0033](0033-faz226-remote-access-broker.md). *(İleride bağımsız update-channel guard istenirse DD-EA-9 olarak ayrılır; şimdilik update-channel semantics DD-EA-3/DD-EA-4 altında.)*
 - **BG-EA-1**: Per-PR boundary declaration (ADR-0011 BG-1 analog)
 
 ### Pilot tier matrisi (user 2026-05-02 fill-in)
