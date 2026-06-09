@@ -13,7 +13,7 @@
     },
     "repo": {
       "type": "string",
-      "enum": ["platform-backend", "platform-web"]
+      "enum": ["platform-backend", "platform-web", "platform-agent"]
     },
     "service": {
       "type": "string",

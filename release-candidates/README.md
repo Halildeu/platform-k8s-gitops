@@ -12,9 +12,11 @@ release-candidates/
 │   ├── <git-sha-1>.json
 │   ├── <git-sha-2>.json
 │   └── ...
-└── platform-web/
-    ├── <git-sha-1>.json
-    └── ...
+├── platform-web/
+│   ├── <git-sha-1>.json
+│   └── ...
+└── platform-agent/        # Faz 22.5 M1 artifact-host (endpoint-agent installer image)
+    └── <git-sha-1>.json
 ```
 
 Each `.json` validated against `schema/promotion-ledger-v1.schema.json`
@@ -22,8 +24,10 @@ on every PR via `.github/workflows/promotion-ledger-validate.yml`.
 
 ## Lifecycle
 
-1. **Created** by upstream CI (`platform-backend` or `platform-web`)
-   on every successful image build + GHCR push.
+1. **Created** by upstream CI (`platform-backend`, `platform-web`, or
+   `platform-agent`) on every successful image build + GHCR push.
+   `platform-agent` covers the Faz 22.5 M1 `artifact-host` installer image
+   (`jwt_validates: false` → D29 Zanzibar tier is AMBER-acceptable).
 2. **Updated to test-promoted** when bot opens gitops PR with test
    overlay digest update; merged → ArgoCD test sync.
 3. **Updated to test-verified** by smoke gate workflow after D29

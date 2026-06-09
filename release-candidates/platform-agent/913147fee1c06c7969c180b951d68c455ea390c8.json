@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-agent",
+  "service": "artifact-host",
+  "git_sha": "913147fee1c06c7969c180b951d68c455ea390c8",
+  "git_short_sha": "913147f",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-agent-artifacts",
+    "digest": "sha256:7ac0fd57ef00d7cc68258cda30eba0a2a1b1ed4a94534f8d96bf92cb4e48f764",
+    "tag": "sha-913147f",
+    "push_run_id": 27209821891,
+    "pushed_at": "2026-06-09T13:36:44Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-06-09T13:42:50Z",
+      "promoted_by_pr": 1425,
+      "argocd_revision": "831ff69d",
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-06-09T14:35:35Z",
+          "details": "k3d-test/platform-test: 2 artifact-host pods (artifact-host-7ff44ddd9d-2xpb8, -v45jr) Running ready=true restarts=0; both imageID ghcr.io/halildeu/platform-agent-artifacts@sha256:7ac0fd57ef00d7cc68258cda30eba0a2a1b1ed4a94534f8d96bf92cb4e48f764 == the prod-pinned digest (identical artifact promoted, no rebuild).",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/issues/1428"
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-06-09T14:35:35Z",
+          "details": "Live testai.acik.com/artifacts/endpoint-agent/v0.1.1-lab.2 smoke: EndpointAgent.zip Content-Type application/zip, Content-Length 3245439, downloaded sha256 b88c710d569b74d0fe902434dc2f368bc7fdf99a5d0557190ebc8652f5a7d0fe == .sha256 sidecar; bootstrap-package.ps1 served as PowerShell (Content-Type application/octet-stream, first line BOM+'<#', NOT SPA HTML); missing path -> 404 (not index.html fallback); artifact-host /healthz 200; SPA / -> 200 and /api/v1/endpoint-agent/health -> 401 unaffected by the /artifacts path.",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/issues/1428",
+          "endpoints": [
+            "/artifacts/endpoint-agent/v0.1.1-lab.2/EndpointAgent.zip",
+            "/artifacts/endpoint-agent/v0.1.1-lab.2/EndpointAgent.zip.sha256",
+            "/artifacts/endpoint-agent/v0.1.1-lab.2/bootstrap-package.ps1",
+            "/healthz"
+          ]
+        },
+        "d29_zanzibar": {
+          "status": "AMBER",
+          "checked_at": "2026-06-09T14:35:35Z",
+          "details": "artifact-host is a static nginx file host with jwt_validates=false (docs/operations/services.yaml): it has no JWT-validating or OpenFGA authz surface (public install URL by design). Zanzibar/allow-deny tier is N/A; AMBER is the D29 policy outcome for jwt_validates=false services (gate accepts GREEN-or-AMBER).",
+          "evidence_url": "https://github.com/Halildeu/platform-k8s-gitops/issues/1428",
+          "allow_deny_synthetic": "SKIP"
+        }
+      },
+      "verified_at": "2026-06-09T14:35:35Z",
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": null
+  },
+  "audit": {
+    "created_at": "2026-06-09T14:35:35Z",
+    "last_updated_at": "2026-06-09T14:35:35Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-agent/actions/runs/27209821891"
+  }
+}

@@ -29,6 +29,19 @@ resources:
   # Ready=True before this workload entry's apply (otherwise pod CrashLoop pending secret).
   # Codex 019e8c3a iter-1 plan AGREE; A2 (D30 atomic cutover DNS L4 switch) separate user decision.
   - ../../base/apps/endpoint-admin-service
+  # Faz 22.5 M1 PROD-ENABLE (board #1428, owner + D30 gated — 2026-06-09):
+  # endpoint-agent one-command bootstrap artifact host. Was test-only (true
+  # defer); this enables it on ai.acik.com. PUBLIC EXPOSURE of the private-repo
+  # lab-signed installer on the prod domain — gated by owner sign-off + D30
+  # cutover (RB-faz22-m1-artifact-host.md §8). Pairs with the artifact-host
+  # image digest pin (`images:` below) + the prod /artifacts Ingress path patch
+  # (`patches:` below). Edge needs NO change: the prod `/` catch-all
+  # (location / → https://127.0.0.1:30443, Host ai.acik.com, verbatim path)
+  # already forwards /artifacts to the cluster ingress.
+  # Base replicas=2 kept (HA static nginx; maxUnavailable=0 rolling + PDB
+  # minAvailable=1 are authored for 2 replicas; ~64Mi total negligible) — exact
+  # parity with testai, which also runs the base (no replica patch).
+  - ../../base/apps/artifact-host
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster (network teşhisi sonrası — k3d cluster → 10.9.193.0/24 routing fail)
   - endpoints-workcube-mssql.yaml    # 172.21.0.7 (workcube-mssql-proxy-prod, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.21.0.7/32:11433
@@ -281,6 +294,18 @@ images:
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
     digest: sha256:3e1e5852838d1ae519bffbe604787c56052d7a0d9965f8c19f590ed3fae1f3bc
+
+  # Faz 22.5 M1 PROD-ENABLE (board #1428) — endpoint-agent artifact host image.
+  # SAME image + D30 digest as the testai pin (kustomize/overlays/test, tag
+  # v0.1.1-lab.2): the prod cutover promotes the identical artifact already
+  # serving on testai (no rebuild). Built+pushed by platform-agent release.yml
+  # run 27209821891 (tag v0.1.1-lab.2, source sha-913147f). Pulled with the
+  # existing ghcr-pull secret (ESO → Vault kv/gitops/ghcr-token). Served
+  # EndpointAgent.zip sha256 b88c710d569b74d0fe902434dc2f368bc7fdf99a5d0557190ebc8652f5a7d0fe.
+  - name: artifact-host
+    newName: ghcr.io/halildeu/platform-agent-artifacts
+    newTag: v0.1.1-lab.2
+    digest: sha256:7ac0fd57ef00d7cc68258cda30eba0a2a1b1ed4a94534f8d96bf92cb4e48f764
 
 # Faz 23.2 PR-D.3 — notification-orchestrator prod IMAGE PIN DEFERRED.
 # D29 evidence gate (Codex P0 Sprint A Item 3) requires:
@@ -1055,6 +1080,14 @@ patches:
           sms.acik.com/jetsms-m4-cutover: "b4-prod-2026-05-20-sha-6307428"
 
   # Ingress host + TLS host: ai.acik.com (D18)
+  # Faz 22.5 M1 PROD-ENABLE (board #1428): append the /artifacts path → the
+  # artifact-host Service (same JSON6902 shape as the test overlay; host
+  # ai.acik.com). ingress-nginx matches most-specific prefix first, so
+  # /artifacts wins over `/` (frontend) regardless of list order. No
+  # rewrite-target → path passes verbatim to artifact-host nginx
+  # (root /usr/share/nginx/html, files at html/artifacts/...). This path is the
+  # single switch that makes ai.acik.com/artifacts LIVE on ArgoCD reconcile —
+  # public exposure, owner-gated (see resources comment above).
   - target:
       kind: Ingress
       name: platform
@@ -1065,6 +1098,16 @@ patches:
       - op: replace
         path: /spec/tls/0/hosts/0
         value: ai.acik.com
+      - op: add
+        path: /spec/rules/0/http/paths/-
+        value:
+          path: /artifacts
+          pathType: Prefix
+          backend:
+            service:
+              name: artifact-host
+              port:
+                number: 80
 
   # Host bridge prod portları (D20)
   - target:

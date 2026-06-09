@@ -187,10 +187,15 @@ services:
     probe_contract: http-healthz   # /healthz nginx
     environments:
       test: enabled
-      prod: deferred   # true defer — not in prod overlay, no prod /artifacts path
-                       # (ai.acik.com/artifacts stays SPA fallback); prod-enable
-                       # is a gated follow-up (owner sign-off + D30). See
-                       # docs/runbooks/RB-faz22-m1-artifact-host.md §8.
+      prod: enabled    # Faz 22.5 M1 prod-enable (board #1428, owner + D30 gated):
+                       # in prod overlay (../../base/apps/artifact-host) + image
+                       # digest pin (v0.1.1-lab.2 @sha256:7ac0fd57…) + /artifacts
+                       # Ingress path. ai.acik.com/artifacts serves the real
+                       # installer (no longer SPA fallback). Edge unchanged — the
+                       # prod `/` catch-all already forwards /artifacts to the
+                       # cluster ingress. Public exposure of the lab-signed
+                       # installer; merge required owner sign-off.
+                       # See docs/runbooks/RB-faz22-m1-artifact-host.md §8.
 
   # --- DEFERRED services (intentionally not in target env) ---
 

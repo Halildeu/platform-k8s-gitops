@@ -102,8 +102,14 @@ curl -s -o /dev/null -w '%{http_code}\n' "$B/does-not-exist"   # 404
 # (d) SPA + API edge değişiminden etkilenmedi
 curl -s -o /dev/null -w '%{http_code}\n' https://testai.acik.com/        # 200 (SPA)
 curl -s -o /dev/null -w '%{http_code}\n' https://testai.acik.com/api/v1/endpoint-agent/health
-# (e) PROD defer: ai.acik.com/artifacts gerçek artifact DÖNMEMELİ (SPA fallback)
-curl -sI "https://ai.acik.com/artifacts/endpoint-agent/<tag>/EndpointAgent.zip" | grep -i content-type  # text/html
+# (e) PROD (board #1428 enable — AFTER merge + ArgoCD reconcile): ai.acik.com/artifacts
+#     gerçek installer SERVİS ETMELİ (artık SPA fallback DEĞİL).
+P="https://ai.acik.com/artifacts/endpoint-agent/<tag>"
+curl -sI "$P/EndpointAgent.zip" | grep -i content-type        # application/zip (text/html DEĞİL)
+curl -fsSL "$P/EndpointAgent.zip" -o /tmp/EA-prod.zip && shasum -a 256 /tmp/EA-prod.zip
+curl -fsSL "$P/EndpointAgent.zip.sha256"                       # eşleşmeli
+curl -s -o /dev/null -w '%{http_code}\n' "$P/does-not-exist"   # 404 (SPA fallback DEĞİL)
+# NOT (prod-enable öncesi, PR merge edilmeden): hâlâ SPA fallback (text/html) döner.
 ```
 
 Windows tek-komut smoke (Parallels `prlctl exec "Windows 11"` = SYSTEM, veya lab PC):
@@ -119,17 +125,73 @@ böylece UPDATE_AGENT self-update capability'sini de advertise eder.
 - **Cluster**: artifact-host yalnız additive (yeni Deployment/Service + ingress
   path). Kaldırmak için overlay'den resource + ingress patch çıkar + apply.
 - **Image**: bozuk image → önceki digest'e re-pin + apply.
+- **Prod (board #1428) — public exposure kapatma**: prod sync `allow_prune=false`
+  ile çalışır (RB-prod-gitops-sync.md), bu yüzden gitops main'i revert etmek
+  Ingress `/artifacts` path'ini kaldırır (→ public erişim DERHAL kapanır, SPA
+  fallback'e döner) **ama** artifact-host Deployment/Service/SA/PDB cluster'da
+  **orphan** kalabilir. Kalıntı istenmiyorsa: ya **revert-forward PR** (resource
+  + image pin + ingress patch'i geri çek) + `allow_prune=true` ile bir prune
+  sync, ya da `kubectl --context k3d-prod -n platform-prod delete deploy/svc/sa/pdb
+  -l app.kubernetes.io/name=artifact-host`. Public exposure'ı kapatmak için
+  Ingress path revert TEK BAŞINA yeterlidir (pod kalsa da dışarıdan erişilemez).
 
-## 8. Prod-enable (DEFERRED — operator/owner gate)
+## 8. Prod-enable (board #1428 — PR PREPARED; merge OWNER + D30 gated)
 
-Şu an prod overlay'de artifact-host **YOK** (true defer): `ai.acik.com/artifacts/...`
-prod `/` catch-all üzerinden SPA fallback'e düşer (gerçek installer servis edilmez).
-Prod'da açmak için ayrı gated PR:
-1. `kustomize/overlays/prod` → `../../base/apps/artifact-host` resource + image digest pin.
-2. Prod ingress'e `/artifacts` path patch (test overlay ile aynı JSON6902).
-3. **Owner sign-off**: private-repo lab-signed installer'ın `ai.acik.com` üzerinden
-   public erişilebilir olması kararı (KVKK/güvenlik) + D30 prod cutover gate.
-4. Prod D29 + browser smoke.
+Prod-enable PR'ı hazırlandı (board #1428). Aşağıdaki desired-state değişiklikleri
+`kustomize/overlays/prod` + `docs/operations/services.yaml`'da uygulandı; **merge
+owner sign-off + D30 cutover gate'ine bağlı** (CI yeşil + Codex cross-AI AGREE +
+`user-approval-required` label). Merge = yalnız desired-state; `ai.acik.com/artifacts`
+ArgoCD prod **reconcile** ile LIVE olur (prod app selfHeal=false → manuel sync adımı).
+
+Uygulanan değişiklikler:
+1. `kustomize/overlays/prod/kustomization.yaml` → `../../base/apps/artifact-host`
+   resource + image digest pin (testai ile **aynı** image+digest:
+   `ghcr.io/halildeu/platform-agent-artifacts:v0.1.1-lab.2@sha256:7ac0fd57…` —
+   yeniden build YOK).
+2. Prod `platform` Ingress JSON6902 `/artifacts` path patch (test overlay ile aynı şekil).
+3. `docs/operations/services.yaml` → artifact-host `prod: deferred → enabled`.
+4. **D29 evidence ledger**: `release-candidates/platform-agent/<sha>.json` (testai
+   D29 Up GREEN / Functional GREEN / Zanzibar AMBER — jwt_validates=false) +
+   `schema/promotion-ledger-v1.schema.json` repo enum `platform-agent` eklendi
+   (`gate-d29-evidence-required` prod gate'i bu olmadan kırmızı olur).
+5. **Edge: değişiklik YOK** — canlı `platform-web-nginx` ai.acik.com 443 bloğunda
+   `location / → proxy_pass https://127.0.0.1:30443` (Host $host, verbatim path)
+   zaten `/artifacts`'i prod cluster ingress'e taşır (`nginx -T` ile doğrulandı;
+   testai'deki açık `/artifacts/` bloğu yalnız eski `:5545` stage route'unu
+   override etmek içindi — prod'da öyle bir route yok).
+
+### ⚠️ KEYSTONE (Codex 019eacc3 P1) — installer default'u TEST cluster'a gider
+
+`bootstrap-package.ps1`/`install.ps1` default `-ApiUrl` =
+`https://testai.acik.com/api/v1/endpoint-agent`, default `-AutoEnrollApiUrl` =
+`https://endpoint-agent-mtls.testai.acik.com/...`. Yalnız `-PackageUrl` ve
+`-ExpectedZipSha256` mandatory. Yani **prod domain'den indirilen installer, açık
+`-ApiUrl` verilmezse agent'ı TEST cluster'a enroll eder** (secret leak değil ama
+ciddi yanlış-hedef riski). Prod install komutu **mutlaka** prod API hedefini
+explicit geçmeli:
+
+```powershell
+$B = "https://ai.acik.com/artifacts/endpoint-agent/v0.1.1-lab.2"
+iwr "$B/bootstrap-package.ps1" -OutFile $env:TEMP\bp.ps1
+powershell -ExecutionPolicy Bypass -File $env:TEMP\bp.ps1 `
+  -PackageUrl "$B/EndpointAgent.zip" -ExpectedZipSha256 <sha> `
+  -ApiUrl "https://ai.acik.com/api/v1/endpoint-agent" `
+  -AutoEnrollApiUrl "https://endpoint-agent-mtls.ai.acik.com/api/v1/endpoint-agent" `
+  -Start -Force
+```
+
+Kalıcı (durable) çözüm = platform-agent'ta host-türevli (download URL'inden
+ApiUrl çıkaran) veya prod-default bir bootstrap (ayrı follow-up; M1 pilot için
+explicit-flag mitigasyonu kabul edilir, owner sign-off'ta flag'lendi).
+
+### Owner sign-off + acceptance
+- **Owner sign-off** (ZORUNLU, irreversible public exposure): private-repo
+  lab-signed installer'ın `ai.acik.com` üzerinden public erişilebilir olması
+  kararı (KVKK/güvenlik) — board #1428 + PR'da kayıtlı. Codex-consult ≠ owner-auth.
+- **Merge sonrası** operator: deploy-prod-gitops sync (selfHeal=false manuel) →
+  prod D29 (Up/Functional) + §6(e) prod acceptance (ZIP/content-type/SHA/404) +
+  **prod-API-target smoke** (yukarıdaki prod komutla bir lab PC'nin `ai.acik.com`'a
+  enroll olduğu, testai'ye DEĞİL) + browser smoke. Sonra ledger prod block doldurulur.
 
 ## 9. Güvenlik / boundary
 
@@ -145,5 +207,6 @@ Prod'da açmak için ayrı gated PR:
   `scripts/build/windows-package.sh` (PREBUILT_EXE), `installers/windows/README.md`
 - gitops: `kustomize/base/apps/artifact-host/`, `kustomize/overlays/test/kustomization.yaml`
   (artifact-host image pin + `/artifacts` ingress patch), `host-compose/web-nginx/default.conf`
-- Codex thread 019eac74 (design + post-impl AGREE)
-- Board: platform-k8s-gitops#1424
+- Codex thread 019eac74 (test-host design + post-impl AGREE)
+- Codex thread 019eacc3 (prod-enable cross-AI review — REVISE→absorb)
+- Board: platform-k8s-gitops#1424 (test host, CLOSED), #1428 (prod-enable)
