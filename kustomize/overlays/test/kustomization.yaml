@@ -4987,7 +4987,19 @@ images:
     #   escalation generator/controller beans wire.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-db52d52
     #   digest sha256:a71c20529a6db54aebf900c9682bc70078ea2f04801f98747c03bc046ec12f8e
-    digest: sha256:a71c20529a6db54aebf900c9682bc70078ea2f04801f98747c03bc046ec12f8e
+    #
+    # 2026-06-09 update: sha-3b145d1 — Faz 22.5 AG-043 (#535 + test-compile #536):
+    #   persist + expose active console user (Win32_ComputerSystem.UserName) per
+    #   device. V62 endpoint_device active_user column (additive, ADD COLUMN IF NOT
+    #   EXISTS) + activeUser in HMAC enroll/heartbeat ingest (three-state: value/""=
+    #   clear/absent=no-change) + grid projection + DTO. main HEAD (supersets #527 §9
+    #   escalation arc + board #469 12-FK arc). Cross-AI Codex 019eacbe REVISE→AGREE
+    #   (three-state clear + @Size(255) + mTLS retract). LIVE-verified testai
+    #   2026-06-09: V62 applied 0-ERROR startup; device d0efb00a drawer "Aktif
+    #   Kullanici" = HALILKOOLUB735\halilkocoglu (browser-verified, console clean).
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-3b145d1
+    #   digest sha256:93fe9882aa8c42b02c4658ec2b0699179a13280ea35156ec0a8325bca22a342e
+    digest: sha256:93fe9882aa8c42b02c4658ec2b0699179a13280ea35156ec0a8325bca22a342e
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
