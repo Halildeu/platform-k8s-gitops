@@ -17,6 +17,13 @@ outbound remote-access bridge** hattını tanımlar. Faz 22.6, Faz 22.5 yazılı
 yönetimi komut kuyruğunun yerine geçmez; uzun ömürlü, interaktif ve yüksek
 yetkili destek oturumları için ayrı bir güvenlik modeli üretir.
 
+> **Karar kaydı:** Broker mimarisi, OpenFGA `remote_session` authz, token
+> kontratı, audit/recording şeması, #1388 minimum pilot seti, KVKK ve threat
+> model [`ADR-0033`](./adr/0033-faz-22-6-remote-access-bridge-broker.md)'te
+> (3-AI consensus: Codex `019ea9aa` + Mavis/MiniMax `mvs_c922…` + Claude,
+> 2026-06-09). Aşağıdaki §4 "Hedef Mimari" üst-seviye kalır; detaylı state
+> machine/token/audit ADR-0033'tedir. Owner-decision checklist: §9.
+
 ## 1. Amaç
 
 - IT / operator'ın dış ağdaki veya domain'e anlık erişimi olmayan Windows
@@ -126,3 +133,31 @@ katman ayrı kanıtlanır.
 | backend #510 | 22.6 umbrella | BLOCKED by #1388 |
 | backend #524 | Broker ADR/state machine | BLOCKED by #1388/#510 |
 | agent #116 | Agent outbound tunnel spike | BLOCKED by #1388/#524 |
+
+## 9. 3-AI Consensus + #1388 Owner-Decision Checklist (2026-06-09)
+
+3 sağlayıcı (Codex/OpenAI `019ea9aa` + Mavis/MiniMax `mvs_c922…` + Claude/Anthropic) bağımsız mutabakat: build-vs-buy **hybrid**, `pilot_ready_after_owner_decision: **no**`. Tam karar kaydı [ADR-0033](./adr/0033-faz-22-6-remote-access-bridge-broker.md).
+
+### 9.1 Agent-actionable ŞİMDİ (runtime açmadan — paralel ilerler)
+
+- [x] ADR-0033 broker mimarisi + authz + token + audit + threat model + KVKK (bu PR)
+- [ ] `#1402`/`#524` broker skeleton: state-machine + OpenFGA `remote_session` + token contract + audit schema, **`ENABLE_REMOTE_SUPPORT=false`** disabled-by-default, tests only
+- [ ] OSS matris refinement (#1400/#1401): OpenZiti/zrok + Guacamole-as-adapter + per-tool bypass-risk
+- [ ] Negative-test plan: self-approval deny · expired/replayed token deny · capability-mismatch deny · recorder-unavailable deny (fail-closed)
+- [ ] Synthetic loopback tunnel spike (#116) — **lab/synthetic only**; managed endpoint'e bağlanmak runtime sayılır
+
+### 9.2 Owner / legal decision checklist (#1388 — runtime'ı açan kapı, sensiz ilerleyemez)
+
+Aşağıdakiler kabul edilip #1388'de imzalanmadan **hiçbir canlı session açılmaz**:
+
+- [ ] **Legal basis (KVKK)**: meşru menfaat / sözleşme / hukuki yükümlülük + aydınlatma metni; employee consent tek başına yetersiz (güç asimetrisi). İK + Hukuk imzalı policy + employee acknowledgment.
+- [ ] **KVKK kapsam**: m.5 işleme şartı (legal basis) + m.10 aydınlatma + m.12 veri güvenliği — session recording = kişisel veri işleme kabulü; m.6 yalnız özel-nitelikli veri varsa, m.9 yalnız sınır-ötesi aktarım varsa; ADR-0030 encryption + RBAC + access-audit reuse.
+- [ ] **Recording retention/access**: metadata 7y / raw 30-90g encrypted / sadece IT-Security-lead + Data-Controller + incident-responder; segment-erişim audit'i.
+- [ ] **Attended/unattended + break-glass policy**: pilot **attended-only**; unattended/break-glass Phase 2 (ayrı ADR).
+- [ ] **Named pilot scope**: 2-5 IT-owned cihaz + named requester/operator/approver listesi.
+- [ ] **Capability sınıfları**: pilot için izinli set (öneri: view-only veya allowlist'li PTY; file-transfer/clipboard/elevation OFF).
+- [ ] **3rd-party OSS/relay DPA**: OpenZiti/zrok/MeshCentral subprocessor/DPA duruşu.
+
+### 9.3 Pipeline
+
+`#1388 owner/legal accept` → `ADR-0033 ACCEPTED` → OSS seçimi → broker impl + negative-test evidence → recording fail-closed evidence → **ilk attended pilot (D29-EA Up/Functional/Secured ayrı kanıt)**.
