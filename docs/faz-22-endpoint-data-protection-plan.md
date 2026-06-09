@@ -111,9 +111,9 @@ ADR-0035 §1 (per-case ACL/encryption/WORM-equiv/audit) gate'leriyle.
 |---|---|---|
 | **Velociraptor** | **reactivation-trigger only** (ADR-0036) | AGPL + ikinci control-plane riski → standing server YOK; yalnız DFIR artifact-collection/live-hunt gerçekten landerse (22.8C clean-room + legal gate #1403) re-evaluate edilir; standing wrap değil |
 | **YARA** | **WRAP-only-if-scan** (ADR-0036) | Yalnız **dosya-içerik IOC/malware/imza** scan gerektiğinde wrap; **secret/credential-scan AYRI scanner sınırı** olabilir (YARA otomatik cevap değil); §6 bounded job + resource cap |
-| osquery | ADAPT light telemetry/reference | ayrı fleet manager adoption yok |
-| Sigma rules | **LICENSE-GATED REFERENCE** (DRL 1.1) | attribution/legal gate olmadan rule reuse yok |
-| Wazuh | **DEFER / reject as core** | full SIEM/HIDS = ikinci control plane + ağır ops footprint |
+| osquery | **SKIP** (ADR-0036) | Posture zaten in-house (AG-*); ayrı fleet manager/query motoru gereksiz |
+| Sigma rules | **SKIP** (ADR-0036; DRL 1.1 license-gated) | DRL 1.1 standart permissive OSS değil; attribution/legal gate olmadan rule reuse yok |
+| Wazuh | **SKIP / reject-as-core** (ADR-0036) | full SIEM/HIDS = ikinci control plane + ağır ops footprint |
 
 ## §4 — Non-goals (DC-EA-RED + sınırlar)
 
@@ -283,10 +283,10 @@ besler.)
 | gitops #1389 | Phase boundary sync | 22.5/22.6/22.7/22.8 canonical |
 | gitops #1390 | 22.8 charter | BLOCKED by #1388 (bu plan charter'ı besler) |
 | agent #117 | 22.8A dry-run manifest | BLOCKED by #1388/#1390; **metadata-only, içerik hash YOK** |
-| gitops #1399 | 22.8A backup engine matrix | Kopia PRIMARY / restic FALLBACK / Duplicati reject (§3.1) |
-| gitops #1400 | OSS-only build-vs-buy decision matrix | Cross-phase karar otoritesi; runtime yetkisi vermez |
-| gitops #1403 | Velociraptor clean-room/legal ADR | 22.8C forensic boundary (AGPL/2nd-control-plane) |
-| gitops #1404 | YARA/osquery/Sigma scanner reference | YARA → §6 quarantine DLP; Sigma LICENSE-GATED |
+| gitops #1399 | 22.8A backup engine matrix | **CLOSED by ADR-0036**: dry-run in-house metadata-only; Kopia wrap-only-if-real-copy |
+| gitops #1400 | OSS-only build-vs-buy decision matrix | **DECISION-CLOSED by ADR-0036** (Cat1+2 in-house); runtime yetkisi vermez |
+| gitops #1403 | Velociraptor clean-room/legal ADR | 22.8C forensic boundary; ADR-0036: reactivation-trigger only (AGPL/2nd-control-plane) |
+| gitops #1404 | YARA/osquery/Sigma scanner reference | **CLOSED by ADR-0036**: posture in-house; YARA wrap-only-if-scan; osquery/Sigma/Wazuh skip |
 | **YENİ** | ADR-0012-EA §0 DD-EA-9 + DC-EA axis migration | #1388 altında (22.6 §0 ile ortak migration slice) |
 
 ## §16 — Cross-AI Consensus Log
