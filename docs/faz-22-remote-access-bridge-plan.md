@@ -148,6 +148,8 @@ katman ayrı kanıtlanır.
 
 ### 9.2 Owner / legal decision checklist (#1388 — runtime'ı açan kapı, sensiz ilerleyemez)
 
+> Formal imza kaydı: **[ADR-0034](./adr/0034-1388-sensitive-endpoint-ops-owner-decision.md)** (#1388 Owner Decision Record, ADR-0030 stili — D1 legal basis … D10 acceptance gate + Veri Sorumlusu/Hukuk/İK/IT-Security imza bloğu). Aşağıdaki liste o ADR'nin operasyonel özeti.
+
 Aşağıdakiler kabul edilip #1388'de imzalanmadan **hiçbir canlı session açılmaz**:
 
 - [ ] **Legal basis (KVKK)**: meşru menfaat / sözleşme / hukuki yükümlülük + aydınlatma metni; employee consent tek başına yetersiz (güç asimetrisi). İK + Hukuk imzalı policy + employee acknowledgment.
