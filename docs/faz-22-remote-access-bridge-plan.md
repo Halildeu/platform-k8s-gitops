@@ -12,6 +12,9 @@
 > - platform-backend [#510](https://github.com/Halildeu/platform-backend/issues/510) — remote-access bridge umbrella
 > - platform-backend [#524](https://github.com/Halildeu/platform-backend/issues/524) — broker ADR + state machine
 > - platform-agent [#116](https://github.com/Halildeu/platform-agent/issues/116) — agent outbound tunnel client spike
+> - platform-k8s-gitops [#1400](https://github.com/Halildeu/platform-k8s-gitops/issues/1400) — OSS-only build-vs-buy decision matrix
+> - platform-k8s-gitops [#1401](https://github.com/Halildeu/platform-k8s-gitops/issues/1401) — MeshCentral/RustDesk transport adapter POC boundary
+> - platform-k8s-gitops [#1402](https://github.com/Halildeu/platform-k8s-gitops/issues/1402) — endpoint-admin broker ADR / state machine
 > - **YENİ**: governance-drift reconciliation item (ADR-0012-EA ladder/guard uyumlama) — #1388 altında ayrı slice
 
 Bu doküman, managed endpoint'lere uzaktan destek ve test için **agent-initiated
@@ -159,6 +162,24 @@ yalnız doğrular ve relay eder.
   - `unattended` ancak break-glass policy objesi varsa;
   - **disabled feature broker'a advertise edilemez** (AG-013 capability
     false-advertising precedent'i).
+
+## §5b — OSS-only Transport Adapter Kararı (PR #1395 absorb)
+
+> 22.6 kararı "hazır bir remote-control aracını alıp çalıştırmak" **değildir**.
+> **Authz / audit / approval / session-grant / chain-of-custody control-plane'de
+> kalır** (endpoint-admin + broker, §4); OSS araçlar yalnız **transport adapter /
+> relay** rolü alabilir — kendi başına authz/audit sahibi **olamaz**.
+
+| Araç | Karar | Sistem-fit notu |
+|---|---|---|
+| **MeshCentral** | **ADAPT / primary transport POC** | Agent/relay + no-inbound modeli §4 control/data-plane ayrımına uygun; **broker grant-verifier kalır, MeshCentral relay olur**; authz/audit/approval **sahibi olamaz** (#1401) |
+| RustDesk OSS | **SECONDARY POC / defer** | Relay faydalı olabilir; AGPL/distribution + paid/pro feature boundary daha sıkı review (#1401) |
+| Apache Guacamole | **REJECT primary** | Agentless gateway RDP/VNC/SSH reachability ister; outbound endpoint-agent modeliyle zayıf uyumlu (#1400) |
+| Remotely | **REJECT / low priority** | Remote scripting yüzeyi control-plane ile çakışır; GPL/uyum riski (#1400) |
+
+> Transport adapter seçimi **DD-EA-8 + D35-EA-4-F tier binding'ini değiştirmez**;
+> hangi OSS relay kullanılırsa kullanılsın session grant/recording/dual-control
+> control-plane'de enforce edilir (broker ADR [ADR-0033](adr/0033-faz226-remote-access-broker.md)).
 
 ## §6 — G7 Operational Isolation: Broker İzolasyonu (YENİ)
 
@@ -308,7 +329,10 @@ D29 üç katmanı **değişmez** (PLAN.md D29 mühürü — "4. pillar" YASAK):
 | backend #510 | 22.6 umbrella | BLOCKED by #1388 |
 | backend #524 | Broker ADR / state machine | BLOCKED by #1388/#510; bu doc §4/§6/§6b girdi |
 | agent #116 | Agent outbound tunnel spike | BLOCKED by #1388/#524 |
-| **YENİ** | Governance-drift reconciliation (ADR-0012-EA extended ladder + DD-EA-8) | #1388 altında ayrı migration slice |
+| gitops #1400 | OSS-only build-vs-buy decision matrix | Cross-phase karar otoritesi; runtime yetkisi vermez |
+| gitops #1401 | MeshCentral/RustDesk transport adapter POC | transport-only (§5b); authz/audit broker'da kalır |
+| gitops #1402 | endpoint-admin broker ADR / state machine | ADR-0033 ile örtüşür (#524 ile uyumla) |
+| **YENİ** | Governance-drift reconciliation (ADR-0012-EA extended ladder + DD-EA-8/9 + DC-EA) | #1388 altında ortak migration slice (22.6+22.8) |
 
 ## §14 — Cross-AI Consensus Log
 
