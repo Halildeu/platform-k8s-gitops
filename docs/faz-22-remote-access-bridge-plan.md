@@ -151,7 +151,7 @@ katman ayrı kanıtlanır.
 Aşağıdakiler kabul edilip #1388'de imzalanmadan **hiçbir canlı session açılmaz**:
 
 - [ ] **Legal basis (KVKK)**: meşru menfaat / sözleşme / hukuki yükümlülük + aydınlatma metni; employee consent tek başına yetersiz (güç asimetrisi). İK + Hukuk imzalı policy + employee acknowledgment.
-- [ ] **KVKK m.6/9 kapsam**: session recording = kişisel/özel-nitelikli veri işleme kabulü; ADR-0030 encryption + RBAC + access-audit reuse.
+- [ ] **KVKK kapsam**: m.5 işleme şartı (legal basis) + m.10 aydınlatma + m.12 veri güvenliği — session recording = kişisel veri işleme kabulü; m.6 yalnız özel-nitelikli veri varsa, m.9 yalnız sınır-ötesi aktarım varsa; ADR-0030 encryption + RBAC + access-audit reuse.
 - [ ] **Recording retention/access**: metadata 7y / raw 30-90g encrypted / sadece IT-Security-lead + Data-Controller + incident-responder; segment-erişim audit'i.
 - [ ] **Attended/unattended + break-glass policy**: pilot **attended-only**; unattended/break-glass Phase 2 (ayrı ADR).
 - [ ] **Named pilot scope**: 2-5 IT-owned cihaz + named requester/operator/approver listesi.

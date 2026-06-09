@@ -69,7 +69,7 @@ type remote_session
     define capability: [capability]    # per-session allowlist (broker-computed, agent can only downscope)
 ```
 
-- Reuses BE-017 dual-control semantics: `approver != requester`, enforced server-side + at OpenFGA tuple level.
+- Reuses BE-017 dual-control semantics: `approver != requester`, enforced as a **server-side invariant + regression test** — OpenFGA models the grants (`can_request`/`can_approve`), but the `≠` inequality between two principals is NOT expressible at the tuple level and must be a broker-side check.
 - Capability set is **broker-computed**; the agent's advertised capabilities are a *signal only*, never authority (false-advertising guard).
 - Runtime revoke → emits an authz event AND **kills the live session** (capability-drift guard).
 
@@ -126,8 +126,8 @@ The 3-AI divergence (Codex/Claude "mandatory" vs Mavis "risk-tiered") **resolves
 | Transcript / command timeline | ≥ raw retention (legal-decided) | ≥ raw strictness (more searchable) |
 | Security-incident / legal-hold | explicit, reasoned, audited | legal hold |
 
-- Screen content can contain **KVKK m.6/9 özel-nitelikli veri** (payroll, health, credentials, customer PII) → recording inherits ADR-0030's encryption + RBAC + access-audit.
-- **Legal basis**: employee consent alone is weak (power imbalance) → owner/legal selects meşru menfaat / sözleşme / hukuki yükümlülük + aydınlatma; İK + Hukuk signed policy + employee acknowledgment. One-sided recording without notice = KVKK m.7 violation.
+- Screen content can contain **KVKK m.6 özel nitelikli veri** (sağlık vb.) plus credentials / customer PII / ticari sır → recording inherits ADR-0030's encryption + RBAC + access-audit. (m.6 applies only when special-category data is actually present.)
+- **Legal basis**: KVKK m.5 işleme şartı — employee consent alone is weak (power imbalance) → owner/legal selects meşru menfaat / sözleşme / hukuki yükümlülük; İK + Hukuk signed policy + employee acknowledgment. Recording without prior notice violates the **m.10 aydınlatma yükümlülüğü** (transparency/notice duty). Cross-border transfer of recordings (if any) is a separate **m.9** decision.
 
 ---
 
@@ -147,7 +147,7 @@ The 3-AI divergence (Codex/Claude "mandatory" vs Mavis "risk-tiered") **resolves
 
 ## 10. Decision 9 — Unblock Sequencing
 
-**Owner / legal (cannot proceed without owner — gates runtime):** KVKK m.6/9 scope (recording = personal/sensitive data processing) · legal basis + aydınlatma/consent · attended vs unattended + break-glass policy · named pilot device/user/operator/approver list · capability classes (view-only / PTY / RDP / file-transfer / clipboard / elevation) · third-party OSS/relay DPA/subprocessor stance.
+**Owner / legal (cannot proceed without owner — gates runtime):** KVKK scope — m.5 işleme şartı (legal basis) + m.10 aydınlatma + m.12 veri güvenliği (recording = personal-data processing); m.6 only if özel-nitelikli veri present; m.9 only if cross-border transfer · legal basis + aydınlatma/consent · attended vs unattended + break-glass policy · named pilot device/user/operator/approver list · capability classes (view-only / PTY / RDP / file-transfer / clipboard / elevation) · third-party OSS/relay DPA/subprocessor stance.
 
 **Agent-actionable NOW (no runtime opened) — proceed in parallel:**
 1. This ADR-0033 (broker design + governance) — DONE.
