@@ -4953,7 +4953,19 @@ images:
     #   V60 head on apply; verify 0-ERROR startup + the active-unique 409 path.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-c96c148
     #   digest sha256:8d4c0996e9df7dca0bfc1f17a955c3e8bec874d751adb17130db361ee51376cb
-    digest: sha256:8d4c0996e9df7dca0bfc1f17a955c3e8bec874d751adb17130db361ee51376cb
+    #
+    # 2026-06-09 update: sha-e0d7d0a — Faz 22.5 #527 §9.2 slice-2a (#531): command-
+    #   result auto-ingest/classifier. A terminal non-success agent command result
+    #   (FAILED/PARTIAL/UNSUPPORTED) is classified evidence-first (INSTALLER_MSI /
+    #   SERVICE_HMAC_MODE / BACKEND_RESULT_SUBMIT) and auto-seeds OR idempotently
+    #   coalesces a rollout failed-device-queue item via the AFTER_COMMIT listener
+    #   (own REQUIRES_NEW tx, swallowed). No stop-line/escalation/waive/resolve
+    #   (§9.3/§9.4 deferred). Cross-AI Codex 019eaaf0 AGREE (5 REVISE rounds). No
+    #   new migration (additive on V60). Verify 0-ERROR startup + the auto-ingest
+    #   listener wires (full bean graph) on apply.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-e0d7d0a
+    #   digest sha256:d7e03af399dc4e04963db88e4664ad6cc2aeea76d3fc5ab20bedd21499e1031c
+    digest: sha256:d7e03af399dc4e04963db88e4664ad6cc2aeea76d3fc5ab20bedd21499e1031c
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
