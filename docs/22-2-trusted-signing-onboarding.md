@@ -1,6 +1,29 @@
 # Faz 22.2 Trusted Signing Onboarding (Operator Infrastructure Prep Checklist)
 
-> **Status**: DRAFT — Operator infrastructure prep checklist; agent docs-only (Azure/GitHub/cert/timestamp/RBAC setup operator-side, agent dokunmaz)
+> ## ⚠️ OWNER DECISION 2026-06-09: NO PAID SERVICES → Azure Trusted Signing EXCLUDED
+>
+> The **authoritative** trusted-signing path is **AD CS internal code-signing** (Windows Server Enterprise CA — **$0, built-in**; ADR-0029's original decision), signed on a **self-hosted Windows signing runner** (cert + private key in `LocalMachine\My`; **PFX-in-GitHub FORBIDDEN**). Trust is **internal/AD-domain** (the AD CS root reaches domain machines' Trusted Publisher via GPO — free); NOT public Windows trust.
+> **The Azure Trusted Signing 7-item checklist below (§2) is SUPERSEDED — pay-as-you-go, excluded by owner decision. Kept for historical/comparison only; do NOT action it.**
+
+## 0. AD CS Internal Signing — AUTHORITATIVE operator checklist (FREE)
+
+The pipeline is wired in **platform-agent** (AG-018): `build-msi.ps1 -SigningMode trusted` (AD CS) + `.github/workflows/release-msi-adcs.yml` (self-hosted runner). It is **fail-closed + inert** until the operator completes these — no billing anywhere:
+
+| # | Item | Ne sağlar | Sorumlu | Maliyet |
+|---|---|---|---|---|
+| 0.1 | **AD CS Code Signing template** | "Code Signing" template duplicate (`CN=EndpointAgent CodeSign`, OU=ACIK Build) on the corp Enterprise CA | AD CS admin | $0 (Windows Server rolü) |
+| 0.2 | **Cert enrollment** | Cert + **non-exportable** private key enrolled into the signing runner's `LocalMachine\My` | AD CS admin | $0 |
+| 0.3 | **Self-hosted signing runner** | Dedicated `[self-hosted, windows, signing]` runner, AD-joined, Windows SDK `signtool` + WiX; isolated; only this repo/environment | IT/operator | $0 (mevcut donanım) |
+| 0.4 | **Repo variables** (non-secret) | `ADCS_SIGNING_ENABLED=true`, `ADCS_SIGNING_CERT_THUMBPRINT`, `ADCS_THUMBPRINT_ALLOWLIST` (CSV), `ADCS_TIMESTAMP_URL` | Repo admin | $0 |
+| 0.5 | **Free RFC3161 TSA** | `ADCS_TIMESTAMP_URL` (önerilen ücretsiz public: `http://timestamp.digicert.com`) + reachability smoke | Security | $0 (public TSA) |
+| 0.6 | **GitHub environment** | `trusted-signing-prod` + required reviewers + protected `v*.*.*` tag ruleset | Repo admin | $0 |
+| 0.7 | **Trusted Publisher GPO** | AD CS root → domain machines' `Cert:\LocalMachine\TrustedPublisher` via GPO (AppLocker/WDAC signer trust) | DC admin | $0 |
+
+**Aktivasyon sonucu:** clean `v0.2.0` tag (no `-lab`, on main) → `release-msi-adcs.yml` (self-hosted) → cert preflight (private key + validity + Code-Signing EKU + thumbprint allowlist + chain) → `signtool /sm /sha1 … /tr <TSA>` → `verify /pa` (no import) + RFC3161 timestamp → manifest `production=true` / `signing_tier=trusted-adcs` / `trust_scope=internal-ad-domain` / `publicly_trusted=false`. **No PFX, no OIDC, no Azure, no billing.**
+
+---
+
+> **Status**: SUPERSEDED (§2 Azure path) — Operator infrastructure prep checklist; agent docs-only (Azure/GitHub/cert/timestamp/RBAC setup operator-side, agent dokunmaz)
 > **Scope**: Faz 22.2.A non-domain Windows pilot (A2 BYOD + A3 Entra-joined + A4 Workplace-registered) için Authenticode signed binary distribution prerequisite. A1 lab cihazları için time-boxed unsigned exception kabul edilebilir (RB-faz22-non-domain-windows-pilot.md §7.3).
 > **Tracked by**: ADR-0012-EA "22.2 pre-req docs (22.1'de hazırlanır)" section (7-item Codex iter-3 PR-8d/PR-8e) + RB-faz22-non-domain-windows-pilot.md §7 Signed Distribution Policy
 > **TRACKING-ROADMAP refs**: AG-018 trusted signing pipeline (TODO) + AG-024 Signed update manifest verification (TODO)
@@ -15,7 +38,9 @@ Faz 22.2.A non-domain Windows pilot ile A2 BYOD + A3 Entra-joined + A4 Workplace
 
 **Codex `019e5b38` Q7 önerisi**: bu doküman **operator infrastructure prep checklist** olarak kalır; agent Azure RBAC, GitHub OIDC, certificate profile veya timestamp endpoint kurmuş gibi yazmaz.
 
-## 2. ADR-0012-EA 7-Item Operator Checklist
+## 2. ADR-0012-EA 7-Item Operator Checklist — ⚠️ SUPERSEDED (Azure = PAID, excluded by owner 2026-06-09)
+
+> **Do NOT action §2.** The authoritative FREE path is **§0 (AD CS internal)** above. This Azure Trusted Signing checklist is kept for historical/comparison only — it is pay-as-you-go and excluded by the owner's "no paid services" decision.
 
 ### Item 1 — Azure Trusted Signing Onayı
 
@@ -158,7 +183,9 @@ Faz 22.2.A non-domain Windows pilot ile A2 BYOD + A3 Entra-joined + A4 Workplace
 
 **Status (2026-05-24)**: Invariant statement documented (this doc). Enforcement is **conditional** and **NOT active** today; activation requires **both** (a) AG-024 (Signed update manifest verification) merged AND (b) release promotion gate active. Both items are currently TODO per Operator Action Checklist §4 below (Items 6 + 7) and per `Tracked by` §6. Until both conditions hold, operator-side manual enforcement is required (verify Authenticode signature before installer distribution; reject unsigned in A2/A3/A4/22.2.B/22.3 channels).
 
-## 3. Implementation Sequencing
+## 3. Implementation Sequencing — ⚠️ SUPERSEDED (Azure path; see §0 for the AD CS sequence)
+
+> The AD CS sequence is: §0.1 CA template → §0.2 cert enrollment → §0.3 self-hosted runner → §0.4 repo vars → §0.5 free TSA → §0.6 environment → §0.7 Trusted Publisher GPO → tag `v0.2.0`. The Azure sequencing below is historical only.
 
 ADR-0012-EA "22.2 pre-req docs" items'ın sıralı infaz akışı:
 
@@ -182,7 +209,9 @@ Item 7 (Trusted signed invariant enforcement — AG-024 implementation TODO)
 A2/A3/A4 pilot acceptance unlock
 ```
 
-## 4. Operator Action Checklist (Top-Level)
+## 4. Operator Action Checklist (Top-Level) — ⚠️ SUPERSEDED (Azure path; use §0 AD CS checklist)
+
+> The authoritative operator checklist is **§0 (AD CS, FREE)** above. The Azure pay-as-you-go table below is historical/comparison only — do NOT action it.
 
 | Item | Status | Owner | Effort |
 |---|---|---|---|
@@ -196,21 +225,21 @@ A2/A3/A4 pilot acceptance unlock
 
 Toplam operator effort: ~3-7 gün (Azure approval timeline dahil)
 
-## 5. Boundary (HARD)
+## 5. Boundary (HARD) — AD CS path (authoritative)
 
-- **DRAFT only** — operator/security/Azure tenant admin review required before infrastructure prep
-- **Agent docs-only** — Azure RBAC, GitHub OIDC, certificate profile, timestamp endpoint setup **operator-side**; agent dokunmaz (no credential, no RBAC mutation, no cert/key generation)
-- **No actual Azure tenant id / subscription id / certificate thumbprint** in this template (placeholders only)
-- **AG-018 + AG-024 backend gate** — backend trusted signing pipeline implementation + signed manifest verification TRACKING-ROADMAP backlog TODO; operator infrastructure prep prerequisite
-- **A1 lab exception** — `RB-faz22-non-domain-windows-pilot.md §7.3` time-boxed SHA-pinned unsigned exception (30 gün max)
-- **NOT prod-ready** — pilot infrastructure prep only; production deployment ayrı release pipeline + EV cert + extended audit
+- **NO paid services** — Azure Trusted Signing (pay-as-you-go) EXCLUDED by owner decision (2026-06-09). AD CS internal CA = Windows Server built-in = $0; free public RFC3161 TSA.
+- **NO PFX / NO long-lived secret in GitHub, NO Azure/OIDC** — the cert + private key live in the self-hosted signing runner's `LocalMachine\My` (non-exportable); the runner never exports the key.
+- **Agent ≠ operator infra** — AG-018 wired the pipeline (`build-msi.ps1 -SigningMode trusted` + `release-msi-adcs.yml`); the operator stands up the CA template, the cert, the self-hosted runner, the repo vars, the environment, and the Trusted Publisher GPO. The agent does NOT generate certs/keys, run the CA, or mutate runner config.
+- **Inert until enabled** — `ADCS_SIGNING_ENABLED=true` + the ADCS_* vars + the runner online gate activation; the pipeline is fail-closed (no unsigned-as-production) and config-check is a visible skip when unconfigured.
+- **Internal trust scope** — an AD CS signature is NOT public Windows trust; the AD CS root must reach domain machines' Trusted Publisher via GPO (manifest `publicly_trusted=false`, `requires_trusted_publisher_gpo=true`).
+- **A1 lab exception** — `RB-faz22-non-domain-windows-pilot.md §7.3` time-boxed SHA-pinned unsigned exception (30 gün max).
 
 ## 6. Tracked by
 
 - ADR-0012-EA "22.2 pre-req docs" section (7 item canonical)
 - RB-faz22-non-domain-windows-pilot.md §7 Signed Distribution Policy
 - gitops PR #1043 RB MERGED `47fca508`
-- AG-018 trusted signing pipeline (TRACKING-ROADMAP TODO)
+- **AG-018 AD CS trusted-signing pipeline SKELETON — DONE** (platform-agent #130 Azure-skeleton → re-pointed to AD CS free path; `build-msi.ps1 -SigningMode trusted` + `release-msi-adcs.yml`; fail-closed + inert until operator-enabled). Azure path EXCLUDED (owner: no paid).
 - AG-024 Signed update manifest verification (TRACKING-ROADMAP TODO)
 - 22-2-byod-consent-template.md (BYOD consent paralel)
 - 22-2-kvkk-data-inventory.md (KVKK paralel)
