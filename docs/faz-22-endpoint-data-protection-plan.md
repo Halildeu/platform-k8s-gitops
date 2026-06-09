@@ -82,6 +82,8 @@ post-upload quarantine DLP scan + disabled-capability-not-advertised (AG-013).
 
 ### §3.1 — OSS-only Engine / Tool Kararları (PR #1395 absorb)
 
+> **Canonical karar: [ADR-0036](./adr/0036-faz-22-oss-build-vs-buy.md)** (owner 2026-06-09) — 22.8A **dry-run manifest in-house build** (file-walk + **metadata-only**: path-class/size/mtime-bucket/owner-scope/count + allow/deny; **içerik okuma/içerik hash YOK** — DC-EA-1 invariant, content hash onaylı bounded-content/copy yetkisine ertelenir); **Kopia yalnız gerçek copy/restore/retention gerekirse wrap**; Velociraptor yalnız DFIR reactivation (#1403); YARA yalnız dosya-içerik IOC/malware/imza scan gerektiğinde (secret-scan ayrı scanner sınırı). Aşağıdaki tablo ADR-0036 §2 ile **decision-closed** — gerekçe referansı.
+
 > Faz 22.8 kararı "dosya kopyalayan bir aracı alıp çalıştırmak" **değildir**.
 > Endpoint-admin policy/approval/audit/retention/chain-of-custody katmanlarını
 > **kendi üretir**; OSS araçlar yalnız **bounded engine / storage transport /
@@ -92,11 +94,11 @@ post-upload quarantine DLP scan + disabled-capability-not-advertised (AG-013).
 
 | Araç | Karar | Sistem-fit notu |
 |---|---|---|
-| **Kopia** | **PRIMARY ENGINE CANDIDATE** (Apache-2.0; cross-platform snapshot/dedup/encryption) | DD-EA-9 allowlist/denylist + manifest wrapper içinde; **dry-run metadata-only invariant'ını (§5) bozmaz** |
-| restic | FALLBACK / cold archive | Kopia unattended/service sürtünmesinde |
-| BorgBackup | WATCHLIST (Windows service ergonomics kanıtlanmadan primary değil) | — |
-| Duplicati | **CONDITIONAL / likely reject** (license'da `proprietary/` boundary) | OSS-only ihlali |
-| rclone | **STORAGE TRANSPORT ONLY** | §9 scoped write-only upload transport helper'ı; policy/snapshot engine **değil** |
+| **Kopia** | **WRAP-only-if-real-copy** (ADR-0036; Apache-2.0; cross-platform snapshot/dedup/encryption) | Dry-run in-house metadata-only; Kopia yalnız gerçek backup **copy** + repo lifecycle + restore drill + retention devreye alınırsa DD-EA-9 wrapper içinde wrap edilir; **dry-run metadata-only invariant'ını (§5) bozmaz** |
+| restic | **HISTORICAL / not selected** (ADR-0036) | Dry-run in-house; gerçek-copy fallback gerekirse ayrı ADR (Cat-3 listesi Kopia ile sınırlı) |
+| BorgBackup | **HISTORICAL / not selected** (ADR-0036) | Windows service ergonomics pursued edilmedi |
+| Duplicati | **SKIP / license boundary** (ADR-0036) | `proprietary/` boundary = OSS-only ihlali; not selected |
+| rclone | **TRANSPORT-REFERENCE ONLY** (ADR-0036) | §9 scoped write-only upload transport helper'ı; backup/snapshot engine **değil**; storage transport adoption gerekirse ayrı ADR + #1388/DPA |
 | Own dedup/encryption engine | **REJECT** | platform wrapper/policy/audit yazar, backup internals yazmaz |
 
 **22.8B offboarding:** serbest SMB copy **değil** — 22.8A engine'i bounded
@@ -107,11 +109,11 @@ ADR-0035 §1 (per-case ACL/encryption/WORM-equiv/audit) gate'leriyle.
 
 | Araç | Karar | Sistem-fit notu |
 |---|---|---|
-| **Velociraptor** | **REFERENCE / serverless ops-adapter only** | AGPL + ikinci control-plane riski → standing server YOK; VQL/artifact pattern'leri **clean-room/legal gate** sonrası (#1403) |
-| **YARA** | **INTEGRATE SCANNER CANDIDATE** | §6 **post-upload quarantine DLP/secret-scan** motoru olarak uyarlanabilir |
-| osquery | ADAPT light telemetry/reference | ayrı fleet manager adoption yok |
-| Sigma rules | **LICENSE-GATED REFERENCE** (DRL 1.1) | attribution/legal gate olmadan rule reuse yok |
-| Wazuh | **DEFER / reject as core** | full SIEM/HIDS = ikinci control plane + ağır ops footprint |
+| **Velociraptor** | **reactivation-trigger only** (ADR-0036) | AGPL + ikinci control-plane riski → standing server YOK; yalnız DFIR artifact-collection/live-hunt gerçekten landerse (22.8C clean-room + legal gate #1403) re-evaluate edilir; standing wrap değil |
+| **YARA** | **WRAP-only-if-scan** (ADR-0036) | Yalnız **dosya-içerik IOC/malware/imza** scan gerektiğinde wrap; **secret/credential-scan AYRI scanner sınırı** olabilir (YARA otomatik cevap değil); §6 bounded job + resource cap |
+| osquery | **SKIP** (ADR-0036) | Posture zaten in-house (AG-*); ayrı fleet manager/query motoru gereksiz |
+| Sigma rules | **SKIP** (ADR-0036; DRL 1.1 license-gated) | DRL 1.1 standart permissive OSS değil; attribution/legal gate olmadan rule reuse yok |
+| Wazuh | **SKIP / reject-as-core** (ADR-0036) | full SIEM/HIDS = ikinci control plane + ağır ops footprint |
 
 ## §4 — Non-goals (DC-EA-RED + sınırlar)
 
@@ -281,10 +283,10 @@ besler.)
 | gitops #1389 | Phase boundary sync | 22.5/22.6/22.7/22.8 canonical |
 | gitops #1390 | 22.8 charter | BLOCKED by #1388 (bu plan charter'ı besler) |
 | agent #117 | 22.8A dry-run manifest | BLOCKED by #1388/#1390; **metadata-only, içerik hash YOK** |
-| gitops #1399 | 22.8A backup engine matrix | Kopia PRIMARY / restic FALLBACK / Duplicati reject (§3.1) |
-| gitops #1400 | OSS-only build-vs-buy decision matrix | Cross-phase karar otoritesi; runtime yetkisi vermez |
-| gitops #1403 | Velociraptor clean-room/legal ADR | 22.8C forensic boundary (AGPL/2nd-control-plane) |
-| gitops #1404 | YARA/osquery/Sigma scanner reference | YARA → §6 quarantine DLP; Sigma LICENSE-GATED |
+| gitops #1399 | 22.8A backup engine matrix | **CLOSED by ADR-0036**: dry-run in-house metadata-only; Kopia wrap-only-if-real-copy |
+| gitops #1400 | OSS-only build-vs-buy decision matrix | **DECISION-CLOSED by ADR-0036** (Cat1+2 in-house); runtime yetkisi vermez |
+| gitops #1403 | Velociraptor clean-room/legal ADR | 22.8C forensic boundary; ADR-0036: reactivation-trigger only (AGPL/2nd-control-plane) |
+| gitops #1404 | YARA/osquery/Sigma scanner reference | **CLOSED by ADR-0036**: posture in-house; YARA wrap-only-if-scan; osquery/Sigma/Wazuh skip |
 | **YENİ** | ADR-0012-EA §0 DD-EA-9 + DC-EA axis migration | #1388 altında (22.6 §0 ile ortak migration slice) |
 
 ## §16 — Cross-AI Consensus Log

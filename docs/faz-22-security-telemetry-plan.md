@@ -31,13 +31,15 @@ lisans/güvenlik sınırı ve #1388 governance gate'i gerekir.
 
 ## 3. OSS-only Karar Matrisi
 
+> **Canonical karar:** Bu matris artık [ADR-0036](./adr/0036-faz-22-oss-build-vs-buy.md) tarafından konsolide edilmiştir (owner kararı 2026-06-09: "Kategori 1 ve 2 tamamını biz yazalım"). Özet: **posture telemetri zaten in-house** (AG-035/037/038/039/040 probe hattı); **YARA** yalnız dosya-içerik IOC/malware/imza taraması gerçekten gerektiğinde wrap edilir (ayrı scanner sınırı + #1388 + DPA/lisans); **osquery/Sigma/Wazuh skip** (posture zaten toplanıyor; Sigma DRL 1.1 lisans-gated, standart OSS değil; Wazuh full SIEM/HIDS = ikinci control plane, reject-as-core). Aşağıdaki tablo gerekçe referansı olarak korunur; bağlayıcı karar ADR-0036'dadır.
+
 | Araç / yaklaşım | Lisans sinyali | Karar | Gerekçe | Takip |
 |---|---|---|---|---|
-| osquery-style query/table model | Apache-2.0 project signal; packs/extensions separately reviewed | **REFERENCE / possible light adapter** | Endpoint state query modeli mevcut inventory/compliance mimarisine uyabilir; ayrı fleet manager adoption yok | #1404 |
-| YARA | BSD-3-Clause | **INTEGRATE SCANNER CANDIDATE** | Bounded malware/signature scan job'ları audit ve resource cap ile modellenebilir | #1404 |
-| Sigma rules | DRL 1.1 | **LICENSE-GATED REFERENCE** | DRL normal permissive OSS lisansı değildir; attribution/legal gate olmadan rule reuse yok | #1404 |
-| Wazuh | GPL-2.0 family | **DEFER / reject as core** | Full SIEM/HIDS stack ikinci control plane ve ağır ops footprint getirir | #1404 |
-| Velociraptor | AGPL-3.0 | **22.8C reference, not 22.9 core** | Forensic/IR pattern'leri 22.8C clean-room ADR kapsamında kalır | #1403 |
+| osquery-style query/table model | Apache-2.0 project signal; packs/extensions separately reviewed | **SKIP** (ADR-0036) | Posture telemetri zaten in-house toplanıyor (AG-035/037/038/039/040); ayrı fleet manager/query motoru gereksiz | #1404 |
+| YARA | BSD-3-Clause | **WRAP-only-if-scan** (ADR-0036) | Yalnız dosya-içerik IOC/malware/imza scan gerektiğinde wrap; secret/credential-scan AYRI scanner sınırı olabilir; bounded job + resource cap + audit | #1404 |
+| Sigma rules | DRL 1.1 | **SKIP** (ADR-0036; license-gated) | DRL 1.1 standart permissive OSS değil; attribution/legal gate olmadan rule reuse yok | #1404 |
+| Wazuh | GPL-2.0 family | **SKIP / reject-as-core** (ADR-0036) | Full SIEM/HIDS stack = ikinci control plane + ağır ops footprint | #1404 |
+| Velociraptor | AGPL-3.0 | **reactivation-trigger only** (ADR-0036) | Yalnız DFIR artifact-collection/live-hunt landerse (22.8C clean-room + legal #1403) re-evaluate; standing server YOK | #1403 |
 
 ## 4. Non-goals
 
@@ -52,13 +54,12 @@ lisans/güvenlik sınırı ve #1388 governance gate'i gerekir.
 
 ## 5. İlk Güvenli Slice
 
-22.9 için ilk güvenli adım #1404 matrix'idir:
+> Build-vs-buy karar matrisi artık [ADR-0036](./adr/0036-faz-22-oss-build-vs-buy.md) ile **decision-closed**: posture in-house (AG-*), YARA wrap-only-if-scan, osquery/Sigma/Wazuh skip. Bu bölümdeki "ilk güvenli slice" artık "matrisi karar bağla" değil; **scan kabiliyeti gerçekten landerse** çalışacak runtime scanner kontratı tasarımıdır:
 
-1. osquery, YARA, Sigma ve Wazuh için lisans/kullanım sınırı yazılır.
-2. Runtime scan açmadan query/rule packaging modeli tasarlanır.
-3. Resource caps, denylist, redaction ve audit event kontratı belirlenir.
-4. Endpoint-admin core'a alınacak bileşenler ile future SIEM connector'lar
-   ayrılır.
+1. Posture telemetri zaten in-house (AG-035/037/038/039/040) — yeni motor gerekmez.
+2. **YARA wrap** ancak dosya-içerik IOC/malware/imza scan kabiliyeti devreye alınırsa: runtime scan açmadan bounded scan/job packaging modeli + lisans/kullanım sınırı tasarlanır (ayrı ADR + #1388 + DPA).
+3. Resource caps, denylist, redaction ve audit event kontratı belirlenir; secret/credential-scan AYRI scanner sınırı olarak ele alınır.
+4. SIEM/HIDS (Wazuh) ve Sigma reuse'u **skip** — adoption gerekirse ayrı charter/ADR (ADR-0002 §7.1 kaynak bütçesi).
 
 Bu slice endpoint üzerinde scan çalıştırmaz ve agent binary değişikliği
 gerektirmez.
@@ -79,5 +80,5 @@ kanıtlandığında kurulabilir.
 | Issue | Rol | Status yorumu |
 |---|---|---|
 | gitops #1388 | Sensitive Endpoint Ops Governance Gate | Runtime scan/action ön koşulu |
-| gitops #1400 | OSS-only build-vs-buy decision matrix | Cross-phase karar otoritesi |
-| gitops #1404 | 22.9 telemetry/security matrix | Todo/P1; ilk güvenli slice |
+| gitops #1400 | OSS-only build-vs-buy decision matrix | **DECISION-CLOSED by ADR-0036** (Cat1+2 in-house) |
+| gitops #1404 | 22.9 telemetry/security matrix | **CLOSED by ADR-0036**: posture in-house (AG-*), YARA wrap-only-if-scan, osquery/Sigma/Wazuh skip; runtime scanner kontratı yalnız scan kabiliyeti landerse |

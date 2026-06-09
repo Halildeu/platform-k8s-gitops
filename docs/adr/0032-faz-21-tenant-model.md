@@ -37,7 +37,7 @@ Faz 21 multi-tenant migration **bu Layer-1'i daha iyi kullanır** — multi-org 
 - JWT claim `org_id` **canonical** v1 tenant pointer (Faz 23 M2 Layer-1 ile uyumlu)
 - Yeni `tenant_id` claim/column introduce **EDİLMEZ** v1'de (alias/compat olabilir, second source-of-truth olmaz)
 - Tüm tenant context propagation `org_id` üzerinden gerçekleşir
-- Reversal trigger (§5): "tenant" semantik "org" semantik'ten genişlerse (örn. one org → multiple tenants), ADR-0033 ile re-charter
+- Reversal trigger (§5): "tenant" semantik "org" semantik'ten genişlerse (örn. one org → multiple tenants), ADR-0037 ile re-charter
 
 ### 2.1 Decision rationale
 
@@ -71,7 +71,7 @@ Ayrı store/model **yalnız reversal trigger** (§5) sonrası — örn. tenant-X
 
 > **Live state (2026-06-03 test cluster dry-run)**: `notify` schema persists `org_id` canonically (4 discovered tables on test cluster). `endpoint_admin_service` schema currently persists **`tenant_id`** (7 discovered tables on test cluster). Faz 21.1 sub-faz binding rename: endpoint backend `tenant_id → org_id` column + service-layer DTO mapper update + Flyway V<N> migration. Pre-migration audit script accommodates the drift via tenant_id fallback chain so Faz 21.0 audit completes; rename is the binding lock-in deliverable. Evidence: [`docs/faz-23-evidence/2026-06-03-faz-21-dryrun-on-test-cluster.md`](../faz-23-evidence/2026-06-03-faz-21-dryrun-on-test-cluster.md) §3.
 
-**Deferred (Faz 21.2 ADR-0033)**: physical isolation — single schema vs schema-per-tenant vs DB-per-tenant. Pre-migration audit + dry-run evidence consumed sonrası karar.
+**Deferred (Faz 21.2 ADR-0037)**: physical isolation — single schema vs schema-per-tenant vs DB-per-tenant. Pre-migration audit + dry-run evidence consumed sonrası karar.
 
 ### 3.3 Vault — tenant secret namespace
 
@@ -106,7 +106,7 @@ ExternalSecret + ESO config: per-tenant `ExternalSecret` resource veya tenant-aw
   - Migration backfill mevcut single-tenant data'yı `org_id=org_a` ile mark eder; mass renaming yok
 
 - **Negatif / risk**:
-  - "Tenant" semantik "org" semantik'ten gelecekte ayrılırsa (örn. business request: one org → multiple workspace) reversal gerek (ADR-0033 veya yeni ADR)
+  - "Tenant" semantik "org" semantik'ten gelecekte ayrılırsa (örn. business request: one org → multiple workspace) reversal gerek (ADR-0037 veya yeni ADR)
   - `org_id` zaten Faz 23'ten geliyor; legacy semantik kararı v1'i bağlar (tenant ≡ org constraint kullanıcıya iletilir)
   - OpenFGA object namespace tüm tuple'larda update — migration boyutu büyük; pre-migration audit (Faz 21.0) cost-benefit hesabı yapar
 
@@ -116,8 +116,8 @@ ExternalSecret + ESO config: per-tenant `ExternalSecret` resource veya tenant-aw
 |---|---|---|
 | **Faz 21.0 Pre-migration audit** | This ADR merged + charter merged + Codex AGREE | R10 invariant test harness + audit script + dry-run on prod snapshot evidence |
 | **Faz 21.1 Tenant model code lock-in** | Faz 21.0 evidence accepted | platform-backend + platform-k8s-gitops + platform-web + platform-ai PR'larında 4 R10 invariant enforced |
-| **Faz 21.2 Physical isolation decision** | Faz 21.1 source-side ready + audit/dry-run evidence consumed | ADR-0033 single schema vs schema-per-tenant vs DB-per-tenant decision lock-in |
-| **Faz 21.3 Migration execution** | ADR-0033 merged + Faz 21.1 cross-AI review + acceptance gate (D29) | Live multi-tenant evidence: 2+ tenant'larda isolation kanıtlanır + cross-leak smoke test green |
+| **Faz 21.2 Physical isolation decision** | Faz 21.1 source-side ready + audit/dry-run evidence consumed | ADR-0037 single schema vs schema-per-tenant vs DB-per-tenant decision lock-in |
+| **Faz 21.3 Migration execution** | ADR-0037 merged + Faz 21.1 cross-AI review + acceptance gate (D29) | Live multi-tenant evidence: 2+ tenant'larda isolation kanıtlanır + cross-leak smoke test green |
 | **Faz 21.4 Operational closure** | Faz 21.3 evidence accepted | Per-tenant Grafana + per-tenant alert + tenant onboarding runbook + SLA observable |
 
 ---
@@ -129,11 +129,11 @@ ExternalSecret + ESO config: per-tenant `ExternalSecret` resource veya tenant-aw
 - **Alt-A: New `tenant_id` claim/column** — REJECTED (drift risk, migration cost, Codex strategic verdict 2026-06-03)
 - **Alt-B: Per-tenant OpenFGA store/model** — REJECTED v1 (operational complexity; deferred to reversal trigger)
 - **Alt-C: Vault path `kv/<tenant>/platform/...`** — REJECTED (operator mental model + legacy compat preference)
-- **Alt-D: Physical isolation = DB-per-tenant default** — DEFERRED Faz 21.2 ADR-0033 (audit + dry-run evidence sonrası)
+- **Alt-D: Physical isolation = DB-per-tenant default** — DEFERRED Faz 21.2 ADR-0037 (audit + dry-run evidence sonrası)
 
 ### 5.2 Deferred decisions (NOT in this ADR)
 
-- Physical isolation (single schema vs schema-per-tenant vs DB-per-tenant) — Faz 21.2 ADR-0033
+- Physical isolation (single schema vs schema-per-tenant vs DB-per-tenant) — Faz 21.2 ADR-0037
 - Tenant onboarding self-service flow — post-Faz-21 v1.1
 - Tenant switcher UI shape (platform-web) — Faz 21.4 veya post-v1
 - Cross-tenant analytics platform (read-only aggregated) — post-Faz-21

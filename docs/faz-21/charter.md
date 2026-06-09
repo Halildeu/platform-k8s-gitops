@@ -153,7 +153,7 @@ Acceptance evidence document: `docs/faz-23-evidence/<YYYY-MM-DD>-r10-invariant-t
 |---|---|---|
 | **Faz 21.0 — Pre-Migration Audit** | R10 invariant test harness (PR-3 A); pre-migration audit script; dry-run on prod snapshot; per-tenant isolation test corpus | Audit script produces evidence; 4 invariants tested green; orphan/mixed row count==0 on snapshot |
 | **Faz 21.1 — Logical Isolation Lock-In** | Tenant model code (platform-backend); persistence `org_id` constraint; service layer DTO mapper; AuthN filter wiring; OpenFGA tenant namespace; Vault path migration | All 4 R10 invariants enforced in code + tests; PR boundary declaration ADR-0011 §2.3 |
-| **Faz 21.2 — Physical Isolation Decision Gate** | Pre-migration audit + dry-run evidence consumed; ADR-0033 (physical isolation: single schema vs schema-per-tenant vs DB-per-tenant); decision lock-in | ADR-0033 merged with explicit rationale + alternatives + reversal triggers |
+| **Faz 21.2 — Physical Isolation Decision Gate** | Pre-migration audit + dry-run evidence consumed; ADR-0037 (physical isolation: single schema vs schema-per-tenant vs DB-per-tenant); decision lock-in | ADR-0037 merged with explicit rationale + alternatives + reversal triggers |
 | **Faz 21.3 — Migration Execution** | Per-tenant migration runbook + cutover; tenant data backfill; per-tenant cluster overlay; cross-tenant smoke test | Live multi-tenant evidence: 2+ tenant org_id'lerinin isolation kanıtlanır (no cross-leak) |
 | **Faz 21.4 — Operational Closure** | Per-tenant Grafana dashboard; per-tenant alert; tenant onboarding runbook; SLA per-tenant tracking | Operational runbook canonical; tenant SLA observable |
 
@@ -161,7 +161,7 @@ Acceptance evidence document: `docs/faz-23-evidence/<YYYY-MM-DD>-r10-invariant-t
 
 - [ ] Faz 21.0 — Pre-migration audit evidence + R10 4 invariant test green
 - [ ] Faz 21.1 — Tenant model code MERGED + cross-AI review + acceptance gate (D29 Up/Functional/Secured)
-- [ ] Faz 21.2 — ADR-0033 physical isolation decision merged
+- [ ] Faz 21.2 — ADR-0037 physical isolation decision merged
 - [ ] Faz 21.3 — Live multi-tenant evidence: 2+ tenant'larda isolation kanıtlanır + cross-leak smoke test green
 - [ ] Faz 21.4 — Per-tenant ops runbook + per-tenant SLA observable
 - [ ] All 4 R10 invariants enforced + tested (not just declared)
@@ -171,7 +171,7 @@ Acceptance evidence document: `docs/faz-23-evidence/<YYYY-MM-DD>-r10-invariant-t
 
 | Decision | Reason | Resolution gate |
 |---|---|---|
-| Physical isolation: single schema vs schema-per-tenant vs DB-per-tenant | Pre-migration audit + dry-run evidence ihtiyacı | Faz 21.2 (ADR-0033) |
+| Physical isolation: single schema vs schema-per-tenant vs DB-per-tenant | Pre-migration audit + dry-run evidence ihtiyacı | Faz 21.2 (ADR-0037) |
 | Tenant switcher UI shape (platform-web) | Frontend scope sub-faz; v1 acceptance için kritik değil | Faz 21.4 veya post-Faz-21 v1.1 |
 | Cross-tenant analytics platform (read-only aggregated) | v1 scope dışı; operator-only platform-level | Post-Faz-21 (Faz 22+ sub-faz) |
 | Tenant-isolated AI fine-tuning | platform-ai capacity + business decision | Faz 22+ (Codex strategic consult required) |
