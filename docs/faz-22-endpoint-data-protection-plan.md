@@ -86,7 +86,7 @@ post-upload quarantine DLP scan + disabled-capability-not-advertised (AG-013).
 > Endpoint-admin policy/approval/audit/retention/chain-of-custody katmanlarını
 > **kendi üretir**; OSS araçlar yalnız **bounded engine / storage transport /
 > scanner / forensic reference** rolü alır — hepsi **DD-EA-9** (§6) ile sarmalanır,
-> output **evidence-storage-contract** (§7 / [ADR-0034](adr/0034-evidence-storage-contract.md))'a gider.
+> output **evidence-storage-contract** (§7 / [ADR-0035](adr/0035-evidence-storage-contract.md))'a gider.
 
 **22.8A backup engine matrix (#1399):**
 
@@ -101,7 +101,7 @@ post-upload quarantine DLP scan + disabled-capability-not-advertised (AG-013).
 
 **22.8B offboarding:** serbest SMB copy **değil** — 22.8A engine'i bounded
 collection + handoff package workflow'unda yeniden kullanır; SMB hedef yalnız
-ADR-0034 §1 (per-case ACL/encryption/WORM-equiv/audit) gate'leriyle.
+ADR-0035 §1 (per-case ACL/encryption/WORM-equiv/audit) gate'leriyle.
 
 **22.8C forensic matrix:**
 

@@ -1,4 +1,4 @@
-# ADR-0034 — Evidence Storage Contract v0 (Faz 22.8 owns; Faz 22.6 consumes)
+# ADR-0035 — Evidence Storage Contract v0 (Faz 22.8 owns; Faz 22.6 consumes)
 
 > **Status**: PROPOSED / **BLOCKED** — runtime: #1388 + #1390 + ADR-0012-EA §0 (DD-EA-9 + DC-EA) + DPO/legal sign-off.
 > **Tarih**: 2026-06-09 · **Owner faz**: 22.8 (Endpoint Data Protection/Forensic) · **Consumer**: 22.6 (Remote Access session recordings)
