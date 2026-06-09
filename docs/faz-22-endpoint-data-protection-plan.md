@@ -8,7 +8,7 @@
 > **Created**: 2026-06-09 · **System-fit revision**: 2026-06-09
 > **Cross-AI consensus**: Implementer Claude (Opus 4.8) / Reviewer Codex (OpenAI) — thread `019ea961`, **REVISE → AGREE** (2 tur).
 > **Board**: gitops #1388 / #1389 / #1390 / #1399 (22.8A backup engine matrix) / #1400 (OSS-only build-vs-buy) / #1403 (Velociraptor clean-room ADR) / #1404 (YARA/osquery/Sigma), platform-agent [#117](https://github.com/Halildeu/platform-agent/issues/117) (22.8A dry-run manifest)
-> **İlişkili**: [ADR-0012-EA](adr/0012-EA-endpoint-admin-governance-charter.md) (extended ladder + DD-EA), [22.6 plan](faz-22-remote-access-bridge-plan.md) + [ADR-0033](adr/0033-faz226-remote-access-broker.md) + [#1388 acceptance package](faz-22-6-1388-acceptance-package.md) (evidence-storage-contract tüketicisi)
+> **İlişkili**: [ADR-0012-EA](adr/0012-EA-endpoint-admin-governance-charter.md) (extended ladder + DD-EA), [22.6 plan](faz-22-remote-access-bridge-plan.md) + [ADR-0033](adr/0033-faz-22-6-remote-access-bridge-broker.md) + [#1388 acceptance package](faz-22-6-1388-acceptance-package.md) (evidence-storage-contract tüketicisi)
 
 Bu doküman, endpoint verisi için **planlı yedekleme**, **işten çıkışta kontrollü
 veri toplama** ve **denetim/soruşturma forensic collection** hattını tanımlar.

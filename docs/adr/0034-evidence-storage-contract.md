@@ -3,7 +3,7 @@
 > **Status**: PROPOSED / **BLOCKED** — runtime: #1388 + #1390 + ADR-0012-EA §0 (DD-EA-9 + DC-EA) + DPO/legal sign-off.
 > **Tarih**: 2026-06-09 · **Owner faz**: 22.8 (Endpoint Data Protection/Forensic) · **Consumer**: 22.6 (Remote Access session recordings)
 > **Cross-AI**: Implementer Claude (Opus 4.8) / Reviewer Codex (OpenAI) — thread `019ea961` AGREE.
-> **İlişkili**: [22.8 plan](../faz-22-endpoint-data-protection-plan.md), [ADR-0033 broker](0033-faz226-remote-access-broker.md), [ADR-0012-EA](0012-EA-endpoint-admin-governance-charter.md), [#1388 acceptance package](../faz-22-6-1388-acceptance-package.md), BE-016.
+> **İlişkili**: [22.8 plan](../faz-22-endpoint-data-protection-plan.md), [ADR-0033 broker](0033-faz-22-6-remote-access-bridge-broker.md), [ADR-0012-EA](0012-EA-endpoint-admin-governance-charter.md), [#1388 acceptance package](../faz-22-6-1388-acceptance-package.md), BE-016.
 
 Bu ADR, hassas endpoint evidence'ı (forensic koleksiyon, offboarding copy, backup,
 ve 22.6 session recording) için **tek, paylaşılan evidence-storage-contract**'ı
