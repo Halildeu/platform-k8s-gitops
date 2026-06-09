@@ -22,12 +22,12 @@
 | Operasyon sınıfı | Candidate KVKK | Candidate GDPR | Not |
 |---|---|---|---|
 | Attended IT support session (no recording) | m.5/2-f meşru menfaat | Art.6(1)(f) legitimate interest | balancing test + aydınlatma |
-| Session recording (4-F) | m.6 açık rıza **veya** m.5/2-f + balancing | Art.6(1)(a)/(f) + Art.9 (özel nitelikli olabilir) | DPO karar; recording yüksek hassasiyet |
+| Session recording (4-F) | **m.5/2-f meşru menfaat** (primary, balancing + aydınlatma) — m.6 **yalnız özel-nitelikli veri görünürse** | Art.6(1)(f) primary; Art.9 yalnız special-category | ADR-0034 D1/D3/D4 ile hizalı (m.5 default, m.6 koşullu) |
 | Unattended / break-glass | m.5/2-f + m.5/2-ç hukuki yükümlülük (olası) | Art.6(1)(c)/(f) | acil/güvenlik gerekçesi + post-use review |
 | BYOD (22.2.A kişisel cihaz) | iş sözleşmesi VEYA açık rıza (DPO) | Art.6(1)(b)/(a) | cihaz sahibi hakları güçlü |
 
-**Açık karar (DPO):** Tek madde erken mühürlenmez; recording için m.6 mı, m.5/2-f
-+ balancing mi — DPO belirler.
+**Açık karar (DPO):** Tek madde erken mühürlenmez; recording için **default m.5/2-f
++ balancing** (ADR-0034 D1); **m.6 yalnız özel-nitelikli veri varsa** (ADR-0034 D4) — DPO teyit eder.
 
 ## 2. RBAC Scope Catalog (statik OpenFGA perm — yalnız permission-service yazar)
 
@@ -84,13 +84,15 @@ remote_session_audit (append-only, WORM):
 | Heartbeat / metadata | 90d → delete |
 | Raw inventory / IP / UPN / SID | 30d-raw → 90d-hashed → delete |
 | Local user / software | 30d → delete |
-| Audit log | 365d (BE-016 immutable) |
+| Genel inventory audit log | 365d (BE-016 immutable) |
+| **Session-governance audit / metadata (4-F)** | **7y immutable** (ADR-0034 D3; BE-016 hash-chain) |
 | **Session transcript (4-E/4-F-PTY)** *(YENİ — inventory'ye eklenecek)* | **90d, access-audited** |
 | **Session video recording (4-F-REMOTE-CONTROL)** *(YENİ)* | **90d-raw → crypto-erase**, access-audited, DPIA-bound |
 
-> **REQUIRED DOC EDIT:** session-transcript + session-recording kategorileri
-> `docs/22-2-kvkk-data-inventory.md`'ye **eklenmelidir** (DPO-confirm); aksi halde
-> KVKK inventory drift devam eder. (Bu PR'da inventory edit'i yapılır.)
+> **FOLLOW-UP DOC EDIT:** session-transcript + session-recording kategorileri
+> `docs/22-2-kvkk-data-inventory.md`'ye **DPO-confirm follow-up** ile eklenecek; aksi
+> halde KVKK inventory drift devam eder. (Inventory zaten main'de; **bu PR inventory'yi
+> düzenlemez** — yalnız ADR-0012-EA + bu acceptance package.)
 > Otomatik enforcement **BE-019** MERGE'e bağlı; o zamana dek manuel DPO süreci.
 
 ## 6. Chain-of-Custody Template
