@@ -4975,7 +4975,16 @@ images:
     #   startup + Flyway reaches V61 head + the evaluator bean wires.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-90441c1
     #   digest sha256:fd97d1bb702b23858ae58b1475686dad966b4f7a00382e97937062ac3ef1759c
-    digest: sha256:fd97d1bb702b23858ae58b1475686dad966b4f7a00382e97937062ac3ef1759c
+    #
+    # 2026-06-09 update: sha-db52d52 — Faz 22.5 #527 §9.4 (#533): GitHub escalation
+    #   issue GENERATOR. GET .../endpoint-rollout-failures/{id}/escalation-issue
+    #   (can_view) previews the full contract-template issue body from a queue item
+    #   (already-redacted evidence; live GitHub issue create stays operator-bound).
+    #   No migration. Cross-AI Codex 019eaaf0 AGREE. Verify 0-ERROR startup + the
+    #   escalation generator/controller beans wire.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-db52d52
+    #   digest sha256:a71c20529a6db54aebf900c9682bc70078ea2f04801f98747c03bc046ec12f8e
+    digest: sha256:a71c20529a6db54aebf900c9682bc70078ea2f04801f98747c03bc046ec12f8e
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
