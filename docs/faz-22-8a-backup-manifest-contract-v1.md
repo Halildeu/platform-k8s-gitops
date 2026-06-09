@@ -3,7 +3,7 @@
 > **Status**: PROPOSED / **BLOCKED** — #1388 + #1390 + ADR-0012-EA §0 (DC-EA + DD-EA-9).
 > **DC-EA tier**: **DC-EA-1** (metadata-only; **içerik OKUNMAZ, hash YOK**).
 > **Tarih**: 2026-06-09 · **Owner**: platform-agent [#117](https://github.com/Halildeu/platform-agent/issues/117)
-> **Cross-AI**: Codex `019ea961` AGREE. **İlişkili**: [22.8 plan](faz-22-endpoint-data-protection-plan.md), [ADR-0034 evidence-storage-contract](adr/0034-evidence-storage-contract.md), [ADR-0012-EA §0 DC-EA/DD-EA-9](adr/0012-EA-endpoint-admin-governance-charter.md).
+> **Cross-AI**: Codex `019ea961` AGREE. **İlişkili**: [22.8 plan](faz-22-endpoint-data-protection-plan.md), [ADR-0035 evidence-storage-contract](adr/0035-evidence-storage-contract.md), [ADR-0012-EA §0 DC-EA/DD-EA-9](adr/0012-EA-endpoint-admin-governance-charter.md).
 
 Bu kontrat, 22.8A scheduled backup'ın **ilk güvenli adımını** tanımlar: agent,
 dosya **içeriğini okumadan** ne yedekleneceğinin **metadata-only manifest**'ini
@@ -74,7 +74,7 @@ kritik düzeltmesi: SHA256 hesaplamak = içerik okumak).
 - `denied_*` = DC-EA-RED isabetleri **aggregate**; `denied_classes` **coarse**
   (uygulama/ürün parmak izi YOK — "KeePass found" gibi değil). Ürün adı yalnız
   local debug + DPO-onaylı redacted operator evidence'da.
-- `is_container` = true → ADR-0034 §6 + 22.8 plan §4: **release öncesi recursive
+- `is_container` = true → ADR-0035 §6 + 22.8 plan §4: **release öncesi recursive
   classification / quarantine** (içerik hash bu adımda yok; sadece flag).
 - `owner_scope_marker=unknown` → company-managed proof yok → content'e geçmez (§8 plan).
 
