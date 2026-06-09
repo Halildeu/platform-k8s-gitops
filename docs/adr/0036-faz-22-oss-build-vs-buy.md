@@ -29,7 +29,7 @@ Broker / policy / **OpenFGA authz** / dual-control (no self-approval) / immutabl
 | 22.6 reverse tunnel | **New WS data-plane** that **reuses the agent's existing identity/credential roots** (enrollment cert + HMAC), NOT the existing REST poll transport (that is request/response, not streaming) | OpenZiti / zrok |
 | 22.6 interactive shell | Constrained **PTY/terminal** via Windows ConPTY (NOT raw shell — explicit exception, §4) | — |
 | 22.6 session recording | Terminal-I/O capture (asciicast/ttyrec) + hash-chain reusing the audit primitive; **fail-closed** | — |
-| 22.8A backup | **Dry-run manifest only** (file-walk + hash + allow/deny report; NO copy) | Kopia (not for dry-run) |
+| 22.8A backup | **Dry-run manifest only** — file-walk + **metadata** (path-class / size / mtime-bucket / owner-scope / count) + allow/deny report; **NO content read, NO content hash, NO copy** (content hash crosses the DC-EA-1 metadata-only boundary = reading file content → deferred to an approved bounded-content/copy capability) | Kopia (not for dry-run) |
 | 22.9 posture telemetry | **Already built** via AG-035/037/038/039/040 probes | osquery |
 
 ### Category 3 — Wrap a focused OSS lib ONLY when its specific capability lands (capability-specific trigger)

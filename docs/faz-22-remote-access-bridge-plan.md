@@ -50,13 +50,17 @@ Faz 22.6 için karar, "remote access ürününü alıp platformun yerine koymak"
 değildir. Endpoint-admin **broker / policy / approval / audit** katmanını
 kendi üretir; açık kaynak araçlar yalnız transport/relay adayı olabilir.
 
-| Araç / yaklaşım | Karar | Gerekçe | Takip |
+> Tablo ADR-0036 §2 ile **decision-closed**; aşağıdaki satırlar tarihsel gerekçe + canonical karar etiketidir (actionable transport-seçimi değil).
+
+| Araç / yaklaşım | Karar (ADR-0036) | Gerekçe | Takip |
 |---|---|---|---|
-| Endpoint-admin broker | **BUILD CORE** | #1388 dual-control, RBAC, audit/recording, retention, TTL ve abort semantics platform-native olmalı | #1402 |
-| MeshCentral | **ADAPT / primary transport POC** | Agent/relay ve no-inbound model güçlü; fakat authz/audit/approval sahibi olamaz | #1401 |
-| RustDesk OSS server/client | **SECONDARY POC / defer** | Relay modeli faydalı olabilir; AGPL/distribution ve paid/pro feature boundary daha sıkı review ister | #1401 |
-| Apache Guacamole | **REJECT primary path** | Agentless gateway çoğu senaryoda RDP/VNC/SSH reachability gerektirir; outbound endpoint-agent modeliyle zayıf uyumlu | #1400 |
-| Remotely | **REJECT / low priority** | Remote scripting/control yüzeyi bizim control plane ile çakışır; GPL ve uyum riski MeshCentral'dan yüksek | #1400 |
+| Endpoint-admin broker | **BUILD CORE (Cat-1)** | #1388 dual-control, RBAC, audit/recording, retention, TTL ve abort semantics platform-native olmalı | #1402 |
+| 22.6 reverse tunnel | **BUILD IN-HOUSE (Cat-2)** | Yeni WS data-plane mevcut agent identity/credential kökünü (enrollment cert + HMAC) reuse eder; REST-poll transport stream değil; efor MEDIUM-HIGH staged | #1402 |
+| MeshCentral | **SKIP-as-core** | Full suite kendi authz/relay'iyle gelir → wrapper ile delmek #1388 governance bypass'ı olur; transport için kendi WS data-plane'imizi kurarız | #1401 |
+| RustDesk OSS server/client | **SKIP-as-core** | Aynı gerekçe (full suite + AGPL/paid-pro boundary); transport in-house | #1401 |
+| Apache Guacamole | **WRAP-only-if-GUI** | Yalnız screen/RDP/VNC/clipboard/GUI session-shadowing (PTY ötesi) gerektiğinde wrap; PTY pilotu için SKIP | #1400 |
+| OpenZiti / zrok | **SKIP** | Mevcut kanal kökleri reuse edilir; ayrı overlay-network transport gereksiz | #1401 |
+| Remotely | **SKIP** | Remote scripting/control yüzeyi control plane ile çakışır; GPL + uyum riski | #1400 |
 
 Bu karar runtime yetkisi vermez. #1388 kabul edilmeden relay POC bile yalnız
 offline/lab design seviyesinde kalır; canlı remote session açılmaz.
@@ -129,8 +133,8 @@ katman ayrı kanıtlanır.
 |---|---|---|
 | gitops #1388 | Sensitive Endpoint Ops Governance Gate | BLOCKED/P0; 22.6 ve 22.8 runtime ön koşulu |
 | gitops #1389 | Phase boundary sync | Docs/board truth düzeltme |
-| gitops #1400 | OSS-only build-vs-buy decision matrix | Cross-phase karar otoritesi; runtime yetkisi vermez |
-| gitops #1401 | MeshCentral/RustDesk transport adapter POC boundary | Todo/P1; transport-only değerlendirme |
+| gitops #1400 | OSS-only build-vs-buy decision matrix | **DECISION-CLOSED by ADR-0036** (Cat1+2 in-house); runtime yetkisi vermez |
+| gitops #1401 | MeshCentral/RustDesk transport adapter POC boundary | **CLOSED by ADR-0036**: SKIP-as-core, transport in-house WS data-plane; Guacamole wrap-only-if-GUI |
 | gitops #1402 | Remote Access Broker ADR / state machine | Todo/P0; broker/policy/audit core kontratı |
 | backend #510 | 22.6 umbrella | BLOCKED by #1388 |
 | backend #524 | Broker ADR/state machine | BLOCKED by #1388/#510 |
@@ -144,7 +148,7 @@ katman ayrı kanıtlanır.
 
 - [x] ADR-0033 broker mimarisi + authz + token + audit + threat model + KVKK (bu PR)
 - [ ] `#1402`/`#524` broker skeleton: state-machine + OpenFGA `remote_session` + token contract + audit schema, **`ENABLE_REMOTE_SUPPORT=false`** disabled-by-default, tests only
-- [ ] OSS matris refinement (#1400/#1401): OpenZiti/zrok + Guacamole-as-adapter + per-tool bypass-risk
+- [x] OSS matris refinement (#1400/#1401): **CLOSED by ADR-0036** — transport in-house (OpenZiti/zrok/MeshCentral/RustDesk SKIP), Guacamole wrap-only-if-GUI; per-tool bypass-risk kaydı ADR-0036 §2
 - [ ] Negative-test plan: self-approval deny · expired/replayed token deny · capability-mismatch deny · recorder-unavailable deny (fail-closed)
 - [ ] Synthetic loopback tunnel spike (#116) — **lab/synthetic only**; managed endpoint'e bağlanmak runtime sayılır
 
@@ -160,7 +164,7 @@ Aşağıdakiler kabul edilip #1388'de imzalanmadan **hiçbir canlı session aç�
 - [ ] **Attended/unattended + break-glass policy**: pilot **attended-only**; unattended/break-glass Phase 2 (ayrı ADR).
 - [ ] **Named pilot scope**: 2-5 IT-owned cihaz + named requester/operator/approver listesi.
 - [ ] **Capability sınıfları**: pilot için izinli set (öneri: view-only veya allowlist'li PTY; file-transfer/clipboard/elevation OFF).
-- [ ] **3rd-party OSS/relay DPA**: OpenZiti/zrok/MeshCentral subprocessor/DPA duruşu.
+- [ ] **3rd-party OSS/relay DPA**: ADR-0036 ile transport in-house olduğundan standing relay-subprocessor yok; DPA yalnız bir Cat-3 wrap (örn. Guacamole GUI-shadowing) gerçekten devreye alınırsa gerekir (o noktada ayrı ADR + DPA review).
 
 ### 9.3 Pipeline
 
