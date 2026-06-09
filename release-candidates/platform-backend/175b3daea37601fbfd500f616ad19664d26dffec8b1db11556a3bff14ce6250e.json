@@ -63,7 +63,7 @@
   },
   "metadata": {
     "required_migrations": [
-      "notification-orchestrator V17-V20 \u2014 additive, forward-only, rollback-safe (Codex migration GO)"
+      "notification-orchestrator V17-V22 \u2014 V17-V20 FBL/suppression schema (additive); V21 template_analytics partial index (additive); V22 source CHECK widening on email_bounce_event.source + email_suppression.last_source (adds ARF_MAILBOX + POSTMASTER_WEBHOOK, NULL preserved, superset) \u2014 additive/widening, forward-only, DDL-rollback-safe (Codex 019ea936)"
     ],
     "backward_compatible_until": null,
     "rollback_safe": true,
