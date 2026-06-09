@@ -5316,7 +5316,10 @@ images:
   - name: artifact-host
     newName: ghcr.io/halildeu/platform-agent-artifacts
     newTag: v0.1.1-lab.2
-    # digest: sha256:<PIN-AFTER-lab.2-RELEASE-CI>   # D30 immutable pin (pre-merge)
+    # D30 immutable pin — release.yml run 27209821891 (tag v0.1.1-lab.2,
+    # source sha-913147f). EndpointAgent.zip sha256
+    # b88c710d569b74d0fe902434dc2f368bc7fdf99a5d0557190ebc8652f5a7d0fe.
+    digest: sha256:7ac0fd57ef00d7cc68258cda30eba0a2a1b1ed4a94534f8d96bf92cb4e48f764
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
