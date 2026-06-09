@@ -4965,7 +4965,17 @@ images:
     #   listener wires (full bean graph) on apply.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-e0d7d0a
     #   digest sha256:d7e03af399dc4e04963db88e4664ad6cc2aeea76d3fc5ab20bedd21499e1031c
-    digest: sha256:d7e03af399dc4e04963db88e4664ad6cc2aeea76d3fc5ab20bedd21499e1031c
+    #
+    # 2026-06-09 update: sha-90441c1 — Faz 22.5 #527 §9.3 (#532): stop-line
+    #   threshold evaluator via an orchestrator metrics snapshot. POST .../metrics-
+    #   snapshot (can_manage) writes the authoritative wave/fleet denominators
+    #   (V61 endpoint_rollout_wave_metrics_snapshot, append-only); the wave report
+    #   now emits a COMPUTED + ADVISORY stop_line_status (enforced=false always,
+    #   §6 enforcement deferred). Cross-AI Codex 019eaaf0 AGREE. Verify 0-ERROR
+    #   startup + Flyway reaches V61 head + the evaluator bean wires.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-90441c1
+    #   digest sha256:fd97d1bb702b23858ae58b1475686dad966b4f7a00382e97937062ac3ef1759c
+    digest: sha256:fd97d1bb702b23858ae58b1475686dad966b4f7a00382e97937062ac3ef1759c
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
