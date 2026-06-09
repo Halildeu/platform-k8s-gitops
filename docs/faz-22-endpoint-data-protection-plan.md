@@ -95,10 +95,10 @@ post-upload quarantine DLP scan + disabled-capability-not-advertised (AG-013).
 | Araç | Karar | Sistem-fit notu |
 |---|---|---|
 | **Kopia** | **WRAP-only-if-real-copy** (ADR-0036; Apache-2.0; cross-platform snapshot/dedup/encryption) | Dry-run in-house metadata-only; Kopia yalnız gerçek backup **copy** + repo lifecycle + restore drill + retention devreye alınırsa DD-EA-9 wrapper içinde wrap edilir; **dry-run metadata-only invariant'ını (§5) bozmaz** |
-| restic | FALLBACK / cold archive | Kopia unattended/service sürtünmesinde |
-| BorgBackup | WATCHLIST (Windows service ergonomics kanıtlanmadan primary değil) | — |
-| Duplicati | **CONDITIONAL / likely reject** (license'da `proprietary/` boundary) | OSS-only ihlali |
-| rclone | **STORAGE TRANSPORT ONLY** | §9 scoped write-only upload transport helper'ı; policy/snapshot engine **değil** |
+| restic | **HISTORICAL / not selected** (ADR-0036) | Dry-run in-house; gerçek-copy fallback gerekirse ayrı ADR (Cat-3 listesi Kopia ile sınırlı) |
+| BorgBackup | **HISTORICAL / not selected** (ADR-0036) | Windows service ergonomics pursued edilmedi |
+| Duplicati | **SKIP / license boundary** (ADR-0036) | `proprietary/` boundary = OSS-only ihlali; not selected |
+| rclone | **TRANSPORT-REFERENCE ONLY** (ADR-0036) | §9 scoped write-only upload transport helper'ı; backup/snapshot engine **değil**; storage transport adoption gerekirse ayrı ADR + #1388/DPA |
 | Own dedup/encryption engine | **REJECT** | platform wrapper/policy/audit yazar, backup internals yazmaz |
 
 **22.8B offboarding:** serbest SMB copy **değil** — 22.8A engine'i bounded
