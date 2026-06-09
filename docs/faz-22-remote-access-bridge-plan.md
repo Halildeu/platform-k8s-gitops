@@ -44,6 +44,8 @@ yetkili destek oturumları için ayrı bir güvenlik modeli üretir.
 
 ### 2.1 OSS-only Build-vs-Buy Kararı
 
+> **Canonical karar: [ADR-0036](./adr/0036-faz-22-oss-build-vs-buy.md)** (owner 2026-06-09) — Kategori 1+2 **in-house build**; tunnel = mevcut agent identity/credential kökü reuse + **yeni WS data-plane** (OpenZiti/zrok değil; efor MEDIUM-HIGH staged); PTY = explicit high-risk exception (§4 ADR-0036); Guacamole **yalnız** GUI/RDP gerekirse wrap. Aşağıdaki tablo ADR-0036'nın phase-local özeti.
+
 Faz 22.6 için karar, "remote access ürününü alıp platformun yerine koymak"
 değildir. Endpoint-admin **broker / policy / approval / audit** katmanını
 kendi üretir; açık kaynak araçlar yalnız transport/relay adayı olabilir.

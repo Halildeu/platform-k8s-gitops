@@ -82,6 +82,8 @@ post-upload quarantine DLP scan + disabled-capability-not-advertised (AG-013).
 
 ### §3.1 — OSS-only Engine / Tool Kararları (PR #1395 absorb)
 
+> **Canonical karar: [ADR-0036](./adr/0036-faz-22-oss-build-vs-buy.md)** (owner 2026-06-09) — 22.8A **dry-run manifest in-house build** (file-walk + hash + allow/deny); **Kopia yalnız gerçek copy/restore/retention gerekirse wrap**; Velociraptor yalnız DFIR reactivation (#1403). Aşağıdaki tablo ADR-0036'nın phase-local özeti.
+
 > Faz 22.8 kararı "dosya kopyalayan bir aracı alıp çalıştırmak" **değildir**.
 > Endpoint-admin policy/approval/audit/retention/chain-of-custody katmanlarını
 > **kendi üretir**; OSS araçlar yalnız **bounded engine / storage transport /

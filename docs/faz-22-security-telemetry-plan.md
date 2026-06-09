@@ -31,6 +31,8 @@ lisans/güvenlik sınırı ve #1388 governance gate'i gerekir.
 
 ## 3. OSS-only Karar Matrisi
 
+> **Canonical karar:** Bu matris artık [ADR-0036](./adr/0036-faz-22-oss-build-vs-buy.md) tarafından konsolide edilmiştir (owner kararı 2026-06-09: "Kategori 1 ve 2 tamamını biz yazalım"). Özet: **posture telemetri zaten in-house** (AG-035/037/038/039/040 probe hattı); **YARA** yalnız dosya-içerik IOC/malware/imza taraması gerçekten gerektiğinde wrap edilir (ayrı scanner sınırı + #1388 + DPA/lisans); **osquery/Sigma/Wazuh skip** (posture zaten toplanıyor; Sigma DRL 1.1 lisans-gated, standart OSS değil; Wazuh full SIEM/HIDS = ikinci control plane, reject-as-core). Aşağıdaki tablo gerekçe referansı olarak korunur; bağlayıcı karar ADR-0036'dadır.
+
 | Araç / yaklaşım | Lisans sinyali | Karar | Gerekçe | Takip |
 |---|---|---|---|---|
 | osquery-style query/table model | Apache-2.0 project signal; packs/extensions separately reviewed | **REFERENCE / possible light adapter** | Endpoint state query modeli mevcut inventory/compliance mimarisine uyabilir; ayrı fleet manager adoption yok | #1404 |
