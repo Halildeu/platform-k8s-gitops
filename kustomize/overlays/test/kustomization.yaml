@@ -4941,7 +4941,19 @@ images:
     #   019ea83c AGREE (plan + post-impl). Image build run 27156369884.
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-b83f3d4
     #   digest sha256:79da9fe1dd73aeb893b1bfe6024a5e0bcf2531c5037d02f0de3608307b92dd00
-    digest: sha256:3e1e5852838d1ae519bffbe604787c56052d7a0d9965f8c19f590ed3fae1f3bc
+    #
+    # 2026-06-09 update: sha-c96c148 — Faz 22.5 #527 failed-device rollout queue.
+    #   Brings the accumulated main delta from sha-3e1e585 forward, incl.
+    #   #528 (V60 read foundation: endpoint_rollout_failure + _event tables,
+    #   entities, repos, read REST + wave report) and #530 slice-1b (manual seed
+    #   WRITE path + the typed evidence-redaction validator #528's read foundation
+    #   lacked + type-aware schema-drift guard; POST /endpoint-rollout-failures
+    #   can_manage). Cross-AI Codex 019eaaf0 AGREE (slice-1b). Image build run
+    #   27192465783 (Image Build + GHCR Push success). Flyway must reach the
+    #   V60 head on apply; verify 0-ERROR startup + the active-unique 409 path.
+    #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-c96c148
+    #   digest sha256:8d4c0996e9df7dca0bfc1f17a955c3e8bec874d751adb17130db361ee51376cb
+    digest: sha256:8d4c0996e9df7dca0bfc1f17a955c3e8bec874d751adb17130db361ee51376cb
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
