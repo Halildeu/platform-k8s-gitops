@@ -1,0 +1,15 @@
+# Faz 22.5 M2 edge mTLS — STAGED / INERT bundle.
+#
+# This kustomization is intentionally NOT referenced by any overlay
+# (kustomize/overlays/*/kustomization.yaml). It is version-controlled and
+# reviewable, but ArgoCD does NOT render it until an operator wires it into the
+# test overlay during the M2 activation (see
+# docs/runbooks/RB-faz22-M2-edge-mtls-activation.md). Keeping it inert means a
+# half-provisioned mTLS path (no DNS, no AD CS CA, no backend mTLS listener)
+# cannot affect live admin/UI traffic.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ingress-passthrough.yaml
+  - service.yaml
+  - netpol.yaml
