@@ -200,7 +200,7 @@ ADR-0011 analog:
 
 ### Password reset connector (revised — acik.local first)
 
-(D35-EA-5 destructive sınıfı, **Faz 22.2'den itibaren**):
+(extended ladder: **4-D password-reset** sınıfı — eski düz-ladder'da D35-EA-5 altındaydı; **Faz 22.2'den itibaren**):
 - **Lokal Windows** (NTLM, agent-side) — Faz 22.1 lab + Faz 22.2 pilot
 - **AD `acik.local`** (LDAP scoped query) — Faz 22.2 pilot
 - **Entra (Azure AD Graph API)** — Faz 22.4+ (historical, ex-22.3+) (BOREAS/CESS hibrit gerektirir)
