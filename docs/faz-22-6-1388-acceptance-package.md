@@ -72,7 +72,7 @@ remote_session_audit (append-only, WORM):
   start_ts, end_ts, result, evidence_links[], abort_reason,
   signed_approval_payload (command_digest + device_id + TTL, immutable)
 ```
-- DELETE/UPDATE role-deny; 365d retention; non-repudiation imza.
+- DELETE/UPDATE role-deny; **7y immutable retention** (4-F session-governance audit, ADR-0034 D3 — genel inventory audit değildir); non-repudiation imza.
 
 ## 5. Retention Policy (KVKK inventory ile hizalı + recording eklenir)
 
