@@ -118,7 +118,7 @@ OpenFGA tuple shape: `(user:<id>, can_<action>, scope:<scope-id>)`. Tuple writer
 
 **Dual-control**: 2 farklı user (her biri `endpoint:admin` rol) + approval gate;
 ADR-0010 §2.5 boundary matrix. **Anti-coercion:** approver insan + role-distinct
-+ asla requester (break-glass dahil). Detay broker tasarımı: [ADR-0033](0033-faz226-remote-access-broker.md).
++ asla requester (break-glass dahil). Detay broker tasarımı: [ADR-0033](0033-faz-22-6-remote-access-bridge-broker.md).
 
 ### Code signing supply-chain RoT
 
@@ -161,7 +161,7 @@ ADR-0011 analog:
 - **DD-EA-5**: Vault secret path (kv/platform/endpoint-admin/* allowlist; broker için ayrı `kv/platform/remote-access-broker/*`)
 - **DD-EA-6**: Destructive command audit log (immutable storage)
 - **DD-EA-7**: Identity discovery PII boundary (no PII in logs)
-- **DD-EA-8** *(PROPOSED, Faz 22.6 — henüz CI gate canlı değil)*: **Remote Session Governance Guard** — CI gate (specified): capability → approved D35-EA tier map; 4-F için recording-required enforce; unattended yalnız break-glass policy objesiyle; **disabled feature advertise edilemez** (AG-013 precedent). Detay: [ADR-0033](0033-faz226-remote-access-broker.md). *(Update-channel semantics DD-EA-3/DD-EA-4 altında korunur; ayrı guard'a çıkmaz.)*
+- **DD-EA-8** *(PROPOSED, Faz 22.6 — henüz CI gate canlı değil)*: **Remote Session Governance Guard** — CI gate (specified): capability → approved D35-EA tier map; 4-F için recording-required enforce; unattended yalnız break-glass policy objesiyle; **disabled feature advertise edilemez** (AG-013 precedent). Detay: [ADR-0033](0033-faz-22-6-remote-access-bridge-broker.md). *(Update-channel semantics DD-EA-3/DD-EA-4 altında korunur; ayrı guard'a çıkmaz.)*
 - **DD-EA-9** *(PROPOSED, Faz 22.8 — henüz CI gate canlı değil)*: **Data Collection Governance Guard** — CI gate (specified): **bounded allowlist + agent-hardcoded denylist (class-based, policy ile gevşetilemez) + path canonicalization-before-decision (symlink/junction/UNC/ADS/long-path/container) + backend server-side mirror + dry-run-before-content + manifest-before-upload + post-upload quarantine DLP + disabled-not-advertised**. Ayrı **DC-EA data-collection severity axis** ile birlikte (aşağıda). Detay: [22.8 plan](../faz-22-endpoint-data-protection-plan.md) + [ADR-0034 evidence-storage-contract](0034-evidence-storage-contract.md).
 - **BG-EA-1**: Per-PR boundary declaration (ADR-0011 BG-1 analog)
 

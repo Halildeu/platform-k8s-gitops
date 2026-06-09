@@ -6,7 +6,9 @@
 > **Status:** DRAFT — owner/DPO/legal sign-off bekliyor. Bu paket kabul edilmeden
 > 22.6 (ve 22.8) runtime başlamaz.
 > **Tarih:** 2026-06-09 · **Cross-AI:** Codex `019ea961` REVISE→AGREE.
-> **İlişkili:** [ADR-0033 broker](adr/0033-faz226-remote-access-broker.md), [22.6 plan](faz-22-remote-access-bridge-plan.md), ADR-0012-EA §0, [docs/22-2-kvkk-data-inventory.md](22-2-kvkk-data-inventory.md), BE-019.
+> **İlişkili:** [ADR-0033 broker](adr/0033-faz-22-6-remote-access-bridge-broker.md), [22.6 plan](faz-22-remote-access-bridge-plan.md), ADR-0012-EA §0, [docs/22-2-kvkk-data-inventory.md](22-2-kvkk-data-inventory.md), BE-019.
+>
+> **Canonical owner-decision record:** [ADR-0034 — #1388 Owner Decision Record](adr/0034-1388-sensitive-endpoint-ops-owner-decision.md) (paralel 3-AI: Codex `019ea9aa` + Mavis + Claude). Bu acceptance package onun **detaylı policy-artifact companion**'ıdır (RBAC scope catalog, dual-control matrix, audit schema, break-glass schema, consent UX timing); imzalanacak discrete kararlar ADR-0034'tedir.
 
 > **HARD RULE — Tam Otonom:** Bu paket agent tarafından **tam taslaklandı**;
 > sadece gerçek hukuki/owner kararı (legal basis onayı + imza) owner-gated. Agent

@@ -86,7 +86,7 @@ Faz 22.2.A non-domain Windows pilot için Endpoint Agent (`endpoint-agent.exe`) 
 
 ### 3.7 Uzaktan Erişim Oturum Verileri (Faz 22.6 — YENİ, DPO-confirm)
 
-> **Faz 22.6 Remote Access Bridge** kapsamında eklenmiştir ([ADR-0033](adr/0033-faz226-remote-access-broker.md), [#1388 acceptance package](faz-22-6-1388-acceptance-package.md)). **Yüksek hassasiyet**: oturum kaydı destek alan kullanıcının ekranını/terminalini içerebilir → **olası üçüncü-taraf PII**. **DPIA + VERBİS gözden geçirmesi gerekir.** Bu kategoriler **runtime'da #1388 acceptance + DPO onayı olmadan toplanmaz.**
+> **Faz 22.6 Remote Access Bridge** kapsamında eklenmiştir ([ADR-0033](adr/0033-faz-22-6-remote-access-bridge-broker.md), [#1388 acceptance package](faz-22-6-1388-acceptance-package.md)). **Yüksek hassasiyet**: oturum kaydı destek alan kullanıcının ekranını/terminalini içerebilir → **olası üçüncü-taraf PII**. **DPIA + VERBİS gözden geçirmesi gerekir.** Bu kategoriler **runtime'da #1388 acceptance + DPO onayı olmadan toplanmaz.**
 
 | Field | Source | Sensitivity | Personal? |
 |---|---|---|---|
