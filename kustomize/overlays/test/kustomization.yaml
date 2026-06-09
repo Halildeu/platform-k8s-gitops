@@ -26,6 +26,9 @@ resources:
   - ../../base/apps/endpoint-admin-service    # Faz 22.1.1b live-aligned 2026-05-05
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06
                                                   # (services.yaml prod=deferred; test=enabled)
+  - ../../base/apps/artifact-host    # Faz 22.5 M1: endpoint-agent one-command bootstrap
+                                     # artifact host (test-only; prod deferred). Pairs with
+                                     # the /artifacts ingress path patch + edge route flip.
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster
   - endpoints-workcube-mssql.yaml    # 172.19.0.8 (workcube-mssql-proxy-test, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
@@ -5304,6 +5307,20 @@ images:
     # pending — operator action runbook externalsecret-notify.yaml).
     digest: sha256:175b3daea37601fbfd500f616ad19664d26dffec8b1db11556a3bff14ce6250e
 
+  # Faz 22.5 M1 — endpoint-agent artifact host (test-only). Image built+pushed
+  # by platform-agent release.yml (publish job) for tag v0.1.1-lab.2:
+  #   ghcr.io/halildeu/platform-agent-artifacts:v0.1.1-lab.2 (+ sha-<short>).
+  # Serves /artifacts/endpoint-agent/v0.1.1-lab.2/{bootstrap-package.ps1,EndpointAgent.zip,...}
+  # Pulled with the existing ghcr-pull secret. D30: digest pinned below once the
+  # lab.2 release workflow has published the image (run output emits the digest).
+  - name: artifact-host
+    newName: ghcr.io/halildeu/platform-agent-artifacts
+    newTag: v0.1.1-lab.2
+    # D30 immutable pin — release.yml run 27209821891 (tag v0.1.1-lab.2,
+    # source sha-913147f). EndpointAgent.zip sha256
+    # b88c710d569b74d0fe902434dc2f368bc7fdf99a5d0557190ebc8652f5a7d0fe.
+    digest: sha256:7ac0fd57ef00d7cc68258cda30eba0a2a1b1ed4a94534f8d96bf92cb4e48f764
+
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
   - target:
@@ -6308,6 +6325,11 @@ patches:
         value: "DEBUG"
 
   # Ingress host + TLS host: testai.acik.com (D18)
+  # Faz 22.5 M1: append the /artifacts path (test-only — NOT in base, so prod
+  # ai.acik.com keeps falling through `/` to the SPA, not the real installer).
+  # ingress-nginx matches most-specific path first, so /artifacts wins over `/`
+  # regardless of list order. No rewrite-target → path passes verbatim to the
+  # artifact-host nginx (root /usr/share/nginx/html, files at html/artifacts/...).
   - target:
       kind: Ingress
       name: platform
@@ -6318,6 +6340,16 @@ patches:
       - op: replace
         path: /spec/tls/0/hosts/0
         value: testai.acik.com
+      - op: add
+        path: /spec/rules/0/http/paths/-
+        value:
+          path: /artifacts
+          pathType: Prefix
+          backend:
+            service:
+              name: artifact-host
+              port:
+                number: 80
 
   # Host bridge test portları (D20)
   # 2026-04-22 live truth: k3d-test node + test compose stateful container'lar

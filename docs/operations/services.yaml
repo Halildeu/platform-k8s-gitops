@@ -171,6 +171,27 @@ services:
       test: enabled    # variant: platform-web-frontend-testai
       prod: enabled    # variant: platform-web-frontend
 
+  - name: artifact-host
+    repo: platform-agent
+    description: |
+      Faz 22.5 M1 endpoint-agent bootstrap artifact host. nginx serving the
+      one-command Windows agent install artifacts as static files at
+      /artifacts/endpoint-agent/<version>/{bootstrap-package.ps1,EndpointAgent.zip,
+      SHA256SUMS,release-manifest.json}. Image
+      ghcr.io/halildeu/platform-agent-artifacts (built by the platform-agent
+      release workflow), pulled with ghcr-pull, D30 digest-pinned.
+    jwt_validates: false  # static artifact host, no auth (public install URL)
+    route_external: true  # /artifacts path (edge → cluster ingress)
+    workload_kind: Deployment
+    runtime_class: nginx
+    probe_contract: http-healthz   # /healthz nginx
+    environments:
+      test: enabled
+      prod: deferred   # true defer — not in prod overlay, no prod /artifacts path
+                       # (ai.acik.com/artifacts stays SPA fallback); prod-enable
+                       # is a gated follow-up (owner sign-off + D30). See
+                       # docs/runbooks/RB-faz22-m1-artifact-host.md §8.
+
   # --- DEFERRED services (intentionally not in target env) ---
 
   - name: endpoint-admin-service
