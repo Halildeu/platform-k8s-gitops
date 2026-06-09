@@ -1,5 +1,36 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.7 Compliance Gap Mart Layer D5 LIVE acceptance (browser-verified) + COMPLETED (2026-06-09, Codex 019ea95d)
+
+**Session milestone**: Faz 22.7 (Compliance Gap Mart Layer, platform-backend #376) promoted from SOURCE-MERGED to **COMPLETED** — the D5 live/browser acceptance that was the open gate is now performed and documented, and the three COMPLETED-promotion-gate backend hardening tests landed (provider-distinct Codex review).
+
+### D5 live acceptance — testai browser smoke (HARD RULE Tarayıcıdan Sonuç Doğrulanmadan: satisfied)
+
+Driven via Chrome MCP against `https://testai.acik.com/endpoint-admin/compliance/gaps` (Platform Admin session):
+
+| Acceptance dimension | Evidence |
+|---|---|
+| **Cluster API 200** | `GET /api/v1/endpoint-admin/endpoint-devices/compliance-gap?page=1&pageSize=20&gapTypes=pending_security_updates,rdp_enabled&freshnessWindow=P7D` → **200** (gateway Route → service `/api/v1/admin/...`) |
+| **Grid render (real data)** | 2 devices: `HALILKOOLUB735` (1 gap — "Bekleyen Güvenlik Güncellemeleri", Güçlü/strong-fresh, lastSeen 2026-06-08 17:54) + `MKR-A1` (2 gaps — "Uzak Masaüstü Etkin" + "Bekleyen Güvenlik Güncellemeleri"). Header: `Tazelik: PT168H · Aranan boşluklar: pending_security_updates, rdp_enabled`. Pagination `1/1 · 2 cihaz`. |
+| **Filter exercise (server-side)** | Uncheck "RDP açık" → new request `…gapTypes=pending_security_updates&freshnessWindow=P7D` → 200; MKR-A1 gapCount 2 → 1 (RDP chip dropped). Confirms server-side re-query, not client filter. |
+| **Drill-down** | Row click → device "Detay" drawer with per-snapshot tabs (Detay / İşlemler / Denetim Geçmişi / Envanter / Donanım / Sağlık / Güncel Olmayan Yazılım / Hotfix Duruşu / Agent Tanılaması / Hizmetler). |
+| **Console** | Clean — no errors/exceptions (only a benign `ag-grid-license resolved key: found` DEBUG line). |
+| **D29 digest invariant** | Live testai endpoint-admin pod imageID `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:3e1e5852838d1ae519bffbe604787c56052d7a0d9965f8c19f590ed3fae1f3bc` == overlay desired digest (`kustomize/overlays/test/kustomization.yaml`). Pod `1/1 Running`, ready=true. |
+
+D29 tiers for the read-only mart: **Up** (pod 1/1) + **Functional** (API 200 + JSON-shape + grid/filter/drill-down render) + **Secured** (RBAC `can_view` enforced — see backend tests).
+
+### COMPLETED-promotion-gate backend hardening (platform-backend, Codex 019ea95d findings 3 + 6)
+
+Three machine-enforced guards added (read-only; no runtime behaviour change), all green locally (`Tests run: 5, Failures: 0`, incl. PG IT on a real postgres:16 Testcontainer):
+
+- `ComplianceGapRedactionContractTest` — drives the **real** `EndpointComplianceGapService` (mocked repository) and asserts an exact per-level key allowlist + a sensitive-field deny-list scan over the whole serialized tree (guards `GapDetail.details` / `filterEcho` `Map<String,Object>` against future PII leak).
+- `AdminEndpointComplianceGapSecurityTest` — compliance-gap controller was uncovered by `AdminEndpointAuthorizationSecurityTest`; now denied-viewer → `403` fail-closed (service never invoked) + viewer-with-`can_view` → `200`.
+- `ComplianceGapRepositoryTenantIsolationPostgresIntegrationTest` — real PG + Flyway; tenant A's RDP-enabled startup snapshot AND pending-security-updates hotfix snapshot are visible to tenant A and invisible to tenant B (no existence leak; both gap-type paths).
+
+### Status
+
+Faz 22.7 = **🟢 COMPLETED** (authority platform-backend #376 CLOSED 2026-06-07 + D1 contract + D2-MVP API + D3 explorer merged + D5 browser-verified + redaction allowlist + 403 fail-closed + tenant cross-leak guards). Scope honesty: D2 is MVP (2 gap types `rdp_enabled` + `pending_security_updates`; `gapStrength`/`device[]`/`sort`/explicit-stale/extra-types deferred). Boundary: 22.7 = read-only mart (outside #1388 sensitive-ops gate); "Path C" detection = 22.5 (not 22.7). Canonical plan: `docs/sprint-plan-faz-22-7-compliance-gap-mart.md`.
+
 ## Live Delta — Faz 22.5 consensus gate tracker + M5/M6/M7/#1359 source slice drafts MERGED (2026-05-28 / Session 51 closure batch — Codex 019ea916 + 019ea922 AGREE)
 
 **Session milestone**: Faz 22.5 M2-M7 + #1359 gate'leri için **canonical source-vs-operator boundary tracker** ve **4 source slice runbook draft** (M5 + M6 + M7 + #1359 acceptance evidence template) main'e landed. HARD RULE Tam Otonom (2026-05-28) uygulaması: her gate için **agent organize path** + bounded operator dependency explicit; "operator action gerek" tek satır YASAK pattern engellendi.
@@ -510,7 +541,16 @@ Source-foundation arc (C1/V29-V36 org_id column + compat trigger + match/non-nul
 
 ---
 
-## Live Delta — Faz 22.7 Path C (FILE_VERSION/SHA256/EXISTS) FULL CHAIN LIVE + HALILKOOLUB735 binary upgrade + 7-Zip lifecycle full E2E autonomous (2026-06-02 22:30 Istanbul)
+## Live Delta — Historical "Faz 22.7 Path C" wording, phase-boundary superseded (FILE_VERSION/SHA256/EXISTS) FULL CHAIN LIVE + HALILKOOLUB735 binary upgrade + 7-Zip lifecycle full E2E autonomous (2026-06-02 22:30 Istanbul)
+
+> **Phase-boundary correction 2026-06-09**: this historical live-evidence
+> section used "Faz 22.7 Path C" wording. Canonical phase ownership now treats
+> Faz 22.7 as the Compliance Gap Mart Layer tracked by platform-backend #376
+> and `docs/sprint-plan-faz-22-7-compliance-gap-mart.md`. The Path C evidence
+> below remains valid runtime evidence, but the 22.7 number must not be reused
+> for backup, SMB/file actions, data-protection scope, or security telemetry
+> expansion. Remote access is 22.6; endpoint backup/offboarding/forensic
+> collection is 22.8; endpoint security telemetry/detection extension is 22.9.
 
 **Session milestone**: Detection rule expansion completed end-to-end across agent + backend + web + cluster + endpoint + lifecycle smoke in single autonomous chain.
 

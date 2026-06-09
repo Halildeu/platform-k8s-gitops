@@ -7,7 +7,7 @@
 >
 > **Created**: 2026-06-09 · **System-fit revision**: 2026-06-09
 > **Cross-AI consensus**: Implementer Claude (Opus 4.8) / Reviewer Codex (OpenAI) — thread `019ea961`, **REVISE → AGREE** (2 tur).
-> **Board**: gitops #1388 / #1389 / #1390, platform-agent [#117](https://github.com/Halildeu/platform-agent/issues/117) (22.8A dry-run manifest)
+> **Board**: gitops #1388 / #1389 / #1390 / #1399 (22.8A backup engine matrix) / #1400 (OSS-only build-vs-buy) / #1403 (Velociraptor clean-room ADR) / #1404 (YARA/osquery/Sigma), platform-agent [#117](https://github.com/Halildeu/platform-agent/issues/117) (22.8A dry-run manifest)
 > **İlişkili**: [ADR-0012-EA](adr/0012-EA-endpoint-admin-governance-charter.md) (extended ladder + DD-EA), [22.6 plan](faz-22-remote-access-bridge-plan.md) + [ADR-0033](adr/0033-faz226-remote-access-broker.md) + [#1388 acceptance package](faz-22-6-1388-acceptance-package.md) (evidence-storage-contract tüketicisi)
 
 Bu doküman, endpoint verisi için **planlı yedekleme**, **işten çıkışta kontrollü
@@ -79,6 +79,39 @@ post-upload quarantine DLP scan + disabled-capability-not-advertised (AG-013).
 | **22.8A Scheduled backup** | DC-EA-1 → DC-EA-2 | Agent **metadata-only dry-run manifest** (path-class/size/mtime-bucket/owner-scope/count — **içerik hash YOK**) → policy → approval → bounded content |
 | **22.8B Offboarding copy** | DC-EA-3 | HR/IT request + dual approval + **company-managed scope proof** (§8) + manifest review |
 | **22.8C Forensic collection** | DC-EA-4 | Legal `case_id` + chain-of-custody + immutable manifest + quarantine |
+
+### §3.1 — OSS-only Engine / Tool Kararları (PR #1395 absorb)
+
+> Faz 22.8 kararı "dosya kopyalayan bir aracı alıp çalıştırmak" **değildir**.
+> Endpoint-admin policy/approval/audit/retention/chain-of-custody katmanlarını
+> **kendi üretir**; OSS araçlar yalnız **bounded engine / storage transport /
+> scanner / forensic reference** rolü alır — hepsi **DD-EA-9** (§6) ile sarmalanır,
+> output **evidence-storage-contract** (§7 / [ADR-0034](adr/0034-evidence-storage-contract.md))'a gider.
+
+**22.8A backup engine matrix (#1399):**
+
+| Araç | Karar | Sistem-fit notu |
+|---|---|---|
+| **Kopia** | **PRIMARY ENGINE CANDIDATE** (Apache-2.0; cross-platform snapshot/dedup/encryption) | DD-EA-9 allowlist/denylist + manifest wrapper içinde; **dry-run metadata-only invariant'ını (§5) bozmaz** |
+| restic | FALLBACK / cold archive | Kopia unattended/service sürtünmesinde |
+| BorgBackup | WATCHLIST (Windows service ergonomics kanıtlanmadan primary değil) | — |
+| Duplicati | **CONDITIONAL / likely reject** (license'da `proprietary/` boundary) | OSS-only ihlali |
+| rclone | **STORAGE TRANSPORT ONLY** | §9 scoped write-only upload transport helper'ı; policy/snapshot engine **değil** |
+| Own dedup/encryption engine | **REJECT** | platform wrapper/policy/audit yazar, backup internals yazmaz |
+
+**22.8B offboarding:** serbest SMB copy **değil** — 22.8A engine'i bounded
+collection + handoff package workflow'unda yeniden kullanır; SMB hedef yalnız
+ADR-0034 §1 (per-case ACL/encryption/WORM-equiv/audit) gate'leriyle.
+
+**22.8C forensic matrix:**
+
+| Araç | Karar | Sistem-fit notu |
+|---|---|---|
+| **Velociraptor** | **REFERENCE / serverless ops-adapter only** | AGPL + ikinci control-plane riski → standing server YOK; VQL/artifact pattern'leri **clean-room/legal gate** sonrası (#1403) |
+| **YARA** | **INTEGRATE SCANNER CANDIDATE** | §6 **post-upload quarantine DLP/secret-scan** motoru olarak uyarlanabilir |
+| osquery | ADAPT light telemetry/reference | ayrı fleet manager adoption yok |
+| Sigma rules | **LICENSE-GATED REFERENCE** (DRL 1.1) | attribution/legal gate olmadan rule reuse yok |
+| Wazuh | **DEFER / reject as core** | full SIEM/HIDS = ikinci control plane + ağır ops footprint |
 
 ## §4 — Non-goals (DC-EA-RED + sınırlar)
 
@@ -248,6 +281,10 @@ besler.)
 | gitops #1389 | Phase boundary sync | 22.5/22.6/22.7/22.8 canonical |
 | gitops #1390 | 22.8 charter | BLOCKED by #1388 (bu plan charter'ı besler) |
 | agent #117 | 22.8A dry-run manifest | BLOCKED by #1388/#1390; **metadata-only, içerik hash YOK** |
+| gitops #1399 | 22.8A backup engine matrix | Kopia PRIMARY / restic FALLBACK / Duplicati reject (§3.1) |
+| gitops #1400 | OSS-only build-vs-buy decision matrix | Cross-phase karar otoritesi; runtime yetkisi vermez |
+| gitops #1403 | Velociraptor clean-room/legal ADR | 22.8C forensic boundary (AGPL/2nd-control-plane) |
+| gitops #1404 | YARA/osquery/Sigma scanner reference | YARA → §6 quarantine DLP; Sigma LICENSE-GATED |
 | **YENİ** | ADR-0012-EA §0 DD-EA-9 + DC-EA axis migration | #1388 altında (22.6 §0 ile ortak migration slice) |
 
 ## §16 — Cross-AI Consensus Log
