@@ -1,6 +1,6 @@
 # ADR-0029 — Faz 22 Endpoint Agent Mass Deployment: mTLS self-enroll + AD CS code signing + MSI + GPO
 
-**Status:** ACTIVE (Plan A, owner-approved 2026-05-26; 7-iter Codex cross-AI chain absorbed 12 finding F1-F5 + F1-F4 + F1-F3; MERGED PR #1078 `d677511e` 2026-05-26; AD CS preflight scripts + 7-section operator runbook MERGED PR #1080 `a9fab725` 2026-05-26). Remaining source-side: backend mTLS `POST /endpoint-enrollments/auto` endpoint (canonical platform-backend PR), agent `--auto-enroll` feature (canonical platform-agent PR), MSI WiX (#180 operator-bound), GPO Software Installation pilot (#181), 50/800 ramp (#182)
+**Status:** ACTIVE (Plan A, owner-approved 2026-05-26; 7-iter Codex cross-AI chain absorbed 12 finding F1-F5 + F1-F4 + F1-F3; MERGED PR #1078 `d677511e` 2026-05-26; AD CS preflight scripts + 7-section operator runbook MERGED PR #1080 `a9fab725` 2026-05-26). Remaining source-side: backend mTLS `POST /endpoint-enrollments/auto` endpoint (canonical platform-backend PR), agent `--auto-enroll` feature (canonical platform-agent PR), **MSI WiX ps1-wrapper package-readiness LANDED platform-agent #129 2026-06-09** (lab tier, clean-runner smoke green; Katman 4 re-synced to the as-shipped ps1-wrapper model below — native `<ServiceInstall>` design superseded; trusted-signing + GPO pilot remain operator-bound), GPO Software Installation pilot (#181), 50/800 ramp (#182)
 **Decision date:** 2026-05-26
 **Authors:** Halil Koçoğlu, AI agent (Claude)
 **Cross-AI review:** Codex (OpenAI) review chain — thread `019e665f` (iter-1 REVISE 10 finding + iter-2 REVISE 6 high/medium + 6 yeni risk → iter-3 absorbed); thread `019e667f-98a5-7980-8f80-613fc1a1ed82` (iter-4 REVISE 5 finding F1-F5 → iter-5 absorb f45b7a2; iter-5 REVISE 4 finding F1-F4 → iter-6 absorb 3e5570f; iter-6 REVISE 3 finding F1-F3 → iter-7 absorb; iter-7 AGREE / `ready_for_merge=true`; PR #1078 MERGED `d677511e` 2026-05-26)
@@ -411,7 +411,28 @@ if certExpiresIn(7 * 24 * time.Hour) {
 
 **Dev efforu**: ~3-4 gün (cert load + mTLS-continuous client + token DPAPI + tests)
 
-### Katman 4 — MSI package (WiX Toolset, revize)
+### Katman 4 — MSI package (WiX Toolset)
+
+> **⚠️ AS-SHIPPED MODEL = ps1-wrapper MSI (NOT the native-WiX design in the HISTORICAL block below).**
+> Faz 22.5 M4 shipped the package-readiness MSI in **platform-agent [#129](https://github.com/Halildeu/platform-agent/pull/129)** (lab tier; Codex plan thread `019ead14` REVISE→AGREE + 2-round post-impl REVISE→AGREE-to-merge). The native `<ServiceInstall>` / `<RegistryEntries>` / `ApplyServiceSDDL` design that follows was **superseded before implementation** — do **NOT** reintroduce it (it would create a **dual source-of-truth** for service config alongside `install.ps1`).
+
+**As-shipped design — ps1-wrapper MSI.** The MSI is a thin **payload / ARP / major-upgrade-orchestration + deterministic-log owner**; `installers/windows/install.ps1` stays the installer **single source of truth** (service create via `endpoint-agent.exe service install`, AG-026C per-service `Environment` REG_MULTI_SZ regkey, SDDL/tamper hardening, credential preservation, auto-enroll/HMAC mode). The MSI writes **NO** `<ServiceInstall>` and **NO** service-config/env registry.
+
+- **Files** (`installers/windows/msi/`): `EndpointAgent.wxs` (WiX v4), `run-agent-install.ps1` (deferred-CA wrapper: MSI public-property → install.ps1 param map), `build-msi.ps1` (build + lab self-sign + signing-tier manifest), `README.md`; CI `.github/workflows/msi-build.yml` (build + clean-runner smoke).
+- **Payload staged SEPARATE from runtime**: MSI lays `…\EndpointAgentInstaller\<ver>\payload\…`; runtime stays script-managed `…\EndpointAgent`, so the running script never deletes its own payload.
+- **Deferred CA runs as SYSTEM** (`WixQuietExec64`, the GPO computer-assigned context) and invokes `install.ps1` with mapped public properties. WiX gotcha: the `<SetProperty Id>` must EQUAL the deferred CA Id for the `CustomActionData` handoff.
+- **MajorUpgrade `afterInstallExecute`**, NO `AllowSameVersionUpgrades` (fleet re-config = ProductVersion bump). The upgrade never passes `-ResetCredentialStore` and (HMAC) never a token → the DPAPI store (`config\hmac-credential.dpapi`) is preserved.
+- **Secret model**: the MSI carries **NO** token. Prod/GPO = TOKENLESS `AUTO_ENROLL=1` (machine-cert/mTLS, Katman 3). Lab HMAC token = a pre-staged SYSTEM-only response file (path via non-secret `ENROLL_RESPONSE_FILE`), shredded after use. **NEVER** put an HMAC token in an MST.
+- **Uninstall** preserves credential/config by default; `PURGE_CONFIG=1` to purge. `uninstall.ps1` now waits for the agent process to exit before removing the install dir (`Wait-AgentProcessExit`).
+- **Signing**: lab self-signed now via `build-msi.ps1` (`production=false` manifest); **Authenticode trusted-signing is the operator promotion gate** (Faz 22.2 / Azure Trusted Signing; the existing `release.yml` signing-tier model). NOTE: the historical native build/sign sketch below is **NOT** the shipped lab pipeline.
+- **Clean-runner smoke (all green)**: install + redaction canary + major-upgrade credential-preserve/token-not-forwarded + uninstall + failed-upgrade recoverability (preflight failure preserves old version + valid re-run recovers).
+- **Remaining (operator/domain-gated, NOT in #129)**: Authenticode trusted-signing, AppLocker/WDAC/EDR signer preflight, GPO 5-PC domain pilot. Tracked on board [gitops #115].
+
+---
+
+#### HISTORICAL — superseded native-WiX design (NOT shipped; audit/context only)
+
+> **Everything from here until [Katman 5](#katman-5--gpo-software-installation--pilot-ramp-revize) is historical / audit-only — do NOT follow it as instructions.** `install.ps1` is the service-config SoT; the as-shipped MSI is the ps1-wrapper above. The native `<ServiceInstall>`/`<RegistryEntries>` build, and the `Critical fields`, `Build + sign pipeline`, `Install/upgrade/uninstall commands` (incl. the native `APIURL=...`/`ENROLLMENTJITTERSECONDS=...` + `msiexec /fa` repair examples), `Verification`, and `Dev efforu` notes below ALL describe the **superseded** design.
 
 **WiX project** (`platform-agent/installer/`):
 
