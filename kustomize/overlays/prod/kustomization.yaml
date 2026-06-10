@@ -229,7 +229,16 @@ images:
   #   Sonra: bu PR'ı revert-forward eden bir PR aç, gitops main yeni digest'te kalmasın.
   - name: frontend
     newName: ghcr.io/halildeu/platform-web-frontend
-    digest: sha256:b85ca3898552deca5505090826ec82741dc6e3572774bf1a375b4ece69b47cda
+    # Faz 22.5 frontend prod-promote (gitops#1438): un-freeze #640 (b85ca389) →
+    # main 80273b64 (platform-web#804+#805 — the endpoint-admin UI one-command
+    # modal + the PS 5.1 byte[] fix). D29 ledger
+    # release-candidates/platform-web/80273b64….json (up/functional GREEN,
+    # zanzibar AMBER; prod variant ai.acik.com/serban, no testai leak).
+    # Owner sign-off 2026-06-10. DESIRED-STATE; live cutover gated at the prod
+    # production-env approval (the deploy-prod-gitops resources-sync drift guard
+    # aborts on the D30 backlog → surgical `kubectl set image deploy/frontend`
+    # post-approval, per RB / [[project_ag_grid_license_and_frontend_prod_promote]]).
+    digest: sha256:2eee40a26a2ec96c67cc56928636f6b611a767134d2b8940af16742b6d40ff14
 
   # Faz 23.9 prod cutover (2026-05-08): notification-orchestrator
   # canonical activation. Pin remains sha-204042d (PR #126 era) until D29
