@@ -29,6 +29,12 @@ resources:
   # Ready=True before this workload entry's apply (otherwise pod CrashLoop pending secret).
   # Codex 019e8c3a iter-1 plan AGREE; A2 (D30 atomic cutover DNS L4 switch) separate user decision.
   - ../../base/apps/endpoint-admin-service
+  # Faz 22.5 — endpoint-agent artifact host (prod desired-state; gitops#1436).
+  # Serves the UI one-command install artifacts on ai.acik.com/artifacts/ (the
+  # endpoint-admin modal derives artifactBaseUrl from window.location.origin).
+  # Image pin + the /artifacts ingress path are below. DESIRED-STATE ONLY — prod
+  # ArgoCD is manual-sync (D30), so this rolls only at the owner-gated cutover.
+  - ../../base/apps/artifact-host
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster (network teşhisi sonrası — k3d cluster → 10.9.193.0/24 routing fail)
   - endpoints-workcube-mssql.yaml    # 172.21.0.7 (workcube-mssql-proxy-prod, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.21.0.7/32:11433
@@ -281,6 +287,17 @@ images:
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
     digest: sha256:3e1e5852838d1ae519bffbe604787c56052d7a0d9965f8c19f590ed3fae1f3bc
+
+  # Faz 22.5 — endpoint-agent artifact host (prod desired-state; gitops#1436).
+  # Same env-agnostic static-nginx image as testai (serves /artifacts/endpoint-
+  # agent/v0.2.3/ + the mutable /current/ alias). Reusing the identical digest is
+  # acceptable (Codex 019eb2d6) — D30 tracks the immutable digest, not the tag.
+  # Provenance: release-exe-signed.yml run 27292353430 (tag v0.2.3, source
+  # sha-d05c685, signing_tier=trusted-internal-ca); same pin as test overlay #1435.
+  - name: artifact-host
+    newName: ghcr.io/halildeu/platform-agent-artifacts
+    newTag: v0.2.3
+    digest: sha256:d8e4b1c72d293759ba4946cae3e8a870b5514406ed2af1d6604cc510078b967f
 
 # Faz 23.2 PR-D.3 — notification-orchestrator prod IMAGE PIN DEFERRED.
 # D29 evidence gate (Codex P0 Sprint A Item 3) requires:
@@ -1055,6 +1072,12 @@ patches:
           sms.acik.com/jetsms-m4-cutover: "b4-prod-2026-05-20-sha-6307428"
 
   # Ingress host + TLS host: ai.acik.com (D18)
+  # Faz 22.5 (gitops#1436): append the /artifacts path → artifact-host:80 so the
+  # endpoint-admin UI one-command + manifest discovery resolve on ai.acik.com.
+  # ingress-nginx matches most-specific path first, so /artifacts wins over `/`
+  # regardless of list order; no rewrite-target → path passes verbatim to the
+  # artifact-host nginx. Same host + existing wildcard-acik-com TLS cert (no TLS
+  # change). DESIRED-STATE ONLY (prod manual-sync; owner-gated rollout).
   - target:
       kind: Ingress
       name: platform
@@ -1065,6 +1088,16 @@ patches:
       - op: replace
         path: /spec/tls/0/hosts/0
         value: ai.acik.com
+      - op: add
+        path: /spec/rules/0/http/paths/-
+        value:
+          path: /artifacts
+          pathType: Prefix
+          backend:
+            service:
+              name: artifact-host
+              port:
+                number: 80
 
   # Host bridge prod portları (D20)
   - target:

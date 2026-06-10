@@ -12,8 +12,11 @@ release-candidates/
 │   ├── <git-sha-1>.json
 │   ├── <git-sha-2>.json
 │   └── ...
-└── platform-web/
-    ├── <git-sha-1>.json
+├── platform-web/
+│   ├── <git-sha-1>.json
+│   └── ...
+└── platform-agent/
+    ├── <git-sha-1>.json   # artifact-host (Faz 22.5 M1 endpoint-agent install host)
     └── ...
 ```
 
