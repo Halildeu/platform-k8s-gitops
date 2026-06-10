@@ -1041,10 +1041,23 @@ patches:
       - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: "INFO"
-      # ERP_OPENFGA_ENABLED/API_URL inherit from base. Store/model IDs are no
-      # longer hard-coded in the prod ConfigMap; endpoint-admin reads the prod-
-      # specific `kv/platform/openfga` values through its ESO-managed Secret,
-      # matching the permission-service/report-service discipline.
+      # ERP_OPENFGA_ENABLED/API_URL inherit from base. Store/model IDs:
+      # 2026-06-11 cutover regression fix — the prior "moved to ESO Secret"
+      # plan was NEVER completed (endpoint-admin-service-secrets has only
+      # pepper/encryption/db keys, NOT store/model), so when the D30 full-sync
+      # applied this ConfigMap (which had dropped the inline values) and rolled
+      # the pod, the OpenFGA client got an empty storeId → FgaInvalidParameter
+      # → fail-closed 403 on every @RequireModule call (devices + the
+      # one-command enrollment modal). Store/model IDs are NON-SECRET
+      # identifiers (permission-service/report-service carry them in env too),
+      # so they belong in the ConfigMap. Pinned to the live prod OpenFGA tenant
+      # (verified `allowed:true` against this model 2026-06-11).
+      - op: add
+        path: /data/ERP_OPENFGA_STORE_ID
+        value: "01KPXCVBHCY2TQ6YHVK009NS1C"
+      - op: add
+        path: /data/ERP_OPENFGA_MODEL_ID
+        value: "01KSFFK9K3V43DD211Z79K3FYA"
 
   # Faz 23.9 prod cutover — notification-orchestrator pod-template
   # annotation rollout trigger + replicas override. ConfigMap envFrom
