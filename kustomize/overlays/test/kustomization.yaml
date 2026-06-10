@@ -1122,7 +1122,14 @@ images:
     # success — core-data-service co-job hit a transient Docker Hub buildkit pull
     # timeout, unrelated, rerun).
     # GHCR manifest: ghcr.io/halildeu/platform-backend-permission-service:sha-815308a
-    digest: sha256:7cfaf090deea7f44d6c1cbd1bf95ceb7bf7298b1db3362079d0b9e2321ad8528
+    #
+    # 2026-06-11 update: sha-4f95150 (#538) — add ENDPOINT_ADMIN to the static
+    # module catalog (PermissionCatalogService.MODULES) so the Erişim role drawer
+    # can grant Cihaz Kayıt Yönetimi VIEW/MANAGE (was tuple-seed-only). Deliberately
+    # NOT seeded into ADMIN role. 15/15 catalog unit tests + Codex AGREE. Live testai
+    # pod already set to this digest (kubectl set image); this bump makes it durable
+    # so ArgoCD selfHeal does not revert. Build run 27308323885 (merge 4f951508).
+    digest: sha256:2d9e6a79b1cded03e75eecda50ee0951eead3bda634b23f15415b1e2c166909b
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
