@@ -151,6 +151,52 @@ check('requests.memory', sum_req_mem, quota['requests_mem_mi'], max_pod_req_mem,
 check('limits.cpu', sum_lim_cpu, quota['limits_cpu_m'], max_pod_lim_cpu, 'm')
 check('limits.memory', sum_lim_mem, quota['limits_mem_mi'], max_pod_lim_mem, 'Mi')
 
+# --- Object-count headroom (2026-06-11, gitops#1449 follow-up) ---
+# Live case: services 20/20 doluyken yeni Service apply'da Forbidden aldı
+# (stderr'de sessiz — Endpoints yaratıldı Service yaratılamadı, bridge yarım).
+# Render'daki object sayıları quota hard'a karşı: headroom <= 0 → FAIL.
+# Not: render sayımı alt sınırdır (ESO'nun yarattığı Secret'lar + ArgoCD/runtime
+# objeleri render'da görünmez) — quota'ya yaklaşan her değer erkén sinyaldir;
+# bu yüzden headroom <= 0 FAIL + <= 2 WARN eşiği kullanılır.
+hard_counts = {}
+for d in docs:
+    if isinstance(d, dict) and d.get('kind') == 'ResourceQuota' \
+            and d.get('metadata', {}).get('name') == 'platform-quota':
+        h = d.get('spec', {}).get('hard', {})
+        for k in ('services', 'secrets', 'configmaps', 'persistentvolumeclaims', 'pods'):
+            if k in h:
+                hard_counts[k] = int(h[k])
+
+kind_to_quota_key = {
+    'Service': 'services',
+    'Secret': 'secrets',
+    'ConfigMap': 'configmaps',
+    'PersistentVolumeClaim': 'persistentvolumeclaims',
+}
+rendered_counts = {k: 0 for k in kind_to_quota_key.values()}
+for d in docs:
+    if not isinstance(d, dict):
+        continue
+    qk = kind_to_quota_key.get(d.get('kind'))
+    if qk:
+        rendered_counts[qk] += 1
+# pods: Deployment replicas toplamı (+ ESO/job'lar hariç — alt sınır)
+rendered_counts['pods'] = total_pods
+
+print()
+print("Object-count headroom (render = alt sınır; ESO/runtime objeleri hariç):")
+for qk, hard in sorted(hard_counts.items()):
+    used = rendered_counts.get(qk, 0)
+    margin = hard - used
+    if margin <= 0:
+        print(f"[FAIL] {qk}: rendered {used} / hard {hard} — headroom {margin} (apply Forbidden üretir)")
+        EXIT_CODE = max(EXIT_CODE, 1)
+    elif margin <= 2:
+        print(f"[WARN] {qk}: rendered {used} / hard {hard} — headroom {margin} (sıkışık; runtime objeleriyle dolabilir)")
+        EXIT_CODE = max(EXIT_CODE, 2)
+    else:
+        print(f"[OK]   {qk}: rendered {used} / hard {hard} — headroom {margin}")
+
 print()
 print(f"exit_code={EXIT_CODE}")
 sys.exit(EXIT_CODE)
