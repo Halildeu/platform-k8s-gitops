@@ -20,6 +20,14 @@ data:
   # --- JWT (ZORUNLU çift — eksikse pod fail-fast, #556 kontratı) ---
   AUDIO_GATEWAY_JWT_ISSUER_URI: "https://testai.acik.com/realms/platform-test"
   AUDIO_GATEWAY_JWT_JWKS_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+  # --- JWT claim adları (test realm canonical) ---
+  # platform-test realm'in frontend client mapper'ları claim'i `tenantId`
+  # olarak basar (oidc-usermodel-attribute-mapper tenantId→tenantId +
+  # platform-userId userId→userId; companyId mapper'ı YOK — 2026-06-11
+  # mapper audit). Backend default'u companyId (Codex 019e8846 "claim adı
+  # configurable" tasarımı tam bu durum için) → test'te override:
+  AUDIO_GATEWAY_JWT_TENANT_CLAIM: "tenantId"
+  # user-claim default'u (userId) realm'le zaten uyumlu — override gerekmez.
   # --- Dispatcher: Redis Streams cross-server (PR-gw-01C #534) ---
   AUDIO_GATEWAY_DISPATCHER_MODE: "redis"
   # Aggregate /actuator/health Redis reachability'yi yansıtsın (D29 Functional
