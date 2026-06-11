@@ -51,9 +51,13 @@ spec:
           image: ghcr.io/OVERLAY_MUST_OVERRIDE/audio-gateway-service:OVERLAY_MUST_OVERRIDE
           imagePullPolicy: IfNotPresent
           ports:
-            # WebFlux + actuator AYNI port (8210) — ayrı management port yok
             - name: http
               containerPort: 8210
+              protocol: TCP
+            # k8s profilinde actuator ayrı management portunda (#558 —
+            # drift gate spring-actuator contract: probe port management/8081)
+            - name: management
+              containerPort: 8081
               protocol: TCP
           envFrom:
             - configMapRef:
@@ -74,13 +78,13 @@ spec:
           startupProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: http
+              port: management
             failureThreshold: 30
             periodSeconds: 5        # 150 sn startup toleransı
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: http
+              port: management
             initialDelaySeconds: 0
             periodSeconds: 15
             timeoutSeconds: 3
@@ -88,7 +92,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: http
+              port: management
             initialDelaySeconds: 0
             periodSeconds: 10
             timeoutSeconds: 3

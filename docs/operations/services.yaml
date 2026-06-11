@@ -202,6 +202,26 @@ services:
                        # live rollout gated at deploy-prod-gitops production-env
                        # approval. See docs/runbooks/RB-faz22-m1-artifact-host.md §8.
 
+  - name: audio-gateway
+    repo: platform-backend
+    description: |
+      Faz 24 Meeting Intelligence audio chunk admission gateway (PR-gw-01
+      family — platform-backend#390/#403/#421/#534/#556/#558). JWT fail-closed
+      session/chunk REST API (/api/v1/audio-gateway); Redis Streams
+      cross-server dispatcher producer (audio:chunks:p00..p31, group
+      live-stt-v1 — ADR-0031 D2) to the platform-ai live-stt consumer
+      (platform-ai#138). Aşama-2 staging smoke ön şartı (platform-ai#151/#57).
+      Redis runtime: host-compose/redis-streams + docs/runbooks/
+      redis-streams-staging-sw.md.
+    jwt_validates: true
+    route_external: true   # /api/v1/audio-gateway ingress direct path (8210)
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator   # management:8081 (#558)
+    environments:
+      test: enabled
+      prod: deferred   # Faz 24 D30 cutover'a kadar prod overlay'e dahil değil
+
   # --- DEFERRED services (intentionally not in target env) ---
 
   - name: endpoint-admin-service
