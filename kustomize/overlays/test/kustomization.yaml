@@ -24,6 +24,7 @@ resources:
   - ../../base
   - ../../base/apps/ops-bundle    # Faz 17.2.5: ExternalSecret + ServiceMonitor CRD paketi (runtime'dan ayrı)
   - ../../base/apps/endpoint-admin-service    # Faz 22.1.1b live-aligned 2026-05-05
+  - ../../base/apps/audio-gateway    # Faz 24 Aşama-2 staging (platform-ai#151; test-only, prod D30 cutover'a defer)
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06
                                                   # (services.yaml prod=deferred; test=enabled)
   - ../../base/apps/artifact-host    # Faz 22.5 M1: endpoint-agent one-command bootstrap
@@ -68,6 +69,14 @@ images:
   # Pin: @sha256:digest (D30 immutable, moving tag YASAK).
   # GHCR packages PRIVATE; erişim: ghcr-pull Secret (ESO kv/gitops/ghcr-token → Halildeu PAT).
   # Live test smoke 2026-04-25 00:04 TR saati: D29 3-layer PASS (Up+Functional+Zanzibar-ready).
+
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audio-gateway-service
+    newName: ghcr.io/halildeu/platform-backend-audio-gateway-service
+    # Faz 24 Aşama-2 staging (platform-ai#151): ilk deploy, tag sha-28cfe2c
+    # (#556 Dockerfile + dual-URI JWT fail-fast + Redis health toggle;
+    # #558 management.server.port 8081 — drift gate spring-actuator contract).
+    # D30 immutable digest pin.
+    digest: sha256:40239d8096eab2c4c4a5b11332419ff9a774448cf538b0e640aa71843f6ec7bc
 
   - name: auth-service
     newName: ghcr.io/halildeu/platform-backend-auth-service
@@ -6413,6 +6422,26 @@ patches:
       - op: replace
         path: /subsets/0/ports/0/port
         value: 8200
+  - target:
+      kind: Endpoints
+      name: redis-streams
+    patch: |-
+      - op: replace
+        path: /subsets/0/addresses/0/ip
+        value: "172.19.0.250"
+      # Faz 24: host-compose/redis-streams static IP (platform-test-net,
+      # compose ipv4_address pin — PG'deki dinamik-IP drift riski yok).
+      # Port base'le aynı (6379), IP-only patch yeterli.
+
+  # Faz 24 audio-gateway: test replicas=1 (HARD RULE test scale-to-zero YASAK;
+  # base replicas:0 sadece skeleton fail-closed default'u)
+  - target:
+      kind: Deployment
+      name: audio-gateway
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
 
   # Test PDB gevşek (tek replica olunca anlamsız)
   - target:

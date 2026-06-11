@@ -1,0 +1,32 @@
+# audio-gateway-service ConfigMap — Faz 24 (Aşama-2 staging)
+#
+# Test-realm değerleri base'de (endpoint-admin configmap emsali — prod overlay
+# audio-gateway'i Faz 24 D30 cutover'a kadar DAHİL ETMEZ; dahil edildiğinde
+# issuer/JWKS/Redis host patch'lenir).
+#
+# JWT dual-URI kontratı (platform-backend#556): issuer external (token iss
+# claim'i edge host taşır) + JWKS internal (default-deny egress dışarı 443
+# vermez; key fetch in-cluster keycloak Service üzerinden).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audio-gateway-config
+  labels:
+    app.kubernetes.io/name: audio-gateway
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: platform
+data:
+  SPRING_PROFILES_ACTIVE: "k8s"
+  # --- JWT (ZORUNLU çift — eksikse pod fail-fast, #556 kontratı) ---
+  AUDIO_GATEWAY_JWT_ISSUER_URI: "https://testai.acik.com/realms/platform-test"
+  AUDIO_GATEWAY_JWT_JWKS_URI: "http://keycloak:8080/realms/platform-test/protocol/openid-connect/certs"
+  # --- Dispatcher: Redis Streams cross-server (PR-gw-01C #534) ---
+  AUDIO_GATEWAY_DISPATCHER_MODE: "redis"
+  # Aggregate /actuator/health Redis reachability'yi yansıtsın (D29 Functional
+  # sinyali; liveness/readiness state-based kalır — #556)
+  AUDIO_GATEWAY_HEALTH_REDIS_ENABLED: "true"
+  # --- Redis bağlantısı (host-bridge Service → host-compose/redis-streams) ---
+  SPRING_DATA_REDIS_HOST: "redis-streams"
+  SPRING_DATA_REDIS_PORT: "6379"
+  # SPRING_DATA_REDIS_PASSWORD → audio-gateway-secrets (ESO, Vault
+  # kv/platform/audio-gateway-service redis_password)

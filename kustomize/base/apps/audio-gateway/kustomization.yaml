@@ -1,0 +1,22 @@
+# audio-gateway base kustomization — Faz 24 (Aşama-2 staging, platform-ai#151)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: audio-gateway
+    includeSelectors: true
+    includeTemplates: true
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: true
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - configmap.yaml
+  - serviceaccount.yaml
+  # Secret ESO ile gelir (overlay-specific ExternalSecret —
+  # kustomize/overlays/test/eso/audio-gateway/, Vault path
+  # kv/platform/audio-gateway-service)
