@@ -10,6 +10,7 @@ resources:
   - endpoint-admin/externalsecret.yaml    # Faz 22.1.1b live-aligned (2026-05-05)
   - notify/externalsecret-notify.yaml    # Faz 23.1 PR5 (Codex 019dfaaa absorb 2026-05-06)
   - alertmanager/    # Faz 23.2.D T1.4 D43 outage fallback (Codex 019e0dea iter-2)
+  - audio-gateway/externalsecret.yaml    # Faz 24 Aşama-2 staging (platform-ai#151)
 
 patches:
   - target:

@@ -15,3 +15,4 @@ resources:
   - keycloak-svc.yaml
   - vault-svc.yaml
   - workcube-mssql-svc.yaml    # Faz 19.MSSQL (ADR-0005 Dual DataSource Reporting)
+  - redis-streams-svc.yaml      # Faz 24 cross-server chunk transport (ADR-0031 D2)

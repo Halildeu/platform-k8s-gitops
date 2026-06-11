@@ -42,6 +42,18 @@ spec:
               service:
                 name: api-gateway
                 port: { number: 8080 }
+          # Faz 24 Aşama-2: audio-gateway doğrudan path (platform-ai#151).
+          # nginx longest-prefix → /api/v1/audio-gateway buraya, kalan /api
+          # api-gateway'e. audio-gateway kendi JWT validation'ını fail-closed
+          # yapar (api-gateway auth filter'ına bağımlı değil). Canonical
+          # api-gateway route'u client'lar (24.11/24.12/24.13) gelirken
+          # değerlendirilir — bkz docs/runbooks/redis-streams-staging-sw.md.
+          - path: /api/v1/audio-gateway
+            pathType: Prefix
+            backend:
+              service:
+                name: audio-gateway
+                port: { number: 8210 }
           - path: /api
             pathType: Prefix
             backend:
