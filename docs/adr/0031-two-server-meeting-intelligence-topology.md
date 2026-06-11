@@ -160,6 +160,40 @@ Codex iter-1 4 opsiyon değerlendirdi:
 - ArgoCD hub staging-sw'da: platform-ai k3s'i **remote cluster** olarak register
 - Başlangıçta sadece `ai-test`; prod claim için ayrı `ai-prod` boundary + ayrı secret role + ayrı evidence
 
+#### D5 Amendment — PoC fiili deploy modeli: Windows host + Scheduled Tasks (2026-06-11)
+
+Fiili durum D5'in (d)-benzeri bir varyantına evrildi ve **PoC dönemi için
+resmi kabul edilir**: GPU host **Windows** (RTX 4070) — k3s Linux gerektirir;
+PoC pragmatizmi `deploy/gpu-host/install.ps1` (platform-ai repo) ile
+**Windows Scheduled Tasks** modeline gitti:
+
+- `platform-ai-live-stt` (:8200) + `platform-ai-meeting-ai` (:8300), SYSTEM
+  hesabı, boot'ta otomatik başlama + çökmede ~1 dk içinde restart
+- Deploy = `git pull` + `Restart-ScheduledTask` (manuel; immutable artifact
+  YOK — D30 disiplini bu hat için askıda)
+- Dış erişim: Cloudflare quick tunnel (IPv4 origin); cross-server chunk
+  hattı Redis Streams üzerinden (staging-sw — gitops#1447 zinciri)
+- Canlı kanıt: Aşama-1 browser smoke 6/6 PASS + kalıcı GPU prod deploy
+  (platform-ai #134-#145; go-live-signoff G2)
+
+**Sınırlar (amendment'ın kapsamı)**:
+1. Bu kabul **PoC/Faz 24 MVP dönemi** içindir — production go-live (#59 D30
+   cutover) öncesi şu üçünden biri seçilip mühürlenir: (i) k3s'e geçiş
+   (orijinal D5-b; GPU host'a Linux veya ikinci Linux host), (ii) Windows
+   modeli production-grade sertleştirme (immutable artifact + signed release
+   + otomatik rollback + drift detection), (iii) hibrit (compute Windows'ta
+   kalır, orchestration k8s'te proxy/health-bridge). Karar ayrı ADR/amendment.
+2. ArgoCD remote-register + Vault AppRole `ai-runtime-test` (D6) bu modelde
+   ertelenir — ESO yerine env/host secret yönetimi (KVKK sınırları D7/ADR-0030
+   ile korunur; loglar transcript-free).
+3. GitOps truth: platform-ai servis sürümleri bu dönemde git SHA üzerinden
+   izlenir (`git pull` anındaki main); release tag disiplini önerilir.
+
+Cross-AI not: D5-b kararının orijinal gerekçesi (Codex `019e8c09`) Linux host
+varsayımına dayanıyordu; Windows GPU host gerçeği o varsayımı geçersiz kıldı.
+Bu amendment fiili durumu mühürler ve production seçimini açık bırakır
+(go-live-signoff G11 maddesi).
+
 ### D6 — Vault secret rotation cross-server
 
 Vault staging-sw'da kalır. platform-ai host Vault'a **WireGuard/VPN + TLS-pinned remote API** ile erişir.
