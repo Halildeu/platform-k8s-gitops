@@ -147,6 +147,13 @@ path "kv/data/gitops/ghcr-token" {
   capabilities = ["read"]
 }
 
+# --- Faz 24 audio-gateway-service (Aşama-2 staging — platform-ai#151, gitops#1447) ---
+# SPRING_DATA_REDIS_PASSWORD (host-compose/redis-streams requirepass ile aynı;
+# seed: docs/runbooks/redis-streams-staging-sw.md §1)
+path "kv/data/platform/audio-gateway-service" {
+  capabilities = ["read"]
+}
+
 # --- Metadata read (versioned KV v2 list/describe) ---
 path "kv/metadata/platform/*" {
   capabilities = ["list"]
