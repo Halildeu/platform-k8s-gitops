@@ -169,3 +169,15 @@ Aşağıdakiler kabul edilip #1388'de imzalanmadan **hiçbir canlı session aç�
 ### 9.3 Pipeline
 
 `#1388 owner/legal accept` → `ADR-0033 ACCEPTED` → OSS seçimi → broker impl + negative-test evidence → recording fail-closed evidence → **ilk attended pilot (D29-EA Up/Functional/Secured ayrı kanıt)**.
+
+### 9.4 End-to-end secure build roadmap (Codex red-team absorb `019eb54b`, 2026-06-11)
+
+Owner directive (2026-06-11): complete 22.6 end-to-end to industry-standard (PAM/zero-trust), step by step, absorbing the independent cross-AI security audit. Phases (issue #1445 tracks Faz A; B–E under #510 epic):
+
+- **Faz A — governance + control-plane hardening (agent-doable):** A1 absorb 6 red-team findings → ADR-0033 §9b + ADR-0034 §11/D10 expanded gate *(this PR)*; A2 skeleton hardening — uniform-`DENIED`/constant-time validator + `reevaluateActive()` continuous-re-eval policy hook + tests.
+- **Faz B — crypto/identity foundation:** mTLS + non-exportable (TPM/HSM) cert-bound token + PKI (CRL/OCSP/rotation); atomic distributed jti store + rate-limit; agent attestation (SBOM/SLSA/reproducible/binary-hash).
+- **Faz C — session integrity:** continuous-re-eval runtime + real-time kill-switch/global deny-list; WORM encrypted hash-chained recording + fail-closed writer; **out-of-band signed append-only audit sink** + clock integrity.
+- **Faz D — channel + endpoint:** outbound-only tunnel (self-hosted, D9) + broker separate deployment + NetworkPolicy/egress; operator-channel (FIDO2/CSRF/nonce/re-auth); **VIEW_ONLY exfil controls** (DLP/masking/watermark/visible-indicator/local-abort + coercion UX).
+- **Faz E — acceptance:** negative-test LIVE evidence + red-team drill report + D29-EA → first 2–5 device attended pilot (owner go).
+
+Each phase is disabled-by-default until E; no live session before the §11/D10 expanded gate.

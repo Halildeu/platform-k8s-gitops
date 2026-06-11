@@ -81,10 +81,27 @@ Remote-session recording is personal-data processing requiring a lawful basis.
 
 ## 11. D10 — Acceptance gate (evidence before first live pilot)
 
-Even after this record is signed, the **first live session** opens only after (ADR-0033 §7/§10):
+Even after this record is signed, the **first live session** opens only after (ADR-0033 §7/§10 + §9b red-team absorb, Codex `019eb54b`):
+
+**Original gate:**
 - ADR-0033 ACCEPTED + broker negative-test evidence (self-approval deny / expired-replayed token deny / capability-mismatch deny / recorder-unavailable deny — all fail-closed).
 - Recording fail-closed evidence (no `ACTIVE` without `RECORDING_READY`).
 - D29-EA acceptance: **Up ≠ Functional ≠ Secured** proven separately.
+
+**Expanded must-land (red-team absorb — pilot BLOCKED without each):**
+1. **Continuous re-evaluation + real-time kill** — heartbeat re-validates policy/token/consent/dual-approval/recorder mid-session; negative test: revoke → session dead within the kill-switch SLO window.
+2. **Out-of-band signed audit/recording sink** — broker-independent, append-only, hash-chained, WORM; integrity verifiable with the broker assumed compromised.
+3. **mTLS + non-exportable (TPM/HSM) cert-bound token + PKI lifecycle** (CRL/OCSP/rotation) + **trusted/monotonic clock** (TTL not defeatable by skew).
+4. **Atomic distributed jti store** (Redis SETNX / DB unique) proven under concurrency + **uniform `DENIED` constant-time** wire response + layered rate-limit (no oracle/enumeration/retry-DoS).
+5. **Agent attestation depth** — SBOM + SLSA + reproducible build + runtime binary-hash + cert posture, auto-rollback on mismatch (feeds `agentAttestation`).
+6. **VIEW_ONLY exfil controls** — endpoint-side DLP/screen-masking, watermark, visible 'remote-support active' indicator, user local-abort, per-session content policy.
+7. **Endpoint-user coercion UX** — visible indicator + always-available local kill + revocable-mid-session consent.
+8. **Broker hardening** — separate deployment, NetworkPolicy + per-session egress ACL + namespace isolation, no ambient admin creds, secrets separation.
+9. **Operator-channel hardening** — separate auth, FIDO2/device-posture, ws origin/CSRF, per-channel nonce, no bearer in URL/logs, re-auth/per-action MFA.
+10. **IAM identity canonicalization** for dual-control (alias/proxy/service-account resolved before approver≠requester) + approval-fatigue limits.
+11. **Red-team drill report** — broker-compromise sim, jti replay, recorder-down→fail-closed, token theft, NTP skew, key leak/rotation — all pass.
+
+> These were RED-flagged by an independent cross-AI audit; the disabled-by-default control-plane skeleton (platform-backend#524) is a sound start but is NOT a pilot. No live session opens until all of the above have evidence.
 
 ## 12. Consequences
 
