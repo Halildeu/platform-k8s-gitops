@@ -1,7 +1,7 @@
 # ADR-0034 — #1388 Sensitive Endpoint Ops Governance Gate: Owner Decision Record
 
-> **Status:** PROPOSED — AWAITING OWNER / LEGAL SIGN-OFF (this record, once accepted, lifts the #1388 runtime gate for Faz 22.6 and is a prerequisite for 22.8)
-> **Date:** 2026-06-09
+> **Status:** ACCEPTED — owner-signed 2026-06-11 (single-owner pre-prod; all four roles signed by the Data Controller per §13). This record lifts the #1388 **engineering** gate for Faz 22.6 + 22.8 (disabled-by-default build may proceed); the **first live session** still requires the §11/D10 acceptance gate. A real-counsel legal review of the KVKK basis is recommended before any production (non-pilot) rollout.
+> **Date:** 2026-06-09 (proposed) → 2026-06-11 (owner-accepted)
 > **Owner sign-off required:** Data Controller (Veri Sorumlusu) + Legal/Hukuk + İK (HR) + IT-Security lead
 > **Design input:** 3-AI consensus — Codex/OpenAI `019ea9aa` + Mavis/MiniMax `mvs_c922505d66a94a45b031feb3489f9488` + Claude/Anthropic → [ADR-0033](./0033-faz-22-6-remote-access-bridge-broker.md)
 > **Board:** gitops [#1388](https://github.com/Halildeu/platform-k8s-gitops/issues/1388) (sensitive endpoint ops governance gate, P0)
@@ -25,51 +25,59 @@ Remote-session recording is personal-data processing requiring a lawful basis.
 
 - **Options:** (a) açık rıza (explicit consent), (b) sözleşmenin ifası, (c) hukuki yükümlülük, (d) **meşru menfaat** (legitimate interest — corporate security/support).
 - **3-AI default:** meşru menfaat (m.5/2-f) + sözleşme, **NOT consent-alone** (employee power-imbalance makes consent weak/revocable). İK + Hukuk signed policy + employee acknowledgment.
-- **Owner decision:** ____________________
+- **Owner decision (2026-06-11):** ✅ ACCEPT default — **meşru menfaat (KVKK m.5/2-f) + sözleşmenin ifası**, açık-rıza-değil. Prerequisite: İK+Hukuk imzalı politika metni + çalışan bilgilendirme/acknowledgment kaydı (canlı pilottan önce).
 
 ## 3. D2 — Notice / transparency (KVKK m.10 aydınlatma)
 
 - **Requirement:** employees informed BEFORE processing; each session shows an endpoint-visible prompt (operator identity + reason/ticket + capability set + recording notice). Recording without prior notice violates m.10.
 - **3-AI default:** standing aydınlatma metni (policy) + per-session attended prompt.
-- **Owner decision:** ____________________
+- **Owner decision (2026-06-11):** ✅ ACCEPT default — standing aydınlatma metni (politika) + her oturumda endpoint'te görünür attended uyarı (operatör kimliği + sebep/ticket + yetenek seti + kayıt bildirimi).
 
 ## 4. D3 — Recording mandate + retention (KVKK m.12 veri güvenliği)
 
 - **3-AI default (consensus):** recording **MANDATORY + fail-closed** for the pilot (high-privilege attended-admin class). Retention: metadata/audit **7y immutable**, raw recording **30–90d** (pilot 90d) encrypted, transcript ≥ raw. WORM/object-lock + hash-chain.
-- **Owner decision (retention days + storage):** ____________________
+- **Owner decision (2026-06-11, retention days + storage):** ✅ ACCEPT default — kayıt **ZORUNLU + fail-closed** (`RECORDING_READY` olmadan oturum `ACTIVE` olmaz). Saklama: metadata/audit **7y immutable**, ham kayıt **90 gün** şifreli (pilot), transcript ≥ ham. Depolama: **WORM / object-lock + hash-chain**, in-house (bkz. D5).
 
 ## 5. D4 — Special-category data (KVKK m.6)
 
 - **Context:** screen content MAY contain özel-nitelikli veri (sağlık vb.) → triggers m.6 stricter regime *only if present*.
 - **3-AI default:** treat recording as potentially containing m.6 data → encryption + RBAC + access-audit (ADR-0030 reuse); known-sensitive-app masking as a stretch goal.
-- **Owner decision:** ____________________
+- **Owner decision (2026-06-11):** ✅ ACCEPT default — kayıt potansiyel m.6 verisi sayılır → şifreleme + RBAC + erişim-audit (ADR-0030 reuse). Bilinen-hassas-uygulama maskeleme stretch goal.
 
 ## 6. D5 — Cross-border transfer (KVKK m.9)
 
 - **Context:** m.9 applies ONLY if recordings/metadata are transferred abroad (e.g. non-TR cloud, OSS relay SaaS).
 - **3-AI default:** keep all recording + relay **in-country / in-house**; no cross-border transfer → m.9 not triggered. If a foreign subprocessor is used, m.9 + DPA decision required (see D9).
-- **Owner decision:** ____________________
+- **Owner decision (2026-06-11):** ✅ ACCEPT default — tüm kayıt + relay **yurt içi / in-house**; yurtdışı aktarım yok → m.9 tetiklenmez. Yabancı subprocessor kullanılmayacak (bkz. D9).
 
 ## 7. D6 — Attended / unattended + break-glass policy
 
 - **3-AI default (consensus):** pilot is **attended-only** (endpoint user present + consents). **Unattended + break-glass DEFERRED to a later phase** with a separate ADR — opening them in pilot de-facto bypasses this gate.
-- **Owner decision:** ____________________
+- **Owner decision (2026-06-11):** ✅ ACCEPT default for **interactive remote-access (22.6)** — pilot **attended-only**; unattended + break-glass DEFERRED (separate ADR). Note: the automated **offboarding/audit file-copy** flow approved under D8 is a *non-interactive scheduled/triggered job* (not an unattended interactive remote session) and is governed by its own scenario-based dual-approval (see D8), not by this attended-session rule.
 
 ## 8. D7 — Pilot scope (named)
 
 - **3-AI default:** 2–5 **IT-owned** devices; named requester(s), operator(s), approver(s). No BYOD / general-employee device.
-- **Owner decision (device + people list):** ____________________
+- **Owner decision (2026-06-11, device + people list):** ✅ ACCEPT default framing — **2–5 IT-owned devices, no BYOD**. The concrete named device + requester/operator/approver roster is **operational** and will be recorded at pilot kickoff (before the first live session, as part of the §11/D10 acceptance gate). Lab candidates: the existing IT-owned Parallels/agent-managed Windows hosts (e.g. HALILKOOLUB735, MKR-A1). Maker ≠ checker enforced per ADR-0033.
 
 ## 9. D8 — Capability classes for the pilot
 
 - **3-AI default:** narrowest-first — **view-only screen-share OR an allowlisted constrained PTY**. File-transfer / clipboard-sync / credential-entry / elevation / generalized port-forward **OFF** for pilot.
-- **Owner decision (allowed capability set):** ____________________
+- **Owner decision (2026-06-11) — AMENDED (split into two capability planes):**
+  - **22.6 interactive remote session (live operator):** ✅ keep the narrow default — **view-only screen-share + allowlisted constrained PTY only**. Free-hand in-session file-transfer / clipboard-sync / credential-entry / elevation / port-forward remain **OFF** for the pilot.
+  - **22.8 file-copy (audit + offboarding / işten-çıkış):** ✅ **APPROVED as a separate, non-interactive, automated capability** — owner explicitly wants file-copy enabled for **audit and offboarding scenarios**, **fully automated and bound to a scenario-based dual-approval flow** (not free operator access). Mandatory governance for this plane (all already required by #1388 acceptance + ADR-0033):
+    - **Scenario-bound:** only the named scenarios (employee offboarding copy, audit/forensic evidence collection) — no ad-hoc browse-and-pull.
+    - **Dual-control:** requester ≠ approver (maker-checker); per-scenario approval before any copy job runs; abort on objection / scope-expansion / excessive-volume.
+    - **Chain-of-custody:** SHA256 manifest + immutable evidence bundle (#1388 acceptance) + append-only audit (actor/approver/device/reason/scope/job-id/result/evidence-link).
+    - **Retention:** offboarding/forensic artifacts per D3 (7y metadata; artifact retention set in the 22.8 addendum) + encryption + RBAC (D4) + in-house only (D5).
+    - **Transparency:** offboarding copy disclosed per İK policy + D2 aydınlatma.
+  - **Consequence:** this decision **activates the 22.8 collection-scope** (offboarding + audit file-copy) as owner-approved, gated behind the scenario dual-approval flow. The remaining 22.8 detail (exact path/filetype allowlist, volume caps, masking) is the **22.8 collection-scope addendum** to this record (separate, before 22.8 live). Generalized backup of arbitrary employee files outside the named scenarios is **NOT** approved here.
 
 ## 10. D9 — Third-party OSS / relay (DPA / subprocessor)
 
 - **Context:** if a transport overlay (OpenZiti/zrok) or adapter (MeshCentral) involves a hosted/relay service, a DPA + subprocessor stance is needed.
 - **3-AI default:** self-hosted OSS only (no SaaS relay) → no external subprocessor. Any SaaS path → DPA + D5 cross-border review first.
-- **Owner decision:** ____________________
+- **Owner decision (2026-06-11):** ✅ ACCEPT default — **self-hosted OSS only, no SaaS relay** → no external subprocessor. Any future SaaS path requires a DPA + D5 cross-border review first.
 
 ## 11. D10 — Acceptance gate (evidence before first live pilot)
 
@@ -88,12 +96,12 @@ Even after this record is signed, the **first live session** opens only after (A
 
 | Role | Name | Decision (accept / amend / reject) | Date |
 |---|---|---|---|
-| Data Controller (Veri Sorumlusu) | | | |
-| Legal / Hukuk | | | |
-| İK / HR | | | |
-| IT-Security lead | | | |
+| Data Controller (Veri Sorumlusu) | Halil Koçoğlu (Halildeu, owner) | **ACCEPT** (D1–D7, D9, D10 defaults) + **AMEND** (D8: 22.6 narrow + 22.8 offboarding/audit file-copy via scenario dual-approval) | 2026-06-11 |
+| Legal / Hukuk | Halil Koçoğlu (single-owner pre-prod; real-counsel review recommended pre-production) | **ACCEPT** as above | 2026-06-11 |
+| İK / HR | Halil Koçoğlu (single-owner pre-prod) | **ACCEPT** as above | 2026-06-11 |
+| IT-Security lead | Halil Koçoğlu (single-owner pre-prod) | **ACCEPT** as above | 2026-06-11 |
 
-> Until all four roles sign accept, #1388 remains OPEN and 22.6/22.8 runtime stays BLOCKED.
+> All four roles signed ACCEPT (single-owner pre-prod) 2026-06-11 → #1388 **engineering** gate LIFTED for 22.6 + 22.8 (disabled-by-default build proceeds). The **first live session** still requires the §11/D10 acceptance gate (broker negative-tests + recording fail-closed + D29-EA). The D8 22.8 file-copy plane additionally requires the **22.8 collection-scope addendum** before its first live run. A real legal-counsel review of the KVKK basis is recommended before any production (non-pilot) rollout.
 
 ## 14. References
 
