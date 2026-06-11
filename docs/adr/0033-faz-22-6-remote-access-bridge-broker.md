@@ -143,6 +143,22 @@ The 3-AI divergence (Codex/Claude "mandatory" vs Mavis "risk-tiered") **resolves
 | Confused deputy | approval binds exact target + capability + actor + TTL; not reusable for another device/session/capability |
 | Pass-the-hash | token non-exportable, device-bound; no reusable admin cred to agent |
 
+### 9b. Red-team absorb (Codex 019eb54b, 2026-06-11) — guards added vs mature PAM
+
+The cross-AI security audit (RED-for-live-pilot) surfaced gaps under-covered above. These guards are **mandatory before the first live pilot** (folded into ADR-0034 §11/D10):
+
+| Threat (added) | Guard |
+|---|---|
+| **Mid-session capability/policy drift (TOCTOU)** | the ACTIVE invariant is NOT only an activation-time check — a **continuous re-evaluation heartbeat** re-validates policy=allow ∧ token-valid ∧ consent-held ∧ dual-approval-valid ∧ recorder-healthy every ≤N s; any failure → **immediate kill** (ACTIVE→ENDING/ABORTED), fail-closed. The skeleton exposes a pure `reevaluateActive(pre)` policy hook the runtime heartbeat consumes. |
+| **Audit tampering after broker compromise** | audit/recording integrity does NOT live only in the broker: events stream to an **out-of-band, broker-independent, append-only, signed sink** (separate collector + hash-chain + WORM); the broker holds no key that can rewrite history. Audit is verifiable even if the broker is owned. |
+| **Real-time revocation latency** | revoke/abort propagates to a **global deny-list** consulted by the heartbeat; kill-switch latency is an SLO with a negative test (revoke → session dead within the window). |
+| **Token-validation oracle / enumeration / retry-DoS** | the validator's distinct decisions are **internal/audit-only**; the wire response is a **single uniform `DENIED` with constant-time** behavior. Layered rate-limit + per-(ip,operator,session) throttle; parse-vs-validate distinction is not externally observable. |
+| **VIEW_ONLY is itself an exfil/privacy channel** | read-only screen-share is NOT "safe by recording alone": endpoint-side **DLP/known-sensitive-app screen masking**, per-session **watermark**, a **visible 'remote-support active' indicator**, a **user local-abort/kill control**, and a per-session content policy. |
+| **Endpoint-user coercion** | visible session indicator + always-available **local kill** + coercion-resistant consent UX (out-of-band confirm option); consent is revocable mid-session → kill. |
+| **Agent supply-chain / code integrity** | "signed build" is insufficient alone → **SBOM + SLSA provenance + reproducible build + runtime binary-hash attestation + cert posture**, with auto-rollback on attestation mismatch (feeds `agentAttestation` precondition). |
+| **PKI / clock dependence** | mTLS needs full **cert lifecycle** (CRL/OCSP, rotation, non-exportable TPM/HSM key) and the ≤4h TTL needs **trusted/monotonic time** (NTP integrity) — TTL must not be defeatable by clock skew. |
+| **Insider operator collusion / approval fatigue** | dual-control is necessary not sufficient: **canonical IAM identity** (alias/proxy/service-account resolution before approver≠requester), approval-fatigue limits, and out-of-band incident review of approvals. |
+
 ---
 
 ## 10. Decision 9 — Unblock Sequencing
