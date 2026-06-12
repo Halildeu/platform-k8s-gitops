@@ -257,3 +257,77 @@ This runbook is **operator-activatable**. Activation steps — **LIVE 2026-06-12
 - **Verdict**: AGREE after 4 absorb (source-side scope LIVE; operator activation pending §3)
 
 **Closure ≠ runbook merge**: Bu runbook MERGED ≠ Graph Mail.Read activated. Closure operator §3 + agent §4 smoke + §7 8-item checklist sonra.
+
+---
+
+## 9. Send Surface (D7b — agent/ops explicit send)
+
+> **Helper**: `scripts/ops/graph-mail-send.sh` | **ADR**: §D7b | **Codex**: `019ebbdb` PARTIAL→5 absorb | **LIVE 2026-06-12**
+
+D7 read yüzeyinin simetriği: agent `ai@acik.com`'dan **Mail.Send** Application permission ile mail gönderir. **Backend GraphMailAdapter DEĞİŞMEZ** (SMTP send-path canonical korunur).
+
+### 9.1 Boundary (read-only invariant'tan farklı)
+
+D7 helper SADECE GET (read-only). D7b helper **outbound POST** (`/users/ai@acik.com/sendMail`) — bu yüzden ek guard'lar:
+
+- **Dry-run by default**: `--send` olmadan network call YOK; sadece payload preview
+- **`--confirm-recipients` mekanik guard**: `--send` için zorunlu; normalize `to+cc` set eşleşmeli
+- **From sabit `ai@acik.com`** (AAP sender enforce; `--from` yok)
+- **Body argv/env'de değil**: base64 + heredoc script stream → remote process list'te görünmez
+- **Send-mode audit**: body değeri loglanmaz (sadece body_len); dry-run body'i gösterir (onay için)
+- **No retry** (sendMail idempotent değil); **agent-layer per-message approval** (HARD RULE "send AS user")
+
+### 9.2 Usage
+
+```bash
+# Dry-run (default — gönderim YOK, payload preview):
+./scripts/ops/graph-mail-send.sh --to someone@acik.com --subject "Konu" --body "Metin"
+
+# Gerçek gönderim (--send + --confirm-recipients ikisi zorunlu):
+./scripts/ops/graph-mail-send.sh --to someone@acik.com --subject "Konu" --body "Metin" \
+    --send --confirm-recipients someone@acik.com
+
+# HTML + cc + body-file:
+./scripts/ops/graph-mail-send.sh --to a@acik.com --cc b@acik.com --subject "Rapor" \
+    --body-file /tmp/report.html --content-type html \
+    --send --confirm-recipients "a@acik.com,b@acik.com"
+```
+
+### 9.3 Self-send smoke (acceptance)
+
+```bash
+# 1. Dry-run preview
+./scripts/ops/graph-mail-send.sh --to ai@acik.com --subject "<unique>" --body "test"
+# → dry_run:true, recipient_confirm:ai@acik.com, external_recipients:[]
+
+# 2. Send
+./scripts/ops/graph-mail-send.sh --to ai@acik.com --subject "<unique>" --body "test" \
+    --send --confirm-recipients ai@acik.com
+# → {"status":"accepted","http_status":202,...}
+
+# 3. Inbox kanıtı
+./scripts/ops/graph-mail-list.sh --search "<unique>"
+# → mesaj listede görünür (self-delivery + Graph send path kanıtı; external deliverability AYRI)
+
+# 4. AAP enforce (negative — agent-layer, opsiyonel):
+# from ai@acik.com only enforce; başka sender app token ile Denied (read helper §4.4 mantığı)
+```
+
+### 9.4 Agent Usage Patterns (send)
+
+User: "ai@acik.com'dan X kişisine şu maili at: ..."
+Agent:
+1. `graph-mail-send.sh ... ` **dry-run** çalıştırır → payload preview'i kullanıcıya gösterir
+2. Kullanıcı **açık onay** verir ("evet gönder")
+3. Agent `--send --confirm-recipients <exact to+cc>` ile gönderir
+4. HTTP 202 + (opsiyonel) `graph-mail-list.sh --search` ile sent kanıtı
+
+**Onay olmadan `--send` YASAK** (HARD RULE "send AS the user").
+
+### 9.5 D7b Closure Acceptance
+
+- [ ] Helper dry-run preview LIVE (network yok)
+- [ ] Self-send smoke ai@acik.com → ai@acik.com HTTP 202 + inbox görünme
+- [ ] `--confirm-recipients` mismatch abort kanıtı
+- [ ] shellcheck clean
+- [ ] ADR-0024 §D7b LIVE + §"Last Update" stamp
