@@ -55,6 +55,14 @@ resources:
   # synthetic probe + 2 alerts (Failing / Stale). Browser-based stuck-UI
   # detection (Playwright headless) is separate follow-up scope.
   - prometheusrule-frontend-settings-notifications.yaml
+  # Faz 24 PR-obs-01b (gitops#1247, Codex 019ebacc iter-2 AGREE) — STT pipeline:
+  # 2 recording (consumer_present bool + group lag sum, `or vector(0)` guard'lı)
+  # + 7 alert (gateway down/5xx/p95, redis down, exporter down, backlog-without-
+  # consumer, pending-stuck). absent() bilinçli YOK (base prod'a da gider;
+  # remote_write onarımına kadar cross-cluster false-positive üretirdi).
+  # SttConsumerAbsent alert DEĞİL — recording (GPU host intermittent; info
+  # severity'si bile alarm-receiver-bridge'te GitHub issue üretir).
+  - stt-pipeline-rule.yaml
   - alertmanager-bridge           # Codex Sprint A follow-up — AlertManager → GitHub Issues bridge
   # Grafana dashboard ConfigMap'ler — kube-prometheus-stack sidecar provisioner
   # otomatik import (label grafana_dashboard=1). Helm values
@@ -70,6 +78,7 @@ resources:
   # Per-template analytics panel datasource (defer-aware activation; operator
   # action chain — see RB-grafana-notify-pg-datasource.md). ConfigMap label
   # grafana_datasource=1 → kube-prometheus-stack Grafana sidecar otomatik import.
+  - grafana-dashboards/stt-pipeline-dashboard.yaml  # Faz 24 PR-obs-01b (gitops#1246) — gateway + Redis Streams + live-stt(collapsed, scrape pending); seri adları canlı envanterden (lettuce summary → avg+max, p99 yok)
   - grafana-datasources/
 
 # Kullanım:
