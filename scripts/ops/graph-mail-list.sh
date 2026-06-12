@@ -101,63 +101,65 @@ fi
 # Execute on staging-sw — Vault credential read + token + Graph call all in-band
 # D43 pattern: credential never echoed; SSH session output only sanitized result
 #
-# shellcheck disable=SC2087
-# Heredoc intentionally mixes client-side variable expansion (${MAILBOX}, ${GRAPH_QUERY},
-# ${VAULT_PATH}) with server-side variable expansion (\$VAULT_ROOT_TOKEN, \$ACCESS_TOKEN,
-# \$CLIENT_SECRET, etc., escaped with backslash). Client-side vars are helper params
-# that must expand before SSH; server-side vars are Vault credentials that must
-# never leave staging-sw. Quoting EOSSH would break the client-side param flow.
-ssh -o BatchMode=yes "$SSH_HOST" bash -s <<EOSSH
+# Robust pattern: helper params (MAILBOX, GRAPH_QUERY, VAULT_PATH) are passed as
+# single-quoted env vars in the SSH command string (protects $top/$select/& chars),
+# and the remote body is a QUOTED heredoc (<<'EOSSH') so NO client-side expansion
+# occurs — every $VAR inside is evaluated on staging-sw only. This keeps Vault
+# credentials (CLIENT_SECRET, VAULT_ROOT_TOKEN, ACCESS_TOKEN) from ever leaving
+# the server, and avoids the double-expansion that breaks OData $-prefixed params.
+ssh -o BatchMode=yes "$SSH_HOST" \
+    "VAULT_PATH='${VAULT_PATH}' MAILBOX='${MAILBOX}' GRAPH_QUERY='${GRAPH_QUERY}' bash -s" <<'EOSSH'
 set -euo pipefail
 
-VAULT_ROOT_TOKEN=\$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json 2>/dev/null || \\
+VAULT_ROOT_TOKEN=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-prod.json 2>/dev/null || \
                    jq -r .root_token /home/halil/bootstrap-drill/vault-init.json)
 
 # Read Graph credentials from Vault (no echo)
-GRAPH_DATA=\$(docker exec -i -e VAULT_TOKEN="\$VAULT_ROOT_TOKEN" platform-vault-prod \\
-    vault kv get -format=json "${VAULT_PATH}" 2>/dev/null || \\
-    docker exec -i -e VAULT_TOKEN="\$VAULT_ROOT_TOKEN" platform-vault \\
+GRAPH_DATA=$(docker exec -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault-prod \
+    vault kv get -format=json "${VAULT_PATH}" 2>/dev/null || \
+    docker exec -e VAULT_TOKEN="$VAULT_ROOT_TOKEN" platform-vault \
     vault kv get -format=json "${VAULT_PATH}")
 
-CLIENT_ID=\$(echo "\$GRAPH_DATA" | jq -r '.data.data.graph_client_id // .data.data.client_id')
-CLIENT_SECRET=\$(echo "\$GRAPH_DATA" | jq -r '.data.data.graph_client_secret // .data.data.client_secret')
-TENANT_ID=\$(echo "\$GRAPH_DATA" | jq -r '.data.data.graph_tenant_id // .data.data.tenant_id')
+CLIENT_ID=$(echo "$GRAPH_DATA" | jq -r '.data.data.graph_client_id // .data.data.client_id')
+CLIENT_SECRET=$(echo "$GRAPH_DATA" | jq -r '.data.data.graph_client_secret // .data.data.client_secret')
+TENANT_ID=$(echo "$GRAPH_DATA" | jq -r '.data.data.graph_tenant_id // .data.data.tenant_id')
 
-if [[ -z "\$CLIENT_ID" || -z "\$CLIENT_SECRET" || -z "\$TENANT_ID" || \\
-      "\$CLIENT_ID" == "null" || "\$CLIENT_SECRET" == "null" || "\$TENANT_ID" == "null" ]]; then
+if [[ -z "$CLIENT_ID" || -z "$CLIENT_SECRET" || -z "$TENANT_ID" || \
+      "$CLIENT_ID" == "null" || "$CLIENT_SECRET" == "null" || "$TENANT_ID" == "null" ]]; then
     echo "ERROR: Vault ${VAULT_PATH} missing graph_client_id / graph_client_secret / graph_tenant_id" >&2
     exit 2
 fi
 
 # Client credentials token (~1h TTL Graph default)
-TOKEN_RESPONSE=\$(curl -sS -X POST \\
-    "https://login.microsoftonline.com/\${TENANT_ID}/oauth2/v2.0/token" \\
-    -H "Content-Type: application/x-www-form-urlencoded" \\
-    -d "client_id=\${CLIENT_ID}" \\
-    --data-urlencode "client_secret=\${CLIENT_SECRET}" \\
-    -d "scope=https://graph.microsoft.com/.default" \\
+TOKEN_RESPONSE=$(curl -sS -X POST \
+    "https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=${CLIENT_ID}" \
+    --data-urlencode "client_secret=${CLIENT_SECRET}" \
+    -d "scope=https://graph.microsoft.com/.default" \
     -d "grant_type=client_credentials")
 
-ACCESS_TOKEN=\$(echo "\$TOKEN_RESPONSE" | jq -r '.access_token // empty')
+ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token // empty')
 
-if [[ -z "\$ACCESS_TOKEN" ]]; then
+if [[ -z "$ACCESS_TOKEN" ]]; then
     echo "ERROR: Token acquisition failed" >&2
-    echo "\$TOKEN_RESPONSE" | jq -r '.error_description // .error // .' >&2
+    echo "$TOKEN_RESPONSE" | jq -r '.error_description // .error // .' >&2
     exit 3
 fi
 
 # Graph call (read-only)
-GRAPH_RESPONSE=\$(curl -sS \\
-    "https://graph.microsoft.com/v1.0${GRAPH_QUERY}" \\
-    -H "Authorization: Bearer \${ACCESS_TOKEN}" \\
-    -H "Accept: application/json" \\
+GRAPH_RESPONSE=$(curl -sS \
+    "https://graph.microsoft.com/v1.0${GRAPH_QUERY}" \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+    -H "Accept: application/json" \
     -H "ConsistencyLevel: eventual")
 
 # Sanitize output — strip @odata.context noise + flatten
-echo "\$GRAPH_RESPONSE" | jq '{
-    mailbox: "${MAILBOX}",
+echo "$GRAPH_RESPONSE" | jq --arg mailbox "$MAILBOX" '{
+    mailbox: $mailbox,
     count: (.value | length),
-    messages: [.value[] | {
+    error: (.error.code // null),
+    messages: [(.value // [])[] | {
         id: .id,
         subject: .subject,
         from: (.from.emailAddress.address // null),

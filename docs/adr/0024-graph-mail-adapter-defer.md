@@ -223,6 +223,16 @@ Bu ADR'a göre **bu repodaki** aşağıdaki kontrat noktaları **iç-tutarlı** 
 
 ## Last Update
 
+**2026-06-12 (D7 LIVE — agent/ops inbox read activated)** — D7 (agent/ops inbox read scope, ekleme tarihi 2026-05-28) **operator activation LIVE 2026-06-12**:
+- Entra app `acik-mail-graph-api` **Mail.Read Application permission** eklendi + **tenant admin consent** verildi (Microsoft Graph PowerShell SDK `Add-MgApplicationPassword` + `New-MgServicePrincipalAppRoleAssignment`; role assignments doğrulandı: Mail.Read `810c84a8-...` + Mail.Send `b633e1c5-...`).
+- **ApplicationAccessPolicy** kuruldu (`New-ApplicationAccessPolicy` `RestrictAccess`): mail-enabled security group `Mail-Graph-Allowed-Mailboxes` → sadece `ai@acik.com`. **D6 mailbox scope daraltma artık LIVE** (önceki snapshot AAP "yok" idi; Mail.Send tenant-wide risk de bu adımla kapandı).
+- **Client secret üretildi** (`graph-mail-agent-read-20260612`, 12 ay, expiry 2027-06-12) + **prod Vault `kv/platform/graph`** seed edildi (3 key: `graph_client_id`/`graph_tenant_id`/`graph_client_secret`, stdin-pipe no-log).
+- **Live enforce kanıtı**: `ai@acik.com` → Graph `/messages` **Granted** (5 mesaj okundu); `ai.enes@acik.com` → **`ErrorAccessDenied` "Blocked by tenant configured AppOnly AccessPolicy"**; `halil.kocoglu@serban.com.tr` → **Denied**. Blast radius secret sızıntısında tek mailbox.
+- Helper `scripts/ops/graph-mail-list.sh` end-to-end LIVE (token + Graph list + AAP enforce). **Heredoc stdin bug** (`docker exec -i` heredoc stdin'ini tüketiyordu → `-i` kaldırıldı + quoted-heredoc env-var pattern).
+- **Backend GraphMailAdapter DEĞİŞMEDİ** — `notify.adapters.graph.enabled` hâlâ disabled (D1-D6 send-path SMTP canonical korunur); D7 sadece agent/ops read yüzeyi.
+
+**2026-05-28 (D7 addendum)** — Agent/ops inbox read scope kararı eklendi (Codex `019ebac1` PARTIAL → 4 absorb): same Entra asset, ayrı scope; Mail.Read app-only + AAP app-wide; user direktif "doğrudan yetki vereyim gerektiğinde gelen mailleri görmek bu sohbetten sana sormak istiyorum". Runbook: RB-graph-mail-agent-read.md.
+
 **2026-05-20 (Session 42 — Codex `019e44b1` defer contract alignment)** — ADR-0024 yaratıldı. Graph mail adapter activation defer kararı + Entra app reg + admin consent asset preservation + reactivation chain (5 adım atomic) + Microsoft App Password deprecation horizon hazırlık.
 
-ADR mode `Accepted`. Trigger geldiğinde reactivation board issue [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892) claim'lenir ve RB-graph-mail-adapter-activation.md takip edilir.
+ADR mode `Accepted`. Backend adapter activation trigger geldiğinde reactivation board issue [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892) claim'lenir ve RB-graph-mail-adapter-activation.md takip edilir. **D7 agent/ops read yüzeyi (Mail.Read + AAP) bundan bağımsız ve 2026-06-12 itibarıyla LIVE.**
