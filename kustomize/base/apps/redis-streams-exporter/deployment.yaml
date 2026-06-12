@@ -40,13 +40,26 @@ spec:
             # Host-services D19 bridge Service (kustomize/base/host-services/
             # redis-streams-svc.yaml) — overlay Endpoints gerçek bridge IP'yi
             # taşır; exporter cluster içinden Service DNS'iyle gider.
-            - name: REDIS_ADDR
-              value: redis://redis-streams:6379
+            # ACL ayrımı (gitops#1457): read-only `exporter` user — requirepass
+            # default user'dan bağımsız (Codex 019ebb70). REDIS_USER + PASSWORD
+            # ESO'dan (kv/platform/redis-streams-exporter).
+            # redis_exporter ACL kullanımı (upstream README): user/pass HEM
+            # REDIS_ADDR userinfo'sunda HEM ayrı env'de — canlı 2026-06-12:
+            # REDIS_USER tek başına env'de iken redis_exporter default-user'a
+            # düşüp WRONGPASS verir; userinfo'lu connstr şart. K8s $(VAR)
+            # expansion REDIS_USER/PASSWORD'dan SONRA tanımlı (sıralama önemli).
+            - name: REDIS_USER
+              valueFrom:
+                secretKeyRef:
+                  name: redis-streams-exporter-secrets
+                  key: REDIS_USER
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: redis-streams-exporter-secrets
                   key: REDIS_PASSWORD
+            - name: REDIS_ADDR
+              value: "redis://$(REDIS_USER):$(REDIS_PASSWORD)@redis-streams:6379"
             # 32 partition explicit liste (glob değil — Codex 019ebacc S2:
             # cardinality sabit + glob semantiği sürpriz üretmesin).
             # check-single-streams: her stream için ayrı XINFO STREAM/GROUPS

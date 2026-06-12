@@ -163,6 +163,15 @@ path "kv/data/platform/remote-write-bridge" {
   capabilities = ["read"]
 }
 
+# --- redis-streams-exporter read-only ACL user (gitops#1457) ---
+# Exporter'ın ayrı read-only Redis user'ı (username=exporter + password;
+# host-compose/redis-streams aclfile ile aynı parola). audio-gateway'in
+# default-user parolasından bağımsız rotation. Tüketici: platform-test ns
+# ExternalSecret redis-streams-exporter-secrets.
+path "kv/data/platform/redis-streams-exporter" {
+  capabilities = ["read"]
+}
+
 # --- Metadata read (versioned KV v2 list/describe) ---
 path "kv/metadata/platform/*" {
   capabilities = ["list"]
