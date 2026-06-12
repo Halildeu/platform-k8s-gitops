@@ -185,11 +185,11 @@ close + transcript save + operator notify; revocation propagation ≤30s.
 | 8 | Broker hardening (ayrı deployment + NetPol + egress ACL + secret ayrımı) | ❌ | Gitops infra işi — broker kodu disabled-by-default + loopback-default (#581/#583); manifest/NetPol pilot-önü PR |
 | 9 | Operator-channel hardening (FIDO2/CSRF/nonce/re-auth) | ❌ | Operator console T-4; WebAuthn step-up domain politikası kodda hazır (D-6 StepUpState) |
 | 10 | IAM identity canonicalization (alias→canonical, approver≠requester) | 🔶 | ✅ kod: approver≠requester engine kuralı + anti-coercion invariant. Kalan: alias/proxy/service-account canonicalization (Keycloak attribute eşlemesi) + approval-fatigue limiti |
-| 11 | Red-team drill report | ❌ | Pilot-önü drill: broker-compromise sim, jti replay, recorder-down, token theft, NTP skew, key rotation — runbook'ta senaryo listesi |
+| 11 | Red-team drill report | 🔶 | ✅ senaryo matrisi + design-time test kanıtları haritalandı ([RB-22-6 red-team drill runbook](RB-22-6-remote-bridge-redteam-drill.md) — 8 kategori, her biri merged otomatik teste bağlı: forge/replay/recorder-down/token-theft/clock-skew/key-rotation/transport/coercion). Kalan: pilot broker'ında CANLI drill koşumu (Faz B ön-şartı) + rapor |
 
-> **Özet (2026-06-12, dürüst sayım):** **0/11 madde pilot-complete.** 7/11 maddede
-> kısmî kod/test kanıtı MERGED (🔶 — kalan iş infra / T-4-UI / operasyon sınıfında),
-> 4/11 maddede henüz çalıştırılabilir kanıt yok (❌ — tasarım/domain-model hazır olsa
+> **Özet (2026-06-12, dürüst sayım):** **0/11 madde pilot-complete.** 8/11 maddede
+> kısmî kanıt MERGED (🔶 — kalan iş infra / T-4-UI / operasyon sınıfında),
+> 3/11 maddede henüz çalıştırılabilir kanıt yok (❌ — tasarım/domain-model hazır olsa
 > da D10 anlamında kanıt sayılmaz). **D10 kuralı değişmedi: ilk canlı oturum, 11
 > maddenin TAMAMI madde-seviyesinde yeşil olmadan AÇILMAZ** (ADR-0034 §11: "pilot
 > BLOCKED without each"). Bu harita ilerlemeyi izlemek içindir, gate'i gevşetmez.
