@@ -176,6 +176,40 @@ D7 read yüzeyinin simetriği: agent (Claude Code chat) Microsoft Graph **Mail.S
 - Template/merge-field send
 - Scheduled/deferred send
 
+### D7c — Backend GraphMailAdapter **TEST cutover** (2026-06-12 — D1-D6 reactivation, test slice)
+
+> **Status**: TEST adapter-LIVE 2026-06-12 (Codex thread `019ebc0e` REVISE-with-conditions plan + post-impl AGREE; PR #1477 MERGED `00466d2a`). **PROD hâlâ SMTP** (D1 prod için geçerli; prod cutover ayrı owner-gated slot).
+> **Bu D7/D7b'den FARKLI**: D7/D7b = agent/ops yüzeyi (helper script'ler); **D7c = backend notification-orchestrator pipeline'ının kendisi** (D1-D6'da deferred edilen GraphMailAdapter'ın TEST cluster'da activation'ı).
+
+D1-D6 "SMTP canonical, Graph deferred" kararı **TEST cluster için reactivation trigger karşılandı** (ADR-0024 D3 ops/security tactical decision): bu tenant'ta Conditional Access agresif basic-auth deprecation (device-code 4× timeout 2026-06-12 canlı gözlem) + D7b Graph app-only external delivery proof. Backend mail send path SMTP → Graph app-only cutover, TEST cluster.
+
+**Activation** (PR #1477):
+- ESO test overlay: 3 Graph remoteRef uncomment (`NOTIFY_ADAPTERS_GRAPH_*` ← `kv/platform/notification-orchestrator.graph_*`, platform-vault-test)
+- ConfigMap: `NOTIFY_ADAPTERS_GRAPH_ENABLED=true` + `SENDER_MAILBOX=ai@acik.com` + `SAVE_TO_SENT_ITEMS=true`
+- GraphMailAdapter `@ConditionalOnProperty(notify.adapters.graph.enabled=true)` → mutual exclusion: GraphMailAdapter aktif, SmtpAdapter pasif (SMTP config korunur)
+- **Digest bump YOK** — GraphMailAdapter.java binary'de mevcut (live image Graph-inclusive)
+
+**LIVE doğrulanan (adapter/infra seviyesi)**:
+- ESO Ready=True/SecretSynced + Secret 3 Graph key non-empty
+- GraphMailAdapter initialized (sender=ai@acik.com, saveToSentItems=true) + GraphTokenService initialized
+- SmtpAdapter absent (count 0) → mutual exclusion proven
+- Evidence: `docs/faz-23-evidence/2026-06-12-notify-graph-send-cutover-test.md`
+
+**Credential** (Codex `019ebc0e` #4): backend için **dedicated** client secret (D7/D7b agent helper secret'inden AYRI → bağımsız rotation); test Vault `kv/platform/notification-orchestrator.graph_*`; prod cutover'da ayrı prod backend secret.
+
+**PENDING (No Fake Work)**:
+- **Functional smoke** — `POST /api/v1/notify/intents` (email channel) → DELIVERED + ai@acik.com Sent Items + Authentication-Results. Adapter'ın kendi code path'i (in-cluster token + payload builder) gerçek intent ile test edilmedi. Reçete: Keycloak persona (org_id claim) + aktif EMAIL template + verified subscriber + intent submit + delivery/audit row + Sent Items (D7 read helper `graph-mail-list.sh --search`)
+- **Prod cutover** — ayrı owner-gated slot (D30 disiplini; ayrı prod backend secret + DKIM Authentication-Results re-validation + 72h soak)
+
+**Rollback** (doğrulanmış güvenli): `NOTIFY_ADAPTERS_GRAPH_ENABLED=false` + rollout restart → SmtpAdapter geri aktif (config korunuyor; AAP/consent/app-reg dokunulmaz).
+
+**D1 statüsü**: TEST için Graph-active; **PROD için SMTP canonical korunur** (D1 prod'da geçerli; prod cutover gelene kadar).
+
+**Out-of-scope D7c**:
+- Prod cutover (ayrı owner-gated slot)
+- Bulk/campaign send (transactional notification scope; bulk ayrı provider/reputation)
+- Functional smoke acceptance (yukarıda PENDING)
+
 ---
 
 ## Consequences
@@ -254,6 +288,8 @@ Bu ADR'a göre **bu repodaki** aşağıdaki kontrat noktaları **iç-tutarlı** 
 ---
 
 ## Last Update
+
+**2026-06-12 (D7c — backend GraphMailAdapter TEST cutover)** — D1-D6 "SMTP canonical, Graph deferred" kararı **TEST cluster için reactivation** (Codex `019ebc0e` plan REVISE-with-conditions → post-impl AGREE; PR #1477 MERGED `00466d2a`). Backend notification-orchestrator mail send path SMTP → Graph app-only cutover TEST'te adapter-LIVE (GraphMailAdapter active sender=ai@acik.com saveToSentItems=true; SmtpAdapter absent mutual exclusion; ESO Ready + 3 Graph key Secret'te; dedicated backend secret D7 helper'dan ayrı). **PROD hâlâ SMTP** (D1 prod canonical; prod cutover ayrı owner-gated slot). **Functional smoke PENDING** (intent→delivery→Sent-Items; persona+template+subscriber setup). Evidence: `docs/faz-23-evidence/2026-06-12-notify-graph-send-cutover-test.md`. D7c bölümü detay.
 
 **2026-06-12 (D7b LIVE — agent/ops send activated)** — D7b (agent/ops explicit send helper, Codex `019ebbdb` PARTIAL→5 absorb) **LIVE 2026-06-12**:
 - `scripts/ops/graph-mail-send.sh` MERGED (dry-run default + `--confirm-recipients` guard + body base64-not-argv + send-mode body-not-logged + no-retry).
