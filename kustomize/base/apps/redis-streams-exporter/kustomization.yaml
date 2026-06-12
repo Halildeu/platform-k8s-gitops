@@ -1,0 +1,30 @@
+# redis-streams-exporter base kustomization — Faz 24 PR-obs-01a (gitops#1247)
+#
+# Redis Streams (staging-sw host-compose, ADR-0031 D2 chunk transport) için
+# queue-depth/consumer-group görünürlüğü: oliver006/redis_exporter.
+# Hedef: host-services redis-streams Service'i (D19 Service+Endpoints bridge).
+#
+# Sadece TEST overlay include eder (prod'da Redis Streams yok — D30 cutover'da
+# prod overlay'e eklenir). ops/ alt dizini ServiceMonitor taşır (CRD-gated,
+# Faz 17.2.5 disiplini) — overlay onu ayrıca include eder.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: redis-streams-exporter
+    includeSelectors: true
+    includeTemplates: true
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: true
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  # Secret ESO ile gelir (overlay-specific ExternalSecret —
+  # kustomize/overlays/test/eso/redis-streams-exporter/, Vault path
+  # kv/platform/audio-gateway-service property redis_password — Redis
+  # requirepass tek-parola olduğu için audio-gateway ile paylaşımlı;
+  # ACL ayrımı follow-up: gitops#1457)
