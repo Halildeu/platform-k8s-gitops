@@ -187,12 +187,15 @@ close + transcript save + operator notify; revocation propagation ≤30s.
 | 10 | IAM identity canonicalization (alias→canonical, approver≠requester) | 🔶 | ✅ kod: approver≠requester engine kuralı + anti-coercion invariant. Kalan: alias/proxy/service-account canonicalization (Keycloak attribute eşlemesi) + approval-fatigue limiti |
 | 11 | Red-team drill report | ❌ | Pilot-önü drill: broker-compromise sim, jti replay, recorder-down, token theft, NTP skew, key rotation — runbook'ta senaryo listesi |
 
-> **Özet (2026-06-12):** 11 maddenin kod/test tarafı büyük ölçüde MERGED (4'ü tam koda
-> bağlandı, 7'sinde kalan iş infra/T-4/drill sınıfında). Hiçbir madde "tamamen boş"
-> değil; ❌ olan 3 madde de tasarım/domain-model seviyesinde hazırlanmış durumda.
+> **Özet (2026-06-12, dürüst sayım):** **0/11 madde pilot-complete.** 7/11 maddede
+> kısmî kod/test kanıtı MERGED (🔶 — kalan iş infra / T-4-UI / operasyon sınıfında),
+> 4/11 maddede henüz çalıştırılabilir kanıt yok (❌ — tasarım/domain-model hazır olsa
+> da D10 anlamında kanıt sayılmaz). **D10 kuralı değişmedi: ilk canlı oturum, 11
+> maddenin TAMAMI madde-seviyesinde yeşil olmadan AÇILMAZ** (ADR-0034 §11: "pilot
+> BLOCKED without each"). Bu harita ilerlemeyi izlemek içindir, gate'i gevşetmez.
 > Pilot-flip operasyonel sırası ve D7 roster şablonu runbook'tadır.
 
-### 11.4 Owner / DPO / Legal Sign-off
+### 11.5 Owner / DPO / Legal Sign-off
 | Rol | İsim | İmza | Tarih | Durum |
 |---|---|---|---|---|
 | Owner | Halil Koçoğlu | `[ ]` | | `[ ] Approved` |
