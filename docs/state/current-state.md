@@ -6629,7 +6629,7 @@ Bu dokümanda ve sonraki iletişimde **kullanılmayacak**:
 > | ApplicationAccessPolicy (ai@acik.com restrict) | ❌ yapılmadı | ✅ **LIVE** — mail-enabled security group; ai.enes + serban **Denied** doğrulandı |
 > | Vault `kv/platform/notification-orchestrator.graph_*` (**test**) | absent | ✅ **seeded** (platform-vault-test) |
 > | ESO test `externalsecret-notify.yaml` Graph 3 remoteRef | commented out | ✅ **uncommented** (PR #1477) — `Ready=True SecretSynced` |
-> | TEST `notification-orchestrator` backend adapter | SmtpAdapter (graph=false) | ✅ **GraphMailAdapter active** (flag=true) + SmtpAdapter absent (mutual exclusion); **adapter/infra LIVE, functional intent smoke PENDING** |
+> | TEST `notification-orchestrator` backend adapter | SmtpAdapter (graph=false) | ✅ **GraphMailAdapter active** (flag=true) + SmtpAdapter absent (mutual exclusion); **functional smoke PROVEN 2026-06-12** (intent→DELIVERED→Sent Items+Inbox; evidence §8) |
 > | Agent/ops mail surface | yok | ✅ `scripts/ops/graph-mail-list.sh` (D7 read) + `graph-mail-send.sh` (D7b send) LIVE; 3 gerçek mail teslim |
 >
 > **PROD hâlâ DEFER** (aşağıdaki tablolar prod için geçerli): prod Graph cutover ayrı owner-gated slot (ayrı prod secret + DKIM re-validate + 72h soak). MERGED PR'lar: #1456 #1471 #1473 #1477 #1480 #1482. ADR: `docs/adr/0024-graph-mail-adapter-defer.md` D7/D7b/D7c.

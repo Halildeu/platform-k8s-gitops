@@ -197,8 +197,14 @@ D1-D6 "SMTP canonical, Graph deferred" kararı **TEST cluster için reactivation
 
 **Credential** (Codex `019ebc0e` #4): backend için **dedicated** client secret (D7/D7b agent helper secret'inden AYRI → bağımsız rotation); test Vault `kv/platform/notification-orchestrator.graph_*`; prod cutover'da ayrı prod backend secret.
 
+**✅ Functional smoke PROVEN (2026-06-12 15:26–15:28 UTC)**:
+- **`POST /api/v1/notify/intents`** (email channel, persona JWT) → **202 ACCEPTED** → intent `COMPLETED`; `notification_delivery` status=**DELIVERED** + provider_msg_id `<af51812a-…@notification-orchestrator-graph>`
+- Pod log: `GraphMailAdapter : graph mail accepted … status=202` + `GraphTokenService : access_token refreshed` → adapter'ın **kendi code path'i** (in-cluster app-only auth + payload builder + Graph POST) gerçek intent ile **kanıtlandı**
+- ai@acik.com **Sent Items** (saveToSentItems) + **Inbox receipt** (self-send) + delivered e-postanın `x-notify-message-id` header'ı = DB provider_msg_id (uçtan-uca izlenebilirlik) + `Authentication-Results: dkim=none` yakalandı (intra-tenant Internal)
+- Reçete (proven): t318 ALLOW-path reuse — persona `d29-evidence-tester` (org_id+subscriberId claim) + OpenFGA `can_receive@template:t1` allowed:true + template t1 + subscriber email→ai@acik.com (smoke sonrası restore). Tam kanıt: evidence doc §8
+- Tüm eligibility guard'lar AÇIK koşuldu (NOTIFY_AUTHZ OpenFGA + PREFERENCES + SUBSCRIBER_IDENTITY_STRICT)
+
 **PENDING (No Fake Work)**:
-- **Functional smoke** — `POST /api/v1/notify/intents` (email channel) → DELIVERED + ai@acik.com Sent Items + Authentication-Results. Adapter'ın kendi code path'i (in-cluster token + payload builder) gerçek intent ile test edilmedi. Reçete: Keycloak persona (org_id claim) + aktif EMAIL template + verified subscriber + intent submit + delivery/audit row + Sent Items (D7 read helper `graph-mail-list.sh --search`)
 - **Prod cutover** — ayrı owner-gated slot (D30 disiplini; ayrı prod backend secret + DKIM Authentication-Results re-validation + 72h soak)
 
 **Rollback** (doğrulanmış güvenli): `NOTIFY_ADAPTERS_GRAPH_ENABLED=false` + rollout restart → SmtpAdapter geri aktif (config korunuyor; AAP/consent/app-reg dokunulmaz).
@@ -208,7 +214,7 @@ D1-D6 "SMTP canonical, Graph deferred" kararı **TEST cluster için reactivation
 **Out-of-scope D7c**:
 - Prod cutover (ayrı owner-gated slot)
 - Bulk/campaign send (transactional notification scope; bulk ayrı provider/reputation)
-- Functional smoke acceptance (yukarıda PENDING)
+- Bulk/campaign reputation soak (transactional scope; ayrı)
 
 ---
 
@@ -289,7 +295,7 @@ Bu ADR'a göre **bu repodaki** aşağıdaki kontrat noktaları **iç-tutarlı** 
 
 ## Last Update
 
-**2026-06-12 (D7c — backend GraphMailAdapter TEST cutover)** — D1-D6 "SMTP canonical, Graph deferred" kararı **TEST cluster için reactivation** (Codex `019ebc0e` plan REVISE-with-conditions → post-impl AGREE; PR #1477 MERGED `00466d2a`). Backend notification-orchestrator mail send path SMTP → Graph app-only cutover TEST'te adapter-LIVE (GraphMailAdapter active sender=ai@acik.com saveToSentItems=true; SmtpAdapter absent mutual exclusion; ESO Ready + 3 Graph key Secret'te; dedicated backend secret D7 helper'dan ayrı). **PROD hâlâ SMTP** (D1 prod canonical; prod cutover ayrı owner-gated slot). **Functional smoke PENDING** (intent→delivery→Sent-Items; persona+template+subscriber setup). Evidence: `docs/faz-23-evidence/2026-06-12-notify-graph-send-cutover-test.md`. D7c bölümü detay.
+**2026-06-12 (D7c — backend GraphMailAdapter TEST cutover)** — D1-D6 "SMTP canonical, Graph deferred" kararı **TEST cluster için reactivation** (Codex `019ebc0e` plan REVISE-with-conditions → post-impl AGREE; PR #1477 MERGED `00466d2a`). Backend notification-orchestrator mail send path SMTP → Graph app-only cutover TEST'te adapter-LIVE (GraphMailAdapter active sender=ai@acik.com saveToSentItems=true; SmtpAdapter absent mutual exclusion; ESO Ready + 3 Graph key Secret'te; dedicated backend secret D7 helper'dan ayrı). **PROD hâlâ SMTP** (D1 prod canonical; prod cutover ayrı owner-gated slot). **Functional smoke PROVEN 2026-06-12 15:26-15:28 UTC** (intent `graph-smoke-1781278009` → 202 → DELIVERED + provider_msg_id `@notification-orchestrator-graph` + ai@acik.com Sent Items + Inbox receipt + Authentication-Results; t318 ALLOW-path reuse, tüm guard'lar açık; Codex `019ebc5b`). Evidence: `docs/faz-23-evidence/2026-06-12-notify-graph-send-cutover-test.md` §8. D7c bölümü detay.
 
 **2026-06-12 (D7b LIVE — agent/ops send activated)** — D7b (agent/ops explicit send helper, Codex `019ebbdb` PARTIAL→5 absorb) **LIVE 2026-06-12**:
 - `scripts/ops/graph-mail-send.sh` MERGED (dry-run default + `--confirm-recipients` guard + body base64-not-argv + send-mode body-not-logged + no-retry).

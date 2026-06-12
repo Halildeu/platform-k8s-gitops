@@ -66,25 +66,31 @@ ADR: [docs/adr/0024-graph-mail-adapter-defer.md](./adr/0024-graph-mail-adapter-d
 
 ## 5. Bilinen Boşluk + Sıradaki Agent için P0 Aksiyon Listesi
 
-### P0 — Backend Graph functional smoke (adapter code path kanıtı)
-Zincir (heavy setup, ~1-2h):
+### ~~P0 — Backend Graph functional smoke~~ ✅ DONE (2026-06-12 15:26-15:28 UTC)
+**KOŞULDU + PROVEN** — intent `graph-smoke-1781278009` → 202 → DELIVERED + provider_msg_id `@notification-orchestrator-graph` + ai@acik.com Sent Items + Inbox receipt + Authentication-Results. t318 ALLOW-path reuse (persona+OpenFGA tuple+template, tüm guard'lar açık). Codex `019ebc5b` AGREE. Evidence: `docs/faz-23-evidence/2026-06-12-notify-graph-send-cutover-test.md` §8. Kalan: **external Authentication-Results** (prod/external gate) + prod cutover. Aşağıdaki reçete referans için korunur:
+
+<details><summary>Koşulan reçete (referans)</summary>
+
+Zincir (proven, ~1h):
 1. **KC persona + auth preflight** (Codex `019ebc5b` MED): BL-010 pattern (org_id User Attribute mapper) ile test realm'de email-channel persona → JWT mint. **org_id TEK BAŞINA YETMEZ** — endpoint'in istediği **audience + role/scope** + varsa **authz tuple/eligibility** koşulu da preflight'ta doğrulanmalı; yoksa smoke **auth katmanında takılır, adapter path'e hiç ulaşmaz** (false-negative riski).
 2. **Aktif EMAIL template** + **verified subscriber** seed (psql erişimi gerek — notification pod'da psql yok; bir postgres-client pod veya port-forward + host psql)
 3. **Intent submit**: `POST /api/v1/notify/intents` email channel (persona JWT + template + recipient)
 4. **Doğrula**: delivery/audit row `DELIVERED` + provider message id → ai@acik.com **Sent Items** + recipient inbox + `Authentication-Results` header capture.
    - ⚠️ **Sent Items folder-specific** (Codex `019ebc5b` MED): `graph-mail-list.sh` şu an `/users/${MAILBOX}/messages` (tüm mesajlar) kullanıyor, `SentItems` klasörü değil — P0 ya helper'a `--folder sentitems` ekler ya da doğrudan `GET /users/ai@acik.com/mailFolders/SentItems/messages` smoke komutu yazar.
 5. **Negative**: AADSTS / Graph 403/429/5xx / duplicate delivery YOK
-6. Sonuç → evidence doc §3 LIVE'a taşı + #892 board close
+6. Sonuç → evidence doc §8 LIVE + #892 board close-ready
 
-### P0 — current-state.md Graph truth-delta (Codex `019ebc5b` drift guard)
-`docs/state/current-state.md` §8 (Session 42, 2026-05-20) hâlâ **stale**: "client secret yaratılmadı / AAP yapılmadı / Vault graph_* absent / ESO remoteRef commented" — bu oturum **TEST için hepsini değiştirdi**. Bu handoff'la birlikte §8'e **2026-06-12 truth-delta bloğu** eklendi (TEST için Graph LIVE; prod hâlâ defer). Next agent: §8 başındaki delta'yı oku, eski Session-42 snapshot'ı historical olarak gör.
+</details>
+
+### P0 — current-state.md Graph truth-delta (Codex `019ebc5b` drift guard) ✅ DONE
+`docs/state/current-state.md` §8 (Session 42, 2026-05-20) stale anlatısı ("client secret yaratılmadı / AAP yapılmadı / Vault graph_* absent / ESO remoteRef commented") TEST için düzeltildi: §8'e **2026-06-12 truth-delta bloğu** eklendi (TEST Graph LIVE + functional smoke PROVEN; prod hâlâ defer). Next agent: §8 başındaki delta'yı oku, eski snapshot'ı historical gör.
 
 ### P1 — SMTP credential hygiene + Prod slot
 - [#822](https://github.com/Halildeu/platform-k8s-gitops/issues/822) Office365 SMTP credential rotation (post-exposure hygiene) — TEST artık Graph primary; SMTP App Password rotate/retire değerlendir (rollback path olarak SMTP korunuyor, silme değil)
 - **Prod Graph cutover** (owner-gated): ayrı prod backend secret üret + DKIM/DMARC re-validate + 72h soak
 
 ### P2 — Board temizliği
-- [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892) "Graph mail adapter activation **deferred**" label artık **stale** — D7/D7b/D7c done; yalnız functional smoke + prod kaldı. P0 smoke geçince close.
+- [#892](https://github.com/Halildeu/platform-k8s-gitops/issues/892) "Graph mail adapter activation **deferred**" — D7/D7b/D7c **+ functional smoke** done (TEST). **TEST-scope close-ready**; OPEN kalmalı çünkü prod Graph cutover + external Authentication-Results (DKIM/DMARC) gate'leri açık (Codex `019ebc5b`).
 
 ### P3 — Faz 22.5 operator gates (mail dışı, unrelated)
 - [#1428](https://github.com/Halildeu/platform-k8s-gitops/issues/1428) M1 artifact host prod-enable (owner + D30 gated)
