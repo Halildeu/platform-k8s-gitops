@@ -58,7 +58,8 @@ yaratır ve YASAKTIR (Codex 019ebbe4 P2):
 
 1. Vault seed (D43 stdin-pipe pattern — değerler shell history'ye düşmez):
    ```bash
-   ssh halil@staging-sw "vault kv patch kv/platform/endpoint-admin \
+   # mevcut ESO path ile hizalı (kv/platform/endpoint-admin-service — Codex 019ebbe4 notu)
+   ssh halil@staging-sw "vault kv patch kv/platform/endpoint-admin-service \
      RB_TLS_CERT_CHAIN=@server-chain.pem RB_TLS_KEY=@server-key.pem RB_TLS_DEVICE_CA=@rb-device-ca.pem"
    ```
 2. Gitops PR: `externalsecret.yaml`'a 3 key + Deployment'a secret-volume mount
