@@ -645,9 +645,9 @@ data:
         },
         {
           "id": 19,
-          "title": "Coverage-drift: lag var ama consumer yok (partition sayısı)",
+          "title": "Lag biriken ama consumer'sız partition (sayı)",
           "type": "stat",
-          "description": "lag>0 VE consumer==0 olan partition adedi. >0 = kısmi coverage bozulması (bir partition'ın consumer'ı düşmüş ama backlog birikiyor) — global 'consumer present' yeşilken bile yakalar. 0 beklenir.",
+          "description": "lag>0 VE consumer==0 olan partition adedi (max by(stream) — duplicate-target güvenli). Bir partition'ın consumer'ı düşüp backlog birikirse global 'consumer present' yeşilken bile yakalar. 0 beklenir, >0 kırmızı.",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -660,7 +660,7 @@ data:
           },
           "targets": [
             {
-              "expr": "count( (redis_stream_group_lag{job=\"redis-streams-exporter\",stream=~\"audio:chunks:p[0-9][0-9]\",group=\"live-stt-v1\"} > 0) and on(stream) (redis_stream_group_consumers{job=\"redis-streams-exporter\",stream=~\"audio:chunks:p[0-9][0-9]\",group=\"live-stt-v1\"} == 0) ) or vector(0)",
+              "expr": "count( (max by (stream) (redis_stream_group_lag{job=\"redis-streams-exporter\",stream=~\"audio:chunks:p[0-9][0-9]\",group=\"live-stt-v1\"}) > 0) and on (stream) (max by (stream) (redis_stream_group_consumers{job=\"redis-streams-exporter\",stream=~\"audio:chunks:p[0-9][0-9]\",group=\"live-stt-v1\"}) == 0) ) or vector(0)",
               "refId": "A"
             }
           ],
