@@ -20,3 +20,5 @@ labels:
 resources:
   - remote-write-bridge-svc.yaml
   - externalsecret-remote-write-auth.yaml
+  # gitops#1462: promtail → Loki bridge auth (ayrı credential — Codex S1)
+  - externalsecret-promtail-loki.yaml
