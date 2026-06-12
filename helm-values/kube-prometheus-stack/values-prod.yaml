@@ -466,7 +466,13 @@ prometheus:
         cpu: 100m
         memory: 512Mi
       limits:
-        memory: 1Gi
+        # gitops#1459 canlı kalibrasyon (2026-06-12): remote_write ilk
+        # full-fidelity dalgası head'i 235k'ya çıkardı; allowlist yeni akışı
+        # ~1.3k'ya daralttı ama eski seriler 2h blok rotasyonuna kadar
+        # head'de kalır — RSS 893Mi'ye vurdu (1Gi'de OOM riski). 1536Mi
+        # rotasyon penceresine güvenli nefes + allowlist-sonrası kalıcı
+        # işletme payı (host RAM: 23Gi, available ~4.9Gi).
+        memory: 1536Mi
 
     storageSpec:
       volumeClaimTemplate:
