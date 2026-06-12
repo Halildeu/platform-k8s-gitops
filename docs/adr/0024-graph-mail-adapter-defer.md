@@ -107,6 +107,43 @@ Defer state'ten activation'a geçiş yalnız aşağıdaki **5 adım birlikte** o
 
 ApplicationAccessPolicy (D5 adım 2) zorunlu. App `Mail.Send` permission **tenant-wide grant'tan** sonra `ai@acik.com` mailbox'a **daraltılmalı** (`RestrictAccess`). Aksi halde client_secret çalınırsa kötü actor tenant'taki herhangi bir mailbox'tan mail gönderebilir; ApplicationAccessPolicy bu blast-radius'u **sadece** `ai@acik.com`'a indirir.
 
+### D7 — Agent/ops inbox read **same Entra asset, ayrı scope** (2026-05-28 addendum)
+
+> **Status**: DECISION (2026-05-28; user direktif "doğrudan yetki vereyim gerektiğinde gelen mailleri görmek bu sohbetten sana sormak istiyorum") — operator activation pending (~5 dk; bkz [RB-graph-mail-agent-read.md](../runbooks/RB-graph-mail-agent-read.md) §3)
+> **Codex thread**: `019ebac1` PARTIAL → 4 absorb (Mail.Read scope, AAP app-wide+mail-enabled security group, token TTL 1h no cache default, D7 addendum vs single-line)
+> **NOT backend adapter activation**: D7 sadece **agent/ops side Graph REST read** access ekler; backend `notify.adapters.graph.enabled` flag DEĞİŞMEZ; SmtpAdapter canonical send-path KORUNUR (D1-D6 unchanged).
+
+Agent (Claude Code chat oturumu) Microsoft Graph `Mail.Read` Application permission ile `ai@acik.com` inbox'ı **read-only** sorgulayabilir. Gerçek kullanım: user soruyu sorduğunda agent `scripts/ops/graph-mail-list.sh` çağırır → Vault credential (mevcut `kv/platform/graph` reuse) + token (1h TTL Graph default, cache disabled by default) + Graph REST `/users/ai@acik.com/messages` → sanitized JSON.
+
+**Scope boundaries**:
+- **Permission**: `Mail.Read` Application (NOT `Mail.ReadBasic`/`Mail.ReadWrite`); `bodyPreview` 500 chars truncated default; `--include-body` flag full preview
+- **AAP**: D6 `ApplicationAccessPolicy` app-wide (Mail.Send + Mail.Read aynı policy); mail-enabled security group `Mail-Graph-Allowed-Mailboxes` ile `ai@acik.com` only (operator §3.3 verify or create)
+- **Read-only invariant**: helper script SADECE GET; Mail.Read permission Microsoft-enforced write/delete/move IZIN VERMEZ
+- **Token**: client_credentials grant (app-only; user oturum yok); per-call Vault round-trip (~2s); persistent cache YOK default; opsiyonel `--cache-token` (0600 + expiry-aware, default disabled)
+- **Helper**: `scripts/ops/graph-mail-list.sh` SSH staging-sw round-trip; `unset` chain final (credential + token disk/log'a düşmez)
+- **Usage pattern**: USER-driven only (cron/monitor değil); agent her çağrı için explicit user prompt gerek
+
+**Trigger conditions** (D3 unchanged + addition):
+- D3 backend GraphMailAdapter aktivasyon trigger'ları KORUNUR (SMTP outage, App Password deprecation, port 587 block, vb.)
+- D7 **NO trigger** — user direktifi ile direkt aktive (operator §3 3-adım); inbox read backend dependency yok
+
+**Acceptance** (D7 closure):
+- §3.1 Mail.Read permission added Entra app
+- §3.2 Tenant admin consent granted
+- §3.3 AAP verified or extended (mail-enabled security group with `ai@acik.com`)
+- §4.2 Token smoke pass (has_access_token=true)
+- §4.3 Graph list smoke pass (5 message JSON output)
+- §4.4 AAP enforcement test pass (other mailbox Denied)
+- `Last Update` section actual activation date stamped
+
+**Out-of-scope D7**:
+- Backend GraphMailAdapter activation (D1-D6 send-path unchanged)
+- IMAP/POP3 alternative client
+- Mailbox content persistence/indexing/audit
+- Per-user delegated permission flow
+- Mailbox content backup/export
+- Inbound webhook subscription (Microsoft Graph subscription)
+
 ---
 
 ## Consequences
