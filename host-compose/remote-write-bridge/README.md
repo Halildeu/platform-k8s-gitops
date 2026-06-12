@@ -28,15 +28,36 @@ printf 'rw-test:%s\n' "$(openssl passwd -apr1 "$PW")" > secrets/htpasswd
 # denemesi 500 döner. Sahipliği worker uid'ine ver:
 sudo chown 101:101 secrets/htpasswd && sudo chmod 400 secrets/htpasswd
 
-# 2. Vault'a seed (test Vault; ESO test Prometheus basicAuth secret'ini buradan üretir)
+# 1b. Loki push AYRI parola + loki.htpasswd (gitops#1462 — Codex S1 izolasyon)
+LPW="$(openssl rand -base64 24 | tr -d '=+/' | head -c 32)"
+printf 'loki-test:%s\n' "$(openssl passwd -apr1 "$LPW")" > secrets/loki.htpasswd
+sudo chown 101:101 secrets/loki.htpasswd && sudo chmod 400 secrets/loki.htpasswd
+
+# 2. Vault'a seed — Prometheus (username/password) + Loki (loki_username/loki_password)
+#    AYNI path, AYRI key (ESO promtail-loki-auth bu key'leri okur)
 VT=$(jq -r .root_token /home/halil/bootstrap-drill/vault-init-test.json)
 printf '%s' "$PW" | docker exec -i -e VAULT_TOKEN="$VT" platform-vault-test \
   vault kv put kv/platform/remote-write-bridge username=rw-test password=- >/dev/null
-unset VT PW
+printf '%s' "$LPW" | docker exec -i -e VAULT_TOKEN="$VT" platform-vault-test \
+  vault kv patch kv/platform/remote-write-bridge loki_username=loki-test loki_password=- >/dev/null
+unset VT PW LPW
 
 # 3. Başlat
 docker compose up -d
 docker compose ps   # healthy beklenir
+```
+
+## Loki ingestion (gitops#1462) — promtail + prod Loki NodePort
+
+```bash
+# prod Loki NodePort (bridge backend) + test promtail (STT-only dar scrape)
+kubectl --context k3d-prod apply -k kustomize/base/monitoring-prod-hub        # loki-push-nodeport 30100
+kubectl --context k3d-test  apply -k kustomize/base/monitoring-test-only      # promtail-loki-auth ESO
+helm upgrade --install promtail grafana/promtail --version 6.16.6 \
+  --kube-context k3d-test -n monitoring \
+  -f helm-values/promtail/values-test-loki-bridge.yaml
+# acceptance: prod Loki {cluster="test",app=~"audio-gateway"} + 01c Q1/Q3 LogQL +
+# public ai.acik.com/loki/api/v1/push → 404 (Loki'ye ULAŞMAMALI)
 ```
 
 ## Doğrulama (acceptance negatif kanıtları dahil — #1459)

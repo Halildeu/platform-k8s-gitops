@@ -30,6 +30,7 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./secrets/htpasswd:/etc/nginx/htpasswd:ro   # README: openssl ile üret; git'e GİRMEZ
+      - ./secrets/loki.htpasswd:/etc/nginx/loki.htpasswd:ro   # gitops#1462 AYRI Loki auth (Codex S1)
     networks:
       platform-test-net:
         ipv4_address: 172.19.0.251   # D19 Endpoints pin'i (redis-streams .250 emsali)
