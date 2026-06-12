@@ -144,6 +144,38 @@ Agent (Claude Code chat oturumu) Microsoft Graph `Mail.Read` Application permiss
 - Mailbox content backup/export
 - Inbound webhook subscription (Microsoft Graph subscription)
 
+### D7b — Agent/ops explicit **send** helper (2026-06-12 addendum)
+
+> **Status**: LIVE 2026-06-12 (Codex `019ebbdb` PARTIAL → 5 absorb)
+> **NOT backend adapter activation**: D7b sadece **agent/ops side Graph REST send** yüzeyi; backend `notify.adapters.graph.enabled` flag DEĞİŞMEZ; SmtpAdapter canonical send-path KORUNUR (D1-D6 unchanged).
+
+D7 read yüzeyinin simetriği: agent (Claude Code chat) Microsoft Graph **Mail.Send** Application permission ile `ai@acik.com`'dan mail gönderebilir. Helper `scripts/ops/graph-mail-send.sh` Graph REST `POST /users/ai@acik.com/sendMail` çağırır.
+
+**Scope boundaries** (Codex `019ebbdb` 5 absorb):
+- **From sabit**: `ai@acik.com` (`--from` YOK); AAP zaten sender mailbox'ı enforce eder (secret sızıntı blast radius = tek mailbox)
+- **Dry-run default**: `--send` flag'i olmadan HİÇBİR network call yok; sadece payload preview (to/cc/subject/body/external_recipients/recipient_confirm)
+- **`--confirm-recipients` mekanik guard**: `--send` için zorunlu; normalize edilmiş `to+cc` set'iyle eşleşmeli (yanlış-alıcı guard; CC dahil)
+- **Body argv/env'de DEĞİL**: payload jq `--arg` ile injection-safe local kurulur, base64 encode edilir, heredoc *script stream*'inde gömülür → body/subject remote process list'te görünmez
+- **Send-mode audit**: stderr sadece to/cc/subject/content_type/body_len/external_recipients/http_status; body değeri / token / secret loglanmaz. Dry-run body'i gösterir (kullanıcı onayı için)
+- **External recipients görünür**: dry-run + audit `external_recipients` (acik.com olmayan) listesini açık gösterir; hard allowlist ilk slice'ta YOK (agent-layer per-action approval ile yönetilir)
+- **No retry**: Graph `sendMail` idempotent değil → tek POST; belirsiz hatada otomatik tekrar YOK (önce sent-items/inbox kanıtı, sonra yeni explicit approval)
+- **No token cache, no backend flag change**
+
+**Agent-layer confirm gate** (Anthropic HARD RULE "send AS the user"): helper non-interactive (CI/agent-safe); her gerçek mail için kullanıcı onayı (alıcı+konu+içerik göster, açık yes bekle, sonra `--send`) **agent katmanında** alınır. Helper sadece mekanik guard (`--confirm-recipients`) ile yanlışlıkla gönderimi zorlaştırır.
+
+**Acceptance** (D7b closure):
+- Dry-run preview LIVE (network yok)
+- Self-send smoke `ai@acik.com → ai@acik.com` → HTTP 202 + inbox'ta görünme (`graph-mail-list.sh --search`)
+- `--confirm-recipients` mismatch → abort kanıtı
+- Helper end-to-end (shellcheck clean + dry-run + send)
+
+**Out-of-scope D7b**:
+- Backend GraphMailAdapter activation (D1-D6 SMTP send-path canonical korunur)
+- Bulk/campaign send (notification-orchestrator domain'i, ayrı)
+- Attachment send (helper ilk slice attachment desteklemez)
+- Template/merge-field send
+- Scheduled/deferred send
+
 ---
 
 ## Consequences
