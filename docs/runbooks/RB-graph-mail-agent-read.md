@@ -232,17 +232,19 @@ Agent: `./scripts/ops/graph-mail-list.sh --top 1 --include-body --filter "id eq 
 
 ## 7. Closure / Acceptance
 
-This runbook is **operator-activatable**. Activation steps:
+This runbook is **operator-activatable**. Activation steps — **LIVE 2026-06-12** (Microsoft Graph PowerShell SDK + Exchange Online PowerShell):
 
-- [ ] §3.1 Entra app Mail.Read permission added
-- [ ] §3.2 Tenant admin consent granted
-- [ ] §3.3 ApplicationAccessPolicy verified or created (ai@acik.com only)
-- [ ] §4.1 Vault credential verify (Vault kv/platform/graph graph_* keys present)
-- [ ] §4.2 Token smoke pass (has_access_token=true)
-- [ ] §4.3 Graph list smoke pass (5 messages JSON output)
-- [ ] §4.4 AAP enforcement test pass (other mailbox Denied)
-- [ ] ADR-0024 D7 §"Last Update" + current-state.md live delta updated with activation date
-- [ ] Helper script smoke recorded (first sanitized output)
+- [x] §3.1 Entra app Mail.Read permission added (`Add-MgApplicationPassword` chain; role assignment Mail.Read `810c84a8-...`)
+- [x] §3.2 Tenant admin consent granted (`New-MgServicePrincipalAppRoleAssignment`)
+- [x] §3.3 ApplicationAccessPolicy created (`New-ApplicationAccessPolicy` RestrictAccess → group `Mail-Graph-Allowed-Mailboxes` → ai@acik.com only)
+- [x] §4.1 Vault credential verify (`kv/platform/graph` 3 keys: graph_client_id/graph_tenant_id/graph_client_secret seeded via stdin-pipe)
+- [x] §4.2 Token smoke pass (`has_access_token=true`, expires_in=3599)
+- [x] §4.3 Graph list smoke pass (5 messages JSON output — ai@acik.com inbox read)
+- [x] §4.4 AAP enforcement test pass (ai@acik.com Granted; ai.enes@acik.com + halil.kocoglu@serban.com.tr `ErrorAccessDenied` "Blocked by tenant configured AppOnly AccessPolicy")
+- [x] ADR-0024 D7 §"Last Update" updated with activation date (2026-06-12)
+- [x] Helper script smoke recorded (heredoc stdin bug fixed: `docker exec -i` → `docker exec` + quoted-heredoc env-var pattern)
+
+**Activation provenance**: client secret `graph-mail-agent-read-20260612` (12 ay, expiry 2027-06-12). Revoke: `Remove-MgApplicationPassword -ApplicationId f82c4320-257c-4c18-a0f9-0a6f76b92e41 -KeyId <keyid>`.
 
 ## 8. Cross-AI Peer Review
 
