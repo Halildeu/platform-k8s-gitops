@@ -34,17 +34,54 @@ web/mobile client ──HTTPS──▶ testai.acik.com /api/v1/audio-gateway (in
 
 ## 1. Vault seed (bir kez)
 
+İKİ parola — iki Redis user (gitops#1457 ACL ayrımı):
+- `default` user (= audio-gateway producer, eski requirepass): `REDIS_PASSWORD`
+- `exporter` user (read-only, redis-streams-exporter): `EXPORTER_PASSWORD`
+
 ```bash
-# Parola üret (alphanumeric — Spring env interpolation safe) + Vault'a yaz
-# D43 stdin-pipe: değer shell history/process list'e düşmez
+# default user parolası (audio-gateway) — Vault kv/platform/audio-gateway-service
 ssh halil@staging-sw 'PW=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 32); \
   printf "%s" "$PW" | VAULT_ADDR=http://127.0.0.1:8301 vault kv patch \
   kv/platform/audio-gateway-service redis_password=- && echo SEEDED'
+
+# exporter user parolası — AYRI Vault path (bağımsız rotation)
+ssh halil@staging-sw 'PW=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 32); \
+  printf "%s" "$PW" | VAULT_ADDR=http://127.0.0.1:8301 vault kv put \
+  kv/platform/redis-streams-exporter username=exporter password=- && echo SEEDED'
+
+# AYNI iki parola .env'e (gen-acl-and-run.sh aclfile'ı buradan üretir):
+#   /opt/platform/redis-streams/.env (root:root 600)
+#     REDIS_PASSWORD=<default user parolası — Vault'takiyle aynı>
+#     EXPORTER_PASSWORD=<exporter user parolası — Vault'takiyle aynı>
 ```
 
-Beklenen: `SEEDED`. ESO 1h refresh'le `audio-gateway-secrets` Secret'ını
-oluşturur (anında zorlamak için: `kubectl --context k3d-test -n platform-test \
-annotate externalsecret audio-gateway-secrets force-sync=$(date +%s) --overwrite`).
+Beklenen: `SEEDED`. ESO 1h refresh'le `audio-gateway-secrets` + `redis-streams-
+exporter-secrets` Secret'larını oluşturur (anında: `kubectl --context k3d-test
+-n platform-test annotate externalsecret <ad> force-sync=$(date +%s) --overwrite`).
+
+**ACL kontratı** (Codex 019ebb70 — `gen-acl-and-run.sh` container start'ta
+`/run/redis/users.acl` tmpfs'e üretir; persistence yok → runtime `ACL SETUSER`
+uçar, aclfile şart). `exporter` user: keyspace `~audio:chunks:p[0-2][0-9]
+~audio:chunks:p3[0-1]`, `-@all` + explicit read-class (INFO/CONFIG GET/CLIENT
+LIST/XINFO/XLEN/SLOWLOG/LATENCY/MEMORY STATS). Payload (XRANGE/GET) + write
+(XADD/SET/DEL) + admin (CONFIG SET/FLUSH*/ACL) REDDEDİLİR.
+
+**exporter bağlantı gotcha** (canlı 2026-06-12): redis_exporter REDIS_USER
+env'i tek başına default-user'a düşüp WRONGPASS verir; user/pass HEM
+`REDIS_ADDR` userinfo'sunda HEM ayrı env'de olmalı (deployment
+`REDIS_ADDR: redis://$(REDIS_USER):$(REDIS_PASSWORD)@redis-streams:6379`).
+
+**Bağımsız rotation**: exporter parolası → yeni değer .env `EXPORTER_PASSWORD`
++ Vault `kv/platform/redis-streams-exporter.password` + `docker compose up -d
+--force-recreate` + exporter ESO force-sync + pod restart. audio-gateway
+(default user) DOKUNULMAZ — ayrı user/path/env.
+
+**ACL acceptance** (`ACL DRYRUN exporter <cmd>` ile):
+```bash
+# izinli (OK dönmeli): INFO, XINFO GROUPS audio:chunks:p00, XLEN, MEMORY STATS
+# reddedilmeli (NOPERM): XADD, XRANGE, GET, SET, FLUSHALL, CONFIG SET, ACL LIST
+# runtime kanıt: exporter redis_up=1 + ACL LOG temiz (NOPERM yok)
+```
 
 ## 2. Redis compose up (staging-sw)
 
