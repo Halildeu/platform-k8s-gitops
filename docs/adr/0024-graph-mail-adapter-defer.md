@@ -255,6 +255,12 @@ Bu ADR'a göre **bu repodaki** aşağıdaki kontrat noktaları **iç-tutarlı** 
 
 ## Last Update
 
+**2026-06-12 (D7b LIVE — agent/ops send activated)** — D7b (agent/ops explicit send helper, Codex `019ebbdb` PARTIAL→5 absorb) **LIVE 2026-06-12**:
+- `scripts/ops/graph-mail-send.sh` MERGED (dry-run default + `--confirm-recipients` guard + body base64-not-argv + send-mode body-not-logged + no-retry).
+- **External send smoke LIVE**: ai@acik.com → halil.kocoglu@serban.com.tr (Serban tenant, external) → Graph `POST /sendMail` **HTTP 202** + ai@acik.com sent-copy görünür + **recipient inbox receipt user-confirmed** + 0 NDR. Bu Graph send path + external deliverability + AAP sender-gate (ai@acik.com only) uçtan uca kanıtı (self-send smoke'a gerek kalmadı).
+- `--confirm-recipients` mismatch → exit 4 abort kanıtı.
+- **Backend GraphMailAdapter DEĞİŞMEDİ** — `notify.adapters.graph.enabled` disabled; SMTP send-path canonical (D1-D6); D7b sadece agent/ops send yüzeyi. Per-message user approval agent-layer'da (HARD RULE "send AS the user").
+
 **2026-06-12 (D7 LIVE — agent/ops inbox read activated)** — D7 (agent/ops inbox read scope, ekleme tarihi 2026-05-28) **operator activation LIVE 2026-06-12**:
 - Entra app `acik-mail-graph-api` **Mail.Read Application permission** eklendi + **tenant admin consent** verildi (Microsoft Graph PowerShell SDK `Add-MgApplicationPassword` + `New-MgServicePrincipalAppRoleAssignment`; role assignments doğrulandı: Mail.Read `810c84a8-...` + Mail.Send `b633e1c5-...`).
 - **ApplicationAccessPolicy** kuruldu (`New-ApplicationAccessPolicy` `RestrictAccess`): mail-enabled security group `Mail-Graph-Allowed-Mailboxes` → sadece `ai@acik.com`. **D6 mailbox scope daraltma artık LIVE** (önceki snapshot AAP "yok" idi; Mail.Send tenant-wide risk de bu adımla kapandı).

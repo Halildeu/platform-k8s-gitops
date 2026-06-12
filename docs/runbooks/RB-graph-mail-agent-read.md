@@ -324,10 +324,12 @@ Agent:
 
 **Onay olmadan `--send` YASAK** (HARD RULE "send AS the user").
 
-### 9.5 D7b Closure Acceptance
+### 9.5 D7b Closure Acceptance — LIVE 2026-06-12
 
-- [ ] Helper dry-run preview LIVE (network yok)
-- [ ] Self-send smoke ai@acik.com → ai@acik.com HTTP 202 + inbox görünme
-- [ ] `--confirm-recipients` mismatch abort kanıtı
-- [ ] shellcheck clean
-- [ ] ADR-0024 §D7b LIVE + §"Last Update" stamp
+- [x] Helper dry-run preview LIVE (network yok)
+- [x] **External send smoke LIVE** ai@acik.com → halil.kocoglu@serban.com.tr: HTTP 202 Accepted + ai@acik.com sent-copy (13:03Z) + **recipient inbox receipt user-confirmed** (external deliverability proven, self-send'den güçlü kanıt) + 0 NDR
+- [x] `--confirm-recipients` mismatch abort kanıtı (exit 4)
+- [x] shellcheck clean
+- [x] ADR-0024 §D7b LIVE + §"Last Update" stamp
+
+**Live evidence**: `--send --confirm-recipients halil.kocoglu@serban.com.tr` → `{"status":"accepted","http_status":202}`; recipient (Halil, Serban tenant) gerçekten aldı (kullanıcı doğruladı). Bu external deliverability + Graph send path + AAP sender-gate (ai@acik.com only) uçtan uca kanıtı.
