@@ -51,6 +51,21 @@ prometheus:
             name: remote-write-bridge-auth
             key: password
         writeRelabelConfigs:
+          # Allowlist fazı (gitops#1459, Codex 019ebacc cardinality kararı):
+          # full-fidelity federation ilk açılışta H1=235k yaptı (H0=115k,
+          # eşit boyutlu cluster'lar → ×2 kaçınılmaz; prod prometheus 773Mi/1Gi
+          # RAM'e dayandı). Amaç STT görünürlüğü — job-scope'lu dar keep:
+          #   up                    → tüm job'lar (target görünürlüğü, ~30 seri)
+          #   redis_*               → yalnız redis-streams-exporter
+          #   http/lettuce/jvm-heap → yalnız audio-gateway
+          #   stt:* + stt_*         → tüm job'lar (recording + worker)
+          # Test infra federation'ı (kubelet/apiserver/ksm/node-exporter)
+          # BİLİNÇLİ dışarıda — ayrı karar (Codex). Guard: prod'da aktif test
+          # serisi <= Tallow*1.15 + RSS<=850Mi sustained (issue #1459).
+          - sourceLabels: ["job", "__name__"]
+            separator: ";"
+            regex: "(?:redis-streams-exporter;(?:redis_up|redis_stream_.*)|audio-gateway;(?:http_server_requests_(?:seconds|active_seconds).*|lettuce_command_(?:completion|firstresponse)_seconds.*|jvm_memory_used_bytes)|[^;]*;(?:up|stt:.*|stt_.*))"
+            action: keep
           # Test cluster label ekle (prod Grafana'da ayrım için)
           - sourceLabels: ["__name__"]
             targetLabel: "cluster"
