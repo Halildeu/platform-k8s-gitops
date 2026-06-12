@@ -7,6 +7,14 @@
 > leak/rotation" drill'in CA tarafı).
 > **Status:** operasyon runbook HAZIR; CANLI koşum **owner/operator-gated** (cert
 > material + Vault custody — agent kendi başına koşamaz).
+> **KOD PRECONDITION (Codex 019ebc24):** bu runbook'un live path'i şu T-4/config
+> ön-şartlarına bağlı (henüz default-off): (a) broker `cert-trust.evaluator=REAL_PKI`
+> + `revocation-mode=CRL` + `trust-anchor-pem` + `crl-pem` (default IN_MEMORY/DISABLED);
+> (b) device-CA **rotation overlap** için multi-issuer pin (mevcut B1.4 tek-issuer);
+> (c) remote-bridge live mTLS **SAN→device binding** (mevcut `CertIdentityGuard` issuer/
+> serial guard'dır, SAN parse etmez — SAN parse `MachineCertExtractor`'da, issuance/
+> enrollment canonical). Bu ön-şartlar gelmeden runbook design-time-doğru ama live-path
+> wiring'i eksiktir.
 > **Custody pattern:** AG-018 internal-OpenSSL-CA (no paid CA, no AD CS) —
 > host-fs custody + sudoers-pinned wrapper.
 > **Referans:** [pilot-flip §A1](RB-22-6-remote-bridge-pilot-flip.md) ·
@@ -43,13 +51,41 @@ sudo openssl req -new -x509 -key device-ca.key -out device-ca.pem -days 365 \
 **Fail sinyali:** `basicConstraints CA:TRUE` veya `keyUsage cRLSign` eksikse DUR —
 CRL imzalayamayan CA revocation drill'i (D10-6) çalıştıramaz.
 
-## 2. Device cert issuance (cihaz başına, ~5 dk)
+## 1.5 CA database bootstrap (ZORUNLU — `openssl ca` bunsuz çalışmaz, Codex P1)
+
+`openssl ca -gencrl/-revoke` gerçek bir CA DB ister; bu olmadan §3/§5 ilk adımda kırılır:
 
 ```bash
-# cihazda (veya operator host): CSR — device-id SAN'da authoritative (B1.4 CertIdentityGuard okur)
+cd /opt/rb-pki/device-ca
+sudo touch index.txt
+sudo bash -c 'echo 1000 > serial'        # leaf serial counter
+sudo bash -c 'echo 1000 > crlnumber'     # CRL number counter
+sudo install -d newcerts
+# openssl.cnf [ CA_default ]: dir, database=index.txt, serial, crlnumber, new_certs_dir=newcerts,
+#   private_key=device-ca.key, certificate=device-ca.pem, default_md=sha256,
+#   default_crl_days=1, policy + copy_extensions=copy + clientAuth EKU issuance profile
+```
+
+**Fail sinyali:** `index.txt`/`serial`/`crlnumber` yoksa `openssl ca` "unable to load CA
+database" verir. `rb-issue-device-cert.sh` AYNI DB üzerinden imzalamalı — aksi halde CRL
+verilen leaf serial'ını içermez (revoke drill sessizce başarısız olur).
+
+## 2. Device cert issuance (cihaz başına, ~5 dk)
+
+**Birincil yol (D10-3 non-exportable hedefi):** CSR'ı CİHAZDA TPM/DPAPI non-exportable key
+ile üret (private key cihazdan asla çıkmaz). Aşağıdaki `-nodes` operator-host akışı yalnız
+**geçici pilot bootstrap** — D10-3 closure DEĞİL, geçiş riski; raw key host'ta kalmamalı
+(issuance sonrası `shred -u dev-<id>.key` + audit).
+
+```bash
+# GEÇİCİ pilot bootstrap (raw key — D10-3 final değil): CSR + SAN'lı leaf
 openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
   -keyout dev-<device-id>.key -out dev-<device-id>.csr \
   -subj "/CN=<device-id>" -addext "subjectAltName=URI:adcomputer:<objectGUID>"
+# NOT (Codex): SAN adcomputer:{objectGUID} = ISSUANCE/ENROLLMENT canonical identity
+# (MachineCertExtractor doğrular). remote-bridge LIVE mTLS path'inde SAN→device binding
+# henüz enforce edilmez — mevcut B1.4 CertIdentityGuard issuer/serial guard'dır. Live
+# SAN-binding = T-4 evidence-required (PeerIdentityInterceptor certBoundDeviceId + broker).
 # device-CA imza (sudoers-pinned wrapper) + EKU clientAuth + serial ledger
 sudo /opt/rb-pki/bin/rb-issue-device-cert.sh dev-<device-id>.csr   # → dev-<device-id>.pem
 # cihaza kurulum: PKCS#12 → DPAPI (Windows) veya TPM-bound (D10-3 non-exportable hedef)
@@ -58,36 +94,54 @@ openssl pkcs12 -export -inkey dev-<device-id>.key -in dev-<device-id>.pem \
 ```
 
 **Serial ledger zorunlu:** her issuance `serial,device-id,issued-at,operator` satırı append-only
-log'a (revocation + audit için). **Fail sinyali:** SAN device-id beklenen değilse DUR
-(B1.4 CertIdentityGuard SAN'ı authoritative okur — yanlış SAN = yanlış cihaz binding).
+log'a (revocation + audit için). Wrapper `rb-issue-device-cert.sh` `openssl ca` ile §0.5 CA-DB
+üzerinden imzalar (aynı index.txt/serial → revoke/gencrl ile tutarlı), EKU `clientAuth` basar,
+CSR SAN'ını kontrollü kopyalar (`copy_extensions = copy` + allowlist). **Fail sinyali:** issuance
+SAN ile ledger device-id uyuşmazsa DUR (enrollment canonical; live binding T-4).
 
 ## 3. CRL generation + distribution (D10-3 revocation path)
 
+**KOD PRECONDITION (Codex P1):** mevcut broker default `evaluator=IN_MEMORY` +
+`revocation-mode=DISABLED` + boş `crl-pem`; CRL'i okuması için ÖNCE şu config aktif olmalı
+(gitops PR — henüz yok):
+- `ENDPOINT_ADMIN_REMOTE_ACCESS_CERT_TRUST_EVALUATOR=REAL_PKI`
+- `ENDPOINT_ADMIN_REMOTE_ACCESS_CERT_TRUST_REVOCATION_MODE=CRL`
+- `...TRUST_ANCHOR_PEM` (device-CA) + `...CRL_PEM` (CRL içeriği)
+- ExternalSecret'a `RB_DEVICE_CA_CRL` + `RB_DEVICE_CA_TRUST_ANCHOR` key'leri + Deployment env mapping
+
+**`crl-pem` startup-time okunur (hot-reload YOK):** `ScheduledRevocationDriver` CRL'i boot'ta
+parse eder; yeni CRL = **rollout restart** (envFrom secret pickup + reparse). Canlı "reload" YOK.
+
 ```bash
-# CRL üret (device-CA imzalı) — nextUpdate kısa (pilot 24h; stale CRL fail-closed)
+# CRL üret (device-CA imzalı, §1.5 CA-DB üzerinden) — nextUpdate kısa (pilot 24h)
 sudo openssl ca -gencrl -config /opt/rb-pki/device-ca/openssl.cnf \
   -out /opt/rb-pki/device-ca/device-ca.crl -crldays 1
-# broker'a dağıt: Vault seed (D43 stdin-pipe) → ExternalSecret → crl-pem property
+# Vault seed (D43 stdin-pipe) → ExternalSecret → Deployment env → ROLLOUT RESTART (boot reparse)
 ssh halil@staging-sw "vault kv patch kv/platform/endpoint-admin-service \
   RB_DEVICE_CA_CRL=@/opt/rb-pki/device-ca/device-ca.crl"
-# ESO force-sync → broker B1.4 evaluator crl-pem reload
+# ESO sync + kubectl rollout restart deploy/<broker> → yeni CRL boot'ta yüklenir
 ```
 
-**Beklenen:** B1.4 `CertPathTrustEvaluator` CRL'i yükler; `aStaleCrlPastItsNextUpdateIsUnknownFailClosed`
-testinin canlı karşılığı — `nextUpdate` geçmiş CRL = `UNKNOWN` fail-closed (revoke kaçmaz).
-**Fail sinyali:** CRL `nextUpdate` geçmişse broker fail-closed olmalı (revoke edilmemiş cert bile
-reddedilir — bu DOĞRU, stale-CRL grace YOK).
+**Beklenen:** rollout sonrası `CertPathTrustEvaluator` yeni CRL'i parse eder;
+`aStaleCrlPastItsNextUpdateIsUnknownFailClosed` testinin canlı karşılığı — `nextUpdate` geçmiş
+CRL = `UNKNOWN` fail-closed. **Fail sinyali:** REAL_PKI config aktif değilken (default IN_MEMORY)
+CRL hiç okunmaz — revoke etkisiz; ÖNCE config precondition.
 
 ## 4. Rotation (CA + leaf, periyodik + key-leak sonrası)
 
 | Rotasyon | Tetik | Adım | Broker etkisi |
 |---|---|---|---|
 | **Leaf rotation** | 90g ömür / pilot bitiş | yeni CSR → device-CA imza → cihaz reinstall; eski leaf CRL'e | kid değişmez (device-CA aynı); eski leaf CRL ile reddedilir |
-| **Device-CA rotation** | 1y / key-leak şüphesi | yeni device-CA üret → broker `client-ca-pem-path` overlap window (eski+yeni trust) → tüm leaf reissue → eski device-CA retire | overlap window'da iki CA trusted; sonra eski kaldırılır |
+| **Device-CA rotation** | 1y / key-leak şüphesi | yeni device-CA üret → broker trust-anchor bundle (eski+yeni) → tüm leaf reissue → eski device-CA retire | overlap window'da iki CA trusted; sonra eski kaldırılır — **ama mevcut B1.4 tek-issuer pin (Codex P1), multi-issuer = T-4 precondition** |
 | **Permit-signing key rotation** | key-leak / periyodik | broker `kid` bump (RemoteBridgePermitSigner) → eski kid'li permit `anExpiredOrWrongKidPermitIsRejected` ile reddedilir | agent eski-kid permit reddeder |
 
-**Overlap window kuralı:** device-CA rotation'da **fail-open YASAK** — overlap yalnız trust
-genişletir (iki CA kabul), asla daraltmaz; tüm leaf reissue tamamlanana kadar eski CA retire edilmez.
+**Overlap window — güvenlik muhasebesi (Codex P1):** mevcut `CertIdentityGuard` + `ScheduledRevocationDriver`
+**tek `expected-issuer-dn`** kullanır; iki-CA overlap için ya (a) multi-issuer pin desteği T-4 code
+precondition'dır, ya da (b) overlap yalnız şu ek binding'lerle güvenli sayılır: **bounded trust-anchor
+bundle** (yalnız eski+yeni device-CA, başka kök yok) + **per-device serial/thumbprint binding** (cert-bound
+token, B1.1) + **CRL her iki CA'da** + **kısa TTL** + **audit + explicit rollback**. "fail-open YASAK"
+iddiası bu muhasebe yapılmadan geçerli değildir — issuer-pin eski-CA'da kalırsa yeni-CA leaf'leri
+fail-closed olur (DOĞRU yön), pin kapatılırsa trust iki-CA'ya genişler (yukarıdaki binding'ler şart).
 
 ## 5. Revocation drill (D10-6 key-leak/rotation — CANLI, owner-gated)
 
