@@ -1,0 +1,24 @@
+# Prod Prometheus remote-write NodePort — gitops#1459 (prod-hub-ONLY)
+#
+# remote-write-bridge nginx'i (host-compose, platform-prod-net bacağı)
+# k3d-prod-server-0:30090 üzerinden receiver'a ulaşır. NodePort host'a
+# PUBLISH EDİLMEZ (k3d -p mapping'i yok) — yalnız prod docker bridge içi.
+# Auth köprüde (basic auth); receiver'ın kendisi auth'suz olduğu için bu
+# Service'in test ağına/LAN'a doğrudan açılmaması tasarım sınırı
+# (Codex 019ebacc #1459 REVISE absorb).
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-remote-write-nodeport
+  labels:
+    app.kubernetes.io/name: prometheus-remote-write-nodeport
+spec:
+  type: NodePort
+  selector:
+    operator.prometheus.io/name: kube-prometheus-stack-prometheus
+  ports:
+    - name: http-web
+      port: 9090
+      targetPort: 9090
+      nodePort: 30090
+      protocol: TCP
