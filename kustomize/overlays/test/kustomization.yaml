@@ -6011,7 +6011,8 @@ patches:
       # (ADR-0024 reactivation; Codex 019ebc0e REVISE→absorb; #892). Trigger:
       # App Password/legacy SMTP basic-auth deprecation riski + D7b Graph app-only
       # external delivery proof (ai@acik.com → serban recipient-confirmed 2026-06-12).
-      # GraphMailAdapter @ConditionalOnProperty(notify.adapters.graph.enabled=true)
+      # DESIRED-STATE (live acceptance pending apply+ESO-sync+smoke). GraphMailAdapter
+      # @ConditionalOnProperty(notify.adapters.graph.enabled=true)
       # → mutual exclusion: GraphMailAdapter aktif, SmtpAdapter pasif. SMTP config
       # YUKARIDA KORUNUR → rollback = flag flip (enabled=false). sender-mailbox
       # default ai@acik.com (AAP ai@acik.com only ile uyumlu); save-to-sent-items
