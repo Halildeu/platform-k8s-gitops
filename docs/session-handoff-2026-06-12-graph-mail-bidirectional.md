@@ -16,7 +16,7 @@ Kullanıcı `/goal "faz 22 için kalan otonom adımları tamamla"` ile başladı
 - **Korku**: "bu yetki ele geçerse herkes adına mail atılabilir mi?" → **AAP (ApplicationAccessPolicy)** ile blast-radius tek mailbox'a kısıtlandı
 - **Backend**: "bildirim GÖNDERME için de Graph kullanalım daha doğru değil mi?" → backend notification-orchestrator mail send path SMTP → Graph cutover (TEST)
 
-Sonuç: ai@acik.com için **okuma (D7) + agent gönderme (D7b) + AAP güvenlik + backend Graph cutover TEST (D7c)** zinciri tamamlandı.
+Sonuç: ai@acik.com için **okuma (D7) + agent gönderme (D7b) + AAP güvenlik** zinciri **tamamlandı (LIVE)**; **backend Graph cutover TEST (D7c)** ise yalnızca **adapter/infra seviyesinde LIVE** — functional intent→delivery smoke **PENDING** (§4). "Adapter/infra LIVE" ≠ "backend email functional delivery çalıştı".
 
 ---
 
@@ -34,7 +34,7 @@ Sonuç: ai@acik.com için **okuma (D7) + agent gönderme (D7b) + AAP güvenlik +
 **Üç ayrı katman (karıştırma)**:
 - **D7** = agent/ops **okuma** yüzeyi (`scripts/ops/graph-mail-list.sh`)
 - **D7b** = agent/ops **gönderme** yüzeyi (`scripts/ops/graph-mail-send.sh`, dry-run default + `--confirm-recipients` guard)
-- **D7c** = **backend pipeline** mail-send reactivation (GraphMailAdapter flag flip, TEST cluster) — D1-D6'nın TEST'te canlanması
+- **D7c** = **backend pipeline** mail-send reactivation (GraphMailAdapter flag flip, TEST cluster) — D1-D6'nın TEST'te canlanması. **NB**: D7c **adapter/infra LIVE** (bean init + mutual exclusion + secret/env); **functional intent delivery PENDING** (§4). D7/D7b external-delivery PROVEN, D7c adapter-code-path henüz bir gerçek intent ile koşulmadı.
 
 ---
 
@@ -68,12 +68,16 @@ ADR: [docs/adr/0024-graph-mail-adapter-defer.md](./adr/0024-graph-mail-adapter-d
 
 ### P0 — Backend Graph functional smoke (adapter code path kanıtı)
 Zincir (heavy setup, ~1-2h):
-1. **KC persona**: BL-010 pattern (org_id User Attribute mapper) ile test realm'de email-channel persona oluştur → JWT mint (org_id + role claim)
+1. **KC persona + auth preflight** (Codex `019ebc5b` MED): BL-010 pattern (org_id User Attribute mapper) ile test realm'de email-channel persona → JWT mint. **org_id TEK BAŞINA YETMEZ** — endpoint'in istediği **audience + role/scope** + varsa **authz tuple/eligibility** koşulu da preflight'ta doğrulanmalı; yoksa smoke **auth katmanında takılır, adapter path'e hiç ulaşmaz** (false-negative riski).
 2. **Aktif EMAIL template** + **verified subscriber** seed (psql erişimi gerek — notification pod'da psql yok; bir postgres-client pod veya port-forward + host psql)
 3. **Intent submit**: `POST /api/v1/notify/intents` email channel (persona JWT + template + recipient)
-4. **Doğrula**: delivery/audit row `DELIVERED` + provider message id → ai@acik.com **Sent Items** (`graph-mail-list.sh --search`) → recipient inbox + `Authentication-Results` header capture
+4. **Doğrula**: delivery/audit row `DELIVERED` + provider message id → ai@acik.com **Sent Items** + recipient inbox + `Authentication-Results` header capture.
+   - ⚠️ **Sent Items folder-specific** (Codex `019ebc5b` MED): `graph-mail-list.sh` şu an `/users/${MAILBOX}/messages` (tüm mesajlar) kullanıyor, `SentItems` klasörü değil — P0 ya helper'a `--folder sentitems` ekler ya da doğrudan `GET /users/ai@acik.com/mailFolders/SentItems/messages` smoke komutu yazar.
 5. **Negative**: AADSTS / Graph 403/429/5xx / duplicate delivery YOK
 6. Sonuç → evidence doc §3 LIVE'a taşı + #892 board close
+
+### P0 — current-state.md Graph truth-delta (Codex `019ebc5b` drift guard)
+`docs/state/current-state.md` §8 (Session 42, 2026-05-20) hâlâ **stale**: "client secret yaratılmadı / AAP yapılmadı / Vault graph_* absent / ESO remoteRef commented" — bu oturum **TEST için hepsini değiştirdi**. Bu handoff'la birlikte §8'e **2026-06-12 truth-delta bloğu** eklendi (TEST için Graph LIVE; prod hâlâ defer). Next agent: §8 başındaki delta'yı oku, eski Session-42 snapshot'ı historical olarak gör.
 
 ### P1 — SMTP credential hygiene + Prod slot
 - [#822](https://github.com/Halildeu/platform-k8s-gitops/issues/822) Office365 SMTP credential rotation (post-exposure hygiene) — TEST artık Graph primary; SMTP App Password rotate/retire değerlendir (rollback path olarak SMTP korunuyor, silme değil)
