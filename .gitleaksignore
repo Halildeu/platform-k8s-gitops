@@ -87,3 +87,9 @@ db552f5d1db0c177458423ec667fa816d70ecb02:docs/faz-23-evidence/2026-05-24-m5-23-5
 # already documented in many operational notes — but suppressing the
 # inline literal eliminates the heuristic miss entirely.
 f3ceff9fe2ca1370ada8eff9410ad639fc08530c:docs/state/current-state.md:generic-api-key:38
+
+# #1459 remote-write-bridge README dogrulama ornekleri — gercek secret degil:
+# 'curl -u rw-test:$PW' (env-var placeholder) + kasitli yanlis-cred ornegi.
+# Parolanin kendisi Vault'ta; README'de hicbir literal secret yok.
+.ost-compose/remote-write-bridge/README.md:curl-auth-user:46
+host-compose/remote-write-bridge/README.md:curl-auth-user:46
