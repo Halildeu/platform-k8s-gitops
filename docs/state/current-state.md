@@ -6618,6 +6618,22 @@ Bu dokümanda ve sonraki iletişimde **kullanılmayacak**:
 
 > Snapshot — `notification-orchestrator` mail delivery path canlı/desired-state ayrımı.
 
+> ### ⚠️ 2026-06-12 TRUTH-DELTA (Codex `019ebc5b` drift guard) — §8 Session-42 snapshot'ı **TEST için STALE**
+>
+> Bu oturum (2026-06-12, handoff `docs/session-handoff-2026-06-12-graph-mail-bidirectional.md`) §8'in "defer" anlatısını **TEST cluster için değiştirdi**. Aşağıdaki Session-42 tablo değerleri **historical**; TEST güncel truth:
+>
+> | Surface | Session-42 (stale) | **2026-06-12 TEST güncel** |
+> |---|---|---|
+> | Microsoft Graph **Mail.Read** (Application) | yok | ✅ Added + admin consent (D7 agent inbox read) |
+> | Client secret | ❌ yaratılmadı | ✅ **2 ayrı secret**: agent helper (D7/D7b) + backend `notify-orchestrator-test-graph-20260612` (D7c) — local dosyada, repo'da değil |
+> | ApplicationAccessPolicy (ai@acik.com restrict) | ❌ yapılmadı | ✅ **LIVE** — mail-enabled security group; ai.enes + serban **Denied** doğrulandı |
+> | Vault `kv/platform/notification-orchestrator.graph_*` (**test**) | absent | ✅ **seeded** (platform-vault-test) |
+> | ESO test `externalsecret-notify.yaml` Graph 3 remoteRef | commented out | ✅ **uncommented** (PR #1477) — `Ready=True SecretSynced` |
+> | TEST `notification-orchestrator` backend adapter | SmtpAdapter (graph=false) | ✅ **GraphMailAdapter active** (flag=true) + SmtpAdapter absent (mutual exclusion); **adapter/infra LIVE, functional intent smoke PENDING** |
+> | Agent/ops mail surface | yok | ✅ `scripts/ops/graph-mail-list.sh` (D7 read) + `graph-mail-send.sh` (D7b send) LIVE; 3 gerçek mail teslim |
+>
+> **PROD hâlâ DEFER** (aşağıdaki tablolar prod için geçerli): prod Graph cutover ayrı owner-gated slot (ayrı prod secret + DKIM re-validate + 72h soak). MERGED PR'lar: #1456 #1471 #1473 #1477 #1480 #1482. ADR: `docs/adr/0024-graph-mail-adapter-defer.md` D7/D7b/D7c.
+
 ### 8.1 Live runtime (effective desired-state — pod truth from helm release rev 2 minimal config kabuğu; deploy-time SmtpAdapter activation gerçek SmtpAdapter log evidence ile değil)
 
 | Surface | State | Source |
