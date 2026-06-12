@@ -27,6 +27,11 @@ bağlanılabiliyor" kanıtıdır — oturum yetkisi değil.
 
 - [ ] Owner "transport smoke başlasın" kararı (bu da exposure'dır — agent başlatamaz)
 - [ ] D10-8'in transport-smoke alt kümesi: NetworkPolicy + edge kuralı PR'ı merged
+      → broker isolation manifest seti: scaffold `kustomize/base/apps/endpoint-admin-remote-bridge/`
+      (inert, replicas:0) + owner-gated activation overlay
+      `kustomize/overlays/test/activation/endpoint-admin-remote-bridge/` (Argo root dışı;
+      11 izolasyon kontrolü + NetworkPolicy + ESO orada). Aktivasyon prosedürü:
+      o overlay'in `OWNER-APPROVAL.md` dosyası.
 
 ### A1. PKI — iki AYRI CA (~30 dk)
 
@@ -58,9 +63,12 @@ yaratır ve YASAKTIR (Codex 019ebbe4 P2):
 
 1. Vault seed (D43 stdin-pipe pattern — değerler shell history'ye düşmez):
    ```bash
-   # mevcut ESO path ile hizalı (kv/platform/endpoint-admin-service — Codex 019ebbe4 notu)
-   ssh halil@staging-sw "vault kv patch kv/platform/endpoint-admin-service \
-     RB_TLS_CERT_CHAIN=@server-chain.pem RB_TLS_KEY=@server-key.pem RB_TLS_DEVICE_CA=@rb-device-ca.pem"
+   # SUPERSEDED 2026-06-12 (D10-8 broker isolation): broker SEPARATE Vault path
+   # kv/platform/endpoint-admin-remote-bridge (control #3/#9 — broker secret'i
+   # endpoint-admin-service-secrets ile ortak path'te durmaz). Seed komutu +
+   # tam key listesi: activation overlay OWNER-APPROVAL.md.
+   ssh halil@staging-sw "vault kv put kv/platform/endpoint-admin-remote-bridge \
+     broker_tls_cert_chain_pem=@server-chain.pem broker_tls_private_key_pem=@server-key.pem device_ca_pem=@rb-device-ca.pem"
    ```
 2. Gitops PR: `externalsecret.yaml`'a 3 key + Deployment'a secret-volume mount
    (`/etc/remote-bridge/tls`, readOnly) + aşağıdaki property'ler.
@@ -85,7 +93,9 @@ pod bind ETMEDEN fail eder (yarı-açık durum yoktur — kod garantisi #583).
 ### A3. Ağ — NetworkPolicy + L4 TLS-passthrough edge
 
 - **NetworkPolicy:** 9444'e ingress YALNIZ edge passthrough kaynağından; egress
-  yalnız DB/recorder. (Tam broker hardening D10-8'in kalanı — Faz B ön-şartı.)
+  yalnız DB/recorder. Tam broker hardening (11 kontrol) artık manifest olarak
+  mevcut: `kustomize/overlays/test/activation/endpoint-admin-remote-bridge/netpol.yaml`
+  (ingress 9444 allowlist + egress default-deny scoped + per-session device ACL).
 - **Host nginx `stream` (TERMINATE ETME — ADR-0038):**
 
 ```nginx

@@ -40,6 +40,36 @@ jobs:
         run: kustomize build kustomize/base/rbac/prod-deploy-smoke > /tmp/rbac-prod-deploy-smoke.yaml
       - name: Build base/rbac/prod-operator-readonly (PR-3D staged readonly identity)
         run: kustomize build kustomize/base/rbac/prod-operator-readonly > /tmp/rbac-prod-operator-readonly.yaml
+      # Faz 22.6 D10-8 — remote-bridge broker isolation. Desired-state, NOT in
+      # the Argo root (owner-gated activation). Render sanity + isolation guards
+      # (Codex 019ebc51 P2 — machine-enforced, not self-attestation).
+      - name: Build base/apps/endpoint-admin-remote-bridge (D10-8 scaffold — staged)
+        run: kustomize build kustomize/base/apps/endpoint-admin-remote-bridge > /tmp/eab-bridge-base.yaml
+      - name: Build overlays/test/activation/endpoint-admin-remote-bridge (D10-8 activation — staged)
+        run: kustomize build kustomize/overlays/test/activation/endpoint-admin-remote-bridge > /tmp/eab-bridge-activation.yaml
+      - name: D10-8 broker isolation guards (no part-of=platform; not in Argo root)
+        run: |
+          # control #1 — the broker must NEVER carry part-of=platform (it would
+          # match the broad platform ingress/egress allowlists in base/netpol).
+          if grep -q "part-of: platform" /tmp/eab-bridge-base.yaml; then
+            echo "❌ broker scaffold render carries app.kubernetes.io/part-of: platform — control #1 broken"; exit 1
+          fi
+          if grep -q "part-of: platform" /tmp/eab-bridge-activation.yaml; then
+            echo "❌ broker activation render carries app.kubernetes.io/part-of: platform — control #1 broken"; exit 1
+          fi
+          # desired-state boundary — the broker must NOT leak into the synced
+          # test Argo root (/tmp/test.yaml built above), else it could auto-roll.
+          if grep -q "endpoint-admin-remote-bridge" /tmp/test.yaml; then
+            echo "❌ endpoint-admin-remote-bridge leaked into overlays/test render — must stay out of the Argo root"; exit 1
+          fi
+          # control #11 — the scaffold must ship inert (replicas:0 + enabled false).
+          if ! grep -q "REMOTE_BRIDGE_ENABLED: \"false\"" /tmp/eab-bridge-base.yaml; then
+            echo "❌ scaffold ConfigMap missing REMOTE_BRIDGE_ENABLED=false — control #11 broken"; exit 1
+          fi
+          if ! grep -q "replicas: 0" /tmp/eab-bridge-base.yaml; then
+            echo "❌ scaffold Deployment is not replicas:0 — control #11 (inert) broken"; exit 1
+          fi
+          echo "✓ D10-8 broker isolation guards pass (no part-of=platform; not in Argo root; scaffold inert replicas:0/enabled=false)"
       # Faz 17.Z — PR'da blocking: local overlay'ler render sanity (lokal dev drift yakalama)
       - name: Build overlays/local-authn-min (Faz 17.2)
         run: kustomize build kustomize/overlays/local-authn-min > /tmp/local-authn-min.yaml

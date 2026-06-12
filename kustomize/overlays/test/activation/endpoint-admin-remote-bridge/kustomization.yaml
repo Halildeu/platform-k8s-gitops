@@ -1,0 +1,45 @@
+# endpoint-admin-remote-bridge ACTIVATION overlay — Faz 22.6 D10-8 (test)
+#
+# ⚠️  OWNER-GATED. This overlay is the runtime-activation half of the broker
+# isolation package. It is DELIBERATELY NOT referenced by
+# kustomize/overlays/test/kustomization.yaml — it is NOT in the Argo root, so an
+# ArgoCD reconcile / `apply -k overlays/test` can NEVER flip the broker live.
+#
+# Activation is a deliberate operator action AFTER:
+#   1. T-4a-ii broker beans + permit-signing-key config land as merged backend code,
+#   2. the broker mTLS / signer / WORM secrets are seeded to
+#      kv/platform/endpoint-admin-remote-bridge,
+#   3. the live exposure smoke passes (docs/RB-22-6-remote-bridge-pilot-flip.md §A3),
+#   4. ADR-0034 §13/D10 owner sign-off for the first live session.
+#
+# Then, and only then:
+#   kubectl --context k3d-test -n platform-test apply -k \
+#     kustomize/overlays/test/activation/endpoint-admin-remote-bridge
+#
+# Build sanity (no apply):
+#   kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-test
+
+resources:
+  - ../../../../base/apps/endpoint-admin-remote-bridge   # the inert scaffold
+  - externalsecret.yaml                                   # control #3/#4/#10
+  - netpol.yaml                                           # control #6/#7/#8
+
+patches:
+  # control #11 — flips replicas:1 + REMOTE_BRIDGE_ENABLED=true + mounts the
+  # mTLS/signer secrets + makes the broker secret required (fail-closed).
+  - path: patch-activate.yaml
+  # L4 edge exposure — publishes 9444 as nodePort 31944 (still no 8096/8081).
+  - path: service-patch.yaml
+
+images:
+  # control #11 — immutable digest (D30). SAME image as endpoint-admin-service
+  # (Codex A+). PLACEHOLDER digest (64 zeros) — the owner pins the live testai
+  # endpoint-admin-service digest at flip time. A zeros-digest pulls nothing
+  # real, so an accidental apply of this overlay stays fail-closed.
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
+    newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
