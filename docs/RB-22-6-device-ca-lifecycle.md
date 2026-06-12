@@ -37,6 +37,8 @@ asla Vault'a ham CA key konmaz (CA = root-of-trust, air-gap-benzeri custody).
 
 ## 1. Device-CA kurulumu (bir kez, ~15 dk operator)
 
+> Tüm komut blokları **root shell / sudo wrapper** altında koşar (`/opt/rb-pki` 0700 root:root).
+
 ```bash
 sudo install -d -m 0700 /opt/rb-pki/device-ca
 cd /opt/rb-pki/device-ca
@@ -94,7 +96,7 @@ openssl pkcs12 -export -inkey dev-<device-id>.key -in dev-<device-id>.pem \
 ```
 
 **Serial ledger zorunlu:** her issuance `serial,device-id,issued-at,operator` satırı append-only
-log'a (revocation + audit için). Wrapper `rb-issue-device-cert.sh` `openssl ca` ile §0.5 CA-DB
+log'a (revocation + audit için). Wrapper `rb-issue-device-cert.sh` `openssl ca` ile §1.5 CA-DB
 üzerinden imzalar (aynı index.txt/serial → revoke/gencrl ile tutarlı), EKU `clientAuth` basar,
 CSR SAN'ını kontrollü kopyalar (`copy_extensions = copy` + allowlist). **Fail sinyali:** issuance
 SAN ile ledger device-id uyuşmazsa DUR (enrollment canonical; live binding T-4).
