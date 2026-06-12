@@ -165,8 +165,9 @@ Drill tarihi: ____  ·  Pilot broker: ____  ·  Operatör (test persona): ____
 | 5 | Clock skew | PASS | ____ | ____ |
 | 6 | Key rotation | PASS | ____ | ____ |
 | 7 | Transport | PASS | ____ | ____ |
+| 7b | Oracle / enum / retry-DoS | PASS | ____ | ____ |
 | 8 | Coercion UX | PASS | ____ | ____ |
-Genel verdict: [ ] ALL PASS → D10-11 live-complete  ·  [ ] FAIL (#__) → pilot BLOCKED, kök neden: ____
+Genel verdict: [ ] 9 satırın tümü PASS → D10-11 live-complete  ·  [ ] FAIL (#__) → pilot BLOCKED, kök neden: ____
 ```
 
 > **D10-11 kapanışı:** yukarıdaki kategorilerin **hem design-time hem live** kolonu PASS
@@ -178,5 +179,5 @@ Genel verdict: [ ] ALL PASS → D10-11 live-complete  ·  [ ] FAIL (#__) → pil
 > KAPATMADIĞI iki madde: **D10-4** (uniform constant-time `DENIED` + layered rate-limit —
 > §7b drill *kanıt* üretir ama maddenin kendi acceptance'ı ayrı) ve **D10-9** (operator-channel
 > hardening: FIDO2/CSRF/nonce/no-bearer/re-auth — operator console T-4'te, bu drill kapsamı
-> DIŞINDA). 8 drill kategorisi PASS olsa bile **D10 11/11 yeşil olmadan pilot BLOCKED**
+> DIŞINDA). 9 drill satırının tümü PASS olsa bile **D10 11/11 yeşil olmadan pilot BLOCKED**
 > (ADR-0034 §11: "pilot BLOCKED without each").
