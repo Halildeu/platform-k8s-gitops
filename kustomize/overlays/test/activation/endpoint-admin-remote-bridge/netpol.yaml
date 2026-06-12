@@ -1,0 +1,183 @@
+# endpoint-admin-remote-bridge NetworkPolicies — Faz 22.6 D10-8 (activation)
+#
+# The broker is already DEFAULT-DENIED (ingress + egress) by the namespace
+# baseline kustomize/base/netpol/default-deny.yaml (podSelector:{} covers every
+# pod, including the broker). Because the broker carries NO part-of=platform
+# label (control #1), it inherits NONE of the broad platform allowlists. These
+# policies ADD the broker's narrow, explicit allows — nothing more.
+#
+# All policies select ONLY the broker pod:
+#   app.kubernetes.io/name: endpoint-admin-remote-bridge
+#
+# IP placeholders use RFC 5737 documentation ranges (192.0.2.0/24,
+# 198.51.100.0/24, 203.0.113.0/24). The owner replaces them with the real
+# edge / device CIDRs at flip time (no real internal IPs in git).
+---
+# control #6 — INGRESS allowlist: 9444 from the orchestrator / mTLS L4 edge ONLY.
+# Never api-gateway / ingress-nginx / the part-of=platform blanket.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eab-bridge-allow-ingress-9444
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge
+    app.kubernetes.io/part-of: remote-bridge
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-remote-bridge
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        # (a) the operator/session orchestrator — a NARROW pod label the owner
+        #     applies to the specific orchestrator pod, NOT part-of=platform.
+        - podSelector:
+            matchLabels:
+              remote-bridge.platform/peer: orchestrator
+        # (b) the mTLS L4 edge that passthrough-forwards agent connections.
+        #     OWNER PINS the real edge/host CIDR at flip (placeholder below).
+        - ipBlock:
+            cidr: 192.0.2.0/24        # RFC5737 placeholder — owner pins mTLS edge CIDR
+      ports:
+        - protocol: TCP
+          port: 9444
+  # NOTE control #5 (documented pilot waiver; Codex 019ebc51 P2) — this policy
+  # adds NO allow for 8096 (admin HTTP) or 8081 (management), so pod-to-pod and
+  # edge paths to them are denied even though the shared image still binds them
+  # in-pod. Caveat: kubelet health probes reach 8081 over the node→pod path,
+  # which the CNI permits OUTSIDE NetworkPolicy — that same exemption may leave a
+  # node-origin 8096/8081 reach un-governed by policy. So "every source denied"
+  # is NOT claimed; Phase A acceptance MUST run the negative reachability tests
+  # (same-ns pod, ingress-nginx ns, edge/host/node) in OWNER-APPROVAL.md, and the
+  # durable close of admin HTTP is a T-4a-ii backend-profile follow-up before the
+  # first live session. If smoke shows probes blocked, the owner adds a node-IP
+  # ingress allow scoped to 8081.
+---
+# control #7 — EGRESS allow: DNS (kube-dns).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eab-bridge-allow-egress-dns
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge
+    app.kubernetes.io/part-of: remote-bridge
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-remote-bridge
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# control #7 — EGRESS allow: OpenFGA-check (in-cluster openfga pod, port 8080).
+# Scoped to the openfga pod ONLY — not the part-of=platform intra-ns blanket.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eab-bridge-allow-egress-openfga
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge
+    app.kubernetes.io/part-of: remote-bridge
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-remote-bridge
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openfga
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# control #7 — EGRESS allow: scoped host-bridge for least-priv Postgres (:5432,
+# also the WORM recording sink — Postgres-backed DbRecordingSink) and JWKS-read
+# (Keycloak :8080). Codex 019ebc51 P1: NOT 0.0.0.0/0 — pinned to the specific
+# host-compose endpoint /32s, each on its OWN port (no cross-allow PG:8080 or
+# KC:5432). No Vault :8200 — ESO delivers secrets, the broker never talks to
+# Vault directly. The test Endpoints IPs (postgres 172.19.0.6, keycloak
+# 172.19.0.5) are docker-network-assigned and CAN drift on compose recreate; the
+# owner re-verifies from `kubectl -n platform-test get endpoints postgres keycloak`
+# at flip (OWNER-APPROVAL.md). Drift = fail-closed (broker can't reach PG/KC →
+# not-Ready), never silent-open.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eab-bridge-allow-egress-host-bridge
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge
+    app.kubernetes.io/part-of: remote-bridge
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-remote-bridge
+  policyTypes:
+    - Egress
+  egress:
+    # least-priv Postgres + WORM recording sink — ONLY 5432 to the PG host.
+    - to:
+        - ipBlock:
+            cidr: 172.19.0.6/32     # postgres (test Endpoints — owner re-verifies at flip)
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Keycloak JWKS-read — ONLY 8080 to the KC host.
+    - to:
+        - ipBlock:
+            cidr: 172.19.0.5/32     # keycloak (test Endpoints — owner re-verifies at flip)
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# control #8 — per-session egress ACL (pilot-min). K8s NetworkPolicy cannot do
+# dynamic per-token targets, so the pilot bounds broker↔device data-plane
+# connections to a STATIC 2–5 named device allowlist; the broker additionally
+# enforces the per-session token target + TTL at the app layer. Dynamic
+# per-session netpol (controller / egress proxy / ephemeral per-session pod) is
+# DEFERRED to production. OWNER PINS the real device CIDRs at flip.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eab-bridge-allow-egress-pilot-devices
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge
+    app.kubernetes.io/part-of: remote-bridge
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: endpoint-admin-remote-bridge
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        # RFC5737 placeholders — owner replaces with the 2–5 named pilot devices.
+        # Codex 019ebc51 P2: /32 ONLY (K8s does not enforce a "≤5 hosts" subnet
+        # comment). A subnet (anything broader than /32) needs a separate
+        # owner-reviewed waiver — it is NOT the pilot-min shape.
+        - ipBlock:
+            cidr: 198.51.100.11/32     # pilot device #1 (placeholder)
+        - ipBlock:
+            cidr: 198.51.100.12/32     # pilot device #2 (placeholder)
+        - ipBlock:
+            cidr: 198.51.100.13/32     # pilot device #3 (placeholder)
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 8443
