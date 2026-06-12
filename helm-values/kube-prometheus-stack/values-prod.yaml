@@ -454,6 +454,13 @@ prometheus:
     retention: 10d                    # D10
     retentionSize: "8GB"
 
+    # gitops#1459: test→prod-hub remote_write zincirinin receiver ucu.
+    # /api/v1/write yalnız remote-write-bridge nginx'i (basic auth) üzerinden
+    # erişilir — NodePort 30090 host'a publish edilmez, prod bridge içi.
+    # Cardinality gate: kabul kriterinde pre/post head-series ölçümü +
+    # rollback eşiği (#1459).
+    enableRemoteWriteReceiver: true
+
     resources:
       requests:
         cpu: 100m

@@ -154,6 +154,15 @@ path "kv/data/platform/audio-gateway-service" {
   capabilities = ["read"]
 }
 
+# --- remote-write-bridge basic auth (gitops#1459) ---
+# Test Prometheus remoteWrite basicAuth credential'ı (username/password;
+# host-compose/remote-write-bridge htpasswd ile aynı parola — seed README §1).
+# Tüketici: monitoring ns ExternalSecret remote-write-bridge-auth
+# (kustomize/base/monitoring-test-only).
+path "kv/data/platform/remote-write-bridge" {
+  capabilities = ["read"]
+}
+
 # --- Metadata read (versioned KV v2 list/describe) ---
 path "kv/metadata/platform/*" {
   capabilities = ["list"]

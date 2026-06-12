@@ -20,3 +20,6 @@ labels:
 
 resources:
   - prometheusrule-frontend-federation-smoke-absent.yaml
+  # gitops#1459: remote-write receiver NodePort (yalnız prod docker bridge
+  # içi — host publish yok; auth remote-write-bridge nginx katmanında)
+  - prometheus-remote-write-nodeport.yaml

@@ -34,11 +34,22 @@ prometheus:
     serviceMonitorSelector: {}        # Tüm ServiceMonitor'ları scrape et
     podMonitorSelectorNilUsesHelmValues: false
     podMonitorSelector: {}
-    # Remote write prod Prometheus'a
-    # NOT: URL prod cluster ingress veya direct Service; cutover sonrası set edilir
-    # Şimdilik placeholder; PR-next-5 ArgoCD kurulumu sonrası doğru endpoint yazılır.
+    # Remote write prod Prometheus'a — gitops#1459 onarımı (2026-06-12).
+    # Eski URL var olmayan bir prod-ns Service'ine işaret ediyordu
+    # (cross-cluster DNS çözümsüz; akış hiç çalışmadı). Yeni zincir:
+    # D19 bridge Service (base/monitoring-test-only) → remote-write-bridge
+    # nginx (host-compose, 172.19.0.251:9091, basic auth) →
+    # k3d-prod-server-0:30090 NodePort → prod receiver
+    # (enableRemoteWriteReceiver, values-prod).
     remoteWrite:
-      - url: "http://prometheus-prod-remote-write-receiver.platform-prod.svc.cluster.local:9090/api/v1/write"
+      - url: "http://remote-write-bridge.monitoring.svc.cluster.local:9091/api/v1/write"
+        basicAuth:
+          username:
+            name: remote-write-bridge-auth   # ESO: kv/platform/remote-write-bridge
+            key: username
+          password:
+            name: remote-write-bridge-auth
+            key: password
         writeRelabelConfigs:
           # Test cluster label ekle (prod Grafana'da ayrım için)
           - sourceLabels: ["__name__"]
