@@ -6007,6 +6007,25 @@ patches:
       - op: add
         path: /data/NOTIFY_ADAPTERS_SMTP_FROM_NAME
         value: "Ai - Açık Holding (test)"
+      # Faz 23.8 — Backend mail send path SMTP → Microsoft Graph app-only cutover
+      # (ADR-0024 reactivation; Codex 019ebc0e REVISE→absorb; #892). Trigger:
+      # App Password/legacy SMTP basic-auth deprecation riski + D7b Graph app-only
+      # external delivery proof (ai@acik.com → serban recipient-confirmed 2026-06-12).
+      # GraphMailAdapter @ConditionalOnProperty(notify.adapters.graph.enabled=true)
+      # → mutual exclusion: GraphMailAdapter aktif, SmtpAdapter pasif. SMTP config
+      # YUKARIDA KORUNUR → rollback = flag flip (enabled=false). sender-mailbox
+      # default ai@acik.com (AAP ai@acik.com only ile uyumlu); save-to-sent-items
+      # true (Sent Items kanıt). Credential: kv/platform/notification-orchestrator.graph_*
+      # (D7 helper'ın kv/platform/graph'ından AYRI; ESO 3 remoteRef uncomment edildi).
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_GRAPH_ENABLED
+        value: "true"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_GRAPH_SENDER_MAILBOX
+        value: "ai@acik.com"
+      - op: add
+        path: /data/NOTIFY_ADAPTERS_GRAPH_SAVE_TO_SENT_ITEMS
+        value: "true"
       # Faz 23.3 PR-5 — JetSMS cutover: SMS primary provider flip.
       # PR-4 base ConfigMap'e jetsms api-url/report-url eklemişti; bu flip
       # SmsAdapter'ı JetSMS primary'ye çevirir (image sha-ab333c5 JetSmsProvider
