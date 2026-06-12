@@ -165,7 +165,37 @@ close + transcript save + operator notify; revocation propagation ≤30s.
 - [ ] D35-EA-4-F live-evidence gate (stale-token/same-user/tenant-mismatch/no-recording/no-cert/orphan/timeout/reconnect-TTL) yeşil
 - [ ] BE-019 enforcement (veya manuel DPO süreci açık beyanı)
 
-### 11.4 Owner / DPO / Legal Sign-off
+### 11.4 ADR-0034 §11/D10 expanded gate — kanıt haritası (2026-06-12 güncel)
+
+> İlk canlı oturumun teknik ön-şartı: D10'un 11 maddesi (red-team absorb). Aşağıdaki
+> harita **merged koda** işaret eder — ✅ kod/test kanıtı MERGED, 🔶 kısmî (kalan iş
+> belirtilmiş), ❌ henüz yok. Transport zinciri: T-1 broker domain (backend #577-579) +
+> T-2a proto (#580) + T-2b grpc server (#581/#582) + T-2c mTLS (#583) + T-3 Go harness
+> (platform-agent #143). Operasyonel adımlar: [RB-22-6-remote-bridge-pilot-flip](RB-22-6-remote-bridge-pilot-flip.md).
+
+| # | D10 maddesi | Durum | Kanıt (merged) / kalan |
+|---|---|---|---|
+| 1 | Continuous re-eval + real-time kill | 🔶 | ✅ kod: revocation reconciler push+poll, DB-anchored SLO (backend #547); KILL transport <1s DATA-saturation testi (#581). Kalan: canlı revoke→kill drill'i (pilot ortamında, SLO ölçümüyle) |
+| 2 | Out-of-band signed audit/recording sink | 🔶 | ✅ kod: hash-chain recording + ECDSA anchor signer/verifier + DbRecordingSink (C serisi); recorder-unavailable→deny fail-closed broker testi (#579). Kalan: broker-BAĞIMSIZ WORM deployment (ayrı namespace/storage + object-lock, gitops infra) |
+| 3 | mTLS + non-exportable (TPM) cert-bound token + PKI lifecycle + trusted clock | 🔶 | ✅ kod: cert-bound token (B1.1 #549/#550), CRL fail-closed evaluator (B1.4b), attestation verifiers (B1.4c/d), transport mTLS clientAuth=REQUIRE secure-by-default (#583). Kalan: TPM non-exportable binding (T-4 device), device-CA issuance/dağıtım operasyonu, trusted/monotonic clock kanıtı |
+| 4 | Atomic jti store + uniform DENIED + rate-limit | 🔶 | ✅ kod: DB-CAS single-use consume 64-thread concurrency proof (#545), fixed-window rate limiter, single-arbiter idempotency. Kalan: operator-kanalı dış yüzeyinde uniform/constant-time DENIED (T-4 operator console ile birlikte) |
+| 5 | Agent attestation depth (SBOM/SLSA/reproducible/runtime-hash/rollback) | 🔶 | ✅ kod: attestation-statement verifier (B1.4c/d), SBOM CI (platform-agent Syft). Kalan: reproducible-build kanıtı, runtime binary-hash + auto-rollback (T-4/agent) |
+| 6 | VIEW_ONLY exfil controls (DLP/masking/watermark/indicator/local-abort) | 🔶 | ✅ kod: ViewWatermark.specFor, SecretRedactor, D-5 DLP politikası, D-1..D-7 capability/command/value gate'leri (D serisi). Kalan: endpoint-side gerçek masking/indicator/local-abort UI (T-4) |
+| 7 | Endpoint-user coercion UX (indicator + local kill + revocable consent) | ❌ | Domain modeli hazır (ConsentLease locallyAborted; LOCAL_ABORT→KILLED state machine #578) — gerçek attended-consent UI T-4 |
+| 8 | Broker hardening (ayrı deployment + NetPol + egress ACL + secret ayrımı) | ❌ | Gitops infra işi — broker kodu disabled-by-default + loopback-default (#581/#583); manifest/NetPol pilot-önü PR |
+| 9 | Operator-channel hardening (FIDO2/CSRF/nonce/re-auth) | ❌ | Operator console T-4; WebAuthn step-up domain politikası kodda hazır (D-6 StepUpState) |
+| 10 | IAM identity canonicalization (alias→canonical, approver≠requester) | 🔶 | ✅ kod: approver≠requester engine kuralı + anti-coercion invariant. Kalan: alias/proxy/service-account canonicalization (Keycloak attribute eşlemesi) + approval-fatigue limiti |
+| 11 | Red-team drill report | ❌ | Pilot-önü drill: broker-compromise sim, jti replay, recorder-down, token theft, NTP skew, key rotation — runbook'ta senaryo listesi |
+
+> **Özet (2026-06-12, dürüst sayım):** **0/11 madde pilot-complete.** 7/11 maddede
+> kısmî kod/test kanıtı MERGED (🔶 — kalan iş infra / T-4-UI / operasyon sınıfında),
+> 4/11 maddede henüz çalıştırılabilir kanıt yok (❌ — tasarım/domain-model hazır olsa
+> da D10 anlamında kanıt sayılmaz). **D10 kuralı değişmedi: ilk canlı oturum, 11
+> maddenin TAMAMI madde-seviyesinde yeşil olmadan AÇILMAZ** (ADR-0034 §11: "pilot
+> BLOCKED without each"). Bu harita ilerlemeyi izlemek içindir, gate'i gevşetmez.
+> Pilot-flip operasyonel sırası ve D7 roster şablonu runbook'tadır.
+
+### 11.5 Owner / DPO / Legal Sign-off
 | Rol | İsim | İmza | Tarih | Durum |
 |---|---|---|---|---|
 | Owner | Halil Koçoğlu | `[ ]` | | `[ ] Approved` |
