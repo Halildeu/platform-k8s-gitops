@@ -1,0 +1,75 @@
+# promtail TEST — STT log ingestion via remote-write-bridge → prod Loki
+# (gitops#1462, Codex 019ebb70 REVISE absorb). AYRI values (prod values.yaml
+# BOZMA — o cluster-wide prod-shape; bu dar STT-only test-bridge).
+#
+# Akış: test pod logları → promtail → bridge (172.19.0.251:9091/loki/api/v1/push,
+# basic auth) → k3d-prod-server-0:30100 → prod Loki. external_labels cluster=test.
+#
+# DAR scrape (Codex S2): yalnız platform-test ns audio-gateway +
+# redis-streams-exporter (stable label app.kubernetes.io/name — pod-name
+# regex DEĞİL, rollout suffix sapar). Tüm-cluster log federation DEĞİL.
+
+# Secret env expansion (Codex S5: parola plaintext values'a girmez)
+extraArgs:
+  - -config.expand-env=true
+
+extraEnv:
+  - name: LOKI_BRIDGE_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: promtail-loki-auth
+        key: LOKI_BRIDGE_USERNAME
+  - name: LOKI_BRIDGE_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: promtail-loki-auth
+        key: LOKI_BRIDGE_PASSWORD
+
+config:
+  clients:
+    - url: http://remote-write-bridge.monitoring.svc.cluster.local:9091/loki/api/v1/push
+      basic_auth:
+        username: ${LOKI_BRIDGE_USERNAME}
+        password: ${LOKI_BRIDGE_PASSWORD}
+      external_labels:
+        cluster: test
+      # Bridge/Loki koparsa test promtail'ı sonsuz retry'a sokma
+      backoff_config:
+        min_period: 1s
+        max_period: 30s
+        max_retries: 8
+
+  snippets:
+    # Default kubernetes-pods scrape'i KAPAT (cluster-wide); dar STT-only koy.
+    scrapeConfigs: |
+      - job_name: stt-pods
+        kubernetes_sd_configs:
+          - role: pod
+        pipeline_stages:
+          # JSON log → sadece level filtreleme için parse; correlation_id/
+          # session_id LABEL YAPILMAZ (Codex S3 — query-time parse; stream
+          # cardinality patlamasın). Label çıkarımı YOK, ham satır gönderilir.
+          - cri: {}
+        relabel_configs:
+          # DAR: yalnız platform-test ns
+          - action: keep
+            source_labels: [__meta_kubernetes_namespace]
+            regex: platform-test
+          # DAR: yalnız 2 STT app (stable label)
+          - action: keep
+            source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            regex: audio-gateway|redis-streams-exporter
+          # Düşük-cardinality label seti (Codex S3): namespace/app/container/pod
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            target_label: app
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          # __path__ (promtail log dosyası yolu)
+          - source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
+            target_label: __path__
+            separator: /
+            replacement: /var/log/pods/*$1/*.log
