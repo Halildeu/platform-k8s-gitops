@@ -222,6 +222,26 @@ services:
       test: enabled
       prod: deferred   # Faz 24 D30 cutover'a kadar prod overlay'e dahil değil
 
+  - name: redis-streams-exporter
+    repo: oliver006/redis_exporter
+    description: |
+      Faz 24 PR-obs-01a (gitops#1247): Redis Streams chunk transport queue
+      görünürlüğü — stream length + consumer-group lag/pending/idle (XINFO,
+      32 partition explicit check-single-streams). Hedef: host-services
+      redis-streams D19 bridge (host-compose/redis-streams). Parola ESO
+      kv/platform/audio-gateway-service.redis_password (paylaşımlı requirepass
+      — geçici; read-only ACL ayrımı follow-up gitops#1457). ServiceMonitor
+      9121 /metrics; netpol allow-monitoring-scrape 9121.
+    jwt_validates: false  # internal metrics endpoint, monitoring-ns scrape only
+    route_external: false
+    third_party: true
+    workload_kind: Deployment
+    runtime_class: lab-tool
+    probe_contract: exempt   # redis_exporter kendi /health modeli (healthz seti dışı)
+    environments:
+      test: enabled
+      prod: deferred   # prod'da Redis Streams yok — D30 cutover'da runtime ile birlikte
+
   # --- DEFERRED services (intentionally not in target env) ---
 
   - name: endpoint-admin-service

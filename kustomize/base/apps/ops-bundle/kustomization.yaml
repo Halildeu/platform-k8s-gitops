@@ -24,6 +24,10 @@ resources:
   - ../schema-service/ops
   - ../permission-service/ops
   - ../openfga/ops
+  # Faz 24 PR-obs-01a (gitops#1247): audio-gateway ServiceMonitor. Prod'da
+  # audio-gateway runtime'ı henüz yok (D30 defer) — SM eşleşen Service
+  # bulamaz, boş kalır; D30 cutover'da otomatik devreye girer.
+  - ../audio-gateway/ops
   # Faz 23.9 Step D (Codex thread 019e08df REVISE absorb 2026-05-08):
   # notification-orchestrator ExternalSecret moved out of ops-bundle to
   # per-environment overlays (overlays/{test,prod}/eso/notify) to eliminate

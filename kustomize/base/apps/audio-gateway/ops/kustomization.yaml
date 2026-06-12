@@ -1,0 +1,18 @@
+# ops extras for audio-gateway (Faz 24 PR-obs-01a, gitops#1247 scrape temeli)
+# CRD-gated resources: ServiceMonitor (monitoring.coreos.com)
+# Label injection parent runtime kustomization ile simetrik.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: audio-gateway
+    includeSelectors: false
+    includeTemplates: false
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: false
+
+resources:
+  - servicemonitor.yaml
