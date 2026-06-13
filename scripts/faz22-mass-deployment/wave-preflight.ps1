@@ -267,8 +267,8 @@ Invoke-LogRetentionCheck
 # count=null and `$null -gt 0` is false -> overall mislabeled PASS (gate-masking,
 # a single real FAIL silently passes). Caught by the live Win11 VM smoke: the
 # 1-WARN preinstall-readiness run reported warnCount=null + overall=PASS.
-$failCount = @($checks | Where-Object { $_.status -eq 'FAIL' }).Count
-$warnCount = @($checks | Where-Object { $_.status -eq 'WARN' }).Count
+[int]$failCount = @($checks | Where-Object { $_.status -eq 'FAIL' }).Count
+[int]$warnCount = @($checks | Where-Object { $_.status -eq 'WARN' }).Count
 $overall = if ($failCount -gt 0) { 'FAIL' } elseif ($warnCount -gt 0) { 'PASS-WITH-WARN' } else { 'PASS' }
 
 $result = [pscustomobject]@{
