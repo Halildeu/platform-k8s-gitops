@@ -18,7 +18,7 @@
 
 **Source-side scope (this runbook)**:
 - Lab-clone rollback rehearsal pattern (env setup + 5-PC clone)
-- Revoke API + ledger proof contract (backend endpoint + audit row)
+- Device decommission/reactivate proof contract (decommission endpoint + cascade counts + hash-chain audit row + 409-on-revoked)
 - Rollback runbook (exact abort/restore checklist + chronological order)
 - Mavis/board coordination format (destructive action approval chain)
 - 3-layer drill scenario design
@@ -66,8 +66,7 @@ Cloning steps (operator):
 Lab backend endpoint-admin-service:
   - Separate cluster (k3d-lab or staging)
   - PG DB cloned from prod baseline (post-M6 50-PC enrollment)
-  - OpenFGA tuples cloned (50 agent: tuples)
-  - Enrollment records 50 (active)
+  - 50 enrolled devices present (credentials + device rows; status ONLINE/OFFLINE)
   - Heartbeat data baseline ready
 ```
 
@@ -194,11 +193,12 @@ Phase 2 — Drill Layer 1 (MSI Uninstall) — 1+ lab-clone PC:
   ☐ Layer 1 evidence collected (Event 102 + Service status + binary check)
   ☐ Layer 1 acceptance: PASS/FAIL noted
 
-Phase 3 — Drill Layer 2 (Enrollment Revoke) — 1+ lab-clone PC:
-  ☐ Identify agent_id pre-uninstall (already done if Phase 2 included this PC)
-  ☐ Revoke API call from operator admin JWT
-  ☐ Backend audit row + token invalidation verified
-  ☐ OpenFGA tuple update verified (if Layer-2 includes)
+Phase 3 — Drill Layer 2 (Enrollment Revoke = device decommission) — 1+ lab-clone PC:
+  ☐ Identify deviceId pre-uninstall (GET /api/v1/endpoint-admin/endpoint-devices)
+  ☐ decommission call (MANAGER JWT): POST .../endpoint-devices/{deviceId}/decommission
+  ☐ Backend lifecycle + hash-chain audit row (ENDPOINT_DEVICE_DECOMMISSIONED + cascade counts) verified
+  ☐ New command-create on decommissioned device returns specific 409 (revoked device cannot act)
+  ☐ reactivate restores device (OFFLINE/PENDING_ENROLLMENT)
   ☐ Layer 2 evidence collected
   ☐ Layer 2 acceptance: PASS/FAIL noted
 
@@ -260,7 +260,7 @@ mavis communication send \
   --command prompt \
   --content "M7 drill closure YYYY-MM-DD:
   - Layer 1 MSI Uninstall: PASS (1/1 lab-clone PC; Event 102 uninstall successful)
-  - Layer 2 Enrollment Revoke: PASS (revoke API 200 + audit row + token invalidated)
+  - Layer 2 Enrollment Revoke: PASS (decommission 200 + hash-chain audit + 409-on-revoked + reactivate)
   - Layer 3 GPO Rollback: PASS (5/5 lab-clone PC GPRESULT clean + agent removed)
   - Evidence bundle: evidence/m7-rollback-drill-YYYYMMDD/
   - Lab AD GPO restored to pre-drill state
@@ -289,12 +289,12 @@ evidence/m7-rollback-drill-YYYYMMDD/
 │   └── acceptance-result.md            # PASS/FAIL
 ├── 02-layer-2-revoke/
 │   ├── scenario-step-log.md
-│   ├── revoke-api-request.txt
-│   ├── revoke-api-response.txt
-│   ├── audit-row-evidence.sql
-│   ├── enrollment-status-check.sql
-│   ├── token-invalidation-test.txt    # agent next heartbeat 401/403 proof
-│   ├── openfga-tuple-state.txt        # if Layer-2 multi-layer
+│   ├── decommission-request.txt        # POST .../endpoint-devices/{id}/decommission
+│   ├── decommission-response.txt       # status DECOMMISSIONED + cascade counts
+│   ├── lifecycle-audit-evidence.sql    # ENDPOINT_DEVICE_DECOMMISSIONED + hash-chain
+│   ├── device-status-check.sql         # status enum (DECOMMISSIONED)
+│   ├── revoked-command-409.txt         # command-create on revoked device -> 409 proof
+│   ├── reactivate-response.txt         # reactivate -> OFFLINE/PENDING_ENROLLMENT
 │   └── acceptance-result.md            # PASS/FAIL
 ├── 03-layer-3-gpo-rollback/
 │   ├── scenario-step-log.md
@@ -317,7 +317,7 @@ evidence/m7-rollback-drill-YYYYMMDD/
 - [ ] Lab-clone environment 5-PC + lab AD + lab backend READY
 - [ ] Mavis ops APPROVE drill window
 - [ ] Layer 1 MSI uninstall PASS (Event 102 + service stopped + binary removed)
-- [ ] Layer 2 enrollment revoke PASS (API 200 + audit row + token invalidated)
+- [ ] Layer 2 enrollment revoke PASS (decommission 200 + hash-chain audit + cascade counts + 409-on-revoked + reactivate restores)
 - [ ] Layer 3 GPO rollback PASS (5/5 lab-clone PCs GPRESULT clean + agent removed)
 - [ ] 3-layer drill closure: 3/3 PASS (or 1+ DRILL FAIL → re-iterate)
 - [ ] Lab AD GPO restored to pre-drill state (revert path proven)

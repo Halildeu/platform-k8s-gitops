@@ -208,6 +208,13 @@ Evidence:
 ## 6. Capacity Baseline Acceptance
 
 ```
+Pre-wave (metric-name freeze — do BEFORE ring A):
+  - Reconcile every PromQL/SQL identifier in this runbook against the LIVE
+    catalogs (curl /actuator/prometheus | grep endpoint_; \d endpoint_devices).
+  - Replace any PROPOSED-but-absent metric (e.g. endpoint_admin_enrollments_5xx_total)
+    with a real exposed metric OR instrument it; the abort formula MUST bind to
+    metrics that exist. Freeze the final names before ring A starts.
+
 For ring C closure:
   - 50/50 PC enrollment + GPO install LIVE
   - Backend CPU < 60% baseline (no sustained 80% breach)
