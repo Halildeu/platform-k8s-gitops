@@ -566,9 +566,10 @@ bash scripts/board-sync.sh require-claim \
 ```
 
 Bu komut GitHub write path'lerine dokunmaz; JSON `allowed=true|false`,
-`deny_code` ve deny durumunda `deny_event_intent_id` uretir. Ledger replay,
-CAS writer, `record-deny`, reaper ve takeover mekanigi sonraki implementation
-slice'laridir.
+`deny_code` ve deny durumunda `deny_event_intent_id` uretir. `COORDINATION_LEDGER_PATH`
+set edildiginde ayni read-only gate ledger replay sonucunu da permission
+predicate'ine dahil eder. CAS-backed mirror write, `DENY_RECORDED` retry,
+reaper mutation ve takeover commit mekanigi ayri implementation slice'laridir.
 
 `record-deny` ilk implementation slice'inda fail-closed local audit debt queue
 olarak calisir:
@@ -678,8 +679,9 @@ invalid suffix'te nonzero döner. Kontroller:
 - aynı `event_uuid` yalnız byte-identical retry ise idempotent kabul edilir.
 
 Bu verifier tek başına claim yetkisi vermez ve GitHub/Project yüzeylerini
-mutate etmez. `require-claim` içine tam authority entegrasyonu CAS append
-writer + materialized comment binding geldikten sonra yapılır.
+mutate etmez. `require-claim`, `COORDINATION_LEDGER_PATH` set edildiginde bu
+verifier'i read-only predicate girdisi olarak kullanir; ledger append veya
+mirror repair yapmaz.
 
 ### 17.3 Coordination ledger local append writer
 
@@ -835,3 +837,30 @@ olmadan `OWNER_APPROVAL_EVIDENCE` / `OWNER_APPROVED` planlamaz.
 Planner read-only'dir: GitHub, Project, comment veya ledger mutate etmez.
 Urettigi event planlari mevcut `emit-ledger-event.sh` + remote CAS hattindan
 append edilmelidir.
+
+### 17.10 Coordination ledger-backed require-claim predicate
+
+`require-claim` varsayilan olarak Project #2 + issue body mirror predicate'i
+ile calisir. Ledger replay predicate'i opsiyoneldir ve yalniz
+`COORDINATION_LEDGER_PATH` set edildiginde devreye girer:
+
+```bash
+COORDINATION_LEDGER_PATH=coordination-ledger/events.jsonl \
+  bash scripts/board-sync.sh require-claim \
+  --issue <owner/repo#N> \
+  --session "$BOARD_SESSION_ID" \
+  --operation commit
+```
+
+Bu modda `scripts/board-sync.sh`, `scripts/coordination/ledger-claim-state.py`
+ile ledger'i genesis'ten replay eder ve JSON sonucuna `ledger` alanini ekler.
+Ledger state `active_winner` degilse, session uyusmuyorsa, claim expired/stale
+ise, takeover pending ise veya ledger suffix invalid ise `require-claim`
+fail-closed doner. Invalid suffix hem normal Project path'inde hem de
+GraphQL-exhausted REST-only low-risk path'inde `invalid_ledger_suffix` olarak
+deny edilir.
+
+Bu gate read-only'dir. Ledger append, issue body edit, Project #2 field update,
+PR body update, materialized comment post veya drift repair yapmaz. Bu
+yuzeylerde mutation yalniz CAS-backed emitter / reaper / mirror-write
+slice'lariyla gelir.
