@@ -263,16 +263,41 @@ For pre-mutation operation classes, the wrapper must call:
 scripts/board-sync.sh record-deny --intent <json>
 ```
 
+Implementation slice RDQ-1 adds `record-deny` as a fail-closed local debt
+queue while the CAS writer is still pending. It validates the deny intent,
+dedupes by `deny_event_intent_id`, writes a local append-only
+`coordination-audit-debt/v1` JSONL record, and returns nonzero
+`blocked_audit_debt`. It intentionally does not call GitHub, Project GraphQL,
+or append a ledger event.
+
 If coordinator is unavailable:
 
 - wrapper exits nonzero with `blocked_audit_debt`;
 - no mutation happens;
 - intent is written to a local append-only debt queue;
-- next successful `board-sync` invocation retries queued intents.
+- after the CAS writer exists, the next successful writer/reaper invocation
+  retries queued intents.
 
 Dedupe key is `deny_event_intent_id`. At most one `DENY_RECORDED` is emitted per key.
 
 During `coordination_invalid_suffix`, no new ledger `DENY_RECORDED` is attempted; denials are local debt until repair or tombstone restores safe append.
+
+Default local queue path:
+
+```text
+.local/coordination-audit-debt.jsonl
+```
+
+Override:
+
+```bash
+COORDINATION_AUDIT_DEBT_QUEUE=/path/to/debt.jsonl \
+  scripts/board-sync.sh record-deny --intent-file deny.json
+```
+
+CAS emission and automatic debt retry remain part of the coordinator writer /
+reaper follow-up; RDQ-1 only guarantees the denial intent is not lost and that
+the guarded mutation stays blocked.
 
 ## 14. Takeover Protocol
 
@@ -653,7 +678,10 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 - Add CAS append path.
 - Add materialized comment binding.
 - Add issue body / Project / PR mirror writes after CAS.
-- Add `DENY_RECORDED` record-deny handoff.
+- [x] Add fail-closed `record-deny` local audit debt queue while CAS writer is
+  unavailable.
+- [ ] Add CAS-backed `DENY_RECORDED` emission and debt retry after CAS writer
+  exists.
 
 ### Slice 4 — Reaper
 

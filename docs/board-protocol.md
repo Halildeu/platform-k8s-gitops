@@ -570,6 +570,18 @@ Bu komut GitHub write path'lerine dokunmaz; JSON `allowed=true|false`,
 CAS writer, `record-deny`, reaper ve takeover mekanigi sonraki implementation
 slice'laridir.
 
+`record-deny` ilk implementation slice'inda fail-closed local audit debt queue
+olarak calisir:
+
+```bash
+scripts/board-sync.sh record-deny --intent-file deny.json
+```
+
+CAS writer henuz yokken komut GitHub/Project'e yazmaz; intent'i
+`.local/coordination-audit-debt.jsonl` dosyasina dedupe ederek ekler ve
+`blocked_audit_debt` sonucu ile nonzero doner. Bu, pre-mutation wrapper'in
+audit kaydi alinmadan mutation'a devam etmesini engeller.
+
 ### 17.1 Project GraphQL budget / mirror queue hardening
 
 2026-06-13 ikinci Claude / Mavis / Codex ping-pong mutabakati sonucu Project
