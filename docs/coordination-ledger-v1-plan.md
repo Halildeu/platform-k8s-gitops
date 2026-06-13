@@ -502,6 +502,39 @@ LDG-4 still does not write issue bodies, Project fields, PR bodies, or GitHub
 comments. CAS-backed mirror-safe emission and local denial debt retry remain
 Slice 3 follow-up work.
 
+Implementation slice LDG-5 adds the GitHub materialized comment render/fetch
+verification path:
+
+```bash
+python3 scripts/coordination/materialize-ledger-comment.py render \
+  --repo Halildeu/platform-k8s-gitops \
+  --issue 1498 \
+  --event-uuid <uuid> \
+  --event-type HEARTBEAT_EVIDENCE \
+  --writer-role coordinator \
+  --payload-hash sha256:<event-payload-hash>
+
+python3 scripts/coordination/materialize-ledger-comment.py verify \
+  --repo Halildeu/platform-k8s-gitops \
+  --issue 1498 \
+  --event-uuid <uuid> \
+  --event-type HEARTBEAT_EVIDENCE \
+  --writer-role coordinator \
+  --payload-hash sha256:<event-payload-hash> \
+  --committed-at <ledger-committed-at> \
+  --comment-json fetched-comment.json
+```
+
+`post` is also available for the coordinator path: it creates the GitHub issue
+comment via `gh api`, fetches it back, verifies marker/body/timestamp rules, and
+emits the `comment_binding` JSON object for the ledger writer. Offline tests use
+fixtures only; the CI gate does not mutate GitHub.
+
+LDG-5 does not append ledger events and does not mutate issue bodies, Project
+fields, or PR bodies. Mirror-safe emission still remains the orchestrated path:
+materialize comment, append remote branch CAS event with the emitted
+`comment_binding`, then update visible mirrors only after CAS success.
+
 ## 19. Project GraphQL Budget / Mirror Queue Hardening
 
 GitHub Project v2 custom fields are GraphQL-only. This includes Project #2
@@ -745,7 +778,7 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 - [x] Add remote/branch CAS append coordination foundation.
 - [ ] Add mirror-safe emission after remote CAS.
 - [x] Add materialized comment binding verifier foundation.
-- [ ] Add GitHub materialized comment writer/fetch verification path.
+- [x] Add GitHub materialized comment writer/fetch verification path.
 - Add issue body / Project / PR mirror writes after CAS.
 - [x] Add fail-closed `record-deny` local audit debt queue while CAS writer is
   unavailable.
