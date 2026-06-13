@@ -71,7 +71,7 @@
       ]
     },
     "comment_binding": {
-      "type": "object"
+      "$ref": "#/$defs/commentBinding"
     },
     "metadata": {
       "type": "object"
@@ -81,6 +81,83 @@
     "sha256Hash": {
       "type": "string",
       "pattern": "^(sha256:)?[a-f0-9]{64}$"
+    },
+    "commentBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface",
+        "repository",
+        "issue",
+        "comment_id",
+        "author_id",
+        "author_login",
+        "author_type",
+        "created_at",
+        "updated_at",
+        "raw_body_hash",
+        "payload_hash",
+        "verification_mode",
+        "timestamp_tolerance_minutes"
+      ],
+      "properties": {
+        "surface": {
+          "const": "github_issue_comment"
+        },
+        "repository": {
+          "type": "string",
+          "pattern": "^[^/]+/[^/]+$"
+        },
+        "issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "comment_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "author_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "author_login": {
+          "type": "string",
+          "minLength": 1
+        },
+        "author_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "Z$"
+        },
+        "raw_body_hash": {
+          "$ref": "#/$defs/sha256Hash"
+        },
+        "payload_hash": {
+          "$ref": "#/$defs/sha256Hash"
+        },
+        "verification_mode": {
+          "enum": [
+            "normal",
+            "degraded",
+            "recovery"
+          ]
+        },
+        "timestamp_tolerance_minutes": {
+          "enum": [
+            5,
+            15
+          ]
+        }
+      }
     }
   }
 }

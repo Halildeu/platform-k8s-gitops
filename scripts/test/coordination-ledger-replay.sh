@@ -30,7 +30,25 @@ def digest(value):
     return hashlib.sha256(canonical(value)).hexdigest()
 
 
-def event(uuid, event_type, writer_role, committed_at, payload, previous):
+def comment_binding(created_at, updated_at=None, payload_hash="__PAYLOAD_HASH__"):
+    return {
+        "surface": "github_issue_comment",
+        "repository": "Halildeu/platform-k8s-gitops",
+        "issue": 1498,
+        "comment_id": 4698543436,
+        "author_id": 12345,
+        "author_login": "Halildeu",
+        "author_type": "User",
+        "created_at": created_at,
+        "updated_at": updated_at or created_at,
+        "raw_body_hash": "sha256:" + "1" * 64,
+        "payload_hash": payload_hash,
+        "verification_mode": "normal",
+        "timestamp_tolerance_minutes": 5,
+    }
+
+
+def event(uuid, event_type, writer_role, committed_at, payload, previous, binding=None):
     item = {
         "schemaVersion": "coordination-ledger-event/v1",
         "event_uuid": uuid,
@@ -41,6 +59,11 @@ def event(uuid, event_type, writer_role, committed_at, payload, previous):
         "payload": payload,
     }
     item["payload_hash"] = f"sha256:{digest(payload)}"
+    if binding is not None:
+        binding = copy.deepcopy(binding)
+        if binding.get("payload_hash") == "__PAYLOAD_HASH__":
+            binding["payload_hash"] = item["payload_hash"]
+        item["comment_binding"] = binding
     item["event_hash"] = f"sha256:{digest(item)}"
     return item
 
@@ -68,9 +91,13 @@ for item in [
         "coordinator",
         "2026-06-13T10:02:00Z",
         {"issue": 1498, "session": "codex-a", "permission_state": "active_winner"},
+        comment_binding("2026-06-13T10:02:30Z"),
     ),
 ]:
-    record = event(*item, previous=previous_hash)
+    if len(item) == 6:
+        record = event(*item[:5], previous=previous_hash, binding=item[5])
+    else:
+        record = event(*item, previous=previous_hash)
     records.append(record)
     previous_hash = record["event_hash"].removeprefix("sha256:")
 
@@ -113,6 +140,39 @@ elif mode == "time-regression":
         "2026-06-13T09:59:00Z",
         {"issue": 1498, "session": "codex-a"},
         previous_hash,
+    )
+    records.append(bad)
+elif mode == "comment-binding-payload-mismatch":
+    bad = event(
+        "00000000-0000-4000-8000-000000000004",
+        "HEARTBEAT_EVIDENCE",
+        "coordinator",
+        "2026-06-13T10:03:00Z",
+        {"issue": 1498, "session": "codex-a"},
+        previous_hash,
+        comment_binding("2026-06-13T10:03:20Z", payload_hash="sha256:" + "0" * 64),
+    )
+    records.append(bad)
+elif mode == "comment-binding-edited":
+    bad = event(
+        "00000000-0000-4000-8000-000000000004",
+        "HEARTBEAT_EVIDENCE",
+        "coordinator",
+        "2026-06-13T10:03:00Z",
+        {"issue": 1498, "session": "codex-a"},
+        previous_hash,
+        comment_binding("2026-06-13T10:03:20Z", updated_at="2026-06-13T10:03:30Z"),
+    )
+    records.append(bad)
+elif mode == "comment-binding-stale-timestamp":
+    bad = event(
+        "00000000-0000-4000-8000-000000000004",
+        "HEARTBEAT_EVIDENCE",
+        "coordinator",
+        "2026-06-13T10:03:00Z",
+        {"issue": 1498, "session": "codex-a"},
+        previous_hash,
+        comment_binding("2026-06-13T10:20:00Z"),
     )
     records.append(bad)
 else:
@@ -165,5 +225,14 @@ printf '  ok payload hash mismatch invalidates suffix\n'
 
 expect_fail time-regression "committed_at moved backwards"
 printf '  ok timestamp regression invalidates suffix\n'
+
+expect_fail comment-binding-payload-mismatch "comment_binding.payload_hash mismatch"
+printf '  ok comment binding payload mismatch invalidates suffix\n'
+
+expect_fail comment-binding-edited "comment_binding.updated_at must equal created_at"
+printf '  ok edited materialized comment invalidates suffix\n'
+
+expect_fail comment-binding-stale-timestamp "comment_binding.created_at outside tolerance"
+printf '  ok stale materialized comment timestamp invalidates suffix\n'
 
 printf 'PASS coordination ledger replay verifier harness\n'

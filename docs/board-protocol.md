@@ -699,3 +699,21 @@ reddeder, `--expect-previous-hash` CAS guard'ını uygular, candidate ledger'ı
 temp dosyada doğrular ve sadece sonra tek JSONL event append eder. Bu foundation
 GitHub issue/comment, Project #2 veya PR mirror mutate etmez; remote/branch CAS
 ve materialized comment binding sonraki coordination slice'ında tamamlanır.
+
+### 17.4 Coordination ledger materialized comment binding
+
+Replay verifier `comment_binding` alanını gördüğünde binding yapısını
+fail-closed doğrular. Şu foundation yalnız offline doğrulama yapar:
+
+- `surface=github_issue_comment`;
+- `repository`, `issue`, `comment_id`, `author_id`, `author_login`,
+  `author_type`;
+- `raw_body_hash`;
+- binding `payload_hash` event `payload_hash` ile birebir aynı;
+- `updated_at == created_at` (edited comment reddedilir);
+- `verification_mode=normal|degraded|recovery`;
+- timestamp tolerance: normal `5m`, degraded/recovery `15m`.
+
+Bu verifier GitHub comment fetch/create/edit yapmaz. Comment writer/fetch
+verification ve CAS sonrası issue/Project/PR mirror mutation ayrı slice olarak
+açık kalır.

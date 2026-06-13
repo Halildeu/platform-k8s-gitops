@@ -24,6 +24,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_AUTHORITY_PATH = REPO_ROOT / "docs" / "coordination" / "ledger-event-authority-v1.json"
 EXPECTED_EVENT_SCHEMA = "coordination-ledger-event/v1"
 HASH_RE = re.compile(r"^(?:sha256:)?([a-f0-9]{64})$")
+COMMENT_BINDING_TOLERANCE_MINUTES = {
+    "normal": 5,
+    "degraded": 15,
+    "recovery": 15,
+}
 
 
 class LedgerInvalid(Exception):
@@ -130,6 +135,85 @@ def require_string(event: dict[str, Any], field: str, line: int) -> str:
     return value
 
 
+def require_comment_string(binding: dict[str, Any], field: str, line: int) -> str:
+    value = binding.get(field)
+    if not isinstance(value, str) or not value:
+        raise LedgerInvalid(line, f"comment_binding.{field} must be a non-empty string")
+    return value
+
+
+def require_positive_int(value: Any, field: str, line: int) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise LedgerInvalid(line, f"comment_binding.{field} must be a positive integer")
+
+
+def validate_comment_binding(
+    event: dict[str, Any],
+    line: int,
+    *,
+    expected_payload_hash: str,
+    committed_at: datetime,
+) -> None:
+    binding = event.get("comment_binding")
+    if binding is None:
+        return
+    if not isinstance(binding, dict):
+        raise LedgerInvalid(line, "comment_binding must be an object")
+
+    surface = require_comment_string(binding, "surface", line)
+    if surface != "github_issue_comment":
+        raise LedgerInvalid(line, "comment_binding.surface must be github_issue_comment")
+
+    repository = require_comment_string(binding, "repository", line)
+    if "/" not in repository:
+        raise LedgerInvalid(line, "comment_binding.repository must be owner/repo")
+
+    require_positive_int(binding.get("issue"), "issue", line)
+    require_positive_int(binding.get("comment_id"), "comment_id", line)
+    require_positive_int(binding.get("author_id"), "author_id", line)
+    require_comment_string(binding, "author_login", line)
+    require_comment_string(binding, "author_type", line)
+
+    raw_body_hash = normalize_hash(binding.get("raw_body_hash"), "comment_binding.raw_body_hash", line)
+    if raw_body_hash is None:
+        raise LedgerInvalid(line, "comment_binding.raw_body_hash must be present")
+
+    actual_payload_hash = normalize_hash(binding.get("payload_hash"), "comment_binding.payload_hash", line)
+    if actual_payload_hash != expected_payload_hash:
+        raise LedgerInvalid(
+            line,
+            "comment_binding.payload_hash mismatch "
+            f"expected=sha256:{expected_payload_hash} actual=sha256:{actual_payload_hash}",
+        )
+
+    created_at = parse_committed_at(binding.get("created_at"), line)
+    updated_at = parse_committed_at(binding.get("updated_at"), line)
+    if updated_at != created_at:
+        raise LedgerInvalid(line, "comment_binding.updated_at must equal created_at")
+
+    verification_mode = require_comment_string(binding, "verification_mode", line)
+    expected_tolerance = COMMENT_BINDING_TOLERANCE_MINUTES.get(verification_mode)
+    if expected_tolerance is None:
+        allowed = ", ".join(sorted(COMMENT_BINDING_TOLERANCE_MINUTES))
+        raise LedgerInvalid(line, f"comment_binding.verification_mode must be one of: {allowed}")
+
+    tolerance = binding.get("timestamp_tolerance_minutes")
+    if tolerance != expected_tolerance:
+        raise LedgerInvalid(
+            line,
+            "comment_binding.timestamp_tolerance_minutes mismatch "
+            f"expected={expected_tolerance} actual={tolerance}",
+        )
+
+    delta_seconds = abs((created_at - committed_at).total_seconds())
+    if delta_seconds > expected_tolerance * 60:
+        raise LedgerInvalid(
+            line,
+            "comment_binding.created_at outside tolerance "
+            f"mode={verification_mode} tolerance_minutes={expected_tolerance}",
+        )
+
+
 def validate_new_event(
     event: dict[str, Any],
     line: int,
@@ -184,6 +268,13 @@ def validate_new_event(
             line,
             f"committed_at moved backwards previous={last_committed_at.isoformat()} current={committed_at.isoformat()}",
         )
+
+    validate_comment_binding(
+        event,
+        line,
+        expected_payload_hash=expected_payload_hash,
+        committed_at=committed_at,
+    )
 
     expected_event_hash_material = copy.deepcopy(event)
     expected_event_hash_material.pop("event_hash", None)
