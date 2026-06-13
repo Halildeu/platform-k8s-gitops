@@ -434,8 +434,9 @@ first invalid suffix and reports the last valid prefix hash.
 
 LDG-1 is deliberately read-only and offline. It does not append ledger events,
 mutate GitHub issue bodies/comments, mutate Project #2 fields, or replace the
-current `board-sync require-claim` mirror checks. CAS writer, materialized
-comment binding, and runtime permission integration remain later slices.
+current `board-sync require-claim` mirror checks by itself. CAS writer,
+materialized comment binding, and runtime permission integration are separate
+slices.
 
 Implementation slice LDG-2 adds a local/offline CAS append writer foundation:
 
@@ -594,6 +595,30 @@ mirror verification is supplied. Recovery planning emits
 JSON with comment id, approver identity, scope, reason, and expiry. LDG-8 is
 read-only; the returned event plans must still be appended through the
 CAS-backed emitter.
+
+Implementation slice LDG-9 wires ledger replay into the `board-sync
+require-claim` permission predicate as an optional read-only input:
+
+```bash
+COORDINATION_LEDGER_PATH=coordination-ledger/events.jsonl \
+  bash scripts/board-sync.sh require-claim \
+  --issue 1498 \
+  --session "$BOARD_SESSION_ID" \
+  --operation commit
+```
+
+When `COORDINATION_LEDGER_PATH` is unset, `require-claim` keeps the existing
+Project + issue-body mirror predicate. When it is set, `scripts/board-sync.sh`
+calls `scripts/coordination/ledger-claim-state.py`, replays the ledger from
+genesis through the authority verifier, derives the latest issue/session state,
+and includes a `ledger` object in the JSON response. Ledger denial codes join
+the normal mirror-denial list. Invalid suffixes fail closed with
+`invalid_ledger_suffix` in both the normal Project path and the
+GraphQL-exhausted REST-only low-risk path.
+
+LDG-9 is still read-only: it does not append ledger events, record
+`DENY_RECORDED`, mutate issue bodies, mutate Project #2, mutate PR mirrors, or
+repair drift. Those remain CAS-backed follow-up slices.
 
 ## 19. Project GraphQL Budget / Mirror Queue Hardening
 
@@ -826,11 +851,12 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 
 - [x] Add ledger replay verifier.
 - [x] Add event schema for verifier input records.
-- [ ] Wire ledger replay state into `require-claim` permission predicate after
-  CAS append writer + materialized comment binding exist.
-- Add `require-claim --operation` operation classes.
-- Add machine-readable deny codes.
-- Add Project #2 field validation.
+- [x] Wire ledger replay state into `require-claim` permission predicate as an
+  optional read-only gate (`COORDINATION_LEDGER_PATH`), after CAS append writer
+  and materialized comment binding foundations exist.
+- [x] Add `require-claim --operation` operation classes.
+- [x] Add machine-readable deny codes.
+- [x] Add Project #2 field validation.
 
 ### Slice 3 — Coordinator writer
 
@@ -839,7 +865,7 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 - [x] Add mirror-safe emission after remote CAS.
 - [x] Add materialized comment binding verifier foundation.
 - [x] Add GitHub materialized comment writer/fetch verification path.
-- Add issue body / Project / PR mirror writes after CAS.
+- [ ] Add issue body / Project / PR mirror writes after CAS.
 - [x] Add fail-closed `record-deny` local audit debt queue while CAS writer is
   unavailable.
 - [ ] Add CAS-backed `DENY_RECORDED` emission and debt retry after CAS writer
@@ -859,16 +885,16 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
   and local text-file release/merge fixtures.
 - [x] Add post-merge forbidden close keyword scan for push-to-main commit
   messages and release published/edited notes.
-- Add PR mirror validation.
-- Add branch protection/append-only ledger CI.
-- Add secret scan across coordination surfaces.
+- [ ] Add PR mirror validation.
+- [ ] Add branch protection/append-only ledger CI enforcement.
+- [ ] Add secret scan across coordination surfaces.
 
 ### Slice 6 — Takeover/recovery
 
 - [x] Add two-phase takeover.
 - [x] Add owner approval evidence binding.
 - [x] Add solo-owner recovery audit gate.
-- Add tombstone/supersede flow.
+- [ ] Add tombstone/supersede flow.
 
 ## 21. Acceptance Criteria
 

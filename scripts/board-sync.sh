@@ -44,6 +44,7 @@
 set -euo pipefail
 
 # --- board reference (see docs/board-protocol.md section 13) ------------------
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_OWNER="Halildeu"
 PROJECT_NUMBER="2"
 PROJECT_ID="PVT_kwHOCx7tY84BIN2d"
@@ -64,6 +65,8 @@ PROJECT_GRAPHQL_MIN_REMAINING="${PROJECT_GRAPHQL_MIN_REMAINING:-1}"
 PROJECT_TRUTH_TTL_SECONDS="${PROJECT_TRUTH_TTL_SECONDS:-300}"
 PROJECT_FIELD_CATALOG="${PROJECT_FIELD_CATALOG:-docs/coordination/project-field-catalog-v1.json}"
 COORDINATION_AUDIT_DEBT_QUEUE="${COORDINATION_AUDIT_DEBT_QUEUE:-.local/coordination-audit-debt.jsonl}"
+COORDINATION_LEDGER_PATH="${COORDINATION_LEDGER_PATH:-}"
+COORDINATION_LEDGER_CLAIM_STATE="${COORDINATION_LEDGER_CLAIM_STATE:-$REPO_ROOT/scripts/coordination/ledger-claim-state.py}"
 if ! [[ "$PROJECT_ITEM_LIMIT" =~ ^[0-9]+$ ]] || [ "$PROJECT_ITEM_LIMIT" -lt 200 ]; then
   echo "ERR: PROJECT_ITEM_LIMIT='$PROJECT_ITEM_LIMIT' must be an integer >= 200" >&2
   exit 2
@@ -619,6 +622,35 @@ rest_comment_contains() {
     | jq -e --arg needle "$3" '[.[] | select((.body // "") | contains($needle))] | length > 0' >/dev/null
 }
 
+ledger_claim_state_json() {
+  # ledger_claim_state_json <repo> <num> <session>
+  # Empty output means the ledger predicate is not configured. Non-empty JSON is
+  # read-only evidence and may be allowed=false.
+  local repo="$1" num="$2" sid="$3" out rc
+  [ -n "$COORDINATION_LEDGER_PATH" ] || return 0
+  set +e
+  out="$(python3 "$COORDINATION_LEDGER_CLAIM_STATE" \
+    --ledger "$COORDINATION_LEDGER_PATH" \
+    --repo "$repo" \
+    --issue "$num" \
+    --session "$sid" 2>&1)"
+  rc=$?
+  set -e
+  if ! printf '%s' "$out" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    jq -cn --arg ledger "$COORDINATION_LEDGER_PATH" --arg reason "$out" '{
+      configured: true,
+      ledger: $ledger,
+      valid: false,
+      allowed: false,
+      deny_code: "ledger_claim_state_error",
+      reason: $reason
+    }'
+    return 1
+  fi
+  printf '%s\n' "$out"
+  [ "$rc" -eq 0 ]
+}
+
 rest_post_comment() {
   # rest_post_comment <owner/repo> <num> <body>
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -880,7 +912,8 @@ cmd_claim() {
 cmd_require_claim_rest_only() {
   local issue_ref="$1"
   local sid wt branch body bstatus bsess bwt bbr bexp now_iso
-  local allowed deny_code details_json actor bucket minute bucket_min intent_src intent_id
+  local ledger_json ledger_allowed ledger_deny ledger_reason
+  local allowed deny_code details_json actor bucket minute bucket_min intent_src intent_id source
   local -a fail_codes=()
   local -a fail_messages=()
 
@@ -929,6 +962,22 @@ cmd_require_claim_rest_only() {
     add_fail "lease_expired" "claim lease expired at $bexp"
   fi
 
+  ledger_json="$(ledger_claim_state_json "$REPO" "$NUM" "$sid" || true)"
+  if [ -n "$ledger_json" ]; then
+    ledger_allowed="$(printf '%s' "$ledger_json" | jq -r '.allowed // false')"
+    if [ "$ledger_allowed" != "true" ]; then
+      ledger_deny="$(printf '%s' "$ledger_json" | jq -r '.deny_code // "ledger_permission_denied"')"
+      ledger_reason="$(printf '%s' "$ledger_json" | jq -r '.reason // "ledger permission denied"')"
+      add_fail "$ledger_deny" "$ledger_reason"
+    fi
+  else
+    ledger_json="null"
+  fi
+  source="issue_body_rest_project_graphql_exhausted_v1"
+  if [ "$ledger_json" != "null" ]; then
+    source="issue_body_rest_project_graphql_exhausted_ledger_v1"
+  fi
+
   if [ "${#fail_codes[@]}" -eq 0 ]; then
     allowed="true"
     deny_code=""
@@ -947,7 +996,7 @@ cmd_require_claim_rest_only() {
     minute="$(date -u +%M)"
     bucket_min="$((10#$minute / 10 * 10))"
     bucket="$(date -u +%Y%m%dT%H)$(printf '%02d' "$bucket_min")Z"
-    intent_src="$REPO#$NUM|$sid|$OPT_OPERATION|$deny_code|rest-only-graphql-exhausted|$bucket|$actor"
+    intent_src="$REPO#$NUM|$sid|$OPT_OPERATION|$deny_code|$source|$bucket|$actor"
     intent_id="$(printf '%s' "$intent_src" | shasum -a 256 | awk '{print $1}')"
   fi
 
@@ -956,10 +1005,11 @@ cmd_require_claim_rest_only() {
     --arg issue "$REPO#$NUM" \
     --arg session "$sid" \
     --arg operation "$OPT_OPERATION" \
-    --arg source "issue_body_rest_project_graphql_exhausted_v1" \
+    --arg source "$source" \
     --arg deny_code "$deny_code" \
     --arg deny_event_intent_id "$intent_id" \
     --argjson details "$details_json" \
+    --argjson ledger "$ledger_json" \
     '{
       allowed: ($allowed == "true"),
       issue: $issue,
@@ -973,6 +1023,7 @@ cmd_require_claim_rest_only() {
       },
       deny_code: (if $deny_code == "" then null else $deny_code end),
       deny_event_intent_id: (if $deny_event_intent_id == "" then null else $deny_event_intent_id end),
+      ledger: $ledger,
       details: $details
     }'
 
@@ -1071,7 +1122,24 @@ cmd_require_claim() {
     add_fail "lease_expired" "claim lease expired at $bexp"
   fi
 
-  local allowed deny_code details_json actor bucket minute bucket_min intent_src intent_id
+  local ledger_json ledger_allowed ledger_deny ledger_reason
+  ledger_json="$(ledger_claim_state_json "$REPO" "$NUM" "$sid" || true)"
+  if [ -n "$ledger_json" ]; then
+    ledger_allowed="$(printf '%s' "$ledger_json" | jq -r '.allowed // false')"
+    if [ "$ledger_allowed" != "true" ]; then
+      ledger_deny="$(printf '%s' "$ledger_json" | jq -r '.deny_code // "ledger_permission_denied"')"
+      ledger_reason="$(printf '%s' "$ledger_json" | jq -r '.reason // "ledger permission denied"')"
+      add_fail "$ledger_deny" "$ledger_reason"
+    fi
+  else
+    ledger_json="null"
+  fi
+  local allowed deny_code details_json actor bucket minute bucket_min intent_src intent_id source
+  source="project_issue_mirror_v1"
+  if [ "$ledger_json" != "null" ]; then
+    source="project_issue_ledger_mirror_v1"
+  fi
+
   if [ "${#fail_codes[@]}" -eq 0 ]; then
     allowed="true"
     deny_code=""
@@ -1090,7 +1158,7 @@ cmd_require_claim() {
     minute="$(date -u +%M)"
     bucket_min="$((10#$minute / 10 * 10))"
     bucket="$(date -u +%Y%m%dT%H)$(printf '%02d' "$bucket_min")Z"
-    intent_src="$REPO#$NUM|$sid|$OPT_OPERATION|$deny_code|mirror-v1-no-ledger|$bucket|$actor"
+    intent_src="$REPO#$NUM|$sid|$OPT_OPERATION|$deny_code|$source|$bucket|$actor"
     intent_id="$(printf '%s' "$intent_src" | shasum -a 256 | awk '{print $1}')"
   fi
 
@@ -1106,10 +1174,11 @@ cmd_require_claim() {
     --arg truth_fresh "$truth_fresh" \
     --arg truth_reason "$truth_reason" \
     --arg ttl_seconds "$PROJECT_TRUTH_TTL_SECONDS" \
-    --arg source "project_issue_mirror_v1" \
+    --arg source "$source" \
     --arg deny_code "$deny_code" \
     --arg deny_event_intent_id "$intent_id" \
     --argjson details "$details_json" \
+    --argjson ledger "$ledger_json" \
     '{
       allowed: ($allowed == "true"),
       issue: $issue,
@@ -1127,6 +1196,7 @@ cmd_require_claim() {
       },
       deny_code: (if $deny_code == "" then null else $deny_code end),
       deny_event_intent_id: (if $deny_event_intent_id == "" then null else $deny_event_intent_id end),
+      ledger: $ledger,
       details: $details
     }'
 
