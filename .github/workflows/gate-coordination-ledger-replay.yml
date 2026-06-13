@@ -6,8 +6,10 @@ on:
       - "coordination-ledger/**/*.jsonl"
       - "docs/coordination/coordination-ledger-event-v1.schema.json"
       - "docs/coordination/ledger-event-authority-v1.json"
+      - "scripts/coordination/append-ledger-branch.sh"
       - "scripts/coordination/append-ledger-event.py"
       - "scripts/coordination/verify-ledger-replay.py"
+      - "scripts/test/coordination-ledger-branch-cas.sh"
       - "scripts/test/coordination-ledger-replay.sh"
       - "scripts/test/coordination-ledger-writer.sh"
       - ".github/workflows/gate-coordination-ledger-replay.yml"
@@ -18,8 +20,10 @@ on:
       - "coordination-ledger/**/*.jsonl"
       - "docs/coordination/coordination-ledger-event-v1.schema.json"
       - "docs/coordination/ledger-event-authority-v1.json"
+      - "scripts/coordination/append-ledger-branch.sh"
       - "scripts/coordination/append-ledger-event.py"
       - "scripts/coordination/verify-ledger-replay.py"
+      - "scripts/test/coordination-ledger-branch-cas.sh"
       - "scripts/test/coordination-ledger-replay.sh"
       - "scripts/test/coordination-ledger-writer.sh"
       - ".github/workflows/gate-coordination-ledger-replay.yml"
@@ -41,6 +45,9 @@ jobs:
 
       - name: Run append writer harness
         run: bash scripts/test/coordination-ledger-writer.sh
+
+      - name: Run remote branch CAS harness
+        run: bash scripts/test/coordination-ledger-branch-cas.sh
 
       - name: Replay repository ledger files
         shell: bash

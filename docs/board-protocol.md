@@ -717,3 +717,30 @@ fail-closed doğrular. Şu foundation yalnız offline doğrulama yapar:
 Bu verifier GitHub comment fetch/create/edit yapmaz. Comment writer/fetch
 verification ve CAS sonrası issue/Project/PR mirror mutation ayrı slice olarak
 açık kalır.
+
+### 17.5 Coordination ledger remote branch CAS append
+
+Remote branch CAS append foundation:
+
+```bash
+scripts/coordination/append-ledger-branch.sh \
+  --remote origin \
+  --branch coordination-ledger \
+  --ledger-path coordination-ledger/events.jsonl \
+  --commit-title "coordination ledger append" \
+  --commit-message "Tracked by #1498" \
+  -- \
+  --expect-previous-hash sha256:<last-ledger-event-hash> \
+  --event-type <EVENT> \
+  --writer-role <ROLE> \
+  --payload-json '<json-object>'
+```
+
+Wrapper mevcut ledger branch'ini temp ref'e fetch eder, detached temp worktree
+açar, local append writer ile JSONL event'i üretir, sadece ledger path diff'ini
+commit eder ve `--force-with-lease` ile fetched branch OID'e karşı push eder.
+Branch yarışında push reddedilir ve caller yeniden okuyup tekrar denemelidir.
+
+Bu wrapper issue body, Project #2, PR body veya GitHub comment mutate etmez.
+Mirror-safe emission, denial debt retry ve comment writer/fetch verification
+ayrı slice olarak açık kalır.
