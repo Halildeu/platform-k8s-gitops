@@ -213,6 +213,36 @@ assert queue_lines[-1]["event_hash"] == event["event_hash"]
 PY
 printf '  ok local audit debt emits DENY_RECORDED through remote CAS\n'
 
+ALREADY_QUEUE="$WORK/already-debt.jsonl"
+write_debt_queue "$ALREADY_QUEUE" "$INTENT_ID"
+python3 "$RETRY" \
+  --queue "$ALREADY_QUEUE" \
+  --remote "$REMOTE" \
+  --branch "$LEDGER_BRANCH" \
+  --ledger-path "$LEDGER_PATH" \
+  --comment-json-dir "$FIXTURES" \
+  --committed-at "$COMMITTED_AT" \
+  --limit 5 >"$WORK/retry-already.json"
+
+fresh_checkout "$REMOTE" "$CHECKOUT"
+[ "$(line_count "$CHECKOUT/$LEDGER_PATH")" -eq 1 ]
+python3 - "$WORK/retry-already.json" "$ALREADY_QUEUE" "$INTENT_ID" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+out = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+queue_lines = [json.loads(line) for line in Path(sys.argv[2]).read_text(encoding="utf-8").splitlines()]
+intent_id = sys.argv[3]
+assert out["status"] == "ok"
+assert out["emitted"] == 0
+assert out["already_in_ledger"] == 1
+assert out["failed"] == []
+assert queue_lines[-1]["status"] == "already_in_ledger"
+assert queue_lines[-1]["deny_event_intent_id"] == intent_id
+PY
+printf '  ok remote already-in-ledger state appends a local terminal marker without mutation\n'
+
 python3 "$RETRY" \
   --queue "$QUEUE" \
   --remote "$REMOTE" \
