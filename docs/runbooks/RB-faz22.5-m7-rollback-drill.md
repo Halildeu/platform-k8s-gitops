@@ -1,6 +1,6 @@
 # RB Faz 22.5 M7 — Rollback Drill: MSI Uninstall + Enrollment Revoke + GPO Rollback
 
-> **Status**: SOURCE DRAFT (DESTRUCTIVE PLAN ONLY)
+> **Status**: SOURCE DRAFT (DESTRUCTIVE PLAN ONLY) — **HARDENED 2026-06-13**: §4.1/§4.2 verified against live backend/agent source (real `decommission`/`reactivate` + `EndpointDeviceWriteGuard` 409; correct `EndpointAgent`/`endpoint-agent.exe` names; removed the unverified `/revoke` placeholder endpoint). Companion read-only check: `scripts/faz22-mass-deployment/wave-preflight.ps1 -Mode rollback-clean`. Cross-AI: Claude (impl) ≠ Codex (review), thread `019ebf9b`.
 > **Runtime mutation**: NONE in this PR (draft only)
 > **Destructive execution**: FORBIDDEN until lab-clone operator AGREE + board/Mavis evidence
 > **Codex plan-time AGREE required**: ✅ thread `019ea922` AGREE source-side draft scope (M7 destructive boundary)
@@ -18,7 +18,7 @@
 
 **Source-side scope (this runbook)**:
 - Lab-clone rollback rehearsal pattern (env setup + 5-PC clone)
-- Revoke API + ledger proof contract (backend endpoint + audit row)
+- Device decommission/reactivate proof contract (decommission endpoint + cascade counts + hash-chain audit row + 409-on-revoked)
 - Rollback runbook (exact abort/restore checklist + chronological order)
 - Mavis/board coordination format (destructive action approval chain)
 - 3-layer drill scenario design
@@ -66,8 +66,7 @@ Cloning steps (operator):
 Lab backend endpoint-admin-service:
   - Separate cluster (k3d-lab or staging)
   - PG DB cloned from prod baseline (post-M6 50-PC enrollment)
-  - OpenFGA tuples cloned (50 agent: tuples)
-  - Enrollment records 50 (active)
+  - 50 enrolled devices present (credentials + device rows; status ONLINE/OFFLINE)
   - Heartbeat data baseline ready
 ```
 
@@ -83,48 +82,67 @@ Drill steps:
   2. Operator opens GPO management → Move pilot-pc-01-lab to non-pilot OU
   3. GPO refresh: gpupdate /force /target:computer
   4. Wait for next computer policy cycle (≤120 min OR force refresh)
-  5. GPO Software Installation triggers uninstall (Event 102 uninstall flag)
+  5. GPO Software Installation triggers uninstall ONLY IF the package option
+     "Uninstall this application when it falls out of the scope of management"
+     is set; otherwise the package stays and a manual uninstall (msiexec /x) is
+     required -- record which path applied.
   6. Verify agent service stopped + binary removed
   
-Expected evidence:
+Expected evidence (verify with: wave-preflight.ps1 -Mode rollback-clean -Json):
   - Event 102 ApplicationInstaller "Removal Successful"
-  - Get-Service PlatformAgent → ServiceController doesn't exist
-  - Test-Path "%ProgramFiles%\PlatformAgent\platform-agent.exe" → False
-  - %ProgramData%\PlatformAgent\state.json → may persist or removed (depends on MSI cleanup config)
+  - Get-Service EndpointAgent → service absent (not installed)
+  - Test-Path "%ProgramFiles%\EndpointAgent\endpoint-agent.exe" → False
+  - HKLM\SYSTEM\CurrentControlSet\Services\EndpointAgent\Environment regkey CLEARED (uninstall.ps1)
+  - %ProgramData%\EndpointAgent\logs → PRESERVED (evidence retention)
+  - %ProgramData%\EndpointAgent\config\hmac-credential.dpapi → PRESERVED unless -RemoveConfig/PURGE_CONFIG=1
 
 Acceptance:
   - Uninstall completed within 120 min
-  - Agent process not running
+  - Agent process not running (uninstall.ps1 Wait-AgentProcessExit; locked-binary guard)
   - No leftover scheduled tasks
-  - No registry orphan keys (HKLM\SOFTWARE\PlatformAgent removed)
+  - Service Environment regkey cleared (stale-mode guard, #108/#109 class)
+  - NOTE: HKLM\SOFTWARE\EndpointAgent (Mode/ApiUrl) is NOT removed by default uninstall
+    (reinstall overwrites it; only -RemoveConfig purges Machine env + HMAC blob)
+  - NOTE: service/binary names are EndpointAgent / endpoint-agent.exe (NOT PlatformAgent)
 ```
 
 ### 4.2 Layer 2 — Enrollment Revoke (backend-side)
 
 ```
-Scenario: Compromised agent → revoke enrollment to prevent further data ingest
+Scenario: Compromised/retired agent -> revoke so it cannot receive commands until re-enrolled
+
+Mekanizma (VERIFIED 2026-06-13 against EndpointDeviceLifecycleService + EndpointDeviceWriteGuard,
+Codex 019ea789): enrollment revoke = device DECOMMISSION (KVKK reversible deactivate-not-delete).
+Cascade cancels pending commands / maintenance-tokens / open uninstall-requests. The
+"decommissioned device cannot act OR revive itself" invariant is enforced by the write guard.
+NOTE: there is NO `POST /api/v1/endpoint-admin/enrollments/{id}/revoke` endpoint -- that was an
+unverified draft placeholder. The real, verified surface is decommission/reactivate below.
 
 Drill steps:
-  1. Identify agent_id from lab-clone PC (pre-uninstall): backend GET /endpoint-devices/{id}
-  2. Operator (admin JWT) calls revoke endpoint:
-     POST /api/v1/endpoint-admin/enrollments/{agent_id}/revoke
-     Body: {"reason": "drill: rollback test", "revoked_by": "operator", "evidence_ref": "M7 drill scenario 4.2"}
-  3. Backend transitions enrollment status: active → revoked
-  4. Backend writes audit row: action="ENROLLMENT_REVOKE", agent_id, reason, evidence_ref, timestamp
-  5. Backend invalidates agent token (no more API access)
-  
+  1. Identify deviceId from grid:
+     GET /api/v1/endpoint-admin/endpoint-devices   (public; gateway rewrites -> /api/v1/admin/...)
+  2. Operator (MANAGER JWT) decommission:
+     POST /api/v1/endpoint-admin/endpoint-devices/{deviceId}/decommission
+     Body: {"reason": "M7 drill: rollback revoke verify"}
+  3. Device status -> DECOMMISSIONED; cascade cancels pending commands/tokens/uninstalls
+  4. Hash-chained audit row ENDPOINT_DEVICE_DECOMMISSIONED (lifecycle audit who/when/why + cascade counts)
+  5. Verify revoked device cannot get NEW operations; then reactivate to restore.
+
 Expected evidence:
-  - Backend response 200 + revocation confirmation
-  - DB query: SELECT status FROM endpoint_enrollments WHERE id=<agent_id> → "revoked"
-  - DB query: SELECT * FROM endpoint_audit WHERE action='ENROLLMENT_REVOKE' ORDER BY ts DESC LIMIT 1 → drill row
-  - Agent next heartbeat fails with 401 Unauthorized (or 403 Forbidden)
-  - OpenFGA tuple: agent:<agent_id> → can_check_in → REVOKED (separate tuple write)
+  - decommission 200 -> status DECOMMISSIONED (409 if already decommissioned)
+  - New command-create on the decommissioned device -> 409
+    "Endpoint device is decommissioned; reactivate it before creating new operations."
+    (EndpointDeviceWriteGuard). Body field is `type` (NOT commandType) -- a wrong field 400s
+    and would FALSELY read as a revoke-rejection; require the specific 409.
+  - Lifecycle audit ENDPOINT_DEVICE_DECOMMISSIONED + cascade counts
+    (cancelledCommands / revokedTokens / finalizedUninstalls); secret clear is a side-effect, no separate count
+  - reactivate: POST .../endpoint-devices/{deviceId}/reactivate {"reason":"..."}
+    -> OFFLINE or PENDING_ENROLLMENT; ONLINE is earned by the next real heartbeat
 
 Acceptance:
-  - Revoke API 200 within 5 sec
-  - Audit row persisted (immutable per V8 trigger)
-  - Token invalidated (subsequent agent API call rejected)
-  - OpenFGA tuple updated (if multi-layer revoke design includes Layer-2)
+  - decommission 200; command-create on revoked device returns SPECIFIC 409 (not generic 4xx / not 400)
+  - Lifecycle + hash-chain audit rows persisted
+  - reactivate restores the device (HMAC/cert-bound; no manual re-enroll for the same device)
 ```
 
 ### 4.3 Layer 3 — GPO Rollback (DC-side)
@@ -175,11 +193,12 @@ Phase 2 — Drill Layer 1 (MSI Uninstall) — 1+ lab-clone PC:
   ☐ Layer 1 evidence collected (Event 102 + Service status + binary check)
   ☐ Layer 1 acceptance: PASS/FAIL noted
 
-Phase 3 — Drill Layer 2 (Enrollment Revoke) — 1+ lab-clone PC:
-  ☐ Identify agent_id pre-uninstall (already done if Phase 2 included this PC)
-  ☐ Revoke API call from operator admin JWT
-  ☐ Backend audit row + token invalidation verified
-  ☐ OpenFGA tuple update verified (if Layer-2 includes)
+Phase 3 — Drill Layer 2 (Enrollment Revoke = device decommission) — 1+ lab-clone PC:
+  ☐ Identify deviceId pre-uninstall (GET /api/v1/endpoint-admin/endpoint-devices)
+  ☐ decommission call (MANAGER JWT): POST .../endpoint-devices/{deviceId}/decommission
+  ☐ Backend lifecycle + hash-chain audit row (ENDPOINT_DEVICE_DECOMMISSIONED + cascade counts) verified
+  ☐ New command-create on decommissioned device returns specific 409 (revoked device cannot act)
+  ☐ reactivate restores device (OFFLINE/PENDING_ENROLLMENT)
   ☐ Layer 2 evidence collected
   ☐ Layer 2 acceptance: PASS/FAIL noted
 
@@ -241,7 +260,7 @@ mavis communication send \
   --command prompt \
   --content "M7 drill closure YYYY-MM-DD:
   - Layer 1 MSI Uninstall: PASS (1/1 lab-clone PC; Event 102 uninstall successful)
-  - Layer 2 Enrollment Revoke: PASS (revoke API 200 + audit row + token invalidated)
+  - Layer 2 Enrollment Revoke: PASS (decommission 200 + hash-chain audit + 409-on-revoked + reactivate)
   - Layer 3 GPO Rollback: PASS (5/5 lab-clone PC GPRESULT clean + agent removed)
   - Evidence bundle: evidence/m7-rollback-drill-YYYYMMDD/
   - Lab AD GPO restored to pre-drill state
@@ -270,12 +289,12 @@ evidence/m7-rollback-drill-YYYYMMDD/
 │   └── acceptance-result.md            # PASS/FAIL
 ├── 02-layer-2-revoke/
 │   ├── scenario-step-log.md
-│   ├── revoke-api-request.txt
-│   ├── revoke-api-response.txt
-│   ├── audit-row-evidence.sql
-│   ├── enrollment-status-check.sql
-│   ├── token-invalidation-test.txt    # agent next heartbeat 401/403 proof
-│   ├── openfga-tuple-state.txt        # if Layer-2 multi-layer
+│   ├── decommission-request.txt        # POST .../endpoint-devices/{id}/decommission
+│   ├── decommission-response.txt       # status DECOMMISSIONED + cascade counts
+│   ├── lifecycle-audit-evidence.sql    # ENDPOINT_DEVICE_DECOMMISSIONED + hash-chain
+│   ├── device-status-check.sql         # status enum (DECOMMISSIONED)
+│   ├── revoked-command-409.txt         # command-create on revoked device -> 409 proof
+│   ├── reactivate-response.txt         # reactivate -> OFFLINE/PENDING_ENROLLMENT
 │   └── acceptance-result.md            # PASS/FAIL
 ├── 03-layer-3-gpo-rollback/
 │   ├── scenario-step-log.md
@@ -298,7 +317,7 @@ evidence/m7-rollback-drill-YYYYMMDD/
 - [ ] Lab-clone environment 5-PC + lab AD + lab backend READY
 - [ ] Mavis ops APPROVE drill window
 - [ ] Layer 1 MSI uninstall PASS (Event 102 + service stopped + binary removed)
-- [ ] Layer 2 enrollment revoke PASS (API 200 + audit row + token invalidated)
+- [ ] Layer 2 enrollment revoke PASS (decommission 200 + hash-chain audit + cascade counts + 409-on-revoked + reactivate restores)
 - [ ] Layer 3 GPO rollback PASS (5/5 lab-clone PCs GPRESULT clean + agent removed)
 - [ ] 3-layer drill closure: 3/3 PASS (or 1+ DRILL FAIL → re-iterate)
 - [ ] Lab AD GPO restored to pre-drill state (revert path proven)

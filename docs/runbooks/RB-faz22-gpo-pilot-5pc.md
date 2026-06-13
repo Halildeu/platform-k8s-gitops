@@ -8,8 +8,21 @@
 > **Evidence template**: §6 evidence pack layout (operator + agent collectors)
 > **Codex thread**: `019ea922` plan-time AGREE (pattern from RB-faz22-non-domain-windows-pilot.md + RB-faz22.3-ad-cs-setup.md)
 > **Prerequisite**: M2 #1376 AD CS / edge mTLS finalization (source LIVE + operator-gate closure)
+> **Companion preflight**: `scripts/faz22-mass-deployment/wave-preflight.ps1` (§4.4 — read-only device health, modes preinstall-readiness / enroll-health).
 
 ---
+
+> ## ⚠ SCOPE AMENDMENT — owner 2026-06-10 (board [#1377](https://github.com/Halildeu/platform-k8s-gitops/issues/1377) authoritative)
+>
+> Owner reduced the pilot **5-PC → 2-PC** and the soak minimum **7d → 24h**. **Board #1377 acceptance is authoritative** over the 5-PC tables below (which remain the original design + the full diversity-dimension reference).
+>
+> **For the 2-PC run, apply the scaled gate:**
+> - **2 devices** listed (hostname/OU/OS/arch/HW/EDR/network); x64 coverage.
+> - **Diversity minimum (2-PC)**: the 2 devices differ on **≥1 high-signal axis** — (a) EDR-active vs Defender-only, OR (b) fresh-enroll vs prior-enrolled/reinstall, OR (c) distinct Windows build families — and **≥1 device** runs a user-session SYSTEM install/command smoke.
+> - **Soak minimum 24h** (not 7d); a shorter soak needs new consensus.
+> - Abort thresholds scale to the 2-device denominator (any 1/2 enroll/heartbeat fail → stop + debug M2/M3/M4).
+> - **1 device** performs the rollback + reinstall drill (`RB-faz22.5-m7-rollback-drill.md` §4.1 Layer-1 + §4.2 revoke).
+> - Post-pilot artifact records **denominator=2**, success rate, failures, rollback readiness, recommendation.
 
 ## 1. Scope
 
@@ -87,28 +100,52 @@ Defender ATP:
 
 CrowdStrike Falcon (if used):
   - Falcon Console > Detection > Exceptions
-  - Add path exception: %ProgramFiles%\PlatformAgent\
+  - Add path exception: %ProgramFiles%\EndpointAgent\
   - Add publisher: <code-signing CN>
 
 WDAC (Application Control for Windows):
   - Policy: AllowSigners <code-signing-cert>
-  - Path: %ProgramFiles%\PlatformAgent\*
+  - Path: %ProgramFiles%\EndpointAgent\*
 
 AppLocker:
-  - Path rule: %ProgramFiles%\PlatformAgent\*
+  - Path rule: %ProgramFiles%\EndpointAgent\*
   - Publisher rule: <code-signing CN>
 ```
 
 ### 4.3 Code-Signing Cert Chain (AD CS prerequisite M2)
 
 ```powershell
-# Test signature on agent binary:
-Get-AuthenticodeSignature platform-agent.exe
-# Expected: Status=Valid; SignerCertificate.Issuer=corp Enterprise CA (from M2)
+# Test signature on agent binary (name is endpoint-agent.exe, NOT platform-agent.exe):
+Get-AuthenticodeSignature "$env:ProgramFiles\EndpointAgent\endpoint-agent.exe"
+# Expected: Status=Valid; signer = internal CA leaf (AG-018 trusted-internal-ca)
 
-Get-AuthenticodeSignature endpoint-agent-<version>-signed.msi
+Get-AuthenticodeSignature "EndpointAgent-<version>-signed.msi"
 # Expected: Status=Valid; same chain
 ```
+
+### 4.4 Per-device preflight (read-only, before + after enroll)
+
+```powershell
+# BEFORE MSI push (service/exe not yet installed): reachability + machine cert + reboot.
+# -RequireMachineCert makes a missing Client-Auth cert a FAIL (tokenless M2 is a hard gate).
+.\wave-preflight.ps1 -Mode preinstall-readiness -Json `
+  -ApiHost endpoint-agent-mtls.testai.acik.com -RequireMachineCert
+
+# AFTER enroll: service Running + version + signature(HARD) + mode + cert.
+# -RequireSignature makes a non-Valid Authenticode signature a FAIL (signed-MSI /
+# Trusted Publisher gate); pin the AG-018 leaf with -ExpectedSignerThumbprint when known.
+.\wave-preflight.ps1 -Mode enroll-health -Json `
+  -ApiHost endpoint-agent-mtls.testai.acik.com `
+  -RequireMachineCert -RequireSignature -ExpectedSignerThumbprint <AG-018-leaf-thumbprint>
+```
+
+Script: `scripts/faz22-mass-deployment/wave-preflight.ps1` (read-only; modes
+`preinstall-readiness` / `enroll-health` / `rollback-clean`). `overall=FAIL` blocks the wave.
+
+> **NOTE**: the preflight `-RequireMachineCert` check only asserts a private-key Client-Auth
+> cert is present in LocalMachine\My — it does **NOT** prove the SAN `URI:adcomputer:{guid}` /
+> template binding (that is `verify-machine-cert.ps1`'s job). Preflight does not replace M2;
+> the **2/2 tokenless positive enroll** (D3) is the authoritative identity proof.
 
 ## 5. Wave Abort Formula + Threshold
 
@@ -129,7 +166,9 @@ For each PC at +24h, +48h, +7d:
   metrics_collect:
     install_status: Event 102 + msiexec exit code
     heartbeat_age: now - last_ping (seconds)
-    enrollment_status: backend /enrollments query (active/inactive)
+    device_status: GET /api/v1/endpoint-admin/endpoint-devices -> DeviceStatus
+                   (PENDING_ENROLLMENT|ONLINE|STALE|OFFLINE|DECOMMISSIONED;
+                   tokenless device truth is here, NOT enrollment-token status)
     edr_block: EDR console (alert list)
     cert_status: agent log "cert verify" lines (last 100)
   
@@ -137,7 +176,7 @@ For each PC at +24h, +48h, +7d:
     abort + investigate GPO/MSI/code-signing
   elif (heartbeat_age > 1800 for >= 1 PC):
     abort + investigate network/agent crash
-  elif (enrollment_fail >= 2):
+  elif (device_status not in {ONLINE,OFFLINE} for >= 2 PC):  # stuck PENDING_ENROLLMENT
     abort + investigate edge mTLS (M2 dependency)
   elif (edr_block >= 1):
     abort + EDR allowlist re-process
@@ -176,7 +215,7 @@ evidence/m5-5pc-pilot-YYYYMMDD/
 │   │   ├── 07-event-102-installer.txt    # Get-WinEvent -ProviderName 'Microsoft-Windows-Application-Experience' Event ID 102/103
 │   │   ├── 08-heartbeat-log.txt          # backend GET /endpoint-devices/{id}/heartbeats?since=...
 │   │   ├── 09-collect-inventory.json     # backend GET /endpoint-devices/{id}/inventory/latest
-│   │   ├── 10-agent-service-status.txt   # Get-Service PlatformAgent status
+│   │   ├── 10-agent-service-status.txt   # Get-Service EndpointAgent status
 │   │   └── 11-cert-chain-verify.txt      # Get-ChildItem Cert:\LocalMachine\My + chain trust
 │   ├── pilot-pc-02/ ... (same structure)
 │   └── pilot-pc-05/ ... (same structure)
@@ -196,13 +235,13 @@ evidence/m5-5pc-pilot-YYYYMMDD/
 mavis communication send \
   --to <ops-peer-or-channel> \
   --command prompt \
-  --content "M5 5-PC GPO pilot kickoff YYYY-MM-DD HH:MMZ:
-  - Pilot OU: Pilot/EndpointAgentM5 (5 PC)
+  --content "M5 2-PC GPO pilot kickoff YYYY-MM-DD HH:MMZ (board #1377, owner 2-PC/24h):
+  - Pilot OU: Pilot/EndpointAgentM5 (2 PC)
   - GPO: EndpointAgentM5-Install linked
-  - MSI: endpoint-agent-<version>-signed.msi
-  - Soak: 7d (until YYYY-MM-DD)
-  - Abort threshold: ≥2/5 install_fail OR ≥1/5 heartbeat_loss>30m OR ≥1/5 EDR block
-  - Status updates: daily +24h
+  - MSI: EndpointAgent-<version>-signed.msi
+  - Soak: 24h (until YYYY-MM-DD)
+  - Abort threshold (2-PC): any 1/2 install_fail OR 1/2 heartbeat_loss>30m OR 1/2 EDR block
+  - Status updates: +24h
   - Tracked by: #1377"
 ```
 
@@ -212,8 +251,8 @@ mavis communication send \
 mavis communication send \
   --to <ops-peer> \
   --command prompt \
-  --content "M5 soak day-N update:
-  - Heartbeat 5/5 alive ✅
+  --content "M5 soak update (24h window):
+  - Heartbeat 2/2 alive ✅
   - 0 EDR alerts
   - 0 install retries
   - 0 crash events
@@ -240,28 +279,43 @@ mavis communication send \
 mavis communication send \
   --to <ops-peer> \
   --command prompt \
-  --content "M5 closure sign-off YYYY-MM-DD:
-  - 5/5 PC enrollment + GPO install LIVE
-  - 7d soak: 5/5 heartbeat alive, 0 EDR, 0 crash
-  - Evidence bundle: evidence/m5-5pc-pilot-YYYYMMDD/
+  --content "M5 closure sign-off YYYY-MM-DD (board #1377 2-PC gate):
+  - 2/2 PC tokenless enrollment + GPO install LIVE
+  - 24h soak: 2/2 heartbeat alive, 0 EDR, 0 crash
+  - 1/2 rollback + reinstall drill PASS (M7 §4.1/§4.2)
+  - Evidence bundle: evidence/m5-2pc-pilot-YYYYMMDD/
   - Mavis ops sign-off: APPROVED for M6 50-PC ramp gate
   - Tracked by: #1377"
 ```
 
-## 8. Closure Acceptance Checklist (M5 #1377 closure gate)
+## 8. Closure Acceptance Checklist
 
-- [ ] 5/5 PC pilot OU member + GPO linked + WMI filter applied (if used)
-- [ ] 5/5 PC GPO Software Installation Event 102 success (msiexec exit 0)
-- [ ] 5/5 PC endpoint-agent service Running state
-- [ ] 5/5 PC backend enrollment record active + cert subject SAN URI valid (M2 chain)
-- [ ] 5/5 PC heartbeat alive at +24h, +48h, +7d
-- [ ] 0 EDR alerts on agent runtime (7d window)
-- [ ] 0 unhandled agent crashes (7d window)
-- [ ] 5/5 PC COLLECT_INVENTORY hash chain valid (BL-016 audit)
-- [ ] Diversity matrix covered (≥2 OS, ≥1 ARM64, ≥2 subnet, ≥2 vendor, ≥2 EDR)
-- [ ] Evidence bundle archived to `evidence/m5-5pc-pilot-YYYYMMDD/`
-- [ ] Mavis ops sign-off comment on #1377 with APPROVED for M6 ramp gate
-- [ ] M6 #1378 ramp pre-flight readiness check kicked off
+> **AUTHORITATIVE = 2-PC board #1377 amendment (8.A)**. The 5-PC list (8.B) is the
+> **original design reference only** — owner reduced scope to 2-PC / 24h (2026-06-10).
+> Do NOT tick the 5/5 + 7d boxes for the live gate; use 8.A.
+
+### 8.A 2-PC board #1377 closure gate (AUTHORITATIVE)
+
+- [ ] Exactly 2 devices listed (hostname/OU/OS/arch/HW/EDR/network); x64 coverage
+- [ ] Diversity: ≥1 high-signal axis differs (EDR-active vs Defender-only / fresh vs prior-enrolled / distinct build) + ≥1 user-session smoke
+- [ ] 2/2 tokenless enroll (no manual token/ZIP) + heartbeat + inventory + result-submit 200
+- [ ] preflight `wave-preflight.ps1` FAIL=0 on 2/2 (preinstall + enroll-health, -RequireMachineCert -RequireSignature)
+- [ ] 24h soak no-regress (heartbeat/command stability; shorter needs new consensus)
+- [ ] 1 device rollback + reinstall drill PASS (`RB-faz22.5-m7-rollback-drill.md` §4.1 + §4.2)
+- [ ] Failed-device queue empty or root-cause classed
+- [ ] Post-pilot artifact: denominator=2 / success / failures / rollback readiness / recommendation
+- [ ] Mavis ops sign-off on #1377; M6 #1378 ramp readiness kicked off
+
+### 8.B 5-PC original design (REFERENCE ONLY — superseded by 8.A)
+
+- [ ] (ref) 5/5 PC pilot OU member + GPO linked + WMI filter applied (if used)
+- [ ] (ref) 5/5 PC GPO Software Installation Event 102 success (msiexec exit 0)
+- [ ] (ref) 5/5 PC endpoint-agent service Running state
+- [ ] (ref) 5/5 PC backend enrollment record + cert subject SAN URI valid (M2 chain)
+- [ ] (ref) 5/5 PC heartbeat alive at +24h, +48h, +7d
+- [ ] (ref) 0 EDR alerts + 0 unhandled crashes (7d window)
+- [ ] (ref) 5/5 PC COLLECT_INVENTORY hash chain valid (BL-016 audit)
+- [ ] (ref) Diversity matrix covered (≥2 OS, ≥1 ARM64, ≥2 subnet, ≥2 vendor, ≥2 EDR)
 
 ## 9. Closure Provenance
 
@@ -270,4 +324,4 @@ Cross-AI peer review:
 - Reviewer (plan-time): Codex (OpenAI GPT-5.2) thread `019ea922` AGREE pattern (RB-faz22-non-domain-windows-pilot.md + RB-faz22.3-ad-cs-setup.md inspiration)
 - Verdict: AGREE source-side draft + diversity matrix + evidence pack + abort formula + Mavis coordination
 
-**Closure ≠ runbook merge**: Bu PR runbook MERGED ≠ M5 #1377 closed. Closure operator 5-PC physical pilot + 7d soak + 11-item acceptance checklist + Mavis sign-off sonra.
+**Closure ≠ runbook merge**: Bu PR runbook MERGED ≠ M5 #1377 closed. Closure operator **2-PC pilot (board #1377 authoritative) + 24h soak + §8.A checklist** + 1-device rollback drill + Mavis sign-off sonra. (5-PC/7d = §8.B original design, superseded.)
