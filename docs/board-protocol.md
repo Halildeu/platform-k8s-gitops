@@ -788,3 +788,25 @@ basarili olmadan issue body, Project #2 veya PR body mirror'i mutate edilmez.
 `--comment-json` modu yalniz offline fixture/test icindir. `--post-comment`
 sonrasi remote CAS fail olursa olusan comment yetki vermez; orphan candidate
 olarak reaper/orphan akisi tarafindan islenir.
+
+### 17.8 Coordination ledger read-only reaper detector
+
+Read-only reaper detector:
+
+```bash
+python3 scripts/coordination/reap-ledger-state.py \
+  --ledger coordination-ledger/events.jsonl \
+  --mirror-json mirror-snapshot.json \
+  --audit-debt-jsonl .local/coordination-audit-debt.jsonl
+```
+
+Detector ledger'i verifier ile replay eder. Invalid suffix gorurse
+`fail_closed=true` ve `LEDGER_INVALID_SUFFIX` finding'i uretir. Ledger valid
+ise stale/expired claim, mirror drift/orphan ve orphan materialized comment
+finding'lerini explicit mirror snapshot uzerinden raporlar. Local audit-debt
+queue icin bounded dedupe sayaci uretir; CAS-backed retry henuz bu helper'in
+kapsaminda degildir.
+
+Bu helper issue body, Project #2, PR body, comment veya ledger branch mutate
+etmez. Ciktisi sonraki CAS-backed reaper/retry ve repair akislari icin
+makine-okunur evidence input'udur.
