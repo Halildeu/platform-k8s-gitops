@@ -8,6 +8,8 @@
 > **Evidence template**: §6 capacity baseline + §7 wave abort drill format
 > **Codex thread**: `019ea922` plan-time AGREE (pattern from RB-bl028b-prod-openfga-notification-model-cutover.md preflight + impact inventory)
 > **Prerequisite**: M5 #1377 5-PC GPO pilot closure + Mavis ops sign-off
+> **Companion preflight**: `scripts/faz22-mass-deployment/wave-preflight.ps1` — per-device read-only health before each ring ramp (`-Mode preinstall-readiness` pre-push, `-Mode enroll-health` post-enroll). `overall=FAIL` holds the ring.
+> **VERIFY-BEFORE-WAVE (2026-06-13)**: the PromQL/SQL identifiers below are illustrative and MUST be reconciled against the live catalogs before the wave. Confirmed corrections: device `status` values are `PENDING_ENROLLMENT|ONLINE|STALE|OFFLINE|DECOMMISSIONED` (there is **no** `active`); confirm any `endpoint_admin_*` Prometheus metric exists in `/actuator/prometheus` (e.g. `endpoint_admin_enrollments_5xx_total` is a PROPOSED name — instrument or replace before relying on the abort formula).
 
 ---
 
@@ -73,9 +75,10 @@ FROM endpoint_devices
 GROUP BY source, status
 ORDER BY source, status;
 
--- Pre-wave baseline: existing source breakdown
--- "auto-enroll" status="active" → M5 5-PC pilot
--- "manual" status="active" → SRB-AIDENETIMPC + HALILKOOLUB735 + Parallels VMs
+-- Pre-wave baseline: existing source breakdown (status enum:
+--   PENDING_ENROLLMENT|ONLINE|STALE|OFFLINE|DECOMMISSIONED -- NOT "active")
+-- "auto-enroll" status=ONLINE → M5 pilot devices reporting
+-- "manual" status=ONLINE/OFFLINE → SRB-AIDENETIMPC + HALILKOOLUB735 + Parallels VMs
 ```
 
 ### 3.3 Backend HPA + Resource State

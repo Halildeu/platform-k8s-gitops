@@ -8,8 +8,21 @@
 > **Evidence template**: §6 evidence pack layout (operator + agent collectors)
 > **Codex thread**: `019ea922` plan-time AGREE (pattern from RB-faz22-non-domain-windows-pilot.md + RB-faz22.3-ad-cs-setup.md)
 > **Prerequisite**: M2 #1376 AD CS / edge mTLS finalization (source LIVE + operator-gate closure)
+> **Companion preflight**: `scripts/faz22-mass-deployment/wave-preflight.ps1` (§4.4 — read-only device health, modes preinstall-readiness / enroll-health).
 
 ---
+
+> ## ⚠ SCOPE AMENDMENT — owner 2026-06-10 (board [#1377](https://github.com/Halildeu/platform-k8s-gitops/issues/1377) authoritative)
+>
+> Owner reduced the pilot **5-PC → 2-PC** and the soak minimum **7d → 24h**. **Board #1377 acceptance is authoritative** over the 5-PC tables below (which remain the original design + the full diversity-dimension reference).
+>
+> **For the 2-PC run, apply the scaled gate:**
+> - **2 devices** listed (hostname/OU/OS/arch/HW/EDR/network); x64 coverage.
+> - **Diversity minimum (2-PC)**: the 2 devices differ on **≥1 high-signal axis** — (a) EDR-active vs Defender-only, OR (b) fresh-enroll vs prior-enrolled/reinstall, OR (c) distinct Windows build families — and **≥1 device** runs a user-session SYSTEM install/command smoke.
+> - **Soak minimum 24h** (not 7d); a shorter soak needs new consensus.
+> - Abort thresholds scale to the 2-device denominator (any 1/2 enroll/heartbeat fail → stop + debug M2/M3/M4).
+> - **1 device** performs the rollback + reinstall drill (`RB-faz22.5-m7-rollback-drill.md` §4.1 Layer-1 + §4.2 revoke).
+> - Post-pilot artifact records **denominator=2**, success rate, failures, rollback readiness, recommendation.
 
 ## 1. Scope
 
@@ -87,28 +100,43 @@ Defender ATP:
 
 CrowdStrike Falcon (if used):
   - Falcon Console > Detection > Exceptions
-  - Add path exception: %ProgramFiles%\PlatformAgent\
+  - Add path exception: %ProgramFiles%\EndpointAgent\
   - Add publisher: <code-signing CN>
 
 WDAC (Application Control for Windows):
   - Policy: AllowSigners <code-signing-cert>
-  - Path: %ProgramFiles%\PlatformAgent\*
+  - Path: %ProgramFiles%\EndpointAgent\*
 
 AppLocker:
-  - Path rule: %ProgramFiles%\PlatformAgent\*
+  - Path rule: %ProgramFiles%\EndpointAgent\*
   - Publisher rule: <code-signing CN>
 ```
 
 ### 4.3 Code-Signing Cert Chain (AD CS prerequisite M2)
 
 ```powershell
-# Test signature on agent binary:
-Get-AuthenticodeSignature platform-agent.exe
-# Expected: Status=Valid; SignerCertificate.Issuer=corp Enterprise CA (from M2)
+# Test signature on agent binary (name is endpoint-agent.exe, NOT platform-agent.exe):
+Get-AuthenticodeSignature "$env:ProgramFiles\EndpointAgent\endpoint-agent.exe"
+# Expected: Status=Valid; signer = internal CA leaf (AG-018 trusted-internal-ca)
 
-Get-AuthenticodeSignature endpoint-agent-<version>-signed.msi
+Get-AuthenticodeSignature "EndpointAgent-<version>-signed.msi"
 # Expected: Status=Valid; same chain
 ```
+
+### 4.4 Per-device preflight (read-only, before + after enroll)
+
+```powershell
+# BEFORE MSI push (service/exe not yet installed): reachability + machine cert + reboot
+.\wave-preflight.ps1 -Mode preinstall-readiness -Json `
+  -ApiHost endpoint-agent-mtls.testai.acik.com
+
+# AFTER enroll: service Running + version + signature + mode + cert
+.\wave-preflight.ps1 -Mode enroll-health -Json `
+  -ApiHost endpoint-agent-mtls.testai.acik.com -RequireMachineCert
+```
+
+Script: `scripts/faz22-mass-deployment/wave-preflight.ps1` (read-only; modes
+`preinstall-readiness` / `enroll-health` / `rollback-clean`). `overall=FAIL` blocks the wave.
 
 ## 5. Wave Abort Formula + Threshold
 
@@ -176,7 +204,7 @@ evidence/m5-5pc-pilot-YYYYMMDD/
 │   │   ├── 07-event-102-installer.txt    # Get-WinEvent -ProviderName 'Microsoft-Windows-Application-Experience' Event ID 102/103
 │   │   ├── 08-heartbeat-log.txt          # backend GET /endpoint-devices/{id}/heartbeats?since=...
 │   │   ├── 09-collect-inventory.json     # backend GET /endpoint-devices/{id}/inventory/latest
-│   │   ├── 10-agent-service-status.txt   # Get-Service PlatformAgent status
+│   │   ├── 10-agent-service-status.txt   # Get-Service EndpointAgent status
 │   │   └── 11-cert-chain-verify.txt      # Get-ChildItem Cert:\LocalMachine\My + chain trust
 │   ├── pilot-pc-02/ ... (same structure)
 │   └── pilot-pc-05/ ... (same structure)
