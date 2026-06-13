@@ -672,9 +672,43 @@ Safety rules:
 - The emitted event is audit-only. It never grants permission, revokes another
   session, edits issue bodies, mutates Project #2, or updates PR mirrors.
 
-LDG-11 still does not implement PR mirror validation gates, branch
-protection/append-only repository enforcement, secret scanning, or
-tombstone/supersede flows.
+Implementation slice LDG-12 adds the final MVP hardening gates:
+
+```bash
+python3 scripts/coordination/validate-pr-mirrors.py \
+  --ledger coordination-ledger/events.jsonl \
+  --snapshot pr-mirror-snapshot.json
+
+python3 scripts/coordination/enforce-append-only-ledger.py \
+  --old old-events.jsonl \
+  --new new-events.jsonl
+
+python3 scripts/coordination/scan-coordination-secrets.py
+
+python3 scripts/coordination/tombstone-supersede-flow.py \
+  --ledger coordination-ledger/events.jsonl \
+  --phase supersede \
+  --repo Halildeu/platform-k8s-gitops \
+  --issue <old-issue> \
+  --new-issue <new-issue> \
+  --mirror-verification-json mirror-verification.json \
+  --reason "<reason>"
+```
+
+The PR mirror validator rejects missing, stale, forged, or session-mismatched
+`coordination-ledger-pr-mirror:v1` marker blocks unless they reference a valid
+ledger event hash. The append-only gate enforces exact prefix preservation for
+`coordination-ledger/**/*.jsonl` changes in CI before replaying the candidate
+ledger. The coordination secret scanner adds a high-confidence, coordination
+surface-specific token/key scan in addition to the repository-wide gitleaks
+gate. The tombstone/supersede planner emits read-only event plans for
+`TOMBSTONE_CHAIN` and `SUPERSEDE_ISSUE` and requires mirror verification before
+supersede planning.
+
+LDG-12 remains permission-conservative: validators and planners never grant
+permission, never mutate GitHub/Project mirrors directly, and fail closed on
+invalid ledgers, missing mirror evidence, append-only violations, or
+high-confidence secret findings.
 
 ## 19. Project GraphQL Budget / Mirror Queue Hardening
 
@@ -941,16 +975,16 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
   and local text-file release/merge fixtures.
 - [x] Add post-merge forbidden close keyword scan for push-to-main commit
   messages and release published/edited notes.
-- [ ] Add PR mirror validation.
-- [ ] Add branch protection/append-only ledger CI enforcement.
-- [ ] Add secret scan across coordination surfaces.
+- [x] Add PR mirror validation.
+- [x] Add branch protection/append-only ledger CI enforcement.
+- [x] Add secret scan across coordination surfaces.
 
 ### Slice 6 — Takeover/recovery
 
 - [x] Add two-phase takeover.
 - [x] Add owner approval evidence binding.
 - [x] Add solo-owner recovery audit gate.
-- [ ] Add tombstone/supersede flow.
+- [x] Add tombstone/supersede flow.
 
 ## 21. Acceptance Criteria
 
