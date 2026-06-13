@@ -43,8 +43,26 @@ fi
 
 if [ "${1:-}" = "api" ]; then
   joined=" $* "
+  if printf '%s' "$joined" | grep -q ' repos/Halildeu/platform-k8s-gitops/issues/42 '; then
+    if printf '%s' "$joined" | grep -q ' --jq .body'; then
+      cat <<'BODY'
+## Agent State
+
+<!-- agent-state:v1
+status: in-progress
+claim_session: test-session
+claim_worktree: /tmp/test-worktree
+claim_branch: test-branch
+claim_updated_at: 2026-06-13T00:00:00Z
+expires_at: 2999-01-01T00:00:00Z
+-->
+BODY
+    else
+      printf '42\n'
+    fi
+    exit 0
+  fi
   case "$joined" in
-    *" repos/Halildeu/platform-k8s-gitops/issues/42 "*) printf '42\n'; exit 0 ;;
     *" repos/Halildeu/platform-k8s-gitops/issues/42/comments?per_page=100 "*)
       printf '[]\n'
       exit 0
@@ -117,6 +135,67 @@ run_verify_deferred() {
   grep -q 'repos/Halildeu/platform-k8s-gitops/issues/42/comments' "$WORK/verify.log"
 }
 
+run_require_claim_rest_only_low_risk() {
+  local out
+  out="$(GH_LOG="$WORK/require-low-risk.log" FAKE_GRAPHQL_REMAINING=0 BOARD_SESSION_ID=test-session \
+    "$BOARD_SYNC" require-claim --issue 42 --session test-session --operation file_write \
+      --worktree /tmp/test-worktree --branch test-branch)"
+  printf '%s\n' "$out" | jq -e '
+    .allowed == true
+    and .permission_source == "issue_body_rest_project_graphql_exhausted_v1"
+    and .project_status == null
+    and .project_truth.reason == "project_graphql_exhausted_rest_only_low_risk_operation"
+  ' >/dev/null
+  if grep -q '^project ' "$WORK/require-low-risk.log"; then
+    echo "Project API was called on REST-only require-claim file_write path" >&2
+    return 1
+  fi
+  if grep -q '^api graphql' "$WORK/require-low-risk.log"; then
+    echo "GraphQL endpoint was called on REST-only require-claim file_write path" >&2
+    return 1
+  fi
+}
+
+run_require_claim_rest_only_pr_update() {
+  local out
+  out="$(GH_LOG="$WORK/require-pr-update.log" FAKE_GRAPHQL_REMAINING=0 BOARD_SESSION_ID=test-session \
+    "$BOARD_SYNC" require-claim --issue 42 --session test-session --operation pr_update \
+      --worktree /tmp/test-worktree --branch test-branch)"
+  printf '%s\n' "$out" | jq -e '
+    .allowed == true
+    and .operation == "pr_update"
+    and .permission_source == "issue_body_rest_project_graphql_exhausted_v1"
+  ' >/dev/null
+  if grep -q '^project ' "$WORK/require-pr-update.log"; then
+    echo "Project API was called on REST-only require-claim pr_update path" >&2
+    return 1
+  fi
+  if grep -q '^api graphql' "$WORK/require-pr-update.log"; then
+    echo "GraphQL endpoint was called on REST-only require-claim pr_update path" >&2
+    return 1
+  fi
+}
+
+run_require_claim_critical_fail_closed() {
+  local out rc
+  set +e
+  out="$(GH_LOG="$WORK/require-critical.log" FAKE_GRAPHQL_REMAINING=0 BOARD_SESSION_ID=test-session \
+    "$BOARD_SYNC" require-claim --issue 42 --session test-session --operation deploy \
+      --worktree /tmp/test-worktree --branch test-branch 2>&1)"
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ]
+  printf '%s\n' "$out" | grep -q "Project GraphQL budget exhausted — require-claim operation 'deploy' needs fresh Project truth"
+  if grep -q '^project ' "$WORK/require-critical.log"; then
+    echo "Project API was called before critical require-claim fail-closed" >&2
+    return 1
+  fi
+  if grep -q '^api graphql' "$WORK/require-critical.log"; then
+    echo "GraphQL endpoint was called before critical require-claim fail-closed" >&2
+    return 1
+  fi
+}
+
 printf 'board-sync.sh Project GraphQL budget harness\n'
 run_budget_defer
 printf '  ok low-risk Project mutation deferred when exhausted\n'
@@ -126,4 +205,10 @@ run_budget_continue
 printf '  ok Project mutation continues when budget is available\n'
 run_verify_deferred
 printf '  ok verify records PROJECT-DEFERRED without Project API\n'
+run_require_claim_rest_only_low_risk
+printf '  ok require-claim file_write uses REST-only path when GraphQL exhausted\n'
+run_require_claim_rest_only_pr_update
+printf '  ok require-claim pr_update uses REST-only path when GraphQL exhausted\n'
+run_require_claim_critical_fail_closed
+printf '  ok require-claim critical operation fails closed when GraphQL exhausted\n'
 printf 'PASS board-sync GraphQL budget harness\n'

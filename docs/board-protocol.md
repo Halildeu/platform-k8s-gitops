@@ -595,8 +595,8 @@ Operation policy:
 
 | Operation class | Project GraphQL yoksa davranis |
 |---|---|
-| `local_edit`, `file_write` | Devam edebilir; board mutation implied degildir. |
-| `commit`, `push`, `pr_create`, `pr_update` | REST issue/PR evidence valid ise devam edebilir; yalniz low-risk Project mutation deferred edilir. |
+| `local_edit`, `file_write` | Devam edebilir; `require-claim` REST issue-body claim/lease kanıtını doğrular, board mutation implied degildir. |
+| `commit`, `push`, `pr_create`, `pr_update` | REST issue/PR evidence valid ise devam edebilir; `require-claim` REST issue-body claim/lease kanıtını doğrular, yalniz low-risk Project mutation deferred edilir. |
 | `claim`, `list`, `sync-state`, `backlog-add`, `reap` | Fresh Project truth yoksa yeni claim veya authoritative board mutation yoktur; sadece clearly-labeled stale/read-only output olabilir. |
 | `live_mutation`, `deploy`, `issue_close`, `recovery`, `key_rotation` | Fresh Project truth + valid claim yoksa fail-closed. |
 
