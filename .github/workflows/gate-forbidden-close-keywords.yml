@@ -1,0 +1,50 @@
+name: Runtime PR Auto-close Guard
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: forbidden-close-keywords-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  forbidden-close-keywords:
+    name: Forbidden close keyword scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout base ref (trusted script, not PR head)
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Fetch PR commit messages (paginated, read-only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/commits" \
+            --paginate --jq '.[] | {sha:.sha,message:.commit.message}' > /tmp/pr-commits.ndjson
+
+      - name: Scan PR metadata and commit messages
+        run: |
+          node scripts/ci/check-forbidden-close-keywords.mjs \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --commit-messages-file /tmp/pr-commits.ndjson
+
+      - name: Run regression tests
+        run: |
+          node tests/ci/test-forbidden-close-keywords.mjs
