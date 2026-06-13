@@ -170,7 +170,7 @@ require_claim_rest_only_operation() {
 
 require_claim_fresh_project_truth_operation() {
   case "$1" in
-    live_mutation|release|deploy|issue_close|recovery|key_rotation)
+    live_mutation|deploy|issue_close|recovery|key_rotation)
       return 0 ;;
     *) return 1 ;;
   esac
@@ -203,7 +203,14 @@ graphql_budget_decision() {
     claim|list|sync-state|backlog-add|reap|drain-project-queue)
       printf 'fail\tgraphql_exhausted_fresh_project_truth_required'
       ;;
-    live_mutation|release|deploy|issue_close|recovery|key_rotation)
+    release)
+      if [ "$risk" = "low-risk" ]; then
+        printf 'defer\tgraphql_exhausted_release_todo_reconcile'
+      else
+        printf 'fail\tgraphql_exhausted_release_requires_low_risk'
+      fi
+      ;;
+    live_mutation|deploy|issue_close|recovery|key_rotation)
       printf 'fail\tgraphql_exhausted_critical_operation_fail_closed'
       ;;
     *)
@@ -278,6 +285,10 @@ preflight() {
     case "$cmd" in
       verify)
         log "preflight: Project GraphQL budget exhausted — verify will use PROJECT-DEFERRED for low-risk mirror mutation"
+        return 0
+        ;;
+      release)
+        log "preflight: Project GraphQL budget exhausted — release will use REST issue update + PROJECT-DEFERRED Todo reconcile"
         return 0
         ;;
       require-claim)
@@ -1142,8 +1153,65 @@ cmd_heartbeat() {
 }
 
 # --- subcommand: release ------------------------------------------------------
+cmd_release_project_deferred() {
+  local issue_ref="$1" reason="$2"
+  local sid body bsess bexp now_iso rel_session note key_src key marker marker_body
+
+  parse_issue_ref "$issue_ref"
+  sid="$(session_id)"
+  body="$(issue_body "$REPO" "$NUM")"
+  bsess="$(printf '%s\n' "$body" | state_get claim_session)"
+  bexp="$(printf '%s\n' "$body" | state_get expires_at)"
+  now_iso="$(iso_now)"
+  rel_session="$sid"
+
+  if [ -n "$bsess" ] && [ "$bsess" != "none" ] && [ "$bsess" != "$sid" ]; then
+    if [ "$FORCE_STALE" -eq 1 ] && [ -n "$bexp" ] && [ "$bexp" != "none" ] \
+       && [[ "$bexp" < "$now_iso" ]]; then
+      log "force-stale: #$NUM claimed by '$bsess' but lease expired ($bexp) — reclaiming"
+      reason="stale-reclaim"
+      rel_session="$bsess"
+    else
+      die "release refused — #$NUM claimed by session '$bsess', not you ($sid); --force-stale only if its lease ($bexp) is expired"
+    fi
+  fi
+
+  log "release #$NUM ($REPO) — session=$sid reason=$reason (Project Todo reconcile deferred)"
+  note=""
+  [ "$rel_session" != "$sid" ] && note=" by=$sid"
+  post_comment "$REPO" "$NUM" \
+    "HANDOFF released=$reason session=$rel_session${note} at=$now_iso"
+
+  if printf '%s\n' "$body" | grep -q 'agent-state:v1'; then
+    printf '%s\n' "$body" \
+      | rewrite_state "todo" "none" "none" "none" "none" "none" \
+      | write_body "$REPO" "$NUM"
+    log "issue body agent-state -> todo (unclaimed)"
+  fi
+
+  key_src="project-deferred|release|$REPO#$NUM|Status|Todo|$rel_session|v1"
+  key="$(printf '%s' "$key_src" | shasum -a 256 | awk '{print $1}')"
+  marker="PROJECT-DEFERRED v1 key=$key"
+  if rest_comment_contains "$REPO" "$NUM" "$marker"; then
+    log "release deferred note — #$NUM already has $marker"
+  else
+    marker_body="$marker mutation=status target=\"Todo\" reason=graphql_exhausted source=release issue_repo=$REPO issue=$NUM session=$rel_session at=$now_iso
+Deferred mutation class: low-risk mirror repair only.
+Authority boundary: release already updated issue-body claim state via REST; this marker is not board truth.
+Drain requirement: re-read Project #2 current item state before mutation; no downgrade; skip if stale/already-drained."
+    rest_post_comment "$REPO" "$NUM" "$marker_body"
+    log "release deferred #$NUM ($REPO) — recorded $marker for Status -> Todo"
+  fi
+  log "released #$NUM (Project Todo reconcile deferred)"
+}
+
 cmd_release() {
   [ -n "${1:-}" ] || die "release needs an <issue>"
+  if project_graphql_is_exhausted; then
+    cmd_release_project_deferred "$1" "${2:-manual}"
+    return $?
+  fi
+
   resolve_issue "$1"
   local sid reason body bsess bexp now_iso rel_session
   sid="$(session_id)"

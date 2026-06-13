@@ -547,6 +547,7 @@ a stale-skip audit marker instead of overwriting the board.
 |---|---|
 | `local_edit`, `file_write` | May continue using REST issue-body claim/lease evidence only. No board mutation is implied. |
 | `commit`, `push`, `pr_create`, `pr_update` | May continue if issue/PR REST evidence is valid. `require-claim` uses REST issue-body claim/lease evidence; Project mutation is deferred only when the mutation is low-risk. |
+| `release` | May release the issue-body claim through REST and enqueue low-risk `Status -> Todo` Project reconcile as `PROJECT-DEFERRED`; never marks Project truth changed until drained. |
 | `claim`, `list`, `sync-state`, `backlog-add`, `reap` | No claim or authoritative board mutation without fresh Project truth. Read-only stale mirror output is allowed if clearly labeled. |
 | `live_mutation`, `deploy`, `issue_close`, `recovery`, `key_rotation` | Fail closed unless fresh Project truth and valid claim are verified. |
 
@@ -585,6 +586,8 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 - [x] Add idempotent, durable deferred mutation records via GitHub-visible marker + terminal `PROJECT-DRAINED` / `PROJECT-STALE-SKIP` comments.
 - [x] Add issue-scoped `drain-project-queue`.
 - [x] Queue only low-risk mirror repair mutations for `verify`.
+- [x] Queue low-risk `release` Project mirror repair as `Status -> Todo`
+  while updating claim state only through REST.
 - [x] Ensure queued `Needs Verify` prevents a new claim until drained or resolved.
 
 #### Slice 1B-c — Critical operation fail-closed integration

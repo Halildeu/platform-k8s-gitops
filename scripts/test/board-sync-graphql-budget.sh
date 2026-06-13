@@ -74,6 +74,32 @@ BODY
   esac
 fi
 
+if [ "${1:-}" = "issue" ] && [ "${2:-}" = "view" ]; then
+  body="$(cat <<'BODY'
+## Agent State
+
+<!-- agent-state:v1
+status: in-progress
+claim_session: test-session
+claim_worktree: /tmp/test-worktree
+claim_branch: test-branch
+claim_updated_at: 2026-06-13T00:00:00Z
+expires_at: 2999-01-01T00:00:00Z
+-->
+BODY
+)"
+  if printf '%s' " $* " | grep -q ' --jq '; then
+    printf '%s\n' "$body"
+  else
+    jq -n --arg body "$body" '{body:$body}'
+  fi
+  exit 0
+fi
+
+if [ "${1:-}" = "issue" ] && { [ "${2:-}" = "comment" ] || [ "${2:-}" = "edit" ]; }; then
+  exit 0
+fi
+
 echo "fake gh: unsupported call: $*" >&2
 exit 92
 FAKE_GH
@@ -107,6 +133,16 @@ run_budget_fail_closed() {
   ! grep -q '^project ' "$WORK/fail.log"
 }
 
+run_budget_release_defer() {
+  local out
+  out="$(GH_LOG="$WORK/release-budget.log" FAKE_GRAPHQL_REMAINING=0 "$BOARD_SYNC" graphql-budget --operation release --mutation-risk low-risk)"
+  printf '%s\n' "$out" | jq -e '
+    .decision == "defer"
+    and .reason == "graphql_exhausted_release_todo_reconcile"
+  ' >/dev/null
+  ! grep -q '^project ' "$WORK/release-budget.log"
+}
+
 run_budget_continue() {
   local out
   out="$(GH_LOG="$WORK/continue.log" FAKE_GRAPHQL_REMAINING=100 "$BOARD_SYNC" graphql-budget --operation claim --mutation-risk critical)"
@@ -133,6 +169,24 @@ run_verify_deferred() {
   fi
   grep -q 'rate_limit' "$WORK/verify.log"
   grep -q 'repos/Halildeu/platform-k8s-gitops/issues/42/comments' "$WORK/verify.log"
+}
+
+run_release_deferred() {
+  GH_LOG="$WORK/release.log" FAKE_GRAPHQL_REMAINING=0 BOARD_SESSION_ID=test-session \
+    "$BOARD_SYNC" release 42 graphql-exhausted-test
+
+  if grep -q '^project ' "$WORK/release.log"; then
+    echo "Project API was called on exhausted release path" >&2
+    return 1
+  fi
+  if grep -q '^api graphql' "$WORK/release.log"; then
+    echo "GraphQL endpoint was called on exhausted release path" >&2
+    return 1
+  fi
+  grep -q 'rate_limit' "$WORK/release.log"
+  grep -q '^issue comment' "$WORK/release.log"
+  grep -q '^issue edit' "$WORK/release.log"
+  grep -q 'repos/Halildeu/platform-k8s-gitops/issues/42/comments' "$WORK/release.log"
 }
 
 run_require_claim_rest_only_low_risk() {
@@ -201,10 +255,14 @@ run_budget_defer
 printf '  ok low-risk Project mutation deferred when exhausted\n'
 run_budget_fail_closed
 printf '  ok critical operation fails closed when exhausted\n'
+run_budget_release_defer
+printf '  ok release Todo reconcile is low-risk deferred when exhausted\n'
 run_budget_continue
 printf '  ok Project mutation continues when budget is available\n'
 run_verify_deferred
 printf '  ok verify records PROJECT-DEFERRED without Project API\n'
+run_release_deferred
+printf '  ok release records PROJECT-DEFERRED Todo reconcile without Project API\n'
 run_require_claim_rest_only_low_risk
 printf '  ok require-claim file_write uses REST-only path when GraphQL exhausted\n'
 run_require_claim_rest_only_pr_update
