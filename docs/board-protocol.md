@@ -590,8 +590,10 @@ Canonical ayrim:
 - `PROJECT-DEFERRED v1 key=...` marker'i low-risk Project mirror mutation
   borcunu kaydeder; board Status yerine gecmez.
 - Queue sadece low-risk mirror repair icin kullanilir:
-  `PR merged -> Needs Verify`, `backlog-add` reconcile, release sonrasi `Todo`
-  reconcile.
+  `PR merged -> Needs Verify` ve release sonrasi `Todo` reconcile.
+- `backlog-add` queue'ya alinmaz. GraphQL budget yoksa GitHub issue
+  olusturmadan fail-closed olur; aksi halde board disi orphan capture riski
+  dogar.
 - Queue **asla** `Done`, `issue_close`, `live_mutation`, `deploy`, `recovery`
   veya `key_rotation` icin kullanilmaz.
 
@@ -602,7 +604,8 @@ Operation policy:
 | `local_edit`, `file_write` | Devam edebilir; `require-claim` REST issue-body claim/lease kanıtını doğrular, board mutation implied degildir. |
 | `commit`, `push`, `pr_create`, `pr_update` | REST issue/PR evidence valid ise devam edebilir; `require-claim` REST issue-body claim/lease kanıtını doğrular, yalniz low-risk Project mutation deferred edilir. |
 | `release` | Issue-body claim REST ile bırakılır; Project `Status -> Todo` reconcile yalnız `PROJECT-DEFERRED` marker olarak kuyruğa alınır. |
-| `claim`, `list`, `sync-state`, `backlog-add`, `reap` | Fresh Project truth yoksa yeni claim veya authoritative board mutation yoktur; sadece clearly-labeled stale/read-only output olabilir. |
+| `backlog-add` | Fresh Project truth yoksa GitHub issue açmadan fail-closed olur; queue kullanılmaz. |
+| `claim`, `list`, `sync-state`, `reap` | Fresh Project truth yoksa yeni claim veya authoritative board mutation yoktur; sadece clearly-labeled stale/read-only output olabilir. |
 | `live_mutation`, `deploy`, `issue_close`, `recovery`, `key_rotation` | Fresh Project truth + valid claim yoksa fail-closed. |
 
 Fresh Project truth kritik operasyonlar icin Project item lookup çıktısındaki

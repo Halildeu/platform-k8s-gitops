@@ -537,8 +537,15 @@ detect duplicates, stale state, and drift.
 Allowed low-risk deferred mutations:
 
 - PR merge evidence -> `Needs Verify`
-- `backlog-add` Kind/Status reconcile
 - release after accepted work -> `Todo` reconcile
+
+Rejected deferred mutation:
+
+- `backlog-add` Kind/Status reconcile. This operation creates a new GitHub
+  issue and adds it to Project #2; queueing only the field/status part would
+  risk a durable orphan issue that looks captured but is not on the board. If
+  Project GraphQL budget is exhausted, `backlog-add` fails closed before issue
+  creation. Operator/agent retries after GraphQL budget returns.
 
 Forbidden deferred mutations:
 
@@ -575,7 +582,8 @@ a stale-skip audit marker instead of overwriting the board.
 | `local_edit`, `file_write` | May continue using REST issue-body claim/lease evidence only. No board mutation is implied. |
 | `commit`, `push`, `pr_create`, `pr_update` | May continue if issue/PR REST evidence is valid. `require-claim` uses REST issue-body claim/lease evidence; Project mutation is deferred only when the mutation is low-risk. |
 | `release` | May release the issue-body claim through REST and enqueue low-risk `Status -> Todo` Project reconcile as `PROJECT-DEFERRED`; never marks Project truth changed until drained. |
-| `claim`, `list`, `sync-state`, `backlog-add`, `reap` | No claim or authoritative board mutation without fresh Project truth. Read-only stale mirror output is allowed if clearly labeled. |
+| `backlog-add` | Fail closed before GitHub issue creation when Project GraphQL budget is exhausted; no deferred queue is used. |
+| `claim`, `list`, `sync-state`, `reap` | No claim or authoritative board mutation without fresh Project truth. Read-only stale mirror output is allowed if clearly labeled. |
 | `live_mutation`, `deploy`, `issue_close`, `recovery`, `key_rotation` | Fail closed unless fresh Project truth and valid claim are verified. |
 
 Fresh Project truth for critical operations means the Project item lookup
@@ -616,6 +624,8 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 - [x] Queue low-risk `release` Project mirror repair as `Status -> Todo`
   while updating claim state only through REST.
 - [x] Ensure queued `Needs Verify` prevents a new claim until drained or resolved.
+- [x] Reject `backlog-add` queueing; it fails closed before issue creation when
+  Project GraphQL is exhausted, avoiding board-orphan capture records.
 
 #### Slice 1B-c — Critical operation fail-closed integration
 

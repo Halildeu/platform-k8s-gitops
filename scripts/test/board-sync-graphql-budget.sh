@@ -143,6 +143,20 @@ run_budget_release_defer() {
   ! grep -q '^project ' "$WORK/release-budget.log"
 }
 
+run_budget_backlog_add_fail_closed() {
+  local out rc
+  set +e
+  out="$(GH_LOG="$WORK/backlog-budget.log" FAKE_GRAPHQL_REMAINING=0 "$BOARD_SYNC" graphql-budget --operation backlog-add --mutation-risk low-risk)"
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ]
+  printf '%s\n' "$out" | jq -e '
+    .decision == "fail"
+    and .reason == "graphql_exhausted_fresh_project_truth_required"
+  ' >/dev/null
+  ! grep -q '^project ' "$WORK/backlog-budget.log"
+}
+
 run_budget_continue() {
   local out
   out="$(GH_LOG="$WORK/continue.log" FAKE_GRAPHQL_REMAINING=100 "$BOARD_SYNC" graphql-budget --operation claim --mutation-risk critical)"
@@ -250,6 +264,28 @@ run_require_claim_critical_fail_closed() {
   fi
 }
 
+run_backlog_add_fail_closed_before_issue_create() {
+  local out rc
+  set +e
+  out="$(GH_LOG="$WORK/backlog-add.log" FAKE_GRAPHQL_REMAINING=0 "$BOARD_SYNC" backlog-add "captured follow-up" --note "test note" 2>&1)"
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ]
+  printf '%s\n' "$out" | grep -q "Project GraphQL budget exhausted — 'backlog-add' needs fresh Project truth"
+  if grep -q '^issue create' "$WORK/backlog-add.log"; then
+    echo "backlog-add created an issue while Project GraphQL was exhausted" >&2
+    return 1
+  fi
+  if grep -q '^project ' "$WORK/backlog-add.log"; then
+    echo "Project API was called after backlog-add fail-closed decision" >&2
+    return 1
+  fi
+  if grep -q '^api graphql' "$WORK/backlog-add.log"; then
+    echo "GraphQL endpoint was called after backlog-add fail-closed decision" >&2
+    return 1
+  fi
+}
+
 printf 'board-sync.sh Project GraphQL budget harness\n'
 run_budget_defer
 printf '  ok low-risk Project mutation deferred when exhausted\n'
@@ -257,6 +293,8 @@ run_budget_fail_closed
 printf '  ok critical operation fails closed when exhausted\n'
 run_budget_release_defer
 printf '  ok release Todo reconcile is low-risk deferred when exhausted\n'
+run_budget_backlog_add_fail_closed
+printf '  ok backlog-add budget decision fails closed when exhausted\n'
 run_budget_continue
 printf '  ok Project mutation continues when budget is available\n'
 run_verify_deferred
@@ -269,4 +307,6 @@ run_require_claim_rest_only_pr_update
 printf '  ok require-claim pr_update uses REST-only path when GraphQL exhausted\n'
 run_require_claim_critical_fail_closed
 printf '  ok require-claim critical operation fails closed when GraphQL exhausted\n'
+run_backlog_add_fail_closed_before_issue_create
+printf '  ok backlog-add creates no issue when Project GraphQL is exhausted\n'
 printf 'PASS board-sync GraphQL budget harness\n'
