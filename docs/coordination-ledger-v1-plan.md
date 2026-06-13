@@ -422,6 +422,7 @@ Implementation slice LDG-1 adds an offline replay verifier:
 
 ```text
 scripts/coordination/verify-ledger-replay.py
+scripts/coordination/append-ledger-event.py
 docs/coordination/coordination-ledger-event-v1.schema.json
 .github/workflows/gate-coordination-ledger-replay.yml
 ```
@@ -435,6 +436,28 @@ LDG-1 is deliberately read-only and offline. It does not append ledger events,
 mutate GitHub issue bodies/comments, mutate Project #2 fields, or replace the
 current `board-sync require-claim` mirror checks. CAS writer, materialized
 comment binding, and runtime permission integration remain later slices.
+
+Implementation slice LDG-2 adds a local/offline CAS append writer foundation:
+
+```bash
+python3 scripts/coordination/append-ledger-event.py \
+  --ledger .local/coordination-ledger.jsonl \
+  --expect-previous-hash GENESIS \
+  --event-type BOOTSTRAP_KEY_REGISTRY \
+  --writer-role bootstrap_path \
+  --payload-json '{"key_id":"coordination-bootstrap-v1"}'
+```
+
+The writer obtains a local ledger lock, replays the existing JSONL ledger from
+genesis, refuses existing invalid suffixes, enforces `--expect-previous-hash`
+as a compare-and-swap guard, builds canonical `payload_hash`,
+`previous_event_hash`, and `event_hash`, validates the candidate ledger in a
+temp file, appends exactly one JSONL event, and replays again after write.
+
+LDG-2 still does not mutate GitHub issues, Project #2 fields, PR bodies, or
+materialized comments. Remote branch CAS, materialized comment binding, issue
+body / Project / PR mirror writes after CAS, and `record-deny` debt retry remain
+Slice 3 work.
 
 ## 19. Project GraphQL Budget / Mirror Queue Hardening
 
@@ -675,7 +698,8 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 
 ### Slice 3 — Coordinator writer
 
-- Add CAS append path.
+- [x] Add local/offline CAS append writer foundation.
+- [ ] Add remote/branch CAS append coordination path.
 - Add materialized comment binding.
 - Add issue body / Project / PR mirror writes after CAS.
 - [x] Add fail-closed `record-deny` local audit debt queue while CAS writer is
