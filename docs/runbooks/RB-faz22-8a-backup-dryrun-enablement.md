@@ -60,7 +60,7 @@ strict-schema whitelist with no content/hash field).
 |---|---|
 | **Up** | Capability advertised ONLY on the policy-ready Windows build (`EnableBackupDryRun`); absent from a plain build + non-Windows + the lightweight heartbeat (AG-013 coherence). |
 | **Functional** | Valid manifest → mirror accepts + result stored; manifest correct path-class/size/count/mtime-bucket; **no content hash anywhere**; denied aggregate correct (archive denied, never an entry). |
-| **Secured** | Metadata-only enforced both sides (agent static guard + backend strict-schema); a manifest with a RED entry / raw path (incl. summary/errorCode) / unknown field / decimal count / device-tenant mismatch → **400 + audit, nothing persists**; issuing path dual-control + DEDICATED_PATH_ONLY 422 on the generic path. |
+| **Secured** | Metadata-only enforced both sides (agent static guard + backend strict-schema); a manifest with a RED entry / raw path (incl. summary/errorCode) / unknown field / decimal count / device-tenant mismatch → **400; the offending result payload/manifest is NOT persisted; the command is marked FAILED with a bounded, path-free error**; issuing path dual-control + DEDICATED_PATH_ONLY 422 on the generic path. (The future dedicated issuing surface (P2) must also capture the rejection in its own audit trail.) |
 
 ## Live Windows-VM smoke (operator/VM-gated — like #149)
 
