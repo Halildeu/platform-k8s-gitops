@@ -58,6 +58,7 @@ KIND_ISSUE="22b29779"
 KIND_RISK="e3a49d4e"
 PROJECT_ITEM_LIMIT="${PROJECT_ITEM_LIMIT:-1000}"
 PROJECT_GRAPHQL_MIN_REMAINING="${PROJECT_GRAPHQL_MIN_REMAINING:-1}"
+PROJECT_TRUTH_TTL_SECONDS="${PROJECT_TRUTH_TTL_SECONDS:-300}"
 PROJECT_FIELD_CATALOG="${PROJECT_FIELD_CATALOG:-docs/coordination/project-field-catalog-v1.json}"
 if ! [[ "$PROJECT_ITEM_LIMIT" =~ ^[0-9]+$ ]] || [ "$PROJECT_ITEM_LIMIT" -lt 200 ]; then
   echo "ERR: PROJECT_ITEM_LIMIT='$PROJECT_ITEM_LIMIT' must be an integer >= 200" >&2
@@ -65,6 +66,10 @@ if ! [[ "$PROJECT_ITEM_LIMIT" =~ ^[0-9]+$ ]] || [ "$PROJECT_ITEM_LIMIT" -lt 200 
 fi
 if ! [[ "$PROJECT_GRAPHQL_MIN_REMAINING" =~ ^[0-9]+$ ]]; then
   echo "ERR: PROJECT_GRAPHQL_MIN_REMAINING='$PROJECT_GRAPHQL_MIN_REMAINING' must be a non-negative integer" >&2
+  exit 2
+fi
+if ! [[ "$PROJECT_TRUTH_TTL_SECONDS" =~ ^[0-9]+$ ]]; then
+  echo "ERR: PROJECT_TRUTH_TTL_SECONDS='$PROJECT_TRUTH_TTL_SECONDS' must be a non-negative integer" >&2
   exit 2
 fi
 # 2026-05-20 — Guardrail PR-8 (Codex 019e444d must-fix #1 absorb): env
@@ -158,6 +163,14 @@ budget_operation_known() {
 require_claim_rest_only_operation() {
   case "$1" in
     local_edit|file_write|stage|commit|push|pr_create|pr_update)
+      return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+require_claim_fresh_project_truth_operation() {
+  case "$1" in
+    live_mutation|release|deploy|issue_close|recovery|key_rotation)
       return 0 ;;
     *) return 1 ;;
   esac
@@ -344,9 +357,11 @@ project_issue_item_json() {
   # project_issue_item_json <owner/repo> <number>
   # Targeted Project item bootstrap lookup. This avoids the old hot-path full
   # board scan and uses only the issue's projectItems connection.
-  local repo="$1" num="$2" owner name query
+  local repo="$1" num="$2" owner name query raw refreshed_epoch refreshed_at
   owner="${repo%%/*}"
   name="${repo#*/}"
+  refreshed_epoch="$(epoch_now)"
+  refreshed_at="$(epoch_to_iso "$refreshed_epoch")"
   query="$(cat <<'GRAPHQL'
 query($owner:String!, $name:String!, $number:Int!) {
   repository(owner:$owner, name:$name) {
@@ -377,12 +392,15 @@ query($owner:String!, $name:String!, $number:Int!) {
 }
 GRAPHQL
 )"
-  gh api graphql \
+  raw="$(gh api graphql \
     -F query="$query" \
     -F owner="$owner" \
     -F name="$name" \
-    -F number="$num" 2>/dev/null \
-    | jq -c --arg project_id "$PROJECT_ID" '
+    -F number="$num" 2>/dev/null)" || return 1
+  printf '%s' "$raw" \
+    | jq -c --arg project_id "$PROJECT_ID" \
+        --arg refreshed_at "$refreshed_at" \
+        --argjson refreshed_at_epoch "$refreshed_epoch" '
       .data.repository.issue as $issue
       | ($issue.projectItems.nodes // [] | map(select(.project.id == $project_id)) | .[0]) as $item
       | if ($issue == null or $item == null) then empty else
@@ -392,6 +410,8 @@ GRAPHQL
               | .[0] // {});
           {
             id: $item.id,
+            refreshed_at: $refreshed_at,
+            refreshed_at_epoch: $refreshed_at_epoch,
             title: ($issue.title // ""),
             status: (fv("Status").name // ""),
             faz: (fv("Faz").name // ""),
@@ -954,6 +974,7 @@ cmd_require_claim() {
   resolve_issue "$issue_ref"
 
   local sid wt branch body bstatus bsess bwt bbr bexp now_iso item_json field value
+  local refreshed_epoch truth_age truth_fresh truth_reason
   local -a fail_codes=()
   local -a fail_messages=()
 
@@ -969,6 +990,29 @@ cmd_require_claim() {
   }
 
   item_json="$ITEM_JSON"
+  refreshed_epoch="$(printf '%s' "$item_json" | jq -r '.refreshed_at_epoch // empty')"
+  truth_age=""
+  truth_fresh="false"
+  truth_reason="missing_refreshed_at"
+  if printf '%s' "$refreshed_epoch" | grep -Eq '^[0-9]+$'; then
+    truth_age="$(( $(epoch_now) - refreshed_epoch ))"
+    if [ "$truth_age" -lt 0 ]; then
+      add_fail "project_truth_future_timestamp" "Project truth refreshed_at_epoch is in the future"
+      truth_reason="future_timestamp"
+    elif [ "$truth_age" -le "$PROJECT_TRUTH_TTL_SECONDS" ]; then
+      truth_fresh="true"
+      truth_reason="fresh_project_truth"
+    else
+      truth_reason="stale_project_truth"
+    fi
+  else
+    add_fail "project_truth_missing_refreshed_at" "Project truth lookup has no refreshed_at_epoch"
+  fi
+  if require_claim_fresh_project_truth_operation "$OPT_OPERATION" \
+     && [ "$truth_fresh" != "true" ]; then
+    add_fail "project_truth_stale" "Project truth age ${truth_age:-unknown}s exceeds TTL ${PROJECT_TRUTH_TTL_SECONDS}s for critical operation '$OPT_OPERATION'"
+  fi
+
   for field in status faz track priority kind; do
     value="$(printf '%s' "$item_json" | jq -r --arg f "$field" '.[$f] // ""')"
     if [ -z "$value" ] || [ "$value" = "null" ]; then
@@ -1036,6 +1080,12 @@ cmd_require_claim() {
     --arg session "$sid" \
     --arg operation "$OPT_OPERATION" \
     --arg status "$ITEM_STATUS" \
+    --arg refreshed_at "$(printf '%s' "$item_json" | jq -r '.refreshed_at // empty')" \
+    --arg refreshed_at_epoch "${refreshed_epoch:-}" \
+    --arg truth_age "${truth_age:-}" \
+    --arg truth_fresh "$truth_fresh" \
+    --arg truth_reason "$truth_reason" \
+    --arg ttl_seconds "$PROJECT_TRUTH_TTL_SECONDS" \
     --arg source "project_issue_mirror_v1" \
     --arg deny_code "$deny_code" \
     --arg deny_event_intent_id "$intent_id" \
@@ -1047,6 +1097,14 @@ cmd_require_claim() {
       operation: $operation,
       permission_source: $source,
       project_status: $status,
+      project_truth: {
+        fresh: ($truth_fresh == "true"),
+        reason: $truth_reason,
+        refreshed_at: (if $refreshed_at == "" then null else $refreshed_at end),
+        refreshed_at_epoch: (if $refreshed_at_epoch == "" then null else ($refreshed_at_epoch | tonumber) end),
+        age_seconds: (if $truth_age == "" then null else ($truth_age | tonumber) end),
+        ttl_seconds: ($ttl_seconds | tonumber)
+      },
       deny_code: (if $deny_code == "" then null else $deny_code end),
       deny_event_intent_id: (if $deny_event_intent_id == "" then null else $deny_event_intent_id end),
       details: $details

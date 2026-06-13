@@ -550,8 +550,10 @@ a stale-skip audit marker instead of overwriting the board.
 | `claim`, `list`, `sync-state`, `backlog-add`, `reap` | No claim or authoritative board mutation without fresh Project truth. Read-only stale mirror output is allowed if clearly labeled. |
 | `live_mutation`, `deploy`, `issue_close`, `recovery`, `key_rotation` | Fail closed unless fresh Project truth and valid claim are verified. |
 
-Fresh Project truth for critical operations means `refreshed_at <= 5 minutes`.
-If stale, the command attempts a refresh. If refresh is impossible because
+Fresh Project truth for critical operations means the Project item lookup
+records `refreshed_at_epoch` and `age_seconds <= PROJECT_TRUTH_TTL_SECONDS`
+(default 300 seconds). `require-claim` reports this in `project_truth`. If
+truth is stale, missing, in the future, or impossible to refresh because
 GraphQL budget is exhausted, critical operations fail closed.
 
 ## 20. Implementation Slices
@@ -589,7 +591,8 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 
 - [x] Enforce operation policy in scripts, not only docs, through `graphql-budget` and preflight classes.
 - [x] Require fresh Project truth for `live_mutation`, `deploy`, `issue_close`,
-  `recovery`, and `key_rotation`.
+  `recovery`, and `key_rotation` by validating `refreshed_at_epoch` age in
+  `require-claim`.
 - [x] Deny critical operations when Project truth is stale and GraphQL budget is
   exhausted.
 - [x] Preserve REST-only continuation for local edit, file write, and permitted
