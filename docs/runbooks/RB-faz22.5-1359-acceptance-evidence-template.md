@@ -39,7 +39,7 @@ evidence/1359-autoenroll-edge-activation-YYYYMMDD/
 ├── 06-edge-mtls-positive-smoke.txt # curl --resolve + --cert + --key valid PASS (HTTP 200 backend response)
 ├── 07-edge-mtls-nocert-negative.txt # curl --resolve no --cert → HTTP 4xx (TLS handshake reject)
 ├── 08-edge-mtls-spoof-negative.txt  # curl --resolve + --cert + X-Forwarded-Client-Cert spoof header → reject
-├── 09-agent-autoenroll-flow.txt    # platform-agent --auto-enroll log capture (one test PC end-to-end)
+├── 09-agent-autoenroll-flow.txt    # endpoint-agent.exe --auto-enroll log capture (one test PC end-to-end)
 ├── 10-backend-enrollment-record.txt # backend endpoint-admin-service /enrollments query → 1 new record
 └── README.md                       # bundle context (date, operator, AD CS CA name, edge host, agent version)
 ```
@@ -141,7 +141,7 @@ openssl pkcs12 -in machine-cert.pfx -nocerts -nodes -out machine.key
 # Positive smoke:
 curl --resolve "<autoenroll-edge>.acik.com:443:<edge-IP>" \
      --cert machine.crt --key machine.key \
-     https://<autoenroll-edge>.acik.com/api/v1/endpoint-enrollments/auto
+     https://<autoenroll-edge>.acik.com/api/v1/endpoint-agent/endpoint-enrollments/auto
 
 # Expected: HTTP 200 OR 201 (backend endpoint-admin-service /enrollments/auto response)
 # Body: {"agentId": "...", "enrollmentToken": "...", "ttl": ...}
@@ -152,7 +152,7 @@ curl --resolve "<autoenroll-edge>.acik.com:443:<edge-IP>" \
 ```bash
 # Operator (test PC, no client cert):
 curl --resolve "<autoenroll-edge>.acik.com:443:<edge-IP>" \
-     -v https://<autoenroll-edge>.acik.com/api/v1/endpoint-enrollments/auto 2>&1 | head -30
+     -v https://<autoenroll-edge>.acik.com/api/v1/endpoint-agent/endpoint-enrollments/auto 2>&1 | head -30
 
 # Expected: TLS handshake fail (SSL_R_TLSV13_ALERT_CERTIFICATE_REQUIRED or "no client certificate sent")
 # NOT: HTTP 401/403/404 (would indicate edge passes through to backend without cert verify)
@@ -166,7 +166,7 @@ curl --resolve "<autoenroll-edge>.acik.com:443:<edge-IP>" \
      --cert machine.crt --key machine.key \
      -H "X-Forwarded-Client-Cert: CN=attacker-injected" \
      -H "X-Client-Cert-Subject: CN=attacker-injected" \
-     -v https://<autoenroll-edge>.acik.com/api/v1/endpoint-enrollments/auto 2>&1 | head -30
+     -v https://<autoenroll-edge>.acik.com/api/v1/endpoint-agent/endpoint-enrollments/auto 2>&1 | head -30
 
 # Expected: edge strips spoofed headers; backend receives only real cert subject (from edge proxy header set)
 # Backend log evidence: cert subject == actual machine cert SAN URI:adcomputer:{objectGUID}, NOT "CN=attacker-injected"
@@ -179,21 +179,30 @@ curl --resolve "<autoenroll-edge>.acik.com:443:<edge-IP>" \
 ### 3.9 Agent AutoEnroll Flow (`09-agent-autoenroll-flow.txt`)
 
 ```bash
-# Operator (test PC, platform-agent installed):
-# 1. Reset agent state (no token):
-# Service: stop platform-agent; rm %ProgramData%\PlatformAgent\state.json
+# Operator (test PC, Endpoint Agent installed — Windows service: EndpointAgent;
+# binary: %ProgramFiles%\EndpointAgent\endpoint-agent.exe; NOT PlatformAgent):
 
-# 2. Trigger --auto-enroll mode (or manual command):
-platform-agent.exe --auto-enroll --log-level=debug --log-file=auto-enroll.log
+# 1. Reset auto-enroll state to force a fresh tokenless enroll (PowerShell):
+Stop-Service EndpointAgent
+Remove-Item -LiteralPath "$env:ProgramData\EndpointAgent\config\auto-enroll.dpapi" -Force -ErrorAction SilentlyContinue
+#   NOTE: the auto-enroll runner persists to auto-enroll.dpapi (internal/platform/windows/dpapi);
+#   the HMAC/manual-token path uses a SEPARATE hmac-credential.dpapi (internal/hmacstore).
+#   There is NO state.json. For an auto-enroll reset, remove auto-enroll.dpapi.
 
-# 3. Tail log for chain:
-# Expected log lines:
-# - "AutoEnroll: discovering machine cert"
-# - "AutoEnroll: found cert subject=<corp>, SAN URI=adcomputer:{<guid>}"
-# - "AutoEnroll: connecting to https://<autoenroll-edge>.acik.com/api/v1/endpoint-enrollments/auto"
-# - "AutoEnroll: TLS handshake OK (cert presented)"
-# - "AutoEnroll: enrollment response 200, agentId=<uuid>, token cached"
-# - "AutoEnroll: state.json written"
+# 2. Trigger auto-enroll with real flags only (run `endpoint-agent.exe --help` for the full set;
+#    --log-level / --log-file do NOT exist; the service writes logs to %ProgramData%\EndpointAgent\logs):
+& "$env:ProgramFiles\EndpointAgent\endpoint-agent.exe" --auto-enroll --api-url "https://<autoenroll-edge>.acik.com/api/v1/endpoint-agent"
+#   --api-url is the full canonical base; the wire client appends /endpoint-enrollments/auto, so the
+#   request lands on POST /api/v1/endpoint-agent/endpoint-enrollments/auto (gateway route parity #1357).
+#   Add --dry-run to validate cert + TLS + persisted-config WITHOUT any HTTP call (exit code = smoke result).
+
+# 3. Inspect the service log for the auto-enroll chain. Wording below is illustrative —
+#    the exact strings come from internal/autoenroll/runner.go and may evolve:
+# - "auto-enroll cert loaded: subject=... thumbprint_sha256=... not_after=..."
+# - "auto-enroll reissue: device_id=... existing=... expires_at=..."
+# Machine-checkable evidence (preferred over a log-string grep):
+# - %ProgramData%\EndpointAgent\config\auto-enroll.dpapi present after the run
+# - backend enrollment record created (cross-check via §3.10)
 ```
 
 ### 3.10 Backend Enrollment Record (`10-backend-enrollment-record.txt`)
@@ -226,7 +235,7 @@ curl -sS -H "Authorization: Bearer $TOKEN" \
 - [ ] §3.6 Edge mTLS positive smoke HTTP 200 + backend enrollment created
 - [ ] §3.7 No-cert negative TLS handshake reject (NOT HTTP-level fail)
 - [ ] §3.8 Header spoof negative — edge strips spoofed headers; backend receives real cert subject
-- [ ] §3.9 Agent --auto-enroll flow log chain complete + state.json persisted
+- [ ] §3.9 Agent --auto-enroll flow log chain complete + auto-enroll.dpapi persisted
 - [ ] §3.10 Backend enrollment record present + SAN URI cross-check PASS
 - [ ] Evidence bundle archived to `evidence/1359-autoenroll-edge-activation-YYYYMMDD/`
 - [ ] Mavis ops sign-off comment on #1359
