@@ -558,3 +558,43 @@ Bu komut GitHub write path'lerine dokunmaz; JSON `allowed=true|false`,
 `deny_code` ve deny durumunda `deny_event_intent_id` uretir. Ledger replay,
 CAS writer, `record-deny`, reaper ve takeover mekanigi sonraki implementation
 slice'laridir.
+
+### 17.1 Project GraphQL budget / mirror queue hardening
+
+2026-06-13 ikinci Claude / Mavis / Codex ping-pong mutabakati sonucu Project
+v2 GraphQL rate-limit problemi ayri bir implementation slice'i olarak kabul
+edildi.
+
+Problem REST fallback eksikligi degildir. PR create/merge, issue body/comment
+ve check-run okuma REST ile devam edebilir. Sorun, Project #2 custom field
+truth'unun GraphQL-only olmasi ve board hot path'te pahali `item-list` /
+`item-edit` cagirilariyla tuketilmesidir.
+
+Canonical ayrim:
+
+- `project_item_id` sadece **locator cache**'tir; Project truth degildir.
+- Project field catalog repo-level fixture olur; her issue body'ye kopyalanmaz.
+- `PROJECT-DEFERRED v1 key=...` marker'i low-risk Project mirror mutation
+  borcunu kaydeder; board Status yerine gecmez.
+- Queue sadece low-risk mirror repair icin kullanilir:
+  `PR merged -> Needs Verify`, `backlog-add` reconcile, release sonrasi `Todo`
+  reconcile.
+- Queue **asla** `Done`, `issue_close`, `live_mutation`, `deploy`, `recovery`
+  veya `key_rotation` icin kullanilmaz.
+
+Operation policy:
+
+| Operation class | Project GraphQL yoksa davranis |
+|---|---|
+| `local_edit`, `file_write` | Devam edebilir; board mutation implied degildir. |
+| `commit`, `push`, `pr_create`, `pr_update` | REST issue/PR evidence valid ise devam edebilir; yalniz low-risk Project mutation deferred edilir. |
+| `claim`, `list`, `sync-state`, `backlog-add`, `reap` | Fresh Project truth yoksa yeni claim veya authoritative board mutation yoktur; sadece clearly-labeled stale/read-only output olabilir. |
+| `live_mutation`, `deploy`, `issue_close`, `recovery`, `key_rotation` | Fresh Project truth + valid claim yoksa fail-closed. |
+
+Fresh Project truth kritik operasyonlar icin `refreshed_at <= 5 dakika` olarak
+yorumlanir. Stale ise refresh denenir; GraphQL budget yoksa kritik operasyon
+durur.
+
+`drain-project-queue` idempotent, bounded, rate-aware ve no-downgrade olmak
+zorundadir. Drain sirasinda Project item state degismisse item overwrite
+edilmez; stale-skip audit marker'i uretilir.
