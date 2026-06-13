@@ -388,6 +388,12 @@ Project board.
 Project-level field ids and option ids are stored in a repo-level field catalog
 fixture. They are not copied into every issue body.
 
+Implemented fixture:
+
+```text
+docs/coordination/project-field-catalog-v1.json
+```
+
 The catalog records:
 
 - Project id.
@@ -404,6 +410,12 @@ ids.
 Issue body or coordination blocks may hold `project_item_id`, but only as a
 locator cache. It is not truth and does not replace a fresh Project read for
 critical operations.
+
+Schema:
+
+```text
+docs/coordination/project-item-locator-cache-v1.schema.json
+```
 
 The locator cache records:
 
@@ -437,6 +449,19 @@ The guard emits machine-readable JSON with:
 The guard policy is operation-class aware. Low-risk Project mirror mutations
 may be deferred; critical operations fail closed.
 
+Implementation command:
+
+```bash
+bash scripts/board-sync.sh graphql-budget \
+  --operation pr_update \
+  --mutation-risk low-risk
+```
+
+`scripts/board-sync.sh verify` uses the same guard. When Project GraphQL is
+exhausted, it does not rewrite `agent-state.status` to `needs-verify` and does
+not pretend Project #2 moved. It posts GitHub-visible `PROJECT-DEFERRED v1`
+evidence for the low-risk `PR merged -> Needs Verify` mirror mutation.
+
 ### 19.4 Direct ProjectV2 Mutation Helper
 
 Hot-path Project mutation must use a narrow helper around
@@ -450,6 +475,10 @@ catalog, validates catalog freshness, and emits distinct error classes for:
 - already target state
 - no-downgrade skip
 - mutation failed
+
+First implementation is wired through `set_board_status`, which now calls a
+direct `updateProjectV2ItemFieldValue` mutation for `Status` writes after the
+REST budget guard passes.
 
 ### 19.5 Deferred Project Mutation Queue
 
@@ -529,20 +558,20 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 
 #### Slice 1B-a — Budget and direct mutation foundation
 
-- Add repo-level Project field catalog fixture.
-- Add `project_item_id` locator cache schema.
-- Add targeted item bootstrap lookup.
-- Add REST rate-limit based GraphQL budget guard.
-- Add direct ProjectV2 mutation helper.
-- Detect stale item ids and field/option drift.
+- [x] Add repo-level Project field catalog fixture.
+- [x] Add `project_item_id` locator cache schema.
+- [ ] Add targeted item bootstrap lookup.
+- [x] Add REST rate-limit based GraphQL budget guard.
+- [x] Add direct ProjectV2 mutation helper for `Status` writes.
+- [ ] Detect stale item ids and field/option drift beyond direct mutation failure classes.
 
 #### Slice 1B-b — Deferred queue for low-risk Project mutations
 
-- Add `PROJECT-DEFERRED v1` GitHub-visible marker.
-- Add idempotent, durable deferred mutation records.
-- Add `drain-project-queue`.
-- Queue only low-risk mirror repair mutations.
-- Ensure queued `Needs Verify` prevents a new claim until drained or resolved.
+- [x] Add `PROJECT-DEFERRED v1` GitHub-visible marker for `verify`.
+- [ ] Add idempotent, durable deferred mutation records.
+- [ ] Add `drain-project-queue`.
+- [x] Queue only low-risk mirror repair mutations for `verify`.
+- [ ] Ensure queued `Needs Verify` prevents a new claim until drained or resolved.
 
 #### Slice 1B-c — Critical operation fail-closed integration
 
@@ -617,7 +646,8 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 ## 22. Follow-up Work
 
 - Implement `board-sync` verifier library.
-- Add Project #2 field schema fixture.
+- Add targeted Project item bootstrap lookup.
+- Add `drain-project-queue`.
 - Add ledger branch bootstrap runbook.
 - Add CI guard for runtime close keywords.
 - Add Mavis boundary section to agent onboarding docs.

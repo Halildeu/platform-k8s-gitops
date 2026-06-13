@@ -14,6 +14,7 @@
 #   release    <issue>    release your claim (ownership-checked)
 #   sync-state <issue>    report issue-body agent-state vs board Status
 #   require-claim         read-only operation-scoped claim permission check
+#   graphql-budget        REST rate-limit guard for Project v2 GraphQL budget
 #   verify     <issue>    PR-merge evidence: Status -> Needs Verify (--pr N)
 #   reap                  release every stale In Progress claim
 #   backlog-add "<title>" capture discovered work as a Backlog issue
@@ -32,6 +33,7 @@
 #   --operation <class>   (require-claim) operation boundary to verify
 #   --worktree <path>     (require-claim) expected worktree (default: current)
 #   --branch <name>       (require-claim) expected branch (default: current)
+#   --mutation-risk <r>   (graphql-budget) none|low-risk|critical
 #
 # <issue>: bare number (resolved via board), owner/repo#N, or full URL.
 # Session id: $BOARD_SESSION_ID if set, else generated and printed.
@@ -54,8 +56,13 @@ KIND_FIELD="PVTSSF_lAHOCx7tY84BIN2dzhTGxFk"
 KIND_ISSUE="22b29779"
 KIND_RISK="e3a49d4e"
 PROJECT_ITEM_LIMIT="${PROJECT_ITEM_LIMIT:-1000}"
+PROJECT_GRAPHQL_MIN_REMAINING="${PROJECT_GRAPHQL_MIN_REMAINING:-1}"
 if ! [[ "$PROJECT_ITEM_LIMIT" =~ ^[0-9]+$ ]] || [ "$PROJECT_ITEM_LIMIT" -lt 200 ]; then
   echo "ERR: PROJECT_ITEM_LIMIT='$PROJECT_ITEM_LIMIT' must be an integer >= 200" >&2
+  exit 2
+fi
+if ! [[ "$PROJECT_GRAPHQL_MIN_REMAINING" =~ ^[0-9]+$ ]]; then
+  echo "ERR: PROJECT_GRAPHQL_MIN_REMAINING='$PROJECT_GRAPHQL_MIN_REMAINING' must be a non-negative integer" >&2
   exit 2
 fi
 # 2026-05-20 — Guardrail PR-8 (Codex 019e444d must-fix #1 absorb): env
@@ -82,6 +89,7 @@ OPT_SESSION=""
 OPT_OPERATION=""
 OPT_WORKTREE=""
 OPT_BRANCH=""
+OPT_MUTATION_RISK=""
 BOARD_CACHE=""
 
 # --- helpers ------------------------------------------------------------------
@@ -89,7 +97,7 @@ log()  { printf '%s\n' "$*" >&2; }
 die()  { printf 'board-sync: %s\n' "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '4,31p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '4,36p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -120,10 +128,117 @@ session_id() {
 # read one agent-state:v1 key from an issue body (stdin)
 state_get() { sed -n "s/^$1: *//p" | head -1; }
 
+project_graphql_rate_json() {
+  gh api rate_limit --jq '.resources.graphql' 2>/dev/null || true
+}
+
+project_graphql_remaining() {
+  local raw
+  raw="$(project_graphql_rate_json)"
+  printf '%s' "$raw" | jq -er '.remaining // empty' 2>/dev/null || printf 'unknown'
+}
+
+project_graphql_is_exhausted() {
+  local remaining
+  remaining="$(project_graphql_remaining)"
+  [ "$remaining" != "unknown" ] && [ "$remaining" -le "$PROJECT_GRAPHQL_MIN_REMAINING" ]
+}
+
+budget_operation_known() {
+  case "$1" in
+    local_edit|file_write|stage|commit|push|pr_create|pr_update|live_mutation|release|deploy|issue_close|recovery|key_rotation|claim|list|sync-state|backlog-add|reap|verify|drain-project-queue)
+      return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+graphql_budget_decision() {
+  # graphql_budget_decision <operation> <mutation-risk> <remaining-or-unknown>
+  local operation="$1" risk="$2" remaining="$3"
+  if [ "$remaining" = "unknown" ]; then
+    printf 'continue\tgraphql_budget_unknown'
+    return 0
+  fi
+  if [ "$remaining" -gt "$PROJECT_GRAPHQL_MIN_REMAINING" ]; then
+    printf 'continue\tgraphql_budget_available'
+    return 0
+  fi
+  case "$operation" in
+    local_edit|file_write|stage)
+      printf 'continue\tno_project_mutation_required'
+      ;;
+    commit|push|pr_create|pr_update|verify)
+      if [ "$risk" = "low-risk" ]; then
+        printf 'defer\tgraphql_exhausted_low_risk_project_mutation'
+      elif [ "$risk" = "none" ]; then
+        printf 'continue\trest_only_operation'
+      else
+        printf 'fail\tgraphql_exhausted_critical_or_unknown_mutation'
+      fi
+      ;;
+    claim|list|sync-state|backlog-add|reap|drain-project-queue)
+      printf 'fail\tgraphql_exhausted_fresh_project_truth_required'
+      ;;
+    live_mutation|release|deploy|issue_close|recovery|key_rotation)
+      printf 'fail\tgraphql_exhausted_critical_operation_fail_closed'
+      ;;
+    *)
+      printf 'fail\tunknown_operation'
+      ;;
+  esac
+}
+
+cmd_graphql_budget() {
+  [ -n "$OPT_OPERATION" ] || die "graphql-budget needs --operation <class>"
+  budget_operation_known "$OPT_OPERATION" \
+    || die "graphql-budget unknown --operation '$OPT_OPERATION'"
+  local risk="${OPT_MUTATION_RISK:-none}"
+  case "$risk" in
+    none|low-risk|critical) : ;;
+    *) die "graphql-budget --mutation-risk must be none|low-risk|critical" ;;
+  esac
+
+  local raw remaining reset used limit decision reason
+  raw="$(project_graphql_rate_json)"
+  remaining="$(printf '%s' "$raw" | jq -er '.remaining // empty' 2>/dev/null || printf 'unknown')"
+  reset="$(printf '%s' "$raw" | jq -er '.reset // empty' 2>/dev/null || printf 'unknown')"
+  used="$(printf '%s' "$raw" | jq -er '.used // empty' 2>/dev/null || printf 'unknown')"
+  limit="$(printf '%s' "$raw" | jq -er '.limit // empty' 2>/dev/null || printf 'unknown')"
+  IFS=$'\t' read -r decision reason <<<"$(graphql_budget_decision "$OPT_OPERATION" "$risk" "$remaining")"
+
+  jq -n \
+    --arg operation "$OPT_OPERATION" \
+    --arg mutation_risk "$risk" \
+    --arg remaining "$remaining" \
+    --arg reset "$reset" \
+    --arg used "$used" \
+    --arg limit "$limit" \
+    --arg decision "$decision" \
+    --arg reason "$reason" \
+    --arg min_remaining "$PROJECT_GRAPHQL_MIN_REMAINING" \
+    '{
+      operation: $operation,
+      project_mutation_risk: $mutation_risk,
+      graphql: {
+        remaining: (if $remaining == "unknown" then null else ($remaining | tonumber) end),
+        reset: (if $reset == "unknown" then null else ($reset | tonumber) end),
+        used: (if $used == "unknown" then null else ($used | tonumber) end),
+        limit: (if $limit == "unknown" then null else ($limit | tonumber) end),
+        min_remaining: ($min_remaining | tonumber)
+      },
+      decision: $decision,
+      reason: $reason
+    }'
+
+  [ "$decision" != "fail" ]
+}
+
 preflight() {
+  local cmd="${1:-}"
   command -v gh >/dev/null 2>&1 || die "gh CLI not found in PATH"
   command -v jq >/dev/null 2>&1 || die "jq not found in PATH"
   gh auth status >/dev/null 2>&1 || die "gh not authenticated (gh auth status failed)"
+  [ "$cmd" = "graphql-budget" ] && return 0
   # #1085 Codex 019e8079 must_fix #1: skip the Project API probe when
   # BOARD_PAT_PRESENT="" (CI fell back to GITHUB_TOKEN, which has no
   # project scope). The verify subcommand routes to its own PAT-missing
@@ -134,6 +249,17 @@ preflight() {
   if [ "${BOARD_PAT_PRESENT-yes}" = "" ]; then
     log "preflight: PAT missing — Project API probe skipped (verify will take comment-only path)"
     return 0
+  fi
+  if project_graphql_is_exhausted; then
+    case "$cmd" in
+      verify)
+        log "preflight: Project GraphQL budget exhausted — verify will use PROJECT-DEFERRED for low-risk mirror mutation"
+        return 0
+        ;;
+      *)
+        die "Project GraphQL budget exhausted — '$cmd' needs fresh Project truth; run 'board-sync.sh graphql-budget --operation $cmd'"
+        ;;
+    esac
   fi
   local pid
   pid="$(gh project view "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --format json 2>/dev/null \
@@ -216,10 +342,36 @@ set_board_status() {
     log "board Status skip — ADD_TO_PROJECT_PAT missing in CI (project mutation requires PAT; issue-comment EVIDENCE half still ran)"
     return 0
   fi
-  gh project item-edit --id "$1" --project-id "$PROJECT_ID" \
-    --field-id "$STATUS_FIELD" --single-select-option-id "$2" >/dev/null \
-    || die "failed to set board Status"
+  project_set_single_select "$1" "$STATUS_FIELD" "$2" "Status" "$3"
   log "board Status -> $3"
+}
+
+project_set_single_select() {
+  # project_set_single_select <item-id> <field-id> <option-id> <field-name> <target-label>
+  local item_id="$1" field_id="$2" option_id="$3" field_name="$4" target_label="$5"
+  if project_graphql_is_exhausted; then
+    die "Project GraphQL budget exhausted — cannot set $field_name -> $target_label"
+  fi
+  local mutation out
+  # shellcheck disable=SC2016 # GraphQL variable names must remain literal.
+  mutation='mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $optionId:String!) {
+    updateProjectV2ItemFieldValue(input:{
+      projectId:$projectId,
+      itemId:$itemId,
+      fieldId:$fieldId,
+      value:{singleSelectOptionId:$optionId}
+    }) { projectV2Item { id } }
+  }'
+  out="$(gh api graphql \
+    -f query="$mutation" \
+    -F projectId="$PROJECT_ID" \
+    -F itemId="$item_id" \
+    -F fieldId="$field_id" \
+    -F optionId="$option_id" \
+    --jq '.data.updateProjectV2ItemFieldValue.projectV2Item.id // empty' 2>/dev/null)" \
+    || die "Project mutation failed — field=$field_name target=$target_label item=$item_id"
+  [ "$out" = "$item_id" ] \
+    || die "Project mutation returned unexpected item id '${out:-empty}' for $item_id"
 }
 
 post_comment() {
@@ -233,6 +385,33 @@ post_comment() {
 }
 
 issue_body() { gh issue view "$2" --repo "$1" --json body --jq '.body' 2>/dev/null || echo ""; }
+
+rest_issue_exists() {
+  # rest_issue_exists <owner/repo> <num>
+  gh api "repos/$1/issues/$2" --jq '.number' >/dev/null 2>&1
+}
+
+rest_issue_comments() {
+  # rest_issue_comments <owner/repo> <num>
+  gh api --paginate "repos/$1/issues/$2/comments?per_page=100" 2>/dev/null \
+    | jq -s '[.[][]?]'
+}
+
+rest_comment_contains() {
+  # rest_comment_contains <owner/repo> <num> <needle>
+  rest_issue_comments "$1" "$2" \
+    | jq -e --arg needle "$3" '[.[] | select((.body // "") | contains($needle))] | length > 0' >/dev/null
+}
+
+rest_post_comment() {
+  # rest_post_comment <owner/repo> <num> <body>
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "[dry-run] REST comment on $1#$2: $3"
+    return 0
+  fi
+  gh api -X POST "repos/$1/issues/$2/comments" -f body="$3" >/dev/null \
+    || die "failed to post REST comment on $1#$2"
+}
 
 write_body() {
   # write_body <repo> <num> <new-body-on-stdin>
@@ -707,6 +886,11 @@ cmd_verify() {
     return $?
   fi
 
+  if project_graphql_is_exhausted; then
+    _verify_project_deferred "$vnum" "$vrepo"
+    return $?
+  fi
+
   # graceful skip if the ref is not a single board issue (curated board —
   # not every issue is roadmap-tracked; ambiguity is not a hard error here)
   local cnt
@@ -833,6 +1017,56 @@ Runtime/acceptance evidence pending — board Status mutation SKIPPED (PAT missi
     printf '✓ EVIDENCE comment posted on %s#%s (board Status still requires PAT)\n' \
       "$issue_repo" "$vnum" >>"$GITHUB_STEP_SUMMARY" || true
   fi
+}
+
+_verify_project_deferred() {
+  local vnum="$1" vrepo="$2" issue_repo key_src key marker evidence body seen_marker seen_evidence
+  issue_repo="${vrepo:-${OPT_REPO:-$OPT_PR_REPO}}"
+  printf '%s' "$issue_repo" | grep -Eq '^[^/ ]+/[^/ ]+$' \
+    || die "verify deferred — cannot resolve issue repo for #$vnum"
+
+  if ! rest_issue_exists "$issue_repo" "$vnum"; then
+    log "verify deferred skip — #$vnum not found in $issue_repo (REST 404)"
+    return 0
+  fi
+
+  key_src="project-deferred|verify|$issue_repo#$vnum|$OPT_PR_REPO#$OPT_PR|Status|Needs Verify|v1"
+  key="$(printf '%s' "$key_src" | shasum -a 256 | awk '{print $1}')"
+  marker="PROJECT-DEFERRED v1 key=$key"
+
+  seen_marker=0
+  if rest_comment_contains "$issue_repo" "$vnum" "$marker"; then
+    seen_marker=1
+  fi
+  seen_evidence=0
+  if rest_comment_contains "$issue_repo" "$vnum" "pr_repo=$OPT_PR_REPO pr=$OPT_PR "; then
+    seen_evidence=1
+  fi
+
+  if [ "$seen_marker" -eq 1 ]; then
+    log "verify deferred skip — #$vnum already has $marker"
+    return 0
+  fi
+
+  local now
+  now="$(iso_now)"
+  evidence="EVIDENCE type=pr-merged pr_repo=$OPT_PR_REPO pr=$OPT_PR issue_repo=$issue_repo at=$now
+Source-ready: $OPT_PR_REPO PR #$OPT_PR merged.
+Runtime/acceptance evidence pending.
+Project Status mutation not executed because Project GraphQL budget is exhausted."
+
+  body="$marker mutation=status target=\"Needs Verify\" reason=graphql_exhausted source=verify issue_repo=$issue_repo issue=$vnum pr_repo=$OPT_PR_REPO pr=$OPT_PR at=$now
+Deferred mutation class: low-risk mirror repair only.
+Authority boundary: this marker is not board truth and does not change agent-state.status.
+Drain requirement: re-read Project #2 current item state before mutation; no downgrade; skip if stale/already-drained."
+
+  log "verify deferred #$vnum ($issue_repo) — GraphQL exhausted; recording $marker"
+  if [ "$seen_evidence" -eq 0 ]; then
+    rest_post_comment "$issue_repo" "$vnum" "$evidence"
+  else
+    log "verify deferred note — EVIDENCE for $OPT_PR_REPO#$OPT_PR already exists"
+  fi
+  rest_post_comment "$issue_repo" "$vnum" "$body"
 }
 
 # --- subcommand: reap ---------------------------------------------------------
@@ -1006,17 +1240,19 @@ main() {
       --operation)   [ $# -ge 2 ] || die "--operation needs a value"; OPT_OPERATION="$2"; shift 2 ;;
       --worktree)    [ $# -ge 2 ] || die "--worktree needs a value"; OPT_WORKTREE="$2"; shift 2 ;;
       --branch)      [ $# -ge 2 ] || die "--branch needs a value"; OPT_BRANCH="$2"; shift 2 ;;
+      --mutation-risk) [ $# -ge 2 ] || die "--mutation-risk needs a value"; OPT_MUTATION_RISK="$2"; shift 2 ;;
       -h|--help)     usage 0 ;;
       *) if [ -z "$cmd" ]; then cmd="$1"; else args+=("$1"); fi; shift ;;
     esac
   done
   [ -n "$cmd" ] || usage 1
 
-  preflight
+  preflight "$cmd"
   case "$cmd" in
     list)       cmd_list ;;
     claim)      cmd_claim "${args[@]:-}" ;;
     require-claim) cmd_require_claim "${args[@]:-}" ;;
+    graphql-budget) cmd_graphql_budget ;;
     heartbeat)  cmd_heartbeat "${args[@]:-}" ;;
     release)    cmd_release "${args[@]:-}" ;;
     sync-state) cmd_sync_state "${args[@]:-}" ;;
