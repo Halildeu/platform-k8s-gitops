@@ -123,7 +123,7 @@ Gövdenin başında makine-okunur blok + 5-alan state:
 status: todo            # backlog | todo | in-progress | blocked | needs-verify | done
 claim_session: none     # claim eden oturum id'si
 claim_worktree: none    # claim eden worktree path
-claim_branch: none      # roadmap-<issue>-<slug>
+claim_branch: none      # claim eden aktif branch
 claim_updated_at: none  # son heartbeat ISO-8601
 expires_at: none        # claim son kullanma ISO-8601
 -->
@@ -196,7 +196,7 @@ Claim kimliği **issue assignee değildir** (tüm oturumlar aynı GitHub kullan�
 1. Agent uygun (eligible, §9) bir issue seçer.
 2. İlk write olarak `CLAIM` comment'i atar:
    ```
-   CLAIM session=<id> worktree=<path> branch=roadmap-<issue>-<slug> at=<ISO> expires=<ISO + ~2h>
+   CLAIM session=<id> worktree=<path> branch=<current-branch> at=<ISO> expires=<ISO + ~2h>
    ```
 3. Hemen issue'nun **tüm** comment'lerini yeniden okur.
 4. **Aktif** `CLAIM`'leri `created_at` artan sırada dizer. Bir CLAIM aktiftir:
@@ -543,3 +543,18 @@ Temel kararlar:
 - Runtime/gate PR'lar `Tracked by #N` kullanacak; `Closes/Fixes/Resolves #N` yasak kalacak.
 - Invalid ledger suffix repo-wide fail-closed kabul edilecek.
 - Takeover iki asamali olacak: `TAKEOVER_ACCEPTED` -> mirror verify -> `TAKEOVER_COMMITTED`.
+
+Ilk implementation slice'i mevcut Project #2 + issue body mirror'lari uzerinden
+read-only gate saglar:
+
+```bash
+bash scripts/board-sync.sh require-claim \
+  --issue <issue> \
+  --session "$BOARD_SESSION_ID" \
+  --operation file_write
+```
+
+Bu komut GitHub write path'lerine dokunmaz; JSON `allowed=true|false`,
+`deny_code` ve deny durumunda `deny_event_intent_id` uretir. Ledger replay,
+CAS writer, `record-deny`, reaper ve takeover mekanigi sonraki implementation
+slice'laridir.
