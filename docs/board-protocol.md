@@ -744,3 +744,23 @@ Branch yarışında push reddedilir ve caller yeniden okuyup tekrar denemelidir.
 Bu wrapper issue body, Project #2, PR body veya GitHub comment mutate etmez.
 Mirror-safe emission, denial debt retry ve comment writer/fetch verification
 ayrı slice olarak açık kalır.
+
+### 17.6 Coordination ledger materialized comment writer/fetch path
+
+Materialized comment helper:
+
+```bash
+python3 scripts/coordination/materialize-ledger-comment.py render ...
+python3 scripts/coordination/materialize-ledger-comment.py verify --comment-json fetched-comment.json ...
+python3 scripts/coordination/materialize-ledger-comment.py post ...
+```
+
+`render` deterministik GitHub issue comment gövdesi üretir. `verify`, fetch
+edilmiş GitHub issue comment JSON'unu marker/body/timestamp kurallarıyla
+doğrular ve ledger event için `comment_binding` JSON'u çıkarır. `post`, comment'i
+`gh api` ile oluşturur, hemen geri fetch eder ve aynı verifier'dan geçirir.
+
+Bu helper tek başına ledger event append etmez, Project #2 mutate etmez, issue
+body veya PR body değiştirmez ve claim yetkisi vermez. Çıkan `comment_binding`
+ancak remote branch CAS append writer ile ledger'a girdikten ve mirror-safe
+emission tamamlandıktan sonra permission predicate girdisi olabilir.
