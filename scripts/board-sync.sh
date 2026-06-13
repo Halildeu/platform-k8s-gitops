@@ -155,6 +155,14 @@ budget_operation_known() {
   esac
 }
 
+require_claim_rest_only_operation() {
+  case "$1" in
+    local_edit|file_write|stage|commit|push|pr_create|pr_update)
+      return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 graphql_budget_decision() {
   # graphql_budget_decision <operation> <mutation-risk> <remaining-or-unknown>
   local operation="$1" risk="$2" remaining="$3"
@@ -258,6 +266,13 @@ preflight() {
       verify)
         log "preflight: Project GraphQL budget exhausted — verify will use PROJECT-DEFERRED for low-risk mirror mutation"
         return 0
+        ;;
+      require-claim)
+        if require_claim_rest_only_operation "${OPT_OPERATION:-}"; then
+          log "preflight: Project GraphQL budget exhausted — require-claim will use REST-only low-risk path for operation=${OPT_OPERATION:-unknown}"
+          return 0
+        fi
+        die "Project GraphQL budget exhausted — require-claim operation '${OPT_OPERATION:-unknown}' needs fresh Project truth"
         ;;
       *)
         die "Project GraphQL budget exhausted — '$cmd' needs fresh Project truth; run 'board-sync.sh graphql-budget --operation $cmd'"
@@ -547,6 +562,11 @@ rest_issue_exists() {
   gh api "repos/$1/issues/$2" --jq '.number' >/dev/null 2>&1
 }
 
+rest_issue_body() {
+  # rest_issue_body <owner/repo> <num>
+  gh api "repos/$1/issues/$2" --jq '.body // ""' 2>/dev/null || echo ""
+}
+
 rest_issue_comments() {
   # rest_issue_comments <owner/repo> <num>
   gh api --paginate "repos/$1/issues/$2/comments?per_page=100" 2>/dev/null \
@@ -817,12 +837,119 @@ cmd_claim() {
 # Read-only operation-scoped claim gate. This is the mirror-verifier slice of
 # Coordination Ledger v1; ledger replay/CAS writer are separate follow-up
 # slices. It intentionally performs no GitHub writes.
+cmd_require_claim_rest_only() {
+  local issue_ref="$1"
+  local sid wt branch body bstatus bsess bwt bbr bexp now_iso
+  local allowed deny_code details_json actor bucket minute bucket_min intent_src intent_id
+  local -a fail_codes=()
+  local -a fail_messages=()
+
+  sid="${OPT_SESSION:-${BOARD_SESSION_ID:-}}"
+  [ -n "$sid" ] || die "require-claim needs --session <id> or BOARD_SESSION_ID"
+  wt="${OPT_WORKTREE:-$(git rev-parse --show-toplevel 2>/dev/null || echo unknown)}"
+  branch="${OPT_BRANCH:-$(git branch --show-current 2>/dev/null || echo unknown)}"
+  now_iso="$(iso_now)"
+
+  add_fail() {
+    fail_codes+=("$1")
+    fail_messages+=("$2")
+  }
+
+  parse_issue_ref "$issue_ref"
+  if ! rest_issue_exists "$REPO" "$NUM"; then
+    add_fail "issue_missing" "issue $REPO#$NUM not found via REST"
+    body=""
+  else
+    body="$(rest_issue_body "$REPO" "$NUM")"
+  fi
+
+  bstatus="$(printf '%s\n' "$body" | state_get status)"
+  bsess="$(printf '%s\n' "$body" | state_get claim_session)"
+  bwt="$(printf '%s\n' "$body" | state_get claim_worktree)"
+  bbr="$(printf '%s\n' "$body" | state_get claim_branch)"
+  bexp="$(printf '%s\n' "$body" | state_get expires_at)"
+
+  [ "$bstatus" = "in-progress" ] \
+    || add_fail "body_status_not_in_progress" "issue body status='${bstatus:-<none>}' is not in-progress"
+  [ "$bsess" = "$sid" ] \
+    || add_fail "session_mismatch" "issue body claim_session='${bsess:-<none>}' expected='$sid'"
+  if [ -z "${bwt:-}" ] || [ "$bwt" = "none" ]; then
+    add_fail "worktree_missing" "issue body claim_worktree is missing"
+  elif [ "$bwt" != "$wt" ]; then
+    add_fail "worktree_mismatch" "issue body claim_worktree='$bwt' expected='$wt'"
+  fi
+  if [ -z "${bbr:-}" ] || [ "$bbr" = "none" ]; then
+    add_fail "branch_missing" "issue body claim_branch is missing"
+  elif [ "$bbr" != "$branch" ]; then
+    add_fail "branch_mismatch" "issue body claim_branch='$bbr' expected='$branch'"
+  fi
+  if [ -z "${bexp:-}" ] || [ "$bexp" = "none" ]; then
+    add_fail "lease_missing" "issue body expires_at is missing"
+  elif [[ "$bexp" < "$now_iso" ]]; then
+    add_fail "lease_expired" "claim lease expired at $bexp"
+  fi
+
+  if [ "${#fail_codes[@]}" -eq 0 ]; then
+    allowed="true"
+    deny_code=""
+    details_json="[]"
+    intent_id=""
+  else
+    allowed="false"
+    deny_code="${fail_codes[0]}"
+    details_json="$(
+      for i in "${!fail_codes[@]}"; do
+        jq -cn --arg code "${fail_codes[$i]}" --arg message "${fail_messages[$i]}" \
+          '{code:$code,message:$message}'
+      done | jq -s .
+    )"
+    actor="$(gh api user --jq '.login' 2>/dev/null || echo unknown)"
+    minute="$(date -u +%M)"
+    bucket_min="$((10#$minute / 10 * 10))"
+    bucket="$(date -u +%Y%m%dT%H)$(printf '%02d' "$bucket_min")Z"
+    intent_src="$REPO#$NUM|$sid|$OPT_OPERATION|$deny_code|rest-only-graphql-exhausted|$bucket|$actor"
+    intent_id="$(printf '%s' "$intent_src" | shasum -a 256 | awk '{print $1}')"
+  fi
+
+  jq -n \
+    --arg allowed "$allowed" \
+    --arg issue "$REPO#$NUM" \
+    --arg session "$sid" \
+    --arg operation "$OPT_OPERATION" \
+    --arg source "issue_body_rest_project_graphql_exhausted_v1" \
+    --arg deny_code "$deny_code" \
+    --arg deny_event_intent_id "$intent_id" \
+    --argjson details "$details_json" \
+    '{
+      allowed: ($allowed == "true"),
+      issue: $issue,
+      session: $session,
+      operation: $operation,
+      permission_source: $source,
+      project_status: null,
+      project_truth: {
+        fresh: false,
+        reason: "project_graphql_exhausted_rest_only_low_risk_operation"
+      },
+      deny_code: (if $deny_code == "" then null else $deny_code end),
+      deny_event_intent_id: (if $deny_event_intent_id == "" then null else $deny_event_intent_id end),
+      details: $details
+    }'
+
+  [ "$allowed" = "true" ]
+}
+
 cmd_require_claim() {
   local issue_ref="${OPT_ISSUE:-${1:-}}"
   [ -n "$issue_ref" ] || die "require-claim needs --issue <issue>"
   [ -n "$OPT_OPERATION" ] || die "require-claim needs --operation <class>"
   valid_operation_class "$OPT_OPERATION" \
     || die "require-claim unknown --operation '$OPT_OPERATION'"
+
+  if project_graphql_is_exhausted && require_claim_rest_only_operation "$OPT_OPERATION"; then
+    cmd_require_claim_rest_only "$issue_ref"
+    return $?
+  fi
 
   resolve_issue "$issue_ref"
 

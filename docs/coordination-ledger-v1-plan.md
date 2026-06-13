@@ -545,8 +545,8 @@ a stale-skip audit marker instead of overwriting the board.
 
 | Operation class | GraphQL exhausted behavior |
 |---|---|
-| `local_edit`, `file_write` | May continue using local/REST evidence only. No board mutation is implied. |
-| `commit`, `push`, `pr_create`, `pr_update` | May continue if issue/PR REST evidence is valid. Project mutation is deferred only when the mutation is low-risk. |
+| `local_edit`, `file_write` | May continue using REST issue-body claim/lease evidence only. No board mutation is implied. |
+| `commit`, `push`, `pr_create`, `pr_update` | May continue if issue/PR REST evidence is valid. `require-claim` uses REST issue-body claim/lease evidence; Project mutation is deferred only when the mutation is low-risk. |
 | `claim`, `list`, `sync-state`, `backlog-add`, `reap` | No claim or authoritative board mutation without fresh Project truth. Read-only stale mirror output is allowed if clearly labeled. |
 | `live_mutation`, `deploy`, `issue_close`, `recovery`, `key_rotation` | Fail closed unless fresh Project truth and valid claim are verified. |
 
