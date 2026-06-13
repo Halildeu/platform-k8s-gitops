@@ -31,6 +31,9 @@ if [ "${1:-}" = "project" ] && [ "${2:-}" = "view" ]; then
 fi
 
 if [ "${1:-}" = "api" ] && [ "${2:-}" = "graphql" ]; then
+  if [ -n "${FAKE_GRAPHQL_DELAY_SECONDS:-}" ]; then
+    sleep "$FAKE_GRAPHQL_DELAY_SECONDS"
+  fi
   jq -n \
     --arg status "${FAKE_STATUS-In Progress}" \
     --arg faz "${FAKE_FAZ-Faz 23}" \
@@ -125,7 +128,50 @@ run_allowed() {
     and .issue == "Halildeu/platform-k8s-gitops#1498"
     and .operation == "file_write"
     and .permission_source == "project_issue_mirror_v1"
+    and .project_truth.fresh == true
+    and .project_truth.ttl_seconds == 300
+    and (.project_truth.age_seconds | type == "number")
     and .deny_code == null
+  ' >/dev/null
+}
+
+run_critical_fresh_allowed() {
+  local out
+  out="$("$BOARD_SYNC" require-claim \
+    --issue 1498 \
+    --session session-ok \
+    --operation deploy \
+    --worktree /tmp/worktree-ok \
+    --branch branch-ok)"
+  printf '%s\n' "$out" | jq -e '
+    .allowed == true
+    and .operation == "deploy"
+    and .project_truth.fresh == true
+    and .project_truth.age_seconds <= .project_truth.ttl_seconds
+  ' >/dev/null
+}
+
+run_critical_stale_denied() {
+  local out rc
+  set +e
+  out="$(PROJECT_TRUTH_TTL_SECONDS=0 FAKE_GRAPHQL_DELAY_SECONDS=1 "$BOARD_SYNC" require-claim \
+    --issue 1498 \
+    --session session-ok \
+    --operation deploy \
+    --worktree /tmp/worktree-ok \
+    --branch branch-ok)"
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ]
+  printf '%s\n' "$out" | jq -e '
+    .allowed == false
+    and .operation == "deploy"
+    and .deny_code == "project_truth_stale"
+    and .project_truth.fresh == false
+    and .project_truth.reason == "stale_project_truth"
+    and .project_truth.ttl_seconds == 0
+    and .project_truth.age_seconds >= 1
+    and (.details[] | select(.code == "project_truth_stale"))
   ' >/dev/null
 }
 
@@ -186,6 +232,10 @@ run_invalid_operation_setup_error() {
 printf 'board-sync.sh require-claim harness\n'
 run_allowed
 printf '  ok allowed mirror verification\n'
+run_critical_fresh_allowed
+printf '  ok critical operation allowed with fresh Project truth\n'
+run_critical_stale_denied
+printf '  ok critical operation denied when Project truth exceeds TTL\n'
 run_missing_project_field_denied
 printf '  ok missing Project field denied\n'
 run_todo_status_denied

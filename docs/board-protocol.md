@@ -600,9 +600,11 @@ Operation policy:
 | `claim`, `list`, `sync-state`, `backlog-add`, `reap` | Fresh Project truth yoksa yeni claim veya authoritative board mutation yoktur; sadece clearly-labeled stale/read-only output olabilir. |
 | `live_mutation`, `deploy`, `issue_close`, `recovery`, `key_rotation` | Fresh Project truth + valid claim yoksa fail-closed. |
 
-Fresh Project truth kritik operasyonlar icin `refreshed_at <= 5 dakika` olarak
-yorumlanir. Stale ise refresh denenir; GraphQL budget yoksa kritik operasyon
-durur.
+Fresh Project truth kritik operasyonlar icin Project item lookup çıktısındaki
+`refreshed_at_epoch` yaşının `PROJECT_TRUTH_TTL_SECONDS` (default 300 saniye)
+altında kalmasıdır. `require-claim` sonucu bunu `project_truth` alanında
+raporlar. Truth stale/missing/future ise veya GraphQL budget yoksa kritik
+operasyon durur.
 
 Budget guard:
 
