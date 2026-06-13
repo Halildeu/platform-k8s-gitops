@@ -383,7 +383,8 @@ def audit_debt_summary(path: str | None, limit: int) -> dict[str, Any]:
         "invalid": invalid,
         "bounded": total <= limit,
         "limit": limit,
-        "retry_supported": False,
+        "retry_supported": True,
+        "retry_command": "python3 scripts/coordination/retry-audit-debt.py",
     }
 
 

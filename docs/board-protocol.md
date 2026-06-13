@@ -568,8 +568,9 @@ bash scripts/board-sync.sh require-claim \
 Bu komut GitHub write path'lerine dokunmaz; JSON `allowed=true|false`,
 `deny_code` ve deny durumunda `deny_event_intent_id` uretir. `COORDINATION_LEDGER_PATH`
 set edildiginde ayni read-only gate ledger replay sonucunu da permission
-predicate'ine dahil eder. CAS-backed mirror write, `DENY_RECORDED` retry,
-reaper mutation ve takeover commit mekanigi ayri implementation slice'laridir.
+predicate'ine dahil eder. CAS-backed mirror write ve `DENY_RECORDED` retry
+ayri helper'lar uzerinden gelir; reaper mutation ve takeover commit mekanigi
+ayri implementation slice'laridir.
 
 `record-deny` ilk implementation slice'inda fail-closed local audit debt queue
 olarak calisir:
@@ -806,8 +807,7 @@ Detector ledger'i verifier ile replay eder. Invalid suffix gorurse
 `fail_closed=true` ve `LEDGER_INVALID_SUFFIX` finding'i uretir. Ledger valid
 ise stale/expired claim, mirror drift/orphan ve orphan materialized comment
 finding'lerini explicit mirror snapshot uzerinden raporlar. Local audit-debt
-queue icin bounded dedupe sayaci uretir; CAS-backed retry henuz bu helper'in
-kapsaminda degildir.
+queue icin bounded dedupe sayaci ve CAS-backed retry komut bilgisini uretir.
 
 Bu helper issue body, Project #2, PR body, comment veya ledger branch mutate
 etmez. Ciktisi sonraki CAS-backed reaper/retry ve repair akislari icin
@@ -893,3 +893,33 @@ Mutation oncesi tum yuzeyler validate edilir:
 Kismi apply hatasinda helper `mirror_write_failed_repair_required` ve
 `repair_debt[]` uretir; bu ciktinin kendisi permission grant degildir. Kalan
 repair/retry akisi reaper veya CAS-backed audit debt retry slice'indadir.
+
+### 17.12 Coordination ledger audit-debt retry
+
+Audit-debt retry helper:
+
+```bash
+python3 scripts/coordination/retry-audit-debt.py \
+  --queue .local/coordination-audit-debt.jsonl \
+  --remote origin \
+  --branch coordination-ledger \
+  --ledger-path coordination-ledger/events.jsonl \
+  --post-comment \
+  --limit 20
+```
+
+Bu helper `record-deny` tarafindan uretilen append-only local
+`coordination-audit-debt/v1` queue kayitlarini bounded ve dedupe edilmis sekilde
+okur, her `deny_event_intent_id` icin deterministik `DENY_RECORDED` event UUID
+uretir ve mevcut `emit-ledger-event.sh` + remote branch CAS hattindan ledger'a
+append eder.
+
+Kurallar:
+
+- Queue otorite degildir; otorite sadece valid ledger event'idir.
+- Basarili retry veya zaten ledger'da bulunan event icin queue'ya terminal marker
+  eklenir, eski kayitlar rewrite edilmez.
+- Invalid ledger suffix, CAS mismatch, comment materialization hatasi veya
+  fixture eksikligi mutation oncesi fail-closed olur.
+- `DENY_RECORDED` audit-only event'tir; claim yetkisi vermez, revoke yapmaz,
+  issue body / Project #2 / PR mirror mutate etmez.

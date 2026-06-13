@@ -572,8 +572,8 @@ emitting a `LEDGER_INVALID_SUFFIX` finding. On valid ledgers it reports
 candidate `CLAIM_STALE`, `CLAIM_EXPIRED`, `MIRROR_DRIFT_DETECTED`,
 `MIRROR_ORPHAN_DETECTED`, and `ORPHAN_COMMENT_DETECTED` findings from an
 explicit mirror snapshot. It also scans the local audit-debt queue with bounded
-dedupe and reports that CAS-backed retry is not yet supported. LDG-7 does not
-append ledger events or mutate GitHub/Project mirrors.
+dedupe and reports the CAS-backed retry command. LDG-7 itself does not append
+ledger events or mutate GitHub/Project mirrors.
 
 Implementation slice LDG-8 adds the takeover/recovery runtime flow planner:
 
@@ -641,7 +641,40 @@ permission.
 
 LDG-10 still does not append new ledger events for `DENY_RECORDED`, audit debt
 retry, PR mirror validation gates, branch protection, secret scanning, or
-tombstone/supersede flows. Those remain follow-up slices.
+tombstone/supersede flows. LDG-11 covers `DENY_RECORDED` audit-debt retry;
+the remaining gates stay as follow-up slices.
+
+Implementation slice LDG-11 adds CAS-backed audit-debt retry:
+
+```bash
+python3 scripts/coordination/retry-audit-debt.py \
+  --queue .local/coordination-audit-debt.jsonl \
+  --remote origin \
+  --branch coordination-ledger \
+  --ledger-path coordination-ledger/events.jsonl \
+  --post-comment \
+  --limit 20
+```
+
+The helper drains bounded `coordination-audit-debt/v1` local queue records into
+`DENY_RECORDED` ledger events through the existing mirror-safe emitter and
+remote branch CAS path. The local queue remains append-only: successful retry
+or already-present ledger state is recorded by appending terminal markers
+instead of editing historical debt records.
+
+Safety rules:
+
+- Invalid existing ledger suffix fails closed before any retry append.
+- Missing or invalid materialized comment evidence fails closed before ledger
+  mutation in fixture mode; live mode must use `--post-comment`.
+- Event UUIDs are deterministic per `deny_event_intent_id`, so reruns are
+  idempotent and do not grow the ledger.
+- The emitted event is audit-only. It never grants permission, revokes another
+  session, edits issue bodies, mutates Project #2, or updates PR mirrors.
+
+LDG-11 still does not implement PR mirror validation gates, branch
+protection/append-only repository enforcement, secret scanning, or
+tombstone/supersede flows.
 
 ## 19. Project GraphQL Budget / Mirror Queue Hardening
 
@@ -891,7 +924,7 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 - [x] Add issue body / Project / PR mirror writes after CAS.
 - [x] Add fail-closed `record-deny` local audit debt queue while CAS writer is
   unavailable.
-- [ ] Add CAS-backed `DENY_RECORDED` emission and debt retry after CAS writer
+- [x] Add CAS-backed `DENY_RECORDED` emission and debt retry after CAS writer
   exists.
 
 ### Slice 4 — Reaper
@@ -900,7 +933,7 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 - [x] Add mirror drift/orphan detection.
 - [x] Add invalid suffix fail-closed behavior.
 - [x] Add audit debt bounded dedupe report.
-- [ ] Add CAS-backed audit debt retry.
+- [x] Add CAS-backed audit debt retry.
 
 ### Slice 5 — PR/CI gates
 
