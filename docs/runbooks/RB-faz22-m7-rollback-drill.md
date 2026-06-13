@@ -2,15 +2,15 @@
 
 > **Status**: WAVE-GATE PREP — agent docs-only. Canlı drill **operatör + 1 pilot cihaz** gerektirir (operator-gated).
 > **Tracked by**: [#1379](https://github.com/Halildeu/platform-k8s-gitops/issues/1379) (Faz 22.5 M7 — Rollback drill gate).
-> **Source of truth**: `docs/faz-22-software-deployment-plan.md` §0.5.3 (MSI/GPO rollback), §0.5.7 (Rollback ve Communications gate), §0.5.9 (full-consensus protocol — M7 mandatory gate).
-> **Scope sınırı**: Bu runbook rollback drill'in **tekrar edilebilir prosedürü + evidence template**'idir. "Rollback prove edildi" iddiası **ancak 1 pilot cihazda canlı drill koşulup evidence template doldurulduktan sonra** geçerlidir (§0.5.9 stop-line rule 3: rollback drill failure stops the next wave). PR merge tek başına gate kapatmaz.
-> **İlişkili**: `RB-faz22-m5-2pc-pilot.md` (M5 pilot), `RB-faz22-m6-50pc-capacity.md` (M6 wave), `RB-faz22.3-ad-cs-setup.md` (AD CS), `scripts/faz22-mass-deployment/wave-preflight.ps1` (cihaz sağlık check).
+> **Source of truth (origin/main canonical)**: `docs/faz-22-software-deployment-plan.md` → **M0-M7 Milestone tablosu** (M7 800-PC Rollout Acceptance: "rollback/uninstall path ready") + **§22.5.6 Managed Uninstall / Rollback** + **board issue [#1379](https://github.com/Halildeu/platform-k8s-gitops/issues/1379) acceptance body** (governance gereği board claim canonical truth'tur). NOT: detaylı "Wave Gate Matrix / Rollback gate / Full-Consensus Protocol" alt-bölümleri (§0.5.4-0.5.9) şu an main'de DEĞİL — paralel `deploy-758` branch'inin WIP snapshot'ında (`6824e5a2`); main'e commit edilince anchor'lar netleşir (board backlog ile yakalandı).
+> **Scope sınırı**: Bu runbook rollback drill'in **tekrar edilebilir prosedürü + evidence template**'idir. "Rollback prove edildi" iddiası **ancak 1 pilot cihazda canlı drill koşulup evidence template doldurulduktan sonra** geçerlidir (rollback drill failure → sonraki dalga AÇILMAZ). PR merge tek başına gate kapatmaz.
+> **İlişkili**: `RB-faz22-m5-2pc-pilot.md` (M5 pilot), `RB-faz22-m6-50pc-capacity.md` (M6 wave), `RB-faz22.3-ad-cs-setup.md` (AD CS), `scripts/faz22-mass-deployment/wave-preflight.ps1` (cihaz sağlık check — **M5 PR'ında gelir**).
 
 ---
 
 ## 1. Amaç ve kapsam
 
-Rollback bir **kapıdır, sonradan-akla-gelen değil** (§0.5.7). M5'ten itibaren rollback prove edilmeden hiçbir dalga büyütülmez. Bu drill, 800-PC filo ölçeğine çıkmadan önce **kontrollü çıkış yolunun gerçekten çalıştığını** 1 pilot cihazda kanıtlar.
+Rollback bir **kapıdır, sonradan-akla-gelen değil** (M7 gate; §22.5.6 Managed Uninstall / Rollback). M5'ten itibaren rollback prove edilmeden hiçbir dalga büyütülmez. Bu drill, 800-PC filo ölçeğine çıkmadan önce **kontrollü çıkış yolunun gerçekten çalıştığını** 1 pilot cihazda kanıtlar.
 
 ### 1.1 Neyi kanıtlar
 
@@ -46,7 +46,7 @@ Rollback bir **kapıdır, sonradan-akla-gelen değil** (§0.5.7). M5'ten itibare
 
 ## 3. Drill adımları
 
-Her adım: **tetik → komut → beklenen → fail-sinyali → devam eşiği**. Adımlar sıralı; bir adım fail ederse **dur**, root-cause kaydet, sonraki dalga AÇILMAZ (§0.5.9 stop-line).
+Her adım: **tetik → komut → beklenen → fail-sinyali → devam eşiği**. Adımlar sıralı; bir adım fail ederse **dur**, root-cause kaydet, sonraki dalga AÇILMAZ (stop-line: rollback drill failure → expansion bloklu).
 
 ### D1 — MSI uninstall + reinstall drill (~10 dk)
 
@@ -54,14 +54,24 @@ Her adım: **tetik → komut → beklenen → fail-sinyali → devam eşiği**. 
 
 **Komut** (pilot cihazda, elevated PowerShell — `LocalSystem` veya local admin):
 ```powershell
-# 1a. ProductCode'u bul (uninstall için stable identity)
-$p = Get-CimInstance Win32_Product -Filter "Name LIKE 'EndpointAgent%'" |
-     Select-Object Name, Version, IdentifyingNumber
-$p | Format-Table -AutoSize
-# IdentifyingNumber = {GUID} = ProductCode
+# 1a. ProductCode'u bul (uninstall için stable identity).
+#     DİKKAT: MSI ProductName = "Endpoint Agent (Lab)" / prod "Endpoint Agent"
+#     (BOŞLUKLU); servis/dosya adı "EndpointAgent" (boşluksuz). 'EndpointAgent%'
+#     filtresi BOŞ döner → $code=$null → uninstall kırılır. Registry'den iki adı
+#     da kapsa (64-bit + WOW6432Node), bulunamazsa THROW (fail-closed):
+$uninstallRoots = @(
+  'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+)
+$p = Get-ItemProperty $uninstallRoots -ErrorAction SilentlyContinue |
+     Where-Object { $_.DisplayName -like 'Endpoint Agent*' -or $_.DisplayName -like 'EndpointAgent*' } |
+     Sort-Object DisplayVersion -Descending |
+     Select-Object -First 1 DisplayName, DisplayVersion, PSChildName
+if (-not $p -or -not $p.PSChildName) { throw "Endpoint Agent MSI ProductCode not found." }
+$code = $p.PSChildName   # = {GUID} = ProductCode
+"$($p.DisplayName) $($p.DisplayVersion) -> $code"
 
 # 1b. MSI uninstall (silent, no reboot, verbose log)
-$code = $p.IdentifyingNumber
 msiexec /x "$code" /qn /norestart /l*v "C:\ProgramData\EndpointAgent\logs\uninstall-msi-$(Get-Date -Format yyyyMMdd-HHmmss).log"
 echo "msiexec exit: $LASTEXITCODE"   # beklenen 0 (3010 = reboot-pending, kabul edilebilir)
 
@@ -78,7 +88,7 @@ echo "msiexec exit: $LASTEXITCODE"   # beklenen 0
 #  ENROLL_RESPONSE_FILE=<temp>; wrapper kullanım sonrası dosyayı siler.)
 ```
 
-> **Not**: `Win32_Product` enumerate yavaş + her satırda consistency-check tetikler; alternatif olarak `Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where DisplayName -like 'EndpointAgent*'` ile `PSChildName` (= ProductCode) okunabilir (daha hızlı, yan etkisiz).
+> **Not**: Yukarıda **registry uninstall yolu** kullanıldı (`Win32_Product` yerine) — `Win32_Product` enumerate yavaş + her satırda consistency-check (repair) tetikler, yan etkili. Registry yolu hızlı + yan etkisiz + iki ProductName varyantını (`Endpoint Agent` / `EndpointAgent`) da kapsar.
 
 **MSI uninstall iç akışı** (M4 ps1-wrapper model, `installers/windows/`): MSI deferred CA → `run-agent-install.ps1 -Uninstall` → `uninstall.ps1`. `uninstall.ps1` adımları (canonical SoT, doğrulandı):
 1. `HKLM\SYSTEM\CurrentControlSet\Services\EndpointAgent\Environment` regkey **temizlenir** (stale Mode/env guard — #108/#109 sınıfı).
@@ -89,7 +99,7 @@ echo "msiexec exit: $LASTEXITCODE"   # beklenen 0
 
 **Beklenen**: uninstall exit 0/3010; service kayıt yok; reinstall exit 0; reinstall sonrası service `Running`.
 
-**Fail-sinyali**: uninstall exit 1603 (genel fail — `-l*v` log tail oku: çoğunlukla locked binary / pending-delete); reinstall "another version is already installed" (ProductCode/UpgradeCode drift → M4 stop §0.5.4).
+**Fail-sinyali**: uninstall exit 1603 (genel fail — `-l*v` log tail oku: çoğunlukla locked binary / pending-delete); reinstall "another version is already installed" (ProductCode/UpgradeCode drift → M4 signed-MSI gate stop).
 
 **Devam eşiği**: uninstall + reinstall ikisi de exit 0/3010 → D2.
 
@@ -241,13 +251,13 @@ curl -sS -X POST "$BASE/api/v1/admin/endpoint-devices/$DEVICE_ID/decommission" \
 | Drill fail | Kurtarma |
 |---|---|
 | Uninstall locked binary (1603) | `taskkill /F /IM endpoint-agent.exe` (tüm child'lar) → uninstall retry; hâlâ fail ise VM snapshot/restore point geri yükle |
-| Reinstall ProductCode drift | Eski sürüm `Win32_Product` enumerate → manuel `msiexec /x <old-code>` → temiz reinstall |
+| Reinstall ProductCode drift | Eski sürüm registry'den (1a yolu) bul → manuel `msiexec /x <old-code>` → temiz reinstall |
 | Decommission cascade cihazı kilitledi | `reactivate` ile geri al; reactivate de fail ediyorsa (409) backend lifecycle state DB'den incele (operatör) |
-| GPO unlink MSI loop | İkinci accidental link kontrolü (`gpresult /r` tüm GPO'lar); link guard (§0.5.3 "accidental link guard") |
+| GPO unlink MSI loop | İkinci accidental link kontrolü (`gpresult /r` tüm GPO'lar); GPO scope discipline (accidental link guard — pilot OU dışı link YASAK) |
 
 ---
 
-## 5. IT / help-desk comms template (§0.5.7)
+## 5. IT / help-desk comms template
 
 > Dalga başlamadan **önce** IT owner + help-desk triage class'ları + escalation SLA yazılı olmalı.
 
@@ -261,7 +271,7 @@ Kullanıcı etkisi:
 - Rollback sırasında agent servisi durur; kullanıcı oturumu / dosyaları ETKİLENMEZ (agent read-only + komut-tabanlı).
 - Reboot gerektirmez (msiexec /norestart); pending-reboot (exit 3010) varsa kullanıcı bilgilendirilir.
 
-Triage class'ları (failed-device queue, §0.5.5):
+Triage class'ları (failed-device queue):
 - DNS/edge mTLS · Cert identity · Installer/MSI · Service/HMAC/mode · Backend result-submit · EDR/network
 
 Eskalasyon: <kanal — Microsoft Teams kanalı; NOT Slack>
@@ -296,7 +306,7 @@ Eskalasyon: <kanal — Microsoft Teams kanalı; NOT Slack>
 
 ## 8. Referanslar
 
-- `docs/faz-22-software-deployment-plan.md` §0.5.3 / §0.5.7 / §0.5.9
+- `docs/faz-22-software-deployment-plan.md` → M0-M7 Milestone tablosu (M7 Acceptance) + §22.5.6 Managed Uninstall / Rollback; board issue [#1379](https://github.com/Halildeu/platform-k8s-gitops/issues/1379) acceptance body (canonical)
 - Backend revoke: `endpoint-admin-service` `AdminEndpointDeviceController` (`/decommission`, `/reactivate`), `EndpointDeviceLifecycleService` (Codex `019ea789`)
 - Agent uninstall: `platform-agent` `installers/windows/uninstall.ps1` + `run-agent-install.ps1` (M4 ps1-wrapper, memory `project_faz225_m4_wix_msi`)
 - Signed MSI: AG-018 internal-CA pipeline (memory `project_ag018_linux_signing_pivot`, v0.2.1 LIVE)

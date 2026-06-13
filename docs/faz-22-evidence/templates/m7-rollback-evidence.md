@@ -91,4 +91,4 @@ Cascade counts (decommission, gerçek audit alanları): `cancelledCommands`=`?`,
 | **Recommendation** | PASS (M5/M6 expansion açılabilir) / FAIL (gate kapalı) |
 | Root-cause class (FAIL ise) | |
 | Sonraki dalga onayı | bekliyor / verildi |
-| Full-consensus (§0.5.9) | Claude / Mavis / Codex verdict |
+| Full-consensus (Claude+Mavis+Codex per HARD RULE) | Claude / Mavis / Codex verdict |
