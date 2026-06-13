@@ -29,6 +29,23 @@ The plan is based on a provider-level ping-pong consultation completed on 2026-0
 
 V13 and V14 were rejected for real blockers: ambiguous TTL/reaper behavior, incomplete event authority, Project mirror race, degraded-mode leakage, bootstrap ambiguity, Mavis authority leakage, and takeover/deny-audit gaps. V16 is the accepted specification.
 
+### 2.1 Project GraphQL Budget Consensus
+
+On 2026-06-13 the team ran a second provider-level consultation for the
+GitHub Project v2 GraphQL exhaustion failure observed while closing PR #1500.
+
+| Reviewer | Round 1 | Round 2 | Final must-fix |
+|---|---|---|---|
+| Claude CLI result | REVISE | AGREE | NONE |
+| Mavis / MiniMax result | AGREE | AGREE | NONE |
+| Codex sub-agent second opinion | REVISE | AGREE | NONE |
+
+The accepted conclusion is narrow: REST fallback already exists for PR,
+issue, comment, and check-run workflows. The remaining blocker is Project v2
+GraphQL usage on the board hot path. Therefore the fix is not "use REST
+more"; the fix is to make Project GraphQL budgeted, targeted, queue-aware for
+low-risk mirror mutations, and fail-closed for critical operations.
+
 ## 3. Design Decision
 
 Adopt an append-only coordination ledger as the replay source of truth, while keeping GitHub Project #2, issue body, materialized comments, and PR body as required visible mirrors.
@@ -355,7 +372,148 @@ Duplicate `event_uuid` with different payload or hash invalidates the suffix.
 
 Exact duplicate retry is idempotent only when payload, hash, signature, and comment binding are byte-identical.
 
-## 19. Implementation Slices
+## 19. Project GraphQL Budget / Mirror Queue Hardening
+
+GitHub Project v2 custom fields are GraphQL-only. This includes Project #2
+`Status`, `Faz`, `Track`, `Priority`, `Kind`, Project item ids, and Project
+field mutations. REST fallback is available for PRs, issues, issue comments,
+issue body edits, and check-runs, but not for Project v2 field truth.
+
+The system must keep Project GraphQL out of the high-frequency path whenever
+possible, without pretending that an issue body, PR body, or queue item is the
+Project board.
+
+### 19.1 Field Catalog
+
+Project-level field ids and option ids are stored in a repo-level field catalog
+fixture. They are not copied into every issue body.
+
+The catalog records:
+
+- Project id.
+- Required field ids: `Status`, `Faz`, `Track`, `Priority`, `Kind`.
+- Option-name to option-id mapping for each single-select field.
+- `catalog_version` and a fingerprint.
+
+If a Project field or option id drifts, direct mutation helpers fail or refresh
+the catalog. They must not perform blind best-effort writes with stale option
+ids.
+
+### 19.2 Project Item Locator Cache
+
+Issue body or coordination blocks may hold `project_item_id`, but only as a
+locator cache. It is not truth and does not replace a fresh Project read for
+critical operations.
+
+The locator cache records:
+
+- `project_id`
+- `project_item_id`
+- issue repo, issue number, and issue URL
+- last seen `Status/Faz/Track/Priority/Kind`
+- `refreshed_at`
+- `catalog_fingerprint`
+
+When `project_item_id` is missing, the bootstrap path performs a targeted
+Project lookup for that issue. Full-board scans are not allowed on hot-path
+claim, release, verify, or permission checks.
+
+### 19.3 GraphQL Budget Guard
+
+Project GraphQL calls first check the REST rate-limit endpoint:
+
+```bash
+gh api rate_limit --jq '.resources.graphql'
+```
+
+If remaining GraphQL budget is exhausted, no additional GraphQL probe is made.
+The guard emits machine-readable JSON with:
+
+- remaining budget
+- reset time
+- operation class
+- decision: `continue`, `defer`, or `fail`
+
+The guard policy is operation-class aware. Low-risk Project mirror mutations
+may be deferred; critical operations fail closed.
+
+### 19.4 Direct ProjectV2 Mutation Helper
+
+Hot-path Project mutation must use a narrow helper around
+`updateProjectV2ItemFieldValue`, not opaque `gh project item-edit` wrappers.
+The helper receives known `item_id`, `field_id`, and option name/id from the
+catalog, validates catalog freshness, and emits distinct error classes for:
+
+- rate limit exhausted
+- stale or missing item id
+- field or option drift
+- already target state
+- no-downgrade skip
+- mutation failed
+
+### 19.5 Deferred Project Mutation Queue
+
+Deferred Project mutation is allowed only for low-risk board mirror repair.
+It is never authority and never replaces Project #2 truth.
+
+The canonical marker is GitHub-visible:
+
+```text
+PROJECT-DEFERRED v1 key=<stable-id>
+```
+
+Local files may cache pending work, but local files are not canonical. Queue
+items are idempotent and include enough data for `drain-project-queue` to
+detect duplicates, stale state, and drift.
+
+Allowed low-risk deferred mutations:
+
+- PR merge evidence -> `Needs Verify`
+- `backlog-add` Kind/Status reconcile
+- release after accepted work -> `Todo` reconcile
+
+Forbidden deferred mutations:
+
+- `Done`
+- `issue_close`
+- `live_mutation`
+- `deploy`
+- `recovery`
+- `key_rotation`
+
+`agent-state.status` must not be silently changed to a value that conflicts
+with Project #2. If the board could not be updated, the body records an
+explicit deferred marker rather than pretending the board state changed.
+
+### 19.6 Drain Semantics
+
+`drain-project-queue` is:
+
+- idempotent
+- bounded per batch
+- rate-aware
+- no-downgrade
+- safe when the target is already in the desired state
+- fail/refresh on option drift
+
+During drain, each item re-checks the current Project item state. If the item
+changed since the queued marker was created, drain skips that item and records
+a stale-skip audit marker instead of overwriting the board.
+
+### 19.7 Operation Policy
+
+| Operation class | GraphQL exhausted behavior |
+|---|---|
+| `local_edit`, `file_write` | May continue using local/REST evidence only. No board mutation is implied. |
+| `commit`, `push`, `pr_create`, `pr_update` | May continue if issue/PR REST evidence is valid. Project mutation is deferred only when the mutation is low-risk. |
+| `claim`, `list`, `sync-state`, `backlog-add`, `reap` | No claim or authoritative board mutation without fresh Project truth. Read-only stale mirror output is allowed if clearly labeled. |
+| `live_mutation`, `deploy`, `issue_close`, `recovery`, `key_rotation` | Fail closed unless fresh Project truth and valid claim are verified. |
+
+Fresh Project truth for critical operations means `refreshed_at <= 5 minutes`.
+If stale, the command attempts a refresh. If refresh is impossible because
+GraphQL budget is exhausted, critical operations fail closed.
+
+## 20. Implementation Slices
 
 ### Slice 1 — Docs and schema
 
@@ -363,6 +521,38 @@ Exact duplicate retry is idempotent only when payload, hash, signature, and comm
 - Reference it from `docs/board-protocol.md`.
 - Define ledger event JSON schema.
 - Define event authority table as machine-readable fixture.
+
+### Slice 1B — Project GraphQL budget / mirror queue hardening
+
+This slice is inserted before the full ledger replay/writer path because it
+removes the current Project GraphQL hot-path blocker for agent coordination.
+
+#### Slice 1B-a — Budget and direct mutation foundation
+
+- Add repo-level Project field catalog fixture.
+- Add `project_item_id` locator cache schema.
+- Add targeted item bootstrap lookup.
+- Add REST rate-limit based GraphQL budget guard.
+- Add direct ProjectV2 mutation helper.
+- Detect stale item ids and field/option drift.
+
+#### Slice 1B-b — Deferred queue for low-risk Project mutations
+
+- Add `PROJECT-DEFERRED v1` GitHub-visible marker.
+- Add idempotent, durable deferred mutation records.
+- Add `drain-project-queue`.
+- Queue only low-risk mirror repair mutations.
+- Ensure queued `Needs Verify` prevents a new claim until drained or resolved.
+
+#### Slice 1B-c — Critical operation fail-closed integration
+
+- Enforce operation policy in scripts, not only docs.
+- Require fresh Project truth for `live_mutation`, `deploy`, `issue_close`,
+  `recovery`, and `key_rotation`.
+- Deny critical operations when Project truth is stale and GraphQL budget is
+  exhausted.
+- Preserve REST-only continuation for local edit, file write, and permitted
+  PR/issue evidence paths.
 
 ### Slice 2 — Read-only verifier
 
@@ -399,7 +589,7 @@ Exact duplicate retry is idempotent only when payload, hash, signature, and comm
 - Add solo-owner recovery audit gate.
 - Add tombstone/supersede flow.
 
-## 20. Acceptance Criteria
+## 21. Acceptance Criteria
 
 - Project #2 issue exists and is field-complete.
 - `docs/board-protocol.md` references this plan.
@@ -413,11 +603,23 @@ Exact duplicate retry is idempotent only when payload, hash, signature, and comm
 - Runtime PRs are blocked on forbidden close keywords and must use `Tracked by #N`.
 - Takeover grants new active winner only after `TAKEOVER_COMMITTED`.
 - Denials before mutation generate `DENY_RECORDED` or local audit debt; mutation remains blocked.
+- GraphQL budget exhaustion for low-risk PR evidence queues a Project mirror
+  mutation instead of silently dropping it.
+- GraphQL budget exhaustion for `live_mutation`, `deploy`, `issue_close`,
+  `recovery`, or `key_rotation` fails closed.
+- `project_item_id` is treated only as a locator cache, never as Project truth.
+- Stale or already drained `PROJECT-DEFERRED` markers do not permanently block
+  eligible work.
+- Queued `Needs Verify` prevents a new claim until drain/reconcile resolves it.
+- Option id drift fails or refreshes before mutation; stale option ids are not
+  blindly written.
 
-## 21. Follow-up Work
+## 22. Follow-up Work
 
 - Implement `board-sync` verifier library.
 - Add Project #2 field schema fixture.
 - Add ledger branch bootstrap runbook.
 - Add CI guard for runtime close keywords.
 - Add Mavis boundary section to agent onboarding docs.
+- Implement Project GraphQL budget guard.
+- Implement `PROJECT-DEFERRED v1` queue and `drain-project-queue`.
