@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acik.com/schemas/coordination-ledger-event-v1.schema.json",
+  "title": "Coordination Ledger Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "event_uuid",
+    "event_type",
+    "writer_role",
+    "committed_at",
+    "previous_event_hash",
+    "payload",
+    "payload_hash",
+    "event_hash"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "coordination-ledger-event/v1"
+    },
+    "event_uuid": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "writer_role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "committed_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "previous_event_hash": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sha256Hash"
+        }
+      ]
+    },
+    "payload": {
+      "type": "object"
+    },
+    "payload_hash": {
+      "$ref": "#/$defs/sha256Hash"
+    },
+    "event_hash": {
+      "$ref": "#/$defs/sha256Hash"
+    },
+    "key_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signature": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object"
+        }
+      ]
+    },
+    "comment_binding": {
+      "type": "object"
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "sha256Hash": {
+      "type": "string",
+      "pattern": "^(sha256:)?[a-f0-9]{64}$"
+    }
+  }
+}

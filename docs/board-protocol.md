@@ -639,3 +639,25 @@ Drain terminal marker'lari:
 Pending `PROJECT-DEFERRED v1 target="Needs Verify"` marker'i varken `claim`
 reddedilir. Bu, PR merge evidence kuyruğa düşmüşken başka ajanların item'ı
 yeniden `Todo/In Progress` gibi ele almasını engeller.
+
+### 17.2 Coordination ledger replay verifier
+
+Ledger replay verifier read-only/offline bir guard'dır:
+
+```bash
+python3 scripts/coordination/verify-ledger-replay.py <ledger.jsonl>
+```
+
+Guard `docs/coordination/ledger-event-authority-v1.json` dosyasındaki event
+authority sözleşmesine göre JSONL ledger'ı genesis'ten replay eder ve ilk
+invalid suffix'te nonzero döner. Kontroller:
+
+- unknown event type fail-closed;
+- unauthorized writer fail-closed;
+- `payload_hash`, `previous_event_hash`, `event_hash` zinciri;
+- `committed_at` geriye gitmez;
+- aynı `event_uuid` yalnız byte-identical retry ise idempotent kabul edilir.
+
+Bu verifier tek başına claim yetkisi vermez ve GitHub/Project yüzeylerini
+mutate etmez. `require-claim` içine tam authority entegrasyonu CAS append
+writer + materialized comment binding geldikten sonra yapılır.

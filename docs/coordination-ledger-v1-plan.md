@@ -1,6 +1,6 @@
 # Coordination Ledger v1 — Parallel Agent Claim / Permission Gate Plan
 
-Status: Planned
+Status: Partially implemented
 Date: 2026-06-13
 Tracked by: Halildeu/platform-k8s-gitops#1498
 Authority: `AGENTS.md`, `docs/context-priority-rules.md`, `docs/board-protocol.md`, Project #2
@@ -384,6 +384,24 @@ Duplicate `event_uuid` with different payload or hash invalidates the suffix.
 
 Exact duplicate retry is idempotent only when payload, hash, signature, and comment binding are byte-identical.
 
+Implementation slice LDG-1 adds an offline replay verifier:
+
+```text
+scripts/coordination/verify-ledger-replay.py
+docs/coordination/coordination-ledger-event-v1.schema.json
+.github/workflows/gate-coordination-ledger-replay.yml
+```
+
+The verifier reads JSONL events from genesis, checks the event authority
+fixture, writer role, `payload_hash`, `previous_event_hash`, `event_hash`,
+timestamp monotonicity, and exact duplicate retry semantics. It fails on the
+first invalid suffix and reports the last valid prefix hash.
+
+LDG-1 is deliberately read-only and offline. It does not append ledger events,
+mutate GitHub issue bodies/comments, mutate Project #2 fields, or replace the
+current `board-sync require-claim` mirror checks. CAS writer, materialized
+comment binding, and runtime permission integration remain later slices.
+
 ## 19. Project GraphQL Budget / Mirror Queue Hardening
 
 GitHub Project v2 custom fields are GraphQL-only. This includes Project #2
@@ -603,7 +621,10 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 
 ### Slice 2 — Read-only verifier
 
-- Add ledger replay verifier.
+- [x] Add ledger replay verifier.
+- [x] Add event schema for verifier input records.
+- [ ] Wire ledger replay state into `require-claim` permission predicate after
+  CAS append writer + materialized comment binding exist.
 - Add `require-claim --operation` operation classes.
 - Add machine-readable deny codes.
 - Add Project #2 field validation.

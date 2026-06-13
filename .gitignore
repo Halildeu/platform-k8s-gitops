@@ -38,6 +38,9 @@ tmp/
 
 # Claude Code session state
 .claude/
+__pycache__/
+**/__pycache__/
+*.py[cod]
 scripts/drift_detection/__pycache__/
 scripts/drift_detection/**/__pycache__/
 scripts/governance/__pycache__/

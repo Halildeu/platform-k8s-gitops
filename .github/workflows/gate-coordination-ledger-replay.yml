@@ -1,0 +1,45 @@
+name: Coordination Ledger Replay Gate
+
+on:
+  pull_request:
+    paths:
+      - "coordination-ledger/**/*.jsonl"
+      - "docs/coordination/coordination-ledger-event-v1.schema.json"
+      - "docs/coordination/ledger-event-authority-v1.json"
+      - "scripts/coordination/verify-ledger-replay.py"
+      - "scripts/test/coordination-ledger-replay.sh"
+      - ".github/workflows/gate-coordination-ledger-replay.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "coordination-ledger/**/*.jsonl"
+      - "docs/coordination/coordination-ledger-event-v1.schema.json"
+      - "docs/coordination/ledger-event-authority-v1.json"
+      - "scripts/coordination/verify-ledger-replay.py"
+      - "scripts/test/coordination-ledger-replay.sh"
+      - ".github/workflows/gate-coordination-ledger-replay.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run verifier harness
+        run: bash scripts/test/coordination-ledger-replay.sh
+
+      - name: Replay repository ledger files
+        shell: bash
+        run: |
+          set -euo pipefail
+          # bash is required for mapfile and process substitution.
+          mapfile -t ledgers < <(find coordination-ledger -type f -name '*.jsonl' 2>/dev/null | sort || true)
+          if [ "${#ledgers[@]}" -eq 0 ]; then
+            echo "No coordination-ledger JSONL files present."
+            exit 0
+          fi
+          python3 scripts/coordination/verify-ledger-replay.py "${ledgers[@]}"
