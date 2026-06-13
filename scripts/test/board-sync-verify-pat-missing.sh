@@ -65,6 +65,24 @@ if [ "${1:-}" = "auth" ] && [ "${2:-}" = "status" ]; then
   exit 0
 fi
 
+if [ "${1:-}" = "api" ] && [ "${2:-}" = "rate_limit" ]; then
+  printf '{"limit":5000,"remaining":100,"reset":1781347433,"used":4900}\n'
+  exit 0
+fi
+
+if [ "${1:-}" = "api" ] && [ "${2:-}" = "graphql" ]; then
+  case "${GH_FAKE_MODE:-}" in
+    pat-present|pat-present-repair)
+      printf 'PVTI_test_42\n'
+      exit 0
+      ;;
+    *)
+      echo "fake gh: GraphQL forbidden on this path" >&2
+      exit 99
+      ;;
+  esac
+fi
+
 case "${GH_FAKE_MODE:-}" in
   pat-present)
     # Full path: project view, item-list, issue view (no comments),
@@ -277,8 +295,9 @@ assert_log_contains "project view"
 assert_log_contains "project item-list"
 assert_log_contains "issue comment"
 # Codex 019e8079 iter-2 nit: also assert the full path actually moves
-# the board (project item-edit) — earlier this was implicit.
-assert_log_contains "project item-edit"
+# the board. The implementation now uses direct updateProjectV2ItemFieldValue
+# via gh api graphql instead of opaque gh project item-edit.
+assert_log_contains "api graphql"
 
 # Scenario 2: PAT missing, same-repo ref
 printf '\n[2] PAT missing, same-repo — comment-only, NO Project API\n'
@@ -289,7 +308,7 @@ run_case "pat-missing-same" "pat-missing-same-repo" 0 \
 assert_log_contains "issue comment"
 assert_log_lacks "project view"
 assert_log_lacks "project item-list"
-assert_log_lacks "project item-edit"
+assert_log_lacks "api graphql"
 assert_log_lacks "issue edit"   # body rewrite must be skipped (drift guard)
 
 # Scenario 3: PAT missing, cross-repo ref
@@ -332,7 +351,7 @@ run_case "pat-present-repair" "pat-present-repair" 0 \
   --pr 99 --pr-repo "Halildeu/platform-k8s-gitops"
 assert_log_lacks "issue comment"
 assert_log_contains "issue edit"      # body rewrite half (iter-3 P1 #2)
-assert_log_contains "project item-edit"  # board Status half
+assert_log_contains "api graphql"  # board Status half
 
 # Scenario 6: PAT missing, lowercase same-repo ref — case-insensitive
 # compare must NOT trigger the cross-repo skip.

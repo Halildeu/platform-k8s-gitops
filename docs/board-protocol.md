@@ -573,7 +573,9 @@ truth'unun GraphQL-only olmasi ve board hot path'te pahali `item-list` /
 Canonical ayrim:
 
 - `project_item_id` sadece **locator cache**'tir; Project truth degildir.
-- Project field catalog repo-level fixture olur; her issue body'ye kopyalanmaz.
+- Project field catalog repo-level fixture'dir:
+  `docs/coordination/project-field-catalog-v1.json`; her issue body'ye
+  kopyalanmaz.
 - `PROJECT-DEFERRED v1 key=...` marker'i low-risk Project mirror mutation
   borcunu kaydeder; board Status yerine gecmez.
 - Queue sadece low-risk mirror repair icin kullanilir:
@@ -594,6 +596,19 @@ Operation policy:
 Fresh Project truth kritik operasyonlar icin `refreshed_at <= 5 dakika` olarak
 yorumlanir. Stale ise refresh denenir; GraphQL budget yoksa kritik operasyon
 durur.
+
+Budget guard:
+
+```bash
+bash scripts/board-sync.sh graphql-budget \
+  --operation pr_update \
+  --mutation-risk low-risk
+```
+
+`verify` komutu GraphQL exhausted ise `PR merged -> Needs Verify` mirror
+mutation'ini GitHub-visible `PROJECT-DEFERRED v1` marker olarak kaydeder;
+body `agent-state.status`'u `needs-verify` yapmaz ve Project #2 degismis gibi
+sunmaz.
 
 `drain-project-queue` idempotent, bounded, rate-aware ve no-downgrade olmak
 zorundadir. Drain sirasinda Project item state degismisse item overwrite
