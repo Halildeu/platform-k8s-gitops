@@ -557,6 +557,23 @@ If remote CAS fails after a live `--post-comment`, the comment is an orphan
 candidate, is not authoritative, and must be handled by the reaper/orphan path.
 Offline CI uses `--comment-json` fixtures and does not mutate GitHub.
 
+Implementation slice LDG-7 adds the read-only reaper detector:
+
+```bash
+python3 scripts/coordination/reap-ledger-state.py \
+  --ledger coordination-ledger/events.jsonl \
+  --mirror-json mirror-snapshot.json \
+  --audit-debt-jsonl .local/coordination-audit-debt.jsonl
+```
+
+The detector replays the ledger and fails closed on invalid suffixes by
+emitting a `LEDGER_INVALID_SUFFIX` finding. On valid ledgers it reports
+candidate `CLAIM_STALE`, `CLAIM_EXPIRED`, `MIRROR_DRIFT_DETECTED`,
+`MIRROR_ORPHAN_DETECTED`, and `ORPHAN_COMMENT_DETECTED` findings from an
+explicit mirror snapshot. It also scans the local audit-debt queue with bounded
+dedupe and reports that CAS-backed retry is not yet supported. LDG-7 does not
+append ledger events or mutate GitHub/Project mirrors.
+
 ## 19. Project GraphQL Budget / Mirror Queue Hardening
 
 GitHub Project v2 custom fields are GraphQL-only. This includes Project #2
@@ -809,10 +826,11 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 
 ### Slice 4 — Reaper
 
-- Add stale/expired claim detection.
-- Add mirror drift/orphan detection.
-- Add invalid suffix fail-closed behavior.
-- Add audit debt retry and bounded dedupe.
+- [x] Add stale/expired claim detection.
+- [x] Add mirror drift/orphan detection.
+- [x] Add invalid suffix fail-closed behavior.
+- [x] Add audit debt bounded dedupe report.
+- [ ] Add CAS-backed audit debt retry.
 
 ### Slice 5 — PR/CI gates
 
