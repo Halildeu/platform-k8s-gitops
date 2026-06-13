@@ -1,5 +1,21 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 wave-gate runbooks hardened + wave-preflight runtime-proven + M4 LIVE (2026-06-13, Codex 019ebf9b/019ebfbb/019ebff3)
+
+**Session milestone**: Faz 22.5 rollout wave-gate'lerinin **agent-completable prep'i doygun** — M5/M6/M7 runbook'ları doğrulanmış-doğru (gerçek backend/agent surface), `wave-preflight.ps1` canlı Windows'ta runtime-proven, M2/#1015 operatör doküman doğruluğu düzeltildi. **6 PR merged** bu oturum.
+
+| Alan | Durum (2026-06-13) | Kanıt |
+|---|---|---|
+| **M4 Signed MSI** | 🟢 **LIVE** (eski "OPEN" supersede) | AG-018 internal-CA pipeline, v0.2.1 production MSI 2-kanıt doğrulandı (`project_ag018_linux_signing_pivot`) |
+| **M5/M6/M7 runbook'lar** | 🟢 **HARDENED** (eski "Source DRAFT" supersede) | gitops **#1490** — `RB-faz22-gpo-pilot-5pc.md` (owner 2-PC/24h amendment §8.A) + `RB-faz22.5-m6-capacity-baseline.md` (metric-freeze + DeviceStatus enum fix) + `RB-faz22.5-m7-rollback-drill.md` (uydurma `/revoke` → gerçek `decommission`/`reactivate`+409; `EndpointAgent`/`endpoint-agent.exe` isim fix); #1489 duplicate consolidate edildi |
+| **wave-preflight.ps1** | 🟢 **NEW + runtime-proven** | `scripts/faz22-mass-deployment/wave-preflight.ps1` (preinstall/enroll-health/rollback-clean); **#1491** gate-masking `[int]@()` fix — canlı Win11 VM (`HALILKOOLUB735`, SYSTEM) smoke ile yakalandı+doğrulandı |
+| **M2 #1359 evidence template** | 🟢 doğruluk fix | **#1492** — uydurma `/revoke` endpoint + `platform-agent.exe`/`state.json` → gerçek surface (`auto-enroll.dpapi` vs `hmac-credential.dpapi` iki-store ayrımı) |
+| **#1015 IT pilot runbook** | 🟢 doğruluk fix | **#1494** — `endpoint-enes-agent`/`EndpointEnes\Logs` → `EndpointAgent`/`endpoint-agent.exe`/`%ProgramData%\EndpointAgent\logs`; heartbeat path + tablo adları doğrulandı; preflight wired |
+| Board | #1377/#1378/#1379/#1015 → **Needs Verify** + evidence; #1488 backlog (deployment-plan §0.5.x stranded WIP) | Project #2 |
+| M6 metrics reconcile | 🟡 paralel chip in-flight (`d3e844f6`: ServiceMonitor + PromQL reconcile) | M2-bağımsız |
+
+**KRİTİK BLOCKER değişmedi**: **M2 tokenless mTLS (#1359/#1376)** — `endpoint-agent-mtls.testai.acik.com` DNS + AD CS Web Enrollment + client CA + edge mTLS **operatör-gated**; M3 acceptance + M5/M6/M7 wave zincirinin TAMAMINI blokluyor. Agent prep ~%100, wave exec ~%0 — drift'in tek kök sebebi M2. Cross-AI: Implementer Claude ≠ Reviewer Codex (HARD RULE).
+
 ## Live Delta — Faz 22.7 Compliance Gap Mart Layer D5 LIVE acceptance (browser-verified) + COMPLETED (2026-06-09, Codex 019ea95d)
 
 **Session milestone**: Faz 22.7 (Compliance Gap Mart Layer, platform-backend #376) promoted from SOURCE-MERGED to **COMPLETED** — the D5 live/browser acceptance that was the open gate is now performed and documented, and the three COMPLETED-promotion-gate backend hardening tests landed (provider-distinct Codex review).
