@@ -89,6 +89,79 @@ set -e
 grep -q "session mismatch" "$WORK/session-mismatch.json"
 printf '  ok session mismatch fails closed\n'
 
+python3 - "$SNAPSHOT" "$REPO" "$ISSUE" "$EVENT_UUID" "$SESSION" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+path, repo, issue, event_uuid, session = sys.argv[1:]
+wrong_hash = "sha256:" + ("a" * 64)
+body = f"""PR body
+
+<!-- coordination-ledger-pr-mirror:v1
+coordination_state: active_winner
+event_uuid: {event_uuid}
+event_hash: {wrong_hash}
+session: {session}
+-->
+"""
+Path(path).write_text(
+    json.dumps(
+        {
+            "repository": repo,
+            "pull_requests": [
+                {"number": 1530, "body": body, "expected_issue": int(issue)}
+            ],
+        },
+        sort_keys=True,
+    ),
+    encoding="utf-8",
+)
+PY
+set +e
+python3 "$VALIDATOR" --ledger "$LEDGER" --snapshot "$SNAPSHOT" >"$WORK/hash-mismatch.json"
+rc=$?
+set -e
+[ "$rc" -eq 1 ]
+grep -q "event_hash mismatch" "$WORK/hash-mismatch.json"
+printf '  ok event hash mismatch fails closed\n'
+
+python3 - "$SNAPSHOT" "$REPO" "$ISSUE" "$EVENT_UUID" "$EVENT_HASH" "$SESSION" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+path, repo, issue, event_uuid, event_hash, session = sys.argv[1:]
+body = f"""PR body
+
+<!-- coordination-ledger-pr-mirror:v1
+coordination_state: arbitrary_string
+event_uuid: {event_uuid}
+event_hash: {event_hash}
+session: {session}
+-->
+"""
+Path(path).write_text(
+    json.dumps(
+        {
+            "repository": repo,
+            "pull_requests": [
+                {"number": 1531, "body": body, "expected_issue": int(issue)}
+            ],
+        },
+        sort_keys=True,
+    ),
+    encoding="utf-8",
+)
+PY
+set +e
+python3 "$VALIDATOR" --ledger "$LEDGER" --snapshot "$SNAPSHOT" >"$WORK/unknown-state.json"
+rc=$?
+set -e
+[ "$rc" -eq 1 ]
+grep -q "unknown coordination_state" "$WORK/unknown-state.json"
+printf '  ok unknown coordination_state fails closed\n'
+
 python3 - "$SNAPSHOT" "$REPO" <<'PY'
 from pathlib import Path
 import json

@@ -156,8 +156,10 @@ def validate_one(pr: dict[str, Any], events_by_uuid: dict[str, dict[str, Any]], 
 
     state = marker["coordination_state"]
     allowed_types = STATE_EVENT_TYPES.get(state)
+    if allowed_types is None:
+        raise MirrorValidationError(f"PR #{number} unknown coordination_state {state!r}")
     event_type = event.get("event_type")
-    if allowed_types is not None and event_type not in allowed_types:
+    if event_type not in allowed_types:
         raise MirrorValidationError(
             f"PR #{number} state {state!r} cannot point at ledger event_type {event_type!r}"
         )

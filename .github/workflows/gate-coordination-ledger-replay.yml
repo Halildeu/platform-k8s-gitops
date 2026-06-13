@@ -97,6 +97,9 @@ jobs:
           elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
             base_ref="${{ github.event.before }}"
           else
+            # Explicit bootstrap exception: a zero-SHA first push has no
+            # comparable base ledger. Normal PR and push paths must compare
+            # against base_ref and run the append-only guard below.
             echo "No comparable base ref for append-only enforcement."
             exit 0
           fi
