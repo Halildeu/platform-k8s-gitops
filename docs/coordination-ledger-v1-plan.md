@@ -535,6 +535,28 @@ fields, or PR bodies. Mirror-safe emission still remains the orchestrated path:
 materialize comment, append remote branch CAS event with the emitted
 `comment_binding`, then update visible mirrors only after CAS success.
 
+Implementation slice LDG-6 adds the first mirror-safe emission helper:
+
+```bash
+scripts/coordination/emit-ledger-event.sh \
+  --repo Halildeu/platform-k8s-gitops \
+  --issue 1498 \
+  --expect-previous-hash sha256:<last-ledger-event-hash> \
+  --event-type HEARTBEAT_EVIDENCE \
+  --writer-role coordinator \
+  --payload-json '{"issue":1498,"session":"..."}' \
+  --post-comment
+```
+
+The helper computes the canonical payload hash, materializes and verifies the
+GitHub issue comment, then calls the remote branch CAS writer with the emitted
+`comment_binding`. It emits a single JSON result after the ledger event is
+pushed with `--force-with-lease`. It deliberately does not mutate issue bodies,
+Project #2 fields, or PR bodies; those mirrors remain a later post-CAS step.
+If remote CAS fails after a live `--post-comment`, the comment is an orphan
+candidate, is not authoritative, and must be handled by the reaper/orphan path.
+Offline CI uses `--comment-json` fixtures and does not mutate GitHub.
+
 ## 19. Project GraphQL Budget / Mirror Queue Hardening
 
 GitHub Project v2 custom fields are GraphQL-only. This includes Project #2
@@ -776,7 +798,7 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 
 - [x] Add local/offline CAS append writer foundation.
 - [x] Add remote/branch CAS append coordination foundation.
-- [ ] Add mirror-safe emission after remote CAS.
+- [x] Add mirror-safe emission after remote CAS.
 - [x] Add materialized comment binding verifier foundation.
 - [x] Add GitHub materialized comment writer/fetch verification path.
 - Add issue body / Project / PR mirror writes after CAS.

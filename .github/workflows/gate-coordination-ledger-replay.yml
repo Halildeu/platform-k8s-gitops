@@ -8,10 +8,12 @@ on:
       - "docs/coordination/ledger-event-authority-v1.json"
       - "scripts/coordination/append-ledger-branch.sh"
       - "scripts/coordination/append-ledger-event.py"
+      - "scripts/coordination/emit-ledger-event.sh"
       - "scripts/coordination/materialize-ledger-comment.py"
       - "scripts/coordination/verify-ledger-replay.py"
       - "scripts/test/coordination-ledger-branch-cas.sh"
       - "scripts/test/coordination-ledger-materialized-comment.sh"
+      - "scripts/test/coordination-ledger-mirror-safe-emission.sh"
       - "scripts/test/coordination-ledger-replay.sh"
       - "scripts/test/coordination-ledger-writer.sh"
       - ".github/workflows/gate-coordination-ledger-replay.yml"
@@ -24,10 +26,12 @@ on:
       - "docs/coordination/ledger-event-authority-v1.json"
       - "scripts/coordination/append-ledger-branch.sh"
       - "scripts/coordination/append-ledger-event.py"
+      - "scripts/coordination/emit-ledger-event.sh"
       - "scripts/coordination/materialize-ledger-comment.py"
       - "scripts/coordination/verify-ledger-replay.py"
       - "scripts/test/coordination-ledger-branch-cas.sh"
       - "scripts/test/coordination-ledger-materialized-comment.sh"
+      - "scripts/test/coordination-ledger-mirror-safe-emission.sh"
       - "scripts/test/coordination-ledger-replay.sh"
       - "scripts/test/coordination-ledger-writer.sh"
       - ".github/workflows/gate-coordination-ledger-replay.yml"
@@ -55,6 +59,9 @@ jobs:
 
       - name: Run materialized comment harness
         run: bash scripts/test/coordination-ledger-materialized-comment.sh
+
+      - name: Run mirror-safe emission harness
+        run: bash scripts/test/coordination-ledger-mirror-safe-emission.sh
 
       - name: Replay repository ledger files
         shell: bash
