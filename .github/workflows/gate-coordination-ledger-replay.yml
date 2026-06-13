@@ -13,8 +13,10 @@ on:
       - "scripts/coordination/ledger-claim-state.py"
       - "scripts/coordination/materialize-ledger-comment.py"
       - "scripts/coordination/reap-ledger-state.py"
+      - "scripts/coordination/retry-audit-debt.py"
       - "scripts/coordination/takeover-recovery-flow.py"
       - "scripts/coordination/verify-ledger-replay.py"
+      - "scripts/test/coordination-ledger-audit-debt-retry.sh"
       - "scripts/test/coordination-ledger-branch-cas.sh"
       - "scripts/test/coordination-ledger-materialized-comment.sh"
       - "scripts/test/coordination-ledger-mirror-safe-emission.sh"
@@ -40,8 +42,10 @@ on:
       - "scripts/coordination/ledger-claim-state.py"
       - "scripts/coordination/materialize-ledger-comment.py"
       - "scripts/coordination/reap-ledger-state.py"
+      - "scripts/coordination/retry-audit-debt.py"
       - "scripts/coordination/takeover-recovery-flow.py"
       - "scripts/coordination/verify-ledger-replay.py"
+      - "scripts/test/coordination-ledger-audit-debt-retry.sh"
       - "scripts/test/coordination-ledger-branch-cas.sh"
       - "scripts/test/coordination-ledger-materialized-comment.sh"
       - "scripts/test/coordination-ledger-mirror-safe-emission.sh"
@@ -64,7 +68,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Compile ledger scripts
-        run: python3 -m py_compile scripts/coordination/append-ledger-event.py scripts/coordination/apply-ledger-mirrors.py scripts/coordination/ledger-claim-state.py scripts/coordination/materialize-ledger-comment.py scripts/coordination/reap-ledger-state.py scripts/coordination/takeover-recovery-flow.py scripts/coordination/verify-ledger-replay.py
+        run: python3 -m py_compile scripts/coordination/append-ledger-event.py scripts/coordination/apply-ledger-mirrors.py scripts/coordination/ledger-claim-state.py scripts/coordination/materialize-ledger-comment.py scripts/coordination/reap-ledger-state.py scripts/coordination/retry-audit-debt.py scripts/coordination/takeover-recovery-flow.py scripts/coordination/verify-ledger-replay.py
 
       - name: Run verifier harness
         run: bash scripts/test/coordination-ledger-replay.sh
@@ -86,6 +90,9 @@ jobs:
 
       - name: Run reaper harness
         run: bash scripts/test/coordination-ledger-reaper.sh
+
+      - name: Run audit debt retry harness
+        run: bash scripts/test/coordination-ledger-audit-debt-retry.sh
 
       - name: Run takeover/recovery harness
         run: bash scripts/test/coordination-ledger-takeover-recovery.sh

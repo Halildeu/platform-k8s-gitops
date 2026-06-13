@@ -135,7 +135,8 @@ assert "ORPHAN_COMMENT_DETECTED" in types
 assert report["audit_debt"]["total"] == 3
 assert report["audit_debt"]["unique"] == 2
 assert report["audit_debt"]["duplicates"] == 1
-assert report["audit_debt"]["retry_supported"] is False
+assert report["audit_debt"]["retry_supported"] is True
+assert report["audit_debt"]["retry_command"] == "python3 scripts/coordination/retry-audit-debt.py"
 PY
 printf '  ok stale claim, mirror drift/orphan, orphan comment, and debt dedupe are reported\n'
 
