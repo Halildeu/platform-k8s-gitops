@@ -764,3 +764,27 @@ Bu helper tek başına ledger event append etmez, Project #2 mutate etmez, issue
 body veya PR body değiştirmez ve claim yetkisi vermez. Çıkan `comment_binding`
 ancak remote branch CAS append writer ile ledger'a girdikten ve mirror-safe
 emission tamamlandıktan sonra permission predicate girdisi olabilir.
+
+### 17.7 Coordination ledger mirror-safe emission helper
+
+Mirror-safe emission helper:
+
+```bash
+scripts/coordination/emit-ledger-event.sh \
+  --repo Halildeu/platform-k8s-gitops \
+  --issue <N> \
+  --expect-previous-hash sha256:<last-ledger-event-hash> \
+  --event-type <EVENT> \
+  --writer-role <ROLE> \
+  --payload-json '<json-object>' \
+  --post-comment
+```
+
+Helper once payload hash'i canonical JSON ile hesaplar, materialized comment'i
+olusturup/fetch edip verifier'dan gecirir, sonra `comment_binding` ile remote
+branch CAS append writer'i cagirir. Ledger push'u `--force-with-lease` ile
+basarili olmadan issue body, Project #2 veya PR body mirror'i mutate edilmez.
+
+`--comment-json` modu yalniz offline fixture/test icindir. `--post-comment`
+sonrasi remote CAS fail olursa olusan comment yetki vermez; orphan candidate
+olarak reaper/orphan akisi tarafindan islenir.
