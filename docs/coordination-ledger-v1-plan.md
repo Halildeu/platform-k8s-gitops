@@ -476,6 +476,32 @@ LDG-3 still does not fetch, create, or edit GitHub comments. The actual
 materialized comment writer/fetch verifier and mirror mutation path remain
 Slice 3 work after remote/branch CAS coordination.
 
+Implementation slice LDG-4 adds a remote branch CAS append wrapper:
+
+```bash
+scripts/coordination/append-ledger-branch.sh \
+  --remote origin \
+  --branch coordination-ledger \
+  --ledger-path coordination-ledger/events.jsonl \
+  --commit-title "coordination ledger append" \
+  --commit-message "Tracked by #1498" \
+  -- \
+  --expect-previous-hash sha256:<last-ledger-event-hash> \
+  --event-type HEARTBEAT_EVIDENCE \
+  --writer-role coordinator \
+  --payload-json '{"issue":1498,"session":"..."}'
+```
+
+The wrapper fetches the existing ledger branch into a temporary ref, creates a
+detached temporary worktree, runs the local append writer, commits exactly the
+ledger JSONL diff, and pushes with `--force-with-lease` against the fetched
+branch OID. A competing branch update fails as `remote_cas_mismatch`; a missing
+ledger branch fails closed and points to the bootstrap runbook.
+
+LDG-4 still does not write issue bodies, Project fields, PR bodies, or GitHub
+comments. CAS-backed mirror-safe emission and local denial debt retry remain
+Slice 3 follow-up work.
+
 ## 19. Project GraphQL Budget / Mirror Queue Hardening
 
 GitHub Project v2 custom fields are GraphQL-only. This includes Project #2
@@ -716,7 +742,8 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 ### Slice 3 — Coordinator writer
 
 - [x] Add local/offline CAS append writer foundation.
-- [ ] Add remote/branch CAS append coordination path.
+- [x] Add remote/branch CAS append coordination foundation.
+- [ ] Add mirror-safe emission after remote CAS.
 - [x] Add materialized comment binding verifier foundation.
 - [ ] Add GitHub materialized comment writer/fetch verification path.
 - Add issue body / Project / PR mirror writes after CAS.
