@@ -166,7 +166,9 @@ For each PC at +24h, +48h, +7d:
   metrics_collect:
     install_status: Event 102 + msiexec exit code
     heartbeat_age: now - last_ping (seconds)
-    enrollment_status: backend /enrollments query (active/inactive)
+    device_status: GET /api/v1/endpoint-admin/endpoint-devices -> DeviceStatus
+                   (PENDING_ENROLLMENT|ONLINE|STALE|OFFLINE|DECOMMISSIONED;
+                   tokenless device truth is here, NOT enrollment-token status)
     edr_block: EDR console (alert list)
     cert_status: agent log "cert verify" lines (last 100)
   
@@ -174,7 +176,7 @@ For each PC at +24h, +48h, +7d:
     abort + investigate GPO/MSI/code-signing
   elif (heartbeat_age > 1800 for >= 1 PC):
     abort + investigate network/agent crash
-  elif (enrollment_fail >= 2):
+  elif (device_status not in {ONLINE,OFFLINE} for >= 2 PC):  # stuck PENDING_ENROLLMENT
     abort + investigate edge mTLS (M2 dependency)
   elif (edr_block >= 1):
     abort + EDR allowlist re-process
