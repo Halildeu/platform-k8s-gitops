@@ -142,6 +142,11 @@ Get-AuthenticodeSignature "EndpointAgent-<version>-signed.msi"
 Script: `scripts/faz22-mass-deployment/wave-preflight.ps1` (read-only; modes
 `preinstall-readiness` / `enroll-health` / `rollback-clean`). `overall=FAIL` blocks the wave.
 
+> **NOTE**: the preflight `-RequireMachineCert` check only asserts a private-key Client-Auth
+> cert is present in LocalMachine\My — it does **NOT** prove the SAN `URI:adcomputer:{guid}` /
+> template binding (that is `verify-machine-cert.ps1`'s job). Preflight does not replace M2;
+> the **2/2 tokenless positive enroll** (D3) is the authoritative identity proof.
+
 ## 5. Wave Abort Formula + Threshold
 
 ### 5.1 Failure Modes
@@ -228,13 +233,13 @@ evidence/m5-5pc-pilot-YYYYMMDD/
 mavis communication send \
   --to <ops-peer-or-channel> \
   --command prompt \
-  --content "M5 5-PC GPO pilot kickoff YYYY-MM-DD HH:MMZ:
-  - Pilot OU: Pilot/EndpointAgentM5 (5 PC)
+  --content "M5 2-PC GPO pilot kickoff YYYY-MM-DD HH:MMZ (board #1377, owner 2-PC/24h):
+  - Pilot OU: Pilot/EndpointAgentM5 (2 PC)
   - GPO: EndpointAgentM5-Install linked
-  - MSI: endpoint-agent-<version>-signed.msi
-  - Soak: 7d (until YYYY-MM-DD)
-  - Abort threshold: ≥2/5 install_fail OR ≥1/5 heartbeat_loss>30m OR ≥1/5 EDR block
-  - Status updates: daily +24h
+  - MSI: EndpointAgent-<version>-signed.msi
+  - Soak: 24h (until YYYY-MM-DD)
+  - Abort threshold (2-PC): any 1/2 install_fail OR 1/2 heartbeat_loss>30m OR 1/2 EDR block
+  - Status updates: +24h
   - Tracked by: #1377"
 ```
 
@@ -244,8 +249,8 @@ mavis communication send \
 mavis communication send \
   --to <ops-peer> \
   --command prompt \
-  --content "M5 soak day-N update:
-  - Heartbeat 5/5 alive ✅
+  --content "M5 soak update (24h window):
+  - Heartbeat 2/2 alive ✅
   - 0 EDR alerts
   - 0 install retries
   - 0 crash events
@@ -272,10 +277,11 @@ mavis communication send \
 mavis communication send \
   --to <ops-peer> \
   --command prompt \
-  --content "M5 closure sign-off YYYY-MM-DD:
-  - 5/5 PC enrollment + GPO install LIVE
-  - 7d soak: 5/5 heartbeat alive, 0 EDR, 0 crash
-  - Evidence bundle: evidence/m5-5pc-pilot-YYYYMMDD/
+  --content "M5 closure sign-off YYYY-MM-DD (board #1377 2-PC gate):
+  - 2/2 PC tokenless enrollment + GPO install LIVE
+  - 24h soak: 2/2 heartbeat alive, 0 EDR, 0 crash
+  - 1/2 rollback + reinstall drill PASS (M7 §4.1/§4.2)
+  - Evidence bundle: evidence/m5-2pc-pilot-YYYYMMDD/
   - Mavis ops sign-off: APPROVED for M6 50-PC ramp gate
   - Tracked by: #1377"
 ```
@@ -316,4 +322,4 @@ Cross-AI peer review:
 - Reviewer (plan-time): Codex (OpenAI GPT-5.2) thread `019ea922` AGREE pattern (RB-faz22-non-domain-windows-pilot.md + RB-faz22.3-ad-cs-setup.md inspiration)
 - Verdict: AGREE source-side draft + diversity matrix + evidence pack + abort formula + Mavis coordination
 
-**Closure ≠ runbook merge**: Bu PR runbook MERGED ≠ M5 #1377 closed. Closure operator 5-PC physical pilot + 7d soak + 11-item acceptance checklist + Mavis sign-off sonra.
+**Closure ≠ runbook merge**: Bu PR runbook MERGED ≠ M5 #1377 closed. Closure operator **2-PC pilot (board #1377 authoritative) + 24h soak + §8.A checklist** + 1-device rollback drill + Mavis sign-off sonra. (5-PC/7d = §8.B original design, superseded.)

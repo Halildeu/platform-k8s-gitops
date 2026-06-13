@@ -7,7 +7,7 @@
 > **Tracked by**: [#1378](https://github.com/Halildeu/platform-k8s-gitops/issues/1378) Faz 22.5 M6 — 50-PC capacity baseline + wave abort evidence
 > **Evidence template**: §6 capacity baseline + §7 wave abort drill format
 > **Codex thread**: `019ea922` plan-time AGREE (pattern from RB-bl028b-prod-openfga-notification-model-cutover.md preflight + impact inventory)
-> **Prerequisite**: M5 #1377 5-PC GPO pilot closure + Mavis ops sign-off
+> **Prerequisite**: M5 #1377 board-authoritative pilot closure (2-PC per owner 2026-06-10 amendment) + Mavis ops sign-off
 > **Companion preflight**: `scripts/faz22-mass-deployment/wave-preflight.ps1` — per-device read-only health before each ring ramp (`-Mode preinstall-readiness` pre-push, `-Mode enroll-health` post-enroll). `overall=FAIL` holds the ring.
 > **VERIFY-BEFORE-WAVE (2026-06-13)**: the PromQL/SQL identifiers below are illustrative and MUST be reconciled against the live catalogs before the wave. Confirmed corrections: device `status` values are `PENDING_ENROLLMENT|ONLINE|STALE|OFFLINE|DECOMMISSIONED` (there is **no** `active`); confirm any `endpoint_admin_*` Prometheus metric exists in `/actuator/prometheus` (e.g. `endpoint_admin_enrollments_5xx_total` is a PROPOSED name — instrument or replace before relying on the abort formula).
 
@@ -15,7 +15,7 @@
 
 ## 1. Scope
 
-**M6** = 50-PC wave deploy (post M5 5-PC closure). Hedef: ring-based rollout (group A 10 + group B 20 + group C 20) ile capacity baseline measure + wave abort formula validate + throttling/ring config LIVE.
+**M6** = 50-PC wave deploy (post M5 #1377 board-authoritative pilot closure; 2-PC per owner amendment). Hedef: ring-based rollout (group A 10 + group B 20 + group C 20) ile capacity baseline measure + wave abort formula validate + throttling/ring config LIVE.
 
 **Source-side scope (this runbook)**:
 - Capacity baseline runbook (PromQL queries + Grafana dashboard pointers + SQL queries)
