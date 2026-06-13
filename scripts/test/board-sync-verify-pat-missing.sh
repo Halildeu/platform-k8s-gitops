@@ -73,7 +73,39 @@ fi
 if [ "${1:-}" = "api" ] && [ "${2:-}" = "graphql" ]; then
   case "${GH_FAKE_MODE:-}" in
     pat-present|pat-present-repair)
-      printf 'PVTI_test_42\n'
+      joined=" $* "
+      if printf '%s' "$joined" | grep -q 'updateProjectV2ItemFieldValue'; then
+        printf 'PVTI_test_42\n'
+      else
+        jq -n '{
+          data: {
+            repository: {
+              issue: {
+                number: 42,
+                title: "test issue 42",
+                url: "https://github.com/Halildeu/platform-k8s-gitops/issues/42",
+                projectItems: {
+                  nodes: [
+                    {
+                      id: "PVTI_test_42",
+                      project: { id: "PVT_kwHOCx7tY84BIN2d" },
+                      fieldValues: {
+                        nodes: [
+                          { __typename: "ProjectV2ItemFieldSingleSelectValue", name: "In Progress", optionId: "6e2ec368", field: { name: "Status", id: "PVTSSF_lAHOCx7tY84BIN2dzg4vgLw" } },
+                          { __typename: "ProjectV2ItemFieldSingleSelectValue", name: "issue", optionId: "22b29779", field: { name: "Kind", id: "PVTSSF_lAHOCx7tY84BIN2dzhTGxFk" } },
+                          { __typename: "ProjectV2ItemFieldSingleSelectValue", name: "Faz 23", optionId: "7ff54758", field: { name: "Faz", id: "PVTSSF_lAHOCx7tY84BIN2dzhTGqF0" } },
+                          { __typename: "ProjectV2ItemFieldSingleSelectValue", name: "gitops", optionId: "4b80f631", field: { name: "Track", id: "PVTSSF_lAHOCx7tY84BIN2dzhTGqHY" } },
+                          { __typename: "ProjectV2ItemFieldSingleSelectValue", name: "P0", optionId: "951c13f7", field: { name: "Priority", id: "PVTSSF_lAHOCx7tY84BIN2dzhTGqHk" } }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }'
+      fi
       exit 0
       ;;
     *)
@@ -292,12 +324,12 @@ run_case "pat-present" "pat-present" 0 \
   verify "https://github.com/Halildeu/platform-k8s-gitops/issues/42" \
   --pr 99 --pr-repo "Halildeu/platform-k8s-gitops"
 assert_log_contains "project view"
-assert_log_contains "project item-list"
 assert_log_contains "issue comment"
 # Codex 019e8079 iter-2 nit: also assert the full path actually moves
 # the board. The implementation now uses direct updateProjectV2ItemFieldValue
 # via gh api graphql instead of opaque gh project item-edit.
 assert_log_contains "api graphql"
+assert_log_lacks "project item-list"
 
 # Scenario 2: PAT missing, same-repo ref
 printf '\n[2] PAT missing, same-repo — comment-only, NO Project API\n'

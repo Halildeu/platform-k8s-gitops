@@ -560,27 +560,27 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 
 - [x] Add repo-level Project field catalog fixture.
 - [x] Add `project_item_id` locator cache schema.
-- [ ] Add targeted item bootstrap lookup.
+- [x] Add targeted item bootstrap lookup.
 - [x] Add REST rate-limit based GraphQL budget guard.
 - [x] Add direct ProjectV2 mutation helper for `Status` writes.
-- [ ] Detect stale item ids and field/option drift beyond direct mutation failure classes.
+- [x] Detect stale item ids and field/option drift before direct mutation where the local catalog can validate field/option ids; direct mutation still fails closed on stale item ids.
 
 #### Slice 1B-b — Deferred queue for low-risk Project mutations
 
 - [x] Add `PROJECT-DEFERRED v1` GitHub-visible marker for `verify`.
-- [ ] Add idempotent, durable deferred mutation records.
-- [ ] Add `drain-project-queue`.
+- [x] Add idempotent, durable deferred mutation records via GitHub-visible marker + terminal `PROJECT-DRAINED` / `PROJECT-STALE-SKIP` comments.
+- [x] Add issue-scoped `drain-project-queue`.
 - [x] Queue only low-risk mirror repair mutations for `verify`.
-- [ ] Ensure queued `Needs Verify` prevents a new claim until drained or resolved.
+- [x] Ensure queued `Needs Verify` prevents a new claim until drained or resolved.
 
 #### Slice 1B-c — Critical operation fail-closed integration
 
-- Enforce operation policy in scripts, not only docs.
-- Require fresh Project truth for `live_mutation`, `deploy`, `issue_close`,
+- [x] Enforce operation policy in scripts, not only docs, through `graphql-budget` and preflight classes.
+- [x] Require fresh Project truth for `live_mutation`, `deploy`, `issue_close`,
   `recovery`, and `key_rotation`.
-- Deny critical operations when Project truth is stale and GraphQL budget is
+- [x] Deny critical operations when Project truth is stale and GraphQL budget is
   exhausted.
-- Preserve REST-only continuation for local edit, file write, and permitted
+- [x] Preserve REST-only continuation for local edit, file write, and permitted
   PR/issue evidence paths.
 
 ### Slice 2 — Read-only verifier
@@ -646,10 +646,6 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 ## 22. Follow-up Work
 
 - Implement `board-sync` verifier library.
-- Add targeted Project item bootstrap lookup.
-- Add `drain-project-queue`.
 - Add ledger branch bootstrap runbook.
 - Add CI guard for runtime close keywords.
 - Add Mavis boundary section to agent onboarding docs.
-- Implement Project GraphQL budget guard.
-- Implement `PROJECT-DEFERRED v1` queue and `drain-project-queue`.
