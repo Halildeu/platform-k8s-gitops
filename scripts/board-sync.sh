@@ -15,6 +15,7 @@
 #   sync-state <issue>    report issue-body agent-state vs board Status
 #   require-claim         read-only operation-scoped claim permission check
 #   graphql-budget        REST rate-limit guard for Project v2 GraphQL budget
+#   drain-project-queue   apply low-risk PROJECT-DEFERRED markers
 #   verify     <issue>    PR-merge evidence: Status -> Needs Verify (--pr N)
 #   reap                  release every stale In Progress claim
 #   backlog-add "<title>" capture discovered work as a Backlog issue
@@ -57,6 +58,7 @@ KIND_ISSUE="22b29779"
 KIND_RISK="e3a49d4e"
 PROJECT_ITEM_LIMIT="${PROJECT_ITEM_LIMIT:-1000}"
 PROJECT_GRAPHQL_MIN_REMAINING="${PROJECT_GRAPHQL_MIN_REMAINING:-1}"
+PROJECT_FIELD_CATALOG="${PROJECT_FIELD_CATALOG:-docs/coordination/project-field-catalog-v1.json}"
 if ! [[ "$PROJECT_ITEM_LIMIT" =~ ^[0-9]+$ ]] || [ "$PROJECT_ITEM_LIMIT" -lt 200 ]; then
   echo "ERR: PROJECT_ITEM_LIMIT='$PROJECT_ITEM_LIMIT' must be an integer >= 200" >&2
   exit 2
@@ -91,13 +93,14 @@ OPT_WORKTREE=""
 OPT_BRANCH=""
 OPT_MUTATION_RISK=""
 BOARD_CACHE=""
+ITEM_JSON=""
 
 # --- helpers ------------------------------------------------------------------
 log()  { printf '%s\n' "$*" >&2; }
 die()  { printf 'board-sync: %s\n' "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '4,36p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '4,40p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -289,39 +292,164 @@ board_matches() {
     | .[] | "\(.id)\t\(.status // "")\t\(.content.url // "")\t\(.title // "")\t\(.kind // "")"'
 }
 
-# resolve_issue <number|url> -> sets REPO NUM ITEM_ID ITEM_STATUS ITEM_KIND
-resolve_issue() {
+git_remote_repo() {
+  local url
+  url="$(git config --get remote.origin.url 2>/dev/null || true)"
+  case "$url" in
+    https://github.com/*.git) printf '%s' "${url#https://github.com/}" | sed 's/\.git$//' ;;
+    git@github.com:*.git) printf '%s' "${url#git@github.com:}" | sed 's/\.git$//' ;;
+    https://github.com/*) printf '%s' "${url#https://github.com/}" ;;
+    git@github.com:*) printf '%s' "${url#git@github.com:}" ;;
+    *) printf '' ;;
+  esac
+}
+
+parse_issue_ref() {
+  # parse_issue_ref <number|owner/repo#N|url> -> sets REPO NUM
   local arg="$1"
-  REPO=""; NUM=""; ITEM_ID=""; ITEM_STATUS=""; ITEM_KIND=""
+  REPO=""; NUM=""
   if printf '%s' "$arg" | grep -q '^https://github.com/'; then
     local path
     path="${arg#https://github.com/}"
     REPO="${path%%/issues/*}"
     NUM="${path##*/}"
+  elif printf '%s' "$arg" | grep -Eq '^[^/ ]+/[^/ #]+#[0-9]+$'; then
+    REPO="${arg%#*}"
+    NUM="${arg##*#}"
   else
     NUM="$arg"
+    REPO="${OPT_REPO:-$(git_remote_repo)}"
   fi
   printf '%s' "$NUM" | grep -Eq '^[0-9]+$' || die "bad issue ref: '$arg'"
+  printf '%s' "$REPO" | grep -Eq '^[^/ ]+/[^/ ]+$' \
+    || die "could not resolve repo for issue #$NUM — pass owner/repo#N, full issue URL, or --repo owner/repo"
+}
 
-  local matches
-  matches="$(board_matches "$NUM" "$REPO")"
+project_issue_item_json() {
+  # project_issue_item_json <owner/repo> <number>
+  # Targeted Project item bootstrap lookup. This avoids the old hot-path full
+  # board scan and uses only the issue's projectItems connection.
+  local repo="$1" num="$2" owner name query
+  owner="${repo%%/*}"
+  name="${repo#*/}"
+  query="$(cat <<'GRAPHQL'
+query($owner:String!, $name:String!, $number:Int!) {
+  repository(owner:$owner, name:$name) {
+    issue(number:$number) {
+      number
+      title
+      url
+      projectItems(first:20) {
+        nodes {
+          id
+          project { id }
+          fieldValues(first:50) {
+            nodes {
+              __typename
+              ... on ProjectV2ItemFieldSingleSelectValue {
+                name
+                optionId
+                field {
+                  ... on ProjectV2SingleSelectField { id name }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GRAPHQL
+)"
+  gh api graphql \
+    -F query="$query" \
+    -F owner="$owner" \
+    -F name="$name" \
+    -F number="$num" 2>/dev/null \
+    | jq -c --arg project_id "$PROJECT_ID" '
+      .data.repository.issue as $issue
+      | ($issue.projectItems.nodes // [] | map(select(.project.id == $project_id)) | .[0]) as $item
+      | if ($issue == null or $item == null) then empty else
+          def fv($n):
+            (($item.fieldValues.nodes // [])
+              | map(select(.__typename == "ProjectV2ItemFieldSingleSelectValue" and (.field.name // "") == $n))
+              | .[0] // {});
+          {
+            id: $item.id,
+            title: ($issue.title // ""),
+            status: (fv("Status").name // ""),
+            faz: (fv("Faz").name // ""),
+            track: (fv("Track").name // ""),
+            priority: (fv("Priority").name // ""),
+            kind: (fv("Kind").name // ""),
+            fieldOptionIds: {
+              status: (fv("Status").optionId // ""),
+              faz: (fv("Faz").optionId // ""),
+              track: (fv("Track").optionId // ""),
+              priority: (fv("Priority").optionId // ""),
+              kind: (fv("Kind").optionId // "")
+            },
+            content: {
+              type: "Issue",
+              number: ($issue.number | tonumber),
+              url: ($issue.url // "")
+            }
+          }
+        end'
+}
 
-  local count
-  count="$(printf '%s\n' "$matches" | grep -c . || true)"
-  [ "$count" -eq 0 ] && die "issue #$NUM not found on board (is it a roadmap issue?)"
-  [ "$count" -gt 1 ] && die "issue #$NUM ambiguous across repos — pass the full issue URL"
+project_item_status_by_id() {
+  # project_item_status_by_id <item-id>
+  local item_id="$1" query
+  query="$(cat <<'GRAPHQL'
+query($itemId:ID!) {
+  node(id:$itemId) {
+    ... on ProjectV2Item {
+      id
+      fieldValues(first:20) {
+        nodes {
+          __typename
+          ... on ProjectV2ItemFieldSingleSelectValue {
+            name
+            field {
+              ... on ProjectV2SingleSelectField { id name }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GRAPHQL
+)"
+  gh api graphql -F query="$query" -F itemId="$item_id" 2>/dev/null \
+    | jq -r '.data.node.fieldValues.nodes[]?
+      | select(.__typename == "ProjectV2ItemFieldSingleSelectValue" and (.field.name // "") == "Status")
+      | .name' | head -1
+}
 
-  ITEM_ID="$(printf '%s' "$matches" | cut -f1)"
-  ITEM_STATUS="$(printf '%s' "$matches" | cut -f2)"
-  ITEM_KIND="$(printf '%s' "$matches" | cut -f5)"
-  local url
-  url="$(printf '%s' "$matches" | cut -f3)"
-  if [ -z "$REPO" ] && [ -n "$url" ]; then
-    local p
-    p="${url#https://github.com/}"
-    REPO="${p%%/issues/*}"
+populate_item_from_json() {
+  ITEM_ID="$(printf '%s' "$ITEM_JSON" | jq -r '.id // empty')"
+  ITEM_STATUS="$(printf '%s' "$ITEM_JSON" | jq -r '.status // empty')"
+  ITEM_KIND="$(printf '%s' "$ITEM_JSON" | jq -r '.kind // empty')"
+  [ -n "$ITEM_ID" ] || return 1
+}
+
+resolve_issue_optional() {
+  # resolve_issue_optional <number|owner/repo#N|url> -> sets REPO NUM ITEM_*
+  REPO=""; NUM=""; ITEM_ID=""; ITEM_STATUS=""; ITEM_KIND=""; ITEM_JSON=""
+  parse_issue_ref "$1"
+  ITEM_JSON="$(project_issue_item_json "$REPO" "$NUM")"
+  [ -n "$ITEM_JSON" ] || return 1
+  populate_item_from_json
+}
+
+# resolve_issue <number|owner/repo#N|url> -> sets REPO NUM ITEM_ID ITEM_STATUS ITEM_KIND ITEM_JSON
+resolve_issue() {
+  if ! resolve_issue_optional "$1"; then
+    die "issue ${REPO:-?}#${NUM:-?} not found on Project #2 via targeted lookup (is it a roadmap issue?)"
   fi
-  [ -n "$REPO" ] || die "could not resolve repo for issue #$NUM"
 }
 
 set_board_status() {
@@ -349,6 +477,7 @@ set_board_status() {
 project_set_single_select() {
   # project_set_single_select <item-id> <field-id> <option-id> <field-name> <target-label>
   local item_id="$1" field_id="$2" option_id="$3" field_name="$4" target_label="$5"
+  validate_project_option "$field_name" "$field_id" "$target_label" "$option_id"
   if project_graphql_is_exhausted; then
     die "Project GraphQL budget exhausted — cannot set $field_name -> $target_label"
   fi
@@ -372,6 +501,33 @@ project_set_single_select() {
     || die "Project mutation failed — field=$field_name target=$target_label item=$item_id"
   [ "$out" = "$item_id" ] \
     || die "Project mutation returned unexpected item id '${out:-empty}' for $item_id"
+}
+
+catalog_field_id() {
+  # catalog_field_id <field-name>
+  jq -er --arg field "$1" '.fields[$field].id // empty' "$PROJECT_FIELD_CATALOG" 2>/dev/null
+}
+
+catalog_option_id() {
+  # catalog_option_id <field-name> <option-name>
+  jq -er --arg field "$1" --arg option "$2" '.fields[$field].options[$option] // empty' "$PROJECT_FIELD_CATALOG" 2>/dev/null
+}
+
+validate_project_option() {
+  # validate_project_option <field-name> <field-id> <option-name> <option-id>
+  local field_name="$1" field_id="$2" option_name="$3" option_id="$4" expected_field expected_option
+  expected_field="$(catalog_field_id "$field_name")" \
+    || die "Project field catalog missing field '$field_name' ($PROJECT_FIELD_CATALOG)"
+  expected_option="$(catalog_option_id "$field_name" "$option_name")" \
+    || die "Project field catalog missing option '$field_name/$option_name'"
+  [ "$expected_field" = "$field_id" ] \
+    || die "Project field drift: $field_name expected field_id=$expected_field got=$field_id"
+  [ "$expected_option" = "$option_id" ] \
+    || die "Project option drift: $field_name/$option_name expected option_id=$expected_option got=$option_id"
+}
+
+status_option_id() {
+  catalog_option_id "Status" "$1"
 }
 
 post_comment() {
@@ -411,6 +567,38 @@ rest_post_comment() {
   fi
   gh api -X POST "repos/$1/issues/$2/comments" -f body="$3" >/dev/null \
     || die "failed to post REST comment on $1#$2"
+}
+
+project_deferred_records_json() {
+  # project_deferred_records_json <owner/repo> <num>
+  rest_issue_comments "$1" "$2" | jq -c '
+    . as $comments
+    | [ $comments[]
+        | select((.body // "") | test("^PROJECT-DEFERRED v1 key=[0-9a-f]{64}\\b"))
+        | .body as $body
+        | ($body | capture("^PROJECT-DEFERRED v1 key=(?<key>[0-9a-f]{64})")) as $m
+        | select(([ $comments[]
+            | select((.body // "") | test("^PROJECT-(DRAINED|STALE-SKIP) v1 key=" + $m.key + "\\b"))
+          ] | length) == 0)
+        | {
+            key: $m.key,
+            comment_id: .id,
+            created_at: .created_at,
+            mutation: ((try ($body | capture(" mutation=(?<v>[^ ]+)").v) catch "")),
+            target: ((try ($body | capture(" target=\"(?<v>[^\"]+)\"").v) catch "")),
+            source: ((try ($body | capture(" source=(?<v>[^ ]+)").v) catch "")),
+            issue_repo: ((try ($body | capture(" issue_repo=(?<v>[^ ]+)").v) catch "")),
+            issue: ((try ($body | capture(" issue=(?<v>[0-9]+)").v) catch "")),
+            pr_repo: ((try ($body | capture(" pr_repo=(?<v>[^ ]+)").v) catch "")),
+            pr: ((try ($body | capture(" pr=(?<v>[0-9]+)").v) catch "")),
+            body: $body
+          }
+      ]'
+}
+
+pending_needs_verify_deferred_count() {
+  project_deferred_records_json "$1" "$2" \
+    | jq '[.[] | select(.mutation == "status" and .target == "Needs Verify")] | length'
 }
 
 write_body() {
@@ -554,6 +742,12 @@ cmd_claim() {
   [ -n "${1:-}" ] || die "claim needs an <issue>"
   resolve_issue "$1"
 
+  local pending_needs_verify
+  pending_needs_verify="$(pending_needs_verify_deferred_count "$REPO" "$NUM")"
+  if [ "${pending_needs_verify:-0}" -gt 0 ]; then
+    die "claim refused — #$NUM has pending PROJECT-DEFERRED Needs Verify marker(s); run drain-project-queue --issue $REPO#$NUM or record stale-skip first"
+  fi
+
   # eligible-status hard gate (docs/board-protocol.md §4, §9)
   [ "$ITEM_KIND" = "umbrella" ] \
     && die "claim refused — #$NUM is Kind=umbrella (rollup, not claimable work)"
@@ -647,7 +841,7 @@ cmd_require_claim() {
     fail_messages+=("$2")
   }
 
-  item_json="$(board_json | jq -c --arg id "$ITEM_ID" '.items[] | select(.id == $id)' | head -1)"
+  item_json="$ITEM_JSON"
   for field in status faz track priority kind; do
     value="$(printf '%s' "$item_json" | jq -r --arg f "$field" '.[$f] // ""')"
     if [ -z "$value" ] || [ "$value" = "null" ]; then
@@ -891,19 +1085,10 @@ cmd_verify() {
     return $?
   fi
 
-  # graceful skip if the ref is not a single board issue (curated board —
-  # not every issue is roadmap-tracked; ambiguity is not a hard error here)
-  local cnt
-  cnt="$(board_matches "$vnum" "$vrepo" | grep -c . || true)"
-  if [ "$cnt" -eq 0 ]; then
-    log "verify skip — #$vnum not on the board (curated — not a roadmap issue)"
+  if ! resolve_issue_optional "$ref"; then
+    log "verify skip — ${vrepo:-${OPT_REPO:-$(git_remote_repo)}}#$vnum not on Project #2 (targeted lookup)"
     return 0
   fi
-  if [ "$cnt" -gt 1 ]; then
-    log "verify skip — #$vnum ambiguous across repos (use owner/repo#N)"
-    return 0
-  fi
-  resolve_issue "$ref"
 
   if [ "$ITEM_KIND" = "umbrella" ]; then
     log "verify skip — #$NUM Kind=umbrella"
@@ -1069,6 +1254,148 @@ Drain requirement: re-read Project #2 current item state before mutation; no dow
   rest_post_comment "$issue_repo" "$vnum" "$body"
 }
 
+deferred_transition_decision() {
+  # deferred_transition_decision <current-status> <target-status>
+  local current="$1" target="$2"
+  case "$target" in
+    "Needs Verify")
+      case "$current" in
+        "Needs Verify") printf 'already-target' ;;
+        Todo|"In Progress") printf 'apply' ;;
+        *) printf 'stale-skip' ;;
+      esac
+      ;;
+    Todo)
+      case "$current" in
+        Todo) printf 'already-target' ;;
+        "In Progress") printf 'apply' ;;
+        *) printf 'stale-skip' ;;
+      esac
+      ;;
+    Backlog)
+      case "$current" in
+        Backlog) printf 'already-target' ;;
+        Todo) printf 'apply' ;;
+        *) printf 'stale-skip' ;;
+      esac
+      ;;
+    *)
+      printf 'forbidden-target'
+      ;;
+  esac
+}
+
+rewrite_body_after_deferred_status() {
+  # rewrite_body_after_deferred_status <target-status>
+  local target="$1" body state
+  case "$target" in
+    "Needs Verify") state="needs-verify" ;;
+    Todo) state="todo" ;;
+    Backlog) state="backlog" ;;
+    *) return 0 ;;
+  esac
+  body="$(issue_body "$REPO" "$NUM")"
+  if printf '%s\n' "$body" | grep -q 'agent-state:v1'; then
+    printf '%s\n' "$body" \
+      | rewrite_state "$state" "none" "none" "none" "none" "none" \
+      | write_body "$REPO" "$NUM"
+    log "issue body agent-state -> $state (deferred drain reconcile)"
+  fi
+}
+
+post_deferred_terminal_marker() {
+  # post_deferred_terminal_marker <kind> <key> <result> <extra>
+  local kind="$1" key="$2" result="$3" extra="${4:-}" now
+  now="$(iso_now)"
+  rest_post_comment "$REPO" "$NUM" \
+    "PROJECT-$kind v1 key=$key result=$result ${extra}at=$now"
+}
+
+# --- subcommand: drain-project-queue -----------------------------------------
+# Apply issue-scoped low-risk PROJECT-DEFERRED markers. The queue is not
+# authority; each item re-reads Project #2 with targeted lookup, then either
+# applies a no-downgrade Status mutation or records a terminal stale-skip.
+cmd_drain_project_queue() {
+  local issue_ref="${OPT_ISSUE:-${1:-}}"
+  [ -n "$issue_ref" ] || die "drain-project-queue needs --issue <issue>"
+  local limit="${OPT_LIMIT:-20}"
+  printf '%s' "$limit" | grep -Eq '^[0-9]+$' || die "drain-project-queue --limit must be a number"
+
+  resolve_issue "$issue_ref"
+
+  local records count drained=0 skipped=0 applied=0 already=0
+  records="$(project_deferred_records_json "$REPO" "$NUM" | jq -c --argjson limit "$limit" '.[:$limit][]')"
+  count="$(printf '%s\n' "$records" | grep -c . || true)"
+  if [ "$count" -eq 0 ]; then
+    log "drain-project-queue — no pending PROJECT-DEFERRED markers on $REPO#$NUM"
+    return 0
+  fi
+  log "drain-project-queue — $REPO#$NUM pending=$count limit=$limit"
+
+  while IFS= read -r rec; do
+    [ -n "$rec" ] || continue
+    local key mutation target source decision current opt extra
+    key="$(printf '%s' "$rec" | jq -r '.key')"
+    mutation="$(printf '%s' "$rec" | jq -r '.mutation')"
+    target="$(printf '%s' "$rec" | jq -r '.target')"
+    source="$(printf '%s' "$rec" | jq -r '.source')"
+
+    resolve_issue "$REPO#$NUM"
+    current="$ITEM_STATUS"
+
+    if [ "$mutation" != "status" ]; then
+      skipped=$((skipped + 1))
+      log "drain-project-queue — key=$key skip unsupported mutation='$mutation'"
+      [ "$DRY_RUN" -eq 1 ] || post_deferred_terminal_marker "STALE-SKIP" "$key" "unsupported-mutation" "mutation=$mutation target=\"$target\" "
+      continue
+    fi
+
+    decision="$(deferred_transition_decision "$current" "$target")"
+    case "$decision" in
+      apply)
+        opt="$(status_option_id "$target")" \
+          || die "drain-project-queue — no Status option for target '$target'"
+        log "drain-project-queue — key=$key apply Status '$current' -> '$target' (source=${source:-unknown})"
+        if [ "$DRY_RUN" -eq 1 ]; then
+          log "[dry-run] would set Project Status -> $target and reconcile body"
+        else
+          set_board_status "$ITEM_ID" "$opt" "$target"
+          rewrite_body_after_deferred_status "$target"
+          post_deferred_terminal_marker "DRAINED" "$key" "applied" "from=\"$current\" target=\"$target\" "
+        fi
+        applied=$((applied + 1))
+        drained=$((drained + 1))
+        ;;
+      already-target)
+        log "drain-project-queue — key=$key already target Status '$target'"
+        if [ "$DRY_RUN" -eq 1 ]; then
+          log "[dry-run] would record PROJECT-DRAINED already-target"
+        else
+          rewrite_body_after_deferred_status "$target"
+          post_deferred_terminal_marker "DRAINED" "$key" "already-target" "current=\"$current\" target=\"$target\" "
+        fi
+        already=$((already + 1))
+        drained=$((drained + 1))
+        ;;
+      stale-skip)
+        log "drain-project-queue — key=$key stale-skip current='$current' target='$target'"
+        [ "$DRY_RUN" -eq 1 ] || post_deferred_terminal_marker "STALE-SKIP" "$key" "no-downgrade" "current=\"$current\" target=\"$target\" "
+        skipped=$((skipped + 1))
+        ;;
+      forbidden-target)
+        log "drain-project-queue — key=$key forbidden target='$target'"
+        [ "$DRY_RUN" -eq 1 ] || post_deferred_terminal_marker "STALE-SKIP" "$key" "forbidden-target" "current=\"$current\" target=\"$target\" "
+        skipped=$((skipped + 1))
+        ;;
+      *)
+        die "drain-project-queue — internal unknown decision '$decision'"
+        ;;
+    esac
+  done <<< "$records"
+
+  log "drain-project-queue — drained=$drained applied=$applied already=$already skipped=$skipped"
+}
+
 # --- subcommand: reap ---------------------------------------------------------
 # Release every In Progress item whose claim lease has expired. Conservative:
 # only acts on a real, recorded, parseable, past lease; never touches
@@ -1122,9 +1449,7 @@ cmd_reap() {
 
 # fresh (uncached) board Status of one item
 item_status() {
-  gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
-    --format json --limit "$PROJECT_ITEM_LIMIT" \
-    | jq -r --arg id "$1" '.items[] | select(.id == $id) | .status // ""'
+  project_item_status_by_id "$1"
 }
 
 # --- subcommand: backlog-add --------------------------------------------------
@@ -1194,24 +1519,18 @@ eligible is olur. Protokol: docs/board-protocol.md."
   item="$(gh project item-add "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
     --url "$url" --format json 2>/dev/null | jq -r '.id // empty')"
   [ -n "$item" ] || die "backlog-add — failed to add $url to the board"
-  gh project item-edit --id "$item" --project-id "$PROJECT_ID" \
-    --field-id "$KIND_FIELD" --single-select-option-id "$kopt" >/dev/null \
-    || die "backlog-add — failed to set Kind"
+  project_set_single_select "$item" "$KIND_FIELD" "$kopt" "Kind" "$kind"
 
   # set Status=Backlog, then reconcile against the native item-added->Todo
   # workflow (async — it can flip a freshly-added item back to Todo)
   local cur i
-  gh project item-edit --id "$item" --project-id "$PROJECT_ID" \
-    --field-id "$STATUS_FIELD" --single-select-option-id "$STATUS_BACKLOG" >/dev/null \
-    || die "backlog-add — failed to set Status"
+  project_set_single_select "$item" "$STATUS_FIELD" "$STATUS_BACKLOG" "Status" "$STATUS_BACKLOG_NAME"
   for i in 1 2 3 4 5; do
     sleep 8
     cur="$(item_status "$item")"
     if [ "$cur" != "Backlog" ]; then
       log "backlog-add — Status drifted to '${cur:-empty}' (item-added race/lag), re-setting (round $i)"
-      gh project item-edit --id "$item" --project-id "$PROJECT_ID" \
-        --field-id "$STATUS_FIELD" --single-select-option-id "$STATUS_BACKLOG" >/dev/null \
-        || die "backlog-add — failed to re-set Status"
+      project_set_single_select "$item" "$STATUS_FIELD" "$STATUS_BACKLOG" "Status" "$STATUS_BACKLOG_NAME"
     fi
   done
   cur="$(item_status "$item")"
@@ -1253,6 +1572,7 @@ main() {
     claim)      cmd_claim "${args[@]:-}" ;;
     require-claim) cmd_require_claim "${args[@]:-}" ;;
     graphql-budget) cmd_graphql_budget ;;
+    drain-project-queue) cmd_drain_project_queue "${args[@]:-}" ;;
     heartbeat)  cmd_heartbeat "${args[@]:-}" ;;
     release)    cmd_release "${args[@]:-}" ;;
     sync-state) cmd_sync_state "${args[@]:-}" ;;

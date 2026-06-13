@@ -613,3 +613,19 @@ sunmaz.
 `drain-project-queue` idempotent, bounded, rate-aware ve no-downgrade olmak
 zorundadir. Drain sirasinda Project item state degismisse item overwrite
 edilmez; stale-skip audit marker'i uretilir.
+
+Issue-scoped drain:
+
+```bash
+bash scripts/board-sync.sh drain-project-queue --issue <owner/repo#N> --limit 20
+```
+
+Drain terminal marker'lari:
+
+- `PROJECT-DRAINED v1 key=...` — mutation applied veya already-target.
+- `PROJECT-STALE-SKIP v1 key=...` — no-downgrade, forbidden target,
+  unsupported mutation veya stale state.
+
+Pending `PROJECT-DEFERRED v1 target="Needs Verify"` marker'i varken `claim`
+reddedilir. Bu, PR merge evidence kuyruğa düşmüşken başka ajanların item'ı
+yeniden `Todo/In Progress` gibi ele almasını engeller.

@@ -30,14 +30,7 @@ if [ "${1:-}" = "project" ] && [ "${2:-}" = "view" ]; then
   exit 0
 fi
 
-if [ "${1:-}" = "project" ] && [ "${2:-}" = "item-list" ]; then
-  # Regression guard: the real board already exceeded the old first-200
-  # assumption. Return the item only when the caller requests the hardened
-  # page size.
-  case "$joined" in
-    *" --limit 1000 "*) ;;
-    *) printf '{"items":[]}\n'; exit 0 ;;
-  esac
+if [ "${1:-}" = "api" ] && [ "${2:-}" = "graphql" ]; then
   jq -n \
     --arg status "${FAKE_STATUS-In Progress}" \
     --arg faz "${FAKE_FAZ-Faz 23}" \
@@ -45,22 +38,32 @@ if [ "${1:-}" = "project" ] && [ "${2:-}" = "item-list" ]; then
     --arg priority "${FAKE_PRIORITY-P0}" \
     --arg kind "${FAKE_KIND-issue}" \
     '{
-      items: [
-        {
-          id: "PVTI_fake1498",
-          title: "Coordination Ledger v1 fake item",
-          status: $status,
-          faz: $faz,
-          track: $track,
-          priority: $priority,
-          kind: $kind,
-          content: {
-            type: "Issue",
+      data: {
+        repository: {
+          issue: {
             number: 1498,
-            url: "https://github.com/Halildeu/platform-k8s-gitops/issues/1498"
+            title: "Coordination Ledger v1 fake item",
+            url: "https://github.com/Halildeu/platform-k8s-gitops/issues/1498",
+            projectItems: {
+              nodes: [
+                {
+                  id: "PVTI_fake1498",
+                  project: { id: "PVT_kwHOCx7tY84BIN2d" },
+                  fieldValues: {
+                    nodes: [
+                      { __typename: "ProjectV2ItemFieldSingleSelectValue", name: $status, optionId: "6e2ec368", field: { name: "Status", id: "PVTSSF_lAHOCx7tY84BIN2dzg4vgLw" } },
+                      { __typename: "ProjectV2ItemFieldSingleSelectValue", name: $faz, optionId: "7ff54758", field: { name: "Faz", id: "PVTSSF_lAHOCx7tY84BIN2dzhTGqF0" } },
+                      { __typename: "ProjectV2ItemFieldSingleSelectValue", name: $track, optionId: "4b80f631", field: { name: "Track", id: "PVTSSF_lAHOCx7tY84BIN2dzhTGqHY" } },
+                      { __typename: "ProjectV2ItemFieldSingleSelectValue", name: $priority, optionId: "951c13f7", field: { name: "Priority", id: "PVTSSF_lAHOCx7tY84BIN2dzhTGqHk" } },
+                      { __typename: "ProjectV2ItemFieldSingleSelectValue", name: $kind, optionId: "22b29779", field: { name: "Kind", id: "PVTSSF_lAHOCx7tY84BIN2dzhTGxFk" } }
+                    ]
+                  }
+                }
+              ]
+            }
           }
         }
-      ]
+      }
     }'
   exit 0
 fi
