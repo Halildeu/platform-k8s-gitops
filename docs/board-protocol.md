@@ -522,3 +522,24 @@ Backlog **sayısı** gösterir (triage hatırlatması) — roadmap view kirlenme
 **Kural**: scope-dışı bulgu → **her zaman `backlog-add`** (kalıcı kayıt). Ek
 olarak iş *şimdi paralel* yapılacaksa `spawn_task` da açılır. spawn_task tek
 başına yeterli değildir — chip kaybolur, board'da iz bırakmaz.
+
+---
+
+## 17. Coordination Ledger v1 — paralel ajan claim/permission hardening
+
+2026-06-13 Claude / Mavis / Codex ping-pong mutabakati sonucu paralel ajan
+calismasi icin mevcut board claim disiplini `coordination-ledger` tabanli bir
+izin katmaniyla guclendirilecek.
+
+Canonical plan: [`docs/coordination-ledger-v1-plan.md`](./coordination-ledger-v1-plan.md)
+
+Tracked by: [platform-k8s-gitops#1498](https://github.com/Halildeu/platform-k8s-gitops/issues/1498)
+
+Temel kararlar:
+
+- `board-sync require-claim --operation ...` read-only permission gate olacak.
+- Project #2 `Status/Faz/Track/Priority/Kind` alanlari izin predicate'ine girecek.
+- Mavis mesajlari claim, approval, recovery veya closure authority olmayacak.
+- Runtime/gate PR'lar `Tracked by #N` kullanacak; `Closes/Fixes/Resolves #N` yasak kalacak.
+- Invalid ledger suffix repo-wide fail-closed kabul edilecek.
+- Takeover iki asamali olacak: `TAKEOVER_ACCEPTED` -> mirror verify -> `TAKEOVER_COMMITTED`.
