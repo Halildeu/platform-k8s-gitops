@@ -378,6 +378,15 @@ The guard intentionally does not checkout PR head code. It runs the base-branch
 copy of `scripts/ci/check-forbidden-close-keywords.mjs` and fails with a direct
 rewrite instruction: replace `Closes/Fixes/Resolves #N` with `Tracked by #N`.
 
+Implementation slice PR-CI-2 extends the same base-branch script to post-merge
+surfaces:
+
+- `push` to `main` scans `head_commit.message` and all event commit messages,
+  covering automation-generated merge/squash commit bodies after merge.
+- `release` `published` / `edited` scans release name and release notes.
+- Local regression tests cover PR metadata, PR commits, text-file fixtures,
+  push event merge body, and release event notes.
+
 ## 18. Event UUID Idempotency
 
 Duplicate `event_uuid` with different payload or hash invalidates the suffix.
@@ -647,6 +656,8 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 
 - [x] Add forbidden close keyword scan for PR title/body, PR commit messages,
   and local text-file release/merge fixtures.
+- [x] Add post-merge forbidden close keyword scan for push-to-main commit
+  messages and release published/edited notes.
 - Add PR mirror validation.
 - Add branch protection/append-only ledger CI.
 - Add secret scan across coordination surfaces.

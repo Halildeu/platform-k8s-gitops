@@ -31,6 +31,32 @@ function writeCommits(commits) {
   return file;
 }
 
+function writePushEvent(commits) {
+  const file = join(dir, `push-${Math.random().toString(16).slice(2)}.json`);
+  writeFileSync(
+    file,
+    JSON.stringify({
+      head_commit: commits[0] ?? {},
+      commits,
+    }),
+  );
+  return file;
+}
+
+function writeReleaseEvent(name, body) {
+  const file = join(dir, `release-${Math.random().toString(16).slice(2)}.json`);
+  writeFileSync(
+    file,
+    JSON.stringify({
+      release: {
+        name,
+        body,
+      },
+    }),
+  );
+  return file;
+}
+
 function run(args) {
   try {
     execFileSync('node', [SCRIPT, ...args], { stdio: 'pipe' });
@@ -94,6 +120,24 @@ const cases = [
       writeFileSync(file, 'Release notes\n\nResolved #1498\n');
       return ['--text-file', file];
     },
+    1,
+  ],
+  [
+    'Push event merge body is blocked',
+    () => [
+      '--event-path',
+      writePushEvent([
+        {
+          id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          message: 'coordination: merge verifier\n\nCloses #1498',
+        },
+      ]),
+    ],
+    1,
+  ],
+  [
+    'Release event notes are blocked',
+    () => ['--event-path', writeReleaseEvent('v-test', 'Release notes\n\nFixes #1498')],
     1,
   ],
 ];
