@@ -51,7 +51,7 @@ strict-schema whitelist with no content/hash field).
 2. Deploy endpoint-admin-service with V66 + the mirror (P4); confirm pod imageID == GHCR digest (D30 immutable).
 3. Enable the agent capability on the pilot Windows build (P5); confirm `COLLECT_BACKUP_DRYRUN` appears in the heartbeat `payload.capabilities` ONLY on that build.
 4. Issue one `COLLECT_BACKUP_DRYRUN` via the dedicated surface (P2) with a single bounded managed root + a reason (RequiresReason); dual-control approve.
-5. Agent produces the metadata-only manifest; backend mirror re-validates (accept on valid, 400 + audit on violation).
+5. Agent produces the metadata-only manifest; backend mirror re-validates (accept on valid; on violation → 400, the offending result payload/manifest is not persisted, the command is marked FAILED with a bounded path-free error; the P2 issuing surface must capture the rejection in its own audit trail).
 6. Run the live Windows-VM smoke (below) and capture the D29-EA evidence.
 
 ## D29-EA acceptance gate
