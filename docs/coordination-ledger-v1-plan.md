@@ -620,6 +620,29 @@ LDG-9 is still read-only: it does not append ledger events, record
 `DENY_RECORDED`, mutate issue bodies, mutate Project #2, mutate PR mirrors, or
 repair drift. Those remain CAS-backed follow-up slices.
 
+Implementation slice LDG-10 adds the post-CAS mirror writer:
+
+```bash
+python3 scripts/coordination/apply-ledger-mirrors.py \
+  --cas-result emit-result.json \
+  --plan mirror-write-plan.json \
+  --apply
+```
+
+The helper refuses all mirror writes unless `emit-result.json` proves
+`status=ledger_event_emitted_after_remote_cas` and the expected
+`event_uuid/event_hash` from the mirror plan matches the appended ledger event.
+It validates issue body `agent-state:v1`, Project current fields, and PR mirror
+markers before applying any mutation. Project writes use the repo field catalog
+and enforce no-downgrade status semantics. PR writes are bounded to the
+`coordination-ledger-pr-mirror:v1` marker block. Partial write failures emit
+`mirror_write_failed_repair_required` with bounded repair debt and never grant
+permission.
+
+LDG-10 still does not append new ledger events for `DENY_RECORDED`, audit debt
+retry, PR mirror validation gates, branch protection, secret scanning, or
+tombstone/supersede flows. Those remain follow-up slices.
+
 ## 19. Project GraphQL Budget / Mirror Queue Hardening
 
 GitHub Project v2 custom fields are GraphQL-only. This includes Project #2
@@ -865,7 +888,7 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 - [x] Add mirror-safe emission after remote CAS.
 - [x] Add materialized comment binding verifier foundation.
 - [x] Add GitHub materialized comment writer/fetch verification path.
-- [ ] Add issue body / Project / PR mirror writes after CAS.
+- [x] Add issue body / Project / PR mirror writes after CAS.
 - [x] Add fail-closed `record-deny` local audit debt queue while CAS writer is
   unavailable.
 - [ ] Add CAS-backed `DENY_RECORDED` emission and debt retry after CAS writer
