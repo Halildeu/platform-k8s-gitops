@@ -85,6 +85,16 @@ function loadEventSurfaces(args, findings) {
   const pr = event.pull_request ?? {};
   scanSurface(findings, 'pull_request.title', pr.title ?? '');
   scanSurface(findings, 'pull_request.body', pr.body ?? '');
+
+  const release = event.release ?? {};
+  scanSurface(findings, 'release.name', release.name ?? release.tag_name ?? '');
+  scanSurface(findings, 'release.body', release.body ?? '');
+
+  const headCommit = event.head_commit ?? {};
+  scanSurface(findings, 'push.head_commit.message', headCommit.message ?? '');
+  for (const [idx, commit] of (event.commits ?? []).entries()) {
+    scanSurface(findings, `push.commits[${idx}].message`, commit.message ?? '');
+  }
 }
 
 function loadBodySurfaces(args, findings) {
