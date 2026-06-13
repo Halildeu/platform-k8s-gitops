@@ -459,6 +459,23 @@ materialized comments. Remote branch CAS, materialized comment binding, issue
 body / Project / PR mirror writes after CAS, and `record-deny` debt retry remain
 Slice 3 work.
 
+Implementation slice LDG-3 adds materialized comment binding validation to the
+offline replay verifier. When an event includes `comment_binding`, replay now
+requires a structured GitHub issue comment binding:
+
+- `surface=github_issue_comment`;
+- repository, issue, comment id, author id/login/type;
+- `raw_body_hash`;
+- binding `payload_hash` equal to the event payload hash;
+- `updated_at == created_at` so edited materialized comments fail;
+- `verification_mode` with timestamp tolerance (`normal=5m`,
+  `degraded/recovery=15m`);
+- comment timestamp within the declared tolerance of `committed_at`.
+
+LDG-3 still does not fetch, create, or edit GitHub comments. The actual
+materialized comment writer/fetch verifier and mirror mutation path remain
+Slice 3 work after remote/branch CAS coordination.
+
 ## 19. Project GraphQL Budget / Mirror Queue Hardening
 
 GitHub Project v2 custom fields are GraphQL-only. This includes Project #2
@@ -700,7 +717,8 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 
 - [x] Add local/offline CAS append writer foundation.
 - [ ] Add remote/branch CAS append coordination path.
-- Add materialized comment binding.
+- [x] Add materialized comment binding verifier foundation.
+- [ ] Add GitHub materialized comment writer/fetch verification path.
 - Add issue body / Project / PR mirror writes after CAS.
 - [x] Add fail-closed `record-deny` local audit debt queue while CAS writer is
   unavailable.
