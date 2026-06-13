@@ -119,6 +119,51 @@ docker exec m2-pg psql -U postgres -d endpoint_admin -c \
 
 ---
 
+## L2b — passthrough variant (real :8443 mTLS handshake, Step-2)
+
+Canonical passthrough (ADR-0029 #1501; backend PR #621): the backend terminates
+mTLS on `:8443` (clientAuth=NEED), identity from the TLS peer cert, `X-Tenant-Id`
+IGNORED (fixed-tenant authority). Domain-free with the test CA. All behind
+`endpoint-admin.mtls.passthrough.enabled` (default off).
+
+### 1) Server keystore + CA truststore
+```bash
+cd <platform-k8s-gitops>/scripts/faz22-mass-deployment/m2-local-test
+./gen-test-certs.sh ./certs                  # test CA + client certs (if not already)
+./gen-server-keystore.sh ./certs changeit    # server-keystore.p12 + truststore.p12 (+ prints backend cmd)
+```
+
+### 2) Start backend with passthrough (forward-header OFF)
+Use the command `gen-server-keystore.sh` prints (`passthrough.enabled=true` +
+key-store/trust-store paths + `fixed-tenant-id` + `forward-header.enabled=false`).
+**Beklenen log:** `Added passthrough mTLS connector on port 8443 (clientAuth=NEED)`,
+`Tomcat started on ports 8096 (http), 8443 (https)`, validator pass.
+Mutual-exclusion: `passthrough.enabled` + `forward-header.enabled` birlikte → startup **FAIL**.
+
+### 3) Passthrough matrix (real handshake — no `-k`)
+```bash
+CERTS=./certs ./run-passthrough.sh
+```
+**Beklenen:** `TOTAL: pass=6 fail=0` (docker PG erişilebilirse — T1b koşar); PG yoksa `pass=5 fail=0` + `SKIP T1b` (DB tenant'ı runbook adım 4'te manuel doğrula).
+
+| # | Vaka | Beklenen |
+|---|---|---|
+| T1 | valid cert + FORGED `X-Tenant-Id` | **201** enrolled — header ignored (DB tenant T1b'de kontrol edilir) |
+| T1b | (ops.) DB tenant binding | device `tenant_id==org_id==fixed` — forged header etkisiz (PG yoksa SKIP) |
+| T2 | no client cert | TLS **handshake refused** (clientAuth=NEED; curl exit 56) |
+| T3 | wrong-CA client cert | TLS **handshake refused** (truststore = dedicated CA only) |
+| T4 | plain `:8096` endpoint-agent | **403** MTLS_CONNECTOR_REQUIRED (guard; never reaches business path) |
+| T5 | non-agent path on `:8443` | **404** (guard least-privilege) |
+
+### 4) Forged-tenant persistence verify
+```bash
+docker exec m2-pg psql -U postgres -d endpoint_admin -c \
+"SELECT hostname,tenant_id,org_id FROM endpoint_admin_service.endpoint_devices WHERE hostname LIKE 'WIN11-PT-%';"
+```
+**Beklenen:** `tenant_id = org_id = fixed-tenant-id` (forged `X-Tenant-Id`'in etkisi YOK).
+
+---
+
 ## L3 — Win11 cross-machine (Parallels guest → Mac)
 
 Önkoşul: L2 servisi açık (`*:8096` tüm arayüzlere bind), Parallels "Windows 11" guest çalışıyor.
