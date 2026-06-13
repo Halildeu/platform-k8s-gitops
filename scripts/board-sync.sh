@@ -13,6 +13,7 @@
 #   heartbeat  <issue>    extend your active claim's lease
 #   release    <issue>    release your claim (ownership-checked)
 #   sync-state <issue>    report issue-body agent-state vs board Status
+#   require-claim         read-only operation-scoped claim permission check
 #   verify     <issue>    PR-merge evidence: Status -> Needs Verify (--pr N)
 #   reap                  release every stale In Progress claim
 #   backlog-add "<title>" capture discovered work as a Backlog issue
@@ -26,6 +27,11 @@
 #   --limit <N>           (reap) max items per run (default 20)
 #   --note "<text>"       (backlog-add) context for the captured item
 #   --kind issue|risk     (backlog-add) board Kind (default issue)
+#   --issue <N|url>       (require-claim) issue to verify
+#   --session <id>        (require-claim) expected BOARD_SESSION_ID
+#   --operation <class>   (require-claim) operation boundary to verify
+#   --worktree <path>     (require-claim) expected worktree (default: current)
+#   --branch <name>       (require-claim) expected branch (default: current)
 #
 # <issue>: bare number (resolved via board), owner/repo#N, or full URL.
 # Session id: $BOARD_SESSION_ID if set, else generated and printed.
@@ -47,6 +53,11 @@ STATUS_NEEDSVERIFY_NAME="Needs Verify"
 KIND_FIELD="PVTSSF_lAHOCx7tY84BIN2dzhTGxFk"
 KIND_ISSUE="22b29779"
 KIND_RISK="e3a49d4e"
+PROJECT_ITEM_LIMIT="${PROJECT_ITEM_LIMIT:-1000}"
+if ! [[ "$PROJECT_ITEM_LIMIT" =~ ^[0-9]+$ ]] || [ "$PROJECT_ITEM_LIMIT" -lt 200 ]; then
+  echo "ERR: PROJECT_ITEM_LIMIT='$PROJECT_ITEM_LIMIT' must be an integer >= 200" >&2
+  exit 2
+fi
 # 2026-05-20 — Guardrail PR-8 (Codex 019e444d must-fix #1 absorb): env
 # override `CLAIM_TTL_HOURS=N bash scripts/board-sync.sh claim …` previously
 # was overwritten by the hardcoded `="2"`. Default 2 stays for back-compat
@@ -66,6 +77,11 @@ OPT_REPO=""
 OPT_LIMIT=""
 OPT_NOTE=""
 OPT_KIND=""
+OPT_ISSUE=""
+OPT_SESSION=""
+OPT_OPERATION=""
+OPT_WORKTREE=""
+OPT_BRANCH=""
 BOARD_CACHE=""
 
 # --- helpers ------------------------------------------------------------------
@@ -130,7 +146,7 @@ board_json() {
   if [ -z "$BOARD_CACHE" ]; then
     BOARD_CACHE="$(mktemp -t board-sync.XXXXXX)"
     gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
-      --format json --limit 200 >"$BOARD_CACHE" \
+      --format json --limit "$PROJECT_ITEM_LIMIT" >"$BOARD_CACHE" \
       || die "failed to fetch board items"
   fi
   cat "$BOARD_CACHE"
@@ -147,10 +163,10 @@ board_matches() {
     | .[] | "\(.id)\t\(.status // "")\t\(.content.url // "")\t\(.title // "")\t\(.kind // "")"'
 }
 
-# resolve_issue <number|url> -> sets REPO NUM ITEM_ID ITEM_STATUS ITEM_TITLE
+# resolve_issue <number|url> -> sets REPO NUM ITEM_ID ITEM_STATUS ITEM_KIND
 resolve_issue() {
   local arg="$1"
-  REPO=""; NUM=""; ITEM_ID=""; ITEM_STATUS=""; ITEM_TITLE=""; ITEM_KIND=""
+  REPO=""; NUM=""; ITEM_ID=""; ITEM_STATUS=""; ITEM_KIND=""
   if printf '%s' "$arg" | grep -q '^https://github.com/'; then
     local path
     path="${arg#https://github.com/}"
@@ -171,7 +187,6 @@ resolve_issue() {
 
   ITEM_ID="$(printf '%s' "$matches" | cut -f1)"
   ITEM_STATUS="$(printf '%s' "$matches" | cut -f2)"
-  ITEM_TITLE="$(printf '%s' "$matches" | cut -f4)"
   ITEM_KIND="$(printf '%s' "$matches" | cut -f5)"
   local url
   url="$(printf '%s' "$matches" | cut -f3)"
@@ -244,6 +259,28 @@ rewrite_state() {
     inb && /^expires_at:/      { print "expires_at: " ex; next }
     { print }
   '
+}
+
+append_agent_state_block() {
+  # append_agent_state_block <status> <session> <worktree> <branch> <updated_at> <expires>
+  cat
+  printf '\n\n## Agent State\n\n'
+  printf '<!-- agent-state:v1\n'
+  printf 'status: %s\n' "$1"
+  printf 'claim_session: %s\n' "$2"
+  printf 'claim_worktree: %s\n' "$3"
+  printf 'claim_branch: %s\n' "$4"
+  printf 'claim_updated_at: %s\n' "$5"
+  printf 'expires_at: %s\n' "$6"
+  printf '%s\n' '-->'
+}
+
+valid_operation_class() {
+  case "$1" in
+    local_edit|file_write|stage|commit|push|pr_create|pr_update|live_mutation|release|deploy|issue_close|recovery|key_rotation)
+      return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # claim winner: earliest active CLAIM. A CLAIM is active when (a) its effective
@@ -356,20 +393,17 @@ cmd_claim() {
       ;;
   esac
 
-  local sid wt branch now exp slug claim_body winner
+  local sid wt branch now exp claim_body winner
   sid="$(session_id)"
   wt="$(git rev-parse --show-toplevel 2>/dev/null || echo unknown)"
   branch="$(git branch --show-current 2>/dev/null || echo unknown)"
   now="$(iso_now)"
   exp="$(claim_expiry_iso)"
-  slug="$(printf '%s' "$ITEM_TITLE" | tr '[:upper:]' '[:lower:]' \
-    | tr -cs '[:alnum:]' '-' | sed 's/^-*//;s/-*$//' | cut -c1-32 | sed 's/-*$//')"
-  [ -n "$slug" ] || slug="issue"
 
   log "claim #$NUM ($REPO) — session=$sid branch=$branch"
   [ -n "${BOARD_SESSION_ID:-}" ] || log "note: BOARD_SESSION_ID unset — reuse: export BOARD_SESSION_ID=$sid"
 
-  claim_body="CLAIM session=$sid worktree=$wt branch=roadmap-$NUM-$slug at=$now expires=$exp"
+  claim_body="CLAIM session=$sid worktree=$wt branch=$branch at=$now expires=$exp"
   post_comment "$REPO" "$NUM" "$claim_body"
 
   if [ "$DRY_RUN" -eq 1 ]; then
@@ -393,14 +427,132 @@ cmd_claim() {
   body="$(issue_body "$REPO" "$NUM")"
   if printf '%s\n' "$body" | grep -q 'agent-state:v1'; then
     printf '%s\n' "$body" \
-      | rewrite_state "in-progress" "$sid" "$wt" "roadmap-$NUM-$slug" "$now" "$exp" \
+      | rewrite_state "in-progress" "$sid" "$wt" "$branch" "$now" "$exp" \
       | write_body "$REPO" "$NUM"
     log "issue body agent-state -> in-progress"
   else
-    log "WARN: issue #$NUM has no agent-state:v1 block — body not updated (see docs/board-protocol.md)"
+    printf '%s\n' "$body" \
+      | append_agent_state_block "in-progress" "$sid" "$wt" "$branch" "$now" "$exp" \
+      | write_body "$REPO" "$NUM"
+    log "issue body agent-state -> in-progress (initialized)"
   fi
   set_board_status "$ITEM_ID" "$STATUS_INPROGRESS" "$STATUS_INPROGRESS_NAME"
   log "claim WON — #$NUM is yours (lease $exp; run 'heartbeat $NUM' before it expires)"
+}
+
+# --- subcommand: require-claim ------------------------------------------------
+# Read-only operation-scoped claim gate. This is the mirror-verifier slice of
+# Coordination Ledger v1; ledger replay/CAS writer are separate follow-up
+# slices. It intentionally performs no GitHub writes.
+cmd_require_claim() {
+  local issue_ref="${OPT_ISSUE:-${1:-}}"
+  [ -n "$issue_ref" ] || die "require-claim needs --issue <issue>"
+  [ -n "$OPT_OPERATION" ] || die "require-claim needs --operation <class>"
+  valid_operation_class "$OPT_OPERATION" \
+    || die "require-claim unknown --operation '$OPT_OPERATION'"
+
+  resolve_issue "$issue_ref"
+
+  local sid wt branch body bstatus bsess bwt bbr bexp now_iso item_json field value
+  local -a fail_codes=()
+  local -a fail_messages=()
+
+  sid="${OPT_SESSION:-${BOARD_SESSION_ID:-}}"
+  [ -n "$sid" ] || die "require-claim needs --session <id> or BOARD_SESSION_ID"
+  wt="${OPT_WORKTREE:-$(git rev-parse --show-toplevel 2>/dev/null || echo unknown)}"
+  branch="${OPT_BRANCH:-$(git branch --show-current 2>/dev/null || echo unknown)}"
+  now_iso="$(iso_now)"
+
+  add_fail() {
+    fail_codes+=("$1")
+    fail_messages+=("$2")
+  }
+
+  item_json="$(board_json | jq -c --arg id "$ITEM_ID" '.items[] | select(.id == $id)' | head -1)"
+  for field in status faz track priority kind; do
+    value="$(printf '%s' "$item_json" | jq -r --arg f "$field" '.[$f] // ""')"
+    if [ -z "$value" ] || [ "$value" = "null" ]; then
+      add_fail "project_field_missing" "Project #2 field '$field' is empty"
+    fi
+  done
+  [ "$ITEM_KIND" = "umbrella" ] \
+    && add_fail "project_kind_umbrella" "Kind=umbrella is not claimable executable work"
+  [ "$ITEM_STATUS" = "$STATUS_INPROGRESS_NAME" ] \
+    || add_fail "project_status_not_in_progress" "Project Status='$ITEM_STATUS' is not In Progress"
+
+  body="$(issue_body "$REPO" "$NUM")"
+  bstatus="$(printf '%s\n' "$body" | state_get status)"
+  bsess="$(printf '%s\n' "$body" | state_get claim_session)"
+  bwt="$(printf '%s\n' "$body" | state_get claim_worktree)"
+  bbr="$(printf '%s\n' "$body" | state_get claim_branch)"
+  bexp="$(printf '%s\n' "$body" | state_get expires_at)"
+
+  [ "$bstatus" = "in-progress" ] \
+    || add_fail "body_status_not_in_progress" "issue body status='${bstatus:-<none>}' is not in-progress"
+  [ "$bsess" = "$sid" ] \
+    || add_fail "session_mismatch" "issue body claim_session='${bsess:-<none>}' expected='$sid'"
+  if [ -z "${bwt:-}" ] || [ "$bwt" = "none" ]; then
+    add_fail "worktree_missing" "issue body claim_worktree is missing"
+  elif [ "$bwt" != "$wt" ]; then
+    add_fail "worktree_mismatch" "issue body claim_worktree='$bwt' expected='$wt'"
+  fi
+  if [ -z "${bbr:-}" ] || [ "$bbr" = "none" ]; then
+    add_fail "branch_missing" "issue body claim_branch is missing"
+  elif [ "$bbr" != "$branch" ]; then
+    add_fail "branch_mismatch" "issue body claim_branch='$bbr' expected='$branch'"
+  fi
+  if [ -z "${bexp:-}" ] || [ "$bexp" = "none" ]; then
+    add_fail "lease_missing" "issue body expires_at is missing"
+  elif [[ "$bexp" < "$now_iso" ]]; then
+    add_fail "lease_expired" "claim lease expired at $bexp"
+  fi
+
+  local allowed deny_code details_json actor bucket minute bucket_min intent_src intent_id
+  if [ "${#fail_codes[@]}" -eq 0 ]; then
+    allowed="true"
+    deny_code=""
+    details_json="[]"
+    intent_id=""
+  else
+    allowed="false"
+    deny_code="${fail_codes[0]}"
+    details_json="$(
+      for i in "${!fail_codes[@]}"; do
+        jq -cn --arg code "${fail_codes[$i]}" --arg message "${fail_messages[$i]}" \
+          '{code:$code,message:$message}'
+      done | jq -s .
+    )"
+    actor="$(gh api user --jq '.login' 2>/dev/null || echo unknown)"
+    minute="$(date -u +%M)"
+    bucket_min="$((10#$minute / 10 * 10))"
+    bucket="$(date -u +%Y%m%dT%H)$(printf '%02d' "$bucket_min")Z"
+    intent_src="$REPO#$NUM|$sid|$OPT_OPERATION|$deny_code|mirror-v1-no-ledger|$bucket|$actor"
+    intent_id="$(printf '%s' "$intent_src" | shasum -a 256 | awk '{print $1}')"
+  fi
+
+  jq -n \
+    --arg allowed "$allowed" \
+    --arg issue "$REPO#$NUM" \
+    --arg session "$sid" \
+    --arg operation "$OPT_OPERATION" \
+    --arg status "$ITEM_STATUS" \
+    --arg source "project_issue_mirror_v1" \
+    --arg deny_code "$deny_code" \
+    --arg deny_event_intent_id "$intent_id" \
+    --argjson details "$details_json" \
+    '{
+      allowed: ($allowed == "true"),
+      issue: $issue,
+      session: $session,
+      operation: $operation,
+      permission_source: $source,
+      project_status: $status,
+      deny_code: (if $deny_code == "" then null else $deny_code end),
+      deny_event_intent_id: (if $deny_event_intent_id == "" then null else $deny_event_intent_id end),
+      details: $details
+    }'
+
+  [ "$allowed" = "true" ]
 }
 
 # --- subcommand: heartbeat ----------------------------------------------------
@@ -737,7 +889,7 @@ cmd_reap() {
 # fresh (uncached) board Status of one item
 item_status() {
   gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
-    --format json --limit 200 \
+    --format json --limit "$PROJECT_ITEM_LIMIT" \
     | jq -r --arg id "$1" '.items[] | select(.id == $id) | .status // ""'
 }
 
@@ -849,6 +1001,11 @@ main() {
       --limit)       [ $# -ge 2 ] || die "--limit needs a value"; OPT_LIMIT="$2"; shift 2 ;;
       --note)        [ $# -ge 2 ] || die "--note needs a value"; OPT_NOTE="$2"; shift 2 ;;
       --kind)        [ $# -ge 2 ] || die "--kind needs a value"; OPT_KIND="$2"; shift 2 ;;
+      --issue)       [ $# -ge 2 ] || die "--issue needs a value"; OPT_ISSUE="$2"; shift 2 ;;
+      --session)     [ $# -ge 2 ] || die "--session needs a value"; OPT_SESSION="$2"; shift 2 ;;
+      --operation)   [ $# -ge 2 ] || die "--operation needs a value"; OPT_OPERATION="$2"; shift 2 ;;
+      --worktree)    [ $# -ge 2 ] || die "--worktree needs a value"; OPT_WORKTREE="$2"; shift 2 ;;
+      --branch)      [ $# -ge 2 ] || die "--branch needs a value"; OPT_BRANCH="$2"; shift 2 ;;
       -h|--help)     usage 0 ;;
       *) if [ -z "$cmd" ]; then cmd="$1"; else args+=("$1"); fi; shift ;;
     esac
@@ -859,6 +1016,7 @@ main() {
   case "$cmd" in
     list)       cmd_list ;;
     claim)      cmd_claim "${args[@]:-}" ;;
+    require-claim) cmd_require_claim "${args[@]:-}" ;;
     heartbeat)  cmd_heartbeat "${args[@]:-}" ;;
     release)    cmd_release "${args[@]:-}" ;;
     sync-state) cmd_sync_state "${args[@]:-}" ;;

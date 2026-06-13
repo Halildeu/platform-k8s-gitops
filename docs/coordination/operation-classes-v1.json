@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "coordination-operation-classes/v1",
+  "source": "docs/coordination-ledger-v1-plan.md",
+  "classes": [
+    "local_edit",
+    "file_write",
+    "stage",
+    "commit",
+    "push",
+    "pr_create",
+    "pr_update",
+    "live_mutation",
+    "release",
+    "deploy",
+    "issue_close",
+    "recovery",
+    "key_rotation"
+  ],
+  "degradedModeAllowed": [
+    "local_edit",
+    "file_write"
+  ]
+}

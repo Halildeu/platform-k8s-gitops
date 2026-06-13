@@ -1,0 +1,131 @@
+{
+  "schemaVersion": "coordination-ledger-event-authority/v1",
+  "source": "docs/coordination-ledger-v1-plan.md",
+  "unknownEventPolicy": "invalid_suffix_fail_closed",
+  "events": {
+    "CLAIM_REQUEST": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "candidate_claim_evidence"
+    },
+    "CLAIM_ACCEPTED": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "pending_or_active_claim_per_mirror_rules"
+    },
+    "CLAIM_LOST_RACE": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "losing_claim_denied"
+    },
+    "CLAIM_RACE_LOST": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "losing_cas_attempt_denied_reread_required"
+    },
+    "CLAIM_STALE": {
+      "authorizedWriters": ["reaper"],
+      "replayEffect": "revoke_permission"
+    },
+    "CLAIM_EXPIRED": {
+      "authorizedWriters": ["reaper"],
+      "replayEffect": "revoke_permission"
+    },
+    "HEARTBEAT_EVIDENCE": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "liveness_evidence"
+    },
+    "DENY_RECORDED": {
+      "authorizedWriters": ["coordinator", "reaper"],
+      "replayEffect": "audit_only_never_grants_or_revokes_permission"
+    },
+    "PR_SUPERSEDED": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "open_pr_no_longer_competes_if_body_block_matches"
+    },
+    "MIRROR_DRIFT_DETECTED": {
+      "authorizedWriters": ["reaper"],
+      "replayEffect": "permission_false_until_repair"
+    },
+    "MIRROR_ORPHAN_DETECTED": {
+      "authorizedWriters": ["reaper"],
+      "replayEffect": "permission_false_until_repair"
+    },
+    "MIRROR_ORPHAN_REPAIR_DEFERRED": {
+      "authorizedWriters": ["reaper"],
+      "replayEffect": "audit_or_blocked_repair_debt"
+    },
+    "ORPHAN_COMMENT_DETECTED": {
+      "authorizedWriters": ["reaper"],
+      "replayEffect": "audit_repair_signal"
+    },
+    "COORDINATION_LOG_MUTATION_DETECTED": {
+      "authorizedWriters": ["reaper"],
+      "replayEffect": "permission_false"
+    },
+    "LEDGER_INVALID_SUFFIX": {
+      "authorizedWriters": ["reaper", "coordinator"],
+      "replayEffect": "derived_invalid_suffix_condition_recorded_when_safe"
+    },
+    "VERIFY_DEGRADED": {
+      "authorizedWriters": ["reaper", "coordinator"],
+      "replayEffect": "degraded_verification_audit"
+    },
+    "VERIFY_FAILED": {
+      "authorizedWriters": ["reaper", "coordinator", "ci_via_coordinator_identity"],
+      "replayEffect": "permission_false_or_audit_signal"
+    },
+    "SECRET_SCAN_FAILED": {
+      "authorizedWriters": ["reaper", "ci_via_coordinator_identity"],
+      "replayEffect": "permission_false"
+    },
+    "OWNER_APPROVAL_EVIDENCE": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "evidence_only"
+    },
+    "OWNER_APPROVED": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "approved_scope_only_bound_to_prior_evidence"
+    },
+    "TAKEOVER_REQUEST": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "takeover_candidate"
+    },
+    "TAKEOVER_ACCEPTED": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "old_and_new_sessions_no_permission_until_commit"
+    },
+    "TAKEOVER_COMMITTED": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "new_session_active_winner_after_mirror_verification"
+    },
+    "TAKEOVER_REJECTED": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "takeover_denied"
+    },
+    "REPAIR_MATERIALIZATION": {
+      "authorizedWriters": ["coordinator", "reaper"],
+      "replayEffect": "mirror_repair_evidence"
+    },
+    "BLOCKED_FAIL_CLOSED": {
+      "authorizedWriters": ["coordinator", "reaper"],
+      "replayEffect": "issue_blocked_fail_closed"
+    },
+    "TOMBSTONE_CHAIN": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "old_issue_or_chain_cannot_grant_permission"
+    },
+    "SUPERSEDE_ISSUE": {
+      "authorizedWriters": ["coordinator"],
+      "replayEffect": "superseding_issue_or_pr_relation"
+    },
+    "AUDIT_MARKER": {
+      "authorizedWriters": ["coordinator", "reaper"],
+      "replayEffect": "audit_only"
+    },
+    "BOOTSTRAP_KEY_REGISTRY": {
+      "authorizedWriters": ["bootstrap_path"],
+      "replayEffect": "initial_key_registry"
+    },
+    "EMERGENCY_KEY_ROTATION": {
+      "authorizedWriters": ["emergency_path"],
+      "replayEffect": "key_recovery_only"
+    }
+  }
+}
