@@ -9,7 +9,12 @@
 > **Codex thread**: `019ea922` plan-time AGREE (pattern from RB-bl028b-prod-openfga-notification-model-cutover.md preflight + impact inventory)
 > **Prerequisite**: M5 #1377 board-authoritative pilot closure (2-PC per owner 2026-06-10 amendment) + Mavis ops sign-off
 > **Companion preflight**: `scripts/faz22-mass-deployment/wave-preflight.ps1` — per-device read-only health before each ring ramp (`-Mode preinstall-readiness` pre-push, `-Mode enroll-health` post-enroll). `overall=FAIL` holds the ring.
-> **VERIFY-BEFORE-WAVE (2026-06-13)**: the PromQL/SQL identifiers below are illustrative and MUST be reconciled against the live catalogs before the wave. Confirmed corrections: device `status` values are `PENDING_ENROLLMENT|ONLINE|STALE|OFFLINE|DECOMMISSIONED` (there is **no** `active`); confirm any `endpoint_admin_*` Prometheus metric exists in `/actuator/prometheus` (e.g. `endpoint_admin_enrollments_5xx_total` is a PROPOSED name — instrument or replace before relying on the abort formula).
+> **METRIC RECONCILIATION (2026-06-13, [#1493](https://github.com/Halildeu/platform-k8s-gitops/issues/1493) — Codex `019ebffb`)**: the PromQL identifiers in §3.1/§5 were PROPOSED names that did **not** exist as live series. They are now reconciled against what `endpoint-admin-service` actually exposes at `/actuator/prometheus` (Spring Boot `http_server_requests_seconds_*` + HikariCP `hikaricp_connections_*` auto-metrics) plus **one** instrumented counter. Three prerequisites are wired by the companion PRs and MUST be confirmed live before the wave:
+> 1. **Scrape exists** — endpoint-admin-service had **no ServiceMonitor**, so `/actuator/prometheus` (mgmt port 8081) was never scraped. Added in this PR (`kustomize/base/apps/endpoint-admin-service/ops` via `ops-bundle`, test+prod). Confirm the target is **UP** in Prometheus before ring A.
+> 2. **COLLECT_INVENTORY counter** — `endpoint_admin_agent_command_results_total{command_type,status}` is instrumented in platform-backend (the command type is not an HTTP `uri` label, so it is the one metric that cannot be mapped to an existing series). Requires the endpoint-admin-service image carrying it to be **deployed** before the wave; it is pre-registered at 0 so the series is present immediately on deploy.
+> 3. **SQL** — device `status` enum is `PENDING_ENROLLMENT|ONLINE|STALE|OFFLINE|DECOMMISSIONED` (there is **no** `active`).
+>
+> **Hard gate**: if any abort-formula series below resolves **empty** (scrape down, image not yet deployed) the wave is **BLOCKED** — never treat a missing series as 0 (see §6 metric-absence gate). Run the §3.1 discovery query first to freeze the live label set (`uri` templates, the `service` label value, pod regex).
 
 ---
 
@@ -44,22 +49,39 @@
 ### 3.1 Backend Capacity Baseline
 
 ```bash
-# PromQL (Grafana endpoint-admin dashboard):
+# PromQL (Prometheus / Grafana — endpoint-admin scraped via the ServiceMonitor
+# added in this PR; mgmt port 8081 /actuator/prometheus).
+#
+# Selector note (Codex 019ebffb E): app-level series (hikaricp_*,
+# http_server_requests_*, the instrumented counter) carry the
+# Prometheus-Operator-added `namespace` + `service` + `pod` labels — NOT
+# app.kubernetes.io/name. Select by service="endpoint-admin-service" (the
+# Service name); pod=~"endpoint-admin-service-.*" is an equivalent fallback.
+# cAdvisor container_* series carry only `pod`.
 
-# Heartbeat ingest rate (per minute, per device)
-rate(endpoint_agent_heartbeats_total[5m])
+# (0) DISCOVERY — run FIRST to freeze the live label set (uri templates, the
+#     `service` label value, pod regex) before trusting the queries below.
+sum by (uri, method, status) (rate(http_server_requests_seconds_count{namespace="platform-prod", service="endpoint-admin-service"}[5m]))
+
+# Heartbeat ingest rate (req/s) — POST /api/v1/agent/heartbeat is a 1:1 HTTP
+# endpoint, so the Spring Boot auto-metric IS the heartbeat counter (no custom
+# metric needed). Drop status= for total load; add outcome="SUCCESS" for OK-only.
+rate(http_server_requests_seconds_count{namespace="platform-prod", service="endpoint-admin-service", uri="/api/v1/agent/heartbeat", method="POST"}[5m])
 # Pre-wave baseline: ~5-10 heartbeat/min per device active
 
-# COLLECT_INVENTORY frequency
-rate(endpoint_agent_collect_inventory_total[5m])
+# COLLECT_INVENTORY rate — instrumented counter (command type is not a uri label,
+# so this is the one series that had to be added; see platform-backend PR).
+rate(endpoint_admin_agent_command_results_total{namespace="platform-prod", service="endpoint-admin-service", command_type="COLLECT_INVENTORY"}[5m])
+# Add status="SUCCEEDED" for ingested-OK only; omit for all agent-reported outcomes.
 # Pre-wave baseline: ~1-2 collect/hour per device
 
-# Backend CPU/mem
+# Backend CPU/mem (cAdvisor — already real; container_* carry only `pod`)
 container_cpu_usage_seconds_total{namespace="platform-prod", pod=~"endpoint-admin-service.*"}
 container_memory_working_set_bytes{namespace="platform-prod", pod=~"endpoint-admin-service.*"}
 
-# DB connection pool
-endpoint_admin_db_connections_active / endpoint_admin_db_connections_max
+# DB connection pool (HikariCP auto-metric; sum() over replicas; max default 10)
+sum(hikaricp_connections_active{namespace="platform-prod", service="endpoint-admin-service"})
+  / sum(hikaricp_connections_max{namespace="platform-prod", service="endpoint-admin-service"})
 # Pre-wave baseline: <50% utilization
 ```
 
@@ -152,6 +174,8 @@ Backend reads ConfigMap → enforces concurrent install cap per ring.
 | **Heartbeat ingest rate** | >2x baseline sustained 10min | warn | warn | warn | Monitor; throttle if persists |
 | **Enrollment fail** | edge mTLS 5xx | ≥1/10 (10%) | ≥2/20 (10%) | ≥3/20 (15%) | M2 edge mTLS re-verify |
 
+> **Reconciled series (§3.1, #1493)**: *Backend DB pool* = `sum(hikaricp_connections_active{service="endpoint-admin-service"}) / sum(hikaricp_connections_max{...})`; *Heartbeat ingest rate* = `rate(http_server_requests_seconds_count{…,uri="/api/v1/agent/heartbeat"}[5m])`; *Enrollment fail* app-5xx = `http_server_requests_seconds_count{…,uri="/api/v1/endpoint-agent/endpoint-enrollments/auto",status=~"5.."}`. **Caveat**: the "edge mTLS 5xx" detection is **edge/nginx-level** — a client-cert TLS handshake rejected at the edge never reaches endpoint-admin-service, so the app metric counts only enrollment requests that *did* reach the backend. Pair it with the nginx/edge error rate for full mTLS-failure coverage.
+
 ### 5.2 Abort Decision Tree (per ring)
 
 ```
@@ -160,9 +184,12 @@ For each active ring:
     metrics_collect:
       install_status: Event 102 + enrollment record
       heartbeat_age: now - last_ping (P95 across ring)
-      backend_cpu: container_cpu_usage_seconds_total (avg over 5m)
-      db_pool: endpoint_admin_db_connections_active / max
-      enrollment_5xx: rate(endpoint_admin_enrollments_5xx_total[5m])
+      backend_cpu: container_cpu_usage_seconds_total{pod=~"endpoint-admin-service.*"} (avg over 5m)
+      db_pool: sum(hikaricp_connections_active{service="endpoint-admin-service"})
+               / sum(hikaricp_connections_max{service="endpoint-admin-service"})
+      enrollment_5xx: sum(rate(http_server_requests_seconds_count{service="endpoint-admin-service", uri="/api/v1/endpoint-agent/endpoint-enrollments/auto", status=~"5.."}[5m]))
+                      / sum(rate(http_server_requests_seconds_count{service="endpoint-admin-service", uri="/api/v1/endpoint-agent/endpoint-enrollments/auto"}[5m]))
+                      # app-surface 5xx only; edge/nginx mTLS rejections never reach the app (see §5.1 note)
     
     if (install_fail >= ring_threshold):
       pause ring + investigate root cause
@@ -208,19 +235,33 @@ Evidence:
 ## 6. Capacity Baseline Acceptance
 
 ```
-Pre-wave (metric-name freeze — do BEFORE ring A):
-  - Reconcile every PromQL/SQL identifier in this runbook against the LIVE
-    catalogs (curl /actuator/prometheus | grep endpoint_; \d endpoint_devices).
-  - Replace any PROPOSED-but-absent metric (e.g. endpoint_admin_enrollments_5xx_total)
-    with a real exposed metric OR instrument it; the abort formula MUST bind to
-    metrics that exist. Freeze the final names before ring A starts.
+Pre-wave (metric-name freeze — RECONCILED 2026-06-13, #1493 / Codex 019ebffb):
+  - The PromQL identifiers are reconciled (§3.1) against the real
+    endpoint-admin-service exposition. Re-confirm live before ring A:
+      curl -s <mgmt:8081>/actuator/prometheus \
+        | grep -E 'endpoint_admin_agent_command_results_total|hikaricp_connections_(active|max)|http_server_requests_seconds_count'
+      \d endpoint_devices   # status enum, no "active"
+  - Reconciliation map:
+      heartbeat ingest        -> http_server_requests_seconds_count{uri="/api/v1/agent/heartbeat"}   (Spring auto)
+      COLLECT_INVENTORY rate  -> endpoint_admin_agent_command_results_total{command_type="COLLECT_INVENTORY"}  (INSTRUMENTED, platform-backend PR)
+      db pool                 -> hikaricp_connections_active / hikaricp_connections_max   (HikariCP auto)
+      enrollment 5xx          -> http_server_requests_seconds_count{uri=".../endpoint-enrollments/auto",status=~"5.."}  (Spring auto, app-surface)
+      backend cpu/mem         -> container_* (cAdvisor, unchanged)
+
+  - METRIC-ABSENCE WAVE-BLOCK GATE (Codex 019ebffb E): a missing series is NOT
+    zero. Before ring A, assert each abort-formula series resolves to >0 samples;
+    if any is empty (ServiceMonitor target down / image not yet carrying the
+    counter), BLOCK the wave. Do NOT paper over absence with `or vector(0)`:
+      count(hikaricp_connections_max{service="endpoint-admin-service"}) == 0                       -> BLOCK
+      absent(endpoint_admin_agent_command_results_total{service="endpoint-admin-service"})         -> BLOCK
+      absent(http_server_requests_seconds_count{service="endpoint-admin-service", uri="/api/v1/agent/heartbeat"}) -> BLOCK
 
 For ring C closure:
   - 50/50 PC enrollment + GPO install LIVE
   - Backend CPU < 60% baseline (no sustained 80% breach)
-  - DB pool < 60% baseline (no sustained 80% breach)
-  - Heartbeat ingest rate scaled linearly (50 PC ~ 50x 5-PC pilot)
-  - COLLECT_INVENTORY rate scaled linearly
+  - DB pool < 60% baseline (no sustained 80% breach) — sum(hikaricp_active)/sum(hikaricp_max)
+  - Heartbeat ingest rate scaled linearly (50 PC ~ 50x 5-PC pilot) — http_server_requests heartbeat uri
+  - COLLECT_INVENTORY rate scaled linearly — endpoint_admin_agent_command_results_total{command_type="COLLECT_INVENTORY"}
   - 0 backend OOM event
   - 0 backend pod restart unrelated to image rollout
   - 1+ controlled wave abort drill PASS
