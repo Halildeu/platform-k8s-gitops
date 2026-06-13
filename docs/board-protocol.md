@@ -104,6 +104,11 @@ Runtime evidence pending
 merge issue'yu kapatır, `item-closed → Done` tetiklenir, canlı kanıt
 olmadan board `Done` olur (overclaim).
 
+CI enforcement: `gate-forbidden-close-keywords.yml` PR başlığı, PR gövdesi ve
+commit mesajlarında `Closes/Fixes/Resolves #N` sınıfı GitHub issue referansını
+yakalar. Guard sadece issue ref ile birlikte gelen close keyword'leri bloklar;
+`Closes the bug class` gibi açıklayıcı metin false-positive üretmez.
+
 Akış: runtime issue PR-merge'de **kapanmaz** → agent canlı kanıt + acceptance
 checklist'i issue'ya işler → `Needs Verify` → kabul → deliberate close → `Done`.
 
@@ -541,6 +546,8 @@ Temel kararlar:
 - Project #2 `Status/Faz/Track/Priority/Kind` alanlari izin predicate'ine girecek.
 - Mavis mesajlari claim, approval, recovery veya closure authority olmayacak.
 - Runtime/gate PR'lar `Tracked by #N` kullanacak; `Closes/Fixes/Resolves #N` yasak kalacak.
+- `gate-forbidden-close-keywords.yml` bu kuralı PR metadata + commit mesajları
+  seviyesinde fail-closed denetleyecek.
 - Invalid ledger suffix repo-wide fail-closed kabul edilecek.
 - Takeover iki asamali olacak: `TAKEOVER_ACCEPTED` -> mirror verify -> `TAKEOVER_COMMITTED`.
 

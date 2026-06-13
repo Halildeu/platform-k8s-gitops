@@ -366,6 +366,18 @@ Scan surfaces:
 
 Any forbidden close keyword hit fails CI/permission until rewritten to `Tracked by #N`.
 
+Implementation slice PR-CI-1 adds a trusted-base `pull_request_target` gate:
+
+- scans PR title and body from the event payload;
+- scans all PR commit messages through the read-only REST commits API;
+- supports local `--text-file` scans for release-note / merge-body fixtures;
+- matches close keywords only when followed by a GitHub issue reference, so
+  safe prose such as "Closes the bug class" is not blocked.
+
+The guard intentionally does not checkout PR head code. It runs the base-branch
+copy of `scripts/ci/check-forbidden-close-keywords.mjs` and fails with a direct
+rewrite instruction: replace `Closes/Fixes/Resolves #N` with `Tracked by #N`.
+
 ## 18. Event UUID Idempotency
 
 Duplicate `event_uuid` with different payload or hash invalidates the suffix.
@@ -606,7 +618,8 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 
 ### Slice 5 — PR/CI gates
 
-- Add forbidden close keyword scan.
+- [x] Add forbidden close keyword scan for PR title/body, PR commit messages,
+  and local text-file release/merge fixtures.
 - Add PR mirror validation.
 - Add branch protection/append-only ledger CI.
 - Add secret scan across coordination surfaces.
