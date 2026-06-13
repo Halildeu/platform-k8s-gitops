@@ -34,6 +34,7 @@ on:
       - "scripts/test/coordination-ledger-writer.sh"
       - "scripts/test/coordination-secret-scan.sh"
       - "scripts/test/board-sync-ledger-require-claim.sh"
+      - "scripts/test/board-sync-project-item-limit.sh"
       - "scripts/board-sync.sh"
       - ".github/workflows/gate-coordination-ledger-replay.yml"
   push:
@@ -71,6 +72,7 @@ on:
       - "scripts/test/coordination-ledger-writer.sh"
       - "scripts/test/coordination-secret-scan.sh"
       - "scripts/test/board-sync-ledger-require-claim.sh"
+      - "scripts/test/board-sync-project-item-limit.sh"
       - "scripts/board-sync.sh"
       - ".github/workflows/gate-coordination-ledger-replay.yml"
 
@@ -166,6 +168,9 @@ jobs:
 
       - name: Run ledger-backed require-claim harness
         run: bash scripts/test/board-sync-ledger-require-claim.sh
+
+      - name: Run Project item-list limit harness
+        run: bash scripts/test/board-sync-project-item-limit.sh
 
       - name: Replay repository ledger files
         shell: bash
