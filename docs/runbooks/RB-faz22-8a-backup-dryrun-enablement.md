@@ -2,11 +2,13 @@
 
 > **Code-complete (agent-doable) DONE; enablement owner/operator-gated.** The
 > three-layer 22.8A vertical — contract + agent producer + backend mirror — is
-> merged, cross-AI AGREE'd, and CI-green, but **disabled-by-default end-to-end**.
-> Nothing produces or accepts a backup dry-run manifest in any live environment
-> until the owner decides go-forward and the operator/backend wire the remaining
-> slices. This runbook is the handoff: what is built, what remains to enable it,
-> and the D29-EA + KVKK acceptance gate for the live flip.
+> merged, cross-AI AGREE'd, and CI-green (13/13 · 8/8 · 14/14 PR checks), but
+> **disabled-by-default end-to-end**. **No supported end-to-end path produces or
+> persists a live backup dry-run result** until the owner decides go-forward and
+> the operator/backend wire the remaining slices (agent capability default-off;
+> generic `/commands` → 422; no dedicated issuing surface; no deploy). This
+> runbook is the handoff: what is built, what remains to enable it, and the
+> D29-EA + KVKK acceptance gate for the live flip.
 
 DC-EA tier **DC-EA-1**: the manifest is **metadata-only** — the agent lists what
 *would* be eligible for backup (path-class / size / mtime-bucket / count)
@@ -23,10 +25,14 @@ denied-aggregate and never listed (contract v1 P0 amendment, Codex `019ec28a`).
 | Agent producer | platform-agent `#153` (`c9dc5132`) | `internal/dataprotection` metadata-only walker (deny-before-descent, `GetFinalPathNameByHandle` canonicalization, no-content static guard, root-field positive-allowlist), `COLLECT_BACKUP_DRYRUN` capability **opt-in** (`EnableBackupDryRun`, default false) | Codex `019ec2bb` AGREE |
 | Backend mirror | platform-backend `#640` (`19d58d06`) | `BackupDryRunManifestPayloadPolicy` strict-schema server-side re-validate (additionalProperties:false + full-envelope path-free + aggregate invariants + device/tenant binding), `COLLECT_BACKUP_DRYRUN` in `DEDICATED_PATH_ONLY`, V66 CHECK | Codex `019ec2e6` AGREE |
 
-The Go producer and the Java mirror enforce **byte-for-byte the same contract**
-(identical key sets, enums, denylist, aggregate invariants). Metadata-only is
-machine-enforced on both sides (agent: import/call static guard + `FILE_READ_ATTRIBUTES`-only
-handle; backend: strict-schema whitelist that has no content/hash field).
+The Go producer and the Java mirror implement **the same wire contract**
+(identical key sets, enums, denylist, aggregate invariants). The backend is a
+**strict structural no-trust mirror**: it re-validates the received manifest's
+schema / enums / path-free / aggregate-consistency / device-tenant binding — it
+does NOT re-walk the device filesystem (it has none) nor re-derive the deny
+decision from real paths. Metadata-only is machine-enforced on both sides
+(agent: import/call static guard + `FILE_READ_ATTRIBUTES`-only handle; backend:
+strict-schema whitelist with no content/hash field).
 
 ## Prerequisites to enable (NOT agent-doable — owner/operator/future-slice)
 
@@ -67,12 +73,12 @@ On the pilot Windows host (or a Parallels Win11 guest, SYSTEM context):
 ## KVKK mapping
 
 - **m.4 (data minimization)**: metadata-only manifest, opaque `root_ref`, coarse `mtime_bucket`, path-free — the artifact carries no file content and no raw personal path.
-- **m.5 / m.6 (lawful basis)**: backup-eligibility scanning of company-managed data is a `meşru menfaat` / `sözleşmenin ifası` basis on company-managed roots only; BYOD personal roots are denied. Declare the purpose in the aydınlatma metni.
+- **m.5 / m.6 (lawful basis)**: the lawful basis is **NOT locked here — DPO / Hukuk decide** (22.8 plan §8; **DPIA + VERBİS impact-check mandatory** before live). The *candidate* basis is `meşru menfaat` / `sözleşmenin ifası`, scoped to company-managed roots only (BYOD personal roots denied), declared in the aydınlatma metni after sign-off. **m.6 (özel nitelikli veri)**: DC-EA-1 does not target special-category data; if special-category inference/processing risk emerges, a **separate m.6 gate** is required.
 - **DC-EA-1 / DD-EA-9 (ADR-0012-EA §0)**: this tier permits metadata-only; any move to content read/copy is a separate, higher tier with its own gate (ADR-0035 evidence-storage, BLOCKED).
 
 ## Rollback
 
-The feature is disabled-by-default; to revert at any stage: unset `EnableBackupDryRun` on the agent build (capability disappears from the heartbeat) and/or remove the dedicated issuing surface. No data is at risk (metadata-only, nothing copied).
+The feature is disabled-by-default; to revert at any stage: unset `EnableBackupDryRun` on the agent build (capability disappears from the heartbeat) and/or remove the dedicated issuing surface. **No file content is copied and no hash/content artifact is produced.** Any already-persisted metadata-only result remains **governed evidence** — path-class / size / mtime-bucket / count metadata is still KVKK-in-scope and subject to the audit retention + purge controls (not content, but not "zero data" either).
 
 ## References
 
