@@ -810,3 +810,28 @@ kapsaminda degildir.
 Bu helper issue body, Project #2, PR body, comment veya ledger branch mutate
 etmez. Ciktisi sonraki CAS-backed reaper/retry ve repair akislari icin
 makine-okunur evidence input'udur.
+
+### 17.9 Coordination ledger takeover/recovery flow planner
+
+Takeover/recovery planner:
+
+```bash
+python3 scripts/coordination/takeover-recovery-flow.py \
+  --ledger coordination-ledger/events.jsonl \
+  --phase accept|commit|recovery \
+  --repo Halildeu/platform-k8s-gitops \
+  --issue <N> \
+  --old-session <old> \
+  --new-session <new>
+```
+
+`accept` fazi mevcut old-session claim'ini ledger'da gormeden plan uretmez ve
+`TAKEOVER_ACCEPTED` payload'inda hem eski hem yeni oturum icin permission=false
+tutar. `commit` fazi en son matching takeover event'i `TAKEOVER_ACCEPTED`
+degilse veya issue body / Project / PR mirror verification JSON'u tam degilse
+`TAKEOVER_COMMITTED` planlamaz. `recovery` fazi owner approval evidence JSON'u
+olmadan `OWNER_APPROVAL_EVIDENCE` / `OWNER_APPROVED` planlamaz.
+
+Planner read-only'dir: GitHub, Project, comment veya ledger mutate etmez.
+Urettigi event planlari mevcut `emit-ledger-event.sh` + remote CAS hattindan
+append edilmelidir.

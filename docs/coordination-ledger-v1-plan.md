@@ -574,6 +574,27 @@ explicit mirror snapshot. It also scans the local audit-debt queue with bounded
 dedupe and reports that CAS-backed retry is not yet supported. LDG-7 does not
 append ledger events or mutate GitHub/Project mirrors.
 
+Implementation slice LDG-8 adds the takeover/recovery runtime flow planner:
+
+```bash
+python3 scripts/coordination/takeover-recovery-flow.py \
+  --ledger coordination-ledger/events.jsonl \
+  --phase accept \
+  --repo Halildeu/platform-k8s-gitops \
+  --issue 1498 \
+  --old-session old-session \
+  --new-session new-session
+```
+
+The helper enforces two-phase takeover: `TAKEOVER_ACCEPTED` plans put both old
+and new sessions into no-permission pending-mirror state, while
+`TAKEOVER_COMMITTED` is refused unless explicit issue-body, Project, and PR
+mirror verification is supplied. Recovery planning emits
+`OWNER_APPROVAL_EVIDENCE` before `OWNER_APPROVED` and requires owner approval
+JSON with comment id, approver identity, scope, reason, and expiry. LDG-8 is
+read-only; the returned event plans must still be appended through the
+CAS-backed emitter.
+
 ## 19. Project GraphQL Budget / Mirror Queue Hardening
 
 GitHub Project v2 custom fields are GraphQL-only. This includes Project #2
@@ -844,9 +865,9 @@ removes the current Project GraphQL hot-path blocker for agent coordination.
 
 ### Slice 6 — Takeover/recovery
 
-- Add two-phase takeover.
-- Add owner approval evidence binding.
-- Add solo-owner recovery audit gate.
+- [x] Add two-phase takeover.
+- [x] Add owner approval evidence binding.
+- [x] Add solo-owner recovery audit gate.
 - Add tombstone/supersede flow.
 
 ## 21. Acceptance Criteria
