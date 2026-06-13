@@ -1,6 +1,6 @@
 # Faz 22.8A — Endpoint Backup Dry-Run Manifest Contract v1
 
-> **Status**: PROPOSED / **BLOCKED** — #1388 + #1390 + ADR-0012-EA §0 (DC-EA + DD-EA-9).
+> **Status**: PROPOSED — **engineering (disabled-by-default) UNBLOCKED** (ADR-0034 #1388 lift); **live/runtime BLOCKED** (§11/D10 + 22.8 collection-scope addendum + DPO/legal + #1390 charter + ADR-0012-EA §0 DC-EA/DD-EA-9).
 > **DC-EA tier**: **DC-EA-1** (metadata-only; **içerik OKUNMAZ, hash YOK**).
 > **Tarih**: 2026-06-09 · **Owner**: platform-agent [#117](https://github.com/Halildeu/platform-agent/issues/117)
 > **Cross-AI**: Codex `019ea961` AGREE (v1 baseline) · Codex `019ec28a` REVISE→ (P0 `archive_container`/`is_container` çelişki çözümü, 2026-06-13). **İlişkili**: [22.8 plan](faz-22-endpoint-data-protection-plan.md), [ADR-0034 #1388 lift](adr/0034-1388-sensitive-endpoint-ops-owner-decision.md), [ADR-0035 evidence-storage-contract](adr/0035-evidence-storage-contract.md), [ADR-0012-EA §0 DC-EA/DD-EA-9](adr/0012-EA-endpoint-admin-governance-charter.md).
@@ -112,6 +112,13 @@ Authoritative kural **sınıf bazlı**dır (aşağıdaki path örnekleri yalnız
 Sınıf matcher **agent-hardcoded**; policy ile gevşetilemez; backend mirror (§5)
 aynı sınıf kararını server-side doğrular.
 
+**Dual-match dedup (`pst/ost`)**: `.pst`/`.ost` hem `mailbox_cache` hem
+`archive_container` predicate'ine uyar. Aynı obje **`denied_count`'a yalnız bir
+kez** sayılır; primary class `mailbox_cache`, ek olarak archive-container predicate
+true olduğundan `container_count++` ve `denied_classes` set'ine `archive_container`
+da eklenir. Producer ve backend mirror (§5) bu dedup'ı **aynı** uygular (Codex
+`019ec28a` netleştirme).
+
 ## 4. Allowlist profile (backend, bounded)
 
 `managed_data_root` registry'den türetilir (22.8 plan §8): yalnız ispatlı
@@ -123,7 +130,9 @@ pre-managed sync root; personal Documents/Desktop/Pictures/Downloads **deny**.
 
 Manifest backend'e gelince, **aynı karar motorunun server-side mirror'ı**
 re-validate eder (agent'a güvenilmez): allowlist match + denylist negative +
-canonicalization sanity + aggregate tutarlılık. Mismatch → reject + audit.
+canonicalization sanity + aggregate tutarlılık. Mirror ayrıca `archive_container`
+deny kararını + `container_count`'u **yeniden hesaplar** (producer'a güvenmez).
+Mismatch → reject + audit.
 
 ## 6. D29 acceptance (22.8A.1)
 
