@@ -34,7 +34,8 @@ Uninstall log tail (redacted): `<son 10 satır, secret yok>`
 | Service `EndpointAgent` | yok | | |
 | Scheduled task `EndpointAgent*` | yok | | |
 | HKLM `Services\EndpointAgent` | yok | | |
-| HKLM `...\Environment` regkey | temizlendi | | |
+| HKLM `Services\EndpointAgent\Environment` regkey | temizlendi | | |
+| HKLM `SOFTWARE\EndpointAgent` `Mode` | reinstall mode'una eşit (stale değil) | | |
 | `endpoint-agent.exe` | yok | | |
 | Log dizini (`ProgramData\EndpointAgent\logs`) | korundu | | |
 | Config store (`hmac-credential.dpapi`) | korundu (`-RemoveConfig` yoksa) | | |
@@ -45,14 +46,14 @@ Uninstall log tail (redacted): `<son 10 satır, secret yok>`
 | Kontrol | Beklenen | Gözlenen | PASS/FAIL |
 |---|---|---|---|
 | Decommission status | `DECOMMISSIONED` | | |
-| Revoked cihaza komut dispatch | 4xx (reddedildi) | | |
+| Revoked cihaza komut YARATMA (`type` field) | **409** "...is decommissioned..." (400 = field hatası, FAIL) | | |
 | Agent-side poll (revoked) | komut yok | | |
 | Reactivate status | `OFFLINE` / `PENDING_ENROLLMENT` | | |
 | Reactivate sonrası heartbeat | `ONLINE` | | |
 | Audit row `ENDPOINT_DEVICE_DECOMMISSIONED` | yazıldı (lifecycle + hash-chain) | | |
 | Audit row `ENDPOINT_DEVICE_REACTIVATED` | yazıldı | | |
 
-Cascade counts (decommission): commands=`?`, secrets=`?`, maintenance_tokens=`?`, uninstall_requests=`?`
+Cascade counts (decommission, gerçek audit alanları): `cancelledCommands`=`?`, `revokedTokens`=`?`, `finalizedUninstalls`=`?` (secret clear yan-etki, ayrı count yok)
 
 ## D4 — GPO rollback (operatör AD)
 
@@ -60,17 +61,19 @@ Cascade counts (decommission): commands=`?`, secrets=`?`, maintenance_tokens=`?`
 |---|---|---|---|
 | GPO unlink / security-filter remove | uygulandı | | |
 | `gpresult /r` GPO görünmüyor | evet | | |
-| Assigned-MSI scope-dışı uninstall | (varsa) uninstall | | |
+| GPO Software Installation "uninstall on scope exit" | configured / NOT-configured (manuel) | | |
+| Assigned-MSI scope-dışı uninstall | (yalnız configured ise) uninstall | | |
 | Propagation süresi | kaydedildi | `__ dk` | |
 
 ## D5 — Backend dark / pause
 
 | Katman | Komut | Etki gözlendi | PASS/FAIL |
 |---|---|---|---|
-| 1. Yeni komut üretimi durdu | (operasyonel) | | |
-| 2. Rollout-ring de-assign | `PATCH .../rollout` | | |
-| 3. Subset decommission | `POST .../decommission` | | |
-| Pause sonrası yeni komut çekimi | yok | | |
+| 1. Yeni komut üretimi durdu (PRIMARY) | (operasyonel — yeni POST yok) | | |
+| 2. Rollout-ring de-assign (yalnız yaratma-zamanı) | `PATCH .../rollout` | | |
+| 3. Zaten-queued iptal (cascade) | `POST .../decommission` | | |
+| Pause sonrası YENİ komut üretimi | yok | | |
+| Queued komut (ring de-assign sonrası, decommission ÖNCESİ) | hâlâ claim edilebilir (beklenen — ring claim'i filtrelemez) | | |
 
 ## D6 — Evidence retention + comms
 
