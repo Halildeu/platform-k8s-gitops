@@ -923,3 +923,71 @@ Kurallar:
   fixture eksikligi mutation oncesi fail-closed olur.
 - `DENY_RECORDED` audit-only event'tir; claim yetkisi vermez, revoke yapmaz,
   issue body / Project #2 / PR mirror mutate etmez.
+
+### 17.13 Coordination ledger PR mirror validation
+
+PR mirror validator:
+
+```bash
+python3 scripts/coordination/validate-pr-mirrors.py \
+  --ledger coordination-ledger/events.jsonl \
+  --snapshot pr-mirror-snapshot.json
+```
+
+Snapshot format'i PR body'lerini offline verir. Helper valid ledger replay
+olmadan hicbir marker'i kabul etmez. Her `coordination-ledger-pr-mirror:v1`
+marker'i icin `coordination_state`, `event_uuid`, `event_hash`, `session`
+alanlari zorunludur; marker event hash'i ledger event hash'iyle, marker
+session'i event payload session/new_session/old_session alanlariyla uyusmazsa
+fail-closed doner.
+
+### 17.14 Coordination ledger append-only CI enforcement
+
+Append-only guard:
+
+```bash
+python3 scripts/coordination/enforce-append-only-ledger.py \
+  --old old-events.jsonl \
+  --new new-events.jsonl
+```
+
+Guard eski ledger'in non-empty satirlarini yeni ledger'in exact prefix'i olarak
+ister. Rewrite, reorder, deletion veya truncation reddedilir; sonra eski ve yeni
+ledger verifier'dan gecirilir. `gate-coordination-ledger-replay` workflow'u PR
+ve push event'lerinde `coordination-ledger/**/*.jsonl` diff'leri icin bu guard'i
+calistirir.
+
+### 17.15 Coordination surface secret scan
+
+Coordination-specific scanner:
+
+```bash
+python3 scripts/coordination/scan-coordination-secrets.py
+```
+
+Scanner ledger, coordination docs ve coordination scripts yuzeylerinde
+high-confidence secret pattern'lerini arar: GitHub token, GitHub PAT, AWS access
+key, Google API key, Slack token, private key ve uzun bearer token. Generic
+`TOKEN=` gibi source-code false-positive ureten kaliplari kullanmaz. Finding
+varsa redacted snippet ile nonzero doner ve permission grant uretmez.
+
+### 17.16 Coordination ledger tombstone/supersede flow
+
+Tombstone/supersede planner:
+
+```bash
+python3 scripts/coordination/tombstone-supersede-flow.py \
+  --ledger coordination-ledger/events.jsonl \
+  --phase tombstone|supersede \
+  --repo Halildeu/platform-k8s-gitops \
+  --issue <old-issue> \
+  --new-issue <new-issue> \
+  --mirror-verification-json mirror-verification.json \
+  --reason "<reason>"
+```
+
+`tombstone` fazi eski issue chain'inin permission uretememesi icin
+`TOMBSTONE_CHAIN` event planlar. `supersede` fazi `SUPERSEDE_ISSUE` event'ini
+yalniz issue body, Project ve PR mirror verification JSON'u tam ise planlar.
+Planner read-only'dir; event planlari yine `emit-ledger-event.sh` + remote CAS
+hattindan append edilmelidir.
