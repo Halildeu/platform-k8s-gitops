@@ -110,8 +110,11 @@ Rehearsal **acik.local pilot yerine geçmez** — pilot öncesi tekrar edilebili
 - [ ] **RDP** veya **IT eşliğinde local console erişimi** — agent install + smoke için.
 - [ ] **Şifre e-posta ile paylaşılmaz** (HARD RULE — Kullanıcı Aktif Credential'ına Dokunma): operator/IT şahsen veya secrets manager üzerinden paylaşır.
 - [ ] **HTTPS 443 backend reachability**: pilot PC'den `testai.acik.com` (test cluster) HTTPS resolve + TCP/443 ulaşabilmeli (firewall + DNS). **Pilot scope test cluster only**; prod host (`ai.acik.com`) bu runbook kapsamı dışıdır (§5 ve §8).
-- [ ] **EDR/Antivirüs allowlist muhatabı**: operator çalıştığı SOC veya IT güvenlik ekibinden `endpoint-enes-agent.exe` (ve hash'i) için allowlist permission önceden alınır. EDR allowlist olmadan smoke fail eder (quarantine veya block).
+- [ ] **EDR/Antivirüs allowlist muhatabı**: operator çalıştığı SOC veya IT güvenlik ekibinden `endpoint-agent.exe` (ve hash'i) için allowlist permission önceden alınır. EDR allowlist olmadan smoke fail eder (quarantine veya block).
 - [ ] **Pilot cihazlarda local admin/install yetkisi**: agent install + Windows service register için gereklidir. Domain user RDP yetersizdir.
+- [ ] **Per-device preflight** (read-only, install öncesi + sonrası): `scripts/faz22-mass-deployment/wave-preflight.ps1` — `-Mode preinstall-readiness` (install öncesi: backend reachability + pending-reboot; service/exe yokluğu fail değil) ve enroll sonrası `-Mode enroll-health` (service Running + PE version + signature + reachability). `overall=FAIL` → smoke durdurulur. (M5/M6/M7 wave-gate'leriyle ortak araç.)
+
+> **Agent kimlik referansları doğrulandı (2026-06-13, platform-agent HEAD `b0c1ba0`)**: Windows service = **`EndpointAgent`**, binary = **`endpoint-agent.exe`** (`%ProgramFiles%\EndpointAgent\`), log dizini = **`%ProgramData%\EndpointAgent\logs`**, heartbeat = `POST /api/v1/endpoint-agent/heartbeat`. (Eski `endpoint-enes-agent` / `EndpointEnes\Logs` adları YANLIŞTI — rollback `Stop-Service` komutu canlıda fail ederdi; bu PR'da düzeltildi. "Endpoint-Enes" yalnız ürün takma adıdır, servis/binary adı değil.)
 
 ### Backend hazırlık
 
@@ -124,7 +127,7 @@ Rehearsal **acik.local pilot yerine geçmez** — pilot öncesi tekrar edilebili
 | # | Adım | Sorumlu | Amaç |
 |---|---|---|---|
 | 1 | **Agent install** | IT + operator | `platform-agent` release artifact (SHA256 doğrulanmış) pilot PC'ye kopya + installer çalıştır |
-| 2 | **Service start/status** | IT + operator | `endpoint-enes-agent` Windows service start; `Get-Service` status doğrula |
+| 2 | **Service start/status** | IT + operator | `EndpointAgent` Windows service start; `Get-Service` status doğrula |
 | 3 | **Inventory collect** | agent automatic | İlk başlatmada local inventory: hostname, OS, machine fingerprint, agent version |
 | 4 | **Heartbeat** | agent automatic | Backend `/api/v1/endpoint-agent/heartbeat` POST — interval beklenen |
 | 5 | **Backend enrollment** | agent + backend | İlk heartbeat sonrası backend `endpoint_devices` tablosuna row insert; `enrollment_id` döner |
@@ -161,14 +164,14 @@ Her PC için aşağıdaki kayıtlar **tam doldurulmalı**:
 | `tenantId` (backend) | `<UUID>` — `endpoint_devices.tenant_id` (multi-tenant ayrım kanıtı) |
 | Agent version + artifact SHA256 | `platform-agent v0.1.0 sha256:<full>` (release artifact hash) |
 | Build run / source provenance | platform-agent ci-image-push run id veya release tag (artifact source traceability) |
-| Service status | `Running (PID <N>); Get-Service endpoint-enes-agent → Status=Running` |
+| Service status | `Running (PID <N>); Get-Service EndpointAgent → Status=Running` |
 | Enrollment id (`endpoint_devices.id`) | `<UUID>` (backend device row) |
 | Enrollment token / credential proof | non-secret credential id veya provider (`hmac-sha256` fingerprint id; **gerçek credential value LOGLANMAZ** — sadece type + non-secret id) |
 | Heartbeat timestamp | `2026-MM-DDTHH:MM:SSZ` (backend `endpoint_devices.last_heartbeat_at`) |
 | Backend command id + action | `<UUID>` (queued dummy command'ın `endpoint_commands.id`'si) + command type/action (örn. `inventory_refresh`) |
 | Backend result id + final status | `<UUID>` (`endpoint_command_results.id`) + result status (`COMPLETED` / `FAILED` / `TIMEOUT`) |
 | Audit row id + event type | `<UUID>` (`endpoint_audit_events.id`) + `event_type` (örn. `ENDPOINT_COMMAND_APPROVED`, `COMMAND_RESULT_RECEIVED`) |
-| Agent local log path | `C:\ProgramData\EndpointEnes\Logs\agent-YYYYMMDD.log` (veya benzeri) |
+| Agent local log path | `C:\ProgramData\EndpointAgent\logs\agent-YYYYMMDD.log` (veya benzeri) |
 | EDR / AV result | quarantine? block? clean? — pilot başlamadan ve smoke sonrası IT/SOC ile teyit |
 | Ekran/log kanıtı | screenshot veya log dump arşivlenir (örn. evidence doc `docs/faz-22-evidence/<date>-it-pilot-<pc>.md`) |
 
@@ -178,13 +181,13 @@ Pilot smoke sırasında sorun olursa veya pilot sonrası temizlik:
 
 1. **Agent service stop**
    ```powershell
-   Stop-Service endpoint-enes-agent
-   Set-Service endpoint-enes-agent -StartupType Disabled
+   Stop-Service EndpointAgent
+   Set-Service EndpointAgent -StartupType Disabled
    ```
 2. **Agent uninstall** — installer'ın `/uninstall` flag'i veya Windows "Apps & Features" UI; binary + config + log temizleme runbook'a göre
 3. **GPO/Intune policy kaldırma** — pilot için GPO push yapıldıysa, GPO link sil + `gpupdate /force` pilot PC'lerde
 4. **Log/artifact toplama** — pilot çıktıları (log, evidence, screenshot) operator'a aktar; pilot sonrası retention süresi belirlenir
-5. **EDR allowlist geri alma** — gerekiyorsa IT/SOC ile koordinasyon (allowlist whitelist'ten endpoint-enes-agent çıkarılır)
+5. **EDR allowlist geri alma** — gerekiyorsa IT/SOC ile koordinasyon (allowlist whitelist'ten endpoint-agent.exe çıkarılır)
 6. **Backend cleanup (opsiyonel)** — `endpoint_devices` test pilot row'ları operator karar verirse silinir (audit trail backup alındıktan sonra)
 
 ## 8. Acceptance sınırı (formal)
@@ -203,6 +206,7 @@ Pilot smoke sonrası **operator karar verir** sonraki adımı:
 
 ## 9. Referanslar
 
+- **Wave-gate kardeş runbook'lar (Faz 22.5, agent kimlik referansları aynı kaynaktan doğrulandı)**: `RB-faz22-gpo-pilot-5pc.md` (M5 2-PC), `RB-faz22.5-m6-capacity-baseline.md` (M6 50-PC), `RB-faz22.5-m7-rollback-drill.md` (M7 rollback), `RB-faz22.5-1359-acceptance-evidence-template.md` (M2 edge-mTLS, PR #1492), `scripts/faz22-mass-deployment/wave-preflight.ps1` (ortak preflight)
 - `docs/state/current-state.md` — Faz 22 truth (Pending: IT pilot 22.2 — operator-bound)
 - `docs/session-handoff-2026-05-24-faz22-faz23-m7.md` §4-5 — P1 operator queue
 - `PLAN.md` row 37 Faz 22 — "Pending: ... IT pilot ayrı kapı"
