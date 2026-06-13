@@ -6,8 +6,10 @@ on:
       - "coordination-ledger/**/*.jsonl"
       - "docs/coordination/coordination-ledger-event-v1.schema.json"
       - "docs/coordination/ledger-event-authority-v1.json"
+      - "scripts/coordination/append-ledger-event.py"
       - "scripts/coordination/verify-ledger-replay.py"
       - "scripts/test/coordination-ledger-replay.sh"
+      - "scripts/test/coordination-ledger-writer.sh"
       - ".github/workflows/gate-coordination-ledger-replay.yml"
   push:
     branches:
@@ -16,8 +18,10 @@ on:
       - "coordination-ledger/**/*.jsonl"
       - "docs/coordination/coordination-ledger-event-v1.schema.json"
       - "docs/coordination/ledger-event-authority-v1.json"
+      - "scripts/coordination/append-ledger-event.py"
       - "scripts/coordination/verify-ledger-replay.py"
       - "scripts/test/coordination-ledger-replay.sh"
+      - "scripts/test/coordination-ledger-writer.sh"
       - ".github/workflows/gate-coordination-ledger-replay.yml"
 
 permissions:
@@ -29,8 +33,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compile ledger scripts
+        run: python3 -m py_compile scripts/coordination/append-ledger-event.py scripts/coordination/verify-ledger-replay.py
+
       - name: Run verifier harness
         run: bash scripts/test/coordination-ledger-replay.sh
+
+      - name: Run append writer harness
+        run: bash scripts/test/coordination-ledger-writer.sh
 
       - name: Replay repository ledger files
         shell: bash

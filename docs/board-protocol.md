@@ -680,3 +680,22 @@ invalid suffix'te nonzero döner. Kontroller:
 Bu verifier tek başına claim yetkisi vermez ve GitHub/Project yüzeylerini
 mutate etmez. `require-claim` içine tam authority entegrasyonu CAS append
 writer + materialized comment binding geldikten sonra yapılır.
+
+### 17.3 Coordination ledger local append writer
+
+Local/offline append writer foundation:
+
+```bash
+python3 scripts/coordination/append-ledger-event.py \
+  --ledger .local/coordination-ledger.jsonl \
+  --expect-previous-hash <GENESIS|sha256:...> \
+  --event-type <EVENT> \
+  --writer-role <ROLE> \
+  --payload-json '<json-object>'
+```
+
+Bu writer mevcut ledger'ı genesis'ten replay eder, invalid suffix varsa yazmayı
+reddeder, `--expect-previous-hash` CAS guard'ını uygular, candidate ledger'ı
+temp dosyada doğrular ve sadece sonra tek JSONL event append eder. Bu foundation
+GitHub issue/comment, Project #2 veya PR mirror mutate etmez; remote/branch CAS
+ve materialized comment binding sonraki coordination slice'ında tamamlanır.
