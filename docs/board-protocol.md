@@ -864,3 +864,32 @@ Bu gate read-only'dir. Ledger append, issue body edit, Project #2 field update,
 PR body update, materialized comment post veya drift repair yapmaz. Bu
 yuzeylerde mutation yalniz CAS-backed emitter / reaper / mirror-write
 slice'lariyla gelir.
+
+### 17.11 Coordination ledger post-CAS mirror writes
+
+Post-CAS mirror writer:
+
+```bash
+python3 scripts/coordination/apply-ledger-mirrors.py \
+  --cas-result emit-result.json \
+  --plan mirror-write-plan.json \
+  --apply
+```
+
+Bu helper yalniz `emit-ledger-event.sh` sonucunda gelen
+`status=ledger_event_emitted_after_remote_cas` kanitini kabul eder. Mirror plan
+icindeki `expected_event_uuid` ve `expected_event_hash`, CAS sonucundaki ledger
+event ile birebir eslesmezse issue body, Project #2 veya PR body mutation
+yapilmaz.
+
+Mutation oncesi tum yuzeyler validate edilir:
+
+- issue body `agent-state:v1` beklenen status/session ile eslesmeli;
+- Project planindaki current fields no-downgrade kuralini gecmeli ve yazilar
+  field catalog option id'leriyle yapilmali;
+- PR body sadece `coordination-ledger-pr-mirror:v1` marker block icinde
+  guncellenmeli; mevcut marker icin beklenen alanlar uyusmazsa fail-closed.
+
+Kismi apply hatasinda helper `mirror_write_failed_repair_required` ve
+`repair_debt[]` uretir; bu ciktinin kendisi permission grant degildir. Kalan
+repair/retry akisi reaper veya CAS-backed audit debt retry slice'indadir.
