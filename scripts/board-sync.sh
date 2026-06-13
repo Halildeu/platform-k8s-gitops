@@ -14,6 +14,7 @@
 #   release    <issue>    release your claim (ownership-checked)
 #   sync-state <issue>    report issue-body agent-state vs board Status
 #   require-claim         read-only operation-scoped claim permission check
+#   record-deny           queue DENY_RECORDED intent when CAS writer unavailable
 #   graphql-budget        REST rate-limit guard for Project v2 GraphQL budget
 #   drain-project-queue   apply low-risk PROJECT-DEFERRED markers
 #   verify     <issue>    PR-merge evidence: Status -> Needs Verify (--pr N)
@@ -35,6 +36,8 @@
 #   --worktree <path>     (require-claim) expected worktree (default: current)
 #   --branch <name>       (require-claim) expected branch (default: current)
 #   --mutation-risk <r>   (graphql-budget) none|low-risk|critical
+#   --intent <json>       (record-deny) deny intent JSON from require-claim
+#   --intent-file <path>  (record-deny) deny intent JSON file, or '-' for stdin
 #
 # <issue>: bare number (resolved via board), owner/repo#N, or full URL.
 # Session id: $BOARD_SESSION_ID if set, else generated and printed.
@@ -60,6 +63,7 @@ PROJECT_ITEM_LIMIT="${PROJECT_ITEM_LIMIT:-1000}"
 PROJECT_GRAPHQL_MIN_REMAINING="${PROJECT_GRAPHQL_MIN_REMAINING:-1}"
 PROJECT_TRUTH_TTL_SECONDS="${PROJECT_TRUTH_TTL_SECONDS:-300}"
 PROJECT_FIELD_CATALOG="${PROJECT_FIELD_CATALOG:-docs/coordination/project-field-catalog-v1.json}"
+COORDINATION_AUDIT_DEBT_QUEUE="${COORDINATION_AUDIT_DEBT_QUEUE:-.local/coordination-audit-debt.jsonl}"
 if ! [[ "$PROJECT_ITEM_LIMIT" =~ ^[0-9]+$ ]] || [ "$PROJECT_ITEM_LIMIT" -lt 200 ]; then
   echo "ERR: PROJECT_ITEM_LIMIT='$PROJECT_ITEM_LIMIT' must be an integer >= 200" >&2
   exit 2
@@ -97,6 +101,8 @@ OPT_OPERATION=""
 OPT_WORKTREE=""
 OPT_BRANCH=""
 OPT_MUTATION_RISK=""
+OPT_INTENT=""
+OPT_INTENT_FILE=""
 BOARD_CACHE=""
 ITEM_JSON=""
 
@@ -266,8 +272,11 @@ cmd_graphql_budget() {
 
 preflight() {
   local cmd="${1:-}"
-  command -v gh >/dev/null 2>&1 || die "gh CLI not found in PATH"
   command -v jq >/dev/null 2>&1 || die "jq not found in PATH"
+  if [ "$cmd" = "record-deny" ]; then
+    return 0
+  fi
+  command -v gh >/dev/null 2>&1 || die "gh CLI not found in PATH"
   gh auth status >/dev/null 2>&1 || die "gh not authenticated (gh auth status failed)"
   [ "$cmd" = "graphql-budget" ] && return 0
   # #1085 Codex 019e8079 must_fix #1: skip the Project API probe when
@@ -1124,6 +1133,112 @@ cmd_require_claim() {
   [ "$allowed" = "true" ]
 }
 
+# --- subcommand: record-deny --------------------------------------------------
+# CAS ledger writer is not available in this slice. record-deny therefore
+# preserves denial intents in a local append-only debt queue and returns
+# nonzero so mutation wrappers stay fail-closed.
+cmd_record_deny() {
+  local intent queue dir id intent_operation now existing_count record rc
+  if [ -n "$OPT_INTENT_FILE" ]; then
+    if [ "$OPT_INTENT_FILE" = "-" ]; then
+      intent="$(cat)"
+    else
+      intent="$(cat "$OPT_INTENT_FILE")" \
+        || die "record-deny — failed to read --intent-file '$OPT_INTENT_FILE'"
+    fi
+  else
+    intent="$OPT_INTENT"
+  fi
+  [ -n "$intent" ] || die "record-deny needs --intent <json> or --intent-file <path>"
+
+  printf '%s' "$intent" | jq -e '
+    type == "object"
+    and (.allowed == false)
+    and (.deny_event_intent_id | type == "string" and test("^[a-f0-9]{64}$"))
+    and (.deny_code | type == "string" and length > 0)
+    and (.issue | type == "string" and length > 0)
+    and (.session | type == "string" and length > 0)
+    and (.operation | type == "string" and length > 0)
+  ' >/dev/null || die "record-deny — invalid deny intent JSON"
+
+  id="$(printf '%s' "$intent" | jq -r '.deny_event_intent_id')"
+  intent_operation="$(printf '%s' "$intent" | jq -r '.operation')"
+  valid_operation_class "$intent_operation" \
+    || die "record-deny — invalid operation '$intent_operation'"
+  queue="$COORDINATION_AUDIT_DEBT_QUEUE"
+  dir="$(dirname "$queue")"
+  now="$(iso_now)"
+  mkdir -p "$dir" || die "record-deny — failed to create queue directory '$dir'"
+  touch "$queue" || die "record-deny — failed to touch queue '$queue'"
+
+  existing_count="$(jq -s --arg id "$id" '
+    [ .[]
+      | select(type == "object")
+      | select((.deny_event_intent_id // .intent.deny_event_intent_id // "") == $id)
+    ] | length
+  ' "$queue" 2>/dev/null || printf '0')"
+
+  if [ "${existing_count:-0}" -gt 0 ]; then
+    jq -n \
+      --arg status "blocked_audit_debt" \
+      --arg reason "duplicate_local_debt" \
+      --arg queue "$queue" \
+      --arg id "$id" \
+      '{
+        recorded: false,
+        queued: false,
+        duplicate: true,
+        status: $status,
+        reason: $reason,
+        queue_path: $queue,
+        deny_event_intent_id: $id
+      }'
+    return 1
+  fi
+
+  record="$(jq -cn \
+    --arg queued_at "$now" \
+    --arg status "blocked_audit_debt" \
+    --arg reason "cas_writer_unavailable" \
+    --arg source "board-sync-record-deny-v1" \
+    --arg queue "$queue" \
+    --argjson intent "$intent" \
+    '{
+      schemaVersion: "coordination-audit-debt/v1",
+      queued_at: $queued_at,
+      status: $status,
+      reason: $reason,
+      source: $source,
+      queue_path: $queue,
+      deny_event_intent_id: $intent.deny_event_intent_id,
+      intent: $intent
+    }')"
+
+  rc=1
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "[dry-run] record-deny — would append local audit debt id=$id to $queue"
+  else
+    printf '%s\n' "$record" >>"$queue" \
+      || die "record-deny — failed to append local audit debt to '$queue'"
+  fi
+
+  jq -n \
+    --arg status "blocked_audit_debt" \
+    --arg reason "cas_writer_unavailable" \
+    --arg queue "$queue" \
+    --arg id "$id" \
+    '{
+      recorded: false,
+      queued: true,
+      duplicate: false,
+      status: $status,
+      reason: $reason,
+      queue_path: $queue,
+      deny_event_intent_id: $id
+    }'
+  return "$rc"
+}
+
 # --- subcommand: heartbeat ----------------------------------------------------
 cmd_heartbeat() {
   [ -n "${1:-}" ] || die "heartbeat needs an <issue>"
@@ -1813,6 +1928,8 @@ main() {
       --worktree)    [ $# -ge 2 ] || die "--worktree needs a value"; OPT_WORKTREE="$2"; shift 2 ;;
       --branch)      [ $# -ge 2 ] || die "--branch needs a value"; OPT_BRANCH="$2"; shift 2 ;;
       --mutation-risk) [ $# -ge 2 ] || die "--mutation-risk needs a value"; OPT_MUTATION_RISK="$2"; shift 2 ;;
+      --intent)      [ $# -ge 2 ] || die "--intent needs a value"; OPT_INTENT="$2"; shift 2 ;;
+      --intent-file) [ $# -ge 2 ] || die "--intent-file needs a value"; OPT_INTENT_FILE="$2"; shift 2 ;;
       -h|--help)     usage 0 ;;
       *) if [ -z "$cmd" ]; then cmd="$1"; else args+=("$1"); fi; shift ;;
     esac
@@ -1824,6 +1941,7 @@ main() {
     list)       cmd_list ;;
     claim)      cmd_claim "${args[@]:-}" ;;
     require-claim) cmd_require_claim "${args[@]:-}" ;;
+    record-deny) cmd_record_deny ;;
     graphql-budget) cmd_graphql_budget ;;
     drain-project-queue) cmd_drain_project_queue "${args[@]:-}" ;;
     heartbeat)  cmd_heartbeat "${args[@]:-}" ;;
