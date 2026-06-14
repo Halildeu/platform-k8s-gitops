@@ -5412,6 +5412,13 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+      # Faz 22.5 M2 activation: enabling the secondary mTLS connector lengthens
+      # endpoint-admin cold start enough that the base 150s startup window can
+      # kill otherwise healthy pods before management 8081 is ready. Keep this
+      # test-only while mTLS boot cost is characterized.
+      - op: replace
+        path: /spec/template/spec/containers/0/startupProbe/failureThreshold
+        value: 90
 
   # BE-017/AG-042 formal dual-control + local SAM adapter evidence (gitops
   # #1023 + #1320; Codex strategic `019e5a61` REVISE absorb): test-only enable
@@ -5467,6 +5474,31 @@ patches:
       - op: replace
         path: /data/ENDPOINT_ADMIN_UNINSTALL_ENABLED
         value: "true"
+
+  # Faz 22.5 M2 AD CS / edge mTLS activation (TEST only) — gitops #1359/#1376.
+  # Preconditions live-proven 2026-06-14:
+  #   - AD CS Enterprise Root CA Acik-Endpoint-CA on ERP-MOBIL.acik.local.
+  #   - Server cert SAN covers mtls.testai.acik.com + mtls.ai.acik.com.
+  #   - Kubernetes secrets endpoint-admin-service-mtls-stores and
+  #     endpoint-admin-service-mtls-secrets are seeded out-of-band; no secret
+  #     material is committed here.
+  #   - Fixed tenant UUID is the current platform-test endpoint-admin tenant
+  #     observed in endpoint_devices/enrollments/audit rows.
+  # The forward-header mode must be OFF when passthrough is ON; the backend
+  # fails closed if both are enabled. Prod inherits the base default-off state.
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    patch: |-
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_MTLS_FORWARD_HEADER_ENABLED
+        value: "false"
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_MTLS_PASSTHROUGH_ENABLED
+        value: "true"
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_MTLS_PASSTHROUGH_FIXED_TENANT_ID
+        value: "00000000-0000-0000-0000-000000000001"
 
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz SPRING_DATASOURCE_URL
   # + KEYCLOAK_URL replace patch'leri KALDIRILDI (base zaten shortname).
