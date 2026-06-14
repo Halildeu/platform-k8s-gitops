@@ -1,5 +1,30 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 M2 agent edge-default fix merged; Project #2 hygiene guard/backfill merged; M2 runtime gates still separate (2026-06-15, Codex #151/#1537)
+
+**Session milestone**: M2'de agent-doable kalan slice ve board hygiene slice
+autonomous olarak işlendi. `platform-agent` #156 (`ea4ba70`) merge edildi:
+tokenless AutoEnroll/mTLS default host'u canonical `mtls.testai.acik.com` oldu,
+retired `endpoint-agent-mtls.testai.acik.com` referansları kaldırıldı ve
+tokenless lifecycle fail-closed regression guard eklendi. `platform-k8s-gitops`
+#1552 (`61fa4786`) merge edildi: Project #2 required-field hygiene audit +
+fixture harness + CI guard + board protocol eklendi; live deterministic backfill
+Project #2 üzerinde uygulandı.
+
+| Alan | Durum (2026-06-15) | Kanıt / sınır |
+|---|---|---|
+| Agent M2 edge default | 🟢 MERGED | `platform-agent` #156 merge commit `ea4ba70`; CI: BG-EA-1, Go/Windows tests, PS5.1 installer gate, MSI lab build, SBOM, gitleaks, reproducible build all pass before merge |
+| Agent issue #151 | 🟡 Needs Verify | Project #2 status `Needs Verify`; issue evidence comment eklendi. Boundary: cert-auth command/result lifecycle backend surface olmadan agent tarafında claim edilmez |
+| Board required-field hygiene | 🟢 MERGED + APPLIED | `platform-k8s-gitops` #1552 merge commit `61fa4786`; pre-backfill `items=129`, `proposal_count=222`, `manual_count=172`; applied `75+75+72=222`; final audit `items=106`, `proposal_count=0`, `manual_count=172` |
+| Board issue #1537 | 🟡 Needs Verify | `board-sync verify` sonrası Project #2 `Needs Verify`, claim cleared. Remaining 172 manual fields are triage debt, not auto-fill candidates |
+| M2 acceptance boundary | 🟡 split | Test AutoEnroll + tokenless heartbeat already live-smoked; #1359/#1376 remain Project #2 `Blocked` for durable AD DNS/edge/prod and rollout gates; backend #655 remains `Needs Verify` for heartbeat endpoint; cert-auth command/result lifecycle remains open |
+
+**Boundary**: #156 + #1552 materially improve M2 source/board hygiene, but they do
+not prove 5-PC GPO, 24h soak, 50/800 wave rollout, prod `mtls.ai.acik.com`, or
+cert-auth command/result execution. Remaining manual Project fields must be
+triaged explicitly; no script should infer `Faz`/`Priority`/`Status` without
+deterministic evidence.
+
 ## Live Delta — Faz 22.5 M2 AD CS edge mTLS AutoEnroll + tokenless heartbeat live-smoked; durable DNS/GPO rollout still gated (2026-06-14, Codex #1359/#1376/#151)
 
 **Session milestone**: tokenless Endpoint Agent AutoEnroll için eski
