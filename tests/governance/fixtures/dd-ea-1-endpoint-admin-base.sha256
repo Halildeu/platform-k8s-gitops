@@ -28,4 +28,12 @@
 #   Deployment pod template carries the stable ESO selector marker to roll pods
 #   and re-read envFrom after the selector migration. Previous baseline:
 #   b95f55ca030c67d0105ddcc9b938bbc78dcc380a0e5580d13309f51554795600
-0f52701ae952f1dd5805f3e90dca7bf5a4cd8ad50ce7142026f49be3b026241d
+#
+# 2026-06-14 endpoint mTLS host prep (gitops #1359 / PR #1540): base
+#   Deployment declares a default-off mtls connector port, optional mTLS
+#   credential envFrom Secret, and optional read-only PKCS12 store mount; base
+#   ConfigMap carries default-off passthrough settings. Runtime activation still
+#   requires test overlay/edge/operator gates; Claude CLI cross-AI review
+#   verdict AGREE. Previous baseline:
+#   0f52701ae952f1dd5805f3e90dca7bf5a4cd8ad50ce7142026f49be3b026241d
+b8740ea7a27798879fbb82ac8077e59f90e58737b0094aa4b62e3652952b186a

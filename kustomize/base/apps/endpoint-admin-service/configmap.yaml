@@ -106,6 +106,21 @@ data:
   ENDPOINT_ADMIN_AGENT_AUTH_NONCE_CLEANUP_INTERVAL_MS: "600000"
   ENDPOINT_ADMIN_AGENT_AUTH_TIMESTAMP_WINDOW_SECONDS: "300"
 
+  # Faz 22.5 M2 (#1359) — tokenless/domain AutoEnroll passthrough mTLS.
+  # Default-off contract: the sha-f78a24d endpoint-admin image carries the
+  # secondary Tomcat connector, but it binds 8443 only when a test/prod overlay
+  # deliberately flips PASSTHROUGH_ENABLED=true. Forward-header mode stays ON
+  # for the existing trusted-hop route while passthrough is off; the backend
+  # fail-fast validator requires it to be false when passthrough is enabled.
+  ENDPOINT_ADMIN_MTLS_FORWARD_HEADER_ENABLED: "true"
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_ENABLED: "false"
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_PORT: "8443"
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_FIXED_TENANT_ID: ""
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_KEY_STORE: "/etc/endpoint-admin/mtls/server-keystore.p12"
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_KEY_STORE_TYPE: "PKCS12"
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_TRUST_STORE: "/etc/endpoint-admin/mtls/truststore.p12"
+  ENDPOINT_ADMIN_MTLS_PASSTHROUGH_TRUST_STORE_TYPE: "PKCS12"
+
   # Command claim TTL
   ENDPOINT_ADMIN_COMMAND_CLAIM_TTL_SECONDS: "300"
 
