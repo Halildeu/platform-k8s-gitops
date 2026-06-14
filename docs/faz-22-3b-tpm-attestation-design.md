@@ -121,7 +121,7 @@ verifyClientCert(cert):
 - Generic `/commands` etc. unaffected.
 
 ## 10. Test plan (maps to gated rollout 5–6)
-- **Negative (must DENY, fail-closed):** expired/forged EK; EK not in bundle; revoked EK; replayed nonce; reused nonce (consume-once); quote over a stale nonce; CSR pubkey ≠ certified key; PCR mismatch on HIGH-risk; decommissioned device reconnect; cross-channel cert (Vault cert on ADCS path & vice-versa); feature-disabled → 503.
+- **Negative (must DENY, fail-closed):** expired/forged EK; EK not in bundle; revoked EK; replayed nonce; reused nonce (consume-once); quote over a stale nonce; CSR pubkey ≠ certified key; PCR mismatch on HIGH-risk; decommissioned device reconnect; cross-channel cert (Vault cert on ADCS path & vice-versa); feature-disabled. **Every one of these denies returns the SAME uniform `403` + fixed body** (the specific reason — incl. `FEATURE_DISABLED` — is audit-log-only; **no `503`/`422` oracle**, per §9).
 - **Positive:** valid TPM → cert issued → mTLS handshake succeeds → device identity = `tpm:{ek_pub_sha256}`.
 - **CA-resilience (gate 5):** seal/unseal, OCSP/CRL unavailable, intermediate-expiry sim → issuance fully fail-closed; revocation-propagation latency measured.
 
