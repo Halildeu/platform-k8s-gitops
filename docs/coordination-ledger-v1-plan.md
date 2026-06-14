@@ -891,6 +891,40 @@ records `refreshed_at_epoch` and `age_seconds <= PROJECT_TRUTH_TTL_SECONDS`
 truth is stale, missing, in the future, or impossible to refresh because
 GraphQL budget is exhausted, critical operations fail closed.
 
+### 19.8 Status Reconciliation Barrier
+
+`docs/board-protocol.md` §4.1 defines the status reconciliation barrier. In
+ledger terms this is not a new event family. It is a permission predicate over
+existing mirrors:
+
+- Project #2 `Status`
+- issue body `agent-state:v1 status`
+- latest relevant taxonomy comment (`PROGRESS`, `EVIDENCE`, `BLOCKED`,
+  `READY-FOR-VERIFY`, `DONE-CANDIDATE`, `HANDOFF`)
+
+If new evidence changes the status interpretation, those three mirrors must be
+reconciled before any strong operation crosses the boundary. Strong operations
+are `stage`, `commit`, `push`, `pr_create`, `pr_update`, `live_mutation`,
+`deploy`, `release`, `issue_close`, `recovery`, and `key_rotation`.
+
+When the mirrors disagree, replay treats the item as mirror drift:
+
+- emit or honor `MIRROR_DRIFT_DETECTED`
+- deny strong operations until repair
+- use `REPAIR_MATERIALIZATION` after body, Project status, and comment truth are
+  synchronized
+- allow only degraded `local_edit` / `file_write` while repair is pending
+
+GraphQL exhaustion does not waive the barrier. Low-risk Project mutations may
+queue a `PROJECT-DEFERRED v1` marker, but the marker is not truth and does not
+grant permission to proceed past strong operation boundaries. Critical
+operations remain fail-closed until fresh Project truth and synchronized mirrors
+are available.
+
+`Blocked` is a valid reconciled state. If operator gates, external dependencies
+or follow-up runtime gates remain, PR merge or live-smoke evidence updates the
+comment/body explanation but must not promote the issue to `Needs Verify`.
+
 ## 20. Implementation Slices
 
 ### Slice 1 — Docs and schema
