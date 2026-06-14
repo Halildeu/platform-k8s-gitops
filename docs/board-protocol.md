@@ -686,6 +686,35 @@ sunmaz.
 zorundadir. Drain sirasinda Project item state degismisse item overwrite
 edilmez; stale-skip audit marker'i uretilir.
 
+#### 17.1.1 Project required-field hygiene
+
+Project #2 required field drift'i icin read-only/default arac:
+
+```bash
+python3 scripts/board-hygiene-audit.py --json
+```
+
+Arac varsayilan live modda yalniz Project item payload'ini kullanir
+(`title`, `body`, `repository`, `number`). Boylece board hygiene icin her item'da
+ayri `gh issue view` cagrisi yapilmaz ve GraphQL/REST budget gereksiz
+tuketilmez. Label/state tabanli daha zengin kontrol gerekiyorsa operator bilincli
+olarak `--hydrate-issues` verir.
+
+Apply modu yalniz deterministik alanlari yazar; `Faz`, `Priority` veya `Status`
+icin yeterli kanit yoksa manual queue'da birakir:
+
+```bash
+python3 scripts/board-hygiene-audit.py --apply --max-mutations 75
+```
+
+Manual alanlari otomatik uydurmak yasaktir. Backfill sonrasi beklenen saglik
+sinyali `proposal_count=0`; kalan `manual_count` triage borcudur, closure kaniti
+degildir. Offline regresyon guard'i:
+
+```bash
+bash scripts/test/board-hygiene-audit.sh
+```
+
 Issue-scoped drain:
 
 ```bash

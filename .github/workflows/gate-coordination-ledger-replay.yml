@@ -34,7 +34,9 @@ on:
       - "scripts/test/coordination-ledger-writer.sh"
       - "scripts/test/coordination-secret-scan.sh"
       - "scripts/test/board-sync-ledger-require-claim.sh"
+      - "scripts/test/board-hygiene-audit.sh"
       - "scripts/test/board-sync-project-item-limit.sh"
+      - "scripts/board-hygiene-audit.py"
       - "scripts/board-sync.sh"
       - ".github/workflows/gate-coordination-ledger-replay.yml"
   push:
@@ -72,7 +74,9 @@ on:
       - "scripts/test/coordination-ledger-writer.sh"
       - "scripts/test/coordination-secret-scan.sh"
       - "scripts/test/board-sync-ledger-require-claim.sh"
+      - "scripts/test/board-hygiene-audit.sh"
       - "scripts/test/board-sync-project-item-limit.sh"
+      - "scripts/board-hygiene-audit.py"
       - "scripts/board-sync.sh"
       - ".github/workflows/gate-coordination-ledger-replay.yml"
 
@@ -88,7 +92,7 @@ jobs:
           fetch-depth: 0
 
       - name: Compile ledger scripts
-        run: python3 -m py_compile scripts/coordination/append-ledger-event.py scripts/coordination/apply-ledger-mirrors.py scripts/coordination/enforce-append-only-ledger.py scripts/coordination/ledger-claim-state.py scripts/coordination/materialize-ledger-comment.py scripts/coordination/reap-ledger-state.py scripts/coordination/retry-audit-debt.py scripts/coordination/scan-coordination-secrets.py scripts/coordination/takeover-recovery-flow.py scripts/coordination/tombstone-supersede-flow.py scripts/coordination/validate-pr-mirrors.py scripts/coordination/verify-ledger-replay.py
+        run: python3 -m py_compile scripts/coordination/append-ledger-event.py scripts/coordination/apply-ledger-mirrors.py scripts/coordination/enforce-append-only-ledger.py scripts/coordination/ledger-claim-state.py scripts/coordination/materialize-ledger-comment.py scripts/coordination/reap-ledger-state.py scripts/coordination/retry-audit-debt.py scripts/coordination/scan-coordination-secrets.py scripts/coordination/takeover-recovery-flow.py scripts/coordination/tombstone-supersede-flow.py scripts/coordination/validate-pr-mirrors.py scripts/coordination/verify-ledger-replay.py scripts/board-hygiene-audit.py
 
       - name: Enforce append-only repository ledgers
         shell: bash
@@ -168,6 +172,9 @@ jobs:
 
       - name: Run ledger-backed require-claim harness
         run: bash scripts/test/board-sync-ledger-require-claim.sh
+
+      - name: Run Project required-field hygiene harness
+        run: bash scripts/test/board-hygiene-audit.sh
 
       - name: Run Project item-list limit harness
         run: bash scripts/test/board-sync-project-item-limit.sh
