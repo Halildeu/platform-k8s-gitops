@@ -1,15 +1,13 @@
 # Faz 22.5 M2 — passthrough target Service. Selects the backend that terminates
-# mTLS (derives identity from the client cert). BACKEND DEPENDENCY: the selected
-# workload must expose an mTLS listener on `mtls` (8443) with client-auth=need,
-# trust anchor = AD CS Root CA ("CN=ACIK Endpoint CA"), serving the device API at
-# the CANONICAL AutoEnroll route POST /api/v1/endpoint-agent/endpoint-enrollments/
-# auto (per current-state + gateway route parity — NOT /endpoint-admin/) +
-# heartbeat + command poll/result. Until that listener exists this Service
-# (the Ingress is inert — see runbook).
+# mTLS (derives identity from the client cert). The endpoint-admin Deployment
+# now declares a default-off `mtls` containerPort (8443); the backend only binds
+# it when the operator supplies the PKCS12 keystore/truststore secrets, fixed
+# tenant UUID and overlay enablement. This Service is therefore safe to render
+# before activation, but it is not acceptance evidence by itself.
 #
-# NOTE: selector + port name must match the backend Deployment's mTLS port once
-# the platform-backend mTLS-listener PR lands; placeholder pinned to
-# endpoint-admin-service. Confirm against that PR before activation.
+# Canonical AutoEnroll route: POST /api/v1/endpoint-agent/endpoint-enrollments/
+# auto (per current-state + gateway route parity — NOT /endpoint-admin/) plus
+# heartbeat + command poll/result.
 apiVersion: v1
 kind: Service
 metadata:

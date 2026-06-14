@@ -24,6 +24,11 @@ resources:
   - ../../base
   - ../../base/apps/ops-bundle    # Faz 17.2.5: ExternalSecret + ServiceMonitor CRD paketi (runtime'dan ayrı)
   - ../../base/apps/endpoint-admin-service    # Faz 22.1.1b live-aligned 2026-05-05
+  - ../../base/endpoint-agent-mtls    # Faz 22.5 M2 #1359: mtls.testai.acik.com
+                                      # passthrough Service/Ingress/NetPolicy.
+                                      # Backend connector remains default-off
+                                      # until secret + fixed tenant + host stream
+                                      # + ingress ssl-passthrough gates pass.
   - ../../base/apps/audio-gateway    # Faz 24 Aşama-2 staging (platform-ai#151; test-only, prod D30 cutover'a defer)
   - ../../base/apps/redis-streams-exporter    # Faz 24 PR-obs-01a (gitops#1247): Redis Streams queue/consumer metrikleri (test-only; prod D30'da)
   - ../../base/apps/redis-streams-exporter/ops    # ServiceMonitor (CRD-gated; ops-bundle'a değil buraya — prod sızıntısı yok)

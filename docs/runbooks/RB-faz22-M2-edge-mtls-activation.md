@@ -1,12 +1,15 @@
 # RB — Faz 22.5 M2 Edge mTLS Activation (#1359)
 
-> **Config prep DONE (agent-doable); activation operator/backend-gated.** This
-> runbook + the staged manifests in `kustomize/base/endpoint-agent-mtls/`
-> (inert: not referenced by any overlay) + the host-nginx stream snippet are the
-> edge config layer for ADR-0029's TLS-passthrough device-API mTLS. The live
-> flip needs operator DNS + AD CS CA + the platform-backend mTLS listener + the
-> ingress-nginx controller flag. Nothing here mutates a live cluster until the
-> operator wires the bundle into the test overlay.
+> **Config prep advanced (agent-doable); live activation remains
+> operator-gated.** This runbook + the manifests in
+> `kustomize/base/endpoint-agent-mtls/` + the host-nginx stream snippet are the
+> edge config layer for ADR-0029's TLS-passthrough device-API mTLS. The test
+> overlay now renders the passthrough Service/Ingress/NetworkPolicy and the
+> endpoint-admin Deployment declares a default-off `mtls` port, but the backend
+> connector still stays disabled until the operator seeds keystore/truststore
+> secrets, sets a fixed tenant UUID, applies the ingress-nginx ssl-passthrough
+> flag, and wires the real host-nginx stream route. The normal browser/API host
+> is unaffected while `ENDPOINT_ADMIN_MTLS_PASSTHROUGH_ENABLED=false`.
 
 Architecture (ADR-0029 §2.5, owner-approved; host naming amendment
 2026-06-14): dedicated SNI hosts `mtls.testai.acik.com` for test/pilot and
@@ -41,28 +44,37 @@ Read-only host/cluster preflight from 2026-06-14:
 | Host nginx server names | `ai.acik.com` and `testai.acik.com`; no `mtls.*` server/stream route yet |
 | k3d-test serverlb HTTPS | `127.0.0.1:31443` |
 | k3d-prod serverlb HTTPS | `127.0.0.1:30443` |
-| endpoint-admin-service ports | test/prod Services expose `http:8096` and `management:8081`; no `mtls:8443` yet |
-| ingress-nginx ssl-passthrough flag | not observed in read-only args grep |
+| endpoint-admin-service ports | desired-state now declares Deployment port `mtls:8443` and renders `endpoint-agent-mtls-backend`; live service currently remains `http:8096` + `management:8081` until GitOps sync/rollout |
+| ingress-nginx ssl-passthrough flag | desired `helm-values/ingress-nginx/values-test.yaml` now includes `enable-ssl-passthrough`; live controller args still need Helm apply + read-back verification |
 
-## Prerequisites (NOT agent-doable — operator/backend)
+## Live prerequisites (not fully agent-doable)
 
 | # | Prerequisite | Owner | Why |
 |---|---|---|---|
 | P1 | DNS A records `mtls.testai.acik.com` + `mtls.ai.acik.com` → edge public IP | **operator (DNS)** | **DONE 2026-06-14** for public resolvers; still verify from target corp DNS/VPN before pilot |
-| P2 | AD CS Enterprise Root CA `CN=ACIK Endpoint CA` issuing machine certs (EKU Client Authentication; SAN `URI:adcomputer:{objectGUID}`); CRL/OCSP reachable | **operator (AD CS)** | trust anchor + renewal-safe identity binding (ADR-0029 §1, RB-faz22.3-ad-cs-setup) |
-| P3 | platform-backend mTLS listener on container port named `mtls` (8443), `client-auth=need`, trust = AD CS Root CA, server cert SAN covers `mtls.testai.acik.com` and later `mtls.ai.acik.com`, serving `POST /api/v1/endpoint-agent/endpoint-enrollments/auto` (canonical route) + heartbeat + command poll/result; identity derived from client cert | **platform-backend PR** | ADR-0029 §2.5; "route parity var, no-cert POST fail-closed" exists but the mTLS-terminating port is the remaining backend slice |
-| P4 | ingress-nginx controller running with `--enable-ssl-passthrough` | **operator (cluster)** | required for the passthrough Ingress to SNI-route raw TLS (currently NOT enabled — verified 2026-06-09) |
+| P2 | AD CS Enterprise Root CA issuing machine certs (EKU Client Authentication; SAN `URI:adcomputer:{objectGUID}`); CRL/OCSP reachable | **operator (AD CS)** | URI-SAN machine-cert issuance is proven on `ERP-MOBIL` (RequestId 3, thumbprint `F87F0D21F29DCBE77AA861587559BAC974D2FCC0`, URI `adcomputer:2a8a00bf-420f-4741-aad3-c402eed0f74d`); still verify CRL/OCSP reachability from backend namespace before pilot |
+| P3 | endpoint-admin mTLS passthrough connector enabled only in test with mounted PKCS12 stores + passwords + fixed tenant UUID; client trust = AD CS Root CA; server cert SAN covers `mtls.testai.acik.com`; connector serves `POST /api/v1/endpoint-agent/endpoint-enrollments/auto` (canonical route) + heartbeat + command poll/result and derives identity from client cert | **operator + GitOps overlay** | Backend source is already present in test image `sha-f78a24d`; remaining gate is deliberate config/secret activation. The backend fails fast if passthrough and forward-header mode are enabled together |
+| P4 | ingress-nginx controller running with `--enable-ssl-passthrough` | **operator (cluster)** | required for the passthrough Ingress to SNI-route raw TLS; desired test values now include the flag, but live args must be Helm-applied and verified |
 | P5 | host-nginx built with `--with-stream` + `--with-stream_ssl_preread_module` | **operator (host)** | SNI passthrough at the real internet edge (the wildcard host nginx must not TLS-terminate the mTLS SNI) |
 | P6 | port-scope the broad intra-namespace allow (or isolate the mTLS listener on a separately-labeled workload) so 8443 is reachable only from ingress-nginx | **operator (cluster)** | K8s NetworkPolicy is additive — the allow in `netpol.yaml` is necessary but NOT sufficient (Codex F2); see the caveat in that file |
 | P7 | fill the PKI egress `ipBlock` CIDRs in `netpol.yaml` (AD CS CRL/OCSP + DC LDAPS) | **operator (AD CS/network)** | default-deny egress otherwise blocks revocation checking → backend fails-closed (Codex F3) |
 
 ## Activation steps (after P1–P7 — all are security prerequisites, none optional)
 
-1. **Confirm the backend mTLS Service selector/port** in
-   `kustomize/base/endpoint-agent-mtls/service.yaml` against the backend
-   mTLS-listener PR (the `mtls`/8443 named port + `app.kubernetes.io/name`
-   selector must match).
-2. **Host nginx**: place the directives from `host-nginx-stream-snippet.conf`
+1. **Seed the mTLS runtime material** without committing secrets:
+   - Secret `endpoint-admin-service-mtls-stores` with
+     `server-keystore.p12` and `truststore.p12`.
+   - Secret `endpoint-admin-service-mtls-secrets` with
+     `ENDPOINT_ADMIN_MTLS_PASSTHROUGH_KEY_STORE_PASSWORD` and
+     `ENDPOINT_ADMIN_MTLS_PASSTHROUGH_TRUST_STORE_PASSWORD`.
+   - Server certificate SAN must cover `mtls.testai.acik.com`; truststore must
+     contain the dedicated Endpoint CA chain used to issue machine certs.
+2. **Enable the endpoint-admin passthrough connector in the test overlay only**:
+   set `ENDPOINT_ADMIN_MTLS_FORWARD_HEADER_ENABLED=false`,
+   `ENDPOINT_ADMIN_MTLS_PASSTHROUGH_ENABLED=true`, and a non-empty
+   `ENDPOINT_ADMIN_MTLS_PASSTHROUGH_FIXED_TENANT_ID` matching the pilot tenant.
+   Do not enable prod until test negative/positive smokes pass.
+3. **Host nginx**: place the directives from `host-nginx-stream-snippet.conf`
    INSIDE the host nginx's single `stream { }` block (nginx permits exactly one
    stream context — do NOT add a second `stream {}`; create one in the main
    nginx.conf if none exists). The staged snippet defaults the test/prod
@@ -72,10 +84,10 @@ Read-only host/cluster preflight from 2026-06-14:
    reshaping the current terminating nginx so the stream listener can own
    `:443`; `nginx -t` then reload. If prod is not being activated yet, keep
    `mtls.ai.acik.com` mapped to a fail-closed upstream rather than test.
-3. **Cluster**: reference the bundle from the test overlay
-   (`kustomize/overlays/test/kustomization.yaml` → add
-   `../../base/endpoint-agent-mtls`); commit a gitops PR; let ArgoCD sync.
-4. Verify the Ingress + Service + NetworkPolicy applied and the backend mTLS
+4. **Cluster**: apply the ingress-nginx values with ssl-passthrough enabled,
+   then sync the GitOps PR that renders `../../base/endpoint-agent-mtls` in the
+   test overlay.
+5. Verify the Ingress + Service + NetworkPolicy applied and the backend mTLS
    Service has ready endpoints (`kubectl -n platform-test get ep
    endpoint-agent-mtls-backend`).
 
@@ -148,9 +160,11 @@ cert-bound bearer re-issued) with zero or planned downtime; write the
 downtime decision before scaling.
 
 ## Status
-- **Edge config layer: PREPARED** (this runbook + staged manifests + host-nginx
-  snippet), 2026-06-09. M2 stays **BLOCKED** on P1–P7 (operator DNS + AD CS CA +
-  backend mTLS listener PR + controller/host-nginx flags + 8443 isolation +
-  PKI-egress /32s) — board `#1359`.
+- **Edge/GitOps config layer: PREPARED FOR REVIEW** (runbook + rendered test
+  overlay bundle + host-nginx stream snippet + default-off backend connector
+  env/ports), 2026-06-14. M2 is **not live-accepted** yet: it still depends on
+  secret material, fixed tenant UUID, live Helm ssl-passthrough apply/read-back,
+  host-nginx stream route, 8443 isolation, PKI egress /32s, and the fail-closed
+  negative + valid-cert positive smokes — board `#1359`.
 - Cross-references: ADR-0029, RB-faz22.3-ad-cs-setup.md, plan §0.5.2,
   `kustomize/base/endpoint-agent-mtls/`.

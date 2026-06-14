@@ -3,10 +3,10 @@
 # backend (NOT the edge) terminates mTLS and derives identity from the client
 # cert in the TLS handshake (spoofing-safe — never from a request header).
 #
-# STAGED / INERT: this directory is NOT referenced by any overlay kustomization.
-# Activation is operator-gated (DNS + AD CS CA + backend mTLS listener + the
-# ingress-nginx controller `--enable-ssl-passthrough` flag). See
-# docs/runbooks/RB-faz22-M2-edge-mtls-activation.md.
+# STAGED IN TEST: the test overlay renders this bundle, but live activation is
+# still operator-gated (keystore/truststore secrets + fixed tenant UUID +
+# ingress-nginx controller `--enable-ssl-passthrough` + host-nginx stream route).
+# See docs/runbooks/RB-faz22-M2-edge-mtls-activation.md.
 #
 # Acceptance (plan §0.5.2): DNS resolves + edge client-cert verify (at backend) +
 # spoof-header strip + no-cert/spoofed-header negative fail-closed + valid

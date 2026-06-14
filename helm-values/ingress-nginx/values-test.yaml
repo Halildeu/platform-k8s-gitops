@@ -32,6 +32,12 @@ controller:
     patch:
       enabled: true
 
+  # Faz 22.5 M2 #1359 — required for the dedicated mTLS SNI host.
+  # This is test-only; prod keeps passthrough disabled until the test path has
+  # passed no-cert negative + valid machine-cert positive acceptance.
+  extraArgs:
+    enable-ssl-passthrough: ""
+
   metrics:
     enabled: false           # test'te monitoring yok (prod federate eder)
 
