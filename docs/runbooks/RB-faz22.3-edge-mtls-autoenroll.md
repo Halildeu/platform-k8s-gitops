@@ -4,12 +4,20 @@
 > Agent. This runbook covers DNS + host-edge mTLS + spoof-safe forwarding to
 > `endpoint-admin-service`. It does not replace the HMAC enrollment-token
 > fallback used for immediate two-device pilot installs.
+>
+> **Canonical path note (2026-06-14)**: the current owner-approved M2 path is
+> TLS passthrough in
+> [`RB-faz22-M2-edge-mtls-activation.md`](./RB-faz22-M2-edge-mtls-activation.md),
+> where the backend terminates mTLS and derives identity from the TLS client
+> certificate. This file remains as a forward-header/edge-termination fallback
+> template only; using it as the primary path requires an ADR-0029 change.
 
 ## 1. Boundary
 
 Tokenless AutoEnroll is accepted only when all of these are true:
 
-- `endpoint-agent-mtls.testai.acik.com` resolves to the test edge.
+- `mtls.testai.acik.com` resolves to the test edge (`mtls.ai.acik.com` is the
+  prod counterpart and is not used until test acceptance passes).
 - The edge TLS listener requests and verifies a client machine certificate
   against an approved client CA bundle.
 - The edge strips any client-supplied identity headers before injecting trusted
@@ -28,7 +36,7 @@ normal browser/MFE traffic remains unaffected.
 
 | Input | Example / Location | Secret? | Rule |
 |---|---|---:|---|
-| DNS record | `endpoint-agent-mtls.testai.acik.com` -> test edge | No | DNS must resolve before smoke |
+| DNS record | `mtls.testai.acik.com` -> test edge; `mtls.ai.acik.com` -> prod edge | No | Public DNS was created 2026-06-14; verify from the target corp resolver before smoke |
 | Server certificate | existing wildcard or dedicated cert | Private key = yes | Do not paste key/cert bodies into issues/docs |
 | Client CA bundle | `/etc/nginx/mtls/endpoint-agent-client-ca.crt` | No private key | CA public cert only; private key never on edge |
 | Test tenant UUID | injected as `X-Tenant-Id` | No, but environment-specific | Do not guess; obtain from backend/test tenant truth |
@@ -78,17 +86,18 @@ docker exec platform-web-nginx nginx -t
 docker exec platform-web-nginx nginx -s reload
 ```
 
-`endpoint-agent-mtls.testai.acik.com` currently returns NXDOMAIN from the
-observed resolver, so the DNS record must be created before public acceptance.
-Before DNS propagates, an operator may use `curl --resolve` only for local edge
-diagnostics; that does not satisfy the public DNS gate.
+`mtls.testai.acik.com` and `mtls.ai.acik.com` resolve publicly to
+`212.115.26.190` as of 2026-06-14. If a specific Windows/corp resolver still
+returns NXDOMAIN, treat that as split-DNS/cache drift and do not start public
+acceptance from that network yet. Operators may still use `curl --resolve` only
+for local edge diagnostics; it does not satisfy the end-user DNS gate.
 
 ```nginx
 server {
   listen 443 ssl;
   http2 on;
   listen [::]:443 ssl;
-  server_name endpoint-agent-mtls.testai.acik.com;
+  server_name mtls.testai.acik.com;
 
   ssl_certificate     /etc/nginx/tls/wildcard-acik-com.crt;
   ssl_certificate_key /etc/nginx/tls/wildcard-acik-com.key;
@@ -132,7 +141,8 @@ server {
 
 ## 5. Activation Steps
 
-1. Create DNS record for `endpoint-agent-mtls.testai.acik.com`.
+1. Confirm DNS records for `mtls.testai.acik.com` and `mtls.ai.acik.com`
+   resolve from the relevant corp/client network.
 2. Place the client CA public certificate on the edge host.
 3. Mount the CA path read-only into the host-edge NGINX container.
 4. Add the dedicated server block to the current host edge config
@@ -153,9 +163,9 @@ docker exec platform-web-nginx nginx -s reload
 7. Confirm DNS and TLS listener:
 
 ```bash
-dig +short endpoint-agent-mtls.testai.acik.com
-openssl s_client -connect endpoint-agent-mtls.testai.acik.com:443 \
-  -servername endpoint-agent-mtls.testai.acik.com \
+dig +short mtls.testai.acik.com
+openssl s_client -connect mtls.testai.acik.com:443 \
+  -servername mtls.testai.acik.com \
   -brief </dev/null
 ```
 
@@ -167,7 +177,7 @@ Expected: TLS client-cert rejection or backend `401 MTLS_CERT_MISSING`.
 
 ```bash
 curl -skS -X POST \
-  https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-agent/endpoint-enrollments/auto \
+  https://mtls.testai.acik.com/api/v1/endpoint-agent/endpoint-enrollments/auto \
   -H 'Content-Type: application/json' \
   --data '{"machineFingerprint":"negative-no-cert","hostname":"NO-CERT","osName":"windows","agentVersion":"0.1.0-dev","schemaVersion":1}' \
   -w '\nhttp_code=%{http_code}\n'
@@ -180,7 +190,7 @@ must not be accepted.
 
 ```bash
 curl -skS -X POST \
-  https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-agent/endpoint-enrollments/auto \
+  https://mtls.testai.acik.com/api/v1/endpoint-agent/endpoint-enrollments/auto \
   -H 'Content-Type: application/json' \
   -H 'X-Client-Cert: spoofed' \
   -H 'X-Tenant-Id: 00000000-0000-0000-0000-000000000000' \
@@ -207,7 +217,7 @@ $Body = @{
 
 Invoke-RestMethod `
   -Method Post `
-  -Uri "https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-agent/endpoint-enrollments/auto" `
+  -Uri "https://mtls.testai.acik.com/api/v1/endpoint-agent/endpoint-enrollments/auto" `
   -CertificateThumbprint "<TEST_MACHINE_CERT_THUMBPRINT>" `
   -ContentType "application/json" `
   -Body $Body
@@ -236,7 +246,7 @@ published through the test artifact host:
   `7ac13aad5c910a74c59862dfc7faafc3c88187c541b9b5f7af64172427335859`
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/bootstrap-package.ps1 -OutFile $env:TEMP\endpoint-agent-bootstrap.ps1; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\endpoint-agent-bootstrap.ps1 -PackageUrl 'https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/EndpointAgent.zip' -ExpectedZipSha256 '9dcf6c2cab5a7dd1fef16a230f065540e1f2d639e0031038e3fbd8d0a9d26029' -AutoEnroll -AutoEnrollApiUrl 'https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-agent' -AutoEnrollCertSANURIPrefix 'adcomputer:' -WorkDir 'C:\Temp\EndpointEnes' -ZipPath 'C:\Temp\EndpointAgent.zip' -Start -Force"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/bootstrap-package.ps1 -OutFile $env:TEMP\endpoint-agent-bootstrap.ps1; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\endpoint-agent-bootstrap.ps1 -PackageUrl 'https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/EndpointAgent.zip' -ExpectedZipSha256 '9dcf6c2cab5a7dd1fef16a230f065540e1f2d639e0031038e3fbd8d0a9d26029' -AutoEnroll -AutoEnrollApiUrl 'https://mtls.testai.acik.com/api/v1/endpoint-agent' -AutoEnrollCertSANURIPrefix 'adcomputer:' -WorkDir 'C:\Temp\EndpointEnes' -ZipPath 'C:\Temp\EndpointAgent.zip' -Start -Force"
 ```
 
 ## 8. HMAC Fallback Bootstrap Before Edge Gate

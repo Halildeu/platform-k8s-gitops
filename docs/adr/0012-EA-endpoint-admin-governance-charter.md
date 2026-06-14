@@ -467,7 +467,7 @@ Faz 22 sub-track numbering reassignment:
 
 ### Cross-scope invariants
 
-- **Tek backend** (`endpoint-admin-service`) — 22.2.A/22.2.B/22.3 hepsi aynı `https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin` canonical Device API base'i kullanır
+- **Tek backend** (`endpoint-admin-service`) — 22.2.A/22.2.B/22.3 aynı device API sözleşmesini kullanır: test/pilot canonical base `https://mtls.testai.acik.com/api/v1/endpoint-agent`; prod canonical base `https://mtls.ai.acik.com/api/v1/endpoint-agent`
 - **Tek agent codebase** (`platform-agent`) — `--auto-enroll` flag 22.3 için MSI ile yüklenir, 22.2.A/B manual install'da CLI invocation
 - **Identity model: PARTIAL invariant — backend/audit ortak, enrollment binding farklı**:
   - **22.2.A non-domain primary** (workgroup/BYOD): AD computer object YOK → SAN URI:adcomputer:{guid} mekanizması GEÇERSİZ; manual single-use bearer token enrollment + future cert-based identity (TPM machine cert ile self-signed veya AD CS bypass — şu an açık)
@@ -485,7 +485,7 @@ Faz 22 sub-track numbering reassignment:
 - AD CS code-signing template + agent-team-restricted issuance + revocation pipeline
 - MSI UpgradeCode GUID assignment (immutable, governance-tracked)
 - GPO Software Installation Computer-assigned package + WMI filter (test OU scope)
-- Cross-subnet firewall rule (`endpoint-agent-mtls.testai.acik.com:443` reachability from corp PC subnets — 9-saatlik AGENTPC2 fail'in root cause'u; bu olmadan 22.3 pilot kuru çalışır)
+- Cross-subnet firewall rule (`mtls.testai.acik.com:443` reachability from corp PC subnets — 9-saatlik AGENTPC2 fail'in root cause'u; bu olmadan 22.3 pilot kuru çalışır)
 - EDR allowlist (CrowdStrike/Defender — agent binary + persistence + scheduled task pattern false-positive yok)
 - 5-PC pilot OU + 50-PC ramp OU + 800-PC production OU (separate scope, isolated rollback)
 

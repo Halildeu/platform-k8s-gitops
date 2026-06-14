@@ -33,7 +33,7 @@ spec:
   rules:
     # Dedicated SNI host — never bind an optional client-cert prompt onto the
     # general browser host (testai.acik.com). Operator creates the DNS A record.
-    - host: endpoint-agent-mtls.testai.acik.com
+    - host: mtls.testai.acik.com
       http:
         paths:
           - path: /

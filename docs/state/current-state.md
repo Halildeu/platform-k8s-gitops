@@ -1,5 +1,26 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 M2 mTLS DNS naming unblocked, edge/backend activation still gated (2026-06-14, Codex #1359)
+
+**Session milestone**: tokenless Endpoint Agent AutoEnroll için eski
+`endpoint-agent-mtls.testai.acik.com` placeholder'ı canonical olarak
+`mtls.testai.acik.com` (test/pilot) ve `mtls.ai.acik.com` (prod) isimlerine
+taşındı. Operator DNS yanıtı alındı ve public resolver'lar iki host'u da
+`212.115.26.190` olarak döndürüyor.
+
+| Alan | Durum (2026-06-14) | Kanıt / sınır |
+|---|---|---|
+| DNS | 🟢 `mtls.testai.acik.com` + `mtls.ai.acik.com` public resolver'larda `212.115.26.190` | `dig @1.1.1.1`, `@8.8.8.8`, `@9.9.9.9`; local/corp resolver cache ayrıca doğrulanmalı |
+| Edge reachability | 🟡 TCP/443 reaches nginx, forced-SNI HEAD returns HTTP 404 | Route/vhost not wired yet; this is expected until activation |
+| TLS cert | 🟡 current edge cert is `CN=*.acik.com`, SAN `*.acik.com, acik.com` | Final mTLS backend/server cert must explicitly cover `mtls.testai.acik.com` and `mtls.ai.acik.com`, or equivalent coverage |
+| Host/cluster preflight | 🔴 mTLS route not active | `platform-web-nginx` only has `ai.acik.com` / `testai.acik.com`; k3d serverlb HTTPS ports are `31443` test and `30443` prod; endpoint-admin-service exposes only `8096/8081`, no `mtls:8443`; ingress `--enable-ssl-passthrough` not observed |
+| GitOps config | 🟡 source update in progress under #1359 | staged/inert mTLS bundle and runbooks updated to the `mtls.*` names; no live cluster mutation claimed |
+| M2 acceptance | 🔴 still gated | Backend mTLS listener, ingress `--enable-ssl-passthrough`, AD CS/client CA, PKI egress, no-cert/spoof negative and valid machine-cert positive evidence remain required |
+
+**Boundary**: DNS is no longer the only blocker, but #1359 is **not Done**.
+No tokenless AutoEnroll success, 5-PC GPO readiness, 50/800 rollout readiness
+or prod `mtls.ai.acik.com` activation is claimed by this DNS update.
+
 ## Live Delta — Faz 22.5 wave-gate runbooks hardened + wave-preflight runtime-proven + M4 LIVE (2026-06-13, Codex 019ebf9b/019ebfbb/019ebff3)
 
 **Session milestone**: Faz 22.5 rollout wave-gate'lerinin **agent-completable prep'i doygun** — M5/M6/M7 runbook'ları doğrulanmış-doğru (gerçek backend/agent surface), `wave-preflight.ps1` canlı Windows'ta runtime-proven, M2/#1015 operatör doküman doğruluğu düzeltildi. **6 PR merged** bu oturum.
@@ -14,7 +35,16 @@
 | Board | #1377/#1378/#1379/#1015 → **Needs Verify** + evidence; #1488 backlog (deployment-plan §0.5.x stranded WIP) | Project #2 |
 | M6 metrics reconcile | 🟡 paralel chip in-flight (`d3e844f6`: ServiceMonitor + PromQL reconcile) | M2-bağımsız |
 
-**KRİTİK BLOCKER değişmedi**: **M2 tokenless mTLS (#1359/#1376)** — `endpoint-agent-mtls.testai.acik.com` DNS + AD CS Web Enrollment + client CA + edge mTLS **operatör-gated**; M3 acceptance + M5/M6/M7 wave zincirinin TAMAMINI blokluyor. Agent prep ~%100, wave exec ~%0 — drift'in tek kök sebebi M2. Cross-AI: Implementer Claude ≠ Reviewer Codex (HARD RULE).
+**KRİTİK BLOCKER değişmedi (2026-06-14 DNS-name supersede notu)**:
+**M2 tokenless mTLS (#1359/#1376)** hâlâ operatör/backend-gated; ancak
+DNS alt maddesi artık eski `endpoint-agent-mtls.testai.acik.com` değil,
+canonical `mtls.testai.acik.com` / `mtls.ai.acik.com` isimleriyle takip edilir
+ve public DNS resolve kısmı 2026-06-14'te kanıtlandı. Kalan gate: AD CS/client
+CA, backend mTLS listener, ingress ssl-passthrough, cert SAN coverage, edge
+route wiring, no-cert/spoof negative ve valid machine-cert positive evidence.
+M3 acceptance + M5/M6/M7 wave zincirinin TAMAMINI hâlâ blokluyor. Agent prep
+~%100, wave exec ~%0 — drift'in tek kök sebebi M2. Cross-AI: Implementer
+Claude ≠ Reviewer Codex (HARD RULE).
 
 ## Live Delta — Faz 22.7 Compliance Gap Mart Layer D5 LIVE acceptance (browser-verified) + COMPLETED (2026-06-09, Codex 019ea95d)
 
@@ -117,7 +147,7 @@ the standard signal.** This blocker also gates any further merge/deploy until li
 - **P0-2 installer productization + PS5.1 gate** — DONE (platform-agent **#101** CLOSED + **#112**/PR **#113** CLOSED/MERGED).
 - **#108 stale-regkey strand** — agent-level rescue **LIVE-verified + merged (PR #114)**; full closure still gated on official-release binary + installer (#111) path on a standard PC.
 - **#109 reinstall/fresh-enroll guard** — MERGED (PR #110); standalone live verify still pending (Needs Verify).
-- **#1359 tokenless/domain AutoEnroll** — **BLOCKED** (DNS + edge mTLS for `endpoint-agent-mtls.testai.acik.com` not yet active).
+- **#1359 tokenless/domain AutoEnroll** — **BLOCKED** (DNS for `mtls.testai.acik.com` / `mtls.ai.acik.com` is now public-resolver OK; edge/backend mTLS activation not yet active).
 
 ## Live Delta — Faz 22.5 platform-agent #101 Parallels standard-PC bootstrap smoke (2026-06-08 18:05 Istanbul / 15:05Z UTC)
 
@@ -158,7 +188,7 @@ rollout, two-device/24h soak, or production Trusted Signing.
 **Session milestone**: the standard Windows PC friction observed on MKR-A1 is
 now tracked in the canonical 22.5 plan and has source/desired-state progress
 across agent, backend and GitOps. This does not yet prove tokenless domain
-AutoEnroll or 800-PC rollout readiness: `endpoint-agent-mtls.testai.acik.com`
+AutoEnroll or 800-PC rollout readiness: `mtls.testai.acik.com`
 DNS/edge mTLS activation remains a separate gate tracked by
 platform-k8s-gitops #1359.
 
@@ -170,7 +200,7 @@ platform-k8s-gitops #1359.
 | Backend result-submit visibility | `platform-backend` PR #511 merged `7c0ec4a`; endpoint-admin image digest `sha256:0c1e384b414b35ddd9540fa6fcacb9fcc6a856a19ca25d92277166f76041ae45` pinned by GitOps PR #1355 `d0c26292`; live pod imageID matches digest and `/actuator/health` is UP. Runtime invalid-result smoke submitted AG-038 diagnostics with invalid `configHash="abc"` and got HTTP `400`; DB row moved to `FAILED`, `last_error` carried bounded `RESULT_REJECTED`, lock was cleared and zero raw result rows were persisted | P0-0 source + test overlay + runtime failure-visibility proof exists and aligns with platform-backend #509 Project Done evidence. This does not prove the full standard-PC installer rerun in platform-agent #101 |
 | Gateway route parity | GitOps PR #1358 merged `4ddc8dd8`; live `api-gateway` env carries `endpoint-admin-mtls-auto-enroll-route` at route index 22 and public POST to `/api/v1/endpoint-agent/endpoint-enrollments/auto` returns `401 MTLS_CERT_MISSING` without a client cert | Route reaches backend auto-enroll controller and fail-closes without cert; this is route parity, not tokenless enrollment success |
 | Edge mTLS activation runbook | `docs/runbooks/RB-faz22.3-edge-mtls-autoenroll.md` defines the dedicated mTLS host, backend `X-Client-Cert` / `X-Tenant-Id` contract, spoof-header stripping, no-cert negative, header-injection negative and valid machine-cert positive smokes | The blocker is now executable as an ops runbook; acceptance still requires DNS + edge mTLS + valid machine-cert evidence |
-| DNS / edge mTLS gate | `dig +short endpoint-agent-mtls.testai.acik.com` returned empty; current `testai.acik.com:443` TLS endpoint did not request client certificate CA names | Tokenless AutoEnroll remains blocked on DNS + edge mTLS termination/passthrough + safe client-cert forwarding; tracked by #1359 |
+| DNS / edge mTLS gate | 2026-06-14 supersede: `mtls.testai.acik.com` and `mtls.ai.acik.com` resolve publicly to `212.115.26.190`; forced-SNI probe reaches nginx 404; current route is not wired and no client-cert enforcement is live | Tokenless AutoEnroll remains blocked on edge/backend mTLS termination/passthrough + safe client-cert handling + valid machine-cert evidence; tracked by #1359 |
 
 **Boundary / remaining gates**:
 

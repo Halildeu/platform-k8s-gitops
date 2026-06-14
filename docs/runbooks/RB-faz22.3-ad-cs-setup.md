@@ -337,14 +337,14 @@ gpupdate /force /target:computer
 
 **Plus**: Phase 0 P0-1..P0-22 diğer gate'leri (ADR-0029 §"Phase 0 — Operator Manual Preflight Checklist") tamamlanmalı:
 
-- P0-12 mTLS reachability (corp PC → endpoint-agent-mtls.testai.acik.com:443) — Task #178 backend deploy bekleyebilir
+- P0-12 mTLS reachability (corp PC → `mtls.testai.acik.com:443` for test/pilot; `mtls.ai.acik.com:443` only after prod promotion) — Task #178 backend deploy bekleyebilir
 - P0-13 nginx ingress mTLS passthrough config — gitops PR ayrı
 - P0-14 CRL/OCSP reachability (R24 bounded grace) — IIS CRL distribution (§3.6 manual)
 - P0-15 SYSTEM context UNC share read (PsExec /s) — operator pilot PC test
 - P0-16 backend-to-AD LDAPS reachability — Task #178 dep
 - P0-18 EDR/WDAC/AppLocker baseline (Trusted Publisher AD CS root cert) — operator IT manual
 - P0-19 Trusted Publisher store (LocalMachine\TrustedPublisher) — code signing cert manual deploy
-- P0-21 Egress firewall (corp subnet → endpoint-agent-mtls.testai.acik.com:443) — operator IT manual
+- P0-21 Egress firewall (corp subnet → `mtls.testai.acik.com:443`; later prod wave → `mtls.ai.acik.com:443`) — operator IT manual
 - P0-22 Fleet TPM readiness sample (10 PC ≥95% TPM Enabled+Ready)
 
 Phase 0 fail noktası fix edilmeden Phase 1 5-PC pilot başlatılmaz.
@@ -509,7 +509,7 @@ Start-Job { .\enroll-endpoint-agent-cert.ps1 -Verbose }
 
 AD CS preflight + GPO + 5 pilot PC cert mint OK olduğunda:
 
-1. **Backend mTLS endpoint LIVE** (Task #178 — `POST /api/v1/endpoint-admin/endpoint-enrollments/auto`)
+1. **Backend mTLS endpoint LIVE** (Task #178 — `POST /api/v1/endpoint-agent/endpoint-enrollments/auto`)
 2. **Agent --auto-enroll feature** built + signed (Task #179 + Task #180)
 3. **MSI WiX package** AD CS code signing imzalı (Task #180)
 4. **GPO Software Installation** policy create + link `OU=EndpointPilot` (Task #181)

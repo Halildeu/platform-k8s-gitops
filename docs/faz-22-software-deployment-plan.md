@@ -126,8 +126,12 @@
 > failure visibility; GitOps #1355 pinned the endpoint-admin digest; GitOps
 > #1358 added the exact auto-enroll gateway route and live no-cert POST now
 > fails closed with `MTLS_CERT_MISSING`. Remaining gate: tokenless domain
-> AutoEnroll is still blocked on `endpoint-agent-mtls.testai.acik.com` DNS plus
-> edge mTLS activation (#1359). The HMAC bootstrap is usable for short pilot
+> AutoEnroll DNS naming was updated on 2026-06-14 to
+> `mtls.testai.acik.com` (test/pilot) and `mtls.ai.acik.com` (prod), both
+> resolving to `212.115.26.190` on public resolvers. AutoEnroll remains blocked
+> on edge/backend mTLS activation (#1359): backend mTLS listener, ingress
+> ssl-passthrough, server-cert SAN coverage, AD CS/client CA, no-cert/spoof
+> negative and valid machine-cert positive evidence. The HMAC bootstrap is usable for short pilot
 > reruns, but it still prompts for a hidden enrollment token and is not the
 > final 800-PC rollout channel.
 
@@ -287,7 +291,7 @@ bu süreye **3-10+ iş günü** operator beklemesi eklenir.
 - `platform-agent` PR #105 MERGED: AutoEnroll default/base examples were
   aligned with the deployed gateway/backend route. The agent AutoEnroll client
   appends `/endpoint-enrollments/auto`, so the canonical external base is
-  `https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-agent`.
+  `https://mtls.testai.acik.com/api/v1/endpoint-agent`.
 - `platform-agent` PR #106 MERGED: the packaged `bootstrap-package.ps1`
   default and installer README were also aligned to
   `/api/v1/endpoint-agent`; `scripts/test/windows-installer-encoding.sh` now
@@ -318,8 +322,10 @@ bu süreye **3-10+ iş günü** operator beklemesi eklenir.
   `/api/v1/endpoint-agent/endpoint-enrollments/auto`; live no-cert POST reaches
   backend and returns `MTLS_CERT_MISSING`.
 - `platform-k8s-gitops` edge runbook added:
-  `docs/runbooks/RB-faz22.3-edge-mtls-autoenroll.md`. It defines the dedicated
-  `endpoint-agent-mtls.testai.acik.com` host, backend header contract
+  `docs/runbooks/RB-faz22.3-edge-mtls-autoenroll.md`; canonical passthrough
+  activation is now `docs/runbooks/RB-faz22-M2-edge-mtls-activation.md`. The
+  dedicated hosts are `mtls.testai.acik.com` for test/pilot and
+  `mtls.ai.acik.com` for prod. The runbooks define the backend header contract
   (`X-Client-Cert` + `X-Tenant-Id`), spoof-header stripping, no-cert negative
   smoke, header-injection negative smoke and valid machine-cert positive smoke.
 - 2026-06-08 local Parallels rerun: `HALILKOOLUB735` downloaded the canonical
