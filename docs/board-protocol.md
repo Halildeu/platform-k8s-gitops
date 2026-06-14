@@ -85,6 +85,46 @@ yalnız aktif çalışmaya alınan satır issue olur.
 - `Blocked` hem board `Status` hem issue'da bir `BLOCKED` comment'i ile
   işaretlenir — sadece biri yetmez.
 
+### 4.1 Status Reconciliation Barrier
+
+Bir issue icin yeni kanit issue'nun status yorumunu degistiriyorsa, sonraki
+guclu operasyon sinirina gecmeden once status aynalari senkron olmalidir:
+
+1. Project #2 `Status`
+2. issue body `agent-state:v1 status`
+3. son ilgili taxonomy comment (`PROGRESS`, `EVIDENCE`, `BLOCKED`,
+   `READY-FOR-VERIFY`, `DONE-CANDIDATE`, `HANDOFF`)
+
+Trigger'lar:
+
+- live/runtime evidence eklendi
+- PR merge evidence geldi
+- blocker kalkti, degisti veya yeni blocker bulundu
+- acceptance boundary degisti (`source-ready`, `live-smoked`, `accepted`
+  gibi)
+- issue body veya board status manuel/script ile degisti
+
+Barrier, `stage`, `commit`, `push`, `pr_create`, `pr_update`,
+`live_mutation`, `deploy`, `release`, `issue_close`, `recovery` ve
+`key_rotation` oncesi uygulanir. Drift varken yalniz `local_edit` ve
+`file_write` devam edebilir; daha guclu operasyonlar fail-closed olur.
+
+Eger aynalar uyusmuyorsa veya Project mutation GraphQL/permission nedeniyle
+yapilamiyorsa agent sunlari yapar:
+
+- durumu gercek semantige gore yazar; `Blocked` hala gercekse `Needs Verify`
+  yapmaz
+- `MIRROR_DRIFT_DETECTED` / `REPAIR_MATERIALIZATION` ledger akisini kullanir
+  (yeni event icat etmez)
+- GitHub-visible comment ile hangi ayna stale, hangi evidence yeni ve hangi
+  repair adimi gerekli yazar
+- status reconcile tamamlanmadan yeni implementasyon dalina gecmez
+
+`Blocked` onceliklidir: kalan operator gate, dis bagimlilik veya baska issue
+blokluyorsa PR merge ya da live-smoke kaniti tek basina `Needs Verify`
+yapmaz. `Needs Verify`, yalniz artik bilinen blocker kalmadiginda ve beklenen
+is acceptance verification oldugunda kullanilir.
+
 ---
 
 ## 5. `Closes #N` vs `Tracked by #N`
@@ -306,6 +346,7 @@ kanıtlanmadığı açıkça yazılır.
 | **Acceptance tam** | `DONE-CANDIDATE` + canlı kanıt; deliberate issue-close → `Done` |
 | **Oturum devri** | gövde `agent-state` güncel + `HANDOFF` comment |
 | **Blocker** | board `Status=Blocked` + `BLOCKED` comment (sebep + unblock sahibi) |
+| **Status drift** | §4.1 bariyeri; body + board + comment reconcile olmadan güçlü operasyona geçme |
 
 **HARD RULE — claim-before-work (paralel-session çakışma guard'ı)**
 
