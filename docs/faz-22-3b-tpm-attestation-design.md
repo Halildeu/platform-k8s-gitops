@@ -8,22 +8,30 @@
 - **Goal:** issue an mTLS clientAuth cert to a device whose trust is rooted in **TPM attestation** (not domain membership), from **Vault PKI**, for the **domain-less / BYOD / macOS-Linux** segment.
 - **Non-goals:** does NOT replace AD CS; does NOT touch the `adcomputer:{objectGUID}` AD CS path; no live issuance until the gated rollout's CA-resilience + pilot gates pass.
 
-## 2. Enrollment protocol (3 legs, all over the existing token/HMAC-authenticated agent channel until the cert exists)
+## 2. Enrollment protocol (4-leg, with TPM credential-activation EK→AK binding)
+
+> **Updated 2026-06-14 (3-AI gate-4 consult: Codex `019ec723` + MiniMax `mvs_d6ab5b4f`).** The original 3-leg shape did NOT strongly bind the AK to the EK ("is this AK really resident in that EK's TPM?"). Both reviewers, unanimously: a secure **non-interactive** binding does not exist — the standard is **TPM2_MakeCredential (server) → TPM2_ActivateCredential (device)** challenge-response (TCG TPM 2.0 / DevID v1 r12). So the protocol is now **4-leg** = 2 HTTP round-trips, with the credential-activation challenge riding in the nonce response and the activation proof riding in the attest envelope. Still over the existing bootstrap token/HMAC channel until the cert exists.
 
 ```
 Agent                                            Backend (endpoint-admin)            Vault PKI
-  | 1. POST /enroll/tpm/nonce  (deviceRef)            |                                  |
+  | L1. POST /enroll/tpm/nonce (deviceRef, ekPub, akPub, akName)                          |
   |-------------------------------------------------->| mint single-use nonce            |
-  |<--------------------------------------------------| {nonce, nonceId, exp}            |
-  | 2. build attestation over nonce (TPM)             |                                  |
-  | POST /enroll/tpm/attest  (envelope)               |                                  |
-  |-------------------------------------------------->| verify (§4) --fail-closed-->deny |
-  |                                                   | if ok: sign CSR via Vault role   |
+  |                                                   | software TPM2_MakeCredential      |
+  |                                                   |   (EK_pub, AK_name, server-secret)|
+  |<--------------------------------------------------| {nonce,nonceId,exp, credBlob,     |
+  |                                                   |  encSecret}  ← the challenge      |
+  | L2. TPM2_ActivateCredential(EK,AK,credBlob,encSecret) → recovers server-secret        |
+  |     (proves the device holds BOTH the EK and the AK inside ONE TPM)                   |
+  | L3. TPM2_Quote(nonce,pcrSelect) + TPM2_Certify(deviceKey by AK)                        |
+  | POST /enroll/tpm/attest (envelope: activatedSecret + quote + certify + csr)           |
+  |-------------------------------------------------->| verify §4 (V1–V12) fail-closed→deny|
+  |                                                   | ok ⇒ Vault PKI issue (CSR pubkey) |
   |                                                   |--------------------------------->|
   |                                                   |<-- clientAuth cert (short TTL) --|
-  |<--------------------------------------------------| {cert, caChain, notAfter}        |
-  | 3. mTLS to backend :8443 with the issued cert (existing client-auth=need path)       |
+  |<--------------------------------------------------| {cert, caChain, notAfter, uuid}  |
+  | L4. mTLS to backend :8443 with the issued cert (existing client-auth=need path)       |
 ```
+- **EK→AK binding (the key upgrade):** L1 server runs **software** `TPM2_MakeCredential` (pure crypto — no TPM / TSS-proxy on the server) sealing a random `server-secret` to the EK-public + AK-name. Only a TPM that holds BOTH that EK and that AK can `ActivateCredential` and recover it (L2). The recovered `activatedSecret` in the attest envelope proves EK↔AK↔one-TPM — this is what satisfies the "no secure non-interactive binding" requirement.
 
 - **Legs 1–2 are authenticated by the device's existing bootstrap channel** (the current token/HMAC enrollment). TPM attestation is the **trust upgrade**, not the only auth — the cert is issued only when BOTH the bootstrap channel AND the attestation verify. (Defence-in-depth: a stolen bootstrap token alone cannot mint a cert without a valid TPM attestation; a replayed attestation alone cannot without the channel.)
 - **Framing honesty (Codex 019ec723 review-2):** this is a **"bootstrap-authorization + TPM-identity-proof" HYBRID**, NOT a zero-shared-secret model like Windows domain/Kerberos. The bootstrap channel still carries a secret; the TPM attestation raises the assurance to hardware-rooted. We do not claim "no shared secret" — we claim "shared secret alone is insufficient."
@@ -34,9 +42,10 @@ Agent                                            Backend (endpoint-admin)       
 
 ```json
 {
-  "schema": "faz22.3b.tpm-attest.v1",
+  "schema": "faz22.3b.tpm-attest.v2",
   "deviceRef": "<opaque backend device ref>",
   "nonceId": "<from leg 1>",
+  "activatedSecret": "<base64 — server-secret recovered via TPM2_ActivateCredential (L2 EK↔AK binding proof; V10)>",
   "ekCert": "<base64 DER EK certificate>",
   "ekCertChain": ["<base64 DER intermediate>", "..."],
   "akPub": "<base64 TPMT_PUBLIC of the Attestation Key>",
@@ -104,17 +113,34 @@ verifyClientCert(cert):
 ## 9. Integration contract (HTTP)
 | Method | Path | Auth | Req | 2xx | Deny |
 |---|---|---|---|---|---|
-| POST | `/api/v1/endpoint-agent/enroll/tpm/nonce` | bootstrap channel | `{deviceRef}` | `201 {nonce,nonceId,exp}` | uniform `403` |
+| POST | `/api/v1/endpoint-agent/enroll/tpm/nonce` | bootstrap channel | `{deviceRef,ekPub,akPub,akName}` | `201 {nonce,nonceId,exp,credBlob,encSecret}` (MakeCredential challenge) | uniform `403` |
 | POST | `/api/v1/endpoint-agent/enroll/tpm/attest` | bootstrap channel | envelope (§3) | `201 {cert,caChain,notAfter,deviceUuid}` | uniform `403` |
 | (mTLS) | existing `:8443` device API | issued cert | — | — | fail-closed on unknown issuer |
 
-- **All deny responses are identical on the wire:** single `403` + a fixed body (no deny code, no detail). The V1–V9 reason code (incl. `FEATURE_DISABLED`) is recorded **only in the append-only audit log** — never returned — to avoid a behavioral/enumeration oracle. Response timing + size normalized.
+- **All deny responses are identical on the wire:** single `403` + a fixed body (no deny code, no detail). The V1–V12 reason code (incl. `FEATURE_DISABLED`) is recorded **only in the append-only audit log** — never returned — to avoid a behavioral/enumeration oracle. Response timing + size normalized.
 - Generic `/commands` etc. unaffected.
 
 ## 10. Test plan (maps to gated rollout 5–6)
 - **Negative (must DENY, fail-closed):** expired/forged EK; EK not in bundle; revoked EK; replayed nonce; reused nonce (consume-once); quote over a stale nonce; CSR pubkey ≠ certified key; PCR mismatch on HIGH-risk; decommissioned device reconnect; cross-channel cert (Vault cert on ADCS path & vice-versa); feature-disabled → 503.
 - **Positive:** valid TPM → cert issued → mTLS handshake succeeds → device identity = `tpm:{ek_pub_sha256}`.
 - **CA-resilience (gate 5):** seal/unseal, OCSP/CRL unavailable, intermediate-expiry sim → issuance fully fail-closed; revocation-propagation latency measured.
+
+## 10.5 Gate-4 backend implementation design (3-AI consult 2026-06-14: Codex `019ec723` + MiniMax `mvs_d6ab5b4f`, convergent)
+
+**Library (TPM 2.0 structure parsing):** **webauthn4j** — its WebAuthn "tpm" attestation-statement classes (`com.webauthn4j.data.attestation.statement.*`: `TPMTPublic`, `TPMSAttest`, `TPMAttestationStatement`) parse exactly these structures and are used **standalone** (no WebAuthn ceremony). Yubico `java-webauthn-server` (v2.1.0+ `tpm` fmt) is the equivalent alternative; Microsoft TSS.Java is **rejected** (low maintenance, device-side). **Hand-rolling TPMS_ATTEST/TPMT_PUBLIC marshalling is rejected** (byte-order/canonical-layout surface). + **BouncyCastle** for EK cert-chain validation, signature verification, and the software MakeCredential. **AK-restricted-key assertion must be source-verified in the chosen lib** (don't assume the validator enforces it — see V11).
+
+**Server-side `TPM2_MakeCredential` is IN-PROCESS software crypto** (KDFa + seed-encrypt to EK + AK-name HMAC, per TCG TPM 2.0 Part 1; via BouncyCastle) — **no TPM and no TSS-proxy on the server**. This resolves the only flagged architecture sub-decision (tpm2_tools shell-out vs microservice → neither needed).
+
+**Verifier extends §4 V1–V9 → V12 (3-AI additions):**
+- **V10 credential-activation:** the attest envelope's `activatedSecret` equals the server's MakeCredential `server-secret` (consumed once, bound to `nonceId`). This is the EK↔AK↔one-TPM proof. Fail → `ACTIVATION_FAILED`.
+- **V11 AK restricted-signing-key:** the AK's `TPMA_OBJECT` MUST have `restricted` + `sign` + `fixedTPM` + `sensitiveDataOrigin` set (only a restricted AK's Certify/Quote are trustworthy). Fail → `AK_NOT_RESTRICTED`.
+- **V12 algorithm whitelist:** EK/AK/CSR keys + all signatures restricted to **RSA-3072+ / ECDSA-P256+, SHA-256+**; SHA-1/MD5 and RSA↔ECC confusion rejected; explicit per-alg dispatch. Fail → `WEAK_ALGORITHM`.
+
+**T-1..T-10 hardening (MiniMax pitfalls, mapped):** T-1 replay → atomic single-use nonce store (≤5 min TTL) + ≤30 s timestamp window + token-scope (V1). T-2 EK privacy → persist `ek_pub_sha256` (NOT raw EK) as the identity; raw EK never echoed (Privacy-CA = a 22.3B-extension for consumer/macOS). T-3 algorithm confusion → V12. T-4 restricted key → V11. T-5 PCR-policy bypass → verify the EXACT PCR subset selected, never a superset/subset substitution. T-6 PCR drift → a per-risk-class golden PCR allow-set with bounded tolerance (HIGH = pinned). T-7 manufacturer-root chain → curated bundle + **dual-root rotation window** (overlap during rotation). T-8 cert policy/EKU → leaf EKU clientAuth-only, no critical-ext expansion (Vault role + V12). T-9 quote-struct malleability → canonical lib-assisted parse (byte-order), reject trailing/ambiguous bytes. T-10 **backend trust bootstrap → the manufacturer EK root bundle is pinned at BUILD time by SHA-256** (not runtime-fetched), matching the AG-018 root-pin pattern.
+
+**Test (3-layer, both reviewers):** (1) **swtpm + tpm2-tools golden reproducer** → deterministic happy-path + a per-V mutation negative (V1..V12) fixture set; (2) JUnit 5 over the fixtures (no hardware in CI); (3) **real-hardware nightly** at pilot (one good + one problematic-BIOS device). Verifier ships behind the default-off flag until layer-3 passes.
+
+**Implementation test notes (Codex `019ec723` review-2, carried into gate-4 code):** (1) **V11 recomputes the AK name** from `akPub` per the TPM `nameAlg` and compares it to `akName` — name-hash mismatch → fail-closed + logged (don't trust a caller-supplied name); (2) the software `MakeCredential` is verified with **negative vectors** across `nameAlg` / `hashAlg` / secret-derivation; (3) the `activatedSecret`↔`nonceId` match is bound to the **token-scope** (anti device-hijack — the recovered secret only validates the device that requested that nonce).
 
 ## 11. Slice breakdown (post gate-1b)
 1. **gitops:** Vault PKI mount + role + ESO wiring (no live issuance) — gate 2.
