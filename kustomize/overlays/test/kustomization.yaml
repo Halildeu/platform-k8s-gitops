@@ -5042,13 +5042,14 @@ images:
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-f78a24d
     #   digest sha256:90cfcf41e6dd6194974264adccc4c3158b84517ebfbaa415ceddc4cd59b23425
     # 2026-06-14 Faz 22.5 M2-B cert-auth heartbeat endpoint (#656) +
-    # heartbeat mTLS security permit fix (#658) -> sha-c568d73. Adds tokenless
+    # heartbeat mTLS security permit fix (#658) -> sha-c568d73; follow-up
+    # backend main deploy sha-a2d3a0e carries the same M2 surface. Adds tokenless
     # mTLS heartbeat surface on endpoint-admin-service, paired with
-    # platform-agent #154. This pin is the backend prerequisite for the M2 live
-    # heartbeat smoke; no production path.
-    # Image build run 27512802834, digest map evidence:
-    # endpoint-admin-service sha256:3c1a93309efe091741d7cb27e6ab85b82efc137a6eb96eb6c2a4c911b2ce6e95
-    digest: sha256:3c1a93309efe091741d7cb27e6ab85b82efc137a6eb96eb6c2a4c911b2ce6e95
+    # platform-agent #154/#155. This pin is the backend prerequisite for the M2
+    # live heartbeat smoke; no production path.
+    # Deploy run 27513652052 evidence:
+    # endpoint-admin-service sha256:6316261a533a87970ace69a771a2077951eb9dd28e25d4312a1dbde504059698
+    digest: sha256:6316261a533a87970ace69a771a2077951eb9dd28e25d4312a1dbde504059698
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
