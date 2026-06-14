@@ -12,8 +12,8 @@ name: Deploy backend testai (auto)
 #   S2 — SEQUENTIAL rollout (paralel ResourceQuota riski; iter-50 frontend
 #         deploy'da 1000m+1000m=2000m > 8000m quota aşımı yaşandı)
 #   S3 — api-gateway entry-point EN SON deploy
-#   S4 — endpoint-admin-service + discovery-server bu ilk cut'ta SKIP
-#         (manifest contract netleşince ayrı PR)
+#   S4 — discovery-server SKIP; endpoint-admin-service is now part of the
+#         Faz 22.5 runtime surface and must roll with backend digests.
 #   S5 — Gate 2 (auth flow) opt-in warn-only; primary blocking pod imageID
 #         + api-gateway health
 #
@@ -43,8 +43,8 @@ on:
           render edip per-service `@sha256:` digest'leri otomatik çıkarır
           (PR-FOLLOW-UP-3 2026-06-01: overlay-render auto-extract).
 
-          Operator override istiyorsanız tam JSON map verin (tüm 8 backend
-          servis: auth/permission/user/variant/core-data/report/schema/api-gateway).
+          Operator override istiyorsanız tam JSON map verin (tüm 9 backend
+          servis: auth/permission/user/variant/core-data/report/schema/endpoint-admin/api-gateway).
 
           Tag-based fallback YASAK (PR #1170/#1171 incident — gitops commit
           SHA'sı yanlışlıkla image tag gibi yorumlandı).
@@ -156,7 +156,7 @@ jobs:
           fi
 
           # Required services check (Codex D fail-closed semantic)
-          REQUIRED_SVCS="auth-service permission-service user-service variant-service core-data-service report-service schema-service api-gateway"
+          REQUIRED_SVCS="auth-service permission-service user-service variant-service core-data-service report-service schema-service endpoint-admin-service api-gateway"
           for svc in $REQUIRED_SVCS; do
             if [ -z "$(echo "${DIGESTS_JSON}" | jq -r --arg s "$svc" '.[$s] // empty')" ]; then
               echo "::error::auto-extract missing digest for ${svc} (overlay'de pin yok)"
@@ -189,7 +189,7 @@ jobs:
         run: |
           set -euo pipefail
           # Codex S3: api-gateway en sonda
-          # discovery-server + endpoint-admin-service ilk cut'tan SKIP (S4)
+          # discovery-server remains out-of-scope; api-gateway rolls last (S3).
           SERVICES=(
             "auth-service"
             "permission-service"
@@ -198,6 +198,7 @@ jobs:
             "core-data-service"
             "report-service"
             "schema-service"
+            "endpoint-admin-service"
             "api-gateway"
           )
 
@@ -368,6 +369,7 @@ jobs:
             "core-data-service"
             "report-service"
             "schema-service"
+            "endpoint-admin-service"
             "api-gateway"
           )
           FAILED=0
@@ -426,6 +428,7 @@ jobs:
             "core-data-service"
             "report-service"
             "schema-service"
+            "endpoint-admin-service"
             "api-gateway"
           )
           for svc in "${SERVICES[@]}"; do
@@ -483,7 +486,7 @@ jobs:
             echo ""
             echo "## Backend deploy verify chain"
             echo ""
-            echo "- Sequential rollout (8 service): ✓"
+            echo "- Sequential rollout (9 service): ✓"
             echo "- Gate 1a (per-service pod digest): ✓"
             echo "- Gate 1b (api-gateway public health): ✓"
             echo "- Gate 1c (in-cluster readiness): ✓"
