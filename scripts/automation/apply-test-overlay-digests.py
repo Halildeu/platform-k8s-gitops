@@ -41,9 +41,8 @@ DEFAULT_KUSTOMIZATION = "kustomize/overlays/test/kustomization.yaml"
 
 # The backend services deploy-backend-testai.yml rolls out (its SERVICES array).
 # The digest map must contain ONLY these — a key outside this set (e.g. a
-# non-rolled backend entry such as endpoint-admin-service /
-# notification-orchestrator) is a contract violation and is rejected
-# fail-closed (Codex 019e407c P3).
+# non-rolled backend entry such as notification-orchestrator) is a contract
+# violation and is rejected fail-closed (Codex 019e407c P3).
 SYNC_SERVICES = frozenset({
     "auth-service",
     "permission-service",
@@ -52,6 +51,7 @@ SYNC_SERVICES = frozenset({
     "core-data-service",
     "report-service",
     "schema-service",
+    "endpoint-admin-service",
     "api-gateway",
 })
 

@@ -5041,7 +5041,13 @@ images:
     #   boot, Flyway now at v70. Cross-AI Codex 019ec45e AGREE (issuing surface).
     #   tag    ghcr.io/halildeu/platform-backend-endpoint-admin-service:sha-f78a24d
     #   digest sha256:90cfcf41e6dd6194974264adccc4c3158b84517ebfbaa415ceddc4cd59b23425
-    digest: sha256:90cfcf41e6dd6194974264adccc4c3158b84517ebfbaa415ceddc4cd59b23425
+    # 2026-06-14 Faz 22.5 M2-B cert-auth heartbeat endpoint (#656) →
+    # sha-4634463. Adds tokenless mTLS heartbeat surface on
+    # endpoint-admin-service, paired with platform-agent #154. This pin is the
+    # backend prerequisite for the M2 live heartbeat smoke; no production path.
+    # Image build run 27511669234, digest map evidence:
+    # endpoint-admin-service sha256:54fcf1350a2ac6410deefabc9b2174bb03032a45a6db2229298c7207d1ccf5ed
+    digest: sha256:54fcf1350a2ac6410deefabc9b2174bb03032a45a6db2229298c7207d1ccf5ed
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
