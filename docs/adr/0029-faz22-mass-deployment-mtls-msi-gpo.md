@@ -59,7 +59,7 @@ Faz 22 endpoint agent 800 PC mass deployment için aşağıdaki **6-katman** mim
 
 0. **Phase 0 — Preflight evidence checklist** (gate, herhangi bir deploy adımı öncesi zorunlu)
 1. **AD CS (Active Directory Certificate Services)** — corp internal CA, ücretsiz, Windows Server rolü; machine certificate auto-enrollment GPO ile her **domain-joined** PC'ye TPM-attested cert mint
-2. **Backend mTLS self-enrollment endpoint** — `POST /api/v1/endpoint-admin/endpoint-enrollments/auto` (yeni); **client cert'ten backend-derived identity** (body'den değil), AD computer SID/GUID stable identity + cert thumbprint chain
+2. **Backend mTLS self-enrollment endpoint** — `POST /api/v1/endpoint-agent/endpoint-enrollments/auto`; **client cert'ten backend-derived identity** (body'den değil), AD computer SID/GUID stable identity + cert thumbprint chain
 3. **Agent auto-enroll feature** — `--auto-enroll` flag; TPM cert ile mTLS-continuous (token sadece cert sahibi tarafından kullanılabilir)
 4. **MSI package (WiX Toolset)** — `endpoint-agent.exe` → `endpoint-agent.msi`; ProductCode/UpgradeCode versioned, MST transform ile APIURL property, **internal Windows signing runner** ile imzalı (GitHub Actions PFX YASAK)
 5. **GPO Software Installation** — Computer Configuration > Software Settings > Software Installation; package `\\ACIKDC01\endpoint-agent-deploy\endpoint-agent.msi`; deployment **Assigned to Computer** (boot anında OS-level install); wave-based security group control
@@ -105,7 +105,7 @@ Faz 22 endpoint agent 800 PC mass deployment için aşağıdaki **6-katman** mim
 | P0-9 | **MSI install Event Log baseline** | Test MSI (1KB no-op) install + Event Log entry verify | Test MSI deploy |
 | P0-10 | **AD CS cert auto-enrollment Event Log** | Test PC `Get-WinEvent -ProviderName "Microsoft-Windows-CertificateServicesClient-AutoEnrollment"` PASS | Event Log |
 | P0-11 | **TPM availability** | `Get-Tpm` test PC'de Enabled + Ready | PowerShell |
-| P0-12 | **mTLS reachability test** | DEVICE_API_BASE_URL `https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin` mTLS handshake + no-cert negative test (handshake reject expected) | openssl s_client veya PowerShell mTLS test |
+| P0-12 | **mTLS reachability test** | DEVICE_API_BASE_URL `https://mtls.testai.acik.com/api/v1/endpoint-agent` mTLS handshake + no-cert negative test (handshake reject expected) | openssl s_client veya PowerShell mTLS test |
 | P0-13 | **Ingress mTLS termination kanıtı** | nginx ingress mTLS passthrough config + canlı route smoke (request endpoint pod'a kadar mTLS context taşır mı kanıt) | Cluster config inspect + tcpdump/Wireshark veya backend audit cert ext log |
 | P0-14 | **CRL/OCSP reachability** | AD CS CRL URL test PC'den reachable + cache invalidation < 7 gün; **plus CRL outage davranış testi**: CRL endpoint disable + backend response — **enrollment-time davranış**: fail-closed default expected (yeni cert validation reddedilir); **already-enrolled davranış (R24, iter-6 F2 bounded formula)**: `grace_until = min(cert_not_after, last_good_revocation_check + 24h)` — 24h hard cap last good CRL check'inden itibaren, cert_not_after üst limit; long-lived cert + uzun CRL outage senaryosunda fail-closed enforced (grace yıllarca uzayamaz); plus agent batch alert (>%10 device grace state) | curl + certutil + simulated CRL outage (2 sub-scenario: (a) yeni enroll fail-closed, (b) already-enrolled grace bounded formula verify + near-expiry hard-cap test) |
 | **P0-15** | **SYSTEM context UNC share read** | Test PC `psexec -s cmd /c "dir \\\\ACIKDC01\\endpoint-agent-deploy"` SYSTEM context PASS (admin PSSession değil) | PsExec SYSTEM context |
@@ -114,7 +114,7 @@ Faz 22 endpoint agent 800 PC mass deployment için aşağıdaki **6-katman** mim
 | **P0-18** | **EDR/WDAC/AppLocker baseline check** | Trusted Publisher AD CS root cert AppLocker policy + Defender exclusion install dir + WDAC signer rule (varsa) | gpresult AppLocker + Defender PowerShell |
 | **P0-19** | **Trusted Publisher store** | Test PC `Cert:\LocalMachine\TrustedPublisher` AD CS code signing cert thumbprint mevcut (manuel test install öncesi) | Certificates MMC |
 | **P0-20** | **Proxy/TLS inspection** | Corp proxy/TLS inspection AD CS root cert intercept etmez (mTLS handshake passthrough) | mitmproxy/Wireshark veya proxy config inspect |
-| **P0-21** | **Egress firewall (mTLS host)** | Corp PC subnet → `endpoint-agent-mtls.testai.acik.com` (port 443 standart SNI) egress allow | Test PC TCP probe |
+| **P0-21** | **Egress firewall (mTLS host)** | Corp PC subnet → `mtls.testai.acik.com` (port 443 standart SNI) egress allow | Test PC TCP probe |
 | **P0-22** | **Fleet TPM readiness sample** | 10 PC sample → `Get-Tpm` Enabled + Ready ratio (≥95% expected); ratio düşükse mass deploy scope reduce | PowerShell sample |
 | **P0-23** | **Cert SAN URI:adcomputer:{objectGUID} verify (iter-4 F2 + iter-6 F1 absorb)** | Test PC machine cert mint edildikten sonra `certutil -store -enterprise My <thumbprint>` (LocalMachine\My store, `-user` flag YOK — machine cert) → output SAN section'da `URL=adcomputer:<guid>` extension'ı mevcut; **plus** doğrulama: DirectorySearcher (RSAT-free) ile `objectGUID` LDAP query + cert SAN URI içindeki GUID match etmeli (renewal-safe binding garanti) | certutil LocalMachine\My + DirectorySearcher cross-check |
 
@@ -261,10 +261,10 @@ Install-AdcsCertificationAuthority -CAType EnterpriseRootCA `
 
 | Surface | Base URL | mTLS required? | Routing |
 |---|---|---|---|
-| **Device API** (auto-enroll + heartbeat + command poll/result) | `https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin` (canonical; `:8443` lab fallback non-canonical) | ✅ MANDATORY | Separate Ingress + Service, mTLS passthrough, standart port 443 SNI |
+| **Device API** (auto-enroll + heartbeat + command poll/result) | `https://mtls.testai.acik.com/api/v1/endpoint-agent` (test canonical; prod canonical = `https://mtls.ai.acik.com/api/v1/endpoint-agent`; `:8443` lab fallback non-canonical) | ✅ MANDATORY | Separate Ingress + Service, mTLS passthrough, standart port 443 SNI |
 | **Admin API** (UI Yönetim > Uç Birimler, command queue, audit query) | `https://testai.acik.com` | ❌ JWT-only | Mevcut nginx ingress, no breaking change |
 
-**Karar**: SNI ayrı host (`endpoint-agent-mtls.testai.acik.com`) — TLS passthrough basit + audit chain net. Ayrı Service + Ingress + Cluster IP, mevcut admin/UI traffic ile çakışmaz.
+**Karar**: SNI ayrı host (`mtls.testai.acik.com` test / `mtls.ai.acik.com` prod) — TLS passthrough basit + audit chain net. Ayrı Service + Ingress + Cluster IP, mevcut admin/UI traffic ile çakışmaz.
 
 **Identity binding strategy (revize)**:
 - **Primary**: Cert SAN extension `URI:adcomputer:{objectGUID}` (AD CS template ile mint; certreq policy.inf'de SAN extension)
@@ -274,7 +274,7 @@ Install-AdcsCertificationAuthority -CAType EnterpriseRootCA `
 **Yeni endpoint** (Spring Boot, `endpoint-admin-service`):
 
 ```
-POST /api/v1/endpoint-admin/endpoint-enrollments/auto
+POST /api/v1/endpoint-agent/endpoint-enrollments/auto
 Content-Type: application/json
 [MANDATORY: Client mTLS cert; backend validates chain to AD CS Root CA]
 
@@ -359,11 +359,12 @@ Response (200):
 
 ```go
 // New CLI flag
-// IMPORTANT (iter-4 F1): --api-url FULL canonical base path including /api/v1/endpoint-admin
+// IMPORTANT (iter-4 F1; amended 2026-06-14): --api-url FULL canonical base
+// path including /api/v1/endpoint-agent
 // Backend join only relative segment ("/endpoint-enrollments/auto", "/endpoint-heartbeat" etc.)
-// Wrong: --api-url=https://endpoint-agent-mtls.testai.acik.com (path düşer)
-// Right: --api-url=https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin
-endpoint-agent --auto-enroll [--api-url=https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin]
+// Wrong: --api-url=https://mtls.testai.acik.com (path düşer)
+// Right: --api-url=https://mtls.testai.acik.com/api/v1/endpoint-agent
+endpoint-agent --auto-enroll [--api-url=https://mtls.testai.acik.com/api/v1/endpoint-agent]
 
 // iter-6 F4 absorb: jitter config from registry (MSI persisted to HKLM)
 // MSI writes EnrollmentJitterSeconds to HKLM\SOFTWARE\EndpointAgent at install time
@@ -385,8 +386,8 @@ if !configExists() {
     // mTLS client config (cert-bound tüm istekler için)
     httpClient := createMtlsClient(cert)
 
-    // F1 absorb: apiUrl = full base path (canonical: https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin)
-    // Path join sadece relative segment ekler — base path /api/v1/endpoint-admin korunur
+    // F1 absorb: apiUrl = full base path (canonical: https://mtls.testai.acik.com/api/v1/endpoint-agent)
+    // Path join sadece relative segment ekler — base path /api/v1/endpoint-agent korunur
     resp := httpClient.Post(apiUrl + "/endpoint-enrollments/auto", {
         os_info: collectOsInfo(),
         agent_version: VERSION,
@@ -468,8 +469,8 @@ if certExpiresIn(7 * 24 * time.Hour) {
       AllowSameVersionUpgrades="no" />
 
     <!-- Properties (overridable via MST transform) -->
-    <!-- F1 absorb: APIURL = full canonical base path including /api/v1/endpoint-admin -->
-    <Property Id="APIURL" Value="https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin" Secure="yes" />
+    <!-- F1 absorb: APIURL = full canonical base path including /api/v1/endpoint-agent -->
+    <Property Id="APIURL" Value="https://mtls.testai.acik.com/api/v1/endpoint-agent" Secure="yes" />
     <Property Id="ARPHELPLINK" Value="https://testai.acik.com/endpoint-admin" />
     <Property Id="ARPNOREPAIR" Value="1" />
     <Property Id="ENROLLMENTJITTERSECONDS" Value="300" Secure="yes" /> <!-- F5 absorb: agent reads this; randomized 0-N at startup -->
@@ -560,7 +561,7 @@ Copy-Item endpoint-agent.msi -Destination \\ACIKDC01\endpoint-agent-deploy\
 **Install/upgrade/uninstall commands** (manuel test):
 ```
 # Fresh install (F1 absorb: APIURL = full canonical base path)
-msiexec /i endpoint-agent.msi /qn APIURL=https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-admin ENROLLMENTJITTERSECONDS=300
+msiexec /i endpoint-agent.msi /qn APIURL=https://mtls.testai.acik.com/api/v1/endpoint-agent ENROLLMENTJITTERSECONDS=300
 
 # Upgrade (MajorUpgrade auto-handles)
 msiexec /i endpoint-agent-v0.2.1.msi /qn  # eski uninstall + yeni install
@@ -701,7 +702,7 @@ New-GPLink -Name "EndpointAgent Mass Deployment" `
 | **R19** | **APIURL property GPO** — `msiexec APIURL=...` GPO direct pass etmez | Yüksek | Medium | MST transform file (`endpoint-agent-mst-transform.mst`) GPO Modifications tab; Phase 0 P0-9 evidence |
 | **R20** | **Rate limiting NAT/proxy** — `10 req/min per IP` 800 PC yanlış throttle | Orta | Medium | Rate limit **per SID** (cert-derived), IP'den bağımsız |
 | **R21** | **Scope truth drift** — ADR-0029 ↔ PLAN.md/ADR-0012/RB-faz22 supersedence dili belirsizliği | Bilinen | High | ADR üst kısmı scope amendment statement explicit; iter-3 absorb PR'a PLAN.md + ADR-0012 + RB header truth-sync ekle |
-| **R22** | **mTLS route split** — admin/browser API JWT-only, device API mTLS-mandatory; route mismatch admin'i kırabilir | Yüksek | High | Ayrı Ingress + SNI host (`endpoint-agent-mtls.testai.acik.com`) + Service; admin traffic mevcut nginx ingress; Phase 0 P0-13 canlı smoke gate |
+| **R22** | **mTLS route split** — admin/browser API JWT-only, device API mTLS-mandatory; route mismatch admin'i kırabilir | Yüksek | High | Ayrı Ingress + SNI host (`mtls.testai.acik.com`) + Service; admin traffic mevcut nginx ingress; Phase 0 P0-13 canlı smoke gate |
 | **R23** | **CN-to-AD identity binding** — Cert subject CN unique değil (CN reuse, rejoin, stale obj), SID/GUID extraction zinciri zayıf | Yüksek | High | Cert SAN extension `URI:adcomputer:{objectGUID}` template ile mint; fallback CN→LDAPS lookup + reuse guard (SID mismatch → AUTO_ENROLL_DENIED + alert); P0-16 backend LDAPS gate |
 | **R24** | **Token refresh outage cascade** — 24h short-lived + ingress fault + CRL outage simultaneous → 800 cihaz offline cascade | Orta | High | **İki davranış AYRI uygulanır (iter-4 F3 absorb + iter-6 F2 absorb)**: **(a) Enrollment-time** (yeni cert validation): CRL fail → **fail-closed default** (yeni cihaz enroll reddedilir, P0-14 expected behavior); **(b) Already-enrolled** (token refresh / heartbeat): CRL fail → backend `grace_until = min(cert_not_after, last_good_revocation_check + 24h)` — 24h grace yalnız last good CRL check'inden itibaren; cert_not_after hard cap (cert zaten expired ise grace_window OFF, fail-closed enforced). Long-lived certs (2 yıl) için CRL outage 24h'den uzun sürerse fail-closed enforced; grace yıllarca uzayamaz. Agent heartbeat response'unda `grace_window: true` + `grace_until` field iletilir; agent service continues; **fail-closed sadece grace_until aşıldıktan sonra** (cihaz offline state). Plus: Phase 1 acceptance fault injection tests (3 senaryo: forced token expiry, ingress mTLS fault, CRL outage); agent exponential backoff (1-2-4-8-16dk caps 60dk); CRL outage anında **batch alert** (>%10 device grace state)。 Token TTL 24h cert-expiry'den daha kısa olduğu için cert hâlâ valid + CRL inaccessible durumunda already-enrolled hosts grace window ile sağ kalır |
 | **R25** | **Fleet TPM/CA trust/EDR readiness** — TPM disable/EDR block/Trusted Publisher missing %5'i geçerse mass deploy fail explode | Orta | High | P0-22 fleet TPM sample (≥95%); P0-18 EDR allowlist + WDAC; P0-19 Trusted Publisher store; ratio düşükse scope reduce |
@@ -868,7 +869,7 @@ Plus P0-5 vs P0-15 ayrımı net:
 - ✅ **Continuous Autonomous Mode**: owner approval (Plan A) ile otonom devam
 - ✅ **Iter-1 REVISE absorbed (Codex 10 finding)**: Phase 0 + workgroup path + mTLS ingress + cert renewal stable identity + cert-bound token + MSI Upgrade/MST + signing key custody + R11 nuance + Wazuh rollback realism + acceptance gates objektif source-of-truth
 - ✅ **Iter-2 REVISE absorbed (Codex 6 high/medium + 6 yeni risk)**: scope amendment statement + mTLS route split (DEVICE_API_BASE_URL, ayrı SNI) + identity SAN extension + token rotation soak/fault tests + P0 expansion (15-22) + denominator T0 freeze + UI Phase 1 backend-only karar + R21-R26 risk register
-- ✅ **Iter-3 REVISE absorbed (Codex 5 finding)**: truth-sync MERGE BLOCKER (PLAN.md + ADR-0012 + 2 RB header) + mTLS URL canonical (endpoint-agent-mtls.testai.acik.com) + backend processing step 9 SAN-primary identity + AD CS template SAN extension instructions + Phase 0 P0-1..P0-22 + Phase 2 UI HARD GATE + denominator T0 freeze + R24 24h grace + R26 WiX jitter (initial) + scope addition statement
+- ✅ **Iter-3 REVISE absorbed (Codex 5 finding)**: truth-sync MERGE BLOCKER (PLAN.md + ADR-0012 + 2 RB header) + mTLS URL canonical (mtls.testai.acik.com) + backend processing step 9 SAN-primary identity + AD CS template SAN extension instructions + Phase 0 P0-1..P0-22 + Phase 2 UI HARD GATE + denominator T0 freeze + R24 24h grace + R26 WiX jitter (initial) + scope addition statement
 - ✅ **Iter-4 REVISE absorbed (Codex 5 finding F1-F5)** [historical — superseded ifadeleri iter-5/6 absorb'larında düzeltildi]: F1 mTLS canonical URL Option A (APIURL full base path /api/v1/endpoint-admin canonical) + F2 AD CS SAN URI:adcomputer:{objectGUID} mekanizma (initial: ~~Get-ADComputer + certreq -enroll -inf~~ — **superseded by iter-5 F1**: RSAT-free DirectorySearcher + certreq 3-step `-new`/`-submit`/`-accept`; P0-23 verify gate eklendi) + F3 R24 2-davranış ayrımı (enrollment-time fail-closed + already-enrolled grace; initial formula ~~`expiry+24h`~~ — **superseded by iter-5 F2**: bounded formula `min(cert_not_after, last_good_revocation_check + 24h)`) + F4 scope addition truth-sync (ADR-0029:9 Related "ADDITION" + ADR-0012 22.3 Restricted→22.4 rename + RB-non-domain SAN URI invariant 22.3 path-only) + F5 R26 WiX CustomAction yanlış (jitter agent service startup'a taşındı; MSI ENROLLMENTJITTERSECONDS property; initial commit registry persist eksik — **superseded by iter-5 F4**: WiX RegistryValue HKLM persist + agent registry read pseudo-code eklendi)
 - ✅ **Iter-5 REVISE absorbed (Codex 4 finding F1-F4)**: F1 GPO + certreq executable mekanizma (RSAT-free DirectorySearcher LDAP query + certreq 3-step `-new`/`-submit`/`-accept` valid flow + P0-23 LocalMachine\My store) + F2 R24 grace_until bounded formula (`min(cert_not_after, last_good_revocation_check + 24h)`) + F3 ADR-0012 identity model PARTIAL invariant (22.2.A non-domain AD computer object yok → SAN URI geçersiz; 22.2.B small-scale manual cert; 22.3 SAN URI primary; backend/audit ortak invariant) + F4 WiX RegistryEntries EnrollmentJitterSeconds persist + agent service startup config read
 - ✅ **Iter-6 REVISE absorbed (Codex 3 finding F1-F3, this commit)**: F1 P0-14 grace formula bounded (R24/Phase 1 ile uyumlu, in-doc çelişki kapatıldı) + F2 Phase 0 acceptance gate P0-22 → P0-23 (cert SAN URI verify mandatory gate) + F3 cross-doc truth-sync homojen (RB-IT-owned scope superseded note identity invariant PARTIAL alignment + PLAN.md iter-6 chain state + ADR-0029 HARD RULE summary historical "superseded by" markers)

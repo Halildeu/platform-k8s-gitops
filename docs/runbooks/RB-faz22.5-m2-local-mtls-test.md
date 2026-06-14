@@ -195,7 +195,8 @@ prlctl exec "Windows 11" powershell -Command "(Get-Content C:\Windows\System32\d
 
 - **Gerçek AD CS issuance** (SAN URI:adcomputer:{objectGUID} otomatik, EKU template-OID) — operator gate.
 - **Passthrough mTLS edge** (:8443 connector, `client-auth=need`, gerçek TLS handshake kimliği) — **Step-2**, ADR-0029 #1501; paralel #611/#612 arkasına sıralı + Codex plan-time design review.
-- **prod DNS subhost** (`endpoint-agent-mtls.<env>`) — operator gate.
+- **prod DNS subhost** (`mtls.<env>` canonicalized as `mtls.testai.acik.com`
+  for test/pilot and `mtls.ai.acik.com` for prod) — operator gate.
 
 ## Referans
 - Backend: `endpoint-admin-service` — `AgentMachineCertEnrollmentController`, `MachineCertAutoEnrollService`, `MachineCertExtractor`, `MtlsSecurityConfig`

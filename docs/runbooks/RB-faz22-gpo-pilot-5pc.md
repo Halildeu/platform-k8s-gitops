@@ -125,17 +125,20 @@ Get-AuthenticodeSignature "EndpointAgent-<version>-signed.msi"
 
 ### 4.4 Per-device preflight (read-only, before + after enroll)
 
+Use `mtls.testai.acik.com` for the M5 pilot. `mtls.ai.acik.com` is the prod
+counterpart and must not be used until the test M2/M5 acceptance gates pass.
+
 ```powershell
 # BEFORE MSI push (service/exe not yet installed): reachability + machine cert + reboot.
 # -RequireMachineCert makes a missing Client-Auth cert a FAIL (tokenless M2 is a hard gate).
 .\wave-preflight.ps1 -Mode preinstall-readiness -Json `
-  -ApiHost endpoint-agent-mtls.testai.acik.com -RequireMachineCert
+  -ApiHost mtls.testai.acik.com -RequireMachineCert
 
 # AFTER enroll: service Running + version + signature(HARD) + mode + cert.
 # -RequireSignature makes a non-Valid Authenticode signature a FAIL (signed-MSI /
 # Trusted Publisher gate); pin the AG-018 leaf with -ExpectedSignerThumbprint when known.
 .\wave-preflight.ps1 -Mode enroll-health -Json `
-  -ApiHost endpoint-agent-mtls.testai.acik.com `
+  -ApiHost mtls.testai.acik.com `
   -RequireMachineCert -RequireSignature -ExpectedSignerThumbprint <AG-018-leaf-thumbprint>
 ```
 

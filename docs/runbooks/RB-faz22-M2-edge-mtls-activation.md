@@ -8,21 +8,49 @@
 > ingress-nginx controller flag. Nothing here mutates a live cluster until the
 > operator wires the bundle into the test overlay.
 
-Architecture (ADR-0029 §2.5, owner-approved): dedicated SNI host
-`endpoint-agent-mtls.testai.acik.com`, **TLS passthrough** (the backend, not the
-edge, terminates mTLS and derives identity from the client cert in the
-handshake — never from a request header), standard port 443. Acceptance gate
-(plan §0.5.2): DNS resolves + edge client-cert verify (at backend) +
-spoof-header strip + no-cert/spoofed negative fail-closed + valid machine-cert
-positive tokenless AutoEnroll smoke.
+Architecture (ADR-0029 §2.5, owner-approved; host naming amendment
+2026-06-14): dedicated SNI hosts `mtls.testai.acik.com` for test/pilot and
+`mtls.ai.acik.com` for prod, **TLS passthrough** (the backend, not the edge,
+terminates mTLS and derives identity from the client cert in the handshake —
+never from a request header), standard port 443. Acceptance gate (plan §0.5.2):
+DNS resolves + edge client-cert verify (at backend) + spoof-header strip +
+no-cert/spoofed negative fail-closed + valid machine-cert positive tokenless
+AutoEnroll smoke.
+
+## 2026-06-14 DNS naming decision
+
+The old placeholder host `endpoint-agent-mtls.testai.acik.com` is replaced by:
+
+| Environment | Canonical host | Purpose |
+|---|---|---|
+| Test / pilot | `mtls.testai.acik.com` | M2 acceptance and 5-PC pilot path |
+| Prod | `mtls.ai.acik.com` | Prod mTLS device API after test acceptance |
+
+Public DNS for both names has been operator-created and externally verified to
+resolve to `212.115.26.190`. This does **not** close M2: the current forced-SNI
+probe reaches the existing nginx default route and returns HTTP 404, which means
+the host route is not wired yet. The served certificate is currently
+`CN=*.acik.com` / SAN `*.acik.com, acik.com`; the eventual mTLS backend/server
+certificate must explicitly cover `mtls.testai.acik.com` and
+`mtls.ai.acik.com` (or use an equivalent cert that covers those exact names).
+
+Read-only host/cluster preflight from 2026-06-14:
+
+| Check | Observed |
+|---|---|
+| Host nginx server names | `ai.acik.com` and `testai.acik.com`; no `mtls.*` server/stream route yet |
+| k3d-test serverlb HTTPS | `127.0.0.1:31443` |
+| k3d-prod serverlb HTTPS | `127.0.0.1:30443` |
+| endpoint-admin-service ports | test/prod Services expose `http:8096` and `management:8081`; no `mtls:8443` yet |
+| ingress-nginx ssl-passthrough flag | not observed in read-only args grep |
 
 ## Prerequisites (NOT agent-doable — operator/backend)
 
 | # | Prerequisite | Owner | Why |
 |---|---|---|---|
-| P1 | DNS A record `endpoint-agent-mtls.testai.acik.com` → edge public IP | **operator (DNS)** | the dedicated SNI host must resolve; never bind a client-cert prompt onto `testai.acik.com` |
+| P1 | DNS A records `mtls.testai.acik.com` + `mtls.ai.acik.com` → edge public IP | **operator (DNS)** | **DONE 2026-06-14** for public resolvers; still verify from target corp DNS/VPN before pilot |
 | P2 | AD CS Enterprise Root CA `CN=ACIK Endpoint CA` issuing machine certs (EKU Client Authentication; SAN `URI:adcomputer:{objectGUID}`); CRL/OCSP reachable | **operator (AD CS)** | trust anchor + renewal-safe identity binding (ADR-0029 §1, RB-faz22.3-ad-cs-setup) |
-| P3 | platform-backend mTLS listener on container port named `mtls` (8443), `client-auth=need`, trust = AD CS Root CA, serving `POST /api/v1/endpoint-agent/endpoint-enrollments/auto` (canonical route) + heartbeat + command poll/result; identity derived from client cert | **platform-backend PR** | ADR-0029 §2.5; "route parity var, no-cert POST fail-closed" exists but the mTLS-terminating port is the remaining backend slice |
+| P3 | platform-backend mTLS listener on container port named `mtls` (8443), `client-auth=need`, trust = AD CS Root CA, server cert SAN covers `mtls.testai.acik.com` and later `mtls.ai.acik.com`, serving `POST /api/v1/endpoint-agent/endpoint-enrollments/auto` (canonical route) + heartbeat + command poll/result; identity derived from client cert | **platform-backend PR** | ADR-0029 §2.5; "route parity var, no-cert POST fail-closed" exists but the mTLS-terminating port is the remaining backend slice |
 | P4 | ingress-nginx controller running with `--enable-ssl-passthrough` | **operator (cluster)** | required for the passthrough Ingress to SNI-route raw TLS (currently NOT enabled — verified 2026-06-09) |
 | P5 | host-nginx built with `--with-stream` + `--with-stream_ssl_preread_module` | **operator (host)** | SNI passthrough at the real internet edge (the wildcard host nginx must not TLS-terminate the mTLS SNI) |
 | P6 | port-scope the broad intra-namespace allow (or isolate the mTLS listener on a separately-labeled workload) so 8443 is reachable only from ingress-nginx | **operator (cluster)** | K8s NetworkPolicy is additive — the allow in `netpol.yaml` is necessary but NOT sufficient (Codex F2); see the caveat in that file |
@@ -37,8 +65,13 @@ positive tokenless AutoEnroll smoke.
 2. **Host nginx**: place the directives from `host-nginx-stream-snippet.conf`
    INSIDE the host nginx's single `stream { }` block (nginx permits exactly one
    stream context — do NOT add a second `stream {}`; create one in the main
-   nginx.conf if none exists). Set the two upstream targets (ingress-nginx
-   ssl-passthrough listener + the existing http/TLS edge); `nginx -t` then reload.
+   nginx.conf if none exists). The staged snippet defaults the test/prod
+   passthrough upstreams to the currently observed serverlb HTTPS ports
+   (`127.0.0.1:31443` test, `127.0.0.1:30443` prod). Set the existing http/TLS
+   edge fallback upstream (`127.0.0.1:8444` placeholder) only after deliberately
+   reshaping the current terminating nginx so the stream listener can own
+   `:443`; `nginx -t` then reload. If prod is not being activated yet, keep
+   `mtls.ai.acik.com` mapped to a fail-closed upstream rather than test.
 3. **Cluster**: reference the bundle from the test overlay
    (`kustomize/overlays/test/kustomization.yaml` → add
    `../../base/endpoint-agent-mtls`); commit a gitops PR; let ArgoCD sync.
@@ -61,8 +94,8 @@ positive tokenless AutoEnroll smoke.
 # N1 — no client cert → server demands one. Assert server trust AND the specific
 # reject class separately, so a wrong-server-cert error can never read as PASS.
 set -o pipefail
-out=$(openssl s_client -connect endpoint-agent-mtls.testai.acik.com:443 \
-  -servername endpoint-agent-mtls.testai.acik.com \
+out=$(openssl s_client -connect mtls.testai.acik.com:443 \
+  -servername mtls.testai.acik.com \
   -CAfile acik-endpoint-ca-chain.pem -verify_return_error </dev/null 2>&1)
 echo "$out" | grep -q "Verify return code: 0 (ok)" \
   || { echo "FAIL: server cert not trusted — fix trust before judging client-auth"; exit 1; }
@@ -74,7 +107,7 @@ echo "$out" | grep -Eiq "certificate required|peer did not return a certificate"
 
 # N2 — VALID client cert + FORGED identity headers → backend must use the CERT, ignore headers
 curl -sS --cert pilot-machine.crt --key pilot-machine.key --cacert acik-endpoint-ca-chain.pem \
-  https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-agent/endpoint-enrollments/auto -X POST \
+  https://mtls.testai.acik.com/api/v1/endpoint-agent/endpoint-enrollments/auto -X POST \
   -H "X-Client-Cert: FORGED" -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001" \
   -H "X-Company-Id: 00000000-0000-0000-0000-000000000001" -H "ssl-client-verify: SUCCESS"
 #   PASS only if the backend audit shows identity_source = tls_client_cert AND the
@@ -87,7 +120,7 @@ Raw cert/key/JWT/token MUST NOT appear in any log or doc.
 ```bash
 # P — tokenless AutoEnroll end-to-end (no one-time token)
 curl -sS --cert pilot-machine.crt --key pilot-machine.key --cacert acik-endpoint-ca-chain.pem \
-  https://endpoint-agent-mtls.testai.acik.com/api/v1/endpoint-agent/endpoint-enrollments/auto -X POST
+  https://mtls.testai.acik.com/api/v1/endpoint-agent/endpoint-enrollments/auto -X POST
 #   PASS requires ALL: HTTP 200/201 + a credential issued (cert-bound, no one-time token used)
 #   + a first heartbeat accepted over mTLS-continuous + a backend audit row with
 #   identity_source = tls_client_cert and SAN URI:adcomputer:{guid} ↔ LDAP objectGUID match.
