@@ -41,13 +41,10 @@ spec:
 # identity, the domain controller LDAPS). Without this, revocation checking
 # either fails-closed (rejecting all enrollments) or cannot be proven.
 #
-# ⚠️ TEMPLATE — fail-closed by default (Codex F1-round2). The placeholder CIDRs
-# below are RFC 5737 documentation/TEST-NET ranges that route NOWHERE real, so if
-# this bundle is wired into an overlay BEFORE the operator patches it, no actual
-# egress opens (the policy renders, but to dead addresses). The operator MUST
-# replace them with the real AD CS CRL/OCSP host(s) and DC as narrow /32s before
-# activation. Never widen to 0.0.0.0/0 or an RFC1918 supernet (cluster/pod/svc
-# CIDRs live in 10/8 — a 10.0.0.0/8 allow would expose in-cluster traffic).
+# Test activation 2026-06-14: replace the fail-closed sentinels with narrow lab
+# /32s. AD CS Enterprise Root CA runs on ERP-MOBIL (10.9.10.101); the DC/LDAPS
+# endpoint is ACIKDC01 (10.9.10.10). Keep these test-only and do not widen to
+# RFC1918 supernets.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -63,7 +60,7 @@ spec:
   egress:
     - to:
         - ipBlock:
-            cidr: 192.0.2.255/32   # SENTINEL (RFC5737 TEST-NET-1) — REPLACE with AD CS CRL/OCSP host /32(s)
+            cidr: 10.9.10.101/32   # ERP-MOBIL.acik.local AD CS CRL/OCSP host
       ports:
         - protocol: TCP
           port: 80    # HTTP CRL distribution point
@@ -71,7 +68,7 @@ spec:
           port: 443   # OCSP responder
     - to:
         - ipBlock:
-            cidr: 198.51.100.255/32   # SENTINEL (RFC5737 TEST-NET-2) — REPLACE with domain controller /32(s)
+            cidr: 10.9.10.10/32   # ACIKDC01.acik.local domain controller
       ports:
         - protocol: TCP
           port: 636   # LDAPS (objectGUID resolve, if used)
