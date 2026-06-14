@@ -1,19 +1,22 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.5 M2 AD CS edge mTLS AutoEnroll live smoke passed; continuous heartbeat/GPO rollout still gated (2026-06-14, Codex #1359/#1376)
+## Live Delta — Faz 22.5 M2 AD CS edge mTLS AutoEnroll + tokenless heartbeat live-smoked; durable DNS/GPO rollout still gated (2026-06-14, Codex #1359/#1376/#151)
 
 **Session milestone**: tokenless Endpoint Agent AutoEnroll için eski
 `endpoint-agent-mtls.testai.acik.com` placeholder'ı canonical olarak
 `mtls.testai.acik.com` (test/pilot) ve `mtls.ai.acik.com` (prod) isimlerine
 taşındı; AD CS Enterprise Root CA path'i kuruldu; test edge/backend mTLS
 passthrough canlı aktive edildi; `ERP-MOBIL.acik.local` machine certificate ile
-tokenless AutoEnroll **HTTP 201** live smoke geçti. Bu M2 auto-enroll gate'ini
-önemli ölçüde açar, fakat 5-PC/GPO rollout, 24h soak ve mTLS-continuous
-heartbeat/command channel bu kanıtla otomatik kapanmaz.
+tokenless AutoEnroll **HTTP 201** live smoke geçti. Ardından `platform-agent`
+#155 (`836d232`) Windows certstore crash fix artifact'i ERP-MOBIL'de
+`--auto-enroll` ile çalıştırıldı ve backend DB'de tokenless mTLS heartbeat
+satırları oluştu. Bu M2 auto-enroll + heartbeat subgate'ini önemli ölçüde
+açar, fakat durable AD DNS, cert-auth command/result lifecycle, 5-PC/GPO
+rollout, 24h soak ve 50/800 dalgaları bu kanıtla otomatik kapanmaz.
 
 | Alan | Durum (2026-06-14) | Kanıt / sınır |
 |---|---|---|
-| DNS | 🟢 `mtls.testai.acik.com` + `mtls.ai.acik.com` public resolver'larda `212.115.26.190` | `dig @1.1.1.1`, `@8.8.8.8`, `@9.9.9.9`; local/corp resolver cache ayrıca doğrulanmalı |
+| DNS | 🟡 public OK, internal AD DNS pending | `mtls.testai.acik.com` + `mtls.ai.acik.com` public resolver'larda `212.115.26.190`; ERP-MOBIL heartbeat smoke için geçici local hosts shim kullanıldı ve kanıt sonrası kaldırıldı. Durable gate: domain DNS `mtls.testai.acik.com` -> internal edge without hosts file |
 | AD CS | 🟢 Enterprise Root CA + machine cert issuance proven | CA `Acik-Endpoint-CA`; `ERP-MOBIL` machine cert SAN `adcomputer:2a8a00bf-420f-4741-aad3-c402eed0f74d`, EKU Client Authentication, private key non-exportable |
 | Backend mTLS listener | 🟢 Live on test | endpoint-admin pod `1/1 Running`; `endpoint-agent-mtls-backend` endpoint `10.44.3.253:8443`; log: `Tomcat started on ports 8096 (http), 8443 (https)` and trust store `/etc/endpoint-admin/mtls/truststore.p12` |
 | Edge passthrough | 🟢 Test host active | `platform-web-nginx` stream SNI route sends `mtls.testai.acik.com:443` to k3d-test `127.0.0.1:31443`; browser hosts fallback to loopback `8444`; `testai-healthz` and `ai nginx-healthz` still return 200 |
@@ -21,13 +24,15 @@ heartbeat/command channel bu kanıtla otomatik kapanmaz.
 | No-cert negative | 🟢 Fail-closed | Public `curl -vkI --resolve mtls.testai.acik.com:443:212.115.26.190 .../endpoint-enrollments/auto` shows server `Request CERT` then `curl: (56)`; Windows private-edge no-cert path also exits 56 |
 | Spoof-header + valid cert positive | 🟢 HTTP 201 live | Windows Schannel explicit `LocalMachine\\MY\\F87F0D21...` client cert via private edge `10.9.10.53:443` + forged `X-Client-Cert` / `X-Tenant-Id` / `X-Company-Id` headers returned `201` with `status=enrolled`, device `a358d36d-2ade-4e1f-9f54-68a085ef44a5`, SAN URI `adcomputer:2a8a00bf-420f-4741-aad3-c402eed0f74d` |
 | DB/audit | 🟢 Fixed tenant + cert identity proven | `endpoint_devices.tenant_id/org_id = 00000000-0000-0000-0000-000000000001` despite forged header; `endpoint_machine_certs` row stored SAN/objectGUID/thumbprint; audit `MACHINE_CERT_AUTO_ENROLL_SUCCESS` with `performed_by_subject=machine-cert:adcomputer:...` |
-| GitOps config | 🟡 desired-state PR pending | Test overlay/netpol changes staged locally; live secrets and host nginx stream route are runtime-applied and must be reconciled/PR'd before treating as fully GitOps-closed |
-| M2 acceptance boundary | 🟡 auto-enroll live, continuous agent channel open | AutoEnroll path is live-proven; current image does not issue `endpoint_device_credentials` on this auto-enroll response and `/api/v1/agent/heartbeat` remains normal credential-auth, not mTLS-continuous. 5-PC GPO, 24h soak, 50/800 rollout remain separate gates |
+| Agent tokenless heartbeat | 🟢 live-smoked on ERP-MOBIL | `platform-agent` #155 crash fix artifact SHA256 `BDEA1B102...`; backend `endpoint_devices` row `a358d36d-2ade-4e1f-9f54-68a085ef44a5` is `ONLINE`; latest DB heartbeat `2026-06-14 23:05:06.603163+00`, `agent_version=0.1.0-ci.355.g836d232`, `hostname=ERP-MOBIL`, `osType=WINDOWS` |
+| GitOps config | 🟡 reconciled for test overlay, runtime/DNS still gated | #1545 reconciled M2 test mTLS desired-state after AutoEnroll smoke; #1550 aligned endpoint-admin test digest to live `sha256:6316261...`. Durable internal AD DNS and cert-auth command lifecycle are still separate gates |
+| M2 acceptance boundary | 🟡 auto-enroll + heartbeat live, command/GPO rollout open | AutoEnroll path and tokenless mTLS heartbeat are live-proven on one domain machine. Agent still logs command lifecycle deferred to #151 follow-up; 5-PC GPO, 24h soak, 50/800 rollout remain separate gates |
 
 **Boundary**: #1359/#1376 are no longer merely DNS/edge blocked for test
-AutoEnroll; a real tokenless AutoEnroll success exists. Do **not** claim 5-PC
-GPO readiness, 50/800 rollout readiness, prod `mtls.ai.acik.com` activation, or
-mTLS-continuous heartbeat/command channel from this evidence alone.
+AutoEnroll/heartbeat; a real tokenless AutoEnroll success and backend heartbeat
+exist. Do **not** claim 5-PC GPO readiness, 50/800 rollout readiness, prod
+`mtls.ai.acik.com` activation, durable internal DNS readiness, or cert-auth
+command/result lifecycle from this evidence alone.
 
 ## Live Delta — Faz 22.5 wave-gate runbooks hardened + wave-preflight runtime-proven + M4 LIVE (2026-06-13, Codex 019ebf9b/019ebfbb/019ebff3)
 
