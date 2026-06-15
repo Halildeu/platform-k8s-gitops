@@ -1,5 +1,31 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 M2 durable AD DNS preflight blocked on DC DNS mutation rights (2026-06-15, Codex #1569)
+
+**Session milestone**: M2 durable no-hosts path için yeni bounded gate
+`platform-k8s-gitops#1569` açıldı ve Project #2 alanları dolduruldu
+(`Status=In Progress` during execution, then `Blocked` after DC DNS mutation
+access denial; `Faz=Faz 22`, `Track=ops`, `Priority=P0`, `Kind=gate`).
+Existing reverse SSH path üzerinden `ERP-MOBIL` host'una
+`acik\ca.setup` olarak erişildi ve read-only preflight koşuldu. Kanıt:
+[2026-06-15-m2-durable-dns-preflight.md](../faz-22-evidence/2026-06-15-m2-durable-dns-preflight.md).
+
+| Alan | Durum (2026-06-15) | Kanıt / sınır |
+|---|---|---|
+| Windows/domain access | 🟢 REACHABLE | Reverse SSH path çalışıyor: `staging-sw -> 127.0.0.1:22022 -> ERP-MOBIL:22`; Windows identity `acik\ca.setup`. `ERP-MOBIL` domain-joined (`acik.local`), DC discovery `ACIKDC01.acik.local` / `10.9.10.10`, secure channel `NERR_Success`. |
+| Hosts-file state | 🟢 NO SHIM | `C:\Windows\System32\drivers\etc\hosts` içinde `mtls.testai.acik.com`, `mtls.ai.acik.com`, `TEMP-M2-SMOKE` veya `10.9.10.53` satırı yok. Bu preflight gerçek no-hosts durumunu ölçüyor. |
+| AD DNS current state | 🔴 BLOCKED NAME | DNS client `Ethernet0` server `10.9.10.10`. `testai.acik.com` AD DNS üzerinden `10.9.10.53` döndürüyor; `mtls.testai.acik.com` default DNS ve explicit `-Server 10.9.10.10` ile resolve olmuyor. |
+| Edge reachability | 🟢 EDGE TCP REACHABLE | `Test-NetConnection 10.9.10.53 -Port 443` succeeds from `ERP-MOBIL`; `Test-NetConnection mtls.testai.acik.com -Port 443` name resolution failure yüzünden fails. |
+| Agent durable failure signal | 🔴 CONFIRMED | Existing EndpointAgent logları temporary hosts shim kaldırıldıktan sonra tekrar eden `lookup mtls.testai.acik.com: no such host` hatasını gösteriyor. Önceki tokenless heartbeat ve command/result proof'ları temp route'a bağlıydı. |
+| Autonomous DNS mutation | 🔴 ACCESS BLOCKED | `DnsServer` module + `RSAT-DNS-Server` + `dnscmd.exe` mevcut; `whoami /groups` Domain Admins/Enterprise Admins/High Mandatory gösteriyor. Buna rağmen `Get-DnsServerZone -ComputerName 10.9.10.10`, `dnscmd 10.9.10.10 /enumzones`, `dnscmd ACIKDC01.acik.local /enumzones` ve remote `schtasks` query `ERROR_ACCESS_DENIED` / `Access is denied` döndürdü. |
+| Required narrow fix | ⏳ OPERATOR/ACL GATE | AD DNS'te en dar kalıcı kayıt gerekiyor: mevcut `testai.acik.com` zone içinde `mtls A 10.9.10.53`, yoksa exact zone `mtls.testai.acik.com` apex A `10.9.10.53`. Bu oturum DC DNS mutation yapamadı; service continuity over durable DNS bu kayıt sonrası tekrar koşulmalı. |
+
+**Boundary**: This proves the current durable DNS blocker and the autonomous
+access limit. It does **not** prove service restart continuity over durable
+DNS, OS reboot continuity, signed MSI/GPO deployment, 5-PC pilot, 24h soak,
+50/800 staged rollout, or prod `mtls.ai.acik.com`. #1359/#1376 remain open
+and blocked; #1569 carries the bounded DNS/service subgate evidence.
+
 ## Live Delta — Faz 22.5 M2 service-mode continuity smoke proven; dry-run CNG crash split to agent backlog (2026-06-15, Codex #1567/#165)
 
 **Session milestone**: M2 tokenless mTLS path için kalan agent-doable
