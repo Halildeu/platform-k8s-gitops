@@ -303,7 +303,7 @@ install/uninstall kanıtlarını supersede etmez.
 | **M2 Backend mTLS Auto-enroll** | Machine cert doğrulayan `POST /endpoint-enrollments/auto`, AD computer identity binding, audit/revoke semantics | `platform-backend` | **BOUNDED LIVE / broader gates Blocked** | `mtls.testai.acik.com` test edge/backend mTLS, no-cert fail-closed, valid ERP-MOBIL machine cert AutoEnroll HTTP 201, DB/audit cert identity, #155 tokenless heartbeat rows, #157 cert-auth command/result smoke (`COLLECT_INVENTORY` command `125d46a7-55b7-4379-a7d2-72bf7b0600cc` -> `SUCCEEDED`), and #1569 durable no-hosts AD DNS + service restart continuity proven/closed. Remaining broad rollout gates: board-authoritative M5 same-day selected-device GPO pilot, explicit no-24h risk/stabilization decision before M6 expansion, prod host and any retained negative matrix |
 | **M3 Agent `--auto-enroll`** | Agent machine cert/domain identity ile backend auto-enroll, fallback claim-code ayrımı | `platform-agent` | **BOUNDED LIVE / Needs Verify** | Domain cihazda kullanıcı token'ı olmadan service start -> enrolled -> heartbeat proven on ERP-MOBIL; #171/#v0.2.4 CNG signer fix released; current bootstrap installed/restored `EndpointAgent` as `LocalSystem` service; restart logs show `auto-enroll cert loaded` + `no command available` over durable `mtls.testai.acik.com`. Remaining: signed MSI/GPO bootstrap acceptance, OS reboot continuity, multi-device rollout |
 | **M4 Signed WiX MSI** | Authenticode signed MSI, fixed UpgradeCode, service install/upgrade/uninstall, EDR allowlist doc | `platform-agent` CI + operator signing | **2-4 iş günü** + cert gate | Local install/repair/upgrade/uninstall smoke; signature trust verified |
-| **M5 Same-day selected-device pilot** | Pilot OU'ya GPO Software Installation for domain-gpo devices; local Parallels/control + denetim evidence lanes; T0/T+15/T+60 collector monitoring | Operator + IT + gitops evidence | **aynı gün** (no-24h owner direction) | Board #1377 authoritative scope: selected device pool (`AGENTPC1`, `AGENTPC2`, local Parallels Windows, denetim PC), domain-gpo denominator frozen, tokenless enroll + heartbeat + inventory/result-submit, no manual token/ZIP for domain-gpo devices, 1 cihaz rollback + reinstall drill, post-pilot artifact states `same_day_smoke=true` and `soak_hours=0` |
+| **M5 Same-day selected-device pilot** | Pilot OU'ya GPO Software Installation for domain-gpo devices; local Parallels/control + denetim evidence lanes; T0/T+15/T+60 collector monitoring | Operator + IT + gitops evidence | **aynı gün** (no-24h owner direction) | Board #1377 authoritative scope: current minimum device set is denetim PC + local Parallels Windows; `AGENTPC1`/`AGENTPC2` are optional expansion/fallback. Domain-gpo denominator frozen separately from selected-device count; local Parallels does not count for GPO/tokenless denominator unless domain-joined + pilot GPO-scoped. Tokenless enroll + heartbeat + inventory/result-submit required for every domain-gpo denominator member; no manual token/ZIP for domain-gpo devices; 1 cihaz rollback + reinstall drill; post-pilot artifact states `same_day_smoke=true`, `soak_hours=0`, `selected_device_count`, `domain_gpo_denominator`, `local_control_count` |
 | **M6 50-PC Wave** | Ring/tag rollout, concurrency/maintenance window discipline, alerting | Operator + backend rollout controls | **2-3 iş günü** + gözlem | 50 cihazda P95 enrollment/heartbeat/command SLA raporu |
 | **M7 800-PC Rollout** | OU/ring bazlı staged rollout, rollback/uninstall path, stale-device alerting | Operator + IT | **1-2 hafta** staged | 800-PC rollout raporu; failed devices explicit queue; rollback path ready |
 
@@ -312,10 +312,13 @@ same-day smoke kapısına **aynı gün**, 50/800 staged rollout kapısına yakla
 gerçekçi görünür. AD CS/code-signing/EDR allowlist procurement hazır değilse
 bu süreye **3-10+ iş günü** operator beklemesi eklenir.
 
-**No-24h boundary (owner 2026-06-15):** M5 için 24h bekleme yapılmayacak. Bu,
-same-day pilot hızını artırır fakat 50/800 ramp öncesi risk notunu zorunlu kılar:
-M6 ya açık no-24h risk acceptance ile başlar ya da ayrı bir stabilization gate
-eklenir.
+**No-24h boundary (owner 2026-06-15):** M5 için 24h bekleme yapılmayacak.
+Follow-up owner minimum: denetim PC + local Parallels Windows bugünkü iki
+cihazlı smoke set'i için yeterlidir. Bu, two-device smoke shape'i karşılar; 2/2
+domain-gpo sonucu yalnız iki cihaz da domain-joined + pilot GPO-scoped ise
+yazılabilir. Aynı gün pilot hızını artırır fakat 50/800 ramp öncesi risk notunu
+zorunlu kılar: M6 ya açık no-24h risk acceptance ile başlar ya da ayrı bir
+stabilization gate eklenir.
 
 **2026-06-08 implementation delta:**
 

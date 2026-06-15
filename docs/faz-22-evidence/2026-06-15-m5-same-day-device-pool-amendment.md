@@ -13,13 +13,32 @@ removed the 24h wait:
 
 | Device | Role | Counts for GPO/tokenless denominator? | Notes |
 |---|---|---:|---|
-| `AGENTPC1` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Preferred primary GPO pilot device |
-| `AGENTPC2` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Prior 9-hour install discovery is historical; retest as same-day GPO path |
-| Local Parallels Windows | `local-control` | No, unless domain-joined and GPO-scoped | Installer/agent regression control and fast rollback/reinstall smoke |
-| Denetim PC | `audit` | Yes, if domain-joined and GPO-scoped | Audit/user-session evidence device |
+| Denetim PC | `audit` / `domain-gpo` if pilot-scoped | Yes, if domain-joined and GPO-scoped | Minimum current first-run device; audit/user-session evidence and first domain-gpo denominator member if scoped |
+| Local Parallels Windows | `local-control` | No, unless domain-joined and GPO-scoped | Minimum current first-run device; installer/agent regression control and rollback/reinstall smoke |
+| `AGENTPC1` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Optional expansion / fallback primary GPO pilot device |
+| `AGENTPC2` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Optional expansion / fallback; prior 9-hour install discovery is historical and must be retested if used |
 
 This supersedes the earlier 2-PC/24h kickoff wording. The original 5-PC/7d and
 the intermediate 2-PC/24h paths remain reference/history only.
+
+## 1.1 Current Minimum Rule — Denetim PC + Local Parallels
+
+Owner follow-up on 2026-06-15 sets the immediate first-run minimum to:
+
+```text
+Denetim PC + local Parallels Windows
+```
+
+This is acceptable as a two-device same-day smoke set with strict denominator
+accounting:
+
+- Denetim PC counts toward the GPO/tokenless denominator only if it is
+  domain-joined and pilot GPO-scoped.
+- Local Parallels Windows remains `local-control` and outside the GPO/tokenless
+  denominator unless it is domain-joined and pilot GPO-scoped.
+- A result with Denetim PC + local Parallels satisfies the two-device smoke
+  shape, but it must not be reported as a 2/2 domain-gpo success unless both
+  devices are domain-joined and pilot GPO-scoped.
 
 ## 2. Current Acceptance Boundary
 
@@ -36,7 +55,8 @@ attached:
   devices;
 - one-device rollback + reinstall drill evidence;
 - post-pilot artifact states `same_day_smoke=true`, `soak_hours=0`,
-  denominator, success/failure count, rollback readiness and M6 risk note.
+  `selected_device_count`, `domain_gpo_denominator`, `local_control_count`,
+  success/failure count, rollback readiness and M6 risk note.
 
 ## 3. No-24h Risk Note
 
