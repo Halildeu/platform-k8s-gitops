@@ -10,8 +10,10 @@ ile çalıştırıldı, AD CS machine cert'i seçti, cert-auth heartbeat attı,
 backend'de seed edilen non-destructive `COLLECT_INVENTORY` komutunu poll etti ve
 result submit ile `SUCCEEDED` durumuna taşıdı. Kanıt yorumları REST Issues API
 ile `platform-k8s-gitops` #1555, `platform-agent` #151 ve `platform-backend`
-#663 üzerine işlendi; ProjectV2 field mutation yapılmadı çünkü GraphQL budget o
-anda exhausted durumdaydı.
+#663 üzerine işlendi. Follow-up board truth closure: #151/#663/#1555 Project #2
+`Needs Verify`, #1359/#1376 `Blocked`, #1537/#1560 `Needs Verify` olarak
+`board-sync.sh sync-state` ile doğrulandı; #1561 manual exception report merged
+ve #1560 stale Backlog gövdesi `Needs Verify` gerçeğine hizalandı.
 
 | Alan | Durum (2026-06-15) | Kanıt / sınır |
 |---|---|---|
@@ -19,12 +21,13 @@ anda exhausted durumdaydı.
 | Backend command/result rows | 🟢 PROVEN (DB evidence) | Command `125d46a7-55b7-4379-a7d2-72bf7b0600cc`, device `a358d36d-2ade-4e1f-9f54-68a085ef44a5`, `status=SUCCEEDED`, `attempt_count=1`, `delivered_at=2026-06-15 01:22:17Z`, `completed_at=2026-06-15 01:23:21Z`, `last_error` empty; result `841575fe-8527-4978-9f4d-3c8f8d77dbf8`, `result_status=SUCCEEDED`, `claimId=87f1634b-11d3-4442-9915-a3fa082634cd`, diagnostics `backendDNSReachable=true`, `backendTLSValid=true` |
 | Cert identity binding | 🟢 PROVEN | Active machine cert binding row has `san_uri=adcomputer:2a8a00bf-420f-4741-aad3-c402eed0f74d`, subject `CN=ERP-MOBIL.acik.local`, issuer `Acik-Endpoint-CA`, thumbprint `61a7450113c0f86a91c35ffac46153db830e9f32c5f1a59db785f9c47e33650f`, `revoked_at=NULL` |
 | Edge/DNS path used for smoke | 🟡 TEMP SHIM | Windows local hosts shim mapped `mtls.testai.acik.com -> 10.9.10.53` only for smoke and was removed after evidence capture. Durable AD DNS for domain clients remains a separate gate. |
-| Board / issue truth | 🟡 issue comments updated; Project mutation deferred | REST comments: gitops #1555 `issuecomment-4703783674`, agent #151 `issuecomment-4703783710`, backend #663 `issuecomment-4703783749`. ProjectV2 status remains `Needs Verify` until the maintainer deliberately accepts the bounded smoke or splits durable DNS/admin-dispatch follow-up. |
+| Board / issue truth | 🟡 synced, not accepted | REST comments: gitops #1555 `issuecomment-4703783674`, agent #151 `issuecomment-4703783710`, backend #663 `issuecomment-4703783749`. `board-sync.sh sync-state` confirms #151/#663/#1555 `Needs Verify`, #1359/#1376 `Blocked`, #1537/#1560 `Needs Verify`. #1561 adds a manual exception report for unresolved Project #2 fields; latest audit remains `proposal_count=0`, `manual_count=168`, `applied_count=0`. |
 
 **Boundary**: This proves cert-auth heartbeat + command poll + command result
 submit on one Windows domain machine with a temporary hosts shim and a DB-seeded
-non-destructive command. It does **not** prove durable AD DNS, admin dispatch
-API, 5-PC GPO, 24h soak, 50/800 staged rollout, or prod `mtls.ai.acik.com`.
+non-destructive command. It does **not** prove durable no-hosts AD DNS,
+service-mode continuity/restart behavior, admin dispatch API, 5-PC GPO, 24h
+soak, 50/800 staged rollout, or prod `mtls.ai.acik.com`.
 Operator-bound and time-bound gates remain skipped per autonomous-mode
 instruction.
 
@@ -53,15 +56,16 @@ runtime doğrulama issue'ları `Needs Verify` durumunda tutuldu:
 | Testai deploy follow-up | 🟢 deploy + sync gates passed; E2E still open | `backend-testai-deploy` run `27516978772` completed `success`: endpoint-admin pod image verified at `sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97`, public edge chain alive returned HTTP 401, all 9 service readiness checks returned 200, and endpoint-admin 180s stability window passed; Gate 2 JWT smoke skipped because `SMOKE_AUTH_*` secrets are absent. `faz22-platform-test-sync-openfga-verify` run `27517879015` also completed `success` through ArgoCD platform-test sync + endpoint-admin OpenFGA runtime selector verify. |
 | Auth boundary | 🟢 source-enforced | Agent `NextCommandCert` / `SubmitResultCert` send no `Authorization` header; legacy bearer path still fail-closes on empty token. Backend authenticates presented machine cert via existing lifecycle binding and ignores client-supplied tenant on mTLS passthrough. |
 | Cross-AI review | 🟢 no blocking findings | Claude CLI reviewed backend #665 and agent #157 diffs; both returned `NO BLOCKING FINDINGS`. Backend review residuals were outside-diff runtime/tenant-binding concerns; agent review's helper-name style note was absorbed. |
-| Board sync / hygiene | 🟡 deterministic backfill exhausted, manual triage remains | Clean `origin/main` `board-sync.sh sync-state` verified cross-repo #151/#663/#1537 as `Needs Verify` + unclaimed. Latest read-only audit `board-hygiene-audit.py --limit 220 --only-project-roadmap --json`: `items_with_missing_fields=102`, `proposal_count=0`, `manual_count=168`; `board-sync.sh list` shows no eligible Todo issue, 10 Backlog triage items, and 10 claimless In Progress anomalies. Remaining fields must not be guessed. |
-| Runtime gate | 🟡 open | Need deployed backend/edge + cert-bearing Windows host proof for AutoEnroll -> heartbeat -> command poll -> command result over `https://mtls.testai.acik.com/api/v1/endpoint-agent`, with no bearer/HMAC fallback and backend audit/device rows showing cert-auth binding. |
+| Board sync / hygiene | 🟡 deterministic backfill exhausted, manual triage remains | Clean `origin/main` `board-sync.sh sync-state` verified cross-repo #151/#663/#1555/#1537/#1560 as `Needs Verify` + unclaimed and #1359/#1376 as `Blocked`. #1561 added `--manual-exception-report`; latest read-only audit `board-hygiene-audit.py --limit 220 --only-project-roadmap --json`: `items_with_missing_fields=102`, `proposal_count=0`, `manual_count=168`, `applied_count=0`. `board-sync.sh list` shows no eligible Todo issue, 10 Backlog triage items, and 10 claimless In Progress anomalies. Remaining fields must not be guessed. |
+| Runtime gate | 🟡 bounded proof complete; durable gates open | Superseded by the bounded Windows smoke above for AutoEnroll -> heartbeat -> command poll -> command result. Remaining gates are durable no-hosts AD DNS, service-mode continuity/restart behavior, admin dispatch API, 5-PC GPO, 24h soak, 50/800 rollout and prod `mtls.ai.acik.com`. |
 
 **Boundary**: M2 command/result lifecycle is now source-merged on both sides,
 desired-state pinned for test overlay, and testai backend deploy/sync gates have
-passed, but this is not `Done`. It does not prove tokenless live command/result
-execution from a cert-bearing Windows agent, 5-PC GPO, 24h soak, 50/800 rollout,
-or prod `mtls.ai.acik.com`. Operator-bound and time-bound gates remain skipped
-per autonomous-mode instruction.
+passed. This historical section is superseded by the bounded Windows smoke above
+for cert-bearing command/result execution. It still does not prove durable
+no-hosts AD DNS, service-mode continuity/restart behavior, 5-PC GPO, 24h soak,
+50/800 rollout, or prod `mtls.ai.acik.com`. Operator-bound and time-bound gates
+remain skipped per autonomous-mode instruction.
 
 ## Live Delta — Faz 22.5 M2 agent edge-default fix merged; Project #2 hygiene guard/backfill merged; M2 runtime gates still separate (2026-06-15, Codex #151/#1537)
 
@@ -77,16 +81,17 @@ Project #2 üzerinde uygulandı.
 | Alan | Durum (2026-06-15) | Kanıt / sınır |
 |---|---|---|
 | Agent M2 edge default | 🟢 MERGED | `platform-agent` #156 merge commit `ea4ba70`; CI: BG-EA-1, Go/Windows tests, PS5.1 installer gate, MSI lab build, SBOM, gitleaks, reproducible build all pass before merge |
-| Agent issue #151 | 🟡 Needs Verify | Project #2 status `Needs Verify`; issue evidence comment eklendi. Boundary: cert-auth command/result lifecycle backend surface olmadan agent tarafında claim edilmez |
-| Board required-field hygiene | 🟢 MERGED + APPLIED | `platform-k8s-gitops` #1552 merge commit `61fa4786`; pre-backfill `items=129`, `proposal_count=222`, `manual_count=172`; applied `75+75+72=222`; final audit `items=106`, `proposal_count=0`, `manual_count=172` |
-| Board issue #1537 | 🟡 Needs Verify | `board-sync verify` sonrası Project #2 `Needs Verify`, claim cleared. Remaining 172 manual fields are triage debt, not auto-fill candidates |
-| M2 acceptance boundary | 🟡 split | Test AutoEnroll + tokenless heartbeat already live-smoked; #1359/#1376 remain Project #2 `Blocked` for durable AD DNS/edge/prod and rollout gates; backend #655 remains `Needs Verify` for heartbeat endpoint; cert-auth command/result lifecycle remains open |
+| Agent issue #151 | 🟡 Needs Verify | Project #2 status `Needs Verify`; issue evidence comment eklendi. Later #157/#1559 bounded command/result proof exists; issue remains `Needs Verify` for deliberate acceptance or durable-gate split |
+| Board required-field hygiene | 🟢 MERGED + APPLIED | `platform-k8s-gitops` #1552 merge commit `61fa4786`; pre-backfill `items=129`, `proposal_count=222`, `manual_count=172`; applied `75+75+72=222`; follow-up #1561 added manual exception reporting and latest audit is `items_with_missing_fields=102`, `proposal_count=0`, `manual_count=168`, `applied_count=0` |
+| Board issue #1537 / #1560 | 🟡 Needs Verify | `board-sync verify/sync-state` sonrası Project #2 `Needs Verify`, claims cleared. Remaining 168 manual fields are triage debt, not auto-fill candidates; #1560 stale Backlog body was corrected to `Needs Verify` truth. |
+| M2 acceptance boundary | 🟡 split | Test AutoEnroll + tokenless heartbeat already live-smoked; bounded cert-auth command/result is now proven via #1559; #1359/#1376 remain Project #2 `Blocked` for durable no-hosts AD DNS, service-mode continuity, 5-PC/GPO/soak/wave and prod gates |
 
-**Boundary**: #156 + #1552 materially improve M2 source/board hygiene, but they do
-not prove 5-PC GPO, 24h soak, 50/800 wave rollout, prod `mtls.ai.acik.com`, or
-cert-auth command/result execution. Remaining manual Project fields must be
-triaged explicitly; no script should infer `Faz`/`Priority`/`Status` without
-deterministic evidence.
+**Boundary**: #156 + #1552 materially improved M2 source/board hygiene; #1559
+later proved bounded cert-auth command/result execution on one Windows host.
+They still do not prove durable no-hosts AD DNS, service-mode continuity/restart
+behavior, 5-PC GPO, 24h soak, 50/800 wave rollout, or prod `mtls.ai.acik.com`.
+Remaining manual Project fields must be triaged explicitly; no script should
+infer `Faz`/`Priority`/`Status` without deterministic evidence.
 
 ## Live Delta — Faz 22.5 M2 AD CS edge mTLS AutoEnroll + tokenless heartbeat live-smoked; durable DNS/GPO rollout still gated (2026-06-14, Codex #1359/#1376/#151)
 
@@ -99,8 +104,10 @@ tokenless AutoEnroll **HTTP 201** live smoke geçti. Ardından `platform-agent`
 #155 (`836d232`) Windows certstore crash fix artifact'i ERP-MOBIL'de
 `--auto-enroll` ile çalıştırıldı ve backend DB'de tokenless mTLS heartbeat
 satırları oluştu. Bu M2 auto-enroll + heartbeat subgate'ini önemli ölçüde
-açar, fakat durable AD DNS, cert-auth command/result lifecycle, 5-PC/GPO
-rollout, 24h soak ve 50/800 dalgaları bu kanıtla otomatik kapanmaz.
+açar, fakat durable AD DNS, 5-PC/GPO rollout, 24h soak ve 50/800 dalgaları bu
+kanıtla otomatik kapanmaz. Cert-auth command/result lifecycle sonradan #1559
+ile bounded tek-makine smoke olarak kanıtlandı; durable service-mode/rollout
+kanıtı ayrı kalır.
 
 | Alan | Durum (2026-06-14) | Kanıt / sınır |
 |---|---|---|
@@ -114,7 +121,7 @@ rollout, 24h soak ve 50/800 dalgaları bu kanıtla otomatik kapanmaz.
 | DB/audit | 🟢 Fixed tenant + cert identity proven | `endpoint_devices.tenant_id/org_id = 00000000-0000-0000-0000-000000000001` despite forged header; `endpoint_machine_certs` row stored SAN/objectGUID/thumbprint; audit `MACHINE_CERT_AUTO_ENROLL_SUCCESS` with `performed_by_subject=machine-cert:adcomputer:...` |
 | Agent tokenless heartbeat | 🟢 live-smoked on ERP-MOBIL | `platform-agent` #155 crash fix artifact SHA256 `BDEA1B102...`; backend `endpoint_devices` row `a358d36d-2ade-4e1f-9f54-68a085ef44a5` is `ONLINE`; latest DB heartbeat `2026-06-14 23:05:06.603163+00`, `agent_version=0.1.0-ci.355.g836d232`, `hostname=ERP-MOBIL`, `osType=WINDOWS` |
 | GitOps config | 🟡 reconciled for test overlay, runtime/DNS still gated | #1545 reconciled M2 test mTLS desired-state after AutoEnroll smoke; #1550 aligned endpoint-admin test digest to live `sha256:6316261...`. Durable internal AD DNS and cert-auth command lifecycle are still separate gates |
-| M2 acceptance boundary | 🟡 auto-enroll + heartbeat live, command/GPO rollout open | AutoEnroll path and tokenless mTLS heartbeat are live-proven on one domain machine. Agent still logs command lifecycle deferred to #151 follow-up; 5-PC GPO, 24h soak, 50/800 rollout remain separate gates |
+| M2 acceptance boundary | 🟡 auto-enroll + heartbeat live, rollout open | AutoEnroll path and tokenless mTLS heartbeat are live-proven on one domain machine. At the time of this entry command lifecycle was deferred to #151; #1559 later proved bounded command/result. 5-PC GPO, 24h soak and 50/800 rollout remain separate gates |
 
 **Boundary**: #1359/#1376 are no longer merely DNS/edge blocked for test
 AutoEnroll/heartbeat; a real tokenless AutoEnroll success and backend heartbeat
