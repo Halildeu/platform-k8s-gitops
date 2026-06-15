@@ -331,16 +331,17 @@ bu süreye **3-10+ iş günü** operator beklemesi eklenir.
   now requires this URL and rejects stale `/api/v1/endpoint-admin` in both
   install and bootstrap scripts. Main workflow run `27144437218` succeeded
   across Linux build/package, lab signing and Windows Go test.
-- Canonical test artifact endpoint refreshed from PR #107 output:
-  `https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/EndpointAgent.zip`
-  SHA256 `9dcf6c2cab5a7dd1fef16a230f065540e1f2d639e0031038e3fbd8d0a9d26029`;
-  standalone `bootstrap-package.ps1` SHA256
-  `7ac13aad5c910a74c59862dfc7faafc3c88187c541b9b5f7af64172427335859`.
-  Public HTTPS verification confirmed standalone `bootstrap-package.ps1` and
-  ZIP-contained `install.ps1` / `bootstrap-package.ps1` carry UTF-8 BOM,
-  contain `/api/v1/endpoint-agent` and do not contain the stale
-  `/api/v1/endpoint-admin` AutoEnroll base. ZIP-internal `SHA256SUMS` verified
-  all package files.
+- Canonical test artifact endpoint refreshed again after artifact-host v0.2.3
+  promotion: `https://testai.acik.com/artifacts/endpoint-agent/current/`
+  serves the live pilot pointer, with immutable equivalent under
+  `/artifacts/endpoint-agent/v0.2.3/`. Current `EndpointAgent.zip` SHA256 is
+  `e03618da2c6afe06ef5d674a759ea3a43614cdac7f16c27aaaabb9d05ba51b14`;
+  standalone `bootstrap-package.ps1` SHA256 is
+  `fa11ded2ad2e81587f6de1adc323b81f852918021872fdda27376a176432718a`.
+  The older `/0.1.0-dev/` path is stale and returns 404 on the live artifact
+  host. Public/internal HTTPS verification confirmed `current/` and `v0.2.3/`
+  `bootstrap-package.ps1`, `EndpointAgent.zip`, `EndpointAgent.zip.sha256`,
+  `SHA256SUMS`, and `release-manifest.json` return HTTP 200.
 - `platform-backend` PR #511 MERGED: rejected result submissions no longer
   leave commands silently locked; backend marks command `FAILED`, clears claim
   lock and stores bounded/redacted `RESULT_REJECTED` last-error without
