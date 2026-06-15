@@ -725,6 +725,18 @@ guard'i:
 bash scripts/test/board-hygiene-audit.sh
 ```
 
+Scheduled visibility surface:
+
+**`.github/workflows/board-hygiene-audit.yml`** — daily schedule +
+`workflow_dispatch`. Default run is read-only: it executes
+`scripts/board-hygiene-audit.py --json --manual-exception-report ...`, writes a
+GitHub job summary, and uploads `audit.json` + manual exception markdown as an
+artifact. If Project GraphQL budget is exhausted, scheduled read-only runs skip
+with an explicit summary instead of burning retries; manual `apply=true` fails
+closed when budget is insufficient. `apply=true` is bounded by
+`max_mutations` and only applies deterministic proposals; manual fields stay
+manual and must not be guessed.
+
 Issue-scoped drain:
 
 ```bash

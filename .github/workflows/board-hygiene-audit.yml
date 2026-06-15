@@ -1,0 +1,176 @@
+name: Board — required-field hygiene audit
+
+# Project #2 required-field drift visibility. Read-only by default; manual
+# dispatch can apply deterministic proposals in a bounded batch.
+
+on:
+  schedule:
+    - cron: '43 02 * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Apply deterministic field proposals'
+        type: boolean
+        default: false
+      hydrate_issues:
+        description: 'Fetch issue labels/state for richer proposals'
+        type: boolean
+        default: false
+      strict:
+        description: 'Fail when manual triage fields remain'
+        type: boolean
+        default: false
+      limit:
+        description: 'Project item read limit, must be >= 200'
+        type: string
+        default: '1000'
+      max_mutations:
+        description: 'Max deterministic Project mutations when apply=true'
+        type: string
+        default: '75'
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: GraphQL budget preflight
+        id: budget
+        env:
+          GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT }}
+          APPLY: ${{ inputs.apply || 'false' }}
+          MAX_MUTATIONS: ${{ inputs.max_mutations || '75' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+            echo "reason=ADD_TO_PROJECT_PAT missing" >>"$GITHUB_OUTPUT"
+            {
+              echo "## Board hygiene audit"
+              echo ""
+              echo "Skipped: ADD_TO_PROJECT_PAT is not configured."
+            } >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          raw="$(gh api rate_limit --jq '.resources.graphql')"
+          remaining="$(printf '%s' "$raw" | jq -r '.remaining // 0')"
+          reset="$(printf '%s' "$raw" | jq -r '.reset // 0')"
+          echo "graphql_remaining=$remaining" >>"$GITHUB_OUTPUT"
+          echo "graphql_reset=$reset" >>"$GITHUB_OUTPUT"
+
+          min_required=2
+          if [ "${APPLY}" = "true" ]; then
+            if ! [[ "$MAX_MUTATIONS" =~ ^[0-9]+$ ]]; then
+              echo "max_mutations must be an integer" >&2
+              exit 2
+            fi
+            min_required=$((MAX_MUTATIONS + 50))
+          fi
+
+          if [ "$remaining" -lt "$min_required" ]; then
+            if [ "${APPLY}" = "true" ]; then
+              echo "GraphQL budget too low for apply: remaining=$remaining min_required=$min_required" >&2
+              exit 1
+            fi
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+            echo "reason=GraphQL budget too low: remaining=$remaining min_required=$min_required reset=$reset" >>"$GITHUB_OUTPUT"
+            {
+              echo "## Board hygiene audit"
+              echo ""
+              echo "Skipped: GraphQL budget too low for read-only Project audit."
+              echo ""
+              echo "- remaining: \`$remaining\`"
+              echo "- reset epoch: \`$reset\`"
+            } >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "skip=false" >>"$GITHUB_OUTPUT"
+
+      - name: Run board hygiene audit
+        if: steps.budget.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT }}
+          APPLY: ${{ inputs.apply || 'false' }}
+          HYDRATE_ISSUES: ${{ inputs.hydrate_issues || 'false' }}
+          STRICT: ${{ inputs.strict || 'false' }}
+          LIMIT: ${{ inputs.limit || '1000' }}
+          MAX_MUTATIONS: ${{ inputs.max_mutations || '75' }}
+        run: |
+          set -euo pipefail
+
+          if ! [[ "$LIMIT" =~ ^[0-9]+$ ]] || [ "$LIMIT" -lt 200 ]; then
+            echo "limit must be an integer >= 200" >&2
+            exit 2
+          fi
+          if ! [[ "$MAX_MUTATIONS" =~ ^[0-9]+$ ]]; then
+            echo "max_mutations must be an integer" >&2
+            exit 2
+          fi
+
+          mkdir -p board-hygiene-report
+
+          args=(
+            --limit "$LIMIT"
+            --json
+            --manual-exception-report board-hygiene-report/manual-exceptions.md
+          )
+          if [ "$APPLY" = "true" ]; then
+            args+=(--apply --max-mutations "$MAX_MUTATIONS")
+          fi
+          if [ "$HYDRATE_ISSUES" = "true" ]; then
+            args+=(--hydrate-issues)
+          fi
+          if [ "$STRICT" = "true" ]; then
+            args+=(--strict)
+          fi
+
+          python3 scripts/board-hygiene-audit.py "${args[@]}" \
+            > board-hygiene-report/audit.json
+
+      - name: Summarize board hygiene audit
+        if: always()
+        run: |
+          set -euo pipefail
+
+          if [ "${{ steps.budget.outputs.skip }}" = "true" ]; then
+            exit 0
+          fi
+          if [ ! -f board-hygiene-report/audit.json ]; then
+            echo "No audit report generated." >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          items="$(jq -r '.items_with_missing_fields' board-hygiene-report/audit.json)"
+          proposals="$(jq -r '.proposal_count' board-hygiene-report/audit.json)"
+          manual="$(jq -r '.manual_count' board-hygiene-report/audit.json)"
+          applied="$(jq -r '.applied_count' board-hygiene-report/audit.json)"
+
+          {
+            echo "## Board hygiene audit"
+            echo ""
+            echo "| Metric | Count |"
+            echo "|---|---:|"
+            echo "| Items with missing fields | $items |"
+            echo "| Deterministic proposals | $proposals |"
+            echo "| Manual fields | $manual |"
+            echo "| Applied mutations | $applied |"
+            echo ""
+            echo "Manual exception report is uploaded as a workflow artifact."
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload board hygiene report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: board-hygiene-report
+          path: board-hygiene-report
+          if-no-files-found: ignore
