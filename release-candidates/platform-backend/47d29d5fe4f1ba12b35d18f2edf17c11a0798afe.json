@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-backend",
+  "service": "endpoint-admin-service",
+  "git_sha": "47d29d5fe4f1ba12b35d18f2edf17c11a0798afe",
+  "git_short_sha": "47d29d5f",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-backend-endpoint-admin-service",
+    "digest": "sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97",
+    "tag": "sha-47d29d5",
+    "push_run_id": null,
+    "pushed_at": "2026-06-15T00:23:22Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": "2026-06-15T01:33:47Z",
+      "promoted_by_pr": 1559,
+      "argocd_revision": "8a19159d3d3db7cf773e81fb4b84606e01f81e47",
+      "smoke_evidence": {
+        "d29_up": {
+          "status": "GREEN",
+          "checked_at": "2026-06-15T01:33:47Z",
+          "details": "platform-k8s-gitops #1559 recorded testai M2 evidence; backend-testai deploy verified endpoint-admin pod imageID sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97, all service readiness checks returned 200, and 180s endpoint-admin stability window passed."
+        },
+        "d29_functional": {
+          "status": "GREEN",
+          "checked_at": "2026-06-15T01:33:47Z",
+          "endpoints": [
+            "/api/v1/endpoint-agent/endpoint-enrollments/auto",
+            "/api/v1/endpoint-agent/heartbeat",
+            "/api/v1/endpoint-agent/commands/poll",
+            "/api/v1/endpoint-agent/commands/{commandId}/result"
+          ],
+          "details": "platform-backend #665 added the M2-C cert-auth command/result lifecycle; gitops #1559 recorded M2 cert command smoke evidence on the testai deployment."
+        },
+        "d29_zanzibar": {
+          "status": "GREEN",
+          "checked_at": "2026-06-15T01:33:47Z",
+          "allow_deny_synthetic": "PASS",
+          "details": "faz22-platform-test-sync-openfga-verify run completed successfully after the test overlay pin; endpoint-admin OpenFGA runtime selector verified on testai."
+        }
+      },
+      "verified_at": "2026-06-15T01:33:47Z",
+      "candidate_pr": 1559,
+      "candidate_pr_status": "merged"
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    }
+  },
+  "metadata": {
+    "required_migrations": [
+      "endpoint-admin-service M2-C cert-auth command/result lifecycle; migrations already applied and smoke-recorded in testai evidence."
+    ],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:3e1e5852838d1ae519bffbe604787c56052d7a0d9965f8c19f590ed3fae1f3bc"
+  },
+  "audit": {
+    "created_at": "2026-06-15T21:20:00Z",
+    "last_updated_at": "2026-06-15T21:20:00Z",
+    "ci_run_url": null
+  }
+}
