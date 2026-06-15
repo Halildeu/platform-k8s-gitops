@@ -2,24 +2,28 @@
 
 ## Live Delta — Faz 22.5 M5 same-day selected-device pilot scope (2026-06-15, owner no-24h)
 
-**Owner decision**: The M5 first pilot will not wait for 24h. The current device
-pool is **AGENTPC1**, **AGENTPC2**, the local Parallels Windows device, and the
-denetim PC. This supersedes the earlier 2-PC/24h kickoff wording for #1377.
+**Owner decision**: The M5 first pilot will not wait for 24h. The current minimum
+device set is **denetim PC + local Parallels Windows**; **AGENTPC1** and
+**AGENTPC2** are optional expansion/fallback devices for this same-day gate. This
+supersedes the earlier 2-PC/24h kickoff wording for #1377.
 
 | Device | Intended role | Counts for GPO/tokenless denominator? | Current boundary |
 |---|---|---:|---|
-| `AGENTPC1` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Needs Windows/DC-side preinstall + GPO + enroll-health evidence. |
-| `AGENTPC2` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Prior 9-hour install discovery is historical; retest via same-day GPO path. |
-| Local Parallels Windows | `local-control` | No, unless joined to `acik.local` and GPO-scoped | Use for installer/agent regression control and fast rollback/reinstall smoke. |
-| Denetim PC | `audit` | Yes, if domain-joined and GPO-scoped | Use as audit/user-session evidence device. |
+| Denetim PC | `audit` / `domain-gpo` if pilot-scoped | Yes, if domain-joined and GPO-scoped | Minimum current first-run device; audit/user-session evidence and first domain-gpo denominator member if scoped. |
+| Local Parallels Windows | `local-control` | No, unless joined to `acik.local` and GPO-scoped | Minimum current first-run device; installer/agent regression control and fast rollback/reinstall smoke. |
+| `AGENTPC1` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Optional expansion/fallback; needs Windows/DC-side preinstall + GPO + enroll-health evidence if used. |
+| `AGENTPC2` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Optional expansion/fallback; prior 9-hour install discovery is historical and must be retested if used. |
 
 **Acceptance boundary**: #1377 remains `Needs Verify`. M5 no longer requires 24h
 soak for this first run; required checkpoints are T0/T+15/T+60 collector JSON,
-domain-gpo tokenless enrollment + heartbeat + inventory/result-submit evidence,
-one-device rollback/reinstall drill, and an explicit post-pilot artifact with
-`same_day_smoke=true`, `soak_hours=0`, denominator, failures, and M6 risk note.
-M6/50-PC may start only with explicit no-24h risk acceptance or a later
-stabilization gate.
+domain-gpo tokenless enrollment + heartbeat + inventory/result-submit evidence
+for every domain-gpo denominator member, one-device rollback/reinstall drill, and
+an explicit post-pilot artifact with `same_day_smoke=true`, `soak_hours=0`,
+`selected_device_count`, `domain_gpo_denominator`, `local_control_count`,
+failures, and M6 risk note. Denetim PC + local Parallels may satisfy the
+two-device smoke shape, but must not be reported as a 2/2 domain-gpo result
+unless both devices are domain-joined and pilot GPO-scoped. M6/50-PC may start
+only with explicit no-24h risk acceptance or a later stabilization gate.
 
 **Agent-doable support added**: `scripts/faz22-mass-deployment/m5-same-day-pilot-collector.ps1`
 is a read-only Windows collector for T0/T+15/T+60 evidence. It does not install,

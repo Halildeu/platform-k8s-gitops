@@ -31,6 +31,13 @@
 > **For this no-24h run, apply the scaled gate:**
 > - Selected device matrix lists all available devices and their role: `domain-gpo`, `audit`, or `local-control`.
 > - GPO/tokenless denominator counts only domain-joined GPO-capable devices. Local Parallels may be used as a control/installer/agent smoke, but it does **not** prove domain GPO deployment unless domain-joined.
+> - **Follow-up owner minimum (2026-06-15)**: for the immediate first same-day
+>   run, **Denetim PC + local Parallels Windows** is an acceptable two-device
+>   smoke set. Denetim PC counts for the GPO/tokenless denominator only if it is
+>   domain-joined and pilot GPO-scoped. Local Parallels remains `local-control`
+>   and outside the GPO/tokenless denominator unless it is also domain-joined and
+>   pilot GPO-scoped. This satisfies the two-device smoke shape, not a 2/2
+>   domain-gpo success claim.
 > - Required same-day checkpoints: **T0**, **T+15m**, **T+60m** using `m5-same-day-pilot-collector.ps1` plus `wave-preflight.ps1`.
 > - No 24h closure claim is made. The post-pilot artifact must explicitly state `soak_hours=0` / `same_day_smoke=true`.
 > - M6/50-PC expansion may proceed only with an explicit no-24h risk acceptance note, or with a later stabilization evidence gate.
@@ -77,10 +84,20 @@
 
 | Device | Role | Counts for GPO/tokenless denominator? | Notes |
 |---|---|---:|---|
-| `AGENTPC1` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Preferred primary GPO pilot device |
-| `AGENTPC2` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Prior 9-hour install discovery exists; retest as fresh same-day GPO path |
-| Local Parallels Windows | `local-control` | No, unless joined to `acik.local` and GPO-scoped | Use for installer/agent regression control and fast rollback/reinstall smoke |
-| Denetim PC | `audit` | Yes, if domain-joined and GPO-scoped | Use as audit/user-session evidence device |
+| Denetim PC | `audit` / `domain-gpo` if pilot-scoped | Yes, if domain-joined and GPO-scoped | **Minimum current first-run device**; use as audit/user-session evidence and the first domain-gpo denominator member if scoped. |
+| Local Parallels Windows | `local-control` | No, unless joined to `acik.local` and GPO-scoped | **Minimum current first-run device**; installer/agent regression control and fast rollback/reinstall smoke. |
+| `AGENTPC1` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Optional expansion / fallback primary GPO pilot device. |
+| `AGENTPC2` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Optional expansion / fallback; prior 9-hour install discovery exists but must be retested as same-day GPO path if used. |
+
+**Minimum current run rule**: Denetim PC + local Parallels Windows may satisfy
+the two-device same-day smoke gate. The post-pilot artifact must separate:
+
+- `selected_device_count=2` for the smoke shape;
+- `domain_gpo_denominator=<n>` for actual domain/GPO/tokenless accounting;
+- `local_control_count=<n>` for local Parallels/control evidence.
+
+If a **2/2 domain-gpo** result is required, local Parallels must first be
+domain-joined and pilot OU/GPO-scoped, or AGENTPC1/AGENTPC2 must be reintroduced.
 
 ### 3.1 5-PC Allocation Template (REFERENCE ONLY — superseded by §8.A)
 
@@ -350,7 +367,7 @@ mavis communication send \
 
 ### 8.A Same-day board #1377 closure gate (AUTHORITATIVE)
 
-- [ ] Selected device pool listed: `AGENTPC1`, `AGENTPC2`, local Parallels Windows, denetim PC; each has role/hostname/OU/OS/arch/HW/EDR/network
+- [ ] Selected device pool listed: current minimum is denetim PC + local Parallels Windows; AGENTPC1/AGENTPC2 are optional expansion/fallback. Each selected device has role/hostname/OU/OS/arch/HW/EDR/network.
 - [ ] Domain-gpo denominator frozen; local Parallels clearly excluded from GPO proof unless domain-joined and GPO-scoped
 - [ ] Domain-gpo devices tokenless enroll (no manual token/ZIP) + heartbeat + inventory + result-submit 200
 - [ ] preflight `wave-preflight.ps1` FAIL=0 on domain-gpo devices (preinstall + enroll-health, -RequireMachineCert -RequireSignature)
