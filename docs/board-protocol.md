@@ -709,7 +709,17 @@ python3 scripts/board-hygiene-audit.py --apply --max-mutations 75
 
 Manual alanlari otomatik uydurmak yasaktir. Backfill sonrasi beklenen saglik
 sinyali `proposal_count=0`; kalan `manual_count` triage borcudur, closure kaniti
-degildir. Offline regresyon guard'i:
+degildir. Bu durumda ajan kalan manuel borcu issue timeline'inda veya handoff'ta
+tek tek tahmin etmeden göstermek için markdown manual-exception raporu üretir:
+
+```bash
+python3 scripts/board-hygiene-audit.py \
+  --manual-exception-report /tmp/project-2-manual-exceptions.md
+```
+
+Manual-exception raporu closure degildir; yalniz `Faz`/`Priority`/`Status`
+gibi kanitla türetilemeyen alanlarin triage listesidir. Offline regresyon
+guard'i:
 
 ```bash
 bash scripts/test/board-hygiene-audit.sh

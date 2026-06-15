@@ -96,10 +96,12 @@ cat >"$WORK/issues/Halildeu__platform-agent/9999.json" <<'JSON'
 JSON
 
 JSON_OUT="$WORK/out.json"
+MANUAL_REPORT="$WORK/manual-exceptions.md"
 python3 "$ROOT/scripts/board-hygiene-audit.py" \
   --fixture "$WORK/project.json" \
   --issue-fixture-dir "$WORK/issues" \
-  --json >"$JSON_OUT"
+  --json \
+  --manual-exception-report "$MANUAL_REPORT" >"$JSON_OUT"
 
 jq -e '.items_with_missing_fields == 3' "$JSON_OUT" >/dev/null
 jq -e '.proposal_count == 7' "$JSON_OUT" >/dev/null
@@ -108,6 +110,11 @@ jq -e '.rows[] | select(.number == 151) | .proposals | map(.field + "=" + .value
 jq -e '.rows[] | select(.number == 151) | .proposals | map(.field + "=" + .value) | index("Track=agent")' "$JSON_OUT" >/dev/null
 jq -e '.rows[] | select(.number == 151) | .proposals | map(.field + "=" + .value) | index("Kind=gate")' "$JSON_OUT" >/dev/null
 jq -e '.rows[] | select(.number == 1537) | .proposals | map(.field + "=" + .value) | index("Status=In Progress")' "$JSON_OUT" >/dev/null
+
+grep -F "# Project #2 Board Hygiene Manual Exception Report" "$MANUAL_REPORT" >/dev/null
+grep -F "Manual fields requiring triage: 3" "$MANUAL_REPORT" >/dev/null
+grep -F "[#9999](https://github.com/Halildeu/platform-agent/issues/9999)" "$MANUAL_REPORT" >/dev/null
+grep -F "Status, Faz, Priority" "$MANUAL_REPORT" >/dev/null
 
 if python3 "$ROOT/scripts/board-hygiene-audit.py" \
   --fixture "$WORK/project.json" \
