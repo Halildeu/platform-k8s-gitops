@@ -161,7 +161,7 @@ Aşağıdakiler kabul edilip #1388'de imzalanmadan **hiçbir canlı session aç�
 - [ ] **Legal basis (KVKK)**: meşru menfaat / sözleşme / hukuki yükümlülük + aydınlatma metni; employee consent tek başına yetersiz (güç asimetrisi). İK + Hukuk imzalı policy + employee acknowledgment.
 - [ ] **KVKK kapsam**: m.5 işleme şartı (legal basis) + m.10 aydınlatma + m.12 veri güvenliği — session recording = kişisel veri işleme kabulü; m.6 yalnız özel-nitelikli veri varsa, m.9 yalnız sınır-ötesi aktarım varsa; ADR-0030 encryption + RBAC + access-audit reuse.
 - [ ] **Recording retention/access**: metadata 7y / raw 30-90g encrypted / sadece IT-Security-lead + Data-Controller + incident-responder; segment-erişim audit'i.
-- [ ] **Attended/unattended + break-glass policy**: pilot **attended-only**; unattended/break-glass Phase 2 (ayrı ADR).
+- [ ] **Attended/unattended + break-glass policy**: pilot **attended-only**; unattended/break-glass Phase 2 (ayrı ADR) → **[ADR-0040](./adr/0040-faz-22-6-breakglass-domain-auth-recovery.md)** drafted (PROPOSED, owner-sign-off pending §9): agent-mediated Kerberos AS-REQ relay for offline domain-auth recovery; a **separate capability plane** from the attended VIEW_ONLY pilot (D8 untouched). Realizes the anticipated Phase-2 break-glass ADR.
 - [ ] **Named pilot scope**: 2-5 IT-owned cihaz + named requester/operator/approver listesi.
 - [ ] **Capability sınıfları**: pilot için izinli set (öneri: view-only veya allowlist'li PTY; file-transfer/clipboard/elevation OFF).
 - [ ] **3rd-party OSS/relay DPA**: ADR-0036 ile transport in-house olduğundan standing relay-subprocessor yok; DPA yalnız bir Cat-3 wrap (örn. Guacamole GUI-shadowing) gerçekten devreye alınırsa gerekir (o noktada ayrı ADR + DPA review).
@@ -181,3 +181,18 @@ Owner directive (2026-06-11): complete 22.6 end-to-end to industry-standard (PAM
 - **Faz E — acceptance:** negative-test LIVE evidence + red-team drill report + D29-EA → first 2–5 device attended pilot (owner go).
 
 Each phase is disabled-by-default until E; no live session before the §11/D10 expanded gate.
+
+### 9.5 Data-plane phasing + agent-completable status (2026-06-15, code-verified)
+
+The bridge wire (`remote_bridge.proto`) is **FROZEN + backend-owned** (shadow wire spec `endpoint-admin-service/docs/remote-bridge-wire-contract.md`); the agent copy is **vendored (T-3)** — wire changes originate backend-side + re-vendor, never agent-side. The `Data` stream + `DataFrame`/`ErrorFrame` are declared (T-2a) but **inert**. Phasing:
+
+| Phase | Scope | Status |
+|---|---|---|
+| T-1 / T-2a / T-3 | domain records · wire contract+codegen+adapters · vendored agent proto | ✅ done |
+| **Control-plane runtime** | agent harness: dial/AgentHello/heartbeat-watchdog/**KILL-priority** (KILL on CONTROL, structurally never delayed by DATA — agent never opens DATA)/seqGuard/backoff; `data_frame`-while-idle → **fail-closed defect-close** + `ErrorFrame("unsupported-payload-in-idle")` + counter (observable, not silent) | ✅ done + tested (15 harness tests) |
+| Authority/approval (B1/C/D control-side) | cert-bound token · token-lifecycle · dual-control approval→grant→PERMIT · operator-JWT-auth · duress | ✅ done (see [[project-faz-22-6-t4-bridge-wiring]]) |
+| **T-2b DATA-stream runtime** (agent-side) | opening the DATA stream + real backpressure/frame-flow | ⏳ **inseparable from a real payload producer → effectively gated with T-4**; a standalone fail-closed frame-guard now would be unwired/speculative (3-AI: No-Fake-Work, defer) |
+| **T-4 real screen/PTY capture** + Faz D VIEW_ONLY exfil controls (mask/watermark/indicator/local-abort) | the actual data-plane payload | 🔒 **owner-pilot-gated (ADR-0034 §13/D10)** |
+| Faz E LIVE acceptance | negative-test LIVE + red-team + D29-EA → attended pilot | 🔒 **owner-go** |
+
+**Agent-completable 22.6 RUNTIME + governance-doc surface = saturated** (control-plane runtime + authority/approval + ADR-0033/0034/0036/0040 + operator runbooks `RB-22-6-*`) — phase-limited claim: NOT "all of 22.6 done". The remainder is **owner/operator-gated pilot runtime + live evidence chain** (ADR-0040 §9 sign-off · #1388 §9.2 owner decisions [signed 2026-06-11] · T-4 capture + Faz D exfil controls · broker-side T-2b-live · Faz E attended pilot + physical PCs). Building further agent DATA-plane code before the T-4 owner gate = speculative (Codex `019ecbc5` AGREE: hardening/runbook, not new data-plane code).

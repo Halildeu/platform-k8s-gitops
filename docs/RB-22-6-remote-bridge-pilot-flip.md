@@ -14,6 +14,11 @@
 > [ADR-0038](adr/0038-faz-22-6-remote-access-transport.md) ·
 > [acceptance package §11.4 kanıt haritası](faz-22-6-1388-acceptance-package.md) ·
 > wire contract: platform-backend `endpoint-admin-service/docs/remote-bridge-wire-contract.md`
+>
+> **Kapsam — bu runbook yalnız ATTENDED VIEW_ONLY pilotudur (D8).** Unattended/break-glass
+> **offline domain-auth recovery** ayrı bir capability düzlemidir → **[ADR-0040](adr/0040-faz-22-6-breakglass-domain-auth-recovery.md)**
+> (PROPOSED, ayrı owner-sign-off §9; agent-mediated Kerberos AS-REQ relay). Bu runbook'la
+> AÇILMAZ; kendi acceptance gate'i (ADR-0040 BG-D5) vardır.
 
 ---
 
