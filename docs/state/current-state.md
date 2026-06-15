@@ -1,5 +1,26 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.3B TPM/Vault enrollment source stack advanced; AD CS M2 remains primary rollout gate (2026-06-15)
+
+**Session milestone**: adjacent repo truth check shows the parallel TPM
+attestation + Vault PKI enrollment path (ADR-0039 / Faz 22.3B) materially
+advanced on source, while the AD CS M2 rollout gate remains separate. This path
+is disabled-by-default, additive, and does **not** replace the domain AD CS/GPO
+path tracked by #1359/#1376.
+
+| Alan | Durum (2026-06-15) | Kanıt / sınır |
+|---|---|---|
+| Agent TPM enrollment gate-3 | 🟢 SOURCE-MERGED | `platform-agent` PRs #158-#163 merged: TPM2 wire layer (`388054e8`), TPMT_PUBLIC marshal (`7b9a8ccd`), credential activation crypto (`c5575189`), TPMS_ATTEST/signature (`585764ae`), `TPMDevice` + mock (`5c72f106`), 4-leg HTTP orchestrator (`33551940`). `internal/autoenroll/` AD CS path is explicitly untouched in these PRs. |
+| Backend TPM/Vault gate-4 | 🟢 SOURCE-MERGED | `platform-backend` PRs #651/#659/#660/#661/#662/#664 merged: verifier foundation (`ddc7bdde`), PCR/CSR policy (`f24a6a3a`), Vault PKI issuance client (`a2d3a0ec`), `/nonce` (`749a11dd`), `/attest` + Vault issuance (`6c7e8151`), issuer-SPKI channel resolver core (`60784f0b`). |
+| Runtime / rollout | 🟡 not proven | No claim of live TPM enrollment, Vault PKI runtime enablement, mTLS cert acceptance, GPO rollout, or prod activation. Gate-4c resolver wiring is still described as disabled-by-default / no runtime effect until its follow-up wiring. |
+| Board hygiene | 🔴 tracking gap observed | REST issue/PR search shows the 22.3B source PRs are merged but several carry no `project-roadmap`/Faz/Priority labels. ProjectV2 GraphQL reads are currently exhausted (`remaining=0`, reset `2026-06-15 05:32:41 +03`), so Project #2 reconciliation must be resumed after reset; do not infer board completeness from these PR merges. |
+
+**Boundary**: Faz 22.3B is a parallel hardware-rooted enrollment channel for
+TPM-capable/domain-less segments. The current production-standard path for
+domain Windows rollout remains AD CS + signed MSI + GPO under #1359/#1376 and
+M4/M5/M6/M7 gates. 22.3B source progress improves future optional enrollment
+architecture but does not satisfy M2, M3, M4, GPO pilot, soak, or wave rollout.
+
 ## Live Delta — Faz 22.5 M2 cert-auth command/result Windows smoke proven; durable DNS/GPO rollout still gated (2026-06-15, Codex #151/#663/#1555)
 
 **Session milestone**: M2 tokenless mTLS lifecycle'da agent-doable command/result
