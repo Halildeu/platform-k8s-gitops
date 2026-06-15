@@ -92,6 +92,67 @@ What this does:
 operator kubeconfig context valid. **Continue threshold**: command exits 0;
 secret created.
 
+### Step 2B — CLI-less internal bridge + cluster Secret path
+
+Use this path when the staging host does not have the `argocd` CLI or when
+`argocd cluster add` cannot choose an ArgoCD-reachable test API address.
+
+Observed drift on 2026-06-15 (#1577):
+
+- staging host has `kubectl`/Docker and both kubeconfig contexts, but no
+  `argocd` CLI;
+- `k3d-test` API is exposed on host loopback `https://127.0.0.1:7443`;
+- prod ArgoCD pods cannot reach host-loopback or the separate
+  `platform-test-net` Docker bridge directly;
+- public exposure of the test API is not acceptable.
+
+The bounded alternative is an internal-only `socat` bridge container connected
+to both Docker bridges, with **no published host ports**:
+
+```text
+k3d-prod ArgoCD pod
+  -> platform-prod-net bridge IP of platform-argocd-test-api-bridge:6443
+  -> socat TCP proxy
+  -> k3d-test-serverlb:6443 on platform-test-net
+```
+
+The ArgoCD cluster Secret uses:
+
+- `server=https://<bridge-prod-net-ip>:6443`
+- `tlsClientConfig.serverName=k3d-test-serverlb`
+- `caData` from the `k3d-test` service-account token Secret
+- bearer token from the `kube-system/argocd-manager-token` Secret
+
+Scripted path:
+
+```bash
+# Preview, no mutation:
+bash bootstrap/register-test-cluster-argocd-secret.sh
+
+# Apply live mutation:
+APPLY=1 bash bootstrap/register-test-cluster-argocd-secret.sh
+```
+
+Rollback:
+
+```bash
+# Remove ArgoCD cluster secret + internal Docker bridge.
+APPLY=1 ROLLBACK=1 bash bootstrap/register-test-cluster-argocd-secret.sh
+
+# Also remove test-cluster RBAC/token if the registration should be fully
+# dismantled:
+APPLY=1 ROLLBACK=1 ROLLBACK_TEST_RBAC=1 \
+  bash bootstrap/register-test-cluster-argocd-secret.sh
+```
+
+Security boundary:
+
+- The script does not print bearer token material.
+- The bridge has no host-published port and is reachable only from Docker
+  networks already present on the staging host.
+- This is still a live state change: Docker bridge container in host state,
+  `kube-system` SA/CRB/Secret in `k3d-test`, and cluster Secret in prod ArgoCD.
+
 ## Step 3 — Verify cluster credential
 
 ```bash
@@ -100,6 +161,19 @@ ssh halil@staging-sw 'argocd cluster list 2>&1' | grep test-cluster
 
 Expected: row containing `test-cluster` + the k3d-test API server URL +
 `Successful` connection state.
+
+For the CLI-less path, verify the cluster Secret exists:
+
+```bash
+ssh halil@staging-sw '
+  kubectl --context k3d-prod -n argocd get secret cluster-test-cluster \
+    -o jsonpath="{.data.name}{\"\n\"}{.data.server}{\"\n\"}"
+'
+```
+
+Then verify the `platform-test` Application condition no longer reports
+`unable to find destination server: there are no clusters with this name:
+test-cluster`.
 
 ## Step 4 — Verify `platform-test` Application transitions to Synced/Healthy
 
