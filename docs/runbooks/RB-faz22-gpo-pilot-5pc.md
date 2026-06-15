@@ -1,10 +1,10 @@
-# RB Faz 22.5 M5 — 5-PC GPO pilot diversity matrix + soak gate
+# RB Faz 22.5 M5 — 2-PC GPO pilot diversity matrix + soak gate
 
 > **Status**: SOURCE DRAFT
 > **Runtime mutation**: NONE
-> **Operator gate**: REQUIRED (5 PC IT-owned hardware + domain admin pilot OU + EDR allowlist + WDAC/AppLocker code-signing + 7d soak monitoring)
+> **Operator gate**: REQUIRED (2 domain-joined pilot devices + domain admin pilot OU/GPO + EDR allowlist + WDAC/AppLocker code-signing + 24h soak monitoring)
 > **Closure claim**: NO (source-side draft; M5 acceptance evidence operator collects)
-> **Tracked by**: [#1377](https://github.com/Halildeu/platform-k8s-gitops/issues/1377) Faz 22.5 M5 — 5-PC GPO pilot diversity matrix + soak gate
+> **Tracked by**: [#1377](https://github.com/Halildeu/platform-k8s-gitops/issues/1377) Faz 22.5 M5 — 2-PC GPO pilot diversity matrix + soak gate
 > **Evidence template**: §6 evidence pack layout (operator + agent collectors)
 > **Codex thread**: `019ea922` plan-time AGREE (pattern from RB-faz22-non-domain-windows-pilot.md + RB-faz22.3-ad-cs-setup.md)
 > **Prerequisite**: M2 #1376 AD CS / edge mTLS finalization (source LIVE + operator-gate closure)
@@ -12,9 +12,9 @@
 
 ---
 
-> ## ⚠ SCOPE AMENDMENT — owner 2026-06-10 (board [#1377](https://github.com/Halildeu/platform-k8s-gitops/issues/1377) authoritative)
+> ## SCOPE AMENDMENT — owner 2026-06-10, reaffirmed 2026-06-15 (board [#1377](https://github.com/Halildeu/platform-k8s-gitops/issues/1377) authoritative)
 >
-> Owner reduced the pilot **5-PC → 2-PC** and the soak minimum **7d → 24h**. **Board #1377 acceptance is authoritative** over the 5-PC tables below (which remain the original design + the full diversity-dimension reference).
+> Owner reduced the pilot **5-PC -> 2-PC** and the soak minimum **7d -> 24h**. On 2026-06-15 owner reaffirmed that 2 PCs are sufficient for the first GPO pilot. **Board #1377 acceptance is authoritative** over the 5-PC tables below (which remain the original design + the full diversity-dimension reference).
 >
 > **For the 2-PC run, apply the scaled gate:**
 > - **2 devices** listed (hostname/OU/OS/arch/HW/EDR/network); x64 coverage.
@@ -26,7 +26,7 @@
 
 ## 1. Scope
 
-**M5** = İlk 5-PC domain-joined pilot (post M2 AD CS LIVE). Hedef: GPO Software Installation kanalı ile 5 fiziksel cihaza endpoint-agent MSI deploy + enrollment + 7d soak no-regress.
+**M5** = İlk 2-PC domain-joined pilot (post M2 AD CS bounded-live evidence). Hedef: GPO Software Installation kanalı ile 2 cihaza endpoint-agent MSI deploy + tokenless enrollment + 24h soak no-regress.
 
 **Source-side scope (this runbook)**:
 - Diversity matrix design (donanım + OS + subnet kombinasyon)
@@ -34,18 +34,18 @@
 - Wave abort formula + threshold (failure_rate, heartbeat_loss, queue_depth)
 - Sanitized evidence pack format (gpresult + Event ID Application Installer + EndpointAgent heartbeat + COLLECT_INVENTORY post-install)
 - Mavis ops handoff format (board issue cross-link + on-call rotation)
-- 7d soak monitoring runbook (PromQL queries + Grafana dashboard pointers)
+- 24h soak monitoring runbook (PromQL queries + Grafana dashboard pointers)
 
 **Out-of-scope** (operator-bound):
-- IT pilot PC allocation (5 PC asset tag + AD object + assigned IT contact)
+- IT pilot PC allocation (2 PC asset tag + AD object + assigned IT contact)
 - Domain admin pilot OU create + GPO link
 - EDR allowlist (Defender/CrowdStrike/Sentinel whitelist)
 - WDAC/AppLocker code-signing policy build
-- Physical 7d soak execution + monitoring + abort decision
+- Physical 24h soak execution + monitoring + abort decision
 
 ## 2. Hard Constraints / Non-Goals
 
-- **No M5 closure without 5/5 PC enrollment + 5/5 GPO Software Installation LIVE + 7d soak no-regress** — partial PASS YASAK (Codex No Fake Work HARD RULE)
+- **No M5 closure without 2/2 PC enrollment + 2/2 GPO Software Installation LIVE + 24h soak no-regress + 1-device rollback/reinstall drill** — partial PASS YASAK (Codex No Fake Work HARD RULE)
 - **No expansion to M6 50-PC ramp without M5 PASS + Mavis ops sign-off** — gate sequencing strict (HARD RULE Tam Otonom: M6 prerequisite = M5 closure)
 - **No EDR allowlist bypass** — operator-side whitelist process zorunlu; bypass attempt YASAK
 - **No GPO Software Installation force-push without GPO settings backup** — pilot OU revert path zorunlu (rollback dependency)
