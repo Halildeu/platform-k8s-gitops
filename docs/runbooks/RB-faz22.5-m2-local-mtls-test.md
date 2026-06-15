@@ -177,7 +177,9 @@ SHARE=~/m2-win11; mkdir -p "$SHARE"
 prlctl exec "Windows 11" powershell -ExecutionPolicy Bypass -File "C:\Mac\Home\m2-win11\run-enroll.ps1"
 ```
 **Beklenen:** `actuator/health -> 200`, `positive(dev,tenantA) -> 201 enrolled`, `noeku -> 401`, `nosan -> 401`.
-**Local DNS opsiyonu:** guest `hosts` dosyasına `10.211.55.2 endpoint-agent-mtls.local` → isimle erişim 200.
+**Local DNS opsiyonu:** guest `hosts` dosyasına `10.211.55.2 mtls.local.test` → isimle erişim 200.
+Bu yalnız izole lab alias'ıdır; production/test canonical host'ları
+`mtls.testai.acik.com` ve `mtls.ai.acik.com` olarak kalır.
 PowerShell `[System.Web.HttpUtility]::UrlEncode` form-urlencoding üretir = Java `URLDecoder` ile bire bir uyumlu.
 
 ---
@@ -188,7 +190,7 @@ PowerShell `[System.Web.HttpUtility]::UrlEncode` form-urlencoding üretir = Java
 # bg servisi durdur (mvn spring-boot:run process'i), sonra:
 docker rm -f m2-pg
 # guest hosts temizliği (opsiyonel):
-prlctl exec "Windows 11" powershell -Command "(Get-Content C:\Windows\System32\drivers\etc\hosts) | Where-Object {$_ -notmatch 'endpoint-agent-mtls.local'} | Set-Content C:\Windows\System32\drivers\etc\hosts"
+prlctl exec "Windows 11" powershell -Command "(Get-Content C:\Windows\System32\drivers\etc\hosts) | Where-Object {$_ -notmatch 'mtls.local.test'} | Set-Content C:\Windows\System32\drivers\etc\hosts"
 ```
 
 ## Bu runbook NE kanıtlamaz (prod go-live için kalan)
