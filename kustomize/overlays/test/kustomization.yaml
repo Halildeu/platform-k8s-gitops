@@ -5378,9 +5378,9 @@ images:
     digest: sha256:175b3daea37601fbfd500f616ad19664d26dffec8b1db11556a3bff14ce6250e
 
   # Faz 22.5 M2 — endpoint-agent artifact host (test). Image built+pushed by
-  # platform-agent Release EXE trusted workflow for tag v0.2.4:
-  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.4 (+ sha-5319454).
-  # Serves /artifacts/endpoint-agent/v0.2.4/{bootstrap-package.ps1,EndpointAgent.zip,...}
+  # platform-agent Release EXE trusted workflow for tag v0.2.5:
+  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.5 (+ sha-da6d982).
+  # Serves /artifacts/endpoint-agent/v0.2.5/{bootstrap-package.ps1,EndpointAgent.zip,...}
   # PLUS a stable MUTABLE alias /artifacts/endpoint-agent/current/ (byte-identical,
   # nginx no-store) so the endpoint-admin UI renders a copy-paste one-command
   # install + discovers the live package hash without a per-release frontend edit
@@ -5388,15 +5388,15 @@ images:
   # is TRUSTED-INTERNAL-CA signed (osslsigncode + internal OpenSSL CA, RFC3161
   # timestamp; install.ps1 imports the internal root TOFU so Authenticode validates
   # Valid). NOT publicly trusted. Pulled with the existing ghcr-pull secret.
-  # One-version-per-image: this image REPLACES v0.2.3; old /artifacts/v0.2.3/
+  # One-version-per-image: this image REPLACES v0.2.4; old /artifacts/v0.2.4/
   # URLs 404 after rollout (durable archive = the GitHub release assets) — but
   # /current/ keeps resolving.
   - name: artifact-host
     newName: ghcr.io/halildeu/platform-agent-artifacts
-    newTag: v0.2.4
-    # D30 immutable pin — Release EXE trusted run 27551613867 (tag v0.2.4,
-    # source sha-5319454, signing_tier=trusted-internal-ca).
-    digest: sha256:f52480d300852cd0c2c398482e25f188eb8b3eda75d93aa495fa90e32a4b9592
+    newTag: v0.2.5
+    # D30 immutable pin — Release EXE trusted run 27569016476 (tag v0.2.5,
+    # source sha-da6d982, signing_tier=trusted-internal-ca).
+    digest: sha256:6d687c8b2dabc05372aafc4a44c99d0a984b45a81f4cbaea317001c1ac3e10b2
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)

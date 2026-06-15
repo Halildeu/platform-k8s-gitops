@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "repo": "platform-agent",
+  "service": "artifact-host",
+  "git_sha": "da6d9826fda624ea382596d349b56b07f69bbd70",
+  "git_short_sha": "da6d982",
+  "image": {
+    "registry": "ghcr.io",
+    "path": "halildeu/platform-agent-artifacts",
+    "digest": "sha256:6d687c8b2dabc05372aafc4a44c99d0a984b45a81f4cbaea317001c1ac3e10b2",
+    "tag": "sha-da6d982",
+    "push_run_id": 27569016476,
+    "pushed_at": "2026-06-15T18:58:34Z"
+  },
+  "promotion": {
+    "test": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    },
+    "prod": {
+      "promoted_at": null,
+      "promoted_by_pr": null,
+      "argocd_revision": null,
+      "smoke_evidence": null,
+      "verified_at": null,
+      "candidate_pr": null,
+      "candidate_pr_status": null
+    }
+  },
+  "metadata": {
+    "required_migrations": [],
+    "backward_compatible_until": null,
+    "rollback_safe": true,
+    "rollback_to_digest": "sha256:f52480d300852cd0c2c398482e25f188eb8b3eda75d93aa495fa90e32a4b9592"
+  },
+  "audit": {
+    "created_at": "2026-06-15T19:01:51Z",
+    "last_updated_at": "2026-06-15T19:01:51Z",
+    "ci_run_url": "https://github.com/Halildeu/platform-agent/actions/runs/27569016476"
+  }
+}
