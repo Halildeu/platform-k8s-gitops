@@ -1,25 +1,25 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.5 M5 same-day selected-device pilot scope (2026-06-15, owner no-24h)
+## Live Delta — Faz 22.5 M5 same-day selected-device pilot accepted (2026-06-15)
 
-**Owner decision**: The M5 first pilot will not wait for 24h. The current device
-pool is **AGENTPC1**, **AGENTPC2**, the local Parallels Windows device, and the
-denetim PC. This supersedes the earlier 2-PC/24h kickoff wording for #1377.
+**Owner decision / accepted scope**: The M5 first pilot did not wait for 24h and
+was narrowed to a same-day 2-device acceptance gate for this run. Board issue
+#1377 is `CLOSED` and Project #2 Status is `Done` with evidence comment
+`issuecomment-4711585681`.
 
-| Device | Intended role | Counts for GPO/tokenless denominator? | Current boundary |
-|---|---|---:|---|
-| `AGENTPC1` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Needs Windows/DC-side preinstall + GPO + enroll-health evidence. |
-| `AGENTPC2` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Prior 9-hour install discovery is historical; retest via same-day GPO path. |
-| Local Parallels Windows | `local-control` | No, unless joined to `acik.local` and GPO-scoped | Use for installer/agent regression control and fast rollback/reinstall smoke. |
-| Denetim PC | `audit` | Yes, if domain-joined and GPO-scoped | Use as audit/user-session evidence device. |
+| Device | Role in this accepted gate | Evidence |
+|---|---|---|
+| `SRB-AIDENETIMPC` | domain workstation / denetim PC | Domain `acik.local`, `domainProbe=PASS`, `EndpointAgent` service `Running` / `Auto` / `LocalSystem`, binary `v0.2.5`, SHA256 `5917B45B7BBB8EAA675B6E450961D75582BFC67BD4A01A76332CA1C507D91ABE`, Authenticode `Valid`, WinGet system context ready, post-restart polling reached `no command available`. |
+| `ERP-MOBIL` | domain-joined Windows Server / AD CS path | Domain `acik.local`, `domainProbe=PASS`, internal DNS for `testai.acik.com` and `mtls.testai.acik.com` resolves to `10.9.10.53`, upgraded from `v0.2.4` to `v0.2.5` through canonical current bootstrap, Authenticode `Valid`, service `Running` / `Auto` / `LocalSystem`, AD CS machine cert loaded and post-restart polling reached `no command available`. |
 
-**Acceptance boundary**: #1377 remains `Needs Verify`. M5 no longer requires 24h
-soak for this first run; required checkpoints are T0/T+15/T+60 collector JSON,
-domain-gpo tokenless enrollment + heartbeat + inventory/result-submit evidence,
-one-device rollback/reinstall drill, and an explicit post-pilot artifact with
-`same_day_smoke=true`, `soak_hours=0`, denominator, failures, and M6 risk note.
-M6/50-PC may start only with explicit no-24h risk acceptance or a later
-stabilization gate.
+**Non-selected device boundary**: local Parallels `Windows 11` remains
+`WORKGROUP` and only reaches DC DNS/53; Kerberos/LDAP/SMB/LDAPS were not
+reachable. It is not valid for this M5 domain GPO/cert gate until domain
+networking/join is handled separately.
+
+**Remaining expansion boundary**: original 5-PC diversity pilot, later
+stabilization/soak evidence and 50/800 rollout remain separate follow-up
+gates if requested.
 
 **Agent-doable support added**: `scripts/faz22-mass-deployment/m5-same-day-pilot-collector.ps1`
 is a read-only Windows collector for T0/T+15/T+60 evidence. It does not install,
@@ -43,17 +43,16 @@ restart/service smoke evidence recorded on #1569 / #1359 / #1376 / agent #170.
 | Hosts-file state | 🟢 NO SHIM | `C:\Windows\System32\drivers\etc\hosts` içinde `mtls.testai.acik.com`, `mtls.ai.acik.com`, `TEMP-M2-SMOKE` veya `10.9.10.53` satırı yok. Final smoke gerçek no-hosts durumunda koştu. |
 | AD DNS current state | 🟢 A RECORDS PROVEN | `ERP-MOBIL` DNS client `Ethernet0` server `10.9.10.10`. `Resolve-DnsName` now returns real A records for `testai.acik.com -> 10.9.10.53` and `mtls.testai.acik.com -> 10.9.10.53`; the earlier literal-IP CNAME and NXDOMAIN states are historical only. |
 | Edge reachability | 🟢 EDGE TCP REACHABLE | `Test-NetConnection testai.acik.com -Port 443`, `Test-NetConnection mtls.testai.acik.com -Port 443`, and `Test-NetConnection 10.9.10.53 -Port 443` succeeded from `ERP-MOBIL` without hosts shim. |
-| Artifact-host | 🟢 v0.2.4 CURRENT | `https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json` returns `release_tag=v0.2.4`; `EndpointAgent.zip` SHA256 `9caea9fb851513717cc1e3d54c5378dd850731de8e73e21df9351cf7077ec8a8`; agent binary SHA256 `067e42eab24ee1f73dc28903774c6f5db6c6dcb2bf1163271efa3803587e06a3`. |
+| Artifact-host | 🟢 v0.2.5 CURRENT | `https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json` returns `release_tag=v0.2.5`; `EndpointAgent.zip` SHA256 `18343e2aae8a197b93aceace974bec8bf432ac9feca21a505b9d155b0571151f`; agent binary SHA256 `5917b45b7bbb8eaa675b6e450961d75582bfc67bd4a01a76332ca1c507d91abe`; test artifact-host Deployment is `2/2 Ready` with `ghcr.io/halildeu/platform-agent-artifacts:v0.2.5@sha256:6d687c8b2dabc05372aafc4a44c99d0a984b45a81f4cbaea317001c1ac3e10b2` from gitops PR #1589. |
 | Agent CNG signer fix | 🟢 SOURCE-MERGED + RELEASED | `platform-agent` #171 fixed AD CS CNG machine certs with noncanonical KeySpec/AT_NONE by requiring a positive NCrypt Algorithm Name probe; merged `5319454f`, tagged `v0.2.4`, artifact-host image digest `sha256:f52480d300852cd0c2c398482e25f188eb8b3eda75d93aa495fa90e32a4b9592`. |
-| Agent durable service continuity | 🟢 PROVEN ON ERP-MOBIL | `EndpointAgent` restored from current bootstrap, service `Running` / `Auto` / `LocalSystem`; post-restart logs show `auto-enroll cert loaded` for `ERP-MOBIL.acik.local` and repeated `no command available`, proving tokenless mTLS command-poll continuity over `https://mtls.testai.acik.com/api/v1/endpoint-agent`. |
+| Agent durable service continuity | 🟢 PROVEN ON ERP-MOBIL | `EndpointAgent` restored from current bootstrap and later upgraded to `v0.2.5`, service `Running` / `Auto` / `LocalSystem`; post-restart logs show `auto-enroll cert loaded` for `ERP-MOBIL.acik.local` and repeated `no command available`, proving tokenless mTLS command-poll continuity over `https://mtls.testai.acik.com/api/v1/endpoint-agent`. |
 | AD CS machine cert | 🟢 CANONICAL TEMPLATE | Machine cert `CN=ERP-MOBIL.acik.local`, issuer `Acik-Endpoint-CA`, thumbprint `F87F0D21F29DCBE77AA861587559BAC974D2FCC0`, EKU Client Authentication, SAN `DNS Name=ERP-MOBIL.acik.local, URL=adcomputer:2a8a00bf-420f-4741-aad3-c402eed0f74d`. |
-| GitOps sync caveat | 🟡 FOLLOW-UP | ArgoCD `platform-test` Application still cannot sync the test overlay because destination `test-cluster` is not registered/reachable from ArgoCD. Artifact-host v0.2.4 was narrowed-applied from the merged overlay render, not by direct image mutation. Follow-up: #1577. |
+| GitOps sync caveat | 🟡 PARTIAL DRIFT ONLY | ArgoCD test-cluster registration was restored through `bootstrap/register-test-cluster-argocd-secret.sh`; no direct workload image mutation was used. `artifact-host` now tracks the merged overlay and is healthy on v0.2.5. The `platform-test` Application still reports `OutOfSync` due to unrelated ExternalSecret/Secret drift, not artifact-host image drift. |
 
 **Boundary**: This proves the bounded #1569 subgate for durable AD DNS +
 ERP-MOBIL service restart continuity over tokenless mTLS. It does **not** prove
-OS reboot continuity, signed MSI/GPO deployment, the board-authoritative M5
-same-day selected-device pilot, later stabilization/soak evidence, 50/800
-staged rollout, or prod `mtls.ai.acik.com`.
+OS reboot continuity, signed MSI/GPO deployment, later 5-PC/50/800 staged
+rollout, or prod `mtls.ai.acik.com`.
 #1359/#1376 remain open/Blocked for
 those broader gates; #1577 tracks ArgoCD test-cluster registration/network debt.
 
@@ -71,13 +70,14 @@ network-discoverable candidate set from this host:
 | `AGENTPC2.acik.local` | `10.9.2.228` | DNS resolves, but checked ports refused | Not a good active candidate for this kickoff. |
 | `MKR-A1.acik.local` | `10.9.2.221` | DNS resolves, host down/timeouts | Not a good active candidate for this kickoff. |
 
-**Boundary**: This is a kickoff/matrix narrowing step, not M5 closure. From
+**Historical boundary**: This was a kickoff/matrix narrowing step, not M5 closure. From
 this Codex host there is no remote execution channel to the Windows clients
 (RDP/SMB/RPC visible, WinRM/SSH unavailable), so the next live evidence must be
 collected on the Windows/DC side: OU/GPO membership, preinstall
 `wave-preflight.ps1`, GPO MSI install, enroll-health preflight, same-day
 T0/T+15/T+60 collector evidence, and one-device rollback/reinstall drill.
-#1377 remains `Needs Verify`.
+Superseded by the current top entry: #1377 is now `CLOSED` / Project `Done`
+under the user-narrowed 2-device same-day smoke gate.
 
 ## Live Delta — Faz 22.5 M2 service-mode continuity smoke proven; dry-run CNG crash split to agent backlog (2026-06-15, Codex #1567/#165)
 
@@ -309,7 +309,7 @@ readiness, or cert-auth command/result lifecycle from this evidence alone.
 | **wave-preflight.ps1** | 🟢 **NEW + runtime-proven** | `scripts/faz22-mass-deployment/wave-preflight.ps1` (preinstall/enroll-health/rollback-clean); **#1491** gate-masking `[int]@()` fix — canlı Win11 VM (`HALILKOOLUB735`, SYSTEM) smoke ile yakalandı+doğrulandı |
 | **M2 #1359 evidence template** | 🟢 doğruluk fix | **#1492** — uydurma `/revoke` endpoint + `platform-agent.exe`/`state.json` → gerçek surface (`auto-enroll.dpapi` vs `hmac-credential.dpapi` iki-store ayrımı) |
 | **#1015 IT pilot runbook** | 🟢 doğruluk fix | **#1494** — `endpoint-enes-agent`/`EndpointEnes\Logs` → `EndpointAgent`/`endpoint-agent.exe`/`%ProgramData%\EndpointAgent\logs`; heartbeat path + tablo adları doğrulandı; preflight wired |
-| Board | #1377/#1378/#1379/#1015 → **Needs Verify** + evidence; #1488 backlog (deployment-plan §0.5.x stranded WIP) | Project #2 |
+| Board | #1377 → **Done** under user-narrowed 2-device same-day smoke; #1378/#1379/#1015 → **Needs Verify** + evidence; #1488 backlog (deployment-plan §0.5.x stranded WIP) | Project #2 |
 | M6 metrics reconcile | 🟡 paralel chip in-flight (`d3e844f6`: ServiceMonitor + PromQL reconcile) | M2-bağımsız |
 
 **KRİTİK BLOCKER değişmedi (2026-06-14 DNS-name supersede notu)**:
@@ -364,7 +364,7 @@ Faz 22.7 = **🟢 COMPLETED** (authority platform-backend #376 CLOSED 2026-06-07
 
 **Tracker coverage** (PR #1385 §2 Gate Boundary Matrix):
 - **M2** (#1376) — AD CS / edge mTLS finalization: Source LIVE (RB + scripts + ADR MERGED PR #1078/#1080); operator gate = DNS + AD CS + CA + cert
-- **M5** (#1377) — same-day selected-device GPO pilot: Source runbook/evidence updated; supersedes both original 5-PC/7d and intermediate 2-PC/24h paths; operator gate = selected device access + domain-gpo OU/GPO + EDR/WDAC + T0/T+15/T+60 evidence
+- **M5** (#1377) — same-day selected-device GPO pilot: Source runbook/evidence updated; supersedes both original 5-PC/7d and intermediate 2-PC/24h paths. Current accepted gate is the user-narrowed 2-device smoke in the top 2026-06-15 entry; original/full expansion remains separate.
 - **M6** (#1378) — 50-PC capacity baseline: Source DRAFT LIVE (PR #1386 RB-faz22.5-m6-capacity-baseline.md); operator gate = 50 PC IT + on-call rotation
 - **M7** (#1379) — Rollback drill: Source DRAFT LIVE (PR #1386 RB-faz22.5-m7-rollback-drill.md); operator gate = Lab env + domain admin; execution FORBIDDEN until lab-clone + Codex plan-time AGREE per scope
 - **#1359** Tokenless AutoEnroll: Source LIVE (edge mTLS RB + smoke templates) + Acceptance evidence template DRAFT LIVE (PR #1386); operator gate = DNS + cert + CA + agent --auto-enroll source (DNS still BLOCKED — see live delta above)
@@ -385,7 +385,7 @@ Faz 22.7 = **🟢 COMPLETED** (authority platform-backend #376 CLOSED 2026-06-07
 
 **Follow-up scope** (Tracker §3 closure status — operator-bound):
 - M2 closure: DNS yayını + AD CS Web Enrollment + cert chain + cert end-to-end + edge mTLS LIVE + spoof negative + no-cert negative + ≥1 test PC autoenrollment proof
-- M5 closure: selected-device matrix + domain-gpo enrollment/GPO install LIVE + same-day T0/T+15/T+60 no-regress evidence + rollback/reinstall drill + `same_day_smoke=true` / `soak_hours=0` artifact + Mavis sign-off
+- M5 original/full expansion closure: selected-device matrix + domain-gpo enrollment/GPO install LIVE + same-day T0/T+15/T+60 no-regress evidence + rollback/reinstall drill + `same_day_smoke=true` / `soak_hours=0` artifact + Mavis sign-off; current #1377 accepted gate is narrower and already closed.
 - M6 closure: 50/50 PC + capacity baseline measured + 1+ controlled abort drill PASS + throttling LIVE + Mavis sign-off
 - M7 closure: lab-clone drill 3-layer PASS (uninstall + revoke + GPO rollback) + audit ledger proof + Mavis sign-off
 - #1359 closure: DNS LIVE + cert mount + cert end-to-end + agent --auto-enroll source PR + edge mTLS + spoof/no-cert negative PASS (currently BLOCKED on DNS)
