@@ -5049,7 +5049,15 @@ images:
     # live heartbeat smoke; no production path.
     # Deploy run 27513652052 evidence:
     # endpoint-admin-service sha256:6316261a533a87970ace69a771a2077951eb9dd28e25d4312a1dbde504059698
-    digest: sha256:6316261a533a87970ace69a771a2077951eb9dd28e25d4312a1dbde504059698
+    # 2026-06-15 Faz 22.5 M2-C cert-auth command/result lifecycle (#663,
+    # backend PR #665) -> sha-47d29d5. Adds cert-auth
+    # /api/v1/endpoint-agent/commands/next and
+    # /commands/{commandId}/result for the tokenless mTLS agent path. This is
+    # the test-only backend prerequisite for the M2 live command lifecycle
+    # smoke; no production path.
+    # Image build run 27516905956 digest map evidence:
+    # endpoint-admin-service sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97
+    digest: sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
