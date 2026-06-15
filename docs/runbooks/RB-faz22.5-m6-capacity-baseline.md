@@ -260,7 +260,7 @@ For ring C closure:
   - 50/50 PC enrollment + GPO install LIVE
   - Backend CPU < 60% baseline (no sustained 80% breach)
   - DB pool < 60% baseline (no sustained 80% breach) — sum(hikaricp_active)/sum(hikaricp_max)
-  - Heartbeat ingest rate scaled linearly (50 PC ~ 50x 5-PC pilot) — http_server_requests heartbeat uri
+  - Heartbeat ingest rate scaled linearly against the 2-PC M5 pilot baseline (normalize per-device, then project 50 PC) — http_server_requests heartbeat uri
   - COLLECT_INVENTORY rate scaled linearly — endpoint_admin_agent_command_results_total{command_type="COLLECT_INVENTORY"}
   - 0 backend OOM event
   - 0 backend pod restart unrelated to image rollout

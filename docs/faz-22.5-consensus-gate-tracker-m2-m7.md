@@ -33,25 +33,25 @@ Faz 22.5 M2-M7 gate'leri **full-consensus protocol** (Claude + Codex + Mavis 3-A
 | **Blocking issue** | #1359 tokenless AutoEnroll DNS + edge mTLS host activation (operator DNS+cert) |
 | **Closure acceptance** | DNS yayını + AD CS Web Enrollment endpoint LIVE + machine cert end-to-end issuance + edge mTLS server-side acceptance + spoof-header negative + no-cert negative + ≥1 test PC agent autoenrollment proof |
 
-### M5 — 5-PC GPO pilot diversity matrix + soak gate (#1377)
+### M5 — 2-PC GPO pilot diversity matrix + soak gate (#1377)
 
 | Boyut | Durum |
 |---|---|
 | **Source-side LIVE** | ADR-0029 GPO Software Installation pattern (canonical); RB-faz22.3-ad-cs-setup.md §6 (group policy section); scripts/faz22-mass-deployment/ MSI WiX wrapper (operator-bound source) |
-| **Desired state** | 5 domain-joined cihaz (diversity: Win10 + Win11 + ARM64 + x64 + DC subnet + corp subnet) pilot OU; GPO Software Installation deploy; EDR allowlist; WDAC/AppLocker code-signing; soak window 7d no-regress |
-| **Live state** | Source slice LIVE (ADR-0029 + AD CS runbook); 5-PC fiziksel pilot operator-bound |
-| **Operator-gate condition** | (a) 5 PC IT-owned hardware allocation, (b) domain admin pilot OU create + GPO link, (c) EDR allowlist whitelist (Defender/CrowdStrike/Sentinel), (d) WDAC/AppLocker code-signing policy build, (e) soak 7d monitoring + abort threshold ledger |
-| **Agent-otonom slice** | (1) 5-PC diversity matrix design (donanım + OS + subnet kombinasyon); (2) sanitized evidence pack template (gpresult + Event ID Application Installer + EndpointAgent heartbeat + COLLECT_INVENTORY post-install); (3) wave abort formula + threshold (failure rate, heartbeat loss, command queue depth); (4) board handoff format (Mavis ops coordination); (5) RB-faz22-gpo-pilot-5pc.md draft; (6) PR + Codex iter + merge |
-| **Consensus verdict** | Source AGREE; operator/IT-gated closure (Codex "Operator/IT-gated. Beş domain-joined cihaz, pilot OU, GPO Software Installation, EDR/WDAC/AppLocker, domain admin ve soak gerekiyor"). Agent path = diversity matrix + evidence pack + abort threshold + Mavis handoff |
+| **Desired state** | 2 domain-joined cihaz (diversity: x64 coverage + ≥1 high-signal axis such as EDR/fresh-enroll/build/subnet; ≥1 user-session smoke) pilot OU; GPO Software Installation deploy; EDR allowlist; WDAC/AppLocker code-signing; soak window 24h no-regress |
+| **Live state** | Source slice LIVE (ADR-0029 + AD CS runbook); 2-PC fiziksel pilot operator-bound |
+| **Operator-gate condition** | (a) 2 PC IT-owned hardware allocation, (b) domain admin pilot OU create + GPO link, (c) EDR allowlist whitelist (Defender/CrowdStrike/Sentinel/ESET as applicable), (d) WDAC/AppLocker code-signing policy build, (e) 24h monitoring + abort threshold ledger |
+| **Agent-otonom slice** | (1) 2-PC diversity matrix design (donanım + OS + subnet kombinasyon); (2) sanitized evidence pack template (gpresult + Event ID Application Installer + EndpointAgent heartbeat + COLLECT_INVENTORY post-install); (3) wave abort formula + threshold (failure rate, heartbeat loss, command queue depth); (4) board handoff format (Mavis ops coordination); (5) RB-faz22-gpo-pilot-5pc.md draft with §8.A 2-PC amendment; (6) PR + Codex/Claude iter + merge |
+| **Consensus verdict** | Original source consensus was 5-PC/operator-gated; superseded by board #1377 owner amendment to 2-PC/24h. Source AGREE; operator/IT-gated closure remains. Agent path = diversity matrix + evidence pack + abort threshold + Mavis handoff |
 | **Blocking issue** | #1376 (AD CS M2) prerequisite + IT pilot allocation |
-| **Closure acceptance** | 5/5 PC enrollment + 5/5 GPO Software Installation LIVE + 5/5 7d soak no-regress + abort threshold ledger + sanitized evidence pack PR + Mavis ops sign-off |
+| **Closure acceptance** | 2/2 PC enrollment + 2/2 GPO Software Installation LIVE + 2/2 24h soak no-regress + one-device rollback/reinstall drill + abort threshold ledger + sanitized evidence pack PR + Mavis ops sign-off |
 
 ### M6 — 50-PC capacity baseline + wave abort evidence (#1378)
 
 | Boyut | Durum |
 |---|---|
 | **Source-side LIVE** | ADR-0029 ramp 50/800 plan; capacity/runbook scaffold (mevcut faz-22-software-deployment-plan.md §4 milestone 22.5.8 Controlled Rollout Policies referans); backend BE-026-029 source (rollout controls) |
-| **Desired state** | 50 PC wave deploy (M5 5-PC pilot sonrası); capacity baseline measure (heartbeat ingest rate + COLLECT_INVENTORY frequency + agent CPU/mem/disk); wave abort formula validate + throttling/ring config; pause/resume controls |
+| **Desired state** | 50 PC wave deploy (M5 2-PC pilot sonrası); capacity baseline measure (heartbeat ingest rate + COLLECT_INVENTORY frequency + agent CPU/mem/disk); wave abort formula validate + throttling/ring config; pause/resume controls |
 | **Live state** | Source slice partial (BE-026-029 source-merged); 50-PC fiziksel ramp operator-gated |
 | **Operator-gate condition** | (a) 50 PC IT pilot wave allocation, (b) ring config (group A 10 + group B 20 + group C 20), (c) capacity baseline metrics (Prometheus dashboards + alerts), (d) wave abort decision tree + Mavis ops on-call rotation, (e) throttling guardrails (max concurrent install per ring) |
 | **Agent-otonom slice** | (1) capacity baseline runbook draft (PromQL + Grafana dashboards + SQL queries); (2) wave abort formula (failure_rate + heartbeat_loss + queue_depth thresholds); (3) synthetic or existing telemetry rehearsal (mevcut HALILKOOLUB735 + Parallels VM data ile dry-run); (4) throttling/ring config kubeconfig + ConfigMap; (5) ring rollout sequencer script; (6) board handoff Mavis ops; (7) PR + Codex iter + merge |
@@ -66,7 +66,7 @@ Faz 22.5 M2-M7 gate'leri **full-consensus protocol** (Claude + Codex + Mavis 3-A
 | **Source-side LIVE** | ADR-0029 rollback strategy (rollback section); AG-028 testai go-live (uninstall MERGED 2026-06-04); enrollment revoke API (backend); GPO rollback DC pattern (ADR-0029) |
 | **Desired state** | Rollback drill 3 layer: (a) MSI uninstall agent-side (signed self-update revoke); (b) enrollment revoke backend-side (token invalidate + ledger proof); (c) GPO rollback DC-side (Software Installation policy un-link or computer object move to non-pilot OU) |
 | **Live state** | AG-028 testai uninstall LIVE; enrollment revoke source partial; GPO rollback operator destructive (domain admin) |
-| **Operator-gate condition** | (a) lab-clone 5-PC rollback rehearsal environment (M5 pilot post-soak), (b) domain admin GPO rollback authority, (c) Mavis ops coordination (rollback decision tree), (d) destructive action checklist (uninstall + revoke + rollback chronological order) |
+| **Operator-gate condition** | (a) lab-clone rollback rehearsal environment from the 2-PC M5 pilot post-soak, (b) domain admin GPO rollback authority, (c) Mavis ops coordination (rollback decision tree), (d) destructive action checklist (uninstall + revoke + rollback chronological order) |
 | **Agent-otonom slice** | (1) lab-clone rollback rehearsal runbook (RB-faz22.5-m7-rollback-drill.md draft); (2) revoke API + ledger proof contract (backend endpoint + audit row); (3) rollback runbook (exact abort/restore checklist); (4) Mavis/board coordination format; (5) PR + Codex iter (destructive action plan-time AGREE) + merge |
 | **Consensus verdict** | Source partial; operator/destructive-gated (Codex "Operator/destructive gate. MSI uninstall + enrollment revoke + GPO rollback domain tarafında destructive sayılır"). Agent path = lab-clone rehearsal + revoke contract + rollback runbook + Mavis coordination |
 | **Blocking issue** | M5+M6 (#1377+#1378) prerequisite + IT lab environment + domain admin authority |
@@ -92,7 +92,7 @@ Faz 22.5 M2-M7 gate'leri **full-consensus protocol** (Claude + Codex + Mavis 3-A
 | Gate | Agent-otonom slice DONE | Operator-gate condition | Closure status |
 |---|---|---|---|
 | **M2** (#1376) | RB + scripts + ADR + Codex consult ✅ | DNS + AD CS + CA + cert | ⏳ pending operator |
-| **M5** (#1377) | Diversity matrix + evidence pack template ⏳ DRAFT | 5 PC IT + EDR + WDAC + soak | ⏳ pending operator |
+| **M5** (#1377) | Diversity matrix + evidence pack template ⏳ DRAFT | 2 PC IT + EDR + WDAC + 24h soak | ⏳ pending operator |
 | **M6** (#1378) | Capacity runbook + abort formula ⏳ DRAFT | 50 PC IT + on-call rotation | ⏳ pending operator |
 | **M7** (#1379) | Lab-clone runbook + revoke contract ⏳ DRAFT | Lab env + domain admin | ⏳ pending operator |
 | **#1359** | Edge NGINX + smoke templates ✅ | DNS + cert + CA + agent --auto-enroll source | ⏳ pending operator |
@@ -126,14 +126,14 @@ Anti-pattern engeli: Aşağıdaki operator dependency'ler **board issue + Mavis 
 
 ### Dependency #D4 — IT pilot PC allocation (M5 + M6 + M7)
 
-- **Agent organize path**: 5-PC diversity matrix doc + IT board issue + Mavis ops coordination + sanitized evidence pack template (gpresult + Event ID + heartbeat collectors)
-- **Operator action**: IT admin 5 PC allocate (M5) + 50 PC ramp (M6) + lab-clone rollback environment (M7); pilot OU create + GPO link; EDR allowlist
+- **Agent organize path**: 2-PC diversity matrix doc + IT board issue + Mavis ops coordination + sanitized evidence pack template (gpresult + Event ID + heartbeat collectors)
+- **Operator action**: IT admin 2 PC allocate (M5) + 50 PC ramp (M6) + lab-clone rollback environment (M7); pilot OU create + GPO link; EDR allowlist
 - **Acceptance**: PC list (asset tag + AD object + assigned IT contact) + pilot OU MEMBER OF GPO
 
 ### Dependency #D5 — Mavis ops coordination (M5+M6+M7)
 
 - **Agent organize path**: Mavis CLI peer message pattern (`mavis communication send --to <peer> --command prompt --content "<redacted handoff>"`); board issue cross-link; on-call rotation schedule doc
-- **Operator action**: Mavis ops sign-off per gate (M5 5-PC soak gate + M6 50-PC wave abort + M7 rollback drill)
+- **Operator action**: Mavis ops sign-off per gate (M5 2-PC/24h soak gate + M6 50-PC wave abort + M7 rollback drill)
 - **Acceptance**: board issue Mavis comment + sign-off date + decision provenance
 
 ---

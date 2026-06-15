@@ -54,15 +54,19 @@
 
 | Dimension | Variants | Min Coverage |
 |---|---|---|
-| **OS Version** | Windows 10 22H2, Windows 11 23H2 | ≥2 (1 W10 + 1 W11) |
-| **Architecture** | x64, ARM64 | ≥1 ARM64 (Surface Pro X, Lenovo Carbon Gen 11) |
-| **Subnet** | DC subnet (10.9.10.x), corp standard subnet (10.9.2.x), VLAN-segmented | ≥2 subnets |
-| **PC vendor** | Dell/Lenovo/HP mix | ≥2 vendors |
-| **User profile** | Standard user (non-admin), local admin disabled | All 5 standard user |
-| **AD location** | Pilot OU (dedicated), production OU prep | All 5 pilot OU |
-| **EDR** | Defender ATP, CrowdStrike Falcon (if deployed) | matrix entry per EDR product |
+| **OS Version** | Windows Server / Windows 10 / Windows 11 | Record both devices; ≥1 build-family difference preferred |
+| **Architecture** | x64, ARM64 | x64 coverage required; ARM64 no longer required for the 2-PC first gate |
+| **Subnet** | DC subnet (10.9.10.x), corp standard subnet (10.9.2.x), VLAN-segmented | Record both devices; subnet diversity is a valid high-signal axis |
+| **PC vendor / class** | Server VM / laptop / desktop vendor mix | Record both devices; class/vendor diversity preferred |
+| **User profile** | Standard user (non-admin), local admin disabled | Both pilot endpoints documented |
+| **AD location** | Pilot OU (dedicated), production OU prep | Both pilot endpoints in the pilot OU / pilot security scope |
+| **EDR** | Defender ATP, ESET, CrowdStrike Falcon (if deployed) | Record per device; EDR-active vs Defender-only is a valid high-signal axis |
 
-### 3.1 5-PC Allocation Template
+### 3.1 5-PC Allocation Template (REFERENCE ONLY — superseded by §8.A)
+
+This table is the original diversity design. It is retained as the expansion
+reference for later 5-PC/50-PC planning. It is **not** the live M5 closure gate.
+Use §8.A for board #1377.
 
 | PC ID | OS | Arch | Subnet | Vendor | EDR | IT Contact |
 |---|---|---|---|---|---|---|
@@ -79,7 +83,7 @@
 ```
 1. AD Users and Computers (DSA.MSC):
    - Create OU "Pilot/EndpointAgentM5" under acik.local
-   - Move 5 pilot PCs (computer objects) to this OU
+   - Move 2 pilot PCs (computer objects) to this OU
 
 2. Group Policy Management (GPMC.MSC):
    - Create GPO "EndpointAgentM5-Install" linked to OU
@@ -156,16 +160,16 @@ Script: `scripts/faz22-mass-deployment/wave-preflight.ps1` (read-only; modes
 
 | Mode | Detection | Abort Threshold |
 |---|---|---|
-| **GPO install fail** | Event 102 Application Installer (msiexec exit code ≠ 0) | ≥2/5 (40%) → abort + investigate |
-| **Heartbeat loss** | EndpointAgent ping miss > 5 min | ≥1/5 (20%) sustained > 30 min → abort |
-| **Enrollment fail** | Backend /enrollments/auto rejection | ≥2/5 (40%) → abort + edge mTLS check |
-| **EDR block** | Defender/CrowdStrike alert blocks agent runtime | ≥1/5 (20%) → abort + EDR allowlist re-check |
-| **Cert chain fail** | Agent log "cert verify fail" or TLS handshake reject | ≥1/5 (20%) → abort + M2 cert chain re-verify |
+| **GPO install fail** | Event 102 Application Installer (msiexec exit code ≠ 0) | ≥1/2 (50%) → abort + investigate |
+| **Heartbeat loss** | EndpointAgent ping miss > 5 min | ≥1/2 (50%) sustained > 30 min → abort |
+| **Enrollment fail** | Backend /enrollments/auto rejection | ≥1/2 (50%) → abort + edge mTLS check |
+| **EDR block** | Defender/ESET/CrowdStrike alert blocks agent runtime | ≥1/2 (50%) → abort + EDR allowlist re-check |
+| **Cert chain fail** | Agent log "cert verify fail" or TLS handshake reject | ≥1/2 (50%) → abort + M2 cert chain re-verify |
 
 ### 5.2 Abort Decision Tree
 
 ```
-For each PC at +24h, +48h, +7d:
+For each PC at +24h:
   metrics_collect:
     install_status: Event 102 + msiexec exit code
     heartbeat_age: now - last_ping (seconds)
@@ -175,11 +179,11 @@ For each PC at +24h, +48h, +7d:
     edr_block: EDR console (alert list)
     cert_status: agent log "cert verify" lines (last 100)
   
-  if (install_fail >= 2):
+  if (install_fail >= 1):
     abort + investigate GPO/MSI/code-signing
   elif (heartbeat_age > 1800 for >= 1 PC):
     abort + investigate network/agent crash
-  elif (device_status not in {ONLINE,OFFLINE} for >= 2 PC):  # stuck PENDING_ENROLLMENT
+  elif (device_status not in {ONLINE,OFFLINE} for >= 1 PC):  # stuck PENDING_ENROLLMENT
     abort + investigate edge mTLS (M2 dependency)
   elif (edr_block >= 1):
     abort + EDR allowlist re-process
@@ -189,24 +193,24 @@ For each PC at +24h, +48h, +7d:
     PASS (continue soak)
 ```
 
-### 5.3 7d Soak Acceptance
+### 5.3 24h Soak Acceptance (AUTHORITATIVE for board #1377)
 
 ```
-For 7 consecutive days:
-  - 5/5 PC heartbeat alive (no >1 hour gap)
+For 24 consecutive hours:
+  - 2/2 PC heartbeat alive (no >1 hour gap)
   - 0 EDR alert on agent runtime
   - 0 GPO redeploy attempts (Event 108 unexpected reinstall)
-  - 5/5 PC COLLECT_INVENTORY result hash chain valid (BL-016 hash-chain audit)
+  - 2/2 PC COLLECT_INVENTORY result hash chain valid (BL-016 hash-chain audit)
   - 0 unhandled agent crash (Event 1000 Application Error)
-  - Optional: 1 controlled test command (e.g., COLLECT_INVENTORY trigger) success on 5/5 PC
+  - Optional: 1 controlled test command (e.g., COLLECT_INVENTORY trigger) success on 2/2 PC
 ```
 
 ## 6. Evidence Pack Template
 
 Layout:
 ```
-evidence/m5-5pc-pilot-YYYYMMDD/
-├── README.md                     # pilot context (date, pilot OU, GPO name, 5 PC asset tags)
+evidence/m5-2pc-pilot-YYYYMMDD/
+├── README.md                     # pilot context (date, pilot OU, GPO name, 2 PC asset tags)
 ├── 01-pilot-ou-screenshot.png    # GPMC pilot OU + GPO link visual proof
 ├── 02-gpo-software-package.txt   # GPMC export: package path + deployment type + WMI filter
 ├── 03-code-signing-cert.txt      # Get-AuthenticodeSignature output for MSI + agent binary
@@ -220,12 +224,8 @@ evidence/m5-5pc-pilot-YYYYMMDD/
 │   │   ├── 09-collect-inventory.json     # backend GET /endpoint-devices/{id}/inventory/latest
 │   │   ├── 10-agent-service-status.txt   # Get-Service EndpointAgent status
 │   │   └── 11-cert-chain-verify.txt      # Get-ChildItem Cert:\LocalMachine\My + chain trust
-│   ├── pilot-pc-02/ ... (same structure)
-│   └── pilot-pc-05/ ... (same structure)
+│   └── pilot-pc-02/ ... (same structure)
 ├── soak-day-1.md                 # 24h heartbeat + EDR + crash summary
-├── soak-day-2.md
-├── ...
-├── soak-day-7.md                 # 7d closure summary
 ├── abort-decision-ledger.md      # any failure mode trigger + Mavis decision + recovery
 └── mavis-signoff.txt             # Mavis ops sign-off comment text
 ```

@@ -69,7 +69,7 @@ Faz 22 endpoint agent 800 PC mass deployment için aşağıdaki **6-katman** mim
 | Phase | PC | Süre | Acceptance |
 |---|---|---|---|
 | **Phase 0** | DC + 1 test domain PC | 2-3 gün | Tüm preflight evidence kanıt PASS |
-| Phase 1 | **5 PC, sadece domain-joined** (AGENTPC2 + AGENTPC1/MKR-A1 + HALILKOCOGLU + 2 IT volunteer; SRB-AIDENETIMPC workgroup için **AYRI install path**) | 1 hafta | Objektif kanıt source-of-truth ile (aşağıda) |
+| Phase 1 | **2 PC, sadece domain-joined** (board #1377 owner amendment; current kickoff candidates: ERP-MOBIL + HALILKOCOGLU; SRB-AIDENETIMPC workgroup için **AYRI install path**) | 1-2 iş günü + 24h soak | Objektif kanıt source-of-truth ile (aşağıda) |
 | Phase 2 | 50 PC (IT department, domain-joined) | 1 hafta | 95%+ install + 90%+ heartbeat 24h |
 | Phase 3 | 800 PC (full Domain Computers) | 1-2 hafta | Wave 200/gün, <5% fail rate per wave |
 
@@ -442,7 +442,7 @@ if certExpiresIn(7 * 24 * time.Hour) {
 - **Uninstall** preserves credential/config by default; `PURGE_CONFIG=1` to purge. `uninstall.ps1` now waits for the agent process to exit before removing the install dir (`Wait-AgentProcessExit`).
 - **Signing**: lab self-signed now via `build-msi.ps1` (`production=false` manifest); **Authenticode trusted-signing is the operator promotion gate** (Faz 22.2 / Azure Trusted Signing; the existing `release.yml` signing-tier model). NOTE: the historical native build/sign sketch below is **NOT** the shipped lab pipeline.
 - **Clean-runner smoke (all green)**: install + redaction canary + major-upgrade credential-preserve/token-not-forwarded + uninstall + failed-upgrade recoverability (preflight failure preserves old version + valid re-run recovers).
-- **Remaining (operator/domain-gated, NOT in #129)**: Authenticode trusted-signing, AppLocker/WDAC/EDR signer preflight, GPO 5-PC domain pilot. Tracked on board [gitops #115].
+- **Remaining (operator/domain-gated, NOT in #129)**: Authenticode trusted-signing, AppLocker/WDAC/EDR signer preflight, board #1377 2-PC GPO domain pilot. Tracked on board [gitops #115].
 
 ---
 
@@ -640,27 +640,25 @@ New-GPLink -Name "EndpointAgent Mass Deployment" `
   -Target "DC=acik,DC=local" -LinkEnabled Yes
 ```
 
-**Pilot Phase 1 — 5 domain-joined PC**:
+**Pilot Phase 1 — 2 domain-joined PC**:
 
 | # | PC | Domain join | Pilot strategy |
 |---|---|---|---|
-| 1 | **AGENTPC2** (10.9.2.98) | ✅ acik.local | GPO Software Installation hedefi |
-| 2 | **AGENTPC1 / MKR-A1** (10.9.2.97) | IT onayı bekleniyor | GPO hedefi (onay sonra) |
-| 3 | **HALILKOCOGLU** (10.9.2.151) | ✅ acik.local | GPO hedefi |
-| 4 | **1 IT volunteer PC** | ✅ acik.local | GPO hedefi |
-| 5 | **1 IT department PC** | ✅ acik.local | GPO hedefi |
+| 1 | **ERP-MOBIL** (10.9.10.101) | ✅ acik.local | GPO Software Installation hedefi; prior M2 tokenless continuity evidence exists |
+| 2 | **HALILKOCOGLU** (10.9.2.151) | ✅ acik.local | GPO hedefi; user-session smoke candidate |
+| ref | **AGENTPC2 / MKR-A1 / IT volunteer PCs** | varies | Original 5-PC expansion pool; not part of board #1377 current 2-PC gate |
 | (ayrı path) | **SRB-AIDENETIMPC** (10.9.161.105) | ❌ WORKGROUP | **Mevcut AnyDesk + manual install path korunur** (PR #1070 evidence pattern); GPO Software Installation **DEĞİL** |
 
 **Phase 1 acceptance gates** (Codex iter-1 revise: objektif source-of-truth):
 
 | # | Gate | Source-of-truth | Acceptance |
 |---|---|---|---|
-| 1 | AD CS cert mint | Test PC Certificates MMC (Personal store) `Get-ChildItem Cert:\LocalMachine\My` + template OID match | 5/5 PC TPM-attested cert mevcut |
-| 2 | MSI install fire | Test PC Application Event Log `Get-WinEvent -ProviderName MsiInstaller -FilterHashtable @{Id=1033}` | 5/5 PC event entry, ProductCode match |
-| 3 | Service Running | Test PC `Get-Service EndpointAgent` Status=Running, StartType=Automatic | 5/5 PC PASS |
-| 4 | Backend auto-enroll audit | Backend audit log `ENDPOINT_AUTO_ENROLLED` event count 5+ unique device_id | 5/5 device_id mint |
-| 5 | Heartbeat aktif | Backend `endpoint-devices` API `lastSeenAt` < 5 dk per device | 5/5 device PASS |
-| 6 | Command lifecycle | Backend `endpoint-commands` API: 1+ SUCCEEDED COLLECT_INVENTORY per device | 5/5 device 1+ command |
+| 1 | AD CS cert mint | Test PC Certificates MMC (Personal store) `Get-ChildItem Cert:\LocalMachine\My` + template OID match | 2/2 PC machine/client-auth cert mevcut |
+| 2 | MSI install fire | Test PC Application Event Log `Get-WinEvent -ProviderName MsiInstaller -FilterHashtable @{Id=1033}` | 2/2 PC event entry, ProductCode match |
+| 3 | Service Running | Test PC `Get-Service EndpointAgent` Status=Running, StartType=Automatic | 2/2 PC PASS |
+| 4 | Backend auto-enroll audit | Backend audit log `ENDPOINT_AUTO_ENROLLED` event count 2+ unique device_id | 2/2 device_id mint |
+| 5 | Heartbeat aktif | Backend `endpoint-devices` API `lastSeenAt` < 5 dk per device | 2/2 device PASS |
+| 6 | Command lifecycle | Backend `endpoint-commands` API: 1+ SUCCEEDED COLLECT_INVENTORY per device | 2/2 device 1+ command |
 | 7 | "No per-device manuel" | Process tanım: per-device manual install/enroll yok; sadece merkezi GPO link + reboot/gpupdate allowed | Process audit OK |
 | 8 | Denominator clarity | Offline/decommissioned/broken-trust PC sayımdan exclude; explicit list documented | Pre-pilot list freeze + post-pilot delta |
 
@@ -683,7 +681,7 @@ New-GPLink -Name "EndpointAgent Mass Deployment" `
 |---|---|---|---|---|
 | R1 | AD CS auto-enrollment fail (PC GPO refresh yok / TPM disabled / policy conflict) | Orta | High | Phase 0 P0-2/P0-10/P0-11 gate; TPM enable corp policy; AD CS test cert manuel + GPO scope dar başla |
 | R2 | mTLS endpoint security exploit | Düşük | Critical | Backend cert-derived identity (body değil); EKU/template/SAN/issuer/CRL check; rate limit per SID |
-| R3 | MSI install fail (Defender / AppLocker conflict) | Orta | Medium | Code signing cert thumbprint AppLocker allowlist; Defender exclusion install dir; pilot test 5 PC |
+| R3 | MSI install fail (Defender / AppLocker conflict) | Orta | Medium | Code signing cert thumbprint AppLocker allowlist; Defender exclusion install dir; pilot test 2 PC |
 | R4 | GPO scope error | Düşük | Medium | Wave Security Group strict; hostname guard agent self-check; multi-layer safety |
 | R5 | Network bandwidth (800 PC simultaneous boot) | Orta | Medium | Wave rollout 200/gün; MSI BITS cache; off-hours boot policy |
 | R6 | Token rotation chaos | Orta | High | Auto-rotate at 80% lifetime; cert-bound token (mTLS required); monitoring alert on expiry |
@@ -770,7 +768,7 @@ Plus P0-5 vs P0-15 ayrımı net:
 - **P0-5** "Machine account UNC read (admin PSSession quick check)" — human-context smoke
 - **P0-15** "SYSTEM context UNC read (PsExec /s)" — **authoritative gate** (SYSTEM context şart, install-time context emülasyonu)
 
-### Phase 1 (5 domain-joined PC pilot)
+### Phase 1 (2 domain-joined PC pilot)
 
 **Denominator T0 freeze procedure** (iter-3 absorb): Phase 1 başlangıcı T0'da snapshot al:
 - Wave Security Group member listesi (AD object SID + GUID + DisplayName)
@@ -785,18 +783,18 @@ Plus P0-5 vs P0-15 ayrımı net:
 - Phase 2 acceptance gate'inde UI grid render PASS ek conditional (50 PC UI'da görünür olmalı, kritik UX).
 - Rationale: backend mass deploy fonksiyonel kanıt UI bug fix'ten bağımsız ilerleyebilir.
 
-- [ ] 5/5 AD CS TPM-attested cert mint (Certificates MMC kanıt)
-- [ ] 5/5 MSI install fire (MsiInstaller Event Log 1033 kanıt)
-- [ ] 5/5 Service Running (Get-Service kanıt)
-- [ ] 5/5 backend ENDPOINT_AUTO_ENROLLED audit (backend log)
-- [ ] 5/5 heartbeat aktif (endpoint-devices API lastSeenAt < 5 dk)
-- [ ] 5/5 command lifecycle SUCCEEDED (endpoint-commands API 1+ COLLECT_INVENTORY per device)
+- [ ] 2/2 AD CS machine/client-auth cert mint (Certificates MMC kanıt)
+- [ ] 2/2 MSI install fire (MsiInstaller Event Log 1033 kanıt)
+- [ ] 2/2 Service Running (Get-Service kanıt)
+- [ ] 2/2 backend ENDPOINT_AUTO_ENROLLED audit (backend log)
+- [ ] 2/2 heartbeat aktif (endpoint-devices API lastSeenAt < 5 dk)
+- [ ] 2/2 command lifecycle SUCCEEDED (endpoint-commands API 1+ COLLECT_INVENTORY per device)
 - [ ] 0 per-device manuel müdahale (process audit)
-- [ ] **Denominator T0 freeze documented** (5/5 wave SG snapshot + LastLogonDate filter)
+- [ ] **Denominator T0 freeze documented** (2/2 wave SG snapshot + LastLogonDate filter)
 - [ ] Cert renewal scenario tested (1 PC manuel renewal trigger, SID stable dedupe verify, no duplicate device)
 - [ ] **Forced token-expiry test** (R24): 1 PC token TTL'i 5dk'a düşür, agent refresh PASS
 - [ ] **Ingress mTLS fault injection** (R24): nginx ingress restart sırasında agent backoff + recovery PASS
-- [ ] **CRL outage scenario** (R24, R16, F3 absorb + F2 iter-6 absorb — 2 sub-scenario AYRI verify): (a) **Enrollment-time**: CRL endpoint disable 30sn, yeni PC enroll attempt → backend reddetmeli (fail-closed default); (b) **Already-enrolled**: CRL endpoint disable 30sn sırasında mevcut 5 PC heartbeat continue + `grace_window: true` + `grace_until` field iletilir; **grace_until formula `min(cert_not_after, last_good_revocation_check + 24h)`** — 24h hard cap (cert_expiry değil), long-lived cert + uzun CRL outage senaryosunda fail-closed enforced. Batch alert >%10 device grace state'de tetiklenir verify. **Test scenario**: 2 PC cert near-expiry simülasyon — grace window cert_expiry'den önce kapanmalı.
+- [ ] **CRL outage scenario** (R24, R16, F3 absorb + F2 iter-6 absorb — 2 sub-scenario AYRI verify): (a) **Enrollment-time**: CRL endpoint disable 30sn, yeni PC enroll attempt → backend reddetmeli (fail-closed default); (b) **Already-enrolled**: CRL endpoint disable 30sn sırasında mevcut 2 PC heartbeat continue + `grace_window: true` + `grace_until` field iletilir; **grace_until formula `min(cert_not_after, last_good_revocation_check + 24h)`** — 24h hard cap (cert_expiry değil), long-lived cert + uzun CRL outage senaryosunda fail-closed enforced. Batch alert >%10 device grace state'de tetiklenir verify. **Test scenario**: 2 PC cert near-expiry simülasyon — grace window cert_expiry'den önce kapanmalı.
 - [ ] **Workgroup PC (SRB-AIDENETIMPC) Phase 1 dışı** — ayrı AnyDesk path korunur
 - [ ] **REMOVED: Codex AGREE acceptance gate** (governance precondition only, not runtime)
 - [ ] **Phase 1 backend-only** — UI grid render bug task #175 paralel, Phase 1 fail nedeni değil
