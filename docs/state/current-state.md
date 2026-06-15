@@ -1,30 +1,33 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.5 M2 durable AD DNS preflight blocked on DC DNS mutation rights (2026-06-15, Codex #1569)
+## Live Delta — Faz 22.5 M2 durable AD DNS + service-mode continuity proven on ERP-MOBIL (2026-06-15, Codex #1569)
 
-**Session milestone**: M2 durable no-hosts path için yeni bounded gate
-`platform-k8s-gitops#1569` açıldı ve Project #2 alanları dolduruldu
-(`Status=In Progress` during execution, then `Blocked` after DC DNS mutation
-access denial; `Faz=Faz 22`, `Track=ops`, `Priority=P0`, `Kind=gate`).
-Existing reverse SSH path üzerinden `ERP-MOBIL` host'una
-`acik\ca.setup` olarak erişildi ve read-only preflight koşuldu. Kanıt:
-[2026-06-15-m2-durable-dns-preflight.md](../faz-22-evidence/2026-06-15-m2-durable-dns-preflight.md).
+**Session milestone**: M2 durable no-hosts path için bounded gate
+`platform-k8s-gitops#1569` Project #2'de `Needs Verify` durumuna taşındı.
+Önceki DC DNS mutation/access-denied snapshot'ı superseded: internal AD DNS
+records were fixed, artifact-host v0.2.4 was published, and the Windows/domain
+service-mode AutoEnroll continuity smoke was rerun through the durable DNS path.
+Kanıt zinciri: `platform-agent` #171 (`5319454f`) + release `v0.2.4`, GitOps
+#1575 (`c25dd56e`) artifact-host digest pin, and ERP-MOBIL no-hosts
+restart/service smoke evidence recorded on #1569 / #1359 / #1376 / agent #170.
 
 | Alan | Durum (2026-06-15) | Kanıt / sınır |
 |---|---|---|
 | Windows/domain access | 🟢 REACHABLE | Reverse SSH path çalışıyor: `staging-sw -> 127.0.0.1:22022 -> ERP-MOBIL:22`; Windows identity `acik\ca.setup`. `ERP-MOBIL` domain-joined (`acik.local`), DC discovery `ACIKDC01.acik.local` / `10.9.10.10`, secure channel `NERR_Success`. |
-| Hosts-file state | 🟢 NO SHIM | `C:\Windows\System32\drivers\etc\hosts` içinde `mtls.testai.acik.com`, `mtls.ai.acik.com`, `TEMP-M2-SMOKE` veya `10.9.10.53` satırı yok. Bu preflight gerçek no-hosts durumunu ölçüyor. |
-| AD DNS current state | 🔴 BLOCKED NAME | DNS client `Ethernet0` server `10.9.10.10`. `testai.acik.com` AD DNS üzerinden `10.9.10.53` döndürüyor; `mtls.testai.acik.com` default DNS ve explicit `-Server 10.9.10.10` ile resolve olmuyor. |
-| Edge reachability | 🟢 EDGE TCP REACHABLE | `Test-NetConnection 10.9.10.53 -Port 443` succeeds from `ERP-MOBIL`; `Test-NetConnection mtls.testai.acik.com -Port 443` name resolution failure yüzünden fails. |
-| Agent durable failure signal | 🔴 CONFIRMED | Existing EndpointAgent logları temporary hosts shim kaldırıldıktan sonra tekrar eden `lookup mtls.testai.acik.com: no such host` hatasını gösteriyor. Önceki tokenless heartbeat ve command/result proof'ları temp route'a bağlıydı. |
-| Autonomous DNS mutation | 🔴 ACCESS BLOCKED | `DnsServer` module + `RSAT-DNS-Server` + `dnscmd.exe` mevcut; `whoami /groups` Domain Admins/Enterprise Admins/High Mandatory gösteriyor. Buna rağmen `Get-DnsServerZone -ComputerName 10.9.10.10`, `dnscmd 10.9.10.10 /enumzones`, `dnscmd ACIKDC01.acik.local /enumzones` ve remote `schtasks` query `ERROR_ACCESS_DENIED` / `Access is denied` döndürdü. |
-| Required narrow fix | ⏳ OPERATOR/ACL GATE | AD DNS'te en dar kalıcı kayıt gerekiyor: mevcut `testai.acik.com` zone içinde `mtls A 10.9.10.53`, yoksa exact zone `mtls.testai.acik.com` apex A `10.9.10.53`. Bu oturum DC DNS mutation yapamadı; service continuity over durable DNS bu kayıt sonrası tekrar koşulmalı. |
+| Hosts-file state | 🟢 NO SHIM | `C:\Windows\System32\drivers\etc\hosts` içinde `mtls.testai.acik.com`, `mtls.ai.acik.com`, `TEMP-M2-SMOKE` veya `10.9.10.53` satırı yok. Final smoke gerçek no-hosts durumunda koştu. |
+| AD DNS current state | 🟢 A RECORDS PROVEN | `ERP-MOBIL` DNS client `Ethernet0` server `10.9.10.10`. `Resolve-DnsName` now returns real A records for `testai.acik.com -> 10.9.10.53` and `mtls.testai.acik.com -> 10.9.10.53`; the earlier literal-IP CNAME and NXDOMAIN states are historical only. |
+| Edge reachability | 🟢 EDGE TCP REACHABLE | `Test-NetConnection testai.acik.com -Port 443`, `Test-NetConnection mtls.testai.acik.com -Port 443`, and `Test-NetConnection 10.9.10.53 -Port 443` succeeded from `ERP-MOBIL` without hosts shim. |
+| Artifact-host | 🟢 v0.2.4 CURRENT | `https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json` returns `release_tag=v0.2.4`; `EndpointAgent.zip` SHA256 `9caea9fb851513717cc1e3d54c5378dd850731de8e73e21df9351cf7077ec8a8`; agent binary SHA256 `067e42eab24ee1f73dc28903774c6f5db6c6dcb2bf1163271efa3803587e06a3`. |
+| Agent CNG signer fix | 🟢 SOURCE-MERGED + RELEASED | `platform-agent` #171 fixed AD CS CNG machine certs with noncanonical KeySpec/AT_NONE by requiring a positive NCrypt Algorithm Name probe; merged `5319454f`, tagged `v0.2.4`, artifact-host image digest `sha256:f52480d300852cd0c2c398482e25f188eb8b3eda75d93aa495fa90e32a4b9592`. |
+| Agent durable service continuity | 🟢 PROVEN ON ERP-MOBIL | `EndpointAgent` restored from current bootstrap, service `Running` / `Auto` / `LocalSystem`; post-restart logs show `auto-enroll cert loaded` for `ERP-MOBIL.acik.local` and repeated `no command available`, proving tokenless mTLS command-poll continuity over `https://mtls.testai.acik.com/api/v1/endpoint-agent`. |
+| AD CS machine cert | 🟢 CANONICAL TEMPLATE | Machine cert `CN=ERP-MOBIL.acik.local`, issuer `Acik-Endpoint-CA`, thumbprint `F87F0D21F29DCBE77AA861587559BAC974D2FCC0`, EKU Client Authentication, SAN `DNS Name=ERP-MOBIL.acik.local, URL=adcomputer:2a8a00bf-420f-4741-aad3-c402eed0f74d`. |
+| GitOps sync caveat | 🟡 FOLLOW-UP | ArgoCD `platform-test` Application still cannot sync the test overlay because destination `test-cluster` is not registered/reachable from ArgoCD. Artifact-host v0.2.4 was narrowed-applied from the merged overlay render, not by direct image mutation. Follow-up: #1577. |
 
-**Boundary**: This proves the current durable DNS blocker and the autonomous
-access limit. It does **not** prove service restart continuity over durable
-DNS, OS reboot continuity, signed MSI/GPO deployment, 5-PC pilot, 24h soak,
-50/800 staged rollout, or prod `mtls.ai.acik.com`. #1359/#1376 remain open
-and blocked; #1569 carries the bounded DNS/service subgate evidence.
+**Boundary**: This proves the bounded #1569 subgate for durable AD DNS +
+ERP-MOBIL service restart continuity over tokenless mTLS. It does **not** prove
+OS reboot continuity, signed MSI/GPO deployment, 5-PC pilot, 24h soak, 50/800
+staged rollout, or prod `mtls.ai.acik.com`. #1359/#1376 remain open/Blocked for
+those broader gates; #1577 tracks ArgoCD test-cluster registration/network debt.
 
 ## Live Delta — Faz 22.5 M2 service-mode continuity smoke proven; dry-run CNG crash split to agent backlog (2026-06-15, Codex #1567/#165)
 
@@ -404,20 +407,20 @@ rollout, two-device/24h soak, or production Trusted Signing.
 
 **Session milestone**: the standard Windows PC friction observed on MKR-A1 is
 now tracked in the canonical 22.5 plan and has source/desired-state progress
-across agent, backend and GitOps. This does not yet prove tokenless domain
-AutoEnroll or 800-PC rollout readiness: `mtls.testai.acik.com`
-DNS/edge mTLS activation remains a separate gate tracked by
-platform-k8s-gitops #1359.
+across agent, backend and GitOps. Later 2026-06-15 evidence proves the bounded
+ERP-MOBIL tokenless domain AutoEnroll/service-continuity subgate; this older
+section still does not prove 5-PC GPO, 24h soak, 50/800 rollout readiness or
+prod `mtls.ai.acik.com`.
 
 | Slice | Evidence | Hukum |
 |---|---|---|
 | Written plan | PR #1354 merged `6160ae35`; `docs/faz-22-software-deployment-plan.md` now has `0.4 Standard PC Install Productization Lane` with M0-M7 milestones, duration baseline and non-negotiable target | Plan is canonical; current lane is no longer ad-hoc |
 | Agent installer/package | `platform-agent` PR #102 merged `cba5ecee`; PR #103 merged `87fa38b9`; PR #105 merged `05774bf6`; PR #106 merged `7e92a9e4`; PR #107 merged `35c641e3`; main workflow runs `27137185247`, `27142499833` and `27144437218` succeeded | PS5.1-safe installer package, UTF-8 BOM packaged scripts, `EndpointAgent.zip`, `bootstrap-package.ps1`, static encoding guard and `-AutoEnroll` installer/bootstrap path are source-ready. Agent AutoEnroll client default, packaged bootstrap default and direct `install.ps1` default align to the deployed external route `/api/v1/endpoint-agent` |
-| Canonical artifact | 2026-06-15 live artifact-host check: `https://testai.acik.com/artifacts/endpoint-agent/current/` and immutable `/artifacts/endpoint-agent/v0.2.3/` return HTTP 200 for `bootstrap-package.ps1`, `EndpointAgent.zip`, `EndpointAgent.zip.sha256`, `SHA256SUMS`, and `release-manifest.json`; current ZIP SHA256 is `e03618da2c6afe06ef5d674a759ea3a43614cdac7f16c27aaaabb9d05ba51b14`; standalone `bootstrap-package.ps1` SHA256 is `fa11ded2ad2e81587f6de1adc323b81f852918021872fdda27376a176432718a`; older `/0.1.0-dev/` URLs now return HTTP 404 | Manual ZIP transfer is no longer required for pilot bootstrap; new installs must use `current/` or immutable `v0.2.3/`. Hidden token prompt still remains on the HMAC fallback path; tokenless AutoEnroll uses the mTLS host |
+| Canonical artifact | 2026-06-15 live artifact-host check after v0.2.4 promotion: `https://testai.acik.com/artifacts/endpoint-agent/current/` and immutable `/artifacts/endpoint-agent/v0.2.4/` return HTTP 200 for `bootstrap-package.ps1`, `EndpointAgent.zip`, `EndpointAgent.zip.sha256`, `SHA256SUMS`, and `release-manifest.json`; current ZIP SHA256 is `9caea9fb851513717cc1e3d54c5378dd850731de8e73e21df9351cf7077ec8a8`; agent binary SHA256 is `067e42eab24ee1f73dc28903774c6f5db6c6dcb2bf1163271efa3803587e06a3`; older `/0.1.0-dev/` URLs now return HTTP 404 | Manual ZIP transfer is no longer required for pilot bootstrap; new installs must use `current/` or immutable `v0.2.4/`. Hidden token prompt still remains on the HMAC fallback path; tokenless AutoEnroll uses the mTLS host |
 | Backend result-submit visibility | `platform-backend` PR #511 merged `7c0ec4a`; endpoint-admin image digest `sha256:0c1e384b414b35ddd9540fa6fcacb9fcc6a856a19ca25d92277166f76041ae45` pinned by GitOps PR #1355 `d0c26292`; live pod imageID matches digest and `/actuator/health` is UP. Runtime invalid-result smoke submitted AG-038 diagnostics with invalid `configHash="abc"` and got HTTP `400`; DB row moved to `FAILED`, `last_error` carried bounded `RESULT_REJECTED`, lock was cleared and zero raw result rows were persisted | P0-0 source + test overlay + runtime failure-visibility proof exists and aligns with platform-backend #509 Project Done evidence. This does not prove the full standard-PC installer rerun in platform-agent #101 |
 | Gateway route parity | GitOps PR #1358 merged `4ddc8dd8`; live `api-gateway` env carries `endpoint-admin-mtls-auto-enroll-route` at route index 22 and public POST to `/api/v1/endpoint-agent/endpoint-enrollments/auto` returns `401 MTLS_CERT_MISSING` without a client cert | Route reaches backend auto-enroll controller and fail-closes without cert; this is route parity, not tokenless enrollment success |
 | Edge mTLS activation runbook | `docs/runbooks/RB-faz22.3-edge-mtls-autoenroll.md` defines the dedicated mTLS host, backend `X-Client-Cert` / `X-Tenant-Id` contract, spoof-header stripping, no-cert negative, header-injection negative and valid machine-cert positive smokes | The blocker is now executable as an ops runbook; acceptance still requires DNS + edge mTLS + valid machine-cert evidence |
-| DNS / edge mTLS gate | 2026-06-14 supersede: `mtls.testai.acik.com` and `mtls.ai.acik.com` resolve publicly to `212.115.26.190`; test edge stream route is active for `mtls.testai.acik.com`; backend serves `CN=mtls.testai.acik.com` from AD CS and requests a client cert; `ERP-MOBIL` valid machine-cert AutoEnroll returned HTTP 201 with DB/audit evidence | Tokenless AutoEnroll test path is live-smoked; remaining gates are desired-state reconciliation, mTLS-continuous heartbeat/credential, 5-PC GPO/24h soak/waves; tracked by #1359/#1376 |
+| DNS / edge mTLS gate | 2026-06-15 supersede: internal AD DNS returns A records for `testai.acik.com` and `mtls.testai.acik.com` to `10.9.10.53`; test edge stream route is active for `mtls.testai.acik.com`; backend serves `CN=mtls.testai.acik.com` from AD CS and requests a client cert; `ERP-MOBIL` valid machine-cert AutoEnroll returned HTTP 201 with DB/audit evidence and later v0.2.4 service restart logs show `auto-enroll cert loaded` + `no command available` | Tokenless AutoEnroll test path and bounded service continuity are live-smoked; remaining gates are maintainer acceptance, OS reboot, 5-PC GPO/24h soak/waves and prod host activation; tracked by #1359/#1376/#1569 |
 
 **Boundary / remaining gates**:
 

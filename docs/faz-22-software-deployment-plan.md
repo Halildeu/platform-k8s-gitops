@@ -1,34 +1,32 @@
 # Faz 22.5 — Software Deployment Quick Wins
 
-> **2026-06-15 M2 cert-auth command lifecycle truth refresh**:
-> backend + agent source slice merged: `platform-backend` #665 (`47d29d5f`)
-> cert-auth `/api/v1/endpoint-agent/commands/next` ve
-> `/commands/{commandId}/result` yüzeylerini ekledi; `platform-agent` #157
-> (`83cd30d0`) tokenless auto-enroll runner'ını cert-auth heartbeat sonrası
-> command poll -> execute -> result submit akışına bağladı. `platform-k8s-gitops`
-> #1556 (`3ad0ebe4`) test overlay `endpoint-admin-service` digest'ini
-> `sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97`
-> artifact'ine pinledi. Bounded runtime smoke da geçti: `ERP-MOBIL.acik.local`
-> üzerinde #157 Windows binary SHA256
-> `a447a3eb5c338426bb458f148b6de304d4f3f132a3e041e41d1b3aed32932670`
-> `--auto-enroll --once --api-url https://mtls.testai.acik.com/api/v1/endpoint-agent`
-> ile çalıştı; backend DB'de `COLLECT_INVENTORY` command
-> `125d46a7-55b7-4379-a7d2-72bf7b0600cc` `SUCCEEDED`, result
-> `841575fe-8527-4978-9f4d-3c8f8d77dbf8` `SUCCEEDED`, active machine-cert
-> binding `san_uri=adcomputer:2a8a00bf-420f-4741-aad3-c402eed0f74d`.
-> Project #2 `platform-backend` #663, `platform-agent` #151 ve
-> `platform-k8s-gitops` #1555 durumları deliberate acceptance için
-> `Needs Verify` tutuldu.
-> `backend-testai-deploy` run `27516978772` `success`: endpoint-admin pod image
-> #665 digest'iyle verify edildi, public edge chain alive, 9/9 service
-> readiness, endpoint-admin 180s stability window PASS; Gate 2 JWT smoke
-> `SMOKE_AUTH_*` yokluğu nedeniyle skip. `faz22-platform-test-sync-openfga-verify`
-> run `27517879015` de ArgoCD platform-test sync + endpoint-admin OpenFGA
-> runtime selector verify ile `success`. Smoke sırasında Windows local hosts
-> shim `mtls.testai.acik.com -> 10.9.10.53` kullanıldı ve kanıt sonrası
-> kaldırıldı; kalıcı AD DNS, admin-dispatch API, 5-PC GPO, 24h soak, 50/800
-> wave ve prod `mtls.ai.acik.com` gate'leri ayrı kalır. Canonical ayrıntı:
-> `docs/state/current-state.md` 2026-06-15 M2 live delta.
+> **2026-06-15 M2 durable AD DNS + service-mode truth refresh**:
+> backend + agent cert-auth command lifecycle source slice remains as previously
+> recorded: `platform-backend` #665 (`47d29d5f`) added cert-auth command poll
+> and result endpoints, and `platform-agent` #157 (`83cd30d0`) connected
+> tokenless AutoEnroll heartbeat -> command poll -> execute -> result submit.
+> The subsequent durable service-mode blocker is now addressed for the bounded
+> ERP-MOBIL subgate: `platform-agent` #171 (`5319454f`) fixed AD CS CNG machine
+> certs with noncanonical KeySpec/AT_NONE by accepting them only after a positive
+> NCrypt Algorithm Name probe; release `v0.2.4` was published and GitOps #1575
+> (`c25dd56e`) pinned artifact-host to
+> `ghcr.io/halildeu/platform-agent-artifacts:v0.2.4@sha256:f52480d300852cd0c2c398482e25f188eb8b3eda75d93aa495fa90e32a4b9592`.
+> On `ERP-MOBIL.acik.local`, no-hosts AD DNS now resolves `testai.acik.com` and
+> `mtls.testai.acik.com` through `10.9.10.10` to `10.9.10.53`; both TCP/443
+> checks pass. Current artifact path
+> `https://testai.acik.com/artifacts/endpoint-agent/current/` serves
+> `release_tag=v0.2.4`, `EndpointAgent.zip` SHA256
+> `9caea9fb851513717cc1e3d54c5378dd850731de8e73e21df9351cf7077ec8a8`, and agent
+> binary SHA256 `067e42eab24ee1f73dc28903774c6f5db6c6dcb2bf1163271efa3803587e06a3`.
+> `EndpointAgent` was restored as a `LocalSystem` auto-start service and,
+> after restart, logs show `auto-enroll cert loaded` followed by repeated
+> `no command available`, proving tokenless mTLS command-poll continuity over
+> `https://mtls.testai.acik.com/api/v1/endpoint-agent`. Project #2 bounded
+> gate #1569 is `Needs Verify`; broader #1359/#1376 remain `Blocked` for
+> 5-PC GPO pilot, 24h soak/waves, prod `mtls.ai.acik.com`, and any negative
+> matrix kept in M2 scope. ArgoCD `platform-test` still lacks registered
+> `test-cluster`; follow-up #1577 tracks that GitOps automation debt.
+> Canonical ayrıntı: `docs/state/current-state.md` 2026-06-15 M2 live delta.
 
 > **2026-06-07 endpoint-admin OpenFGA selector truth refresh**:
 > platform-k8s-gitops #1267 and #1331 are CLOSED + Project Done after workflow
@@ -155,15 +153,14 @@
 > `/api/v1/endpoint-agent` route; `platform-backend` #511 provides result-submit
 > failure visibility; GitOps #1355 pinned the endpoint-admin digest; GitOps
 > #1358 added the exact auto-enroll gateway route and live no-cert POST now
-> fails closed with `MTLS_CERT_MISSING`. Remaining gate: tokenless domain
-> AutoEnroll DNS naming was updated on 2026-06-14 to
-> `mtls.testai.acik.com` (test/pilot) and `mtls.ai.acik.com` (prod), both
-> resolving to `212.115.26.190` on public resolvers. AutoEnroll remains blocked
-> on edge/backend mTLS activation (#1359): backend mTLS listener, ingress
-> ssl-passthrough, server-cert SAN coverage, AD CS/client CA, no-cert/spoof
-> negative and valid machine-cert positive evidence. The HMAC bootstrap is usable for short pilot
-> reruns, but it still prompts for a hidden enrollment token and is not the
-> final 800-PC rollout channel.
+> fails closed with `MTLS_CERT_MISSING`. Later M2 evidence supersedes the
+> initial blocker wording: `mtls.testai.acik.com` test/pilot DNS, edge/backend
+> mTLS activation, AD CS machine cert positive path, artifact-host current
+> package, and ERP-MOBIL service restart continuity are now proven for bounded
+> gate #1569. The HMAC bootstrap is still usable for short pilot reruns, but it
+> prompts for a hidden enrollment token and is not the final 800-PC rollout
+> channel. Remaining broader gates: 5-PC GPO pilot, OS reboot continuity,
+> 24h soak, 50/800 staged waves, and prod `mtls.ai.acik.com`.
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
@@ -297,8 +294,8 @@ install/uninstall kanıtlarını supersede etmez.
 |---|---|---|---:|---|
 | **M0 Official Hotfix Release** | AG-038 full `configHash`, PS5.1 installer encoding/BOM regression, canonical artifact URL, initial Authenticode/dev-signing path, result-submit 4xx/5xx visibility | `platform-agent` + `platform-backend` + release/artifact ops | **1-2 iş günü** | MKR-A1 clean reinstall: service running + enrollment OK + HMAC OK + `COLLECT_INVENTORY` result submit 200 + audit row |
 | **M1 One-command Pilot Bootstrap** | Signed/hash-verified PowerShell bootstrap, short-lived claim-code, AppInstaller/WinGet readiness check/repair, post-install smoke | `platform-agent` + backend enrollment surface | **1-2 iş günü** | 2-5 pilot cihazda tek komutla install + enroll + inventory smoke; raw token paste yok |
-| **M2 Backend mTLS Auto-enroll** | Machine cert doğrulayan `POST /endpoint-enrollments/auto`, AD computer identity binding, audit/revoke semantics | `platform-backend` | **LIVE-SMOKED / durable-gated** | `mtls.testai.acik.com` test edge/backend mTLS, no-cert fail-closed, valid ERP-MOBIL machine cert AutoEnroll HTTP 201, DB/audit cert identity, #155 tokenless heartbeat rows and #157 cert-auth command/result smoke (`COLLECT_INVENTORY` command `125d46a7-55b7-4379-a7d2-72bf7b0600cc` -> `SUCCEEDED`) proven; durable AD DNS, admin dispatch API and rollout gates remain open |
-| **M3 Agent `--auto-enroll`** | Agent machine cert/domain identity ile backend auto-enroll, fallback claim-code ayrımı | `platform-agent` | **PARTIAL-LIVE** | Domain cihazda kullanıcı token'ı olmadan service start -> enrolled -> heartbeat proven on ERP-MOBIL with `0.1.0-ci.355.g836d232`; #157 local smoke proved cert-auth command poll/result submit with a temporary hosts shim; installer/GPO bootstrap acceptance, stale HKLM/fresh-enroll guard verify and durable DNS remain open |
+| **M2 Backend mTLS Auto-enroll** | Machine cert doğrulayan `POST /endpoint-enrollments/auto`, AD computer identity binding, audit/revoke semantics | `platform-backend` | **BOUNDED LIVE / Needs Verify** | `mtls.testai.acik.com` test edge/backend mTLS, no-cert fail-closed, valid ERP-MOBIL machine cert AutoEnroll HTTP 201, DB/audit cert identity, #155 tokenless heartbeat rows, #157 cert-auth command/result smoke (`COLLECT_INVENTORY` command `125d46a7-55b7-4379-a7d2-72bf7b0600cc` -> `SUCCEEDED`), and #1569 durable no-hosts AD DNS + service restart continuity proven. Remaining: maintainer acceptance, 5-PC GPO, 24h soak/waves, prod host and any retained negative matrix |
+| **M3 Agent `--auto-enroll`** | Agent machine cert/domain identity ile backend auto-enroll, fallback claim-code ayrımı | `platform-agent` | **BOUNDED LIVE / Needs Verify** | Domain cihazda kullanıcı token'ı olmadan service start -> enrolled -> heartbeat proven on ERP-MOBIL; #171/#v0.2.4 CNG signer fix released; current bootstrap installed/restored `EndpointAgent` as `LocalSystem` service; restart logs show `auto-enroll cert loaded` + `no command available` over durable `mtls.testai.acik.com`. Remaining: signed MSI/GPO bootstrap acceptance, OS reboot continuity, multi-device rollout |
 | **M4 Signed WiX MSI** | Authenticode signed MSI, fixed UpgradeCode, service install/upgrade/uninstall, EDR allowlist doc | `platform-agent` CI + operator signing | **2-4 iş günü** + cert gate | Local install/repair/upgrade/uninstall smoke; signature trust verified |
 | **M5 GPO 5-PC Pilot** | Pilot OU'ya GPO Software Installation, 5 cihaz rollout, monitoring | Operator + IT + gitops evidence | **1-2 iş günü** + gözlem | 5/5 cihaz enrolled, heartbeat, inventory; no manual token/ZIP |
 | **M6 50-PC Wave** | Ring/tag rollout, concurrency/maintenance window discipline, alerting | Operator + backend rollout controls | **2-3 iş günü** + gözlem | 50 cihazda P95 enrollment/heartbeat/command SLA raporu |
@@ -331,15 +328,15 @@ bu süreye **3-10+ iş günü** operator beklemesi eklenir.
   now requires this URL and rejects stale `/api/v1/endpoint-admin` in both
   install and bootstrap scripts. Main workflow run `27144437218` succeeded
   across Linux build/package, lab signing and Windows Go test.
-- Canonical test artifact endpoint refreshed again after artifact-host v0.2.3
+- Canonical test artifact endpoint refreshed again after artifact-host v0.2.4
   promotion: `https://testai.acik.com/artifacts/endpoint-agent/current/`
   serves the live pilot pointer, with immutable equivalent under
-  `/artifacts/endpoint-agent/v0.2.3/`. Current `EndpointAgent.zip` SHA256 is
-  `e03618da2c6afe06ef5d674a759ea3a43614cdac7f16c27aaaabb9d05ba51b14`;
-  standalone `bootstrap-package.ps1` SHA256 is
-  `fa11ded2ad2e81587f6de1adc323b81f852918021872fdda27376a176432718a`.
+  `/artifacts/endpoint-agent/v0.2.4/`. Current `EndpointAgent.zip` SHA256 is
+  `9caea9fb851513717cc1e3d54c5378dd850731de8e73e21df9351cf7077ec8a8`; agent
+  binary SHA256 is
+  `067e42eab24ee1f73dc28903774c6f5db6c6dcb2bf1163271efa3803587e06a3`.
   The older `/0.1.0-dev/` path is stale and returns 404 on the live artifact
-  host. Public/internal HTTPS verification confirmed `current/` and `v0.2.3/`
+  host. Public/internal HTTPS verification confirmed `current/` and `v0.2.4/`
   `bootstrap-package.ps1`, `EndpointAgent.zip`, `EndpointAgent.zip.sha256`,
   `SHA256SUMS`, and `release-manifest.json` return HTTP 200.
 - `platform-backend` PR #511 MERGED: rejected result submissions no longer
