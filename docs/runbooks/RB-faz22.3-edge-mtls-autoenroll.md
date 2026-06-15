@@ -237,16 +237,18 @@ The agent AutoEnroll client appends `/endpoint-enrollments/auto` to the base
 URL, so `-AutoEnrollApiUrl` must use the external gateway base
 `/api/v1/endpoint-agent`.
 
-The current canonical pilot package is the `platform-agent` #107 artifact
-published through the test artifact host:
+The current canonical pilot package is the `platform-agent` v0.2.3 artifact
+published through the test artifact host. Use `/current/` for pilot bootstrap
+so the command follows the live artifact-host pointer; `/v0.2.3/` is the
+immutable equivalent.
 
 - `EndpointAgent.zip` SHA256:
-  `9dcf6c2cab5a7dd1fef16a230f065540e1f2d639e0031038e3fbd8d0a9d26029`
+  `e03618da2c6afe06ef5d674a759ea3a43614cdac7f16c27aaaabb9d05ba51b14`
 - standalone `bootstrap-package.ps1` SHA256:
-  `7ac13aad5c910a74c59862dfc7faafc3c88187c541b9b5f7af64172427335859`
+  `fa11ded2ad2e81587f6de1adc323b81f852918021872fdda27376a176432718a`
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/bootstrap-package.ps1 -OutFile $env:TEMP\endpoint-agent-bootstrap.ps1; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\endpoint-agent-bootstrap.ps1 -PackageUrl 'https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/EndpointAgent.zip' -ExpectedZipSha256 '9dcf6c2cab5a7dd1fef16a230f065540e1f2d639e0031038e3fbd8d0a9d26029' -AutoEnroll -AutoEnrollApiUrl 'https://mtls.testai.acik.com/api/v1/endpoint-agent' -AutoEnrollCertSANURIPrefix 'adcomputer:' -WorkDir 'C:\Temp\EndpointEnes' -ZipPath 'C:\Temp\EndpointAgent.zip' -Start -Force"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://testai.acik.com/artifacts/endpoint-agent/current/bootstrap-package.ps1 -OutFile $env:TEMP\endpoint-agent-bootstrap.ps1; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\endpoint-agent-bootstrap.ps1 -PackageUrl 'https://testai.acik.com/artifacts/endpoint-agent/current/EndpointAgent.zip' -ExpectedZipSha256 'e03618da2c6afe06ef5d674a759ea3a43614cdac7f16c27aaaabb9d05ba51b14' -AutoEnroll -AutoEnrollApiUrl 'https://mtls.testai.acik.com/api/v1/endpoint-agent' -AutoEnrollCertSANURIPrefix 'adcomputer:' -WorkDir 'C:\Temp\EndpointEnes' -ZipPath 'C:\Temp\EndpointAgent.zip' -Start -Force"
 ```
 
 ## 8. HMAC Fallback Bootstrap Before Edge Gate
@@ -269,9 +271,9 @@ with hidden input.
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$BootstrapUrl = "https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/bootstrap-package.ps1"
-$PackageUrl = "https://testai.acik.com/artifacts/endpoint-agent/0.1.0-dev/EndpointAgent.zip"
-$ExpectedZipSha256 = "9dcf6c2cab5a7dd1fef16a230f065540e1f2d639e0031038e3fbd8d0a9d26029"
+$BootstrapUrl = "https://testai.acik.com/artifacts/endpoint-agent/current/bootstrap-package.ps1"
+$PackageUrl = "https://testai.acik.com/artifacts/endpoint-agent/current/EndpointAgent.zip"
+$ExpectedZipSha256 = "e03618da2c6afe06ef5d674a759ea3a43614cdac7f16c27aaaabb9d05ba51b14"
 $BootstrapPath = "$env:TEMP\endpoint-agent-bootstrap.ps1"
 
 Invoke-WebRequest -UseBasicParsing -Uri $BootstrapUrl -OutFile $BootstrapPath
