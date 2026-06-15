@@ -8,22 +8,27 @@ truth güncellendi. `platform-backend` #665 (`47d29d5f`) cert-auth command poll
 ve result endpoint'lerini `/api/v1/endpoint-agent/commands/**` altında ekledi.
 `platform-agent` #157 (`83cd30d0`) tokenless auto-enroll runner'ını
 cert-auth heartbeat sonrası command poll -> execute -> result submit akışına
-bağladı. İki issue da runtime doğrulama beklediği için `Needs Verify`
-durumunda tutuldu: `platform-backend` #663 ve `platform-agent` #151.
+bağladı. Ardından `platform-k8s-gitops` #1556 (`3ad0ebe4`) test overlay
+`endpoint-admin-service` digest'ini #665 artifact'ine pinledi. İlgili
+runtime doğrulama issue'ları `Needs Verify` durumunda tutuldu:
+`platform-backend` #663, `platform-agent` #151 ve `platform-k8s-gitops` #1555.
 
 | Alan | Durum (2026-06-15) | Kanıt / sınır |
 |---|---|---|
 | Backend M2-C cert-auth command lifecycle | 🟡 SOURCE-MERGED + Needs Verify | `platform-backend` #665 merge commit `47d29d5fe4f1ba12b35d18f2edf17c11a0798afe`; PR CI before merge: Maven full reactor, endpoint-admin-service unit/slice, secrets, OSV, contract gate, auth/report/permission integration checks SUCCESS; issue #663 Project #2 `Needs Verify` |
 | Agent M2-D tokenless command lifecycle | 🟡 SOURCE-MERGED + Needs Verify | `platform-agent` #157 merge commit `83cd30d0a734db495caf3c0e1cf4ae76adb09666`; CI before merge: BG-EA-1 boundary declaration, Test/lint/cross-build, Windows Go test, Windows PowerShell 5.1 installer gate, D10-5a reproducible build, SBOM, gitleaks SUCCESS; issue #151 Project #2 `Needs Verify` |
+| GitOps M2-E desired-state pin | 🟡 MERGED + Needs Verify | `platform-k8s-gitops` #1556 merge commit `3ad0ebe45dbe6d974e17f8dfd3c82fe5e6dc5684`; test overlay now pins `endpoint-admin-service` to `sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97`; issue #1555 Project #2 `Needs Verify` |
+| Testai deploy follow-up | 🟡 partial runtime gate | `backend-testai-deploy` run `27516978772` passed sequential digest rollout, public edge chain alive, and per-service readiness, then remained in Gate 1d pod stability window during this session; `faz22-platform-test-sync-openfga-verify` run `27517879015` queued on self-hosted runner. No long wait held in-session. |
 | Auth boundary | 🟢 source-enforced | Agent `NextCommandCert` / `SubmitResultCert` send no `Authorization` header; legacy bearer path still fail-closes on empty token. Backend authenticates presented machine cert via existing lifecycle binding and ignores client-supplied tenant on mTLS passthrough. |
 | Cross-AI review | 🟢 no blocking findings | Claude CLI reviewed backend #665 and agent #157 diffs; both returned `NO BLOCKING FINDINGS`. Backend review residuals were outside-diff runtime/tenant-binding concerns; agent review's helper-name style note was absorbed. |
-| Board sync / hygiene | 🟡 deterministic backfill exhausted, manual triage remains | Clean `origin/main` `board-sync.sh sync-state` verified cross-repo #151/#663/#1537 as `Needs Verify` + unclaimed. Live `board-hygiene-audit.py --limit 1000 --json`: `items_with_missing_fields=106`, `proposal_count=0`, `manual_count=172`, missing by field `Status=11`, `Faz=60`, `Priority=101`. Remaining fields must not be guessed. |
+| Board sync / hygiene | 🟡 deterministic backfill exhausted, manual triage remains | Clean `origin/main` `board-sync.sh sync-state` verified cross-repo #151/#663/#1537 as `Needs Verify` + unclaimed. Latest read-only audit `board-hygiene-audit.py --limit 220 --only-project-roadmap --json`: `items_with_missing_fields=102`, `proposal_count=0`, `manual_count=168`; `board-sync.sh list` shows no eligible Todo issue, 10 Backlog triage items, and 10 claimless In Progress anomalies. Remaining fields must not be guessed. |
 | Runtime gate | 🟡 open | Need deployed backend/edge + cert-bearing Windows host proof for AutoEnroll -> heartbeat -> command poll -> command result over `https://mtls.testai.acik.com/api/v1/endpoint-agent`, with no bearer/HMAC fallback and backend audit/device rows showing cert-auth binding. |
 
-**Boundary**: M2 command/result lifecycle is now source-merged on both sides,
-but this is not `Done`. It does not prove 5-PC GPO, 24h soak, 50/800 rollout,
-prod `mtls.ai.acik.com`, or live cert-auth command execution. Operator-bound
-and time-bound gates remain skipped per autonomous-mode instruction.
+**Boundary**: M2 command/result lifecycle is now source-merged on both sides
+and desired-state pinned for test overlay, but this is not `Done`. It does not
+prove tokenless live command/result execution, 5-PC GPO, 24h soak, 50/800
+rollout, or prod `mtls.ai.acik.com`. Operator-bound and time-bound gates remain
+skipped per autonomous-mode instruction.
 
 ## Live Delta — Faz 22.5 M2 agent edge-default fix merged; Project #2 hygiene guard/backfill merged; M2 runtime gates still separate (2026-06-15, Codex #151/#1537)
 
