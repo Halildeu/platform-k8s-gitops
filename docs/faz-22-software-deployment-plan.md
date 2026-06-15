@@ -5,11 +5,17 @@
 > (`47d29d5f`) cert-auth `/api/v1/endpoint-agent/commands/next` ve
 > `/commands/{commandId}/result` yüzeylerini ekledi; `platform-agent` #157
 > (`83cd30d0`) tokenless auto-enroll runner'ını cert-auth heartbeat sonrası
-> command poll -> execute -> result submit akışına bağladı. Project #2
-> `platform-backend` #663 ve `platform-agent` #151 durumları `Needs Verify`.
-> Bu yalnız source + CI kanıtıdır; live mTLS E2E, 5-PC GPO, 24h soak, 50/800
-> wave ve prod `mtls.ai.acik.com` gate'leri ayrı kalır. Canonical ayrıntı:
-> `docs/state/current-state.md` 2026-06-15 M2 live delta.
+> command poll -> execute -> result submit akışına bağladı. `platform-k8s-gitops`
+> #1556 (`3ad0ebe4`) test overlay `endpoint-admin-service` digest'ini
+> `sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97`
+> artifact'ine pinledi. Project #2 `platform-backend` #663, `platform-agent`
+> #151 ve `platform-k8s-gitops` #1555 durumları `Needs Verify`.
+> `backend-testai-deploy` run `27516978772` sequential rollout + public edge
+> alive + per-service readiness kapılarını geçti, fakat bu oturumda Gate 1d
+> stability window içinde kaldı; live command/result E2E halen ayrı runtime
+> gate'tir. 5-PC GPO, 24h soak, 50/800 wave ve prod `mtls.ai.acik.com`
+> gate'leri ayrı kalır. Canonical ayrıntı: `docs/state/current-state.md`
+> 2026-06-15 M2 live delta.
 
 > **2026-06-07 endpoint-admin OpenFGA selector truth refresh**:
 > platform-k8s-gitops #1267 and #1331 are CLOSED + Project Done after workflow
