@@ -1,15 +1,15 @@
 # RB — Faz 22.5 M2 Edge mTLS Activation (#1359)
 
-> **Config prep advanced (agent-doable); live activation remains
-> operator-gated.** This runbook + the manifests in
-> `kustomize/base/endpoint-agent-mtls/` + the host-nginx stream snippet are the
-> edge config layer for ADR-0029's TLS-passthrough device-API mTLS. The test
-> overlay now renders the passthrough Service/Ingress/NetworkPolicy and the
-> endpoint-admin Deployment declares a default-off `mtls` port, but the backend
-> connector still stays disabled until the operator seeds keystore/truststore
-> secrets, sets a fixed tenant UUID, applies the ingress-nginx ssl-passthrough
-> flag, and wires the real host-nginx stream route. The normal browser/API host
-> is unaffected while `ENDPOINT_ADMIN_MTLS_PASSTHROUGH_ENABLED=false`.
+> **Test activation is bounded-proven; durable rollout remains gated.** This
+> runbook + the manifests in `kustomize/base/endpoint-agent-mtls/` + the
+> host-nginx stream snippet are the edge config layer for ADR-0029's
+> TLS-passthrough device-API mTLS. As of the 2026-06-14/15 M2 smoke, the test
+> path for `mtls.testai.acik.com` serves the AD CS-backed mTLS listener, requests
+> client certs, fails closed without a client cert, and accepted one
+> `ERP-MOBIL.acik.local` machine-cert AutoEnroll + heartbeat + cert-auth command
+> result chain. That is **not** domain rollout acceptance: durable AD DNS,
+> service-mode continuity, GPO/MSI pilot, 24h soak/waves and prod
+> `mtls.ai.acik.com` remain separate gates.
 
 Architecture (ADR-0029 §2.5, owner-approved; host naming amendment
 2026-06-14): dedicated SNI hosts `mtls.testai.acik.com` for test/pilot and
@@ -22,7 +22,7 @@ AutoEnroll smoke.
 
 ## 2026-06-14 DNS naming decision
 
-The old placeholder host `endpoint-agent-mtls.testai.acik.com` is replaced by:
+The retired long-form placeholder host is replaced by:
 
 | Environment | Canonical host | Purpose |
 |---|---|---|
@@ -30,22 +30,27 @@ The old placeholder host `endpoint-agent-mtls.testai.acik.com` is replaced by:
 | Prod | `mtls.ai.acik.com` | Prod mTLS device API after test acceptance |
 
 Public DNS for both names has been operator-created and externally verified to
-resolve to `212.115.26.190`. This does **not** close M2: the current forced-SNI
-probe reaches the existing nginx default route and returns HTTP 404, which means
-the host route is not wired yet. The served certificate is currently
-`CN=*.acik.com` / SAN `*.acik.com, acik.com`; the eventual mTLS backend/server
-certificate must explicitly cover `mtls.testai.acik.com` and
-`mtls.ai.acik.com` (or use an equivalent cert that covers those exact names).
+resolve to `212.115.26.190`. This does **not** close M2: the test host route is
+now wired and bounded-smoked, but the smoke used a temporary Windows hosts shim
+for the private edge path and only one domain machine. Durable internal AD DNS,
+service-mode restart continuity, 5-PC GPO, soak/waves and prod activation still
+need their own evidence.
 
-Read-only host/cluster preflight from 2026-06-14:
+Latest no-client-cert recheck (2026-06-15 ~05:15 +03, Mac -> public edge with
+forced SNI) reached `mtls.testai.acik.com:443`, saw the backend/server
+certificate `CN=mtls.testai.acik.com` issued by `Acik-Endpoint-CA`, received
+TLS `Request CERT`, then failed closed without a client certificate (`curl:
+(56)`). That replaces the older 404/default-route snapshot below.
+
+Read-only host/cluster truth, superseding the early 2026-06-14 preflight:
 
 | Check | Observed |
 |---|---|
-| Host nginx server names | `ai.acik.com` and `testai.acik.com`; no `mtls.*` server/stream route yet |
+| Host nginx mTLS SNI route | `mtls.testai.acik.com:443` reaches the mTLS path and requests a client cert; `mtls.ai.acik.com` stays prod-gated |
 | k3d-test serverlb HTTPS | `127.0.0.1:31443` |
 | k3d-prod serverlb HTTPS | `127.0.0.1:30443` |
-| endpoint-admin-service ports | desired-state now declares Deployment port `mtls:8443` and renders `endpoint-agent-mtls-backend`; live service currently remains `http:8096` + `management:8081` until GitOps sync/rollout |
-| ingress-nginx ssl-passthrough flag | desired `helm-values/ingress-nginx/values-test.yaml` now includes `enable-ssl-passthrough`; live controller args still need Helm apply + read-back verification |
+| endpoint-admin-service mTLS listener | test path has been live-smoked for AutoEnroll/heartbeat and later cert-auth command/result; keep service endpoint/readiness as a per-smoke check |
+| ingress-nginx ssl-passthrough | test path has been live-smoked; keep controller arg/read-back verification in every activation run |
 
 ## Live prerequisites (not fully agent-doable)
 
@@ -53,9 +58,9 @@ Read-only host/cluster preflight from 2026-06-14:
 |---|---|---|---|
 | P1 | DNS A records `mtls.testai.acik.com` + `mtls.ai.acik.com` → edge public IP | **operator (DNS)** | **DONE 2026-06-14** for public resolvers; still verify from target corp DNS/VPN before pilot |
 | P2 | AD CS Enterprise Root CA issuing machine certs (EKU Client Authentication; SAN `URI:adcomputer:{objectGUID}`); CRL/OCSP reachable | **operator (AD CS)** | URI-SAN machine-cert issuance is proven on `ERP-MOBIL` (RequestId 3, thumbprint `F87F0D21F29DCBE77AA861587559BAC974D2FCC0`, URI `adcomputer:2a8a00bf-420f-4741-aad3-c402eed0f74d`); still verify CRL/OCSP reachability from backend namespace before pilot |
-| P3 | endpoint-admin mTLS passthrough connector enabled only in test with mounted PKCS12 stores + passwords + fixed tenant UUID; client trust = AD CS Root CA; server cert SAN covers `mtls.testai.acik.com`; connector serves `POST /api/v1/endpoint-agent/endpoint-enrollments/auto` (canonical route) + heartbeat + command poll/result and derives identity from client cert | **operator + GitOps overlay** | Backend source is already present in test image `sha-f78a24d`; remaining gate is deliberate config/secret activation. The backend fails fast if passthrough and forward-header mode are enabled together |
-| P4 | ingress-nginx controller running with `--enable-ssl-passthrough` | **operator (cluster)** | required for the passthrough Ingress to SNI-route raw TLS; desired test values now include the flag, but live args must be Helm-applied and verified |
-| P5 | host-nginx built with `--with-stream` + `--with-stream_ssl_preread_module` | **operator (host)** | SNI passthrough at the real internet edge (the wildcard host nginx must not TLS-terminate the mTLS SNI) |
+| P3 | endpoint-admin mTLS passthrough connector enabled only in test with mounted PKCS12 stores + passwords + fixed tenant UUID; client trust = AD CS Root CA; server cert SAN covers `mtls.testai.acik.com`; connector serves `POST /api/v1/endpoint-agent/endpoint-enrollments/auto` (canonical route) + heartbeat + command poll/result and derives identity from client cert | **operator + GitOps overlay** | **BOUNDED-PROVEN on test 2026-06-14/15** for one machine: AutoEnroll HTTP 201, heartbeat, cert-auth command/result `SUCCEEDED`. Keep as a per-rollout gate for service-mode and multi-device evidence |
+| P4 | ingress-nginx controller running with `--enable-ssl-passthrough` | **operator (cluster)** | **BOUNDED-PROVEN on test path** by no-cert fail-closed + valid machine-cert smoke; still read back args/endpoints during every activation |
+| P5 | host-nginx built with `--with-stream` + `--with-stream_ssl_preread_module` | **operator (host)** | **BOUNDED-PROVEN on test path** by public SNI no-cert probe reaching backend cert-auth path; prod SNI remains gated |
 | P6 | port-scope the broad intra-namespace allow (or isolate the mTLS listener on a separately-labeled workload) so 8443 is reachable only from ingress-nginx | **operator (cluster)** | K8s NetworkPolicy is additive — the allow in `netpol.yaml` is necessary but NOT sufficient (Codex F2); see the caveat in that file |
 | P7 | fill the PKI egress `ipBlock` CIDRs in `netpol.yaml` (AD CS CRL/OCSP + DC LDAPS) | **operator (AD CS/network)** | default-deny egress otherwise blocks revocation checking → backend fails-closed (Codex F3) |
 
@@ -160,11 +165,14 @@ cert-bound bearer re-issued) with zero or planned downtime; write the
 downtime decision before scaling.
 
 ## Status
-- **Edge/GitOps config layer: PREPARED FOR REVIEW** (runbook + rendered test
-  overlay bundle + host-nginx stream snippet + default-off backend connector
-  env/ports), 2026-06-14. M2 is **not live-accepted** yet: it still depends on
-  secret material, fixed tenant UUID, live Helm ssl-passthrough apply/read-back,
-  host-nginx stream route, 8443 isolation, PKI egress /32s, and the fail-closed
-  negative + valid-cert positive smokes — board `#1359`.
+- **Test edge mTLS path: BOUNDED-PROVEN / durable rollout gated**
+  (2026-06-14/15). The test SNI host reaches the mTLS listener, serves a
+  `mtls.testai.acik.com` server cert from `Acik-Endpoint-CA`, requests a client
+  cert and fail-closes no-cert traffic. A valid `ERP-MOBIL.acik.local` machine
+  cert produced AutoEnroll HTTP 201, backend DB/audit cert identity, tokenless
+  heartbeat and later cert-auth command/result `SUCCEEDED` evidence.
+- M2 remains **not domain-rollout accepted**: durable no-hosts AD DNS,
+  service-mode continuity/restart behavior, admin-dispatch API, 5-PC GPO, 24h
+  soak, 50/800 waves and prod `mtls.ai.acik.com` stay open under `#1359/#1376`.
 - Cross-references: ADR-0029, RB-faz22.3-ad-cs-setup.md, plan §0.5.2,
   `kustomize/base/endpoint-agent-mtls/`.
