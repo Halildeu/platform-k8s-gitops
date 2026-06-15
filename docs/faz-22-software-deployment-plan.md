@@ -1,5 +1,16 @@
 # Faz 22.5 — Software Deployment Quick Wins
 
+> **2026-06-15 M2 cert-auth command lifecycle truth refresh**:
+> backend + agent source slice artık merged: `platform-backend` #665
+> (`47d29d5f`) cert-auth `/api/v1/endpoint-agent/commands/next` ve
+> `/commands/{commandId}/result` yüzeylerini ekledi; `platform-agent` #157
+> (`83cd30d0`) tokenless auto-enroll runner'ını cert-auth heartbeat sonrası
+> command poll -> execute -> result submit akışına bağladı. Project #2
+> `platform-backend` #663 ve `platform-agent` #151 durumları `Needs Verify`.
+> Bu yalnız source + CI kanıtıdır; live mTLS E2E, 5-PC GPO, 24h soak, 50/800
+> wave ve prod `mtls.ai.acik.com` gate'leri ayrı kalır. Canonical ayrıntı:
+> `docs/state/current-state.md` 2026-06-15 M2 live delta.
+
 > **2026-06-07 endpoint-admin OpenFGA selector truth refresh**:
 > platform-k8s-gitops #1267 and #1331 are CLOSED + Project Done after workflow
 > run `27096356021` passed on `main@513e238b`. Runtime report verdict `PASS`:
