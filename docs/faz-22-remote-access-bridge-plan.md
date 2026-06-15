@@ -182,17 +182,24 @@ Owner directive (2026-06-11): complete 22.6 end-to-end to industry-standard (PAM
 
 Each phase is disabled-by-default until E; no live session before the §11/D10 expanded gate.
 
-### 9.5 Data-plane phasing + agent-completable status (2026-06-15, code-verified)
+### 9.5 Data-plane phasing + agent-completable status (2026-06-15, agent-side T-4 BUILT + VM-gold-proven)
 
-The bridge wire (`remote_bridge.proto`) is **FROZEN + backend-owned** (shadow wire spec `endpoint-admin-service/docs/remote-bridge-wire-contract.md`); the agent copy is **vendored (T-3)** — wire changes originate backend-side + re-vendor, never agent-side. The `Data` stream + `DataFrame`/`ErrorFrame` are declared (T-2a) but **inert**. Phasing:
+The bridge wire (`remote_bridge.proto`) is **FROZEN + backend-owned** (shadow wire spec `endpoint-admin-service/docs/remote-bridge-wire-contract.md`); the agent copy is **vendored (T-3)** — wire changes originate backend-side + re-vendor, never agent-side. The `Data` stream + `DataFrame`/`ErrorFrame` are declared (T-2a); the **live stream is not yet opened** — the agent-side capture/stream/exfil engine now EXISTS (built + VM-gold-proven, disabled-by-default under the §13 build-only path) but is unwired to the live `Data` stream until the broker-side T-2b lands. Phasing:
 
 | Phase | Scope | Status |
 |---|---|---|
 | T-1 / T-2a / T-3 | domain records · wire contract+codegen+adapters · vendored agent proto | ✅ done |
 | **Control-plane runtime** | agent harness: dial/AgentHello/heartbeat-watchdog/**KILL-priority** (KILL on CONTROL, structurally never delayed by DATA — agent never opens DATA)/seqGuard/backoff; `data_frame`-while-idle → **fail-closed defect-close** + `ErrorFrame("unsupported-payload-in-idle")` + counter (observable, not silent) | ✅ done + tested (15 harness tests) |
 | Authority/approval (B1/C/D control-side) | cert-bound token · token-lifecycle · dual-control approval→grant→PERMIT · operator-JWT-auth · duress | ✅ done (see [[project-faz-22-6-t4-bridge-wiring]]) |
-| **T-2b DATA-stream runtime** (agent-side) | opening the DATA stream + real backpressure/frame-flow | ⏳ **inseparable from a real payload producer → effectively gated with T-4**; a standalone fail-closed frame-guard now would be unwired/speculative (3-AI: No-Fake-Work, defer) |
-| **T-4 real screen/PTY capture** + Faz D VIEW_ONLY exfil controls (mask/watermark/indicator/local-abort) | the actual data-plane payload | 🔒 **owner-pilot-gated (ADR-0034 §13/D10)** |
+| **T-4 agent-side VIEW_ONLY data-plane** (capture + secure-stream + exfil + endpoint-awareness) | GDI screen capture · PNG codec · session-launcher (SYSTEM→session-1, no password) · secured named-pipe (protected DACL + nonce) · frame-IPC · in-frame exfil controls (active-indicator/screen-mask) + producer pipeline-wiring · endpoint-awareness banner | ✅ **BUILT + VM-gold-proven (disabled-by-default, §13 build-only)** — 15 PRs #172–#182, Codex `019ecbc5` AGREE each slice; real-Windows proofs: real-pixel capture, streaming+exfil (band survives e2e), banner (96/96 top-center red on real desktop) |
+| **T-2b DATA-stream wiring + broker-side** | opening the live `Data` gRPC stream (dataplane producer → bridge Data stream → broker consume) + broker backpressure/recording | ⏳ **broker-side = NEXT agent-completable track** (platform-backend / endpoint-admin-service, against the frozen wire; control-plane openSession + resolver already exist, slice-4c) — **agent producer is ready** |
+| **T-4 LIVE activation** + Faz D policy-mask-source / recording-WORM / telemetry / production default-on wiring | turning the built data-plane ON in a real session | 🔒 **owner-pilot-gated (ADR-0034 §13/D10)** |
 | Faz E LIVE acceptance | negative-test LIVE + red-team + D29-EA → attended pilot | 🔒 **owner-go** |
 
-**Agent-completable 22.6 RUNTIME + governance-doc surface = saturated** (control-plane runtime + authority/approval + ADR-0033/0034/0036/0040 + operator runbooks `RB-22-6-*`) — phase-limited claim: NOT "all of 22.6 done". The remainder is **owner/operator-gated pilot runtime + live evidence chain** (ADR-0040 §9 sign-off · #1388 §9.2 owner decisions [signed 2026-06-11] · T-4 capture + Faz D exfil controls · broker-side T-2b-live · Faz E attended pilot + physical PCs). Building further agent DATA-plane code before the T-4 owner gate = speculative (Codex `019ecbc5` AGREE: hardening/runbook, not new data-plane code).
+**Agent-side 22.6 VIEW_ONLY data-plane = BUILT + VM-gold-proven** (capture + secure-stream + in-frame exfil controls + pipeline wiring + stream-exfil proof + endpoint-awareness banner; 15 PRs #172–#182, disabled-by-default, Codex `019ecbc5` AGREE each slice). This **supersedes** the earlier "building agent data-plane code = speculative" stance: ADR-0034 **§13 explicitly permits disabled-by-default BUILD**; only LIVE activation needs D10, so the §13 build-only path was the correct, non-speculative track (each slice cross-AI-reviewed + real-Windows gold-proven).
+
+**Remaining agent-completable:** broker-side **T-2b** DATA-stream runtime (platform-backend / endpoint-admin-service, against the frozen wire — control-plane openSession already exists; needs its own plan-time design) · agent-side residuals (PID-verify hardening [winio-blocked raw-handle, Codex-deferred as defense-in-depth-not-primary], banner multi-monitor).
+
+**Remaining owner/operator-gated:** policy/DLP mask source · recording WORM writer · telemetry counters · production default-on wiring · T-4 LIVE activation · Faz E attended pilot + physical PCs · ADR-0040 §9 sign-off · #1388 §9.2 owner decisions [signed 2026-06-11].
+
+Phase-limited claim: NOT "all of 22.6 done" — the **live bridge end-to-end** still needs the broker-side T-2b + the owner LIVE gate. Board canonical: **#1580** (In Progress).
