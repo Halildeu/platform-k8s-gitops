@@ -10,12 +10,15 @@
 > `sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97`
 > artifact'ine pinledi. Project #2 `platform-backend` #663, `platform-agent`
 > #151 ve `platform-k8s-gitops` #1555 durumları `Needs Verify`.
-> `backend-testai-deploy` run `27516978772` sequential rollout + public edge
-> alive + per-service readiness kapılarını geçti, fakat bu oturumda Gate 1d
-> stability window içinde kaldı; live command/result E2E halen ayrı runtime
-> gate'tir. 5-PC GPO, 24h soak, 50/800 wave ve prod `mtls.ai.acik.com`
-> gate'leri ayrı kalır. Canonical ayrıntı: `docs/state/current-state.md`
-> 2026-06-15 M2 live delta.
+> `backend-testai-deploy` run `27516978772` `success`: endpoint-admin pod image
+> #665 digest'iyle verify edildi, public edge chain alive, 9/9 service
+> readiness, endpoint-admin 180s stability window PASS; Gate 2 JWT smoke
+> `SMOKE_AUTH_*` yokluğu nedeniyle skip. `faz22-platform-test-sync-openfga-verify`
+> run `27517879015` de ArgoCD platform-test sync + endpoint-admin OpenFGA
+> runtime selector verify ile `success`. Live cert-bearing Windows agent
+> command/result E2E, 5-PC GPO, 24h soak, 50/800 wave ve prod
+> `mtls.ai.acik.com` gate'leri ayrı kalır. Canonical ayrıntı:
+> `docs/state/current-state.md` 2026-06-15 M2 live delta.
 
 > **2026-06-07 endpoint-admin OpenFGA selector truth refresh**:
 > platform-k8s-gitops #1267 and #1331 are CLOSED + Project Done after workflow
