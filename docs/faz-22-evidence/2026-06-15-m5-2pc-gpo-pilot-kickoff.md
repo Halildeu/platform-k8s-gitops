@@ -2,21 +2,21 @@
 
 > **Date**: 2026-06-15
 > **Tracked by**: platform-k8s-gitops #1377
-> **Scope**: 2-PC GPO pilot kickoff / matrix narrowing
+> **Scope**: historical 2-PC GPO pilot kickoff / matrix narrowing
+> **Superseded by**: owner same-day no-24h selected-device direction recorded in `2026-06-15-m5-same-day-device-pool-amendment.md`
 > **Closure claim**: NO
 > **Runtime mutation from Codex host**: NONE
 
 ## 1. Owner Decision
 
-Owner reaffirmed on 2026-06-15 that the first M5 GPO pilot should use **2 PCs**,
-not the original 5-PC design. The authoritative acceptance remains board #1377
-and `docs/runbooks/RB-faz22-gpo-pilot-5pc.md` §8.A:
+Owner reaffirmed earlier on 2026-06-15 that the first M5 GPO pilot should use
+**2 PCs**, not the original 5-PC design. This was later superseded the same day
+by the owner-approved selected-device/no-24h scope. This file remains only as
+read-only discovery evidence.
 
-- exactly 2 devices;
-- 2/2 tokenless enrollment, heartbeat, inventory and result-submit evidence;
-- 24h soak;
-- one device rollback + reinstall drill;
-- post-pilot artifact with denominator=2.
+- original 2-PC candidate discovery;
+- no runtime mutation from the Codex host;
+- no GPO deployment claim.
 
 ## 2. Candidate Discovery From Codex Host
 
@@ -94,9 +94,10 @@ For each selected device:
   -ExpectedSignerThumbprint D68F4F530137EB65CE44E3405E82B46205E753E5
 ```
 
-M5 #1377 should remain `Needs Verify` until:
+M5 #1377 should remain `Needs Verify` until the current same-day selected-device
+gate is evidenced:
 
-- both devices have GPO/MSI install evidence;
-- both devices have tokenless enrollment + heartbeat + inventory/result-submit;
-- 24h soak is observed;
+- domain-gpo devices have GPO/MSI install evidence;
+- domain-gpo devices have tokenless enrollment + heartbeat + inventory/result-submit;
+- same-day T0/T+15/T+60 collector evidence is attached;
 - one device completes rollback + reinstall drill.

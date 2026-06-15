@@ -1,5 +1,30 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 M5 same-day selected-device pilot scope (2026-06-15, owner no-24h)
+
+**Owner decision**: The M5 first pilot will not wait for 24h. The current device
+pool is **AGENTPC1**, **AGENTPC2**, the local Parallels Windows device, and the
+denetim PC. This supersedes the earlier 2-PC/24h kickoff wording for #1377.
+
+| Device | Intended role | Counts for GPO/tokenless denominator? | Current boundary |
+|---|---|---:|---|
+| `AGENTPC1` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Needs Windows/DC-side preinstall + GPO + enroll-health evidence. |
+| `AGENTPC2` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Prior 9-hour install discovery is historical; retest via same-day GPO path. |
+| Local Parallels Windows | `local-control` | No, unless joined to `acik.local` and GPO-scoped | Use for installer/agent regression control and fast rollback/reinstall smoke. |
+| Denetim PC | `audit` | Yes, if domain-joined and GPO-scoped | Use as audit/user-session evidence device. |
+
+**Acceptance boundary**: #1377 remains `Needs Verify`. M5 no longer requires 24h
+soak for this first run; required checkpoints are T0/T+15/T+60 collector JSON,
+domain-gpo tokenless enrollment + heartbeat + inventory/result-submit evidence,
+one-device rollback/reinstall drill, and an explicit post-pilot artifact with
+`same_day_smoke=true`, `soak_hours=0`, denominator, failures, and M6 risk note.
+M6/50-PC may start only with explicit no-24h risk acceptance or a later
+stabilization gate.
+
+**Agent-doable support added**: `scripts/faz22-mass-deployment/m5-same-day-pilot-collector.ps1`
+is a read-only Windows collector for T0/T+15/T+60 evidence. It does not install,
+uninstall, enroll, mutate GPO, read secrets, or submit backend data.
+
 ## Live Delta — Faz 22.5 M2 durable AD DNS + service-mode continuity proven on ERP-MOBIL (2026-06-15, Codex #1569)
 
 **Session milestone**: M2 durable no-hosts path için bounded gate
@@ -26,15 +51,17 @@ restart/service smoke evidence recorded on #1569 / #1359 / #1376 / agent #170.
 
 **Boundary**: This proves the bounded #1569 subgate for durable AD DNS +
 ERP-MOBIL service restart continuity over tokenless mTLS. It does **not** prove
-OS reboot continuity, signed MSI/GPO deployment, the board-authoritative 2-PC
-pilot, 24h soak, 50/800 staged rollout, or prod `mtls.ai.acik.com`.
+OS reboot continuity, signed MSI/GPO deployment, the board-authoritative M5
+same-day selected-device pilot, later stabilization/soak evidence, 50/800
+staged rollout, or prod `mtls.ai.acik.com`.
 #1359/#1376 remain open/Blocked for
 those broader gates; #1577 tracks ArgoCD test-cluster registration/network debt.
 
-## Live Delta — Faz 22.5 M5 2-PC GPO pilot kickoff boundary (2026-06-15, Codex #1377)
+## Historical Delta — Faz 22.5 M5 2-PC GPO pilot kickoff boundary (2026-06-15, Codex #1377; superseded by same-day no-24h scope)
 
-**Owner decision**: 5-PC pilot is not required for the first GPO pilot; board
-#1377 remains authoritative with **2-PC / 24h** scope. Codex rechecked the
+**Historical owner decision**: 5-PC pilot was not required for the first GPO pilot;
+board #1377 later superseded this with the same-day no-24h selected-device
+scope above. Codex rechecked the
 network-discoverable candidate set from this host:
 
 | Candidate | DNS/IP | Reachability from Codex host | Current pilot use |
@@ -48,8 +75,9 @@ network-discoverable candidate set from this host:
 this Codex host there is no remote execution channel to the Windows clients
 (RDP/SMB/RPC visible, WinRM/SSH unavailable), so the next live evidence must be
 collected on the Windows/DC side: OU/GPO membership, preinstall
-`wave-preflight.ps1`, GPO MSI install, enroll-health preflight, 24h soak, and
-one-device rollback/reinstall drill. #1377 remains `Needs Verify`.
+`wave-preflight.ps1`, GPO MSI install, enroll-health preflight, same-day
+T0/T+15/T+60 collector evidence, and one-device rollback/reinstall drill.
+#1377 remains `Needs Verify`.
 
 ## Live Delta — Faz 22.5 M2 service-mode continuity smoke proven; dry-run CNG crash split to agent backlog (2026-06-15, Codex #1567/#165)
 
@@ -81,7 +109,8 @@ döngüsüne devam etti. Detay evidence:
 **Boundary**: This proves bounded Windows service-mode continuity across a
 service stop/start using local test CA + `mtls.local.test` host alias. It does
 **not** prove AD CS-issued service continuity on a domain host, durable no-hosts
-AD DNS, signed MSI/GPO install, OS reboot continuity, 24h soak, 2/50/800-device
+AD DNS, signed MSI/GPO install, OS reboot continuity, M5 same-day
+selected-device pilot, later stabilization/soak evidence, 50/800-device
 rollout, or prod `mtls.ai.acik.com`. #1359/#1376 therefore remain open for
 durable DNS/AD CS/GPO/wave gates.
 
@@ -106,8 +135,9 @@ aynı M2 enrollment/mTLS kontrolleri temiz Postgres ile yeniden koşturuldu.
 the backend M2 enrollment/mTLS code path and guard behavior. It does **not**
 prove AD CS-issued live corp cert enrollment, durable AD DNS without hosts
 shim, edge/public `:443` passthrough beyond the existing no-cert fail-closed
-probe, AD CS/domain service continuity, OS reboot continuity, 2-PC GPO pilot,
-24h soak, 50/800 staged rollout, or prod `mtls.ai.acik.com`. Therefore
+probe, AD CS/domain service continuity, OS reboot continuity, M5 same-day
+selected-device GPO pilot, later stabilization/soak evidence, 50/800 staged
+rollout, or prod `mtls.ai.acik.com`. Therefore
 #1359/#1376 stay open/Blocked;
 operator-bound and time-bound gates remain skipped per autonomous-mode
 instruction.
@@ -161,7 +191,8 @@ ve #1560 stale Backlog gövdesi `Needs Verify` gerçeğine hizalandı.
 submit on one Windows domain machine with a temporary hosts shim and a DB-seeded
 non-destructive command. It does **not** prove durable no-hosts AD DNS,
 AD CS/domain service continuity, OS reboot continuity, admin dispatch API,
-2-PC GPO, 24h soak, 50/800 staged rollout, or prod `mtls.ai.acik.com`.
+M5 same-day selected-device GPO pilot, later stabilization/soak evidence,
+50/800 staged rollout, or prod `mtls.ai.acik.com`.
 Operator-bound and time-bound gates remain skipped per autonomous-mode
 instruction.
 
@@ -191,14 +222,15 @@ runtime doğrulama issue'ları `Needs Verify` durumunda tutuldu:
 | Auth boundary | 🟢 source-enforced | Agent `NextCommandCert` / `SubmitResultCert` send no `Authorization` header; legacy bearer path still fail-closes on empty token. Backend authenticates presented machine cert via existing lifecycle binding and ignores client-supplied tenant on mTLS passthrough. |
 | Cross-AI review | 🟢 no blocking findings | Claude CLI reviewed backend #665 and agent #157 diffs; both returned `NO BLOCKING FINDINGS`. Backend review residuals were outside-diff runtime/tenant-binding concerns; agent review's helper-name style note was absorbed. |
 | Board sync / hygiene | 🟡 deterministic backfill exhausted, manual triage remains | Clean `origin/main` `board-sync.sh sync-state` verified cross-repo #151/#663/#1555/#1537/#1560 as `Needs Verify` + unclaimed and #1359/#1376 as `Blocked`. #1561 added `--manual-exception-report`; #1565 added scheduled/manual audit. Latest post-#1565 live audit/backfill: `items_with_missing_fields=107`, `proposal_count=0`, `manual_count=174`, `applied_count=0` after safe deterministic #1560 `Track=gitops` apply. Remaining fields must not be guessed. |
-| Runtime gate | 🟡 bounded proof complete; durable gates open | Superseded by the bounded Windows smokes above for AutoEnroll -> heartbeat -> command poll -> command result and local service stop/start continuity. Remaining gates are durable no-hosts AD DNS, AD CS/domain service continuity, OS reboot continuity, admin dispatch API, 2-PC GPO, 24h soak, 50/800 rollout and prod `mtls.ai.acik.com`. |
+| Runtime gate | 🟡 bounded proof complete; durable gates open | Superseded by the bounded Windows smokes above for AutoEnroll -> heartbeat -> command poll -> command result and local service stop/start continuity. Remaining gates are durable no-hosts AD DNS, AD CS/domain service continuity, OS reboot continuity, admin dispatch API, M5 same-day selected-device GPO pilot, later stabilization/soak evidence, 50/800 rollout and prod `mtls.ai.acik.com`. |
 
 **Boundary**: M2 command/result lifecycle is now source-merged on both sides,
 desired-state pinned for test overlay, and testai backend deploy/sync gates have
 passed. This historical section is superseded by the bounded Windows smoke above
 for cert-bearing command/result execution. It still does not prove durable
 no-hosts AD DNS, AD CS/domain service continuity, OS reboot continuity,
-2-PC GPO, 24h soak, 50/800 rollout, or prod `mtls.ai.acik.com`.
+M5 same-day selected-device GPO pilot, later stabilization/soak evidence,
+50/800 rollout, or prod `mtls.ai.acik.com`.
 Operator-bound and time-bound gates
 remain skipped per autonomous-mode instruction.
 
@@ -224,8 +256,8 @@ Project #2 üzerinde uygulandı.
 **Boundary**: #156 + #1552 materially improved M2 source/board hygiene; #1559
 later proved bounded cert-auth command/result execution on one Windows host.
 They still do not prove durable no-hosts AD DNS, AD CS/domain service
-continuity, OS reboot continuity, 2-PC GPO, 24h soak, 50/800 wave rollout, or
-prod `mtls.ai.acik.com`.
+continuity, OS reboot continuity, M5 same-day selected-device GPO pilot, later
+stabilization/soak evidence, 50/800 wave rollout, or prod `mtls.ai.acik.com`.
 Remaining manual Project fields must be triaged explicitly; no script should
 infer `Faz`/`Priority`/`Status` without deterministic evidence.
 
@@ -240,8 +272,9 @@ tokenless AutoEnroll **HTTP 201** live smoke geçti. Ardından `platform-agent`
 #155 (`836d232`) Windows certstore crash fix artifact'i ERP-MOBIL'de
 `--auto-enroll` ile çalıştırıldı ve backend DB'de tokenless mTLS heartbeat
 satırları oluştu. Bu M2 auto-enroll + heartbeat subgate'ini önemli ölçüde
-açar, fakat durable AD DNS, 2-PC/GPO rollout, 24h soak ve 50/800 dalgaları bu
-kanıtla otomatik kapanmaz. Cert-auth command/result lifecycle sonradan #1559
+açar, fakat durable AD DNS, M5 same-day selected-device GPO rollout, later
+stabilization/soak evidence ve 50/800 dalgaları bu kanıtla otomatik kapanmaz.
+Cert-auth command/result lifecycle sonradan #1559
 ile bounded tek-makine smoke olarak kanıtlandı; durable service-mode/rollout
 kanıtı ayrı kalır.
 
@@ -257,13 +290,13 @@ kanıtı ayrı kalır.
 | DB/audit | 🟢 Fixed tenant + cert identity proven | `endpoint_devices.tenant_id/org_id = 00000000-0000-0000-0000-000000000001` despite forged header; `endpoint_machine_certs` row stored SAN/objectGUID/thumbprint; audit `MACHINE_CERT_AUTO_ENROLL_SUCCESS` with `performed_by_subject=machine-cert:adcomputer:...` |
 | Agent tokenless heartbeat | 🟢 live-smoked on ERP-MOBIL | `platform-agent` #155 crash fix artifact SHA256 `BDEA1B102...`; backend `endpoint_devices` row `a358d36d-2ade-4e1f-9f54-68a085ef44a5` is `ONLINE`; latest DB heartbeat `2026-06-14 23:05:06.603163+00`, `agent_version=0.1.0-ci.355.g836d232`, `hostname=ERP-MOBIL`, `osType=WINDOWS` |
 | GitOps config | 🟡 reconciled for test overlay, runtime/DNS still gated | #1545 reconciled M2 test mTLS desired-state after AutoEnroll smoke; #1550 aligned endpoint-admin test digest to live `sha256:6316261...`. Durable internal AD DNS and cert-auth command lifecycle are still separate gates |
-| M2 acceptance boundary | 🟡 auto-enroll + heartbeat live, rollout open | AutoEnroll path and tokenless mTLS heartbeat are live-proven on one domain machine. At the time of this entry command lifecycle was deferred to #151; #1559 later proved bounded command/result. 2-PC GPO, 24h soak and 50/800 rollout remain separate gates |
+| M2 acceptance boundary | 🟡 auto-enroll + heartbeat live, rollout open | AutoEnroll path and tokenless mTLS heartbeat are live-proven on one domain machine. At the time of this entry command lifecycle was deferred to #151; #1559 later proved bounded command/result. M5 same-day selected-device GPO pilot, later stabilization/soak evidence and 50/800 rollout remain separate gates |
 
 **Boundary**: #1359/#1376 are no longer merely DNS/edge blocked for test
 AutoEnroll/heartbeat; a real tokenless AutoEnroll success and backend heartbeat
-exist. Do **not** claim 2-PC GPO readiness, 50/800 rollout readiness, prod
-`mtls.ai.acik.com` activation, durable internal DNS readiness, or cert-auth
-command/result lifecycle from this evidence alone.
+exist. Do **not** claim M5 same-day selected-device GPO readiness, 50/800
+rollout readiness, prod `mtls.ai.acik.com` activation, durable internal DNS
+readiness, or cert-auth command/result lifecycle from this evidence alone.
 
 ## Live Delta — Faz 22.5 wave-gate runbooks hardened + wave-preflight runtime-proven + M4 LIVE (2026-06-13, Codex 019ebf9b/019ebfbb/019ebff3)
 
@@ -272,7 +305,7 @@ command/result lifecycle from this evidence alone.
 | Alan | Durum (2026-06-13) | Kanıt |
 |---|---|---|
 | **M4 Signed MSI** | 🟢 **LIVE** (eski "OPEN" supersede) | AG-018 internal-CA pipeline, v0.2.1 production MSI 2-kanıt doğrulandı (`project_ag018_linux_signing_pivot`) |
-| **M5/M6/M7 runbook'lar** | 🟢 **HARDENED** (eski "Source DRAFT" supersede) | gitops **#1490** — `RB-faz22-gpo-pilot-5pc.md` (owner 2-PC/24h amendment §8.A) + `RB-faz22.5-m6-capacity-baseline.md` (metric-freeze + DeviceStatus enum fix) + `RB-faz22.5-m7-rollback-drill.md` (uydurma `/revoke` → gerçek `decommission`/`reactivate`+409; `EndpointAgent`/`endpoint-agent.exe` isim fix); #1489 duplicate consolidate edildi |
+| **M5/M6/M7 runbook'lar** | 🟢 **HARDENED** (eski "Source DRAFT" supersede) | gitops **#1490** — `RB-faz22-gpo-pilot-5pc.md` was later amended by owner same-day no-24h scope for #1377 + `RB-faz22.5-m6-capacity-baseline.md` (metric-freeze + DeviceStatus enum fix) + `RB-faz22.5-m7-rollback-drill.md` (uydurma `/revoke` → gerçek `decommission`/`reactivate`+409; `EndpointAgent`/`endpoint-agent.exe` isim fix); #1489 duplicate consolidate edildi |
 | **wave-preflight.ps1** | 🟢 **NEW + runtime-proven** | `scripts/faz22-mass-deployment/wave-preflight.ps1` (preinstall/enroll-health/rollback-clean); **#1491** gate-masking `[int]@()` fix — canlı Win11 VM (`HALILKOOLUB735`, SYSTEM) smoke ile yakalandı+doğrulandı |
 | **M2 #1359 evidence template** | 🟢 doğruluk fix | **#1492** — uydurma `/revoke` endpoint + `platform-agent.exe`/`state.json` → gerçek surface (`auto-enroll.dpapi` vs `hmac-credential.dpapi` iki-store ayrımı) |
 | **#1015 IT pilot runbook** | 🟢 doğruluk fix | **#1494** — `endpoint-enes-agent`/`EndpointEnes\Logs` → `EndpointAgent`/`endpoint-agent.exe`/`%ProgramData%\EndpointAgent\logs`; heartbeat path + tablo adları doğrulandı; preflight wired |
@@ -285,7 +318,8 @@ bakımından açıldı: DNS, AD CS CA, machine cert, backend 8443, ingress
 ssl-passthrough, host-nginx stream route, no-cert negative, spoof-header +
 valid-cert positive ve DB/audit evidence mevcut. Kalan gate artık daha dar:
 desired-state reconciliation/PR, mTLS-continuous credential/heartbeat channel,
-2-PC GPO pilot, 24h soak ve M5/M6/M7 wave execution. Agent prep ~100, wave exec
+M5 same-day selected-device GPO pilot, later stabilization/soak evidence ve
+M5/M6/M7 wave execution. Agent prep ~100, wave exec
 ~0. Cross-AI: Implementer Claude ≠ Reviewer Codex (HARD RULE).
 
 ## Live Delta — Faz 22.7 Compliance Gap Mart Layer D5 LIVE acceptance (browser-verified) + COMPLETED (2026-06-09, Codex 019ea95d)
@@ -330,7 +364,7 @@ Faz 22.7 = **🟢 COMPLETED** (authority platform-backend #376 CLOSED 2026-06-07
 
 **Tracker coverage** (PR #1385 §2 Gate Boundary Matrix):
 - **M2** (#1376) — AD CS / edge mTLS finalization: Source LIVE (RB + scripts + ADR MERGED PR #1078/#1080); operator gate = DNS + AD CS + CA + cert
-- **M5** (#1377) — 2-PC GPO pilot: Source DRAFT LIVE (PR #1386 RB-faz22-gpo-pilot-5pc.md; superseded by #1377 2-PC/24h amendment); operator gate = 2 PC IT + EDR + WDAC + soak
+- **M5** (#1377) — same-day selected-device GPO pilot: Source runbook/evidence updated; supersedes both original 5-PC/7d and intermediate 2-PC/24h paths; operator gate = selected device access + domain-gpo OU/GPO + EDR/WDAC + T0/T+15/T+60 evidence
 - **M6** (#1378) — 50-PC capacity baseline: Source DRAFT LIVE (PR #1386 RB-faz22.5-m6-capacity-baseline.md); operator gate = 50 PC IT + on-call rotation
 - **M7** (#1379) — Rollback drill: Source DRAFT LIVE (PR #1386 RB-faz22.5-m7-rollback-drill.md); operator gate = Lab env + domain admin; execution FORBIDDEN until lab-clone + Codex plan-time AGREE per scope
 - **#1359** Tokenless AutoEnroll: Source LIVE (edge mTLS RB + smoke templates) + Acceptance evidence template DRAFT LIVE (PR #1386); operator gate = DNS + cert + CA + agent --auto-enroll source (DNS still BLOCKED — see live delta above)
@@ -351,7 +385,7 @@ Faz 22.7 = **🟢 COMPLETED** (authority platform-backend #376 CLOSED 2026-06-07
 
 **Follow-up scope** (Tracker §3 closure status — operator-bound):
 - M2 closure: DNS yayını + AD CS Web Enrollment + cert chain + cert end-to-end + edge mTLS LIVE + spoof negative + no-cert negative + ≥1 test PC autoenrollment proof
-- M5 closure: 2/2 PC enrollment + GPO install LIVE + 2/2 24h soak no-regress + rollback/reinstall drill + Mavis sign-off
+- M5 closure: selected-device matrix + domain-gpo enrollment/GPO install LIVE + same-day T0/T+15/T+60 no-regress evidence + rollback/reinstall drill + `same_day_smoke=true` / `soak_hours=0` artifact + Mavis sign-off
 - M6 closure: 50/50 PC + capacity baseline measured + 1+ controlled abort drill PASS + throttling LIVE + Mavis sign-off
 - M7 closure: lab-clone drill 3-layer PASS (uninstall + revoke + GPO rollback) + audit ledger proof + Mavis sign-off
 - #1359 closure: DNS LIVE + cert mount + cert end-to-end + agent --auto-enroll source PR + edge mTLS + spoof/no-cert negative PASS (currently BLOCKED on DNS)
@@ -401,7 +435,7 @@ ZIP SHA256, installed the agent, enrolled, confirmed HMAC credential persistence
 removed enrollment-token material from the service environment, and completed a
 non-destructive `COLLECT_INVENTORY` command through backend -> agent -> result
 -> audit. This does not prove tokenless domain AutoEnroll, DNS/edge mTLS, MSI/GPO
-rollout, two-device/24h soak, or production Trusted Signing.
+rollout, M5 same-day selected-device GPO pilot, or production Trusted Signing.
 
 | Slice | Evidence | Hukum |
 |---|---|---|
@@ -421,7 +455,8 @@ rollout, two-device/24h soak, or production Trusted Signing.
   during the rerun.
 - platform-k8s-gitops #1359 remains blocked on DNS/edge mTLS for tokenless
   domain AutoEnroll.
-- #1044 two-device/24h soak and domain/IT pilot evidence remain separate.
+- #1044 historical two-device/24h soak and domain/IT pilot evidence remain
+  separate; it is not the current #1377 M5 same-day/no-24h gate.
 - Evidence file:
   `docs/faz-22-evidence/2026-06-08-agent-101-parallels-bootstrap-smoke.md`.
 
@@ -431,8 +466,8 @@ rollout, two-device/24h soak, or production Trusted Signing.
 now tracked in the canonical 22.5 plan and has source/desired-state progress
 across agent, backend and GitOps. Later 2026-06-15 evidence proves the bounded
 ERP-MOBIL tokenless domain AutoEnroll/service-continuity subgate; this older
-section still does not prove 2-PC GPO, 24h soak, 50/800 rollout readiness or
-prod `mtls.ai.acik.com`.
+section still does not prove M5 same-day selected-device GPO readiness,
+50/800 rollout readiness or prod `mtls.ai.acik.com`.
 
 | Slice | Evidence | Hukum |
 |---|---|---|
@@ -442,7 +477,7 @@ prod `mtls.ai.acik.com`.
 | Backend result-submit visibility | `platform-backend` PR #511 merged `7c0ec4a`; endpoint-admin image digest `sha256:0c1e384b414b35ddd9540fa6fcacb9fcc6a856a19ca25d92277166f76041ae45` pinned by GitOps PR #1355 `d0c26292`; live pod imageID matches digest and `/actuator/health` is UP. Runtime invalid-result smoke submitted AG-038 diagnostics with invalid `configHash="abc"` and got HTTP `400`; DB row moved to `FAILED`, `last_error` carried bounded `RESULT_REJECTED`, lock was cleared and zero raw result rows were persisted | P0-0 source + test overlay + runtime failure-visibility proof exists and aligns with platform-backend #509 Project Done evidence. This does not prove the full standard-PC installer rerun in platform-agent #101 |
 | Gateway route parity | GitOps PR #1358 merged `4ddc8dd8`; live `api-gateway` env carries `endpoint-admin-mtls-auto-enroll-route` at route index 22 and public POST to `/api/v1/endpoint-agent/endpoint-enrollments/auto` returns `401 MTLS_CERT_MISSING` without a client cert | Route reaches backend auto-enroll controller and fail-closes without cert; this is route parity, not tokenless enrollment success |
 | Edge mTLS activation runbook | `docs/runbooks/RB-faz22.3-edge-mtls-autoenroll.md` defines the dedicated mTLS host, backend `X-Client-Cert` / `X-Tenant-Id` contract, spoof-header stripping, no-cert negative, header-injection negative and valid machine-cert positive smokes | The blocker is now executable as an ops runbook; acceptance still requires DNS + edge mTLS + valid machine-cert evidence |
-| DNS / edge mTLS gate | 2026-06-15 supersede: internal AD DNS returns A records for `testai.acik.com` and `mtls.testai.acik.com` to `10.9.10.53`; test edge stream route is active for `mtls.testai.acik.com`; backend serves `CN=mtls.testai.acik.com` from AD CS and requests a client cert; `ERP-MOBIL` valid machine-cert AutoEnroll returned HTTP 201 with DB/audit evidence and later v0.2.4 service restart logs show `auto-enroll cert loaded` + `no command available` | Tokenless AutoEnroll test path and bounded service continuity are live-smoked; remaining gates are OS reboot, board-authoritative 2-PC GPO/24h soak/waves and prod host activation; tracked by #1359/#1376 |
+| DNS / edge mTLS gate | 2026-06-15 supersede: internal AD DNS returns A records for `testai.acik.com` and `mtls.testai.acik.com` to `10.9.10.53`; test edge stream route is active for `mtls.testai.acik.com`; backend serves `CN=mtls.testai.acik.com` from AD CS and requests a client cert; `ERP-MOBIL` valid machine-cert AutoEnroll returned HTTP 201 with DB/audit evidence and later v0.2.4 service restart logs show `auto-enroll cert loaded` + `no command available` | Tokenless AutoEnroll test path and bounded service continuity are live-smoked; remaining gates are OS reboot, board-authoritative M5 same-day selected-device GPO pilot, explicit no-24h risk/stabilization decision before M6 expansion, and prod host activation; tracked by #1359/#1376 |
 
 **Boundary / remaining gates**:
 
@@ -453,8 +488,9 @@ prod `mtls.ai.acik.com`.
 - platform-k8s-gitops #1359 is the P0 ops gate for tokenless domain AutoEnroll:
   DNS host, TLS client-cert request/verification, spoof-safe certificate
   forwarding and positive/negative mTLS evidence.
-- HMAC bootstrap is usable today for the 2-PC pilot, but it still needs a
-  hidden enrollment token; it is not the final 800-PC domain rollout channel.
+- HMAC bootstrap is usable today for local-control fallback reruns, but it
+  still needs a hidden enrollment token; it does not count for domain-gpo M5
+  acceptance and is not the final 800-PC domain rollout channel.
 
 ## Live Delta — Faz 22.5 P1 visibility local Parallels probe smoke (2026-06-07 21:28 Istanbul / 18:28Z UTC)
 

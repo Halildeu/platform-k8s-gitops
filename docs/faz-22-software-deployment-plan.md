@@ -25,8 +25,9 @@
 > gate #1569 is now `Done` / closed after Codex re-verified AD DNS from this
 > host (`mtls.testai.acik.com` and `testai.acik.com` both resolve through
 > `10.9.10.10` to `10.9.10.53`). Broader #1359/#1376 remain `Blocked` for
-> the board-authoritative 2-PC GPO pilot, 24h soak/waves, prod
-> `mtls.ai.acik.com`, and any negative matrix kept in M2 scope. ArgoCD
+> the board-authoritative M5 same-day selected-device GPO pilot and later
+> wave/prod gates (`mtls.ai.acik.com`, 50/800 staged rollout, and any negative
+> matrix kept in M2 scope). ArgoCD
 > `platform-test` still lacks registered
 > `test-cluster`; follow-up #1577 tracks that GitOps automation debt.
 > Canonical ayrıntı: `docs/state/current-state.md` 2026-06-15 M2 live delta.
@@ -162,8 +163,10 @@
 > package, and ERP-MOBIL service restart continuity are now proven for bounded
 > gate #1569. The HMAC bootstrap is still usable for short pilot reruns, but it
 > prompts for a hidden enrollment token and is not the final 800-PC rollout
-> channel. Remaining broader gates: 2-PC GPO pilot, OS reboot continuity,
-> 24h soak, 50/800 staged waves, and prod `mtls.ai.acik.com`.
+> channel. Remaining broader gates: M5 same-day selected-device GPO pilot,
+> OS reboot continuity, explicit no-24h risk acceptance or later stabilization
+> evidence before M6 expansion, 50/800 staged waves, and prod
+> `mtls.ai.acik.com`.
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
@@ -297,17 +300,22 @@ install/uninstall kanıtlarını supersede etmez.
 |---|---|---|---:|---|
 | **M0 Official Hotfix Release** | AG-038 full `configHash`, PS5.1 installer encoding/BOM regression, canonical artifact URL, initial Authenticode/dev-signing path, result-submit 4xx/5xx visibility | `platform-agent` + `platform-backend` + release/artifact ops | **1-2 iş günü** | MKR-A1 clean reinstall: service running + enrollment OK + HMAC OK + `COLLECT_INVENTORY` result submit 200 + audit row |
 | **M1 One-command Pilot Bootstrap** | Signed/hash-verified PowerShell bootstrap, short-lived claim-code, AppInstaller/WinGet readiness check/repair, post-install smoke | `platform-agent` + backend enrollment surface | **1-2 iş günü** | 2-5 pilot cihazda tek komutla install + enroll + inventory smoke; raw token paste yok |
-| **M2 Backend mTLS Auto-enroll** | Machine cert doğrulayan `POST /endpoint-enrollments/auto`, AD computer identity binding, audit/revoke semantics | `platform-backend` | **BOUNDED LIVE / broader gates Blocked** | `mtls.testai.acik.com` test edge/backend mTLS, no-cert fail-closed, valid ERP-MOBIL machine cert AutoEnroll HTTP 201, DB/audit cert identity, #155 tokenless heartbeat rows, #157 cert-auth command/result smoke (`COLLECT_INVENTORY` command `125d46a7-55b7-4379-a7d2-72bf7b0600cc` -> `SUCCEEDED`), and #1569 durable no-hosts AD DNS + service restart continuity proven/closed. Remaining broad rollout gates: board-authoritative 2-PC GPO pilot, 24h soak/waves, prod host and any retained negative matrix |
+| **M2 Backend mTLS Auto-enroll** | Machine cert doğrulayan `POST /endpoint-enrollments/auto`, AD computer identity binding, audit/revoke semantics | `platform-backend` | **BOUNDED LIVE / broader gates Blocked** | `mtls.testai.acik.com` test edge/backend mTLS, no-cert fail-closed, valid ERP-MOBIL machine cert AutoEnroll HTTP 201, DB/audit cert identity, #155 tokenless heartbeat rows, #157 cert-auth command/result smoke (`COLLECT_INVENTORY` command `125d46a7-55b7-4379-a7d2-72bf7b0600cc` -> `SUCCEEDED`), and #1569 durable no-hosts AD DNS + service restart continuity proven/closed. Remaining broad rollout gates: board-authoritative M5 same-day selected-device GPO pilot, explicit no-24h risk/stabilization decision before M6 expansion, prod host and any retained negative matrix |
 | **M3 Agent `--auto-enroll`** | Agent machine cert/domain identity ile backend auto-enroll, fallback claim-code ayrımı | `platform-agent` | **BOUNDED LIVE / Needs Verify** | Domain cihazda kullanıcı token'ı olmadan service start -> enrolled -> heartbeat proven on ERP-MOBIL; #171/#v0.2.4 CNG signer fix released; current bootstrap installed/restored `EndpointAgent` as `LocalSystem` service; restart logs show `auto-enroll cert loaded` + `no command available` over durable `mtls.testai.acik.com`. Remaining: signed MSI/GPO bootstrap acceptance, OS reboot continuity, multi-device rollout |
 | **M4 Signed WiX MSI** | Authenticode signed MSI, fixed UpgradeCode, service install/upgrade/uninstall, EDR allowlist doc | `platform-agent` CI + operator signing | **2-4 iş günü** + cert gate | Local install/repair/upgrade/uninstall smoke; signature trust verified |
-| **M5 GPO 2-PC Pilot** | Pilot OU'ya GPO Software Installation, 2 cihaz rollout, monitoring | Operator + IT + gitops evidence | **1-2 iş günü** + 24h gözlem | Board #1377 authoritative scope: 2/2 cihaz enrolled, heartbeat, inventory/result-submit; no manual token/ZIP; 1 cihaz rollback + reinstall drill |
+| **M5 Same-day selected-device pilot** | Pilot OU'ya GPO Software Installation for domain-gpo devices; local Parallels/control + denetim evidence lanes; T0/T+15/T+60 collector monitoring | Operator + IT + gitops evidence | **aynı gün** (no-24h owner direction) | Board #1377 authoritative scope: selected device pool (`AGENTPC1`, `AGENTPC2`, local Parallels Windows, denetim PC), domain-gpo denominator frozen, tokenless enroll + heartbeat + inventory/result-submit, no manual token/ZIP for domain-gpo devices, 1 cihaz rollback + reinstall drill, post-pilot artifact states `same_day_smoke=true` and `soak_hours=0` |
 | **M6 50-PC Wave** | Ring/tag rollout, concurrency/maintenance window discipline, alerting | Operator + backend rollout controls | **2-3 iş günü** + gözlem | 50 cihazda P95 enrollment/heartbeat/command SLA raporu |
 | **M7 800-PC Rollout** | OU/ring bazlı staged rollout, rollback/uninstall path, stale-device alerting | Operator + IT | **1-2 hafta** staged | 800-PC rollout raporu; failed devices explicit queue; rollback path ready |
 
-**Duration baseline:** signing/AD CS/GPO erişimleri hazırsa 2-PC pilot kapısına
-yaklaşık **1-2 iş günü + 24h gözlem**, 50/800 staged rollout kapısına yaklaşık **2-3 hafta**
+**Duration baseline:** signing/AD CS/GPO erişimleri hazırsa selected-device M5
+same-day smoke kapısına **aynı gün**, 50/800 staged rollout kapısına yaklaşık **2-3 hafta**
 gerçekçi görünür. AD CS/code-signing/EDR allowlist procurement hazır değilse
 bu süreye **3-10+ iş günü** operator beklemesi eklenir.
+
+**No-24h boundary (owner 2026-06-15):** M5 için 24h bekleme yapılmayacak. Bu,
+same-day pilot hızını artırır fakat 50/800 ramp öncesi risk notunu zorunlu kılar:
+M6 ya açık no-24h risk acceptance ile başlar ya da ayrı bir stabilization gate
+eklenir.
 
 **2026-06-08 implementation delta:**
 

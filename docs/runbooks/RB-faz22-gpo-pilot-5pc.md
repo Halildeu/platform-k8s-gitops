@@ -1,22 +1,22 @@
-# RB Faz 22.5 M5 — 2-PC GPO pilot diversity matrix + soak gate
+# RB Faz 22.5 M5 — selected-device same-day GPO pilot smoke gate
 
 > **Status**: SOURCE DRAFT
 > **Runtime mutation**: NONE
-> **Operator gate**: REQUIRED (2 domain-joined pilot devices + domain admin pilot OU/GPO + EDR allowlist + WDAC/AppLocker code-signing + 24h soak monitoring)
+> **Operator gate**: REQUIRED (selected devices + domain admin pilot OU/GPO for domain PCs + EDR allowlist + WDAC/AppLocker code-signing + same-day T0/T+15/T+60 monitoring)
 > **Closure claim**: NO (source-side draft; M5 acceptance evidence operator collects)
-> **Tracked by**: [#1377](https://github.com/Halildeu/platform-k8s-gitops/issues/1377) Faz 22.5 M5 — 2-PC GPO pilot diversity matrix + soak gate
+> **Tracked by**: [#1377](https://github.com/Halildeu/platform-k8s-gitops/issues/1377) Faz 22.5 M5 — selected-device same-day GPO pilot smoke gate
 > **Evidence template**: §6 evidence pack layout (operator + agent collectors)
 > **Codex thread**: `019ea922` plan-time AGREE (pattern from RB-faz22-non-domain-windows-pilot.md + RB-faz22.3-ad-cs-setup.md)
 > **Prerequisite**: M2 #1376 AD CS / edge mTLS finalization (source LIVE + operator-gate closure)
-> **Companion preflight**: `scripts/faz22-mass-deployment/wave-preflight.ps1` (§4.4 — read-only device health, modes preinstall-readiness / enroll-health).
+> **Companion collectors**: `scripts/faz22-mass-deployment/wave-preflight.ps1` (§4.4) and `scripts/faz22-mass-deployment/m5-same-day-pilot-collector.ps1` (§4.5).
 
 ---
 
-> ## SCOPE AMENDMENT — owner 2026-06-10, reaffirmed 2026-06-15 (board [#1377](https://github.com/Halildeu/platform-k8s-gitops/issues/1377) authoritative)
+> ## HISTORICAL SCOPE AMENDMENT — owner 2026-06-10, superseded 2026-06-15
 >
-> Owner reduced the pilot **5-PC -> 2-PC** and the soak minimum **7d -> 24h**. On 2026-06-15 owner reaffirmed that 2 PCs are sufficient for the first GPO pilot. **Board #1377 acceptance is authoritative** over the 5-PC tables below (which remain the original design + the full diversity-dimension reference).
+> Owner reduced the pilot **5-PC -> 2-PC** and the soak minimum **7d -> 24h**. This is retained as history only; the later same-day no-24h amendment below is authoritative for the current run.
 >
-> **For the 2-PC run, apply the scaled gate:**
+> **Historical 2-PC/24h gate (not current):**
 > - **2 devices** listed (hostname/OU/OS/arch/HW/EDR/network); x64 coverage.
 > - **Diversity minimum (2-PC)**: the 2 devices differ on **≥1 high-signal axis** — (a) EDR-active vs Defender-only, OR (b) fresh-enroll vs prior-enrolled/reinstall, OR (c) distinct Windows build families — and **≥1 device** runs a user-session SYSTEM install/command smoke.
 > - **Soak minimum 24h** (not 7d); a shorter soak needs new consensus.
@@ -24,9 +24,20 @@
 > - **1 device** performs the rollback + reinstall drill (`RB-faz22.5-m7-rollback-drill.md` §4.1 Layer-1 + §4.2 revoke).
 > - Post-pilot artifact records **denominator=2**, success rate, failures, rollback readiness, recommendation.
 
+> ## SCOPE AMENDMENT — owner 2026-06-15 (supersedes the 2-PC/24h gate for this first run)
+>
+> Owner approved this same-day device pool: **AGENTPC1, AGENTPC2, local Parallels Windows, denetim PC**. Owner also removed the 24h wait for this run.
+>
+> **For this no-24h run, apply the scaled gate:**
+> - Selected device matrix lists all available devices and their role: `domain-gpo`, `audit`, or `local-control`.
+> - GPO/tokenless denominator counts only domain-joined GPO-capable devices. Local Parallels may be used as a control/installer/agent smoke, but it does **not** prove domain GPO deployment unless domain-joined.
+> - Required same-day checkpoints: **T0**, **T+15m**, **T+60m** using `m5-same-day-pilot-collector.ps1` plus `wave-preflight.ps1`.
+> - No 24h closure claim is made. The post-pilot artifact must explicitly state `soak_hours=0` / `same_day_smoke=true`.
+> - M6/50-PC expansion may proceed only with an explicit no-24h risk acceptance note, or with a later stabilization evidence gate.
+
 ## 1. Scope
 
-**M5** = İlk 2-PC domain-joined pilot (post M2 AD CS bounded-live evidence). Hedef: GPO Software Installation kanalı ile 2 cihaza endpoint-agent MSI deploy + tokenless enrollment + 24h soak no-regress.
+**M5** = Same-day selected-device pilot (post M2 AD CS bounded-live evidence). Hedef: domain-joined cihazlarda GPO Software Installation kanalı ile endpoint-agent MSI deploy + tokenless enrollment; local Parallels/control cihazlarında installer/agent smoke. 24h soak bu owner-approved ilk run'da acceptance değildir.
 
 **Source-side scope (this runbook)**:
 - Diversity matrix design (donanım + OS + subnet kombinasyon)
@@ -34,19 +45,19 @@
 - Wave abort formula + threshold (failure_rate, heartbeat_loss, queue_depth)
 - Sanitized evidence pack format (gpresult + Event ID Application Installer + EndpointAgent heartbeat + COLLECT_INVENTORY post-install)
 - Mavis ops handoff format (board issue cross-link + on-call rotation)
-- 24h soak monitoring runbook (PromQL queries + Grafana dashboard pointers)
+- same-day T0/T+15/T+60 monitoring runbook (collector JSON + backend heartbeat/result checks)
 
 **Out-of-scope** (operator-bound):
-- IT pilot PC allocation (2 PC asset tag + AD object + assigned IT contact)
+- IT selected-device access/allocation (asset tag + AD object + assigned IT contact)
 - Domain admin pilot OU create + GPO link
 - EDR allowlist (Defender/CrowdStrike/Sentinel whitelist)
 - WDAC/AppLocker code-signing policy build
-- Physical 24h soak execution + monitoring + abort decision
+- Physical device access + same-day monitoring + abort decision
 
 ## 2. Hard Constraints / Non-Goals
 
-- **No M5 closure without 2/2 PC enrollment + 2/2 GPO Software Installation LIVE + 24h soak no-regress + 1-device rollback/reinstall drill** — partial PASS YASAK (Codex No Fake Work HARD RULE)
-- **No expansion to M6 50-PC ramp without M5 PASS + Mavis ops sign-off** — gate sequencing strict (HARD RULE Tam Otonom: M6 prerequisite = M5 closure)
+- **No M5 closure without selected-device matrix + domain-device GPO/tokenless evidence + T0/T+15/T+60 same-day checks + 1-device rollback/reinstall drill** — partial PASS YASAK (Codex No Fake Work HARD RULE)
+- **No expansion to M6 50-PC ramp without M5 same-day PASS + explicit no-24h risk note or later stabilization gate + Mavis ops sign-off** — gate sequencing strict (HARD RULE Tam Otonom: M6 prerequisite = M5 closure)
 - **No EDR allowlist bypass** — operator-side whitelist process zorunlu; bypass attempt YASAK
 - **No GPO Software Installation force-push without GPO settings backup** — pilot OU revert path zorunlu (rollback dependency)
 
@@ -54,13 +65,22 @@
 
 | Dimension | Variants | Min Coverage |
 |---|---|---|
-| **OS Version** | Windows Server / Windows 10 / Windows 11 | Record both devices; ≥1 build-family difference preferred |
-| **Architecture** | x64, ARM64 | x64 coverage required; ARM64 no longer required for the 2-PC first gate |
-| **Subnet** | DC subnet (10.9.10.x), corp standard subnet (10.9.2.x), VLAN-segmented | Record both devices; subnet diversity is a valid high-signal axis |
-| **PC vendor / class** | Server VM / laptop / desktop vendor mix | Record both devices; class/vendor diversity preferred |
-| **User profile** | Standard user (non-admin), local admin disabled | Both pilot endpoints documented |
-| **AD location** | Pilot OU (dedicated), production OU prep | Both pilot endpoints in the pilot OU / pilot security scope |
+| **OS Version** | Windows Server / Windows 10 / Windows 11 | Record every selected device; ≥1 build-family difference preferred |
+| **Architecture** | x64, ARM64 | x64 coverage required; ARM64 is optional for this same-day first gate |
+| **Subnet** | DC subnet (10.9.10.x), corp standard subnet (10.9.2.x), VLAN-segmented | Record every selected device; subnet diversity is a valid high-signal axis |
+| **PC vendor / class** | Server VM / laptop / desktop vendor mix | Record every selected device; class/vendor diversity preferred |
+| **User profile** | Standard user (non-admin), local admin disabled | Every selected endpoint documented |
+| **AD location** | Pilot OU (dedicated), production OU prep | Domain-gpo endpoints in the pilot OU / pilot security scope |
 | **EDR** | Defender ATP, ESET, CrowdStrike Falcon (if deployed) | Record per device; EDR-active vs Defender-only is a valid high-signal axis |
+
+### 3.0 Owner-approved same-day device pool
+
+| Device | Role | Counts for GPO/tokenless denominator? | Notes |
+|---|---|---:|---|
+| `AGENTPC1` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Preferred primary GPO pilot device |
+| `AGENTPC2` | `domain-gpo` | Yes, if domain-joined and GPO-scoped | Prior 9-hour install discovery exists; retest as fresh same-day GPO path |
+| Local Parallels Windows | `local-control` | No, unless joined to `acik.local` and GPO-scoped | Use for installer/agent regression control and fast rollback/reinstall smoke |
+| Denetim PC | `audit` | Yes, if domain-joined and GPO-scoped | Use as audit/user-session evidence device |
 
 ### 3.1 5-PC Allocation Template (REFERENCE ONLY — superseded by §8.A)
 
@@ -154,6 +174,28 @@ Script: `scripts/faz22-mass-deployment/wave-preflight.ps1` (read-only; modes
 > template binding (that is `verify-machine-cert.ps1`'s job). Preflight does not replace M2;
 > the **2/2 tokenless positive enroll** (D3) is the authoritative identity proof.
 
+### 4.5 Same-day evidence collector
+
+Run this collector on every selected device at T0, T+15m and T+60m. It is
+read-only and writes JSON evidence locally.
+
+```powershell
+# Before GPO/MSI push
+.\m5-same-day-pilot-collector.ps1 -Phase preinstall -Role domain-gpo -Json
+
+# After GPO/MSI install + tokenless enroll
+.\m5-same-day-pilot-collector.ps1 -Phase postinstall -Role domain-gpo `
+  -RequireSignature -Json
+
+# Local Parallels/control lane
+.\m5-same-day-pilot-collector.ps1 -Phase postinstall -Role local-control -Json
+
+# Rollback/reinstall drill evidence
+.\m5-same-day-pilot-collector.ps1 -Phase rollback-clean -Role domain-gpo -Json
+```
+
+Evidence path: `C:\ProgramData\EndpointAgent\evidence\m5-same-day\*.json`.
+
 ## 5. Wave Abort Formula + Threshold
 
 ### 5.1 Failure Modes
@@ -169,7 +211,7 @@ Script: `scripts/faz22-mass-deployment/wave-preflight.ps1` (read-only; modes
 ### 5.2 Abort Decision Tree
 
 ```
-For each PC at +24h:
+For each selected device at T0/T+15m/T+60m:
   metrics_collect:
     install_status: Event 102 + msiexec exit code
     heartbeat_age: now - last_ping (seconds)
@@ -190,27 +232,29 @@ For each PC at +24h:
   elif (cert_status_fail >= 1):
     abort + M2 cert chain re-verify
   else:
-    PASS (continue soak)
+    PASS (continue same-day monitoring)
 ```
 
-### 5.3 24h Soak Acceptance (AUTHORITATIVE for board #1377)
+### 5.3 Same-day smoke acceptance (AUTHORITATIVE for board #1377 no-24h run)
 
 ```
-For 24 consecutive hours:
-  - 2/2 PC heartbeat alive (no >1 hour gap)
+At T0, T+15m and T+60m:
+  - selected device matrix frozen with role and denominator
+  - domain-gpo devices heartbeat alive
   - 0 EDR alert on agent runtime
   - 0 GPO redeploy attempts (Event 108 unexpected reinstall)
-  - 2/2 PC COLLECT_INVENTORY result hash chain valid (BL-016 hash-chain audit)
+  - domain-gpo devices COLLECT_INVENTORY result hash chain valid (BL-016 hash-chain audit)
   - 0 unhandled agent crash (Event 1000 Application Error)
-  - Optional: 1 controlled test command (e.g., COLLECT_INVENTORY trigger) success on 2/2 PC
+  - at least 1 controlled test command (e.g., COLLECT_INVENTORY trigger) success
+  - post-pilot artifact explicitly records same_day_smoke=true and soak_hours=0
 ```
 
 ## 6. Evidence Pack Template
 
 Layout:
 ```
-evidence/m5-2pc-pilot-YYYYMMDD/
-├── README.md                     # pilot context (date, pilot OU, GPO name, 2 PC asset tags)
+evidence/m5-same-day-pilot-YYYYMMDD/
+├── README.md                     # pilot context (date, pilot OU, GPO name, selected devices, denominator)
 ├── 01-pilot-ou-screenshot.png    # GPMC pilot OU + GPO link visual proof
 ├── 02-gpo-software-package.txt   # GPMC export: package path + deployment type + WMI filter
 ├── 03-code-signing-cert.txt      # Get-AuthenticodeSignature output for MSI + agent binary
@@ -218,6 +262,9 @@ evidence/m5-2pc-pilot-YYYYMMDD/
 ├── 05-wdac-applocker-policy.txt  # exported policy XML/json
 ├── per-pc/
 │   ├── pilot-pc-01/
+│   │   ├── 00-m5-collector-t0.json
+│   │   ├── 00-m5-collector-t15.json
+│   │   ├── 00-m5-collector-t60.json
 │   │   ├── 06-gpresult-html.html         # gpresult /h pilot-pc-01.html
 │   │   ├── 07-event-102-installer.txt    # Get-WinEvent -ProviderName 'Microsoft-Windows-Application-Experience' Event ID 102/103
 │   │   ├── 08-heartbeat-log.txt          # backend GET /endpoint-devices/{id}/heartbeats?since=...
@@ -225,7 +272,7 @@ evidence/m5-2pc-pilot-YYYYMMDD/
 │   │   ├── 10-agent-service-status.txt   # Get-Service EndpointAgent status
 │   │   └── 11-cert-chain-verify.txt      # Get-ChildItem Cert:\LocalMachine\My + chain trust
 │   └── pilot-pc-02/ ... (same structure)
-├── soak-day-1.md                 # 24h heartbeat + EDR + crash summary
+├── same-day-summary.md           # T0/T+15/T+60 heartbeat + EDR + crash summary
 ├── abort-decision-ledger.md      # any failure mode trigger + Mavis decision + recovery
 └── mavis-signoff.txt             # Mavis ops sign-off comment text
 ```
@@ -238,28 +285,30 @@ evidence/m5-2pc-pilot-YYYYMMDD/
 mavis communication send \
   --to <ops-peer-or-channel> \
   --command prompt \
-  --content "M5 2-PC GPO pilot kickoff YYYY-MM-DD HH:MMZ (board #1377, owner 2-PC/24h):
-  - Pilot OU: Pilot/EndpointAgentM5 (2 PC)
+  --content "M5 same-day selected-device pilot kickoff YYYY-MM-DD HH:MMZ (board #1377, owner no-24h):
+  - Pilot OU: Pilot/EndpointAgentM5 (domain-gpo devices)
   - GPO: EndpointAgentM5-Install linked
   - MSI: EndpointAgent-<version>-signed.msi
-  - Soak: 24h (until YYYY-MM-DD)
-  - Abort threshold (2-PC): any 1/2 install_fail OR 1/2 heartbeat_loss>30m OR 1/2 EDR block
-  - Status updates: +24h
+  - Device pool: AGENTPC1, AGENTPC2, local Parallels Windows, denetim PC
+  - Soak: no 24h; same-day checkpoints T0/T+15/T+60
+  - Abort threshold: any domain-gpo install_fail OR heartbeat_loss>30m OR EDR block
+  - Status updates: T0/T+15/T+60
   - Tracked by: #1377"
 ```
 
-### 7.2 Daily Soak Update
+### 7.2 Same-day Update
 
 ```
 mavis communication send \
   --to <ops-peer> \
   --command prompt \
-  --content "M5 soak update (24h window):
-  - Heartbeat 2/2 alive ✅
+  --content "M5 same-day update:
+  - checkpoint: T+<N>m
+  - Heartbeat <n>/<denominator> alive
   - 0 EDR alerts
   - 0 install retries
   - 0 crash events
-  - Next check: +24h"
+  - Next check: T+15/T+60 or final"
 ```
 
 ### 7.3 Abort Trigger
@@ -272,7 +321,7 @@ mavis communication send \
   - PC: <pilot-pc-id>
   - Failure mode: <install_fail | heartbeat_loss | enrollment_fail | edr_block | cert_status_fail>
   - Detection: <evidence excerpt>
-  - Decision: HOLD soak; investigate root cause
+  - Decision: HOLD same-day pilot; investigate root cause
   - Tracked by: #1377 + new incident issue"
 ```
 
@@ -282,32 +331,35 @@ mavis communication send \
 mavis communication send \
   --to <ops-peer> \
   --command prompt \
-  --content "M5 closure sign-off YYYY-MM-DD (board #1377 2-PC gate):
-  - 2/2 PC tokenless enrollment + GPO install LIVE
-  - 24h soak: 2/2 heartbeat alive, 0 EDR, 0 crash
+  --content "M5 closure sign-off YYYY-MM-DD (board #1377 same-day gate):
+  - domain-gpo denominator frozen and documented
+  - domain-gpo tokenless enrollment + GPO install LIVE
+  - same-day checkpoints: T0/T+15/T+60 heartbeat alive, 0 EDR, 0 crash
   - 1/2 rollback + reinstall drill PASS (M7 §4.1/§4.2)
-  - Evidence bundle: evidence/m5-2pc-pilot-YYYYMMDD/
+  - Evidence bundle: evidence/m5-same-day-pilot-YYYYMMDD/
+  - No-24h note: same_day_smoke=true, soak_hours=0
   - Mavis ops sign-off: APPROVED for M6 50-PC ramp gate
   - Tracked by: #1377"
 ```
 
 ## 8. Closure Acceptance Checklist
 
-> **AUTHORITATIVE = 2-PC board #1377 amendment (8.A)**. The 5-PC list (8.B) is the
-> **original design reference only** — owner reduced scope to 2-PC / 24h (2026-06-10).
-> Do NOT tick the 5/5 + 7d boxes for the live gate; use 8.A.
+> **AUTHORITATIVE = same-day selected-device owner amendment (8.A)**. The 5-PC
+> list (8.B) is the original design reference only. The previous 2-PC/24h gate
+> is superseded for this first run by owner no-24h direction on 2026-06-15.
 
-### 8.A 2-PC board #1377 closure gate (AUTHORITATIVE)
+### 8.A Same-day board #1377 closure gate (AUTHORITATIVE)
 
-- [ ] Exactly 2 devices listed (hostname/OU/OS/arch/HW/EDR/network); x64 coverage
-- [ ] Diversity: ≥1 high-signal axis differs (EDR-active vs Defender-only / fresh vs prior-enrolled / distinct build) + ≥1 user-session smoke
-- [ ] 2/2 tokenless enroll (no manual token/ZIP) + heartbeat + inventory + result-submit 200
-- [ ] preflight `wave-preflight.ps1` FAIL=0 on 2/2 (preinstall + enroll-health, -RequireMachineCert -RequireSignature)
-- [ ] 24h soak no-regress (heartbeat/command stability; shorter needs new consensus)
+- [ ] Selected device pool listed: `AGENTPC1`, `AGENTPC2`, local Parallels Windows, denetim PC; each has role/hostname/OU/OS/arch/HW/EDR/network
+- [ ] Domain-gpo denominator frozen; local Parallels clearly excluded from GPO proof unless domain-joined and GPO-scoped
+- [ ] Domain-gpo devices tokenless enroll (no manual token/ZIP) + heartbeat + inventory + result-submit 200
+- [ ] preflight `wave-preflight.ps1` FAIL=0 on domain-gpo devices (preinstall + enroll-health, -RequireMachineCert -RequireSignature)
+- [ ] same-day collector JSON attached for each selected device at T0/T+15/T+60
+- [ ] same-day no-regress: heartbeat/command stable through T+60; `same_day_smoke=true`, `soak_hours=0`
 - [ ] 1 device rollback + reinstall drill PASS (`RB-faz22.5-m7-rollback-drill.md` §4.1 + §4.2)
 - [ ] Failed-device queue empty or root-cause classed
-- [ ] Post-pilot artifact: denominator=2 / success / failures / rollback readiness / recommendation
-- [ ] Mavis ops sign-off on #1377; M6 #1378 ramp readiness kicked off
+- [ ] Post-pilot artifact: denominator / success / failures / rollback readiness / no-24h risk note / recommendation
+- [ ] Mavis ops sign-off on #1377; M6 #1378 ramp readiness kicked off only with explicit no-24h risk acceptance or later stabilization gate
 
 ### 8.B 5-PC original design (REFERENCE ONLY — superseded by 8.A)
 
@@ -327,4 +379,4 @@ Cross-AI peer review:
 - Reviewer (plan-time): Codex (OpenAI GPT-5.2) thread `019ea922` AGREE pattern (RB-faz22-non-domain-windows-pilot.md + RB-faz22.3-ad-cs-setup.md inspiration)
 - Verdict: AGREE source-side draft + diversity matrix + evidence pack + abort formula + Mavis coordination
 
-**Closure ≠ runbook merge**: Bu PR runbook MERGED ≠ M5 #1377 closed. Closure operator **2-PC pilot (board #1377 authoritative) + 24h soak + §8.A checklist** + 1-device rollback drill + Mavis sign-off sonra. (5-PC/7d = §8.B original design, superseded.)
+**Closure ≠ runbook merge**: Bu PR runbook MERGED ≠ M5 #1377 closed. Closure operator **same-day selected-device pilot (board #1377 authoritative) + §8.A checklist** + 1-device rollback drill + Mavis sign-off sonra. (5-PC/7d = §8.B original design, previous 2-PC/24h = superseded by owner no-24h direction.)
