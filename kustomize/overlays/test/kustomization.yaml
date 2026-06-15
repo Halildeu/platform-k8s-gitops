@@ -5377,27 +5377,26 @@ images:
     # pending — operator action runbook externalsecret-notify.yaml).
     digest: sha256:175b3daea37601fbfd500f616ad19664d26dffec8b1db11556a3bff14ce6250e
 
-  # Faz 22.5 M1 — endpoint-agent artifact host (test-only). Image built+pushed
-  # by platform-agent release-exe-signed.yml (AG-018 Part 2, TRUSTED tier) for
-  # tag v0.2.3:
-  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.3 (+ sha-<short>).
-  # Serves /artifacts/endpoint-agent/v0.2.3/{bootstrap-package.ps1,EndpointAgent.zip,...}
+  # Faz 22.5 M2 — endpoint-agent artifact host (test). Image built+pushed by
+  # platform-agent Release EXE trusted workflow for tag v0.2.4:
+  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.4 (+ sha-5319454).
+  # Serves /artifacts/endpoint-agent/v0.2.4/{bootstrap-package.ps1,EndpointAgent.zip,...}
   # PLUS a stable MUTABLE alias /artifacts/endpoint-agent/current/ (byte-identical,
   # nginx no-store) so the endpoint-admin UI renders a copy-paste one-command
   # install + discovers the live package hash without a per-release frontend edit
-  # (gitops#1434, platform-agent#142). The agent exe inside EndpointAgent.zip is
-  # TRUSTED-INTERNAL-CA signed (osslsigncode + internal OpenSSL CA, RFC3161
-  # timestamp; install.ps1 imports the internal root TOFU so Authenticode
-  # validates Valid). NOT publicly trusted. Pulled with the existing ghcr-pull
-  # secret. One-version-per-image: this image REPLACES v0.2.2; old
-  # /artifacts/v0.2.2/ URLs 404 after rollout (durable archive = the GitHub
-  # release assets) — but /current/ keeps resolving.
+  # (gitops#1569, platform-agent#170/#171). The agent exe inside EndpointAgent.zip
+  # is TRUSTED-INTERNAL-CA signed (osslsigncode + internal OpenSSL CA, RFC3161
+  # timestamp; install.ps1 imports the internal root TOFU so Authenticode validates
+  # Valid). NOT publicly trusted. Pulled with the existing ghcr-pull secret.
+  # One-version-per-image: this image REPLACES v0.2.3; old /artifacts/v0.2.3/
+  # URLs 404 after rollout (durable archive = the GitHub release assets) — but
+  # /current/ keeps resolving.
   - name: artifact-host
     newName: ghcr.io/halildeu/platform-agent-artifacts
-    newTag: v0.2.3
-    # D30 immutable pin — release-exe-signed.yml run 27292353430 (tag v0.2.3,
-    # source sha-d05c685, signing_tier=trusted-internal-ca).
-    digest: sha256:d8e4b1c72d293759ba4946cae3e8a870b5514406ed2af1d6604cc510078b967f
+    newTag: v0.2.4
+    # D30 immutable pin — Release EXE trusted run 27551613867 (tag v0.2.4,
+    # source sha-5319454, signing_tier=trusted-internal-ca).
+    digest: sha256:f52480d300852cd0c2c398482e25f188eb8b3eda75d93aa495fa90e32a4b9592
 
 patches:
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
