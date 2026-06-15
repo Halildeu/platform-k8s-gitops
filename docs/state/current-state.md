@@ -1,5 +1,30 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 M2 prod `mtls.ai.acik.com` activation proven (2026-06-15/16)
+
+**Session milestone**: prod Endpoint Agent mTLS host activation is live-proven
+for the M2 tokenless AutoEnroll path. GitOps activation PR #1593 merged at
+`5fc00710e92e8a7ada7003ece58913cf5114c546`; runtime follow-up upgraded
+prod ingress-nginx Helm release to rev4 with `--enable-ssl-passthrough`.
+Evidence file:
+`docs/faz-22-evidence/2026-06-15-m2-prod-mtls-ai-activation.md`.
+
+| Alan | Durum (2026-06-15/16) | Kanıt / sınır |
+|---|---|---|
+| Prod mTLS Service/Ingress | 🟢 LIVE | `endpoint-agent-mtls-backend` exists in `platform-prod` with endpoint `10.42.75.58:8443`; Ingress `endpoint-agent-mtls` host `mtls.ai.acik.com` is `Synced/Healthy`. |
+| Prod ingress-nginx passthrough | 🟢 LIVE | Helm release `ingress-nginx` rev4; controller pod `ingress-nginx-controller-h5bzn` is ready with `--enable-ssl-passthrough`, restarts `0`. |
+| Backend artifact | 🟢 IMMUTABLE DIGEST LIVE | `endpoint-admin-service-65dc8d6d58-cgzjz` ready, restarts `0`, imageID `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97`. |
+| TLS/SNI | 🟢 BACKEND CERT SERVED | Forced SNI to `10.9.10.53:443` with `mtls.ai.acik.com` serves `CN=mtls.testai.acik.com`, issuer `Acik-Endpoint-CA`, SAN `DNS:mtls.testai.acik.com, DNS:mtls.ai.acik.com`, and requests a client certificate. |
+| No-cert negative | 🟢 FAIL-CLOSED | `curl --resolve mtls.ai.acik.com:443:10.9.10.53 .../endpoint-enrollments/auto` returns `http_code=000`, `exit=56`, TLS alert `certificate required`. |
+| Valid machine-cert positive | 🟢 PASS | `SRB-AIDENETIMPC` machine cert direct POST to prod AutoEnroll returned HTTP `201`; isolated-config agent run over `https://mtls.ai.acik.com/api/v1/endpoint-agent` logged `auto-enroll already-enrolled` and `no command available`, exit `0`. |
+| Existing Denetim service safety | 🟢 PRESERVED | Positive prod smoke used temporary `prod-smoke-auto-enroll.dpapi`; cleanup read-back `SmokeConfigExists=False`, main service remains `EndpointAgent Running / Auto / LocalSystem`. |
+| Global app drift boundary | 🟡 UNRELATED DRIFT | `platform-prod` Application still reports `OutOfSync/Missing` due to existing `ServiceMonitor endpoint-admin-service` drift. The mTLS Service/Ingress/Deployment rows are individually `Synced/Healthy`. |
+
+**Boundary**: This proves prod `mtls.ai.acik.com` host activation for the M2
+tokenless AutoEnroll path. It does not prove 50/800 rollout, 24h soak,
+revocation/wrong-CA matrix if retained, OS reboot continuity, or destructive
+rollback/uninstall drills.
+
 ## Live Delta — Faz 22.5 M5 same-day selected-device pilot accepted (2026-06-15)
 
 **Owner decision / accepted scope**: The M5 first pilot did not wait for 24h and
