@@ -34,6 +34,8 @@ resources:
   - ../../base/apps/redis-streams-exporter/ops    # ServiceMonitor (CRD-gated; ops-bundle'a değil buraya — prod sızıntısı yok)
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06
                                                   # (services.yaml prod=deferred; test=enabled)
+  - eso/notify/externalsecret-notify.yaml    # notification-orchestrator-secrets ESO owner;
+                                             # pairs with delete patch below for the base stub Secret.
   - ../../base/apps/artifact-host    # Faz 22.5 M1: endpoint-agent one-command bootstrap
                                      # artifact host (test-only; prod deferred). Pairs with
                                      # the /artifacts ingress path patch + edge route flip.
@@ -5399,6 +5401,20 @@ images:
     digest: sha256:6d687c8b2dabc05372aafc4a44c99d0a984b45a81f4cbaea317001c1ac3e10b2
 
 patches:
+  # notification-orchestrator-secrets is owned by the test ExternalSecret. The
+  # base bootstrap Secret is for non-ESO bootstrap only; rendering both creates
+  # permanent Argo drift against the ESO-managed live Secret.
+  - target:
+      version: v1
+      kind: Secret
+      name: notification-orchestrator-secrets
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: notification-orchestrator-secrets
+
   # Replica 1 default (2026-05-10: D17 deprecated; HARD RULE — Scale-to-Zero YASAK)
   - target:
       kind: Deployment
