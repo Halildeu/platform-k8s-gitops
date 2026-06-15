@@ -370,6 +370,69 @@ def print_report(rows: list[AuditRow], applied: list[tuple[AuditRow, FieldPropos
         print(f"  manual  : {manual_text}")
 
 
+def markdown_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ").strip()
+
+
+def manual_exception_markdown(rows: list[AuditRow]) -> str:
+    manual_rows = [row for row in rows if row.manual]
+    proposal_count = sum(len(row.proposals) for row in rows)
+    manual_count = sum(len(row.manual) for row in rows)
+    lines = [
+        "# Project #2 Board Hygiene Manual Exception Report",
+        "",
+        "This report lists Project #2 items whose required fields cannot be",
+        "deterministically derived from labels, issue body, title, state, or owner repo.",
+        "Agents must not guess these values; a human or explicit follow-up issue must",
+        "triage them.",
+        "",
+        "## Summary",
+        "",
+        f"- Items with missing fields: {len(rows)}",
+        f"- Deterministic proposals available: {proposal_count}",
+        f"- Manual fields requiring triage: {manual_count}",
+        f"- Manual exception rows: {len(manual_rows)}",
+        "",
+        "## Manual Exceptions",
+        "",
+    ]
+
+    if not manual_rows:
+        lines.append("No manual exceptions remain.")
+        return "\n".join(lines) + "\n"
+
+    lines.extend(
+        [
+            "| Repo | Issue | Missing manual fields | Title |",
+            "|---|---:|---|---|",
+        ]
+    )
+    for row in manual_rows:
+        issue_url = f"https://github.com/{row.repo}/issues/{row.number}"
+        lines.append(
+            "| "
+            + markdown_escape(row.repo)
+            + " | "
+            + f"[#{row.number}]({issue_url})"
+            + " | "
+            + markdown_escape(", ".join(row.manual))
+            + " | "
+            + markdown_escape(row.title)
+            + " |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def write_manual_exception_report(path_value: str, rows: list[AuditRow]) -> None:
+    report = manual_exception_markdown(rows)
+    if path_value == "-":
+        print(report, end="")
+        return
+    output_path = Path(path_value)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(report, encoding="utf-8")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=int, default=2)
@@ -385,6 +448,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-mutations", type=int, default=25)
     parser.add_argument("--hydrate-issues", action="store_true", help="fetch issue labels/state with gh issue view; slower but richer")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--manual-exception-report",
+        metavar="PATH|-",
+        help="write a markdown report for unresolved manual fields without mutating Project #2",
+    )
     parser.add_argument("--strict", action="store_true", help="exit non-zero when any open roadmap issue still has manual missing fields")
     return parser.parse_args()
 
@@ -414,6 +482,9 @@ def main() -> int:
                 break
 
     print_report(rows, applied, args.json)
+
+    if args.manual_exception_report:
+        write_manual_exception_report(args.manual_exception_report, rows)
 
     if args.strict and any(row.manual for row in rows):
         return 1
