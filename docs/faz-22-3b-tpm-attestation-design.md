@@ -2,7 +2,7 @@
 
 > **Gate 1b** of [ADR-0039](adr/0039-faz-22-3b-tpm-attestation-vault-pki.md). Detailed design + the **agent ↔ backend integration contract** that Codex review (`019ec723`) required before the sequence is more than paper. All surfaces **disabled-by-default**; live pilot **owner-gated**. This path is **parallel** to AD CS (Faz 22.3A, Codex-owned) and does **not** alter it.
 >
-> Status: Proposed (spec; no code in this doc). Cross-AI: Claude impl, Codex reviewer.
+> Status: Implemented (gate-3 agent + gate-4 backend MERGED 2026-06-15; live pilot owner-gated — see `runbooks/RB-faz22-3b-tpm-enrollment-e2e.md`). Cross-AI: Claude impl, Codex reviewer.
 
 ## 1. Goal & non-goals
 - **Goal:** issue an mTLS clientAuth cert to a device whose trust is rooted in **TPM attestation** (not domain membership), from **Vault PKI**, for the **domain-less / BYOD / macOS-Linux** segment.
@@ -14,7 +14,7 @@
 
 ```
 Agent                                            Backend (endpoint-admin)            Vault PKI
-  | L1. POST /enroll/tpm/nonce (deviceRef, ekPub, akPub, akName)                          |
+  | L1. POST /enrollments/tpm/nonce (deviceRef, ekPub, akPub, akName)                     |
   |-------------------------------------------------->| mint single-use nonce            |
   |                                                   | software TPM2_MakeCredential      |
   |                                                   |   (EK_pub, AK_name, server-secret)|
@@ -23,7 +23,7 @@ Agent                                            Backend (endpoint-admin)       
   | L2. TPM2_ActivateCredential(EK,AK,credBlob,encSecret) → recovers server-secret        |
   |     (proves the device holds BOTH the EK and the AK inside ONE TPM)                   |
   | L3. TPM2_Quote(nonce,pcrSelect) + TPM2_Certify(deviceKey by AK)                        |
-  | POST /enroll/tpm/attest (envelope: activatedSecret + quote + certify + csr)           |
+  | POST /enrollments/tpm/attest (envelope: activatedSecret + quote + certify + csr)      |
   |-------------------------------------------------->| verify §4 (V1–V12) fail-closed→deny|
   |                                                   | ok ⇒ Vault PKI issue (CSR pubkey) |
   |                                                   |--------------------------------->|
@@ -113,9 +113,11 @@ verifyClientCert(cert):
 ## 9. Integration contract (HTTP)
 | Method | Path | Auth | Req | 2xx | Deny |
 |---|---|---|---|---|---|
-| POST | `/api/v1/endpoint-agent/enroll/tpm/nonce` | bootstrap channel | `{deviceRef,ekPub,akPub,akName}` | `201 {nonce,nonceId,exp,credBlob,encSecret}` (MakeCredential challenge) | uniform `403` |
-| POST | `/api/v1/endpoint-agent/enroll/tpm/attest` | bootstrap channel | envelope (§3) | `201 {cert,caChain,notAfter,deviceUuid}` | uniform `403` |
+| POST | `/api/v1/endpoint-agent/enrollments/tpm/nonce` | bootstrap channel | `{deviceRef,ekPub,akPub,akName}` | `200 {nonce,nonceId,exp,credBlob,encSecret}` (MakeCredential challenge) | uniform `403` |
+| POST | `/api/v1/endpoint-agent/enrollments/tpm/attest` | bootstrap channel | envelope (§3) | `200 {cert,caChain,notAfter,deviceUuid}` | uniform `403` |
 | (mTLS) | existing `:8443` device API | issued cert | — | — | fail-closed on unknown issuer |
+
+> **Edge vs. internal path (verified against merged code 2026-06-15):** the table shows the **gateway-public** surface `/api/v1/endpoint-agent/**`. The api-gateway `endpoint-admin-agent-route` rewrites it `RewritePath=/api/v1/endpoint-agent/(?<segment>.*) → /api/v1/agent/${segment}`, so the request reaches the controller `@RequestMapping("/api/v1/agent/enrollments/tpm")` (`TpmEnrollmentController`). The agent (`internal/tpmenroll`, `wire.go`) joins the suffix `"/enrollments/tpm/{nonce,attest}"` onto the edge base `…/api/v1/endpoint-agent`. Both legs return **`200`** (`ResponseEntity.ok()`), not `201`. There is **no** `/api/v1/agent/**` route at the gateway — point the agent at the `endpoint-agent` edge surface.
 
 - **All deny responses are identical on the wire:** single `403` + a fixed body (no deny code, no detail). The V1–V12 reason code (incl. `FEATURE_DISABLED`) is recorded **only in the append-only audit log** — never returned — to avoid a behavioral/enumeration oracle. Response timing + size normalized.
 - Generic `/commands` etc. unaffected.
