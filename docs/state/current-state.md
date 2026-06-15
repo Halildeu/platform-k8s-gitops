@@ -1,6 +1,38 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.5 M2 cert-auth command lifecycle source merged; runtime mTLS E2E still Needs Verify (2026-06-15, Codex #151/#663/#1537)
+## Live Delta — Faz 22.5 M2 cert-auth command/result Windows smoke proven; durable DNS/GPO rollout still gated (2026-06-15, Codex #151/#663/#1555)
+
+**Session milestone**: M2 tokenless mTLS lifecycle'da agent-doable command/result
+runtime kapısı tek domain Windows host üzerinde kanıtlandı. `ERP-MOBIL.acik.local`
+üzerinde `platform-agent` #157 (`83cd30d0`) Windows amd64 binary'si
+`--auto-enroll --once --api-url https://mtls.testai.acik.com/api/v1/endpoint-agent`
+ile çalıştırıldı, AD CS machine cert'i seçti, cert-auth heartbeat attı,
+backend'de seed edilen non-destructive `COLLECT_INVENTORY` komutunu poll etti ve
+result submit ile `SUCCEEDED` durumuna taşıdı. Kanıt yorumları REST Issues API
+ile `platform-k8s-gitops` #1555, `platform-agent` #151 ve `platform-backend`
+#663 üzerine işlendi; ProjectV2 field mutation yapılmadı çünkü GraphQL budget o
+anda exhausted durumdaydı.
+
+| Alan | Durum (2026-06-15) | Kanıt / sınır |
+|---|---|---|
+| Windows cert-auth agent smoke | 🟢 PROVEN (bounded test) | Host `ERP-MOBIL.acik.local`, user `acik\ca.setup`; binary commit `83cd30d0`, SHA256 `a447a3eb5c338426bb458f148b6de304d4f3f132a3e041e41d1b3aed32932670`; agent log: `command 125d46a7-55b7-4379-a7d2-72bf7b0600cc finished with SUCCEEDED`; exit code 0 |
+| Backend command/result rows | 🟢 PROVEN (DB evidence) | Command `125d46a7-55b7-4379-a7d2-72bf7b0600cc`, device `a358d36d-2ade-4e1f-9f54-68a085ef44a5`, `status=SUCCEEDED`, `attempt_count=1`, `delivered_at=2026-06-15 01:22:17Z`, `completed_at=2026-06-15 01:23:21Z`, `last_error` empty; result `841575fe-8527-4978-9f4d-3c8f8d77dbf8`, `result_status=SUCCEEDED`, `claimId=87f1634b-11d3-4442-9915-a3fa082634cd`, diagnostics `backendDNSReachable=true`, `backendTLSValid=true` |
+| Cert identity binding | 🟢 PROVEN | Active machine cert binding row has `san_uri=adcomputer:2a8a00bf-420f-4741-aad3-c402eed0f74d`, subject `CN=ERP-MOBIL.acik.local`, issuer `Acik-Endpoint-CA`, thumbprint `61a7450113c0f86a91c35ffac46153db830e9f32c5f1a59db785f9c47e33650f`, `revoked_at=NULL` |
+| Edge/DNS path used for smoke | 🟡 TEMP SHIM | Windows local hosts shim mapped `mtls.testai.acik.com -> 10.9.10.53` only for smoke and was removed after evidence capture. Durable AD DNS for domain clients remains a separate gate. |
+| Board / issue truth | 🟡 issue comments updated; Project mutation deferred | REST comments: gitops #1555 `issuecomment-4703783674`, agent #151 `issuecomment-4703783710`, backend #663 `issuecomment-4703783749`. ProjectV2 status remains `Needs Verify` until the maintainer deliberately accepts the bounded smoke or splits durable DNS/admin-dispatch follow-up. |
+
+**Boundary**: This proves cert-auth heartbeat + command poll + command result
+submit on one Windows domain machine with a temporary hosts shim and a DB-seeded
+non-destructive command. It does **not** prove durable AD DNS, admin dispatch
+API, 5-PC GPO, 24h soak, 50/800 staged rollout, or prod `mtls.ai.acik.com`.
+Operator-bound and time-bound gates remain skipped per autonomous-mode
+instruction.
+
+## Live Delta — Faz 22.5 M2 cert-auth command lifecycle source merged; runtime mTLS E2E was still Needs Verify before bounded smoke (2026-06-15, Codex #151/#663/#1537)
+
+> Superseded by the 2026-06-15 bounded Windows smoke entry above for the
+> command/result runtime path; durable DNS/admin-dispatch/GPO/wave gates remain
+> outside that proof.
 
 **Session milestone**: M2 tokenless mTLS lifecycle için agent-doable kalan
 command/result source slice backend + agent tarafında işlendi ve Project #2
