@@ -29,6 +29,12 @@ resources:
   # Ready=True before this workload entry's apply (otherwise pod CrashLoop pending secret).
   # Codex 019e8c3a iter-1 plan AGREE; A2 (D30 atomic cutover DNS L4 switch) separate user decision.
   - ../../base/apps/endpoint-admin-service
+  # Faz 22.5 M2 prod mTLS activation (#1359/#1376): dedicated SNI host for
+  # tokenless domain-device enrollment. Test path `mtls.testai.acik.com` was
+  # already live-proven with AD CS machine certs; prod overlay rewrites the
+  # host below to `mtls.ai.acik.com` and keeps browser traffic on `ai.acik.com`
+  # untouched. Secrets are seeded out-of-band; no key material is committed.
+  - ../../base/endpoint-agent-mtls
   # Faz 22.5 — endpoint-agent artifact host (prod desired-state; gitops#1436).
   # Serves the UI one-command install artifacts on ai.acik.com/artifacts/ (the
   # endpoint-admin modal derives artifactBaseUrl from window.location.origin).
@@ -285,19 +291,16 @@ images:
     # success 2026-05-20T19:47Z; digest sha256:3b103e35e3978192556ea8dab8da60ef40f80514981d31ab1e001a27a005d74d.
     digest: sha256:175b3daea37601fbfd500f616ad19664d26dffec8b1db11556a3bff14ce6250e
 
-  # Faz 22.5 P2-A A1 first prod deploy — endpoint-admin-service (BE-024c v2-d).
-  # Source artifact: sha-e0a2731 (platform-backend PR #389 grid SCHEMA v5 +
-  # PR #387 DiffCacheBackfillWorker + AdminDiffCacheController cumulative).
-  # Test cluster LIVE 2026-06-03 (image identical), 8h+ uptime, 4/4 acceptance
-  # smoke composite PASS (TENANT + DEVICES + per-device error isolation +
-  # validation + concurrency + idempotency) — see board #1134 + PR #1230.
-  # D30 immutable digest pin; A2 atomic cutover NOT in this PR (separate user
-  # decision per ADR-0010 §2.5). Cross-AI: Codex 019e8c3a-e997-7d42-a614-7285d3d6420f
-  # plan-time AGREE ready_for_impl=true for A1 substrate; per-PR post-impl
-  # Codex review chain follows.
+  # Faz 22.5 M2 prod mTLS activation (#1359/#1376).
+  # Promotes the test-proven cert-auth command lifecycle image:
+  #   - platform-backend PR #665 merge commit 47d29d5f
+  #   - gitops PR #1559 M2 cert command smoke evidence
+  #   - live testai pod imageID matched sha256:0b7e8489...
+  # This replaces the older P2-A prod digest because prod `mtls.ai.acik.com`
+  # needs the M2-C auto-enroll + heartbeat + command/result endpoints.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:3e1e5852838d1ae519bffbe604787c56052d7a0d9965f8c19f590ed3fae1f3bc
+    digest: sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97
 
   # Faz 22.5 — endpoint-agent artifact host (prod desired-state; gitops#1436).
   # Same env-agnostic static-nginx image as testai (serves /artifacts/endpoint-
@@ -1058,6 +1061,40 @@ patches:
       - op: add
         path: /data/ERP_OPENFGA_MODEL_ID
         value: "01KSFFK9K3V43DD211Z79K3FYA"
+
+  # Faz 22.5 M2 prod AD CS / edge mTLS activation (#1359/#1376).
+  # Preconditions live-proven 2026-06-14/15:
+  #   - DNS `mtls.ai.acik.com` resolves to the staging edge (10.9.10.53).
+  #   - Host nginx SNI stream route points `mtls.ai.acik.com` to prod ingress.
+  #   - AD CS issues machine ClientAuth certs from Acik-Endpoint-CA.
+  #   - Server cert SAN covers both `mtls.testai.acik.com` and
+  #     `mtls.ai.acik.com`.
+  #   - Kubernetes mTLS store/password secrets are seeded out-of-band; no
+  #     secret material is committed here.
+  # Fixed tenant UUID matches the current endpoint-admin default tenant used
+  # throughout Faz 22 evidence and M2 local/test matrices.
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    patch: |-
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_MTLS_FORWARD_HEADER_ENABLED
+        value: "false"
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_MTLS_PASSTHROUGH_ENABLED
+        value: "true"
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_MTLS_PASSTHROUGH_FIXED_TENANT_ID
+        value: "00000000-0000-0000-0000-000000000001"
+
+  # Prod SNI host override for the shared endpoint-agent mTLS base bundle.
+  - target:
+      kind: Ingress
+      name: endpoint-agent-mtls
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: "mtls.ai.acik.com"
 
   # Faz 23.9 prod cutover — notification-orchestrator pod-template
   # annotation rollout trigger + replicas override. ConfigMap envFrom
