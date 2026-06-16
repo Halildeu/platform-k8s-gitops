@@ -3,6 +3,17 @@
 > Format: D28 5-alan + sıradaki agent P0 aksiyon listesi
 > Önceki context: `ac816415-...` session (Zeynep/Mavis mail-loop + #52 KVKK consensus → /goal "tüm Faz 24 agent-doable çıkar + board-uyumlu + sektör-std tamamla")
 
+---
+## ⚡ GÜNCELLEME — Deploy fazı başladı (meeting-service LIVE)
+
+Bu handoff yazıldıktan SONRA, aynı oturumda **deploy fazı (gitops#1615) başlatıldı**:
+- **meeting-service k3d-test'e DEPLOY EDİLDİ** → **D29 Up+Functional LIVE** (pod Ready + imageID `sha256:62a24571` digest match + Flyway V1 gerçek `meeting` DB'de + health 200 + admin/meetings no-JWT 401) + canonical GitOps (**gitops PR #1618 MERGED**).
+- **Deploy reçetesi UÇTAN UCA PROVEN + dokümante** → memory `project_faz24_backend_foundation_delivery` "DEPLOY RECIPE PROVEN" bölümü (8 adım + CI gotcha'ları). Çözülen kalıcı sürtünmeler: ESO per-path policy (`eso-runtime` + canlı write), drift Check1 **@sha256 digest ZORUNLU** (sha-tag yetmez; live pod imageID'den al), services.yaml catalog (Check4/5), boundary `state-mutation (test cluster)` TEK (credential-class user-approval tetikler), rebase-before-merge.
+- **Durum: 3 servis BUILT + 1 servis tam-LIVE (D29) + reçete proven.** Deploy fazı 1/3.
+
+**Sıradaki P0 (proven reçete replikasyonu)**: (1) transcript-service deploy (#411, port 8098, DB `transcript`, schema transcript_service) — yeni main'den worktree. (2) audit-event-consumer deploy (#1249, port 8099, schema audit_event + Redis consumer + audio-gateway `AUDIO_GATEWAY_AUDIT_REDIS_ENABLED=true` flip). (3) meeting Zanzibar-ready (OpenFGA module:meeting seed + allow/deny) + api-gateway route (browser-smoke). (4) #1250 retention. Reçete birebir memory'de.
+
+---
 ## 1. Bağlam (bu oturumda ne yapıldı)
 
 İki ana iş bloğu:
