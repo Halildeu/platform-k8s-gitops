@@ -183,8 +183,11 @@
 > live artifact-host `/current/` now serves `release_tag=v0.2.7` and
 > `EndpointAgent.zip` SHA256
 > `598add6fa01cf8fd5adc3acd8c68ef2a251452831bfbc3246c7ea26c590b9f97`.
-> Pod imageID remains an access-pending verification because this Codex context
-> has no `k3d-test` kube context and direct staging SSH failed.
+> Staging `k3d-test` now verifies `platform-test/artifact-host` Deployment `2/2`
+> ready on the same digest; both pods report imageID
+> `ghcr.io/halildeu/platform-agent-artifacts@sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8`,
+> `ready=true`, `restartCount=0`, rollout succeeded, and ArgoCD `platform-test`
+> is `Synced / Healthy`.
 > The signed MSI release-lane hygiene bug was fixed by `platform-agent` #195
 > (`5a48900177ece937a9c17a8ed2117a672b186149`): fresh trusted MSI run
 > `27619652974` succeeded for `0.2.8`, produced
