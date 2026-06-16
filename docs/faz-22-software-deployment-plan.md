@@ -180,8 +180,11 @@
 > and agent binary SHA256
 > `80df31855c92a37a4592f30d58ae3352e5ff9bb93ed23eae69aa1137a9fbdfed`.
 > GitOps PR #1602 merged that test artifact-host digest pin to origin/main;
-> live artifact-host still needs ArgoCD/pod rollout verification before v0.2.7
-> is claimed current.
+> live artifact-host `/current/` now serves `release_tag=v0.2.7` and
+> `EndpointAgent.zip` SHA256
+> `598add6fa01cf8fd5adc3acd8c68ef2a251452831bfbc3246c7ea26c590b9f97`.
+> Pod imageID remains an access-pending verification because this Codex context
+> has no `k3d-test` kube context and direct staging SSH failed.
 > The signed MSI release lane still has a self-hosted-runner hygiene bug
 > (stale `incoming/EndpointAgent-0.2.0-unsigned.msi` selected during sign job)
 > and must be fixed before MSI/GPO readiness is claimed.
@@ -372,10 +375,11 @@ eklenir.
   `v0.2.7` published a release asset manifest with artifact-host digest
   `sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8`;
   GitOps #1602 merged the test artifact-host pin to this immutable image so
-  `/current/` can serve the remote-bridge-capable bootstrap after ArgoCD sync.
-  This supersedes the earlier live pilot pointer only after live
-  `release-manifest.json`, `EndpointAgent.zip.sha256` and pod imageID match
-  the v0.2.7 digest.
+  `/current/` serves the remote-bridge-capable bootstrap after ArgoCD sync.
+  Follow-up public live checks show `release_tag=v0.2.7`,
+  `EndpointAgent.zip.sha256=598add6fa01cf8fd5adc3acd8c68ef2a251452831bfbc3246c7ea26c590b9f97`,
+  and bootstrap remote-bridge parameters present. Pod imageID verification is
+  still pending staging/k3d-test access.
 - `platform-backend` PR #511 MERGED: rejected result submissions no longer
   leave commands silently locked; backend marks command `FAILED`, clears claim
   lock and stores bounded/redacted `RESULT_REJECTED` last-error without
