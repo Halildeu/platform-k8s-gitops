@@ -5380,25 +5380,29 @@ images:
     digest: sha256:175b3daea37601fbfd500f616ad19664d26dffec8b1db11556a3bff14ce6250e
 
   # Faz 22.5 M2 — endpoint-agent artifact host (test). Image built+pushed by
-  # platform-agent Release EXE trusted workflow for tag v0.2.5:
-  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.5 (+ sha-da6d982).
-  # Serves /artifacts/endpoint-agent/v0.2.5/{bootstrap-package.ps1,EndpointAgent.zip,...}
+  # platform-agent Release EXE trusted workflow for tag v0.2.7:
+  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.7 (+ sha-cd513d1).
+  # Serves /artifacts/endpoint-agent/v0.2.7/{bootstrap-package.ps1,EndpointAgent.zip,...}
   # PLUS a stable MUTABLE alias /artifacts/endpoint-agent/current/ (byte-identical,
   # nginx no-store) so the endpoint-admin UI renders a copy-paste one-command
   # install + discovers the live package hash without a per-release frontend edit
-  # (gitops#1569, platform-agent#170/#171). The agent exe inside EndpointAgent.zip
+  # (gitops#1569/#1601, platform-agent#170/#171/#193/#194). The agent exe inside EndpointAgent.zip
   # is TRUSTED-INTERNAL-CA signed (osslsigncode + internal OpenSSL CA, RFC3161
   # timestamp; install.ps1 imports the internal root TOFU so Authenticode validates
   # Valid). NOT publicly trusted. Pulled with the existing ghcr-pull secret.
-  # One-version-per-image: this image REPLACES v0.2.4; old /artifacts/v0.2.4/
+  # One-version-per-image: this image REPLACES v0.2.5; old /artifacts/v0.2.5/
   # URLs 404 after rollout (durable archive = the GitHub release assets) — but
   # /current/ keeps resolving.
   - name: artifact-host
     newName: ghcr.io/halildeu/platform-agent-artifacts
-    newTag: v0.2.5
-    # D30 immutable pin — Release EXE trusted run 27569016476 (tag v0.2.5,
-    # source sha-da6d982, signing_tier=trusted-internal-ca).
-    digest: sha256:6d687c8b2dabc05372aafc4a44c99d0a984b45a81f4cbaea317001c1ac3e10b2
+    newTag: v0.2.7
+    # D30 immutable pin — Release EXE trusted run 27616980839 (tag v0.2.7,
+    # source sha-cd513d1, signing_tier=trusted-internal-ca). Release asset
+    # manifest records EndpointAgent.zip SHA256
+    # 598add6fa01cf8fd5adc3acd8c68ef2a251452831bfbc3246c7ea26c590b9f97 and
+    # agent binary SHA256
+    # 80df31855c92a37a4592f30d58ae3352e5ff9bb93ed23eae69aa1137a9fbdfed.
+    digest: sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8
 
 patches:
   # notification-orchestrator-secrets is owned by the test ExternalSecret. The
