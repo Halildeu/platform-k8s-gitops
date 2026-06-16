@@ -144,14 +144,14 @@ jobs:
         run: |
           set -euo pipefail
           DIGESTS_JSON=$(kubectl kustomize kustomize/overlays/test \
-            | grep -oE 'platform-backend-[a-z-]+@sha256:[a-f0-9]{64}' \
+            | grep -oE 'platform-backend-[a-z-]+(:[^[:space:]@]+)?@sha256:[a-f0-9]{64}' \
             | sort -u \
-            | jq -Rn '[inputs | capture("platform-backend-(?<svc>[a-z-]+)@(?<dg>sha256:[a-f0-9]{64})") | {key:.svc, value:.dg}] | from_entries')
+            | jq -Rn '[inputs | capture("platform-backend-(?<svc>[a-z-]+)(?::[^@]+)?@(?<dg>sha256:[a-f0-9]{64})") | {key:.svc, value:.dg}] | from_entries')
 
           # Validation: digests JSON must be a non-empty object
           if ! echo "${DIGESTS_JSON}" | jq -e 'type == "object" and length > 0' >/dev/null 2>&1; then
             echo "::error::auto-extract produced empty/invalid digest map. Overlay render output:"
-            kubectl kustomize kustomize/overlays/test | grep -oE 'platform-backend-[a-z-]+@sha256:[a-f0-9]{64}' | head -20
+            kubectl kustomize kustomize/overlays/test | grep -oE 'platform-backend-[a-z-]+(:[^[:space:]@]+)?@sha256:[a-f0-9]{64}' | head -20
             exit 1
           fi
 
@@ -256,6 +256,23 @@ jobs:
           # Override DIGESTS_JSON with normalized (object-form) for downstream jq
           DIGESTS_JSON="${DIGESTS_PARSED}"
 
+          # ADR-0023 guard: the test overlay is GitOps-authoritative. Do not
+          # imperatively mutate k3d-test when the payload would drift from the
+          # checked-out desired-state; ArgoCD can otherwise reconcile the slow
+          # rollout back to the old digest before imageID verification (observed
+          # on report-service during #1616 / backend#676).
+          ROLLOUT_SERVICES_JSON=$(printf '%s\n' "${SERVICES[@]}" | jq -R . | jq -sc .)
+          ROLLOUT_DIGESTS_JSON=$(jq -cn \
+            --argjson digests "${DIGESTS_JSON}" \
+            --argjson services "${ROLLOUT_SERVICES_JSON}" \
+            'reduce $services[] as $svc ({}; . + {($svc): ($digests[$svc] // "")})')
+
+          python3 scripts/automation/apply-test-overlay-digests.py \
+            --digest-map "${ROLLOUT_DIGESTS_JSON}" \
+            --kustomization kustomize/overlays/test/kustomization.yaml \
+            --check \
+            --fail-on-change
+
           {
             echo "## Sequential rollout (digest-pin)"
             echo ""
@@ -271,7 +288,7 @@ jobs:
             # Direct digest pin only (tag-based fallback REMOVED 2026-06-01
             # PR-FOLLOW-UP-2). Codex 019de00f PARTIAL #2: regex-strict format
             # ^sha256:[a-f0-9]{64}$ — sadece prefix değil tam doğrulama.
-            DIGEST=$(echo "${DIGESTS_JSON}" | jq -r --arg s "${svc}" '.[$s] // empty')
+            DIGEST=$(echo "${ROLLOUT_DIGESTS_JSON}" | jq -r --arg s "${svc}" '.[$s] // empty')
             if [ -z "${DIGEST}" ]; then
               echo "::error::${svc} digest missing from payload"
               exit 1
@@ -320,7 +337,7 @@ jobs:
           done
 
           # #827 PR-B: expose the full {service: digest} map to the
-          # sync-test-overlay-pr job. Reached only after all 8 services rolled
+          # sync-test-overlay-pr job. Reached only after all 9 services rolled
           # out + verified — a failed run exits earlier, so the map (and the
           # auto-PR) is never emitted for a partial rollout.
           echo "digest_map=${DIGEST_MAP_JSON}" >> "$GITHUB_OUTPUT"
@@ -502,9 +519,9 @@ jobs:
             echo ""
             echo '```bash'
             echo "DIGESTS_JSON=\$(kubectl kustomize kustomize/overlays/test \\"
-            echo "  | grep -oE 'platform-backend-[a-z-]+@sha256:[a-f0-9]{64}' \\"
+            echo "  | grep -oE 'platform-backend-[a-z-]+(:[^[:space:]@]+)?@sha256:[a-f0-9]{64}' \\"
             echo "  | sort -u \\"
-            echo "  | jq -Rn '[inputs | capture(\"platform-backend-(?<svc>[a-z-]+)@(?<dg>sha256:[a-f0-9]{64})\") | {key:.svc, value:.dg}] | from_entries')"
+            echo "  | jq -Rn '[inputs | capture(\"platform-backend-(?<svc>[a-z-]+)(?::[^@]+)?@(?<dg>sha256:[a-f0-9]{64})\") | {key:.svc, value:.dg}] | from_entries')"
             echo ""
             echo "# (Tek satırlık alternatif: awk + paste -sd ',' - + sed wrap)"
             echo "# DIGESTS_JSON=\$(... | awk -F'platform-backend-|@' '{printf \"\\\"%s\\\":\\\"%s\\\",\", \$2, \$3}' \\"

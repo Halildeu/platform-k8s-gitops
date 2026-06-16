@@ -814,7 +814,7 @@ images:
     # ReportContractGate reports=37 violations=0 (36→37 weekly-audit-digest).
     # D-chain progress: 5/5 LIVE pure-grid modules (post-deploy) — TARGET CLOSED.
     newTag: sha-14322ac
-    digest: sha256:2b1619301b6a1745ff76cfbb88bd736fefc38d01ef7f3ade2eb75efff0617560
+    digest: sha256:6a896fe09dbf229ffc1c68b2c08596e79d2bf1e50733c96d0d16e042f304aa99
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
@@ -5059,7 +5059,7 @@ images:
     # smoke; no production path.
     # Image build run 27516905956 digest map evidence:
     # endpoint-admin-service sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97
-    digest: sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97
+    digest: sha256:e1cb12d2b1a5b16c723443c8c12e72e7103d9ee8ce4f0206daf8c716cf13f21d
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
