@@ -5069,7 +5069,14 @@ images:
     # smoke; no production path.
     # Image build run 27516905956 digest map evidence:
     # endpoint-admin-service sha256:0b7e848918481b01d41aab20b49c85e9766d2a62a36855552b486589cc898f97
-    digest: sha256:e1cb12d2b1a5b16c723443c8c12e72e7103d9ee8ce4f0206daf8c716cf13f21d
+    # 2026-06-17 Domain Ops broker runtime wiring hotfix (#676/#680) -> sha-b7f1539.
+    # Fixes the testai rollout blocker where the #678 image reached k3d-test but
+    # endpoint-admin failed startup with DomainOpsBrokerService NoSuchMethodException
+    # because Spring did not select the intended constructor. Image build run
+    # 27651919048 succeeded; repository_dispatch deploy 27652019493 correctly failed
+    # the overlay drift guard before this desired-state bump.
+    # endpoint-admin-service sha256:5ddeb760f6acb08b2e8d6c618391b3bb9e8fcc82f8af84c84d991f5536758c57
+    digest: sha256:5ddeb760f6acb08b2e8d6c618391b3bb9e8fcc82f8af84c84d991f5536758c57
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
