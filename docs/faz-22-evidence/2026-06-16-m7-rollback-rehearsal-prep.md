@@ -264,6 +264,32 @@ SHA256: 396f6b15f3bab2b63ff0af4bb08e5e63bed172960610ef31a4cb8824f0e20824
 overall: PASS
 ```
 
+Main-tracked LF-normalized, scanner-safe JSON evidence copies:
+
+```text
+docs/faz-22-evidence/raw/2026-06-16-m7-rollback-rehearsal/HALILKOOLUB735-baseline.json
+docs/faz-22-evidence/raw/2026-06-16-m7-rollback-rehearsal/HALILKOOLUB735-rollback-clean.json
+docs/faz-22-evidence/raw/2026-06-16-m7-rollback-rehearsal/HALILKOOLUB735-reinstall-continuity.json
+docs/faz-22-evidence/raw/2026-06-16-m7-rollback-rehearsal/SRB-AIDENETIMPC-baseline.json
+docs/faz-22-evidence/raw/2026-06-16-m7-rollback-rehearsal/SRB-AIDENETIMPC-rehearsal-baseline.json
+docs/faz-22-evidence/raw/2026-06-16-m7-rollback-rehearsal/SRB-AIDENETIMPC-rollback-clean.json
+docs/faz-22-evidence/raw/2026-06-16-m7-rollback-rehearsal/SRB-AIDENETIMPC-reinstall-continuity.json
+docs/faz-22-evidence/raw/2026-06-16-m7-rollback-rehearsal/SRB-AIDENETIMPC-backend-lifecycle-summary.json
+```
+
+Main-tracked JSON SHA256 index:
+
+```text
+7a4ed9852c09a674ed12854306218cb3f64aaa39394a30789f3ffe211e6bce01  HALILKOOLUB735-baseline.json
+ac8a2bbdeb712f74696110d485243b09300b50d9fa32526d374c9969f6e7930e  HALILKOOLUB735-rollback-clean.json
+7ec049fd9e934f20c1e3350cc673cb1298dd3fea1b79a6eea05a21a8b28fcd6f  HALILKOOLUB735-reinstall-continuity.json
+8f7f5d4b92731d07a3e4570e46656afa586d6cf42ec11e136d225f3978ab8bb2  SRB-AIDENETIMPC-baseline.json
+19560554baba1cadb2eb8b59926fc1bbbc6d055768af8a8b5d5e19b8d091eab5  SRB-AIDENETIMPC-rehearsal-baseline.json
+62b0de10351de71d6a607ee624f8155ef55203c5a7d6b8029b1cda951076e1d2  SRB-AIDENETIMPC-rollback-clean.json
+660dc65f1d3e31d8bbef1a10ff4954c0d7391ec79d22f49fcc8ebfeda5562299  SRB-AIDENETIMPC-reinstall-continuity.json
+eb7e4727f28d1a16676cb197826194a3430e3e9ad7330c5d0c63c848e0208855  SRB-AIDENETIMPC-backend-lifecycle-summary.json
+```
+
 Raw evidence hash highlights:
 
 ```text

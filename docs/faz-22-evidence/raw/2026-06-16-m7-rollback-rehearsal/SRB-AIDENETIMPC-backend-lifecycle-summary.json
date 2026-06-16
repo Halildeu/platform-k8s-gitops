@@ -1,0 +1,66 @@
+{
+  "boundaries": [
+    "testai/platform-test only",
+    "no raw JWT/password persisted",
+    "actual selected device was decommissioned then reactivated in same script",
+    "does not prove GPO unlink propagation or 50-PC wave denominator"
+  ],
+  "checks": {
+    "createWhileDecommissioned409": true,
+    "decommission200StatusDecommissioned": true,
+    "decommissionAuditReadable": true,
+    "futureCommandCascadeCancelled": true,
+    "futureCommandCreated200": true,
+    "listDevices200": true,
+    "postWaitReadable": true,
+    "reactivate200": true,
+    "reactivateAuditReadable": true
+  },
+  "command": {
+    "futureCommandId": "8bfe3af8-aba9-4100-9a55-15d365bebd5e",
+    "statusAfterDecommission": "CANCELLED"
+  },
+  "evidenceType": "m7-backend-lifecycle-smoke",
+  "http": {
+    "auditDecommission": "200",
+    "auditReactivate": "200",
+    "createFutureCommand": "200",
+    "createWhileDecommissioned": "409",
+    "decommission": "200",
+    "getAfterReactivateWait": "200",
+    "getCommandAfterDecommission": "200",
+    "listDevices": "200",
+    "reactivate": "200"
+  },
+  "overall": "PASS",
+  "persona": {
+    "keycloakUserId": "redacted-test-persona-id",
+    "passwordRotatedAfterSmoke": true,
+    "tokenLogged": false,
+    "username": "c5persona-admin-9001"
+  },
+  "rawSha256": {
+    "audit-decommission.json": "c610d69d628fe948ac2b4963e55b26bb037550b15c16fa89f3af83585a0fe926",
+    "audit-reactivate.json": "bc04f82f56cf3474be413611b73c1ef2e3148613c7ff2b750e0a97d5de45199b",
+    "command-after-decommission.json": "03e740ccb1ec4997bb9f7ec1eb5b296759d557fce3715ee6c0c7013a223a77b6",
+    "create-command-while-decommissioned-request.json": "0d5dd24d71d7ff853c68dba9dadf09f55c6675ac5f797d1701789e1305ed8b41",
+    "create-command-while-decommissioned-response.json": "71837d93cdd0ca42a6eab77f2bde25614883743d15580d21ee194b626fd30602",
+    "create-future-command-request.json": "7fd8f6cdb6d320797a554f781ff297b91136b3ea6117752712fb7e7919acf874",
+    "create-future-command-response.json": "31617539cb85246c213b32f06e0fc06900c50fd4a1fb818a8472798c2bd9092a",
+    "decommission-request.json": "82dd9fc82f9dd64822df7adeb26ff72a7456508aef4df9c4b83d6d75ae8e3f51",
+    "decommission-response.json": "4794e6852e5a8dfe6c3dba6a77d42b017c902d38562d87cde93ce313efc40a85",
+    "device-after-reactivate-wait.json": "038e335e7f34b25b548e54fd2a8624a06bb88adda7a8ecd189c1ce608957a548",
+    "devices-before.json": "27c899aeffc387683a27781dcde862748e60ec0f271f804df9212ef0094131d9",
+    "reactivate-request.json": "0a9ceb7fdbdc7b588b1221d7351cb9c09f229e42e4301f37ae49d3a85d43bf14",
+    "reactivate-response.json": "5d16f6918fd35b5a9b92a00f811bede2b9775d01900f1b3fb2144ad427e0c5de",
+    "token-response-redacted.json": "fa2cc7e395e837d0e698484e9f539aebc8bdd494190c93df5a0210ad156812d5"
+  },
+  "stamp": "20260616-093940Z",
+  "target": {
+    "deviceId": "423b6fc3-7497-4083-bd2f-5e2fe543bfe9",
+    "hostname": "SRB-AIDENETIMPC",
+    "postWaitStatus": "ONLINE",
+    "preStatus": "ONLINE",
+    "reactivateResponseStatus": "OFFLINE"
+  }
+}
