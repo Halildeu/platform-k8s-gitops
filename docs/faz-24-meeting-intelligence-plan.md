@@ -3,12 +3,14 @@
 > **Status**: ACTIVE (2026-06-02, 3-AI mutabakat sonrası sabit)
 >
 > **Mutabakat trail**: Claude (Anthropic) + Codex `019e879c` (OpenAI, AGREE final) + Mavis `mvs_c922505d66a94a45b031feb3489f9488` msg `78` (MiniMax, AGREE).
+>
+> **2026-06-16 güncelleme (owner kararı + 2-AI sektör istişaresi)**: Faz 24 **bağımsız ürün** olarak konumlanır — **Workcube/ERP bağı YOK** (owner net direktifi 2026-06-16). Workcube bu repoda yalnızca göç edilen eski veri kaynağıdır; toplantı zekâsı ürünü bağımsız satılır. Sektör-standardı yol haritası §11'e eklendi (Claude + Codex `019ed1f5` tur-1+tur-2 sektör istişaresi; Mavis/MiniMax bu turda iki denemede de erişilemedi — istişare 2-AI provider-distinct).
 
 ---
 
 ## 1. Vizyon
 
-Workcube ERP'ye entegre toplantı zekâsı platformu. Telefon / masaüstü / Teams ses kaynaklarından:
+**Bağımsız** toplantı zekâsı platformu (2026-06-16 owner kararı: Workcube/ERP bağı YOK — herhangi bir kuruma satılabilir bağımsız ürün; hedef pazar = Türkiye + regüle/veri-hassas sektörler). Telefon / masaüstü / Teams ses kaynaklarından:
 
 - Canlı geçici transkript (2-8 sn gecikme)
 - Kesinleşmiş transkript (10-20 sn bağlamlı)
@@ -37,7 +39,7 @@ Workcube ERP'ye entegre toplantı zekâsı platformu. Telefon / masaüstü / Tea
 
 `live-stt-service` iç compute worker'dır; mobile/web hiçbir zaman doğrudan `platform-ai`'a bağlanmaz.
 
-**Neden**: Auth / tenant / audit / permission / KVKK pattern'leri Spring Boot Gateway'de (Workcube ERP konvansiyonu). `live-stt`'ye client WebSocket koymak = yanlış ownership boundary + deprecation borcu.
+**Neden**: Auth / tenant / audit / permission / KVKK pattern'leri Spring Boot Gateway'de (platform auth/tenant konvansiyonu). `live-stt`'ye client WebSocket koymak = yanlış ownership boundary + deprecation borcu.
 
 ### 2. Audio Gateway Contract 1.0 ÖNCE kilitlenir
 
@@ -67,7 +69,7 @@ KVKK ADR'ye transcript için **ayrı boyut**: kim okuyabilir (participant / comp
 
 Gateway Contract 1.0'da `language` required field; `tr` sadece local/dev default. Product API explicit gönderir.
 
-**Neden**: Workcube müşteri çeşitliliği multi-dil destek gerektirir. Sonradan eklemek = breaking change retroaktif.
+**Neden**: Müşteri çeşitliliği multi-dil destek gerektirir. Sonradan eklemek = breaking change retroaktif.
 
 ### 7. Worker isolation = b + d kombinasyonu
 
@@ -95,14 +97,14 @@ PR-stt-02 e2e öncesi **iki host için ayrı baseline** (Codex `019e8c09` iter-2
 
 Faz 24.1 MVP tek müşteri OK, ama ADR-0030'da "future multi-tenant readiness" placeholder — tenantId metadata + auth token validation Gateway seviyesinde.
 
-**Neden**: Workcube dışı müşteri girişi geldiğinde retroactively eklemek pahalı.
+**Neden**: Yeni müşteri/tenant girişi geldiğinde retroactively eklemek pahalı.
 
 ---
 
 ## 4. 3 RED (yapılmayacak — Codex + Mavis ortak)
 
 1. ❌ **Gateway contract kilitlenmeden** mobile/Web veya STT WebSocket contract yazılması
-2. ❌ **KVKK ADR olmadan** gerçek Workcube meeting kaydı kullanılması
+2. ❌ **KVKK ADR olmadan** gerçek müşteri meeting kaydı kullanılması
 3. ❌ **Synthetic WER ile** model kararı kapatılması
 
 ---
@@ -256,6 +258,91 @@ Mobile/desktop/web client'lar **hiçbir zaman** doğrudan `platform-ai`'a bağla
 | Staging resource pressure gate | iter-3 AGREE | msg `74` B eksik risk | AGREE |
 | Multi-tenant placeholder | (örtük) | msg `78` B tek eksik | AGREE |
 | **Two-server topology** (ADR-0031) | `019e8c09` iter-1+iter-2+iter-3 REVISE absorb → **iter-4 AGREE final** ("merge blocker bulmadım") | msg `78` AGREE final 2026-06-03 (ADR-0031 mutabakat closed) | AGREE (kullanıcı 2026-06-03 mimari notu) |
+
+## 11. Sektör-Standardı Yol Haritası (2026-06-16 — bağımsız ürün, 2-AI istişaresi)
+
+> **Bağlam**: Owner 2026-06-16 kararı — Faz 24 **bağımsız ürün** (Workcube/ERP bağı YOK). Sektör karşılaştırması (Otter / Fireflies / Gong / Teams Copilot / Zoom AI Companion) + 2-AI ping-pong istişaresi (Claude + Codex `019ed1f5` tur-1+tur-2) sonucu. Mavis/MiniMax iki denemede de erişilemedi → istişare 2-AI provider-distinct (HARD RULE: self-subagent ikamesi yok).
+
+### 11.1 Kazanma formülü (savunulabilir pozisyon)
+
+> **Türkçe-first + on-prem/self-host + compliance-grade governance + kaynaklı (citation'lı) intelligence — dördü birlikte.** Tek başına hiçbiri yeterli değil. Hedef: dar ama yüksek-ACV regüle enterprise pazarı (kamu/finans/sağlık/savunma/hukuk). Yatay self-serve SaaS değil.
+
+**Teşhis**: Mevcut plan (24.0-24.13) STT-altyapı ağırlıklı (~%70 olgun); sektörün beklediği **ürün değeri** katmanı (capture + intelligence + compliance ürünleştirme) zayıf/eksik.
+
+### 11.2 Plana eklenen 5 yetenek hattı (capability track)
+
+| Hat | Kapsam | Sektör boşluğu | Öncelik | Repo |
+|---|---|---|:--:|---|
+| **T-A Capture** | Teams + Calendar bot (`PR-cap-01`), Zoom/Meet bot (`PR-cap-02`), masaüstü recorder'ı production'a | Bağımsız üründe #1 adoption kapısı; bot olmadan "dosya yükle" MVP-altı | **P0** | backend + client |
+| **T-B Kalite kanıtı** | Türkçe benchmark harness (`PR-wer-01` güçlendir) + **diarization** (`PR-diar-01`) + model/GPU kararı | Diarization sektör standardı (bizde yok); Türkçe WER wedge ama ölçülmeli | **P0** | platform-ai |
+| **T-C Intelligence** | LLM özet/karar/aksiyon (`PR-llm-01`) + **kaynaklı/zaman-damgalı çıktı** (`PR-llm-02`) + AI sohbet (`PR-llm-03`) | Ürünün asıl değeri; regüle sektörde "AI dedi" değil "şu cümleden çıkarıldı" güveni | **P0** | platform-ai + backend |
+| **T-D Compliance ürünleştirme** | ADR-0030 → **ACCEPTED** (hukuk+VERBIS) + consent/retention/legal-hold UI (`PR-comp-01`) + access-matrix/audit (`PR-comp-02`) + on-prem kurulum paketi (Helm/GPU sizing/backup) | Kale'miz; ancak **paketlenirse** satışa döner | **P1** | web + gitops + hukuk |
+| **T-E Entegrasyon paritesi** | Webhook/CRM/Jira/CSV export (`PR-int-01`) | Parite (diferansiyatör değil); olmazsa eksik görünür | **P2** | backend |
+
+> **Over-engineering (ertelenir, 2-AI ortak)**: 3 client (mobil+masaüstü+web) tam paritesini erken büyütmek · canlı-transkript latency takıntısı · 32-partition Redis erken tuning · self-host LLM'i tek mod yapmak (özel-bulut/transcript-only LLM esnekliği kalsın) · GPU'yu WER'den önce kilitlemek.
+
+### 11.3 Yeni kabul kapıları (ürün kalite kanıtı — §9 D29 gate'lerine ek)
+
+| Gate | Eşik / kanıt |
+|---|---|
+| **G-WER** | Gerçek toplantı Türkçe WER ≤ hedef + diarization DER ≤ hedef (synthetic CI'da kalır; claim için gerçek toplantı) |
+| **G-INT** | Özet faithfulness + action-item precision/recall ≥ hedef + her çıktı citation'lı (zaman damgası bağlı) |
+| **G-CAP** | Bot join + kayıt tamamlanma başarı oranı ≥ hedef |
+| **G-COMP** | Consent + retention + audit canlı **ve** KVKK hukuk imzası mevcut |
+| **G-LAT/COST** | Latency p50/p95 + cost/dakika ölçülü (GPU/model kararına girdi) |
+
+### 11.4 Sektör-standardı sıralı yol (Aşama-2 LIVE'ın üstüne)
+
+```
+Aşama-2 (LIVE) ─ gateway + Redis + STT iskelet + observability  ✅
+
+Aşama-3  ÇEKİRDEK DEĞER (P0) → "demo edilebilir gerçek ürün"
+  T-B Türkçe benchmark + diarization        → G-WER
+  T-C LLM özet/karar/aksiyon + citation      → G-INT
+  (synthetic → ilk gerçek toplantı e2e)
+
+Aşama-4  ADOPTION + KALE (P0/P1) → "satılabilir ürün"
+  T-A Teams/Calendar capture                 → G-CAP
+  T-D consent/retention/audit + KVKK ACCEPTED → G-COMP
+  on-prem kurulum paketi ürünleştir
+
+Aşama-5  KANIT (PoC) → "referans + benchmark raporu"
+  3-5 design-partner regüle kurum PoC
+  Türkçe benchmark raporu yayınla
+
+Aşama-6  ÖLÇEK + GTM → "tekrarlanabilir satış"
+  dikey wedge seç (hukuk / yön. kurulu / banka-içi / sağlık / kamu)
+  T-E entegrasyon paritesi + GTM paketleme
+```
+
+### 11.5 MVP tanımı (ilk satılabilir sürüm)
+
+**Teams/Calendar capture → Türkçe transcript + diarization → kaynaklı özet/karar/aksiyon → admin (retention/access/audit) → on-prem opsiyon → basit export.** Tek dikey wedge ile. *(Canlı altyazı, mobil, çoklu-platform bot, revenue-coaching MVP-dışı.)*
+
+### 11.6 Go-to-market (hibrit)
+
+**(1)** private/cloud SaaS (seat + dakika, mid-market) · **(2)** enterprise on-prem yıllık lisans (named-user/node/GPU + SLA + kurulum) · **(3)** "regulated premium" (self-host STT+LLM, müşteri-anahtarı, air-gap, KVKK artefaktları). Sıra: design-partner PoC → benchmark raporu → dikey wedge → on-prem ürünleştirme.
+
+### 11.7 Planlanan ADR'lar (numara board/PR-time'da atanır — paralel-session çakışma guard'ı)
+
+| ADR (öneri) | Konu | Tetik |
+|---|---|---|
+| ADR — Capture stratejisi | Bot vs native vs recorder — tek güçlü yol | T-A öncesi |
+| ADR — Diarization yaklaşımı | pyannote vs alternatif + speaker→kişi eşleme | T-B `PR-diar-01` öncesi |
+| ADR — Intelligence katmanı | Kaynaklı özet/aksiyon, hallucination guard, self-host↔özel-bulut LLM esnekliği | T-C `PR-llm-01` öncesi |
+| **ADR-0030 → ACCEPTED** | KVKK placeholder'ı yükselt (hukuk + VERBIS) | T-D / gerçek ses akışı öncesi (HARD gate) |
+| ADR — Paketleme/GTM | SaaS + on-prem lisans + regulated premium tier | Aşama-6 öncesi |
+
+### 11.8 2-AI istişare trail (2026-06-16)
+
+| Kaynak | Katkı |
+|---|---|
+| Claude (Anthropic) | Türkçe WER "kazan-kaybet kapısı" + Teams-native capture + KVKK/permission-aware kale vurgusu |
+| Codex (OpenAI) `019ed1f5` tur-1 | "STT platformu değil, outcome engine"; intelligence + WER + diarization + capture eksik sırası; over-engineering uyarıları |
+| Codex (OpenAI) `019ed1f5` tur-2 | Bağımsız ürün çerçevesinde diferansiyatör kombinasyonu + niş değerlendirmesi (dar/yüksek-ACV) + 3 öncelik + hibrit GTM |
+| Mavis (MiniMax) | İki denemede erişilemedi (delivered, orchestrator yanıt yok) — KVKK/regülasyon turu açıkta; açılırsa eklenecek |
+
+---
 
 ## References
 
