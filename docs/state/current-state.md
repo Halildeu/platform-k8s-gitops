@@ -1,20 +1,30 @@
 # Current State — Platform K8s Migration
 
-## Planning Delta — Faz 22.5 pilot cap + AgentPC2 channel decision (2026-06-16)
+## Live Delta — Faz 22.5 two-device acceptance evidence (#1609, 2026-06-16)
 
-**Owner decision / safety boundary**: the 50-PC M6 wave is deliberately closed
-until the productized two-device acceptance path is proven. Active pilot scope
-is capped at **max 2 computers**. The allowed test pool is `SRB-AIDENETIMPC`
-(Denetim PC), `AgentPC2`, `AgentPC1`, and local Parallels Windows; the primary
-acceptance pair is **Denetim PC + AgentPC2**. Tracked by Project #2 issue
+**Owner decision / safety boundary**: the 50-PC M6 wave remains deliberately
+closed. Active pilot scope is capped at **max 2 computers**. The allowed test
+pool is `SRB-AIDENETIMPC` (Denetim PC), `AgentPC2`, `AgentPC1`, and local
+Parallels/domain Windows. During the 2026-06-16 acceptance run the
+owner-approved current pair was **Denetim PC + ERP-MOBIL**; `AgentPC2` remains
+the next product-channel verify candidate, not a blocker for the current
+two-device #1609 record. Tracked by Project #2 issue
 [#1609](https://github.com/Halildeu/platform-k8s-gitops/issues/1609).
 
 | Device | Recommended role | Why | Boundary |
 |---|---|---|---|
-| `SRB-AIDENETIMPC` / Denetim PC | Primary device 1 | Already has domain + GPO + machine-cert + `EndpointAgent` evidence and represents a real workstation path. | Use for signed MSI/GPO + service continuity smokes; do not treat it as a 50-PC denominator. |
-| `AgentPC2` | Primary device 2 | Best second target because it is the next real user/workstation-style device and should expose different network/domain friction earlier than local lab. | If domain joined and GPO/cert applies, use signed MSI + GPO. If not, use one-command bootstrap until domain path is repaired. |
+| `SRB-AIDENETIMPC` / Denetim PC | Accepted device 1 | Domain joined, `mtls.testai.acik.com:443=true`, `testai.acik.com:443=true`, `Acik-Endpoint-CA` client-auth cert, `EndpointAgent` Running/Auto/LocalSystem, restart smoke PASS. | Real workstation path; do not treat it as a 50-PC denominator. |
+| `ERP-MOBIL` | Accepted device 2 | Domain joined, `mtls.testai.acik.com:443=true`, `testai.acik.com:443=true`, `Acik-Endpoint-CA` client-auth cert, `EndpointAgent` Running/Auto/LocalSystem, restart smoke PASS. | Domain Windows Server / controllable acceptance host; valid for current 2-device cap, not broad workstation diversity. |
+| `AgentPC2` | Next product-channel verify | Best next workstation-style target once stable GPO/MSI or remote-ops product channel exists. | If domain joined and GPO/cert applies, use signed MSI + GPO. If not, use one-command bootstrap until domain path is repaired. |
 | `AgentPC1` | Reserve/fallback | Useful if AgentPC2 is unavailable or needs comparison evidence. | Keep out of active denominator unless one of the primary pair is dropped. |
 | local Parallels Windows | Break/fix lab | Fastest place to reproduce installer, rollback, and service-mode regressions without affecting users. | Lab evidence only; not domain-GPO acceptance unless explicitly domain-joined and network-ready. |
+
+Acceptance evidence collected by Codex over temporary lab reverse-SSH bridges:
+
+| Device | Cert thumbprint(s) | Agent restart / log signal | Result |
+|---|---|---|---|
+| `SRB-AIDENETIMPC` | `1687D3C41443239A12ECA973E6EED87B0876B068` | restart succeeded; log includes `agent mode=auto-enroll`, `auto-enroll cert loaded`, `no command available` | PASS |
+| `ERP-MOBIL` | `F87F0D21F29DCBE77AA861587559BAC974D2FCC0`, `196E4A8D87F9B341718C6BBCFB33A0DD3FF96C53` | restart succeeded; log includes `agent mode=auto-enroll`, `auto-enroll cert loaded`, `no command available` | PASS |
 
 **AD/GPO operation boundary**: Codex-controlled SSH/public-key access to a
 domain host is sufficient for host-local diagnostics but not a durable AD/GPO
