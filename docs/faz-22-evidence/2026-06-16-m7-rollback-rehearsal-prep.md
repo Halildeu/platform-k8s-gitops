@@ -63,16 +63,68 @@ localhost:22024 -> connection refused
 Therefore this session could not execute the collector on Denetim PC or
 ERP-MOBIL from the Codex host. This is not treated as a runtime pass.
 
-## 5. Status
+## 5. Local-Control Runtime Rehearsal Evidence
+
+After the reverse-SSH route became unavailable, Codex used the local Parallels
+Windows 11 VM (`HALILKOOLUB735`) as the safe local-control device. This does
+not replace domain-GPO evidence, but it proves the same-day rollback collector,
+preserve-config uninstall path, HMAC-preserving reinstall path, and
+post-reinstall service continuity on a real Windows endpoint.
+
+| Phase | File | Overall | Fail | Warn | SHA256 |
+|---|---|---:|---:|---:|---|
+| baseline | `.runtime-evidence/HALILKOOLUB735/20260616-080748Z-HALILKOOLUB735-baseline.json` | PASS-WITH-WARN | 0 | 1 | `b65967ba520a68e1b498fea5e5ae96bb81eaaca5a5450750f37234ad351912f1` |
+| rollback-clean | `.runtime-evidence/HALILKOOLUB735/20260616-082315Z-HALILKOOLUB735-rollback-clean.json` | PASS | 0 | 0 | `aaea53e3e694bebe8ac75e497f01ef1d4a9105a3531d00fc184ff7d55071529f` |
+| reinstall-continuity | `.runtime-evidence/HALILKOOLUB735/20260616-082338Z-HALILKOOLUB735-reinstall-continuity.json` | PASS | 0 | 0 | `92cc24b1601023ef7caebdb0b9211ee1aff5fa4b89ac7031ded7f8a96f77f06e` |
+
+Rehearsal runner:
+
+```text
+.runtime-evidence/HALILKOOLUB735/m7-local-w11-rehearsal-runner.ps1
+SHA256: 54592185df930307588a361455a15e361c45f2c80665693eb2f893ab9d4da220
+```
+
+Local Windows step log:
+
+```text
+2026-06-16T11:23:12+03:00 PRE-STATE
+2026-06-16T11:23:12+03:00 BEGIN UNINSTALL-PRESERVE-CONFIG-LOGS
+2026-06-16T11:23:13+03:00 END UNINSTALL-PRESERVE-CONFIG-LOGS exit=0
+2026-06-16T11:23:13+03:00 BEGIN COLLECT-ROLLBACK-CLEAN
+2026-06-16T11:23:15+03:00 END COLLECT-ROLLBACK-CLEAN exit=0
+2026-06-16T11:23:15+03:00 BEGIN INSTALL-CURRENT-PRESERVE-HMAC
+2026-06-16T11:23:16+03:00 END INSTALL-CURRENT-PRESERVE-HMAC exit=0
+2026-06-16T11:23:36+03:00 BEGIN COLLECT-REINSTALL-CONTINUITY
+2026-06-16T11:23:38+03:00 END COLLECT-REINSTALL-CONTINUITY exit=0
+2026-06-16T11:23:38+03:00 POST-STATE
+2026-06-16T11:23:38+03:00 END M7 local-control rollback rehearsal
+```
+
+Post-state:
+
+```text
+EndpointAgent service: Running / Automatic
+endpoint-agent version: v0.2.5
+```
+
+Important boundary:
+
+- This proves local-control rollback/reinstall continuity.
+- This does **not** prove domain-GPO propagation or the 2-device denominator.
+- Therefore #1379 remains open until domain-GPO/selected-pilot evidence is
+  attached or the acceptance boundary is explicitly narrowed by the owner.
+
+## 6. Status
 
 | Gate | Status |
 |---|---|
-| #1379 board status | In Progress for bounded rehearsal prep |
+| #1379 board status | Blocked/open; local-control evidence attached, domain-GPO evidence pending |
 | M7 full closure | Not closed |
-| Full destructive rollback drill | Runtime evidence pending |
+| Local-control rollback/reinstall drill | PASS on HALILKOOLUB735 |
+| Domain-GPO destructive rollback drill | Runtime evidence pending |
 | 50-PC/M6 dependency | Still open under #1378 |
 
-## 6. Next Runtime Command Shape
+## 7. Next Runtime Command Shape
 
 On a selected Windows device with the repo script available:
 
