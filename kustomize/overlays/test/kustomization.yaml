@@ -30,6 +30,7 @@ resources:
                                       # until secret + fixed tenant + host stream
                                       # + ingress ssl-passthrough gates pass.
   - ../../base/apps/audio-gateway    # Faz 24 Aşama-2 staging (platform-ai#151; test-only, prod D30 cutover'a defer)
+  - ../../base/apps/meeting-service    # Faz 24 Meeting Intelligence foundation (#410; test-only, prod D30 cutover'a defer)
   - ../../base/apps/redis-streams-exporter    # Faz 24 PR-obs-01a (gitops#1247): Redis Streams queue/consumer metrikleri (test-only; prod D30'da)
   - ../../base/apps/redis-streams-exporter/ops    # ServiceMonitor (CRD-gated; ops-bundle'a değil buraya — prod sızıntısı yok)
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06
@@ -86,6 +87,14 @@ images:
     # #558 management.server.port 8081 — drift gate spring-actuator contract).
     # D30 immutable digest pin.
     digest: sha256:40239d8096eab2c4c4a5b11332419ff9a774448cf538b0e640aa71843f6ec7bc
+
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
+    newName: ghcr.io/halildeu/platform-backend-meeting-service
+    # Faz 24 Meeting Intelligence foundation (#410): ilk deploy, tag sha-cf1074a
+    # (meeting-service V1 baseline schema + REST + OpenFGA @RequireModule gate;
+    # SERVER_PORT 8097 + management 8081 spring-actuator contract).
+    # D30 immutable tag pin (sha-<short>; moving tag main-stable YASAK).
+    newTag: sha-cf1074a
 
   - name: docker.io/oliver006/redis_exporter
     # Faz 24 PR-obs-01a (gitops#1247): redis-streams-exporter v1.86.0
@@ -5454,6 +5463,17 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/startupProbe/failureThreshold
         value: 90
+
+  # Faz 24 Meeting Intelligence foundation (#410): replica 1 default
+  # (HARD RULE — Scale-to-Zero YASAK). No mTLS connector → base 150s startup
+  # window is sufficient (no startupProbe override).
+  - target:
+      kind: Deployment
+      name: meeting-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
 
   # BE-017/AG-042 formal dual-control + local SAM adapter evidence (gitops
   # #1023 + #1320; Codex strategic `019e5a61` REVISE absorb): test-only enable
