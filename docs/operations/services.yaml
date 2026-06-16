@@ -242,6 +242,24 @@ services:
       test: enabled
       prod: deferred   # prod'da Redis Streams yok — D30 cutover'da runtime ile birlikte
 
+  - name: meeting-service
+    repo: platform-backend
+    description: |
+      Faz 24 Meeting Intelligence meeting CRUD + org_id multi-tenancy + OpenFGA
+      (platform-backend#410, PR #672). meeting/session/action/decision CRUD;
+      Flyway V1 'meeting' DB schema meeting_service (4 tablo + org_id compat
+      triggers); @RequireModule(module:meeting) authz. k3d-test foundation
+      deploy gitops#1615 / PR #1618 — D29 Up+Functional LIVE 2026-06-17
+      (Zanzibar-ready + api-gateway route deferred follow-up).
+    jwt_validates: true
+    route_external: false   # api-gateway route deferred (internal-only, 8097)
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator   # management:8081
+    environments:
+      test: enabled
+      prod: deferred   # Faz 24 D30 cutover'a kadar prod overlay'e dahil değil
+
   # --- DEFERRED services (intentionally not in target env) ---
 
   - name: endpoint-admin-service
