@@ -78,6 +78,27 @@ logic; it is blocked by the current SSH credential-delegation boundary for
 DC-backed GroupPolicy mutation. Do not mark Done from this same-day rehearsal
 alone.
 
+## Live Delta — Faz 22.5 #1601 operatorless access release pin pending test rollout (2026-06-16, Codex)
+
+**Session milestone**: `platform-agent` #193 added disabled-by-default
+remote-bridge installer/bootstrap/MSI configuration wiring and #194 added
+release-manifest artifact-host digest evidence. The new trusted EXE release
+`v0.2.7` is published and D30-pinnable through its release asset manifest.
+
+| Alan | Durum (2026-06-16) | Kanıt / sınır |
+|---|---|---|
+| Agent remote-bridge config | 🟢 SOURCE-MERGED | `platform-agent` #193 merged `432d05920ab93b05ba5708611062870d50227d84`; installer/bootstrap accept `-RemoteBridgeEnabled`, `-RemoteBridgeBrokerAddr` and `-RemoteBridgeInsecurePlaintext`; service env is written only when explicitly enabled. Default install path remains remote-bridge disabled. |
+| Release digest evidence | 🟢 SOURCE-MERGED + RELEASED | `platform-agent` #194 merged `cd513d154c0c94a8a3726923c3aa8a21d9eba2a3`; Release EXE trusted run `27616980839` published `v0.2.7`. Release manifest records `artifact_host_image_ref=ghcr.io/halildeu/platform-agent-artifacts:v0.2.7@sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8`, `EndpointAgent.zip` SHA256 `598add6fa01cf8fd5adc3acd8c68ef2a251452831bfbc3246c7ea26c590b9f97`, and agent binary SHA256 `80df31855c92a37a4592f30d58ae3352e5ff9bb93ed23eae69aa1137a9fbdfed`. |
+| GitOps desired-state | 🟡 PIN IN REVIEW | Test overlay is being updated from artifact-host `v0.2.5@sha256:6d687c8b2dabc05372aafc4a44c99d0a984b45a81f4cbaea317001c1ac3e10b2` to `v0.2.7@sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8` under #1601. |
+| Live artifact-host | 🟡 STILL v0.2.5 BEFORE PIN ROLLOUT | Live `https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json` still returns `release_tag=v0.2.5` before the GitOps pin PR is merged/synced. Do not claim v0.2.7 live until `/current/release-manifest.json`, `/current/EndpointAgent.zip.sha256`, and the artifact-host pod imageID match the v0.2.7 digest. |
+| MSI trusted release | 🟡 NON-BLOCKING RELEASE-TRACK BUG | MSI signed release run `27616980844` failed in the sign job because the self-hosted runner `incoming/` directory contained stale `EndpointAgent-0.2.0-unsigned.msi`; the build job did produce `EndpointAgent-0.2.7-unsigned.msi`. This does not block the EXE/ZIP one-command artifact-host path, but MSI/GPO rollout must clean the download directory or use a run-unique path before claiming signed MSI readiness. |
+
+**Boundary**: This delta advances the operatorless install/remote-ops product
+path to release + desired-state pin readiness. It does **not** prove v0.2.7
+live at `testai.acik.com`, remote-bridge broker connectivity, Denetim/AGENTPC2
+remote session autonomy, or signed MSI/GPO rollout until those smokes are
+recorded with live evidence.
+
 ## Live Delta — Faz 22.5 M2 durable AD DNS + service-mode continuity proven on ERP-MOBIL (2026-06-15, Codex #1569)
 
 **Session milestone**: M2 durable no-hosts path için bounded gate

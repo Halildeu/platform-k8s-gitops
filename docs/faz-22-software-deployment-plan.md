@@ -168,6 +168,22 @@
 > evidence before M6 expansion, 50/800 staged waves, and prod
 > `mtls.ai.acik.com`.
 
+> **2026-06-16 operatorless access / artifact-host pin addendum**:
+> `platform-agent` #193/#194 moved the operatorless access lane forward without
+> making it the default install path. #193 added disabled-by-default remote
+> bridge installer/bootstrap/MSI wiring; #194 made the trusted EXE release
+> manifest D30-pinnable by carrying `artifact_host_image_ref`. Trusted release
+> `v0.2.7` is published with artifact-host image
+> `ghcr.io/halildeu/platform-agent-artifacts:v0.2.7@sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8`,
+> `EndpointAgent.zip` SHA256
+> `598add6fa01cf8fd5adc3acd8c68ef2a251452831bfbc3246c7ea26c590b9f97`,
+> and agent binary SHA256
+> `80df31855c92a37a4592f30d58ae3352e5ff9bb93ed23eae69aa1137a9fbdfed`.
+> Current GitOps work under #1601 pins the test artifact-host to that digest.
+> The signed MSI release lane still has a self-hosted-runner hygiene bug
+> (stale `incoming/EndpointAgent-0.2.0-unsigned.msi` selected during sign job)
+> and must be fixed before MSI/GPO readiness is claimed.
+
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
 planı tanımlar.
@@ -350,6 +366,14 @@ eklenir.
   host. Public/internal HTTPS verification confirmed `current/` and `v0.2.4/`
   `bootstrap-package.ps1`, `EndpointAgent.zip`, `EndpointAgent.zip.sha256`,
   `SHA256SUMS`, and `release-manifest.json` return HTTP 200.
+- 2026-06-16 follow-up: `platform-agent` #193/#194 merged and trusted release
+  `v0.2.7` published a release asset manifest with artifact-host digest
+  `sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8`;
+  GitOps #1601 pins the test artifact-host to this immutable image so
+  `/current/` can serve the remote-bridge-capable bootstrap once ArgoCD syncs.
+  This supersedes the earlier live pilot pointer only after live
+  `release-manifest.json`, `EndpointAgent.zip.sha256` and pod imageID match
+  the v0.2.7 digest.
 - `platform-backend` PR #511 MERGED: rejected result submissions no longer
   leave commands silently locked; backend marks command `FAILED`, clears claim
   lock and stores bounded/redacted `RESULT_REJECTED` last-error without
