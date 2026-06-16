@@ -1,5 +1,32 @@
 # Current State — Platform K8s Migration
 
+## Planning Delta — Faz 22.5 pilot cap + AgentPC2 channel decision (2026-06-16)
+
+**Owner decision / safety boundary**: the 50-PC M6 wave is deliberately closed
+until the productized two-device acceptance path is proven. Active pilot scope
+is capped at **max 2 computers**. The allowed test pool is `SRB-AIDENETIMPC`
+(Denetim PC), `AgentPC2`, `AgentPC1`, and local Parallels Windows; the primary
+acceptance pair is **Denetim PC + AgentPC2**. Tracked by Project #2 issue
+[#1609](https://github.com/Halildeu/platform-k8s-gitops/issues/1609).
+
+| Device | Recommended role | Why | Boundary |
+|---|---|---|---|
+| `SRB-AIDENETIMPC` / Denetim PC | Primary device 1 | Already has domain + GPO + machine-cert + `EndpointAgent` evidence and represents a real workstation path. | Use for signed MSI/GPO + service continuity smokes; do not treat it as a 50-PC denominator. |
+| `AgentPC2` | Primary device 2 | Best second target because it is the next real user/workstation-style device and should expose different network/domain friction earlier than local lab. | If domain joined and GPO/cert applies, use signed MSI + GPO. If not, use one-command bootstrap until domain path is repaired. |
+| `AgentPC1` | Reserve/fallback | Useful if AgentPC2 is unavailable or needs comparison evidence. | Keep out of active denominator unless one of the primary pair is dropped. |
+| local Parallels Windows | Break/fix lab | Fastest place to reproduce installer, rollback, and service-mode regressions without affecting users. | Lab evidence only; not domain-GPO acceptance unless explicitly domain-joined and network-ready. |
+
+**AD/GPO operation boundary**: Codex-controlled SSH/public-key access to a
+domain host is sufficient for host-local diagnostics but not a durable AD/GPO
+mutation channel. AD/GPO changes must move to a delegated **Domain Ops Broker**
+or an explicitly domain-authenticated operator/DC path. Target design:
+[docs/faz-22-domain-ops-broker-plan.md](../faz-22-domain-ops-broker-plan.md).
+
+**Remote-ops product boundary**: temporary reverse SSH is a lab bridge, not a
+product capability. Product remote-ops remains disabled by default and must be
+outbound mTLS, TTL-bounded, allowlist-only, no raw shell, and fully audited
+before it can unblock operatorless AgentPC2 management.
+
 ## Live Delta — Faz 22.5 M2 prod `mtls.ai.acik.com` activation proven (2026-06-15/16)
 
 **Session milestone**: prod Endpoint Agent mTLS host activation is live-proven
