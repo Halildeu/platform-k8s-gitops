@@ -90,11 +90,12 @@ images:
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
-    # Faz 24 Meeting Intelligence foundation (#410): ilk deploy, tag sha-cf1074a
+    # Faz 24 Meeting Intelligence foundation (#410): ilk deploy sha-cf1074a
     # (meeting-service V1 baseline schema + REST + OpenFGA @RequireModule gate;
     # SERVER_PORT 8097 + management 8081 spring-actuator contract).
-    # D30 immutable tag pin (sha-<short>; moving tag main-stable YASAK).
-    newTag: sha-cf1074a
+    # D30 immutable digest pin (drift gate Check1 = @sha256; live pod imageID
+    # 2026-06-17 D29 Up+Functional verified).
+    digest: sha256:62a24571f99d46f9862b36ca4466f2a605400bc7da739f54d57c83ce68a6f51b
 
   - name: docker.io/oliver006/redis_exporter
     # Faz 24 PR-obs-01a (gitops#1247): redis-streams-exporter v1.86.0
