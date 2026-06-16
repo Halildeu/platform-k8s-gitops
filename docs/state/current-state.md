@@ -50,6 +50,34 @@ gates if requested.
 is a read-only Windows collector for T0/T+15/T+60 evidence. It does not install,
 uninstall, enroll, mutate GPO, read secrets, or submit backend data.
 
+## Live Delta — Faz 22.5 M7 same-day rollback/reinstall rehearsal advanced (2026-06-16)
+
+**Session milestone**: #1379 now has runtime rollback/reinstall evidence on both
+a local-control Windows device and the selected domain-GPO Denetim PC, plus
+live backend decommission/reactivate evidence against `testai` / `platform-test`.
+This is meaningful rollback-risk reduction, but not full M7 closure because GPO
+unlink/security-filter rollback propagation and the 50-PC/M6 expansion
+denominator remain open.
+
+Evidence file:
+`docs/faz-22-evidence/2026-06-16-m7-rollback-rehearsal-prep.md`.
+Issue evidence comment:
+`https://github.com/Halildeu/platform-k8s-gitops/issues/1379#issuecomment-4716977942`.
+
+| Device | Role | Runtime evidence | Boundary |
+|---|---|---|---|
+| `HALILKOOLUB735` | local-control Windows 11 | baseline `PASS-WITH-WARN`, rollback-clean `PASS`, reinstall-continuity `PASS`; service returned `Running / Automatic`; `endpoint-agent v0.2.5` | Proves local preserve-config/logs uninstall + HMAC-preserving reinstall; not domain-GPO propagation. |
+| `SRB-AIDENETIMPC` | domain-GPO Denetim PC | baseline `PASS`, rollback-clean `PASS`, reinstall-continuity `PASS`; service returned `Running / Auto / LocalSystem`; machine cert `1687D3C41443239A12ECA973E6EED87B0876B068`; signer `D68F4F530137EB65CE44E3405E82B46205E753E5`; auto-enroll config preserved | Proves selected domain-GPO device service/binary/env rollback-clean + auto-enroll reinstall continuity; not backend decommission/reactivate or GPO unlink propagation. |
+| `SRB-AIDENETIMPC` | backend lifecycle | `testai` API decommission returned `200` / `DECOMMISSIONED`; future-visible command `8bfe3af8-aba9-4100-9a55-15d365bebd5e` cascade-cancelled; new command while decommissioned returned `409`; reactivate returned `200` / `OFFLINE`; post-wait device returned `ONLINE`; audit events readable; summary SHA256 `396f6b15f3bab2b63ff0af4bb08e5e63bed172960610ef31a4cb8824f0e20824` | Proves backend lifecycle and write-guard fail-close on selected device; not GPO unlink/security-filter propagation or 50-PC denominator. |
+| `ERP-MOBIL` | GPO propagation attempt host | SSH identity `acik\ca.setup` has Domain Admins / Enterprise Admins / local Administrators groups, but SSH logon lacks usable DC network credentials; `klist get ldap/cifs ACIKDC01` returns `0x8009030e`, `SYSVOL` path test is false, `Get-GPO` returns `E_ACCESSDENIED` | Codex-controlled SSH is blocked for GroupPolicy/SYSVOL mutation; GPO unlink/security-filter propagation still needs DC/RDP/interactive admin, WinRM/CredSSP delegation, or a pre-authorized DC-side runner. |
+
+**Current #1379 boundary**: keep open/blocked for full M7 acceptance until
+Layer 3 GPO rollback propagation proof and wave denominator evidence are
+captured. The remaining GPO propagation smoke is not blocked by agent service
+logic; it is blocked by the current SSH credential-delegation boundary for
+DC-backed GroupPolicy mutation. Do not mark Done from this same-day rehearsal
+alone.
+
 ## Live Delta — Faz 22.5 M2 durable AD DNS + service-mode continuity proven on ERP-MOBIL (2026-06-15, Codex #1569)
 
 **Session milestone**: M2 durable no-hosts path için bounded gate
