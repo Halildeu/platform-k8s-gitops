@@ -12,6 +12,57 @@
 
 ---
 
+## 0. Same-Day 2-Device Rehearsal Lane (Owner-Approved, Not Closure)
+
+Owner may open a bounded same-day rehearsal before the full M6/M7 sequence when
+the goal is to reduce rollout risk without claiming M7 closure. This lane was
+added after the 2026-06-15/16 Windows pilot work showed that manual evidence
+collection, remote access drift, DNS/artifact drift and reinstall continuity
+must be captured as a repeatable artifact instead of chat-only commands.
+
+**Allowed devices**: owner-selected pilot/control devices such as Denetim PC,
+ERP-MOBIL, AGENTPC1/AGENTPC2, or local Parallels Windows.
+
+**Allowed evidence phases**:
+
+```powershell
+# Before rollback/uninstall
+.\m7-rollback-rehearsal-collector.ps1 -Phase baseline -DeviceRole domain-gpo -RequireMachineCert -Json
+
+# After uninstall or GPO scope-removal
+.\m7-rollback-rehearsal-collector.ps1 -Phase rollback-clean -DeviceRole domain-gpo -Json
+
+# After reinstall / scope-restore
+.\m7-rollback-rehearsal-collector.ps1 -Phase reinstall-continuity -DeviceRole domain-gpo -RequireMachineCert -Json
+```
+
+**Rules**:
+
+- This lane may move #1379 to `In Progress` only when the owner explicitly opens
+  the same-day rehearsal window in the issue/chat and the issue comment records
+  the selected devices.
+- This lane may attach evidence to #1379, but it **MUST NOT** close #1379 and
+  **MUST NOT** move it to `Done`.
+- This lane proves only selected-device rollback hygiene. It does not prove the
+  50-PC capacity baseline, 800-PC rollout, full lab-clone GPO rollback, or final
+  help-desk/IT sign-off.
+- Destructive actions still follow the hard order below. The collector is
+  read-only; it does not install, uninstall, decommission, reactivate, mutate GPO
+  or read secrets.
+- If remote access fails, the failure is evidence: record the SSH/tunnel/DNS
+  class and keep runtime acceptance open instead of substituting source proof.
+
+**Output location on Windows devices**:
+
+```text
+C:\ProgramData\EndpointAgent\evidence\m7-rollback-rehearsal\*.json
+```
+
+The JSON schema is `faz22.m7.rollback-rehearsal.collector.v1` and includes:
+service/binary state, service environment key presence, machine ClientAuth cert,
+backend TCP reachability, GPRESULT summary, recent installer/EndpointAgent
+events, and redacted EndpointAgent log tail.
+
 ## 1. Scope
 
 **M7** = 3-layer rollback drill (post M5 + M6 closure). Hedef: lab-clone environment ile destructive rollback path validate — (a) MSI uninstall agent-side, (b) enrollment revoke backend-side, (c) GPO rollback DC-side.
