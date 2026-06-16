@@ -5538,6 +5538,20 @@ patches:
         path: /data/ENDPOINT_ADMIN_UNINSTALL_ENABLED
         value: "true"
 
+  # #676 Domain Ops Broker product-channel acceptance (TEST only). Base/prod
+  # stay dark; test flips the broker ON so the authenticated Admin API smoke can
+  # prove durable request state, credential-ref custody, typed connector
+  # dispatch, bounded permit metadata and result/audit persistence. `replace`
+  # is deliberate: if the base dark-launch default is removed, render fails
+  # instead of silently inventing an enabled runtime key.
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    patch: |-
+      - op: replace
+        path: /data/ENDPOINT_ADMIN_DOMAIN_OPS_ENABLED
+        value: "true"
+
   # Faz 22.5 M2 AD CS / edge mTLS activation (TEST only) — gitops #1359/#1376.
   # Preconditions live-proven 2026-06-14:
   #   - AD CS Enterprise Root CA Acik-Endpoint-CA on ERP-MOBIL.acik.local.
