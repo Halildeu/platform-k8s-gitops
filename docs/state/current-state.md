@@ -91,13 +91,14 @@ release-manifest artifact-host digest evidence. The new trusted EXE release
 | Release digest evidence | 🟢 SOURCE-MERGED + RELEASED | `platform-agent` #194 merged `cd513d154c0c94a8a3726923c3aa8a21d9eba2a3`; Release EXE trusted run `27616980839` published `v0.2.7`. Release manifest records `artifact_host_image_ref=ghcr.io/halildeu/platform-agent-artifacts:v0.2.7@sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8`, `EndpointAgent.zip` SHA256 `598add6fa01cf8fd5adc3acd8c68ef2a251452831bfbc3246c7ea26c590b9f97`, and agent binary SHA256 `80df31855c92a37a4592f30d58ae3352e5ff9bb93ed23eae69aa1137a9fbdfed`. |
 | GitOps desired-state | 🟢 MERGED, VERIFY PENDING | GitOps PR #1602 merged `488205233cd29a97558c0567de467749a5cd3ace`; origin/main now pins the test overlay artifact-host from `v0.2.5@sha256:6d687c8b2dabc05372aafc4a44c99d0a984b45a81f4cbaea317001c1ac3e10b2` to `v0.2.7@sha256:c1266c66fd1f53fdbcec23f815ee181bb3f574624aa6267df9fb63c4b99b00d8`. |
 | Live artifact-host | 🟢 v0.2.7 PUBLIC ARTIFACT LIVE / 🟡 POD IMAGEID PENDING | Follow-up live poll returned `release_tag=v0.2.7` from `https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json`; `/current/EndpointAgent.zip.sha256` returns `598add6fa01cf8fd5adc3acd8c68ef2a251452831bfbc3246c7ea26c590b9f97`; `/current/bootstrap-package.ps1` contains the `RemoteBridgeEnabled`, `RemoteBridgeBrokerAddr`, and `RemoteBridgeInsecurePlaintext` parameters. Local Codex context still has no `k3d-test` kube context and direct staging SSH failed with `Permission denied (publickey,password)`, so artifact-host pod imageID/ArgoCD sync could not be verified from this environment. |
-| MSI trusted release | 🟡 NON-BLOCKING RELEASE-TRACK BUG | MSI signed release run `27616980844` failed in the sign job because the self-hosted runner `incoming/` directory contained stale `EndpointAgent-0.2.0-unsigned.msi`; the build job did produce `EndpointAgent-0.2.7-unsigned.msi`. This does not block the EXE/ZIP one-command artifact-host path, but MSI/GPO rollout must clean the download directory or use a run-unique path before claiming signed MSI readiness. |
+| MSI trusted release | 🟢 BUG FIX MERGED + TRUSTED RUN PROVEN | `platform-agent` #195 merged `5a48900177ece937a9c17a8ed2117a672b186149`, cleaning self-hosted runner MSI staging before download and requiring exactly one unsigned MSI + manifest. Fresh trusted MSI run `27619652974` succeeded for `0.2.8`: `EndpointAgent-0.2.8-signed.msi` SHA256 `8af982357e32c9553f22ef1761fd808513b9945df67b3e280e2ba971626067e7`, trusted manifest SHA256 `5a662dee41764a324d123a6b58d58af3e65d3c16d2adf32675be127e133f9b51`, `production=true`, `signing_tier=trusted-internal-ca`, `timestamped=true`, and signature status `Valid`. This proves release-pipeline hygiene recovery; endpoint-side MSI install/GPO rollout remains a separate live smoke. |
 
 **Boundary**: This delta advances the operatorless install/remote-ops product
 path to release + desired-state pin + public artifact-host `/current/` live
-readiness. It does **not** prove artifact-host pod imageID, remote-bridge broker
-connectivity, Denetim/AGENTPC2 remote session autonomy, or signed MSI/GPO
-rollout until those smokes are recorded with live evidence.
+readiness plus trusted MSI artifact generation. It does **not** prove
+artifact-host pod imageID, remote-bridge broker connectivity, Denetim/AGENTPC2
+remote session autonomy, or endpoint-side MSI/GPO rollout until those smokes are
+recorded with live evidence.
 
 ## Live Delta — Faz 22.5 M2 durable AD DNS + service-mode continuity proven on ERP-MOBIL (2026-06-15, Codex #1569)
 
