@@ -114,17 +114,49 @@ Important boundary:
 - Therefore #1379 remains open until domain-GPO/selected-pilot evidence is
   attached or the acceptance boundary is explicitly narrowed by the owner.
 
-## 6. Status
+## 6. Denetim PC Domain-GPO Baseline Evidence
+
+After the reverse-SSH route recovered, Codex ran the collector on the selected
+domain-joined Denetim PC (`SRB-AIDENETIMPC`) in non-destructive baseline mode.
+This proves the domain-GPO baseline is healthy, but does not execute the
+rollback-clean or reinstall-continuity phases on that device.
+
+| Phase | File | Overall | Fail | Warn | SHA256 |
+|---|---|---:|---:|---:|---|
+| baseline | `.runtime-evidence/SRB-AIDENETIMPC/20260616-083459Z-SRB-A_DENET_MPC-baseline.json` | PASS | 0 | 0 | `d64a3c7bdef87ec082e2ccae687b3e344b74c1b274233539bd58d924e3aa21e7` |
+
+Runtime facts:
+
+```text
+Computer: SRB-AIDENETIMPC
+Domain: acik.local
+EndpointAgent service: Running / Automatic
+Machine cert: CN=SRB-AIDENETIMPC.acik.local
+Issuer: CN=Acik-Endpoint-CA, DC=acik, DC=local
+Cert thumbprint: 1687D3C41443239A12ECA973E6EED87B0876B068
+Executable signature: Valid, signer D68F4F530137EB65CE44E3405E82B46205E753E5
+Backend TCP: PASS mtls.testai.acik.com:443
+```
+
+Important boundary:
+
+- This proves a selected domain-GPO device baseline is ready.
+- This does **not** prove destructive rollback-clean/reinstall-continuity on
+  Denetim PC.
+- This does **not** prove backend enrollment revoke/decommission/reactivate.
+
+## 7. Status
 
 | Gate | Status |
 |---|---|
-| #1379 board status | Blocked/open; local-control evidence attached, domain-GPO evidence pending |
+| #1379 board status | Blocked/open; local-control drill + Denetim baseline evidence attached |
 | M7 full closure | Not closed |
 | Local-control rollback/reinstall drill | PASS on HALILKOOLUB735 |
+| Domain-GPO baseline | PASS on SRB-AIDENETIMPC |
 | Domain-GPO destructive rollback drill | Runtime evidence pending |
 | 50-PC/M6 dependency | Still open under #1378 |
 
-## 7. Next Runtime Command Shape
+## 8. Next Runtime Command Shape
 
 On a selected Windows device with the repo script available:
 
