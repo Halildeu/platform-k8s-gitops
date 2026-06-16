@@ -185,9 +185,15 @@
 > `598add6fa01cf8fd5adc3acd8c68ef2a251452831bfbc3246c7ea26c590b9f97`.
 > Pod imageID remains an access-pending verification because this Codex context
 > has no `k3d-test` kube context and direct staging SSH failed.
-> The signed MSI release lane still has a self-hosted-runner hygiene bug
-> (stale `incoming/EndpointAgent-0.2.0-unsigned.msi` selected during sign job)
-> and must be fixed before MSI/GPO readiness is claimed.
+> The signed MSI release-lane hygiene bug was fixed by `platform-agent` #195
+> (`5a48900177ece937a9c17a8ed2117a672b186149`): fresh trusted MSI run
+> `27619652974` succeeded for `0.2.8`, produced
+> `EndpointAgent-0.2.8-signed.msi` SHA256
+> `8af982357e32c9553f22ef1761fd808513b9945df67b3e280e2ba971626067e7`, and
+> emitted a trusted production manifest with `signing_tier=trusted-internal-ca`,
+> `timestamped=true`, and signature status `Valid`. This proves MSI release
+> artifact generation; endpoint-side MSI install and GPO rollout readiness still
+> require live pilot smoke evidence.
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
