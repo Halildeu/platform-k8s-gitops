@@ -257,6 +257,13 @@ data:
   SPRING_CLOUD_GATEWAY_ROUTES_25_PREDICATES_0: "Path=/api/v1/endpoint-agents/**"
   # StripPrefix yok — endpoint-agents (plural) read-only status path
 
+  # NOT (Faz 24 Meeting Intelligence routes 26/27): meeting-service (#410) +
+  # transcript-service (#411) gateway route'ları base'de DEĞİL; test overlay
+  # strategic-merge ConfigMap patch'inde (kustomize/overlays/test/
+  # kustomization.yaml). Sebep: prod'da meeting/transcript Deployment YOK
+  # (prod:deferred) — base'de tutulsaydı prod render non-existent service'e
+  # route üretirdi (prod-leak). Codex cross-AI REVISE Must-Fix 1.
+
   # D7: Eureka yok → K8s svc DNS
   AUTH_SERVICE_URL: "http://auth-service:8088"
   # Dilim 2+:
