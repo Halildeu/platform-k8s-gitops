@@ -70,6 +70,19 @@ path "kv/data/platform/transcript-service" {
   capabilities = ["read"]
 }
 
+# --- Faz 24 #1249/#1615 audit-event-consumer-service (KVKK audit pipeline) ---
+# ExternalSecret reads kv/platform/audit-event-consumer-service with 3 keys
+# (db_username, db_password, redis_password — same flat-path convention as
+# meeting/transcript/endpoint-admin/auth). redis_password matches the
+# host-compose/redis-streams requirepass (the audio-gateway producer uses the
+# same value via kv/platform/audio-gateway-service). Without this grant ESO sync
+# returns 403 → K8s Secret never lands → pod stuck ContainerCreating
+# (envFrom optional:false). Live patch applied to vault-test alongside; this
+# file keeps it canonical (bootstrap-drill safe).
+path "kv/data/platform/audit-event-consumer-service" {
+  capabilities = ["read"]
+}
+
 # --- Faz 23.9 Step D notification-orchestrator (flat path; auth-service convention) ---
 # Codex thread 019e08df REVISE absorb: ExternalSecret reads kv/platform/notification-
 # orchestrator with 5 keys (db_username, db_password, webhook_signing_secret,

@@ -32,6 +32,7 @@ resources:
   - ../../base/apps/audio-gateway    # Faz 24 Aşama-2 staging (platform-ai#151; test-only, prod D30 cutover'a defer)
   - ../../base/apps/meeting-service    # Faz 24 Meeting Intelligence foundation (#410; test-only, prod D30 cutover'a defer)
   - ../../base/apps/transcript-service    # Faz 24 Meeting Intelligence foundation (#411; test-only, prod D30 cutover'a defer)
+  - ../../base/apps/audit-event-consumer-service    # Faz 24 KVKK audit pipeline Redis consumer (#1249; test-only, prod D30 cutover'a defer)
   - ../../base/apps/redis-streams-exporter    # Faz 24 PR-obs-01a (gitops#1247): Redis Streams queue/consumer metrikleri (test-only; prod D30'da)
   - ../../base/apps/redis-streams-exporter/ops    # ServiceMonitor (CRD-gated; ops-bundle'a değil buraya — prod sızıntısı yok)
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06
@@ -107,6 +108,15 @@ images:
     # D30 immutable digest pin (drift gate Check1 = @sha256; live pod imageID
     # 2026-06-17 D29 Up+Functional verified — health 200 + no-JWT 401 + Flyway V1).
     digest: sha256:7f5ed7a170d48e1dc35d39b44efa51095c15d67ba46f12bc1929d32c4388ea31
+
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
+    newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
+    # Faz 24 KVKK audit pipeline (#1249, PR #677): ilk deploy sha-74c9e1a
+    # (#677 merge commit; pure Redis-stream consumer audit:events → immutable
+    # hash-chain persist + DLQ; SERVER_PORT 8099 + management 8081 spring-actuator).
+    # D30 immutable digest pin (drift gate Check1 = @sha256; live pod imageID
+    # 2026-06-17 D29 Up+Functional verified — health 200 + consumer-group joined).
+    digest: sha256:196ec1a06b27722c9d52881f93e97efb693342ef5430677eb05535be5db84bc5
 
   - name: docker.io/oliver006/redis_exporter
     # Faz 24 PR-obs-01a (gitops#1247): redis-streams-exporter v1.86.0
@@ -5507,6 +5517,17 @@ patches:
   - target:
       kind: Deployment
       name: transcript-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
+  # Faz 24 KVKK audit pipeline (#1249): replica 1 default (HARD RULE —
+  # Scale-to-Zero YASAK). Pure Redis consumer (no mTLS, no inbound API) → base
+  # 150s startup window is sufficient (no startupProbe override).
+  - target:
+      kind: Deployment
+      name: audit-event-consumer-service
     patch: |-
       - op: replace
         path: /spec/replicas
