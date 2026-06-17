@@ -28,8 +28,12 @@ CONTAINERS_SERVICES=(
   "platform-postgres-db-1:postgres:5432"
   "platform-keycloak-1:keycloak:8080"
   "platform-vault-1:vault:8200"
+  "minio-minio-test-1:minio:9000"
 )
 # Faz 3 ESO: vault platform-test-net'te görünür olmalı (ClusterSecretStore → 8200)
+# Faz 24 #1250 (ADR-0042): minio host-compose (audit-archive 7yr WORM) container
+# NATIVE port 9000 üzerinden — host-published :9100 değil; cluster bridge IP'den
+# container portuna erişir (redis-streams emsali). Drift sonrası reconnect.
 
 log()  { printf '\033[36m[reconnect]\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[33m[reconnect]\033[0m %s\n' "$*" >&2; }

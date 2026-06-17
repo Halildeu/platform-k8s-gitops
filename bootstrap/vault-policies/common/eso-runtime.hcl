@@ -205,6 +205,18 @@ path "kv/data/platform/redis-streams-exporter" {
   capabilities = ["read"]
 }
 
+# --- Faz 24 #1250 audit-retention-worker (audit-archive 7yr WORM — ADR-0042) ---
+# ExternalSecret audit-retention-worker-secrets reads kv/platform/audit-retention-worker
+# (minio_access_key + minio_secret_key — least-privilege MinIO svcacct for the
+# audit-archive bucket; non-secret endpoint/bucket/region carried alongside).
+# Same flat-path convention as audit-event-consumer / redis-streams-exporter.
+# Without this grant ESO sync returns 403 → Secret never lands → the C-slice
+# audit-retention-worker CronJob can't start. Live patch applied to vault-test
+# alongside; this file keeps it canonical (bootstrap-drill safe).
+path "kv/data/platform/audit-retention-worker" {
+  capabilities = ["read"]
+}
+
 # --- Metadata read (versioned KV v2 list/describe) ---
 path "kv/metadata/platform/*" {
   capabilities = ["list"]

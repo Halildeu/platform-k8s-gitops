@@ -6702,6 +6702,17 @@ patches:
       # Faz 24: host-compose/redis-streams static IP (platform-test-net,
       # compose ipv4_address pin — PG'deki dinamik-IP drift riski yok).
       # Port base'le aynı (6379), IP-only patch yeterli.
+  - target:
+      kind: Endpoints
+      name: minio
+    patch: |-
+      - op: replace
+        path: /subsets/0/addresses/0/ip
+        value: "172.19.0.252"
+      # Faz 24 #1250 (ADR-0042): host-compose MinIO (minio-minio-test-1)
+      # platform-test-net'e `docker network connect` ile @172.19.0.252 eklendi
+      # (audit-archive 7yr WORM cold). Container NATIVE port 9000 (base'le aynı),
+      # IP-only patch. Drift → bootstrap/reconnect-compose-to-test-net.sh.
 
   # Faz 24 audio-gateway: test replicas=1 (HARD RULE test scale-to-zero YASAK;
   # base replicas:0 sadece skeleton fail-closed default'u)
