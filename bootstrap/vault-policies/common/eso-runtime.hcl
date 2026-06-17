@@ -50,6 +50,16 @@ path "kv/data/platform/endpoint-admin-service" {
   capabilities = ["read"]
 }
 
+# --- Faz 22.6 endpoint-admin-remote-bridge activation path ---
+# Dedicated broker-scoped secret path for the outbound mTLS remote-ops broker.
+# Consumed by kustomize/overlays/test/activation/endpoint-admin-remote-bridge.
+# This is deliberately separate from endpoint-admin-service because the broker
+# receives only least-priv DB/OpenFGA/PKI/attestation/step-up/signing material,
+# not the primary endpoint-admin service's enrollment/admin secrets.
+path "kv/data/platform/endpoint-admin-remote-bridge" {
+  capabilities = ["read"]
+}
+
 # --- Faz 24 #410/#1615 meeting-service (foundation deploy 2026-06-17) ---
 # ExternalSecret reads kv/platform/meeting-service with 2 keys (db_username,
 # db_password). Same flat-path convention as endpoint-admin/auth/report.
