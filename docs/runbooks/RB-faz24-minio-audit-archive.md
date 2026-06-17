@@ -99,16 +99,25 @@ kubectl --context k3d-test -n platform-test apply -f kustomize/base/netpol/allow
 kubectl --context k3d-test -n platform-test get endpoints minio
 # Functional: cluster pod'undan put/get/head (least-priv svcacct ile)
 #   — ESO Secret'tan AK/SK ile geçici curl/mc; put OK + get OK + retention header.
-# Secured: delete/overwrite DENIED (COMPLIANCE + least-priv cred).
-#   mc rm → "Access Denied" / object-lock; overwrite → new-version reddi.
+# Secured: (a) DELETE of a locked version DENIED (COMPLIANCE + least-priv).
+#   (b) Overwrite is NOT a hard-deny — same-key re-PUT yeni VERSION yaratır;
+#   orijinal version COMPLIANCE-lock'lu retained (version-lock tamper-evidence,
+#   NOT "overwrite reddi"). Worker version_id pin'ler (ADR-0042 amendment).
 # ESO sync: kubectl get secret audit-retention-worker-secrets (keys MINIO_ACCESS_KEY/MINIO_SECRET_KEY)
 kubectl --context k3d-test -n platform-test get externalsecret audit-retention-worker-secrets -o jsonpath='{.status.conditions[0].reason}'
 ```
 
-> **Secured kanıt notu**: COMPLIANCE mode'da object süre dolmadan **root dahil**
-> silinemez/kısaltılamaz; least-privilege svcacct ayrıca delete iznini hiç
-> taşımaz (defense-in-depth). Kanıt: 2026-06-17 svcacct smoke — PUT OK / GET OK /
-> DELETE DENIED.
+> **Secured kanıt notu** (Codex 019ed4f4 düzeltmesi): COMPLIANCE mode'da
+> arşivlenmiş object **version**'ı süre dolmadan **root dahil** silinemez/
+> kısaltılamaz; least-privilege svcacct ayrıca delete iznini hiç taşımaz
+> (defense-in-depth). Kanıt 2026-06-17 svcacct smoke: PUT OK / GET OK / **DELETE
+> DENIED**. **ÖNEMLİ — "overwrite denied" YANLIŞ iddia**: S3 Object Lock +
+> versioning aynı key'e yeni version yazmayı **engellemez**; eski version
+> immutable kalır ama latest değişebilir. Doğru garanti = "arşiv version'ı
+> retained + immutable (tamper-evident)", "overwrite reddi" DEĞİL. → ADR-0042
+> D4.6/D4.7 **amendment** gerekir: ledger `version_id` tutar; worker HEAD/GET
+> **version-specific**; beklenmeyen yeni latest-version = tamper alert
+> (fail-closed), orijinal version-lock korur. (Takip: ADR-0042 amendment PR.)
 
 ## 5. Rollback / recovery
 
