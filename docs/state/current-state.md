@@ -1,5 +1,21 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 remote-ops product session gate evidence (#1601/#1666, 2026-06-17)
+
+**Session milestone**: Denetim PC now has a positive product remote-ops
+session gate through the real EndpointAgent outbound mTLS remote-bridge path.
+This is not reverse SSH/RDP clipboard evidence. The operator path opened a
+session, recorded approval, issued the WebAuthn challenge, verified step-up,
+and transported a constrained pilot operation.
+
+| Alan | Durum | Kanıt / sınır |
+|---|---|---|
+| GitOps heartbeat/trust freshness | 🟢 MERGED | PR #1666 merged at `c26e58b762fc987172dbae72666376d9895be12f`; test activation overlay now sets `REMOTE_BRIDGE_HEARTBEAT_INTERVAL_MILLIS=10000` and `REMOTE_BRIDGE_PEER_TRUST_FRESHNESS_TTL_MILLIS=120000`. |
+| Live broker runtime | 🟢 UP + CURRENT DIGEST | `platform-test/endpoint-admin-remote-bridge` deployment is `ready=1 updated=1`; pod `endpoint-admin-remote-bridge-6cc9797bd9-s6q92` is Running; imageID is `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:f76511a01ed8e5656008a796a6a4d7a094f886647da293739e8a0a49bb35565f`; live config reads heartbeat `10000`, peer-trust TTL `120000`. |
+| Denetim product smoke | 🟢 PERMIT + TRANSPORT PUSHED | Evidence dir `/home/halil/codex-rb-smoke/20260617T191335Z-product`; session `rb-denetim-20260617T191335Z`; device `423b6fc3-7497-4083-bd2f-5e2fe543bfe9`; `open=200`, `negative-nonpilot=400`, `approve=200`, `challenge=200`, `verify=200`, `operation=200`; operation response `PERMIT` with `transportPushed=true`; `summary.json` SHA256 `433e1273e13b1dafb24160948447abb490c87fd1db1c29ef642df0f7f52320f0`. |
+| Endpoint-side cross-check | 🟢 OUTBOUND MTLS CONNECTED | Denetim agent log at `2026-06-17 19:13:37` shows `remote-bridge: pilot auto-consent is enabled` and `constrained-pty enabled with outbound mTLS cert fingerprint=da72cae025e650bdd19d59a87ea319ec900533525884e05d9cc10bb33c552ce6`. |
+| Remaining #1601 gates | 🟡 OPEN | Project #2 issue #1601 remains `Needs Verify`, not Done: AgentPC2 third-device product-channel gate (#1643), signed MSI/GPO rollout acceptance, and owner-gated remote-access parent (#510) remain separate gates. Backend follow-up #690 tracks the observed DENY-after-session lifecycle issue. |
+
 ## Live Delta — Faz 22.5 M4 MSI lifecycle lab smoke (#115, 2026-06-17)
 
 **Session milestone**: `platform-agent` #115 now has endpoint-side MSI
@@ -159,10 +175,10 @@ release-manifest artifact-host digest evidence. The new trusted EXE release
 
 **Boundary**: This delta advances the operatorless install/remote-ops product
 path to release + desired-state pin + public artifact-host `/current/` live
-readiness plus trusted MSI artifact generation. It does **not** prove
-remote-bridge broker connectivity, Denetim/AGENTPC2 remote session autonomy, or
-endpoint-side MSI/GPO rollout until those smokes are recorded with live
-evidence.
+readiness plus trusted MSI artifact generation. Remote-bridge broker
+connectivity and Denetim product-session evidence are superseded by the
+2026-06-17 #1601/#1666 live delta above. It still does **not** prove AgentPC2
+product-channel acceptance or endpoint-side MSI/GPO rollout.
 
 ## Live Delta — Faz 22.5 M2 durable AD DNS + service-mode continuity proven on ERP-MOBIL (2026-06-15, Codex #1569)
 
