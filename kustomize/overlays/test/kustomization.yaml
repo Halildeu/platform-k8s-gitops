@@ -5130,8 +5130,8 @@ images:
     # plus deterministic idempotency-race replay. Image build run 27665015370
     # succeeded; repository_dispatch deploy 27665094783 correctly failed the
     # ADR-0023 overlay drift guard before this desired-state bump.
-    # endpoint-admin-service sha256:41d3bb533fc5c75ed838a2f4fc45653759cf13c2d905d51efaa8c381d95a2046
-    digest: sha256:41d3bb533fc5c75ed838a2f4fc45653759cf13c2d905d51efaa8c381d95a2046
+    # endpoint-admin-service sha256:f76511a01ed8e5656008a796a6a4d7a094f886647da293739e8a0a49bb35565f
+    digest: sha256:f76511a01ed8e5656008a796a6a4d7a094f886647da293739e8a0a49bb35565f
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
