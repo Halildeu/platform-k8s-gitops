@@ -5464,6 +5464,13 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+      # #676 domain-ops test dark-launch flip lives in a ConfigMap. Static
+      # ConfigMap data changes do not alter the pod template by themselves, so
+      # this test-only marker makes the acceptance rollout GitOps-authoritative
+      # and avoids a direct kubectl rollout restart on the shared test cluster.
+      - op: add
+        path: /spec/template/metadata/annotations/endpoint-admin.acik.com~1domain-ops-acceptance-rev
+        value: "2026-06-17-676"
       # Faz 22.5 M2 activation: enabling the secondary mTLS connector lengthens
       # endpoint-admin cold start enough that the base 150s startup window can
       # kill otherwise healthy pods before management 8081 is ready. Keep this
