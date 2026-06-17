@@ -101,9 +101,11 @@ images:
     # Faz 24 Meeting Intelligence foundation (#410): ilk deploy sha-cf1074a
     # (meeting-service V1 baseline schema + REST + OpenFGA @RequireModule gate;
     # SERVER_PORT 8097 + management 8081 spring-actuator contract).
-    # D30 immutable digest pin (drift gate Check1 = @sha256; live pod imageID
-    # 2026-06-17 D29 Up+Functional verified).
-    digest: sha256:62a24571f99d46f9862b36ca4466f2a605400bc7da739f54d57c83ce68a6f51b
+    # 2026-06-17 update: sha-9751099 (#688) — ADR-0041 §5 Option A: MeetingAuthz.MODULE
+    # "meeting" -> "MEETING" (module gate object id uppercase-align to permission-service
+    # catalog/writer path; Codex 019ed603). Staged re-seed RB-faz24-mt-uppercase-reseed.md.
+    # D30 immutable digest pin (drift gate Check1 = @sha256).
+    digest: sha256:53bb5bbefcedc77ec1c9dd2145d965baa501602c3ceffcf9917760155889f0ed
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -111,9 +113,10 @@ images:
     # (#674 merge commit; transcript V1 segment CRUD + search/export + KVKK m.12
     # access-log + OpenFGA @RequireModule gate; SERVER_PORT 8098 + management 8081
     # spring-actuator contract). 154fa2b deploy-commit transcript'i rebuild etmedi.
-    # D30 immutable digest pin (drift gate Check1 = @sha256; live pod imageID
-    # 2026-06-17 D29 Up+Functional verified — health 200 + no-JWT 401 + Flyway V1).
-    digest: sha256:7f5ed7a170d48e1dc35d39b44efa51095c15d67ba46f12bc1929d32c4388ea31
+    # 2026-06-17 update: sha-9751099 (#688) — ADR-0041 §5 Option A: TranscriptAuthz.MODULE
+    # "transcript" -> "TRANSCRIPT" (module gate object id uppercase-align; Codex 019ed603).
+    # D30 immutable digest pin (drift gate Check1 = @sha256).
+    digest: sha256:b5626cd9aab29ded9ded5b9a03911e931be4c76c5df4f0d5b9c87b776969a625
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
@@ -1199,7 +1202,12 @@ images:
     # NOT seeded into ADMIN role. 15/15 catalog unit tests + Codex AGREE. Live testai
     # pod already set to this digest (kubectl set image); this bump makes it durable
     # so ArgoCD selfHeal does not revert. Build run 27308323885 (merge 4f951508).
-    digest: sha256:2d9e6a79b1cded03e75eecda50ee0951eead3bda634b23f15415b1e2c166909b
+    #
+    # 2026-06-17 update: sha-9751099 (#688) — ADR-0041 §5 Option A: catalog += MEETING
+    # ("Toplantı") + TRANSCRIPT ("Transkript") VIEW/MANAGE + ADMIN MANAGE granule seed
+    # (Initializer->outbox->OpenFGA module:MEETING/TRANSCRIPT writer path; Codex 019ed603).
+    # 384 permission-service unit tests PASS. Needed for the writer-path prod-gate evidence.
+    digest: sha256:4383d25f8d0b56bab72b03585ae3835aa8242c5cbb2263104987e8d8d095f2c4
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
