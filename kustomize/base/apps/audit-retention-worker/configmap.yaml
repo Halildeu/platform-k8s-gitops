@@ -1,0 +1,73 @@
+# audit-retention-worker ConfigMap — Faz 24 KVKK audit-archive 7yr WORM (#1250-D).
+#
+# Non-secret env contract. DB credentials (SPRING_DATASOURCE_USERNAME/PASSWORD)
+# + MinIO svcacct (MINIO_ACCESS_KEY/SECRET_KEY) come via the ESO-managed
+# `audit-retention-worker-secrets` Secret (not here).
+#
+# The worker connects as the DEDICATED least-privilege role
+# `audit_retention_worker` (Codex D2): SELECT on audit_event.audit_event, OWNER
+# of the audit_archive schema. The schema is pre-created (AUTHORIZATION) so
+# SPRING_FLYWAY_CREATE_SCHEMAS=false — the worker never needs CREATE on the DB,
+# only owns audit_archive.* (Flyway history + cursor/ledger/anchor tables).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-retention-worker-config
+  annotations:
+    # ArgoCD Replace sync keeps this ConfigMap exact + removes stale keys.
+    argocd.argoproj.io/sync-options: Replace=true
+  labels:
+    app.kubernetes.io/name: audit-retention-worker
+data:
+  # Spring Boot ports (run-once mode exits before serving; carried for parity +
+  # Deployment/scheduler mode). Management 8081 = drift-gate probe contract.
+  SERVER_PORT: "8101"
+  MANAGEMENT_SERVER_PORT: "8081"
+
+  # Datasource — host-compose Postgres test cluster (audit_event DB). The worker
+  # qualifies every table explicitly (audit_event.audit_event SELECT, audit_archive.*
+  # owner), so no currentSchema is needed. User/password via ESO.
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/audit_event"
+
+  # Flyway owns ONLY audit_archive (isolated history). create-schemas=false: the
+  # schema is pre-created AUTHORIZATION audit_retention_worker (least-priv — the
+  # role is NOT a DB-wide schema creator).
+  SPRING_FLYWAY_ENABLED: "true"
+  SPRING_FLYWAY_CREATE_SCHEMAS: "false"
+  AUDIT_RETENTION_DB_SCHEMA: "audit_archive"
+
+  # Worker contract (ADR-0042 D4). hot-window 90d is the prod-shape desired-state;
+  # the k3d-test D29 archive proof uses a manual Job override AUDIT_RETENTION_HOT_WINDOW_DAYS=0
+  # (the 4 live rows are <90d old) — promotion to staging/prod keeps 90 (gate).
+  AUDIT_RETENTION_RUN_ONCE: "true"
+  AUDIT_RETENTION_SCHEDULER_ENABLED: "false"
+  AUDIT_RETENTION_HOT_WINDOW_DAYS: "90"
+  AUDIT_RETENTION_YEARS: "7"
+  AUDIT_RETENTION_SCAN_BATCH_SIZE: "5000"
+  AUDIT_RETENTION_MAX_SEGMENT_ROWS: "50000"
+  AUDIT_RETENTION_SOURCE_SCHEMA: "audit_event"
+  AUDIT_RETENTION_SOURCE_TABLE: "audit_event"
+
+  # Object store — host-compose MinIO via the selectorless `minio` Service
+  # (#1250-A host-bridge Endpoints 172.19.0.252:9000). Region/bucket/path-style
+  # are non-secret; the svcacct keys come from ESO.
+  AUDIT_RETENTION_S3_ENDPOINT: "http://minio:9000"
+  AUDIT_RETENTION_S3_REGION: "us-east-1"
+  AUDIT_RETENTION_S3_BUCKET: "audit-archive"
+  AUDIT_RETENTION_S3_KEY_PREFIX: "segments"
+  AUDIT_RETENTION_S3_PATH_STYLE: "true"
+
+  # Image-digest binding (Codex D1): MUST equal the overlay-pinned digest so the
+  # manifest/ledger worker_image_digest evidence matches the running artifact.
+  AUDIT_RETENTION_WORKER_IMAGE_DIGEST: "sha256:06d5b9e5eaf88263a5c60010962c12bd4e67a6f5a6644fec45e3dc882ebfe0dd"
+
+  # Spring profile (activates application-k8s.yml management port).
+  SPRING_PROFILES_ACTIVE: "k8s"
+
+  # Spring Cloud off (no discovery/Vault runtime — ESO delivers secrets).
+  SPRING_CLOUD_VAULT_ENABLED: "false"
+  SPRING_CLOUD_DISCOVERY_ENABLED: "false"
+  EUREKA_CLIENT_ENABLED: "false"
+
+  LOGGING_LEVEL_ROOT: "INFO"
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
