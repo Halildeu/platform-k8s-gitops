@@ -21,8 +21,10 @@ Bu handoff yazıldıktan SONRA, aynı oturumda **deploy fazı (gitops#1615) UÇT
 
 - [x] **✅ Faz 24 OpenFGA-governance ADR-0041 DONE** (gitops PR #1650 MERGED `df1168a4`, Codex `019ed4d8` REVISE→AGREE, issue #1649 CLOSED) — DD-EA-2 Faz 24'e extend: test-only direct-seed dar exception + **machine-enforced guard** (seed script: platform-test-only/no-wildcard/module:{meeting,transcript}-only) + prod path (permission-service role/granule→TupleSyncService) + somut gate (PermissionCatalogService'te MEETING/TRANSCRIPT yok). prod-promotion blocker formalized.
 
-**Sıradaki P0 (kalan — agent-doable)**:
-1. **#1250 audit retention archival worker** — 7yr→MinIO cold + hash-chain verify (immutable kaynak hazır; **büyük backend slice** → yeni worker+Flyway+MinIO+scheduling+Testcontainers+cross-AI+deploy; taze session önerilir).
+- [x] **✅ #1250-A+B (audit-archive 7yr WORM) DONE 2026-06-17** (Codex `019ed4f4`): B = ADR-0042 worker-contract PR #1651; A = MinIO object-store infra PR #1653 (`dca16c90`) — bucket object-lock COMPLIANCE 7y + versioning + least-priv svcacct (no delete/bypass) + Vault `kv/platform/audit-retention-worker` + ESO `Ready=SecretSynced` (eso-runtime 403 gap fixed) + MinIO **single-homed** platform-test-net (owner-approved compose recreate; return-path fix) + **D29 pod-side PROVEN** (pod→minio:9000 UP, PUT/GET OK, DELETE locked-version DENIED, durable desired-state). gitops: minio-svc bridge + NetPol +9000 + reconnect dual-home guard + runbook. Detay: memory `project_faz24_audit_archive_minio_infra`.
+
+**Sıradaki P0 (kalan)**:
+1. **#1250 C/D (fresh backend session — scope=platform-backend)**: (a) **ADR-0042 amendment C-ÖNCESİ** — "overwrite denied" YANLIŞ → version_id model (ledger version_id + version-specific HEAD/GET + unexpected-latest=tamper, Codex blocker-2); (b) **C** backend `audit-retention-worker` CronJob (image+ledger/cursor Flyway+S3 client+CHAIN_SCOPE consumer-confirm+Testcontainers MinIO+cross-AI; platform-backend checkout stale→reconcile gerek); (c) **D** deploy + worker-specific NetPol narrow + observability alerts (archive_lag/chain_break/errors/dlq).
 2. backend non-public-schema Testcontainers coverage (audit consumer schema bug CI'da yakalansın — `task_dc2b7248` chip).
 3. **ADR-0041 §5 prod-promotion gate**: permission-service module granule/catalog (MODULE:MEETING|TRANSCRIPT × VIEW|MANAGE) + assignment + outbox sync evidence (prod cutover ön-koşulu).
 4. services.yaml gateway-forward "pending"→"verified" reconcile (live 200 proven bu oturum).
@@ -73,7 +75,7 @@ Board: #52/#60/#410/#411/#1249/#1462 → Done. Deploy follow-up gitops#1615 olu�
 8. audio-gateway overlay `AUDIO_GATEWAY_AUDIT_REDIS_ENABLED=true` flip (audit producer aktif).
 9. apply k3d-test → **D29 (Up/Functional/Zanzibar) + browser-smoke** (HARD RULE — agent kendi browser tool'uyla).
 
-**P1**: #1250 audit retention archival worker (7yr→MinIO cold + hash-chain verify; immutable kaynak hazır). #1468 prod Prometheus public-read edge fix (gitops, prod-edge onaylı).
+**P1**: #1250 **A+B DONE** (ADR-0042 #1651 + MinIO infra #1653 + D29 pod-side proven); kalan C/D fresh backend session (ADR amendment + worker CronJob + deploy). #1468 prod Prometheus public-read edge fix (gitops, prod-edge onaylı).
 
 **P2-P3**: consumer chain (foundation-deploy + STT-live sonrası): #751 mfe-meeting, #412/#413 additive (meeting event-emission gerek), CDC #808/#12/#12, desktop#1-8, mobile#1.
 
