@@ -9,9 +9,10 @@
 # All policies select ONLY the broker pod:
 #   app.kubernetes.io/name: endpoint-admin-remote-bridge
 #
-# IP placeholders use RFC 5737 documentation ranges (192.0.2.0/24,
-# 198.51.100.0/24, 203.0.113.0/24). The owner replaces them with the real
-# edge / device CIDRs at flip time (no real internal IPs in git).
+# 2026-06-17 product session gate selection: Option A true outbound-only.
+# EndpointAgent opens the outbound mTLS/gRPC stream to the broker edge. The
+# broker does not open a data-plane connection back to endpoint device IPs for
+# this gate.
 ---
 # control #6 — INGRESS allowlist: 9444 from the orchestrator / mTLS L4 edge ONLY.
 # Never api-gateway / ingress-nginx / the part-of=platform blanket.
@@ -35,10 +36,17 @@ spec:
         - podSelector:
             matchLabels:
               remote-bridge.platform/peer: orchestrator
-        # (b) the mTLS L4 edge that passthrough-forwards agent connections.
-        #     OWNER PINS the real edge/host CIDR at flip (placeholder below).
+        # (b) the mTLS L4 edge / staging host that passthrough-forwards agent
+        #     connections for the Denetim PC test gate.
         - ipBlock:
-            cidr: 192.0.2.0/24        # RFC5737 placeholder — owner pins mTLS edge CIDR
+            cidr: 10.9.10.53/32
+        # (c) the dedicated k3d node-netns TCP forwarder for the first
+        #     product-channel gate. Host port 9445 forwards into the
+        #     k3d-test-server-0 network namespace, then to broker:9444. This is
+        #     intentionally narrower than allowing the whole k3d/docker bridge
+        #     subnet.
+        - ipBlock:
+            cidr: 172.19.0.2/32
       ports:
         - protocol: TCP
           port: 9444
@@ -144,40 +152,3 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
----
-# control #8 — per-session egress ACL (pilot-min). K8s NetworkPolicy cannot do
-# dynamic per-token targets, so the pilot bounds broker↔device data-plane
-# connections to a STATIC 2–5 named device allowlist; the broker additionally
-# enforces the per-session token target + TTL at the app layer. Dynamic
-# per-session netpol (controller / egress proxy / ephemeral per-session pod) is
-# DEFERRED to production. OWNER PINS the real device CIDRs at flip.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: eab-bridge-allow-egress-pilot-devices
-  labels:
-    app.kubernetes.io/name: endpoint-admin-remote-bridge
-    app.kubernetes.io/part-of: remote-bridge
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: endpoint-admin-remote-bridge
-  policyTypes:
-    - Egress
-  egress:
-    - to:
-        # RFC5737 placeholders — owner replaces with the 2–5 named pilot devices.
-        # Codex 019ebc51 P2: /32 ONLY (K8s does not enforce a "≤5 hosts" subnet
-        # comment). A subnet (anything broader than /32) needs a separate
-        # owner-reviewed waiver — it is NOT the pilot-min shape.
-        - ipBlock:
-            cidr: 198.51.100.11/32     # pilot device #1 (placeholder)
-        - ipBlock:
-            cidr: 198.51.100.12/32     # pilot device #2 (placeholder)
-        - ipBlock:
-            cidr: 198.51.100.13/32     # pilot device #3 (placeholder)
-      ports:
-        - protocol: TCP
-          port: 443
-        - protocol: TCP
-          port: 8443

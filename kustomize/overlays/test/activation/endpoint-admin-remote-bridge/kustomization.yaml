@@ -12,6 +12,12 @@
 #   3. the live exposure smoke passes (docs/RB-22-6-remote-bridge-pilot-flip.md §A3),
 #   4. ADR-0034 §13/D10 owner sign-off for the first live session.
 #
+# 2026-06-17 product session gate selection:
+#   - topology: Option A true outbound-only agent -> broker mTLS/gRPC stream
+#   - no broker -> device egress NetworkPolicy is part of this gate
+#   - immutable test digest approved by owner:
+#     sha256:f76511a01ed8e5656008a796a6a4d7a094f886647da293739e8a0a49bb35565f
+#
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
 #     kustomize/overlays/test/activation/endpoint-admin-remote-bridge
@@ -29,6 +35,9 @@ resources:
   - netpol.yaml                                           # control #6/#7/#8
 
 patches:
+  # control #11 / product gate — explicit non-prod trust-basis and approval
+  # config for the first Denetim PC product-channel session.
+  - path: configmap-activation-patch.yaml
   # control #11 — flips replicas:1 + REMOTE_BRIDGE_ENABLED=true + mounts the
   # mTLS/signer secrets + makes the broker secret required (fail-closed).
   - path: patch-activate.yaml
