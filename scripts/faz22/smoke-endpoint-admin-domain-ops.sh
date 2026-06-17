@@ -572,24 +572,6 @@ resolve_postgres_runner_target() {
   printf '%s\t%s\tjdbc-host\n' "$service_host" "$service_port"
 }
 
-resolve_postgres_kubernetes_target() {
-  local service_host="$1"
-  local service_port="$2"
-  local cluster_ip cluster_port
-
-  cluster_ip="$(kubectl --context "$CTX" -n "$NS" get svc "$service_host" \
-    -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)"
-  cluster_port="$(kubectl --context "$CTX" -n "$NS" get svc "$service_host" \
-    -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || true)"
-
-  if [[ -n "$cluster_ip" && "$cluster_ip" != "None" && -n "$cluster_port" ]]; then
-    printf '%s\t%s\tservice-cluster-ip\n' "$cluster_ip" "$cluster_port"
-    return 0
-  fi
-
-  printf '%s\t%s\tjdbc-host\n' "$service_host" "$service_port"
-}
-
 start_postgres_port_forward() {
   local remote_port="$1"
   local local_port
@@ -631,6 +613,13 @@ run_kubernetes_psql_query() {
     --arg pgUser "$db_user" \
     '{
     apiVersion: "v1",
+    metadata: {
+      labels: {
+        "app.kubernetes.io/name": "endpoint-admin-domain-ops-smoke",
+        "app.kubernetes.io/component": "ci-smoke",
+        "app.kubernetes.io/part-of": "platform"
+      }
+    },
     spec: {
       securityContext: {
         runAsNonRoot: true,
@@ -723,7 +712,7 @@ run_kubernetes_psql_query() {
 run_psql_json_query() {
   local db_url db_user db_pass db_schema db_host db_port db_name parsed
   local psql_output local_port connect_host connect_port connect_source connect_target
-  local k8s_connect_host k8s_connect_port k8s_connect_target db_pass_pgpass
+  local db_pass_pgpass
   local pod_env
 
   pod_env="$(kubectl --context "$CTX" -n "$NS" exec "deploy/$DEPLOY" -- printenv)"
@@ -870,9 +859,7 @@ SQL
           || fail "dockerized psql query failed"
       }
   else
-    k8s_connect_target="$(resolve_postgres_kubernetes_target "$db_host" "$db_port")"
-    IFS=$'\t' read -r k8s_connect_host k8s_connect_port _ <<< "$k8s_connect_target"
-    psql_output="$(run_kubernetes_psql_query "$k8s_connect_host" "$k8s_connect_port" "$db_name" "$db_user" "$db_pass_pgpass" "$SQL_FILE")" \
+    psql_output="$(run_kubernetes_psql_query "$connect_host" "$connect_port" "$db_name" "$db_user" "$db_pass_pgpass" "$SQL_FILE")" \
       || fail "kubernetes psql query failed"
   fi
 
