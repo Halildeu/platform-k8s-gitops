@@ -5626,6 +5626,46 @@ patches:
         path: /data/ENDPOINT_ADMIN_MTLS_PASSTHROUGH_FIXED_TENANT_ID
         value: "00000000-0000-0000-0000-000000000001"
 
+  # --- Faz 24 Meeting Intelligence (gitops#1615 activation) — TEST only ---
+  # meeting-service (#410) + transcript-service (#411) admin API gateway routes.
+  # These were moved OUT of the base api-gateway-config (Codex cross-AI REVISE
+  # Must-Fix 1): prod overlay includes base, but meeting/transcript Deployments
+  # are prod:deferred (NOT deployed to prod). A base route would make the prod
+  # render produce routes to non-existent services (prod-leak). Test overlay is
+  # the only place meeting/transcript run, so the routes live in this test-only
+  # ConfigMap patch.
+  # Native resource-specific path /api/v1/admin/meetings|transcripts → DIRECT
+  # route, RewritePath YOK (notification-orchestrator /api/v1/admin/notify
+  # route 19 emsali; Spring Boot 3.x trailing-slash strict → rewrite
+  # empty-segment trailing-slash riskinden kaçınır). Servis-içi @RequireModule(
+  # module:meeting|transcript) OpenFGA gate + SecurityConfig ROLE/SCOPE çift
+  # kapı enforce eder. Shadowing yok: tek admin route /api/v1/admin/notify
+  # (route 19, specific); catch-all yok.
+  # INVARIANT: `kubectl kustomize overlays/test | grep ROUTES_26` → VAR;
+  # `kubectl kustomize overlays/prod | grep ROUTES_26` → YOK (0 satır).
+  - target:
+      kind: ConfigMap
+      name: api-gateway-config
+    patch: |-
+      - op: add
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_26_ID
+        value: "meeting-admin-route"
+      - op: add
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_26_URI
+        value: "http://meeting-service:8097"
+      - op: add
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_26_PREDICATES_0
+        value: "Path=/api/v1/admin/meetings/**"
+      - op: add
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_27_ID
+        value: "transcript-admin-route"
+      - op: add
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_27_URI
+        value: "http://transcript-service:8098"
+      - op: add
+        path: /data/SPRING_CLOUD_GATEWAY_ROUTES_27_PREDICATES_0
+        value: "Path=/api/v1/admin/transcripts/**"
+
   # 2026-04-19 S2-A1 follow-up: Shortname refactor sonrası gereksiz SPRING_DATASOURCE_URL
   # + KEYCLOAK_URL replace patch'leri KALDIRILDI (base zaten shortname).
   # Overlay test-specific add patches (DDL_AUTO + FLYWAY_ENABLED + LOGGING DEBUG) kalır.

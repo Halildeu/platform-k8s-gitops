@@ -249,10 +249,15 @@ services:
       (platform-backend#410, PR #672). meeting/session/action/decision CRUD;
       Flyway V1 'meeting' DB schema meeting_service (4 tablo + org_id compat
       triggers); @RequireModule(module:meeting) authz. k3d-test foundation
-      deploy gitops#1615 / PR #1618 — D29 Up+Functional LIVE 2026-06-17
-      (Zanzibar-ready + api-gateway route deferred follow-up).
+      deploy gitops#1615 / PR #1618 — D29 Up+Functional LIVE 2026-06-17.
+      Zanzibar-ready LIVE 2026-06-17 (OpenFGA module:meeting can_view/can_manage
+      allow + deny + deny-by-relation enforce; bootstrap/openfga/
+      meeting-transcript-tuples.json) + api-gateway route 26
+      /api/v1/admin/meetings/** APPLIED+LOADED (render-correct test-overlay
+      ConfigMap patch; authenticated gateway-forward smoke pending — gateway
+      security filter global 401, persona token realm/role setup gerek).
     jwt_validates: true
-    route_external: false   # api-gateway route deferred (internal-only, 8097)
+    route_external: false   # gateway-routed (api-gateway route 26 /api/v1/admin/meetings/**); false=no own edge ingress (endpoint-admin/notification emsali)
     workload_kind: Deployment
     runtime_class: spring-backend
     probe_contract: spring-actuator   # management:8081
@@ -270,9 +275,14 @@ services:
       @RequireModule(module:transcript) authz consumer. k3d-test foundation
       deploy gitops#1615 — ESO Ready=True/SecretSynced + Vault seed/policy live;
       D29 Up+Functional LIVE 2026-06-17 (pod imageID digest match + health 200 +
-      no-JWT 401). Zanzibar-ready + api-gateway route deferred follow-up.
+      no-JWT 401). Zanzibar-ready LIVE 2026-06-17 (OpenFGA module:transcript
+      can_view/can_manage allow + deny + deny-by-relation enforce; bootstrap/
+      openfga/meeting-transcript-tuples.json) + api-gateway route 27
+      /api/v1/admin/transcripts/** APPLIED+LOADED (render-correct test-overlay
+      ConfigMap patch; authenticated gateway-forward smoke pending — gateway
+      security filter global 401, persona token realm/role setup gerek).
     jwt_validates: true
-    route_external: false   # api-gateway route deferred (internal-only, 8098)
+    route_external: false   # gateway-routed (api-gateway route 27 /api/v1/admin/transcripts/**); false=no own edge ingress (endpoint-admin/notification emsali)
     workload_kind: Deployment
     runtime_class: spring-backend
     probe_contract: spring-actuator   # management:8081
