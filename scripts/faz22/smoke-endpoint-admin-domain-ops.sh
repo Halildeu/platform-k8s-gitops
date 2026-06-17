@@ -544,6 +544,24 @@ s.close()
 PY
 }
 
+resolve_postgres_runner_target() {
+  local service_host="$1"
+  local service_port="$2"
+  local endpoint_ip endpoint_port
+
+  endpoint_ip="$(kubectl --context "$CTX" -n "$NS" get endpoints "$service_host" \
+    -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)"
+  endpoint_port="$(kubectl --context "$CTX" -n "$NS" get endpoints "$service_host" \
+    -o jsonpath='{.subsets[0].ports[0].port}' 2>/dev/null || true)"
+
+  if [[ -n "$endpoint_ip" && -n "$endpoint_port" ]]; then
+    printf '%s\t%s\tservice-endpoint\n' "$endpoint_ip" "$endpoint_port"
+    return 0
+  fi
+
+  printf '%s\t%s\tjdbc-host\n' "$service_host" "$service_port"
+}
+
 start_postgres_port_forward() {
   local remote_port="$1"
   local local_port
@@ -568,7 +586,7 @@ start_postgres_port_forward() {
 
 run_psql_json_query() {
   local db_url db_user db_pass db_schema db_host db_port db_name parsed
-  local psql_output local_port
+  local psql_output local_port connect_host connect_port connect_source connect_target
   local pod_env
 
   pod_env="$(kubectl --context "$CTX" -n "$NS" exec "deploy/$DEPLOY" -- printenv)"
@@ -588,7 +606,9 @@ run_psql_json_query() {
   parsed="$(parse_jdbc_url "$db_url")" || fail "could not parse endpoint-admin JDBC URL"
   IFS=$'\t' read -r db_host db_port db_name <<< "$parsed"
   [[ "$db_host" == "postgres" ]] \
-    || fail "unexpected endpoint-admin DB host for smoke port-forward: $db_host"
+    || fail "unexpected endpoint-admin DB host for smoke evidence query: $db_host"
+  connect_target="$(resolve_postgres_runner_target "$db_host" "$db_port")"
+  IFS=$'\t' read -r connect_host connect_port connect_source <<< "$connect_target"
 
   cat > "$SQL_FILE" <<SQL
 WITH req AS (
@@ -642,36 +662,75 @@ CROSS JOIN audit;
 SQL
   chmod 0600 "$SQL_FILE"
 
-  local_port="$(start_postgres_port_forward "$db_port")"
-  printf '127.0.0.1:%s:%s:%s:%s\n' "$local_port" "$db_name" "$db_user" "$db_pass" > "$PGPASS_FILE"
+  printf '%s:%s:%s:%s:%s\n' "$connect_host" "$connect_port" "$db_name" "$db_user" "$db_pass" > "$PGPASS_FILE"
   chmod 0600 "$PGPASS_FILE"
 
   if command -v psql >/dev/null 2>&1; then
-    psql_output="$(PGPASSFILE="$PGPASS_FILE" psql \
-      -h "127.0.0.1" \
-      -p "$local_port" \
+    psql_output="$(PGPASSFILE="$PGPASS_FILE" PGCONNECT_TIMEOUT=5 psql \
+      -h "$connect_host" \
+      -p "$connect_port" \
       -U "$db_user" \
       -d "$db_name" \
       -tA \
       -v ON_ERROR_STOP=1 \
       -f "$SQL_FILE")" \
-      || fail "psql query failed"
+      || {
+        if [[ "$connect_source" == "service-endpoint" ]]; then
+          fail "psql direct query failed via postgres service endpoint"
+        fi
+        local_port="$(start_postgres_port_forward "$db_port")"
+        printf '127.0.0.1:%s:%s:%s:%s\n' "$local_port" "$db_name" "$db_user" "$db_pass" > "$PGPASS_FILE"
+        chmod 0600 "$PGPASS_FILE"
+        psql_output="$(PGPASSFILE="$PGPASS_FILE" PGCONNECT_TIMEOUT=5 psql \
+          -h "127.0.0.1" \
+          -p "$local_port" \
+          -U "$db_user" \
+          -d "$db_name" \
+          -tA \
+          -v ON_ERROR_STOP=1 \
+          -f "$SQL_FILE")" \
+          || fail "psql query failed"
+      }
   elif command -v docker >/dev/null 2>&1; then
     psql_output="$(docker run --rm -i \
       --network host \
       -v "$SQL_FILE:/tmp/domain-ops-smoke.sql:ro" \
       -v "$PGPASS_FILE:/tmp/pgpass:ro" \
       -e PGPASSFILE=/tmp/pgpass \
+      -e PGCONNECT_TIMEOUT=5 \
       postgres:16-alpine \
       psql \
-        -h "127.0.0.1" \
-        -p "$local_port" \
+        -h "$connect_host" \
+        -p "$connect_port" \
         -U "$db_user" \
         -d "$db_name" \
         -tA \
         -v ON_ERROR_STOP=1 \
         -f /tmp/domain-ops-smoke.sql)" \
-      || fail "dockerized psql query failed"
+      || {
+        if [[ "$connect_source" == "service-endpoint" ]]; then
+          fail "dockerized psql direct query failed via postgres service endpoint"
+        fi
+        local_port="$(start_postgres_port_forward "$db_port")"
+        printf '127.0.0.1:%s:%s:%s:%s\n' "$local_port" "$db_name" "$db_user" "$db_pass" > "$PGPASS_FILE"
+        chmod 0600 "$PGPASS_FILE"
+        psql_output="$(docker run --rm -i \
+          --network host \
+          -v "$SQL_FILE:/tmp/domain-ops-smoke.sql:ro" \
+          -v "$PGPASS_FILE:/tmp/pgpass:ro" \
+          -e PGPASSFILE=/tmp/pgpass \
+          -e PGCONNECT_TIMEOUT=5 \
+          postgres:16-alpine \
+          psql \
+            -h "127.0.0.1" \
+            -p "$local_port" \
+            -U "$db_user" \
+            -d "$db_name" \
+            -tA \
+            -v ON_ERROR_STOP=1 \
+            -f /tmp/domain-ops-smoke.sql)" \
+          || fail "dockerized psql query failed"
+      }
   else
     fail "neither psql nor docker is available for DB evidence query"
   fi
