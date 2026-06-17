@@ -1,6 +1,6 @@
 # ADR-0041 — Faz 24 OpenFGA Tuple Governance (DD-EA-2 Extension to Meeting/Transcript)
 
-> **Status**: ACCEPTED (2026-06-17). Faz 24 Meeting Intelligence modüllerinin (meeting `#410`, transcript `#411`) OpenFGA tuple yazımını ADR-0012-EA **DD-EA-2** disiplinine bağlar. Test-only direct-seed bootstrap exception'ı formalize eder ve **prod-promotion blocker**'ını netleştirir.
+> **Status**: ACCEPTED (2026-06-17), **AMENDED 2026-06-17** (Option A — UPPERCASE object id; Codex `019ed603`). Faz 24 Meeting Intelligence modüllerinin (meeting `#410`, transcript `#411`) OpenFGA tuple yazımını ADR-0012-EA **DD-EA-2** disiplinine bağlar. Test-only direct-seed bootstrap exception'ı formalize eder ve **prod-promotion blocker**'ını netleştirir. Amendment, §5 prod-promotion gate'inin permission-service yarısını (catalog + ADMIN seed + writer-path) kapatır ve test-seed object id'lerini `module:meeting/transcript` (lowercase) → `module:MEETING/TRANSCRIPT` (UPPERCASE) olarak hizalar. Bkz. **Amendment** bölümü (en alt).
 >
 > **Bağlantı**: [ADR-0012-EA](0012-EA-endpoint-admin-governance-charter.md) (DD-EA-2 canonical writer), [ADR-0011](0011-drift-detection-audit-cadence-boundary-governance.md) (BG-1 boundary governance / cross-service tuple discipline), [ADR-0030](0030-kvkk-meeting-intelligence-boundary.md) (KVKK boundary), [ADR-0031](0031-two-server-meeting-intelligence-topology.md) (topology). Issue gitops#1649; activation gitops#1645 + #1648.
 
@@ -27,12 +27,12 @@ permission-service canonical mekanizması **role/granule-driven**: modül erişi
 4. **Invariants** (test seed; seed script `scripts/faz24/openfga-meeting-transcript-seed.sh` tarafından **machine-enforced**, fail-closed):
    - `KUBE_NS == platform-test` zorunlu — başka/prod realm seed reddedilir (guard `exit 1`).
    - Wildcard subject (`user:*` / `:*` suffix) YASAK (guard).
-   - Yalnız `module:meeting` / `module:transcript` object'leri (guard; foreign object reddedilir).
+   - Yalnız `module:MEETING` / `module:TRANSCRIPT` object'leri (guard; foreign object reddedilir). **(AMENDED 2026-06-17: lowercase → UPPERCASE, Option A — Amendment bölümü.)**
    - Test subject = numeric mock persona (committed seed: `user:1`, `user:9102`; gerçek prod kullanıcısı DEĞİL).
    - Tuple'lar canonical JSON'da tek-source (`bootstrap/openfga/meeting-transcript-tuples.json`) + post-seed `/check` allow/deny assertion.
    - Model değişikliği gerektirmez: `module` type (`can_view`/`can_manage`/`can_edit`/`blocked`) zaten var; meeting/transcript yeni instance.
 
-5. **Prod-promotion gate (somut gap).** permission catalog şu an `MEETING`/`TRANSCRIPT` modülünü **içermiyor** (`PermissionCatalogService`). Prod cutover'ından ÖNCE: (a) module catalog entry + default role/granule (`MODULE:MEETING|TRANSCRIPT` × `VIEW|MANAGE`), (b) assignment akışı (`PUT /api/v1/roles/{roleId}/granules` + role/user assignment), (c) outbox→OpenFGA sync evidence + runbook. Bu gate kapanana kadar Faz 24 modülleri **prod'a promote edilmez** (test'te direct-seed enforce LIVE kalır).
+5. **Prod-promotion gate (somut gap).** ~~permission catalog şu an `MEETING`/`TRANSCRIPT` modülünü **içermiyor** (`PermissionCatalogService`)~~ **(AMENDED 2026-06-17 — (a) KAPANDI: platform-backend #688)**. Prod cutover'ından ÖNCE: (a) ~~module catalog entry + default role/granule (`MODULE:MEETING|TRANSCRIPT` × `VIEW|MANAGE`)~~ **DONE (#688: catalog + ADMIN MANAGE seed + Initializer→outbox→OpenFGA `module:MEETING`/`TRANSCRIPT` UPPERCASE)**, (b) assignment akışı (`PUT /api/v1/roles/{roleId}/granules` + role/user assignment), (c) outbox→OpenFGA sync evidence + runbook **(b+c = live writer-path prod-gate evidence, staged re-seed runbook `docs/runbooks/RB-faz24-mt-uppercase-reseed.md`)**. Bu gate kapanana kadar Faz 24 modülleri **prod'a promote edilmez** (test'te direct-seed enforce LIVE kalır).
 
 ## Consequences
 
@@ -47,4 +47,42 @@ permission-service canonical mekanizması **role/granule-driven**: modül erişi
 - [x] DD-EA-2'nin Faz 24'e uygulanması yazılı + canonical kayıtta.
 - [x] Test-only direct-seed exception + invariants **machine-enforced** (seed script guard: platform-test-only + no-wildcard + module:{meeting,transcript}-only; committed JSON guard'ı geçer — `user:1`/`user:9102`).
 - [x] Prod path (permission-service role/granule + assignment → TupleSyncService) + somut gap (catalog'da MEETING/TRANSCRIPT yok) netleştirildi.
-- [ ] (prod-promotion) permission-service modül granule/catalog + assignment + outbox sync evidence — ayrı slice, §5 gate.
+- [x] (prod-promotion **a**) permission-service modül granule/catalog **DONE** (platform-backend #688: catalog MEETING/TRANSCRIPT + ADMIN MANAGE seed + tests; UPPERCASE Option A).
+- [ ] (prod-promotion **b+c**) live writer-path evidence (grant → outbox DONE → `module:MEETING` tuple → meeting/transcript endpoint 200) + staged uppercase re-seed — gitops #1657, runbook `RB-faz24-mt-uppercase-reseed.md`.
+
+---
+
+## Amendment (2026-06-17) — Option A: UPPERCASE object id + §5 catalog half closed
+
+> Cross-AI: Codex thread `019ed603` (plan AGREE + post-impl AGREE). Bağlı PR'lar: platform-backend **#688** (catalog + services uppercase), gitops **#1657** (test-seed/invariant/ADR + staged live re-seed).
+
+### Sorun (keystone, bu ADR yazılırken fark edilmemişti)
+
+Bu ADR'nin orijinal §3 prod path'i UPPERCASE `MODULE:MEETING`/`MODULE:TRANSCRIPT` granule öngörürken, §4 test-seed invariant'ı **lowercase** `module:meeting`/`module:transcript` enforce ediyordu. meeting/transcript servisleri de lowercase (`MeetingAuthz.MODULE="meeting"`) check ediyordu. permission-service **MODULE write path'i case transform YAPMAZ** (`TupleSyncService` objectId=key verbatim; `AccessControllerV1` PUT granules `key.trim()` verbatim). Dolayısıyla §3 prod path canlıya alınsaydı `module:MEETING` tuple yazılır, servis `module:meeting` check ederdi → **prod authz sessiz fail** (tuple miss → fail-closed deny). Test (lowercase) ile prod (uppercase) iki farklı object id üretip aynı servisi tatmin edemezdi.
+
+### Karar — Option A (uppercase-align)
+
+Tüm zincir **tek string** olacak şekilde core-module convention'ına (`module:ACCESS`/`module:AUDIT`, tümü UPPERCASE) hizalandı:
+
+`PermissionCatalogService` catalog key == `role_permissions.permission_key` == OpenFGA object id == servis `@RequireModule` literal'i (`MeetingAuthz.MODULE`/`TranscriptAuthz.MODULE`) = **`MEETING` / `TRANSCRIPT`** (UPPERCASE).
+
+- platform-backend #688: catalog'a MEETING/TRANSCRIPT + ADMIN'e MANAGE granule seed (IMPERSONATION_AUDIT emsali) + servis sabitleri uppercase. **Flyway YOK** — `PermissionDataInitializer` granule seed'i `RoleChangeEvent`→outbox→sync üretir (SQL üretmez).
+- gitops #1657: bu ADR + `bootstrap/openfga/meeting-transcript-tuples.json` + seed script invariant `module:MEETING`/`module:TRANSCRIPT`.
+
+### endpoint-admin emsal DEĞİL
+
+endpoint-admin'in catalog key'i (`ENDPOINT_ADMIN`, UPPERCASE) ile OpenFGA object id'si (`endpoint-admin`, lowercase kebab) **ayrışır**; ama bu **wired bir auto-grant köprüsü değildir** (MODULE write path transform yapmadığı için UI-drawer grant'ı `module:ENDPOINT_ADMIN` üretir, servis `module:endpoint-admin` bekler — uyuşmaz; grant fiilen manual tuple seed ister). Bu yüzden endpoint-admin'in split'i **legacy exception**'dır, meeting/transcript için **emsal alınmadı**. Yeni invariant: **governed module object id = catalog key = role permission_key = OpenFGA object id = servis check literal'i** (hepsi aynı string).
+
+### Staged live re-seed (delete-first DEĞİL — Codex zorunlu sıra)
+
+Merge tek başına k3d-test'i bozmaz (deploy gitops digest-pin ile). Kırılma noktası = uppercase servis imajlarını lowercase-only store'a deploy etmek. Doğru sıra (`RB-faz24-mt-uppercase-reseed.md`):
+
+1. backend #688 merge + image build.
+2. uppercase JSON ile seed script → `module:MEETING`/`TRANSCRIPT` tuple'ları **ADDITIVE** eklenir (lowercase durur).
+3. yeni uppercase imaj pod'ları deploy + 7/7 smoke.
+4. lowercase tuple'ları DELETE + invariant uppercase-only + 7/7 tekrar.
+5. **writer-path prod-gate evidence**: permission-service grant → outbox DONE → `module:MEETING` tuple → meeting/transcript endpoint 200 (direct-seed bu gate'i kapatmaz).
+
+### Residual (Codex)
+
+Live `backend/openfga/model.fga`'da `type meeting` (owner/participant/viewer) tanımının mevcut olduğu §39 live re-seed sırasında ayrıca doğrulanmalı (module gate düzelse bile create-path owner tuple write fail-closed olmasın).
