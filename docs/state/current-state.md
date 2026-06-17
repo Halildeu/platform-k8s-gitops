@@ -1,5 +1,49 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 product remote-ops session gate hardened, partial live evidence captured (2026-06-17)
+
+**Session milestone**: Faz 22.6 operatorless/product remote-ops acceptance is no longer allowed to use reverse SSH, RDP, operator-pasted PowerShell, or endpoint inbound SSH/WinRM/SMB/RPC as completion evidence. The acceptance gate is now a real product remote-ops session: EndpointAgent outbound mTLS/gRPC product channel, short-lived signed permit, typed read-only operation, audit/hash-chain evidence, and fail-closed negative tests.
+
+Cross-AI consultation was run before the gate shape was finalized:
+
+| Reviewer | Result | Absorbed constraint |
+|---|---|---|
+| Claude CLI | AGREE with deltas | idle/session timeout, heartbeat-loss terminate, replay/concurrent-session tests, audit immutability, kill-switch |
+| Mavis | unavailable this run | not asserted; CLI required a session id, so no completed Mavis verdict is recorded |
+| Codex CLI | REVISE | outbound-only claim must match topology, owner-gated activation must be explicit, 8096/8081 negative reachability required |
+
+Written truth closure:
+
+- `docs/runbooks/RB-faz22.6-product-remote-ops-session-gate.md` defines the live product session gate for `platform-backend#510` + `platform-k8s-gitops#1601`.
+- `docs/faz-22-software-deployment-plan.md` now records the Product Remote-Ops Session Gate lane.
+- `kustomize/overlays/test/activation/endpoint-admin-remote-bridge/OWNER-APPROVAL.md` now warns that broker-to-device egress pilot must not be described as true outbound-only product-channel evidence.
+- `scripts/faz22-remote-ops/remote-ops-session-preflight.sh` provides a read-only cluster preflight helper and intentionally fails before live session when activation inputs are placeholders or missing.
+- Board comments were attached to `platform-backend#510`, `platform-k8s-gitops#1601`, and `platform-k8s-gitops#1643`.
+
+2026-06-17 live update:
+
+- `endpoint-admin-remote-bridge` is live in `k3d-test/platform-test` as a separate broker deployment with image digest `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:cbddd3e0a04e6b5e724b633e972be6fbda8f5700844e20c1903cd22e5cead947`.
+- Denetim PC product session `rb-denetim-20260617145927` reached `open=200`, `approval=200`, `WEBAUTHN step-up verify=200`, `non-pilot FULL_RDP=400`, and `PTY_COMMAND hostname=200/DENY`.
+- Broker inbound audit recorded `CONSENT_GRANTED` then `ACTIVE`; DB evidence recorded approval decision `RECORDED`, approval grant `CONSTRAINED_PTY`, and WORM `session_recording_entry` seq `0` / `POLICY_EVENT`.
+- The `DENY` operation result is correct fail-closed behavior for the current peer trust state: HELLO ledger is `cert=true,attestation=false,device=false`, and the policy engine denies crypto identity before operation dispatch.
+- Agent PR `platform-agent#206` now includes commit `636f1d4` to read `ENDPOINT_AGENT_REMOTE_BRIDGE_ATTESTATION_EVIDENCE_B64` and send it in `AgentHello`; local `go test ./...` passed and PR CI is green, including cross-build/test, PS5.1 installer, lab signing, and Windows Go test.
+- Next live smoke input is an attestation evidence blob signed for Denetim PC test binary SHA256 `2c3870d1e5ce332933e9a9713665432a9bd985aa999b7a644c5ad41312523c42`. The repo does not carry the private attestation key; evidence generation needs staging key access or a managed Vault attestation public-key rotation.
+- Evidence comments: `platform-backend#510` https://github.com/Halildeu/platform-backend/issues/510#issuecomment-4729813159 and `platform-k8s-gitops#1601` https://github.com/Halildeu/platform-k8s-gitops/issues/1601#issuecomment-4729819063.
+
+Live/preflight truth:
+
+| Item | Current truth |
+|---|---|
+| First target | Denetim PC / `SRB-AIDENETIMPC` |
+| Denetim PC domain/cert | domain-joined; machine client-auth cert from `Acik-Endpoint-CA` present; EndpointAgent service running as LocalSystem |
+| Product remote-ops evidence | **partial live evidence captured**: outbound mTLS/session/authz/consent/approval/step-up/audit proven; full `PERMIT + dispatch + agent result` still open because device trust + attestation are false |
+| `k3d-test` remote-bridge live objects | separate remote-bridge Deployment/Service/Secrets live; live hotfixes must be reconciled back to GitOps desired-state |
+| Activation overlay | source exists but needs reconciliation to the live digest/env topology before it can be the sole desired-state proof |
+| Preflight helper latest result | superseded by live partial smoke; rerun after GitOps reconciliation |
+| AgentPC2 | separate third-device gate remains blocked until product channel exists (`#1643`) |
+
+Open gate before full acceptance: reconcile live remote-bridge digest/env into GitOps desired-state, prove device trust + attestation for `SRB-AIDENETIMPC`, then rerun the typed Denetim PC session until `PTY_COMMAND hostname` reaches `PERMIT`, `transportPushed=true`, and an agent result/audit row is returned. Keep reverse SSH/RDP/manual bridge excluded from acceptance evidence.
+
 ## Live Delta — Faz 22 prod endpoint-admin D29 GREEN + self-update/rollout draft stack CI green (2026-06-06)
 
 **Session milestone**: prod endpoint-admin service presence is now D29-proven; BE-026 rollout rings moved from TODO to draft PR with 13/13 CI pass; AG-029 / BE-031 / BE-032 self-update source path progressed to draft CI-green PRs.

@@ -160,6 +160,7 @@ kanıtı prod/domain-wide readiness yerine geçmez.
 | Signed agent distribution / self-update | OPEN / draft source | AG-029 draft PR #59 head `c3c1869` CI GREEN (6/6) adds staging primitives, capability false-advertising guard, installer opt-in wiring and a BE-031/BE-032-pinned live-smoke runbook; the runbook now requires a BE-032 negative trust-field preflight before positive self-update dispatch; BE-031 #488 release catalog + BE-032 #489 catalog-bound UPDATE_AGENT dispatch are draft/CI-green; BE-032 head `7ab33ef` rejects caller-supplied trust fields before service dispatch; real Windows self-update smoke, merge/deploy, rollback/watchdog acceptance and provider-distinct review remain pending |
 | Rollout controls | OPEN / draft source stack | BE-026 PR #478, BE-027 PR #480, BE-028 PR #482, BE-029 PR #484, BE-030 PR #486/#487, BE-031 PR #488 and BE-032 PR #489 are draft/CI-green; BE-032 head `7ab33ef` includes release-catalog trust-field fail-closed guard; merge, image/digest rollout, testai acceptance and provider-distinct review remain pending |
 | Domain-wide IT rollout | OPEN / operator-bound | 22.3 MSI/GPO/AD CS/5-PC -> 50/800 ramp; 22.2.B VPN/DC/EDR/signing gates remain external |
+| Laptop availability orchestration | PLANNED as Faz 22.10 | Offline/Wi-Fi laptop reality is not solved by classic WOL. 22.10 owns pending job queue, opportunistic execution, maintenance windows, wake-lock, Ethernet WOL pilot, WoWLAN readiness and vPro/AMT discovery; see [`docs/faz-22-10-endpoint-availability-orchestration.md`](./faz-22-10-endpoint-availability-orchestration.md). |
 | Prod endpoint-admin presence | PROVEN | #1241 ESO MERGED (`e268854c`), #1242 workload/config MERGED (`4202e17c`); prod pod `endpoint-admin-service-777c66f5c9-wl5kr` Running ready=true restarts=0 imageID digest `sha256:7fa5975c...`; D29 report `/tmp/smoke-report-prod-20260606T020443Z` exit_code=0. |
 
 ### 0.5 Standard PC Install Productization Lane — 2026-06-08
@@ -220,6 +221,49 @@ degil; acceptance/risk gate'leri yazilmadan 5/50/800 cikilmaz`. Ortak
 mutabakat: M0/M1 foundation yeterince somut, fakat M2-M7 icin AD CS/mTLS,
 MSI/GPO, wave gate, rollback, capacity, telemetry ve failed-device queue
 kontratlari bu plana baglanmadan 800-PC readiness iddia edilemez.
+
+### 0.6 Product Remote-Ops Session Gate — 2026-06-17
+
+Faz 22.5 operatorless access (#1601) ve Faz 22.6 remote-access bridge
+parent'ı (platform-backend#510) için canlı kabul kapısı **lab reverse SSH/RDP
+değil**, gerçek ürün kanalıdır. İlk hedef **Denetim PC / SRB-AIDENETIMPC**;
+ERP-MOBIL yalnız ikinci kanıt olabilir. AgentPC2 ayrı üçüncü cihaz gate'i
+(#1643) olarak blocked kalır.
+
+2026-06-17 Claude CLI + Codex istişaresi sonucu: **REVISE -> ACCEPTABLE**.
+Mavis CLI bu turda session-id gereksinimi nedeniyle kullanılamadı; Mavis
+sonucu tamamlanmış reviewer gibi gösterilmez. Yol doğru, fakat canlı session
+öncesi şu şartlar acceptance'a yazılır:
+
+- outbound-only iddiası topolojiyle tutarlı olmalı; agent broker'a outbound
+  mTLS/gRPC stream açıyorsa broker->device egress gerekmez. Broker->device
+  egress pilotu kullanılırsa buna "outbound-only" denmez.
+- permit `jti` single-use, TTL, device binding, operator identity binding,
+  maker-checker approval ve replay/expiry negatifleri kanıtlanır.
+- ilk operation sabit typed read-only olur (`GET_AGENT_STATUS` veya
+  `GET_AGENT_VERSION`); raw shell, PowerShell, RDP, WinRM, SMB, SSH, file
+  browser veya path enumeration kabul kapsamı dışıdır.
+- audit/recording/hash-chain fail-open olamaz; audit sink down ise permit ya da
+  operation fail-closed olur.
+- shared-image 8096/8081 yüzeyi same-namespace, ingress namespace ve host/edge
+  path'ten negatif kanıtlanmadan canlı session'a geçilmez.
+
+Canonical runbook:
+[`docs/runbooks/RB-faz22.6-product-remote-ops-session-gate.md`](./runbooks/RB-faz22.6-product-remote-ops-session-gate.md).
+
+**Live evidence update 2026-06-17:** Denetim PC session
+`rb-denetim-20260617145927` captured partial product evidence on the real
+remote-bridge stack: open session `200`, non-pilot `FULL_RDP` `400`,
+distinct-approver approval `200`, WEBAUTHN step-up verify `200`, broker audit
+`CONSENT_GRANTED -> ACTIVE`, DB approval decision `RECORDED`, DB grant
+`CONSTRAINED_PTY`, and WORM `session_recording_entry` seq `0`. The first
+`PTY_COMMAND hostname` returned `200/DENY/transportPushed=false`, which is the
+correct fail-closed result while HELLO trust is
+`cert=true,attestation=false,device=false`. This moves the lane from
+"not live" to **partial live evidence captured**, but it does **not** close
+#1601/#510 or prove 5-PC/50-PC rollout readiness. Full acceptance still needs
+device-trust + attestation evidence and a `PERMIT + dispatch + agent result`
+run.
 
 #### 0.5.1 Rollout Readiness Gate Matrix
 
@@ -925,6 +969,9 @@ Bu sıra 2026-05-29 truth refresh sonrası geçerlidir.
   aşamada tek cihaz / tek katalog item pilotudur.
 - EDR allowlist + code signing, 22.2/22.3/22.4 güvenlik kapılarıdır; 22.5
   agent self-update ve install adapter'ları bu kapılara bağlı kalır.
+- Offline/Wi-Fi laptoplarda background islerin kacmamasi 22.5 kapsaminda
+  genisletilmez; bu konu Faz 22.10 Endpoint Availability Orchestration
+  planina ayrilmistir.
 - Windows Update install/reboot trigger, arbitrary PowerShell/script execution,
   process kill, registry edit, browser history, Wi-Fi password ve saved
   credential collection 22.5 quick-win kapsamına alınmaz.
