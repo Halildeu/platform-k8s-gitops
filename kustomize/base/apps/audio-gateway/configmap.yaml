@@ -38,3 +38,12 @@ data:
   SPRING_DATA_REDIS_PORT: "6379"
   # SPRING_DATA_REDIS_PASSWORD → audio-gateway-secrets (ESO, Vault
   # kv/platform/audio-gateway-service redis_password)
+  # --- Faz 24 KVKK audit producer flip (gitops#1249 / #1615) ---
+  # RedisStreamAuditSink'i aktive eder (default NoOpAudioGatewayAuditSink yerine
+  # — backend application.yml audit.enabled=${AUDIO_GATEWAY_AUDIT_REDIS_ENABLED:false}).
+  # audit-event-consumer-service (#1631) k3d-test'te D29 LIVE: consumer group
+  # audit-persist-v1 'audit:events' stream'ine joined → producer flip end-to-end
+  # audit akışını tamamlar (audio-gateway producer → audit:events → consumer → audit_event DB).
+  # stream-key consumer'ın AUDIT_CONSUMER_STREAM_KEY'i (audit:events) ile birebir aynı.
+  AUDIO_GATEWAY_AUDIT_REDIS_ENABLED: "true"
+  AUDIO_GATEWAY_AUDIT_STREAM_KEY: "audit:events"
