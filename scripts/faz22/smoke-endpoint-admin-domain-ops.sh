@@ -186,6 +186,7 @@ write_keycloak_source_diagnostics() {
   local docker_socket_present=false
   local docker_socket_readable=false
   local docker_socket_writable=false
+  local actions_secret_present=false
   local label candidate exists readable
 
   : > "$candidates_file"
@@ -205,6 +206,7 @@ write_keycloak_source_diagnostics() {
   [[ -e /var/run/docker.sock ]] && docker_socket_present=true
   [[ -r /var/run/docker.sock ]] && docker_socket_readable=true
   [[ -w /var/run/docker.sock ]] && docker_socket_writable=true
+  [[ -n "${KC_ADMIN_PASSWORD:-}" ]] && actions_secret_present=true
 
   if [[ "$docker_available" == "true" ]]; then
     if docker inspect "$KC_CONTAINER" >/dev/null 2>&1; then
@@ -231,6 +233,7 @@ write_keycloak_source_diagnostics() {
     --argjson dockerSocketPresent "$docker_socket_present" \
     --argjson dockerSocketReadable "$docker_socket_readable" \
     --argjson dockerSocketWritable "$docker_socket_writable" \
+    --argjson actionsSecretPresent "$actions_secret_present" \
     --slurpfile candidates "$candidates_file" \
     '{
       selectedSource: $selectedSource,
@@ -249,12 +252,20 @@ write_keycloak_source_diagnostics() {
         socketReadable: $dockerSocketReadable,
         socketWritable: $dockerSocketWritable
       },
+      actionsSecretPresent: $actionsSecretPresent,
       hostFileCandidates: $candidates
     }' > "$KC_SOURCE_DIAG_FILE"
   chmod 0600 "$KC_SOURCE_DIAG_FILE"
 }
 
 read_keycloak_admin_password() {
+  if [[ -n "${KC_ADMIN_PASSWORD:-}" ]]; then
+    printf '%s' "$KC_ADMIN_PASSWORD" > "$KC_ADMIN_PASS_FILE"
+    chmod 0600 "$KC_ADMIN_PASS_FILE"
+    write_keycloak_source_diagnostics "actions-secret" "KC_TEST_ADMIN_PASSWORD"
+    return 0
+  fi
+
   if command -v docker >/dev/null 2>&1; then
     if docker exec "$KC_CONTAINER" sh -c 'cat /run/secrets/kc_admin_password' \
         > "$KC_ADMIN_PASS_FILE" 2>/dev/null && [[ -s "$KC_ADMIN_PASS_FILE" ]]; then
