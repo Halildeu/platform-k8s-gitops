@@ -14,12 +14,15 @@ Bu handoff yazıldıktan SONRA, aynı oturumda **deploy fazı (gitops#1615) UÇT
 - **Durum: 3/3 servis tam-LIVE (D29) + canonical + reçete proven + memory + board #1615 senkron.** **Deploy fazı 3/3 ✓.**
 
 **Activation durumu + Sıradaki P0** (deploy ≠ activation; hepsi agent-doable, distinct ops):
-- [x] **audio-gateway producer flip WIRED** (#1634 MERGED 5f5c00f4) — `AUDIO_GATEWAY_AUDIT_REDIS_ENABLED=true` + stream-key `audit:events` applied + rolling restart; audio-gateway env 2-key + health 200 UP + consumer group lag=0. **E2E event smoke PENDING** (XLEN=0 → ilk tetiklenmiş audit event = gerçek STT kullanımı / deliberate trigger; producer→stream→consumer→`audit_event` DB row henüz exercise edilmedi).
-1. **meeting/transcript Zanzibar-ready** — OpenFGA `module:meeting` + `module:transcript` tuple seed + allow/deny synthetic (şu an authenticated check fail-closed deny = doğru ama enforce kanıtı yok). OpenFGA model'de type var mı önce kontrol.
-2. **meeting/transcript api-gateway route** — platform-backend RewritePath (`/api/v1/meeting-admin/**`→`/api/v1/admin/**`) + browser-smoke (HARD RULE).
+- [x] **audio-gateway producer flip WIRED** (#1634 MERGED 5f5c00f4) — env 2-key + health UP + consumer lag=0. E2E event smoke PENDING (XLEN=0 → P0 #1 aşağıda).
+- [x] **meeting/transcript Zanzibar-ready + api-gateway routes** (#1645 MERGED 281da52c, Codex 019ed45d REVISE→AGREE) — OpenFGA module:meeting/transcript seed + **7/7 smoke_checks** (ALLOW + DENY + DENY-by-relation; fail-closed script `scripts/faz24/openfga-meeting-transcript-seed.sh`); gateway routes 26/27 test-only patch (prod-leak fixed). **Forward-smoke + browser-smoke PENDING** (P0 #2-3 aşağıda).
+
+**Sıradaki P0 (kalan activation — agent-doable, distinct)**:
+1. **audit E2E event smoke** — audio-gateway chunk admission rejection tetikle (valid JWT + chunk endpoint) → XLEN>0 + consumer persist + `audit_event` DB row (producer flip kapanış kanıtı).
+2. **authenticated gateway-forward smoke** — persona token (KC platform-test realm, reset test-persona pw NOT admin@example.com, grant ROLE_MEETING_ADMIN/SCOPE + seed persona userId tuple) → gateway `/api/v1/admin/meetings/` → 200 (route+authz forward proof; gateway global-401 unauthenticated ayırt etmiyor).
 3. **#1250 audit retention archival worker** — 7yr→MinIO cold + hash-chain verify (immutable kaynak hazır).
-4. **audit E2E event smoke** — audio-gateway chunk admission rejection tetikle → XLEN>0 + consumer persist + `audit_event` DB row (producer flip'in kapanış kanıtı; Codex 019ed340 notu).
-5. Consumer chain (#751 mfe-meeting / #412 notification / #413 report / desktop / mobile / CDC) — foundation-deploy ✓ + STT-live'a bağlı.
+4. **Faz 24 OpenFGA-governance ADR** — DD-EA-2 (tuple writer=permission-service) Faz 24'e extend = **prod-promotion blocker** (test seed direct-bootstrap kabul, prod permission-service yolu).
+5. browser smoke (mfe-meeting #751) + Consumer chain (#412/#413/desktop/mobile/CDC) — foundation-deploy ✓ + STT-live + #751'e bağlı.
 
 ---
 ## 1. Bağlam (bu oturumda ne yapıldı)
