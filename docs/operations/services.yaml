@@ -242,6 +242,26 @@ services:
       test: enabled
       prod: deferred   # prod'da Redis Streams yok — D30 cutover'da runtime ile birlikte
 
+  - name: audit-archive-exporter
+    repo: prometheuscommunity/postgres-exporter
+    description: |
+      Faz 24 PR-obs-02 (gitops#1656, ADR-0042 §4): audit-retention-worker
+      DB-state observability — postgres_exporter custom queries over the durable
+      audit_archive.* state (cursor/ledger). The worker is a run-once CronJob so
+      its in-process Micrometer counters are ephemeral; this always-on exporter
+      surfaces the DB truth + the companion PrometheusRule alerts on it. Read-only
+      role via ESO kv/platform/audit-archive-exporter; ServiceMonitor 9187
+      /metrics; narrow netpol (egress DNS+PG only, ingress monitoring→9187).
+    jwt_validates: false  # internal metrics endpoint, monitoring-ns scrape only
+    route_external: false
+    third_party: true
+    workload_kind: Deployment
+    runtime_class: lab-tool
+    probe_contract: exempt   # postgres_exporter tcp/metrics; no actuator healthz set
+    environments:
+      test: enabled
+      prod: deferred   # worker/exporter test-only until the ADR-0042 §5 prod gate
+
   - name: meeting-service
     repo: platform-backend
     description: |
