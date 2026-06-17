@@ -40,6 +40,8 @@ Reddedilen alternatifler + red nedenleri.
 | 0025 | [Enterprise Platform Charter — Process & Parameter Management Hub](./0025-enterprise-platform-charter.md) | **Proposed** (2026-05-20) |
 | 0028 | [BL-009 (DKIM CNAME) + BL-022 (NetGSM Contract) Plan-Out / Demand-Reactivated](./0028-bl009-bl022-demand-reactivated-plan-out.md) | **Accepted** (2026-05-25) |
 | 0029 | [Hibrit D — perf-alertmanager Teams Primary + Slack Dormant Asset-Preserved](./0029-hibrit-d-perf-alerts-teams-primary.md) | **Accepted** (2026-05-27) |
+| 0041 | [Faz 24 OpenFGA Tuple Governance (DD-EA-2 Extension to Meeting/Transcript)](./0041-faz24-openfga-tuple-governance.md) | **Accepted** (2026-06-17) |
+| 0042 | [Faz 24 Audit Archive 7-Year Retention Worker (WORM Cold-Storage Contract)](./0042-faz24-audit-archive-retention-worker.md) | **Accepted** (2026-06-17) |
 
 Her yeni büyük karar için yeni ADR dosyası + PLAN.md D-karar satırı referansı.
 
