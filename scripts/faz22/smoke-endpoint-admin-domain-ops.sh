@@ -195,10 +195,10 @@ write_keycloak_source_diagnostics() {
     [[ -e "$candidate" ]] && exists=true
     [[ -r "$candidate" ]] && readable=true
     jq -n \
-      --arg label "$label" \
+      --arg candidateLabel "$label" \
       --argjson exists "$exists" \
       --argjson readable "$readable" \
-      '{"label": $label, exists: $exists, readable: $readable}' >> "$candidates_file"
+      '{"label": $candidateLabel, exists: $exists, readable: $readable}' >> "$candidates_file"
   done < <(keycloak_admin_password_candidates)
 
   command -v docker >/dev/null 2>&1 && docker_available=true
