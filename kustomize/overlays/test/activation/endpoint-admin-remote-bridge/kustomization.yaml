@@ -46,9 +46,10 @@ patches:
 
 images:
   # control #11 — immutable digest (D30). SAME image as endpoint-admin-service
-  # (Codex A+). Owner-approved live testai digest for the Faz 22.6 product
-  # remote-ops session gate; this activation overlay remains outside the Argo
-  # root and still requires an explicit operator apply.
+  # (Codex A+). Re-pinned after #690 DENY terminalization/eviction live
+  # evidence on the Faz 22.6 product remote-ops session gate; this activation
+  # overlay remains outside the Argo root and still requires an explicit
+  # operator apply.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:f76511a01ed8e5656008a796a6a4d7a094f886647da293739e8a0a49bb35565f
+    digest: sha256:a2f73c1508fb4aa95b1391ef419dd45e727d8652f7c4069cba595beafb4dd3a9
