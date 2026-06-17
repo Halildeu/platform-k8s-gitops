@@ -51,6 +51,7 @@ jobs:
           TARGET_HOSTNAME: ${{ inputs.target_hostname }}
           OPERATION: ${{ inputs.operation }}
           CREDENTIAL_REF: ${{ inputs.credential_ref }}
+          KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
           REPORT_PATH: ${{ runner.temp }}/endpoint-admin-domain-ops-smoke-report.json
         run: bash scripts/faz22/smoke-endpoint-admin-domain-ops.sh
 
