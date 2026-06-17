@@ -100,6 +100,14 @@ data:
   # store/model stubs above.
   ENDPOINT_ADMIN_UNINSTALL_ENABLED: "false"
 
+  # Domain Ops Broker feature flag (endpoint-admin.domain-ops.enabled).
+  # DARK-LAUNCH default: false -> the Domain Ops admin API fails closed with
+  # 403 "Domain ops broker is disabled." Base/prod stay dark; test overlay flips
+  # this deliberately for #676 product-channel acceptance so the real Admin API
+  # can create durable endpoint_domain_ops_requests rows, dispatch through the
+  # typed connector boundary, and persist redacted result/audit evidence.
+  ENDPOINT_ADMIN_DOMAIN_OPS_ENABLED: "false"
+
   # Agent auth (HMAC nonce + timestamp window)
   ENDPOINT_ADMIN_AGENT_AUTH_NONCE_TTL_SECONDS: "600"
   ENDPOINT_ADMIN_AGENT_AUTH_NONCE_CLEANUP_INITIAL_DELAY_MS: "600000"
