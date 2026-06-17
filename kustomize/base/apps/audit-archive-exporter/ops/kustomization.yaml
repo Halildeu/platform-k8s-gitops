@@ -1,0 +1,18 @@
+# ops extras for audit-archive-exporter (Faz 24 PR-obs-02, #1656).
+# CRD-gated resource: ServiceMonitor (monitoring.coreos.com). Included by the
+# TEST overlay (exporter is test-only); NOT in ops-bundle → no prod leak.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: audit-archive-exporter
+    includeSelectors: false
+    includeTemplates: false
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: false
+
+resources:
+  - servicemonitor.yaml

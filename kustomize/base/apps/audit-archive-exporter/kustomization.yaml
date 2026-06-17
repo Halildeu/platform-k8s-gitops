@@ -1,0 +1,33 @@
+# audit-archive-exporter base — Faz 24 PR-obs-02 (#1656, ADR-0042 §4).
+#
+# DB-state exporter for the audit-retention-worker (run-once CronJob → ephemeral
+# in-process metrics). postgres_exporter with custom queries over the durable
+# audit_archive.* state. TEST-overlay-only (worker is test-only until the §5 prod
+# gate); ops/ carries the CRD-gated ServiceMonitor (overlay includes it too).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: audit-archive-exporter
+    includeSelectors: true
+    includeTemplates: true
+  # part-of=platform — same network posture as the sibling redis-streams-exporter.
+  # (Codex 019ed602 final: Must-Fix 3's part-of=audit-archive is INCOMPATIBLE with
+  # the PR-time drift Check 5, which only scopes part-of=platform Deployments — a
+  # catalog-enabled Deployment must be platform-scoped.) The pod inherits the shared
+  # allow-egress-dns + allow-egress-host-bridge (PG reachable) + allow-monitoring-scrape
+  # (port 9187 added there). DB blast radius is bounded at the ROLE layer (dedicated
+  # read-only audit_archive_exporter — Codex Must-Fix 7), not the network layer.
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: true
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - configmap-queries.yaml
+  # Secret comes via ESO (overlay-specific ExternalSecret —
+  # overlays/test/eso/audit-archive-exporter/; Vault kv/platform/audit-archive-exporter
+  # → DATA_SOURCE_USER/PASS for the dedicated read-only role audit_archive_exporter).

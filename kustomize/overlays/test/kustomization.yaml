@@ -36,6 +36,8 @@ resources:
   - ../../base/apps/audit-retention-worker          # Faz 24 audit-archive 7yr WORM CronJob (#1250-D, ADR-0042; test-only, prod §5 gate)
   - ../../base/apps/redis-streams-exporter    # Faz 24 PR-obs-01a (gitops#1247): Redis Streams queue/consumer metrikleri (test-only; prod D30'da)
   - ../../base/apps/redis-streams-exporter/ops    # ServiceMonitor (CRD-gated; ops-bundle'a değil buraya — prod sızıntısı yok)
+  - ../../base/apps/audit-archive-exporter        # Faz 24 PR-obs-02 (#1656, ADR-0042 §4): audit_archive.* DB-state metrics for the run-once worker (test-only; prod §5 gate)
+  - ../../base/apps/audit-archive-exporter/ops    # ServiceMonitor (CRD-gated; test overlay only — prod sızıntısı yok)
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06
                                                   # (services.yaml prod=deferred; test=enabled)
   - eso/notify/externalsecret-notify.yaml    # notification-orchestrator-secrets ESO owner;
@@ -47,6 +49,9 @@ resources:
   - endpoints-workcube-mssql.yaml    # 172.19.0.8 (workcube-mssql-proxy-test, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
   - netpol-audit-retention-worker.yaml  # #1250-D worker narrow egress: DNS + PG 172.19.0.6/32:5432 + MinIO 172.19.0.252/32:9000
+  # PR-obs-02 (#1656) audit-archive-exporter uses part-of=platform → shared
+  # allow-egress-host-bridge (PG) + allow-monitoring-scrape (9187 added); no
+  # dedicated netpol (part-of=platform is required by drift Check 5 — Codex 019ed602).
   # Faz 23.2 PR-D.2 — Tempo OTLP egress (notification-orchestrator → monitoring/tempo)
   - netpol-notification-tempo.yaml
   # Faz 23.A6+A7+A8 — notification-orchestrator → mail provider egress (Office 365 SMTP 587 + Graph 443)
@@ -141,6 +146,13 @@ images:
     # (docker.io manifest-list digest, 2026-06-12; D30 immutable pin —
     # base'de OVERLAY_MUST_OVERRIDE fail-closed placeholder).
     digest: sha256:2e9795be900db073e9475fdb9c5124db309b07a3e4e75a1770705cb03be1a1c8
+
+  - name: quay.io/prometheuscommunity/postgres-exporter
+    # Faz 24 PR-obs-02 (gitops#1656, ADR-0042 §4): audit-archive-exporter
+    # postgres_exporter v0.15.0 (quay.io multi-arch image-index digest,
+    # incl. linux/amd64; D30 immutable pin — base'de OVERLAY_MUST_OVERRIDE
+    # fail-closed placeholder).
+    digest: sha256:386b12d19eab2a37d7cd8ca8b4c7491cc7a830d9581f49af6c98a393da9605e6
 
   - name: auth-service
     newName: ghcr.io/halildeu/platform-backend-auth-service
