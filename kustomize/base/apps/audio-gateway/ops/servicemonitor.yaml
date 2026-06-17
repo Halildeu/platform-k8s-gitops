@@ -1,0 +1,31 @@
+# audio-gateway ServiceMonitor — Faz 24 PR-obs-01a (api-gateway emsali)
+#
+# Scrape hedefi: management:8081 /actuator/prometheus (micrometer-prometheus
+# pom'da aktif, exposure application.yml'de health,info,prometheus —
+# platform-backend audio-gateway-service #556/#558).
+# Metrik tabanı: http_server_requests_seconds histogram (percentiles-histogram
+# açık) + lettuce_command_* (Redis client latency) + JVM seti. Custom
+# audio_gateway_* metrikleri (skeleton §Metric Namespace) ayrı backend PR'ı.
+#
+# namespaceSelector test+prod: prod'da audio-gateway henüz yok (D30 cutover'a
+# defer) — Prometheus eşleşen Service bulamaz, SM boş kalır (api-gateway
+# emsaliyle aynı D30-ready davranış).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: audio-gateway
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audio-gateway
+  endpoints:
+    - port: management
+      path: /actuator/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - platform-prod
+      - platform-test

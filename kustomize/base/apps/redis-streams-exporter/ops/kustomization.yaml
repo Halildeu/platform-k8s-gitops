@@ -1,0 +1,21 @@
+# ops extras for redis-streams-exporter (Faz 24 PR-obs-01a)
+# CRD-gated resources: ServiceMonitor (monitoring.coreos.com)
+#
+# ops-bundle'a DEĞİL test overlay'e include edilir (exporter yalnız test'te —
+# prod'da Redis Streams yok; D30 cutover'da prod overlay'e runtime ile
+# birlikte eklenir).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: redis-streams-exporter
+    includeSelectors: false
+    includeTemplates: false
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: false
+
+resources:
+  - servicemonitor.yaml

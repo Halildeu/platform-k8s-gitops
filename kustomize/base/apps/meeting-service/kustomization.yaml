@@ -1,0 +1,23 @@
+# meeting-service base kustomization — Faz 24 Meeting Intelligence (foundation #410)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# app.kubernetes.io/name selector + Service selector + Deployment pod
+# selector aynı label ile eşleşsin (endpoint-admin pattern).
+labels:
+  - pairs:
+      app.kubernetes.io/name: meeting-service
+    includeSelectors: true
+    includeTemplates: true
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: true
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - configmap.yaml
+  - serviceaccount.yaml
+  # No secret stub: ESO ExternalSecret creates meeting-service-secrets directly
+  # (target.creationPolicy: Owner) from overlays/<env>/eso/meeting-service.

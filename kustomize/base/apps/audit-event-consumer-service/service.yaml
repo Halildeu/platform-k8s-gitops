@@ -1,0 +1,26 @@
+# audit-event-consumer-service Service — Faz 24 KVKK audit pipeline (#1249)
+#
+# ClusterIP only — there is no external ingress (pure Redis consumer, no public
+# HTTP API). The http:8099 + management:8081 ports exist so in-cluster actuator
+# reachability + Prometheus scrape (monitoring ns → management:8081 via the
+# namespace-wide allow-monitoring-scrape NetPol) work.
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-event-consumer-service
+  labels:
+    app.kubernetes.io/name: audit-event-consumer-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: audit-event-consumer-service
+  ports:
+    # App listens 8099 → targetPort http (8099); ClusterIP routing tutarlı.
+    - name: http
+      port: 8099
+      targetPort: http
+      protocol: TCP
+    - name: management
+      port: 8081
+      targetPort: management
+      protocol: TCP

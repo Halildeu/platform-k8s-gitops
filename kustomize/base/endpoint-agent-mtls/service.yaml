@@ -1,0 +1,25 @@
+# Faz 22.5 M2 — passthrough target Service. Selects the backend that terminates
+# mTLS (derives identity from the client cert). The endpoint-admin Deployment
+# now declares a default-off `mtls` containerPort (8443); the backend only binds
+# it when the operator supplies the PKCS12 keystore/truststore secrets, fixed
+# tenant UUID and overlay enablement. This Service is therefore safe to render
+# before activation, but it is not acceptance evidence by itself.
+#
+# Canonical AutoEnroll route: POST /api/v1/endpoint-agent/endpoint-enrollments/
+# auto (per current-state + gateway route parity — NOT /endpoint-admin/) plus
+# heartbeat + command poll/result.
+apiVersion: v1
+kind: Service
+metadata:
+  name: endpoint-agent-mtls-backend
+  labels:
+    app.kubernetes.io/part-of: faz22-endpoint-agent-mtls
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: endpoint-admin-service
+  ports:
+    - name: mtls
+      port: 8443
+      targetPort: mtls   # backend Deployment must name its mTLS containerPort "mtls"
+      protocol: TCP

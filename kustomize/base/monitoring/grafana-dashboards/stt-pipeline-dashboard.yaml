@@ -1,0 +1,687 @@
+# Grafana Dashboard ConfigMap — STT pipeline (Faz 24 PR-obs-01b, gitops#1246)
+#
+# Codex 019ebacc iter-2 AGREE absorb:
+# - Tüm Redis panelleri {stream=~"audio:chunks:p[0-9][0-9]",group="live-stt-v1"}
+#   + job filtreli (Must-Fix 1)
+# - Row 3 collapsed "live-stt scrape pending" — stt_* GPU host'tan henüz
+#   scrape edilmiyor (Aşama-3 WireGuard sonrası); ana dashboard sağlığına
+#   karışmaz (Codex S5)
+# - Seri adları CANLI envanterden (PR #1458 comment + /actuator/prometheus
+#   2026-06-12): lettuce_command_completion_seconds SUMMARY'dir (bucket YOK)
+#   → p99 paneli YOK, avg (rate sum/count) + max panelleri var.
+# - ADR-0002 §3.8: tek Grafana prod-hub'da; remote_write onarımına (ayrı
+#   issue) kadar bu dashboard prod Grafana'da test verisi GÖSTERMEZ —
+#   acceptance test-side Prometheus API query kanıtıyla (PR body).
+#
+# Sidecar provisioner auto-import: label grafana_dashboard=1
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stt-pipeline-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: grafana-dashboard
+data:
+  stt-pipeline.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "title": "STT pipeline — gateway + Redis Streams + live-stt (Faz 24)",
+      "uid": "stt-pipeline",
+      "tags": [
+        "platform",
+        "faz-24",
+        "stt",
+        "audio-gateway",
+        "redis-streams"
+      ],
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "browser",
+      "panels": [
+        {
+          "id": 100,
+          "title": "Gateway (chunk admission)",
+          "type": "row",
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "panels": []
+        },
+        {
+          "id": 1,
+          "title": "Request rate by status (5m)",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 1
+          },
+          "targets": [
+            {
+              "expr": "sum by (status) (rate(http_server_requests_seconds_count{job=\"audio-gateway\",uri=~\"/api/v1/audio-gateway/.*\"}[5m]))",
+              "legendFormat": "{{status}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 2,
+          "title": "Latency p50/p95/p99 — chunk admission path",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 1
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"audio-gateway\",uri=~\"/api/v1/audio-gateway/.*\"}[5m])))",
+              "legendFormat": "p50",
+              "refId": "A"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"audio-gateway\",uri=~\"/api/v1/audio-gateway/.*\"}[5m])))",
+              "legendFormat": "p95",
+              "refId": "B"
+            },
+            {
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"audio-gateway\",uri=~\"/api/v1/audio-gateway/.*\"}[5m])))",
+              "legendFormat": "p99",
+              "refId": "C"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 3,
+          "title": "5xx oranı (alert eşiği %5 + trafik floor)",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 4,
+            "x": 16,
+            "y": 1
+          },
+          "targets": [
+            {
+              "expr": "(sum(rate(http_server_requests_seconds_count{job=\"audio-gateway\",status=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_server_requests_seconds_count{job=\"audio-gateway\"}[5m])), 0.001)",
+              "legendFormat": "5xx ratio",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.05
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 4,
+          "title": "JVM heap used",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 4,
+            "x": 20,
+            "y": 1
+          },
+          "targets": [
+            {
+              "expr": "sum(jvm_memory_used_bytes{job=\"audio-gateway\",area=\"heap\"})",
+              "legendFormat": "heap used",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 200,
+          "title": "Redis Streams transport",
+          "type": "row",
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 9
+          },
+          "panels": []
+        },
+        {
+          "id": 10,
+          "title": "redis_up",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 0,
+            "y": 10
+          },
+          "targets": [
+            {
+              "expr": "redis_up{job=\"redis-streams-exporter\"}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 11,
+          "title": "exporter scrape up",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 4,
+            "y": 10
+          },
+          "targets": [
+            {
+              "expr": "up{job=\"redis-streams-exporter\"}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 12,
+          "title": "live-stt consumer present (0/1)",
+          "type": "stat",
+          "description": "stt:consumer_present:bool recording rule. GPU host intermittent — 0 tek başına incident değil; redis_up ve exporter up panelleriyle birlikte oku (exporter down iken 'consumer yok' diye yorumlama).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 8,
+            "y": 10
+          },
+          "targets": [
+            {
+              "expr": "stt:consumer_present:bool",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "yellow",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 13,
+          "title": "Group lag toplam (XINFO native)",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 12,
+            "y": 10
+          },
+          "targets": [
+            {
+              "expr": "stt:stream_group_lag:sum",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 10
+                  },
+                  {
+                    "color": "red",
+                    "value": 50
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 14,
+          "title": "Pending (delivered, ACK'sız)",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 18,
+            "y": 10
+          },
+          "targets": [
+            {
+              "expr": "sum(redis_stream_group_messages_pending{job=\"redis-streams-exporter\",stream=~\"audio:chunks:p[0-9][0-9]\",group=\"live-stt-v1\"}) or vector(0)",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 15,
+          "title": "Stream length — partition top 10",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 14
+          },
+          "targets": [
+            {
+              "expr": "topk(10, redis_stream_length{job=\"redis-streams-exporter\",stream=~\"audio:chunks:p[0-9][0-9]\"})",
+              "legendFormat": "{{stream}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 16,
+          "title": "Consumer kayıtları (32 partition toplamı) + max idle",
+          "type": "timeseries",
+          "description": "Tek GPU host consumer'ı 32 partition'ın her birine register olur → sağlıklı durumda toplam 32. 0/1 mevcudiyet için 'consumer present' stat'ına bak (canlı kanıt 2026-06-12: değer 32).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 14
+          },
+          "targets": [
+            {
+              "expr": "sum(redis_stream_group_consumers{job=\"redis-streams-exporter\",stream=~\"audio:chunks:p[0-9][0-9]\",group=\"live-stt-v1\"}) or vector(0)",
+              "legendFormat": "consumers",
+              "refId": "A"
+            },
+            {
+              "expr": "max(redis_stream_group_consumer_idle_seconds{job=\"redis-streams-exporter\",stream=~\"audio:chunks:p[0-9][0-9]\",group=\"live-stt-v1\"})",
+              "legendFormat": "max idle (s)",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 17,
+          "title": "Lettuce Redis client latency (avg + max; summary — p99 yok)",
+          "type": "timeseries",
+          "description": "lettuce_command_completion_seconds SUMMARY metriktir (histogram bucket yok) — quantile hesaplanamaz; avg = rate(sum)/rate(count).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 14
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(lettuce_command_completion_seconds_sum{job=\"audio-gateway\"}[5m])) / clamp_min(sum(rate(lettuce_command_completion_seconds_count{job=\"audio-gateway\"}[5m])), 0.001)",
+              "legendFormat": "avg",
+              "refId": "A"
+            },
+            {
+              "expr": "max(lettuce_command_completion_seconds_max{job=\"audio-gateway\"})",
+              "legendFormat": "max",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 300,
+          "title": "live-stt worker (scrape pending — Aşama-3 WireGuard sonrası)",
+          "type": "row",
+          "collapsed": true,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 30
+          },
+          "panels": [
+            {
+              "id": 30,
+              "title": "stt_transcribe rate by result",
+              "type": "timeseries",
+              "description": "GPU host live-stt /metrics henüz scrape edilmiyor (cluster dışı, intermittent; Aşama-3 WireGuard/mTLS sonrası additionalScrapeConfig). Prod-shape panel — veri gelince dolar.",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 0,
+                "y": 31
+              },
+              "targets": [
+                {
+                  "expr": "sum by (result) (rate(stt_transcribe_total[5m]))",
+                  "legendFormat": "{{result}}",
+                  "refId": "A"
+                }
+              ],
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "reqps"
+                },
+                "overrides": []
+              }
+            },
+            {
+              "id": 31,
+              "title": "stt_transcribe_duration p95",
+              "type": "timeseries",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 8,
+                "y": 31
+              },
+              "targets": [
+                {
+                  "expr": "histogram_quantile(0.95, sum by (le) (rate(stt_transcribe_duration_seconds_bucket[5m])))",
+                  "legendFormat": "p95",
+                  "refId": "A"
+                }
+              ],
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "s"
+                },
+                "overrides": []
+              }
+            },
+            {
+              "id": 32,
+              "title": "stt timeout + oom",
+              "type": "timeseries",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 8,
+                "x": 16,
+                "y": 31
+              },
+              "targets": [
+                {
+                  "expr": "sum(rate(stt_timeout_total[5m]))",
+                  "legendFormat": "timeout",
+                  "refId": "A"
+                },
+                {
+                  "expr": "sum(rate(stt_oom_total[5m]))",
+                  "legendFormat": "oom",
+                  "refId": "B"
+                }
+              ],
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "reqps"
+                },
+                "overrides": []
+              }
+            }
+          ]
+        },
+        {
+          "id": 18,
+          "title": "Per-partition lag (32 partition — coverage görünürlüğü)",
+          "type": "timeseries",
+          "description": "Her partition'ın consumer-group lag'i ayrı. Global lag:sum maskelerken tek-partition birikimi burada görünür (Codex #1460 non-blocking).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 16,
+            "x": 0,
+            "y": 22
+          },
+          "targets": [
+            {
+              "expr": "redis_stream_group_lag{job=\"redis-streams-exporter\",stream=~\"audio:chunks:p[0-9][0-9]\",group=\"live-stt-v1\"}",
+              "legendFormat": "{{stream}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 19,
+          "title": "Lag biriken ama consumer'sız partition (sayı)",
+          "type": "stat",
+          "description": "lag>0 VE consumer==0 olan partition adedi (max by(stream) — duplicate-target güvenli). Bir partition'ın consumer'ı düşüp backlog birikirse global 'consumer present' yeşilken bile yakalar. 0 beklenir, >0 kırmızı.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 22
+          },
+          "targets": [
+            {
+              "expr": "count( (max by (stream) (redis_stream_group_lag{job=\"redis-streams-exporter\",stream=~\"audio:chunks:p[0-9][0-9]\",group=\"live-stt-v1\"}) > 0) and on (stream) (max by (stream) (redis_stream_group_consumers{job=\"redis-streams-exporter\",stream=~\"audio:chunks:p[0-9][0-9]\",group=\"live-stt-v1\"}) == 0) ) or vector(0)",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        }
+      ]
+    }

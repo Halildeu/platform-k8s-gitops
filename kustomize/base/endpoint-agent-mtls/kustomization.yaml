@@ -1,0 +1,14 @@
+# Faz 22.5 M2 edge mTLS — test overlay wired, backend connector default-off.
+#
+# The test overlay references this bundle so the passthrough Service, Ingress
+# and NetworkPolicy are reviewable in rendered GitOps output. It still cannot
+# serve tokenless AutoEnroll until the endpoint-admin passthrough connector is
+# explicitly enabled with the required keystore/truststore secrets, fixed tenant
+# UUID, ingress-nginx ssl-passthrough and host-nginx stream route. Those gates
+# remain operator-controlled; the normal browser host is unaffected.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ingress-passthrough.yaml
+  - service.yaml
+  - netpol.yaml

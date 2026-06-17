@@ -13,11 +13,12 @@ Bu handoff yazıldıktan SONRA, aynı oturumda **deploy fazı (gitops#1615) UÇT
 - **Deploy reçetesi 3/3 PROVEN + dokümante** → memory `project_faz24_backend_foundation_delivery` "DEPLOY RECIPE PROVEN" + "DEPLOY 3/3 COMPLETE". Çözülen kalıcı sürtünmeler + 5 yeni gotcha: image-tag = servisin BUILD COMMIT'i (latest-main değil), Vault root token `~/bootstrap-drill/vault-init-test.json` (host token-scan classifier-blocked), quota object-count `services` bump (24→28), SSH host transient-down retry-loop, rebase-before-merge race (her PR 1-2 rebase), consumer D29 = XINFO group-join (HTTP-401 değil).
 - **Durum: 3/3 servis tam-LIVE (D29) + canonical + reçete proven + memory + board #1615 senkron.** **Deploy fazı 3/3 ✓.**
 
-**Sıradaki P0 — Activation follow-up'ları (deploy ≠ activation; hepsi agent-doable, distinct ops)**:
-1. **audio-gateway producer flip** — `AUDIO_GATEWAY_AUDIT_REDIS_ENABLED=true` configmap env + rolling restart → audit end-to-end (producer→`audit:events`→consumer→`audit_event` DB row). Audit pipeline'ı fiilen akıtır. (audio-gateway configmap'te flag henüz YOK = default-off.)
-2. **meeting/transcript Zanzibar-ready** — OpenFGA `module:meeting` + `module:transcript` tuple seed + allow/deny synthetic (şu an authenticated check fail-closed deny = doğru ama enforce kanıtı yok).
-3. **meeting/transcript api-gateway route** — platform-backend RewritePath (`/api/v1/meeting-admin/**`→`/api/v1/admin/**`) + browser-smoke (HARD RULE).
-4. **#1250 audit retention archival worker** — 7yr→MinIO cold + hash-chain verify (immutable kaynak hazır).
+**Activation durumu + Sıradaki P0** (deploy ≠ activation; hepsi agent-doable, distinct ops):
+- [x] **audio-gateway producer flip WIRED** (#1634 MERGED 5f5c00f4) — `AUDIO_GATEWAY_AUDIT_REDIS_ENABLED=true` + stream-key `audit:events` applied + rolling restart; audio-gateway env 2-key + health 200 UP + consumer group lag=0. **E2E event smoke PENDING** (XLEN=0 → ilk tetiklenmiş audit event = gerçek STT kullanımı / deliberate trigger; producer→stream→consumer→`audit_event` DB row henüz exercise edilmedi).
+1. **meeting/transcript Zanzibar-ready** — OpenFGA `module:meeting` + `module:transcript` tuple seed + allow/deny synthetic (şu an authenticated check fail-closed deny = doğru ama enforce kanıtı yok). OpenFGA model'de type var mı önce kontrol.
+2. **meeting/transcript api-gateway route** — platform-backend RewritePath (`/api/v1/meeting-admin/**`→`/api/v1/admin/**`) + browser-smoke (HARD RULE).
+3. **#1250 audit retention archival worker** — 7yr→MinIO cold + hash-chain verify (immutable kaynak hazır).
+4. **audit E2E event smoke** — audio-gateway chunk admission rejection tetikle → XLEN>0 + consumer persist + `audit_event` DB row (producer flip'in kapanış kanıtı; Codex 019ed340 notu).
 5. Consumer chain (#751 mfe-meeting / #412 notification / #413 report / desktop / mobile / CDC) — foundation-deploy ✓ + STT-live'a bağlı.
 
 ---

@@ -1,0 +1,22 @@
+# Faz 22.5 M1 — artifact-host base (prod-CAPABLE, NOT wired into base/kustomization.yaml).
+# Overlays opt in explicitly: the test overlay adds this + the /artifacts ingress
+# path; prod is deferred (no resource, no ingress path → ai.acik.com/artifacts
+# stays SPA-fallback, not the real installer).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: artifact-host
+    includeSelectors: true
+    includeTemplates: true
+  - pairs:
+      app.kubernetes.io/part-of: platform     # netpol allow-from-ingress-nginx match
+    includeSelectors: false
+    includeTemplates: true
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - serviceaccount.yaml
+  - pdb.yaml
