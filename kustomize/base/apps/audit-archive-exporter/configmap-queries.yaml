@@ -1,0 +1,88 @@
+# audit-archive-exporter custom queries — Faz 24 PR-obs-02 (#1656, ADR-0042 §4).
+#
+# postgres_exporter (PG_EXPORTER_EXTEND_QUERY_PATH=/etc/pg-exporter/queries.yaml,
+# default+settings collectors disabled) runs ONLY these queries. Each top-level
+# key is a metric namespace; emitted metric = <namespace>_<column>. The dedicated
+# read-only role audit_archive_exporter (operator-seeded) needs SELECT on
+# audit_event.audit_event + audit_archive.{audit_archive_cursor,audit_archive_ledger}.
+#
+# Codex 019ed602 REVISE absorbed:
+#  - lag uses now() - GREATEST(event_timestamp+hot_window, ingested_at): a late-
+#    ingested row carrying an OLD event_timestamp must NOT read as instant lag —
+#    the worker cannot archive a row before it arrives (Must-Fix 1).
+#  - contiguous-prefix faithful: only the SMALLEST seq > cursor matters; rows
+#    blocked behind a hot row are un-archivable by design, not lag (ADR-0042 D4.2).
+#  - ledger uses IS DISTINCT FROM (NULL-safe) (Must-Fix 4).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-archive-exporter-queries
+  annotations:
+    # ArgoCD Replace keeps this ConfigMap exact + prunes stale keys.
+    argocd.argoproj.io/sync-options: Replace=true
+  labels:
+    app.kubernetes.io/name: audit-archive-exporter
+data:
+  queries.yaml: |
+    # ---- cursor + lag (singleton cursor row + the next-by-seq source row) ----
+    audit_archive_state:
+      query: |
+        WITH cur AS (
+          SELECT last_archived_seq, updated_at
+          FROM audit_archive.audit_archive_cursor
+          LIMIT 1
+        ),
+        nxt AS (
+          SELECT e.event_timestamp, e.ingested_at
+          FROM audit_event.audit_event e, cur
+          WHERE e.seq > cur.last_archived_seq
+          ORDER BY e.seq ASC
+          LIMIT 1
+        )
+        SELECT
+          cur.last_archived_seq AS cursor_seq,
+          EXTRACT(EPOCH FROM (now() - cur.updated_at)) AS cursor_age_seconds,
+          COALESCE(
+            (SELECT GREATEST(0, EXTRACT(EPOCH FROM (
+               now() - GREATEST(
+                 nxt.event_timestamp + interval '90 days',
+                 COALESCE(nxt.ingested_at, nxt.event_timestamp)
+               )
+             ))) FROM nxt),
+            0
+          ) AS lag_seconds,
+          (90 * 86400)::float8 AS hot_window_seconds
+        FROM cur;
+      master: true
+      metrics:
+        - cursor_seq:
+            usage: "GAUGE"
+            description: "audit_archive_cursor.last_archived_seq — monotonic archive watermark (no-gap contiguous seq prefix)."
+        - cursor_age_seconds:
+            usage: "GAUGE"
+            description: "Seconds since audit_archive_cursor.updated_at. updated_at advances ONLY on a real archive (ADR-0042 D4.3) so this is large when idle — dashboard signal, NOT an alert input (stale-cursor alert was dropped per Codex 019ed602)."
+        - lag_seconds:
+            usage: "GAUGE"
+            description: "For the contiguous next-by-seq unarchived source row: seconds it has been BOTH cold (event_timestamp + 90d) AND present (ingested_at) yet unarchived. 0 if that row is still hot or none exists. Rows blocked behind a hot row are un-archivable by design and excluded (ADR-0042 D4.2)."
+        - hot_window_seconds:
+            usage: "GAUGE"
+            description: "Hot-window constant baked into lag_seconds (90d = worker AUDIT_RETENTION_HOT_WINDOW_DAYS prod-shape). Surfaced so the alert threshold assumption is visible; keep in sync with the worker ConfigMap."
+    # ---- ledger invariants (archived-segment provenance) ----
+    audit_archive_ledger:
+      query: |
+        SELECT
+          count(*) AS segment_count,
+          count(*) FILTER (WHERE verify_status IS DISTINCT FROM 'VERIFIED') AS unverified_rows,
+          COALESCE(EXTRACT(EPOCH FROM (now() - max(created_at))), 0) AS last_segment_age_seconds
+        FROM audit_archive.audit_archive_ledger;
+      master: true
+      metrics:
+        - segment_count:
+            usage: "GAUGE"
+            description: "Total audit_archive_ledger rows (archived segments)."
+        - unverified_rows:
+            usage: "GAUGE"
+            description: "Ledger rows where verify_status IS DISTINCT FROM 'VERIFIED' (NULL-safe). Expected 0 — the worker inserts a ledger row only AFTER S3 verify inside one atomic txn (ADR-0042 D4.7). >0 is a DB-invariant / corruption / code-regression signal, NOT the primary chain-break signal (a chain break leaves NO ledger row + a failed Job)."
+        - last_segment_age_seconds:
+            usage: "GAUGE"
+            description: "Seconds since the most recent archived segment (max created_at); 0 if none yet. Dashboard context only."
