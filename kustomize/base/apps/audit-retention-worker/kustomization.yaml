@@ -12,8 +12,12 @@ labels:
       app.kubernetes.io/name: audit-retention-worker
     includeSelectors: false
     includeTemplates: true
+  # part-of=audit-archive (NOT platform) — the worker pod must NOT match the
+  # namespace-wide allow-egress-host-bridge / allow-egress-dns / allow-egress-intra-ns
+  # (part-of=platform). The worker-specific allow-egress-audit-retention-worker
+  # NetPol is then its SOLE egress allowlist: DNS + PG + MinIO (Codex D REVISE-2).
   - pairs:
-      app.kubernetes.io/part-of: platform
+      app.kubernetes.io/part-of: audit-archive
     includeSelectors: false
     includeTemplates: true
 

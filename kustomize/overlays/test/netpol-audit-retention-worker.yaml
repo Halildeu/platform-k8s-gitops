@@ -4,17 +4,15 @@
 # Postgres (audit_event source + audit_archive state) + the host-compose MinIO
 # (WORM archive). NOT Redis, NOT Vault, NOT Keycloak, NOT the Kubernetes API.
 #
-# IMPORTANT — additive-policy honesty (No Fake Work): the worker pod carries
-# `app.kubernetes.io/part-of: platform`, so the namespace-wide
-# `allow-egress-host-bridge` ALSO selects it and (additively) opens 5432/9000 plus
-# 6379/8080/8200 to the host bridge. NetworkPolicy is union-only, so THIS tight
-# policy does not by itself REMOVE that wider grant. It is authored as the
-# worker's explicit narrow contract + a no-regression floor: hardening to true
-# tight enforcement (scoping the worker out of allow-egress-host-bridge) is the
-# §5 prod-promotion gate (it requires narrowing the shared broad policy's
-# selector and is a separate namespace-NetPol change affecting all platform
-# services). PG/MinIO host endpoints are /32 ipBlocks (selectorless-Service DNAT
-# resolves to these; A-slice proved the host-endpoint path).
+# TRUE tight enforcement (Codex D post-impl REVISE-2): the worker pod carries
+# `app.kubernetes.io/part-of: audit-archive` (NOT platform), so it does NOT match
+# the namespace-wide allow-egress-host-bridge / allow-egress-dns / allow-egress-intra-ns
+# (all part-of=platform). This policy — selecting the worker by name — is therefore
+# the SOLE egress allowlist for the worker: DNS + PG + MinIO only (no Redis, Vault,
+# Keycloak, intra-ns, or K8s API). DNS is re-provided here (the worker lost the
+# shared allow-egress-dns by escaping part-of=platform). PG/MinIO host endpoints
+# are /32 ipBlocks (selectorless-Service DNAT resolves to these; A-slice proved
+# the host-endpoint path).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
