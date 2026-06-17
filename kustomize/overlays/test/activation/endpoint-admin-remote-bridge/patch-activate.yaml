@@ -33,6 +33,9 @@ spec:
             # the exact property; pinned here as a mounted file path.
             - name: REMOTE_BRIDGE_PERMIT_SIGNING_KEY_PEM_PATH
               value: /etc/remote-bridge/signer/permit-signing.key
+            # Durable WORM anchor key is separate from the permit key.
+            - name: REMOTE_BRIDGE_RECORDING_ANCHOR_KEY_PATH
+              value: /etc/remote-bridge/signer/recording-anchor.key
           envFrom:
             # Re-declared in full (strategic merge replaces the envFrom list):
             # keep the config, and make the broker secret REQUIRED (control #11).

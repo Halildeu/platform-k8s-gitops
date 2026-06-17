@@ -32,7 +32,7 @@ data:
   # Loopback default (T-2b). Activation sets 0.0.0.0 to expose 9444 behind the
   # mTLS L4 edge / ingress allowlist (control #6).
   REMOTE_BRIDGE_BIND_HOST: "127.0.0.1"
-  REMOTE_BRIDGE_BIND_PORT: "9444"
+  REMOTE_BRIDGE_PORT: "9444"
   # mTLS-only fail-closed (T-2c). Plaintext is refused unless explicitly enabled
   # AND provably loopback; the broker stays mTLS-only in the pilot.
   REMOTE_BRIDGE_ALLOW_INSECURE_PLAINTEXT: "false"

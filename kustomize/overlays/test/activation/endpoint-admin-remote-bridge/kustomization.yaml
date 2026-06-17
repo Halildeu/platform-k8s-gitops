@@ -12,6 +12,12 @@
 #   3. the live exposure smoke passes (docs/RB-22-6-remote-bridge-pilot-flip.md §A3),
 #   4. ADR-0034 §13/D10 owner sign-off for the first live session.
 #
+# 2026-06-17 product session gate selection:
+#   - topology: Option A true outbound-only agent -> broker mTLS/gRPC stream
+#   - no broker -> device egress NetworkPolicy is part of this gate
+#   - immutable test digest approved by owner:
+#     sha256:3950a61241330e0b119c2bd2741df7f8438098c5e7673ac619d96e5e04b570d8
+#
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
 #     kustomize/overlays/test/activation/endpoint-admin-remote-bridge
@@ -29,6 +35,9 @@ resources:
   - netpol.yaml                                           # control #6/#7/#8
 
 patches:
+  # control #11 / product gate — explicit non-prod trust-basis and approval
+  # config for the first Denetim PC product-channel session.
+  - path: configmap-activation-patch.yaml
   # control #11 — flips replicas:1 + REMOTE_BRIDGE_ENABLED=true + mounts the
   # mTLS/signer secrets + makes the broker secret required (fail-closed).
   - path: patch-activate.yaml
@@ -37,9 +46,11 @@ patches:
 
 images:
   # control #11 — immutable digest (D30). SAME image as endpoint-admin-service
-  # (Codex A+). PLACEHOLDER digest (64 zeros) — the owner pins the live testai
-  # endpoint-admin-service digest at flip time. A zeros-digest pulls nothing
-  # real, so an accidental apply of this overlay stays fail-closed.
+  # (Codex A+). Pinned to the live testai endpoint-admin-service digest after
+  # owner approval for the 2026-06-17 Denetim PC product session gate.
+  # Re-pinned after the primary-plane gate fix: the previous digest started
+  # but failed readiness by requiring primary command/enrollment/status-plane
+  # dependencies.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    digest: sha256:3950a61241330e0b119c2bd2741df7f8438098c5e7673ac619d96e5e04b570d8

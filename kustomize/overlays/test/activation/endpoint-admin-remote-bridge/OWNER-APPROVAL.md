@@ -20,6 +20,19 @@
       (4-role: Veri Sorumlusu / Hukuk / İK / IT-Security).
 - [ ] **Live exposure smoke planned** — RB-22-6-remote-bridge-pilot-flip.md §A4
       (Phase A D29-EA: Up / Functional-transport / Secured).
+- [ ] **Product session gate planned** —
+      `docs/runbooks/RB-faz22.6-product-remote-ops-session-gate.md` is the
+      acceptance contract for #510/#1601. It must identify the topology as
+      either true agent-outbound-only or broker-to-device pilot before the
+      first live session.
+- [x] **2026-06-17 topology + digest owner approval** — owner approved Option A
+      true outbound-only for the Denetim PC gate and approved the immutable
+      test digest path. The active digest is
+      `sha256:3950a61241330e0b119c2bd2741df7f8438098c5e7673ac619d96e5e04b570d8`;
+      it replaces
+      `sha256:1f672f6bad9b6afb541109593916a574d9a08139a9e4c9e688e11d040950954c`
+      after the previous activation exposed broker startup blockers caused by
+      primary command/enrollment/status-plane dependencies.
 
 ## Apply (after the gate)
 
@@ -67,7 +80,7 @@ defeat the isolation. This supersedes the §A2 interim note.
 | 5 | only 9444 | Service has one port (9444); 8096/8081 unreachable from the edge |
 | 6 | ingress allowlist | 9444 reachable only via edge/orchestrator; other sources denied |
 | 7 | egress default-deny + scoped | broker reaches DNS/OpenFGA/PG/KC only; arbitrary egress denied |
-| 8 | per-session device ACL | egress to non-pilot device IP denied; pilot devices allowed |
+| 8 | outbound-only data plane | no broker-to-device egress NetworkPolicy exists for this gate; the endpoint agent initiates the outbound mTLS/gRPC stream |
 | 9 | no ambient admin creds | broker pod cannot call admin REST / cannot get a cluster token |
 | 10 | WORM recording | recording rows append-only (V65 triggers block UPDATE/DELETE/TRUNCATE) |
 | 11 | fail-closed activation | remove signer secret → pod never Ready; enabled=true only here |
@@ -84,11 +97,20 @@ explicitly at Phase A — each must FAIL (connection refused / timeout):
 - [ ] from the **ingress-nginx** namespace → 8096/8081 → fail
 - [ ] from the **host/node / edge** path → 8096/8081 → fail (only 31944→9444 reachable)
 - [ ] 9444 reachable ONLY via the edge passthrough + the labelled orchestrator pod
-- [ ] arbitrary egress (e.g. broker → a non-pilot IP:443) → fail; pilot device IP:443 → ok
+- [ ] arbitrary egress (e.g. broker → a device IP:443) → fail; broker-to-device data-plane egress is not part of this gate
 
 If the node-origin 8096/8081 path is reachable, do NOT proceed to the first live
 session — close admin HTTP via the T-4a-ii backend broker profile (or record an
 explicit owner waiver).
+
+## Outbound-only claim guard (2026-06-17 consult)
+
+For the 2026-06-17 Denetim PC gate this activation overlay is configured as
+Option A: the endpoint agent opens the mTLS/gRPC stream to the broker and the
+broker has no direct endpoint-IP egress for the data plane. If a future pilot
+reintroduces broker -> device egress, that pilot must be labelled
+broker-to-device pilot and must not close the outbound-only product-channel
+gate.
 
 ## Rollback (≤5 min — RB §A5)
 
