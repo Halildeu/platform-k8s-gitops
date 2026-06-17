@@ -232,10 +232,25 @@
 > evidence through GPO/signed MSI, one-command bootstrap, an existing
 > EndpointAgent mTLS product channel, or a Domain Ops Broker typed operation.
 > Lab reverse SSH/RDP, open inbound SSH/WinRM/SMB/RPC, and operator-pasted
-> commands are explicitly not acceptance evidence. #1601 remains
-> `Needs Verify` for product remote-ops session acceptance and this AgentPC2
-> gate; #1609 remains Done for the accepted `SRB-AIDENETIMPC` + `ERP-MOBIL`
-> two-device record.
+> commands are explicitly not acceptance evidence. #1601 now has Denetim PC
+> product remote-ops positive session evidence (`rb-denetim-20260617T191335Z`,
+> `PERMIT`, `transportPushed=true`) but remains `Needs Verify` because the
+> AgentPC2 gate, signed MSI/GPO rollout acceptance, and owner-gated remote-access
+> parent are still separate open gates. #1609 remains Done for the accepted
+> `SRB-AIDENETIMPC` + `ERP-MOBIL` two-device record.
+
+> **2026-06-17 remote-ops product-session refresh**:
+> GitOps #1666 merged the remote-bridge heartbeat/freshness test overlay
+> settings (`REMOTE_BRIDGE_HEARTBEAT_INTERVAL_MILLIS=10000`,
+> `REMOTE_BRIDGE_PEER_TRUST_FRESHNESS_TTL_MILLIS=120000`). Live
+> `platform-test/endpoint-admin-remote-bridge` is ready on imageID
+> `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:f76511a01ed8e5656008a796a6a4d7a094f886647da293739e8a0a49bb35565f`.
+> Denetim product smoke evidence directory:
+> `/home/halil/codex-rb-smoke/20260617T191335Z-product`. HTTP path:
+> `open=200`, `approve=200`, `challenge=200`, `verify=200`, `operation=200`;
+> operation response `PERMIT`, `transportPushed=true`; non-pilot `FULL_RDP`
+> remains rejected with `400`. Backend robustness follow-up:
+> `platform-backend#690` tracks DENY session lifecycle terminalization.
 
 > **2026-06-17 M4 MSI lifecycle lab-smoke refresh**:
 > `platform-agent` #115 now has endpoint-side MSI lifecycle evidence from a
