@@ -52,6 +52,7 @@ ROTATE_BODY_FILE="$TMP_DIR/rotate-password.json"
 SQL_FILE="$TMP_DIR/domain-ops-smoke.sql"
 PGPASS_FILE="$TMP_DIR/pgpass"
 PORT_FORWARD_LOG="$TMP_DIR/postgres-port-forward.log"
+K8S_PSQL_LOG="$TMP_DIR/kubernetes-psql.log"
 
 KC_ADMIN_TOKEN=""
 PERSONA_ID=""
@@ -59,6 +60,7 @@ OPERATION_ID=""
 HTTP_STATUS=""
 DEVICE_ID=""
 PF_PID=""
+K8S_PSQL_POD_NAME=""
 
 echo '{}' > "$RUNTIME_FILE"
 echo '{}' > "$JWT_CLAIMS_FILE"
@@ -131,6 +133,10 @@ cleanup() {
   if [[ -n "$PF_PID" ]]; then
     kill "$PF_PID" >/dev/null 2>&1
     wait "$PF_PID" >/dev/null 2>&1
+  fi
+  if [[ -n "$K8S_PSQL_POD_NAME" ]]; then
+    kubectl --context "$CTX" -n "$NS" delete pod "$K8S_PSQL_POD_NAME" \
+      --ignore-not-found >/dev/null 2>&1 || true
   fi
   if [[ -n "$KC_ADMIN_TOKEN" && -n "$PERSONA_ID" ]]; then
     openssl rand -base64 32 | tr -d '\n' > "$PERSONA_ROTATE_PASS_FILE" 2>/dev/null
@@ -534,6 +540,10 @@ print("\t".join([m.group(1), m.group(2) or "5432", m.group(3)]))
 PY
 }
 
+pgpass_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/:/\\:/g'
+}
+
 find_free_local_port() {
   python3 - <<'PY'
 import socket
@@ -584,9 +594,67 @@ start_postgres_port_forward() {
   fail "postgres port-forward did not become ready"
 }
 
+run_kubernetes_psql_query() {
+  local db_host="$1"
+  local db_port="$2"
+  local db_name="$3"
+  local db_user="$4"
+  local db_pass_pgpass="$5"
+  local sql_file="$6"
+  local output pod_name status
+
+  pod_name="domain-ops-psql-${GITHUB_RUN_ID:-manual}-$$"
+  kubectl --context "$CTX" -n "$NS" delete pod "$pod_name" \
+    --ignore-not-found >/dev/null 2>&1 || true
+
+  K8S_PSQL_POD_NAME="$pod_name"
+  set +e
+  # shellcheck disable=SC2016
+  output="$(
+    {
+      printf '%s:%s:%s:%s:%s\n' "$db_host" "$db_port" "$db_name" "$db_user" "$db_pass_pgpass"
+      cat "$sql_file"
+    } | kubectl --context "$CTX" -n "$NS" run "$pod_name" \
+      --rm \
+      -i \
+      --quiet \
+      --restart=Never \
+      --pod-running-timeout=120s \
+      --image=postgres:16-alpine \
+      --image-pull-policy=IfNotPresent \
+      --env=PGHOST="$db_host" \
+      --env=PGPORT="$db_port" \
+      --env=PGDATABASE="$db_name" \
+      --env=PGUSER="$db_user" \
+      --env=PGCONNECT_TIMEOUT=5 \
+      --command -- sh -c '
+        set -eu
+        IFS= read -r pgpass
+        printf "%s\n" "$pgpass" > /tmp/pgpass
+        chmod 600 /tmp/pgpass
+        cat > /tmp/domain-ops-smoke.sql
+        export PGPASSFILE=/tmp/pgpass
+        psql -tA -v ON_ERROR_STOP=1 -f /tmp/domain-ops-smoke.sql
+      ' 2>"$K8S_PSQL_LOG"
+  )"
+  status=$?
+  set -e
+
+  kubectl --context "$CTX" -n "$NS" delete pod "$pod_name" \
+    --ignore-not-found >/dev/null 2>&1 || true
+  K8S_PSQL_POD_NAME=""
+
+  if (( status != 0 )); then
+    sed 's/[[:cntrl:]]//g' "$K8S_PSQL_LOG" >&2 || true
+    return "$status"
+  fi
+
+  printf '%s\n' "$output"
+}
+
 run_psql_json_query() {
   local db_url db_user db_pass db_schema db_host db_port db_name parsed
-  local psql_output local_port connect_host connect_port connect_source connect_target
+  local psql_output local_port connect_host connect_port connect_source connect_target db_pass_pgpass
   local pod_env
 
   pod_env="$(kubectl --context "$CTX" -n "$NS" exec "deploy/$DEPLOY" -- printenv)"
@@ -609,6 +677,7 @@ run_psql_json_query() {
     || fail "unexpected endpoint-admin DB host for smoke evidence query: $db_host"
   connect_target="$(resolve_postgres_runner_target "$db_host" "$db_port")"
   IFS=$'\t' read -r connect_host connect_port connect_source <<< "$connect_target"
+  db_pass_pgpass="$(pgpass_escape "$db_pass")"
 
   cat > "$SQL_FILE" <<SQL
 WITH req AS (
@@ -662,7 +731,7 @@ CROSS JOIN audit;
 SQL
   chmod 0600 "$SQL_FILE"
 
-  printf '%s:%s:%s:%s:%s\n' "$connect_host" "$connect_port" "$db_name" "$db_user" "$db_pass" > "$PGPASS_FILE"
+  printf '%s:%s:%s:%s:%s\n' "$connect_host" "$connect_port" "$db_name" "$db_user" "$db_pass_pgpass" > "$PGPASS_FILE"
   chmod 0600 "$PGPASS_FILE"
 
   if command -v psql >/dev/null 2>&1; then
@@ -679,7 +748,7 @@ SQL
           fail "psql direct query failed via postgres service endpoint"
         fi
         local_port="$(start_postgres_port_forward "$db_port")"
-        printf '127.0.0.1:%s:%s:%s:%s\n' "$local_port" "$db_name" "$db_user" "$db_pass" > "$PGPASS_FILE"
+        printf '127.0.0.1:%s:%s:%s:%s\n' "$local_port" "$db_name" "$db_user" "$db_pass_pgpass" > "$PGPASS_FILE"
         chmod 0600 "$PGPASS_FILE"
         psql_output="$(PGPASSFILE="$PGPASS_FILE" PGCONNECT_TIMEOUT=5 psql \
           -h "127.0.0.1" \
@@ -712,7 +781,7 @@ SQL
           fail "dockerized psql direct query failed via postgres service endpoint"
         fi
         local_port="$(start_postgres_port_forward "$db_port")"
-        printf '127.0.0.1:%s:%s:%s:%s\n' "$local_port" "$db_name" "$db_user" "$db_pass" > "$PGPASS_FILE"
+        printf '127.0.0.1:%s:%s:%s:%s\n' "$local_port" "$db_name" "$db_user" "$db_pass_pgpass" > "$PGPASS_FILE"
         chmod 0600 "$PGPASS_FILE"
         psql_output="$(docker run --rm -i \
           --network host \
@@ -732,7 +801,8 @@ SQL
           || fail "dockerized psql query failed"
       }
   else
-    fail "neither psql nor docker is available for DB evidence query"
+    psql_output="$(run_kubernetes_psql_query "$db_host" "$db_port" "$db_name" "$db_user" "$db_pass_pgpass" "$SQL_FILE")" \
+      || fail "kubernetes psql query failed"
   fi
 
   printf '%s\n' "$psql_output" \
