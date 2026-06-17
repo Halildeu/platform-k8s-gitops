@@ -168,6 +168,8 @@ read_keycloak_admin_password() {
 
   local candidate
   for candidate in \
+    "/home/halil/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "/home/halil/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
     "$HOME/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
     "host-compose/keycloak/test/secrets/kc_admin_password.txt"; do
     if [[ -f "$candidate" ]]; then
