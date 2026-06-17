@@ -74,6 +74,24 @@ for entry in "${CONTAINERS_SERVICES[@]}"; do
     log "   zaten bağlı"
   fi
 
+  # Faz 24 #1250 (ADR-0042): MinIO TEK-HOMED olmalı (return-path asymmetry —
+  # runbook RB-faz24-minio-audit-archive §0.1). Dual-home (minio_default +
+  # platform-test-net) k3d pod→minio:9000 timeout yaratır. Compose artık
+  # minio-test'i yalnız platform-test-net'e koyuyor; ama drift olursa burada
+  # FAIL-FAST + explicit consent iste (auto-disconnect YASAK — shared instance
+  # #55 meeting/transcript; owner onayı gerek).
+  if [[ "${container}" == minio-* ]]; then
+    other=$(sshrun "docker inspect -f '{{range \$k,\$v := .NetworkSettings.Networks}}{{\$k}} {{end}}' ${container}" | tr ' ' '\n' | grep -vE "^(${NETWORK})?$" | grep -c . || true)
+    if [[ "${other}" -gt 0 ]]; then
+      if [[ "${MINIO_SINGLE_HOME:-false}" == "true" ]]; then
+        warn "   ${container} dual-homed + MINIO_SINGLE_HOME=true → minio_default ayrılıyor"
+        sshrun "docker network disconnect minio_default ${container} || true"
+      else
+        err "   ${container} DUAL-HOMED (return-path bozuk). Single-home gerek: compose'da yalnız ${NETWORK}, ya da owner onayıyla MINIO_SINGLE_HOME=true ./$(basename "$0"). (runbook §0.1)"
+      fi
+    fi
+  fi
+
   # IP'yi oku
   ip=$(sshrun "docker inspect -f '{{(index .NetworkSettings.Networks \"${NETWORK}\").IPAddress}}' ${container}")
   IPS["${svc}"]="${ip}"
