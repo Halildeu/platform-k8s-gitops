@@ -604,7 +604,14 @@ run_kubernetes_psql_query() {
   local output pod_name pod_overrides status
 
   pod_name="domain-ops-psql-${GITHUB_RUN_ID:-manual}-$$"
-  pod_overrides="$(jq -cn --arg name "$pod_name" '{
+  pod_overrides="$(jq -cn \
+    --arg name "$pod_name" \
+    --arg image "postgres:16-alpine" \
+    --arg pgHost "$db_host" \
+    --arg pgPort "$db_port" \
+    --arg pgDatabase "$db_name" \
+    --arg pgUser "$db_user" \
+    '{
     apiVersion: "v1",
     spec: {
       securityContext: {
@@ -617,6 +624,19 @@ run_kubernetes_psql_query() {
       containers: [
         {
           name: $name,
+          image: $image,
+          imagePullPolicy: "IfNotPresent",
+          env: [
+            {name: "PGHOST", value: $pgHost},
+            {name: "PGPORT", value: $pgPort},
+            {name: "PGDATABASE", value: $pgDatabase},
+            {name: "PGUSER", value: $pgUser},
+            {name: "PGCONNECT_TIMEOUT", value: "5"}
+          ],
+          command: ["sh", "-c"],
+          args: [
+            "set -eu\nIFS= read -r pgpass\nprintf \"%s\\n\" \"$pgpass\" > /tmp/pgpass\nchmod 600 /tmp/pgpass\ncat > /tmp/domain-ops-smoke.sql\nexport PGPASSFILE=/tmp/pgpass\npsql -tA -v ON_ERROR_STOP=1 -f /tmp/domain-ops-smoke.sql"
+          ],
           securityContext: {
             allowPrivilegeEscalation: false,
             capabilities: {drop: ["ALL"]},
@@ -645,20 +665,7 @@ run_kubernetes_psql_query() {
       --image=postgres:16-alpine \
       --image-pull-policy=IfNotPresent \
       --overrides="$pod_overrides" \
-      --env=PGHOST="$db_host" \
-      --env=PGPORT="$db_port" \
-      --env=PGDATABASE="$db_name" \
-      --env=PGUSER="$db_user" \
-      --env=PGCONNECT_TIMEOUT=5 \
-      --command -- sh -c '
-        set -eu
-        IFS= read -r pgpass
-        printf "%s\n" "$pgpass" > /tmp/pgpass
-        chmod 600 /tmp/pgpass
-        cat > /tmp/domain-ops-smoke.sql
-        export PGPASSFILE=/tmp/pgpass
-        psql -tA -v ON_ERROR_STOP=1 -f /tmp/domain-ops-smoke.sql
-      ' 2>"$K8S_PSQL_LOG"
+      2>"$K8S_PSQL_LOG"
   )"
   status=$?
   set -e
