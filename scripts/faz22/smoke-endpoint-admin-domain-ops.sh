@@ -601,9 +601,31 @@ run_kubernetes_psql_query() {
   local db_user="$4"
   local db_pass_pgpass="$5"
   local sql_file="$6"
-  local output pod_name status
+  local output pod_name pod_overrides status
 
   pod_name="domain-ops-psql-${GITHUB_RUN_ID:-manual}-$$"
+  pod_overrides="$(jq -cn --arg name "$pod_name" '{
+    apiVersion: "v1",
+    spec: {
+      securityContext: {
+        runAsNonRoot: true,
+        runAsUser: 999,
+        runAsGroup: 999,
+        fsGroup: 999,
+        seccompProfile: {type: "RuntimeDefault"}
+      },
+      containers: [
+        {
+          name: $name,
+          securityContext: {
+            allowPrivilegeEscalation: false,
+            capabilities: {drop: ["ALL"]},
+            runAsNonRoot: true
+          }
+        }
+      ]
+    }
+  }')"
   kubectl --context "$CTX" -n "$NS" delete pod "$pod_name" \
     --ignore-not-found >/dev/null 2>&1 || true
 
@@ -622,6 +644,7 @@ run_kubernetes_psql_query() {
       --pod-running-timeout=120s \
       --image=postgres:16-alpine \
       --image-pull-policy=IfNotPresent \
+      --overrides="$pod_overrides" \
       --env=PGHOST="$db_host" \
       --env=PGPORT="$db_port" \
       --env=PGDATABASE="$db_name" \
@@ -801,7 +824,7 @@ SQL
           || fail "dockerized psql query failed"
       }
   else
-    psql_output="$(run_kubernetes_psql_query "$db_host" "$db_port" "$db_name" "$db_user" "$db_pass_pgpass" "$SQL_FILE")" \
+    psql_output="$(run_kubernetes_psql_query "$connect_host" "$connect_port" "$db_name" "$db_user" "$db_pass_pgpass" "$SQL_FILE")" \
       || fail "kubernetes psql query failed"
   fi
 
