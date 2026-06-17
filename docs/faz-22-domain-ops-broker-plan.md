@@ -1,7 +1,11 @@
 # Faz 22.5 Domain Ops Broker Plan
 
-> Status: planning gate for Project #2 issue
-> [#1609](https://github.com/Halildeu/platform-k8s-gitops/issues/1609).
+> Status: design gate plus first backend product slice accepted.
+> Tracked by Project #2 issues
+> [#1609](https://github.com/Halildeu/platform-k8s-gitops/issues/1609),
+> [#1643](https://github.com/Halildeu/platform-k8s-gitops/issues/1643),
+> and backend issue
+> [platform-backend#676](https://github.com/Halildeu/platform-backend/issues/676).
 > This plan does not grant permission to mutate AD/GPO outside the bounded
 > scope below.
 
@@ -27,6 +31,13 @@ the platform, validate scope, perform the specific AD/GPO operation, and return
 audited results.
 
 The broker is not a general remote shell and not a Domain Admin backdoor.
+
+The first accepted backend slice (#676) implements the product request/audit
+spine before a live domain connector is enabled: Admin API, durable request
+state, credential-ref-only custody, typed connector dispatch, deterministic
+`connector-unavailable` fail-closed result, and audit/result persistence. That
+slice proves safe custody/durability/redaction. It does **not** prove real
+AD/GPO mutation success.
 
 ## 3. Scope
 
@@ -95,6 +106,7 @@ returned in logs or issue comments.
 | Gate | Acceptance |
 |---|---|
 | DOP-0 Design | This document linked from #1609 and reviewed against the current AD/GPO boundary. |
+| DOP-0A Product request spine | Admin API + durable request state + credential-ref custody + typed connector dispatch + fail-closed result/status/audit accepted in platform-backend#676. |
 | DOP-1 Read-only probe | Broker reads EndpointTest OU, pilot group, and Endpoint Agent GPO state; audit row emitted. |
 | DOP-2 Add/remove pilot device | Broker adds then removes a disposable test computer membership with pre/post audit and idempotency proof. |
 | DOP-3 GPO link/filtering smoke | Broker links or verifies the Endpoint Agent GPO on EndpointTest OU and records exact filtering state. |
@@ -103,14 +115,17 @@ returned in logs or issue comments.
 
 ## 6. Pilot Device Policy
 
-Until DOP-5 and the remote-ops MVP safety gates pass, active pilot scope is
-limited to two computers:
+The accepted #1609 two-device record is limited to:
 
 - `SRB-AIDENETIMPC`
-- `AgentPC2`
+- `ERP-MOBIL`
 
-`AgentPC1` remains a reserve device. Local Parallels Windows remains the
-break/fix lab for installer and agent regressions.
+`AgentPC2` is now a separate third-device product-channel gate tracked in
+#1643. It must not be accepted from lab reverse SSH/RDP, inbound SSH/WinRM/SMB
+or operator-pasted commands. Valid evidence is GPO/signed MSI, one-command
+bootstrap, existing EndpointAgent mTLS product channel, or Domain Ops Broker
+typed operation evidence. `AgentPC1` remains a reserve device. Local Parallels
+Windows remains the break/fix lab for installer and agent regressions.
 
 ## 7. Relationship To Remote-Ops
 
