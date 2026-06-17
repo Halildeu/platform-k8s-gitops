@@ -5131,7 +5131,13 @@ images:
     # succeeded; repository_dispatch deploy 27665094783 correctly failed the
     # ADR-0023 overlay drift guard before this desired-state bump.
     # endpoint-admin-service sha256:f76511a01ed8e5656008a796a6a4d7a094f886647da293739e8a0a49bb35565f
-    digest: sha256:f76511a01ed8e5656008a796a6a4d7a094f886647da293739e8a0a49bb35565f
+    # 2026-06-17 remote bridge DENY session cleanup (#690, backend PR #691)
+    # -> sha-7168734. Source merge 71687344; image build run 27716303750
+    # produced endpoint-admin-service
+    # sha256:a2f73c1508fb4aa95b1391ef419dd45e727d8652f7c4069cba595beafb4dd3a9.
+    # Repository_dispatch deploy 27716493012 correctly refused imperative drift
+    # until this GitOps desired-state bump.
+    digest: sha256:a2f73c1508fb4aa95b1391ef419dd45e727d8652f7c4069cba595beafb4dd3a9
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
