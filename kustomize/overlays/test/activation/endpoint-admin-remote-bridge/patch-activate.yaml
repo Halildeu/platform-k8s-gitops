@@ -18,6 +18,10 @@ spec:
             # control #11 — broker ENABLED only on this Deployment.
             - name: REMOTE_BRIDGE_ENABLED
               value: "true"
+            # Broker-only runtime: do not load the primary endpoint admin plane
+            # command/enrollment/status beans or their broad secret dependencies.
+            - name: ENDPOINT_ADMIN_PRIMARY_PLANE_ENABLED
+              value: "false"
             # Expose 9444 behind the mTLS L4 edge / ingress allowlist (control #6).
             - name: REMOTE_BRIDGE_BIND_HOST
               value: "0.0.0.0"
