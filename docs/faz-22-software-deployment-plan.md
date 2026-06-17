@@ -245,6 +245,11 @@
 > `REMOTE_BRIDGE_PEER_TRUST_FRESHNESS_TTL_MILLIS=120000`). Live
 > `platform-test/endpoint-admin-remote-bridge` is ready on imageID
 > `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:f76511a01ed8e5656008a796a6a4d7a094f886647da293739e8a0a49bb35565f`.
+> Product-session acceptance contract is now canonicalized in
+> `docs/runbooks/RB-faz22.6-product-remote-ops-session-gate.md`: outbound mTLS
+> product channel only, typed `PTY_COMMAND hostname` read-only operation,
+> approval/audit/negative evidence, and explicit exclusion of reverse
+> SSH/RDP/manual bridge evidence.
 > Denetim product smoke evidence directory:
 > `/home/halil/codex-rb-smoke/20260617T191335Z-product`. HTTP path:
 > `open=200`, `approve=200`, `challenge=200`, `verify=200`, `operation=200`;
