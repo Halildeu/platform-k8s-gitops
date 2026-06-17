@@ -280,6 +280,29 @@ services:
       test: enabled
       prod: deferred   # Faz 24 D30 cutover'a kadar prod overlay'e dahil değil
 
+  - name: audit-event-consumer-service
+    repo: platform-backend
+    description: |
+      Faz 24 KVKK audit pipeline Redis consumer (platform-backend#1249, PR #677).
+      Pure Redis-Streams consumer (XREADGROUP audit:events group audit-persist-v1
+      → immutable hash-chain persist + DLQ audit:events:dlq); NO CRUD HTTP API
+      (no @RestController) → jwt_validates:false, no api-gateway route, no OpenFGA
+      gate. Flyway V1 baseline DB schema audit_event (history table
+      audit_consumer_flyway_history); SERVER_PORT 8099 + management 8081
+      spring-actuator contract. k3d-test deploy gitops#1615 — D29 Up+Functional
+      LIVE 2026-06-17 (pod imageID digest match + health 200 + consumer group
+      audit-persist-v1 joined on stream audit:events). Same host-bridge Redis as
+      audio-gateway (producer side; AUDIO_GATEWAY_AUDIT_REDIS_ENABLED flip +
+      end-to-end event flow = deferred follow-up, Zanzibar-ready analogu).
+    jwt_validates: false   # pure Redis consumer — no inbound HTTP API to enforce
+    route_external: false   # no public HTTP API (consumer-only, internal 8099 actuator)
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator   # management:8081
+    environments:
+      test: enabled
+      prod: deferred   # Faz 24 D30 cutover'a kadar prod overlay'e dahil değil
+
   # --- DEFERRED services (intentionally not in target env) ---
 
   - name: endpoint-admin-service

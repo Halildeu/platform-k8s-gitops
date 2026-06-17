@@ -13,6 +13,7 @@ resources:
   - audio-gateway/externalsecret.yaml    # Faz 24 Aşama-2 staging (platform-ai#151)
   - meeting-service/externalsecret.yaml    # Faz 24 Meeting Intelligence foundation (#410)
   - transcript-service/externalsecret.yaml    # Faz 24 Meeting Intelligence foundation (#411)
+  - audit-event-consumer-service/externalsecret.yaml    # Faz 24 KVKK audit pipeline Redis consumer (#1249)
   - redis-streams-exporter/externalsecret.yaml    # Faz 24 PR-obs-01a (gitops#1247; shared redis_password — ACL ayrımı #1457)
 
 patches:
