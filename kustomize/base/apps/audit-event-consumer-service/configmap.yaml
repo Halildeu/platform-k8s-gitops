@@ -34,7 +34,17 @@ data:
   # Flyway (flyway history table audit_consumer_flyway_history, V1 baseline,
   # driven by AUDIT_CONSUMER_DB_SCHEMA). DB user/password come from ESO
   # (audit-event-consumer-service-secrets).
-  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/audit_event"
+  #
+  # currentSchema=audit_event (gitops#1647): the consumer persist path is a
+  # NATIVE `INSERT INTO audit_event` (AuditEventRepository, JdbcTemplate) which
+  # does NOT honour spring.jpa hibernate.default_schema — that only rewrites
+  # Hibernate-generated SQL. Without the connection search_path set, the
+  # unqualified table resolves to public.audit_event (absent) → "relation
+  # audit_event does not exist" → event left unacked in the PEL (no persist).
+  # currentSchema pins the connection search_path so native + Hibernate agree.
+  # (Integration tests passed because Testcontainers used the public schema —
+  # the non-public-schema mismatch only surfaces live; proven by E2E smoke.)
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/audit_event?currentSchema=audit_event"
   DB_POOL_MAX: "5"
 
   # JPA / Flyway — Flyway is the sole schema authority. ddl-auto=validate

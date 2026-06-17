@@ -84,11 +84,15 @@ images:
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audio-gateway-service
     newName: ghcr.io/halildeu/platform-backend-audio-gateway-service
-    # Faz 24 Aşama-2 staging (platform-ai#151): ilk deploy, tag sha-28cfe2c
-    # (#556 Dockerfile + dual-URI JWT fail-fast + Redis health toggle;
-    # #558 management.server.port 8081 — drift gate spring-actuator contract).
+    # Faz 24 KVKK audit producer activation (gitops#1647): tag sha-74c9e1a
+    # (#677 audit-pipeline — adds RedisStreamAuditSink). The prior pin
+    # sha-28cfe2c (#556/#558) PREDATES #677 → it ships only the NoOp sink, so
+    # the #1634 AUDIO_GATEWAY_AUDIT_REDIS_ENABLED=true env flip had no effect
+    # (audit:events emit never fired). E2E smoke proved: with sha-74c9e1a a real
+    # ChunkAdmissionRejected (413 oversize) lands on the audit:events stream and
+    # is persisted by audit-event-consumer-service.
     # D30 immutable digest pin.
-    digest: sha256:40239d8096eab2c4c4a5b11332419ff9a774448cf538b0e640aa71843f6ec7bc
+    digest: sha256:b6b565e91a6c7f4ec6e6ec7144b77ea70afb8a8184980c6122a8a970a57ec91b
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -5531,6 +5535,28 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
+
+  # gitops#1647 — rollout trigger for the SPRING_DATASOURCE_URL currentSchema
+  # change. The URL lives in audit-event-consumer-service-config consumed via
+  # envFrom, which is read only at pod start; a ConfigMap-only edit does NOT
+  # restart the running pod (selfHeal/ArgoCD syncs the ConfigMap, but the pod
+  # keeps the stale env). This pod-template annotation bump changes the template
+  # hash so the consumer is rolled when this overlay is applied/synced,
+  # deterministically picking up ?currentSchema=audit_event
+  # (Codex 019ed4bb REVISE absorb). Bump the rev on any future schema-URL change.
+  - target:
+      kind: Deployment
+      name: audit-event-consumer-service
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: audit-event-consumer-service
+      spec:
+        template:
+          metadata:
+            annotations:
+              audit-event-consumer.acik.com/schema-url-rev: "2026-06-17-1647-currentSchema"
 
   # BE-017/AG-042 formal dual-control + local SAM adapter evidence (gitops
   # #1023 + #1320; Codex strategic `019e5a61` REVISE absorb): test-only enable
