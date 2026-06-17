@@ -31,6 +31,7 @@ resources:
                                       # + ingress ssl-passthrough gates pass.
   - ../../base/apps/audio-gateway    # Faz 24 Aşama-2 staging (platform-ai#151; test-only, prod D30 cutover'a defer)
   - ../../base/apps/meeting-service    # Faz 24 Meeting Intelligence foundation (#410; test-only, prod D30 cutover'a defer)
+  - ../../base/apps/transcript-service    # Faz 24 Meeting Intelligence foundation (#411; test-only, prod D30 cutover'a defer)
   - ../../base/apps/redis-streams-exporter    # Faz 24 PR-obs-01a (gitops#1247): Redis Streams queue/consumer metrikleri (test-only; prod D30'da)
   - ../../base/apps/redis-streams-exporter/ops    # ServiceMonitor (CRD-gated; ops-bundle'a değil buraya — prod sızıntısı yok)
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06
@@ -96,6 +97,16 @@ images:
     # D30 immutable digest pin (drift gate Check1 = @sha256; live pod imageID
     # 2026-06-17 D29 Up+Functional verified).
     digest: sha256:62a24571f99d46f9862b36ca4466f2a605400bc7da739f54d57c83ce68a6f51b
+
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
+    newName: ghcr.io/halildeu/platform-backend-transcript-service
+    # Faz 24 Meeting Intelligence foundation (#411): ilk deploy sha-7bed579
+    # (#674 merge commit; transcript V1 segment CRUD + search/export + KVKK m.12
+    # access-log + OpenFGA @RequireModule gate; SERVER_PORT 8098 + management 8081
+    # spring-actuator contract). 154fa2b deploy-commit transcript'i rebuild etmedi.
+    # D30 immutable digest pin (drift gate Check1 = @sha256; live pod imageID
+    # 2026-06-17 D29 Up+Functional verified — health 200 + no-JWT 401 + Flyway V1).
+    digest: sha256:7f5ed7a170d48e1dc35d39b44efa51095c15d67ba46f12bc1929d32c4388ea31
 
   - name: docker.io/oliver006/redis_exporter
     # Faz 24 PR-obs-01a (gitops#1247): redis-streams-exporter v1.86.0
@@ -5485,6 +5496,17 @@ patches:
   - target:
       kind: Deployment
       name: meeting-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
+  # Faz 24 Meeting Intelligence foundation (#411): replica 1 default
+  # (HARD RULE — Scale-to-Zero YASAK). No mTLS connector → base 150s startup
+  # window is sufficient (no startupProbe override).
+  - target:
+      kind: Deployment
+      name: transcript-service
     patch: |-
       - op: replace
         path: /spec/replicas
