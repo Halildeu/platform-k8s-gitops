@@ -44,6 +44,7 @@ DEVICE_LIST_FILE="$TMP_DIR/devices.json"
 REQUEST_FILE="$TMP_DIR/domain-ops-request.json"
 AUTH_HEADER_FILE="$TMP_DIR/auth-header.txt"
 KC_ADMIN_PASS_FILE="$TMP_DIR/kc-admin-password.txt"
+KC_SOURCE_DIAG_FILE="$TMP_DIR/keycloak-source-diagnostics.json"
 PERSONA_PASS_FILE="$TMP_DIR/persona-password.txt"
 PERSONA_ROTATE_PASS_FILE="$TMP_DIR/persona-rotate-password.txt"
 RESET_BODY_FILE="$TMP_DIR/reset-password.json"
@@ -63,6 +64,7 @@ echo '{}' > "$RUNTIME_FILE"
 echo '{}' > "$JWT_CLAIMS_FILE"
 echo '{}' > "$API_RESPONSE_REDACTED_FILE"
 echo '{}' > "$DB_REPORT_FILE"
+echo '{}' > "$KC_SOURCE_DIAG_FILE"
 chmod 0600 "$TMP_DIR"/* 2>/dev/null || true
 
 need() {
@@ -100,6 +102,7 @@ write_report() {
     --slurpfile jwt "$JWT_CLAIMS_FILE" \
     --slurpfile api "$API_RESPONSE_REDACTED_FILE" \
     --slurpfile db "$DB_REPORT_FILE" \
+    --slurpfile kcSource "$KC_SOURCE_DIAG_FILE" \
     '{
       verdict: $verdict,
       reason: $reason,
@@ -116,6 +119,7 @@ write_report() {
       httpStatus: ($httpStatus | tonumber? // null),
       contract: $contract,
       runtime: $runtime[0],
+      keycloakCredentialSource: $kcSource[0],
       jwtClaims: $jwt[0],
       apiResponse: $api[0],
       db: $db[0]
@@ -157,28 +161,126 @@ pass() {
   echo "PASS: $reason"
 }
 
+keycloak_admin_password_candidates() {
+  printf '%s\t%s\n' \
+    "canonical-home-repo" "/home/halil/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "canonical-home-compose" "/home/halil/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "runner-home-compose" "$HOME/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "checkout-absolute" "$PWD/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "checkout-relative" "host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "github-work" "/home/runner/work/platform-k8s-gitops/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "github-work-underscore" "/home/runner/_work/platform-k8s-gitops/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "opt-repo" "/opt/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    "srv-repo" "/srv/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
+    | awk -F '\t' 'NF >= 2 && !seen[$2]++'
+}
+
+write_keycloak_source_diagnostics() {
+  local selected_source="${1:-}"
+  local selected_label="${2:-}"
+  local candidates_file="$TMP_DIR/keycloak-source-candidates.jsonl"
+  local docker_available=false
+  local docker_container_found=false
+  local docker_run_secret_readable=false
+  local docker_env_secret_readable=false
+  local docker_socket_present=false
+  local docker_socket_readable=false
+  local docker_socket_writable=false
+  local label candidate exists readable
+
+  : > "$candidates_file"
+  while IFS=$'\t' read -r label candidate; do
+    exists=false
+    readable=false
+    [[ -e "$candidate" ]] && exists=true
+    [[ -r "$candidate" ]] && readable=true
+    jq -n \
+      --arg label "$label" \
+      --argjson exists "$exists" \
+      --argjson readable "$readable" \
+      '{label: $label, exists: $exists, readable: $readable}' >> "$candidates_file"
+  done < <(keycloak_admin_password_candidates)
+
+  command -v docker >/dev/null 2>&1 && docker_available=true
+  [[ -e /var/run/docker.sock ]] && docker_socket_present=true
+  [[ -r /var/run/docker.sock ]] && docker_socket_readable=true
+  [[ -w /var/run/docker.sock ]] && docker_socket_writable=true
+
+  if [[ "$docker_available" == "true" ]]; then
+    if docker inspect "$KC_CONTAINER" >/dev/null 2>&1; then
+      docker_container_found=true
+    fi
+    if docker exec "$KC_CONTAINER" sh -c 'test -r /run/secrets/kc_admin_password' >/dev/null 2>&1; then
+      docker_run_secret_readable=true
+    fi
+    if docker exec "$KC_CONTAINER" sh -c 'p="${KEYCLOAK_ADMIN_PASSWORD_FILE:-}"; [ -n "$p" ] && test -r "$p"' >/dev/null 2>&1; then
+      docker_env_secret_readable=true
+    fi
+  fi
+
+  jq -n \
+    --arg selectedSource "$selected_source" \
+    --arg selectedLabel "$selected_label" \
+    --arg kcContainer "$KC_CONTAINER" \
+    --arg kcBaseUrl "$KC_BASE_URL" \
+    --arg kcRealm "$KC_REALM" \
+    --argjson dockerAvailable "$docker_available" \
+    --argjson dockerContainerFound "$docker_container_found" \
+    --argjson dockerRunSecretReadable "$docker_run_secret_readable" \
+    --argjson dockerEnvSecretReadable "$docker_env_secret_readable" \
+    --argjson dockerSocketPresent "$docker_socket_present" \
+    --argjson dockerSocketReadable "$docker_socket_readable" \
+    --argjson dockerSocketWritable "$docker_socket_writable" \
+    --slurpfile candidates "$candidates_file" \
+    '{
+      selectedSource: $selectedSource,
+      selectedLabel: $selectedLabel,
+      keycloak: {
+        container: $kcContainer,
+        baseUrl: $kcBaseUrl,
+        realm: $kcRealm
+      },
+      docker: {
+        available: $dockerAvailable,
+        containerFound: $dockerContainerFound,
+        runSecretReadable: $dockerRunSecretReadable,
+        envSecretReadable: $dockerEnvSecretReadable,
+        socketPresent: $dockerSocketPresent,
+        socketReadable: $dockerSocketReadable,
+        socketWritable: $dockerSocketWritable
+      },
+      hostFileCandidates: $candidates
+    }' > "$KC_SOURCE_DIAG_FILE"
+  chmod 0600 "$KC_SOURCE_DIAG_FILE"
+}
+
 read_keycloak_admin_password() {
   if command -v docker >/dev/null 2>&1; then
     if docker exec "$KC_CONTAINER" sh -c 'cat /run/secrets/kc_admin_password' \
-        > "$KC_ADMIN_PASS_FILE" 2>/dev/null; then
+        > "$KC_ADMIN_PASS_FILE" 2>/dev/null && [[ -s "$KC_ADMIN_PASS_FILE" ]]; then
       chmod 0600 "$KC_ADMIN_PASS_FILE"
+      write_keycloak_source_diagnostics "docker-run-secret" "run-secret"
+      return 0
+    fi
+    if docker exec "$KC_CONTAINER" sh -c 'p="${KEYCLOAK_ADMIN_PASSWORD_FILE:-}"; [ -n "$p" ] && cat "$p"' \
+        > "$KC_ADMIN_PASS_FILE" 2>/dev/null && [[ -s "$KC_ADMIN_PASS_FILE" ]]; then
+      chmod 0600 "$KC_ADMIN_PASS_FILE"
+      write_keycloak_source_diagnostics "docker-env-secret" "env-secret"
       return 0
     fi
   fi
 
-  local candidate
-  for candidate in \
-    "/home/halil/platform-k8s-gitops/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
-    "/home/halil/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
-    "$HOME/host-compose/keycloak/test/secrets/kc_admin_password.txt" \
-    "host-compose/keycloak/test/secrets/kc_admin_password.txt"; do
-    if [[ -f "$candidate" ]]; then
+  local label candidate
+  while IFS=$'\t' read -r label candidate; do
+    if [[ -r "$candidate" ]]; then
       cp "$candidate" "$KC_ADMIN_PASS_FILE"
       chmod 0600 "$KC_ADMIN_PASS_FILE"
+      write_keycloak_source_diagnostics "host-file" "$label"
       return 0
     fi
-  done
+  done < <(keycloak_admin_password_candidates)
 
+  write_keycloak_source_diagnostics "" ""
   fail "Keycloak admin password source not found for test realm"
 }
 
