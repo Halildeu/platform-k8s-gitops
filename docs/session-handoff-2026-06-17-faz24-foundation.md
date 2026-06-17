@@ -19,11 +19,14 @@ Bu handoff yazıldıktan SONRA, aynı oturumda **deploy fazı (gitops#1615) UÇT
 - [x] **✅ P0 #2 — gateway-forward smoke DONE** (2026-06-17): persona-token harness (`faz24-smoke@acik.com`, MEETING/TRANSCRIPT_ADMIN realm rolleri + frontend password-grant + OpenFGA tuple `user:990001`). `GET api-gateway:8080/api/v1/admin/meetings`+`/transcripts?meetingId=` → **200** (gerçek body), unauth → **401**. İki kapı (role + @RequireModule userId-claim) PROVEN.
 - [x] **✅ P0 #1 — audit E2E DONE + gitops PR #1648 MERGED** (37a01c7b, Codex `019ed4bb` REVISE→AGREE, issue #1647 CLOSED). No-Fake-Work E2E **4 gerçek gap deldi**: (1) producer image stale `sha-28cfe2c` #677-öncesi → NoOp → #1634 flip INERT (XLEN=0); fix overlay digest→`sha-74c9e1a`/`b6b565e9`. (2) consumer native-INSERT public-search_path → `relation audit_event does not exist`; fix `?currentSchema=audit_event`. (3) envFrom hot-reload yok → pod-template rollout annotation. (4) testai selfHeal live-apply'i revert eder → gitops overlay durable path. **Durable state'te 4/4 fire EMIT+persist; stream==DB==entries-read=4, dlq=0, lag=0, hash-chain dolu.** Detay: memory `project_faz24_backend_foundation_delivery` "ACTIVATION E2E PROVEN".
 
-**Sıradaki P0 (kalan activation — agent-doable, distinct)**:
-1. **#1250 audit retention archival worker** — 7yr→MinIO cold + hash-chain verify (immutable kaynak hazır; backend impl).
-2. **Faz 24 OpenFGA-governance ADR** — DD-EA-2 (tuple writer=permission-service) Faz 24'e extend = **prod-promotion blocker** (test seed direct-bootstrap kabul, prod permission-service yolu).
-3. backend non-public-schema Testcontainers coverage (audit consumer schema bug CI'da yakalansın — `task_dc2b7248` chip).
-4. browser smoke (mfe-meeting #751) + Consumer chain (#412/#413/desktop/mobile/CDC) — foundation-deploy ✓ + STT-live + #751'e bağlı.
+- [x] **✅ Faz 24 OpenFGA-governance ADR-0041 DONE** (gitops PR #1650 MERGED `df1168a4`, Codex `019ed4d8` REVISE→AGREE, issue #1649 CLOSED) — DD-EA-2 Faz 24'e extend: test-only direct-seed dar exception + **machine-enforced guard** (seed script: platform-test-only/no-wildcard/module:{meeting,transcript}-only) + prod path (permission-service role/granule→TupleSyncService) + somut gate (PermissionCatalogService'te MEETING/TRANSCRIPT yok). prod-promotion blocker formalized.
+
+**Sıradaki P0 (kalan — agent-doable)**:
+1. **#1250 audit retention archival worker** — 7yr→MinIO cold + hash-chain verify (immutable kaynak hazır; **büyük backend slice** → yeni worker+Flyway+MinIO+scheduling+Testcontainers+cross-AI+deploy; taze session önerilir).
+2. backend non-public-schema Testcontainers coverage (audit consumer schema bug CI'da yakalansın — `task_dc2b7248` chip).
+3. **ADR-0041 §5 prod-promotion gate**: permission-service module granule/catalog (MODULE:MEETING|TRANSCRIPT × VIEW|MANAGE) + assignment + outbox sync evidence (prod cutover ön-koşulu).
+4. services.yaml gateway-forward "pending"→"verified" reconcile (live 200 proven bu oturum).
+5. browser smoke (mfe-meeting #751) + Consumer chain (#412/#413/desktop/mobile/CDC) — STT-live + #751'e bağlı.
 
 ---
 ## 1. Bağlam (bu oturumda ne yapıldı)
