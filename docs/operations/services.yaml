@@ -260,6 +260,26 @@ services:
       test: enabled
       prod: deferred   # Faz 24 D30 cutover'a kadar prod overlay'e dahil değil
 
+  - name: transcript-service
+    repo: platform-backend
+    description: |
+      Faz 24 Meeting Intelligence transcript segment CRUD + search/export + KVKK
+      Madde 12 erişim kaydı (platform-backend#411, PR #674). transcript_segments
+      CRUD + transcript_access_audit (2yr, yapısal transcript-free); Flyway V1
+      'transcript' DB schema transcript_service (org_id compat baked-in);
+      @RequireModule(module:transcript) authz consumer. k3d-test foundation
+      deploy gitops#1615 — ESO Ready=True/SecretSynced + Vault seed/policy live;
+      D29 Up+Functional LIVE 2026-06-17 (pod imageID digest match + health 200 +
+      no-JWT 401). Zanzibar-ready + api-gateway route deferred follow-up.
+    jwt_validates: true
+    route_external: false   # api-gateway route deferred (internal-only, 8098)
+    workload_kind: Deployment
+    runtime_class: spring-backend
+    probe_contract: spring-actuator   # management:8081
+    environments:
+      test: enabled
+      prod: deferred   # Faz 24 D30 cutover'a kadar prod overlay'e dahil değil
+
   # --- DEFERRED services (intentionally not in target env) ---
 
   - name: endpoint-admin-service

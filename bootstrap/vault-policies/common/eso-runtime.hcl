@@ -60,6 +60,16 @@ path "kv/data/platform/meeting-service" {
   capabilities = ["read"]
 }
 
+# --- Faz 24 #411/#1615 transcript-service (foundation deploy 2026-06-17) ---
+# ExternalSecret reads kv/platform/transcript-service with 2 keys (db_username,
+# db_password). Same flat-path convention as meeting/endpoint-admin/auth/report.
+# Without this grant ESO sync returns 403 → K8s Secret never lands →
+# pod stuck ContainerCreating (envFrom optional:false). Live patch applied
+# to vault-test alongside; this file keeps it canonical (bootstrap-drill safe).
+path "kv/data/platform/transcript-service" {
+  capabilities = ["read"]
+}
+
 # --- Faz 23.9 Step D notification-orchestrator (flat path; auth-service convention) ---
 # Codex thread 019e08df REVISE absorb: ExternalSecret reads kv/platform/notification-
 # orchestrator with 5 keys (db_username, db_password, webhook_signing_secret,
