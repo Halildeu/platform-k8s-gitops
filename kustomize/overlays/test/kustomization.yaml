@@ -131,7 +131,7 @@ images:
     # verify-before-archive + version-id idempotency + COMPLIANCE WORM.
     # D30 immutable digest pin (main image build run 27689352546).
     # AUDIT_RETENTION_WORKER_IMAGE_DIGEST (ConfigMap) MUST equal this digest.
-    digest: sha256:d7e7f57407437c014571f1ad5a9955f03fc3edcb1d964067ef351fa38e798665
+    digest: sha256:06d5b9e5eaf88263a5c60010962c12bd4e67a6f5a6644fec45e3dc882ebfe0dd
 
   - name: docker.io/oliver006/redis_exporter
     # Faz 24 PR-obs-01a (gitops#1247): redis-streams-exporter v1.86.0

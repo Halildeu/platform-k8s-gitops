@@ -59,7 +59,7 @@ data:
 
   # Image-digest binding (Codex D1): MUST equal the overlay-pinned digest so the
   # manifest/ledger worker_image_digest evidence matches the running artifact.
-  AUDIT_RETENTION_WORKER_IMAGE_DIGEST: "sha256:d7e7f57407437c014571f1ad5a9955f03fc3edcb1d964067ef351fa38e798665"
+  AUDIT_RETENTION_WORKER_IMAGE_DIGEST: "sha256:06d5b9e5eaf88263a5c60010962c12bd4e67a6f5a6644fec45e3dc882ebfe0dd"
 
   # Spring profile (activates application-k8s.yml management port).
   SPRING_PROFILES_ACTIVE: "k8s"
