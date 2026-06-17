@@ -633,10 +633,8 @@ run_kubernetes_psql_query() {
             {name: "PGUSER", value: $pgUser},
             {name: "PGCONNECT_TIMEOUT", value: "5"}
           ],
-          command: ["sh", "-c"],
-          args: [
-            "set -eu\nIFS= read -r pgpass\nprintf \"%s\\n\" \"$pgpass\" > /tmp/pgpass\nchmod 600 /tmp/pgpass\ncat > /tmp/domain-ops-smoke.sql\nexport PGPASSFILE=/tmp/pgpass\npsql -tA -v ON_ERROR_STOP=1 -f /tmp/domain-ops-smoke.sql"
-          ],
+          command: ["sleep"],
+          args: ["300"],
           securityContext: {
             allowPrivilegeEscalation: false,
             capabilities: {drop: ["ALL"]},
@@ -650,29 +648,51 @@ run_kubernetes_psql_query() {
     --ignore-not-found >/dev/null 2>&1 || true
 
   K8S_PSQL_POD_NAME="$pod_name"
+
+  if ! kubectl --context "$CTX" -n "$NS" run "$pod_name" \
+      --restart=Never \
+      --pod-running-timeout=120s \
+      --image=postgres:16-alpine \
+      --image-pull-policy=IfNotPresent \
+      --overrides="$pod_overrides" \
+      >"$K8S_PSQL_LOG" 2>&1; then
+    sed 's/[[:cntrl:]]//g' "$K8S_PSQL_LOG" >&2 || true
+    return 1
+  fi
+
+  if ! kubectl --context "$CTX" -n "$NS" wait "pod/$pod_name" \
+      --for=condition=Ready \
+      --timeout=120s \
+      >>"$K8S_PSQL_LOG" 2>&1; then
+    kubectl --context "$CTX" -n "$NS" describe pod "$pod_name" \
+      >>"$K8S_PSQL_LOG" 2>&1 || true
+    kubectl --context "$CTX" -n "$NS" logs "$pod_name" \
+      >>"$K8S_PSQL_LOG" 2>&1 || true
+    sed 's/[[:cntrl:]]//g' "$K8S_PSQL_LOG" >&2 || true
+    return 1
+  fi
+
   set +e
   # shellcheck disable=SC2016
   output="$(
     {
       printf '%s:%s:%s:%s:%s\n' "$db_host" "$db_port" "$db_name" "$db_user" "$db_pass_pgpass"
       cat "$sql_file"
-    } | kubectl --context "$CTX" -n "$NS" run "$pod_name" \
-      --rm \
-      -i \
-      --quiet \
-      --restart=Never \
-      --pod-running-timeout=120s \
-      --image=postgres:16-alpine \
-      --image-pull-policy=IfNotPresent \
-      --overrides="$pod_overrides" \
-      2>"$K8S_PSQL_LOG"
+    } | kubectl --context "$CTX" -n "$NS" exec -i "$pod_name" -- sh -c '
+      set -eu
+      IFS= read -r pgpass
+      printf "%s\n" "$pgpass" > /tmp/pgpass
+      chmod 600 /tmp/pgpass
+      cat > /tmp/domain-ops-smoke.sql
+      export PGPASSFILE=/tmp/pgpass
+      psql -tA -v ON_ERROR_STOP=1 -f /tmp/domain-ops-smoke.sql
+    ' 2>>"$K8S_PSQL_LOG"
   )"
   status=$?
-  set -e
-
   kubectl --context "$CTX" -n "$NS" delete pod "$pod_name" \
     --ignore-not-found >/dev/null 2>&1 || true
   K8S_PSQL_POD_NAME=""
+  set -e
 
   if (( status != 0 )); then
     sed 's/[[:cntrl:]]//g' "$K8S_PSQL_LOG" >&2 || true
