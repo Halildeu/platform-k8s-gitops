@@ -198,6 +198,34 @@
 > artifact generation; endpoint-side MSI install and GPO rollout readiness still
 > require live pilot smoke evidence.
 
+> **2026-06-17 artifact-host v0.2.8 truth refresh**:
+> `platform-agent` #203 (`78f2ee35dcd64e7fc70d6d63e4e8f8ce016b85c1`) moved
+> the canonical bootstrap to host-aware URL derivation: `PackageUrl` host
+> derives default API base `https://<host>/api/v1/endpoint-agent`, and
+> `-AutoEnroll` derives `https://mtls.<host>/api/v1/endpoint-agent` unless the
+> operator explicitly passes an override. Trusted release `v0.2.8` published
+> artifact-host image
+> `ghcr.io/halildeu/platform-agent-artifacts:v0.2.8@sha256:b3118c6e14fd7cb6d157d684b56333e10eb99e9defc7d84dadbf9e078fca4a86`,
+> `EndpointAgent.zip` SHA256
+> `73ce4aaf0409344a36ea3619c8cca22cfdcb2a222002a902cd03e197145a6b06`, and
+> agent binary SHA256
+> `353e9b33d34862d9b42fb836c09f77ae485a8c2d19035efbaed02d2ed59de41b`.
+> GitOps PR #1641 merged the test overlay digest pin; ArgoCD `platform-test`
+> reports `Synced / Healthy` at revision
+> `38fd3a3f90e3b261d87a9cc121268bcf54b0dc16`, and
+> `platform-test/artifact-host` is `2/2` ready with both pods imageID
+> `ghcr.io/halildeu/platform-agent-artifacts@sha256:b3118c6e14fd7cb6d157d684b56333e10eb99e9defc7d84dadbf9e078fca4a86`,
+> `ready=true`, `restartCount=0`. Public
+> `https://testai.acik.com/artifacts/endpoint-agent/current/` now serves
+> `release_tag=v0.2.8`; `EndpointAgent.zip.sha256` matches
+> `73ce4aaf0409344a36ea3619c8cca22cfdcb2a222002a902cd03e197145a6b06`; and
+> public `bootstrap-package.ps1` contains `Resolve-BootstrapApiUrls`,
+> `Get-PackageUrlHost`, and `https://mtls.$hostName/api/v1/endpoint-agent`
+> with the older hardcoded `testai` API defaults absent. Project #2 issue
+> #1640 has live acceptance evidence and Project Status `Done`. This refresh
+> does not claim GPO/MSI pilot acceptance, 50/800 staged rollout, product
+> remote-ops, or prod-domain readiness.
+
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
 planı tanımlar.
