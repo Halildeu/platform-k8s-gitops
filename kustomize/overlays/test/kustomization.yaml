@@ -33,6 +33,7 @@ resources:
   - ../../base/apps/meeting-service    # Faz 24 Meeting Intelligence foundation (#410; test-only, prod D30 cutover'a defer)
   - ../../base/apps/transcript-service    # Faz 24 Meeting Intelligence foundation (#411; test-only, prod D30 cutover'a defer)
   - ../../base/apps/audit-event-consumer-service    # Faz 24 KVKK audit pipeline Redis consumer (#1249; test-only, prod D30 cutover'a defer)
+  - ../../base/apps/audit-retention-worker          # Faz 24 audit-archive 7yr WORM CronJob (#1250-D, ADR-0042; test-only, prod §5 gate)
   - ../../base/apps/redis-streams-exporter    # Faz 24 PR-obs-01a (gitops#1247): Redis Streams queue/consumer metrikleri (test-only; prod D30'da)
   - ../../base/apps/redis-streams-exporter/ops    # ServiceMonitor (CRD-gated; ops-bundle'a değil buraya — prod sızıntısı yok)
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06
@@ -45,6 +46,7 @@ resources:
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster
   - endpoints-workcube-mssql.yaml    # 172.19.0.8 (workcube-mssql-proxy-test, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
+  - netpol-audit-retention-worker.yaml  # #1250-D worker narrow egress: DNS + PG 172.19.0.6/32:5432 + MinIO 172.19.0.252/32:9000
   # Faz 23.2 PR-D.2 — Tempo OTLP egress (notification-orchestrator → monitoring/tempo)
   - netpol-notification-tempo.yaml
   # Faz 23.A6+A7+A8 — notification-orchestrator → mail provider egress (Office 365 SMTP 587 + Graph 443)
@@ -121,6 +123,15 @@ images:
     # D30 immutable digest pin (drift gate Check1 = @sha256; live pod imageID
     # 2026-06-17 D29 Up+Functional verified — health 200 + consumer-group joined).
     digest: sha256:196ec1a06b27722c9d52881f93e97efb693342ef5430677eb05535be5db84bc5
+
+  - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
+    newName: ghcr.io/halildeu/platform-backend-audit-retention-worker
+    # Faz 24 KVKK audit-archive 7yr WORM worker (#1250-D, ADR-0042; C-slice
+    # platform-backend PR #687 merge a78d7460). CronJob run-once; PER_TENANT
+    # verify-before-archive + version-id idempotency + COMPLIANCE WORM.
+    # D30 immutable digest pin (main image build run 27689352546).
+    # AUDIT_RETENTION_WORKER_IMAGE_DIGEST (ConfigMap) MUST equal this digest.
+    digest: sha256:d7e7f57407437c014571f1ad5a9955f03fc3edcb1d964067ef351fa38e798665
 
   - name: docker.io/oliver006/redis_exporter
     # Faz 24 PR-obs-01a (gitops#1247): redis-streams-exporter v1.86.0
