@@ -43,6 +43,23 @@ POD_DEPLOY="${POD_DEPLOY:-deploy/meeting-service}"
 OPENFGA_BASE="${OPENFGA_BASE:-http://openfga:8080}"
 KE="kubectl --context ${KUBE_CONTEXT} -n ${KUBE_NS}"
 
+# --- INVARIANT GUARD (ADR-0041 §4 — machine-enforced, fail-closed) ---
+# Test-only bootstrap exception (DD-EA-2): this script NEVER seeds a prod realm,
+# never writes a wildcard subject, and only touches the Faz 24 module objects.
+# Prod tuple-writing is permission-service's job (role/granule + assignment →
+# TupleSyncService → OpenFGA). Refuse loudly if any invariant is violated.
+case "$KUBE_NS" in
+  platform-test) : ;;
+  *) err "ADR-0041 invariant: seed is platform-test only (KUBE_NS=${KUBE_NS} refused — prod/other realm seed forbidden)"; exit 1 ;;
+esac
+if jq -e '[(.tuples // [])[].user, (.smoke_checks // [])[].user] | any(. == "user:*" or endswith(":*"))' "$TUPLES_JSON" >/dev/null 2>&1; then
+  err "ADR-0041 invariant: wildcard subject (user:*) forbidden in ${TUPLES_JSON##*/}"; exit 1
+fi
+if jq -e '[(.tuples // [])[].object, (.smoke_checks // [])[].object] | any(. != "module:meeting" and . != "module:transcript")' "$TUPLES_JSON" >/dev/null 2>&1; then
+  err "ADR-0041 invariant: only module:meeting / module:transcript objects allowed in ${TUPLES_JSON##*/}"; exit 1
+fi
+info "ADR-0041 invariant guard: PASS (platform-test, no wildcard subject, module:{meeting,transcript} only)"
+
 # --- store/model from the running pod env (fail-closed if absent) ---
 SID=$($KE exec "$POD_DEPLOY" -- env 2>/dev/null | grep '^ERP_OPENFGA_STORE_ID=' | cut -d= -f2 | tr -d '\r')
 MID=$($KE exec "$POD_DEPLOY" -- env 2>/dev/null | grep '^ERP_OPENFGA_MODEL_ID=' | cut -d= -f2 | tr -d '\r')
