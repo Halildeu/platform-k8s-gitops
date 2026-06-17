@@ -10,12 +10,18 @@ owner-approved current pair was **Denetim PC + ERP-MOBIL**; `AgentPC2` remains
 the next product-channel verify candidate, not a blocker for the current
 two-device #1609 record. Tracked by Project #2 issue
 [#1609](https://github.com/Halildeu/platform-k8s-gitops/issues/1609).
+As of 2026-06-17, `AgentPC2` is tracked as a dedicated third-device
+product-channel gate in
+[#1643](https://github.com/Halildeu/platform-k8s-gitops/issues/1643)
+(`Status=Blocked`, `Faz=Faz 22`, `Track=ops`, `Priority=P0`, `Kind=gate`).
+No temporary reverse SSH/RDP path, inbound SSH/WinRM/SMB/RPC reachability, or
+operator-pasted command counts as AgentPC2 acceptance evidence.
 
 | Device | Recommended role | Why | Boundary |
 |---|---|---|---|
 | `SRB-AIDENETIMPC` / Denetim PC | Accepted device 1 | Domain joined, `mtls.testai.acik.com:443=true`, `testai.acik.com:443=true`, `Acik-Endpoint-CA` client-auth cert, `EndpointAgent` Running/Auto/LocalSystem, restart smoke PASS. | Real workstation path; do not treat it as a 50-PC denominator. |
 | `ERP-MOBIL` | Accepted device 2 | Domain joined, `mtls.testai.acik.com:443=true`, `testai.acik.com:443=true`, `Acik-Endpoint-CA` client-auth cert, `EndpointAgent` Running/Auto/LocalSystem, restart smoke PASS. | Domain Windows Server / controllable acceptance host; valid for current 2-device cap, not broad workstation diversity. |
-| `AgentPC2` | Next product-channel verify | Best next workstation-style target once stable GPO/MSI or remote-ops product channel exists. | If domain joined and GPO/cert applies, use signed MSI + GPO. If not, use one-command bootstrap until domain path is repaired. |
+| `AgentPC2` | Blocked third-device product-channel gate (#1643) | Best next workstation-style target once stable GPO/MSI, one-command bootstrap, existing EndpointAgent mTLS, or Domain Ops Broker typed evidence exists. | Do not accept lab tunnel/RDP/inbound-port evidence. Keep blocked until product-channel evidence is attached to #1643 and cross-linked to #1601. |
 | `AgentPC1` | Reserve/fallback | Useful if AgentPC2 is unavailable or needs comparison evidence. | Keep out of active denominator unless one of the primary pair is dropped. |
 | local Parallels Windows | Break/fix lab | Fastest place to reproduce installer, rollback, and service-mode regressions without affecting users. | Lab evidence only; not domain-GPO acceptance unless explicitly domain-joined and network-ready. |
 
@@ -31,6 +37,11 @@ domain host is sufficient for host-local diagnostics but not a durable AD/GPO
 mutation channel. AD/GPO changes must move to a delegated **Domain Ops Broker**
 or an explicitly domain-authenticated operator/DC path. Target design:
 [docs/faz-22-domain-ops-broker-plan.md](../faz-22-domain-ops-broker-plan.md).
+The first backend product slice is accepted under
+[platform-backend#676](https://github.com/Halildeu/platform-backend/issues/676):
+Admin API -> durable request state -> credential-ref custody -> typed connector
+dispatch -> deterministic fail-closed result/status/audit. It proves safe
+broker durability and redaction; it does not prove real AD/GPO mutation success.
 
 **Remote-ops product boundary**: temporary reverse SSH is a lab bridge, not a
 product capability. Product remote-ops remains disabled by default and must be
