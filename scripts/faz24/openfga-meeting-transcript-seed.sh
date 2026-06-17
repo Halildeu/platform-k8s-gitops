@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Faz 24 Zanzibar-ready: seed module:meeting + module:transcript tuples + verify allow/deny.
+# Faz 24 Zanzibar-ready: seed module:MEETING + module:TRANSCRIPT tuples + verify allow/deny.
+# UPPERCASE object ids (ADR-0041 §5 Option A, Codex 019ed603): the OpenFGA module
+# object id == permission-service catalog key == role_permissions.permission_key ==
+# services' @RequireModule literal (MeetingAuthz/TranscriptAuthz.MODULE). The MODULE
+# write path applies no case transform; staged re-seed runbook (additive, NOT
+# delete-first): docs/runbooks/RB-faz24-mt-uppercase-reseed.md.
 #
 # Runs ON staging-sw. OpenFGA reached via meeting-service pod (has curl); JSON
 # payloads piped via stdin (-d @-) to avoid quote-nesting. jq runs on the HOST
@@ -55,10 +60,10 @@ esac
 if jq -e '[(.tuples // [])[].user, (.smoke_checks // [])[].user] | any(. == "user:*" or endswith(":*"))' "$TUPLES_JSON" >/dev/null 2>&1; then
   err "ADR-0041 invariant: wildcard subject (user:*) forbidden in ${TUPLES_JSON##*/}"; exit 1
 fi
-if jq -e '[(.tuples // [])[].object, (.smoke_checks // [])[].object] | any(. != "module:meeting" and . != "module:transcript")' "$TUPLES_JSON" >/dev/null 2>&1; then
-  err "ADR-0041 invariant: only module:meeting / module:transcript objects allowed in ${TUPLES_JSON##*/}"; exit 1
+if jq -e '[(.tuples // [])[].object, (.smoke_checks // [])[].object] | any(. != "module:MEETING" and . != "module:TRANSCRIPT")' "$TUPLES_JSON" >/dev/null 2>&1; then
+  err "ADR-0041 invariant: only module:MEETING / module:TRANSCRIPT objects allowed in ${TUPLES_JSON##*/}"; exit 1
 fi
-info "ADR-0041 invariant guard: PASS (platform-test, no wildcard subject, module:{meeting,transcript} only)"
+info "ADR-0041 invariant guard: PASS (platform-test, no wildcard subject, module:{MEETING,TRANSCRIPT} only)"
 
 # --- store/model from the running pod env (fail-closed if absent) ---
 SID=$($KE exec "$POD_DEPLOY" -- env 2>/dev/null | grep '^ERP_OPENFGA_STORE_ID=' | cut -d= -f2 | tr -d '\r')
@@ -145,4 +150,4 @@ if [ "$rc" -ne 0 ]; then
   err "Smoke verification FAILED — one or more allow/deny assertions did not match."
   exit 1
 fi
-info "All ${TUPLES_JSON##*/} smoke_checks PASS — Faz 24 module:meeting + module:transcript Zanzibar-ready."
+info "All ${TUPLES_JSON##*/} smoke_checks PASS — Faz 24 module:MEETING + module:TRANSCRIPT Zanzibar-ready."
