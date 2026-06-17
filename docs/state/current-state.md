@@ -1,5 +1,21 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 M4 MSI lifecycle lab smoke (#115, 2026-06-17)
+
+**Session milestone**: `platform-agent` #115 now has endpoint-side MSI
+lifecycle evidence on a snapshot-backed local Parallels Windows 11 VM. This
+adds install/repair/upgrade/uninstall behavior evidence to the earlier signed
+artifact generation record; it does not close production trusted-signing, EDR
+allowlist, GPO pilot, or 50/800 rollout gates.
+
+| Alan | Durum | Kanıt / sınır |
+|---|---|---|
+| Source baseline | 🟢 proven for this smoke | `platform-agent@08972ac` from `origin/main`; Windows agent binary SHA256 `869d658e1a1d10f7173a3376e2d3584440b21d13d57abe2dfa871cf9af436939`. |
+| MSI lifecycle | 🟢 lab PASS | Built lab MSI `0.1.2` and `0.1.3`; `0.1.2` install PASS, `0.1.2` repair PASS, `0.1.2 -> 0.1.3` upgrade PASS, `0.1.3` uninstall PASS. |
+| Evidence bundle | 🟢 captured | `/Users/halilkocoglu/codex-agent-msi-smoke/evidence.zip` SHA256 `7cd97ba0922ecf11a2fc0ed63905816487733dcc01937915bafda2788f58d486`; `summary-lifecycle.json` SHA256 `44cb738cd7e7e37f5a134d21b1bf8d04cedf523ee4679192f22a47f6843e77eb`. |
+| VM cleanup | 🟢 restored | Parallels VM `Windows 11` switched back to snapshot `{562aca0e-300e-4fcf-9bf6-08190aa751f9}` after the smoke. |
+| Remaining M4 gates | 🟡 open | Production trusted code-signing trust-chain, EDR/AppLocker/WDAC allowlist, GPO install pilot, rollback/reinstall drill, and broader rollout evidence remain unproven. #115 stays `Needs Verify`. |
+
 ## Live Delta — Faz 22.5 two-device acceptance evidence (#1609, 2026-06-16)
 
 **Owner decision / safety boundary**: the 50-PC M6 wave remains deliberately
