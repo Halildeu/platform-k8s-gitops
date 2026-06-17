@@ -250,8 +250,10 @@ services:
       audit_archive.* state (cursor/ledger). The worker is a run-once CronJob so
       its in-process Micrometer counters are ephemeral; this always-on exporter
       surfaces the DB truth + the companion PrometheusRule alerts on it. Read-only
-      role via ESO kv/platform/audit-archive-exporter; ServiceMonitor 9187
-      /metrics; narrow netpol (egress DNS+PG only, ingress monitoring→9187).
+      role via ESO kv/platform/audit-archive-exporter; ServiceMonitor 9187 /metrics.
+      Network posture = redis-streams-exporter parity (part-of=platform → shared
+      allow-egress-host-bridge + allow-monitoring-scrape 9187); DB blast radius is
+      bounded by the dedicated read-only role, not the network layer.
     jwt_validates: false  # internal metrics endpoint, monitoring-ns scrape only
     route_external: false
     third_party: true

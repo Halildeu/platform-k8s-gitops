@@ -16,13 +16,15 @@
 # pg_monitor / no pg_stat_* surface). Mirrors the off-the-shelf-exporter norm of
 # redis-streams-exporter (oliver006/redis_exporter).
 #
-# Failure-domain hygiene (Codex 019ed602 Must-Fix 3): the pod carries
-# app.kubernetes.io/part-of=audit-archive (NOT platform — see kustomization.yaml),
-# so it does NOT inherit the namespace-wide allow-egress-host-bridge (which opens
-# PG+KC+Vault+Redis+MinIO). Its SOLE network allowlist is the overlay's
-# netpol-audit-archive-exporter.yaml: egress DNS + host PG only, ingress
-# monitoring→9187. It talks to EXACTLY the host-compose Postgres (audit_event DB,
-# audit_event + audit_archive schemas) — never MinIO, Redis, Vault, KC, K8s API.
+# Network posture (Codex 019ed602 final): the pod carries
+# app.kubernetes.io/part-of=platform — same as the sibling redis-streams-exporter —
+# so it inherits the shared allow-egress-dns + allow-egress-host-bridge (PG
+# reachable) + allow-monitoring-scrape (port 9187 added there). (part-of=audit-archive
+# would give tighter egress, but the PR-time drift Check 5 only scopes part-of=platform
+# Deployments and a catalog-enabled Deployment must be platform-scoped.) The exporter
+# only ever connects to the host-compose Postgres (audit_event DB, audit_event +
+# audit_archive schemas); its DB blast radius is bounded at the ROLE layer — a
+# dedicated read-only audit_archive_exporter role (SELECT only) via ESO — not the network.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

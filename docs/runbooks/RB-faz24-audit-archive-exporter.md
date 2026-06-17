@@ -18,17 +18,20 @@
 audit-retention-worker CronJob (03:00) ──writes──▶ audit_archive.{cursor,ledger,tenant_anchor}
                                                      (host-compose Postgres, DB audit_event)
                                                             │ SELECT (read-only role)
-audit-archive-exporter (k3d-test, part-of=audit-archive) ──┘  postgres:5432  (Endpoints 172.19.0.6)
+audit-archive-exporter (k3d-test, part-of=platform) ──┘  postgres:5432  (Endpoints 172.19.0.6)
    │ :9187 /metrics  (custom queries: audit_archive_state_* + audit_archive_ledger_*)
    ▼ ServiceMonitor (monitoring ns scrape)
 Prometheus ──▶ PrometheusRule audit-retention-worker (lag / job-failed / cronjob / ledger / exporter health)
             └▶ alertmanager-bridge → GitHub issue
 ```
 
-- Pod label `app.kubernetes.io/part-of=audit-archive` (NOT platform) → does NOT
-  inherit the namespace-wide allow-egress-host-bridge; its SOLE allowlist is
-  `kustomize/overlays/test/netpol-audit-archive-exporter.yaml` (egress DNS + PG
-  only, ingress monitoring→9187). It reads PG; it never touches MinIO/Redis/Vault/KC.
+- Pod label `app.kubernetes.io/part-of=platform` (redis-streams-exporter parity) →
+  inherits the shared `allow-egress-host-bridge` (PG reachable) + `allow-monitoring-scrape`
+  (port 9187 added). It only ever connects to the host Postgres; the DB blast radius is
+  bounded at the **role layer** (dedicated read-only `audit_archive_exporter`), not the
+  network layer. (`part-of=audit-archive` would give tighter egress but is incompatible
+  with the PR-time drift Check 5, which only scopes `part-of=platform` Deployments — a
+  catalog-enabled Deployment must be platform-scoped; Codex `019ed602`.)
 - Metrics are derived from DB state, so they survive the CronJob exiting. They are
   named distinctly from the worker's in-process `audit_archive_*` counters
   (namespaced `audit_archive_state_*` / `audit_archive_ledger_*`).
@@ -98,9 +101,12 @@ kubectl --context k3d-test -n platform-test exec deploy/audit-archive-exporter -
 #   Expect: pg_up 1, audit_archive_state_cursor_seq, audit_archive_state_lag_seconds,
 #           audit_archive_state_hot_window_seconds 7776000, audit_archive_ledger_segment_count, ...
 
-# Secured — egress narrowed: PG reachable, an off-allowlist host is NOT
-kubectl --context k3d-test -n platform-test exec deploy/audit-archive-exporter -- sh -c \
-  'nc -z -w2 postgres 5432 && echo PG-OK; nc -z -w2 1.1.1.1 443 && echo LEAK || echo egress-blocked-OK'
+# Secured — the boundary is the dedicated READ-ONLY DB role + monitoring-only scrape
+# ingress (network egress is the shared platform posture, NOT the boundary). Post-
+# activation, confirm the role is SELECT-only — a write MUST be denied:
+ssh halil@staging-sw 'docker exec -i platform-pg-test psql -U audit_archive_exporter -d audit_event \
+  -c "INSERT INTO audit_archive.audit_archive_cursor VALUES (0, now());"'   # expect: ERROR: permission denied
+#   Scrape ingress: allow-monitoring-scrape opens :9187 only from the monitoring namespace.
 ```
 
 ## Alert response
@@ -130,6 +136,6 @@ kubectl --context k3d-test -n platform-test exec deploy/audit-archive-exporter -
 
 - ADR-0042 §4 (observability), §D4.2 (contiguous-prefix cursor), §D4.3 (cursor updated_at semantics).
 - Worker: kustomize/base/apps/audit-retention-worker/ (#1250-D, #1655).
-- Exporter: kustomize/base/apps/audit-archive-exporter/ + overlays/test/eso/audit-archive-exporter/ + overlays/test/netpol-audit-archive-exporter.yaml.
+- Exporter: kustomize/base/apps/audit-archive-exporter/ + overlays/test/eso/audit-archive-exporter/ (part-of=platform → shared allow-egress-host-bridge + allow-monitoring-scrape:9187).
 - Rule: kustomize/base/monitoring/audit-retention-worker-rule.yaml.
 - Precedent: redis-streams-exporter (gitops#1247) + stt-pipeline-rule.yaml (absent()-free discipline).

@@ -49,7 +49,9 @@ resources:
   - endpoints-workcube-mssql.yaml    # 172.19.0.8 (workcube-mssql-proxy-test, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
   - netpol-audit-retention-worker.yaml  # #1250-D worker narrow egress: DNS + PG 172.19.0.6/32:5432 + MinIO 172.19.0.252/32:9000
-  - netpol-audit-archive-exporter.yaml  # PR-obs-02 (#1656) exporter narrow egress: DNS + PG 172.19.0.6/32:5432; ingress monitoring→9187
+  # PR-obs-02 (#1656) audit-archive-exporter uses part-of=platform → shared
+  # allow-egress-host-bridge (PG) + allow-monitoring-scrape (9187 added); no
+  # dedicated netpol (part-of=platform is required by drift Check 5 — Codex 019ed602).
   # Faz 23.2 PR-D.2 — Tempo OTLP egress (notification-orchestrator → monitoring/tempo)
   - netpol-notification-tempo.yaml
   # Faz 23.A6+A7+A8 — notification-orchestrator → mail provider egress (Office 365 SMTP 587 + Graph 443)

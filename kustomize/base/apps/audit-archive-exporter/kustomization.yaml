@@ -12,13 +12,15 @@ labels:
       app.kubernetes.io/name: audit-archive-exporter
     includeSelectors: true
     includeTemplates: true
-  # part-of=audit-archive (NOT platform) — same failure-domain discipline as the
-  # worker (Codex 019ed602 Must-Fix 3): the pod must NOT inherit the broad
-  # namespace-wide allow-egress-host-bridge / allow-egress-dns / allow-monitoring-scrape
-  # (all part-of=platform). The overlay's netpol-audit-archive-exporter.yaml is its
-  # SOLE allowlist (egress DNS + host PG only; ingress monitoring→9187).
+  # part-of=platform — same network posture as the sibling redis-streams-exporter.
+  # (Codex 019ed602 final: Must-Fix 3's part-of=audit-archive is INCOMPATIBLE with
+  # the PR-time drift Check 5, which only scopes part-of=platform Deployments — a
+  # catalog-enabled Deployment must be platform-scoped.) The pod inherits the shared
+  # allow-egress-dns + allow-egress-host-bridge (PG reachable) + allow-monitoring-scrape
+  # (port 9187 added there). DB blast radius is bounded at the ROLE layer (dedicated
+  # read-only audit_archive_exporter — Codex Must-Fix 7), not the network layer.
   - pairs:
-      app.kubernetes.io/part-of: audit-archive
+      app.kubernetes.io/part-of: platform
     includeSelectors: false
     includeTemplates: true
 

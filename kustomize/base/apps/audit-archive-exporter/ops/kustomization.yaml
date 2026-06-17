@@ -10,7 +10,7 @@ labels:
     includeSelectors: false
     includeTemplates: false
   - pairs:
-      app.kubernetes.io/part-of: audit-archive
+      app.kubernetes.io/part-of: platform
     includeSelectors: false
     includeTemplates: false
 
