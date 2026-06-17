@@ -4,14 +4,21 @@
 > Önceki context: `ac816415-...` session (Zeynep/Mavis mail-loop + #52 KVKK consensus → /goal "tüm Faz 24 agent-doable çıkar + board-uyumlu + sektör-std tamamla")
 
 ---
-## ⚡ GÜNCELLEME — Deploy fazı başladı (meeting-service LIVE)
+## 🎯 GÜNCELLEME — Faz 24 backend foundation 3/3 DEPLOYED (deploy fazı TAMAM)
 
-Bu handoff yazıldıktan SONRA, aynı oturumda **deploy fazı (gitops#1615) başlatıldı**:
-- **meeting-service k3d-test'e DEPLOY EDİLDİ** → **D29 Up+Functional LIVE** (pod Ready + imageID `sha256:62a24571` digest match + Flyway V1 gerçek `meeting` DB'de + health 200 + admin/meetings no-JWT 401) + canonical GitOps (**gitops PR #1618 MERGED**).
-- **Deploy reçetesi UÇTAN UCA PROVEN + dokümante** → memory `project_faz24_backend_foundation_delivery` "DEPLOY RECIPE PROVEN" bölümü (8 adım + CI gotcha'ları). Çözülen kalıcı sürtünmeler: ESO per-path policy (`eso-runtime` + canlı write), drift Check1 **@sha256 digest ZORUNLU** (sha-tag yetmez; live pod imageID'den al), services.yaml catalog (Check4/5), boundary `state-mutation (test cluster)` TEK (credential-class user-approval tetikler), rebase-before-merge.
-- **Durum: 3 servis BUILT + 1 servis tam-LIVE (D29) + reçete proven.** Deploy fazı 1/3.
+Bu handoff yazıldıktan SONRA, aynı oturumda **deploy fazı (gitops#1615) UÇTAN UCA tamamlandı — 3/3 servis k3d-test D29 Up+Functional LIVE + canonical GitOps**:
+- **meeting-service** (#410) → **D29 LIVE** (imageID `sha256:62a24571` + Flyway V1 `meeting` DB + health 200 + no-JWT 401) — **gitops PR #1618 MERGED**.
+- **transcript-service** (#411) → **D29 LIVE** (imageID `sha256:7f5ed7a1` + Flyway V1 `transcript` DB schema transcript_service + 2 tablo + health 200 + no-JWT 401; Codex 019ed2ec REVISE→AGREE) — **gitops PR #1626 MERGED**.
+- **audit-event-consumer-service** (#1249) → **D29 LIVE** (imageID `sha256:196ec1a0` + Flyway V1 `audit_event` DB + health 200 + Redis consumer-group `audit-persist-v1` `audit:events` JOIN via XINFO; pure consumer, OpenFGA YOK; Codex 019ed321 slice-AGREE) — **gitops PR #1631 MERGED**.
+- **Deploy reçetesi 3/3 PROVEN + dokümante** → memory `project_faz24_backend_foundation_delivery` "DEPLOY RECIPE PROVEN" + "DEPLOY 3/3 COMPLETE". Çözülen kalıcı sürtünmeler + 5 yeni gotcha: image-tag = servisin BUILD COMMIT'i (latest-main değil), Vault root token `~/bootstrap-drill/vault-init-test.json` (host token-scan classifier-blocked), quota object-count `services` bump (24→28), SSH host transient-down retry-loop, rebase-before-merge race (her PR 1-2 rebase), consumer D29 = XINFO group-join (HTTP-401 değil).
+- **Durum: 3/3 servis tam-LIVE (D29) + canonical + reçete proven + memory + board #1615 senkron.** **Deploy fazı 3/3 ✓.**
 
-**Sıradaki P0 (proven reçete replikasyonu)**: (1) transcript-service deploy (#411, port 8098, DB `transcript`, schema transcript_service) — yeni main'den worktree. (2) audit-event-consumer deploy (#1249, port 8099, schema audit_event + Redis consumer + audio-gateway `AUDIO_GATEWAY_AUDIT_REDIS_ENABLED=true` flip). (3) meeting Zanzibar-ready (OpenFGA module:meeting seed + allow/deny) + api-gateway route (browser-smoke). (4) #1250 retention. Reçete birebir memory'de.
+**Sıradaki P0 — Activation follow-up'ları (deploy ≠ activation; hepsi agent-doable, distinct ops)**:
+1. **audio-gateway producer flip** — `AUDIO_GATEWAY_AUDIT_REDIS_ENABLED=true` configmap env + rolling restart → audit end-to-end (producer→`audit:events`→consumer→`audit_event` DB row). Audit pipeline'ı fiilen akıtır. (audio-gateway configmap'te flag henüz YOK = default-off.)
+2. **meeting/transcript Zanzibar-ready** — OpenFGA `module:meeting` + `module:transcript` tuple seed + allow/deny synthetic (şu an authenticated check fail-closed deny = doğru ama enforce kanıtı yok).
+3. **meeting/transcript api-gateway route** — platform-backend RewritePath (`/api/v1/meeting-admin/**`→`/api/v1/admin/**`) + browser-smoke (HARD RULE).
+4. **#1250 audit retention archival worker** — 7yr→MinIO cold + hash-chain verify (immutable kaynak hazır).
+5. Consumer chain (#751 mfe-meeting / #412 notification / #413 report / desktop / mobile / CDC) — foundation-deploy ✓ + STT-live'a bağlı.
 
 ---
 ## 1. Bağlam (bu oturumda ne yapıldı)
