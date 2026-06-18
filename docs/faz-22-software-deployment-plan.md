@@ -291,6 +291,98 @@
 > prove production trusted code-signing, EDR/AppLocker/WDAC allowlisting, GPO
 > rollout, or 5/50/800-device rollout; #115 therefore remains `Needs Verify`.
 
+### 0.7 Remote Response Terminal Productization Lane — 2026-06-18
+
+`platform-backend#510` kapalı parent staging acceptance, **güvenli taşıma ve
+ürün session kapısını** kanıtlar: outbound mTLS/gRPC, product API
+open/approve/challenge/verify/operation akışı, `PERMIT`, `transportPushed=true`,
+`deny=null`, WORM/audit/recording ve immutable digest eşleşmesi. Bu kanıt
+**serbest terminal** veya broad remote-support readiness anlamına gelmez.
+
+2026-06-18 Claude CLI advisory sonucu: **koşullu evet**. Mimari rakiplerdeki
+Microsoft Defender Live Response, CrowdStrike RTR, SentinelOne Remote Shell,
+Sophos Live Response ve RMM Backstage/Remote Terminal sınıfıyla uyumludur; ürün
+dili **"serbest terminal"** değil **Remote Response Terminal / Break-Glass
+Response Shell** olmalıdır. Transport/auth layer #510 ile kabul edildi; komut
+ve içerik katmanı ayrı 22.6.x productization fazı olarak yürür.
+
+Board tracking:
+
+| Lane | Board issue | Owner repo | Gate |
+|---|---|---|---|
+| **22.6.x governance + runbook** | `platform-k8s-gitops#1693` | gitops | Canonical no-go, acceptance checklist, evidence/runbook |
+| **22.6.1 Operation Catalog** | `platform-backend#701` | backend | Approved diagnostic operations; raw shell yok |
+| **22.6.2 Approved Script Runner** | `platform-backend#702` | backend | Signed/approved script library; arbitrary script text yok |
+| **22.6.3 Break-glass constrained executor** | `platform-agent#208` | agent | Deny-by-default terminal executor; allowlisted diagnostic commands |
+| **22.6.x operator UX** | `platform-web#820` | web | Justification, approval, step-up, TTL, recording state visible |
+
+Canonical runbook skeleton:
+[`docs/runbooks/RB-faz22.6-remote-response-terminal.md`](./runbooks/RB-faz22.6-remote-response-terminal.md).
+
+#### 0.7.1 Product shape
+
+Üç katmanlı sıra zorunludur; sonraki katman önceki katmanın yerine geçmez:
+
+| Katman | Amaç | Varsayılan risk posture |
+|---|---|---|
+| **22.6.1 Approved Operation Catalog** | `GET_AGENT_STATUS`, `GET_AGENT_VERSION`, `GET_HOSTNAME`, `GET_NETWORK_SUMMARY`, `GET_SERVICE_STATUS`, `COLLECT_AGENT_LOGS`, `RUN_CERT_AUTOENROLL_PULSE`, `REFRESH_SOFTWARE_INVENTORY` gibi bounded operasyonlar | Default-deny, read-only ağırlıklı |
+| **22.6.2 Approved Script Runner** | İmzalı, hash-pinned, versioned script library üzerinden bakım/triage script'i çalıştırma | Dual-control + WebAuthn + arg schema |
+| **22.6.3 Break-Glass Remote Response Terminal** | Önceden kataloglanamayan incident/support durumunda kısa süreli, audit'li, allowlist'li terminal | High-risk, owner/approver gated |
+
+#### 0.7.2 Non-negotiable no-go gates
+
+Aşağıdaki koşullardan biri sağlanmıyorsa terminal veya script runner production
+claim'i yapılamaz:
+
+- Endpoint inbound RDP/SSH/WinRM/SMB/RPC yok; agent yalnız bizim broker'a
+  outbound mTLS/gRPC açar.
+- WORM/session recording kapatılamaz; audit sink down ise permit veya operation
+  fail-closed olur.
+- Operator ve approver aynı kişi olamaz; self-approval fail-closed olur.
+- WebAuthn/MFA step-up terminal ve write/elevated script için zorunludur.
+- Justification/ticket reference olmadan break-glass session açılamaz.
+- Permit device-bound, tenant-bound, short-lived ve replay-safe olur.
+- Command/script policy default-deny çalışır; unknown operation, raw
+  `cmd`/`powershell`, encoded command, arbitrary download/execute ve credential
+  export/dump sınıfları DENY olur.
+- Transcript/output redaction vardır; JWT/token/password/private key/cert
+  material response, browser log, audit body veya issue comment'e yazılmaz.
+- File transfer ve clipboard default kapalıdır; ayrı owner-approved gate
+  olmadan açılmaz.
+- Kill/revoke, heartbeat-loss ve TTL expiry session'ı terminal state'e taşır.
+- Tenant/device isolation negatifleri kanıtlanır.
+
+#### 0.7.3 B1.4 hardware-attestation boundary
+
+`platform-backend#548` açık/blocked kalır: true device-key / TPM
+hardware-attestation agent wire üzerinde henüz kapanmadı. #510 staging parent
+acceptance, B1.1-B1.3 ve enrollment-backed machine-cert trust için yeterli
+bounded kanıt sağlar; **B1.4 closure değildir**. 22.6.1/22.6.2 staging pilotu
+owner risk kabulüyle enrollment-backed trust üzerinde ilerleyebilir; 22.6.3
+broad rollout veya production remote-support claim'i için #548 ya kapanır ya da
+owner tarafından açık, süreli ve yazılı risk acceptance verilir.
+
+#### 0.7.4 Acceptance evidence checklist
+
+Her 22.6.x lane için kanıt issue comment'i ve current-state/runbook referansı
+ile kalıcılaştırılır:
+
+- allowed operation/script/terminal command: `PERMIT`, `transportPushed=true`,
+  bounded output, WORM transcript.
+- no-auth, missing role, self-approval, missing justification, missing step-up,
+  wrong tenant, wrong device, expired permit, replayed `jti`/seq, audit-down,
+  heartbeat-loss, mid-session revoke, clock skew: fail-closed.
+- raw-shell classes (`cmd /c`, unrestricted `powershell`, encoded command,
+  arbitrary download-and-execute, credential export/dump, arbitrary registry
+  save, arbitrary service/task creation, arbitrary file delete): `DENY`,
+  `transportPushed=false`, no endpoint execution.
+- browser/operator UX shows risk, TTL, approver, consent/recording state and
+  does not unlock input before server-side approval/step-up/recording gates.
+- evidence explicitly says what it **does not** prove: signed MSI/GPO rollout,
+  5-PC/50-PC/800-PC readiness, production support readiness, unrestricted
+  shell/RDP/WinRM/SMB/SSH, and true TPM/device-key attestation unless that gate
+  has separate accepted evidence.
+
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
 planı tanımlar.

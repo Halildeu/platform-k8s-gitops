@@ -76,6 +76,16 @@ Residual boundaries:
   rollout/productization gates.
 - Temporary reverse SSH and RDP/manual PowerShell remain lab-only and did not
   count toward this acceptance.
+- Remote Response Terminal / Break-Glass Response Shell productization is now
+  split out of the closed `platform-backend#510` parent. Tracking issues:
+  `platform-k8s-gitops#1693` (governance/runbook), `platform-backend#701`
+  (Operation Catalog), `platform-backend#702` (Approved Script Runner),
+  `platform-agent#208` (constrained executor), and `platform-web#820`
+  (operator UX). This is not a current live terminal claim; it is the planned
+  22.6.x productization lane. Raw unrestricted shell, broad RDP/WinRM/SMB/SSH
+  support, signed MSI/GPO rollout, 5-PC/50-PC/800-PC readiness, production
+  remote-support readiness, and true TPM/device-key attestation remain outside
+  the #510 closure unless separately evidenced.
 
 ## Live Delta — Faz 22.5 #1601 bounded acceptance closed + exporter blocker fixed (2026-06-18)
 
