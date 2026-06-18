@@ -33,10 +33,12 @@ ssh halil@staging-sw "vault kv put kv/platform/endpoint-admin-remote-bridge \
 
 # 1) Pin the REAL digest FIRST — kustomization.yaml images: must reference an
 #    immutable endpoint-admin-service digest (same image, Codex A+). For #510
-#    parent acceptance verification, the active digest is the platform-backend
-#    #696 + #697 image that exposes redacted PERMIT metadata and treats
-#    advisory AgentHello.deviceId as non-authoritative:
-#    sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9.
+#    parent acceptance verification, the active digest includes
+#    platform-backend #696, #697, #698, and #699 so the product path exposes
+#    redacted PERMIT metadata, treats advisory AgentHello.deviceId as
+#    non-authoritative, returns bounded DENY metadata, and adds bounded
+#    CRYPTO_IDENTITY deny.policyDetail diagnostics:
+#    sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392.
 
 # 2) Re-verify the PG/KC egress /32s in netpol.yaml against the current
 #    Endpoints (they drift on compose recreate):
