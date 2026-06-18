@@ -23,23 +23,79 @@
 | `MeetingServiceDBPoolSaturated` / `TranscriptServiceDBPoolSaturated` (warning, 10m) | `hikaricp_connections_pending>0` — thread'ler DB bağlantısı bekliyor (pool max=5) | Yavaş sorgu mu, leak mi? `hikaricp_connections_active` vs `_max`; PG tarafı `pg_stat_activity` uzun-süren sorgu |
 | `MeetingServiceHeapPressure` / `TranscriptServiceHeapPressure` (warning, 15m) | Heap kullanımı >%90 (15dk) | `jvm_memory_used_bytes{area="heap"}` trend; GC: `rate(jvm_gc_pause_seconds_count[5m])`; leak şüphesi → heap dump |
 
-## 2. Doğrulama (PR apply sonrası D29)
+## 2. Deploy + Doğrulama (D29)
+
+### Topoloji (Codex 019edc25 — ÖNEMLİ)
+
+- **base/monitoring** (ServiceMonitor değil; PrometheusRule) ArgoCD `platform-system`
+  ile **her iki cluster'a** sync olur (test + prod-hub'da `get prometheusrule` ile
+  `stt-pipeline`/`audit-retention-worker` görülür). Yani `meeting-transcript` rule'u
+  hem test hem prod-hub Prometheus'unda **yüklenir**.
+- **ServiceMonitor**'lar test overlay'inde → yalnız **test** cluster scrape eder
+  (lokal `up` + tüm seriler test Prometheus'unda anında oluşur).
+- **Alert routing GATED**: test cluster'da **Alertmanager KAPALI**
+  (`values-test.yaml` alertmanager.enabled=false) → test rule'u evaluate eder ama
+  route etmez. Prod-hub Alertmanager'ı var ama **şu an `cluster="test"` serisi YOK**
+  (remote_write KIRIK — **issue #1459**). Bu yüzden bu PR şunu sağlar: test-lokal
+  scrape (şimdi doğrulanır) + rule tanımı + allowlist hazırlığı. Uçtan-uca routing
+  **#1459 onarılınca** aktif olur (sahte "8 alert canlı routing" iddiası YOK).
+
+### 0. Test Prometheus remote_write allowlist'i uygula (HELM — manuel)
+
+> `platform-system` ArgoCD app **yalnız `kustomize/base/monitoring` CR'lerini** yönetir;
+> Helm release'lerini **YÖNETMEZ**. `values-test.yaml` writeRelabelConfigs değişikliği
+> `helm upgrade` olmadan test Prometheus config'ine GİRMEZ → bu adım kaçarsa #1459
+> onarılsa bile prod-hub yalnız `up` alır, 5xx/Hikari/heap = veri-yok sahte kapsama.
 
 ```bash
-# 1) ServiceMonitor'lar var
-kubectl --context k3d-test -n platform-test get servicemonitor meeting-service transcript-service
+# Mevcut -f zincirini koru (drill values aktifse onu da ekle):
+#   helm get values kube-prometheus-stack -n monitoring   # aktif -f setini gör
+helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  --version 85.0.3 \
+  -n monitoring \
+  -f helm-values/kube-prometheus-stack/values-test.yaml
+#   (k3d-test context; release rev artar)
+```
 
-# 2) Prometheus hedefleri up (1-2 scrape interval bekle, ~60s)
+### 1. ServiceMonitor + Rule apply (ArgoCD sync veya manuel)
+
+```bash
+# ArgoCD platform-system + overlay sync; manuel selective:
+kubectl --context k3d-test apply -k kustomize/overlays/test   # ServiceMonitor'lar
+kubectl --context k3d-test apply -k kustomize/base/monitoring  # meeting-transcript rule
+```
+
+### 2. Doğrulama — TEST (şimdi yapılabilir)
+
+```bash
 PP=prometheus-kube-prometheus-stack-prometheus-0
+# a) ServiceMonitor'lar var
+kubectl --context k3d-test -n platform-test get servicemonitor meeting-service transcript-service
+# b) test Prometheus hedefleri up (1-2 scrape, ~60s bekle)
 kubectl --context k3d-test -n monitoring exec $PP -c prometheus -- \
   promtool query instant http://localhost:9090 'up{job=~"meeting-service|transcript-service"}'
 #   beklenen: iki seri, value=1
-
-# 3) PrometheusRule yüklendi + alarmlar inactive (false-firing yok)
+# c) alert girdisi seriler test'te mevcut (5xx/hikari/heap)
+kubectl --context k3d-test -n monitoring exec $PP -c prometheus -- \
+  promtool query instant http://localhost:9090 \
+  'count({job=~"meeting-service|transcript-service",__name__=~"http_server_requests_seconds_count|hikaricp_connections_pending|jvm_memory_used_bytes"})'
+#   beklenen: >0
+# d) rule yüklü + false-firing yok
 kubectl --context k3d-test -n monitoring exec $PP -c prometheus -- \
   promtool query instant http://localhost:9090 \
   'ALERTS{alertname=~"Meeting.*|Transcript.*",alertstate="firing"}'
-#   beklenen: boş (sağlıklı state'te hiçbiri firing değil)
+#   beklenen: boş (sağlıklı state)
+```
+
+### 3. Doğrulama — PROD-HUB (#1459 onarıldıktan SONRA)
+
+```bash
+# remote_write sağlıklıysa test serileri prod-hub'a allowlist üzerinden gelir:
+PP=prometheus-kube-prometheus-stack-prometheus-0
+kubectl --context k3d-prod -n monitoring exec $PP -c prometheus -- \
+  promtool query instant http://localhost:9090 \
+  'count({cluster="test",job=~"meeting-service|transcript-service",__name__=~"http_server_requests_seconds_count|hikaricp_connections_pending|jvm_memory_(used|max)_bytes"})'
+#   beklenen (#1459 sonrası): >0. Boşsa: helm upgrade (§0) atlandı VEYA remote_write hâlâ kırık.
 ```
 
 ## 3. Rollback
