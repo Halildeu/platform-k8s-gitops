@@ -72,8 +72,8 @@ jobs:
   deploy:
     name: Deploy backend testai (sequential digest pin + verify)
     runs-on: [self-hosted, staging-sw, testai-deploy]
-    # Codex 019e233b review #1 — Gate 1d adds deterministic 17 min budget
-    # (auth 180s + 7 services * 120s). Plus rollout (8 * 180s = 24m max) +
+    # Codex 019e233b review #1 — Gate 1d adds deterministic 20 min budget
+    # (auth + endpoint-admin 180s + 7 services * 120s). Plus rollout (9 * 180s = 27m max) +
     # Gate 1c (per-service curl) + buffer. 30m timeout was insufficient.
     timeout-minutes: 60
 
