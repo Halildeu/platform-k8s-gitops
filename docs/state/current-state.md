@@ -1,42 +1,48 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.6 #510 remote-bridge DENY-observability repin prepared (2026-06-18)
+## Live Delta — Faz 22.6 #510 remote-bridge CRYPTO_IDENTITY gate exposed (2026-06-18)
 
 **Session milestone**: `platform-backend#510` remains Project `Needs Verify`.
-The primary `endpoint-admin-service` hardening image already carries
-`platform-backend#696`, `platform-backend#697`, and `platform-backend#698`, but
-the separate owner-gated `endpoint-admin-remote-bridge` activation overlay also
-has to run the latest image before a live product-session can either prove
-`PERMIT` or expose the remaining policy gate through redacted `DENY` metadata.
-The latest product smoke on the #697 remote-bridge digest returned
-`DENY`/`transportPushed=false`, so #698 was merged to remove blind debugging
-from the #510 parent acceptance path.
+`platform-backend#698` changed the previous blind DENY behavior in the live
+remote-bridge path into a bounded policy response, but the parent acceptance
+gate is still not a `PERMIT` path.
 
-Agent-doable GitOps preparation:
+Live evidence captured on `k3d-test/platform-test`:
 
-- Activation overlay
-  `kustomize/overlays/test/activation/endpoint-admin-remote-bridge` now pins
-  the broker image to
+- `platform-k8s-gitops#1689` merged the owner-gated activation overlay repin.
+  Staging `/home/halil/platform-k8s-gitops` fast-forwarded to
+  `62e445e16c50dd148a6dfadfdff74021cd643de0` and applied
+  `kustomize/overlays/test/activation/endpoint-admin-remote-bridge`.
+- `endpoint-admin-remote-bridge` rollout succeeded with deployment state
+  `READY 1/1`, `UP-TO-DATE 1`, `AVAILABLE 1`. The active endpoint target was
+  `endpoint-admin-remote-bridge-ccbff5f5f-g426g`.
+- Desired image and live pod `imageID` both matched the immutable #698 image:
   `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:4203694562dae5f3ae57ca17f3d8354fce9920026a7e05ee42be550b95a35aa3`.
-  This digest was produced by backend image build run `27762898846` after
-  `platform-backend#696` merged as
-  `14e6390e9ae3d92a0c012c6220fdddf5b1d82d78` and `platform-backend#697`
-  merged as `2612786cd05d986c452ed4dbbf6bb1b12f4a7d4d`; it also includes
-  `platform-backend#698`, merged as
-  `9a53fa745ec7dc27ed5166291ec3048e389615d3`, which adds bounded/redacted
-  `deny.reason` and `deny.policyGate` for broker DENY responses.
-- This is not a #510 closure claim. The acceptance gate still requires an
-  owner-gated apply/sync of the activation overlay, live `pod imageID` match
-  for `endpoint-admin-remote-bridge`, and a product remote-ops smoke. If that
-  smoke returns `PERMIT`, it must capture `transportPushed=true` and redacted
-  `permit.signaturePresent`, `permit.canonicalPayloadSha256`, and
-  `permit.freshAtResponseTime` without raw `signatureB64`, raw `deviceId`, or
-  raw `operatorSubject`. If it still returns `DENY`, the response must expose
-  only the bounded/redacted policy gate needed for the next fix.
-- Remaining #510 parent evidence after this repin is still the retained live
-  negative/session-control matrix: replay, expired permit, wrong device,
-  audit-sink-down, heartbeat loss, terminate/reconnect, mid-session revoke,
-  and clock-skew.
+
+Product smoke evidence:
+
+- Evidence dir: `/home/halil/codex-rb-smoke/20260618T134524Z-product`.
+- Session: `rb-denetim-20260618T134524Z`.
+- Operation: `op-hostname-20260618T134524Z`.
+- HTTP path: open `200`, negative non-pilot capability `400`, approve `200`,
+  step-up challenge `200`, step-up verify `200`, operation submit `200`.
+- Operation response:
+  `{"kind":"DENY","transportPushed":false,"permit":null,"deny":{"reason":"policy:CRYPTO_IDENTITY","policyGate":"CRYPTO_IDENTITY"}}`.
+- WORM recording kinds captured: `POLICY_EVENT`.
+
+Interpretation:
+
+- The previous silent/opaque DENY symptom no longer reproduces in the deployed
+  #698 digest path; the remaining policy gate is now visible as
+  `CRYPTO_IDENTITY`.
+- #510 is not parent-accepted yet: there is no `PERMIT`, no
+  `transportPushed=true`, and no `AGENT_OUTPUT` evidence for the real product
+  operation.
+- Next executable slice is the `CRYPTO_IDENTITY` policy/device-identity gate
+  for the Denetim/ERP-MOBIL pilot identity path. After that fix, rerun the same
+  product smoke until the accepted result is either a `PERMIT` with
+  `transportPushed=true` + WORM `POLICY_EVENT` + `AGENT_OUTPUT`, or a formally
+  accepted DENY boundary for this pilot scope.
 
 ## Live Delta — Faz 22.5 #1601 bounded acceptance closed + exporter blocker fixed (2026-06-18)
 
