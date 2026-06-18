@@ -50,8 +50,24 @@ Scope split / residual truth:
   `https://github.com/Halildeu/platform-agent/releases/download/v0.2.9/msi-build-manifest.json`.
   `gpo-msi` can now be selected for the live pilot, but #1680 still requires
   two managed-PC install/upgrade evidence packets plus one rollback drill.
+- Remote-ops hardening/deploy evidence was added on 2026-06-18 for the
+  broader `platform-backend#510` parent. `platform-backend#696` merged as
+  `14e6390e9ae3d92a0c012c6220fdddf5b1d82d78`, exposing redacted/non-secret
+  PERMIT metadata while withholding raw `signatureB64`, raw `deviceId`, and raw
+  `operatorSubject`. `platform-k8s-gitops#1684` pinned test
+  `endpoint-admin-service` to
+  `sha256:d1634dfd1beadb5bf69499e1384395e7fb9f8517e34c5a32319d3536fa6971f2`;
+  deploy run `27756026906` succeeded with pod digest match, readiness `200`,
+  and Gate 1d `endpoint-admin-service` stability PASS across `180s`.
+  `platform-k8s-gitops#1685` added a regression guard so Gate 1d coverage keeps
+  `endpoint-admin-service` in the stability window. This removes the G6
+  observability/deploy guard gap, but it is not the full #510 product
+  acceptance.
 - Broader owner-gated attended remote-access remains
-  `platform-backend#510` (`Needs Verify`).
+  `platform-backend#510` (`Needs Verify`). Remaining evidence: product-session
+  capture of the new redacted permit metadata plus retained live negative and
+  session-control cases: replay, expired permit, wrong device, audit-sink-down,
+  heartbeat loss, terminate/reconnect, mid-session revoke, and clock-skew.
 - Current Argo residual drift is exporter-external: `platform-eso-test`
   remains `Degraded` because `perf-alertmanager-teams-secrets` cannot get
   provider data; `platform-test` remains `OutOfSync` because
