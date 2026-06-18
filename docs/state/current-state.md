@@ -1,14 +1,16 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.6.1 remote-bridge #701 combined digest activated, full catalog smoke still gated (2026-06-18)
+## Live Delta — Faz 22.6.1 #701 catalog product smoke accepted-candidate on combined digest (2026-06-18)
 
-**Session milestone**: `platform-k8s-gitops#1697` has live deploy/preflight
-evidence for the combined `platform-backend#701` + `#705/#706`
-endpoint-admin artifact on both the primary endpoint-admin deployment and the
-owner-gated `endpoint-admin-remote-bridge` activation overlay. This is deploy
-readiness for the `#701` Operation Catalog runtime path; it is not yet full
-`#701` acceptance because a fresh owner-approved product session and operator
-bearer token are still required to prove `PERMIT` plus `transportPushed=true`.
+**Session milestone**: `platform-k8s-gitops#1697` now has live deploy,
+activation, preflight, and product-path catalog smoke evidence for the combined
+`platform-backend#701` + `#705/#706` endpoint-admin artifact. The bounded
+`#701` runtime gate has accepted-candidate evidence for one enabled catalog
+operation (`GET_HOSTNAME`) with `PERMIT`, `transportPushed=true`, and bounded
+audit/result evidence. This is not a claim for Approved Script Runner,
+interactive terminal, unrestricted shell, file transfer, VIEW_ONLY screen-share,
+production remote-support readiness, broad rollout, or true TPM/device-key
+attestation.
 
 Runtime and source lineage:
 
@@ -29,20 +31,13 @@ Runtime and source lineage:
   completed `success`: digest extraction, sequential digest pin, public edge
   chain, in-cluster readiness, and pod stability passed. Gate 2 JWT auth smoke
   remained warn-only/skipped because `SMOKE_AUTH_*` secrets are not configured.
-- Staging `/home/halil/platform-k8s-gitops` was reset to `origin/main`
-  `68257294485aa22a58d4c7e8faac4b6615c8152e`, which includes `#1699`, and the
-  owner-gated activation overlay was applied with the documented
+- Owner-gated activation overlay was applied with the documented
   `kubectl apply -k kustomize/overlays/test/activation/endpoint-admin-remote-bridge`
   path against `k3d-test/platform-test`.
-- Live `endpoint-admin-service` image and pod `imageID` match the selected
-  digest; deployment is Ready/Available `1/1`, pod restart count `0`.
-- Live `endpoint-admin-remote-bridge` deployment status after activation:
-  ready `1`, available `1`, updated `1`, replicas `1`, observed generation
-  `25`, generation `25`.
-- Live remote-bridge pod:
-  `endpoint-admin-remote-bridge-dcbffc9c6-6szpg`, Ready `true`, restart count
-  `0`, imageID
-  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:3c0a9573602247437b18f8cc0685c5607326530fc6b81528330f8a395524719c`.
+- Live `endpoint-admin-service` and `endpoint-admin-remote-bridge` deployment
+  images and pod `imageID`s match the selected digest. The live remote-bridge
+  pod is `endpoint-admin-remote-bridge-dcbffc9c6-6szpg`, Ready `true`, restart
+  count `0`.
 
 Preflight and fail-closed evidence:
 
@@ -58,19 +53,47 @@ Preflight and fail-closed evidence:
   `summary.json` SHA256:
   `5c13784f13cac4bf190132c7d3a7b1ff43a9356486343b09024973c7f382b2d9`.
 
+Product catalog smoke evidence:
+
+- Evidence directory:
+  `/home/halil/codex-rb-smoke/20260618T201530Z-catalog-701-product`.
+- `summary.json` SHA256:
+  `9485fb9935fd1467f82bd311998b0f0d7525d41fad94d368b4df0a4d4e69c20a`.
+- Session: `rb-denetim-catalog-20260618T201715Z`; device:
+  `423b6fc3-7497-4083-bd2f-5e2fe543bfe9`; catalog operation:
+  `GET_HOSTNAME`; operation id: `op-catalog-20260618T201715Z`.
+- Product HTTP path: no-auth catalog `401`, authenticated catalog `200`, open
+  session `200` with `consentPromptSent=true`, non-pilot `FULL_RDP` open
+  `400`, approval `200`, step-up challenge `200`, step-up verify `200` with
+  `WEBAUTHN_USER_VERIFICATION`.
+- Catalog negative matrix: raw `PTY_COMMAND` without `catalogOperationId`
+  returned `400/catalog-operation-required`; disabled `GET_SERVICE_STATUS`
+  returned `422/catalog-operation-disabled`; `GET_HOSTNAME` command override
+  returned `400/catalog-command-override`.
+- Allowed catalog operation result: `GET_HOSTNAME` returned `200`,
+  `kind=PERMIT`, `transportPushed=true`, `deny=null`,
+  `permit.signaturePresent=true`, `permit.freshAtResponseTime=true`,
+  `permit.capability=CONSTRAINED_PTY`.
+- Bounded audit/result evidence: harness log records `HEARTBEAT`,
+  `CONSENT_PROMPT`, consent grant, and `OPERATION_DISPATCH` for the same
+  session/operation command `hostname`; remote-bridge log records
+  `HELLO_VERIFIED` and `CONSENT_GRANTED/ACTIVE`; DB WORM query records
+  `session_recording_entry` kind `POLICY_EVENT`.
+- Temporary per-run REST/gRPC port-forwards and Docker harness were cleaned up;
+  pre-existing shared `18096/19444` forwards were not touched.
+
 Residual boundaries:
 
-- Full `platform-backend#701` catalog runtime acceptance remains open until
-  `scripts/faz22-remote-ops/remote-ops-catalog-smoke.sh` runs with
-  `REQUIRE_OPERATION=1`, a fresh owner-approved `REMOTE_BRIDGE_SESSION_ID`, and
-  an `OPERATOR_BEARER_TOKEN`, proving an enabled catalog operation, `PERMIT`,
-  `transportPushed=true`, and bounded audit/result evidence.
-- Current staging shell environment did not have `OPERATOR_BEARER_TOKEN` or
-  `REMOTE_BRIDGE_SESSION_ID` exported at evidence time.
-- This evidence does not prove authenticated catalog listing, endpoint
-  execution, Approved Script Runner, interactive terminal, unrestricted shell,
-  file transfer, production remote-support readiness, broad rollout, or true
-  TPM/device-key attestation.
+- The earlier `openSession 404` observation on the same digest remains useful
+  stale/no-live-peer evidence, but it is superseded for `#701` acceptance by
+  the fresh Denetim CONTROL stream smoke above. No backend resolver code change
+  is proven necessary by that earlier failure alone.
+- `platform-backend#701` now has accepted-candidate runtime evidence for the
+  server-owned/static first catalog boundary. Persistent tenant-scoped catalog
+  CRUD remains a separate product decision.
+- `platform-backend#702` owns Approved Script Runner. VIEW_ONLY screen-share
+  remains under `platform-k8s-gitops#1580`. True device-key/TPM residual remains
+  under `platform-backend#548`.
 
 ## Live Delta — Faz 22.6 #510 parent remote-bridge acceptance closed on staging (2026-06-18)
 
