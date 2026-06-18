@@ -31,8 +31,12 @@
 #     (`9a8bf45a51c6494e5f03ba33f515dd38e108bbee`) so #1697 can smoke the
 #     catalog gate through the owner-gated remote-bridge broker path without
 #     racing a superseded #701-only endpoint-admin image.
+#   - immutable test digest includes platform-backend#707 via #708
+#     (`41998aa04224dcfeaadfac201317891ca18dd95f`) so the owner-gated
+#     remote-bridge broker path uses the same connected-peer resolver fallback
+#     artifact as the primary endpoint-admin-service test overlay.
 #   - immutable test digest:
-#     sha256:3c0a9573602247437b18f8cc0685c5607326530fc6b81528330f8a395524719c
+#     sha256:f43bb111c382bee85ad655290dbbc9fc9fe9fc0e0c032c35aa49bfa5e6f9a95c
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -69,9 +73,12 @@ images:
   # uses the same combined Operation Catalog + Domain Ops executor image as the
   # primary test overlay. This file is still owner-gated and outside Argo root;
   # this PR does not apply it.
+  # Re-pinned for backend #707/#708 after the primary test overlay moved to
+  # sha-41998aa, so owner-gated broker-path smoke does not run on stale
+  # connected-peer resolver code.
   # This activation overlay remains outside the Argo root and still requires an
   # explicit owner-gated operator apply before #510 live product-session
   # verification.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:3c0a9573602247437b18f8cc0685c5607326530fc6b81528330f8a395524719c
+    digest: sha256:f43bb111c382bee85ad655290dbbc9fc9fe9fc0e0c032c35aa49bfa5e6f9a95c
