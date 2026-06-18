@@ -84,6 +84,90 @@ Residual boundaries:
   `sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb`
   before merge/apply to avoid a digest downgrade or overlay drift.
 
+## Live Delta — Faz 22.6.1 #701 catalog smoke accepted on approved-script digest (2026-06-19)
+
+**Session milestone**: `platform-k8s-gitops#1697` and `platform-backend#707`
+now have fresh live staging evidence for the server-owned/static Operation
+Catalog and resolver guard path on the same runtime digest accepted for
+Approved Script Runner. The bounded catalog gate has product-path evidence for
+one enabled catalog operation (`GET_HOSTNAME`) with `PERMIT`,
+`transportPushed=true`, catalog fail-closed checks, and live pod imageID
+matching the selected digest. This is not a claim for Approved Script Runner
+itself, unrestricted shell, terminal UX, file transfer, VIEW_ONLY
+screen-share, broad managed-PC rollout, production remote-support readiness,
+or true TPM/device-key attestation.
+
+Runtime and source lineage:
+
+- Selected artifact:
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb`.
+- Staging `/home/halil/platform-k8s-gitops` is at
+  `5c8f766141ddef3900730e9a76c8bc6b27b908d5`, which pins both the primary
+  test overlay and the owner-gated remote-bridge activation overlay to the
+  selected digest.
+- Live `endpoint-admin-remote-bridge` pod
+  `endpoint-admin-remote-bridge-789dd799-ktpjk` is Running/ready with restart
+  count `0`; container `endpoint-admin-remote-bridge` imageID matches the
+  selected digest.
+- `platform-k8s-gitops#1697` and `platform-backend#707` record the acceptance
+  evidence and are GitHub `Closed` for this bounded catalog/resolver gate.
+
+Product catalog smoke evidence:
+
+- Evidence directory:
+  `/home/halil/codex-rb-smoke/20260618T221211Z-catalog-9645ad-product-retry3`.
+- Catalog helper directory:
+  `/home/halil/codex-rb-smoke/20260618T221211Z-catalog-9645ad-product-retry3/catalog`.
+- Top-level `summary.json` SHA256:
+  `4f44404ab219e93d8724ee14ac78a29420f6638e291531a1d038317898d98d67`.
+- Session: `rb-catalog-9645ad-20260618T221211Z`; product HTTP path:
+  open `200`, approve `200`, step-up challenge `200`, step-up verify `200`.
+- Pilot/scope guard: non-pilot `FULL_RDP` open returned `400`.
+- Catalog access guard: no-auth catalog returned `401`; authenticated catalog
+  returned `200`.
+- Catalog negative matrix: raw `PTY_COMMAND` without `catalogOperationId`
+  returned `400/catalog-operation-required`; disabled `GET_SERVICE_STATUS`
+  returned `422/catalog-operation-disabled`; `GET_HOSTNAME` command override
+  returned `400/catalog-command-override`.
+- Allowed catalog operation result: `GET_HOSTNAME` returned `200`,
+  `kind=PERMIT`, `transportPushed=true`, `deny=null`,
+  `permit.signaturePresent=true`, `permit.freshAtResponseTime=true`,
+  `permit.capability=CONSTRAINED_PTY`, and
+  `catalogOperationId=GET_HOSTNAME`.
+- Audit/recording evidence: summary `recordingKinds` includes
+  `POLICY_EVENT`; broker log for the live stream records
+  `HELLO_VERIFIED:cert=true,attestation=true,device=false`.
+- Temporary REST/gRPC port-forwards and the Docker harness were cleaned up
+  after the accepted run; live pod readiness and imageID were rechecked after
+  cleanup.
+
+Discovered follow-up:
+
+- A stale successful Approved Script Runner session
+  `rb-approved-script-20260618T215313Z` initially caused subsequent catalog
+  `open-session` attempts to return `422/open-session-refused`, because the
+  remote-bridge session store allows one non-terminal session per peer.
+- Cleanup evidence:
+  `/home/halil/codex-rb-smoke/20260618T221002Z-cleanup-active-session-screen-view-deny`.
+  A `SCREEN_VIEW` operation returned `200` with
+  `kind=DENY`, `transportPushed=false`, and
+  `deny.reason=no-active-consent-lease`, which released the active slot.
+- Follow-up issue `platform-backend#710` tracks an explicit remote-bridge
+  session close/reaper path after `PERMIT` so later smokes and operator flows
+  do not depend on an incidental DENY cleanup operation.
+
+Residual boundaries:
+
+- `platform-backend#702/#709` Approved Script Runner evidence is recorded in
+  the separate `#1705` delta above and is not implied by this catalog section.
+- `platform-agent#208` remains the constrained executor source boundary; no
+  new packaged-agent terminal-source smoke is claimed by this catalog run.
+- `platform-web#820` remains open for the operator UX. UI approval, TTL,
+  transcript, and negative-state browser smoke are not proven here.
+- `platform-backend#548` remains the true device-key / TPM hardware-attestation
+  boundary for broad terminal rollout unless owner explicitly accepts a narrow,
+  time-bounded pilot risk envelope.
+
 ## Live Delta — Faz 22.6.1 #701 catalog product smoke accepted-candidate on combined digest (2026-06-18)
 
 **Session milestone**: `platform-k8s-gitops#1697` now has live deploy,
