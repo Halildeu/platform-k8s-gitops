@@ -27,8 +27,12 @@
 #   - immutable test digest includes platform-backend#699
 #     (`64926dd98ea2501ada12facfb5962d6f4677ff5a`) so CRYPTO_IDENTITY
 #     DENY responses expose bounded/redacted deny.policyDetail diagnostics.
+#   - immutable test digest includes platform-backend#701/#705 via #704/#706
+#     (`9a8bf45a51c6494e5f03ba33f515dd38e108bbee`) so #1697 can smoke the
+#     catalog gate through the owner-gated remote-bridge broker path without
+#     racing a superseded #701-only endpoint-admin image.
 #   - immutable test digest:
-#     sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392
+#     sha256:3c0a9573602247437b18f8cc0685c5607326530fc6b81528330f8a395524719c
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -61,9 +65,13 @@ images:
   # (Codex A+). Re-pinned after #699 CRYPTO_IDENTITY detail hardening merged,
   # because the latest #510 product smoke on the #698 digest returned a visible
   # policy gate but no bounded detail explaining the remaining identity gap.
+  # Re-pinned for #1697 after backend #704/#706 merged, so the activation path
+  # uses the same combined Operation Catalog + Domain Ops executor image as the
+  # primary test overlay. This file is still owner-gated and outside Argo root;
+  # this PR does not apply it.
   # This activation overlay remains outside the Argo root and still requires an
   # explicit owner-gated operator apply before #510 live product-session
   # verification.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392
+    digest: sha256:3c0a9573602247437b18f8cc0685c5607326530fc6b81528330f8a395524719c
