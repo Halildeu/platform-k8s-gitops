@@ -4,19 +4,21 @@
 
 **Session milestone**: `platform-backend#510` remains Project `Needs Verify`.
 The primary `endpoint-admin-service` hardening image already carries
-`platform-backend#696`, but the separate owner-gated
+`platform-backend#696` and `platform-backend#697`, but the separate owner-gated
 `endpoint-admin-remote-bridge` activation overlay also has to run the same
-image before a live product-session can prove the new redacted PERMIT metadata.
+image before a live product-session can prove the new redacted PERMIT metadata
+and the advisory `AgentHello.deviceId` trust-contract fix.
 
 Agent-doable GitOps preparation:
 
 - Activation overlay
   `kustomize/overlays/test/activation/endpoint-admin-remote-bridge` now pins
   the broker image to
-  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:d1634dfd1beadb5bf69499e1384395e7fb9f8517e34c5a32319d3536fa6971f2`,
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9`,
   the same digest live-verified on primary `endpoint-admin-service` after
   `platform-backend#696` merged as
-  `14e6390e9ae3d92a0c012c6220fdddf5b1d82d78`.
+  `14e6390e9ae3d92a0c012c6220fdddf5b1d82d78` and `platform-backend#697`
+  merged as `2612786cd05d986c452ed4dbbf6bb1b12f4a7d4d`.
 - This is not a #510 closure claim. The acceptance gate still requires an
   owner-gated apply/sync of the activation overlay, live `pod imageID` match
   for `endpoint-admin-remote-bridge`, and a product remote-ops smoke that
@@ -83,11 +85,17 @@ Scope split / residual truth:
   broader `platform-backend#510` parent. `platform-backend#696` merged as
   `14e6390e9ae3d92a0c012c6220fdddf5b1d82d78`, exposing redacted/non-secret
   PERMIT metadata while withholding raw `signatureB64`, raw `deviceId`, and raw
-  `operatorSubject`. `platform-k8s-gitops#1684` pinned test
+  `operatorSubject`. `platform-backend#697` merged as
+  `2612786cd05d986c452ed4dbbf6bb1b12f4a7d4d`, preserving cert-bound device id
+  hard-deny while preventing advisory `AgentHello.deviceId` from vetoing active
+  machine-cert enrollment trust. This worktree pins test
   `endpoint-admin-service` to
-  `sha256:d1634dfd1beadb5bf69499e1384395e7fb9f8517e34c5a32319d3536fa6971f2`;
-  deploy run `27756026906` succeeded with pod digest match, readiness `200`,
-  and Gate 1d `endpoint-admin-service` stability PASS across `180s`.
+  `sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9`
+  after image build run `27759915899`; repository_dispatch deploy
+  `27760025464` correctly refused imperative drift until desired-state is
+  updated. Earlier `#1684` digest `sha256:d1634df...` had deploy run
+  `27756026906` succeeded with pod digest match, readiness `200`, and Gate 1d
+  `endpoint-admin-service` stability PASS across `180s`.
   `platform-k8s-gitops#1685` added a regression guard so Gate 1d coverage keeps
   `endpoint-admin-service` in the stability window. This removes the G6
   observability/deploy guard gap, but it is not the full #510 product

@@ -5137,7 +5137,14 @@ images:
     # sha256:a2f73c1508fb4aa95b1391ef419dd45e727d8652f7c4069cba595beafb4dd3a9.
     # Repository_dispatch deploy 27716493012 correctly refused imperative drift
     # until this GitOps desired-state bump.
-    digest: sha256:d1634dfd1beadb5bf69499e1384395e7fb9f8517e34c5a32319d3536fa6971f2
+    # 2026-06-18 remote-bridge #510 permit regression fix (backend PR #697)
+    # -> sha-2612786. Treats AgentHello.deviceId as advisory while keeping
+    # cert-bound device id mismatch as hard deny. Image build run 27759915899
+    # produced endpoint-admin-service
+    # sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9.
+    # Repository_dispatch deploy 27760025464 correctly refused imperative drift
+    # until this GitOps desired-state bump.
+    digest: sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
