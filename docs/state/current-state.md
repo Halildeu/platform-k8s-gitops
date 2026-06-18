@@ -31,7 +31,21 @@ Scope split / residual truth:
 
 - Signed MSI/GPO rollout acceptance is split to `#1680`, Project #2
   `Blocked`, Faz 22 / ops / P0 / gate. It owns managed-PC install, rollback,
-  and broader 5-PC/50-PC/800-PC rollout evidence.
+  and broader 5-PC/50-PC/800-PC rollout evidence. Agent-doable prep now has a
+  canonical runbook
+  `docs/runbooks/RB-faz22.5-signed-msi-gpo-rollout-acceptance.md` and endpoint
+  collector
+  `scripts/faz22-mass-deployment/collect-endpoint-agent-rollout-evidence.ps1`;
+  live acceptance remains blocked until the selected deployment method is run
+  on two managed PCs.
+- Current #1680 artifact reality: public `v0.2.9` ZIP/bootstrap is live and
+  hash-verified, and trusted MSI workflow run `27741877258` produced
+  `endpoint-agent-msi-trusted` with `EndpointAgent-0.2.9-signed.msi` SHA256
+  `5cab18d460720e5bf89ddf0038f5b1c4d5ae04afc031dda0dc15d9810c969571`,
+  `production=true`, `signing_tier=trusted-internal-ca`, and
+  `timestamped=true`; however the `v0.2.9` GitHub release does not contain a
+  durable MSI release asset, so `gpo-msi` acceptance still requires a durable
+  signed MSI URL/share path or an explicit bootstrap-method pilot decision.
 - Broader owner-gated attended remote-access remains
   `platform-backend#510` (`Needs Verify`).
 - Current Argo residual drift is exporter-external: `platform-eso-test`
