@@ -2,11 +2,11 @@
 
 ## Live Delta — Faz 22.6 remote-ops product session gate evidence (#1601/#1666, 2026-06-17)
 
-**Session milestone**: Denetim PC now has a positive product remote-ops
-session gate through the real EndpointAgent outbound mTLS remote-bridge path.
-This is not reverse SSH/RDP clipboard evidence. The operator path opened a
-session, recorded approval, issued the WebAuthn challenge, verified step-up,
-and transported a constrained pilot operation.
+**Session milestone**: Denetim PC now has accepted bounded-MVP product
+remote-ops session evidence through the real EndpointAgent outbound mTLS
+remote-bridge path. This is not reverse SSH/RDP clipboard evidence. The
+operator path opened a session, recorded approval, issued the WebAuthn
+challenge, verified step-up, and transported a constrained pilot operation.
 
 | Alan | Durum | Kanıt / sınır |
 |---|---|---|
@@ -16,7 +16,7 @@ and transported a constrained pilot operation.
 | Checklist/runbook contract | 🟢 SOURCE | `docs/runbooks/RB-faz22.6-product-remote-ops-session-gate.md` defines the #510/#1601 product-session acceptance contract: outbound mTLS product channel only, typed `PTY_COMMAND hostname` read-only operation, approval/audit/negative evidence, and explicit exclusion of reverse SSH/RDP/manual bridge evidence. |
 | Denetim product smoke | 🟢 PERMIT + TRANSPORT PUSHED | Evidence dir `/home/halil/codex-rb-smoke/20260617T191335Z-product`; session `rb-denetim-20260617T191335Z`; device `423b6fc3-7497-4083-bd2f-5e2fe543bfe9`; `open=200`, `negative-nonpilot=400`, `approve=200`, `challenge=200`, `verify=200`, `operation=200`; operation response `PERMIT` with `transportPushed=true`; `summary.json` SHA256 `433e1273e13b1dafb24160948447abb490c87fd1db1c29ef642df0f7f52320f0`. |
 | Endpoint-side cross-check | 🟢 OUTBOUND MTLS CONNECTED | Denetim agent log at `2026-06-17 19:13:37` shows `remote-bridge: pilot auto-consent is enabled` and `constrained-pty enabled with outbound mTLS cert fingerprint=da72cae025e650bdd19d59a87ea319ec900533525884e05d9cc10bb33c552ce6`. |
-| Remaining #1601 gates | 🟡 OPEN | Project #2 issue #1601 remains `Needs Verify`, not Done: AgentPC2 third-device product-channel gate (#1643), signed MSI/GPO rollout acceptance, and owner-gated remote-access parent (#510) remain separate gates. Backend follow-up #690 remains Project `Done` after product DENY cleanup smoke `rb-deny-cleanup-20260617T211003Z`; ESO/Vault cleanup #1662 is also Project `Done` after the clean desired-state evidence above. |
+| Remaining parent gates | 🟡 OPEN | Denetim PC bounded MVP product-session evidence is accepted, but Project #2 issue #1601 and backend parent #510 remain `Needs Verify`, not Done: AgentPC2 third-device product-channel gate (#1643), signed MSI/GPO rollout acceptance, broader owner-gated remote-access scope, and any retained full live negative/session-control matrix remain separate gates. Backend follow-up #690 remains Project `Done` after product DENY cleanup smoke `rb-deny-cleanup-20260617T211003Z`; ESO/Vault cleanup #1662 is also Project `Done` after the clean desired-state evidence above. |
 
 ## Live Delta — Faz 22.5 M4 MSI lifecycle lab smoke (#115, 2026-06-17)
 
