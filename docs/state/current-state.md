@@ -43,9 +43,13 @@ Scope split / residual truth:
   `endpoint-agent-msi-trusted` with `EndpointAgent-0.2.9-signed.msi` SHA256
   `5cab18d460720e5bf89ddf0038f5b1c4d5ae04afc031dda0dc15d9810c969571`,
   `production=true`, `signing_tier=trusted-internal-ca`, and
-  `timestamped=true`; however the `v0.2.9` GitHub release does not contain a
-  durable MSI release asset, so `gpo-msi` acceptance still requires a durable
-  signed MSI URL/share path or an explicit bootstrap-method pilot decision.
+  `timestamped=true`. The signed MSI and MSI manifest are now durable
+  `v0.2.9` release assets:
+  `https://github.com/Halildeu/platform-agent/releases/download/v0.2.9/EndpointAgent-0.2.9-signed.msi`
+  and
+  `https://github.com/Halildeu/platform-agent/releases/download/v0.2.9/msi-build-manifest.json`.
+  `gpo-msi` can now be selected for the live pilot, but #1680 still requires
+  two managed-PC install/upgrade evidence packets plus one rollback drill.
 - Broader owner-gated attended remote-access remains
   `platform-backend#510` (`Needs Verify`).
 - Current Argo residual drift is exporter-external: `platform-eso-test`
