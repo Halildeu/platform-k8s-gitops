@@ -5166,7 +5166,15 @@ images:
     # sha256:f43bb111c382bee85ad655290dbbc9fc9fe9fc0e0c032c35aa49bfa5e6f9a95c.
     # Repository_dispatch deploy 27788316961 correctly refused imperative drift
     # from sha256:3c0a9573... until this GitOps desired-state bump.
-    digest: sha256:f43bb111c382bee85ad655290dbbc9fc9fe9fc0e0c032c35aa49bfa5e6f9a95c
+    # 2026-06-18 Faz 22.6.2 Approved Script Runner backend source/API
+    # (backend #702 / PR #709 -> sha-6b8bac8). This digest includes the
+    # #707 resolver fallback image plus the server-owned approved script catalog
+    # and invocation policy on top of the #701/#705 operation-catalog/result-submit
+    # image used by #1697 smoke.
+    # Image build run 27789316995 produced endpoint-admin-service
+    # sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb.
+    # Runtime acceptance remains gated by #1705 deploy + approved-script smoke.
+    digest: sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571

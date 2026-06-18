@@ -35,8 +35,11 @@
 #     (`41998aa04224dcfeaadfac201317891ca18dd95f`) so the owner-gated
 #     remote-bridge broker path uses the same connected-peer resolver fallback
 #     artifact as the primary endpoint-admin-service test overlay.
+#   - immutable test digest includes platform-backend#702 via #709
+#     (`6b8bac8090824968fe31da824a855c3ef59912db`) so #1705 can smoke the
+#     approved-script catalog path through the same owner-gated broker lane.
 #   - immutable test digest:
-#     sha256:f43bb111c382bee85ad655290dbbc9fc9fe9fc0e0c032c35aa49bfa5e6f9a95c
+#     sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -76,9 +79,16 @@ images:
   # Re-pinned for backend #707/#708 after the primary test overlay moved to
   # sha-41998aa, so owner-gated broker-path smoke does not run on stale
   # connected-peer resolver code.
+  # Re-pinned for #1705 after backend #709 merged, so the activation path
+  # uses the same Approved Script Runner image as the primary test overlay.
+  # Merge-order guard: draft PR #1652 also touches this activation overlay and
+  # carries the older sha256:3950a612... digest. If #1652 is resumed after this
+  # PR, rebase it onto this digest before merge/apply; do not downgrade.
+  # This file is still owner-gated and outside Argo root; this PR does not
+  # apply it.
   # This activation overlay remains outside the Argo root and still requires an
   # explicit owner-gated operator apply before #510 live product-session
   # verification.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:f43bb111c382bee85ad655290dbbc9fc9fe9fc0e0c032c35aa49bfa5e6f9a95c
+    digest: sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb
