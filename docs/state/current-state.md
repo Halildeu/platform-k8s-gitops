@@ -1,5 +1,77 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6.1 remote-bridge #701 combined digest activated, full catalog smoke still gated (2026-06-18)
+
+**Session milestone**: `platform-k8s-gitops#1697` has live deploy/preflight
+evidence for the combined `platform-backend#701` + `#705/#706`
+endpoint-admin artifact on both the primary endpoint-admin deployment and the
+owner-gated `endpoint-admin-remote-bridge` activation overlay. This is deploy
+readiness for the `#701` Operation Catalog runtime path; it is not yet full
+`#701` acceptance because a fresh owner-approved product session and operator
+bearer token are still required to prove `PERMIT` plus `transportPushed=true`.
+
+Runtime and source lineage:
+
+- `platform-k8s-gitops#1698` merged the digest-independent catalog smoke
+  harness and Remote Response Terminal runbook boundary.
+- `platform-backend#706` merged after `#701/#704`, so the selected runtime
+  artifact is the combined endpoint-admin image from backend commit
+  `9a8bf45a51c6494e5f03ba33f515dd38e108bbee`, not the superseded `#701`-only
+  digest.
+- Selected artifact:
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:3c0a9573602247437b18f8cc0685c5607326530fc6b81528330f8a395524719c`.
+- `platform-k8s-gitops#1699` merged at
+  `0d031e1776060bdda7d957ae56660162173fa2e0`, pinning the primary test overlay
+  and visibly re-pinning the owner-gated remote-bridge activation overlay to
+  the same digest.
+- Backend test deploy workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27783540665`
+  completed `success`: digest extraction, sequential digest pin, public edge
+  chain, in-cluster readiness, and pod stability passed. Gate 2 JWT auth smoke
+  remained warn-only/skipped because `SMOKE_AUTH_*` secrets are not configured.
+- Staging `/home/halil/platform-k8s-gitops` was reset to `origin/main`
+  `68257294485aa22a58d4c7e8faac4b6615c8152e`, which includes `#1699`, and the
+  owner-gated activation overlay was applied with the documented
+  `kubectl apply -k kustomize/overlays/test/activation/endpoint-admin-remote-bridge`
+  path against `k3d-test/platform-test`.
+- Live `endpoint-admin-service` image and pod `imageID` match the selected
+  digest; deployment is Ready/Available `1/1`, pod restart count `0`.
+- Live `endpoint-admin-remote-bridge` deployment status after activation:
+  ready `1`, available `1`, updated `1`, replicas `1`, observed generation
+  `25`, generation `25`.
+- Live remote-bridge pod:
+  `endpoint-admin-remote-bridge-dcbffc9c6-6szpg`, Ready `true`, restart count
+  `0`, imageID
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:3c0a9573602247437b18f8cc0685c5607326530fc6b81528330f8a395524719c`.
+
+Preflight and fail-closed evidence:
+
+- `scripts/faz22-remote-ops/remote-ops-session-preflight.sh` on the staging
+  host returned `PRECHECK_STATUS=ready failures=0 not_ready=0`.
+- Preflight confirmed activation overlay render, no zero digest placeholder, no
+  RFC5737 placeholder CIDRs, outbound-only topology, dedicated remote-bridge
+  Vault path, expected runtime envs, remote-bridge ExternalSecrets
+  `Ready=True / SecretSynced`, backing Secrets present, and remote-bridge
+  NetworkPolicies present.
+- No-auth catalog preflight on the new digest returned `401`:
+  `/home/halil/codex-rb-smoke/20260618T194645Z-catalog-noauth-newdigest`.
+  `summary.json` SHA256:
+  `5c13784f13cac4bf190132c7d3a7b1ff43a9356486343b09024973c7f382b2d9`.
+
+Residual boundaries:
+
+- Full `platform-backend#701` catalog runtime acceptance remains open until
+  `scripts/faz22-remote-ops/remote-ops-catalog-smoke.sh` runs with
+  `REQUIRE_OPERATION=1`, a fresh owner-approved `REMOTE_BRIDGE_SESSION_ID`, and
+  an `OPERATOR_BEARER_TOKEN`, proving an enabled catalog operation, `PERMIT`,
+  `transportPushed=true`, and bounded audit/result evidence.
+- Current staging shell environment did not have `OPERATOR_BEARER_TOKEN` or
+  `REMOTE_BRIDGE_SESSION_ID` exported at evidence time.
+- This evidence does not prove authenticated catalog listing, endpoint
+  execution, Approved Script Runner, interactive terminal, unrestricted shell,
+  file transfer, production remote-support readiness, broad rollout, or true
+  TPM/device-key attestation.
+
 ## Live Delta — Faz 22.6 #510 parent remote-bridge acceptance closed on staging (2026-06-18)
 
 **Session milestone**: `platform-backend#510` is GitHub `Closed` and Project #2
