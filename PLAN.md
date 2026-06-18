@@ -132,6 +132,23 @@ production signing, password-reset readiness or domain-wide rollout.
    - Legacy observability kapanışı (prod live ÖNCE)
    - Rollback-window kapsamı dar tutma
 
+### 0.5.1 Faz 22.6.x Remote Response Terminal Reference
+
+Remote Response Terminal / Break-Glass Response Shell ürünleştirme hattı Faz
+22.6 parent acceptance'ın devamı değil, ayrı 22.6.x productization lane'idir.
+Kanonik detay ve no-go kapıları:
+
+- `docs/faz-22-software-deployment-plan.md` §0.7
+- `docs/runbooks/RB-faz22.6-remote-response-terminal.md`
+- board gate `platform-k8s-gitops#1693`
+- implementation issues: `platform-backend#701`, `platform-backend#702`,
+  `platform-agent#208`, `platform-web#820`
+
+Boundary: `platform-backend#510` closed staging parent acceptance proves the
+outbound mTLS product path, not raw unrestricted shell, broad remote support,
+signed MSI/GPO rollout, 5/50/800-device rollout, or true TPM/device-key
+attestation.
+
 ### 0.6 Faz-Eski Mapping
 
 | Eski | Yeni karşılık |
