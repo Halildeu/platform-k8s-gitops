@@ -1,55 +1,81 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.6 #510 remote-bridge CRYPTO_IDENTITY detail digest pending activation (2026-06-18)
+## Live Delta — Faz 22.6 #510 parent remote-bridge acceptance closed on staging (2026-06-18)
 
-**Session milestone**: `platform-backend#510` is GitHub `Closed`, but Project #2
-still shows `Needs Verify`, so parent acceptance is not treated as fully
-verified. `platform-backend#699` merged as
-`64926dd98ea2501ada12facfb5962d6f4677ff5a`, adding bounded/redacted
-`deny.policyDetail` diagnostics for the remaining `CRYPTO_IDENTITY` gate.
-Backend image build run `27765787433` produced immutable
-`endpoint-admin-service` digest
-`sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392`.
-The automatic testai deploy dispatch `27765931549` failed closed because the
-owner-gated activation overlay was still pinned to the previous desired digest;
-this requires an explicit GitOps repin/apply before the next live product
-smoke.
+**Session milestone**: `platform-backend#510` is GitHub `Closed` and Project #2
+status is now `Done` after fresh live staging evidence. This is a parent
+acceptance closure for the owner-gated staging remote-ops path; it is not a
+50/800-device rollout claim and it does not replace the separate signed MSI/GPO
+pilot gate.
 
-Previous live evidence captured on `k3d-test/platform-test`:
+Runtime and source lineage:
 
-- `platform-k8s-gitops#1689` merged the owner-gated activation overlay repin.
-  Staging `/home/halil/platform-k8s-gitops` fast-forwarded to
-  `62e445e16c50dd148a6dfadfdff74021cd643de0` and applied
-  `kustomize/overlays/test/activation/endpoint-admin-remote-bridge`.
-- `endpoint-admin-remote-bridge` rollout succeeded with deployment state
-  `READY 1/1`, `UP-TO-DATE 1`, `AVAILABLE 1`. The active endpoint target was
-  `endpoint-admin-remote-bridge-ccbff5f5f-g426g`.
-- Desired image and live pod `imageID` both matched the immutable #698 image:
-  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:4203694562dae5f3ae57ca17f3d8354fce9920026a7e05ee42be550b95a35aa3`.
+- `platform-backend#699` merged as
+  `64926dd98ea2501ada12facfb5962d6f4677ff5a`, adding bounded/redacted
+  `deny.policyDetail` diagnostics for `CRYPTO_IDENTITY`.
+- GitOps PR `platform-k8s-gitops#1691` repinned the owner-gated
+  `endpoint-admin-remote-bridge` activation overlay to backend image digest
+  `sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392`
+  and merged as `b13a1cb9e263ce1fa3f0d1c4034e8725f69900f0`.
+- Staging `/home/halil/platform-k8s-gitops` was fast-forwarded to that merge
+  and `kustomize/overlays/test/activation/endpoint-admin-remote-bridge` was
+  applied on `k3d-test/platform-test`.
+- Live deployment image and pod `imageID` both match:
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392`.
+- Live pod: `endpoint-admin-remote-bridge-6dbc8cbf98-phkwm`, Ready `1/1`,
+  restart count `0`.
 
-Product smoke evidence:
+Accepted product smoke evidence:
 
-- Evidence dir: `/home/halil/codex-rb-smoke/20260618T134524Z-product`.
-- Session: `rb-denetim-20260618T134524Z`.
-- Operation: `op-hostname-20260618T134524Z`.
+- Parent evidence bundle:
+  `/home/halil/codex-rb-smoke/20260618T145831Z-parent-acceptance`.
+- Product smoke directory:
+  `/home/halil/codex-rb-smoke/20260618T145831Z-product`.
+- Session: `rb-denetim-20260618T145831Z`.
+- Operation: `op-hostname-20260618T145831Z`.
 - HTTP path: open `200`, negative non-pilot capability `400`, approve `200`,
   step-up challenge `200`, step-up verify `200`, operation submit `200`.
-- Operation response:
-  `{"kind":"DENY","transportPushed":false,"permit":null,"deny":{"reason":"policy:CRYPTO_IDENTITY","policyGate":"CRYPTO_IDENTITY"}}`.
-- WORM recording kinds captured: `POLICY_EVENT`.
+- Operation response: `kind=PERMIT`, `transportPushed=true`, `deny=null`,
+  `signaturePresent=true`, `freshAtResponseTime=true`,
+  capability `CONSTRAINED_PTY`.
+- Recording row captured for this run: `POLICY_EVENT`. The harness also
+  received broker `OPERATION_DISPATCH` for the same session and command
+  `hostname`; do not infer broad DATA-plane or full shell capability from this.
 
-Interpretation:
+mTLS / crypto identity evidence:
 
-- The previous silent/opaque DENY symptom no longer reproduces in the deployed
-  #698 digest path; the remaining policy gate is now visible as
-  `CRYPTO_IDENTITY`.
-- #699 is the next diagnostic hardening slice for the same product path. #510
-  still needs a live activation-overlay repin to
-  `sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392`,
-  rollout imageID match, and product smoke evidence showing either a `PERMIT`
-  with `transportPushed=true` + WORM `POLICY_EVENT` + `AGENT_OUTPUT`, or a
-  formally accepted bounded DENY boundary with `deny.policyDetail` for this
-  pilot scope.
+- Broker log for the accepted live stream:
+  `HELLO_VERIFIED:cert=true,attestation=true,device=false`.
+- Active DB machine-cert binding for the Denetim device points at transport
+  peer key
+  `0979dec1a9553a75d8aed49d833e110abfb9a63992d5947201061315a987ee8b`.
+- Live harness path:
+  `/home/halil/codex-rb-smoke/harness-runs/20260618T145647Z-live-agent`.
+
+Evidence hashes in the parent bundle:
+
+```text
+91edcba0b4c2338daa8dfe5b1813d208ba0978718191a9a7cdbac44b78949c33  db-machine-cert.txt
+baceb677bc4d25bce7282b2ac13dda419ca9e9946ea63895bb4d000a169199ca  deploy-image.txt
+ccc7b9566037a1692769935392472ab4019d45ae034af889a80b42c56724087d  deploy.json
+35c4a971d9ca5f1f75fb44ce327f92b52afcfbce4bff8b9be93ee3ab78d28009  harness.log
+cc851f4429076702cb6ef06e8e2a4f7ea0b1b05571f937024b794db8b21f2beb  operation.res.json
+baceb677bc4d25bce7282b2ac13dda419ca9e9946ea63895bb4d000a169199ca  pod-imageID.txt
+b45aa06133f13359b6778a156c9a2637b82ae354adbd1fd12407df09389cc3ae  pod.json
+a6022084fefa6d1bbecfa42db1f18a7c4ebc0c448623a7f03c2fe3fd95574365  product-SHA256SUMS
+153c7d0626157bf40075ea0e89074f869f2e8de8c746d50d25878108b5a82c11  product-summary.json
+46a9e5ccd3734807a002c4c852dc252c12ec3aafc66ddba38a6591df071a1a5a  recording.tsv
+373f57cb4fd8ccd9e115b338e3744aa50ae2e156a04f136cac0dc06ae4012a76  remote-bridge-logs.txt
+```
+
+Residual boundaries:
+
+- The accepted #510 scope is the staging parent remote-ops acceptance gate, not
+  a broad managed-PC rollout. Packaged agent remote-ops capability, signed
+  MSI/GPO deployment, rollback drills, and larger device waves remain separate
+  rollout/productization gates.
+- Temporary reverse SSH and RDP/manual PowerShell remain lab-only and did not
+  count toward this acceptance.
 
 ## Live Delta — Faz 22.5 #1601 bounded acceptance closed + exporter blocker fixed (2026-06-18)
 
