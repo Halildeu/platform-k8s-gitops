@@ -1,5 +1,34 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 #510 remote-bridge verification repin prepared (2026-06-18)
+
+**Session milestone**: `platform-backend#510` remains Project `Needs Verify`.
+The primary `endpoint-admin-service` hardening image already carries
+`platform-backend#696`, but the separate owner-gated
+`endpoint-admin-remote-bridge` activation overlay also has to run the same
+image before a live product-session can prove the new redacted PERMIT metadata.
+
+Agent-doable GitOps preparation:
+
+- Activation overlay
+  `kustomize/overlays/test/activation/endpoint-admin-remote-bridge` now pins
+  the broker image to
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:d1634dfd1beadb5bf69499e1384395e7fb9f8517e34c5a32319d3536fa6971f2`,
+  the same digest live-verified on primary `endpoint-admin-service` after
+  `platform-backend#696` merged as
+  `14e6390e9ae3d92a0c012c6220fdddf5b1d82d78`.
+- This is not a #510 closure claim. The acceptance gate still requires an
+  owner-gated apply/sync of the activation overlay, live `pod imageID` match
+  for `endpoint-admin-remote-bridge`, and a product remote-ops smoke that
+  captures `kind=PERMIT`, `transportPushed=true`, and redacted
+  `permit.signaturePresent`, `permit.canonicalPayloadSha256`, and
+  `permit.freshAtResponseTime` without raw `signatureB64`, raw `deviceId`, or
+  raw `operatorSubject`.
+- Remaining #510 parent evidence after this repin is still the retained live
+  negative/session-control matrix: replay, expired permit, wrong device,
+  audit-sink-down, heartbeat loss, terminate/reconnect, mid-session revoke,
+  and clock-skew.
+
 ## Live Delta — Faz 22.5 #1601 bounded acceptance closed + exporter blocker fixed (2026-06-18)
 
 **Session milestone**: `platform-k8s-gitops#1601` is closed and Project #2
@@ -86,7 +115,7 @@ challenge, verified step-up, and transported a constrained pilot operation.
 | Alan | Durum | Kanıt / sınır |
 |---|---|---|
 | GitOps heartbeat/trust freshness | 🟢 MERGED | PR #1666 merged at `c26e58b762fc987172dbae72666376d9895be12f`; test activation overlay now sets `REMOTE_BRIDGE_HEARTBEAT_INTERVAL_MILLIS=10000` and `REMOTE_BRIDGE_PEER_TRUST_FRESHNESS_TTL_MILLIS=120000`. |
-| Live broker runtime | 🟢 UP + CURRENT DIGEST | `platform-test/endpoint-admin-remote-bridge` was live-verified on pod `endpoint-admin-remote-bridge-69568fb865-tf7wc`, Ready `1/1`, restart `0`; imageID is `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:a2f73c1508fb4aa95b1391ef419dd45e727d8652f7c4069cba595beafb4dd3a9`. GitOps activation overlay is reconciled by #1670 (`68b3a7154d1ca3fbc93b92799062c999ea000d92`). |
+| Live broker runtime | 🟡 PRE-#696 LIVE DIGEST | `platform-test/endpoint-admin-remote-bridge` was live-verified on pod `endpoint-admin-remote-bridge-69568fb865-tf7wc`, Ready `1/1`, restart `0`; imageID was `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:a2f73c1508fb4aa95b1391ef419dd45e727d8652f7c4069cba595beafb4dd3a9`. That evidence predates the #696 redacted PERMIT metadata digest; the activation overlay now needs the #510 verification repin above applied and live imageID-verified before G6 can close. |
 | ESO/Vault desired-state cleanup | 🟢 READY + DONE | #1662 is resolved and Project #2 `Done`. PR #1672 merged the `eso-runtime` source grant for `kv/data/platform/endpoint-admin-remote-bridge` (`e98c529b133d64a40bf3625068e920c54ceab153`). Live test Vault policy apply used an owner-approved one-time generated root token without posting secret material, then revoked it. Evidence artifact `/home/halil/codex-rb-smoke/20260617T213937Z-remote-bridge-eso-clean`: ESO AppRole policies `default,eso-runtime`, remote-bridge path capability `read`, all three remote-bridge ExternalSecrets `True / SecretSynced`, post-restart preflight `PRECHECK_STATUS=ready failures=0 not_ready=0`, broker pod recreated `Ready=True` with unchanged digest. |
 | Checklist/runbook contract | 🟢 SOURCE | `docs/runbooks/RB-faz22.6-product-remote-ops-session-gate.md` defines the #510/#1601 product-session acceptance contract: outbound mTLS product channel only, typed `PTY_COMMAND hostname` read-only operation, approval/audit/negative evidence, and explicit exclusion of reverse SSH/RDP/manual bridge evidence. |
 | Denetim product smoke | 🟢 PERMIT + TRANSPORT PUSHED | Evidence dir `/home/halil/codex-rb-smoke/20260617T191335Z-product`; session `rb-denetim-20260617T191335Z`; device `423b6fc3-7497-4083-bd2f-5e2fe543bfe9`; `open=200`, `negative-nonpilot=400`, `approve=200`, `challenge=200`, `verify=200`, `operation=200`; operation response `PERMIT` with `transportPushed=true`; `summary.json` SHA256 `433e1273e13b1dafb24160948447abb490c87fd1db1c29ef642df0f7f52320f0`. |

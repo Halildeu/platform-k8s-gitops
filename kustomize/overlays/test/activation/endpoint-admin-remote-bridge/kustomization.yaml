@@ -12,11 +12,14 @@
 #   3. the live exposure smoke passes (docs/RB-22-6-remote-bridge-pilot-flip.md §A3),
 #   4. ADR-0034 §13/D10 owner sign-off for the first live session.
 #
-# 2026-06-17 product session gate selection:
+# 2026-06-18 #510 parent acceptance verification gate:
 #   - topology: Option A true outbound-only agent -> broker mTLS/gRPC stream
 #   - no broker -> device egress NetworkPolicy is part of this gate
-#   - immutable test digest approved by owner:
-#     sha256:f76511a01ed8e5656008a796a6a4d7a094f886647da293739e8a0a49bb35565f
+#   - immutable test digest includes platform-backend#696
+#     (`14e6390e9ae3d92a0c012c6220fdddf5b1d82d78`) so the live product
+#     session can capture redacted PERMIT metadata for #510 G6.
+#   - immutable test digest:
+#     sha256:d1634dfd1beadb5bf69499e1384395e7fb9f8517e34c5a32319d3536fa6971f2
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -46,10 +49,10 @@ patches:
 
 images:
   # control #11 — immutable digest (D30). SAME image as endpoint-admin-service
-  # (Codex A+). Re-pinned after #690 DENY terminalization/eviction live
-  # evidence on the Faz 22.6 product remote-ops session gate; this activation
+  # (Codex A+). Re-pinned after #696 redacted PERMIT metadata merged and the
+  # same digest was live-verified on endpoint-admin-service. This activation
   # overlay remains outside the Argo root and still requires an explicit
-  # operator apply.
+  # owner-gated operator apply before #510 live product-session verification.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:a2f73c1508fb4aa95b1391ef419dd45e727d8652f7c4069cba595beafb4dd3a9
+    digest: sha256:d1634dfd1beadb5bf69499e1384395e7fb9f8517e34c5a32319d3536fa6971f2
