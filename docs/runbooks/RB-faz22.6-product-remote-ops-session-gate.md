@@ -1,13 +1,15 @@
 # RB — Faz 22.6 Product Remote-Ops Session Gate
 
 > **Status**: ACTIVE acceptance contract for `platform-backend#510` and
-> `platform-k8s-gitops#1601`; Denetim PC bounded MVP evidence is accepted,
-> while both parent issues remain `Needs Verify` for broader gates.
+> `platform-k8s-gitops#1601`; #510 parent staging acceptance and #1601
+> bounded MVP evidence are accepted, while broad rollout/productization gates
+> remain split to their own issues.
 > **First target**: Denetim PC / `SRB-AIDENETIMPC`.
-> **Current evidence anchor**: `rb-denetim-20260617T191335Z`.
+> **Current #510 parent evidence anchor**: `rb-denetim-20260618T145831Z`.
 >
 > This runbook defines what can be counted as product remote-ops evidence. It
-> does not by itself move #510 or #1601 out of `Needs Verify`.
+> does not by itself prove signed MSI/GPO rollout, broad device waves, or
+> production remote-support readiness.
 
 ## 1. Gate Decision
 
@@ -49,11 +51,11 @@ the drift is reconciled in both places.
 
 ## 3. Required Evidence Classes
 
-| Gate | Required evidence | Denetim `20260617T191335Z` status |
+| Gate | Required evidence | Denetim `20260618T145831Z` status |
 |---|---|---|
 | G1 target | `SRB-AIDENETIMPC` selected; device id recorded | Proven |
 | G2 topology | EndpointAgent outbound mTLS product path; no reverse SSH/RDP evidence | Proven for Denetim product run |
-| G3 runtime artifact | broker deployment imageID digest and live config captured | Proven via #1666 evidence |
+| G3 runtime artifact | broker deployment imageID digest and live config captured | Proven with digest `sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392` |
 | G4 authz/approval | operator open + distinct approval + step-up challenge/verify | Proven |
 | G5 typed operation | `PTY_COMMAND hostname` / `CONSTRAINED_PTY`; no raw shell | Proven for positive operation |
 | G6 transport | operation response `PERMIT` and `transportPushed=true` | Proven |
@@ -122,30 +124,42 @@ Does not prove:
 
 ## 5. Current Denetim Evidence Mapping
 
-The current accepted Denetim product session evidence is:
+The current #510 parent accepted Denetim product session evidence is:
 
 - Evidence directory:
-  `/home/halil/codex-rb-smoke/20260617T191335Z-product`
-- Session: `rb-denetim-20260617T191335Z`
-- Operation: `op-hostname-20260617T191335Z`
+  `/home/halil/codex-rb-smoke/20260618T145831Z-parent-acceptance`
+- Product smoke directory:
+  `/home/halil/codex-rb-smoke/20260618T145831Z-product`
+- Session: `rb-denetim-20260618T145831Z`
+- Operation: `op-hostname-20260618T145831Z`
 - Device: `423b6fc3-7497-4083-bd2f-5e2fe543bfe9`
 - HTTP statuses: `open=200`, `negative-nonpilot=400`, `approve=200`,
   `challenge=200`, `verify=200`, `operation=200`
-- Operation response: `PERMIT`, `transportPushed=true`
+- Operation response: `PERMIT`, `transportPushed=true`, `deny=null`,
+  `signaturePresent=true`, `freshAtResponseTime=true`
 - `summary.json` SHA256:
-  `433e1273e13b1dafb24160948447abb490c87fd1db1c29ef642df0f7f52320f0`
-- Endpoint log cross-check: Denetim agent log at `2026-06-17 19:13:37`
-  shows pilot auto-consent and constrained-PTY enabled over outbound mTLS.
+  `153c7d0626157bf40075ea0e89074f869f2e8de8c746d50d25878108b5a82c11`
+- Runtime digest: deployment image and pod `imageID` both equal
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392`.
+- mTLS/crypto cross-check: broker logged
+  `HELLO_VERIFIED:cert=true,attestation=true,device=false`; DB active machine
+  cert thumbprint for the Denetim device is
+  `0979dec1a9553a75d8aed49d833e110abfb9a63992d5947201061315a987ee8b`.
+- Harness cross-check:
+  `/home/halil/codex-rb-smoke/harness-runs/20260618T145647Z-live-agent`
+  received broker `CONSENT_PROMPT` and `OPERATION_DISPATCH`.
 
 Known limitation for this specific evidence bundle: the recording row observed
-for the `20260617T191335Z-product` package was `POLICY_EVENT`; do not claim
-`AGENT_OUTPUT` for that run unless a row for the same session is inspected and
-attached.
+for the `20260618T145831Z-product` package was `POLICY_EVENT`; do not claim
+`AGENT_OUTPUT`, DATA-plane transport, broad shell execution, or rollout
+readiness from this run.
 
 ## 6. Status Rules
 
-- Keep #510 and #1601 in `Needs Verify` while any parent gate remains outside
-  the accepted Denetim MVP evidence.
+- #510 and #1601 can be `Done` for their accepted staging/bounded MVP scopes
+  only when the corresponding issue comment cites fresh product-channel
+  evidence. Do not reuse this status for signed MSI/GPO rollout, 50/800 waves,
+  or production remote-support readiness.
 - Keep AgentPC2 in its own gate (#1643) until AgentPC2 itself has product-channel
   evidence. Lab reverse SSH/RDP or inbound admin reachability does not unblock it.
 - Backend lifecycle hardening in `platform-backend#690` is historical Done
