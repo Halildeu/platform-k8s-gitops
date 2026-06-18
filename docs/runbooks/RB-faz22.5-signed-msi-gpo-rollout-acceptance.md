@@ -30,11 +30,12 @@ As of 2026-06-18:
 | Artifact lane | Current truth | Acceptance impact |
 |---|---|---|
 | Public current ZIP/bootstrap | `v0.2.9`, ZIP SHA256 `88d6b203bdf07ab7fdad7bd6930893db37fdf2b1ff8f237aaddc5b9ef0ea0f9a`, public `testai.acik.com/artifacts/endpoint-agent/current/` | Acceptable for one-command bootstrap pilot evidence only; not a signed MSI/GPO Software Installation proof |
-| Trusted MSI workflow | `platform-agent` run `27741877258`, artifact `endpoint-agent-msi-trusted`, not expired, created 2026-06-18. Downloaded verification: `EndpointAgent-0.2.9-signed.msi` SHA256 `5cab18d460720e5bf89ddf0038f5b1c4d5ae04afc031dda0dc15d9810c969571`; `msi-build-manifest.json` SHA256 `a5949a093ce234eafdb88c759fd884bf32324c9a8172b455c0daa78c9dfe72d0`; `production=true`; `signing_tier=trusted-internal-ca`; `timestamped=true`; signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`; root cert SHA256 `078494D03E2FB51EA35DB71FFC04B5C5230EE9F52E0D5A057B6F35B8F7E0B59E` | Build/signing evidence exists, but GitHub Actions artifact is not a durable deployment URL for broad GPO unless mirrored/promoted |
-| GitHub release `v0.2.9` | release has `EndpointAgent.zip`, `bootstrap-package.ps1`, `install.ps1`, `uninstall.ps1`, manifest, sums, EXE; no MSI release asset | #1680 M4/M5 cannot be accepted as signed MSI/GPO rollout until a durable signed MSI location or explicit bootstrap method is chosen |
+| Trusted MSI workflow | `platform-agent` run `27741877258`, artifact `endpoint-agent-msi-trusted`, not expired, created 2026-06-18. Downloaded verification: `EndpointAgent-0.2.9-signed.msi` SHA256 `5cab18d460720e5bf89ddf0038f5b1c4d5ae04afc031dda0dc15d9810c969571`; `msi-build-manifest.json` SHA256 `a5949a093ce234eafdb88c759fd884bf32324c9a8172b455c0daa78c9dfe72d0`; `production=true`; `signing_tier=trusted-internal-ca`; `timestamped=true`; signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`; root cert SHA256 `078494D03E2FB51EA35DB71FFC04B5C5230EE9F52E0D5A057B6F35B8F7E0B59E` | Build/signing evidence exists and has been promoted to durable release assets |
+| GitHub release `v0.2.9` | release has `EndpointAgent.zip`, `bootstrap-package.ps1`, `install.ps1`, `uninstall.ps1`, manifest, sums, EXE, `EndpointAgent-0.2.9-signed.msi`, and `msi-build-manifest.json` | `gpo-msi` can be selected for the live pilot; #1680 still requires endpoint-side install/upgrade, restart, mTLS, rollback, and failed-device evidence |
 
-**Decision required before live pilot:** choose exactly one deployment method in
-the issue comment and evidence packet:
+**Deployment method for the next live pilot:** use `gpo-msi` unless the owner
+explicitly chooses the bootstrap fallback in the issue comment. Record exactly
+one deployment method in the evidence packet:
 
 1. `gpo-msi`: GPO Software Installation or startup-script `msiexec` using a
    durable signed MSI URL/share path and SHA256.
