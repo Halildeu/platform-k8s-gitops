@@ -45,7 +45,12 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        # Image default user is nobody (65534); seccomp runtime default.
+        # Image default user is `nobody`; pin numeric IDs so kubelet can
+        # verify runAsNonRoot instead of rejecting the non-numeric image user.
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        # seccomp runtime default.
         seccompProfile:
           type: RuntimeDefault
       containers:
