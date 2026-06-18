@@ -1,5 +1,89 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6.2 #702 Approved Script Runner product smoke accepted-bounded (2026-06-19)
+
+**Session milestone**: `platform-k8s-gitops#1705` now has live
+desired-state, runtime imageID, and product-path Approved Script Runner smoke
+evidence for `platform-backend#702/#709`. The bounded `#702` runtime gate has
+accepted-candidate evidence for one signed approved script (`DIAG_HOSTNAME`)
+with `PERMIT` / `permit-transport-pushed` and explicit fail-closed checks for
+raw script text, wrong script hash, argument-schema mismatch, disabled script,
+revoked script, and no-auth catalog access. This is not a claim for
+interactive terminal, unrestricted shell, file transfer, VIEW_ONLY
+screen-share, production remote-support readiness, broad rollout, platform-web
+operator UX, or true TPM/device-key attestation.
+
+Runtime and source lineage:
+
+- `platform-backend#709` merged the Approved Script Runner source/API slice at
+  `6b8bac8090824968fe31da824a855c3ef59912db`.
+- Selected artifact:
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb`.
+- Backend image workflow run `27789316995` completed `success`; digest artifact
+  `digest-endpoint-admin-service` contained
+  `9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb`.
+- GitOps PR `platform-k8s-gitops#1706` merged at
+  `2026-06-18T21:41:26Z` as
+  `5c8f766141ddef3900730e9a76c8bc6b27b908d5`, pinning both the primary test
+  overlay and the owner-gated remote-bridge activation overlay to the selected
+  digest.
+- PR `#1706` checks passed: ADR-0011 boundary, ADR-0031 enum drift, CodeQL
+  actions/python, drift render prod/test, kustomize, YAML lint, shellcheck,
+  no-closure, placeholder leak, ResourceQuota headroom prod/test, gitleaks,
+  cross-ai-audit, auto-label, and TPG reset guards.
+- Staging `/home/halil/platform-k8s-gitops` is at `5c8f766`; both
+  `kubectl --context k3d-test kustomize kustomize/overlays/test` and
+  the owner-gated remote-bridge activation overlay render the selected digest.
+- Live primary `endpoint-admin-service` pod
+  `endpoint-admin-service-6f5549ddcd-gn9ml` is Running/ready with restart
+  count `0` and imageID matching the selected digest.
+- Live `endpoint-admin-remote-bridge` pod
+  `endpoint-admin-remote-bridge-789dd799-ktpjk` is Running/ready with restart
+  count `0`; container `endpoint-admin-remote-bridge` imageID matches the
+  selected digest.
+
+Approved Script Runner product smoke evidence:
+
+- Evidence directory:
+  `/home/halil/codex-rb-smoke/20260618T215313Z-approved-script-product-9645`.
+- Summary files:
+  `/home/halil/codex-rb-smoke/20260618T215313Z-approved-script-product-9645/summary.json`
+  and
+  `/home/halil/codex-rb-smoke/20260618T215313Z-approved-script-product-9645/approved-script/summary.json`.
+- Evidence ledger: top-level `SHA256SUMS` has 45 entries and the
+  approved-script helper `SHA256SUMS` has 23 entries.
+- Session: `rb-approved-script-20260618T215313Z`; product HTTP path:
+  open `200`, approve `200`, step-up challenge `200`, step-up verify `200`.
+- Approved script result: status `accepted-candidate`, operationStatus
+  `permit-transport-pushed`, scriptId `DIAG_HOSTNAME`, scriptVersion `1`,
+  scriptHash
+  `b381ceb8eeba1a24a20f555807180a7f793697fcd11dbf016857e15c48da3f77`,
+  expectedOperationKind `PERMIT`, sessionPresent `true`.
+- Deny matrix: no-auth approved-scripts `401`, raw-script deny `400`,
+  wrong-hash deny `400`, argument-schema deny `400`, disabled-script deny
+  `422`, revoked-script deny `422`.
+- Audit/recording evidence: summary `recordingKinds` includes `POLICY_EVENT`;
+  remote-bridge logs show the gRPC server listening with mutual TLS and inbound
+  audit for session `rb-approved-script-20260618T215313Z` with
+  `CONSENT_GRANTED` and `ACTIVE`.
+- `platform-k8s-gitops#1705` records the acceptance evidence and is closed as
+  the bounded 22.6.2 GitOps/runtime gate.
+
+Residual boundaries:
+
+- `platform-agent#208` is source-ready for the 22.6.3 constrained executor, but
+  no new staging AGENT_OUTPUT/live terminal-source smoke was proven in the
+  `#1705` evidence path.
+- `platform-web#820` remains open for the operator UX. UI approval, TTL,
+  transcript, and negative-state browser smoke are not yet proven.
+- `platform-backend#548` remains the true device-key / TPM hardware-attestation
+  boundary for broad terminal rollout unless owner explicitly accepts a narrow,
+  time-bounded pilot risk envelope.
+- Open draft PR `platform-k8s-gitops#1652` still touches the owner-gated
+  remote-bridge activation overlay. It must preserve/rebase onto
+  `sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb`
+  before merge/apply to avoid a digest downgrade or overlay drift.
+
 ## Live Delta — Faz 22.6.1 #701 catalog product smoke accepted-candidate on combined digest (2026-06-18)
 
 **Session milestone**: `platform-k8s-gitops#1697` now has live deploy,
