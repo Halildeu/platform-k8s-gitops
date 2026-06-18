@@ -1,5 +1,22 @@
 # Faz 22.5 — Software Deployment Quick Wins
 
+> **2026-06-18 #1601 bounded acceptance truth refresh**:
+> `platform-k8s-gitops#1601` is closed and Project #2 Status is `Done` for the
+> bounded operatorless/product-channel acceptance scope. Denetim PC product
+> session artifact `rb-denetim-20260617T191335Z-product` remains available;
+> `summary.json` SHA256 is
+> `433e1273e13b1dafb24160948447abb490c87fd1db1c29ef642df0f7f52320f0`, and the
+> product path returned open/approve/challenge/verify/operation `200`,
+> non-pilot `400`, `PERMIT`, and `transportPushed=true`. AgentPC2 third-device
+> product-channel evidence is accepted under `#1643`: tokenless mTLS
+> auto-enroll, persisted DPAPI state, authenticated command polling, restart
+> continuity, and `v0.2.9` artifact promotion. `audit-archive-exporter`
+> Degraded was fixed by `#1677/#1678/#1679` with ExternalSecret
+> `True/SecretSynced`, successful rollout, `pg_up 1`, and
+> `pg_exporter_last_scrape_error 0`. Broader signed MSI/GPO rollout is split to
+> `#1680`, and broader attended remote-access remains `platform-backend#510`;
+> this does not claim 5-PC/50-PC/800-PC rollout readiness.
+
 > **2026-06-15 M2 durable AD DNS + service-mode truth refresh**:
 > backend + agent cert-auth command lifecycle source slice remains as previously
 > recorded: `platform-backend` #665 (`47d29d5f`) added cert-auth command poll
@@ -227,16 +244,16 @@
 > remote-ops, or prod-domain readiness.
 
 > **2026-06-17 AgentPC2 gate truth refresh**:
-> Project #2 issue #1643 now tracks `AgentPC2` as a dedicated third-device
-> product-channel acceptance gate. Status is `Blocked` until the device has
-> evidence through GPO/signed MSI, one-command bootstrap, an existing
-> EndpointAgent mTLS product channel, or a Domain Ops Broker typed operation.
+> Project #2 issue #1643 now tracks `AgentPC2` as the accepted third-device
+> product-channel acceptance gate. Status is `Done` after tokenless mTLS
+> auto-enroll, persisted DPAPI state, authenticated command polling, restart
+> continuity, and `v0.2.9` artifact promotion evidence.
 > Lab reverse SSH/RDP, open inbound SSH/WinRM/SMB/RPC, and operator-pasted
 > commands are explicitly not acceptance evidence. #1601 now has Denetim PC
 > product remote-ops positive session evidence (`rb-denetim-20260617T191335Z`,
-> `PERMIT`, `transportPushed=true`) but remains `Needs Verify` because the
-> AgentPC2 gate, signed MSI/GPO rollout acceptance, and owner-gated remote-access
-> parent are still separate open gates. #1609 remains Done for the accepted
+> `PERMIT`, `transportPushed=true`) and is Project `Done`; signed MSI/GPO
+> rollout acceptance is split to #1680, and owner-gated remote-access parent
+> scope remains under platform-backend#510. #1609 remains Done for the accepted
 > `SRB-AIDENETIMPC` + `ERP-MOBIL` two-device record.
 
 > **2026-06-17 remote-ops product-session refresh**:
@@ -405,11 +422,11 @@ install/uninstall kanıtlarını supersede etmez.
 | **M0 Official Hotfix Release** | AG-038 full `configHash`, PS5.1 installer encoding/BOM regression, canonical artifact URL, initial Authenticode/dev-signing path, result-submit 4xx/5xx visibility | `platform-agent` + `platform-backend` + release/artifact ops | **1-2 iş günü** | MKR-A1 clean reinstall: service running + enrollment OK + HMAC OK + `COLLECT_INVENTORY` result submit 200 + audit row |
 | **M1 One-command Pilot Bootstrap** | Signed/hash-verified PowerShell bootstrap, short-lived claim-code, AppInstaller/WinGet readiness check/repair, post-install smoke | `platform-agent` + backend enrollment surface | **1-2 iş günü** | 2-5 pilot cihazda tek komutla install + enroll + inventory smoke; raw token paste yok |
 | **M2 Backend mTLS Auto-enroll** | Machine cert doğrulayan `POST /endpoint-enrollments/auto`, AD computer identity binding, audit/revoke semantics | `platform-backend` | **PROD HOST LIVE / broader rollout gates separate** | `mtls.testai.acik.com` test edge/backend mTLS, no-cert fail-closed, valid ERP-MOBIL machine cert AutoEnroll HTTP 201, DB/audit cert identity, #155 tokenless heartbeat rows, #157 cert-auth command/result smoke (`COLLECT_INVENTORY` command `125d46a7-55b7-4379-a7d2-72bf7b0600cc` -> `SUCCEEDED`), #1569 durable no-hosts AD DNS + service restart continuity proven/closed, #1377 same-day selected-device M5 accepted, and prod `mtls.ai.acik.com` activation proven via #1593 + ingress-nginx rev4 ssl-passthrough: AD CS backend cert served, no-cert `exit=56` fail-closed, `SRB-AIDENETIMPC` machine-cert AutoEnroll HTTP 201, isolated-config agent `-once` logged `auto-enroll already-enrolled` + `no command available`, exit 0. Remaining broad rollout gates: 50/800 wave, longer stabilization, OS reboot continuity, revocation/wrong-CA matrix if retained, and destructive rollback/uninstall drills. |
-| **M3 Agent `--auto-enroll`** | Agent machine cert/domain identity ile backend auto-enroll, fallback claim-code ayrımı | `platform-agent` | **BOUNDED LIVE / Needs Verify** | Domain cihazda kullanıcı token'ı olmadan service start -> enrolled -> heartbeat proven on ERP-MOBIL; #171/#v0.2.4 CNG signer fix released; current bootstrap installed/restored `EndpointAgent` as `LocalSystem` service; restart logs show `auto-enroll cert loaded` + `no command available` over durable `mtls.testai.acik.com`. Remaining: signed MSI/GPO bootstrap acceptance, OS reboot continuity, multi-device rollout |
+| **M3 Agent `--auto-enroll`** | Agent machine cert/domain identity ile backend auto-enroll, fallback claim-code ayrımı | `platform-agent` | **BOUNDED LIVE / accepted for AgentPC2 product-channel scope** | Domain cihazda kullanıcı token'ı olmadan service start -> enrolled -> heartbeat proven on ERP-MOBIL and AgentPC2; #171/#v0.2.4 CNG signer fix released; #207/v0.2.9 CNG/KSP signer fix promoted for AgentPC2; restart logs show `auto-enroll cert loaded` + authenticated command polling over durable `mtls.testai.acik.com`. Remaining: signed MSI/GPO bootstrap acceptance, OS reboot continuity, broader rollout |
 | **M4 Signed WiX MSI** | Authenticode signed MSI, fixed UpgradeCode, service install/upgrade/uninstall, EDR allowlist doc | `platform-agent` CI + operator signing | **Needs Verify** | #115 lab MSI lifecycle smoke passed on snapshot-backed local Parallels Windows 11 (`0.1.2` install/repair -> `0.1.3` upgrade -> uninstall). Earlier trusted MSI artifact generation is proven, but production trusted signing trust-chain, EDR/AppLocker/WDAC allowlist, GPO install pilot and rollback/reinstall evidence remain open. |
-| **M5 Same-day selected-device pilot** | Pilot OU'ya GPO Software Installation for domain-gpo devices; local Parallels/control + denetim evidence lanes; T0/T+15/T+60 collector monitoring | Operator + IT + gitops evidence | **aynı gün** (no-24h owner direction) | Board #1377 accepted the earlier same-day selected-device scope; #1609 now narrows active productization to max 2 devices. 2026-06-16 owner-approved acceptance pair: `SRB-AIDENETIMPC` + `ERP-MOBIL`; `AgentPC2` moved to dedicated third-device gate #1643 and is not a blocker for the two-device #1609 record. Tokenless enroll + heartbeat/no-command poll, no manual token/ZIP for domain-gpo devices, restart continuity, and post-pilot evidence are required before any broader wave. |
+| **M5 Same-day selected-device pilot** | Pilot OU'ya GPO Software Installation for domain-gpo devices; local Parallels/control + denetim evidence lanes; T0/T+15/T+60 collector monitoring | Operator + IT + gitops evidence | **aynı gün** (no-24h owner direction) | Board #1377 accepted the earlier same-day selected-device scope; #1609 narrows active productization to max 2 devices and #1643 accepts AgentPC2 as the third product-channel device. Signed MSI/GPO rollout acceptance is split to #1680 before any broader wave. |
 | **M5A Domain Ops Broker gate** | Delegated Windows service for EndpointTest OU / EndpointAgentPilotComputers / Endpoint Agent GPO mutation; maker-checker + TTL + audit | `platform-k8s-gitops` plan + backend/ops implementation | **P0 design gate + first slice accepted** | SSH/RDP clipboard is not the durable AD/GPO mutation channel. Broker design is documented in `docs/faz-22-domain-ops-broker-plan.md`; platform-backend #676 accepted the Admin API + durable request state + credential-ref custody + typed connector dispatch + deterministic fail-closed result/status/audit slice. Real AD/GPO mutation success remains a later connector/live gate. |
-| **M5B Remote-ops MVP safety gate** | Endpoint-side outbound mTLS operatorless diagnostics/remediation; default-off, TTL, bounded command allowlist, no raw shell | `platform-agent` + backend broker surface | **BOUNDED MVP ACCEPTED / parent Needs Verify** | Denetim PC product-session gate is accepted on `rb-denetim-20260617T191335Z` (`PERMIT`, `transportPushed=true`) with #690 DENY cleanup and #1662 ESO/Vault cleanup Done. This still does not unblock AgentPC2/AD/GPO operations or broader rollout until the specific product-channel evidence exists. Temporary reverse SSH is lab-only. |
+| **M5B Remote-ops MVP safety gate** | Endpoint-side outbound mTLS operatorless diagnostics/remediation; default-off, TTL, bounded command allowlist, no raw shell | `platform-agent` + backend broker surface | **BOUNDED MVP ACCEPTED / #1601 Done** | Denetim PC product-session gate is accepted on `rb-denetim-20260617T191335Z` (`PERMIT`, `transportPushed=true`) with #690 DENY cleanup and #1662 ESO/Vault cleanup Done; AgentPC2 product-channel evidence is accepted under #1643. Broader attended remote-access parent remains platform-backend#510. Temporary reverse SSH is lab-only. |
 | **M6 50-PC Wave** | Ring/tag rollout, concurrency/maintenance window discipline, alerting | Operator + backend rollout controls | **GATE CLOSED by #1609** | Do not start a 50-PC denominator while only 2 active pilot devices are available. Reopen only after the owner-approved two-device evidence pair is accepted, remote-ops MVP safety gate, signed MSI/GPO smoke, rollback/reinstall proof, and explicit owner acceptance. `AgentPC2` should be used as the next product-channel verify candidate when GPO/MSI or remote-ops access is stable. |
 | **M7 800-PC Rollout** | OU/ring bazlı staged rollout, rollback/uninstall path, stale-device alerting | Operator + IT | **1-2 hafta** staged | 800-PC rollout raporu; failed devices explicit queue; rollback path ready |
 
@@ -429,9 +446,8 @@ pilot cihaz sağlayabildiği için, sektör-standardına yakın güvenli yol iki
 kanıtlanmış cihazla acceptance almak ve geniş dalgayı kapalı tutmaktır. Bu
 oturumda owner-approved acceptance pair `SRB-AIDENETIMPC` + `ERP-MOBIL` olarak
 kanıtlandı. `AgentPC2` artık #1609 iki-cihaz kaydının kapanış blocker'ı değil;
-#1643 altında `Blocked` üçüncü cihaz product-channel gate'idir. GPO/MSI,
-one-command bootstrap, mevcut EndpointAgent mTLS product channel veya Domain
-Ops Broker typed-operation evidence yoksa AgentPC2 acceptance yapılamaz. AD/GPO
+#1643 altında kabul edilmiş üçüncü cihaz product-channel gate'idir. Bu, signed
+MSI/GPO rollout acceptance değildir; o gate #1680'e ayrılmıştır. AD/GPO
 mutation için kalıcı model SSH değil,
 `docs/faz-22-domain-ops-broker-plan.md` içindeki delegated Domain Ops
 Broker'dır.
