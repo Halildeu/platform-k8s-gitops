@@ -1,0 +1,18 @@
+# ops extras for meeting-service (Faz 24 PR-obs-03, gitops#1660)
+# CRD-gated resources: ServiceMonitor (monitoring.coreos.com)
+# Label injection parent runtime kustomization ile simetrik (audio-gateway emsali).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: meeting-service
+    includeSelectors: false
+    includeTemplates: false
+  - pairs:
+      app.kubernetes.io/part-of: platform
+    includeSelectors: false
+    includeTemplates: false
+
+resources:
+  - servicemonitor.yaml

@@ -38,6 +38,8 @@ resources:
   - ../../base/apps/redis-streams-exporter/ops    # ServiceMonitor (CRD-gated; ops-bundle'a değil buraya — prod sızıntısı yok)
   - ../../base/apps/audit-archive-exporter        # Faz 24 PR-obs-02 (#1656, ADR-0042 §4): audit_archive.* DB-state metrics for the run-once worker (test-only; prod §5 gate)
   - ../../base/apps/audit-archive-exporter/ops    # ServiceMonitor (CRD-gated; test overlay only — prod sızıntısı yok)
+  - ../../base/apps/meeting-service/ops      # Faz 24 PR-obs-03 (#1660): ServiceMonitor management:8081 (CRD-gated; services were LIVE but unscraped)
+  - ../../base/apps/transcript-service/ops   # Faz 24 PR-obs-03 (#1660): ServiceMonitor management:8081 (CRD-gated; services were LIVE but unscraped)
   - ../../base/apps/notification-orchestrator    # Faz 23.1 PR5 D29-NOTIFY 2026-05-06
                                                   # (services.yaml prod=deferred; test=enabled)
   - eso/notify/externalsecret-notify.yaml    # notification-orchestrator-secrets ESO owner;
