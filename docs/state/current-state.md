@@ -54,12 +54,16 @@ Residual runtime truth for `platform-agent#208`:
 - Denetim PC `SRB-AIDENETIMPC`
   (`423b6fc3-7497-4083-bd2f-5e2fe543bfe9`) still reports
   `agent_version=0.1.0-dev.g636f1d4-productsession`, status `ONLINE`, last
-  seen `2026-06-18 23:25:35+00`.
+  seen `2026-06-18 23:37:04+00`.
 - The latest heartbeat capabilities do not include `UPDATE_AGENT`; they list
   `COLLECT_INVENTORY`, `GET_LOGGED_IN_USER`, `GET_USER_HOME_PATHS`,
   `LIST_LOCAL_USERS`, `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`,
   `CHANGE_LOCAL_PASSWORD`, `INSTALL_SOFTWARE`, `UNINSTALL_SOFTWARE`, and
   `SET_DISPLAY_POLICY`.
+- A live software-catalog query for agent/endpoint candidates returned only
+  approved 7-Zip WinGet items (`be026-smoke-7zip-registry`, `7zip`,
+  `be021-smoke-7zip`). There is no EndpointAgent `v0.2.10` catalog item, and
+  the current install lane is not a generic signed-binary installer.
 - The recent `#701/#702` catalog and approved-script product smoke evidence
   records `POLICY_EVENT` only for the new digest path; it does not prove a new
   `AGENT_OUTPUT` / DATA row from the `v0.2.10` constrained executor.
@@ -74,9 +78,18 @@ Next gate:
   updated or installed from the `v0.2.10` artifact through an owner-approved
   path and then proves a product-channel constrained operation that records
   `AGENT_OUTPUT` or equivalent DATA/EndStream evidence.
+- Preferred product path is catalog-bound `UPDATE_AGENT`, but Denetim PC cannot
+  use that path while its latest heartbeat omits `UPDATE_AGENT`. The acceptable
+  alternatives are an explicitly owner-approved local maintenance install for a
+  single pilot endpoint, or a separate cert-enrolled endpoint already running
+  `v0.2.10`. Either alternative only seeds the pilot; it does not satisfy
+  terminal acceptance until product-channel `AGENT_OUTPUT` / DATA evidence is
+  recorded.
 - Do not count unrestricted shell, RDP, WinRM, SMB, SSH, arbitrary
-  download-and-execute, generic reverse tunnel, or operator-pasted endpoint
-  PowerShell as acceptance evidence.
+  download-and-execute, generic reverse tunnel, Software Catalog abuse,
+  Approved Script Runner abuse, or operator-pasted endpoint PowerShell as
+  acceptance evidence. The detailed decision tree is now in
+  `docs/runbooks/RB-faz22.6-remote-response-terminal.md`.
 
 ## Live Delta — Faz 22.6.2 #702 Approved Script Runner product smoke accepted-bounded (2026-06-19)
 

@@ -188,6 +188,80 @@ arbitrary file delete
 arbitrary installer execution
 ```
 
+### 6.1 Pilot Endpoint Upgrade Precondition For 22.6.3
+
+`platform-agent#208` runtime acceptance requires an endpoint that is actually
+running the constrained-executor artifact under the product channel. A signed
+artifact being served by `testai` is a prerequisite, not execution evidence.
+
+Current pilot truth as of the 2026-06-18T23:40Z recheck:
+
+- `testai` artifact-host serves `v0.2.10` with
+  `endpoint_agent_sha256=a50344a4457959b95dfdfa22e6578e53cd6ec4b124830b506fe53503c18ba1ec`
+  and trusted signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`.
+- Denetim PC `SRB-AIDENETIMPC`
+  (`423b6fc3-7497-4083-bd2f-5e2fe543bfe9`) still reports
+  `agent_version=0.1.0-dev.g636f1d4-productsession`.
+- Its latest heartbeat advertises `INSTALL_SOFTWARE` and
+  `UNINSTALL_SOFTWARE`, but does not advertise `UPDATE_AGENT`.
+- The live software catalog query returns only 7-Zip WinGet entries for the
+  agent/endpoint search surface; no EndpointAgent `v0.2.10` install catalog
+  item exists.
+
+Accepted ways to seed the 22.6.3 runtime pilot:
+
+1. **Catalog-bound `UPDATE_AGENT` self-update**, only when the latest heartbeat
+   advertises `UPDATE_AGENT`, the `v0.2.10` release exists as
+   `APPROVED`+enabled release-catalog metadata, the backend dispatch uses
+   `POST /api/v1/admin/endpoint-devices/{deviceId}/agent-updates`, and the
+   post-update heartbeat proves the target `agent_version`. The caller supplies
+   only release id, reason, schedule, idempotency, and optional ring; binary
+   URL, hash, signer thumbprint, signing tier, target version, and max bytes
+   must be resolved server-side from the approved catalog.
+2. **Owner-approved local maintenance install** from the signed `v0.2.10`
+   artifact can seed a single pilot endpoint when self-update is not available,
+   but it is not terminal acceptance evidence. It must record endpoint id,
+   operator, timestamp, artifact URL, SHA256, signer thumbprint, service state,
+   rollback note, and the first post-install heartbeat. Acceptance starts only
+   after the product-channel constrained operation records `AGENT_OUTPUT` or
+   equivalent DATA/EndStream evidence.
+3. **A cert-enrolled test endpoint already running `v0.2.10`** is acceptable
+   for the #208 runtime smoke if it uses the same outbound mTLS remote-bridge
+   path, tenant/device binding, broker permit validation, and recording/audit
+   chain. The evidence must name the endpoint and must not borrow Denetim PC
+   identity claims.
+
+Rejected ways to seed or prove the 22.6.3 runtime pilot:
+
+- Software Catalog / `INSTALL_SOFTWARE` unless EndpointAgent is first published
+  as an approved WinGet package/catalog item with the normal maker-checker,
+  preflight, install audit, and detection-rule contracts. The current
+  WinGet-only 7-Zip catalog surface is not a general signed-binary installer.
+- Approved Script Runner download-and-execute or arbitrary installer execution
+  unless a separate signed install gate is explicitly designed and accepted for
+  agent upgrade. The script runner can prove script policy; it must not be
+  repurposed as a hidden unrestricted installer lane for #208.
+- Generic `/endpoint-commands` `UPDATE_AGENT`, direct database inserts,
+  caller-supplied binary URL/hash/signer fields, direct operator PowerShell,
+  unrestricted terminal, RDP, SSH, WinRM, SMB/RPC, file browser, reverse tunnel,
+  or any manual endpoint command as acceptance evidence.
+
+Decision tree for the next #208 runtime pass:
+
+1. Read the public release manifest and record release tag, SHA256, signer
+   thumbprint, and artifact-host digest.
+2. Read the target endpoint heartbeat. If it already reports `v0.2.10`, run the
+   product-channel constrained operation smoke.
+3. If it is older and advertises `UPDATE_AGENT`, use the catalog-bound
+   self-update path, then wait for a fresh heartbeat proving `v0.2.10`.
+4. If it is older and does not advertise `UPDATE_AGENT`, choose either an
+   owner-approved local maintenance install for one pilot endpoint or wait for
+   the managed rollout lane. Do not fabricate acceptance through Software
+   Catalog, Approved Script Runner, or raw shell.
+5. Only after the endpoint reports `v0.2.10`, run the allowed diagnostic
+   command plus the negative matrix subset and attach `AGENT_OUTPUT` or
+   equivalent DATA/EndStream recording evidence to `platform-agent#208`.
+
 ## 7. Acceptance Checklist
 
 Required evidence per lane:
