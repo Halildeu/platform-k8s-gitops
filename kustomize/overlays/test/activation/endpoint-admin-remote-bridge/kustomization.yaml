@@ -18,8 +18,11 @@
 #   - immutable test digest includes platform-backend#696
 #     (`14e6390e9ae3d92a0c012c6220fdddf5b1d82d78`) so the live product
 #     session can capture redacted PERMIT metadata for #510 G6.
+#   - immutable test digest also includes platform-backend#697
+#     (`2612786cd05d986c452ed4dbbf6bb1b12f4a7d4d`) so advisory
+#     AgentHello.deviceId cannot veto active machine-cert enrollment trust.
 #   - immutable test digest:
-#     sha256:d1634dfd1beadb5bf69499e1384395e7fb9f8517e34c5a32319d3536fa6971f2
+#     sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -55,4 +58,4 @@ images:
   # owner-gated operator apply before #510 live product-session verification.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:d1634dfd1beadb5bf69499e1384395e7fb9f8517e34c5a32319d3536fa6971f2
+    digest: sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9
