@@ -262,6 +262,30 @@ Decision tree for the next #208 runtime pass:
    command plus the negative matrix subset and attach `AGENT_OUTPUT` or
    equivalent DATA/EndStream recording evidence to `platform-agent#208`.
 
+Read-only helper for this gate:
+
+```bash
+EVIDENCE_DIR=/tmp/remote-response-terminal-pilot-readiness-$(date -u +%Y%m%dT%H%M%SZ) \
+scripts/faz22-remote-ops/remote-response-terminal-pilot-readiness.sh
+```
+
+The helper validates the public artifact manifest and, when staging DB access
+is available, reads the target endpoint heartbeat, release-catalog candidates,
+and software-catalog candidates. It writes `summary.json` with one of these
+decision values:
+
+- `ready-for-product-smoke`
+- `use-catalog-bound-update-agent`
+- `seed-or-approve-release-catalog-first`
+- `owner-approved-seed-required`
+- `artifact-manifest-mismatch`
+- `blocked-live-db-read`
+- `target-endpoint-not-found`
+
+Set `REQUIRE_READY=1` when a CI/operator wrapper should fail unless the target
+endpoint already reports the expected agent version. The helper is not an
+installer and does not dispatch operations.
+
 ## 7. Acceptance Checklist
 
 Required evidence per lane:
