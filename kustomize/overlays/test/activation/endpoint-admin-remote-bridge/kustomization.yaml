@@ -16,13 +16,16 @@
 #   - topology: Option A true outbound-only agent -> broker mTLS/gRPC stream
 #   - no broker -> device egress NetworkPolicy is part of this gate
 #   - immutable test digest includes platform-backend#696
-#     (`14e6390e9ae3d92a0c012c6220fdddf5b1d82d78`) so the live product
-#     session can capture redacted PERMIT metadata for #510 G6.
-#   - immutable test digest also includes platform-backend#697
+#     (`14e6390e9ae3d92a0c012c6220fdddf5b1d82d78`) so live product
+#     sessions can capture redacted PERMIT metadata for #510 G6.
+#   - immutable test digest includes platform-backend#697
 #     (`2612786cd05d986c452ed4dbbf6bb1b12f4a7d4d`) so advisory
 #     AgentHello.deviceId cannot veto active machine-cert enrollment trust.
+#   - immutable test digest includes platform-backend#698
+#     (`9a53fa745ec7dc27ed5166291ec3048e389615d3`) so any remaining live
+#     DENY returns bounded/redacted deny.reason and deny.policyGate metadata.
 #   - immutable test digest:
-#     sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9
+#     sha256:4203694562dae5f3ae57ca17f3d8354fce9920026a7e05ee42be550b95a35aa3
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -52,10 +55,11 @@ patches:
 
 images:
   # control #11 — immutable digest (D30). SAME image as endpoint-admin-service
-  # (Codex A+). Re-pinned after #696 redacted PERMIT metadata merged and the
-  # same digest was live-verified on endpoint-admin-service. This activation
-  # overlay remains outside the Argo root and still requires an explicit
-  # owner-gated operator apply before #510 live product-session verification.
+  # (Codex A+). Re-pinned after #698 redacted DENY metadata merged, because
+  # the latest #510 product smoke on the #697 digest still returned DENY
+  # without a visible policy gate. This activation overlay remains outside the
+  # Argo root and still requires an explicit owner-gated operator apply before
+  # #510 live product-session verification.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9
+    digest: sha256:4203694562dae5f3ae57ca17f3d8354fce9920026a7e05ee42be550b95a35aa3

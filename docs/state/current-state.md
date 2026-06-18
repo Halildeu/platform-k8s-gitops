@@ -1,31 +1,38 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.6 #510 remote-bridge verification repin prepared (2026-06-18)
+## Live Delta — Faz 22.6 #510 remote-bridge DENY-observability repin prepared (2026-06-18)
 
 **Session milestone**: `platform-backend#510` remains Project `Needs Verify`.
 The primary `endpoint-admin-service` hardening image already carries
-`platform-backend#696` and `platform-backend#697`, but the separate owner-gated
-`endpoint-admin-remote-bridge` activation overlay also has to run the same
-image before a live product-session can prove the new redacted PERMIT metadata
-and the advisory `AgentHello.deviceId` trust-contract fix.
+`platform-backend#696`, `platform-backend#697`, and `platform-backend#698`, but
+the separate owner-gated `endpoint-admin-remote-bridge` activation overlay also
+has to run the latest image before a live product-session can either prove
+`PERMIT` or expose the remaining policy gate through redacted `DENY` metadata.
+The latest product smoke on the #697 remote-bridge digest returned
+`DENY`/`transportPushed=false`, so #698 was merged to remove blind debugging
+from the #510 parent acceptance path.
 
 Agent-doable GitOps preparation:
 
 - Activation overlay
   `kustomize/overlays/test/activation/endpoint-admin-remote-bridge` now pins
   the broker image to
-  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9`,
-  the same digest live-verified on primary `endpoint-admin-service` after
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:4203694562dae5f3ae57ca17f3d8354fce9920026a7e05ee42be550b95a35aa3`.
+  This digest was produced by backend image build run `27762898846` after
   `platform-backend#696` merged as
   `14e6390e9ae3d92a0c012c6220fdddf5b1d82d78` and `platform-backend#697`
-  merged as `2612786cd05d986c452ed4dbbf6bb1b12f4a7d4d`.
+  merged as `2612786cd05d986c452ed4dbbf6bb1b12f4a7d4d`; it also includes
+  `platform-backend#698`, merged as
+  `9a53fa745ec7dc27ed5166291ec3048e389615d3`, which adds bounded/redacted
+  `deny.reason` and `deny.policyGate` for broker DENY responses.
 - This is not a #510 closure claim. The acceptance gate still requires an
   owner-gated apply/sync of the activation overlay, live `pod imageID` match
-  for `endpoint-admin-remote-bridge`, and a product remote-ops smoke that
-  captures `kind=PERMIT`, `transportPushed=true`, and redacted
+  for `endpoint-admin-remote-bridge`, and a product remote-ops smoke. If that
+  smoke returns `PERMIT`, it must capture `transportPushed=true` and redacted
   `permit.signaturePresent`, `permit.canonicalPayloadSha256`, and
   `permit.freshAtResponseTime` without raw `signatureB64`, raw `deviceId`, or
-  raw `operatorSubject`.
+  raw `operatorSubject`. If it still returns `DENY`, the response must expose
+  only the bounded/redacted policy gate needed for the next fix.
 - Remaining #510 parent evidence after this repin is still the retained live
   negative/session-control matrix: replay, expired permit, wrong device,
   audit-sink-down, heartbeat loss, terminate/reconnect, mid-session revoke,
@@ -88,12 +95,15 @@ Scope split / residual truth:
   `operatorSubject`. `platform-backend#697` merged as
   `2612786cd05d986c452ed4dbbf6bb1b12f4a7d4d`, preserving cert-bound device id
   hard-deny while preventing advisory `AgentHello.deviceId` from vetoing active
-  machine-cert enrollment trust. This worktree pins test
-  `endpoint-admin-service` to
+  machine-cert enrollment trust. `platform-backend#698` merged as
+  `9a53fa745ec7dc27ed5166291ec3048e389615d3`, adding redacted DENY metadata
+  because the latest product smoke on remote-bridge digest
   `sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9`
-  after image build run `27759915899`; repository_dispatch deploy
-  `27760025464` correctly refused imperative drift until desired-state is
-  updated. Earlier `#1684` digest `sha256:d1634df...` had deploy run
+  still returned `DENY` without a visible policy gate. This worktree now pins
+  the owner-gated remote-bridge activation overlay to the #698 image build
+  digest
+  `sha256:4203694562dae5f3ae57ca17f3d8354fce9920026a7e05ee42be550b95a35aa3`
+  from run `27762898846`. Earlier `#1684` digest `sha256:d1634df...` had deploy run
   `27756026906` succeeded with pod digest match, readiness `200`, and Gate 1d
   `endpoint-admin-service` stability PASS across `180s`.
   `platform-k8s-gitops#1685` added a regression guard so Gate 1d coverage keeps
