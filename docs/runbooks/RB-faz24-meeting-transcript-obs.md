@@ -47,14 +47,19 @@
 > `helm upgrade` olmadan test Prometheus config'ine GİRMEZ → bu adım kaçarsa #1459
 > onarılsa bile prod-hub yalnız `up` alır, 5xx/Hikari/heap = veri-yok sahte kapsama.
 
+> **GÜVENLİK (Codex 019edc25 MF4):** `--kube-context k3d-test` ZORUNLU. Yanlış
+> current-context `k3d-prod` ise `values-test.yaml` PROD release'ine uygulanır →
+> prod Alertmanager/Grafana/topology için yüksek blast-radius hata.
+
 ```bash
 # Mevcut -f zincirini koru (drill values aktifse onu da ekle):
-#   helm get values kube-prometheus-stack -n monitoring   # aktif -f setini gör
+#   helm get values kube-prometheus-stack -n monitoring --kube-context k3d-test
 helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  --kube-context k3d-test \
   --version 85.0.3 \
   -n monitoring \
   -f helm-values/kube-prometheus-stack/values-test.yaml
-#   (k3d-test context; release rev artar)
+#   (k3d-test release rev artar)
 ```
 
 ### 1. ServiceMonitor + Rule apply (ArgoCD sync veya manuel)
