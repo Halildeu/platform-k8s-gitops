@@ -18,7 +18,7 @@ spec:
     targetRevision: main
     path: kustomize/overlays/test/eso    # Overlay split — test Vault FQDN
   destination:
-    server: https://kubernetes.default.svc    # ArgoCD kendi cluster'ı = test
+    name: test-cluster    # ArgoCD prod hub registered k3d-test destination
     namespace: external-secrets
   syncPolicy:
     automated:
@@ -27,3 +27,19 @@ spec:
     syncOptions:
       - CreateNamespace=false   # external-secrets ns Helm tarafından
       - ServerSideApply=true
+  # Keep ESO status/default-field noise out of sync status without ignoring real
+  # provider/data/path drift. Mirrors the prod ESO app's narrowed ignore policy.
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jsonPointers:
+        - /status
+      jqPathExpressions:
+        - .spec.data[].remoteRef.conversionStrategy
+        - .spec.data[].remoteRef.decodingStrategy
+        - .spec.data[].remoteRef.metadataPolicy
+        - .spec.data[].remoteRef.nullBytePolicy
+    - group: external-secrets.io
+      kind: ClusterSecretStore
+      jsonPointers:
+        - /status
