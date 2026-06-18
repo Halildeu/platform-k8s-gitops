@@ -227,6 +227,16 @@ path "kv/data/platform/audit-retention-worker" {
   capabilities = ["read"]
 }
 
+# --- Faz 24 PR-obs-02 audit-archive-exporter (ADR-0042 durable metrics) ---
+# ExternalSecret audit-archive-exporter-secrets reads
+# kv/platform/audit-archive-exporter (db_username + db_password) for the
+# dedicated read-only Postgres exporter role. Without this grant ESO sync
+# returns 403 -> Secret never lands -> audit-archive-exporter remains
+# CreateContainerConfigError/Degraded.
+path "kv/data/platform/audit-archive-exporter" {
+  capabilities = ["read"]
+}
+
 # --- Metadata read (versioned KV v2 list/describe) ---
 path "kv/metadata/platform/*" {
   capabilities = ["list"]
