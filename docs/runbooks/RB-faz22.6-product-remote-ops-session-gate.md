@@ -1,7 +1,8 @@
 # RB — Faz 22.6 Product Remote-Ops Session Gate
 
 > **Status**: ACTIVE acceptance contract for `platform-backend#510` and
-> `platform-k8s-gitops#1601`.
+> `platform-k8s-gitops#1601`; Denetim PC bounded MVP evidence is accepted,
+> while both parent issues remain `Needs Verify` for broader gates.
 > **First target**: Denetim PC / `SRB-AIDENETIMPC`.
 > **Current evidence anchor**: `rb-denetim-20260617T191335Z`.
 >
@@ -63,9 +64,9 @@ the drift is reconciled in both places.
 | G11 mTLS negative | no-cert and wrong-CA fail closed on real RPC | Proven by earlier same-day gRPC negative comments; attach when claiming |
 | G12 session controls | expiry/replay/wrong-device/heartbeat/revoke/audit-down/skew | Not fully live-proven |
 
-The Denetim run can be used for a bounded MVP gate only. It must not be used to
-claim AgentPC2 acceptance, signed MSI/GPO readiness, 5-PC/50-PC/800-PC rollout,
-or prod remote-support readiness.
+The Denetim run is accepted as the bounded MVP product-session gate evidence.
+It must not be used to claim AgentPC2 acceptance, signed MSI/GPO readiness,
+5-PC/50-PC/800-PC rollout, or prod remote-support readiness.
 
 ## 4. Evidence Template
 
@@ -147,12 +148,13 @@ attached.
   the accepted Denetim MVP evidence.
 - Keep AgentPC2 in its own gate (#1643) until AgentPC2 itself has product-channel
   evidence. Lab reverse SSH/RDP or inbound admin reachability does not unblock it.
-- Track backend lifecycle hardening separately in `platform-backend#690`:
-  DENY/terminal outcomes should terminalize or evict live sessions and leave
-  audited state.
+- Backend lifecycle hardening in `platform-backend#690` is historical Done
+  evidence: DENY cleanup smoke `rb-deny-cleanup-20260617T211003Z` proved a
+  denied operation does not leave the peer blocked.
 - Desired-state cleanup such as ESO/Vault reconciliation is separate from the
-  positive product session. Do not call the overlay clean while ExternalSecrets
-  remain `SecretSyncedError`.
+  positive product session. For the current Denetim evidence, #1662 is Done:
+  all three remote-bridge ExternalSecrets are `Ready=True / SecretSynced` and
+  the final preflight is `PRECHECK_STATUS=ready failures=0 not_ready=0`.
 
 ## 7. Minimal Re-Verification Before Reuse
 
