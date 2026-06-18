@@ -92,6 +92,47 @@ Each operation must define:
 - allowed target device class
 - rollback/cleanup note when applicable
 
+### 4.1 Runtime Smoke For 22.6.1
+
+The catalog source gate is not accepted by a source merge alone. Runtime
+acceptance requires the broker image that contains `platform-backend#701` to be
+running on the remote-bridge path, not only on the primary endpoint-admin
+Deployment.
+
+Use the helper below after the selected endpoint-admin digest is pinned and
+deployed:
+
+```bash
+OPERATOR_BEARER_TOKEN=<redacted> \
+REMOTE_BRIDGE_SESSION_ID=<fresh-owned-and-step-up-verified-session> \
+CATALOG_OPERATION_ID=GET_HOSTNAME \
+EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-catalog \
+scripts/faz22-remote-ops/remote-ops-catalog-smoke.sh
+```
+
+The helper:
+
+- opens only a local port-forward when `REMOTE_BRIDGE_OPERATOR_BASE_URL` is not
+  supplied;
+- queries `GET /internal/remote-bridge/operator/operation-catalog`;
+- verifies enabled entries `GET_HOSTNAME` and `GET_NETWORK_SUMMARY`;
+- verifies a disabled catalog entry remains disabled;
+- verifies raw `PTY_COMMAND` without `catalogOperationId` is rejected;
+- verifies command override with a catalog id is rejected;
+- submits one server-owned catalog operation and requires `PERMIT` plus
+  `transportPushed=true` by default;
+- writes bounded evidence files and SHA256 manifest under `EVIDENCE_DIR`.
+
+If `REMOTE_BRIDGE_SESSION_ID` is omitted, the helper performs only the
+authenticated/no-auth catalog preflight and records that operation evidence is
+skipped. That is useful for deploy readiness, but it is not #701 acceptance.
+
+Do not use direct `kubectl set image`, `kubectl patch`, or `kubectl edit` for
+this lane. The selected digest must be reconciled through GitOps desired-state.
+If `platform-backend#706` or another endpoint-admin PR merges before the smoke,
+pin the newer combined digest rather than reusing an immediately superseded
+#701-only digest.
+
 ## 5. Script Runner Contract
 
 Approved Script Runner must execute only immutable library entries:

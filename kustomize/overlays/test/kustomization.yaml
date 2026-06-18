@@ -5152,7 +5152,15 @@ images:
     # sha256:263f1761cd56aaf333e9e1e99a90dbae1d66514b1adaf6f32a82a6d5f7983e92.
     # Repository_dispatch deploy 27776425541 correctly refused imperative drift
     # until this GitOps desired-state bump.
-    digest: sha256:263f1761cd56aaf333e9e1e99a90dbae1d66514b1adaf6f32a82a6d5f7983e92
+    # 2026-06-18 Faz 22.6.1 Operation Catalog + Domain Ops executor result
+    # submit combined image (backend #704/#706 -> sha-9a8bf45). This digest
+    # contains the #701 catalog gate plus the #705 result-submit adapter, so it
+    # supersedes the short-lived #701-only digest for #1697 smoke evidence.
+    # Image build run 27782888671 produced endpoint-admin-service
+    # sha256:3c0a9573602247437b18f8cc0685c5607326530fc6b81528330f8a395524719c.
+    # Repository_dispatch deploy 27783055059 correctly refused imperative drift
+    # from sha256:263f1761... until this GitOps desired-state bump.
+    digest: sha256:3c0a9573602247437b18f8cc0685c5607326530fc6b81528330f8a395524719c
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
