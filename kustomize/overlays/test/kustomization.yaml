@@ -5144,7 +5144,13 @@ images:
     # sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9.
     # Repository_dispatch deploy 27760025464 correctly refused imperative drift
     # until this GitOps desired-state bump.
-    digest: sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9
+    # 2026-06-18 Faz 22.5 #1680 Domain Ops execution-package connector
+    # (backend #700 / PR #703 -> sha-8678a36). Image build run 27776302536
+    # produced endpoint-admin-service
+    # sha256:263f1761cd56aaf333e9e1e99a90dbae1d66514b1adaf6f32a82a6d5f7983e92.
+    # Repository_dispatch deploy 27776425541 correctly refused imperative drift
+    # until this GitOps desired-state bump.
+    digest: sha256:263f1761cd56aaf333e9e1e99a90dbae1d66514b1adaf6f32a82a6d5f7983e92
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
