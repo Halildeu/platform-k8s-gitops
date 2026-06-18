@@ -1,5 +1,83 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6.3 #208 agent artifact v0.2.10 served; runtime terminal gate still open (2026-06-19)
+
+**Session milestone**: the `platform-agent#208` constrained-executor source
+fix is now available as a signed test artifact and is served by the live
+`testai` artifact-host. This is a runtime prerequisite for the Remote Response
+Terminal lane, not terminal acceptance by itself. The pilot endpoint has not
+yet proven a `v0.2.10` product-path `AGENT_OUTPUT` / DATA recording.
+
+Source and artifact lineage:
+
+- `platform-agent#209` merged the agent app-entrypoint wiring for the
+  constrained PTY dispatcher. Default behavior remains CONTROL-only; operation
+  mode requires explicit enablement, outbound mTLS client material, pinned
+  broker permit key/kid, and plaintext dispatch refusal.
+- Release tag `v0.2.10` was published from merge commit
+  `9def0a7e15b1d746642e71501760176126a750c5`.
+- Trusted EXE release workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27794936606`
+  completed successfully.
+- Release manifest evidence:
+  `endpoint_agent_sha256=a50344a4457959b95dfdfa22e6578e53cd6ec4b124830b506fe53503c18ba1ec`,
+  `endpoint_agent_zip_sha256=fa72f278b81497bf2480ea312c7d13cff410372bfcef6ddca23dc3e50a1f292e`,
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`,
+  signing tier `trusted-internal-ca`, and artifact-host image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.10@sha256:7befd6aac67712e1a40fd1ab950ff455c22161ffcadfe03c2dd204b128fffd72`.
+- `platform-k8s-gitops#1710` merged at
+  `2a280b33dd74087a5eee79eb13a83698a1368b5a`, promoting the test
+  artifact-host image from `v0.2.9` to the immutable `v0.2.10` digest.
+- Platform-test sync workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27795463381`
+  succeeded: `Sync platform-test through ArgoCD`, endpoint-admin OpenFGA
+  runtime selector verify, and report upload all passed.
+
+Live evidence after sync:
+
+- `artifact-host` deployment image is
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.10@sha256:7befd6aac67712e1a40fd1ab950ff455c22161ffcadfe03c2dd204b128fffd72`.
+- Deployment status is `2/2`, `updatedReplicas=2`, generation `12`, observed
+  generation `12`.
+- Both live artifact-host pods are Ready and their imageIDs match digest
+  `sha256:7befd6aac67712e1a40fd1ab950ff455c22161ffcadfe03c2dd204b128fffd72`.
+- Public manifest
+  `https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json`
+  now returns `release_tag=v0.2.10`,
+  `endpoint_agent_sha256=a50344a4457959b95dfdfa22e6578e53cd6ec4b124830b506fe53503c18ba1ec`,
+  and `endpoint_agent_zip_sha256=fa72f278b81497bf2480ea312c7d13cff410372bfcef6ddca23dc3e50a1f292e`.
+- Evidence comment:
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4746949961`.
+
+Residual runtime truth for `platform-agent#208`:
+
+- Denetim PC `SRB-AIDENETIMPC`
+  (`423b6fc3-7497-4083-bd2f-5e2fe543bfe9`) still reports
+  `agent_version=0.1.0-dev.g636f1d4-productsession`, status `ONLINE`, last
+  seen `2026-06-18 23:25:35+00`.
+- The latest heartbeat capabilities do not include `UPDATE_AGENT`; they list
+  `COLLECT_INVENTORY`, `GET_LOGGED_IN_USER`, `GET_USER_HOME_PATHS`,
+  `LIST_LOCAL_USERS`, `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`,
+  `CHANGE_LOCAL_PASSWORD`, `INSTALL_SOFTWARE`, `UNINSTALL_SOFTWARE`, and
+  `SET_DISPLAY_POLICY`.
+- The recent `#701/#702` catalog and approved-script product smoke evidence
+  records `POLICY_EVENT` only for the new digest path; it does not prove a new
+  `AGENT_OUTPUT` / DATA row from the `v0.2.10` constrained executor.
+- The latest generic Denetim product smoke
+  `/home/halil/codex-rb-smoke/20260618T223221Z-product` returned
+  `operation=400` with reason `catalog-operation-required` and no recording
+  rows. Do not use it as terminal acceptance evidence.
+
+Next gate:
+
+- Keep `platform-agent#208` open / `Needs Verify` until a pilot endpoint is
+  updated or installed from the `v0.2.10` artifact through an owner-approved
+  path and then proves a product-channel constrained operation that records
+  `AGENT_OUTPUT` or equivalent DATA/EndStream evidence.
+- Do not count unrestricted shell, RDP, WinRM, SMB, SSH, arbitrary
+  download-and-execute, generic reverse tunnel, or operator-pasted endpoint
+  PowerShell as acceptance evidence.
+
 ## Live Delta — Faz 22.6.2 #702 Approved Script Runner product smoke accepted-bounded (2026-06-19)
 
 **Session milestone**: `platform-k8s-gitops#1705` now has live
