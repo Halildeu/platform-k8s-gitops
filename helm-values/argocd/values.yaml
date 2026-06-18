@@ -77,7 +77,10 @@ controller:
       cpu: 100m
       memory: 256Mi
     limits:
-      memory: 512Mi
+      # 2026-06-18: platform-test full sync hit OOMKilled at 512Mi while
+      # reconciling the larger Faz 22/23 test app. Keep request modest but
+      # allow enough headroom for GitOps reconciliation.
+      memory: 1Gi
 
   metrics:
     enabled: true
