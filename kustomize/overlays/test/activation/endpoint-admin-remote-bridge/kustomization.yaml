@@ -24,8 +24,11 @@
 #   - immutable test digest includes platform-backend#698
 #     (`9a53fa745ec7dc27ed5166291ec3048e389615d3`) so any remaining live
 #     DENY returns bounded/redacted deny.reason and deny.policyGate metadata.
+#   - immutable test digest includes platform-backend#699
+#     (`64926dd98ea2501ada12facfb5962d6f4677ff5a`) so CRYPTO_IDENTITY
+#     DENY responses expose bounded/redacted deny.policyDetail diagnostics.
 #   - immutable test digest:
-#     sha256:4203694562dae5f3ae57ca17f3d8354fce9920026a7e05ee42be550b95a35aa3
+#     sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -55,11 +58,12 @@ patches:
 
 images:
   # control #11 — immutable digest (D30). SAME image as endpoint-admin-service
-  # (Codex A+). Re-pinned after #698 redacted DENY metadata merged, because
-  # the latest #510 product smoke on the #697 digest still returned DENY
-  # without a visible policy gate. This activation overlay remains outside the
-  # Argo root and still requires an explicit owner-gated operator apply before
-  # #510 live product-session verification.
+  # (Codex A+). Re-pinned after #699 CRYPTO_IDENTITY detail hardening merged,
+  # because the latest #510 product smoke on the #698 digest returned a visible
+  # policy gate but no bounded detail explaining the remaining identity gap.
+  # This activation overlay remains outside the Argo root and still requires an
+  # explicit owner-gated operator apply before #510 live product-session
+  # verification.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:4203694562dae5f3ae57ca17f3d8354fce9920026a7e05ee42be550b95a35aa3
+    digest: sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392

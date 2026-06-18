@@ -1,13 +1,21 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.6 #510 remote-bridge CRYPTO_IDENTITY gate exposed (2026-06-18)
+## Live Delta — Faz 22.6 #510 remote-bridge CRYPTO_IDENTITY detail digest pending activation (2026-06-18)
 
-**Session milestone**: `platform-backend#510` remains Project `Needs Verify`.
-`platform-backend#698` changed the previous blind DENY behavior in the live
-remote-bridge path into a bounded policy response, but the parent acceptance
-gate is still not a `PERMIT` path.
+**Session milestone**: `platform-backend#510` is GitHub `Closed`, but Project #2
+still shows `Needs Verify`, so parent acceptance is not treated as fully
+verified. `platform-backend#699` merged as
+`64926dd98ea2501ada12facfb5962d6f4677ff5a`, adding bounded/redacted
+`deny.policyDetail` diagnostics for the remaining `CRYPTO_IDENTITY` gate.
+Backend image build run `27765787433` produced immutable
+`endpoint-admin-service` digest
+`sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392`.
+The automatic testai deploy dispatch `27765931549` failed closed because the
+owner-gated activation overlay was still pinned to the previous desired digest;
+this requires an explicit GitOps repin/apply before the next live product
+smoke.
 
-Live evidence captured on `k3d-test/platform-test`:
+Previous live evidence captured on `k3d-test/platform-test`:
 
 - `platform-k8s-gitops#1689` merged the owner-gated activation overlay repin.
   Staging `/home/halil/platform-k8s-gitops` fast-forwarded to
@@ -35,14 +43,13 @@ Interpretation:
 - The previous silent/opaque DENY symptom no longer reproduces in the deployed
   #698 digest path; the remaining policy gate is now visible as
   `CRYPTO_IDENTITY`.
-- #510 is not parent-accepted yet: there is no `PERMIT`, no
-  `transportPushed=true`, and no `AGENT_OUTPUT` evidence for the real product
-  operation.
-- Next executable slice is the `CRYPTO_IDENTITY` policy/device-identity gate
-  for the Denetim/ERP-MOBIL pilot identity path. After that fix, rerun the same
-  product smoke until the accepted result is either a `PERMIT` with
-  `transportPushed=true` + WORM `POLICY_EVENT` + `AGENT_OUTPUT`, or a formally
-  accepted DENY boundary for this pilot scope.
+- #699 is the next diagnostic hardening slice for the same product path. #510
+  still needs a live activation-overlay repin to
+  `sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392`,
+  rollout imageID match, and product smoke evidence showing either a `PERMIT`
+  with `transportPushed=true` + WORM `POLICY_EVENT` + `AGENT_OUTPUT`, or a
+  formally accepted bounded DENY boundary with `deny.policyDetail` for this
+  pilot scope.
 
 ## Live Delta — Faz 22.5 #1601 bounded acceptance closed + exporter blocker fixed (2026-06-18)
 
@@ -105,13 +112,18 @@ Scope split / residual truth:
   `9a53fa745ec7dc27ed5166291ec3048e389615d3`, adding redacted DENY metadata
   because the latest product smoke on remote-bridge digest
   `sha256:da4e437c4fa03a24956335eb80fed9eb88877acdf8e78af19e56e37cb4b169c9`
-  still returned `DENY` without a visible policy gate. This worktree now pins
-  the owner-gated remote-bridge activation overlay to the #698 image build
-  digest
+  still returned `DENY` without a visible policy gate. `platform-backend#699`
+  merged as `64926dd98ea2501ada12facfb5962d6f4677ff5a`, adding bounded
+  `deny.policyDetail` diagnostics for the remaining `CRYPTO_IDENTITY` gate.
+  The previous owner-gated remote-bridge activation overlay was pinned to the
+  #698 image build digest
   `sha256:4203694562dae5f3ae57ca17f3d8354fce9920026a7e05ee42be550b95a35aa3`
-  from run `27762898846`. Earlier `#1684` digest `sha256:d1634df...` had deploy run
-  `27756026906` succeeded with pod digest match, readiness `200`, and Gate 1d
-  `endpoint-admin-service` stability PASS across `180s`.
+  from run `27762898846`; this worktree now repins it to the #699 image build
+  digest
+  `sha256:e66269bc609b35bc7f4a6f0ab8629a4fd14739827ea01d59ab3fc36e3833b392`
+  from run `27765787433`. Earlier `#1684` digest `sha256:d1634df...` had deploy
+  run `27756026906` succeeded with pod digest match, readiness `200`, and Gate
+  1d `endpoint-admin-service` stability PASS across `180s`.
   `platform-k8s-gitops#1685` added a regression guard so Gate 1d coverage keeps
   `endpoint-admin-service` in the stability window. This removes the G6
   observability/deploy guard gap, but it is not the full #510 product
