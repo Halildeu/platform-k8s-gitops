@@ -1,5 +1,46 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.5 #1601 bounded acceptance closed + exporter blocker fixed (2026-06-18)
+
+**Session milestone**: `platform-k8s-gitops#1601` is closed and Project #2
+Status is `Done` for the bounded operatorless/product-channel acceptance scope.
+The accepted scope is Denetim PC product remote-ops session evidence plus
+AgentPC2 product-channel evidence; broader signed MSI/GPO rollout and
+owner-gated attended remote-support remain split follow-ups.
+
+Accepted evidence:
+
+- Denetim PC product session artifact
+  `/home/halil/codex-rb-smoke/20260617T191335Z-product` remains present on
+  staging; `summary.json` SHA256 is
+  `433e1273e13b1dafb24160948447abb490c87fd1db1c29ef642df0f7f52320f0`.
+  The product path returned `open=200`, `approve=200`, `challenge=200`,
+  `verify=200`, `operation=200`, `negative-nonpilot=400`; operation result
+  was `PERMIT` with `transportPushed=true`.
+- AgentPC2 product-channel gate is accepted under `#1643`: tokenless mTLS
+  auto-enroll, persisted DPAPI state, authenticated command polling, restart
+  continuity, and `v0.2.9` artifact promotion evidence are recorded. The
+  Windows CNG/KSP signer fix landed in `platform-agent#207`.
+- `audit-archive-exporter` Degraded was fixed by `#1677`, `#1678`, and
+  `#1679`: `audit-archive-exporter-secrets` is `True / SecretSynced`, the
+  Secret contains keys `DATA_SOURCE_PASS,DATA_SOURCE_USER` (values not
+  printed), rollout succeeded, pod is `Running/Ready`, and metrics include
+  `pg_up 1`, `pg_exporter_last_scrape_error 0`, and `audit_archive_*`.
+
+Scope split / residual truth:
+
+- Signed MSI/GPO rollout acceptance is split to `#1680`, Project #2
+  `Blocked`, Faz 22 / ops / P0 / gate. It owns managed-PC install, rollback,
+  and broader 5-PC/50-PC/800-PC rollout evidence.
+- Broader owner-gated attended remote-access remains
+  `platform-backend#510` (`Needs Verify`).
+- Current Argo residual drift is exporter-external: `platform-eso-test`
+  remains `Degraded` because `perf-alertmanager-teams-secrets` cannot get
+  provider data; `platform-test` remains `OutOfSync` because
+  `notification-orchestrator-secrets` is OutOfSync while health is `Healthy`.
+  Do not describe the whole platform as green until those separate drifts are
+  addressed.
+
 ## Live Delta — Faz 22.6 remote-ops product session gate evidence (#1601/#1666, 2026-06-17)
 
 **Session milestone**: Denetim PC now has accepted bounded-MVP product
@@ -16,7 +57,7 @@ challenge, verified step-up, and transported a constrained pilot operation.
 | Checklist/runbook contract | 🟢 SOURCE | `docs/runbooks/RB-faz22.6-product-remote-ops-session-gate.md` defines the #510/#1601 product-session acceptance contract: outbound mTLS product channel only, typed `PTY_COMMAND hostname` read-only operation, approval/audit/negative evidence, and explicit exclusion of reverse SSH/RDP/manual bridge evidence. |
 | Denetim product smoke | 🟢 PERMIT + TRANSPORT PUSHED | Evidence dir `/home/halil/codex-rb-smoke/20260617T191335Z-product`; session `rb-denetim-20260617T191335Z`; device `423b6fc3-7497-4083-bd2f-5e2fe543bfe9`; `open=200`, `negative-nonpilot=400`, `approve=200`, `challenge=200`, `verify=200`, `operation=200`; operation response `PERMIT` with `transportPushed=true`; `summary.json` SHA256 `433e1273e13b1dafb24160948447abb490c87fd1db1c29ef642df0f7f52320f0`. |
 | Endpoint-side cross-check | 🟢 OUTBOUND MTLS CONNECTED | Denetim agent log at `2026-06-17 19:13:37` shows `remote-bridge: pilot auto-consent is enabled` and `constrained-pty enabled with outbound mTLS cert fingerprint=da72cae025e650bdd19d59a87ea319ec900533525884e05d9cc10bb33c552ce6`. |
-| Remaining parent gates | 🟡 OPEN | Denetim PC bounded MVP product-session evidence is accepted, but Project #2 issue #1601 and backend parent #510 remain `Needs Verify`, not Done: AgentPC2 third-device product-channel gate (#1643), signed MSI/GPO rollout acceptance, broader owner-gated remote-access scope, and any retained full live negative/session-control matrix remain separate gates. Backend follow-up #690 remains Project `Done` after product DENY cleanup smoke `rb-deny-cleanup-20260617T211003Z`; ESO/Vault cleanup #1662 is also Project `Done` after the clean desired-state evidence above. |
+| Remaining parent gates | 🟡 SPLIT | Denetim PC bounded MVP product-session evidence is accepted and #1601 is now Project `Done`; AgentPC2 is accepted under #1643. Signed MSI/GPO rollout acceptance is split to #1680, and broader owner-gated remote-access scope plus any retained full live negative/session-control matrix remain under backend parent #510. Backend follow-up #690 remains Project `Done` after product DENY cleanup smoke `rb-deny-cleanup-20260617T211003Z`; ESO/Vault cleanup #1662 is also Project `Done` after the clean desired-state evidence above. |
 
 ## Live Delta — Faz 22.5 M4 MSI lifecycle lab smoke (#115, 2026-06-17)
 
@@ -40,14 +81,14 @@ allowlist, GPO pilot, or 50/800 rollout gates.
 closed. Active pilot scope is capped at **max 2 computers**. The allowed test
 pool is `SRB-AIDENETIMPC` (Denetim PC), `AgentPC2`, `AgentPC1`, and local
 Parallels/domain Windows. During the 2026-06-16 acceptance run the
-owner-approved current pair was **Denetim PC + ERP-MOBIL**; `AgentPC2` remains
-the next product-channel verify candidate, not a blocker for the current
-two-device #1609 record. Tracked by Project #2 issue
+owner-approved current pair was **Denetim PC + ERP-MOBIL**; `AgentPC2` later
+became the accepted third-device product-channel record under #1643. It is not
+a blocker for the current two-device #1609 record. Tracked by Project #2 issue
 [#1609](https://github.com/Halildeu/platform-k8s-gitops/issues/1609).
-As of 2026-06-17, `AgentPC2` is tracked as a dedicated third-device
+As of 2026-06-18, `AgentPC2` is tracked as the accepted third-device
 product-channel gate in
 [#1643](https://github.com/Halildeu/platform-k8s-gitops/issues/1643)
-(`Status=Blocked`, `Faz=Faz 22`, `Track=ops`, `Priority=P0`, `Kind=gate`).
+(`Status=Done`, `Faz=Faz 22`, `Track=ops`, `Priority=P0`, `Kind=gate`).
 No temporary reverse SSH/RDP path, inbound SSH/WinRM/SMB/RPC reachability, or
 operator-pasted command counts as AgentPC2 acceptance evidence.
 
@@ -55,7 +96,7 @@ operator-pasted command counts as AgentPC2 acceptance evidence.
 |---|---|---|---|
 | `SRB-AIDENETIMPC` / Denetim PC | Accepted device 1 | Domain joined, `mtls.testai.acik.com:443=true`, `testai.acik.com:443=true`, `Acik-Endpoint-CA` client-auth cert, `EndpointAgent` Running/Auto/LocalSystem, restart smoke PASS. | Real workstation path; do not treat it as a 50-PC denominator. |
 | `ERP-MOBIL` | Accepted device 2 | Domain joined, `mtls.testai.acik.com:443=true`, `testai.acik.com:443=true`, `Acik-Endpoint-CA` client-auth cert, `EndpointAgent` Running/Auto/LocalSystem, restart smoke PASS. | Domain Windows Server / controllable acceptance host; valid for current 2-device cap, not broad workstation diversity. |
-| `AgentPC2` | Blocked third-device product-channel gate (#1643) | Best next workstation-style target once stable GPO/MSI, one-command bootstrap, existing EndpointAgent mTLS, or Domain Ops Broker typed evidence exists. | Do not accept lab tunnel/RDP/inbound-port evidence. Keep blocked until product-channel evidence is attached to #1643 and cross-linked to #1601. |
+| `AgentPC2` | Accepted third-device product-channel gate (#1643) | Tokenless mTLS auto-enroll, persisted DPAPI state, authenticated command polling, restart continuity, and `v0.2.9` artifact promotion evidence are recorded. | Does not prove signed MSI/GPO rollout; that broader gate is split to #1680. |
 | `AgentPC1` | Reserve/fallback | Useful if AgentPC2 is unavailable or needs comparison evidence. | Keep out of active denominator unless one of the primary pair is dropped. |
 | local Parallels Windows | Break/fix lab | Fastest place to reproduce installer, rollback, and service-mode regressions without affecting users. | Lab evidence only; not domain-GPO acceptance unless explicitly domain-joined and network-ready. |
 
