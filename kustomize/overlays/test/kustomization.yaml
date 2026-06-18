@@ -5458,9 +5458,9 @@ images:
     digest: sha256:175b3daea37601fbfd500f616ad19664d26dffec8b1db11556a3bff14ce6250e
 
   # Faz 22.5 M2 — endpoint-agent artifact host (test). Image built+pushed by
-  # platform-agent Release EXE trusted workflow for tag v0.2.8:
-  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.8 (+ sha-78f2ee3).
-  # Serves /artifacts/endpoint-agent/v0.2.8/{bootstrap-package.ps1,EndpointAgent.zip,...}
+  # platform-agent Release EXE trusted workflow for tag v0.2.9:
+  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.9 (+ sha-ff25c40).
+  # Serves /artifacts/endpoint-agent/v0.2.9/{bootstrap-package.ps1,EndpointAgent.zip,...}
   # PLUS a stable MUTABLE alias /artifacts/endpoint-agent/current/ (byte-identical,
   # nginx no-store) so the endpoint-admin UI renders a copy-paste one-command
   # install + discovers the live package hash without a per-release frontend edit
@@ -5468,19 +5468,19 @@ images:
   # is TRUSTED-INTERNAL-CA signed (osslsigncode + internal OpenSSL CA, RFC3161
   # timestamp; install.ps1 imports the internal root TOFU so Authenticode validates
   # Valid). NOT publicly trusted. Pulled with the existing ghcr-pull secret.
-  # One-version-per-image: this image REPLACES v0.2.7; old /artifacts/v0.2.7/
+  # One-version-per-image: this image REPLACES v0.2.8; old /artifacts/v0.2.8/
   # URLs 404 after rollout (durable archive = the GitHub release assets) — but
   # /current/ keeps resolving.
   - name: artifact-host
     newName: ghcr.io/halildeu/platform-agent-artifacts
-    newTag: v0.2.8
-    # D30 immutable pin — Release EXE trusted run 27667406377 (tag v0.2.8,
-    # source sha-78f2ee3, signing_tier=trusted-internal-ca). Release asset
+    newTag: v0.2.9
+    # D30 immutable pin — Release EXE trusted run 27741877260 (tag v0.2.9,
+    # source sha-ff25c40, signing_tier=trusted-internal-ca). Release asset
     # manifest records EndpointAgent.zip SHA256
-    # 73ce4aaf0409344a36ea3619c8cca22cfdcb2a222002a902cd03e197145a6b06 and
+    # 88d6b203bdf07ab7fdad7bd6930893db37fdf2b1ff8f237aaddc5b9ef0ea0f9a and
     # agent binary SHA256
-    # 353e9b33d34862d9b42fb836c09f77ae485a8c2d19035efbaed02d2ed59de41b.
-    digest: sha256:b3118c6e14fd7cb6d157d684b56333e10eb99e9defc7d84dadbf9e078fca4a86
+    # 3aa901aafda3221e310e55d39925e8c88998db2ae86c8fa237d0a364778029ca.
+    digest: sha256:4118ed2200f292eb17998fe6de75a779c24f53654d8846c126f14b37ba882b32
 
 patches:
   # notification-orchestrator-secrets is owned by the test ExternalSecret. The
