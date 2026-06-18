@@ -70,6 +70,14 @@ resources:
   # prod (exporter/worker/series are test-only). 8 alerts: lag warn/crit, job-failed,
   # cronjob-not-scheduling, ledger-unverified, exporter-down, db-unreachable, scrape-error.
   - audit-retention-worker-rule.yaml
+  # Faz 24 PR-obs-03 (gitops#1660) — meeting-service + transcript-service. These two
+  # services were LIVE (1/1) but had NO ServiceMonitor → never scraped (no up{} series).
+  # This adds the scrape (base/apps/{meeting,transcript}-service/ops) + 8 alerts on the
+  # live Micrometer series: up==0 down (2), 5xx ratio w/ clamp_min+traffic-floor (2),
+  # HikariCP pending>0 pool-starvation (2), heap>90% (2). p95 deliberately OMITTED
+  # (percentiles-histogram disabled → no _bucket series → would be fake coverage).
+  # absent()-free → inert in prod (services D30-deferred → no Service → SM empty).
+  - meeting-transcript-rule.yaml
   - alertmanager-bridge           # Codex Sprint A follow-up — AlertManager → GitHub Issues bridge
   # Grafana dashboard ConfigMap'ler — kube-prometheus-stack sidecar provisioner
   # otomatik import (label grafana_dashboard=1). Helm values

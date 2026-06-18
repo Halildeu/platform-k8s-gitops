@@ -1,0 +1,177 @@
+# PrometheusRule — meeting-service + transcript-service (Faz 24 PR-obs-03, gitops#1660)
+#
+# Bağlam: meeting-service (#410) + transcript-service (#411) k3d-test'te 1/1
+# canlı ama ServiceMonitor'ları YOKTU → hiç scrape edilmiyorlardı (up serisi
+# bile yok). Bu PR (a) iki ServiceMonitor ekler (management:8081
+# /actuator/prometheus — base/apps/<svc>/ops), (b) bu rule ile temel
+# availability + SLO + saturation alarmlarını kurar.
+#
+# Seri tabanı CANLI envanterden (No-Fake-Work, 2026-06-18, /actuator/prometheus
+# 200 doğrulandı):
+# - up{job="meeting-service"|"transcript-service"} (SM eklenince oluşur; job
+#   label = SM/Service adı — audio-gateway emsali doğruladı)
+# - http_server_requests_seconds_count{status,uri,outcome} (5xx + trafik floor)
+#     UYARI: percentiles-histogram KAPALI → http_server_requests_seconds_bucket
+#     YOK → p95 histogram_quantile BİLİNÇLİ YAZILMADI (boş sonuç = sahte
+#     kapsama olurdu, kural #9). Latency görünürlüğü için backend
+#     management.metrics.distribution.percentiles-histogram açılması ayrı
+#     follow-up; o zamana kadar latency mean(sum/count) + hikari acquire ile.
+# - hikaricp_connections_pending{pool} (DB pool starvation; canlı pool max=5)
+# - jvm_memory_{used,max}_bytes{area="heap"} (heap max gerçek, -1 değil)
+#
+# absent() BİLİNÇLİ YOK: base/monitoring prod'a da gider; meeting/transcript
+# prod'a D30 cutover'a kadar deploy EDİLMEYECEK → prod'da Service yok → SM boş
+# → up{} serisi yok → `up == 0` boş küme üzerinde değerlendirilir, alarm
+# üretmez (audio-gateway/STT ile aynı D30-defer davranışı). remote_write
+# onarılana kadar (#1459) absent() cross-cluster false-positive üretirdi.
+#
+# Alerting topolojisi (Codex 019edc25 MF1+MF2): test cluster lightweight scrape
+# agent — Alertmanager KAPALI → alarm değerlendirmesi prod-hub'da, test serileri
+# remote_write ile gider. Bu yüzden (a) up dışı tüm serilerin
+# helm-values/kube-prometheus-stack/values-test.yaml writeRelabelConfigs
+# allowlist'inde olması ŞART (yoksa prod-hub'da veri-yok = sahte kapsama) —
+# bu PR meeting/transcript için http/hikari/jvm serilerini ekledi; (b) aggregate
+# ifadeler `sum by (cluster, namespace)` ile origin label'ını korur (düz sum()
+# cluster'ı düşürür → remote-written test serisi prod-hub'da prod gibi görünürdü).
+#
+# Threshold'lar pre-MVP initial; trafik profili oturunca kalibre edilecek.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: meeting-transcript
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/component: monitoring
+    release: kube-prometheus-stack   # Prom Operator ruleSelector
+spec:
+  groups:
+    - name: meeting-transcript.availability
+      interval: 30s
+      rules:
+        - alert: MeetingServiceDown
+          expr: up{job="meeting-service"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: meeting-service
+          annotations:
+            summary: "meeting-service scrape down (toplantı CRUD API kesik olabilir)"
+            description: "Prometheus meeting-service management endpoint'ini 5dk'dır scrape edemiyor. Faz 24 meeting plane (toplantı/oturum/aksiyon/karar CRUD + @RequireModule meeting) kesik olabilir."
+            runbook_url: "docs/runbooks/RB-faz24-meeting-transcript-obs.md"
+
+        - alert: TranscriptServiceDown
+          expr: up{job="transcript-service"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: transcript-service
+          annotations:
+            summary: "transcript-service scrape down (transkript CRUD + KVKK m.12 kaydı kesik olabilir)"
+            description: "Prometheus transcript-service management endpoint'ini 5dk'dır scrape edemiyor. Transkript segment CRUD + KVKK Madde 12 erişim-kaydı API'si kesik olabilir."
+            runbook_url: "docs/runbooks/RB-faz24-meeting-transcript-obs.md"
+
+    - name: meeting-transcript.slo
+      interval: 30s
+      rules:
+        # 5xx oranı — clamp_min (bölme-sıfır guard) + and on() trafik floor
+        # (10dk'da <20 istek varken değerlendirme yok; pre-MVP low-traffic
+        # noise guard — stt-pipeline-rule emsali).
+        - alert: MeetingService5xxRatio
+          expr: |
+            (
+              sum by (cluster, namespace) (rate(http_server_requests_seconds_count{job="meeting-service",status=~"5.."}[5m]))
+              /
+              clamp_min(sum by (cluster, namespace) (rate(http_server_requests_seconds_count{job="meeting-service"}[5m])), 0.001)
+            ) > 0.05
+            and on(cluster, namespace)
+            sum by (cluster, namespace) (increase(http_server_requests_seconds_count{job="meeting-service"}[10m])) >= 20
+          for: 10m
+          labels:
+            severity: warning
+            component: meeting-service
+            slo_class: error-rate
+          annotations:
+            summary: "meeting-service 5xx oranı >%5 (10dk sürekli)"
+            description: "5xx oranı son 5dk penceresinde %{{ $value | humanizePercentage }}. Pre-MVP threshold (%5 + >=20 istek/10dk floor) — trafik profili oturunca kalibre edilecek."
+
+        - alert: TranscriptService5xxRatio
+          expr: |
+            (
+              sum by (cluster, namespace) (rate(http_server_requests_seconds_count{job="transcript-service",status=~"5.."}[5m]))
+              /
+              clamp_min(sum by (cluster, namespace) (rate(http_server_requests_seconds_count{job="transcript-service"}[5m])), 0.001)
+            ) > 0.05
+            and on(cluster, namespace)
+            sum by (cluster, namespace) (increase(http_server_requests_seconds_count{job="transcript-service"}[10m])) >= 20
+          for: 10m
+          labels:
+            severity: warning
+            component: transcript-service
+            slo_class: error-rate
+          annotations:
+            summary: "transcript-service 5xx oranı >%5 (10dk sürekli)"
+            description: "5xx oranı son 5dk penceresinde %{{ $value | humanizePercentage }}. Pre-MVP threshold (%5 + >=20 istek/10dk floor)."
+
+    - name: meeting-transcript.saturation
+      interval: 30s
+      rules:
+        # HikariCP pending>0 sürekli → DB bağlantı havuzu starvation (thread'ler
+        # bağlantı bekliyor). Canlı pool max=5; pre-MVP'de pending normalde 0.
+        - alert: MeetingServiceDBPoolSaturated
+          expr: sum by (cluster, namespace) (hikaricp_connections_pending{job="meeting-service"}) > 0
+          for: 10m
+          labels:
+            severity: warning
+            component: meeting-service
+            slo_class: saturation
+          annotations:
+            summary: "meeting-service HikariCP havuzu doygun (pending>0, 10dk)"
+            description: "{{ $value }} thread DB bağlantısı bekliyor (pool max=5). Sürekli pending → connection starvation; havuz büyütme veya yavaş-sorgu incelemesi gerek."
+            runbook_url: "docs/runbooks/RB-faz24-meeting-transcript-obs.md"
+
+        - alert: TranscriptServiceDBPoolSaturated
+          expr: sum by (cluster, namespace) (hikaricp_connections_pending{job="transcript-service"}) > 0
+          for: 10m
+          labels:
+            severity: warning
+            component: transcript-service
+            slo_class: saturation
+          annotations:
+            summary: "transcript-service HikariCP havuzu doygun (pending>0, 10dk)"
+            description: "{{ $value }} thread DB bağlantısı bekliyor (pool max=5). Sürekli pending → connection starvation."
+            runbook_url: "docs/runbooks/RB-faz24-meeting-transcript-obs.md"
+
+        # Heap kullanımı >%90 sürekli → GC baskısı / OOM riski. clamp_min(...,1)
+        # bölme-sıfır guard (heap max canlı gerçek, -1 değil — yine de güvenli).
+        - alert: MeetingServiceHeapPressure
+          expr: |
+            sum by (cluster, namespace) (jvm_memory_used_bytes{job="meeting-service",area="heap"})
+            /
+            clamp_min(sum by (cluster, namespace) (jvm_memory_max_bytes{job="meeting-service",area="heap"}), 1)
+            > 0.9
+          for: 15m
+          labels:
+            severity: warning
+            component: meeting-service
+            slo_class: saturation
+          annotations:
+            summary: "meeting-service heap kullanımı >%90 (15dk)"
+            description: "Heap kullanım oranı %{{ $value | humanizePercentage }}. Sürekli >%90 → GC baskısı / OOM riski; heap limiti veya leak incelemesi gerek."
+            runbook_url: "docs/runbooks/RB-faz24-meeting-transcript-obs.md"
+
+        - alert: TranscriptServiceHeapPressure
+          expr: |
+            sum by (cluster, namespace) (jvm_memory_used_bytes{job="transcript-service",area="heap"})
+            /
+            clamp_min(sum by (cluster, namespace) (jvm_memory_max_bytes{job="transcript-service",area="heap"}), 1)
+            > 0.9
+          for: 15m
+          labels:
+            severity: warning
+            component: transcript-service
+            slo_class: saturation
+          annotations:
+            summary: "transcript-service heap kullanımı >%90 (15dk)"
+            description: "Heap kullanım oranı %{{ $value | humanizePercentage }}. Sürekli >%90 → GC baskısı / OOM riski."
+            runbook_url: "docs/runbooks/RB-faz24-meeting-transcript-obs.md"
