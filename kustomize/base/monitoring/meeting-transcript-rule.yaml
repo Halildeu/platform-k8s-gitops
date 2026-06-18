@@ -25,6 +25,15 @@
 # üretmez (audio-gateway/STT ile aynı D30-defer davranışı). remote_write
 # onarılana kadar (#1459) absent() cross-cluster false-positive üretirdi.
 #
+# Alerting topolojisi (Codex 019edc25 MF1+MF2): test cluster lightweight scrape
+# agent — Alertmanager KAPALI → alarm değerlendirmesi prod-hub'da, test serileri
+# remote_write ile gider. Bu yüzden (a) up dışı tüm serilerin
+# helm-values/kube-prometheus-stack/values-test.yaml writeRelabelConfigs
+# allowlist'inde olması ŞART (yoksa prod-hub'da veri-yok = sahte kapsama) —
+# bu PR meeting/transcript için http/hikari/jvm serilerini ekledi; (b) aggregate
+# ifadeler `sum by (cluster, namespace)` ile origin label'ını korur (düz sum()
+# cluster'ı düşürür → remote-written test serisi prod-hub'da prod gibi görünürdü).
+#
 # Threshold'lar pre-MVP initial; trafik profili oturunca kalibre edilecek.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -71,12 +80,12 @@ spec:
         - alert: MeetingService5xxRatio
           expr: |
             (
-              sum(rate(http_server_requests_seconds_count{job="meeting-service",status=~"5.."}[5m]))
+              sum by (cluster, namespace) (rate(http_server_requests_seconds_count{job="meeting-service",status=~"5.."}[5m]))
               /
-              clamp_min(sum(rate(http_server_requests_seconds_count{job="meeting-service"}[5m])), 0.001)
+              clamp_min(sum by (cluster, namespace) (rate(http_server_requests_seconds_count{job="meeting-service"}[5m])), 0.001)
             ) > 0.05
-            and on()
-            sum(increase(http_server_requests_seconds_count{job="meeting-service"}[10m])) >= 20
+            and on(cluster, namespace)
+            sum by (cluster, namespace) (increase(http_server_requests_seconds_count{job="meeting-service"}[10m])) >= 20
           for: 10m
           labels:
             severity: warning
@@ -89,12 +98,12 @@ spec:
         - alert: TranscriptService5xxRatio
           expr: |
             (
-              sum(rate(http_server_requests_seconds_count{job="transcript-service",status=~"5.."}[5m]))
+              sum by (cluster, namespace) (rate(http_server_requests_seconds_count{job="transcript-service",status=~"5.."}[5m]))
               /
-              clamp_min(sum(rate(http_server_requests_seconds_count{job="transcript-service"}[5m])), 0.001)
+              clamp_min(sum by (cluster, namespace) (rate(http_server_requests_seconds_count{job="transcript-service"}[5m])), 0.001)
             ) > 0.05
-            and on()
-            sum(increase(http_server_requests_seconds_count{job="transcript-service"}[10m])) >= 20
+            and on(cluster, namespace)
+            sum by (cluster, namespace) (increase(http_server_requests_seconds_count{job="transcript-service"}[10m])) >= 20
           for: 10m
           labels:
             severity: warning
@@ -110,7 +119,7 @@ spec:
         # HikariCP pending>0 sürekli → DB bağlantı havuzu starvation (thread'ler
         # bağlantı bekliyor). Canlı pool max=5; pre-MVP'de pending normalde 0.
         - alert: MeetingServiceDBPoolSaturated
-          expr: sum(hikaricp_connections_pending{job="meeting-service"}) > 0
+          expr: sum by (cluster, namespace) (hikaricp_connections_pending{job="meeting-service"}) > 0
           for: 10m
           labels:
             severity: warning
@@ -122,7 +131,7 @@ spec:
             runbook_url: "docs/runbooks/RB-faz24-meeting-transcript-obs.md"
 
         - alert: TranscriptServiceDBPoolSaturated
-          expr: sum(hikaricp_connections_pending{job="transcript-service"}) > 0
+          expr: sum by (cluster, namespace) (hikaricp_connections_pending{job="transcript-service"}) > 0
           for: 10m
           labels:
             severity: warning
@@ -137,9 +146,9 @@ spec:
         # bölme-sıfır guard (heap max canlı gerçek, -1 değil — yine de güvenli).
         - alert: MeetingServiceHeapPressure
           expr: |
-            sum(jvm_memory_used_bytes{job="meeting-service",area="heap"})
+            sum by (cluster, namespace) (jvm_memory_used_bytes{job="meeting-service",area="heap"})
             /
-            clamp_min(sum(jvm_memory_max_bytes{job="meeting-service",area="heap"}), 1)
+            clamp_min(sum by (cluster, namespace) (jvm_memory_max_bytes{job="meeting-service",area="heap"}), 1)
             > 0.9
           for: 15m
           labels:
@@ -153,9 +162,9 @@ spec:
 
         - alert: TranscriptServiceHeapPressure
           expr: |
-            sum(jvm_memory_used_bytes{job="transcript-service",area="heap"})
+            sum by (cluster, namespace) (jvm_memory_used_bytes{job="transcript-service",area="heap"})
             /
-            clamp_min(sum(jvm_memory_max_bytes{job="transcript-service",area="heap"}), 1)
+            clamp_min(sum by (cluster, namespace) (jvm_memory_max_bytes{job="transcript-service",area="heap"}), 1)
             > 0.9
           for: 15m
           labels:
