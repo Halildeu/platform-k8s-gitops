@@ -6793,3 +6793,9 @@ patches:
       - op: replace
         path: /spec/hard/limits.memory
         value: 24Gi
+      # 2026-06-18: audit-archive-exporter Service made the live namespace hit
+      # services=28/28, blocking ArgoCD sync before artifact-host v0.2.9 could
+      # reconcile. Add small test-only headroom for current desired services.
+      - op: replace
+        path: /spec/hard/services
+        value: "32"
