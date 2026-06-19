@@ -36,13 +36,13 @@ ssh halil@staging-sw "vault kv put kv/platform/endpoint-admin-remote-bridge \
 #    parent acceptance verification, #1697 catalog smoke, #1705
 #    approved-script smoke, and #710 lifecycle close/reopen smoke, the active
 #    digest includes platform-backend #696, #697, #698, #699, #701, #705,
-#    #702, and #710 via the #704/#706/#709/#711 image chain. The product path
+#    #702, #710, and #713 via the #704/#706/#709/#711/#714 image chain. The product path
 #    keeps redacted PERMIT metadata, advisory AgentHello.deviceId handling,
 #    bounded DENY metadata, bounded CRYPTO_IDENTITY deny.policyDetail
 #    diagnostics, the operation-catalog gate, the approved-script catalog gate,
-#    and the explicit operator close path needed for the remote-bridge broker
-#    path:
-#    sha256:1c8ec2d19a8a03a1c08342c6c316b88d68bd85713d417bd9bad95401ed043fb0.
+#    the explicit operator close path, and heartbeat peer-trust freshness needed
+#    for the remote-bridge broker path:
+#    sha256:116711b56caabd5a39bc4292af5c9e7e7042e764df2af32eec80ac0ab20ec322.
 
 # 2) Re-verify the PG/KC egress /32s in netpol.yaml against the current
 #    Endpoints (they drift on compose recreate):

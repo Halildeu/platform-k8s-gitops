@@ -5182,7 +5182,7 @@ images:
     # sha256:1c8ec2d19a8a03a1c08342c6c316b88d68bd85713d417bd9bad95401ed043fb0.
     # Runtime acceptance remains gated by platform-test sync plus close/reopen
     # product smoke; this line is only desired-state artifact promotion.
-    digest: sha256:1c8ec2d19a8a03a1c08342c6c316b88d68bd85713d417bd9bad95401ed043fb0
+    digest: sha256:116711b56caabd5a39bc4292af5c9e7e7042e764df2af32eec80ac0ab20ec322
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
