@@ -1,5 +1,60 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6.3 #208 v0.2.13 source/artifact ready; GitOps live gate pending (2026-06-20)
+
+**Session milestone**: AgentPC2 proved that the `v0.2.12` service environment
+was populated with the dedicated 443/SNI remote-bridge settings, compatibility
+aliases, pinned broker permit key metadata, pilot consent, and `adcomputer:`
+SAN prefix. The service still emitted only `agent mode=auto-enroll` and no
+`remote-bridge` / `HELLO` / permit / operation log lines. That narrowed the
+blocker to source wiring: the auto-enroll app path did not start the outbound
+remote bridge.
+
+Source and artifact lineage:
+
+- AgentPC2 local evidence (`2026-06-19`) showed
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR=remote-bridge-mtls.testai.acik.com:443`,
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_TLS_SERVER_NAME=remote-bridge-mtls.testai.acik.com`,
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED=true`,
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED=true`,
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_PTY_ENABLED=true`,
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT=true`, and both old/new
+  permit-key and SAN-prefix aliases present; the log stream remained
+  auto-enroll-only.
+- `platform-agent#212` merged at
+  `56f4307965f41e38eff6ec50e7a0d901532a620d`, adding remote-bridge startup
+  in the auto-enroll service and foreground paths and reading persisted
+  auto-enroll identity via `Runner.DeviceID`.
+- Trusted EXE release workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27849205571`
+  returned `conclusion=success` for tag `v0.2.13`.
+- Release manifest evidence:
+  `endpoint_agent_sha256=6e3a79b8ea076d08e2288be98359d3db6049b6179e655ceaff924f792736cd0c`,
+  `endpoint_agent_zip_sha256=9afe07b6eb1fa2c8b94b50181ec5265681e77a28ec3368bdd8d1a25fd59acec0`,
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`,
+  signing tier `trusted-internal-ca`, and artifact-host image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.13@sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`.
+
+GitOps desired-state change in progress:
+
+- The test overlay promotion updates `artifact-host` from
+  `v0.2.12@sha256:b51cd8167734ecc1b383944454ef9030224b0d337a42ba476477b83ebbe762c9`
+  to
+  `v0.2.13@sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`.
+- Until the GitOps promotion PR is merged, ArgoCD syncs, and live
+  `platform-test/artifact-host` pod `imageID`s plus public `/current/`
+  manifest/hash evidence are collected, the test environment may still serve
+  `v0.2.12`.
+
+Acceptance boundary:
+
+- `platform-agent#208` remains open until a pilot endpoint runs the accepted
+  `v0.2.13` candidate and proves outbound product-channel `HELLO`, broker
+  permit verification, constrained operation output, negative/plaintext refusal,
+  and audit/evidence ledger entries.
+- Raw shell/RDP/WinRM/SMB/SSH and operator-pasted PowerShell remain diagnostic
+  aids only; they do not satisfy the product remote-ops acceptance gate.
+
 ## Live Delta — Faz 22.6.3 #208 artifact-host v0.2.11 served; runtime terminal gate still open (2026-06-19)
 
 **Session milestone**: `platform-agent#210` corrected the artifact-host image
