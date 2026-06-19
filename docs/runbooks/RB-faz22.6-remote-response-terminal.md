@@ -369,6 +369,11 @@ Accepted input names:
 - governance evidence:
   `governance-evidence.json`, `governance/summary.json`,
   `approval-evidence.json`, or `operator-governance.json`;
+- redaction scan surface:
+  the verifier-relevant operation, recording, session ownership, pilot
+  readiness, governance, negative response, request, JSONL/TSV/PSV/CSV evidence
+  files. The verifier reports only file paths and marker classes; it never
+  copies matched values into `verification-summary.json`;
 - `SHA256SUMS` for evidence integrity. The manifest must cover the allowed
   operation response, the recording export, and the required negative evidence
   files; a stale manifest that omits required files is not accepted.
@@ -395,6 +400,10 @@ Default acceptance rules:
   and fail-closed recording policy;
 - governance evidence contains no raw bearer token, JWT, session id, private
   key, password, client secret, or equivalent sensitive marker;
+- the verifier-relevant evidence bundle contains no high-confidence bearer,
+  JWT, explicit session secret/env marker such as `REMOTE_BRIDGE_SESSION_ID`,
+  private-key, client-secret/API-key, operator-token env, OAuth-token, or
+  PostgreSQL credential markers;
 - the recording export contains `AGENT_OUTPUT` or equivalent `DATA`;
 - the recording export contains terminal `EndStream`;
 - core raw-shell and command/policy override negative evidence is present;
@@ -486,6 +495,12 @@ scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
 REQUIRE_GOVERNANCE_EVIDENCE=0 \
 scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
 
+# Bundle-level redaction scanning is required by default for Remote Response
+# Terminal accepted candidates. Use this only to inspect legacy evidence that
+# predates the evidence redaction guard; do not use it for #208 acceptance.
+REQUIRE_EVIDENCE_REDACTION=0 \
+scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
+
 # Pin the expected catalog operation for one smoke.
 EXPECTED_CATALOG_OPERATION_ID=GET_HOSTNAME REQUIRE_ACCEPTED=1 \
 scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
@@ -505,6 +520,10 @@ Verifier decision values are intentionally bounded:
   bundle does not prove dual-control, step-up, ticket/justification, approval
   id, WORM recording, and fail-closed recording policy without sensitive
   marker leakage.
+- `sensitive-evidence-marker` means a verifier-relevant evidence file contains
+  a high-confidence sensitive marker class. Redact or replace the file before
+  using the bundle for #208 accepted-candidate evidence. The summary names only
+  the file and marker class, not the matched secret/session value.
 - `missing-permit`, `missing-transport-push`, `missing-permit-signature`,
   `wrong-capability`, or `missing-server-owned-source-binding` mean the allowed
   operation response cannot prove the product-channel constrained path.
@@ -677,6 +696,10 @@ operator/approver subjects, step-up, ticket, justification, approval id, WORM
 recording, and fail-closed recording policy. Set
 `VERIFY_REQUIRE_GOVERNANCE_EVIDENCE=0` only for legacy inspection; do not use
 that opt-out for `platform-agent#208` acceptance.
+When `VERIFY_REQUIRE_EVIDENCE_REDACTION=1` remains at its default, the verifier
+also fails closed on high-confidence sensitive marker classes in the captured
+evidence bundle. Set `VERIFY_REQUIRE_EVIDENCE_REDACTION=0` only for legacy
+inspection; do not use that opt-out for `platform-agent#208` acceptance.
 Set `RUN_GOVERNANCE_EXPORT=1 SOURCE_GOVERNANCE_FILE=/path/to/product-governance.json`
 when the bundle should normalize the product-exported governance file before
 verification. If the source file is absent or incomplete, the orchestrator
