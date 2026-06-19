@@ -15,6 +15,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/remote-response-terminal-runtime-smoke-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 RUN_PILOT_READINESS="${RUN_PILOT_READINESS:-0}"
+RUN_GOVERNANCE_EXPORT="${RUN_GOVERNANCE_EXPORT:-0}"
 RUN_OPERATION="${RUN_OPERATION:-0}"
 RUN_RECORDING_EXPORT="${RUN_RECORDING_EXPORT:-0}"
 RUN_VERIFY="${RUN_VERIFY:-1}"
@@ -29,6 +30,7 @@ SESSION_OWNER_ISSUE_URL="${SESSION_OWNER_ISSUE_URL:-${SESSION_OWNER_ISSUE:-}}"
 SESSION_OWNER_ENDPOINT_ID="${SESSION_OWNER_ENDPOINT_ID:-}"
 SESSION_OWNER_TTL_MINUTES="${SESSION_OWNER_TTL_MINUTES:-45}"
 SESSION_OWNER_COMMENTS_FILE="${SESSION_OWNER_COMMENTS_FILE:-}"
+SOURCE_GOVERNANCE_FILE="${SOURCE_GOVERNANCE_FILE:-}"
 CATALOG_OPERATION_ID="${CATALOG_OPERATION_ID:-GET_HOSTNAME}"
 APPROVED_SCRIPT_ID="${APPROVED_SCRIPT_ID:-DIAG_HOSTNAME}"
 APPROVED_SCRIPT_VERSION="${APPROVED_SCRIPT_VERSION:-1}"
@@ -123,6 +125,7 @@ write_plan() {
     --arg approvedScriptId "$APPROVED_SCRIPT_ID" \
     --arg approvedScriptVersion "$APPROVED_SCRIPT_VERSION" \
     --arg runPilotReadiness "$RUN_PILOT_READINESS" \
+    --arg runGovernanceExport "$RUN_GOVERNANCE_EXPORT" \
     --arg runOperation "$RUN_OPERATION" \
     --arg runRecordingExport "$RUN_RECORDING_EXPORT" \
     --arg runVerify "$RUN_VERIFY" \
@@ -131,6 +134,7 @@ write_plan() {
     --arg sessionOwnerAutoClaim "$SESSION_OWNER_AUTO_CLAIM" \
     --arg sessionOwnerIssueSet "$([[ -n "$SESSION_OWNER_ISSUE_URL" ]] && printf true || printf false)" \
     --arg sessionOwnerEndpointSet "$([[ -n "$SESSION_OWNER_ENDPOINT_ID" ]] && printf true || printf false)" \
+    --arg sourceGovernanceSet "$([[ -n "$SOURCE_GOVERNANCE_FILE" ]] && printf true || printf false)" \
     --arg verifyRequireGovernance "$VERIFY_REQUIRE_GOVERNANCE_EVIDENCE" \
     --arg sessionPresent "$([[ -n "$REMOTE_BRIDGE_SESSION_ID" ]] && printf true || printf false)" \
     '{
@@ -148,10 +152,12 @@ write_plan() {
       governanceEvidence: {
         requiredForAcceptedCandidate: ($verifyRequireGovernance == "1"),
         expectedFile: "governance-evidence.json",
-        generatedByOrchestrator: false
+        generatedByOrchestrator: ($runGovernanceExport == "1"),
+        sourceGovernanceFileSet: ($sourceGovernanceSet == "true")
       },
       requestedActions: {
         pilotReadiness: ($runPilotReadiness == "1"),
+        governanceExport: ($runGovernanceExport == "1"),
         operation: ($runOperation == "1"),
         recordingExport: ($runRecordingExport == "1"),
         verify: ($runVerify == "1")
@@ -236,6 +242,19 @@ run_pilot_readiness() {
   local decision
   decision="$(jq -r '.decision // .status // "unknown"' "${dir}/summary.json" 2>/dev/null || printf unknown)"
   append_action "pilot-readiness" "ok" "decision=${decision}"
+}
+
+run_governance_export() {
+  (
+    cd "$REPO_ROOT"
+    EVIDENCE_DIR="$EVIDENCE_DIR" \
+    SOURCE_GOVERNANCE_FILE="$SOURCE_GOVERNANCE_FILE" \
+      scripts/faz22-remote-ops/remote-response-terminal-governance-export.sh
+  )
+
+  local reason
+  reason="$(jq -r '.reason // "unknown"' "${EVIDENCE_DIR}/governance-evidence-summary.json" 2>/dev/null || printf unknown)"
+  append_action "governance-export" "ok" "reason=${reason}"
 }
 
 run_operation_smoke() {
@@ -327,7 +346,7 @@ run_verifier() {
 }
 
 write_summary() {
-  local status="plan-ready-no-operation" verifier_result="" operation_status="" recording_hint="" pilot_decision=""
+  local status="plan-ready-no-operation" verifier_result="" operation_status="" recording_hint="" pilot_decision="" governance_reason=""
 
   if [[ "$RUN_OPERATION" == "1" ]]; then
     status="operation-attempted"
@@ -349,6 +368,9 @@ write_summary() {
   if [[ -f "${EVIDENCE_DIR}/pilot-readiness/summary.json" ]]; then
     pilot_decision="$(jq -r '.decision // .status // ""' "${EVIDENCE_DIR}/pilot-readiness/summary.json")"
   fi
+  if [[ -f "${EVIDENCE_DIR}/governance-evidence-summary.json" ]]; then
+    governance_reason="$(jq -r '.reason // ""' "${EVIDENCE_DIR}/governance-evidence-summary.json")"
+  fi
 
   jq -n \
     --arg generatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -364,6 +386,7 @@ write_summary() {
     --arg verifierResult "$verifier_result" \
     --arg recordingHint "$recording_hint" \
     --arg pilotDecision "$pilot_decision" \
+    --arg governanceReason "$governance_reason" \
     --argjson actions "$ACTIONS_JSON" \
     '{
       generatedAt: $generatedAt,
@@ -379,6 +402,7 @@ write_summary() {
         approvedScriptVersion: $approvedScriptVersion
       },
       pilotReadinessDecision: $pilotDecision,
+      governanceEvidenceReason: $governanceReason,
       recordingAcceptanceHint: $recordingHint,
       verifierResult: $verifierResult,
       actions: $actions,
@@ -405,6 +429,7 @@ main() {
   need_cmd jq
   need_cmd mktemp
   bool_env "$RUN_PILOT_READINESS" RUN_PILOT_READINESS
+  bool_env "$RUN_GOVERNANCE_EXPORT" RUN_GOVERNANCE_EXPORT
   bool_env "$RUN_OPERATION" RUN_OPERATION
   bool_env "$RUN_RECORDING_EXPORT" RUN_RECORDING_EXPORT
   bool_env "$RUN_VERIFY" RUN_VERIFY
@@ -432,6 +457,12 @@ main() {
     run_pilot_readiness
   else
     append_action "pilot-readiness" "skipped" "RUN_PILOT_READINESS is not 1"
+  fi
+
+  if [[ "$RUN_GOVERNANCE_EXPORT" == "1" ]]; then
+    run_governance_export
+  else
+    append_action "governance-export" "skipped" "RUN_GOVERNANCE_EXPORT is not 1"
   fi
 
   if [[ "$RUN_OPERATION" == "1" ]]; then

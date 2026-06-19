@@ -433,6 +433,31 @@ stable redacted subjects or product user ids; do not include bearer tokens,
 raw JWTs, raw `REMOTE_BRIDGE_SESSION_ID`, cookies, private keys, passwords,
 or personal contact/payment data.
 
+Operator-safe normalization helper for this file:
+
+```bash
+SOURCE_GOVERNANCE_FILE=/path/to/product-governance.json \
+EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal \
+scripts/faz22-remote-ops/remote-response-terminal-governance-export.sh
+```
+
+The helper is read-only/offline. It normalizes only an already captured product
+governance JSON document; it does not accept raw manual env fields as proof and
+does not create an approval, step-up, ticket, or recording policy record. It
+writes or refreshes:
+
+- `governance-evidence.json` — canonical verifier input;
+- `governance-evidence-summary.json` — source digest, parsed field checks,
+  validation reason, and residual boundary;
+- `SHA256SUMS` — refreshed over the evidence bundle.
+
+The helper fails closed when the source is missing, invalid JSON, self-approved,
+missing operator/approver/approval id/step-up/ticket/justification/WORM
+recording/fail-closed recording policy, or contains sensitive markers such as
+bearer/JWT/session/private-key/password material. If the source file is outside
+`EVIDENCE_DIR`, the helper records only its basename plus SHA256 digest; it does
+not copy the raw source into the evidence bundle.
+
 Useful strict modes:
 
 ```bash
@@ -577,12 +602,14 @@ opt-in, a session id, and an operator token file:
 ```bash
 LIVE_OPERATION=1 \
 RUN_PILOT_READINESS=1 \
+RUN_GOVERNANCE_EXPORT=1 \
 PILOT_REQUIRE_READY=1 \
 RUN_OPERATION=1 \
 RUN_RECORDING_EXPORT=1 \
 RUN_VERIFY=1 \
 OPERATOR_BEARER_TOKEN_FILE=/secure/path/operator.jwt \
 REMOTE_BRIDGE_SESSION_ID=<fresh-owned-step-up-verified-session> \
+SOURCE_GOVERNANCE_FILE=/path/to/product-governance.json \
 CATALOG_OPERATION_ID=GET_HOSTNAME \
 STAGING_SSH_TARGET=halil@staging-sw \
 EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal \
@@ -602,12 +629,14 @@ querying PostgreSQL over SSH:
 ```bash
 LIVE_OPERATION=1 \
 RUN_PILOT_READINESS=1 \
+RUN_GOVERNANCE_EXPORT=1 \
 PILOT_REQUIRE_READY=1 \
 RUN_OPERATION=1 \
 RUN_RECORDING_EXPORT=1 \
 RUN_VERIFY=1 \
 OPERATOR_BEARER_TOKEN_FILE=/secure/path/operator.jwt \
 REMOTE_BRIDGE_SESSION_ID=<fresh-owned-step-up-verified-session> \
+SOURCE_GOVERNANCE_FILE=/path/to/product-governance.json \
 SOURCE_RECORDING_ROWS_FILE=/path/to/session-recording.jsonl \
 EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal \
 scripts/faz22-remote-ops/remote-response-terminal-runtime-smoke.sh
@@ -618,6 +647,7 @@ Strict candidate mode should be used for a #208 evidence comment:
 ```bash
 LIVE_OPERATION=1 \
 RUN_PILOT_READINESS=1 \
+RUN_GOVERNANCE_EXPORT=1 \
 PILOT_REQUIRE_READY=1 \
 RUN_OPERATION=1 \
 RUN_RECORDING_EXPORT=1 \
@@ -625,6 +655,7 @@ RUN_VERIFY=1 \
 VERIFY_REQUIRE_ACCEPTED=1 \
 OPERATOR_BEARER_TOKEN_FILE=/secure/path/operator.jwt \
 REMOTE_BRIDGE_SESSION_ID=<fresh-owned-step-up-verified-session> \
+SOURCE_GOVERNANCE_FILE=/path/to/product-governance.json \
 CATALOG_OPERATION_ID=GET_HOSTNAME \
 STAGING_SSH_TARGET=halil@staging-sw \
 EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal \
@@ -646,6 +677,10 @@ operator/approver subjects, step-up, ticket, justification, approval id, WORM
 recording, and fail-closed recording policy. Set
 `VERIFY_REQUIRE_GOVERNANCE_EVIDENCE=0` only for legacy inspection; do not use
 that opt-out for `platform-agent#208` acceptance.
+Set `RUN_GOVERNANCE_EXPORT=1 SOURCE_GOVERNANCE_FILE=/path/to/product-governance.json`
+when the bundle should normalize the product-exported governance file before
+verification. If the source file is absent or incomplete, the orchestrator
+fails before dispatch/verification instead of fabricating governance proof.
 It does not prove that the endpoint is already on `v0.2.10`; run pilot
 readiness first or set `RUN_PILOT_READINESS=1 PILOT_REQUIRE_READY=1` to fail
 unless that precondition is true.
