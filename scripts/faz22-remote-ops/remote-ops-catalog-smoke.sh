@@ -117,7 +117,8 @@ expect_code() {
   local actual="$1" expected="$2" label="$3"
   if [[ "$actual" != "$expected" ]]; then
     printf 'ERR %s expected_http=%s actual_http=%s\n' "$label" "$expected" "$actual" >&2
-    local body="${EVIDENCE_DIR}/$(safe_label "$label").body"
+    local body
+    body="${EVIDENCE_DIR}/$(safe_label "$label").body"
     [[ -f "$body" ]] && sed 's/^/BODY /' "$body" >&2
     exit 1
   fi
@@ -135,10 +136,13 @@ assert_json() {
 sha256_manifest() {
   (
     cd "$EVIDENCE_DIR"
+    local sums_file
+    sums_file="$(mktemp "${TMPDIR:-/tmp}/remote-ops-catalog-sha256.XXXXXX")"
     find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
       | sort -z \
       | xargs -0 shasum -a 256 \
-      > SHA256SUMS
+      > "$sums_file"
+    mv "$sums_file" SHA256SUMS
   )
 }
 
