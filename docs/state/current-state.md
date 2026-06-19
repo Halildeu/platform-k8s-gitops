@@ -501,6 +501,13 @@ Scope split / residual truth:
   must still enforce `ExpectedMinimumAgentVersion=0.2.10`, and #1680 remains
   open until two managed PCs provide GPO/MSI install, service, mTLS,
   rollback, and failure-triage evidence.
+- Agent-doable prep for #1680 also includes
+  `scripts/faz22-mass-deployment/build-gpo-msi-acceptance-bundle.ps1`, which
+  builds a non-secret pilot-share-ready bundle containing the pinned
+  `v0.2.10` signed MSI, trusted manifest, startup install script, postinstall
+  verifier, rollback helper, and collectors. The bundle generator is not live
+  acceptance and does not mutate AD/GPO/endpoints; it removes ambiguity around
+  the exact script/artifact set that the next `gpo-msi` pilot must use.
 - Remote-ops hardening/deploy evidence was added on 2026-06-18 for the
   broader `platform-backend#510` parent. `platform-backend#696` merged as
   `14e6390e9ae3d92a0c012c6220fdddf5b1d82d78`, exposing redacted/non-secret

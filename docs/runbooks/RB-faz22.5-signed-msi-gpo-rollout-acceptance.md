@@ -51,6 +51,61 @@ one deployment method in the evidence packet:
 
 Do not mix methods in the same acceptance run.
 
+## 2.1 GPO/MSI Acceptance Bundle
+
+Before a domain pilot mutates GPO, build a non-secret, pilot-share-ready bundle
+from this repo. The bundle pins the current signed MSI URL/hash, copies the
+read-only collectors, and generates startup install / verify / rollback helper
+scripts. It does **not** mutate AD, GPO, endpoints, or backend state.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\faz22-mass-deployment\build-gpo-msi-acceptance-bundle.ps1 `
+  -OutputDir C:\Temp\EndpointAgent1680 `
+  -DownloadAssets `
+  -Force
+```
+
+Expected bundle contents:
+
+```text
+EndpointAgent1680\
+  README.md
+  bundle-manifest.json
+  assets\EndpointAgent-0.2.10-signed.msi
+  assets\msi-build-manifest.json
+  evidence-template\github-issue-comment-template.md
+  scripts\install-endpoint-agent-gpo-msi.ps1
+  scripts\verify-endpoint-agent-gpo-msi.ps1
+  scripts\rollback-endpoint-agent-gpo-msi.ps1
+  scripts\wave-preflight.ps1
+  scripts\collect-endpoint-agent-rollout-evidence.ps1
+  scripts\m5-same-day-pilot-collector.ps1
+  scripts\m7-rollback-rehearsal-collector.ps1
+```
+
+Pilot GPO startup command points at the generated install script:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File "\\<pilot-share>\EndpointAgent1680\scripts\install-endpoint-agent-gpo-msi.ps1"
+```
+
+The generated `install-endpoint-agent-gpo-msi.ps1` uses only non-secret MSI
+properties:
+
+```text
+AUTO_ENROLL=1
+AUTO_ENROLL_API_URL=https://mtls.testai.acik.com/api/v1/endpoint-agent
+AUTO_ENROLL_CERT_SAN_URI_PREFIX=adcomputer:
+AUTO_ENROLL_JITTER_SECONDS=900
+```
+
+The bundle itself is not acceptance evidence. It is accepted only as the
+repeatable execution package for the later two-device `gpo-msi` run. Attach the
+`bundle-manifest.json` hash to #1680 before execution so later endpoint evidence
+can be tied to an exact script/artifact set.
+
 ## 3. Hard Boundaries
 
 - No raw enrollment token, JWT, private key, password, or bearer value is pasted
