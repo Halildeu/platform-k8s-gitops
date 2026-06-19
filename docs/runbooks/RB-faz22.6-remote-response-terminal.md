@@ -320,7 +320,9 @@ Accepted input names:
   disabled/revoked operation denies, no-auth/role/step-up denies, expired
   permit, wrong device/tenant, replay, heartbeat-loss, and revoke/kill
   evidence;
-- `SHA256SUMS` for evidence integrity.
+- `SHA256SUMS` for evidence integrity. The manifest must cover the allowed
+  operation response, the recording export, and the required negative evidence
+  files; a stale manifest that omits required files is not accepted.
 
 Default acceptance rules:
 
@@ -334,7 +336,7 @@ Default acceptance rules:
 - the recording export contains `AGENT_OUTPUT` or equivalent `DATA`;
 - the recording export contains terminal `EndStream`;
 - core raw-shell and command/policy override negative evidence is present;
-- `SHA256SUMS` verifies cleanly.
+- `SHA256SUMS` verifies cleanly and lists the required evidence files.
 
 Useful strict modes:
 
@@ -371,6 +373,61 @@ support readiness, unrestricted shell safety, or true TPM/device-key
 hardware-attestation. The #208 `Done` transition still requires the accepted
 evidence comment to name the remaining acceptance items and the owner to accept
 the lifecycle/authz/replay/termination boundary that was actually proven.
+
+### 6.3 Recording Export For The Verifier
+
+The WORM recording table stores metadata hashes, not raw endpoint output. That
+is intentional: raw terminal output has a shorter retention/privacy boundary.
+For #208 runtime acceptance, export the durable metadata trail and pair it with
+the allowed operation response, negative response bodies, and `SHA256SUMS`.
+Use the recording export helper as the final bundling step after the operation
+and negative response files are already in `EVIDENCE_DIR`, so the generated
+`SHA256SUMS` covers the full evidence bundle.
+
+Read-only export from a staging SSH target:
+
+```bash
+SESSION_ID=<remote-bridge-session-id> \
+STAGING_SSH_TARGET=halil@staging-sw \
+EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal \
+scripts/faz22-remote-ops/remote-response-terminal-recording-export.sh
+```
+
+Read-only export from a local PostgreSQL URL:
+
+```bash
+SESSION_ID=<remote-bridge-session-id> \
+DATABASE_URL=postgresql://<redacted>@<host>:5432/endpoint_admin \
+EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal \
+scripts/faz22-remote-ops/remote-response-terminal-recording-export.sh
+```
+
+Offline normalization of a previously exported JSONL file:
+
+```bash
+SOURCE_RECORDING_ROWS_FILE=/path/to/session-recording.jsonl \
+EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal \
+scripts/faz22-remote-ops/remote-response-terminal-recording-export.sh
+```
+
+The helper writes or refreshes:
+
+- `session-recording.jsonl` — one normalized JSON object per WORM row;
+- `recording-summary.json` — row counts, kind counts, and an acceptance hint;
+- `recording-query.sql` when the helper performs the DB export;
+- `SHA256SUMS`.
+
+Expected WORM rows for a terminal evidence candidate include `AGENT_OUTPUT` or
+equivalent DATA evidence and a terminal marker such as `SESSION_END` or
+`EndStream`. A recording bundle with only `POLICY_EVENT` rows is useful
+control-plane evidence, but it does not prove endpoint output reached the
+recording/audit path. Run the verifier against the same `EVIDENCE_DIR`:
+
+```bash
+REQUIRE_ACCEPTED=1 \
+scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh \
+  /home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal
+```
 
 ## 7. Acceptance Checklist
 
