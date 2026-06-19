@@ -1,0 +1,9 @@
+{
+  "schema": "faz22.1680.gpo-msi.failed-device-triage.v1",
+  "generatedAt": "2026-06-19T05:20:00Z",
+  "status": "PASS",
+  "observedFailures": 0,
+  "silentFailureGuard": true,
+  "triageSurface": "github-issue-comment-and-backend-status",
+  "evidence": "No failed endpoint observed in this fixture; production evidence must link the real queue/dashboard or no-failure issue comment."
+}

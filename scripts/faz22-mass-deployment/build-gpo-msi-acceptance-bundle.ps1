@@ -129,6 +129,7 @@ New-Directory $evidenceDir
 Write-Step "copy collectors"
 $collectorNames = @(
     "collect-endpoint-agent-rollout-evidence.ps1",
+    "validate-gpo-msi-rollout-evidence.ps1",
     "wave-preflight.ps1",
     "m5-same-day-pilot-collector.ps1",
     "m7-rollback-rehearsal-collector.ps1"
@@ -342,6 +343,7 @@ if (-not $NoRestart) {
 $collectorOutput = & powershell.exe @collectorArgs
 $collectorExit = $LASTEXITCODE
 $collectorOutput | Set-Content -Path $collectorOut -Encoding UTF8
+$verifyStatus = if ($waveExit -eq 0 -and $collectorExit -eq 0) { "PASS" } else { "FAIL" }
 
 $summary = [pscustomobject]@{
     schema = "faz22.1680.gpo-msi.verify.v1"
@@ -351,6 +353,7 @@ $summary = [pscustomobject]@{
     expectedSignerThumbprint = $ExpectedSignerThumbprint
     expectedMinimumAgentVersion = $ExpectedMinimumAgentVersion
     expectedMsiSha256 = $ExpectedMsiSha256
+    verifyStatus = $verifyStatus
     wavePreflight = [pscustomobject]@{
         exitCode = $waveExit
         output = $preflightOut
@@ -634,6 +637,7 @@ $manifest = [pscustomobject]@{
         rollback = "scripts/rollback-endpoint-agent-gpo-msi.ps1"
         wavePreflight = "scripts/wave-preflight.ps1"
         rolloutCollector = "scripts/collect-endpoint-agent-rollout-evidence.ps1"
+        evidenceVerifier = "scripts/validate-gpo-msi-rollout-evidence.ps1"
         m5Collector = "scripts/m5-same-day-pilot-collector.ps1"
         m7Collector = "scripts/m7-rollback-rehearsal-collector.ps1"
     }

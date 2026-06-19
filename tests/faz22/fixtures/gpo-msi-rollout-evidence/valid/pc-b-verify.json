@@ -1,0 +1,12 @@
+{
+  "schema": "faz22.1680.gpo-msi.verify.v1",
+  "generatedAt": "2026-06-19T05:12:00Z",
+  "computerName": "PC-B",
+  "apiHost": "mtls.testai.acik.com",
+  "expectedSignerThumbprint": "D68F4F530137EB65CE44E3405E82B46205E753E5",
+  "expectedMinimumAgentVersion": "0.2.10",
+  "expectedMsiSha256": "132b8990bc78c4952ccaa7d2076cf26a37f0616f81e1a82274b5570b49f24ea4",
+  "verifyStatus": "PASS",
+  "wavePreflight": { "exitCode": 0, "output": "wave-pc-b.json" },
+  "collector": { "exitCode": 0, "output": "collector-pc-b.txt" }
+}

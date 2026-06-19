@@ -1,0 +1,15 @@
+{
+  "mode": "enroll-health",
+  "timestamp": "2026-06-19T05:13:00Z",
+  "host": "PC-B",
+  "overall": "PASS",
+  "failCount": 0,
+  "warnCount": 0,
+  "checks": [
+    { "check": "service-state", "status": "PASS", "detail": "Running" },
+    { "check": "agent-version-floor", "status": "PASS", "detail": "installed 0.2.10 meets required 0.2.10" },
+    { "check": "exe-signature", "status": "PASS", "detail": "Valid signer" },
+    { "check": "backend-reachability", "status": "PASS", "detail": "TCP mtls.testai.acik.com:443 reachable" },
+    { "check": "pending-reboot", "status": "PASS", "detail": "no pending reboot" }
+  ]
+}

@@ -57,6 +57,7 @@ jobs:
             "/tmp/endpoint-agent-1680-bundle-ci/scripts/verify-endpoint-agent-gpo-msi.ps1",
             "/tmp/endpoint-agent-1680-bundle-ci/scripts/rollback-endpoint-agent-gpo-msi.ps1",
             "/tmp/endpoint-agent-1680-bundle-ci/scripts/collect-endpoint-agent-rollout-evidence.ps1",
+            "/tmp/endpoint-agent-1680-bundle-ci/scripts/validate-gpo-msi-rollout-evidence.ps1",
             "/tmp/endpoint-agent-1680-bundle-ci/scripts/wave-preflight.ps1",
             "/tmp/endpoint-agent-1680-bundle-ci/scripts/m5-same-day-pilot-collector.ps1",
             "/tmp/endpoint-agent-1680-bundle-ci/scripts/m7-rollback-rehearsal-collector.ps1"
@@ -117,11 +118,16 @@ jobs:
           files = {entry["name"]: entry for entry in manifest["files"]}
           assert files["EndpointAgent-0.2.10-signed.msi"]["sha256"] == artifact["msiSha256"]
           assert files["msi-build-manifest.json"]["sha256"] == artifact["msiManifestSha256"]
+          verifier = files["validate-gpo-msi-rollout-evidence.ps1"]
 
           msi_file = Path("/tmp/endpoint-agent-1680-bundle-ci/assets/EndpointAgent-0.2.10-signed.msi")
           msi_manifest_file = Path("/tmp/endpoint-agent-1680-bundle-ci/assets/msi-build-manifest.json")
+          verifier_file = Path("/tmp/endpoint-agent-1680-bundle-ci/scripts/validate-gpo-msi-rollout-evidence.ps1")
+          source_verifier_file = Path("scripts/faz22-mass-deployment/validate-gpo-msi-rollout-evidence.ps1")
           assert hashlib.sha256(msi_file.read_bytes()).hexdigest() == expected_msi_sha256
           assert hashlib.sha256(msi_manifest_file.read_bytes()).hexdigest() == expected_manifest_sha256
+          assert hashlib.sha256(verifier_file.read_bytes()).hexdigest() == verifier["sha256"]
+          assert hashlib.sha256(source_verifier_file.read_bytes()).hexdigest() == verifier["sha256"]
 
           install_text = Path("/tmp/endpoint-agent-1680-bundle-ci/scripts/install-endpoint-agent-gpo-msi.ps1").read_text(encoding="utf-8-sig")
           assert "ENDPOINT_AGENT_ENROLLMENT_TOKEN" not in install_text
@@ -139,3 +145,67 @@ jobs:
 
           print("bundle manifest and guardrails PASS")
           PY
+
+      - name: Validate evidence verifier fixture behavior
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
+          $script = "scripts/faz22-mass-deployment/validate-gpo-msi-rollout-evidence.ps1"
+          $valid = "tests/faz22/fixtures/gpo-msi-rollout-evidence/valid"
+
+          $json = & pwsh -NoProfile -ExecutionPolicy Bypass `
+            -File $script `
+            -EvidenceRoot $valid `
+            -BundleManifestPath (Join-Path $valid "bundle-manifest.json") `
+            -Json `
+            -ExitCodeOnFail
+          $result = $json | ConvertFrom-Json
+          if ($result.overall -ne "PASS" -or $result.failCount -ne 0) {
+            $json
+            throw "valid fixture did not PASS"
+          }
+          Write-Host "VALID_FIXTURE_PASS"
+
+          $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gpo-msi-evidence-negative-" + [guid]::NewGuid().ToString("N"))
+          try {
+            Copy-Item -Path $valid -Destination $tmp -Recurse
+            Remove-Item -Path (Join-Path $tmp "pc-b-*.json") -Force
+            & pwsh -NoProfile -ExecutionPolicy Bypass `
+              -File $script `
+              -EvidenceRoot $tmp `
+              -BundleManifestPath (Join-Path $tmp "bundle-manifest.json") `
+              -ExitCodeOnFail
+            if ($LASTEXITCODE -eq 0) {
+              throw "negative fixture unexpectedly passed without second device"
+            }
+            Write-Host "NEGATIVE_MISSING_SECOND_DEVICE_FAILS"
+          } finally {
+            Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+          $tmp2 = Join-Path ([System.IO.Path]::GetTempPath()) ("gpo-msi-evidence-targeting-" + [guid]::NewGuid().ToString("N"))
+          try {
+            Copy-Item -Path $valid -Destination $tmp2 -Recurse
+            $targeting = Join-Path $tmp2 "targeting.json"
+            $targetingJson = Get-Content $targeting -Raw | ConvertFrom-Json
+            $targetingJson.domainWideLinkAllowed = $true
+            $targetingJson | ConvertTo-Json -Depth 10 | Set-Content -Path $targeting -Encoding UTF8
+            & pwsh -NoProfile -ExecutionPolicy Bypass `
+              -File $script `
+              -EvidenceRoot $tmp2 `
+              -BundleManifestPath (Join-Path $tmp2 "bundle-manifest.json") `
+              -ExitCodeOnFail
+            if ($LASTEXITCODE -eq 0) {
+              throw "negative fixture unexpectedly passed with domainWideLinkAllowed=true"
+            }
+            Write-Host "NEGATIVE_DOMAIN_WIDE_TARGETING_FAILS"
+          } finally {
+            Remove-Item -Path $tmp2 -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+          # Negative fixture commands intentionally exit non-zero. Reset the
+          # native exit code after proving the expected fail-closed behavior so
+          # the pwsh step reports the fixture audit result instead of the last
+          # child process exit code.
+          $global:LASTEXITCODE = 0

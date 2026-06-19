@@ -1,0 +1,14 @@
+{
+  "schema": "faz22.1680.gpo-msi.targeting.v1",
+  "generatedAt": "2026-06-19T05:05:00Z",
+  "status": "PASS",
+  "method": "gpo-msi",
+  "ou": "OU=EndpointTest,DC=acik,DC=local",
+  "securityGroup": "EndpointAgentPilotComputers",
+  "gpoName": "EndpointAgent Pilot GPO",
+  "expectedComputers": ["PC-A", "PC-B"],
+  "actualComputers": ["PC-A", "PC-B"],
+  "domainWideLinkAllowed": false,
+  "authenticatedUsersApplyAllowed": false,
+  "broadTargetingDetected": false
+}
