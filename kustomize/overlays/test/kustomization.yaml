@@ -5510,10 +5510,10 @@ images:
     # pending — operator action runbook externalsecret-notify.yaml).
     digest: sha256:175b3daea37601fbfd500f616ad19664d26dffec8b1db11556a3bff14ce6250e
 
-  # Faz 22.5 M2 — endpoint-agent artifact host (test). Image built+pushed by
-  # platform-agent Release EXE trusted workflow for tag v0.2.11:
-  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.11 (+ sha-dea5a4b).
-  # Serves /artifacts/endpoint-agent/v0.2.11/{bootstrap-package.ps1,endpoint-agent.exe,EndpointAgent.zip,...}
+  # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
+  # platform-agent Release EXE trusted workflow for tag v0.2.12:
+  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.12 (+ platform-agent#206).
+  # Serves /artifacts/endpoint-agent/current/{bootstrap-package.ps1,endpoint-agent.exe,EndpointAgent.zip,...}
   # PLUS a stable MUTABLE alias /artifacts/endpoint-agent/current/ (byte-identical,
   # nginx no-store) so the endpoint-admin UI renders a copy-paste one-command
   # install + discovers the live package hash without a per-release frontend edit
@@ -5521,19 +5521,19 @@ images:
   # is TRUSTED-INTERNAL-CA signed (osslsigncode + internal OpenSSL CA, RFC3161
   # timestamp; install.ps1 imports the internal root TOFU so Authenticode validates
   # Valid). NOT publicly trusted. Pulled with the existing ghcr-pull secret.
-  # One-version-per-image: this image REPLACES v0.2.10; old /artifacts/v0.2.10/
-  # URLs 404 after rollout (durable archive = the GitHub release assets) — but
-  # /current/ keeps resolving.
+  # One-version-per-image: this image REPLACES v0.2.11; durable archive remains
+  # the GitHub release assets. The signed MSI is a separate trusted MSI workflow
+  # artifact and is not treated as a release-hosted public asset here.
   - name: artifact-host
     newName: ghcr.io/halildeu/platform-agent-artifacts
-    newTag: v0.2.11
-    # D30 immutable pin — Release EXE trusted run 27810127580 (tag v0.2.11,
-    # source sha-dea5a4b, signing_tier=trusted-internal-ca). Release asset
+    newTag: v0.2.12
+    # D30 immutable pin — Release EXE trusted run 27844534995 (tag v0.2.12,
+    # signing_tier=trusted-internal-ca). Release asset
     # manifest records EndpointAgent.zip SHA256
-    # 393ec3db48fe81dc9c85cf86e4879336dbac5136713611c6094c6daaca91df0d and
+    # 925776e70337d5b757c853358505c3bc3c386ab94f74b051ef188f224156ddcd and
     # agent binary SHA256
-    # cd3a5741a737f008a8bc3d11c1b8e3564ea71203063d215efef18a384a2f703e.
-    digest: sha256:6ac5cd888b4b20691d50cc509e26a113df66a427defce51b1a1d6a51d83a7f9a
+    # e83e8c95c51236b3d107b0802c50e6e6c3f707246a0160260d87870bab42442d.
+    digest: sha256:b51cd8167734ecc1b383944454ef9030224b0d337a42ba476477b83ebbe762c9
 
 patches:
   # notification-orchestrator-secrets is owned by the test ExternalSecret. The
