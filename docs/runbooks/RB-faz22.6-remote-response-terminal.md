@@ -366,6 +366,9 @@ Accepted input names:
   disabled/revoked operation denies, no-auth/role/step-up denies, expired
   permit, wrong device/tenant, replay, heartbeat-loss, and revoke/kill
   evidence;
+- governance evidence:
+  `governance-evidence.json`, `governance/summary.json`,
+  `approval-evidence.json`, or `operator-governance.json`;
 - `SHA256SUMS` for evidence integrity. The manifest must cover the allowed
   operation response, the recording export, and the required negative evidence
   files; a stale manifest that omits required files is not accepted.
@@ -387,12 +390,48 @@ Default acceptance rules:
 - the session ownership evidence contains only short SHA-derived session and
   endpoint hashes plus owner comment metadata, not raw session ids or bearer
   values;
+- governance evidence proves distinct operator and approver subjects, approval
+  id, step-up verification, ticket reference, justification, WORM recording,
+  and fail-closed recording policy;
+- governance evidence contains no raw bearer token, JWT, session id, private
+  key, password, client secret, or equivalent sensitive marker;
 - the recording export contains `AGENT_OUTPUT` or equivalent `DATA`;
 - the recording export contains terminal `EndStream`;
 - core raw-shell and command/policy override negative evidence is present;
 - `SHA256SUMS` verifies cleanly and lists the required evidence files,
-  including `session-ownership-guard.out` and `pilot-readiness/summary.json`
-  when those requirements are enabled.
+  including `session-ownership-guard.out`, `pilot-readiness/summary.json`, and
+  `governance-evidence.json` when those requirements are enabled.
+
+Canonical governance evidence shape:
+
+```json
+{
+  "operator": {
+    "subject": "rb-operator-denetim"
+  },
+  "approver": {
+    "subject": "rb-approver-denetim"
+  },
+  "approval": {
+    "id": "approval-123"
+  },
+  "stepUp": {
+    "verified": true,
+    "method": "webauthn"
+  },
+  "ticketRef": "INC-123",
+  "justification": "Bounded hostname diagnostic for platform-agent#208",
+  "recording": {
+    "worm": true,
+    "failClosed": true
+  }
+}
+```
+
+The file is an exported governance summary, not a credential container. Use
+stable redacted subjects or product user ids; do not include bearer tokens,
+raw JWTs, raw `REMOTE_BRIDGE_SESSION_ID`, cookies, private keys, passwords,
+or personal contact/payment data.
 
 Useful strict modes:
 
@@ -416,6 +455,12 @@ scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
 REQUIRE_PILOT_READINESS=0 \
 scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
 
+# Governance evidence is required by default for Remote Response Terminal
+# accepted candidates. Use this only to inspect legacy evidence that predates
+# this governance verifier guard; do not use it for #208 acceptance.
+REQUIRE_GOVERNANCE_EVIDENCE=0 \
+scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
+
 # Pin the expected catalog operation for one smoke.
 EXPECTED_CATALOG_OPERATION_ID=GET_HOSTNAME REQUIRE_ACCEPTED=1 \
 scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
@@ -424,13 +469,17 @@ scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
 Verifier decision values are intentionally bounded:
 
 - `accepted-candidate` means PERMIT, transport, pilot readiness, redacted
-  session ownership, bounded output recording, core negative evidence, and
-  checksum evidence are present.
+  session ownership, governance evidence, bounded output recording, core
+  negative evidence, and checksum evidence are present.
 - `missing-pilot-readiness` or `invalid-pilot-readiness` means the bundle does
   not prove an endpoint was already running the expected constrained-executor
   artifact before the terminal smoke.
 - `missing-session-ownership` or `invalid-session-ownership` means the bundle
   does not prove the single-owner live-smoke coordination guard.
+- `missing-governance-evidence` or `invalid-governance-evidence` means the
+  bundle does not prove dual-control, step-up, ticket/justification, approval
+  id, WORM recording, and fail-closed recording policy without sensitive
+  marker leakage.
 - `missing-permit`, `missing-transport-push`, `missing-permit-signature`,
   `wrong-capability`, or `missing-server-owned-source-binding` mean the allowed
   operation response cannot prove the product-channel constrained path.
@@ -540,6 +589,13 @@ EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal \
 scripts/faz22-remote-ops/remote-response-terminal-runtime-smoke.sh
 ```
 
+Before `RUN_VERIFY=1` can produce an accepted #208 candidate, place the
+product-exported governance summary in the same `EVIDENCE_DIR` as
+`governance-evidence.json`. The runtime smoke orchestrator does not generate
+or infer governance proof. It only passes the verifier default
+`VERIFY_REQUIRE_GOVERNANCE_EVIDENCE=1`, so a missing governance export fails
+closed instead of silently accepting a privileged terminal action.
+
 If the recording rows have already been exported, reuse that file instead of
 querying PostgreSQL over SSH:
 
@@ -584,6 +640,12 @@ for `accepted-candidate`.
 When live operation is run with the default `SESSION_OWNER_REQUIRED=1`, it
 writes `session-ownership-guard.out`; the verifier requires that file by
 default for `accepted-candidate`.
+When `VERIFY_REQUIRE_GOVERNANCE_EVIDENCE=1` remains at its default, the
+verifier also requires `governance-evidence.json` to prove distinct
+operator/approver subjects, step-up, ticket, justification, approval id, WORM
+recording, and fail-closed recording policy. Set
+`VERIFY_REQUIRE_GOVERNANCE_EVIDENCE=0` only for legacy inspection; do not use
+that opt-out for `platform-agent#208` acceptance.
 It does not prove that the endpoint is already on `v0.2.10`; run pilot
 readiness first or set `RUN_PILOT_READINESS=1 PILOT_REQUIRE_READY=1` to fail
 unless that precondition is true.
