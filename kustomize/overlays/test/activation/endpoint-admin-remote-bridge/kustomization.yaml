@@ -43,8 +43,11 @@
 #     explicit operator close/reopen lifecycle path through the same
 #     owner-gated broker lane instead of testing the older approved-script
 #     broker image.
+#   - immutable test digest includes platform-backend#713 via #714
+#     (`dc1e6e0b852d29720f80d06166c1eb720196a014`) so long-lived broker
+#     control streams refresh peer-trust evidence on heartbeat after AgentHello.
 #   - immutable test digest:
-#     sha256:1c8ec2d19a8a03a1c08342c6c316b88d68bd85713d417bd9bad95401ed043fb0
+#     sha256:116711b56caabd5a39bc4292af5c9e7e7042e764df2af32eec80ac0ab20ec322
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -89,6 +92,9 @@ images:
   # Re-pinned for backend #710/#711 after the primary test overlay moved to
   # sha-3216a6b5, so owner-gated broker-path close/reopen smoke does not run
   # on the older approved-script-only broker image.
+  # Re-pinned for backend #713/#714 after the primary test overlay moved to
+  # sha-dc1e6e0, so owner-gated broker-path close/reopen smoke validates the
+  # heartbeat peer-trust freshness fix on the same image as endpoint-admin.
   # Merge-order guard: draft PR #1652 also touches this activation overlay and
   # carries the older sha256:3950a612... digest. If #1652 is resumed after this
   # PR, rebase it onto this digest before merge/apply; do not downgrade.
@@ -99,4 +105,4 @@ images:
   # verification.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:1c8ec2d19a8a03a1c08342c6c316b88d68bd85713d417bd9bad95401ed043fb0
+    digest: sha256:116711b56caabd5a39bc4292af5c9e7e7042e764df2af32eec80ac0ab20ec322
