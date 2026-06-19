@@ -357,11 +357,12 @@ function Validate-WavePreflight {
         $d = $doc.data
         $device = Get-DeviceName $d
         $checks = @(Get-Field $d "checks")
-        if ((Same-Text (Get-Field $d "overall") "PASS") -and
+        $overall = Normalize-String (Get-Field $d "overall")
+        $overallOk = (Same-Text $overall "PASS") -or (Same-Text $overall "PASS-WITH-WARN")
+        if ($overallOk -and
             ([int](Get-Field $d "failCount") -eq 0) -and
             (Test-CheckStatus -Checks $checks -Name "service-state" -Status "PASS") -and
             (Test-CheckStatus -Checks $checks -Name "agent-version-floor" -Status "PASS") -and
-            (Test-CheckStatus -Checks $checks -Name "exe-signature" -Status "PASS") -and
             (Test-CheckStatus -Checks $checks -Name "backend-reachability" -Status "PASS") -and
             (Test-NoFailures -Checks $checks)) {
             $passing += $device

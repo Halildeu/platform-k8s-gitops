@@ -39,6 +39,17 @@ function Redact-Text {
     return $value
 }
 
+function Get-ObjectPropertyValue {
+    param(
+        $InputObject,
+        [string]$Name
+    )
+    if ($null -eq $InputObject) { return $null }
+    $prop = $InputObject.PSObject.Properties[$Name]
+    if ($null -eq $prop) { return $null }
+    return $prop.Value
+}
+
 function Test-TcpPort {
     param(
         [string]$HostName,
@@ -194,19 +205,28 @@ function Get-InstalledProductRows {
     foreach ($root in $uninstallRoots) {
         $items = Get-ItemProperty $root -ErrorAction SilentlyContinue |
             Where-Object {
-                $_.DisplayName -like "*Endpoint Agent*" -or
-                $_.DisplayName -like "*EndpointAgent*" -or
-                $_.InstallLocation -like "*EndpointAgent*"
+                $displayName = Get-ObjectPropertyValue $_ "DisplayName"
+                $installLocation = Get-ObjectPropertyValue $_ "InstallLocation"
+                $displayName -like "*Endpoint Agent*" -or
+                $displayName -like "*EndpointAgent*" -or
+                $installLocation -like "*EndpointAgent*"
             }
         foreach ($item in $items) {
+            $displayName = Get-ObjectPropertyValue $item "DisplayName"
+            $displayVersion = Get-ObjectPropertyValue $item "DisplayVersion"
+            $publisher = Get-ObjectPropertyValue $item "Publisher"
+            $installLocation = Get-ObjectPropertyValue $item "InstallLocation"
+            $uninstallString = Get-ObjectPropertyValue $item "UninstallString"
+            $quietUninstallString = Get-ObjectPropertyValue $item "QuietUninstallString"
+            $windowsInstaller = Get-ObjectPropertyValue $item "WindowsInstaller"
             $rows += [PSCustomObject]@{
-                displayName = $item.DisplayName
-                displayVersion = $item.DisplayVersion
-                publisher = $item.Publisher
-                installLocation = $item.InstallLocation
-                uninstallString = Redact-Text $item.UninstallString
-                quietUninstallString = Redact-Text $item.QuietUninstallString
-                windowsInstaller = $item.WindowsInstaller
+                displayName = $displayName
+                displayVersion = $displayVersion
+                publisher = $publisher
+                installLocation = $installLocation
+                uninstallString = Redact-Text $uninstallString
+                quietUninstallString = Redact-Text $quietUninstallString
+                windowsInstaller = $windowsInstaller
                 psPath = $item.PSPath
             }
         }

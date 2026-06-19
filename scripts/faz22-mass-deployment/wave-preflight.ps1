@@ -93,6 +93,44 @@ function ConvertTo-AgentVersion {
     }
 }
 
+function Get-ObjectPropertyValue {
+    param(
+        $InputObject,
+        [string]$Name
+    )
+    if ($null -eq $InputObject) { return $null }
+    $prop = $InputObject.PSObject.Properties[$Name]
+    if ($null -eq $prop) { return $null }
+    return $prop.Value
+}
+
+function Get-InstalledEndpointAgentProducts {
+    $rows = @()
+    $roots = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    foreach ($root in $roots) {
+        $items = Get-ItemProperty $root -ErrorAction SilentlyContinue | Where-Object {
+            $displayName = Get-ObjectPropertyValue $_ 'DisplayName'
+            $installLocation = Get-ObjectPropertyValue $_ 'InstallLocation'
+            $displayName -like '*Endpoint Agent*' -or
+            $displayName -like '*EndpointAgent*' -or
+            $installLocation -like '*EndpointAgent*'
+        }
+        foreach ($item in $items) {
+            $rows += [pscustomobject]@{
+                displayName = Get-ObjectPropertyValue $item 'DisplayName'
+                displayVersion = Get-ObjectPropertyValue $item 'DisplayVersion'
+                publisher = Get-ObjectPropertyValue $item 'Publisher'
+                installLocation = Get-ObjectPropertyValue $item 'InstallLocation'
+                psPath = $item.PSPath
+            }
+        }
+    }
+    return $rows
+}
+
 function Get-AgentVersionCandidate {
     param([string]$ExePath)
     if (-not (Test-Path $ExePath)) { return $null }
@@ -101,6 +139,13 @@ function Get-AgentVersionCandidate {
         [pscustomobject]@{ source = 'ProductVersion'; value = $vi.ProductVersion; parsed = ConvertTo-AgentVersion $vi.ProductVersion },
         [pscustomobject]@{ source = 'FileVersion'; value = $vi.FileVersion; parsed = ConvertTo-AgentVersion $vi.FileVersion }
     )
+    foreach ($product in (Get-InstalledEndpointAgentProducts)) {
+        $candidates += [pscustomobject]@{
+            source = 'installedProduct.displayVersion'
+            value = $product.displayVersion
+            parsed = ConvertTo-AgentVersion $product.displayVersion
+        }
+    }
     $parsed = @($candidates | Where-Object { $null -ne $_.parsed } | Sort-Object parsed -Descending)
     if ($parsed.Count -gt 0) { return $parsed[0] }
     return [pscustomobject]@{ source = 'unparsed'; value = (($candidates | ForEach-Object { "$($_.source)=$($_.value)" }) -join '; '); parsed = $null }
@@ -270,7 +315,11 @@ function Invoke-SignatureCheck {
         return
     }
     if ($ExpectedSignerThumbprint -and ($thumb -ne $ExpectedSignerThumbprint)) {
-        Add-Check 'exe-signature' 'FAIL' "signer thumbprint $thumb != expected $ExpectedSignerThumbprint"
+        if ($RequireSignature) {
+            Add-Check 'exe-signature' 'FAIL' "signer thumbprint $thumb != expected $ExpectedSignerThumbprint"
+        } else {
+            Add-Check 'exe-signature' 'WARN' "signer thumbprint $thumb != expected $ExpectedSignerThumbprint"
+        }
     } else {
         Add-Check 'exe-signature' 'PASS' "Valid; signer=$thumb"
     }

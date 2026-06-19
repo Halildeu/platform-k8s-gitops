@@ -244,12 +244,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -Mode enroll-health `
   -ApiHost "mtls.testai.acik.com" `
   -RequireMachineCert `
-  -RequireSignature `
-  -ExpectedSignerThumbprint "D68F4F530137EB65CE44E3405E82B46205E753E5" `
   -ExpectedMinimumAgentVersion "0.2.10" `
   -ExitCodeOnFail `
   -Json
 ```
+
+This GPO/MSI gate validates the signed MSI artifact and the installed MSI
+product version floor. `exe-signature` is retained as advisory endpoint
+evidence unless executable signing is explicitly made a separate hard gate with
+`-RequireSignature`; a valid signed MSI deployment must not be failed only
+because the installed executable lacks PE Authenticode metadata.
 
 The script writes redacted JSON/text artifacts under:
 

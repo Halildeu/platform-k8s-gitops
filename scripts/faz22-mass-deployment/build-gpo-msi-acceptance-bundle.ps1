@@ -341,8 +341,6 @@ $waveArgs = @(
     "-Mode", "enroll-health",
     "-ApiHost", "`"$ApiHost`"",
     "-RequireMachineCert",
-    "-RequireSignature",
-    "-ExpectedSignerThumbprint", "`"$ExpectedSignerThumbprint`"",
     "-ExpectedMinimumAgentVersion", "`"$ExpectedMinimumAgentVersion`"",
     "-ExitCodeOnFail",
     "-Json"
@@ -437,6 +435,17 @@ function New-Dir {
     }
 }
 
+function Get-ObjectPropertyValue {
+    param(
+        $InputObject,
+        [string]$Name
+    )
+    if ($null -eq $InputObject) { return $null }
+    $prop = $InputObject.PSObject.Properties[$Name]
+    if ($null -eq $prop) { return $null }
+    return $prop.Value
+}
+
 function Get-EndpointAgentProductCode {
     $roots = @(
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
@@ -444,15 +453,19 @@ function Get-EndpointAgentProductCode {
     )
     foreach ($root in $roots) {
         $items = Get-ItemProperty $root -ErrorAction SilentlyContinue | Where-Object {
-            $_.DisplayName -like "*Endpoint Agent*" -or
-            $_.DisplayName -like "*EndpointAgent*" -or
-            $_.InstallLocation -like "*EndpointAgent*"
+            $displayName = Get-ObjectPropertyValue $_ "DisplayName"
+            $installLocation = Get-ObjectPropertyValue $_ "InstallLocation"
+            $displayName -like "*Endpoint Agent*" -or
+            $displayName -like "*EndpointAgent*" -or
+            $installLocation -like "*EndpointAgent*"
         }
         foreach ($item in $items) {
             if ($item.PSChildName -match '^\{[0-9A-Fa-f-]{36}\}$') {
                 return $item.PSChildName
             }
-            $candidate = "$($item.UninstallString) $($item.QuietUninstallString)"
+            $uninstallString = Get-ObjectPropertyValue $item "UninstallString"
+            $quietUninstallString = Get-ObjectPropertyValue $item "QuietUninstallString"
+            $candidate = "$uninstallString $quietUninstallString"
             $m = [regex]::Match($candidate, '\{[0-9A-Fa-f-]{36}\}')
             if ($m.Success) { return $m.Value }
         }

@@ -146,6 +146,7 @@ jobs:
           assert "function Resolve-ScriptRoot" in rollback_text
           assert 'Join-Path $PSScriptRoot' not in verify_text
           assert 'Join-Path $PSScriptRoot' not in rollback_text
+          assert '"-RequireSignature"' not in verify_text
           assert "$args =" not in install_text
           assert "$args =" not in rollback_text
           assert "$waveArgs" in rollback_text
@@ -174,6 +175,37 @@ jobs:
             throw "valid fixture did not PASS"
           }
           Write-Host "VALID_FIXTURE_PASS"
+
+          $tmpWarn = Join-Path ([System.IO.Path]::GetTempPath()) ("gpo-msi-evidence-warn-" + [guid]::NewGuid().ToString("N"))
+          try {
+            Copy-Item -Path $valid -Destination $tmpWarn -Recurse
+            Get-ChildItem -Path $tmpWarn -Filter "*-wave.json" | ForEach-Object {
+              $wave = Get-Content $_.FullName -Raw | ConvertFrom-Json
+              $wave.overall = "PASS-WITH-WARN"
+              $wave.warnCount = 1
+              foreach ($check in $wave.checks) {
+                if ($check.check -eq "exe-signature") {
+                  $check.status = "WARN"
+                  $check.detail = "signature status=NotSigned signer=<none> (MSI signer evidence is authoritative for #1680)"
+                }
+              }
+              $wave | ConvertTo-Json -Depth 10 | Set-Content -Path $_.FullName -Encoding UTF8
+            }
+            $warnJson = & pwsh -NoProfile -ExecutionPolicy Bypass `
+              -File $script `
+              -EvidenceRoot $tmpWarn `
+              -BundleManifestPath (Join-Path $tmpWarn "bundle-manifest.json") `
+              -Json `
+              -ExitCodeOnFail
+            $warnResult = $warnJson | ConvertFrom-Json
+            if ($warnResult.overall -ne "PASS" -or $warnResult.failCount -ne 0) {
+              $warnJson
+              throw "PASS-WITH-WARN exe-signature fixture did not PASS"
+            }
+            Write-Host "WARN_EXE_SIGNATURE_FIXTURE_PASS"
+          } finally {
+            Remove-Item -Path $tmpWarn -Recurse -Force -ErrorAction SilentlyContinue
+          }
 
           $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("gpo-msi-evidence-negative-" + [guid]::NewGuid().ToString("N"))
           try {
