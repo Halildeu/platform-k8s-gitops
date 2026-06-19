@@ -478,19 +478,26 @@ Scope split / residual truth:
   collector
   `scripts/faz22-mass-deployment/collect-endpoint-agent-rollout-evidence.ps1`;
   live acceptance remains blocked until the selected deployment method is run
-  on two managed PCs.
-- Current #1680 artifact reality: public `v0.2.9` ZIP/bootstrap is live and
-  hash-verified, and trusted MSI workflow run `27741877258` produced
-  `endpoint-agent-msi-trusted` with `EndpointAgent-0.2.9-signed.msi` SHA256
+  on two managed PCs and their installed agent versions meet the current
+  artifact floor.
+- Current #1680 artifact reality after `#1710`: public
+  `current/release-manifest.json` serves `v0.2.10` with EXE SHA256
+  `a50344a4457959b95dfdfa22e6578e53cd6ec4b124830b506fe53503c18ba1ec`
+  and ZIP SHA256
+  `fa72f278b81497bf2480ea312c7d13cff410372bfcef6ddca23dc3e50a1f292e`.
+  GitHub release `v0.2.10` contains ZIP/bootstrap/install/uninstall/EXE
+  assets but no signed MSI asset. The latest durable signed MSI is still
+  `EndpointAgent-0.2.9-signed.msi` SHA256
   `5cab18d460720e5bf89ddf0038f5b1c4d5ae04afc031dda0dc15d9810c969571`,
   `production=true`, `signing_tier=trusted-internal-ca`, and
-  `timestamped=true`. The signed MSI and MSI manifest are now durable
-  `v0.2.9` release assets:
+  `timestamped=true`:
   `https://github.com/Halildeu/platform-agent/releases/download/v0.2.9/EndpointAgent-0.2.9-signed.msi`
   and
   `https://github.com/Halildeu/platform-agent/releases/download/v0.2.9/msi-build-manifest.json`.
-  `gpo-msi` can now be selected for the live pilot, but #1680 still requires
-  two managed-PC install/upgrade evidence packets plus one rollback drill.
+  Therefore #1680 collectors must enforce `ExpectedMinimumAgentVersion=0.2.10`
+  while `current/` serves `v0.2.10`; a `v0.2.9` signed MSI run is a
+  downgrade/regression lab unless an explicit temporary issue exception is
+  recorded, and it cannot close the current runtime acceptance path.
 - Remote-ops hardening/deploy evidence was added on 2026-06-18 for the
   broader `platform-backend#510` parent. `platform-backend#696` merged as
   `14e6390e9ae3d92a0c012c6220fdddf5b1d82d78`, exposing redacted/non-secret
