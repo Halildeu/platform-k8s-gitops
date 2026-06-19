@@ -15,6 +15,7 @@ OPERATION_BODY_FILE="${OPERATION_BODY_FILE:-}"
 RECORDING_ROWS_FILE="${RECORDING_ROWS_FILE:-}"
 SMOKE_SUMMARY_FILE="${SMOKE_SUMMARY_FILE:-}"
 SESSION_OWNERSHIP_FILE="${SESSION_OWNERSHIP_FILE:-}"
+PILOT_READINESS_FILE="${PILOT_READINESS_FILE:-}"
 SUMMARY_FILE="${SUMMARY_FILE:-${EVIDENCE_DIR}/verification-summary.json}"
 
 EXPECTED_OPERATION_KIND="${EXPECTED_OPERATION_KIND:-PERMIT}"
@@ -27,6 +28,7 @@ REQUIRE_FULL_MATRIX="${REQUIRE_FULL_MATRIX:-0}"
 REQUIRE_SHA256="${REQUIRE_SHA256:-1}"
 REQUIRE_ACCEPTED="${REQUIRE_ACCEPTED:-0}"
 REQUIRE_SESSION_OWNERSHIP="${REQUIRE_SESSION_OWNERSHIP:-1}"
+REQUIRE_PILOT_READINESS="${REQUIRE_PILOT_READINESS:-1}"
 
 NEGATIVE_DETAILS="[]"
 
@@ -227,6 +229,18 @@ find_session_ownership_file() {
     live-session-owner.out
 }
 
+find_pilot_readiness_file() {
+  if [[ -n "$PILOT_READINESS_FILE" ]]; then
+    resolve_input_file "$PILOT_READINESS_FILE"
+    return 0
+  fi
+  first_existing_file \
+    pilot-readiness/summary.json \
+    pilot-readiness-summary.json \
+    pilot-readiness.json \
+    readiness-summary.json
+}
+
 analyze_sha256_manifest() {
   local sums_file="${EVIDENCE_DIR}/SHA256SUMS"
   local status="not-present" log_excerpt="" tmp_log hasher=()
@@ -378,6 +392,56 @@ analyze_session_ownership() {
       ok: ($ok == "true"),
       reason: $reason
     }'
+}
+
+analyze_pilot_readiness() {
+  local file="$1"
+  if [[ -z "$file" ]]; then
+    jq -cn '{status:"missing", file:null, ok:false, reason:"pilot readiness summary not found"}'
+    return 0
+  fi
+  if ! jq -e . "$file" >/dev/null 2>&1; then
+    jq -cn --arg file "$(relpath "$file")" \
+      '{status:"invalid-json", file:$file, ok:false, reason:"pilot readiness summary is not valid JSON"}'
+    return 0
+  fi
+
+  jq -c --arg file "$(relpath "$file")" '
+    . as $root
+    | ($root.manifest.expectedReleaseTag // "") as $expectedReleaseTag
+    | ($root.manifest.expectedAgentVersion // "") as $expectedAgentVersion
+    | ($root.targetEndpoint.observed.agent_version // "") as $observedVersion
+    | {
+        status: "parsed",
+        file: $file,
+        decision: ($root.decision // ""),
+        reasonText: ($root.reason // ""),
+        manifestOk: ($root.manifest.ok == true),
+        expectedReleaseTag: $expectedReleaseTag,
+        expectedAgentVersion: $expectedAgentVersion,
+        observedAgentVersion: $observedVersion,
+        targetEndpointPresent: (($root.targetEndpoint.observed // null) != null),
+        decisionOk: (($root.decision // "") == "ready-for-product-smoke"),
+        versionOk: (
+          ($observedVersion | length) > 0
+          and (
+            ($expectedReleaseTag | length) > 0 and $observedVersion == $expectedReleaseTag
+            or ($expectedAgentVersion | length) > 0 and $observedVersion == $expectedAgentVersion
+            or ($expectedAgentVersion | length) > 0 and ($observedVersion | contains($expectedAgentVersion))
+            or ($expectedReleaseTag | length) > 0 and ($observedVersion | contains($expectedReleaseTag))
+          )
+        )
+      }
+    | .ok = (.decisionOk and .manifestOk and .targetEndpointPresent and .versionOk)
+    | .reason = (
+        if .ok then "pilot-ready-for-product-smoke"
+        elif .decisionOk | not then "pilot-not-ready"
+        elif .manifestOk | not then "pilot-artifact-manifest-mismatch"
+        elif .targetEndpointPresent | not then "pilot-target-endpoint-missing"
+        elif .versionOk | not then "pilot-agent-version-mismatch"
+        else "pilot-readiness-incomplete"
+        end
+      )' "$file"
 }
 
 analyze_operation_body() {
@@ -559,23 +623,26 @@ main() {
   [[ -d "$EVIDENCE_DIR" ]] || die "EVIDENCE_DIR is not a directory: $EVIDENCE_DIR"
 
   local operation_file recording_file smoke_summary_file
-  local session_ownership_file
+  local session_ownership_file pilot_readiness_file
   operation_file="$(find_operation_body_file || true)"
   recording_file="$(find_recording_rows_file || true)"
   smoke_summary_file="$(find_smoke_summary_file || true)"
   session_ownership_file="$(find_session_ownership_file || true)"
+  pilot_readiness_file="$(find_pilot_readiness_file || true)"
 
   validate_file_under_evidence_dir "$operation_file" "operation body"
   validate_file_under_evidence_dir "$recording_file" "recording rows"
   validate_file_under_evidence_dir "$smoke_summary_file" "smoke summary"
   validate_file_under_evidence_dir "$session_ownership_file" "session ownership"
+  validate_file_under_evidence_dir "$pilot_readiness_file" "pilot readiness"
 
-  local sha_json operation_json recording_json smoke_summary_json session_ownership_json
+  local sha_json operation_json recording_json smoke_summary_json session_ownership_json pilot_readiness_json
   sha_json="$(analyze_sha256_manifest)"
   operation_json="$(analyze_operation_body "$operation_file")"
   recording_json="$(analyze_recording_rows "$recording_file")"
   smoke_summary_json="$(summarize_smoke_summary "$smoke_summary_file")"
   session_ownership_json="$(analyze_session_ownership "$session_ownership_file")"
+  pilot_readiness_json="$(analyze_pilot_readiness "$pilot_readiness_file")"
 
   local raw_negative_ok="false" override_negative_ok="false" disabled_negative_ok="false"
   local authz_negative_ok="false" expired_negative_ok="false" wrong_device_negative_ok="false"
@@ -661,7 +728,7 @@ main() {
   fi
 
   local sha_required_json
-  sha_required_json="$(analyze_sha256_required_files "$operation_file" "$recording_file" "$session_ownership_file")"
+  sha_required_json="$(analyze_sha256_required_files "$operation_file" "$recording_file" "$session_ownership_file" "$pilot_readiness_file")"
 
   local result reason
   if [[ "$(jq -r '.ok' <<< "$operation_json")" != "true" ]]; then
@@ -679,6 +746,12 @@ main() {
   elif [[ "$REQUIRE_SESSION_OWNERSHIP" == "1" && "$(jq -r '.ok' <<< "$session_ownership_json")" != "true" ]]; then
     result="invalid-session-ownership"
     reason="session ownership guard evidence is incomplete or leaks a sensitive marker"
+  elif [[ "$REQUIRE_PILOT_READINESS" == "1" && "$(jq -r '.status' <<< "$pilot_readiness_json")" == "missing" ]]; then
+    result="missing-pilot-readiness"
+    reason="pilot readiness summary proving expected endpoint agent version is required"
+  elif [[ "$REQUIRE_PILOT_READINESS" == "1" && "$(jq -r '.ok' <<< "$pilot_readiness_json")" != "true" ]]; then
+    result="invalid-pilot-readiness"
+    reason="pilot readiness summary does not prove ready-for-product-smoke with expected agent version"
   elif [[ "$REQUIRE_SHA256" == "1" && "$(jq -r '.status' <<< "$sha_json")" != "ok" ]]; then
     result="sha256-unverified"
     reason="SHA256SUMS is required but did not verify cleanly"
@@ -693,7 +766,15 @@ main() {
     reason="full #208 lifecycle/authz/replay/termination matrix is required but incomplete"
   else
     result="accepted-candidate"
-    reason="PERMIT, transport, redacted session ownership, recording, checksum, and required negative evidence are present"
+    if [[ "$REQUIRE_SESSION_OWNERSHIP" == "1" && "$REQUIRE_PILOT_READINESS" == "1" ]]; then
+      reason="PERMIT, transport, redacted session ownership, pilot readiness, recording, checksum, and required negative evidence are present"
+    elif [[ "$REQUIRE_SESSION_OWNERSHIP" == "1" ]]; then
+      reason="PERMIT, transport, redacted session ownership, recording, checksum, and required negative evidence are present"
+    elif [[ "$REQUIRE_PILOT_READINESS" == "1" ]]; then
+      reason="PERMIT, transport, pilot readiness, recording, checksum, and required negative evidence are present"
+    else
+      reason="PERMIT, transport, recording, checksum, and required negative evidence are present"
+    fi
   fi
 
   jq -n \
@@ -709,6 +790,7 @@ main() {
     --arg requireFullMatrix "$REQUIRE_FULL_MATRIX" \
     --arg requireSha256 "$REQUIRE_SHA256" \
     --arg requireSessionOwnership "$REQUIRE_SESSION_OWNERSHIP" \
+    --arg requirePilotReadiness "$REQUIRE_PILOT_READINESS" \
     --arg coreNegativesOk "$core_negatives_ok" \
     --arg fullMatrixOk "$full_matrix_ok" \
     --arg rawNegativeOk "$raw_negative_ok" \
@@ -723,6 +805,7 @@ main() {
     --argjson recording "$recording_json" \
     --argjson smokeSummary "$smoke_summary_json" \
     --argjson sessionOwnership "$session_ownership_json" \
+    --argjson pilotReadiness "$pilot_readiness_json" \
     --argjson sha256Manifest "$sha_json" \
     --argjson sha256RequiredFiles "$sha_required_json" \
     --argjson negativeChecks "$NEGATIVE_DETAILS" \
@@ -742,10 +825,12 @@ main() {
         requireNegatives: ($requireNegatives == "1"),
         requireFullMatrix: ($requireFullMatrix == "1"),
         requireSha256: ($requireSha256 == "1"),
-        requireSessionOwnership: ($requireSessionOwnership == "1")
+        requireSessionOwnership: ($requireSessionOwnership == "1"),
+        requirePilotReadiness: ($requirePilotReadiness == "1")
       },
       smokeSummary: $smokeSummary,
       sessionOwnership: $sessionOwnership,
+      pilotReadiness: $pilotReadiness,
       operation: $operation,
       recording: $recording,
       sha256Manifest: ($sha256Manifest + {requiredFiles: $sha256RequiredFiles}),
@@ -770,6 +855,7 @@ main() {
         "production remote-support readiness",
         "unrestricted shell/RDP/WinRM/SMB/SSH",
         "broker-side enforcement from the session ownership comment alone",
+        "fresh endpoint readiness beyond the captured pilot readiness timestamp",
         "true TPM/device-key hardware attestation unless platform-backend#548 is separately accepted",
         "full #208 Done state unless the full lifecycle/authz/replay/termination matrix is also attached and accepted"
       ]

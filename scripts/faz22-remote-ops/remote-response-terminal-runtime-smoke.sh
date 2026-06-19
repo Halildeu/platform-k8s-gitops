@@ -40,6 +40,7 @@ VERIFY_REQUIRE_ACCEPTED="${VERIFY_REQUIRE_ACCEPTED:-0}"
 VERIFY_REQUIRE_FULL_MATRIX="${VERIFY_REQUIRE_FULL_MATRIX:-0}"
 VERIFY_REQUIRE_SHA256="${VERIFY_REQUIRE_SHA256:-1}"
 VERIFY_REQUIRE_SESSION_OWNERSHIP="${VERIFY_REQUIRE_SESSION_OWNERSHIP:-1}"
+VERIFY_REQUIRE_PILOT_READINESS="${VERIFY_REQUIRE_PILOT_READINESS:-1}"
 
 TOKEN=""
 ACTIONS_JSON="[]"
@@ -105,7 +106,7 @@ sha256_manifest() {
       die "missing command: shasum or sha256sum"
     fi
     sums_file="$(mktemp "${TMPDIR:-/tmp}/rtt-runtime-smoke-sha256.XXXXXX")"
-    find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
+    find . -type f ! -name SHA256SUMS -print0 \
       | sort -z \
       | xargs -0 "${hasher[@]}" \
       > "$sums_file"
@@ -163,6 +164,7 @@ write_plan() {
       ],
       acceptedRuntimeEvidence: [
         "pilot endpoint heartbeat proves EndpointAgent v0.2.10",
+        "pilot-readiness/summary.json proves ready-for-product-smoke",
         "redacted live-session ownership guard output is present",
         "allowed catalog operation returns PERMIT with transportPushed=true",
         "recording/export contains AGENT_OUTPUT or DATA plus terminal EndStream",
@@ -299,6 +301,7 @@ run_verifier() {
     export REQUIRE_FULL_MATRIX="$VERIFY_REQUIRE_FULL_MATRIX"
     export REQUIRE_SHA256="$VERIFY_REQUIRE_SHA256"
     export REQUIRE_SESSION_OWNERSHIP="$VERIFY_REQUIRE_SESSION_OWNERSHIP"
+    export REQUIRE_PILOT_READINESS="$VERIFY_REQUIRE_PILOT_READINESS"
     if [[ "$OPERATION_SOURCE" == "catalog" ]]; then
       export EXPECTED_CATALOG_OPERATION_ID="$CATALOG_OPERATION_ID"
       export EXPECTED_APPROVED_SCRIPT_ID=""
@@ -403,6 +406,7 @@ main() {
   bool_env "$VERIFY_REQUIRE_FULL_MATRIX" VERIFY_REQUIRE_FULL_MATRIX
   bool_env "$VERIFY_REQUIRE_SHA256" VERIFY_REQUIRE_SHA256
   bool_env "$VERIFY_REQUIRE_SESSION_OWNERSHIP" VERIFY_REQUIRE_SESSION_OWNERSHIP
+  bool_env "$VERIFY_REQUIRE_PILOT_READINESS" VERIFY_REQUIRE_PILOT_READINESS
 
   mkdir -p "$EVIDENCE_DIR"
   write_plan

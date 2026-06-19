@@ -379,6 +379,9 @@ Default acceptance rules:
 - capability is `CONSTRAINED_PTY`;
 - the response is bound to a server-owned source
   (`catalogOperationId`, `approvedScript.scriptId`, or `permit.commandHash`);
+- pilot readiness evidence proves `decision=ready-for-product-smoke`,
+  artifact manifest `ok=true`, and the target endpoint reports the expected
+  agent release/version;
 - the redacted session ownership guard output is present and proves
   `REMOTE_RESPONSE_TERMINAL_SESSION_GUARD_STATUS=owned`;
 - the session ownership evidence contains only short SHA-derived session and
@@ -388,7 +391,8 @@ Default acceptance rules:
 - the recording export contains terminal `EndStream`;
 - core raw-shell and command/policy override negative evidence is present;
 - `SHA256SUMS` verifies cleanly and lists the required evidence files,
-  including `session-ownership-guard.out` when session ownership is required.
+  including `session-ownership-guard.out` and `pilot-readiness/summary.json`
+  when those requirements are enabled.
 
 Useful strict modes:
 
@@ -406,6 +410,12 @@ scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
 REQUIRE_SESSION_OWNERSHIP=0 \
 scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
 
+# Pilot readiness evidence is required by default for Remote Response Terminal
+# accepted candidates. Use this only to inspect legacy evidence that predates
+# the readiness verifier guard; do not use it for #208 acceptance.
+REQUIRE_PILOT_READINESS=0 \
+scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
+
 # Pin the expected catalog operation for one smoke.
 EXPECTED_CATALOG_OPERATION_ID=GET_HOSTNAME REQUIRE_ACCEPTED=1 \
 scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
@@ -413,9 +423,12 @@ scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
 
 Verifier decision values are intentionally bounded:
 
-- `accepted-candidate` means PERMIT, transport, redacted session ownership,
-  bounded output recording, core negative evidence, and checksum evidence are
-  present.
+- `accepted-candidate` means PERMIT, transport, pilot readiness, redacted
+  session ownership, bounded output recording, core negative evidence, and
+  checksum evidence are present.
+- `missing-pilot-readiness` or `invalid-pilot-readiness` means the bundle does
+  not prove an endpoint was already running the expected constrained-executor
+  artifact before the terminal smoke.
 - `missing-session-ownership` or `invalid-session-ownership` means the bundle
   does not prove the single-owner live-smoke coordination guard.
 - `missing-permit`, `missing-transport-push`, `missing-permit-signature`,
@@ -514,6 +527,8 @@ opt-in, a session id, and an operator token file:
 
 ```bash
 LIVE_OPERATION=1 \
+RUN_PILOT_READINESS=1 \
+PILOT_REQUIRE_READY=1 \
 RUN_OPERATION=1 \
 RUN_RECORDING_EXPORT=1 \
 RUN_VERIFY=1 \
@@ -530,6 +545,8 @@ querying PostgreSQL over SSH:
 
 ```bash
 LIVE_OPERATION=1 \
+RUN_PILOT_READINESS=1 \
+PILOT_REQUIRE_READY=1 \
 RUN_OPERATION=1 \
 RUN_RECORDING_EXPORT=1 \
 RUN_VERIFY=1 \
@@ -544,6 +561,8 @@ Strict candidate mode should be used for a #208 evidence comment:
 
 ```bash
 LIVE_OPERATION=1 \
+RUN_PILOT_READINESS=1 \
+PILOT_REQUIRE_READY=1 \
 RUN_OPERATION=1 \
 RUN_RECORDING_EXPORT=1 \
 RUN_VERIFY=1 \
@@ -558,6 +577,10 @@ scripts/faz22-remote-ops/remote-response-terminal-runtime-smoke.sh
 
 The orchestrator refuses `RUN_OPERATION=1` unless `LIVE_OPERATION=1` is set.
 It keeps bearer values out of argv examples and evidence by using token files.
+For #208 acceptance, keep `RUN_PILOT_READINESS=1 PILOT_REQUIRE_READY=1` so the
+evidence bundle contains `pilot-readiness/summary.json` with
+`decision=ready-for-product-smoke`; the verifier requires that file by default
+for `accepted-candidate`.
 When live operation is run with the default `SESSION_OWNER_REQUIRED=1`, it
 writes `session-ownership-guard.out`; the verifier requires that file by
 default for `accepted-candidate`.
