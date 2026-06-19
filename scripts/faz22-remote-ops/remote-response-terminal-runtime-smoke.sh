@@ -44,6 +44,7 @@ VERIFY_REQUIRE_SHA256="${VERIFY_REQUIRE_SHA256:-1}"
 VERIFY_REQUIRE_SESSION_OWNERSHIP="${VERIFY_REQUIRE_SESSION_OWNERSHIP:-1}"
 VERIFY_REQUIRE_PILOT_READINESS="${VERIFY_REQUIRE_PILOT_READINESS:-1}"
 VERIFY_REQUIRE_GOVERNANCE_EVIDENCE="${VERIFY_REQUIRE_GOVERNANCE_EVIDENCE:-1}"
+VERIFY_REQUIRE_EVIDENCE_REDACTION="${VERIFY_REQUIRE_EVIDENCE_REDACTION:-1}"
 
 TOKEN=""
 ACTIONS_JSON="[]"
@@ -136,6 +137,7 @@ write_plan() {
     --arg sessionOwnerEndpointSet "$([[ -n "$SESSION_OWNER_ENDPOINT_ID" ]] && printf true || printf false)" \
     --arg sourceGovernanceSet "$([[ -n "$SOURCE_GOVERNANCE_FILE" ]] && printf true || printf false)" \
     --arg verifyRequireGovernance "$VERIFY_REQUIRE_GOVERNANCE_EVIDENCE" \
+    --arg verifyRequireRedaction "$VERIFY_REQUIRE_EVIDENCE_REDACTION" \
     --arg sessionPresent "$([[ -n "$REMOTE_BRIDGE_SESSION_ID" ]] && printf true || printf false)" \
     '{
       generatedAt: $generatedAt,
@@ -154,6 +156,10 @@ write_plan() {
         expectedFile: "governance-evidence.json",
         generatedByOrchestrator: ($runGovernanceExport == "1"),
         sourceGovernanceFileSet: ($sourceGovernanceSet == "true")
+      },
+      evidenceRedaction: {
+        requiredForAcceptedCandidate: ($verifyRequireRedaction == "1"),
+        reportsMatchedValues: false
       },
       requestedActions: {
         pilotReadiness: ($runPilotReadiness == "1"),
@@ -180,6 +186,7 @@ write_plan() {
         "pilot-readiness/summary.json proves ready-for-product-smoke",
         "redacted live-session ownership guard output is present",
         "governance-evidence.json proves dual-control, step-up, ticket, justification, and fail-closed recording policy",
+        "evidence redaction scan reports no high-confidence sensitive marker classes",
         "allowed catalog operation returns PERMIT with transportPushed=true",
         "recording/export contains AGENT_OUTPUT or DATA plus terminal EndStream",
         "core raw/unrestricted and command/policy override denies are present",
@@ -330,6 +337,7 @@ run_verifier() {
     export REQUIRE_SESSION_OWNERSHIP="$VERIFY_REQUIRE_SESSION_OWNERSHIP"
     export REQUIRE_PILOT_READINESS="$VERIFY_REQUIRE_PILOT_READINESS"
     export REQUIRE_GOVERNANCE_EVIDENCE="$VERIFY_REQUIRE_GOVERNANCE_EVIDENCE"
+    export REQUIRE_EVIDENCE_REDACTION="$VERIFY_REQUIRE_EVIDENCE_REDACTION"
     if [[ "$OPERATION_SOURCE" == "catalog" ]]; then
       export EXPECTED_CATALOG_OPERATION_ID="$CATALOG_OPERATION_ID"
       export EXPECTED_APPROVED_SCRIPT_ID=""
@@ -409,6 +417,7 @@ write_summary() {
       acceptedNextEvidence: [
         "post-update heartbeat proving EndpointAgent v0.2.10",
         "governance-evidence.json proving dual-control, step-up, ticket, justification, and fail-closed recording policy",
+        "evidence redaction scan with no sensitive marker findings",
         "catalog operation PERMIT with transportPushed=true",
         "AGENT_OUTPUT or DATA plus EndStream in recording export",
         "raw/unrestricted and command/policy override negative evidence",
@@ -443,6 +452,7 @@ main() {
   bool_env "$VERIFY_REQUIRE_SESSION_OWNERSHIP" VERIFY_REQUIRE_SESSION_OWNERSHIP
   bool_env "$VERIFY_REQUIRE_PILOT_READINESS" VERIFY_REQUIRE_PILOT_READINESS
   bool_env "$VERIFY_REQUIRE_GOVERNANCE_EVIDENCE" VERIFY_REQUIRE_GOVERNANCE_EVIDENCE
+  bool_env "$VERIFY_REQUIRE_EVIDENCE_REDACTION" VERIFY_REQUIRE_EVIDENCE_REDACTION
 
   mkdir -p "$EVIDENCE_DIR"
   write_plan

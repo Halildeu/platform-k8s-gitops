@@ -31,8 +31,11 @@ REQUIRE_ACCEPTED="${REQUIRE_ACCEPTED:-0}"
 REQUIRE_SESSION_OWNERSHIP="${REQUIRE_SESSION_OWNERSHIP:-1}"
 REQUIRE_PILOT_READINESS="${REQUIRE_PILOT_READINESS:-1}"
 REQUIRE_GOVERNANCE_EVIDENCE="${REQUIRE_GOVERNANCE_EVIDENCE:-1}"
+REQUIRE_EVIDENCE_REDACTION="${REQUIRE_EVIDENCE_REDACTION:-1}"
 
 NEGATIVE_DETAILS="[]"
+REDACTION_SCAN_FILES="[]"
+REDACTION_FINDINGS="[]"
 
 die() {
   printf 'ERR %s\n' "$*" >&2
@@ -552,6 +555,135 @@ analyze_governance_evidence() {
       )' "$file"
 }
 
+redaction_add_scan_file() {
+  local file="$1" rel
+  [[ -n "$file" && -f "$file" ]] || return 0
+  rel="$(relpath "$file")"
+
+  case "$rel" in
+    SHA256SUMS|verification-summary.json|runtime-smoke-plan.json|governance-evidence-summary.json|recording-summary.json|binary-headers.txt|port-forward.log)
+      return 0
+      ;;
+  esac
+
+  REDACTION_SCAN_FILES="$(jq -cn \
+    --argjson arr "$REDACTION_SCAN_FILES" \
+    --arg file "$rel" \
+    'if any($arr[]; . == $file) then $arr else $arr + [$file] end')"
+}
+
+redaction_add_discovered_files() {
+  local file
+  while IFS= read -r -d '' file; do
+    redaction_add_scan_file "$file"
+  done < <(find "$EVIDENCE_DIR" -type f \( \
+      -name '*.body' \
+      -o -name '*.request.json' \
+      -o -name '*.request' \
+      -o -name '*.jsonl' \
+      -o -name '*.tsv' \
+      -o -name '*.psv' \
+      -o -name '*.csv' \
+      -o -name 'session-ownership*.out' \
+      -o -name 'live-session-owner.out' \
+    \) -print0)
+}
+
+redaction_record_finding() {
+  local file="$1" marker_class="$2"
+  REDACTION_FINDINGS="$(jq -cn \
+    --argjson arr "$REDACTION_FINDINGS" \
+    --arg file "$file" \
+    --arg markerClass "$marker_class" \
+    '$arr + [{file: $file, markerClass: $markerClass}]')"
+}
+
+redaction_scan_marker() {
+  local rel="$1" file="$2" marker_class="$3" pattern="$4"
+  if LC_ALL=C grep -Eiq -- "$pattern" "$file"; then
+    redaction_record_finding "$rel" "$marker_class"
+  fi
+}
+
+redaction_scan_file() {
+  local rel="$1"
+  local file="${EVIDENCE_DIR}/${rel}"
+  [[ -f "$file" ]] || return 0
+
+  redaction_scan_marker "$rel" "$file" "bearer-token" \
+    'Bearer[[:space:]]+[A-Za-z0-9._~+/=-]{10,}'
+  redaction_scan_marker "$rel" "$file" "authorization-header" \
+    'Authorization[[:space:]]*:[[:space:]]*Bearer[[:space:]]+[A-Za-z0-9._~+/=-]{10,}'
+  redaction_scan_marker "$rel" "$file" "jwt" \
+    'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+  redaction_scan_marker "$rel" "$file" "oauth-token" \
+    '(access_token|refresh_token)[[:space:]]*[:=][[:space:]]*["'\'']?[A-Za-z0-9._~+/=-]{16,}'
+  redaction_scan_marker "$rel" "$file" "client-secret" \
+    '(client_secret|secret_key|api_key)[[:space:]]*[:=][[:space:]]*["'\'']?[A-Za-z0-9._~+/=-]{16,}'
+  redaction_scan_marker "$rel" "$file" "private-key" \
+    '-----BEGIN ((RSA|EC|OPENSSH)[[:space:]])?PRIVATE KEY-----|"privateKey"[[:space:]]*:[[:space:]]*"[^"<]{20,}"'
+  redaction_scan_marker "$rel" "$file" "operator-token-env" \
+    'OPERATOR_BEARER_TOKEN[[:space:]]*[:=][[:space:]]*["'\'']?[A-Za-z0-9._~+/=-]{16,}'
+  redaction_scan_marker "$rel" "$file" "session-secret" \
+    '("?(REMOTE_BRIDGE_SESSION_ID|remoteBridgeSessionId|remote_bridge_session_id|session_token|session_secret|session_key)"?[[:space:]]*[:=][[:space:]]*["'\'']?[A-Za-z0-9._:-]{12,})'
+  redaction_scan_marker "$rel" "$file" "pg-credential" \
+    'PGPASSWORD[[:space:]]*=|postgresql://[^[:space:]@/]+:[^[:space:]@]+@'
+}
+
+analyze_evidence_redaction() {
+  local file rel scanned_count finding_count ok="true" status="ok" reason="no-sensitive-marker-detected"
+  REDACTION_SCAN_FILES="[]"
+  REDACTION_FINDINGS="[]"
+
+  for file in "$@"; do
+    redaction_add_scan_file "$file"
+  done
+
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    redaction_add_scan_file "${EVIDENCE_DIR}/${rel}"
+  done < <(jq -r '.[] | select(.file != null) | .file' <<< "$NEGATIVE_DETAILS")
+
+  redaction_add_discovered_files
+
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    redaction_scan_file "$rel"
+  done < <(jq -r '.[]' <<< "$REDACTION_SCAN_FILES")
+
+  scanned_count="$(jq 'length' <<< "$REDACTION_SCAN_FILES")"
+  finding_count="$(jq 'length' <<< "$REDACTION_FINDINGS")"
+
+  if [[ "$finding_count" != "0" ]]; then
+    ok="false"
+    status="finding"
+    reason="evidence-bundle-contains-sensitive-marker"
+  elif [[ "$scanned_count" == "0" ]]; then
+    status="no-files-scanned"
+    reason="no-verifier-relevant-files-found-for-redaction-scan"
+  fi
+
+  jq -cn \
+    --arg required "$REQUIRE_EVIDENCE_REDACTION" \
+    --arg ok "$ok" \
+    --arg status "$status" \
+    --arg reason "$reason" \
+    --arg scannedCount "$scanned_count" \
+    --arg findingCount "$finding_count" \
+    --argjson scannedFiles "$REDACTION_SCAN_FILES" \
+    --argjson findings "$REDACTION_FINDINGS" \
+    '{
+      required: ($required == "1"),
+      ok: ($ok == "true"),
+      status: $status,
+      reason: $reason,
+      scannedFilesCount: ($scannedCount | tonumber),
+      findingCount: ($findingCount | tonumber),
+      scannedFiles: $scannedFiles,
+      findings: $findings
+    }'
+}
+
 analyze_operation_body() {
   local file="$1"
   if [[ -z "$file" ]]; then
@@ -727,6 +859,7 @@ main() {
   need_cmd head
   need_cmd grep
   need_cmd sed
+  need_cmd find
 
   [[ -d "$EVIDENCE_DIR" ]] || die "EVIDENCE_DIR is not a directory: $EVIDENCE_DIR"
 
@@ -746,7 +879,7 @@ main() {
   validate_file_under_evidence_dir "$pilot_readiness_file" "pilot readiness"
   validate_file_under_evidence_dir "$governance_evidence_file" "governance evidence"
 
-  local sha_json operation_json recording_json smoke_summary_json session_ownership_json pilot_readiness_json governance_evidence_json
+  local sha_json operation_json recording_json smoke_summary_json session_ownership_json pilot_readiness_json governance_evidence_json evidence_redaction_json
   sha_json="$(analyze_sha256_manifest)"
   operation_json="$(analyze_operation_body "$operation_file")"
   recording_json="$(analyze_recording_rows "$recording_file")"
@@ -838,6 +971,14 @@ main() {
     full_matrix_ok="true"
   fi
 
+  evidence_redaction_json="$(analyze_evidence_redaction \
+    "$operation_file" \
+    "$recording_file" \
+    "$smoke_summary_file" \
+    "$session_ownership_file" \
+    "$pilot_readiness_file" \
+    "$governance_evidence_file")"
+
   local sha_required_json
   sha_required_json="$(analyze_sha256_required_files "$operation_file" "$recording_file" "$session_ownership_file" "$pilot_readiness_file" "$governance_evidence_file")"
 
@@ -869,6 +1010,9 @@ main() {
   elif [[ "$REQUIRE_GOVERNANCE_EVIDENCE" == "1" && "$(jq -r '.ok' <<< "$governance_evidence_json")" != "true" ]]; then
     result="invalid-governance-evidence"
     reason="governance evidence is incomplete, self-approved, lacks step-up/ticket/recording policy, or leaks a sensitive marker"
+  elif [[ "$REQUIRE_EVIDENCE_REDACTION" == "1" && "$(jq -r '.ok' <<< "$evidence_redaction_json")" != "true" ]]; then
+    result="sensitive-evidence-marker"
+    reason="evidence bundle contains sensitive marker classes; redact before accepted candidate"
   elif [[ "$REQUIRE_SHA256" == "1" && "$(jq -r '.status' <<< "$sha_json")" != "ok" ]]; then
     result="sha256-unverified"
     reason="SHA256SUMS is required but did not verify cleanly"
@@ -893,6 +1037,9 @@ main() {
     if [[ "$REQUIRE_GOVERNANCE_EVIDENCE" == "1" ]]; then
       reason="${reason}, governance evidence"
     fi
+    if [[ "$REQUIRE_EVIDENCE_REDACTION" == "1" ]]; then
+      reason="${reason}, redaction guard"
+    fi
     reason="${reason}, recording, checksum, and required negative evidence are present"
   fi
 
@@ -911,6 +1058,7 @@ main() {
     --arg requireSessionOwnership "$REQUIRE_SESSION_OWNERSHIP" \
     --arg requirePilotReadiness "$REQUIRE_PILOT_READINESS" \
     --arg requireGovernanceEvidence "$REQUIRE_GOVERNANCE_EVIDENCE" \
+    --arg requireEvidenceRedaction "$REQUIRE_EVIDENCE_REDACTION" \
     --arg coreNegativesOk "$core_negatives_ok" \
     --arg fullMatrixOk "$full_matrix_ok" \
     --arg rawNegativeOk "$raw_negative_ok" \
@@ -927,6 +1075,7 @@ main() {
     --argjson sessionOwnership "$session_ownership_json" \
     --argjson pilotReadiness "$pilot_readiness_json" \
     --argjson governanceEvidence "$governance_evidence_json" \
+    --argjson evidenceRedaction "$evidence_redaction_json" \
     --argjson sha256Manifest "$sha_json" \
     --argjson sha256RequiredFiles "$sha_required_json" \
     --argjson negativeChecks "$NEGATIVE_DETAILS" \
@@ -948,12 +1097,14 @@ main() {
         requireSha256: ($requireSha256 == "1"),
         requireSessionOwnership: ($requireSessionOwnership == "1"),
         requirePilotReadiness: ($requirePilotReadiness == "1"),
-        requireGovernanceEvidence: ($requireGovernanceEvidence == "1")
+        requireGovernanceEvidence: ($requireGovernanceEvidence == "1"),
+        requireEvidenceRedaction: ($requireEvidenceRedaction == "1")
       },
       smokeSummary: $smokeSummary,
       sessionOwnership: $sessionOwnership,
       pilotReadiness: $pilotReadiness,
       governanceEvidence: $governanceEvidence,
+      evidenceRedaction: $evidenceRedaction,
       operation: $operation,
       recording: $recording,
       sha256Manifest: ($sha256Manifest + {requiredFiles: $sha256RequiredFiles}),
@@ -979,6 +1130,7 @@ main() {
         "unrestricted shell/RDP/WinRM/SMB/SSH",
         "broker-side enforcement from the session ownership comment alone",
         "operator identity beyond the captured governance evidence",
+        "absence of all possible secrets beyond the configured high-confidence evidence redaction scan",
         "fresh endpoint readiness beyond the captured pilot readiness timestamp",
         "true TPM/device-key hardware attestation unless platform-backend#548 is separately accepted",
         "full #208 Done state unless the full lifecycle/authz/replay/termination matrix is also attached and accepted"
