@@ -534,23 +534,21 @@ corp-share path and must not be linked domain-wide.
 
 ## Files
 
-- `assets/$msiFileName` - signed MSI, present only when generated with `-DownloadAssets`.
-- `assets/$manifestFileName` - trusted signing manifest, present only when generated with `-DownloadAssets`.
-- `scripts/install-endpoint-agent-gpo-msi.ps1` - GPO startup install script.
-- `scripts/verify-endpoint-agent-gpo-msi.ps1` - postinstall evidence wrapper.
-- `scripts/rollback-endpoint-agent-gpo-msi.ps1` - MSI uninstall + rollback-clean evidence helper.
-- `scripts/wave-preflight.ps1` - read-only preflight/health/rollback check.
-- `scripts/collect-endpoint-agent-rollout-evidence.ps1` - redacted per-device collector.
-- `scripts/m5-same-day-pilot-collector.ps1` - same-day pilot checkpoint collector.
-- `scripts/m7-rollback-rehearsal-collector.ps1` - rollback rehearsal collector.
+- assets/$msiFileName - signed MSI, present only when generated with -DownloadAssets.
+- assets/$manifestFileName - trusted signing manifest, present only when generated with -DownloadAssets.
+- scripts/install-endpoint-agent-gpo-msi.ps1 - GPO startup install script.
+- scripts/verify-endpoint-agent-gpo-msi.ps1 - postinstall evidence wrapper.
+- scripts/rollback-endpoint-agent-gpo-msi.ps1 - MSI uninstall + rollback-clean evidence helper.
+- scripts/wave-preflight.ps1 - read-only preflight/health/rollback check.
+- scripts/collect-endpoint-agent-rollout-evidence.ps1 - redacted per-device collector.
+- scripts/m5-same-day-pilot-collector.ps1 - same-day pilot checkpoint collector.
+- scripts/m7-rollback-rehearsal-collector.ps1 - rollback rehearsal collector.
 
 ## GPO startup command
 
 Use a pilot-only GPO startup PowerShell script entry that points to:
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "\\<pilot-share>\EndpointAgent1680\scripts\install-endpoint-agent-gpo-msi.ps1"
-```
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "\\<pilot-share>\EndpointAgent1680\scripts\install-endpoint-agent-gpo-msi.ps1"
 
 Do not put raw enrollment tokens, JWTs, passwords, private keys, or bearer
 values in this bundle, a GPO script, an MST, or issue comments.
@@ -558,7 +556,7 @@ values in this bundle, a GPO script, an MST, or issue comments.
 ## Acceptance boundary
 
 Generating this bundle does not satisfy #1680. #1680 still needs constrained
-pilot targeting, two managed PCs installed/upgraded through `gpo-msi`, per-device
+pilot targeting, two managed PCs installed/upgraded through gpo-msi, per-device
 service/restart/mTLS evidence, one rollback drill, failure triage, and Project
 status evidence.
 "@
