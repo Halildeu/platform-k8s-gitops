@@ -286,6 +286,92 @@ Set `REQUIRE_READY=1` when a CI/operator wrapper should fail unless the target
 endpoint already reports the expected agent version. The helper is not an
 installer and does not dispatch operations.
 
+### 6.2 Runtime Evidence Verifier For 22.6.3
+
+After the product-channel constrained operation smoke is captured, verify the
+evidence bundle before posting it as `platform-agent#208` runtime evidence:
+
+```bash
+EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal \
+REQUIRE_ACCEPTED=1 \
+scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
+```
+
+The verifier is read-only against the platform. It does not open a session,
+dispatch an operation, read the staging database, mutate Kubernetes, update
+GitOps desired-state, or touch the endpoint. It only consumes files already
+captured under `EVIDENCE_DIR` and writes `verification-summary.json`.
+
+Accepted input names:
+
+- allowed operation response:
+  `catalog-operation.body`, `approved-script-operation.body`,
+  `terminal-operation.body`, `response-terminal-operation.body`,
+  `operation.body`, or `permit.body`;
+- recording export:
+  `session-recording.jsonl`, `recording.jsonl`,
+  `remote-bridge-recording.jsonl`, `agent-output.jsonl`,
+  `session-recording.tsv`, `recording.tsv`, `session-recording.psv`,
+  `recording.psv`, `session-recording.csv`, or `recording.csv`;
+- core negative evidence:
+  `raw-pty-deny.body` or equivalent raw/unrestricted deny file, plus
+  `command-override-deny.body` or equivalent command/policy override deny file;
+- optional wider matrix evidence:
+  disabled/revoked operation denies, no-auth/role/step-up denies, expired
+  permit, wrong device/tenant, replay, heartbeat-loss, and revoke/kill
+  evidence;
+- `SHA256SUMS` for evidence integrity.
+
+Default acceptance rules:
+
+- the allowed response must be `PERMIT`;
+- `transportPushed=true`;
+- `deny` is absent/null;
+- permit signature metadata is present;
+- capability is `CONSTRAINED_PTY`;
+- the response is bound to a server-owned source
+  (`catalogOperationId`, `approvedScript.scriptId`, or `permit.commandHash`);
+- the recording export contains `AGENT_OUTPUT` or equivalent `DATA`;
+- the recording export contains terminal `EndStream`;
+- core raw-shell and command/policy override negative evidence is present;
+- `SHA256SUMS` verifies cleanly.
+
+Useful strict modes:
+
+```bash
+# Fail unless the bounded runtime evidence is an accepted candidate.
+REQUIRE_ACCEPTED=1 scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
+
+# Also fail unless broader lifecycle/authz/replay/termination evidence is present.
+REQUIRE_ACCEPTED=1 REQUIRE_FULL_MATRIX=1 \
+scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
+
+# Pin the expected catalog operation for one smoke.
+EXPECTED_CATALOG_OPERATION_ID=GET_HOSTNAME REQUIRE_ACCEPTED=1 \
+scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
+```
+
+Verifier decision values are intentionally bounded:
+
+- `accepted-candidate` means PERMIT, transport, bounded output recording, core
+  negative evidence, and checksum evidence are present.
+- `missing-permit`, `missing-transport-push`, `missing-permit-signature`,
+  `wrong-capability`, or `missing-server-owned-source-binding` mean the allowed
+  operation response cannot prove the product-channel constrained path.
+- `recording-unavailable`, `missing-agent-output`, or `missing-end-stream` mean
+  the endpoint output path is not proven.
+- `sha256-unverified` means evidence integrity was not proven.
+- `missing-negative` means the core deny evidence is absent.
+- `missing-full-negative-matrix` means `REQUIRE_FULL_MATRIX=1` was requested but
+  lifecycle/authz/replay/termination evidence is still incomplete.
+
+`accepted-candidate` is not `Done` for `platform-agent#208` by itself. It does
+not prove signed MSI/GPO rollout, 5-PC/50-PC/800-PC readiness, production
+support readiness, unrestricted shell safety, or true TPM/device-key
+hardware-attestation. The #208 `Done` transition still requires the accepted
+evidence comment to name the remaining acceptance items and the owner to accept
+the lifecycle/authz/replay/termination boundary that was actually proven.
+
 ## 7. Acceptance Checklist
 
 Required evidence per lane:
