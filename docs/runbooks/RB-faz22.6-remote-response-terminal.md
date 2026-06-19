@@ -286,6 +286,52 @@ Set `REQUIRE_READY=1` when a CI/operator wrapper should fail unless the target
 endpoint already reports the expected agent version. The helper is not an
 installer and does not dispatch operations.
 
+Operator-safe helper for the catalog-bound `UPDATE_AGENT` seed path:
+
+```bash
+EVIDENCE_DIR=/tmp/remote-response-terminal-update-agent-seed-$(date -u +%Y%m%dT%H%M%SZ) \
+scripts/faz22-remote-ops/remote-response-terminal-update-agent-seed.sh
+```
+
+Default mode is plan-only and performs no live mutation. It writes the planned
+release-catalog payload, planned dispatch payload, a negative-dispatch payload,
+the public release manifest, redacted binary URL headers, `binary-sha256.json`,
+`summary.json`, and `SHA256SUMS`. It also downloads the loose signed
+`endpoint-agent.exe` to a temporary file, validates the SHA256, then removes the
+temporary binary.
+
+Create/approve the `v0.2.10` release row only after a manager JWT and a second
+maker-checker subject are available:
+
+```bash
+LIVE_MUTATION=1 \
+RUN_CREATE=1 \
+RUN_APPROVE=1 \
+CREATOR_BEARER_TOKEN_FILE=/secure/path/creator.jwt \
+APPROVER_BEARER_TOKEN_FILE=/secure/path/approver.jwt \
+EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-update-agent-seed \
+scripts/faz22-remote-ops/remote-response-terminal-update-agent-seed.sh
+```
+
+Dispatch to a pilot endpoint only after the release row is
+`APPROVED`+enabled. Keep JWTs in token files, not command-line env values:
+
+```bash
+LIVE_MUTATION=1 \
+RUN_NEGATIVE_DISPATCH=1 \
+RUN_DISPATCH=1 \
+DISPATCH_BEARER_TOKEN_FILE=/secure/path/dispatcher.jwt \
+TARGET_DEVICE_ID=d0efb00a-681a-4e32-b7de-a27ef94f2977 \
+TARGET_DEVICE_HOSTNAME=HALILKOOLUB735 \
+EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-update-agent-dispatch \
+scripts/faz22-remote-ops/remote-response-terminal-update-agent-seed.sh
+```
+
+The helper refuses all `RUN_*` actions unless `LIVE_MUTATION=1` is set. It does
+not prove `platform-agent#208` acceptance by itself. After dispatch, rerun the
+pilot readiness helper with `REQUIRE_READY=1`; only a fresh post-update
+heartbeat proving `v0.2.10` can unlock the constrained-terminal product smoke.
+
 ### 6.2 Runtime Evidence Verifier For 22.6.3
 
 After the product-channel constrained operation smoke is captured, verify the
