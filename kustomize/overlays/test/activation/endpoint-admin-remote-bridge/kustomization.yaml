@@ -38,8 +38,13 @@
 #   - immutable test digest includes platform-backend#702 via #709
 #     (`6b8bac8090824968fe31da824a855c3ef59912db`) so #1705 can smoke the
 #     approved-script catalog path through the same owner-gated broker lane.
+#   - immutable test digest includes platform-backend#710/#711
+#     (`3216a6b599a1f41b93b7c9b35a1ed4a3b26eabab`) so #710 can smoke the
+#     explicit operator close/reopen lifecycle path through the same
+#     owner-gated broker lane instead of testing the older approved-script
+#     broker image.
 #   - immutable test digest:
-#     sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb
+#     sha256:1c8ec2d19a8a03a1c08342c6c316b88d68bd85713d417bd9bad95401ed043fb0
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -81,6 +86,9 @@ images:
   # connected-peer resolver code.
   # Re-pinned for #1705 after backend #709 merged, so the activation path
   # uses the same Approved Script Runner image as the primary test overlay.
+  # Re-pinned for backend #710/#711 after the primary test overlay moved to
+  # sha-3216a6b5, so owner-gated broker-path close/reopen smoke does not run
+  # on the older approved-script-only broker image.
   # Merge-order guard: draft PR #1652 also touches this activation overlay and
   # carries the older sha256:3950a612... digest. If #1652 is resumed after this
   # PR, rebase it onto this digest before merge/apply; do not downgrade.
@@ -91,4 +99,4 @@ images:
   # verification.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb
+    digest: sha256:1c8ec2d19a8a03a1c08342c6c316b88d68bd85713d417bd9bad95401ed043fb0
