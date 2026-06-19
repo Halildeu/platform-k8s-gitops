@@ -158,7 +158,7 @@ write_summary() {
 sha256_manifest() {
   (
     cd "$EVIDENCE_DIR"
-    local hasher=()
+    local hasher=() sums_file
     if command -v shasum >/dev/null 2>&1; then
       hasher=(shasum -a 256)
     elif command -v sha256sum >/dev/null 2>&1; then
@@ -166,10 +166,12 @@ sha256_manifest() {
     else
       die "missing command: shasum or sha256sum"
     fi
+    sums_file="$(mktemp "${TMPDIR:-/tmp}/rtt-recording-sha256.XXXXXX")"
     find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
       | sort -z \
       | xargs -0 "${hasher[@]}" \
-      > SHA256SUMS
+      > "$sums_file"
+    mv "$sums_file" SHA256SUMS
   )
 }
 

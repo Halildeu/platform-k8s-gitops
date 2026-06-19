@@ -305,10 +305,13 @@ limit 30;"
 
   (
     cd "$EVIDENCE_DIR"
+    local sums_file
+    sums_file="$(mktemp "${TMPDIR:-/tmp}/rtt-pilot-readiness-sha256.XXXXXX")"
     find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
       | sort -z \
       | xargs -0 shasum -a 256 \
-      > SHA256SUMS
+      > "$sums_file"
+    mv "$sums_file" SHA256SUMS
   )
 
   printf 'INFO evidence_dir=%s\n' "$EVIDENCE_DIR"

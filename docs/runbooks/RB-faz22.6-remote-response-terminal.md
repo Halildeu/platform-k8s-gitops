@@ -475,6 +475,78 @@ scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh \
   /home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal
 ```
 
+### 6.4 Runtime Smoke Orchestrator For 22.6.3
+
+Use the runtime smoke orchestrator when the pilot endpoint already reports
+`v0.2.10` and an owned, approved, step-up-verified remote-bridge session id is
+available. The orchestrator composes the existing product-path helpers; it does
+not invent a new API and does not bypass the catalog/approved-script,
+recording, or verifier boundaries.
+
+Default mode is plan-only and dispatches nothing:
+
+```bash
+EVIDENCE_DIR=/tmp/remote-response-terminal-runtime-smoke-$(date -u +%Y%m%dT%H%M%SZ) \
+scripts/faz22-remote-ops/remote-response-terminal-runtime-smoke.sh
+```
+
+The default output is useful for handoff/inspection, but it is not #208
+runtime evidence. It writes `runtime-smoke-plan.json`, `summary.json`, and
+`SHA256SUMS` with `status=plan-ready-no-operation`.
+
+Run the allowed catalog operation path only with explicit live-operation
+opt-in, a session id, and an operator token file:
+
+```bash
+LIVE_OPERATION=1 \
+RUN_OPERATION=1 \
+RUN_RECORDING_EXPORT=1 \
+RUN_VERIFY=1 \
+OPERATOR_BEARER_TOKEN_FILE=/secure/path/operator.jwt \
+REMOTE_BRIDGE_SESSION_ID=<fresh-owned-step-up-verified-session> \
+CATALOG_OPERATION_ID=GET_HOSTNAME \
+STAGING_SSH_TARGET=halil@staging-sw \
+EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal \
+scripts/faz22-remote-ops/remote-response-terminal-runtime-smoke.sh
+```
+
+If the recording rows have already been exported, reuse that file instead of
+querying PostgreSQL over SSH:
+
+```bash
+LIVE_OPERATION=1 \
+RUN_OPERATION=1 \
+RUN_RECORDING_EXPORT=1 \
+RUN_VERIFY=1 \
+OPERATOR_BEARER_TOKEN_FILE=/secure/path/operator.jwt \
+REMOTE_BRIDGE_SESSION_ID=<fresh-owned-step-up-verified-session> \
+SOURCE_RECORDING_ROWS_FILE=/path/to/session-recording.jsonl \
+EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal \
+scripts/faz22-remote-ops/remote-response-terminal-runtime-smoke.sh
+```
+
+Strict candidate mode should be used for a #208 evidence comment:
+
+```bash
+LIVE_OPERATION=1 \
+RUN_OPERATION=1 \
+RUN_RECORDING_EXPORT=1 \
+RUN_VERIFY=1 \
+VERIFY_REQUIRE_ACCEPTED=1 \
+OPERATOR_BEARER_TOKEN_FILE=/secure/path/operator.jwt \
+REMOTE_BRIDGE_SESSION_ID=<fresh-owned-step-up-verified-session> \
+CATALOG_OPERATION_ID=GET_HOSTNAME \
+STAGING_SSH_TARGET=halil@staging-sw \
+EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal \
+scripts/faz22-remote-ops/remote-response-terminal-runtime-smoke.sh
+```
+
+The orchestrator refuses `RUN_OPERATION=1` unless `LIVE_OPERATION=1` is set.
+It keeps bearer values out of argv examples and evidence by using token files.
+It does not prove that the endpoint is already on `v0.2.10`; run pilot
+readiness first or set `RUN_PILOT_READINESS=1 PILOT_REQUIRE_READY=1` to fail
+unless that precondition is true.
+
 ## 7. Acceptance Checklist
 
 Required evidence per lane:
