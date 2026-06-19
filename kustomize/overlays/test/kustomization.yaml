@@ -5174,7 +5174,15 @@ images:
     # Image build run 27789316995 produced endpoint-admin-service
     # sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb.
     # Runtime acceptance remains gated by #1705 deploy + approved-script smoke.
-    digest: sha256:9645ad4a14107e4a7e12196734eb67a8b618b553876ca01b22a6c2eb7e06caeb
+    # 2026-06-19 Faz 22.6.x #710 session lifecycle close/reopen hardening
+    # (backend #710 / PR #711 -> sha-3216a6b). This binds operator identity
+    # into explicit session-close audit without storing raw operator subject
+    # and keeps audit+close transition under the session lock. Image build
+    # run 27797068414 produced endpoint-admin-service
+    # sha256:1c8ec2d19a8a03a1c08342c6c316b88d68bd85713d417bd9bad95401ed043fb0.
+    # Runtime acceptance remains gated by platform-test sync plus close/reopen
+    # product smoke; this line is only desired-state artifact promotion.
+    digest: sha256:1c8ec2d19a8a03a1c08342c6c316b88d68bd85713d417bd9bad95401ed043fb0
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
