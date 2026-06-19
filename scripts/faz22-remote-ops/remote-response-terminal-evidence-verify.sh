@@ -250,6 +250,60 @@ analyze_sha256_manifest() {
     '{required: ($required == "1"), status: $status, logExcerpt: $logExcerpt}'
 }
 
+sha256_manifest_covers_relpath() {
+  local rel="$1" sums_file="${EVIDENCE_DIR}/SHA256SUMS"
+  rel="${rel#./}"
+  [[ -f "$sums_file" ]] || return 1
+  awk -v rel="$rel" '
+    {
+      path = $0
+      sub(/^[^[:space:]]+[[:space:]]+/, "", path)
+      sub(/^[* ]/, "", path)
+      sub(/^\.\//, "", path)
+      if (path == rel) {
+        found = 1
+      }
+    }
+    END { exit found ? 0 : 1 }
+  ' "$sums_file"
+}
+
+analyze_sha256_required_files() {
+  local arr="[]" path rel ok missing_count
+  for path in "$@"; do
+    [[ -n "$path" ]] || continue
+    rel="$(relpath "$path")"
+    ok="false"
+    if sha256_manifest_covers_relpath "$rel"; then
+      ok="true"
+    fi
+    arr="$(jq -cn \
+      --argjson arr "$arr" \
+      --arg file "$rel" \
+      --arg ok "$ok" \
+      '$arr + [{file: $file, covered: ($ok == "true")}]')"
+  done
+
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    ok="false"
+    if sha256_manifest_covers_relpath "$rel"; then
+      ok="true"
+    fi
+    arr="$(jq -cn \
+      --argjson arr "$arr" \
+      --arg file "$rel" \
+      --arg ok "$ok" \
+      '$arr + [{file: $file, covered: ($ok == "true")}]')"
+  done < <(jq -r '.[] | select(.file != null) | .file' <<< "$NEGATIVE_DETAILS")
+
+  missing_count="$(jq '[.[] | select(.covered != true)] | length' <<< "$arr")"
+  jq -cn \
+    --argjson files "$arr" \
+    --arg missingCount "$missing_count" \
+    '{ok: (($missingCount | tonumber) == 0), missingCount: ($missingCount | tonumber), files: $files}'
+}
+
 analyze_operation_body() {
   local file="$1"
   if [[ -z "$file" ]]; then
@@ -339,7 +393,7 @@ analyze_recording_rows() {
           rowCount: ($rows | length),
           hasAgentOutput: any($rows[]; (text | test("\\bAGENT_OUTPUT\\b"; "i"))),
           hasData: any($rows[]; (text | test("\\bDATA\\b"; "i"))),
-          hasEndStream: any($rows[]; (text | test("END[_-]?STREAM|EndStream|endStream"; "i")))
+          hasEndStream: any($rows[]; (text | test("END[_-]?STREAM|EndStream|endStream|\\bSESSION_END\\b"; "i")))
         }
       | .ok = ((.hasAgentOutput or .hasData) and .hasEndStream)
       | .reason = (
@@ -361,7 +415,7 @@ analyze_recording_rows() {
   if LC_ALL=C grep -Eiq '(^|[^A-Z_])DATA([^A-Z_]|$)' "$file"; then
     has_data="true"
   fi
-  if LC_ALL=C grep -Eiq 'END[_-]?STREAM|EndStream|endStream' "$file"; then
+  if LC_ALL=C grep -Eiq 'END[_-]?STREAM|EndStream|endStream|(^|[^A-Z_])SESSION_END([^A-Z_]|$)' "$file"; then
     has_end_stream="true"
   fi
   ok="false"
@@ -522,9 +576,12 @@ main() {
     && "$expired_negative_ok" == "true" \
     && "$wrong_device_negative_ok" == "true" \
     && "$replay_negative_ok" == "true" \
-    && "$termination_negative_ok" == "true" ]]; then
+      && "$termination_negative_ok" == "true" ]]; then
     full_matrix_ok="true"
   fi
+
+  local sha_required_json
+  sha_required_json="$(analyze_sha256_required_files "$operation_file" "$recording_file")"
 
   local result reason
   if [[ "$(jq -r '.ok' <<< "$operation_json")" != "true" ]]; then
@@ -539,6 +596,9 @@ main() {
   elif [[ "$REQUIRE_SHA256" == "1" && "$(jq -r '.status' <<< "$sha_json")" != "ok" ]]; then
     result="sha256-unverified"
     reason="SHA256SUMS is required but did not verify cleanly"
+  elif [[ "$REQUIRE_SHA256" == "1" && "$(jq -r '.ok' <<< "$sha_required_json")" != "true" ]]; then
+    result="sha256-unverified"
+    reason="SHA256SUMS does not cover all required evidence files"
   elif [[ "$REQUIRE_NEGATIVES" == "1" && "$core_negatives_ok" != "true" ]]; then
     result="missing-negative"
     reason="core raw-shell and command/policy override deny evidence is required"
@@ -576,6 +636,7 @@ main() {
     --argjson recording "$recording_json" \
     --argjson smokeSummary "$smoke_summary_json" \
     --argjson sha256Manifest "$sha_json" \
+    --argjson sha256RequiredFiles "$sha_required_json" \
     --argjson negativeChecks "$NEGATIVE_DETAILS" \
     '{
       generatedAt: $generatedAt,
@@ -597,7 +658,7 @@ main() {
       smokeSummary: $smokeSummary,
       operation: $operation,
       recording: $recording,
-      sha256Manifest: $sha256Manifest,
+      sha256Manifest: ($sha256Manifest + {requiredFiles: $sha256RequiredFiles}),
       negatives: {
         coreOk: ($coreNegativesOk == "true"),
         fullMatrixOk: ($fullMatrixOk == "true"),
