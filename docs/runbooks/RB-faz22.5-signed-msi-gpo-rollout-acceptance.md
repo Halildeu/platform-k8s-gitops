@@ -25,20 +25,27 @@ This runbook defines the acceptance contract for:
 
 ## 2. Current Artifact Reality
 
-As of 2026-06-18:
+As of 2026-06-19:
 
 | Artifact lane | Current truth | Acceptance impact |
 |---|---|---|
-| Public current ZIP/bootstrap | `v0.2.9`, ZIP SHA256 `88d6b203bdf07ab7fdad7bd6930893db37fdf2b1ff8f237aaddc5b9ef0ea0f9a`, public `testai.acik.com/artifacts/endpoint-agent/current/` | Acceptable for one-command bootstrap pilot evidence only; not a signed MSI/GPO Software Installation proof |
-| Trusted MSI workflow | `platform-agent` run `27741877258`, artifact `endpoint-agent-msi-trusted`, not expired, created 2026-06-18. Downloaded verification: `EndpointAgent-0.2.9-signed.msi` SHA256 `5cab18d460720e5bf89ddf0038f5b1c4d5ae04afc031dda0dc15d9810c969571`; `msi-build-manifest.json` SHA256 `a5949a093ce234eafdb88c759fd884bf32324c9a8172b455c0daa78c9dfe72d0`; `production=true`; `signing_tier=trusted-internal-ca`; `timestamped=true`; signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`; root cert SHA256 `078494D03E2FB51EA35DB71FFC04B5C5230EE9F52E0D5A057B6F35B8F7E0B59E` | Build/signing evidence exists and has been promoted to durable release assets |
-| GitHub release `v0.2.9` | release has `EndpointAgent.zip`, `bootstrap-package.ps1`, `install.ps1`, `uninstall.ps1`, manifest, sums, EXE, `EndpointAgent-0.2.9-signed.msi`, and `msi-build-manifest.json` | `gpo-msi` can be selected for the live pilot; #1680 still requires endpoint-side install/upgrade, restart, mTLS, rollback, and failed-device evidence |
+| Public current ZIP/bootstrap | `v0.2.10`, EXE SHA256 `a50344a4457959b95dfdfa22e6578e53cd6ec4b124830b506fe53503c18ba1ec`, ZIP SHA256 `fa72f278b81497bf2480ea312c7d13cff410372bfcef6ddca23dc3e50a1f292e`, public `testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json` | Current runtime floor for endpoint-side acceptance. A pilot endpoint running below `0.2.10` cannot close the current rollout/runtime gate. |
+| GitHub release `v0.2.10` | release has `EndpointAgent.zip`, `bootstrap-package.ps1`, `install.ps1`, `uninstall.ps1`, manifest, sums, and EXE. It does **not** currently contain a signed MSI asset. | Acceptable for owner-approved bootstrap/current-artifact pilot evidence only; not sufficient for signed MSI/GPO Software Installation proof. |
+| Trusted MSI workflow / durable signed MSI | `EndpointAgent-0.2.9-signed.msi` remains the latest durable signed MSI asset: SHA256 `5cab18d460720e5bf89ddf0038f5b1c4d5ae04afc031dda0dc15d9810c969571`; `msi-build-manifest.json` SHA256 `a5949a093ce234eafdb88c759fd884bf32324c9a8172b455c0daa78c9dfe72d0`; `production=true`; `signing_tier=trusted-internal-ca`; `timestamped=true`; signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`; root cert SHA256 `078494D03E2FB51EA35DB71FFC04B5C5230EE9F52E0D5A057B6F35B8F7E0B59E` | This proves the signed-MSI lane exists, but it is now below the current `v0.2.10` artifact floor. It must not be used to claim current #1680 acceptance unless the issue records an explicit temporary version-floor exception; that exception still does not close #208 terminal/runtime acceptance. |
+
+**Version-floor rule:** every post-install / enroll-health evidence run must
+include `-ExpectedMinimumAgentVersion "0.2.10"` while `current/` serves
+`v0.2.10`. If a signed MSI lower than that is deployed, the collector must
+return `FAIL` and the rollout is a downgrade/regression lab, not #1680
+acceptance.
 
 **Deployment method for the next live pilot:** use `gpo-msi` unless the owner
 explicitly chooses the bootstrap fallback in the issue comment. Record exactly
 one deployment method in the evidence packet:
 
 1. `gpo-msi`: GPO Software Installation or startup-script `msiexec` using a
-   durable signed MSI URL/share path and SHA256.
+   durable signed MSI URL/share path and SHA256. The installed endpoint must
+   still satisfy the current version floor.
 2. `one-command-bootstrap`: current ZIP/bootstrap URL and SHA256, executed by
    GPO startup script or an operator-approved command channel.
 
@@ -55,6 +62,9 @@ Do not mix methods in the same acceptance run.
   pilot PCs through the same selected deployment method.
 - `source-ready != deployed != accepted`: release, workflow, or PR evidence
   cannot replace endpoint-side install, service, mTLS, and rollback evidence.
+- `signed != current`: a valid older signed MSI does not satisfy the gate when
+  the public current artifact has advanced. The evidence collector must fail
+  versions below the current floor.
 - The 5-PC/50-PC/800-PC gates stay closed until #1680 is accepted.
 
 ## 4. Pilot Targeting
@@ -83,6 +93,9 @@ evidence.
 - Record version, URL/share path, SHA256, source run/release, and signer/trust
   facts if MSI.
 - Verify artifact hash before install on each pilot PC.
+- Record the current version floor from `current/release-manifest.json`. The
+  installed version on each device must be greater than or equal to that floor,
+  unless #1680 explicitly records a temporary downgrade exception.
 
 ### M2 Deployment Method
 
@@ -105,7 +118,9 @@ On each selected PC:
 - install or upgrade happens through the selected deployment method;
 - no manual token/ZIP step is used;
 - `EndpointAgent` service exists after policy/application;
-- binary hash and version are recorded.
+- binary hash and version are recorded;
+- installed version satisfies `-ExpectedMinimumAgentVersion` for the current
+  artifact floor.
 
 ### M5 Service Continuity
 
@@ -149,9 +164,25 @@ Use:
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\collect-endpoint-agent-rollout-evidence.ps1 `
   -ExpectedApiHost "mtls.testai.acik.com" `
-  -ExpectedZipSha256 "88d6b203bdf07ab7fdad7bd6930893db37fdf2b1ff8f237aaddc5b9ef0ea0f9a" `
+  -ExpectedZipSha256 "fa72f278b81497bf2480ea312c7d13cff410372bfcef6ddca23dc3e50a1f292e" `
+  -ExpectedMinimumAgentVersion "0.2.10" `
   -RestartService `
   -IncludeGpResultHtml
+```
+
+For GPO/MSI health checks, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\wave-preflight.ps1 `
+  -Mode enroll-health `
+  -ApiHost "mtls.testai.acik.com" `
+  -RequireMachineCert `
+  -RequireSignature `
+  -ExpectedSignerThumbprint "D68F4F530137EB65CE44E3405E82B46205E753E5" `
+  -ExpectedMinimumAgentVersion "0.2.10" `
+  -ExitCodeOnFail `
+  -Json
 ```
 
 The script writes redacted JSON/text artifacts under:
@@ -171,6 +202,7 @@ EVIDENCE #1680 rollout acceptance <timestamp>
 Method: gpo-msi | one-command-bootstrap
 Artifact:
 - version:
+- current version floor:
 - URL/share path:
 - SHA256:
 - signer/trust facts:

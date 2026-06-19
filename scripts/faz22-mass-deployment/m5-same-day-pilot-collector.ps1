@@ -18,7 +18,7 @@
 
 .EXAMPLES
   .\m5-same-day-pilot-collector.ps1 -Phase preinstall -Role domain-gpo -Json
-  .\m5-same-day-pilot-collector.ps1 -Phase postinstall -Role audit -RequireSignature -Json
+  .\m5-same-day-pilot-collector.ps1 -Phase postinstall -Role audit -RequireSignature -ExpectedMinimumAgentVersion 0.2.10 -Json
   .\m5-same-day-pilot-collector.ps1 -Phase rollback-clean -Role domain-gpo -Json
 #>
 [CmdletBinding()]
@@ -39,6 +39,7 @@ param(
 
     [switch]$RequireSignature,
     [string]$ExpectedSignerThumbprint = '',
+    [string]$ExpectedMinimumAgentVersion = '',
     [int]$TcpTimeoutMs = 4000,
     [int]$LogTail = 120,
     [switch]$Json
@@ -134,6 +135,33 @@ function Get-EndpointAgentSignature {
     catch { return [pscustomobject]@{ Status = 'Error'; StatusMessage = $_.Exception.Message; SignerCertificate = $null } }
 }
 
+function ConvertTo-AgentVersion {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
+    $m = [regex]::Match($Value, '(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?')
+    if (-not $m.Success) { return $null }
+    $build = '0'
+    if ($m.Groups[4].Success) { $build = $m.Groups[4].Value }
+    try {
+        return [version]::Parse(('{0}.{1}.{2}.{3}' -f $m.Groups[1].Value, $m.Groups[2].Value, $m.Groups[3].Value, $build))
+    } catch {
+        return $null
+    }
+}
+
+function Get-EndpointAgentVersionCandidate {
+    param([string]$ExePath)
+    if (-not (Test-Path $ExePath)) { return $null }
+    $vi = (Get-Item $ExePath).VersionInfo
+    $candidates = @(
+        [pscustomobject]@{ source = 'ProductVersion'; value = $vi.ProductVersion; parsed = ConvertTo-AgentVersion $vi.ProductVersion },
+        [pscustomobject]@{ source = 'FileVersion'; value = $vi.FileVersion; parsed = ConvertTo-AgentVersion $vi.FileVersion }
+    )
+    $parsed = @($candidates | Where-Object { $null -ne $_.parsed } | Sort-Object parsed -Descending)
+    if ($parsed.Count -gt 0) { return $parsed[0] }
+    return [pscustomobject]@{ source = 'unparsed'; value = (($candidates | ForEach-Object { "$($_.source)=$($_.value)" }) -join '; '); parsed = $null }
+}
+
 function Invoke-CoreChecks {
     $cs = Get-CimInstance Win32_ComputerSystem
     $exe = Join-Path $InstallDir 'endpoint-agent.exe'
@@ -166,6 +194,21 @@ function Invoke-CoreChecks {
 
             if (Test-Path $exe) { Add-Check 'agent-binary' 'PASS' "binary present: $exe" }
             else { Add-Check 'agent-binary' 'FAIL' "binary missing: $exe" }
+
+            if (-not [string]::IsNullOrWhiteSpace($ExpectedMinimumAgentVersion)) {
+                $expected = ConvertTo-AgentVersion $ExpectedMinimumAgentVersion
+                $actual = Get-EndpointAgentVersionCandidate $exe
+                if ($null -eq $expected) {
+                    Add-Check 'agent-version-floor' 'FAIL' "cannot parse ExpectedMinimumAgentVersion=$ExpectedMinimumAgentVersion"
+                } elseif ($null -eq $actual -or $null -eq $actual.parsed) {
+                    $detail = if ($null -eq $actual) { 'no endpoint-agent.exe version metadata found' } else { "cannot parse installed version metadata: $($actual.value)" }
+                    Add-Check 'agent-version-floor' 'FAIL' $detail
+                } elseif ($actual.parsed -lt $expected) {
+                    Add-Check 'agent-version-floor' 'FAIL' "installed $($actual.value) from $($actual.source) is below required $ExpectedMinimumAgentVersion"
+                } else {
+                    Add-Check 'agent-version-floor' 'PASS' "installed $($actual.value) from $($actual.source) meets required $ExpectedMinimumAgentVersion"
+                }
+            }
 
             $sig = Get-EndpointAgentSignature -ExePath $exe
             if ($sig) {

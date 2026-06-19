@@ -28,6 +28,11 @@
     -RequireSignature     the installed exe signature MUST be Valid (+ match
                           -ExpectedSignerThumbprint if given). Default: WARN only,
                           because a Trusted-Publisher root GPO may still be pending.
+    -ExpectedMinimumAgentVersion
+                          the installed endpoint-agent.exe metadata MUST be at
+                          least this version in enroll-health mode. Use the
+                          current release-manifest floor to prevent downgrade
+                          acceptance when signed MSI lags ZIP/EXE current.
 
 .NOTES
   PS5.1-compatible, ASCII-only code. Companion cert tools:
@@ -53,6 +58,7 @@ param(
     [string]$ApiHost = 'testai.acik.com',
     [int]$ApiPort = 443,
     [int]$ReachabilityTimeoutMs = 4000,
+    [string]$ExpectedMinimumAgentVersion = '',
     # Optional: assert the installed exe is signed by this leaf thumbprint
     # (AG-018 internal-CA). Empty = report signer; with -RequireSignature any
     # Valid trusted signer passes unless a thumbprint is given to pin it.
@@ -72,6 +78,33 @@ function Add-Check {
 }
 
 function Get-AgentExePath { Join-Path $InstallDir 'endpoint-agent.exe' }
+
+function ConvertTo-AgentVersion {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
+    $m = [regex]::Match($Value, '(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?')
+    if (-not $m.Success) { return $null }
+    $build = '0'
+    if ($m.Groups[4].Success) { $build = $m.Groups[4].Value }
+    try {
+        return [version]::Parse(('{0}.{1}.{2}.{3}' -f $m.Groups[1].Value, $m.Groups[2].Value, $m.Groups[3].Value, $build))
+    } catch {
+        return $null
+    }
+}
+
+function Get-AgentVersionCandidate {
+    param([string]$ExePath)
+    if (-not (Test-Path $ExePath)) { return $null }
+    $vi = (Get-Item $ExePath).VersionInfo
+    $candidates = @(
+        [pscustomobject]@{ source = 'ProductVersion'; value = $vi.ProductVersion; parsed = ConvertTo-AgentVersion $vi.ProductVersion },
+        [pscustomobject]@{ source = 'FileVersion'; value = $vi.FileVersion; parsed = ConvertTo-AgentVersion $vi.FileVersion }
+    )
+    $parsed = @($candidates | Where-Object { $null -ne $_.parsed } | Sort-Object parsed -Descending)
+    if ($parsed.Count -gt 0) { return $parsed[0] }
+    return [pscustomobject]@{ source = 'unparsed'; value = (($candidates | ForEach-Object { "$($_.source)=$($_.value)" }) -join '; '); parsed = $null }
+}
 
 # --- Probes (read-only) ----------------------------------------------------
 
@@ -148,6 +181,20 @@ function Invoke-BinaryVersionCheck {
             # The agent has NO `version` subcommand (it hangs into default mode).
             $fv = (Get-Item $exe).VersionInfo.FileVersion
             Add-Check 'agent-version' 'INFO' "FileVersion=$fv"
+            if (-not [string]::IsNullOrWhiteSpace($ExpectedMinimumAgentVersion)) {
+                $expected = ConvertTo-AgentVersion $ExpectedMinimumAgentVersion
+                $actual = Get-AgentVersionCandidate $exe
+                if ($null -eq $expected) {
+                    Add-Check 'agent-version-floor' 'FAIL' "cannot parse ExpectedMinimumAgentVersion=$ExpectedMinimumAgentVersion"
+                } elseif ($null -eq $actual -or $null -eq $actual.parsed) {
+                    $detail = if ($null -eq $actual) { 'no version metadata found' } else { "cannot parse installed version metadata: $($actual.value)" }
+                    Add-Check 'agent-version-floor' 'FAIL' $detail
+                } elseif ($actual.parsed -lt $expected) {
+                    Add-Check 'agent-version-floor' 'FAIL' "installed $($actual.value) from $($actual.source) is below required $ExpectedMinimumAgentVersion"
+                } else {
+                    Add-Check 'agent-version-floor' 'PASS' "installed $($actual.value) from $($actual.source) meets required $ExpectedMinimumAgentVersion"
+                }
+            }
         }
     }
 }

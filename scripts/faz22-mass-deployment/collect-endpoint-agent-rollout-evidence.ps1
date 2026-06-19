@@ -10,6 +10,7 @@ param(
     [Parameter()][string]$ExpectedZipSha256 = "",
     [Parameter()][string]$ExpectedMsiSha256 = "",
     [Parameter()][string]$ExpectedSignerThumbprint = "",
+    [Parameter()][string]$ExpectedMinimumAgentVersion = "",
     [Parameter()][int]$TcpTimeoutMs = 3000,
     [Parameter()][int]$LogTailLines = 260,
     [Parameter()][switch]$RestartService,
@@ -74,6 +75,20 @@ function Test-TcpPort {
         }
     } finally {
         $client.Close()
+    }
+}
+
+function ConvertTo-AgentVersion {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
+    $m = [regex]::Match($Value, '(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?')
+    if (-not $m.Success) { return $null }
+    $build = "0"
+    if ($m.Groups[4].Success) { $build = $m.Groups[4].Value }
+    try {
+        return [version]::Parse(("{0}.{1}.{2}.{3}" -f $m.Groups[1].Value, $m.Groups[2].Value, $m.Groups[3].Value, $build))
+    } catch {
+        return $null
     }
 }
 
@@ -154,18 +169,16 @@ function Get-EndpointBinaryEvidence {
         if (Test-Path $path) {
             $item = Get-Item $path
             $hash = Get-FileHash $path -Algorithm SHA256
-            $version = $null
-            try {
-                $version = (& $path version 2>$null | Out-String).Trim()
-            } catch {
-                $version = $null
-            }
+            $fileVersion = $item.VersionInfo.FileVersion
+            $productVersion = $item.VersionInfo.ProductVersion
             return [PSCustomObject]@{
                 path = $item.FullName
                 length = $item.Length
                 lastWriteTime = $item.LastWriteTime.ToString("o")
                 sha256 = $hash.Hash
-                versionOutput = $version
+                fileVersion = $fileVersion
+                productVersion = $productVersion
+                versionOutput = $productVersion
             }
         }
     }
@@ -199,6 +212,94 @@ function Get-InstalledProductRows {
         }
     }
     return $rows
+}
+
+function Get-AgentVersionFloorEvidence {
+    param(
+        $Binary,
+        $InstalledProducts,
+        [string]$ExpectedMinimumVersion
+    )
+
+    $candidates = @()
+    if ($null -ne $Binary) {
+        $candidates += [PSCustomObject]@{
+            source = "binary.productVersion"
+            value = $Binary.productVersion
+            parsed = ConvertTo-AgentVersion $Binary.productVersion
+        }
+        $candidates += [PSCustomObject]@{
+            source = "binary.fileVersion"
+            value = $Binary.fileVersion
+            parsed = ConvertTo-AgentVersion $Binary.fileVersion
+        }
+        $candidates += [PSCustomObject]@{
+            source = "binary.versionOutput"
+            value = $Binary.versionOutput
+            parsed = ConvertTo-AgentVersion $Binary.versionOutput
+        }
+    }
+
+    foreach ($product in $InstalledProducts) {
+        $candidates += [PSCustomObject]@{
+            source = "installedProduct.displayVersion"
+            value = $product.displayVersion
+            parsed = ConvertTo-AgentVersion $product.displayVersion
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ExpectedMinimumVersion)) {
+        return [PSCustomObject]@{
+            status = "SKIP"
+            expectedMinimumVersion = ""
+            selectedVersion = $null
+            selectedSource = $null
+            message = "ExpectedMinimumAgentVersion not set"
+            candidates = $candidates
+        }
+    }
+
+    $expected = ConvertTo-AgentVersion $ExpectedMinimumVersion
+    if ($null -eq $expected) {
+        return [PSCustomObject]@{
+            status = "FAIL"
+            expectedMinimumVersion = $ExpectedMinimumVersion
+            selectedVersion = $null
+            selectedSource = $null
+            message = "Cannot parse ExpectedMinimumAgentVersion"
+            candidates = $candidates
+        }
+    }
+
+    $parsedCandidates = @($candidates | Where-Object { $null -ne $_.parsed } | Sort-Object parsed -Descending)
+    if ($parsedCandidates.Count -eq 0) {
+        return [PSCustomObject]@{
+            status = "FAIL"
+            expectedMinimumVersion = $ExpectedMinimumVersion
+            selectedVersion = $null
+            selectedSource = $null
+            message = "No parseable installed EndpointAgent version metadata found"
+            candidates = $candidates
+        }
+    }
+
+    $selected = $parsedCandidates[0]
+    $status = "PASS"
+    $message = "Installed version meets minimum version floor"
+    if ($selected.parsed -lt $expected) {
+        $status = "FAIL"
+        $message = "Installed version is below minimum version floor"
+    }
+
+    return [PSCustomObject]@{
+        status = $status
+        expectedMinimumVersion = $ExpectedMinimumVersion
+        selectedVersion = $selected.value
+        selectedSource = $selected.source
+        selectedParsedVersion = $selected.parsed.ToString()
+        message = $message
+        candidates = $candidates
+    }
 }
 
 function Get-ClientAuthCertRows {
@@ -321,6 +422,7 @@ $serviceRows = @(Get-EndpointServiceRows)
 $envRows = @(Get-ServiceEnvironmentRows)
 $binary = Get-EndpointBinaryEvidence
 $installedProducts = @(Get-InstalledProductRows)
+$versionFloor = Get-AgentVersionFloorEvidence -Binary $binary -InstalledProducts $installedProducts -ExpectedMinimumVersion $ExpectedMinimumAgentVersion
 $certRows = @(Get-ClientAuthCertRows -ExpectedGuid $adGuid)
 
 $processRows = @()
@@ -363,6 +465,7 @@ $summary = [PSCustomObject]@{
         zipSha256 = $ExpectedZipSha256
         msiSha256 = $ExpectedMsiSha256
         signerThumbprint = $ExpectedSignerThumbprint
+        minimumAgentVersion = $ExpectedMinimumAgentVersion
     }
     host = [PSCustomObject]@{
         domain = $computerSystem.Domain
@@ -384,6 +487,7 @@ $summary = [PSCustomObject]@{
         serviceEnvironment = $envRows
         binary = $binary
         installedProducts = $installedProducts
+        versionFloor = $versionFloor
         restart = $restartEvidence
         clientAuthCerts = $certRows
     }
@@ -409,6 +513,7 @@ Write-Host "DomainJoined: $($computerSystem.PartOfDomain)"
 Write-Host "APIHost: $ExpectedApiHost TCP443=$($tcp443.open)"
 Write-Host "ServiceCount: $($serviceRows.Count)"
 Write-Host "ClientAuthCertCount: $($certRows.Count)"
+Write-Host "VersionFloor: $($versionFloor.status) $($versionFloor.message)"
 Write-Host "RestartRequested: $($restartEvidence.requested) RestartSuccess: $($restartEvidence.success)"
 Write-Host "JSON: $jsonPath"
 Write-Host "RedactedLogTail: $logTailPath"
@@ -434,6 +539,10 @@ if (-not $running) {
 
 if ($RestartService -and -not $restartEvidence.success) {
     exit 4
+}
+
+if ($versionFloor.status -eq "FAIL") {
+    exit 5
 }
 
 exit 0
