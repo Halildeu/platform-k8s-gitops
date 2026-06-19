@@ -1,13 +1,14 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.6.3 #208 artifact-host v0.2.11 release published; test pin promotion queued (2026-06-19)
+## Live Delta — Faz 22.6.3 #208 artifact-host v0.2.11 served; runtime terminal gate still open (2026-06-19)
 
 **Session milestone**: `platform-agent#210` corrected the artifact-host image
 staging contract so the image serves the loose signed `endpoint-agent.exe`
 listed by `release-manifest.json`, not only the ZIP/bootstrap files. Trusted
-release tag `v0.2.11` is published, and this repo now has a test overlay pin
-candidate for the immutable artifact-host image. This is still a release +
-desired-state prerequisite, not Remote Response Terminal acceptance.
+release tag `v0.2.11` is published and the live `testai` artifact-host now
+serves the immutable `v0.2.11` artifact set through both `/v0.2.11/` and
+`/current/`. This is still an artifact delivery prerequisite, not Remote
+Response Terminal acceptance.
 
 Source and artifact lineage:
 
@@ -26,12 +27,39 @@ Source and artifact lineage:
 - `platform-k8s-gitops#1743` merged at
   `6a6c7c26905f24eef79b1ace2c3ad718ea57871b`, refreshing the Remote Response
   Terminal evidence bundle `SHA256SUMS` immediately before verifier execution.
+- `platform-k8s-gitops#1744` merged at
+  `ff5caa8c50e5a038d786f7e18247d1a2119d831b`, promoting the test artifact-host
+  overlay from `v0.2.10@sha256:7befd6aac67712e1a40fd1ab950ff455c22161ffcadfe03c2dd204b128fffd72`
+  to `v0.2.11@sha256:6ac5cd888b4b20691d50cc509e26a113df66a427defce51b1a1d6a51d83a7f9a`.
+
+Live evidence after sync:
+
+- Platform-test sync workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27810517080`
+  returned `conclusion=success`; the ArgoCD Application reports `Synced` /
+  `Healthy` at revision `ff5caa8c50e5a038d786f7e18247d1a2119d831b`.
+- `platform-test/artifact-host` Deployment is rolled out with generation `13`,
+  observed generation `13`, `2/2` updated/ready replicas, and image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.11@sha256:6ac5cd888b4b20691d50cc509e26a113df66a427defce51b1a1d6a51d83a7f9a`.
+- Both live artifact-host pods are Ready with `restartCount=0` and imageID
+  `ghcr.io/halildeu/platform-agent-artifacts@sha256:6ac5cd888b4b20691d50cc509e26a113df66a427defce51b1a1d6a51d83a7f9a`.
+- Public manifest
+  `https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json`
+  returns `release_tag=v0.2.11`,
+  `endpoint_agent_sha256=cd3a5741a737f008a8bc3d11c1b8e3564ea71203063d215efef18a384a2f703e`,
+  and `endpoint_agent_zip_sha256=393ec3db48fe81dc9c85cf86e4879336dbac5136713611c6094c6daaca91df0d`.
+- Public artifact checks:
+  `/current/endpoint-agent.exe` and `/v0.2.11/endpoint-agent.exe` both return
+  HTTP 200, size `14104488`, SHA256
+  `cd3a5741a737f008a8bc3d11c1b8e3564ea71203063d215efef18a384a2f703e`.
+  `/current/EndpointAgent.zip` and `/v0.2.11/EndpointAgent.zip` both return
+  HTTP 200, size `5453986`, SHA256
+  `393ec3db48fe81dc9c85cf86e4879336dbac5136713611c6094c6daaca91df0d`.
 
 Acceptance boundary:
 
-- The live `testai` artifact-host must still be synced and verified against
-  `v0.2.11` before the public `/current/endpoint-agent.exe` path is counted as
-  accepted for the artifact-host gate.
+- The public artifact-host gate is satisfied for `v0.2.11`; this does not
+  prove endpoint update or constrained terminal execution.
 - `platform-backend#712` still needs a catalog-bound `UPDATE_AGENT` dispatch
   using an approved `v0.2.11` URL, followed by post-update heartbeat evidence.
 - `platform-agent#208` remains open until a pilot endpoint running the accepted
