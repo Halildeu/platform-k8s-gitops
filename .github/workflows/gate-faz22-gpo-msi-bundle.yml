@@ -131,13 +131,21 @@ jobs:
 
           install_text = Path("/tmp/endpoint-agent-1680-bundle-ci/scripts/install-endpoint-agent-gpo-msi.ps1").read_text(encoding="utf-8-sig")
           assert "ENDPOINT_AGENT_ENROLLMENT_TOKEN" not in install_text
+          assert "function Resolve-ScriptRoot" in install_text
+          assert 'MsiPath = (Join-Path $PSScriptRoot' not in install_text
+          assert 'Join-Path $PSScriptRoot' not in install_text
           assert '$AutoEnrollApiUrl = "https://mtls.testai.acik.com/api/v1/endpoint-agent"' in install_text
           assert '$AutoEnrollCertSANURIPrefix = "adcomputer:"' in install_text
           assert "AUTO_ENROLL=1" in install_text
           assert "AUTO_ENROLL_API_URL=$AutoEnrollApiUrl" in install_text
           assert "AUTO_ENROLL_CERT_SAN_URI_PREFIX=$AutoEnrollCertSANURIPrefix" in install_text
 
+          verify_text = Path("/tmp/endpoint-agent-1680-bundle-ci/scripts/verify-endpoint-agent-gpo-msi.ps1").read_text(encoding="utf-8-sig")
           rollback_text = Path("/tmp/endpoint-agent-1680-bundle-ci/scripts/rollback-endpoint-agent-gpo-msi.ps1").read_text(encoding="utf-8-sig")
+          assert "function Resolve-ScriptRoot" in verify_text
+          assert "function Resolve-ScriptRoot" in rollback_text
+          assert 'Join-Path $PSScriptRoot' not in verify_text
+          assert 'Join-Path $PSScriptRoot' not in rollback_text
           assert "$args =" not in install_text
           assert "$args =" not in rollback_text
           assert "$waveArgs" in rollback_text

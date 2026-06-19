@@ -164,7 +164,7 @@ $installScript = @'
 
 [CmdletBinding()]
 param(
-    [Parameter()][string]$MsiPath = (Join-Path $PSScriptRoot "..\assets\__MSI_FILE__"),
+    [Parameter()][string]$MsiPath = "",
     [Parameter()][string]$ExpectedMsiSha256 = "__MSI_SHA256__",
     [Parameter()][string]$AutoEnrollApiUrl = "__AUTO_ENROLL_API_URL__",
     [Parameter()][string]$AutoEnrollCertSANURIPrefix = "__AUTO_ENROLL_SAN_URI_PREFIX__",
@@ -177,6 +177,16 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+function Resolve-ScriptRoot {
+    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        return $PSScriptRoot
+    }
+    if (-not [string]::IsNullOrWhiteSpace($MyInvocation.MyCommand.Path)) {
+        return (Split-Path -Parent $MyInvocation.MyCommand.Path)
+    }
+    throw "Unable to resolve script root; pass -MsiPath explicitly."
+}
 
 function New-Dir {
     param([string]$Path)
@@ -192,6 +202,11 @@ function Assert-Sha256 {
     if ($actual -ne $Expected.ToLowerInvariant()) {
         throw "MSI SHA256 mismatch. Expected=$Expected Actual=$actual Path=$Path"
     }
+}
+
+$ScriptRoot = Resolve-ScriptRoot
+if ([string]::IsNullOrWhiteSpace($MsiPath)) {
+    $MsiPath = Join-Path $ScriptRoot "..\assets\__MSI_FILE__"
 }
 
 New-Dir $EvidenceRoot
@@ -219,7 +234,7 @@ $installStatus = if ($successExitCodes -contains $exitCode) { "PASS" } else { "F
 
 $verify = $null
 if (-not $SkipPostInstallVerify) {
-    $verifyScript = Join-Path $PSScriptRoot "verify-endpoint-agent-gpo-msi.ps1"
+    $verifyScript = Join-Path $ScriptRoot "verify-endpoint-agent-gpo-msi.ps1"
     if (Test-Path $verifyScript) {
         $verifyArgs = @(
             "-NoProfile",
@@ -297,16 +312,27 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Continue"
 
+function Resolve-ScriptRoot {
+    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        return $PSScriptRoot
+    }
+    if (-not [string]::IsNullOrWhiteSpace($MyInvocation.MyCommand.Path)) {
+        return (Split-Path -Parent $MyInvocation.MyCommand.Path)
+    }
+    throw "Unable to resolve script root."
+}
+
 if (-not (Test-Path $EvidenceRoot)) {
     New-Item -ItemType Directory -Force -Path $EvidenceRoot | Out-Null
 }
 
+$ScriptRoot = Resolve-ScriptRoot
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
 $preflightOut = Join-Path $EvidenceRoot "wave-preflight-enroll-health-$env:COMPUTERNAME-$stamp.json"
 $collectorOut = Join-Path $EvidenceRoot "collector-console-$env:COMPUTERNAME-$stamp.txt"
 
-$wave = Join-Path $PSScriptRoot "wave-preflight.ps1"
-$collector = Join-Path $PSScriptRoot "collect-endpoint-agent-rollout-evidence.ps1"
+$wave = Join-Path $ScriptRoot "wave-preflight.ps1"
+$collector = Join-Path $ScriptRoot "collect-endpoint-agent-rollout-evidence.ps1"
 
 $waveArgs = @(
     "-NoProfile",
@@ -394,6 +420,16 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Resolve-ScriptRoot {
+    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        return $PSScriptRoot
+    }
+    if (-not [string]::IsNullOrWhiteSpace($MyInvocation.MyCommand.Path)) {
+        return (Split-Path -Parent $MyInvocation.MyCommand.Path)
+    }
+    throw "Unable to resolve script root."
+}
+
 function New-Dir {
     param([string]$Path)
     if (-not (Test-Path $Path)) {
@@ -424,6 +460,7 @@ function Get-EndpointAgentProductCode {
     return $null
 }
 
+$ScriptRoot = Resolve-ScriptRoot
 New-Dir $EvidenceRoot
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
 $summaryPath = Join-Path $EvidenceRoot "endpoint-agent-gpo-msi-rollback-$env:COMPUTERNAME-$stamp.json"
@@ -453,8 +490,8 @@ $exitCode = $p.ExitCode
 $successExitCodes = @(0, 3010, 1605)
 $status = if ($successExitCodes -contains $exitCode) { "PASS" } else { "FAIL" }
 
-$wave = Join-Path $PSScriptRoot "wave-preflight.ps1"
-$m7 = Join-Path $PSScriptRoot "m7-rollback-rehearsal-collector.ps1"
+$wave = Join-Path $ScriptRoot "wave-preflight.ps1"
+$m7 = Join-Path $ScriptRoot "m7-rollback-rehearsal-collector.ps1"
 $waveOut = Join-Path $EvidenceRoot "wave-preflight-rollback-clean-$env:COMPUTERNAME-$stamp.json"
 $m7Out = Join-Path $EvidenceRoot "m7-rollback-console-$env:COMPUTERNAME-$stamp.txt"
 
