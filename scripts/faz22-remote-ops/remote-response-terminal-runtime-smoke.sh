@@ -23,6 +23,12 @@ LIVE_OPERATION="${LIVE_OPERATION:-0}"
 OPERATION_SOURCE="${OPERATION_SOURCE:-catalog}"
 REMOTE_BRIDGE_SESSION_ID="${REMOTE_BRIDGE_SESSION_ID:-}"
 REMOTE_BRIDGE_OPERATOR_BASE_URL="${REMOTE_BRIDGE_OPERATOR_BASE_URL:-}"
+SESSION_OWNER_REQUIRED="${SESSION_OWNER_REQUIRED:-1}"
+SESSION_OWNER_AUTO_CLAIM="${SESSION_OWNER_AUTO_CLAIM:-0}"
+SESSION_OWNER_ISSUE_URL="${SESSION_OWNER_ISSUE_URL:-${SESSION_OWNER_ISSUE:-}}"
+SESSION_OWNER_ENDPOINT_ID="${SESSION_OWNER_ENDPOINT_ID:-}"
+SESSION_OWNER_TTL_MINUTES="${SESSION_OWNER_TTL_MINUTES:-45}"
+SESSION_OWNER_COMMENTS_FILE="${SESSION_OWNER_COMMENTS_FILE:-}"
 CATALOG_OPERATION_ID="${CATALOG_OPERATION_ID:-GET_HOSTNAME}"
 APPROVED_SCRIPT_ID="${APPROVED_SCRIPT_ID:-DIAG_HOSTNAME}"
 APPROVED_SCRIPT_VERSION="${APPROVED_SCRIPT_VERSION:-1}"
@@ -118,11 +124,23 @@ write_plan() {
     --arg runRecordingExport "$RUN_RECORDING_EXPORT" \
     --arg runVerify "$RUN_VERIFY" \
     --arg liveOperation "$LIVE_OPERATION" \
+    --arg sessionOwnerRequired "$SESSION_OWNER_REQUIRED" \
+    --arg sessionOwnerAutoClaim "$SESSION_OWNER_AUTO_CLAIM" \
+    --arg sessionOwnerIssueSet "$([[ -n "$SESSION_OWNER_ISSUE_URL" ]] && printf true || printf false)" \
+    --arg sessionOwnerEndpointSet "$([[ -n "$SESSION_OWNER_ENDPOINT_ID" ]] && printf true || printf false)" \
     --arg sessionPresent "$([[ -n "$REMOTE_BRIDGE_SESSION_ID" ]] && printf true || printf false)" \
     '{
       generatedAt: $generatedAt,
       operationSource: $operationSource,
       liveOperation: ($liveOperation == "1"),
+      sessionOwnership: {
+        required: ($sessionOwnerRequired == "1"),
+        autoClaim: ($sessionOwnerAutoClaim == "1"),
+        ownerIssueSet: ($sessionOwnerIssueSet == "true"),
+        endpointIdSet: ($sessionOwnerEndpointSet == "true"),
+        storesRawSessionId: false,
+        storesBearerToken: false
+      },
       requestedActions: {
         pilotReadiness: ($runPilotReadiness == "1"),
         operation: ($runOperation == "1"),
@@ -139,6 +157,7 @@ write_plan() {
         "RUN_OPERATION=1",
         "LIVE_OPERATION=1",
         "REMOTE_BRIDGE_SESSION_ID set to an owned, approved, step-up-verified session",
+        "SESSION_OWNER_ISSUE_URL and SESSION_OWNER_ENDPOINT_ID prove a redacted active ownership claim",
         "OPERATOR_BEARER_TOKEN_FILE or OPERATOR_BEARER_TOKEN supplied by operator"
       ],
       acceptedRuntimeEvidence: [
@@ -158,6 +177,37 @@ write_plan() {
         "RDP/SSH/WinRM/SMB/RPC/file browser/reverse tunnel"
       ]
     }' > "${EVIDENCE_DIR}/runtime-smoke-plan.json"
+}
+
+run_session_ownership_guard() {
+  [[ -n "$REMOTE_BRIDGE_SESSION_ID" ]] \
+    || die "REMOTE_BRIDGE_SESSION_ID is required when RUN_OPERATION=1"
+  [[ -n "$SESSION_OWNER_ISSUE_URL" ]] \
+    || die "SESSION_OWNER_ISSUE_URL or SESSION_OWNER_ISSUE is required when SESSION_OWNER_REQUIRED=1"
+  [[ -n "$SESSION_OWNER_ENDPOINT_ID" ]] \
+    || die "SESSION_OWNER_ENDPOINT_ID is required when SESSION_OWNER_REQUIRED=1"
+
+  local action="check" guard_output
+  if [[ "$SESSION_OWNER_AUTO_CLAIM" == "1" ]]; then
+    action="claim"
+  fi
+  guard_output="${EVIDENCE_DIR}/session-ownership-guard.out"
+
+  (
+    cd "$REPO_ROOT"
+    ACTION="$action" \
+    REMOTE_BRIDGE_SESSION_ID="$REMOTE_BRIDGE_SESSION_ID" \
+    SESSION_OWNER_ENDPOINT_ID="$SESSION_OWNER_ENDPOINT_ID" \
+    SESSION_OWNER_ISSUE_URL="$SESSION_OWNER_ISSUE_URL" \
+    SESSION_OWNER_TTL_MINUTES="$SESSION_OWNER_TTL_MINUTES" \
+    SESSION_OWNER_OPERATION_SOURCE="$OPERATION_SOURCE" \
+    SESSION_OWNER_COMMENTS_FILE="$SESSION_OWNER_COMMENTS_FILE" \
+    CATALOG_OPERATION_ID="$CATALOG_OPERATION_ID" \
+    APPROVED_SCRIPT_ID="$APPROVED_SCRIPT_ID" \
+      scripts/faz22-remote-ops/remote-response-terminal-session-ownership-guard.sh
+  ) > "$guard_output"
+
+  append_action "session-ownership-guard" "ok" "$(tail -n 1 "$guard_output")"
 }
 
 run_pilot_readiness() {
@@ -343,6 +393,8 @@ main() {
   bool_env "$RUN_RECORDING_EXPORT" RUN_RECORDING_EXPORT
   bool_env "$RUN_VERIFY" RUN_VERIFY
   bool_env "$LIVE_OPERATION" LIVE_OPERATION
+  bool_env "$SESSION_OWNER_REQUIRED" SESSION_OWNER_REQUIRED
+  bool_env "$SESSION_OWNER_AUTO_CLAIM" SESSION_OWNER_AUTO_CLAIM
   bool_env "$PILOT_REQUIRE_READY" PILOT_REQUIRE_READY
   bool_env "$VERIFY_REQUIRE_ACCEPTED" VERIFY_REQUIRE_ACCEPTED
   bool_env "$VERIFY_REQUIRE_FULL_MATRIX" VERIFY_REQUIRE_FULL_MATRIX
@@ -364,8 +416,14 @@ main() {
   fi
 
   if [[ "$RUN_OPERATION" == "1" ]]; then
+    if [[ "$SESSION_OWNER_REQUIRED" == "1" ]]; then
+      run_session_ownership_guard
+    else
+      append_action "session-ownership-guard" "skipped" "SESSION_OWNER_REQUIRED is not 1"
+    fi
     run_operation_smoke
   else
+    append_action "session-ownership-guard" "skipped" "RUN_OPERATION is not 1"
     append_action "operation-smoke" "skipped" "RUN_OPERATION is not 1; no terminal operation dispatched"
   fi
 

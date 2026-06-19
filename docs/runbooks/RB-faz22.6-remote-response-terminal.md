@@ -547,6 +547,80 @@ It does not prove that the endpoint is already on `v0.2.10`; run pilot
 readiness first or set `RUN_PILOT_READINESS=1 PILOT_REQUIRE_READY=1` to fail
 unless that precondition is true.
 
+### 6.5 Live Session Ownership Guard
+
+Before any live terminal smoke, create a redacted single-owner claim on the
+implementation issue that owns the runtime evidence, normally
+`platform-agent#208`. The claim is a coordination guard, not acceptance
+evidence. It prevents two operator/agent sessions from dispatching against the
+same endpoint at the same time.
+
+Create the ownership claim after the operator has the approved, step-up-verified
+remote-bridge session id. The helper hashes the session id and endpoint id; it
+never writes the raw session id, bearer token, JWT, endpoint hostname, or user
+data to GitHub:
+
+```bash
+ACTION=claim \
+SESSION_OWNER_ISSUE_URL=https://github.com/Halildeu/platform-agent/issues/208 \
+SESSION_OWNER_ENDPOINT_ID=<target-endpoint-device-id> \
+REMOTE_BRIDGE_SESSION_ID=<fresh-owned-step-up-verified-session> \
+SESSION_OWNER_TTL_MINUTES=45 \
+scripts/faz22-remote-ops/remote-response-terminal-session-ownership-guard.sh
+```
+
+Run the runtime smoke with the same ownership fields. By default, live
+operation dispatch requires this check and fails closed if no matching active
+claim exists, if the claim expired, or if another active claim exists for the
+same endpoint hash:
+
+```bash
+LIVE_OPERATION=1 \
+RUN_OPERATION=1 \
+RUN_RECORDING_EXPORT=1 \
+RUN_VERIFY=1 \
+VERIFY_REQUIRE_ACCEPTED=1 \
+SESSION_OWNER_ISSUE_URL=https://github.com/Halildeu/platform-agent/issues/208 \
+SESSION_OWNER_ENDPOINT_ID=<target-endpoint-device-id> \
+OPERATOR_BEARER_TOKEN_FILE=/secure/path/operator.jwt \
+REMOTE_BRIDGE_SESSION_ID=<fresh-owned-step-up-verified-session> \
+CATALOG_OPERATION_ID=GET_HOSTNAME \
+STAGING_SSH_TARGET=halil@staging-sw \
+EVIDENCE_DIR=/home/halil/codex-rb-smoke/<timestamp>-remote-response-terminal \
+scripts/faz22-remote-ops/remote-response-terminal-runtime-smoke.sh
+```
+
+For tightly controlled single-operator runs, the orchestrator can create and
+then check the claim immediately before dispatch:
+
+```bash
+SESSION_OWNER_AUTO_CLAIM=1 \
+SESSION_OWNER_ISSUE_URL=https://github.com/Halildeu/platform-agent/issues/208 \
+SESSION_OWNER_ENDPOINT_ID=<target-endpoint-device-id> \
+LIVE_OPERATION=1 RUN_OPERATION=1 \
+OPERATOR_BEARER_TOKEN_FILE=/secure/path/operator.jwt \
+REMOTE_BRIDGE_SESSION_ID=<fresh-owned-step-up-verified-session> \
+scripts/faz22-remote-ops/remote-response-terminal-runtime-smoke.sh
+```
+
+Release the claim after the smoke or when the session is abandoned:
+
+```bash
+ACTION=release \
+SESSION_OWNER_ISSUE_URL=https://github.com/Halildeu/platform-agent/issues/208 \
+SESSION_OWNER_ENDPOINT_ID=<target-endpoint-device-id> \
+REMOTE_BRIDGE_SESSION_ID=<fresh-owned-step-up-verified-session> \
+SESSION_OWNER_RELEASE_REASON=done \
+scripts/faz22-remote-ops/remote-response-terminal-session-ownership-guard.sh
+```
+
+This guard mirrors common remote monitoring and management practice: just-in
+time operator access, explicit session ownership, short TTL, redacted audit
+trail, fail-closed conflict detection, and separate acceptance evidence. It is
+not a security boundary by itself; broker-side device binding, maker-checker,
+step-up auth, command policy, recording, and endpoint permit validation remain
+the enforcement boundaries.
+
 ## 7. Acceptance Checklist
 
 Required evidence per lane:
