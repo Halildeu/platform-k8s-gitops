@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.6.3 #208 v0.2.13 source/artifact ready; GitOps live gate pending (2026-06-20)
+## Live Delta — Faz 22.6.3 #208 v0.2.13 public edge ready; pod imageID + AgentPC2 gate pending (2026-06-20)
 
 **Session milestone**: AgentPC2 proved that the `v0.2.12` service environment
 was populated with the dedicated 443/SNI remote-bridge settings, compatibility
@@ -35,19 +35,42 @@ Source and artifact lineage:
   signing tier `trusted-internal-ca`, and artifact-host image
   `ghcr.io/halildeu/platform-agent-artifacts:v0.2.13@sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`.
 
-GitOps desired-state change in progress:
+GitOps + public edge evidence:
 
-- The test overlay promotion updates `artifact-host` from
+- `platform-k8s-gitops#1749` merged at
+  `74eea4c5a31926531b9feca0ee532c530d0cf4d5`, updating the test overlay
+  `artifact-host` pin from
   `v0.2.12@sha256:b51cd8167734ecc1b383944454ef9030224b0d337a42ba476477b83ebbe762c9`
   to
   `v0.2.13@sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`.
-- Until the GitOps promotion PR is merged, ArgoCD syncs, and live
-  `platform-test/artifact-host` pod `imageID`s plus public `/current/`
-  manifest/hash evidence are collected, the test environment may still serve
-  `v0.2.12`.
+- Public `https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json`
+  now returns `release_tag=v0.2.13`,
+  `endpoint_agent_sha256=6e3a79b8ea076d08e2288be98359d3db6049b6179e655ceaff924f792736cd0c`,
+  and
+  `endpoint_agent_zip_sha256=9afe07b6eb1fa2c8b94b50181ec5265681e77a28ec3368bdd8d1a25fd59acec0`.
+- Public artifact checks:
+  `/current/endpoint-agent.exe` returns SHA256
+  `6e3a79b8ea076d08e2288be98359d3db6049b6179e655ceaff924f792736cd0c`
+  with size `14108584`; `/current/EndpointAgent.zip` returns SHA256
+  `9afe07b6eb1fa2c8b94b50181ec5265681e77a28ec3368bdd8d1a25fd59acec0`
+  with size `5455118`.
+- Manual platform-test sync workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27849762575`
+  completed successfully for endpoint-admin OpenFGA runtime selector
+  verification, but ArgoCD core was unavailable and the script used selected
+  endpoint-admin fallback. That report does not provide `artifact-host` pod
+  `imageID`.
+- Live drift workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27849826042`
+  still reports the existing broader `OutOfSync/Healthy` drift class and does
+  not produce artifact-host-specific digest parity.
 
 Acceptance boundary:
 
+- Live `platform-test/artifact-host` pod `imageID` parity for
+  `sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`
+  is still pending because the Codex shell did not have staging SSH agent
+  access in this turn (`SSH_AUTH_SOCK` unset; local key passphrase unavailable).
 - `platform-agent#208` remains open until a pilot endpoint runs the accepted
   `v0.2.13` candidate and proves outbound product-channel `HELLO`, broker
   permit verification, constrained operation output, negative/plaintext refusal,
