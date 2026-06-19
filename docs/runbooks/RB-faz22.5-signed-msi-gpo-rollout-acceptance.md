@@ -78,6 +78,7 @@ EndpointAgent1680\
   scripts\install-endpoint-agent-gpo-msi.ps1
   scripts\verify-endpoint-agent-gpo-msi.ps1
   scripts\rollback-endpoint-agent-gpo-msi.ps1
+  scripts\validate-gpo-msi-rollout-evidence.ps1
   scripts\wave-preflight.ps1
   scripts\collect-endpoint-agent-rollout-evidence.ps1
   scripts\m5-same-day-pilot-collector.ps1
@@ -110,7 +111,8 @@ CI guard:
 
 - `.github/workflows/gate-faz22-gpo-msi-bundle.yml` builds this bundle with
   the pinned release assets, verifies the MSI and manifest hashes, parses all
-  generated PowerShell scripts, and checks the manifest guardrails.
+  generated PowerShell scripts, checks the manifest guardrails, and exercises
+  positive/negative fixtures for the read-only evidence-package verifier.
 - The CI guard proves package reproducibility only. It does not prove GPO
   targeting, endpoint install, service restart, mTLS heartbeat, rollback, or
   failed-device triage.
@@ -254,6 +256,28 @@ The script writes redacted JSON/text artifacts under:
 ```text
 C:\ProgramData\EndpointAgent\rollout-evidence
 ```
+
+After both devices and the rollback drill have produced artifacts, verify the
+evidence package before moving #1680 out of `Blocked`:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\validate-gpo-msi-rollout-evidence.ps1 `
+  -EvidenceRoot "C:\ProgramData\EndpointAgent\rollout-evidence" `
+  -BundleManifestPath "\\<pilot-share>\EndpointAgent1680\bundle-manifest.json" `
+  -ExpectedMsiSha256 "132b8990bc78c4952ccaa7d2076cf26a37f0616f81e1a82274b5570b49f24ea4" `
+  -ExpectedMsiManifestSha256 "68929426674f6524e6fdbc78e2eb024920cfd686dd637573537c1717196c69ee" `
+  -ExpectedSignerThumbprint "D68F4F530137EB65CE44E3405E82B46205E753E5" `
+  -ExpectedMinimumAgentVersion "0.2.10" `
+  -ExitCodeOnFail `
+  -Json
+```
+
+The verifier is read-only. It requires M1 bundle evidence, M3 constrained
+targeting evidence, two passing install/verify/preflight/collector device
+evidence sets, one rollback plus reinstall-continuity evidence set, and M8
+failed-device triage evidence. A verifier `PASS` is evidence-package quality
+control; it still does not mutate GPO or close #1680 by itself.
 
 Attach only redacted summaries or file hashes to GitHub. Do not paste secret
 values or raw private material.

@@ -1,0 +1,17 @@
+{
+  "schema": "faz22.m7.rollback-rehearsal.collector.v1",
+  "collectedAt": "2026-06-19T05:17:00Z",
+  "phase": "rollback-clean",
+  "deviceRole": "domain-gpo",
+  "overall": "PASS",
+  "failCount": 0,
+  "warnCount": 0,
+  "facts": { "computerName": "PC-A", "domain": "acik.local", "partOfDomain": true },
+  "checks": [
+    { "name": "service-removed", "status": "PASS", "detail": "service absent" },
+    { "name": "agent-binary-removed", "status": "PASS", "detail": "binary absent" },
+    { "name": "service-env-cleared", "status": "PASS", "detail": "service Environment regkey absent" },
+    { "name": "scheduled-task", "status": "PASS", "detail": "no EndpointAgent scheduled task" },
+    { "name": "log-retention", "status": "PASS", "detail": "log dir preserved" }
+  ]
+}

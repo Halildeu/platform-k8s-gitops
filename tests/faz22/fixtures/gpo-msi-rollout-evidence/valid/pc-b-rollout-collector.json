@@ -1,0 +1,30 @@
+{
+  "schema": "faz22.5-endpoint-agent-rollout-evidence-v1",
+  "generatedAt": "2026-06-19T05:14:00Z",
+  "computerName": "PC-B",
+  "expected": {
+    "apiHost": "mtls.testai.acik.com",
+    "msiSha256": "132b8990bc78c4952ccaa7d2076cf26a37f0616f81e1a82274b5570b49f24ea4",
+    "signerThumbprint": "D68F4F530137EB65CE44E3405E82B46205E753E5",
+    "minimumAgentVersion": "0.2.10"
+  },
+  "host": {
+    "domain": "acik.local",
+    "domainJoined": true,
+    "adObjectGuid": "22222222-2222-2222-2222-222222222222"
+  },
+  "network": {
+    "tcp443": { "host": "mtls.testai.acik.com", "port": 443, "open": true, "error": null }
+  },
+  "endpointAgent": {
+    "services": [
+      { "name": "EndpointAgent", "displayName": "Endpoint Agent", "state": "Running", "startMode": "Auto", "startName": "LocalSystem" }
+    ],
+    "binary": { "productVersion": "0.2.10", "fileVersion": "0.2.10.0" },
+    "versionFloor": { "status": "PASS", "expectedMinimumVersion": "0.2.10", "selectedVersion": "0.2.10" },
+    "restart": { "requested": true, "attempted": true, "success": true, "stateAfter": "Running" },
+    "clientAuthCerts": [
+      { "subject": "CN=PC-B.acik.local", "hasPrivateKey": true, "enhancedKeyUsage": "Client Authentication (1.3.6.1.5.5.7.3.2)" }
+    ]
+  }
+}

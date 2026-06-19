@@ -1,0 +1,12 @@
+{
+  "schema": "faz22.1680.gpo-msi.rollback.v1",
+  "generatedAt": "2026-06-19T05:16:00Z",
+  "computerName": "PC-A",
+  "productCode": "{11111111-2222-3333-4444-555555555555}",
+  "purgeConfig": true,
+  "msiexecExitCode": 0,
+  "rollbackStatus": "PASS",
+  "msiLog": "C:\\ProgramData\\EndpointAgent\\rollout-evidence\\pc-a-uninstall.log",
+  "wavePreflight": { "exitCode": 0, "output": "pc-a-wave-rollback-clean.json" },
+  "m7Collector": { "exitCode": 0, "output": "pc-a-m7-rollback-clean.txt" }
+}

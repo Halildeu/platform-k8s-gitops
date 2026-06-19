@@ -1,0 +1,13 @@
+{
+  "schema": "faz22.1680.gpo-msi.install.v1",
+  "generatedAt": "2026-06-19T05:10:00Z",
+  "computerName": "PC-B",
+  "expectedMsiSha256": "132b8990bc78c4952ccaa7d2076cf26a37f0616f81e1a82274b5570b49f24ea4",
+  "autoEnrollApiUrl": "https://mtls.testai.acik.com/api/v1/endpoint-agent",
+  "autoEnrollCertSANURIPrefix": "adcomputer:",
+  "autoEnrollJitterSeconds": 900,
+  "msiexecExitCode": 3010,
+  "installStatus": "PASS",
+  "acceptedRestartRequired": true,
+  "msiLog": "C:\\ProgramData\\EndpointAgent\\rollout-evidence\\pc-b-install.log"
+}
