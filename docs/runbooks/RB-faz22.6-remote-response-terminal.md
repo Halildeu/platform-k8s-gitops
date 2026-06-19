@@ -379,10 +379,16 @@ Default acceptance rules:
 - capability is `CONSTRAINED_PTY`;
 - the response is bound to a server-owned source
   (`catalogOperationId`, `approvedScript.scriptId`, or `permit.commandHash`);
+- the redacted session ownership guard output is present and proves
+  `REMOTE_RESPONSE_TERMINAL_SESSION_GUARD_STATUS=owned`;
+- the session ownership evidence contains only short SHA-derived session and
+  endpoint hashes plus owner comment metadata, not raw session ids or bearer
+  values;
 - the recording export contains `AGENT_OUTPUT` or equivalent `DATA`;
 - the recording export contains terminal `EndStream`;
 - core raw-shell and command/policy override negative evidence is present;
-- `SHA256SUMS` verifies cleanly and lists the required evidence files.
+- `SHA256SUMS` verifies cleanly and lists the required evidence files,
+  including `session-ownership-guard.out` when session ownership is required.
 
 Useful strict modes:
 
@@ -394,6 +400,12 @@ REQUIRE_ACCEPTED=1 scripts/faz22-remote-ops/remote-response-terminal-evidence-ve
 REQUIRE_ACCEPTED=1 REQUIRE_FULL_MATRIX=1 \
 scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
 
+# Session ownership evidence is required by default for Remote Response Terminal
+# accepted candidates. Use this only to inspect legacy evidence that predates
+# the ownership guard; do not use it for #208 acceptance.
+REQUIRE_SESSION_OWNERSHIP=0 \
+scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
+
 # Pin the expected catalog operation for one smoke.
 EXPECTED_CATALOG_OPERATION_ID=GET_HOSTNAME REQUIRE_ACCEPTED=1 \
 scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
@@ -401,8 +413,11 @@ scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
 
 Verifier decision values are intentionally bounded:
 
-- `accepted-candidate` means PERMIT, transport, bounded output recording, core
-  negative evidence, and checksum evidence are present.
+- `accepted-candidate` means PERMIT, transport, redacted session ownership,
+  bounded output recording, core negative evidence, and checksum evidence are
+  present.
+- `missing-session-ownership` or `invalid-session-ownership` means the bundle
+  does not prove the single-owner live-smoke coordination guard.
 - `missing-permit`, `missing-transport-push`, `missing-permit-signature`,
   `wrong-capability`, or `missing-server-owned-source-binding` mean the allowed
   operation response cannot prove the product-channel constrained path.
@@ -543,6 +558,9 @@ scripts/faz22-remote-ops/remote-response-terminal-runtime-smoke.sh
 
 The orchestrator refuses `RUN_OPERATION=1` unless `LIVE_OPERATION=1` is set.
 It keeps bearer values out of argv examples and evidence by using token files.
+When live operation is run with the default `SESSION_OWNER_REQUIRED=1`, it
+writes `session-ownership-guard.out`; the verifier requires that file by
+default for `accepted-candidate`.
 It does not prove that the endpoint is already on `v0.2.10`; run pilot
 readiness first or set `RUN_PILOT_READINESS=1 PILOT_REQUIRE_READY=1` to fail
 unless that precondition is true.
@@ -619,7 +637,9 @@ time operator access, explicit session ownership, short TTL, redacted audit
 trail, fail-closed conflict detection, and separate acceptance evidence. It is
 not a security boundary by itself; broker-side device binding, maker-checker,
 step-up auth, command policy, recording, and endpoint permit validation remain
-the enforcement boundaries.
+the enforcement boundaries. The live smoke evidence bundle must retain the
+generated `session-ownership-guard.out` file so the verifier can prove the
+single-owner coordination path was used without exposing raw session material.
 
 ## 7. Acceptance Checklist
 

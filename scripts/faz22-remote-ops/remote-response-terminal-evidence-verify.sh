@@ -14,6 +14,7 @@ EVIDENCE_DIR="${EVIDENCE_DIR:-${1:-.}}"
 OPERATION_BODY_FILE="${OPERATION_BODY_FILE:-}"
 RECORDING_ROWS_FILE="${RECORDING_ROWS_FILE:-}"
 SMOKE_SUMMARY_FILE="${SMOKE_SUMMARY_FILE:-}"
+SESSION_OWNERSHIP_FILE="${SESSION_OWNERSHIP_FILE:-}"
 SUMMARY_FILE="${SUMMARY_FILE:-${EVIDENCE_DIR}/verification-summary.json}"
 
 EXPECTED_OPERATION_KIND="${EXPECTED_OPERATION_KIND:-PERMIT}"
@@ -25,6 +26,7 @@ REQUIRE_NEGATIVES="${REQUIRE_NEGATIVES:-1}"
 REQUIRE_FULL_MATRIX="${REQUIRE_FULL_MATRIX:-0}"
 REQUIRE_SHA256="${REQUIRE_SHA256:-1}"
 REQUIRE_ACCEPTED="${REQUIRE_ACCEPTED:-0}"
+REQUIRE_SESSION_OWNERSHIP="${REQUIRE_SESSION_OWNERSHIP:-1}"
 
 NEGATIVE_DETAILS="[]"
 
@@ -214,6 +216,17 @@ find_smoke_summary_file() {
   first_existing_file summary.json smoke-summary.json
 }
 
+find_session_ownership_file() {
+  if [[ -n "$SESSION_OWNERSHIP_FILE" ]]; then
+    resolve_input_file "$SESSION_OWNERSHIP_FILE"
+    return 0
+  fi
+  first_existing_file \
+    session-ownership-guard.out \
+    session-ownership.out \
+    live-session-owner.out
+}
+
 analyze_sha256_manifest() {
   local sums_file="${EVIDENCE_DIR}/SHA256SUMS"
   local status="not-present" log_excerpt="" tmp_log hasher=()
@@ -302,6 +315,69 @@ analyze_sha256_required_files() {
     --argjson files "$arr" \
     --arg missingCount "$missing_count" \
     '{ok: (($missingCount | tonumber) == 0), missingCount: ($missingCount | tonumber), files: $files}'
+}
+
+analyze_session_ownership() {
+  local file="$1"
+  if [[ -z "$file" ]]; then
+    jq -cn '{status:"missing", file:null, ok:false, reason:"session ownership guard evidence not found"}'
+    return 0
+  fi
+
+  local rel owned_line has_owned_line="false" session_hash_ok="false" endpoint_hash_ok="false"
+  local owner_comment_ok="false" raw_marker_present="false" ok="false" reason="session-ownership-evidence-incomplete"
+  rel="$(relpath "$file")"
+  owned_line="$(grep -E '^REMOTE_RESPONSE_TERMINAL_SESSION_GUARD_STATUS=owned([[:space:]]|$)' "$file" | tail -n 1 || true)"
+
+  if [[ -n "$owned_line" ]]; then
+    has_owned_line="true"
+  fi
+  if [[ "$owned_line" =~ (^|[[:space:]])session_hash=[a-f0-9]{12}([[:space:]]|$) ]]; then
+    session_hash_ok="true"
+  fi
+  if [[ "$owned_line" =~ (^|[[:space:]])endpoint_hash=[a-f0-9]{12}([[:space:]]|$) ]]; then
+    endpoint_hash_ok="true"
+  fi
+  if [[ "$owned_line" =~ (^|[[:space:]])owner_comment_id=[0-9]+([[:space:]]|$) ]]; then
+    owner_comment_ok="true"
+  fi
+  if LC_ALL=C grep -Eiq 'Bearer|Authorization|eyJ[A-Za-z0-9_-]{10,}|access_token|client_secret|privateKey|BEGIN PRIVATE|OPERATOR_BEARER_TOKEN|REMOTE_BRIDGE_SESSION_ID=' "$file"; then
+    raw_marker_present="true"
+  fi
+
+  if [[ "$has_owned_line" != "true" ]]; then
+    reason="missing-owned-status"
+  elif [[ "$session_hash_ok" != "true" || "$endpoint_hash_ok" != "true" ]]; then
+    reason="missing-redacted-session-or-endpoint-hash"
+  elif [[ "$owner_comment_ok" != "true" ]]; then
+    reason="missing-owner-comment-id"
+  elif [[ "$raw_marker_present" == "true" ]]; then
+    reason="session-ownership-evidence-leaks-sensitive-marker"
+  else
+    ok="true"
+    reason="redacted-session-ownership-present"
+  fi
+
+  jq -cn \
+    --arg file "$rel" \
+    --arg hasOwnedLine "$has_owned_line" \
+    --arg sessionHashOk "$session_hash_ok" \
+    --arg endpointHashOk "$endpoint_hash_ok" \
+    --arg ownerCommentOk "$owner_comment_ok" \
+    --arg rawMarkerPresent "$raw_marker_present" \
+    --arg ok "$ok" \
+    --arg reason "$reason" \
+    '{
+      status: "parsed",
+      file: $file,
+      hasOwnedStatus: ($hasOwnedLine == "true"),
+      sessionHashRedacted: ($sessionHashOk == "true"),
+      endpointHashRedacted: ($endpointHashOk == "true"),
+      ownerCommentPresent: ($ownerCommentOk == "true"),
+      sensitiveMarkerPresent: ($rawMarkerPresent == "true"),
+      ok: ($ok == "true"),
+      reason: $reason
+    }'
 }
 
 analyze_operation_body() {
@@ -483,19 +559,23 @@ main() {
   [[ -d "$EVIDENCE_DIR" ]] || die "EVIDENCE_DIR is not a directory: $EVIDENCE_DIR"
 
   local operation_file recording_file smoke_summary_file
+  local session_ownership_file
   operation_file="$(find_operation_body_file || true)"
   recording_file="$(find_recording_rows_file || true)"
   smoke_summary_file="$(find_smoke_summary_file || true)"
+  session_ownership_file="$(find_session_ownership_file || true)"
 
   validate_file_under_evidence_dir "$operation_file" "operation body"
   validate_file_under_evidence_dir "$recording_file" "recording rows"
   validate_file_under_evidence_dir "$smoke_summary_file" "smoke summary"
+  validate_file_under_evidence_dir "$session_ownership_file" "session ownership"
 
-  local sha_json operation_json recording_json smoke_summary_json
+  local sha_json operation_json recording_json smoke_summary_json session_ownership_json
   sha_json="$(analyze_sha256_manifest)"
   operation_json="$(analyze_operation_body "$operation_file")"
   recording_json="$(analyze_recording_rows "$recording_file")"
   smoke_summary_json="$(summarize_smoke_summary "$smoke_summary_file")"
+  session_ownership_json="$(analyze_session_ownership "$session_ownership_file")"
 
   local raw_negative_ok="false" override_negative_ok="false" disabled_negative_ok="false"
   local authz_negative_ok="false" expired_negative_ok="false" wrong_device_negative_ok="false"
@@ -581,7 +661,7 @@ main() {
   fi
 
   local sha_required_json
-  sha_required_json="$(analyze_sha256_required_files "$operation_file" "$recording_file")"
+  sha_required_json="$(analyze_sha256_required_files "$operation_file" "$recording_file" "$session_ownership_file")"
 
   local result reason
   if [[ "$(jq -r '.ok' <<< "$operation_json")" != "true" ]]; then
@@ -593,6 +673,12 @@ main() {
   elif [[ "$(jq -r '.ok' <<< "$recording_json")" != "true" ]]; then
     result="$(jq -r '.reason' <<< "$recording_json")"
     reason="recording rows do not prove DATA/AGENT_OUTPUT plus EndStream"
+  elif [[ "$REQUIRE_SESSION_OWNERSHIP" == "1" && "$(jq -r '.status' <<< "$session_ownership_json")" == "missing" ]]; then
+    result="missing-session-ownership"
+    reason="redacted live-session ownership guard evidence is required"
+  elif [[ "$REQUIRE_SESSION_OWNERSHIP" == "1" && "$(jq -r '.ok' <<< "$session_ownership_json")" != "true" ]]; then
+    result="invalid-session-ownership"
+    reason="session ownership guard evidence is incomplete or leaks a sensitive marker"
   elif [[ "$REQUIRE_SHA256" == "1" && "$(jq -r '.status' <<< "$sha_json")" != "ok" ]]; then
     result="sha256-unverified"
     reason="SHA256SUMS is required but did not verify cleanly"
@@ -607,7 +693,7 @@ main() {
     reason="full #208 lifecycle/authz/replay/termination matrix is required but incomplete"
   else
     result="accepted-candidate"
-    reason="PERMIT, transport, recording, checksum, and required negative evidence are present"
+    reason="PERMIT, transport, redacted session ownership, recording, checksum, and required negative evidence are present"
   fi
 
   jq -n \
@@ -622,6 +708,7 @@ main() {
     --arg requireNegatives "$REQUIRE_NEGATIVES" \
     --arg requireFullMatrix "$REQUIRE_FULL_MATRIX" \
     --arg requireSha256 "$REQUIRE_SHA256" \
+    --arg requireSessionOwnership "$REQUIRE_SESSION_OWNERSHIP" \
     --arg coreNegativesOk "$core_negatives_ok" \
     --arg fullMatrixOk "$full_matrix_ok" \
     --arg rawNegativeOk "$raw_negative_ok" \
@@ -635,6 +722,7 @@ main() {
     --argjson operation "$operation_json" \
     --argjson recording "$recording_json" \
     --argjson smokeSummary "$smoke_summary_json" \
+    --argjson sessionOwnership "$session_ownership_json" \
     --argjson sha256Manifest "$sha_json" \
     --argjson sha256RequiredFiles "$sha_required_json" \
     --argjson negativeChecks "$NEGATIVE_DETAILS" \
@@ -653,9 +741,11 @@ main() {
       requirements: {
         requireNegatives: ($requireNegatives == "1"),
         requireFullMatrix: ($requireFullMatrix == "1"),
-        requireSha256: ($requireSha256 == "1")
+        requireSha256: ($requireSha256 == "1"),
+        requireSessionOwnership: ($requireSessionOwnership == "1")
       },
       smokeSummary: $smokeSummary,
+      sessionOwnership: $sessionOwnership,
       operation: $operation,
       recording: $recording,
       sha256Manifest: ($sha256Manifest + {requiredFiles: $sha256RequiredFiles}),
@@ -679,6 +769,7 @@ main() {
         "5-PC/50-PC/800-PC readiness",
         "production remote-support readiness",
         "unrestricted shell/RDP/WinRM/SMB/SSH",
+        "broker-side enforcement from the session ownership comment alone",
         "true TPM/device-key hardware attestation unless platform-backend#548 is separately accepted",
         "full #208 Done state unless the full lifecycle/authz/replay/termination matrix is also attached and accepted"
       ]

@@ -39,6 +39,7 @@ PILOT_REQUIRE_READY="${PILOT_REQUIRE_READY:-0}"
 VERIFY_REQUIRE_ACCEPTED="${VERIFY_REQUIRE_ACCEPTED:-0}"
 VERIFY_REQUIRE_FULL_MATRIX="${VERIFY_REQUIRE_FULL_MATRIX:-0}"
 VERIFY_REQUIRE_SHA256="${VERIFY_REQUIRE_SHA256:-1}"
+VERIFY_REQUIRE_SESSION_OWNERSHIP="${VERIFY_REQUIRE_SESSION_OWNERSHIP:-1}"
 
 TOKEN=""
 ACTIONS_JSON="[]"
@@ -162,6 +163,7 @@ write_plan() {
       ],
       acceptedRuntimeEvidence: [
         "pilot endpoint heartbeat proves EndpointAgent v0.2.10",
+        "redacted live-session ownership guard output is present",
         "allowed catalog operation returns PERMIT with transportPushed=true",
         "recording/export contains AGENT_OUTPUT or DATA plus terminal EndStream",
         "core raw/unrestricted and command/policy override denies are present",
@@ -296,6 +298,7 @@ run_verifier() {
     export REQUIRE_ACCEPTED="$VERIFY_REQUIRE_ACCEPTED"
     export REQUIRE_FULL_MATRIX="$VERIFY_REQUIRE_FULL_MATRIX"
     export REQUIRE_SHA256="$VERIFY_REQUIRE_SHA256"
+    export REQUIRE_SESSION_OWNERSHIP="$VERIFY_REQUIRE_SESSION_OWNERSHIP"
     if [[ "$OPERATION_SOURCE" == "catalog" ]]; then
       export EXPECTED_CATALOG_OPERATION_ID="$CATALOG_OPERATION_ID"
       export EXPECTED_APPROVED_SCRIPT_ID=""
@@ -399,6 +402,7 @@ main() {
   bool_env "$VERIFY_REQUIRE_ACCEPTED" VERIFY_REQUIRE_ACCEPTED
   bool_env "$VERIFY_REQUIRE_FULL_MATRIX" VERIFY_REQUIRE_FULL_MATRIX
   bool_env "$VERIFY_REQUIRE_SHA256" VERIFY_REQUIRE_SHA256
+  bool_env "$VERIFY_REQUIRE_SESSION_OWNERSHIP" VERIFY_REQUIRE_SESSION_OWNERSHIP
 
   mkdir -p "$EVIDENCE_DIR"
   write_plan
