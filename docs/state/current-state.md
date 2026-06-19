@@ -508,6 +508,11 @@ Scope split / residual truth:
   verifier, rollback helper, and collectors. The bundle generator is not live
   acceptance and does not mutate AD/GPO/endpoints; it removes ambiguity around
   the exact script/artifact set that the next `gpo-msi` pilot must use.
+- `.github/workflows/gate-faz22-gpo-msi-bundle.yml` machine-checks that bundle
+  path by downloading the pinned release assets, verifying hashes, parsing the
+  source and generated PowerShell scripts, and asserting the manifest guardrails.
+  This is reproducibility evidence only; #1680 still needs endpoint execution
+  evidence before the signed MSI/GPO rollout gate can move.
 - Remote-ops hardening/deploy evidence was added on 2026-06-18 for the
   broader `platform-backend#510` parent. `platform-backend#696` merged as
   `14e6390e9ae3d92a0c012c6220fdddf5b1d82d78`, exposing redacted/non-secret

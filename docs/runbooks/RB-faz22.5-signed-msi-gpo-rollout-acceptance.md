@@ -106,6 +106,15 @@ repeatable execution package for the later two-device `gpo-msi` run. Attach the
 `bundle-manifest.json` hash to #1680 before execution so later endpoint evidence
 can be tied to an exact script/artifact set.
 
+CI guard:
+
+- `.github/workflows/gate-faz22-gpo-msi-bundle.yml` builds this bundle with
+  the pinned release assets, verifies the MSI and manifest hashes, parses all
+  generated PowerShell scripts, and checks the manifest guardrails.
+- The CI guard proves package reproducibility only. It does not prove GPO
+  targeting, endpoint install, service restart, mTLS heartbeat, rollback, or
+  failed-device triage.
+
 ## 3. Hard Boundaries
 
 - No raw enrollment token, JWT, private key, password, or bearer value is pasted
