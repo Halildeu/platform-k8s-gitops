@@ -494,6 +494,7 @@ main() {
   fi
 
   if [[ "$RUN_VERIFY" == "1" && "$RUN_OPERATION" == "1" ]]; then
+    sha256_manifest
     run_verifier
   else
     append_action "evidence-verify" "skipped" "RUN_VERIFY is not 1 or no operation was run"
