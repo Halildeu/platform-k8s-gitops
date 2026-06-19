@@ -1,5 +1,44 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6.3 #208 artifact-host v0.2.11 release published; test pin promotion queued (2026-06-19)
+
+**Session milestone**: `platform-agent#210` corrected the artifact-host image
+staging contract so the image serves the loose signed `endpoint-agent.exe`
+listed by `release-manifest.json`, not only the ZIP/bootstrap files. Trusted
+release tag `v0.2.11` is published, and this repo now has a test overlay pin
+candidate for the immutable artifact-host image. This is still a release +
+desired-state prerequisite, not Remote Response Terminal acceptance.
+
+Source and artifact lineage:
+
+- `platform-agent#210` merged at
+  `dea5a4b86eb05081147cc47c43f3cc1730072c73`, adding reusable artifact-host
+  served-file staging and release-time manifest/hash checks.
+- Trusted EXE release workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27810127580`
+  returned `conclusion=success` for tag `v0.2.11`.
+- Release manifest evidence:
+  `endpoint_agent_sha256=cd3a5741a737f008a8bc3d11c1b8e3564ea71203063d215efef18a384a2f703e`,
+  `endpoint_agent_zip_sha256=393ec3db48fe81dc9c85cf86e4879336dbac5136713611c6094c6daaca91df0d`,
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`,
+  signing tier `trusted-internal-ca`, and artifact-host image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.11@sha256:6ac5cd888b4b20691d50cc509e26a113df66a427defce51b1a1d6a51d83a7f9a`.
+- `platform-k8s-gitops#1743` merged at
+  `6a6c7c26905f24eef79b1ace2c3ad718ea57871b`, refreshing the Remote Response
+  Terminal evidence bundle `SHA256SUMS` immediately before verifier execution.
+
+Acceptance boundary:
+
+- The live `testai` artifact-host must still be synced and verified against
+  `v0.2.11` before the public `/current/endpoint-agent.exe` path is counted as
+  accepted for the artifact-host gate.
+- `platform-backend#712` still needs a catalog-bound `UPDATE_AGENT` dispatch
+  using an approved `v0.2.11` URL, followed by post-update heartbeat evidence.
+- `platform-agent#208` remains open until a pilot endpoint running the accepted
+  candidate proves product-channel constrained terminal output (`AGENT_OUTPUT`
+  or equivalent DATA/EndStream evidence). Raw shell/RDP/WinRM/SMB/SSH or
+  operator-pasted PowerShell does not satisfy the gate.
+
 ## Live Delta — Faz 22.6.3 #208 agent artifact v0.2.10 served; runtime terminal gate still open (2026-06-19)
 
 **Session milestone**: the `platform-agent#208` constrained-executor source
