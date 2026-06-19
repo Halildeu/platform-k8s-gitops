@@ -16,6 +16,7 @@ RECORDING_ROWS_FILE="${RECORDING_ROWS_FILE:-}"
 SMOKE_SUMMARY_FILE="${SMOKE_SUMMARY_FILE:-}"
 SESSION_OWNERSHIP_FILE="${SESSION_OWNERSHIP_FILE:-}"
 PILOT_READINESS_FILE="${PILOT_READINESS_FILE:-}"
+GOVERNANCE_EVIDENCE_FILE="${GOVERNANCE_EVIDENCE_FILE:-}"
 SUMMARY_FILE="${SUMMARY_FILE:-${EVIDENCE_DIR}/verification-summary.json}"
 
 EXPECTED_OPERATION_KIND="${EXPECTED_OPERATION_KIND:-PERMIT}"
@@ -29,6 +30,7 @@ REQUIRE_SHA256="${REQUIRE_SHA256:-1}"
 REQUIRE_ACCEPTED="${REQUIRE_ACCEPTED:-0}"
 REQUIRE_SESSION_OWNERSHIP="${REQUIRE_SESSION_OWNERSHIP:-1}"
 REQUIRE_PILOT_READINESS="${REQUIRE_PILOT_READINESS:-1}"
+REQUIRE_GOVERNANCE_EVIDENCE="${REQUIRE_GOVERNANCE_EVIDENCE:-1}"
 
 NEGATIVE_DETAILS="[]"
 
@@ -241,6 +243,18 @@ find_pilot_readiness_file() {
     readiness-summary.json
 }
 
+find_governance_evidence_file() {
+  if [[ -n "$GOVERNANCE_EVIDENCE_FILE" ]]; then
+    resolve_input_file "$GOVERNANCE_EVIDENCE_FILE"
+    return 0
+  fi
+  first_existing_file \
+    governance-evidence.json \
+    governance/summary.json \
+    approval-evidence.json \
+    operator-governance.json
+}
+
 analyze_sha256_manifest() {
   local sums_file="${EVIDENCE_DIR}/SHA256SUMS"
   local status="not-present" log_excerpt="" tmp_log hasher=()
@@ -444,6 +458,100 @@ analyze_pilot_readiness() {
       )' "$file"
 }
 
+analyze_governance_evidence() {
+  local file="$1"
+  if [[ -z "$file" ]]; then
+    jq -cn '{status:"missing", file:null, ok:false, reason:"governance evidence not found"}'
+    return 0
+  fi
+
+  local rel raw_marker_present="false"
+  rel="$(relpath "$file")"
+  if LC_ALL=C grep -Eiq 'Bearer|Authorization|eyJ[A-Za-z0-9_-]{10,}|access_token|refresh_token|client_secret|secret_key|api_key|privateKey|BEGIN PRIVATE|OPERATOR_BEARER_TOKEN|REMOTE_BRIDGE_SESSION_ID=|password' "$file"; then
+    raw_marker_present="true"
+  fi
+
+  if ! jq -e . "$file" >/dev/null 2>&1; then
+    jq -cn --arg file "$rel" \
+      '{status:"invalid-json", file:$file, ok:false, reason:"governance evidence is not valid JSON"}'
+    return 0
+  fi
+
+  jq -c \
+    --arg file "$rel" \
+    --arg rawMarkerPresent "$raw_marker_present" \
+    '
+    . as $root
+    | (($root.operator.subject // $root.operator.id // $root.operatorSubject // "") | tostring) as $operatorSubject
+    | (($root.approver.subject // $root.approver.id // $root.approverSubject // "") | tostring) as $approverSubject
+    | (($root.approval.id // $root.approvalId // "") | tostring) as $approvalId
+    | (
+        $root.ticketRef
+        // (if ($root.ticket | type) == "object" then ($root.ticket.ref // $root.ticket.id) else $root.ticket end)
+        // $root.ticketId
+        // ""
+      | tostring) as $ticketRef
+    | (
+        (if ($root.justification | type) == "object" then $root.justification.text else $root.justification end)
+        // $root.reason
+        // ""
+      | tostring) as $justification
+    | (($root.stepUp.verified == true) or ($root.stepUpVerified == true)) as $stepUpVerified
+    | (
+        ($root.recording.worm == true)
+        or ($root.recording.wormEnabled == true)
+        or ($root.wormRecording.enabled == true)
+        or (($root.recording.mode // "") | tostring | ascii_downcase) == "worm"
+      ) as $wormRecordingEnabled
+    | (
+        ($root.recording.failClosed == true)
+        or ($root.wormRecording.failClosed == true)
+        or (($root.recording.mode // "") | tostring | ascii_downcase) == "fail-closed"
+        or (($root.recording.failurePolicy // "") | tostring | ascii_downcase) == "fail-closed"
+      ) as $recordingFailClosed
+    | {
+        status: "parsed",
+        file: $file,
+        operatorSubjectPresent: (($operatorSubject | length) > 0),
+        approverSubjectPresent: (($approverSubject | length) > 0),
+        distinctOperatorApprover: (($operatorSubject | length) > 0 and ($approverSubject | length) > 0 and $operatorSubject != $approverSubject),
+        approvalIdPresent: (($approvalId | length) > 0),
+        stepUpVerified: $stepUpVerified,
+        ticketRefPresent: (($ticketRef | length) > 0),
+        justificationPresent: (($justification | length) > 0),
+        wormRecordingEnabled: $wormRecordingEnabled,
+        recordingFailClosed: $recordingFailClosed,
+        sensitiveMarkerPresent: ($rawMarkerPresent == "true")
+      }
+    | .ok = (
+        .operatorSubjectPresent
+        and .approverSubjectPresent
+        and .distinctOperatorApprover
+        and .approvalIdPresent
+        and .stepUpVerified
+        and .ticketRefPresent
+        and .justificationPresent
+        and .wormRecordingEnabled
+        and .recordingFailClosed
+        and (.sensitiveMarkerPresent | not)
+      )
+    | .reason = (
+        if .ok then "governance-evidence-present"
+        elif .sensitiveMarkerPresent then "governance-evidence-leaks-sensitive-marker"
+        elif (.operatorSubjectPresent | not) then "governance-operator-missing"
+        elif (.approverSubjectPresent | not) then "governance-approver-missing"
+        elif (.distinctOperatorApprover | not) then "governance-operator-approver-not-distinct"
+        elif (.approvalIdPresent | not) then "governance-approval-id-missing"
+        elif (.stepUpVerified | not) then "governance-step-up-missing"
+        elif (.ticketRefPresent | not) then "governance-ticket-missing"
+        elif (.justificationPresent | not) then "governance-justification-missing"
+        elif (.wormRecordingEnabled | not) then "governance-worm-recording-missing"
+        elif (.recordingFailClosed | not) then "governance-recording-not-fail-closed"
+        else "governance-evidence-incomplete"
+        end
+      )' "$file"
+}
+
 analyze_operation_body() {
   local file="$1"
   if [[ -z "$file" ]]; then
@@ -623,26 +731,29 @@ main() {
   [[ -d "$EVIDENCE_DIR" ]] || die "EVIDENCE_DIR is not a directory: $EVIDENCE_DIR"
 
   local operation_file recording_file smoke_summary_file
-  local session_ownership_file pilot_readiness_file
+  local session_ownership_file pilot_readiness_file governance_evidence_file
   operation_file="$(find_operation_body_file || true)"
   recording_file="$(find_recording_rows_file || true)"
   smoke_summary_file="$(find_smoke_summary_file || true)"
   session_ownership_file="$(find_session_ownership_file || true)"
   pilot_readiness_file="$(find_pilot_readiness_file || true)"
+  governance_evidence_file="$(find_governance_evidence_file || true)"
 
   validate_file_under_evidence_dir "$operation_file" "operation body"
   validate_file_under_evidence_dir "$recording_file" "recording rows"
   validate_file_under_evidence_dir "$smoke_summary_file" "smoke summary"
   validate_file_under_evidence_dir "$session_ownership_file" "session ownership"
   validate_file_under_evidence_dir "$pilot_readiness_file" "pilot readiness"
+  validate_file_under_evidence_dir "$governance_evidence_file" "governance evidence"
 
-  local sha_json operation_json recording_json smoke_summary_json session_ownership_json pilot_readiness_json
+  local sha_json operation_json recording_json smoke_summary_json session_ownership_json pilot_readiness_json governance_evidence_json
   sha_json="$(analyze_sha256_manifest)"
   operation_json="$(analyze_operation_body "$operation_file")"
   recording_json="$(analyze_recording_rows "$recording_file")"
   smoke_summary_json="$(summarize_smoke_summary "$smoke_summary_file")"
   session_ownership_json="$(analyze_session_ownership "$session_ownership_file")"
   pilot_readiness_json="$(analyze_pilot_readiness "$pilot_readiness_file")"
+  governance_evidence_json="$(analyze_governance_evidence "$governance_evidence_file")"
 
   local raw_negative_ok="false" override_negative_ok="false" disabled_negative_ok="false"
   local authz_negative_ok="false" expired_negative_ok="false" wrong_device_negative_ok="false"
@@ -728,7 +839,7 @@ main() {
   fi
 
   local sha_required_json
-  sha_required_json="$(analyze_sha256_required_files "$operation_file" "$recording_file" "$session_ownership_file" "$pilot_readiness_file")"
+  sha_required_json="$(analyze_sha256_required_files "$operation_file" "$recording_file" "$session_ownership_file" "$pilot_readiness_file" "$governance_evidence_file")"
 
   local result reason
   if [[ "$(jq -r '.ok' <<< "$operation_json")" != "true" ]]; then
@@ -752,6 +863,12 @@ main() {
   elif [[ "$REQUIRE_PILOT_READINESS" == "1" && "$(jq -r '.ok' <<< "$pilot_readiness_json")" != "true" ]]; then
     result="invalid-pilot-readiness"
     reason="pilot readiness summary does not prove ready-for-product-smoke with expected agent version"
+  elif [[ "$REQUIRE_GOVERNANCE_EVIDENCE" == "1" && "$(jq -r '.status' <<< "$governance_evidence_json")" == "missing" ]]; then
+    result="missing-governance-evidence"
+    reason="governance evidence proving dual-control, step-up, justification, ticket, and fail-closed recording policy is required"
+  elif [[ "$REQUIRE_GOVERNANCE_EVIDENCE" == "1" && "$(jq -r '.ok' <<< "$governance_evidence_json")" != "true" ]]; then
+    result="invalid-governance-evidence"
+    reason="governance evidence is incomplete, self-approved, lacks step-up/ticket/recording policy, or leaks a sensitive marker"
   elif [[ "$REQUIRE_SHA256" == "1" && "$(jq -r '.status' <<< "$sha_json")" != "ok" ]]; then
     result="sha256-unverified"
     reason="SHA256SUMS is required but did not verify cleanly"
@@ -766,15 +883,17 @@ main() {
     reason="full #208 lifecycle/authz/replay/termination matrix is required but incomplete"
   else
     result="accepted-candidate"
-    if [[ "$REQUIRE_SESSION_OWNERSHIP" == "1" && "$REQUIRE_PILOT_READINESS" == "1" ]]; then
-      reason="PERMIT, transport, redacted session ownership, pilot readiness, recording, checksum, and required negative evidence are present"
-    elif [[ "$REQUIRE_SESSION_OWNERSHIP" == "1" ]]; then
-      reason="PERMIT, transport, redacted session ownership, recording, checksum, and required negative evidence are present"
-    elif [[ "$REQUIRE_PILOT_READINESS" == "1" ]]; then
-      reason="PERMIT, transport, pilot readiness, recording, checksum, and required negative evidence are present"
-    else
-      reason="PERMIT, transport, recording, checksum, and required negative evidence are present"
+    reason="PERMIT, transport"
+    if [[ "$REQUIRE_SESSION_OWNERSHIP" == "1" ]]; then
+      reason="${reason}, redacted session ownership"
     fi
+    if [[ "$REQUIRE_PILOT_READINESS" == "1" ]]; then
+      reason="${reason}, pilot readiness"
+    fi
+    if [[ "$REQUIRE_GOVERNANCE_EVIDENCE" == "1" ]]; then
+      reason="${reason}, governance evidence"
+    fi
+    reason="${reason}, recording, checksum, and required negative evidence are present"
   fi
 
   jq -n \
@@ -791,6 +910,7 @@ main() {
     --arg requireSha256 "$REQUIRE_SHA256" \
     --arg requireSessionOwnership "$REQUIRE_SESSION_OWNERSHIP" \
     --arg requirePilotReadiness "$REQUIRE_PILOT_READINESS" \
+    --arg requireGovernanceEvidence "$REQUIRE_GOVERNANCE_EVIDENCE" \
     --arg coreNegativesOk "$core_negatives_ok" \
     --arg fullMatrixOk "$full_matrix_ok" \
     --arg rawNegativeOk "$raw_negative_ok" \
@@ -806,6 +926,7 @@ main() {
     --argjson smokeSummary "$smoke_summary_json" \
     --argjson sessionOwnership "$session_ownership_json" \
     --argjson pilotReadiness "$pilot_readiness_json" \
+    --argjson governanceEvidence "$governance_evidence_json" \
     --argjson sha256Manifest "$sha_json" \
     --argjson sha256RequiredFiles "$sha_required_json" \
     --argjson negativeChecks "$NEGATIVE_DETAILS" \
@@ -826,11 +947,13 @@ main() {
         requireFullMatrix: ($requireFullMatrix == "1"),
         requireSha256: ($requireSha256 == "1"),
         requireSessionOwnership: ($requireSessionOwnership == "1"),
-        requirePilotReadiness: ($requirePilotReadiness == "1")
+        requirePilotReadiness: ($requirePilotReadiness == "1"),
+        requireGovernanceEvidence: ($requireGovernanceEvidence == "1")
       },
       smokeSummary: $smokeSummary,
       sessionOwnership: $sessionOwnership,
       pilotReadiness: $pilotReadiness,
+      governanceEvidence: $governanceEvidence,
       operation: $operation,
       recording: $recording,
       sha256Manifest: ($sha256Manifest + {requiredFiles: $sha256RequiredFiles}),
@@ -855,6 +978,7 @@ main() {
         "production remote-support readiness",
         "unrestricted shell/RDP/WinRM/SMB/SSH",
         "broker-side enforcement from the session ownership comment alone",
+        "operator identity beyond the captured governance evidence",
         "fresh endpoint readiness beyond the captured pilot readiness timestamp",
         "true TPM/device-key hardware attestation unless platform-backend#548 is separately accepted",
         "full #208 Done state unless the full lifecycle/authz/replay/termination matrix is also attached and accepted"
