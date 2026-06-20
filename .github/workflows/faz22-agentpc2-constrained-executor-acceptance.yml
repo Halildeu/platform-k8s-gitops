@@ -1,0 +1,204 @@
+name: Faz 22.6.3 AgentPC2 constrained executor acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Required literal: RUN_AGENTPC2_CONSTRAINED_EXECUTOR_ACCEPTANCE'
+        required: true
+      expected_digest:
+        description: 'Expected endpoint-admin remote-bridge deployment digest'
+        required: true
+        default: 'sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84'
+      device_id:
+        description: 'Target endpoint device UUID'
+        required: true
+        default: 'fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a'
+      device_hostname:
+        description: 'Target endpoint hostname'
+        required: true
+        default: 'AgentPc2'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: faz22-agentpc2-constrained-executor-acceptance
+  cancel-in-progress: false
+
+env:
+  K8S_CONTEXT: k3d-test
+  K8S_NAMESPACE: platform-test
+  REMOTE_BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge
+  REMOTE_BRIDGE_LOCAL_PORT: '18096'
+  EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+  DEVICE_ID: ${{ inputs.device_id }}
+  DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+  KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
+  GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
+  EVIDENCE_DIR: /home/halil/codex-rb-smoke/${{ github.run_id }}-agentpc2-208
+
+jobs:
+  acceptance:
+    name: AgentPC2 product-channel bounded acceptance
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 30
+
+    steps:
+      - name: Validate dispatch inputs
+        run: |
+          set -euo pipefail
+
+          if [ "${{ inputs.confirm }}" != "RUN_AGENTPC2_CONSTRAINED_EXECUTOR_ACCEPTANCE" ]; then
+            echo "::error::confirm input must be RUN_AGENTPC2_CONSTRAINED_EXECUTOR_ACCEPTANCE"
+            exit 1
+          fi
+
+          if ! printf '%s' "${{ inputs.expected_digest }}" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
+            echo "::error::expected_digest must match ^sha256:[a-f0-9]{64}$"
+            exit 1
+          fi
+
+          if ! printf '%s' "${{ inputs.device_id }}" | grep -Eq '^[0-9a-fA-F-]{36}$'; then
+            echo "::error::device_id must look like a UUID"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run AgentPC2 constrained executor acceptance
+        id: smoke
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p "${EVIDENCE_DIR}"
+          chmod +x scripts/faz22-remote-ops/agentpc2-constrained-executor-acceptance.sh
+
+          scripts/faz22-remote-ops/agentpc2-constrained-executor-acceptance.sh \
+            2>&1 | tee "${EVIDENCE_DIR}/workflow-smoke.log"
+          exit_code="${PIPESTATUS[0]}"
+
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          echo "AGENTPC2_ACCEPTANCE_EXIT_CODE=${exit_code}"
+          exit 0
+
+      - name: Publish redacted issue evidence
+        if: always()
+        run: |
+          set -euo pipefail
+
+          summary="${EVIDENCE_DIR}/summary.json"
+          if [ ! -f "${summary}" ]; then
+            jq -n \
+              --arg generatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --arg status "no-go" \
+              --arg reason "summary-json-missing" \
+              --arg evidenceDir "${EVIDENCE_DIR}" \
+              '{
+                generatedAt:$generatedAt,
+                status:$status,
+                reason:$reason,
+                evidenceDir:$evidenceDir,
+                secretHygiene:{
+                  rawBearerTokenLogged:false,
+                  rawSessionIdLogged:false,
+                  privateKeyLogged:false
+                }
+              }' > "${summary}"
+          fi
+
+          status="$(jq -r '.status // "unknown"' "${summary}")"
+          reason="$(jq -r '.reason // ""' "${summary}")"
+          session_hash="$(jq -r '.productPath.sessionHash // ""' "${summary}")"
+          open_http="$(jq -r '.productPath.openHttp // ""' "${summary}")"
+          approve_http="$(jq -r '.productPath.approveHttp // ""' "${summary}")"
+          challenge_http="$(jq -r '.productPath.stepUpChallengeHttp // ""' "${summary}")"
+          verify_http="$(jq -r '.productPath.stepUpVerifyHttp // ""' "${summary}")"
+          operation_status="$(jq -r '.productPath.operationStatus // ""' "${summary}")"
+          verifier_result="$(jq -r '.productPath.verifierResult // ""' "${summary}")"
+          recording_hint="$(jq -r '.productPath.recordingHint // ""' "${summary}")"
+
+          deploy_image="$(cat "${EVIDENCE_DIR}/deploy-image.txt" 2>/dev/null || true)"
+          pod_image_id="$(cat "${EVIDENCE_DIR}/pod-imageID.txt" 2>/dev/null || true)"
+          sha_manifest=""
+          if [ -f "${EVIDENCE_DIR}/SHA256SUMS" ]; then
+            sha_manifest="$(sha256sum "${EVIDENCE_DIR}/SHA256SUMS" | awk '{print $1}')"
+          fi
+
+          comment="${RUNNER_TEMP}/agentpc2-208-evidence.md"
+          {
+            echo "AGENTPC2_PRODUCT_ACCEPTANCE status=${status}"
+            echo ""
+            echo "- Source: platform-backend#718 merged; endpoint-admin remote-bridge digest expected \`${{ inputs.expected_digest }}\`."
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Evidence dir on staging runner: \`${EVIDENCE_DIR}\`"
+            echo "- Runtime deploy image: \`${deploy_image}\`"
+            echo "- Runtime pod imageID: \`${pod_image_id}\`"
+            echo "- Target device: \`${{ inputs.device_hostname }}\` / \`${{ inputs.device_id }}\`"
+            echo "- Session hash: \`${session_hash}\`"
+            echo "- Open / approve / step-up challenge / step-up verify HTTP: \`${open_http}\` / \`${approve_http}\` / \`${challenge_http}\` / \`${verify_http}\`"
+            echo "- Catalog operation: \`${operation_status}\`"
+            echo "- Evidence verifier: \`${verifier_result}\`"
+            echo "- Recording hint: \`${recording_hint}\`"
+            echo "- Evidence SHA256SUMS hash: \`${sha_manifest}\`"
+            echo "- Secret hygiene: raw bearer token, raw session id, and private key are intentionally omitted."
+            echo ""
+            echo "Boundary: this proves only the bounded outbound mTLS product-channel constrained-executor pilot path when status is \`accepted-candidate\`. It does not prove broad rollout, production support readiness, inbound SSH/RDP/WinRM/SMB/RPC, unrestricted shell, or TPM/device-key attestation."
+            if [ -n "${reason}" ]; then
+              echo ""
+              echo "Reason: \`${reason}\`"
+            fi
+          } > "${comment}"
+
+          gh issue comment 208 \
+            --repo Halildeu/platform-agent \
+            --body-file "${comment}"
+
+          backend_comment="${RUNNER_TEMP}/platform-backend-717-evidence.md"
+          {
+            echo "ENDPOINT_ADMIN_REMOTE_BRIDGE_ACCEPTANCE_LINK status=${status}"
+            echo ""
+            echo "- platform-backend#718 is merged and deployed through endpoint-admin remote-bridge digest \`${{ inputs.expected_digest }}\`."
+            echo "- Staging runtime evidence is tracked in platform-agent#208 by this run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- AgentPC2 product-channel acceptance status: \`${status}\`"
+            if [ -n "${reason}" ]; then
+              echo "- Reason: \`${reason}\`"
+            fi
+          } > "${backend_comment}"
+
+          gh issue comment 717 \
+            --repo Halildeu/platform-backend \
+            --body-file "${backend_comment}"
+
+          {
+            echo "## AgentPC2 product-channel acceptance"
+            echo ""
+            cat "${comment}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload redacted evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentpc2-constrained-executor-evidence-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail workflow on no-go
+        if: always()
+        run: |
+          set -euo pipefail
+
+          exit_code="${{ steps.smoke.outputs.exit_code }}"
+          if [ -z "${exit_code}" ]; then
+            echo "::error::smoke step did not expose exit_code"
+            exit 1
+          fi
+
+          if [ "${exit_code}" != "0" ]; then
+            echo "::error::AgentPC2 constrained executor acceptance did not pass; see issue comment and uploaded evidence."
+            exit "${exit_code}"
+          fi
