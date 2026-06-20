@@ -4,7 +4,7 @@ set -euo pipefail
 # Faz 22.6.3 / platform-k8s-gitops#1768 AgentPC2 first-install bootstrap gate.
 #
 # This script prepares a bounded, endpoint-local bootstrap package that can move
-# AgentPC2 from a non-operation-capable agent to the v0.2.13 operation-capable
+# AgentPC2 from a non-operation-capable agent to the v0.2.14 operation-capable
 # release without opening inbound SSH/RDP/WinRM/SMB/RPC paths. It deliberately
 # does not claim platform-agent#208 acceptance; it only produces immutable
 # first-install evidence and the script required for the endpoint-local action.
@@ -13,8 +13,8 @@ RUN_ID="${GITHUB_RUN_ID:-local-$(date -u +%Y%m%dT%H%M%SZ)}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-first-install-bootstrap-${RUN_ID}}"
 TMP_DIR="$(mktemp -d)"
 
-RELEASE_ID="${RELEASE_ID:-v0.2.13}"
-TARGET_VERSION="${TARGET_VERSION:-0.2.13}"
+RELEASE_ID="${RELEASE_ID:-v0.2.14}"
+TARGET_VERSION="${TARGET_VERSION:-0.2.14}"
 TARGET_HOSTNAME="${TARGET_HOSTNAME:-AgentPc2}"
 TARGET_PRODUCT_DEVICE_ID="${TARGET_PRODUCT_DEVICE_ID:-2f7ad30f-970a-42e7-8af8-08764ae6066f}"
 
@@ -25,14 +25,14 @@ BOOTSTRAP_PACKAGE_URL="${BOOTSTRAP_PACKAGE_URL:-${RELEASE_BASE_URL}/bootstrap-pa
 MANIFEST_URL="${MANIFEST_URL:-${RELEASE_BASE_URL}/release-manifest.json}"
 SHA256SUMS_URL="${SHA256SUMS_URL:-${RELEASE_BASE_URL}/SHA256SUMS}"
 
-EXPECTED_RELEASE_MANIFEST_SHA256="${EXPECTED_RELEASE_MANIFEST_SHA256:-1cafb7bad5e6dabe8e1f10ae39ac2c91553ed923ee069776e7cb330a0e2fe08f}"
-EXPECTED_INSTALL_PS1_SHA256="${EXPECTED_INSTALL_PS1_SHA256:-cb5b82f2d2dbbc0411e7f14ec0f9b68a35a900d851f86b14af93273fa72f23ec}"
+EXPECTED_RELEASE_MANIFEST_SHA256="${EXPECTED_RELEASE_MANIFEST_SHA256:-37d3a5fb7fd90166ab62c2bfb82f77b6cc597ec9371217c1a5a81a0efa15b2c5}"
+EXPECTED_INSTALL_PS1_SHA256="${EXPECTED_INSTALL_PS1_SHA256:-5819207b63795ca0f14c1949f2a187dd996372f066992d692672e8f0d71c79df}"
 EXPECTED_BOOTSTRAP_PS1_SHA256="${EXPECTED_BOOTSTRAP_PS1_SHA256:-83292ab3b5c27a8c27c11c7774cf4157bbb23188b81b0adf2a5a29a70279c7f8}"
-EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-6e3a79b8ea076d08e2288be98359d3db6049b6179e655ceaff924f792736cd0c}"
-EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-9afe07b6eb1fa2c8b94b50181ec5265681e77a28ec3368bdd8d1a25fd59acec0}"
+EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618}"
+EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-2d7b372c7a3dda548caec66fbcb9327a04e54531369b9b1f2bd7f0c56910a7b1}"
 EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
 EXPECTED_SIGNING_TIER="${EXPECTED_SIGNING_TIER:-trusted-internal-ca}"
-EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454}"
+EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0}"
 
 AUTO_ENROLL_API_URL="${AUTO_ENROLL_API_URL:-https://mtls.testai.acik.com/api/v1/endpoint-agent}"
 AUTO_ENROLL_SAN_URI_PREFIX="${AUTO_ENROLL_SAN_URI_PREFIX:-adcomputer:}"
@@ -395,7 +395,7 @@ try {
     boundary = @{
       proves = @(
         "Endpoint-local install script executed",
-        "EndpointAgent service install/start attempted with immutable v0.2.13 binary hash",
+        "EndpointAgent service install/start attempted with immutable v0.2.14 binary hash",
         "Outbound remote bridge configuration written for 443/SNI broker"
       )
       doesNotProve = @(
@@ -506,7 +506,7 @@ write_summary() {
     --arg bootstrapScript "${BOOTSTRAP_PS1}" \
     --arg readme "${README_PATH}" \
     --argjson proves "$(write_json_string_array \
-      "v0.2.13 release manifest/install/bootstrap hashes verified" \
+      "v0.2.14 release manifest/install/bootstrap hashes verified" \
       "Broker permit public key derived from live signer source or explicit public-key override" \
       "Endpoint-local first-install script generated with outbound-only 443/SNI remote bridge configuration" \
       "No inbound endpoint management port is required by this bootstrap package")" \
@@ -631,7 +631,7 @@ main() {
       (.signing_tier == $tier) and
       (.artifact_host_digest == $digest)
     ' "${manifest_path}" >/dev/null; then
-    echo "ERR release manifest did not match expected v0.2.13 immutable metadata" >&2
+    echo "ERR release manifest did not match expected v0.2.14 immutable metadata" >&2
     exit 3
   fi
 

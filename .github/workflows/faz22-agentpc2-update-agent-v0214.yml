@@ -1,10 +1,10 @@
-name: Faz 22.6.3 AgentPC2 v0.2.13 product update
+name: Faz 22.6.3 AgentPC2 v0.2.14 product update
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Required literal: RUN_AGENTPC2_UPDATE_AGENT_V0213'
+        description: 'Required literal: RUN_AGENTPC2_UPDATE_AGENT_V0214'
         required: true
       target_product_device_id:
         description: 'Endpoint-admin product device UUID for AgentPC2'
@@ -15,7 +15,7 @@ on:
         required: true
         default: 'AgentPc2'
       poll_seconds:
-        description: 'Max seconds to wait for AgentPC2 to report v0.2.13'
+        description: 'Max seconds to wait for AgentPC2 to report v0.2.14'
         required: true
         default: '900'
 
@@ -24,13 +24,13 @@ permissions:
   issues: write
 
 concurrency:
-  group: faz22-agentpc2-update-agent-v0213
+  group: faz22-agentpc2-update-agent-v0214
   cancel-in-progress: false
 
 env:
   KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
   GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
-  EVIDENCE_DIR: /tmp/agentpc2-update-agent-v0213-${{ github.run_id }}
+  EVIDENCE_DIR: /tmp/agentpc2-update-agent-v0214-${{ github.run_id }}
   TARGET_DEVICE_ID: ${{ inputs.target_product_device_id }}
   TARGET_DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
   POLL_SECONDS: ${{ inputs.poll_seconds }}
@@ -46,8 +46,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${{ inputs.confirm }}" != "RUN_AGENTPC2_UPDATE_AGENT_V0213" ]; then
-            echo "::error::confirm input must be RUN_AGENTPC2_UPDATE_AGENT_V0213"
+          if [ "${{ inputs.confirm }}" != "RUN_AGENTPC2_UPDATE_AGENT_V0214" ]; then
+            echo "::error::confirm input must be RUN_AGENTPC2_UPDATE_AGENT_V0214"
             exit 1
           fi
 
@@ -64,15 +64,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Run AgentPC2 v0.2.13 product update
+      - name: Run AgentPC2 v0.2.14 product update
         id: update
         continue-on-error: true
         run: |
           set +e
           mkdir -p "${EVIDENCE_DIR}"
-          chmod +x scripts/faz22-remote-ops/agentpc2-update-agent-v0213.sh
+          chmod +x scripts/faz22-remote-ops/agentpc2-update-agent-v0214.sh
 
-          scripts/faz22-remote-ops/agentpc2-update-agent-v0213.sh \
+          scripts/faz22-remote-ops/agentpc2-update-agent-v0214.sh \
             2>&1 | sed -E 's/^::add-mask::.*/::add-mask::<redacted>/' | tee "${EVIDENCE_DIR}/workflow-update.log"
           exit_code="${PIPESTATUS[0]}"
 
@@ -147,14 +147,14 @@ jobs:
             sha_manifest="$(sha256sum "${EVIDENCE_DIR}/SHA256SUMS" | awk '{print $1}')"
           fi
 
-          comment="${RUNNER_TEMP}/agentpc2-update-agent-v0213.md"
+          comment="${RUNNER_TEMP}/agentpc2-update-agent-v0214.md"
           {
-            echo "AGENTPC2_UPDATE_AGENT_V0213 status=${status}"
+            echo "AGENTPC2_UPDATE_AGENT_V0214 status=${status}"
             echo ""
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Target product device: \`${{ inputs.device_hostname }}\` / \`${{ inputs.target_product_device_id }}\`"
-            echo "- Release: \`v0.2.13\`"
-            echo "- Binary SHA256: \`6e3a79b8ea076d08e2288be98359d3db6049b6179e655ceaff924f792736cd0c\`"
+            echo "- Release: \`v0.2.14\`"
+            echo "- Binary SHA256: \`624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618\`"
             echo "- Signer thumbprint: \`D68F4F530137EB65CE44E3405E82B46205E753E5\`"
             echo "- Seed helper exit/status: \`${seed_exit}\` / \`${seed_status}\`"
             echo "- Observed AgentPC2 version/status/lastSeen: \`${observed_version}\` / \`${observed_status}\` / \`${observed_last_seen}\`"
@@ -177,7 +177,7 @@ jobs:
 
           backend_comment="${RUNNER_TEMP}/platform-backend-717-update-link.md"
           {
-            echo "AGENTPC2_UPDATE_AGENT_V0213_LINK status=${status}"
+            echo "AGENTPC2_UPDATE_AGENT_V0214_LINK status=${status}"
             echo ""
             echo "- platform-backend#718 is merged; this run attempted the next product update gate before #208 acceptance."
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
@@ -195,7 +195,7 @@ jobs:
             || echo "::warning::Could not comment on platform-backend#717 with this workflow token; evidence remains in the workflow artifact."
 
           {
-            echo "## AgentPC2 v0.2.13 product update"
+            echo "## AgentPC2 v0.2.14 product update"
             echo ""
             cat "${comment}"
           } >> "${GITHUB_STEP_SUMMARY}"
@@ -204,7 +204,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: agentpc2-update-agent-v0213-evidence-${{ github.run_id }}
+          name: agentpc2-update-agent-v0214-evidence-${{ github.run_id }}
           path: ${{ env.EVIDENCE_DIR }}
           if-no-files-found: warn
           retention-days: 14
@@ -221,6 +221,6 @@ jobs:
           fi
 
           if [ "${exit_code}" != "0" ]; then
-            echo "::error::AgentPC2 v0.2.13 product update did not pass; see issue comment and uploaded evidence."
+            echo "::error::AgentPC2 v0.2.14 product update did not pass; see issue comment and uploaded evidence."
             exit "${exit_code}"
           fi
