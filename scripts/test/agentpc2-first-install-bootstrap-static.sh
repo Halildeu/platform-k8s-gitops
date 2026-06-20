@@ -56,4 +56,14 @@ if ! grep -Fq 'SHA256SUMS:' "${bootstrap_configmap}"; then
   exit 1
 fi
 
+if ! grep -Fq 'agentpc2-remote-bridge-pilot-autoconsent-patch-v5.ps1:' "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap ConfigMap must contain the v5 pilot auto-consent patch" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'd08c1b3b7af7af00c000f9f3ecd48bfb2ad5a36f70d80289353b5dc45eec4d5f  agentpc2-remote-bridge-pilot-autoconsent-patch-v5.ps1' "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap SHA256SUMS must pin the v5 pilot auto-consent patch hash" >&2
+  exit 1
+fi
+
 echo "agentpc2 first-install bootstrap static guard passed"

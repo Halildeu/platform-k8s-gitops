@@ -170,6 +170,63 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Script
 This URL is test-only GitOps-hosted pilot seed material. It does not prove
 platform-agent#208 acceptance and must not be reused as broad rollout evidence.
 
+## Test Artifact-Host V5 Auto-Consent Patch
+
+2026-06-20 endpoint-local v3 alias patch proved that AgentPC2 had the canonical
+remote-bridge broker, TLS SNI, permit verifier, and operation env keys, but it
+did not set the owner-gated pilot auto-consent key required by the current
+platform-agent runtime. The observed v3 summary status was
+`patched-needs-attention` with missing key:
+
+```text
+ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT
+```
+
+The bounded v5 patch is published through the same test artifact-host path:
+
+```text
+https://testai.acik.com/artifacts/endpoint-agent/bootstrap/agentpc2-remote-bridge-pilot-autoconsent-patch-v5.ps1
+```
+
+Script SHA256:
+
+```text
+d08c1b3b7af7af00c000f9f3ecd48bfb2ad5a36f70d80289353b5dc45eec4d5f
+```
+
+Endpoint-local command:
+
+```powershell
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+
+$Base = "https://testai.acik.com/artifacts/endpoint-agent/bootstrap"
+$WorkDir = "C:\Temp\AgentPC2Bootstrap"
+$Script = Join-Path $WorkDir "agentpc2-remote-bridge-pilot-autoconsent-patch-v5.ps1"
+
+New-Item -ItemType Directory -Force $WorkDir | Out-Null
+Invoke-WebRequest -UseBasicParsing -Uri "$Base/agentpc2-remote-bridge-pilot-autoconsent-patch-v5.ps1" -OutFile $Script
+
+$ExpectedScriptSha256 = "d08c1b3b7af7af00c000f9f3ecd48bfb2ad5a36f70d80289353b5dc45eec4d5f"
+$ActualScriptSha256 = (Get-FileHash $Script -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($ActualScriptSha256 -ne $ExpectedScriptSha256) {
+  throw "Patch script SHA256 mismatch: $ActualScriptSha256"
+}
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Script
+```
+
+Boundary:
+
+- Proves only that EndpointAgent has the owner-gated pilot auto-consent service
+  environment key and that the service was restarted after the patch.
+- Does not prove broker permit issuance, typed constrained operation execution,
+  platform-agent#208 acceptance, or production/domain-wide remote support
+  readiness.
+- Must be followed by the normal #208 product-channel smoke:
+  `HELLO`/`CONSENT_GRANTED`/`ACTIVE`, permit, constrained operation, negative
+  operation, and audit evidence.
+
 After the script finishes, collect the evidence folder and rerun the normal
 #208 acceptance workflow. Do not move #1768 or #208 forward on the board until
 that rerun produces live product-channel `HELLO`, permit, constrained
