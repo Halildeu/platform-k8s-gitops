@@ -19,6 +19,7 @@ EXPECTED_DIGEST="${EXPECTED_DIGEST:-sha256:7e1925ceb0312042c8712fcb423eafc5bae1a
 
 DEVICE_ID="${DEVICE_ID:-fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a}"
 DEVICE_HOSTNAME="${DEVICE_HOSTNAME:-AgentPc2}"
+PRODUCT_DEVICE_ID="$DEVICE_ID"
 ISSUE_URL="${ISSUE_URL:-https://github.com/Halildeu/platform-agent/issues/208}"
 CATALOG_OPERATION_ID="${CATALOG_OPERATION_ID:-GET_HOSTNAME}"
 SESSION_ID="${SESSION_ID:-rb-agentpc2-$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -119,6 +120,7 @@ write_summary() {
     --arg deployment "$REMOTE_BRIDGE_DEPLOYMENT" \
     --arg expectedDigest "$EXPECTED_DIGEST" \
     --arg deviceId "$DEVICE_ID" \
+    --arg productDeviceId "$PRODUCT_DEVICE_ID" \
     --arg deviceHostname "$DEVICE_HOSTNAME" \
     --arg sessionHash "$session_hash" \
     --arg catalogOperationId "$CATALOG_OPERATION_ID" \
@@ -138,6 +140,7 @@ write_summary() {
       reason: $reason,
       target: {
         deviceId: $deviceId,
+        productDeviceId: $productDeviceId,
         hostname: $deviceHostname
       },
       runtime: {
@@ -519,6 +522,7 @@ psql_query() {
     --image-pull-policy=IfNotPresent \
     --quiet=true \
     --overrides="$overrides" \
+    >>"$pod_log" 2>&1 \
     || fail_acceptance "postgres-client-pod-query-failed"
 
   if ! kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" wait "pod/$pod_name" \
@@ -701,12 +705,13 @@ limit 1;"
   psql_query "$sql" '|' > "$device_file"
 
   local row id hostname version endpoint_status last_seen heartbeat_at caps device_json manifest_ok decision reason_text
-  row="$(head -n 1 "$device_file" || true)"
+  row="$(grep -E '^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{12}\|' "$device_file" | head -n 1 || true)"
   if [[ -n "$row" ]]; then
     IFS='|' read -r id hostname version endpoint_status last_seen heartbeat_at caps <<< "$row"
-    if ! jq -e . <<< "$caps" >/dev/null 2>&1; then
+    if [[ -z "$caps" ]] || ! jq -e . <<< "$caps" >/dev/null 2>&1; then
       caps="[]"
     fi
+    PRODUCT_DEVICE_ID="$id"
     device_json="$(jq -cn \
       --arg id "$id" --arg hostname "$hostname" --arg version "$version" \
       --arg status "$endpoint_status" --arg lastSeen "$last_seen" --arg heartbeatAt "$heartbeat_at" \
@@ -865,13 +870,13 @@ main() {
   operator_base="http://127.0.0.1:${REMOTE_BRIDGE_LOCAL_PORT}/internal/remote-bridge/operator"
   approval_base="http://127.0.0.1:${REMOTE_BRIDGE_LOCAL_PORT}/internal/remote-bridge/approval"
 
-  body="$(jq -nc --arg session "$SESSION_ID" --arg device "$DEVICE_ID" \
+  body="$(jq -nc --arg session "$SESSION_ID" --arg device "$PRODUCT_DEVICE_ID" \
     '{sessionId:$session, deviceId:$device, reason:"Faz 22.6.3 AgentPC2 constrained executor smoke", capabilities:["CONSTRAINED_PTY"]}')"
   open_code="$(curl_json POST "$operator_base" /sessions "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/open-session.body" "$body")"
   assert_http "$open_code" 200 "open session" "${EVIDENCE_DIR}/open-session.body"
 
   local deny_body deny_code
-  deny_body="$(jq -nc --arg session "${SESSION_ID}-full-rdp-deny" --arg device "$DEVICE_ID" \
+  deny_body="$(jq -nc --arg session "${SESSION_ID}-full-rdp-deny" --arg device "$PRODUCT_DEVICE_ID" \
     '{sessionId:$session, deviceId:$device, reason:"negative non-pilot capability", capabilities:["FULL_RDP"]}')"
   deny_code="$(curl_json POST "$operator_base" /sessions "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/negative-nonpilot-open.body" "$deny_body")"
   [[ "$deny_code" == "400" ]] || fail_acceptance "negative-nonpilot-open expected 400 got ${deny_code}"
@@ -895,7 +900,7 @@ main() {
 
   ACTION=claim \
   SESSION_OWNER_ISSUE_URL="$ISSUE_URL" \
-  SESSION_OWNER_ENDPOINT_ID="$DEVICE_ID" \
+  SESSION_OWNER_ENDPOINT_ID="$PRODUCT_DEVICE_ID" \
   REMOTE_BRIDGE_SESSION_ID="$SESSION_ID" \
   SESSION_OWNER_TTL_MINUTES=45 \
     "$REPO_ROOT/scripts/faz22-remote-ops/remote-response-terminal-session-ownership-guard.sh" \
