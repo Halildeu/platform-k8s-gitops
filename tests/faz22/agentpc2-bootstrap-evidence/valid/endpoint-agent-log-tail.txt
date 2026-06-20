@@ -1,0 +1,3 @@
+2026-06-20T12:31:00Z endpoint-agent service starting
+2026-06-20T12:31:02Z remote-bridge outbound mTLS configured broker=remote-bridge-mtls.testai.acik.com:443 tlsServerName=remote-bridge-mtls.testai.acik.com
+2026-06-20T12:31:05Z certificate selector prefix=adcomputer:

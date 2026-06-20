@@ -424,9 +424,11 @@ ettiğinde catalog-bound `UPDATE_AGENT`, owner-approved local maintenance instal
 for this one pilot endpoint, veya beklenen sürümle zaten sertifika-enrolled bir
 test endpoint. Sıradaki geçerli kapı AgentPC2 üzerinde endpoint-local
 `agentpc2-first-install-bootstrap.ps1` çalıştırılması ya da eşdeğer kabul edilen
-seed yolundan sonra #208 workflow'unun yeniden koşulması ve aynı session'da
-`HELLO`, permit, constrained-operation, negative, audit ledger kanıtlarının
-alınmasıdır. Software Catalog abuse, Approved Script Runner
+seed yolundan sonra endpoint evidence'in `Faz 22.6.3 AgentPC2 first-install
+evidence ingest` workflow'u ile doğrulanmasıdır. Bu ingest geçerse #208
+workflow'u yeniden koşulur ve aynı session'da `HELLO`, permit,
+constrained-operation, negative, audit ledger kanıtlarının alınması gerekir.
+Software Catalog abuse, Approved Script Runner
 download-and-execute, generic endpoint-commands `UPDATE_AGENT`, direct DB
 insert, caller-supplied binary/hash/signer fields, raw PowerShell, unrestricted
 terminal, RDP/WinRM/SMB/SSH/RPC veya reverse tunnel acceptance kanıtı değildir.

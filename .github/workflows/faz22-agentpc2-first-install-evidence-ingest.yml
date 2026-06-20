@@ -1,0 +1,232 @@
+name: Faz 22.6.3 AgentPC2 first-install evidence ingest
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Required literal: INGEST_AGENTPC2_FIRST_INSTALL_EVIDENCE'
+        required: true
+      evidence_dir:
+        description: 'Endpoint evidence directory on the staging runner'
+        required: true
+        default: '/home/halil/agentpc2-bootstrap-evidence/latest'
+      trigger_acceptance:
+        description: 'Dispatch #208 constrained-executor acceptance after verifier success'
+        required: true
+        default: 'true'
+      expected_digest:
+        description: 'Expected endpoint-admin remote-bridge deployment digest'
+        required: true
+        default: 'sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84'
+      device_id:
+        description: 'Target AD computer object GUID for AgentPC2'
+        required: true
+        default: 'fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a'
+      device_hostname:
+        description: 'Target endpoint hostname'
+        required: true
+        default: 'AgentPc2'
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+concurrency:
+  group: faz22-agentpc2-first-install-evidence-ingest
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
+  EVIDENCE_DIR: ${{ inputs.evidence_dir }}
+  EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+  DEVICE_ID: ${{ inputs.device_id }}
+  DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+
+jobs:
+  ingest:
+    name: Verify endpoint-local bootstrap evidence
+    runs-on: [self-hosted, staging-sw, testai-deploy]
+    timeout-minutes: 20
+
+    steps:
+      - name: Validate dispatch inputs
+        run: |
+          set -euo pipefail
+
+          if [ "${{ inputs.confirm }}" != "INGEST_AGENTPC2_FIRST_INSTALL_EVIDENCE" ]; then
+            echo "::error::confirm input must be INGEST_AGENTPC2_FIRST_INSTALL_EVIDENCE"
+            exit 1
+          fi
+
+          case "${EVIDENCE_DIR}" in
+            /home/halil/agentpc2-bootstrap-evidence/*|/tmp/agentpc2-first-install-endpoint-evidence-*|/tmp/agentpc2-bootstrap-evidence-*)
+              ;;
+            *)
+              echo "::error::evidence_dir must be under an approved staging-runner evidence root"
+              exit 1
+              ;;
+          esac
+
+          if [ ! -d "${EVIDENCE_DIR}" ]; then
+            echo "::error::evidence_dir does not exist on staging runner: ${EVIDENCE_DIR}"
+            exit 1
+          fi
+
+          if ! printf '%s' "${EXPECTED_DIGEST}" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
+            echo "::error::expected_digest must match ^sha256:[a-f0-9]{64}$"
+            exit 1
+          fi
+
+          if ! printf '%s' "${DEVICE_ID}" | grep -Eq '^[0-9a-fA-F-]{36}$'; then
+            echo "::error::device_id must look like a UUID"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify endpoint bootstrap evidence
+        id: verify
+        continue-on-error: true
+        run: |
+          set +e
+          chmod +x scripts/faz22-remote-ops/agentpc2-first-install-bootstrap-evidence-verify.sh
+
+          scripts/faz22-remote-ops/agentpc2-first-install-bootstrap-evidence-verify.sh \
+            --evidence-dir "${EVIDENCE_DIR}" \
+            2>&1 | tee "${EVIDENCE_DIR}/workflow-ingest-verifier.log"
+          exit_code="${PIPESTATUS[0]}"
+
+          rm -f "${EVIDENCE_DIR}/INGEST_SHA256SUMS"
+          (
+            cd "${EVIDENCE_DIR}" || exit 1
+            if command -v shasum >/dev/null 2>&1; then
+              find . -maxdepth 1 -type f ! -name "INGEST_SHA256SUMS" -print0 \
+                | sort -z \
+                | xargs -0 shasum -a 256 > INGEST_SHA256SUMS
+              shasum -a 256 -c INGEST_SHA256SUMS
+            else
+              find . -maxdepth 1 -type f ! -name "INGEST_SHA256SUMS" -print0 \
+                | sort -z \
+                | xargs -0 sha256sum > INGEST_SHA256SUMS
+              sha256sum -c INGEST_SHA256SUMS
+            fi
+          )
+          checksum_exit="$?"
+
+          if [ "${exit_code}" = "0" ] && [ "${checksum_exit}" != "0" ]; then
+            exit_code="${checksum_exit}"
+          fi
+
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          echo "AGENTPC2_BOOTSTRAP_INGEST_EXIT_CODE=${exit_code}"
+          exit 0
+
+      - name: Publish issue evidence
+        if: always()
+        run: |
+          set -euo pipefail
+
+          summary="${EVIDENCE_DIR}/bootstrap-evidence-verifier-summary.json"
+          if [ ! -f "${summary}" ]; then
+            jq -n \
+              --arg generatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --arg status "rejected-bootstrap-evidence" \
+              --arg reason "verifier-summary-missing" \
+              --arg evidenceDir "${EVIDENCE_DIR}" \
+              '{schema:"faz22.1768.agentpc2-first-install-bootstrap.ingest.v1",generatedAt:$generatedAt,status:$status,reason:$reason,evidence:{dir:$evidenceDir}}' \
+              > "${summary}"
+          fi
+
+          status="$(jq -r '.status // "unknown"' "${summary}")"
+          reason="$(jq -r '.reason // ""' "${summary}")"
+          release_id="$(jq -r '.expected.releaseId // ""' "${summary}")"
+          target_version="$(jq -r '.expected.targetVersion // ""' "${summary}")"
+          broker="$(jq -r '.expected.remoteBridge.brokerAddr // ""' "${summary}")"
+          findings="$(jq -c '.findings // []' "${summary}")"
+          ingest_sums_sha=""
+          if [ -f "${EVIDENCE_DIR}/INGEST_SHA256SUMS" ]; then
+            ingest_sums_sha="$(sha256sum "${EVIDENCE_DIR}/INGEST_SHA256SUMS" | awk '{print $1}')"
+          fi
+
+          comment="${RUNNER_TEMP}/agentpc2-bootstrap-ingest-1768.md"
+          {
+            echo "AGENTPC2_FIRST_INSTALL_EVIDENCE_INGEST status=${status}"
+            echo ""
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Evidence dir on staging runner: \`${EVIDENCE_DIR}\`"
+            echo "- Target: \`${DEVICE_HOSTNAME}\` / \`${DEVICE_ID}\`"
+            echo "- Expected release: \`${release_id}\` / target \`${target_version}\`"
+            echo "- Remote bridge broker: \`${broker}\`"
+            echo "- Evidence INGEST_SHA256SUMS hash: \`${ingest_sums_sha}\`"
+            echo "- Reason: \`${reason}\`"
+            echo "- Findings: \`${findings}\`"
+            echo ""
+            echo "Boundary: a passing ingest only proves the endpoint-local bootstrap evidence is valid. It does not prove platform-agent#208 HELLO/permit/constrained-operation/negative/audit acceptance; that remains the separate product-channel workflow."
+          } > "${comment}"
+
+          gh issue comment 1768 \
+            --repo Halildeu/platform-k8s-gitops \
+            --body-file "${comment}" \
+            || echo "::warning::Could not comment on platform-k8s-gitops#1768."
+
+          agent_comment="${RUNNER_TEMP}/agentpc2-bootstrap-ingest-208.md"
+          {
+            echo "AGENTPC2_FIRST_INSTALL_EVIDENCE_INGEST_REFERENCE status=${status}"
+            echo ""
+            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Evidence dir on staging runner: \`${EVIDENCE_DIR}\`"
+            echo "- This is a prerequisite signal only. #208 remains gated by the constrained-executor acceptance workflow."
+            echo "- Reason: \`${reason}\`"
+          } > "${agent_comment}"
+
+          gh issue comment 208 \
+            --repo Halildeu/platform-agent \
+            --body-file "${agent_comment}" \
+            || echo "::warning::Could not comment on platform-agent#208."
+
+          {
+            echo "## AgentPC2 first-install evidence ingest"
+            echo ""
+            cat "${comment}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Dispatch #208 product-channel acceptance
+        if: ${{ always() && steps.verify.outputs.exit_code == '0' && inputs.trigger_acceptance == 'true' }}
+        run: |
+          set -euo pipefail
+
+          gh workflow run faz22-agentpc2-constrained-executor-acceptance.yml \
+            --repo Halildeu/platform-k8s-gitops \
+            -f confirm=RUN_AGENTPC2_CONSTRAINED_EXECUTOR_ACCEPTANCE \
+            -f expected_digest="${EXPECTED_DIGEST}" \
+            -f device_id="${DEVICE_ID}" \
+            -f device_hostname="${DEVICE_HOSTNAME}"
+
+          gh issue comment 208 \
+            --repo Halildeu/platform-agent \
+            --body "AGENTPC2_CONSTRAINED_EXECUTOR_ACCEPTANCE_DISPATCHED after bootstrap evidence ingest. Source workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Boundary: acceptance remains pending until the dispatched workflow publishes product-channel HELLO/permit/constrained-operation/negative/audit evidence."
+
+      - name: Upload endpoint evidence snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentpc2-first-install-evidence-ingest-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail workflow on rejected evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          exit_code="${{ steps.verify.outputs.exit_code }}"
+          if [ -z "${exit_code}" ]; then
+            echo "::error::verify step did not expose exit_code"
+            exit 1
+          fi
+          if [ "${exit_code}" != "0" ]; then
+            echo "::error::AgentPC2 bootstrap evidence ingest rejected; see issue comment and uploaded artifact."
+            exit "${exit_code}"
+          fi

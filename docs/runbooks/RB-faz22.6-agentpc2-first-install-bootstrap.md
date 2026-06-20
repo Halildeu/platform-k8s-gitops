@@ -127,6 +127,35 @@ After the script finishes, collect the evidence folder and rerun the normal
 that rerun produces live product-channel `HELLO`, permit, constrained
 operation, negative, and audit evidence.
 
+## Evidence Ingest
+
+After the endpoint-local script writes
+`C:\ProgramData\EndpointAgent\rollout-evidence`, copy that evidence folder to
+one of the approved staging-runner evidence roots, for example:
+
+```text
+/home/halil/agentpc2-bootstrap-evidence/<run-or-hostname>
+```
+
+Then run the GitHub Actions workflow:
+
+```text
+Faz 22.6.3 AgentPC2 first-install evidence ingest
+```
+
+Required confirmation input:
+
+```text
+INGEST_AGENTPC2_FIRST_INSTALL_EVIDENCE
+```
+
+The ingest workflow verifies the endpoint-local summary schema, immutable
+`v0.2.13` hashes, signer thumbprint, `LocalSystem` service state, outbound
+`remote-bridge-mtls.testai.acik.com:443` configuration, redacted service
+environment, and private-key client-auth certificate with the expected
+`adcomputer:` SAN. A passing ingest may dispatch the normal #208 acceptance
+workflow automatically, but it still does not prove #208 by itself.
+
 ## Acceptance Hand-Off
 
 Only after AgentPC2 reports an operation-capable agent version may the normal
