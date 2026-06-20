@@ -37,7 +37,7 @@ env:
   DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
   KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
   GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
-  EVIDENCE_DIR: ${{ runner.temp }}/agentpc2-constrained-executor-${{ github.run_id }}
+  EVIDENCE_DIR: /tmp/agentpc2-constrained-executor-${{ github.run_id }}
 
 jobs:
   acceptance:
