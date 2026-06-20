@@ -20,7 +20,7 @@ EXPECTED_DIGEST="${EXPECTED_DIGEST:-sha256:7e1925ceb0312042c8712fcb423eafc5bae1a
 DEVICE_ID="${DEVICE_ID:-fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a}"
 DEVICE_HOSTNAME="${DEVICE_HOSTNAME:-AgentPc2}"
 PRODUCT_DEVICE_ID="$DEVICE_ID"
-ISSUE_URL="${ISSUE_URL:-https://github.com/Halildeu/platform-agent/issues/208}"
+ISSUE_URL="${ISSUE_URL:-https://github.com/Halildeu/platform-k8s-gitops/issues/1768}"
 CATALOG_OPERATION_ID="${CATALOG_OPERATION_ID:-GET_HOSTNAME}"
 SESSION_ID="${SESSION_ID:-rb-agentpc2-$(date -u +%Y%m%dT%H%M%SZ)}"
 STEP_UP_EPHEMERAL_KEY_ENABLED="${STEP_UP_EPHEMERAL_KEY_ENABLED:-1}"
@@ -1077,7 +1077,9 @@ main() {
   REMOTE_BRIDGE_SESSION_ID="$SESSION_ID" \
   SESSION_OWNER_TTL_MINUTES=45 \
     "$REPO_ROOT/scripts/faz22-remote-ops/remote-response-terminal-session-ownership-guard.sh" \
-    > "${EVIDENCE_DIR}/session-ownership-guard.out"
+    > "${EVIDENCE_DIR}/session-ownership-guard.out" \
+    2> "${EVIDENCE_DIR}/session-ownership-guard.err" \
+    || fail_acceptance "session-ownership-guard-failed"
 
   OPERATOR_BEARER_TOKEN="$(tr -d '\r\n' < "$OPERATOR_TOKEN_FILE")" \
   EVIDENCE_DIR="$EVIDENCE_DIR" \

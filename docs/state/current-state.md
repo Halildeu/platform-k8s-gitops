@@ -1,5 +1,74 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6.3 SNI broker route live; #208 acceptance rerun guard fixed (2026-06-20)
+
+**Session milestone**: the standard `443`/SNI product route for the remote
+bridge broker is now live-verified, and AgentPC2 reports the required
+`v0.2.13` agent version. The remaining #208 gate is a clean constrained
+operation acceptance rerun, not endpoint install or custom-port reachability.
+
+Live route and runtime evidence:
+
+- `remote-bridge-mtls.testai.acik.com:443` now resolves to the dedicated
+  broker TLS identity. Staging `openssl s_client` with SNI returned subject
+  `CN=remote-bridge-mtls.testai.acik.com`, issuer
+  `CN=Acik-Endpoint-CA, DC=acik, DC=local`, SHA256 fingerprint
+  `40:4E:21:30:0A:AD:34:C0:8D:E5:E9:D6:66:31:5B:9A:61:B5:99:D9:8C:8C:FC:27:1D:2D:2A:13:D5:DE:C0:D6`,
+  and SANs `DNS:remote-bridge-mtls.testai.acik.com` plus
+  `DNS:mtls.testai.acik.com`.
+- The live edge `stream` route is
+  `remote-bridge-mtls.testai.acik.com -> test_remote_bridge_broker ->
+  172.19.0.2:19445 -> endpoint-rb-node-forwarder -> endpoint-admin-remote-bridge:9444`.
+  The GitOps host-nginx snippet now records this dedicated SNI route so the
+  live edge is no longer an untracked one-off patch.
+- `endpoint-admin-remote-bridge` in `k3d-test/platform-test` is rolled out at
+  digest
+  `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`;
+  live pod `endpoint-admin-remote-bridge-87bdd689d-td87l` is `Ready=true`,
+  restart count `0`, and its `imageID` matches the same digest.
+- AgentPC2 backend device row is live and current:
+  product device id `2f7ad30f-970a-42e7-8af8-08764ae6066f`, hostname
+  `AgentPc2`, `agent_version=v0.2.13`, `status=ONLINE`, and heartbeat rows are
+  arriving at the expected ~30 second cadence. Example live heartbeat:
+  `2026-06-20 17:08:39.681063+00`.
+- Remote bridge approval audit has AgentPC2 constrained session evidence:
+  latest recorded session `rb-agentpc2-20260620T165724Z`, operator
+  `rb-operator-denetim`, requested/approved capability `CONSTRAINED_PTY`,
+  decision `RECORDED` at `2026-06-20 17:00:25.939692+00`.
+
+Workflow/evidence truth:
+
+- Constrained executor workflow run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27877859056`
+  advanced beyond the older install/readiness blocker: open session, approve,
+  step-up challenge, and step-up verify all returned HTTP `200`, and the
+  non-pilot `FULL_RDP` negative open returned the expected `400`.
+- That run still ended `no-go` because the session ownership guard tried to use
+  the cross-repo `platform-agent#208` issue as its coordination ledger and the
+  workflow token hit `gh: Resource not accessible by integration`; the script
+  then exited before writing the final acceptance summary.
+- The acceptance workflow and script now use
+  `platform-k8s-gitops#1768` as the same-repo redacted session-ownership guard
+  ledger. The cross-repo `platform-agent#208` and `platform-backend#717`
+  comments remain best-effort evidence publishing only and no longer block
+  summary generation. The guard call is also wrapped with
+  `fail_acceptance "session-ownership-guard-failed"` so future guard failures
+  produce a redacted no-go summary instead of `summary-json-missing`.
+
+Acceptance boundary:
+
+- The route/cert/broker/AgentPC2-version prerequisites are satisfied for the
+  bounded pilot path.
+- `platform-agent#208` still must not be moved out of blocked/open until a
+  fresh run captures the full product-channel chain: `HELLO`, permit,
+  constrained catalog operation, raw/plaintext negative refusal,
+  WORM/recording evidence, SHA256 manifest verification, and redacted issue
+  evidence.
+- This remains bounded pilot evidence only. It does not prove signed MSI/GPO
+  broad rollout, 5/50/800 device readiness, production remote-support
+  readiness, inbound SSH/RDP/WinRM/SMB/RPC, unrestricted shell, or true
+  TPM/device-key hardware attestation.
+
 ## Live Delta — Faz 22.6.3 #208 v0.2.13 staging prerequisites ready; AgentPC2 endpoint-local bootstrap pending (2026-06-20)
 
 **Session milestone**: AgentPC2 proved that the `v0.2.12` service environment

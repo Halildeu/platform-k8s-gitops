@@ -35,6 +35,7 @@ env:
   EXPECTED_DIGEST: ${{ inputs.expected_digest }}
   DEVICE_ID: ${{ inputs.device_id }}
   DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+  ISSUE_URL: https://github.com/Halildeu/platform-k8s-gitops/issues/1768
   KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
   GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
   EVIDENCE_DIR: /tmp/agentpc2-constrained-executor-${{ github.run_id }}

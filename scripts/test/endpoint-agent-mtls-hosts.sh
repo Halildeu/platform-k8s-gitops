@@ -5,6 +5,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 TEST_HOST="mtls.testai.acik.com"
+REMOTE_BRIDGE_TEST_HOST="remote-bridge-mtls.testai.acik.com"
 PROD_HOST="mtls.ai.acik.com"
 OLD_HOST="endpoint-agent-mtls.testai.acik.com"
 OLD_BASE="https://mtls.testai.acik.com/api/v1/endpoint-admin"
@@ -27,6 +28,9 @@ done
 
 grep -q "host: ${TEST_HOST}" kustomize/base/endpoint-agent-mtls/ingress-passthrough.yaml
 grep -q "${TEST_HOST}" kustomize/base/endpoint-agent-mtls/host-nginx-stream-snippet.conf
+grep -q "${REMOTE_BRIDGE_TEST_HOST}" kustomize/base/endpoint-agent-mtls/host-nginx-stream-snippet.conf
+grep -q "test_remote_bridge_broker" kustomize/base/endpoint-agent-mtls/host-nginx-stream-snippet.conf
+grep -q "172.19.0.2:19445" kustomize/base/endpoint-agent-mtls/host-nginx-stream-snippet.conf
 grep -q "${PROD_HOST}" kustomize/base/endpoint-agent-mtls/host-nginx-stream-snippet.conf
 grep -q "${CANONICAL_BASE}" docs/adr/0029-faz22-mass-deployment-mtls-msi-gpo.md
 grep -q "${PROD_HOST}" docs/runbooks/RB-faz22-M2-edge-mtls-activation.md
