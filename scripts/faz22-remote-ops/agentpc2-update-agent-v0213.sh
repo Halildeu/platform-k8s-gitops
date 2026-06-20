@@ -437,7 +437,7 @@ main() {
     TARGET_DEVICE_ID="$TARGET_DEVICE_ID" \
     TARGET_DEVICE_HOSTNAME="$TARGET_DEVICE_HOSTNAME" \
     DISPATCH_REASON="Faz 22.6.3 AgentPC2 constrained-executor v0.2.13 product update for platform-agent#208" \
-    DISPATCH_IDEMPOTENCY_KEY="agentpc2-v0213-${GITHUB_RUN_ID:-manual}-$(date -u +%Y%m%d%H%M%S)" \
+    DISPATCH_IDEMPOTENCY_KEY="a2-v213-${GITHUB_RUN_ID:-manual}" \
     LIVE_MUTATION=1 \
     RUN_CREATE=1 \
     RUN_APPROVE=1 \
