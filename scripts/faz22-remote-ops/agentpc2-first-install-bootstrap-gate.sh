@@ -310,7 +310,6 @@ try {
     "-ExecutionPolicy", "Bypass",
     "-File", \$InstallPath,
     "-BinaryPath", \$BinaryPath,
-    "-BinaryUrl", "",
     "-ExpectedSha256", \$ExpectedAgentSha256,
     "-ExpectedSignerThumbprint", \$ExpectedSignerThumbprint,
     "-SigningTier", \$ExpectedSigningTier,
