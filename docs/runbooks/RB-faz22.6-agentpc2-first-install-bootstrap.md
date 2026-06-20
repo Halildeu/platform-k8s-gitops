@@ -64,15 +64,21 @@ bootstrap.
 Evidence:
 
 - acceptance rerun:
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27868590359`
-  (supersedes earlier same-day rerun `27867580698`)
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27869889116`
+  (supersedes earlier same-day reruns `27869662051`, `27868590359`, and
+  `27867580698`)
 - no-go reason: `pilot-readiness-agent-version-mismatch`
 - AgentPC2 observed state: `agent_version=v0.2.12`, `status=ONLINE`,
-  `capabilities=[]`, `last_seen_at=2026-06-20 10:37:49.030519+00`
+  `capabilities=[]`, `last_seen_at=2026-06-20 11:33:49.486324+00`
 - endpoint-admin remote-bridge digest prerequisite:
   `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`
 - artifact-host `v0.2.13` digest prerequisite:
   `sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`
+- current no-go artifact:
+  `agentpc2-constrained-executor-evidence-27869889116`; after
+  `platform-k8s-gitops#1776`, downloaded artifact verification with
+  `shasum -a 256 -c SHA256SUMS` passed for every uploaded file, including
+  `workflow-smoke.log`
 - generated bootstrap artifact source:
   `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27867360595`
 
