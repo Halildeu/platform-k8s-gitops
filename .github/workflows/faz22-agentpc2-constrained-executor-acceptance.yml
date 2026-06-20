@@ -77,7 +77,7 @@ jobs:
           chmod +x scripts/faz22-remote-ops/agentpc2-constrained-executor-acceptance.sh
 
           scripts/faz22-remote-ops/agentpc2-constrained-executor-acceptance.sh \
-            2>&1 | tee "${EVIDENCE_DIR}/workflow-smoke.log"
+            2>&1 | sed -E 's/^::add-mask::.*/::add-mask::<redacted>/' | tee "${EVIDENCE_DIR}/workflow-smoke.log"
           exit_code="${PIPESTATUS[0]}"
 
           echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
@@ -155,7 +155,8 @@ jobs:
 
           gh issue comment 208 \
             --repo Halildeu/platform-agent \
-            --body-file "${comment}"
+            --body-file "${comment}" \
+            || echo "::warning::Could not comment on platform-agent#208 with this workflow token; evidence remains in the workflow artifact."
 
           backend_comment="${RUNNER_TEMP}/platform-backend-717-evidence.md"
           {
@@ -171,7 +172,8 @@ jobs:
 
           gh issue comment 717 \
             --repo Halildeu/platform-backend \
-            --body-file "${backend_comment}"
+            --body-file "${backend_comment}" \
+            || echo "::warning::Could not comment on platform-backend#717 with this workflow token; evidence remains in the workflow artifact."
 
           {
             echo "## AgentPC2 product-channel acceptance"

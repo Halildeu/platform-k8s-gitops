@@ -22,6 +22,7 @@ DEVICE_HOSTNAME="${DEVICE_HOSTNAME:-AgentPc2}"
 ISSUE_URL="${ISSUE_URL:-https://github.com/Halildeu/platform-agent/issues/208}"
 CATALOG_OPERATION_ID="${CATALOG_OPERATION_ID:-GET_HOSTNAME}"
 SESSION_ID="${SESSION_ID:-rb-agentpc2-$(date -u +%Y%m%dT%H%M%SZ)}"
+STEP_UP_EPHEMERAL_KEY_ENABLED="${STEP_UP_EPHEMERAL_KEY_ENABLED:-1}"
 
 EXPECTED_RELEASE_TAG="${EXPECTED_RELEASE_TAG:-v0.2.13}"
 EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-0.2.13}"
@@ -72,6 +73,8 @@ operation_status=""
 verification_result=""
 recording_hint=""
 session_hash=""
+step_up_key_mode=""
+step_up_public_key_sha256=""
 operator_claims_file="${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
 approver_claims_file="${EVIDENCE_DIR}/approver-jwt-claims.redacted.json"
 
@@ -84,13 +87,18 @@ need_cmd() {
 
 cleanup() {
   set +e
-  if [[ -n "$PORT_FORWARD_PID" ]] && kill -0 "$PORT_FORWARD_PID" >/dev/null 2>&1; then
-    kill "$PORT_FORWARD_PID" >/dev/null 2>&1
-    wait "$PORT_FORWARD_PID" >/dev/null 2>&1
-  fi
+  stop_port_forward
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
+
+stop_port_forward() {
+  if [[ -n "$PORT_FORWARD_PID" ]] && kill -0 "$PORT_FORWARD_PID" >/dev/null 2>&1; then
+    kill "$PORT_FORWARD_PID" >/dev/null 2>&1
+    wait "$PORT_FORWARD_PID" >/dev/null 2>&1 || true
+  fi
+  PORT_FORWARD_PID=""
+}
 
 sha256_text() {
   if command -v shasum >/dev/null 2>&1; then
@@ -121,6 +129,8 @@ write_summary() {
     --arg operationStatus "$operation_status" \
     --arg verificationResult "$verification_result" \
     --arg recordingHint "$recording_hint" \
+    --arg stepUpKeyMode "$step_up_key_mode" \
+    --arg stepUpPublicKeySha256 "$step_up_public_key_sha256" \
     --arg evidenceDir "$EVIDENCE_DIR" \
     '{
       generatedAt: $generatedAt,
@@ -145,7 +155,9 @@ write_summary() {
         stepUpVerifyHttp: $verifyCode,
         operationStatus: $operationStatus,
         verifierResult: $verificationResult,
-        recordingHint: $recordingHint
+        recordingHint: $recordingHint,
+        stepUpKeyMode: $stepUpKeyMode,
+        stepUpPublicKeySha256: $stepUpPublicKeySha256
       },
       evidenceDir: $evidenceDir,
       secretHygiene: {
@@ -174,7 +186,7 @@ fail_acceptance() {
 
 mask_file_value() {
   local file="$1"
-  if [[ -s "$file" && -n "${GITHUB_ACTIONS:-}" ]]; then
+  if [[ -s "$file" && -n "${GITHUB_ACTIONS:-}" && "${EMIT_GITHUB_MASK_COMMANDS:-0}" == "1" ]]; then
     printf '::add-mask::%s\n' "$(tr -d '\r\n' < "$file")"
   fi
 }
@@ -393,6 +405,7 @@ verify_runtime_digest() {
 }
 
 start_port_forward() {
+  stop_port_forward
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" \
     port-forward "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" "${REMOTE_BRIDGE_LOCAL_PORT}:8096" \
     > "${EVIDENCE_DIR}/port-forward.log" 2>&1 &
@@ -415,6 +428,7 @@ export_step_up_public_key() {
     -o jsonpath='{.data.REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM}' \
     | base64 -d > "${TMP_DIR}/step-up-public.pem"
   [[ -s "${TMP_DIR}/step-up-public.pem" ]] || fail_acceptance "step-up-public-key-missing"
+  step_up_public_key_sha256="$(shasum -a 256 "${TMP_DIR}/step-up-public.pem" | awk '{print $1}')"
 }
 
 secret_key_to_file() {
@@ -509,7 +523,7 @@ candidate_private_keys() {
   fi
 }
 
-find_matching_step_up_private_key() {
+try_find_matching_step_up_private_key() {
   local public_norm candidate pub_tmp
   public_norm="$(grep -v -- '-----' "${TMP_DIR}/step-up-public.pem" | tr -d '\r\n[:space:]')"
   while IFS= read -r candidate; do
@@ -519,11 +533,64 @@ find_matching_step_up_private_key() {
       if [[ "$(grep -v -- '-----' "$pub_tmp" | tr -d '\r\n[:space:]')" == "$public_norm" ]]; then
         printf '%s' "$candidate" > "${TMP_DIR}/step-up-private-key.path"
         chmod 0600 "${TMP_DIR}/step-up-private-key.path"
+        step_up_key_mode="preconfigured-private-key"
         return 0
       fi
     fi
   done < <(candidate_private_keys | awk 'NF && !seen[$0]++')
-  fail_acceptance "step-up-private-key-unavailable-or-public-mismatch"
+  return 1
+}
+
+generate_run_scoped_step_up_key() {
+  [[ "$STEP_UP_EPHEMERAL_KEY_ENABLED" == "1" ]] \
+    || fail_acceptance "step-up-private-key-unavailable-or-public-mismatch"
+
+  local key_path public_path public_b64 patch run_id
+  key_path="${TMP_DIR}/run-scoped-step-up-private-key.pem"
+  public_path="${TMP_DIR}/run-scoped-step-up-public-key.pem"
+  run_id="${GITHUB_RUN_ID:-manual-$(date -u +%Y%m%dT%H%M%SZ)}"
+
+  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$key_path" \
+    >/dev/null 2>&1 || fail_acceptance "step-up-ephemeral-key-generation-failed"
+  chmod 0600 "$key_path"
+  openssl pkey -in "$key_path" -pubout -out "$public_path" \
+    >/dev/null 2>&1 || fail_acceptance "step-up-ephemeral-public-key-generation-failed"
+
+  public_b64="$(base64 < "$public_path" | tr -d '\r\n')"
+  patch="$(jq -cn --arg pem "$public_b64" '{data:{REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM:$pem}}')"
+
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch secret endpoint-admin-remote-bridge-secrets \
+    --type merge -p "$patch" >/dev/null \
+    || fail_acceptance "step-up-ephemeral-public-key-secret-patch-failed"
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" annotate secret endpoint-admin-remote-bridge-secrets \
+    "remote-bridge.platform/run-scoped-step-up-key=${run_id}" --overwrite >/dev/null 2>&1 || true
+
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout restart "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" >/dev/null \
+    || fail_acceptance "step-up-ephemeral-rollout-restart-failed"
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --timeout=240s \
+    || fail_acceptance "step-up-ephemeral-rollout-timeout"
+  verify_runtime_digest
+
+  cp "$public_path" "${TMP_DIR}/step-up-public.pem"
+  printf '%s' "$key_path" > "${TMP_DIR}/step-up-private-key.path"
+  chmod 0600 "${TMP_DIR}/step-up-private-key.path"
+  step_up_key_mode="run-scoped-ephemeral-test-key"
+  step_up_public_key_sha256="$(shasum -a 256 "${TMP_DIR}/step-up-public.pem" | awk '{print $1}')"
+
+  jq -n \
+    --arg mode "$step_up_key_mode" \
+    --arg publicKeySha256 "$step_up_public_key_sha256" \
+    --arg runId "$run_id" \
+    '{mode:$mode, publicKeySha256:$publicKeySha256, runId:$runId, privateKeyStoredInEvidence:false}' \
+    > "${EVIDENCE_DIR}/step-up-key-mode.json"
+}
+
+find_matching_step_up_private_key() {
+  if try_find_matching_step_up_private_key; then
+    return 0
+  fi
+  generate_run_scoped_step_up_key
+  start_port_forward
 }
 
 build_step_up_assertion() {
