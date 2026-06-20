@@ -136,7 +136,7 @@ jobs:
             echo "- Evidence SHA256SUMS hash: \`${sha_manifest}\`"
             echo "- Secret hygiene: raw bearer tokens, Keycloak passwords, and private keys are intentionally omitted."
             echo ""
-            echo "Boundary: this proves only the release-catalog UPDATE_AGENT product update path when status is \`update-observed\`. It does not prove #208 constrained executor acceptance, broad MSI/GPO rollout, production support readiness, inbound SSH/RDP/WinRM/SMB/RPC, unrestricted shell, or TPM/device-key attestation."
+            echo "Boundary: this proves only the release-catalog UPDATE_AGENT product update path. Status \`update-observed\` means the endpoint version was observed through this workflow; status \`update-dispatched-unobserved\` means dispatch succeeded but version observation is deferred to the #208 acceptance workflow. It does not prove #208 constrained executor acceptance, broad MSI/GPO rollout, production support readiness, inbound SSH/RDP/WinRM/SMB/RPC, unrestricted shell, or TPM/device-key attestation."
             if [ -n "${reason}" ]; then
               echo ""
               echo "Reason: \`${reason}\`"

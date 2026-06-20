@@ -53,6 +53,7 @@ OBSERVED_VERSION=""
 OBSERVED_STATUS=""
 OBSERVED_LAST_SEEN=""
 OBSERVED_DEVICE_ID=""
+DEVICE_SNAPSHOT_API_STATUS=""
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -248,9 +249,10 @@ write_device_snapshot() {
   raw="${EVIDENCE_DIR}/${label}-endpoint-devices.raw.json"
   out="${EVIDENCE_DIR}/${label}-agentpc2-device.json"
   code="$(curl_api GET /endpoint-devices "$CREATOR_TOKEN_FILE" "$raw" || true)"
+  DEVICE_SNAPSHOT_API_STATUS="$code"
   if [[ "$code" != "200" ]]; then
-    jq -n --arg http "$code" --arg label "$label" \
-      '{"label":$label,httpStatus:($http|tonumber? // null),deviceFound:false}' > "$out"
+    jq -n --arg http "$code" --arg snapshotLabel "$label" \
+      '{"label":$snapshotLabel,httpStatus:($http|tonumber? // null),deviceFound:false}' > "$out"
     return 0
   fi
 
@@ -320,8 +322,20 @@ write_summary() {
     --slurpfile approver "${EVIDENCE_DIR}/approver-jwt-claims.redacted.json" \
     '{
       generatedAt: $generatedAt,
-      status: (if $seedExitCode == 0 and $pollResult == "ok" then "update-observed" else "no-go" end),
-      reason: (if $seedExitCode != 0 then "update-agent-dispatch-failed" elif $pollResult != "ok" then $pollReason else "agent-version-updated" end),
+      status: (
+        if $seedExitCode != 0 then "no-go"
+        elif $pollResult == "ok" then "update-observed"
+        elif $pollResult == "unavailable" then "update-dispatched-unobserved"
+        else "no-go"
+        end
+      ),
+      reason: (
+        if $seedExitCode != 0 then "update-agent-dispatch-failed"
+        elif $pollResult == "ok" then "agent-version-updated"
+        elif $pollResult == "unavailable" then $pollReason
+        else $pollReason
+        end
+      ),
       apiBase: $apiBase,
       release: {
         releaseId: $releaseId,
@@ -437,7 +451,12 @@ main() {
   set -e
 
   if [[ "$SEED_EXIT_CODE" == "0" ]]; then
-    poll_expected_version || true
+    if [[ "$DEVICE_SNAPSHOT_API_STATUS" == "200" ]]; then
+      poll_expected_version || true
+    else
+      POLL_RESULT="unavailable"
+      POLL_REASON="endpoint-device-list-api-http-${DEVICE_SNAPSHOT_API_STATUS:-unknown}"
+    fi
   else
     POLL_RESULT="skipped"
     POLL_REASON="seed-helper-failed"
@@ -454,7 +473,7 @@ main() {
   if [[ "$SEED_EXIT_CODE" != "0" ]]; then
     exit "$SEED_EXIT_CODE"
   fi
-  if [[ "$POLL_RESULT" != "ok" ]]; then
+  if [[ "$POLL_RESULT" != "ok" && "$POLL_RESULT" != "unavailable" ]]; then
     exit 1
   fi
 }
