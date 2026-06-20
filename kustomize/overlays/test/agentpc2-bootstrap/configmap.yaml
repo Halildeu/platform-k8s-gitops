@@ -1,0 +1,321 @@
+apiVersion: v1
+data:
+  README.md: |
+    # AgentPC2 public first-install bootstrap
+
+    This directory is served by the test artifact-host at:
+
+    ```text
+    https://testai.acik.com/artifacts/endpoint-agent/bootstrap/
+    ```
+
+    Run on AgentPC2 from an elevated PowerShell session:
+
+    ```powershell
+    $ErrorActionPreference = "Stop"
+    $ProgressPreference = "SilentlyContinue"
+
+    $Base = "https://testai.acik.com/artifacts/endpoint-agent/bootstrap"
+    $WorkDir = "C:\Temp\AgentPC2Bootstrap"
+    $Script = Join-Path $WorkDir "agentpc2-first-install-bootstrap.ps1"
+
+    New-Item -ItemType Directory -Force $WorkDir | Out-Null
+    Invoke-WebRequest -UseBasicParsing -Uri "$Base/agentpc2-first-install-bootstrap.ps1" -OutFile $Script
+
+    $ExpectedScriptSha256 = "c60fc426145f8ea0c33c417a4e94c66d001b3723167360ab365192eb31f275ab"
+    $ActualScriptSha256 = (Get-FileHash $Script -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($ActualScriptSha256 -ne $ExpectedScriptSha256) { throw "Bootstrap script SHA256 mismatch: $ActualScriptSha256" }
+
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Script
+    ```
+
+    Boundary:
+    - This is a bounded AgentPC2 first-install seed for platform-k8s-gitops#1768.
+    - It contains no HMAC enrollment token, bearer token, password, private key, or administrator credential.
+    - It does not prove platform-agent#208 acceptance by itself.
+    - #208 still requires live product-channel HELLO, permit, constrained-operation, negative/plaintext refusal, and audit evidence after AgentPC2 reports v0.2.14.
+  SHA256SUMS: |
+    3daa9df5955bb462d6159410d34d4366993e02681076596913c2f9af2d63b163  README.md
+    c60fc426145f8ea0c33c417a4e94c66d001b3723167360ab365192eb31f275ab  agentpc2-first-install-bootstrap.ps1
+  agentpc2-first-install-bootstrap.ps1: |
+    <#
+    .SYNOPSIS
+    AgentPC2 bounded first-install bootstrap for EndpointAgent v0.2.14.
+
+    .DESCRIPTION
+    Installs the operation-capable Endpoint Agent release using immutable release
+    metadata, enables outbound-only remote bridge over 443/SNI, and collects
+    redacted endpoint-local evidence. This script contains no enrollment token,
+    bearer token, private key, password, or administrator credential.
+    #>
+
+    [CmdletBinding()]
+    param(
+      [string]$EvidenceRoot = "C:\ProgramData\EndpointAgent\rollout-evidence",
+      [string]$WorkDir = "C:\ProgramData\EndpointAgent\bootstrap\v0.2.14",
+      [int]$PostInstallWaitSeconds = 90
+    )
+
+    Set-StrictMode -Version Latest
+    $ErrorActionPreference = "Stop"
+    $ProgressPreference = "SilentlyContinue"
+
+    $ReleaseId = "v0.2.14"
+    $TargetVersion = "0.2.14"
+    $TargetHostname = "AgentPc2"
+    $TargetProductDeviceId = "2f7ad30f-970a-42e7-8af8-08764ae6066f"
+
+    $InstallUrl = "https://testai.acik.com/artifacts/endpoint-agent/v0.2.14/install.ps1"
+    $BinaryUrl = "https://testai.acik.com/artifacts/endpoint-agent/v0.2.14/endpoint-agent.exe"
+    $ExpectedInstallPs1Sha256 = "5819207b63795ca0f14c1949f2a187dd996372f066992d692672e8f0d71c79df"
+    $ExpectedAgentSha256 = "624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618"
+    $ExpectedSignerThumbprint = "D68F4F530137EB65CE44E3405E82B46205E753E5"
+    $ExpectedSigningTier = "trusted-internal-ca"
+
+    $AutoEnrollApiUrl = "https://mtls.testai.acik.com/api/v1/endpoint-agent"
+    $AutoEnrollSanUriPrefix = "adcomputer:"
+    $RemoteBridgeBrokerAddr = "remote-bridge-mtls.testai.acik.com:443"
+    $RemoteBridgeTlsServerName = "remote-bridge-mtls.testai.acik.com"
+    $RemoteBridgeMTLSSanUriPrefix = "adcomputer:"
+    $RemoteBridgePermitKid = "rb-test-denetim-20260617-01"
+    $RemoteBridgePermitBrokerPublicKeyB64 = @'
+    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEKrY41M+0Yt995yJrAAeARZ4tgnEvhO35KWR8BjJPM4JkwUBxCfMHCYhm9mQUz3PDbtCBUS9X9t3MtH9atSLb/Q==
+    '@.Trim()
+
+    function Write-Step {
+      param([string]$Message)
+      Write-Host "[agentpc2-bootstrap] $Message"
+    }
+
+    function Get-Sha256 {
+      param([string]$Path)
+      return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+
+    function Assert-Sha256 {
+      param(
+        [string]$Path,
+        [string]$Expected
+      )
+      $actual = Get-Sha256 -Path $Path
+      if ($actual -ne $Expected.ToLowerInvariant()) {
+        throw "SHA256 mismatch for $Path expected=$Expected actual=$actual"
+      }
+    }
+
+    function Invoke-DownloadVerified {
+      param(
+        [string]$Uri,
+        [string]$OutFile,
+        [string]$ExpectedSha256
+      )
+
+      Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $OutFile -MaximumRedirection 5
+      Assert-Sha256 -Path $OutFile -Expected $ExpectedSha256
+    }
+
+    function Get-RedactedServiceEnvironment {
+      $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\EndpointAgent"
+      $raw = (Get-ItemProperty -Path $serviceKey -Name Environment -ErrorAction SilentlyContinue).Environment
+      if ($null -eq $raw) {
+        return @()
+      }
+
+      $rows = @()
+      foreach ($entry in $raw) {
+        $parts = $entry -split "=", 2
+        $key = $parts[0]
+        $value = if ($parts.Count -gt 1) { $parts[1] } else { "" }
+        $isSensitive = $key -match "TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL"
+        $rows += [PSCustomObject]@{
+          Key = $key
+          Present = -not [string]::IsNullOrWhiteSpace($value)
+          Length = $value.Length
+          Value = if ($isSensitive) { "<redacted>" } else { $value }
+        }
+      }
+      return $rows
+    }
+
+    function Get-ClientAuthCertRows {
+      $rows = @()
+      $certs = Get-ChildItem Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
+        Where-Object {
+          $_.HasPrivateKey -and
+          $_.EnhancedKeyUsageList.ObjectId -contains "1.3.6.1.5.5.7.3.2"
+        } |
+        Sort-Object NotBefore -Descending
+
+      foreach ($cert in $certs) {
+        $san = $cert.Extensions |
+          Where-Object { $_.Oid.Value -eq "2.5.29.17" } |
+          Select-Object -First 1
+        $sanText = if ($san) { $san.Format($false) } else { "" }
+        $rows += [PSCustomObject]@{
+          Subject = $cert.Subject
+          Issuer = $cert.Issuer
+          Thumbprint = $cert.Thumbprint
+          NotBefore = $cert.NotBefore.ToString("o")
+          NotAfter = $cert.NotAfter.ToString("o")
+          HasPrivateKey = $cert.HasPrivateKey
+          SAN = $sanText
+        }
+      }
+      return $rows
+    }
+
+    $startedAt = Get-Date
+    New-Item -ItemType Directory -Force -Path $EvidenceRoot,$WorkDir | Out-Null
+    $TranscriptPath = Join-Path $EvidenceRoot "agentpc2-first-install-bootstrap-transcript.log"
+    $SummaryPath = Join-Path $EvidenceRoot "agentpc2-first-install-bootstrap-summary.json"
+    $InstallPath = Join-Path $WorkDir "install.ps1"
+    $BinaryPath = Join-Path $WorkDir "endpoint-agent.exe"
+
+    try {
+      Start-Transcript -Path $TranscriptPath -Force | Out-Null
+
+      $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+      $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+      if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw "Administrator shell required."
+      }
+
+      Write-Step "download immutable install.ps1"
+      Invoke-DownloadVerified -Uri $InstallUrl -OutFile $InstallPath -ExpectedSha256 $ExpectedInstallPs1Sha256
+
+      Write-Step "download immutable endpoint-agent.exe"
+      Invoke-DownloadVerified -Uri $BinaryUrl -OutFile $BinaryPath -ExpectedSha256 $ExpectedAgentSha256
+
+      Write-Step "verify endpoint-agent.exe signer thumbprint"
+      $signature = Get-AuthenticodeSignature -FilePath $BinaryPath
+      $signerThumbprint = if ($signature.SignerCertificate) { $signature.SignerCertificate.Thumbprint } else { "" }
+      if ($signerThumbprint -ne $ExpectedSignerThumbprint) {
+        throw "Signer thumbprint mismatch expected=$ExpectedSignerThumbprint actual=$signerThumbprint"
+      }
+
+      Write-Step "install EndpointAgent $ReleaseId with outbound remote bridge"
+      $installArgs = @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", $InstallPath,
+        "-BinaryPath", $BinaryPath,
+        "-ExpectedSha256", $ExpectedAgentSha256,
+        "-ExpectedSignerThumbprint", $ExpectedSignerThumbprint,
+        "-SigningTier", $ExpectedSigningTier,
+        "-ReleaseTag", $ReleaseId,
+        "-AutoEnroll",
+        "-AutoEnrollApiUrl", $AutoEnrollApiUrl,
+        "-AutoEnrollCertSANURIPrefix", $AutoEnrollSanUriPrefix,
+        "-RemoteBridgeEnabled",
+        "-RemoteBridgeBrokerAddr", $RemoteBridgeBrokerAddr,
+        "-RemoteBridgeMTLSCertSANURIPrefix", $RemoteBridgeMTLSSanUriPrefix,
+        "-RemoteBridgeOperationsEnabled",
+        "-RemoteBridgePermitBrokerPublicKeyB64", $RemoteBridgePermitBrokerPublicKeyB64,
+        "-RemoteBridgePermitKeyID", $RemoteBridgePermitKid,
+        "-RemoteBridgeTLSServerName", $RemoteBridgeTlsServerName,
+        "-ServiceStartTimeoutSeconds", "90",
+        "-Force",
+        "-Start"
+      )
+      & powershell.exe @installArgs
+
+      if ($LASTEXITCODE -ne 0) {
+        throw "install.ps1 exited with code $LASTEXITCODE"
+      }
+
+      Start-Sleep -Seconds $PostInstallWaitSeconds
+
+      $service = Get-CimInstance Win32_Service |
+        Where-Object { $_.Name -eq "EndpointAgent" } |
+        Select-Object Name,DisplayName,State,StartMode,StartName,PathName
+
+      $serviceEnv = Get-RedactedServiceEnvironment
+      $certRows = Get-ClientAuthCertRows
+      $logTailPath = Join-Path $EvidenceRoot "endpoint-agent-log-tail.txt"
+      Get-Content "C:\ProgramData\EndpointAgent\logs\*.log" -Tail 800 -ErrorAction SilentlyContinue |
+        Set-Content -Path $logTailPath -Encoding UTF8
+
+      $signalsPath = Join-Path $EvidenceRoot "endpoint-agent-remote-bridge-signals.txt"
+      Get-Content $logTailPath -ErrorAction SilentlyContinue |
+        Select-String -Pattern "remote-bridge|bridge|mtls|mTLS|hello|HELLO|permit|operation|CONSTRAINED|error|failed|denied|certificate|attestation|remote-bridge-mtls.testai.acik.com" |
+        ForEach-Object { $_.Line } |
+        Set-Content -Path $signalsPath -Encoding UTF8
+
+      $completedAt = Get-Date
+      [PSCustomObject]@{
+        schema = "faz22.1768.agentpc2-first-install-bootstrap.endpoint.v1"
+        status = if ($service -and $service.State -eq "Running") { "installed-service-running" } else { "installed-service-not-running" }
+        startedAt = $startedAt.ToString("o")
+        completedAt = $completedAt.ToString("o")
+        computerName = $env:COMPUTERNAME
+        user = $identity.Name
+        release = @{
+          id = $ReleaseId
+          targetVersion = $TargetVersion
+          binaryUrl = $BinaryUrl
+          binarySha256 = $ExpectedAgentSha256
+          installPs1Sha256 = $ExpectedInstallPs1Sha256
+          signerThumbprint = $ExpectedSignerThumbprint
+          signingTier = $ExpectedSigningTier
+          authenticodeStatus = [string]$signature.Status
+          authenticodeStatusMessage = [string]$signature.StatusMessage
+        }
+        remoteBridge = @{
+          enabled = $true
+          brokerAddr = $RemoteBridgeBrokerAddr
+          tlsServerName = $RemoteBridgeTlsServerName
+          operationsEnabled = $true
+          permitKeyId = $RemoteBridgePermitKid
+          permitBrokerPublicKeySha256 = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::ASCII.GetBytes($RemoteBridgePermitBrokerPublicKeyB64))).Replace("-", "").ToLowerInvariant()
+        }
+        autoEnroll = @{
+          apiUrl = $AutoEnrollApiUrl
+          certSANURIPrefix = $AutoEnrollSanUriPrefix
+        }
+        service = $service
+        redactedServiceEnvironment = $serviceEnv
+        clientAuthCerts = $certRows
+        evidence = @{
+          root = $EvidenceRoot
+          transcript = $TranscriptPath
+          logTail = $logTailPath
+          remoteBridgeSignals = $signalsPath
+        }
+        boundary = @{
+          proves = @(
+            "Endpoint-local install script executed",
+            "EndpointAgent service install/start attempted with immutable v0.2.14 binary hash",
+            "Outbound remote bridge configuration written for 443/SNI broker"
+          )
+          doesNotProve = @(
+            "platform-agent#208 constrained operation acceptance",
+            "broad GPO/MSI rollout",
+            "inbound SSH/RDP/WinRM/SMB/RPC support",
+            "production/domain-wide support readiness",
+            "TPM/device-key hardware attestation"
+          )
+        }
+      } | ConvertTo-Json -Depth 8 | Set-Content -Path $SummaryPath -Encoding UTF8
+
+      Write-Step "summary: $SummaryPath"
+      Get-Content $SummaryPath
+    } catch {
+      $completedAt = Get-Date
+      [PSCustomObject]@{
+        schema = "faz22.1768.agentpc2-first-install-bootstrap.endpoint.v1"
+        status = "failed"
+        startedAt = $startedAt.ToString("o")
+        completedAt = $completedAt.ToString("o")
+        computerName = $env:COMPUTERNAME
+        user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+        error = $_.Exception.Message
+        evidence = @{ root = $EvidenceRoot; transcript = $TranscriptPath }
+      } | ConvertTo-Json -Depth 6 | Set-Content -Path $SummaryPath -Encoding UTF8
+      Write-Error $_.Exception.Message
+      exit 1
+    } finally {
+      try { Stop-Transcript | Out-Null } catch {}
+    }
+kind: ConfigMap
+metadata:
+  name: agentpc2-first-install-bootstrap

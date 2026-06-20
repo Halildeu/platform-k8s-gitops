@@ -176,7 +176,7 @@ jobs:
             echo "AGENTPC2_FIRST_INSTALL_BOOTSTRAP_REFERENCE status=${status}"
             echo ""
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            echo "- This is prerequisite/bootstrap evidence for AgentPC2 because the current v0.2.12 endpoint does not advertise \`UPDATE_AGENT\`."
+            echo "- This is prerequisite/bootstrap evidence for AgentPC2 because the current older/non-operation-capable endpoint does not advertise \`UPDATE_AGENT\`."
             echo "- It is not #208 acceptance. #208 still requires live HELLO/permit/constrained-operation/negative/audit evidence after AgentPC2 reports an operation-capable version."
             echo "- Bootstrap package evidence dir: \`${EVIDENCE_DIR}\`"
           } > "${agent_comment}"

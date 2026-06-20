@@ -2,6 +2,8 @@
 set -euo pipefail
 
 script="scripts/faz22-remote-ops/agentpc2-first-install-bootstrap-gate.sh"
+kustomization="kustomize/overlays/test/kustomization.yaml"
+bootstrap_configmap="kustomize/overlays/test/agentpc2-bootstrap/configmap.yaml"
 
 if [[ ! -f "${script}" ]]; then
   echo "missing ${script}" >&2
@@ -26,6 +28,31 @@ fi
 
 if grep -Fq '"-BinaryUrl"' <<<"${install_args_block}"; then
   echo "bootstrap install args must not pass -BinaryUrl with an empty value; Windows PowerShell drops empty native args" >&2
+  exit 1
+fi
+
+if [[ ! -f "${bootstrap_configmap}" ]]; then
+  echo "missing ${bootstrap_configmap}" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'agentpc2-bootstrap/configmap.yaml' "${kustomization}"; then
+  echo "test overlay must include the AgentPC2 bootstrap ConfigMap resource" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'mountPath: /usr/share/nginx/html/artifacts/endpoint-agent/bootstrap' "${kustomization}"; then
+  echo "artifact-host must publish the AgentPC2 bootstrap ConfigMap under /artifacts/endpoint-agent/bootstrap" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'agentpc2-first-install-bootstrap.ps1:' "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap ConfigMap must contain agentpc2-first-install-bootstrap.ps1" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'SHA256SUMS:' "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap ConfigMap must contain SHA256SUMS" >&2
   exit 1
 fi
 
