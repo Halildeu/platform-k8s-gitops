@@ -222,10 +222,19 @@ Live evidence after sync:
 
 Acceptance boundary:
 
-- The public artifact-host gate is satisfied for `v0.2.11`; this does not
-  prove endpoint update or constrained terminal execution.
-- `platform-backend#712` still needs a catalog-bound `UPDATE_AGENT` dispatch
-  using an approved `v0.2.11` URL, followed by post-update heartbeat evidence.
+- The public artifact-host gate is satisfied for `v0.2.11`; by itself this did
+  not prove endpoint update or constrained terminal execution.
+- `platform-backend#712` is now accepted-bounded and Project #2 `Done` for the
+  release/update lane. The follow-up catalog-bound `UPDATE_AGENT` path used the
+  approved/enabled `v0.2.11` release row, reached staged activation on
+  `HALILKOOLUB735`, and moved heartbeat from `v0.2.5` to `v0.2.11`. Evidence:
+  command id `bc425bca-74ab-4a9c-a4e7-fa70cc8453f7`, result
+  `UPDATE_AGENT STAGED_ACTIVATION_READY`, binary SHA256
+  `cd3a5741a737f008a8bc3d11c1b8e3564ea71203063d215efef18a384a2f703e`,
+  Authenticode signer cert SHA256 thumbprint
+  `EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD`, and a
+  negative guard proving caller-supplied binary/hash/signer fields were
+  rejected.
 - `platform-agent#208` remains open until a pilot endpoint running the accepted
   candidate proves product-channel constrained terminal output (`AGENT_OUTPUT`
   or equivalent DATA/EndStream evidence). Raw shell/RDP/WinRM/SMB/SSH or
