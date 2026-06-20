@@ -50,6 +50,8 @@ BOOTSTRAP_PS1="${EVIDENCE_DIR}/agentpc2-first-install-bootstrap.ps1"
 README_PATH="${EVIDENCE_DIR}/README.md"
 SUMMARY_PATH="${EVIDENCE_DIR}/summary.json"
 PUBLIC_KEY_JSON="${EVIDENCE_DIR}/permit-public-key.json"
+RELEASE_SHA256SUMS_PATH="${EVIDENCE_DIR}/release-SHA256SUMS"
+EVIDENCE_SHA256SUMS_PATH="${EVIDENCE_DIR}/SHA256SUMS"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -453,6 +455,8 @@ Endpoint evidence will be written under:
 
 The script contains no HMAC enrollment token, bearer token, password, private key, or administrator credential. It contains the broker permit public key, which is intentionally public verifier material.
 
+The artifact bundle contains a top-level SHA256SUMS file with relative paths. Verify it from this directory before endpoint-local execution.
+
 After endpoint-local execution, rerun the #208 constrained-executor acceptance workflow. Do not close #208 from this bootstrap evidence alone.
 EOF
 }
@@ -557,6 +561,35 @@ scan_for_secret_leaks() {
   fi
 }
 
+write_evidence_sha256sums() {
+  local sums_tmp
+  sums_tmp="${TMP_DIR}/agentpc2-first-install-evidence-SHA256SUMS"
+
+  (
+    cd "${EVIDENCE_DIR}"
+    if command -v shasum >/dev/null 2>&1; then
+      find . -maxdepth 1 -type f ! -name "SHA256SUMS" -print0 \
+        | sort -z \
+        | xargs -0 shasum -a 256
+    else
+      find . -maxdepth 1 -type f ! -name "SHA256SUMS" -print0 \
+        | sort -z \
+        | xargs -0 sha256sum
+    fi
+  ) > "${sums_tmp}"
+
+  mv "${sums_tmp}" "${EVIDENCE_SHA256SUMS_PATH}"
+
+  (
+    cd "${EVIDENCE_DIR}"
+    if command -v shasum >/dev/null 2>&1; then
+      shasum -a 256 -c "SHA256SUMS" >/dev/null
+    else
+      sha256sum -c "SHA256SUMS" >/dev/null
+    fi
+  )
+}
+
 main() {
   need_cmd curl
   need_cmd jq
@@ -576,7 +609,7 @@ main() {
   download_verified "${INSTALL_URL}" "${install_path}" "${EXPECTED_INSTALL_PS1_SHA256}"
   download_verified "${BOOTSTRAP_PACKAGE_URL}" "${bootstrap_path}" "${EXPECTED_BOOTSTRAP_PS1_SHA256}"
   curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 60 \
-    -o "${EVIDENCE_DIR}/SHA256SUMS" "${SHA256SUMS_URL}"
+    -o "${RELEASE_SHA256SUMS_PATH}" "${SHA256SUMS_URL}"
 
   sha_manifest="$(sha256_file "${manifest_path}")"
   sha_install="$(sha256_file "${install_path}")"
@@ -653,10 +686,8 @@ main() {
     "${sha_manifest}" "${sha_install}" "${sha_bootstrap}" \
     "${artifact_image}" "${artifact_ready}"
 
-  find "${EVIDENCE_DIR}" -maxdepth 1 -type f -print0 | sort -z | xargs -0 shasum -a 256 \
-    > "${EVIDENCE_DIR}/evidence-SHA256SUMS"
-
   scan_for_secret_leaks
+  write_evidence_sha256sums
 
   echo "=== SUMMARY ==="
   jq . "${SUMMARY_PATH}"
