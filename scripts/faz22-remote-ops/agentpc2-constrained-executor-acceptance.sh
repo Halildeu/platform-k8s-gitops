@@ -169,7 +169,7 @@ capture_remote_bridge_runtime_env() {
       (.metadata.annotations // {}) as $annotations |
       {
         hadStepUpEnv: any($c.env[]?; .name == "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM"),
-        stepUpEnv: (($c.env // [])[]? | select(.name == "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM") | .) // null,
+        stepUpEnv: (first(($c.env // [])[]? | select(.name == "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")) // null),
         hadRunScopedAnnotation: ($annotations | has("remote-bridge.platform/run-scoped-step-up-key")),
         runScopedAnnotationValue: ($annotations["remote-bridge.platform/run-scoped-step-up-key"] // null)
       }' \
@@ -235,7 +235,7 @@ restore_remote_bridge_runtime_env_override() {
       ($original[0]) as $orig |
       ([($c.env // [])[]? | select(.name == "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")] | length) as $stepUpEnvCount |
       ((if $orig.hadStepUpEnv then
-          ($stepUpEnvCount == 1 and ((($c.env // [])[]? | select(.name == "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")) == $orig.stepUpEnv))
+          ($stepUpEnvCount == 1 and (first(($c.env // [])[]? | select(.name == "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")) == $orig.stepUpEnv))
         else
           ($stepUpEnvCount == 0)
         end)
