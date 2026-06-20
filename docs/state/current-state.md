@@ -148,6 +148,13 @@ Acceptance boundary:
   `agentpc2-first-install-bootstrap.ps1` runs endpoint-local on AgentPC2 from
   an elevated PowerShell session and writes endpoint evidence under
   `C:\ProgramData\EndpointAgent\rollout-evidence`.
+- The next automated hand-off after that endpoint-local seed is the
+  `Faz 22.6.3 AgentPC2 first-install evidence ingest` workflow. It validates
+  the copied endpoint evidence from an approved staging-runner path and, on a
+  passing verifier result, may dispatch the normal #208 constrained-executor
+  acceptance workflow. This ingest gate is prerequisite verification only; it
+  still does not count as product-channel `HELLO` / permit / operation /
+  negative / audit acceptance.
 - `platform-agent#208` remains open/blocked until a pilot endpoint running the
   accepted `v0.2.13` candidate proves outbound product-channel `HELLO`, broker
   permit verification, constrained operation output, negative/plaintext

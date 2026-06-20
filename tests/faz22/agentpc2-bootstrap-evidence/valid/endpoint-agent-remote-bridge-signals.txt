@@ -1,0 +1,2 @@
+remote-bridge outbound mTLS configured broker=remote-bridge-mtls.testai.acik.com:443 tlsServerName=remote-bridge-mtls.testai.acik.com
+certificate selector prefix=adcomputer:
