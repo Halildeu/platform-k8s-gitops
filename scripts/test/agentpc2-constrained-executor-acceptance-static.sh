@@ -33,18 +33,13 @@ if ! grep -Fq 'restore_remote_bridge_runtime_env_override' "${script}"; then
   exit 1
 fi
 
-if ! grep -Fq 'delete_run_scoped_step_up_runtime_secret' "${script}"; then
-  echo "acceptance must delete the run-scoped step-up runtime Secret during cleanup" >&2
-  exit 1
-fi
-
-if ! grep -Fq 'if restore_remote_bridge_runtime_env_override; then' "${script}"; then
-  echo "acceptance cleanup must delete the smoke Secret only after the Deployment env restore succeeds" >&2
+if ! grep -Fq 'if ! restore_remote_bridge_runtime_env_override; then' "${script}"; then
+  echo "acceptance cleanup must attempt to restore the Deployment env override" >&2
   exit 1
 fi
 
 if ! grep -Fq 'CLEANUP_WARN remote-bridge runtime env restore failed' "${script}"; then
-  echo "acceptance cleanup must warn and retain the smoke Secret when Deployment env restore fails" >&2
+  echo "acceptance cleanup must warn when Deployment env restore fails" >&2
   exit 1
 fi
 
@@ -68,18 +63,18 @@ if ! grep -Fq '(.metadata.annotations // {}) as $annotations' "${script}"; then
   exit 1
 fi
 
-if ! grep -Fq 'create_run_scoped_step_up_runtime_secret' "${script}"; then
-  echo "acceptance must create a smoke-only runtime Secret for the run-scoped step-up public key" >&2
-  exit 1
-fi
-
 if ! grep -Fq 'apply_run_scoped_step_up_runtime_env_override' "${script}"; then
   echo "acceptance must inject the run-scoped step-up key through a Deployment env override" >&2
   exit 1
 fi
 
-if ! grep -Fq 'secretKeyRef' "${script}"; then
-  echo "acceptance must reference the smoke-only step-up Secret through valueFrom.secretKeyRef" >&2
+if ! grep -Fq -- '--rawfile publicKey "$public_path"' "${script}"; then
+  echo "acceptance must load the run-scoped public key directly from the generated public key file" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'value: $publicKey' "${script}"; then
+  echo "acceptance must inject the run-scoped public key as a transient Deployment env literal" >&2
   exit 1
 fi
 
@@ -93,13 +88,18 @@ if grep -Fq 'patch secret endpoint-admin-remote-bridge-secrets' "${script}"; the
   exit 1
 fi
 
+if grep -Fq 'create secret generic' "${script}"; then
+  echo "acceptance must not create a run-scoped Secret because the test namespace may be at Secret quota" >&2
+  exit 1
+fi
+
 if grep -Fq 'pause_step_up_external_secret_refresh' "${script}"; then
   echo "acceptance must not mutate the ExternalSecret to inject run-scoped step-up material" >&2
   exit 1
 fi
 
-if ! grep -Fq 'STEP_UP_SECRET_STABILIZE_SECONDS' "${script}"; then
-  echo "acceptance must wait briefly after broker rollout before final step-up Secret SHA checks" >&2
+if ! grep -Fq 'STEP_UP_RUNTIME_STABILIZE_SECONDS' "${script}"; then
+  echo "acceptance must wait briefly after broker rollout before final step-up runtime SHA checks" >&2
   exit 1
 fi
 
