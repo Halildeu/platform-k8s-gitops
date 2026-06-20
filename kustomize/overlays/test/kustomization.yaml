@@ -5190,7 +5190,18 @@ images:
     # sha256:eb32d3f3018fc76ddd4699bf16baa0e2ce32fa4d80768a87a8ea36238b8c7213.
     # Runtime acceptance remains gated by platform-test sync plus close/reopen
     # product smoke; this line is only desired-state artifact promotion.
-    digest: sha256:eb32d3f3018fc76ddd4699bf16baa0e2ce32fa4d80768a87a8ea36238b8c7213
+    # 2026-06-20 Faz 22.6 bounded remote-ops acceptance unblock (#717/#718)
+    # -> sha-49dfe1f. Backend PR #718 makes machine-cert auto-enrollment
+    # rotation reject an already-active same-SAN fingerprint before revocation
+    # and maps optimistic-lock enrollment races to 409 ENROLLMENT_RACE. Image
+    # build run 27862533554 produced endpoint-admin-service
+    # sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84.
+    # repository_dispatch deploy run 27862583540 correctly refused imperative
+    # drift until this GitOps desired-state bump.
+    # Runtime acceptance remains gated by platform-test sync plus AgentPC2
+    # product remote-ops smoke; this line is only desired-state artifact
+    # promotion.
+    digest: sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
