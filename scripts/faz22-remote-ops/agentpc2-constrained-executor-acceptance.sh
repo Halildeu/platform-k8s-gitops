@@ -478,9 +478,21 @@ psql_query() {
       apiVersion: "v1",
       spec: {
         restartPolicy: "Never",
+        securityContext: {
+          runAsNonRoot: true,
+          seccompProfile: {type: "RuntimeDefault"}
+        },
         containers: [{
           name: $podName,
           image: $image,
+          securityContext: {
+            allowPrivilegeEscalation: false,
+            capabilities: {drop: ["ALL"]},
+            runAsNonRoot: true,
+            runAsUser: 65532,
+            runAsGroup: 65532,
+            seccompProfile: {type: "RuntimeDefault"}
+          },
           env: [
             {name: "PGHOST", value: $host},
             {name: "PGPORT", value: $port},
@@ -500,7 +512,8 @@ psql_query() {
     --image="$PG_CLIENT_IMAGE" \
     --labels="app.kubernetes.io/name=agentpc2-psql-smoke,app.kubernetes.io/part-of=platform" \
     --quiet=true \
-    --overrides="$overrides"
+    --overrides="$overrides" \
+    || fail_acceptance "postgres-client-pod-query-failed"
 }
 
 candidate_private_keys() {
