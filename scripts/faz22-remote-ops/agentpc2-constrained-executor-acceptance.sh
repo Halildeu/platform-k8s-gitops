@@ -38,7 +38,7 @@ KC_CONTAINER="${KC_CONTAINER:-platform-kc-test}"
 OPERATOR_USERNAME="${OPERATOR_USERNAME:-rb-operator-denetim}"
 APPROVER_USERNAME="${APPROVER_USERNAME:-rb-approver-denetim}"
 TENANT_ID="${TENANT_ID:-00000000-0000-0000-0000-000000000001}"
-TOKEN_CLIENT_CANDIDATES="${TOKEN_CLIENT_CANDIDATES:-frontend remote-bridge-operator-api}"
+TOKEN_CLIENT_CANDIDATES="${TOKEN_CLIENT_CANDIDATES:-remote-bridge-operator-api frontend}"
 
 PG_CONTAINER="${PG_CONTAINER:-platform-pg-test}"
 PG_DATABASE="${PG_DATABASE:-endpoint_admin}"
@@ -381,12 +381,16 @@ mint_persona_token() {
       chmod 0600 "$token_file"
       mask_file_value "$token_file"
       decode_jwt_claims "$token_file" "$claims_file"
-      if jq -e '.realmRolesContainRemoteBridgeOperator == true and .tenant_id_present == true' "$claims_file" >/dev/null; then
+      if jq -e '
+        .realmRolesContainRemoteBridgeOperator == true
+        and .tenant_id_present == true
+        and .audContainsRemoteBridgeOperatorApi == true
+      ' "$claims_file" >/dev/null; then
         return 0
       fi
     fi
   done
-  fail_acceptance "keycloak-persona-token-unusable:${username}"
+  fail_acceptance "keycloak-persona-token-unusable:${username}:missing-required-role-tenant-or-audience"
 }
 
 verify_runtime_digest() {
