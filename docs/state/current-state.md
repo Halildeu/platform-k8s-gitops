@@ -67,10 +67,15 @@ GitOps + public edge evidence:
 - `platform-backend#718` merged at
   `49dfe1fc33a286a575f87b93c4f524ae24b619cd`, with the endpoint-admin
   service CI and security gates green before merge.
+- `platform-k8s-gitops#1780` merged at
+  `0c2cc9e4a023da7d115818d27ed6207d97733a97`, adding the AgentPC2
+  first-install evidence ingest workflow and verifier. This is prerequisite
+  automation only, not #208 acceptance.
 - AgentPC2 constrained-executor acceptance rerun
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27869889116`
-  supersedes earlier same-day reruns `27869662051`, `27868590359`, and
-  `27867580698` for the current no-go evidence. It reached the staging
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27871280141`
+  supersedes earlier same-day reruns `27869889116`, `27869662051`,
+  `27868590359`, and `27867580698` for the current no-go evidence. It reached
+  the staging
   prerequisite checks and then failed intentionally with no-go reason
   `pilot-readiness-agent-version-mismatch`.
 - That rerun verified the endpoint-admin remote-bridge deployment/pod digest
@@ -80,20 +85,20 @@ GitOps + public edge evidence:
   artifact-host digest
   `sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`.
 - The current no-go artifact is
-  `agentpc2-constrained-executor-evidence-27869889116`. `platform-k8s-gitops#1776`
-  (`94327b5129a527d2d542058b98cb69b0df8ff5d2`) hardened the workflow so the
-  uploaded evidence bundle recomputes `SHA256SUMS` after `workflow-smoke.log`
-  finalization. Downloaded artifact verification with
-  `shasum -a 256 -c SHA256SUMS` passed for every uploaded file, including
-  `workflow-smoke.log`.
-- Known evidence hashes for run `27869889116`: `summary.json` SHA256
-  `dc1af2bd3b15f180dca02ed8a172a6c9963d11e72123cf2bcef7896cd21bc472`,
+  `agentpc2-constrained-executor-evidence-27871280141`. Downloaded artifact
+  verification with `shasum -a 256 -c SHA256SUMS` passed for every uploaded
+  file, including `workflow-smoke.log`.
+- Known evidence hashes for run `27871280141`: `summary.json` SHA256
+  `6ea4338267428c2e0171dc9d98d623f81a00464af172804ba3f044c89aafcfc6`,
   `pilot-readiness/summary.json` SHA256
-  `0783f2f3fb629a8b75e93c61b391014dab55ffce4cba8c1253d076d42fcac380`,
-  and `workflow-smoke.log` SHA256
-  `b82611986cb06b44a9cf25291832f875ba2f2a82baaa80599ae99d615ddb0128`.
-- Follow-up live readiness helper output generated at `2026-06-20T12:00:59Z`
-  refined the AgentPC2 blocker from the workflow's coarse preflight result:
+  `76ed0b6578198b11c7066b49daef2c4e0c216d8c18e10d9682ba069b3da2dbba`,
+  `workflow-smoke.log` SHA256
+  `06e8b1409f2edcac6ac732f56ba126fd4efd0be8edd0ade00f459171d7235290`, and
+  `SHA256SUMS` SHA256
+  `afba29e7afd7de08361953f4574c76f42117c2a3865a10ccc303ea12f17b62da`.
+- Earlier follow-up live readiness helper output generated at
+  `2026-06-20T12:00:59Z` refined the AgentPC2 blocker from the workflow's
+  coarse preflight result:
   `decision=owner-approved-seed-required`, reason `Target is older and does
   not advertise UPDATE_AGENT; do not use Software Catalog or Approved Script
   Runner as a hidden installer lane.` Evidence directory
@@ -125,16 +130,13 @@ Acceptance boundary:
   the AgentPC2 bootstrap remotely through inbound SSH/RDP/WinRM/SMB/RPC, cannot
   mutate GPO through the ERP tunnel, and cannot satisfy #208 by operator-shell
   evidence.
-- AgentPC2 remains the live blocker: the latest readiness helper resolved the
+- AgentPC2 remains the live blocker: the latest acceptance rerun resolved the
   existing product device row `2f7ad30f-970a-42e7-8af8-08764ae6066f` for
   hostname `AgentPc2` and observed `agent_version=v0.2.12`, `status=ONLINE`,
-  `last_seen_at=2026-06-20 11:59:18.969098+00`, and capabilities
-  `COLLECT_INVENTORY`, `GET_LOGGED_IN_USER`, `GET_USER_HOME_PATHS`,
-  `LIST_LOCAL_USERS`, `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`,
-  `CHANGE_LOCAL_PASSWORD`, `INSTALL_SOFTWARE`, `UNINSTALL_SOFTWARE`, and
-  `SET_DISPLAY_POLICY`. `UPDATE_AGENT` was absent, so the approved
-  `v0.2.13` release candidate cannot be dispatched through the catalog-bound
-  update path from this installed agent version.
+  `last_seen_at=2026-06-20 12:33:18.975489+00`, and `capabilities=[]`. The
+  pilot endpoint still does not report the expected `v0.2.13` agent version,
+  so the #208 product path stops before `HELLO`, permit, operation, negative,
+  or audit evidence.
 - The allowed next seed paths are limited to: catalog-bound `UPDATE_AGENT`
   after a heartbeat advertises it, owner-approved local maintenance install for
   this single pilot endpoint followed by product-channel smoke, or a

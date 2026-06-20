@@ -64,21 +64,24 @@ bootstrap.
 Evidence:
 
 - acceptance rerun:
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27869889116`
-  (supersedes earlier same-day reruns `27869662051`, `27868590359`, and
-  `27867580698`)
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27871280141`
+  (supersedes earlier same-day reruns `27869889116`, `27869662051`,
+  `27868590359`, and `27867580698`)
 - no-go reason: `pilot-readiness-agent-version-mismatch`
 - AgentPC2 observed state: `agent_version=v0.2.12`, `status=ONLINE`,
-  `capabilities=[]`, `last_seen_at=2026-06-20 11:33:49.486324+00`
+  `capabilities=[]`, `last_seen_at=2026-06-20 12:33:18.975489+00`
 - endpoint-admin remote-bridge digest prerequisite:
   `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`
 - artifact-host `v0.2.13` digest prerequisite:
   `sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`
 - current no-go artifact:
-  `agentpc2-constrained-executor-evidence-27869889116`; after
-  `platform-k8s-gitops#1776`, downloaded artifact verification with
-  `shasum -a 256 -c SHA256SUMS` passed for every uploaded file, including
-  `workflow-smoke.log`
+  `agentpc2-constrained-executor-evidence-27871280141`; downloaded artifact
+  verification with `shasum -a 256 -c SHA256SUMS` passed for every uploaded
+  file, including `workflow-smoke.log`. Key hashes:
+  `summary.json=6ea4338267428c2e0171dc9d98d623f81a00464af172804ba3f044c89aafcfc6`,
+  `pilot-readiness/summary.json=76ed0b6578198b11c7066b49daef2c4e0c216d8c18e10d9682ba069b3da2dbba`,
+  `workflow-smoke.log=06e8b1409f2edcac6ac732f56ba126fd4efd0be8edd0ade00f459171d7235290`,
+  `SHA256SUMS=afba29e7afd7de08361953f4574c76f42117c2a3865a10ccc303ea12f17b62da`
 - generated bootstrap artifact source:
   `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27867360595`
 

@@ -387,8 +387,8 @@ ile kalıcılaştırılır:
 
 `platform-backend#718` merged the endpoint-admin machine-certificate rotation
 fix, and the latest 2026-06-20 AgentPC2 constrained-executor acceptance rerun
-(`platform-k8s-gitops` workflow `27869889116`; supersedes earlier reruns
-`27869662051`, `27868590359`, and `27867580698`) verified the staging
+(`platform-k8s-gitops` workflow `27871280141`; supersedes earlier reruns
+`27869889116`, `27869662051`, `27868590359`, and `27867580698`) verified the staging
 prerequisites before stopping at the intended no-go gate:
 
 - endpoint-admin remote-bridge deployment/pod digest:
@@ -401,22 +401,17 @@ prerequisites before stopping at the intended no-go gate:
 - AgentPC2 target/observed identity: AD object GUID
   `fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a`; product device id
   `2f7ad30f-970a-42e7-8af8-08764ae6066f`
-- AgentPC2 latest readiness helper observed state:
+- AgentPC2 latest acceptance observed state:
   `agent_version=v0.2.12`, `status=ONLINE`,
-  `last_seen_at=2026-06-20 11:59:18.969098+00`, capabilities
-  `COLLECT_INVENTORY`, `GET_LOGGED_IN_USER`, `GET_USER_HOME_PATHS`,
-  `LIST_LOCAL_USERS`, `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`,
-  `CHANGE_LOCAL_PASSWORD`, `INSTALL_SOFTWARE`, `UNINSTALL_SOFTWARE`, and
-  `SET_DISPLAY_POLICY`; `UPDATE_AGENT` is absent.
+  `last_seen_at=2026-06-20 12:33:18.975489+00`, `capabilities=[]`.
 - readiness helper decision: `owner-approved-seed-required`, reason
   `Target is older and does not advertise UPDATE_AGENT; do not use Software
   Catalog or Approved Script Runner as a hidden installer lane.`
-- readiness helper evidence hashes:
-  `summary.json=890b75ef1ac49d1ec40375783907dafb6733c9a5fbf3d87cad9aa13c2796246d`,
-  `device-heartbeat.psv=ec651a489d2d1b8110fcf469bd31c81ac03642ffd0c72d62f8ffbc3f28ae6f1c`,
-  `agent-update-releases.psv=ee08a8edb94e79a9fde6944ed9c9b1f7383fb91b6914e6143fa90c0c9bff549a`,
-  `artifact-manifest.json=3a4038f46f5ca137f54664ca3ebf5d62fd37821293575032d0f5794d535a890d`,
-  `software-catalog-candidates.psv=ccc4ec047cb7b8cd98aa30967983e096f713d44d0889aba8ec402c151d60cf66`.
+- acceptance evidence hashes:
+  `summary.json=6ea4338267428c2e0171dc9d98d623f81a00464af172804ba3f044c89aafcfc6`,
+  `pilot-readiness/summary.json=76ed0b6578198b11c7066b49daef2c4e0c216d8c18e10d9682ba069b3da2dbba`,
+  `workflow-smoke.log=06e8b1409f2edcac6ac732f56ba126fd4efd0be8edd0ade00f459171d7235290`,
+  `SHA256SUMS=afba29e7afd7de08361953f4574c76f42117c2a3865a10ccc303ea12f17b62da`.
 
 Bu, `#208` için acceptance değildir. `#1768` first-install bootstrap artifact
 hazırdır. Geçerli seed yolları sınırlıdır: heartbeat `UPDATE_AGENT` advertise
