@@ -48,6 +48,16 @@ if ! grep -Fq 'select(.secretKey != "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")' "${
   exit 1
 fi
 
+if ! grep -Fq 'wait_for_step_up_external_secret_pause_to_settle' "${script}"; then
+  echo "acceptance must wait for the ESO step-up key mapping removal reconcile before writing the run-scoped key" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'STEP_UP_ESO_PAUSE_SETTLE_SECONDS' "${script}"; then
+  echo "acceptance must bound the ESO pause settle wait" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'apply_run_scoped_step_up_secret_patch' "${script}"; then
   echo "acceptance must apply the run-scoped step-up Secret patch through a reusable verified helper" >&2
   exit 1
