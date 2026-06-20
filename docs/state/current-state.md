@@ -1,12 +1,14 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.6.3 #208 v0.2.14 consent responder released; GitOps artifact-host pin pending merge (2026-06-20)
+## Live Delta — Faz 22.6.3 #208 v0.2.14 artifact-host live; AgentPC2 first-install pending (2026-06-20)
 
-**Session milestone**: the AgentPC2 product stream reached the broker, but the
-bounded operation still returned `session-not-active` because the endpoint did
-not emit the broker consent result. `platform-agent#213` corrected that source
-gap with a disabled-by-default consent responder seam and an explicit
-`ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT` installer/MSI gate.
+**Session milestone**: earlier AgentPC2 product-stream evidence reached the
+broker but the bounded operation returned `session-not-active` because the
+endpoint did not emit the broker consent result. `platform-agent#213` corrected
+that source gap with a disabled-by-default consent responder seam and an
+explicit `ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT` installer/MSI gate.
+The current live recheck still shows AgentPC2 on `v0.2.13`, so this is not yet
+#208 constrained-operation acceptance.
 
 Source and release evidence:
 
@@ -30,31 +32,61 @@ Source and release evidence:
   `D68F4F530137EB65CE44E3405E82B46205E753E5`, root certificate SHA256
   `078494D03E2FB51EA35DB71FFC04B5C5230EE9F52E0D5A057B6F35B8F7E0B59E`.
 
-GitOps desired-state delta:
+GitOps desired-state and live artifact-host evidence:
 
-- The test overlay artifact-host desired image is being advanced from
+- `platform-k8s-gitops#1796` merged at
+  `f8a45f34a0845d33d0c0d914a9e11d70913b977b`, advancing the test overlay
+  artifact-host desired image from
   `v0.2.13@sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`
   to
   `v0.2.14@sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`.
-- This is desired-state release/pin evidence only until Project #2/PR merge,
-  platform-test sync, and artifact-host pod `imageID` parity are recorded.
+- ArgoCD `platform-test` refreshed to revision
+  `f8a45f34a0845d33d0c0d914a9e11d70913b977b`; live
+  `platform-test/artifact-host` rolled out successfully with `generation=19`,
+  `observed=19`, `ready=2`, `updated=2`, `available=2`.
+- Both live artifact-host pods report imageID
+  `ghcr.io/halildeu/platform-agent-artifacts@sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`
+  with `ready=true` and restart count `0`.
 
-Live AgentPC2 recheck during this session:
+Live AgentPC2 and route recheck during this session:
 
 - `endpoint_admin_service.endpoint_devices` still shows `AgentPc2` product
   device id `2f7ad30f-970a-42e7-8af8-08764ae6066f` as `ONLINE` in ring
   `PILOT`, with `agent_version=v0.2.13` and `last_seen_at=2026-06-20
-  18:15:39.638051+00`.
+  18:48:39.637374+00`.
+- `Faz 22.6.3 AgentPC2 v0.2.14 product update` workflow
+  `27880118884` correctly returned `no-go`: backend HTTP `422`
+  `Agent does not advertise the 'UPDATE_AGENT' capability on the most recent
+  heartbeat. Upgrade/configure the agent and retry.`
+- `Faz 22.6.3 AgentPC2 first-install bootstrap` workflow `27880208124`
+  produced `bootstrap-ready` evidence for `v0.2.14` with binary SHA256
+  `624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618`,
+  `install.ps1` SHA256
+  `5819207b63795ca0f14c1949f2a187dd996372f066992d692672e8f0d71c79df`,
+  broker `remote-bridge-mtls.testai.acik.com:443`, and permit public-key
+  SHA256 `0a92abcd8f84619fb8f14f530beb94cbdc4e0981c9eb14a4756bdc85175a1110`.
 - The remote-bridge broker pod
   `endpoint-admin-remote-bridge-6554577d8f-v6bsr` is `Ready 1/1` on
   endpoint-admin digest
   `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`.
-  Recent broker logs contain `HELLO_VERIFIED:cert=true,attestation=false,device=false`
-  at `2026-06-20T17:21:28Z`.
+  Recent broker logs contain broker-readiness `HELLO_VERIFIED:cert=true,attestation=false,device=false`
+  entries at `2026-06-20T17:21:28Z`, but not AgentPC2 operation acceptance.
 - DB approval grants include recent `rb-agentpc2-*` `CONSTRAINED_PTY` grants,
   but `session_recording_entry` has no corresponding AgentPC2 `AGENT_OUTPUT`
   entry. This is **stream/approval-path signal**, not #208 constrained-operation
   acceptance.
+- Fresh SNI recheck proves the dedicated broker route is separated from the
+  endpoint-agent mTLS API path: `remote-bridge-mtls.testai.acik.com:443`
+  serves leaf `CN=remote-bridge-mtls.testai.acik.com` with SHA256 fingerprint
+  `40:4E:21:30:0A:AD:34:C0:8D:E5:E9:D6:66:31:5B:9A:61:B5:99:D9:8C:8C:FC:27:1D:2D:2A:13:D5:DE:C0:D6`;
+  `mtls.testai.acik.com:443` still serves the endpoint-agent mTLS API cert
+  `CN=mtls.testai.acik.com`; `testai.acik.com:443` still serves the public
+  wildcard web cert.
+- Live `platform-web-nginx` stream map routes
+  `remote-bridge-mtls.testai.acik.com` to upstream `test_remote_bridge_broker`
+  (`172.19.0.2:19445`), and `endpoint-rb-node-forwarder` logged a successful
+  connection to the broker pod IP `10.45.62.59:9444` during the recheck at
+  `2026-06-20 18:42:01Z`.
 
 Acceptance boundary:
 

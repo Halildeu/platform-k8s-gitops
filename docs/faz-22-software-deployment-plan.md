@@ -452,10 +452,57 @@ bounded pilot path through explicit installer/MSI configuration. Release
 - signer thumbprint:
   `D68F4F530137EB65CE44E3405E82B46205E753E5`
 
-This is release and desired-state evidence only. #208 remains open until the
-pilot endpoint consumes `v0.2.14` through an approved path and the constrained
-executor workflow records live outbound 443 mTLS `HELLO`, permit, constrained
-operation, negative/plaintext refusal, and audit evidence.
+At this 0.7.6 stage, the evidence was release and desired-state evidence only.
+#208 remained open until the pilot endpoint consumed `v0.2.14` through an
+approved path and the constrained executor workflow recorded live outbound 443
+mTLS `HELLO`, permit, constrained operation, negative/plaintext refusal, and
+audit evidence. The 0.7.7 entry below adds the later live GitOps/SNI proof.
+
+#### 0.7.7 2026-06-20 #208 v0.2.14 GitOps live + SNI broker route truth refresh
+
+`platform-k8s-gitops#1796` merged the `v0.2.14` artifact-host test overlay
+pin at `f8a45f34a0845d33d0c0d914a9e11d70913b977b`. ArgoCD `platform-test`
+was refreshed to that revision and live `platform-test/artifact-host` rolled
+out successfully:
+
+- desired/live artifact-host image:
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.14@sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`
+- deployment state: `generation=19`, `observed=19`, `ready=2`,
+  `updated=2`, `available=2`
+- live pod imageID parity:
+  `ghcr.io/halildeu/platform-agent-artifacts@sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`,
+  `ready=true`, restart count `0` on both pods
+
+The dedicated remote bridge hostname was also live-rechecked through the
+public 443/SNI entrypoint. `remote-bridge-mtls.testai.acik.com:443` serves
+the AD CS leaf `CN=remote-bridge-mtls.testai.acik.com` with SHA256
+fingerprint
+`40:4E:21:30:0A:AD:34:C0:8D:E5:E9:D6:66:31:5B:9A:61:B5:99:D9:8C:8C:FC:27:1D:2D:2A:13:D5:DE:C0:D6`.
+The sibling hostnames remain separated: `mtls.testai.acik.com:443` serves the
+endpoint-agent mTLS API certificate and `testai.acik.com:443` serves the public
+wildcard web certificate. Live `platform-web-nginx` stream config maps
+`remote-bridge-mtls.testai.acik.com` to upstream `test_remote_bridge_broker`
+via `172.19.0.2:19445`, and `endpoint-rb-node-forwarder` logged a successful
+connection to the broker pod IP `10.45.62.59:9444` during the recheck.
+
+The AgentPC2 endpoint acceptance gate is still open. Product update workflow
+`27880118884` correctly returned HTTP `422` because the current AgentPC2
+heartbeat does not advertise `UPDATE_AGENT`. Live DB state after the recheck:
+product device `2f7ad30f-970a-42e7-8af8-08764ae6066f`, hostname `AgentPc2`,
+`agent_version=v0.2.13`, `status=ONLINE`, `last_seen_at=2026-06-20
+18:48:39.637374+00`. Bootstrap workflow `27880208124` produced the bounded
+first-install handoff for `v0.2.14` with public agent artifact SHA256
+`624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618`,
+`install.ps1` SHA256
+`5819207b63795ca0f14c1949f2a187dd996372f066992d692672e8f0d71c79df`, broker
+`remote-bridge-mtls.testai.acik.com:443`, and permit public-key SHA256
+`0a92abcd8f84619fb8f14f530beb94cbdc4e0981c9eb14a4756bdc85175a1110`.
+
+This closes the SNI-routing prerequisite, not #208 itself. #208 remains open
+until AgentPC2 consumes the pinned `v0.2.14` artifact through the approved
+first-install/product path and the normal constrained-executor acceptance
+records live outbound 443 mTLS `HELLO`, permit, constrained operation,
+negative/plaintext refusal, and audit evidence.
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
