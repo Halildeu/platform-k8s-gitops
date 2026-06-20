@@ -76,6 +76,8 @@ recording_hint=""
 session_hash=""
 step_up_key_mode=""
 step_up_public_key_sha256=""
+STEP_UP_ESO_NAME="${STEP_UP_ESO_NAME:-endpoint-admin-remote-bridge-secrets}"
+STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE="${TMP_DIR}/step-up-eso-original-refresh-policy"
 operator_claims_file="${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
 approver_claims_file="${EVIDENCE_DIR}/approver-jwt-claims.redacted.json"
 
@@ -88,6 +90,7 @@ need_cmd() {
 
 cleanup() {
   set +e
+  restore_step_up_external_secret_refresh_policy
   stop_port_forward
   rm -rf "$TMP_DIR"
 }
@@ -107,6 +110,55 @@ sha256_text() {
   else
     printf '%s' "$1" | sha256sum | awk '{print $1}'
   fi
+}
+
+sha256_file() {
+  local file="$1"
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  else
+    sha256sum "$file" | awk '{print $1}'
+  fi
+}
+
+restore_step_up_external_secret_refresh_policy() {
+  [[ -s "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE" ]] || return 0
+
+  local original
+  original="$(cat "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE")"
+  [[ -n "$original" ]] || original="Periodic"
+
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch externalsecret "$STEP_UP_ESO_NAME" \
+    --type merge -p "$(jq -cn --arg policy "$original" '{spec:{refreshPolicy:$policy}}')" \
+    >/dev/null 2>&1 || true
+  rm -f "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE"
+}
+
+pause_step_up_external_secret_refresh() {
+  local original
+  original="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get externalsecret "$STEP_UP_ESO_NAME" \
+    -o jsonpath='{.spec.refreshPolicy}' 2>/dev/null || true)"
+  [[ -n "$original" ]] || original="Periodic"
+  printf '%s' "$original" > "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE"
+
+  # The step-up key is run-scoped test material. The steady-state ExternalSecret
+  # owns the same Secret and will otherwise restore the Vault value immediately
+  # after our patch, producing a valid HTTP 200 with verified=false.
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch externalsecret "$STEP_UP_ESO_NAME" \
+    --type merge -p '{"spec":{"refreshPolicy":"OnChange"}}' >/dev/null \
+    || fail_acceptance "step-up-external-secret-pause-failed"
+}
+
+verify_live_step_up_public_key() {
+  local expected_sha="$1" live_pem="$2" live_sha
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get secret endpoint-admin-remote-bridge-secrets \
+    -o jsonpath='{.data.REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM}' \
+    | base64 -d > "$live_pem" \
+    || fail_acceptance "step-up-live-public-key-read-failed"
+
+  live_sha="$(sha256_file "$live_pem")"
+  [[ "$live_sha" == "$expected_sha" ]] \
+    || fail_acceptance "step-up-live-public-key-drift expected=${expected_sha} actual=${live_sha}"
 }
 
 write_summary() {
@@ -619,23 +671,28 @@ generate_run_scoped_step_up_key() {
   public_b64="$(base64 < "$public_path" | tr -d '\r\n')"
   patch="$(jq -cn --arg pem "$public_b64" '{data:{REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM:$pem}}')"
 
+  pause_step_up_external_secret_refresh
+
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch secret endpoint-admin-remote-bridge-secrets \
     --type merge -p "$patch" >/dev/null \
     || fail_acceptance "step-up-ephemeral-public-key-secret-patch-failed"
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" annotate secret endpoint-admin-remote-bridge-secrets \
     "remote-bridge.platform/run-scoped-step-up-key=${run_id}" --overwrite >/dev/null 2>&1 || true
 
+  step_up_key_mode="run-scoped-ephemeral-test-key"
+  step_up_public_key_sha256="$(sha256_file "$public_path")"
+  verify_live_step_up_public_key "$step_up_public_key_sha256" "${TMP_DIR}/live-step-up-public.pem"
+
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout restart "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" >/dev/null \
     || fail_acceptance "step-up-ephemeral-rollout-restart-failed"
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --timeout=240s \
     || fail_acceptance "step-up-ephemeral-rollout-timeout"
   verify_runtime_digest
+  verify_live_step_up_public_key "$step_up_public_key_sha256" "${TMP_DIR}/live-step-up-public-after-rollout.pem"
 
   cp "$public_path" "${TMP_DIR}/step-up-public.pem"
   printf '%s' "$key_path" > "${TMP_DIR}/step-up-private-key.path"
   chmod 0600 "${TMP_DIR}/step-up-private-key.path"
-  step_up_key_mode="run-scoped-ephemeral-test-key"
-  step_up_public_key_sha256="$(shasum -a 256 "${TMP_DIR}/step-up-public.pem" | awk '{print $1}')"
 
   jq -n \
     --arg mode "$step_up_key_mode" \

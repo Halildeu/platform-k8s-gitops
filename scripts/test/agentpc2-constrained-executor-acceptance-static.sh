@@ -28,4 +28,19 @@ if grep -Fq '.realmRolesContainRemoteBridgeOperator == true and .tenant_id_prese
   exit 1
 fi
 
+if ! grep -Fq 'restore_step_up_external_secret_refresh_policy' "${script}"; then
+  echo "acceptance must restore the step-up ExternalSecret refresh policy during cleanup" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'pause_step_up_external_secret_refresh' "${script}"; then
+  echo "acceptance must pause the ESO-owned step-up Secret before writing a run-scoped key" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'step-up-live-public-key-drift' "${script}"; then
+  echo "acceptance must fail clearly when ESO restores a different step-up public key" >&2
+  exit 1
+fi
+
 echo "agentpc2 constrained-executor acceptance static guard passed"
