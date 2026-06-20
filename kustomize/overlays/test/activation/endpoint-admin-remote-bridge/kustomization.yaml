@@ -50,8 +50,12 @@
 #     (`99d15f1f5aae3aeefa31b5589db7858715026c02`) so accepted consent
 #     refreshes cached AgentHello trust evidence before the first operator
 #     action when the current agent does not emit broker HEARTBEAT frames.
+#   - immutable test digest includes platform-backend#717 via #718
+#     (`49dfe1fc33a286a575f87b93c4f524ae24b619cd`) so renewed same-SAN
+#     AD CS machine cert enrollment rotates the active cert row before the
+#     AgentPC2 #208 product-channel smoke rechecks device-bound HELLO.
 #   - immutable test digest:
-#     sha256:eb32d3f3018fc76ddd4699bf16baa0e2ce32fa4d80768a87a8ea36238b8c7213
+#     sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -102,6 +106,9 @@ images:
   # Re-pinned for backend #713/#715 after the primary test overlay moved to
   # sha-99d15f1, so owner-gated broker-path close/reopen smoke validates the
   # accepted-consent trust-refresh fix on the same image as endpoint-admin.
+  # Re-pinned for backend #717/#718 after the primary test overlay moved to
+  # sha-49dfe1f, so owner-gated broker-path AgentPC2 smoke validates renewed
+  # same-SAN machine-cert rotation on the same image as endpoint-admin.
   # Merge-order guard: draft PR #1652 also touches this activation overlay and
   # carries the older sha256:3950a612... digest. If #1652 is resumed after this
   # PR, rebase it onto this digest before merge/apply; do not downgrade.
@@ -112,4 +119,4 @@ images:
   # verification.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:eb32d3f3018fc76ddd4699bf16baa0e2ce32fa4d80768a87a8ea36238b8c7213
+    digest: sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84
