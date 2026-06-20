@@ -54,7 +54,7 @@ PG_CLIENT_IMAGE="${PG_CLIENT_IMAGE:-postgres:16-alpine}"
 DB_SCHEMA="${DB_SCHEMA:-endpoint_admin_service}"
 
 STEP_UP_PRIVATE_KEY_PEM_PATH="${STEP_UP_PRIVATE_KEY_PEM_PATH:-}"
-STEP_UP_SECRET_STABILIZE_SECONDS="${STEP_UP_SECRET_STABILIZE_SECONDS:-8}"
+STEP_UP_RUNTIME_STABILIZE_SECONDS="${STEP_UP_RUNTIME_STABILIZE_SECONDS:-${STEP_UP_SECRET_STABILIZE_SECONDS:-8}}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-rtt-acceptance-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 TMP_DIR="$(mktemp -d)"
@@ -77,7 +77,6 @@ recording_hint=""
 session_hash=""
 step_up_key_mode=""
 step_up_public_key_sha256=""
-STEP_UP_RUNTIME_SECRET_NAME_FILE="${TMP_DIR}/step-up-runtime-secret-name"
 REMOTE_BRIDGE_ORIGINAL_ENV_FILE="${TMP_DIR}/remote-bridge-original-env.json"
 operator_claims_file="${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
 approver_claims_file="${EVIDENCE_DIR}/approver-jwt-claims.redacted.json"
@@ -92,10 +91,8 @@ need_cmd() {
 cleanup() {
   set +e
   stop_port_forward
-  if restore_remote_bridge_runtime_env_override; then
-    delete_run_scoped_step_up_runtime_secret
-  else
-    echo "CLEANUP_WARN remote-bridge runtime env restore failed; retaining run-scoped step-up Secret to avoid a missing Secret reference" >&2
+  if ! restore_remote_bridge_runtime_env_override; then
+    echo "CLEANUP_WARN remote-bridge runtime env restore failed; run-scoped step-up env override may remain" >&2
   fi
   rm -rf "$TMP_DIR"
 }
@@ -145,18 +142,6 @@ verify_runtime_step_up_public_key() {
   runtime_sha="$(sha256_file "$runtime_pem")"
   [[ "$runtime_sha" == "$expected_sha" ]] \
     || fail_acceptance "step-up-runtime-public-key-drift expected=${expected_sha} actual=${runtime_sha}"
-}
-
-delete_run_scoped_step_up_runtime_secret() {
-  [[ -s "$STEP_UP_RUNTIME_SECRET_NAME_FILE" ]] || return 0
-
-  local secret_name
-  secret_name="$(cat "$STEP_UP_RUNTIME_SECRET_NAME_FILE" 2>/dev/null || true)"
-  if [[ -n "$secret_name" ]]; then
-    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" delete secret "$secret_name" \
-      --ignore-not-found >/dev/null 2>&1 || true
-  fi
-  rm -f "$STEP_UP_RUNTIME_SECRET_NAME_FILE"
 }
 
 capture_remote_bridge_runtime_env() {
@@ -250,41 +235,14 @@ restore_remote_bridge_runtime_env_override() {
   rm -f "$REMOTE_BRIDGE_ORIGINAL_ENV_FILE"
 }
 
-create_run_scoped_step_up_runtime_secret() {
-  local public_path="$1" run_id="$2" secret_name
-
-  secret_name="$(printf 'agentpc2-step-up-%s' "$run_id" \
-    | tr '[:upper:]' '[:lower:]' \
-    | tr -c 'a-z0-9-' '-' \
-    | sed -E 's/^-+//; s/-+$//; s/-+/-/g' \
-    | cut -c1-63)"
-  [[ -n "$secret_name" ]] || secret_name="agentpc2-step-up-manual"
-
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" delete secret "$secret_name" \
-    --ignore-not-found >/dev/null 2>&1 || true
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" create secret generic "$secret_name" \
-    --from-file=REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM="$public_path" \
-    --dry-run=client -o yaml \
-    | kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" apply -f - >/dev/null \
-    || fail_acceptance "step-up-runtime-public-key-secret-create-failed"
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" label secret "$secret_name" \
-    "app.kubernetes.io/name=agentpc2-step-up-smoke" \
-    "app.kubernetes.io/part-of=platform-acceptance-smoke" \
-    --overwrite >/dev/null 2>&1 || true
-
-  printf '%s' "$secret_name" > "$STEP_UP_RUNTIME_SECRET_NAME_FILE"
-}
-
 apply_run_scoped_step_up_runtime_env_override() {
-  local public_path="$1" run_id="$2" secret_name patch
+  local public_path="$1" run_id="$2" patch
 
   capture_remote_bridge_runtime_env
-  create_run_scoped_step_up_runtime_secret "$public_path" "$run_id"
-  secret_name="$(cat "$STEP_UP_RUNTIME_SECRET_NAME_FILE")"
 
   patch="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get deploy "$REMOTE_BRIDGE_DEPLOYMENT" \
     -o json \
-    | jq -c --arg secretName "$secret_name" '
+    | jq -c --rawfile publicKey "$public_path" '
       (.spec.template.spec.containers[0].env // []) as $env |
       ($env | map(select(.name != "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM"))) as $filtered |
       [
@@ -294,12 +252,7 @@ apply_run_scoped_step_up_runtime_env_override() {
           value: (
             $filtered + [{
               name: "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM",
-              valueFrom: {
-                secretKeyRef: {
-                  name: $secretName,
-                  key: "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM"
-                }
-              }
+              value: $publicKey
             }]
           )
         }
@@ -828,11 +781,12 @@ generate_run_scoped_step_up_key() {
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --timeout=240s \
     || fail_acceptance "step-up-ephemeral-rollout-timeout"
   verify_runtime_digest
-  sleep "$STEP_UP_SECRET_STABILIZE_SECONDS"
+  sleep "$STEP_UP_RUNTIME_STABILIZE_SECONDS"
 
   # The run-scoped key is injected as an explicit Deployment env var backed by a
-  # smoke-only Secret. That keeps the test key out of the ESO-owned steady-state
-  # Secret while still making the broker pod runtime the authoritative check.
+  # transient public-key literal. That keeps the test key out of the ESO-owned
+  # steady-state Secret and avoids consuming namespace Secret quota while still
+  # making the broker pod runtime the authoritative check.
   if ! runtime_step_up_public_key_matches "$step_up_public_key_sha256" "${TMP_DIR}/runtime-step-up-public-after-rollout.pem"; then
     fail_acceptance "step-up-runtime-public-key-drift-after-env-override"
   fi
