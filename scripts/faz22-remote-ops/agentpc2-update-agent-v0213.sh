@@ -250,7 +250,7 @@ write_device_snapshot() {
   code="$(curl_api GET /endpoint-devices "$CREATOR_TOKEN_FILE" "$raw" || true)"
   if [[ "$code" != "200" ]]; then
     jq -n --arg http "$code" --arg label "$label" \
-      '{label:$label,httpStatus:($http|tonumber? // null),deviceFound:false}' > "$out"
+      '{"label":$label,httpStatus:($http|tonumber? // null),deviceFound:false}' > "$out"
     return 0
   fi
 
