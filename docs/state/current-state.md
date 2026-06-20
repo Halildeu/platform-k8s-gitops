@@ -97,6 +97,17 @@ Acceptance boundary:
 
 - The `v0.2.13` source, public artifact-host, endpoint-admin digest, and
   generated first-install bootstrap package are accepted prerequisites only.
+- Access audit refreshed 2026-06-20: staging has reverse SSH listeners for
+  ERP-MOBIL (`127.0.0.1:22022`) and Denetim PC (`127.0.0.1:22024`), but no
+  AgentPC2 listener (`127.0.0.1:22026` refused). ERP-MOBIL is reachable through
+  that tunnel as `ACIK\ca.setup` with local Administrators and Domain Admins
+  group membership, but the OpenSSH public-key session holds only an S4U ticket
+  scoped to `erp-mobil$`; ADWS/SYSVOL/GPO network operations fail from that
+  token. Denetim PC and ERP-MOBIL both timeout to AgentPC2 on ports
+  `22/135/445/5985/3389/443/80`. Therefore current live access cannot execute
+  the AgentPC2 bootstrap remotely through inbound SSH/RDP/WinRM/SMB/RPC, cannot
+  mutate GPO through the ERP tunnel, and cannot satisfy #208 by operator-shell
+  evidence.
 - AgentPC2 remains the live blocker: the rerun targeted AD object GUID
   `fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a`, resolved the existing product
   device row `2f7ad30f-970a-42e7-8af8-08764ae6066f`, and observed
