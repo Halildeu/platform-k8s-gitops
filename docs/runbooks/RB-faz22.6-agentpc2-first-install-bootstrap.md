@@ -86,6 +86,26 @@ This no-go is the expected safety behavior. It must not be reclassified as a
 failed product gate, and it must not be bypassed by inbound SSH/RDP/WinRM/SMB
 or manual remote-shell evidence.
 
+## Access Boundary Audit
+
+2026-06-20 live audit:
+
+- Staging reverse SSH listeners exist for ERP-MOBIL (`127.0.0.1:22022`) and
+  Denetim PC (`127.0.0.1:22024`), but AgentPC2 has no active reverse listener
+  (`127.0.0.1:22026` refused).
+- Denetim PC and ERP-MOBIL both timed out when testing AgentPC2 ports
+  `22/135/445/5985/3389/443/80`.
+- The ERP-MOBIL tunnel authenticates as `ACIK\ca.setup` and shows local
+  Administrators + Domain Admins group membership, but the OpenSSH public-key
+  session holds only an S4U ticket scoped to `erp-mobil$`. ADWS, SYSVOL, and
+  GPO operations fail from that token, so the ERP tunnel is not an effective
+  domain-authenticated GPO mutation channel.
+
+Consequence: the remaining bootstrap must be executed through an approved
+endpoint-local/operator path, a real domain-authenticated GPO/management
+channel, or a future product update capability. Current tunnels cannot be used
+as #208 acceptance evidence.
+
 ## Endpoint-Local Action
 
 After the workflow artifact is available, execute the generated
