@@ -173,6 +173,27 @@ live_step_up_public_key_matches() {
   [[ "$live_sha" == "$expected_sha" ]]
 }
 
+runtime_step_up_public_key_matches() {
+  local expected_sha="$1" runtime_pem="$2" runtime_sha
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" exec "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" \
+    -- printenv REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM > "$runtime_pem" \
+    || return 1
+
+  runtime_sha="$(sha256_file "$runtime_pem")"
+  [[ "$runtime_sha" == "$expected_sha" ]]
+}
+
+verify_runtime_step_up_public_key() {
+  local expected_sha="$1" runtime_pem="$2" runtime_sha
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" exec "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" \
+    -- printenv REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM > "$runtime_pem" \
+    || fail_acceptance "step-up-runtime-public-key-read-failed"
+
+  runtime_sha="$(sha256_file "$runtime_pem")"
+  [[ "$runtime_sha" == "$expected_sha" ]] \
+    || fail_acceptance "step-up-runtime-public-key-drift expected=${expected_sha} actual=${runtime_sha}"
+}
+
 apply_run_scoped_step_up_secret_patch() {
   local patch="$1" run_id="$2" expected_sha="$3" evidence_suffix="$4"
 
@@ -712,8 +733,8 @@ generate_run_scoped_step_up_key() {
   # one-time reconcile of the target Secret. If that race restores the steady
   # Vault key during rollout, re-apply the run-scoped key once and restart the
   # broker again. The final drift guard below remains fail-closed.
-  if ! live_step_up_public_key_matches "$step_up_public_key_sha256" "${TMP_DIR}/live-step-up-public-after-rollout.pem"; then
-    echo "INFO step-up public key drifted after rollout; reapplying run-scoped key once after ESO reconcile" >&2
+  if ! runtime_step_up_public_key_matches "$step_up_public_key_sha256" "${TMP_DIR}/runtime-step-up-public-after-rollout.pem"; then
+    echo "INFO broker runtime step-up public key did not match after rollout; reapplying run-scoped key once after ESO reconcile" >&2
     apply_run_scoped_step_up_secret_patch "$patch" "$run_id" "$step_up_public_key_sha256" "reapply"
     kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout restart "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" >/dev/null \
       || fail_acceptance "step-up-ephemeral-rollout-restart-failed-after-reapply"
@@ -722,7 +743,7 @@ generate_run_scoped_step_up_key() {
     verify_runtime_digest
     sleep "$STEP_UP_SECRET_STABILIZE_SECONDS"
   fi
-  verify_live_step_up_public_key "$step_up_public_key_sha256" "${TMP_DIR}/live-step-up-public-final.pem"
+  verify_runtime_step_up_public_key "$step_up_public_key_sha256" "${TMP_DIR}/runtime-step-up-public-final.pem"
 
   cp "$public_path" "${TMP_DIR}/step-up-public.pem"
   printf '%s' "$key_path" > "${TMP_DIR}/step-up-private-key.path"

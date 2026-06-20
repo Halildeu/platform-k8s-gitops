@@ -53,6 +53,16 @@ if ! grep -Fq 'STEP_UP_SECRET_STABILIZE_SECONDS' "${script}"; then
   exit 1
 fi
 
+if ! grep -Fq 'runtime_step_up_public_key_matches' "${script}"; then
+  echo "acceptance must verify the broker runtime step-up public key after rollout" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'step-up-runtime-public-key-drift' "${script}"; then
+  echo "acceptance must fail clearly when the broker runtime step-up public key does not match the run-scoped key" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'step-up-live-public-key-drift' "${script}"; then
   echo "acceptance must fail clearly when ESO restores a different step-up public key" >&2
   exit 1
