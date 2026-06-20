@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.6.3 #208 v0.2.13 public edge ready; pod imageID + AgentPC2 gate pending (2026-06-20)
+## Live Delta — Faz 22.6.3 #208 v0.2.13 staging prerequisites ready; AgentPC2 endpoint-local bootstrap pending (2026-06-20)
 
 **Session milestone**: AgentPC2 proved that the `v0.2.12` service environment
 was populated with the dedicated 443/SNI remote-bridge settings, compatibility
@@ -64,17 +64,41 @@ GitOps + public edge evidence:
   `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27849826042`
   still reports the existing broader `OutOfSync/Healthy` drift class and does
   not produce artifact-host-specific digest parity.
+- `platform-backend#718` merged at
+  `49dfe1fc33a286a575f87b93c4f524ae24b619cd`, with the endpoint-admin
+  service CI and security gates green before merge.
+- AgentPC2 constrained-executor acceptance rerun
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27867580698`
+  reached the staging prerequisite checks and then failed intentionally with
+  no-go reason `pilot-readiness-agent-version-mismatch`.
+- That rerun verified the endpoint-admin remote-bridge deployment/pod digest
+  prerequisite as
+  `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`.
+- The same rerun verified the artifact-host `v0.2.13` release manifest and
+  artifact-host digest
+  `sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`.
+- The no-go artifact is
+  `agentpc2-constrained-executor-evidence-27867580698`; known evidence hashes:
+  `summary.json` SHA256
+  `07c04708e8b4f727af9bb89e9f8d47cda8c1ded10532ed531c540ee80352655c` and
+  `pilot-readiness/summary.json` SHA256
+  `f2c53af3aca9b2dc3d636bfcb9a374f4af44c83ef491ee855ae9c0c2dbbef163`.
 
 Acceptance boundary:
 
-- Live `platform-test/artifact-host` pod `imageID` parity for
-  `sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`
-  is still pending because the Codex shell did not have staging SSH agent
-  access in this turn (`SSH_AUTH_SOCK` unset; local key passphrase unavailable).
-- `platform-agent#208` remains open until a pilot endpoint runs the accepted
-  `v0.2.13` candidate and proves outbound product-channel `HELLO`, broker
-  permit verification, constrained operation output, negative/plaintext refusal,
-  and audit/evidence ledger entries.
+- The `v0.2.13` source, public artifact-host, endpoint-admin digest, and
+  generated first-install bootstrap package are accepted prerequisites only.
+- AgentPC2 remains the live blocker: the rerun observed
+  `agent_version=v0.2.12`, `status=ONLINE`, and `capabilities=[]`; no
+  operation-capable `v0.2.13` heartbeat was present.
+- `platform-k8s-gitops#1768` remains blocked until the generated
+  `agentpc2-first-install-bootstrap.ps1` runs endpoint-local on AgentPC2 from
+  an elevated PowerShell session and writes endpoint evidence under
+  `C:\ProgramData\EndpointAgent\rollout-evidence`.
+- `platform-agent#208` remains open/blocked until a pilot endpoint running the
+  accepted `v0.2.13` candidate proves outbound product-channel `HELLO`, broker
+  permit verification, constrained operation output, negative/plaintext
+  refusal, and audit/evidence ledger entries.
 - Raw shell/RDP/WinRM/SMB/SSH and operator-pasted PowerShell remain diagnostic
   aids only; they do not satisfy the product remote-ops acceptance gate.
 

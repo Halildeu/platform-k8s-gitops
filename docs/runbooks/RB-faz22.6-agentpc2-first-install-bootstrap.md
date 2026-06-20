@@ -53,6 +53,30 @@ The workflow runs on the staging self-hosted runner and performs:
 
 The workflow must not mark #208 as accepted.
 
+## Latest No-Go Handoff
+
+The 2026-06-20 constrained-executor acceptance rerun proved that the staging
+prerequisites are present, but AgentPC2 still needs the endpoint-local
+bootstrap.
+
+Evidence:
+
+- acceptance rerun:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27867580698`
+- no-go reason: `pilot-readiness-agent-version-mismatch`
+- AgentPC2 observed state: `agent_version=v0.2.12`, `status=ONLINE`,
+  `capabilities=[]`
+- endpoint-admin remote-bridge digest prerequisite:
+  `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`
+- artifact-host `v0.2.13` digest prerequisite:
+  `sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`
+- generated bootstrap artifact source:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27867360595`
+
+This no-go is the expected safety behavior. It must not be reclassified as a
+failed product gate, and it must not be bypassed by inbound SSH/RDP/WinRM/SMB
+or manual remote-shell evidence.
+
 ## Endpoint-Local Action
 
 After the workflow artifact is available, execute the generated
@@ -68,6 +92,11 @@ C:\ProgramData\EndpointAgent\rollout-evidence
 The endpoint-local script contains no HMAC enrollment token, bearer token,
 password, private key, or administrator credential. It contains only the broker
 permit public key, which is public verifier material.
+
+After the script finishes, collect the evidence folder and rerun the normal
+#208 acceptance workflow. Do not move #1768 or #208 forward on the board until
+that rerun produces live product-channel `HELLO`, permit, constrained
+operation, negative, and audit evidence.
 
 ## Acceptance Hand-Off
 
