@@ -129,6 +129,47 @@ The endpoint-local script contains no HMAC enrollment token, bearer token,
 password, private key, or administrator credential. It contains only the broker
 permit public key, which is public verifier material.
 
+## Test Artifact-Host Bootstrap URL
+
+For the bounded AgentPC2 pilot, the same generated non-secret bootstrap script
+is also published through the test artifact-host over the existing internal
+443 path:
+
+```text
+https://testai.acik.com/artifacts/endpoint-agent/bootstrap/agentpc2-first-install-bootstrap.ps1
+```
+
+Script SHA256:
+
+```text
+c60fc426145f8ea0c33c417a4e94c66d001b3723167360ab365192eb31f275ab
+```
+
+Endpoint-local command:
+
+```powershell
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+
+$Base = "https://testai.acik.com/artifacts/endpoint-agent/bootstrap"
+$WorkDir = "C:\Temp\AgentPC2Bootstrap"
+$Script = Join-Path $WorkDir "agentpc2-first-install-bootstrap.ps1"
+
+New-Item -ItemType Directory -Force $WorkDir | Out-Null
+Invoke-WebRequest -UseBasicParsing -Uri "$Base/agentpc2-first-install-bootstrap.ps1" -OutFile $Script
+
+$ExpectedScriptSha256 = "c60fc426145f8ea0c33c417a4e94c66d001b3723167360ab365192eb31f275ab"
+$ActualScriptSha256 = (Get-FileHash $Script -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($ActualScriptSha256 -ne $ExpectedScriptSha256) {
+  throw "Bootstrap script SHA256 mismatch: $ActualScriptSha256"
+}
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Script
+```
+
+This URL is test-only GitOps-hosted pilot seed material. It does not prove
+platform-agent#208 acceptance and must not be reused as broad rollout evidence.
+
 After the script finishes, collect the evidence folder and rerun the normal
 #208 acceptance workflow. Do not move #1768 or #208 forward on the board until
 that rerun produces live product-channel `HELLO`, permit, constrained

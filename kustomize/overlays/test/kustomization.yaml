@@ -47,6 +47,7 @@ resources:
   - ../../base/apps/artifact-host    # Faz 22.5 M1: endpoint-agent one-command bootstrap
                                      # artifact host (test-only; prod deferred). Pairs with
                                      # the /artifacts ingress path patch + edge route flip.
+  - agentpc2-bootstrap/configmap.yaml # Faz 22.6.3 AgentPC2 bounded public bootstrap script
   # Faz 19.MSSQL.F: bridge proxy container IP per-cluster
   - endpoints-workcube-mssql.yaml    # 172.19.0.8 (workcube-mssql-proxy-test, alpine/socat)
   - netpol-workcube-mssql.yaml       # egress 172.19.0.8/32:11433
@@ -6732,6 +6733,26 @@ patches:
         value: "DEBUG"
 
   # Ingress host + TLS host: testai.acik.com (D18)
+  # Faz 22.6.3 AgentPC2 bounded bootstrap publication: mount only non-secret
+  # script material under artifact-host's /artifacts tree. This is test-only
+  # and does not prove #208 constrained executor acceptance by itself.
+  - target:
+      kind: Deployment
+      name: artifact-host
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: agentpc2-first-install-bootstrap
+          mountPath: /usr/share/nginx/html/artifacts/endpoint-agent/bootstrap
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: agentpc2-first-install-bootstrap
+          configMap:
+            name: agentpc2-first-install-bootstrap
+
   # Faz 22.5 M1: append the /artifacts path (test-only — NOT in base, so prod
   # ai.acik.com keeps falling through `/` to the SPA, not the real installer).
   # ingress-nginx matches most-specific path first, so /artifacts wins over `/`
