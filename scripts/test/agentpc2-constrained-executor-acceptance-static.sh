@@ -38,6 +38,16 @@ if ! grep -Fq 'pause_step_up_external_secret_refresh' "${script}"; then
   exit 1
 fi
 
+if ! grep -Fq 'apply_run_scoped_step_up_secret_patch' "${script}"; then
+  echo "acceptance must apply the run-scoped step-up Secret patch through a reusable verified helper" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'reapplying run-scoped key once after ESO reconcile' "${script}"; then
+  echo "acceptance must re-apply the run-scoped key once if the ESO OnChange reconcile races the broker rollout" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'step-up-live-public-key-drift' "${script}"; then
   echo "acceptance must fail clearly when ESO restores a different step-up public key" >&2
   exit 1

@@ -161,6 +161,29 @@ verify_live_step_up_public_key() {
     || fail_acceptance "step-up-live-public-key-drift expected=${expected_sha} actual=${live_sha}"
 }
 
+live_step_up_public_key_matches() {
+  local expected_sha="$1" live_pem="$2" live_sha
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get secret endpoint-admin-remote-bridge-secrets \
+    -o jsonpath='{.data.REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM}' \
+    | base64 -d > "$live_pem" \
+    || return 1
+
+  live_sha="$(sha256_file "$live_pem")"
+  [[ "$live_sha" == "$expected_sha" ]]
+}
+
+apply_run_scoped_step_up_secret_patch() {
+  local patch="$1" run_id="$2" expected_sha="$3" evidence_suffix="$4"
+
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch secret endpoint-admin-remote-bridge-secrets \
+    --type merge -p "$patch" >/dev/null \
+    || fail_acceptance "step-up-ephemeral-public-key-secret-patch-failed"
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" annotate secret endpoint-admin-remote-bridge-secrets \
+    "remote-bridge.platform/run-scoped-step-up-key=${run_id}" --overwrite >/dev/null 2>&1 || true
+
+  verify_live_step_up_public_key "$expected_sha" "${TMP_DIR}/live-step-up-public-${evidence_suffix}.pem"
+}
+
 write_summary() {
   mkdir -p "$EVIDENCE_DIR"
   jq -n \
@@ -673,22 +696,30 @@ generate_run_scoped_step_up_key() {
 
   pause_step_up_external_secret_refresh
 
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch secret endpoint-admin-remote-bridge-secrets \
-    --type merge -p "$patch" >/dev/null \
-    || fail_acceptance "step-up-ephemeral-public-key-secret-patch-failed"
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" annotate secret endpoint-admin-remote-bridge-secrets \
-    "remote-bridge.platform/run-scoped-step-up-key=${run_id}" --overwrite >/dev/null 2>&1 || true
-
   step_up_key_mode="run-scoped-ephemeral-test-key"
   step_up_public_key_sha256="$(sha256_file "$public_path")"
-  verify_live_step_up_public_key "$step_up_public_key_sha256" "${TMP_DIR}/live-step-up-public.pem"
+  apply_run_scoped_step_up_secret_patch "$patch" "$run_id" "$step_up_public_key_sha256" "initial"
 
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout restart "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" >/dev/null \
     || fail_acceptance "step-up-ephemeral-rollout-restart-failed"
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --timeout=240s \
     || fail_acceptance "step-up-ephemeral-rollout-timeout"
   verify_runtime_digest
-  verify_live_step_up_public_key "$step_up_public_key_sha256" "${TMP_DIR}/live-step-up-public-after-rollout.pem"
+
+  # Patching an ExternalSecret from Periodic to OnChange can itself trigger a
+  # one-time reconcile of the target Secret. If that race restores the steady
+  # Vault key during rollout, re-apply the run-scoped key once and restart the
+  # broker again. The final drift guard below remains fail-closed.
+  if ! live_step_up_public_key_matches "$step_up_public_key_sha256" "${TMP_DIR}/live-step-up-public-after-rollout.pem"; then
+    echo "INFO step-up public key drifted after rollout; reapplying run-scoped key once after ESO reconcile" >&2
+    apply_run_scoped_step_up_secret_patch "$patch" "$run_id" "$step_up_public_key_sha256" "reapply"
+    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout restart "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" >/dev/null \
+      || fail_acceptance "step-up-ephemeral-rollout-restart-failed-after-reapply"
+    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --timeout=240s \
+      || fail_acceptance "step-up-ephemeral-rollout-timeout-after-reapply"
+    verify_runtime_digest
+  fi
+  verify_live_step_up_public_key "$step_up_public_key_sha256" "${TMP_DIR}/live-step-up-public-final.pem"
 
   cp "$public_path" "${TMP_DIR}/step-up-public.pem"
   printf '%s' "$key_path" > "${TMP_DIR}/step-up-private-key.path"
