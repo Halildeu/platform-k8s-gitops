@@ -314,13 +314,17 @@ verify_artifacts() {
 }
 
 run_release_flow() {
-  local code existing_code payload
+  local code existing_code existing_status existing_enabled payload
   payload="$(release_payload)"
+  existing_status=""
+  existing_enabled=""
 
   existing_code="$(curl_request GET "/endpoint-agent-update-releases/${RELEASE_ID}" "$CREATOR_TOKEN" release-get-before)"
   if [[ "$existing_code" == "200" ]]; then
     validate_release_body_matches_expected "${EVIDENCE_DIR}/release-get-before.body" "existing release"
-    append_action "release-get-before" "ok" "matching release row already exists"
+    existing_status="$(jq -r '.status // ""' "${EVIDENCE_DIR}/release-get-before.body")"
+    existing_enabled="$(jq -r '.enabled // false' "${EVIDENCE_DIR}/release-get-before.body")"
+    append_action "release-get-before" "ok" "matching release row already exists with status=${existing_status}"
   elif [[ "$existing_code" == "404" ]]; then
     append_action "release-get-before" "missing" "release row not found"
     if [[ "$RUN_CREATE" == "1" ]]; then
@@ -338,7 +342,9 @@ run_release_flow() {
     expect_code_set "$existing_code" "200,404,401,403" release-get-before
   fi
 
-  if [[ "$RUN_APPROVE" == "1" ]]; then
+  if [[ "$RUN_APPROVE" == "1" && "$existing_status" == "APPROVED" && "$existing_enabled" == "true" ]]; then
+    append_action "release-approve" "already-approved" "release was already APPROVED and enabled"
+  elif [[ "$RUN_APPROVE" == "1" ]]; then
     code="$(curl_request POST "/endpoint-agent-update-releases/${RELEASE_ID}/approve" "$APPROVER_TOKEN" release-approve "" 1)"
     expect_code_set "$code" "200" release-approve
     validate_release_body_matches_expected "${EVIDENCE_DIR}/release-approve.body" "approved release"
