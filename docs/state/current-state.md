@@ -68,9 +68,10 @@ GitOps + public edge evidence:
   `49dfe1fc33a286a575f87b93c4f524ae24b619cd`, with the endpoint-admin
   service CI and security gates green before merge.
 - AgentPC2 constrained-executor acceptance rerun
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27867580698`
-  reached the staging prerequisite checks and then failed intentionally with
-  no-go reason `pilot-readiness-agent-version-mismatch`.
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27868590359`
+  supersedes the earlier same-day rerun `27867580698` for the current no-go
+  evidence. It reached the staging prerequisite checks and then failed
+  intentionally with no-go reason `pilot-readiness-agent-version-mismatch`.
 - That rerun verified the endpoint-admin remote-bridge deployment/pod digest
   prerequisite as
   `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`.
@@ -78,19 +79,22 @@ GitOps + public edge evidence:
   artifact-host digest
   `sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`.
 - The no-go artifact is
-  `agentpc2-constrained-executor-evidence-27867580698`; known evidence hashes:
+  `agentpc2-constrained-executor-evidence-27868590359`; known evidence hashes:
   `summary.json` SHA256
-  `07c04708e8b4f727af9bb89e9f8d47cda8c1ded10532ed531c540ee80352655c` and
+  `f336606cf6f0c64dd8f71a13b35cdad113c9268b26e978017324b213d2d8c9ab` and
   `pilot-readiness/summary.json` SHA256
-  `f2c53af3aca9b2dc3d636bfcb9a374f4af44c83ef491ee855ae9c0c2dbbef163`.
+  `56e23f39233197298d466912d52b2bf72fe80d21f0e8178a4e52226dc910952e`.
 
 Acceptance boundary:
 
 - The `v0.2.13` source, public artifact-host, endpoint-admin digest, and
   generated first-install bootstrap package are accepted prerequisites only.
-- AgentPC2 remains the live blocker: the rerun observed
-  `agent_version=v0.2.12`, `status=ONLINE`, and `capabilities=[]`; no
-  operation-capable `v0.2.13` heartbeat was present.
+- AgentPC2 remains the live blocker: the rerun targeted AD object GUID
+  `fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a`, resolved the existing product
+  device row `2f7ad30f-970a-42e7-8af8-08764ae6066f`, and observed
+  `agent_version=v0.2.12`, `status=ONLINE`, `capabilities=[]`, and
+  `last_seen_at=2026-06-20 10:37:49.030519+00`; no operation-capable
+  `v0.2.13` heartbeat was present.
 - `platform-k8s-gitops#1768` remains blocked until the generated
   `agentpc2-first-install-bootstrap.ps1` runs endpoint-local on AgentPC2 from
   an elevated PowerShell session and writes endpoint evidence under

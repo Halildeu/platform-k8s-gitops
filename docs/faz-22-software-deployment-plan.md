@@ -386,9 +386,10 @@ ile kalıcılaştırılır:
 #### 0.7.5 2026-06-20 #208 / #1768 no-go handoff
 
 `platform-backend#718` merged the endpoint-admin machine-certificate rotation
-fix, and the 2026-06-20 AgentPC2 constrained-executor acceptance rerun
-(`platform-k8s-gitops` workflow `27867580698`) verified the staging
-prerequisites before stopping at the intended no-go gate:
+fix, and the latest 2026-06-20 AgentPC2 constrained-executor acceptance rerun
+(`platform-k8s-gitops` workflow `27868590359`; supersedes earlier rerun
+`27867580698`) verified the staging prerequisites before stopping at the
+intended no-go gate:
 
 - endpoint-admin remote-bridge deployment/pod digest:
   `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`
@@ -397,8 +398,11 @@ prerequisites before stopping at the intended no-go gate:
 - public agent artifact SHA256:
   `6e3a79b8ea076d08e2288be98359d3db6049b6179e655ceaff924f792736cd0c`
 - no-go reason: `pilot-readiness-agent-version-mismatch`
+- AgentPC2 target/observed identity: AD object GUID
+  `fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a`; product device id
+  `2f7ad30f-970a-42e7-8af8-08764ae6066f`
 - AgentPC2 observed state: `agent_version=v0.2.12`, `status=ONLINE`,
-  `capabilities=[]`
+  `capabilities=[]`, `last_seen_at=2026-06-20 10:37:49.030519+00`
 
 Bu, `#208` için acceptance değildir. `#1768` first-install bootstrap artifact
 hazırdır; sıradaki geçerli kapı AgentPC2 üzerinde endpoint-local

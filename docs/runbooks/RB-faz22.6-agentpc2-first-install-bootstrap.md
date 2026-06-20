@@ -5,7 +5,9 @@ Status: active bounded-pilot runbook
 Scope:
 - Issue: platform-k8s-gitops#1768
 - Downstream acceptance: platform-agent#208
-- Target: AgentPC2 / product device `2f7ad30f-970a-42e7-8af8-08764ae6066f`
+- Target: AgentPC2 / AD object GUID
+  `fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a` / product device
+  `2f7ad30f-970a-42e7-8af8-08764ae6066f`
 - Release: platform-agent `v0.2.13`
 
 ## Purpose
@@ -62,10 +64,11 @@ bootstrap.
 Evidence:
 
 - acceptance rerun:
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27867580698`
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27868590359`
+  (supersedes earlier same-day rerun `27867580698`)
 - no-go reason: `pilot-readiness-agent-version-mismatch`
 - AgentPC2 observed state: `agent_version=v0.2.12`, `status=ONLINE`,
-  `capabilities=[]`
+  `capabilities=[]`, `last_seen_at=2026-06-20 10:37:49.030519+00`
 - endpoint-admin remote-bridge digest prerequisite:
   `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`
 - artifact-host `v0.2.13` digest prerequisite:
