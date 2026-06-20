@@ -114,6 +114,14 @@ jobs:
           bootstrap_script="$(jq -r '.evidence.bootstrapScript // ""' "${summary}")"
           secret_private="$(jq -r '.secretHygiene.rawPrivateKeyLogged // false' "${summary}")"
           secret_token="$(jq -r '.secretHygiene.hmacEnrollmentTokenIncluded // false' "${summary}")"
+          release_sums_sha=""
+          if [ -f "${EVIDENCE_DIR}/release-SHA256SUMS" ]; then
+            release_sums_sha="$(sha256sum "${EVIDENCE_DIR}/release-SHA256SUMS" | awk '{print $1}')"
+          fi
+          evidence_sums_sha=""
+          if [ -f "${EVIDENCE_DIR}/SHA256SUMS" ]; then
+            evidence_sums_sha="$(sha256sum "${EVIDENCE_DIR}/SHA256SUMS" | awk '{print $1}')"
+          fi
 
           comment="${RUNNER_TEMP}/agentpc2-first-install-bootstrap-1768.md"
           {
@@ -129,6 +137,8 @@ jobs:
             echo "- Permit key id/public-key SHA256: \`${permit_kid}\` / \`${permit_public_sha}\`"
             echo "- Generated endpoint bootstrap script: \`${bootstrap_script}\`"
             echo "- Evidence dir on staging runner: \`${EVIDENCE_DIR}\`"
+            echo "- Release SHA256SUMS hash: \`${release_sums_sha}\`"
+            echo "- Evidence SHA256SUMS hash: \`${evidence_sums_sha}\`"
             echo "- Secret hygiene: rawPrivateKeyLogged=\`${secret_private}\`, hmacEnrollmentTokenIncluded=\`${secret_token}\`"
             echo ""
             echo "Boundary: this prepares the bounded AgentPC2 first-install bootstrap package for #1768. It does not prove platform-agent#208 constrained executor acceptance, does not prove AgentPC2 executed the bootstrap, does not prove broad GPO/MSI rollout, and does not open inbound SSH/RDP/WinRM/SMB/RPC."
