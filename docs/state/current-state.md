@@ -92,6 +92,23 @@ GitOps + public edge evidence:
   `0783f2f3fb629a8b75e93c61b391014dab55ffce4cba8c1253d076d42fcac380`,
   and `workflow-smoke.log` SHA256
   `b82611986cb06b44a9cf25291832f875ba2f2a82baaa80599ae99d615ddb0128`.
+- Follow-up live readiness helper output generated at `2026-06-20T12:00:59Z`
+  refined the AgentPC2 blocker from the workflow's coarse preflight result:
+  `decision=owner-approved-seed-required`, reason `Target is older and does
+  not advertise UPDATE_AGENT; do not use Software Catalog or Approved Script
+  Runner as a hidden installer lane.` Evidence directory
+  `/tmp/agentpc2-readiness-live-4jRtYS` verified the public
+  `v0.2.13` release manifest, staging DB access, and the approved update
+  release candidate. Key hashes: `summary.json` SHA256
+  `890b75ef1ac49d1ec40375783907dafb6733c9a5fbf3d87cad9aa13c2796246d`,
+  `device-heartbeat.psv` SHA256
+  `ec651a489d2d1b8110fcf469bd31c81ac03642ffd0c72d62f8ffbc3f28ae6f1c`,
+  `agent-update-releases.psv` SHA256
+  `ee08a8edb94e79a9fde6944ed9c9b1f7383fb91b6914e6143fa90c0c9bff549a`,
+  `artifact-manifest.json` SHA256
+  `3a4038f46f5ca137f54664ca3ebf5d62fd37821293575032d0f5794d535a890d`,
+  and `software-catalog-candidates.psv` SHA256
+  `ccc4ec047cb7b8cd98aa30967983e096f713d44d0889aba8ec402c151d60cf66`.
 
 Acceptance boundary:
 
@@ -108,12 +125,25 @@ Acceptance boundary:
   the AgentPC2 bootstrap remotely through inbound SSH/RDP/WinRM/SMB/RPC, cannot
   mutate GPO through the ERP tunnel, and cannot satisfy #208 by operator-shell
   evidence.
-- AgentPC2 remains the live blocker: the rerun targeted AD object GUID
-  `fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a`, resolved the existing product
-  device row `2f7ad30f-970a-42e7-8af8-08764ae6066f`, and observed
-  `agent_version=v0.2.12`, `status=ONLINE`, `capabilities=[]`, and
-  `last_seen_at=2026-06-20 11:33:49.486324+00`; no operation-capable
-  `v0.2.13` heartbeat was present.
+- AgentPC2 remains the live blocker: the latest readiness helper resolved the
+  existing product device row `2f7ad30f-970a-42e7-8af8-08764ae6066f` for
+  hostname `AgentPc2` and observed `agent_version=v0.2.12`, `status=ONLINE`,
+  `last_seen_at=2026-06-20 11:59:18.969098+00`, and capabilities
+  `COLLECT_INVENTORY`, `GET_LOGGED_IN_USER`, `GET_USER_HOME_PATHS`,
+  `LIST_LOCAL_USERS`, `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`,
+  `CHANGE_LOCAL_PASSWORD`, `INSTALL_SOFTWARE`, `UNINSTALL_SOFTWARE`, and
+  `SET_DISPLAY_POLICY`. `UPDATE_AGENT` was absent, so the approved
+  `v0.2.13` release candidate cannot be dispatched through the catalog-bound
+  update path from this installed agent version.
+- The allowed next seed paths are limited to: catalog-bound `UPDATE_AGENT`
+  after a heartbeat advertises it, owner-approved local maintenance install for
+  this single pilot endpoint followed by product-channel smoke, or a
+  certificate-enrolled test endpoint already running the expected agent
+  version. Rejected acceptance paths remain Software Catalog abuse without an
+  approved EndpointAgent catalog item, Approved Script Runner
+  download-and-execute, generic endpoint-commands `UPDATE_AGENT`, direct DB
+  insert, caller-supplied binary/hash/signer fields, raw PowerShell or
+  unrestricted terminal, and RDP/SSH/WinRM/SMB/RPC/file browser/reverse tunnel.
 - `platform-k8s-gitops#1768` remains blocked until the generated
   `agentpc2-first-install-bootstrap.ps1` runs endpoint-local on AgentPC2 from
   an elevated PowerShell session and writes endpoint evidence under

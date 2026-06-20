@@ -387,9 +387,9 @@ ile kalıcılaştırılır:
 
 `platform-backend#718` merged the endpoint-admin machine-certificate rotation
 fix, and the latest 2026-06-20 AgentPC2 constrained-executor acceptance rerun
-(`platform-k8s-gitops` workflow `27868590359`; supersedes earlier rerun
-`27867580698`) verified the staging prerequisites before stopping at the
-intended no-go gate:
+(`platform-k8s-gitops` workflow `27869889116`; supersedes earlier reruns
+`27869662051`, `27868590359`, and `27867580698`) verified the staging
+prerequisites before stopping at the intended no-go gate:
 
 - endpoint-admin remote-bridge deployment/pod digest:
   `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`
@@ -401,16 +401,37 @@ intended no-go gate:
 - AgentPC2 target/observed identity: AD object GUID
   `fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a`; product device id
   `2f7ad30f-970a-42e7-8af8-08764ae6066f`
-- AgentPC2 observed state: `agent_version=v0.2.12`, `status=ONLINE`,
-  `capabilities=[]`, `last_seen_at=2026-06-20 10:37:49.030519+00`
+- AgentPC2 latest readiness helper observed state:
+  `agent_version=v0.2.12`, `status=ONLINE`,
+  `last_seen_at=2026-06-20 11:59:18.969098+00`, capabilities
+  `COLLECT_INVENTORY`, `GET_LOGGED_IN_USER`, `GET_USER_HOME_PATHS`,
+  `LIST_LOCAL_USERS`, `LOCK_USER_LOGIN`, `UNLOCK_USER_LOGIN`,
+  `CHANGE_LOCAL_PASSWORD`, `INSTALL_SOFTWARE`, `UNINSTALL_SOFTWARE`, and
+  `SET_DISPLAY_POLICY`; `UPDATE_AGENT` is absent.
+- readiness helper decision: `owner-approved-seed-required`, reason
+  `Target is older and does not advertise UPDATE_AGENT; do not use Software
+  Catalog or Approved Script Runner as a hidden installer lane.`
+- readiness helper evidence hashes:
+  `summary.json=890b75ef1ac49d1ec40375783907dafb6733c9a5fbf3d87cad9aa13c2796246d`,
+  `device-heartbeat.psv=ec651a489d2d1b8110fcf469bd31c81ac03642ffd0c72d62f8ffbc3f28ae6f1c`,
+  `agent-update-releases.psv=ee08a8edb94e79a9fde6944ed9c9b1f7383fb91b6914e6143fa90c0c9bff549a`,
+  `artifact-manifest.json=3a4038f46f5ca137f54664ca3ebf5d62fd37821293575032d0f5794d535a890d`,
+  `software-catalog-candidates.psv=ccc4ec047cb7b8cd98aa30967983e096f713d44d0889aba8ec402c151d60cf66`.
 
 Bu, `#208` için acceptance değildir. `#1768` first-install bootstrap artifact
-hazırdır; sıradaki geçerli kapı AgentPC2 üzerinde endpoint-local
-`agentpc2-first-install-bootstrap.ps1` çalıştırılması, sonrasında #208
-workflow'unun yeniden koşulması ve aynı session'da `HELLO`, permit,
-constrained-operation, negative, audit ledger kanıtlarının alınmasıdır. Bu
-kanıt gelmeden `#208`, broad rollout, production remote support, raw shell,
-RDP/WinRM/SMB/SSH veya TPM/device-key closure dili kullanılmaz.
+hazırdır. Geçerli seed yolları sınırlıdır: heartbeat `UPDATE_AGENT` advertise
+ettiğinde catalog-bound `UPDATE_AGENT`, owner-approved local maintenance install
+for this one pilot endpoint, veya beklenen sürümle zaten sertifika-enrolled bir
+test endpoint. Sıradaki geçerli kapı AgentPC2 üzerinde endpoint-local
+`agentpc2-first-install-bootstrap.ps1` çalıştırılması ya da eşdeğer kabul edilen
+seed yolundan sonra #208 workflow'unun yeniden koşulması ve aynı session'da
+`HELLO`, permit, constrained-operation, negative, audit ledger kanıtlarının
+alınmasıdır. Software Catalog abuse, Approved Script Runner
+download-and-execute, generic endpoint-commands `UPDATE_AGENT`, direct DB
+insert, caller-supplied binary/hash/signer fields, raw PowerShell, unrestricted
+terminal, RDP/WinRM/SMB/SSH/RPC veya reverse tunnel acceptance kanıtı değildir.
+Bu kanıt gelmeden `#208`, broad rollout, production remote support veya
+TPM/device-key closure dili kullanılmaz.
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
