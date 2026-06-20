@@ -63,8 +63,8 @@ if ! grep -Fq 'step-up-runtime-public-key-drift' "${script}"; then
   exit 1
 fi
 
-if ! grep -Fq 'step-up-live-public-key-drift' "${script}"; then
-  echo "acceptance must fail clearly when ESO restores a different step-up public key" >&2
+if ! grep -Fq 'broker runtime env check remains authoritative' "${script}"; then
+  echo "acceptance must treat post-patch live Secret drift as observation while keeping broker runtime key verification authoritative" >&2
   exit 1
 fi
 
