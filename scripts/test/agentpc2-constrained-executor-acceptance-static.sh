@@ -48,6 +48,11 @@ if ! grep -Fq 'reapplying run-scoped key once after ESO reconcile' "${script}"; 
   exit 1
 fi
 
+if ! grep -Fq 'STEP_UP_SECRET_STABILIZE_SECONDS' "${script}"; then
+  echo "acceptance must wait briefly after broker rollout before final step-up Secret SHA checks" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'step-up-live-public-key-drift' "${script}"; then
   echo "acceptance must fail clearly when ESO restores a different step-up public key" >&2
   exit 1
