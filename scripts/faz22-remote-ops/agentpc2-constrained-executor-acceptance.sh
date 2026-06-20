@@ -461,8 +461,9 @@ psql_query() {
       && return 0
   fi
 
-  local pod_name overrides
+  local pod_name overrides pod_log output status
   pod_name="agentpc2-psql-$(date -u +%Y%m%d%H%M%S)-$RANDOM"
+  pod_log="${EVIDENCE_DIR}/postgres-client-pod.log"
   overrides="$(jq -nc \
     --arg podName "$pod_name" \
     --arg image "$PG_CLIENT_IMAGE" \
@@ -480,18 +481,19 @@ psql_query() {
         restartPolicy: "Never",
         securityContext: {
           runAsNonRoot: true,
+          runAsUser: 999,
+          runAsGroup: 999,
+          fsGroup: 999,
           seccompProfile: {type: "RuntimeDefault"}
         },
         containers: [{
           name: $podName,
           image: $image,
+          imagePullPolicy: "IfNotPresent",
           securityContext: {
             allowPrivilegeEscalation: false,
             capabilities: {drop: ["ALL"]},
-            runAsNonRoot: true,
-            runAsUser: 65532,
-            runAsGroup: 65532,
-            seccompProfile: {type: "RuntimeDefault"}
+            runAsNonRoot: true
           },
           env: [
             {name: "PGHOST", value: $host},
@@ -502,18 +504,55 @@ psql_query() {
             {name: "PGUSER", valueFrom: {secretKeyRef: {name: $secretName, key: $userKey}}},
             {name: "PGPASSWORD", valueFrom: {secretKeyRef: {name: $secretName, key: $passwordKey}}}
           ],
-          command: ["sh", "-ceu"],
-          args: ["psql -h \"$PGHOST\" -p \"$PGPORT\" -U \"$PGUSER\" -d \"$PGDATABASE\" -At -F \"$PGDELIMITER\" -v ON_ERROR_STOP=1 -c \"$SQL\""]
+          command: ["sleep"],
+          args: ["300"]
         }]
       }
     }')"
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" delete pod "$pod_name" \
+    --ignore-not-found >/dev/null 2>&1 || true
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" run "$pod_name" \
-    --rm -i --restart=Never \
+    --restart=Never \
+    --pod-running-timeout=120s \
     --image="$PG_CLIENT_IMAGE" \
     --labels="app.kubernetes.io/name=agentpc2-psql-smoke,app.kubernetes.io/part-of=platform" \
+    --image-pull-policy=IfNotPresent \
     --quiet=true \
     --overrides="$overrides" \
     || fail_acceptance "postgres-client-pod-query-failed"
+
+  if ! kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" wait "pod/$pod_name" \
+      --for=condition=Ready \
+      --timeout=120s \
+      >"$pod_log" 2>&1; then
+    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" describe pod "$pod_name" \
+      >>"$pod_log" 2>&1 || true
+    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" logs "$pod_name" \
+      >>"$pod_log" 2>&1 || true
+    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" delete pod "$pod_name" \
+      --ignore-not-found >/dev/null 2>&1 || true
+    sed 's/[[:cntrl:]]//g' "$pod_log" >&2 || true
+    fail_acceptance "postgres-client-pod-not-ready"
+  fi
+
+  set +e
+  output="$(
+    printf '%s\n' "$sql" | kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" exec -i "$pod_name" -- sh -ceu '
+      cat > /tmp/agentpc2-query.sql
+      psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" -At -F "$PGDELIMITER" -v ON_ERROR_STOP=1 -f /tmp/agentpc2-query.sql
+    ' 2>>"$pod_log"
+  )"
+  status=$?
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" delete pod "$pod_name" \
+    --ignore-not-found >/dev/null 2>&1 || true
+  set -e
+
+  if (( status != 0 )); then
+    sed 's/[[:cntrl:]]//g' "$pod_log" >&2 || true
+    fail_acceptance "postgres-client-pod-query-failed"
+  fi
+
+  printf '%s\n' "$output"
 }
 
 candidate_private_keys() {
