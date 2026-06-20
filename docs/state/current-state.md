@@ -1,5 +1,33 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — AgentPC2 remote-bridge pilot auto-consent still awaiting endpoint-local v5 patch (2026-06-20)
+
+**Session milestone**: AgentPC2 v3 endpoint-local alias patch was verified as
+non-acceptance evidence. It corrected the broker/SNI/permit/env alias surface,
+but the endpoint summary returned `patched-needs-attention` because
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT` was still missing. Broker
+logs continued to show AgentPC2 `HELLO` without `CONSENT_GRANTED`/`ACTIVE`, so
+bounded operation dispatch remained `session-not-active`.
+
+Desired-state follow-up:
+
+- The test artifact-host bootstrap ConfigMap now includes bounded patch
+  `agentpc2-remote-bridge-pilot-autoconsent-patch-v5.ps1`.
+- Rendered ConfigMap SHA256 for the v5 script:
+  `d08c1b3b7af7af00c000f9f3ecd48bfb2ad5a36f70d80289353b5dc45eec4d5f`.
+- Static guard `scripts/test/agentpc2-first-install-bootstrap-static.sh`
+  checks that the v5 patch key and hash are present, preventing a repeat of the
+  Argo-managed ConfigMap drift where a runtime-only patch disappeared from the
+  public bootstrap path.
+
+Acceptance boundary:
+
+- This only makes the endpoint-local v5 patch available through the GitOps
+  artifact-host path.
+- `platform-agent#208` remains open until AgentPC2 proves product-channel
+  `HELLO`/`CONSENT_GRANTED`/`ACTIVE`, permit, constrained operation, negative
+  operation, and audit evidence after the v5 patch is run.
+
 ## Live Delta — Faz 22.6.3 #208 v0.2.14 artifact-host live; AgentPC2 first-install pending (2026-06-20)
 
 **Session milestone**: earlier AgentPC2 product-stream evidence reached the
