@@ -128,8 +128,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          summary="${EVIDENCE_DIR}/bootstrap-evidence-verifier-summary.json"
+          if [ -d "${EVIDENCE_DIR}" ]; then
+            summary="${EVIDENCE_DIR}/bootstrap-evidence-verifier-summary.json"
+          else
+            summary="${RUNNER_TEMP}/bootstrap-evidence-verifier-summary.json"
+          fi
+
           if [ ! -f "${summary}" ]; then
+            mkdir -p "$(dirname "${summary}")"
             jq -n \
               --arg generatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               --arg status "rejected-bootstrap-evidence" \
@@ -146,7 +152,7 @@ jobs:
           broker="$(jq -r '.expected.remoteBridge.brokerAddr // ""' "${summary}")"
           findings="$(jq -c '.findings // []' "${summary}")"
           ingest_sums_sha=""
-          if [ -f "${EVIDENCE_DIR}/INGEST_SHA256SUMS" ]; then
+          if [ -d "${EVIDENCE_DIR}" ] && [ -f "${EVIDENCE_DIR}/INGEST_SHA256SUMS" ]; then
             ingest_sums_sha="$(sha256sum "${EVIDENCE_DIR}/INGEST_SHA256SUMS" | awk '{print $1}')"
           fi
 
@@ -193,7 +199,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Dispatch #208 product-channel acceptance
-        if: ${{ always() && steps.verify.outputs.exit_code == '0' && inputs.trigger_acceptance == 'true' }}
+        if: ${{ always() && steps.verify.outcome == 'success' && steps.verify.outputs.exit_code == '0' && inputs.trigger_acceptance == 'true' }}
         run: |
           set -euo pipefail
 
