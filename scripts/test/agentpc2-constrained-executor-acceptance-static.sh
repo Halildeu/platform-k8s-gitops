@@ -28,43 +28,73 @@ if grep -Fq '.realmRolesContainRemoteBridgeOperator == true and .tenant_id_prese
   exit 1
 fi
 
-if ! grep -Fq 'restore_step_up_external_secret_refresh_policy' "${script}"; then
-  echo "acceptance must restore the step-up ExternalSecret refresh policy during cleanup" >&2
+if ! grep -Fq 'restore_remote_bridge_runtime_env_override' "${script}"; then
+  echo "acceptance must restore the remote-bridge Deployment runtime env override during cleanup" >&2
   exit 1
 fi
 
-if ! grep -Fq 'pause_step_up_external_secret_refresh' "${script}"; then
-  echo "acceptance must pause the ESO-owned step-up Secret before writing a run-scoped key" >&2
+if ! grep -Fq 'delete_run_scoped_step_up_runtime_secret' "${script}"; then
+  echo "acceptance must delete the run-scoped step-up runtime Secret during cleanup" >&2
   exit 1
 fi
 
-if ! grep -Fq 'STEP_UP_ESO_ORIGINAL_DATA_FILE' "${script}"; then
-  echo "acceptance must back up and restore the ExternalSecret data array during run-scoped step-up key smoke" >&2
+if ! grep -Fq 'if restore_remote_bridge_runtime_env_override; then' "${script}"; then
+  echo "acceptance cleanup must delete the smoke Secret only after the Deployment env restore succeeds" >&2
   exit 1
 fi
 
-if ! grep -Fq 'select(.secretKey != "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")' "${script}"; then
-  echo "acceptance must temporarily remove only the ESO step-up key mapping before writing a run-scoped key" >&2
+if ! grep -Fq 'CLEANUP_WARN remote-bridge runtime env restore failed' "${script}"; then
+  echo "acceptance cleanup must warn and retain the smoke Secret when Deployment env restore fails" >&2
   exit 1
 fi
 
-if ! grep -Fq 'wait_for_step_up_external_secret_pause_to_settle' "${script}"; then
-  echo "acceptance must wait for the ESO step-up key mapping removal reconcile before writing the run-scoped key" >&2
+if ! grep -Fq 'REMOTE_BRIDGE_ORIGINAL_ENV_FILE' "${script}"; then
+  echo "acceptance must back up the remote-bridge Deployment env before applying a step-up override" >&2
   exit 1
 fi
 
-if ! grep -Fq 'STEP_UP_ESO_PAUSE_SETTLE_SECONDS' "${script}"; then
-  echo "acceptance must bound the ESO pause settle wait" >&2
+if ! grep -Fq 'hadStepUpEnv' "${script}"; then
+  echo "acceptance must restore only the original step-up env entry instead of replacing the whole env array blindly" >&2
   exit 1
 fi
 
-if ! grep -Fq 'apply_run_scoped_step_up_secret_patch' "${script}"; then
-  echo "acceptance must apply the run-scoped step-up Secret patch through a reusable verified helper" >&2
+if ! grep -Fq 'hadRunScopedAnnotation' "${script}"; then
+  echo "acceptance must restore or remove the run-scoped step-up Deployment annotation during cleanup" >&2
   exit 1
 fi
 
-if ! grep -Fq 'reapplying run-scoped key once after ESO reconcile' "${script}"; then
-  echo "acceptance must re-apply the run-scoped key once if the ESO OnChange reconcile races the broker rollout" >&2
+if ! grep -Fq '(.metadata.annotations // {}) as $annotations' "${script}"; then
+  echo "acceptance must capture and verify the top-level Deployment annotation written by kubectl annotate deploy" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'create_run_scoped_step_up_runtime_secret' "${script}"; then
+  echo "acceptance must create a smoke-only runtime Secret for the run-scoped step-up public key" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'apply_run_scoped_step_up_runtime_env_override' "${script}"; then
+  echo "acceptance must inject the run-scoped step-up key through a Deployment env override" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'secretKeyRef' "${script}"; then
+  echo "acceptance must reference the smoke-only step-up Secret through valueFrom.secretKeyRef" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'map(select(.name != "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM"))' "${script}"; then
+  echo "acceptance must replace any prior explicit step-up env var instead of duplicating it" >&2
+  exit 1
+fi
+
+if grep -Fq 'patch secret endpoint-admin-remote-bridge-secrets' "${script}"; then
+  echo "acceptance must not write the run-scoped key into the ESO-owned steady-state Secret" >&2
+  exit 1
+fi
+
+if grep -Fq 'pause_step_up_external_secret_refresh' "${script}"; then
+  echo "acceptance must not mutate the ExternalSecret to inject run-scoped step-up material" >&2
   exit 1
 fi
 
@@ -83,8 +113,8 @@ if ! grep -Fq 'step-up-runtime-public-key-drift' "${script}"; then
   exit 1
 fi
 
-if ! grep -Fq 'broker runtime env check remains authoritative' "${script}"; then
-  echo "acceptance must treat post-patch live Secret drift as observation while keeping broker runtime key verification authoritative" >&2
+if ! grep -Fq 'step-up-runtime-public-key-drift-after-env-override' "${script}"; then
+  echo "acceptance must fail clearly when the Deployment env override does not reach broker runtime" >&2
   exit 1
 fi
 
