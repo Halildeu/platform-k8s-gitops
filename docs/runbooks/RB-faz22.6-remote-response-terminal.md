@@ -288,6 +288,13 @@ installer and does not dispatch operations.
 
 Operator-safe helper for the catalog-bound `UPDATE_AGENT` seed path:
 
+Status note (2026-06-20): `platform-backend#712` is accepted-bounded via the
+`v0.2.11` catalog-bound update path on `HALILKOOLUB735`. The commands below are
+kept as the repeatable helper for future pilot reruns or equivalent endpoints;
+they are no longer the active #712 blocker. The current #208 blocker is
+AgentPC2 endpoint-local first-install/bootstrap evidence tracked by
+`platform-k8s-gitops#1768`.
+
 ```bash
 EVIDENCE_DIR=/tmp/remote-response-terminal-update-agent-seed-$(date -u +%Y%m%dT%H%M%SZ) \
 scripts/faz22-remote-ops/remote-response-terminal-update-agent-seed.sh
