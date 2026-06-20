@@ -70,6 +70,26 @@ jobs:
             2>&1 | tee "${EVIDENCE_DIR}/workflow-bootstrap.log"
           exit_code="${PIPESTATUS[0]}"
 
+          rm -f "${EVIDENCE_DIR}/SHA256SUMS"
+          (
+            cd "${EVIDENCE_DIR}" || exit 1
+            if command -v shasum >/dev/null 2>&1; then
+              find . -maxdepth 1 -type f ! -name "SHA256SUMS" -print0 \
+                | sort -z \
+                | xargs -0 shasum -a 256 > SHA256SUMS
+              shasum -a 256 -c SHA256SUMS
+            else
+              find . -maxdepth 1 -type f ! -name "SHA256SUMS" -print0 \
+                | sort -z \
+                | xargs -0 sha256sum > SHA256SUMS
+              sha256sum -c SHA256SUMS
+            fi
+          )
+          checksum_exit="$?"
+          if [ "${exit_code}" = "0" ] && [ "${checksum_exit}" != "0" ]; then
+            exit_code="${checksum_exit}"
+          fi
+
           echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
           echo "AGENTPC2_FIRST_INSTALL_BOOTSTRAP_EXIT_CODE=${exit_code}"
           exit 0
