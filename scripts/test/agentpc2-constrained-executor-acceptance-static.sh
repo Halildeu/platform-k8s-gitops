@@ -108,6 +108,16 @@ if ! grep -Fq 'runtime_step_up_public_key_matches' "${script}"; then
   exit 1
 fi
 
+if ! grep -Fq 'sha256_public_key_material_file' "${script}"; then
+  echo "acceptance must compare step-up public keys by canonical key material hash, not raw PEM bytes" >&2
+  exit 1
+fi
+
+if ! grep -Fq "grep -v -- '-----'" "${script}"; then
+  echo "acceptance must strip PEM armor before hashing step-up public key material" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'step-up-runtime-public-key-drift' "${script}"; then
   echo "acceptance must fail clearly when the broker runtime step-up public key does not match the run-scoped key" >&2
   exit 1

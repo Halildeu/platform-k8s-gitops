@@ -123,13 +123,20 @@ sha256_file() {
   fi
 }
 
+sha256_public_key_material_file() {
+  local file="$1" material
+  material="$(grep -v -- '-----' "$file" | tr -d '\r\n[:space:]')"
+  [[ -n "$material" ]] || return 1
+  sha256_text "$material"
+}
+
 runtime_step_up_public_key_matches() {
   local expected_sha="$1" runtime_pem="$2" runtime_sha
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" exec "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" \
     -- printenv REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM > "$runtime_pem" \
     || return 1
 
-  runtime_sha="$(sha256_file "$runtime_pem")"
+  runtime_sha="$(sha256_public_key_material_file "$runtime_pem")"
   [[ "$runtime_sha" == "$expected_sha" ]]
 }
 
@@ -139,7 +146,8 @@ verify_runtime_step_up_public_key() {
     -- printenv REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM > "$runtime_pem" \
     || fail_acceptance "step-up-runtime-public-key-read-failed"
 
-  runtime_sha="$(sha256_file "$runtime_pem")"
+  runtime_sha="$(sha256_public_key_material_file "$runtime_pem")" \
+    || fail_acceptance "step-up-runtime-public-key-material-empty"
   [[ "$runtime_sha" == "$expected_sha" ]] \
     || fail_acceptance "step-up-runtime-public-key-drift expected=${expected_sha} actual=${runtime_sha}"
 }
@@ -591,7 +599,8 @@ export_step_up_public_key() {
     -o jsonpath='{.data.REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM}' \
     | base64 -d > "${TMP_DIR}/step-up-public.pem"
   [[ -s "${TMP_DIR}/step-up-public.pem" ]] || fail_acceptance "step-up-public-key-missing"
-  step_up_public_key_sha256="$(shasum -a 256 "${TMP_DIR}/step-up-public.pem" | awk '{print $1}')"
+  step_up_public_key_sha256="$(sha256_public_key_material_file "${TMP_DIR}/step-up-public.pem")" \
+    || fail_acceptance "step-up-public-key-material-empty"
 }
 
 secret_key_to_file() {
@@ -773,7 +782,8 @@ generate_run_scoped_step_up_key() {
     >/dev/null 2>&1 || fail_acceptance "step-up-ephemeral-public-key-generation-failed"
 
   step_up_key_mode="run-scoped-ephemeral-test-key"
-  step_up_public_key_sha256="$(sha256_file "$public_path")"
+  step_up_public_key_sha256="$(sha256_public_key_material_file "$public_path")" \
+    || fail_acceptance "step-up-ephemeral-public-key-material-empty"
   apply_run_scoped_step_up_runtime_env_override "$public_path" "$run_id"
 
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout restart "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" >/dev/null \
