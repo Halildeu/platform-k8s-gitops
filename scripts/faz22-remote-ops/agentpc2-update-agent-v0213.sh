@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
 SEED_HELPER="${REPO_ROOT}/scripts/faz22-remote-ops/remote-response-terminal-update-agent-seed.sh"
 
-API_BASE="${ENDPOINT_ADMIN_API_BASE:-https://testai.acik.com/api/v1/admin}"
+API_BASE="${ENDPOINT_ADMIN_API_BASE:-https://testai.acik.com/api/v1/endpoint-admin}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-update-agent-v0213-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
