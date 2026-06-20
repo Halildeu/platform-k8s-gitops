@@ -80,6 +80,33 @@ jobs:
             2>&1 | sed -E 's/^::add-mask::.*/::add-mask::<redacted>/' | tee "${EVIDENCE_DIR}/workflow-smoke.log"
           exit_code="${PIPESTATUS[0]}"
 
+          checksum_exit=0
+          (
+            set -e
+            cd "${EVIDENCE_DIR}"
+            rm -f SHA256SUMS
+            tmp_sums="$(mktemp)"
+
+            if command -v shasum >/dev/null 2>&1; then
+              find . -type f ! -name SHA256SUMS -print0 \
+                | sort -z \
+                | xargs -0 shasum -a 256 > "${tmp_sums}"
+              mv "${tmp_sums}" SHA256SUMS
+              shasum -a 256 -c SHA256SUMS
+            else
+              find . -type f ! -name SHA256SUMS -print0 \
+                | sort -z \
+                | xargs -0 sha256sum > "${tmp_sums}"
+              mv "${tmp_sums}" SHA256SUMS
+              sha256sum -c SHA256SUMS
+            fi
+          )
+          checksum_exit="${?}"
+
+          if [ "${checksum_exit}" != "0" ] && [ "${exit_code}" = "0" ]; then
+            exit_code="${checksum_exit}"
+          fi
+
           echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
           echo "AGENTPC2_ACCEPTANCE_EXIT_CODE=${exit_code}"
           exit 0
