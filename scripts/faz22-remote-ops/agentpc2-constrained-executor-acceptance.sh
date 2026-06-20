@@ -54,6 +54,7 @@ PG_CLIENT_IMAGE="${PG_CLIENT_IMAGE:-postgres:16-alpine}"
 DB_SCHEMA="${DB_SCHEMA:-endpoint_admin_service}"
 
 STEP_UP_PRIVATE_KEY_PEM_PATH="${STEP_UP_PRIVATE_KEY_PEM_PATH:-}"
+STEP_UP_SECRET_STABILIZE_SECONDS="${STEP_UP_SECRET_STABILIZE_SECONDS:-8}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-rtt-acceptance-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 TMP_DIR="$(mktemp -d)"
@@ -705,6 +706,7 @@ generate_run_scoped_step_up_key() {
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --timeout=240s \
     || fail_acceptance "step-up-ephemeral-rollout-timeout"
   verify_runtime_digest
+  sleep "$STEP_UP_SECRET_STABILIZE_SECONDS"
 
   # Patching an ExternalSecret from Periodic to OnChange can itself trigger a
   # one-time reconcile of the target Secret. If that race restores the steady
@@ -718,6 +720,7 @@ generate_run_scoped_step_up_key() {
     kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --timeout=240s \
       || fail_acceptance "step-up-ephemeral-rollout-timeout-after-reapply"
     verify_runtime_digest
+    sleep "$STEP_UP_SECRET_STABILIZE_SECONDS"
   fi
   verify_live_step_up_public_key "$step_up_public_key_sha256" "${TMP_DIR}/live-step-up-public-final.pem"
 
