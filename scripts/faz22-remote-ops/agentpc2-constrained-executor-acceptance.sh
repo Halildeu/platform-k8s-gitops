@@ -54,7 +54,6 @@ PG_CLIENT_IMAGE="${PG_CLIENT_IMAGE:-postgres:16-alpine}"
 DB_SCHEMA="${DB_SCHEMA:-endpoint_admin_service}"
 
 STEP_UP_PRIVATE_KEY_PEM_PATH="${STEP_UP_PRIVATE_KEY_PEM_PATH:-}"
-STEP_UP_ESO_PAUSE_SETTLE_SECONDS="${STEP_UP_ESO_PAUSE_SETTLE_SECONDS:-30}"
 STEP_UP_SECRET_STABILIZE_SECONDS="${STEP_UP_SECRET_STABILIZE_SECONDS:-8}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-rtt-acceptance-$(date -u +%Y%m%dT%H%M%SZ)}"
 
@@ -78,9 +77,8 @@ recording_hint=""
 session_hash=""
 step_up_key_mode=""
 step_up_public_key_sha256=""
-STEP_UP_ESO_NAME="${STEP_UP_ESO_NAME:-endpoint-admin-remote-bridge-secrets}"
-STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE="${TMP_DIR}/step-up-eso-original-refresh-policy"
-STEP_UP_ESO_ORIGINAL_DATA_FILE="${TMP_DIR}/step-up-eso-original-data.json"
+STEP_UP_RUNTIME_SECRET_NAME_FILE="${TMP_DIR}/step-up-runtime-secret-name"
+REMOTE_BRIDGE_ORIGINAL_ENV_FILE="${TMP_DIR}/remote-bridge-original-env.json"
 operator_claims_file="${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
 approver_claims_file="${EVIDENCE_DIR}/approver-jwt-claims.redacted.json"
 
@@ -93,8 +91,12 @@ need_cmd() {
 
 cleanup() {
   set +e
-  restore_step_up_external_secret_refresh_policy
   stop_port_forward
+  if restore_remote_bridge_runtime_env_override; then
+    delete_run_scoped_step_up_runtime_secret
+  else
+    echo "CLEANUP_WARN remote-bridge runtime env restore failed; retaining run-scoped step-up Secret to avoid a missing Secret reference" >&2
+  fi
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
@@ -124,107 +126,6 @@ sha256_file() {
   fi
 }
 
-restore_step_up_external_secret_refresh_policy() {
-  [[ -s "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE" || -s "$STEP_UP_ESO_ORIGINAL_DATA_FILE" ]] || return 0
-
-  local original patch
-  original="$(cat "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE" 2>/dev/null || true)"
-  [[ -n "$original" ]] || original="Periodic"
-
-  if [[ -s "$STEP_UP_ESO_ORIGINAL_DATA_FILE" ]]; then
-    patch="$(jq -cn \
-      --arg policy "$original" \
-      --slurpfile data "$STEP_UP_ESO_ORIGINAL_DATA_FILE" \
-      '{spec:{refreshPolicy:$policy,data:$data[0]}}')"
-  else
-    patch="$(jq -cn --arg policy "$original" '{spec:{refreshPolicy:$policy}}')"
-  fi
-
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch externalsecret "$STEP_UP_ESO_NAME" \
-    --type merge -p "$patch" \
-    >/dev/null 2>&1 || true
-  rm -f "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE" "$STEP_UP_ESO_ORIGINAL_DATA_FILE"
-}
-
-pause_step_up_external_secret_refresh() {
-  local eso_json original patch remaining
-  eso_json="${TMP_DIR}/step-up-eso-before.json"
-
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get externalsecret "$STEP_UP_ESO_NAME" \
-    -o json > "$eso_json" \
-    || fail_acceptance "step-up-external-secret-read-failed"
-
-  original="$(jq -r '.spec.refreshPolicy // "Periodic"' "$eso_json")"
-  [[ -n "$original" ]] || original="Periodic"
-  printf '%s' "$original" > "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE"
-  jq '.spec.data // []' "$eso_json" > "$STEP_UP_ESO_ORIGINAL_DATA_FILE"
-
-  # The step-up key is run-scoped test material. The steady-state ExternalSecret
-  # owns the same Secret and will otherwise restore the Vault value immediately
-  # after our patch, producing a valid HTTP 200 with verified=false.
-  #
-  # RefreshPolicy=OnChange alone is not enough: the policy transition itself may
-  # trigger one reconcile, and a retained .spec.data entry still tells ESO to
-  # rewrite REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM from Vault. For this bounded
-  # smoke we temporarily remove only that mapping, then restore the exact data
-  # array in cleanup.
-  patch="$(jq -cn \
-    --slurpfile data "$STEP_UP_ESO_ORIGINAL_DATA_FILE" \
-    '($data[0] | map(select(.secretKey != "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM"))) as $filtered |
-      {spec:{refreshPolicy:"OnChange",data:$filtered}}')"
-
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch externalsecret "$STEP_UP_ESO_NAME" \
-    --type merge -p "$patch" >/dev/null \
-    || fail_acceptance "step-up-external-secret-pause-failed"
-
-  remaining="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get externalsecret "$STEP_UP_ESO_NAME" \
-    -o json | jq -r '[.spec.data[]? | select(.secretKey == "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")] | length')"
-  [[ "$remaining" == "0" ]] \
-    || fail_acceptance "step-up-external-secret-step-up-key-mapping-still-owned"
-}
-
-wait_for_step_up_external_secret_pause_to_settle() {
-  local deadline has_key
-  deadline=$((SECONDS + STEP_UP_ESO_PAUSE_SETTLE_SECONDS))
-
-  while (( SECONDS < deadline )); do
-    has_key="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get secret endpoint-admin-remote-bridge-secrets \
-      -o json | jq -r '.data | has("REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")' 2>/dev/null || true)"
-
-    if [[ "$has_key" == "false" ]]; then
-      echo "INFO ESO step-up key mapping removal observed in target Secret before run-scoped key patch" >&2
-      return 0
-    fi
-
-    sleep 1
-  done
-
-  echo "INFO ESO step-up key mapping removal was not observed within ${STEP_UP_ESO_PAUSE_SETTLE_SECONDS}s; proceeding after bounded settle window" >&2
-}
-
-verify_live_step_up_public_key() {
-  local expected_sha="$1" live_pem="$2" live_sha
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get secret endpoint-admin-remote-bridge-secrets \
-    -o jsonpath='{.data.REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM}' \
-    | base64 -d > "$live_pem" \
-    || fail_acceptance "step-up-live-public-key-read-failed"
-
-  live_sha="$(sha256_file "$live_pem")"
-  [[ "$live_sha" == "$expected_sha" ]] \
-    || fail_acceptance "step-up-live-public-key-drift expected=${expected_sha} actual=${live_sha}"
-}
-
-live_step_up_public_key_matches() {
-  local expected_sha="$1" live_pem="$2" live_sha
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get secret endpoint-admin-remote-bridge-secrets \
-    -o jsonpath='{.data.REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM}' \
-    | base64 -d > "$live_pem" \
-    || return 1
-
-  live_sha="$(sha256_file "$live_pem")"
-  [[ "$live_sha" == "$expected_sha" ]]
-}
-
 runtime_step_up_public_key_matches() {
   local expected_sha="$1" runtime_pem="$2" runtime_sha
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" exec "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" \
@@ -246,18 +147,169 @@ verify_runtime_step_up_public_key() {
     || fail_acceptance "step-up-runtime-public-key-drift expected=${expected_sha} actual=${runtime_sha}"
 }
 
-apply_run_scoped_step_up_secret_patch() {
-  local patch="$1" run_id="$2" expected_sha="$3" evidence_suffix="$4"
+delete_run_scoped_step_up_runtime_secret() {
+  [[ -s "$STEP_UP_RUNTIME_SECRET_NAME_FILE" ]] || return 0
 
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch secret endpoint-admin-remote-bridge-secrets \
-    --type merge -p "$patch" >/dev/null \
-    || fail_acceptance "step-up-ephemeral-public-key-secret-patch-failed"
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" annotate secret endpoint-admin-remote-bridge-secrets \
-    "remote-bridge.platform/run-scoped-step-up-key=${run_id}" --overwrite >/dev/null 2>&1 || true
-
-  if ! live_step_up_public_key_matches "$expected_sha" "${TMP_DIR}/live-step-up-public-${evidence_suffix}.pem"; then
-    echo "INFO ESO-owned live step-up Secret did not retain the run-scoped key at ${evidence_suffix}; broker runtime env check remains authoritative" >&2
+  local secret_name
+  secret_name="$(cat "$STEP_UP_RUNTIME_SECRET_NAME_FILE" 2>/dev/null || true)"
+  if [[ -n "$secret_name" ]]; then
+    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" delete secret "$secret_name" \
+      --ignore-not-found >/dev/null 2>&1 || true
   fi
+  rm -f "$STEP_UP_RUNTIME_SECRET_NAME_FILE"
+}
+
+capture_remote_bridge_runtime_env() {
+  [[ -s "$REMOTE_BRIDGE_ORIGINAL_ENV_FILE" ]] && return 0
+
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get deploy "$REMOTE_BRIDGE_DEPLOYMENT" \
+    -o json \
+    | jq '
+      .spec.template.spec.containers[0] as $c |
+      (.metadata.annotations // {}) as $annotations |
+      {
+        hadStepUpEnv: any($c.env[]?; .name == "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM"),
+        stepUpEnv: (($c.env // [])[]? | select(.name == "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM") | .) // null,
+        hadRunScopedAnnotation: ($annotations | has("remote-bridge.platform/run-scoped-step-up-key")),
+        runScopedAnnotationValue: ($annotations["remote-bridge.platform/run-scoped-step-up-key"] // null)
+      }' \
+    > "$REMOTE_BRIDGE_ORIGINAL_ENV_FILE" \
+    || fail_acceptance "step-up-runtime-env-backup-failed"
+}
+
+restore_remote_bridge_runtime_env_override() {
+  [[ -s "$REMOTE_BRIDGE_ORIGINAL_ENV_FILE" ]] || return 0
+
+  local current_json patch annotation_had annotation_value live_matches
+  current_json="${TMP_DIR}/remote-bridge-current-env-restore.json"
+
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get deploy "$REMOTE_BRIDGE_DEPLOYMENT" \
+    -o json > "$current_json" \
+    || return 1
+
+  patch="$(jq -cn \
+    --slurpfile current "$current_json" \
+    --slurpfile original "$REMOTE_BRIDGE_ORIGINAL_ENV_FILE" '
+    $current[0] as $deploy |
+    $original[0] as $orig |
+    ($deploy.spec.template.spec.containers[0].env // []) as $env |
+    ($env | map(select(.name != "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM"))) as $filtered |
+    (if $orig.hadStepUpEnv then ($filtered + [$orig.stepUpEnv]) else $filtered end) as $restored |
+    if ($restored | length) > 0 then
+      [{op:(if ($deploy.spec.template.spec.containers[0] | has("env")) then "replace" else "add" end),
+        path:"/spec/template/spec/containers/0/env",
+        value:$restored}]
+    elif ($deploy.spec.template.spec.containers[0] | has("env")) then
+      [{op:"remove", path:"/spec/template/spec/containers/0/env"}]
+    else
+      []
+    end')"
+
+  if [[ "$patch" != "[]" ]]; then
+    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch deploy "$REMOTE_BRIDGE_DEPLOYMENT" \
+      --type json -p "$patch" >/dev/null \
+      || return 1
+  fi
+
+  annotation_had="$(jq -r '.hadRunScopedAnnotation' "$REMOTE_BRIDGE_ORIGINAL_ENV_FILE")"
+  if [[ "$annotation_had" == "true" ]]; then
+    annotation_value="$(jq -r '.runScopedAnnotationValue' "$REMOTE_BRIDGE_ORIGINAL_ENV_FILE")"
+    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" annotate deploy "$REMOTE_BRIDGE_DEPLOYMENT" \
+      "remote-bridge.platform/run-scoped-step-up-key=${annotation_value}" --overwrite >/dev/null \
+      || return 1
+  else
+    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" annotate deploy "$REMOTE_BRIDGE_DEPLOYMENT" \
+      "remote-bridge.platform/run-scoped-step-up-key-" --overwrite >/dev/null 2>&1 \
+      || true
+  fi
+
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" \
+    --timeout=240s >/dev/null \
+    || return 1
+
+  live_matches="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get deploy "$REMOTE_BRIDGE_DEPLOYMENT" \
+    -o json \
+    | jq -r --slurpfile original "$REMOTE_BRIDGE_ORIGINAL_ENV_FILE" '
+      .spec.template.spec.containers[0] as $c |
+      (.metadata.annotations // {}) as $annotations |
+      ($original[0]) as $orig |
+      ([($c.env // [])[]? | select(.name == "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")] | length) as $stepUpEnvCount |
+      ((if $orig.hadStepUpEnv then
+          ($stepUpEnvCount == 1 and ((($c.env // [])[]? | select(.name == "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")) == $orig.stepUpEnv))
+        else
+          ($stepUpEnvCount == 0)
+        end)
+       and
+       (if $orig.hadRunScopedAnnotation then
+          ($annotations["remote-bridge.platform/run-scoped-step-up-key"] == $orig.runScopedAnnotationValue)
+        else
+          ($annotations | has("remote-bridge.platform/run-scoped-step-up-key") | not)
+        end))')"
+  [[ "$live_matches" == "true" ]] || return 1
+
+  rm -f "$REMOTE_BRIDGE_ORIGINAL_ENV_FILE"
+}
+
+create_run_scoped_step_up_runtime_secret() {
+  local public_path="$1" run_id="$2" secret_name
+
+  secret_name="$(printf 'agentpc2-step-up-%s' "$run_id" \
+    | tr '[:upper:]' '[:lower:]' \
+    | tr -c 'a-z0-9-' '-' \
+    | sed -E 's/^-+//; s/-+$//; s/-+/-/g' \
+    | cut -c1-63)"
+  [[ -n "$secret_name" ]] || secret_name="agentpc2-step-up-manual"
+
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" delete secret "$secret_name" \
+    --ignore-not-found >/dev/null 2>&1 || true
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" create secret generic "$secret_name" \
+    --from-file=REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM="$public_path" \
+    --dry-run=client -o yaml \
+    | kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" apply -f - >/dev/null \
+    || fail_acceptance "step-up-runtime-public-key-secret-create-failed"
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" label secret "$secret_name" \
+    "app.kubernetes.io/name=agentpc2-step-up-smoke" \
+    "app.kubernetes.io/part-of=platform-acceptance-smoke" \
+    --overwrite >/dev/null 2>&1 || true
+
+  printf '%s' "$secret_name" > "$STEP_UP_RUNTIME_SECRET_NAME_FILE"
+}
+
+apply_run_scoped_step_up_runtime_env_override() {
+  local public_path="$1" run_id="$2" secret_name patch
+
+  capture_remote_bridge_runtime_env
+  create_run_scoped_step_up_runtime_secret "$public_path" "$run_id"
+  secret_name="$(cat "$STEP_UP_RUNTIME_SECRET_NAME_FILE")"
+
+  patch="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get deploy "$REMOTE_BRIDGE_DEPLOYMENT" \
+    -o json \
+    | jq -c --arg secretName "$secret_name" '
+      (.spec.template.spec.containers[0].env // []) as $env |
+      ($env | map(select(.name != "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM"))) as $filtered |
+      [
+        {
+          op: (if (.spec.template.spec.containers[0] | has("env")) then "replace" else "add" end),
+          path: "/spec/template/spec/containers/0/env",
+          value: (
+            $filtered + [{
+              name: "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM",
+              valueFrom: {
+                secretKeyRef: {
+                  name: $secretName,
+                  key: "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM"
+                }
+              }
+            }]
+          )
+        }
+      ]')"
+
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch deploy "$REMOTE_BRIDGE_DEPLOYMENT" \
+    --type json -p "$patch" >/dev/null \
+    || fail_acceptance "step-up-runtime-env-override-failed"
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" annotate deploy "$REMOTE_BRIDGE_DEPLOYMENT" \
+    "remote-bridge.platform/run-scoped-step-up-key=${run_id}" --overwrite >/dev/null 2>&1 || true
 }
 
 write_summary() {
@@ -756,7 +808,7 @@ generate_run_scoped_step_up_key() {
   [[ "$STEP_UP_EPHEMERAL_KEY_ENABLED" == "1" ]] \
     || fail_acceptance "step-up-private-key-unavailable-or-public-mismatch"
 
-  local key_path public_path public_b64 patch run_id
+  local key_path public_path run_id
   key_path="${TMP_DIR}/run-scoped-step-up-private-key.pem"
   public_path="${TMP_DIR}/run-scoped-step-up-public-key.pem"
   run_id="${GITHUB_RUN_ID:-manual-$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -767,15 +819,9 @@ generate_run_scoped_step_up_key() {
   openssl pkey -in "$key_path" -pubout -out "$public_path" \
     >/dev/null 2>&1 || fail_acceptance "step-up-ephemeral-public-key-generation-failed"
 
-  public_b64="$(base64 < "$public_path" | tr -d '\r\n')"
-  patch="$(jq -cn --arg pem "$public_b64" '{data:{REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM:$pem}}')"
-
-  pause_step_up_external_secret_refresh
-  wait_for_step_up_external_secret_pause_to_settle
-
   step_up_key_mode="run-scoped-ephemeral-test-key"
   step_up_public_key_sha256="$(sha256_file "$public_path")"
-  apply_run_scoped_step_up_secret_patch "$patch" "$run_id" "$step_up_public_key_sha256" "initial"
+  apply_run_scoped_step_up_runtime_env_override "$public_path" "$run_id"
 
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout restart "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" >/dev/null \
     || fail_acceptance "step-up-ephemeral-rollout-restart-failed"
@@ -784,19 +830,11 @@ generate_run_scoped_step_up_key() {
   verify_runtime_digest
   sleep "$STEP_UP_SECRET_STABILIZE_SECONDS"
 
-  # Patching an ExternalSecret from Periodic to OnChange can itself trigger a
-  # one-time reconcile of the target Secret. If that race restores the steady
-  # Vault key during rollout, re-apply the run-scoped key once and restart the
-  # broker again. The final drift guard below remains fail-closed.
+  # The run-scoped key is injected as an explicit Deployment env var backed by a
+  # smoke-only Secret. That keeps the test key out of the ESO-owned steady-state
+  # Secret while still making the broker pod runtime the authoritative check.
   if ! runtime_step_up_public_key_matches "$step_up_public_key_sha256" "${TMP_DIR}/runtime-step-up-public-after-rollout.pem"; then
-    echo "INFO broker runtime step-up public key did not match after rollout; reapplying run-scoped key once after ESO reconcile" >&2
-    apply_run_scoped_step_up_secret_patch "$patch" "$run_id" "$step_up_public_key_sha256" "reapply"
-    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout restart "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" >/dev/null \
-      || fail_acceptance "step-up-ephemeral-rollout-restart-failed-after-reapply"
-    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --timeout=240s \
-      || fail_acceptance "step-up-ephemeral-rollout-timeout-after-reapply"
-    verify_runtime_digest
-    sleep "$STEP_UP_SECRET_STABILIZE_SECONDS"
+    fail_acceptance "step-up-runtime-public-key-drift-after-env-override"
   fi
   verify_runtime_step_up_public_key "$step_up_public_key_sha256" "${TMP_DIR}/runtime-step-up-public-final.pem"
 
