@@ -29,7 +29,7 @@ POLL_SECONDS="${POLL_SECONDS:-900}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-15}"
 
 RELEASE_ID="${RELEASE_ID:-v0.2.13}"
-TARGET_VERSION="${TARGET_VERSION:-v0.2.13}"
+TARGET_VERSION="${TARGET_VERSION:-0.2.13}"
 BINARY_URL="${BINARY_URL:-https://github.com/Halildeu/platform-agent/releases/download/v0.2.13/endpoint-agent.exe}"
 MANIFEST_URL="${MANIFEST_URL:-https://github.com/Halildeu/platform-agent/releases/download/v0.2.13/release-manifest.json}"
 EXPECTED_SHA256="${EXPECTED_SHA256:-6e3a79b8ea076d08e2288be98359d3db6049b6179e655ceaff924f792736cd0c}"

@@ -14,7 +14,7 @@ EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/remote-response-terminal-update-agent-seed-$(
 
 RELEASE_ID="${RELEASE_ID:-v0.2.10}"
 CHANNEL="${CHANNEL:-PILOT}"
-TARGET_VERSION="${TARGET_VERSION:-v0.2.10}"
+TARGET_VERSION="${TARGET_VERSION:-0.2.10}"
 BINARY_URL="${BINARY_URL:-https://github.com/Halildeu/platform-agent/releases/download/v0.2.10/endpoint-agent.exe}"
 MANIFEST_URL="${MANIFEST_URL:-https://github.com/Halildeu/platform-agent/releases/download/v0.2.10/release-manifest.json}"
 EXPECTED_SHA256="${EXPECTED_SHA256:-a50344a4457959b95dfdfa22e6578e53cd6ec4b124830b506fe53503c18ba1ec}"
