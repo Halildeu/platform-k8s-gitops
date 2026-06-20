@@ -41,6 +41,14 @@ TOKEN_CLIENT_CANDIDATES="${TOKEN_CLIENT_CANDIDATES:-frontend remote-bridge-opera
 PG_CONTAINER="${PG_CONTAINER:-platform-pg-test}"
 PG_DATABASE="${PG_DATABASE:-endpoint_admin}"
 PG_USER="${PG_USER:-postgres}"
+PG_HOST="${PG_HOST:-127.0.0.1}"
+PG_PORT="${PG_PORT:-5433}"
+PG_SERVICE_HOST="${PG_SERVICE_HOST:-postgres}"
+PG_SERVICE_PORT="${PG_SERVICE_PORT:-5432}"
+PG_SECRET_NAME="${PG_SECRET_NAME:-endpoint-admin-remote-bridge-secrets}"
+PG_USER_SECRET_KEY="${PG_USER_SECRET_KEY:-SPRING_DATASOURCE_USERNAME}"
+PG_PASSWORD_SECRET_KEY="${PG_PASSWORD_SECRET_KEY:-SPRING_DATASOURCE_PASSWORD}"
+PG_CLIENT_IMAGE="${PG_CLIENT_IMAGE:-postgres:16-alpine}"
 DB_SCHEMA="${DB_SCHEMA:-endpoint_admin_service}"
 
 STEP_UP_PRIVATE_KEY_PEM_PATH="${STEP_UP_PRIVATE_KEY_PEM_PATH:-}"
@@ -409,6 +417,78 @@ export_step_up_public_key() {
   [[ -s "${TMP_DIR}/step-up-public.pem" ]] || fail_acceptance "step-up-public-key-missing"
 }
 
+secret_key_to_file() {
+  local secret_name="$1" key="$2" out="$3"
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get secret "$secret_name" \
+    -o "jsonpath={.data.${key}}" \
+    | base64 -d > "$out"
+  [[ -s "$out" ]] || fail_acceptance "secret-key-missing:${secret_name}/${key}"
+  chmod 0600 "$out"
+}
+
+read_pg_credentials() {
+  secret_key_to_file "$PG_SECRET_NAME" "$PG_USER_SECRET_KEY" "${TMP_DIR}/pg-user.txt"
+  secret_key_to_file "$PG_SECRET_NAME" "$PG_PASSWORD_SECRET_KEY" "${TMP_DIR}/pg-password.txt"
+}
+
+psql_query() {
+  local sql="$1" delimiter="${2:-|}"
+
+  if command -v docker >/dev/null 2>&1 && docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
+    docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DATABASE" -At -F "$delimiter" -v ON_ERROR_STOP=1 -c "$sql"
+    return 0
+  fi
+
+  if command -v psql >/dev/null 2>&1; then
+    read_pg_credentials
+    PGPASSWORD="$(cat "${TMP_DIR}/pg-password.txt")" \
+      psql -h "$PG_HOST" -p "$PG_PORT" -U "$(cat "${TMP_DIR}/pg-user.txt")" \
+      -d "$PG_DATABASE" -At -F "$delimiter" -v ON_ERROR_STOP=1 -c "$sql" \
+      && return 0
+  fi
+
+  local pod_name overrides
+  pod_name="agentpc2-psql-$(date -u +%Y%m%d%H%M%S)-$RANDOM"
+  overrides="$(jq -nc \
+    --arg podName "$pod_name" \
+    --arg image "$PG_CLIENT_IMAGE" \
+    --arg host "$PG_SERVICE_HOST" \
+    --arg port "$PG_SERVICE_PORT" \
+    --arg database "$PG_DATABASE" \
+    --arg delimiter "$delimiter" \
+    --arg secretName "$PG_SECRET_NAME" \
+    --arg userKey "$PG_USER_SECRET_KEY" \
+    --arg passwordKey "$PG_PASSWORD_SECRET_KEY" \
+    --arg sql "$sql" \
+    '{
+      apiVersion: "v1",
+      spec: {
+        restartPolicy: "Never",
+        containers: [{
+          name: $podName,
+          image: $image,
+          env: [
+            {name: "PGHOST", value: $host},
+            {name: "PGPORT", value: $port},
+            {name: "PGDATABASE", value: $database},
+            {name: "PGDELIMITER", value: $delimiter},
+            {name: "SQL", value: $sql},
+            {name: "PGUSER", valueFrom: {secretKeyRef: {name: $secretName, key: $userKey}}},
+            {name: "PGPASSWORD", valueFrom: {secretKeyRef: {name: $secretName, key: $passwordKey}}}
+          ],
+          command: ["sh", "-ceu"],
+          args: ["psql -h \"$PGHOST\" -p \"$PGPORT\" -U \"$PGUSER\" -d \"$PGDATABASE\" -At -F \"$PGDELIMITER\" -v ON_ERROR_STOP=1 -c \"$SQL\""]
+        }]
+      }
+    }')"
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" run "$pod_name" \
+    --rm -i --restart=Never \
+    --image="$PG_CLIENT_IMAGE" \
+    --labels="app.kubernetes.io/name=agentpc2-psql-smoke,app.kubernetes.io/part-of=platform" \
+    --quiet=true \
+    --overrides="$overrides"
+}
+
 candidate_private_keys() {
   if [[ -n "$STEP_UP_PRIVATE_KEY_PEM_PATH" ]]; then
     printf '%s\n' "$STEP_UP_PRIVATE_KEY_PEM_PATH"
@@ -505,8 +585,7 @@ where d.id='${DEVICE_ID}'::uuid or lower(d.hostname)=lower('${DEVICE_HOSTNAME}')
 order by case when d.id='${DEVICE_ID}'::uuid then 0 else 1 end,
          d.last_seen_at desc nulls last
 limit 1;"
-  docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DATABASE" -At -F '|' -c "$sql" \
-    > "$device_file"
+  psql_query "$sql" '|' > "$device_file"
 
   local row id hostname version endpoint_status last_seen heartbeat_at caps device_json manifest_ok decision reason_text
   row="$(head -n 1 "$device_file" || true)"
@@ -612,7 +691,7 @@ SELECT jsonb_build_object(
 FROM ${DB_SCHEMA}.session_recording_entry
 WHERE chain_id = '${SESSION_ID}'
 ORDER BY seq;"
-  docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DATABASE" -At -c "$sql" > "$raw_rows"
+  psql_query "$sql" > "$raw_rows"
   SOURCE_RECORDING_ROWS_FILE="$raw_rows" \
   EVIDENCE_DIR="$EVIDENCE_DIR" \
     "$REPO_ROOT/scripts/faz22-remote-ops/remote-response-terminal-recording-export.sh"
@@ -651,7 +730,7 @@ sha256_manifest() {
 }
 
 main() {
-  for cmd in kubectl jq curl docker openssl python3 shasum base64; do
+  for cmd in kubectl jq curl openssl python3 shasum base64; do
     need_cmd "$cmd"
   done
   mkdir -p "$EVIDENCE_DIR"
