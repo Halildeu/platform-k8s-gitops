@@ -9,7 +9,7 @@ set -euo pipefail
 # Approved Script Runner as an installer, and never opens a shell/RDP/WinRM/SMB
 # path. Live API mutations require LIVE_MUTATION=1 plus explicit RUN_* flags.
 
-API_BASE="${ENDPOINT_ADMIN_API_BASE:-https://testai.acik.com/api/v1/admin}"
+API_BASE="${ENDPOINT_ADMIN_API_BASE:-https://testai.acik.com/api/v1/endpoint-admin}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/remote-response-terminal-update-agent-seed-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 RELEASE_ID="${RELEASE_ID:-v0.2.10}"
