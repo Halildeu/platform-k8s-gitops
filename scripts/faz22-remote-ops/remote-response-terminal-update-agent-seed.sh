@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Faz 22.6.3 EndpointAgent v0.2.10 release-catalog seed helper.
+# Faz 22.6.3 EndpointAgent release-catalog seed helper.
 #
 # This helper prepares or executes the approved EndpointAgent release-catalog
 # path that unblocks platform-agent#208 runtime smoke. It never talks directly
@@ -287,7 +287,7 @@ verify_artifacts() {
     > "$headers_file"
   rm -f "$raw_headers"
   if [[ "$VERIFY_BINARY_SHA" == "1" ]]; then
-    tmp_bin="$(mktemp "${TMPDIR:-/tmp}/endpoint-agent-v0210.XXXXXX")"
+    tmp_bin="$(mktemp "${TMPDIR:-/tmp}/endpoint-agent.XXXXXX")"
     if ! curl -fsSL --max-time 120 "$BINARY_URL" -o "$tmp_bin"; then
       rm -f "$tmp_bin"
       die "binary download failed"
@@ -458,7 +458,7 @@ write_summary() {
         "release row APPROVED and enabled with maker-checker subjects",
         "negative dispatch rejects caller-supplied trust fields",
         "catalog-bound UPDATE_AGENT dispatch response",
-        "post-update heartbeat proving v0.2.10 before platform-agent#208 terminal smoke"
+        ("post-update heartbeat proving " + $targetVersion + " before platform-agent#208 terminal smoke")
       ],
       rejectedPaths: [
         "direct database insert",
