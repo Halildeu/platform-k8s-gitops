@@ -68,22 +68,30 @@ GitOps + public edge evidence:
   `49dfe1fc33a286a575f87b93c4f524ae24b619cd`, with the endpoint-admin
   service CI and security gates green before merge.
 - AgentPC2 constrained-executor acceptance rerun
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27868590359`
-  supersedes the earlier same-day rerun `27867580698` for the current no-go
-  evidence. It reached the staging prerequisite checks and then failed
-  intentionally with no-go reason `pilot-readiness-agent-version-mismatch`.
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27869889116`
+  supersedes earlier same-day reruns `27869662051`, `27868590359`, and
+  `27867580698` for the current no-go evidence. It reached the staging
+  prerequisite checks and then failed intentionally with no-go reason
+  `pilot-readiness-agent-version-mismatch`.
 - That rerun verified the endpoint-admin remote-bridge deployment/pod digest
   prerequisite as
   `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`.
 - The same rerun verified the artifact-host `v0.2.13` release manifest and
   artifact-host digest
   `sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`.
-- The no-go artifact is
-  `agentpc2-constrained-executor-evidence-27868590359`; known evidence hashes:
-  `summary.json` SHA256
-  `f336606cf6f0c64dd8f71a13b35cdad113c9268b26e978017324b213d2d8c9ab` and
+- The current no-go artifact is
+  `agentpc2-constrained-executor-evidence-27869889116`. `platform-k8s-gitops#1776`
+  (`94327b5129a527d2d542058b98cb69b0df8ff5d2`) hardened the workflow so the
+  uploaded evidence bundle recomputes `SHA256SUMS` after `workflow-smoke.log`
+  finalization. Downloaded artifact verification with
+  `shasum -a 256 -c SHA256SUMS` passed for every uploaded file, including
+  `workflow-smoke.log`.
+- Known evidence hashes for run `27869889116`: `summary.json` SHA256
+  `dc1af2bd3b15f180dca02ed8a172a6c9963d11e72123cf2bcef7896cd21bc472`,
   `pilot-readiness/summary.json` SHA256
-  `56e23f39233197298d466912d52b2bf72fe80d21f0e8178a4e52226dc910952e`.
+  `0783f2f3fb629a8b75e93c61b391014dab55ffce4cba8c1253d076d42fcac380`,
+  and `workflow-smoke.log` SHA256
+  `b82611986cb06b44a9cf25291832f875ba2f2a82baaa80599ae99d615ddb0128`.
 
 Acceptance boundary:
 
@@ -93,7 +101,7 @@ Acceptance boundary:
   `fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a`, resolved the existing product
   device row `2f7ad30f-970a-42e7-8af8-08764ae6066f`, and observed
   `agent_version=v0.2.12`, `status=ONLINE`, `capabilities=[]`, and
-  `last_seen_at=2026-06-20 10:37:49.030519+00`; no operation-capable
+  `last_seen_at=2026-06-20 11:33:49.486324+00`; no operation-capable
   `v0.2.13` heartbeat was present.
 - `platform-k8s-gitops#1768` remains blocked until the generated
   `agentpc2-first-install-bootstrap.ps1` runs endpoint-local on AgentPC2 from
