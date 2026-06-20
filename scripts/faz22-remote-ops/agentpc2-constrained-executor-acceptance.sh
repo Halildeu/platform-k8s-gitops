@@ -54,6 +54,7 @@ PG_CLIENT_IMAGE="${PG_CLIENT_IMAGE:-postgres:16-alpine}"
 DB_SCHEMA="${DB_SCHEMA:-endpoint_admin_service}"
 
 STEP_UP_PRIVATE_KEY_PEM_PATH="${STEP_UP_PRIVATE_KEY_PEM_PATH:-}"
+STEP_UP_ESO_PAUSE_SETTLE_SECONDS="${STEP_UP_ESO_PAUSE_SETTLE_SECONDS:-30}"
 STEP_UP_SECRET_STABILIZE_SECONDS="${STEP_UP_SECRET_STABILIZE_SECONDS:-8}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-rtt-acceptance-$(date -u +%Y%m%dT%H%M%SZ)}"
 
@@ -180,6 +181,25 @@ pause_step_up_external_secret_refresh() {
     -o json | jq -r '[.spec.data[]? | select(.secretKey == "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")] | length')"
   [[ "$remaining" == "0" ]] \
     || fail_acceptance "step-up-external-secret-step-up-key-mapping-still-owned"
+}
+
+wait_for_step_up_external_secret_pause_to_settle() {
+  local deadline has_key
+  deadline=$((SECONDS + STEP_UP_ESO_PAUSE_SETTLE_SECONDS))
+
+  while (( SECONDS < deadline )); do
+    has_key="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get secret endpoint-admin-remote-bridge-secrets \
+      -o json | jq -r '.data | has("REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")' 2>/dev/null || true)"
+
+    if [[ "$has_key" == "false" ]]; then
+      echo "INFO ESO step-up key mapping removal observed in target Secret before run-scoped key patch" >&2
+      return 0
+    fi
+
+    sleep 1
+  done
+
+  echo "INFO ESO step-up key mapping removal was not observed within ${STEP_UP_ESO_PAUSE_SETTLE_SECONDS}s; proceeding after bounded settle window" >&2
 }
 
 verify_live_step_up_public_key() {
@@ -751,6 +771,7 @@ generate_run_scoped_step_up_key() {
   patch="$(jq -cn --arg pem "$public_b64" '{data:{REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM:$pem}}')"
 
   pause_step_up_external_secret_refresh
+  wait_for_step_up_external_secret_pause_to_settle
 
   step_up_key_mode="run-scoped-ephemeral-test-key"
   step_up_public_key_sha256="$(sha256_file "$public_path")"
