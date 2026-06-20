@@ -38,6 +38,16 @@ if ! grep -Fq 'pause_step_up_external_secret_refresh' "${script}"; then
   exit 1
 fi
 
+if ! grep -Fq 'STEP_UP_ESO_ORIGINAL_DATA_FILE' "${script}"; then
+  echo "acceptance must back up and restore the ExternalSecret data array during run-scoped step-up key smoke" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'select(.secretKey != "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")' "${script}"; then
+  echo "acceptance must temporarily remove only the ESO step-up key mapping before writing a run-scoped key" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'apply_run_scoped_step_up_secret_patch' "${script}"; then
   echo "acceptance must apply the run-scoped step-up Secret patch through a reusable verified helper" >&2
   exit 1

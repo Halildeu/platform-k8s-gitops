@@ -79,6 +79,7 @@ step_up_key_mode=""
 step_up_public_key_sha256=""
 STEP_UP_ESO_NAME="${STEP_UP_ESO_NAME:-endpoint-admin-remote-bridge-secrets}"
 STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE="${TMP_DIR}/step-up-eso-original-refresh-policy"
+STEP_UP_ESO_ORIGINAL_DATA_FILE="${TMP_DIR}/step-up-eso-original-data.json"
 operator_claims_file="${EVIDENCE_DIR}/operator-jwt-claims.redacted.json"
 approver_claims_file="${EVIDENCE_DIR}/approver-jwt-claims.redacted.json"
 
@@ -123,31 +124,62 @@ sha256_file() {
 }
 
 restore_step_up_external_secret_refresh_policy() {
-  [[ -s "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE" ]] || return 0
+  [[ -s "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE" || -s "$STEP_UP_ESO_ORIGINAL_DATA_FILE" ]] || return 0
 
-  local original
-  original="$(cat "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE")"
+  local original patch
+  original="$(cat "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE" 2>/dev/null || true)"
   [[ -n "$original" ]] || original="Periodic"
 
+  if [[ -s "$STEP_UP_ESO_ORIGINAL_DATA_FILE" ]]; then
+    patch="$(jq -cn \
+      --arg policy "$original" \
+      --slurpfile data "$STEP_UP_ESO_ORIGINAL_DATA_FILE" \
+      '{spec:{refreshPolicy:$policy,data:$data[0]}}')"
+  else
+    patch="$(jq -cn --arg policy "$original" '{spec:{refreshPolicy:$policy}}')"
+  fi
+
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch externalsecret "$STEP_UP_ESO_NAME" \
-    --type merge -p "$(jq -cn --arg policy "$original" '{spec:{refreshPolicy:$policy}}')" \
+    --type merge -p "$patch" \
     >/dev/null 2>&1 || true
-  rm -f "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE"
+  rm -f "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE" "$STEP_UP_ESO_ORIGINAL_DATA_FILE"
 }
 
 pause_step_up_external_secret_refresh() {
-  local original
-  original="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get externalsecret "$STEP_UP_ESO_NAME" \
-    -o jsonpath='{.spec.refreshPolicy}' 2>/dev/null || true)"
+  local eso_json original patch remaining
+  eso_json="${TMP_DIR}/step-up-eso-before.json"
+
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get externalsecret "$STEP_UP_ESO_NAME" \
+    -o json > "$eso_json" \
+    || fail_acceptance "step-up-external-secret-read-failed"
+
+  original="$(jq -r '.spec.refreshPolicy // "Periodic"' "$eso_json")"
   [[ -n "$original" ]] || original="Periodic"
   printf '%s' "$original" > "$STEP_UP_ESO_ORIGINAL_REFRESH_POLICY_FILE"
+  jq '.spec.data // []' "$eso_json" > "$STEP_UP_ESO_ORIGINAL_DATA_FILE"
 
   # The step-up key is run-scoped test material. The steady-state ExternalSecret
   # owns the same Secret and will otherwise restore the Vault value immediately
   # after our patch, producing a valid HTTP 200 with verified=false.
+  #
+  # RefreshPolicy=OnChange alone is not enough: the policy transition itself may
+  # trigger one reconcile, and a retained .spec.data entry still tells ESO to
+  # rewrite REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM from Vault. For this bounded
+  # smoke we temporarily remove only that mapping, then restore the exact data
+  # array in cleanup.
+  patch="$(jq -cn \
+    --slurpfile data "$STEP_UP_ESO_ORIGINAL_DATA_FILE" \
+    '($data[0] | map(select(.secretKey != "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM"))) as $filtered |
+      {spec:{refreshPolicy:"OnChange",data:$filtered}}')"
+
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" patch externalsecret "$STEP_UP_ESO_NAME" \
-    --type merge -p '{"spec":{"refreshPolicy":"OnChange"}}' >/dev/null \
+    --type merge -p "$patch" >/dev/null \
     || fail_acceptance "step-up-external-secret-pause-failed"
+
+  remaining="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get externalsecret "$STEP_UP_ESO_NAME" \
+    -o json | jq -r '[.spec.data[]? | select(.secretKey == "REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM")] | length')"
+  [[ "$remaining" == "0" ]] \
+    || fail_acceptance "step-up-external-secret-step-up-key-mapping-still-owned"
 }
 
 verify_live_step_up_public_key() {
