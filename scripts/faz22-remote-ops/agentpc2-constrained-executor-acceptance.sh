@@ -691,15 +691,9 @@ write_pilot_readiness() {
   local sql
   sql="
 select d.id,d.hostname,coalesce(d.agent_version,''),coalesce(d.status,''),
-       coalesce(d.last_seen_at::text,''),coalesce(h.received_at::text,''),
-       coalesce((h.payload->'capabilities')::text,'[]')
+       coalesce(d.last_seen_at::text,''),'' as heartbeat_at,
+       '[]' as capabilities
 from ${DB_SCHEMA}.endpoint_devices d
-left join lateral (
-  select * from ${DB_SCHEMA}.endpoint_heartbeats h
-  where h.device_id=d.id
-  order by h.received_at desc
-  limit 1
-) h on true
 where d.id='${DEVICE_ID}'::uuid or lower(d.hostname)=lower('${DEVICE_HOSTNAME}')
 order by case when d.id='${DEVICE_ID}'::uuid then 0 else 1 end,
          d.last_seen_at desc nulls last
