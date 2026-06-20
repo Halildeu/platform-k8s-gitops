@@ -430,6 +430,33 @@ terminal, RDP/WinRM/SMB/SSH/RPC veya reverse tunnel acceptance kanıtı değildi
 Bu kanıt gelmeden `#208`, broad rollout, production remote support veya
 TPM/device-key closure dili kullanılmaz.
 
+#### 0.7.6 2026-06-20 #208 v0.2.14 consent responder release
+
+`platform-agent#213` merged the gated pilot consent responder that keeps
+remote-bridge operation consent disabled by default and only enables the
+bounded pilot path through explicit installer/MSI configuration. Release
+`v0.2.14` then passed the trusted internal-CA EXE and MSI workflows:
+
+- trusted EXE/artifact-host workflow:
+  `https://github.com/Halildeu/platform-agent/actions/runs/27879277114`
+- trusted MSI workflow:
+  `https://github.com/Halildeu/platform-agent/actions/runs/27879277123`
+- artifact-host `v0.2.14` digest:
+  `sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`
+- public agent artifact SHA256:
+  `624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618`
+- EndpointAgent.zip SHA256:
+  `2d7b372c7a3dda548caec66fbcb9327a04e54531369b9b1f2bd7f0c56910a7b1`
+- signed MSI SHA256:
+  `D5289D68050C5B703C9EDBFF6F338941BF894BD71DB0067DABED6EBA7D3C17ED`
+- signer thumbprint:
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`
+
+This is release and desired-state evidence only. #208 remains open until the
+pilot endpoint consumes `v0.2.14` through an approved path and the constrained
+executor workflow records live outbound 443 mTLS `HELLO`, permit, constrained
+operation, negative/plaintext refusal, and audit evidence.
+
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
 planı tanımlar.

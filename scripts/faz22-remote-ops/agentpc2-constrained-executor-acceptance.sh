@@ -25,10 +25,10 @@ CATALOG_OPERATION_ID="${CATALOG_OPERATION_ID:-GET_HOSTNAME}"
 SESSION_ID="${SESSION_ID:-rb-agentpc2-$(date -u +%Y%m%dT%H%M%SZ)}"
 STEP_UP_EPHEMERAL_KEY_ENABLED="${STEP_UP_EPHEMERAL_KEY_ENABLED:-1}"
 
-EXPECTED_RELEASE_TAG="${EXPECTED_RELEASE_TAG:-v0.2.13}"
-EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-0.2.13}"
-EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-6e3a79b8ea076d08e2288be98359d3db6049b6179e655ceaff924f792736cd0c}"
-EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-9afe07b6eb1fa2c8b94b50181ec5265681e77a28ec3368bdd8d1a25fd59acec0}"
+EXPECTED_RELEASE_TAG="${EXPECTED_RELEASE_TAG:-v0.2.14}"
+EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-0.2.14}"
+EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618}"
+EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-2d7b372c7a3dda548caec66fbcb9327a04e54531369b9b1f2bd7f0c56910a7b1}"
 EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
 
 KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
@@ -917,7 +917,7 @@ limit 1;"
     reason_text="No matching endpoint device row for AgentPC2."
   elif [[ "$manifest_ok" != "true" ]]; then
     decision="artifact-manifest-mismatch"
-    reason_text="Artifact manifest does not match expected v0.2.13 hashes."
+    reason_text="Artifact manifest does not match expected v0.2.14 hashes."
   else
     decision="agent-version-mismatch"
     reason_text="Target endpoint does not report expected agent version."

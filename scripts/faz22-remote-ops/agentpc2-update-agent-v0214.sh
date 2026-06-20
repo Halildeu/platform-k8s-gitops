@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Faz 22.6.3 / platform-agent#208 AgentPC2 v0.2.13 product update gate.
+# Faz 22.6.3 / platform-agent#208 AgentPC2 v0.2.14 product update gate.
 #
 # This script runs only on the staging self-hosted runner. It exercises the
 # endpoint-admin release-catalog UPDATE_AGENT product path. It does not open an
@@ -13,7 +13,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
 SEED_HELPER="${REPO_ROOT}/scripts/faz22-remote-ops/remote-response-terminal-update-agent-seed.sh"
 
 API_BASE="${ENDPOINT_ADMIN_API_BASE:-https://testai.acik.com/api/v1/endpoint-admin}"
-EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-update-agent-v0213-$(date -u +%Y%m%dT%H%M%SZ)}"
+EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-update-agent-v0214-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
 KC_REALM="${KC_REALM:-platform-test}"
@@ -24,17 +24,17 @@ APPROVER_USERNAME="${APPROVER_USERNAME:-endpoint-admin-test-approver}"
 
 TARGET_DEVICE_ID="${TARGET_DEVICE_ID:-2f7ad30f-970a-42e7-8af8-08764ae6066f}"
 TARGET_DEVICE_HOSTNAME="${TARGET_DEVICE_HOSTNAME:-AgentPc2}"
-EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-0.2.13}"
+EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-0.2.14}"
 POLL_SECONDS="${POLL_SECONDS:-900}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-15}"
 
-RELEASE_ID="${RELEASE_ID:-v0.2.13}"
-TARGET_VERSION="${TARGET_VERSION:-0.2.13}"
-BINARY_URL="${BINARY_URL:-https://github.com/Halildeu/platform-agent/releases/download/v0.2.13/endpoint-agent.exe}"
-MANIFEST_URL="${MANIFEST_URL:-https://github.com/Halildeu/platform-agent/releases/download/v0.2.13/release-manifest.json}"
-EXPECTED_SHA256="${EXPECTED_SHA256:-6e3a79b8ea076d08e2288be98359d3db6049b6179e655ceaff924f792736cd0c}"
+RELEASE_ID="${RELEASE_ID:-v0.2.14}"
+TARGET_VERSION="${TARGET_VERSION:-0.2.14}"
+BINARY_URL="${BINARY_URL:-https://github.com/Halildeu/platform-agent/releases/download/v0.2.14/endpoint-agent.exe}"
+MANIFEST_URL="${MANIFEST_URL:-https://github.com/Halildeu/platform-agent/releases/download/v0.2.14/release-manifest.json}"
+EXPECTED_SHA256="${EXPECTED_SHA256:-624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618}"
 EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
-MAX_BYTES="${MAX_BYTES:-14108584}"
+MAX_BYTES="${MAX_BYTES:-14115240}"
 
 TMP_DIR="$(mktemp -d)"
 KC_ADMIN_PASS_FILE="${TMP_DIR}/kc-admin-password.txt"
@@ -433,11 +433,11 @@ main() {
     EXPECTED_SIGNER_THUMBPRINT="$EXPECTED_SIGNER_THUMBPRINT" \
     SIGNING_TIER=TRUSTED_SIGNED \
     MAX_BYTES="$MAX_BYTES" \
-    RELEASE_NOTES="Faz 22.6.3 AgentPC2 v0.2.13 seed for platform-agent#208" \
+    RELEASE_NOTES="Faz 22.6.3 AgentPC2 v0.2.14 seed for platform-agent#208" \
     TARGET_DEVICE_ID="$TARGET_DEVICE_ID" \
     TARGET_DEVICE_HOSTNAME="$TARGET_DEVICE_HOSTNAME" \
-    DISPATCH_REASON="Faz 22.6.3 AgentPC2 constrained-executor v0.2.13 product update for platform-agent#208" \
-    DISPATCH_IDEMPOTENCY_KEY="a2-v213-${GITHUB_RUN_ID:-manual}" \
+    DISPATCH_REASON="Faz 22.6.3 AgentPC2 constrained-executor v0.2.14 product update for platform-agent#208" \
+    DISPATCH_IDEMPOTENCY_KEY="a2-v214-${GITHUB_RUN_ID:-manual}" \
     LIVE_MUTATION=1 \
     RUN_CREATE=1 \
     RUN_APPROVE=1 \

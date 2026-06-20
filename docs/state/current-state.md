@@ -1,5 +1,70 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6.3 #208 v0.2.14 consent responder released; GitOps artifact-host pin pending merge (2026-06-20)
+
+**Session milestone**: the AgentPC2 product stream reached the broker, but the
+bounded operation still returned `session-not-active` because the endpoint did
+not emit the broker consent result. `platform-agent#213` corrected that source
+gap with a disabled-by-default consent responder seam and an explicit
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT` installer/MSI gate.
+
+Source and release evidence:
+
+- `platform-agent#213` merged at
+  `fe860dd13d14fda55258854693151fc7e68de534`, adding the gated pilot consent
+  responder plus installer/MSI configuration guards.
+- Trusted EXE release workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27879277114`
+  returned `conclusion=success` for tag `v0.2.14`.
+- Trusted MSI workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27879277123`
+  returned `conclusion=success` for tag `v0.2.14`.
+- Release manifest evidence: `endpoint_agent_sha256=624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618`,
+  `endpoint_agent_zip_sha256=2d7b372c7a3dda548caec66fbcb9327a04e54531369b9b1f2bd7f0c56910a7b1`,
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`,
+  signing tier `trusted-internal-ca`, and artifact-host image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.14@sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`.
+- Trusted MSI evidence: `EndpointAgent-0.2.14-signed.msi` SHA256
+  `D5289D68050C5B703C9EDBFF6F338941BF894BD71DB0067DABED6EBA7D3C17ED`,
+  `production=true`, `timestamped=true`, signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`, root certificate SHA256
+  `078494D03E2FB51EA35DB71FFC04B5C5230EE9F52E0D5A057B6F35B8F7E0B59E`.
+
+GitOps desired-state delta:
+
+- The test overlay artifact-host desired image is being advanced from
+  `v0.2.13@sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`
+  to
+  `v0.2.14@sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`.
+- This is desired-state release/pin evidence only until Project #2/PR merge,
+  platform-test sync, and artifact-host pod `imageID` parity are recorded.
+
+Live AgentPC2 recheck during this session:
+
+- `endpoint_admin_service.endpoint_devices` still shows `AgentPc2` product
+  device id `2f7ad30f-970a-42e7-8af8-08764ae6066f` as `ONLINE` in ring
+  `PILOT`, with `agent_version=v0.2.13` and `last_seen_at=2026-06-20
+  18:15:39.638051+00`.
+- The remote-bridge broker pod
+  `endpoint-admin-remote-bridge-6554577d8f-v6bsr` is `Ready 1/1` on
+  endpoint-admin digest
+  `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`.
+  Recent broker logs contain `HELLO_VERIFIED:cert=true,attestation=false,device=false`
+  at `2026-06-20T17:21:28Z`.
+- DB approval grants include recent `rb-agentpc2-*` `CONSTRAINED_PTY` grants,
+  but `session_recording_entry` has no corresponding AgentPC2 `AGENT_OUTPUT`
+  entry. This is **stream/approval-path signal**, not #208 constrained-operation
+  acceptance.
+
+Acceptance boundary:
+
+- `platform-agent#208` remains open/blocked until a pilot endpoint running
+  `v0.2.14` proves outbound product-channel `HELLO`, broker permit
+  verification, constrained operation output, negative/plaintext refusal, and
+  audit/evidence ledger entries.
+- Raw shell/RDP/WinRM/SMB/SSH/reverse-tunnel access remains diagnostic only and
+  does not satisfy the product remote-ops acceptance gate.
+
 ## Live Delta — Faz 22.6.3 #208 v0.2.13 staging prerequisites ready; AgentPC2 endpoint-local bootstrap pending (2026-06-20)
 
 **Session milestone**: AgentPC2 proved that the `v0.2.12` service environment
