@@ -16,10 +16,10 @@ OUTPUT_FILE="${OUTPUT_FILE:-}"
 EXPECTED_SCHEMA="${EXPECTED_SCHEMA:-faz22.1768.agentpc2-first-install-bootstrap.endpoint.v1}"
 EXPECTED_STATUS="${EXPECTED_STATUS:-installed-service-running}"
 EXPECTED_HOSTNAME="${EXPECTED_HOSTNAME:-AgentPc2}"
-EXPECTED_RELEASE_ID="${EXPECTED_RELEASE_ID:-v0.2.14}"
-EXPECTED_TARGET_VERSION="${EXPECTED_TARGET_VERSION:-0.2.14}"
-EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618}"
-EXPECTED_INSTALL_PS1_SHA256="${EXPECTED_INSTALL_PS1_SHA256:-5819207b63795ca0f14c1949f2a187dd996372f066992d692672e8f0d71c79df}"
+EXPECTED_RELEASE_ID="${EXPECTED_RELEASE_ID:-v0.2.16}"
+EXPECTED_TARGET_VERSION="${EXPECTED_TARGET_VERSION:-0.2.16}"
+EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-1acecdc944ef62c8248192d8b8bd4f67b13c70bd8b4f2cd879be717480fb19c8}"
+EXPECTED_INSTALL_PS1_SHA256="${EXPECTED_INSTALL_PS1_SHA256:-139fb6b50aa21462972aaeb206c7782c820e4cbe0553edd73543265bd86a8ceb}"
 EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
 EXPECTED_SIGNING_TIER="${EXPECTED_SIGNING_TIER:-trusted-internal-ca}"
 EXPECTED_AUTHENTICODE_STATUS="${EXPECTED_AUTHENTICODE_STATUS:-Valid}"
@@ -316,7 +316,7 @@ write_summary() {
       boundary:{
         proves:[
           "AgentPC2 endpoint-local first-install evidence passed verifier checks",
-          "Expected v0.2.14 binary/install/signer metadata is present in endpoint evidence",
+          "Expected " + $releaseId + " binary/install/signer metadata is present in endpoint evidence",
           "EndpointAgent service is running with outbound 443/SNI remote bridge configuration",
           "Private-key client-auth certificate with expected adcomputer SAN is present"
         ],

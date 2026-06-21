@@ -4,7 +4,7 @@ set -euo pipefail
 # Faz 22.6.3 / platform-k8s-gitops#1768 AgentPC2 first-install bootstrap gate.
 #
 # This script prepares a bounded, endpoint-local bootstrap package that can move
-# AgentPC2 from a non-operation-capable agent to the v0.2.14 operation-capable
+# AgentPC2 from a non-operation-capable agent to the selected operation-capable
 # release without opening inbound SSH/RDP/WinRM/SMB/RPC paths. It deliberately
 # does not claim platform-agent#208 acceptance; it only produces immutable
 # first-install evidence and the script required for the endpoint-local action.
@@ -13,8 +13,8 @@ RUN_ID="${GITHUB_RUN_ID:-local-$(date -u +%Y%m%dT%H%M%SZ)}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-first-install-bootstrap-${RUN_ID}}"
 TMP_DIR="$(mktemp -d)"
 
-RELEASE_ID="${RELEASE_ID:-v0.2.14}"
-TARGET_VERSION="${TARGET_VERSION:-0.2.14}"
+RELEASE_ID="${RELEASE_ID:-v0.2.16}"
+TARGET_VERSION="${TARGET_VERSION:-${RELEASE_ID#v}}"
 TARGET_HOSTNAME="${TARGET_HOSTNAME:-AgentPc2}"
 TARGET_PRODUCT_DEVICE_ID="${TARGET_PRODUCT_DEVICE_ID:-2f7ad30f-970a-42e7-8af8-08764ae6066f}"
 
@@ -25,14 +25,14 @@ BOOTSTRAP_PACKAGE_URL="${BOOTSTRAP_PACKAGE_URL:-${RELEASE_BASE_URL}/bootstrap-pa
 MANIFEST_URL="${MANIFEST_URL:-${RELEASE_BASE_URL}/release-manifest.json}"
 SHA256SUMS_URL="${SHA256SUMS_URL:-${RELEASE_BASE_URL}/SHA256SUMS}"
 
-EXPECTED_RELEASE_MANIFEST_SHA256="${EXPECTED_RELEASE_MANIFEST_SHA256:-37d3a5fb7fd90166ab62c2bfb82f77b6cc597ec9371217c1a5a81a0efa15b2c5}"
-EXPECTED_INSTALL_PS1_SHA256="${EXPECTED_INSTALL_PS1_SHA256:-5819207b63795ca0f14c1949f2a187dd996372f066992d692672e8f0d71c79df}"
+EXPECTED_RELEASE_MANIFEST_SHA256="${EXPECTED_RELEASE_MANIFEST_SHA256:-7b34836800705205b15a56e18d6f2ef5e46a3064ce5335e5196dce1dd9014c39}"
+EXPECTED_INSTALL_PS1_SHA256="${EXPECTED_INSTALL_PS1_SHA256:-139fb6b50aa21462972aaeb206c7782c820e4cbe0553edd73543265bd86a8ceb}"
 EXPECTED_BOOTSTRAP_PS1_SHA256="${EXPECTED_BOOTSTRAP_PS1_SHA256:-83292ab3b5c27a8c27c11c7774cf4157bbb23188b81b0adf2a5a29a70279c7f8}"
-EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618}"
-EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-2d7b372c7a3dda548caec66fbcb9327a04e54531369b9b1f2bd7f0c56910a7b1}"
+EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-1acecdc944ef62c8248192d8b8bd4f67b13c70bd8b4f2cd879be717480fb19c8}"
+EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-b11af93cea172e100872984eef46b9e13a305d87485b53517d22a7fbe7b2a7ae}"
 EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
 EXPECTED_SIGNING_TIER="${EXPECTED_SIGNING_TIER:-trusted-internal-ca}"
-EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0}"
+EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:307990110d8f85ef226b5a287c2c4096395b8de68db972572967ff59ef675900}"
 
 AUTO_ENROLL_API_URL="${AUTO_ENROLL_API_URL:-https://mtls.testai.acik.com/api/v1/endpoint-agent}"
 AUTO_ENROLL_SAN_URI_PREFIX="${AUTO_ENROLL_SAN_URI_PREFIX:-adcomputer:}"
@@ -104,6 +104,41 @@ download_verified() {
   if [[ "${actual_sha}" != "${expected_lower}" ]]; then
     echo "ERR SHA256 mismatch for ${url}: expected ${expected_lower}, got ${actual_sha}" >&2
     exit 3
+  fi
+}
+
+validate_release_inputs() {
+  if [[ "${#TARGET_HOSTNAME}" -gt 253 ]] || ! printf '%s' "${TARGET_HOSTNAME}" | grep -Eq '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)([.][A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$'; then
+    echo "ERR TARGET_HOSTNAME must be a DNS-safe hostname label/FQDN" >&2
+    exit 2
+  fi
+
+  if [[ "${RELEASE_ID}" != "v${TARGET_VERSION}" ]]; then
+    echo "ERR RELEASE_ID must equal vTARGET_VERSION: release=${RELEASE_ID} target=${TARGET_VERSION}" >&2
+    exit 2
+  fi
+
+  if ! printf '%s' "${RELEASE_ID}" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9._-]+)?$'; then
+    echo "ERR RELEASE_ID must look like vX.Y.Z" >&2
+    exit 2
+  fi
+
+  for value in \
+    "${EXPECTED_RELEASE_MANIFEST_SHA256}" \
+    "${EXPECTED_INSTALL_PS1_SHA256}" \
+    "${EXPECTED_BOOTSTRAP_PS1_SHA256}" \
+    "${EXPECTED_AGENT_SHA256}" \
+    "${EXPECTED_AGENT_ZIP_SHA256}"
+  do
+    if ! printf '%s' "${value}" | grep -Eq '^[a-f0-9]{64}$'; then
+      echo "ERR expected SHA256 values must be lowercase 64-char hex strings" >&2
+      exit 2
+    fi
+  done
+
+  if ! printf '%s' "${EXPECTED_ARTIFACT_HOST_DIGEST}" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
+    echo "ERR EXPECTED_ARTIFACT_HOST_DIGEST must match sha256:<64 hex>" >&2
+    exit 2
   fi
 }
 
@@ -395,7 +430,7 @@ try {
     boundary = @{
       proves = @(
         "Endpoint-local install script executed",
-        "EndpointAgent service install/start attempted with immutable v0.2.14 binary hash",
+        "EndpointAgent service install/start attempted with immutable \$ReleaseId binary hash",
         "Outbound remote bridge configuration written for 443/SNI broker"
       )
       doesNotProve = @(
@@ -506,7 +541,7 @@ write_summary() {
     --arg bootstrapScript "${BOOTSTRAP_PS1}" \
     --arg readme "${README_PATH}" \
     --argjson proves "$(write_json_string_array \
-      "v0.2.14 release manifest/install/bootstrap hashes verified" \
+      "${RELEASE_ID} release manifest/install/bootstrap hashes verified" \
       "Broker permit public key derived from live signer source or explicit public-key override" \
       "Endpoint-local first-install script generated with outbound-only 443/SNI remote bridge configuration" \
       "No inbound endpoint management port is required by this bootstrap package")" \
@@ -594,6 +629,7 @@ main() {
   need_cmd jq
   need_cmd openssl
   need_cmd base64
+  validate_release_inputs
 
   mkdir -p "${EVIDENCE_DIR}"
   chmod 0700 "${EVIDENCE_DIR}"
@@ -631,7 +667,7 @@ main() {
       (.signing_tier == $tier) and
       (.artifact_host_digest == $digest)
     ' "${manifest_path}" >/dev/null; then
-    echo "ERR release manifest did not match expected v0.2.14 immutable metadata" >&2
+    echo "ERR release manifest did not match expected ${RELEASE_ID} immutable metadata" >&2
     exit 3
   fi
 

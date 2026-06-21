@@ -13,7 +13,7 @@ on:
       device_id:
         description: 'Target endpoint device UUID'
         required: true
-        default: 'fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a'
+        default: '2f7ad30f-970a-42e7-8af8-08764ae6066f'
       device_hostname:
         description: 'Target endpoint hostname'
         required: true
@@ -32,11 +32,10 @@ env:
   K8S_NAMESPACE: platform-test
   REMOTE_BRIDGE_DEPLOYMENT: endpoint-admin-remote-bridge
   REMOTE_BRIDGE_LOCAL_PORT: '18096'
+  CONFIRM: ${{ inputs.confirm }}
   EXPECTED_DIGEST: ${{ inputs.expected_digest }}
   DEVICE_ID: ${{ inputs.device_id }}
   DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
-  KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
-  GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
   EVIDENCE_DIR: /tmp/agentpc2-constrained-executor-${{ github.run_id }}
 
 jobs:
@@ -50,18 +49,38 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${{ inputs.confirm }}" != "RUN_AGENTPC2_CONSTRAINED_EXECUTOR_ACCEPTANCE" ]; then
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "$value" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be a single line"
+                exit 1
+                ;;
+            esac
+          }
+
+          for name in CONFIRM EXPECTED_DIGEST DEVICE_ID DEVICE_HOSTNAME; do
+            reject_multiline "$name" "${!name}"
+          done
+
+          if [ "${CONFIRM}" != "RUN_AGENTPC2_CONSTRAINED_EXECUTOR_ACCEPTANCE" ]; then
             echo "::error::confirm input must be RUN_AGENTPC2_CONSTRAINED_EXECUTOR_ACCEPTANCE"
             exit 1
           fi
 
-          if ! printf '%s' "${{ inputs.expected_digest }}" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
+          if ! printf '%s' "${EXPECTED_DIGEST}" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
             echo "::error::expected_digest must match ^sha256:[a-f0-9]{64}$"
             exit 1
           fi
 
-          if ! printf '%s' "${{ inputs.device_id }}" | grep -Eq '^[0-9a-fA-F-]{36}$'; then
+          if ! printf '%s' "${DEVICE_ID}" | grep -Eq '^[0-9a-fA-F-]{36}$'; then
             echo "::error::device_id must look like a UUID"
+            exit 1
+          fi
+
+          if [ "${#DEVICE_HOSTNAME}" -gt 253 ] || ! printf '%s' "${DEVICE_HOSTNAME}" | grep -Eq '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)([.][A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$'; then
+            echo "::error::device_hostname must be a DNS-safe hostname label/FQDN"
             exit 1
           fi
 
@@ -71,6 +90,8 @@ jobs:
       - name: Run AgentPC2 constrained executor acceptance
         id: smoke
         continue-on-error: true
+        env:
+          KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
         run: |
           set +e
           mkdir -p "${EVIDENCE_DIR}"
@@ -113,6 +134,8 @@ jobs:
 
       - name: Publish redacted issue evidence
         if: always()
+        env:
+          GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
         run: |
           set -euo pipefail
 
@@ -159,12 +182,12 @@ jobs:
           {
             echo "AGENTPC2_PRODUCT_ACCEPTANCE status=${status}"
             echo ""
-            echo "- Source: platform-backend#718 merged; endpoint-admin remote-bridge digest expected \`${{ inputs.expected_digest }}\`."
+            echo "- Source: platform-backend#718 merged; endpoint-admin remote-bridge digest expected \`${EXPECTED_DIGEST}\`."
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Evidence dir on staging runner: \`${EVIDENCE_DIR}\`"
             echo "- Runtime deploy image: \`${deploy_image}\`"
             echo "- Runtime pod imageID: \`${pod_image_id}\`"
-            echo "- Target device: \`${{ inputs.device_hostname }}\` / \`${{ inputs.device_id }}\`"
+            echo "- Target device: \`${DEVICE_HOSTNAME}\` / \`${DEVICE_ID}\`"
             echo "- Session hash: \`${session_hash}\`"
             echo "- Open / approve / step-up challenge / step-up verify HTTP: \`${open_http}\` / \`${approve_http}\` / \`${challenge_http}\` / \`${verify_http}\`"
             echo "- Catalog operation: \`${operation_status}\`"
@@ -189,7 +212,7 @@ jobs:
           {
             echo "ENDPOINT_ADMIN_REMOTE_BRIDGE_ACCEPTANCE_LINK status=${status}"
             echo ""
-            echo "- platform-backend#718 is merged and deployed through endpoint-admin remote-bridge digest \`${{ inputs.expected_digest }}\`."
+            echo "- platform-backend#718 is merged and deployed through endpoint-admin remote-bridge digest \`${EXPECTED_DIGEST}\`."
             echo "- Staging runtime evidence is tracked in platform-agent#208 by this run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- AgentPC2 product-channel acceptance status: \`${status}\`"
             if [ -n "${reason}" ]; then
