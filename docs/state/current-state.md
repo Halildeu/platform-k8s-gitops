@@ -1,59 +1,78 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — AgentPC2 v0.2.19 artifact-host live; endpoint bootstrap still pending (2026-06-21)
+## Live Delta — AgentPC2 v0.2.20 endpoint bootstrap evidence received; product acceptance pending (2026-06-22)
 
 `platform-agent#208` remains not accepted. The latest product-channel rerun
-after `v0.2.18` proved signed `PERMIT` + `transportPushed=true`, but the durable
-recording still contained only `POLICY_EVENT` + `SESSION_END`; there was no
-`AGENT_OUTPUT` / DATA row. That no-go evidence is workflow
-`27912749262`, artifact `7777906183`, artifact zip SHA256
-`a9d5a111773d651ea7d049a178be0c401ba57f6505b9253429c7a42aebafad01`.
+after `v0.2.19` reached signed `PERMIT` + `transportPushed=true`, but the durable
+recording still contained no useful terminal output. The source fix-forward was
+merged in `platform-agent#219`, and `v0.2.20` is now the canonical acceptance
+target. AgentPC2 endpoint-local bootstrap to `v0.2.20` has now been performed
+by an operator on the endpoint; the constrained-executor product acceptance
+workflow remains the next gate for #208.
 
 Fix-forward source/release state:
 
-- `platform-agent#218` merged at
-  `ddaedea3e45e34499d9fff9364db1d11a5da2562`, adding a Windows fallback from
-  an empty-output active-session ConPTY helper result to the existing bounded
-  service-mode direct-capture path. The broker permit, allowlist, command hash,
-  no-shell, and output cap contracts are unchanged.
-- Main CI for `ddaedea3e45e34499d9fff9364db1d11a5da2562` passed, including
-  Windows Go test.
-- Trusted EXE release workflow `27913656957` published `v0.2.19` with
+- `platform-agent#219` merged at
+  `40c5cf8202773099df95c9de522168feebc6cce5`, tightening the Windows
+  constrained runner so zero-byte successful ConPTY reads are not treated as
+  EOF and empty constrained output fails closed. The broker permit, allowlist,
+  command hash, no-shell, and output cap contracts remain unchanged.
+- Trusted EXE/MSI release workflows `27916774165` / `27916774171` published
+  `v0.2.20` with
   signing tier `trusted-internal-ca`, signer thumbprint
   `D68F4F530137EB65CE44E3405E82B46205E753E5`, endpoint-agent.exe SHA256
-  `d294b79e925dc9564ee4fb0b0122698e351238709fa004268287563fb35b7839`,
+  `b28990d088b144927c0de7dd1ee83c2288e44a9357c2684892781164a1710b5a`,
   `EndpointAgent.zip` SHA256
-  `6278877cfac586dc371152ec008c06fb1c7fe6a4d623ed616245282ad22cec65`,
+  `9f7f5c2e227c7f88863095cec218322972a42464dc8042f064bb5accafaa1fe2`,
   and artifact-host image
-  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.19@sha256:39059fb9754c31037e966c0a54456f167e572c9fe61c4a29594f521bbb394a3f`.
-- GitOps PR `platform-k8s-gitops#1831` merged at
-  `7e6cc6e3375322c18fbdb72de3b3382b31dd408b`, updating the test artifact-host
-  desired-state, AgentPC2 bootstrap defaults, and constrained executor
-  acceptance defaults to the immutable `v0.2.19` release hashes.
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.20@sha256:5526b307b5181ed599077d164a3e162639671d56a39ba6bf8f47ef177dc30d67`.
+- GitOps PR `platform-k8s-gitops#1835` merged at
+  `3eef3e8be066c91c19f25c79169fc44828a89d71`, updating the test artifact-host
+  desired-state and AgentPC2 bootstrap defaults to the immutable `v0.2.20`
+  release hashes.
 - Live `k3d-test/platform-test` evidence now matches the immutable artifact-host
-  digest: deployment `artifact-host` generation `30`, observed `30`, ready
-  `2/2`; pods `artifact-host-b8687995d-4msws` and
-  `artifact-host-b8687995d-s6w9n` are ready with imageID
-  `ghcr.io/halildeu/platform-agent-artifacts@sha256:39059fb9754c31037e966c0a54456f167e572c9fe61c4a29594f521bbb394a3f`.
+  digest: deployment `artifact-host` generation `31`, observed `31`, ready
+  `2/2`; pods `artifact-host-7f675b8f49-c6zd5` and
+  `artifact-host-7f675b8f49-fr67b` are ready with imageID
+  `ghcr.io/halildeu/platform-agent-artifacts@sha256:5526b307b5181ed599077d164a3e162639671d56a39ba6bf8f47ef177dc30d67`.
 - Public `/artifacts/endpoint-agent/current/release-manifest.json` resolves to
-  `release_tag=v0.2.19`, endpoint-agent.exe SHA256
-  `d294b79e925dc9564ee4fb0b0122698e351238709fa004268287563fb35b7839`,
+  `release_tag=v0.2.20`, endpoint-agent.exe SHA256
+  `b28990d088b144927c0de7dd1ee83c2288e44a9357c2684892781164a1710b5a`,
   `install.ps1` SHA256
-  `b7933a600c079c9cd2623cb7d1161f62421d22e5724a6c48e37cd463f8801a57`, and
+  `7fbc90fd1f7a26b5003f9e9448862e85862736ed081e7cab0f68a8e125ec72b3`, and
   `EndpointAgent.zip` SHA256
-  `6278877cfac586dc371152ec008c06fb1c7fe6a4d623ed616245282ad22cec65`.
+  `9f7f5c2e227c7f88863095cec218322972a42464dc8042f064bb5accafaa1fe2`.
 - Public AgentPC2 bootstrap script at
   `/artifacts/endpoint-agent/bootstrap/agentpc2-first-install-bootstrap.ps1`
   has SHA256
-  `7bfe0c9b78bfc31f5fa44fd58abddc16727e796b050a03861c832df3ca8adf46`.
+  `411d2b73db8bb2e5380ff8ad15d83638ce3e76c5dcdbbcd06b9da7870e38e5b3`.
+- Bootstrap package gate workflow `27917353876` passed and posted #1768
+  `bootstrap-ready` evidence. Product `UPDATE_AGENT` workflow `27917408760`
+  remains no-go because the latest AgentPC2 heartbeat did not advertise
+  `UPDATE_AGENT`; it observed AgentPC2 online at `v0.2.19`.
+- Endpoint-local operator evidence from AgentPC2 on 2026-06-22 shows the public
+  bootstrap script SHA256 matched
+  `411d2b73db8bb2e5380ff8ad15d83638ce3e76c5dcdbbcd06b9da7870e38e5b3`; the
+  bootstrap installed `EndpointAgent` `v0.2.20`; Authenticode status was
+  `Valid`; signer thumbprint was
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`; endpoint-agent.exe SHA256 was
+  `b28990d088b144927c0de7dd1ee83c2288e44a9357c2684892781164a1710b5a`;
+  `install.ps1` SHA256 was
+  `7fbc90fd1f7a26b5003f9e9448862e85862736ed081e7cab0f68a8e125ec72b3`; the
+  service was `Running` as `LocalSystem`; remote bridge env pointed to
+  `remote-bridge-mtls.testai.acik.com:443` with TLS server name
+  `remote-bridge-mtls.testai.acik.com`, constrained PTY enabled, operations
+  enabled, pilot auto-consent enabled, and AD CS client cert SAN
+  `adcomputer:fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a`.
 
-Boundary: this proves only source merge, test artifact-host rollout, immutable
-imageID, and public artifact manifest/bootstrap availability. #208 still needs
-AgentPC2 endpoint-local bootstrap to `v0.2.19`, fresh outbound 443 mTLS
-HELLO/CONSENT/ACTIVE, signed PERMIT, `AGENT_OUTPUT`/DATA plus terminal marker,
-negative guards, and audit evidence. It does not claim unrestricted
-shell/RDP/WinRM/SMB/SSH, file browser, production remote-support readiness,
-broad rollout, or true TPM/device-key hardware attestation.
+Boundary: this proves source merge, test artifact-host rollout, immutable
+imageID, public artifact manifest/bootstrap availability, and endpoint-local
+operator execution of the v0.2.20 bootstrap. #208 still needs fresh outbound
+443 mTLS HELLO/CONSENT/ACTIVE, signed PERMIT, `AGENT_OUTPUT`/DATA plus
+terminal marker, negative guards, and audit evidence through the product-channel
+acceptance workflow. It does not claim unrestricted shell/RDP/WinRM/SMB/SSH,
+file browser, production remote-support readiness, broad rollout, or true
+TPM/device-key hardware attestation.
 
 ## Live Delta — AgentPC2 v0.2.18 online; broker needs bounded enrollment-backed pilot flag (2026-06-21)
 
