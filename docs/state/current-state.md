@@ -1,5 +1,38 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — AgentPC2 v0.2.21 bootstrap ready; product self-update blocked (2026-06-22)
+
+`platform-agent#208` remains not accepted. The `v0.2.21` artifact-host rollout is
+live, and the bounded AgentPC2 first-install bootstrap package is prepared, but
+the endpoint still needs to execute that bootstrap locally before the
+constrained-executor acceptance can pass.
+
+Latest acceptance/update evidence:
+
+- Constrained-executor acceptance workflow `27919845280` stopped before
+  open/approve/operation because product readiness still observed AgentPC2
+  reporting `agent_version=v0.2.20`; expected `v0.2.21`. Remote-bridge backend
+  digest matched the expected `sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d`,
+  so the no-go was not a broker image mismatch.
+- First-install bootstrap workflow `27920123622` produced
+  `status=bootstrap-ready` for `v0.2.21`, target `AgentPc2` /
+  `2f7ad30f-970a-42e7-8af8-08764ae6066f`, public endpoint bootstrap SHA256
+  `4f5c1549aefcb6e2652b69b28639e80e2f74a646c15f3c0a1d7b817d508a41ef`,
+  endpoint-agent.exe SHA256
+  `d346d35142a6a6be7f2bdd2cf8f26aaf652b25cabd8a6e14426c7a452baff2b1`,
+  and broker `remote-bridge-mtls.testai.acik.com:443`.
+- Product `UPDATE_AGENT` workflow `27920209771` correctly no-go'd with HTTP
+  `422`: AgentPC2 does not advertise the `UPDATE_AGENT` capability on the
+  latest heartbeat. This confirms the remaining step is endpoint-local
+  execution of the prepared `v0.2.21` bootstrap, not another GitOps or backend
+  digest change.
+
+Boundary: this proves the `v0.2.21` bootstrap is prepared and the product
+self-update path was tested and rejected for a contract reason. It does not yet
+prove AgentPC2 executed `v0.2.21`, `platform-agent#208` constrained operation
+acceptance, broad MSI/GPO rollout, unrestricted shell/RDP/WinRM/SMB/SSH,
+production remote-support readiness, or TPM/device-key hardware attestation.
+
 ## Live Delta — AgentPC2 v0.2.21 artifact-host live; product acceptance pending (2026-06-22)
 
 `platform-agent#208` remains not accepted. The latest product-channel rerun on
