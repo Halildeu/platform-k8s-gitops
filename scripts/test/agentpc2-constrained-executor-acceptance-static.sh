@@ -13,6 +13,26 @@ if ! grep -Fq 'TOKEN_CLIENT_CANDIDATES="${TOKEN_CLIENT_CANDIDATES:-remote-bridge
   exit 1
 fi
 
+if ! grep -Fq 'EXPECTED_RELEASE_TAG="${EXPECTED_RELEASE_TAG:-v0.2.17}"' "${script}"; then
+  echo "acceptance must default to the current AgentPC2 release tag v0.2.17" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-0.2.17}"' "${script}"; then
+  echo "acceptance must default to the current AgentPC2 agent version 0.2.17" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-418160181258594ce196a734f5d570473919ee6678c255a9fb92b7da0f16a4c2}"' "${script}"; then
+  echo "acceptance must default to the v0.2.17 endpoint-agent.exe SHA256" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-873a2906c85668ed92a5c656806e77ece82b9d3feabcd6f4cb6927837205cfb7}"' "${script}"; then
+  echo "acceptance must default to the v0.2.17 EndpointAgent.zip SHA256" >&2
+  exit 1
+fi
+
 if ! grep -Fq '.audContainsRemoteBridgeOperatorApi == true' "${script}"; then
   echo "acceptance must reject persona tokens without the remote-bridge-operator-api audience" >&2
   exit 1

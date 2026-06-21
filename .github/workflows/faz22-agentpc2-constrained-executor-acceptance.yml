@@ -9,7 +9,7 @@ on:
       expected_digest:
         description: 'Expected endpoint-admin remote-bridge deployment digest'
         required: true
-        default: 'sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84'
+        default: 'sha256:e5e247ebdd6da129a4ae1951b33cdef5d2357bc48d9b6a344098f9218126e3ba'
       device_id:
         description: 'Target endpoint device UUID'
         required: true
