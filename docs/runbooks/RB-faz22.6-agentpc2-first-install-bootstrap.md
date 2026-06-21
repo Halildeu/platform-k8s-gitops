@@ -8,7 +8,7 @@ Scope:
 - Target: AgentPC2 / AD object GUID
   `fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a` / product device
   `2f7ad30f-970a-42e7-8af8-08764ae6066f`
-- Release: platform-agent `v0.2.14`
+- Release: platform-agent `v0.2.17`
 
 ## Purpose
 
@@ -45,7 +45,7 @@ PREPARE_AGENTPC2_FIRST_INSTALL_BOOTSTRAP
 
 The workflow runs on the staging self-hosted runner and performs:
 
-- immutable release metadata verification for `v0.2.14`
+- immutable release metadata verification for `v0.2.17`
 - live broker permit public-key derivation from the staging signer secret
 - outbound-only remote bridge configuration generation for
   `remote-bridge-mtls.testai.acik.com:443`
@@ -57,7 +57,7 @@ The workflow must not mark #208 as accepted.
 
 ## Latest No-Go Handoff
 
-The 2026-06-20 v0.2.14 product-update rerun proved that the release and
+The 2026-06-21 v0.2.17 product-update rerun proved that the release and
 artifact-host prerequisites are present, but AgentPC2 still needs the
 endpoint-local bootstrap because its current heartbeat does not advertise
 `UPDATE_AGENT`.
@@ -65,24 +65,23 @@ endpoint-local bootstrap because its current heartbeat does not advertise
 Evidence:
 
 - product update workflow:
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27880118884`
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27904276569`
 - no-go reason: `update-agent-dispatch-failed`
 - backend response: HTTP `422`,
   `Agent does not advertise the 'UPDATE_AGENT' capability on the most recent
   heartbeat. Upgrade/configure the agent and retry.`
-- AgentPC2 observed state: `agent_version=v0.2.13`, `status=ONLINE`,
-  `last_seen_at=2026-06-20 18:48:39.637374+00`
+- AgentPC2 observed state: `agent_version=v0.2.16`, `status=ONLINE`,
+  `last_seen_at=2026-06-21T12:24:58.283725Z`
 - endpoint-admin remote-bridge digest prerequisite remains:
-  `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`
-- artifact-host `v0.2.14` live digest prerequisite:
-  `sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`;
-  both live pods reported matching imageID and restart count `0`
+  `sha256:e5e247ebdd6da129a4ae1951b33cdef5d2357bc48d9b6a344098f9218126e3ba`
+- artifact-host `v0.2.17` live digest prerequisite:
+  `sha256:4e7c95ba603e8fb36f17cffc46aff94c281186d080f5d8adf6e2ee0e3447419a`
 - public agent artifact SHA256:
-  `624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618`
+  `418160181258594ce196a734f5d570473919ee6678c255a9fb92b7da0f16a4c2`
 - generated bootstrap artifact source:
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27880208124`
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27904338823`
 - generated bootstrap status: `bootstrap-ready`; `install.ps1` SHA256
-  `5819207b63795ca0f14c1949f2a187dd996372f066992d692672e8f0d71c79df`;
+  `8e7dffa89dda0a7bc8d8e6dc210b22298441b478c19dd5b1622ab64f75a94f56`;
   broker `remote-bridge-mtls.testai.acik.com:443`; permit public-key SHA256
   `0a92abcd8f84619fb8f14f530beb94cbdc4e0981c9eb14a4756bdc85175a1110`
 
@@ -142,7 +141,7 @@ https://testai.acik.com/artifacts/endpoint-agent/bootstrap/agentpc2-first-instal
 Script SHA256:
 
 ```text
-c60fc426145f8ea0c33c417a4e94c66d001b3723167360ab365192eb31f275ab
+e3f5d49f50ba2f792e8750541cf84d381cc57c94944ea06fd26d51fad93eb65b
 ```
 
 Endpoint-local command:
@@ -158,7 +157,7 @@ $Script = Join-Path $WorkDir "agentpc2-first-install-bootstrap.ps1"
 New-Item -ItemType Directory -Force $WorkDir | Out-Null
 Invoke-WebRequest -UseBasicParsing -Uri "$Base/agentpc2-first-install-bootstrap.ps1" -OutFile $Script
 
-$ExpectedScriptSha256 = "c60fc426145f8ea0c33c417a4e94c66d001b3723167360ab365192eb31f275ab"
+$ExpectedScriptSha256 = "e3f5d49f50ba2f792e8750541cf84d381cc57c94944ea06fd26d51fad93eb65b"
 $ActualScriptSha256 = (Get-FileHash $Script -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($ActualScriptSha256 -ne $ExpectedScriptSha256) {
   throw "Bootstrap script SHA256 mismatch: $ActualScriptSha256"
@@ -255,7 +254,7 @@ INGEST_AGENTPC2_FIRST_INSTALL_EVIDENCE
 ```
 
 The ingest workflow verifies the endpoint-local summary schema, immutable
-`v0.2.14` hashes, signer thumbprint, `LocalSystem` service state, outbound
+`v0.2.17` hashes, signer thumbprint, `LocalSystem` service state, outbound
 `remote-bridge-mtls.testai.acik.com:443` configuration, redacted service
 environment, and private-key client-auth certificate with the expected
 `adcomputer:` SAN. A passing ingest may dispatch the normal #208 acceptance
