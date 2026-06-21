@@ -617,26 +617,53 @@ read_pg_credentials() {
   secret_key_to_file "$PG_SECRET_NAME" "$PG_PASSWORD_SECRET_KEY" "${TMP_DIR}/pg-password.txt"
 }
 
+restore_errexit() {
+  local was_enabled="$1"
+  if (( was_enabled )); then
+    set -e
+  else
+    set +e
+  fi
+}
+
 psql_query() {
-  local sql="$1" delimiter="${2:-|}"
+  local sql="$1" delimiter="${2:-|}" status errexit_enabled
+
+  case "$-" in
+    *e*) errexit_enabled=1 ;;
+    *) errexit_enabled=0 ;;
+  esac
 
   if command -v docker >/dev/null 2>&1 && docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
+    set +e
     printf '%s\n' "$sql" \
       | docker exec -i "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DATABASE" \
         -At -F "$delimiter" -v ON_ERROR_STOP=1 -f -
+    status=$?
+    restore_errexit "$errexit_enabled"
+    if (( status != 0 )); then
+      [[ "${PSQL_QUERY_ALLOW_FAILURE:-0}" == "1" ]] && return "$status"
+      fail_acceptance "postgres-query-failed"
+    fi
     return 0
   fi
 
   if command -v psql >/dev/null 2>&1; then
     read_pg_credentials
+    set +e
     printf '%s\n' "$sql" \
       | PGPASSWORD="$(cat "${TMP_DIR}/pg-password.txt")" \
       psql -h "$PG_HOST" -p "$PG_PORT" -U "$(cat "${TMP_DIR}/pg-user.txt")" \
-      -d "$PG_DATABASE" -At -F "$delimiter" -v ON_ERROR_STOP=1 -f - \
-      && return 0
+      -d "$PG_DATABASE" -At -F "$delimiter" -v ON_ERROR_STOP=1 -f -
+    status=$?
+    restore_errexit "$errexit_enabled"
+    if (( status == 0 )); then
+      return 0
+    fi
+    [[ "${PSQL_QUERY_ALLOW_FAILURE:-0}" == "1" ]] && return "$status"
   fi
 
-  local pod_name overrides pod_log output status
+  local pod_name overrides pod_log output
   pod_name="agentpc2-psql-$(date -u +%Y%m%d%H%M%S)-$RANDOM"
   pod_log="${EVIDENCE_DIR}/postgres-client-pod.log"
   overrides="$(jq -nc \
@@ -721,10 +748,11 @@ psql_query() {
   status=$?
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" delete pod "$pod_name" \
     --ignore-not-found >/dev/null 2>&1 || true
-  set -e
+  restore_errexit "$errexit_enabled"
 
   if (( status != 0 )); then
     sed 's/[[:cntrl:]]//g' "$pod_log" >&2 || true
+    [[ "${PSQL_QUERY_ALLOW_FAILURE:-0}" == "1" ]] && return "$status"
     fail_acceptance "postgres-client-pod-query-failed"
   fi
 
@@ -919,7 +947,7 @@ order by case when d.id=:'device_id'::uuid then 0 else 1 end,
          d.last_seen_at desc nulls last
 limit 1;"
   set +e
-  psql_query_with_vars "$sql" '|' "device_id=${DEVICE_ID}" "device_hostname=${DEVICE_HOSTNAME}" > "$device_file" 2>"${dir}/device-heartbeat-capabilities.stderr"
+  PSQL_QUERY_ALLOW_FAILURE=1 psql_query_with_vars "$sql" '|' "device_id=${DEVICE_ID}" "device_hostname=${DEVICE_HOSTNAME}" > "$device_file" 2>"${dir}/device-heartbeat-capabilities.stderr"
   query_status=$?
   set -e
 
