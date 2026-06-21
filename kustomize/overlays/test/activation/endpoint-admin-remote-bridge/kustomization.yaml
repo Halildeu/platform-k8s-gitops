@@ -55,7 +55,7 @@
 #     AD CS machine cert enrollment rotates the active cert row before the
 #     AgentPC2 #208 product-channel smoke rechecks device-bound HELLO.
 #   - immutable test digest:
-#     sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84
+#     sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -123,6 +123,10 @@ images:
   # verification.
   # Re-pinned to the live broker imageID proven on the dedicated
   # remote-bridge-mtls.testai.acik.com:443 SNI path.
+  # 2026-06-21 Faz 22.6 AgentPC2 constrained executor terminal-output audit
+  # (backend #724 -> sha-0d521d7). Re-pinned with the primary endpoint-admin
+  # overlay so the owner-gated broker path records DATA frames as AGENT_OUTPUT
+  # and EndStream as SESSION_END during #208/#1768 acceptance rerun.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:2c023f64c35701b827927041d0b6ae24cc3a772667e626a3a5f3e6eebb59ff84
+    digest: sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d
