@@ -1,5 +1,35 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — AgentPC2 v0.2.16 installed; canonical env mismatch blocks ACTIVE (2026-06-21)
+
+`platform-agent#208` remains open. AgentPC2 endpoint-local bootstrap evidence
+now shows `EndpointAgent` `v0.2.16` installed and running with outbound
+`remote-bridge-mtls.testai.acik.com:443`, but the guarded acceptance workflow
+`27897404910` still ended `no-go`: open/approve/step-up succeeded, catalog
+negative tests stayed fail-closed, and the catalog `GET_HOSTNAME` operation
+returned `DENY/session-not-active`.
+
+Root cause found in source/config comparison: the installed service environment
+still carries earlier alias keys such as
+`ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED`,
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64`, and
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_KEY_ID`, while the `v0.2.16` agent binary
+loads the canonical operation-capable keys
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PTY_ENABLED`,
+`ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_PUBLIC_KEY_B64`,
+`ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_KID`, and
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT`.
+
+Desired-state follow-up: the public AgentPC2 bootstrap ConfigMap now publishes
+`agentpc2-remote-bridge-canonical-env-patch-v7.ps1` to migrate an already
+installed `v0.2.16` endpoint to canonical constrained-PTY env keys and
+owner-gated pilot auto-consent. The same canonical env patch is embedded in the
+first-install bootstrap path so a fresh rerun does not recreate the alias drift.
+This patch is not acceptance evidence by itself; after endpoint-local execution,
+`#208` still requires fresh product-channel `HELLO`, `CONSENT_GRANTED`/`ACTIVE`,
+`PERMIT`, `transportPushed=true`, constrained `GET_HOSTNAME`, same-session
+`AGENT_OUTPUT`, safe negative matrix, and audit/WORM evidence.
+
 ## Live Delta — remote-bridge-mtls SNI broker path proven via ingress-nginx; #208 still lacks fresh AGENT_OUTPUT (2026-06-21)
 
 `remote-bridge-mtls.testai.acik.com:443` is currently routed to the dedicated
