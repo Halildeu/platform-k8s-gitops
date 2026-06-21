@@ -1,5 +1,48 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — AgentPC2 v0.2.18 bootstrap installed; acceptance defaults need v0.2.18 rerun (2026-06-21)
+
+`platform-k8s-gitops#1768` has fresh endpoint-local bootstrap evidence for
+AgentPC2 on the published `v0.2.18` package, but `platform-agent#208` remains
+not accepted until the product-channel acceptance workflow captures a new
+bounded operation run.
+
+Fresh endpoint-local evidence from AgentPC2:
+
+- `agentpc2-first-install-bootstrap.ps1` was downloaded from
+  `https://testai.acik.com/artifacts/endpoint-agent/bootstrap/` with SHA256
+  `f12e05475dd2eaa77491e640a26406f8a10187d691529ebb503e51d14fd60d4b`, matching
+  the expected public artifact.
+- The bootstrap installed `EndpointAgent` `v0.2.18`, verified Authenticode as
+  `Valid`, signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`, and
+  endpoint-agent.exe SHA256
+  `92bf65812720d330eaefa9cfee86d6df4d6477a2370b14850f02a74ea288e88e`.
+- `install.ps1` SHA256 was
+  `13dae1d19b313518c2446f7b3e3985d65bc2d46c472fe57429e5bf2ea3b0f9b1`.
+- Windows service evidence shows `EndpointAgent` `Running`, `Auto`,
+  `LocalSystem`, binary version `ProductVersion=v0.2.18` /
+  `FileVersion=v0.2.18`.
+- The service environment is configured for outbound-only broker/SNI
+  `remote-bridge-mtls.testai.acik.com:443`, TLS server name
+  `remote-bridge-mtls.testai.acik.com`, constrained PTY/operations enabled,
+  pilot auto-consent enabled, and AD CS client certificate SAN
+  `adcomputer:fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a`.
+
+Current repo/workflow alignment requirement:
+
+- The live endpoint-admin remote-bridge deployment imageID currently uses
+  `sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d`.
+- First-install ingest and constrained-executor acceptance defaults must target
+  `v0.2.18` plus the live remote-bridge digest above; otherwise the next
+  verifier run can produce a false no-go against stale `v0.2.17` /
+  `sha256:7e1925...` expectations.
+- This evidence proves the bounded endpoint-local seed and service config only.
+  It does not prove `platform-agent#208` product-channel acceptance, broad
+  GPO/MSI rollout, production/domain-wide support readiness, unrestricted
+  shell, inbound SSH/RDP/WinRM/SMB/RPC, or TPM/device-key attestation. The next
+  product-channel gate still needs fresh HELLO/permit/constrained-operation
+  output, negative matrix, and audit/WORM evidence.
+
 ## Live Delta — AgentPC2 v0.2.17 product path reaches PERMIT, but recording lacks agent output (2026-06-21)
 
 `platform-agent#208` and `platform-k8s-gitops#1768` remain not accepted.

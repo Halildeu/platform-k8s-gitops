@@ -6,11 +6,11 @@
   "computerName": "AGENTPC2",
   "user": "ACIK\\aiadmin",
   "release": {
-    "id": "v0.2.17",
-    "targetVersion": "0.2.17",
-    "binaryUrl": "https://github.com/Halildeu/platform-agent/releases/download/v0.2.17/endpoint-agent.exe",
-    "binarySha256": "418160181258594ce196a734f5d570473919ee6678c255a9fb92b7da0f16a4c2",
-    "installPs1Sha256": "8e7dffa89dda0a7bc8d8e6dc210b22298441b478c19dd5b1622ab64f75a94f56",
+    "id": "v0.2.18",
+    "targetVersion": "0.2.18",
+    "binaryUrl": "https://github.com/Halildeu/platform-agent/releases/download/v0.2.18/endpoint-agent.exe",
+    "binarySha256": "92bf65812720d330eaefa9cfee86d6df4d6477a2370b14850f02a74ea288e88e",
+    "installPs1Sha256": "13dae1d19b313518c2446f7b3e3985d65bc2d46c472fe57429e5bf2ea3b0f9b1",
     "signerThumbprint": "D68F4F530137EB65CE44E3405E82B46205E753E5",
     "signingTier": "trusted-internal-ca",
     "authenticodeStatus": "Valid",
@@ -100,7 +100,7 @@
   "boundary": {
     "proves": [
       "Endpoint-local install script executed",
-      "EndpointAgent service install/start attempted with immutable v0.2.17 binary hash",
+      "EndpointAgent service install/start attempted with immutable v0.2.18 binary hash",
       "Outbound remote bridge configuration written for 443/SNI broker"
     ],
     "doesNotProve": [
