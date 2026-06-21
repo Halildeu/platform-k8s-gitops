@@ -10,6 +10,7 @@ if [[ ! -f "${script}" ]]; then
   exit 1
 fi
 
+# shellcheck disable=SC2016
 if ! grep -Fq 'Invoke-DownloadVerified -Uri \$BinaryUrl -OutFile \$BinaryPath -ExpectedSha256 \$ExpectedAgentSha256' "${script}"; then
   echo "bootstrap must download and SHA256-verify endpoint-agent.exe before local install" >&2
   exit 1
@@ -21,6 +22,7 @@ install_args_block="$(awk '
   in_block && /^[[:space:]]+\)/ { exit }
 ' "${script}")"
 
+# shellcheck disable=SC2016
 if ! grep -Fq '"-BinaryPath", \$BinaryPath' <<<"${install_args_block}"; then
   echo "bootstrap install args must pass the verified local BinaryPath" >&2
   exit 1
@@ -56,13 +58,18 @@ if ! grep -Fq 'SHA256SUMS:' "${bootstrap_configmap}"; then
   exit 1
 fi
 
-if ! grep -Fq 'agentpc2-remote-bridge-pilot-autoconsent-patch-v5.ps1:' "${bootstrap_configmap}"; then
-  echo "AgentPC2 bootstrap ConfigMap must contain the v5 pilot auto-consent patch" >&2
+if ! grep -Fq 'agentpc2-remote-bridge-canonical-env-patch-v7.ps1:' "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap ConfigMap must contain the v7 canonical env patch" >&2
   exit 1
 fi
 
-if ! grep -Fq 'd08c1b3b7af7af00c000f9f3ecd48bfb2ad5a36f70d80289353b5dc45eec4d5f  agentpc2-remote-bridge-pilot-autoconsent-patch-v5.ps1' "${bootstrap_configmap}"; then
-  echo "AgentPC2 bootstrap SHA256SUMS must pin the v5 pilot auto-consent patch hash" >&2
+if ! grep -Fq 'be30746c9d8c8ca6d439a68ecb2e75184638001935657dcc2fbf755422438f99  agentpc2-remote-bridge-canonical-env-patch-v7.ps1' "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap SHA256SUMS must pin the v7 canonical env patch hash" >&2
+  exit 1
+fi
+
+if ! grep -Fq '56b793f5b085abdaec49c2aa7fe5feac82d9999682d87f982a10dba0589c59f5  agentpc2-first-install-bootstrap.ps1' "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap SHA256SUMS must pin the canonical-env first-install hash" >&2
   exit 1
 fi
 

@@ -47,6 +47,7 @@ PERMIT_SIGNER_SECRET="${PERMIT_SIGNER_SECRET:-endpoint-admin-remote-bridge-signe
 PERMIT_SIGNER_SECRET_KEY="${PERMIT_SIGNER_SECRET_KEY:-permit-signing.key}"
 
 BOOTSTRAP_PS1="${EVIDENCE_DIR}/agentpc2-first-install-bootstrap.ps1"
+CANONICAL_ENV_PATCH_PS1="${EVIDENCE_DIR}/agentpc2-remote-bridge-canonical-env-patch-v7.ps1"
 README_PATH="${EVIDENCE_DIR}/README.md"
 SUMMARY_PATH="${EVIDENCE_DIR}/summary.json"
 PUBLIC_KEY_JSON="${EVIDENCE_DIR}/permit-public-key.json"
@@ -283,6 +284,56 @@ function Get-RedactedServiceEnvironment {
   return \$rows
 }
 
+function Read-ServiceEnvMap {
+  param([string]\$Path)
+  \$raw = (Get-ItemProperty -Path \$Path -Name Environment -ErrorAction SilentlyContinue).Environment
+  \$map = [ordered]@{}
+  foreach (\$entry in @(\$raw)) {
+    \$parts = \$entry -split "=", 2
+    if (\$parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace(\$parts[0])) {
+      \$map[\$parts[0]] = \$parts[1]
+    }
+  }
+  return \$map
+}
+
+function Write-ServiceEnvMap {
+  param([string]\$Path, \$Map)
+  \$entries = @()
+  foreach (\$key in \$Map.Keys) {
+    \$value = [string]\$Map[\$key]
+    if (-not [string]::IsNullOrWhiteSpace(\$value)) {
+      \$entries += "\$key=\$value"
+    }
+  }
+  Set-ItemProperty -Path \$Path -Name Environment -Type MultiString -Value \$entries
+}
+
+function Set-CanonicalRemoteBridgeServiceEnvironment {
+  param([string]\$ServiceName)
+
+  \$serviceKey = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\\$ServiceName"
+  if (-not (Test-Path -Path \$serviceKey)) {
+    throw "Service registry key not found: \$serviceKey"
+  }
+
+  \$map = Read-ServiceEnvMap -Path \$serviceKey
+  \$map["ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED"] = "true"
+  \$map["ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR"] = \$RemoteBridgeBrokerAddr
+  \$map["ENDPOINT_AGENT_REMOTE_BRIDGE_TLS_SERVER_NAME"] = \$RemoteBridgeTlsServerName
+  \$map["ENDPOINT_AGENT_REMOTE_BRIDGE_CERT_SAN_URI_PREFIX"] = \$RemoteBridgeMTLSSanUriPrefix
+  \$map["ENDPOINT_AGENT_REMOTE_BRIDGE_MTLS_CERT_SAN_URI_PREFIX"] = \$RemoteBridgeMTLSSanUriPrefix
+  \$map["ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED"] = "true"
+  \$map["ENDPOINT_AGENT_REMOTE_BRIDGE_PTY_ENABLED"] = "true"
+  \$map["ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_PUBLIC_KEY_B64"] = \$RemoteBridgePermitBrokerPublicKeyB64
+  \$map["ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_KID"] = \$RemoteBridgePermitKid
+  \$map["ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64"] = \$RemoteBridgePermitBrokerPublicKeyB64
+  \$map["ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_KEY_ID"] = \$RemoteBridgePermitKid
+  \$map["ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT"] = "true"
+
+  Write-ServiceEnvMap -Path \$serviceKey -Map \$map
+}
+
 function Get-ClientAuthCertRows {
   \$rows = @()
   \$certs = Get-ChildItem Cert:\\LocalMachine\\My -ErrorAction SilentlyContinue |
@@ -369,6 +420,12 @@ try {
     throw "install.ps1 exited with code \$LASTEXITCODE"
   }
 
+  Write-Step "patch canonical remote bridge service environment"
+  Set-CanonicalRemoteBridgeServiceEnvironment -ServiceName "EndpointAgent"
+
+  Write-Step "restart EndpointAgent with canonical remote bridge environment"
+  Restart-Service EndpointAgent -Force
+
   Start-Sleep -Seconds \$PostInstallWaitSeconds
 
   \$service = Get-CimInstance Win32_Service |
@@ -411,6 +468,8 @@ try {
       brokerAddr = \$RemoteBridgeBrokerAddr
       tlsServerName = \$RemoteBridgeTlsServerName
       operationsEnabled = \$true
+      ptyEnabled = \$true
+      pilotAutoConsent = \$true
       permitKeyId = \$RemoteBridgePermitKid
       permitBrokerPublicKeySha256 = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::ASCII.GetBytes(\$RemoteBridgePermitBrokerPublicKeyB64))).Replace("-", "").ToLowerInvariant()
     }
@@ -431,7 +490,8 @@ try {
       proves = @(
         "Endpoint-local install script executed",
         "EndpointAgent service install/start attempted with immutable \$ReleaseId binary hash",
-        "Outbound remote bridge configuration written for 443/SNI broker"
+        "Outbound remote bridge configuration written for 443/SNI broker",
+        "Canonical constrained-PTY and owner-gated pilot auto-consent service environment written"
       )
       doesNotProve = @(
         "platform-agent#208 constrained operation acceptance",
@@ -467,6 +527,206 @@ EOF
   chmod 0644 "${BOOTSTRAP_PS1}"
 }
 
+write_canonical_env_patch_script() {
+  local permit_public_key_b64="$1"
+
+  cat > "${CANONICAL_ENV_PATCH_PS1}" <<EOF
+<#
+.SYNOPSIS
+AgentPC2 remote-bridge canonical environment patch v7.
+
+.DESCRIPTION
+Migrates the EndpointAgent service Environment from earlier pilot alias names to
+the canonical v0.2.16 remote-bridge keys, enables bounded CONSTRAINED_PTY
+operation handling, and enables owner-gated pilot auto-consent for the AgentPC2
+lab acceptance lane. It contains no private key, bearer token, password,
+administrator credential, or HMAC enrollment token.
+#>
+
+[CmdletBinding()]
+param(
+  [string]\$EvidenceRoot = "C:\\ProgramData\\EndpointAgent\\rollout-evidence",
+  [int]\$PostRestartWaitSeconds = 90
+)
+
+Set-StrictMode -Version Latest
+\$ErrorActionPreference = "Stop"
+\$ProgressPreference = "SilentlyContinue"
+
+\$PatchId = "agentpc2-remote-bridge-canonical-env-v7"
+\$StartedAt = Get-Date
+\$ServiceName = "EndpointAgent"
+\$ServiceKey = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\\$ServiceName"
+\$BinaryPath = "C:\\Program Files\\EndpointAgent\\endpoint-agent.exe"
+\$ExpectedAgentSha256 = "${EXPECTED_AGENT_SHA256}"
+\$RemoteBridgeBrokerAddr = "${REMOTE_BRIDGE_BROKER_ADDR}"
+\$RemoteBridgeTlsServerName = "${REMOTE_BRIDGE_HOSTNAME}"
+\$RemoteBridgeMTLSSanUriPrefix = "${REMOTE_BRIDGE_MTLS_SAN_URI_PREFIX}"
+\$RemoteBridgePermitKid = "${REMOTE_BRIDGE_PERMIT_KID}"
+\$RemoteBridgePermitBrokerPublicKeyB64 = @'
+${permit_public_key_b64}
+'@.Trim()
+
+function Write-Step {
+  param([string]\$Message)
+  Write-Host "[\$PatchId] \$Message"
+}
+
+function Assert-Administrator {
+  \$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+  \$principal = New-Object Security.Principal.WindowsPrincipal(\$identity)
+  if (-not \$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "Administrator shell required."
+  }
+}
+
+function Read-ServiceEnvMap {
+  param([string]\$Path)
+  \$raw = (Get-ItemProperty -Path \$Path -Name Environment -ErrorAction SilentlyContinue).Environment
+  \$map = [ordered]@{}
+  foreach (\$entry in @(\$raw)) {
+    \$parts = \$entry -split "=", 2
+    if (\$parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace(\$parts[0])) {
+      \$map[\$parts[0]] = \$parts[1]
+    }
+  }
+  return \$map
+}
+
+function Write-ServiceEnvMap {
+  param([string]\$Path, \$Map)
+  \$entries = @()
+  foreach (\$key in \$Map.Keys) {
+    \$value = [string]\$Map[\$key]
+    if (-not [string]::IsNullOrWhiteSpace(\$value)) {
+      \$entries += "\$key=\$value"
+    }
+  }
+  Set-ItemProperty -Path \$Path -Name Environment -Type MultiString -Value \$entries
+}
+
+function Redact-ServiceEnvMap {
+  param(\$Map)
+  \$rows = @()
+  foreach (\$key in (\$Map.Keys | Sort-Object)) {
+    \$value = [string]\$Map[\$key]
+    \$sensitive = \$key -match "TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL|KID|ATTESTATION"
+    \$rows += [PSCustomObject]@{
+      Key = \$key
+      Present = -not [string]::IsNullOrWhiteSpace(\$value)
+      Length = \$value.Length
+      Value = if (\$sensitive) { "<redacted>" } else { \$value }
+    }
+  }
+  return \$rows
+}
+
+function Get-RemoteBridgeSignals {
+  Get-Content "C:\\ProgramData\\EndpointAgent\\logs\\*.log" -Tail 1200 -ErrorAction SilentlyContinue |
+    Select-String -Pattern "remote-bridge|bridge|mtls|mTLS|hello|HELLO|consent|CONSENT|active|ACTIVE|permit|operation|CONSTRAINED|error|failed|denied|certificate|${REMOTE_BRIDGE_HOSTNAME}" |
+    ForEach-Object { \$_.Line }
+}
+
+New-Item -ItemType Directory -Force -Path \$EvidenceRoot | Out-Null
+\$SummaryPath = Join-Path \$EvidenceRoot "agentpc2-remote-bridge-canonical-env-patch-v7-summary.json"
+\$SignalsPath = Join-Path \$EvidenceRoot "agentpc2-remote-bridge-canonical-env-patch-v7-signals.txt"
+
+Assert-Administrator
+if (-not (Test-Path -Path \$ServiceKey)) { throw "Service registry key not found: \$ServiceKey" }
+if (-not (Test-Path -Path \$BinaryPath)) { throw "EndpointAgent binary not found: \$BinaryPath" }
+
+\$actualAgentSha256 = (Get-FileHash -Path \$BinaryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if (\$actualAgentSha256 -ne \$ExpectedAgentSha256) {
+  throw "EndpointAgent binary SHA256 mismatch expected=\$ExpectedAgentSha256 actual=\$actualAgentSha256"
+}
+
+Write-Step "read service environment"
+\$map = Read-ServiceEnvMap -Path \$ServiceKey
+
+Write-Step "write canonical remote bridge keys"
+\$map["ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED"] = "true"
+\$map["ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR"] = \$RemoteBridgeBrokerAddr
+\$map["ENDPOINT_AGENT_REMOTE_BRIDGE_TLS_SERVER_NAME"] = \$RemoteBridgeTlsServerName
+\$map["ENDPOINT_AGENT_REMOTE_BRIDGE_CERT_SAN_URI_PREFIX"] = \$RemoteBridgeMTLSSanUriPrefix
+\$map["ENDPOINT_AGENT_REMOTE_BRIDGE_MTLS_CERT_SAN_URI_PREFIX"] = \$RemoteBridgeMTLSSanUriPrefix
+\$map["ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED"] = "true"
+\$map["ENDPOINT_AGENT_REMOTE_BRIDGE_PTY_ENABLED"] = "true"
+\$map["ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_PUBLIC_KEY_B64"] = \$RemoteBridgePermitBrokerPublicKeyB64
+\$map["ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_KID"] = \$RemoteBridgePermitKid
+\$map["ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_BROKER_PUBLIC_KEY_B64"] = \$RemoteBridgePermitBrokerPublicKeyB64
+\$map["ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_KEY_ID"] = \$RemoteBridgePermitKid
+\$map["ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT"] = "true"
+
+Write-ServiceEnvMap -Path \$ServiceKey -Map \$map
+
+Write-Step "restart EndpointAgent"
+Restart-Service \$ServiceName -Force
+Start-Sleep -Seconds \$PostRestartWaitSeconds
+
+\$service = Get-CimInstance Win32_Service |
+  Where-Object { \$_.Name -eq \$ServiceName } |
+  Select-Object Name, DisplayName, State, StartMode, StartName, PathName
+
+\$patchedMap = Read-ServiceEnvMap -Path \$ServiceKey
+\$signals = @(Get-RemoteBridgeSignals)
+\$signals | Set-Content -Path \$SignalsPath -Encoding UTF8
+
+\$requiredKeys = @(
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_CERT_SAN_URI_PREFIX",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_PTY_ENABLED",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_PUBLIC_KEY_B64",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_KID",
+  "ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT"
+)
+\$missing = @(\$requiredKeys | Where-Object {
+  -not \$patchedMap.Contains(\$_) -or [string]::IsNullOrWhiteSpace([string]\$patchedMap[\$_])
+})
+
+\$completedAt = Get-Date
+[PSCustomObject]@{
+  schema = "faz22.1768.agentpc2-remote-bridge-canonical-env-patch.v1"
+  patchId = \$PatchId
+  status = if (\$missing.Count -eq 0 -and \$service -and \$service.State -eq "Running") { "patched-service-running" } else { "patched-needs-attention" }
+  startedAt = \$StartedAt.ToString("o")
+  completedAt = \$completedAt.ToString("o")
+  computerName = \$env:COMPUTERNAME
+  user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+  localBinary = @{ path = \$BinaryPath; sha256 = \$actualAgentSha256 }
+  service = \$service
+  missingCanonicalKeys = \$missing
+  redactedServiceEnvironment = @(Redact-ServiceEnvMap -Map \$patchedMap)
+  evidence = @{ root = \$EvidenceRoot; signals = \$SignalsPath }
+  boundary = @{
+    proves = @(
+      "EndpointAgent v0.2.16 binary digest matches expected release digest",
+      "Canonical constrained-PTY remote-bridge service environment is present",
+      "Owner-gated pilot auto-consent is enabled for bounded AgentPC2 lab acceptance",
+      "EndpointAgent service restart attempted after canonical env patch"
+    )
+    doesNotProve = @(
+      "platform-agent#208 constrained operation acceptance",
+      "broker permit issuance",
+      "typed operation execution",
+      "production/domain-wide support readiness",
+      "unrestricted shell/RDP/WinRM/SMB/SSH readiness"
+    )
+  }
+} | ConvertTo-Json -Depth 8 | Set-Content -Path \$SummaryPath -Encoding UTF8
+
+Write-Step "summary: \$SummaryPath"
+Get-Content \$SummaryPath
+
+if (\$missing.Count -gt 0) { throw "Missing canonical remote-bridge keys: \$(\$missing -join ', ')" }
+if (-not \$service -or \$service.State -ne "Running") { throw "EndpointAgent is not running after patch." }
+
+Write-Step "completed"
+EOF
+
+  chmod 0644 "${CANONICAL_ENV_PATCH_PS1}"
+}
+
 write_readme() {
   cat > "${README_PATH}" <<EOF
 # AgentPC2 first-install bootstrap package
@@ -477,17 +737,46 @@ Purpose:
 - Move AgentPC2 to EndpointAgent ${RELEASE_ID} when the currently installed agent does not advertise \`UPDATE_AGENT\`.
 - Preserve the product remote-ops acceptance boundary: this package is only a bootstrap step, not #208 acceptance.
 - Use outbound-only remote bridge configuration over ${REMOTE_BRIDGE_BROKER_ADDR}.
+- Publish an endpoint-local v7 migration patch for already-installed v0.2.16
+  endpoints that still carry earlier remote-bridge env aliases.
 
 Run on AgentPC2 from an elevated PowerShell session:
 
-    Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\agentpc2-first-install-bootstrap.ps1
+    \$ErrorActionPreference = "Stop"
+    \$ProgressPreference = "SilentlyContinue"
+    \$Base = "https://testai.acik.com/artifacts/endpoint-agent/bootstrap"
+    \$WorkDir = "C:\\Temp\\AgentPC2Bootstrap"
+    \$Script = Join-Path \$WorkDir "agentpc2-first-install-bootstrap.ps1"
+    \$ExpectedScriptSha256 = "<see SHA256SUMS>"
+    New-Item -ItemType Directory -Force \$WorkDir | Out-Null
+    Invoke-WebRequest -UseBasicParsing -Uri "\$Base/agentpc2-first-install-bootstrap.ps1" -OutFile \$Script
+    \$ActualScriptSha256 = (Get-FileHash \$Script -Algorithm SHA256).Hash.ToLowerInvariant()
+    if (\$ActualScriptSha256 -ne \$ExpectedScriptSha256) { throw "Bootstrap script SHA256 mismatch: \$ActualScriptSha256" }
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File \$Script
+
+If AgentPC2 already has EndpointAgent ${RELEASE_ID} installed but the product
+smoke still returns \`session-not-active\`, run the bounded canonical env patch
+instead:
+
+    \$ErrorActionPreference = "Stop"
+    \$ProgressPreference = "SilentlyContinue"
+    \$Base = "https://testai.acik.com/artifacts/endpoint-agent/bootstrap"
+    \$WorkDir = "C:\\Temp\\AgentPC2Bootstrap"
+    \$Script = Join-Path \$WorkDir "agentpc2-remote-bridge-canonical-env-patch-v7.ps1"
+    \$ExpectedScriptSha256 = "<see SHA256SUMS>"
+    New-Item -ItemType Directory -Force \$WorkDir | Out-Null
+    Invoke-WebRequest -UseBasicParsing -Uri "\$Base/agentpc2-remote-bridge-canonical-env-patch-v7.ps1" -OutFile \$Script
+    \$ActualScriptSha256 = (Get-FileHash \$Script -Algorithm SHA256).Hash.ToLowerInvariant()
+    if (\$ActualScriptSha256 -ne \$ExpectedScriptSha256) { throw "Patch script SHA256 mismatch: \$ActualScriptSha256" }
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File \$Script
 
 Endpoint evidence will be written under:
 
     C:\\ProgramData\\EndpointAgent\\rollout-evidence
 
-The script contains no HMAC enrollment token, bearer token, password, private key, or administrator credential. It contains the broker permit public key, which is intentionally public verifier material.
+The scripts contain no HMAC enrollment token, bearer token, password, private
+key, or administrator credential. They contain the broker permit public key,
+which is intentionally public verifier material.
 
 The artifact bundle contains a top-level SHA256SUMS file with relative paths. Verify it from this directory before endpoint-local execution.
 
@@ -539,6 +828,7 @@ write_summary() {
     --arg permitPublicKeySha256 "${permit_public_key_sha}" \
     --arg evidenceDir "${EVIDENCE_DIR}" \
     --arg bootstrapScript "${BOOTSTRAP_PS1}" \
+    --arg canonicalEnvPatchScript "${CANONICAL_ENV_PATCH_PS1}" \
     --arg readme "${README_PATH}" \
     --argjson proves "$(write_json_string_array \
       "${RELEASE_ID} release manifest/install/bootstrap hashes verified" \
@@ -577,7 +867,7 @@ write_summary() {
         permitKeyId:$permitKeyId,
         permitBrokerPublicKeySha256:$permitPublicKeySha256
       },
-      evidence:{dir:$evidenceDir, bootstrapScript:$bootstrapScript, readme:$readme},
+      evidence:{dir:$evidenceDir, bootstrapScript:$bootstrapScript, canonicalEnvPatchScript:$canonicalEnvPatchScript, readme:$readme},
       boundary:{proves:$proves, doesNotProve:$doesNotProve},
       secretHygiene:$secretHygiene
     }' > "${SUMMARY_PATH}"
@@ -716,6 +1006,7 @@ main() {
 
   echo "=== WRITE ENDPOINT BOOTSTRAP PACKAGE ==="
   write_bootstrap_script "${permit_public_key_b64}"
+  write_canonical_env_patch_script "${permit_public_key_b64}"
   write_readme
   write_summary "${permit_public_key_b64}" "${permit_public_key_sha}" \
     "${sha_manifest}" "${sha_install}" "${sha_bootstrap}" \
