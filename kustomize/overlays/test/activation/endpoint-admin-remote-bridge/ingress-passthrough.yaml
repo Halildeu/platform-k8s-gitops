@@ -1,0 +1,30 @@
+# endpoint-admin-remote-bridge mTLS passthrough Ingress - Faz 22.6 D10-8
+#
+# Dedicated broker SNI host. ingress-nginx forwards the raw TLS stream to the
+# broker Service; the broker pod terminates mTLS with the AD CS server cert and
+# validates the EndpointAgent machine certificate. The general browser host
+# (testai.acik.com) is not part of this route.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: endpoint-admin-remote-bridge-mtls
+  labels:
+    app.kubernetes.io/name: endpoint-admin-remote-bridge
+    app.kubernetes.io/component: remote-bridge-broker
+    app.kubernetes.io/part-of: remote-bridge
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: remote-bridge-mtls.testai.acik.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: endpoint-admin-remote-bridge
+                port:
+                  number: 9444
