@@ -1,5 +1,67 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — AgentPC2 v0.2.17 product update blocked by missing UPDATE_AGENT; bounded bootstrap package ready (2026-06-21)
+
+`platform-agent#208` remains not accepted. The dedicated
+`remote-bridge-mtls.testai.acik.com:443` broker/SNI path and `v0.2.17`
+artifact delivery are ready, but AgentPC2 still needs endpoint-local bootstrap
+before the constrained-operation acceptance workflow can prove `PERMIT`,
+`transportPushed=true`, `AGENT_OUTPUT`, and audit/WORM evidence.
+
+Current live/product-update evidence:
+
+- Product update workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27904276569`
+  attempted release-catalog `UPDATE_AGENT` to `v0.2.17` for AgentPC2
+  (`2f7ad30f-970a-42e7-8af8-08764ae6066f`) with expected binary SHA256
+  `418160181258594ce196a734f5d570473919ee6678c255a9fb92b7da0f16a4c2`.
+- The release record was created and approved, but dispatch returned HTTP
+  `422`: `Agent does not advertise the 'UPDATE_AGENT' capability on the most
+  recent heartbeat. Upgrade/configure the agent and retry.`
+- The same workflow observed AgentPC2 as `ONLINE`, `agent_version=v0.2.16`,
+  `last_seen_at=2026-06-21T12:24:58.283725Z`; polling was skipped because the
+  seed helper failed.
+- Negative trust-field guard remained fail-closed: caller-supplied
+  `binaryUrl`, `maxBytes`, `sha256`, `signerThumbprint`, `signingTier`, and
+  `targetVersion` in the dispatch request were rejected with HTTP `400`.
+
+Bounded first-install bootstrap evidence:
+
+- Workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27904338823`
+  generated the bounded AgentPC2 first-install bootstrap package for
+  EndpointAgent `v0.2.17`.
+- Generated script SHA256:
+  `e3f5d49f50ba2f792e8750541cf84d381cc57c94944ea06fd26d51fad93eb65b`
+  (`agentpc2-first-install-bootstrap.ps1`).
+- Canonical env patch v7 SHA256:
+  `f5233701b51cb6ff026f90ac7cd09f15cbe0356c644d395421be66b509d18ec8`.
+- Package summary status: `bootstrap-ready`; broker:
+  `remote-bridge-mtls.testai.acik.com:443`; permit public-key SHA256:
+  `0a92abcd8f84619fb8f14f530beb94cbdc4e0981c9eb14a4756bdc85175a1110`.
+- Release metadata verified: `release-manifest.json`
+  `ad62a7ebecbe53f2d9fcdaea5096f76c4098eaf325c8ec2bf6a575b23a2c3e28`,
+  `install.ps1`
+  `8e7dffa89dda0a7bc8d8e6dc210b22298441b478c19dd5b1622ab64f75a94f56`,
+  `EndpointAgent.zip`
+  `873a2906c85668ed92a5c656806e77ece82b9d3feabcd6f4cb6927837205cfb7`,
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`.
+
+Next required evidence:
+
+- Execute the generated bounded bootstrap on AgentPC2 from an elevated
+  PowerShell session, then ingest endpoint-local evidence with the first-install
+  evidence workflow.
+- After ingest passes, rerun the `Faz 22.6.3 AgentPC2 constrained executor
+  acceptance` workflow and require fresh product-channel `HELLO`,
+  consent/active state, signed `PERMIT`, `transportPushed=true`, constrained
+  `GET_HOSTNAME` output, WORM `POLICY_EVENT + AGENT_OUTPUT`, and negative matrix
+  evidence.
+- This bootstrap package is only a bounded seed step. It does not prove
+  `platform-agent#208` acceptance, broad signed MSI/GPO rollout, production
+  support readiness, unrestricted shell, inbound SSH/RDP/WinRM/SMB/RPC, or
+  `platform-backend#548` true TPM/device-key hardware attestation.
+
 ## Live Delta — AgentPC2 v0.2.16 installed; operation capability still missing (2026-06-21)
 
 `platform-agent#208` remains open. AgentPC2 endpoint-local bootstrap evidence
