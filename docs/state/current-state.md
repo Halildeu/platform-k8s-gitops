@@ -1,5 +1,55 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — AgentPC2 v0.2.17 product path reaches PERMIT, but recording lacks agent output (2026-06-21)
+
+`platform-agent#208` and `platform-k8s-gitops#1768` remain not accepted.
+AgentPC2 is now installed with the `v0.2.17` operation-capable EndpointAgent
+and reaches the dedicated outbound-only product broker path at
+`remote-bridge-mtls.testai.acik.com:443`, but the latest guarded acceptance
+workflow still ended `no-go` because the same-session WORM recording did not
+contain endpoint output.
+
+Fresh evidence:
+
+- Operator-side AgentPC2 bootstrap transcript shows `EndpointAgent` `v0.2.17`
+  installed and running as `LocalSystem`, broker
+  `remote-bridge-mtls.testai.acik.com:443`, TLS server name
+  `remote-bridge-mtls.testai.acik.com`, constrained operations/PTY enabled,
+  binary SHA256
+  `418160181258594ce196a734f5d570473919ee6678c255a9fb92b7da0f16a4c2`, and
+  local rollout evidence zip SHA256
+  `6ADFC050F695F2C91391F44ECC1406CB52C9464F536E142031EC6EAA5692656D`.
+- Workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27905258546`
+  produced evidence artifact
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27905258546/artifacts/7775629367`
+  with artifact zip SHA256
+  `d075a279865fddb6fc9a65cc4073eaf8c76bb7a06dca6ded67ee75e5776677c5`.
+- Pilot readiness was `ready-for-product-smoke`: AgentPC2 was observed as
+  `ONLINE`, `agent_version=v0.2.17`, `last_seen_at=2026-06-21
+  13:06:42.458516+00`.
+- The product governance/session path advanced through `open=200`,
+  `approve=200`, step-up challenge `200`, and step-up verify `200`.
+- Catalog operation `GET_HOSTNAME` returned a signed, fresh `PERMIT` with
+  `capability=CONSTRAINED_PTY`, `policyVersion=rb-test-denetim-v1`,
+  `kid=rb-test-denetim-20260617-01`, and `transportPushed=true`.
+- Core negative guards remained fail-closed: no-auth catalog `401`, raw
+  caller-supplied PTY `400/catalog-operation-required`, command override
+  `400/catalog-command-override`, and disabled catalog operation
+  `422/catalog-operation-disabled`.
+
+No-go boundary:
+
+- `verification-summary.json` reports `result=missing-agent-output` and
+  `acceptedCandidate=false`.
+- `recording-summary.json` reports `rowCount=1`, `POLICY_EVENT` only, and no
+  `DATA`, no `AGENT_OUTPUT`, and no `EndStream` marker.
+- Therefore this evidence narrows the remaining work to the live broker/agent
+  operation dispatch plus recording/export path after `transportPushed=true`.
+  It does not prove `platform-agent#208` Done, unrestricted shell,
+  signed MSI/GPO broad rollout, production remote-support readiness, or true
+  TPM/device-key hardware attestation under `platform-backend#548`.
+
 ## Live Delta — AgentPC2 first-install ingest verifier aligned to v0.2.17 (2026-06-21)
 
 The first-install evidence ingest gate must validate the same release that the
