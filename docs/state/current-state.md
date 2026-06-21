@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — AgentPC2 v0.2.18 bootstrap installed; acceptance defaults need v0.2.18 rerun (2026-06-21)
+## Live Delta — AgentPC2 v0.2.18 online; broker needs bounded enrollment-backed pilot flag (2026-06-21)
 
 `platform-k8s-gitops#1768` has fresh endpoint-local bootstrap evidence for
 AgentPC2 on the published `v0.2.18` package, but `platform-agent#208` remains
@@ -28,14 +28,26 @@ Fresh endpoint-local evidence from AgentPC2:
   pilot auto-consent enabled, and AD CS client certificate SAN
   `adcomputer:fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a`.
 
-Current repo/workflow alignment requirement:
+Current product-channel no-go:
 
 - The live endpoint-admin remote-bridge deployment imageID currently uses
   `sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d`.
-- First-install ingest and constrained-executor acceptance defaults must target
-  `v0.2.18` plus the live remote-bridge digest above; otherwise the next
-  verifier run can produce a false no-go against stale `v0.2.17` /
-  `sha256:7e1925...` expectations.
+- `platform-k8s-gitops#1829` aligned the constrained-executor acceptance
+  defaults to `v0.2.18` and the live remote-bridge digest above; rerun
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27911758838`
+  reached the product broker instead of a stale verifier mismatch.
+- That rerun observed AgentPC2 `ONLINE`, `agent_version=v0.2.18`, and catalog
+  HTTP `200`, but the broker decision was `DENY`: `policy:CRYPTO_IDENTITY`,
+  `policyGate=CRYPTO_IDENTITY`, `policyDetail=attestation-unverified`,
+  `transportPushed=false`. Evidence artifact zip SHA256:
+  `dc2566f2a78aa02bd41437361a34e61a7ca873b2a50d660f9deaf1df6854db15`.
+- Backend `platform-backend#723/#724` is already present in the pinned digest:
+  it supports the explicit non-prod
+  `remote-bridge.broker.enrollment-backed-crypto-identity-pilot-risk-accepted`
+  flag and rejects that flag in production-like profiles. The remaining
+  owner-gated GitOps action is to activate the matching test-only ConfigMap
+  env `REMOTE_BRIDGE_BROKER_ENROLLMENT_BACKED_CRYPTO_IDENTITY_PILOT_RISK_ACCEPTED=true`
+  on the dedicated activation overlay, then rerun #208 acceptance.
 - This evidence proves the bounded endpoint-local seed and service config only.
   It does not prove `platform-agent#208` product-channel acceptance, broad
   GPO/MSI rollout, production/domain-wide support readiness, unrestricted

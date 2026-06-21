@@ -54,6 +54,11 @@
 #     (`49dfe1fc33a286a575f87b93c4f524ae24b619cd`) so renewed same-SAN
 #     AD CS machine cert enrollment rotates the active cert row before the
 #     AgentPC2 #208 product-channel smoke rechecks device-bound HELLO.
+#   - immutable test digest includes platform-backend#723/#724
+#     (`0d521d76e6f9810ff8a776bea250776d5b33b5b0`) so the bounded non-prod
+#     AgentPC2 pilot can explicitly select enrollment-backed crypto identity
+#     while prod-like profiles still reject that exception and DATA/EndStream
+#     terminal markers are recorded for #208 acceptance.
 #   - immutable test digest:
 #     sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d
 #
@@ -127,6 +132,10 @@ images:
   # (backend #724 -> sha-0d521d7). Re-pinned with the primary endpoint-admin
   # overlay so the owner-gated broker path records DATA frames as AGENT_OUTPUT
   # and EndStream as SESSION_END during #208/#1768 acceptance rerun.
+  # 2026-06-21 backend #723 is activated by configmap-activation-patch.yaml
+  # through the explicit non-prod
+  # REMOTE_BRIDGE_BROKER_ENROLLMENT_BACKED_CRYPTO_IDENTITY_PILOT_RISK_ACCEPTED
+  # flag; do not copy that flag into prod overlays.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
     digest: sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d
