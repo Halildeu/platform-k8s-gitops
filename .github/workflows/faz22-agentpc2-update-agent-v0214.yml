@@ -1,11 +1,31 @@
-name: Faz 22.6.3 AgentPC2 v0.2.14 product update
+name: Faz 22.6.3 AgentPC2 product update
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Required literal: RUN_AGENTPC2_UPDATE_AGENT_V0214'
+        description: 'Required literal: RUN_AGENTPC2_UPDATE_AGENT_RELEASE'
         required: true
+      release_id:
+        description: 'Release tag to dispatch through the product UPDATE_AGENT path'
+        required: true
+        default: 'v0.2.16'
+      target_version:
+        description: 'Agent version expected after update'
+        required: true
+        default: '0.2.16'
+      expected_sha256:
+        description: 'Expected SHA256 for endpoint-agent.exe'
+        required: true
+        default: '1acecdc944ef62c8248192d8b8bd4f67b13c70bd8b4f2cd879be717480fb19c8'
+      expected_signer_thumbprint:
+        description: 'Expected internal-CA Authenticode signer thumbprint'
+        required: true
+        default: 'D68F4F530137EB65CE44E3405E82B46205E753E5'
+      max_bytes:
+        description: 'Maximum allowed endpoint-agent.exe size'
+        required: true
+        default: '14138792'
       target_product_device_id:
         description: 'Endpoint-admin product device UUID for AgentPC2'
         required: true
@@ -15,7 +35,7 @@ on:
         required: true
         default: 'AgentPc2'
       poll_seconds:
-        description: 'Max seconds to wait for AgentPC2 to report v0.2.14'
+        description: 'Max seconds to wait for AgentPC2 to report target_version'
         required: true
         default: '900'
 
@@ -24,16 +44,11 @@ permissions:
   issues: write
 
 concurrency:
-  group: faz22-agentpc2-update-agent-v0214
+  group: faz22-agentpc2-update-agent
   cancel-in-progress: false
 
 env:
-  KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
-  GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
-  EVIDENCE_DIR: /tmp/agentpc2-update-agent-v0214-${{ github.run_id }}
-  TARGET_DEVICE_ID: ${{ inputs.target_product_device_id }}
-  TARGET_DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
-  POLL_SECONDS: ${{ inputs.poll_seconds }}
+  EVIDENCE_DIR: /tmp/agentpc2-update-agent-${{ github.run_id }}
 
 jobs:
   update-agent:
@@ -43,30 +58,120 @@ jobs:
 
     steps:
       - name: Validate dispatch inputs
+        env:
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          INPUT_RELEASE_ID: ${{ inputs.release_id }}
+          INPUT_TARGET_VERSION: ${{ inputs.target_version }}
+          INPUT_EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
+          INPUT_EXPECTED_SIGNER_THUMBPRINT: ${{ inputs.expected_signer_thumbprint }}
+          INPUT_MAX_BYTES: ${{ inputs.max_bytes }}
+          INPUT_TARGET_PRODUCT_DEVICE_ID: ${{ inputs.target_product_device_id }}
+          INPUT_DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+          INPUT_POLL_SECONDS: ${{ inputs.poll_seconds }}
         run: |
           set -euo pipefail
 
-          if [ "${{ inputs.confirm }}" != "RUN_AGENTPC2_UPDATE_AGENT_V0214" ]; then
-            echo "::error::confirm input must be RUN_AGENTPC2_UPDATE_AGENT_V0214"
+          reject_multiline() {
+            local name="$1"
+            local value="$2"
+
+            case "${value}" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be a single line"
+                exit 1
+                ;;
+            esac
+          }
+
+          reject_multiline confirm "${INPUT_CONFIRM}"
+          reject_multiline release_id "${INPUT_RELEASE_ID}"
+          reject_multiline target_version "${INPUT_TARGET_VERSION}"
+          reject_multiline expected_sha256 "${INPUT_EXPECTED_SHA256}"
+          reject_multiline expected_signer_thumbprint "${INPUT_EXPECTED_SIGNER_THUMBPRINT}"
+          reject_multiline max_bytes "${INPUT_MAX_BYTES}"
+          reject_multiline target_product_device_id "${INPUT_TARGET_PRODUCT_DEVICE_ID}"
+          reject_multiline device_hostname "${INPUT_DEVICE_HOSTNAME}"
+          reject_multiline poll_seconds "${INPUT_POLL_SECONDS}"
+
+          if [ "${INPUT_CONFIRM}" != "RUN_AGENTPC2_UPDATE_AGENT_RELEASE" ]; then
+            echo "::error::confirm input must be RUN_AGENTPC2_UPDATE_AGENT_RELEASE"
             exit 1
           fi
 
-          if ! printf '%s' "${{ inputs.target_product_device_id }}" | grep -Eq '^[0-9a-fA-F-]{36}$'; then
+          if [[ ! "${INPUT_RELEASE_ID}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::release_id must look like vX.Y.Z"
+            exit 1
+          fi
+
+          if [[ ! "${INPUT_TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::target_version must look like X.Y.Z"
+            exit 1
+          fi
+
+          if [ "${INPUT_RELEASE_ID}" != "v${INPUT_TARGET_VERSION}" ]; then
+            echo "::error::release_id must equal v<target_version>"
+            exit 1
+          fi
+
+          if [[ ! "${INPUT_EXPECTED_SHA256}" =~ ^[a-f0-9]{64}$ ]]; then
+            echo "::error::expected_sha256 must be 64 lowercase hex characters"
+            exit 1
+          fi
+
+          if [[ ! "${INPUT_EXPECTED_SIGNER_THUMBPRINT}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::expected_signer_thumbprint must be 40 hex characters"
+            exit 1
+          fi
+
+          if [[ ! "${INPUT_MAX_BYTES}" =~ ^[0-9]+$ ]]; then
+            echo "::error::max_bytes must be numeric"
+            exit 1
+          fi
+
+          if [[ ! "${INPUT_TARGET_PRODUCT_DEVICE_ID}" =~ ^[0-9a-fA-F-]{36}$ ]]; then
             echo "::error::target_product_device_id must look like a UUID"
             exit 1
           fi
 
-          if ! printf '%s' "${{ inputs.poll_seconds }}" | grep -Eq '^[0-9]+$'; then
+          case "${INPUT_DEVICE_HOSTNAME}" in
+            ""|"-"*|*"-"|*[^A-Za-z0-9-]*)
+              echo "::error::device_hostname must be a single DNS hostname label"
+              exit 1
+              ;;
+          esac
+
+          if [ "${#INPUT_DEVICE_HOSTNAME}" -gt 63 ]; then
+            echo "::error::device_hostname must be at most 63 characters"
+            exit 1
+          fi
+
+          if [[ ! "${INPUT_POLL_SECONDS}" =~ ^[0-9]+$ ]]; then
             echo "::error::poll_seconds must be numeric"
             exit 1
           fi
 
+          {
+            printf 'RELEASE_ID=%s\n' "${INPUT_RELEASE_ID}"
+            printf 'TARGET_VERSION=%s\n' "${INPUT_TARGET_VERSION}"
+            printf 'EXPECTED_AGENT_VERSION=%s\n' "${INPUT_TARGET_VERSION}"
+            printf 'BINARY_URL=https://github.com/Halildeu/platform-agent/releases/download/%s/endpoint-agent.exe\n' "${INPUT_RELEASE_ID}"
+            printf 'MANIFEST_URL=https://github.com/Halildeu/platform-agent/releases/download/%s/release-manifest.json\n' "${INPUT_RELEASE_ID}"
+            printf 'EXPECTED_SHA256=%s\n' "${INPUT_EXPECTED_SHA256}"
+            printf 'EXPECTED_SIGNER_THUMBPRINT=%s\n' "${INPUT_EXPECTED_SIGNER_THUMBPRINT}"
+            printf 'MAX_BYTES=%s\n' "${INPUT_MAX_BYTES}"
+            printf 'TARGET_DEVICE_ID=%s\n' "${INPUT_TARGET_PRODUCT_DEVICE_ID}"
+            printf 'TARGET_DEVICE_HOSTNAME=%s\n' "${INPUT_DEVICE_HOSTNAME}"
+            printf 'POLL_SECONDS=%s\n' "${INPUT_POLL_SECONDS}"
+          } >> "${GITHUB_ENV}"
+
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Run AgentPC2 v0.2.14 product update
+      - name: Run AgentPC2 product update
         id: update
         continue-on-error: true
+        env:
+          KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
         run: |
           set +e
           mkdir -p "${EVIDENCE_DIR}"
@@ -109,8 +214,21 @@ jobs:
 
       - name: Publish redacted issue evidence
         if: always()
+        env:
+          GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
         run: |
           set -euo pipefail
+
+          workflow_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          target_device_hostname="${TARGET_DEVICE_HOSTNAME:-unknown}"
+          target_device_id="${TARGET_DEVICE_ID:-unknown}"
+          release_id="${RELEASE_ID:-unknown}"
+          target_version="${TARGET_VERSION:-unknown}"
+          binary_url="${BINARY_URL:-unknown}"
+          manifest_url="${MANIFEST_URL:-unknown}"
+          expected_sha256="${EXPECTED_SHA256:-unknown}"
+          signer_thumbprint="${EXPECTED_SIGNER_THUMBPRINT:-unknown}"
+          max_bytes="${MAX_BYTES:-unknown}"
 
           summary="${EVIDENCE_DIR}/summary.json"
           mkdir -p "${EVIDENCE_DIR}"
@@ -147,15 +265,19 @@ jobs:
             sha_manifest="$(sha256sum "${EVIDENCE_DIR}/SHA256SUMS" | awk '{print $1}')"
           fi
 
-          comment="${RUNNER_TEMP}/agentpc2-update-agent-v0214.md"
+          comment="${RUNNER_TEMP}/agentpc2-update-agent-release.md"
           {
-            echo "AGENTPC2_UPDATE_AGENT_V0214 status=${status}"
+            echo "AGENTPC2_UPDATE_AGENT_RELEASE status=${status}"
             echo ""
-            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            echo "- Target product device: \`${{ inputs.device_hostname }}\` / \`${{ inputs.target_product_device_id }}\`"
-            echo "- Release: \`v0.2.14\`"
-            echo "- Binary SHA256: \`624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618\`"
-            echo "- Signer thumbprint: \`D68F4F530137EB65CE44E3405E82B46205E753E5\`"
+            echo "- Workflow: ${workflow_url}"
+            echo "- Target product device: \`${target_device_hostname}\` / \`${target_device_id}\`"
+            echo "- Release: \`${release_id}\`"
+            echo "- Target version: \`${target_version}\`"
+            echo "- Binary URL: \`${binary_url}\`"
+            echo "- Manifest URL: \`${manifest_url}\`"
+            echo "- Binary SHA256: \`${expected_sha256}\`"
+            echo "- Signer thumbprint: \`${signer_thumbprint}\`"
+            echo "- Max bytes: \`${max_bytes}\`"
             echo "- Seed helper exit/status: \`${seed_exit}\` / \`${seed_status}\`"
             echo "- Observed AgentPC2 version/status/lastSeen: \`${observed_version}\` / \`${observed_status}\` / \`${observed_last_seen}\`"
             echo "- Poll result/reason: \`${poll_result}\` / \`${poll_reason}\`"
@@ -177,11 +299,12 @@ jobs:
 
           backend_comment="${RUNNER_TEMP}/platform-backend-717-update-link.md"
           {
-            echo "AGENTPC2_UPDATE_AGENT_V0214_LINK status=${status}"
+            echo "AGENTPC2_UPDATE_AGENT_RELEASE_LINK status=${status}"
             echo ""
             echo "- platform-backend#718 is merged; this run attempted the next product update gate before #208 acceptance."
-            echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            echo "- Target product device: \`${{ inputs.device_hostname }}\` / \`${{ inputs.target_product_device_id }}\`"
+            echo "- Workflow: ${workflow_url}"
+            echo "- Target product device: \`${target_device_hostname}\` / \`${target_device_id}\`"
+            echo "- Release/version: \`${release_id}\` / \`${target_version}\`"
             echo "- Observed AgentPC2 version/status/lastSeen: \`${observed_version}\` / \`${observed_status}\` / \`${observed_last_seen}\`"
             echo "- Product update status: \`${status}\`"
             if [ -n "${reason}" ]; then
@@ -195,7 +318,7 @@ jobs:
             || echo "::warning::Could not comment on platform-backend#717 with this workflow token; evidence remains in the workflow artifact."
 
           {
-            echo "## AgentPC2 v0.2.14 product update"
+            echo "## AgentPC2 product update"
             echo ""
             cat "${comment}"
           } >> "${GITHUB_STEP_SUMMARY}"
@@ -204,7 +327,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: agentpc2-update-agent-v0214-evidence-${{ github.run_id }}
+          name: agentpc2-update-agent-evidence-${{ github.run_id }}
           path: ${{ env.EVIDENCE_DIR }}
           if-no-files-found: warn
           retention-days: 14
@@ -221,6 +344,6 @@ jobs:
           fi
 
           if [ "${exit_code}" != "0" ]; then
-            echo "::error::AgentPC2 v0.2.14 product update did not pass; see issue comment and uploaded evidence."
+            echo "::error::AgentPC2 product update did not pass; see issue comment and uploaded evidence."
             exit "${exit_code}"
           fi
