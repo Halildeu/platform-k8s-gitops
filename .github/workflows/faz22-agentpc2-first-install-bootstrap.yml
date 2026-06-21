@@ -14,6 +14,34 @@ on:
         description: 'Target endpoint hostname'
         required: true
         default: 'AgentPc2'
+      release_id:
+        description: 'EndpointAgent release tag to bootstrap'
+        required: true
+        default: 'v0.2.16'
+      expected_release_manifest_sha256:
+        description: 'Expected release-manifest.json SHA256'
+        required: true
+        default: '7b34836800705205b15a56e18d6f2ef5e46a3064ce5335e5196dce1dd9014c39'
+      expected_install_ps1_sha256:
+        description: 'Expected install.ps1 SHA256'
+        required: true
+        default: '139fb6b50aa21462972aaeb206c7782c820e4cbe0553edd73543265bd86a8ceb'
+      expected_bootstrap_ps1_sha256:
+        description: 'Expected bootstrap-package.ps1 SHA256'
+        required: true
+        default: '83292ab3b5c27a8c27c11c7774cf4157bbb23188b81b0adf2a5a29a70279c7f8'
+      expected_agent_sha256:
+        description: 'Expected endpoint-agent.exe SHA256'
+        required: true
+        default: '1acecdc944ef62c8248192d8b8bd4f67b13c70bd8b4f2cd879be717480fb19c8'
+      expected_agent_zip_sha256:
+        description: 'Expected EndpointAgent.zip SHA256'
+        required: true
+        default: 'b11af93cea172e100872984eef46b9e13a305d87485b53517d22a7fbe7b2a7ae'
+      expected_signer_thumbprint:
+        description: 'Expected Authenticode signer thumbprint'
+        required: true
+        default: 'D68F4F530137EB65CE44E3405E82B46205E753E5'
 
 permissions:
   contents: read
@@ -24,10 +52,17 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
   EVIDENCE_DIR: /tmp/agentpc2-first-install-bootstrap-${{ github.run_id }}
+  CONFIRM: ${{ inputs.confirm }}
   TARGET_PRODUCT_DEVICE_ID: ${{ inputs.target_product_device_id }}
   TARGET_HOSTNAME: ${{ inputs.target_hostname }}
+  RELEASE_ID: ${{ inputs.release_id }}
+  EXPECTED_RELEASE_MANIFEST_SHA256: ${{ inputs.expected_release_manifest_sha256 }}
+  EXPECTED_INSTALL_PS1_SHA256: ${{ inputs.expected_install_ps1_sha256 }}
+  EXPECTED_BOOTSTRAP_PS1_SHA256: ${{ inputs.expected_bootstrap_ps1_sha256 }}
+  EXPECTED_AGENT_SHA256: ${{ inputs.expected_agent_sha256 }}
+  EXPECTED_AGENT_ZIP_SHA256: ${{ inputs.expected_agent_zip_sha256 }}
+  EXPECTED_SIGNER_THUMBPRINT: ${{ inputs.expected_signer_thumbprint }}
 
 jobs:
   prepare-bootstrap:
@@ -40,18 +75,72 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${{ inputs.confirm }}" != "PREPARE_AGENTPC2_FIRST_INSTALL_BOOTSTRAP" ]; then
+          reject_multiline() {
+            name="$1"
+            value="$2"
+            case "$value" in
+              *$'\n'*|*$'\r'*)
+                echo "::error::${name} must be a single line"
+                exit 1
+                ;;
+            esac
+          }
+
+          for name in \
+            CONFIRM \
+            TARGET_PRODUCT_DEVICE_ID \
+            TARGET_HOSTNAME \
+            RELEASE_ID \
+            EXPECTED_RELEASE_MANIFEST_SHA256 \
+            EXPECTED_INSTALL_PS1_SHA256 \
+            EXPECTED_BOOTSTRAP_PS1_SHA256 \
+            EXPECTED_AGENT_SHA256 \
+            EXPECTED_AGENT_ZIP_SHA256 \
+            EXPECTED_SIGNER_THUMBPRINT
+          do
+            reject_multiline "$name" "${!name}"
+          done
+
+          if [ "${CONFIRM}" != "PREPARE_AGENTPC2_FIRST_INSTALL_BOOTSTRAP" ]; then
             echo "::error::confirm input must be PREPARE_AGENTPC2_FIRST_INSTALL_BOOTSTRAP"
             exit 1
           fi
 
-          if ! printf '%s' "${{ inputs.target_product_device_id }}" | grep -Eq '^[0-9a-fA-F-]{36}$'; then
+          if ! printf '%s' "${TARGET_PRODUCT_DEVICE_ID}" | grep -Eq '^[0-9a-fA-F-]{36}$'; then
             echo "::error::target_product_device_id must look like a UUID"
             exit 1
           fi
 
-          if [ -z "${{ inputs.target_hostname }}" ]; then
+          if [ -z "${TARGET_HOSTNAME}" ]; then
             echo "::error::target_hostname cannot be empty"
+            exit 1
+          fi
+
+          if [ "${#TARGET_HOSTNAME}" -gt 253 ] || ! printf '%s' "${TARGET_HOSTNAME}" | grep -Eq '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)([.][A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$'; then
+            echo "::error::target_hostname must be a DNS-safe hostname label/FQDN"
+            exit 1
+          fi
+
+          if ! printf '%s' "${RELEASE_ID}" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9._-]+)?$'; then
+            echo "::error::release_id must look like vX.Y.Z"
+            exit 1
+          fi
+
+          for name in \
+            EXPECTED_RELEASE_MANIFEST_SHA256 \
+            EXPECTED_INSTALL_PS1_SHA256 \
+            EXPECTED_BOOTSTRAP_PS1_SHA256 \
+            EXPECTED_AGENT_SHA256 \
+            EXPECTED_AGENT_ZIP_SHA256
+          do
+            if ! printf '%s' "${!name}" | grep -Eq '^[a-f0-9]{64}$'; then
+              echo "::error::${name} must be a lowercase SHA256 hex string"
+              exit 1
+            fi
+          done
+
+          if ! printf '%s' "${EXPECTED_SIGNER_THUMBPRINT}" | grep -Eq '^[A-F0-9]{40}$'; then
+            echo "::error::expected_signer_thumbprint must be uppercase SHA1 thumbprint hex"
             exit 1
           fi
 
@@ -96,6 +185,8 @@ jobs:
 
       - name: Publish issue evidence
         if: always()
+        env:
+          GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
         run: |
           set -euo pipefail
 
@@ -148,7 +239,7 @@ jobs:
             echo "AGENTPC2_FIRST_INSTALL_BOOTSTRAP status=${status}"
             echo ""
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            echo "- Target: \`${{ inputs.target_hostname }}\` / \`${{ inputs.target_product_device_id }}\`"
+            echo "- Target: \`${TARGET_HOSTNAME}\` / \`${TARGET_PRODUCT_DEVICE_ID}\`"
             echo "- Release: \`${release_id}\` / target version \`${target_version}\`"
             echo "- Release manifest SHA256: \`${manifest_sha}\`"
             echo "- install.ps1 SHA256: \`${install_sha}\`"

@@ -17,7 +17,7 @@ REMOTE_BRIDGE_DEPLOYMENT="${REMOTE_BRIDGE_DEPLOYMENT:-endpoint-admin-remote-brid
 REMOTE_BRIDGE_LOCAL_PORT="${REMOTE_BRIDGE_LOCAL_PORT:-18096}"
 EXPECTED_DIGEST="${EXPECTED_DIGEST:-sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84}"
 
-DEVICE_ID="${DEVICE_ID:-fa2d1ad6-a0a8-4101-ab77-9f2a0b25742a}"
+DEVICE_ID="${DEVICE_ID:-2f7ad30f-970a-42e7-8af8-08764ae6066f}"
 DEVICE_HOSTNAME="${DEVICE_HOSTNAME:-AgentPc2}"
 PRODUCT_DEVICE_ID="$DEVICE_ID"
 ISSUE_URL="${ISSUE_URL:-https://github.com/Halildeu/platform-agent/issues/208}"
@@ -25,10 +25,10 @@ CATALOG_OPERATION_ID="${CATALOG_OPERATION_ID:-GET_HOSTNAME}"
 SESSION_ID="${SESSION_ID:-rb-agentpc2-$(date -u +%Y%m%dT%H%M%SZ)}"
 STEP_UP_EPHEMERAL_KEY_ENABLED="${STEP_UP_EPHEMERAL_KEY_ENABLED:-1}"
 
-EXPECTED_RELEASE_TAG="${EXPECTED_RELEASE_TAG:-v0.2.14}"
-EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-0.2.14}"
-EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618}"
-EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-2d7b372c7a3dda548caec66fbcb9327a04e54531369b9b1f2bd7f0c56910a7b1}"
+EXPECTED_RELEASE_TAG="${EXPECTED_RELEASE_TAG:-v0.2.16}"
+EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-0.2.16}"
+EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-1acecdc944ef62c8248192d8b8bd4f67b13c70bd8b4f2cd879be717480fb19c8}"
+EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-b11af93cea172e100872984eef46b9e13a305d87485b53517d22a7fbe7b2a7ae}"
 EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
 
 KC_BASE_URL="${KC_BASE_URL:-http://127.0.0.1:8082}"
@@ -621,15 +621,18 @@ psql_query() {
   local sql="$1" delimiter="${2:-|}"
 
   if command -v docker >/dev/null 2>&1 && docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
-    docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DATABASE" -At -F "$delimiter" -v ON_ERROR_STOP=1 -c "$sql"
+    printf '%s\n' "$sql" \
+      | docker exec -i "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DATABASE" \
+        -At -F "$delimiter" -v ON_ERROR_STOP=1 -f -
     return 0
   fi
 
   if command -v psql >/dev/null 2>&1; then
     read_pg_credentials
-    PGPASSWORD="$(cat "${TMP_DIR}/pg-password.txt")" \
+    printf '%s\n' "$sql" \
+      | PGPASSWORD="$(cat "${TMP_DIR}/pg-password.txt")" \
       psql -h "$PG_HOST" -p "$PG_PORT" -U "$(cat "${TMP_DIR}/pg-user.txt")" \
-      -d "$PG_DATABASE" -At -F "$delimiter" -v ON_ERROR_STOP=1 -c "$sql" \
+      -d "$PG_DATABASE" -At -F "$delimiter" -v ON_ERROR_STOP=1 -f - \
       && return 0
   fi
 
@@ -726,6 +729,37 @@ psql_query() {
   fi
 
   printf '%s\n' "$output"
+}
+
+psql_query_with_vars() {
+  local sql="$1" delimiter="${2:-|}" assignment name value prefix=""
+  shift 2
+
+  for assignment in "$@"; do
+    name="${assignment%%=*}"
+    value="${assignment#*=}"
+
+    if ! printf '%s' "$name" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$'; then
+      fail_acceptance "postgres-query-variable-name-invalid"
+    fi
+    if ! printf '%s' "$value" | grep -Eq '^[A-Za-z0-9._:-]+$'; then
+      fail_acceptance "postgres-query-variable-value-invalid:${name}"
+    fi
+
+    prefix+="\\set ${name} ${value}"$'\n'
+  done
+
+  psql_query "${prefix}${sql}" "$delimiter"
+}
+
+validate_acceptance_inputs() {
+  if ! printf '%s' "$DEVICE_ID" | grep -Eq '^[0-9a-fA-F-]{36}$'; then
+    fail_acceptance "device-id-invalid"
+  fi
+
+  if [[ "${#DEVICE_HOSTNAME}" -gt 253 ]] || ! printf '%s' "$DEVICE_HOSTNAME" | grep -Eq '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)([.][A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$'; then
+    fail_acceptance "device-hostname-invalid"
+  fi
 }
 
 candidate_private_keys() {
@@ -871,11 +905,11 @@ select d.id,d.hostname,coalesce(d.agent_version,''),coalesce(d.status,''),
        coalesce(d.last_seen_at::text,''),'' as heartbeat_at,
        '[]' as capabilities
 from ${DB_SCHEMA}.endpoint_devices d
-where d.id='${DEVICE_ID}'::uuid or lower(d.hostname)=lower('${DEVICE_HOSTNAME}')
-order by case when d.id='${DEVICE_ID}'::uuid then 0 else 1 end,
+where d.id=:'device_id'::uuid or lower(d.hostname)=lower(:'device_hostname')
+order by case when d.id=:'device_id'::uuid then 0 else 1 end,
          d.last_seen_at desc nulls last
 limit 1;"
-  psql_query "$sql" '|' > "$device_file"
+  psql_query_with_vars "$sql" '|' "device_id=${DEVICE_ID}" "device_hostname=${DEVICE_HOSTNAME}" > "$device_file"
 
   local row id hostname version endpoint_status last_seen heartbeat_at caps device_json manifest_ok decision reason_text
   row="$(grep -E '^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{12}\|' "$device_file" | head -n 1 || true)"
@@ -917,7 +951,7 @@ limit 1;"
     reason_text="No matching endpoint device row for AgentPC2."
   elif [[ "$manifest_ok" != "true" ]]; then
     decision="artifact-manifest-mismatch"
-    reason_text="Artifact manifest does not match expected v0.2.14 hashes."
+    reason_text="Artifact manifest does not match expected ${EXPECTED_RELEASE_TAG} hashes."
   else
     decision="agent-version-mismatch"
     reason_text="Target endpoint does not report expected agent version."
@@ -1024,6 +1058,7 @@ main() {
   for cmd in kubectl jq curl openssl python3 shasum base64; do
     need_cmd "$cmd"
   done
+  validate_acceptance_inputs
   mkdir -p "$EVIDENCE_DIR"
   session_hash="$(sha256_text "$SESSION_ID")"
 
