@@ -70,6 +70,7 @@ namespace: platform-test
 
 resources:
   - ../../../../base/apps/endpoint-admin-remote-bridge   # the inert scaffold
+  - ingress-passthrough.yaml                             # dedicated 443/SNI broker path
   - externalsecret.yaml                                   # control #3/#4/#10
   - netpol.yaml                                           # control #6/#7/#8
 
@@ -80,7 +81,10 @@ patches:
   # control #11 — flips replicas:1 + REMOTE_BRIDGE_ENABLED=true + mounts the
   # mTLS/signer secrets + makes the broker secret required (fail-closed).
   - path: patch-activate.yaml
-  # L4 edge exposure — publishes 9444 as nodePort 31944 (still no 8096/8081).
+  # Legacy L4 fallback — publishes 9444 as nodePort 31944 (still no 8096/8081).
+  # The accepted standard path is the passthrough Ingress above:
+  # remote-bridge-mtls.testai.acik.com:443 -> host stream -> ingress-nginx
+  # ssl-passthrough -> endpoint-admin-remote-bridge:9444.
   - path: service-patch.yaml
 
 images:
@@ -117,6 +121,8 @@ images:
   # This activation overlay remains outside the Argo root and still requires an
   # explicit owner-gated operator apply before #510 live product-session
   # verification.
+  # Re-pinned to the live broker imageID proven on the dedicated
+  # remote-bridge-mtls.testai.acik.com:443 SNI path.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84
+    digest: sha256:2c023f64c35701b827927041d0b6ae24cc3a772667e626a3a5f3e6eebb59ff84
