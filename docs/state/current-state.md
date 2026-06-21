@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — AgentPC2 v0.2.19 fix-forward release published; test artifact-host promotion in progress (2026-06-21)
+## Live Delta — AgentPC2 v0.2.19 artifact-host live; endpoint bootstrap still pending (2026-06-21)
 
 `platform-agent#208` remains not accepted. The latest product-channel rerun
 after `v0.2.18` proved signed `PERMIT` + `transportPushed=true`, but the durable
@@ -26,17 +26,34 @@ Fix-forward source/release state:
   `6278877cfac586dc371152ec008c06fb1c7fe6a4d623ed616245282ad22cec65`,
   and artifact-host image
   `ghcr.io/halildeu/platform-agent-artifacts:v0.2.19@sha256:39059fb9754c31037e966c0a54456f167e572c9fe61c4a29594f521bbb394a3f`.
-- GitOps branch `codex/208-promote-v0219-artifact-host-20260621` updates the
-  test artifact-host desired-state, AgentPC2 bootstrap defaults, and constrained
-  executor acceptance defaults to the immutable `v0.2.19` release hashes.
+- GitOps PR `platform-k8s-gitops#1831` merged at
+  `7e6cc6e3375322c18fbdb72de3b3382b31dd408b`, updating the test artifact-host
+  desired-state, AgentPC2 bootstrap defaults, and constrained executor
+  acceptance defaults to the immutable `v0.2.19` release hashes.
+- Live `k3d-test/platform-test` evidence now matches the immutable artifact-host
+  digest: deployment `artifact-host` generation `30`, observed `30`, ready
+  `2/2`; pods `artifact-host-b8687995d-4msws` and
+  `artifact-host-b8687995d-s6w9n` are ready with imageID
+  `ghcr.io/halildeu/platform-agent-artifacts@sha256:39059fb9754c31037e966c0a54456f167e572c9fe61c4a29594f521bbb394a3f`.
+- Public `/artifacts/endpoint-agent/current/release-manifest.json` resolves to
+  `release_tag=v0.2.19`, endpoint-agent.exe SHA256
+  `d294b79e925dc9564ee4fb0b0122698e351238709fa004268287563fb35b7839`,
+  `install.ps1` SHA256
+  `b7933a600c079c9cd2623cb7d1161f62421d22e5724a6c48e37cd463f8801a57`, and
+  `EndpointAgent.zip` SHA256
+  `6278877cfac586dc371152ec008c06fb1c7fe6a4d623ed616245282ad22cec65`.
+- Public AgentPC2 bootstrap script at
+  `/artifacts/endpoint-agent/bootstrap/agentpc2-first-install-bootstrap.ps1`
+  has SHA256
+  `7bfe0c9b78bfc31f5fa44fd58abddc16727e796b050a03861c832df3ca8adf46`.
 
-Boundary: this is release/promotion preparation only. #208 still needs
-artifact-host live imageID verification, AgentPC2 endpoint-local bootstrap to
-`v0.2.19`, fresh outbound 443 mTLS HELLO/CONSENT/ACTIVE, signed PERMIT,
-`AGENT_OUTPUT`/DATA plus terminal marker, negative guards, and audit evidence.
-It does not claim unrestricted shell/RDP/WinRM/SMB/SSH, file browser,
-production remote-support readiness, broad rollout, or true TPM/device-key
-hardware attestation.
+Boundary: this proves only source merge, test artifact-host rollout, immutable
+imageID, and public artifact manifest/bootstrap availability. #208 still needs
+AgentPC2 endpoint-local bootstrap to `v0.2.19`, fresh outbound 443 mTLS
+HELLO/CONSENT/ACTIVE, signed PERMIT, `AGENT_OUTPUT`/DATA plus terminal marker,
+negative guards, and audit evidence. It does not claim unrestricted
+shell/RDP/WinRM/SMB/SSH, file browser, production remote-support readiness,
+broad rollout, or true TPM/device-key hardware attestation.
 
 ## Live Delta — AgentPC2 v0.2.18 online; broker needs bounded enrollment-backed pilot flag (2026-06-21)
 
