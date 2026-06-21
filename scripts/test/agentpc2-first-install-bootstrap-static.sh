@@ -16,8 +16,8 @@ if ! grep -Fq 'Invoke-DownloadVerified -Uri \$BinaryUrl -OutFile \$BinaryPath -E
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:5526b307b5181ed599077d164a3e162639671d56a39ba6bf8f47ef177dc30d67}"' "${script}"; then
-  echo "bootstrap gate default artifact-host digest must track the v0.2.20 immutable image digest" >&2
+if ! grep -Fq 'EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:e4309d08da77f9c3f5eb288805611fa2d8a97178bcd90b1a132eb30585ed3da0}"' "${script}"; then
+  echo "bootstrap gate default artifact-host digest must track the v0.2.21 immutable image digest" >&2
   exit 1
 fi
 
@@ -78,7 +78,7 @@ if ! grep -Fq 'agentpc2-remote-bridge-canonical-env-patch-v7.ps1:' "${bootstrap_
   exit 1
 fi
 
-if ! grep -Fq 'a7f7a07a8f93d4d6650d26120ea933abfd54db714bbc0796b92a7f5922cd528f  agentpc2-remote-bridge-canonical-env-patch-v7.ps1' "${bootstrap_configmap}"; then
+if ! grep -Fq '7f920e7d7d08f74d3e10e747b7da75433d6329d7b2369ae028807b83eb6c2b61  agentpc2-remote-bridge-canonical-env-patch-v7.ps1' "${bootstrap_configmap}"; then
   echo "AgentPC2 bootstrap SHA256SUMS must pin the v7 canonical env patch hash" >&2
   exit 1
 fi
@@ -93,7 +93,7 @@ if ! grep -Fq 'f695d8b3bf5b74ad200529bed823d1dc7228e1db9c0dac680eb1339355917c06 
   exit 1
 fi
 
-if ! grep -Fq '411d2b73db8bb2e5380ff8ad15d83638ce3e76c5dcdbbcd06b9da7870e38e5b3  agentpc2-first-install-bootstrap.ps1' "${bootstrap_configmap}"; then
+if ! grep -Fq '4f5c1549aefcb6e2652b69b28639e80e2f74a646c15f3c0a1d7b817d508a41ef  agentpc2-first-install-bootstrap.ps1' "${bootstrap_configmap}"; then
   echo "AgentPC2 bootstrap SHA256SUMS must pin the canonical-env first-install hash" >&2
   exit 1
 fi
