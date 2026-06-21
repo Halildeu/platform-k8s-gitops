@@ -123,6 +123,21 @@ if ! grep -Fq 'STEP_UP_RUNTIME_STABILIZE_SECONDS' "${script}"; then
   exit 1
 fi
 
+if ! grep -Fq 'AGENT_OPERATION_WAIT_SECONDS="${AGENT_OPERATION_WAIT_SECONDS:-45}"' "${script}"; then
+  echo "acceptance must use a configurable, jitter-tolerant default wait before exporting agent output recording" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'agent-operation-wait-seconds-invalid' "${script}"; then
+  echo "acceptance must validate the agent operation output wait window" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'sleep "$AGENT_OPERATION_WAIT_SECONDS"' "${script}"; then
+  echo "acceptance must not use a fixed short sleep before recording export" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'runtime_step_up_public_key_matches' "${script}"; then
   echo "acceptance must verify the broker runtime step-up public key after rollout" >&2
   exit 1
