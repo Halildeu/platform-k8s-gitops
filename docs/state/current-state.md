@@ -1,5 +1,64 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — AgentPC2 v0.2.21 artifact-host live; product acceptance pending (2026-06-22)
+
+`platform-agent#208` remains not accepted. The latest product-channel rerun on
+`v0.2.20` reached signed `PERMIT` + `transportPushed=true`, but the durable
+recording still lacked `AGENT_OUTPUT`/DATA plus terminal marker evidence. Real
+Claude review classified the sessionless dispatch `ErrorFrame` behavior as an
+audit/WORM gap, not just observability. `platform-agent#220` implemented the
+fix-forward, and `v0.2.21` is now the canonical acceptance target.
+
+Fix-forward source/release/GitOps state:
+
+- `platform-agent#220` merged at
+  `0ea1ad7c756c65880a56ba17da46b173d4304881`, binding dispatch/device-mismatch,
+  stream-open, handler, and empty-output errors to the operation session so the
+  broker/verifier can attribute failure frames instead of receiving orphan
+  sessionless errors.
+- Trusted EXE/MSI release workflows `27918992271` / `27918992269` published
+  `v0.2.21` with signing tier `trusted-internal-ca`, signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`, endpoint-agent.exe SHA256
+  `d346d35142a6a6be7f2bdd2cf8f26aaf652b25cabd8a6e14426c7a452baff2b1`,
+  `EndpointAgent.zip` SHA256
+  `73292071fa61b0572e81db6fb51b5eff0e48483467a4ebced177778c3aff78cd`,
+  `install.ps1` SHA256
+  `fd150897767fe9b85cf3a018b6fe2f62b61ab2f3e8aa13e37445afc4c1ba35f4`,
+  release-manifest SHA256
+  `bc7482f2b651aab51a6130f9f121534a5ecc9abdcadd1c31f3e4ff10c4c11725`,
+  and artifact-host image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.21@sha256:e4309d08da77f9c3f5eb288805611fa2d8a97178bcd90b1a132eb30585ed3da0`.
+- GitOps PR `platform-k8s-gitops#1838` merged at
+  `e85d8b8cd245b4c0fa5de7a7359b1346ace2ae3b`, updating the test artifact-host
+  desired-state and AgentPC2 bootstrap/verifier defaults to the immutable
+  `v0.2.21` release hashes.
+- Live `k3d-test/platform-test` evidence now matches the immutable artifact-host
+  digest: deployment `artifact-host` generation `32`, observed `32`, ready
+  `2/2`; pods `artifact-host-55bb578846-2ltrn` and
+  `artifact-host-55bb578846-kfsdn` are ready with `restartCount=0` and imageID
+  `ghcr.io/halildeu/platform-agent-artifacts@sha256:e4309d08da77f9c3f5eb288805611fa2d8a97178bcd90b1a132eb30585ed3da0`.
+- Public `/artifacts/endpoint-agent/current/release-manifest.json` and
+  immutable `/artifacts/endpoint-agent/v0.2.21/release-manifest.json` both
+  resolve to `release_tag=v0.2.21`, endpoint-agent.exe SHA256
+  `d346d35142a6a6be7f2bdd2cf8f26aaf652b25cabd8a6e14426c7a452baff2b1`, and
+  `EndpointAgent.zip` SHA256
+  `73292071fa61b0572e81db6fb51b5eff0e48483467a4ebced177778c3aff78cd`.
+- ArgoCD `platform-test` is `OutOfSync / Healthy` at revision
+  `e85d8b8cd245b4c0fa5de7a7359b1346ace2ae3b`; the remaining listed drift is
+  `ExternalSecret/platform-test/notification-orchestrator-secrets`, not the
+  artifact-host deployment.
+
+Boundary: this proves source merge, trusted release publication, GitOps
+desired-state merge, test artifact-host rollout, immutable pod imageID parity,
+and public artifact availability for `v0.2.21`. It does not yet prove
+`platform-agent#208` product-channel acceptance. The next required gate is a
+fresh outbound 443 mTLS run from AgentPC2 against
+`remote-bridge-mtls.testai.acik.com:443` proving HELLO/CONSENT/ACTIVE, signed
+PERMIT, `AGENT_OUTPUT`/DATA plus terminal marker, negative guards, and audit
+evidence. It does not claim unrestricted shell/RDP/WinRM/SMB/SSH, file browser,
+production remote-support readiness, broad rollout, or true TPM/device-key
+hardware attestation.
+
 ## Live Delta — AgentPC2 v0.2.20 endpoint bootstrap evidence received; product acceptance pending (2026-06-22)
 
 `platform-agent#208` remains not accepted. The latest product-channel rerun
