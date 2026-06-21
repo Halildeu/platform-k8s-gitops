@@ -543,7 +543,7 @@ AgentPC2 remote-bridge canonical environment patch v7.
 
 .DESCRIPTION
 Migrates the EndpointAgent service Environment from earlier pilot alias names to
-the canonical v0.2.17 remote-bridge keys, enables bounded CONSTRAINED_PTY
+the canonical remote-bridge keys for ${RELEASE_ID}, enables bounded CONSTRAINED_PTY
 operation handling, and enables owner-gated pilot auto-consent for the AgentPC2
 lab acceptance lane. It contains no private key, bearer token, password,
 administrator credential, or HMAC enrollment token.
@@ -706,7 +706,7 @@ Start-Sleep -Seconds \$PostRestartWaitSeconds
   evidence = @{ root = \$EvidenceRoot; signals = \$SignalsPath }
   boundary = @{
     proves = @(
-      "EndpointAgent v0.2.17 binary digest matches expected release digest",
+      "EndpointAgent ${RELEASE_ID} binary digest matches expected release digest",
       "Canonical constrained-PTY remote-bridge service environment is present",
       "Owner-gated pilot auto-consent is enabled for bounded AgentPC2 lab acceptance",
       "EndpointAgent service restart attempted after canonical env patch"
@@ -743,7 +743,7 @@ Purpose:
 - Move AgentPC2 to EndpointAgent ${RELEASE_ID} when the currently installed agent does not advertise \`UPDATE_AGENT\`.
 - Preserve the product remote-ops acceptance boundary: this package is only a bootstrap step, not #208 acceptance.
 - Use outbound-only remote bridge configuration over ${REMOTE_BRIDGE_BROKER_ADDR}.
-- Publish an endpoint-local v7 migration patch for already-installed v0.2.17
+- Publish an endpoint-local v7 migration patch for already-installed ${RELEASE_ID}
   endpoints that still carry earlier remote-bridge env aliases.
 
 Run on AgentPC2 from an elevated PowerShell session:

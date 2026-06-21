@@ -392,7 +392,7 @@ fix, and the latest 2026-06-20 AgentPC2 constrained-executor acceptance rerun
 prerequisites before stopping at the intended no-go gate:
 
 - endpoint-admin remote-bridge deployment/pod digest:
-  `sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84`
+  `sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d`
 - artifact-host `v0.2.13` digest:
   `sha256:6d19a740c5ba4b1a555d3398f5b80387b98b769c1ada2814954d3d914c975454`
 - public agent artifact SHA256:
