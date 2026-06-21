@@ -5202,7 +5202,19 @@ images:
     # Runtime acceptance remains gated by platform-test sync plus AgentPC2
     # product remote-ops smoke; this line is only desired-state artifact
     # promotion.
-    digest: sha256:6f634666b919f732f26ae37963d489e649aae6b2a1e703d70fc61d65c6b30eec
+    # 2026-06-21 Faz 22.6 AgentPC2 constrained executor terminal-output audit
+    # (backend #724 -> sha-0d521d7). Records remote-bridge DATA frames as
+    # AGENT_OUTPUT and EndStream as SESSION_END in durable audit, addressing
+    # the AgentPC2 no-go where PERMIT existed but agent output/terminal marker
+    # were missing from the evidence ledger. Image build run 27906811299
+    # produced endpoint-admin-service
+    # sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d.
+    # repository_dispatch deploy run 27906857897 correctly refused imperative
+    # drift from sha256:6f634666... until this desired-state bump.
+    # Runtime acceptance remains gated by platform-test sync plus AgentPC2
+    # product remote-ops smoke; this line is only desired-state artifact
+    # promotion.
+    digest: sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
