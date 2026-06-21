@@ -12,8 +12,11 @@ data:
     - Move AgentPC2 to EndpointAgent v0.2.21 when the currently installed agent does not advertise `UPDATE_AGENT`.
     - Preserve the product remote-ops acceptance boundary: this package is only a bootstrap step, not #208 acceptance.
     - Use outbound-only remote bridge configuration over remote-bridge-mtls.testai.acik.com:443.
+    - Enable the signed, host-bounded EndpointAgent self-update policy required for
+      the product `UPDATE_AGENT` capability.
     - Publish an endpoint-local v7 migration patch for already-installed v0.2.21
-      endpoints that still carry earlier remote-bridge env aliases.
+      endpoints that still carry earlier remote-bridge env aliases or lack the
+      signed self-update local policy.
 
     Run on AgentPC2 from an elevated PowerShell session:
 
@@ -30,8 +33,8 @@ data:
         powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Script
 
     If AgentPC2 already has EndpointAgent v0.2.21 installed but the product
-    smoke still returns `session-not-active`, run the bounded canonical env patch
-    instead:
+    smoke still returns `session-not-active` or `UPDATE_AGENT` is not advertised,
+    run the bounded canonical env patch instead:
 
         $ErrorActionPreference = "Stop"
         $ProgressPreference = "SilentlyContinue"
@@ -57,9 +60,9 @@ data:
 
     After endpoint-local execution, rerun the #208 constrained-executor acceptance workflow. Do not close #208 from this bootstrap evidence alone.
   SHA256SUMS: |
-    af2cf45f34faed123616a98437444cf05dcf20ebbd71326cc34561cd3c7e197d  README.md
-    4f5c1549aefcb6e2652b69b28639e80e2f74a646c15f3c0a1d7b817d508a41ef  agentpc2-first-install-bootstrap.ps1
-    7f920e7d7d08f74d3e10e747b7da75433d6329d7b2369ae028807b83eb6c2b61  agentpc2-remote-bridge-canonical-env-patch-v7.ps1
+    3ded08b9dedde27e2a7fc5ab0cfbba6fd7df25d4b107a1a1a7b287c1d95b3a7b  README.md
+    00ab037fdd5d2577970359f153f77c75d51eeeb0e9da34f287d716293ed0a13c  agentpc2-first-install-bootstrap.ps1
+    4c79bd64d015189aa6cbd92b8194d3e926298921bc4579fd8c6428b76ec918fe  agentpc2-remote-bridge-canonical-env-patch-v7.ps1
     f695d8b3bf5b74ad200529bed823d1dc7228e1db9c0dac680eb1339355917c06  agentpc2-remote-bridge-attestation-patch-v0217-20260621T144928Z-14741b2e.ps1
   agentpc2-first-install-bootstrap.ps1: |
     <#
@@ -105,6 +108,14 @@ data:
     $RemoteBridgePermitBrokerPublicKeyB64 = @'
     MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEKrY41M+0Yt995yJrAAeARZ4tgnEvhO35KWR8BjJPM4JkwUBxCfMHCYhm9mQUz3PDbtCBUS9X9t3MtH9atSLb/Q==
     '@.Trim()
+    $SelfUpdateAllowedHosts = "github.com,release-assets.githubusercontent.com,objects.githubusercontent.com"
+    $SelfUpdateSignerThumbprints = "D68F4F530137EB65CE44E3405E82B46205E753E5"
+    $SelfUpdateHardMaxBytes = "52428800"
+    $SelfUpdateMaxRedirects = "5"
+    $SelfUpdateAutoActivate = "true"
+    $SelfUpdateActivationTimeout = "2m"
+    $SelfUpdateCommandTimeout = "30m"
+    $SelfUpdateServiceName = "EndpointAgent"
 
     function Write-Step {
       param([string]$Message)
@@ -211,6 +222,28 @@ data:
       Write-ServiceEnvMap -Path $serviceKey -Map $map
     }
 
+    function Set-CanonicalSelfUpdateServiceEnvironment {
+      param([string]$ServiceName)
+
+      $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+      if (-not (Test-Path -Path $serviceKey)) {
+        throw "Service registry key not found: $serviceKey"
+      }
+
+      $map = Read-ServiceEnvMap -Path $serviceKey
+      $map["ENDPOINT_AGENT_SELF_UPDATE_ENABLED"] = "true"
+      $map["ENDPOINT_AGENT_SELF_UPDATE_ALLOWED_HOSTS"] = $SelfUpdateAllowedHosts
+      $map["ENDPOINT_AGENT_SELF_UPDATE_SIGNER_THUMBPRINTS"] = $SelfUpdateSignerThumbprints
+      $map["ENDPOINT_AGENT_SELF_UPDATE_HARD_MAX_BYTES"] = $SelfUpdateHardMaxBytes
+      $map["ENDPOINT_AGENT_SELF_UPDATE_MAX_REDIRECTS"] = $SelfUpdateMaxRedirects
+      $map["ENDPOINT_AGENT_SELF_UPDATE_AUTO_ACTIVATE"] = $SelfUpdateAutoActivate
+      $map["ENDPOINT_AGENT_SELF_UPDATE_ACTIVATION_TIMEOUT"] = $SelfUpdateActivationTimeout
+      $map["ENDPOINT_AGENT_SELF_UPDATE_SERVICE_NAME"] = $SelfUpdateServiceName
+      $map["ENDPOINT_AGENT_SELF_UPDATE_COMMAND_TIMEOUT"] = $SelfUpdateCommandTimeout
+
+      Write-ServiceEnvMap -Path $serviceKey -Map $map
+    }
+
     function Get-ClientAuthCertRows {
       $rows = @()
       $certs = Get-ChildItem Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
@@ -300,7 +333,10 @@ data:
       Write-Step "patch canonical remote bridge service environment"
       Set-CanonicalRemoteBridgeServiceEnvironment -ServiceName "EndpointAgent"
 
-      Write-Step "restart EndpointAgent with canonical remote bridge environment"
+      Write-Step "patch signed self-update service environment"
+      Set-CanonicalSelfUpdateServiceEnvironment -ServiceName "EndpointAgent"
+
+      Write-Step "restart EndpointAgent with canonical remote bridge and self-update environment"
       Restart-Service EndpointAgent -Force
 
       Start-Sleep -Seconds $PostInstallWaitSeconds
@@ -350,6 +386,17 @@ data:
           permitKeyId = $RemoteBridgePermitKid
           permitBrokerPublicKeySha256 = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::ASCII.GetBytes($RemoteBridgePermitBrokerPublicKeyB64))).Replace("-", "").ToLowerInvariant()
         }
+        selfUpdate = @{
+          enabled = $true
+          allowedHosts = $SelfUpdateAllowedHosts
+          signerThumbprintsConfigured = 1
+          hardMaxBytes = $SelfUpdateHardMaxBytes
+          maxRedirects = $SelfUpdateMaxRedirects
+          autoActivate = $SelfUpdateAutoActivate
+          activationTimeout = $SelfUpdateActivationTimeout
+          serviceName = $SelfUpdateServiceName
+          commandTimeout = $SelfUpdateCommandTimeout
+        }
         autoEnroll = @{
           apiUrl = $AutoEnrollApiUrl
           certSANURIPrefix = $AutoEnrollSanUriPrefix
@@ -368,10 +415,13 @@ data:
             "Endpoint-local install script executed",
             "EndpointAgent service install/start attempted with immutable $ReleaseId binary hash",
             "Outbound remote bridge configuration written for 443/SNI broker",
-            "Canonical constrained-PTY and owner-gated pilot auto-consent service environment written"
+            "Canonical constrained-PTY and owner-gated pilot auto-consent service environment written",
+            "Signed self-update local trust policy written so UPDATE_AGENT can be advertised"
           )
           doesNotProve = @(
             "platform-agent#208 constrained operation acceptance",
+            "UPDATE_AGENT product dispatch succeeded",
+            "Agent version changed through product self-update",
             "broad GPO/MSI rollout",
             "inbound SSH/RDP/WinRM/SMB/RPC support",
             "production/domain-wide support readiness",
@@ -526,6 +576,17 @@ data:
     $map["ENDPOINT_AGENT_REMOTE_BRIDGE_PERMIT_KEY_ID"] = $RemoteBridgePermitKid
     $map["ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT"] = "true"
 
+    Write-Step "write canonical signed self-update keys"
+    $map["ENDPOINT_AGENT_SELF_UPDATE_ENABLED"] = "true"
+    $map["ENDPOINT_AGENT_SELF_UPDATE_ALLOWED_HOSTS"] = $SelfUpdateAllowedHosts
+    $map["ENDPOINT_AGENT_SELF_UPDATE_SIGNER_THUMBPRINTS"] = $SelfUpdateSignerThumbprints
+    $map["ENDPOINT_AGENT_SELF_UPDATE_HARD_MAX_BYTES"] = $SelfUpdateHardMaxBytes
+    $map["ENDPOINT_AGENT_SELF_UPDATE_MAX_REDIRECTS"] = $SelfUpdateMaxRedirects
+    $map["ENDPOINT_AGENT_SELF_UPDATE_AUTO_ACTIVATE"] = $SelfUpdateAutoActivate
+    $map["ENDPOINT_AGENT_SELF_UPDATE_ACTIVATION_TIMEOUT"] = $SelfUpdateActivationTimeout
+    $map["ENDPOINT_AGENT_SELF_UPDATE_SERVICE_NAME"] = $SelfUpdateServiceName
+    $map["ENDPOINT_AGENT_SELF_UPDATE_COMMAND_TIMEOUT"] = $SelfUpdateCommandTimeout
+
     Write-ServiceEnvMap -Path $ServiceKey -Map $map
 
     Write-Step "restart EndpointAgent"
@@ -547,7 +608,14 @@ data:
       "ENDPOINT_AGENT_REMOTE_BRIDGE_PTY_ENABLED",
       "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_PUBLIC_KEY_B64",
       "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_KID",
-      "ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT"
+      "ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT",
+      "ENDPOINT_AGENT_SELF_UPDATE_ENABLED",
+      "ENDPOINT_AGENT_SELF_UPDATE_ALLOWED_HOSTS",
+      "ENDPOINT_AGENT_SELF_UPDATE_SIGNER_THUMBPRINTS",
+      "ENDPOINT_AGENT_SELF_UPDATE_HARD_MAX_BYTES",
+      "ENDPOINT_AGENT_SELF_UPDATE_MAX_REDIRECTS",
+      "ENDPOINT_AGENT_SELF_UPDATE_AUTO_ACTIVATE",
+      "ENDPOINT_AGENT_SELF_UPDATE_SERVICE_NAME"
     )
     $missing = @($requiredKeys | Where-Object {
       -not $patchedMap.Contains($_) -or [string]::IsNullOrWhiteSpace([string]$patchedMap[$_])
@@ -564,6 +632,16 @@ data:
       user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
       localBinary = @{ path = $BinaryPath; sha256 = $actualAgentSha256 }
       service = $service
+      selfUpdate = @{
+        enabled = $patchedMap["ENDPOINT_AGENT_SELF_UPDATE_ENABLED"]
+        allowedHosts = $patchedMap["ENDPOINT_AGENT_SELF_UPDATE_ALLOWED_HOSTS"]
+        signerThumbprintsConfigured = if ([string]::IsNullOrWhiteSpace([string]$patchedMap["ENDPOINT_AGENT_SELF_UPDATE_SIGNER_THUMBPRINTS"])) { 0 } else { 1 }
+        hardMaxBytes = $patchedMap["ENDPOINT_AGENT_SELF_UPDATE_HARD_MAX_BYTES"]
+        maxRedirects = $patchedMap["ENDPOINT_AGENT_SELF_UPDATE_MAX_REDIRECTS"]
+        autoActivate = $patchedMap["ENDPOINT_AGENT_SELF_UPDATE_AUTO_ACTIVATE"]
+        serviceName = $patchedMap["ENDPOINT_AGENT_SELF_UPDATE_SERVICE_NAME"]
+        commandTimeout = $patchedMap["ENDPOINT_AGENT_SELF_UPDATE_COMMAND_TIMEOUT"]
+      }
       missingCanonicalKeys = $missing
       redactedServiceEnvironment = @(Redact-ServiceEnvMap -Map $patchedMap)
       evidence = @{ root = $EvidenceRoot; signals = $SignalsPath }
@@ -572,10 +650,13 @@ data:
           "EndpointAgent v0.2.21 binary digest matches expected release digest",
           "Canonical constrained-PTY remote-bridge service environment is present",
           "Owner-gated pilot auto-consent is enabled for bounded AgentPC2 lab acceptance",
+          "Signed self-update local trust policy is present so UPDATE_AGENT can be advertised",
           "EndpointAgent service restart attempted after canonical env patch"
         )
         doesNotProve = @(
           "platform-agent#208 constrained operation acceptance",
+          "UPDATE_AGENT product dispatch succeeded",
+          "Agent version changed through product self-update",
           "broker permit issuance",
           "typed operation execution",
           "production/domain-wide support readiness",

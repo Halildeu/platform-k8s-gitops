@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 set -euo pipefail
 
 script="scripts/faz22-remote-ops/agentpc2-first-install-bootstrap-gate.sh"
@@ -48,6 +49,21 @@ if grep -Fq '"-BinaryUrl"' <<<"${install_args_block}"; then
   exit 1
 fi
 
+if ! grep -Fq 'SELF_UPDATE_ALLOWED_HOSTS="${SELF_UPDATE_ALLOWED_HOSTS:-github.com,release-assets.githubusercontent.com,objects.githubusercontent.com}"' "${script}"; then
+  echo "bootstrap gate must default to the bounded signed self-update host allowlist" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'ENDPOINT_AGENT_SELF_UPDATE_ENABLED' "${script}"; then
+  echo "bootstrap gate must write self-update service environment keys" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'Signed self-update local trust policy written so UPDATE_AGENT can be advertised' "${script}"; then
+  echo "bootstrap endpoint evidence boundary must state self-update capability scope" >&2
+  exit 1
+fi
+
 if [[ ! -f "${bootstrap_configmap}" ]]; then
   echo "missing ${bootstrap_configmap}" >&2
   exit 1
@@ -78,7 +94,12 @@ if ! grep -Fq 'agentpc2-remote-bridge-canonical-env-patch-v7.ps1:' "${bootstrap_
   exit 1
 fi
 
-if ! grep -Fq '7f920e7d7d08f74d3e10e747b7da75433d6329d7b2369ae028807b83eb6c2b61  agentpc2-remote-bridge-canonical-env-patch-v7.ps1' "${bootstrap_configmap}"; then
+if ! grep -Fq 'ENDPOINT_AGENT_SELF_UPDATE_ALLOWED_HOSTS' "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap ConfigMap must publish self-update service environment keys" >&2
+  exit 1
+fi
+
+if ! grep -Fq '4c79bd64d015189aa6cbd92b8194d3e926298921bc4579fd8c6428b76ec918fe  agentpc2-remote-bridge-canonical-env-patch-v7.ps1' "${bootstrap_configmap}"; then
   echo "AgentPC2 bootstrap SHA256SUMS must pin the v7 canonical env patch hash" >&2
   exit 1
 fi
@@ -93,8 +114,13 @@ if ! grep -Fq 'f695d8b3bf5b74ad200529bed823d1dc7228e1db9c0dac680eb1339355917c06 
   exit 1
 fi
 
-if ! grep -Fq '4f5c1549aefcb6e2652b69b28639e80e2f74a646c15f3c0a1d7b817d508a41ef  agentpc2-first-install-bootstrap.ps1' "${bootstrap_configmap}"; then
-  echo "AgentPC2 bootstrap SHA256SUMS must pin the canonical-env first-install hash" >&2
+if ! grep -Fq '00ab037fdd5d2577970359f153f77c75d51eeeb0e9da34f287d716293ed0a13c  agentpc2-first-install-bootstrap.ps1' "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap SHA256SUMS must pin the self-update-capable first-install hash" >&2
+  exit 1
+fi
+
+if ! grep -Fq '3ded08b9dedde27e2a7fc5ab0cfbba6fd7df25d4b107a1a1a7b287c1d95b3a7b  README.md' "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap SHA256SUMS must pin the self-update-capable README hash" >&2
   exit 1
 fi
 
