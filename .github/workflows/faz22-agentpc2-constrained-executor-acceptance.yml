@@ -37,6 +37,10 @@ env:
   DEVICE_ID: ${{ inputs.device_id }}
   DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
   EVIDENCE_DIR: /tmp/agentpc2-constrained-executor-${{ github.run_id }}
+  # Session ownership is a live coordination ledger, not the product evidence
+  # issue. Keep it in this repo so the workflow's issues:write token can create
+  # the redacted owner claim; cross-repo #208 evidence publish remains best-effort.
+  ISSUE_URL: https://github.com/Halildeu/platform-k8s-gitops/issues/1768
 
 jobs:
   acceptance:
