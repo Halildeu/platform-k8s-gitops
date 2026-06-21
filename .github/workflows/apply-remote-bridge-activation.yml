@@ -63,6 +63,8 @@ jobs:
           kubectl kustomize "${OVERLAY}" > /tmp/endpoint-admin-remote-bridge-activation.yaml
           grep -F "image: ghcr.io/halildeu/platform-backend-endpoint-admin-service@${{ inputs.expected_digest }}" \
             /tmp/endpoint-admin-remote-bridge-activation.yaml
+          grep -F 'REMOTE_BRIDGE_BROKER_ENROLLMENT_BACKED_CRYPTO_IDENTITY_PILOT_RISK_ACCEPTED: "true"' \
+            /tmp/endpoint-admin-remote-bridge-activation.yaml
 
           {
             echo "## Remote-bridge activation render"

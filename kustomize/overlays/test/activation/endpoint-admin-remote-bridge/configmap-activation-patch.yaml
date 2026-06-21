@@ -24,6 +24,11 @@ data:
   REMOTE_BRIDGE_PEER_TRUST_FRESHNESS_TTL_MILLIS: "120000"
   REMOTE_BRIDGE_PEER_EVIDENCE_PARSER: "TRANSPORT_BOUND"
   REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER: "MACHINE_CERT_ENROLLMENT"
+  # Bounded non-prod pilot exception: backend rejects this flag in
+  # production-like profiles, and the broad rollout TPM/device-key gate remains
+  # open. This lets the AgentPC2 product smoke honestly use the AD CS
+  # machine-certificate enrollment basis already recorded in the audit path.
+  REMOTE_BRIDGE_BROKER_ENROLLMENT_BACKED_CRYPTO_IDENTITY_PILOT_RISK_ACCEPTED: "true"
   REMOTE_BRIDGE_OWNER_GRANT_GATE_TYPE: "APPROVAL_BACKED_DURABLE_DB"
   REMOTE_BRIDGE_DURESS_SOURCE_TYPE: "PILOT_RISK_ACCEPTED_DISABLED"
   REMOTE_BRIDGE_DURESS_PILOT_RISK_ACCEPTED: "true"
