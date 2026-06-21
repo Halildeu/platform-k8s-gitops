@@ -13,7 +13,7 @@ RUN_ID="${GITHUB_RUN_ID:-local-$(date -u +%Y%m%dT%H%M%SZ)}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-first-install-bootstrap-${RUN_ID}}"
 TMP_DIR="$(mktemp -d)"
 
-RELEASE_ID="${RELEASE_ID:-v0.2.16}"
+RELEASE_ID="${RELEASE_ID:-v0.2.17}"
 TARGET_VERSION="${TARGET_VERSION:-${RELEASE_ID#v}}"
 TARGET_HOSTNAME="${TARGET_HOSTNAME:-AgentPc2}"
 TARGET_PRODUCT_DEVICE_ID="${TARGET_PRODUCT_DEVICE_ID:-2f7ad30f-970a-42e7-8af8-08764ae6066f}"
@@ -25,14 +25,14 @@ BOOTSTRAP_PACKAGE_URL="${BOOTSTRAP_PACKAGE_URL:-${RELEASE_BASE_URL}/bootstrap-pa
 MANIFEST_URL="${MANIFEST_URL:-${RELEASE_BASE_URL}/release-manifest.json}"
 SHA256SUMS_URL="${SHA256SUMS_URL:-${RELEASE_BASE_URL}/SHA256SUMS}"
 
-EXPECTED_RELEASE_MANIFEST_SHA256="${EXPECTED_RELEASE_MANIFEST_SHA256:-7b34836800705205b15a56e18d6f2ef5e46a3064ce5335e5196dce1dd9014c39}"
-EXPECTED_INSTALL_PS1_SHA256="${EXPECTED_INSTALL_PS1_SHA256:-139fb6b50aa21462972aaeb206c7782c820e4cbe0553edd73543265bd86a8ceb}"
+EXPECTED_RELEASE_MANIFEST_SHA256="${EXPECTED_RELEASE_MANIFEST_SHA256:-ad62a7ebecbe53f2d9fcdaea5096f76c4098eaf325c8ec2bf6a575b23a2c3e28}"
+EXPECTED_INSTALL_PS1_SHA256="${EXPECTED_INSTALL_PS1_SHA256:-8e7dffa89dda0a7bc8d8e6dc210b22298441b478c19dd5b1622ab64f75a94f56}"
 EXPECTED_BOOTSTRAP_PS1_SHA256="${EXPECTED_BOOTSTRAP_PS1_SHA256:-83292ab3b5c27a8c27c11c7774cf4157bbb23188b81b0adf2a5a29a70279c7f8}"
-EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-1acecdc944ef62c8248192d8b8bd4f67b13c70bd8b4f2cd879be717480fb19c8}"
-EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-b11af93cea172e100872984eef46b9e13a305d87485b53517d22a7fbe7b2a7ae}"
+EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-418160181258594ce196a734f5d570473919ee6678c255a9fb92b7da0f16a4c2}"
+EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-873a2906c85668ed92a5c656806e77ece82b9d3feabcd6f4cb6927837205cfb7}"
 EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
 EXPECTED_SIGNING_TIER="${EXPECTED_SIGNING_TIER:-trusted-internal-ca}"
-EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:307990110d8f85ef226b5a287c2c4096395b8de68db972572967ff59ef675900}"
+EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:4e7c95ba603e8fb36f17cffc46aff94c281186d080f5d8adf6e2ee0e3447419a}"
 
 AUTO_ENROLL_API_URL="${AUTO_ENROLL_API_URL:-https://mtls.testai.acik.com/api/v1/endpoint-agent}"
 AUTO_ENROLL_SAN_URI_PREFIX="${AUTO_ENROLL_SAN_URI_PREFIX:-adcomputer:}"
@@ -537,7 +537,7 @@ AgentPC2 remote-bridge canonical environment patch v7.
 
 .DESCRIPTION
 Migrates the EndpointAgent service Environment from earlier pilot alias names to
-the canonical v0.2.16 remote-bridge keys, enables bounded CONSTRAINED_PTY
+the canonical v0.2.17 remote-bridge keys, enables bounded CONSTRAINED_PTY
 operation handling, and enables owner-gated pilot auto-consent for the AgentPC2
 lab acceptance lane. It contains no private key, bearer token, password,
 administrator credential, or HMAC enrollment token.
@@ -700,7 +700,7 @@ Start-Sleep -Seconds \$PostRestartWaitSeconds
   evidence = @{ root = \$EvidenceRoot; signals = \$SignalsPath }
   boundary = @{
     proves = @(
-      "EndpointAgent v0.2.16 binary digest matches expected release digest",
+      "EndpointAgent v0.2.17 binary digest matches expected release digest",
       "Canonical constrained-PTY remote-bridge service environment is present",
       "Owner-gated pilot auto-consent is enabled for bounded AgentPC2 lab acceptance",
       "EndpointAgent service restart attempted after canonical env patch"
@@ -737,7 +737,7 @@ Purpose:
 - Move AgentPC2 to EndpointAgent ${RELEASE_ID} when the currently installed agent does not advertise \`UPDATE_AGENT\`.
 - Preserve the product remote-ops acceptance boundary: this package is only a bootstrap step, not #208 acceptance.
 - Use outbound-only remote bridge configuration over ${REMOTE_BRIDGE_BROKER_ADDR}.
-- Publish an endpoint-local v7 migration patch for already-installed v0.2.16
+- Publish an endpoint-local v7 migration patch for already-installed v0.2.17
   endpoints that still carry earlier remote-bridge env aliases.
 
 Run on AgentPC2 from an elevated PowerShell session:

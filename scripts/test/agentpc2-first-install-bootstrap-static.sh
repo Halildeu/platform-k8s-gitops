@@ -63,12 +63,12 @@ if ! grep -Fq 'agentpc2-remote-bridge-canonical-env-patch-v7.ps1:' "${bootstrap_
   exit 1
 fi
 
-if ! grep -Fq 'be30746c9d8c8ca6d439a68ecb2e75184638001935657dcc2fbf755422438f99  agentpc2-remote-bridge-canonical-env-patch-v7.ps1' "${bootstrap_configmap}"; then
+if ! grep -Fq 'f5233701b51cb6ff026f90ac7cd09f15cbe0356c644d395421be66b509d18ec8  agentpc2-remote-bridge-canonical-env-patch-v7.ps1' "${bootstrap_configmap}"; then
   echo "AgentPC2 bootstrap SHA256SUMS must pin the v7 canonical env patch hash" >&2
   exit 1
 fi
 
-if ! grep -Fq '56b793f5b085abdaec49c2aa7fe5feac82d9999682d87f982a10dba0589c59f5  agentpc2-first-install-bootstrap.ps1' "${bootstrap_configmap}"; then
+if ! grep -Fq 'e3f5d49f50ba2f792e8750541cf84d381cc57c94944ea06fd26d51fad93eb65b  agentpc2-first-install-bootstrap.ps1' "${bootstrap_configmap}"; then
   echo "AgentPC2 bootstrap SHA256SUMS must pin the canonical-env first-install hash" >&2
   exit 1
 fi
