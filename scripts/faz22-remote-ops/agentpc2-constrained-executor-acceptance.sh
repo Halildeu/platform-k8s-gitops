@@ -55,6 +55,7 @@ DB_SCHEMA="${DB_SCHEMA:-endpoint_admin_service}"
 
 STEP_UP_PRIVATE_KEY_PEM_PATH="${STEP_UP_PRIVATE_KEY_PEM_PATH:-}"
 STEP_UP_RUNTIME_STABILIZE_SECONDS="${STEP_UP_RUNTIME_STABILIZE_SECONDS:-${STEP_UP_SECRET_STABILIZE_SECONDS:-8}}"
+AGENT_OPERATION_WAIT_SECONDS="${AGENT_OPERATION_WAIT_SECONDS:-45}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-rtt-acceptance-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 TMP_DIR="$(mktemp -d)"
@@ -788,6 +789,11 @@ validate_acceptance_inputs() {
   if [[ "${#DEVICE_HOSTNAME}" -gt 253 ]] || ! printf '%s' "$DEVICE_HOSTNAME" | grep -Eq '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)([.][A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$'; then
     fail_acceptance "device-hostname-invalid"
   fi
+
+  if ! printf '%s' "$AGENT_OPERATION_WAIT_SECONDS" | grep -Eq '^[0-9]+$' \
+      || (( AGENT_OPERATION_WAIT_SECONDS < 5 || AGENT_OPERATION_WAIT_SECONDS > 180 )); then
+    fail_acceptance "agent-operation-wait-seconds-invalid"
+  fi
 }
 
 candidate_private_keys() {
@@ -1199,7 +1205,8 @@ main() {
 
   operation_status="$(jq -r '.operationStatus // ""' "${EVIDENCE_DIR}/summary.json" 2>/dev/null || true)"
 
-  sleep 12
+  printf 'INFO waiting_for_agent_output seconds=%s\n' "$AGENT_OPERATION_WAIT_SECONDS"
+  sleep "$AGENT_OPERATION_WAIT_SECONDS"
   export_recording_rows
   sha256_manifest
 
