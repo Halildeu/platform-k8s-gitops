@@ -899,24 +899,51 @@ write_pilot_readiness() {
   curl -fsS --max-time 20 "https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json" \
     -o "$manifest_file"
 
-  local sql
+  local sql device_sql query_status capability_source_status capability_source_error
+  capability_source_status="ok"
+  capability_source_error=""
   sql="
 select d.id,d.hostname,coalesce(d.agent_version,''),coalesce(d.status,''),
+       coalesce(d.last_seen_at::text,''),coalesce(h.received_at::text,'') as heartbeat_at,
+       coalesce((h.payload->'capabilities')::text,'[]') as capabilities
+from ${DB_SCHEMA}.endpoint_devices d
+left join lateral (
+  select *
+  from ${DB_SCHEMA}.endpoint_heartbeats h
+  where h.device_id=d.id
+  order by h.received_at desc
+  limit 1
+) h on true
+where d.id=:'device_id'::uuid or lower(d.hostname)=lower(:'device_hostname')
+order by case when d.id=:'device_id'::uuid then 0 else 1 end,
+         d.last_seen_at desc nulls last
+limit 1;"
+  set +e
+  psql_query_with_vars "$sql" '|' "device_id=${DEVICE_ID}" "device_hostname=${DEVICE_HOSTNAME}" > "$device_file" 2>"${dir}/device-heartbeat-capabilities.stderr"
+  query_status=$?
+  set -e
+
+  if (( query_status != 0 )); then
+    capability_source_status="unavailable"
+    capability_source_error="$(tr '\n' ' ' < "${dir}/device-heartbeat-capabilities.stderr" | sed 's/[[:space:]]\{1,\}/ /g' | cut -c1-500)"
+    device_sql="
+select d.id,d.hostname,coalesce(d.agent_version,''),coalesce(d.status,''),
        coalesce(d.last_seen_at::text,''),'' as heartbeat_at,
-       '[]' as capabilities
+       'null' as capabilities
 from ${DB_SCHEMA}.endpoint_devices d
 where d.id=:'device_id'::uuid or lower(d.hostname)=lower(:'device_hostname')
 order by case when d.id=:'device_id'::uuid then 0 else 1 end,
          d.last_seen_at desc nulls last
 limit 1;"
-  psql_query_with_vars "$sql" '|' "device_id=${DEVICE_ID}" "device_hostname=${DEVICE_HOSTNAME}" > "$device_file"
+    psql_query_with_vars "$device_sql" '|' "device_id=${DEVICE_ID}" "device_hostname=${DEVICE_HOSTNAME}" > "$device_file"
+  fi
 
-  local row id hostname version endpoint_status last_seen heartbeat_at caps device_json manifest_ok decision reason_text
+  local row id hostname version endpoint_status last_seen heartbeat_at caps device_json manifest_ok operation_capable decision reason_text
   row="$(grep -E '^[0-9a-fA-F-]{8}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{4}-[0-9a-fA-F-]{12}\|' "$device_file" | head -n 1 || true)"
   if [[ -n "$row" ]]; then
     IFS='|' read -r id hostname version endpoint_status last_seen heartbeat_at caps <<< "$row"
     if [[ -z "$caps" ]] || ! jq -e . <<< "$caps" >/dev/null 2>&1; then
-      caps="[]"
+      caps="null"
     fi
     PRODUCT_DEVICE_ID="$id"
     device_json="$(jq -cn \
@@ -927,6 +954,7 @@ limit 1;"
   else
     device_json="null"
     version=""
+    caps="null"
   fi
 
   manifest_ok="false"
@@ -943,15 +971,26 @@ limit 1;"
     manifest_ok="true"
   fi
 
-  if [[ "$manifest_ok" == "true" && "$device_json" != "null" && "$version" == *"$EXPECTED_AGENT_VERSION"* ]]; then
+  operation_capable="false"
+  if [[ "$capability_source_status" == "ok" ]] && jq -e 'type == "array" and index("CONSTRAINED_PTY") != null' <<< "$caps" >/dev/null 2>&1; then
+    operation_capable="true"
+  fi
+
+  if [[ "$manifest_ok" == "true" && "$device_json" != "null" && "$version" == *"$EXPECTED_AGENT_VERSION"* && "$operation_capable" == "true" ]]; then
     decision="ready-for-product-smoke"
-    reason_text="Target endpoint reports expected agent version."
+    reason_text="Target endpoint reports expected agent version and advertises CONSTRAINED_PTY."
+  elif [[ "$manifest_ok" == "true" && "$device_json" != "null" && "$version" == *"$EXPECTED_AGENT_VERSION"* && "$capability_source_status" != "ok" ]]; then
+    decision="ready-for-product-smoke"
+    reason_text="Target endpoint reports expected agent version; heartbeat capability source is unavailable to this verifier, so the product smoke remains the authority."
   elif [[ "$device_json" == "null" ]]; then
     decision="target-endpoint-not-found"
     reason_text="No matching endpoint device row for AgentPC2."
   elif [[ "$manifest_ok" != "true" ]]; then
     decision="artifact-manifest-mismatch"
     reason_text="Artifact manifest does not match expected ${EXPECTED_RELEASE_TAG} hashes."
+  elif [[ "$version" == *"$EXPECTED_AGENT_VERSION"* && "$operation_capable" != "true" ]]; then
+    decision="agent-capability-missing"
+    reason_text="Target endpoint reports expected agent version, but latest heartbeat does not advertise CONSTRAINED_PTY."
   else
     decision="agent-version-mismatch"
     reason_text="Target endpoint does not report expected agent version."
@@ -970,6 +1009,8 @@ limit 1;"
     --slurpfile manifest "$manifest_file" \
     --arg deviceId "$DEVICE_ID" \
     --arg deviceHostname "$DEVICE_HOSTNAME" \
+    --arg capabilitySourceStatus "$capability_source_status" \
+    --arg capabilitySourceError "$capability_source_error" \
     --argjson device "$device_json" \
     '{
       generatedAt:$generatedAt,
@@ -981,6 +1022,7 @@ limit 1;"
         expectedSha256:$expectedSha256,
         expectedZipSha256:$expectedZipSha256,
         expectedSignerThumbprint:$expectedSignerThumbprint,
+        requiredCapability:"CONSTRAINED_PTY",
         ok:$manifestOk,
         observed:$manifest[0]
       },
@@ -988,6 +1030,11 @@ limit 1;"
         requestedId:$deviceId,
         requestedHostname:$deviceHostname,
         observed:$device
+      },
+      capabilitySource:{
+        status:$capabilitySourceStatus,
+        error:$capabilitySourceError,
+        requiredCapability:"CONSTRAINED_PTY"
       }
     }' > "${dir}/summary.json"
 
