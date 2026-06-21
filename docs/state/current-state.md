@@ -1,5 +1,80 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — remote-bridge-mtls SNI broker path proven; #208 reopened for missing AGENT_OUTPUT (2026-06-21)
+
+`remote-bridge-mtls.testai.acik.com:443` is currently routed to the
+remote-bridge broker path, not to the normal endpoint-agent mTLS API path.
+This closes the SNI/certificate routing prerequisite, but it does not close
+`platform-agent#208` because the live constrained-operation evidence still
+lacks same-session agent output.
+
+Fresh live evidence:
+
+- Host-nginx stream config on staging routes
+  `remote-bridge-mtls.testai.acik.com` through upstream
+  `test_remote_bridge_broker` at `172.19.0.2:19445`; the Kubernetes
+  `endpoint-admin-remote-bridge` Service is `NodePort 31944 -> 9444`, with
+  endpoint pod `endpoint-admin-remote-bridge-6968f65dd4-xhjzf` at
+  `10.44.3.238:9444`.
+- TLS/SNI check for `remote-bridge-mtls.testai.acik.com:443` presents
+  `CN=remote-bridge-mtls.testai.acik.com`, issuer
+  `CN=Acik-Endpoint-CA, DC=acik, DC=local`, SAN
+  `DNS:remote-bridge-mtls.testai.acik.com, DNS:mtls.testai.acik.com`, and
+  SHA256 fingerprint
+  `40:4E:21:30:0A:AD:34:C0:8D:E5:E9:D6:66:31:5B:9A:61:B5:99:D9:8C:8C:FC:27:1D:2D:2A:13:D5:DE:C0:D6`.
+- Control TLS/SNI check for `mtls.testai.acik.com:443` still presents the
+  normal endpoint-agent mTLS API certificate `CN=mtls.testai.acik.com` with
+  SHA256 fingerprint
+  `2B:3A:4C:B3:E5:92:DB:AD:10:18:55:F3:12:FE:19:3F:BA:11:3D:B0:BD:DC:C8:63:63:60:7B:5B:24:00:0F:09`.
+- Broker logs in `platform-test` show the gRPC broker listening on `0.0.0.0:9444`
+  and prior AgentPC2 product-channel traffic:
+  `HELLO_VERIFIED:cert=true,attestation=true,device=false`,
+  `CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false`,
+  `CONSENT_GRANTED`, `ACTIVE`, then
+  `AGENT_ERROR:operation-dispatch-failed:retryable=false`.
+- EndpointAdmin DB still shows AgentPC2 product device
+  `2f7ad30f-970a-42e7-8af8-08764ae6066f` as `ONLINE`, hostname `AgentPc2`,
+  domain `acik.local`, `agent_version=v0.2.14`, ring `PILOT`, and
+  `last_seen_at=2026-06-21 00:53:34+00`.
+- The latest product-channel smoke directory
+  `/home/halil/codex-rb-smoke/20260621T005147Z-agentpc2-v5-product` reached
+  the operator catalog (`catalog=200`) but `open` returned
+  `422 {"reason":"open-session-refused"}`; no `PERMIT`, `transportPushed=true`,
+  or `AGENT_OUTPUT` was produced in that run.
+
+Tracking correction:
+
+- `platform-agent#208` was briefly closed as `COMPLETED` while its issue body
+  and Project #2 item still said `Blocked` and while the required
+  `AGENT_OUTPUT`/DATA evidence was missing. The issue was reopened on
+  2026-06-21 with evidence comment
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4760487637`.
+- The Project #2 item is again consistent with the live state:
+  `platform-agent#208` is open and `Blocked`.
+
+Artifact boundary:
+
+- The live test artifact host still serves `v0.2.14`:
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.14@sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`,
+  and `/artifacts/endpoint-agent/current/release-manifest.json` reports
+  `release_tag=v0.2.14`.
+- `platform-agent#214` / release `v0.2.15` exists and improves agent-side
+  dispatch-error classification, but it is not yet the accepted AgentPC2
+  product-channel artifact for this gate. Moving AgentPC2 to `v0.2.15` also
+  requires fresh attestation/provenance evidence or an explicit bounded-pilot
+  trust decision; broad rollout still leaves `platform-backend#548`
+  (TPM/device-key hardware attestation) open.
+
+Next acceptance gate:
+
+- Re-establish an active AgentPC2 remote-bridge attended session over the
+  product `remote-bridge-mtls.testai.acik.com:443` path.
+- Re-run the guarded product smoke and require `PERMIT`, `transportPushed=true`,
+  constrained `GET_HOSTNAME`, same-session `AGENT_OUTPUT`/DATA, WORM
+  `POLICY_EVENT` + output recording, and safe negative-operation evidence.
+- Do not substitute reverse SSH/RDP/WinRM/SMB/SSH, unrestricted shell, or
+  endpoint-local manual output for the product-channel acceptance evidence.
+
 ## Live Delta — AgentPC2 remote-bridge pilot auto-consent still awaiting endpoint-local v5 patch (2026-06-20)
 
 **Session milestone**: AgentPC2 v3 endpoint-local alias patch was verified as
