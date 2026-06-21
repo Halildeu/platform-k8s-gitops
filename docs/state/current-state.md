@@ -1,5 +1,43 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — AgentPC2 v0.2.19 fix-forward release published; test artifact-host promotion in progress (2026-06-21)
+
+`platform-agent#208` remains not accepted. The latest product-channel rerun
+after `v0.2.18` proved signed `PERMIT` + `transportPushed=true`, but the durable
+recording still contained only `POLICY_EVENT` + `SESSION_END`; there was no
+`AGENT_OUTPUT` / DATA row. That no-go evidence is workflow
+`27912749262`, artifact `7777906183`, artifact zip SHA256
+`a9d5a111773d651ea7d049a178be0c401ba57f6505b9253429c7a42aebafad01`.
+
+Fix-forward source/release state:
+
+- `platform-agent#218` merged at
+  `ddaedea3e45e34499d9fff9364db1d11a5da2562`, adding a Windows fallback from
+  an empty-output active-session ConPTY helper result to the existing bounded
+  service-mode direct-capture path. The broker permit, allowlist, command hash,
+  no-shell, and output cap contracts are unchanged.
+- Main CI for `ddaedea3e45e34499d9fff9364db1d11a5da2562` passed, including
+  Windows Go test.
+- Trusted EXE release workflow `27913656957` published `v0.2.19` with
+  signing tier `trusted-internal-ca`, signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`, endpoint-agent.exe SHA256
+  `d294b79e925dc9564ee4fb0b0122698e351238709fa004268287563fb35b7839`,
+  `EndpointAgent.zip` SHA256
+  `6278877cfac586dc371152ec008c06fb1c7fe6a4d623ed616245282ad22cec65`,
+  and artifact-host image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.19@sha256:39059fb9754c31037e966c0a54456f167e572c9fe61c4a29594f521bbb394a3f`.
+- GitOps branch `codex/208-promote-v0219-artifact-host-20260621` updates the
+  test artifact-host desired-state, AgentPC2 bootstrap defaults, and constrained
+  executor acceptance defaults to the immutable `v0.2.19` release hashes.
+
+Boundary: this is release/promotion preparation only. #208 still needs
+artifact-host live imageID verification, AgentPC2 endpoint-local bootstrap to
+`v0.2.19`, fresh outbound 443 mTLS HELLO/CONSENT/ACTIVE, signed PERMIT,
+`AGENT_OUTPUT`/DATA plus terminal marker, negative guards, and audit evidence.
+It does not claim unrestricted shell/RDP/WinRM/SMB/SSH, file browser,
+production remote-support readiness, broad rollout, or true TPM/device-key
+hardware attestation.
+
 ## Live Delta — AgentPC2 v0.2.18 online; broker needs bounded enrollment-backed pilot flag (2026-06-21)
 
 `platform-k8s-gitops#1768` has fresh endpoint-local bootstrap evidence for

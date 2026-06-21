@@ -13,23 +13,23 @@ if ! grep -Fq 'TOKEN_CLIENT_CANDIDATES="${TOKEN_CLIENT_CANDIDATES:-remote-bridge
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_RELEASE_TAG="${EXPECTED_RELEASE_TAG:-v0.2.18}"' "${script}"; then
-  echo "acceptance must default to the current AgentPC2 release tag v0.2.18" >&2
+if ! grep -Fq 'EXPECTED_RELEASE_TAG="${EXPECTED_RELEASE_TAG:-v0.2.19}"' "${script}"; then
+  echo "acceptance must default to the current AgentPC2 release tag v0.2.19" >&2
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-0.2.18}"' "${script}"; then
-  echo "acceptance must default to the current AgentPC2 agent version 0.2.18" >&2
+if ! grep -Fq 'EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-0.2.19}"' "${script}"; then
+  echo "acceptance must default to the current AgentPC2 agent version 0.2.19" >&2
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-92bf65812720d330eaefa9cfee86d6df4d6477a2370b14850f02a74ea288e88e}"' "${script}"; then
-  echo "acceptance must default to the v0.2.18 endpoint-agent.exe SHA256" >&2
+if ! grep -Fq 'EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-d294b79e925dc9564ee4fb0b0122698e351238709fa004268287563fb35b7839}"' "${script}"; then
+  echo "acceptance must default to the v0.2.19 endpoint-agent.exe SHA256" >&2
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-afa7448ed78c38ed4c54de8191cbed41e4cdec3c35c7b72e393c45dc42be5137}"' "${script}"; then
-  echo "acceptance must default to the v0.2.18 EndpointAgent.zip SHA256" >&2
+if ! grep -Fq 'EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-6278877cfac586dc371152ec008c06fb1c7fe6a4d623ed616245282ad22cec65}"' "${script}"; then
+  echo "acceptance must default to the v0.2.19 EndpointAgent.zip SHA256" >&2
   exit 1
 fi
 
