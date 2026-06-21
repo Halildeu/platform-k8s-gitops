@@ -12,6 +12,17 @@ open/approve/step-up (`200` responses, WebAuthn verified) before catalog
 `GET_HOSTNAME` returned `DENY/session-not-active` with
 `transportPushed=false`. This is not `platform-agent#208` acceptance.
 
+A subsequent guarded run on merged `main`
+`https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27900035529`
+ran at commit `e29775133fcd9ad4a1a707214bb1b5648803caa2` after the
+capability verifier patch. It still ended `no-go`, but it stopped before the
+product operation path with `reason=postgres-client-pod-query-failed`: the
+workflow DB principal cannot read `endpoint_admin_service.endpoint_heartbeats`,
+and the shell helper converted that expected read-scope failure into a hard
+workflow failure before the fallback `endpoint_devices` query could run. This
+is a verifier control-flow bug, not `#208` acceptance evidence and not an
+endpoint-local bootstrap failure.
+
 Root cause found in source/config comparison: the installed service environment
 can still carry earlier alias keys such as
 `ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED`,
@@ -37,12 +48,30 @@ public edge verification currently returns bootstrap SHA256
 patch SHA256
 `be30746c9d8c8ca6d439a68ecb2e75184638001935657dcc2fbf755422438f99`. The
 guarded acceptance script now reads the latest heartbeat capability payload
-when the workflow DB principal is allowed to read it, records
-`capabilitySource.status`, and fails early with
+when the workflow DB principal is allowed to read it, treats heartbeat
+read-scope denial as `capabilitySource.status=unavailable`, falls back to the
+endpoint device row, and fails early with
 `pilot-readiness-agent-capability-missing` when an available source does not
 advertise `CONSTRAINED_PTY`. If the heartbeat capability source is unavailable
 to the verifier, the summary explicitly records that boundary and the product
 smoke result remains authoritative instead of fabricating `capabilities=[]`.
+
+Endpoint-local v7 execution was completed on AgentPC2 at
+`2026-06-21T12:30:58+03:00` to `2026-06-21T12:32:29+03:00` with script SHA256
+`be30746c9d8c8ca6d439a68ecb2e75184638001935657dcc2fbf755422438f99`. The
+summary reported `status=patched-service-running`, EndpointAgent service
+`Running`, local binary SHA256
+`1acecdc944ef62c8248192d8b8bd4f67b13c70bd8b4f2cd879be717480fb19c8`, no
+missing canonical keys, broker address
+`remote-bridge-mtls.testai.acik.com:443`, TLS server name
+`remote-bridge-mtls.testai.acik.com`, `ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED=true`,
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PTY_ENABLED=true`, and
+`ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT=true`. The same log tail shows
+the agent reaching the remote-bridge path but ending streams with
+`broker closed the control stream`, `protocol defect: unsupported-payload-in-idle`,
+or `heartbeat watchdog expired`; this proves the canonical endpoint config is
+present and the product path is being attempted, but does not prove `PERMIT`,
+constrained operation output, or audit acceptance.
 
 This patch/script hardening is not acceptance evidence by itself. After
 endpoint-local v7/bootstrap execution, `#208` still requires fresh
