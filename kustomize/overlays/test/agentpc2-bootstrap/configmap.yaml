@@ -9,6 +9,12 @@ data:
     https://testai.acik.com/artifacts/endpoint-agent/bootstrap/
     ```
 
+
+    Current first-install target:
+    - EndpointAgent v0.2.16
+    - outbound-only remote bridge: remote-bridge-mtls.testai.acik.com:443
+    - endpoint-agent.exe SHA256: 1acecdc944ef62c8248192d8b8bd4f67b13c70bd8b4f2cd879be717480fb19c8
+
     Run on AgentPC2 from an elevated PowerShell session:
 
     ```powershell
@@ -22,7 +28,7 @@ data:
     New-Item -ItemType Directory -Force $WorkDir | Out-Null
     Invoke-WebRequest -UseBasicParsing -Uri "$Base/agentpc2-first-install-bootstrap.ps1" -OutFile $Script
 
-    $ExpectedScriptSha256 = "c60fc426145f8ea0c33c417a4e94c66d001b3723167360ab365192eb31f275ab"
+    $ExpectedScriptSha256 = "d58574d4c9dd675ef41ba8b3bb1c12f8f13c88675ef43e0fee1d40b3bdf2eed7"
     $ActualScriptSha256 = (Get-FileHash $Script -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($ActualScriptSha256 -ne $ExpectedScriptSha256) { throw "Bootstrap script SHA256 mismatch: $ActualScriptSha256" }
 
@@ -55,15 +61,15 @@ data:
     - This is a bounded AgentPC2 first-install seed for platform-k8s-gitops#1768.
     - It contains no HMAC enrollment token, bearer token, password, private key, or administrator credential.
     - It does not prove platform-agent#208 acceptance by itself.
-    - #208 still requires live product-channel HELLO, permit, constrained-operation, negative/plaintext refusal, and audit evidence after AgentPC2 reports v0.2.14.
+    - #208 still requires live product-channel HELLO, permit, constrained-operation, negative/plaintext refusal, and audit evidence after AgentPC2 reports v0.2.16.
   SHA256SUMS: |
-    269812c4f23e6411bcaae9c9d1b86fab17847a49d3121758ee2b2381b2acd050  README.md
-    c60fc426145f8ea0c33c417a4e94c66d001b3723167360ab365192eb31f275ab  agentpc2-first-install-bootstrap.ps1
+    54b44c1df207c6031c033c25933026168fae5e023bd8353b67a4781c38275802  README.md
+    d58574d4c9dd675ef41ba8b3bb1c12f8f13c88675ef43e0fee1d40b3bdf2eed7  agentpc2-first-install-bootstrap.ps1
     d08c1b3b7af7af00c000f9f3ecd48bfb2ad5a36f70d80289353b5dc45eec4d5f  agentpc2-remote-bridge-pilot-autoconsent-patch-v5.ps1
   agentpc2-first-install-bootstrap.ps1: |
     <#
     .SYNOPSIS
-    AgentPC2 bounded first-install bootstrap for EndpointAgent v0.2.14.
+    AgentPC2 bounded first-install bootstrap for EndpointAgent v0.2.16.
 
     .DESCRIPTION
     Installs the operation-capable Endpoint Agent release using immutable release
@@ -75,7 +81,7 @@ data:
     [CmdletBinding()]
     param(
       [string]$EvidenceRoot = "C:\ProgramData\EndpointAgent\rollout-evidence",
-      [string]$WorkDir = "C:\ProgramData\EndpointAgent\bootstrap\v0.2.14",
+      [string]$WorkDir = "C:\ProgramData\EndpointAgent\bootstrap\v0.2.16",
       [int]$PostInstallWaitSeconds = 90
     )
 
@@ -83,15 +89,15 @@ data:
     $ErrorActionPreference = "Stop"
     $ProgressPreference = "SilentlyContinue"
 
-    $ReleaseId = "v0.2.14"
-    $TargetVersion = "0.2.14"
+    $ReleaseId = "v0.2.16"
+    $TargetVersion = "0.2.16"
     $TargetHostname = "AgentPc2"
     $TargetProductDeviceId = "2f7ad30f-970a-42e7-8af8-08764ae6066f"
 
-    $InstallUrl = "https://testai.acik.com/artifacts/endpoint-agent/v0.2.14/install.ps1"
-    $BinaryUrl = "https://testai.acik.com/artifacts/endpoint-agent/v0.2.14/endpoint-agent.exe"
-    $ExpectedInstallPs1Sha256 = "5819207b63795ca0f14c1949f2a187dd996372f066992d692672e8f0d71c79df"
-    $ExpectedAgentSha256 = "624d7f4efd520de1382c7d82027a25cf2dd860bc5574eb31815eafa3c99d6618"
+    $InstallUrl = "https://github.com/Halildeu/platform-agent/releases/download/v0.2.16/install.ps1"
+    $BinaryUrl = "https://github.com/Halildeu/platform-agent/releases/download/v0.2.16/endpoint-agent.exe"
+    $ExpectedInstallPs1Sha256 = "139fb6b50aa21462972aaeb206c7782c820e4cbe0553edd73543265bd86a8ceb"
+    $ExpectedAgentSha256 = "1acecdc944ef62c8248192d8b8bd4f67b13c70bd8b4f2cd879be717480fb19c8"
     $ExpectedSignerThumbprint = "D68F4F530137EB65CE44E3405E82B46205E753E5"
     $ExpectedSigningTier = "trusted-internal-ca"
 
@@ -307,7 +313,7 @@ data:
         boundary = @{
           proves = @(
             "Endpoint-local install script executed",
-            "EndpointAgent service install/start attempted with immutable v0.2.14 binary hash",
+            "EndpointAgent service install/start attempted with immutable $ReleaseId binary hash",
             "Outbound remote bridge configuration written for 443/SNI broker"
           )
           doesNotProve = @(
