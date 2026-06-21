@@ -1,5 +1,24 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — AgentPC2 first-install ingest verifier aligned to v0.2.17 (2026-06-21)
+
+The first-install evidence ingest gate must validate the same release that the
+current bounded AgentPC2 bootstrap package installs. After the
+`v0.2.17` bootstrap package was generated, the ingest verifier defaults were
+aligned from the previous `v0.2.16` artifact hashes to:
+
+- release `v0.2.17` / target version `0.2.17`
+- endpoint-agent.exe SHA256
+  `418160181258594ce196a734f5d570473919ee6678c255a9fb92b7da0f16a4c2`
+- install.ps1 SHA256
+  `8e7dffa89dda0a7bc8d8e6dc210b22298441b478c19dd5b1622ab64f75a94f56`
+
+This prevents a false negative when AgentPC2 produces valid endpoint-local
+`v0.2.17` bootstrap evidence. It does not prove `platform-agent#208`
+acceptance; the product-channel acceptance workflow still must capture fresh
+`HELLO`, signed `PERMIT`, constrained operation output, negative matrix, and
+audit/WORM evidence.
+
 ## Live Delta — AgentPC2 v0.2.17 product update blocked by missing UPDATE_AGENT; bounded bootstrap package ready (2026-06-21)
 
 `platform-agent#208` remains not accepted. The dedicated
