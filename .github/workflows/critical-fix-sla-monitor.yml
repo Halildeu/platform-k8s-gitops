@@ -68,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout full history (Codex 019e4946 iter-3 — fetch-depth: 0)
+      - name: "Checkout full history (Codex 019e4946 iter-3 — fetch-depth: 0)"
         # The script calls `git merge-base --is-ancestor <merge_sha> <revision>`
         # which requires every candidate revision and every PR merge SHA to be
         # present in the local git object database. Default `actions/checkout`
