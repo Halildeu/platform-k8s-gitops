@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — remote-bridge-mtls SNI broker path proven; #208 reopened for missing AGENT_OUTPUT (2026-06-21)
+## Live Delta — AgentPC2 reaches broker PERMIT over SNI path; #208 still lacks AGENT_OUTPUT (2026-06-21)
 
 `remote-bridge-mtls.testai.acik.com:443` is currently routed to the
 remote-bridge broker path, not to the normal endpoint-agent mTLS API path.
@@ -36,13 +36,30 @@ Fresh live evidence:
   `2f7ad30f-970a-42e7-8af8-08764ae6066f` as `ONLINE`, hostname `AgentPc2`,
   domain `acik.local`, `agent_version=v0.2.14`, ring `PILOT`, and
   `last_seen_at=2026-06-21 00:53:34+00`.
-- The latest product-channel smoke directory
+- The earlier product-channel smoke directory
   `/home/halil/codex-rb-smoke/20260621T005147Z-agentpc2-v5-product` reached
   the operator catalog (`catalog=200`) but `open` returned
-  `422 {"reason":"open-session-refused"}`; no `PERMIT`, `transportPushed=true`,
-  or `AGENT_OUTPUT` was produced in that run.
+  `422 {"reason":"open-session-refused"}` because a previous AgentPC2 session was
+  still live.
+- After explicitly closing stale session
+  `rb-agentpc2-v5-20260621T001948Z`, the latest product-channel smoke
+  `/home/halil/codex-rb-smoke/20260621T010905Z-agentpc2-v5-product` advanced
+  through the real product path: `catalog=200`, `open=200`, `approve=200`,
+  `challenge=200`, `verify=200`, and `operation=200`.
+- The latest operation response is a broker `PERMIT` for catalog operation
+  `GET_HOSTNAME`, `capability=CONSTRAINED_PTY`, `policyVersion=rb-test-denetim-v1`,
+  `kid=rb-test-denetim-20260617-01`, `signaturePresent=true`, and
+  `transportPushed=true`.
+- Safe negative checks in the same run remained fail-closed:
+  `negative-nonpilot=400`, raw caller-supplied PTY command `raw-pty=400`,
+  command override `command-override=400`, and disabled catalog operation
+  `disabled-catalog=422`.
+- This is **not yet #208 acceptance**: WORM recording for
+  `rb-agentpc2-v5-20260621T010905Z` contains only seq `0` / `POLICY_EVENT`.
+  The broker log records `AGENT_ERROR:operation-dispatch-failed:retryable=false`
+  and no same-session `AGENT_OUTPUT`/DATA row.
 
-Tracking correction:
+Board tracking correction:
 
 - `platform-agent#208` was briefly closed as `COMPLETED` while its issue body
   and Project #2 item still said `Blocked` and while the required
@@ -58,12 +75,19 @@ Artifact boundary:
   `ghcr.io/halildeu/platform-agent-artifacts:v0.2.14@sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`,
   and `/artifacts/endpoint-agent/current/release-manifest.json` reports
   `release_tag=v0.2.14`.
-- `platform-agent#214` / release `v0.2.15` exists and improves agent-side
+- `platform-agent` PR #214 / release `v0.2.15` exists and improves agent-side
   dispatch-error classification, but it is not yet the accepted AgentPC2
   product-channel artifact for this gate. Moving AgentPC2 to `v0.2.15` also
   requires fresh attestation/provenance evidence or an explicit bounded-pilot
   trust decision; broad rollout still leaves `platform-backend#548`
   (TPM/device-key hardware attestation) open.
+
+Tracking correction:
+
+- `platform-k8s-gitops#1621` is closed on GitHub, but its Project #2 item still
+  showed `In Progress` during the 2026-06-21 live check. The Project #2 item was
+  moved to `Done` and the issue body `agent-state` mirror was reconciled to
+  `status=done`, so this no longer appears as active work.
 
 Next acceptance gate:
 
