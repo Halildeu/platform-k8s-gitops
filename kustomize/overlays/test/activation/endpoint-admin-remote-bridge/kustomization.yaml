@@ -54,8 +54,12 @@
 #     (`49dfe1fc33a286a575f87b93c4f524ae24b619cd`) so renewed same-SAN
 #     AD CS machine cert enrollment rotates the active cert row before the
 #     AgentPC2 #208 product-channel smoke rechecks device-bound HELLO.
+#   - immutable test digest includes platform-backend#723
+#     (`c174cabfd87e73863188cb448eb74031440058a3`) so the owner-gated
+#     AgentPC2 #208 bounded pilot can accept enrollment-backed crypto identity
+#     only when the explicit non-prod risk flag below is present.
 #   - immutable test digest:
-#     sha256:7e1925ceb0312042c8712fcb423eafc5bae1a3f1e0f22c93a7d0ce3b16dccf84
+#     sha256:e5e247ebdd6da129a4ae1951b33cdef5d2357bc48d9b6a344098f9218126e3ba
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -123,6 +127,9 @@ images:
   # verification.
   # Re-pinned to the live broker imageID proven on the dedicated
   # remote-bridge-mtls.testai.acik.com:443 SNI path.
+  # Re-pinned for backend #723 after the policy engine gained the explicit
+  # non-prod enrollment-backed crypto-identity pilot flag. This remains
+  # owner-gated and outside the Argo root; this PR does not apply it.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:2c023f64c35701b827927041d0b6ae24cc3a772667e626a3a5f3e6eebb59ff84
+    digest: sha256:e5e247ebdd6da129a4ae1951b33cdef5d2357bc48d9b6a344098f9218126e3ba
