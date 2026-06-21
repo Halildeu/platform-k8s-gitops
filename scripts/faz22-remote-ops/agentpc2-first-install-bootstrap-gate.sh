@@ -13,7 +13,7 @@ RUN_ID="${GITHUB_RUN_ID:-local-$(date -u +%Y%m%dT%H%M%SZ)}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-first-install-bootstrap-${RUN_ID}}"
 TMP_DIR="$(mktemp -d)"
 
-RELEASE_ID="${RELEASE_ID:-v0.2.17}"
+RELEASE_ID="${RELEASE_ID:-v0.2.18}"
 TARGET_VERSION="${TARGET_VERSION:-${RELEASE_ID#v}}"
 TARGET_HOSTNAME="${TARGET_HOSTNAME:-AgentPc2}"
 TARGET_PRODUCT_DEVICE_ID="${TARGET_PRODUCT_DEVICE_ID:-2f7ad30f-970a-42e7-8af8-08764ae6066f}"
@@ -25,14 +25,15 @@ BOOTSTRAP_PACKAGE_URL="${BOOTSTRAP_PACKAGE_URL:-${RELEASE_BASE_URL}/bootstrap-pa
 MANIFEST_URL="${MANIFEST_URL:-${RELEASE_BASE_URL}/release-manifest.json}"
 SHA256SUMS_URL="${SHA256SUMS_URL:-${RELEASE_BASE_URL}/SHA256SUMS}"
 
-EXPECTED_RELEASE_MANIFEST_SHA256="${EXPECTED_RELEASE_MANIFEST_SHA256:-ad62a7ebecbe53f2d9fcdaea5096f76c4098eaf325c8ec2bf6a575b23a2c3e28}"
-EXPECTED_INSTALL_PS1_SHA256="${EXPECTED_INSTALL_PS1_SHA256:-8e7dffa89dda0a7bc8d8e6dc210b22298441b478c19dd5b1622ab64f75a94f56}"
+EXPECTED_RELEASE_MANIFEST_SHA256="${EXPECTED_RELEASE_MANIFEST_SHA256:-478a2a92bfb82feb697496cb214dd2238c0e9b1f2407e70fec4a84ee34992267}"
+EXPECTED_INSTALL_PS1_SHA256="${EXPECTED_INSTALL_PS1_SHA256:-13dae1d19b313518c2446f7b3e3985d65bc2d46c472fe57429e5bf2ea3b0f9b1}"
 EXPECTED_BOOTSTRAP_PS1_SHA256="${EXPECTED_BOOTSTRAP_PS1_SHA256:-83292ab3b5c27a8c27c11c7774cf4157bbb23188b81b0adf2a5a29a70279c7f8}"
-EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-418160181258594ce196a734f5d570473919ee6678c255a9fb92b7da0f16a4c2}"
-EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-873a2906c85668ed92a5c656806e77ece82b9d3feabcd6f4cb6927837205cfb7}"
+EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-92bf65812720d330eaefa9cfee86d6df4d6477a2370b14850f02a74ea288e88e}"
+EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-afa7448ed78c38ed4c54de8191cbed41e4cdec3c35c7b72e393c45dc42be5137}"
 EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
 EXPECTED_SIGNING_TIER="${EXPECTED_SIGNING_TIER:-trusted-internal-ca}"
-EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:4e7c95ba603e8fb36f17cffc46aff94c281186d080f5d8adf6e2ee0e3447419a}"
+EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:ecd62ab47f981c5d6ac2b941f4fe01446e17a809d5158b5862e29418fa2f71a8}"
+REQUIRE_ARTIFACT_HOST_LIVE_DIGEST="${REQUIRE_ARTIFACT_HOST_LIVE_DIGEST:-true}"
 
 AUTO_ENROLL_API_URL="${AUTO_ENROLL_API_URL:-https://mtls.testai.acik.com/api/v1/endpoint-agent}"
 AUTO_ENROLL_SAN_URI_PREFIX="${AUTO_ENROLL_SAN_URI_PREFIX:-adcomputer:}"
@@ -139,6 +140,11 @@ validate_release_inputs() {
 
   if ! printf '%s' "${EXPECTED_ARTIFACT_HOST_DIGEST}" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
     echo "ERR EXPECTED_ARTIFACT_HOST_DIGEST must match sha256:<64 hex>" >&2
+    exit 2
+  fi
+
+  if [[ "${REQUIRE_ARTIFACT_HOST_LIVE_DIGEST}" != "true" && "${REQUIRE_ARTIFACT_HOST_LIVE_DIGEST}" != "false" ]]; then
+    echo "ERR REQUIRE_ARTIFACT_HOST_LIVE_DIGEST must be true or false" >&2
     exit 2
   fi
 }
@@ -992,7 +998,29 @@ main() {
 
   echo "=== ARTIFACT HOST LIVE SNAPSHOT ==="
   local artifact_image="" artifact_ready=""
-  if command -v kubectl >/dev/null 2>&1; then
+  if [[ "${REQUIRE_ARTIFACT_HOST_LIVE_DIGEST}" == "true" ]]; then
+    need_cmd kubectl
+    set +e
+    kubectl --context "${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" get deploy artifact-host -o json \
+      > "${EVIDENCE_DIR}/artifact-host-deployment.json" 2>"${EVIDENCE_DIR}/artifact-host-deployment.err"
+    local kubectl_status=$?
+    set -e
+    if [[ "${kubectl_status}" != "0" ]]; then
+      echo "ERR could not read live artifact-host deployment for digest assertion" >&2
+      cat "${EVIDENCE_DIR}/artifact-host-deployment.err" >&2 || true
+      exit 3
+    fi
+    artifact_image="$(jq -r '.spec.template.spec.containers[0].image // ""' "${EVIDENCE_DIR}/artifact-host-deployment.json")"
+    artifact_ready="$(jq -r '.status.readyReplicas // 0' "${EVIDENCE_DIR}/artifact-host-deployment.json")"
+    if [[ "${artifact_image}" != *"@${EXPECTED_ARTIFACT_HOST_DIGEST}" ]]; then
+      echo "ERR live artifact-host image digest mismatch: expected ${EXPECTED_ARTIFACT_HOST_DIGEST}, got ${artifact_image}" >&2
+      exit 3
+    fi
+    if [[ "${artifact_ready}" == "0" || -z "${artifact_ready}" ]]; then
+      echo "ERR live artifact-host has no ready replicas" >&2
+      exit 3
+    fi
+  elif command -v kubectl >/dev/null 2>&1; then
     set +e
     kubectl --context "${K8S_CONTEXT}" -n "${K8S_NAMESPACE}" get deploy artifact-host -o json \
       > "${EVIDENCE_DIR}/artifact-host-deployment.json" 2>"${EVIDENCE_DIR}/artifact-host-deployment.err"

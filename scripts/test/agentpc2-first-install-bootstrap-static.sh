@@ -16,6 +16,21 @@ if ! grep -Fq 'Invoke-DownloadVerified -Uri \$BinaryUrl -OutFile \$BinaryPath -E
   exit 1
 fi
 
+if ! grep -Fq 'EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:ecd62ab47f981c5d6ac2b941f4fe01446e17a809d5158b5862e29418fa2f71a8}"' "${script}"; then
+  echo "bootstrap gate default artifact-host digest must track the v0.2.18 immutable image digest" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'REQUIRE_ARTIFACT_HOST_LIVE_DIGEST="${REQUIRE_ARTIFACT_HOST_LIVE_DIGEST:-true}"' "${script}"; then
+  echo "bootstrap gate must require live artifact-host digest assertion by default" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'ERR live artifact-host image digest mismatch' "${script}"; then
+  echo "bootstrap gate must fail closed when the live artifact-host digest differs from the expected release digest" >&2
+  exit 1
+fi
+
 install_args_block="$(awk '
   /\\\$installArgs = @\(/ { in_block=1 }
   in_block { print }
