@@ -91,6 +91,7 @@ jobs:
         id: smoke
         continue-on-error: true
         env:
+          GH_TOKEN: ${{ secrets.ADD_TO_PROJECT_PAT || github.token }}
           KC_ADMIN_PASSWORD: ${{ secrets.KC_TEST_ADMIN_PASSWORD }}
         run: |
           set +e
