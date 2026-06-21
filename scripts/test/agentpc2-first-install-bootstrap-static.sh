@@ -68,6 +68,16 @@ if ! grep -Fq 'f5233701b51cb6ff026f90ac7cd09f15cbe0356c644d395421be66b509d18ec8 
   exit 1
 fi
 
+if ! grep -Fq 'agentpc2-remote-bridge-attestation-patch-v0217-20260621T144928Z-14741b2e.ps1:' "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap ConfigMap must contain the v0.2.17 signed attestation patch" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'f695d8b3bf5b74ad200529bed823d1dc7228e1db9c0dac680eb1339355917c06  agentpc2-remote-bridge-attestation-patch-v0217-20260621T144928Z-14741b2e.ps1' "${bootstrap_configmap}"; then
+  echo "AgentPC2 bootstrap SHA256SUMS must pin the v0.2.17 signed attestation patch hash" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'e3f5d49f50ba2f792e8750541cf84d381cc57c94944ea06fd26d51fad93eb65b  agentpc2-first-install-bootstrap.ps1' "${bootstrap_configmap}"; then
   echo "AgentPC2 bootstrap SHA256SUMS must pin the canonical-env first-install hash" >&2
   exit 1

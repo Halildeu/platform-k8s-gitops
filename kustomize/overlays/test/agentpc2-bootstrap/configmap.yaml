@@ -42,6 +42,28 @@ data:
         if ($ActualScriptSha256 -ne $ExpectedScriptSha256) { throw "Patch script SHA256 mismatch: $ActualScriptSha256" }
         powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Script
 
+
+    If AgentPC2 has EndpointAgent v0.2.17 installed and the product smoke reaches
+    HELLO/CONSENT/ACTIVE but denies a constrained operation with
+    `policyDetail=attestation-unverified`, run the bounded signed attestation
+    patch. This carries broker-verifiable KEY_BASED provenance for the exact
+    v0.2.17 binary digest and does not contain private keys or credentials.
+    It is version-pinned and test-pilot scoped; a new agent binary or signing
+    key rotation requires a new signed tuple and a new checksum-pinned script:
+
+        $ErrorActionPreference = "Stop"
+        $ProgressPreference = "SilentlyContinue"
+        $Base = "https://testai.acik.com/artifacts/endpoint-agent/bootstrap"
+        $WorkDir = "C:\Temp\AgentPC2Bootstrap"
+        $ScriptName = "agentpc2-remote-bridge-attestation-patch-v0217-20260621T144928Z-14741b2e.ps1"
+        $Script = Join-Path $WorkDir $ScriptName
+        $ExpectedScriptSha256 = "f695d8b3bf5b74ad200529bed823d1dc7228e1db9c0dac680eb1339355917c06"
+        New-Item -ItemType Directory -Force $WorkDir | Out-Null
+        Invoke-WebRequest -UseBasicParsing -Uri "$Base/${ScriptName}?cacheBust=$([Guid]::NewGuid().ToString('N'))" -OutFile $Script
+        $ActualScriptSha256 = (Get-FileHash $Script -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($ActualScriptSha256 -ne $ExpectedScriptSha256) { throw "Attestation patch SHA256 mismatch: $ActualScriptSha256" }
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Script
+
     Endpoint evidence will be written under:
 
         C:\ProgramData\EndpointAgent\rollout-evidence
@@ -54,9 +76,231 @@ data:
 
     After endpoint-local execution, rerun the #208 constrained-executor acceptance workflow. Do not close #208 from this bootstrap evidence alone.
   SHA256SUMS: |
-    ae09247c1b89995dbac407ce225a47ebae9d90f0ab9d1b41c25f58bf1a44f85b  README.md
+    11508b36acf6325e773d40bbbeeab143e052c2b7ee35f734dbf114252aebc187  README.md
     e3f5d49f50ba2f792e8750541cf84d381cc57c94944ea06fd26d51fad93eb65b  agentpc2-first-install-bootstrap.ps1
     f5233701b51cb6ff026f90ac7cd09f15cbe0356c644d395421be66b509d18ec8  agentpc2-remote-bridge-canonical-env-patch-v7.ps1
+    f695d8b3bf5b74ad200529bed823d1dc7228e1db9c0dac680eb1339355917c06  agentpc2-remote-bridge-attestation-patch-v0217-20260621T144928Z-14741b2e.ps1
+  agentpc2-remote-bridge-attestation-patch-v0217-20260621T144928Z-14741b2e.ps1: |
+    <#
+    .SYNOPSIS
+    AgentPC2 remote-bridge attestation patch for EndpointAgent v0.2.17.
+
+    .DESCRIPTION
+    Adds broker-verifiable, already-signed build provenance evidence to the
+    EndpointAgent service environment for the bounded AgentPC2 Faz 22.6 pilot.
+    The script verifies the local EndpointAgent binary SHA256 before writing the
+    evidence, restarts the service, and collects redacted endpoint-local evidence.
+
+    This script contains no private key, bearer token, password, administrator
+    credential, or enrollment token. The attestation payload is a public signed
+    provenance tuple for the immutable v0.2.17 agent binary.
+    #>
+
+    [CmdletBinding()]
+    param(
+      [string]$EvidenceRoot = "C:\ProgramData\EndpointAgent\rollout-evidence",
+      [int]$PostRestartWaitSeconds = 90
+    )
+
+    Set-StrictMode -Version Latest
+    $ErrorActionPreference = "Stop"
+    $ProgressPreference = "SilentlyContinue"
+
+    $ServiceName = "EndpointAgent"
+    $ServiceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+    $PatchId = "agentpc2-remote-bridge-attestation-v0217-14741b2e"
+    $StartedAt = Get-Date
+
+    $BinaryPath = "C:\Program Files\EndpointAgent\endpoint-agent.exe"
+    $ExpectedAgentSha256 = "418160181258594ce196a734f5d570473919ee6678c255a9fb92b7da0f16a4c2"
+    $ExpectedBuilderId = "faz22-agent-builder@acik"
+    $ExpectedPolicyHash = "faz22-remote-bridge-policy-v1"
+    $ExpectedEvidenceB64Sha256 = "14741b2ee171fd41ca966e43f5473201d01ab38528b9660873e93ed813e4571f"
+    $AttestationEvidenceB64 = @'
+    NDE4MTYwMTgxMjU4NTk0Y2UxOTZhNzM0ZjVkNTcwNDczOTE5ZWU2Njc4YzI1NWE5ZmI5MmI3ZGEwZjE2YTRjMnxmYXoyMi1hZ2VudC1idWlsZGVyQGFjaWt8ZmF6MjItcmVtb3RlLWJyaWRnZS1wb2xpY3ktdjF8TUVRQ0lHRnF3TEpnNFF2Zjl2RnlKNnBWa1h6V0d5VUU5VHNHTVJlWjFqYThkeERQQWlBc1NKZ2FZWFRXOXVnMlNTcThXK2U2bTJXS3hmay94QUVROExQWloxWVBCQT09
+    '@.Trim()
+
+    function Write-Step {
+      param([string]$Message)
+      Write-Host "[$PatchId] $Message"
+    }
+
+    function Assert-Administrator {
+      $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+      $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+      if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw "Administrator shell required."
+      }
+    }
+
+    function ConvertTo-Sha256Hex {
+      param([string]$Value)
+      $sha = [Security.Cryptography.SHA256]::Create()
+      try {
+        $bytes = [Text.Encoding]::UTF8.GetBytes($Value)
+        $hash = $sha.ComputeHash($bytes)
+        return (($hash | ForEach-Object { $_.ToString("x2") }) -join "")
+      } finally {
+        $sha.Dispose()
+      }
+    }
+
+    function Read-ServiceEnvMap {
+      param([string]$Path)
+      $raw = (Get-ItemProperty -Path $Path -Name Environment -ErrorAction Stop).Environment
+      $map = [ordered]@{}
+      foreach ($entry in $raw) {
+        $parts = $entry -split "=", 2
+        if ($parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace($parts[0])) {
+          $map[$parts[0]] = $parts[1]
+        }
+      }
+      return $map
+    }
+
+    function Write-ServiceEnvMap {
+      param([string]$Path, [hashtable]$Map)
+      $entries = @()
+      foreach ($key in $Map.Keys) {
+        $value = [string]$Map[$key]
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+          $entries += "$key=$value"
+        }
+      }
+      Set-ItemProperty -Path $Path -Name Environment -Type MultiString -Value $entries
+    }
+
+    function Redact-ServiceEnvMap {
+      param([hashtable]$Map)
+      $rows = @()
+      foreach ($key in ($Map.Keys | Sort-Object)) {
+        $value = [string]$Map[$key]
+        $sensitive = $key -match "TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL|KID|ATTESTATION"
+        $rows += [PSCustomObject]@{
+          Key = $key
+          Present = -not [string]::IsNullOrWhiteSpace($value)
+          Length = $value.Length
+          Value = if ($sensitive) { "<redacted>" } else { $value }
+        }
+      }
+      return $rows
+    }
+
+    function Get-RemoteBridgeSignals {
+      Get-Content "C:\ProgramData\EndpointAgent\logs\*.log" -Tail 1200 -ErrorAction SilentlyContinue |
+        Select-String -Pattern "remote-bridge|bridge|mtls|mTLS|hello|HELLO|consent|CONSENT|active|ACTIVE|permit|operation|CONSTRAINED|attestation|error|failed|denied|certificate|remote-bridge-mtls" |
+        ForEach-Object { $_.Line }
+    }
+
+    New-Item -ItemType Directory -Force -Path $EvidenceRoot | Out-Null
+    $SummaryPath = Join-Path $EvidenceRoot "agentpc2-remote-bridge-attestation-patch-v0217-summary.json"
+    $SignalsPath = Join-Path $EvidenceRoot "agentpc2-remote-bridge-attestation-patch-v0217-signals.txt"
+
+    Assert-Administrator
+    if (-not (Test-Path -Path $ServiceKey)) { throw "Service registry key not found: $ServiceKey" }
+    if (-not (Test-Path -Path $BinaryPath)) { throw "EndpointAgent binary not found: $BinaryPath" }
+
+    $actualAgentSha256 = (Get-FileHash -Path $BinaryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualAgentSha256 -ne $ExpectedAgentSha256) {
+      throw "EndpointAgent binary SHA256 mismatch expected=$ExpectedAgentSha256 actual=$actualAgentSha256"
+    }
+
+    $actualEvidenceB64Sha256 = ConvertTo-Sha256Hex -Value $AttestationEvidenceB64
+    if ($actualEvidenceB64Sha256 -ne $ExpectedEvidenceB64Sha256) {
+      throw "Attestation evidence SHA256 mismatch expected=$ExpectedEvidenceB64Sha256 actual=$actualEvidenceB64Sha256"
+    }
+
+    $decodedEvidence = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($AttestationEvidenceB64))
+    $fields = $decodedEvidence -split "\|", 4
+    if ($fields.Count -ne 4) { throw "Attestation evidence must contain four fields." }
+    if ($fields[0] -ne $ExpectedAgentSha256) { throw "Attestation digest mismatch." }
+    if ($fields[1] -ne $ExpectedBuilderId) { throw "Attestation builder mismatch." }
+    if ($fields[2] -ne $ExpectedPolicyHash) { throw "Attestation policy mismatch." }
+    if ([string]::IsNullOrWhiteSpace($fields[3])) { throw "Attestation signature is blank." }
+
+    Write-Step "read service environment"
+    $map = Read-ServiceEnvMap -Path $ServiceKey
+
+    Write-Step "write signed attestation evidence"
+    $map["ENDPOINT_AGENT_REMOTE_BRIDGE_ATTESTATION_EVIDENCE_B64"] = $AttestationEvidenceB64
+
+    Write-ServiceEnvMap -Path $ServiceKey -Map $map
+
+    Write-Step "restart EndpointAgent"
+    Restart-Service $ServiceName -Force
+    Start-Sleep -Seconds $PostRestartWaitSeconds
+
+    $service = Get-CimInstance Win32_Service |
+      Where-Object { $_.Name -eq $ServiceName } |
+      Select-Object Name, DisplayName, State, StartMode, StartName, PathName
+
+    $patchedMap = Read-ServiceEnvMap -Path $ServiceKey
+    $signals = @(Get-RemoteBridgeSignals)
+    $signals | Set-Content -Path $SignalsPath -Encoding UTF8
+
+    $requiredKeys = @(
+      "ENDPOINT_AGENT_REMOTE_BRIDGE_ENABLED",
+      "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR",
+      "ENDPOINT_AGENT_REMOTE_BRIDGE_TLS_SERVER_NAME",
+      "ENDPOINT_AGENT_REMOTE_BRIDGE_PTY_ENABLED",
+      "ENDPOINT_AGENT_REMOTE_BRIDGE_OPERATIONS_ENABLED",
+      "ENDPOINT_AGENT_REMOTE_BRIDGE_PILOT_AUTO_CONSENT",
+      "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_PUBLIC_KEY_B64",
+      "ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_PERMIT_KID",
+      "ENDPOINT_AGENT_REMOTE_BRIDGE_ATTESTATION_EVIDENCE_B64"
+    )
+
+    $completedAt = Get-Date
+    $missing = @($requiredKeys | Where-Object {
+      -not $patchedMap.Contains($_) -or [string]::IsNullOrWhiteSpace([string]$patchedMap[$_])
+    })
+
+    [PSCustomObject]@{
+      schema = "faz22.1768.agentpc2-remote-bridge-attestation-patch.v0217"
+      patchId = $PatchId
+      status = if ($missing.Count -eq 0 -and $service -and $service.State -eq "Running") { "patched-service-running" } else { "patched-needs-attention" }
+      startedAt = $StartedAt.ToString("o")
+      completedAt = $completedAt.ToString("o")
+      computerName = $env:COMPUTERNAME
+      user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+      localBinary = @{
+        path = $BinaryPath
+        sha256 = $actualAgentSha256
+      }
+      attestation = @{
+        evidenceB64Sha256 = $actualEvidenceB64Sha256
+        binaryDigest = $fields[0]
+        builderId = $fields[1]
+        slsaPredicateHash = $fields[2]
+        signaturePresent = -not [string]::IsNullOrWhiteSpace($fields[3])
+      }
+      service = $service
+      missingCanonicalKeys = $missing
+      redactedServiceEnvironment = @(Redact-ServiceEnvMap -Map $patchedMap)
+      evidence = @{ root = $EvidenceRoot; signals = $SignalsPath }
+      boundary = @{
+        proves = @(
+          "EndpointAgent v0.2.17 local binary digest matches signed attestation evidence",
+          "EndpointAgent service environment carries broker-verifiable KEY_BASED attestation evidence",
+          "EndpointAgent service restart attempted after attestation patch"
+        )
+        doesNotProve = @(
+          "platform-agent#208 constrained operation acceptance by itself",
+          "production/domain-wide support readiness",
+          "TPM/device-key hardware attestation",
+          "absence of signing-key compromise",
+          "runtime binary integrity after service process load"
+        )
+      }
+    } | ConvertTo-Json -Depth 8 | Set-Content -Path $SummaryPath -Encoding UTF8
+
+    Write-Step "summary: $SummaryPath"
+    Get-Content $SummaryPath
+
+    if ($missing.Count -gt 0) { throw "Missing canonical remote-bridge keys: $($missing -join ', ')" }
+    if (-not $service -or $service.State -ne "Running") { throw "EndpointAgent is not running after patch." }
+
+    Write-Step "completed"
   agentpc2-first-install-bootstrap.ps1: |
     <#
     .SYNOPSIS
