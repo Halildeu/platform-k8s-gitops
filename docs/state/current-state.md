@@ -1,41 +1,47 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — AgentPC2 reaches broker PERMIT over SNI path; #208 still lacks AGENT_OUTPUT (2026-06-21)
+## Live Delta — remote-bridge-mtls SNI broker path proven via ingress-nginx; #208 still lacks fresh AGENT_OUTPUT (2026-06-21)
 
-`remote-bridge-mtls.testai.acik.com:443` is currently routed to the
-remote-bridge broker path, not to the normal endpoint-agent mTLS API path.
-This closes the SNI/certificate routing prerequisite, but it does not close
-`platform-agent#208` because the live constrained-operation evidence still
-lacks same-session agent output.
+`remote-bridge-mtls.testai.acik.com:443` is currently routed to the dedicated
+remote-bridge broker mTLS/gRPC path through ingress-nginx ssl-passthrough, not
+to the browser edge and not to the endpoint-agent mTLS API path. This closes
+the SNI/certificate routing prerequisite for the bounded pilot, but it does
+not close `platform-agent#208`: AgentPC2 still needs fresh `v0.2.16` `HELLO`,
+`PERMIT`, constrained `GET_HOSTNAME`, same-session `AGENT_OUTPUT`, negative,
+and audit evidence from the product channel.
 
 Fresh live evidence:
 
-- Host-nginx stream config on staging routes
-  `remote-bridge-mtls.testai.acik.com` through upstream
-  `test_remote_bridge_broker` at `172.19.0.2:19445`; the Kubernetes
-  `endpoint-admin-remote-bridge` Service is `NodePort 31944 -> 9444`, with
-  endpoint pod `endpoint-admin-remote-bridge-6968f65dd4-xhjzf` at
-  `10.44.3.238:9444`.
-- TLS/SNI check for `remote-bridge-mtls.testai.acik.com:443` presents
-  `CN=remote-bridge-mtls.testai.acik.com`, issuer
-  `CN=Acik-Endpoint-CA, DC=acik, DC=local`, SAN
-  `DNS:remote-bridge-mtls.testai.acik.com, DNS:mtls.testai.acik.com`, and
-  SHA256 fingerprint
-  `40:4E:21:30:0A:AD:34:C0:8D:E5:E9:D6:66:31:5B:9A:61:B5:99:D9:8C:8C:FC:27:1D:2D:2A:13:D5:DE:C0:D6`.
-- Control TLS/SNI check for `mtls.testai.acik.com:443` still presents the
-  normal endpoint-agent mTLS API certificate `CN=mtls.testai.acik.com` with
-  SHA256 fingerprint
-  `2B:3A:4C:B3:E5:92:DB:AD:10:18:55:F3:12:FE:19:3F:BA:11:3D:B0:BD:DC:C8:63:63:60:7B:5B:24:00:0F:09`.
-- Broker logs in `platform-test` show the gRPC broker listening on `0.0.0.0:9444`
-  and prior AgentPC2 product-channel traffic:
-  `HELLO_VERIFIED:cert=true,attestation=true,device=false`,
-  `CONSENT_TRUST_REFRESHED:cert=true,attestation=true,device=false`,
-  `CONSENT_GRANTED`, `ACTIVE`, then
+- Argo `platform-test` is `health=Healthy` at revision
+  `210dbd2808cbb1cd54d49ac09d180383a9f7eb3c`. The app is still `OutOfSync`
+  only because of the unrelated shared
+  `ExternalSecret platform-test/notification-orchestrator-secrets` warning.
+- Ingress `platform-test/endpoint-admin-remote-bridge-mtls` has host
+  `remote-bridge-mtls.testai.acik.com`, annotation
+  `nginx.ingress.kubernetes.io/ssl-passthrough: "true"`, and backend
+  `endpoint-admin-remote-bridge:9444`.
+- Service `platform-test/endpoint-admin-remote-bridge` points to endpoint
+  `10.44.3.238:9444`; deployment `endpoint-admin-remote-bridge` is ready
+  `1/1` with imageID
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:2c023f64c35701b827927041d0b6ae24cc3a772667e626a3a5f3e6eebb59ff84`.
+- `remote-bridge-mtls.testai.acik.com` SNI on `127.0.0.1:443` negotiates
+  TLSv1.3/h2, presents `CN=remote-bridge-mtls.testai.acik.com` issued by
+  `Acik-Endpoint-CA`, advertises that CA as an acceptable client certificate
+  issuer, then fails without a client certificate with
+  `tlsv13 alert certificate required`.
+- The same IP/port with SNI `testai.acik.com` returns browser edge
+  `HTTP/2 200` with the public `*.acik.com` Sectigo certificate; SNI
+  `mtls.testai.acik.com` still presents the normal endpoint-agent mTLS API
+  certificate. Route separation is intact.
+- Broker preflight from staging is ready:
+  `PRECHECK_STATUS=ready failures=0 not_ready=0`.
+
+AgentPC2 product-channel boundary:
+
+- Historical broker logs around the 00:15-01:09 window show AgentPC2 reaching
+  the broker path with `HELLO_VERIFIED:cert=true,attestation=true,device=false`,
+  `CONSENT_TRUST_REFRESHED`, `CONSENT_GRANTED`, `ACTIVE`, then
   `AGENT_ERROR:operation-dispatch-failed:retryable=false`.
-- EndpointAdmin DB still shows AgentPC2 product device
-  `2f7ad30f-970a-42e7-8af8-08764ae6066f` as `ONLINE`, hostname `AgentPc2`,
-  domain `acik.local`, `agent_version=v0.2.14`, ring `PILOT`, and
-  `last_seen_at=2026-06-21 00:53:34+00`.
 - The earlier product-channel smoke directory
   `/home/halil/codex-rb-smoke/20260621T005147Z-agentpc2-v5-product` reached
   the operator catalog (`catalog=200`) but `open` returned
@@ -58,8 +64,27 @@ Fresh live evidence:
   `rb-agentpc2-v5-20260621T010905Z` contains only seq `0` / `POLICY_EVENT`.
   The broker log records `AGENT_ERROR:operation-dispatch-failed:retryable=false`
   and no same-session `AGENT_OUTPUT`/DATA row.
+- A 06:48 four-hour recheck found no fresh AgentPC2 `HELLO`/`ACTIVE`; do not
+  claim AgentPC2 is connected now.
 
-Board tracking correction:
+Artifact boundary:
+
+- Latest endpoint evidence before re-bootstrap still showed AgentPC2 on
+  `v0.2.14`. The `v0.2.16` endpoint bootstrap must run endpoint-local or through
+  the existing product channel once it reconnects.
+- `platform-k8s-gitops#1806` merged at
+  `210dbd2808cbb1cd54d49ac09d180383a9f7eb3c`, fixing the canonical
+  `kustomize/overlays/test/agentpc2-bootstrap/configmap.yaml` source for the
+  AgentPC2 `v0.2.16` first-install bootstrap artifact.
+- Public artifact-host verification from the edge returned 5/5 `HTTP/2 200`
+  responses for `agentpc2-first-install-bootstrap.ps1`, SHA256
+  `d58574d4c9dd675ef41ba8b3bb1c12f8f13c88675ef43e0fee1d40b3bdf2eed7`,
+  with version marker `v0.2.16`.
+- Live `artifact-host` pods are ready with imageID
+  `ghcr.io/halildeu/platform-agent-artifacts@sha256:307990110d8f85ef226b5a287c2c4096395b8de68db972572967ff59ef675900`;
+  the mounted bootstrap script hash is the same `d585...` value.
+
+Tracking correction:
 
 - `platform-agent#208` was briefly closed as `COMPLETED` while its issue body
   and Project #2 item still said `Blocked` and while the required
@@ -68,22 +93,6 @@ Board tracking correction:
   `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4760487637`.
 - The Project #2 item is again consistent with the live state:
   `platform-agent#208` is open and `Blocked`.
-
-Artifact boundary:
-
-- The live test artifact host still serves `v0.2.14`:
-  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.14@sha256:54ad8a712df02e4ed445e7dd3d3b3e4261764265d04259121bbb4df7056aa7b0`,
-  and `/artifacts/endpoint-agent/current/release-manifest.json` reports
-  `release_tag=v0.2.14`.
-- `platform-agent` PR #214 / release `v0.2.15` exists and improves agent-side
-  dispatch-error classification, but it is not yet the accepted AgentPC2
-  product-channel artifact for this gate. Moving AgentPC2 to `v0.2.15` also
-  requires fresh attestation/provenance evidence or an explicit bounded-pilot
-  trust decision; broad rollout still leaves `platform-backend#548`
-  (TPM/device-key hardware attestation) open.
-
-Tracking correction:
-
 - `platform-k8s-gitops#1621` is closed on GitHub, but its Project #2 item still
   showed `In Progress` during the 2026-06-21 live check. The Project #2 item was
   moved to `Done` and the issue body `agent-state` mirror was reconciled to
@@ -91,8 +100,7 @@ Tracking correction:
 
 Next acceptance gate:
 
-- Re-establish an active AgentPC2 remote-bridge attended session over the
-  product `remote-bridge-mtls.testai.acik.com:443` path.
+- Run the `v0.2.16` bootstrap on AgentPC2.
 - Re-run the guarded product smoke and require `PERMIT`, `transportPushed=true`,
   constrained `GET_HOSTNAME`, same-session `AGENT_OUTPUT`/DATA, WORM
   `POLICY_EVENT` + output recording, and safe negative-operation evidence.
