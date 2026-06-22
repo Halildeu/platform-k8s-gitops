@@ -1,47 +1,63 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — AgentPC2 v0.2.23 UPDATE_AGENT rerun still no-go until endpoint-local seed runs (2026-06-22)
+## Live Delta — AgentPC2 v0.2.23 UPDATE_AGENT stages successfully; activation not observed (2026-06-22)
 
-`platform-agent#208` remains not accepted. The latest product-channel
-`UPDATE_AGENT` rerun against the released and live-served `v0.2.23` artifact
-again proved delivery/execution but stopped at the same endpoint-local trust
-gate: the currently installed AgentPC2 `v0.2.20` service environment still does
-not include the trusted internal-CA signer allowlist.
+`platform-agent#208` remains not accepted. The bounded endpoint-local SHA256
+signer-policy seed has now run on AgentPC2 and removed the previous
+`SIGNER_NOT_ALLOWED` blocker. The latest product-channel `UPDATE_AGENT` rerun
+against the released and live-served `v0.2.23` artifact verified and staged the
+signed binary, but the endpoint did not report the activated version inside the
+900s observation window.
 
 Evidence:
 
-- `platform-k8s-gitops#1846` merged at
-  `76ccff367efb9d67440e59d40d22d6e908eaeb3f`, publishing a bounded
-  endpoint-local self-update trust seed helper at
-  `https://testai.acik.com/artifacts/endpoint-agent/bootstrap/agentpc2-self-update-policy-seed-v023.ps1`.
-  Public HTTPS returned `200`, and the script SHA256 is
-  `ebd35f17b58eed8ffa4f5f73bfd5bd0a0df262fd96eced1d31c1b93fb5dbc5a6`.
+- `platform-k8s-gitops#1848` merged at
+  `5bbeeb868053469e7e6eb47245a1612b37980036`, publishing the bounded
+  endpoint-local SHA256 signer seed helper at
+  `https://testai.acik.com/artifacts/endpoint-agent/bootstrap/agentpc2-self-update-policy-seed-v023-sha256.ps1`.
+  Live artifact-host and public HTTPS checks returned SHA256
+  `0697369e93671e30de874b5f0589f8ed00355225284a70fa5f52ae1a0aac7aa1`.
+- Operator-run AgentPC2 seed evidence showed the script hash matched, the
+  `EndpointAgent` service remained `Running`, and the service environment now
+  contains bounded self-update policy using signer fingerprint algorithm
+  `sha256(cert.Raw)`. The configured remote bridge endpoint remains
+  `remote-bridge-mtls.testai.acik.com:443`.
 - Product update workflow
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27925072962`
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27934293027`
   attempted `v0.2.23` / `0.2.23` for AgentPC2 with endpoint-agent.exe SHA256
   `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`,
-  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`, and
-  evidence artifact
-  `https://api.github.com/repos/Halildeu/platform-k8s-gitops/actions/artifacts/7781907049/zip`.
+  release-manifest signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`, and evidence artifact
+  `agentpc2-update-agent-evidence-27934293027`.
 - Live DB terminal evidence for command
-  `4263fbc5-ec18-48bc-b659-467ab29cf4a2` shows command type `UPDATE_AGENT`,
-  status `FAILED`, delivered `2026-06-22T02:03:20.812671Z`, started
-  `2026-06-22T02:04:22.831306Z`, completed
-  `2026-06-22T02:04:28.138023Z`, result summary
-  `UPDATE_AGENT FAILED_STAGE`, `errorCode=SIGNER_NOT_ALLOWED`, and reason
-  `verified signer not in local allowlist`.
-- AgentPC2 stayed `ONLINE` at `agent_version=v0.2.20`; the product channel is
-  still reaching the endpoint, but the endpoint correctly fails closed until
-  the bounded local seed helper is run from an elevated AgentPC2 PowerShell
-  session.
+  `f65c51be-8739-4a32-b531-3f5d25179d1d` shows command type `UPDATE_AGENT`,
+  status `SUCCEEDED`, delivered `2026-06-22T06:35:02.200337Z`, started
+  `2026-06-22T06:36:04.221658Z`, completed
+  `2026-06-22T06:36:10.473836Z`, result summary
+  `UPDATE_AGENT STAGED_ACTIVATION_READY`, `oldVersion=v0.2.20`,
+  `targetVersion=0.2.23`, `stageStatus=STAGED_ACTIVATION_READY`,
+  `activationPlanId=c015f8ec89519cb221f613b005004112`, actual binary SHA256
+  `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`, and
+  actual signer fingerprint
+  `EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD`.
+- Workflow summary ended `status=no-go`, `reason=expected-version-not-observed`,
+  `poll.result=timeout`, and observed AgentPC2 as `ONLINE` at
+  `agent_version=v0.2.20` with `lastSeenAt=2026-06-22T06:50:02.057117Z`.
+  Direct DB recheck after the workflow still showed `agent_version=v0.2.20`.
 - `platform-agent#208` evidence comment:
-  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4764176514`.
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4765665886`.
+- Governance/no-go ledger update:
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1693#issuecomment-4765670407`.
 
-Boundary: this does not prove `UPDATE_AGENT` success or constrained executor
-acceptance. The next required gate is to execute the bounded
-`agentpc2-self-update-policy-seed-v023.ps1` helper on AgentPC2, then rerun
-product `UPDATE_AGENT` to `v0.2.23`, then run fresh outbound 443 mTLS
-constrained-operation/negative/audit evidence against
+Boundary: this proves release-catalog `UPDATE_AGENT` create/approve/dispatch
+and endpoint-side signed artifact verification/staging after SHA256 signer
+policy seeding. It does not prove self-update activation, `v0.2.23` running on
+AgentPC2, constrained executor acceptance, broad MSI/GPO rollout, production
+remote support, unrestricted shell, or inbound SSH/RDP/WinRM/SMB/RPC. The next
+required gate is to inspect/fix the endpoint-local self-update activation
+helper/outcome for activation plan `c015f8ec89519cb221f613b005004112`, rerun
+the product update until AgentPC2 reports `v0.2.23`, then run fresh outbound
+443 mTLS constrained-operation/negative/audit evidence against
 `remote-bridge-mtls.testai.acik.com:443`.
 
 ## Live Delta — AgentPC2 self-update signer policy fix released as v0.2.23; artifact-host live verified (2026-06-22)
