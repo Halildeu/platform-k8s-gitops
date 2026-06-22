@@ -17,15 +17,15 @@ on:
       release_id:
         description: 'EndpointAgent release tag to bootstrap'
         required: true
-        default: 'v0.2.25'
+        default: 'v0.2.26'
       expected_release_manifest_sha256:
         description: 'Expected release-manifest.json SHA256'
         required: true
-        default: '28330d13c6d65b5fc4bf052b32df45aa16e06bce1965144577e27da58b9645d8'
+        default: 'c34085bed15d288f625e8fb941157a950873256a754a7a049868f12af1f21451'
       expected_install_ps1_sha256:
         description: 'Expected install.ps1 SHA256'
         required: true
-        default: '138fa1469e393a59013a09ae18d951d56ef2cea47f4b91c2ca1bf2be8ae6657a'
+        default: '1fe5f6e8104a48f42d4fdc80b8ac9f96e53377999644d04c994d69eb212f5657'
       expected_bootstrap_ps1_sha256:
         description: 'Expected bootstrap-package.ps1 SHA256'
         required: true
@@ -33,11 +33,11 @@ on:
       expected_agent_sha256:
         description: 'Expected endpoint-agent.exe SHA256'
         required: true
-        default: '0bf8aada0bf7b25f3e574e576a8401f9030168cbe60a487d6f6c5a6d4c610aec'
+        default: '66b0fb98deb63e175c2e37fbf4ff78af98803bf66a84b11ac3667b21a5bf5bb8'
       expected_agent_zip_sha256:
         description: 'Expected EndpointAgent.zip SHA256'
         required: true
-        default: 'e67a1c74e188f8e90c5c5fa05f3d982b863fbeabd986d28c549a55a34527c0f3'
+        default: '7497a599c395ced4d6ebacb6cf9a96b36d358bd08f9c0b3916aaefa4ce4f92e7'
       expected_signer_thumbprint:
         description: 'Expected Authenticode signer thumbprint'
         required: true
