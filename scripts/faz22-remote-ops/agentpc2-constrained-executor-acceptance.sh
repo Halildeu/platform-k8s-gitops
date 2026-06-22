@@ -54,6 +54,7 @@ PG_CLIENT_IMAGE="${PG_CLIENT_IMAGE:-postgres:16-alpine}"
 DB_SCHEMA="${DB_SCHEMA:-endpoint_admin_service}"
 
 STEP_UP_PRIVATE_KEY_PEM_PATH="${STEP_UP_PRIVATE_KEY_PEM_PATH:-}"
+REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS="${REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS:-420}"
 STEP_UP_RUNTIME_STABILIZE_SECONDS="${STEP_UP_RUNTIME_STABILIZE_SECONDS:-${STEP_UP_SECRET_STABILIZE_SECONDS:-8}}"
 AGENT_OPERATION_WAIT_SECONDS="${AGENT_OPERATION_WAIT_SECONDS:-45}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-rtt-acceptance-$(date -u +%Y%m%dT%H%M%SZ)}"
@@ -218,7 +219,7 @@ restore_remote_bridge_runtime_env_override() {
   fi
 
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" \
-    --timeout=240s >/dev/null \
+    --timeout="${REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS}s" >/dev/null \
     || return 1
 
   live_matches="$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get deploy "$REMOTE_BRIDGE_DEPLOYMENT" \
@@ -630,7 +631,7 @@ mint_persona_token() {
 }
 
 verify_runtime_digest() {
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --timeout=240s
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --timeout="${REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS}s"
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get deploy "$REMOTE_BRIDGE_DEPLOYMENT" -o json \
     > "${EVIDENCE_DIR}/deploy.json"
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get pods -l "app.kubernetes.io/name=${REMOTE_BRIDGE_DEPLOYMENT}" -o json \
@@ -865,6 +866,11 @@ validate_acceptance_inputs() {
       || (( AGENT_OPERATION_WAIT_SECONDS < 5 || AGENT_OPERATION_WAIT_SECONDS > 180 )); then
     fail_acceptance "agent-operation-wait-seconds-invalid"
   fi
+
+  if ! printf '%s' "$REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS" | grep -Eq '^[0-9]+$' \
+      || (( REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS < 120 || REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS > 900 )); then
+    fail_acceptance "remote-bridge-rollout-timeout-seconds-invalid"
+  fi
 }
 
 candidate_private_keys() {
@@ -927,7 +933,7 @@ generate_run_scoped_step_up_key() {
 
   kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout restart "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" >/dev/null \
     || fail_acceptance "step-up-ephemeral-rollout-restart-failed"
-  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --timeout=240s \
+  kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" rollout status "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --timeout="${REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS}s" \
     || fail_acceptance "step-up-ephemeral-rollout-timeout"
   verify_runtime_digest
   sleep "$STEP_UP_RUNTIME_STABILIZE_SECONDS"

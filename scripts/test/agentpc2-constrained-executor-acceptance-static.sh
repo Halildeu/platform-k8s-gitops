@@ -33,6 +33,16 @@ if ! grep -Fq 'EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-1adc6ac01
   exit 1
 fi
 
+if ! grep -Fq 'REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS="${REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS:-420}"' "${script}"; then
+  echo "acceptance must default remote-bridge rollout waits to 420s for Java cold-start tolerance" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'remote-bridge-rollout-timeout-seconds-invalid' "${script}"; then
+  echo "acceptance must validate REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS bounds" >&2
+  exit 1
+fi
+
 if ! grep -Fq '.audContainsRemoteBridgeOperatorApi == true' "${script}"; then
   echo "acceptance must reject persona tokens without the remote-bridge-operator-api audience" >&2
   exit 1
