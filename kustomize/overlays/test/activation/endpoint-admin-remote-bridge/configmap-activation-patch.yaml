@@ -58,6 +58,9 @@ data:
   REMOTE_BRIDGE_OPERATOR_AUTH_JWT_REQUIRED_OPERATOR_ROLE: "remote-bridge-operator"
 
   REMOTE_BRIDGE_OPERATOR_REST_ENABLED: "true"
+  # Non-prod acceptance-only #729 probe surface. The backend controller is also
+  # gated by operator REST and rejects production-like profiles.
+  REMOTE_BRIDGE_NEGATIVE_PROBES_ENABLED: "true"
   REMOTE_BRIDGE_APPROVAL_REST_ENABLED: "true"
   REMOTE_BRIDGE_APPROVAL_AUDIT_SINK: "DURABLE_WORM_DB"
   REMOTE_BRIDGE_APPROVAL_GRANT_TTL_MILLIS: "300000"
