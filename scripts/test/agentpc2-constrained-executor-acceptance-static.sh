@@ -168,6 +168,11 @@ if ! grep -Fq 'capture_failpath_diagnostics "$reason"' "${script}"; then
   exit 1
 fi
 
+if ! grep -Fq 'local verifier_exit=$?' "${script}"; then
+  echo "acceptance must capture verifier exit code instead of letting set -e bypass failpath diagnostics" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'failpath-diagnostics' "${script}"; then
   echo "acceptance no-go evidence must include a failpath-diagnostics bundle" >&2
   exit 1

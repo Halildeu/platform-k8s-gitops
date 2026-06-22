@@ -1281,13 +1281,16 @@ main() {
   export_recording_rows
   sha256_manifest
 
+  set +e
   REQUIRE_ACCEPTED=1 \
   REQUIRE_FULL_MATRIX=0 \
   EXPECTED_CATALOG_OPERATION_ID="$CATALOG_OPERATION_ID" \
     "$REPO_ROOT/scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh" "$EVIDENCE_DIR"
+  local verifier_exit=$?
+  set -e
 
   verification_result="$(jq -r '.result // ""' "${EVIDENCE_DIR}/verification-summary.json" 2>/dev/null || true)"
-  if [[ "$verification_result" != "accepted-candidate" ]]; then
+  if [[ "$verifier_exit" != "0" || "$verification_result" != "accepted-candidate" ]]; then
     fail_acceptance "verifier-${verification_result:-unknown}"
   fi
 
