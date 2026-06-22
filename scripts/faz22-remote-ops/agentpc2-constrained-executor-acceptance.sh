@@ -349,8 +349,18 @@ write_summary() {
 fail_acceptance() {
   status="no-go"
   reason="$1"
+  set +e
   capture_failpath_diagnostics "$reason"
+  local diagnostics_rc=$?
   write_summary
+  local summary_rc=$?
+  set -e
+  if [[ "$diagnostics_rc" != "0" ]]; then
+    echo "WARN failpath diagnostics failed rc=${diagnostics_rc}"
+  fi
+  if [[ "$summary_rc" != "0" ]]; then
+    echo "WARN failpath summary write failed rc=${summary_rc}"
+  fi
   echo "NO_GO $reason"
   exit 1
 }
@@ -1217,18 +1227,22 @@ run_product_supported_full_matrix_negatives() {
   local close_code closed_op_body closed_session_code
   wrong_device="00000000-0000-0000-0000-0000000000ff"
 
+  echo "INFO full_matrix_probe=wrong-device start"
   body="$(jq -nc --arg session "${SESSION_ID}-wrong-device-deny" --arg device "$wrong_device" \
     '{sessionId:$session, deviceId:$device, reason:"negative wrong-device / not enrolled / not connected", capabilities:["CONSTRAINED_PTY"]}')"
   curl_json_or_fail wrong_device_code wrong-device-deny \
     POST "$operator_base" /sessions "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/wrong-device-deny.body" "$body"
   normalize_body_named_http_evidence "${EVIDENCE_DIR}/wrong-device-deny.body"
+  echo "INFO full_matrix_probe=wrong-device http=${wrong_device_code}"
   if [[ "$wrong_device_code" != "404" ]]; then
     fail_acceptance "wrong-device-deny expected 404 got ${wrong_device_code}"
   fi
 
+  echo "INFO full_matrix_probe=expired-permit start"
   curl_json_or_fail expired_code expired-permit-deny \
     POST "$operator_base" "/sessions/${SESSION_ID}/negative-probes/expired-permit" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/expired-permit-deny.body"
   normalize_body_named_http_evidence "${EVIDENCE_DIR}/expired-permit-deny.body"
+  echo "INFO full_matrix_probe=expired-permit http=${expired_code}"
   if [[ "$expired_code" != "422" ]]; then
     fail_acceptance "expired-permit-deny expected 422 got ${expired_code}"
   fi
@@ -1236,9 +1250,11 @@ run_product_supported_full_matrix_negatives() {
     "${EVIDENCE_DIR}/expired-permit-deny.body" >/dev/null \
     || fail_acceptance "expired-permit-deny body did not prove agent-side permit-invalid"
 
+  echo "INFO full_matrix_probe=replay start"
   curl_json_or_fail replay_code replay-deny \
     POST "$operator_base" "/sessions/${SESSION_ID}/negative-probes/replay" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/replay-deny.body"
   normalize_body_named_http_evidence "${EVIDENCE_DIR}/replay-deny.body"
+  echo "INFO full_matrix_probe=replay http=${replay_code}"
   if [[ "$replay_code" != "422" ]]; then
     fail_acceptance "replay-deny expected 422 got ${replay_code}"
   fi
@@ -1246,18 +1262,22 @@ run_product_supported_full_matrix_negatives() {
     "${EVIDENCE_DIR}/replay-deny.body" >/dev/null \
     || fail_acceptance "replay-deny body did not prove agent-side seq-replay"
 
+  echo "INFO full_matrix_probe=close-session start"
   curl_json_or_fail close_code close-session \
     POST "$operator_base" "/sessions/${SESSION_ID}/close" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/close-session.body"
   normalize_body_named_http_evidence "${EVIDENCE_DIR}/close-session.body"
+  echo "INFO full_matrix_probe=close-session http=${close_code}"
   if [[ "$close_code" != "204" ]]; then
     fail_acceptance "close-session expected 204 got ${close_code}"
   fi
 
+  echo "INFO full_matrix_probe=closed-session-deny start"
   closed_op_body="$(jq -nc --arg op "op-closed-session-$(date -u +%Y%m%dT%H%M%SZ)" --arg catalog "$CATALOG_OPERATION_ID" \
     '{operationId:$op, catalogOperationId:$catalog}')"
   curl_json_or_fail closed_session_code closed-session-deny \
     POST "$operator_base" "/sessions/${SESSION_ID}/operations" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/closed-session-deny.body" "$closed_op_body"
   normalize_body_named_http_evidence "${EVIDENCE_DIR}/closed-session-deny.body"
+  echo "INFO full_matrix_probe=closed-session-deny http=${closed_session_code}"
   if [[ "$closed_session_code" != "404" ]]; then
     fail_acceptance "closed-session-deny expected 404 got ${closed_session_code}"
   fi
