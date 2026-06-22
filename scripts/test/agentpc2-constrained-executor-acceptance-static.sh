@@ -178,6 +178,16 @@ if ! grep -Fq 'local stem="${body_file%.body}"' "${script}"; then
   exit 1
 fi
 
+if ! awk '
+  /^normalize_body_named_http_evidence\(\) \{/ { in_fn=1 }
+  in_fn && /return 0/ { found=1 }
+  in_fn && /^\}/ { exit found ? 0 : 1 }
+  END { if (!found) exit 1 }
+' "${script}"; then
+  echo "acceptance named HTTP evidence normalizer must return success when request.json is absent" >&2
+  exit 1
+fi
+
 if grep -Fq 'curl_json_or_fail code ' "${script}"; then
   echo "acceptance must not pass result_var=code to curl_json_or_fail because the helper has a local code variable" >&2
   exit 1
