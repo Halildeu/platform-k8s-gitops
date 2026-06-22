@@ -1213,7 +1213,8 @@ ORDER BY seq;"
 }
 
 run_product_supported_full_matrix_negatives() {
-  local operator_base="$1" wrong_device body wrong_device_code close_code closed_op_body closed_session_code
+  local operator_base="$1" wrong_device body wrong_device_code expired_code replay_code
+  local close_code closed_op_body closed_session_code
   wrong_device="00000000-0000-0000-0000-0000000000ff"
 
   body="$(jq -nc --arg session "${SESSION_ID}-wrong-device-deny" --arg device "$wrong_device" \
@@ -1224,6 +1225,26 @@ run_product_supported_full_matrix_negatives() {
   if [[ "$wrong_device_code" != "404" ]]; then
     fail_acceptance "wrong-device-deny expected 404 got ${wrong_device_code}"
   fi
+
+  curl_json_or_fail expired_code expired-permit-deny \
+    POST "$operator_base" "/sessions/${SESSION_ID}/negative-probes/expired-permit" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/expired-permit-deny.body"
+  normalize_body_named_http_evidence "${EVIDENCE_DIR}/expired-permit-deny.body"
+  if [[ "$expired_code" != "422" ]]; then
+    fail_acceptance "expired-permit-deny expected 422 got ${expired_code}"
+  fi
+  jq -e '.kind == "DENY" and .transportPushed == true and (.agentErrorCode // "" | contains("permit-invalid"))' \
+    "${EVIDENCE_DIR}/expired-permit-deny.body" >/dev/null \
+    || fail_acceptance "expired-permit-deny body did not prove agent-side permit-invalid"
+
+  curl_json_or_fail replay_code replay-deny \
+    POST "$operator_base" "/sessions/${SESSION_ID}/negative-probes/replay" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/replay-deny.body"
+  normalize_body_named_http_evidence "${EVIDENCE_DIR}/replay-deny.body"
+  if [[ "$replay_code" != "422" ]]; then
+    fail_acceptance "replay-deny expected 422 got ${replay_code}"
+  fi
+  jq -e '.kind == "DENY" and .transportPushed == true and (.agentErrorCode // "" | contains("seq-replay"))' \
+    "${EVIDENCE_DIR}/replay-deny.body" >/dev/null \
+    || fail_acceptance "replay-deny body did not prove agent-side seq-replay"
 
   curl_json_or_fail close_code close-session \
     POST "$operator_base" "/sessions/${SESSION_ID}/close" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/close-session.body"
@@ -1244,21 +1265,27 @@ run_product_supported_full_matrix_negatives() {
   jq -n \
     --arg generatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg wrongDeviceCode "$(<"${EVIDENCE_DIR}/wrong-device-deny.body.code")" \
+    --arg expiredCode "$(<"${EVIDENCE_DIR}/expired-permit-deny.body.code")" \
+    --arg replayCode "$(<"${EVIDENCE_DIR}/replay-deny.body.code")" \
     --arg closeCode "$(<"${EVIDENCE_DIR}/close-session.body.code")" \
     --arg closedSessionCode "$(<"${EVIDENCE_DIR}/closed-session-deny.body.code")" \
     '{
       generatedAt:$generatedAt,
       productSupportedNegatives:{
         wrongDeviceOrUnenrolledOpenHttp:$wrongDeviceCode,
+        expiredPermitAgentDenyHttp:$expiredCode,
+        replayAgentDenyHttp:$replayCode,
         operatorCloseHttp:$closeCode,
         closedSessionOperationHttp:$closedSessionCode
       },
-      unsupportedLiveNegatives:[
-        "expired-permit-deny requires a product endpoint or controllable runtime TTL-expiry path; live DB/fixture injection is not acceptable evidence",
-        "replay-deny requires agent/broker frame-level replay or a product replay endpoint; duplicate REST operation ids are not equivalent",
-        "true kill/revoke requires an owner-gated product revoke/kill path; explicit operator close only proves closed-session denial"
-      ],
-      boundary:"This file is evidence of product-supported negative probes only. It does not by itself satisfy REQUIRE_FULL_MATRIX=1."
+      backendDependency:{
+        requiredPullRequest:"platform-backend#729",
+        requiredProperties:[
+          "remote-bridge.operator-rest.enabled=true",
+          "remote-bridge.negative-probes.enabled=true"
+        ]
+      },
+      boundary:"This file is evidence of product-supported negative probes. With REQUIRE_FULL_MATRIX=1, verifier remains authoritative."
     }' > "${EVIDENCE_DIR}/full-matrix-product-supported-summary.json"
 }
 
