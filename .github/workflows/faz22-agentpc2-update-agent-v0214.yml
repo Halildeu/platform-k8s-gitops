@@ -9,15 +9,15 @@ on:
       release_id:
         description: 'Release tag to dispatch through the product UPDATE_AGENT path'
         required: true
-        default: 'v0.2.25'
+        default: 'v0.2.26'
       target_version:
         description: 'Agent version expected after update'
         required: true
-        default: '0.2.25'
+        default: '0.2.26'
       expected_sha256:
         description: 'Expected SHA256 for endpoint-agent.exe'
         required: true
-        default: '0bf8aada0bf7b25f3e574e576a8401f9030168cbe60a487d6f6c5a6d4c610aec'
+        default: '66b0fb98deb63e175c2e37fbf4ff78af98803bf66a84b11ac3667b21a5bf5bb8'
       expected_signer_thumbprint:
         description: 'Expected internal-CA Authenticode signer thumbprint'
         required: true
@@ -25,7 +25,7 @@ on:
       max_bytes:
         description: 'Maximum allowed endpoint-agent.exe size'
         required: true
-        default: '14376360'
+        default: '14377384'
       target_product_device_id:
         description: 'Endpoint-admin product device UUID for AgentPC2'
         required: true
