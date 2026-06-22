@@ -17,8 +17,8 @@ if ! grep -Fq 'Invoke-DownloadVerified -Uri \$BinaryUrl -OutFile \$BinaryPath -E
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:85091b6bc26e9d3c52ddea01886155d79d19fc9e56eefb41b27a1b756aa76cc4}"' "${script}"; then
-  echo "bootstrap gate default artifact-host digest must track the v0.2.27 immutable image digest" >&2
+if ! grep -Fq 'EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2}"' "${script}"; then
+  echo "bootstrap gate default artifact-host digest must track the v0.2.28 immutable image digest" >&2
   exit 1
 fi
 
