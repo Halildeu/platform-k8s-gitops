@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — AgentPC2 self-update signer policy fix released as v0.2.23; artifact-host desired-state update in flight (2026-06-22)
+## Live Delta — AgentPC2 self-update signer policy fix released as v0.2.23; artifact-host live verified (2026-06-22)
 
 `platform-agent#208` remains not accepted. The live root cause from the
 `v0.2.22` product `UPDATE_AGENT` attempt was endpoint-local policy, not broker
@@ -36,15 +36,31 @@ Fix-forward source/release state:
   `9ccef216ffe497ea496ad9b47d26fedc6427ce8bb34975c6f87335f61bc33ea6`.
 - The release manifest records artifact-host image
   `ghcr.io/halildeu/platform-agent-artifacts:v0.2.23@sha256:1334c1c52fe87c04f42154e02cdc8d1222637e5fa838656df4fb316bdcfb8fd4`.
+- `platform-k8s-gitops#1844` merged at
+  `8ca3da441e68c5f482f06438a3110225134c031b`, pinning the test overlay
+  artifact-host desired-state to the same immutable `v0.2.23` digest.
+- Live `k3d-test/platform-test` artifact-host rollout is verified:
+  deployment `artifact-host` generation `34`, observed `34`, ready `2/2`,
+  updated `2/2`, image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.23@sha256:1334c1c52fe87c04f42154e02cdc8d1222637e5fa838656df4fb316bdcfb8fd4`.
+  Pods `artifact-host-667bccd555-f556v` and
+  `artifact-host-667bccd555-lp2zh` are ready with `restartCount=0` and imageID
+  `ghcr.io/halildeu/platform-agent-artifacts@sha256:1334c1c52fe87c04f42154e02cdc8d1222637e5fa838656df4fb316bdcfb8fd4`.
+- Public `/artifacts/endpoint-agent/current/release-manifest.json` resolves to
+  `release_tag=v0.2.23`, signing tier `trusted-internal-ca`, signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`, endpoint-agent.exe SHA256
+  `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`, and
+  `EndpointAgent.zip` SHA256
+  `9ccef216ffe497ea496ad9b47d26fedc6427ce8bb34975c6f87335f61bc33ea6`.
 
 Boundary: this closes the durable packaging/install propagation gap for future
-signed self-update installs and creates the immutable `v0.2.23` artifact-host
-candidate. It does not yet prove AgentPC2 has consumed `v0.2.23`, self-updated
-successfully, or completed the `platform-agent#208` constrained-executor
-acceptance. The next gates are: merge and live-verify this GitOps artifact-host
-pin, seed or otherwise correct the currently installed AgentPC2 local
-self-update policy, rerun product `UPDATE_AGENT` to `v0.2.23`, then run fresh
-outbound 443 mTLS constrained-operation/negative/audit evidence against
+signed self-update installs and verifies the immutable `v0.2.23` artifact-host
+candidate on test. It does not yet prove AgentPC2 has consumed `v0.2.23`,
+self-updated successfully, or completed the `platform-agent#208`
+constrained-executor acceptance. The next gates are: seed or otherwise correct
+the currently installed AgentPC2 local self-update policy, rerun product
+`UPDATE_AGENT` to `v0.2.23`, then run fresh outbound 443 mTLS
+constrained-operation/negative/audit evidence against
 `remote-bridge-mtls.testai.acik.com:443`.
 
 ## Live Delta — AgentPC2 v0.2.22 artifact-host live; UPDATE_AGENT no-go is signer allowlist (2026-06-22)
