@@ -9,7 +9,7 @@ on:
       expected_digest:
         description: 'Expected endpoint-admin remote-bridge deployment digest'
         required: true
-        default: 'sha256:48ff12342bf2d9bd0dfc25899353fe594d3b105e1043f80cadfa6fc1e1740249'
+        default: 'sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3'
       device_id:
         description: 'Target endpoint device UUID'
         required: true
@@ -198,7 +198,7 @@ jobs:
           {
             echo "AGENTPC2_PRODUCT_ACCEPTANCE status=${status}"
             echo ""
-            echo "- Source: platform-backend#729 merged; endpoint-admin remote-bridge digest expected \`${EXPECTED_DIGEST}\`."
+            echo "- Source: platform-backend#730 merged; endpoint-admin remote-bridge digest expected \`${EXPECTED_DIGEST}\`."
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Evidence dir on staging runner: \`${EVIDENCE_DIR}\`"
             echo "- Runtime deploy image: \`${deploy_image}\`"
@@ -229,7 +229,7 @@ jobs:
           {
             echo "ENDPOINT_ADMIN_REMOTE_BRIDGE_ACCEPTANCE_LINK status=${status}"
             echo ""
-            echo "- platform-backend#729 is merged and deployed through endpoint-admin remote-bridge digest \`${EXPECTED_DIGEST}\`."
+            echo "- platform-backend#730 is merged and deployed through endpoint-admin remote-bridge digest \`${EXPECTED_DIGEST}\`."
             echo "- Staging runtime evidence is tracked in platform-agent#208 by this run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- AgentPC2 product-channel acceptance status: \`${status}\`"
             if [ -n "${reason}" ]; then

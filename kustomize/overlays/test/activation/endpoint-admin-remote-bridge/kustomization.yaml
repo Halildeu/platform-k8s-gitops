@@ -60,7 +60,7 @@
 #     while prod-like profiles still reject that exception and DATA/EndStream
 #     terminal markers are recorded for #208 acceptance.
 #   - immutable test digest:
-#     sha256:48ff12342bf2d9bd0dfc25899353fe594d3b105e1043f80cadfa6fc1e1740249
+#     sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -140,6 +140,10 @@ images:
   # re-pin owner-gated broker image with the primary endpoint-admin #729 digest
   # so AgentPC2 acceptance can prove expired-permit and replay DENY through the
   # real outbound mTLS product channel.
+  # 2026-06-23 backend #730 negative-probe observer fix: re-pin with primary
+  # endpoint-admin so expired-permit DENY accepts the bounded
+  # `operation-dispatch-failed:permit-invalid:*` agent error-code family instead
+  # of misclassifying suffixed product errors as agent-deny-not-observed.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:48ff12342bf2d9bd0dfc25899353fe594d3b105e1043f80cadfa6fc1e1740249
+    digest: sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3

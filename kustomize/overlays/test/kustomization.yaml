@@ -5226,7 +5226,17 @@ images:
     # Runtime acceptance remains gated by platform-test sync plus AgentPC2
     # product remote-ops smoke; this line is only desired-state artifact
     # promotion.
-    digest: sha256:48ff12342bf2d9bd0dfc25899353fe594d3b105e1043f80cadfa6fc1e1740249
+    # 2026-06-23 Faz 22.6 full-matrix negative-probe observer fix
+    # (backend #730 -> sha-882a3c7). Accepts the bounded agent error-code
+    # family `operation-dispatch-failed:permit-invalid:*` so expired-permit
+    # DENY evidence is not misclassified as `agent-deny-not-observed` when the
+    # agent appends a diagnostic suffix such as `:not-fresh`. Image build run
+    # 27988214167 produced endpoint-admin-service
+    # sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3.
+    # Runtime acceptance remains gated by platform-test sync plus AgentPC2
+    # product remote-ops full-matrix smoke; this line is only desired-state
+    # artifact promotion.
+    digest: sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
