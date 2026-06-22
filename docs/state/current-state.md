@@ -1,5 +1,56 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — AgentPC2 v0.2.25 local bootstrap verified; #208 acceptance rerun blocked by stale defaults (2026-06-22)
+
+`platform-agent#208` remains not accepted yet. AgentPC2 has now been moved by
+endpoint-local bootstrap to the signed `v0.2.25` EndpointAgent build with the
+bounded outbound remote-bridge and signed self-update policy required for the
+next product-channel acceptance gate.
+
+Evidence:
+
+- Operator-side AgentPC2 transcript on 2026-06-22 verified downloads from
+  `https://testai.acik.com/artifacts/endpoint-agent/current`:
+  `install.ps1` SHA256
+  `138fa1469e393a59013a09ae18d951d56ef2cea47f4b91c2ca1bf2be8ae6657a`
+  and `endpoint-agent.exe` SHA256
+  `0bf8aada0bf7b25f3e574e576a8401f9030168cbe60a487d6f6c5a6d4c610aec`.
+- Authenticode verification returned `Status=Valid` with signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`.
+- Installed binary evidence on AgentPC2:
+  `C:\Program Files\EndpointAgent\endpoint-agent.exe`,
+  `ProductVersion=v0.2.25`, `FileVersion=v0.2.25`, length `14376360`, SHA256
+  `0BF8AADA0BF7B25F3E574E576A8401F9030168CBE60A487D6F6C5A6D4C610AEC`.
+- Service evidence: `EndpointAgent` is `Running`, `StartMode=Auto`,
+  `StartName=LocalSystem`.
+- Redacted service environment shows the dedicated outbound broker path
+  `ENDPOINT_AGENT_REMOTE_BRIDGE_BROKER_ADDR=remote-bridge-mtls.testai.acik.com:443`,
+  TLS server name `remote-bridge-mtls.testai.acik.com`, operations and PTY
+  enabled, pilot auto-consent enabled, and self-update enabled.
+- Self-update local policy now uses bounded hosts
+  `github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,testai.acik.com`
+  and the SHA256 signer certificate fingerprint
+  `EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD`.
+- Follow-up product-channel acceptance workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27947137547`
+  was intentionally cancelled after the runner-side gate was found to still
+  carry stale `v0.2.21` acceptance defaults. This is not product no-go evidence;
+  it is a stale-gate guard to avoid evaluating the live AgentPC2 `v0.2.25`
+  endpoint against the wrong release boundary.
+- The active remediation is to align the first-install, evidence-verifier,
+  constrained-acceptance, and `UPDATE_AGENT` runner defaults to `v0.2.25`
+  before rerunning the product-channel
+  HELLO/PERMIT/constrained-operation/negative/audit gate.
+
+Boundary: this proves AgentPC2 is locally installed with the expected signed
+`v0.2.25` binary and bounded remote-ops/self-update configuration. It does not
+prove `platform-agent#208` constrained-executor acceptance, product
+`UPDATE_AGENT` activation, broad MSI/GPO rollout, production support readiness,
+inbound SSH/RDP/WinRM/SMB/RPC, unrestricted shell, or TPM/device-key hardware
+attestation. The next gate is a fresh product-channel
+HELLO/PERMIT/constrained-operation/negative/audit workflow run after the
+`v0.2.25` gate/default alignment is merged or run from this branch.
+
 ## Live Delta — AgentPC2 v0.2.21 product update reaches endpoint but fails signer allowlist (2026-06-22)
 
 `platform-agent#208` remains not accepted. The later AgentPC2 `v0.2.21`

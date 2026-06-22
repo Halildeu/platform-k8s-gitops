@@ -17,15 +17,15 @@ on:
       release_id:
         description: 'EndpointAgent release tag to bootstrap'
         required: true
-        default: 'v0.2.21'
+        default: 'v0.2.25'
       expected_release_manifest_sha256:
         description: 'Expected release-manifest.json SHA256'
         required: true
-        default: 'bc7482f2b651aab51a6130f9f121534a5ecc9abdcadd1c31f3e4ff10c4c11725'
+        default: '28330d13c6d65b5fc4bf052b32df45aa16e06bce1965144577e27da58b9645d8'
       expected_install_ps1_sha256:
         description: 'Expected install.ps1 SHA256'
         required: true
-        default: 'fd150897767fe9b85cf3a018b6fe2f62b61ab2f3e8aa13e37445afc4c1ba35f4'
+        default: '138fa1469e393a59013a09ae18d951d56ef2cea47f4b91c2ca1bf2be8ae6657a'
       expected_bootstrap_ps1_sha256:
         description: 'Expected bootstrap-package.ps1 SHA256'
         required: true
@@ -33,15 +33,19 @@ on:
       expected_agent_sha256:
         description: 'Expected endpoint-agent.exe SHA256'
         required: true
-        default: 'd346d35142a6a6be7f2bdd2cf8f26aaf652b25cabd8a6e14426c7a452baff2b1'
+        default: '0bf8aada0bf7b25f3e574e576a8401f9030168cbe60a487d6f6c5a6d4c610aec'
       expected_agent_zip_sha256:
         description: 'Expected EndpointAgent.zip SHA256'
         required: true
-        default: '73292071fa61b0572e81db6fb51b5eff0e48483467a4ebced177778c3aff78cd'
+        default: 'e67a1c74e188f8e90c5c5fa05f3d982b863fbeabd986d28c549a55a34527c0f3'
       expected_signer_thumbprint:
         description: 'Expected Authenticode signer thumbprint'
         required: true
         default: 'D68F4F530137EB65CE44E3405E82B46205E753E5'
+      expected_signer_sha256_fingerprint:
+        description: 'Expected SHA256 fingerprint of the Authenticode signing certificate'
+        required: true
+        default: 'EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD'
 
 permissions:
   contents: read
@@ -63,6 +67,7 @@ env:
   EXPECTED_AGENT_SHA256: ${{ inputs.expected_agent_sha256 }}
   EXPECTED_AGENT_ZIP_SHA256: ${{ inputs.expected_agent_zip_sha256 }}
   EXPECTED_SIGNER_THUMBPRINT: ${{ inputs.expected_signer_thumbprint }}
+  EXPECTED_SIGNER_SHA256_FINGERPRINT: ${{ inputs.expected_signer_sha256_fingerprint }}
 
 jobs:
   prepare-bootstrap:
@@ -96,7 +101,8 @@ jobs:
             EXPECTED_BOOTSTRAP_PS1_SHA256 \
             EXPECTED_AGENT_SHA256 \
             EXPECTED_AGENT_ZIP_SHA256 \
-            EXPECTED_SIGNER_THUMBPRINT
+            EXPECTED_SIGNER_THUMBPRINT \
+            EXPECTED_SIGNER_SHA256_FINGERPRINT
           do
             reject_multiline "$name" "${!name}"
           done
@@ -141,6 +147,11 @@ jobs:
 
           if ! printf '%s' "${EXPECTED_SIGNER_THUMBPRINT}" | grep -Eq '^[A-F0-9]{40}$'; then
             echo "::error::expected_signer_thumbprint must be uppercase SHA1 thumbprint hex"
+            exit 1
+          fi
+
+          if ! printf '%s' "${EXPECTED_SIGNER_SHA256_FINGERPRINT}" | grep -Eq '^[A-F0-9]{64}$'; then
+            echo "::error::expected_signer_sha256_fingerprint must be uppercase SHA256 certificate fingerprint hex"
             exit 1
           fi
 
