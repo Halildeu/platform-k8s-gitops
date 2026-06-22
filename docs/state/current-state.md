@@ -1,5 +1,53 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — AgentPC2 v0.2.21 product update reaches endpoint but fails signer allowlist (2026-06-22)
+
+`platform-agent#208` remains not accepted. The later AgentPC2 `v0.2.21`
+manual/bootstrap install restored outbound remote-bridge connectivity and
+advertised product update capability, but a fresh product-channel
+`UPDATE_AGENT` to `v0.2.23` failed endpoint-side before activation because the
+local self-update signer allowlist did not accept the released binary signer.
+
+Evidence:
+
+- Prior acceptance workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27935944910`
+  ended `status=no-go` with
+  `reason=pilot-readiness-artifact-manifest-mismatch`: AgentPC2 was observed as
+  `agent_version=v0.2.21`, while the live artifact manifest had already moved to
+  `release_tag=v0.2.23` and endpoint-agent.exe SHA256
+  `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`.
+  Product-path operation fields were empty, so this did not exercise the
+  HELLO/PERMIT/constrained-operation path.
+- Product update workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27937126594`
+  dispatched `UPDATE_AGENT` to AgentPC2 for `v0.2.23` / `0.2.23` with expected
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5` and expected
+  binary SHA256
+  `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`.
+- Live DB recheck for command
+  `418248a3-04d5-4395-96ea-af138a8abeac` showed the command reached AgentPC2:
+  `delivered_at=2026-06-22T07:37:25Z`,
+  `started_at=2026-06-22T07:38:27Z`, and
+  `completed_at=2026-06-22T07:38:32Z`.
+- Terminal result was fail-closed:
+  `endpoint_commands.status=FAILED`, `last_error=UPDATE_AGENT FAILED_STAGE`,
+  `endpoint_command_results.result_status=FAILED`, and
+  `result_payload.details.update.errorCode=SIGNER_NOT_ALLOWED` with reason
+  `verified signer not in local allowlist`.
+- `platform-agent#208` evidence comment:
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4766194963`.
+
+Boundary: this proves the product command was delivered to AgentPC2 and failed
+inside endpoint self-update policy, not in GitHub Actions dispatch. It also
+proves the previous v0.2.21 acceptance no-go was a version-skew preflight, not a
+security/attestation verdict. The next gate is to restore the bounded SHA256
+signer allowlist/self-update config on AgentPC2 or otherwise provide a release
+path accepted by the installed agent, then rerun product `UPDATE_AGENT` and only
+after observing `v0.2.23` live rerun the constrained executor acceptance. No
+constrained executor acceptance, production support, broad rollout readiness, or
+unrestricted shell/RDP/WinRM/SMB/SSH readiness is claimed.
+
 ## Live Delta — self-update activation no-go source hardening merged; AgentPC2 acceptance still open (2026-06-22)
 
 `platform-agent#208` remains not accepted. After the AgentPC2 `v0.2.23`
