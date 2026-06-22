@@ -444,7 +444,13 @@ images:
     # stayed out of admin/users and could not be activated. ArgoCD selfHeal pins
     # this overlay digest, so the live fix REQUIRES this bump (kubectl set-image
     # alone was reverted within ~60s). Codex 019eef97 AGREE.
-    digest: sha256:726cefddbedc0f067dccdfb68526848bc786b02d1c7fedcc29fded31c750f8f9
+    # 2026-06-22 PR #728 bump: sha-1a0e439 — M365 userId claim is now a DB-verified
+    # hint, not gate authority (Slice 1 of platform-backend#727). Orphaned Keycloak
+    # userId attributes (stale id, no backend row) no longer lock the user out of
+    # auto-provision; CurrentUserResolver is identity-aware (kc_subject/email first)
+    # and a gate-denied numeric claim is honored only when it matches the token's own
+    # row (anti-cross-user). Codex 019eeffd + 019ef0a7 AGREE; 70 user-service tests green.
+    digest: sha256:d767ae3ab245e41195ac6038effdddd9f7a66e2d594c9460b341e04d230a6a19
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
