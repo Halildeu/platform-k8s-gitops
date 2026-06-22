@@ -577,6 +577,58 @@ path remains: prove AgentPC2 is actually running the target version through the
 product update path, then run outbound 443 mTLS `HELLO` / permit /
 constrained-operation / negative / audit evidence for `platform-agent#208`.
 
+#### 0.7.10 2026-06-22 #208 AgentPC2 v0.2.28 product-channel accepted-candidate
+
+The later product-channel path supersedes the earlier AgentPC2 activation
+no-go for the narrow bounded pilot. AgentPC2 was updated through the release
+catalog and then produced accepted-candidate constrained-executor evidence.
+
+Product update evidence:
+
+- workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27964789754`
+- result: `status=update-observed`, `reason=agent-version-updated`
+- target: `AgentPc2` / `2f7ad30f-970a-42e7-8af8-08764ae6066f`
+- observed endpoint state: `agent_version=v0.2.28`, `status=ONLINE`,
+  `lastSeenAt=2026-06-22T15:38:07.751839Z`
+- release artifact: `v0.2.28`, endpoint-agent.exe SHA256
+  `e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4`,
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`
+- evidence SHA256SUMS hash:
+  `77151aabe14ab316213edc10a19debaecec44d4752328e701485880f10e82ae8`
+
+Constrained executor evidence:
+
+- workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27964962910`
+- artifact: `agentpc2-constrained-executor-evidence-27964962910`
+  (artifact id `7797551799`)
+- evidence SHA256SUMS hash:
+  `4bac950d586db224871877044749e7eefaa34d5982c42e13efbf67eb4c5807cb`
+- runtime image digest:
+  `sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d`
+- product path: `GET_HOSTNAME`, `CONSTRAINED_PTY`, `PERMIT`,
+  `transportPushed=true`, `operationStatus=permit-transport-pushed`
+- HTTP path: open/approve/step-up challenge/step-up verify/catalog operation
+  returned `200/200/200/200/200`
+- verifier result: `accepted-candidate`
+- recording evidence: `rowCount=3`, `hasAgentOutput=true`,
+  `hasEndStream=true`
+- negative evidence: no-auth catalog `401`, disabled catalog `422`,
+  command/policy override `400`, raw unrestricted PTY `400`, and non-pilot
+  capability open `400`
+- post-run cleanup: no run-scoped annotation and no step-up public-key env
+  override remained on the deployment
+
+Boundary: this moves `platform-agent#208` to Open / Needs Verify with bounded
+AgentPC2 accepted-candidate evidence. It is not full #208 Done and does not
+prove production remote support, broad signed MSI/GPO rollout, device waves,
+inbound SSH/RDP/WinRM/SMB/RPC, unrestricted shell/file browser, or true
+TPM/device-key hardware attestation. The remaining #208 gate is the full
+lifecycle/authz/replay/termination matrix: expired permit, wrong-device or
+wrong-tenant, replay, and termination/kill/revoke evidence. `platform-backend#548`
+remains Open / Blocked for broad rollout hardware-attestation evidence.
+
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
 planı tanımlar.
