@@ -1,5 +1,52 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — AgentPC2 self-update signer policy fix released as v0.2.23; artifact-host desired-state update in flight (2026-06-22)
+
+`platform-agent#208` remains not accepted. The live root cause from the
+`v0.2.22` product `UPDATE_AGENT` attempt was endpoint-local policy, not broker
+delivery: AgentPC2 received and started the update command, then failed closed
+with `SIGNER_NOT_ALLOWED` because its local self-update signer allowlist did not
+include the trusted internal CA signer thumbprint.
+
+Fix-forward source/release state:
+
+- `platform-agent#221` merged at
+  `6977ea84047e7cfb6dd0713055b9bebf6ef14cdb`, wiring the Windows installer,
+  MSI wrapper, and WiX properties to persist endpoint-local self-update policy.
+  When self-update is enabled, install now fails closed unless allowed hosts and
+  signer thumbprints are present; if no explicit self-update signer allowlist is
+  supplied, the installer derives
+  `ENDPOINT_AGENT_SELF_UPDATE_SIGNER_THUMBPRINTS` from the release-patched
+  `ExpectedSignerThumbprint`.
+- Trusted EXE release workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27923908721`
+  completed successfully for tag `v0.2.23`: signed exe build, Authenticode +
+  independent chain-to-pinned-root verification, release archive, and artifact
+  host image publish all passed.
+- Trusted MSI release workflow
+  `https://github.com/Halildeu/platform-agent/actions/runs/27923908730`
+  also completed successfully for tag `v0.2.23`.
+- GitHub release `https://github.com/Halildeu/platform-agent/releases/tag/v0.2.23`
+  publishes signing tier `trusted-internal-ca`, signer thumbprint
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`, endpoint-agent.exe SHA256
+  `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`,
+  `install.ps1` SHA256
+  `48b33211991c69d5677417e4651b459f7612cf38aa270ca9c112abb7e0766b96`, and
+  `EndpointAgent.zip` SHA256
+  `9ccef216ffe497ea496ad9b47d26fedc6427ce8bb34975c6f87335f61bc33ea6`.
+- The release manifest records artifact-host image
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.23@sha256:1334c1c52fe87c04f42154e02cdc8d1222637e5fa838656df4fb316bdcfb8fd4`.
+
+Boundary: this closes the durable packaging/install propagation gap for future
+signed self-update installs and creates the immutable `v0.2.23` artifact-host
+candidate. It does not yet prove AgentPC2 has consumed `v0.2.23`, self-updated
+successfully, or completed the `platform-agent#208` constrained-executor
+acceptance. The next gates are: merge and live-verify this GitOps artifact-host
+pin, seed or otherwise correct the currently installed AgentPC2 local
+self-update policy, rerun product `UPDATE_AGENT` to `v0.2.23`, then run fresh
+outbound 443 mTLS constrained-operation/negative/audit evidence against
+`remote-bridge-mtls.testai.acik.com:443`.
+
 ## Live Delta — AgentPC2 v0.2.22 artifact-host live; UPDATE_AGENT no-go is signer allowlist (2026-06-22)
 
 `platform-agent#208` remains not accepted. The latest product-channel

@@ -5535,8 +5535,8 @@ images:
     digest: sha256:175b3daea37601fbfd500f616ad19664d26dffec8b1db11556a3bff14ce6250e
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
-  # platform-agent Release EXE trusted workflow for tag v0.2.22:
-  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.22 (+ platform-agent#220).
+  # platform-agent Release EXE trusted workflow for tag v0.2.23:
+  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.23 (+ platform-agent#221).
   # Serves /artifacts/endpoint-agent/current/{bootstrap-package.ps1,endpoint-agent.exe,EndpointAgent.zip,...}
   # PLUS a stable MUTABLE alias /artifacts/endpoint-agent/current/ (byte-identical,
   # nginx no-store) so the endpoint-admin UI renders a copy-paste one-command
@@ -5545,19 +5545,19 @@ images:
   # is TRUSTED-INTERNAL-CA signed (osslsigncode + internal OpenSSL CA, RFC3161
   # timestamp; install.ps1 imports the internal root TOFU so Authenticode validates
   # Valid). NOT publicly trusted. Pulled with the existing ghcr-pull secret.
-  # One-version-per-image: this image REPLACES v0.2.19; durable archive remains
+  # One-version-per-image: this image REPLACES v0.2.22; durable archive remains
   # the GitHub release assets. The signed MSI is a separate trusted MSI workflow
   # artifact and is not treated as a release-hosted public asset here.
   - name: artifact-host
     newName: ghcr.io/halildeu/platform-agent-artifacts
-    newTag: v0.2.22
-    # D30 immutable pin — Release EXE trusted run 27922061109 (tag v0.2.22,
+    newTag: v0.2.23
+    # D30 immutable pin — Release EXE trusted run 27923908721 (tag v0.2.23,
     # signing_tier=trusted-internal-ca). Release asset
     # manifest records EndpointAgent.zip SHA256
-    # 51fed6ca7915bc8982f1040f317829d0f1049f74b1399bc4532fa4725d731e5d and
+    # 9ccef216ffe497ea496ad9b47d26fedc6427ce8bb34975c6f87335f61bc33ea6 and
     # agent binary SHA256
-    # c17fe546d9bea645d01b5b2a0d3e0f56993d84838a9e904064349105b25ce0c2.
-    digest: sha256:da63e6fe353fda6939e3c6d3d0ae2ad7b65017b40871fac1e166c959f3830da5
+    # 72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484.
+    digest: sha256:1334c1c52fe87c04f42154e02cdc8d1222637e5fa838656df4fb316bdcfb8fd4
 
 patches:
   # notification-orchestrator-secrets is owned by the test ExternalSecret. The
