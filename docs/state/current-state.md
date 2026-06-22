@@ -1,5 +1,49 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — AgentPC2 v0.2.23 UPDATE_AGENT rerun still no-go until endpoint-local seed runs (2026-06-22)
+
+`platform-agent#208` remains not accepted. The latest product-channel
+`UPDATE_AGENT` rerun against the released and live-served `v0.2.23` artifact
+again proved delivery/execution but stopped at the same endpoint-local trust
+gate: the currently installed AgentPC2 `v0.2.20` service environment still does
+not include the trusted internal-CA signer allowlist.
+
+Evidence:
+
+- `platform-k8s-gitops#1846` merged at
+  `76ccff367efb9d67440e59d40d22d6e908eaeb3f`, publishing a bounded
+  endpoint-local self-update trust seed helper at
+  `https://testai.acik.com/artifacts/endpoint-agent/bootstrap/agentpc2-self-update-policy-seed-v023.ps1`.
+  Public HTTPS returned `200`, and the script SHA256 is
+  `ebd35f17b58eed8ffa4f5f73bfd5bd0a0df262fd96eced1d31c1b93fb5dbc5a6`.
+- Product update workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27925072962`
+  attempted `v0.2.23` / `0.2.23` for AgentPC2 with endpoint-agent.exe SHA256
+  `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`,
+  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`, and
+  evidence artifact
+  `https://api.github.com/repos/Halildeu/platform-k8s-gitops/actions/artifacts/7781907049/zip`.
+- Live DB terminal evidence for command
+  `4263fbc5-ec18-48bc-b659-467ab29cf4a2` shows command type `UPDATE_AGENT`,
+  status `FAILED`, delivered `2026-06-22T02:03:20.812671Z`, started
+  `2026-06-22T02:04:22.831306Z`, completed
+  `2026-06-22T02:04:28.138023Z`, result summary
+  `UPDATE_AGENT FAILED_STAGE`, `errorCode=SIGNER_NOT_ALLOWED`, and reason
+  `verified signer not in local allowlist`.
+- AgentPC2 stayed `ONLINE` at `agent_version=v0.2.20`; the product channel is
+  still reaching the endpoint, but the endpoint correctly fails closed until
+  the bounded local seed helper is run from an elevated AgentPC2 PowerShell
+  session.
+- `platform-agent#208` evidence comment:
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4764176514`.
+
+Boundary: this does not prove `UPDATE_AGENT` success or constrained executor
+acceptance. The next required gate is to execute the bounded
+`agentpc2-self-update-policy-seed-v023.ps1` helper on AgentPC2, then rerun
+product `UPDATE_AGENT` to `v0.2.23`, then run fresh outbound 443 mTLS
+constrained-operation/negative/audit evidence against
+`remote-bridge-mtls.testai.acik.com:443`.
+
 ## Live Delta — AgentPC2 self-update signer policy fix released as v0.2.23; artifact-host live verified (2026-06-22)
 
 `platform-agent#208` remains not accepted. The live root cause from the
