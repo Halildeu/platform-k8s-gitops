@@ -163,6 +163,11 @@ if ! grep -Fq 'run_product_supported_full_matrix_negatives' "${script}"; then
   exit 1
 fi
 
+if ! grep -Fq 'curl_json_or_fail' "${script}"; then
+  echo "acceptance must convert product-negative curl failures into explicit fail_acceptance summaries" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'wrong-device-deny.body' "${script}"; then
   echo "acceptance must record a product-supported wrong-device/not-enrolled negative probe" >&2
   exit 1

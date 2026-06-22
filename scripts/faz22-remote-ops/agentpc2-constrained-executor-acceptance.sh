@@ -457,6 +457,23 @@ curl_json() {
   tr -d '\r\n[:space:]' < "$code_file"
 }
 
+curl_json_or_fail() {
+  local result_var="$1" label="$2"
+  shift 2
+
+  local code rc
+  set +e
+  code="$(curl_json "$@")"
+  rc=$?
+  set -e
+
+  if [[ "$rc" != "0" ]]; then
+    fail_acceptance "${label}-request-failed exit=${rc}"
+  fi
+
+  printf -v "$result_var" '%s' "$code"
+}
+
 normalize_body_named_http_evidence() {
   local body_file="$1" stem="${body_file%.body}"
   [[ "$stem" != "$body_file" ]] || return 0
@@ -1200,13 +1217,15 @@ run_product_supported_full_matrix_negatives() {
 
   body="$(jq -nc --arg session "${SESSION_ID}-wrong-device-deny" --arg device "$wrong_device" \
     '{sessionId:$session, deviceId:$device, reason:"negative wrong-device / not enrolled / not connected", capabilities:["CONSTRAINED_PTY"]}')"
-  code="$(curl_json POST "$operator_base" /sessions "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/wrong-device-deny.body" "$body")"
+  curl_json_or_fail code wrong-device-deny \
+    POST "$operator_base" /sessions "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/wrong-device-deny.body" "$body"
   normalize_body_named_http_evidence "${EVIDENCE_DIR}/wrong-device-deny.body"
   if [[ "$code" != "404" ]]; then
     fail_acceptance "wrong-device-deny expected 404 got ${code}"
   fi
 
-  close_code="$(curl_json POST "$operator_base" "/sessions/${SESSION_ID}/close" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/close-session.body")"
+  curl_json_or_fail close_code close-session \
+    POST "$operator_base" "/sessions/${SESSION_ID}/close" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/close-session.body"
   normalize_body_named_http_evidence "${EVIDENCE_DIR}/close-session.body"
   if [[ "$close_code" != "204" ]]; then
     fail_acceptance "close-session expected 204 got ${close_code}"
@@ -1214,7 +1233,8 @@ run_product_supported_full_matrix_negatives() {
 
   closed_op_body="$(jq -nc --arg op "op-closed-session-$(date -u +%Y%m%dT%H%M%SZ)" --arg catalog "$CATALOG_OPERATION_ID" \
     '{operationId:$op, catalogOperationId:$catalog}')"
-  code="$(curl_json POST "$operator_base" "/sessions/${SESSION_ID}/operations" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/closed-session-deny.body" "$closed_op_body")"
+  curl_json_or_fail code closed-session-deny \
+    POST "$operator_base" "/sessions/${SESSION_ID}/operations" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/closed-session-deny.body" "$closed_op_body"
   normalize_body_named_http_evidence "${EVIDENCE_DIR}/closed-session-deny.body"
   if [[ "$code" != "404" ]]; then
     fail_acceptance "closed-session-deny expected 404 got ${code}"
