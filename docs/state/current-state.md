@@ -1,63 +1,60 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — AgentPC2 v0.2.21 artifact-host live; product acceptance pending (2026-06-22)
+## Live Delta — AgentPC2 v0.2.22 artifact-host live; UPDATE_AGENT no-go is signer allowlist (2026-06-22)
 
-`platform-agent#208` remains not accepted. The latest product-channel rerun on
-`v0.2.20` reached signed `PERMIT` + `transportPushed=true`, but the durable
-recording still lacked `AGENT_OUTPUT`/DATA plus terminal marker evidence. Real
-Claude review classified the sessionless dispatch `ErrorFrame` behavior as an
-audit/WORM gap, not just observability. `platform-agent#220` implemented the
-fix-forward, and `v0.2.21` is now the canonical acceptance target.
+`platform-agent#208` remains not accepted. The latest product-channel
+`UPDATE_AGENT` run is no longer a delivery/poll uncertainty: live DB evidence
+shows the command was delivered to AgentPC2, started on the endpoint, and failed
+closed because the endpoint-local self-update signer allowlist did not contain
+the trusted internal CA signer thumbprint for the `v0.2.22` release.
 
-Fix-forward source/release/GitOps state:
+Current source/release/GitOps state:
 
-- `platform-agent#220` merged at
-  `0ea1ad7c756c65880a56ba17da46b173d4304881`, binding dispatch/device-mismatch,
-  stream-open, handler, and empty-output errors to the operation session so the
-  broker/verifier can attribute failure frames instead of receiving orphan
-  sessionless errors.
-- Trusted EXE/MSI release workflows `27918992271` / `27918992269` published
-  `v0.2.21` with signing tier `trusted-internal-ca`, signer thumbprint
+- GitOps PR `platform-k8s-gitops#1842` merged at
+  `7f11ac0c9a1ae3810088c092fc80e8c25f805087`, pinning the test artifact-host
+  desired-state to
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.22@sha256:da63e6fe353fda6939e3c6d3d0ae2ad7b65017b40871fac1e166c959f3830da5`.
+- Public `/artifacts/endpoint-agent/current/release-manifest.json` resolves to
+  `release_tag=v0.2.22`, signing tier `trusted-internal-ca`, signer thumbprint
   `D68F4F530137EB65CE44E3405E82B46205E753E5`, endpoint-agent.exe SHA256
-  `d346d35142a6a6be7f2bdd2cf8f26aaf652b25cabd8a6e14426c7a452baff2b1`,
-  `EndpointAgent.zip` SHA256
-  `73292071fa61b0572e81db6fb51b5eff0e48483467a4ebced177778c3aff78cd`,
+  `c17fe546d9bea645d01b5b2a0d3e0f56993d84838a9e904064349105b25ce0c2`,
   `install.ps1` SHA256
-  `fd150897767fe9b85cf3a018b6fe2f62b61ab2f3e8aa13e37445afc4c1ba35f4`,
-  release-manifest SHA256
-  `bc7482f2b651aab51a6130f9f121534a5ecc9abdcadd1c31f3e4ff10c4c11725`,
-  and artifact-host image
-  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.21@sha256:e4309d08da77f9c3f5eb288805611fa2d8a97178bcd90b1a132eb30585ed3da0`.
-- GitOps PR `platform-k8s-gitops#1838` merged at
-  `e85d8b8cd245b4c0fa5de7a7359b1346ace2ae3b`, updating the test artifact-host
-  desired-state and AgentPC2 bootstrap/verifier defaults to the immutable
-  `v0.2.21` release hashes.
-- Live `k3d-test/platform-test` evidence now matches the immutable artifact-host
-  digest: deployment `artifact-host` generation `32`, observed `32`, ready
-  `2/2`; pods `artifact-host-55bb578846-2ltrn` and
-  `artifact-host-55bb578846-kfsdn` are ready with `restartCount=0` and imageID
-  `ghcr.io/halildeu/platform-agent-artifacts@sha256:e4309d08da77f9c3f5eb288805611fa2d8a97178bcd90b1a132eb30585ed3da0`.
-- Public `/artifacts/endpoint-agent/current/release-manifest.json` and
-  immutable `/artifacts/endpoint-agent/v0.2.21/release-manifest.json` both
-  resolve to `release_tag=v0.2.21`, endpoint-agent.exe SHA256
-  `d346d35142a6a6be7f2bdd2cf8f26aaf652b25cabd8a6e14426c7a452baff2b1`, and
+  `aad51b5f295dd2a1f24e7f36861a569ee55921b0196ea2dd67d8b8001c49b259`, and
   `EndpointAgent.zip` SHA256
-  `73292071fa61b0572e81db6fb51b5eff0e48483467a4ebced177778c3aff78cd`.
-- ArgoCD `platform-test` is `OutOfSync / Healthy` at revision
-  `e85d8b8cd245b4c0fa5de7a7359b1346ace2ae3b`; the remaining listed drift is
-  `ExternalSecret/platform-test/notification-orchestrator-secrets`, not the
-  artifact-host deployment.
+  `51fed6ca7915bc8982f1040f317829d0f1049f74b1399bc4532fa4725d731e5d`.
+- Product update workflow
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27922444943`
+  completed `failure` for target `v0.2.22` after the endpoint remained at
+  `v0.2.20`.
+- Live DB terminal evidence for command
+  `ed0bb085-f8bb-40f9-aae9-8612cc98155b` shows `UPDATE_AGENT` status
+  `FAILED`, delivered `2026-06-22T00:25:20.836591Z`, started
+  `2026-06-22T00:26:22.851940Z`, completed
+  `2026-06-22T00:26:28.599427Z`, result summary
+  `UPDATE_AGENT FAILED_STAGE`, `errorCode=SIGNER_NOT_ALLOWED`, and reason
+  `verified signer not in local allowlist`.
+- `platform-agent#208` comment
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4763897245`
+  records the same live root cause and supersedes the weaker
+  `expected-version-not-observed` wording.
+- Durable fix-forward is open as draft PR
+  `https://github.com/Halildeu/platform-agent/pull/221`: installer/MSI
+  propagation for signed self-update policy. When self-update is enabled, the
+  installer writes endpoint-local self-update trust policy and derives
+  `ENDPOINT_AGENT_SELF_UPDATE_SIGNER_THUMBPRINTS` from the release-patched
+  `ExpectedSignerThumbprint` if no explicit rotation allowlist is supplied.
 
-Boundary: this proves source merge, trusted release publication, GitOps
-desired-state merge, test artifact-host rollout, immutable pod imageID parity,
-and public artifact availability for `v0.2.21`. It does not yet prove
-`platform-agent#208` product-channel acceptance. The next required gate is a
-fresh outbound 443 mTLS run from AgentPC2 against
-`remote-bridge-mtls.testai.acik.com:443` proving HELLO/CONSENT/ACTIVE, signed
-PERMIT, `AGENT_OUTPUT`/DATA plus terminal marker, negative guards, and audit
-evidence. It does not claim unrestricted shell/RDP/WinRM/SMB/SSH, file browser,
-production remote-support readiness, broad rollout, or true TPM/device-key
-hardware attestation.
+Boundary: this proves the `v0.2.22` release is publicly served and the product
+channel can deliver and start an `UPDATE_AGENT` command on AgentPC2. It does not
+yet prove self-update success or `platform-agent#208` constrained-executor
+acceptance. The next required gate is endpoint-local signer policy seeding for
+the already-installed `v0.2.20` pilot, rerun of the product `UPDATE_AGENT`
+workflow to `v0.2.22`, then a fresh outbound 443 mTLS constrained operation run
+from AgentPC2 against `remote-bridge-mtls.testai.acik.com:443` proving
+HELLO/CONSENT/ACTIVE, signed PERMIT, `AGENT_OUTPUT`/DATA plus terminal marker,
+negative guards, and audit evidence. It does not claim unrestricted
+shell/RDP/WinRM/SMB/SSH, file browser, production remote-support readiness,
+broad rollout, or true TPM/device-key hardware attestation.
 
 ## Live Delta — AgentPC2 v0.2.20 endpoint bootstrap evidence received; product acceptance pending (2026-06-22)
 
