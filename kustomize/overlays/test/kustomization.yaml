@@ -5226,7 +5226,7 @@ images:
     # Runtime acceptance remains gated by platform-test sync plus AgentPC2
     # product remote-ops smoke; this line is only desired-state artifact
     # promotion.
-    digest: sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d
+    digest: sha256:48ff12342bf2d9bd0dfc25899353fe594d3b105e1043f80cadfa6fc1e1740249
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
