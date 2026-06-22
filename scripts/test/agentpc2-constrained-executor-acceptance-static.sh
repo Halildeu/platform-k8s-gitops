@@ -163,4 +163,29 @@ if ! grep -Fq 'step-up-runtime-public-key-drift-after-env-override' "${script}";
   exit 1
 fi
 
+if ! grep -Fq 'capture_failpath_diagnostics "$reason"' "${script}"; then
+  echo "acceptance must capture fail-path diagnostics before writing no-go summary" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'failpath-diagnostics' "${script}"; then
+  echo "acceptance no-go evidence must include a failpath-diagnostics bundle" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'remote-bridge-logs-tail.txt' "${script}"; then
+  echo "acceptance no-go evidence must preserve remote-bridge logs before cleanup/rollout changes" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'session-recording.raw.jsonl' "${script}"; then
+  echo "acceptance no-go evidence must attempt to preserve current session recording rows" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'docker postgres container unavailable for failpath recording export' "${script}"; then
+  echo "acceptance failpath recording export must degrade without recursive no-go failures" >&2
+  exit 1
+fi
+
 echo "agentpc2 constrained-executor acceptance static guard passed"
