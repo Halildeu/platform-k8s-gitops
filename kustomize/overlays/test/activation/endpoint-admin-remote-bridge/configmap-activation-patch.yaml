@@ -61,6 +61,11 @@ data:
   # Non-prod acceptance-only #729 probe surface. The backend controller is also
   # gated by operator REST and rejects production-like profiles.
   REMOTE_BRIDGE_NEGATIVE_PROBES_ENABLED: "true"
+  # AgentPC2 product-channel full-matrix runs over real outbound mTLS and can
+  # observe agent-side negative deny events slightly after the default 3s
+  # harness window. Keep the production default in code; only widen the
+  # owner-gated non-prod probe observation window.
+  REMOTE_BRIDGE_NEGATIVE_PROBES_OBSERVATION_TIMEOUT_MILLIS: "15000"
   REMOTE_BRIDGE_APPROVAL_REST_ENABLED: "true"
   REMOTE_BRIDGE_APPROVAL_AUDIT_SINK: "DURABLE_WORM_DB"
   REMOTE_BRIDGE_APPROVAL_GRANT_TTL_MILLIS: "300000"
