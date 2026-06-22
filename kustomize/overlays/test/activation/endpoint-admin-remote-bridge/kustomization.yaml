@@ -60,7 +60,7 @@
 #     while prod-like profiles still reject that exception and DATA/EndStream
 #     terminal markers are recorded for #208 acceptance.
 #   - immutable test digest:
-#     sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d
+#     sha256:48ff12342bf2d9bd0dfc25899353fe594d3b105e1043f80cadfa6fc1e1740249
 #
 # Then, and only then:
 #   kubectl --context k3d-test -n platform-test apply -k \
@@ -136,6 +136,10 @@ images:
   # through the explicit non-prod
   # REMOTE_BRIDGE_BROKER_ENROLLMENT_BACKED_CRYPTO_IDENTITY_PILOT_RISK_ACCEPTED
   # flag; do not copy that flag into prod overlays.
+  # 2026-06-22 backend #729 full-matrix negative-probe controller support:
+  # re-pin owner-gated broker image with the primary endpoint-admin #729 digest
+  # so AgentPC2 acceptance can prove expired-permit and replay DENY through the
+  # real outbound mTLS product channel.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d
+    digest: sha256:48ff12342bf2d9bd0dfc25899353fe594d3b105e1043f80cadfa6fc1e1740249
