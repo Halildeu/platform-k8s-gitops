@@ -484,6 +484,15 @@ REQUIRE_ACCEPTED=1 scripts/faz22-remote-ops/remote-response-terminal-evidence-ve
 REQUIRE_ACCEPTED=1 REQUIRE_FULL_MATRIX=1 \
 scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh
 
+# Run the AgentPC2 acceptance workflow in the same fail-closed full-matrix mode.
+gh workflow run faz22-agentpc2-constrained-executor-acceptance.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  -f confirm=RUN_AGENTPC2_CONSTRAINED_EXECUTOR_ACCEPTANCE \
+  -f expected_digest=sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d \
+  -f device_id=2f7ad30f-970a-42e7-8af8-08764ae6066f \
+  -f device_hostname=AgentPc2 \
+  -f require_full_matrix=true
+
 # Session ownership evidence is required by default for Remote Response Terminal
 # accepted candidates. Use this only to inspect legacy evidence that predates
 # the ownership guard; do not use it for #208 acceptance.
@@ -540,6 +549,15 @@ Verifier decision values are intentionally bounded:
 - `missing-negative` means the core deny evidence is absent.
 - `missing-full-negative-matrix` means `REQUIRE_FULL_MATRIX=1` was requested but
   lifecycle/authz/replay/termination evidence is still incomplete.
+
+Full-matrix workflow mode is intentionally fail-closed. The AgentPC2 harness
+captures only product-supported live negatives through the remote-bridge
+operator REST surface. Today that includes wrong-device/not-enrolled session
+open denial and closed-session operation denial. It must not synthesize expired
+permits, replayed frames, or kill/revoke events through direct DB mutation or
+test fixtures; those are not product-path evidence. Until a product endpoint or
+real runtime path exists for those classes, `REQUIRE_FULL_MATRIX=1` is expected
+to fail closed with `missing-full-negative-matrix`.
 
 `accepted-candidate` is not `Done` for `platform-agent#208` by itself. It does
 not prove signed MSI/GPO rollout, 5-PC/50-PC/800-PC readiness, production

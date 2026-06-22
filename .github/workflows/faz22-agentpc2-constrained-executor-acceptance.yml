@@ -18,6 +18,11 @@ on:
         description: 'Target endpoint hostname'
         required: true
         default: 'AgentPc2'
+      require_full_matrix:
+        description: 'Require full lifecycle/authz/replay/termination matrix; fail closed if any evidence is missing'
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -36,6 +41,7 @@ env:
   EXPECTED_DIGEST: ${{ inputs.expected_digest }}
   DEVICE_ID: ${{ inputs.device_id }}
   DEVICE_HOSTNAME: ${{ inputs.device_hostname }}
+  REQUIRE_FULL_MATRIX: ${{ inputs.require_full_matrix && '1' || '0' }}
   EVIDENCE_DIR: /tmp/agentpc2-constrained-executor-${{ github.run_id }}
   # Session ownership is a live coordination ledger, not the product evidence
   # issue. Keep it in this repo so the workflow's issues:write token can create
@@ -64,7 +70,7 @@ jobs:
             esac
           }
 
-          for name in CONFIRM EXPECTED_DIGEST DEVICE_ID DEVICE_HOSTNAME; do
+          for name in CONFIRM EXPECTED_DIGEST DEVICE_ID DEVICE_HOSTNAME REQUIRE_FULL_MATRIX; do
             reject_multiline "$name" "${!name}"
           done
 
@@ -85,6 +91,11 @@ jobs:
 
           if [ "${#DEVICE_HOSTNAME}" -gt 253 ] || ! printf '%s' "${DEVICE_HOSTNAME}" | grep -Eq '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)([.][A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$'; then
             echo "::error::device_hostname must be a DNS-safe hostname label/FQDN"
+            exit 1
+          fi
+
+          if ! printf '%s' "${REQUIRE_FULL_MATRIX}" | grep -Eq '^[01]$'; then
+            echo "::error::REQUIRE_FULL_MATRIX must resolve to 0 or 1"
             exit 1
           fi
 
@@ -193,6 +204,7 @@ jobs:
             echo "- Runtime deploy image: \`${deploy_image}\`"
             echo "- Runtime pod imageID: \`${pod_image_id}\`"
             echo "- Target device: \`${DEVICE_HOSTNAME}\` / \`${DEVICE_ID}\`"
+            echo "- Full matrix required: \`${REQUIRE_FULL_MATRIX}\`"
             echo "- Session hash: \`${session_hash}\`"
             echo "- Open / approve / step-up challenge / step-up verify HTTP: \`${open_http}\` / \`${approve_http}\` / \`${challenge_http}\` / \`${verify_http}\`"
             echo "- Catalog operation: \`${operation_status}\`"
@@ -201,7 +213,7 @@ jobs:
             echo "- Evidence SHA256SUMS hash: \`${sha_manifest}\`"
             echo "- Secret hygiene: raw bearer token, raw session id, and private key are intentionally omitted."
             echo ""
-            echo "Boundary: this proves only the bounded outbound mTLS product-channel constrained-executor pilot path when status is \`accepted-candidate\`. It does not prove broad rollout, production support readiness, inbound SSH/RDP/WinRM/SMB/RPC, unrestricted shell, or TPM/device-key attestation."
+            echo "Boundary: this proves only the bounded outbound mTLS product-channel constrained-executor pilot path when status is \`accepted-candidate\`. If \`Full matrix required\` is \`1\`, missing lifecycle/authz/replay/termination evidence must remain a no-go. This does not prove broad rollout, production support readiness, inbound SSH/RDP/WinRM/SMB/RPC, unrestricted shell, or TPM/device-key attestation."
             if [ -n "${reason}" ]; then
               echo ""
               echo "Reason: \`${reason}\`"
