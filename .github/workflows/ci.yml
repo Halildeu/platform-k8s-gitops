@@ -48,6 +48,8 @@ jobs:
         run: bash scripts/test/agentpc2-first-install-bootstrap-static.sh
       - name: AgentPC2 constrained-executor acceptance static guard
         run: bash scripts/test/agentpc2-constrained-executor-acceptance-static.sh
+      - name: AgentPC2 UPDATE_AGENT static guard
+        run: bash scripts/test/agentpc2-update-agent-static.sh
       # Faz 22.6 D10-8 — remote-bridge broker isolation. Desired-state, NOT in
       # the Argo root (owner-gated activation). Render sanity + isolation guards
       # (Codex 019ebc51 P2 — machine-enforced, not self-attestation).

@@ -17,8 +17,8 @@ if ! grep -Fq 'Invoke-DownloadVerified -Uri \$BinaryUrl -OutFile \$BinaryPath -E
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:e4309d08da77f9c3f5eb288805611fa2d8a97178bcd90b1a132eb30585ed3da0}"' "${script}"; then
-  echo "bootstrap gate default artifact-host digest must track the v0.2.21 immutable image digest" >&2
+if ! grep -Fq 'EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:ee628fd83f436138b6dda7c0a5aea13cd3747e67640b38b5b07f0e144d4ca5d7}"' "${script}"; then
+  echo "bootstrap gate default artifact-host digest must track the v0.2.25 immutable image digest" >&2
   exit 1
 fi
 
@@ -49,8 +49,33 @@ if grep -Fq '"-BinaryUrl"' <<<"${install_args_block}"; then
   exit 1
 fi
 
-if ! grep -Fq 'SELF_UPDATE_ALLOWED_HOSTS="${SELF_UPDATE_ALLOWED_HOSTS:-github.com,release-assets.githubusercontent.com,objects.githubusercontent.com}"' "${script}"; then
+if ! grep -Fq 'SELF_UPDATE_ALLOWED_HOSTS="${SELF_UPDATE_ALLOWED_HOSTS:-github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,testai.acik.com}"' "${script}"; then
   echo "bootstrap gate must default to the bounded signed self-update host allowlist" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'EXPECTED_SIGNER_SHA256_FINGERPRINT="${EXPECTED_SIGNER_SHA256_FINGERPRINT:-EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD}"' "${script}"; then
+  echo "bootstrap gate must pin the SHA256 Authenticode certificate fingerprint used by UPDATE_AGENT" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'ERR EXPECTED_SIGNER_THUMBPRINT must be uppercase SHA1 thumbprint hex' "${script}"; then
+  echo "bootstrap gate must validate the SHA1 Authenticode signer thumbprint in standalone mode" >&2
+  exit 1
+fi
+
+if ! grep -Fq '"-RemoteBridgePilotAutoConsent"' <<<"${install_args_block}"; then
+  echo "bootstrap install args must opt into the bounded AgentPC2 pilot remote-bridge consent lane" >&2
+  exit 1
+fi
+
+if ! grep -Fq '"-SelfUpdateEnabled"' <<<"${install_args_block}"; then
+  echo "bootstrap install args must enable signed product self-update support" >&2
+  exit 1
+fi
+
+if ! grep -Fq '"-SelfUpdateSignerThumbprints", \$SelfUpdateSignerThumbprints' <<<"${install_args_block}"; then
+  echo "bootstrap install args must pass the SHA256 signer fingerprint allowlist to install.ps1" >&2
   exit 1
 fi
 
@@ -99,7 +124,7 @@ if ! grep -Fq 'ENDPOINT_AGENT_SELF_UPDATE_ALLOWED_HOSTS' "${bootstrap_configmap}
   exit 1
 fi
 
-if ! grep -Fq '4c79bd64d015189aa6cbd92b8194d3e926298921bc4579fd8c6428b76ec918fe  agentpc2-remote-bridge-canonical-env-patch-v7.ps1' "${bootstrap_configmap}"; then
+if ! grep -Fq '6f82c2c00ebccff7d8766a0113e2ddf5678d4200e02c4a7263c0bb28852e172e  agentpc2-remote-bridge-canonical-env-patch-v7.ps1' "${bootstrap_configmap}"; then
   echo "AgentPC2 bootstrap SHA256SUMS must pin the v7 canonical env patch hash" >&2
   exit 1
 fi
@@ -114,12 +139,12 @@ if ! grep -Fq 'f695d8b3bf5b74ad200529bed823d1dc7228e1db9c0dac680eb1339355917c06 
   exit 1
 fi
 
-if ! grep -Fq '00ab037fdd5d2577970359f153f77c75d51eeeb0e9da34f287d716293ed0a13c  agentpc2-first-install-bootstrap.ps1' "${bootstrap_configmap}"; then
+if ! grep -Fq 'ebe72317b5d28151652052855bc9a86a0cdcfa08f8875668ee43c9fe3977667f  agentpc2-first-install-bootstrap.ps1' "${bootstrap_configmap}"; then
   echo "AgentPC2 bootstrap SHA256SUMS must pin the self-update-capable first-install hash" >&2
   exit 1
 fi
 
-if ! grep -Fq '3ded08b9dedde27e2a7fc5ab0cfbba6fd7df25d4b107a1a1a7b287c1d95b3a7b  README.md' "${bootstrap_configmap}"; then
+if ! grep -Fq '2f53180f6eac67b292f2842e3368236f0a24fd7f95bd9e64b6f94ba1e36a7425  README.md' "${bootstrap_configmap}"; then
   echo "AgentPC2 bootstrap SHA256SUMS must pin the self-update-capable README hash" >&2
   exit 1
 fi

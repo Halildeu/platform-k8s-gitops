@@ -13,7 +13,7 @@ RUN_ID="${GITHUB_RUN_ID:-local-$(date -u +%Y%m%dT%H%M%SZ)}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-first-install-bootstrap-${RUN_ID}}"
 TMP_DIR="$(mktemp -d)"
 
-RELEASE_ID="${RELEASE_ID:-v0.2.21}"
+RELEASE_ID="${RELEASE_ID:-v0.2.25}"
 TARGET_VERSION="${TARGET_VERSION:-${RELEASE_ID#v}}"
 TARGET_HOSTNAME="${TARGET_HOSTNAME:-AgentPc2}"
 TARGET_PRODUCT_DEVICE_ID="${TARGET_PRODUCT_DEVICE_ID:-2f7ad30f-970a-42e7-8af8-08764ae6066f}"
@@ -25,14 +25,15 @@ BOOTSTRAP_PACKAGE_URL="${BOOTSTRAP_PACKAGE_URL:-${RELEASE_BASE_URL}/bootstrap-pa
 MANIFEST_URL="${MANIFEST_URL:-${RELEASE_BASE_URL}/release-manifest.json}"
 SHA256SUMS_URL="${SHA256SUMS_URL:-${RELEASE_BASE_URL}/SHA256SUMS}"
 
-EXPECTED_RELEASE_MANIFEST_SHA256="${EXPECTED_RELEASE_MANIFEST_SHA256:-bc7482f2b651aab51a6130f9f121534a5ecc9abdcadd1c31f3e4ff10c4c11725}"
-EXPECTED_INSTALL_PS1_SHA256="${EXPECTED_INSTALL_PS1_SHA256:-fd150897767fe9b85cf3a018b6fe2f62b61ab2f3e8aa13e37445afc4c1ba35f4}"
+EXPECTED_RELEASE_MANIFEST_SHA256="${EXPECTED_RELEASE_MANIFEST_SHA256:-28330d13c6d65b5fc4bf052b32df45aa16e06bce1965144577e27da58b9645d8}"
+EXPECTED_INSTALL_PS1_SHA256="${EXPECTED_INSTALL_PS1_SHA256:-138fa1469e393a59013a09ae18d951d56ef2cea47f4b91c2ca1bf2be8ae6657a}"
 EXPECTED_BOOTSTRAP_PS1_SHA256="${EXPECTED_BOOTSTRAP_PS1_SHA256:-83292ab3b5c27a8c27c11c7774cf4157bbb23188b81b0adf2a5a29a70279c7f8}"
-EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-d346d35142a6a6be7f2bdd2cf8f26aaf652b25cabd8a6e14426c7a452baff2b1}"
-EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-73292071fa61b0572e81db6fb51b5eff0e48483467a4ebced177778c3aff78cd}"
+EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-0bf8aada0bf7b25f3e574e576a8401f9030168cbe60a487d6f6c5a6d4c610aec}"
+EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-e67a1c74e188f8e90c5c5fa05f3d982b863fbeabd986d28c549a55a34527c0f3}"
 EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
+EXPECTED_SIGNER_SHA256_FINGERPRINT="${EXPECTED_SIGNER_SHA256_FINGERPRINT:-EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD}"
 EXPECTED_SIGNING_TIER="${EXPECTED_SIGNING_TIER:-trusted-internal-ca}"
-EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:e4309d08da77f9c3f5eb288805611fa2d8a97178bcd90b1a132eb30585ed3da0}"
+EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:ee628fd83f436138b6dda7c0a5aea13cd3747e67640b38b5b07f0e144d4ca5d7}"
 REQUIRE_ARTIFACT_HOST_LIVE_DIGEST="${REQUIRE_ARTIFACT_HOST_LIVE_DIGEST:-true}"
 
 AUTO_ENROLL_API_URL="${AUTO_ENROLL_API_URL:-https://mtls.testai.acik.com/api/v1/endpoint-agent}"
@@ -42,7 +43,7 @@ REMOTE_BRIDGE_BROKER_ADDR="${REMOTE_BRIDGE_BROKER_ADDR:-${REMOTE_BRIDGE_HOSTNAME
 REMOTE_BRIDGE_MTLS_SAN_URI_PREFIX="${REMOTE_BRIDGE_MTLS_SAN_URI_PREFIX:-adcomputer:}"
 REMOTE_BRIDGE_PERMIT_KID="${REMOTE_BRIDGE_PERMIT_KID:-rb-test-denetim-20260617-01}"
 
-SELF_UPDATE_ALLOWED_HOSTS="${SELF_UPDATE_ALLOWED_HOSTS:-github.com,release-assets.githubusercontent.com,objects.githubusercontent.com}"
+SELF_UPDATE_ALLOWED_HOSTS="${SELF_UPDATE_ALLOWED_HOSTS:-github.com,release-assets.githubusercontent.com,objects.githubusercontent.com,testai.acik.com}"
 SELF_UPDATE_HARD_MAX_BYTES="${SELF_UPDATE_HARD_MAX_BYTES:-52428800}"
 SELF_UPDATE_MAX_REDIRECTS="${SELF_UPDATE_MAX_REDIRECTS:-5}"
 SELF_UPDATE_AUTO_ACTIVATE="${SELF_UPDATE_AUTO_ACTIVATE:-true}"
@@ -147,6 +148,16 @@ validate_release_inputs() {
 
   if ! printf '%s' "${EXPECTED_ARTIFACT_HOST_DIGEST}" | grep -Eq '^sha256:[a-f0-9]{64}$'; then
     echo "ERR EXPECTED_ARTIFACT_HOST_DIGEST must match sha256:<64 hex>" >&2
+    exit 2
+  fi
+
+  if ! printf '%s' "${EXPECTED_SIGNER_THUMBPRINT}" | grep -Eq '^[A-F0-9]{40}$'; then
+    echo "ERR EXPECTED_SIGNER_THUMBPRINT must be uppercase SHA1 thumbprint hex" >&2
+    exit 2
+  fi
+
+  if ! printf '%s' "${EXPECTED_SIGNER_SHA256_FINGERPRINT}" | grep -Eq '^[A-F0-9]{64}$'; then
+    echo "ERR EXPECTED_SIGNER_SHA256_FINGERPRINT must be uppercase SHA256 certificate fingerprint hex" >&2
     exit 2
   fi
 
@@ -270,7 +281,7 @@ Set-StrictMode -Version Latest
 ${permit_public_key_b64}
 '@.Trim()
 \$SelfUpdateAllowedHosts = "${SELF_UPDATE_ALLOWED_HOSTS}"
-\$SelfUpdateSignerThumbprints = "${EXPECTED_SIGNER_THUMBPRINT}"
+\$SelfUpdateSignerThumbprints = "${EXPECTED_SIGNER_SHA256_FINGERPRINT}"
 \$SelfUpdateHardMaxBytes = "${SELF_UPDATE_HARD_MAX_BYTES}"
 \$SelfUpdateMaxRedirects = "${SELF_UPDATE_MAX_REDIRECTS}"
 \$SelfUpdateAutoActivate = "${SELF_UPDATE_AUTO_ACTIVATE}"
@@ -481,6 +492,16 @@ try {
     "-RemoteBridgePermitBrokerPublicKeyB64", \$RemoteBridgePermitBrokerPublicKeyB64,
     "-RemoteBridgePermitKeyID", \$RemoteBridgePermitKid,
     "-RemoteBridgeTLSServerName", \$RemoteBridgeTlsServerName,
+    "-RemoteBridgePilotAutoConsent",
+    "-SelfUpdateEnabled",
+    "-SelfUpdateAllowedHosts", \$SelfUpdateAllowedHosts,
+    "-SelfUpdateSignerThumbprints", \$SelfUpdateSignerThumbprints,
+    "-SelfUpdateHardMaxBytes", \$SelfUpdateHardMaxBytes,
+    "-SelfUpdateMaxRedirects", \$SelfUpdateMaxRedirects,
+    "-SelfUpdateAutoActivate",
+    "-SelfUpdateActivationTimeout", \$SelfUpdateActivationTimeout,
+    "-SelfUpdateServiceName", \$SelfUpdateServiceName,
+    "-SelfUpdateCommandTimeout", \$SelfUpdateCommandTimeout,
     "-ServiceStartTimeoutSeconds", "90",
     "-Force",
     "-Start"
@@ -654,6 +675,14 @@ Set-StrictMode -Version Latest
 \$RemoteBridgePermitBrokerPublicKeyB64 = @'
 ${permit_public_key_b64}
 '@.Trim()
+\$SelfUpdateAllowedHosts = "${SELF_UPDATE_ALLOWED_HOSTS}"
+\$SelfUpdateSignerThumbprints = "${EXPECTED_SIGNER_SHA256_FINGERPRINT}"
+\$SelfUpdateHardMaxBytes = "${SELF_UPDATE_HARD_MAX_BYTES}"
+\$SelfUpdateMaxRedirects = "${SELF_UPDATE_MAX_REDIRECTS}"
+\$SelfUpdateAutoActivate = "${SELF_UPDATE_AUTO_ACTIVATE}"
+\$SelfUpdateActivationTimeout = "${SELF_UPDATE_ACTIVATION_TIMEOUT}"
+\$SelfUpdateCommandTimeout = "${SELF_UPDATE_COMMAND_TIMEOUT}"
+\$SelfUpdateServiceName = "EndpointAgent"
 
 function Write-Step {
   param([string]\$Message)
@@ -938,6 +967,7 @@ write_summary() {
     --arg binarySha256 "$(lower_string "${EXPECTED_AGENT_SHA256}")" \
     --arg zipSha256 "$(lower_string "${EXPECTED_AGENT_ZIP_SHA256}")" \
     --arg signerThumbprint "${EXPECTED_SIGNER_THUMBPRINT}" \
+    --arg signerSha256Fingerprint "${EXPECTED_SIGNER_SHA256_FINGERPRINT}" \
     --arg signingTier "${EXPECTED_SIGNING_TIER}" \
     --arg artifactHostDigest "${EXPECTED_ARTIFACT_HOST_DIGEST}" \
     --arg artifactImage "${artifact_image}" \
@@ -986,7 +1016,7 @@ write_summary() {
         bootstrapPackagePs1:{url:$bootstrapPackageUrl, sha256:$bootstrapPs1Sha256, expectedSha256:$expectedBootstrapPs1Sha256},
         binary:{url:$binaryUrl, sha256:$binarySha256},
         zip:{sha256:$zipSha256},
-        signer:{thumbprint:$signerThumbprint, tier:$signingTier},
+        signer:{thumbprint:$signerThumbprint, sha256Fingerprint:$signerSha256Fingerprint, tier:$signingTier},
         artifactHostDigest:$artifactHostDigest
       },
       artifactHost:{image:$artifactImage, readyReplicas:$artifactReady},
@@ -1002,6 +1032,7 @@ write_summary() {
         enabled:true,
         allowedHosts:$selfUpdateAllowedHosts,
         signerThumbprintsConfigured:1,
+        signerFingerprintAlgorithm:"sha256(cert.Raw)",
         hardMaxBytes:$selfUpdateHardMaxBytes,
         maxRedirects:$selfUpdateMaxRedirects,
         autoActivate:$selfUpdateAutoActivate,
