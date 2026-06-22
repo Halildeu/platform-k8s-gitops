@@ -504,6 +504,48 @@ first-install/product path and the normal constrained-executor acceptance
 records live outbound 443 mTLS `HELLO`, permit, constrained operation,
 negative/plaintext refusal, and audit evidence.
 
+#### 0.7.8 2026-06-22 #208 v0.2.23 product update stage succeeded, activation no-go
+
+`platform-k8s-gitops#1848` merged a bounded AgentPC2 endpoint-local SHA256
+signer-policy seed helper at
+`5bbeeb868053469e7e6eb47245a1612b37980036`. Live artifact-host/public HTTPS
+served
+`agentpc2-self-update-policy-seed-v023-sha256.ps1` with SHA256
+`0697369e93671e30de874b5f0589f8ed00355225284a70fa5f52ae1a0aac7aa1`.
+Operator-run AgentPC2 evidence showed that the seed script hash matched,
+`EndpointAgent` stayed `Running`, and local self-update signer policy now uses
+the expected `sha256(cert.Raw)` fingerprint form.
+
+The follow-up product `UPDATE_AGENT` workflow
+`https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27934293027`
+proved a narrower but important gate:
+
+- release/version attempted: `v0.2.23` / `0.2.23`
+- binary SHA256:
+  `72b5c14f9b45111d450a363fce5ceecaae6310cbf7cdc9bd01d8d4c23e591484`
+- release-manifest signer thumbprint:
+  `D68F4F530137EB65CE44E3405E82B46205E753E5`
+- command `f65c51be-8739-4a32-b531-3f5d25179d1d` reached AgentPC2 and
+  returned `SUCCEEDED`
+- result summary: `UPDATE_AGENT STAGED_ACTIVATION_READY`
+- activation plan:
+  `c015f8ec89519cb221f613b005004112`
+- actual signer fingerprint:
+  `EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD`
+
+The workflow still ended `no-go` because AgentPC2 did not report `v0.2.23`
+inside the 900s observation window. It remained `ONLINE` at
+`agent_version=v0.2.20`; direct DB recheck after the workflow confirmed the
+same state. Therefore this stage evidence is **not** #208 acceptance and must
+not be used as constrained executor, production support, broad rollout, or
+unrestricted shell evidence.
+
+Next valid gate: inspect/fix the endpoint-local self-update activation
+helper/outcome for activation plan `c015f8ec89519cb221f613b005004112`, rerun
+the product update until AgentPC2 reports `v0.2.23`, then run the normal
+outbound 443 mTLS `HELLO` / permit / constrained-operation / negative / audit
+acceptance workflow for `platform-agent#208`.
+
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
 planı tanımlar.
