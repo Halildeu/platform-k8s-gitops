@@ -9,15 +9,15 @@ on:
       release_id:
         description: 'Release tag to dispatch through the product UPDATE_AGENT path'
         required: true
-        default: 'v0.2.26'
+        default: 'v0.2.27'
       target_version:
         description: 'Agent version expected after update'
         required: true
-        default: '0.2.26'
+        default: '0.2.27'
       expected_sha256:
         description: 'Expected SHA256 for endpoint-agent.exe'
         required: true
-        default: '66b0fb98deb63e175c2e37fbf4ff78af98803bf66a84b11ac3667b21a5bf5bb8'
+        default: 'ea99347adb64f43c1f1b921f6b6a1ebfa1c1ddcd1598acddea87cd6b8ab35a8f'
       expected_signer_thumbprint:
         description: 'Expected internal-CA Authenticode signer thumbprint'
         required: true
