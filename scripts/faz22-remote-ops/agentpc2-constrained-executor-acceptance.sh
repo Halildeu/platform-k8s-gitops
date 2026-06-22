@@ -1213,16 +1213,16 @@ ORDER BY seq;"
 }
 
 run_product_supported_full_matrix_negatives() {
-  local operator_base="$1" wrong_device body code close_code closed_op_body
+  local operator_base="$1" wrong_device body wrong_device_code close_code closed_op_body closed_session_code
   wrong_device="00000000-0000-0000-0000-0000000000ff"
 
   body="$(jq -nc --arg session "${SESSION_ID}-wrong-device-deny" --arg device "$wrong_device" \
     '{sessionId:$session, deviceId:$device, reason:"negative wrong-device / not enrolled / not connected", capabilities:["CONSTRAINED_PTY"]}')"
-  curl_json_or_fail code wrong-device-deny \
+  curl_json_or_fail wrong_device_code wrong-device-deny \
     POST "$operator_base" /sessions "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/wrong-device-deny.body" "$body"
   normalize_body_named_http_evidence "${EVIDENCE_DIR}/wrong-device-deny.body"
-  if [[ "$code" != "404" ]]; then
-    fail_acceptance "wrong-device-deny expected 404 got ${code}"
+  if [[ "$wrong_device_code" != "404" ]]; then
+    fail_acceptance "wrong-device-deny expected 404 got ${wrong_device_code}"
   fi
 
   curl_json_or_fail close_code close-session \
@@ -1234,11 +1234,11 @@ run_product_supported_full_matrix_negatives() {
 
   closed_op_body="$(jq -nc --arg op "op-closed-session-$(date -u +%Y%m%dT%H%M%SZ)" --arg catalog "$CATALOG_OPERATION_ID" \
     '{operationId:$op, catalogOperationId:$catalog}')"
-  curl_json_or_fail code closed-session-deny \
+  curl_json_or_fail closed_session_code closed-session-deny \
     POST "$operator_base" "/sessions/${SESSION_ID}/operations" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/closed-session-deny.body" "$closed_op_body"
   normalize_body_named_http_evidence "${EVIDENCE_DIR}/closed-session-deny.body"
-  if [[ "$code" != "404" ]]; then
-    fail_acceptance "closed-session-deny expected 404 got ${code}"
+  if [[ "$closed_session_code" != "404" ]]; then
+    fail_acceptance "closed-session-deny expected 404 got ${closed_session_code}"
   fi
 
   jq -n \

@@ -178,6 +178,21 @@ if ! grep -Fq 'local stem="${body_file%.body}"' "${script}"; then
   exit 1
 fi
 
+if grep -Fq 'curl_json_or_fail code ' "${script}"; then
+  echo "acceptance must not pass result_var=code to curl_json_or_fail because the helper has a local code variable" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'curl_json_or_fail wrong_device_code wrong-device-deny' "${script}"; then
+  echo "acceptance must store wrong-device probe HTTP status in a non-shadowing variable" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'curl_json_or_fail closed_session_code closed-session-deny' "${script}"; then
+  echo "acceptance must store closed-session probe HTTP status in a non-shadowing variable" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'wrong-device-deny.body' "${script}"; then
   echo "acceptance must record a product-supported wrong-device/not-enrolled negative probe" >&2
   exit 1
