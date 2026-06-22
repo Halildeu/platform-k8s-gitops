@@ -479,6 +479,7 @@ main() {
   if [[ "$POLL_RESULT" != "ok" && "$POLL_RESULT" != "unavailable" ]]; then
     exit 1
   fi
+  exit 0
 }
 
 main "$@"

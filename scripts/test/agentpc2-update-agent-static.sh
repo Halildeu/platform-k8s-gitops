@@ -49,6 +49,11 @@ if ! grep -Fq 'MAX_BYTES="${MAX_BYTES:-14377384}"' "${script}"; then
   exit 1
 fi
 
+if ! grep -Fq 'exit 0' "${script}"; then
+  echo "UPDATE_AGENT script must explicitly exit 0 after accepted update-observed/update-dispatched states" >&2
+  exit 1
+fi
+
 if ! grep -Fq "default: 'v0.2.28'" "${workflow}"; then
   echo "UPDATE_AGENT workflow must default release_id to v0.2.28" >&2
   exit 1
