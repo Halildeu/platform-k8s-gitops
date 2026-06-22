@@ -62,6 +62,7 @@ EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-rtt-acceptance-$(date -u +%Y%m%dT%H%
 
 TMP_DIR="$(mktemp -d)"
 PORT_FORWARD_PID=""
+SESSION_OWNER_CLAIMED="0"
 SUMMARY_FILE="${EVIDENCE_DIR}/summary.json"
 OPERATOR_TOKEN_FILE="${TMP_DIR}/operator.jwt"
 APPROVER_TOKEN_FILE="${TMP_DIR}/approver.jwt"
@@ -93,6 +94,7 @@ need_cmd() {
 
 cleanup() {
   set +e
+  release_session_owner_claim
   stop_port_forward
   if ! restore_remote_bridge_runtime_env_override; then
     echo "CLEANUP_WARN remote-bridge runtime env restore failed; run-scoped step-up env override may remain" >&2
@@ -107,6 +109,30 @@ stop_port_forward() {
     wait "$PORT_FORWARD_PID" >/dev/null 2>&1 || true
   fi
   PORT_FORWARD_PID=""
+}
+
+release_session_owner_claim() {
+  [[ "${SESSION_OWNER_CLAIMED:-0}" == "1" ]] || return 0
+  [[ -n "${PRODUCT_DEVICE_ID:-}" ]] || return 0
+  [[ -n "${SESSION_ID:-}" ]] || return 0
+
+  mkdir -p "$EVIDENCE_DIR" 2>/dev/null || true
+  local release_reason release_log
+  release_reason="acceptance-cleanup"
+  case "${status:-}" in
+    accepted-candidate) release_reason="accepted-candidate-cleanup" ;;
+    no-go) release_reason="no-go-cleanup" ;;
+  esac
+  release_log="${EVIDENCE_DIR}/session-ownership-release.out"
+
+  ACTION=release \
+  SESSION_OWNER_ISSUE_URL="$ISSUE_URL" \
+  SESSION_OWNER_ENDPOINT_ID="$PRODUCT_DEVICE_ID" \
+  REMOTE_BRIDGE_SESSION_ID="$SESSION_ID" \
+  SESSION_OWNER_RELEASE_REASON="$release_reason" \
+    "$REPO_ROOT/scripts/faz22-remote-ops/remote-response-terminal-session-ownership-guard.sh" \
+    > "$release_log" 2>&1 \
+    || echo "CLEANUP_WARN session owner release failed; see ${release_log}" >&2
 }
 
 sha256_text() {
@@ -1392,13 +1418,17 @@ main() {
   EVIDENCE_DIR="$EVIDENCE_DIR" SOURCE_GOVERNANCE_FILE="${EVIDENCE_DIR}/product-governance.json" \
     "$REPO_ROOT/scripts/faz22-remote-ops/remote-response-terminal-governance-export.sh"
 
-  ACTION=claim \
-  SESSION_OWNER_ISSUE_URL="$ISSUE_URL" \
-  SESSION_OWNER_ENDPOINT_ID="$PRODUCT_DEVICE_ID" \
-  REMOTE_BRIDGE_SESSION_ID="$SESSION_ID" \
-  SESSION_OWNER_TTL_MINUTES=45 \
-    "$REPO_ROOT/scripts/faz22-remote-ops/remote-response-terminal-session-ownership-guard.sh" \
-    > "${EVIDENCE_DIR}/session-ownership-guard.out"
+  if ! ACTION=claim \
+    SESSION_OWNER_ISSUE_URL="$ISSUE_URL" \
+    SESSION_OWNER_ENDPOINT_ID="$PRODUCT_DEVICE_ID" \
+    REMOTE_BRIDGE_SESSION_ID="$SESSION_ID" \
+    SESSION_OWNER_TTL_MINUTES=45 \
+      "$REPO_ROOT/scripts/faz22-remote-ops/remote-response-terminal-session-ownership-guard.sh" \
+      > "${EVIDENCE_DIR}/session-ownership-guard.out" 2>&1; then
+    sed 's/[[:cntrl:]]//g' "${EVIDENCE_DIR}/session-ownership-guard.out" >&2 || true
+    fail_acceptance "session-ownership-claim-failed"
+  fi
+  SESSION_OWNER_CLAIMED="1"
 
   OPERATOR_BEARER_TOKEN="$(tr -d '\r\n' < "$OPERATOR_TOKEN_FILE")" \
   EVIDENCE_DIR="$EVIDENCE_DIR" \
