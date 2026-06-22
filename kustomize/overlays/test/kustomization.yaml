@@ -5541,8 +5541,8 @@ images:
     digest: sha256:175b3daea37601fbfd500f616ad19664d26dffec8b1db11556a3bff14ce6250e
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
-  # platform-agent Release EXE trusted workflow for tag v0.2.27:
-  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.27 (+ platform-agent#226).
+  # platform-agent Release EXE trusted workflow for tag v0.2.28:
+  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.28 (+ platform-agent#227).
   # Serves /artifacts/endpoint-agent/current/{bootstrap-package.ps1,endpoint-agent.exe,EndpointAgent.zip,...}
   # PLUS a stable MUTABLE alias /artifacts/endpoint-agent/current/ (byte-identical,
   # nginx no-store) so the endpoint-admin UI renders a copy-paste one-command
@@ -5556,14 +5556,14 @@ images:
   # artifact and is not treated as a release-hosted public asset here.
   - name: artifact-host
     newName: ghcr.io/halildeu/platform-agent-artifacts
-    newTag: v0.2.27
-    # D30 immutable pin — Release EXE trusted run 27957889712 (tag v0.2.27,
+    newTag: v0.2.28
+    # D30 immutable pin — Release EXE trusted run 27962366960 (tag v0.2.28,
     # signing_tier=trusted-internal-ca). Release asset
     # manifest records EndpointAgent.zip SHA256
-    # 1adc6ac01a72a829714b198e1e8531c6aff2229251559f246c1377e1b1c6f752 and
+    # e30ab27490dfcc565bd19f5da657739dfacb8e8d9f57770142575a03e607938a and
     # agent binary SHA256
-    # ea99347adb64f43c1f1b921f6b6a1ebfa1c1ddcd1598acddea87cd6b8ab35a8f.
-    digest: sha256:85091b6bc26e9d3c52ddea01886155d79d19fc9e56eefb41b27a1b756aa76cc4
+    # e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4.
+    digest: sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2
 
 patches:
   # notification-orchestrator-secrets is owned by the test ExternalSecret. The

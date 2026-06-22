@@ -17,8 +17,8 @@ if ! grep -Fq 'Invoke-DownloadVerified -Uri \$BinaryUrl -OutFile \$BinaryPath -E
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:85091b6bc26e9d3c52ddea01886155d79d19fc9e56eefb41b27a1b756aa76cc4}"' "${script}"; then
-  echo "bootstrap gate default artifact-host digest must track the v0.2.27 immutable image digest" >&2
+if ! grep -Fq 'EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2}"' "${script}"; then
+  echo "bootstrap gate default artifact-host digest must track the v0.2.28 immutable image digest" >&2
   exit 1
 fi
 
@@ -124,7 +124,7 @@ if ! grep -Fq 'ENDPOINT_AGENT_SELF_UPDATE_ALLOWED_HOSTS' "${bootstrap_configmap}
   exit 1
 fi
 
-if ! grep -Fq '9da2e0ee733173e1289d8ef7a65a0bb1eb1725d8747d553d0c25790a71450532  agentpc2-remote-bridge-canonical-env-patch-v7.ps1' "${bootstrap_configmap}"; then
+if ! grep -Fq '9e3a7a89f5782ea54acb93e7c4bc1bbe411e0d5f29eacabca2a3911dbd8a5196  agentpc2-remote-bridge-canonical-env-patch-v7.ps1' "${bootstrap_configmap}"; then
   echo "AgentPC2 bootstrap SHA256SUMS must pin the v7 canonical env patch hash" >&2
   exit 1
 fi
@@ -139,12 +139,12 @@ if ! grep -Fq 'f695d8b3bf5b74ad200529bed823d1dc7228e1db9c0dac680eb1339355917c06 
   exit 1
 fi
 
-if ! grep -Fq '1c83bc3f6c1f263b462c82ae43cefaa9e1f3019f5fbc575a047076d341ecc217  agentpc2-first-install-bootstrap.ps1' "${bootstrap_configmap}"; then
+if ! grep -Fq 'c301386acbcee0297260495a1d4fc79f4e263130c39522a6137354d10f11bdbe  agentpc2-first-install-bootstrap.ps1' "${bootstrap_configmap}"; then
   echo "AgentPC2 bootstrap SHA256SUMS must pin the self-update-capable first-install hash" >&2
   exit 1
 fi
 
-if ! grep -Fq '25671f8860d95f2ebdb0990a7dd9e69a42811638a226f2b06aa640b069a69228  README.md' "${bootstrap_configmap}"; then
+if ! grep -Fq '91570e68f60c7b789d44d748735d696f70dddb09534e84ce6124f09966396503  README.md' "${bootstrap_configmap}"; then
   echo "AgentPC2 bootstrap SHA256SUMS must pin the self-update-capable README hash" >&2
   exit 1
 fi
