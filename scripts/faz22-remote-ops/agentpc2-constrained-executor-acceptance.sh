@@ -347,9 +347,80 @@ write_summary() {
 fail_acceptance() {
   status="no-go"
   reason="$1"
+  capture_failpath_diagnostics "$reason"
   write_summary
   echo "NO_GO $reason"
   exit 1
+}
+
+capture_failpath_diagnostics() {
+  local failure_reason="$1" diagnostics_dir raw_rows recording_log
+
+  diagnostics_dir="${EVIDENCE_DIR}/failpath-diagnostics"
+  mkdir -p "$diagnostics_dir" 2>/dev/null || return 0
+
+  {
+    printf 'generatedAt=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'reason=%s\n' "$failure_reason"
+    printf 'sessionHash=%s\n' "$session_hash"
+    printf 'catalogOperationId=%s\n' "$CATALOG_OPERATION_ID"
+    printf 'operationStatus=%s\n' "$operation_status"
+    printf 'verificationResult=%s\n' "$verification_result"
+    printf 'recordingHint=%s\n' "$recording_hint"
+  } > "${diagnostics_dir}/failpath-context.env" 2>/dev/null || true
+
+  if command -v kubectl >/dev/null 2>&1; then
+    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get deploy "$REMOTE_BRIDGE_DEPLOYMENT" -o json \
+      > "${diagnostics_dir}/remote-bridge-deploy.json" 2>"${diagnostics_dir}/remote-bridge-deploy.stderr" || true
+    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get pods -l "app.kubernetes.io/name=${REMOTE_BRIDGE_DEPLOYMENT}" -o wide \
+      > "${diagnostics_dir}/remote-bridge-pods.txt" 2>"${diagnostics_dir}/remote-bridge-pods.stderr" || true
+    kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" logs "deploy/${REMOTE_BRIDGE_DEPLOYMENT}" --tail=1200 \
+      > "${diagnostics_dir}/remote-bridge-logs-tail.txt" 2>"${diagnostics_dir}/remote-bridge-logs-tail.stderr" || true
+  fi
+
+  if [[ -n "$SESSION_ID" ]] && command -v jq >/dev/null 2>&1; then
+    raw_rows="${diagnostics_dir}/session-recording.raw.jsonl"
+    recording_log="${diagnostics_dir}/session-recording-export.stderr"
+    local sql
+    sql="
+SELECT jsonb_build_object(
+  'chain_id', chain_id,
+  'session_id', chain_id,
+  'seq', seq,
+  'timestamp_millis', timestamp_millis,
+  'kind', kind,
+  'source', kind,
+  'event', kind,
+  'content_hash', content_hash,
+  'previous_hash', previous_hash,
+  'entry_hash', entry_hash,
+  'recorded_at', recorded_at,
+  'payload_retention_boundary', 'content_hash_only_no_raw_payload'
+)::text
+FROM ${DB_SCHEMA}.session_recording_entry
+WHERE chain_id = '${SESSION_ID}'
+ORDER BY seq;"
+
+    set +e
+    local query_status=127
+    if command -v docker >/dev/null 2>&1 && docker inspect "$PG_CONTAINER" >/dev/null 2>&1; then
+      printf '%s\n' "$sql" \
+        | docker exec -i "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DATABASE" \
+          -At -v ON_ERROR_STOP=1 -f - \
+          > "$raw_rows" 2>"$recording_log"
+      query_status=$?
+    else
+      printf 'docker postgres container unavailable for failpath recording export\n' > "$recording_log"
+    fi
+    set -e
+
+    if [[ "$query_status" == "0" && -s "$raw_rows" ]]; then
+      SOURCE_RECORDING_ROWS_FILE="$raw_rows" \
+      EVIDENCE_DIR="${diagnostics_dir}" \
+        "$REPO_ROOT/scripts/faz22-remote-ops/remote-response-terminal-recording-export.sh" \
+        >>"$recording_log" 2>&1 || true
+    fi
+  fi
 }
 
 mask_file_value() {
