@@ -198,7 +198,7 @@ jobs:
           {
             echo "AGENTPC2_PRODUCT_ACCEPTANCE status=${status}"
             echo ""
-            echo "- Source: platform-backend#718 merged; endpoint-admin remote-bridge digest expected \`${EXPECTED_DIGEST}\`."
+            echo "- Source: platform-backend#729 merged; endpoint-admin remote-bridge digest expected \`${EXPECTED_DIGEST}\`."
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Evidence dir on staging runner: \`${EVIDENCE_DIR}\`"
             echo "- Runtime deploy image: \`${deploy_image}\`"
@@ -229,7 +229,7 @@ jobs:
           {
             echo "ENDPOINT_ADMIN_REMOTE_BRIDGE_ACCEPTANCE_LINK status=${status}"
             echo ""
-            echo "- platform-backend#718 is merged and deployed through endpoint-admin remote-bridge digest \`${EXPECTED_DIGEST}\`."
+            echo "- platform-backend#729 is merged and deployed through endpoint-admin remote-bridge digest \`${EXPECTED_DIGEST}\`."
             echo "- Staging runtime evidence is tracked in platform-agent#208 by this run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- AgentPC2 product-channel acceptance status: \`${status}\`"
             if [ -n "${reason}" ]; then
