@@ -475,7 +475,8 @@ curl_json_or_fail() {
 }
 
 normalize_body_named_http_evidence() {
-  local body_file="$1" stem="${body_file%.body}"
+  local body_file="$1"
+  local stem="${body_file%.body}"
   [[ "$stem" != "$body_file" ]] || return 0
   [[ -f "${body_file}.code" ]] && cp "${body_file}.code" "${stem}.code"
   [[ -f "${body_file}.request.json" ]] && cp "${body_file}.request.json" "${stem}.request.json"

@@ -168,6 +168,16 @@ if ! grep -Fq 'curl_json_or_fail' "${script}"; then
   exit 1
 fi
 
+if grep -Fq 'local body_file="$1" stem="${body_file%.body}"' "${script}"; then
+  echo "acceptance must not derive stem from body_file in the same local declaration under set -u" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'local stem="${body_file%.body}"' "${script}"; then
+  echo "acceptance must derive named HTTP evidence stems after body_file is assigned" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'wrong-device-deny.body' "${script}"; then
   echo "acceptance must record a product-supported wrong-device/not-enrolled negative probe" >&2
   exit 1
