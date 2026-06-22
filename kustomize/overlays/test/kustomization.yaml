@@ -438,7 +438,13 @@ images:
     # /api/v1/users/{id} + POST /{id}/restore + tombstone-aware identity, 403
     # USER_DELETED choke point). Codex 019ea6f6 AGREE (3-iter, 6+1 cross-service
     # holes closed). V17 Flyway runs on pod start (deleted_at column + partial index).
-    digest: sha256:2f82ab9a02ee389c21eae2f82a5edd6a40c06b221b45fd3969f77ee4facaadcc
+    # 2026-06-22 PR #726 bump: sha-c912944 — M365 SSO lazy-provision fix. The
+    # by-email self-probe path was excluded from KeycloakUserAutoProvisionFilter,
+    # so an M365 first-login never auto-created the backend users row → the user
+    # stayed out of admin/users and could not be activated. ArgoCD selfHeal pins
+    # this overlay digest, so the live fix REQUIRES this bump (kubectl set-image
+    # alone was reverted within ~60s). Codex 019eef97 AGREE.
+    digest: sha256:726cefddbedc0f067dccdfb68526848bc786b02d1c7fedcc29fded31c750f8f9
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
