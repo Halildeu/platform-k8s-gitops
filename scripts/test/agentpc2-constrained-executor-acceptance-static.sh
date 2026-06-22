@@ -138,6 +138,16 @@ if ! grep -Fq 'AGENT_OPERATION_WAIT_SECONDS="${AGENT_OPERATION_WAIT_SECONDS:-45}
   exit 1
 fi
 
+if ! grep -Fq 'REQUIRE_FULL_MATRIX="${REQUIRE_FULL_MATRIX:-0}"' "${script}"; then
+  echo "acceptance must expose REQUIRE_FULL_MATRIX instead of hard-coding verifier full-matrix mode" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'require-full-matrix-invalid' "${script}"; then
+  echo "acceptance must validate REQUIRE_FULL_MATRIX as a strict 0/1 input" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'agent-operation-wait-seconds-invalid' "${script}"; then
   echo "acceptance must validate the agent operation output wait window" >&2
   exit 1
@@ -145,6 +155,26 @@ fi
 
 if ! grep -Fq 'sleep "$AGENT_OPERATION_WAIT_SECONDS"' "${script}"; then
   echo "acceptance must not use a fixed short sleep before recording export" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'run_product_supported_full_matrix_negatives' "${script}"; then
+  echo "acceptance must capture product-supported full-matrix negative probes when full matrix mode is requested" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'wrong-device-deny.body' "${script}"; then
+  echo "acceptance must record a product-supported wrong-device/not-enrolled negative probe" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'closed-session-deny.body' "${script}"; then
+  echo "acceptance must record a product-supported closed-session termination negative probe" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'REQUIRE_FULL_MATRIX="$REQUIRE_FULL_MATRIX"' "${script}"; then
+  echo "acceptance must pass REQUIRE_FULL_MATRIX through to the evidence verifier" >&2
   exit 1
 fi
 

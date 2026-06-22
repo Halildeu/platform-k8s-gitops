@@ -57,6 +57,7 @@ STEP_UP_PRIVATE_KEY_PEM_PATH="${STEP_UP_PRIVATE_KEY_PEM_PATH:-}"
 REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS="${REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS:-420}"
 STEP_UP_RUNTIME_STABILIZE_SECONDS="${STEP_UP_RUNTIME_STABILIZE_SECONDS:-${STEP_UP_SECRET_STABILIZE_SECONDS:-8}}"
 AGENT_OPERATION_WAIT_SECONDS="${AGENT_OPERATION_WAIT_SECONDS:-45}"
+REQUIRE_FULL_MATRIX="${REQUIRE_FULL_MATRIX:-0}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-rtt-acceptance-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 TMP_DIR="$(mktemp -d)"
@@ -454,6 +455,13 @@ curl_json() {
     curl "${args[@]}" "${base}${path}" > "$code_file"
   fi
   tr -d '\r\n[:space:]' < "$code_file"
+}
+
+normalize_body_named_http_evidence() {
+  local body_file="$1" stem="${body_file%.body}"
+  [[ "$stem" != "$body_file" ]] || return 0
+  [[ -f "${body_file}.code" ]] && cp "${body_file}.code" "${stem}.code"
+  [[ -f "${body_file}.request.json" ]] && cp "${body_file}.request.json" "${stem}.request.json"
 }
 
 assert_http() {
@@ -871,6 +879,11 @@ validate_acceptance_inputs() {
       || (( REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS < 120 || REMOTE_BRIDGE_ROLLOUT_TIMEOUT_SECONDS > 900 )); then
     fail_acceptance "remote-bridge-rollout-timeout-seconds-invalid"
   fi
+
+  case "$REQUIRE_FULL_MATRIX" in
+    0|1) ;;
+    *) fail_acceptance "require-full-matrix-invalid" ;;
+  esac
 }
 
 candidate_private_keys() {
@@ -1181,6 +1194,53 @@ ORDER BY seq;"
   recording_hint="$(jq -r '.acceptanceHint // ""' "${EVIDENCE_DIR}/recording-summary.json" 2>/dev/null || true)"
 }
 
+run_product_supported_full_matrix_negatives() {
+  local operator_base="$1" wrong_device body code close_code closed_op_body
+  wrong_device="00000000-0000-0000-0000-0000000000ff"
+
+  body="$(jq -nc --arg session "${SESSION_ID}-wrong-device-deny" --arg device "$wrong_device" \
+    '{sessionId:$session, deviceId:$device, reason:"negative wrong-device / not enrolled / not connected", capabilities:["CONSTRAINED_PTY"]}')"
+  code="$(curl_json POST "$operator_base" /sessions "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/wrong-device-deny.body" "$body")"
+  normalize_body_named_http_evidence "${EVIDENCE_DIR}/wrong-device-deny.body"
+  if [[ "$code" != "404" ]]; then
+    fail_acceptance "wrong-device-deny expected 404 got ${code}"
+  fi
+
+  close_code="$(curl_json POST "$operator_base" "/sessions/${SESSION_ID}/close" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/close-session.body")"
+  normalize_body_named_http_evidence "${EVIDENCE_DIR}/close-session.body"
+  if [[ "$close_code" != "204" ]]; then
+    fail_acceptance "close-session expected 204 got ${close_code}"
+  fi
+
+  closed_op_body="$(jq -nc --arg op "op-closed-session-$(date -u +%Y%m%dT%H%M%SZ)" --arg catalog "$CATALOG_OPERATION_ID" \
+    '{operationId:$op, catalogOperationId:$catalog}')"
+  code="$(curl_json POST "$operator_base" "/sessions/${SESSION_ID}/operations" "$OPERATOR_TOKEN_FILE" "${EVIDENCE_DIR}/closed-session-deny.body" "$closed_op_body")"
+  normalize_body_named_http_evidence "${EVIDENCE_DIR}/closed-session-deny.body"
+  if [[ "$code" != "404" ]]; then
+    fail_acceptance "closed-session-deny expected 404 got ${code}"
+  fi
+
+  jq -n \
+    --arg generatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg wrongDeviceCode "$(<"${EVIDENCE_DIR}/wrong-device-deny.body.code")" \
+    --arg closeCode "$(<"${EVIDENCE_DIR}/close-session.body.code")" \
+    --arg closedSessionCode "$(<"${EVIDENCE_DIR}/closed-session-deny.body.code")" \
+    '{
+      generatedAt:$generatedAt,
+      productSupportedNegatives:{
+        wrongDeviceOrUnenrolledOpenHttp:$wrongDeviceCode,
+        operatorCloseHttp:$closeCode,
+        closedSessionOperationHttp:$closedSessionCode
+      },
+      unsupportedLiveNegatives:[
+        "expired-permit-deny requires a product endpoint or controllable runtime TTL-expiry path; live DB/fixture injection is not acceptable evidence",
+        "replay-deny requires agent/broker frame-level replay or a product replay endpoint; duplicate REST operation ids are not equivalent",
+        "true kill/revoke requires an owner-gated product revoke/kill path; explicit operator close only proves closed-session denial"
+      ],
+      boundary:"This file is evidence of product-supported negative probes only. It does not by itself satisfy REQUIRE_FULL_MATRIX=1."
+    }' > "${EVIDENCE_DIR}/full-matrix-product-supported-summary.json"
+}
+
 write_governance_source() {
   jq -n \
     --arg operator "$OPERATOR_USERNAME" \
@@ -1285,11 +1345,16 @@ main() {
   printf 'INFO waiting_for_agent_output seconds=%s\n' "$AGENT_OPERATION_WAIT_SECONDS"
   sleep "$AGENT_OPERATION_WAIT_SECONDS"
   export_recording_rows
+
+  if [[ "$REQUIRE_FULL_MATRIX" == "1" ]]; then
+    run_product_supported_full_matrix_negatives "$operator_base"
+  fi
+
   sha256_manifest
 
   set +e
   REQUIRE_ACCEPTED=1 \
-  REQUIRE_FULL_MATRIX=0 \
+  REQUIRE_FULL_MATRIX="$REQUIRE_FULL_MATRIX" \
   EXPECTED_CATALOG_OPERATION_ID="$CATALOG_OPERATION_ID" \
     "$REPO_ROOT/scripts/faz22-remote-ops/remote-response-terminal-evidence-verify.sh" "$EVIDENCE_DIR"
   local verifier_exit=$?

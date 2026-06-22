@@ -161,7 +161,7 @@ check_negative_category() {
     reason="$(extract_denial_reason "$file")"
     http_code="$(adjacent_http_code "$file")"
 
-    if body_indicates_denial "$file" || [[ "$http_code" =~ ^(400|401|403|409|422)$ ]]; then
+    if body_indicates_denial "$file" || [[ "$http_code" =~ ^(400|401|403|404|409|422)$ ]]; then
       ok="true"
     fi
     append_negative_detail "$category" "$file" "$ok" "$reason" "$http_code"
@@ -951,6 +951,7 @@ main() {
   if check_negative_category termination_evidence \
     heartbeat-loss-evidence.json \
     heartbeat-loss-deny.body \
+    closed-session-deny.body \
     kill-revoke-evidence.json \
     revoke-evidence.json \
     mid-session-revoke-evidence.json; then
