@@ -190,6 +190,42 @@ release_after_claim() {
   return 1
 }
 
+active_owner_for_endpoint() {
+  local session_hash="$1" endpoint_hash="$2" comments now owners releases
+  local owner_id owner_created owner_line owner_status owner_session owner_endpoint owner_expires
+
+  comments="$(fetch_comments_json)"
+  now="$(now_iso)"
+  owners="$(printf '%s' "$comments" \
+    | jq -r '.[] | select((.body // "") | startswith("LIVE-SESSION-OWNER ")) | [.id, .created_at, ((.body | split("\n")[0]))] | @tsv' \
+    | sort -t $'\t' -k2,2 -k1,1n)"
+  releases="$(printf '%s' "$comments" \
+    | jq -r '.[] | select((.body // "") | startswith("LIVE-SESSION-RELEASE ")) | [.id, .created_at, ((.body | split("\n")[0]))] | @tsv' \
+    | sort -t $'\t' -k2,2 -k1,1n)"
+
+  while IFS=$'\t' read -r owner_id owner_created owner_line; do
+    [[ -n "${owner_id:-}" ]] || continue
+    owner_status="$(kv_from_line "$owner_line" status)"
+    owner_session="$(kv_from_line "$owner_line" session_sha256)"
+    owner_endpoint="$(kv_from_line "$owner_line" endpoint_sha256)"
+    owner_expires="$(kv_from_line "$owner_line" expires_at)"
+
+    [[ "$owner_status" == "active" ]] || continue
+    [[ "$owner_endpoint" == "$endpoint_hash" ]] || continue
+    [[ "$owner_session" =~ ^[a-f0-9]{64}$ ]] || continue
+    [[ "$owner_expires" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || continue
+    [[ "$owner_expires" > "$now" ]] || continue
+    if release_after_claim "$releases" "$owner_id" "$owner_created" "$owner_session" "$owner_endpoint"; then
+      continue
+    fi
+
+    printf '%s\t%s\t%s\n' "$owner_id" "$owner_created" "$owner_session"
+    return 0
+  done <<< "$owners"
+
+  return 1
+}
+
 evaluate_ownership() {
   local session_hash="$1" endpoint_hash="$2" comments now owners releases
   local owner_id owner_created owner_line owner_status owner_session owner_endpoint owner_expires
@@ -263,6 +299,23 @@ main() {
       build_owner_comment "$session_hash" "$endpoint_hash" "$expires_at"
       ;;
     claim)
+      local active_owner active_owner_id active_owner_created active_owner_session
+      active_owner="$(active_owner_for_endpoint "$session_hash" "$endpoint_hash" || true)"
+      if [[ -n "$active_owner" ]]; then
+        IFS=$'\t' read -r active_owner_id active_owner_created active_owner_session <<< "$active_owner"
+        if [[ "$active_owner_session" != "$session_hash" ]]; then
+          die "session ownership conflict: active owner comment $active_owner_id wins for endpoint_hash=$(short_hash "$endpoint_hash")"
+        fi
+        printf 'REMOTE_RESPONSE_TERMINAL_SESSION_GUARD_CLAIM_EXISTS issue=%s owner_comment_id=%s owner_created_at=%s session_hash=%s endpoint_hash=%s\n' \
+          "$ISSUE_DISPLAY" \
+          "$active_owner_id" \
+          "$active_owner_created" \
+          "$(short_hash "$session_hash")" \
+          "$(short_hash "$endpoint_hash")"
+        evaluate_ownership "$session_hash" "$endpoint_hash"
+        return 0
+      fi
+
       expires_at="$(expires_iso "$SESSION_OWNER_TTL_MINUTES")"
       comment_url="$(post_issue_comment "$(build_owner_comment "$session_hash" "$endpoint_hash" "$expires_at")")"
       printf 'REMOTE_RESPONSE_TERMINAL_SESSION_GUARD_CLAIM_COMMENT=%s session_hash=%s endpoint_hash=%s expires_at=%s\n' \
