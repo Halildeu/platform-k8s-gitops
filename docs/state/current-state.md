@@ -1,5 +1,41 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — self-update activation no-go source hardening merged; AgentPC2 acceptance still open (2026-06-22)
+
+`platform-agent#208` remains not accepted. After the AgentPC2 `v0.2.23`
+product-channel `UPDATE_AGENT` run reached `STAGED_ACTIVATION_READY` but did
+not activate, `platform-agent#222` added source-side activation outcome
+persistence so future activation failures and rollbacks are not silent.
+
+Evidence:
+
+- `platform-agent#222` merged at
+  `eaee50d569ff6e51d6441278225685afe7a3f352`.
+- Source change: activation readiness failures, service stop failures,
+  rollback outcomes, and rollback failures now attempt to persist
+  `activation-outcome-<stagingId>.json` in the local self-update staging root.
+- If outcome persistence itself fails, the returned local activation outcome now
+  carries path-free `evidencePersistenceError` while preserving
+  `evidencePersisted=false` and fail-closed behavior.
+- Verification for `platform-agent#222`: local `go test ./internal/selfupdate
+  ./internal/commands ./internal/app`, local `go test ./...`, `git diff
+  --check`, Claude second-pass review, and PR CI all passed. CI included
+  BG-EA-1 boundary declaration, gitleaks, SBOM, reproducible build, Linux
+  test/lint/cross-build, Windows PowerShell installer gate, lab-only signing,
+  and Windows Go test.
+- `platform-agent#208` merge evidence comment:
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4765879785`.
+
+Boundary: this is source hardening only. It does not activate the currently
+installed AgentPC2 `v0.2.20`, does not prove `v0.2.23` running, and does not
+close constrained executor acceptance. The current AgentPC2 no-go still needs
+endpoint-local diagnostic for activation plan
+`c015f8ec89519cb221f613b005004112` or a post-merge signed release/retry path
+that proves activation before the normal outbound 443 mTLS
+HELLO/PERMIT/constrained-operation/negative/audit gate for `platform-agent#208`.
+No unrestricted shell, inbound SSH/RDP/WinRM/SMB/RPC, production support, or
+broad rollout readiness is claimed.
+
 ## Live Delta — AgentPC2 v0.2.23 UPDATE_AGENT stages successfully; activation not observed (2026-06-22)
 
 `platform-agent#208` remains not accepted. The bounded endpoint-local SHA256

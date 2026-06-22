@@ -546,6 +546,37 @@ the product update until AgentPC2 reports `v0.2.23`, then run the normal
 outbound 443 mTLS `HELLO` / permit / constrained-operation / negative / audit
 acceptance workflow for `platform-agent#208`.
 
+#### 0.7.9 2026-06-22 #208 activation outcome source hardening merged
+
+The activation no-go in §0.7.8 exposed a source-side evidence gap: successful
+activation wrote an outcome, but several failure and rollback paths could return
+an in-process activation result without persisting
+`activation-outcome-<stagingId>.json` in the endpoint-local self-update staging
+root. That made a staged-but-not-activated product update harder to diagnose.
+
+`platform-agent#222` merged the narrow source hardening at
+`eaee50d569ff6e51d6441278225685afe7a3f352`:
+
+- activation readiness failures, service stop failures, rollback outcomes, and
+  rollback failures now attempt to persist local activation outcome evidence;
+- outcome persistence failures are surfaced as path-free
+  `evidencePersistenceError` while keeping `evidencePersisted=false`;
+- fail-closed behavior is preserved; a failed activation is not converted into
+  success because evidence writing failed;
+- local tests and PR CI passed, including full `go test ./...`, Windows Go
+  test, reproducible build, SBOM, gitleaks, and BG-EA-1 boundary declaration;
+- Claude second-pass review reported no merge blocker after earlier review
+  findings were addressed.
+
+Boundary: this does **not** activate the currently installed AgentPC2
+`v0.2.20`, does **not** close `platform-agent#208`, and does **not** replace
+the required endpoint-local diagnostic for activation plan
+`c015f8ec89519cb221f613b005004112`. It only ensures the next release/retry path
+has stronger activation no-go evidence if activation fails again. The accepted
+path remains: prove AgentPC2 is actually running the target version through the
+product update path, then run outbound 443 mTLS `HELLO` / permit /
+constrained-operation / negative / audit evidence for `platform-agent#208`.
+
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir
 planı tanımlar.
