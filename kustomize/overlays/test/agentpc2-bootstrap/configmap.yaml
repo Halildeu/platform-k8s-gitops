@@ -64,6 +64,198 @@ data:
     00ab037fdd5d2577970359f153f77c75d51eeeb0e9da34f287d716293ed0a13c  agentpc2-first-install-bootstrap.ps1
     4c79bd64d015189aa6cbd92b8194d3e926298921bc4579fd8c6428b76ec918fe  agentpc2-remote-bridge-canonical-env-patch-v7.ps1
     f695d8b3bf5b74ad200529bed823d1dc7228e1db9c0dac680eb1339355917c06  agentpc2-remote-bridge-attestation-patch-v0217-20260621T144928Z-14741b2e.ps1
+    ebd35f17b58eed8ffa4f5f73bfd5bd0a0df262fd96eced1d31c1b93fb5dbc5a6  agentpc2-self-update-policy-seed-v023.ps1
+  agentpc2-self-update-policy-seed-v023.ps1: |
+    <#
+    .SYNOPSIS
+    AgentPC2 bounded self-update local trust seed for v0.2.23.
+
+    .DESCRIPTION
+    Writes only ENDPOINT_AGENT_SELF_UPDATE_* service environment keys required for
+    EndpointAgent v0.2.20 to accept the trusted internal-CA signed UPDATE_AGENT
+    release. This is a one-time endpoint-local bootstrap step; it contains no
+    secret, bearer token, password, private key, shell command payload, or HMAC
+    enrollment token.
+    #>
+
+    [CmdletBinding()]
+    param(
+      [string]$EvidenceRoot = "C:\ProgramData\EndpointAgent\rollout-evidence",
+      [int]$PostRestartWaitSeconds = 45
+    )
+
+    Set-StrictMode -Version Latest
+    $ErrorActionPreference = "Stop"
+    $ProgressPreference = "SilentlyContinue"
+
+    $ReleaseId = "v0.2.23"
+    $ExpectedSignerThumbprint = "D68F4F530137EB65CE44E3405E82B46205E753E5"
+    $AllowedHosts = "github.com,release-assets.githubusercontent.com,objects.githubusercontent.com"
+    $ServiceName = "EndpointAgent"
+    $ServiceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+
+    function Write-Step([string]$Message) {
+      Write-Host "[agentpc2-self-update-seed] $Message"
+    }
+
+    function Assert-Administrator {
+      $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+      $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+      if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw "Administrator shell required."
+      }
+    }
+
+    function Read-ServiceEnvMap([string]$Path) {
+      $map = [ordered]@{}
+      $raw = (Get-ItemProperty -Path $Path -Name Environment -ErrorAction SilentlyContinue).Environment
+      if ($raw) {
+        foreach ($entry in $raw) {
+          $parts = $entry -split "=", 2
+          if ($parts.Count -eq 2 -and -not [string]::IsNullOrWhiteSpace($parts[0])) {
+            $map[$parts[0]] = $parts[1]
+          }
+        }
+      }
+      return $map
+    }
+
+    function Write-ServiceEnvMap([string]$Path, [System.Collections.Specialized.OrderedDictionary]$Map) {
+      $entries = @()
+      foreach ($kv in $Map.GetEnumerator()) {
+        $entries += "$($kv.Key)=$($kv.Value)"
+      }
+      Set-ItemProperty -Path $Path -Name Environment -Type MultiString -Value $entries
+    }
+
+    function Redact-ServiceEnv([System.Collections.Specialized.OrderedDictionary]$Map) {
+      $rows = @()
+      foreach ($kv in $Map.GetEnumerator()) {
+        $value = [string]$kv.Value
+        $shown = if ($kv.Key -match "TOKEN|SECRET|KEY|PASSWORD|SIGNER") { "<redacted>" } else { $value }
+        $rows += [PSCustomObject]@{
+          Key = $kv.Key
+          Present = -not [string]::IsNullOrWhiteSpace($value)
+          Length = $value.Length
+          Value = $shown
+        }
+      }
+      return $rows
+    }
+
+    $startedAt = Get-Date
+    New-Item -ItemType Directory -Force -Path $EvidenceRoot | Out-Null
+    $TranscriptPath = Join-Path $EvidenceRoot "agentpc2-self-update-policy-seed-v023-transcript.log"
+    $SummaryPath = Join-Path $EvidenceRoot "agentpc2-self-update-policy-seed-v023-summary.json"
+
+    try {
+      Start-Transcript -Path $TranscriptPath -Force | Out-Null
+      Assert-Administrator
+
+      if (-not (Test-Path $ServiceKey)) {
+        throw "EndpointAgent service registry key not found: $ServiceKey"
+      }
+
+      Write-Step "read service environment"
+      $map = Read-ServiceEnvMap -Path $ServiceKey
+
+      Write-Step "write bounded self-update trust policy for $ReleaseId"
+      $map["ENDPOINT_AGENT_SELF_UPDATE_ENABLED"] = "true"
+      $map["ENDPOINT_AGENT_SELF_UPDATE_ALLOWED_HOSTS"] = $AllowedHosts
+      $map["ENDPOINT_AGENT_SELF_UPDATE_SIGNER_THUMBPRINTS"] = $ExpectedSignerThumbprint
+      $map["ENDPOINT_AGENT_SELF_UPDATE_HARD_MAX_BYTES"] = "52428800"
+      $map["ENDPOINT_AGENT_SELF_UPDATE_MAX_REDIRECTS"] = "5"
+      $map["ENDPOINT_AGENT_SELF_UPDATE_AUTO_ACTIVATE"] = "true"
+      $map["ENDPOINT_AGENT_SELF_UPDATE_ACTIVATION_TIMEOUT"] = "2m"
+      $map["ENDPOINT_AGENT_SELF_UPDATE_SERVICE_NAME"] = $ServiceName
+      $map["ENDPOINT_AGENT_SELF_UPDATE_COMMAND_TIMEOUT"] = "30m"
+      Write-ServiceEnvMap -Path $ServiceKey -Map $map
+
+      Write-Step "restart EndpointAgent"
+      Restart-Service $ServiceName -Force
+      Start-Sleep -Seconds $PostRestartWaitSeconds
+
+      $service = Get-CimInstance Win32_Service |
+        Where-Object { $_.Name -eq $ServiceName } |
+        Select-Object Name, DisplayName, State, StartMode, StartName, PathName
+
+      $afterMap = Read-ServiceEnvMap -Path $ServiceKey
+      $seeded = (
+        $afterMap["ENDPOINT_AGENT_SELF_UPDATE_ENABLED"] -eq "true" -and
+        $afterMap["ENDPOINT_AGENT_SELF_UPDATE_ALLOWED_HOSTS"] -eq $AllowedHosts -and
+        $afterMap["ENDPOINT_AGENT_SELF_UPDATE_SIGNER_THUMBPRINTS"] -eq $ExpectedSignerThumbprint
+      )
+
+      if (-not $seeded) {
+        throw "Self-update policy verification failed after registry write."
+      }
+
+      $logSignalsPath = Join-Path $EvidenceRoot "agentpc2-self-update-policy-seed-v023-log-signals.txt"
+      Get-Content "C:\ProgramData\EndpointAgent\logs\*.log" -Tail 300 -ErrorAction SilentlyContinue |
+        Select-String -Pattern "version|UPDATE_AGENT|self-update|remote-bridge|HELLO|hello|permit|operation|failed|error|denied|signer|allowlist" |
+        ForEach-Object { $_.Line } |
+        Set-Content -Path $logSignalsPath -Encoding UTF8
+
+      $completedAt = Get-Date
+      [PSCustomObject]@{
+        schema = "faz22.1768.agentpc2-self-update-policy-seed.endpoint.v1"
+        status = if ($service -and $service.State -eq "Running") { "seeded-service-running" } else { "seeded-service-not-running" }
+        startedAt = $startedAt.ToString("o")
+        completedAt = $completedAt.ToString("o")
+        computerName = $env:COMPUTERNAME
+        user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+        release = @{ id = $ReleaseId; signerThumbprint = $ExpectedSignerThumbprint }
+        selfUpdate = @{
+          enabled = $true
+          allowedHosts = $AllowedHosts
+          signerThumbprintsConfigured = 1
+          hardMaxBytes = "52428800"
+          maxRedirects = "5"
+          autoActivate = "true"
+          activationTimeout = "2m"
+          serviceName = $ServiceName
+          commandTimeout = "30m"
+        }
+        service = $service
+        redactedServiceEnvironment = @(Redact-ServiceEnv -Map $afterMap)
+        evidence = @{ root = $EvidenceRoot; transcript = $TranscriptPath; logSignals = $logSignalsPath }
+        boundary = @{
+          proves = @(
+            "Endpoint-local self-update signer allowlist was written for the trusted internal CA signer",
+            "EndpointAgent service restarted after the policy change"
+          )
+          doesNotProve = @(
+            "UPDATE_AGENT product dispatch succeeded",
+            "Agent version changed through product self-update",
+            "platform-agent#208 constrained operation acceptance",
+            "broad GPO/MSI rollout",
+            "unrestricted shell/RDP/WinRM/SMB/SSH support",
+            "production/domain-wide support readiness",
+            "TPM/device-key hardware attestation"
+          )
+        }
+      } | ConvertTo-Json -Depth 8 | Set-Content -Path $SummaryPath -Encoding UTF8
+
+      Write-Step "summary: $SummaryPath"
+      Get-Content $SummaryPath
+      Write-Host "`nAGENTPC2_SELF_UPDATE_POLICY_SEEDED"
+    } catch {
+      $completedAt = Get-Date
+      [PSCustomObject]@{
+        schema = "faz22.1768.agentpc2-self-update-policy-seed.endpoint.v1"
+        status = "failed"
+        startedAt = $startedAt.ToString("o")
+        completedAt = $completedAt.ToString("o")
+        computerName = $env:COMPUTERNAME
+        user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+        error = $_.Exception.Message
+        evidence = @{ root = $EvidenceRoot; transcript = $TranscriptPath }
+      } | ConvertTo-Json -Depth 6 | Set-Content -Path $SummaryPath -Encoding UTF8
+      Write-Error $_.Exception.Message
+      exit 1
+    } finally {
+      try { Stop-Transcript | Out-Null } catch {}
+    }
   agentpc2-first-install-bootstrap.ps1: |
     <#
     .SYNOPSIS
