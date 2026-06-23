@@ -5236,7 +5236,15 @@ images:
     # Runtime acceptance remains gated by platform-test sync plus AgentPC2
     # product remote-ops full-matrix smoke; this line is only desired-state
     # artifact promotion.
-    digest: sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3
+    # 2026-06-23 Faz 22.6 #548 device-key attestation negative evidence
+    # harness (backend #733 -> sha-dcc5b6f). Moves the test desired-state from
+    # the accepted #208 remote-ops digest to the image that contains the source
+    # fail-closed negative evidence matrix. This is not #548 closure: live
+    # TPM/device-key material, broker root policy, and accepted field evidence
+    # remain required.
+    # Image build run 27998861570 produced endpoint-admin-service
+    # sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c.
+    digest: sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571

@@ -144,6 +144,10 @@ images:
   # endpoint-admin so expired-permit DENY accepts the bounded
   # `operation-dispatch-failed:permit-invalid:*` agent error-code family instead
   # of misclassifying suffixed product errors as agent-deny-not-observed.
+  # 2026-06-23 backend #733 #548 device-key attestation negative evidence matrix:
+  # re-pin with primary endpoint-admin so owner-gated broker-path smokes run on
+  # the fail-closed source harness image. This remains source/live-wiring
+  # progress only; it does not prove TPM/device-key field evidence.
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/endpoint-admin-service
     newName: ghcr.io/halildeu/platform-backend-endpoint-admin-service
-    digest: sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3
+    digest: sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c
