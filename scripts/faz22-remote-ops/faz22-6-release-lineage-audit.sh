@@ -19,6 +19,7 @@ EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:36a81cb89
 RECENT_RELEASE_WINDOW="${RECENT_RELEASE_WINDOW:-50}"
 RECENT_RELEASE_HYGIENE_THRESHOLD="${RECENT_RELEASE_HYGIENE_THRESHOLD:-5}"
 MIN_ARTIFACT_HOST_DIGEST_HITS="${MIN_ARTIFACT_HOST_DIGEST_HITS:-2}"
+CURL_MAX_TIME="${CURL_MAX_TIME:-20}"
 ARTIFACT_BASE_URL="${ARTIFACT_BASE_URL:-https://testai.acik.com/artifacts/endpoint-agent/current}"
 GITHUB_RELEASE_BASE_URL="${GITHUB_RELEASE_BASE_URL:-https://github.com/${AGENT_REPO}/releases/download/${EXPECTED_AGENT_TAG}}"
 
@@ -50,6 +51,12 @@ sha_from_sums() {
 shell_quote() {
   # shell_quote <value>
   printf '%q' "$1"
+}
+
+fetch_url() {
+  # fetch_url <url>
+  # Keep the audit bounded and avoid stale CDN bytes after metadata-only release repairs.
+  curl --max-time "$CURL_MAX_TIME" -fsSL -H 'Cache-Control: no-cache' "$1"
 }
 
 main() {
@@ -119,22 +126,22 @@ main() {
   fi
 
   local release_manifest current_manifest release_sums current_sums release_zip_sha current_zip_sha
-  if ! release_manifest="$(curl -fsSL "${GITHUB_RELEASE_BASE_URL}/release-manifest.json" 2>&1)"; then
+  if ! release_manifest="$(fetch_url "${GITHUB_RELEASE_BASE_URL}/release-manifest.json" 2>&1)"; then
     print_check 'RELEASE_MANIFEST_FETCH' 'blocked' "reason=$(printf '%q' "$release_manifest")"
     blocked=1
     release_manifest='{}'
   fi
-  if ! current_manifest="$(curl -fsSL "${ARTIFACT_BASE_URL}/release-manifest.json" 2>&1)"; then
+  if ! current_manifest="$(fetch_url "${ARTIFACT_BASE_URL}/release-manifest.json" 2>&1)"; then
     print_check 'CURRENT_MANIFEST_FETCH' 'blocked' "reason=$(printf '%q' "$current_manifest")"
     blocked=1
     current_manifest='{}'
   fi
-  if ! release_sums="$(curl -fsSL "${GITHUB_RELEASE_BASE_URL}/SHA256SUMS" 2>&1)"; then
+  if ! release_sums="$(fetch_url "${GITHUB_RELEASE_BASE_URL}/SHA256SUMS" 2>&1)"; then
     print_check 'RELEASE_SHA256SUMS_FETCH' 'blocked' "reason=$(printf '%q' "$release_sums")"
     blocked=1
     release_sums=''
   fi
-  if ! current_sums="$(curl -fsSL "${ARTIFACT_BASE_URL}/SHA256SUMS" 2>&1)"; then
+  if ! current_sums="$(fetch_url "${ARTIFACT_BASE_URL}/SHA256SUMS" 2>&1)"; then
     print_check 'CURRENT_SHA256SUMS_FETCH' 'blocked' "reason=$(printf '%q' "$current_sums")"
     blocked=1
     current_sums=''
@@ -200,12 +207,12 @@ main() {
   fi
 
   local release_zip_sha_raw current_zip_sha_raw
-  if ! release_zip_sha_raw="$(curl -fsSL "${GITHUB_RELEASE_BASE_URL}/EndpointAgent.zip.sha256" 2>&1)"; then
+  if ! release_zip_sha_raw="$(fetch_url "${GITHUB_RELEASE_BASE_URL}/EndpointAgent.zip.sha256" 2>&1)"; then
     print_check 'RELEASE_ZIP_SHA256_FILE_FETCH' 'blocked' "reason=$(printf '%q' "$release_zip_sha_raw")"
     blocked=1
     release_zip_sha_raw=''
   fi
-  if ! current_zip_sha_raw="$(curl -fsSL "${ARTIFACT_BASE_URL}/EndpointAgent.zip.sha256" 2>&1)"; then
+  if ! current_zip_sha_raw="$(fetch_url "${ARTIFACT_BASE_URL}/EndpointAgent.zip.sha256" 2>&1)"; then
     print_check 'CURRENT_ZIP_SHA256_FILE_FETCH' 'blocked' "reason=$(printf '%q' "$current_zip_sha_raw")"
     blocked=1
     current_zip_sha_raw=''

@@ -12,7 +12,9 @@ broader rollout claim.
 It does not replace `platform-agent` release workflows. It audits the published
 release, the test artifact-host surface, and the live `artifact-host`
 deployment so that a moving or partially-recorded release line is not confused
-with rollout readiness.
+with rollout readiness. HTTP fetches are bounded by `CURL_MAX_TIME` (default:
+`20` seconds) and request no-cache semantics so metadata-only release repairs do
+not leave the verifier reading stale CDN bytes.
 
 ## 1. Required Release Record
 
