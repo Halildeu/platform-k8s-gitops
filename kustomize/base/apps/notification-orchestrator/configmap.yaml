@@ -52,6 +52,15 @@ data:
   # FQDN, breaking prod overlay).
   NOTIFY_AUTHZ_PERMISSION_SERVICE_URL: "http://permission-service:8090"
 
+  # #734: SERVICE-token decoder for the internal system-submit path
+  # (/api/v1/internal/notify/intents). Env-gated — these activate the secondary
+  # auth-service JWT decoder so a service token (iss=auth-service,
+  # aud=notification-orchestrator, perm=notify:intents:system) can reach the
+  # internal endpoint. The user-facing Keycloak decoder is unchanged.
+  NOTIFY_INTERNAL_SERVICE_JWT_ISSUER: "auth-service"
+  NOTIFY_INTERNAL_SERVICE_JWT_JWK_SET_URI: "http://auth-service:8088/oauth2/jwks"
+  NOTIFY_INTERNAL_SERVICE_JWT_AUDIENCE: "notification-orchestrator"
+
   # SMTP / Slack / Webhook adapter defaults — provider URLs etc. ConfigMap;
   # secrets ESO ExternalSecret üzerinden inject edilir.
   NOTIFY_ADAPTERS_SMTP_HOST: "OVERLAY_MUST_OVERRIDE"
