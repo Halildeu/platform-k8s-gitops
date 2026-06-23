@@ -72,7 +72,97 @@ evidence.
 | Release/version hygiene | Agent release, MSI/ProductVersion/FileVersion, artifact-host current, GitOps expected version, verifier defaults, and acceptance issue evidence agree | release artifacts plus GitOps verifier output |
 | Rollout boundary | 5/50/800 readiness is either explicitly out of scope or proven under separate signed MSI/GPO rollout gates | rollout issues, not `#208` |
 
-## 4. Explicit Non-Completion Cases
+## 4. Machine-Readable Gate Acceptance
+
+Issue state alone is not authoritative enough for the sensitive Faz 22.6 gates.
+The completion audit therefore requires machine-readable acceptance markers on
+the canonical gate issue before it can treat `#548` or `#1580` as passing. This
+prevents accidental issue closure, informal comments, or source-only evidence
+from becoming product acceptance.
+
+Keep sample marker text in this runbook, not in the live issue body. The audit
+reads the live issue body as the approval surface.
+
+### 4.1 B1.4 Hardware Attestation
+
+There are two accepted paths.
+
+The strong path closes `platform-backend#548` only when real device-key / TPM
+or secure-element evidence is carried on the agent wire and verified by the
+broker:
+
+```text
+F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1
+acceptance_scope: hardware-attestation
+device_key_evidence: present
+tpm_or_secure_element: present
+agent_wire_contract: present
+broker_verifier: pass
+root_policy: pass
+field_evidence: attached
+positive_matrix: hardware-attested-device
+negative_matrix: missing,stale,replay,wrong-device,wrong-tenant
+owner_approved_by: <named owner>
+approved_at: YYYY-MM-DD
+```
+
+The bounded pilot risk path leaves `platform-backend#548` open as a future
+hardening gate, but allows the bounded Faz 22.6 pilot to proceed on
+enrollment-backed trust when a named owner accepts the residual risk:
+
+```text
+F22_6_B1_4_RISK_ACCEPTANCE: v1
+risk_scope: bounded-pilot-enrollment-backed-trust
+accepted_gap: no-real-tpm-attestation
+compensating_controls: cert-bound-token,mTLS,revocation-check,signed-permits,dual-control,audit-recording,kill-revoke
+forbidden_claims: tpm-complete,hardware-attestation-complete,5-device,50-device,800-device,production,broad-rollout
+owner_approved_by: <named owner>
+approved_at: YYYY-MM-DD
+expires_at: YYYY-MM-DD
+```
+
+### 4.2 VIEW_ONLY Screen-Share Acceptance
+
+`platform-k8s-gitops#1580` can pass only through bounded VIEW_ONLY
+product-channel evidence. RDP, credential entry, raw shell, port-forward,
+screen-share without recording, or a UI-only session claim does not satisfy
+this gate.
+
+```text
+F22_6_VIEW_ONLY_ACCEPTANCE: v1
+acceptance_scope: bounded-pilot-view-only
+product_channel: endpoint-agent-outbound-mtls-remote-bridge
+view_mode: VIEW_ONLY
+pilot_device: <device or deviceId>
+session_id: <product session id>
+evidence_package_sha256: <64 hex chars, upper or lower case>
+recording_worm: pass
+d10_fail_closed: pass
+dlp_mask_policy: pass
+local_abort: pass
+active_indicator: pass
+viewer_path_decision: fanout-proven
+audit_negative_matrix: no-auth,wrong-device,expired-session,recording-down,dlp-deny,local-abort
+kvkk_attended_pilot_signoff: pass
+forbidden_claims: rdp,credential-entry,raw-shell,port-forward,5-device,50-device,800-device,production,broad-rollout
+owner_approved_by: <named owner>
+approved_at: YYYY-MM-DD
+expires_at: YYYY-MM-DD
+```
+
+`viewer_path_decision` may be `fanout-proven` or `owner-deferred`. A defer keeps
+the fan-out limitation explicit; it does not prove broad operator-viewer
+readiness.
+
+Marker parsing is fail-closed:
+
+- named owner cannot be empty, `TBD`, `none`, or `n/a`;
+- dates must parse as UTC `YYYY-MM-DD`;
+- expired acceptance/risk windows fail;
+- forbidden rollout claims must be explicitly listed;
+- the marker must live on the canonical issue body, not only in a comment.
+
+## 5. Explicit Non-Completion Cases
 
 The following do not complete Faz 22.6:
 
@@ -89,7 +179,7 @@ The following do not complete Faz 22.6:
   verifier agreement.
 - A green workflow whose artifact does not prove the named gate.
 
-## 5. Release And Version Standard
+## 6. Release And Version Standard
 
 The rapid `v0.2.x` release train is acceptable for pilot recovery only if the
 lineage remains deterministic. Before any 5-device or broader rollout claim,
@@ -114,7 +204,7 @@ item even when the latest tag is correct, because multiple same-day pilot
 recovery releases must be reconciled before any 5-device or broader rollout
 claim.
 
-## 6. Owner Decisions Needed
+## 7. Owner Decisions Needed
 
 Two decisions unblock the remaining completion path:
 
@@ -128,7 +218,7 @@ If either decision is not available, the autonomous path continues by hardening
 source/verifier coverage and preparing evidence scripts, but completion cannot
 be claimed.
 
-## 7. Audit Command
+## 8. Audit Command
 
 Use the completion audit helper before reporting status:
 
@@ -137,8 +227,9 @@ scripts/faz22-remote-ops/faz22-6-completion-audit.sh
 ```
 
 The audit is intentionally conservative. It prints `F22_6_COMPLETION=blocked`
-while `#548` or `#1580` remains open, or when live broker/release evidence is
-missing.
+while `#548` lacks hardware-attestation acceptance or bounded risk acceptance,
+while `#1580` lacks VIEW_ONLY acceptance, or when live broker/release evidence
+is missing.
 
 Use the release-lineage helper before any 5-device or broader rollout claim:
 
@@ -161,7 +252,7 @@ object (`isImmutable=false`) and the dense `v0.2.x` pilot-recovery train. Broad
 rollout language still requires either fixing those hygiene items or recording
 an explicit owner-approved lineage waiver for the bounded pilot only.
 
-## 8. Closure Language
+## 9. Closure Language
 
 Allowed language:
 
