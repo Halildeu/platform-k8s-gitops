@@ -630,6 +630,15 @@ Constrained executor evidence:
 - post-run cleanup: no run-scoped annotation and no step-up public-key env
   override remained on the deployment
 
+Live runtime re-check on 2026-06-23 matches that accepted evidence boundary:
+`endpoint-admin-remote-bridge` is running digest
+`sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3`
+with `restartCount=0`; all three remote-bridge ExternalSecrets are
+`Ready=True / SecretSynced`; broker heartbeat interval is `5000ms`; and the
+recent audit log shows `HELLO_VERIFIED:cert=true,attestation=false,device=false`.
+This proves current product-channel connectivity for the bounded AgentPC2
+executor gate, not true device-key / TPM attestation.
+
 Board result: `platform-agent#208` is Closed / Done for the bounded AgentPC2
 product-channel constrained executor scope. `platform-k8s-gitops#1768` and
 stale pointer `platform-agent#116` are also Closed / Done as superseded by this
