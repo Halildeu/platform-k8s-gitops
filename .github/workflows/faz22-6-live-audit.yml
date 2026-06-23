@@ -34,6 +34,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Assert GitHub read token
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::PLATFORM_GITHUB_READ_TOKEN is not configured; Faz 22.6 completion audit cannot read issue gates"
+            exit 1
+          fi
+
       - name: Run Faz 22.6 completion audit
         run: |
           set -euo pipefail
