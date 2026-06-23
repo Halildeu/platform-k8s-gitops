@@ -362,6 +362,15 @@ owner risk kabulüyle enrollment-backed trust üzerinde ilerleyebilir; 22.6.3
 broad rollout veya production remote-support claim'i için #548 ya kapanır ya da
 owner tarafından açık, süreli ve yazılı risk acceptance verilir.
 
+2026-06-23 source progress: backend parser path `platform-backend#731`
+(`5d1e4fd36792e5b7bb08fa312669c4f4db6c7038`) and agent producer path
+`platform-agent#229` (`178db2952219e24951eba18c81e77480ed328d42`) are merged.
+The agent can now assemble the strict v1 evidence envelope from pre-provisioned
+SLSA/device-key material, and the backend can parse that envelope. This is
+source/wire progress only; #548 remains blocked until real TPM/device-key
+evidence, device-attestation roots/provisioning, broker verifier pass, negative
+matrix, and accepted live field evidence exist.
+
 #### 0.7.4 Acceptance evidence checklist
 
 Her 22.6.x lane için kanıt issue comment'i ve current-state/runbook referansı
@@ -577,11 +586,11 @@ path remains: prove AgentPC2 is actually running the target version through the
 product update path, then run outbound 443 mTLS `HELLO` / permit /
 constrained-operation / negative / audit evidence for `platform-agent#208`.
 
-#### 0.7.10 2026-06-22 #208 AgentPC2 v0.2.28 product-channel accepted-candidate
+#### 0.7.10 2026-06-23 #208 AgentPC2 v0.2.28 product-channel full-matrix accepted
 
 The later product-channel path supersedes the earlier AgentPC2 activation
 no-go for the narrow bounded pilot. AgentPC2 was updated through the release
-catalog and then produced accepted-candidate constrained-executor evidence.
+catalog and then produced full-matrix constrained-executor evidence.
 
 Product update evidence:
 
@@ -600,34 +609,37 @@ Product update evidence:
 Constrained executor evidence:
 
 - workflow:
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27964962910`
-- artifact: `agentpc2-constrained-executor-evidence-27964962910`
-  (artifact id `7797551799`)
-- evidence SHA256SUMS hash:
-  `4bac950d586db224871877044749e7eefaa34d5982c42e13efbf67eb4c5807cb`
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27992032625`
+  (`success`)
+- artifact: `agentpc2-constrained-executor-evidence-27992032625`
 - runtime image digest:
-  `sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d`
+  `sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3`
 - product path: `GET_HOSTNAME`, `CONSTRAINED_PTY`, `PERMIT`,
   `transportPushed=true`, `operationStatus=permit-transport-pushed`
 - HTTP path: open/approve/step-up challenge/step-up verify/catalog operation
   returned `200/200/200/200/200`
-- verifier result: `accepted-candidate`
+- verifier result: `accepted-candidate`, `requireFullMatrix=true`,
+  `fullMatrixOk=true`
 - recording evidence: `rowCount=3`, `hasAgentOutput=true`,
   `hasEndStream=true`
 - negative evidence: no-auth catalog `401`, disabled catalog `422`,
-  command/policy override `400`, raw unrestricted PTY `400`, and non-pilot
-  capability open `400`
+  command/policy override `400`, raw unrestricted PTY `400`, non-pilot
+  capability open `400`, wrong-device/unenrolled open `404`, expired permit
+  `422`, replay `422`, operator close `204`, and closed-session operation
+  `404`
 - post-run cleanup: no run-scoped annotation and no step-up public-key env
   override remained on the deployment
 
-Boundary: this moves `platform-agent#208` to Open / Needs Verify with bounded
-AgentPC2 accepted-candidate evidence. It is not full #208 Done and does not
-prove production remote support, broad signed MSI/GPO rollout, device waves,
-inbound SSH/RDP/WinRM/SMB/RPC, unrestricted shell/file browser, or true
-TPM/device-key hardware attestation. The remaining #208 gate is the full
-lifecycle/authz/replay/termination matrix: expired permit, wrong-device or
-wrong-tenant, replay, and termination/kill/revoke evidence. `platform-backend#548`
-remains Open / Blocked for broad rollout hardware-attestation evidence.
+Board result: `platform-agent#208` is Closed / Done for the bounded AgentPC2
+product-channel constrained executor scope. `platform-k8s-gitops#1768` and
+stale pointer `platform-agent#116` are also Closed / Done as superseded by this
+accepted evidence.
+
+Boundary: this does not prove production remote support, broad signed MSI/GPO
+rollout, 5/50/800 device waves, inbound SSH/RDP/WinRM/SMB/RPC, unrestricted
+shell/file browser/clipboard/file transfer, or true TPM/device-key hardware
+attestation. `platform-backend#548` remains Open / Blocked for broad rollout
+hardware-attestation evidence.
 
 Bu doküman Endpoint-Enes / Endpoint Admin agent hattına **ücretsiz ve sektör
 standardına yakın yazılım yönetimi** kabiliyeti eklemek için takip edilebilir

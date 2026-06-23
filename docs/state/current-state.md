@@ -1,65 +1,74 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — AgentPC2 v0.2.28 product-channel constrained executor accepted-candidate (2026-06-22)
+## Live Delta — AgentPC2 #208 full-matrix accepted; B1.4 source slices reconciled (2026-06-23)
 
-`platform-agent#208` is now Open / Needs Verify. The latest live evidence
+`platform-agent#208` is now Closed / Done for the bounded AgentPC2
+product-channel constrained executor scope. The full-matrix evidence
 supersedes the earlier AgentPC2 v0.2.20-v0.2.25 activation and stale-gate
-no-go entries for the narrow bounded pilot: AgentPC2 reached the expected
-`v0.2.28` release through the product `UPDATE_AGENT` path, and the subsequent
-outbound mTLS constrained-executor smoke returned `accepted-candidate`.
+no-go entries for this narrow bounded pilot.
 
-Product update evidence:
+Accepted AgentPC2 product-channel evidence:
 
 - Workflow:
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27964789754`.
-- Evidence status: `update-observed`, reason `agent-version-updated`.
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27992032625`
+  completed `success`.
+- Evidence artifact: `agentpc2-constrained-executor-evidence-27992032625`.
 - Target endpoint: `AgentPc2` / product device
   `2f7ad30f-970a-42e7-8af8-08764ae6066f`.
-- Observed endpoint state: `observedAgentVersion=v0.2.28`,
-  `observedStatus=ONLINE`, `observedLastSeenAt=2026-06-22T15:38:07.751839Z`.
-- Release artifact: `v0.2.28`, endpoint-agent.exe SHA256
-  `e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4`,
-  signer thumbprint `D68F4F530137EB65CE44E3405E82B46205E753E5`.
-- Evidence SHA256SUMS hash:
-  `77151aabe14ab316213edc10a19debaecec44d4752328e701485880f10e82ae8`.
-
-Constrained executor evidence:
-
-- Workflow:
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/27964962910`.
-- Evidence artifact: `agentpc2-constrained-executor-evidence-27964962910`,
-  artifact id `7797551799`.
-- Evidence SHA256SUMS hash:
-  `4bac950d586db224871877044749e7eefaa34d5982c42e13efbf67eb4c5807cb`.
 - Runtime: `k3d-test/platform-test`, deployment
-  `endpoint-admin-remote-bridge`, image digest
-  `sha256:fb229ff98a1b7afb3cc31fe6de49312192686ee3ff6f80952494892d19b23b0d`.
+  `endpoint-admin-remote-bridge`, requested digest
+  `sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3`.
 - Product path: `GET_HOSTNAME`, `CONSTRAINED_PTY`, signed `PERMIT`,
   `transportPushed=true`, `operationStatus=permit-transport-pushed`.
 - HTTP path: open/approve/step-up challenge/step-up verify/catalog operation
   returned `200/200/200/200/200`.
-- Verifier result: `accepted-candidate`; recording has `rowCount=3`,
-  `hasAgentOutput=true`, and `hasEndStream=true`.
+- Verifier result: `accepted-candidate` with `requireFullMatrix=true` and
+  `fullMatrixOk=true`.
+- Recording has `rowCount=3`, `hasAgentOutput=true`, and `hasEndStream=true`.
 - Governance evidence: operator and approver are distinct, step-up is verified,
   ticket/justification are present, WORM recording is enabled, recording is
-  fail-closed, and the evidence redaction scan reported no high-confidence
-  secret marker.
-- Negative evidence covered: no-auth catalog `401`, disabled catalog `422`,
-  command/policy override `400`, raw unrestricted PTY `400`, and non-pilot
-  capability open `400`.
-- Runtime cleanup after workflow: no run-scoped annotation, no
-  `REMOTE_BRIDGE_STEP_UP_PUBLIC_KEY_PEM` env override, and deployment rollout
-  remained successful.
+  fail-closed, and the evidence redaction scan covered `35` files with `0`
+  findings.
+- Required negative evidence is present: raw unrestricted PTY `400`,
+  command/policy override `400`, disabled catalog `422`, no-auth catalog `401`,
+  wrong-device/unenrolled open `404`, expired permit `422`, replay `422`,
+  operator close `204`, and closed-session operation `404`.
+- Evidence summary:
+  `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4774267666`.
 
-Boundary: this is bounded AgentPC2 product-channel accepted-candidate evidence,
-not full #208 Done. The remaining #208 verification gap is the full
-lifecycle/authz/replay/termination matrix: expired permit, wrong-device or
-wrong-tenant, replay, and termination/kill/revoke evidence are not present in
-this bundle. This also does not prove signed MSI/GPO broad rollout, 5/50/800
-device waves, production remote-support readiness, inbound
-SSH/RDP/WinRM/SMB/RPC reachability, unrestricted shell/file browser, or true
-TPM/device-key hardware attestation. `platform-backend#548` therefore remains
-Open / Blocked for broad rollout hardware-attestation evidence.
+Board/state reconciliation:
+
+- `platform-agent#208`: `CLOSED`, reason `COMPLETED`, Project #2 `Done`.
+- `platform-k8s-gitops#1768`: `CLOSED`, reason `COMPLETED`, Project #2
+  `Done`; the earlier AgentPC2 bootstrap blocker is superseded by the accepted
+  v0.2.28 product-channel evidence.
+- `platform-agent#116`: `CLOSED`, reason `COMPLETED`, Project #2 `Done`; the
+  stale outbound-tunnel spike/live-acceptance pointer is superseded by #208.
+
+B1.4 source progress and boundary:
+
+- `platform-backend#731` merged at `2026-06-23T00:49:23Z` with merge commit
+  `5d1e4fd36792e5b7bb08fa312669c4f4db6c7038`. It adds a strict v1
+  `AgentHello.attestationEvidenceB64` parser while preserving the legacy
+  bounded-pilot SLSA payload format.
+- `platform-agent#229` merged at `2026-06-23T01:16:09Z` with merge commit
+  `178db2952219e24951eba18c81e77480ed328d42`. It adds the agent-side strict
+  v1 envelope producer from pre-provisioned SLSA/device-key material while
+  preserving the raw override and failing closed on partial/malformed
+  structured config.
+- `platform-agent#228`: `CLOSED`, reason `COMPLETED`, Project #2 `Done` for
+  the source-producer scope only.
+- `platform-backend#548`: `OPEN`, reason `REOPENED`, Project #2 `Blocked`.
+  Real completion still requires device-attestation CA/provisioning,
+  device-attestation roots configured in the broker, real TPM/device-key
+  material on the wire, broker verifier pass, negative matrix, and accepted
+  live field evidence.
+
+Boundary: this is bounded AgentPC2 product-channel acceptance only. It does not
+prove signed MSI/GPO broad rollout, 5-PC/50-PC/800-PC wave readiness,
+production remote-support readiness, inbound SSH/RDP/WinRM/SMB/RPC reachability,
+unrestricted shell/file browser/clipboard/file transfer, or true TPM/device-key
+hardware attestation for broad rollout.
 
 ## Live Delta — AgentPC2 v0.2.25 local bootstrap verified; #208 acceptance rerun blocked by stale defaults (2026-06-22)
 
