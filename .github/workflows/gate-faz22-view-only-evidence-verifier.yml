@@ -6,7 +6,9 @@ on:
       - '.github/workflows/gate-faz22-view-only-evidence-verifier.yml'
       - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh'
   push:
     branches:
       - main
@@ -14,7 +16,9 @@ on:
       - '.github/workflows/gate-faz22-view-only-evidence-verifier.yml'
       - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh'
 
 permissions:
   contents: read
@@ -25,7 +29,7 @@ concurrency:
 
 jobs:
   verifier-regression:
-    name: Verify VIEW_ONLY evidence manifest guard
+    name: Verify VIEW_ONLY evidence manifest guard and package generator
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -38,10 +42,18 @@ jobs:
           set -euo pipefail
           bash -n \
             scripts/faz22-remote-ops/faz22-6-completion-audit.sh \
-            tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh
+            scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh \
+            tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh \
+            tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh
 
       - name: Run VIEW_ONLY evidence verifier regression test
         run: |
           set -euo pipefail
           TMPDIR="$RUNNER_TEMP" \
             tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh
+
+      - name: Run VIEW_ONLY evidence package generator regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_view_only_evidence_package.sh
