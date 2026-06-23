@@ -239,7 +239,9 @@ REMOTE_BRIDGE_KUBECTL_MODE=local SSH_TARGET=local \
 The local-kubectl mode is intended for execution on `staging-sw` or the
 `[self-hosted, staging-sw, testai-deploy]` runner. The canonical workflow is
 `.github/workflows/faz22-6-live-audit.yml`; it is read-only, uploads the audit
-output, and fails if `REMOTE_BRIDGE_LIVE=pass mode=local` is not present.
+output, and fails if `REMOTE_BRIDGE_LIVE=pass mode=local-kubectl` is not
+present. Because the gate repositories are public, the workflow uses the
+short-lived read-only `github.token` rather than a long-lived repository secret.
 
 The audit is intentionally conservative. It prints `F22_6_COMPLETION=blocked`
 while `#548` lacks hardware-attestation acceptance or bounded risk acceptance,
