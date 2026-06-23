@@ -1,5 +1,47 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 self-hosted completion audit canonicalized (2026-06-23)
+
+Faz 22.6 remote-bridge live evidence is no longer blocked by Mac-side SSH to
+`staging-sw`. The canonical path is now the self-hosted `staging-sw` runner
+workflow:
+
+- PR #1908 merged the read-only local-kubectl completion-audit workflow and
+  added `REMOTE_BRIDGE_KUBECTL_MODE=local-kubectl` support to
+  `scripts/faz22-remote-ops/faz22-6-completion-audit.sh`.
+- PR #1909 added a fail-fast GitHub token preflight after a manual run showed
+  the previous long-lived secret path could otherwise produce false-green audit
+  output when `GH_TOKEN` was empty.
+- PR #1913 replaced the absent `PLATFORM_GITHUB_READ_TOKEN` dependency with
+  the workflow-scoped read-only `github.token`; all gate repositories read by
+  the audit are public.
+- Workflow run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28010996845`
+  completed `success` on head
+  `cc9031f4e9c8c5d5ea88c207d5f105a15f780b5b`, runner
+  `staging-sw-testai-deploy`, machine `stagingsw`.
+- The run produced canonical live cluster evidence:
+  `REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_digest=sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c`.
+- The same run read live GitHub gate state without `gh` auth errors.
+- Board items #1907 and #1911 are `Closed` / Project #2 `Done`.
+
+Current completion-audit blockers after run `28010996845`:
+
+- `platform-backend#548`: `GATE_B1_4_HARDWARE_ATTESTATION=blocked`
+  (`missing-acceptance-marker`).
+- `platform-k8s-gitops#1580`: `GATE_VIEW_ONLY_SCREEN_SHARE=blocked`
+  (`missing-acceptance-marker`).
+- `platform-k8s-gitops#1901`: `RELEASE_LINEAGE_WAIVER=blocked`.
+- Agent release train remains `needs_hygiene`:
+  `latest=v0.2.28`, `recent_v0_2_count=20`, `isImmutable=false`.
+
+Therefore `F22_6_COMPLETION=blocked`, but `fix-remote-bridge-live` is no
+longer in `F22_6_NEXT_REQUIRED`. The current next-required set is:
+
+```text
+F22_6_NEXT_REQUIRED=close-or-risk-accept-548-with-marker,close-1580-with-view-only-marker,fix-release-lineage-hygiene
+```
+
 ## Live Delta — Faz 22.6 #548 digest bump live-wired on test overlay (2026-06-23)
 
 GitOps/live-wiring status changed after the #548 digest bump follow-up:
