@@ -329,6 +329,20 @@ If either decision is not available, the autonomous path continues by hardening
 source/verifier coverage and preparing evidence scripts, but completion cannot
 be claimed.
 
+After a live audit, generate a read-only owner decision package instead of
+hand-interpreting the final blocker lines:
+
+```bash
+scripts/faz22-remote-ops/faz22-6-completion-decision-package.sh \
+  --audit-file /path/to/faz22-6-completion-audit.txt \
+  --output-dir /path/to/decision-package
+```
+
+The package writes bounded JSON/Markdown with the parsed completion status,
+remaining owner inputs, and the exact helper commands for B1.4, VIEW_ONLY, and
+release-lineage. It does not approve risk, write issue markers, mutate GitHub,
+touch Kubernetes/endpoints/releases/secrets, or claim completion.
+
 ## 8. Audit Command
 
 Use the completion audit helper before reporting status:
