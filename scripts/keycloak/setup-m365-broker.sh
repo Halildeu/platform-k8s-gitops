@@ -427,6 +427,199 @@ UPEOF
   rm -f "$UP_HOST"
 fi
 
+# ─── 4b. Client token mapper: entra_tid user-attr → token claim ────────────
+# DURABILITY FIX (Codex thread 019ef32b, Option A). Steps above only write the
+# entra_tid USER ATTRIBUTE (IdP mapper) and declare it in the user profile —
+# but NO client protocol mapper surfaces it INTO the issued token. The backend
+# M365 auto-provision gate (requireCurrentUser → JwtAutoProvisionGate) REQUIRES
+# an `entra_tid` token claim as its M365 marker; without this mapper every M365
+# login is denied `missing-entra-tid` and auto-provision never works for anyone
+# (the live bug, hotfixed by a direct DB insert this step now makes durable
+# across a KC re-bootstrap). Mirrors that proven mapper exactly:
+# oidc-usermodel-attribute-mapper on the SPA realm client, entra_tid →
+# claim.name=entra_tid (access+id+userinfo). Idempotent by name; fail-CLOSED if
+# a FOREIGN mapper already emits the entra_tid claim — directly OR via a default
+# client scope — to avoid a duplicate-claim conflict (Codex 019ef32b (b)).
+TOKEN_CLIENT_ID="${TOKEN_CLIENT_ID:-frontend}"
+ENTRA_TID_MAPPER="entra-tid"
+echo ""
+echo "=== Step 4b: Client token mapper ('$ENTRA_TID_MAPPER' on client '$TOKEN_CLIENT_ID') ==="
+
+# Resolve the realm client (exactly one) that mints SPA / user-service tokens,
+# via JSON parse (repo pattern; avoids any CSV-header ambiguity across kcadm
+# versions — Codex 019ef32b). Resolved ALWAYS (also under VERIFY_ONLY=1, since
+# the Step 5 read-back needs it). Read failure → fail-closed.
+if ! FE_CLIENTS_JSON=$($KC get clients -r "$REALM" -q "clientId=$TOKEN_CLIENT_ID" --fields id 2>/dev/null); then
+  echo "ERROR: token client lookup ('$TOKEN_CLIENT_ID') kcadm okuması başarısız" >&2
+  exit 1
+fi
+FE_CLIENT_ID=$(printf '%s' "$FE_CLIENTS_JSON" | python3 -c '
+import json, sys
+try:
+    arr = json.load(sys.stdin)
+except Exception:
+    arr = []
+ids = [c.get("id") for c in arr if c.get("id")] if isinstance(arr, list) else []
+print(ids[0] if len(ids) == 1 else "")
+' 2>/dev/null || echo "")
+if [ -z "$FE_CLIENT_ID" ]; then
+  echo "ERROR: token client '$TOKEN_CLIENT_ID' bu realm'de tek eşleşme değil." >&2
+  echo "       SPA token client adı farklıysa TOKEN_CLIENT_ID env ile verin." >&2
+  exit 1
+fi
+echo "  · token client internal id: $FE_CLIENT_ID"
+
+# Shared helper: print the client's EFFECTIVE entra_tid claim surface as a JSON
+# object {"direct":[...],"scoped":[...]} — direct protocol mappers PLUS every
+# default-client-scope's mappers. FAIL-CLOSED: any kcadm read error prints an
+# ERR_* token (never a fake-empty result) so the duplicate/collision guard
+# cannot be silently disabled by an API hiccup (Codex 019ef32b (3)). Callers
+# MUST treat an ERR_* line as fatal.
+collect_entra_tid_surface() {
+  local fe_id="$1" direct scopes_json sids sid sm agg
+  if ! direct=$($KC get "clients/$fe_id/protocol-mappers/models" -r "$REALM" 2>/dev/null); then
+    echo "ERR_READ_DIRECT"; return 0
+  fi
+  if ! scopes_json=$($KC get "clients/$fe_id/default-client-scopes" -r "$REALM" 2>/dev/null); then
+    echo "ERR_READ_DEFAULT_SCOPES"; return 0
+  fi
+  sids=$(printf '%s' "$scopes_json" | python3 -c '
+import json, sys
+try:
+    arr = json.load(sys.stdin)
+except Exception:
+    arr = []
+[print(s["id"]) for s in (arr if isinstance(arr, list) else []) if s.get("id")]
+' 2>/dev/null || echo "")
+  agg="$(mktemp /tmp/_m365_surf.XXXXXX.json)"; echo "[]" > "$agg"
+  for sid in $sids; do
+    if ! sm=$($KC get "client-scopes/$sid/protocol-mappers/models" -r "$REALM" 2>/dev/null); then
+      rm -f "$agg"; echo "ERR_READ_SCOPE_MAPPERS"; return 0
+    fi
+    M365_AGG="$(cat "$agg")" M365_SM="$sm" python3 - "$agg" <<'AGGEOF'
+import json, os, sys
+try: agg = json.loads(os.environ.get("M365_AGG") or "[]")
+except Exception: agg = []
+try: sm = json.loads(os.environ.get("M365_SM") or "[]")
+except Exception: sm = []
+if not isinstance(agg, list): agg = []
+if isinstance(sm, list): agg.extend(sm)
+json.dump(agg, open(sys.argv[1], "w"))
+AGGEOF
+  done
+  M365_DIRECT="$direct" M365_SCOPED="$(cat "$agg")" python3 -c '
+import json, os
+def load(e):
+    try:
+        v = json.loads(os.environ.get(e) or "[]"); return v if isinstance(v, list) else []
+    except Exception:
+        return []
+print(json.dumps({"direct": load("M365_DIRECT"), "scoped": load("M365_SCOPED")}))
+' 2>/dev/null || echo "ERR_SURFACE_BUILD"
+  rm -f "$agg"
+}
+
+if [ "$VERIFY_ONLY" != "1" ]; then
+  # Build the EFFECTIVE entra_tid surface (direct + default scopes), fail-closed.
+  SURFACE=$(collect_entra_tid_surface "$FE_CLIENT_ID")
+  case "$SURFACE" in
+    ERR_*)
+      echo "ERROR: entra_tid surface read failed ($SURFACE) — fail-closed, mapper kararı verilmiyor" >&2
+      exit 1
+      ;;
+  esac
+  # Decision: CREATE | UPDATE:<id> | NOOP | FAIL:<reason>.
+  # OWNERSHIP = ANY mapper whose config.claim.name == entra_tid, regardless of
+  # protocolMapper type (Codex 019ef32b (1) — a hardcoded-claim or script mapper
+  # emitting entra_tid must also count). A scoped owner, OR a direct owner not
+  # named '$ENTRA_TID_MAPPER', is FOREIGN → fail-closed (avoid duplicate claim).
+  # The expected mapper is validated separately for protocolMapper + 7-key cfg.
+  DECISION=$(M365_SURFACE="$SURFACE" M365_NAME="$ENTRA_TID_MAPPER" python3 -c '
+import json, os
+name = os.environ["M365_NAME"]
+CLAIM = "entra_tid"
+try:
+    surf = json.loads(os.environ.get("M365_SURFACE") or "{}")
+    if not isinstance(surf, dict): surf = {}
+except Exception:
+    surf = {}
+direct = surf.get("direct") or []
+scoped = surf.get("scoped") or []
+def owns(m):
+    return (m.get("config") or {}).get("claim.name") == CLAIM
+want = {"user.attribute": "entra_tid", "claim.name": "entra_tid", "jsonType.label": "String",
+        "access.token.claim": "true", "id.token.claim": "true",
+        "userinfo.token.claim": "true", "multivalued": "false"}
+foreign = [m for m in direct if owns(m) and m.get("name") != name] + [m for m in scoped if owns(m)]
+mine = [m for m in direct if m.get("name") == name]
+if foreign:
+    print("FAIL:foreign mapper(s) already emit entra_tid: " + ", ".join(str(m.get("name")) for m in foreign))
+elif len(mine) > 1:
+    print("FAIL:multiple direct mappers named " + name)
+elif mine:
+    m = mine[0]; cfg = m.get("config") or {}
+    correct = (m.get("protocolMapper") == "oidc-usermodel-attribute-mapper"
+               and all(str(cfg.get(k)) == v for k, v in want.items()))
+    print("NOOP" if correct else "UPDATE:" + str(m.get("id")))
+else:
+    print("CREATE")
+' 2>/dev/null || echo "FAIL:decision script error")
+
+  case "$DECISION" in
+    FAIL:*)
+      echo "ERROR: entra_tid client-mapper guard: ${DECISION#FAIL:}" >&2
+      exit 1
+      ;;
+    NOOP)
+      echo "  ✓ client mapper '$ENTRA_TID_MAPPER' zaten doğru (no-op)"
+      ;;
+    CREATE|UPDATE:*)
+      CM_ID=""
+      if [ "${DECISION%%:*}" = "UPDATE" ]; then CM_ID="${DECISION#UPDATE:}"; fi
+      CM_HOST="$(mktemp /tmp/_m365_cm.XXXXXX.json)"
+      CM_CTR="/tmp/m365-cm-$$.json"
+      M365_CM_NAME="$ENTRA_TID_MAPPER" M365_CM_ID="$CM_ID" python3 - "$CM_HOST" <<'CMEOF'
+import json, os, sys
+m = {
+    "name": os.environ["M365_CM_NAME"],
+    "protocol": "openid-connect",
+    "protocolMapper": "oidc-usermodel-attribute-mapper",
+    "config": {
+        "user.attribute": "entra_tid",
+        "claim.name": "entra_tid",
+        "jsonType.label": "String",
+        "access.token.claim": "true",
+        "id.token.claim": "true",
+        "userinfo.token.claim": "true",
+        "multivalued": "false",
+    },
+}
+mid = os.environ.get("M365_CM_ID", "")
+if mid:
+    m["id"] = mid
+json.dump(m, open(sys.argv[1], "w"))
+CMEOF
+      docker exec -i "$KC_CONTAINER" sh -lc "umask 077; cat > '$CM_CTR'" < "$CM_HOST" \
+        || { echo "ERROR: client mapper container'a yazılamadı" >&2; rm -f "$CM_HOST"; exit 1; }
+      if [ -n "$CM_ID" ]; then
+        $KC update "clients/$FE_CLIENT_ID/protocol-mappers/models/$CM_ID" -r "$REALM" -f "$CM_CTR" >/dev/null 2>&1 \
+          || { echo "ERROR: client mapper update failed" >&2; rm -f "$CM_HOST"; exit 1; }
+        echo "  ✓ client mapper '$ENTRA_TID_MAPPER' converged (update)"
+      else
+        $KC create "clients/$FE_CLIENT_ID/protocol-mappers/models" -r "$REALM" -f "$CM_CTR" >/dev/null 2>&1 \
+          || { echo "ERROR: client mapper create failed" >&2; rm -f "$CM_HOST"; exit 1; }
+        echo "  ✓ client mapper '$ENTRA_TID_MAPPER' created"
+      fi
+      rm -f "$CM_HOST"
+      docker exec "$KC_CONTAINER" rm -f "$CM_CTR" >/dev/null 2>&1 || true
+      ;;
+    *)
+      echo "ERROR: beklenmeyen client-mapper kararı: '$DECISION'" >&2
+      exit 1
+      ;;
+  esac
+fi
+
 # ─── 5. Verify (read-back assertions) ──────────────────────────────────────
 echo ""
 echo "=== Step 5/5: Verify ==="
@@ -561,6 +754,64 @@ print("PASS" if ok else "FAIL")
 echo "$UP_VERIFY"
 echo "$UP_VERIFY" | tail -1 | grep -q "^PASS$" \
   || { echo "ERROR: user-profile verify FAILED" >&2; exit 3; }
+
+# Client token mapper read-back: EXACTLY ONE EFFECTIVE entra_tid claim emitter
+# on the token client — direct mappers PLUS default-client-scope mappers
+# combined (Codex 019ef32b (2)/(d)) — and that one is the DIRECT
+# '$ENTRA_TID_MAPPER' (oidc-usermodel-attribute-mapper) with the full 7-key
+# config; zero scoped emitters. Reuses the same fail-closed surface collector
+# as the apply path so a default-scope drift can't slip past a verify-only run.
+# Structural gate only — issued-token decode after a fresh M365 login is the
+# acceptance smoke (RB-m365-sso-broker.md), since an existing session token
+# won't carry the new claim until refreshed.
+CM_SURFACE=$(collect_entra_tid_surface "$FE_CLIENT_ID")
+case "$CM_SURFACE" in
+  ERR_*)
+    echo "ERROR: client token mapper verify — surface read failed ($CM_SURFACE)" >&2
+    exit 3
+    ;;
+esac
+CM_VERIFY=$(M365_SURFACE="$CM_SURFACE" M365_NAME="$ENTRA_TID_MAPPER" python3 -c '
+import json, os
+name = os.environ["M365_NAME"]
+CLAIM = "entra_tid"
+try:
+    surf = json.loads(os.environ.get("M365_SURFACE") or "{}")
+    if not isinstance(surf, dict): surf = {}
+except Exception:
+    surf = {}
+direct = surf.get("direct") or []
+scoped = surf.get("scoped") or []
+def owns(m):
+    return (m.get("config") or {}).get("claim.name") == CLAIM
+direct_owners = [m for m in direct if owns(m)]
+scoped_owners = [m for m in scoped if owns(m)]
+ok = True
+print(f"  effective entra_tid emitters: direct={len(direct_owners)} scoped={len(scoped_owners)}")
+if len(scoped_owners) != 0:
+    ok = False
+    print("  FAIL: a default client scope emits entra_tid (duplicate-claim risk)")
+if len(direct_owners) != 1:
+    ok = False
+else:
+    m = direct_owners[0]; cfg = m.get("config") or {}
+    want = {"user.attribute": "entra_tid", "claim.name": "entra_tid", "jsonType.label": "String",
+            "access.token.claim": "true", "id.token.claim": "true",
+            "userinfo.token.claim": "true", "multivalued": "false"}
+    print(f"  mapper name={m.get(\"name\")} protocolMapper={m.get(\"protocolMapper\")}")
+    if m.get("name") != name:
+        ok = False
+    if m.get("protocolMapper") != "oidc-usermodel-attribute-mapper":
+        ok = False
+    for k, v in want.items():
+        if str(cfg.get(k)) != v:
+            ok = False
+            print(f"  cfg {k}={cfg.get(k)} (want {v})")
+print("PASS" if ok else "FAIL")
+' 2>/dev/null || echo "FAIL: client mapper verify error")
+echo "$CM_VERIFY"
+echo "$CM_VERIFY" | tail -1 | grep -q "^PASS$" \
+  || { echo "ERROR: client token mapper verify FAILED — entra_tid claim mapper eksik/yanlış" >&2; exit 3; }
 
 echo ""
 echo "=== M365 broker apply (v2 auto-provision) — PASS (realm=$REALM) ==="
