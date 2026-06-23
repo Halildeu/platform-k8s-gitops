@@ -3916,7 +3916,19 @@ images:
     #   Image build run: 27172365605 (success).
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-3627195
     #   digest sha256:d65a92ced4e33882429e3150dd749fd801d0dfec0bc9b07c5c30674cdc0b79b4
-    digest: sha256:d65a92ced4e33882429e3150dd749fd801d0dfec0bc9b07c5c30674cdc0b79b4
+    #
+    # 2026-06-23 update: sha-1b4b2b7 = main 1b4b2b7c (platform-web #835).
+    #   M365 SSO first-login now triggers the user-service backend provision
+    #   (ensureUserProvisioned → GET /api/v1/users/me/profile in the bootstrap
+    #   chain), so a first-login M365 user auto-provisions hands-free with no
+    #   manual call. Durable pin: the imperative deploy-testai run 28010234060
+    #   set this image and PASSED Gate 1a (pod digest) + 1b (public 200 +
+    #   /assets/mf-entry-bootstrap entry reachable) + 1c (build-info sha=1b4b2b7)
+    #   + Gate 2 (Playwright behavior smoke); ArgoCD selfHeal then reverted to
+    #   the old pin, so this commit makes sha-1b4b2b7 the durable overlay digest.
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-1b4b2b7
+    #   digest sha256:61ddb10c274696d4ce36a066794cda0b91ff5e75b02d00d2c828d1e50dd4caa7
+    digest: sha256:61ddb10c274696d4ce36a066794cda0b91ff5e75b02d00d2c828d1e50dd4caa7
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
