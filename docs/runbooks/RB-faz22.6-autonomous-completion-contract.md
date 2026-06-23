@@ -226,6 +226,21 @@ Use the completion audit helper before reporting status:
 scripts/faz22-remote-ops/faz22-6-completion-audit.sh
 ```
 
+Mac/operator shells use `SSH_TARGET=staging-sw` by default and collect live
+broker evidence over SSH. If TCP/22 to `staging-sw` is unavailable, use the
+self-hosted runner path instead of treating the Mac-side SSH failure as cluster
+truth:
+
+```bash
+REMOTE_BRIDGE_KUBECTL_MODE=local SSH_TARGET=local \
+  scripts/faz22-remote-ops/faz22-6-completion-audit.sh
+```
+
+The local-kubectl mode is intended for execution on `staging-sw` or the
+`[self-hosted, staging-sw, testai-deploy]` runner. The canonical workflow is
+`.github/workflows/faz22-6-live-audit.yml`; it is read-only, uploads the audit
+output, and fails if `REMOTE_BRIDGE_LIVE=pass mode=local` is not present.
+
 The audit is intentionally conservative. It prints `F22_6_COMPLETION=blocked`
 while `#548` lacks hardware-attestation acceptance or bounded risk acceptance,
 while `#1580` lacks VIEW_ONLY acceptance, or when live broker/release evidence
