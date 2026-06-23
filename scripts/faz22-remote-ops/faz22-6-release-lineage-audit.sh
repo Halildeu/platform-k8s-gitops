@@ -9,6 +9,7 @@ set -euo pipefail
 
 AGENT_REPO="${AGENT_REPO:-Halildeu/platform-agent}"
 SSH_TARGET="${SSH_TARGET:-staging-sw}"
+RELEASE_LINEAGE_KUBECTL_MODE="${RELEASE_LINEAGE_KUBECTL_MODE:-ssh}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
 EXPECTED_AGENT_TAG="${EXPECTED_AGENT_TAG:-v0.2.28}"
@@ -59,6 +60,14 @@ fetch_url() {
   # fetch_url <url>
   # Keep the audit bounded and avoid stale CDN bytes after metadata-only release repairs.
   curl --max-time "$CURL_MAX_TIME" -fsSL -H 'Cache-Control: no-cache' "$1"
+}
+
+artifact_host_kubectl_output() {
+  kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" get deploy artifact-host \
+    -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,UPDATED:.status.updatedReplicas,IMAGE:.spec.template.spec.containers[0].image
+  kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" get pod \
+    -l app.kubernetes.io/name=artifact-host \
+    -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,IMAGEID:.status.containerStatuses[0].imageID
 }
 
 waiver_field() {
@@ -179,7 +188,6 @@ main() {
   need curl
   need awk
   need grep
-  need ssh
 
   local blocked=0
   local needs_hygiene=0
@@ -370,22 +378,61 @@ main() {
     nonwaiver_hygiene=1
   fi
 
-  local live q_context q_namespace digest_hits
-  q_context="$(shell_quote "$KUBE_CONTEXT")"
-  q_namespace="$(shell_quote "$KUBE_NAMESPACE")"
-  # shellcheck disable=SC2029 # q_context/q_namespace are shell-escaped locally and intentionally expanded before ssh.
-  if live="$(ssh "$SSH_TARGET" "kubectl --context $q_context -n $q_namespace get deploy artifact-host -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,UPDATED:.status.updatedReplicas,IMAGE:.spec.template.spec.containers[0].image && kubectl --context $q_context -n $q_namespace get pod -l app.kubernetes.io/name=artifact-host -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,IMAGEID:.status.containerStatuses[0].imageID" 2>&1)"; then
-    printf 'ARTIFACT_HOST_LIVE_OUTPUT_BEGIN\n%s\nARTIFACT_HOST_LIVE_OUTPUT_END\n' "$live"
-    digest_hits="$(printf '%s\n' "$live" | grep -c "$EXPECTED_ARTIFACT_HOST_DIGEST" || true)"
-    if [ "$digest_hits" -ge "$MIN_ARTIFACT_HOST_DIGEST_HITS" ]; then
-      print_check 'ARTIFACT_HOST_LIVE_DIGEST' 'pass' "expected_digest=$EXPECTED_ARTIFACT_HOST_DIGEST digest_hits=$digest_hits"
+  local live q_context q_namespace digest_hits effective_mode
+  case "$RELEASE_LINEAGE_KUBECTL_MODE" in
+    local|local-kubectl) effective_mode="local-kubectl" ;;
+    ssh) effective_mode="ssh" ;;
+    *)
+      print_check 'ARTIFACT_HOST_LIVE_DIGEST' 'blocked' "mode=$(printf '%q' "$RELEASE_LINEAGE_KUBECTL_MODE") reason=invalid-release-lineage-kubectl-mode"
+      blocked=1
+      effective_mode="$RELEASE_LINEAGE_KUBECTL_MODE"
+      ;;
+  esac
+  if [ "$SSH_TARGET" = "local" ]; then
+    effective_mode="local-kubectl"
+  fi
+
+  if [ -z "$KUBE_CONTEXT" ]; then
+    print_check 'ARTIFACT_HOST_LIVE_DIGEST' 'blocked' "mode=$effective_mode reason=empty-kube-context"
+    blocked=1
+  elif [ -z "$KUBE_NAMESPACE" ]; then
+    print_check 'ARTIFACT_HOST_LIVE_DIGEST' 'blocked' "mode=$effective_mode reason=empty-kube-namespace"
+    blocked=1
+  elif [ "$effective_mode" = "local-kubectl" ]; then
+    if ! command -v kubectl >/dev/null 2>&1; then
+      print_check 'ARTIFACT_HOST_LIVE_DIGEST' 'blocked' "mode=$effective_mode reason=missing-kubectl"
+      blocked=1
+    elif live="$(artifact_host_kubectl_output 2>&1)"; then
+      printf 'ARTIFACT_HOST_LIVE_OUTPUT_BEGIN\n%s\nARTIFACT_HOST_LIVE_OUTPUT_END\n' "$live"
+      digest_hits="$(printf '%s\n' "$live" | grep -c "$EXPECTED_ARTIFACT_HOST_DIGEST" || true)"
+      if [ "$digest_hits" -ge "$MIN_ARTIFACT_HOST_DIGEST_HITS" ]; then
+        print_check 'ARTIFACT_HOST_LIVE_DIGEST' 'pass' "mode=$effective_mode expected_digest=$EXPECTED_ARTIFACT_HOST_DIGEST digest_hits=$digest_hits"
+      else
+        print_check 'ARTIFACT_HOST_LIVE_DIGEST' 'blocked' "mode=$effective_mode expected_digest=$EXPECTED_ARTIFACT_HOST_DIGEST digest_hits=$digest_hits min_hits=$MIN_ARTIFACT_HOST_DIGEST_HITS"
+        blocked=1
+      fi
     else
-      print_check 'ARTIFACT_HOST_LIVE_DIGEST' 'blocked' "expected_digest=$EXPECTED_ARTIFACT_HOST_DIGEST digest_hits=$digest_hits min_hits=$MIN_ARTIFACT_HOST_DIGEST_HITS"
+      print_check 'ARTIFACT_HOST_LIVE_DIGEST' 'blocked' "mode=$effective_mode reason=$(printf '%q' "$live")"
       blocked=1
     fi
   else
-    print_check 'ARTIFACT_HOST_LIVE_DIGEST' 'blocked' "reason=$(printf '%q' "$live")"
-    blocked=1
+    need ssh
+    q_context="$(shell_quote "$KUBE_CONTEXT")"
+    q_namespace="$(shell_quote "$KUBE_NAMESPACE")"
+    # shellcheck disable=SC2029 # q_context/q_namespace are shell-escaped locally and intentionally expanded before ssh.
+    if live="$(ssh "$SSH_TARGET" "kubectl --context $q_context -n $q_namespace get deploy artifact-host -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,UPDATED:.status.updatedReplicas,IMAGE:.spec.template.spec.containers[0].image && kubectl --context $q_context -n $q_namespace get pod -l app.kubernetes.io/name=artifact-host -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,IMAGEID:.status.containerStatuses[0].imageID" 2>&1)"; then
+      printf 'ARTIFACT_HOST_LIVE_OUTPUT_BEGIN\n%s\nARTIFACT_HOST_LIVE_OUTPUT_END\n' "$live"
+      digest_hits="$(printf '%s\n' "$live" | grep -c "$EXPECTED_ARTIFACT_HOST_DIGEST" || true)"
+      if [ "$digest_hits" -ge "$MIN_ARTIFACT_HOST_DIGEST_HITS" ]; then
+        print_check 'ARTIFACT_HOST_LIVE_DIGEST' 'pass' "mode=$effective_mode expected_digest=$EXPECTED_ARTIFACT_HOST_DIGEST digest_hits=$digest_hits"
+      else
+        print_check 'ARTIFACT_HOST_LIVE_DIGEST' 'blocked' "mode=$effective_mode expected_digest=$EXPECTED_ARTIFACT_HOST_DIGEST digest_hits=$digest_hits min_hits=$MIN_ARTIFACT_HOST_DIGEST_HITS"
+        blocked=1
+      fi
+    else
+      print_check 'ARTIFACT_HOST_LIVE_DIGEST' 'blocked' "mode=$effective_mode reason=$(printf '%q' "$live")"
+      blocked=1
+    fi
   fi
 
   if [ "$blocked" -ne 0 ]; then
