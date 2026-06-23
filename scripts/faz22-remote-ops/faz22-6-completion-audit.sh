@@ -142,7 +142,7 @@ main() {
     printf 'F22_6_COMPLETION=pass\n'
   else
     printf 'F22_6_COMPLETION=blocked\n'
-    printf 'F22_6_NEXT_REQUIRED=close-or-risk-accept-548,close-1580,finish-release-lineage-audit\n'
+    printf 'F22_6_NEXT_REQUIRED=close-or-risk-accept-548,close-1580,fix-release-lineage-hygiene\n'
   fi
 }
 
