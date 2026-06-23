@@ -12,6 +12,7 @@ BACKEND_REPO="${BACKEND_REPO:-Halildeu/platform-backend}"
 AGENT_REPO="${AGENT_REPO:-Halildeu/platform-agent}"
 WEB_REPO="${WEB_REPO:-Halildeu/platform-web}"
 SSH_TARGET="${SSH_TARGET:-staging-sw}"
+REMOTE_BRIDGE_KUBECTL_MODE="${REMOTE_BRIDGE_KUBECTL_MODE:-ssh}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
 EXPECTED_REMOTE_BRIDGE_DIGEST="${EXPECTED_REMOTE_BRIDGE_DIGEST:-sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c}"
@@ -31,6 +32,11 @@ need() {
     printf 'F22_6_AUDIT_ERROR=missing-command:%s\n' "$1"
     exit 2
   }
+}
+
+shell_quote() {
+  local value="$1"
+  printf "'%s'" "$(printf '%s' "$value" | sed "s/'/'\\\\''/g")"
 }
 
 lineage_print_check() {
@@ -479,16 +485,65 @@ check_view_only_gate() {
   return 1
 }
 
+remote_bridge_kubectl_output() {
+  kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" get deploy endpoint-admin-service endpoint-admin-remote-bridge \
+    -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,UPDATED:.status.updatedReplicas,IMAGE:.spec.template.spec.containers[0].image
+  kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" get pod \
+    -l 'app.kubernetes.io/name in (endpoint-admin-service,endpoint-admin-remote-bridge)' \
+    -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,IMAGEID:.status.containerStatuses[0].imageID
+  kubectl --context "$KUBE_CONTEXT" -n "$KUBE_NAMESPACE" get externalsecret \
+    endpoint-admin-remote-bridge-secrets endpoint-admin-remote-bridge-signer endpoint-admin-remote-bridge-tls \
+    -o custom-columns=NAME:.metadata.name,READY:.status.conditions[0].status,REASON:.status.conditions[0].reason \
+    --no-headers
+}
+
 check_remote_bridge() {
   local output digest_hits secret_hits
-  if ! command -v ssh >/dev/null 2>&1; then
-    printf 'REMOTE_BRIDGE_LIVE=unknown reason=missing-ssh\n'
+  local q_context q_namespace q_selector remote_cmd effective_mode
+  case "$REMOTE_BRIDGE_KUBECTL_MODE" in
+    local|local-kubectl) effective_mode="local-kubectl" ;;
+    ssh) effective_mode="ssh" ;;
+    *)
+      printf 'REMOTE_BRIDGE_LIVE=unknown mode=%q reason=invalid-remote-bridge-kubectl-mode\n' "$REMOTE_BRIDGE_KUBECTL_MODE"
+      return 1
+      ;;
+  esac
+  if [ "$SSH_TARGET" = "local" ]; then
+    effective_mode="local-kubectl"
+  fi
+
+  if [ -z "$KUBE_CONTEXT" ]; then
+    printf 'REMOTE_BRIDGE_LIVE=unknown mode=%s reason=empty-kube-context\n' "$effective_mode"
     return 1
   fi
-  # shellcheck disable=SC2029 # KUBE_CONTEXT/KUBE_NAMESPACE are intended client-side audit parameters.
-  if ! output="$(ssh "$SSH_TARGET" "kubectl --context '$KUBE_CONTEXT' -n '$KUBE_NAMESPACE' get deploy endpoint-admin-service endpoint-admin-remote-bridge -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,UPDATED:.status.updatedReplicas,IMAGE:.spec.template.spec.containers[0].image && kubectl --context '$KUBE_CONTEXT' -n '$KUBE_NAMESPACE' get pod -l 'app.kubernetes.io/name in (endpoint-admin-service,endpoint-admin-remote-bridge)' -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,IMAGEID:.status.containerStatuses[0].imageID && kubectl --context '$KUBE_CONTEXT' -n '$KUBE_NAMESPACE' get externalsecret endpoint-admin-remote-bridge-secrets endpoint-admin-remote-bridge-signer endpoint-admin-remote-bridge-tls -o custom-columns=NAME:.metadata.name,READY:.status.conditions[0].status,REASON:.status.conditions[0].reason --no-headers" 2>&1)"; then
-    printf 'REMOTE_BRIDGE_LIVE=unknown reason=%q\n' "$output"
+  if [ -z "$KUBE_NAMESPACE" ]; then
+    printf 'REMOTE_BRIDGE_LIVE=unknown mode=%s reason=empty-kube-namespace\n' "$effective_mode"
     return 1
+  fi
+
+  if [ "$effective_mode" = "local-kubectl" ]; then
+    if ! command -v kubectl >/dev/null 2>&1; then
+      printf 'REMOTE_BRIDGE_LIVE=unknown mode=%s reason=missing-kubectl\n' "$effective_mode"
+      return 1
+    fi
+    if ! output="$(remote_bridge_kubectl_output 2>&1)"; then
+      printf 'REMOTE_BRIDGE_LIVE=unknown mode=%s reason=%q\n' "$effective_mode" "$output"
+      return 1
+    fi
+  else
+    if ! command -v ssh >/dev/null 2>&1; then
+      printf 'REMOTE_BRIDGE_LIVE=unknown mode=ssh reason=missing-ssh\n'
+      return 1
+    fi
+    q_context="$(shell_quote "$KUBE_CONTEXT")"
+    q_namespace="$(shell_quote "$KUBE_NAMESPACE")"
+    q_selector="$(shell_quote 'app.kubernetes.io/name in (endpoint-admin-service,endpoint-admin-remote-bridge)')"
+    remote_cmd="kubectl --context $q_context -n $q_namespace get deploy endpoint-admin-service endpoint-admin-remote-bridge -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,UPDATED:.status.updatedReplicas,IMAGE:.spec.template.spec.containers[0].image && kubectl --context $q_context -n $q_namespace get pod -l $q_selector -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,IMAGEID:.status.containerStatuses[0].imageID && kubectl --context $q_context -n $q_namespace get externalsecret endpoint-admin-remote-bridge-secrets endpoint-admin-remote-bridge-signer endpoint-admin-remote-bridge-tls -o custom-columns=NAME:.metadata.name,READY:.status.conditions[0].status,REASON:.status.conditions[0].reason --no-headers"
+    # shellcheck disable=SC2029 # q_context/q_namespace are shell-escaped locally and intentionally expanded before ssh.
+    if ! output="$(ssh "$SSH_TARGET" "$remote_cmd" 2>&1)"; then
+      printf 'REMOTE_BRIDGE_LIVE=unknown mode=ssh reason=%q\n' "$output"
+      return 1
+    fi
   fi
 
   printf 'REMOTE_BRIDGE_LIVE_OUTPUT_BEGIN\n%s\nREMOTE_BRIDGE_LIVE_OUTPUT_END\n' "$output"
@@ -499,10 +554,10 @@ check_remote_bridge() {
   digest_hits="$(printf '%s\n' "$output" | grep -c "@${EXPECTED_REMOTE_BRIDGE_DIGEST}" || true)"
   secret_hits="$(printf '%s\n' "$output" | grep -cE 'True.*SecretSynced' || true)"
   if [ "$digest_hits" -ge 4 ] && [ "$secret_hits" -ge 3 ]; then
-    printf 'REMOTE_BRIDGE_LIVE=pass expected_digest=%s\n' "$EXPECTED_REMOTE_BRIDGE_DIGEST"
+    printf 'REMOTE_BRIDGE_LIVE=pass mode=%s expected_digest=%s\n' "$effective_mode" "$EXPECTED_REMOTE_BRIDGE_DIGEST"
     return 0
   fi
-  printf 'REMOTE_BRIDGE_LIVE=blocked expected_digest=%s digest_hits=%s secret_synced_hits=%s\n' "$EXPECTED_REMOTE_BRIDGE_DIGEST" "$digest_hits" "$secret_hits"
+  printf 'REMOTE_BRIDGE_LIVE=blocked mode=%s expected_digest=%s digest_hits=%s secret_synced_hits=%s\n' "$effective_mode" "$EXPECTED_REMOTE_BRIDGE_DIGEST" "$digest_hits" "$secret_hits"
   return 1
 }
 
@@ -560,7 +615,11 @@ main() {
   need grep
   need awk
   need jq
-  need ssh
+  if [ "$REMOTE_BRIDGE_KUBECTL_MODE" = "local" ] || [ "$REMOTE_BRIDGE_KUBECTL_MODE" = "local-kubectl" ] || [ "$SSH_TARGET" = "local" ]; then
+    need kubectl
+  else
+    need ssh
+  fi
 
   local blocked=0
   local next_required=()
