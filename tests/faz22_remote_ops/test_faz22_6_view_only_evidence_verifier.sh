@@ -60,7 +60,7 @@ cat >"$manifest" <<JSON
     "production",
     "broad-rollout"
   ],
-  "owner_approved_by": "named-owner",
+  "owner_approved_by": "Owner Example",
   "approved_at": "$approved_at",
   "expires_at": "$expires_at"
 }
@@ -88,7 +88,7 @@ viewer_path_decision: fanout-proven
 audit_negative_matrix: no-auth,wrong-device,expired-session,recording-down,dlp-deny,local-abort
 kvkk_attended_pilot_signoff: pass
 forbidden_claims: rdp,credential-entry,raw-shell,port-forward,5-device,50-device,800-device,production,broad-rollout
-owner_approved_by: named-owner
+owner_approved_by: Owner Example
 approved_at: $approved_at
 expires_at: $expires_at
 EOF

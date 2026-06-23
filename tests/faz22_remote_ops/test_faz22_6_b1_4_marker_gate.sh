@@ -61,7 +61,7 @@ root_policy: pass
 field_evidence: attached
 positive_matrix: hardware-attested-device
 negative_matrix: missing,stale,replay,wrong-device,wrong-tenant
-owner_approved_by: named-owner
+owner_approved_by: Owner Example
 approved_at: $approved_at
 EOF
 )"
@@ -136,7 +136,7 @@ risk_scope: bounded-pilot-enrollment-backed-trust
 accepted_gap: no-real-tpm-attestation
 compensating_controls: cert-bound-token,mTLS,revocation-check,signed-permits,dual-control,audit-recording,kill-revoke
 forbidden_claims: tpm-complete,hardware-attestation-complete,5-device,50-device,800-device,production,broad-rollout
-owner_approved_by: named-owner
+owner_approved_by: Owner Example
 approved_at: $approved_at
 expires_at: $expires_at
 EOF
@@ -253,7 +253,7 @@ printf '%s\n' "$output" >"$tmp_dir/risk-missing-forbidden.out"
 grep -q '^GATE_B1_4_HARDWARE_ATTESTATION=blocked ' "$tmp_dir/risk-missing-forbidden.out"
 grep -q 'forbidden_claims:broad-rollout' "$tmp_dir/risk-missing-forbidden.out"
 
-risk_placeholder_owner="${risk_body/owner_approved_by: named-owner/owner_approved_by: TBD}"
+risk_placeholder_owner="${risk_body/owner_approved_by: Owner Example/owner_approved_by: TBD}"
 jq -n \
   --arg state "OPEN" \
   --arg body "$risk_placeholder_owner" \
