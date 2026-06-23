@@ -36,6 +36,27 @@ Accepted AgentPC2 product-channel evidence:
 - Evidence summary:
   `https://github.com/Halildeu/platform-agent/issues/208#issuecomment-4774267666`.
 
+Runtime re-check on 2026-06-23:
+
+- `k3d-test/platform-test` deployment `endpoint-admin-remote-bridge` is
+  `1/1` ready on image
+  `ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:0e451bb690f6511fe76292e1843ca95e2b9501aa20ae0e7ae7cd4eb1509c09f3`;
+  the running pod imageID matches the same immutable digest, with
+  `restartCount=0`.
+- Remote-bridge ExternalSecrets
+  `endpoint-admin-remote-bridge-secrets`,
+  `endpoint-admin-remote-bridge-signer`, and
+  `endpoint-admin-remote-bridge-tls` are all `Ready=True /
+  SecretSynced`.
+- Live broker config reports
+  `REMOTE_BRIDGE_HEARTBEAT_INTERVAL_MILLIS=5000` and
+  `REMOTE_BRIDGE_ENABLED=true`.
+- Recent broker audit log contains
+  `HELLO_VERIFIED:cert=true,attestation=false,device=false` for the AgentPC2
+  product channel. This confirms current outbound mTLS product-channel
+  connectivity and also confirms why #548 remains open: hardware-backed
+  device-key/TPM attestation is not present in the live evidence.
+
 Board/state reconciliation:
 
 - `platform-agent#208`: `CLOSED`, reason `COMPLETED`, Project #2 `Done`.
