@@ -140,6 +140,18 @@ The audit is intentionally conservative. It prints `F22_6_COMPLETION=blocked`
 while `#548` or `#1580` remains open, or when live broker/release evidence is
 missing.
 
+Use the release-lineage helper before any 5-device or broader rollout claim:
+
+```bash
+scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh
+```
+
+The expected current posture is `F22_6_RELEASE_LINEAGE=needs_hygiene`: the
+`v0.2.28` release, artifact-host `current` surface, and live artifact-host
+deployment agree on the runtime payload, but the release record still needs
+full SHA256SUMS coverage, current-manifest artifact-host digest, and dense
+release-train reconciliation before broad rollout language is valid.
+
 ## 8. Closure Language
 
 Allowed language:
