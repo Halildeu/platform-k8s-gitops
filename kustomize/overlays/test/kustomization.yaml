@@ -3928,7 +3928,21 @@ images:
     #   the old pin, so this commit makes sha-1b4b2b7 the durable overlay digest.
     #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-1b4b2b7
     #   digest sha256:61ddb10c274696d4ce36a066794cda0b91ff5e75b02d00d2c828d1e50dd4caa7
-    digest: sha256:61ddb10c274696d4ce36a066794cda0b91ff5e75b02d00d2c828d1e50dd4caa7
+    #
+    # 2026-06-23 update: sha-1b4b2b7 -> sha-6f9ef4d = main 6f9ef4d1 (platform-web
+    #   #836). 1.16.x @module-federation/vite (landed via #819) regressed the
+    #   host-only (import:false) shared-class MF proxy → `new QueryClient()` in
+    #   federated remotes threw "Class constructor cannot be invoked without
+    #   'new'", crashing the Kullanıcılar (mfe-users) page error boundary on
+    #   testai (every hostOnly remote at risk). #836 pins the plugin to 1.15.5;
+    #   the fixed build rebuilds the remote as UsersApp.ui-xXWdtvp6 (broken was
+    #   Bd1EKRpN). sha-1b4b2b7 (+ 8d22245 before it) carry the broken 1.16.8
+    #   remote. Durable overlay bump so ArgoCD selfHeal enforces the fixed image
+    #   (the imperative deploy-testai set-image is reverted by selfHeal). image
+    #   build run 28053854408; Codex 019ef5f7 AGREE.
+    #   tag    ghcr.io/halildeu/platform-web-frontend-testai:sha-6f9ef4d
+    #   digest sha256:74a15f7e4bc532793d7c776483d52c2c898f5af9744e4c796efb132c7ec4b3e0
+    digest: sha256:74a15f7e4bc532793d7c776483d52c2c898f5af9744e4c796efb132c7ec4b3e0
 
   # Faz 22.1 BE-017 endpoint-admin-service test overlay digest pin —
   # destructive command dual-control gate (2026-05-22). Board #978.
