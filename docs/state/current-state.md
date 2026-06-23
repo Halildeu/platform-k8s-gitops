@@ -1,5 +1,28 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 #548 digest bump live-wired on test overlay (2026-06-23)
+
+GitOps/live-wiring status changed after the #548 digest bump follow-up:
+
+- platform-k8s-gitops PR #1893 merged at 2026-06-23T04:09:38Z with merge commit e62de03a4ea7a3539e4d6834c8c6666a1a3efd56.
+- Source build/run: Halildeu/platform-backend actions run 27998861570, backend head dcc5b6fb247f3408fe8d33db8742a5e33ddd1d56.
+- Desired digest: sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c.
+- Validation before merge: git diff --check; kubectl kustomize kustomize/overlays/test; kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge; PR CI green including ADR-0011 BG-1, forbidden-close scan, and cross-ai-audit.
+- Activation overlay note: endpoint-admin-remote-bridge activation is owner-gated and not wired into the platform-test Argo root. Live apply used the rendered kustomize activation overlay after server dry-run; it was not a direct kubectl set image / patch / edit mutation.
+
+Live staging-sw / k3d-test / platform-test evidence after apply:
+
+- endpoint-admin-service rollout succeeded; deployment image and running pod imageID both match ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c, pod Ready=true, restartCount=0.
+- endpoint-admin-remote-bridge rollout succeeded; deployment image and running pod imageID both match ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c, pod Ready=true, restartCount=0.
+- endpoint-admin-remote-bridge-secrets, endpoint-admin-remote-bridge-signer, and endpoint-admin-remote-bridge-tls ExternalSecrets are Ready=True / SecretSynced.
+- Broker startup log includes remote-bridge grpc server listening on 0.0.0.0:9444 (mutual TLS) and EndpointAdminServiceApplication started.
+
+Boundary for #548 remains unchanged:
+
+- This is source/live-wiring progress for the #548 harness path, not #548 resolution.
+- Current broker audit still includes HELLO_VERIFIED:cert=true,attestation=false,device=false. That is useful connectivity evidence, but it also proves the hardware attestation/device-key gate is still open.
+- Remaining #548 acceptance gates: live TPM/device-key material, broker attestation root policy/config, positive verifier pass, negative field matrix, and field evidence.
+
 ## Live Delta — AgentPC2 #208 full-matrix accepted; B1.4 source slices reconciled (2026-06-23)
 
 `platform-agent#208` is now Closed / Done for the bounded AgentPC2
