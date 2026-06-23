@@ -154,4 +154,3 @@ evidence to proceed under the named waiver, but it still forbids 5-device,
 50-device, 800-device, production, and broad rollout language. Full
 `F22_6_RELEASE_LINEAGE=pass` remains reserved for the no-waiver path where
 all release-lineage hygiene findings are resolved.
-\n
