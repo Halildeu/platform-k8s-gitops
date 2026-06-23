@@ -1,5 +1,39 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 release-lineage live digest self-hosted evidence canonicalized (2026-06-23)
+
+Faz 22.6 release-lineage artifact-host live digest evidence is no longer
+blocked by Mac-side SSH to `staging-sw`. The canonical path is now the
+self-hosted `staging-sw` runner workflow:
+
+- PR #1916 merged the read-only
+  `.github/workflows/faz22-6-release-lineage-audit.yml` workflow and added
+  `RELEASE_LINEAGE_KUBECTL_MODE=local-kubectl` support to
+  `scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh`.
+- Workflow run
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28012805556`
+  completed `success` on head
+  `7d7f95e201489cc99d3ea9986738140b489af34a`, job
+  `release-lineage audit (staging-sw local kubectl)`.
+- The run produced canonical live cluster evidence:
+  `ARTIFACT_HOST_LIVE_DIGEST=pass mode=local-kubectl expected_digest=sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2 digest_hits=3`.
+- Board item #1915 is `Closed` / Project #2 `Done`.
+
+Boundary: this removes only the artifact-host live-digest evidence transport
+blocker for #1901. It does not close #1901 and does not make Faz 22.6
+release-lineage accepted. The same audit still reports:
+
+```text
+GITHUB_RELEASE_IMMUTABLE=needs_hygiene tag=v0.2.28 isImmutable=false
+GITHUB_RELEASE_DENSE_TRAIN=needs_hygiene recent_v0_2_count=27 threshold=5
+RELEASE_LINEAGE_WAIVER=blocked
+F22_6_RELEASE_LINEAGE=needs_hygiene
+```
+
+Therefore #1901 remains open/blocked until either an owner-approved waiver/risk
+acceptance marker satisfies the runbook contract or the release-lineage hygiene
+findings are fixed.
+
 ## Live Delta — Faz 22.6 self-hosted completion audit canonicalized (2026-06-23)
 
 Faz 22.6 remote-bridge live evidence is no longer blocked by Mac-side SSH to
