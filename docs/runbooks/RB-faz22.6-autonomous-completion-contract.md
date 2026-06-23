@@ -121,6 +121,33 @@ approved_at: YYYY-MM-DD
 expires_at: YYYY-MM-DD
 ```
 
+Use the package helper to produce either marker from already-approved owner
+metadata:
+
+```bash
+scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh \
+  --mode risk \
+  --marker-out /path/to/b1-4-risk-marker.txt \
+  --owner-approved-by "<named owner>" \
+  --approved-at YYYY-MM-DD \
+  --expires-at YYYY-MM-DD
+```
+
+For the strong hardware-attestation path:
+
+```bash
+scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh \
+  --mode hardware \
+  --marker-out /path/to/b1-4-hardware-marker.txt \
+  --owner-approved-by "<named owner>" \
+  --approved-at YYYY-MM-DD
+```
+
+The helper does not approve `#548`, does not write to GitHub, and does not
+create hardware evidence. It only prevents hand-written marker drift after a
+real owner decision exists. It rejects placeholder owners, invalid dates,
+expired risk windows, and `expires_at` on the hardware path.
+
 ### 4.2 VIEW_ONLY Screen-Share Acceptance
 
 `platform-k8s-gitops#1580` can pass only through bounded VIEW_ONLY
