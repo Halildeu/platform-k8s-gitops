@@ -208,6 +208,32 @@ frames, credentials, private endpoint identifiers, personal data, or operator
 tokens in the manifest. Store sensitive recording material in the approved WORM
 evidence location and expose only redacted references and hashes.
 
+Use the package helper to produce the canonical JSON, `jq -cS` SHA256, and
+issue marker from already-approved evidence metadata:
+
+```bash
+scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh \
+  --manifest-out /path/to/view-only-evidence.json \
+  --marker-out /path/to/view-only-marker.txt \
+  --evidence-url https://example.invalid/view-only-evidence.json \
+  --pilot-device AgentPc2 \
+  --session-id <product session id> \
+  --recording-worm pass \
+  --d10-fail-closed pass \
+  --dlp-mask-policy pass \
+  --local-abort pass \
+  --active-indicator pass \
+  --viewer-path-decision fanout-proven \
+  --kvkk-attended-pilot-signoff pass \
+  --owner-approved-by "<named owner>" \
+  --approved-at YYYY-MM-DD \
+  --expires-at YYYY-MM-DD
+```
+
+The helper does not approve #1580, does not write to GitHub, and does not prove
+a live VIEW_ONLY session by itself. It only prevents hand-written marker/hash
+drift once the owner/operator-gated evidence exists.
+
 Marker parsing is fail-closed:
 
 - named owner cannot be empty, `TBD`, `none`, or `n/a`;
