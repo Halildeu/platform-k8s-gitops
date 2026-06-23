@@ -71,7 +71,7 @@ artifact_host_kubectl_output() {
 }
 
 waiver_field() {
-  # waiver_field <key> <issue-body>
+  # waiver_field <key>; reads the issue body from stdin.
   local key="$1"
   sed -n "s/^${key}:[[:space:]]*//p" | head -1
 }
@@ -458,4 +458,6 @@ main() {
   fi
 }
 
-main "$@"
+if [ "${F22_6_RELEASE_LINEAGE_AUDIT_SOURCE_ONLY:-0}" != "1" ]; then
+  main "$@"
+fi

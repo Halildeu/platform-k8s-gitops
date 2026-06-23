@@ -79,7 +79,7 @@ lineage_print_check() {
 }
 
 waiver_field() {
-  # waiver_field <key> <issue-body>
+  # waiver_field <key>; reads the issue body from stdin.
   local key="$1"
   sed -n "s/^${key}:[[:space:]]*//p" | head -1
 }
