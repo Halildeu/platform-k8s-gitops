@@ -66,9 +66,13 @@ Lineage boundary:
 
 Hygiene findings:
 
-- The GitHub release `SHA256SUMS` asset is narrower than the artifact-host
-  `SHA256SUMS` surface. It omits `EndpointAgent.zip`,
-  `EndpointAgent.zip.sha256`, and `release-manifest.json`.
+- The earlier GitHub release `SHA256SUMS` coverage debt is resolved as of the
+  2026-06-23 in-place `v0.2.28` metadata repair. The main audit now reports
+  both `CURRENT_SHA256SUMS_COVERAGE=pass assets=7` and
+  `RELEASE_SHA256SUMS_COVERAGE=pass assets=7`, including
+  `EndpointAgent.zip`, `EndpointAgent.zip.sha256`, and
+  `release-manifest.json`. No binary, script, ZIP, tag, or
+  `release-manifest.json` payload bytes changed for that repair.
 - Release objects report `isImmutable=false`.
 - The recent `v0.2.x` train is dense (`v0.2.9` through `v0.2.28` in the recent
   audit window). That is acceptable for pilot recovery, not broad rollout
@@ -89,7 +93,11 @@ F22_6_RELEASE_LINEAGE=needs_hygiene
 ```
 
 `needs_hygiene` means the live artifact-host and release payload agree, but
-the release record is not complete enough for broad rollout claims.
+the release record is not complete enough for broad rollout claims. In the
+2026-06-23 main audit, checksum coverage is no longer the source of that
+posture; the remaining release-lineage hygiene items are the mutable GitHub
+release object and the dense `v0.2.x` train without an owner-approved lineage
+waiver.
 
 ## 4. Promotion Rule
 
