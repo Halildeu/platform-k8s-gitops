@@ -148,9 +148,18 @@ scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh
 
 The expected current posture is `F22_6_RELEASE_LINEAGE=needs_hygiene`: the
 `v0.2.28` release, artifact-host `current` surface, and live artifact-host
-deployment agree on the runtime payload, but the release record still needs
-full SHA256SUMS coverage, current-manifest artifact-host digest, and dense
-release-train reconciliation before broad rollout language is valid.
+deployment agree on the runtime payload. The earlier GitHub release
+`SHA256SUMS` coverage debt is resolved as of the 2026-06-23 in-place metadata
+repair: both current and release checksum surfaces cover 7 assets, including
+`EndpointAgent.zip`, `EndpointAgent.zip.sha256`, and `release-manifest.json`.
+The artifact-host `current` manifest is not required to embed its own final
+image digest because that value is self-referential; the durable GitHub release
+manifest plus live Kubernetes imageID provide the immutable image binding.
+
+The remaining release-lineage hygiene items are the mutable GitHub release
+object (`isImmutable=false`) and the dense `v0.2.x` pilot-recovery train. Broad
+rollout language still requires either fixing those hygiene items or recording
+an explicit owner-approved lineage waiver for the bounded pilot only.
 
 ## 8. Closure Language
 
