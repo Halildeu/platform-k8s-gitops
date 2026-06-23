@@ -95,10 +95,10 @@ csv_has() {
 
 owner_is_invalid() {
   local owner="$1" owner_lc
-  owner_lc="$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]')"
-  [ -z "$owner" ] && return 0
+  owner_lc="$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  [ -z "$owner_lc" ] && return 0
   case "$owner_lc" in
-    tbd|none|n/a) return 0 ;;
+    tbd|none|n/a|na|placeholder|owner|named-owner) return 0 ;;
   esac
   return 1
 }
@@ -112,6 +112,12 @@ date_window_errors() {
   fi
   if [ -n "$expires_at" ] && ! [[ "$expires_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
     missing+=("expires_at")
+  fi
+  if [[ "$approved_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] \
+    && [ -n "$expires_at" ] \
+    && [[ "$expires_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] \
+    && [[ "$approved_at" > "$expires_at" ]]; then
+    missing+=("approved_at-after-expires_at")
   fi
   today="$(date -u +%Y-%m-%d 2>/dev/null || true)"
   if ! [[ "$today" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
@@ -328,7 +334,7 @@ check_release_lineage_waiver() {
   # check_release_lineage_waiver <comma-separated-required-findings>
   local required_findings="$1"
   local ref="$RELEASE_LINEAGE_WAIVER_REF"
-  local repo_ref number issue_json state body today
+  local repo_ref number issue_json state body marker_count_value marker_body date_errors
   local marker scope release_tag digest accepted_findings forbidden_claims owner approved_at expires_at
   local missing=()
 
@@ -360,28 +366,39 @@ check_release_lineage_waiver() {
     return 1
   fi
 
-  marker="$(printf '%s\n' "$body" | waiver_field 'F22_6_RELEASE_LINEAGE_WAIVER')"
-  scope="$(printf '%s\n' "$body" | waiver_field 'waiver_scope')"
-  release_tag="$(printf '%s\n' "$body" | waiver_field 'release_tag')"
-  digest="$(printf '%s\n' "$body" | waiver_field 'artifact_host_digest')"
-  accepted_findings="$(printf '%s\n' "$body" | waiver_field 'accepted_findings')"
-  forbidden_claims="$(printf '%s\n' "$body" | waiver_field 'forbidden_claims')"
-  owner="$(printf '%s\n' "$body" | waiver_field 'owner_approved_by')"
-  approved_at="$(printf '%s\n' "$body" | waiver_field 'approved_at')"
-  expires_at="$(printf '%s\n' "$body" | waiver_field 'expires_at')"
+  marker_count_value="$(printf '%s\n' "$body" | marker_count 'F22_6_RELEASE_LINEAGE_WAIVER')"
+  if [ "$marker_count_value" -gt 1 ]; then
+    lineage_print_check 'RELEASE_LINEAGE_WAIVER' 'blocked' "ref=$ref reason=duplicate-marker"
+    return 1
+  fi
+  marker_body="$body"
+  if [ "$marker_count_value" -eq 1 ]; then
+    marker_body="$(printf '%s\n' "$body" | marker_block 'F22_6_RELEASE_LINEAGE_WAIVER')"
+  fi
+
+  marker="$(printf '%s\n' "$marker_body" | waiver_field 'F22_6_RELEASE_LINEAGE_WAIVER')"
+  scope="$(printf '%s\n' "$marker_body" | waiver_field 'waiver_scope')"
+  release_tag="$(printf '%s\n' "$marker_body" | waiver_field 'release_tag')"
+  digest="$(printf '%s\n' "$marker_body" | waiver_field 'artifact_host_digest')"
+  accepted_findings="$(printf '%s\n' "$marker_body" | waiver_field 'accepted_findings')"
+  forbidden_claims="$(printf '%s\n' "$marker_body" | waiver_field 'forbidden_claims')"
+  owner="$(printf '%s\n' "$marker_body" | waiver_field 'owner_approved_by')"
+  approved_at="$(printf '%s\n' "$marker_body" | waiver_field 'approved_at')"
+  expires_at="$(printf '%s\n' "$marker_body" | waiver_field 'expires_at')"
 
   [ "$marker" = "v1" ] || missing+=("marker")
   [ "$scope" = "bounded-pilot-only" ] || missing+=("scope")
   [ "$release_tag" = "$EXPECTED_AGENT_TAG" ] || missing+=("release_tag")
   [ "$digest" = "$EXPECTED_ARTIFACT_HOST_DIGEST" ] || missing+=("artifact_host_digest")
-  local owner_lc
-  owner_lc="$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]')"
-  if [ -z "$owner" ]; then
+  if owner_is_invalid "$owner"; then
     missing+=("owner_approved_by")
+  else
+    local owner_lc
+    owner_lc="$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    case "$owner_lc" in
+      na|placeholder|owner|named-owner) missing+=("owner_approved_by") ;;
+    esac
   fi
-  case "$owner_lc" in
-    tbd|none|n/a) missing+=("owner_approved_by") ;;
-  esac
 
   local finding
   IFS=',' read -r -a _required_findings <<<"$required_findings"
@@ -401,23 +418,8 @@ check_release_lineage_waiver() {
     fi
   done
 
-  if ! [[ "$approved_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-    missing+=("approved_at")
-  fi
-  if ! [[ "$expires_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-    missing+=("expires_at")
-  fi
-  today="$(date -u +%Y-%m-%d 2>/dev/null || true)"
-  if ! [[ "$today" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-    missing+=("today-unparseable")
-  else
-    if [[ "$approved_at" > "$today" ]]; then
-      missing+=("approved_at-in-future")
-    fi
-    if [[ "$expires_at" < "$today" ]]; then
-      missing+=("expires_at-expired")
-    fi
-  fi
+  date_errors="$(date_window_errors "$approved_at" "$expires_at")"
+  [ -z "$date_errors" ] || missing+=("$date_errors")
 
   if [ "${#missing[@]}" -ne 0 ]; then
     local reason

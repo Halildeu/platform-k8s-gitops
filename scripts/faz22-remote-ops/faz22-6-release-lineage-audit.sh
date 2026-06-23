@@ -76,11 +76,94 @@ waiver_field() {
   sed -n "s/^${key}:[[:space:]]*//p" | head -1
 }
 
+marker_count() {
+  # marker_count <marker-key>; reads issue body from stdin and ignores fenced examples.
+  local marker="$1"
+  awk -v marker="$marker" '
+    /^```/ { fenced = !fenced; next }
+    !fenced && $0 ~ "^" marker ":[[:space:]]*v1[[:space:]]*$" { count++ }
+    END { print count + 0 }
+  '
+}
+
+marker_block() {
+  # marker_block <marker-key>; reads issue body from stdin and ignores fenced examples.
+  local marker="$1"
+  awk -v marker="$marker" '
+    /^```/ {
+      if (found) {
+        exit
+      }
+      fenced = !fenced
+      next
+    }
+    fenced { next }
+    !found && $0 ~ "^" marker ":[[:space:]]*v1[[:space:]]*$" {
+      found = 1
+      print
+      next
+    }
+    found {
+      if ($0 ~ /^[[:space:]]*$/) {
+        exit
+      }
+      if ($0 ~ /^[A-Za-z0-9_]+:[[:space:]]*/) {
+        print
+        next
+      }
+      exit
+    }
+  '
+}
+
+owner_is_invalid() {
+  local owner="$1" owner_lc
+  owner_lc="$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  [ -z "$owner_lc" ] && return 0
+  case "$owner_lc" in
+    tbd|none|n/a|na|placeholder|owner|named-owner) return 0 ;;
+  esac
+  return 1
+}
+
+date_window_errors() {
+  # date_window_errors <approved_at> <expires_at>
+  local approved_at="$1" expires_at="$2" today
+  local missing=()
+  if ! [[ "$approved_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    missing+=("approved_at")
+  fi
+  if ! [[ "$expires_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    missing+=("expires_at")
+  fi
+  if [[ "$approved_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] \
+    && [[ "$expires_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] \
+    && [[ "$approved_at" > "$expires_at" ]]; then
+    missing+=("approved_at-after-expires_at")
+  fi
+  today="$(date -u +%Y-%m-%d 2>/dev/null || true)"
+  if ! [[ "$today" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    missing+=("today-unparseable")
+  else
+    if [[ "$approved_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "$approved_at" > "$today" ]]; then
+      missing+=("approved_at-in-future")
+    fi
+    if [[ "$expires_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "$expires_at" < "$today" ]]; then
+      missing+=("expires_at-expired")
+    fi
+  fi
+  if [ "${#missing[@]}" -ne 0 ]; then
+    local reason
+    reason="$(IFS=,; printf '%s' "${missing[*]}")"
+    printf '%s' "$reason"
+  fi
+}
+
 check_release_lineage_waiver() {
   # check_release_lineage_waiver <comma-separated-required-findings>
   local required_findings="$1"
   local ref="$RELEASE_LINEAGE_WAIVER_REF"
-  local repo_ref number issue_json state body today
+  local repo_ref number issue_json state body marker_count_value marker_body date_errors
   local marker scope release_tag digest accepted_findings forbidden_claims owner approved_at expires_at
   local missing=()
 
@@ -112,28 +195,31 @@ check_release_lineage_waiver() {
     return 1
   fi
 
-  marker="$(printf '%s\n' "$body" | waiver_field 'F22_6_RELEASE_LINEAGE_WAIVER')"
-  scope="$(printf '%s\n' "$body" | waiver_field 'waiver_scope')"
-  release_tag="$(printf '%s\n' "$body" | waiver_field 'release_tag')"
-  digest="$(printf '%s\n' "$body" | waiver_field 'artifact_host_digest')"
-  accepted_findings="$(printf '%s\n' "$body" | waiver_field 'accepted_findings')"
-  forbidden_claims="$(printf '%s\n' "$body" | waiver_field 'forbidden_claims')"
-  owner="$(printf '%s\n' "$body" | waiver_field 'owner_approved_by')"
-  approved_at="$(printf '%s\n' "$body" | waiver_field 'approved_at')"
-  expires_at="$(printf '%s\n' "$body" | waiver_field 'expires_at')"
+  marker_count_value="$(printf '%s\n' "$body" | marker_count 'F22_6_RELEASE_LINEAGE_WAIVER')"
+  if [ "$marker_count_value" -gt 1 ]; then
+    print_check 'RELEASE_LINEAGE_WAIVER' 'blocked' "ref=$ref reason=duplicate-marker"
+    return 1
+  fi
+  marker_body="$body"
+  if [ "$marker_count_value" -eq 1 ]; then
+    marker_body="$(printf '%s\n' "$body" | marker_block 'F22_6_RELEASE_LINEAGE_WAIVER')"
+  fi
+
+  marker="$(printf '%s\n' "$marker_body" | waiver_field 'F22_6_RELEASE_LINEAGE_WAIVER')"
+  scope="$(printf '%s\n' "$marker_body" | waiver_field 'waiver_scope')"
+  release_tag="$(printf '%s\n' "$marker_body" | waiver_field 'release_tag')"
+  digest="$(printf '%s\n' "$marker_body" | waiver_field 'artifact_host_digest')"
+  accepted_findings="$(printf '%s\n' "$marker_body" | waiver_field 'accepted_findings')"
+  forbidden_claims="$(printf '%s\n' "$marker_body" | waiver_field 'forbidden_claims')"
+  owner="$(printf '%s\n' "$marker_body" | waiver_field 'owner_approved_by')"
+  approved_at="$(printf '%s\n' "$marker_body" | waiver_field 'approved_at')"
+  expires_at="$(printf '%s\n' "$marker_body" | waiver_field 'expires_at')"
 
   [ "$marker" = "v1" ] || missing+=("marker")
   [ "$scope" = "bounded-pilot-only" ] || missing+=("scope")
   [ "$release_tag" = "$EXPECTED_AGENT_TAG" ] || missing+=("release_tag")
   [ "$digest" = "$EXPECTED_ARTIFACT_HOST_DIGEST" ] || missing+=("artifact_host_digest")
-  local owner_lc
-  owner_lc="$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]')"
-  if [ -z "$owner" ]; then
-    missing+=("owner_approved_by")
-  fi
-  case "$owner_lc" in
-    tbd|none|n/a) missing+=("owner_approved_by") ;;
-  esac
+  owner_is_invalid "$owner" && missing+=("owner_approved_by")
 
   local finding
   IFS=',' read -r -a _required_findings <<<"$required_findings"
@@ -153,23 +239,8 @@ check_release_lineage_waiver() {
     fi
   done
 
-  if ! [[ "$approved_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-    missing+=("approved_at")
-  fi
-  if ! [[ "$expires_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-    missing+=("expires_at")
-  fi
-  today="$(date -u +%Y-%m-%d 2>/dev/null || true)"
-  if ! [[ "$today" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-    missing+=("today-unparseable")
-  else
-    if [[ "$approved_at" > "$today" ]]; then
-      missing+=("approved_at-in-future")
-    fi
-    if [[ "$expires_at" < "$today" ]]; then
-      missing+=("expires_at-expired")
-    fi
-  fi
+  date_errors="$(date_window_errors "$approved_at" "$expires_at")"
+  [ -z "$date_errors" ] || missing+=("$date_errors")
 
   if [ "${#missing[@]}" -ne 0 ]; then
     local reason

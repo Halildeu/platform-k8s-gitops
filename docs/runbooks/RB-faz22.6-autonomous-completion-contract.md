@@ -236,7 +236,8 @@ drift once the owner/operator-gated evidence exists.
 
 Marker parsing is fail-closed:
 
-- named owner cannot be empty, `TBD`, `none`, or `n/a`;
+- named owner cannot be empty, `TBD`, `none`, `n/a`, `na`,
+  `placeholder`, `owner`, or the literal example `named-owner`;
 - dates must parse as UTC `YYYY-MM-DD`;
 - expired acceptance/risk windows fail;
 - `evidence_package_url` must be HTTPS and fetchable;

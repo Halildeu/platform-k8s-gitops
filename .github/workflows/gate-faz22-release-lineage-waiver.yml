@@ -8,6 +8,7 @@ on:
       - 'docs/runbooks/RB-faz22.6-release-lineage-audit.md'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh'
   push:
     branches:
@@ -18,6 +19,7 @@ on:
       - 'docs/runbooks/RB-faz22.6-release-lineage-audit.md'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh'
+      - 'scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh'
 
 permissions:
@@ -43,6 +45,7 @@ jobs:
           bash -n \
             scripts/faz22-remote-ops/faz22-6-completion-audit.sh \
             scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh \
+            scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh \
             tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh
 
       - name: Run release-lineage waiver regression test

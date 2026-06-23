@@ -172,3 +172,32 @@ evidence to proceed under the named waiver, but it still forbids 5-device,
 50-device, 800-device, production, and broad rollout language. Full
 `F22_6_RELEASE_LINEAGE=pass` remains reserved for the no-waiver path where
 all release-lineage hygiene findings are resolved.
+
+Use the package helper to produce the exact marker from already-approved owner
+metadata:
+
+```bash
+scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh \
+  --marker-out /path/to/release-lineage-waiver-marker.txt \
+  --release-tag v0.2.28 \
+  --artifact-host-digest sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2 \
+  --owner-approved-by "<named owner>" \
+  --approved-at YYYY-MM-DD \
+  --expires-at YYYY-MM-DD
+```
+
+The helper does not approve #1901, does not write to GitHub, and does not alter
+release, tag, asset, artifact-host, Kubernetes, or endpoint state. It only
+prevents hand-written marker drift after a real owner decision exists.
+
+Marker parsing is fail-closed:
+
+- fenced example markers are ignored;
+- more than one live `F22_6_RELEASE_LINEAGE_WAIVER: v1` marker fails as
+  `duplicate-marker`;
+- owner cannot be empty, `TBD`, `none`, `n/a`, `na`, `placeholder`, `owner`, or
+  the literal example `named-owner`;
+- dates must parse as UTC `YYYY-MM-DD`;
+- `approved_at` cannot be in the future;
+- `expires_at` cannot be expired;
+- `approved_at` cannot be after `expires_at`.
