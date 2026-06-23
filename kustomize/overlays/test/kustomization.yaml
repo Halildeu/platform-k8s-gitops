@@ -465,9 +465,9 @@ images:
     # 500/502/503=upstream classes). Cache supplier no longer caches
     # failures (doesNotCacheUpstreamFailures test proves recovery).
     # 22/22 variant tests PASS (5 authz + 17 other).
-    # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
-    # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:8c5ae280ee244fc096d346c341a96808acd0d8611f92eb8f751d7d8c9e9191a7
+    # 2026-06-23 #736 Slice-2c: trust /authz/me userId over the claim-derived id
+    # (sha-45293e5). Prior: sha256:8c5ae280 (#821 drift-correction).
+    digest: sha256:4f322b8712e3528b1f85868122356fe00d7ca7774ef51834323f5da9df02d72b
   - name: core-data-service
     newName: ghcr.io/halildeu/platform-backend-core-data-service
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
@@ -1232,9 +1232,9 @@ images:
     #
     # 2026-06-17 update: sha-9751099 (#688) — ADR-0041 §5 Option A: catalog += MEETING
     # ("Toplantı") + TRANSCRIPT ("Transkript") VIEW/MANAGE + ADMIN MANAGE granule seed
-    # (Initializer->outbox->OpenFGA module:MEETING/TRANSCRIPT writer path; Codex 019ed603).
-    # 384 permission-service unit tests PASS. Needed for the writer-path prod-gate evidence.
-    digest: sha256:4383d25f8d0b56bab72b03585ae3835aa8242c5cbb2263104987e8d8d095f2c4
+    # 2026-06-23 #736 Slice-2b: distrust foreign userId claim + /authz/me
+    # fail-closed (sha-45293e5). Prior: sha256:4383d25f (Codex 019ed603 writer-path).
+    digest: sha256:e828808e54a88a3290cd3c1b9343dbe2cc0f8b55061b27a5e0c7957fde3f9b0e
   # Frontend testai variant (testai.acik.com + platform-test realm)
   # 2026-04-29 update: sha-ef8fbc5 — Codex 019dd818 iter-10 final cycle:
   # PR #75 (cleanup): @mfe/auth ESLint warnings 13→0 (any → unknown helpers)
