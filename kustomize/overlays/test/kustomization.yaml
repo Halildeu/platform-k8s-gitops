@@ -194,7 +194,7 @@ images:
     #   - Pairs with platform-web#411 (FE UX overhaul)
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:82cb10d42f1049ec38983de92b9ec11339769a882775d2927ad3e0aacd120841
+    digest: sha256:b95b825d3760fa0eef273363e054b7f787da063c8eda87816d4382a4b863cb3f
   - name: api-gateway
     newName: ghcr.io/halildeu/platform-backend-api-gateway
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -450,7 +450,7 @@ images:
     # auto-provision; CurrentUserResolver is identity-aware (kc_subject/email first)
     # and a gate-denied numeric claim is honored only when it matches the token's own
     # row (anti-cross-user). Codex 019eeffd + 019ef0a7 AGREE; 70 user-service tests green.
-    digest: sha256:d767ae3ab245e41195ac6038effdddd9f7a66e2d594c9460b341e04d230a6a19
+    digest: sha256:209e21d18afff90351e4723523e53cf0f278e0460220b3e970a0db75ecd9541e
   - name: variant-service
     newName: ghcr.io/halildeu/platform-backend-variant-service
     # 2026-04-30 update: sha-da79a05 — Codex 019dddb7 iter-42 cycle close.
@@ -5574,7 +5574,7 @@ images:
     # ConfigMap WebPush 5 entries eklenir (base default ENABLED=false defer-aware).
     # ExternalSecret WebPush 3 remoteRef entries comment-out (Vault seed
     # pending — operator action runbook externalsecret-notify.yaml).
-    digest: sha256:175b3daea37601fbfd500f616ad19664d26dffec8b1db11556a3bff14ce6250e
+    digest: sha256:66f79088c766545e7fbbfba7fd5a537fd8b89f2d6cf8714b4e78d0763c29489e
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
   # platform-agent Release EXE trusted workflow for tag v0.2.28:
@@ -5602,6 +5602,42 @@ images:
     digest: sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2
 
 patches:
+  # #734 (test-only): the admin-email B3 wiring is scoped to the test overlay so
+  # prod (selfHeal-OFF, no prod-vault seed) is never touched. (a) append the two
+  # service-to-service secret keys to the base ExternalSecrets — Vault values
+  # seeded on the TEST vault 2026-06-23; (b) flip the pending-activation feature
+  # on for testai (base default is "false"). The notify service-JWT decoder env
+  # + user-service mint URL stay in base (harmless in prod: nothing mints there).
+  - target:
+      kind: ExternalSecret
+      name: auth-service-secrets
+    patch: |-
+      - op: add
+        path: /spec/data/-
+        value:
+          secretKey: SERVICE_CLIENT_USER_SERVICE_SECRET
+          remoteRef:
+            key: kv/platform/auth-service
+            property: service_client_user_service_secret
+  - target:
+      kind: ExternalSecret
+      name: user-service-secrets
+    patch: |-
+      - op: add
+        path: /spec/data/-
+        value:
+          secretKey: SERVICE_TOKEN_CLIENT_SECRET
+          remoteRef:
+            key: kv/platform/user-service
+            property: service_token_client_secret
+  - target:
+      kind: ConfigMap
+      name: user-service-config
+    patch: |-
+      - op: replace
+        path: /data/USER_PENDING_ACTIVATION_NOTIFICATION_ENABLED
+        value: "true"
+
   # notification-orchestrator-secrets is owned by the test ExternalSecret. The
   # base bootstrap Secret is for non-ESO bootstrap only; rendering both creates
   # permanent Argo drift against the ESO-managed live Secret.
