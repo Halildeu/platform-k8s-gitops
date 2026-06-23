@@ -39,6 +39,35 @@ shell_quote() {
   printf "'%s'" "$(printf '%s' "$value" | sed "s/'/'\\\\''/g")"
 }
 
+fetch_url() {
+  # fetch_url <url>
+  case "$1" in
+    https://*) ;;
+    file://*)
+      [ "${F22_6_ALLOW_LOCAL_EVIDENCE_URL_FOR_TESTS:-0}" = "1" ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  curl --max-time "${CURL_MAX_TIME:-20}" -fsSL -H 'Cache-Control: no-cache' "$1"
+}
+
+sha256_stream() {
+  # Reads bytes from stdin and prints a lowercase hex SHA256.
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+    return 0
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+    return 0
+  fi
+  return 1
+}
+
+lower_hex() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 lineage_print_check() {
   local label="$1" status="$2"
   shift 2
@@ -160,6 +189,139 @@ marker_block() {
       exit
     }
   '
+}
+
+manifest_field() {
+  # manifest_field <canonical-json> <key>
+  local manifest="$1" key="$2"
+  jq -r --arg key "$key" '.[$key] // ""' <<<"$manifest"
+}
+
+manifest_csv_has() {
+  # manifest_csv_has <canonical-json> <key> <value>
+  # Accept either an array field or a comma-separated string field so operators
+  # can generate the manifest from simple tooling while the audit remains strict
+  # about required values.
+  local manifest="$1" key="$2" value="$3"
+  jq -e --arg key "$key" --arg value "$value" '
+    .[$key] as $field
+    | if ($field | type) == "array" then
+        any($field[]; . == $value)
+      elif ($field | type) == "string" then
+        ("," + ($field | gsub("\\s"; "")) + ",") | contains("," + $value + ",")
+      else
+        false
+      end
+  ' <<<"$manifest" >/dev/null
+}
+
+normalize_csv() {
+  # normalize_csv <comma-separated-values>
+  printf '%s' "$1" \
+    | tr -d '[:space:]' \
+    | tr ',' '\n' \
+    | awk 'NF' \
+    | LC_ALL=C sort -u \
+    | paste -sd, -
+}
+
+manifest_csv_values() {
+  # manifest_csv_values <canonical-json> <key>
+  # Return a sorted comma-separated set for an array or comma-separated string.
+  local manifest="$1" key="$2"
+  jq -r --arg key "$key" '
+    .[$key] as $field
+    | if ($field | type) == "array" then
+        $field[]
+      elif ($field | type) == "string" then
+        ($field | gsub("\\s"; "") | split(",")[])
+      else
+        empty
+      end
+  ' <<<"$manifest" \
+    | awk 'NF' \
+    | LC_ALL=C sort -u \
+    | paste -sd, -
+}
+
+manifest_csv_matches_marker() {
+  # manifest_csv_matches_marker <canonical-json> <marker-body> <key>
+  local manifest="$1" marker_body="$2" key="$3"
+  local marker_values manifest_values
+  marker_values="$(normalize_csv "$(printf '%s\n' "$marker_body" | waiver_field "$key")")"
+  manifest_values="$(manifest_csv_values "$manifest" "$key")"
+  [ -n "$manifest_values" ] && [ "$manifest_values" = "$marker_values" ]
+}
+
+verify_view_only_evidence_manifest() {
+  # verify_view_only_evidence_manifest <url> <expected-sha256> <marker-body>
+  local url="$1" expected_sha="$2" marker_body="$3"
+  local fetched canonical actual_sha marker_value manifest_value errors=()
+
+  case "$url" in
+    https://*) ;;
+    file://*)
+      if [ "${F22_6_ALLOW_LOCAL_EVIDENCE_URL_FOR_TESTS:-0}" != "1" ]; then
+        errors+=("evidence_package_url:https-required")
+      fi
+      ;;
+    *) errors+=("evidence_package_url:https-required") ;;
+  esac
+  if [ "${#errors[@]}" -ne 0 ]; then
+    printf '%s' "$(IFS=,; printf '%s' "${errors[*]}")"
+    return 1
+  fi
+
+  if ! fetched="$(fetch_url "$url" 2>&1)"; then
+    errors+=("evidence_package_fetch")
+    printf '%s' "$(IFS=,; printf '%s' "${errors[*]}")"
+    return 1
+  fi
+
+  if ! canonical="$(jq -cS . <<<"$fetched" 2>/dev/null)"; then
+    errors+=("evidence_package_json")
+    printf '%s' "$(IFS=,; printf '%s' "${errors[*]}")"
+    return 1
+  fi
+
+  if ! actual_sha="$(printf '%s' "$canonical" | sha256_stream)"; then
+    errors+=("evidence_package_sha256_tool")
+  elif [ "$(lower_hex "$actual_sha")" != "$(lower_hex "$expected_sha")" ]; then
+    errors+=("evidence_package_sha256_mismatch")
+  fi
+
+  [ "$(manifest_field "$canonical" "schema_version")" = "faz22.6-view-only-evidence-v1" ] || errors+=("manifest:schema_version")
+
+  local exact_field
+  for exact_field in acceptance_scope product_channel view_mode pilot_device session_id recording_worm d10_fail_closed dlp_mask_policy local_abort active_indicator viewer_path_decision kvkk_attended_pilot_signoff owner_approved_by approved_at expires_at; do
+    marker_value="$(printf '%s\n' "$marker_body" | waiver_field "$exact_field")"
+    manifest_value="$(manifest_field "$canonical" "$exact_field")"
+    if [ -z "$manifest_value" ]; then
+      errors+=("manifest:$exact_field")
+    elif [ "$manifest_value" != "$marker_value" ]; then
+      errors+=("manifest:${exact_field}:mismatch")
+    fi
+  done
+
+  local required_value
+  manifest_csv_matches_marker "$canonical" "$marker_body" "audit_negative_matrix" || errors+=("manifest:audit_negative_matrix:mismatch")
+  manifest_csv_matches_marker "$canonical" "$marker_body" "forbidden_claims" || errors+=("manifest:forbidden_claims:mismatch")
+
+  for required_value in no-auth wrong-device expired-session recording-down dlp-deny local-abort; do
+    manifest_csv_has "$canonical" "audit_negative_matrix" "$required_value" || errors+=("manifest:audit_negative_matrix:$required_value")
+  done
+  IFS=',' read -r -a _view_manifest_forbidden_claims <<<"$VIEW_ONLY_FORBIDDEN_CLAIMS"
+  for required_value in "${_view_manifest_forbidden_claims[@]}"; do
+    [ -z "$required_value" ] && continue
+    manifest_csv_has "$canonical" "forbidden_claims" "$required_value" || errors+=("manifest:forbidden_claims:$required_value")
+  done
+
+  if [ "${#errors[@]}" -ne 0 ]; then
+    printf '%s' "$(IFS=,; printf '%s' "${errors[*]}")"
+    return 1
+  fi
+
+  return 0
 }
 
 check_release_lineage_waiver() {
@@ -417,6 +579,7 @@ check_view_only_gate() {
 
   if [ "$marker_count_value" -eq 1 ]; then
     local acceptance_scope product_channel view_mode pilot_device session_id evidence_package_sha256
+    local evidence_package_url evidence_manifest_errors
     local recording_worm d10_fail_closed dlp_mask_policy local_abort active_indicator viewer_path_decision
     local audit_negative_matrix kvkk_attended_pilot_signoff forbidden_claims owner approved_at expires_at date_errors
     marker_body="$(printf '%s\n' "$body" | marker_block 'F22_6_VIEW_ONLY_ACCEPTANCE')"
@@ -425,6 +588,7 @@ check_view_only_gate() {
     view_mode="$(printf '%s\n' "$marker_body" | waiver_field 'view_mode')"
     pilot_device="$(printf '%s\n' "$marker_body" | waiver_field 'pilot_device')"
     session_id="$(printf '%s\n' "$marker_body" | waiver_field 'session_id')"
+    evidence_package_url="$(printf '%s\n' "$marker_body" | waiver_field 'evidence_package_url')"
     evidence_package_sha256="$(printf '%s\n' "$marker_body" | waiver_field 'evidence_package_sha256')"
     recording_worm="$(printf '%s\n' "$marker_body" | waiver_field 'recording_worm')"
     d10_fail_closed="$(printf '%s\n' "$marker_body" | waiver_field 'd10_fail_closed')"
@@ -445,6 +609,7 @@ check_view_only_gate() {
     [ "$view_mode" = "VIEW_ONLY" ] || missing+=("view_mode")
     [ -n "$pilot_device" ] || missing+=("pilot_device")
     [ -n "$session_id" ] || missing+=("session_id")
+    [ -n "$evidence_package_url" ] || missing+=("evidence_package_url")
     [[ "$evidence_package_sha256" =~ ^[a-fA-F0-9]{64}$ ]] || missing+=("evidence_package_sha256")
     [ "$recording_worm" = "pass" ] || missing+=("recording_worm")
     [ "$d10_fail_closed" = "pass" ] || missing+=("d10_fail_closed")
@@ -471,13 +636,19 @@ check_view_only_gate() {
     date_errors="$(date_window_errors "$approved_at" "$expires_at")"
     [ -z "$date_errors" ] || missing+=("$date_errors")
 
+    if [ -n "$evidence_package_url" ] && [[ "$evidence_package_sha256" =~ ^[a-fA-F0-9]{64}$ ]]; then
+      if ! evidence_manifest_errors="$(verify_view_only_evidence_manifest "$evidence_package_url" "$evidence_package_sha256" "$marker_body")"; then
+        missing+=("$evidence_manifest_errors")
+      fi
+    fi
+
     if [ "${#missing[@]}" -ne 0 ]; then
       local reason
       reason="$(IFS=,; printf '%s' "${missing[*]}")"
       lineage_print_check 'GATE_VIEW_ONLY_SCREEN_SHARE' 'blocked' "state=$state issue=$ref title=$(printf '%q' "$title") reason=$reason"
       return 1
     fi
-    lineage_print_check 'GATE_VIEW_ONLY_SCREEN_SHARE' 'pass' "state=$state issue=$ref owner=$owner session_id=$session_id expires_at=$expires_at"
+    lineage_print_check 'GATE_VIEW_ONLY_SCREEN_SHARE' 'pass' "state=$state issue=$ref owner=$owner session_id=$session_id evidence_package_sha256=$evidence_package_sha256 expires_at=$expires_at"
     return 0
   fi
 
@@ -671,4 +842,6 @@ main() {
   fi
 }
 
-main "$@"
+if [ "${F22_6_COMPLETION_AUDIT_SOURCE_ONLY:-0}" != "1" ]; then
+  main "$@"
+fi

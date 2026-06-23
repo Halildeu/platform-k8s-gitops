@@ -135,7 +135,8 @@ product_channel: endpoint-agent-outbound-mtls-remote-bridge
 view_mode: VIEW_ONLY
 pilot_device: <device or deviceId>
 session_id: <product session id>
-evidence_package_sha256: <64 hex chars, upper or lower case>
+evidence_package_url: <https URL to canonical JSON evidence manifest>
+evidence_package_sha256: <64 hex SHA256 of jq -cS canonical JSON manifest>
 recording_worm: pass
 d10_fail_closed: pass
 dlp_mask_policy: pass
@@ -154,11 +155,67 @@ expires_at: YYYY-MM-DD
 the fan-out limitation explicit; it does not prove broad operator-viewer
 readiness.
 
+The evidence package URL must be fetchable over HTTPS by the audit runner and
+must return a JSON manifest whose `jq -cS` canonical representation hashes to
+`evidence_package_sha256`. The manifest must use this schema:
+
+```json
+{
+  "schema_version": "faz22.6-view-only-evidence-v1",
+  "acceptance_scope": "bounded-pilot-view-only",
+  "product_channel": "endpoint-agent-outbound-mtls-remote-bridge",
+  "view_mode": "VIEW_ONLY",
+  "pilot_device": "<device or deviceId>",
+  "session_id": "<product session id>",
+  "recording_worm": "pass",
+  "d10_fail_closed": "pass",
+  "dlp_mask_policy": "pass",
+  "local_abort": "pass",
+  "active_indicator": "pass",
+  "viewer_path_decision": "fanout-proven",
+  "audit_negative_matrix": [
+    "no-auth",
+    "wrong-device",
+    "expired-session",
+    "recording-down",
+    "dlp-deny",
+    "local-abort"
+  ],
+  "kvkk_attended_pilot_signoff": "pass",
+  "forbidden_claims": [
+    "rdp",
+    "credential-entry",
+    "raw-shell",
+    "port-forward",
+    "5-device",
+    "50-device",
+    "800-device",
+    "production",
+    "broad-rollout"
+  ],
+  "owner_approved_by": "<named owner>",
+  "approved_at": "YYYY-MM-DD",
+  "expires_at": "YYYY-MM-DD"
+}
+```
+
+`viewer_path_decision` in the manifest must match the issue marker and may be
+either `fanout-proven` or `owner-deferred`; the JSON block above shows the
+fan-out-proven case.
+
+The manifest is intentionally metadata-only. Do not publish raw screen-share
+frames, credentials, private endpoint identifiers, personal data, or operator
+tokens in the manifest. Store sensitive recording material in the approved WORM
+evidence location and expose only redacted references and hashes.
+
 Marker parsing is fail-closed:
 
 - named owner cannot be empty, `TBD`, `none`, or `n/a`;
 - dates must parse as UTC `YYYY-MM-DD`;
 - expired acceptance/risk windows fail;
+- `evidence_package_url` must be HTTPS and fetchable;
+- `evidence_package_sha256` must match the canonical JSON evidence manifest;
+- required manifest fields must match the issue marker;
 - forbidden rollout claims must be explicitly listed;
 - the marker must live on the canonical issue body, not only in a comment.
 
