@@ -1,0 +1,47 @@
+name: Gate Faz 22.6 VIEW_ONLY evidence verifier
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gate-faz22-view-only-evidence-verifier.yml'
+      - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/gate-faz22-view-only-evidence-verifier.yml'
+      - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-faz22-view-only-evidence-verifier-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verifier-regression:
+    name: Verify VIEW_ONLY evidence manifest guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Parse completion audit and verifier test
+        run: |
+          set -euo pipefail
+          bash -n \
+            scripts/faz22-remote-ops/faz22-6-completion-audit.sh \
+            tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh
+
+      - name: Run VIEW_ONLY evidence verifier regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_view_only_evidence_verifier.sh
