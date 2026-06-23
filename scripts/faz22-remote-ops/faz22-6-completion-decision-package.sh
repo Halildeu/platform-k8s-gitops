@@ -70,7 +70,7 @@ fi
 
 first_line() {
   local prefix="$1"
-  grep -m1 "^${prefix}" "$AUDIT_FILE" || true
+  awk -v prefix="$prefix" 'index($0, prefix) == 1 { print; exit }' "$AUDIT_FILE"
 }
 
 line_value() {
