@@ -19,6 +19,10 @@ EXPECTED_AGENT_LATEST_TAG="${EXPECTED_AGENT_LATEST_TAG:-v0.2.28}"
 RELEASE_HYGIENE_RECENT_THRESHOLD="${RELEASE_HYGIENE_RECENT_THRESHOLD:-5}"
 RELEASE_LINEAGE_WAIVER_REF="${RELEASE_LINEAGE_WAIVER_REF:-Halildeu/platform-k8s-gitops#1901}"
 RELEASE_LINEAGE_WAIVER_FORBIDDEN_CLAIMS="${RELEASE_LINEAGE_WAIVER_FORBIDDEN_CLAIMS:-5-device,50-device,800-device,production,broad-rollout}"
+B1_4_ATTESTATION_ACCEPTANCE_REF="${B1_4_ATTESTATION_ACCEPTANCE_REF:-Halildeu/platform-backend#548}"
+B1_4_RISK_ACCEPTANCE_FORBIDDEN_CLAIMS="${B1_4_RISK_ACCEPTANCE_FORBIDDEN_CLAIMS:-tpm-complete,hardware-attestation-complete,5-device,50-device,800-device,production,broad-rollout}"
+VIEW_ONLY_ACCEPTANCE_REF="${VIEW_ONLY_ACCEPTANCE_REF:-Halildeu/platform-k8s-gitops#1580}"
+VIEW_ONLY_FORBIDDEN_CLAIMS="${VIEW_ONLY_FORBIDDEN_CLAIMS:-rdp,credential-entry,raw-shell,port-forward,5-device,50-device,800-device,production,broad-rollout}"
 EXPECTED_AGENT_TAG="${EXPECTED_AGENT_TAG:-$EXPECTED_AGENT_LATEST_TAG}"
 EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2}"
 
@@ -43,6 +47,113 @@ waiver_field() {
   # waiver_field <key> <issue-body>
   local key="$1"
   sed -n "s/^${key}:[[:space:]]*//p" | head -1
+}
+
+csv_has() {
+  local csv="$1" value="$2"
+  csv="$(printf '%s' "$csv" | tr -d ' ')"
+  case ",$csv," in
+    *,"$value",*) return 0 ;;
+  esac
+  return 1
+}
+
+owner_is_invalid() {
+  local owner="$1" owner_lc
+  owner_lc="$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]')"
+  [ -z "$owner" ] && return 0
+  case "$owner_lc" in
+    tbd|none|n/a) return 0 ;;
+  esac
+  return 1
+}
+
+date_window_errors() {
+  # date_window_errors <approved_at> <expires_at-or-empty>
+  local approved_at="$1" expires_at="${2:-}" today
+  local missing=()
+  if ! [[ "$approved_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    missing+=("approved_at")
+  fi
+  if [ -n "$expires_at" ] && ! [[ "$expires_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    missing+=("expires_at")
+  fi
+  today="$(date -u +%Y-%m-%d 2>/dev/null || true)"
+  if ! [[ "$today" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    missing+=("today-unparseable")
+  else
+    if [[ "$approved_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "$approved_at" > "$today" ]]; then
+      missing+=("approved_at-in-future")
+    fi
+    if [ -n "$expires_at" ] && [[ "$expires_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "$expires_at" < "$today" ]]; then
+      missing+=("expires_at-expired")
+    fi
+  fi
+  if [ "${#missing[@]}" -ne 0 ]; then
+    local reason
+    reason="$(IFS=,; printf '%s' "${missing[*]}")"
+    printf '%s' "$reason"
+  fi
+}
+
+issue_json_for_ref() {
+  local ref="$1" repo_ref number issue_json
+  if printf '%s' "$ref" | grep -q '^https://github.com/'; then
+    repo_ref="${ref#https://github.com/}"
+    repo_ref="${repo_ref%%/issues/*}"
+    number="${ref##*/}"
+  elif printf '%s' "$ref" | grep -q '#'; then
+    repo_ref="${ref%%#*}"
+    number="${ref##*#}"
+  else
+    printf '{"_audit_error":"bad-ref-format"}'
+    return 1
+  fi
+  if ! issue_json="$(gh issue view "$number" -R "$repo_ref" --json state,body,title,url 2>&1)"; then
+    printf '{"_audit_error":%s}' "$(jq -Rn --arg error "$issue_json" '$error')"
+    return 1
+  fi
+  printf '%s' "$issue_json"
+}
+
+marker_count() {
+  # marker_count <marker-key>; reads issue body from stdin and ignores fenced examples.
+  local marker="$1"
+  awk -v marker="$marker" '
+    /^```/ { fenced = !fenced; next }
+    !fenced && $0 ~ "^" marker ":[[:space:]]*v1[[:space:]]*$" { count++ }
+    END { print count + 0 }
+  '
+}
+
+marker_block() {
+  # marker_block <marker-key>; reads issue body from stdin and ignores fenced examples.
+  local marker="$1"
+  awk -v marker="$marker" '
+    /^```/ {
+      if (found) {
+        exit
+      }
+      fenced = !fenced
+      next
+    }
+    fenced { next }
+    !found && $0 ~ "^" marker ":[[:space:]]*v1[[:space:]]*$" {
+      found = 1
+      print
+      next
+    }
+    found {
+      if ($0 ~ /^[[:space:]]*$/) {
+        exit
+      }
+      if ($0 ~ /^[A-Za-z0-9_]+:[[:space:]]*/) {
+        print
+        next
+      }
+      exit
+    }
+  '
 }
 
 check_release_lineage_waiver() {
@@ -174,6 +285,200 @@ pass_if_state() {
   return 1
 }
 
+check_b1_4_hardware_gate() {
+  local ref="$B1_4_ATTESTATION_ACCEPTANCE_REF" issue_json state body title
+  local hardware_count risk_count hardware_block risk_block missing=()
+  if ! issue_json="$(issue_json_for_ref "$ref")"; then
+    lineage_print_check 'GATE_B1_4_HARDWARE_ATTESTATION' 'blocked' "ref=$ref reason=$(printf '%s' "$issue_json" | jq -r '._audit_error // "issue-fetch-failed"')"
+    return 1
+  fi
+  state="$(printf '%s\n' "$issue_json" | jq -r '.state // ""')"
+  body="$(printf '%s\n' "$issue_json" | jq -r '.body // ""')"
+  title="$(printf '%s\n' "$issue_json" | jq -r '.title // ""')"
+  hardware_count="$(printf '%s\n' "$body" | marker_count 'F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE')"
+  risk_count="$(printf '%s\n' "$body" | marker_count 'F22_6_B1_4_RISK_ACCEPTANCE')"
+
+  if [ "$hardware_count" -gt 0 ] && [ "$risk_count" -gt 0 ]; then
+    lineage_print_check 'GATE_B1_4_HARDWARE_ATTESTATION' 'blocked' "state=$state issue=$ref title=$(printf '%q' "$title") reason=multiple-markers"
+    return 1
+  fi
+  if [ "$hardware_count" -gt 1 ] || [ "$risk_count" -gt 1 ]; then
+    lineage_print_check 'GATE_B1_4_HARDWARE_ATTESTATION' 'blocked' "state=$state issue=$ref title=$(printf '%q' "$title") reason=duplicate-marker"
+    return 1
+  fi
+
+  if [ "$hardware_count" -eq 1 ]; then
+    local acceptance_scope device_key_evidence tpm_or_secure_element agent_wire_contract broker_verifier root_policy field_evidence
+    local positive_matrix negative_matrix owner approved_at date_errors
+    hardware_block="$(printf '%s\n' "$body" | marker_block 'F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE')"
+    acceptance_scope="$(printf '%s\n' "$hardware_block" | waiver_field 'acceptance_scope')"
+    device_key_evidence="$(printf '%s\n' "$hardware_block" | waiver_field 'device_key_evidence')"
+    tpm_or_secure_element="$(printf '%s\n' "$hardware_block" | waiver_field 'tpm_or_secure_element')"
+    agent_wire_contract="$(printf '%s\n' "$hardware_block" | waiver_field 'agent_wire_contract')"
+    broker_verifier="$(printf '%s\n' "$hardware_block" | waiver_field 'broker_verifier')"
+    root_policy="$(printf '%s\n' "$hardware_block" | waiver_field 'root_policy')"
+    field_evidence="$(printf '%s\n' "$hardware_block" | waiver_field 'field_evidence')"
+    positive_matrix="$(printf '%s\n' "$hardware_block" | waiver_field 'positive_matrix')"
+    negative_matrix="$(printf '%s\n' "$hardware_block" | waiver_field 'negative_matrix')"
+    owner="$(printf '%s\n' "$hardware_block" | waiver_field 'owner_approved_by')"
+    approved_at="$(printf '%s\n' "$hardware_block" | waiver_field 'approved_at')"
+
+    [ "$state" = "CLOSED" ] || missing+=("issue-not-closed")
+    [ "$acceptance_scope" = "hardware-attestation" ] || missing+=("acceptance_scope")
+    [ "$device_key_evidence" = "present" ] || missing+=("device_key_evidence")
+    [ "$tpm_or_secure_element" = "present" ] || missing+=("tpm_or_secure_element")
+    [ "$agent_wire_contract" = "present" ] || missing+=("agent_wire_contract")
+    [ "$broker_verifier" = "pass" ] || missing+=("broker_verifier")
+    [ "$root_policy" = "pass" ] || missing+=("root_policy")
+    [ "$field_evidence" = "attached" ] || missing+=("field_evidence")
+    csv_has "$positive_matrix" "hardware-attested-device" || missing+=("positive_matrix:hardware-attested-device")
+    local negative
+    for negative in missing stale replay wrong-device wrong-tenant; do
+      csv_has "$negative_matrix" "$negative" || missing+=("negative_matrix:$negative")
+    done
+    owner_is_invalid "$owner" && missing+=("owner_approved_by")
+    date_errors="$(date_window_errors "$approved_at")"
+    [ -z "$date_errors" ] || missing+=("$date_errors")
+
+    if [ "${#missing[@]}" -ne 0 ]; then
+      local reason
+      reason="$(IFS=,; printf '%s' "${missing[*]}")"
+      lineage_print_check 'GATE_B1_4_HARDWARE_ATTESTATION' 'blocked' "state=$state issue=$ref title=$(printf '%q' "$title") reason=$reason"
+      return 1
+    fi
+    lineage_print_check 'GATE_B1_4_HARDWARE_ATTESTATION' 'pass' "state=$state issue=$ref owner=$owner approved_at=$approved_at"
+    return 0
+  fi
+
+  if [ "$risk_count" -eq 1 ]; then
+    local risk_scope accepted_gap compensating_controls forbidden_claims owner approved_at expires_at date_errors
+    risk_block="$(printf '%s\n' "$body" | marker_block 'F22_6_B1_4_RISK_ACCEPTANCE')"
+    risk_scope="$(printf '%s\n' "$risk_block" | waiver_field 'risk_scope')"
+    accepted_gap="$(printf '%s\n' "$risk_block" | waiver_field 'accepted_gap')"
+    compensating_controls="$(printf '%s\n' "$risk_block" | waiver_field 'compensating_controls')"
+    forbidden_claims="$(printf '%s\n' "$risk_block" | waiver_field 'forbidden_claims')"
+    owner="$(printf '%s\n' "$risk_block" | waiver_field 'owner_approved_by')"
+    approved_at="$(printf '%s\n' "$risk_block" | waiver_field 'approved_at')"
+    expires_at="$(printf '%s\n' "$risk_block" | waiver_field 'expires_at')"
+
+    [ "$state" = "OPEN" ] || missing+=("issue-not-open-for-risk-tracking")
+    [ "$risk_scope" = "bounded-pilot-enrollment-backed-trust" ] || missing+=("risk_scope")
+    [ "$accepted_gap" = "no-real-tpm-attestation" ] || missing+=("accepted_gap")
+    local control
+    for control in cert-bound-token mTLS revocation-check signed-permits dual-control audit-recording kill-revoke; do
+      csv_has "$compensating_controls" "$control" || missing+=("compensating_controls:$control")
+    done
+    local forbidden
+    IFS=',' read -r -a _b1_forbidden_claims <<<"$B1_4_RISK_ACCEPTANCE_FORBIDDEN_CLAIMS"
+    for forbidden in "${_b1_forbidden_claims[@]}"; do
+      [ -z "$forbidden" ] && continue
+      csv_has "$forbidden_claims" "$forbidden" || missing+=("forbidden_claims:$forbidden")
+    done
+    owner_is_invalid "$owner" && missing+=("owner_approved_by")
+    [ -n "$expires_at" ] || missing+=("expires_at")
+    date_errors="$(date_window_errors "$approved_at" "$expires_at")"
+    [ -z "$date_errors" ] || missing+=("$date_errors")
+
+    if [ "${#missing[@]}" -ne 0 ]; then
+      local reason
+      reason="$(IFS=,; printf '%s' "${missing[*]}")"
+      lineage_print_check 'GATE_B1_4_HARDWARE_ATTESTATION' 'blocked' "state=$state issue=$ref title=$(printf '%q' "$title") reason=$reason"
+      return 1
+    fi
+    lineage_print_check 'GATE_B1_4_HARDWARE_ATTESTATION' 'bounded_pilot_risk_accepted' "state=$state issue=$ref owner=$owner expires_at=$expires_at"
+    return 0
+  fi
+
+  lineage_print_check 'GATE_B1_4_HARDWARE_ATTESTATION' 'blocked' "state=$state expected=CLOSED-or-bounded-risk-accepted issue=$ref title=$(printf '%q' "$title") reason=missing-acceptance-marker"
+  return 1
+}
+
+check_view_only_gate() {
+  local ref="$VIEW_ONLY_ACCEPTANCE_REF" issue_json state body title marker_count_value marker_body missing=()
+  if ! issue_json="$(issue_json_for_ref "$ref")"; then
+    lineage_print_check 'GATE_VIEW_ONLY_SCREEN_SHARE' 'blocked' "ref=$ref reason=$(printf '%s' "$issue_json" | jq -r '._audit_error // "issue-fetch-failed"')"
+    return 1
+  fi
+  state="$(printf '%s\n' "$issue_json" | jq -r '.state // ""')"
+  body="$(printf '%s\n' "$issue_json" | jq -r '.body // ""')"
+  title="$(printf '%s\n' "$issue_json" | jq -r '.title // ""')"
+  marker_count_value="$(printf '%s\n' "$body" | marker_count 'F22_6_VIEW_ONLY_ACCEPTANCE')"
+
+  if [ "$marker_count_value" -gt 1 ]; then
+    lineage_print_check 'GATE_VIEW_ONLY_SCREEN_SHARE' 'blocked' "state=$state issue=$ref title=$(printf '%q' "$title") reason=duplicate-marker"
+    return 1
+  fi
+
+  if [ "$marker_count_value" -eq 1 ]; then
+    local acceptance_scope product_channel view_mode pilot_device session_id evidence_package_sha256
+    local recording_worm d10_fail_closed dlp_mask_policy local_abort active_indicator viewer_path_decision
+    local audit_negative_matrix kvkk_attended_pilot_signoff forbidden_claims owner approved_at expires_at date_errors
+    marker_body="$(printf '%s\n' "$body" | marker_block 'F22_6_VIEW_ONLY_ACCEPTANCE')"
+    acceptance_scope="$(printf '%s\n' "$marker_body" | waiver_field 'acceptance_scope')"
+    product_channel="$(printf '%s\n' "$marker_body" | waiver_field 'product_channel')"
+    view_mode="$(printf '%s\n' "$marker_body" | waiver_field 'view_mode')"
+    pilot_device="$(printf '%s\n' "$marker_body" | waiver_field 'pilot_device')"
+    session_id="$(printf '%s\n' "$marker_body" | waiver_field 'session_id')"
+    evidence_package_sha256="$(printf '%s\n' "$marker_body" | waiver_field 'evidence_package_sha256')"
+    recording_worm="$(printf '%s\n' "$marker_body" | waiver_field 'recording_worm')"
+    d10_fail_closed="$(printf '%s\n' "$marker_body" | waiver_field 'd10_fail_closed')"
+    dlp_mask_policy="$(printf '%s\n' "$marker_body" | waiver_field 'dlp_mask_policy')"
+    local_abort="$(printf '%s\n' "$marker_body" | waiver_field 'local_abort')"
+    active_indicator="$(printf '%s\n' "$marker_body" | waiver_field 'active_indicator')"
+    viewer_path_decision="$(printf '%s\n' "$marker_body" | waiver_field 'viewer_path_decision')"
+    audit_negative_matrix="$(printf '%s\n' "$marker_body" | waiver_field 'audit_negative_matrix')"
+    kvkk_attended_pilot_signoff="$(printf '%s\n' "$marker_body" | waiver_field 'kvkk_attended_pilot_signoff')"
+    forbidden_claims="$(printf '%s\n' "$marker_body" | waiver_field 'forbidden_claims')"
+    owner="$(printf '%s\n' "$marker_body" | waiver_field 'owner_approved_by')"
+    approved_at="$(printf '%s\n' "$marker_body" | waiver_field 'approved_at')"
+    expires_at="$(printf '%s\n' "$marker_body" | waiver_field 'expires_at')"
+
+    [ "$state" = "CLOSED" ] || missing+=("issue-not-closed")
+    [ "$acceptance_scope" = "bounded-pilot-view-only" ] || missing+=("acceptance_scope")
+    [ "$product_channel" = "endpoint-agent-outbound-mtls-remote-bridge" ] || missing+=("product_channel")
+    [ "$view_mode" = "VIEW_ONLY" ] || missing+=("view_mode")
+    [ -n "$pilot_device" ] || missing+=("pilot_device")
+    [ -n "$session_id" ] || missing+=("session_id")
+    [[ "$evidence_package_sha256" =~ ^[a-fA-F0-9]{64}$ ]] || missing+=("evidence_package_sha256")
+    [ "$recording_worm" = "pass" ] || missing+=("recording_worm")
+    [ "$d10_fail_closed" = "pass" ] || missing+=("d10_fail_closed")
+    [ "$dlp_mask_policy" = "pass" ] || missing+=("dlp_mask_policy")
+    [ "$local_abort" = "pass" ] || missing+=("local_abort")
+    [ "$active_indicator" = "pass" ] || missing+=("active_indicator")
+    case "$viewer_path_decision" in
+      fanout-proven|owner-deferred) ;;
+      *) missing+=("viewer_path_decision") ;;
+    esac
+    local negative
+    for negative in no-auth wrong-device expired-session recording-down dlp-deny local-abort; do
+      csv_has "$audit_negative_matrix" "$negative" || missing+=("audit_negative_matrix:$negative")
+    done
+    [ "$kvkk_attended_pilot_signoff" = "pass" ] || missing+=("kvkk_attended_pilot_signoff")
+    local forbidden
+    IFS=',' read -r -a _view_forbidden_claims <<<"$VIEW_ONLY_FORBIDDEN_CLAIMS"
+    for forbidden in "${_view_forbidden_claims[@]}"; do
+      [ -z "$forbidden" ] && continue
+      csv_has "$forbidden_claims" "$forbidden" || missing+=("forbidden_claims:$forbidden")
+    done
+    owner_is_invalid "$owner" && missing+=("owner_approved_by")
+    [ -n "$expires_at" ] || missing+=("expires_at")
+    date_errors="$(date_window_errors "$approved_at" "$expires_at")"
+    [ -z "$date_errors" ] || missing+=("$date_errors")
+
+    if [ "${#missing[@]}" -ne 0 ]; then
+      local reason
+      reason="$(IFS=,; printf '%s' "${missing[*]}")"
+      lineage_print_check 'GATE_VIEW_ONLY_SCREEN_SHARE' 'blocked' "state=$state issue=$ref title=$(printf '%q' "$title") reason=$reason"
+      return 1
+    fi
+    lineage_print_check 'GATE_VIEW_ONLY_SCREEN_SHARE' 'pass' "state=$state issue=$ref owner=$owner session_id=$session_id expires_at=$expires_at"
+    return 0
+  fi
+
+  lineage_print_check 'GATE_VIEW_ONLY_SCREEN_SHARE' 'blocked' "state=$state expected=CLOSED-with-view-only-acceptance issue=$ref title=$(printf '%q' "$title") reason=missing-acceptance-marker"
+  return 1
+}
+
 check_remote_bridge() {
   local output digest_hits secret_hits
   if ! command -v ssh >/dev/null 2>&1; then
@@ -270,18 +575,18 @@ main() {
   pass_if_state 'GATE_OPERATOR_UX_TERMINAL' "$WEB_REPO" 820 CLOSED || blocked=1
   pass_if_state 'GATE_OPERATOR_UX_SESSION_STATE' "$WEB_REPO" 822 CLOSED || blocked=1
 
-  if pass_if_state 'GATE_B1_4_HARDWARE_ATTESTATION' "$BACKEND_REPO" 548 CLOSED; then
+  if check_b1_4_hardware_gate; then
     :
   else
     blocked=1
-    next_required+=('close-or-risk-accept-548')
+    next_required+=('close-or-risk-accept-548-with-marker')
   fi
 
-  if pass_if_state 'GATE_VIEW_ONLY_SCREEN_SHARE' "$GITOPS_REPO" 1580 CLOSED; then
+  if check_view_only_gate; then
     :
   else
     blocked=1
-    next_required+=('close-1580')
+    next_required+=('close-1580-with-view-only-marker')
   fi
 
   if ! check_remote_bridge; then
