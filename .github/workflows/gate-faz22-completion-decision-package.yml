@@ -1,0 +1,47 @@
+name: Gate Faz 22.6 completion decision package
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gate-faz22-completion-decision-package.yml'
+      - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-decision-package.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_completion_decision_package.sh'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/gate-faz22-completion-decision-package.yml'
+      - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/faz22-6-completion-decision-package.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_completion_decision_package.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-faz22-completion-decision-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  decision-package-regression:
+    name: Verify completion decision package
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Parse decision package script and test
+        run: |
+          set -euo pipefail
+          bash -n \
+            scripts/faz22-remote-ops/faz22-6-completion-decision-package.sh \
+            tests/faz22_remote_ops/test_faz22_6_completion_decision_package.sh
+
+      - name: Run completion decision package regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_completion_decision_package.sh
