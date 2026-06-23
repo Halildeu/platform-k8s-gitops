@@ -13,8 +13,20 @@ mkdir -p "$tmp_root"
 tmp_dir="$(mktemp -d "$tmp_root/view-only-evidence.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
 
+future_date_utc() {
+  local days="$1"
+  if date -u -d "+$days days" +%F >/dev/null 2>&1; then
+    date -u -d "+$days days" +%F
+    return
+  fi
+  date -u -v+"$days"d +%F
+}
+
+approved_at="$(date -u +%F)"
+expires_at="$(future_date_utc 7)"
+
 manifest="$tmp_dir/view-only-evidence.json"
-cat >"$manifest" <<'JSON'
+cat >"$manifest" <<JSON
 {
   "schema_version": "faz22.6-view-only-evidence-v1",
   "acceptance_scope": "bounded-pilot-view-only",
@@ -49,8 +61,8 @@ cat >"$manifest" <<'JSON'
     "broad-rollout"
   ],
   "owner_approved_by": "named-owner",
-  "approved_at": "2026-06-23",
-  "expires_at": "2026-06-30"
+  "approved_at": "$approved_at",
+  "expires_at": "$expires_at"
 }
 JSON
 
@@ -77,8 +89,8 @@ audit_negative_matrix: no-auth,wrong-device,expired-session,recording-down,dlp-d
 kvkk_attended_pilot_signoff: pass
 forbidden_claims: rdp,credential-entry,raw-shell,port-forward,5-device,50-device,800-device,production,broad-rollout
 owner_approved_by: named-owner
-approved_at: 2026-06-23
-expires_at: 2026-06-30
+approved_at: $approved_at
+expires_at: $expires_at
 EOF
 )"
 
@@ -112,5 +124,90 @@ if F22_6_ALLOW_LOCAL_EVIDENCE_URL_FOR_TESTS=0 verify_view_only_evidence_manifest
   echo "expected non-HTTPS evidence URL to fail outside test mode" >&2
   exit 1
 fi
+
+fake_bin="$tmp_dir/bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/gh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "$#" -eq 7 ] \
+  && [ "${1:-}" = "issue" ] \
+  && [ "${2:-}" = "view" ] \
+  && [ "${3:-}" = "1580" ] \
+  && [ "${4:-}" = "-R" ] \
+  && [ "${5:-}" = "Halildeu/platform-k8s-gitops" ] \
+  && [ "${6:-}" = "--json" ] \
+  && [ "${7:-}" = "state,body,title,url" ]; then
+  cat "$FAKE_GH_ISSUE_JSON"
+  exit 0
+fi
+echo "unexpected fake gh invocation: $*" >&2
+exit 2
+SH
+chmod +x "$fake_bin/gh"
+
+issue_json="$tmp_dir/view-only-issue.json"
+jq -n \
+  --arg state "CLOSED" \
+  --arg body "$marker_body" \
+  --arg title "fake VIEW_ONLY acceptance issue" \
+  '{state:$state,body:$body,title:$title,url:"https://example.invalid/issues/1580"}' \
+  >"$issue_json"
+
+PATH="$fake_bin:$PATH" \
+  FAKE_GH_ISSUE_JSON="$issue_json" \
+  VIEW_ONLY_ACCEPTANCE_REF="Halildeu/platform-k8s-gitops#1580" \
+  check_view_only_gate \
+  | tee "$tmp_dir/check-view-only-pass.out"
+
+grep -q '^GATE_VIEW_ONLY_SCREEN_SHARE=pass ' "$tmp_dir/check-view-only-pass.out"
+grep -q "evidence_package_sha256=$manifest_sha" "$tmp_dir/check-view-only-pass.out"
+
+jq -n \
+  --arg state "OPEN" \
+  --arg body "$marker_body" \
+  --arg title "fake VIEW_ONLY acceptance issue still open" \
+  '{state:$state,body:$body,title:$title,url:"https://example.invalid/issues/1580"}' \
+  >"$issue_json"
+
+set +e
+PATH="$fake_bin:$PATH" \
+  FAKE_GH_ISSUE_JSON="$issue_json" \
+  VIEW_ONLY_ACCEPTANCE_REF="Halildeu/platform-k8s-gitops#1580" \
+  check_view_only_gate \
+  >"$tmp_dir/check-view-only-open-issue.out"
+gate_rc="$?"
+set -e
+
+if [ "$gate_rc" = "0" ]; then
+  echo "expected open VIEW_ONLY acceptance issue to keep gate blocked" >&2
+  exit 1
+fi
+grep -q '^GATE_VIEW_ONLY_SCREEN_SHARE=blocked ' "$tmp_dir/check-view-only-open-issue.out"
+grep -q 'reason=issue-not-closed' "$tmp_dir/check-view-only-open-issue.out"
+
+missing_url_body="$(printf '%s\n' "$marker_body" | grep -v '^evidence_package_url:')"
+jq -n \
+  --arg state "CLOSED" \
+  --arg body "$missing_url_body" \
+  --arg title "fake VIEW_ONLY acceptance issue missing evidence URL" \
+  '{state:$state,body:$body,title:$title,url:"https://example.invalid/issues/1580"}' \
+  >"$issue_json"
+
+set +e
+PATH="$fake_bin:$PATH" \
+  FAKE_GH_ISSUE_JSON="$issue_json" \
+  VIEW_ONLY_ACCEPTANCE_REF="Halildeu/platform-k8s-gitops#1580" \
+  check_view_only_gate \
+  >"$tmp_dir/check-view-only-missing-url.out"
+gate_rc="$?"
+set -e
+
+if [ "$gate_rc" = "0" ]; then
+  echo "expected missing evidence_package_url marker to keep gate blocked" >&2
+  exit 1
+fi
+grep -q '^GATE_VIEW_ONLY_SCREEN_SHARE=blocked ' "$tmp_dir/check-view-only-missing-url.out"
+grep -q 'reason=evidence_package_url' "$tmp_dir/check-view-only-missing-url.out"
 
 echo "view-only-evidence-verifier-ok"
