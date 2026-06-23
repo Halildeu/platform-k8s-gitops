@@ -62,13 +62,22 @@ B1.4 source progress and boundary:
   device-trust modes, including the composite
   `REQUIRE_ENROLLMENT_AND_DEVICE_KEY` mode. It is source-wiring only and does
   not supply live TPM material, device-attestation roots, or field evidence.
+- `platform-backend#733` merged at `2026-06-23T02:53:06Z` with merge commit
+  `dcc5b6fb247f3408fe8d33db8742a5e33ddd1d56`. It adds source-level
+  negative evidence coverage for the strict v1 device-key attestation path:
+  the production parser, peer-trust ledger, and session device-trust verifier
+  now have an end-to-end test matrix for missing device-key evidence,
+  malformed envelopes, invalid signatures, untrusted roots, stale peer trust,
+  certificate-bound device mismatch, and missing tenant identity. This is
+  source hardening only and does not supply live TPM material,
+  device-attestation roots, or accepted field evidence.
 - `platform-agent#228`: `CLOSED`, reason `COMPLETED`, Project #2 `Done` for
   the source-producer scope only.
 - `platform-backend#548`: `OPEN`, reason `REOPENED`, Project #2 `Blocked`.
   Real completion still requires device-attestation CA/provisioning,
   device-attestation roots configured in the broker, real TPM/device-key
-  material on the wire, broker verifier pass, negative matrix, and accepted
-  live field evidence.
+  material on the wire, broker verifier pass, and accepted live positive and
+  negative field evidence.
 
 Boundary: this is bounded AgentPC2 product-channel acceptance only. It does not
 prove signed MSI/GPO broad rollout, 5-PC/50-PC/800-PC wave readiness,
