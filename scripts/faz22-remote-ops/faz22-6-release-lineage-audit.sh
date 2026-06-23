@@ -190,7 +190,9 @@ main() {
     blocked=1
   fi
 
-  if printf '%s\n' "$cur_ah_ref" | grep -q "$EXPECTED_ARTIFACT_HOST_DIGEST"; then
+  if [ -z "$cur_ah_ref" ]; then
+    print_check 'CURRENT_MANIFEST_ARTIFACT_HOST_DIGEST' 'not_required' "ref=missing reason=self-referential-image-digest release_manifest_ref=$rel_ah_ref"
+  elif printf '%s\n' "$cur_ah_ref" | grep -q "$EXPECTED_ARTIFACT_HOST_DIGEST"; then
     print_check 'CURRENT_MANIFEST_ARTIFACT_HOST_DIGEST' 'pass' "ref=$cur_ah_ref"
   else
     print_check 'CURRENT_MANIFEST_ARTIFACT_HOST_DIGEST' 'needs_hygiene' "ref=${cur_ah_ref:-missing} expected_digest=$EXPECTED_ARTIFACT_HOST_DIGEST"

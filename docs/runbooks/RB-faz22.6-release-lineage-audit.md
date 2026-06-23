@@ -25,9 +25,13 @@ For broad rollout, the release record must bind:
    `EndpointAgent.zip.sha256`, and `release-manifest.json`.
 5. `endpoint-agent.exe` SHA256.
 6. Signer thumbprint, signing tier, and trust scope.
-7. Artifact-host image tag plus immutable digest.
-8. Artifact-host `current` manifest parity with the GitHub release manifest.
-9. Live `artifact-host` deployment and pod imageID digest match.
+7. Artifact-host image tag plus immutable digest in the durable GitHub
+   release manifest.
+8. Artifact-host `current` manifest parity with the GitHub release manifest
+   for served payload fields (tag, agent SHA, ZIP SHA, signer, tier).
+9. Live `artifact-host` deployment and pod imageID digest match. The
+   `current` manifest is not required to embed its own final image digest
+   because writing that value into the image would itself change the digest.
 10. Acceptance issue/workflow that consumed this exact release.
 
 Missing metadata is not automatically a runtime no-go for the bounded pilot,
@@ -51,13 +55,18 @@ Observed on 2026-06-23:
 - Live `artifact-host` deployment in `k3d-test/platform-test` runs:
   `ghcr.io/halildeu/platform-agent-artifacts:v0.2.28@sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2`.
 
+Lineage boundary:
+
+- The artifact-host `current` manifest is served from the same image whose
+  final digest is only known after push. It is therefore not required to embed
+  its own final image digest; the durable GitHub release manifest and live
+  Kubernetes imageID provide that immutable digest binding.
+
 Hygiene findings:
 
 - The GitHub release `SHA256SUMS` asset is narrower than the artifact-host
   `SHA256SUMS` surface. It omits `EndpointAgent.zip`,
   `EndpointAgent.zip.sha256`, and `release-manifest.json`.
-- The artifact-host `current` manifest does not carry the artifact-host digest
-  fields even though the GitHub release manifest does.
 - Release objects report `isImmutable=false`.
 - The recent `v0.2.x` train is dense (`v0.2.9` through `v0.2.28` in the recent
   audit window). That is acceptable for pilot recovery, not broad rollout
@@ -89,7 +98,10 @@ production rollout ready until the audit prints `F22_6_RELEASE_LINEAGE=pass`.
 
 - release/latest/current/live artifact-host parity;
 - full GitHub release `SHA256SUMS` coverage;
-- artifact-host digest present in the current manifest;
+- artifact-host digest present in the durable GitHub release manifest and
+  matching the live `artifact-host` imageID;
+- current artifact-host manifest parity for served payload fields, without
+  requiring a self-referential image digest;
 - explicit source commit and workflow/run provenance in the release record;
 - no unresolved dense-train hygiene item or an owner-approved release-lineage
   waiver for the bounded pilot only.
