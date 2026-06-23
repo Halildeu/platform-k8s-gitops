@@ -230,11 +230,27 @@ jobs:
           fi
 
           # Same-origin path enforcement (fail-closed for CDN / cross-origin / relative).
-          # Both the Module Federation entry (/mf-entry-bootstrap-*.js) and the
-          # legacy Vite bundle (/assets/index-*.js) are accepted so a D30 warm
-          # rollback to a pre-MF image still passes Gate 1b.
+          # Accepted MF entry layouts (all same-origin):
+          #   - /mf-entry-bootstrap-*.js          — root, unhashed (legacy MF emit)
+          #   - /assets/mf-entry-bootstrap-*.js   — hashed, under /assets/ (current
+          #       Vite emit, e.g. /assets/mf-entry-bootstrap-0-<hash>.js). The build
+          #       moved the MF entry into the content-hashed /assets/ output; the
+          #       old root-only pattern rejected every post-move build with
+          #       "Unexpected module entry path layout" and blocked all frontend
+          #       deploys (run 28009051604). Accepting the /assets/ MF entry fixes
+          #       that false-red without weakening same-origin enforcement.
+          #   - /assets/index-*.js                — legacy Vite bundle, so a D30 warm
+          #       rollback to a pre-MF image still passes Gate 1b.
           case "${ROOT_ENTRY}" in
-            /mf-entry-bootstrap-*.js|/mf-entry-bootstrap-*.js\?*|/assets/index-*.js|/assets/index-*.js\?*)
+            *..*)
+              # Defense-in-depth (Codex 019ef363): the accept globs use `*`
+              # which also matches `/`, so reject any path-traversal segment
+              # up front — first-match arm, applies to ALL accepted layouts.
+              # Legit content-hashed entries never contain `..`.
+              echo "::error::Module entry path contains traversal segment, got: ${ROOT_ENTRY}"
+              exit 1
+              ;;
+            /mf-entry-bootstrap-*.js|/mf-entry-bootstrap-*.js\?*|/assets/mf-entry-bootstrap-*.js|/assets/mf-entry-bootstrap-*.js\?*|/assets/index-*.js|/assets/index-*.js\?*)
               ENTRY_URL="${TESTAI_URL}${ROOT_ENTRY}"
               ;;
             http://*|https://*|//*)
