@@ -24,7 +24,9 @@ jobs:
     timeout-minutes: 5
 
     env:
-      GH_TOKEN: ${{ secrets.PLATFORM_GITHUB_READ_TOKEN }}
+      # All referenced gate repositories are public. Use the workflow-scoped,
+      # read-only token instead of a long-lived PAT secret on the self-hosted runner.
+      GH_TOKEN: ${{ github.token }}
       REMOTE_BRIDGE_KUBECTL_MODE: local-kubectl
       SSH_TARGET: local
       KUBE_CONTEXT: k3d-test
@@ -38,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::PLATFORM_GITHUB_READ_TOKEN is not configured; Faz 22.6 completion audit cannot read issue gates"
+            echo "::error::github.token did not expand; Faz 22.6 completion audit cannot read issue gates"
             exit 1
           fi
 
