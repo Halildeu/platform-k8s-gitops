@@ -86,6 +86,24 @@ Run:
 scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh
 ```
 
+Mac/operator shells use `SSH_TARGET=staging-sw` by default for the live
+artifact-host digest check. If TCP/22 or local SSH authentication to
+`staging-sw` is unavailable, use the self-hosted runner path instead of
+treating the Mac-side SSH failure as cluster truth:
+
+```bash
+RELEASE_LINEAGE_KUBECTL_MODE=local-kubectl SSH_TARGET=local \
+  scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh
+```
+
+The canonical workflow is
+`.github/workflows/faz22-6-release-lineage-audit.yml`. It is read-only, runs on
+`[self-hosted, staging-sw, testai-deploy]`, uploads the audit output, and fails
+if `ARTIFACT_HOST_LIVE_DIGEST=pass mode=local-kubectl` is not present. Because
+the release and gate repositories are public, the workflow uses the
+short-lived read-only `github.token` rather than a long-lived repository
+secret.
+
 Expected current posture:
 
 ```text
