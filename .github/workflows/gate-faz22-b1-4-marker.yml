@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/gate-faz22-b1-4-marker.yml'
       - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_b1_4_marker_gate.sh'
   push:
@@ -13,6 +14,7 @@ on:
     paths:
       - '.github/workflows/gate-faz22-b1-4-marker.yml'
       - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_b1_4_marker_gate.sh'
 
@@ -37,6 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n \
+            scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh \
             scripts/faz22-remote-ops/faz22-6-completion-audit.sh \
             tests/faz22_remote_ops/test_faz22_6_b1_4_marker_gate.sh
 

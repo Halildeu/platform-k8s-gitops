@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+GENERATOR="$ROOT/scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh"
 
 export F22_6_COMPLETION_AUDIT_SOURCE_ONLY=1
 # shellcheck source=/dev/null
@@ -45,26 +46,37 @@ exit 2
 SH
 chmod +x "$fake_bin/gh"
 
+expect_generator_fail() {
+  local label="$1"
+  shift
+  set +e
+  "$GENERATOR" "$@" >"$tmp_dir/generator-${label}.out" 2>"$tmp_dir/generator-${label}.err"
+  local rc="$?"
+  set -e
+  if [ "$rc" = "0" ]; then
+    echo "expected B1.4 generator failure for $label" >&2
+    exit 1
+  fi
+}
+
 issue_json="$tmp_dir/b1-4-issue.json"
 approved_at="$(date -u +%F)"
 expires_at="$(future_date_utc 7)"
 expired_at="$(future_date_utc -1)"
 
-hardware_body="$(cat <<EOF
-F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE: v1
-acceptance_scope: hardware-attestation
-device_key_evidence: present
-tpm_or_secure_element: present
-agent_wire_contract: present
-broker_verifier: pass
-root_policy: pass
-field_evidence: attached
-positive_matrix: hardware-attested-device
-negative_matrix: missing,stale,replay,wrong-device,wrong-tenant
-owner_approved_by: Owner Example
-approved_at: $approved_at
-EOF
+hardware_marker="$tmp_dir/b1-4-hardware-marker.txt"
+hardware_generator_out="$(
+  "$GENERATOR" \
+    --mode hardware \
+    --marker-out "$hardware_marker" \
+    --owner-approved-by "Owner Example" \
+    --approved-at "$approved_at"
 )"
+printf '%s\n' "$hardware_generator_out" | tee "$tmp_dir/hardware-generator.out"
+grep -q "^marker=$hardware_marker$" "$tmp_dir/hardware-generator.out"
+grep -q '^mode=hardware$' "$tmp_dir/hardware-generator.out"
+grep -q "^approved_at=$approved_at$" "$tmp_dir/hardware-generator.out"
+hardware_body="$(cat "$hardware_marker")"
 
 jq -n \
   --arg state "CLOSED" \
@@ -130,17 +142,20 @@ printf '%s\n' "$output" >"$tmp_dir/hardware-missing-replay.out"
 grep -q '^GATE_B1_4_HARDWARE_ATTESTATION=blocked ' "$tmp_dir/hardware-missing-replay.out"
 grep -q 'negative_matrix:replay' "$tmp_dir/hardware-missing-replay.out"
 
-risk_body="$(cat <<EOF
-F22_6_B1_4_RISK_ACCEPTANCE: v1
-risk_scope: bounded-pilot-enrollment-backed-trust
-accepted_gap: no-real-tpm-attestation
-compensating_controls: cert-bound-token,mTLS,revocation-check,signed-permits,dual-control,audit-recording,kill-revoke
-forbidden_claims: tpm-complete,hardware-attestation-complete,5-device,50-device,800-device,production,broad-rollout
-owner_approved_by: Owner Example
-approved_at: $approved_at
-expires_at: $expires_at
-EOF
+risk_marker="$tmp_dir/b1-4-risk-marker.txt"
+risk_generator_out="$(
+  "$GENERATOR" \
+    --mode risk \
+    --marker-out "$risk_marker" \
+    --owner-approved-by "Owner Example" \
+    --approved-at "$approved_at" \
+    --expires-at "$expires_at"
 )"
+printf '%s\n' "$risk_generator_out" | tee "$tmp_dir/risk-generator.out"
+grep -q "^marker=$risk_marker$" "$tmp_dir/risk-generator.out"
+grep -q '^mode=risk$' "$tmp_dir/risk-generator.out"
+grep -q "^expires_at=$expires_at$" "$tmp_dir/risk-generator.out"
+risk_body="$(cat "$risk_marker")"
 
 jq -n \
   --arg state "OPEN" \
@@ -300,5 +315,38 @@ fi
 printf '%s\n' "$output" >"$tmp_dir/risk-expired.out"
 grep -q '^GATE_B1_4_HARDWARE_ATTESTATION=blocked ' "$tmp_dir/risk-expired.out"
 grep -q 'expires_at-expired' "$tmp_dir/risk-expired.out"
+
+expect_generator_fail "bad-mode" \
+  --mode unknown \
+  --marker-out "$tmp_dir/bad-mode.txt" \
+  --owner-approved-by "Owner Example" \
+  --approved-at "$approved_at"
+
+expect_generator_fail "placeholder-owner" \
+  --mode risk \
+  --marker-out "$tmp_dir/placeholder-owner.txt" \
+  --owner-approved-by "TBD" \
+  --approved-at "$approved_at" \
+  --expires-at "$expires_at"
+
+expect_generator_fail "risk-missing-expires" \
+  --mode risk \
+  --marker-out "$tmp_dir/risk-missing-expires.txt" \
+  --owner-approved-by "Owner Example" \
+  --approved-at "$approved_at"
+
+expect_generator_fail "risk-expired" \
+  --mode risk \
+  --marker-out "$tmp_dir/risk-expired-generator.txt" \
+  --owner-approved-by "Owner Example" \
+  --approved-at "$approved_at" \
+  --expires-at "$expired_at"
+
+expect_generator_fail "hardware-with-expires" \
+  --mode hardware \
+  --marker-out "$tmp_dir/hardware-with-expires.txt" \
+  --owner-approved-by "Owner Example" \
+  --approved-at "$approved_at" \
+  --expires-at "$expires_at"
 
 echo "b1-4-marker-gate-ok"
