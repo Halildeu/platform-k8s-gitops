@@ -56,6 +56,12 @@ B1.4 source progress and boundary:
   v1 envelope producer from pre-provisioned SLSA/device-key material while
   preserving the raw override and failing closed on partial/malformed
   structured config.
+- `platform-backend#732` merged at `2026-06-23T02:15:48Z` with merge commit
+  `12bbf76a7b066071111c9fa6f95cb13f73817561`. It wires already
+  parsed/verified peer device-key attestation into fail-closed session
+  device-trust modes, including the composite
+  `REQUIRE_ENROLLMENT_AND_DEVICE_KEY` mode. It is source-wiring only and does
+  not supply live TPM material, device-attestation roots, or field evidence.
 - `platform-agent#228`: `CLOSED`, reason `COMPLETED`, Project #2 `Done` for
   the source-producer scope only.
 - `platform-backend#548`: `OPEN`, reason `REOPENED`, Project #2 `Blocked`.
