@@ -22,6 +22,8 @@ MIN_ARTIFACT_HOST_DIGEST_HITS="${MIN_ARTIFACT_HOST_DIGEST_HITS:-2}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-20}"
 ARTIFACT_BASE_URL="${ARTIFACT_BASE_URL:-https://testai.acik.com/artifacts/endpoint-agent/current}"
 GITHUB_RELEASE_BASE_URL="${GITHUB_RELEASE_BASE_URL:-https://github.com/${AGENT_REPO}/releases/download/${EXPECTED_AGENT_TAG}}"
+RELEASE_LINEAGE_WAIVER_REF="${RELEASE_LINEAGE_WAIVER_REF:-Halildeu/platform-k8s-gitops#1901}"
+RELEASE_LINEAGE_WAIVER_FORBIDDEN_CLAIMS="${RELEASE_LINEAGE_WAIVER_FORBIDDEN_CLAIMS:-5-device,50-device,800-device,production,broad-rollout}"
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -59,6 +61,118 @@ fetch_url() {
   curl --max-time "$CURL_MAX_TIME" -fsSL -H 'Cache-Control: no-cache' "$1"
 }
 
+waiver_field() {
+  # waiver_field <key> <issue-body>
+  local key="$1"
+  sed -n "s/^${key}:[[:space:]]*//p" | head -1
+}
+
+check_release_lineage_waiver() {
+  # check_release_lineage_waiver <comma-separated-required-findings>
+  local required_findings="$1"
+  local ref="$RELEASE_LINEAGE_WAIVER_REF"
+  local repo_ref number issue_json state body today
+  local marker scope release_tag digest accepted_findings forbidden_claims owner approved_at expires_at
+  local missing=()
+
+  if [ -z "$ref" ]; then
+    print_check 'RELEASE_LINEAGE_WAIVER' 'missing' 'reason=no-waiver-ref'
+    return 1
+  fi
+
+  if printf '%s' "$ref" | grep -q '^https://github.com/'; then
+    repo_ref="${ref#https://github.com/}"
+    repo_ref="${repo_ref%%/issues/*}"
+    number="${ref##*/}"
+  elif printf '%s' "$ref" | grep -q '#'; then
+    repo_ref="${ref%%#*}"
+    number="${ref##*#}"
+  else
+    print_check 'RELEASE_LINEAGE_WAIVER' 'blocked' "ref=$ref reason=bad-ref-format"
+    return 1
+  fi
+
+  if ! issue_json="$(gh issue view "$number" -R "$repo_ref" --json state,body,title 2>&1)"; then
+    print_check 'RELEASE_LINEAGE_WAIVER' 'blocked' "ref=$ref reason=$(printf '%q' "$issue_json")"
+    return 1
+  fi
+  state="$(printf '%s\n' "$issue_json" | jq -r '.state // ""')"
+  body="$(printf '%s\n' "$issue_json" | jq -r '.body // ""')"
+  if [ "$state" != "OPEN" ]; then
+    print_check 'RELEASE_LINEAGE_WAIVER' 'blocked' "ref=$ref state=$state reason=issue-not-open"
+    return 1
+  fi
+
+  marker="$(printf '%s\n' "$body" | waiver_field 'F22_6_RELEASE_LINEAGE_WAIVER')"
+  scope="$(printf '%s\n' "$body" | waiver_field 'waiver_scope')"
+  release_tag="$(printf '%s\n' "$body" | waiver_field 'release_tag')"
+  digest="$(printf '%s\n' "$body" | waiver_field 'artifact_host_digest')"
+  accepted_findings="$(printf '%s\n' "$body" | waiver_field 'accepted_findings')"
+  forbidden_claims="$(printf '%s\n' "$body" | waiver_field 'forbidden_claims')"
+  owner="$(printf '%s\n' "$body" | waiver_field 'owner_approved_by')"
+  approved_at="$(printf '%s\n' "$body" | waiver_field 'approved_at')"
+  expires_at="$(printf '%s\n' "$body" | waiver_field 'expires_at')"
+
+  [ "$marker" = "v1" ] || missing+=("marker")
+  [ "$scope" = "bounded-pilot-only" ] || missing+=("scope")
+  [ "$release_tag" = "$EXPECTED_AGENT_TAG" ] || missing+=("release_tag")
+  [ "$digest" = "$EXPECTED_ARTIFACT_HOST_DIGEST" ] || missing+=("artifact_host_digest")
+  local owner_lc
+  owner_lc="$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]')"
+  if [ -z "$owner" ]; then
+    missing+=("owner_approved_by")
+  fi
+  case "$owner_lc" in
+    tbd|none|n/a) missing+=("owner_approved_by") ;;
+  esac
+
+  local finding
+  IFS=',' read -r -a _required_findings <<<"$required_findings"
+  for finding in "${_required_findings[@]}"; do
+    [ -z "$finding" ] && continue
+    if ! printf '%s' "$accepted_findings" | tr -d ' ' | grep -Eq "(^|,)${finding}(,|$)"; then
+      missing+=("accepted_findings:$finding")
+    fi
+  done
+
+  local forbidden
+  IFS=',' read -r -a _forbidden_claims <<<"$RELEASE_LINEAGE_WAIVER_FORBIDDEN_CLAIMS"
+  for forbidden in "${_forbidden_claims[@]}"; do
+    [ -z "$forbidden" ] && continue
+    if ! printf '%s' "$forbidden_claims" | tr -d ' ' | grep -Eq "(^|,)${forbidden}(,|$)"; then
+      missing+=("forbidden_claims:$forbidden")
+    fi
+  done
+
+  if ! [[ "$approved_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    missing+=("approved_at")
+  fi
+  if ! [[ "$expires_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    missing+=("expires_at")
+  fi
+  today="$(date -u +%Y-%m-%d 2>/dev/null || true)"
+  if ! [[ "$today" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    missing+=("today-unparseable")
+  else
+    if [[ "$approved_at" > "$today" ]]; then
+      missing+=("approved_at-in-future")
+    fi
+    if [[ "$expires_at" < "$today" ]]; then
+      missing+=("expires_at-expired")
+    fi
+  fi
+
+  if [ "${#missing[@]}" -ne 0 ]; then
+    local reason
+    reason="$(IFS=,; printf '%s' "${missing[*]}")"
+    print_check 'RELEASE_LINEAGE_WAIVER' 'blocked' "ref=$ref reason=$reason"
+    return 1
+  fi
+
+  print_check 'RELEASE_LINEAGE_WAIVER' 'bounded_pilot_pass' "ref=$ref owner=$owner expires_at=$expires_at accepted_findings=$(printf '%q' "$accepted_findings")"
+  return 0
+}
+
 main() {
   need gh
   need jq
@@ -69,6 +183,8 @@ main() {
 
   local blocked=0
   local needs_hygiene=0
+  local nonwaiver_hygiene=0
+  local waiver_findings=()
 
   printf 'F22_6_RELEASE_LINEAGE_SCOPE=endpoint-agent-release-hygiene\n'
   printf 'F22_6_RELEASE_LINEAGE_RUNBOOK=docs/runbooks/RB-faz22.6-release-lineage-audit.md\n'
@@ -101,11 +217,13 @@ main() {
   else
     print_check 'GITHUB_RELEASE_IMMUTABLE' 'needs_hygiene' "tag=$EXPECTED_AGENT_TAG isImmutable=$is_immutable"
     needs_hygiene=1
+    waiver_findings+=('GITHUB_RELEASE_IMMUTABLE')
   fi
 
   if [ "$recent_count" -gt "$RECENT_RELEASE_HYGIENE_THRESHOLD" ]; then
     print_check 'GITHUB_RELEASE_DENSE_TRAIN' 'needs_hygiene' "recent_v0_2_count=$recent_count threshold=$RECENT_RELEASE_HYGIENE_THRESHOLD"
     needs_hygiene=1
+    waiver_findings+=('GITHUB_RELEASE_DENSE_TRAIN')
   else
     print_check 'GITHUB_RELEASE_DENSE_TRAIN' 'pass' "recent_v0_2_count=$recent_count"
   fi
@@ -204,6 +322,7 @@ main() {
   else
     print_check 'CURRENT_MANIFEST_ARTIFACT_HOST_DIGEST' 'needs_hygiene' "ref=${cur_ah_ref:-missing} expected_digest=$EXPECTED_ARTIFACT_HOST_DIGEST"
     needs_hygiene=1
+    nonwaiver_hygiene=1
   fi
 
   local release_zip_sha_raw current_zip_sha_raw
@@ -248,6 +367,7 @@ main() {
   else
     print_check 'RELEASE_SHA256SUMS_COVERAGE' 'needs_hygiene' "missing=${missing_release[*]}"
     needs_hygiene=1
+    nonwaiver_hygiene=1
   fi
 
   local live q_context q_namespace digest_hits
@@ -271,8 +391,22 @@ main() {
   if [ "$blocked" -ne 0 ]; then
     printf 'F22_6_RELEASE_LINEAGE=blocked\n'
   elif [ "$needs_hygiene" -ne 0 ]; then
-    printf 'F22_6_RELEASE_LINEAGE=needs_hygiene\n'
+    if [ "$nonwaiver_hygiene" -eq 0 ] && [ "${#waiver_findings[@]}" -gt 0 ]; then
+      local required_findings
+      required_findings="$(IFS=,; printf '%s' "${waiver_findings[*]}")"
+      if check_release_lineage_waiver "$required_findings"; then
+        printf 'F22_6_RELEASE_LINEAGE=bounded_pilot_pass\n'
+      else
+        printf 'F22_6_RELEASE_LINEAGE=needs_hygiene\n'
+      fi
+    else
+      if [ "$nonwaiver_hygiene" -ne 0 ]; then
+        print_check 'RELEASE_LINEAGE_WAIVER' 'not_applicable' 'reason=nonwaiver-hygiene-present'
+      fi
+      printf 'F22_6_RELEASE_LINEAGE=needs_hygiene\n'
+    fi
   else
+    print_check 'RELEASE_LINEAGE_WAIVER' 'not_required' 'reason=no-release-lineage-hygiene'
     printf 'F22_6_RELEASE_LINEAGE=pass\n'
   fi
 }

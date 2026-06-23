@@ -115,3 +115,42 @@ production rollout ready until the audit prints `F22_6_RELEASE_LINEAGE=pass`.
 - explicit source commit and workflow/run provenance in the release record;
 - no unresolved dense-train hygiene item or an owner-approved release-lineage
   waiver for the bounded pilot only.
+
+## 5. Bounded Pilot Waiver Contract
+
+The release-lineage audit is fail-closed. A waiver is valid only when
+`RELEASE_LINEAGE_WAIVER_REF` points to an open GitHub issue whose body contains
+the exact machine-readable marker below. The default reference is
+`Halildeu/platform-k8s-gitops#1901`.
+
+The marker may waive only the current bounded-pilot metadata hygiene findings:
+`GITHUB_RELEASE_IMMUTABLE` and `GITHUB_RELEASE_DENSE_TRAIN`. It does not
+waive checksum coverage, manifest parity, signer parity, artifact-host digest,
+live Kubernetes imageID, hardware attestation, VIEW_ONLY acceptance, or any
+broad rollout gate.
+
+```text
+F22_6_RELEASE_LINEAGE_WAIVER: v1
+waiver_scope: bounded-pilot-only
+release_tag: v0.2.28
+artifact_host_digest: sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2
+accepted_findings: GITHUB_RELEASE_IMMUTABLE,GITHUB_RELEASE_DENSE_TRAIN
+forbidden_claims: 5-device,50-device,800-device,production,broad-rollout
+owner_approved_by: <named owner>
+approved_at: YYYY-MM-DD
+expires_at: YYYY-MM-DD
+```
+
+If this marker is present, current, and matches the expected release tag and
+artifact-host digest, the audit prints:
+
+```text
+RELEASE_LINEAGE_WAIVER=bounded_pilot_pass ...
+F22_6_RELEASE_LINEAGE=bounded_pilot_pass
+```
+
+`bounded_pilot_pass` is deliberately not `pass`. It permits bounded pilot
+evidence to proceed under the named waiver, but it still forbids 5-device,
+50-device, 800-device, production, and broad rollout language. Full
+`F22_6_RELEASE_LINEAGE=pass` remains reserved for the no-waiver path where
+all release-lineage hygiene findings are resolved.
