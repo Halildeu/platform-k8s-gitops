@@ -1,8 +1,8 @@
 # RB-faz22.6 — Release Lineage Hygiene Audit
 
 > Status: ACTIVE hygiene gate, 2026-06-23.
-> Scope: EndpointAgent `v0.2.x` pilot recovery / bounded acceptance release
-> lineage for Faz 22.6.
+> Scope: EndpointAgent `v0.3.0` rollout-candidate / bounded acceptance
+> release lineage for Faz 22.6.
 > Parent contract: `docs/runbooks/RB-faz22.6-autonomous-completion-contract.md`.
 
 This runbook defines the release-lineage checks that must be clean before
@@ -59,9 +59,11 @@ Observed on 2026-06-24:
   - signing tier `trusted-internal-ca`
   - artifact-host image
     `ghcr.io/halildeu/platform-agent-artifacts:v0.3.0@sha256:00df8734b6a8d5121f9294af63a8e44ae9002298a1b5d05f7aaf44912183fbe6`
-- This GitOps change pins the test `artifact-host` overlay to that immutable
-  digest. The live `artifact-host` deployment in `k3d-test/platform-test` must
-  still be proven by the audit after ArgoCD/apply reconciliation.
+- GitOps PR #1940 pins the test `artifact-host` overlay to that immutable
+  digest. Self-hosted audit run `28095182027` proved the live
+  `k3d-test/platform-test` `artifact-host` deployment and both pod imageIDs
+  now match the same digest; the audit's `digest_hits=3` is the Deployment
+  image field plus the two pod `imageID` fields.
 
 Lineage boundary:
 
@@ -75,9 +77,12 @@ Hygiene findings:
 - Release workflow `28087330255` ran the post-publish verifier against
   `v0.3.0` and passed release archive, `SHA256SUMS`, manifest, ZIP, and
   artifact-host registry digest parity.
-- Release objects still report `isImmutable=false`. This remains a hygiene
-  finding unless GitHub release immutability/ruleset enforcement is enabled or
-  a bounded waiver is recorded.
+- Release objects still report `isImmutable=false`. REST `Update a release`
+  exposes `immutable` only in the response schema, not as a mutable request
+  field; a tag ruleset protects tag movement but does not change this release
+  metadata flag. This remains a hygiene finding unless GitHub release
+  immutability is enabled through an available GitHub release setting or a
+  bounded waiver is recorded.
 - The historical dense `v0.2.x` pilot-recovery train is no longer the current
   expected release series. The policy now evaluates recent train hygiene
   against `v0.3`, where `v0.3.0` starts a clean minor line.
@@ -106,7 +111,10 @@ The canonical workflow is
 if `ARTIFACT_HOST_LIVE_DIGEST=pass mode=local-kubectl` is not present. Because
 the release and gate repositories are public, the workflow uses the
 short-lived read-only `github.token` rather than a long-lived repository
-secret.
+secret. A run started immediately after a GitOps merge can fail while ArgoCD is
+still reconciling; rerun the workflow after the test Application catches up
+instead of using direct `kubectl set image` or other imperative workload
+patches.
 
 Expected current posture:
 
@@ -114,11 +122,10 @@ Expected current posture:
 F22_6_RELEASE_LINEAGE=needs_hygiene
 ```
 
-`needs_hygiene` now means the `v0.3.0` release payload is published and the
-GitOps desired-state digest is pinned, but either the live artifact-host has
-not yet been reconciled/proven or the GitHub release object still reports
-`isImmutable=false`. The dense `v0.2.x` recovery train is historical context,
-not the current release series for this policy.
+`needs_hygiene` now means the `v0.3.0` release payload, GitOps desired-state,
+artifact-host `current` surface, and live pod imageIDs agree, but the GitHub
+release object still reports `isImmutable=false`. The dense `v0.2.x` recovery
+train is historical context, not the current release series for this policy.
 
 ## 3.1 Release Policy SSOT
 
@@ -167,8 +174,10 @@ production rollout ready until the audit prints `F22_6_RELEASE_LINEAGE=pass`.
 - current artifact-host manifest parity for served payload fields, without
   requiring a self-referential image digest;
 - explicit source commit and workflow/run provenance in the release record;
-- no unresolved dense-train hygiene item or an owner-approved release-lineage
-  waiver for the bounded pilot only.
+- no unresolved release-lineage hygiene finding. A bounded-pilot waiver does
+  not produce `F22_6_RELEASE_LINEAGE=pass`; it produces
+  `F22_6_RELEASE_LINEAGE=bounded_pilot_pass` and keeps broad rollout language
+  forbidden.
 
 ## 5. Bounded Pilot Waiver Contract
 
@@ -181,13 +190,15 @@ The marker may waive only the current bounded-pilot metadata hygiene findings:
 `GITHUB_RELEASE_IMMUTABLE` and `GITHUB_RELEASE_DENSE_TRAIN`. It does not
 waive checksum coverage, manifest parity, signer parity, artifact-host digest,
 live Kubernetes imageID, hardware attestation, VIEW_ONLY acceptance, or any
-broad rollout gate.
+broad rollout gate. The following block is the contract template only; it is
+not a recorded owner approval until the live #1901 issue body contains the
+same shape with a named owner and valid dates.
 
 ```text
 F22_6_RELEASE_LINEAGE_WAIVER: v1
 waiver_scope: bounded-pilot-only
-release_tag: v0.2.28
-artifact_host_digest: sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2
+release_tag: v0.3.0
+artifact_host_digest: sha256:00df8734b6a8d5121f9294af63a8e44ae9002298a1b5d05f7aaf44912183fbe6
 accepted_findings: GITHUB_RELEASE_IMMUTABLE,GITHUB_RELEASE_DENSE_TRAIN
 forbidden_claims: 5-device,50-device,800-device,production,broad-rollout
 owner_approved_by: <named owner>
