@@ -36,6 +36,7 @@ REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_digest=sha256:6b12276cea9123
 RELEASE_LINEAGE_WAIVER=blocked ref=Halildeu/platform-k8s-gitops#1901 reason=marker,scope,release_tag,artifact_host_digest,owner_approved_by,accepted_findings:GITHUB_RELEASE_IMMUTABLE,accepted_findings:GITHUB_RELEASE_DENSE_TRAIN,forbidden_claims:5-device,forbidden_claims:50-device,forbidden_claims:800-device,forbidden_claims:production,forbidden_claims:broad-rollout,approved_at,expires_at
 F22_6_RELEASE_LINEAGE=needs_hygiene
 RELEASE_LINEAGE_GATE=blocked mode=local-kubectl status=needs_hygiene
+AGENT_RELEASE_TRAIN=needs_hygiene
 F22_6_COMPLETION=blocked
 F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-evidence-package-required,release-lineage-audit-pass-required
 EOF
@@ -65,7 +66,7 @@ jq -e '
   and (.decisions[] | select(.id == "release_lineage").current_status) == "needs_hygiene"
   and (.decisions[] | select(.id == "release_lineage").completion_gate_status) == "blocked"
   and (.decisions[] | select(.id == "release_lineage").waiver_status) == "blocked"
-  and (.decisions[] | select(.id == "release_lineage").agent_release_train_status) == "missing"
+  and (.decisions[] | select(.id == "release_lineage").agent_release_train_status) == "needs_hygiene"
 ' "$json" >/dev/null
 
 jq -e '
@@ -82,6 +83,50 @@ grep -q 'does not approve risk' "$markdown"
 grep -q 'faz22-6-b1-4-acceptance-package.sh --mode risk' "$markdown"
 grep -q 'faz22-6-view-only-evidence-package.sh' "$markdown"
 grep -q 'faz22-6-release-lineage-waiver-package.sh' "$markdown"
+
+mixed_audit="$tmp_dir/faz22-6-completion-audit-mixed.txt"
+mixed_out_dir="$tmp_dir/mixed-out"
+cat >"$mixed_audit" <<'EOF'
+REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_digest=sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c
+GATE_B1_4_HARDWARE_ATTESTATION=blocked state=OPEN expected=CLOSED-or-bounded-risk-accepted issue=Halildeu/platform-backend#548 reason=missing-acceptance-marker
+GATE_VIEW_ONLY_SCREEN_SHARE=blocked state=OPEN expected=CLOSED-with-view-only-acceptance issue=Halildeu/platform-k8s-gitops#1580 reason=missing-acceptance-marker
+RELEASE_LINEAGE_WAIVER=not_required reason=no-release-lineage-hygiene
+F22_6_RELEASE_LINEAGE=pass
+RELEASE_LINEAGE_GATE=pass mode=local-kubectl status=pass
+AGENT_RELEASE_TRAIN=pass
+F22_6_COMPLETION=blocked
+F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-evidence-package-required
+EOF
+
+"$GENERATOR" \
+  --audit-file "$mixed_audit" \
+  --output-dir "$mixed_out_dir" \
+  --generated-at 2026-06-24T16:46:24Z \
+  >"$tmp_dir/mixed-generator.out"
+
+mixed_json="$mixed_out_dir/faz22-6-completion-decision-package.json"
+mixed_markdown="$mixed_out_dir/faz22-6-completion-decision-package.md"
+
+jq -e '
+  .completion.status == "blocked"
+  and (.completion.next_required | length) == 2
+  and (.decisions[] | select(.id == "b1_4_hardware_attestation").current_status) == "blocked"
+  and (.decisions[] | select(.id == "view_only_screen_share").current_status) == "blocked"
+  and (.decisions[] | select(.id == "release_lineage").current_status) == "pass"
+  and (.decisions[] | select(.id == "release_lineage").completion_gate_status) == "pass"
+' "$mixed_json" >/dev/null
+
+grep -q '## Satisfied / Non-Actionable Gates' "$mixed_markdown"
+grep -q 'Halildeu/platform-k8s-gitops#1901' "$mixed_markdown"
+grep -q 'release-lineage is evidence-only here' "$mixed_markdown"
+grep -q 'Halildeu/platform-backend#548' "$mixed_markdown"
+grep -q 'Halildeu/platform-k8s-gitops#1580' "$mixed_markdown"
+grep -q 'faz22-6-b1-4-acceptance-package.sh --mode risk' "$mixed_markdown"
+grep -q 'faz22-6-view-only-evidence-package.sh' "$mixed_markdown"
+if grep -q 'faz22-6-release-lineage-waiver-package.sh' "$mixed_markdown"; then
+  echo "release-lineage waiver helper must not be required when release-lineage already passes" >&2
+  exit 1
+fi
 
 expect_failure \
   "missing-file" \
@@ -117,6 +162,7 @@ GATE_VIEW_ONLY_SCREEN_SHARE=pass state=CLOSED issue=Halildeu/platform-k8s-gitops
 RELEASE_LINEAGE_WAIVER=bounded_pilot_pass ref=Halildeu/platform-k8s-gitops#1901 owner=example expires_at=2026-07-23
 F22_6_RELEASE_LINEAGE=bounded_pilot_pass
 RELEASE_LINEAGE_GATE=bounded_pilot_pass mode=local-kubectl status=bounded_pilot_pass
+AGENT_RELEASE_TRAIN=bounded_pilot_pass
 F22_6_COMPLETION=pass
 F22_6_NEXT_REQUIRED=
 EOF
@@ -141,9 +187,15 @@ jq -e '
   and (.decisions[] | select(.id == "view_only_screen_share").current_status) == "pass"
   and (.decisions[] | select(.id == "release_lineage").current_status) == "bounded_pilot_pass"
   and (.decisions[] | select(.id == "release_lineage").completion_gate_status) == "bounded_pilot_pass"
-  and (.decisions[] | select(.id == "release_lineage").agent_release_train_status) == "missing"
+  and (.decisions[] | select(.id == "release_lineage").agent_release_train_status) == "bounded_pilot_pass"
 ' "$pass_json" >/dev/null
 
 grep -Fq "Completion status: \`pass\`" "$pass_markdown"
+grep -q '## Satisfied / Non-Actionable Gates' "$pass_markdown"
+grep -q 'No owner/operator decisions are required by this package.' "$pass_markdown"
+if grep -q 'faz22-6-release-lineage-waiver-package.sh' "$pass_markdown"; then
+  echo "release-lineage waiver helper must not be required when every gate is satisfied" >&2
+  exit 1
+fi
 
 echo "completion-decision-package-ok"

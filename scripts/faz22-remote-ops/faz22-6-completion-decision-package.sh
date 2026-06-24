@@ -133,6 +133,22 @@ agent_train_status="$(line_status "$agent_train_line")"
 completion_status="$(line_status "$completion_line")"
 remote_bridge_status="$(line_status "$remote_bridge_line")"
 
+status_is_satisfied() {
+  case "$1" in
+    pass|bounded_pilot_pass|bounded_pilot_risk_accepted) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+b1_required=0
+view_required=0
+release_required=0
+status_is_satisfied "$b1_status" || b1_required=1
+status_is_satisfied "$view_status" || view_required=1
+if ! { status_is_satisfied "$release_status" && status_is_satisfied "$release_gate_status"; }; then
+  release_required=1
+fi
+
 # Command templates intentionally keep shell variables literal for the operator
 # or follow-up automation that will fill owner-approved values.
 # shellcheck disable=SC2016
@@ -280,8 +296,50 @@ ${release_waiver_line:-RELEASE_LINEAGE_WAIVER=missing}
 ${completion_line:-F22_6_COMPLETION=missing}
 F22_6_NEXT_REQUIRED=${next_required:-missing}
 \`\`\`
+EOF
+
+cat >>"$markdown_out" <<EOF
+
+## Satisfied / Non-Actionable Gates
+EOF
+
+satisfied_written=0
+if [ "$b1_required" = "0" ]; then
+  cat >>"$markdown_out" <<EOF
+
+- Halildeu/platform-backend#548: \`$b1_status\`; no B1.4 marker helper action is required by this package.
+EOF
+  satisfied_written=1
+fi
+if [ "$view_required" = "0" ]; then
+  cat >>"$markdown_out" <<EOF
+
+- Halildeu/platform-k8s-gitops#1580: \`$view_status\`; no VIEW_ONLY marker helper action is required by this package.
+EOF
+  satisfied_written=1
+fi
+if [ "$release_required" = "0" ]; then
+  cat >>"$markdown_out" <<EOF
+
+- Halildeu/platform-k8s-gitops#1901: \`$release_status\` / \`$release_gate_status\`; release-lineage is evidence-only here, no waiver/helper action is required.
+EOF
+  satisfied_written=1
+fi
+if [ "$satisfied_written" = "0" ]; then
+  cat >>"$markdown_out" <<'EOF'
+
+- None.
+EOF
+fi
+
+cat >>"$markdown_out" <<'EOF'
 
 ## Required Decisions
+EOF
+
+required_written=0
+if [ "$b1_required" = "1" ]; then
+  cat >>"$markdown_out" <<EOF
 
 ### Halildeu/platform-backend#548
 
@@ -291,6 +349,12 @@ Choose exactly one path after a real owner decision:
 $b1_hardware_cmd
 $b1_risk_cmd
 \`\`\`
+EOF
+  required_written=1
+fi
+
+if [ "$view_required" = "1" ]; then
+  cat >>"$markdown_out" <<EOF
 
 ### Halildeu/platform-k8s-gitops#1580
 
@@ -299,6 +363,12 @@ Use only after real VIEW_ONLY product-channel evidence and owner signoff exist:
 \`\`\`bash
 $view_cmd
 \`\`\`
+EOF
+  required_written=1
+fi
+
+if [ "$release_required" = "1" ]; then
+  cat >>"$markdown_out" <<EOF
 
 ### Halildeu/platform-k8s-gitops#1901
 
@@ -310,6 +380,15 @@ approval:
 $release_cmd
 \`\`\`
 EOF
+  required_written=1
+fi
+
+if [ "$required_written" = "0" ]; then
+  cat >>"$markdown_out" <<'EOF'
+
+No owner/operator decisions are required by this package.
+EOF
+fi
 
 printf 'json=%s\n' "$json_out"
 printf 'markdown=%s\n' "$markdown_out"
