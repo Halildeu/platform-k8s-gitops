@@ -44,6 +44,11 @@ jobs:
             exit 1
           fi
 
+      - name: Validate EndpointAgent release policy
+        run: |
+          set -euo pipefail
+          scripts/faz22-remote-ops/check-endpoint-agent-release-policy.sh
+
       - name: Run Faz 22.6 completion audit
         run: |
           set -euo pipefail

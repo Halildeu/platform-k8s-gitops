@@ -10,6 +10,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
+# shellcheck source=scripts/faz22-remote-ops/endpoint-agent-release-policy.sh
+source "${SCRIPT_DIR}/endpoint-agent-release-policy.sh"
+endpoint_agent_release_policy_load "$REPO_ROOT"
 SEED_HELPER="${REPO_ROOT}/scripts/faz22-remote-ops/remote-response-terminal-update-agent-seed.sh"
 
 API_BASE="${ENDPOINT_ADMIN_API_BASE:-https://testai.acik.com/api/v1/endpoint-admin}"
@@ -23,17 +26,12 @@ APPROVER_USERNAME="${APPROVER_USERNAME:-endpoint-admin-test-approver}"
 
 TARGET_DEVICE_ID="${TARGET_DEVICE_ID:-2f7ad30f-970a-42e7-8af8-08764ae6066f}"
 TARGET_DEVICE_HOSTNAME="${TARGET_DEVICE_HOSTNAME:-AgentPc2}"
-EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-0.2.28}"
 POLL_SECONDS="${POLL_SECONDS:-900}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-15}"
 
-RELEASE_ID="${RELEASE_ID:-v0.2.28}"
-TARGET_VERSION="${TARGET_VERSION:-0.2.28}"
-BINARY_URL="${BINARY_URL:-https://github.com/Halildeu/platform-agent/releases/download/v0.2.28/endpoint-agent.exe}"
-MANIFEST_URL="${MANIFEST_URL:-https://github.com/Halildeu/platform-agent/releases/download/v0.2.28/release-manifest.json}"
-EXPECTED_SHA256="${EXPECTED_SHA256:-e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4}"
-EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
-MAX_BYTES="${MAX_BYTES:-14377384}"
+TARGET_VERSION="${TARGET_VERSION:-$EXPECTED_AGENT_VERSION}"
+EXPECTED_SHA256="${EXPECTED_SHA256:-$EXPECTED_AGENT_SHA256}"
+MAX_BYTES="${MAX_BYTES:-$EXPECTED_AGENT_MAX_BYTES}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/agentpc2-update-agent-${RELEASE_ID}-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 TMP_DIR="$(mktemp -d)"
@@ -424,6 +422,8 @@ main() {
   safe_release_id="$(printf '%s' "$RELEASE_ID" | tr -cs 'A-Za-z0-9' '-' | sed -E 's/^-+|-+$//g')"
 
   mkdir -p "${EVIDENCE_DIR}/seed"
+  seed_release_notes="Faz 22.6.3 AgentPC2 ${TARGET_VERSION} seed for platform-agent#208"
+  seed_dispatch_reason="Faz 22.6.3 AgentPC2 constrained-executor ${TARGET_VERSION} product update for platform-agent#208"
   set +e
   EVIDENCE_DIR="${EVIDENCE_DIR}/seed" \
     ENDPOINT_ADMIN_API_BASE="$API_BASE" \
@@ -436,10 +436,10 @@ main() {
     EXPECTED_SIGNER_THUMBPRINT="$EXPECTED_SIGNER_THUMBPRINT" \
     SIGNING_TIER=TRUSTED_SIGNED \
     MAX_BYTES="$MAX_BYTES" \
-    RELEASE_NOTES="Faz 22.6.3 AgentPC2 ${TARGET_VERSION} seed for platform-agent#208" \
+    RELEASE_NOTES="$seed_release_notes" \
     TARGET_DEVICE_ID="$TARGET_DEVICE_ID" \
     TARGET_DEVICE_HOSTNAME="$TARGET_DEVICE_HOSTNAME" \
-    DISPATCH_REASON="Faz 22.6.3 AgentPC2 constrained-executor ${TARGET_VERSION} product update for platform-agent#208" \
+    DISPATCH_REASON="$seed_dispatch_reason" \
     DISPATCH_IDEMPOTENCY_KEY="a2-${safe_release_id}-${GITHUB_RUN_ID:-manual}" \
     LIVE_MUTATION=1 \
     RUN_CREATE=1 \

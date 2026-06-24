@@ -3,6 +3,9 @@
 set -euo pipefail
 
 script="scripts/faz22-remote-ops/agentpc2-first-install-bootstrap-gate.sh"
+workflow=".github/workflows/faz22-agentpc2-first-install-bootstrap.yml"
+policy="config/faz22-6-endpoint-agent-release-policy.v1.json"
+policy_validator="scripts/faz22-remote-ops/check-endpoint-agent-release-policy.sh"
 kustomization="kustomize/overlays/test/kustomization.yaml"
 bootstrap_configmap="kustomize/overlays/test/agentpc2-bootstrap/configmap.yaml"
 
@@ -11,14 +14,86 @@ if [[ ! -f "${script}" ]]; then
   exit 1
 fi
 
+if [[ ! -f "${workflow}" ]]; then
+  echo "missing ${workflow}" >&2
+  exit 1
+fi
+
+if [[ ! -f "${policy}" ]]; then
+  echo "missing ${policy}" >&2
+  exit 1
+fi
+
+if [[ ! -x "${policy_validator}" ]]; then
+  echo "missing executable ${policy_validator}" >&2
+  exit 1
+fi
+
+"${policy_validator}" >/dev/null
+
 # shellcheck disable=SC2016
 if ! grep -Fq 'Invoke-DownloadVerified -Uri \$BinaryUrl -OutFile \$BinaryPath -ExpectedSha256 \$ExpectedAgentSha256' "${script}"; then
   echo "bootstrap must download and SHA256-verify endpoint-agent.exe before local install" >&2
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2}"' "${script}"; then
-  echo "bootstrap gate default artifact-host digest must track the v0.2.28 immutable image digest" >&2
+if ! grep -Fq 'source "${SCRIPT_DIR}/endpoint-agent-release-policy.sh"' "${script}"; then
+  echo "bootstrap gate must load the shared EndpointAgent release policy" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'endpoint_agent_release_policy_load "$REPO_ROOT"' "${script}"; then
+  echo "bootstrap gate must source release defaults from the policy SSOT" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'TARGET_VERSION="${TARGET_VERSION:-$EXPECTED_AGENT_VERSION}"' "${script}"; then
+  echo "bootstrap gate target version must default from the policy-loaded agent version" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'RELEASE_BASE_URL="${RELEASE_BASE_URL:-$GITHUB_RELEASE_BASE_URL}"' "${script}"; then
+  echo "bootstrap gate release URLs must default from the policy-loaded release base URL" >&2
+  exit 1
+fi
+
+if ! grep -Fq ': "${EXPECTED_RELEASE_MANIFEST_SHA256:?missing expected release manifest SHA256}"' "${script}"; then
+  echo "bootstrap gate must fail closed when policy does not provide release-manifest SHA256" >&2
+  exit 1
+fi
+
+if ! grep -Fq ': "${EXPECTED_INSTALL_PS1_SHA256:?missing expected install.ps1 SHA256}"' "${script}"; then
+  echo "bootstrap gate must fail closed when policy does not provide install.ps1 SHA256" >&2
+  exit 1
+fi
+
+if ! grep -Fq ': "${EXPECTED_BOOTSTRAP_PS1_SHA256:?missing expected bootstrap-package.ps1 SHA256}"' "${script}"; then
+  echo "bootstrap gate must fail closed when policy does not provide bootstrap-package.ps1 SHA256" >&2
+  exit 1
+fi
+
+if ! grep -Fq ': "${EXPECTED_SIGNER_SHA256_FINGERPRINT:?missing expected signer SHA256 fingerprint}"' "${script}"; then
+  echo "bootstrap gate must fail closed when policy does not provide the signer SHA256 fingerprint" >&2
+  exit 1
+fi
+
+if grep -Fq 'sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2' "${script}"; then
+  echo "bootstrap gate must not hard-code the release artifact-host digest outside the policy SSOT" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'scripts/faz22-remote-ops/check-endpoint-agent-release-policy.sh' "${workflow}"; then
+  echo "first-install workflow must validate the checked-in release policy before running" >&2
+  exit 1
+fi
+
+if grep -Eq '^[[:space:]]+(release_id|expected_release_manifest_sha256|expected_install_ps1_sha256|expected_bootstrap_ps1_sha256|expected_agent_sha256|expected_agent_zip_sha256|expected_signer_thumbprint|expected_signer_sha256_fingerprint):' "${workflow}"; then
+  echo "first-install workflow must not expose release-specific override inputs; release defaults come from the policy SSOT" >&2
+  exit 1
+fi
+
+if grep -Eq "default: '(v0\\.2\\.28|e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4|e30ab27490dfcc565bd19f5da657739dfacb8e8d9f57770142575a03e607938a|afc86befa2db11803724e4c1bc9fc0aaf0275ff4cf31d953270d27c84d6b7f12|f257202723ac719f4170cbe2e800dc190845ff7fbd128c6ce3ddd2ac90e49e0e|83292ab3b5c27a8c27c11c7774cf4157bbb23188b81b0adf2a5a29a70279c7f8|D68F4F530137EB65CE44E3405E82B46205E753E5|EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD)'" "${workflow}"; then
+  echo "first-install workflow must not carry release-specific defaults outside the policy SSOT" >&2
   exit 1
 fi
 
@@ -54,8 +129,8 @@ if ! grep -Fq 'SELF_UPDATE_ALLOWED_HOSTS="${SELF_UPDATE_ALLOWED_HOSTS:-github.co
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_SIGNER_SHA256_FINGERPRINT="${EXPECTED_SIGNER_SHA256_FINGERPRINT:-EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD}"' "${script}"; then
-  echo "bootstrap gate must pin the SHA256 Authenticode certificate fingerprint used by UPDATE_AGENT" >&2
+if grep -Fq 'EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD' "${script}"; then
+  echo "bootstrap gate must not hard-code the Authenticode certificate fingerprint outside the policy SSOT" >&2
   exit 1
 fi
 

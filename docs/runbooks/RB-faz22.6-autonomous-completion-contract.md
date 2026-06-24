@@ -72,6 +72,19 @@ evidence.
 | Release/version hygiene | Agent release, MSI/ProductVersion/FileVersion, artifact-host current, GitOps expected version, verifier defaults, and acceptance issue evidence agree | release artifacts plus GitOps verifier output |
 | Rollout boundary | 5/50/800 readiness is either explicitly out of scope or proven under separate signed MSI/GPO rollout gates | rollout issues, not `#208` |
 
+Release/version hygiene uses
+`config/faz22-6-endpoint-agent-release-policy.v1.json` as the SSOT for the
+bounded-pilot EndpointAgent release identity. Individual audit, bootstrap,
+update, evidence-verifier, or decision-package scripts and workflow dispatch
+defaults must not carry their own stale `v0.2.x` release metadata for the active
+closure path. The policy covers the release tag, source commit, executable/ZIP
+hashes, bootstrap helper hashes, signer fingerprints, artifact-host digest, and
+update byte guard. The validator is:
+
+```bash
+scripts/faz22-remote-ops/check-endpoint-agent-release-policy.sh
+```
+
 ## 4. Machine-Readable Gate Acceptance
 
 Issue state alone is not authoritative enough for the sensitive Faz 22.6 gates.
@@ -379,20 +392,22 @@ Use the release-lineage helper before any 5-device or broader rollout claim:
 scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh
 ```
 
-The expected current posture is `F22_6_RELEASE_LINEAGE=needs_hygiene`: the
-`v0.2.28` release, artifact-host `current` surface, and live artifact-host
-deployment agree on the runtime payload. The earlier GitHub release
-`SHA256SUMS` coverage debt is resolved as of the 2026-06-23 in-place metadata
-repair: both current and release checksum surfaces cover 7 assets, including
-`EndpointAgent.zip`, `EndpointAgent.zip.sha256`, and `release-manifest.json`.
-The artifact-host `current` manifest is not required to embed its own final
-image digest because that value is self-referential; the durable GitHub release
-manifest plus live Kubernetes imageID provide the immutable image binding.
+The expected current posture is still `F22_6_RELEASE_LINEAGE=needs_hygiene`
+until the `v0.3.0` artifact-host digest pin is reconciled and the release
+object immutability finding is addressed. The `v0.3.0` trusted EXE workflow
+published a rollout-candidate release with post-publish archive verification,
+`EndpointAgent.zip` SHA256
+`6139b0cc7b4fb3d745630354d2d49c61558c282360e92999057628fb5c7fd105`, and
+artifact-host image
+`ghcr.io/halildeu/platform-agent-artifacts:v0.3.0@sha256:00df8734b6a8d5121f9294af63a8e44ae9002298a1b5d05f7aaf44912183fbe6`.
 
-The remaining release-lineage hygiene items are the mutable GitHub release
-object (`isImmutable=false`) and the dense `v0.2.x` pilot-recovery train. Broad
-rollout language still requires either fixing those hygiene items or recording
-an explicit owner-approved lineage waiver for the bounded pilot only.
+The dense `v0.2.x` pilot-recovery train is no longer the current policy series;
+it remains historical evidence. The remaining known release-lineage hygiene
+item is that GitHub release objects still report `isImmutable=false`. Broad
+rollout language still requires either fixing that hygiene item, recording an
+explicit owner-approved lineage waiver for the bounded pilot only, or another
+machine-enforced immutable-release control accepted by the release-lineage
+audit.
 
 ## 9. Closure Language
 

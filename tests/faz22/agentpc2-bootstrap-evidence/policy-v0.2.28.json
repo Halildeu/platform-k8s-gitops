@@ -1,0 +1,78 @@
+{
+  "schema_version": "faz22.6.endpoint-agent-release-policy.v1",
+  "status": "test-fixture",
+  "scope": "Historical AgentPC2 bootstrap evidence verifier fixture for v0.2.28",
+  "current_bounded_pilot": {
+    "release_tag": "v0.2.28",
+    "agent_version": "0.2.28",
+    "release_class": "bounded-pilot",
+    "source_commit": "10361a60ca8ca1fb4c6efe3823b433297e16ae3a",
+    "endpoint_agent_sha256": "e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4",
+    "endpoint_agent_zip_sha256": "e30ab27490dfcc565bd19f5da657739dfacb8e8d9f57770142575a03e607938a",
+    "endpoint_agent_max_bytes": 14377384,
+    "release_manifest_sha256": "afc86befa2db11803724e4c1bc9fc0aaf0275ff4cf31d953270d27c84d6b7f12",
+    "install_ps1_sha256": "f257202723ac719f4170cbe2e800dc190845ff7fbd128c6ce3ddd2ac90e49e0e",
+    "bootstrap_package_ps1_sha256": "83292ab3b5c27a8c27c11c7774cf4157bbb23188b81b0adf2a5a29a70279c7f8",
+    "signer_thumbprint": "D68F4F530137EB65CE44E3405E82B46205E753E5",
+    "signer_sha256_fingerprint": "EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD",
+    "signing_tier": "trusted-internal-ca",
+    "artifact_host_digest": "sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2",
+    "artifact_host_image_ref": "ghcr.io/halildeu/platform-agent-artifacts:v0.2.28@sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2",
+    "artifact_base_url": "https://testai.acik.com/artifacts/endpoint-agent/current",
+    "github_release_base_url": "https://github.com/Halildeu/platform-agent/releases/download/v0.2.28",
+    "waiver_ref": "Halildeu/platform-k8s-gitops#1901"
+  },
+  "release_train_policy": {
+    "frozen_minor": "v0.2",
+    "next_trusted_minor": "v0.3",
+    "recent_release_window": 50,
+    "recent_release_series_regex": "^v0\\.2\\.",
+    "recent_release_series_label": "v0.2",
+    "recent_release_hygiene_threshold": 5,
+    "max_trusted_releases_per_day": 2,
+    "require_main_ancestor": true,
+    "require_tag_protection": true,
+    "require_post_publish_verifier": true,
+    "require_release_class": true,
+    "allowed_release_classes": [
+      "bounded-pilot",
+      "rollout-candidate"
+    ]
+  },
+  "release_manifest_required_fields": [
+    "source_commit",
+    "workflow_run_id",
+    "release_tag",
+    "release_class",
+    "endpoint_agent_sha256",
+    "endpoint_agent_zip_sha256",
+    "signer_thumbprint",
+    "signing_tier",
+    "artifact_host_digest",
+    "artifact_host_image_ref",
+    "previous_release"
+  ],
+  "bounded_pilot_waiver": {
+    "accepted_findings": [
+      "GITHUB_RELEASE_IMMUTABLE",
+      "GITHUB_RELEASE_DENSE_TRAIN"
+    ],
+    "forbidden_claims": [
+      "5-device",
+      "50-device",
+      "800-device",
+      "production",
+      "broad-rollout"
+    ]
+  },
+  "broad_rollout_language": {
+    "allowed_only_when": "F22_6_RELEASE_LINEAGE=pass",
+    "bounded_pilot_pass_forbids": [
+      "5-device",
+      "50-device",
+      "800-device",
+      "production",
+      "broad-rollout"
+    ]
+  }
+}

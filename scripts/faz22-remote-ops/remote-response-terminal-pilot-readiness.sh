@@ -9,12 +9,18 @@ set -euo pipefail
 # runs scripts, opens terminal sessions, mutates Kubernetes, edits GitOps
 # desired-state, or executes endpoint commands.
 
-ARTIFACT_MANIFEST_URL="${ARTIFACT_MANIFEST_URL:-https://testai.acik.com/artifacts/endpoint-agent/current/release-manifest.json}"
-EXPECTED_RELEASE_TAG="${EXPECTED_RELEASE_TAG:-v0.2.10}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
+# shellcheck source=scripts/faz22-remote-ops/endpoint-agent-release-policy.sh
+source "${SCRIPT_DIR}/endpoint-agent-release-policy.sh"
+endpoint_agent_release_policy_load "$REPO_ROOT"
+
+ARTIFACT_MANIFEST_URL="${ARTIFACT_MANIFEST_URL:-${ARTIFACT_BASE_URL}/release-manifest.json}"
+EXPECTED_RELEASE_TAG="${EXPECTED_RELEASE_TAG:-$EXPECTED_AGENT_TAG}"
 EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-${EXPECTED_RELEASE_TAG#v}}"
-EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-a50344a4457959b95dfdfa22e6578e53cd6ec4b124830b506fe53503c18ba1ec}"
-EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-fa72f278b81497bf2480ea312c7d13cff410372bfcef6ddca23dc3e50a1f292e}"
-EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
+: "${EXPECTED_AGENT_SHA256:?missing expected agent SHA256}"
+: "${EXPECTED_AGENT_ZIP_SHA256:?missing expected EndpointAgent.zip SHA256}"
+: "${EXPECTED_SIGNER_THUMBPRINT:?missing expected signer thumbprint}"
 
 DEVICE_ID="${DEVICE_ID:-423b6fc3-7497-4083-bd2f-5e2fe543bfe9}"
 DEVICE_HOSTNAME="${DEVICE_HOSTNAME:-SRB-AIDENETIMPC}"
@@ -209,7 +215,7 @@ limit 30;"
       if [[ "$device_json" == "null" ]]; then
         decision="target-endpoint-not-found"
         reason="No matching endpoint device row for DEVICE_ID or DEVICE_HOSTNAME."
-      # Accept local build suffixes such as v0.2.10-pilot.1 for readiness; the
+      # Accept local build suffixes such as vX.Y.Z-pilot.1 for readiness; the
       # artifact manifest hash/signer check above remains exact.
       elif [[ "$endpoint_version" == "$EXPECTED_RELEASE_TAG" || "$endpoint_version" == "$EXPECTED_AGENT_VERSION" || "$endpoint_version" == *"$EXPECTED_AGENT_VERSION"* ]]; then
         decision="ready-for-product-smoke"

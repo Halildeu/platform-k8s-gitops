@@ -7,25 +7,20 @@ on:
         description: 'Required literal: RUN_AGENTPC2_UPDATE_AGENT_RELEASE'
         required: true
       release_id:
-        description: 'Release tag to dispatch through the product UPDATE_AGENT path'
-        required: true
-        default: 'v0.2.28'
+        description: 'Optional release tag override; empty uses the checked-in EndpointAgent release policy'
+        required: false
       target_version:
-        description: 'Agent version expected after update'
-        required: true
-        default: '0.2.28'
+        description: 'Optional target version override; empty uses the checked-in EndpointAgent release policy'
+        required: false
       expected_sha256:
-        description: 'Expected SHA256 for endpoint-agent.exe'
-        required: true
-        default: 'e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4'
+        description: 'Optional endpoint-agent.exe SHA256 override; empty uses the checked-in EndpointAgent release policy'
+        required: false
       expected_signer_thumbprint:
-        description: 'Expected internal-CA Authenticode signer thumbprint'
-        required: true
-        default: 'D68F4F530137EB65CE44E3405E82B46205E753E5'
+        description: 'Optional internal-CA Authenticode signer thumbprint override; empty uses the checked-in EndpointAgent release policy'
+        required: false
       max_bytes:
-        description: 'Maximum allowed endpoint-agent.exe size'
-        required: true
-        default: '14377384'
+        description: 'Optional maximum endpoint-agent.exe size override; empty uses the checked-in EndpointAgent release policy'
+        required: false
       target_product_device_id:
         description: 'Endpoint-admin product device UUID for AgentPC2'
         required: true
@@ -98,32 +93,32 @@ jobs:
             exit 1
           fi
 
-          if [[ ! "${INPUT_RELEASE_ID}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [ -n "${INPUT_RELEASE_ID}" ] && [[ ! "${INPUT_RELEASE_ID}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::release_id must look like vX.Y.Z"
             exit 1
           fi
 
-          if [[ ! "${INPUT_TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [ -n "${INPUT_TARGET_VERSION}" ] && [[ ! "${INPUT_TARGET_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::target_version must look like X.Y.Z"
             exit 1
           fi
 
-          if [ "${INPUT_RELEASE_ID}" != "v${INPUT_TARGET_VERSION}" ]; then
+          if [ -n "${INPUT_RELEASE_ID}" ] && [ -n "${INPUT_TARGET_VERSION}" ] && [ "${INPUT_RELEASE_ID}" != "v${INPUT_TARGET_VERSION}" ]; then
             echo "::error::release_id must equal v<target_version>"
             exit 1
           fi
 
-          if [[ ! "${INPUT_EXPECTED_SHA256}" =~ ^[a-f0-9]{64}$ ]]; then
+          if [ -n "${INPUT_EXPECTED_SHA256}" ] && [[ ! "${INPUT_EXPECTED_SHA256}" =~ ^[a-f0-9]{64}$ ]]; then
             echo "::error::expected_sha256 must be 64 lowercase hex characters"
             exit 1
           fi
 
-          if [[ ! "${INPUT_EXPECTED_SIGNER_THUMBPRINT}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+          if [ -n "${INPUT_EXPECTED_SIGNER_THUMBPRINT}" ] && [[ ! "${INPUT_EXPECTED_SIGNER_THUMBPRINT}" =~ ^[a-fA-F0-9]{40}$ ]]; then
             echo "::error::expected_signer_thumbprint must be 40 hex characters"
             exit 1
           fi
 
-          if [[ ! "${INPUT_MAX_BYTES}" =~ ^[0-9]+$ ]]; then
+          if [ -n "${INPUT_MAX_BYTES}" ] && [[ ! "${INPUT_MAX_BYTES}" =~ ^[0-9]+$ ]]; then
             echo "::error::max_bytes must be numeric"
             exit 1
           fi
@@ -151,14 +146,24 @@ jobs:
           fi
 
           {
-            printf 'RELEASE_ID=%s\n' "${INPUT_RELEASE_ID}"
-            printf 'TARGET_VERSION=%s\n' "${INPUT_TARGET_VERSION}"
-            printf 'EXPECTED_AGENT_VERSION=%s\n' "${INPUT_TARGET_VERSION}"
-            printf 'BINARY_URL=https://github.com/Halildeu/platform-agent/releases/download/%s/endpoint-agent.exe\n' "${INPUT_RELEASE_ID}"
-            printf 'MANIFEST_URL=https://github.com/Halildeu/platform-agent/releases/download/%s/release-manifest.json\n' "${INPUT_RELEASE_ID}"
-            printf 'EXPECTED_SHA256=%s\n' "${INPUT_EXPECTED_SHA256}"
-            printf 'EXPECTED_SIGNER_THUMBPRINT=%s\n' "${INPUT_EXPECTED_SIGNER_THUMBPRINT}"
-            printf 'MAX_BYTES=%s\n' "${INPUT_MAX_BYTES}"
+            if [ -n "${INPUT_RELEASE_ID}" ]; then
+              printf 'RELEASE_ID=%s\n' "${INPUT_RELEASE_ID}"
+              printf 'BINARY_URL=https://github.com/Halildeu/platform-agent/releases/download/%s/endpoint-agent.exe\n' "${INPUT_RELEASE_ID}"
+              printf 'MANIFEST_URL=https://github.com/Halildeu/platform-agent/releases/download/%s/release-manifest.json\n' "${INPUT_RELEASE_ID}"
+            fi
+            if [ -n "${INPUT_TARGET_VERSION}" ]; then
+              printf 'TARGET_VERSION=%s\n' "${INPUT_TARGET_VERSION}"
+              printf 'EXPECTED_AGENT_VERSION=%s\n' "${INPUT_TARGET_VERSION}"
+            fi
+            if [ -n "${INPUT_EXPECTED_SHA256}" ]; then
+              printf 'EXPECTED_SHA256=%s\n' "${INPUT_EXPECTED_SHA256}"
+            fi
+            if [ -n "${INPUT_EXPECTED_SIGNER_THUMBPRINT}" ]; then
+              printf 'EXPECTED_SIGNER_THUMBPRINT=%s\n' "${INPUT_EXPECTED_SIGNER_THUMBPRINT}"
+            fi
+            if [ -n "${INPUT_MAX_BYTES}" ]; then
+              printf 'MAX_BYTES=%s\n' "${INPUT_MAX_BYTES}"
+            fi
             printf 'TARGET_DEVICE_ID=%s\n' "${INPUT_TARGET_PRODUCT_DEVICE_ID}"
             printf 'TARGET_DEVICE_HOSTNAME=%s\n' "${INPUT_DEVICE_HOSTNAME}"
             printf 'POLL_SECONDS=%s\n' "${INPUT_POLL_SECONDS}"
@@ -166,6 +171,9 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Validate release policy
+        run: scripts/faz22-remote-ops/check-endpoint-agent-release-policy.sh
 
       - name: Run AgentPC2 product update
         id: update

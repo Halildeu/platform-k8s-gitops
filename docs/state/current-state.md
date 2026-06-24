@@ -1,5 +1,42 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 22.6 v0.3.0 trusted release published; GitOps pin pending live reconcile (2026-06-24)
+
+`platform-agent` PR #232 merged into `main` and produced trusted EndpointAgent
+release `v0.3.0`:
+
+- PR: `https://github.com/Halildeu/platform-agent/pull/232`
+- Merge commit: `ca662499ca13bb567d8b6bc6f02044e4a91579fa`
+- Release workflow:
+  `https://github.com/Halildeu/platform-agent/actions/runs/28087330255`
+  (`success`)
+- Release URL:
+  `https://github.com/Halildeu/platform-agent/releases/tag/v0.3.0`
+- Release class: `rollout-candidate`
+- Previous release: `v0.2.28`
+- `endpoint-agent.exe` SHA256:
+  `424d7104a0e8614018a34d629f47713375778d85ff49c387f6de4197950aad6d`
+- `EndpointAgent.zip` SHA256:
+  `6139b0cc7b4fb3d745630354d2d49c61558c282360e92999057628fb5c7fd105`
+- Artifact-host image:
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.3.0@sha256:00df8734b6a8d5121f9294af63a8e44ae9002298a1b5d05f7aaf44912183fbe6`
+
+Workflow `28087330255` passed the release-lineage gate, signed EXE build,
+Windows signature machine-gate, GitHub Release publish, GHCR artifact-host
+push, and post-publish release archive verifier. AG-018 MSI workflow
+`28087330396` also completed `success`.
+
+Current boundary:
+
+- This branch updates the policy SSOT and test overlay desired-state pin to
+  `v0.3.0`; live `testai` artifact-host reconciliation still needs audit
+  evidence after merge/apply.
+- GitHub release metadata still reports `isImmutable=false` for `v0.3.0`.
+  Therefore `platform-k8s-gitops#1901` is not closed by the release alone.
+- The historical dense `v0.2.x` train is no longer the current policy series,
+  but final Faz 22.6 completion still also depends on `platform-backend#548`
+  and `platform-k8s-gitops#1580`.
+
 ## Live Delta — Faz 22.6 release-lineage live digest self-hosted evidence canonicalized (2026-06-23)
 
 Faz 22.6 release-lineage artifact-host live digest evidence is no longer

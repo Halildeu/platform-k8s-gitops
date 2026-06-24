@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - '.github/workflows/gate-faz22-completion-decision-package.yml'
+      - 'config/faz22-6-endpoint-agent-release-policy.v1.json'
       - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/endpoint-agent-release-policy.sh'
       - 'scripts/faz22-remote-ops/faz22-6-completion-decision-package.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_completion_decision_package.sh'
   push:
@@ -12,7 +14,9 @@ on:
       - main
     paths:
       - '.github/workflows/gate-faz22-completion-decision-package.yml'
+      - 'config/faz22-6-endpoint-agent-release-policy.v1.json'
       - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
+      - 'scripts/faz22-remote-ops/endpoint-agent-release-policy.sh'
       - 'scripts/faz22-remote-ops/faz22-6-completion-decision-package.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_completion_decision_package.sh'
 
@@ -38,6 +42,7 @@ jobs:
           set -euo pipefail
           bash -n \
             scripts/faz22-remote-ops/faz22-6-completion-decision-package.sh \
+            scripts/faz22-remote-ops/endpoint-agent-release-policy.sh \
             tests/faz22_remote_ops/test_faz22_6_completion_decision_package.sh
 
       - name: Run completion decision package regression test

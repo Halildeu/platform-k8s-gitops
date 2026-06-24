@@ -11,21 +11,22 @@ GITOPS_REPO="${GITOPS_REPO:-Halildeu/platform-k8s-gitops}"
 BACKEND_REPO="${BACKEND_REPO:-Halildeu/platform-backend}"
 AGENT_REPO="${AGENT_REPO:-Halildeu/platform-agent}"
 WEB_REPO="${WEB_REPO:-Halildeu/platform-web}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=scripts/faz22-remote-ops/endpoint-agent-release-policy.sh
+source "$SCRIPT_DIR/endpoint-agent-release-policy.sh"
+endpoint_agent_release_policy_load "$REPO_ROOT"
+
 SSH_TARGET="${SSH_TARGET:-staging-sw}"
 REMOTE_BRIDGE_KUBECTL_MODE="${REMOTE_BRIDGE_KUBECTL_MODE:-ssh}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
 EXPECTED_REMOTE_BRIDGE_DIGEST="${EXPECTED_REMOTE_BRIDGE_DIGEST:-sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c}"
-EXPECTED_AGENT_LATEST_TAG="${EXPECTED_AGENT_LATEST_TAG:-v0.2.28}"
-RELEASE_HYGIENE_RECENT_THRESHOLD="${RELEASE_HYGIENE_RECENT_THRESHOLD:-5}"
-RELEASE_LINEAGE_WAIVER_REF="${RELEASE_LINEAGE_WAIVER_REF:-Halildeu/platform-k8s-gitops#1901}"
-RELEASE_LINEAGE_WAIVER_FORBIDDEN_CLAIMS="${RELEASE_LINEAGE_WAIVER_FORBIDDEN_CLAIMS:-5-device,50-device,800-device,production,broad-rollout}"
 B1_4_ATTESTATION_ACCEPTANCE_REF="${B1_4_ATTESTATION_ACCEPTANCE_REF:-Halildeu/platform-backend#548}"
 B1_4_RISK_ACCEPTANCE_FORBIDDEN_CLAIMS="${B1_4_RISK_ACCEPTANCE_FORBIDDEN_CLAIMS:-tpm-complete,hardware-attestation-complete,5-device,50-device,800-device,production,broad-rollout}"
 VIEW_ONLY_ACCEPTANCE_REF="${VIEW_ONLY_ACCEPTANCE_REF:-Halildeu/platform-k8s-gitops#1580}"
 VIEW_ONLY_FORBIDDEN_CLAIMS="${VIEW_ONLY_FORBIDDEN_CLAIMS:-rdp,credential-entry,raw-shell,port-forward,5-device,50-device,800-device,production,broad-rollout}"
 EXPECTED_AGENT_TAG="${EXPECTED_AGENT_TAG:-$EXPECTED_AGENT_LATEST_TAG}"
-EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2}"
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -746,11 +747,12 @@ check_release_train() {
   latest="$(printf '%s\n' "$releases" \
     | jq -r '(map(select(.isLatest))[0].tagName // .[0].tagName // "unknown")')"
   count="$(printf '%s\n' "$releases" \
-    | jq '[.[].tagName | select(test("^v0\\.2\\."))] | length')"
+    | jq --arg regex "$AGENT_RELEASE_SERIES_REGEX" '[.[].tagName | select(test($regex))] | length')"
   tags="$(printf '%s\n' "$releases" | jq -r '[.[].tagName] | join(",")')"
   is_immutable="$(printf '%s\n' "$releases" | jq -r --arg tag "$EXPECTED_AGENT_LATEST_TAG" 'map(select(.tagName == $tag)) as $m | if ($m|length) > 0 then $m[0].isImmutable else false end')"
   printf 'AGENT_RELEASE_TRAIN_LATEST=%s\n' "${latest:-unknown}"
-  printf 'AGENT_RELEASE_TRAIN_RECENT_V0_2_COUNT=%s\n' "$count"
+  printf 'AGENT_RELEASE_TRAIN_RECENT_SERIES=%s\n' "$AGENT_RELEASE_SERIES_LABEL"
+  printf 'AGENT_RELEASE_TRAIN_RECENT_SERIES_COUNT=%s\n' "$count"
   printf 'AGENT_RELEASE_TRAIN_RECENT_TAGS=%s\n' "$tags"
   if [ "${latest:-}" != "$EXPECTED_AGENT_LATEST_TAG" ]; then
     printf 'AGENT_RELEASE_TRAIN=blocked latest=%s expected_latest=%s\n' "${latest:-unknown}" "$EXPECTED_AGENT_LATEST_TAG"
@@ -771,15 +773,15 @@ check_release_train() {
     local required_findings
     required_findings="$(IFS=,; printf '%s' "${waiver_findings[*]}")"
     if check_release_lineage_waiver "$required_findings"; then
-      printf 'AGENT_RELEASE_TRAIN=bounded_pilot_pass latest=%s recent_v0_2_count=%s isImmutable=%s waiver_ref=%s\n' "$latest" "$count" "$is_immutable" "$RELEASE_LINEAGE_WAIVER_REF"
+      printf 'AGENT_RELEASE_TRAIN=bounded_pilot_pass latest=%s recent_series=%s recent_series_count=%s isImmutable=%s waiver_ref=%s\n' "$latest" "$AGENT_RELEASE_SERIES_LABEL" "$count" "$is_immutable" "$RELEASE_LINEAGE_WAIVER_REF"
       return 0
     fi
-    printf 'AGENT_RELEASE_TRAIN=needs_hygiene latest=%s recent_v0_2_count=%s isImmutable=%s reason=rapid-v0.2-train-or-mutable-release-requires-lineage-waiver\n' "$latest" "$count" "$is_immutable"
+    printf 'AGENT_RELEASE_TRAIN=needs_hygiene latest=%s recent_series=%s recent_series_count=%s isImmutable=%s reason=rapid-release-train-or-mutable-release-requires-lineage-waiver\n' "$latest" "$AGENT_RELEASE_SERIES_LABEL" "$count" "$is_immutable"
     return 1
   fi
 
   lineage_print_check 'RELEASE_LINEAGE_WAIVER' 'not_required' 'reason=no-release-lineage-hygiene'
-  printf 'AGENT_RELEASE_TRAIN=pass latest=%s recent_v0_2_count=%s isImmutable=%s\n' "$latest" "$count" "$is_immutable"
+  printf 'AGENT_RELEASE_TRAIN=pass latest=%s recent_series=%s recent_series_count=%s isImmutable=%s\n' "$latest" "$AGENT_RELEASE_SERIES_LABEL" "$count" "$is_immutable"
   return 0
 }
 

@@ -34,7 +34,7 @@ GATE_B1_4_HARDWARE_ATTESTATION=blocked state=OPEN expected=CLOSED-or-bounded-ris
 GATE_VIEW_ONLY_SCREEN_SHARE=blocked state=OPEN expected=CLOSED-with-view-only-acceptance issue=Halildeu/platform-k8s-gitops#1580 reason=missing-acceptance-marker
 REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_digest=sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c
 RELEASE_LINEAGE_WAIVER=blocked ref=Halildeu/platform-k8s-gitops#1901 reason=marker,scope,release_tag,artifact_host_digest,owner_approved_by,accepted_findings:GITHUB_RELEASE_IMMUTABLE,accepted_findings:GITHUB_RELEASE_DENSE_TRAIN,forbidden_claims:5-device,forbidden_claims:50-device,forbidden_claims:800-device,forbidden_claims:production,forbidden_claims:broad-rollout,approved_at,expires_at
-AGENT_RELEASE_TRAIN=needs_hygiene latest=v0.2.28 recent_v0_2_count=20 isImmutable=false reason=rapid-v0.2-train-or-mutable-release-requires-lineage-waiver
+AGENT_RELEASE_TRAIN=needs_hygiene latest=v0.2.28 recent_series=v0.2 recent_series_count=20 isImmutable=false reason=rapid-release-train-or-mutable-release-requires-lineage-waiver
 F22_6_COMPLETION=blocked
 F22_6_NEXT_REQUIRED=close-or-risk-accept-548-with-marker,close-1580-with-view-only-marker,fix-release-lineage-hygiene
 EOF
