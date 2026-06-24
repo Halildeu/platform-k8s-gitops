@@ -1,83 +1,72 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.6 v0.3.0 runtime parity proven; release hygiene still open (2026-06-24)
+## Live Delta — Faz 22.6 v0.3.1 release-lineage no-waiver gate passed (2026-06-24)
 
-`platform-agent` PR #232 merged into `main` and produced trusted EndpointAgent
-release `v0.3.0`:
+`platform-agent` PR #233 merged into `main` and produced trusted EndpointAgent
+release `v0.3.1` after repo-level release immutability was enabled:
 
-- PR: `https://github.com/Halildeu/platform-agent/pull/232`
-- Merge commit: `ca662499ca13bb567d8b6bc6f02044e4a91579fa`
+- PR: `https://github.com/Halildeu/platform-agent/pull/233`
+- Merge/source commit: `4a988afbb23320fd631a6e6aab629811e637aa1e`
 - Release workflow:
-  `https://github.com/Halildeu/platform-agent/actions/runs/28087330255`
+  `https://github.com/Halildeu/platform-agent/actions/runs/28100776164`
+  (`success`)
+- MSI workflow:
+  `https://github.com/Halildeu/platform-agent/actions/runs/28100776149`
   (`success`)
 - Release URL:
-  `https://github.com/Halildeu/platform-agent/releases/tag/v0.3.0`
+  `https://github.com/Halildeu/platform-agent/releases/tag/v0.3.1`
+- GitHub Release metadata: `isImmutable=true`, `isDraft=false`,
+  `isPrerelease=false`, `publishedAt=2026-06-24T13:12:26Z`.
 - Release class: `rollout-candidate`
-- Previous release: `v0.2.28`
+- Previous release: `v0.3.0`
+- Workflow run id in release manifest: `28100776164`
+- `release-manifest.json` SHA256:
+  `3d74e3dbb057e0d23b25cf0f8fb93864db24749c7db3e2292946d9cf9b01545b`
 - `endpoint-agent.exe` SHA256:
-  `424d7104a0e8614018a34d629f47713375778d85ff49c387f6de4197950aad6d`
+  `edcac7e2a78d8801c6d168bdb8d51f6ecc5e99bc4c4f9fdc8507943df321e1be`
 - `EndpointAgent.zip` SHA256:
-  `6139b0cc7b4fb3d745630354d2d49c61558c282360e92999057628fb5c7fd105`
+  `6791f6af5dbe0c4f2da8d87f33e5fa4165237d8b6a7aeb8121e29a88cbc5c2b7`
 - Artifact-host image:
-  `ghcr.io/halildeu/platform-agent-artifacts:v0.3.0@sha256:00df8734b6a8d5121f9294af63a8e44ae9002298a1b5d05f7aaf44912183fbe6`
+  `ghcr.io/halildeu/platform-agent-artifacts:v0.3.1@sha256:b83e39a0b08b54cd9e4dc094d8d36fb857b2cd253355ce5150aa33edb502eb27`
 
-Workflow `28087330255` passed the release-lineage gate, signed EXE build,
-Windows signature machine-gate, GitHub Release publish, GHCR artifact-host
-push, and post-publish release archive verifier. AG-018 MSI workflow
-`28087330396` also completed `success`.
-
-GitOps PR #1940 merged to `origin/main` at
-`8ee9d630cdf8da02197f6192e950cc04008c870f` and pinned the test
-`artifact-host` overlay to the same `v0.3.0` digest. The first post-merge
-self-hosted audit run `28094935785` failed because ArgoCD/self-heal had not
-yet reconciled live `artifact-host`; it still saw `v0.2.28` and
+GitOps PR #1943 merged to `origin/main` at
+`fc3b64da0868adeec9e5d642d02016ffe1eb0778` and pinned the test
+`artifact-host` overlay to the same `v0.3.1` immutable digest. The first
+post-merge self-hosted audit run `28101992243` failed because ArgoCD had not
+yet reconciled live `artifact-host`; it still saw `v0.3.0` and
 `ARTIFACT_HOST_LIVE_DIGEST=blocked`.
 
 Current live evidence is the follow-up self-hosted release-lineage audit:
 
 - Workflow:
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28095182027`
-  (`success`, head `8ee9d630cdf8da02197f6192e950cc04008c870f`)
-- `MANIFEST_RELEASE_TAG_PARITY=pass release=v0.3.0 current=v0.3.0`
-- `MANIFEST_AGENT_SHA_PARITY=pass sha256=424d7104a0e8614018a34d629f47713375778d85ff49c387f6de4197950aad6d`
-- `MANIFEST_ZIP_SHA_PARITY=pass sha256=6139b0cc7b4fb3d745630354d2d49c61558c282360e92999057628fb5c7fd105`
-- `ARTIFACT_HOST_LIVE_DIGEST=pass mode=local-kubectl expected_digest=sha256:00df8734b6a8d5121f9294af63a8e44ae9002298a1b5d05f7aaf44912183fbe6 digest_hits=3`
-
-On 2026-06-24 the owner approved enabling the `platform-agent` repo Settings /
-General `Enable release immutability` setting. The setting now persists as
-checked in the GitHub UI, but it did not retroactively change the already
-published `v0.3.0` GitHub Release object:
-
-- `gh release view v0.3.0 --repo Halildeu/platform-agent` still reports
-  `isImmutable=false`.
-- REST still reports `immutable=false` and `updated_at=2026-06-24T09:04:29Z`
-  for release id `343988462`.
-- Post-setting self-hosted audit
-  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28099352305`
-  completed `success` but still printed
-  `GITHUB_RELEASE_IMMUTABLE=needs_hygiene tag=v0.3.0 isImmutable=false` and
-  `F22_6_RELEASE_LINEAGE=needs_hygiene`. This is specifically the already
-  published `v0.3.0` release object check; runtime digest parity remains
-  independently `pass`.
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28102175711`
+  (`success`, head `fc3b64da0868adeec9e5d642d02016ffe1eb0778`)
+- `GITHUB_RELEASE_LATEST=pass tag=v0.3.1 draft=false prerelease=false`
+- `GITHUB_RELEASE_IMMUTABLE=pass tag=v0.3.1`
+- `GITHUB_RELEASE_DENSE_TRAIN=pass recent_series=v0.3 recent_series_count=2`
+- `GITHUB_TAG_SOURCE_COMMIT=pass tag=v0.3.1 commit=4a988afbb23320fd631a6e6aab629811e637aa1e`
+- `MANIFEST_RELEASE_TAG_PARITY=pass release=v0.3.1 current=v0.3.1`
+- `MANIFEST_WORKFLOW_RUN_PARITY=pass workflow_run_id=28100776164`
+- `MANIFEST_PREVIOUS_RELEASE_PARITY=pass previous_release=v0.3.0`
+- `MANIFEST_AGENT_SHA_PARITY=pass sha256=edcac7e2a78d8801c6d168bdb8d51f6ecc5e99bc4c4f9fdc8507943df321e1be`
+- `MANIFEST_ZIP_SHA_PARITY=pass sha256=6791f6af5dbe0c4f2da8d87f33e5fa4165237d8b6a7aeb8121e29a88cbc5c2b7`
+- `RELEASE_MANIFEST_ARTIFACT_HOST_DIGEST=pass ref=ghcr.io/halildeu/platform-agent-artifacts:v0.3.1@sha256:b83e39a0b08b54cd9e4dc094d8d36fb857b2cd253355ce5150aa33edb502eb27`
+- `ZIP_SHA256_FILE_PARITY=pass sha256=6791f6af5dbe0c4f2da8d87f33e5fa4165237d8b6a7aeb8121e29a88cbc5c2b7`
+- `CURRENT_SHA256SUMS_COVERAGE=pass assets=7`
+- `RELEASE_SHA256SUMS_COVERAGE=pass assets=7`
+- `ARTIFACT_HOST_LIVE_DIGEST=pass mode=local-kubectl expected_digest=sha256:b83e39a0b08b54cd9e4dc094d8d36fb857b2cd253355ce5150aa33edb502eb27 digest_hits=3`
+- `RELEASE_LINEAGE_WAIVER=not_required reason=no-release-lineage-hygiene`
+- `F22_6_RELEASE_LINEAGE=pass`
 
 Current boundary:
 
-- Runtime `artifact-host` v0.3.0 digest parity, current/release manifest
-  parity, signing parity, ZIP SHA parity, and asset coverage are proven.
-- GitHub release metadata still reports `isImmutable=false` for `v0.3.0`.
-  A REST `PATCH` attempt with `immutable=true` returned the same
-  `immutable=false` value and did not update the release; the field is not a
-  writable REST `Update a release` body parameter. Enabling the repo-level
-  release immutability setting did not make the existing `v0.3.0` release
-  object immutable, so `platform-k8s-gitops#1901` remains open/blocked unless
-  a new trusted immutable release is produced and consumed by GitOps or an
-  owner-approved bounded-pilot waiver marker is recorded.
-- The remaining #1901 sub-gate is release-object immutability evidence. It is
-  no longer a runtime payload, manifest parity, ZIP SHA, signing, or live
-  artifact-host digest blocker for `v0.3.0`.
-- The historical dense `v0.2.x` train is no longer the current policy series,
-  but final Faz 22.6 completion still also depends on `platform-backend#548`
-  and `platform-k8s-gitops#1580`.
+- The #1901 release-lineage hygiene sub-gate now has no-waiver live evidence:
+  immutable GitHub Release object, source/tag provenance, release/current
+  manifest parity, workflow/previous-release parity, ZIP SHA parity, asset
+  coverage, and live artifact-host imageID digest are all proven for `v0.3.1`.
+- This does not by itself satisfy production, broad-rollout, or final Faz 22.6
+  gates. Final Faz 22.6 completion still depends on
+  `platform-backend#548` and `platform-k8s-gitops#1580`.
 
 ## Live Delta — Faz 22.6 release-lineage live digest self-hosted evidence canonicalized (2026-06-23)
 
