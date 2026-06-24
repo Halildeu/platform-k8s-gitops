@@ -7,13 +7,19 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=scripts/faz22-remote-ops/endpoint-agent-release-policy.sh
+source "$SCRIPT_DIR/endpoint-agent-release-policy.sh"
+endpoint_agent_release_policy_load "$REPO_ROOT"
+
 WAIVER_SCOPE="bounded-pilot-only"
-ACCEPTED_FINDINGS="GITHUB_RELEASE_IMMUTABLE,GITHUB_RELEASE_DENSE_TRAIN"
-FORBIDDEN_CLAIMS="5-device,50-device,800-device,production,broad-rollout"
+ACCEPTED_FINDINGS="$RELEASE_LINEAGE_WAIVER_ACCEPTED_FINDINGS"
+FORBIDDEN_CLAIMS="$RELEASE_LINEAGE_WAIVER_FORBIDDEN_CLAIMS"
 
 MARKER_OUT=""
-RELEASE_TAG="${EXPECTED_AGENT_TAG:-v0.2.28}"
-ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2}"
+RELEASE_TAG="${EXPECTED_AGENT_TAG}"
+ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST}"
 OWNER_APPROVED_BY=""
 APPROVED_AT=""
 EXPIRES_AT=""
@@ -23,7 +29,7 @@ usage() {
 Usage:
   faz22-6-release-lineage-waiver-package.sh \
     --marker-out PATH \
-    --release-tag v0.2.28 \
+    --release-tag RELEASE_TAG \
     --artifact-host-digest sha256:<64 hex> \
     --owner-approved-by NAMED_OWNER \
     --approved-at YYYY-MM-DD \

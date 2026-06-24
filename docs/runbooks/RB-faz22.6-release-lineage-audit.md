@@ -39,23 +39,29 @@ For broad rollout, the release record must bind:
 Missing metadata is not automatically a runtime no-go for the bounded pilot,
 but it is a release-hygiene blocker for broader rollout language.
 
-## 2. Current v0.2.28 Snapshot
+## 2. Current v0.3.0 Release Snapshot
 
-Observed on 2026-06-23:
+Observed on 2026-06-24:
 
-- GitHub latest release: `platform-agent` `v0.2.28`.
+- GitHub latest release: `platform-agent` `v0.3.0`.
 - Annotated tag object points to source commit
-  `10361a60ca8ca1fb4c6efe3823b433297e16ae3a`.
-- GitHub release manifest and artifact-host `current` manifest agree on:
-  - `release_tag=v0.2.28`
-  - `endpoint_agent_sha256=e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4`
+  `ca662499ca13bb567d8b6bc6f02044e4a91579fa`.
+- GitHub release manifest records:
+  - `release_tag=v0.3.0`
+  - `release_class=rollout-candidate`
+  - `previous_release=v0.2.28`
+  - `workflow_run_id=28087330255`
+  - `endpoint_agent_sha256=424d7104a0e8614018a34d629f47713375778d85ff49c387f6de4197950aad6d`
   - `EndpointAgent.zip` SHA256
-    `e30ab27490dfcc565bd19f5da657739dfacb8e8d9f57770142575a03e607938a`
+    `6139b0cc7b4fb3d745630354d2d49c61558c282360e92999057628fb5c7fd105`
   - signer thumbprint
     `D68F4F530137EB65CE44E3405E82B46205E753E5`
   - signing tier `trusted-internal-ca`
-- Live `artifact-host` deployment in `k3d-test/platform-test` runs:
-  `ghcr.io/halildeu/platform-agent-artifacts:v0.2.28@sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2`.
+  - artifact-host image
+    `ghcr.io/halildeu/platform-agent-artifacts:v0.3.0@sha256:00df8734b6a8d5121f9294af63a8e44ae9002298a1b5d05f7aaf44912183fbe6`
+- This GitOps change pins the test `artifact-host` overlay to that immutable
+  digest. The live `artifact-host` deployment in `k3d-test/platform-test` must
+  still be proven by the audit after ArgoCD/apply reconciliation.
 
 Lineage boundary:
 
@@ -66,17 +72,15 @@ Lineage boundary:
 
 Hygiene findings:
 
-- The earlier GitHub release `SHA256SUMS` coverage debt is resolved as of the
-  2026-06-23 in-place `v0.2.28` metadata repair. The main audit now reports
-  both `CURRENT_SHA256SUMS_COVERAGE=pass assets=7` and
-  `RELEASE_SHA256SUMS_COVERAGE=pass assets=7`, including
-  `EndpointAgent.zip`, `EndpointAgent.zip.sha256`, and
-  `release-manifest.json`. No binary, script, ZIP, tag, or
-  `release-manifest.json` payload bytes changed for that repair.
-- Release objects report `isImmutable=false`.
-- The recent `v0.2.x` train is dense (`v0.2.9` through `v0.2.28` in the recent
-  audit window). That is acceptable for pilot recovery, not broad rollout
-  language without a lineage summary.
+- Release workflow `28087330255` ran the post-publish verifier against
+  `v0.3.0` and passed release archive, `SHA256SUMS`, manifest, ZIP, and
+  artifact-host registry digest parity.
+- Release objects still report `isImmutable=false`. This remains a hygiene
+  finding unless GitHub release immutability/ruleset enforcement is enabled or
+  a bounded waiver is recorded.
+- The historical dense `v0.2.x` pilot-recovery train is no longer the current
+  expected release series. The policy now evaluates recent train hygiene
+  against `v0.3`, where `v0.3.0` starts a clean minor line.
 
 ## 3. Audit Command
 
@@ -110,12 +114,44 @@ Expected current posture:
 F22_6_RELEASE_LINEAGE=needs_hygiene
 ```
 
-`needs_hygiene` means the live artifact-host and release payload agree, but
-the release record is not complete enough for broad rollout claims. In the
-2026-06-23 main audit, checksum coverage is no longer the source of that
-posture; the remaining release-lineage hygiene items are the mutable GitHub
-release object and the dense `v0.2.x` train without an owner-approved lineage
-waiver.
+`needs_hygiene` now means the `v0.3.0` release payload is published and the
+GitOps desired-state digest is pinned, but either the live artifact-host has
+not yet been reconciled/proven or the GitHub release object still reports
+`isImmutable=false`. The dense `v0.2.x` recovery train is historical context,
+not the current release series for this policy.
+
+## 3.1 Release Policy SSOT
+
+The active bounded-pilot or rollout-candidate release identity and
+release-train hygiene thresholds
+are read from:
+
+```text
+config/faz22-6-endpoint-agent-release-policy.v1.json
+```
+
+This file is the single source of truth for the current bounded-pilot or
+rollout-candidate
+EndpointAgent tag, source commit, executable/ZIP SHA256 values, executable max
+byte guard, release-manifest/install/bootstrap-package hashes, signer
+thumbprint and certificate fingerprint, artifact-host digest, release-lineage
+waiver ref, waiver accepted findings, and dense-train threshold. The audit,
+bootstrap, update, evidence-verifier, and package helpers load it through
+`scripts/faz22-remote-ops/endpoint-agent-release-policy.sh`.
+
+Do not update `EXPECTED_AGENT_TAG`, artifact-host digest, bootstrap hashes,
+update byte limits, signer fingerprints, or dense-train thresholds by editing
+individual scripts or workflow defaults. Update the policy file and let the gate
+validate the new shape:
+
+```bash
+scripts/faz22-remote-ops/check-endpoint-agent-release-policy.sh
+```
+
+The current policy intentionally freezes the `v0.2` recovery line as bounded
+pilot history and records `v0.3.0` as the current trusted minor line. Moving to
+a new trusted line must be represented in this policy first, then consumed by
+the release workflows and audits.
 
 ## 4. Promotion Rule
 
@@ -179,8 +215,8 @@ metadata:
 ```bash
 scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh \
   --marker-out /path/to/release-lineage-waiver-marker.txt \
-  --release-tag v0.2.28 \
-  --artifact-host-digest sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2 \
+  --release-tag "$(jq -r '.current_bounded_pilot.release_tag' config/faz22-6-endpoint-agent-release-policy.v1.json)" \
+  --artifact-host-digest "$(jq -r '.current_bounded_pilot.artifact_host_digest' config/faz22-6-endpoint-agent-release-policy.v1.json)" \
   --owner-approved-by "<named owner>" \
   --approved-at YYYY-MM-DD \
   --expires-at YYYY-MM-DD

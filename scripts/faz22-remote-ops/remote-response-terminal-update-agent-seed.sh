@@ -9,19 +9,25 @@ set -euo pipefail
 # Approved Script Runner as an installer, and never opens a shell/RDP/WinRM/SMB
 # path. Live API mutations require LIVE_MUTATION=1 plus explicit RUN_* flags.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
+# shellcheck source=scripts/faz22-remote-ops/endpoint-agent-release-policy.sh
+source "${SCRIPT_DIR}/endpoint-agent-release-policy.sh"
+endpoint_agent_release_policy_load "$REPO_ROOT"
+
 API_BASE="${ENDPOINT_ADMIN_API_BASE:-https://testai.acik.com/api/v1/endpoint-admin}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/remote-response-terminal-update-agent-seed-$(date -u +%Y%m%dT%H%M%SZ)}"
 
-RELEASE_ID="${RELEASE_ID:-v0.2.10}"
+RELEASE_ID="${RELEASE_ID:-$EXPECTED_AGENT_TAG}"
 CHANNEL="${CHANNEL:-PILOT}"
-TARGET_VERSION="${TARGET_VERSION:-0.2.10}"
-BINARY_URL="${BINARY_URL:-https://github.com/Halildeu/platform-agent/releases/download/v0.2.10/endpoint-agent.exe}"
-MANIFEST_URL="${MANIFEST_URL:-https://github.com/Halildeu/platform-agent/releases/download/v0.2.10/release-manifest.json}"
-EXPECTED_SHA256="${EXPECTED_SHA256:-a50344a4457959b95dfdfa22e6578e53cd6ec4b124830b506fe53503c18ba1ec}"
-EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
+TARGET_VERSION="${TARGET_VERSION:-$EXPECTED_AGENT_VERSION}"
+BINARY_URL="${BINARY_URL:-$GITHUB_RELEASE_BASE_URL/endpoint-agent.exe}"
+MANIFEST_URL="${MANIFEST_URL:-$GITHUB_RELEASE_BASE_URL/release-manifest.json}"
+EXPECTED_SHA256="${EXPECTED_SHA256:-$EXPECTED_AGENT_SHA256}"
+: "${EXPECTED_SIGNER_THUMBPRINT:?missing expected signer thumbprint}"
 SIGNING_TIER="${SIGNING_TIER:-TRUSTED_SIGNED}"
-MAX_BYTES="${MAX_BYTES:-14104488}"
-RELEASE_NOTES="${RELEASE_NOTES:-Faz 22.6.3 constrained-terminal pilot seed for platform-agent#208; source artifact v0.2.10 trusted-internal-ca.}"
+MAX_BYTES="${MAX_BYTES:-$EXPECTED_AGENT_MAX_BYTES}"
+RELEASE_NOTES="${RELEASE_NOTES:-Faz 22.6.3 constrained-terminal pilot seed for platform-agent#208; source artifact ${RELEASE_ID} ${EXPECTED_SIGNING_TIER}.}"
 
 TARGET_DEVICE_ID="${TARGET_DEVICE_ID:-d0efb00a-681a-4e32-b7de-a27ef94f2977}"
 TARGET_DEVICE_HOSTNAME="${TARGET_DEVICE_HOSTNAME:-HALILKOOLUB735}"

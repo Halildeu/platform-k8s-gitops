@@ -144,11 +144,11 @@ write_summary() {
         else "verifier-ready-recording"
         end
       ),
-      doesNotProve: [
-        "raw output payload content",
-        "operator UI fan-out",
-        "endpoint is running v0.2.10",
-        "allowed PERMIT response",
+	      doesNotProve: [
+	        "raw output payload content",
+	        "operator UI fan-out",
+	        "endpoint is running the expected EndpointAgent version",
+	        "allowed PERMIT response",
         "negative deny matrix",
         "full platform-agent#208 Done state"
       ]

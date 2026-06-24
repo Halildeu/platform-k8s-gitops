@@ -9,6 +9,12 @@ set -euo pipefail
 # proves the approved first-install seed produced the expected service/config
 # state needed before the product-channel #208 acceptance workflow is rerun.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
+# shellcheck source=scripts/faz22-remote-ops/endpoint-agent-release-policy.sh
+source "${SCRIPT_DIR}/endpoint-agent-release-policy.sh"
+endpoint_agent_release_policy_load "$REPO_ROOT"
+
 EVIDENCE_DIR="${EVIDENCE_DIR:-}"
 SUMMARY_FILE="${SUMMARY_FILE:-}"
 OUTPUT_FILE="${OUTPUT_FILE:-}"
@@ -16,12 +22,7 @@ OUTPUT_FILE="${OUTPUT_FILE:-}"
 EXPECTED_SCHEMA="${EXPECTED_SCHEMA:-faz22.1768.agentpc2-first-install-bootstrap.endpoint.v1}"
 EXPECTED_STATUS="${EXPECTED_STATUS:-installed-service-running}"
 EXPECTED_HOSTNAME="${EXPECTED_HOSTNAME:-AgentPc2}"
-EXPECTED_RELEASE_ID="${EXPECTED_RELEASE_ID:-v0.2.28}"
-EXPECTED_TARGET_VERSION="${EXPECTED_TARGET_VERSION:-0.2.28}"
-EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4}"
-EXPECTED_INSTALL_PS1_SHA256="${EXPECTED_INSTALL_PS1_SHA256:-f257202723ac719f4170cbe2e800dc190845ff7fbd128c6ce3ddd2ac90e49e0e}"
-EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
-EXPECTED_SIGNING_TIER="${EXPECTED_SIGNING_TIER:-trusted-internal-ca}"
+EXPECTED_TARGET_VERSION="${EXPECTED_TARGET_VERSION:-$EXPECTED_AGENT_VERSION}"
 EXPECTED_AUTHENTICODE_STATUS="${EXPECTED_AUTHENTICODE_STATUS:-Valid}"
 EXPECTED_AUTO_ENROLL_API_URL="${EXPECTED_AUTO_ENROLL_API_URL:-https://mtls.testai.acik.com/api/v1/endpoint-agent}"
 EXPECTED_AUTO_ENROLL_SAN_PREFIX="${EXPECTED_AUTO_ENROLL_SAN_PREFIX:-adcomputer:}"

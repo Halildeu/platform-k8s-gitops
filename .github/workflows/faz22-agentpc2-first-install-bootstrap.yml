@@ -14,38 +14,6 @@ on:
         description: 'Target endpoint hostname'
         required: true
         default: 'AgentPc2'
-      release_id:
-        description: 'EndpointAgent release tag to bootstrap'
-        required: true
-        default: 'v0.2.28'
-      expected_release_manifest_sha256:
-        description: 'Expected release-manifest.json SHA256'
-        required: true
-        default: 'afc86befa2db11803724e4c1bc9fc0aaf0275ff4cf31d953270d27c84d6b7f12'
-      expected_install_ps1_sha256:
-        description: 'Expected install.ps1 SHA256'
-        required: true
-        default: 'f257202723ac719f4170cbe2e800dc190845ff7fbd128c6ce3ddd2ac90e49e0e'
-      expected_bootstrap_ps1_sha256:
-        description: 'Expected bootstrap-package.ps1 SHA256'
-        required: true
-        default: '83292ab3b5c27a8c27c11c7774cf4157bbb23188b81b0adf2a5a29a70279c7f8'
-      expected_agent_sha256:
-        description: 'Expected endpoint-agent.exe SHA256'
-        required: true
-        default: 'e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4'
-      expected_agent_zip_sha256:
-        description: 'Expected EndpointAgent.zip SHA256'
-        required: true
-        default: 'e30ab27490dfcc565bd19f5da657739dfacb8e8d9f57770142575a03e607938a'
-      expected_signer_thumbprint:
-        description: 'Expected Authenticode signer thumbprint'
-        required: true
-        default: 'D68F4F530137EB65CE44E3405E82B46205E753E5'
-      expected_signer_sha256_fingerprint:
-        description: 'Expected SHA256 fingerprint of the Authenticode signing certificate'
-        required: true
-        default: 'EB16FA8C2C2325295483ED2271D87632DA5EA631E3095039D6CFC358F16CAACD'
 
 permissions:
   contents: read
@@ -60,14 +28,6 @@ env:
   CONFIRM: ${{ inputs.confirm }}
   TARGET_PRODUCT_DEVICE_ID: ${{ inputs.target_product_device_id }}
   TARGET_HOSTNAME: ${{ inputs.target_hostname }}
-  RELEASE_ID: ${{ inputs.release_id }}
-  EXPECTED_RELEASE_MANIFEST_SHA256: ${{ inputs.expected_release_manifest_sha256 }}
-  EXPECTED_INSTALL_PS1_SHA256: ${{ inputs.expected_install_ps1_sha256 }}
-  EXPECTED_BOOTSTRAP_PS1_SHA256: ${{ inputs.expected_bootstrap_ps1_sha256 }}
-  EXPECTED_AGENT_SHA256: ${{ inputs.expected_agent_sha256 }}
-  EXPECTED_AGENT_ZIP_SHA256: ${{ inputs.expected_agent_zip_sha256 }}
-  EXPECTED_SIGNER_THUMBPRINT: ${{ inputs.expected_signer_thumbprint }}
-  EXPECTED_SIGNER_SHA256_FINGERPRINT: ${{ inputs.expected_signer_sha256_fingerprint }}
 
 jobs:
   prepare-bootstrap:
@@ -94,15 +54,7 @@ jobs:
           for name in \
             CONFIRM \
             TARGET_PRODUCT_DEVICE_ID \
-            TARGET_HOSTNAME \
-            RELEASE_ID \
-            EXPECTED_RELEASE_MANIFEST_SHA256 \
-            EXPECTED_INSTALL_PS1_SHA256 \
-            EXPECTED_BOOTSTRAP_PS1_SHA256 \
-            EXPECTED_AGENT_SHA256 \
-            EXPECTED_AGENT_ZIP_SHA256 \
-            EXPECTED_SIGNER_THUMBPRINT \
-            EXPECTED_SIGNER_SHA256_FINGERPRINT
+            TARGET_HOSTNAME
           do
             reject_multiline "$name" "${!name}"
           done
@@ -127,36 +79,11 @@ jobs:
             exit 1
           fi
 
-          if ! printf '%s' "${RELEASE_ID}" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9._-]+)?$'; then
-            echo "::error::release_id must look like vX.Y.Z"
-            exit 1
-          fi
-
-          for name in \
-            EXPECTED_RELEASE_MANIFEST_SHA256 \
-            EXPECTED_INSTALL_PS1_SHA256 \
-            EXPECTED_BOOTSTRAP_PS1_SHA256 \
-            EXPECTED_AGENT_SHA256 \
-            EXPECTED_AGENT_ZIP_SHA256
-          do
-            if ! printf '%s' "${!name}" | grep -Eq '^[a-f0-9]{64}$'; then
-              echo "::error::${name} must be a lowercase SHA256 hex string"
-              exit 1
-            fi
-          done
-
-          if ! printf '%s' "${EXPECTED_SIGNER_THUMBPRINT}" | grep -Eq '^[A-F0-9]{40}$'; then
-            echo "::error::expected_signer_thumbprint must be uppercase SHA1 thumbprint hex"
-            exit 1
-          fi
-
-          if ! printf '%s' "${EXPECTED_SIGNER_SHA256_FINGERPRINT}" | grep -Eq '^[A-F0-9]{64}$'; then
-            echo "::error::expected_signer_sha256_fingerprint must be uppercase SHA256 certificate fingerprint hex"
-            exit 1
-          fi
-
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Validate release policy
+        run: scripts/faz22-remote-ops/check-endpoint-agent-release-policy.sh
 
       - name: Prepare bounded first-install bootstrap
         id: prepare

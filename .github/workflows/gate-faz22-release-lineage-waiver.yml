@@ -4,8 +4,10 @@ on:
   pull_request:
     paths:
       - '.github/workflows/gate-faz22-release-lineage-waiver.yml'
+      - 'config/faz22-6-endpoint-agent-release-policy.v1.json'
       - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
       - 'docs/runbooks/RB-faz22.6-release-lineage-audit.md'
+      - 'scripts/faz22-remote-ops/endpoint-agent-release-policy.sh'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh'
@@ -15,8 +17,10 @@ on:
       - main
     paths:
       - '.github/workflows/gate-faz22-release-lineage-waiver.yml'
+      - 'config/faz22-6-endpoint-agent-release-policy.v1.json'
       - 'docs/runbooks/RB-faz22.6-autonomous-completion-contract.md'
       - 'docs/runbooks/RB-faz22.6-release-lineage-audit.md'
+      - 'scripts/faz22-remote-ops/endpoint-agent-release-policy.sh'
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh'
@@ -46,6 +50,7 @@ jobs:
             scripts/faz22-remote-ops/faz22-6-completion-audit.sh \
             scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh \
             scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh \
+            scripts/faz22-remote-ops/endpoint-agent-release-policy.sh \
             tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh
 
       - name: Run release-lineage waiver regression test

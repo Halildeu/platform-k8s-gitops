@@ -5591,8 +5591,8 @@ images:
     digest: sha256:66f79088c766545e7fbbfba7fd5a537fd8b89f2d6cf8714b4e78d0763c29489e
 
   # Faz 22.6 — endpoint-agent artifact host (test). Image built+pushed by
-  # platform-agent Release EXE trusted workflow for tag v0.2.28:
-  #   ghcr.io/halildeu/platform-agent-artifacts:v0.2.28 (+ platform-agent#227).
+  # platform-agent Release EXE trusted workflow for tag v0.3.0:
+  #   ghcr.io/halildeu/platform-agent-artifacts:v0.3.0 (+ platform-agent#231/#232).
   # Serves /artifacts/endpoint-agent/current/{bootstrap-package.ps1,endpoint-agent.exe,EndpointAgent.zip,...}
   # PLUS a stable MUTABLE alias /artifacts/endpoint-agent/current/ (byte-identical,
   # nginx no-store) so the endpoint-admin UI renders a copy-paste one-command
@@ -5601,19 +5601,19 @@ images:
   # is TRUSTED-INTERNAL-CA signed (osslsigncode + internal OpenSSL CA, RFC3161
   # timestamp; install.ps1 imports the internal root TOFU so Authenticode validates
   # Valid). NOT publicly trusted. Pulled with the existing ghcr-pull secret.
-  # One-version-per-image: this image REPLACES v0.2.24; durable archive remains
+  # One-version-per-image: this image REPLACES v0.2.28; durable archive remains
   # the GitHub release assets. The signed MSI is a separate trusted MSI workflow
   # artifact and is not treated as a release-hosted public asset here.
   - name: artifact-host
     newName: ghcr.io/halildeu/platform-agent-artifacts
-    newTag: v0.2.28
-    # D30 immutable pin — Release EXE trusted run 27962366960 (tag v0.2.28,
-    # signing_tier=trusted-internal-ca). Release asset
+    newTag: v0.3.0
+    # D30 immutable pin — Release EXE trusted run 28087330255 (tag v0.3.0,
+    # release_class=rollout-candidate, signing_tier=trusted-internal-ca). Release asset
     # manifest records EndpointAgent.zip SHA256
-    # e30ab27490dfcc565bd19f5da657739dfacb8e8d9f57770142575a03e607938a and
+    # 6139b0cc7b4fb3d745630354d2d49c61558c282360e92999057628fb5c7fd105 and
     # agent binary SHA256
-    # e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4.
-    digest: sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2
+    # 424d7104a0e8614018a34d629f47713375778d85ff49c387f6de4197950aad6d.
+    digest: sha256:00df8734b6a8d5121f9294af63a8e44ae9002298a1b5d05f7aaf44912183fbe6
 
 patches:
   # #734 (test-only): the admin-email B3 wiring is scoped to the test overlay so

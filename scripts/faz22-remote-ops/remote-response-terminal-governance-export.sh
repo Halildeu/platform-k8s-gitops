@@ -231,10 +231,10 @@ analyze_source() {
             sourceSha256: $sourceSha256
           }
         },
-        doesNotProve: [
-          "live terminal dispatch",
-          "EndpointAgent v0.2.10 heartbeat",
-          "PERMIT transport result",
+	        doesNotProve: [
+	          "live terminal dispatch",
+	          "EndpointAgent expected-version heartbeat",
+	          "PERMIT transport result",
           "AGENT_OUTPUT/DATA recording",
           "negative deny matrix",
           "platform-agent#208 Done state"

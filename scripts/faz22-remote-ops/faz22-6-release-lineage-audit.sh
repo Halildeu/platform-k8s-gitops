@@ -8,23 +8,19 @@
 set -euo pipefail
 
 AGENT_REPO="${AGENT_REPO:-Halildeu/platform-agent}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=scripts/faz22-remote-ops/endpoint-agent-release-policy.sh
+source "$SCRIPT_DIR/endpoint-agent-release-policy.sh"
+endpoint_agent_release_policy_load "$REPO_ROOT"
+
 SSH_TARGET="${SSH_TARGET:-staging-sw}"
 RELEASE_LINEAGE_KUBECTL_MODE="${RELEASE_LINEAGE_KUBECTL_MODE:-ssh}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-k3d-test}"
 KUBE_NAMESPACE="${KUBE_NAMESPACE:-platform-test}"
-EXPECTED_AGENT_TAG="${EXPECTED_AGENT_TAG:-v0.2.28}"
-EXPECTED_AGENT_COMMIT="${EXPECTED_AGENT_COMMIT:-10361a60ca8ca1fb4c6efe3823b433297e16ae3a}"
-EXPECTED_SIGNER_THUMBPRINT="${EXPECTED_SIGNER_THUMBPRINT:-D68F4F530137EB65CE44E3405E82B46205E753E5}"
-EXPECTED_SIGNING_TIER="${EXPECTED_SIGNING_TIER:-trusted-internal-ca}"
-EXPECTED_ARTIFACT_HOST_DIGEST="${EXPECTED_ARTIFACT_HOST_DIGEST:-sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2}"
-RECENT_RELEASE_WINDOW="${RECENT_RELEASE_WINDOW:-50}"
-RECENT_RELEASE_HYGIENE_THRESHOLD="${RECENT_RELEASE_HYGIENE_THRESHOLD:-5}"
 MIN_ARTIFACT_HOST_DIGEST_HITS="${MIN_ARTIFACT_HOST_DIGEST_HITS:-2}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-20}"
-ARTIFACT_BASE_URL="${ARTIFACT_BASE_URL:-https://testai.acik.com/artifacts/endpoint-agent/current}"
 GITHUB_RELEASE_BASE_URL="${GITHUB_RELEASE_BASE_URL:-https://github.com/${AGENT_REPO}/releases/download/${EXPECTED_AGENT_TAG}}"
-RELEASE_LINEAGE_WAIVER_REF="${RELEASE_LINEAGE_WAIVER_REF:-Halildeu/platform-k8s-gitops#1901}"
-RELEASE_LINEAGE_WAIVER_FORBIDDEN_CLAIMS="${RELEASE_LINEAGE_WAIVER_FORBIDDEN_CLAIMS:-5-device,50-device,800-device,production,broad-rollout}"
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -281,7 +277,7 @@ main() {
   is_draft="$(printf '%s\n' "$releases" | jq -r --arg tag "$EXPECTED_AGENT_TAG" 'map(select(.tagName == $tag)) as $m | if ($m|length) > 0 then $m[0].isDraft else true end')"
   is_prerelease="$(printf '%s\n' "$releases" | jq -r --arg tag "$EXPECTED_AGENT_TAG" 'map(select(.tagName == $tag)) as $m | if ($m|length) > 0 then $m[0].isPrerelease else true end')"
   is_immutable="$(printf '%s\n' "$releases" | jq -r --arg tag "$EXPECTED_AGENT_TAG" 'map(select(.tagName == $tag)) as $m | if ($m|length) > 0 then $m[0].isImmutable else false end')"
-  recent_count="$(printf '%s\n' "$releases" | jq '[.[].tagName | select(test("^v0\\.2\\."))] | length')"
+  recent_count="$(printf '%s\n' "$releases" | jq --arg regex "$AGENT_RELEASE_SERIES_REGEX" '[.[].tagName | select(test($regex))] | length')"
 
   if [ "$latest" = "$EXPECTED_AGENT_TAG" ] && [ "$is_latest" = "true" ] \
     && [ "$is_draft" = "false" ] && [ "$is_prerelease" = "false" ]; then
@@ -300,11 +296,11 @@ main() {
   fi
 
   if [ "$recent_count" -gt "$RECENT_RELEASE_HYGIENE_THRESHOLD" ]; then
-    print_check 'GITHUB_RELEASE_DENSE_TRAIN' 'needs_hygiene' "recent_v0_2_count=$recent_count threshold=$RECENT_RELEASE_HYGIENE_THRESHOLD"
+    print_check 'GITHUB_RELEASE_DENSE_TRAIN' 'needs_hygiene' "recent_series=$AGENT_RELEASE_SERIES_LABEL recent_series_count=$recent_count threshold=$RECENT_RELEASE_HYGIENE_THRESHOLD"
     needs_hygiene=1
     waiver_findings+=('GITHUB_RELEASE_DENSE_TRAIN')
   else
-    print_check 'GITHUB_RELEASE_DENSE_TRAIN' 'pass' "recent_v0_2_count=$recent_count"
+    print_check 'GITHUB_RELEASE_DENSE_TRAIN' 'pass' "recent_series=$AGENT_RELEASE_SERIES_LABEL recent_series_count=$recent_count"
   fi
 
   local tag_ref tag_object tag_commit

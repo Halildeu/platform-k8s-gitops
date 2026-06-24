@@ -8,6 +8,12 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=scripts/faz22-remote-ops/endpoint-agent-release-policy.sh
+source "$SCRIPT_DIR/endpoint-agent-release-policy.sh"
+endpoint_agent_release_policy_load "$REPO_ROOT"
+
 AUDIT_FILE=""
 OUTPUT_DIR=""
 PREFIX="faz22-6-completion-decision-package"
@@ -129,7 +135,7 @@ b1_risk_cmd='scripts/faz22-remote-ops/faz22-6-b1-4-acceptance-package.sh --mode 
 # shellcheck disable=SC2016
 view_cmd='scripts/faz22-remote-ops/faz22-6-view-only-evidence-package.sh --manifest-out "$MARKER_DIR/view-only-evidence.json" --marker-out "$MARKER_DIR/view-only-marker.txt" --evidence-url "$VIEW_ONLY_EVIDENCE_URL" --pilot-device "$PILOT_DEVICE" --session-id "$VIEW_ONLY_SESSION_ID" --recording-worm pass --d10-fail-closed pass --dlp-mask-policy pass --local-abort pass --active-indicator pass --viewer-path-decision "$VIEWER_PATH_DECISION" --kvkk-attended-pilot-signoff pass --owner-approved-by "$OWNER_APPROVED_BY" --approved-at "$APPROVED_AT" --expires-at "$EXPIRES_AT"'
 # shellcheck disable=SC2016
-release_cmd='scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh --marker-out "$MARKER_DIR/release-lineage-waiver-marker.txt" --release-tag v0.2.28 --artifact-host-digest sha256:36a81cb89294ef7f4d09350ab9f92a955b65b8132ba5330fcf1dcb7e365ab3e2 --owner-approved-by "$OWNER_APPROVED_BY" --approved-at "$APPROVED_AT" --expires-at "$EXPIRES_AT"'
+release_cmd="scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh --marker-out \"\$MARKER_DIR/release-lineage-waiver-marker.txt\" --release-tag $EXPECTED_AGENT_TAG --artifact-host-digest $EXPECTED_ARTIFACT_HOST_DIGEST --owner-approved-by \"\$OWNER_APPROVED_BY\" --approved-at \"\$APPROVED_AT\" --expires-at \"\$EXPIRES_AT\""
 
 jq -nS \
   --arg schema_version "faz22.6-completion-decision-package-v1" \
@@ -224,7 +230,7 @@ jq -nS \
           },
           {
             id: "bounded-pilot-waiver",
-            meaning: "named owner accepts time-bounded pilot-only waiver for mutable release object and dense v0.2 train",
+            meaning: "named owner accepts time-bounded pilot-only waiver for mutable release object and dense release train",
             helper_command: $release_cmd
           }
         ],

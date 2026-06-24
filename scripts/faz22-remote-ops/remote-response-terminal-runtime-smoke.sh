@@ -180,10 +180,10 @@ write_plan() {
         "REMOTE_BRIDGE_SESSION_ID set to an owned, approved, step-up-verified session",
         "SESSION_OWNER_ISSUE_URL and SESSION_OWNER_ENDPOINT_ID prove a redacted active ownership claim",
         "OPERATOR_BEARER_TOKEN_FILE or OPERATOR_BEARER_TOKEN supplied by operator"
-      ],
-      acceptedRuntimeEvidence: [
-        "pilot endpoint heartbeat proves EndpointAgent v0.2.10",
-        "pilot-readiness/summary.json proves ready-for-product-smoke",
+	      ],
+	      acceptedRuntimeEvidence: [
+	        "pilot endpoint heartbeat proves the expected EndpointAgent version",
+	        "pilot-readiness/summary.json proves ready-for-product-smoke",
         "redacted live-session ownership guard output is present",
         "governance-evidence.json proves dual-control, step-up, ticket, justification, and fail-closed recording policy",
         "evidence redaction scan reports no high-confidence sensitive marker classes",
@@ -413,9 +413,9 @@ write_summary() {
       governanceEvidenceReason: $governanceReason,
       recordingAcceptanceHint: $recordingHint,
       verifierResult: $verifierResult,
-      actions: $actions,
-      acceptedNextEvidence: [
-        "post-update heartbeat proving EndpointAgent v0.2.10",
+	      actions: $actions,
+	      acceptedNextEvidence: [
+	        "post-update heartbeat proving the expected EndpointAgent version",
         "governance-evidence.json proving dual-control, step-up, ticket, justification, and fail-closed recording policy",
         "evidence redaction scan with no sensitive marker findings",
         "catalog operation PERMIT with transportPushed=true",
@@ -423,9 +423,9 @@ write_summary() {
         "raw/unrestricted and command/policy override negative evidence",
         "SHA256SUMS verification over the final bundle"
       ],
-      doesNotProve: [
-        "platform-agent#208 Done state unless verification result is accepted-candidate and owner accepts the proven boundary",
-        "EndpointAgent v0.2.10 deployment when pilot readiness is not ready-for-product-smoke",
+	      doesNotProve: [
+	        "platform-agent#208 Done state unless verification result is accepted-candidate and owner accepts the proven boundary",
+	        "current EndpointAgent deployment when pilot readiness is not ready-for-product-smoke",
         "signed MSI/GPO or broad rollout",
         "production remote-support readiness",
         "unrestricted shell/RDP/WinRM/SMB/SSH",

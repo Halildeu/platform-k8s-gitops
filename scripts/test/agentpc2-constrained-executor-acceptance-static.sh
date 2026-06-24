@@ -2,34 +2,37 @@
 set -euo pipefail
 
 script="scripts/faz22-remote-ops/agentpc2-constrained-executor-acceptance.sh"
+policy_validator="scripts/faz22-remote-ops/check-endpoint-agent-release-policy.sh"
 
 if [[ ! -f "${script}" ]]; then
   echo "missing ${script}" >&2
   exit 1
 fi
 
+"${policy_validator}" >/dev/null
+
 if ! grep -Fq 'TOKEN_CLIENT_CANDIDATES="${TOKEN_CLIENT_CANDIDATES:-remote-bridge-operator-api frontend}"' "${script}"; then
   echo "acceptance must try the dedicated remote-bridge-operator-api client before frontend" >&2
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_RELEASE_TAG="${EXPECTED_RELEASE_TAG:-v0.2.28}"' "${script}"; then
-  echo "acceptance must default to the current AgentPC2 release tag v0.2.28" >&2
+if ! grep -Fq 'source "${SCRIPT_DIR}/endpoint-agent-release-policy.sh"' "${script}"; then
+  echo "acceptance must load the shared EndpointAgent release policy" >&2
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-0.2.28}"' "${script}"; then
-  echo "acceptance must default to the current AgentPC2 agent version 0.2.28" >&2
+if ! grep -Fq 'endpoint_agent_release_policy_load "$REPO_ROOT"' "${script}"; then
+  echo "acceptance must source release defaults from the policy SSOT" >&2
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_AGENT_SHA256="${EXPECTED_AGENT_SHA256:-e99c05d0daf37b1d4e36807ab8a70194ab4be76f50a6225f1cedb82b2d31b7a4}"' "${script}"; then
-  echo "acceptance must default to the v0.2.28 endpoint-agent.exe SHA256" >&2
+if ! grep -Fq 'EXPECTED_RELEASE_TAG="${EXPECTED_RELEASE_TAG:-$EXPECTED_AGENT_TAG}"' "${script}"; then
+  echo "acceptance release tag must default from the policy-loaded agent tag" >&2
   exit 1
 fi
 
-if ! grep -Fq 'EXPECTED_AGENT_ZIP_SHA256="${EXPECTED_AGENT_ZIP_SHA256:-e30ab27490dfcc565bd19f5da657739dfacb8e8d9f57770142575a03e607938a}"' "${script}"; then
-  echo "acceptance must default to the v0.2.28 EndpointAgent.zip SHA256" >&2
+if grep -Eq 'EXPECTED_AGENT_(VERSION|SHA256|ZIP_SHA256)="\$\{EXPECTED_AGENT_(VERSION|SHA256|ZIP_SHA256):-[^$]' "${script}"; then
+  echo "acceptance must not hard-code release metadata defaults outside the policy SSOT" >&2
   exit 1
 fi
 
