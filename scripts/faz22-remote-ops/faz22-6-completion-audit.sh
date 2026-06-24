@@ -15,6 +15,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=scripts/faz22-remote-ops/endpoint-agent-release-policy.sh
 source "$SCRIPT_DIR/endpoint-agent-release-policy.sh"
+# SSOT invariant: policy file drives all tag/version checks. If the file is missing
+# or corrupt, set -e (line 8) exits rather than falling back to a stale default.
+# Do NOT update EXPECTED_AGENT_TAG by editing individual scripts — update the policy.
 endpoint_agent_release_policy_load "$REPO_ROOT"
 # shellcheck source=scripts/governance/lib-remote-bridge-digest.sh
 source "$REPO_ROOT/scripts/governance/lib-remote-bridge-digest.sh"

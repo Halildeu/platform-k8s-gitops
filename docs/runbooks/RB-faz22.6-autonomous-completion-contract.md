@@ -542,3 +542,67 @@ Disallowed language until every completion gate passes:
 - broad rollout ready
 - TPM attestation complete
 - unrestricted terminal ready
+
+## 10. Test Acceptance Matrix
+
+`faz22-6-completion-audit.sh` smoke and fail-closed test cases. Each case
+documents the input, the expected exit code, and the expected reason token.
+These are additive to — not a substitute for — the `faz22-6-b1-4-acceptance-package.sh`
+and `faz22-6-view-only-acceptance-package.sh` helper unit tests.
+
+### B1.4 Hardware Gate
+
+| # | Case | Input | Expected |
+|---|------|-------|----------|
+| 1a | Happy path: all fields valid, state=CLOSED | Hardware marker with all 8 required fields, `state=CLOSED` | exit 0, `GATE_B1_4_HARDWARE_ATTESTATION=pass` |
+| 1b | State OPEN: not closed | Hardware marker, `state=OPEN` | exit 1, `reason=issue-not-closed` |
+| 1c | Missing field: `device_key_evidence` absent | Hardware marker missing `device_key_evidence` | exit 1, `reason=device_key_evidence` |
+| 1d | Owner is placeholder | Hardware marker with `owner_approved_by: TBD` | exit 1, `reason=owner_approved_by` |
+| **1e** | **expires_at forbidden on hardware path** | **Hardware marker with `expires_at: 2099-01-01`** | **exit 1, `reason=expires_at-forbidden`** |
+| 1f | Future approved_at | Hardware marker with `approved_at: 2099-12-31` | exit 1, `reason=approved_at-in-future` |
+| 1g | Duplicate marker | Two hardware markers in same issue body | exit 1, `reason=duplicate-acceptance-marker` |
+
+### B1.4 Risk Gate
+
+| # | Case | Input | Expected |
+|---|------|-------|----------|
+| 2a | Happy path: all fields valid, state=OPEN | Risk marker with all required fields, `state=OPEN`, `expires_at` in future | exit 0, `GATE_B1_4_RISK_ACCEPTANCE=pass` |
+| 2b | Expired risk window | Risk marker with `expires_at` in past | exit 1, `reason=expires_at-expired` |
+| 2c | Missing compensating control | Risk marker missing one of 7 compensating controls | exit 1, `reason=missing-compensating-control:<control_name>` |
+| 2d | Forbidden claim present | Risk marker with `forbidden_claims` containing `production` | exit 1, `reason=forbidden-claim:production` |
+
+### VIEW_ONLY Gate
+
+| # | Case | Input | Expected |
+|---|------|-------|----------|
+| 3a | Happy path: all fields valid | VIEW_ONLY marker with valid HTTPS manifest URL, SHA256 parity, all required fields | exit 0, `GATE_VIEW_ONLY=pass` |
+| 3b | HTTP (non-HTTPS) manifest URL | VIEW_ONLY marker with `evidence_package_url: http://…` | exit 1, `reason=evidence_package_url-not-https` |
+| 3c | SHA256 mismatch | VIEW_ONLY marker with incorrect `evidence_package_sha256` | exit 1, `reason=evidence_package_sha256_mismatch` |
+| 3d | Forbidden claim in CSV | VIEW_ONLY marker with `forbidden_claims: rdp` | exit 1, `reason=forbidden-claim:rdp` |
+
+### Release Lineage Gate
+
+| # | Case | Input | Expected |
+|---|------|-------|----------|
+| 4a | Current policy: v0.3.1 immutable | SSOT policy v0.3 series, `isImmutable=true` | exit 0, `F22_6_RELEASE_LINEAGE=pass` |
+| 4b | Missing workflow_run_id | Manifest missing `workflow_run_id` field | exit 1, `reason=previous_workflow_run_id-missing` |
+| 4c | Missing previous_release | Manifest missing `previous_release` field | exit 1, `reason=previous_release-missing` |
+| 4d | Local kubectl mode: kubectl absent | `REMOTE_BRIDGE_KUBECTL_MODE=local`, kubectl not installed | exit 1, `reason=missing-kubectl` |
+| 4e | SSH mode: bridge not reachable | `SSH_TARGET=staging-sw`, SSH handshake fails | exit 1, `reason=bridge-unreachable:<target>` |
+
+### Live Broker Gate
+
+| # | Case | Input | Expected |
+|---|------|-------|----------|
+| 5a | 4+ digest hits: broker alive | `REMOTE_BRIDGE_LIVE=sha256:…`, 4+ agent digest matches | exit 0, `F22_6_BROKER_LIVE=pass` |
+| 5b | 3 digest hits: below threshold | `REMOTE_BRIDGE_LIVE=sha256:…`, 3 or fewer matches | exit 1, `reason=digest_hits_insufficient:<count>` |
+| 5c | SSH failure | `REMOTE_BRIDGE_LIVE=unknown`, SSH failure reason present | exit 1, `reason=ssh_failure:<reason_token>` |
+| 5d | kubectl failure | `REMOTE_BRIDGE_LIVE=unknown`, kubectl failure reason present | exit 1, `reason=kubectl_failure:<reason_token>` |
+
+### Cross-Gate Fail-Closed Invariants
+
+| # | Invariant | Verification |
+|---|-----------|--------------|
+| C1 | Marker count=0 → `reason=missing-acceptance-marker`, exit 1 | Both B1.4 and VIEW_ONLY gates return missing-marker on zero count |
+| C2 | `set -e` on policy load → stale env default unreachable | Policy file missing → script exits; stale `EXPECTED_AGENT_TAG=v0.2.28` alone insufficient |
+| C3 | Distinct reason tokens per failure mode | No silent downgrade; SSH vs kubectl vs missing-kubectl all distinct |
