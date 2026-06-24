@@ -1,7 +1,7 @@
 # RB-faz22.6 — Release Lineage Hygiene Audit
 
-> Status: ACTIVE hygiene gate, 2026-06-23.
-> Scope: EndpointAgent `v0.3.0` rollout-candidate / bounded acceptance
+> Status: ACTIVE hygiene gate, 2026-06-24.
+> Scope: EndpointAgent `v0.3.1` rollout-candidate / no-waiver release-lineage
 > release lineage for Faz 22.6.
 > Parent contract: `docs/runbooks/RB-faz22.6-autonomous-completion-contract.md`.
 
@@ -39,31 +39,37 @@ For broad rollout, the release record must bind:
 Missing metadata is not automatically a runtime no-go for the bounded pilot,
 but it is a release-hygiene blocker for broader rollout language.
 
-## 2. Current v0.3.0 Release Snapshot
+## 2. Current v0.3.1 Release Snapshot
 
 Observed on 2026-06-24:
 
-- GitHub latest release: `platform-agent` `v0.3.0`.
+- GitHub latest release: `platform-agent` `v0.3.1`.
+- GitHub Release metadata reports `isImmutable=true`, `isDraft=false`, and
+  `isPrerelease=false`.
 - Annotated tag object points to source commit
-  `ca662499ca13bb567d8b6bc6f02044e4a91579fa`.
+  `4a988afbb23320fd631a6e6aab629811e637aa1e`.
 - GitHub release manifest records:
-  - `release_tag=v0.3.0`
+  - `release_tag=v0.3.1`
   - `release_class=rollout-candidate`
-  - `previous_release=v0.2.28`
-  - `workflow_run_id=28087330255`
-  - `endpoint_agent_sha256=424d7104a0e8614018a34d629f47713375778d85ff49c387f6de4197950aad6d`
+  - `previous_release=v0.3.0`
+  - `workflow_run_id=28100776164`
+  - `release-manifest.json` SHA256
+    `3d74e3dbb057e0d23b25cf0f8fb93864db24749c7db3e2292946d9cf9b01545b`
+  - `endpoint_agent_sha256=edcac7e2a78d8801c6d168bdb8d51f6ecc5e99bc4c4f9fdc8507943df321e1be`
   - `EndpointAgent.zip` SHA256
-    `6139b0cc7b4fb3d745630354d2d49c61558c282360e92999057628fb5c7fd105`
+    `6791f6af5dbe0c4f2da8d87f33e5fa4165237d8b6a7aeb8121e29a88cbc5c2b7`
   - signer thumbprint
     `D68F4F530137EB65CE44E3405E82B46205E753E5`
   - signing tier `trusted-internal-ca`
   - artifact-host image
-    `ghcr.io/halildeu/platform-agent-artifacts:v0.3.0@sha256:00df8734b6a8d5121f9294af63a8e44ae9002298a1b5d05f7aaf44912183fbe6`
-- GitOps PR #1940 pins the test `artifact-host` overlay to that immutable
-  digest. Self-hosted audit run `28095182027` proved the live
-  `k3d-test/platform-test` `artifact-host` deployment and both pod imageIDs
-  now match the same digest; the audit's `digest_hits=3` is the Deployment
-  image field plus the two pod `imageID` fields.
+    `ghcr.io/halildeu/platform-agent-artifacts:v0.3.1@sha256:b83e39a0b08b54cd9e4dc094d8d36fb857b2cd253355ce5150aa33edb502eb27`
+- GitOps PR #1943 pins the test `artifact-host` overlay to that immutable
+  digest. The first post-merge self-hosted audit run `28101992243` saw live
+  `artifact-host` still on `v0.3.0` while ArgoCD was reconciling. Follow-up
+  audit run `28102175711` proved the live `k3d-test/platform-test`
+  `artifact-host` deployment and both pod imageIDs now match the `v0.3.1`
+  digest; the audit's `digest_hits=3` is the Deployment image field plus the
+  two pod `imageID` fields.
 
 Lineage boundary:
 
@@ -74,23 +80,18 @@ Lineage boundary:
 
 Hygiene findings:
 
-- Release workflow `28087330255` ran the post-publish verifier against
-  `v0.3.0` and passed release archive, `SHA256SUMS`, manifest, ZIP, and
+- Release workflow `28100776164` ran the post-publish verifier against
+  `v0.3.1` and passed release archive, `SHA256SUMS`, manifest, ZIP, and
   artifact-host registry digest parity.
-- Release objects still report `isImmutable=false`. REST `Update a release`
-  exposes `immutable` only in the response schema, not as a mutable request
-  field; a tag ruleset protects tag movement but does not change this release
-  metadata flag. On 2026-06-24 the repo-level `Enable release immutability`
-  setting was enabled with owner approval, but the already-published `v0.3.0`
-  release object still reported `isImmutable=false` and audit run
-  `28099352305` still printed `F22_6_RELEASE_LINEAGE=needs_hygiene`. Treat the
-  setting as protection for future releases unless a later live audit proves an
-  existing release object has become immutable. A future trusted release still
-  has to prove its own `isImmutable=true` state through the audit before it can
-  satisfy the no-waiver path.
-- The historical dense `v0.2.x` pilot-recovery train is no longer the current
-  expected release series. The policy now evaluates recent train hygiene
-  against `v0.3`, where `v0.3.0` starts a clean minor line.
+- The live self-hosted release-lineage audit run `28102175711` printed
+  `GITHUB_RELEASE_IMMUTABLE=pass`, `GITHUB_RELEASE_DENSE_TRAIN=pass`,
+  `MANIFEST_WORKFLOW_RUN_PARITY=pass`, `MANIFEST_PREVIOUS_RELEASE_PARITY=pass`,
+  `ARTIFACT_HOST_LIVE_DIGEST=pass`, `RELEASE_LINEAGE_WAIVER=not_required`, and
+  `F22_6_RELEASE_LINEAGE=pass`.
+- The historical dense `v0.2.x` pilot-recovery train and immutable=false
+  `v0.3.0` release object remain historical evidence. They are no longer the
+  current release-lineage hygiene blocker because the current policy consumes
+  `v0.3.1` and the no-waiver audit is clean.
 
 ## 3. Audit Command
 
@@ -124,16 +125,16 @@ patches.
 Expected current posture:
 
 ```text
-F22_6_RELEASE_LINEAGE=needs_hygiene
+F22_6_RELEASE_LINEAGE=pass
 ```
 
-`needs_hygiene` now means the `v0.3.0` release payload, GitOps desired-state,
-artifact-host `current` surface, and live pod imageIDs agree, but the GitHub
-release object still reports `isImmutable=false`. The repo-level release
-immutability setting is enabled for future release behavior, but it did not
-retroactively satisfy the existing `v0.3.0` release object check. The dense
-`v0.2.x` recovery train is historical context, not the current release series
-for this policy.
+`pass` currently means the `v0.3.1` release object is immutable, the release
+manifest binds source commit / workflow run / previous release / signed asset
+hashes / artifact-host digest, the test overlay consumes that immutable digest,
+the public `current` artifact surface matches the release manifest, and the
+live `artifact-host` deployment plus pod imageIDs match the expected digest.
+This is a release-lineage sub-gate only; it does not close hardware
+attestation, VIEW_ONLY, or other Faz 22.6 acceptance gates.
 
 ## 3.1 Release Policy SSOT
 
@@ -146,12 +147,12 @@ config/faz22-6-endpoint-agent-release-policy.v1.json
 ```
 
 This file is the single source of truth for the current bounded-pilot or
-rollout-candidate
-EndpointAgent tag, source commit, executable/ZIP SHA256 values, executable max
-byte guard, release-manifest/install/bootstrap-package hashes, signer
-thumbprint and certificate fingerprint, artifact-host digest, release-lineage
-waiver ref, waiver accepted findings, and dense-train threshold. The audit,
-bootstrap, update, evidence-verifier, and package helpers load it through
+rollout-candidate EndpointAgent tag, source commit, workflow run id, previous
+release, executable/ZIP SHA256 values, executable max byte guard,
+release-manifest/install/bootstrap-package hashes, signer thumbprint and
+certificate fingerprint, artifact-host digest, release-lineage waiver ref,
+waiver accepted findings, and dense-train threshold. The audit, bootstrap,
+update, evidence-verifier, and package helpers load it through
 `scripts/faz22-remote-ops/endpoint-agent-release-policy.sh`.
 
 Do not update `EXPECTED_AGENT_TAG`, artifact-host digest, bootstrap hashes,
@@ -164,9 +165,9 @@ scripts/faz22-remote-ops/check-endpoint-agent-release-policy.sh
 ```
 
 The current policy intentionally freezes the `v0.2` recovery line as bounded
-pilot history and records `v0.3.0` as the current trusted minor line. Moving to
-a new trusted line must be represented in this policy first, then consumed by
-the release workflows and audits.
+pilot history and records `v0.3.1` as the current trusted minor-line release.
+Moving to a new trusted line must be represented in this policy first, then
+consumed by the release workflows and audits.
 
 ## 4. Promotion Rule
 
@@ -198,6 +199,10 @@ can still add the bounded-pilot marker through the separate approval path.
 
 ## 5. Bounded Pilot Waiver Contract
 
+No waiver is required for the current `v0.3.1` release-lineage state because
+the no-waiver audit prints `F22_6_RELEASE_LINEAGE=pass`. This section remains
+the fail-closed contract for a future bounded-pilot-only hygiene regression.
+
 The release-lineage audit is fail-closed. A waiver is valid only when
 `RELEASE_LINEAGE_WAIVER_REF` points to an open GitHub issue whose body contains
 the exact machine-readable marker below. The default reference is
@@ -214,8 +219,8 @@ same shape with a named owner and valid dates.
 ```text
 F22_6_RELEASE_LINEAGE_WAIVER: v1
 waiver_scope: bounded-pilot-only
-release_tag: v0.3.0
-artifact_host_digest: sha256:00df8734b6a8d5121f9294af63a8e44ae9002298a1b5d05f7aaf44912183fbe6
+release_tag: <current policy release tag>
+artifact_host_digest: <current policy artifact_host_digest>
 accepted_findings: GITHUB_RELEASE_IMMUTABLE,GITHUB_RELEASE_DENSE_TRAIN
 forbidden_claims: 5-device,50-device,800-device,production,broad-rollout
 owner_approved_by: <named owner>

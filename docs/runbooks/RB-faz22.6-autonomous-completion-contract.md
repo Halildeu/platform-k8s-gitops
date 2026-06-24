@@ -392,22 +392,24 @@ Use the release-lineage helper before any 5-device or broader rollout claim:
 scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh
 ```
 
-The expected current posture is still `F22_6_RELEASE_LINEAGE=needs_hygiene`
-until the `v0.3.0` artifact-host digest pin is reconciled and the release
-object immutability finding is addressed. The `v0.3.0` trusted EXE workflow
-published a rollout-candidate release with post-publish archive verification,
+The expected current posture is `F22_6_RELEASE_LINEAGE=pass` for the
+release-lineage sub-gate. The `v0.3.1` trusted EXE workflow published an
+immutable rollout-candidate release with post-publish archive verification,
+`workflow_run_id=28100776164`, `previous_release=v0.3.0`,
 `EndpointAgent.zip` SHA256
-`6139b0cc7b4fb3d745630354d2d49c61558c282360e92999057628fb5c7fd105`, and
+`6791f6af5dbe0c4f2da8d87f33e5fa4165237d8b6a7aeb8121e29a88cbc5c2b7`, and
 artifact-host image
-`ghcr.io/halildeu/platform-agent-artifacts:v0.3.0@sha256:00df8734b6a8d5121f9294af63a8e44ae9002298a1b5d05f7aaf44912183fbe6`.
+`ghcr.io/halildeu/platform-agent-artifacts:v0.3.1@sha256:b83e39a0b08b54cd9e4dc094d8d36fb857b2cd253355ce5150aa33edb502eb27`.
+Self-hosted audit run `28102175711` proved release/current manifest parity,
+workflow/previous-release parity, ZIP SHA parity, live artifact-host digest
+parity, `RELEASE_LINEAGE_WAIVER=not_required`, and
+`F22_6_RELEASE_LINEAGE=pass`.
 
-The dense `v0.2.x` pilot-recovery train is no longer the current policy series;
-it remains historical evidence. The remaining known release-lineage hygiene
-item is that GitHub release objects still report `isImmutable=false`. Broad
-rollout language still requires either fixing that hygiene item, recording an
-explicit owner-approved lineage waiver for the bounded pilot only, or another
-machine-enforced immutable-release control accepted by the release-lineage
-audit.
+The dense `v0.2.x` pilot-recovery train and `v0.3.0` immutable=false release
+object are historical evidence, not the current policy series. Broad rollout
+language still requires all other Faz 22.6 gates to pass; this release-lineage
+sub-gate does not substitute for `platform-backend#548` hardware-attestation
+acceptance or `platform-k8s-gitops#1580` VIEW_ONLY live acceptance.
 
 ## 9. Closure Language
 
