@@ -94,6 +94,12 @@ images:
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audio-gateway-service
     newName: ghcr.io/halildeu/platform-backend-audio-gateway-service
+    # 2026-06-24 update: sha-23a7607 (platform-backend#745) adds
+    # POST /api/v1/audio-gateway/consents as the server-time recorder consent
+    # audit proof. The gateway derives tenant/user/subject/server time from JWT
+    # and fails closed with AUDIO_GATEWAY_AUDIT_UNAVAILABLE before desktop
+    # recording starts if audit persistence cannot be confirmed. Pairs with
+    # platform-desktop#25 consent-before-session enforcement.
     # 2026-06-24 update: sha-3145e72 (platform-backend#739) aligns the
     # recorder meetingId contract to canonical meeting-service UUID and enables
     # fail-closed meeting-service access validation in the k8s profile.
@@ -105,7 +111,7 @@ images:
     # ChunkAdmissionRejected (413 oversize) lands on the audit:events stream and
     # is persisted by audit-event-consumer-service.
     # D30 immutable digest pin.
-    digest: sha256:654f506028c599b6684ceec16513ca9c3aa457d0e322920767e4267d6d38c2b3
+    digest: sha256:a09d497f1bcd749eb1662c0d2a1a836d788eed47c4f3f3925b0a6b9d95f01cee
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
