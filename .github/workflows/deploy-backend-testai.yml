@@ -3,7 +3,7 @@ name: Deploy backend testai (auto)
 # iter-49 backend deploy automation — Codex 019ddf43 PARTIAL+AGREE.
 #
 # Trigger: `repository_dispatch` event_type=backend-testai-deploy from
-# platform-backend's ci-image-push.yml after a successful 9-service GHCR push
+# platform-backend's ci-image-push.yml after a successful 10-service GHCR push
 # (ayrı PR — bu workflow merge sonrası backend tarafına dispatch step eklenir).
 #
 # Codex sertleştirmeleri uygulanmış:
@@ -12,8 +12,9 @@ name: Deploy backend testai (auto)
 #   S2 — SEQUENTIAL rollout (paralel ResourceQuota riski; iter-50 frontend
 #         deploy'da 1000m+1000m=2000m > 8000m quota aşımı yaşandı)
 #   S3 — api-gateway entry-point EN SON deploy
-#   S4 — discovery-server SKIP; endpoint-admin-service is now part of the
-#         Faz 22.5 runtime surface and must roll with backend digests.
+#   S4 — discovery-server SKIP; endpoint-admin-service and Faz 24
+#         audio-gateway-service are part of the test runtime surface and must
+#         roll with backend digests.
 #   S5 — Gate 2 (auth flow) opt-in warn-only; primary blocking pod imageID
 #         + api-gateway health
 #
@@ -43,8 +44,8 @@ on:
           render edip per-service `@sha256:` digest'leri otomatik çıkarır
           (PR-FOLLOW-UP-3 2026-06-01: overlay-render auto-extract).
 
-          Operator override istiyorsanız tam JSON map verin (tüm 9 backend
-          servis: auth/permission/user/variant/core-data/report/schema/endpoint-admin/api-gateway).
+          Operator override istiyorsanız tam JSON map verin (tüm 10 backend
+          servis: auth/permission/user/variant/core-data/report/schema/endpoint-admin/audio-gateway/api-gateway).
 
           Tag-based fallback YASAK (PR #1170/#1171 incident — gitops commit
           SHA'sı yanlışlıkla image tag gibi yorumlandı).
@@ -54,7 +55,7 @@ on:
 permissions:
   contents: read
 
-# #821 (Codex 019e3f2c AGREE): the rollout step pins 8 services sequentially.
+# #821 (Codex 019e3f2c AGREE): the rollout step pins backend services sequentially.
 # A run cancelled mid-rollout would leave k3d-test on a partial digest set;
 # two concurrent backend rollouts would race the same Deployments. Serialise
 # every run and never cancel in-flight (queue instead).
@@ -72,8 +73,8 @@ jobs:
   deploy:
     name: Deploy backend testai (sequential digest pin + verify)
     runs-on: [self-hosted, staging-sw, testai-deploy]
-    # Codex 019e233b review #1 — Gate 1d adds deterministic 20 min budget
-    # (auth + endpoint-admin 180s + 7 services * 120s). Plus rollout (9 * 180s = 27m max) +
+    # Codex 019e233b review #1 — Gate 1d adds deterministic 22 min budget
+    # (auth + endpoint-admin 180s + 8 services * 120s). Plus rollout (10 * 180s = 30m max) +
     # Gate 1c (per-service curl) + buffer. 30m timeout was insufficient.
     timeout-minutes: 60
 
@@ -156,7 +157,7 @@ jobs:
           fi
 
           # Required services check (Codex D fail-closed semantic)
-          REQUIRED_SVCS="auth-service permission-service user-service variant-service core-data-service report-service schema-service endpoint-admin-service api-gateway"
+          REQUIRED_SVCS="auth-service permission-service user-service variant-service core-data-service report-service schema-service endpoint-admin-service audio-gateway-service api-gateway"
           for svc in $REQUIRED_SVCS; do
             if [ -z "$(echo "${DIGESTS_JSON}" | jq -r --arg s "$svc" '.[$s] // empty')" ]; then
               echo "::error::auto-extract missing digest for ${svc} (overlay'de pin yok)"
@@ -188,18 +189,21 @@ jobs:
               || toJSON(github.event.client_payload.digests) }}
         run: |
           set -euo pipefail
-          # Codex S3: api-gateway en sonda
-          # discovery-server remains out-of-scope; api-gateway rolls last (S3).
-          SERVICES=(
-            "auth-service"
-            "permission-service"
-            "user-service"
-            "variant-service"
-            "core-data-service"
-            "report-service"
-            "schema-service"
-            "endpoint-admin-service"
-            "api-gateway"
+          # Codex S3: api-gateway en sonda.
+          # Format: digest-key|deployment|container|selector|image-suffix.
+          # audio-gateway-service is the GHCR/digest key, while Kubernetes
+          # Deployment/container/selector are intentionally audio-gateway.
+          SERVICE_SPECS=(
+            "auth-service|auth-service|auth-service|auth-service|auth-service"
+            "permission-service|permission-service|permission-service|permission-service|permission-service"
+            "user-service|user-service|user-service|user-service|user-service"
+            "variant-service|variant-service|variant-service|variant-service|variant-service"
+            "core-data-service|core-data-service|core-data-service|core-data-service|core-data-service"
+            "report-service|report-service|report-service|report-service|report-service"
+            "schema-service|schema-service|schema-service|schema-service|schema-service"
+            "endpoint-admin-service|endpoint-admin-service|endpoint-admin-service|endpoint-admin-service|endpoint-admin-service"
+            "audio-gateway-service|audio-gateway|audio-gateway|audio-gateway|audio-gateway-service"
+            "api-gateway|api-gateway|api-gateway|api-gateway|api-gateway"
           )
 
           # Digest-pin mode detect: dispatch payload digests map?
@@ -261,10 +265,15 @@ jobs:
           # checked-out desired-state; ArgoCD can otherwise reconcile the slow
           # rollout back to the old digest before imageID verification (observed
           # on report-service during #1616 / backend#676).
-          ROLLOUT_SERVICES_JSON=$(printf '%s\n' "${SERVICES[@]}" | jq -R . | jq -sc .)
+          ROLLOUT_SERVICE_KEYS_JSON=$(
+            printf '%s\n' "${SERVICE_SPECS[@]}" \
+              | awk -F'|' '{print $1}' \
+              | jq -R . \
+              | jq -sc .
+          )
           ROLLOUT_DIGESTS_JSON=$(jq -cn \
             --argjson digests "${DIGESTS_JSON}" \
-            --argjson services "${ROLLOUT_SERVICES_JSON}" \
+            --argjson services "${ROLLOUT_SERVICE_KEYS_JSON}" \
             'reduce $services[] as $svc ({}; . + {($svc): ($digests[$svc] // "")})')
 
           python3 scripts/automation/apply-test-overlay-digests.py \
@@ -284,7 +293,8 @@ jobs:
           # sync-test-overlay-pr job (emitted as a step output after the loop).
           DIGEST_MAP_JSON="{}"
 
-          for svc in "${SERVICES[@]}"; do
+          for spec in "${SERVICE_SPECS[@]}"; do
+            IFS='|' read -r svc deployment container selector image_suffix <<< "${spec}"
             # Direct digest pin only (tag-based fallback REMOVED 2026-06-01
             # PR-FOLLOW-UP-2). Codex 019de00f PARTIAL #2: regex-strict format
             # ^sha256:[a-f0-9]{64}$ — sadece prefix değil tam doğrulama.
@@ -297,21 +307,21 @@ jobs:
               echo "::error::${svc} digest format invalid (expected ^sha256:[a-f0-9]{64}$): ${DIGEST}"
               exit 1
             fi
-            IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${svc}@${DIGEST}"
+            IMAGE="ghcr.io/${IMAGE_OWNER}/platform-backend-${image_suffix}@${DIGEST}"
 
             echo ""
             echo "==============================================="
-            echo "Rolling out: ${svc}"
+            echo "Rolling out: ${svc} -> deployment/${deployment} container/${container}"
             echo "Image: ${IMAGE}"
             echo "==============================================="
 
             kubectl --context="${K8S_CONTEXT}" set image \
-              "deployment/${svc}" \
-              "${svc}=${IMAGE}" \
+              "deployment/${deployment}" \
+              "${container}=${IMAGE}" \
               -n "${K8S_NAMESPACE}"
 
             kubectl --context="${K8S_CONTEXT}" rollout status \
-              "deployment/${svc}" \
+              "deployment/${deployment}" \
               -n "${K8S_NAMESPACE}" \
               --timeout=180s
 
@@ -322,7 +332,7 @@ jobs:
             ./scripts/deploy/verify-pod-digest.sh \
               --context "${K8S_CONTEXT}" \
               --namespace "${K8S_NAMESPACE}" \
-              --selector "app.kubernetes.io/name=${svc}" \
+              --selector "app.kubernetes.io/name=${selector}" \
               --expected-digest "${DIGEST}"
             NORMALIZED="${DIGEST}"
 
@@ -337,7 +347,7 @@ jobs:
           done
 
           # #827 PR-B: expose the full {service: digest} map to the
-          # sync-test-overlay-pr job. Reached only after all 9 services rolled
+          # sync-test-overlay-pr job. Reached only after all 10 services rolled
           # out + verified — a failed run exits earlier, so the map (and the
           # auto-PR) is never emitted for a partial rollout.
           echo "digest_map=${DIGEST_MAP_JSON}" >> "$GITHUB_OUTPUT"
@@ -373,7 +383,7 @@ jobs:
               ;;
           esac
 
-      # Gate 1c: 8 service in-cluster /actuator/health/readiness 200
+      # Gate 1c: 10 service in-cluster /actuator/health/readiness 200
       # Codex S4: management port 8081, readiness sub-path
       - name: Gate 1c — per-service in-cluster readiness
         run: |
@@ -387,6 +397,7 @@ jobs:
             "report-service"
             "schema-service"
             "endpoint-admin-service"
+            "audio-gateway"
             "api-gateway"
           )
           FAILED=0
@@ -446,6 +457,7 @@ jobs:
             "report-service"
             "schema-service"
             "endpoint-admin-service"
+            "audio-gateway"
             "api-gateway"
           )
           for svc in "${SERVICES[@]}"; do
@@ -503,7 +515,7 @@ jobs:
             echo ""
             echo "## Backend deploy verify chain"
             echo ""
-            echo "- Sequential rollout (9 service): ✓"
+            echo "- Sequential rollout (10 service): ✓"
             echo "- Gate 1a (per-service pod digest): ✓"
             echo "- Gate 1b (api-gateway public health): ✓"
             echo "- Gate 1c (in-cluster readiness): ✓"

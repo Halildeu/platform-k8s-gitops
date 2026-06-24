@@ -86,7 +86,7 @@ if git diff --quiet -- "$KUSTOMIZATION"; then
 fi
 
 # ------------------------------------------------------------
-# Diff guard — the PR may change ONLY this file, ONLY digest: lines, ONLY <= 9
+# Diff guard — the PR may change ONLY this file, ONLY digest: lines, ONLY <= 10
 # ------------------------------------------------------------
 changed_files=$(git diff --name-only)
 if [[ "$changed_files" != "$KUSTOMIZATION" ]]; then
@@ -115,8 +115,8 @@ if [[ "$added" -ne "$deleted" ]]; then
   echo "::error::[sync-test-overlay] diff-guard: digest add/remove mismatch (+${added} / -${deleted}) — expected a pure rewrite"
   exit 1
 fi
-if [[ "$added" -lt 1 || "$added" -gt 9 ]]; then
-  echo "::error::[sync-test-overlay] diff-guard: ${added} digest line(s) changed (expected 1..9 backend services)"
+if [[ "$added" -lt 1 || "$added" -gt 10 ]]; then
+  echo "::error::[sync-test-overlay] diff-guard: ${added} digest line(s) changed (expected 1..10 backend services)"
   exit 1
 fi
 echo "[sync-test-overlay] diff-guard OK — ${added} digest line(s) rewritten"

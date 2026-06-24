@@ -107,6 +107,11 @@ images:
     # adds CHUNK_FORWARDED_TO_COMPUTE_PLANE audit before direct-STT raw-audio
     # forward. This pin does not flip direct-STT; live acceptance still requires
     # runtime config + same-session/chunk/correlation audit smoke evidence.
+    # 2026-06-25 update: sha-116f150 (platform-backend#751, platform-ai#182/#188)
+    # adds default-off direct-STT HTTPS+mTLS client wiring for live-stt. This
+    # pin still does not flip direct-STT; runtime enablement remains gated by
+    # Denetim 8243 host-policy reachability, cert/secret mount, and
+    # same-session/chunk/correlation audit smoke evidence.
     # Previous line: Faz 24 KVKK audit producer activation (gitops#1647): tag sha-74c9e1a
     # (#677 audit-pipeline — adds RedisStreamAuditSink). The prior pin
     # sha-28cfe2c (#556/#558) PREDATES #677 → it ships only the NoOp sink, so
@@ -115,7 +120,7 @@ images:
     # ChunkAdmissionRejected (413 oversize) lands on the audit:events stream and
     # is persisted by audit-event-consumer-service.
     # D30 immutable digest pin.
-    digest: sha256:780be9967fd454df73f7c1273b9e2dc080932b9059c97eccb2f2da2799f8eefd
+    digest: sha256:257d2bf05688de5eaebbb7ec52a873eeb3849a9ac7223950f3e6767a7dfbe0ff
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -5291,7 +5296,11 @@ images:
     # sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c.
     # 2026-06-24 drift alignment: deploy-backend-testai.yml --fail-on-change
     # reported this rollout-scope digest behind backend image run 28131649696.
-    digest: sha256:b6137607963ec1378e2feb4668d2f8f51026f6010f1375c2eb210eb6b682261c
+    # 2026-06-25 drift alignment: backend main image build run 28135463780
+    # dispatched endpoint-admin-service sha256:9890a434... with the same
+    # backend sha-116f150 payload; deploy-backend-testai.yml run 28135555236
+    # refused live mutation until this desired-state line matches the payload.
+    digest: sha256:9890a4341eed25c43770d06b9ad0a74b3a9100042873d294a1b729aeddb630d2
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
