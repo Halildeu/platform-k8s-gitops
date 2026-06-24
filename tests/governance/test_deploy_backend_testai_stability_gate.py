@@ -30,9 +30,17 @@ class DeployBackendTestaiStabilityGateTest(unittest.TestCase):
 
     def test_stability_window_budget_comment_matches_service_count(self):
         services = self._gate_1d_services()
-        self.assertEqual(9, len(services), services)
-        self.assertIn("20 min budget", self.workflow)
-        self.assertIn("rollout (9 * 180s = 27m max)", self.workflow)
+        self.assertEqual(10, len(services), services)
+        self.assertIn("audio-gateway", services)
+        self.assertIn("22 min budget", self.workflow)
+        self.assertIn("rollout (10 * 180s = 30m max)", self.workflow)
+
+    def test_faz24_audio_gateway_rollout_mapping_is_explicit(self):
+        self.assertIn(
+            '"audio-gateway-service|audio-gateway|audio-gateway|audio-gateway|audio-gateway-service"',
+            self.workflow,
+        )
+        self.assertIn("audio-gateway-service", self.workflow)
 
 
 if __name__ == "__main__":
