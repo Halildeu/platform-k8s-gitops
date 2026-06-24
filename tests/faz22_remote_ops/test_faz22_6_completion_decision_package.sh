@@ -36,6 +36,7 @@ REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_digest=sha256:6b12276cea9123
 RELEASE_LINEAGE_WAIVER=blocked ref=Halildeu/platform-k8s-gitops#1901 reason=marker,scope,release_tag,artifact_host_digest,owner_approved_by,accepted_findings:GITHUB_RELEASE_IMMUTABLE,accepted_findings:GITHUB_RELEASE_DENSE_TRAIN,forbidden_claims:5-device,forbidden_claims:50-device,forbidden_claims:800-device,forbidden_claims:production,forbidden_claims:broad-rollout,approved_at,expires_at
 F22_6_RELEASE_LINEAGE=needs_hygiene
 RELEASE_LINEAGE_GATE=blocked mode=local-kubectl status=needs_hygiene
+AGENT_RELEASE_TRAIN=needs_hygiene
 F22_6_COMPLETION=blocked
 F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-evidence-package-required,release-lineage-audit-pass-required
 EOF
@@ -65,7 +66,7 @@ jq -e '
   and (.decisions[] | select(.id == "release_lineage").current_status) == "needs_hygiene"
   and (.decisions[] | select(.id == "release_lineage").completion_gate_status) == "blocked"
   and (.decisions[] | select(.id == "release_lineage").waiver_status) == "blocked"
-  and (.decisions[] | select(.id == "release_lineage").agent_release_train_status) == "missing"
+  and (.decisions[] | select(.id == "release_lineage").agent_release_train_status) == "needs_hygiene"
 ' "$json" >/dev/null
 
 jq -e '
@@ -92,6 +93,7 @@ GATE_VIEW_ONLY_SCREEN_SHARE=blocked state=OPEN expected=CLOSED-with-view-only-ac
 RELEASE_LINEAGE_WAIVER=not_required reason=no-release-lineage-hygiene
 F22_6_RELEASE_LINEAGE=pass
 RELEASE_LINEAGE_GATE=pass mode=local-kubectl status=pass
+AGENT_RELEASE_TRAIN=pass
 F22_6_COMPLETION=blocked
 F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-evidence-package-required
 EOF
@@ -160,6 +162,7 @@ GATE_VIEW_ONLY_SCREEN_SHARE=pass state=CLOSED issue=Halildeu/platform-k8s-gitops
 RELEASE_LINEAGE_WAIVER=bounded_pilot_pass ref=Halildeu/platform-k8s-gitops#1901 owner=example expires_at=2026-07-23
 F22_6_RELEASE_LINEAGE=bounded_pilot_pass
 RELEASE_LINEAGE_GATE=bounded_pilot_pass mode=local-kubectl status=bounded_pilot_pass
+AGENT_RELEASE_TRAIN=bounded_pilot_pass
 F22_6_COMPLETION=pass
 F22_6_NEXT_REQUIRED=
 EOF
@@ -184,7 +187,7 @@ jq -e '
   and (.decisions[] | select(.id == "view_only_screen_share").current_status) == "pass"
   and (.decisions[] | select(.id == "release_lineage").current_status) == "bounded_pilot_pass"
   and (.decisions[] | select(.id == "release_lineage").completion_gate_status) == "bounded_pilot_pass"
-  and (.decisions[] | select(.id == "release_lineage").agent_release_train_status) == "missing"
+  and (.decisions[] | select(.id == "release_lineage").agent_release_train_status) == "bounded_pilot_pass"
 ' "$pass_json" >/dev/null
 
 grep -Fq "Completion status: \`pass\`" "$pass_markdown"
