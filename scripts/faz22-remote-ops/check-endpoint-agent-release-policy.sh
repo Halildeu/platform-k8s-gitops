@@ -16,6 +16,16 @@ need() {
   command -v "$1" >/dev/null 2>&1 || die "missing command: $1"
 }
 
+sha256_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+  else
+    die "missing command: sha256sum or shasum"
+  fi
+}
+
 need jq
 [ -f "$POLICY_FILE" ] || die "policy file not found: $POLICY_FILE"
 
@@ -84,9 +94,12 @@ fi
 # B3 gap-fix: verify release-manifest.json SHA256 against pinned value in policy.
 # Set SKIP_MANIFEST_FETCH=1 in environments without outbound HTTPS (e.g. air-gapped).
 if [ "${SKIP_MANIFEST_FETCH:-0}" != "1" ]; then
+  need curl
   pinned_sha="$(jq -r '.current_bounded_pilot.release_manifest_sha256' "$POLICY_FILE")"
   manifest_url="$(jq -r '.current_bounded_pilot.github_release_base_url' "$POLICY_FILE")/release-manifest.json"
-  actual_sha="$(curl -sL "$manifest_url" | shasum -a 256 | awk '{print $1}')"
+  if ! actual_sha="$(curl --max-time 20 -fsSL -H 'Cache-Control: no-cache' "$manifest_url" | sha256_stdin)"; then
+    die "release-manifest.json SHA256 fetch failed: url=$manifest_url"
+  fi
   if [ "$actual_sha" != "$pinned_sha" ]; then
     die "release-manifest.json SHA256 mismatch: expected=$pinned_sha actual=$actual_sha"
   fi

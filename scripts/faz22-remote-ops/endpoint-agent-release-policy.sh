@@ -50,6 +50,8 @@ endpoint_agent_release_policy_load() {
   _endpoint_agent_policy_default EXPECTED_RELEASE_ID "$EXPECTED_AGENT_TAG"
 
   _endpoint_agent_policy_default EXPECTED_AGENT_VERSION "$(_endpoint_agent_policy_read '.current_bounded_pilot.agent_version')"
+  _endpoint_agent_policy_default EXPECTED_RELEASE_WORKFLOW_RUN_ID "$(_endpoint_agent_policy_read '.current_bounded_pilot.workflow_run_id')"
+  _endpoint_agent_policy_default EXPECTED_PREVIOUS_RELEASE "$(_endpoint_agent_policy_read '.current_bounded_pilot.previous_release')"
   _endpoint_agent_policy_default EXPECTED_AGENT_COMMIT "$(_endpoint_agent_policy_read '.current_bounded_pilot.source_commit')"
   _endpoint_agent_policy_default EXPECTED_AGENT_SHA256 "$(_endpoint_agent_policy_read '.current_bounded_pilot.endpoint_agent_sha256')"
   _endpoint_agent_policy_default EXPECTED_AGENT_ZIP_SHA256 "$(_endpoint_agent_policy_read '.current_bounded_pilot.endpoint_agent_zip_sha256')"

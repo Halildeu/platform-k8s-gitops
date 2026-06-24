@@ -340,9 +340,13 @@ main() {
     current_sums=''
   fi
 
-  local rel_tag cur_tag rel_agent_sha cur_agent_sha rel_zip_sha cur_zip_manifest_sha rel_signer cur_signer rel_tier cur_tier rel_ah_ref cur_ah_ref
+  local rel_tag cur_tag rel_workflow_run cur_workflow_run rel_previous_release cur_previous_release rel_agent_sha cur_agent_sha rel_zip_sha cur_zip_manifest_sha rel_signer cur_signer rel_tier cur_tier rel_ah_ref cur_ah_ref
   rel_tag="$(printf '%s\n' "$release_manifest" | jq -r '.release_tag // ""')"
   cur_tag="$(printf '%s\n' "$current_manifest" | jq -r '.release_tag // ""')"
+  rel_workflow_run="$(printf '%s\n' "$release_manifest" | jq -r '.workflow_run_id // ""')"
+  cur_workflow_run="$(printf '%s\n' "$current_manifest" | jq -r '.workflow_run_id // ""')"
+  rel_previous_release="$(printf '%s\n' "$release_manifest" | jq -r '.previous_release // ""')"
+  cur_previous_release="$(printf '%s\n' "$current_manifest" | jq -r '.previous_release // ""')"
   rel_agent_sha="$(printf '%s\n' "$release_manifest" | jq -r '.endpoint_agent_sha256 // ""')"
   cur_agent_sha="$(printf '%s\n' "$current_manifest" | jq -r '.endpoint_agent_sha256 // ""')"
   rel_zip_sha="$(printf '%s\n' "$release_manifest" | jq -r '.endpoint_agent_zip_sha256 // ""')"
@@ -358,6 +362,22 @@ main() {
     print_check 'MANIFEST_RELEASE_TAG_PARITY' 'pass' "release=$rel_tag current=$cur_tag"
   else
     print_check 'MANIFEST_RELEASE_TAG_PARITY' 'blocked' "release=$rel_tag current=$cur_tag expected=$EXPECTED_AGENT_TAG"
+    blocked=1
+  fi
+
+  if [ "$rel_workflow_run" = "$EXPECTED_RELEASE_WORKFLOW_RUN_ID" ] \
+    && [ "$cur_workflow_run" = "$EXPECTED_RELEASE_WORKFLOW_RUN_ID" ]; then
+    print_check 'MANIFEST_WORKFLOW_RUN_PARITY' 'pass' "workflow_run_id=$rel_workflow_run"
+  else
+    print_check 'MANIFEST_WORKFLOW_RUN_PARITY' 'blocked' "release=$rel_workflow_run current=$cur_workflow_run expected=$EXPECTED_RELEASE_WORKFLOW_RUN_ID"
+    blocked=1
+  fi
+
+  if [ "$rel_previous_release" = "$EXPECTED_PREVIOUS_RELEASE" ] \
+    && [ "$cur_previous_release" = "$EXPECTED_PREVIOUS_RELEASE" ]; then
+    print_check 'MANIFEST_PREVIOUS_RELEASE_PARITY' 'pass' "previous_release=$rel_previous_release"
+  else
+    print_check 'MANIFEST_PREVIOUS_RELEASE_PARITY' 'blocked' "release=$rel_previous_release current=$cur_previous_release expected=$EXPECTED_PREVIOUS_RELEASE"
     blocked=1
   fi
 
