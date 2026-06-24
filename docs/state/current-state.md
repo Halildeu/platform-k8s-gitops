@@ -1,5 +1,45 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 OpenFGA meeting/transcript object model verified, selector pending (2026-06-24)
+
+Faz 24 recorder e2e hit a real OpenFGA model blocker: `meeting-service`
+creates canonical meetings by writing `meeting:<uuid>#owner@user:<id>`, but the
+active test model `01KS8QE8T1EJ2DF5CRS4VV9YX1` contains only 15 types and does
+not include `meeting` or `transcript`.
+
+Append-only test-store model write created verified model
+`01KVXG15ETYAHMHANFD0E5CVK8` with content digest
+`sha256:34d59b2230ea944ae1c2a1d9d27dc36baf3ee90f5514600cd007b215b7e642df`.
+The new model preserves all existing 15 types and adds only `meeting` and
+`transcript` object ReBAC types (`blocked`, `owner`, `participant`, `viewer`).
+
+Live explicit-model checks passed:
+
+- `user:1 can_view module:MEETING` -> allow
+- `user:1 can_manage module:TRANSCRIPT` -> allow
+- `user:9102 can_manage module:MEETING` -> deny
+- `user:0 can_view module:MEETING` -> deny
+- transient `meeting:<uuid>#owner@user:990001` write/check/viewer proof passed,
+  then the test tuple was deleted and rechecked false
+- transient `transcript:<uuid>#owner@user:990001` write/check/viewer proof
+  passed, then the test tuple was deleted and rechecked false
+
+Boundary:
+
+- This proves the new model is valid in the test store and supports the object
+  tuple shape required by `meeting-service`.
+- It does not yet make recorder runtime-ready. The shared runtime selector
+  `kv/platform/openfga#model_id` still has to be promoted to
+  `01KVXG15ETYAHMHANFD0E5CVK8`, ExternalSecrets must sync, model-consuming pods
+  must roll, and meeting create + audio-gateway recorder lifecycle smoke must
+  pass.
+- Canonical evidence and promotion steps:
+  `docs/faz-24-evidence/2026-06-24-openfga-meeting-transcript-object-model.md`
+  and
+  `docs/runbooks/RB-faz24-openfga-meeting-transcript-object-model.md`.
+- Canonical backend source alignment is tracked in
+  `Halildeu/platform-backend#742`.
+
 ## Live Delta — Faz 22.6 v0.3.1 release-lineage no-waiver gate passed (2026-06-24)
 
 `platform-agent` PR #233 merged into `main` and produced trusted EndpointAgent
