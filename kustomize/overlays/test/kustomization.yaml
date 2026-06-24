@@ -103,6 +103,10 @@ images:
     # 2026-06-24 update: sha-3145e72 (platform-backend#739) aligns the
     # recorder meetingId contract to canonical meeting-service UUID and enables
     # fail-closed meeting-service access validation in the k8s profile.
+    # 2026-06-24 update: sha-6d669e9 (platform-backend#749, platform-ai#188)
+    # adds CHUNK_FORWARDED_TO_COMPUTE_PLANE audit before direct-STT raw-audio
+    # forward. This pin does not flip direct-STT; live acceptance still requires
+    # runtime config + same-session/chunk/correlation audit smoke evidence.
     # Previous line: Faz 24 KVKK audit producer activation (gitops#1647): tag sha-74c9e1a
     # (#677 audit-pipeline — adds RedisStreamAuditSink). The prior pin
     # sha-28cfe2c (#556/#558) PREDATES #677 → it ships only the NoOp sink, so
@@ -111,7 +115,7 @@ images:
     # ChunkAdmissionRejected (413 oversize) lands on the audit:events stream and
     # is persisted by audit-event-consumer-service.
     # D30 immutable digest pin.
-    digest: sha256:a09d497f1bcd749eb1662c0d2a1a836d788eed47c4f3f3925b0a6b9d95f01cee
+    digest: sha256:780be9967fd454df73f7c1273b9e2dc080932b9059c97eccb2f2da2799f8eefd
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -481,7 +485,9 @@ images:
     newName: ghcr.io/halildeu/platform-backend-core-data-service
     # 2026-05-18 #821 drift-correction: digest synced to live k3d-test pod imageID
     # (deploy-backend-testai.yml imperative kubectl-set-image — overlay was stale).
-    digest: sha256:e5ea02a847c904f10aefc4fe21de7cbdea507d28e672a76e9e8a6aba9e7dbb22
+    # 2026-06-24 drift alignment: deploy-backend-testai.yml --fail-on-change
+    # reported this rollout-scope digest behind backend image run 28131649696.
+    digest: sha256:f89f89b9ff5df27b32a8d4493f9269b9f38cf6d8a307883b90e893eb519c1cd6
   - name: report-service
     newName: ghcr.io/halildeu/platform-backend-report-service
     # 2026-05-07: canonical bump sha-9beed5f (platform-backend HEAD,
@@ -898,8 +904,10 @@ images:
     #
     # ReportContractGate reports=37 violations=0 (36→37 weekly-audit-digest).
     # D-chain progress: 5/5 LIVE pure-grid modules (post-deploy) — TARGET CLOSED.
+    # 2026-06-24 drift alignment: deploy-backend-testai.yml --fail-on-change
+    # reported this rollout-scope digest behind backend image run 28131649696.
     newTag: sha-14322ac
-    digest: sha256:6a896fe09dbf229ffc1c68b2c08596e79d2bf1e50733c96d0d16e042f304aa99
+    digest: sha256:ca8c1dc227bfe0d72234be2a94e74585a00c921a27d6f4fc1d94c60e3eb7058a
   - name: schema-service
     newName: ghcr.io/halildeu/platform-backend-schema-service
     # 2026-04-30: bumped to iter-32 (sha-0c142bf) — Codex 019dda1c cycle close.
@@ -980,7 +988,9 @@ images:
     # Digest job-section + CD deploy spec iki-kaynak teyitli. Image build run
     # 25985721556 (merge commit 58bc2c9).
     # Pinnable: ghcr.io/halildeu/platform-backend-schema-service@sha256:894e492f029c93277ee7d84c993bad2535d970995b0d2df08a48ebb23340ae26
-    digest: sha256:b5cc08c2bc8b6dc434fea403a97a529545f0c056551790e08c88db417243fd69
+    # 2026-06-24 drift alignment: deploy-backend-testai.yml --fail-on-change
+    # reported this rollout-scope digest behind backend image run 28131649696.
+    digest: sha256:667d95942a1a36ab534c9620e14adac76ae1aefd7809e160a4af8cf8030fc1c2
   - name: permission-service
     newName: ghcr.io/halildeu/platform-backend-permission-service
     # 2026-04-29 update: sha-0d9c6cc — Codex 019dd818 iter-12..18 cycle CLOSED.
@@ -5279,7 +5289,9 @@ images:
     # remain required.
     # Image build run 27998861570 produced endpoint-admin-service
     # sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c.
-    digest: sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c
+    # 2026-06-24 drift alignment: deploy-backend-testai.yml --fail-on-change
+    # reported this rollout-scope digest behind backend image run 28131649696.
+    digest: sha256:b6137607963ec1378e2feb4668d2f8f51026f6010f1375c2eb210eb6b682261c
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
