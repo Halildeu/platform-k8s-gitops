@@ -94,7 +94,10 @@ images:
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audio-gateway-service
     newName: ghcr.io/halildeu/platform-backend-audio-gateway-service
-    # Faz 24 KVKK audit producer activation (gitops#1647): tag sha-74c9e1a
+    # 2026-06-24 update: sha-3145e72 (platform-backend#739) aligns the
+    # recorder meetingId contract to canonical meeting-service UUID and enables
+    # fail-closed meeting-service access validation in the k8s profile.
+    # Previous line: Faz 24 KVKK audit producer activation (gitops#1647): tag sha-74c9e1a
     # (#677 audit-pipeline — adds RedisStreamAuditSink). The prior pin
     # sha-28cfe2c (#556/#558) PREDATES #677 → it ships only the NoOp sink, so
     # the #1634 AUDIO_GATEWAY_AUDIT_REDIS_ENABLED=true env flip had no effect
@@ -102,7 +105,7 @@ images:
     # ChunkAdmissionRejected (413 oversize) lands on the audit:events stream and
     # is persisted by audit-event-consumer-service.
     # D30 immutable digest pin.
-    digest: sha256:b6b565e91a6c7f4ec6e6ec7144b77ea70afb8a8184980c6122a8a970a57ec91b
+    digest: sha256:654f506028c599b6684ceec16513ca9c3aa457d0e322920767e4267d6d38c2b3
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
