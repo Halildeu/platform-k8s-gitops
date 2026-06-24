@@ -1,6 +1,6 @@
 # RB-faz22.6 — Autonomous Completion Contract
 
-> Status: ACTIVE completion contract, 2026-06-23.
+> Status: ACTIVE completion contract, updated 2026-06-24 with v0.3.1 no-waiver release-lineage evidence (run 28102175711).
 > Scope: Faz 22.6 remote-ops / remote-bridge productization.
 > Parent milestone: Faz 22 Endpoint Administration.
 > Canonical open gates at creation time: `platform-backend#548` and

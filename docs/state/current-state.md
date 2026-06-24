@@ -88,8 +88,11 @@ self-hosted `staging-sw` runner workflow:
 - Board item #1915 is `Closed` / Project #2 `Done`.
 
 Boundary: this removes only the artifact-host live-digest evidence transport
-blocker for #1901. It does not close #1901 and does not make Faz 22.6
-release-lineage accepted. The same audit still reports:
+blocker for #1901. It does not close #1901 for the current release — the
+hygiene sub-gate was resolved by the subsequent v0.3.1 no-waiver audit (run
+28102175711) which passes F22_6_RELEASE_LINEAGE=pass. The needs_hygiene
+language in lines 95-99 is historical evidence for the v0.2.28 state, not
+current truth. The same audit still reports:
 
 ```text
 GITHUB_RELEASE_IMMUTABLE=needs_hygiene tag=v0.2.28 isImmutable=false
@@ -101,6 +104,11 @@ F22_6_RELEASE_LINEAGE=needs_hygiene
 Therefore #1901 remains open/blocked until either an owner-approved waiver/risk
 acceptance marker satisfies the runbook contract or the release-lineage hygiene
 findings are fixed.
+
+Boundary: this language describes the #1901 hygiene sub-gate for the v0.2.28
+state. The current v0.3.1 no-waiver audit (run 28102175711) passes
+F22_6_RELEASE_LINEAGE=pass with RELEASE_LINEAGE_WAIVER=not_required — #1901
+is not a current blocker for v0.3.1.
 
 ## Live Delta — Faz 22.6 self-hosted completion audit canonicalized (2026-06-23)
 
