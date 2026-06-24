@@ -142,6 +142,30 @@ printf '%s\n' "$output" >"$tmp_dir/hardware-missing-replay.out"
 grep -q '^GATE_B1_4_HARDWARE_ATTESTATION=blocked ' "$tmp_dir/hardware-missing-replay.out"
 grep -q 'negative_matrix:replay' "$tmp_dir/hardware-missing-replay.out"
 
+hardware_with_expiry="$(printf '%s\nexpires_at: %s\n' "$hardware_body" "$expires_at")"
+jq -n \
+  --arg state "CLOSED" \
+  --arg body "$hardware_with_expiry" \
+  --arg title "fake B1.4 hardware acceptance with forbidden expiry" \
+  '{state:$state,body:$body,title:$title,url:"https://github.com/Halildeu/platform-backend/issues/548"}' \
+  >"$issue_json"
+set +e
+output="$(
+  PATH="$fake_bin:$PATH" \
+    FAKE_GH_ISSUE_JSON="$issue_json" \
+    B1_4_ATTESTATION_ACCEPTANCE_REF="Halildeu/platform-backend#548" \
+    check_b1_4_hardware_gate
+)"
+rc="$?"
+set -e
+if [ "$rc" = "0" ]; then
+  echo "expected hardware marker with expires_at to remain blocked" >&2
+  exit 1
+fi
+printf '%s\n' "$output" >"$tmp_dir/hardware-expiry-forbidden.out"
+grep -q '^GATE_B1_4_HARDWARE_ATTESTATION=blocked ' "$tmp_dir/hardware-expiry-forbidden.out"
+grep -q 'expires_at-forbidden' "$tmp_dir/hardware-expiry-forbidden.out"
+
 risk_marker="$tmp_dir/b1-4-risk-marker.txt"
 risk_generator_out="$(
   "$GENERATOR" \

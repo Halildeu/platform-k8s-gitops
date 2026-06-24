@@ -34,9 +34,10 @@ GATE_B1_4_HARDWARE_ATTESTATION=blocked state=OPEN expected=CLOSED-or-bounded-ris
 GATE_VIEW_ONLY_SCREEN_SHARE=blocked state=OPEN expected=CLOSED-with-view-only-acceptance issue=Halildeu/platform-k8s-gitops#1580 reason=missing-acceptance-marker
 REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_digest=sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c
 RELEASE_LINEAGE_WAIVER=blocked ref=Halildeu/platform-k8s-gitops#1901 reason=marker,scope,release_tag,artifact_host_digest,owner_approved_by,accepted_findings:GITHUB_RELEASE_IMMUTABLE,accepted_findings:GITHUB_RELEASE_DENSE_TRAIN,forbidden_claims:5-device,forbidden_claims:50-device,forbidden_claims:800-device,forbidden_claims:production,forbidden_claims:broad-rollout,approved_at,expires_at
-AGENT_RELEASE_TRAIN=needs_hygiene latest=v0.2.28 recent_series=v0.2 recent_series_count=20 isImmutable=false reason=rapid-release-train-or-mutable-release-requires-lineage-waiver
+F22_6_RELEASE_LINEAGE=needs_hygiene
+RELEASE_LINEAGE_GATE=blocked mode=local-kubectl status=needs_hygiene
 F22_6_COMPLETION=blocked
-F22_6_NEXT_REQUIRED=close-or-risk-accept-548-with-marker,close-1580-with-view-only-marker,fix-release-lineage-hygiene
+F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-evidence-package-required,release-lineage-audit-pass-required
 EOF
 
 output="$(
@@ -61,8 +62,10 @@ jq -e '
   and (.decisions | length) == 3
   and (.decisions[] | select(.id == "b1_4_hardware_attestation").current_status) == "blocked"
   and (.decisions[] | select(.id == "view_only_screen_share").current_status) == "blocked"
-  and (.decisions[] | select(.id == "release_lineage").current_status) == "blocked"
-  and (.decisions[] | select(.id == "release_lineage").agent_release_train_status) == "needs_hygiene"
+  and (.decisions[] | select(.id == "release_lineage").current_status) == "needs_hygiene"
+  and (.decisions[] | select(.id == "release_lineage").completion_gate_status) == "blocked"
+  and (.decisions[] | select(.id == "release_lineage").waiver_status) == "blocked"
+  and (.decisions[] | select(.id == "release_lineage").agent_release_train_status) == "missing"
 ' "$json" >/dev/null
 
 jq -e '
@@ -112,7 +115,8 @@ REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_digest=sha256:6b12276cea9123
 GATE_B1_4_HARDWARE_ATTESTATION=bounded_pilot_risk_accepted state=OPEN issue=Halildeu/platform-backend#548 owner=example expires_at=2026-07-23
 GATE_VIEW_ONLY_SCREEN_SHARE=pass state=CLOSED issue=Halildeu/platform-k8s-gitops#1580 evidence_package_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 RELEASE_LINEAGE_WAIVER=bounded_pilot_pass ref=Halildeu/platform-k8s-gitops#1901 owner=example expires_at=2026-07-23
-AGENT_RELEASE_TRAIN=surprising-state latest=v0.2.28
+F22_6_RELEASE_LINEAGE=bounded_pilot_pass
+RELEASE_LINEAGE_GATE=bounded_pilot_pass mode=local-kubectl status=bounded_pilot_pass
 F22_6_COMPLETION=pass
 F22_6_NEXT_REQUIRED=
 EOF
@@ -136,7 +140,8 @@ jq -e '
   and (.decisions[] | select(.id == "b1_4_hardware_attestation").current_status) == "bounded_pilot_risk_accepted"
   and (.decisions[] | select(.id == "view_only_screen_share").current_status) == "pass"
   and (.decisions[] | select(.id == "release_lineage").current_status) == "bounded_pilot_pass"
-  and (.decisions[] | select(.id == "release_lineage").agent_release_train_status) == "unparsed"
+  and (.decisions[] | select(.id == "release_lineage").completion_gate_status) == "bounded_pilot_pass"
+  and (.decisions[] | select(.id == "release_lineage").agent_release_train_status) == "missing"
 ' "$pass_json" >/dev/null
 
 grep -Fq "Completion status: \`pass\`" "$pass_markdown"

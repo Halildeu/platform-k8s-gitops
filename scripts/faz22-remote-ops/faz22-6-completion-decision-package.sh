@@ -95,13 +95,16 @@ line_status() {
     printf 'missing'
     return 0
   fi
-  case "$line" in
-    *=pass|*=pass\ *) printf 'pass' ;;
-    *=bounded_pilot_pass|*=bounded_pilot_pass\ *) printf 'bounded_pilot_pass' ;;
-    *=bounded_pilot_risk_accepted|*=bounded_pilot_risk_accepted\ *) printf 'bounded_pilot_risk_accepted' ;;
-    *=needs_hygiene|*=needs_hygiene\ *) printf 'needs_hygiene' ;;
-    *=blocked|*=blocked\ *) printf 'blocked' ;;
-    *=unknown|*=unknown\ *) printf 'unknown' ;;
+  local value
+  value="${line#*=}"
+  value="${value%% *}"
+  case "$value" in
+    pass) printf 'pass' ;;
+    bounded_pilot_pass) printf 'bounded_pilot_pass' ;;
+    bounded_pilot_risk_accepted) printf 'bounded_pilot_risk_accepted' ;;
+    needs_hygiene) printf 'needs_hygiene' ;;
+    blocked) printf 'blocked' ;;
+    unknown) printf 'unknown' ;;
     *) printf 'unparsed' ;;
   esac
 }
@@ -116,12 +119,16 @@ next_required="$(line_value 'F22_6_NEXT_REQUIRED=')"
 remote_bridge_line="$(first_line 'REMOTE_BRIDGE_LIVE=')"
 b1_line="$(first_line 'GATE_B1_4_HARDWARE_ATTESTATION=')"
 view_line="$(first_line 'GATE_VIEW_ONLY_SCREEN_SHARE=')"
-release_line="$(first_line 'RELEASE_LINEAGE_WAIVER=')"
+release_line="$(first_line 'F22_6_RELEASE_LINEAGE=')"
+release_gate_line="$(first_line 'RELEASE_LINEAGE_GATE=')"
+release_waiver_line="$(first_line 'RELEASE_LINEAGE_WAIVER=')"
 agent_train_line="$(first_line 'AGENT_RELEASE_TRAIN=')"
 
 b1_status="$(line_status "$b1_line")"
 view_status="$(line_status "$view_line")"
 release_status="$(line_status "$release_line")"
+release_gate_status="$(line_status "$release_gate_line")"
+release_waiver_status="$(line_status "$release_waiver_line")"
 agent_train_status="$(line_status "$agent_train_line")"
 completion_status="$(line_status "$completion_line")"
 remote_bridge_status="$(line_status "$remote_bridge_line")"
@@ -155,6 +162,10 @@ jq -nS \
   --arg view_cmd "$view_cmd" \
   --arg release_status "$release_status" \
   --arg release_line "$release_line" \
+  --arg release_gate_status "$release_gate_status" \
+  --arg release_gate_line "$release_gate_line" \
+  --arg release_waiver_status "$release_waiver_status" \
+  --arg release_waiver_line "$release_waiver_line" \
   --arg agent_train_status "$agent_train_status" \
   --arg agent_train_line "$agent_train_line" \
   --arg release_cmd "$release_cmd" \
@@ -219,6 +230,10 @@ jq -nS \
         issue: "Halildeu/platform-k8s-gitops#1901",
         current_status: $release_status,
         audit_line: $release_line,
+        completion_gate_status: $release_gate_status,
+        completion_gate_line: $release_gate_line,
+        waiver_status: $release_waiver_status,
+        waiver_line: $release_waiver_line,
         agent_release_train_status: $agent_train_status,
         agent_release_train_line: $agent_train_line,
         owner_inputs_required: ["OWNER_APPROVED_BY", "APPROVED_AT", "EXPIRES_AT"],
@@ -259,8 +274,9 @@ GitHub, Kubernetes, releases, endpoints, or secrets, and it does not claim Faz
 ${remote_bridge_line:-REMOTE_BRIDGE_LIVE=missing}
 ${b1_line:-GATE_B1_4_HARDWARE_ATTESTATION=missing}
 ${view_line:-GATE_VIEW_ONLY_SCREEN_SHARE=missing}
-${release_line:-RELEASE_LINEAGE_WAIVER=missing}
-${agent_train_line:-AGENT_RELEASE_TRAIN=missing}
+${release_gate_line:-RELEASE_LINEAGE_GATE=missing}
+${release_line:-F22_6_RELEASE_LINEAGE=missing}
+${release_waiver_line:-RELEASE_LINEAGE_WAIVER=missing}
 ${completion_line:-F22_6_COMPLETION=missing}
 F22_6_NEXT_REQUIRED=${next_required:-missing}
 \`\`\`
