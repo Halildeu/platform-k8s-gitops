@@ -96,6 +96,7 @@ GATE_VIEW_ONLY_SCREEN_SHARE=blocked state=OPEN expected=CLOSED-with-view-only-ac
 RELEASE_LINEAGE_WAIVER=not_required reason=no-release-lineage-hygiene
 F22_6_RELEASE_LINEAGE=pass
 RELEASE_LINEAGE_GATE=pass mode=local-kubectl status=pass
+AGENT_RELEASE_TRAIN=pass
 F22_6_COMPLETION=blocked
 F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-evidence-package-required
 EOF
