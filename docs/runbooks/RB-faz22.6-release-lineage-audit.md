@@ -80,9 +80,14 @@ Hygiene findings:
 - Release objects still report `isImmutable=false`. REST `Update a release`
   exposes `immutable` only in the response schema, not as a mutable request
   field; a tag ruleset protects tag movement but does not change this release
-  metadata flag. This remains a hygiene finding unless GitHub release
-  immutability is enabled through an available GitHub release setting or a
-  bounded waiver is recorded.
+  metadata flag. On 2026-06-24 the repo-level `Enable release immutability`
+  setting was enabled with owner approval, but the already-published `v0.3.0`
+  release object still reported `isImmutable=false` and audit run
+  `28099352305` still printed `F22_6_RELEASE_LINEAGE=needs_hygiene`. Treat the
+  setting as protection for future releases unless a later live audit proves an
+  existing release object has become immutable. A future trusted release still
+  has to prove its own `isImmutable=true` state through the audit before it can
+  satisfy the no-waiver path.
 - The historical dense `v0.2.x` pilot-recovery train is no longer the current
   expected release series. The policy now evaluates recent train hygiene
   against `v0.3`, where `v0.3.0` starts a clean minor line.
@@ -124,8 +129,11 @@ F22_6_RELEASE_LINEAGE=needs_hygiene
 
 `needs_hygiene` now means the `v0.3.0` release payload, GitOps desired-state,
 artifact-host `current` surface, and live pod imageIDs agree, but the GitHub
-release object still reports `isImmutable=false`. The dense `v0.2.x` recovery
-train is historical context, not the current release series for this policy.
+release object still reports `isImmutable=false`. The repo-level release
+immutability setting is enabled for future release behavior, but it did not
+retroactively satisfy the existing `v0.3.0` release object check. The dense
+`v0.2.x` recovery train is historical context, not the current release series
+for this policy.
 
 ## 3.1 Release Policy SSOT
 
@@ -178,6 +186,15 @@ production rollout ready until the audit prints `F22_6_RELEASE_LINEAGE=pass`.
   not produce `F22_6_RELEASE_LINEAGE=pass`; it produces
   `F22_6_RELEASE_LINEAGE=bounded_pilot_pass` and keeps broad rollout language
   forbidden.
+
+If repo-level release immutability was enabled only after a release was
+published and that release still reports `isImmutable=false`, do not treat the
+setting as a no-waiver pass. The no-waiver path requires either a later live
+audit proving the same release object is immutable or a new trusted release
+published under the enabled setting and consumed through the release policy.
+`RELEASE_LINEAGE_WAIVER=blocked` means the audit did not find valid waiver
+evidence on the configured issue. It is not itself owner refusal; a named owner
+can still add the bounded-pilot marker through the separate approval path.
 
 ## 5. Bounded Pilot Waiver Contract
 

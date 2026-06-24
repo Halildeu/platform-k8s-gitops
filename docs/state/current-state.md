@@ -43,6 +43,23 @@ Current live evidence is the follow-up self-hosted release-lineage audit:
 - `MANIFEST_ZIP_SHA_PARITY=pass sha256=6139b0cc7b4fb3d745630354d2d49c61558c282360e92999057628fb5c7fd105`
 - `ARTIFACT_HOST_LIVE_DIGEST=pass mode=local-kubectl expected_digest=sha256:00df8734b6a8d5121f9294af63a8e44ae9002298a1b5d05f7aaf44912183fbe6 digest_hits=3`
 
+On 2026-06-24 the owner approved enabling the `platform-agent` repo Settings /
+General `Enable release immutability` setting. The setting now persists as
+checked in the GitHub UI, but it did not retroactively change the already
+published `v0.3.0` GitHub Release object:
+
+- `gh release view v0.3.0 --repo Halildeu/platform-agent` still reports
+  `isImmutable=false`.
+- REST still reports `immutable=false` and `updated_at=2026-06-24T09:04:29Z`
+  for release id `343988462`.
+- Post-setting self-hosted audit
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28099352305`
+  completed `success` but still printed
+  `GITHUB_RELEASE_IMMUTABLE=needs_hygiene tag=v0.3.0 isImmutable=false` and
+  `F22_6_RELEASE_LINEAGE=needs_hygiene`. This is specifically the already
+  published `v0.3.0` release object check; runtime digest parity remains
+  independently `pass`.
+
 Current boundary:
 
 - Runtime `artifact-host` v0.3.0 digest parity, current/release manifest
@@ -50,10 +67,14 @@ Current boundary:
 - GitHub release metadata still reports `isImmutable=false` for `v0.3.0`.
   A REST `PATCH` attempt with `immutable=true` returned the same
   `immutable=false` value and did not update the release; the field is not a
-  writable REST `Update a release` body parameter. Therefore
-  `platform-k8s-gitops#1901` remains open/blocked unless a real GitHub release
-  immutability setting is enabled or an owner-approved bounded-pilot waiver
-  marker is recorded.
+  writable REST `Update a release` body parameter. Enabling the repo-level
+  release immutability setting did not make the existing `v0.3.0` release
+  object immutable, so `platform-k8s-gitops#1901` remains open/blocked unless
+  a new trusted immutable release is produced and consumed by GitOps or an
+  owner-approved bounded-pilot waiver marker is recorded.
+- The remaining #1901 sub-gate is release-object immutability evidence. It is
+  no longer a runtime payload, manifest parity, ZIP SHA, signing, or live
+  artifact-host digest blocker for `v0.3.0`.
 - The historical dense `v0.2.x` train is no longer the current policy series,
   but final Faz 22.6 completion still also depends on `platform-backend#548`
   and `platform-k8s-gitops#1580`.
