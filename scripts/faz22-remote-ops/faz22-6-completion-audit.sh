@@ -480,7 +480,7 @@ check_b1_4_hardware_gate() {
 
   if [ "$hardware_count" -eq 1 ]; then
     local acceptance_scope device_key_evidence tpm_or_secure_element agent_wire_contract broker_verifier root_policy field_evidence
-    local positive_matrix negative_matrix owner approved_at date_errors
+    local positive_matrix negative_matrix owner approved_at expires_at date_errors
     hardware_block="$(printf '%s\n' "$body" | marker_block 'F22_6_B1_4_HARDWARE_ATTESTATION_ACCEPTANCE')"
     acceptance_scope="$(printf '%s\n' "$hardware_block" | waiver_field 'acceptance_scope')"
     device_key_evidence="$(printf '%s\n' "$hardware_block" | waiver_field 'device_key_evidence')"
@@ -493,6 +493,7 @@ check_b1_4_hardware_gate() {
     negative_matrix="$(printf '%s\n' "$hardware_block" | waiver_field 'negative_matrix')"
     owner="$(printf '%s\n' "$hardware_block" | waiver_field 'owner_approved_by')"
     approved_at="$(printf '%s\n' "$hardware_block" | waiver_field 'approved_at')"
+    expires_at="$(printf '%s\n' "$hardware_block" | waiver_field 'expires_at')"
 
     [ "$state" = "CLOSED" ] || missing+=("issue-not-closed")
     [ "$acceptance_scope" = "hardware-attestation" ] || missing+=("acceptance_scope")
@@ -508,6 +509,7 @@ check_b1_4_hardware_gate() {
       csv_has "$negative_matrix" "$negative" || missing+=("negative_matrix:$negative")
     done
     owner_is_invalid "$owner" && missing+=("owner_approved_by")
+    [ -z "$expires_at" ] || missing+=("expires_at-forbidden")
     date_errors="$(date_window_errors "$approved_at")"
     [ -z "$date_errors" ] || missing+=("$date_errors")
 
@@ -735,54 +737,64 @@ check_remote_bridge() {
   return 1
 }
 
-check_release_train() {
-  local releases latest count tags is_immutable
-  local needs_hygiene=0
-  local waiver_findings=()
-  if ! releases="$(gh release list -R "$AGENT_REPO" --limit 20 \
-      --json tagName,isLatest,isDraft,isPrerelease,isImmutable,publishedAt,name 2>&1)"; then
-    printf 'AGENT_RELEASE_TRAIN=unknown reason=%q\n' "$releases"
-    return 1
-  fi
-  latest="$(printf '%s\n' "$releases" \
-    | jq -r '(map(select(.isLatest))[0].tagName // .[0].tagName // "unknown")')"
-  count="$(printf '%s\n' "$releases" \
-    | jq --arg regex "$AGENT_RELEASE_SERIES_REGEX" '[.[].tagName | select(test($regex))] | length')"
-  tags="$(printf '%s\n' "$releases" | jq -r '[.[].tagName] | join(",")')"
-  is_immutable="$(printf '%s\n' "$releases" | jq -r --arg tag "$EXPECTED_AGENT_LATEST_TAG" 'map(select(.tagName == $tag)) as $m | if ($m|length) > 0 then $m[0].isImmutable else false end')"
-  printf 'AGENT_RELEASE_TRAIN_LATEST=%s\n' "${latest:-unknown}"
-  printf 'AGENT_RELEASE_TRAIN_RECENT_SERIES=%s\n' "$AGENT_RELEASE_SERIES_LABEL"
-  printf 'AGENT_RELEASE_TRAIN_RECENT_SERIES_COUNT=%s\n' "$count"
-  printf 'AGENT_RELEASE_TRAIN_RECENT_TAGS=%s\n' "$tags"
-  if [ "${latest:-}" != "$EXPECTED_AGENT_LATEST_TAG" ]; then
-    printf 'AGENT_RELEASE_TRAIN=blocked latest=%s expected_latest=%s\n' "${latest:-unknown}" "$EXPECTED_AGENT_LATEST_TAG"
-    return 1
+check_release_lineage_gate() {
+  local output lineage_line lineage_status effective_mode release_mode
+  release_mode="${RELEASE_LINEAGE_KUBECTL_MODE:-$REMOTE_BRIDGE_KUBECTL_MODE}"
+  case "$release_mode" in
+    local|local-kubectl) effective_mode="local-kubectl" ;;
+    ssh) effective_mode="ssh" ;;
+    *)
+      lineage_print_check 'RELEASE_LINEAGE_GATE' 'blocked' "mode=$(printf '%q' "$release_mode") reason=invalid-release-lineage-kubectl-mode"
+      return 1
+      ;;
+  esac
+  if [ "$SSH_TARGET" = "local" ]; then
+    effective_mode="local-kubectl"
   fi
 
-  if [ "$is_immutable" != "true" ]; then
-    needs_hygiene=1
-    waiver_findings+=('GITHUB_RELEASE_IMMUTABLE')
-  fi
-
-  if [ "$count" -ge "$RELEASE_HYGIENE_RECENT_THRESHOLD" ]; then
-    needs_hygiene=1
-    waiver_findings+=('GITHUB_RELEASE_DENSE_TRAIN')
-  fi
-
-  if [ "$needs_hygiene" -ne 0 ]; then
-    local required_findings
-    required_findings="$(IFS=,; printf '%s' "${waiver_findings[*]}")"
-    if check_release_lineage_waiver "$required_findings"; then
-      printf 'AGENT_RELEASE_TRAIN=bounded_pilot_pass latest=%s recent_series=%s recent_series_count=%s isImmutable=%s waiver_ref=%s\n' "$latest" "$AGENT_RELEASE_SERIES_LABEL" "$count" "$is_immutable" "$RELEASE_LINEAGE_WAIVER_REF"
-      return 0
+  if output="$(
+    RELEASE_LINEAGE_KUBECTL_MODE="$effective_mode" \
+      SSH_TARGET="$SSH_TARGET" \
+      KUBE_CONTEXT="$KUBE_CONTEXT" \
+      KUBE_NAMESPACE="$KUBE_NAMESPACE" \
+      bash "$SCRIPT_DIR/faz22-6-release-lineage-audit.sh" 2>&1
+  )"; then
+    :
+  else
+    lineage_line="$(printf '%s\n' "$output" | awk -F= '$1 == "F22_6_RELEASE_LINEAGE" { line = $0 } END { print line }')"
+    if [ -z "$lineage_line" ]; then
+      printf 'RELEASE_LINEAGE_AUDIT_OUTPUT_BEGIN\n%s\nRELEASE_LINEAGE_AUDIT_OUTPUT_END\n' "$output"
+      lineage_print_check 'RELEASE_LINEAGE_GATE' 'blocked' "mode=$effective_mode reason=release-lineage-audit-failed-without-status"
+      return 1
     fi
-    printf 'AGENT_RELEASE_TRAIN=needs_hygiene latest=%s recent_series=%s recent_series_count=%s isImmutable=%s reason=rapid-release-train-or-mutable-release-requires-lineage-waiver\n' "$latest" "$AGENT_RELEASE_SERIES_LABEL" "$count" "$is_immutable"
+  fi
+
+  printf 'RELEASE_LINEAGE_AUDIT_OUTPUT_BEGIN\n%s\nRELEASE_LINEAGE_AUDIT_OUTPUT_END\n' "$output"
+  lineage_line="$(printf '%s\n' "$output" | awk -F= '$1 == "F22_6_RELEASE_LINEAGE" { line = $0 } END { print line }')"
+  if [ -z "$lineage_line" ]; then
+    lineage_print_check 'RELEASE_LINEAGE_GATE' 'blocked' "mode=$effective_mode reason=missing-F22_6_RELEASE_LINEAGE"
     return 1
   fi
 
-  lineage_print_check 'RELEASE_LINEAGE_WAIVER' 'not_required' 'reason=no-release-lineage-hygiene'
-  printf 'AGENT_RELEASE_TRAIN=pass latest=%s recent_series=%s recent_series_count=%s isImmutable=%s\n' "$latest" "$AGENT_RELEASE_SERIES_LABEL" "$count" "$is_immutable"
-  return 0
+  lineage_status="${lineage_line#F22_6_RELEASE_LINEAGE=}"
+  case "$lineage_status" in
+    pass)
+      lineage_print_check 'RELEASE_LINEAGE_GATE' 'pass' "mode=$effective_mode status=$lineage_status"
+      return 0
+      ;;
+    bounded_pilot_pass)
+      lineage_print_check 'RELEASE_LINEAGE_GATE' 'bounded_pilot_pass' "mode=$effective_mode status=$lineage_status"
+      return 0
+      ;;
+    blocked|needs_hygiene)
+      lineage_print_check 'RELEASE_LINEAGE_GATE' 'blocked' "mode=$effective_mode status=$lineage_status"
+      return 1
+      ;;
+    *)
+      lineage_print_check 'RELEASE_LINEAGE_GATE' 'blocked' "mode=$effective_mode status=$(printf '%q' "$lineage_status") reason=unexpected-release-lineage-status"
+      return 1
+      ;;
+  esac
 }
 
 main() {
@@ -790,6 +802,7 @@ main() {
   need grep
   need awk
   need jq
+  need curl
   if [ "$REMOTE_BRIDGE_KUBECTL_MODE" = "local" ] || [ "$REMOTE_BRIDGE_KUBECTL_MODE" = "local-kubectl" ] || [ "$SSH_TARGET" = "local" ]; then
     need kubectl
   else
@@ -805,31 +818,28 @@ main() {
   pass_if_state 'GATE_22_6_1_OPERATION_CATALOG' "$BACKEND_REPO" 701 CLOSED || blocked=1
   pass_if_state 'GATE_22_6_2_APPROVED_SCRIPT_RUNNER' "$BACKEND_REPO" 702 CLOSED || blocked=1
   pass_if_state 'GATE_22_6_3_CONSTRAINED_EXECUTOR' "$AGENT_REPO" 208 CLOSED || blocked=1
-  pass_if_state 'GATE_AGENTPC2_BOOTSTRAP' "$GITOPS_REPO" 1768 CLOSED || blocked=1
-  pass_if_state 'GATE_OPERATOR_UX_TERMINAL' "$WEB_REPO" 820 CLOSED || blocked=1
-  pass_if_state 'GATE_OPERATOR_UX_SESSION_STATE' "$WEB_REPO" 822 CLOSED || blocked=1
 
   if check_b1_4_hardware_gate; then
     :
   else
     blocked=1
-    next_required+=('close-or-risk-accept-548-with-marker')
+    next_required+=('b1-4-acceptance-package-required')
   fi
 
   if check_view_only_gate; then
     :
   else
     blocked=1
-    next_required+=('close-1580-with-view-only-marker')
+    next_required+=('view-only-evidence-package-required')
   fi
 
   if ! check_remote_bridge; then
     blocked=1
-    next_required+=('fix-remote-bridge-live')
+    next_required+=('remote-bridge-live-evidence-required')
   fi
-  if ! check_release_train; then
+  if ! check_release_lineage_gate; then
     blocked=1
-    next_required+=('fix-release-lineage-hygiene')
+    next_required+=('release-lineage-audit-pass-required')
   fi
 
   if [ "$blocked" -eq 0 ]; then

@@ -11,6 +11,7 @@ on:
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_completion_release_lineage_gate.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh'
   push:
     branches:
@@ -24,6 +25,7 @@ on:
       - 'scripts/faz22-remote-ops/faz22-6-completion-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh'
       - 'scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh'
+      - 'tests/faz22_remote_ops/test_faz22_6_completion_release_lineage_gate.sh'
       - 'tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh'
 
 permissions:
@@ -51,7 +53,14 @@ jobs:
             scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh \
             scripts/faz22-remote-ops/faz22-6-release-lineage-waiver-package.sh \
             scripts/faz22-remote-ops/endpoint-agent-release-policy.sh \
+            tests/faz22_remote_ops/test_faz22_6_completion_release_lineage_gate.sh \
             tests/faz22_remote_ops/test_faz22_6_release_lineage_waiver_gate.sh
+
+      - name: Run completion release-lineage gate regression test
+        run: |
+          set -euo pipefail
+          TMPDIR="$RUNNER_TEMP" \
+            tests/faz22_remote_ops/test_faz22_6_completion_release_lineage_gate.sh
 
       - name: Run release-lineage waiver regression test
         run: |

@@ -76,7 +76,7 @@ jobs:
             echo "- Remote-bridge mode: \`${REMOTE_BRIDGE_KUBECTL_MODE}\`"
             echo
             echo '```text'
-            sed -n '/^GATE_/p;/^REMOTE_BRIDGE_LIVE/p;/^AGENT_RELEASE_TRAIN/p;/^RELEASE_LINEAGE_WAIVER/p;/^F22_6_/p' \
+            sed -n '/^GATE_/p;/^REMOTE_BRIDGE_LIVE/p;/^RELEASE_LINEAGE_GATE/p;/^F22_6_RELEASE_LINEAGE/p;/^RELEASE_LINEAGE_WAIVER/p;/^F22_6_/p' \
               faz22-6-completion-audit.txt 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
