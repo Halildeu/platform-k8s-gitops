@@ -90,16 +90,14 @@ grep -q 'faz22-6-release-lineage-waiver-package.sh' "$markdown"
 mixed_audit="$tmp_dir/faz22-6-completion-audit-mixed.txt"
 mixed_out_dir="$tmp_dir/mixed-out"
 cat >"$mixed_audit" <<'EOF'
-REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_digest=sha256:5eff536b4bcf77c21ef6f75963a9caa4a844bf47fe613fb7399113f34dd9b03b
+REMOTE_BRIDGE_LIVE=pass mode=local-kubectl expected_digest=sha256:6b12276cea912345dcfbcf2e5e920931de813b8aa483b6b2351c75e4b5331a9c
 GATE_B1_4_HARDWARE_ATTESTATION=blocked state=OPEN expected=CLOSED-or-bounded-risk-accepted issue=Halildeu/platform-backend#548 reason=missing-acceptance-marker
-GATE_VIEW_ONLY_ENGINEERING=blocked state=OPEN expected=CLOSED-with-view-only-engineering-acceptance issue=Halildeu/platform-k8s-gitops#1580 reason=missing-acceptance-marker
-GATE_VIEW_ONLY_KVKK=tracked_pending issue=Halildeu/platform-k8s-gitops#1580 reason=no-kvkk-marker
+GATE_VIEW_ONLY_SCREEN_SHARE=blocked state=OPEN expected=CLOSED-with-view-only-acceptance issue=Halildeu/platform-k8s-gitops#1580 reason=missing-acceptance-marker
 RELEASE_LINEAGE_WAIVER=not_required reason=no-release-lineage-hygiene
 F22_6_RELEASE_LINEAGE=pass
 RELEASE_LINEAGE_GATE=pass mode=local-kubectl status=pass
-AGENT_RELEASE_TRAIN=pass
 F22_6_COMPLETION=blocked
-F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-engineering-evidence-package-required
+F22_6_NEXT_REQUIRED=b1-4-acceptance-package-required,view-only-evidence-package-required
 EOF
 
 "$GENERATOR" \
