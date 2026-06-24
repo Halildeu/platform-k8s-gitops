@@ -16,6 +16,16 @@ need() {
   command -v "$1" >/dev/null 2>&1 || die "missing command: $1"
 }
 
+sha256_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+  else
+    die "missing command: sha256sum or shasum"
+  fi
+}
+
 need jq
 [ -f "$POLICY_FILE" ] || die "policy file not found: $POLICY_FILE"
 
@@ -61,6 +71,11 @@ jq -e '
   and (($root.release_manifest_required_fields | index("release_class")) != null)
   and (($root.release_manifest_required_fields | index("artifact_host_digest")) != null)
   and (($root.release_manifest_required_fields | index("artifact_host_image_ref")) != null)
+  and (($root.release_manifest_required_fields | index("previous_release")) != null)
+  and ($root.current_bounded_pilot | has("previous_release"))
+  and ($root.current_bounded_pilot | has("workflow_run_id"))
+  and ($root.current_bounded_pilot.previous_release | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))
+  and ($root.current_bounded_pilot.workflow_run_id | test("^[0-9]+$"))
   and ($root.broad_rollout_language.allowed_only_when == "F22_6_RELEASE_LINEAGE=pass")
 ' "$POLICY_FILE" >/dev/null || die "policy schema/content validation failed"
 
@@ -74,6 +89,21 @@ next_minor="$(jq -r '.release_train_policy.next_trusted_minor' "$POLICY_FILE")"
 current_minor="$(printf '%s' "$release_tag" | sed -E 's/^(v[0-9]+\.[0-9]+)\.[0-9]+$/\1/')"
 if [ "$current_minor" != "$next_minor" ]; then
   die "current release minor $current_minor does not match next_trusted_minor $next_minor"
+fi
+
+# B3 gap-fix: verify release-manifest.json SHA256 against pinned value in policy.
+# Set SKIP_MANIFEST_FETCH=1 in environments without outbound HTTPS (e.g. air-gapped).
+if [ "${SKIP_MANIFEST_FETCH:-0}" != "1" ]; then
+  need curl
+  pinned_sha="$(jq -r '.current_bounded_pilot.release_manifest_sha256' "$POLICY_FILE")"
+  manifest_url="$(jq -r '.current_bounded_pilot.github_release_base_url' "$POLICY_FILE")/release-manifest.json"
+  if ! actual_sha="$(curl --max-time 20 -fsSL -H 'Cache-Control: no-cache' "$manifest_url" | sha256_stdin)"; then
+    die "release-manifest.json SHA256 fetch failed: url=$manifest_url"
+  fi
+  if [ "$actual_sha" != "$pinned_sha" ]; then
+    die "release-manifest.json SHA256 mismatch: expected=$pinned_sha actual=$actual_sha"
+  fi
+  printf 'release-manifest.json SHA256 verified: %s\n' "$actual_sha"
 fi
 
 printf 'ENDPOINT_AGENT_RELEASE_POLICY=pass path=%s release_tag=%s next_trusted_minor=%s\n' \
