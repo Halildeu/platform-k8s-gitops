@@ -1,5 +1,71 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 direct-STT mTLS artifact test overlay'e taşındı; functional gate açık (2026-06-25)
+
+Faz 24 direct-STT source artifact ve GitOps desired-state hattı,
+`audio-gateway` için mTLS-capable artifact'i test overlay'e ve canlı
+`k3d-test` / `platform-test` rollout hattına taşıdı. Bu kanıt D30 digest pin
+ve D29 Up/stability seviyesindedir; direct-STT Functional kabul kanıtı değildir.
+
+Source ve desired-state zinciri:
+
+- `platform-backend#751` merged direct-STT HTTPS+mTLS client wiring'i
+  `main` branch'e taşıdı. Merge commit:
+  `116f150352b4c6f827844c5ddfafee4de67ab61e`.
+- Backend image build run `28135463780` workflow conclusion `success` verdi ve
+  dispatch digest map'i 15 servis üretti. Bu map içinde
+  `audio-gateway-service=sha256:257d2bf05688de5eaebbb7ec52a873eeb3849a9ac7223950f3e6767a7dfbe0ff`
+  ve
+  `endpoint-admin-service=sha256:9890a4341eed25c43770d06b9ad0a74b3a9100042873d294a1b729aeddb630d2`
+  vardı.
+- `platform-k8s-gitops#1954` merged commit
+  `e555bfadef2ce853d1688b20b89ff743b7c0e571` ile
+  `deploy-backend-testai.yml` automation'ını 10-service rollout'a genişletti,
+  `audio-gateway-service -> deployment/audio-gateway container/audio-gateway`
+  mapping'ini explicit hale getirdi ve test overlay digest pin'lerini yukarıdaki
+  `audio-gateway-service` / `endpoint-admin-service` digest'leriyle hizaladı.
+
+Live rollout evidence:
+
+- `deploy-backend-testai.yml` workflow_dispatch run `28136094253`, `main`
+  `e555bfadef2ce853d1688b20b89ff743b7c0e571` üzerinde workflow conclusion
+  `success` verdi.
+- Auto-extract fallback test overlay'den `audio-gateway-service` digest'ini
+  buldu; rollout step'i `Digest-pin mode active (15 services in payload)`
+  satırını verdi.
+- Sequential rollout `10 service` olarak çalıştı. `endpoint-admin-service`
+  `sha256:9890a4341eed25c43770d06b9ad0a74b3a9100042873d294a1b729aeddb630d2`
+  digest'ine, `audio-gateway` ise
+  `sha256:257d2bf05688de5eaebbb7ec52a873eeb3849a9ac7223950f3e6767a7dfbe0ff`
+  digest'ine verify edildi.
+- Gate 1c per-service in-cluster readiness listesine `audio-gateway` eklendi
+  ve readiness `200` verdi.
+- Gate 1d stability window `audio-gateway` için `120s` PASS, `endpoint-admin`
+  hattı için `180s` PASS ve `api-gateway` için `120s` PASS verdi.
+- Gate 2 JWT auth flow smoke `SMOKE_AUTH_*` repo secrets absent olduğu için
+  skipped/warn-only kaldı.
+- Test-overlay auto-PR sync job source-ready durumda, fakat
+  `AUTOMATION_APP_ID` / `AUTOMATION_APP_PRIVATE_KEY` repo secrets absent veya
+  incomplete olduğu için operator-disabled kaldı.
+
+Boundary:
+
+- Bu kanıt yeni `audio-gateway` artifact'inin test ortamında immutable digest
+  ile taşındığını, pod image digest doğrulamasını, readiness ve stability
+  seviyelerini gösterir.
+- Test overlay comment'leri ve base config hâlâ `AUDIO_GATEWAY_DISPATCHER_MODE`
+  için Redis yolunu gösteriyor; bu pin direct-STT flag flip yapmaz.
+- Direct-STT Functional acceptance hâlâ açık: `platform-ai#188` aynı
+  session/chunk/correlation için `CHUNK_FORWARDED_TO_COMPUTE_PLANE` audit
+  smoke ister; `platform-ai#182` `audio-gateway -> live-stt /transcribe`
+  no-persistence e2e ister.
+- `platform-ai#198` Denetim PC `8243` app-mTLS host-policy/WFP/ESET gate
+  hâlâ direct compute-plane smoke önündeki ana runtime blocker'dır. Daha önceki
+  packet evidence WireGuard yolunun SYN paketini Denetim PC'ye ulaştırdığını,
+  ancak `8243` için SYN-ACK dönmediğini göstermişti; bu nedenle blocker staging
+  route veya GitOps digest pin değil, Denetim host-policy/TCP processing
+  yüzeyidir.
+
 ## Live Delta — Faz 24 OpenFGA meeting/transcript object model verified, selector pending (2026-06-24)
 
 Faz 24 recorder e2e hit a real OpenFGA model blocker: `meeting-service`
