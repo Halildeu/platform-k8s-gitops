@@ -1,6 +1,6 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 22.6 v0.3.0 trusted release published; GitOps pin pending live reconcile (2026-06-24)
+## Live Delta — Faz 22.6 v0.3.0 runtime parity proven; release hygiene still open (2026-06-24)
 
 `platform-agent` PR #232 merged into `main` and produced trusted EndpointAgent
 release `v0.3.0`:
@@ -26,13 +26,34 @@ Windows signature machine-gate, GitHub Release publish, GHCR artifact-host
 push, and post-publish release archive verifier. AG-018 MSI workflow
 `28087330396` also completed `success`.
 
+GitOps PR #1940 merged to `origin/main` at
+`8ee9d630cdf8da02197f6192e950cc04008c870f` and pinned the test
+`artifact-host` overlay to the same `v0.3.0` digest. The first post-merge
+self-hosted audit run `28094935785` failed because ArgoCD/self-heal had not
+yet reconciled live `artifact-host`; it still saw `v0.2.28` and
+`ARTIFACT_HOST_LIVE_DIGEST=blocked`.
+
+Current live evidence is the follow-up self-hosted release-lineage audit:
+
+- Workflow:
+  `https://github.com/Halildeu/platform-k8s-gitops/actions/runs/28095182027`
+  (`success`, head `8ee9d630cdf8da02197f6192e950cc04008c870f`)
+- `MANIFEST_RELEASE_TAG_PARITY=pass release=v0.3.0 current=v0.3.0`
+- `MANIFEST_AGENT_SHA_PARITY=pass sha256=424d7104a0e8614018a34d629f47713375778d85ff49c387f6de4197950aad6d`
+- `MANIFEST_ZIP_SHA_PARITY=pass sha256=6139b0cc7b4fb3d745630354d2d49c61558c282360e92999057628fb5c7fd105`
+- `ARTIFACT_HOST_LIVE_DIGEST=pass mode=local-kubectl expected_digest=sha256:00df8734b6a8d5121f9294af63a8e44ae9002298a1b5d05f7aaf44912183fbe6 digest_hits=3`
+
 Current boundary:
 
-- This branch updates the policy SSOT and test overlay desired-state pin to
-  `v0.3.0`; live `testai` artifact-host reconciliation still needs audit
-  evidence after merge/apply.
+- Runtime `artifact-host` v0.3.0 digest parity, current/release manifest
+  parity, signing parity, ZIP SHA parity, and asset coverage are proven.
 - GitHub release metadata still reports `isImmutable=false` for `v0.3.0`.
-  Therefore `platform-k8s-gitops#1901` is not closed by the release alone.
+  A REST `PATCH` attempt with `immutable=true` returned the same
+  `immutable=false` value and did not update the release; the field is not a
+  writable REST `Update a release` body parameter. Therefore
+  `platform-k8s-gitops#1901` remains open/blocked unless a real GitHub release
+  immutability setting is enabled or an owner-approved bounded-pilot waiver
+  marker is recorded.
 - The historical dense `v0.2.x` train is no longer the current policy series,
   but final Faz 22.6 completion still also depends on `platform-backend#548`
   and `platform-k8s-gitops#1580`.
