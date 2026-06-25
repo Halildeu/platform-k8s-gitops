@@ -1,12 +1,15 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 24 WG-B+ I3 runner `wg` repaired; Denetim SSH auth blocker classified (2026-06-25)
+## Live Delta — Faz 24 WG-B+ I3 runner SSH identity stable; Denetim authorization blocker remains (2026-06-25)
 
 Faz 24 WG-B+ I3 management-audit evidence path source-ready olmaktan çıktı ve
 self-hosted `staging-sw` runner üzerinde canlı denendi. Runner-side `wg`
-binary prerequisite repair edildi ve Denetim SSH exit `255` artık
-`ssh-auth-publickey` sınıfına ayrıldı; I3 verifier hâlâ PASS değil. Bu kanıt
-direct-STT, app-mTLS, compute-plane audit veya direct audio e2e kabulü değildir.
+binary prerequisite repair edildi, Denetim SSH exit `255`
+`ssh-auth-publickey` sınıfına ayrıldı, runner-local SSH identity üretildi ve
+son I3 run'ında collector tarafından aynı path hash'iyle görüldü. Buna rağmen
+Denetim PC hâlâ public-key auth'u kabul etmiyor; I3 verifier PASS değil. Bu
+kanıt direct-STT, app-mTLS, compute-plane audit veya direct audio e2e kabulü
+değildir.
 
 Source/workflow chain:
 
@@ -38,6 +41,16 @@ Source/workflow chain:
   reachability, SSH failure class ve raw-output-free fingerprint. Bu alan
   diagnostic/blocker-classification kanıtıdır; acceptance check'lerini
   genişletmez.
+- `platform-k8s-gitops#1968` squash merge commit
+  `e8f9dad3035c89f4490ed7f6c3aeab5883ddff9e` ile controlled
+  `faz24-i3-runner-ssh-identity.yml` workflow'unu, runner-local identity
+  repair script'ini ve collector'ın configured identity'yi `-i` /
+  `IdentitiesOnly=yes` ile kullanmasını ekledi. Boundary: private key runner
+  local kalır; artifact yalnız metadata ve public key içerir.
+- `platform-k8s-gitops#1969` REST merge fallback commit
+  `b9bbedc659edaa1f8c3c5bbe564ad2e3840794b8` ile identity workflow ve I3
+  evidence workflow'unun aynı runner-workspace identity path'ini kullanmasını
+  sağladı. Bu düzeltme #1968 sonrası görülen path hash mismatch'ini giderdi.
 
 Live workflow evidence:
 
@@ -49,11 +62,23 @@ Live workflow evidence:
   `status=pass`, `reason=wg-tool-installed`, `packageManager=apt-get`,
   `installAttempted=true`, `installed=true`, `wgToolFound=true`,
   `wgToolSelected=wg`, `wgToolProbeExitCode=0`.
-- Latest I3 evidence workflow run `28141179881`, `main`
-  `a1ad0e9eb50164c5861b4bce45bca83c72941cb0` üzerinde çalıştı ve verifier
+- Runner SSH identity workflow run `28142166373`, `main`
+  `b9bbedc659edaa1f8c3c5bbe564ad2e3840794b8` üzerinde `success` verdi.
+- Runner SSH identity artifact:
+  `faz24-i3-runner-ssh-identity-28142166373`.
+- Runner SSH identity JSON:
+  `status=pass`, `reason=runner-ssh-identity-available`, `keyCreated=true`,
+  `keyPathHash=01aca9ec388cd6fa`, `publicKeyCopiedToArtifact=true`,
+  `privateKeyCopiedToArtifact=false`.
+- SSH identity artifact files yalnız `ssh-identity.json`,
+  `ssh-identity-summary.txt` ve `faz24-i3-denetim_ed25519.pub` içerdi; private
+  key artifact'e taşınmadı. Public key fingerprint:
+  `SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y`.
+- Latest I3 evidence workflow run `28142193278`, `main`
+  `b9bbedc659edaa1f8c3c5bbe564ad2e3840794b8` üzerinde çalıştı ve verifier
   failure nedeniyle workflow conclusion `failure` verdi.
 - I3 evidence artifact:
-  `faz24-wg-bplus-i3-evidence-28141179881` / artifact id `7866795961`.
+  `faz24-wg-bplus-i3-evidence-28142193278`.
 - Artifact redaction flags:
   `rawAudioIncluded=false`, `rawTranscriptIncluded=false`,
   `secretMaterialIncluded=false`, `commandContentIncluded=false`.
@@ -63,17 +88,19 @@ Bounded blocker facts:
 
 - Runner-side `wg` discovery eski blocker olmaktan çıktı:
   `stagingWireGuardProbe.wgToolFound=true`,
-  `stagingWireGuardProbe.interfacesQueryable=true`,
-  `stagingWireGuardProbe.detectedCount=1`, `selectedInterface=wg0`.
+  `stagingWireGuardProbe.interfacesQueryable=true`, `selectedInterface=wg0`.
+- Runner SSH identity path mismatch eski blocker olmaktan çıktı:
+  identity workflow `keyPathHash=01aca9ec388cd6fa`, I3 collector
+  `sshIdentityPathHash=01aca9ec388cd6fa`, `hashes_match=true`,
+  `sshIdentityConfigured=true`, `sshIdentityPublicKeyPresent=true`.
 - `remoteCollectorReached=false`.
 - Denetim SSH preflight artık endpoint TCP 22 erişilebilirliğini ve auth
   sınıfını ayırıyor:
   `denetimSshPreflight.tcp22Reachable=true`, `sshExitCode=255`,
   `sshFailureClass=ssh-auth-publickey`, `sshStderrPresent=true`,
   `sshErrorFingerprint=9d559fc5b2396bc2`.
-- `denetimSshPreflight.routeQueryable=false`, `routeExitCode=127`; bu run'da
-  runner route tool'u yok/sorgulanabilir değil, fakat TCP 22 erişimi endpoint
-  socket'in runner'dan ulaşılabilir olduğunu kanıtlıyor.
+- TCP 22 erişimi endpoint socket'in runner'dan ulaşılabilir olduğunu
+  kanıtlıyor; kalan hata public-key authorization yüzeyinde.
 - Denetim SSH metadata collector all Denetim-side checks için exit `255`
   vermeye devam ediyor; raw stderr artifact'e taşınmadı.
 - `stagingWireGuardProbe.requested=auto`.
@@ -91,18 +118,18 @@ Boundary / next:
 
 - `platform-k8s-gitops#1864` I3 acceptance açık kalır; verifier PASS olmadan
   accepted/readiness dili kullanılmaz.
-- Sonraki kanıt işi artık runner-side `wg` binary erişimi veya TCP 22
-  reachability değildir; self-hosted `staging-sw` runner SSH identity'si ile
-  Denetim PC `svc-denetim-agent` authorized public key set'i hizalanmalı veya
-  onaylı non-secret provisioning yolu sağlanmalıdır. Repo Actions
-  secret/variable yüzeyinde `SSH`, `DENETIM`, `WG`, `FAZ24` veya `KEY` ile
-  eşleşen kullanılabilir credential adı bulunmadı.
+- Sonraki kanıt işi artık runner-side `wg` binary erişimi, identity path
+  visibility veya TCP 22 reachability değildir; Denetim PC
+  `svc-denetim-agent` authorized public key set'i, artifact'te verilen runner
+  public key ile hizalanmalı veya onaylı non-secret provisioning yolu
+  sağlanmalıdır. Repo Actions secret/variable yüzeyinde `SSH`, `DENETIM`,
+  `WG`, `FAZ24` veya `KEY` ile eşleşen kullanılabilir credential adı bulunmadı.
 - Bu management-plane evidence, `platform-ai#198` Denetim `8243` app-mTLS,
   `platform-ai#188` compute-plane audit smoke veya `platform-ai#182` direct
   audio e2e acceptance'ı yerine geçmez.
 - Project #2 custom-field sync bu oturumda GitHub GraphQL/ProjectV2 rate limit
   nedeniyle pending kaldı; latest REST-backed evidence comment #1864'e yazıldı:
-  `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4795092732`.
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4795217510`.
 
 ## Live Delta — Faz 24 direct-STT mTLS artifact test overlay'e taşındı; functional gate açık (2026-06-25)
 
