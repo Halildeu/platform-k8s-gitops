@@ -212,6 +212,49 @@ Expected verifier evidence:
 Attach both redacted JSON files after checking both have `tokenIncluded=false`.
 Do not attach raw command transcripts.
 
+### 6. Aggregate G-CAP capture gate
+
+A single recorder smoke only proves one lifecycle attempt. For G-CAP, aggregate
+multiple redacted verifier outputs and gate the capture path on attempt count,
+distinct meeting/session coverage, success rate, retry rate, and failure rate:
+
+```bash
+python3 scripts/faz24/verify_gcap_capture_gate_evidence.py \
+  --evidence-file /tmp/faz24-external-recorder-smoke-01.verify.json \
+  --evidence-file /tmp/faz24-external-recorder-smoke-02.verify.json \
+  --evidence-file /tmp/faz24-external-recorder-smoke-03.verify.json \
+  --evidence-file /tmp/faz24-external-recorder-smoke-04.verify.json \
+  --evidence-file /tmp/faz24-external-recorder-smoke-05.verify.json \
+  --min-attempts 5 \
+  --min-distinct-meetings 5 \
+  --min-distinct-sessions 5 \
+  --min-success-rate 0.95 \
+  --max-retry-rate 0.10 \
+  --max-failure-rate 0.05 \
+  --output-file /tmp/faz24-gcap-capture-gate.verify.json
+```
+
+Expected aggregate evidence:
+
+- `/tmp/faz24-gcap-capture-gate.verify.json` has
+  `schemaVersion=faz24.gcapCaptureGateVerifier.v1`, `tokenIncluded=false`,
+  and `status=pass` only when all threshold checks pass.
+- `status=blocked` means the evidence set is too small or coverage is
+  insufficient for the configured G-CAP threshold.
+- `status=fail` means the submitted verifier set has a privacy/schema/overclaim
+  problem or enough evidence exists but success/retry/failure rates miss the
+  configured threshold.
+- `status=error` means the evidence files could not be loaded because of
+  invalid JSON, wrong top-level shape/schema, or I/O failure.
+- The aggregate verifier consumes only
+  `faz24.externalRecorderSmokeVerifier.v1` outputs. It rejects raw recorder
+  smoke envelopes, raw audio, transcript text, JWT/Bearer/Authorization-shaped
+  values, and direct-STT/compute-plane/desktop mic/production overclaims.
+
+Attach the aggregate JSON only after checking `tokenIncluded=false`. This G-CAP
+aggregate does not prove direct-STT, same-session compute-plane audit, desktop
+mic/loopback, or product-wide readiness.
+
 ## Cleanup
 
 ```bash
@@ -221,6 +264,7 @@ shred -u "$AUTH_HEADER_FILE" 2>/dev/null || rm -f "$AUTH_HEADER_FILE"
 rm -f /tmp/faz24-platform-desktop-token-contract.json
 rm -f /tmp/faz24-external-recorder-smoke.json
 rm -f /tmp/faz24-external-recorder-smoke.verify.json
+rm -f /tmp/faz24-gcap-capture-gate.verify.json
 ```
 
 If direct access grants were temporarily enabled for smoke token minting,
@@ -237,3 +281,5 @@ Keycloak before ending the operator window.
   `scripts/faz24/run_external_recorder_smoke.py`
 - External recorder smoke verifier:
   `scripts/faz24/verify_external_recorder_smoke_evidence.py`
+- G-CAP aggregate capture gate verifier:
+  `scripts/faz24/verify_gcap_capture_gate_evidence.py`

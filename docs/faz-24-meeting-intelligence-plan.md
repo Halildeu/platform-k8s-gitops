@@ -278,7 +278,7 @@ Savunulabilir pozisyon: **Türkçe-first + on-prem/self-host + compliance-grade 
 Current diagnosis:
 
 - Altyapı hattı ileri: gateway, Redis Streams, meeting/transcript/audit services, OpenFGA selector ve recorder edge lifecycle evidence var.
-- Ürün-değer hattında source-side guardrail ilerledi: G-WER/DER verifier (`platform-ai#199`), G-INT verifier (`platform-ai#200`), retention readiness gate (`platform-ai#201`), Redis control-plane cleanup (`platform-ai#202`), recording/archive RED boundary (`platform-ai#203`) ve G-LAT/COST verifier (`platform-ai#204`) main'de. Buna rağmen gerçek pilot WER/DER, gerçek pilot G-INT, pilot G-LAT/COST, VERBIS/DB cleanup evidence, direct-STT e2e ve desktop mic/loopback acceptance hâlâ açık.
+- Ürün-değer hattında source-side guardrail ilerledi: G-WER/DER verifier (`platform-ai#199`), G-INT verifier (`platform-ai#200`), retention readiness gate (`platform-ai#201`), Redis control-plane cleanup (`platform-ai#202`), recording/archive RED boundary (`platform-ai#203`), G-LAT/COST verifier (`platform-ai#204`) ve G-CAP aggregate capture gate (`scripts/faz24/verify_gcap_capture_gate_evidence.py`) main'de. Buna rağmen gerçek pilot WER/DER, gerçek pilot G-INT, pilot G-LAT/COST, live aggregate G-CAP evidence, VERBIS/DB cleanup evidence, direct-STT e2e ve desktop mic/loopback acceptance hâlâ açık.
 - Acceptance dili bu ayrımı korur: infrastructure evidence, market-ready product evidence yerine geçmez.
 
 ### 11.2 Capability Tracks
@@ -304,7 +304,7 @@ Deferred by design:
 |---|---|
 | **G-WER/DER** | Gerçek Türkçe toplantı setinde WER ve diarization DER hedefi; `platform-ai#199` gate synthetic/Common Voice kanıtı acceptance yerine kullanmayı bloklar |
 | **G-INT** | Faithfulness + action-item precision/recall + owner/date accuracy; her summary/action citation/timecode ile bağlanır; `platform-ai#200` gate synthetic/mock kanıtı pilot acceptance yerine kullanmayı bloklar |
-| **G-CAP** | Teams/Calendar veya desktop recorder ile kayıt başlatma, consent alma, chunk upload, finish ve failure retry oranı ölçülü |
+| **G-CAP** | Teams/Calendar veya desktop recorder ile kayıt başlatma, consent alma, chunk upload, finish ve failure/retry oranı ölçülü; `scripts/faz24/verify_gcap_capture_gate_evidence.py` yalnız redacted external recorder verifier output'larından aggregate gate üretir, live pilot evidence bekler |
 | **G-COMP** | Consent, retention, legal hold, access audit ve deletion/export policy canlı; KVKK hukuk/VERBIS boundary ADR-0030'da accepted; `platform-ai#201` retention gate mevcut durumda blocked döner, `platform-ai#203` raw-audio archive'i default live path'ten çıkarır |
 | **G-LAT/COST** | Latency p50/p95, queue lag, cost/dakika ve GPU/CPU utilization ölçülür; `platform-ai#204` gate lab/synthetic/Common Voice performans kanıtını acceptance yerine kullanmayı bloklar; model/GPU kararı pilot ölçüme dayanır |
 | **G-OPS** | On-prem install/upgrade/backup/restore/runbook kanıtı; secret delivery ve rollback path test edilir |
@@ -317,7 +317,7 @@ Aşama-2 evidence line
   Boundary: direct-STT, compute-plane audit, desktop mic/loopback, WG-B+ I3 open; I6 MASQ accepted only for pod-CIDR-to-WG metadata evidence.
 
 Aşama-3 Core Product Value (P0)
-  T-B WER/DER + G-LAT/COST + T-C G-INT gate infrastructure main'de; gerçek pilot kanıtı pending
+  T-B WER/DER + G-LAT/COST + T-C G-INT + T-A G-CAP gate infrastructure main'de; gerçek pilot kanıtı pending
   Citation'lı summary / decision / action extraction acceptance hattı hâlâ gerçek pilot kanıtı ister
   İlk gerçek toplantı e2e: capture -> transcript -> intelligence -> audit.
 
