@@ -158,17 +158,18 @@ def rollback_hash(unit: str, pod_cidr: str, wg_interface: str, target_host: str)
 
 
 def collect_systemd(unit: str, drift_timer: str) -> dict[str, Any]:
-    active = first_success(command_variants("systemctl", ["is-active", unit]), timeout=6)
-    enabled = first_success(command_variants("systemctl", ["is-enabled", unit]), timeout=6)
+    active = first_success(command_variants("systemctl", ["is-active", unit], sudo=True), timeout=6)
+    enabled = first_success(command_variants("systemctl", ["is-enabled", unit], sudo=True), timeout=6)
     show = first_success(
         command_variants(
             "systemctl",
             ["show", unit, "-p", "ActiveState", "-p", "UnitFileState", "-p", "ExecStart", "-p", "ExecStop"],
+            sudo=True,
         ),
         timeout=8,
     )
-    timer_active = first_success(command_variants("systemctl", ["is-active", drift_timer]), timeout=6)
-    timer_enabled = first_success(command_variants("systemctl", ["is-enabled", drift_timer]), timeout=6)
+    timer_active = first_success(command_variants("systemctl", ["is-active", drift_timer], sudo=True), timeout=6)
+    timer_enabled = first_success(command_variants("systemctl", ["is-enabled", drift_timer], sudo=True), timeout=6)
 
     show_stdout = show.stdout if show.exit_code == 0 else ""
     has_exec_start = "ExecStart=" in show_stdout and not re.search(r"^ExecStart=$", show_stdout, re.MULTILINE)
@@ -188,7 +189,7 @@ def collect_systemd(unit: str, drift_timer: str) -> dict[str, Any]:
 
 
 def collect_route_interface(target_host: str) -> dict[str, Any]:
-    result = first_success(command_variants("ip", ["route", "get", target_host]), timeout=6)
+    result = first_success(command_variants("ip", ["route", "get", target_host], sudo=True), timeout=6)
     route_interface = None
     if result.exit_code == 0:
         match = re.search(r"\bdev\s+([A-Za-z0-9_.:@-]{1,96})\b", result.stdout)
@@ -201,7 +202,11 @@ def collect_route_interface(target_host: str) -> dict[str, Any]:
 
 
 def collect_iptables(pod_cidr: str, wg_interface: str, target_host: str) -> dict[str, Any]:
-    result = first_success(command_variants("iptables", ["-t", "nat", "-S", "POSTROUTING"], sudo=True), timeout=10)
+    commands: list[list[str]] = []
+    for binary in ["iptables", "iptables-nft", "iptables-legacy"]:
+        commands.extend(command_variants(binary, ["-t", "nat", "-S", "POSTROUTING"], sudo=True))
+    commands.extend(command_variants("iptables-save", ["-t", "nat"], sudo=True))
+    result = first_success(commands, timeout=10)
     lines = result.stdout.splitlines() if result.exit_code == 0 else []
     target_networks = {f"{target_host}/32"}
     try:
