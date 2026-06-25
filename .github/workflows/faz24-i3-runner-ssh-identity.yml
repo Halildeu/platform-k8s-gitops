@@ -36,7 +36,7 @@ jobs:
       EVIDENCE_DIR: /tmp/faz24-i3-runner-ssh-identity-${{ github.run_id }}
       EVIDENCE_JSON: /tmp/faz24-i3-runner-ssh-identity-${{ github.run_id }}/ssh-identity.json
       PUBLIC_KEY_COPY: /tmp/faz24-i3-runner-ssh-identity-${{ github.run_id }}/faz24-i3-denetim_ed25519.pub
-      SSH_IDENTITY_PATH: ~/.ssh/faz24-i3-denetim_ed25519
+      SSH_IDENTITY_PATH: ${{ github.workspace }}/../.faz24-i3-ssh/faz24-i3-denetim_ed25519
 
     steps:
       - name: Validate dispatch inputs

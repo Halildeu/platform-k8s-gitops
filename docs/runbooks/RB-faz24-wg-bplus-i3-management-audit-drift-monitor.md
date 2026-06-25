@@ -158,9 +158,10 @@ for `svc-denetim-agent`; the workflow does not change Denetim PC, clusters,
 direct-STT, app-mTLS, or production state.
 
 After Denetim authorization, rerun `faz24-wg-bplus-i3-evidence.yml`. The
-collector uses `~/.ssh/faz24-i3-denetim_ed25519` when present and records only
-path hash plus public-key fingerprint metadata under
-`collector.denetimSshPreflight`.
+workflow passes the same runner-workspace identity path to the collector and
+records only path hash plus public-key fingerprint metadata under
+`collector.denetimSshPreflight`. Manual collector runs still default to
+`~/.ssh/faz24-i3-denetim_ed25519` unless `--ssh-identity-path` is set.
 
 Use `wg_interface=auto` unless the staging host's WireGuard interface is
 already confirmed. Auto mode runs `wg show interfaces` with the same
