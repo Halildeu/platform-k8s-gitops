@@ -117,6 +117,10 @@ images:
     # result stream. This still does not enable direct-STT or prove audio-gateway
     # -> live-stt /transcribe e2e; it only moves the source-side result-routing
     # artifact into desired-state after backend image build run 28159840296.
+    # 2026-06-26 update: sha-794c187 (platform-backend#765) repoints recorder
+    # meeting access validation to GET /api/v1/meetings/{id}/recording-access,
+    # avoiding the temporary B-narrow admin GET path while preserving
+    # fail-closed can_record authorization through meeting-service.
     # Previous line: Faz 24 KVKK audit producer activation (gitops#1647): tag sha-74c9e1a
     # (#677 audit-pipeline — adds RedisStreamAuditSink). The prior pin
     # sha-28cfe2c (#556/#558) PREDATES #677 → it ships only the NoOp sink, so
@@ -125,7 +129,7 @@ images:
     # ChunkAdmissionRejected (413 oversize) lands on the audit:events stream and
     # is persisted by audit-event-consumer-service.
     # D30 immutable digest pin.
-    digest: sha256:a584bd1f4ca964f0c2707813808e2454afb77a82d87f4624df6eb02788a100e3
+    digest: sha256:54fd0226561dd912532f3784773887c01693742faff31079562d24002c11a351
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -150,8 +154,12 @@ images:
     # accounting. This pin only carries that source-side implementation into
     # test desired-state; #156 still needs live cleanup evidence + VERBIS/legal
     # acceptance before closure.
+    # 2026-06-26 update: sha-794c187 (platform-backend#765) adds the bodyless
+    # non-admin recording-access preflight endpoint backed by OpenFGA
+    # meeting#can_record. This is the PR-2 source artifact for removing the
+    # audio-gateway dependency on /api/v1/admin/meetings/{id}.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:18b8667a5a25a5194c6a495ba44d1c69da4c0701b0f6f57aa94932e670f06689
+    digest: sha256:e9e45ac39ca53a7986a84c49ff8422077b20acdbc5a84b560b95e893845517cf
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
