@@ -145,8 +145,13 @@ images:
     # @RequireModule(MEETING,can_view) OpenFGA gate — root-cause fix for the
     # recurring AUDIO_GATEWAY_MEETING_FORBIDDEN on recordConsent. List, sub-resources
     # and mutations stay admin-gated. Codex 019eff98 AGREE.
+    # 2026-06-26 retention runtime sync: platform-backend#764 adds metadata-only
+    # retention cleanup for meeting intelligence layers and destruction-audit
+    # accounting. This pin only carries that source-side implementation into
+    # test desired-state; #156 still needs live cleanup evidence + VERBIS/legal
+    # acceptance before closure.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:a59fb185b609fd75097f13e4213e8c1acc80bc64bf18b8adaf66e1c9e1d068fa
+    digest: sha256:18b8667a5a25a5194c6a495ba44d1c69da4c0701b0f6f57aa94932e670f06689
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -162,8 +167,11 @@ images:
     # + source_chunk_seq idempotency and metadata-only DLQ. This pin does not
     # enable direct-STT runtime flags and does not claim Denetim 8243 / app-mTLS
     # readiness (#198 remains the runtime gate).
+    # 2026-06-26 retention runtime sync: platform-backend#764 adds metadata-only
+    # transcript/KVKK access-log cleanup and destruction-audit accounting. This
+    # desired-state pin does not by itself prove live deletion or legal closure.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:8f6bb65fb40c4696fa61ec812b998803c537387359fc98e4005a2b764764a5f5
+    digest: sha256:af97f1aa1b3212e0461288f53c1e1a16395e9ed2e80923d0cc4a1137bf2249ba
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
@@ -5342,7 +5350,12 @@ images:
     # single-arch linux/amd64 v2 manifest). The deploy-backend-testai.yml image
     # set rolls this digest AND restarts the pod, so the envFrom ConfigMap
     # change below takes effect on the same roll.
-    digest: sha256:3015656f62bc02549648add32b1a6bde994f1a02f971dbaefe2db43b0a5df79b
+    # 2026-06-26 retention runtime sync: backend image build 28199414291
+    # emitted this endpoint-admin-service digest in the same immutable payload
+    # as meeting/transcript #764. No endpoint-admin functional acceptance is
+    # claimed here; this line only restores deploy-backend-testai digest-map
+    # parity for the test overlay.
+    digest: sha256:5eff536b4bcf77c21ef6f75963a9caa4a844bf47fe613fb7399113f34dd9b03b
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
