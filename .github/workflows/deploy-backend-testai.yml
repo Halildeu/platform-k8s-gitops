@@ -73,8 +73,9 @@ jobs:
   deploy:
     name: Deploy backend testai (sequential digest pin + verify)
     runs-on: [self-hosted, staging-sw, testai-deploy]
-    # Codex 019e233b review #1 — Gate 1d adds deterministic 22 min budget
-    # (auth + endpoint-admin 180s + 8 services * 120s). Plus rollout (10 * 180s = 30m max) +
+    # Codex 019e233b review #1 — Gate 1d adds deterministic budget across the
+    # 10 rolled services (auth + endpoint-admin jvm_warmup_extra 3min each + the
+    # rest 2min). Plus rollout (9 * 180s + endpoint-admin 300s ≈ 32m max) +
     # Gate 1c (per-service curl) + buffer. 30m timeout was insufficient.
     timeout-minutes: 60
 
@@ -319,10 +320,20 @@ jobs:
               "${container}=${IMAGE}" \
               -n "${K8S_NAMESPACE}"
 
+            # Per-service rollout-status budget. Default 180s; endpoint-admin-service
+            # gets 300s as a cold-boot safety margin: the #754-only swap adds NO new
+            # migration (V67..V74 incl. V74 endpoint_tpm_device_binding are already
+            # applied on the running base, commit eed9027), but the first boot after
+            # the re-pin still runs Hibernate ddl-auto=validate over the full
+            # endpoint_admin schema, which can exceed 180s cold.
+            ROLLOUT_TIMEOUT="180s"
+            if [ "${svc}" = "endpoint-admin-service" ]; then
+              ROLLOUT_TIMEOUT="300s"
+            fi
             kubectl --context="${K8S_CONTEXT}" rollout status \
               "deployment/${deployment}" \
               -n "${K8S_NAMESPACE}" \
-              --timeout=180s
+              --timeout="${ROLLOUT_TIMEOUT}"
 
             # Digest-pin verify: shared helper (multi-replica strict mode).
             # Tüm non-terminating Running pod'lar expected digest ile
