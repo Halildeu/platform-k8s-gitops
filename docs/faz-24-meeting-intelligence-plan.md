@@ -4,7 +4,7 @@
 >
 > **Mutabakat trail**: Claude (Anthropic) + Codex `019e879c` (OpenAI, AGREE final) + Mavis `mvs_c922505d66a94a45b031feb3489f9488` msg `78` (MiniMax, AGREE).
 >
-> **2026-06-25 truth refresh**: Faz 24 bağımsız ürün olarak konumlanır; Workcube/ERP entegrasyonu ürün bağımlılığı değildir. Sektör-standardı yol haritası §11'e eklendi ve mevcut runtime truth'a göre sınırlandı: recorder OpenFGA selector + edge lifecycle evidence accepted; #187 direct-STT transcript routing source/deploy scope accepted on testai; #188 compute-plane audit verifier/runbook packaged but live smoke evidence open; #198 Denetim app-mTLS, desktop mic/loopback ve WG-B+ I3/I6 host/operator gates hâlâ ayrı kanıt ister.
+> **2026-06-25 truth refresh**: Faz 24 bağımsız ürün olarak konumlanır; Workcube/ERP entegrasyonu ürün bağımlılığı değildir. Sektör-standardı yol haritası §11'e eklendi ve mevcut runtime truth'a göre sınırlandı: recorder OpenFGA selector + edge lifecycle evidence accepted; #187 direct-STT transcript routing source/deploy scope accepted on testai; WG-B+ I6 pod-CIDR-to-WireGuard MASQ evidence accepted; #188 compute-plane audit verifier/runbook packaged but live smoke evidence open; #198 Denetim app-mTLS, desktop mic/loopback ve WG-B+ I3 management-audit gate hâlâ ayrı kanıt ister.
 
 ---
 
@@ -31,7 +31,7 @@ Bağımsız toplantı zekâsı platformu. Workcube/ERP bu plan için ürün bağ
 | `platform-web` | React + Single-SPA — `mfe-meeting` MFE | **staging-sw** (frontend serve) | ⏳ planning (Faz 24.6) |
 | `platform-mobile` | **React Native + Expo** + TypeScript — iOS + Android mobile client | **Kullanıcı cihazı** (App Store / Google Play distribution) | 🟢 **scaffold LIVE 2026-06-02** (commits `a774412`+`3a609a8`) |
 | `platform-desktop` | **Electron + React** + TypeScript — macOS + Windows + Linux desktop client | **Kullanıcı cihazı** (electron-updater + signed installer) | 🟢 scaffold + recorder contract source chain var; gerçek mic/loopback smoke ayrı kanıt ister |
-| `platform-k8s-gitops` | Kustomize + ArgoCD GitOps + ADR-0030 + ADR-0031 + observability skeleton + WG-B+ evidence packaging | **staging-sw** ArgoCD hub + platform-ai k3s remote cluster | 🟢 runtime desired-state + I3/I6 evidence package lanes main'de; #1864/#1867 operator host kanıtı `Needs Verify` |
+| `platform-k8s-gitops` | Kustomize + ArgoCD GitOps + ADR-0030 + ADR-0031 + observability skeleton + WG-B+ evidence packaging | **staging-sw** ArgoCD hub + platform-ai k3s remote cluster | 🟢 runtime desired-state + I6 MASQ evidence accepted (`#1867` Done); I3 management-audit package lane main'de ama `#1864` `Needs Verify` |
 
 ### 2.1 Current Runtime Boundary (2026-06-25)
 
@@ -39,7 +39,7 @@ Bağımsız toplantı zekâsı platformu. Workcube/ERP bu plan için ürün bağ
 - OpenFGA runtime selector `meeting` / `transcript` model gap'i `01KVXG15ETYAHMHANFD0E5CVK8` ile aşıldı; recorder edge lifecycle smoke `testai.acik.com/api/v1/audio-gateway` üzerinde consent/session/chunk/finish seviyesinde kanıtlandı.
 - External `POST https://testai.acik.com/api/v1/admin/meetings` hâlâ `platform-desktop` token audience sınırı nedeniyle ayrı gateway-contract takip ister; mevcut recorder meeting fixture hop'u cluster-internal meeting-service üzerinden yapılmıştır.
 - `audio-gateway` şu anda Redis dispatcher modunda; #188 same-session `CHUNK_FORWARDED_TO_COMPUTE_PLANE` audit verifier/runbook packaged olsa da live audit smoke, Denetim #198 app-mTLS, direct-STT `/transcribe` e2e ve desktop mic/loopback kanıtı ayrı kapıdır.
-- WG-B+ I3/I6 cross-server hardening acceptance, #1864 ve #1867 altında protected host/operator evidence PASS + reviewer acceptance gelmeden Faz 24 final readiness olarak konuşulmaz.
+- WG-B+ I6 cross-server MASQ evidence accepted only for pod-CIDR-to-WireGuard transit. WG-B+ I3 management audit (`#1864`), Denetim I7 app-mTLS (`platform-ai#198`), #188 compute-plane audit, and #182 direct audio e2e remain separate gates; broad Faz 24 readiness olarak konuşulmaz.
 
 ## 3. 3-AI Mutabakat Noktaları (her biri 3 AI tarafından onaylı)
 
@@ -314,7 +314,7 @@ Deferred by design:
 ```text
 Aşama-2 evidence line
   Gateway + Redis + foundation services + recorder edge lifecycle evidence
-  Boundary: direct-STT, compute-plane audit, desktop mic/loopback, WG-B+ I3/I6 open.
+  Boundary: direct-STT, compute-plane audit, desktop mic/loopback, WG-B+ I3 open; I6 MASQ accepted only for pod-CIDR-to-WG metadata evidence.
 
 Aşama-3 Core Product Value (P0)
   T-B WER/DER + T-C G-INT gate infrastructure main'de; gerçek pilot kanıtı pending
