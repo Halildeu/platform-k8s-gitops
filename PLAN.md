@@ -69,10 +69,14 @@ recorder verifier outputs. `platform-k8s-gitops` also carries the
 metadata-only G-OPS operability gate verifier
 (`scripts/faz24/verify_gops_operability_gate_evidence.py`) for on-prem
 install/upgrade/backup/restore/rollback/secret-delivery/observability
+evidence. This slice adds the metadata-only G-COMP aggregate compliance gate
+verifier (`scripts/faz24/verify_gcomp_compliance_gate_evidence.py`) for
+redacted consent/retention/legal-hold/access-audit/deletion-export/KVKK-VERBIS
 evidence. This advances sector-standard quality/compliance governance, but
 does not provide real pilot WER/DER, real pilot G-INT, pilot G-LAT/COST, live
-aggregate G-CAP evidence, live G-OPS on-prem evidence, VERBIS/DB cleanup
-acceptance, direct-STT runtime, raw-audio transit, or production readiness.
+aggregate G-CAP evidence, live G-COMP compliance evidence, live G-OPS on-prem
+evidence, VERBIS/DB cleanup acceptance, direct-STT runtime, raw-audio transit,
+or production readiness.
 
 **Faz 22.5 AG-029 delta (2026-06-07)**: AG-029 is no longer only a
 TODO/draft item. `platform-agent` #74 and #75 are merged, and a local

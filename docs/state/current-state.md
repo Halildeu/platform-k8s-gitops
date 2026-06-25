@@ -38,8 +38,9 @@ direct-STT flag-flip basis.
 
 ## Live Delta — Faz 24 product-quality guardrails advanced; pilot/runtime gates remain open (2026-06-25)
 
-After the #187 transcript-routing source/deploy slice, `platform-ai` also
-advanced several product-quality and compliance guardrails on `main`:
+After the #187 transcript-routing source/deploy slice, `platform-ai` and
+GitOps also advanced several product-quality and compliance guardrails on
+`main`:
 
 - `platform-ai#199` merged G-WER/DER gate infrastructure at
   `243de9d981b299c28c2015ae0b85112fde924bf8`. The new
@@ -74,6 +75,15 @@ advanced several product-quality and compliance guardrails on `main`:
   pass purpose/legal-basis, consent, tenant-isolated key, encryption/KMS,
   retention, erasure, legal-hold, access-audit, evidence-privacy, and rollback
   gates before raw audio is stored.
+- GitOps issue `platform-k8s-gitops#2024` tracks the source-side G-COMP
+  aggregate compliance gate infrastructure.
+  `scripts/faz24/verify_gcomp_compliance_gate_evidence.py`
+  consumes a redacted `faz24.gcompComplianceEvidence.v1` envelope and requires
+  consent, retention, legal-hold, access-audit, deletion/export, KVKK/VERBIS,
+  redaction, and runbook evidence classes before it can return `pass`. It
+  rejects raw audio/transcript/prompt/response data, personal-data-shaped
+  values, token/secret material, legal-advice overclaims, live-production
+  mutations, and production-readiness claims.
 - `platform-ai#204` merged the G-LAT/COST gate infrastructure at
   `1c9a2cc95852cce830a12f4ff14736465211138e`. The new
   `services/live-stt-service/scripts/glat_cost_gate.py` consumes
@@ -90,9 +100,10 @@ while `#160`, `#161`, `#162`, `#156`, `#182`, `#188`, and `#198` remain
 Boundary: these changes advance source-side quality/compliance/product
 governance. They do not produce real pilot WER/DER, do not satisfy G-INT with a
 real meeting, do not produce pilot G-LAT/COST acceptance, do not record VERBIS,
-do not create DB cleanup evidence, do not enable direct-STT, do not send raw
-audio, do not satisfy #188 compute-plane audit smoke, and do not make Faz 24
-production-ready. The immediate direct-STT runtime blocker remains
+do not create DB cleanup evidence, do not produce live G-COMP acceptance
+evidence, do not enable direct-STT, do not send raw audio, do not satisfy #188
+compute-plane audit smoke, and do not make Faz 24 production-ready. The
+immediate direct-STT runtime blocker remains
 `platform-ai#198` Denetim `8243` app-mTLS reachability.
 
 ## Live Delta — Faz 24 #187 transcript routing deployed on testai; #198 remains runtime gate (2026-06-25)
