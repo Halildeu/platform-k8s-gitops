@@ -29,15 +29,19 @@ class FakeRunner:
         self,
         ssh_stdout: str | None,
         ssh_returncode: int = 0,
+        ssh_stderr: str = "",
         wg_requires_sudo: bool = False,
         wg_binary_path_only: bool = False,
     ):
         self.ssh_stdout = ssh_stdout
         self.ssh_returncode = ssh_returncode
+        self.ssh_stderr = ssh_stderr
         self.wg_requires_sudo = wg_requires_sudo
         self.wg_binary_path_only = wg_binary_path_only
 
     def __call__(self, argv: list[str], stdin: str | None = None, timeout: int = 30):
+        if argv[:3] == ["ip", "route", "get"]:
+            return collector.CommandResult(0, "10.99.0.2 dev wg-denetim src 10.99.0.1\n", "")
         if argv and argv[0] == "journalctl":
             return collector.CommandResult(
                 0,
@@ -59,7 +63,7 @@ class FakeRunner:
         if argv and argv[0] == "ss":
             return collector.CommandResult(0, "ESTAB 0 0 10.99.0.1:49152 10.99.0.2:22\n", "")
         if argv and argv[0] == "ssh":
-            return collector.CommandResult(self.ssh_returncode, self.ssh_stdout or "", "")
+            return collector.CommandResult(self.ssh_returncode, self.ssh_stdout or "", self.ssh_stderr)
         return collector.CommandResult(127, "", "unexpected-command")
 
     def _wg_result(self, argv: list[str]):
@@ -111,6 +115,13 @@ def remote_success_json() -> str:
 
 
 class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
+    def tcp_ok(self, host: str, port: int, timeout: int) -> dict:
+        return {
+            "tcp22Reachable": True,
+            "tcp22ErrorClass": "",
+            "tcp22Errno": None,
+        }
+
     def build(self, runner: FakeRunner, wg_interface: str = "wg0") -> dict:
         return collector.build_evidence(
             timestamp=datetime(2026, 6, 25, 0, 0, 0, tzinfo=timezone.utc),
@@ -121,6 +132,7 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
             wg_interface=wg_interface,
             connect_timeout_seconds=1,
             runner=runner,
+            tcp_probe=self.tcp_ok,
         )
 
     def run_verifier(self, data: dict) -> subprocess.CompletedProcess[str]:
@@ -153,9 +165,13 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
     def test_denetim_ssh_failure_writes_safe_rejected_evidence(self):
         evidence = self.build(FakeRunner(None, ssh_returncode=255))
         statuses = {check["id"]: check["status"] for check in evidence["checks"]}
+        preflight = evidence["collector"]["denetimSshPreflight"]
 
         self.assertEqual("fail", statuses["openssh-event-log"])
         self.assertEqual("fail", statuses["staging-connection-log"])
+        self.assertTrue(preflight["tcp22Reachable"])
+        self.assertEqual(255, preflight["sshExitCode"])
+        self.assertEqual("ssh-exit-255-unclassified", preflight["sshFailureClass"])
         self.assertNotIn("password", json.dumps(evidence).lower())
         self.assertNotIn("token", json.dumps(evidence).lower())
 
@@ -163,6 +179,22 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("status must be 'pass'", result.stderr)
+
+    def test_denetim_ssh_failure_classifies_publickey_without_stderr_leak(self):
+        evidence = self.build(
+            FakeRunner(
+                None,
+                ssh_returncode=255,
+                ssh_stderr="Permission denied (publickey).",
+            )
+        )
+        preflight = evidence["collector"]["denetimSshPreflight"]
+        serialized = json.dumps(evidence)
+
+        self.assertEqual("ssh-auth-publickey", preflight["sshFailureClass"])
+        self.assertTrue(preflight["sshStderrPresent"])
+        self.assertTrue(preflight["sshErrorFingerprint"])
+        self.assertNotIn("Permission denied", serialized)
 
     def test_staging_wireguard_uses_sudo_fallback(self):
         original_which = collector.shutil.which

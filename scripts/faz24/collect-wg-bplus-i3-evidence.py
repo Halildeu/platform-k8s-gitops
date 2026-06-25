@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -184,6 +185,7 @@ class CommandResult:
 
 
 CommandRunner = Callable[[list[str], str | None, int], CommandResult]
+TcpProbeRunner = Callable[[str, int, int], dict[str, Any]]
 
 
 def utc_now() -> datetime:
@@ -231,6 +233,108 @@ def safe_interface_name(value: str) -> str | None:
     if clean and re.match(r"^[A-Za-z0-9_.:-]+$", clean):
         return clean
     return None
+
+
+def parse_ssh_target_host(target: str) -> str:
+    if "@" not in target:
+        return target
+    return target.rsplit("@", 1)[1]
+
+
+def is_ip_literal(value: str) -> bool:
+    return bool(re.match(r"^[0-9.]+$", value) or ":" in value)
+
+
+def classify_socket_error(exc: OSError) -> str:
+    text = str(exc).lower()
+    errno_value = getattr(exc, "errno", None)
+    if isinstance(exc, socket.timeout) or "timed out" in text:
+        return "tcp-timeout"
+    if errno_value in {61, 111} or "connection refused" in text:
+        return "tcp-port-refused"
+    if errno_value in {51, 101} or "network is unreachable" in text:
+        return "tcp-network-unreachable"
+    if errno_value in {64, 113, 65} or "no route to host" in text:
+        return "tcp-host-unreachable"
+    if "name or service not known" in text or "nodename nor servname" in text:
+        return "tcp-dns-resolution"
+    return "tcp-error"
+
+
+def probe_tcp_connect(host: str, port: int, timeout_seconds: int) -> dict[str, Any]:
+    try:
+        with socket.create_connection((host, port), timeout=timeout_seconds):
+            return {
+                "tcp22Reachable": True,
+                "tcp22ErrorClass": "",
+                "tcp22Errno": None,
+            }
+    except OSError as exc:
+        return {
+            "tcp22Reachable": False,
+            "tcp22ErrorClass": classify_socket_error(exc),
+            "tcp22Errno": getattr(exc, "errno", None),
+        }
+
+
+def classify_ssh_failure(result: CommandResult, tcp_reachable: bool) -> str:
+    if result.returncode == 0:
+        return "none"
+
+    text = f"{result.stderr}\n{result.stdout}".lower()
+    if result.returncode == 124 or "timed out" in text or "operation timed out" in text:
+        return "ssh-timeout"
+    if "could not resolve hostname" in text or "name or service not known" in text:
+        return "ssh-dns-resolution"
+    if "no route to host" in text or "network is unreachable" in text:
+        return "ssh-network-route"
+    if "connection refused" in text:
+        return "ssh-port-refused"
+    if "host key verification failed" in text or "remote host identification has changed" in text:
+        return "ssh-hostkey"
+    if "permission denied" in text and "publickey" in text:
+        return "ssh-auth-publickey"
+    if "permission denied" in text:
+        return "ssh-auth-denied"
+    if "kex_exchange_identification" in text or "connection reset" in text:
+        return "ssh-handshake-reset"
+    if "connection closed" in text or "closed by remote host" in text:
+        return "ssh-handshake-closed"
+    if result.returncode == 255 and not tcp_reachable:
+        return "ssh-exit-255-after-tcp-failure"
+    if result.returncode == 255:
+        return "ssh-exit-255-unclassified"
+    return f"ssh-exit-{result.returncode}"
+
+
+def collect_denetim_ssh_preflight(
+    runner: CommandRunner,
+    tcp_probe: TcpProbeRunner,
+    target: str,
+    ssh_result: CommandResult,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    host = parse_ssh_target_host(target)
+    route = runner(["ip", "route", "get", host], None, timeout_seconds)
+    tcp = tcp_probe(host, 22, timeout_seconds)
+    tcp_reachable = tcp.get("tcp22Reachable") is True
+    ssh_output = f"{ssh_result.stderr}\n{ssh_result.stdout}"
+
+    return {
+        "targetHostHash": sha256_short(host),
+        "targetPort": 22,
+        "targetHostIsIpLiteral": is_ip_literal(host),
+        "routeQueryable": route.returncode == 0,
+        "routeExitCode": route.returncode,
+        "tcp22Reachable": tcp_reachable,
+        "tcp22ErrorClass": bounded(str(tcp.get("tcp22ErrorClass", "")), 80),
+        "tcp22Errno": tcp.get("tcp22Errno"),
+        "sshExitCode": ssh_result.returncode,
+        "sshFailureClass": classify_ssh_failure(ssh_result, tcp_reachable),
+        "sshStdoutPresent": bool(ssh_result.stdout.strip()),
+        "sshStderrPresent": bool(ssh_result.stderr.strip()),
+        "sshErrorFingerprint": sha256_short(ssh_output) if ssh_output.strip() else "",
+    }
 
 
 def run_with_sudo_fallback(
@@ -514,6 +618,7 @@ def build_evidence(
     wg_interface: str,
     connect_timeout_seconds: int,
     runner: CommandRunner,
+    tcp_probe: TcpProbeRunner = probe_tcp_connect,
 ) -> dict[str, Any]:
     now = utc_text(timestamp)
     target_hash = sha256_short(denetim_target)
@@ -529,6 +634,13 @@ def build_evidence(
         target=denetim_target,
         lookback_hours=lookback_hours,
         connect_timeout_seconds=connect_timeout_seconds,
+    )
+    denetim_ssh_preflight = collect_denetim_ssh_preflight(
+        runner,
+        tcp_probe,
+        denetim_target,
+        ssh_result,
+        connect_timeout_seconds,
     )
     remote_ok = remote is not None and ssh_result.returncode == 0
     remote_host = bounded(str(remote.get("host", "denetim-pc")) if remote else "denetim-pc", 80)
@@ -648,6 +760,7 @@ def build_evidence(
             "denetimTargetHash": target_hash,
             "lookbackHours": lookback_hours,
             "wgInterface": wg_interface,
+            "denetimSshPreflight": denetim_ssh_preflight,
             "stagingWireGuardProbe": staging["wgProbe"],
             "remoteCollectorReached": remote_ok,
             "stagingJournalQueryable": bool(staging["journalOk"]),

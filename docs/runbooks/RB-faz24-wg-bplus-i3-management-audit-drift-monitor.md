@@ -124,6 +124,21 @@ workflow conclusion is still useful blocker evidence when the uploaded bundle
 shows which management-audit surface is missing. Do not override a verifier
 failure manually.
 
+When Denetim SSH exits non-zero, read `collector.denetimSshPreflight` before
+changing any host config. This field is metadata-only and may include:
+
+- `routeQueryable` / `routeExitCode` for the runner route probe,
+- `tcp22Reachable` / `tcp22ErrorClass` for TCP 22 reachability,
+- `sshExitCode` / `sshFailureClass` for the real metadata-collector SSH
+  attempt,
+- `sshErrorFingerprint` for correlating repeated failures without exporting
+  raw SSH stderr.
+
+The preflight metadata does not make I3 acceptable by itself. It only narrows
+the next action, for example `ssh-auth-publickey` versus `ssh-timeout` versus
+`ssh-hostkey`. The evidence bundle must still pass all eight checks before
+`platform-k8s-gitops#1864` can move forward.
+
 Use `wg_interface=auto` unless the staging host's WireGuard interface is
 already confirmed. Auto mode runs `wg show interfaces` with the same
 non-interactive `sudo -n` fallback as the per-interface metadata probes and

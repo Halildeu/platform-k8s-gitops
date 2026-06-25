@@ -117,9 +117,12 @@ jobs:
 
       - name: Write workflow summary
         if: always()
+        env:
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
         run: |
           set -euo pipefail
 
+          verify_exit_code="${VERIFY_EXIT_CODE:-missing}"
           {
             echo "## Faz 24 WG-B+ I3 evidence"
             echo
@@ -127,7 +130,7 @@ jobs:
             echo "- Denetim target: redacted; stable hash is in the evidence JSON"
             echo "- Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Artifact: \`faz24-wg-bplus-i3-evidence-${{ github.run_id }}\`"
-            echo "- Verifier exit code: \`${{ steps.verify.outputs.exit_code || 'missing' }}\`"
+            echo "- Verifier exit code: \`${verify_exit_code}\`"
             echo
             echo "Boundary: metadata only. No raw audio, transcript text, command/script content, token, cookie, private key, or bearer material is intentionally exported."
             echo
@@ -155,10 +158,12 @@ jobs:
 
       - name: Fail workflow when I3 verifier rejects evidence
         if: always()
+        env:
+          VERIFY_EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
         run: |
           set -euo pipefail
 
-          exit_code="${{ steps.verify.outputs.exit_code }}"
+          exit_code="${VERIFY_EXIT_CODE}"
           if [ -z "${exit_code}" ]; then
             echo "::error::I3 verifier did not expose an exit code"
             exit 1
