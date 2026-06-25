@@ -1,5 +1,47 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 WG-B+ I3 Denetim authorization package ready; management access unavailable (2026-06-25)
+
+`platform-k8s-gitops#1864` remains blocked on Denetim management access before
+the hardened public-key authorization package can be applied. The package
+artifact `faz24-i3-denetim-ssh-authorize-package-28144138366` was downloaded
+and locally rechecked: expected files `README.md`, `SHA256SUMS`,
+`authorize-denetim-i3-public-key.ps1`, `expected-public-key-metadata.json`, and
+`faz24-i3-denetim_ed25519.pub` were present; `sha256sum --check SHA256SUMS`
+passed for all files; private-key, Bearer, GitHub token, and JWT-like marker
+scan returned clean. Package metadata still targets `svc-denetim-agent` with
+fingerprint `SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y`, line hash
+`83f4788c09f9d7e68af113e9680c4a996f95a66c230d6240780ace47734844ff`, and blob
+hash `e2158a715d03df2ad17d6e2cae3d264096fedbdec9f919d2d07ba84740fab756`.
+
+Fresh access probes show the operator application step cannot be performed
+through the currently available agent channels:
+
+- `ssh -J staging-sw denetimpc@10.99.0.2` now fails
+  `Permission denied (publickey)`.
+- `ssh -J staging-sw svc-denetim-agent@10.99.0.2` still fails
+  `Permission denied (publickey)`.
+- `staging-sw` can reach `10.99.0.2:22` at TCP level, so the current failure
+  class is SSH public-key authorization, not route/TCP reachability.
+- The old break-glass reverse SSH path is not currently available: local Mac
+  `127.0.0.1:22024` and `127.0.0.1:22025` refuse connections, and
+  `staging-sw` has no listener on `127.0.0.1:22024` or `127.0.0.1:22025`.
+
+Therefore the next I3 work is no longer package generation, checksum
+verification, runner `wg` tooling, runner identity path alignment, or TCP/22
+reachability. It is restoring an approved Denetim operator management channel
+or applying the already-built public-key package from an elevated Denetim
+operator session, then ingesting
+`denetim-i3-ssh-authorize-evidence.json` and rerunning
+`faz24-wg-bplus-i3-evidence.yml`. Do not mark #1864 accepted until Denetim
+authorize evidence ingest PASS, I3 evidence verifier PASS, and reviewer
+acceptance are all present.
+
+Boundary: this management-plane blocker does not change `platform-ai#198`
+Denetim `8243` app-mTLS, `platform-ai#188` compute-plane audit smoke,
+`platform-ai#182` direct audio e2e, I6 MASQ evidence, production cutover, or
+broad readiness.
+
 ## Live Delta — Faz 24 WG-B+ I6 host MASQ evidence PASS; reviewer acceptance pending (2026-06-25)
 
 `platform-k8s-gitops#1867` moved from source/operator-package readiness to a
