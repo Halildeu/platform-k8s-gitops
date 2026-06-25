@@ -1348,6 +1348,16 @@ Live staging-sw / k3d-test / platform-test evidence after apply:
 - endpoint-admin-remote-bridge-secrets, endpoint-admin-remote-bridge-signer, and endpoint-admin-remote-bridge-tls ExternalSecrets are Ready=True / SecretSynced.
 - Broker startup log includes remote-bridge grpc server listening on 0.0.0.0:9444 (mutual TLS) and EndpointAdminServiceApplication started.
 
+### 2026-06-26 Live Delta — REMOTE_BRIDGE_LIVE digest forward-align 6b12276 → 3015656f (Codex 019f008a)
+
+The primary endpoint-admin-service had drifted forward to sha256:3015656f (later backend deploys: #754 TPM bootstrap-route fix + #548 M1 + #1497) while the remote-bridge activation overlay stayed pinned at the 2026-06-23 baseline sha256:6b12276 above — so the completion-audit REMOTE_BRIDGE_LIVE gate read digest_hits=2 (below the required 4). Forward-aligned the bridge to the current primary digest (same-image pilot topology); the historical 6b evidence above is intentionally retained, not rewritten.
+
+- Live apply used the rendered kustomize activation overlay after server dry-run (NOT kubectl set image/patch): `kubectl kustomize kustomize/overlays/test/activation/endpoint-admin-remote-bridge | kubectl --context k3d-test -n platform-test apply --dry-run=server -f -` (deployment configured, rest unchanged) → apply → `kubectl rollout status deploy/endpoint-admin-remote-bridge` successfully rolled out.
+- endpoint-admin-service AND endpoint-admin-remote-bridge: deployment image and running pod imageID both match ghcr.io/halildeu/platform-backend-endpoint-admin-service@sha256:3015656f62bc02549648add32b1a6bde994f1a02f971dbaefe2db43b0a5df79b, pod Ready=true, restartCount=0 (the old 6b12276 bridge pod terminated).
+- endpoint-admin-remote-bridge-secrets / -signer / -tls ExternalSecrets Ready=True / SecretSynced (3×).
+- `scripts/faz22-remote-ops/faz22-6-completion-audit.sh` → `REMOTE_BRIDGE_LIVE=pass mode=ssh expected_digest=sha256:3015656f... digest_hits=4`. F22_6_COMPLETION remains blocked ONLY on the two owner markers (b1-4-acceptance-package-required #548, view-only-evidence-package-required #1580).
+- gitops PR #2030 (activation digest + audit EXPECTED + decision-package fixtures + contract + apply-workflow default). DURABLE FOLLOW-UP (Codex Q6): single-source the bridge expected digest from the test-overlay primary digest so a future backend bump cannot re-drift it.
+
 Boundary for #548 remains unchanged:
 
 - This is source/live-wiring progress for the #548 harness path, not #548 resolution.
