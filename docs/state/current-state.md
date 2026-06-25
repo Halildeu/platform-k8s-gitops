@@ -8,6 +8,20 @@ route to Denetim (`10.99.0.2 dev wg0 src 10.99.0.1`), but TCP/8243 from
 staging fails. This is consistent with the prior host-policy / WFP / ESET /
 central allowlist blocker and is not a GitOps digest rollout problem.
 
+Follow-up live narrowing after the verifier merge found a more specific
+runtime shape: Denetim still has plaintext Python services listening on `8200`
+and `8300`, `C:\caddy\Caddyfile` defines `live-stt.denetim:8243` with
+`client_auth require_and_verify`, and Windows Firewall has an enabled inbound
+allow rule `WG-staging-caddy-mtls-8243` for remote `10.99.0.1` to local
+TCP/8243. However, Caddy is not running persistently: before the probe there
+was no Caddy process or `8243` listener; `caddy.exe start --config
+C:\caddy\Caddyfile` briefly reported a background process/listener, but
+follow-up staging/audio-gateway probes still timed out and a final Denetim
+check again showed no Caddy process/listener. `caddy-err.log` tail showed start
+and server-running messages, not a captured crash. The next concrete runtime
+dependency is therefore an approved persistent Caddy service/task/host-policy
+path, then a fresh `live-stt-preflight` evidence JSON through the verifier.
+
 The I7 evidence path now has a metadata-only verifier and ingest workflow:
 
 - `scripts/faz24/verify-i7-app-mtls-evidence.py` validates
