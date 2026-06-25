@@ -135,8 +135,12 @@ images:
     # 2026-06-17 update: sha-9751099 (#688) — ADR-0041 §5 Option A: MeetingAuthz.MODULE
     # "meeting" -> "MEETING" (module gate object id uppercase-align to permission-service
     # catalog/writer path; Codex 019ed603). Staged re-seed RB-faz24-mt-uppercase-reseed.md.
+    # 2026-06-25 re-pin: backend main sha-8c269cc full image build for
+    # platform-backend#756. No meeting-service functional source change is
+    # claimed here; this keeps the Faz 24 runtime family aligned with the
+    # 13-service deploy-backend-testai digest guard.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:53bb5bbefcedc77ec1c9dd2145d965baa501602c3ceffcf9917760155889f0ed
+    digest: sha256:a4929327c7514b584f6c97b5bd203b7f4e532ce61a679c5ed87d453cea1607c6
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
@@ -146,17 +150,27 @@ images:
     # spring-actuator contract). 154fa2b deploy-commit transcript'i rebuild etmedi.
     # 2026-06-17 update: sha-9751099 (#688) — ADR-0041 §5 Option A: TranscriptAuthz.MODULE
     # "transcript" -> "TRANSCRIPT" (module gate object id uppercase-align; Codex 019ed603).
+    # 2026-06-25 update: sha-8c269cc (platform-backend#756, platform-ai#187)
+    # adds default-off direct-STT transcript result routing from the
+    # audio-gateway result stream into transcript segments with source_session_id
+    # + source_chunk_seq idempotency and metadata-only DLQ. This pin does not
+    # enable direct-STT runtime flags and does not claim Denetim 8243 / app-mTLS
+    # readiness (#198 remains the runtime gate).
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:b5626cd9aab29ded9ded5b9a03911e931be4c76c5df4f0d5b9c87b776969a625
+    digest: sha256:8f6bb65fb40c4696fa61ec812b998803c537387359fc98e4005a2b764764a5f5
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-event-consumer-service
     newName: ghcr.io/halildeu/platform-backend-audit-event-consumer-service
     # Faz 24 KVKK audit pipeline (#1249, PR #677): ilk deploy sha-74c9e1a
     # (#677 merge commit; pure Redis-stream consumer audit:events → immutable
     # hash-chain persist + DLQ; SERVER_PORT 8099 + management 8081 spring-actuator).
+    # 2026-06-25 re-pin: backend main sha-8c269cc full image build for
+    # platform-backend#756. No audit-event-consumer functional source change is
+    # claimed here; this keeps the Faz 24 runtime family aligned with the
+    # 13-service deploy-backend-testai digest guard.
     # D30 immutable digest pin (drift gate Check1 = @sha256; live pod imageID
     # 2026-06-17 D29 Up+Functional verified — health 200 + consumer-group joined).
-    digest: sha256:196ec1a06b27722c9d52881f93e97efb693342ef5430677eb05535be5db84bc5
+    digest: sha256:ceb3089930f5bcaad721516a653e49d3ac52feaa89a954024f5792aa797bb4f8
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/audit-retention-worker
     newName: ghcr.io/halildeu/platform-backend-audit-retention-worker

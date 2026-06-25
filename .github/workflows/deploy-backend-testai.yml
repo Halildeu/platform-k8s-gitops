@@ -3,7 +3,7 @@ name: Deploy backend testai (auto)
 # iter-49 backend deploy automation — Codex 019ddf43 PARTIAL+AGREE.
 #
 # Trigger: `repository_dispatch` event_type=backend-testai-deploy from
-# platform-backend's ci-image-push.yml after a successful 10-service GHCR push
+# platform-backend's ci-image-push.yml after a successful backend GHCR push
 # (ayrı PR — bu workflow merge sonrası backend tarafına dispatch step eklenir).
 #
 # Codex sertleştirmeleri uygulanmış:
@@ -13,8 +13,8 @@ name: Deploy backend testai (auto)
 #         deploy'da 1000m+1000m=2000m > 8000m quota aşımı yaşandı)
 #   S3 — api-gateway entry-point EN SON deploy
 #   S4 — discovery-server SKIP; endpoint-admin-service and Faz 24
-#         audio-gateway-service are part of the test runtime surface and must
-#         roll with backend digests.
+#         audio-gateway/meeting/transcript/audit consumer services are part of
+#         the test runtime surface and must roll with backend digests.
 #   S5 — Gate 2 (auth flow) opt-in warn-only; primary blocking pod imageID
 #         + api-gateway health
 #
@@ -44,8 +44,9 @@ on:
           render edip per-service `@sha256:` digest'leri otomatik çıkarır
           (PR-FOLLOW-UP-3 2026-06-01: overlay-render auto-extract).
 
-          Operator override istiyorsanız tam JSON map verin (tüm 10 backend
-          servis: auth/permission/user/variant/core-data/report/schema/endpoint-admin/audio-gateway/api-gateway).
+          Operator override istiyorsanız tam JSON map verin (tüm backend
+          runtime servisleri: auth/permission/user/variant/core-data/report/schema/
+          endpoint-admin/audio-gateway/meeting/transcript/audit-consumer/api-gateway).
 
           Tag-based fallback YASAK (PR #1170/#1171 incident — gitops commit
           SHA'sı yanlışlıkla image tag gibi yorumlandı).
@@ -74,8 +75,8 @@ jobs:
     name: Deploy backend testai (sequential digest pin + verify)
     runs-on: [self-hosted, staging-sw, testai-deploy]
     # Codex 019e233b review #1 — Gate 1d adds deterministic budget across the
-    # 10 rolled services (auth + endpoint-admin jvm_warmup_extra 3min each + the
-    # rest 2min). Plus rollout (9 * 180s + endpoint-admin 300s ≈ 32m max) +
+    # rolled services (auth + endpoint-admin jvm_warmup_extra 3min each + the
+    # rest 2min). Plus rollout (12 * 180s + endpoint-admin 300s ≈ 41m max) +
     # Gate 1c (per-service curl) + buffer. 30m timeout was insufficient.
     timeout-minutes: 60
 
@@ -158,7 +159,7 @@ jobs:
           fi
 
           # Required services check (Codex D fail-closed semantic)
-          REQUIRED_SVCS="auth-service permission-service user-service variant-service core-data-service report-service schema-service endpoint-admin-service audio-gateway-service api-gateway"
+          REQUIRED_SVCS="auth-service permission-service user-service variant-service core-data-service report-service schema-service endpoint-admin-service audio-gateway-service meeting-service transcript-service audit-event-consumer-service api-gateway"
           for svc in $REQUIRED_SVCS; do
             if [ -z "$(echo "${DIGESTS_JSON}" | jq -r --arg s "$svc" '.[$s] // empty')" ]; then
               echo "::error::auto-extract missing digest for ${svc} (overlay'de pin yok)"
@@ -204,6 +205,9 @@ jobs:
             "schema-service|schema-service|schema-service|schema-service|schema-service"
             "endpoint-admin-service|endpoint-admin-service|endpoint-admin-service|endpoint-admin-service|endpoint-admin-service"
             "audio-gateway-service|audio-gateway|audio-gateway|audio-gateway|audio-gateway-service"
+            "meeting-service|meeting-service|meeting-service|meeting-service|meeting-service"
+            "transcript-service|transcript-service|transcript-service|transcript-service|transcript-service"
+            "audit-event-consumer-service|audit-event-consumer-service|audit-event-consumer-service|audit-event-consumer-service|audit-event-consumer-service"
             "api-gateway|api-gateway|api-gateway|api-gateway|api-gateway"
           )
 
@@ -357,7 +361,7 @@ jobs:
           done
 
           # #827 PR-B: expose the full {service: digest} map to the
-          # sync-test-overlay-pr job. Reached only after all 10 services rolled
+          # sync-test-overlay-pr job. Reached only after all services rolled
           # out + verified — a failed run exits earlier, so the map (and the
           # auto-PR) is never emitted for a partial rollout.
           echo "digest_map=${DIGEST_MAP_JSON}" >> "$GITHUB_OUTPUT"
@@ -393,7 +397,7 @@ jobs:
               ;;
           esac
 
-      # Gate 1c: 10 service in-cluster /actuator/health/readiness 200
+      # Gate 1c: service in-cluster /actuator/health/readiness 200
       # Codex S4: management port 8081, readiness sub-path
       - name: Gate 1c — per-service in-cluster readiness
         run: |
@@ -408,6 +412,9 @@ jobs:
             "schema-service"
             "endpoint-admin-service"
             "audio-gateway"
+            "meeting-service"
+            "transcript-service"
+            "audit-event-consumer-service"
             "api-gateway"
           )
           FAILED=0
@@ -468,6 +475,9 @@ jobs:
             "schema-service"
             "endpoint-admin-service"
             "audio-gateway"
+            "meeting-service"
+            "transcript-service"
+            "audit-event-consumer-service"
             "api-gateway"
           )
           for svc in "${SERVICES[@]}"; do
