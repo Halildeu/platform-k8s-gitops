@@ -5310,7 +5310,19 @@ images:
     # sha-eed9027 payload; deploy-backend-testai.yml run 28159921571 again
     # refused live mutation under --fail-on-change until this desired-state line
     # matches the rollout digest map.
-    digest: sha256:c6be72d5ad469fb764bdd1eebf6a4df5bd49e28af3b04ce8151bb68ccbbb3da9
+    # 2026-06-25 Faz 22.6 #548 live-proof M1: re-pin to sha-7f56ed6
+    # (commit 7f56ed63 = eed9027 + the single #754 fix "HMAC device-credential
+    # filter must skip the TPM-attest bootstrap route"). 7f56ed63 is a clean
+    # fast-forward over the eed9027-built c6be72d5 (eed9027 is its parent) and
+    # carries #754 + Flyway V67..V74 endpoint_tpm_device_binding + all #548
+    # backend. The #754 route-skip fix is a prerequisite for the TPM-attest
+    # activation below: without it the device-credential HMAC filter blocks the
+    # token-in-body bootstrap route the agent's -auto-enroll-tpm uses. Tag
+    # sha-7f56ed6 resolves to the digest below (anonymous GHCR manifest query;
+    # single-arch linux/amd64 v2 manifest). The deploy-backend-testai.yml image
+    # set rolls this digest AND restarts the pod, so the envFrom ConfigMap
+    # change below takes effect on the same roll.
+    digest: sha256:ea257fd8f738aecce47ccdf8421331df2e4417e6c0b74f928e25f0ff08c567f5
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
@@ -5897,6 +5909,69 @@ patches:
       - op: replace
         path: /data/ENDPOINT_ADMIN_MTLS_PASSTHROUGH_FIXED_TENANT_ID
         value: "00000000-0000-0000-0000-000000000001"
+
+  # Faz 22.6 #548 TPM-attest enrollment activation (ADR-0039 gate-4 / gate-4d)
+  # — TEST only. Backend properties: endpoint-admin.tpm-attest.* bound by
+  # TpmAttestProperties (@ConfigurationProperties prefix "endpoint-admin.tpm-attest")
+  # + the manufacturer-root-pems @Value in TpmEnrollmentConfig. Disabled-by-default
+  # + per-tenant opt-in: with enabled=false every enrollment is fail-closed
+  # (TpmDenyCode.FEATURE_DISABLED); with an empty allowed-tenant-ids no tenant can
+  # enroll. This overlay flips it ON for the live-proof M1 and opts the single
+  # platform-test tenant in. Prod inherits the base default (no TPM keys → disabled).
+  #
+  # Trust anchor is PUBLIC — the Intel On-Die CA Root is a published trust root,
+  # so the PEM + its pinned SHA-256 belong in this ConfigMap (NO Vault, NO secret
+  # material). The bytes below are the unmodified
+  # https://tsci.intel.com/content/OnDieCA/certs/OnDie_CA_RootCA_Certificate.cer
+  # (DER→PEM); its SHA-256 over the DER is
+  # beb40bb7507b33967226aa80e084749fbb6593893c642e818d682e9a8d07fc24, which the
+  # pinned ..._MANUFACTURER_ROOT_SHA256 below re-asserts. TpmEnrollmentConfig
+  # fail-closes (EkChainException) at startup if the PEM bundle is empty or any
+  # cert is not in the pinned SHA-256 set — so an enabled-but-unanchored deploy
+  # crashes fast instead of enrolling against an empty trust set.
+  #
+  # ENDPOINT_ADMIN_TPM_ATTEST_PCR_REQUIRED_BITMAP_HEX is DELIBERATELY OMITTED: the
+  # agent's -auto-enroll-tpm sends no PCR selection, and the TpmPcrPolicy bean is
+  # @ConditionalOnProperty(...pcr.required-bitmap-hex) — absent ⇒ no PCR policy
+  # bean ⇒ no startup failure ⇒ PCR quote is not mandated. Setting a strict bitmap
+  # would fail closed against the agent's no-PCR evidence.
+  #
+  # `op: add` (not replace) is deliberate — these keys do not exist in the base
+  # ConfigMap; this overlay introduces the TPM-attest contract for the test
+  # cluster only.
+  - target:
+      kind: ConfigMap
+      name: endpoint-admin-service-config
+    patch: |-
+      - op: add
+        path: /data/ENDPOINT_ADMIN_TPM_ATTEST_ENABLED
+        value: "true"
+      - op: add
+        path: /data/ENDPOINT_ADMIN_TPM_ATTEST_ALLOWED_TENANT_IDS
+        value: "00000000-0000-0000-0000-000000000001"
+      - op: add
+        path: /data/ENDPOINT_ADMIN_TPM_ATTEST_MANUFACTURER_ROOT_SHA256
+        value: "beb40bb7507b33967226aa80e084749fbb6593893c642e818d682e9a8d07fc24"
+      - op: add
+        path: /data/ENDPOINT_ADMIN_TPM_ATTEST_MANUFACTURER_ROOT_PEMS
+        value: |
+          -----BEGIN CERTIFICATE-----
+          MIICujCCAj6gAwIBAgIUPLLiHTrwySRtWxR4lxKLlu7MJ7wwDAYIKoZIzj0EAwMF
+          ADCBiTELMAkGA1UEBgwCVVMxCzAJBgNVBAgMAkNBMRQwEgYDVQQHDAtTYW50YSBD
+          bGFyYTEaMBgGA1UECgwRSW50ZWwgQ29ycG9yYXRpb24xIzAhBgNVBAsMGk9uRGll
+          IENBIFJvb3QgQ2VydCBTaWduaW5nMRYwFAYDVQQDDA13d3cuaW50ZWwuY29tMB4X
+          DTE5MDQwMzAwMDAwMFoXDTQ5MTIzMTIzNTk1OVowgYkxCzAJBgNVBAYMAlVTMQsw
+          CQYDVQQIDAJDQTEUMBIGA1UEBwwLU2FudGEgQ2xhcmExGjAYBgNVBAoMEUludGVs
+          IENvcnBvcmF0aW9uMSMwIQYDVQQLDBpPbkRpZSBDQSBSb290IENlcnQgU2lnbmlu
+          ZzEWMBQGA1UEAwwNd3d3LmludGVsLmNvbTB2MBAGByqGSM49AgEGBSuBBAAiA2IA
+          BK8SfB2UflvXZqb5Kc3+lokrABHWazvNER2axPURP64HILkXChPB0OEX5hLB7Okw
+          7Dy6oFqB5tQVDupgfvUX/SgYBEaDdG5rCVFrGAis6HX5TA2ewQmj14r2ncHBgnpp
+          B6NjMGEwHwYDVR0jBBgwFoAUtFjJ9uQIQKPyWMg5eG6ujgqNnDgwDwYDVR0TAQH/
+          BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwHQYDVR0OBBYEFLRYyfbkCECj8ljIOXhu
+          ro4KjZw4MAwGCCqGSM49BAMDBQADaAAwZQIxAP9B4lFF86uvpHmkcp61cWaU565a
+          yE3p7ezu9haLE/lPLh5hFQfmTi1nm/sG3JEXMQIwNpKfHoDmUTrUyezhhfv3GG+1
+          CqBXstmCYH40buj9jKW3pHWc71s9arEmPWli7I8U
+          -----END CERTIFICATE-----
 
   # --- Faz 24 Meeting Intelligence (gitops#1615 activation) — TEST only ---
   # meeting-service (#410) + transcript-service (#411) admin API gateway routes.
