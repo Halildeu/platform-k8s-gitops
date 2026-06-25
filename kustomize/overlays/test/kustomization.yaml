@@ -112,6 +112,11 @@ images:
     # pin still does not flip direct-STT; runtime enablement remains gated by
     # Denetim 8243 host-policy reachability, cert/secret mount, and
     # same-session/chunk/correlation audit smoke evidence.
+    # 2026-06-25 update: sha-eed9027 (platform-backend#753, platform-ai#182)
+    # routes successful direct-STT transcript responses to a default-off Redis
+    # result stream. This still does not enable direct-STT or prove audio-gateway
+    # -> live-stt /transcribe e2e; it only moves the source-side result-routing
+    # artifact into desired-state after backend image build run 28159840296.
     # Previous line: Faz 24 KVKK audit producer activation (gitops#1647): tag sha-74c9e1a
     # (#677 audit-pipeline — adds RedisStreamAuditSink). The prior pin
     # sha-28cfe2c (#556/#558) PREDATES #677 → it ships only the NoOp sink, so
@@ -120,7 +125,7 @@ images:
     # ChunkAdmissionRejected (413 oversize) lands on the audit:events stream and
     # is persisted by audit-event-consumer-service.
     # D30 immutable digest pin.
-    digest: sha256:257d2bf05688de5eaebbb7ec52a873eeb3849a9ac7223950f3e6767a7dfbe0ff
+    digest: sha256:a584bd1f4ca964f0c2707813808e2454afb77a82d87f4624df6eb02788a100e3
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/meeting-service
     newName: ghcr.io/halildeu/platform-backend-meeting-service
@@ -5300,7 +5305,12 @@ images:
     # dispatched endpoint-admin-service sha256:9890a434... with the same
     # backend sha-116f150 payload; deploy-backend-testai.yml run 28135555236
     # refused live mutation until this desired-state line matches the payload.
-    digest: sha256:9890a4341eed25c43770d06b9ad0a74b3a9100042873d294a1b729aeddb630d2
+    # 2026-06-25 drift alignment: backend main image build run 28159840296
+    # dispatched endpoint-admin-service sha256:c6be72d5... with backend
+    # sha-eed9027 payload; deploy-backend-testai.yml run 28159921571 again
+    # refused live mutation under --fail-on-change until this desired-state line
+    # matches the rollout digest map.
+    digest: sha256:c6be72d5ad469fb764bdd1eebf6a4df5bd49e28af3b04ce8151bb68ccbbb3da9
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
