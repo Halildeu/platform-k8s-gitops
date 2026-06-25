@@ -55,6 +55,8 @@ class FakeRunner:
         return collector.CommandResult(127, "", "unexpected-command")
 
     def _wg_result(self, argv: list[str]):
+        if argv[-2:] == ["show", "interfaces"]:
+            return collector.CommandResult(0, "wg-denetim\n", "")
         if "latest-handshakes" in argv:
             return collector.CommandResult(0, "peerprefix 1782345600\n", "")
         if "transfer" in argv:
@@ -99,14 +101,14 @@ def remote_success_json() -> str:
 
 
 class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
-    def build(self, runner: FakeRunner) -> dict:
+    def build(self, runner: FakeRunner, wg_interface: str = "wg0") -> dict:
         return collector.build_evidence(
             timestamp=datetime(2026, 6, 25, 0, 0, 0, tzinfo=timezone.utc),
             protected_path="github-actions://Halildeu/platform-k8s-gitops/actions/runs/1/artifacts/faz24-wg-bplus-i3-evidence",
             retention_days=14,
             denetim_target="svc-denetim-agent@10.99.0.2",
             lookback_hours=2,
-            wg_interface="wg0",
+            wg_interface=wg_interface,
             connect_timeout_seconds=1,
             runner=runner,
         )
@@ -162,6 +164,20 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
 
         self.assertTrue(evidence["collector"]["stagingWireGuardQueryable"])
         self.assertEqual(1, evidence["collector"]["stagingWireGuardPeerCount"])
+
+        result = self.run_verifier(evidence)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_staging_wireguard_auto_detects_interface(self):
+        evidence = self.build(FakeRunner(remote_success_json()), wg_interface="auto")
+        probe = evidence["collector"]["stagingWireGuardProbe"]
+
+        self.assertTrue(evidence["collector"]["stagingWireGuardQueryable"])
+        self.assertEqual("auto", probe["requested"])
+        self.assertTrue(probe["interfacesQueryable"])
+        self.assertEqual(1, probe["detectedCount"])
+        self.assertEqual("wg-denetim", probe["selectedInterface"])
 
         result = self.run_verifier(evidence)
 

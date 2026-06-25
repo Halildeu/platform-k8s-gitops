@@ -115,7 +115,7 @@ gh workflow run faz24-wg-bplus-i3-evidence.yml \
   --ref main \
   -f denetim_ssh_target=svc-denetim-agent@10.99.0.2 \
   -f lookback_hours=2 \
-  -f wg_interface=wg0
+  -f wg_interface=auto
 ```
 
 The artifact name is `faz24-wg-bplus-i3-evidence-<run_id>`. Its
@@ -123,6 +123,11 @@ The artifact name is `faz24-wg-bplus-i3-evidence-<run_id>`. Its
 workflow conclusion is still useful blocker evidence when the uploaded bundle
 shows which management-audit surface is missing. Do not override a verifier
 failure manually.
+
+Use `wg_interface=auto` unless the staging host's WireGuard interface is
+already confirmed. Auto mode runs `wg show interfaces` with the same
+non-interactive `sudo -n` fallback as the per-interface metadata probes and
+records only interface/probe metadata in the JSON bundle.
 
 ### 5.2 Manual fallback
 

@@ -16,9 +16,9 @@ on:
         required: true
         default: "2"
       wg_interface:
-        description: "staging-sw WireGuard interface"
+        description: "staging-sw WireGuard interface or auto"
         required: true
-        default: "wg0"
+        default: "auto"
 
 permissions:
   contents: read

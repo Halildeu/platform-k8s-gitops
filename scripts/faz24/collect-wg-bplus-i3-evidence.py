@@ -24,7 +24,7 @@ from typing import Any, Callable
 
 SCHEMA_VERSION = "faz24.wg-bplus.i3.audit.v1"
 DEFAULT_DENETIM_TARGET = "svc-denetim-agent@10.99.0.2"
-DEFAULT_WG_INTERFACE = "wg0"
+DEFAULT_WG_INTERFACE = "auto"
 DEFAULT_RETENTION_DAYS = 14
 
 CHECK_ORDER = [
@@ -218,6 +218,13 @@ def non_empty_lines(value: str) -> list[str]:
     return [line for line in value.splitlines() if line.strip()]
 
 
+def safe_interface_name(value: str) -> str | None:
+    clean = value.strip()
+    if clean and re.match(r"^[A-Za-z0-9_.:-]+$", clean):
+        return clean
+    return None
+
+
 def run_with_sudo_fallback(
     runner: CommandRunner,
     argv: list[str],
@@ -228,6 +235,68 @@ def run_with_sudo_fallback(
         return result
     sudo_result = runner(["sudo", "-n", *argv], None, timeout_seconds)
     return sudo_result if sudo_result.returncode == 0 else result
+
+
+def discover_wg_interfaces(
+    runner: CommandRunner,
+    wg_interface: str,
+    timeout_seconds: int,
+) -> tuple[list[str], dict[str, Any]]:
+    if wg_interface != "auto":
+        return [wg_interface], {
+            "requested": wg_interface,
+            "interfacesQueryable": False,
+            "detectedCount": 0,
+        }
+
+    result = run_with_sudo_fallback(runner, ["wg", "show", "interfaces"], timeout_seconds)
+    interfaces = [
+        clean
+        for token in result.stdout.split()
+        if (clean := safe_interface_name(token)) is not None
+    ]
+    return interfaces, {
+        "requested": "auto",
+        "interfacesQueryable": result.returncode == 0,
+        "interfacesExitCode": result.returncode,
+        "detectedCount": len(interfaces),
+    }
+
+
+def collect_wg_interface_metadata(
+    runner: CommandRunner,
+    interface_name: str,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    wg_latest = run_with_sudo_fallback(
+        runner,
+        ["wg", "show", interface_name, "latest-handshakes"],
+        timeout_seconds,
+    )
+    wg_transfer = run_with_sudo_fallback(
+        runner,
+        ["wg", "show", interface_name, "transfer"],
+        timeout_seconds,
+    )
+    wg_endpoints = run_with_sudo_fallback(
+        runner,
+        ["wg", "show", interface_name, "endpoints"],
+        timeout_seconds,
+    )
+    peer_count = max(
+        len(non_empty_lines(wg_latest.stdout)),
+        len(non_empty_lines(wg_transfer.stdout)),
+        len(non_empty_lines(wg_endpoints.stdout)),
+    )
+    ok = all(result.returncode == 0 for result in [wg_latest, wg_transfer, wg_endpoints])
+    return {
+        "interface": interface_name,
+        "ok": ok,
+        "peerCount": peer_count,
+        "latestExitCode": wg_latest.returncode,
+        "transferExitCode": wg_transfer.returncode,
+        "endpointsExitCode": wg_endpoints.returncode,
+    }
 
 
 def json_from_stdout(stdout: str) -> dict[str, Any] | None:
@@ -299,32 +368,37 @@ def collect_staging_metadata(
         if re.search(r"svc-denetim-agent|10\.99\.0\.2|Accepted|Failed", line, re.IGNORECASE)
     ]
 
-    wg_latest = run_with_sudo_fallback(
+    candidate_interfaces, wg_probe = discover_wg_interfaces(
         runner,
-        ["wg", "show", wg_interface, "latest-handshakes"],
+        wg_interface,
         timeout_seconds,
     )
-    wg_transfer = run_with_sudo_fallback(
-        runner,
-        ["wg", "show", wg_interface, "transfer"],
-        timeout_seconds,
-    )
-    wg_endpoints = run_with_sudo_fallback(
-        runner,
-        ["wg", "show", wg_interface, "endpoints"],
-        timeout_seconds,
-    )
+    interface_probes = [
+        collect_wg_interface_metadata(runner, interface_name, timeout_seconds)
+        for interface_name in candidate_interfaces
+    ]
+    selected_probe = next((probe for probe in interface_probes if probe["ok"]), None)
+    if selected_probe is None and interface_probes:
+        selected_probe = interface_probes[0]
+
     ss_result = runner(
         ["ss", "-Htn", "state", "established", "( sport = :22 or dport = :22 )"],
         None,
         timeout_seconds,
     )
 
-    wg_ok = all(result.returncode == 0 for result in [wg_latest, wg_transfer, wg_endpoints])
-    wg_peer_count = max(
-        len(non_empty_lines(wg_latest.stdout)),
-        len(non_empty_lines(wg_transfer.stdout)),
-        len(non_empty_lines(wg_endpoints.stdout)),
+    wg_ok = bool(selected_probe and selected_probe["ok"])
+    wg_peer_count = int(selected_probe["peerCount"]) if selected_probe else 0
+    wg_probe["selectedInterface"] = selected_probe["interface"] if selected_probe else ""
+    wg_probe["probeCount"] = len(interface_probes)
+    wg_probe["selectedLatestExitCode"] = (
+        selected_probe["latestExitCode"] if selected_probe else None
+    )
+    wg_probe["selectedTransferExitCode"] = (
+        selected_probe["transferExitCode"] if selected_probe else None
+    )
+    wg_probe["selectedEndpointsExitCode"] = (
+        selected_probe["endpointsExitCode"] if selected_probe else None
     )
 
     return {
@@ -332,6 +406,7 @@ def collect_staging_metadata(
         "journalMatchCount": len(journal_matches),
         "wgOk": wg_ok,
         "wgPeerCount": wg_peer_count,
+        "wgProbe": wg_probe,
         "sshSocketOk": ss_result.returncode == 0,
         "sshSocketCount": len(non_empty_lines(ss_result.stdout)),
     }
@@ -537,6 +612,7 @@ def build_evidence(
             "denetimTargetHash": target_hash,
             "lookbackHours": lookback_hours,
             "wgInterface": wg_interface,
+            "stagingWireGuardProbe": staging["wgProbe"],
             "remoteCollectorReached": remote_ok,
             "stagingJournalQueryable": bool(staging["journalOk"]),
             "stagingJournalMatchCount": int(staging["journalMatchCount"]),
