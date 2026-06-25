@@ -4,7 +4,7 @@
 >
 > **Mutabakat trail**: Claude (Anthropic) + Codex `019e879c` (OpenAI, AGREE final) + Mavis `mvs_c922505d66a94a45b031feb3489f9488` msg `78` (MiniMax, AGREE).
 >
-> **2026-06-25 truth refresh**: Faz 24 bağımsız ürün olarak konumlanır; Workcube/ERP entegrasyonu ürün bağımlılığı değildir. Sektör-standardı yol haritası §11'e eklendi ve mevcut runtime truth'a göre sınırlandı: recorder OpenFGA selector + edge lifecycle evidence accepted; #188 compute-plane audit verifier/runbook packaged but live smoke evidence open; direct-STT, desktop mic/loopback ve WG-B+ I3/I6 host/operator gates hâlâ ayrı kanıt ister.
+> **2026-06-25 truth refresh**: Faz 24 bağımsız ürün olarak konumlanır; Workcube/ERP entegrasyonu ürün bağımlılığı değildir. Sektör-standardı yol haritası §11'e eklendi ve mevcut runtime truth'a göre sınırlandı: recorder OpenFGA selector + edge lifecycle evidence accepted; #187 direct-STT transcript routing source/deploy scope accepted on testai; #188 compute-plane audit verifier/runbook packaged but live smoke evidence open; #198 Denetim app-mTLS, desktop mic/loopback ve WG-B+ I3/I6 host/operator gates hâlâ ayrı kanıt ister.
 
 ---
 
@@ -26,8 +26,8 @@ Bağımsız toplantı zekâsı platformu. Workcube/ERP bu plan için ürün bağ
 
 | Repo | Rol | Host | Durum |
 |---|---|---|---|
-| `platform-ai` | Python STT/diarization/meeting-ai (FastAPI + faster-whisper + pyannote + LLM) | **Dedicated host (yeni)** — k3s ai-test → ai-prod; ArgoCD remote register | 🟢 live-stt-service PoC + Redis consumer source/live chain var; direct-STT transcript `platform-ai#182`, compute-plane audit smoke `platform-ai#188` altında ayrı acceptance ister |
-| `platform-backend` | Spring Boot — `audio-gateway-service` (WebFlux) + `meeting-service` + `transcript-service` + `audit-event-consumer-service` | **staging-sw** k3d-test/k3d-prod | 🟢 k3d-test foundation + recorder edge lifecycle kanıtlı; external meeting-admin gateway audience, direct-STT ve desktop mic/loopback ayrı gate |
+| `platform-ai` | Python STT/diarization/meeting-ai (FastAPI + faster-whisper + pyannote + LLM) | **Dedicated host (yeni)** — k3s ai-test → ai-prod; ArgoCD remote register | 🟢 live-stt-service PoC + Redis consumer source/live chain var; direct-STT transcript routing source/deploy slice `platform-ai#187` accepted; compute-plane audit smoke `platform-ai#188` altında ayrı acceptance ister |
+| `platform-backend` | Spring Boot — `audio-gateway-service` (WebFlux) + `meeting-service` + `transcript-service` + `audit-event-consumer-service` | **staging-sw** k3d-test/k3d-prod | 🟢 k3d-test foundation + recorder edge lifecycle + #187 13-service transcript runtime deploy kanıtlı; external meeting-admin gateway audience, #198 app-mTLS, direct-STT e2e ve desktop mic/loopback ayrı gate |
 | `platform-web` | React + Single-SPA — `mfe-meeting` MFE | **staging-sw** (frontend serve) | ⏳ planning (Faz 24.6) |
 | `platform-mobile` | **React Native + Expo** + TypeScript — iOS + Android mobile client | **Kullanıcı cihazı** (App Store / Google Play distribution) | 🟢 **scaffold LIVE 2026-06-02** (commits `a774412`+`3a609a8`) |
 | `platform-desktop` | **Electron + React** + TypeScript — macOS + Windows + Linux desktop client | **Kullanıcı cihazı** (electron-updater + signed installer) | 🟢 scaffold + recorder contract source chain var; gerçek mic/loopback smoke ayrı kanıt ister |
@@ -35,10 +35,10 @@ Bağımsız toplantı zekâsı platformu. Workcube/ERP bu plan için ürün bağ
 
 ### 2.1 Current Runtime Boundary (2026-06-25)
 
-- `meeting-service`, `transcript-service`, `audit-event-consumer-service`, `audio-gateway` ve Redis Streams foundation k3d-test hattında kanıtlıdır; bu, production veya direct-STT transcript readiness iddiası değildir.
+- `meeting-service`, `transcript-service`, `audit-event-consumer-service`, `audio-gateway` ve Redis Streams foundation k3d-test hattında kanıtlıdır; #187 direct-STT transcript routing source/deploy slice 13-service digest/readiness/stability run ile kabul edildi. Bu, production veya direct-STT e2e readiness iddiası değildir.
 - OpenFGA runtime selector `meeting` / `transcript` model gap'i `01KVXG15ETYAHMHANFD0E5CVK8` ile aşıldı; recorder edge lifecycle smoke `testai.acik.com/api/v1/audio-gateway` üzerinde consent/session/chunk/finish seviyesinde kanıtlandı.
 - External `POST https://testai.acik.com/api/v1/admin/meetings` hâlâ `platform-desktop` token audience sınırı nedeniyle ayrı gateway-contract takip ister; mevcut recorder meeting fixture hop'u cluster-internal meeting-service üzerinden yapılmıştır.
-- `audio-gateway` şu anda Redis dispatcher modunda; #188 same-session `CHUNK_FORWARDED_TO_COMPUTE_PLANE` audit verifier/runbook packaged olsa da live audit smoke, direct-STT transcript ve desktop mic/loopback kanıtı ayrı kapıdır.
+- `audio-gateway` şu anda Redis dispatcher modunda; #188 same-session `CHUNK_FORWARDED_TO_COMPUTE_PLANE` audit verifier/runbook packaged olsa da live audit smoke, Denetim #198 app-mTLS, direct-STT `/transcribe` e2e ve desktop mic/loopback kanıtı ayrı kapıdır.
 - WG-B+ I3/I6 cross-server hardening acceptance, #1864 ve #1867 altında protected host/operator evidence PASS + reviewer acceptance gelmeden Faz 24 final readiness olarak konuşulmaz.
 
 ## 3. 3-AI Mutabakat Noktaları (her biri 3 AI tarafından onaylı)
