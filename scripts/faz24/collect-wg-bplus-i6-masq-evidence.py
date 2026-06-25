@@ -104,14 +104,33 @@ def command_variants(name: str, args: list[str], sudo: bool = False) -> list[lis
     return variants
 
 
+def nsenter_variants(name: str, args: list[str], sudo: bool = False) -> list[list[str]]:
+    """Return read-only host namespace variants for containerized runners."""
+    variants: list[list[str]] = []
+    for nsenter in command_paths("nsenter"):
+        for command in command_paths(name):
+            base = [nsenter, "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", command, *args]
+            if sudo:
+                variants.append(["sudo", "-n", *base])
+            variants.append(base)
+    return variants
+
+
+def host_command_variants(name: str, args: list[str], sudo: bool = False) -> list[list[str]]:
+    return command_variants(name, args, sudo=sudo) + nsenter_variants(name, args, sudo=sudo)
+
+
 def first_success(commands: list[list[str]], timeout: int = 12) -> CommandResult:
     last = CommandResult(127, "", "not-run")
+    best_failure: CommandResult | None = None
     for command in commands:
         result = run_command(command, timeout=timeout)
         last = result
         if result.exit_code == 0:
             return result
-    return last
+        if result.exit_code not in {126, 127}:
+            best_failure = result
+    return best_failure or last
 
 
 def safe_name(value: str, fallback: str = "unknown") -> str:
@@ -158,18 +177,18 @@ def rollback_hash(unit: str, pod_cidr: str, wg_interface: str, target_host: str)
 
 
 def collect_systemd(unit: str, drift_timer: str) -> dict[str, Any]:
-    active = first_success(command_variants("systemctl", ["is-active", unit], sudo=True), timeout=6)
-    enabled = first_success(command_variants("systemctl", ["is-enabled", unit], sudo=True), timeout=6)
+    active = first_success(host_command_variants("systemctl", ["is-active", unit], sudo=True), timeout=6)
+    enabled = first_success(host_command_variants("systemctl", ["is-enabled", unit], sudo=True), timeout=6)
     show = first_success(
-        command_variants(
+        host_command_variants(
             "systemctl",
             ["show", unit, "-p", "ActiveState", "-p", "UnitFileState", "-p", "ExecStart", "-p", "ExecStop"],
             sudo=True,
         ),
         timeout=8,
     )
-    timer_active = first_success(command_variants("systemctl", ["is-active", drift_timer], sudo=True), timeout=6)
-    timer_enabled = first_success(command_variants("systemctl", ["is-enabled", drift_timer], sudo=True), timeout=6)
+    timer_active = first_success(host_command_variants("systemctl", ["is-active", drift_timer], sudo=True), timeout=6)
+    timer_enabled = first_success(host_command_variants("systemctl", ["is-enabled", drift_timer], sudo=True), timeout=6)
 
     show_stdout = show.stdout if show.exit_code == 0 else ""
     has_exec_start = "ExecStart=" in show_stdout and not re.search(r"^ExecStart=$", show_stdout, re.MULTILINE)
@@ -189,7 +208,7 @@ def collect_systemd(unit: str, drift_timer: str) -> dict[str, Any]:
 
 
 def collect_route_interface(target_host: str) -> dict[str, Any]:
-    result = first_success(command_variants("ip", ["route", "get", target_host], sudo=True), timeout=6)
+    result = first_success(host_command_variants("ip", ["route", "get", target_host], sudo=True), timeout=6)
     route_interface = None
     if result.exit_code == 0:
         match = re.search(r"\bdev\s+([A-Za-z0-9_.:@-]{1,96})\b", result.stdout)
@@ -204,8 +223,8 @@ def collect_route_interface(target_host: str) -> dict[str, Any]:
 def collect_iptables(pod_cidr: str, wg_interface: str, target_host: str) -> dict[str, Any]:
     commands: list[list[str]] = []
     for binary in ["iptables", "iptables-nft", "iptables-legacy"]:
-        commands.extend(command_variants(binary, ["-t", "nat", "-S", "POSTROUTING"], sudo=True))
-    commands.extend(command_variants("iptables-save", ["-t", "nat"], sudo=True))
+        commands.extend(host_command_variants(binary, ["-t", "nat", "-S", "POSTROUTING"], sudo=True))
+    commands.extend(host_command_variants("iptables-save", ["-t", "nat"], sudo=True))
     result = first_success(commands, timeout=10)
     lines = result.stdout.splitlines() if result.exit_code == 0 else []
     target_networks = {f"{target_host}/32"}
