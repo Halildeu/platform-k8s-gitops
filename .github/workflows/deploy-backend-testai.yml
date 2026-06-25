@@ -322,9 +322,11 @@ jobs:
               -n "${K8S_NAMESPACE}"
 
             # Per-service rollout-status budget. Default 180s; endpoint-admin-service
-            # gets 300s because its first current-main boot runs Flyway V67..V74
-            # (incl. V74 endpoint_tpm_device_binding) + Hibernate ddl-auto=validate
-            # over the full endpoint_admin schema, which can exceed 180s cold.
+            # gets 300s as a cold-boot safety margin: the #754-only swap adds NO new
+            # migration (V67..V74 incl. V74 endpoint_tpm_device_binding are already
+            # applied on the running base, commit eed9027), but the first boot after
+            # the re-pin still runs Hibernate ddl-auto=validate over the full
+            # endpoint_admin schema, which can exceed 180s cold.
             ROLLOUT_TIMEOUT="180s"
             if [ "${svc}" = "endpoint-admin-service" ]; then
               ROLLOUT_TIMEOUT="300s"
