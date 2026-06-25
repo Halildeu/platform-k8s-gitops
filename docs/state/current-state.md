@@ -1,5 +1,32 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 I7 app-mTLS evidence verifier packaged (2026-06-25)
+
+`platform-ai#198` remains the immediate runtime blocker before any bounded
+direct-STT compute-plane smoke. A read-only `staging-sw` probe still shows a WG
+route to Denetim (`10.99.0.2 dev wg0 src 10.99.0.1`), but TCP/8243 from
+staging fails. This is consistent with the prior host-policy / WFP / ESET /
+central allowlist blocker and is not a GitOps digest rollout problem.
+
+The I7 evidence path now has a metadata-only verifier and ingest workflow:
+
+- `scripts/faz24/verify-i7-app-mtls-evidence.py` validates
+  `faz24.i7.app-mtls.evidence.v1` JSON.
+- `.github/workflows/faz24-i7-app-mtls-evidence-ingest.yml` ingests a base64
+  evidence JSON, runs the verifier, uploads a bounded artifact, and fails when
+  the evidence is rejected.
+- `docs/runbooks/RB-faz24-i7-app-mtls-evidence.md` defines two profiles:
+  `live-stt-preflight` for the immediate Denetim `8243` path needed before
+  #188/#182 smoke preparation, and `prod-gate` for the fuller I7 gate including
+  meeting-ai, request audit, plaintext-bypass closure, rotation, failure drill,
+  and redaction.
+
+Boundary: this is source/evidence packaging only. It does not mutate Denetim
+PC, Caddy, firewall/WFP/ESET, Vault PKI, Kubernetes, or production state. It
+does not enable direct-STT, does not send audio, does not prove
+`CHUNK_FORWARDED_TO_COMPUTE_PLANE`, does not prove `/transcribe` e2e, and does
+not make #198 accepted until live metadata evidence passes and is reviewed.
+
 ## Live Delta — Faz 24 direct-STT transcript result artifact test runtime evidence (2026-06-25)
 
 `platform-backend#753` merged commit
