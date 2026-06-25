@@ -1,0 +1,79 @@
+# RB-faz24-product-gate-evidence-ingest
+
+## Purpose
+
+This runbook describes the no-mutation GitHub Actions ingest path for Faz 24
+product-gate evidence:
+
+- G-CAP capture reliability evidence from
+  `scripts/faz24/verify_gcap_capture_gate_evidence.py`
+- G-OPS on-prem operability evidence from
+  `scripts/faz24/verify_gops_operability_gate_evidence.py`
+- G-COMP compliance readiness evidence from
+  `scripts/faz24/verify_gcomp_compliance_gate_evidence.py`
+
+The workflow is `.github/workflows/faz24-product-gate-evidence-ingest.yml`.
+It validates redacted metadata evidence only. It does not run a pilot, mutate
+runtime/Kubernetes/Vault/firewall/legal state, store raw meeting data, accept
+VERBIS/legal sign-off, enable direct-STT, or make production ready.
+
+## Inputs
+
+Dispatch the workflow with:
+
+- `gate`: one of `gcap`, `gops`, `gcomp`
+- `evidence_json_base64`: a single-line base64 representation of the selected
+  gate's redacted JSON evidence envelope
+
+Do not paste secrets, tokens, JWTs, private keys, certificates, raw audio,
+raw transcript text, prompts, responses, personal data, cookies, kubeconfig,
+Vault material, or legal advice text into the evidence JSON.
+
+## Local Encoding
+
+From a trusted local file:
+
+```bash
+base64 -i /path/to/redacted-evidence.json | tr -d '\n'
+```
+
+If the local `base64` implementation does not support `-i`, use:
+
+```bash
+base64 /path/to/redacted-evidence.json | tr -d '\n'
+```
+
+## Expected Outputs
+
+The workflow uploads an artifact named:
+
+```text
+faz24-product-gate-evidence-<gate>-<run_id>
+```
+
+The artifact contains:
+
+- pretty-printed decoded evidence JSON
+- verifier stdout/stderr
+- `summary.json`
+
+The workflow fails when the selected verifier returns non-zero or when the
+artifact scan detects private/secret/raw-sensitive key material. Failed runs
+are still useful for diagnosis, but they are not acceptance evidence.
+
+## Acceptance Boundary
+
+A passing ingest run proves only that the submitted redacted metadata envelope
+met the selected verifier's source-side schema, threshold, and boundary checks.
+It does not prove:
+
+- live G-CAP/G-OPS/G-COMP product acceptance
+- direct-STT transcript readiness
+- compute-plane audit readiness
+- desktop mic/loopback readiness
+- VERBIS/legal acceptance
+- DB cleanup completion
+- production readiness
+
+Attach the workflow URL, artifact name, verifier status, and reviewer notes to
+the relevant gate issue before moving any gate beyond `Needs Verify`.

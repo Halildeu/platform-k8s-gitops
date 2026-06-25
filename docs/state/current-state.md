@@ -92,6 +92,14 @@ GitOps also advanced several product-quality and compliance guardrails on
   allows only approved pilot evidence kinds to satisfy the gate. Lab /
   synthetic / Common Voice style performance rows can support capacity
   planning but intentionally return `status=blocked` for acceptance.
+- GitOps issue `platform-k8s-gitops#2027` tracks the shared no-mutation
+  evidence-ingest workflow for the G-CAP/G-OPS/G-COMP verifiers:
+  `.github/workflows/faz24-product-gate-evidence-ingest.yml` decodes a
+  selected gate's redacted base64 JSON evidence, invokes the matching verifier,
+  scans for private/secret/raw-sensitive markers, and uploads a bounded
+  evidence artifact. It does not run a pilot, mutate runtime/Kubernetes/Vault/
+  firewall/legal state, store raw meeting data, accept VERBIS/legal sign-off,
+  enable direct-STT, or make production ready.
 
 Project #4 was reconciled after these updates: `platform-ai#185` is `Done`,
 while `#160`, `#161`, `#162`, `#156`, `#182`, `#188`, and `#198` remain
@@ -101,8 +109,9 @@ Boundary: these changes advance source-side quality/compliance/product
 governance. They do not produce real pilot WER/DER, do not satisfy G-INT with a
 real meeting, do not produce pilot G-LAT/COST acceptance, do not record VERBIS,
 do not create DB cleanup evidence, do not produce live G-COMP acceptance
-evidence, do not enable direct-STT, do not send raw audio, do not satisfy #188
-compute-plane audit smoke, and do not make Faz 24 production-ready. The
+evidence, do not create live G-CAP/G-OPS acceptance evidence, do not enable
+direct-STT, do not send raw audio, do not satisfy #188 compute-plane audit
+smoke, and do not make Faz 24 production-ready. The
 immediate direct-STT runtime blocker remains
 `platform-ai#198` Denetim `8243` app-mTLS reachability.
 

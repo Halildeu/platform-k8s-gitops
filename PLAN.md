@@ -72,7 +72,10 @@ install/upgrade/backup/restore/rollback/secret-delivery/observability
 evidence. This slice adds the metadata-only G-COMP aggregate compliance gate
 verifier (`scripts/faz24/verify_gcomp_compliance_gate_evidence.py`) for
 redacted consent/retention/legal-hold/access-audit/deletion-export/KVKK-VERBIS
-evidence. This advances sector-standard quality/compliance governance, but
+evidence, plus `.github/workflows/faz24-product-gate-evidence-ingest.yml` and
+`docs/runbooks/RB-faz24-product-gate-evidence-ingest.md` as a shared
+no-mutation ingest path for G-CAP/G-OPS/G-COMP evidence artifacts. This
+advances sector-standard quality/compliance governance, but
 does not provide real pilot WER/DER, real pilot G-INT, pilot G-LAT/COST, live
 aggregate G-CAP evidence, live G-COMP compliance evidence, live G-OPS on-prem
 evidence, VERBIS/DB cleanup acceptance, direct-STT runtime, raw-audio transit,
