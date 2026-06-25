@@ -1,29 +1,44 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 24 direct-STT transcript result artifact desired-state sync (2026-06-25)
+## Live Delta — Faz 24 direct-STT transcript result artifact test runtime evidence (2026-06-25)
 
 `platform-backend#753` merged commit
-`eed9027c5bd85f12192b302568630a9100724126` and moved one source-side slice
-of `platform-ai#182`: successful direct-STT `/transcribe` responses can now be
+`eed9027c5bd85f12192b302568630a9100724126` and moved one source-side slice of
+`platform-ai#182`: successful direct-STT `/transcribe` responses can now be
 routed to a default-off Redis transcript result stream. Backend image build run
-`28159840296` concluded successfully and dispatched a digest map containing:
+`28159840296` succeeded. `platform-k8s-gitops#2000` then merged
+`9a3d8eafbfac2602088ff1d2e210ef3d645c68f6` and aligned test overlay
+desired-state for the backend payload:
 
 - `audio-gateway-service=sha256:a584bd1f4ca964f0c2707813808e2454afb77a82d87f4624df6eb02788a100e3`
 - `endpoint-admin-service=sha256:c6be72d5ad469fb764bdd1eebf6a4df5bd49e28af3b04ce8151bb68ccbbb3da9`
 
-The first `deploy-backend-testai.yml` repository_dispatch run for that backend
-commit, run `28159921571`, did not mutate live runtime. It failed at
-`Sequential kubectl set image` because `--fail-on-change` found the test
-overlay desired-state still pinned to older `audio-gateway-service` and
-`endpoint-admin-service` digests. The test overlay now pins both digest lines to
-the backend payload so the next deploy run can pass the desired-state guard.
+Runtime evidence:
 
-Boundary: this is desired-state digest synchronization for the #753 source
-artifact. It is not a successful live rollout yet, does not enable direct-STT,
-does not prove `audio-gateway -> live-stt /transcribe`, does not close the
-`platform-ai#188` compute-plane audit gate, and is not production readiness.
-Next evidence is a successful `deploy-backend-testai.yml` rerun with pod digest,
-readiness, and stability gates.
+- First repository_dispatch run `28159921571` failed before live mutation because
+  `--fail-on-change` detected overlay drift. This is historical negative
+  evidence; it was not a runtime rollout.
+- Manual `deploy-backend-testai.yml` workflow_dispatch run `28160561477`
+  succeeded on `main` `9a3d8eafbfac2602088ff1d2e210ef3d645c68f6`.
+- Gate 1a digest verification recorded
+  `endpoint-admin-service-845b5948bf-zjngx -> sha256:c6be72d5ad469fb764bdd1eebf6a4df5bd49e28af3b04ce8151bb68ccbbb3da9`
+  and
+  `audio-gateway-677695fdc5-8l95l -> sha256:a584bd1f4ca964f0c2707813808e2454afb77a82d87f4624df6eb02788a100e3`.
+- Gate 1b public edge returned HTTP `401`, accepted as api-gateway edge chain
+  alive.
+- Gate 1c readiness returned `200` for both `endpoint-admin-service` and
+  `audio-gateway`.
+- Gate 1d stability passed for `endpoint-admin-service` across `180s` and
+  `audio-gateway` across `120s`.
+- Gate 2 JWT auth smoke was skipped because `SMOKE_AUTH_*` secrets are absent.
+- Post-run read-only `staging-sw` query confirmed both Deployments are `1/1`,
+  both pods are `ready=true`, and both restart counts are `0`.
+
+Boundary: this proves the #753 source artifact reached `k3d-test` with immutable
+digest, readiness, and stability evidence. It still does not enable direct-STT,
+does not prove `audio-gateway -> live-stt /transcribe`, does not prove transcript
+result stream emission, does not close the `platform-ai#188` compute-plane audit
+gate, and is not production readiness.
 
 ## Live Delta — Faz 24 compute-plane audit evidence verifier packaged (2026-06-25)
 
