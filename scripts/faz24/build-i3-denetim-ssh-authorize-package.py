@@ -143,6 +143,8 @@ param(
   [string]$TargetUser = {ps_single_quoted(target_user)},
   [string]$PublicKeyFile = (Join-Path $PSScriptRoot {ps_single_quoted(DEFAULT_PUBLIC_KEY_NAME)}),
   [string]$EvidencePath = (Join-Path $PSScriptRoot 'denetim-i3-ssh-authorize-evidence.json'),
+  [switch]$CreateTargetUser,
+  [switch]$GrantEventLogReaders,
   [switch]$RestartSshd
 )
 
@@ -243,23 +245,128 @@ function Test-IsAdministrator {{
   return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 }}
 
-function Resolve-LocalProfilePath {{
+function New-RandomSecurePassword {{
+  $bytes = New-Object byte[] 32
+  $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+  try {{
+    $rng.GetBytes($bytes)
+  }} finally {{
+    $rng.Dispose()
+  }}
+  $password = ([Convert]::ToBase64String($bytes) + '!aA1')
+  return ConvertTo-SecureString -String $password -AsPlainText -Force
+}}
+
+function Get-LocalAccountSid {{
   param([Parameter(Mandatory=$true)][string]$UserName)
 
-  $null = Get-LocalUser -Name $UserName -ErrorAction Stop
   $account = New-Object System.Security.Principal.NTAccount($env:COMPUTERNAME, $UserName)
-  $sid = $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
-  $profileKey = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\$sid"
-  if (-not (Test-Path -LiteralPath $profileKey)) {{
-    throw "profile-not-found:$UserName"
+  return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+}}
+
+function Ensure-TargetUser {{
+  param(
+    [Parameter(Mandatory=$true)][string]$UserName,
+    [Parameter(Mandatory=$true)][bool]$CreateIfMissing
+  )
+
+  $user = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
+  $created = $false
+  if ($null -eq $user) {{
+    if (-not $CreateIfMissing) {{
+      throw "target-user-not-found:$UserName"
+    }}
+    $securePassword = New-RandomSecurePassword
+    New-LocalUser `
+      -Name $UserName `
+      -Password $securePassword `
+      -AccountNeverExpires `
+      -PasswordNeverExpires `
+      -UserMayNotChangePassword `
+      -Description 'Faz 24 I3 metadata-only SSH audit account' `
+      -ErrorAction Stop | Out-Null
+    $created = $true
+    $user = Get-LocalUser -Name $UserName -ErrorAction Stop
   }}
-  $profilePath = (Get-ItemProperty -LiteralPath $profileKey).ProfileImagePath
-  if ([string]::IsNullOrWhiteSpace($profilePath) -or -not (Test-Path -LiteralPath $profilePath)) {{
+
+  if (-not $user.Enabled) {{
+    throw "target-user-disabled:$UserName"
+  }}
+
+  return [ordered]@{{
+    created = $created
+    existed = (-not $created)
+    enabled = [bool]$user.Enabled
+    sid = Get-LocalAccountSid -UserName $UserName
+  }}
+}}
+
+function Ensure-EventLogReadersMembership {{
+  param(
+    [Parameter(Mandatory=$true)][string]$UserName,
+    [Parameter(Mandatory=$true)][bool]$GrantMembership
+  )
+
+  if (-not $GrantMembership) {{
+    return [ordered]@{{ attempted = $false; present = $false }}
+  }}
+
+  $targetSid = Get-LocalAccountSid -UserName $UserName
+  $groupSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-573')
+  $groupName = $groupSid.Translate([System.Security.Principal.NTAccount]).Value
+  $memberAccount = "$env:COMPUTERNAME\\$UserName"
+  $members = @(Get-LocalGroupMember -Group $groupName -ErrorAction Stop)
+  $present = (@($members | Where-Object {{ $_.SID.Value -eq $targetSid }}).Count -gt 0)
+
+  if (-not $present) {{
+    Add-LocalGroupMember -Group $groupName -Member $memberAccount -ErrorAction Stop
+    $members = @(Get-LocalGroupMember -Group $groupName -ErrorAction Stop)
+    $present = (@($members | Where-Object {{ $_.SID.Value -eq $targetSid }}).Count -gt 0)
+  }}
+
+  return [ordered]@{{ attempted = $true; present = [bool]$present }}
+}}
+
+function Resolve-LocalProfilePath {{
+  param(
+    [Parameter(Mandatory=$true)][string]$UserName,
+    [Parameter(Mandatory=$true)][bool]$AllowFallback
+  )
+
+  $null = Get-LocalUser -Name $UserName -ErrorAction Stop
+  $sid = Get-LocalAccountSid -UserName $UserName
+  $profileKey = "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\$sid"
+  $registryPresent = Test-Path -LiteralPath $profileKey
+  $profileCreated = $false
+  $profileFallbackUsed = $false
+
+  if (-not $registryPresent) {{
+    if (-not $AllowFallback) {{
+      throw "profile-not-found:$UserName"
+    }}
+    $profilePath = Join-Path $env:SystemDrive "Users\\$UserName"
+    $profileFallbackUsed = $true
+  }} else {{
+    $profilePath = (Get-ItemProperty -LiteralPath $profileKey).ProfileImagePath
+  }}
+
+  if ([string]::IsNullOrWhiteSpace($profilePath)) {{
     throw "profile-path-not-found:$UserName"
   }}
+  if (-not (Test-Path -LiteralPath $profilePath)) {{
+    if (-not $AllowFallback) {{
+      throw "profile-path-not-found:$UserName"
+    }}
+    New-Item -ItemType Directory -Path $profilePath -Force | Out-Null
+    $profileCreated = $true
+  }}
+
   return [ordered]@{{
     sid = $sid
     profilePath = $profilePath
+    registryPresent = [bool]$registryPresent
+    profileCreated = [bool]$profileCreated
+    profileFallbackUsed = [bool]$profileFallbackUsed
   }}
 }}
 
@@ -372,7 +479,9 @@ try {{
     exit 2
   }}
 
-  $profile = Resolve-LocalProfilePath -UserName $TargetUser
+  $targetUserState = Ensure-TargetUser -UserName $TargetUser -CreateIfMissing ([bool]$CreateTargetUser)
+  $eventLogReaders = Ensure-EventLogReadersMembership -UserName $TargetUser -GrantMembership ([bool]$GrantEventLogReaders)
+  $profile = Resolve-LocalProfilePath -UserName $TargetUser -AllowFallback ([bool]$CreateTargetUser)
   $sshDir = Join-Path $profile.profilePath '.ssh'
   $authorizedKeys = Join-Path $sshDir 'authorized_keys'
 
@@ -418,6 +527,14 @@ try {{
     publicKeyLineSha256 = $publicKeyInfo.lineSha256
     publicKeyBlobSha256 = $publicKeyInfo.blobSha256
     targetUserSidHash = Get-Sha256ShortForText -Value $profile.sid
+    targetUserCreated = [bool]$targetUserState.created
+    targetUserExisted = [bool]$targetUserState.existed
+    targetUserEnabled = [bool]$targetUserState.enabled
+    eventLogReadersGrantAttempted = [bool]$eventLogReaders.attempted
+    eventLogReadersMembershipPresent = [bool]$eventLogReaders.present
+    profileRegistryPresent = [bool]$profile.registryPresent
+    profileCreated = [bool]$profile.profileCreated
+    profileFallbackUsed = [bool]$profile.profileFallbackUsed
     profilePathHash = Get-Sha256ShortForText -Value $profile.profilePath
     authorizedKeysPathHash = Get-Sha256ShortForText -Value $authorizedKeys
     keyAdded = $keyAdded
@@ -478,11 +595,24 @@ Do not execute it from a network share. The script sets the final `.ssh` and
 `authorized_keys` ACLs itself, so archive ownership metadata is not used as
 authorization evidence.
 
+If the dedicated local account is missing, use the explicit bootstrap mode:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\{POWERSHELL_NAME} -TargetUser {target_user} -CreateTargetUser -GrantEventLogReaders
+```
+
+This creates `{target_user}` with a random non-exported password, keeps it
+non-admin, grants Event Log Readers for audit metadata collection, prepares the
+local profile `.ssh` directory when Windows has not created one yet, and records
+only hashes/boolean state in the evidence file. The generated password is not
+printed, written to the evidence JSON, or included in this package.
+
 The script is idempotent. It resolves the local user's profile, appends the
 public key only when the key material is absent, hardens `.ssh` and
 `authorized_keys` ACLs to the target user and SYSTEM with FullControl plus
 Administrators read-only access, and writes
-`denetim-i3-ssh-authorize-evidence.json`.
+`denetim-i3-ssh-authorize-evidence.json`. When bootstrap mode is not used, a
+missing target user remains a fail-closed condition.
 
 Optional sshd restart, only if the operator explicitly chooses it:
 
@@ -535,6 +665,8 @@ def build_package(args: argparse.Namespace) -> dict:
         "publicKeyLength": len(public_key.line),
         "privateKeyIncluded": False,
         "rawPublicKeyIncludedInMetadata": False,
+        "supportsTargetUserBootstrap": True,
+        "recommendedMissingUserFlags": ["CreateTargetUser", "GrantEventLogReaders"],
         "operatorScript": POWERSHELL_NAME,
         "operatorEvidenceFile": "denetim-i3-ssh-authorize-evidence.json",
         "nextVerification": "rerun faz24-wg-bplus-i3-evidence.yml after Denetim authorization",

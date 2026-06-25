@@ -146,6 +146,11 @@ def require_bool_true(findings: list[Finding], label: str, value: Any) -> None:
         findings.append(Finding("flag_must_be_true", f"{label}: must be true"))
 
 
+def require_optional_bool(findings: list[Finding], label: str, data: dict[str, Any]) -> None:
+    if label in data and data[label] is not True and data[label] is not False:
+        findings.append(Finding("boolean_shape", f"{label} must be boolean when present"))
+
+
 def require_sha256_hex(findings: list[Finding], label: str, value: Any) -> None:
     if not isinstance(value, str) or not SHA256_HEX_RE.match(value):
         findings.append(Finding("sha256_shape", f"{label}: must be 64 lowercase hex chars"))
@@ -203,6 +208,32 @@ def validate_evidence(data: dict[str, Any], args: argparse.Namespace) -> list[Fi
     require_bool_false(findings, "privateKeyIncluded", data.get("privateKeyIncluded"))
     require_bool_false(findings, "rawPublicKeyIncluded", data.get("rawPublicKeyIncluded"))
     require_bool_true(findings, "aclHardened", data.get("aclHardened"))
+
+    for field in [
+        "targetUserCreated",
+        "targetUserExisted",
+        "targetUserEnabled",
+        "eventLogReadersGrantAttempted",
+        "eventLogReadersMembershipPresent",
+        "profileRegistryPresent",
+        "profileCreated",
+        "profileFallbackUsed",
+    ]:
+        require_optional_bool(findings, field, data)
+
+    if "targetUserEnabled" in data:
+        require_bool_true(findings, "targetUserEnabled", data.get("targetUserEnabled"))
+    if data.get("targetUserCreated") is True and data.get("targetUserExisted") is True:
+        findings.append(Finding("target_user_state", "targetUserCreated and targetUserExisted cannot both be true"))
+    if data.get("targetUserCreated") is False and data.get("targetUserExisted") is False:
+        findings.append(Finding("target_user_state", "targetUserCreated or targetUserExisted must be true when both are present"))
+    if data.get("eventLogReadersGrantAttempted") is True and data.get("eventLogReadersMembershipPresent") is not True:
+        findings.append(
+            Finding(
+                "event_log_readers_membership",
+                "eventLogReadersMembershipPresent must be true when eventLogReadersGrantAttempted is true",
+            )
+        )
 
     key_added = data.get("keyAdded")
     key_already_present = data.get("keyAlreadyPresent")

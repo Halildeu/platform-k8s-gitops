@@ -61,6 +61,25 @@ class VerifyI3DenetimSshAuthorizeEvidenceTest(unittest.TestCase):
         self.assertIn("Faz24 I3 Denetim SSH authorize evidence: PASS", result.stdout)
         self.assertIn("targetUser=svc-denetim-agent", result.stdout)
 
+    def test_bootstrap_evidence_passes_when_consistent(self):
+        data = valid_evidence()
+        data.update(
+            {
+                "targetUserCreated": True,
+                "targetUserExisted": False,
+                "targetUserEnabled": True,
+                "eventLogReadersGrantAttempted": True,
+                "eventLogReadersMembershipPresent": True,
+                "profileRegistryPresent": False,
+                "profileCreated": True,
+                "profileFallbackUsed": True,
+            }
+        )
+
+        result = self.run_verifier(data)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_blocked_status_fails(self):
         data = valid_evidence()
         data["status"] = "blocked"
@@ -118,6 +137,16 @@ class VerifyI3DenetimSshAuthorizeEvidenceTest(unittest.TestCase):
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("key_presence", result.stderr)
+
+    def test_event_log_reader_attempt_requires_membership(self):
+        data = valid_evidence()
+        data["eventLogReadersGrantAttempted"] = True
+        data["eventLogReadersMembershipPresent"] = False
+
+        result = self.run_verifier(data)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("event_log_readers_membership", result.stderr)
 
 
 if __name__ == "__main__":
