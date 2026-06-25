@@ -139,6 +139,29 @@ the next action, for example `ssh-auth-publickey` versus `ssh-timeout` versus
 `ssh-hostkey`. The evidence bundle must still pass all eight checks before
 `platform-k8s-gitops#1864` can move forward.
 
+If the preflight reports `sshFailureClass=ssh-auth-publickey`, first ensure the
+self-hosted runner has the deterministic Faz 24 I3 SSH identity available:
+
+```bash
+gh workflow run faz24-i3-runner-ssh-identity.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main \
+  -f mode=create \
+  -f confirm=CREATE_FAZ24_I3_DENETIM_SSH_IDENTITY
+```
+
+The uploaded artifact is `faz24-i3-runner-ssh-identity-<run_id>`. It contains
+`ssh-identity.json` and a copy of the public key only. The private key remains
+runner-local and must not be copied into issue comments, artifacts, Mavis,
+email, or chat. The Denetim PC must still authorize the uploaded public key
+for `svc-denetim-agent`; the workflow does not change Denetim PC, clusters,
+direct-STT, app-mTLS, or production state.
+
+After Denetim authorization, rerun `faz24-wg-bplus-i3-evidence.yml`. The
+collector uses `~/.ssh/faz24-i3-denetim_ed25519` when present and records only
+path hash plus public-key fingerprint metadata under
+`collector.denetimSshPreflight`.
+
 Use `wg_interface=auto` unless the staging host's WireGuard interface is
 already confirmed. Auto mode runs `wg show interfaces` with the same
 non-interactive `sudo -n` fallback as the per-interface metadata probes and
