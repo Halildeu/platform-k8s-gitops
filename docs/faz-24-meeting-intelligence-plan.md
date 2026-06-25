@@ -3,12 +3,14 @@
 > **Status**: ACTIVE (2026-06-02, 3-AI mutabakat sonrası sabit)
 >
 > **Mutabakat trail**: Claude (Anthropic) + Codex `019e879c` (OpenAI, AGREE final) + Mavis `mvs_c922505d66a94a45b031feb3489f9488` msg `78` (MiniMax, AGREE).
+>
+> **2026-06-25 truth refresh**: Faz 24 bağımsız ürün olarak konumlanır; Workcube/ERP entegrasyonu ürün bağımlılığı değildir. Sektör-standardı yol haritası §11'e eklendi ve mevcut runtime truth'a göre sınırlandı: recorder OpenFGA selector + edge lifecycle evidence accepted; direct-STT, compute-plane audit smoke, desktop mic/loopback ve WG-B+ I3/I6 host/operator gates hâlâ ayrı kanıt ister.
 
 ---
 
 ## 1. Vizyon
 
-Workcube ERP'ye entegre toplantı zekâsı platformu. Telefon / masaüstü / Teams ses kaynaklarından:
+Bağımsız toplantı zekâsı platformu. Workcube/ERP bu plan için ürün bağımlılığı değil; eski entegrasyon bağlamı ve olası connector yüzeyidir. Telefon / masaüstü / Teams ses kaynaklarından:
 
 - Canlı geçici transkript (2-8 sn gecikme)
 - Kesinleşmiş transkript (10-20 sn bağlamlı)
@@ -16,7 +18,7 @@ Workcube ERP'ye entegre toplantı zekâsı platformu. Telefon / masaüstü / Tea
 - Özet + karar + aksiyon LLM çıkarımı
 - KVKK uyumlu retention + audit + consent
 
-üretir. **STT compute worker yapısı** (`platform-ai`) Spring Boot orchestration arkasında konumlanır — mobile/web hiçbir zaman doğrudan Python servisine bağlanmaz.
+üretir. **STT compute worker yapısı** (`platform-ai`) Spring Boot orchestration arkasında konumlanır — mobile/web/desktop hiçbir zaman doğrudan Python servisine bağlanmaz.
 
 ## 2. Repo + Host Topology
 
@@ -24,12 +26,20 @@ Workcube ERP'ye entegre toplantı zekâsı platformu. Telefon / masaüstü / Tea
 
 | Repo | Rol | Host | Durum |
 |---|---|---|---|
-| `platform-ai` | Python STT/diarization/meeting-ai (FastAPI + faster-whisper + pyannote + LLM) | **Dedicated host (yeni)** — k3s ai-test → ai-prod; ArgoCD remote register | 🟢 live-stt-service PoC iskelet LIVE (PR #1 MERGED `4088d9a`) — host provision blocker (ADR-0031) |
-| `platform-backend` | Spring Boot — `audio-gateway-service` (WebFlux) + `meeting-service` + `transcript-service` | **staging-sw** k3d-test/k3d-prod | ⏳ planning (PR-gw-01 sırada) |
+| `platform-ai` | Python STT/diarization/meeting-ai (FastAPI + faster-whisper + pyannote + LLM) | **Dedicated host (yeni)** — k3s ai-test → ai-prod; ArgoCD remote register | 🟢 live-stt-service PoC + Redis consumer source/live chain var; direct-STT transcript `platform-ai#182`, compute-plane audit smoke `platform-ai#188` altında ayrı acceptance ister |
+| `platform-backend` | Spring Boot — `audio-gateway-service` (WebFlux) + `meeting-service` + `transcript-service` + `audit-event-consumer-service` | **staging-sw** k3d-test/k3d-prod | 🟢 k3d-test foundation + recorder edge lifecycle kanıtlı; external meeting-admin gateway audience, direct-STT ve desktop mic/loopback ayrı gate |
 | `platform-web` | React + Single-SPA — `mfe-meeting` MFE | **staging-sw** (frontend serve) | ⏳ planning (Faz 24.6) |
 | `platform-mobile` | **React Native + Expo** + TypeScript — iOS + Android mobile client | **Kullanıcı cihazı** (App Store / Google Play distribution) | 🟢 **scaffold LIVE 2026-06-02** (commits `a774412`+`3a609a8`) |
-| `platform-desktop` | **Electron + React** + TypeScript — macOS + Windows + Linux desktop client | **Kullanıcı cihazı** (electron-updater + signed installer) | 🟢 **scaffold LIVE 2026-06-02** (commit `a245578`) |
-| `platform-k8s-gitops` | Kustomize + ArgoCD GitOps + ADR-0030 + ADR-0031 + observability skeleton | **staging-sw** ArgoCD hub + platform-ai k3s remote cluster | 🟢 charter LIVE (PR #1207 MERGED) + ADR-0031 ACCEPTED (PR #1233 MERGED 2026-06-03) |
+| `platform-desktop` | **Electron + React** + TypeScript — macOS + Windows + Linux desktop client | **Kullanıcı cihazı** (electron-updater + signed installer) | 🟢 scaffold + recorder contract source chain var; gerçek mic/loopback smoke ayrı kanıt ister |
+| `platform-k8s-gitops` | Kustomize + ArgoCD GitOps + ADR-0030 + ADR-0031 + observability skeleton + WG-B+ evidence packaging | **staging-sw** ArgoCD hub + platform-ai k3s remote cluster | 🟢 runtime desired-state + I3/I6 evidence package lanes main'de; #1864/#1867 operator host kanıtı `Needs Verify` |
+
+### 2.1 Current Runtime Boundary (2026-06-25)
+
+- `meeting-service`, `transcript-service`, `audit-event-consumer-service`, `audio-gateway` ve Redis Streams foundation k3d-test hattında kanıtlıdır; bu, production veya direct-STT transcript readiness iddiası değildir.
+- OpenFGA runtime selector `meeting` / `transcript` model gap'i `01KVXG15ETYAHMHANFD0E5CVK8` ile aşıldı; recorder edge lifecycle smoke `testai.acik.com/api/v1/audio-gateway` üzerinde consent/session/chunk/finish seviyesinde kanıtlandı.
+- External `POST https://testai.acik.com/api/v1/admin/meetings` hâlâ `platform-desktop` token audience sınırı nedeniyle ayrı gateway-contract takip ister; mevcut recorder meeting fixture hop'u cluster-internal meeting-service üzerinden yapılmıştır.
+- `audio-gateway` şu anda Redis dispatcher modunda; direct-STT transcript, same-session `CHUNK_FORWARDED_TO_COMPUTE_PLANE` audit smoke ve desktop mic/loopback kanıtı ayrı kapıdır.
+- WG-B+ I3/I6 cross-server hardening acceptance, #1864 ve #1867 altında protected host/operator evidence PASS + reviewer acceptance gelmeden Faz 24 final readiness olarak konuşulmaz.
 
 ## 3. 3-AI Mutabakat Noktaları (her biri 3 AI tarafından onaylı)
 
@@ -37,7 +47,7 @@ Workcube ERP'ye entegre toplantı zekâsı platformu. Telefon / masaüstü / Tea
 
 `live-stt-service` iç compute worker'dır; mobile/web hiçbir zaman doğrudan `platform-ai`'a bağlanmaz.
 
-**Neden**: Auth / tenant / audit / permission / KVKK pattern'leri Spring Boot Gateway'de (Workcube ERP konvansiyonu). `live-stt`'ye client WebSocket koymak = yanlış ownership boundary + deprecation borcu.
+**Neden**: Auth / tenant / audit / permission / KVKK pattern'leri Spring Boot Gateway'de tutulur. `live-stt`'ye client WebSocket koymak = yanlış ownership boundary + deprecation borcu.
 
 ### 2. Audio Gateway Contract 1.0 ÖNCE kilitlenir
 
@@ -67,7 +77,7 @@ KVKK ADR'ye transcript için **ayrı boyut**: kim okuyabilir (participant / comp
 
 Gateway Contract 1.0'da `language` required field; `tr` sadece local/dev default. Product API explicit gönderir.
 
-**Neden**: Workcube müşteri çeşitliliği multi-dil destek gerektirir. Sonradan eklemek = breaking change retroaktif.
+**Neden**: Bağımsız ürün müşteri çeşitliliği multi-dil destek gerektirir. Sonradan eklemek = breaking change retroaktif.
 
 ### 7. Worker isolation = b + d kombinasyonu
 
@@ -95,14 +105,14 @@ PR-stt-02 e2e öncesi **iki host için ayrı baseline** (Codex `019e8c09` iter-2
 
 Faz 24.1 MVP tek müşteri OK, ama ADR-0030'da "future multi-tenant readiness" placeholder — tenantId metadata + auth token validation Gateway seviyesinde.
 
-**Neden**: Workcube dışı müşteri girişi geldiğinde retroactively eklemek pahalı.
+**Neden**: Yeni müşteri/tenant girişi geldiğinde retroactively eklemek pahalı.
 
 ---
 
 ## 4. 3 RED (yapılmayacak — Codex + Mavis ortak)
 
 1. ❌ **Gateway contract kilitlenmeden** mobile/Web veya STT WebSocket contract yazılması
-2. ❌ **KVKK ADR olmadan** gerçek Workcube meeting kaydı kullanılması
+2. ❌ **KVKK ADR olmadan** gerçek müşteri meeting kaydı kullanılması
 3. ❌ **Synthetic WER ile** model kararı kapatılması
 
 ---
@@ -257,11 +267,96 @@ Mobile/desktop/web client'lar **hiçbir zaman** doğrudan `platform-ai`'a bağla
 | Multi-tenant placeholder | (örtük) | msg `78` B tek eksik | AGREE |
 | **Two-server topology** (ADR-0031) | `019e8c09` iter-1+iter-2+iter-3 REVISE absorb → **iter-4 AGREE final** ("merge blocker bulmadım") | msg `78` AGREE final 2026-06-03 (ADR-0031 mutabakat closed) | AGREE (kullanıcı 2026-06-03 mimari notu) |
 
+## 11. Sektör-Standardı Yol Haritası (bağımsız ürün)
+
+> **Kapsam**: Faz 24 artık Workcube'e gömülü bir ERP özelliği olarak değil, Türkiye ve regüle/veri-hassas enterprise pazarına satılabilir bağımsız meeting-intelligence ürünü olarak planlanır. Rakip paritesi Otter, Fireflies, Gong, Teams Copilot ve Zoom AI Companion sınıfına göre okunur; farklılaşma ise Türkçe-first kalite, self-host/on-prem opsiyon, KVKK governance ve citation'lı intelligence kombinasyonudur.
+
+### 11.1 Kazanma Formülü
+
+Savunulabilir pozisyon: **Türkçe-first + on-prem/self-host + compliance-grade governance + kaynaklı intelligence**. Tek başına STT, tek başına chat/summary veya tek başına self-host yeterli değildir. Hedef wedge, yatay self-serve SaaS değil; kamu, finans, sağlık, savunma, hukuk ve yönetim kurulu gibi veri hassasiyeti yüksek enterprise segmentleridir.
+
+Current diagnosis:
+
+- Altyapı hattı ileri: gateway, Redis Streams, meeting/transcript/audit services, OpenFGA selector ve recorder edge lifecycle evidence var.
+- Ürün-değer hattı açık: reliable capture, diarization, WER/DER ölçümü, citation'lı summary/action extraction, admin consent/retention/legal-hold UX ve PoC benchmark raporu eksik.
+- Acceptance dili bu ayrımı korur: infrastructure evidence, market-ready product evidence yerine geçmez.
+
+### 11.2 Capability Tracks
+
+| Track | Kapsam | Sektör boşluğu | Öncelik | Ana repo |
+|---|---|---|:--:|---|
+| **T-A Capture** | Teams/Calendar bot, Zoom/Meet bot, desktop recorder production smoke, browser upload fallback | Bot/capture yoksa ürün dosya-yükleme aracı seviyesinde kalır | P0 | backend + desktop/web/mobile |
+| **T-B Quality** | Türkçe WER harness, gerçek toplantı benchmark, diarization DER, speaker→person mapping | Türkçe doğruluk ve diarization rakip paritesinin temel kanıtı | P0 | `platform-ai` |
+| **T-C Intelligence** | Özet, karar, aksiyon, owner/date extraction, citation/timecode, transcript Q&A | Asıl ürün değeri; regüle pazarda her çıkarım kaynağa bağlanmalı | P0 | `platform-ai` + backend |
+| **T-D Compliance Productization** | ADR-0030 hukuk/VERBIS acceptance, consent UI, retention/legal-hold, access matrix, audit export, on-prem install pack | Bu pazar için farklılaşma noktası; doküman değil ürün yüzeyi olmalı | P1 | gitops + web + backend |
+| **T-E Integration Parity** | Webhook, CRM/Jira/CSV/export, notification follow-up, calendar/task sink | Diferansiyatör değil ama enterprise satışta eksiklik gibi görünür | P2 | backend + web |
+
+Deferred by design:
+
+- Üç client'ta erken tam parite; önce capture + desktop/web reliable path.
+- Canlı altyazı latency takıntısı; önce transcript/intelligence correctness.
+- GPU/model kararını WER/latency/cost ölçümü olmadan kilitlemek.
+- Self-host LLM'i tek opsiyon yapmak; transcript-only özel bulut modu opsiyon olarak kalabilir.
+
+### 11.3 Product Quality Gates
+
+| Gate | Evidence |
+|---|---|
+| **G-WER/DER** | Gerçek Türkçe toplantı setinde WER ve diarization DER hedefi; synthetic fixture yalnız CI/pipeline smoke içindir |
+| **G-INT** | Faithfulness + action-item precision/recall + owner/date accuracy; her summary/action citation/timecode ile bağlanır |
+| **G-CAP** | Teams/Calendar veya desktop recorder ile kayıt başlatma, consent alma, chunk upload, finish ve failure retry oranı ölçülü |
+| **G-COMP** | Consent, retention, legal hold, access audit ve deletion/export policy canlı; KVKK hukuk/VERBIS boundary ADR-0030'da accepted |
+| **G-LAT/COST** | Latency p50/p95, queue lag, cost/dakika ve GPU/CPU utilization ölçülür; model/GPU kararı bu ölçüme dayanır |
+| **G-OPS** | On-prem install/upgrade/backup/restore/runbook kanıtı; secret delivery ve rollback path test edilir |
+
+### 11.4 Aşama Sırası
+
+```text
+Aşama-2 evidence line
+  Gateway + Redis + foundation services + recorder edge lifecycle evidence
+  Boundary: direct-STT, compute-plane audit, desktop mic/loopback, WG-B+ I3/I6 open.
+
+Aşama-3 Core Product Value (P0)
+  T-B WER/DER harness + diarization
+  T-C citation'lı summary / decision / action extraction
+  İlk gerçek toplantı e2e: capture -> transcript -> intelligence -> audit.
+
+Aşama-4 Adoption + Compliance (P0/P1)
+  T-A Teams/Calendar veya desktop recorder production-grade capture
+  T-D consent / retention / legal-hold / access audit UX
+  ADR-0030 accepted + on-prem installation package.
+
+Aşama-5 Proof
+  3-5 design-partner PoC
+  Türkçe benchmark raporu
+  Regulated-segment reference evidence.
+
+Aşama-6 Scale + GTM
+  Tek dikey wedge seçimi
+  T-E integration parity
+  SaaS/private-cloud/on-prem SKU paketleme.
+```
+
+### 11.5 MVP Definition
+
+İlk satılabilir MVP: **Teams/Calendar veya desktop capture → Türkçe transcript + diarization → citation'lı özet/karar/aksiyon → admin consent/retention/access/audit → on-prem opsiyon → basit export**. Canlı altyazı, full mobile parity, multi-platform bot paritesi ve revenue-coaching dikeyleri MVP dışıdır.
+
+### 11.6 ADR Backlog
+
+| ADR | Konu | Tetik |
+|---|---|---|
+| Capture strategy | Bot vs native recorder vs desktop capture; tek güçlü initial path | T-A implementation öncesi |
+| Diarization approach | pyannote/alternatif, DER ölçümü, speaker→person mapping | T-B `PR-diar-*` öncesi |
+| Intelligence layer | Citation, hallucination guard, LLM routing, self-host/private-cloud sınırı | T-C `PR-llm-*` öncesi |
+| ADR-0030 legal evidence package | KVKK boundary'yi hukuk/VERBIS kanıtı, consent/retention/access kararları ve audit evidence ile operasyonel acceptance'a taşıma | Gerçek customer audio/transcript PoC öncesi |
+| Packaging/GTM | SaaS + on-prem lisans, regulated premium tier, backup/restore/SLA | Aşama-6 öncesi |
+
 ## References
 
 - Codex thread: `019e879c-c51e-7691-8f16-69c781fb787e` (plan-time + iter-3 AGREE final — single-host varsayımıyla)
 - Codex thread: `019e877b-bd31-72f3-b86a-229f933e51cb` (live-stt PR #1 review AGREE)
 - Codex thread: `019e8c09-2cc7-7d23-a414-2c1d2950232c` (ADR-0031 two-server topology iter-1 REVISE absorb)
+- Codex/Claude sector-roadmap handoff: PR #1614 historical input, refreshed on `origin/main` with 2026-06-25 runtime boundaries
 - Mavis msgs: `74` (PARTIAL historical) → `76` (absorb wait historical) → `78` (AGREE final 2026-06-03 — ADR-0031 cross-AI mutabakat closed); HARD RULE Cross-AI Peer Review provider seviyesinde Anthropic + OpenAI yeterli, MiniMax non-blocking
 - ADR-0030 KVKK Meeting Intelligence Boundary (placeholder + §"Cross-Server STT Transit Boundary" eklendi 2026-06-03)
 - **ADR-0031 Two-Server Meeting Intelligence Topology** ACCEPTED 2026-06-03 (gitops PR #1233 MERGED — D1-D8 host boundary + network topology + resource pressure + GPU + deployment + Vault + KVKK + failure modes)
