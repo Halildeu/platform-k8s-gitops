@@ -157,6 +157,46 @@ email, or chat. The Denetim PC must still authorize the uploaded public key
 for `svc-denetim-agent`; the workflow does not change Denetim PC, clusters,
 direct-STT, app-mTLS, or production state.
 
+Build the Denetim-side public-key authorization package from that identity
+artifact:
+
+```bash
+gh workflow run faz24-i3-denetim-ssh-authorize-package.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main \
+  -f identity_run_id=<faz24-i3-runner-ssh-identity-run-id> \
+  -f target_user=svc-denetim-agent
+```
+
+The uploaded artifact is
+`faz24-i3-denetim-ssh-authorize-package-<run_id>`. It contains only:
+
+- `authorize-denetim-i3-public-key.ps1`
+- `faz24-i3-denetim_ed25519.pub`
+- `expected-public-key-metadata.json`
+- `README.md`
+- `SHA256SUMS`
+
+Boundary: the package workflow does not connect to Denetim PC and does not
+change Denetim host config. It is public-key-only and rejects private key
+material. A Denetim operator must copy the package to the Denetim PC, extract
+it to a local directory, and run the PowerShell script from an elevated session:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\authorize-denetim-i3-public-key.ps1 `
+  -TargetUser svc-denetim-agent
+```
+
+Do not run it from a network share. The script is idempotent: it validates the
+public key fingerprint and SHA256, resolves the local `svc-denetim-agent`
+profile, appends the key only when the key material is absent, sets the file
+owner to the target user, hardens `.ssh` and `authorized_keys` ACLs to the
+target user and SYSTEM with FullControl plus Administrators read-only access,
+and writes `denetim-i3-ssh-authorize-evidence.json`. This evidence file is not
+acceptance by itself; it is the Denetim-side authorization proof needed before
+the I3 collector can reach the endpoint.
+
 After Denetim authorization, rerun `faz24-wg-bplus-i3-evidence.yml`. The
 workflow passes the same runner-workspace identity path to the collector and
 records only path hash plus public-key fingerprint metadata under
