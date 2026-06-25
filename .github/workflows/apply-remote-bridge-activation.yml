@@ -9,7 +9,7 @@ on:
       expected_digest:
         description: 'Expected endpoint-admin-service digest for endpoint-admin-remote-bridge'
         required: true
-        default: 'sha256:3015656f62bc02549648add32b1a6bde994f1a02f971dbaefe2db43b0a5df79b'
+        default: 'sha256:5eff536b4bcf77c21ef6f75963a9caa4a844bf47fe613fb7399113f34dd9b03b'
       dry_run:
         description: 'Render and server-side dry-run only'
         required: true
