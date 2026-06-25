@@ -413,8 +413,7 @@ try {{
   }}
   $sshdStatusAfter = if ($sshd) {{ $sshd.Status.ToString() }} else {{ 'not-found' }}
 
-  $reason = if ($keyAdded) {{ 'authorized-key-added' }} else {{ 'authorized-key-present' }}
-  Write-Evidence -Status 'pass' -Reason $reason -Extra @{{
+  $evidenceExtra = @{{
     publicKeyFingerprint = $publicKeyInfo.fingerprint
     publicKeyLineSha256 = $publicKeyInfo.lineSha256
     publicKeyBlobSha256 = $publicKeyInfo.blobSha256
@@ -428,6 +427,15 @@ try {{
     sshdServiceStatusAfter = $sshdStatusAfter
     sshdRestartAttempted = $restartAttempted
   }}
+
+  if ($sshdStatusAfter -ne 'Running') {{
+    Write-Evidence -Status 'blocked' -Reason 'sshd-not-running' -Extra $evidenceExtra
+    Write-Error "sshd-not-running:$sshdStatusAfter"
+    exit 1
+  }}
+
+  $reason = if ($keyAdded) {{ 'authorized-key-added' }} else {{ 'authorized-key-present' }}
+  Write-Evidence -Status 'pass' -Reason $reason -Extra $evidenceExtra
 
   Write-Host "FAZ24_I3_DENETIM_SSH_AUTHORIZE status=pass reason=$reason fingerprint=$($publicKeyInfo.fingerprint)"
   exit 0

@@ -193,9 +193,44 @@ public key fingerprint and SHA256, resolves the local `svc-denetim-agent`
 profile, appends the key only when the key material is absent, sets the file
 owner to the target user, hardens `.ssh` and `authorized_keys` ACLs to the
 target user and SYSTEM with FullControl plus Administrators read-only access,
-and writes `denetim-i3-ssh-authorize-evidence.json`. This evidence file is not
-acceptance by itself; it is the Denetim-side authorization proof needed before
-the I3 collector can reach the endpoint.
+requires `sshd` service status to be `Running`, and writes
+`denetim-i3-ssh-authorize-evidence.json`. This evidence file is not acceptance
+by itself; it is the Denetim-side authorization proof needed before the I3
+collector can reach the endpoint.
+
+Before rerunning the I3 evidence workflow, ingest the Denetim-side metadata
+evidence through the verifier workflow. The JSON is metadata-only and must not
+contain a raw public key, private key, bearer token, command content, or raw
+Windows profile path.
+
+From the elevated Denetim PowerShell session:
+
+```powershell
+$EvidenceB64 = [Convert]::ToBase64String(
+  [IO.File]::ReadAllBytes((Resolve-Path .\denetim-i3-ssh-authorize-evidence.json))
+)
+$EvidenceB64
+```
+
+Dispatch the ingest workflow with that single-line value:
+
+```bash
+gh workflow run faz24-i3-denetim-ssh-authorize-evidence-ingest.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main \
+  -f evidence_json_base64='<single-line-base64-from-denetim>' \
+  -f expected_target_user=svc-denetim-agent \
+  -f expected_public_key_fingerprint='SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y' \
+  -f expected_public_key_line_sha256='83f4788c09f9d7e68af113e9680c4a996f95a66c230d6240780ace47734844ff' \
+  -f expected_public_key_blob_sha256='e2158a715d03df2ad17d6e2cae3d264096fedbdec9f919d2d07ba84740fab756'
+```
+
+The uploaded artifact is
+`faz24-i3-denetim-ssh-authorize-evidence-<run_id>`. It contains the normalized
+metadata evidence, verifier stdout/stderr, and `verification-summary.json`.
+Boundary: a passing ingest only proves the Denetim-side authorization evidence
+is structurally acceptable. It does not make #1864 acceptable by itself and it
+does not replace the I3 evidence verifier.
 
 After Denetim authorization, rerun `faz24-wg-bplus-i3-evidence.yml`. The
 workflow passes the same runner-workspace identity path to the collector and
