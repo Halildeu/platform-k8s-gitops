@@ -65,10 +65,14 @@ recording/archive boundary as live-path RED / future opt-in only, and
 `platform-k8s-gitops` now also carries the metadata-only G-CAP aggregate
 capture gate verifier
 (`scripts/faz24/verify_gcap_capture_gate_evidence.py`) for redacted external
-recorder verifier outputs. This advances sector-standard quality/compliance
-governance, but does not provide real pilot WER/DER, real pilot G-INT, pilot
-G-LAT/COST, live aggregate G-CAP evidence, VERBIS/DB cleanup acceptance,
-direct-STT runtime, raw-audio transit, or production readiness.
+recorder verifier outputs. `platform-k8s-gitops` also carries the
+metadata-only G-OPS operability gate verifier
+(`scripts/faz24/verify_gops_operability_gate_evidence.py`) for on-prem
+install/upgrade/backup/restore/rollback/secret-delivery/observability
+evidence. This advances sector-standard quality/compliance governance, but
+does not provide real pilot WER/DER, real pilot G-INT, pilot G-LAT/COST, live
+aggregate G-CAP evidence, live G-OPS on-prem evidence, VERBIS/DB cleanup
+acceptance, direct-STT runtime, raw-audio transit, or production readiness.
 
 **Faz 22.5 AG-029 delta (2026-06-07)**: AG-029 is no longer only a
 TODO/draft item. `platform-agent` #74 and #75 are merged, and a local

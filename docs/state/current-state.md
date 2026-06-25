@@ -554,6 +554,34 @@ new live recorder run, not direct-STT transcript evidence, not same-session
 compute-plane audit evidence, not desktop mic/loopback evidence, and not
 production readiness.
 
+## Live Delta — Faz 24 G-OPS operability gate verifier packaged (2026-06-25)
+
+Faz 24 now has a metadata-only G-OPS verifier for on-prem/self-host
+operability evidence:
+
+- `scripts/faz24/verify_gops_operability_gate_evidence.py` validates
+  `faz24.gopsOperabilityEvidence.v1` JSON before issue attachment.
+- Required evidence classes are install, upgrade, backup, restore, rollback,
+  secret delivery, observability, and runbook.
+- Default thresholds are `max-install-minutes=120`,
+  `max-upgrade-minutes=90`, `max-backup-age-hours=24`,
+  `max-restore-rto-minutes=240`, `max-restore-rpo-minutes=1440`,
+  `max-rollback-rto-minutes=60`, `max-secret-rotation-minutes=60`, and
+  `min-observability-coverage=0.90`.
+- `status=pass` means the submitted redacted evidence meets those source-side
+  G-OPS thresholds. `status=blocked` means an evidence class is missing or too
+  weak. `status=fail` means a privacy/schema/overclaim rejection or an
+  enough-evidence threshold miss.
+- The verifier rejects credential/token-shaped values, raw audio/transcript
+  fields, prompt/response payloads, and live-production / production-readiness
+  overclaims.
+- `docs/runbooks/RB-faz24-gops-operability-gate.md` defines the evidence
+  envelope, threshold command, status semantics, and attachment rule.
+
+Boundary: this packages source-side G-OPS evaluation only. It is not a live
+install, upgrade, backup, restore, rollback, secret rotation, cluster mutation,
+customer on-prem pilot, or production readiness acceptance.
+
 ## Live Delta — Faz 24 external recorder smoke evidence verifier packaged (2026-06-25)
 
 The #1615 external recorder evidence path now has a fail-closed verifier for

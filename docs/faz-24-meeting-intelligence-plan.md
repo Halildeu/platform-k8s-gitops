@@ -307,7 +307,7 @@ Deferred by design:
 | **G-CAP** | Teams/Calendar veya desktop recorder ile kayıt başlatma, consent alma, chunk upload, finish ve failure/retry oranı ölçülü; `scripts/faz24/verify_gcap_capture_gate_evidence.py` yalnız redacted external recorder verifier output'larından aggregate gate üretir, live pilot evidence bekler |
 | **G-COMP** | Consent, retention, legal hold, access audit ve deletion/export policy canlı; KVKK hukuk/VERBIS boundary ADR-0030'da accepted; `platform-ai#201` retention gate mevcut durumda blocked döner, `platform-ai#203` raw-audio archive'i default live path'ten çıkarır |
 | **G-LAT/COST** | Latency p50/p95, queue lag, cost/dakika ve GPU/CPU utilization ölçülür; `platform-ai#204` gate lab/synthetic/Common Voice performans kanıtını acceptance yerine kullanmayı bloklar; model/GPU kararı pilot ölçüme dayanır |
-| **G-OPS** | On-prem install/upgrade/backup/restore/runbook kanıtı; secret delivery ve rollback path test edilir |
+| **G-OPS** | On-prem install/upgrade/backup/restore/runbook kanıtı; secret delivery ve rollback path test edilir; `scripts/faz24/verify_gops_operability_gate_evidence.py` redacted metadata envelope'ını RPO/RTO/coverage eşikleriyle gate eder, live on-prem evidence bekler |
 
 ### 11.4 Aşama Sırası
 
@@ -325,7 +325,7 @@ Aşama-4 Adoption + Compliance (P0/P1)
   T-A Teams/Calendar veya desktop recorder production-grade capture
   T-D consent / retention / legal-hold / access audit UX
   Raw-audio archive default-off; future opt-in only (platform-ai-scoped ADR-0036)
-  ADR-0030 accepted + on-prem installation package.
+  ADR-0030 accepted + on-prem installation package + G-OPS operability gate evidence.
 
 Aşama-5 Proof
   3-5 design-partner PoC
