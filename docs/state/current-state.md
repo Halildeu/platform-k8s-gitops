@@ -1,5 +1,24 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 plan truth refreshed around independent product gates (2026-06-25)
+
+The Faz 24 canonical plan and `PLAN.md` roadmap row have been realigned with
+the current product decision and runtime boundary:
+
+- Faz 24 is now described as an independent meeting-intelligence product;
+  Workcube/ERP is no longer a product dependency or primary framing.
+- The canonical plan now separates infrastructure/runtime evidence from
+  market-ready product evidence. Recorder OpenFGA selector promotion and edge
+  lifecycle evidence remain accepted, but direct-STT transcript, same-session
+  compute-plane audit smoke, desktop mic/loopback, and WG-B+ I3/I6
+  host/operator evidence are still separate gates.
+- Sector-standard product tracks are explicit in the canonical plan: capture,
+  Turkish WER/DER quality, citation-backed intelligence, compliance
+  productization, integration parity, and on-prem/ops packaging.
+- This update does not change #1864 or #1867 acceptance status; both remain
+  `Needs Verify` until protected operator evidence is ingested, verifier PASS
+  is present, and reviewer acceptance is recorded.
+
 ## Live Delta — Faz 24 WG-B+ I3 runner SSH identity stable; Denetim authorization blocker remains (2026-06-25)
 
 Faz 24 WG-B+ I3 management-audit evidence path source-ready olmaktan çıktı ve
