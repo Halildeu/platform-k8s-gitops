@@ -1,10 +1,11 @@
 # Current State — Platform K8s Migration
 
-## Live Delta — Faz 24 WG-B+ I3 runner `wg` repaired; Denetim SSH + correlation gate blocked (2026-06-25)
+## Live Delta — Faz 24 WG-B+ I3 runner `wg` repaired; Denetim SSH auth blocker classified (2026-06-25)
 
 Faz 24 WG-B+ I3 management-audit evidence path source-ready olmaktan çıktı ve
 self-hosted `staging-sw` runner üzerinde canlı denendi. Runner-side `wg`
-binary prerequisite repair edildi, fakat I3 verifier hâlâ PASS değil. Bu kanıt
+binary prerequisite repair edildi ve Denetim SSH exit `255` artık
+`ssh-auth-publickey` sınıfına ayrıldı; I3 verifier hâlâ PASS değil. Bu kanıt
 direct-STT, app-mTLS, compute-plane audit veya direct audio e2e kabulü değildir.
 
 Source/workflow chain:
@@ -31,6 +32,12 @@ Source/workflow chain:
   `98af5a89e27260f4a95156a8003a338406f01f75` ile controlled
   `faz24-i3-runner-wg-tool-repair.yml` workflow'unu, runner-side repair
   script'ini ve runbook rollback boundary'sini ekledi.
+- `platform-k8s-gitops#1966` squash merge commit
+  `a1ad0e9eb50164c5861b4bce45bca83c72941cb0` ile metadata-only
+  `collector.denetimSshPreflight` alanını ekledi: route probe, TCP 22
+  reachability, SSH failure class ve raw-output-free fingerprint. Bu alan
+  diagnostic/blocker-classification kanıtıdır; acceptance check'lerini
+  genişletmez.
 
 Live workflow evidence:
 
@@ -42,11 +49,11 @@ Live workflow evidence:
   `status=pass`, `reason=wg-tool-installed`, `packageManager=apt-get`,
   `installAttempted=true`, `installed=true`, `wgToolFound=true`,
   `wgToolSelected=wg`, `wgToolProbeExitCode=0`.
-- Latest I3 evidence workflow run `28140619780`, `main`
-  `98af5a89e27260f4a95156a8003a338406f01f75` üzerinde çalıştı ve verifier
+- Latest I3 evidence workflow run `28141179881`, `main`
+  `a1ad0e9eb50164c5861b4bce45bca83c72941cb0` üzerinde çalıştı ve verifier
   failure nedeniyle workflow conclusion `failure` verdi.
 - I3 evidence artifact:
-  `faz24-wg-bplus-i3-evidence-28140619780` / artifact id `7866591970`.
+  `faz24-wg-bplus-i3-evidence-28141179881` / artifact id `7866795961`.
 - Artifact redaction flags:
   `rawAudioIncluded=false`, `rawTranscriptIncluded=false`,
   `secretMaterialIncluded=false`, `commandContentIncluded=false`.
@@ -59,8 +66,16 @@ Bounded blocker facts:
   `stagingWireGuardProbe.interfacesQueryable=true`,
   `stagingWireGuardProbe.detectedCount=1`, `selectedInterface=wg0`.
 - `remoteCollectorReached=false`.
+- Denetim SSH preflight artık endpoint TCP 22 erişilebilirliğini ve auth
+  sınıfını ayırıyor:
+  `denetimSshPreflight.tcp22Reachable=true`, `sshExitCode=255`,
+  `sshFailureClass=ssh-auth-publickey`, `sshStderrPresent=true`,
+  `sshErrorFingerprint=9d559fc5b2396bc2`.
+- `denetimSshPreflight.routeQueryable=false`, `routeExitCode=127`; bu run'da
+  runner route tool'u yok/sorgulanabilir değil, fakat TCP 22 erişimi endpoint
+  socket'in runner'dan ulaşılabilir olduğunu kanıtlıyor.
 - Denetim SSH metadata collector all Denetim-side checks için exit `255`
-  verdi.
+  vermeye devam ediyor; raw stderr artifact'e taşınmadı.
 - `stagingWireGuardProbe.requested=auto`.
 - `stagingWireGuardProbe.selectedLatestExitCode=1`,
   `selectedTransferExitCode=1`, `selectedEndpointsExitCode=1`.
@@ -76,15 +91,18 @@ Boundary / next:
 
 - `platform-k8s-gitops#1864` I3 acceptance açık kalır; verifier PASS olmadan
   accepted/readiness dili kullanılmaz.
-- Sonraki kanıt işi artık runner-side `wg` binary erişimi değildir; Denetim SSH
-  reachability/metadata collection ve staging WireGuard/SSH correlation
-  metadata'sı kanıtlanmalıdır.
+- Sonraki kanıt işi artık runner-side `wg` binary erişimi veya TCP 22
+  reachability değildir; self-hosted `staging-sw` runner SSH identity'si ile
+  Denetim PC `svc-denetim-agent` authorized public key set'i hizalanmalı veya
+  onaylı non-secret provisioning yolu sağlanmalıdır. Repo Actions
+  secret/variable yüzeyinde `SSH`, `DENETIM`, `WG`, `FAZ24` veya `KEY` ile
+  eşleşen kullanılabilir credential adı bulunmadı.
 - Bu management-plane evidence, `platform-ai#198` Denetim `8243` app-mTLS,
   `platform-ai#188` compute-plane audit smoke veya `platform-ai#182` direct
   audio e2e acceptance'ı yerine geçmez.
 - Project #2 custom-field sync bu oturumda GitHub GraphQL/ProjectV2 rate limit
   nedeniyle pending kaldı; latest REST-backed evidence comment #1864'e yazıldı:
-  `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4795023408`.
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4795092732`.
 
 ## Live Delta — Faz 24 direct-STT mTLS artifact test overlay'e taşındı; functional gate açık (2026-06-25)
 
