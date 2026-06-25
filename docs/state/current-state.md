@@ -224,23 +224,69 @@ Source/contract evidence:
   Kubernetes DaemonSet assumption'ı, broad LAN NAT, raw output/audio/transcript,
   secret-like değerler, absolute/parent-traversal evidence ref'leri ve drift
   hash mismatch'i acceptance dışıdır.
+- `platform-k8s-gitops#1978` squash merge commit
+  `c9f240ea58aaa325c1befb0c352d2b559b2d4bd7` ile self-hosted `staging-sw`
+  runner üzerinde çalışan metadata-only I6 collector workflow/script'ini
+  ekledi. Default collector mode read-only ve fail-closed kalır; host
+  iptables/nftables, WireGuard, Kubernetes object, platform-ai veya production
+  state mutate etmez.
+- `platform-k8s-gitops#1979` squash merge commit
+  `f9c04982737c60ac7b0b0f65b6abd9903db43a95` ile collector'ın `ip`,
+  `iptables`, `systemctl`, `kubectl` ve `wg` komutları için common absolute
+  path fallback'ini ekledi. Bu düzeltme ilk collector run'ında görülen
+  admin-tool `127` sınıfını path ekseninde daraltmak içindir; acceptance kanıtı
+  değildir.
+
+Runtime/live collector evidence:
+
+- Collector workflow run `28145968109`, `main`
+  `c9f240ea58aaa325c1befb0c352d2b559b2d4bd7` üzerinde çalıştı ve verifier
+  failure nedeniyle workflow conclusion `failure` verdi. Artifact:
+  `faz24-wg-bplus-i6-masq-collect-28145968109`.
+- Path fallback sonrası collector workflow run `28146163383`, `main`
+  `f9c04982737c60ac7b0b0f65b6abd9903db43a95` üzerinde çalıştı ve verifier
+  failure nedeniyle workflow conclusion `failure` verdi. Artifact:
+  `faz24-wg-bplus-i6-masq-collect-28146163383`.
+- Latest collector metadata:
+  `schemaVersion=faz24.wg-bplus.i6.pod-cidr-wg-masq.v1`,
+  `status=blocked`, verifier `status=fail`, `findingCount=10`.
+- Redaction flags all false:
+  `secretMaterialIncluded=false`, `rawCommandOutputIncluded=false`,
+  `rawPacketCaptureIncluded=false`, `rawAudioIncluded=false`,
+  `rawTranscriptIncluded=false`.
+- Positive live facts: `wgInterface=wg0`, `wg.autoDetected=true`,
+  `wg.interfaceCount=1`, `pod-to-platform-ai-http=pass` with bounded `4xx`
+  status class, and `daemonset-not-assumed=pass`.
+- Remaining I6 blocked checks from latest run:
+  `host-namespace-nat-rule-present`, `pod-cidr-to-wg-masq-rule`,
+  `reboot-persistence`, `drift-detect`, `rollback-defined`,
+  `no-broad-lan-nat`.
+- Narrowed host evidence blocker: latest run still reports
+  `route.probeExitCode=127`, `iptables.probeExitCode=127` and
+  `systemd.showExitCode=127`. The current self-hosted runner environment sees
+  WireGuard and can execute a pod-origin HTTP probe, but it does not expose the
+  host namespace `ip`/`iptables`/`systemctl` surfaces required to prove NAT,
+  drift and rollback.
 
 Runtime/live boundary:
 
 - Eski runbook/handoff yüzeyinde `k3d-wg-masq` ve pod -> WG -> `live-stt:8200`
   için prose/historical test-leg kanıtı var; bu yeni I6 verifier üzerinden
   normalize edilmiş PASS evidence değildir.
-- Sıradaki bounded iş: gerçek host/WG path'inden protected metadata-only I6 JSON
-  üretmek, `faz24-wg-bplus-i6-masq-evidence-ingest.yml` workflow'u ile ingest
-  etmek ve #1867'yi reviewer acceptance gelene kadar `Needs Verify` durumunda
-  tutmaktır.
+- Sıradaki bounded iş: self-hosted runner'a host namespace evidence yüzeyini
+  açmak (`ip`, `iptables`, `systemctl`) veya onaylı protected metadata-only host
+  evidence JSON'unu `faz24-wg-bplus-i6-masq-evidence-ingest.yml` workflow'u ile
+  ingest etmektir. #1867 verifier PASS ve reviewer acceptance gelene kadar
+  `Needs Verify` durumunda tutulur.
 - Bu kanıt direct-STT Functional, I3 management audit, platform-ai app-mTLS veya
   production cutover kabulü yerine geçmez.
-- Project #2 / board truth: `scripts/board-sync.sh sync-state 1867` son
+- Project #2 / board truth: `scripts/board-sync.sh sync-state 1867` son başarılı
   kontrolde board `Status=Needs Verify`, body `status=needs-verify`,
-  `claim=unclaimed` döndürdü. Latest REST-backed evidence comment #1867'ye
-  yazıldı:
-  `https://github.com/Halildeu/platform-k8s-gitops/issues/1867#issuecomment-4795605302`.
+  `claim=unclaimed` döndürdü. GraphQL ProjectV2 budget sonraki continuation
+  sırasında exhausted olduğu için board/project sync tekrarları REST-backed
+  issue/PR/check truth ile devam etti; Project custom-field reconciliation reset
+  sonrası yapılmalıdır. Latest REST-backed evidence comment #1867'ye yazıldı:
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1867#issuecomment-4795783082`.
 
 ## Live Delta — Faz 24 direct-STT mTLS artifact test overlay'e taşındı; functional gate açık (2026-06-25)
 
