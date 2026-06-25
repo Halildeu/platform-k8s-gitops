@@ -1,5 +1,41 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 WG-B+ I6 MASQ evidence accepted; runtime gates remain open (2026-06-25)
+
+`platform-k8s-gitops#1867` is now closed / Project #2 `Done` for the
+I6-only pod-CIDR-to-WireGuard MASQ scope.
+
+Accepted evidence chain:
+
+- bounded `staging-sw` host-side I6 repair added an idempotent exact host NAT
+  wrapper for `10.42.0.0/16 -> 10.99.0.0/24` over `wg0`, systemd
+  `ExecStartPost` apply, `ExecStop` rollback, and a 5-minute drift re-apply
+  timer;
+- protected metadata-only evidence
+  `/tmp/wg-bplus-i6-masq-evidence-20260625T110233Z.json` was collected from a
+  clean temporary repo clone on `staging-sw`;
+- local verifier output was `Faz24 WG-B+ I6 MASQ evidence: PASS` with
+  `clusterName=k3d-test`, `podCIDR=10.42.0.0/16`, `wgInterface=wg0`, and
+  `mechanismType=host-systemd-iptables`;
+- GitHub ingest workflow run `28165629939` concluded `success`; job
+  `83416769870` passed input validation, evidence decode, verifier, private
+  material scan, summary, artifact upload, cleanup, and reject-on-fail guard;
+- ingest artifact `faz24-wg-bplus-i6-masq-evidence-28165629939` / id
+  `7876217236` was produced;
+- current-state PR `#2007` merged the evidence snapshot at
+  `2655db8416088ab5b0b76670b2a9bd427d2d657c`;
+- Claude CLI reviewer acceptance was recorded as `AGREE_ACCEPT` for I6-only
+  scope, with verifier status `pass`, finding count `0`, and no-leak boundary
+  preserved;
+- #1867 was deliberately closed after reviewer acceptance.
+
+Boundary: this acceptance covers only I6 pod-CIDR-to-WireGuard MASQ metadata
+evidence. It does not prove `platform-ai#198` Denetim `8243` app-mTLS,
+`platform-ai#188` same-session `CHUNK_FORWARDED_TO_COMPUTE_PLANE` audit smoke,
+`platform-ai#182` direct audio e2e, I3 management audit, desktop mic/loopback,
+production cutover, or broad Faz 24 readiness. It must not be used as a
+direct-STT flag-flip basis.
+
 ## Live Delta — Faz 24 product-quality guardrails advanced; pilot/runtime gates remain open (2026-06-25)
 
 After the #187 transcript-routing source/deploy slice, `platform-ai` also
@@ -219,7 +255,7 @@ Denetim `8243` app-mTLS, `platform-ai#188` compute-plane audit smoke,
 `platform-ai#182` direct audio e2e, I6 MASQ evidence, production cutover, or
 broad readiness.
 
-## Live Delta — Faz 24 WG-B+ I6 host MASQ evidence PASS; reviewer acceptance pending (2026-06-25)
+## Live Delta — Faz 24 WG-B+ I6 host MASQ evidence accepted (2026-06-25)
 
 `platform-k8s-gitops#1867` moved from source/operator-package readiness to a
 fresh metadata-only verifier PASS on `staging-sw`, after a bounded host-side
@@ -258,13 +294,15 @@ Fresh evidence:
   `83416769870` passed decode, verifier, private-material scan, summary, and
   artifact upload. Artifact:
   `faz24-wg-bplus-i6-masq-evidence-28165629939` / id `7876217236`.
+- Claude CLI reviewer acceptance was later recorded as `AGREE_ACCEPT` for the
+  I6-only scope, and `platform-k8s-gitops#1867` was deliberately closed /
+  Project #2 `Done`.
 
-Acceptance boundary: this is I6 pod-CIDR-to-WireGuard MASQ metadata evidence
-only. It does not prove `platform-ai#198` Denetim `8243` app-mTLS,
+Acceptance boundary: this accepted only I6 pod-CIDR-to-WireGuard MASQ metadata
+evidence. It does not prove `platform-ai#198` Denetim `8243` app-mTLS,
 `platform-ai#188` compute-plane audit smoke, `platform-ai#182` direct audio
-e2e, I3 management audit, production cutover, or broad readiness. Keep #1867
-open until the evidence is reviewed and explicitly accepted; do not use this
-as a direct-STT flag-flip basis.
+e2e, I3 management audit, production cutover, or broad readiness. Do not use
+this as a direct-STT flag-flip basis.
 
 ## Live Delta — Faz 22.6 release-train graduation/hygiene gate reworked off the stale exact-pin (#1939, 2026-06-25)
 
@@ -789,7 +827,7 @@ Boundary / next:
   yazıldı:
   `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4796367521`.
 
-## Live Delta — Faz 24 WG-B+ I6 operator package and handoff ready; host verifier PASS pending (2026-06-25)
+## Live Delta — Faz 24 WG-B+ I6 operator package and handoff ready (historical pre-acceptance, 2026-06-25)
 
 Faz 24 WG-B+ I6 pod-CIDR -> WG MASQ işi source/contract seviyesinde
 main'e alındı ve operator-run için metadata-only host-evidence package
@@ -798,6 +836,11 @@ acceptance hâlâ açık. Bu delta yalnız I6 kanıt ingest/verifier, runbook,
 operator package ve coordination package yüzeyinin hazır olduğunu söyler;
 gerçek host/WG path'inden metadata-only evidence üretilip verifier PASS
 alınmadan I6 kabul edilmiş sayılmaz.
+
+Historical boundary: this section records the pre-acceptance package/handoff
+state. It was later superseded by live I6 verifier PASS, GitHub ingest run
+`28165629939`, Claude `AGREE_ACCEPT`, deliberate close of #1867, and Project
+#2 `Done`, recorded in the top I6 acceptance delta.
 
 Source/contract evidence:
 
@@ -929,22 +972,24 @@ Runtime/live collector evidence:
   expose acceptable host namespace `ip`/`iptables`/`systemctl` metadata to
   prove NAT, drift and rollback.
 
-Runtime/live boundary:
+Runtime/live boundary at this historical point:
 
 - Eski runbook/handoff yüzeyinde `k3d-wg-masq` ve pod -> WG -> `live-stt:8200`
   için prose/historical test-leg kanıtı var; bu yeni I6 verifier üzerinden
   normalize edilmiş PASS evidence değildir.
-- Sıradaki bounded iş: `faz24-wg-bplus-operator-handoff-28153244360` içindeki
+- The then-next bounded work was:
+  `faz24-wg-bplus-operator-handoff-28153244360` içindeki
   I6 sıra/komutlarıyla `faz24-i6-host-evidence-package-28151747361`
   artifact'ini `staging-sw` üzerinde clean repo checkout'tan operator olarak
   çalıştırıp `RB-faz24-wg-bplus-i6-pod-cidr-wg-masq.md` §6.1 boundary'sine
   uygun protected metadata-only host evidence JSON'u üretmek ve
   `faz24-wg-bplus-i6-masq-evidence-ingest.yml` workflow'u ile ingest etmektir.
-  #1867 verifier PASS ve reviewer acceptance gelene kadar `Needs Verify`
-  durumunda tutulur.
+  This work later produced verifier PASS and reviewer acceptance as recorded in
+  the top I6 acceptance delta.
 - Bu kanıt direct-STT Functional, I3 management audit, platform-ai app-mTLS veya
   production cutover kabulü yerine geçmez.
-- Project #2 / board truth: `scripts/board-sync.sh sync-state 1867` son başarılı
+- Historical Project #2 / board truth at that point:
+  `scripts/board-sync.sh sync-state 1867` son başarılı
   kontrolde board `Status=Needs Verify`, body `status=needs-verify`,
   `claim=unclaimed` döndürdü. Latest REST-backed evidence comment #1867'ye
   yazıldı:
