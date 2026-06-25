@@ -11,6 +11,12 @@ Denetim PC hâlâ public-key auth'u kabul etmiyor; I3 verifier PASS değil. Bu
 kanıt direct-STT, app-mTLS, compute-plane audit veya direct audio e2e kabulü
 değildir.
 
+Ek source/evidence progress: Denetim-side authorized public key hizalaması için
+public-key-only operator package hattı main'e alındı ve identity artifact'inden
+başarılı package artifact'i üretildi. Bu Denetim PC mutation kanıtı değildir;
+operator'ın elevated Denetim PowerShell oturumunda paketi uygulaması ve I3
+verifier'ın tekrar PASS vermesi hâlâ gerekir.
+
 Source/workflow chain:
 
 - `platform-k8s-gitops#1957` merge commit
@@ -51,6 +57,15 @@ Source/workflow chain:
   `b9bbedc659edaa1f8c3c5bbe564ad2e3840794b8` ile identity workflow ve I3
   evidence workflow'unun aynı runner-workspace identity path'ini kullanmasını
   sağladı. Bu düzeltme #1968 sonrası görülen path hash mismatch'ini giderdi.
+- `platform-k8s-gitops#1971` squash merge commit
+  `6ed74b27639c9818cf876819f870e70d72a66107` ile public-key-only
+  `faz24-i3-denetim-ssh-authorize-package.yml` workflow'unu, package builder'ı,
+  operator PowerShell script üretimini, runbook akışını ve testleri ekledi.
+  Workflow Denetim PC'ye bağlanmaz ve private key upload etmez.
+- `platform-k8s-gitops#1972` squash merge commit
+  `c133eb097d34290370c5069c4206f7645dd5898c` ile transient `input.pub`
+  dosyasını package artifact dizininin dışına taşıdı; artifact contract'ı
+  yalnız operator package dosyalarıyla sınırlı kaldı.
 
 Live workflow evidence:
 
@@ -74,6 +89,24 @@ Live workflow evidence:
   `ssh-identity-summary.txt` ve `faz24-i3-denetim_ed25519.pub` içerdi; private
   key artifact'e taşınmadı. Public key fingerprint:
   `SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y`.
+- Denetim SSH authorize package workflow run `28143384078`, `main`
+  `c133eb097d34290370c5069c4206f7645dd5898c` üzerinde `success` verdi.
+- Denetim SSH authorize package artifact:
+  `faz24-i3-denetim-ssh-authorize-package-28143384078`.
+- Package artifact doğrulanan dosya seti yalnız `README.md`, `SHA256SUMS`,
+  `authorize-denetim-i3-public-key.ps1`,
+  `expected-public-key-metadata.json` ve `faz24-i3-denetim_ed25519.pub`.
+- Package metadata:
+  `schemaVersion=faz24.i3.denetim.ssh-authorize-package.v1`,
+  `targetUser=svc-denetim-agent`, `sourceIdentityRunId=28142166373`,
+  `publicKeyFingerprint=SHA256:4hWKcV0D3yrRfW4srj0mQJb+297J+RnS0HuoR0D6t1Y`,
+  `publicKeyLineSha256=83f4788c09f9d7e68af113e9680c4a996f95a66c230d6240780ace47734844ff`,
+  `publicKeyBlobSha256=e2158a715d03df2ad17d6e2cae3d264096fedbdec9f919d2d07ba84740fab756`,
+  `privateKeyIncluded=false`,
+  `rawPublicKeyIncludedInMetadata=false`.
+- Package artifact content scan:
+  `contains_openssh_private=false`, `contains_rsa_private=false`,
+  `contains_bearer=false`.
 - Latest I3 evidence workflow run `28142193278`, `main`
   `b9bbedc659edaa1f8c3c5bbe564ad2e3840794b8` üzerinde çalıştı ve verifier
   failure nedeniyle workflow conclusion `failure` verdi.
@@ -121,9 +154,11 @@ Boundary / next:
 - Sonraki kanıt işi artık runner-side `wg` binary erişimi, identity path
   visibility veya TCP 22 reachability değildir; Denetim PC
   `svc-denetim-agent` authorized public key set'i, artifact'te verilen runner
-  public key ile hizalanmalı veya onaylı non-secret provisioning yolu
-  sağlanmalıdır. Repo Actions secret/variable yüzeyinde `SSH`, `DENETIM`,
-  `WG`, `FAZ24` veya `KEY` ile eşleşen kullanılabilir credential adı bulunmadı.
+  public key ile hizalanmalıdır. Public-key-only package artifact'i üretildi;
+  sıradaki bounded iş elevated Denetim operator execution evidence'i ve
+  ardından I3 evidence workflow rerun'ıdır. Repo Actions secret/variable
+  yüzeyinde `SSH`, `DENETIM`, `WG`, `FAZ24` veya `KEY` ile eşleşen kullanılabilir
+  credential adı bulunmadı.
 - Bu management-plane evidence, `platform-ai#198` Denetim `8243` app-mTLS,
   `platform-ai#188` compute-plane audit smoke veya `platform-ai#182` direct
   audio e2e acceptance'ı yerine geçmez.
