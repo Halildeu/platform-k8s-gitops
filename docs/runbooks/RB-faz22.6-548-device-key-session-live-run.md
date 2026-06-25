@@ -10,6 +10,49 @@
 
 ---
 
+## A. Codex-consulted execution plan (test pilot — 2026-06-25, thread `019efd6b`)
+
+Authoritative, industry-standard plan from a live recon of the real Intel fTPM PC + the deployed test cluster. **This section is the canonical execution order; §0–§7 are the detailed per-gate reference.**
+
+**Live state established (kubectl + direct-SSH recon):** target PC has a real **Intel fTPM** (RSA-2048 EK, attestation-capable, EK cert present) — viable. The deployed broker `endpoint-admin-remote-bridge` (NodePort 9444) is the **owner-approved denetim pilot** running `REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER=MACHINE_CERT_ENROLLMENT` with existing machine-cert sessions. `endpoint-admin.tpm-attest` is OFF. The signed agent **v0.3.3** (6a–6d + #238 EICA chain) is published (auto-signed, WDAC-trusted).
+
+### A.1 — Decision 1: a SEPARATE #548 broker, NEVER flip the shared pilot
+- **DO (b):** stand up a **separate device-key broker instance** (own Service/SNI or NodePort, ConfigMap, ExternalSecret/Vault path, permit KID, policy version, signer/recording keys, agent broker address) with `REMOTE_BRIDGE_DEVICE_TRUST_VERIFIER=DEVICE_KEY_ATTESTATION_REAL`. Leave the existing broker on `MACHINE_CERT_ENROLLMENT` untouched.
+- **DO NOT (a):** flip the shared broker — that is a hard cutover that denies existing machine-cert-only devices by design.
+- **LATER (c):** a tiered, policy-aware composite verifier (prefer-hardware, named machine-cert fallback with expiry + downgrade metrics) is the production migration — a separate feature PR, not this live run. For the pilot use `DEVICE_KEY_ATTESTATION_REAL` (basis `HARDWARE_KEY_ATTESTATION`) so the evidence is unambiguous; `REQUIRE_ENROLLMENT_AND_DEVICE_KEY_REAL` only if the owner wants the explicit `COMPOSITE` enrollment+hardware basis. The REAL verifier already re-checks active connected peer + persisted TPM binding + EK chain + AK binding + triple-SPKI equality.
+
+### A.2 — Decision 2: tpm-attest enablement (the §0.1 enrollment prerequisite)
+Enable on the service that runs `TpmEnrollmentController` (`endpoint-admin-service`, and the separate #548 broker if it selects the REAL verifier):
+```
+endpoint-admin.tpm-attest.enabled=true
+endpoint-admin.tpm-attest.allowed-tenant-ids=00000000-0000-0000-0000-000000000001   # pilot tenant
+endpoint-admin.tpm-attest.manufacturer-root-pems=<Intel ODCA Root CA PEM>            # config-pinned, NOT runtime-fetched
+endpoint-admin.tpm-attest.manufacturer-root-sha256=beb40bb7507b33967226aa80e084749fbb6593893c642e818d682e9a8d07fc24
+endpoint-admin.tpm-attest.vault.enabled=true
+# Vault PKI (L2 cert issuance) — fails startup if non-HTTPS or missing pinned CA:
+endpoint-admin.tpm-attest.vault.base-url=https://<vault>      # HTTPS
+endpoint-admin.tpm-attest.vault.role-id / secret-id          # AppRole (secret-id via ESO)
+endpoint-admin.tpm-attest.vault.<mount>/<role>               # PKI mount + role
+endpoint-admin.tpm-attest.vault.ca-pem=<pinned Vault CA PEM>
+# PCR: LEAVE UNSET on the first live run (see A.2.1)
+```
+- **Intel ODCA Root** (`https://tsci.intel.com/content/OnDieCA/certs/OnDie_CA_RootCA_Certificate.cer`, self-signed, sha256 `beb40bb7…`) is the correct single trust anchor. With agent **#238** the chain is `EK leaf → CSME ADL PTT EICA → Intel ODCA Root`: the agent sends the EICA in `ek_cert_chain_b64` (read from NV `0x01C00100..+3`), the backend pins the ODCA root. Do **not** pin the CSME intermediate as a normal anchor (that is the temporary "pinned intermediate" exception only).
+
+#### A.2.1 — PCR: do NOT strict-pin on the first run (Codex critical)
+`--auto-enroll-tpm` does **not** pass a `PCRSelections`, so the TPM quote has an empty PCR selection. Backend `pcr.advisory=true` is **not** "ignore PCR" — it still requires the quote's PCR selection to EQUAL `required-bitmap-hex`, then skips only the digest allow-set. So setting `required-bitmap-hex` while the agent sends no selection → enrollment **fails with PCR-selection-mismatch**. ⇒ **Leave PCR policy entirely unset** for the first #548 proof; capture the quote/PCR evidence from the run; only later (once the agent is wired to quote a known selection) set `required-bitmap-hex` + `advisory=true`, and only after stable cross-reboot observations move to `allow-set` enforcement. **Do not claim PCR posture yet.**
+
+### A.3 — Decision 3: safe sequence (validate enrollment + #238 BEFORE any session-verifier change)
+1. **Prepare enrollment trust** — enable tpm-attest (A.2) for the pilot tenant only, Intel ODCA root pin, Vault PKI, PCR off. **Enrollment-only — does not touch the existing broker's session basis.** Owner/security PR (new enrollment trust basis). **Requires Vault PKI admin setup** (mount + role + AppRole + pinned CA) — operator/credential-gated; the existing endpoint ESO carries no Vault PKI, so this is fresh Vault setup.
+2. **TPM auto-enroll** the Intel PC (`endpoint-agent.exe --auto-enroll-tpm --once`, v0.3.3). Verify the strong enrollment evidence BEFORE any session change: EK cert present; **EICA sent in `ek_cert_chain_b64`**; EK chain validates to the Intel ODCA root (no `ek-chain-untrusted` — this **runtime-validates #238**); AK restricted/Name matches; Vault-issued cert returned; `endpoint_tpm_device_binding` row has non-empty `ak_name` / `ak_pub_sha256` / `ek_cert_sha256` / `device_key_spki_sha256`.
+3. **Verify mTLS-leaf binding** (§3.1) — the bridge-selected client cert is the TPM-issued cert, its private key is acquirable, and leaf SPKI SHA-256 == `endpoint_tpm_device_binding.device_key_spki_sha256`. **Most likely operator trap** (a PEM exists but the bridge picks the old machine cert / a no-private-key cert).
+4. **Stand up the separate #548 broker** (A.1) — `DEVICE_KEY_ATTESTATION_REAL`; it also needs `tpm-attest.enabled=true` + the root pins present in its deployment (else the factory fails fast).
+5. **Point ONLY the test PC** at the #548 broker (agent remote-bridge + operations + `DEVICE_KEY_SESSION_ENABLED` for that PC). Existing machine-cert devices stay on the existing broker address.
+6. **Acceptance + negative markers** (§5/§6). Codex extra step-7 evidence: the agent's `ek_cert_chain_b64` subject/issuer **order** must match the validator's `leaf + chain[]` build; the chain is validated **per-session** too (not just enrollment).
+
+> **Owner/operator gates (not agent-doable):** Vault PKI admin setup (A.3.1), the new-enrollment-trust PR sign-off, the separate-broker deployment + its Vault secrets, and the managed-PC agent rollout to v0.3.3. The agent-doable parts (PC update + enroll + mTLS-leaf verify + session, all via SSH once the backend is ready) are driven by the assistant.
+
+---
+
 ## 0. Hardware prerequisite — the target TPM MUST be attestation-capable
 
 **Recon finding (2026-06-25):** the Parallels **vTPM (Manufacturer `PRLS`) is NOT viable** — it has an EK *key* but **no manufacturer EK *certificate*** (`Get-TpmEndorsementKeyInfo` → `ManufacturerCertificates=0`) and `tpmtool` → `Is Capable For Attestation: False`. The strong path **fail-closes** on it. The "denetim PC" is a Linux AI host (RTX 4070 / ollama+whisper), **not** a Windows agent target.
