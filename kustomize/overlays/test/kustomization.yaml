@@ -5322,7 +5322,7 @@ images:
     # single-arch linux/amd64 v2 manifest). The deploy-backend-testai.yml image
     # set rolls this digest AND restarts the pod, so the envFrom ConfigMap
     # change below takes effect on the same roll.
-    digest: sha256:ea257fd8f738aecce47ccdf8421331df2e4417e6c0b74f928e25f0ff08c567f5
+    digest: sha256:3015656f62bc02549648add32b1a6bde994f1a02f971dbaefe2db43b0a5df79b
 
   # Faz 23.1 PR5 D29-NOTIFY (Codex 019dfaaa absorb, 2026-05-06).
   # 2026-05-06 update: Faz 23.2 PR-A + PR-B MERGED — bump to sha-b758571
