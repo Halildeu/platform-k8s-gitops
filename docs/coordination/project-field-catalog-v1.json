@@ -1,13 +1,13 @@
 {
   "schemaVersion": "project-field-catalog/v1",
-  "catalogVersion": "2026-06-13T00:00:00Z",
+  "catalogVersion": "2026-06-25T03:25:00Z",
   "source": "docs/board-protocol.md#13-board-referansi-idler",
   "project": {
     "owner": "Halildeu",
     "number": 2,
     "id": "PVT_kwHOCx7tY84BIN2d"
   },
-  "catalogFingerprint": "sha256:1c8feb84220d90207ec8950f0cda25b04dbdcb6b8c0d24de5b58bf927b802d02",
+  "catalogFingerprint": "sha256:e293d05c722a8c4c58ee423cd1c006a531d78f47ff5380f046476ebad985ac3e",
   "fields": {
     "Status": {
       "id": "PVTSSF_lAHOCx7tY84BIN2dzg4vgLw",
@@ -31,6 +31,7 @@
         "Faz I": "a858eb09",
         "Faz 22": "6fb80ca3",
         "Faz 23": "7ff54758",
+        "Faz 24": "77b820c4",
         "V2.1": "b21e7ec5",
         "V3": "68101ca0",
         "schema-service": "0df88f76"
