@@ -129,6 +129,24 @@ already confirmed. Auto mode runs `wg show interfaces` with the same
 non-interactive `sudo -n` fallback as the per-interface metadata probes and
 records only interface/probe metadata in the JSON bundle.
 
+If the evidence artifact reports `wgToolFound=false`, repair only the
+self-hosted runner prerequisite first:
+
+```bash
+gh workflow run faz24-i3-runner-wg-tool-repair.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main \
+  -f mode=install \
+  -f confirm=INSTALL_WIREGUARD_TOOLS_FOR_FAZ24_I3 \
+  -f package_manager=auto
+```
+
+Boundary: this workflow is a controlled host prerequisite repair for
+`staging-sw` only. It may install `wireguard-tools` when the confirmation token
+matches. It does not touch Denetim PC config, clusters, direct-STT, app-mTLS, or
+production state. If it installed the package, rollback is host package-manager
+removal after confirming no other runner job depends on `wg`.
+
 ### 5.2 Manual fallback
 
 Run these from an elevated Denetim PC PowerShell session or an approved
