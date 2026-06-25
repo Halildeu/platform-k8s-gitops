@@ -249,6 +249,119 @@ check_release_lineage_waiver() {
   return 0
 }
 
+# release_train_verdict <releases_json>
+#
+# Pure, network-free release-train graduation/hygiene evaluator (Faz 22.6
+# #1939). It does NOT call gh/curl/ssh/kubectl, so the test harness can drive
+# it directly with fixtures. It decouples the live release-train check from the
+# bounded-pilot deploy pin:
+#   - graduation is asserted against the latest STABLE release matching the
+#     trusted series (NOT an exact pinned tag, so the train may move ahead of
+#     the deployed bounded pilot);
+#   - the GitHub "latest" pointer being a prerelease/draft is hygiene, not a
+#     series block;
+#   - a frozen-series (v0.2.x) release published at/after the trusted-lineage
+#     boundary is a regression (hygiene). Historical v0.2.x before the boundary
+#     are fine — never counted, never deleted;
+#   - too many active trusted-series releases in the window is hygiene that
+#     requires a lineage audit/waiver — it is never auto-passed and never
+#     triggers a delete.
+#
+# Emits human-readable GITHUB_RELEASE_* check lines to stdout, then two machine
+# lines the caller parses:
+#   RELEASE_TRAIN_VERDICT=<pass|blocked_empty|blocked_series|needs_hygiene>
+#   RELEASE_TRAIN_WAIVER_FINDINGS=<comma-separated waiver-eligible findings>
+# Returns 0 for pass/needs_hygiene (caller decides waiver), 1 for blocked_*.
+release_train_verdict() {
+  local releases_json="$1"
+  local trusted_regex="$AGENT_RELEASE_TRUSTED_SERIES_REGEX"
+  local boundary="$AGENT_RELEASE_TRUSTED_LINEAGE_STARTED_AT"
+  local dense_threshold="$AGENT_RELEASE_ACTIVE_SERIES_DENSE_THRESHOLD"
+  local waiver_findings=()
+
+  # Latest STABLE release = newest non-draft, non-prerelease (by publishedAt desc).
+  local latest_stable
+  latest_stable="$(printf '%s\n' "$releases_json" | jq -r '
+    [ .[] | select((.isDraft // false | not) and (.isPrerelease // false | not)) ]
+    | sort_by(.publishedAt) | reverse | (.[0].tagName // "")')"
+
+  if [ -z "$latest_stable" ]; then
+    print_check 'GITHUB_RELEASE_LATEST_STABLE' 'blocked' 'reason=no-stable-release'
+    printf 'RELEASE_TRAIN_VERDICT=blocked_empty\n'
+    printf 'RELEASE_TRAIN_WAIVER_FINDINGS=\n'
+    return 1
+  fi
+
+  if printf '%s\n' "$latest_stable" | grep -Eq "$trusted_regex"; then
+    print_check 'GITHUB_RELEASE_TRAIN_SERIES' 'pass' "latest_stable=$latest_stable trusted_series=$AGENT_RELEASE_SERIES_LABEL"
+  else
+    print_check 'GITHUB_RELEASE_TRAIN_SERIES' 'blocked' "latest_stable=$latest_stable trusted_series=$AGENT_RELEASE_SERIES_LABEL reason=latest-stable-not-on-trusted-series"
+    printf 'RELEASE_TRAIN_VERDICT=blocked_series\n'
+    printf 'RELEASE_TRAIN_WAIVER_FINDINGS=\n'
+    return 1
+  fi
+
+  local needs_hygiene=0
+
+  # GitHub "latest" pointer hygiene: the pointer being a prerelease/draft does
+  # not block the series (latest STABLE already validated above) but is flagged.
+  local pointer_kind
+  pointer_kind="$(printf '%s\n' "$releases_json" | jq -r '
+    ([ .[] | select(.isLatest // false) ] | .[0]) as $p
+    | if $p == null then "none"
+      elif ($p.isDraft // false) then "draft"
+      elif ($p.isPrerelease // false) then "prerelease"
+      else "stable" end')"
+  if [ "$pointer_kind" = "draft" ] || [ "$pointer_kind" = "prerelease" ]; then
+    print_check 'GITHUB_RELEASE_LATEST_POINTER' 'needs_hygiene' "pointer_kind=$pointer_kind reason=github-latest-is-prerelease-or-draft"
+    needs_hygiene=1
+    waiver_findings+=('GITHUB_RELEASE_LATEST_POINTER')
+  else
+    print_check 'GITHUB_RELEASE_LATEST_POINTER' 'pass' "pointer_kind=$pointer_kind"
+  fi
+
+  # Frozen-series regression: frozen-minor.x published at/after the trusted boundary.
+  # Derive the frozen-series regex from the SSOT minor label (escape dots, anchor,
+  # trailing dot) — NOT hardcoded — so a future graduation (e.g. trusted ^v0\.4\.,
+  # frozen v0.3) counts post-boundary frozen releases without a code change.
+  local frozen_regex
+  frozen_regex="^$(printf '%s' "$AGENT_RELEASE_FROZEN_MINOR" | sed 's/\./\\./g')\\."
+  local regression_count
+  regression_count="$(printf '%s\n' "$releases_json" | jq --arg boundary "$boundary" --arg frozen_regex "$frozen_regex" '
+    [ .[] | select((.tagName // "") | test($frozen_regex)) | select((.publishedAt // "") >= $boundary) ] | length')"
+  if [ "$regression_count" -gt 0 ]; then
+    print_check 'GITHUB_RELEASE_FROZEN_SERIES_REGRESSION' 'needs_hygiene' "frozen_series=$AGENT_RELEASE_FROZEN_MINOR count=$regression_count boundary=$boundary reason=frozen-series-release-after-graduation"
+    needs_hygiene=1
+    waiver_findings+=('GITHUB_RELEASE_FROZEN_SERIES_REGRESSION')
+  else
+    print_check 'GITHUB_RELEASE_FROZEN_SERIES_REGRESSION' 'pass' "frozen_series=$AGENT_RELEASE_FROZEN_MINOR count=$regression_count boundary=$boundary"
+  fi
+
+  # Active-series density: too many trusted-series releases in the window.
+  local active_count
+  active_count="$(printf '%s\n' "$releases_json" | jq --arg regex "$trusted_regex" '
+    [ .[].tagName | select(test($regex)) ] | length')"
+  if [ "$active_count" -ge "$dense_threshold" ]; then
+    print_check 'GITHUB_RELEASE_ACTIVE_SERIES_DENSE' 'needs_hygiene' "trusted_series=$AGENT_RELEASE_SERIES_LABEL active_count=$active_count threshold=$dense_threshold reason=active-series-dense-requires-lineage-audit-or-waiver"
+    needs_hygiene=1
+    waiver_findings+=('GITHUB_RELEASE_ACTIVE_SERIES_DENSE')
+  else
+    print_check 'GITHUB_RELEASE_ACTIVE_SERIES_DENSE' 'pass' "trusted_series=$AGENT_RELEASE_SERIES_LABEL active_count=$active_count threshold=$dense_threshold"
+  fi
+
+  local findings_csv=""
+  if [ "${#waiver_findings[@]}" -gt 0 ]; then
+    findings_csv="$(IFS=,; printf '%s' "${waiver_findings[*]}")"
+  fi
+  if [ "$needs_hygiene" -ne 0 ]; then
+    printf 'RELEASE_TRAIN_VERDICT=needs_hygiene\n'
+  else
+    printf 'RELEASE_TRAIN_VERDICT=pass\n'
+  fi
+  printf 'RELEASE_TRAIN_WAIVER_FINDINGS=%s\n' "$findings_csv"
+  return 0
+}
+
 main() {
   need gh
   need jq
@@ -264,26 +377,60 @@ main() {
   printf 'F22_6_RELEASE_LINEAGE_SCOPE=endpoint-agent-release-hygiene\n'
   printf 'F22_6_RELEASE_LINEAGE_RUNBOOK=docs/runbooks/RB-faz22.6-release-lineage-audit.md\n'
 
-  local releases latest is_latest is_draft is_prerelease is_immutable recent_count
-  if ! releases="$(gh release list -R "$AGENT_REPO" --limit "$RECENT_RELEASE_WINDOW" \
+  local releases bounded_pilot_present is_draft is_prerelease is_immutable
+  # RELEASE_LIST_JSON lets the audit run offline against an injected fixture
+  # (the release-train verdict is pure; the rest of the audit still needs
+  # network/cluster). When unset, live GitHub truth is the gate.
+  if [ -n "${RELEASE_LIST_JSON:-}" ]; then
+    releases="$RELEASE_LIST_JSON"
+    print_check 'GITHUB_RELEASE_LIST' 'pass' 'source=RELEASE_LIST_JSON'
+  elif ! releases="$(gh release list -R "$AGENT_REPO" --limit "$RECENT_RELEASE_WINDOW" \
       --json tagName,isLatest,isDraft,isPrerelease,isImmutable,publishedAt,name 2>&1)"; then
     print_check 'GITHUB_RELEASE_LIST' 'blocked' "reason=$(printf '%q' "$releases")"
     blocked=1
     releases='[]'
   fi
 
-  latest="$(printf '%s\n' "$releases" | jq -r '(map(select(.isLatest))[0].tagName // .[0].tagName // "unknown")')"
-  is_latest="$(printf '%s\n' "$releases" | jq -r --arg tag "$EXPECTED_AGENT_TAG" 'map(select(.tagName == $tag)) as $m | if ($m|length) > 0 then $m[0].isLatest else false end')"
+  # Release-train graduation/hygiene (pure, decoupled from the deploy pin).
+  local train_output train_verdict train_findings
+  if train_output="$(release_train_verdict "$releases")"; then
+    :
+  fi
+  printf '%s\n' "$train_output" | grep -E '^GITHUB_RELEASE_' || true
+  train_verdict="$(printf '%s\n' "$train_output" | awk -F= '$1 == "RELEASE_TRAIN_VERDICT" { v = $2 } END { print v }')"
+  train_findings="$(printf '%s\n' "$train_output" | awk -F= '$1 == "RELEASE_TRAIN_WAIVER_FINDINGS" { v = substr($0, length("RELEASE_TRAIN_WAIVER_FINDINGS=") + 1) } END { print v }')"
+  case "$train_verdict" in
+    pass) : ;;
+    needs_hygiene)
+      needs_hygiene=1
+      if [ -n "$train_findings" ]; then
+        local _f
+        IFS=',' read -r -a _f <<<"$train_findings"
+        waiver_findings+=("${_f[@]}")
+      fi
+      ;;
+    blocked_empty|blocked_series)
+      blocked=1
+      ;;
+    *)
+      print_check 'GITHUB_RELEASE_TRAIN_VERDICT' 'blocked' "verdict=$(printf '%q' "${train_verdict:-missing}") reason=unexpected-release-train-verdict"
+      blocked=1
+      ;;
+  esac
+
+  # Bounded-pilot deploy evidence: the pinned pilot tag must EXIST as a
+  # published stable release. It is intentionally NOT required to be GitHub's
+  # "latest" (the trusted train moves ahead of the deployed pilot), but it must
+  # not be a draft/prerelease.
   is_draft="$(printf '%s\n' "$releases" | jq -r --arg tag "$EXPECTED_AGENT_TAG" 'map(select(.tagName == $tag)) as $m | if ($m|length) > 0 then $m[0].isDraft else true end')"
   is_prerelease="$(printf '%s\n' "$releases" | jq -r --arg tag "$EXPECTED_AGENT_TAG" 'map(select(.tagName == $tag)) as $m | if ($m|length) > 0 then $m[0].isPrerelease else true end')"
+  bounded_pilot_present="$(printf '%s\n' "$releases" | jq -r --arg tag "$EXPECTED_AGENT_TAG" 'any(.[]; .tagName == $tag)')"
   is_immutable="$(printf '%s\n' "$releases" | jq -r --arg tag "$EXPECTED_AGENT_TAG" 'map(select(.tagName == $tag)) as $m | if ($m|length) > 0 then $m[0].isImmutable else false end')"
-  recent_count="$(printf '%s\n' "$releases" | jq --arg regex "$AGENT_RELEASE_SERIES_REGEX" '[.[].tagName | select(test($regex))] | length')"
 
-  if [ "$latest" = "$EXPECTED_AGENT_TAG" ] && [ "$is_latest" = "true" ] \
-    && [ "$is_draft" = "false" ] && [ "$is_prerelease" = "false" ]; then
-    print_check 'GITHUB_RELEASE_LATEST' 'pass' "tag=$latest draft=$is_draft prerelease=$is_prerelease"
+  if [ "$bounded_pilot_present" = "true" ] && [ "$is_draft" = "false" ] && [ "$is_prerelease" = "false" ]; then
+    print_check 'GITHUB_BOUNDED_PILOT_RELEASE_PRESENT' 'pass' "tag=$EXPECTED_AGENT_TAG draft=$is_draft prerelease=$is_prerelease"
   else
-    print_check 'GITHUB_RELEASE_LATEST' 'blocked' "latest=$latest expected=$EXPECTED_AGENT_TAG isLatest=$is_latest draft=$is_draft prerelease=$is_prerelease"
+    print_check 'GITHUB_BOUNDED_PILOT_RELEASE_PRESENT' 'blocked' "tag=$EXPECTED_AGENT_TAG present=$bounded_pilot_present draft=$is_draft prerelease=$is_prerelease"
     blocked=1
   fi
 
@@ -293,14 +440,6 @@ main() {
     print_check 'GITHUB_RELEASE_IMMUTABLE' 'needs_hygiene' "tag=$EXPECTED_AGENT_TAG isImmutable=$is_immutable"
     needs_hygiene=1
     waiver_findings+=('GITHUB_RELEASE_IMMUTABLE')
-  fi
-
-  if [ "$recent_count" -gt "$RECENT_RELEASE_HYGIENE_THRESHOLD" ]; then
-    print_check 'GITHUB_RELEASE_DENSE_TRAIN' 'needs_hygiene' "recent_series=$AGENT_RELEASE_SERIES_LABEL recent_series_count=$recent_count threshold=$RECENT_RELEASE_HYGIENE_THRESHOLD"
-    needs_hygiene=1
-    waiver_findings+=('GITHUB_RELEASE_DENSE_TRAIN')
-  else
-    print_check 'GITHUB_RELEASE_DENSE_TRAIN' 'pass' "recent_series=$AGENT_RELEASE_SERIES_LABEL recent_series_count=$recent_count"
   fi
 
   local tag_ref tag_object tag_commit

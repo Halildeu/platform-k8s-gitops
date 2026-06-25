@@ -47,6 +47,43 @@ e2e, I3 management audit, production cutover, or broad readiness. Keep #1867
 open until the evidence is reviewed and explicitly accepted; do not use this
 as a direct-STT flag-flip basis.
 
+## Live Delta — Faz 22.6 release-train graduation/hygiene gate reworked off the stale exact-pin (#1939, 2026-06-25)
+
+The machine completion gate's release-train check no longer false-blocks Faz
+22.6 once the EndpointAgent graduated to the signed `v0.3` lineage. Branch
+`feat/faz22-6-release-hygiene-claude-20260625` (PR pending; Codex thread
+`019efe62` AGREE) reworks `scripts/faz22-remote-ops/faz22-6-release-lineage-audit.sh`
+(the live-truth gate that `faz22-6-completion-audit.sh` delegates to after
+#1946), consuming the already-merged SSOT `config/faz22-6-endpoint-agent-release-policy.v1.json`:
+
+- The release-train graduation/hygiene logic is now a pure, network-free
+  `release_train_verdict` function (offline-testable; new test
+  `tests/faz22_remote_ops/test_faz22_6_release_train_verdict.sh` + gate
+  `.github/workflows/gate-faz22-release-train-verdict.yml`).
+- It separates the **bounded-pilot deploy pin** (`current_bounded_pilot.release_tag`
+  = `v0.3.1`, still exact-pinned for manifest/digest parity; new
+  `GITHUB_BOUNDED_PILOT_RELEASE_PRESENT` check requires the tag to exist as a
+  stable release but NOT to be GitHub's "latest") from the **release-train
+  graduation** check, which asserts the latest STABLE release matches the
+  trusted series (`^v0\.3\.`) — see RB §3.2.
+- New SSOT `release_train_policy` fields: `trusted_series_regex`,
+  `trusted_lineage_started_at` (`2026-06-24T09:04:29Z` = the v0.3.0 publishedAt
+  boundary), `active_series_dense_threshold` (`8`). Hygiene now counts only
+  `v0.2.x` releases published at/after the boundary as a regression
+  (`GITHUB_RELEASE_FROZEN_SERIES_REGRESSION`); the pre-boundary recovery train
+  is never counted or deleted. Excess trusted-series density
+  (`GITHUB_RELEASE_ACTIVE_SERIES_DENSE`, `>=` threshold) requires a lineage
+  audit/waiver and is never auto-passed.
+- Live GitHub truth at the time of the fix: latest stable `v0.3.3`, four
+  `v0.3.x` releases (below the dense threshold of 8), zero post-boundary
+  `v0.2.x` regressions → the train portion is a clean no-waiver `pass`.
+
+This corrects the prior `GITHUB_RELEASE_LATEST=pass tag=v0.3.1` exact-pin
+posture recorded below (2026-06-24): that exact-pin would block once GitHub's
+latest moved to `v0.3.2`/`v0.3.3` while the deployed pilot pin stayed `v0.3.1`.
+Branch is committed locally, not merged; deploy evidence and other Faz 22.6
+gates are unchanged.
+
 ## Live Delta — Faz 24 I7 Windows Firewall evidence narrowed; endpoint policy still blocks remote 8243 (2026-06-25)
 
 Follow-up read-only #198 probes after the Caddy persistence fix preserved the
