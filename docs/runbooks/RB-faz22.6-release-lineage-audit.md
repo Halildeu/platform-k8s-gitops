@@ -84,14 +84,23 @@ Hygiene findings:
   `v0.3.1` and passed release archive, `SHA256SUMS`, manifest, ZIP, and
   artifact-host registry digest parity.
 - The live self-hosted release-lineage audit run `28102175711` printed
-  `GITHUB_RELEASE_IMMUTABLE=pass`, `GITHUB_RELEASE_DENSE_TRAIN=pass`,
-  `MANIFEST_WORKFLOW_RUN_PARITY=pass`, `MANIFEST_PREVIOUS_RELEASE_PARITY=pass`,
-  `ARTIFACT_HOST_LIVE_DIGEST=pass`, `RELEASE_LINEAGE_WAIVER=not_required`, and
-  `F22_6_RELEASE_LINEAGE=pass`.
+  `GITHUB_RELEASE_IMMUTABLE=pass`, `MANIFEST_WORKFLOW_RUN_PARITY=pass`,
+  `MANIFEST_PREVIOUS_RELEASE_PARITY=pass`, `ARTIFACT_HOST_LIVE_DIGEST=pass`,
+  `RELEASE_LINEAGE_WAIVER=not_required`, and `F22_6_RELEASE_LINEAGE=pass`.
+- Faz 22.6 #1939 reworked the release-train portion of the audit (see §3.2).
+  The train is now evaluated against the latest STABLE release on the trusted
+  `v0.3` series, decoupled from the deployed bounded-pilot `v0.3.1` pin. With
+  the live train (latest stable `v0.3.3`, four `v0.3.x` releases below the
+  dense threshold, zero frozen-series regressions) the train checks print
+  `GITHUB_RELEASE_TRAIN_SERIES=pass`, `GITHUB_RELEASE_LATEST_POINTER=pass`,
+  `GITHUB_RELEASE_FROZEN_SERIES_REGRESSION=pass`, and
+  `GITHUB_RELEASE_ACTIVE_SERIES_DENSE=pass`.
 - The historical dense `v0.2.x` pilot-recovery train and immutable=false
-  `v0.3.0` release object remain historical evidence. They are no longer the
-  current release-lineage hygiene blocker because the current policy consumes
-  `v0.3.1` and the no-waiver audit is clean.
+  `v0.3.0` release object remain historical evidence. They are no longer a
+  release-lineage hygiene blocker: the rework only counts `v0.2.x` releases
+  published at or after the trusted-lineage boundary
+  (`2026-06-24T09:04:29Z`) as a regression, so the pre-boundary recovery train
+  is never counted and is never deleted.
 
 ## 3. Audit Command
 
@@ -128,13 +137,60 @@ Expected current posture:
 F22_6_RELEASE_LINEAGE=pass
 ```
 
-`pass` currently means the `v0.3.1` release object is immutable, the release
-manifest binds source commit / workflow run / previous release / signed asset
-hashes / artifact-host digest, the test overlay consumes that immutable digest,
-the public `current` artifact surface matches the release manifest, and the
-live `artifact-host` deployment plus pod imageIDs match the expected digest.
-This is a release-lineage sub-gate only; it does not close hardware
-attestation, VIEW_ONLY, or other Faz 22.6 acceptance gates.
+`pass` currently means the release train has graduated to the trusted `v0.3`
+series (§3.2), the bounded-pilot `v0.3.1` release object exists as a stable
+release and is immutable, the release manifest binds source commit / workflow
+run / previous release / signed asset hashes / artifact-host digest, the test
+overlay consumes that immutable digest, the public `current` artifact surface
+matches the release manifest, and the live `artifact-host` deployment plus pod
+imageIDs match the expected digest. This is a release-lineage sub-gate only; it
+does not close hardware attestation, VIEW_ONLY, or other Faz 22.6 acceptance
+gates.
+
+## 3.2 Release-Train Graduation vs Bounded-Pilot Deploy Pin (Faz 22.6 #1939)
+
+The audit separates two distinct concerns that earlier conflated into a single
+stale exact-pin (`EXPECTED_AGENT_LATEST_TAG=v0.2.28` + a crude `^v0\.2\.`
+count), which false-blocked completion once the agent graduated to the signed
+`v0.3` lineage:
+
+- **Bounded-pilot deploy evidence** stays exact-pinned to
+  `current_bounded_pilot.release_tag` (`v0.3.1`): manifest parity, artifact-host
+  digest, SHA256SUMS, and `GITHUB_RELEASE_IMMUTABLE`. A new
+  `GITHUB_BOUNDED_PILOT_RELEASE_PRESENT` check asserts the pinned tag exists as
+  a stable (non-draft, non-prerelease) release — but does **not** require it to
+  be GitHub's "latest", because the trusted train intentionally moves ahead of
+  the deployed pilot.
+
+- **Release-train graduation/hygiene** is evaluated by the pure, network-free
+  `release_train_verdict` function against the live release list (or an injected
+  `RELEASE_LIST_JSON` fixture for offline tests):
+  - `GITHUB_RELEASE_TRAIN_SERIES` — the latest STABLE release (newest
+    non-draft, non-prerelease) must match `trusted_series_regex` (`^v0\.3\.`).
+    Otherwise the train has not graduated → `blocked` (and `blocked_empty` when
+    there is no stable release at all).
+  - `GITHUB_RELEASE_LATEST_POINTER` — if GitHub's `isLatest` pointer is a
+    prerelease/draft (while the latest stable is still trusted), this is
+    `needs_hygiene`, not a series block.
+  - `GITHUB_RELEASE_FROZEN_SERIES_REGRESSION` — counts `^v0\.2\.` releases
+    published at or after `trusted_lineage_started_at`
+    (`2026-06-24T09:04:29Z`). Any such release is a regression off the trusted
+    series → `needs_hygiene`. Historical `v0.2.x` before the boundary are fine
+    and are never counted or deleted.
+  - `GITHUB_RELEASE_ACTIVE_SERIES_DENSE` — if the count of trusted-series
+    releases in the window is `>= active_series_dense_threshold` (`8`), this is
+    `needs_hygiene` with reason
+    `active-series-dense-requires-lineage-audit-or-waiver`. It is never
+    auto-passed and never triggers a delete; it requires a lineage audit or
+    waiver.
+
+`release_train_verdict` is offline-testable on its own
+(`tests/faz22_remote_ops/test_faz22_6_release_train_verdict.sh`, gated by
+`.github/workflows/gate-faz22-release-train-verdict.yml`). The
+`check-endpoint-agent-release-policy.sh` verifier validates the SSOT shape
+(including `trusted_lineage_started_at`, `active_series_dense_threshold`, and
+the `trusted_series_regex`/`recent_release_series_regex` alias-drift guard); it
+is **not** a substitute for the live-truth `F22_6_RELEASE_LINEAGE` gate.
 
 ## 3.1 Release Policy SSOT
 
@@ -208,20 +264,33 @@ The release-lineage audit is fail-closed. A waiver is valid only when
 the exact machine-readable marker below. The default reference is
 `Halildeu/platform-k8s-gitops#1901`.
 
-The marker may waive only the current bounded-pilot metadata hygiene findings:
-`GITHUB_RELEASE_IMMUTABLE` and `GITHUB_RELEASE_DENSE_TRAIN`. It does not
-waive checksum coverage, manifest parity, signer parity, artifact-host digest,
-live Kubernetes imageID, hardware attestation, VIEW_ONLY acceptance, or any
-broad rollout gate. The following block is the contract template only; it is
-not a recorded owner approval until the live #1901 issue body contains the
-same shape with a named owner and valid dates.
+The marker may waive only bounded-pilot metadata / release-train hygiene
+findings. The policy SSOT `bounded_pilot_waiver.accepted_findings` enumerates
+the waiver-eligible labels: `GITHUB_RELEASE_IMMUTABLE`,
+`GITHUB_RELEASE_DENSE_TRAIN` (legacy), and the Faz 22.6 #1939 release-train
+labels `GITHUB_RELEASE_LATEST_POINTER`,
+`GITHUB_RELEASE_FROZEN_SERIES_REGRESSION`, and
+`GITHUB_RELEASE_ACTIVE_SERIES_DENSE`. It does not waive checksum coverage,
+manifest parity, signer parity, artifact-host digest, live Kubernetes imageID,
+`GITHUB_RELEASE_TRAIN_SERIES` (a hard series block, not a hygiene finding),
+hardware attestation, VIEW_ONLY acceptance, or any broad rollout gate.
+
+Because the #1939 rework renamed the release-train hygiene findings, an
+existing #1901 waiver marker that lists only the two legacy findings will
+**not** silently waive a new regression/dense/pointer finding: the marker's
+`accepted_findings` must list the finding actually raised by the live audit.
+Refresh the marker (or regenerate it from the updated policy) before a new
+release-train hygiene finding can resolve to `bounded_pilot_pass`. The
+following block is the contract template only; it is not a recorded owner
+approval until the live #1901 issue body contains the same shape with a named
+owner and valid dates.
 
 ```text
 F22_6_RELEASE_LINEAGE_WAIVER: v1
 waiver_scope: bounded-pilot-only
 release_tag: <current policy release tag>
 artifact_host_digest: <current policy artifact_host_digest>
-accepted_findings: GITHUB_RELEASE_IMMUTABLE,GITHUB_RELEASE_DENSE_TRAIN
+accepted_findings: <findings actually raised by the live audit, e.g. GITHUB_RELEASE_IMMUTABLE,GITHUB_RELEASE_FROZEN_SERIES_REGRESSION>
 forbidden_claims: 5-device,50-device,800-device,production,broad-rollout
 owner_approved_by: <named owner>
 approved_at: YYYY-MM-DD

@@ -39,7 +39,10 @@
     "allowed_release_classes": [
       "bounded-pilot",
       "rollout-candidate"
-    ]
+    ],
+    "trusted_series_regex": "^v0\\.3\\.",
+    "trusted_lineage_started_at": "2026-06-24T09:04:29Z",
+    "active_series_dense_threshold": 8
   },
   "release_manifest_required_fields": [
     "source_commit",
@@ -57,7 +60,10 @@
   "bounded_pilot_waiver": {
     "accepted_findings": [
       "GITHUB_RELEASE_IMMUTABLE",
-      "GITHUB_RELEASE_DENSE_TRAIN"
+      "GITHUB_RELEASE_DENSE_TRAIN",
+      "GITHUB_RELEASE_LATEST_POINTER",
+      "GITHUB_RELEASE_FROZEN_SERIES_REGRESSION",
+      "GITHUB_RELEASE_ACTIVE_SERIES_DENSE"
     ],
     "forbidden_claims": [
       "5-device",

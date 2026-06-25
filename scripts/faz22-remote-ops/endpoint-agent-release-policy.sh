@@ -81,5 +81,15 @@ endpoint_agent_release_policy_load() {
   _endpoint_agent_policy_default AGENT_RELEASE_NEXT_TRUSTED_MINOR "$(_endpoint_agent_policy_read '.release_train_policy.next_trusted_minor')"
   _endpoint_agent_policy_default AGENT_RELEASE_FROZEN_MINOR "$(_endpoint_agent_policy_read '.release_train_policy.frozen_minor')"
 
+  # Release-train graduation policy (Faz 22.6 #1939). The trusted-series regex
+  # decouples the live release-train check from the bounded-pilot deploy pin:
+  # graduation is asserted against the latest STABLE release matching the
+  # trusted series, not an exact pinned tag. trusted_series_regex falls back to
+  # recent_release_series_regex when not set, and the SSOT validator fails
+  # closed if both are present but unequal.
+  _endpoint_agent_policy_default AGENT_RELEASE_TRUSTED_SERIES_REGEX "$(jq -er '.release_train_policy.trusted_series_regex // .release_train_policy.recent_release_series_regex' "$policy_file")"
+  _endpoint_agent_policy_default AGENT_RELEASE_TRUSTED_LINEAGE_STARTED_AT "$(_endpoint_agent_policy_read '.release_train_policy.trusted_lineage_started_at')"
+  _endpoint_agent_policy_default AGENT_RELEASE_ACTIVE_SERIES_DENSE_THRESHOLD "$(_endpoint_agent_policy_read '.release_train_policy.active_series_dense_threshold')"
+
   export ENDPOINT_AGENT_RELEASE_POLICY_PATH
 }
