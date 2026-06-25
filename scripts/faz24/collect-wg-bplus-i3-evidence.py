@@ -26,6 +26,14 @@ SCHEMA_VERSION = "faz24.wg-bplus.i3.audit.v1"
 DEFAULT_DENETIM_TARGET = "svc-denetim-agent@10.99.0.2"
 DEFAULT_WG_INTERFACE = "auto"
 DEFAULT_RETENTION_DAYS = 14
+WG_BINARY_CANDIDATES = [
+    "wg",
+    "/usr/bin/wg",
+    "/usr/sbin/wg",
+    "/usr/local/bin/wg",
+    "/snap/bin/wg",
+    "/opt/homebrew/bin/wg",
+]
 
 CHECK_ORDER = [
     "openssh-event-log",
@@ -237,8 +245,32 @@ def run_with_sudo_fallback(
     return sudo_result if sudo_result.returncode == 0 else result
 
 
+def resolve_wg_binary(
+    runner: CommandRunner,
+    timeout_seconds: int,
+) -> tuple[str, dict[str, Any]]:
+    first_exit_code: int | None = None
+    for candidate in WG_BINARY_CANDIDATES:
+        result = run_with_sudo_fallback(runner, [candidate, "--version"], timeout_seconds)
+        if first_exit_code is None:
+            first_exit_code = result.returncode
+        if result.returncode == 0:
+            return candidate, {
+                "wgToolFound": True,
+                "wgToolSelected": candidate,
+                "wgToolProbeExitCode": result.returncode,
+            }
+
+    return "wg", {
+        "wgToolFound": False,
+        "wgToolSelected": "",
+        "wgToolProbeExitCode": first_exit_code if first_exit_code is not None else 127,
+    }
+
+
 def discover_wg_interfaces(
     runner: CommandRunner,
+    wg_binary: str,
     wg_interface: str,
     timeout_seconds: int,
 ) -> tuple[list[str], dict[str, Any]]:
@@ -249,7 +281,7 @@ def discover_wg_interfaces(
             "detectedCount": 0,
         }
 
-    result = run_with_sudo_fallback(runner, ["wg", "show", "interfaces"], timeout_seconds)
+    result = run_with_sudo_fallback(runner, [wg_binary, "show", "interfaces"], timeout_seconds)
     interfaces = [
         clean
         for token in result.stdout.split()
@@ -265,22 +297,23 @@ def discover_wg_interfaces(
 
 def collect_wg_interface_metadata(
     runner: CommandRunner,
+    wg_binary: str,
     interface_name: str,
     timeout_seconds: int,
 ) -> dict[str, Any]:
     wg_latest = run_with_sudo_fallback(
         runner,
-        ["wg", "show", interface_name, "latest-handshakes"],
+        [wg_binary, "show", interface_name, "latest-handshakes"],
         timeout_seconds,
     )
     wg_transfer = run_with_sudo_fallback(
         runner,
-        ["wg", "show", interface_name, "transfer"],
+        [wg_binary, "show", interface_name, "transfer"],
         timeout_seconds,
     )
     wg_endpoints = run_with_sudo_fallback(
         runner,
-        ["wg", "show", interface_name, "endpoints"],
+        [wg_binary, "show", interface_name, "endpoints"],
         timeout_seconds,
     )
     peer_count = max(
@@ -368,13 +401,16 @@ def collect_staging_metadata(
         if re.search(r"svc-denetim-agent|10\.99\.0\.2|Accepted|Failed", line, re.IGNORECASE)
     ]
 
+    wg_binary, wg_tool_probe = resolve_wg_binary(runner, timeout_seconds)
     candidate_interfaces, wg_probe = discover_wg_interfaces(
         runner,
+        wg_binary,
         wg_interface,
         timeout_seconds,
     )
+    wg_probe.update(wg_tool_probe)
     interface_probes = [
-        collect_wg_interface_metadata(runner, interface_name, timeout_seconds)
+        collect_wg_interface_metadata(runner, wg_binary, interface_name, timeout_seconds)
         for interface_name in candidate_interfaces
     ]
     selected_probe = next((probe for probe in interface_probes if probe["ok"]), None)
