@@ -31,12 +31,48 @@ Neither profile proves:
 Current known live shape from `staging-sw`:
 
 - Route to Denetim is present: `10.99.0.2 dev wg0 src 10.99.0.1`.
+- TCP/8200 from staging succeeds.
 - TCP/8243 from staging still fails.
-- Earlier Denetim-local evidence showed Caddy listening on `:8243`; staging
-  timeout points to Denetim host policy / WFP / ESET / central allowlist or
-  equivalent TCP processing, not GitOps digest rollout.
+- Denetim-local evidence shows `CaddyI7AppMtls` running, `caddy.exe` listening
+  on `10.99.0.2:8243`, and `Test-NetConnection 10.99.0.2 -Port 8243`
+  succeeding through `wg0`.
+- Visible Windows Firewall state includes enabled local allow rules
+  `WG-staging-caddy-mtls-8243` and
+  `WG-staging-caddy-mtls-8243-program` for remote `10.99.0.1` to local
+  TCP/8243, with the program rule bound to `C:\caddy\caddy.exe`.
+- Effective Windows Firewall profiles have inbound default block but local
+  firewall rule merge enabled. Firewall drop logging is disabled/missing, and
+  Security log WFP drop events `5152/5157` did not provide matching drop
+  evidence for `8243` / `10.99.0.x`.
+- ESET firewall-related services and ERA agent are running.
+
+The current blocker therefore points to endpoint/security policy or another
+WFP provider path below/outside the visible local Windows Firewall allow rules,
+not GitOps digest rollout, missing Caddy persistence, or an IPv6-only listener.
 
 Do not flip direct-STT based only on a green deploy or plaintext 8200 health.
+Do not disable or stop ESET to force this gate open. The safe next action is an
+endpoint/security-owner decision: add a TTL-bounded ESET/ERA/central WFP
+allow/logging policy for `C:\caddy\caddy.exe`, TCP/8243, remote `10.99.0.1`,
+then rerun the `live-stt-preflight` evidence profile.
+
+## 2.1 Host-Policy Owner Action Checklist
+
+Before any #188/#182 smoke preparation, collect or attach evidence for:
+
+- `CaddyI7AppMtls` task state and `caddy.exe` listener on `10.99.0.2:8243`.
+- Staging route plus TCP probes showing `8200` succeeds and `8243` is the only
+  blocked hop before the policy change.
+- Visible Windows Firewall allow rules for `WG-staging-caddy-mtls-8243*`.
+- ESET/ERA or central WFP policy change record for the exact tuple:
+  `source=10.99.0.1`, `destination=10.99.0.2`, `protocol=TCP`,
+  `port=8243`, `program=C:\caddy\caddy.exe`.
+- Rollback or expiry for that policy change.
+- Fresh `live-stt-preflight` evidence JSON after the policy change.
+
+If the security owner chooses logging before allowlisting, the log must be
+bounded to the same tuple and must not include packet payload, raw audio,
+private keys, bearer material, JWTs, or raw certificate chains.
 
 ## 3. Metadata Contract
 
