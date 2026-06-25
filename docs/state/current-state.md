@@ -1,5 +1,25 @@
 # Current State — Platform K8s Migration
 
+## Live Delta — Faz 24 platform-desktop gateway audience preflight packaged (2026-06-25)
+
+The next #1615 external meeting-admin gate now has a docs/test helper package:
+
+- `docs/runbooks/RB-faz24-platform-desktop-gateway-audience.md` defines the
+  operator path for converging the `platform-desktop` token contract in
+  `platform-test`.
+- `scripts/keycloak/validate_faz24_platform_desktop_token_contract.py` decodes
+  a locally supplied JWT payload and emits a redacted JSON report; it never
+  prints token material and does not verify signatures.
+- The desired token contract is explicit: `azp=platform-desktop`, service
+  audiences `audio-gateway-service` and `meeting-service`, at least one
+  api-gateway-compatible audience (`frontend`, `account`, or `auth-service`),
+  `tenantId`, `companyId`, `userId`, and `MEETING_ADMIN`.
+
+Boundary: this is not a live Keycloak mutation, not a successful external
+`POST /api/v1/admin/meetings` smoke, not direct-STT evidence, and not
+compute-plane audit evidence. It only packages the next operator-safe
+preflight and redacted evidence format.
+
 ## Live Delta — Faz 24 plan truth refreshed around independent product gates (2026-06-25)
 
 The Faz 24 canonical plan and `PLAN.md` roadmap row have been realigned with
