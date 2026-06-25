@@ -102,6 +102,30 @@ JSON contract.
 
 ## 5. Collection Commands
 
+### 5.1 Preferred self-hosted workflow path
+
+Use the self-hosted `staging-sw` runner first. The workflow collects a
+metadata-only JSON bundle, validates it with the repository verifier, uploads
+the evidence artifact, and intentionally fails when any required I3 check is
+not proven.
+
+```bash
+gh workflow run faz24-wg-bplus-i3-evidence.yml \
+  --repo Halildeu/platform-k8s-gitops \
+  --ref main \
+  -f denetim_ssh_target=svc-denetim-agent@10.99.0.2 \
+  -f lookback_hours=2 \
+  -f wg_interface=wg0
+```
+
+The artifact name is `faz24-wg-bplus-i3-evidence-<run_id>`. Its
+`protectedEvidencePath` is the GitHub Actions artifact URI for that run. A red
+workflow conclusion is still useful blocker evidence when the uploaded bundle
+shows which management-audit surface is missing. Do not override a verifier
+failure manually.
+
+### 5.2 Manual fallback
+
 Run these from an elevated Denetim PC PowerShell session or an approved
 operator automation wrapper. Do not paste secrets into the shell.
 
