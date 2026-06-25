@@ -139,8 +139,14 @@ images:
     # platform-backend#756. No meeting-service functional source change is
     # claimed here; this keeps the Faz 24 runtime family aligned with the
     # 13-service deploy-backend-testai digest guard.
+    # 2026-06-25 B-narrow fix: sha-f454426 (platform-backend#758). Opens GET
+    # /api/v1/admin/meetings/{id} to authenticated callers so the recorder's
+    # non-admin meeting-owner token passes Spring Security through to the
+    # @RequireModule(MEETING,can_view) OpenFGA gate — root-cause fix for the
+    # recurring AUDIO_GATEWAY_MEETING_FORBIDDEN on recordConsent. List, sub-resources
+    # and mutations stay admin-gated. Codex 019eff98 AGREE.
     # D30 immutable digest pin (drift gate Check1 = @sha256).
-    digest: sha256:a4929327c7514b584f6c97b5bd203b7f4e532ce61a679c5ed87d453cea1607c6
+    digest: sha256:a59fb185b609fd75097f13e4213e8c1acc80bc64bf18b8adaf66e1c9e1d068fa
 
   - name: ghcr.io/OVERLAY_MUST_OVERRIDE/transcript-service
     newName: ghcr.io/halildeu/platform-backend-transcript-service
