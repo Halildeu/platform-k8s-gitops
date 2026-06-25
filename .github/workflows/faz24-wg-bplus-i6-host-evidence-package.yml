@@ -170,7 +170,7 @@ jobs:
           test -s "${PACKAGE_DIR}/expected-i6-host-evidence-metadata.json"
           test -s "${PACKAGE_DIR}/README.md"
           test -s "${PACKAGE_DIR}/SHA256SUMS"
-          sha256sum --check "${PACKAGE_DIR}/SHA256SUMS"
+          (cd "${PACKAGE_DIR}" && sha256sum --check SHA256SUMS)
 
       - name: Write workflow summary
         if: always()

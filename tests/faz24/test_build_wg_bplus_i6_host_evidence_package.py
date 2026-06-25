@@ -116,7 +116,7 @@ class BuildWgBplusI6HostEvidencePackageTest(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("faz24-i6-host-evidence-package-${{ github.run_id }}", workflow)
-        self.assertIn("sha256sum --check", workflow)
+        self.assertIn('(cd "${PACKAGE_DIR}" && sha256sum --check SHA256SUMS)', workflow)
         self.assertIn("grep -Eq -- '-----BEGIN .*PRIVATE KEY-----", workflow)
         self.assertIn("package contains forbidden private/secret-like material", workflow)
         self.assertIn("does not connect to staging-sw", workflow)
