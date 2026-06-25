@@ -218,6 +218,18 @@ def non_empty_lines(value: str) -> list[str]:
     return [line for line in value.splitlines() if line.strip()]
 
 
+def run_with_sudo_fallback(
+    runner: CommandRunner,
+    argv: list[str],
+    timeout_seconds: int,
+) -> CommandResult:
+    result = runner(argv, None, timeout_seconds)
+    if result.returncode == 0 or not shutil.which("sudo"):
+        return result
+    sudo_result = runner(["sudo", "-n", *argv], None, timeout_seconds)
+    return sudo_result if sudo_result.returncode == 0 else result
+
+
 def json_from_stdout(stdout: str) -> dict[str, Any] | None:
     start = stdout.find("{")
     end = stdout.rfind("}")
@@ -278,9 +290,7 @@ def collect_staging_metadata(
         "--no-pager",
         "--output=short-iso",
     ]
-    journal = runner(journal_cmd, None, timeout_seconds)
-    if journal.returncode != 0 and shutil.which("sudo"):
-        journal = runner(["sudo", "-n", *journal_cmd], None, timeout_seconds)
+    journal = run_with_sudo_fallback(runner, journal_cmd, timeout_seconds)
 
     journal_lines = non_empty_lines(journal.stdout)
     journal_matches = [
@@ -289,9 +299,21 @@ def collect_staging_metadata(
         if re.search(r"svc-denetim-agent|10\.99\.0\.2|Accepted|Failed", line, re.IGNORECASE)
     ]
 
-    wg_latest = runner(["wg", "show", wg_interface, "latest-handshakes"], None, timeout_seconds)
-    wg_transfer = runner(["wg", "show", wg_interface, "transfer"], None, timeout_seconds)
-    wg_endpoints = runner(["wg", "show", wg_interface, "endpoints"], None, timeout_seconds)
+    wg_latest = run_with_sudo_fallback(
+        runner,
+        ["wg", "show", wg_interface, "latest-handshakes"],
+        timeout_seconds,
+    )
+    wg_transfer = run_with_sudo_fallback(
+        runner,
+        ["wg", "show", wg_interface, "transfer"],
+        timeout_seconds,
+    )
+    wg_endpoints = run_with_sudo_fallback(
+        runner,
+        ["wg", "show", wg_interface, "endpoints"],
+        timeout_seconds,
+    )
     ss_result = runner(
         ["ss", "-Htn", "state", "established", "( sport = :22 or dport = :22 )"],
         None,
