@@ -201,6 +201,47 @@ Boundary / next:
   yazıldı:
   `https://github.com/Halildeu/platform-k8s-gitops/issues/1864#issuecomment-4795385968`.
 
+## Live Delta — Faz 24 WG-B+ I6 source contract merged; runtime verifier PASS pending (2026-06-25)
+
+Faz 24 WG-B+ I6 pod-CIDR -> WG MASQ işi source/contract seviyesinde
+main'e alındı, fakat runtime acceptance hâlâ açık. Bu delta yalnız I6 kanıt
+ingest/verifier ve runbook yüzeyinin hazır olduğunu söyler; gerçek host/WG
+path'inden metadata-only evidence üretilip verifier PASS alınmadan I6 kabul
+edilmiş sayılmaz.
+
+Source/contract evidence:
+
+- `platform-k8s-gitops#1976` squash merge commit
+  `19c2d7ce76133ecf938800f0f56fb49067b5cf54` ile
+  `faz24-wg-bplus-i6-masq-evidence-ingest.yml` workflow'unu,
+  `scripts/faz24/verify-wg-bplus-i6-masq-evidence.py` verifier'ını,
+  `docs/runbooks/RB-faz24-wg-bplus-i6-pod-cidr-wg-masq.md` runbook'unu ve
+  verifier testlerini ekledi.
+- Main üzerindeki bu SHA için gözlenen checks `success`: CodeQL, CI —
+  Kustomize Build + Lint, gate-secrets, ADR-0031 Cross-Repo Enum Drift Guard
+  ve Runtime PR Auto-close Guard.
+- Verifier contract'ı host-managed `iptables`/systemd mekanizmasını bekler;
+  Kubernetes DaemonSet assumption'ı, broad LAN NAT, raw output/audio/transcript,
+  secret-like değerler, absolute/parent-traversal evidence ref'leri ve drift
+  hash mismatch'i acceptance dışıdır.
+
+Runtime/live boundary:
+
+- Eski runbook/handoff yüzeyinde `k3d-wg-masq` ve pod -> WG -> `live-stt:8200`
+  için prose/historical test-leg kanıtı var; bu yeni I6 verifier üzerinden
+  normalize edilmiş PASS evidence değildir.
+- Sıradaki bounded iş: gerçek host/WG path'inden protected metadata-only I6 JSON
+  üretmek, `faz24-wg-bplus-i6-masq-evidence-ingest.yml` workflow'u ile ingest
+  etmek ve #1867'yi reviewer acceptance gelene kadar `Needs Verify` durumunda
+  tutmaktır.
+- Bu kanıt direct-STT Functional, I3 management audit, platform-ai app-mTLS veya
+  production cutover kabulü yerine geçmez.
+- Project #2 / board truth: `scripts/board-sync.sh sync-state 1867` son
+  kontrolde board `Status=Needs Verify`, body `status=needs-verify`,
+  `claim=unclaimed` döndürdü. Latest REST-backed evidence comment #1867'ye
+  yazıldı:
+  `https://github.com/Halildeu/platform-k8s-gitops/issues/1867#issuecomment-4795605302`.
+
 ## Live Delta — Faz 24 direct-STT mTLS artifact test overlay'e taşındı; functional gate açık (2026-06-25)
 
 Faz 24 direct-STT source artifact ve GitOps desired-state hattı,
