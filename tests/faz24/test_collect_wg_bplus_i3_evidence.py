@@ -30,10 +30,12 @@ class FakeRunner:
         ssh_stdout: str | None,
         ssh_returncode: int = 0,
         wg_requires_sudo: bool = False,
+        wg_binary_path_only: bool = False,
     ):
         self.ssh_stdout = ssh_stdout
         self.ssh_returncode = ssh_returncode
         self.wg_requires_sudo = wg_requires_sudo
+        self.wg_binary_path_only = wg_binary_path_only
 
     def __call__(self, argv: list[str], stdin: str | None = None, timeout: int = 30):
         if argv and argv[0] == "journalctl":
@@ -42,9 +44,15 @@ class FakeRunner:
                 "2026-06-25T00:00:00Z staging sshd Accepted publickey for svc-denetim-agent\n",
                 "",
             )
+        if len(argv) >= 3 and argv[:2] == ["sudo", "-n"] and argv[2].endswith("/wg"):
+            return self._wg_result(argv[2:])
         if argv[:3] == ["sudo", "-n", "wg"]:
             return self._wg_result(argv[3:])
+        if argv and argv[0].endswith("/wg"):
+            return self._wg_result(argv)
         if argv and argv[0] == "wg":
+            if self.wg_binary_path_only:
+                return collector.CommandResult(127, "", "command-not-found")
             if self.wg_requires_sudo:
                 return collector.CommandResult(1, "", "permission-denied")
             return self._wg_result(argv)
@@ -55,6 +63,8 @@ class FakeRunner:
         return collector.CommandResult(127, "", "unexpected-command")
 
     def _wg_result(self, argv: list[str]):
+        if "--version" in argv:
+            return collector.CommandResult(0, "wireguard-tools v1.0\n", "")
         if argv[-2:] == ["show", "interfaces"]:
             return collector.CommandResult(0, "wg-denetim\n", "")
         if "latest-handshakes" in argv:
@@ -177,6 +187,27 @@ class WgBplusI3EvidenceCollectorTest(unittest.TestCase):
         self.assertEqual("auto", probe["requested"])
         self.assertTrue(probe["interfacesQueryable"])
         self.assertEqual(1, probe["detectedCount"])
+        self.assertEqual("wg-denetim", probe["selectedInterface"])
+
+        result = self.run_verifier(evidence)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_staging_wireguard_uses_common_binary_path_when_path_misses_wg(self):
+        original_which = collector.shutil.which
+        collector.shutil.which = lambda name: None
+        try:
+            evidence = self.build(
+                FakeRunner(remote_success_json(), wg_binary_path_only=True),
+                wg_interface="auto",
+            )
+        finally:
+            collector.shutil.which = original_which
+        probe = evidence["collector"]["stagingWireGuardProbe"]
+
+        self.assertTrue(probe["wgToolFound"])
+        self.assertEqual("/usr/bin/wg", probe["wgToolSelected"])
+        self.assertTrue(probe["interfacesQueryable"])
         self.assertEqual("wg-denetim", probe["selectedInterface"])
 
         result = self.run_verifier(evidence)
